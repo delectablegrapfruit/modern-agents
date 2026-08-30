@@ -1,0 +1,14 @@
+# Build output
+build/
+bin/
+obj/
+*.exe
+*.pdb
+*.rsp
+
+# Visual Studio
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+.vs/

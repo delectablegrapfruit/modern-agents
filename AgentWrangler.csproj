@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">x86</Platform>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>AgentWrangler</RootNamespace>
+    <AssemblyName>AgentWrangler</AssemblyName>
+    <TargetFrameworkVersion>v4.0</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <ApplicationManifest>src\app.manifest</ApplicationManifest>
+    <!-- 32-bit on purpose: the Agent server is an in-process 32-bit COM server. -->
+    <PlatformTarget>x86</PlatformTarget>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|x86' ">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|x86' ">
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Microsoft.CSharp" />
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Xml" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="src\Agents\AgentRoster.cs" />
+    <Compile Include="src\Agents\AgentServer.cs" />
+    <Compile Include="src\Agents\LiveAgent.cs" />
+    <Compile Include="src\AppHost.cs" />
+    <Compile Include="src\Behavior\ActivityBus.cs" />
+    <Compile Include="src\Behavior\ActivityEvent.cs" />
+    <Compile Include="src\Behavior\AssistExecutor.cs" />
+    <Compile Include="src\Behavior\DefaultPhrasebook.cs" />
+    <Compile Include="src\Behavior\PesterCurve.cs" />
+    <Compile Include="src\Behavior\PesterEngine.cs" />
+    <Compile Include="src\Behavior\Phrasebook.cs" />
+    <Compile Include="src\Config\AgentProfile.cs" />
+    <Compile Include="src\Config\AppSettings.cs" />
+    <Compile Include="src\Config\SettingsStore.cs" />
+    <Compile Include="src\Diagnostics.cs" />
+    <Compile Include="src\Interop\NativeMethods.cs" />
+    <Compile Include="src\Library\CharacterFileInfo.cs" />
+    <Compile Include="src\Library\CharacterLibrary.cs" />
+    <Compile Include="src\OneShot.cs" />
+    <Compile Include="src\Program.cs" />
+    <Compile Include="src\Properties\AssemblyInfo.cs" />
+    <Compile Include="src\Ui\AssistPrompt.cs" />
+    <Compile Include="src\Ui\MainForm.Actions.cs" />
+    <Compile Include="src\Ui\MainForm.cs" />
+    <Compile Include="src\Ui\ProfilePanel.cs" />
+    <Compile Include="src\Ui\PromptDialog.cs" />
+    <Compile Include="src\Ui\RetroTheme.cs" />
+    <Compile Include="src\Watchers\ClipboardWatcher.cs" />
+    <Compile Include="src\Watchers\FileActivityWatcher.cs" />
+    <Compile Include="src\Watchers\ForegroundWatcher.cs" />
+    <Compile Include="src\Watchers\IdleWatcher.cs" />
+    <Compile Include="src\Watchers\WatcherHub.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="src\app.manifest" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>
