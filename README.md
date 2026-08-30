@@ -89,6 +89,13 @@ up and slows down rather than starting and stopping, and an orbit is a continuou
 rather than a series of jumps. A character's requests are serialized by the Agent server,
 so movement pauses while an agent is speaking and picks up from wherever it ended up.
 
+**Hold still while I am typing**, on the Setup tab and **on by default**, stops every agent
+moving while the caret is in a text field — a character walking through the sentence you
+are writing is the one interruption that actually costs you something. They carry on
+talking; only movement is held. Detection is the caret reported for the foreground window,
+falling back to the focused control's window class for applications that draw their own
+text cursor.
+
 **Dialogue** cycles by default: every line in a bank is used **twice** before any of them
 comes round again, and never twice in a row — including across the join between one cycle
 and the next. The cycle is **shared by the whole roster**, so two agents with the same
@@ -101,6 +108,7 @@ independent sampling.
 * **Ctrl+Alt+Shift+H** — panic: everyone off screen instantly, still loaded, one keypress from coming back
 * **Ctrl+Alt+Shift+A** — bring the manager window back
 * **Muzzle everyone** — they stay on screen but stop talking and moving
+* **Hold still while I am typing** — movement pauses whenever a text field has the caret
 * The **Pestering** dial at the bottom scales every agent's own level rather than setting a
   floor: 5 leaves them as configured, 10 roughly doubles them, 0 silences the lot
 * Closing the manager window leaves it running in the tray; **Exit** on the tray menu quits properly
@@ -344,7 +352,7 @@ and hand them to the engine through a lock-protected queue.
 `tools/smoketest/` over the parts that need neither Windows nor a COM server — the pester
 curve, token substitution, phrasebook coverage, the XML round trip every setting depends
 on, the guards on the elevated file helper, the line rotation, the movement integrator,
-per-section resets, and the splitter sizing rules. Neither is needed to build or run the
+the text-field heuristic, per-section resets, and the splitter sizing rules. Neither is needed to build or run the
 program.
 
 Neither substitutes for running it on Windows. Mono compiles the sources but does not share

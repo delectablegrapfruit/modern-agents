@@ -405,7 +405,11 @@ namespace AgentWrangler.Ui
 
             options.Controls.Add(Check("Random lines instead of a full rotation", _host.Settings.RandomDialogue,
                 delegate(bool on) { _host.Settings.RandomDialogue = on; _host.SaveSettings(); },
-                "Off: every line in a bank is used before any repeats, shared across all agents"));
+                "Off: every line is used twice before any comes round again, shared across all agents"));
+
+            options.Controls.Add(Check("Hold still while I am typing", _host.Settings.PauseMovementWhileTyping,
+                delegate(bool on) { _host.Settings.PauseMovementWhileTyping = on; _host.SaveSettings(); },
+                "Stops every agent moving while the caret is in a text field. They still talk."));
 
             return options;
         }

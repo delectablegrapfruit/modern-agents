@@ -74,6 +74,10 @@ namespace AgentWrangler.Tests
             MotionChecks();
 
             Console.WriteLine();
+            Console.WriteLine("== holding still while typing ==");
+            TypingChecks();
+
+            Console.WriteLine();
             Console.WriteLine(_failures == 0 ? "ALL CHECKS PASSED" : _failures + " CHECK(S) FAILED");
             return _failures == 0 ? 0 : 1;
         }
@@ -587,6 +591,90 @@ namespace AgentWrangler.Tests
 
             float eased = Motion.Approach(0f, 100f, 3f, Frame);
             Check(eased > 0f && eased < 100f, "eased values move part of the way, not all of it");
+        }
+
+        /// <summary>
+        /// The caret is the real signal and cannot be tested without a desktop, but the
+        /// window-class fallback is a plain function and is worth pinning down: a false
+        /// positive only holds an agent still, a false negative lets one walk through the
+        /// sentence being typed.
+        /// </summary>
+        private static void TypingChecks()
+        {
+            string[] editable =
+            {
+                "Edit",
+                "RichEdit",
+                "RichEdit20W",
+                "RICHEDIT50W",
+                "WindowsForms10.EDIT.app.0.141b42a_r9_ad1",
+                "TEdit",
+                "Scintilla",
+                "TextBox",
+                "SearchTextBox",
+                "TextField"
+            };
+
+            bool allEditableCaught = true;
+            foreach (string name in editable)
+                if (!AgentWrangler.Interop.TextEntry.LooksLikeTextInput(name)) allEditableCaught = false;
+            Check(allEditableCaught, "the usual text control classes are recognised");
+
+            string[] notEditable =
+            {
+                "Button",
+                "Static",
+                "Shell_TrayWnd",
+                "Progman",
+                "SysListView32",
+                "SysTreeView32",
+                "ComboLBox",
+                "#32770",
+                "Chrome_WidgetWin_1",
+                "MozillaWindowClass",
+                "ToolbarWindow32",
+                ""
+            };
+
+            bool noFalsePositives = true;
+            string offender = null;
+            foreach (string name in notEditable)
+            {
+                if (AgentWrangler.Interop.TextEntry.LooksLikeTextInput(name))
+                {
+                    noFalsePositives = false;
+                    if (offender == null) offender = name;
+                }
+            }
+            Check(noFalsePositives, "ordinary window classes are left alone" +
+                                    (offender == null ? "" : " -- matched " + offender));
+
+            Check(!AgentWrangler.Interop.TextEntry.LooksLikeTextInput(null), "a null class name is safe");
+
+            // The option has to default on, for a fresh install and for a settings file
+            // written before it existed.
+            Check(new AppSettings().PauseMovementWhileTyping, "holding still is on for a new install");
+
+            var serializer = new XmlSerializer(typeof(AppSettings));
+            const string olderFile =
+                "<?xml version=\"1.0\"?><AgentWrangler xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">" +
+                "<MasterPester>5</MasterPester></AgentWrangler>";
+
+            using (var reader = new StringReader(olderFile))
+            {
+                var older = (AppSettings)serializer.Deserialize(reader);
+                Check(older.PauseMovementWhileTyping,
+                      "a settings file from before the option still gets it switched on");
+            }
+
+            var off = new AppSettings { PauseMovementWhileTyping = false };
+            var writer = new StringWriter();
+            serializer.Serialize(writer, off);
+            using (var reader = new StringReader(writer.ToString()))
+            {
+                var back = (AppSettings)serializer.Deserialize(reader);
+                Check(!back.PauseMovementWhileTyping, "switching it off is remembered");
+            }
         }
 
         private static float Distance(PointF a, PointF b)

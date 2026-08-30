@@ -32,6 +32,9 @@ namespace AgentWrangler.Config
         /// </summary>
         public bool RandomDialogue { get; set; }
 
+        /// <summary>Hold the agents still while the caret is in a text field.</summary>
+        public bool PauseMovementWhileTyping { get; set; }
+
         public bool StartMinimized { get; set; }
         public bool LaunchOnLogin { get; set; }
 
@@ -60,6 +63,7 @@ namespace AgentWrangler.Config
             MasterPester = 5;
             Muzzled = false;
             RandomDialogue = false;
+            PauseMovementWhileTyping = true;
             StartMinimized = false;
             LaunchOnLogin = false;
             LibraryFolders = new List<string>();

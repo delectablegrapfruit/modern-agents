@@ -258,7 +258,18 @@ namespace AgentWrangler.Behavior
         {
             if (now < agent.NextMoveAt) return;
             RescheduleMove(agent, now);
+            if (MovementSuppressed) return;
             MoveAgent(agent, false);
+        }
+
+        /// <summary>
+        /// True while the agents should hold still because the user is typing into
+        /// something. A character walking through the sentence being written is the one
+        /// interruption that actually costs work, so this is on unless it is turned off.
+        /// </summary>
+        public bool MovementSuppressed
+        {
+            get { return _settings.PauseMovementWhileTyping && TextEntry.IsActive(); }
         }
 
         private void RescheduleNag(LiveAgent agent, DateTime now)
@@ -524,6 +535,7 @@ namespace AgentWrangler.Behavior
         private void StepMotion(DateTime now, float dt)
         {
             if (_settings.Muzzled || _panicHidden || _roster.Count == 0) return;
+            if (MovementSuppressed) return;
 
             Rectangle foreground = Rectangle.Empty;
             bool foregroundRead = false;

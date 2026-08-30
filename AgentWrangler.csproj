@@ -57,6 +57,7 @@
     <Compile Include="src\ElevatedHelper.cs" />
     <Compile Include="src\Interop\Elevation.cs" />
     <Compile Include="src\Interop\NativeMethods.cs" />
+    <Compile Include="src\Interop\TextEntry.cs" />
     <Compile Include="src\Library\CharacterFileInfo.cs" />
     <Compile Include="src\Library\CharacterLibrary.cs" />
     <Compile Include="src\OneShot.cs" />
