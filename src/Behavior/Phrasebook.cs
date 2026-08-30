@@ -21,7 +21,13 @@ namespace AgentWrangler.Behavior
         Tip,             // deliver an unsolicited "helpful" tip
         Compliment,      // say something nice, do nothing
         Reposition,      // move itself somewhere else on screen
-        CheckBackLater   // promise to return, and schedule itself to do exactly that
+        CheckBackLater,  // promise to return, and schedule itself to do exactly that
+        DescribeFile,    // read out a file's size and age
+        CountFiles,      // count what is in a folder and report the number
+        WatchFolder,     // add the folder to the list the agents watch
+        NameIdea,        // suggest a different file name, without renaming anything
+        Quieten,         // turn its own pestering down by one
+        HushBriefly      // promise silence, and keep it
     }
 
     /// <summary>One bank of interchangeable lines for a given activity and persona.</summary>

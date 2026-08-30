@@ -77,15 +77,24 @@ roughly doubles every agent, 0 muzzles all of them.
 | | |
 |---|---|
 | Stay put | Placed in its home corner once and never moves again |
-| Wander | Hops to an unrelated part of the screen every so often |
-| Follow the pointer | Shadows the mouse on its own short clock, ignoring small movements |
+| Wander | Walks to an unrelated part of the screen every so often |
 | Perch in a corner | Lives in its home corner, leaving for the odd excursion and returning |
-| Orbit the window | Steps around the window you are working in, one arc at a time |
+| Follow the pointer | Shadows the mouse continuously |
+| Orbit the window | Circles the window you are working in |
 
-**Dialogue** cycles by default: every line in a bank is used before any repeats, and the
-cycle is **shared by the whole roster**, so two agents with the same personality do not
-open with the same greeting. *Random lines instead of a full rotation* on the Setup tab
-turns that off in favour of independent sampling.
+The first three are scheduled hops, and the Agent server animates the character across the
+gap. The last two are integrated frame by frame at about 25 fps: the character accelerates
+towards where it wants to be and eases off as it arrives, so following the pointer speeds
+up and slows down rather than starting and stopping, and an orbit is a continuous circle
+rather than a series of jumps. A character's requests are serialized by the Agent server,
+so movement pauses while an agent is speaking and picks up from wherever it ended up.
+
+**Dialogue** cycles by default: every line in a bank is used **twice** before any of them
+comes round again, and never twice in a row — including across the join between one cycle
+and the next. The cycle is **shared by the whole roster**, so two agents with the same
+personality work through the same sequence instead of both repeating the openers.
+*Random lines instead of a full rotation* on the Setup tab turns that off in favour of
+independent sampling.
 
 **Getting rid of them**
 
@@ -284,10 +293,12 @@ text is flattened to a single line and truncated to 60 characters.
 **Nothing leaves the machine.** There is no network code in this program.
 
 **The things an agent can offer to do are deliberately trivial and harmless**: open a
-folder in Explorer, copy a file name to the clipboard, give you a useless tip, move itself,
-or promise to come back. An assistant that interrupts every few seconds — with decline
-buttons that may be running away from your pointer — has no business being able to launch
-a program or open a file you just downloaded, so it cannot.
+folder in Explorer, copy or suggest a file name, read out a file's size, count what is in a
+folder, add a folder to the watch list, give you a useless tip, move itself, promise to
+come back, go quiet for a minute, or turn its own pestering down a notch. An assistant that
+interrupts every few seconds — with decline buttons that may be running away from your
+pointer — has no business being able to launch a program or open a file you just
+downloaded, so it cannot.
 
 **Declining an offer declines that offer, and nothing more.** Neither *No thanks* nor
 *Never ask* removes anything from circulation.
@@ -332,8 +343,9 @@ and hand them to the engine through a lock-protected queue.
 `check.sh` type-checks the sources with Mono's compiler, and `smoke.sh` runs the checks in
 `tools/smoketest/` over the parts that need neither Windows nor a COM server — the pester
 curve, token substitution, phrasebook coverage, the XML round trip every setting depends
-on, the guards on the elevated file helper, the line rotation, per-section resets, and the
-splitter sizing rules. Neither is needed to build or run the program.
+on, the guards on the elevated file helper, the line rotation, the movement integrator,
+per-section resets, and the splitter sizing rules. Neither is needed to build or run the
+program.
 
 Neither substitutes for running it on Windows. Mono compiles the sources but does not share
 the .NET Framework's runtime validation: `SplitContainer` on Mono silently accepts a

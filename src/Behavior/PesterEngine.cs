@@ -35,17 +35,14 @@ namespace AgentWrangler.Behavior
         /// <summary>Candidate positions tried before giving up on avoiding another agent.</summary>
         private const int PlacementAttempts = 8;
 
-        /// <summary>Pointer movement, in pixels, before a follower bothers to re-position.</summary>
-        private const int FollowDeadZone = 110;
-
         /// <summary>Gap left between a following character and the pointer.</summary>
         private const int FollowGap = 40;
 
-        /// <summary>Arc covered by one step of an orbit.</summary>
-        private const double OrbitStepRadians = Math.PI / 7;
-
         /// <summary>Odds that a perching agent leaves its corner instead of settling.</summary>
         private const double ExcursionChance = 0.3;
+
+        /// <summary>How often the decision-making half of the engine runs.</summary>
+        private const double BrainIntervalSeconds = 0.25;
 
         private readonly AppSettings _settings;
         private readonly AgentRoster _roster;
@@ -57,6 +54,8 @@ namespace AgentWrangler.Behavior
 
         private Phrasebook _phrasebook;
         private bool _panicHidden;
+        private DateTime _lastFrameAt = DateTime.Now;
+        private DateTime _lastBrainAt = DateTime.MinValue;
 
         public PesterEngine(AppSettings settings, AgentRoster roster, ActivityBus bus, Phrasebook phrasebook)
         {
@@ -75,6 +74,18 @@ namespace AgentWrangler.Behavior
 
         /// <summary>Raised for observed activity, whether or not anybody commented on it.</summary>
         public event EventHandler<ActivityObservedEventArgs> ActivityObserved;
+
+        /// <summary>Raised when an agent changes its own settings, so they can be saved.</summary>
+        public event EventHandler AgentSettingsChanged;
+
+        /// <summary>Set by the host so an agent can offer to watch a folder it noticed.</summary>
+        public Action<string> FolderWatchRequested { get; set; }
+
+        internal void NotifySettingsChanged()
+        {
+            EventHandler handler = AgentSettingsChanged;
+            if (handler != null) handler(this, EventArgs.Empty);
+        }
 
         public AgentRoster Roster { get { return _roster; } }
 
@@ -99,8 +110,8 @@ namespace AgentWrangler.Behavior
 
             DateTime now = DateTime.Now;
             agent.EffectivePester = PesterCurve.Combine(profile.Pester, _settings.MasterPester);
-            agent.NextNagAt = now.AddSeconds(PesterCurve.Jitter(_rng, PesterCurve.NagIntervalSeconds(agent.EffectivePester)));
-            agent.NextMoveAt = now.AddSeconds(PesterCurve.Jitter(_rng, MoveIntervalFor(agent)));
+            RescheduleNag(agent, now);
+            RescheduleMove(agent, now);
 
             // Put it somewhere sensible before it says hello, so two agents summoned back
             // to back do not appear on top of each other.
@@ -166,9 +177,22 @@ namespace AgentWrangler.Behavior
 
         // ---- the loop --------------------------------------------------------------
 
-        /// <summary>One pass of the brain. Call from a UI timer, roughly four times a second.</summary>
+        /// <summary>
+        /// One frame. Called often -- around twenty-five times a second -- because the
+        /// continuous movement styles are integrated here. The decision-making runs on its
+        /// own slower schedule inside.
+        /// </summary>
         public void Tick()
         {
+            DateTime frameAt = DateTime.Now;
+
+            float dt = (float)(frameAt - _lastFrameAt).TotalSeconds;
+            _lastFrameAt = frameAt;
+            if (dt > 0f) StepMotion(frameAt, dt);
+
+            if ((frameAt - _lastBrainAt).TotalSeconds < BrainIntervalSeconds) return;
+            _lastBrainAt = frameAt;
+
             List<ActivityEvent> events = _bus.Drain();
 
             foreach (ActivityEvent ev in events)
@@ -255,6 +279,8 @@ namespace AgentWrangler.Behavior
         /// </summary>
         private bool CanSpeak(LiveAgent agent, DateTime now)
         {
+            if (now < agent.SilentUntil) return false;
+
             TimeSpan since = now - agent.LastSpokeAt;
             if (since < HardFloor) return false;
 
@@ -388,6 +414,12 @@ namespace AgentWrangler.Behavior
             }
         }
 
+        /// <summary>Lets an assist action report back through the agent that offered it.</summary>
+        internal void SpeakResult(LiveAgent agent, string line)
+        {
+            SayLiteral(agent, ActivityKind.Nag, line);
+        }
+
         private void SayLiteral(LiveAgent agent, ActivityKind kind, string line)
         {
             if (string.IsNullOrEmpty(line)) return;
@@ -425,36 +457,208 @@ namespace AgentWrangler.Behavior
 
         // ---- movement --------------------------------------------------------------
 
-        /// <summary>How often each style wants to move, relative to the pester interval.</summary>
+        /// <summary>Styles driven frame by frame rather than by scheduled hops.</summary>
+        private static bool IsContinuous(MovementStyle style)
+        {
+            return style == MovementStyle.FollowCursor || style == MovementStyle.Orbit;
+        }
+
+        /// <summary>How often the hop-based styles want to move.</summary>
         private static double MoveIntervalFor(LiveAgent agent)
         {
-            double baseline = PesterCurve.MoveIntervalSeconds(agent.EffectivePester);
-
             switch (agent.Profile.Movement)
             {
                 case MovementStyle.Stay:
+                case MovementStyle.FollowCursor:
+                case MovementStyle.Orbit:
                     return double.PositiveInfinity;
 
-                case MovementStyle.FollowCursor:
-                    // Following has to keep pace with the pointer to look like following at
-                    // all, so it runs on its own short clock rather than the pester one.
-                    return Math.Min(baseline, 1.5);
-
-                case MovementStyle.Orbit:
-                    // Frequent small steps around the circle.
-                    return Math.Min(baseline * 0.35, 6.0);
-
                 case MovementStyle.Perch:
-                    return baseline * 1.6;
+                    return PesterCurve.MoveIntervalSeconds(agent.EffectivePester) * 1.6;
 
                 default:
-                    return baseline;
+                    return PesterCurve.MoveIntervalSeconds(agent.EffectivePester);
             }
         }
 
-        /// <summary>Moves an agent according to its style. Placement avoids the others.</summary>
+        /// <summary>Cruising speed, in pixels per second, for a style and speed setting.</summary>
+        private static float MaxSpeedFor(AgentProfile profile)
+        {
+            switch (profile.MoveSpeed)
+            {
+                case MoveSpeed.Instant: return 2000f;
+                case MoveSpeed.Fast: return 1100f;
+                case MoveSpeed.Slow: return 380f;
+                default: return 700f;
+            }
+        }
+
+        /// <summary>How eagerly velocity converges on what is wanted. Lower feels heavier.</summary>
+        private static float ResponsivenessFor(AgentProfile profile)
+        {
+            switch (profile.MoveSpeed)
+            {
+                case MoveSpeed.Instant: return 22f;
+                case MoveSpeed.Fast: return 9f;
+                case MoveSpeed.Slow: return 3.2f;
+                default: return 5.5f;
+            }
+        }
+
+        /// <summary>Radians per second travelled around an orbit.</summary>
+        private static double OrbitSpeedFor(AgentProfile profile)
+        {
+            switch (profile.MoveSpeed)
+            {
+                case MoveSpeed.Instant: return 1.15;
+                case MoveSpeed.Fast: return 0.80;
+                case MoveSpeed.Slow: return 0.22;
+                default: return 0.45;
+            }
+        }
+
+        /// <summary>
+        /// One frame of continuous movement for every agent that uses it. Called far more
+        /// often than the rest of the engine.
+        /// </summary>
+        private void StepMotion(DateTime now, float dt)
+        {
+            if (_settings.Muzzled || _panicHidden || _roster.Count == 0) return;
+
+            Rectangle foreground = Rectangle.Empty;
+            bool foregroundRead = false;
+
+            foreach (LiveAgent agent in _roster.Agents)
+            {
+                AgentProfile profile = agent.Profile;
+                if (!IsContinuous(profile.Movement)) continue;
+                if (PesterCurve.Combine(profile.Pester, _settings.MasterPester) == PesterCurve.Min) continue;
+
+                // Movement waits for the character to finish talking, then picks up from
+                // wherever it actually ended up.
+                if (now < agent.SpeakingUntil)
+                {
+                    agent.MotionReady = false;
+                    continue;
+                }
+
+                if (!agent.MotionReady && !SeedMotion(agent)) continue;
+
+                PointF target;
+                if (profile.Movement == MovementStyle.Orbit)
+                {
+                    if (!foregroundRead)
+                    {
+                        foreground = ForegroundWindowBounds();
+                        foregroundRead = true;
+                    }
+                    target = OrbitTarget(agent, foreground, dt);
+                }
+                else
+                {
+                    target = FollowTarget(agent);
+                }
+
+                MotionState next = Motion.Step(agent.Motion, target,
+                                               MaxSpeedFor(profile),
+                                               ResponsivenessFor(profile),
+                                               profile.Movement == MovementStyle.Orbit ? 60f : 150f,
+                                               dt);
+
+                Rectangle work = WorkAreaFor(agent);
+                next.Position = ClampF(next.Position, agent.MotionSize, work);
+                agent.Motion = next;
+
+                agent.MoveInstant((int)Math.Round(next.Position.X), (int)Math.Round(next.Position.Y));
+            }
+        }
+
+        /// <summary>Reads the character's real position once, to start moving from.</summary>
+        private static bool SeedMotion(LiveAgent agent)
+        {
+            Rectangle bounds = agent.Bounds;
+            if (bounds.IsEmpty) return false;
+
+            agent.MotionSize = bounds.Size;
+            agent.Motion = new MotionState(new PointF(bounds.X, bounds.Y), new PointF(0f, 0f));
+            agent.MotionReady = true;
+            agent.ForgetIssuedPosition();
+            return true;
+        }
+
+        /// <summary>
+        /// A point on the circle around the window in front. The centre and radii are eased
+        /// rather than assigned, so switching windows curves the path instead of snapping it.
+        /// </summary>
+        private static PointF OrbitTarget(LiveAgent agent, Rectangle foreground, float dt)
+        {
+            Rectangle window = foreground.IsEmpty ? WorkAreaFor(agent) : foreground;
+
+            var wantedCentre = new PointF(window.Left + window.Width / 2f, window.Top + window.Height / 2f);
+            var wantedRadius = new SizeF(Math.Max(140f, window.Width / 2f + 30f),
+                                         Math.Max(110f, window.Height / 2f + 30f));
+
+            if (agent.OrbitCentre.IsEmpty)
+            {
+                agent.OrbitCentre = wantedCentre;
+                agent.OrbitRadius = wantedRadius;
+            }
+            else
+            {
+                agent.OrbitCentre = Motion.Approach(agent.OrbitCentre, wantedCentre, 2.2f, dt);
+                agent.OrbitRadius = new SizeF(
+                    Motion.Approach(agent.OrbitRadius.Width, wantedRadius.Width, 2.2f, dt),
+                    Motion.Approach(agent.OrbitRadius.Height, wantedRadius.Height, 2.2f, dt));
+            }
+
+            agent.OrbitAngle += OrbitSpeedFor(agent.Profile) * dt;
+            if (agent.OrbitAngle > Math.PI * 2) agent.OrbitAngle -= Math.PI * 2;
+
+            return new PointF(
+                agent.OrbitCentre.X + (float)Math.Cos(agent.OrbitAngle) * agent.OrbitRadius.Width
+                    - agent.MotionSize.Width / 2f,
+                agent.OrbitCentre.Y + (float)Math.Sin(agent.OrbitAngle) * agent.OrbitRadius.Height
+                    - agent.MotionSize.Height / 2f);
+        }
+
+        /// <summary>
+        /// A spot beside the pointer. The steering does the easing, so there is no dead
+        /// zone: a small movement produces a small drift rather than nothing then a lurch.
+        /// </summary>
+        private static PointF FollowTarget(LiveAgent agent)
+        {
+            Point cursor = CursorPosition();
+            Rectangle work = Screen.FromPoint(cursor).WorkingArea;
+
+            float x = cursor.X + FollowGap;
+            if (x + agent.MotionSize.Width > work.Right) x = cursor.X - agent.MotionSize.Width - FollowGap;
+
+            return new PointF(x, cursor.Y - agent.MotionSize.Height / 3f);
+        }
+
+        private static PointF ClampF(PointF p, Size size, Rectangle work)
+        {
+            float maxX = Math.Max(work.Left, work.Right - size.Width);
+            float maxY = Math.Max(work.Top, work.Bottom - size.Height);
+            float x = p.X < work.Left ? work.Left : (p.X > maxX ? maxX : p.X);
+            float y = p.Y < work.Top ? work.Top : (p.Y > maxY ? maxY : p.Y);
+            return new PointF(x, y);
+        }
+
+        /// <summary>
+        /// A scheduled hop, for the styles that are meant to move in discrete jumps. The
+        /// Agent server animates the character across the gap itself.
+        /// </summary>
         public void MoveAgent(LiveAgent agent, bool instant)
         {
+            if (IsContinuous(agent.Profile.Movement) && !instant)
+            {
+                // Continuous movement has no "move now"; send it round the other side instead.
+                agent.OrbitAngle += Math.PI;
+                agent.MotionReady = false;
+                return;
+            }
+
             if (agent.Profile.Movement == MovementStyle.Stay && !instant) return;
 
             Rectangle bounds = agent.Bounds;
@@ -463,18 +667,8 @@ namespace AgentWrangler.Behavior
             Point? target = PickTarget(agent, size);
             if (!target.HasValue) return;
 
-            agent.MoveTo(target.Value.X, target.Value.Y, instant ? 0 : MoveDurationFor(agent));
-        }
-
-        /// <summary>
-        /// A follower that takes two seconds to arrive is always somewhere the pointer used
-        /// to be, so following is capped short whatever the configured speed.
-        /// </summary>
-        private static int MoveDurationFor(LiveAgent agent)
-        {
-            int configured = agent.Profile.MoveDurationMs;
-            if (agent.Profile.Movement == MovementStyle.FollowCursor) return Math.Min(configured, 400);
-            return configured;
+            agent.MoveTo(target.Value.X, target.Value.Y, instant ? 0 : agent.Profile.MoveDurationMs);
+            agent.MotionReady = false;
         }
 
         private Point? PickTarget(LiveAgent agent, Size size)
@@ -483,10 +677,7 @@ namespace AgentWrangler.Behavior
 
             for (int attempt = 0; attempt < PlacementAttempts; attempt++)
             {
-                Point? proposed = ProposeTarget(agent, size, work);
-                if (!proposed.HasValue) return null;
-
-                Point candidate = Clamp(proposed.Value, size, work);
+                Point candidate = Clamp(ProposeTarget(agent, size, work), size, work);
                 if (attempt == PlacementAttempts - 1 || !CollidesWithOtherAgent(agent, candidate, size))
                     return candidate;
             }
@@ -494,72 +685,22 @@ namespace AgentWrangler.Behavior
             return null;
         }
 
-        private Point? ProposeTarget(LiveAgent agent, Size size, Rectangle work)
+        private Point ProposeTarget(LiveAgent agent, Size size, Rectangle work)
         {
             switch (agent.Profile.Movement)
             {
-                case MovementStyle.FollowCursor:
-                    return FollowCursorTarget(agent, size);
-
-                case MovementStyle.Orbit:
-                    return OrbitTarget(agent, size, work);
-
                 case MovementStyle.Perch:
                     return PerchTarget(agent, size, work);
 
                 case MovementStyle.Stay:
+                case MovementStyle.FollowCursor:
+                case MovementStyle.Orbit:
                     return HomeCorner(agent, size, work);
 
                 default:
                     return new Point(_rng.Next(work.Left, Math.Max(work.Left + 1, work.Right - size.Width)),
                                      _rng.Next(work.Top, Math.Max(work.Top + 1, work.Bottom - size.Height)));
             }
-        }
-
-        /// <summary>
-        /// Parks beside the pointer, on whichever side leaves the character fully on screen.
-        /// Skips the move entirely while the pointer has barely shifted, so a still mouse
-        /// does not produce a twitching character.
-        /// </summary>
-        private static Point? FollowCursorTarget(LiveAgent agent, Size size)
-        {
-            Point cursor = CursorPosition();
-
-            Point last = agent.LastFollowedCursor;
-            if (!last.IsEmpty)
-            {
-                int dx = cursor.X - last.X;
-                int dy = cursor.Y - last.Y;
-                if (dx * dx + dy * dy < FollowDeadZone * FollowDeadZone) return null;
-            }
-            agent.LastFollowedCursor = cursor;
-
-            Rectangle work = Screen.FromPoint(cursor).WorkingArea;
-
-            // Prefer the right of the pointer; flip when there is no room.
-            int x = cursor.X + FollowGap;
-            if (x + size.Width > work.Right) x = cursor.X - size.Width - FollowGap;
-
-            int y = cursor.Y - size.Height / 3;
-            return new Point(x, y);
-        }
-
-        /// <summary>Advances a fixed step around the window in front, rather than jumping.</summary>
-        private static Point OrbitTarget(LiveAgent agent, Size size, Rectangle work)
-        {
-            Rectangle window = ForegroundWindowBounds();
-            if (window.IsEmpty) window = work;
-
-            agent.OrbitAngle += OrbitStepRadians;
-            if (agent.OrbitAngle > Math.PI * 2) agent.OrbitAngle -= Math.PI * 2;
-
-            int radiusX = Math.Max(120, window.Width / 2);
-            int radiusY = Math.Max(100, window.Height / 2);
-            int centreX = window.Left + window.Width / 2;
-            int centreY = window.Top + window.Height / 2;
-
-            return new Point(centreX + (int)(Math.Cos(agent.OrbitAngle) * radiusX) - size.Width / 2,
-                             centreY + (int)(Math.Sin(agent.OrbitAngle) * radiusY) - size.Height / 2);
         }
 
         /// <summary>
@@ -600,7 +741,7 @@ namespace AgentWrangler.Behavior
             return new Point(x, y);
         }
 
-        /// <summary>Keeps agents from stacking on top of one another.</summary>
+        /// <summary>Keeps the hopping agents from landing on top of one another.</summary>
         private bool CollidesWithOtherAgent(LiveAgent mover, Point candidate, Size size)
         {
             var proposed = new Rectangle(candidate, size);
@@ -618,7 +759,11 @@ namespace AgentWrangler.Behavior
 
         private static Rectangle WorkAreaFor(LiveAgent agent)
         {
-            Rectangle bounds = agent.Bounds;
+            Rectangle bounds = agent.MotionReady
+                ? new Rectangle((int)agent.Motion.Position.X, (int)agent.Motion.Position.Y,
+                                agent.MotionSize.Width, agent.MotionSize.Height)
+                : agent.Bounds;
+
             if (bounds.IsEmpty) return Screen.PrimaryScreen.WorkingArea;
 
             Screen screen = Screen.FromRectangle(bounds);

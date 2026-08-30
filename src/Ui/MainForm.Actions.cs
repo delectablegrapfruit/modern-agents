@@ -40,6 +40,12 @@ namespace AgentWrangler.Ui
             };
 
             _host.Engine.AgentSpoke += OnAgentSpoke;
+            _host.Engine.AgentSettingsChanged += delegate
+            {
+                RefreshAgentList();
+                RefreshFolderLists();
+                _host.SaveSettings();
+            };
             _host.Engine.ActivityObserved += OnActivityObserved;
             _host.Roster.RosterChanged += delegate { RefreshAgentList(); RefreshActiveList(); };
         }

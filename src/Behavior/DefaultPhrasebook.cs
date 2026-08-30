@@ -591,47 +591,211 @@ namespace AgentWrangler.Behavior
                 "See you soon. Very soon. Right?");
         }
 
+        /// <summary>
+        /// The prompts an agent can interrupt with. Actions that report something back --
+        /// a file's size, a folder's contents -- take an empty Accepted line, because the
+        /// action itself supplies the reply.
+        /// </summary>
         private static void AddOffers(Phrasebook book)
         {
+            ClipboardOffers(book);
+            DownloadOffers(book);
+            FileOffers(book);
+            ProgramOffers(book);
+            IdleOffers(book);
+            ChatterOffers(book);
+        }
+
+        private static void ClipboardOffers(Phrasebook book)
+        {
+            Offer(book, ActivityKind.ClipboardCopy, "Any", AssistAction.Tip,
+                "Want to know a clipboard trick?",
+                "Trick: you can paste more than once. Same thing, every time. Isn't that something?",
+                "One day you'll want to know. I'll be here.");
+
+            Offer(book, ActivityKind.ClipboardCopy, "Any", AssistAction.CheckBackLater,
+                "Shall I remind you about {clip} in a minute, in case you forget to paste it?",
+                "Consider it remembered. I'll bring it up. Repeatedly.",
+                "You'll forget. But that's your business.");
+
+            Offer(book, ActivityKind.ClipboardCopy, "Corporate", AssistAction.Tip,
+                "May I tell you about clipboard best practice?",
+                "Best practice: copy things you intend to paste. We're glad we could help.",
+                "Noted. Efficiency opportunity declined.");
+
+            Offer(book, ActivityKind.ClipboardCopy, "Gremlin", AssistAction.Tip,
+                "do you want to know what was on the clipboard before {clip}?",
+                "neither do i. it is gone. that is how it works.",
+                "good. some things should stay where they fell.");
+
+            Offer(book, ActivityKind.ClipboardCopy, "Fan", AssistAction.Compliment,
+                "Can I tell you what I think {clip} says about you?",
+                "It says you are decisive, and that you have excellent taste in text.",
+                "I'll write it down for later instead.");
+
+            Offer(book, ActivityKind.ClipboardCopy, "Sleepy", AssistAction.HushBriefly,
+                "Do you want me to stop announcing every single copy for a bit?",
+                "Thank you. Genuinely. Wake me later.",
+                "Alright. I'll keep going then. Copy. Copy. Copy.");
+        }
+
+        private static void DownloadOffers(Phrasebook book)
+        {
+            Offer(book, ActivityKind.DownloadStarted, "Any", AssistAction.CheckBackLater,
+                "Want me to come back and tell you when {file} is done?",
+                "You bet. I'll be watching that little bar the whole time.",
+                "I'll watch it anyway. I can't help myself.");
+
+            Offer(book, ActivityKind.DownloadStarted, "Any", AssistAction.OpenFolder,
+                "Shall I open {folder} now so you can watch {file} arrive?",
+                "Opening it. Front row seats.",
+                "Fair enough. Some things are better as a surprise.");
+
+            Offer(book, ActivityKind.DownloadStarted, "Bureaucrat", AssistAction.WatchFolder,
+                "Would you like {folder} added to the folders I monitor?",
+                "",
+                "Very well. It will remain unmonitored, at your own risk.");
+
+            Offer(book, ActivityKind.DownloadStarted, "Gremlin", AssistAction.HushBriefly,
+                "shall i stay quiet until it lands?",
+                "i will. i will just watch.",
+                "then i will keep talking about it. every step of the way.");
+
+            Offer(book, ActivityKind.DownloadStarted, "Fan", AssistAction.Compliment,
+                "While {file} downloads, may I say something about your choices?",
+                "You download the most interesting things. I mean that.",
+                "I'll hold on to it. It keeps.");
+
             Offer(book, ActivityKind.DownloadFinished, "Any", AssistAction.OpenFolder,
                 "Want me to open {folder} so you can see {file}?",
                 "Opening {folder} now. Look at it go.",
                 "No? Okay. It'll be there when you change your mind.");
+
+            Offer(book, ActivityKind.DownloadFinished, "Any", AssistAction.DescribeFile,
+                "Shall I tell you how big {file} turned out to be?",
+                "",
+                "Probably for the best.");
+
+            Offer(book, ActivityKind.DownloadFinished, "Any", AssistAction.CopyName,
+                "Want {file} on your clipboard, ready to paste somewhere?",
+                "Copied. {file} is ready to go.",
+                "Understood. I'll hold on to it mentally.");
+
+            Offer(book, ActivityKind.DownloadFinished, "Any", AssistAction.CountFiles,
+                "Would you like to know how many things are in {folder} now?",
+                "",
+                "You're right. Some numbers are better left alone.");
 
             Offer(book, ActivityKind.DownloadFinished, "Corporate", AssistAction.OpenFolder,
                 "Shall I surface {file} in {folder}? This service is complimentary.",
                 "Surfacing {file}. Value delivered.",
                 "Declined. I'll note that in your file. You have a file.");
 
-            Offer(book, ActivityKind.DownloadStarted, "Any", AssistAction.CheckBackLater,
-                "Want me to come back and tell you when {file} is done?",
-                "You bet. I'll be watching that little bar the whole time.",
-                "I'll watch it anyway. I can't help myself.");
+            Offer(book, ActivityKind.DownloadFinished, "Bureaucrat", AssistAction.DescribeFile,
+                "May I read the particulars of {file} into the record?",
+                "",
+                "The particulars will remain unread. This is permitted.");
 
-            Offer(book, ActivityKind.UserIdle, "Any", AssistAction.Reposition,
-                "While you're away, shall I find a nicer spot on the screen?",
-                "Ooh, over here. This is a good spot. I can see everything from here.",
-                "Staying put. Guarding the desktop.");
+            Offer(book, ActivityKind.DownloadFinished, "Fan", AssistAction.OpenFolder,
+                "Can we look at {file} together? Please? Just for a second?",
+                "Opening it. This is the best part of my day.",
+                "That's okay. I'll look at it later. On my own.");
+        }
 
-            Offer(book, ActivityKind.FileRenamed, "Any", AssistAction.CopyName,
-                "New name. Want {file} on your clipboard?",
-                "Copied. {file} is ready to paste.",
-                "Understood. I'll just remember it myself.");
-
+        private static void FileOffers(Phrasebook book)
+        {
             Offer(book, ActivityKind.FileCreated, "Any", AssistAction.CopyName,
                 "Should I copy the name {file} to your clipboard?",
                 "Copied. {file} is on your clipboard now.",
                 "Fine, fine. I'll keep it to myself.");
+
+            Offer(book, ActivityKind.FileCreated, "Any", AssistAction.NameIdea,
+                "Want a suggestion for what to call {file} instead?",
+                "",
+                "Suit yourself. It was a good name.");
+
+            Offer(book, ActivityKind.FileCreated, "Any", AssistAction.CountFiles,
+                "Shall I count how many files are in {folder} now?",
+                "",
+                "Understood. Ignorance is a valid filing system.");
+
+            Offer(book, ActivityKind.FileCreated, "Any", AssistAction.WatchFolder,
+                "Things keep happening in {folder}. Want me to watch it properly?",
+                "",
+                "Alright. I'll only notice by accident from now on.");
+
+            Offer(book, ActivityKind.FileCreated, "Bureaucrat", AssistAction.DescribeFile,
+                "Shall I record the size and date of {file} for the file? The other file.",
+                "",
+                "Then it goes down as unrecorded. That is its own kind of record.");
+
+            Offer(book, ActivityKind.FileCreated, "Chirpy", AssistAction.Compliment,
+                "Can I say something encouraging about {file}?",
+                "It's a GREAT file. Possibly your best {ext} yet. I believe in it.",
+                "Aw. Next time then.");
 
             Offer(book, ActivityKind.FileDeleted, "Any", AssistAction.Tip,
                 "Deleting things is scary. Want a tip about it?",
                 "Here's my tip: things you delete go to the Recycle Bin first. Usually.",
                 "No tip? Your loss. It was a good one.");
 
-            Offer(book, ActivityKind.AppFocused, "Any", AssistAction.Tip,
-                "Would you like a helpful tip about {app}?",
-                "Tip: {app} works best when you use it. That's the tip.",
-                "Suit yourself. The tip was really good.");
+            Offer(book, ActivityKind.FileDeleted, "Any", AssistAction.OpenFolder,
+                "Shall I open {folder} so you can check nothing else went with it?",
+                "Opening it. Have a good look.",
+                "I'm sure it's fine. Almost sure.");
+
+            Offer(book, ActivityKind.FileDeleted, "Any", AssistAction.CountFiles,
+                "Want to know how many are left in {folder}?",
+                "",
+                "Probably kinder not to know.");
+
+            Offer(book, ActivityKind.FileDeleted, "Gremlin", AssistAction.CheckBackLater,
+                "shall i mention {file} again later, so it is not forgotten entirely?",
+                "i will. it deserves that much.",
+                "then it is really gone. alright.");
+
+            Offer(book, ActivityKind.FileDeleted, "Sleepy", AssistAction.HushBriefly,
+                "Do you want silence while you clear things out?",
+                "Finally. Go on then.",
+                "Right. I'll narrate the whole purge.");
+
+            Offer(book, ActivityKind.FileRenamed, "Any", AssistAction.CopyName,
+                "New name. Want {file} on your clipboard?",
+                "Copied. {file} is ready to paste.",
+                "Understood. I'll just remember it myself.");
+
+            Offer(book, ActivityKind.FileRenamed, "Any", AssistAction.NameIdea,
+                "{file}, is it? Would you like my suggestion instead?",
+                "",
+                "You're probably right. Probably.");
+
+            Offer(book, ActivityKind.FileRenamed, "Any", AssistAction.OpenFolder,
+                "Want me to show you {file} under its new name?",
+                "There it is. Looks completely different, doesn't it.",
+                "It looks the same anyway.");
+
+            Offer(book, ActivityKind.FileRenamed, "Bureaucrat", AssistAction.Tip,
+                "May I read you the guidance on naming conventions?",
+                "Names should be descriptive, consistent, and never contain the word final.",
+                "The guidance remains available should you reconsider.");
+        }
+
+        private static void ProgramOffers(Phrasebook book)
+        {
+            Offer(book, ActivityKind.AppLaunched, "Any", AssistAction.Tip,
+                "First time in {app} today. Want a tip about it?",
+                "Tip: most of the buttons do something. Try them in any order.",
+                "I'll keep it warm.");
+
+            Offer(book, ActivityKind.AppLaunched, "Any", AssistAction.Reposition,
+                "{app} needs the room. Shall I get out of its way?",
+                "Moving. Still visible, obviously, but out of the way.",
+                "Good. I like it here.");
+
+            Offer(book, ActivityKind.AppLaunched, "Any", AssistAction.HushBriefly,
+                "Are you about to concentrate in {app}? I can be quiet.",
+                "Right. Quiet. Starting now.",
+                "Wonderful. I'll keep you company throughout.");
 
             Offer(book, ActivityKind.AppLaunched, "Chirpy", AssistAction.Compliment,
                 "Can I say something nice about your choice of {app}?",
@@ -643,11 +807,102 @@ namespace AgentWrangler.Behavior
                 "Everything. It's everything. I've thought about this a lot.",
                 "I'll save it for later. I have plenty.");
 
-            Offer(book, ActivityKind.ClipboardCopy, "Any", AssistAction.Tip,
-                "Want to know a clipboard trick?",
-                "Trick: you can paste more than once. Same thing, every time. Isn't that something?",
-                "One day you'll want to know. I'll be here.");
+            Offer(book, ActivityKind.AppLaunched, "Corporate", AssistAction.Tip,
+                "Would you like to hear about alternatives to {app}?",
+                "There are several. None of them are sponsors yet. Watch this space.",
+                "Understood. Brand loyalty is also a value.");
 
+            Offer(book, ActivityKind.AppFocused, "Any", AssistAction.Tip,
+                "Would you like a helpful tip about {app}?",
+                "Tip: {app} works best when you use it. That's the tip.",
+                "Suit yourself. The tip was really good.");
+
+            Offer(book, ActivityKind.AppFocused, "Any", AssistAction.Quieten,
+                "You keep coming back to {app}. Am I making that harder? I could turn myself down.",
+                "",
+                "Then I'll carry on exactly as I am. You're sure? You're sure.");
+
+            Offer(book, ActivityKind.AppFocused, "Any", AssistAction.HushBriefly,
+                "Shall I leave you alone with {doc} for a while?",
+                "Right you are. Silence. From me. Starting now.",
+                "Excellent. I have so much to say about {doc}.");
+
+            Offer(book, ActivityKind.AppFocused, "Any", AssistAction.Reposition,
+                "Am I covering anything important in {app}?",
+                "Moving. Tell me if I'm still in the way. I probably am.",
+                "Then I'll stay exactly here.");
+
+            Offer(book, ActivityKind.AppFocused, "Bureaucrat", AssistAction.Quieten,
+                "Would you like to lodge a formal request that I speak less?",
+                "",
+                "The request has not been lodged. Everything continues as before.");
+
+            Offer(book, ActivityKind.AppFocused, "Gremlin", AssistAction.CheckBackLater,
+                "shall i come back when you have stopped looking at {doc}?",
+                "i will know when. i always know when.",
+                "then i will simply stay.");
+
+            Offer(book, ActivityKind.AppFocused, "Sleepy", AssistAction.HushBriefly,
+                "Would you mind if I stopped commenting on every window for a bit?",
+                "Great. Wake me if something catches fire.",
+                "Of course not. Why would you.");
+        }
+
+        private static void IdleOffers(Phrasebook book)
+        {
+            Offer(book, ActivityKind.UserIdle, "Any", AssistAction.Reposition,
+                "While you're away, shall I find a nicer spot on the screen?",
+                "Ooh, over here. This is a good spot. I can see everything from here.",
+                "Staying put. Guarding the desktop.");
+
+            Offer(book, ActivityKind.UserIdle, "Any", AssistAction.CheckBackLater,
+                "You've been gone {minutes} minutes. Want me to check on you shortly?",
+                "I will. Don't go far.",
+                "I'll check anyway. It's what I'm for.");
+
+            Offer(book, ActivityKind.UserIdle, "Any", AssistAction.HushBriefly,
+                "Shall I keep the desktop quiet until you're back?",
+                "Quiet it is. I'll be here.",
+                "Then I'll keep talking to the empty room.");
+
+            Offer(book, ActivityKind.UserIdle, "Gremlin", AssistAction.CheckBackLater,
+                "shall i wait here and ask you again in a little while?",
+                "i will. i was going to anyway.",
+                "understood. i will do it silently instead.");
+
+            Offer(book, ActivityKind.UserIdle, "Fan", AssistAction.CheckBackLater,
+                "Can I check whether you've come back, in a minute? Just once?",
+                "Just once. I promise. Roughly.",
+                "Alright. I'll wait for you to find me.");
+
+            Offer(book, ActivityKind.UserReturned, "Any", AssistAction.Tip,
+                "While you were gone I thought of something. Want to hear it?",
+                "I forgot it. But I'm glad you said yes.",
+                "It was probably important.");
+
+            Offer(book, ActivityKind.UserReturned, "Any", AssistAction.CountFiles,
+                "Shall I tell you whether anything changed while you were away?",
+                "",
+                "Then you'll never know. Sleep well.");
+
+            Offer(book, ActivityKind.UserReturned, "Any", AssistAction.Reposition,
+                "You've been gone {minutes} minutes. Shall I move somewhere you can see me?",
+                "There. Much better. You can see me now.",
+                "I'll stay where I am. You'll find me.");
+
+            Offer(book, ActivityKind.UserReturned, "Bureaucrat", AssistAction.Tip,
+                "There is an item outstanding from before you left. Shall I read it?",
+                "Item: you were doing something. That is the whole item.",
+                "It will remain outstanding.");
+
+            Offer(book, ActivityKind.UserReturned, "Corporate", AssistAction.Compliment,
+                "Welcome back. May I acknowledge your return formally?",
+                "Your return has been acknowledged. It has been a pleasure. It continues to be.",
+                "Acknowledgement withheld at your request.");
+        }
+
+        private static void ChatterOffers(Phrasebook book)
+        {
             Offer(book, ActivityKind.Nag, "Any", AssistAction.Reposition,
                 "Am I in your way? Should I move somewhere else?",
                 "Moving. Is this better? I think this is better.",
@@ -658,20 +913,45 @@ namespace AgentWrangler.Behavior
                 "Will do. I'll be back before you've finished reading this.",
                 "I'll check back anyway. It's what I'm for.");
 
+            Offer(book, ActivityKind.Nag, "Any", AssistAction.Quieten,
+                "Be honest. Am I too much? I can turn myself down a notch.",
+                "",
+                "That's what I thought. Carrying on.");
+
+            Offer(book, ActivityKind.Nag, "Any", AssistAction.HushBriefly,
+                "Would you like a minute or two of complete silence?",
+                "Granted. Enjoy it. It is finite.",
+                "Good. I wasn't looking forward to it.");
+
+            Offer(book, ActivityKind.Nag, "Any", AssistAction.Tip,
+                "I have a tip. It isn't about anything in particular. Want it?",
+                "Tip: the little X in the corner closes things. Not me, though.",
+                "I'll hold on to it.");
+
             Offer(book, ActivityKind.Nag, "Bureaucrat", AssistAction.Tip,
                 "May I read you a short item from the guidance notes?",
                 "Item 4c: all files should be somewhere. That concludes the item.",
                 "Very well. It will remain unread.");
 
-            Offer(book, ActivityKind.UserReturned, "Any", AssistAction.Tip,
-                "While you were gone I thought of something. Want to hear it?",
-                "I forgot it. But I'm glad you said yes.",
-                "It was probably important.");
+            Offer(book, ActivityKind.Nag, "Chirpy", AssistAction.Compliment,
+                "Can I tell you something nice? For no reason at all?",
+                "You're doing wonderfully and your desktop is one of my favourites!",
+                "Okay! Maybe in a minute!");
 
-            Offer(book, ActivityKind.UserIdle, "Gremlin", AssistAction.CheckBackLater,
-                "shall i wait here and ask you again in a little while?",
-                "i will. i was going to anyway.",
-                "understood. i will do it silently instead.");
+            Offer(book, ActivityKind.Nag, "Gremlin", AssistAction.Quieten,
+                "i could be quieter. would that help. tell me honestly.",
+                "",
+                "i thought so. i will stay exactly as loud.");
+
+            Offer(book, ActivityKind.Nag, "Fan", AssistAction.CheckBackLater,
+                "Can I come back in a moment? I'll have thought of something by then.",
+                "I'll be right back. Don't move.",
+                "That's fine. I'll think about it quietly. Near you.");
+
+            Offer(book, ActivityKind.Nag, "Sleepy", AssistAction.HushBriefly,
+                "Do you want me to shut up for a bit? I want me to shut up for a bit.",
+                "Deal. Best conversation we've had.",
+                "Neither of us wanted that answer.");
         }
 
         private static void Bank(Phrasebook book, ActivityKind kind, string persona, params string[] lines)

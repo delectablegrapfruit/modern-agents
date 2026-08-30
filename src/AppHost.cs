@@ -64,6 +64,8 @@ namespace AgentWrangler
             Watchers = new WatcherHub();
             Engine = new PesterEngine(Settings, Roster, Watchers.Bus, Phrasebook);
 
+            Engine.FolderWatchRequested = WatchFolder;
+
             Watchers.Start(Settings.WatchedFolders, AnyAgentQuotesClipboard);
 
             TryConnect();
@@ -370,6 +372,20 @@ namespace AgentWrangler
         public void ApplyWatchedFolders()
         {
             if (Watchers != null) Watchers.UpdateWatchedFolders(Settings.WatchedFolders);
+        }
+
+        /// <summary>Adds a folder to the watched list if it is not already there.</summary>
+        public void WatchFolder(string folder)
+        {
+            if (string.IsNullOrEmpty(folder) || !Directory.Exists(folder)) return;
+
+            foreach (string existing in Settings.WatchedFolders)
+                if (string.Equals(existing, folder, StringComparison.OrdinalIgnoreCase)) return;
+
+            Settings.WatchedFolders.Add(folder);
+            ApplyWatchedFolders();
+            SaveSettings();
+            Diagnostics.Info("Now watching " + folder);
         }
 
         // ---- start with Windows ----------------------------------------------------

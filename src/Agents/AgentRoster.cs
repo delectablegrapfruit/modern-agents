@@ -14,16 +14,18 @@ namespace AgentWrangler.Agents
     {
         private readonly AgentServer _server;
         private readonly List<LiveAgent> _agents = new List<LiveAgent>();
+        private readonly System.Collections.ObjectModel.ReadOnlyCollection<LiveAgent> _readOnlyAgents;
 
         public AgentRoster(AgentServer server)
         {
             if (server == null) throw new ArgumentNullException("server");
             _server = server;
+            _readOnlyAgents = _agents.AsReadOnly();
         }
 
         public event EventHandler RosterChanged;
 
-        public IList<LiveAgent> Agents { get { return _agents.AsReadOnly(); } }
+        public IList<LiveAgent> Agents { get { return _readOnlyAgents; } }
         public int Count { get { return _agents.Count; } }
         public AgentServer Server { get { return _server; } }
 

@@ -4,14 +4,21 @@ using System.Collections.Generic;
 namespace AgentWrangler.Behavior
 {
     /// <summary>
-    /// Hands out lines so a bank is exhausted before any line repeats, and shuffles again
-    /// once it runs dry. One instance is shared by the whole roster, so two agents drawing
-    /// on the same bank do not both open with the same greeting.
+    /// Hands out lines so that every line in a bank is used twice before any of them comes
+    /// round again, and never twice in a row -- including across the join between one cycle
+    /// and the next. One instance is shared by the whole roster, so two agents drawing on
+    /// the same bank work through the same sequence rather than each repeating the openers.
     /// </summary>
     public sealed class LineRotation
     {
+        /// <summary>Uses each line gets per cycle before the bank is reshuffled.</summary>
+        public const int Appearances = 2;
+
         private readonly Dictionary<string, Queue<string>> _remaining =
             new Dictionary<string, Queue<string>>(StringComparer.Ordinal);
+
+        private readonly Dictionary<string, string> _lastIssued =
+            new Dictionary<string, string>(StringComparer.Ordinal);
 
         /// <summary>Number of banks currently part-way through a cycle.</summary>
         public int TrackedBanks { get { return _remaining.Count; } }
@@ -19,6 +26,7 @@ namespace AgentWrangler.Behavior
         public void Clear()
         {
             _remaining.Clear();
+            _lastIssued.Clear();
         }
 
         /// <summary>
@@ -28,32 +36,81 @@ namespace AgentWrangler.Behavior
         public string Next(string bankKey, IList<string> pool, Random rng, bool trueRandom)
         {
             if (pool == null || pool.Count == 0) return null;
-            if (trueRandom || pool.Count == 1) return pool[rng.Next(pool.Count)];
+            if (trueRandom) return pool[rng.Next(pool.Count)];
+            if (pool.Count == 1) return pool[0];
 
             Queue<string> queue;
             if (!_remaining.TryGetValue(bankKey, out queue) || queue.Count == 0)
             {
-                queue = new Queue<string>(Shuffled(pool, rng));
+                string previous;
+                _lastIssued.TryGetValue(bankKey, out previous);
+                queue = new Queue<string>(BuildCycle(pool, rng, previous));
                 _remaining[bankKey] = queue;
             }
 
-            return queue.Dequeue();
+            string line = queue.Dequeue();
+            _lastIssued[bankKey] = line;
+            return line;
         }
 
         /// <summary>
-        /// Fisher-Yates. The last line of the previous cycle is kept out of the first slot
-        /// of the next one, so reshuffling cannot produce an immediate repeat.
+        /// Lays out one cycle: every line <see cref="Appearances"/> times, in a random order
+        /// that never places the same line next to itself.
+        ///
+        /// Shuffling and then repairing collisions can fail on the last few entries, so the
+        /// order is built by always taking a line with the most uses left, excluding
+        /// whichever line came before it. With every count equal that always leaves a legal
+        /// choice, and it keeps the two uses of a line well apart.
         /// </summary>
-        private static List<string> Shuffled(IList<string> pool, Random rng)
+        internal static List<string> BuildCycle(IList<string> pool, Random rng, string previous)
         {
-            var order = new List<string>(pool);
-            for (int i = order.Count - 1; i > 0; i--)
+            int count = pool.Count;
+            var left = new int[count];
+            for (int i = 0; i < count; i++) left[i] = Appearances;
+
+            var order = new List<string>(count * Appearances);
+            var candidates = new List<int>();
+            string last = previous;
+
+            for (int step = 0; step < count * Appearances; step++)
             {
-                int j = rng.Next(i + 1);
-                string swap = order[i];
-                order[i] = order[j];
-                order[j] = swap;
+                candidates.Clear();
+                int most = 0;
+
+                for (int i = 0; i < count; i++)
+                {
+                    if (left[i] == 0) continue;
+                    if (last != null && string.Equals(pool[i], last, StringComparison.Ordinal)) continue;
+
+                    if (left[i] > most)
+                    {
+                        most = left[i];
+                        candidates.Clear();
+                        candidates.Add(i);
+                    }
+                    else if (left[i] == most)
+                    {
+                        candidates.Add(i);
+                    }
+                }
+
+                if (candidates.Count == 0)
+                {
+                    // Only the line just used is left. Possible when a bank contains the
+                    // same text more than once; repeating beats stalling.
+                    for (int i = 0; i < count; i++)
+                    {
+                        if (left[i] > 0) { candidates.Add(i); break; }
+                    }
+                    if (candidates.Count == 0) break;
+                }
+
+                int chosen = candidates[rng.Next(candidates.Count)];
+                left[chosen]--;
+                order.Add(pool[chosen]);
+                last = pool[chosen];
             }
+
             return order;
         }
     }

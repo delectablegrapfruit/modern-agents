@@ -12,7 +12,9 @@ namespace AgentWrangler.Ui
     /// </summary>
     public sealed partial class MainForm : Form
     {
-        private const int TickIntervalMs = 250;
+        // The engine integrates continuous movement on this timer, so it runs at something
+        // close to a frame rate rather than at the decision-making interval.
+        private const int TickIntervalMs = 40;
         private const int RefreshIntervalMs = 1000;
         private const int MaxLogRows = 300;
 

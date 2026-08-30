@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.IO;
 using System.Xml.Serialization;
 using AgentWrangler.Behavior;
@@ -67,6 +68,10 @@ namespace AgentWrangler.Tests
             Console.WriteLine();
             Console.WriteLine("== per-section reset ==");
             ResetChecks();
+
+            Console.WriteLine();
+            Console.WriteLine("== continuous movement ==");
+            MotionChecks();
 
             Console.WriteLine();
             Console.WriteLine(_failures == 0 ? "ALL CHECKS PASSED" : _failures + " CHECK(S) FAILED");
@@ -198,6 +203,45 @@ namespace AgentWrangler.Tests
             Console.WriteLine("        " + book.Banks.Count + " banks, " + lines + " lines, " +
                               book.Offers.Count + " offers, " +
                               Enum.GetValues(typeof(Persona)).Length + " personalities");
+
+            Check(book.Offers.Count >= 50, "there are plenty of prompts to draw on");
+
+            // Actions that report their own result must not also carry an Accepted line,
+            // or the agent says two things at once.
+            bool noDoubleReplies = true;
+            foreach (AssistOffer offer in book.Offers)
+            {
+                bool reportsBack = offer.Action == AssistAction.DescribeFile ||
+                                   offer.Action == AssistAction.CountFiles ||
+                                   offer.Action == AssistAction.NameIdea ||
+                                   offer.Action == AssistAction.WatchFolder ||
+                                   offer.Action == AssistAction.Quieten;
+                if (reportsBack && !string.IsNullOrEmpty(offer.Accepted)) noDoubleReplies = false;
+                if (string.IsNullOrEmpty(offer.Declined)) noDoubleReplies = false;
+            }
+            Check(noDoubleReplies, "self-reporting prompts leave the reply to the action");
+
+            // Every activity the user actually does should be able to raise a prompt.
+            var promptless = new List<string>();
+            foreach (ActivityKind kind in Enum.GetValues(typeof(ActivityKind)))
+            {
+                if (kind == ActivityKind.Summoned || kind == ActivityKind.Dismissed) continue;
+                bool any = false;
+                foreach (Persona persona in Enum.GetValues(typeof(Persona)))
+                    if (book.PickOffer(kind, persona, rng) != null) any = true;
+                if (!any) promptless.Add(kind.ToString());
+            }
+            Check(promptless.Count == 0,
+                  "every observable activity can raise a prompt" +
+                  (promptless.Count == 0 ? "" : " -- missing " + string.Join(", ", promptless.ToArray())));
+
+            // Prompts should mostly talk about the thing that just happened.
+            int specific = 0;
+            foreach (AssistOffer offer in book.Offers)
+                if (offer.Ask.IndexOf('{') >= 0) specific++;
+            Check(specific * 2 >= book.Offers.Count,
+                  "at least half the prompts name what you just did (" + specific + " of " +
+                  book.Offers.Count + ")");
         }
 
         private static Phrasebook BuildDefault()
@@ -369,58 +413,187 @@ namespace AgentWrangler.Tests
         }
 
         /// <summary>
-        /// Lines cycle so a bank is exhausted before anything repeats, and the cycle is
-        /// shared: two agents drawing on the same bank draw from the same sequence.
+        /// Every line is used twice per cycle, never twice in a row, and the cycle is shared
+        /// across the roster.
         /// </summary>
         private static void RotationChecks()
         {
             var rng = new Random(99);
             var rotation = new LineRotation();
             var pool = new List<string> { "a", "b", "c", "d", "e" };
+            int cycleLength = pool.Count * LineRotation.Appearances;
 
-            var firstCycle = new List<string>();
-            for (int i = 0; i < pool.Count; i++) firstCycle.Add(rotation.Next("bank", pool, rng, false));
-
-            var distinct = new HashSet<string>(firstCycle);
-            Check(distinct.Count == pool.Count, "a full cycle uses every line exactly once");
-
-            // Draining and refilling repeatedly must never lose or duplicate a line.
-            bool everyCycleComplete = true;
-            for (int cycle = 0; cycle < 40; cycle++)
-            {
-                var seen = new HashSet<string>();
-                for (int i = 0; i < pool.Count; i++) seen.Add(rotation.Next("bank", pool, rng, false));
-                if (seen.Count != pool.Count) everyCycleComplete = false;
-            }
-            Check(everyCycleComplete, "every later cycle is complete too");
-
-            // Two agents on the same bank share one sequence rather than each running their own.
-            var shared = new LineRotation();
+            var counts = new Dictionary<string, int>();
             var drawn = new List<string>();
-            for (int i = 0; i < pool.Count; i++)
-                drawn.Add(shared.Next("bank", pool, rng, false));
-            Check(new HashSet<string>(drawn).Count == pool.Count,
-                  "interleaved callers share one rotation instead of repeating");
+            for (int i = 0; i < cycleLength; i++)
+            {
+                string line = rotation.Next("bank", pool, rng, false);
+                drawn.Add(line);
+                counts[line] = counts.ContainsKey(line) ? counts[line] + 1 : 1;
+            }
+
+            bool twiceEach = counts.Count == pool.Count;
+            foreach (var pair in counts) if (pair.Value != LineRotation.Appearances) twiceEach = false;
+            Check(twiceEach, "one cycle uses every line exactly " + LineRotation.Appearances + " times");
+
+            // Run many cycles back to back: the counts must stay even and nothing may ever
+            // repeat immediately, including over the join between one cycle and the next.
+            var running = new Dictionary<string, int>();
+            string previous = drawn[drawn.Count - 1];
+            bool adjacentRepeat = false;
+            bool everyCycleEven = true;
+
+            for (int cycle = 0; cycle < 60; cycle++)
+            {
+                running.Clear();
+                for (int i = 0; i < cycleLength; i++)
+                {
+                    string line = rotation.Next("bank", pool, rng, false);
+                    if (line == previous) adjacentRepeat = true;
+                    previous = line;
+                    running[line] = running.ContainsKey(line) ? running[line] + 1 : 1;
+                }
+                if (running.Count != pool.Count) everyCycleEven = false;
+                foreach (var pair in running)
+                    if (pair.Value != LineRotation.Appearances) everyCycleEven = false;
+            }
+
+            Check(everyCycleEven, "every later cycle is even too");
+            Check(!adjacentRepeat, "no line is ever used twice in a row, cycle joins included");
+
+            // Pool sizes from tiny to large must all behave.
+            bool allSizesFine = true;
+            for (int size = 2; size <= 25; size++)
+            {
+                var sized = new List<string>();
+                for (int i = 0; i < size; i++) sized.Add("line" + i);
+
+                var fresh = new LineRotation();
+                string last = null;
+                var seen = new Dictionary<string, int>();
+                for (int i = 0; i < size * LineRotation.Appearances * 3; i++)
+                {
+                    string line = fresh.Next("k", sized, rng, false);
+                    if (line == last) allSizesFine = false;
+                    last = line;
+                    seen[line] = seen.ContainsKey(line) ? seen[line] + 1 : 1;
+                }
+                if (seen.Count != size) allSizesFine = false;
+            }
+            Check(allSizesFine, "pools from 2 to 25 lines all rotate evenly without repeats");
+
+            // Interleaved callers share one sequence rather than each running their own.
+            var shared = new LineRotation();
+            var interleaved = new Dictionary<string, int>();
+            for (int i = 0; i < cycleLength; i++)
+            {
+                string line = shared.Next("bank", pool, rng, false);
+                interleaved[line] = interleaved.ContainsKey(line) ? interleaved[line] + 1 : 1;
+            }
+            bool sharedEven = interleaved.Count == pool.Count;
+            foreach (var pair in interleaved) if (pair.Value != LineRotation.Appearances) sharedEven = false;
+            Check(sharedEven, "interleaved callers share one rotation");
 
             Check(shared.TrackedBanks == 1, "one bank in play means one tracked cycle");
             shared.Next("other", pool, rng, false);
             Check(shared.TrackedBanks == 2, "a different bank rotates separately");
 
-            // True random samples independently, so repeats are expected.
             bool sawRepeat = false;
-            string previous = null;
-            var randomRotation = new LineRotation();
+            string last2 = null;
+            var random = new LineRotation();
             for (int i = 0; i < 300; i++)
             {
-                string line = randomRotation.Next("bank", pool, rng, true);
-                if (line == previous) sawRepeat = true;
-                previous = line;
+                string line = random.Next("bank", pool, rng, true);
+                if (line == last2) sawRepeat = true;
+                last2 = line;
             }
             Check(sawRepeat, "true random can repeat a line back to back");
 
             Check(rotation.Next("bank", new List<string>(), rng, false) == null, "an empty bank yields nothing");
-            Check(rotation.Next("bank", new List<string> { "only" }, rng, false) == "only",
+            Check(rotation.Next("solo", new List<string> { "only" }, rng, false) == "only",
                   "a single-line bank always yields that line");
+        }
+
+        /// <summary>
+        /// Continuous movement must accelerate and decelerate rather than starting and
+        /// stopping, converge on its target, and behave the same at any frame rate.
+        /// </summary>
+        private static void MotionChecks()
+        {
+            const float MaxSpeed = 700f;
+            const float Responsiveness = 5.5f;
+            const float ArriveRadius = 150f;
+            const float Frame = 0.04f;
+
+            var state = new MotionState(new PointF(0f, 0f), new PointF(0f, 0f));
+            var target = new PointF(1200f, 0f);
+
+            // Speed must ramp rather than jump straight to the maximum.
+            state = Motion.Step(state, target, MaxSpeed, Responsiveness, ArriveRadius, Frame);
+            float firstFrameSpeed = state.Speed;
+            Check(firstFrameSpeed > 0f && firstFrameSpeed < MaxSpeed * 0.35f,
+                  "it starts moving gently rather than at full speed");
+
+            float previousSpeed = firstFrameSpeed;
+            bool acceleratedSmoothly = true;
+            for (int i = 0; i < 25; i++)
+            {
+                state = Motion.Step(state, target, MaxSpeed, Responsiveness, ArriveRadius, Frame);
+                if (state.Speed < previousSpeed - 0.01f) acceleratedSmoothly = false;
+                previousSpeed = state.Speed;
+            }
+            Check(acceleratedSmoothly, "speed keeps building while the target is far away");
+            Check(previousSpeed > firstFrameSpeed * 2f, "it does get properly up to speed");
+            Check(previousSpeed <= MaxSpeed + 0.5f, "it never exceeds the cruising speed");
+
+            // Approaching the target it must slow down, not stop dead.
+            for (int i = 0; i < 400; i++)
+                state = Motion.Step(state, target, MaxSpeed, Responsiveness, ArriveRadius, Frame);
+
+            float distance = Distance(state.Position, target);
+            Check(distance < 4f, "it arrives at the target");
+            Check(state.Speed < 20f, "it is barely moving once it arrives");
+
+            // Sitting on the target it must stay there rather than jitter around it.
+            var settled = state.Position;
+            for (int i = 0; i < 100; i++)
+                state = Motion.Step(state, target, MaxSpeed, Responsiveness, ArriveRadius, Frame);
+            Check(Distance(state.Position, settled) < 4f, "it stays put once it has arrived");
+
+            // A target that jumps produces a curve, not a teleport.
+            var far = new MotionState(new PointF(0f, 0f), new PointF(0f, 0f));
+            far = Motion.Step(far, new PointF(3000f, 3000f), MaxSpeed, Responsiveness, ArriveRadius, Frame);
+            Check(Distance(far.Position, new PointF(0f, 0f)) < MaxSpeed * Frame + 1f,
+                  "one frame moves at most one frame's worth of distance");
+
+            // Same journey, different frame rates, comparable outcome.
+            var coarse = new MotionState(new PointF(0f, 0f), new PointF(0f, 0f));
+            var fine = new MotionState(new PointF(0f, 0f), new PointF(0f, 0f));
+            for (int i = 0; i < 50; i++)
+                coarse = Motion.Step(coarse, target, MaxSpeed, Responsiveness, ArriveRadius, 0.08f);
+            for (int i = 0; i < 200; i++)
+                fine = Motion.Step(fine, target, MaxSpeed, Responsiveness, ArriveRadius, 0.02f);
+            Check(Distance(coarse.Position, fine.Position) < 60f,
+                  "the frame rate barely changes where it ends up");
+
+            // A stalled frame must not fling the character across the screen.
+            var stalled = new MotionState(new PointF(0f, 0f), new PointF(MaxSpeed, 0f));
+            stalled = Motion.Step(stalled, target, MaxSpeed, Responsiveness, ArriveRadius, 30f);
+            Check(stalled.Position.X <= MaxSpeed * Motion.MaxFrameSeconds + 1f,
+                  "a long stall is clamped to one frame of travel");
+
+            Check(Motion.Step(state, target, MaxSpeed, Responsiveness, ArriveRadius, 0f).Position == state.Position,
+                  "a zero-length frame changes nothing");
+
+            float eased = Motion.Approach(0f, 100f, 3f, Frame);
+            Check(eased > 0f && eased < 100f, "eased values move part of the way, not all of it");
+        }
+
+        private static float Distance(PointF a, PointF b)
+        {
+            float dx = a.X - b.X;
+            float dy = a.Y - b.Y;
+            return (float)Math.Sqrt(dx * dx + dy * dy);
         }
 
         /// <summary>Each group of settings resets on its own without disturbing the others.</summary>

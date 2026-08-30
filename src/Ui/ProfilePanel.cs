@@ -603,13 +603,13 @@ namespace AgentWrangler.Ui
                         case MovementStyle.Stay:
                             return "Placed in its home corner once and never moves again.";
                         case MovementStyle.Wander:
-                            return "Hops to an unrelated part of the screen every so often.";
+                            return "Walks to an unrelated part of the screen every so often.";
                         case MovementStyle.FollowCursor:
-                            return "Shadows the pointer, keeping pace as you move it.";
+                            return "Shadows the pointer continuously, easing up to speed and slowing as it catches up.";
                         case MovementStyle.Perch:
                             return "Lives in its home corner, leaving for the odd excursion.";
                         case MovementStyle.Orbit:
-                            return "Circles the window you are working in, one step at a time.";
+                            return "Circles the window you are working in, smoothly and without stopping.";
                         default:
                             return string.Empty;
                     }

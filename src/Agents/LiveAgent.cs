@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using AgentWrangler.Behavior;
 using AgentWrangler.Config;
 
 namespace AgentWrangler.Agents
@@ -22,6 +23,8 @@ namespace AgentWrangler.Agents
 
         private readonly object _character;
         private int _consecutiveFaults;
+        private Point _issuedPosition;
+        private bool _hasIssuedPosition;
 
         public LiveAgent(AgentProfile profile, string characterId, object character,
                          IEnumerable<string> availableAnimations)
@@ -81,8 +84,29 @@ namespace AgentWrangler.Agents
         /// <summary>Current position around the orbit, in radians.</summary>
         public double OrbitAngle { get; set; }
 
-        /// <summary>Where the pointer was when a following agent last moved.</summary>
-        public Point LastFollowedCursor { get; set; }
+        /// <summary>Centre the orbit is currently drawn around; eased towards the real one.</summary>
+        public PointF OrbitCentre { get; set; }
+
+        public SizeF OrbitRadius { get; set; }
+
+        /// <summary>Position and velocity for the styles that move continuously.</summary>
+        public MotionState Motion { get; set; }
+
+        /// <summary>False until the motion state has been seeded from the real position.</summary>
+        public bool MotionReady { get; set; }
+
+        /// <summary>Character size cached while moving, so no COM call is needed per frame.</summary>
+        public Size MotionSize { get; set; }
+
+        /// <summary>
+        /// Roughly when the current line should be finished. Movement pauses until then:
+        /// the Agent server serializes a character's requests, so a stream of positions
+        /// issued mid-sentence would queue up behind the speech and then play out at once.
+        /// </summary>
+        public DateTime SpeakingUntil { get; set; }
+
+        /// <summary>Set when the agent has promised to keep quiet for a moment.</summary>
+        public DateTime SilentUntil { get; set; }
 
         /// <summary>True once the character has failed too many COM calls to be useful.</summary>
         public bool Faulted { get { return _consecutiveFaults >= FaultThreshold; } }
@@ -164,7 +188,26 @@ namespace AgentWrangler.Agents
 
             LastLine = text;
             LastSpokeAt = DateTime.Now;
+            SpeakingUntil = LastSpokeAt.AddSeconds(EstimateSpeechSeconds(text));
             LinesSpoken++;
+        }
+
+        /// <summary>
+        /// How long a line is likely to occupy the character. The balloon stays up roughly
+        /// in proportion to its length, and there is no completion event to wait on without
+        /// sinking the server's connection point.
+        /// </summary>
+        public static double EstimateSpeechSeconds(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return 0;
+
+            int words = 1;
+            foreach (char c in text) if (c == ' ') words++;
+
+            double seconds = 1.2 + words * 0.34;
+            if (seconds < 1.5) return 1.5;
+            if (seconds > 9.0) return 9.0;
+            return seconds;
         }
 
         /// <summary>Shows a line in a thought balloon rather than saying it.</summary>
@@ -195,6 +238,23 @@ namespace AgentWrangler.Agents
                 dynamic character = _character;
                 character.Play(animation);
             });
+        }
+
+        /// <summary>
+        /// Repositions without animation, for frame-by-frame movement. Skips the call
+        /// entirely when the character is already there.
+        /// </summary>
+        public void MoveInstant(int x, int y)
+        {
+            if (_hasIssuedPosition && _issuedPosition.X == x && _issuedPosition.Y == y) return;
+            _issuedPosition = new Point(x, y);
+            _hasIssuedPosition = true;
+            MoveTo(x, y, 0);
+        }
+
+        public void ForgetIssuedPosition()
+        {
+            _hasIssuedPosition = false;
         }
 
         public void MoveTo(int x, int y, int durationMs)

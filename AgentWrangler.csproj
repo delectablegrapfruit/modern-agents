@@ -46,6 +46,7 @@
     <Compile Include="src\Behavior\AssistExecutor.cs" />
     <Compile Include="src\Behavior\DefaultPhrasebook.cs" />
     <Compile Include="src\Behavior\LineRotation.cs" />
+    <Compile Include="src\Behavior\Motion.cs" />
     <Compile Include="src\Behavior\PesterCurve.cs" />
     <Compile Include="src\Behavior\PesterEngine.cs" />
     <Compile Include="src\Behavior\Phrasebook.cs" />
