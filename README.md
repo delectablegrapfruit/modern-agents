@@ -309,5 +309,12 @@ and hand them to the engine through a lock-protected queue.
 `check.sh` type-checks the sources with Mono's compiler, and `smoke.sh` runs the checks in
 `tools/smoketest/` over the parts that need neither Windows nor a COM server — the pester
 curve, token substitution, phrasebook coverage, the XML round trip every setting depends
-on, and the guards on the elevated file helper. Neither is needed to build or run the
-program.
+on, the guards on the elevated file helper, and the splitter sizing rules. Neither is
+needed to build or run the program.
+
+Neither substitutes for running it on Windows. Mono compiles the sources but does not share
+the .NET Framework's runtime validation: `SplitContainer` on Mono silently accepts a
+minimum size larger than the control's current width, where the .NET Framework throws — a
+difference that once stopped the program from starting at all while every check here
+passed. Anything touching COM, the Win32 hooks or Windows Forms' own argument checking has
+to be tried on the real thing.

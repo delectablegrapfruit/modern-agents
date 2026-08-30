@@ -62,8 +62,15 @@ namespace AgentWrangler
                 catch (Exception ex)
                 {
                     Diagnostics.Error("Agent Wrangler could not start.", ex);
+
+                    string where = Diagnostics.LogPath;
                     MessageBox.Show(
-                        "Agent Wrangler could not start:" + Environment.NewLine + Environment.NewLine + ex.Message,
+                        "Agent Wrangler could not start:" + Environment.NewLine + Environment.NewLine +
+                        ex.Message +
+                        (string.IsNullOrEmpty(where)
+                            ? string.Empty
+                            : Environment.NewLine + Environment.NewLine + "Details, including where it "
+                              + "happened, are in:" + Environment.NewLine + where),
                         "Agent Wrangler", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return 1;
                 }

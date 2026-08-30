@@ -57,6 +57,10 @@ namespace AgentWrangler.Tests
             ElevatedHelperChecks();
 
             Console.WriteLine();
+            Console.WriteLine("== splitter sizing ==");
+            SplitterChecks();
+
+            Console.WriteLine();
             Console.WriteLine(_failures == 0 ? "ALL CHECKS PASSED" : _failures + " CHECK(S) FAILED");
             return _failures == 0 ? 0 : 1;
         }
@@ -299,6 +303,53 @@ namespace AgentWrangler.Tests
             {
                 try { Directory.Delete(dir, true); } catch { }
             }
+        }
+
+        /// <summary>
+        /// A SplitContainer rejects any minimum or splitter position its current width
+        /// cannot accommodate, and it starts life 150 pixels wide. Getting this arithmetic
+        /// wrong threw out of the manager window's constructor and stopped the program
+        /// from starting, so the rules are checked here directly.
+        /// </summary>
+        private static void SplitterChecks()
+        {
+            const int splitterWidth = 6;
+
+            Check(!Ui.SplitterLayout.FitsIn(150, splitterWidth),
+                  "a default-sized SplitContainer is correctly rejected as too narrow");
+            Check(!Ui.SplitterLayout.FitsIn(500, splitterWidth), "500 pixels is still too narrow");
+            Check(Ui.SplitterLayout.FitsIn(Ui.SplitterLayout.Panel1Min + Ui.SplitterLayout.Panel2Min + splitterWidth,
+                                           splitterWidth),
+                  "the exact sum of both minimums fits");
+            Check(Ui.SplitterLayout.FitsIn(960, splitterWidth), "the real window width fits");
+
+            Check(Ui.SplitterLayout.Distance(960, splitterWidth) == Ui.SplitterLayout.Preferred,
+                  "a roomy window gets the preferred splitter position");
+
+            // Every width that fits must produce a position both panels can live with,
+            // which is exactly the condition the control validates.
+            bool alwaysValid = true;
+            for (int width = 400; width <= 4000; width++)
+            {
+                if (!Ui.SplitterLayout.FitsIn(width, splitterWidth)) continue;
+
+                int distance = Ui.SplitterLayout.Distance(width, splitterWidth);
+                if (distance < Ui.SplitterLayout.Panel1Min ||
+                    width - splitterWidth - distance < Ui.SplitterLayout.Panel2Min)
+                {
+                    Console.WriteLine("        width " + width + " gave " + distance);
+                    alwaysValid = false;
+                }
+            }
+            Check(alwaysValid, "every width that fits yields a position the control would accept");
+
+            int tight = Ui.SplitterLayout.Panel1Min + Ui.SplitterLayout.Panel2Min + splitterWidth;
+            Check(Ui.SplitterLayout.Distance(tight, splitterWidth) == Ui.SplitterLayout.Panel1Min,
+                  "at the tightest fitting width the splitter sits at the first minimum");
+
+            // The window can never be resized below this, so the preferred position always applies.
+            Check(Ui.SplitterLayout.Distance(814, splitterWidth) == Ui.SplitterLayout.Preferred,
+                  "the smallest allowed window still gets the preferred position");
         }
 
         private static void RoundTripChecks()

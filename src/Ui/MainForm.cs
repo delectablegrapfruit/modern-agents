@@ -194,30 +194,25 @@ namespace AgentWrangler.Ui
         {
             var split = new SplitContainer
             {
-                Dock = DockStyle.Fill,
                 Orientation = Orientation.Vertical,
                 SplitterWidth = 6,
-                Panel1MinSize = 260,
-                Panel2MinSize = 320,
+                // Keep the character list a fixed width as the window grows; the tabs are
+                // what benefit from the extra room.
+                FixedPanel = FixedPanel.Panel1,
                 BackColor = RetroTheme.Face
             };
+
+            // Size it before touching any of the constraints, and dock it afterwards. See
+            // SplitterLayout: assigning a minimum to a control still at its default 150px
+            // width throws, and that exception escaped the constructor entirely.
+            split.Size = new System.Drawing.Size(Math.Max(ClientSize.Width, 640),
+                                                 Math.Max(ClientSize.Height, 400));
+            SplitterLayout.Apply(split);
+            split.Dock = DockStyle.Fill;
 
             split.Panel1.Controls.Add(BuildLibraryPane());
             split.Panel2.Controls.Add(BuildTabs());
             Controls.Add(split);
-
-            // SplitterDistance is rejected outright while the control is still at its
-            // default 150px width, so it is set once after docking and again when the
-            // handle appears, and a refusal is not worth reporting.
-            TrySetSplitter(split, 380);
-            split.HandleCreated += delegate { TrySetSplitter(split, 380); };
-        }
-
-        private static void TrySetSplitter(SplitContainer split, int distance)
-        {
-            try { split.SplitterDistance = distance; }
-            catch (InvalidOperationException) { }
-            catch (ArgumentOutOfRangeException) { }
         }
 
         private Control BuildLibraryPane()

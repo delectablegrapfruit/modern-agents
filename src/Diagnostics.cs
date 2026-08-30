@@ -44,7 +44,34 @@ namespace AgentWrangler
 
         public static void Error(string message, Exception ex)
         {
-            Write("ERR ", ex == null ? message : message + " -- " + ex.GetType().Name + ": " + ex.Message);
+            Error(message, ex, 0);
+        }
+
+        /// <summary>Depth cap so a self-referencing exception chain cannot spin forever.</summary>
+        private const int MaxCauseDepth = 5;
+
+        private static void Error(string message, Exception ex, int depth)
+        {
+            if (ex == null)
+            {
+                Write("ERR ", message);
+                return;
+            }
+
+            Write("ERR ", message + " -- " + ex.GetType().Name + ": " + ex.Message);
+
+            // The stack is what actually identifies where a start-up failure came from.
+            if (!string.IsNullOrEmpty(ex.StackTrace))
+            {
+                foreach (string line in ex.StackTrace.Split('\n'))
+                {
+                    string trimmed = line.TrimEnd('\r');
+                    if (trimmed.Length > 0) Write("     ", trimmed.Trim());
+                }
+            }
+
+            if (ex.InnerException != null && depth < MaxCauseDepth)
+                Error("  caused by", ex.InnerException, depth + 1);
         }
 
         private static void Write(string level, string message)
