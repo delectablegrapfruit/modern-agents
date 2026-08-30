@@ -53,6 +53,10 @@ namespace AgentWrangler.Tests
             RoundTripChecks();
 
             Console.WriteLine();
+            Console.WriteLine("== elevated helper guards ==");
+            ElevatedHelperChecks();
+
+            Console.WriteLine();
             Console.WriteLine(_failures == 0 ? "ALL CHECKS PASSED" : _failures + " CHECK(S) FAILED");
             return _failures == 0 ? 0 : 1;
         }
@@ -224,6 +228,77 @@ namespace AgentWrangler.Tests
                 }
             }
             Check(clean, "no built-in line leaves braces showing when tokens are missing");
+        }
+
+        /// <summary>
+        /// The elevated helper runs with administrator rights, so the checks that stop it
+        /// touching anything other than a character file in its own folder are worth
+        /// testing directly. Exit codes: 0 done, 1 failed, 2 refused.
+        /// </summary>
+        private static void ElevatedHelperChecks()
+        {
+            string dir = Path.Combine(Path.GetTempPath(), "aw-elev-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(dir);
+
+            try
+            {
+                Check(ElevatedHelper.IsHelperInvocation(new[] { ElevatedHelper.DeleteSwitch, "x.acs" }),
+                      "a helper invocation is recognised");
+                Check(!ElevatedHelper.IsHelperInvocation(new string[0]), "no arguments is not a helper invocation");
+                Check(!ElevatedHelper.IsHelperInvocation(new[] { "--restarted" }),
+                      "the restart switch is not a helper invocation");
+
+                // Refuses anything that is not a character file.
+                string notACharacter = Path.Combine(dir, "payload.txt");
+                File.WriteAllText(notACharacter, "important");
+                Check(ElevatedHelper.Run(new[] { ElevatedHelper.DeleteSwitch, notACharacter }) == 2,
+                      "refuses to delete a file that is not .acs or .acf");
+                Check(File.Exists(notACharacter), "the refused file is still there");
+
+                // Refuses a new name that is a path, which would move the file elsewhere.
+                string character = Path.Combine(dir, "merlin.acs");
+                File.WriteAllText(character, "pretend character");
+                int escaped = ElevatedHelper.Run(new[]
+                    { ElevatedHelper.RenameSwitch, character, Path.Combine("..", "escaped.acs") });
+                Check(escaped == 2, "refuses a new name containing a path");
+                Check(File.Exists(character), "the file is untouched after a refused rename");
+
+                Check(ElevatedHelper.Run(new[] { ElevatedHelper.RenameSwitch, character, "merlin.exe" }) == 2,
+                      "refuses to rename a character into another kind of file");
+
+                // Refuses to overwrite.
+                string occupied = Path.Combine(dir, "taken.acs");
+                File.WriteAllText(occupied, "already here");
+                Check(ElevatedHelper.Run(new[] { ElevatedHelper.RenameSwitch, character, "taken.acs" }) == 2,
+                      "refuses to rename over an existing file");
+                Check(File.ReadAllText(occupied) == "already here", "the existing file is intact");
+
+                // The operations it is actually for.
+                Check(ElevatedHelper.Run(new[] { ElevatedHelper.RenameSwitch, character, "wizard.acs" }) == 0,
+                      "renames a character file");
+                Check(File.Exists(Path.Combine(dir, "wizard.acs")) && !File.Exists(character),
+                      "the rename really happened");
+
+                // Read-only is cleared, the way Explorer does for a confirmed delete.
+                string readOnly = Path.Combine(dir, "locked.acs");
+                File.WriteAllText(readOnly, "x");
+                File.SetAttributes(readOnly, FileAttributes.ReadOnly);
+                Check(ElevatedHelper.Run(new[] { ElevatedHelper.DeleteSwitch, readOnly }) == 0,
+                      "deletes a read-only character file");
+                Check(!File.Exists(readOnly), "the read-only file is gone");
+
+                Check(ElevatedHelper.Run(new[] { ElevatedHelper.DeleteSwitch, Path.Combine(dir, "ghost.acs") }) == 0,
+                      "deleting something already gone is not an error");
+
+                Check(ElevatedHelper.Run(new[] { ElevatedHelper.DeleteSwitch }) == 2,
+                      "a missing argument is refused");
+                Check(ElevatedHelper.Run(new[] { ElevatedHelper.RenameSwitch, character }) == 2,
+                      "a rename with no new name is refused");
+            }
+            finally
+            {
+                try { Directory.Delete(dir, true); } catch { }
+            }
         }
 
         private static void RoundTripChecks()

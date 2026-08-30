@@ -2,6 +2,7 @@ using System;
 using System.Drawing;
 using System.Windows.Forms;
 using AgentWrangler.Behavior;
+using AgentWrangler.Interop;
 
 namespace AgentWrangler.Ui
 {
@@ -453,6 +454,26 @@ namespace AgentWrangler.Ui
             buttons.Controls.Add(MakeButton("Open data folder", 116, delegate { OpenDataFolder(); }));
             buttons.Controls.Add(MakeButton("Reload phrasebook", 124, delegate { ReloadPhrasebook(); }));
 
+            // Only offered when it would do something. Everyday use needs no elevation; this
+            // is for someone who wants to tidy up several protected character files without
+            // answering a consent prompt for each one.
+            if (Elevation.IsElevated)
+            {
+                buttons.Controls.Add(new Label
+                {
+                    Text = "Running as administrator",
+                    AutoSize = true,
+                    Font = RetroTheme.UiBold,
+                    ForeColor = RetroTheme.Accent,
+                    Margin = new Padding(12, 7, 0, 0)
+                });
+            }
+            else
+            {
+                buttons.Controls.Add(MakeButton("Run as administrator", 136,
+                                                delegate { RestartAsAdministrator(); }));
+            }
+
             var loginBox = new CheckBox
             {
                 Text = "Start when I log in",
@@ -545,6 +566,8 @@ namespace AgentWrangler.Ui
             menu.Items.Add("Dismiss all", null, delegate { DismissAll(); });
             menu.Items.Add("Panic: hide / show", null, delegate { TogglePanic(); });
             menu.Items.Add(new ToolStripSeparator());
+            if (!Elevation.IsElevated)
+                menu.Items.Add("Run as administrator", null, delegate { RestartAsAdministrator(); });
             menu.Items.Add("Exit", null, delegate { ExitApplication(); });
 
             _tray.Text = "Agent Wrangler";

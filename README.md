@@ -84,6 +84,123 @@ roughly doubles every agent, 0 muzzles all of them.
 
 ---
 
+## Installation
+
+Two of these steps need administrator rights and two do not. Agent Wrangler itself does
+not — see [Administrator access](#administrator-access) below.
+
+### 1. Check for the .NET Framework — *administrator, if missing*
+
+Windows 7 SP1 ships with .NET 3.5.1, which is not enough. You have version 4 already if
+this folder exists:
+
+```
+%WINDIR%\Microsoft.NET\Framework\v4.0.30319
+```
+
+If it does not, install the **.NET Framework 4** (or any later 4.x — 4.8 is the last one
+that supports Windows 7). Its installer asks for administrator rights itself.
+
+### 2. Install DoubleAgent — *administrator*
+
+DoubleAgent is the Agent server that actually draws the characters, speaks and animates
+them. Agent Wrangler is only the manager; without a server it will start, catalogue files
+and let you edit behaviour, but nothing will appear on screen.
+
+Run DoubleAgent's installer and let it register itself as the Microsoft Agent replacement.
+Registering a COM server writes under `HKEY_CLASSES_ROOT`, so its installer asks for
+administrator rights. **This is the step people expect Agent Wrangler to need
+administrator rights for — the requirement belongs to DoubleAgent's installer, once.**
+
+To check it took: start Agent Wrangler and look at the top right of the window. It should
+read *Connected via Agent.Control.2*. The **Diagnostics** tab shows the ProgID, the CLSID
+and the DLL registered behind it, so you can confirm DoubleAgent is answering rather than
+something else.
+
+### 3. Put some characters where it can find them — *no administrator*
+
+Agent Wrangler looks in `%WINDIR%\msagent\chars`, DoubleAgent's own character folders,
+anything the registry points at, and any folder you add on the **Folders** tab.
+
+The easy route needs no rights at all: **Import file…** copies a `.acs` into
+`%APPDATA%\AgentWrangler\Characters`, which is yours to write to. Dropping characters
+into `%WINDIR%\msagent\chars` by hand works too, but that folder is protected, so
+Explorer will ask for administrator access when you copy into it.
+
+### 4. Build it — *no administrator*
+
+From a command prompt in the repository root:
+
+```
+build.bat
+```
+
+That uses the C# compiler already present at
+`%WINDIR%\Microsoft.NET\Framework\v4.0.30319\csc.exe` — no Visual Studio needed — and
+writes `build\AgentWrangler.exe`. It is a single self-contained executable; there is
+nothing to install and nothing to register. Copy it wherever you like.
+
+`AgentWrangler.csproj` is also provided if you would rather open it in Visual Studio.
+
+### 5. Run it — *no administrator*
+
+Double-click `AgentWrangler.exe`. On first run it creates `%APPDATA%\AgentWrangler`,
+writes a starter `settings.xml` and `phrasebook.xml`, and scans for characters.
+
+Then:
+
+1. Pick an agent in the list on the left.
+2. **Probe** it — this loads the character briefly to read its real name and animation
+   list, which fills the animation pickers.
+3. On the **Behaviour** tab, choose a personality and set the pester level.
+4. **Summon**. The character appears and starts narrating.
+5. Tick *Summon this agent when the manager starts* to have it come back next time, and
+   **Start when I log in** on the Diagnostics tab to have the manager itself start with
+   Windows.
+
+If nothing appears, the Diagnostics tab lists every ProgID that was tried and why each one
+failed.
+
+## Administrator access
+
+**Agent Wrangler runs as a normal user and asks for nothing at startup.** Its settings,
+log, phrasebook and imported characters all live under `%APPDATA%`; the only registry key
+it writes is the per-user `Run` key; and connecting to the Agent server, watching the
+clipboard, hooking foreground-window changes and registering hotkeys all work unelevated.
+
+One thing does need administrator rights: **renaming or deleting a character file that
+lives in a protected folder** — `%WINDIR%\msagent\chars` and `Program Files`, where most
+characters are installed.
+
+Those two operations are tried normally first. If Windows refuses, the program
+automatically re-runs just that one operation through a short-lived elevated copy of
+itself, so the consent prompt appears by itself at the moment it is needed and nothing
+else runs with extra rights. The confirmation dialog tells you in advance when a file is
+somewhere that will require it, and the Diagnostics tab marks each character folder
+`[writable]` or `[protected]`.
+
+If you would rather have the whole session elevated — to clear out several protected
+characters without answering a prompt each time — use **Run as administrator** on the
+Diagnostics tab or the tray menu. It restarts the program elevated.
+
+The elevated helper is deliberately narrow: it accepts only `.acs` and `.acf` files, will
+not move a file out of its own folder, will not overwrite an existing file, and does
+nothing else. Reaching it costs a consent prompt either way, so it grants no rights the
+caller did not already have.
+
+### Why it does not simply request administrator rights at startup
+
+Marking the program `requireAdministrator` would be simpler, and it is the wrong trade:
+
+* Windows 7 will not launch an elevated program from the `Run` key, so **Start when I log
+  in** would silently stop working.
+* An elevated process cannot accept files dragged from an unelevated Explorer window.
+* Everything the program does for hours at a time — watching, talking, moving — needs no
+  rights at all. Only two menu items do.
+
+If you want it anyway, change `asInvoker` to `requireAdministrator` in `src/app.manifest`
+and rebuild. Expect the login setting to stop working.
+
 ## Requirements
 
 * Windows 7 (or later)
@@ -98,19 +215,6 @@ or ship. The program tries `Agent.Control.2`, `Agent.Control`, `DoubleAgent.Cont
 `DoubleAgent.Control` and `DoubleAgentCtl.Control` in that order; the Diagnostics tab shows
 which one answered, its CLSID and the module registered behind it, and lets you name a
 different ProgID if your installation registers something else.
-
-## Building
-
-No Visual Studio needed. From a command prompt in the repository root:
-
-```
-build.bat
-```
-
-That uses the C# compiler already present at
-`%WINDIR%\Microsoft.NET\Framework\v4.0.30319\csc.exe` and writes `build\AgentWrangler.exe`.
-
-`AgentWrangler.csproj` is also provided if you would rather open it in Visual Studio.
 
 ### Why it builds 32-bit
 
@@ -129,6 +233,10 @@ Everything lives under `%APPDATA%\AgentWrangler`:
 | `phrasebook.xml` | Every line the agents can say — written on first run, yours to edit |
 | `agentwrangler.log` | What happened, including every failed call to the Agent server |
 | `Characters\` | Character files imported through the manager |
+
+To uninstall: delete the executable, delete that folder, and untick **Start when I log in**
+first (or remove the `AgentWrangler` value from
+`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`). Nothing else is written anywhere.
 
 ### Editing the phrasebook
 
@@ -175,6 +283,9 @@ to live.
 closed, a character can be left on screen with nothing driving it; restarting and exiting
 cleanly clears it.
 
+**It runs as a normal user**, and asks Windows for administrator rights only for the two
+file operations that genuinely need them. See [Administrator access](#administrator-access).
+
 ## Layout of the source
 
 ```
@@ -197,5 +308,6 @@ and hand them to the engine through a lock-protected queue.
 `tools/` holds two development aids for working on this from a non-Windows machine:
 `check.sh` type-checks the sources with Mono's compiler, and `smoke.sh` runs the checks in
 `tools/smoketest/` over the parts that need neither Windows nor a COM server — the pester
-curve, token substitution, phrasebook coverage, and the XML round trip every setting
-depends on. Neither is needed to build or run the program.
+curve, token substitution, phrasebook coverage, the XML round trip every setting depends
+on, and the guards on the elevated file helper. Neither is needed to build or run the
+program.

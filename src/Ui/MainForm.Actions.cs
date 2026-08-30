@@ -554,13 +554,15 @@ namespace AgentWrangler.Ui
 
             string current = Path.GetFileNameWithoutExtension(profile.CharacterPath);
             string newName = PromptDialog.Ask(this, "Rename character file",
-                "New file name (the extension is kept):", current);
+                "New file name (the extension is kept):" + ElevationWarning(profile.CharacterPath),
+                current);
             if (newName == null || newName == current) return;
 
             try
             {
                 string oldPath = profile.CharacterPath;
-                string newPath = _host.Library.RenameFile(oldPath, newName);
+                Cursor = Cursors.WaitCursor;
+                string newPath = _host.RenameCharacterFile(oldPath, newName);
                 _host.RepointProfiles(oldPath, newPath);
                 RefreshAgentList();
                 _host.SaveSettings();
@@ -569,6 +571,10 @@ namespace AgentWrangler.Ui
             catch (Exception ex)
             {
                 Complain("Could not rename the file", ex);
+            }
+            finally
+            {
+                Cursor = Cursors.Default;
             }
         }
 
@@ -582,7 +588,8 @@ namespace AgentWrangler.Ui
             DialogResult answer = MessageBox.Show(this,
                 "Permanently delete this character file?" + Environment.NewLine + Environment.NewLine +
                 path + Environment.NewLine + Environment.NewLine +
-                "Every agent built on it will be removed from the list too.",
+                "Every agent built on it will be removed from the list too." +
+                ElevationWarning(path),
                 "Delete character file", MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
                 MessageBoxDefaultButton.Button2);
             if (answer != DialogResult.Yes) return;
@@ -599,12 +606,17 @@ namespace AgentWrangler.Ui
 
             try
             {
-                _host.Library.DeleteFile(path);
+                Cursor = Cursors.WaitCursor;
+                _host.DeleteCharacterFile(path);
             }
             catch (Exception ex)
             {
                 Complain("Could not delete the file", ex);
                 return;
+            }
+            finally
+            {
+                Cursor = Cursors.Default;
             }
 
             foreach (AgentProfile other in new List<AgentProfile>(_host.Settings.Profiles))
@@ -641,6 +653,58 @@ namespace AgentWrangler.Ui
             {
                 Complain("Could not open Explorer", ex);
             }
+        }
+
+        /// <summary>
+        /// A line warning that Windows will ask for administrator access, but only when the
+        /// file really does sit somewhere this process cannot write.
+        /// </summary>
+        private static string ElevationWarning(string path)
+        {
+            if (Elevation.IsElevated) return string.Empty;
+
+            string folder;
+            try { folder = Path.GetDirectoryName(path); }
+            catch (ArgumentException) { return string.Empty; }
+
+            if (string.IsNullOrEmpty(folder) || Elevation.CanWriteTo(folder)) return string.Empty;
+
+            return Environment.NewLine + Environment.NewLine +
+                   "This file is in a protected folder, so Windows will ask for administrator " +
+                   "access first.";
+        }
+
+        private void RestartAsAdministrator()
+        {
+            if (Elevation.IsElevated)
+            {
+                MessageBox.Show(this, "Agent Wrangler is already running as administrator.",
+                                "Run as administrator", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            string message = "Agent Wrangler will close and start again with administrator rights.";
+            if (_host.Roster.Count > 0)
+                message += Environment.NewLine + Environment.NewLine +
+                           "The " + _host.Roster.Count + " agent(s) on screen will be taken down and " +
+                           "re-summoned by the new copy if they are set to start automatically.";
+            message += Environment.NewLine + Environment.NewLine + "Carry on?";
+
+            if (MessageBox.Show(this, message, "Run as administrator",
+                                MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                return;
+
+            string error;
+            if (!Elevation.RestartElevated(out error))
+            {
+                MessageBox.Show(this, error, "Run as administrator",
+                                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            // The new copy waits for this one to release the single-instance lock.
+            _reallyExit = true;
+            Close();
         }
 
         private bool IsFileInUse(string path)
@@ -778,6 +842,17 @@ namespace AgentWrangler.Ui
             {
                 report.AppendLine();
                 report.AppendLine(_host.ConnectionError);
+            }
+
+            report.AppendLine();
+            report.AppendLine("ADMINISTRATOR RIGHTS");
+            report.AppendLine("  This process : " + (Elevation.IsElevated ? "elevated" : "normal user"));
+            report.AppendLine("  Needed for   : renaming or deleting character files in protected folders.");
+            report.AppendLine("                 Windows is asked for them at the moment they are needed.");
+            foreach (string folder in _host.Settings.LibraryFolders)
+            {
+                if (!Directory.Exists(folder)) continue;
+                report.AppendLine("   " + (Elevation.CanWriteTo(folder) ? "[writable] " : "[protected] ") + folder);
             }
 
             report.AppendLine();

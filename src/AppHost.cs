@@ -6,6 +6,7 @@ using Microsoft.Win32;
 using AgentWrangler.Agents;
 using AgentWrangler.Behavior;
 using AgentWrangler.Config;
+using AgentWrangler.Interop;
 using AgentWrangler.Library;
 using AgentWrangler.Watchers;
 
@@ -214,6 +215,74 @@ namespace AgentWrangler
                 if (characterId != null) Server.Unload(characterId);
                 SyncCache();
             }
+        }
+
+        // ---- privileged file operations --------------------------------------------
+
+        /// <summary>
+        /// Deletes a character file, asking Windows for administrator rights only if the
+        /// plain attempt is refused -- which it will be for the characters installed under
+        /// %WINDIR% or Program Files.
+        /// </summary>
+        public void DeleteCharacterFile(string path)
+        {
+            try
+            {
+                Library.DeleteFile(path);
+                return;
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                Diagnostics.Info("Deleting " + path + " needs administrator rights (" + ex.Message + ").");
+            }
+
+            string error;
+            if (!Elevation.RunElevated(ElevatedHelper.DeleteSwitch + " " + Quote(path), out error))
+                throw new UnauthorizedAccessException(error);
+
+            Library.Forget(path);
+            Diagnostics.Info("Deleted " + path + " with administrator rights.");
+        }
+
+        /// <summary>
+        /// Renames a character file, elevating only if Windows refuses. Returns the new path.
+        /// </summary>
+        public string RenameCharacterFile(string path, string newStem)
+        {
+            try
+            {
+                return Library.RenameFile(path, newStem);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                Diagnostics.Info("Renaming " + path + " needs administrator rights (" + ex.Message + ").");
+            }
+
+            string folder = Path.GetDirectoryName(path);
+            if (string.IsNullOrEmpty(folder))
+                throw new IOException("Cannot determine the folder for " + path);
+
+            string newFileName = newStem + Path.GetExtension(path);
+
+            string error;
+            if (!Elevation.RunElevated(
+                    ElevatedHelper.RenameSwitch + " " + Quote(path) + " " + Quote(newFileName), out error))
+                throw new UnauthorizedAccessException(error);
+
+            string target = Path.Combine(folder, newFileName);
+            Library.Forget(path);
+            Library.Track(target);
+            Diagnostics.Info("Renamed " + path + " with administrator rights.");
+            return target;
+        }
+
+        /// <summary>
+        /// Wraps an argument for the elevated helper. Windows file names cannot contain a
+        /// quote character, so nothing here needs escaping beyond the surrounding pair.
+        /// </summary>
+        private static string Quote(string value)
+        {
+            return "\"" + value + "\"";
         }
 
         // ---- profiles --------------------------------------------------------------
