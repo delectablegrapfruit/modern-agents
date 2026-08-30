@@ -25,6 +25,10 @@ namespace AgentWrangler.Ui
 
         private void WireUp()
         {
+            _tips.SetToolTip(_panicButton, "Hide every agent at once (Ctrl+Alt+Shift+H)");
+            _tips.SetToolTip(_muzzle, "Agents stay on screen but stop talking and moving");
+            _tips.SetToolTip(_masterPester, "Scales every agent's own level. 5 leaves them alone, 0 silences all.");
+
             _tickTimer.Interval = TickIntervalMs;
             _tickTimer.Tick += OnEngineTick;
 
@@ -232,7 +236,6 @@ namespace AgentWrangler.Ui
                 foreach (LiveAgent agent in _host.Roster.Agents)
                 {
                     var item = new ListViewItem(agent.Name);
-                    item.SubItems.Add(agent.Profile.Persona.ToString());
                     item.SubItems.Add(agent.EffectivePester.ToString());
                     item.SubItems.Add(agent.LinesSpoken.ToString());
                     item.SubItems.Add(agent.LastLine ?? string.Empty);
@@ -254,11 +257,9 @@ namespace AgentWrangler.Ui
             if (_header != null) _header.Invalidate();
 
             _rosterCount.Text = _host.Roster.Count + " on screen" +
-                                (_host.Engine.PanicHidden ? "  (hidden)" : string.Empty);
+                                (_host.Engine.PanicHidden ? ", hidden" : string.Empty);
 
-            _panicButton.Text = _host.Engine.PanicHidden
-                ? "Bring them back  (Ctrl+Alt+Shift+H)"
-                : "Panic: hide all  (Ctrl+Alt+Shift+H)";
+            _panicButton.Text = _host.Engine.PanicHidden ? "Bring back" : "Hide all";
         }
 
         private void RefreshFolderLists()
@@ -461,7 +462,7 @@ namespace AgentWrangler.Ui
                 RefreshAgentList();
                 _host.SaveSettings();
                 AppendLog("Agent Wrangler",
-                    "Probed " + info.FileName + ": \"" + info.Name + "\", " +
+                    "Inspected " + info.FileName + ": \"" + info.Name + "\", " +
                     info.Animations.Count + " animations.");
             }
             catch (Exception ex)

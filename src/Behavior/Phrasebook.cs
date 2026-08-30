@@ -56,10 +56,6 @@ namespace AgentWrangler.Behavior
         [XmlAttribute("Action")]
         public AssistAction Action { get; set; }
 
-        /// <summary>Groups offers for the "don't ask me this again" list.</summary>
-        [XmlAttribute("Topic")]
-        public string Topic { get; set; }
-
         public string Ask { get; set; }
         public string Accepted { get; set; }
         public string Declined { get; set; }
@@ -67,7 +63,6 @@ namespace AgentWrangler.Behavior
         public AssistOffer()
         {
             Persona = "Any";
-            Topic = "general";
             Ask = string.Empty;
             Accepted = string.Empty;
             Declined = string.Empty;
@@ -114,10 +109,10 @@ namespace AgentWrangler.Behavior
         // ---- selection -------------------------------------------------------------
 
         /// <summary>
-        /// Picks a line for this activity. Persona-specific banks win; a shared "Any" bank
-        /// is the fallback, and null means this agent has nothing to say about it.
+        /// The lines available for an activity and personality. Persona-specific banks win
+        /// outright; the shared "Any" banks are the fallback. Empty means nothing to say.
         /// </summary>
-        public string PickLine(ActivityKind kind, Persona persona, Random rng)
+        public IList<string> Pool(ActivityKind kind, Persona persona, out string bankKey)
         {
             List<string> specific = null;
             List<string> shared = null;
@@ -139,13 +134,39 @@ namespace AgentWrangler.Behavior
                 }
             }
 
-            List<string> pool = (specific != null && specific.Count > 0) ? specific : shared;
-            if (pool == null || pool.Count == 0) return null;
-            return pool[rng.Next(pool.Count)];
+            if (specific != null && specific.Count > 0)
+            {
+                bankKey = kind + "|" + persona;
+                return specific;
+            }
+
+            bankKey = kind + "|Any";
+            return shared ?? EmptyPool;
         }
 
-        public AssistOffer PickOffer(ActivityKind kind, Persona persona, Random rng,
-                                     ICollection<string> excludedTopics)
+        private static readonly List<string> EmptyPool = new List<string>();
+
+        /// <summary>
+        /// Picks a line, cycling through the bank so none repeats until all have been used.
+        /// Pass a null rotation, or trueRandom, to sample independently instead.
+        /// </summary>
+        public string PickLine(ActivityKind kind, Persona persona, Random rng,
+                               LineRotation rotation, bool trueRandom)
+        {
+            string bankKey;
+            IList<string> pool = Pool(kind, persona, out bankKey);
+            if (pool.Count == 0) return null;
+
+            if (rotation == null || trueRandom) return pool[rng.Next(pool.Count)];
+            return rotation.Next(bankKey, pool, rng, false);
+        }
+
+        public string PickLine(ActivityKind kind, Persona persona, Random rng)
+        {
+            return PickLine(kind, persona, rng, null, true);
+        }
+
+        public AssistOffer PickOffer(ActivityKind kind, Persona persona, Random rng)
         {
             var specific = new List<AssistOffer>();
             var shared = new List<AssistOffer>();
@@ -153,7 +174,6 @@ namespace AgentWrangler.Behavior
             foreach (AssistOffer offer in Offers)
             {
                 if (offer == null || offer.Kind != kind || string.IsNullOrEmpty(offer.Ask)) continue;
-                if (excludedTopics != null && excludedTopics.Contains(offer.Topic ?? "general")) continue;
 
                 if (IsAny(offer.Persona)) shared.Add(offer);
                 else if (Matches(offer.Persona, persona)) specific.Add(offer);

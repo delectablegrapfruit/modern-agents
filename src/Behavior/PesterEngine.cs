@@ -35,12 +35,25 @@ namespace AgentWrangler.Behavior
         /// <summary>Candidate positions tried before giving up on avoiding another agent.</summary>
         private const int PlacementAttempts = 8;
 
+        /// <summary>Pointer movement, in pixels, before a follower bothers to re-position.</summary>
+        private const int FollowDeadZone = 110;
+
+        /// <summary>Gap left between a following character and the pointer.</summary>
+        private const int FollowGap = 40;
+
+        /// <summary>Arc covered by one step of an orbit.</summary>
+        private const double OrbitStepRadians = Math.PI / 7;
+
+        /// <summary>Odds that a perching agent leaves its corner instead of settling.</summary>
+        private const double ExcursionChance = 0.3;
+
         private readonly AppSettings _settings;
         private readonly AgentRoster _roster;
         private readonly ActivityBus _bus;
         private readonly Random _rng = new Random();
 
         private readonly List<Ui.AssistPrompt> _openPrompts = new List<Ui.AssistPrompt>();
+        private readonly LineRotation _rotation = new LineRotation();
 
         private Phrasebook _phrasebook;
         private bool _panicHidden;
@@ -68,7 +81,11 @@ namespace AgentWrangler.Behavior
         public Phrasebook Phrasebook
         {
             get { return _phrasebook; }
-            set { _phrasebook = value ?? DefaultPhrasebook.Build(); }
+            set
+            {
+                _phrasebook = value ?? DefaultPhrasebook.Build();
+                _rotation.Clear();
+            }
         }
 
         /// <summary>True while the panic key has everyone hidden.</summary>
@@ -83,7 +100,7 @@ namespace AgentWrangler.Behavior
             DateTime now = DateTime.Now;
             agent.EffectivePester = PesterCurve.Combine(profile.Pester, _settings.MasterPester);
             agent.NextNagAt = now.AddSeconds(PesterCurve.Jitter(_rng, PesterCurve.NagIntervalSeconds(agent.EffectivePester)));
-            agent.NextMoveAt = now.AddSeconds(PesterCurve.Jitter(_rng, PesterCurve.MoveIntervalSeconds(agent.EffectivePester)));
+            agent.NextMoveAt = now.AddSeconds(PesterCurve.Jitter(_rng, MoveIntervalFor(agent)));
 
             // Put it somewhere sensible before it says hello, so two agents summoned back
             // to back do not appear on top of each other.
@@ -228,7 +245,7 @@ namespace AgentWrangler.Behavior
 
         private void RescheduleMove(LiveAgent agent, DateTime now)
         {
-            double seconds = PesterCurve.Jitter(_rng, PesterCurve.MoveIntervalSeconds(agent.EffectivePester));
+            double seconds = PesterCurve.Jitter(_rng, MoveIntervalFor(agent));
             agent.NextMoveAt = double.IsInfinity(seconds) ? DateTime.MaxValue : now.AddSeconds(seconds);
         }
 
@@ -254,7 +271,8 @@ namespace AgentWrangler.Behavior
         /// <summary>Picks a line, says it and reports it. False if the phrasebook had nothing.</summary>
         private bool SayFor(LiveAgent agent, ActivityEvent ev)
         {
-            string template = _phrasebook.PickLine(ev.Kind, agent.Profile.Persona, _rng);
+            string template = _phrasebook.PickLine(ev.Kind, agent.Profile.Persona, _rng,
+                                                   _rotation, _settings.RandomDialogue);
             if (string.IsNullOrEmpty(template)) return false;
 
             string line = Phrasebook.Format(template, ev, agent.Name, agent.LinesSpoken + 1);
@@ -299,7 +317,7 @@ namespace AgentWrangler.Behavior
             if (agent.PromptOpen || _openPrompts.Count >= MaxConcurrentPrompts) return;
             if (_rng.NextDouble() > PesterCurve.AssistChance(agent.EffectivePester)) return;
 
-            AssistOffer offer = _phrasebook.PickOffer(ev.Kind, agent.Profile.Persona, _rng, agent.DeclinedTopics);
+            AssistOffer offer = _phrasebook.PickOffer(ev.Kind, agent.Profile.Persona, _rng);
             if (offer == null) return;
 
             string question = Phrasebook.Format(offer.Ask, ev, agent.Name, agent.LinesSpoken);
@@ -358,13 +376,8 @@ namespace AgentWrangler.Behavior
                     break;
 
                 case AssistAnswer.Declined:
-                    SayLiteral(agent, ev.Kind, Phrasebook.Format(offer.Declined, ev, agent.Name, agent.LinesSpoken));
-                    break;
-
                 case AssistAnswer.Never:
-                    agent.DeclinedTopics.Add(offer.Topic ?? "general");
                     SayLiteral(agent, ev.Kind, Phrasebook.Format(offer.Declined, ev, agent.Name, agent.LinesSpoken));
-                    Diagnostics.Info(agent.Name + " will stop asking about: " + offer.Topic);
                     break;
 
                 default:
@@ -412,7 +425,34 @@ namespace AgentWrangler.Behavior
 
         // ---- movement --------------------------------------------------------------
 
-        /// <summary>Moves an agent according to its movement style. Placement avoids the others.</summary>
+        /// <summary>How often each style wants to move, relative to the pester interval.</summary>
+        private static double MoveIntervalFor(LiveAgent agent)
+        {
+            double baseline = PesterCurve.MoveIntervalSeconds(agent.EffectivePester);
+
+            switch (agent.Profile.Movement)
+            {
+                case MovementStyle.Stay:
+                    return double.PositiveInfinity;
+
+                case MovementStyle.FollowCursor:
+                    // Following has to keep pace with the pointer to look like following at
+                    // all, so it runs on its own short clock rather than the pester one.
+                    return Math.Min(baseline, 1.5);
+
+                case MovementStyle.Orbit:
+                    // Frequent small steps around the circle.
+                    return Math.Min(baseline * 0.35, 6.0);
+
+                case MovementStyle.Perch:
+                    return baseline * 1.6;
+
+                default:
+                    return baseline;
+            }
+        }
+
+        /// <summary>Moves an agent according to its style. Placement avoids the others.</summary>
         public void MoveAgent(LiveAgent agent, bool instant)
         {
             if (agent.Profile.Movement == MovementStyle.Stay && !instant) return;
@@ -420,60 +460,52 @@ namespace AgentWrangler.Behavior
             Rectangle bounds = agent.Bounds;
             Size size = bounds.IsEmpty ? new Size(128, 128) : bounds.Size;
 
-            Point target = PickTarget(agent, size);
-            if (target == Point.Empty) return;
+            Point? target = PickTarget(agent, size);
+            if (!target.HasValue) return;
 
-            agent.MoveTo(target.X, target.Y, instant ? 0 : agent.Profile.MoveDurationMs);
+            agent.MoveTo(target.Value.X, target.Value.Y, instant ? 0 : MoveDurationFor(agent));
         }
 
-        private Point PickTarget(LiveAgent agent, Size size)
+        /// <summary>
+        /// A follower that takes two seconds to arrive is always somewhere the pointer used
+        /// to be, so following is capped short whatever the configured speed.
+        /// </summary>
+        private static int MoveDurationFor(LiveAgent agent)
+        {
+            int configured = agent.Profile.MoveDurationMs;
+            if (agent.Profile.Movement == MovementStyle.FollowCursor) return Math.Min(configured, 400);
+            return configured;
+        }
+
+        private Point? PickTarget(LiveAgent agent, Size size)
         {
             Rectangle work = WorkAreaFor(agent);
 
             for (int attempt = 0; attempt < PlacementAttempts; attempt++)
             {
-                Point candidate = ProposeTarget(agent, size, work);
-                candidate = Clamp(candidate, size, work);
+                Point? proposed = ProposeTarget(agent, size, work);
+                if (!proposed.HasValue) return null;
+
+                Point candidate = Clamp(proposed.Value, size, work);
                 if (attempt == PlacementAttempts - 1 || !CollidesWithOtherAgent(agent, candidate, size))
                     return candidate;
             }
 
-            return Point.Empty;
+            return null;
         }
 
-        private Point ProposeTarget(LiveAgent agent, Size size, Rectangle work)
+        private Point? ProposeTarget(LiveAgent agent, Size size, Rectangle work)
         {
             switch (agent.Profile.Movement)
             {
                 case MovementStyle.FollowCursor:
-                {
-                    Point cursor = CursorPosition();
-                    // Just far enough away to not sit under the pointer, close enough to
-                    // be genuinely in the way.
-                    int dx = _rng.Next(0, 2) == 0 ? 48 : -(size.Width + 48);
-                    int dy = _rng.Next(-40, 41);
-                    return new Point(cursor.X + dx, cursor.Y + dy);
-                }
+                    return FollowCursorTarget(agent, size);
 
                 case MovementStyle.Orbit:
-                {
-                    Rectangle window = ForegroundWindowBounds();
-                    if (window.IsEmpty) window = work;
-                    double angle = _rng.NextDouble() * Math.PI * 2;
-                    int radiusX = Math.Max(80, window.Width / 2);
-                    int radiusY = Math.Max(80, window.Height / 2);
-                    int cx = window.Left + window.Width / 2;
-                    int cy = window.Top + window.Height / 2;
-                    return new Point(cx + (int)(Math.Cos(angle) * radiusX) - size.Width / 2,
-                                     cy + (int)(Math.Sin(angle) * radiusY) - size.Height / 2);
-                }
+                    return OrbitTarget(agent, size, work);
 
                 case MovementStyle.Perch:
-                {
-                    Point home = HomeCorner(agent, size, work);
-                    // Small excursions around home, so it still looks alive.
-                    return new Point(home.X + _rng.Next(-60, 61), home.Y + _rng.Next(-60, 61));
-                }
+                    return PerchTarget(agent, size, work);
 
                 case MovementStyle.Stay:
                     return HomeCorner(agent, size, work);
@@ -482,6 +514,71 @@ namespace AgentWrangler.Behavior
                     return new Point(_rng.Next(work.Left, Math.Max(work.Left + 1, work.Right - size.Width)),
                                      _rng.Next(work.Top, Math.Max(work.Top + 1, work.Bottom - size.Height)));
             }
+        }
+
+        /// <summary>
+        /// Parks beside the pointer, on whichever side leaves the character fully on screen.
+        /// Skips the move entirely while the pointer has barely shifted, so a still mouse
+        /// does not produce a twitching character.
+        /// </summary>
+        private static Point? FollowCursorTarget(LiveAgent agent, Size size)
+        {
+            Point cursor = CursorPosition();
+
+            Point last = agent.LastFollowedCursor;
+            if (!last.IsEmpty)
+            {
+                int dx = cursor.X - last.X;
+                int dy = cursor.Y - last.Y;
+                if (dx * dx + dy * dy < FollowDeadZone * FollowDeadZone) return null;
+            }
+            agent.LastFollowedCursor = cursor;
+
+            Rectangle work = Screen.FromPoint(cursor).WorkingArea;
+
+            // Prefer the right of the pointer; flip when there is no room.
+            int x = cursor.X + FollowGap;
+            if (x + size.Width > work.Right) x = cursor.X - size.Width - FollowGap;
+
+            int y = cursor.Y - size.Height / 3;
+            return new Point(x, y);
+        }
+
+        /// <summary>Advances a fixed step around the window in front, rather than jumping.</summary>
+        private static Point OrbitTarget(LiveAgent agent, Size size, Rectangle work)
+        {
+            Rectangle window = ForegroundWindowBounds();
+            if (window.IsEmpty) window = work;
+
+            agent.OrbitAngle += OrbitStepRadians;
+            if (agent.OrbitAngle > Math.PI * 2) agent.OrbitAngle -= Math.PI * 2;
+
+            int radiusX = Math.Max(120, window.Width / 2);
+            int radiusY = Math.Max(100, window.Height / 2);
+            int centreX = window.Left + window.Width / 2;
+            int centreY = window.Top + window.Height / 2;
+
+            return new Point(centreX + (int)(Math.Cos(agent.OrbitAngle) * radiusX) - size.Width / 2,
+                             centreY + (int)(Math.Sin(agent.OrbitAngle) * radiusY) - size.Height / 2);
+        }
+
+        /// <summary>
+        /// Sits in its corner most of the time, leaving for a single excursion now and then
+        /// and returning on the next move.
+        /// </summary>
+        private Point PerchTarget(LiveAgent agent, Size size, Rectangle work)
+        {
+            if (agent.AwayFromHome)
+            {
+                agent.AwayFromHome = false;
+                return HomeCorner(agent, size, work);
+            }
+
+            if (_rng.NextDouble() > ExcursionChance) return HomeCorner(agent, size, work);
+
+            agent.AwayFromHome = true;
+            return new Point(_rng.Next(work.Left, Math.Max(work.Left + 1, work.Right - size.Width)),
+                             _rng.Next(work.Top, Math.Max(work.Top + 1, work.Bottom - size.Height)));
         }
 
         private static Point HomeCorner(LiveAgent agent, Size size, Rectangle work)
@@ -519,10 +616,6 @@ namespace AgentWrangler.Behavior
             return false;
         }
 
-        /// <summary>
-        /// The screen the agent should stay on: the one it is already on, or the primary
-        /// one if its position cannot be read.
-        /// </summary>
         private static Rectangle WorkAreaFor(LiveAgent agent)
         {
             Rectangle bounds = agent.Bounds;

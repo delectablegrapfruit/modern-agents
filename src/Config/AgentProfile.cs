@@ -5,22 +5,24 @@ using AgentWrangler.Behavior;
 
 namespace AgentWrangler.Config
 {
-    /// <summary>Which bank of lines the agent draws from. Purely a personality skin.</summary>
+    /// <summary>Which bank of lines the agent draws from.</summary>
     public enum Persona
     {
         Chirpy,     // relentlessly upbeat helper
         Corporate,  // sponsored, always selling something
         Gremlin,    // cryptic and slightly unwell
-        Sleepy      // bored, put-upon, does the job anyway
+        Sleepy,     // bored, put-upon, does the job anyway
+        Bureaucrat, // procedural, logs everything, cites policy
+        Fan         // an admirer, far too invested in you
     }
 
     public enum MovementStyle
     {
-        Stay,          // never moves once placed
-        Wander,        // random hops around the working area
-        FollowCursor,  // parks itself next to the mouse
-        Perch,         // returns to its home corner, with short excursions
-        Orbit          // circles the foreground window
+        Stay,          // placed once, never moves again
+        Wander,        // hops to unrelated spots around the screen
+        FollowCursor,  // shadows the pointer continuously
+        Perch,         // lives in its corner, with occasional excursions
+        Orbit          // circles the window you are working in
     }
 
     public enum MoveSpeed
@@ -31,21 +33,34 @@ namespace AgentWrangler.Config
         Slow
     }
 
+    /// <summary>Groups of settings that can be reset independently.</summary>
+    public enum ProfileSection
+    {
+        Identity,
+        Pestering,
+        Movement,
+        Appearance,
+        Habits,
+        Animations,
+        Reactions
+    }
+
     /// <summary>
-    /// Everything that makes one agent behave differently from another.
-    /// Serialized to settings.xml, so all members are public and settable.
+    /// Everything that makes one agent behave differently from another. Serialized to
+    /// settings.xml, so all members are public and settable.
     /// </summary>
     public class AgentProfile
     {
+        public const int MinSizePercent = 25;
+        public const int MaxSizePercent = 300;
+
         public string Id { get; set; }
 
         /// <summary>Full path of the .acs/.acf character file this profile drives.</summary>
         public string CharacterPath { get; set; }
 
-        /// <summary>Name shown in the manager. Defaults to the character's own name.</summary>
         public string DisplayName { get; set; }
 
-        /// <summary>Summon this agent automatically when the manager starts.</summary>
         public bool AutoSummon { get; set; }
 
         /// <summary>0 = muzzled, 10 = unhinged. Drives every rate in <see cref="PesterCurve"/>.</summary>
@@ -58,22 +73,28 @@ namespace AgentWrangler.Config
         /// <summary>Corner the agent treats as home, 0..3 = TL, TR, BL, BR.</summary>
         public int HomeCorner { get; set; }
 
-        /// <summary>May pop up an "want me to help with that?" prompt.</summary>
+        /// <summary>Percentage of the character's own size to draw it at.</summary>
+        public int SizePercent { get; set; }
+
+        /// <summary>
+        /// Speech token to speak with. Empty leaves the character with whichever voice it
+        /// was authored to use.
+        /// </summary>
+        public string VoiceId { get; set; }
+
         public bool OfferAssistance { get; set; }
 
         /// <summary>Read a snippet of copied text back out loud. Off by default, on purpose.</summary>
         public bool QuoteClipboard { get; set; }
 
-        /// <summary>Use the speech synthesiser when one is installed; the balloon shows either way.</summary>
         public bool SpeakAloud { get; set; }
 
         /// <summary>Cut off whatever the agent was saying rather than queueing behind it.</summary>
         public bool Interrupt { get; set; }
 
-        /// <summary>The "No thanks" button slides away from the pointer. Deeply obnoxious.</summary>
+        /// <summary>The "No thanks" button slides away from the pointer.</summary>
         public bool EvasiveDecline { get; set; }
 
-        /// <summary>Assist prompts take focus from whatever you were typing into.</summary>
         public bool StealFocus { get; set; }
 
         /// <summary>Seconds an agent stays quiet after speaking. 0 derives it from Pester.</summary>
@@ -84,16 +105,10 @@ namespace AgentWrangler.Config
         public List<ActivityKind> Reactions { get; set; }
 
         /// <summary>
-        /// The serialized form of <see cref="Reactions"/>.
-        ///
-        /// It has to be an array. XmlSerializer populates a List property by calling Add on
-        /// whatever the getter already returned, and the constructor pre-fills Reactions with
-        /// the defaults -- so a list would merge the saved reactions into the defaults and an
-        /// activity the user switched off would silently come back on the next run. An array
-        /// property is assigned through its setter, replacing the defaults outright.
-        ///
-        /// A file with no Reactions element at all leaves the constructor's defaults alone,
-        /// which is what a hand-written settings file should get.
+        /// The serialized form of <see cref="Reactions"/>. It has to be an array:
+        /// XmlSerializer populates a List property by calling Add on whatever the getter
+        /// returned, and the constructor pre-fills Reactions with the defaults, so a list
+        /// would merge rather than replace. An array is assigned through its setter.
         /// </summary>
         [XmlArray("Reactions")]
         [XmlArrayItem("Kind")]
@@ -103,7 +118,6 @@ namespace AgentWrangler.Config
             set { Reactions = new List<ActivityKind>(value ?? new ActivityKind[0]); }
         }
 
-        // Animations, populated from the character's own animation list when it is probed.
         public string GreetAnimation { get; set; }
         public string AlertAnimation { get; set; }
         public string RestAnimation { get; set; }
@@ -113,23 +127,14 @@ namespace AgentWrangler.Config
             Id = Guid.NewGuid().ToString("N");
             CharacterPath = string.Empty;
             DisplayName = string.Empty;
-            AutoSummon = false;
-            Pester = 5;
-            Persona = Persona.Chirpy;
-            Movement = MovementStyle.Wander;
-            MoveSpeed = MoveSpeed.Normal;
-            HomeCorner = 3;
-            OfferAssistance = true;
-            QuoteClipboard = false;
-            SpeakAloud = true;
-            Interrupt = false;
-            EvasiveDecline = false;
-            StealFocus = false;
-            CooldownSecondsOverride = 0;
             Reactions = DefaultReactions();
-            GreetAnimation = "Greet";
-            AlertAnimation = "GetAttention";
-            RestAnimation = "RestPose";
+
+            ResetSection(ProfileSection.Pestering);
+            ResetSection(ProfileSection.Movement);
+            ResetSection(ProfileSection.Appearance);
+            ResetSection(ProfileSection.Habits);
+            ResetSection(ProfileSection.Animations);
+            AutoSummon = false;
         }
 
         public static List<ActivityKind> DefaultReactions()
@@ -149,6 +154,53 @@ namespace AgentWrangler.Config
                 ActivityKind.Nag,
                 ActivityKind.Summoned
             };
+        }
+
+        /// <summary>Puts one group of settings back to how a new agent starts out.</summary>
+        public void ResetSection(ProfileSection section)
+        {
+            switch (section)
+            {
+                case ProfileSection.Identity:
+                    Persona = Persona.Chirpy;
+                    AutoSummon = false;
+                    break;
+
+                case ProfileSection.Pestering:
+                    Pester = 5;
+                    CooldownSecondsOverride = 0;
+                    Interrupt = false;
+                    break;
+
+                case ProfileSection.Movement:
+                    Movement = MovementStyle.Wander;
+                    MoveSpeed = MoveSpeed.Normal;
+                    HomeCorner = 3;
+                    break;
+
+                case ProfileSection.Appearance:
+                    SizePercent = 100;
+                    VoiceId = string.Empty;
+                    SpeakAloud = true;
+                    break;
+
+                case ProfileSection.Habits:
+                    OfferAssistance = true;
+                    QuoteClipboard = false;
+                    EvasiveDecline = false;
+                    StealFocus = false;
+                    break;
+
+                case ProfileSection.Animations:
+                    GreetAnimation = "Greet";
+                    AlertAnimation = "GetAttention";
+                    RestAnimation = "RestPose";
+                    break;
+
+                case ProfileSection.Reactions:
+                    Reactions = DefaultReactions();
+                    break;
+            }
         }
 
         public bool ReactsTo(ActivityKind kind)
@@ -182,6 +234,17 @@ namespace AgentWrangler.Config
                     case MoveSpeed.Slow: return 2200;
                     default: return 1000;
                 }
+            }
+        }
+
+        [XmlIgnore]
+        public int ClampedSizePercent
+        {
+            get
+            {
+                if (SizePercent < MinSizePercent) return MinSizePercent;
+                if (SizePercent > MaxSizePercent) return MaxSizePercent;
+                return SizePercent;
             }
         }
 

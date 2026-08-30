@@ -36,7 +36,6 @@ namespace AgentWrangler.Agents
                     if (!string.IsNullOrEmpty(a)) Animations.Add(a);
 
             RecentSubjects = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
-            DeclinedTopics = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             SummonedAt = DateTime.Now;
             LastSpokeAt = DateTime.MinValue;
             LastPromptAt = DateTime.MinValue;
@@ -70,11 +69,20 @@ namespace AgentWrangler.Agents
         /// <summary>Recently commented-on subjects, so the agent does not repeat itself.</summary>
         public Dictionary<string, DateTime> RecentSubjects { get; private set; }
 
-        /// <summary>Topics the user answered "never ask again" to.</summary>
-        public HashSet<string> DeclinedTopics { get; private set; }
-
         /// <summary>Pester level after the master dial is folded in. Recomputed every tick.</summary>
         public int EffectivePester { get; set; }
+
+        /// <summary>The character's own drawn size, before any scaling is applied.</summary>
+        public Size NativeSize { get; set; }
+
+        /// <summary>Perching agents alternate between their corner and a short excursion.</summary>
+        public bool AwayFromHome { get; set; }
+
+        /// <summary>Current position around the orbit, in radians.</summary>
+        public double OrbitAngle { get; set; }
+
+        /// <summary>Where the pointer was when a following agent last moved.</summary>
+        public Point LastFollowedCursor { get; set; }
 
         /// <summary>True once the character has failed too many COM calls to be useful.</summary>
         public bool Faulted { get { return _consecutiveFaults >= FaultThreshold; } }
@@ -239,6 +247,47 @@ namespace AgentWrangler.Agents
             {
                 dynamic character = _character;
                 character.SoundEffectsOn = on;
+            });
+        }
+
+        /// <summary>Reads the size the character was authored at.</summary>
+        public Size ReadSize()
+        {
+            return Guard("Size", delegate
+            {
+                dynamic character = _character;
+                return new Size((int)character.Width, (int)character.Height);
+            }, Size.Empty);
+        }
+
+        /// <summary>Redraws the character at a percentage of its own size.</summary>
+        public void ApplyScale(int percent)
+        {
+            if (NativeSize.IsEmpty || percent <= 0) return;
+
+            short width = ToAgentCoordinate(Math.Max(8, NativeSize.Width * percent / 100));
+            short height = ToAgentCoordinate(Math.Max(8, NativeSize.Height * percent / 100));
+
+            Guard("Resize", delegate
+            {
+                dynamic character = _character;
+                character.Width = width;
+                character.Height = height;
+            });
+        }
+
+        /// <summary>
+        /// Switches the speech voice. An empty id leaves whatever the character was
+        /// authored with in place.
+        /// </summary>
+        public void ApplyVoice(string voiceId)
+        {
+            if (string.IsNullOrEmpty(voiceId)) return;
+
+            Guard("Voice", delegate
+            {
+                dynamic character = _character;
+                character.TTSModeID = voiceId;
             });
         }
 

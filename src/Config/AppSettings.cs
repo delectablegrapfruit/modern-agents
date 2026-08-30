@@ -26,6 +26,12 @@ namespace AgentWrangler.Config
         /// <summary>Global mute. Agents stay on screen but stop talking and moving.</summary>
         public bool Muzzled { get; set; }
 
+        /// <summary>
+        /// Pick lines at random instead of cycling through each bank before repeating.
+        /// The cycle is shared by every agent drawing on the same bank.
+        /// </summary>
+        public bool RandomDialogue { get; set; }
+
         public bool StartMinimized { get; set; }
         public bool LaunchOnLogin { get; set; }
 
@@ -53,6 +59,7 @@ namespace AgentWrangler.Config
             ProgId = string.Empty;
             MasterPester = 5;
             Muzzled = false;
+            RandomDialogue = false;
             StartMinimized = false;
             LaunchOnLogin = false;
             LibraryFolders = new List<string>();

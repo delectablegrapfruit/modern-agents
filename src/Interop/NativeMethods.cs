@@ -6,8 +6,7 @@ namespace AgentWrangler.Interop
 {
     /// <summary>
     /// P/Invoke surface used by the watchers and the always-on-top prompt windows.
-    /// Everything here is available on Windows 7 (several of the clipboard APIs are
-    /// Vista+, which is why the older clipboard-viewer chain is not used).
+    /// Everything here is available on Windows 7.
     /// </summary>
     internal static class NativeMethods
     {

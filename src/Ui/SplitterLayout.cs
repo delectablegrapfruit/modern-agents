@@ -67,8 +67,7 @@ namespace AgentWrangler.Ui
             }
             catch (ArgumentOutOfRangeException ex)
             {
-                // Never fatal: a splitter in the wrong place is a cosmetic problem, and
-                // this one already stopped the program from starting once.
+                // Never fatal: a splitter in the wrong place is only cosmetic.
                 Diagnostics.Warn("Could not position the splitter: " + ex.Message);
             }
             catch (InvalidOperationException ex)

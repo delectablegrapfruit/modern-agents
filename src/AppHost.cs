@@ -187,12 +187,24 @@ namespace AgentWrangler
                 info.Animations.Clear();
                 info.Animations.AddRange(AgentRoster.ReadAnimationNames(character));
 
+                try
+                {
+                    info.NativeWidth = (int)ch.Width;
+                    info.NativeHeight = (int)ch.Height;
+                }
+                catch
+                {
+                    info.NativeWidth = 0;
+                    info.NativeHeight = 0;
+                }
+
                 info.ProbedUtc = DateTime.UtcNow;
                 info.ProbeError = string.Empty;
                 info.RefreshFileFacts();
 
-                Diagnostics.Info("Probed " + info.FileName + ": \"" + info.Name + "\", " +
-                                 info.Animations.Count + " animations.");
+                Diagnostics.Info("Inspected " + info.FileName + ": \"" + info.Name + "\", " +
+                                 info.Animations.Count + " animations, " +
+                                 info.NativeWidth + "x" + info.NativeHeight + ".");
 
                 // A profile still named after the file gets the character's real name.
                 AgentProfile profile = Settings.FindProfileForPath(info.Path);
@@ -207,7 +219,7 @@ namespace AgentWrangler
             {
                 info.ProbeError = ex.Message;
                 info.ProbedUtc = default(DateTime);
-                Diagnostics.Error("Probe of " + info.FileName + " failed.", ex);
+                Diagnostics.Error("Inspecting " + info.FileName + " failed.", ex);
                 throw;
             }
             finally

@@ -69,8 +69,17 @@ namespace AgentWrangler.Agents
                 foreach (string name in ReadAnimationNames(character)) agent.Animations.Add(name);
             }
 
+            agent.NativeSize = agent.ReadSize();
             agent.SetSoundEffects(profile.SpeakAloud);
+            agent.ApplyVoice(profile.VoiceId);
+            if (profile.ClampedSizePercent != 100) agent.ApplyScale(profile.ClampedSizePercent);
             agent.Show();
+
+            if (known != null && known.NativeWidth == 0 && !agent.NativeSize.IsEmpty)
+            {
+                known.NativeWidth = agent.NativeSize.Width;
+                known.NativeHeight = agent.NativeSize.Height;
+            }
 
             _agents.Add(agent);
             Diagnostics.Info("Summoned " + agent.Name + " as " + characterId +

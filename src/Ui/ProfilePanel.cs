@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
+using AgentWrangler.Agents;
 using AgentWrangler.Behavior;
 using AgentWrangler.Config;
 using AgentWrangler.Library;
@@ -9,12 +10,14 @@ using AgentWrangler.Library;
 namespace AgentWrangler.Ui
 {
     /// <summary>
-    /// The behaviour editor for one agent. Every control writes straight through to the
-    /// profile it is bound to, so changes take effect on the next tick without an Apply
-    /// button -- including on an agent that is already on screen and talking.
+    /// The settings for one agent. Every control writes straight through to the profile it
+    /// is bound to, so changes take effect on the next tick, including on an agent that is
+    /// already on screen.
     /// </summary>
     public sealed class ProfilePanel : UserControl
     {
+        private const int LabelColumnWidth = 96;
+
         private readonly TableLayoutPanel _table;
 
         private readonly TextBox _name = new TextBox();
@@ -22,11 +25,14 @@ namespace AgentWrangler.Ui
         private readonly ComboBox _persona = new ComboBox();
         private readonly TrackBar _pester = new TrackBar();
         private readonly Label _pesterLabel = new Label();
-        private readonly Label _pesterBlurb = new Label();
+        private readonly NumericUpDown _cooldown = new NumericUpDown();
         private readonly ComboBox _movement = new ComboBox();
+        private readonly Label _movementNote = new Label();
         private readonly ComboBox _speed = new ComboBox();
         private readonly ComboBox _corner = new ComboBox();
-        private readonly NumericUpDown _cooldown = new NumericUpDown();
+        private readonly TrackBar _size = new TrackBar();
+        private readonly Label _sizeLabel = new Label();
+        private readonly ComboBox _voice = new ComboBox();
         private readonly ComboBox _greet = new ComboBox();
         private readonly ComboBox _alert = new ComboBox();
         private readonly ComboBox _rest = new ComboBox();
@@ -41,17 +47,20 @@ namespace AgentWrangler.Ui
         private readonly CheckBox _stealFocus = new CheckBox();
 
         private AgentProfile _profile;
+        private CharacterFileInfo _info;
         private bool _loading;
 
-        /// <summary>Raised after any edit, so the owner can refresh its list and save.</summary>
         public event EventHandler ProfileEdited;
+
+        /// <summary>Lets a change reach an agent that is already on screen.</summary>
+        public Func<AgentProfile, LiveAgent> LiveAgentLookup { get; set; }
 
         public ProfilePanel()
         {
             BackColor = RetroTheme.Face;
             Font = RetroTheme.Ui;
             AutoScroll = true;
-            Padding = new Padding(10);
+            Padding = new Padding(10, 6, 10, 10);
 
             _table = new TableLayoutPanel
             {
@@ -61,129 +70,189 @@ namespace AgentWrangler.Ui
                 AutoSizeMode = AutoSizeMode.GrowAndShrink,
                 GrowStyle = TableLayoutPanelGrowStyle.AddRows
             };
-            _table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 118f));
+            _table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, LabelColumnWidth));
             _table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
             Controls.Add(_table);
 
             BuildIdentity();
-            BuildPester();
+            BuildPestering();
             BuildMovement();
-            BuildToggles();
-            BuildAnimations();
+            BuildAppearance();
+            BuildHabits();
             BuildReactions();
 
             SetEnabled(false);
         }
 
-        // ---- construction ----------------------------------------------------------
+        // ---- sections --------------------------------------------------------------
 
         private void BuildIdentity()
         {
-            Heading("Identity");
+            Heading("Agent", null);
 
-            _name.Width = 240;
+            _name.Width = 220;
             _name.TextChanged += delegate
             {
-                if (_loading || _profile == null) return;
+                if (Editing()) return;
                 _profile.DisplayName = _name.Text;
-                RaiseEdited();
+                Edited();
             };
             Row("Name", _name);
 
             _file.AutoSize = true;
             _file.ForeColor = RetroTheme.Quiet;
-            _file.MaximumSize = new Size(420, 0);
+            _file.MaximumSize = new Size(400, 0);
             Row("Character", _file);
-
-            FillEnum(_persona, typeof(Persona));
-            _persona.SelectedIndexChanged += delegate
-            {
-                if (_loading || _profile == null || _persona.SelectedItem == null) return;
-                _profile.Persona = (Persona)Enum.Parse(typeof(Persona), _persona.SelectedItem.ToString());
-                RaiseEdited();
-            };
-            Row("Personality", _persona);
         }
 
-        private void BuildPester()
+        private void BuildPestering()
         {
-            Heading("How much it pesters you");
+            Heading("Personality and pestering", ProfileSection.Pestering);
+
+            Fill(_persona, typeof(Persona));
+            _persona.SelectedIndexChanged += delegate
+            {
+                if (Editing() || _persona.SelectedItem == null) return;
+                _profile.Persona = (Persona)Enum.Parse(typeof(Persona), _persona.SelectedItem.ToString());
+                Edited();
+            };
+            Row("Voice of", _persona);
 
             _pester.Minimum = PesterCurve.Min;
             _pester.Maximum = PesterCurve.Max;
             _pester.TickFrequency = 1;
             _pester.SmallChange = 1;
             _pester.LargeChange = 1;
-            _pester.Width = 300;
-            _pester.Height = 40;
+            _pester.Width = 260;
+            _pester.Height = 34;
             _pester.ValueChanged += delegate
             {
-                UpdatePesterLabels();
-                if (_loading || _profile == null) return;
+                UpdatePesterLabel();
+                if (Editing()) return;
                 _profile.Pester = _pester.Value;
-                RaiseEdited();
+                Edited();
             };
-            Row("Level", _pester);
+            Row("Pestering", _pester);
 
             _pesterLabel.AutoSize = true;
-            _pesterLabel.Font = RetroTheme.UiBold;
-            _pesterLabel.ForeColor = RetroTheme.Accent;
+            _pesterLabel.MaximumSize = new Size(400, 0);
+            _pesterLabel.ForeColor = RetroTheme.Quiet;
             Row("", _pesterLabel);
-
-            _pesterBlurb.AutoSize = true;
-            _pesterBlurb.ForeColor = RetroTheme.Quiet;
-            _pesterBlurb.MaximumSize = new Size(420, 0);
-            Row("", _pesterBlurb);
 
             _cooldown.Minimum = 0;
             _cooldown.Maximum = 3600;
-            _cooldown.Width = 80;
+            _cooldown.Width = 70;
             _cooldown.ValueChanged += delegate
             {
-                if (_loading || _profile == null) return;
+                if (Editing()) return;
                 _profile.CooldownSecondsOverride = (int)_cooldown.Value;
-                RaiseEdited();
+                Edited();
             };
-            Row("Quiet time", WithHint(_cooldown, "seconds between lines (0 = follow the level)"));
+            Row("Quiet time", Beside(_cooldown, "seconds between lines, 0 to follow the level"));
         }
 
         private void BuildMovement()
         {
-            Heading("Where it goes");
+            Heading("Movement", ProfileSection.Movement);
 
-            FillEnum(_movement, typeof(MovementStyle));
+            _movement.DropDownStyle = ComboBoxStyle.DropDownList;
+            _movement.Width = 180;
+            foreach (MovementStyle style in Enum.GetValues(typeof(MovementStyle)))
+                _movement.Items.Add(new MovementItem(style));
             _movement.SelectedIndexChanged += delegate
             {
-                if (_loading || _profile == null || _movement.SelectedItem == null) return;
-                _profile.Movement = (MovementStyle)Enum.Parse(typeof(MovementStyle), _movement.SelectedItem.ToString());
-                RaiseEdited();
+                UpdateMovementNote();
+                var item = _movement.SelectedItem as MovementItem;
+                if (Editing() || item == null) return;
+                _profile.Movement = item.Style;
+                Edited();
             };
-            Row("Movement", _movement);
+            Row("Style", _movement);
 
-            FillEnum(_speed, typeof(MoveSpeed));
+            _movementNote.AutoSize = true;
+            _movementNote.MaximumSize = new Size(400, 0);
+            _movementNote.ForeColor = RetroTheme.Quiet;
+            Row("", _movementNote);
+
+            Fill(_speed, typeof(MoveSpeed));
             _speed.SelectedIndexChanged += delegate
             {
-                if (_loading || _profile == null || _speed.SelectedItem == null) return;
+                if (Editing() || _speed.SelectedItem == null) return;
                 _profile.MoveSpeed = (MoveSpeed)Enum.Parse(typeof(MoveSpeed), _speed.SelectedItem.ToString());
-                RaiseEdited();
+                Edited();
             };
             Row("Speed", _speed);
 
             _corner.DropDownStyle = ComboBoxStyle.DropDownList;
+            _corner.Width = 140;
             _corner.Items.AddRange(new object[] { "Top left", "Top right", "Bottom left", "Bottom right" });
-            _corner.Width = 160;
             _corner.SelectedIndexChanged += delegate
             {
-                if (_loading || _profile == null) return;
+                if (Editing()) return;
                 _profile.HomeCorner = _corner.SelectedIndex < 0 ? 3 : _corner.SelectedIndex;
-                RaiseEdited();
+                Edited();
             };
-            Row("Home corner", _corner);
+            Row("Home", _corner);
         }
 
-        private void BuildToggles()
+        private void BuildAppearance()
         {
-            Heading("Habits");
+            Heading("Appearance and voice", ProfileSection.Appearance);
+
+            _size.Minimum = AgentProfile.MinSizePercent;
+            _size.Maximum = AgentProfile.MaxSizePercent;
+            _size.TickFrequency = 25;
+            _size.SmallChange = 5;
+            _size.LargeChange = 25;
+            _size.Width = 260;
+            _size.Height = 34;
+            _size.ValueChanged += delegate
+            {
+                UpdateSizeLabel();
+                if (Editing()) return;
+                _profile.SizePercent = _size.Value;
+                LiveAgent live = Live();
+                if (live != null) live.ApplyScale(_profile.ClampedSizePercent);
+                Edited();
+            };
+            Row("Size", _size);
+
+            _sizeLabel.AutoSize = true;
+            _sizeLabel.ForeColor = RetroTheme.Quiet;
+            Row("", _sizeLabel);
+
+            _voice.DropDownStyle = ComboBoxStyle.DropDownList;
+            _voice.Width = 220;
+            _voice.SelectedIndexChanged += delegate
+            {
+                var item = _voice.SelectedItem as VoiceItem;
+                if (Editing() || item == null) return;
+                _profile.VoiceId = item.Id;
+                LiveAgent live = Live();
+                if (live != null) live.ApplyVoice(_profile.VoiceId);
+                Edited();
+            };
+            Row("Voice", _voice);
+
+            Toggle(_speakAloud, "Speak aloud and play sound effects",
+                delegate
+                {
+                    _profile.SpeakAloud = _speakAloud.Checked;
+                    LiveAgent live = Live();
+                    if (live != null) live.SetSoundEffects(_profile.SpeakAloud);
+                });
+
+            WireAnimation(_greet, delegate { _profile.GreetAnimation = _greet.Text; });
+            WireAnimation(_alert, delegate { _profile.AlertAnimation = _alert.Text; });
+            WireAnimation(_rest, delegate { _profile.RestAnimation = _rest.Text; });
+            Row("Greeting", _greet);
+            Row("Big news", _alert);
+            Row("Resting", _rest);
+        }
+
+        private void BuildHabits()
+        {
+            Heading("Habits", ProfileSection.Habits);
 
             Toggle(_autoSummon, "Summon this agent when the manager starts",
                 delegate { _profile.AutoSummon = _autoSummon.Checked; });
@@ -191,59 +260,25 @@ namespace AgentWrangler.Ui
             Toggle(_offerAssistance, "May interrupt with offers to help",
                 delegate { _profile.OfferAssistance = _offerAssistance.Checked; });
 
-            Toggle(_speakAloud, "Use the speech engine and sound effects when available",
-                delegate
-                {
-                    _profile.SpeakAloud = _speakAloud.Checked;
-                    if (LiveAgentLookup != null)
-                    {
-                        var live = LiveAgentLookup(_profile);
-                        if (live != null) live.SetSoundEffects(_profile.SpeakAloud);
-                    }
-                });
-
             Toggle(_interrupt, "Talks over its own unfinished sentences",
                 delegate { _profile.Interrupt = _interrupt.Checked; });
 
-            Toggle(_quoteClipboard, "Reads copied text back out loud (off by default)",
+            Toggle(_quoteClipboard, "Reads copied text back out loud",
                 delegate { _profile.QuoteClipboard = _quoteClipboard.Checked; });
 
-            Toggle(_evasive, "The \"No thanks\" button dodges the pointer",
+            Toggle(_evasive, "The decline buttons dodge the pointer",
                 delegate { _profile.EvasiveDecline = _evasive.Checked; });
 
-            Toggle(_stealFocus, "Prompts take focus from whatever you were typing in",
+            Toggle(_stealFocus, "Prompts take focus from what you are typing in",
                 delegate { _profile.StealFocus = _stealFocus.Checked; });
-        }
-
-        private void BuildAnimations()
-        {
-            Heading("Animations");
-
-            WireAnimation(_greet, delegate { _profile.GreetAnimation = _greet.Text; });
-            Row("Greeting", _greet);
-
-            WireAnimation(_alert, delegate { _profile.AlertAnimation = _alert.Text; });
-            Row("Big news", _alert);
-
-            WireAnimation(_rest, delegate { _profile.RestAnimation = _rest.Text; });
-            Row("Resting", _rest);
-
-            var hint = new Label
-            {
-                Text = "Probe the character to fill these lists with the animations it really has.",
-                AutoSize = true,
-                ForeColor = RetroTheme.Quiet,
-                MaximumSize = new Size(420, 0)
-            };
-            Row("", hint);
         }
 
         private void BuildReactions()
         {
-            Heading("What it comments on");
+            Heading("Reacts to", ProfileSection.Reactions);
 
             _reactions.Width = 300;
-            _reactions.Height = 190;
+            _reactions.Height = 180;
             _reactions.CheckOnClick = true;
             _reactions.IntegralHeight = false;
             foreach (ActivityKind kind in Enum.GetValues(typeof(ActivityKind)))
@@ -251,44 +286,65 @@ namespace AgentWrangler.Ui
 
             _reactions.ItemCheck += delegate(object sender, ItemCheckEventArgs e)
             {
-                if (_loading || _profile == null) return;
                 var item = _reactions.Items[e.Index] as ReactionItem;
-                if (item == null) return;
-
-                // ItemCheck fires before the state is applied, so use the new value.
+                if (Editing() || item == null) return;
+                // ItemCheck runs before the state is applied, so the new value is the truth.
                 _profile.SetReaction(item.Kind, e.NewValue == CheckState.Checked);
-                RaiseEdited();
+                Edited();
             };
-            Row("Activities", _reactions);
+            Row("", _reactions);
         }
 
         // ---- layout helpers --------------------------------------------------------
 
-        private void Heading(string text)
+        private void Heading(string text, ProfileSection? resettable)
         {
-            var label = new Label
+            var host = new Panel
+            {
+                Height = 22,
+                Margin = new Padding(0, 10, 0, 2),
+                Width = 380
+            };
+
+            host.Controls.Add(new Label
             {
                 Text = text.ToUpperInvariant(),
+                Dock = DockStyle.Left,
                 AutoSize = true,
                 Font = RetroTheme.UiBold,
-                ForeColor = RetroTheme.HeaderStart,
-                Margin = new Padding(0, 12, 0, 4)
-            };
-            _table.Controls.Add(label);
-            _table.SetColumnSpan(label, 2);
+                ForeColor = RetroTheme.HeaderStart
+            });
+
+            if (resettable.HasValue)
+            {
+                ProfileSection section = resettable.Value;
+                var reset = new LinkLabel
+                {
+                    Text = "reset",
+                    Dock = DockStyle.Right,
+                    AutoSize = true,
+                    LinkColor = RetroTheme.Quiet,
+                    ActiveLinkColor = RetroTheme.Accent,
+                    LinkBehavior = LinkBehavior.HoverUnderline
+                };
+                reset.Click += delegate { ResetSection(section); };
+                host.Controls.Add(reset);
+            }
+
+            _table.Controls.Add(host);
+            _table.SetColumnSpan(host, 2);
         }
 
         private void Row(string label, Control editor)
         {
-            var caption = new Label
+            _table.Controls.Add(new Label
             {
                 Text = label,
                 AutoSize = true,
-                Margin = new Padding(0, 5, 6, 4),
+                Margin = new Padding(0, 5, 6, 2),
                 ForeColor = RetroTheme.Ink
-            };
-            _table.Controls.Add(caption);
-            editor.Margin = new Padding(0, 2, 0, 4);
+            });
+            editor.Margin = new Padding(0, 2, 0, 2);
             _table.Controls.Add(editor);
         }
 
@@ -296,12 +352,12 @@ namespace AgentWrangler.Ui
         {
             box.Text = caption;
             box.AutoSize = true;
-            box.Margin = new Padding(0, 2, 0, 2);
+            box.Margin = new Padding(0, 1, 0, 1);
             box.CheckedChanged += delegate
             {
-                if (_loading || _profile == null) return;
+                if (Editing()) return;
                 apply();
-                RaiseEdited();
+                Edited();
             };
             _table.Controls.Add(box);
             _table.SetColumnSpan(box, 2);
@@ -309,23 +365,22 @@ namespace AgentWrangler.Ui
 
         private void WireAnimation(ComboBox combo, Action apply)
         {
-            combo.Width = 200;
+            combo.Width = 180;
             combo.DropDownStyle = ComboBoxStyle.DropDown;
             combo.TextChanged += delegate
             {
-                if (_loading || _profile == null) return;
+                if (Editing()) return;
                 apply();
-                RaiseEdited();
+                Edited();
             };
         }
 
-        private static Control WithHint(Control editor, string hint)
+        private static Control Beside(Control editor, string hint)
         {
             var host = new FlowLayoutPanel
             {
                 AutoSize = true,
                 AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                FlowDirection = FlowDirection.LeftToRight,
                 Margin = Padding.Empty,
                 WrapContents = false
             };
@@ -340,26 +395,28 @@ namespace AgentWrangler.Ui
             return host;
         }
 
-        private static void FillEnum(ComboBox combo, Type enumType)
+        private static void Fill(ComboBox combo, Type enumType)
         {
             combo.DropDownStyle = ComboBoxStyle.DropDownList;
-            combo.Width = 160;
+            combo.Width = 140;
             foreach (object value in Enum.GetValues(enumType)) combo.Items.Add(value.ToString());
         }
 
         // ---- binding ---------------------------------------------------------------
 
-        /// <summary>
-        /// Set by the manager so the panel can push a live change (sound effects) straight
-        /// to an agent that is already on screen.
-        /// </summary>
-        public Func<AgentProfile, Agents.LiveAgent> LiveAgentLookup { get; set; }
-
         public AgentProfile Profile { get { return _profile; } }
+
+        private bool Editing() { return _loading || _profile == null; }
+
+        private LiveAgent Live()
+        {
+            return LiveAgentLookup == null || _profile == null ? null : LiveAgentLookup(_profile);
+        }
 
         public void Bind(AgentProfile profile, CharacterFileInfo info)
         {
             _profile = profile;
+            _info = info;
             _loading = true;
 
             try
@@ -379,9 +436,13 @@ namespace AgentWrangler.Ui
                 _persona.SelectedItem = profile.Persona.ToString();
                 _pester.Value = PesterCurve.Clamp(profile.Pester);
                 _cooldown.Value = Math.Min(_cooldown.Maximum, Math.Max(0, profile.CooldownSecondsOverride));
-                _movement.SelectedItem = profile.Movement.ToString();
+                SelectMovement(profile.Movement);
                 _speed.SelectedItem = profile.MoveSpeed.ToString();
                 _corner.SelectedIndex = Math.Min(3, Math.Max(0, profile.HomeCorner));
+                _size.Value = profile.ClampedSizePercent;
+
+                LoadVoices(profile.VoiceId);
+                LoadAnimations(info);
 
                 _autoSummon.Checked = profile.AutoSummon;
                 _offerAssistance.Checked = profile.OfferAssistance;
@@ -391,15 +452,15 @@ namespace AgentWrangler.Ui
                 _evasive.Checked = profile.EvasiveDecline;
                 _stealFocus.Checked = profile.StealFocus;
 
-                LoadAnimations(info);
-
                 for (int i = 0; i < _reactions.Items.Count; i++)
                 {
                     var item = _reactions.Items[i] as ReactionItem;
                     _reactions.SetItemChecked(i, item != null && profile.ReactsTo(item.Kind));
                 }
 
-                UpdatePesterLabels();
+                UpdatePesterLabel();
+                UpdateMovementNote();
+                UpdateSizeLabel();
             }
             finally
             {
@@ -407,19 +468,52 @@ namespace AgentWrangler.Ui
             }
         }
 
-        private static string DescribeFile(AgentProfile profile, CharacterFileInfo info)
+        private void ResetSection(ProfileSection section)
         {
-            string fileName = string.IsNullOrEmpty(profile.CharacterPath)
-                ? "(none)"
-                : System.IO.Path.GetFileName(profile.CharacterPath);
+            if (_profile == null) return;
+            _profile.ResetSection(section);
+            Bind(_profile, _info);
 
-            if (info != null && info.HasBeenProbed && !string.IsNullOrEmpty(info.Description))
-                return fileName + " -- " + info.Description;
+            LiveAgent live = Live();
+            if (live != null)
+            {
+                live.ApplyScale(_profile.ClampedSizePercent);
+                live.SetSoundEffects(_profile.SpeakAloud);
+            }
+            Edited();
+        }
 
-            if (!string.IsNullOrEmpty(profile.CharacterPath) && !System.IO.File.Exists(profile.CharacterPath))
-                return fileName + "  (MISSING)";
+        private void SelectMovement(MovementStyle style)
+        {
+            foreach (object item in _movement.Items)
+            {
+                var candidate = item as MovementItem;
+                if (candidate != null && candidate.Style == style)
+                {
+                    _movement.SelectedItem = candidate;
+                    return;
+                }
+            }
+        }
 
-            return fileName;
+        private void LoadVoices(string selectedId)
+        {
+            _voice.Items.Clear();
+            _voice.Items.Add(new VoiceItem(string.Empty, "The character's own voice"));
+            foreach (VoiceInfo voice in SapiVoices.All())
+                _voice.Items.Add(new VoiceItem(voice.Id, voice.Name));
+
+            foreach (object item in _voice.Items)
+            {
+                var candidate = item as VoiceItem;
+                if (candidate != null &&
+                    string.Equals(candidate.Id, selectedId ?? string.Empty, StringComparison.OrdinalIgnoreCase))
+                {
+                    _voice.SelectedItem = candidate;
+                    return;
+                }
+            }
+            _voice.SelectedIndex = 0;
         }
 
         private void LoadAnimations(CharacterFileInfo info)
@@ -440,10 +534,42 @@ namespace AgentWrangler.Ui
             _rest.Text = _profile.RestAnimation ?? string.Empty;
         }
 
-        private void UpdatePesterLabels()
+        private static string DescribeFile(AgentProfile profile, CharacterFileInfo info)
         {
-            _pesterLabel.Text = _pester.Value + " -- " + PesterCurve.LevelName(_pester.Value);
-            _pesterBlurb.Text = PesterCurve.LevelBlurb(_pester.Value);
+            string fileName = string.IsNullOrEmpty(profile.CharacterPath)
+                ? "(none)"
+                : System.IO.Path.GetFileName(profile.CharacterPath);
+
+            if (!string.IsNullOrEmpty(profile.CharacterPath) && !System.IO.File.Exists(profile.CharacterPath))
+                return fileName + "  (missing)";
+
+            if (info != null && info.HasBeenProbed && !string.IsNullOrEmpty(info.Description))
+                return fileName + " -- " + info.Description;
+
+            return fileName;
+        }
+
+        private void UpdatePesterLabel()
+        {
+            _pesterLabel.Text = _pester.Value + " -- " + PesterCurve.LevelName(_pester.Value) + ". " +
+                                PesterCurve.LevelBlurb(_pester.Value);
+        }
+
+        private void UpdateMovementNote()
+        {
+            var item = _movement.SelectedItem as MovementItem;
+            _movementNote.Text = item == null ? string.Empty : item.Description;
+        }
+
+        private void UpdateSizeLabel()
+        {
+            string text = _size.Value + "% of the character's own size";
+            if (_info != null && _info.NativeWidth > 0)
+            {
+                text += "  (" + _info.NativeWidth * _size.Value / 100 + " x " +
+                        _info.NativeHeight * _size.Value / 100 + " pixels)";
+            }
+            _sizeLabel.Text = text;
         }
 
         private void SetEnabled(bool enabled)
@@ -455,13 +581,69 @@ namespace AgentWrangler.Ui
             }
         }
 
-        private void RaiseEdited()
+        private void Edited()
         {
             EventHandler handler = ProfileEdited;
             if (handler != null) handler(this, EventArgs.Empty);
         }
 
-        /// <summary>Wraps an activity kind with a caption the user can actually read.</summary>
+        // ---- list items ------------------------------------------------------------
+
+        private sealed class MovementItem
+        {
+            public MovementStyle Style { get; private set; }
+            public MovementItem(MovementStyle style) { Style = style; }
+
+            public string Description
+            {
+                get
+                {
+                    switch (Style)
+                    {
+                        case MovementStyle.Stay:
+                            return "Placed in its home corner once and never moves again.";
+                        case MovementStyle.Wander:
+                            return "Hops to an unrelated part of the screen every so often.";
+                        case MovementStyle.FollowCursor:
+                            return "Shadows the pointer, keeping pace as you move it.";
+                        case MovementStyle.Perch:
+                            return "Lives in its home corner, leaving for the odd excursion.";
+                        case MovementStyle.Orbit:
+                            return "Circles the window you are working in, one step at a time.";
+                        default:
+                            return string.Empty;
+                    }
+                }
+            }
+
+            public override string ToString()
+            {
+                switch (Style)
+                {
+                    case MovementStyle.Stay: return "Stay put";
+                    case MovementStyle.Wander: return "Wander";
+                    case MovementStyle.FollowCursor: return "Follow the pointer";
+                    case MovementStyle.Perch: return "Perch in a corner";
+                    case MovementStyle.Orbit: return "Orbit the window";
+                    default: return Style.ToString();
+                }
+            }
+        }
+
+        private sealed class VoiceItem
+        {
+            public string Id { get; private set; }
+            private readonly string _name;
+
+            public VoiceItem(string id, string name)
+            {
+                Id = id ?? string.Empty;
+                _name = name;
+            }
+
+            public override string ToString() { return _name; }
+        }
+
         private sealed class ReactionItem
         {
             public ActivityKind Kind { get; private set; }
@@ -471,7 +653,7 @@ namespace AgentWrangler.Ui
             {
                 switch (Kind)
                 {
-                    case ActivityKind.ClipboardCopy: return "Something is copied to the clipboard";
+                    case ActivityKind.ClipboardCopy: return "Something is copied";
                     case ActivityKind.DownloadStarted: return "A download starts";
                     case ActivityKind.DownloadFinished: return "A download finishes";
                     case ActivityKind.FileCreated: return "A file appears";
@@ -481,7 +663,7 @@ namespace AgentWrangler.Ui
                     case ActivityKind.AppLaunched: return "You open a program";
                     case ActivityKind.UserIdle: return "You stop using the computer";
                     case ActivityKind.UserReturned: return "You come back";
-                    case ActivityKind.Nag: return "Nothing at all (unprompted chatter)";
+                    case ActivityKind.Nag: return "Nothing at all";
                     case ActivityKind.Summoned: return "It is summoned";
                     case ActivityKind.Dismissed: return "It is dismissed";
                     default: return Kind.ToString();

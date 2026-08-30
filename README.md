@@ -63,23 +63,37 @@ things in one.
 A **master dial** in the bottom bar scales the whole roster at once: 5 is neutral, 10
 roughly doubles every agent, 0 muzzles all of them.
 
-**Per-agent settings**
+**Per-agent settings**, grouped into sections that each reset on their own:
 
-* Personality — *Chirpy*, *Corporate*, *Gremlin* or *Sleepy*, each with its own bank of lines
-* Movement — *Stay*, *Wander*, *Follow cursor*, *Perch* (home corner) or *Orbit* the active window; plus speed and home corner
-* Which activities it is allowed to comment on, individually
-* Whether it may interrupt with offers of help
-* Whether it talks over its own unfinished sentences
-* Whether it reads copied text back out loud (off by default)
-* Whether its prompts steal focus from what you are typing
-* Whether the **"No thanks"** button dodges your pointer
-* Which animations it plays for greeting, big news and resting
+* **Personality** — *Chirpy*, *Corporate*, *Gremlin*, *Sleepy*, *Bureaucrat* or *Fan*, each with its own bank of lines
+* **Pestering** — the 0–10 level, a quiet-time override, and whether it talks over its own unfinished sentences
+* **Movement** — see below; plus speed and home corner
+* **Appearance and voice** — drawn size from 25% to 300% of the character's own, which installed speech voice to use, and the animations for greeting, big news and resting
+* **Habits** — whether it may interrupt with offers, whether it reads copied text aloud (off by default), whether prompts steal focus, and whether the decline buttons dodge your pointer
+* **Reacts to** — every activity, individually
+
+**Movement styles** do genuinely different things:
+
+| | |
+|---|---|
+| Stay put | Placed in its home corner once and never moves again |
+| Wander | Hops to an unrelated part of the screen every so often |
+| Follow the pointer | Shadows the mouse on its own short clock, ignoring small movements |
+| Perch in a corner | Lives in its home corner, leaving for the odd excursion and returning |
+| Orbit the window | Steps around the window you are working in, one arc at a time |
+
+**Dialogue** cycles by default: every line in a bank is used before any repeats, and the
+cycle is **shared by the whole roster**, so two agents with the same personality do not
+open with the same greeting. *Random lines instead of a full rotation* on the Setup tab
+turns that off in favour of independent sampling.
 
 **Getting rid of them**
 
 * **Ctrl+Alt+Shift+H** — panic: everyone off screen instantly, still loaded, one keypress from coming back
 * **Ctrl+Alt+Shift+A** — bring the manager window back
 * **Muzzle everyone** — they stay on screen but stop talking and moving
+* The **Pestering** dial at the bottom scales every agent's own level rather than setting a
+  floor: 5 leaves them as configured, 10 roughly doubles them, 0 silences the lot
 * Closing the manager window leaves it running in the tray; **Exit** on the tray menu quits properly
 
 ---
@@ -150,15 +164,17 @@ writes a starter `settings.xml` and `phrasebook.xml`, and scans for characters.
 Then:
 
 1. Pick an agent in the list on the left.
-2. **Probe** it — this loads the character briefly to read its real name and animation
-   list, which fills the animation pickers.
+2. **Inspect** it — this loads the character briefly to read its real name, size and
+   animation list, which fill the pickers on the Behaviour tab.
 3. On the **Behaviour** tab, choose a personality and set the pester level.
 4. **Summon**. The character appears and starts narrating.
 5. Tick *Summon this agent when the manager starts* to have it come back next time, and
-   **Start when I log in** on the Diagnostics tab to have the manager itself start with
-   Windows.
+   **Start when I log in** on the Setup tab to have the manager itself start with Windows.
 
-If nothing appears, the Diagnostics tab lists every ProgID that was tried and why each one
+Everything else — duplicating an agent, importing, renaming or deleting character files —
+is on **More...** and on the right-click menu of the agent list.
+
+If nothing appears, the Setup tab lists every ProgID that was tried and why each one
 failed.
 
 ## Administrator access
@@ -229,7 +245,7 @@ Everything lives under `%APPDATA%\AgentWrangler`:
 
 | File | |
 |---|---|
-| `settings.xml` | Agents, behaviour settings, folder lists, cached probe results |
+| `settings.xml` | Agents, behaviour settings, folder lists, cached character details |
 | `phrasebook.xml` | Every line the agents can say — written on first run, yours to edit |
 | `agentwrangler.log` | What happened, including every failed call to the Agent server |
 | `Characters\` | Character files imported through the manager |
@@ -251,8 +267,8 @@ first (or remove the `AgentWrangler` value from
 
 Tokens: `{file}` `{oldfile}` `{folder}` `{ext}` `{path}` `{app}` `{process}` `{title}`
 `{doc}` `{clip}` `{minutes}` `{agent}` `{user}` `{time}` `{count}`. A token the watcher
-could not fill in becomes a vague stand-in rather than showing braces. Use
-**Reload phrasebook** on the Diagnostics tab to pick up edits without restarting.
+could not fill in becomes a vague stand-in rather than showing braces. Use **Reload lines**
+on the Setup tab to pick up edits without restarting.
 
 If the file is missing or unreadable, the built-in lines are used and a note goes in the log.
 
@@ -269,9 +285,16 @@ text is flattened to a single line and truncated to 60 characters.
 
 **The things an agent can offer to do are deliberately trivial and harmless**: open a
 folder in Explorer, copy a file name to the clipboard, give you a useless tip, move itself,
-or promise to come back. An assistant that interrupts every few seconds — with a "No"
-button that may be running away from your pointer — has no business being able to launch a
-program or open a file you just downloaded, so it cannot.
+or promise to come back. An assistant that interrupts every few seconds — with decline
+buttons that may be running away from your pointer — has no business being able to launch
+a program or open a file you just downloaded, so it cannot.
+
+**Declining an offer declines that offer, and nothing more.** Neither *No thanks* nor
+*Never ask* removes anything from circulation.
+
+**Picking a voice is best-effort.** Installed voices are listed through SAPI and applied to
+the character's speech mode. A character or server that will not accept the change keeps
+the voice it was authored with, and the log says so.
 
 **Interaction is through the prompt windows, not the character itself.** Clicking a
 character does nothing. Microsoft Agent delivers clicks through a COM connection point
@@ -309,8 +332,8 @@ and hand them to the engine through a lock-protected queue.
 `check.sh` type-checks the sources with Mono's compiler, and `smoke.sh` runs the checks in
 `tools/smoketest/` over the parts that need neither Windows nor a COM server — the pester
 curve, token substitution, phrasebook coverage, the XML round trip every setting depends
-on, the guards on the elevated file helper, and the splitter sizing rules. Neither is
-needed to build or run the program.
+on, the guards on the elevated file helper, the line rotation, per-section resets, and the
+splitter sizing rules. Neither is needed to build or run the program.
 
 Neither substitutes for running it on Windows. Mono compiles the sources but does not share
 the .NET Framework's runtime validation: `SplitContainer` on Mono silently accepts a

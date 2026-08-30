@@ -38,6 +38,10 @@ namespace AgentWrangler.Library
         [XmlArrayItem("Animation")]
         public List<string> Animations { get; set; }
 
+        /// <summary>The character's own drawn size, read when it is inspected.</summary>
+        public int NativeWidth { get; set; }
+        public int NativeHeight { get; set; }
+
         public DateTime ProbedUtc { get; set; }
 
         /// <summary>Why the last probe failed, or empty if it succeeded / has not run.</summary>
@@ -94,13 +98,13 @@ namespace AgentWrangler.Library
             get
             {
                 if (!string.IsNullOrEmpty(ProbeError)) return "Will not load";
-                if (HasBeenProbed) return "Loaded OK";
+                if (HasBeenProbed) return "Read OK";
                 switch (Header)
                 {
-                    case HeaderStatus.LooksLikeCharacter: return "Not probed";
+                    case HeaderStatus.LooksLikeCharacter: return "Not read";
                     case HeaderStatus.Unrecognized: return "Odd header";
                     case HeaderStatus.Unreadable: return "Unreadable";
-                    default: return "Not probed";
+                    default: return "Not read";
                 }
             }
         }

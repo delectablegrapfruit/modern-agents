@@ -39,11 +39,13 @@
     <Compile Include="src\Agents\AgentRoster.cs" />
     <Compile Include="src\Agents\AgentServer.cs" />
     <Compile Include="src\Agents\LiveAgent.cs" />
+    <Compile Include="src\Agents\SapiVoices.cs" />
     <Compile Include="src\AppHost.cs" />
     <Compile Include="src\Behavior\ActivityBus.cs" />
     <Compile Include="src\Behavior\ActivityEvent.cs" />
     <Compile Include="src\Behavior\AssistExecutor.cs" />
     <Compile Include="src\Behavior\DefaultPhrasebook.cs" />
+    <Compile Include="src\Behavior\LineRotation.cs" />
     <Compile Include="src\Behavior\PesterCurve.cs" />
     <Compile Include="src\Behavior\PesterEngine.cs" />
     <Compile Include="src\Behavior\Phrasebook.cs" />
@@ -51,6 +53,8 @@
     <Compile Include="src\Config\AppSettings.cs" />
     <Compile Include="src\Config\SettingsStore.cs" />
     <Compile Include="src\Diagnostics.cs" />
+    <Compile Include="src\ElevatedHelper.cs" />
+    <Compile Include="src\Interop\Elevation.cs" />
     <Compile Include="src\Interop\NativeMethods.cs" />
     <Compile Include="src\Library\CharacterFileInfo.cs" />
     <Compile Include="src\Library\CharacterLibrary.cs" />
@@ -63,6 +67,7 @@
     <Compile Include="src\Ui\ProfilePanel.cs" />
     <Compile Include="src\Ui\PromptDialog.cs" />
     <Compile Include="src\Ui\RetroTheme.cs" />
+    <Compile Include="src\Ui\SplitterLayout.cs" />
     <Compile Include="src\Watchers\ClipboardWatcher.cs" />
     <Compile Include="src\Watchers\FileActivityWatcher.cs" />
     <Compile Include="src\Watchers\ForegroundWatcher.cs" />

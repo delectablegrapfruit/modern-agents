@@ -61,6 +61,14 @@ namespace AgentWrangler.Tests
             SplitterChecks();
 
             Console.WriteLine();
+            Console.WriteLine("== line rotation ==");
+            RotationChecks();
+
+            Console.WriteLine();
+            Console.WriteLine("== per-section reset ==");
+            ResetChecks();
+
+            Console.WriteLine();
             Console.WriteLine(_failures == 0 ? "ALL CHECKS PASSED" : _failures + " CHECK(S) FAILED");
             return _failures == 0 ? 0 : 1;
         }
@@ -162,26 +170,34 @@ namespace AgentWrangler.Tests
             var offerless = new List<string>();
             foreach (ActivityKind kind in Enum.GetValues(typeof(ActivityKind)))
             {
-                AssistOffer offer = book.PickOffer(kind, Persona.Chirpy, rng, new List<string>());
-                if (offer == null) offerless.Add(kind.ToString());
+                if (book.PickOffer(kind, Persona.Chirpy, rng) == null) offerless.Add(kind.ToString());
             }
             Check(offerless.Count < Enum.GetValues(typeof(ActivityKind)).Length,
                   "at least some activities can turn into an offer of help");
             Console.WriteLine("        activities with no offer: " + string.Join(", ", offerless.ToArray()));
 
-            var excluded = new List<string> { "openfolder" };
-            bool respected = true;
-            for (int i = 0; i < 200; i++)
+            // Declining an offer must never remove it from circulation.
+            bool everyOfferStillReachable = true;
+            for (int i = 0; i < 400; i++)
             {
-                AssistOffer offer = book.PickOffer(ActivityKind.DownloadFinished, Persona.Chirpy, rng, excluded);
-                if (offer != null && offer.Topic == "openfolder") respected = false;
+                if (book.PickOffer(ActivityKind.DownloadFinished, Persona.Chirpy, rng) == null)
+                    everyOfferStillReachable = false;
             }
-            Check(respected, "'never ask again' topics are never offered again");
+            Check(everyOfferStillReachable, "offers are always available, never suppressed");
 
             int lines = 0;
-            foreach (PhraseBank bank in book.Banks) lines += bank.Lines.Count;
+            bool bannedPhrase = false;
+            foreach (PhraseBank bank in book.Banks)
+            {
+                lines += bank.Lines.Count;
+                foreach (string line in bank.Lines)
+                    if (line.IndexOf("Hiya", StringComparison.OrdinalIgnoreCase) >= 0) bannedPhrase = true;
+            }
+            Check(!bannedPhrase, "no line uses the retired greeting");
+
             Console.WriteLine("        " + book.Banks.Count + " banks, " + lines + " lines, " +
-                              book.Offers.Count + " offers");
+                              book.Offers.Count + " offers, " +
+                              Enum.GetValues(typeof(Persona)).Length + " personalities");
         }
 
         private static Phrasebook BuildDefault()
@@ -352,6 +368,105 @@ namespace AgentWrangler.Tests
                   "the smallest allowed window still gets the preferred position");
         }
 
+        /// <summary>
+        /// Lines cycle so a bank is exhausted before anything repeats, and the cycle is
+        /// shared: two agents drawing on the same bank draw from the same sequence.
+        /// </summary>
+        private static void RotationChecks()
+        {
+            var rng = new Random(99);
+            var rotation = new LineRotation();
+            var pool = new List<string> { "a", "b", "c", "d", "e" };
+
+            var firstCycle = new List<string>();
+            for (int i = 0; i < pool.Count; i++) firstCycle.Add(rotation.Next("bank", pool, rng, false));
+
+            var distinct = new HashSet<string>(firstCycle);
+            Check(distinct.Count == pool.Count, "a full cycle uses every line exactly once");
+
+            // Draining and refilling repeatedly must never lose or duplicate a line.
+            bool everyCycleComplete = true;
+            for (int cycle = 0; cycle < 40; cycle++)
+            {
+                var seen = new HashSet<string>();
+                for (int i = 0; i < pool.Count; i++) seen.Add(rotation.Next("bank", pool, rng, false));
+                if (seen.Count != pool.Count) everyCycleComplete = false;
+            }
+            Check(everyCycleComplete, "every later cycle is complete too");
+
+            // Two agents on the same bank share one sequence rather than each running their own.
+            var shared = new LineRotation();
+            var drawn = new List<string>();
+            for (int i = 0; i < pool.Count; i++)
+                drawn.Add(shared.Next("bank", pool, rng, false));
+            Check(new HashSet<string>(drawn).Count == pool.Count,
+                  "interleaved callers share one rotation instead of repeating");
+
+            Check(shared.TrackedBanks == 1, "one bank in play means one tracked cycle");
+            shared.Next("other", pool, rng, false);
+            Check(shared.TrackedBanks == 2, "a different bank rotates separately");
+
+            // True random samples independently, so repeats are expected.
+            bool sawRepeat = false;
+            string previous = null;
+            var randomRotation = new LineRotation();
+            for (int i = 0; i < 300; i++)
+            {
+                string line = randomRotation.Next("bank", pool, rng, true);
+                if (line == previous) sawRepeat = true;
+                previous = line;
+            }
+            Check(sawRepeat, "true random can repeat a line back to back");
+
+            Check(rotation.Next("bank", new List<string>(), rng, false) == null, "an empty bank yields nothing");
+            Check(rotation.Next("bank", new List<string> { "only" }, rng, false) == "only",
+                  "a single-line bank always yields that line");
+        }
+
+        /// <summary>Each group of settings resets on its own without disturbing the others.</summary>
+        private static void ResetChecks()
+        {
+            var profile = new AgentProfile
+            {
+                DisplayName = "Buddy",
+                Pester = 10,
+                Persona = Persona.Gremlin,
+                Movement = MovementStyle.Orbit,
+                SizePercent = 250,
+                VoiceId = "some-voice",
+                EvasiveDecline = true,
+                GreetAnimation = "Wave"
+            };
+            profile.SetReaction(ActivityKind.Nag, false);
+
+            profile.ResetSection(ProfileSection.Movement);
+            Check(profile.Movement == MovementStyle.Wander, "movement resets");
+            Check(profile.Pester == 10, "resetting movement leaves pestering alone");
+            Check(profile.SizePercent == 250, "resetting movement leaves appearance alone");
+
+            profile.ResetSection(ProfileSection.Appearance);
+            Check(profile.SizePercent == 100 && profile.VoiceId == string.Empty, "appearance resets");
+            Check(profile.EvasiveDecline, "resetting appearance leaves habits alone");
+            Check(profile.DisplayName == "Buddy", "no reset touches the name");
+
+            profile.ResetSection(ProfileSection.Habits);
+            Check(!profile.EvasiveDecline, "habits reset");
+
+            profile.ResetSection(ProfileSection.Reactions);
+            Check(profile.ReactsTo(ActivityKind.Nag), "reactions reset");
+
+            profile.ResetSection(ProfileSection.Pestering);
+            Check(profile.Pester == 5, "pestering resets");
+
+            profile.ResetSection(ProfileSection.Animations);
+            Check(profile.GreetAnimation == "Greet", "animations reset");
+
+            profile.SizePercent = 5000;
+            Check(profile.ClampedSizePercent == AgentProfile.MaxSizePercent, "an absurd size is clamped");
+            profile.SizePercent = 1;
+            Check(profile.ClampedSizePercent == AgentProfile.MinSizePercent, "a tiny size is clamped");
+        }
+
         private static void RoundTripChecks()
         {
             var settings = new AppSettings();
@@ -367,7 +482,9 @@ namespace AgentWrangler.Tests
                 Persona = Persona.Gremlin,
                 Movement = MovementStyle.FollowCursor,
                 MoveSpeed = MoveSpeed.Fast,
-                EvasiveDecline = true
+                EvasiveDecline = true,
+                SizePercent = 175,
+                VoiceId = "test-voice"
             };
             profile.SetReaction(ActivityKind.AppFocused, false);
             settings.Profiles.Add(profile);
@@ -405,6 +522,8 @@ namespace AgentWrangler.Tests
                 Check(back.Movement == MovementStyle.FollowCursor, "movement style survives");
                 Check(back.MoveSpeed == MoveSpeed.Fast && back.MoveDurationMs == 350, "move speed maps to a duration");
                 Check(back.EvasiveDecline, "toggles survive");
+                Check(back.SizePercent == 175, "size survives");
+                Check(back.VoiceId == "test-voice", "voice choice survives");
                 Check(!back.ReactsTo(ActivityKind.AppFocused), "a switched-off reaction stays off");
                 Check(back.ReactsTo(ActivityKind.ClipboardCopy), "the other reactions stay on");
                 Check(back.Reactions.Count == profile.Reactions.Count,
@@ -430,6 +549,8 @@ namespace AgentWrangler.Tests
                       "cached probe results survive");
                 Check(loaded.LibraryFolders.Count == 1 && loaded.WatchedFolders.Count == 1,
                       "folder lists survive");
+                Check(loaded.MasterPester == settings.MasterPester && !loaded.RandomDialogue,
+                      "the dialogue mode survives");
 
                 Console.WriteLine("        settings.xml is " + new FileInfo(path).Length + " bytes");
             }
