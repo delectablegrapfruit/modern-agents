@@ -68,7 +68,6 @@ public final class FSEventsWatcher: ChangeWatcher {
         let flags = kFSEventStreamCreateFlagUseCFTypes
             | kFSEventStreamCreateFlagFileEvents
             | kFSEventStreamCreateFlagNoDefer
-            | kFSEventStreamCreateFlagIgnoreSelf
         guard let created = FSEventStreamCreate(kCFAllocatorDefault,
                                                 fsEventsCallback,
                                                 &context,

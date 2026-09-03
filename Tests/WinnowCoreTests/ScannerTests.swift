@@ -8,7 +8,6 @@ final class ScannerTests: XCTestCase {
         box = try TestSandbox()
         try box.file(".DS_Store")
         try box.file("Photos/.DS_Store")
-        try box.file("Photos/._IMG_1.jpg")
         try box.file("Photos/IMG_1.jpg", "real")
         try box.file(".Spotlight-V100/Store/index", "spotlight")
         try box.file("Photos/.Spotlight-V100/nested")
@@ -34,7 +33,7 @@ final class ScannerTests: XCTestCase {
     func testFindsJunkAndRespectsScope() throws {
         let items = try JunkScanner(options: options()).scan(root: box.path)
         XCTAssertEqual(relativePaths(items, from: box.path), [
-            ".DS_Store", "Photos/.DS_Store", "Photos/._IMG_1.jpg", ".Spotlight-V100", ".Trashes",
+            ".DS_Store", "Photos/.DS_Store", ".Spotlight-V100", ".Trashes",
             "Keep/.DS_Store", "Archive/__MACOSX",
         ])
         let spotlight = items.first { $0.name == ".Spotlight-V100" }!

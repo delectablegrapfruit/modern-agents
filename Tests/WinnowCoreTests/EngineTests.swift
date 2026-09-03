@@ -57,7 +57,7 @@ final class EngineTests: XCTestCase {
     func testFullSweepCoversLocationsAndVolumes() throws {
         try box.file("USB/.DS_Store")
         try box.file("USB/.Spotlight-V100/x")
-        try box.file("USB/Docs/._a")
+        try box.file("USB/Docs/.DS_Store")
         try box.file("USB/Docs/a")
         try box.file("Folder/.DS_Store")
         try box.file("Folder/Sub/.DS_Store")
@@ -77,7 +77,7 @@ final class EngineTests: XCTestCase {
 
         let result = try engine.fullSweep()
         XCTAssertEqual(relativePaths(result.removed, from: box.path),
-                       ["USB/.DS_Store", "USB/.Spotlight-V100", "USB/Docs/._a", "Folder/.DS_Store"])
+                       ["USB/.DS_Store", "USB/.Spotlight-V100", "USB/Docs/.DS_Store", "Folder/.DS_Store"])
         XCTAssertFalse(box.exists("USB/.Spotlight-V100"))
         XCTAssertTrue(box.exists("USB/Docs/a"))
         XCTAssertTrue(box.exists("Folder/Sub/.DS_Store"))

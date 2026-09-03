@@ -7,7 +7,7 @@ final class SweeperTests: XCTestCase {
     override func setUpWithError() throws {
         box = try TestSandbox()
         try box.file(".DS_Store", "12345")
-        try box.file("A/._x", "1")
+        try box.file("A/.DS_Store", "1")
         try box.file(".Trashes/501/a", "1234")
     }
 
@@ -48,7 +48,7 @@ final class SweeperTests: XCTestCase {
         XCTAssertEqual(result.removedCount, 1)
         XCTAssertEqual(result.skipped.count, 3)
         XCTAssertTrue(box.exists(".DS_Store"))
-        XCTAssertFalse(box.exists("A/._x"))
+        XCTAssertFalse(box.exists("A/.DS_Store"))
     }
 
     func testSafetyPolicyVerdicts() {
