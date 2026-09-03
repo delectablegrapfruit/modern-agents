@@ -28,6 +28,10 @@ struct FinderPane: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
+            .onAppear { optionsMode = model.finderDraft.viewStyle }
+            .sheet(item: $model.editingFolderView) { view in
+                FolderViewEditor(view: view).environmentObject(model)
+            }
             ViewOptionsForm(mode: optionsMode, options: $model.finderDraft.options)
         } header: {
             Text("View options")
@@ -75,10 +79,6 @@ struct FinderPane: View {
                     .buttonStyle(.borderedProminent)
                     .disabled(!(model.finderHasChanges || model.resetFoldersOnApply) || model.isApplyingFinder)
             }
-        }
-        .onAppear { optionsMode = model.finderDraft.viewStyle }
-        .sheet(item: $model.editingFolderView) { view in
-            FolderViewEditor(view: view).environmentObject(model)
         }
     }
 
