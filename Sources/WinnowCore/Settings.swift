@@ -147,21 +147,15 @@ public struct VolumePolicy: Codable, Hashable {
 }
 
 public struct PreventionSettings: Codable, Hashable {
-    /// Finder preference `DSDontWriteNetworkStores`.
-    public var noDSStoreOnNetwork = false
-    /// Finder preference `DSDontWriteUSBStores`.
-    public var noDSStoreOnUSB = false
     /// Drop a `.metadata_never_index` marker on cleaned volumes so Spotlight leaves them alone.
     public var noSpotlightOnCleanedVolumes = false
 
     public init() {}
 
-    enum CodingKeys: String, CodingKey { case noDSStoreOnNetwork, noDSStoreOnUSB, noSpotlightOnCleanedVolumes }
+    enum CodingKeys: String, CodingKey { case noSpotlightOnCleanedVolumes }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        noDSStoreOnNetwork = try c.decodeIfPresent(Bool.self, forKey: .noDSStoreOnNetwork) ?? false
-        noDSStoreOnUSB = try c.decodeIfPresent(Bool.self, forKey: .noDSStoreOnUSB) ?? false
         noSpotlightOnCleanedVolumes = try c.decodeIfPresent(Bool.self, forKey: .noSpotlightOnCleanedVolumes) ?? false
     }
 }

@@ -15,12 +15,12 @@ they appear, and sweeps whole disks on demand.
 - **Rules** you can switch individually, plus your own name patterns.
 - **Disk policy**: external, network, internal, per-volume overrides, skip Mac-formatted disks.
 - **Prevention**: Finder's own `.DS_Store` switches for network and USB volumes; a Spotlight no-index marker on cleaned disks.
-- **Finder defaults**: default view, sort order and folders-first for every folder that has no `.DS_Store` of its own, so fewer are needed.
+- **Finder defaults**: view, sort key and direction, group-by and folders-first for every folder without its own `.DS_Store`, written to all four view styles, verified, then Finder is relaunched.
 - **Startup disk** (off by default, warning on enable): removes `.DS_Store` from your home folder and Applications continuously, with an optional time limit (1 h … 1 week) or indefinitely. System folders and `~/Library` are never touched.
 - **Safety**: never the startup disk, never system folders, never outside the area being cleaned, never a mount point itself. Volume-level folders are matched only at the top of a volume.
 - **Activity log** of everything removed.
 
-Runs from the menu bar. One window configures everything.
+Runs from the menu bar. One window, six panes: Clean · Rules · Locations · Finder · Options · Activity.
 
 ## Install
 

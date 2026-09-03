@@ -1,6 +1,7 @@
 import AppKit
 import ServiceManagement
 import UserNotifications
+import WinnowCore
 
 enum AppBundle {
     /// Login items and notifications only work when running from a real `.app` bundle.
@@ -51,12 +52,25 @@ enum LoginItem {
     }
 }
 
-enum Finder {
-    static func relaunch() {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
-        process.arguments = ["Finder"]
-        try? process.run()
+/// Applies Finder defaults: write, verify, then quit Finder so it relaunches with them.
+enum FinderApplier {
+    static let finderID = "com.apple.finder"
+
+    @MainActor
+    static func apply(_ defaults: FinderDefaults) async throws {
+        try defaults.write()
+        let running = NSRunningApplication.runningApplications(withBundleIdentifier: finderID)
+        running.forEach { $0.terminate() }
+        for _ in 0..<30 where !running.allSatisfy(\.isTerminated) {
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+        running.filter { !$0.isTerminated }.forEach { $0.forceTerminate() }
+        // launchd normally restarts Finder on its own; make sure.
+        try? await Task.sleep(nanoseconds: 1_500_000_000)
+        if NSRunningApplication.runningApplications(withBundleIdentifier: finderID).isEmpty {
+            let url = URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app")
+            NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+        }
     }
 }
 

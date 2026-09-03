@@ -58,14 +58,10 @@ final class AppModel: ObservableObject {
     @Published private(set) var activity: [ActivityEntry] = []
     @Published private(set) var statistics = ActivityStatistics()
     @Published private(set) var sweep: SweepState = .idle
-    @Published private(set) var finderNeedsRelaunch = false
-    @Published var finderDefaults = FinderDefaults.read() {
-        didSet {
-            guard finderDefaults != oldValue else { return }
-            finderDefaults.write()
-            finderNeedsRelaunch = true
-        }
-    }
+    /// Finder defaults as edited in the window; written only on Apply.
+    @Published var finderDraft: FinderDefaults
+    @Published private(set) var finderApplied: FinderDefaults
+    @Published private(set) var isApplyingFinder = false
     @Published var startupDiskWarningShown = false
     @Published var lastError: String?
 
@@ -78,10 +74,9 @@ final class AppModel: ObservableObject {
     init(engine: Engine = Engine()) {
         self.engine = engine
         var initial = engine.settings
-        if FinderPreferences.isSupported {
-            initial.prevention.noDSStoreOnNetwork = FinderPreferences.isSuppressed(network: true)
-            initial.prevention.noDSStoreOnUSB = FinderPreferences.isSuppressed(network: false)
-        }
+        let finder = FinderDefaults.read()
+        finderDraft = finder
+        finderApplied = finder
         if LoginItem.isAvailable {
             initial.general.launchAtLogin = LoginItem.isEnabled
         }
@@ -398,21 +393,6 @@ final class AppModel: ObservableObject {
         )
     }
 
-    func dsStoreBinding(network: Bool) -> Binding<Bool> {
-        Binding(
-            get: { [weak self] in
-                guard let self else { return false }
-                return network ? self.settings.prevention.noDSStoreOnNetwork : self.settings.prevention.noDSStoreOnUSB
-            },
-            set: { [weak self] on in
-                guard let self else { return }
-                FinderPreferences.setSuppressed(network: network, on)
-                if network { self.settings.prevention.noDSStoreOnNetwork = on } else { self.settings.prevention.noDSStoreOnUSB = on }
-                self.finderNeedsRelaunch = true
-            }
-        )
-    }
-
     var spotlightBinding: Binding<Bool> {
         Binding(
             get: { [weak self] in self?.settings.prevention.noSpotlightOnCleanedVolumes ?? false },
@@ -432,9 +412,29 @@ final class AppModel: ObservableObject {
         )
     }
 
-    func relaunchFinder() {
-        Finder.relaunch()
-        finderNeedsRelaunch = false
+    // MARK: - Finder
+
+    var finderHasChanges: Bool { finderDraft != finderApplied }
+
+    /// Writes the draft to Finder's preferences and relaunches Finder so it takes effect.
+    func applyFinderDefaults() {
+        guard finderHasChanges, !isApplyingFinder else { return }
+        isApplyingFinder = true
+        let draft = finderDraft
+        Task { @MainActor in
+            do {
+                try await FinderApplier.apply(draft)
+                finderApplied = draft
+            } catch {
+                lastError = error.localizedDescription
+                finderApplied = FinderDefaults.read()
+            }
+            isApplyingFinder = false
+        }
+    }
+
+    func revertFinderDraft() {
+        finderDraft = finderApplied
     }
 
     // MARK: - Startup disk

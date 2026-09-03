@@ -2,21 +2,59 @@ import SwiftUI
 import UniformTypeIdentifiers
 import WinnowCore
 
+enum Pane: String, CaseIterable, Identifiable {
+    case clean, rules, locations, finder, options, activity
+
+    var id: Pane { self }
+
+    var label: String {
+        switch self {
+        case .clean: return "Clean"
+        case .rules: return "Rules"
+        case .locations: return "Locations"
+        case .finder: return "Finder"
+        case .options: return "Options"
+        case .activity: return "Activity"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .clean: return "wind"
+        case .rules: return "checklist"
+        case .locations: return "externaldrive"
+        case .finder: return "macwindow"
+        case .options: return "slider.horizontal.3"
+        case .activity: return "clock"
+        }
+    }
+}
+
 struct MainView: View {
     @EnvironmentObject private var model: AppModel
+    @State private var pane: Pane? = .clean
     @State private var dropTargeted = false
 
     var body: some View {
-        Form {
-            StatusSection()
-            RulesSection()
-            VolumesSection()
-            FoldersSection()
-            OptionsSection()
-            ActivitySection()
+        NavigationSplitView {
+            List(Pane.allCases, selection: $pane) { pane in
+                Label(pane.label, systemImage: pane.symbol)
+            }
+            .navigationSplitViewColumnWidth(min: 150, ideal: 168, max: 220)
+        } detail: {
+            Form {
+                switch pane ?? .clean {
+                case .clean: CleanPane()
+                case .rules: RulesPane()
+                case .locations: LocationsPane()
+                case .finder: FinderPane()
+                case .options: OptionsPane()
+                case .activity: ActivityPane()
+                }
+            }
+            .formStyle(.grouped)
         }
-        .formStyle(.grouped)
-        .frame(minWidth: 480, minHeight: 480)
+        .frame(minWidth: 660, minHeight: 460)
         .overlay {
             if dropTargeted {
                 RoundedRectangle(cornerRadius: 8)
@@ -68,270 +106,27 @@ struct MainView: View {
     }
 }
 
-// MARK: - Status
+/// Two-line row: title plus a secondary caption.
+struct Captioned: View {
+    let title: String
+    let caption: String?
 
-struct StatusSection: View {
-    @EnvironmentObject private var model: AppModel
-
-    var body: some View {
-        Section {
-            HStack(spacing: 10) {
-                Circle()
-                    .fill(model.isWatching ? Color.green : Color.secondary.opacity(0.5))
-                    .frame(width: 8, height: 8)
-                Text(model.statusText)
-                Spacer()
-                Button(model.isWatching ? "Pause" : "Resume") { model.toggleWatching() }
-                Button("Sweep Now") { model.sweepEverything() }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(model.sweep != .idle)
-            }
-            if case .scanning(let label, let detail) = model.sweep {
-                HStack(spacing: 10) {
-                    ProgressView().controlSize(.small)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Scanning \(label)")
-                        Text(detail)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-                    Spacer()
-                    Button("Cancel") { model.cancelSweep() }
-                }
-            }
-        } footer: {
-            Text("Drop a folder on this window to clean just that folder.")
-        }
+    init(_ title: String, _ caption: String? = nil) {
+        self.title = title
+        self.caption = caption
     }
-}
-
-// MARK: - Rules
-
-struct RulesSection: View {
-    @EnvironmentObject private var model: AppModel
-    @State private var newPattern = ""
 
     var body: some View {
-        Section("Remove") {
-            ForEach(JunkCatalog.builtIn) { rule in
-                Toggle(isOn: model.ruleBinding(rule)) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(rule.name)
-                        Text(rule.summary)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-            ForEach(model.settings.rules.custom) { custom in
-                HStack {
-                    Text(custom.pattern)
-                    Spacer()
-                    Button { model.removeCustomPattern(custom.id) } label: {
-                        Image(systemName: "minus.circle")
-                    }
-                    .buttonStyle(.plain)
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            if let caption, !caption.isEmpty {
+                Text(caption)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
-                }
-            }
-            TextField("Add a name or pattern, like Thumbs.db or *.bak", text: $newPattern)
-                .textFieldStyle(.plain)
-                .onSubmit {
-                    model.addCustomPattern(newPattern)
-                    newPattern = ""
-                }
-        }
-    }
-}
-
-// MARK: - Volumes
-
-struct VolumesSection: View {
-    @EnvironmentObject private var model: AppModel
-
-    var body: some View {
-        Section("Disks") {
-            Toggle("External disks", isOn: $model.settings.volumes.cleanExternal)
-            Toggle("Network volumes", isOn: $model.settings.volumes.cleanNetwork)
-            Toggle("Internal disks", isOn: $model.settings.volumes.cleanInternal)
-            Toggle("Skip Mac-formatted disks", isOn: $model.settings.volumes.onlyNonMacFormatted)
-            ForEach(model.volumes) { volume in
-                Toggle(isOn: model.volumeBinding(volume)) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(volume.name)
-                        Text(model.volumeDetail(volume))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .disabled(!model.canToggle(volume))
-            }
-        }
-    }
-}
-
-// MARK: - Folders
-
-struct FoldersSection: View {
-    @EnvironmentObject private var model: AppModel
-
-    var body: some View {
-        Section("Folders") {
-            ForEach(model.settings.locations) { location in
-                HStack {
-                    Toggle(isOn: model.locationEnabledBinding(location.id)) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(location.displayName)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                            Text(location.recursive ? "With subfolders" : "This folder only")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    Button { model.removeLocation(location.id) } label: {
-                        Image(systemName: "minus.circle")
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                }
-                .contextMenu {
-                    Toggle("Include Subfolders", isOn: model.locationRecursiveBinding(location.id))
-                    Button("Remove") { model.removeLocation(location.id) }
-                }
-            }
-            Button("Add Folder…") { model.addFolders() }
-        }
-    }
-}
-
-// MARK: - Options
-
-struct OptionsSection: View {
-    @EnvironmentObject private var model: AppModel
-
-    var body: some View {
-        Section("Options") {
-            Picker("Removal", selection: $model.settings.general.deletionMode) {
-                ForEach(DeletionMode.allCases, id: \.self) { mode in
-                    Text(mode.label).tag(mode)
-                }
-            }
-            Toggle("Clean disks when they connect", isOn: $model.settings.volumes.cleanOnMount)
-            Toggle("Clean disks before they eject", isOn: $model.settings.volumes.cleanOnEject)
-            Toggle("Leave apps and packages alone", isOn: $model.settings.general.skipPackages)
-            Toggle("Notify after cleaning", isOn: $model.settings.general.notify)
-            Toggle("Launch at login", isOn: model.launchAtLoginBinding)
-            Toggle("Spotlight: don't index cleaned disks", isOn: model.spotlightBinding)
-        }
-        Section {
-            Toggle("Don't write .DS_Store on network volumes", isOn: model.dsStoreBinding(network: true))
-            Toggle("Don't write .DS_Store on USB disks", isOn: model.dsStoreBinding(network: false))
-            Picker("Default view", selection: $model.finderDefaults.viewStyle) {
-                Text("Unchanged").tag(FinderViewStyle?.none)
-                ForEach(FinderViewStyle.allCases, id: \.self) { style in
-                    Text(style.label).tag(FinderViewStyle?.some(style))
-                }
-            }
-            Picker("Sort by", selection: $model.finderDefaults.sortKey) {
-                Text("Unchanged").tag(FinderSortKey?.none)
-                ForEach(FinderSortKey.allCases, id: \.self) { key in
-                    Text(key.label).tag(FinderSortKey?.some(key))
-                }
-            }
-            Toggle("Folders first", isOn: $model.finderDefaults.foldersFirst)
-            if model.finderNeedsRelaunch {
-                HStack {
-                    Text("Takes effect after Finder relaunches.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Button("Relaunch Finder") { model.relaunchFinder() }
-                }
-            }
-        } header: {
-            Text("Finder")
-        } footer: {
-            Text("Defaults apply to every folder without its own .DS_Store, so fewer of them are needed.")
-        }
-        Section {
-            Toggle(isOn: model.startupDiskBinding) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Remove .DS_Store on the startup disk")
-                    Text(model.startupDiskDetail ?? "Home folder and Applications. Off by default.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .alert("Remove .DS_Store on the startup disk?", isPresented: $model.startupDiskWarningShown) {
-                Button("Turn On", role: .destructive) { model.enableStartupDisk() }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text(AppModel.startupDiskWarning)
-            }
-            Picker("Turn off after", selection: model.startupDurationBinding) {
-                ForEach(AppModel.startupDurations, id: \.seconds) { choice in
-                    Text(choice.label).tag(choice.seconds)
-                }
-            }
-        } header: {
-            Text("Startup disk")
-        }
-        Section {
-            TextEditor(text: $model.exclusionsDraft)
-                .font(.body.monospaced())
-                .frame(minHeight: 56)
-        } header: {
-            Text("Leave alone")
-        } footer: {
-            Text("One per line: a folder path, or a name pattern such as *.sketch.")
-        }
-    }
-}
-
-// MARK: - Activity
-
-struct ActivitySection: View {
-    @EnvironmentObject private var model: AppModel
-
-    var body: some View {
-        Section {
-            if model.activity.isEmpty {
-                Text("Nothing yet")
-                    .foregroundStyle(.secondary)
-            }
-            ForEach(model.activity.prefix(60)) { entry in
-                HStack(alignment: .firstTextBaseline) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(entry.message)
-                        if let path = entry.path {
-                            Text(path)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                        }
-                    }
-                    Spacer()
-                    Text(entry.date, format: .relative(presentation: .named))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        } header: {
-            HStack {
-                Text("Activity")
-                Spacer()
-                if let stats = model.statisticsText {
-                    Text(stats)
-                }
-                if !model.activity.isEmpty {
-                    Button("Clear") { model.clearActivity() }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.secondary)
-                }
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
         }
     }

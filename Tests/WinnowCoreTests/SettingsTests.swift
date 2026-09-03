@@ -34,7 +34,7 @@ final class SettingsTests: XCTestCase {
         settings.rules.setEnabled(false, ruleID: "ds_store")
         settings.rules.custom = [CustomPattern(pattern: "*.bak", entryKind: .file, scope: .anywhere)]
         settings.locations = [WatchedLocation(path: box.path + "/Photos/", recursive: false)]
-        settings.prevention.noDSStoreOnUSB = true
+        settings.prevention.noSpotlightOnCleanedVolumes = true
         try store.save(settings)
         let loaded = store.load()
         XCTAssertEqual(loaded, settings)
