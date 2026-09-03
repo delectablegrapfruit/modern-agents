@@ -22,24 +22,25 @@ final class FolderViewTests: XCTestCase {
         var view = FolderView(path: box.path + "/Pictures", viewStyle: .icons, sortKey: .dateAdded)
         view.options.icon.iconSize = 128
         let records = try FolderViewWriter.records(for: view)
-        XCTAssertEqual(records.map(\.structID), ["vstl", "vSrn", "icvp"])
+        XCTAssertEqual(records.map(\.structID), ["vstl", "icvl", "vSrn", "icvp"])
         XCTAssertEqual(records[0].value, .type("icnv"))
-        let icvp = plist(records[2])!
+        XCTAssertEqual(records[1].value, .type("icnv"))
+        let icvp = plist(records[3])!
         XCTAssertEqual(plistDouble(icvp["iconSize"]), 128)
         XCTAssertEqual(icvp["arrangeBy"] as? String, "dateAdded")
 
         let list = FolderView(path: box.path + "/Pictures", viewStyle: .list, sortKey: .size, ascending: false)
         let listRecords = try FolderViewWriter.records(for: list)
-        XCTAssertEqual(listRecords.map(\.structID), ["vstl", "vSrn", "lsvp", "lsvP"])
-        let lsvP = plist(listRecords[3])!
+        XCTAssertEqual(listRecords.map(\.structID), ["vstl", "icvl", "vSrn", "lsvp", "lsvP"])
+        let lsvP = plist(listRecords[4])!
         XCTAssertEqual(lsvP["sortColumn"] as? String, "size")
         let columns = lsvP["columns"] as! [[String: Any]]
         let size = columns.first { $0["identifier"] as? String == "size" }!
         XCTAssertEqual(plistBool(size["visible"]), true)
         XCTAssertEqual(plistBool(size["ascending"]), false)
 
-        XCTAssertEqual(try FolderViewWriter.records(for: FolderView(path: box.path, viewStyle: .columns)).map(\.structID), ["vstl", "vSrn"])
-        XCTAssertEqual(try FolderViewWriter.records(for: FolderView(path: box.path, viewStyle: .gallery)).map(\.structID), ["vstl", "vSrn", "glvp"])
+        XCTAssertEqual(try FolderViewWriter.records(for: FolderView(path: box.path, viewStyle: .columns)).map(\.structID), ["vstl", "icvl", "vSrn"])
+        XCTAssertEqual(try FolderViewWriter.records(for: FolderView(path: box.path, viewStyle: .gallery)).map(\.structID), ["vstl", "icvl", "vSrn", "glvp"])
     }
 
     func testWriteMergesWithExistingRecordsAndRemoveStripsThem() throws {
@@ -54,10 +55,15 @@ final class FolderViewTests: XCTestCase {
         XCTAssertTrue(merged.records.contains(foreign))
         XCTAssertFalse(merged.records.contains(stale))
         XCTAssertTrue(merged.records.contains { $0.structID == "vstl" && $0.value == .type("glyv") })
+        XCTAssertTrue(merged.records.contains { $0.structID == "bwsp" }, "window settings are added when missing")
+
+        try FolderViewWriter.write(view)
+        let twice = try DSStoreFile.read(try Data(contentsOf: URL(fileURLWithPath: store)))
+        XCTAssertEqual(twice.records.filter { $0.structID == "bwsp" }.count, 1)
 
         try FolderViewWriter.remove(view)
         let stripped = try DSStoreFile.read(try Data(contentsOf: URL(fileURLWithPath: store)))
-        XCTAssertEqual(stripped.records, [foreign])
+        XCTAssertEqual(Set(stripped.records.map(\.structID)), ["Iloc", "bwsp"])
 
         try DSStoreFile(records: try FolderViewWriter.records(for: view)).encoded().write(to: URL(fileURLWithPath: store))
         try FolderViewWriter.remove(view)
@@ -105,21 +111,42 @@ final class FolderViewTests: XCTestCase {
         XCTAssertEqual(relativePaths(again.removed, from: box.path), ["USB/Pics/.DS_Store"])
     }
 
-    func testResetFolderSettingsUsesStartupRootsAndKeepsManaged() throws {
+    func testResetCoversStartupRootsAndEveryDriveButKeepsManaged() throws {
         try box.file("Users/me/Desktop/.DS_Store")
+        try box.file("Users/me/Library/Preferences/.DS_Store")
         try box.file("Users/me/Pictures/.DS_Store")
         try box.file("Users/me/Desktop/.Spotlight-V100/x")
+        try box.file("Internal/Projects/.DS_Store")
+        try box.file("Internal/.Spotlight-V100/x")
+        try box.file("ReadOnly/.DS_Store")
+        let internalDisk = VolumeInfo(id: "i", name: "Data", mountPoint: box.path + "/Internal", kind: .internalDisk, fileSystem: "apfs")
+        let readOnly = VolumeInfo(id: "r", name: "Disc", mountPoint: box.path + "/ReadOnly", kind: .external, fileSystem: "udf", isReadOnly: true)
+        let boot = VolumeInfo(id: "b", name: "Boot", mountPoint: "/", kind: .boot, fileSystem: "apfs")
         let store = SettingsStore(fileURL: box.root.appendingPathComponent("config/settings.json"))
-        let engine = Engine(store: store, inspector: StaticVolumeInspector([]),
+        let engine = Engine(store: store, inspector: StaticVolumeInspector([boot, internalDisk, readOnly]),
                             log: ActivityLog(fileURL: box.root.appendingPathComponent("config/activity.jsonl")))
         engine.startupDiskRoots = [box.path + "/Users"]
         var settings = engine.settings
         settings.folderViews = [FolderView(path: box.path + "/Users/me/Pictures")]
         engine.update(settings)
+        engine.refreshVolumes()
+
+        XCTAssertEqual(Set(engine.dsStoreOnlyTargets().map(\.path)), [box.path + "/Users", box.path + "/Internal"])
         let result = try engine.resetFolderSettings()
-        XCTAssertEqual(relativePaths(result.removed, from: box.path), ["Users/me/Desktop/.DS_Store"])
+        XCTAssertEqual(relativePaths(result.removed, from: box.path),
+                       ["Users/me/Desktop/.DS_Store", "Users/me/Library/Preferences/.DS_Store", "Internal/Projects/.DS_Store"])
         XCTAssertTrue(box.exists("Users/me/Pictures/.DS_Store"))
         XCTAssertTrue(box.exists("Users/me/Desktop/.Spotlight-V100"))
+        XCTAssertTrue(box.exists("Internal/.Spotlight-V100"), "only the .DS_Store rule applies here")
+        XCTAssertTrue(box.exists("ReadOnly/.DS_Store"))
+
+        // A drive already cleaned by policy keeps its full-rule target; no duplicate.
+        settings.startupDisk.enable()
+        settings.volumes.cleanInternal = true
+        engine.update(settings)
+        let paths = engine.fullSweepTargets().map(\.path)
+        XCTAssertEqual(paths.filter { $0 == box.path + "/Internal" }.count, 1)
+        XCTAssertTrue(engine.fullSweepTargets().contains { $0.path == box.path + "/Users" })
     }
 
     func testListOptionsRoundTripThroughPlist() {

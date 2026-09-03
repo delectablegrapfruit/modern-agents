@@ -20,7 +20,9 @@ struct FinderPane: View {
             Picker("Group by", selection: $model.finderDraft.groupBy) {
                 ForEach(FinderGroupBy.allCases, id: \.self) { Text($0.label).tag($0) }
             }
-            Toggle("Folders first", isOn: $model.finderDraft.foldersFirst)
+            Toggle(isOn: $model.finderDraft.foldersFirst) {
+                Captioned("Folders first", "Finder applies this when sorting by name.")
+            }
         }
         Section {
             Picker("Mode", selection: $optionsMode) {
@@ -63,9 +65,28 @@ struct FinderPane: View {
             Toggle("Don’t write on USB disks", isOn: $model.finderDraft.noDSStoreOnUSB)
         }
         Section {
+            Toggle(isOn: model.startupDiskBinding) {
+                Captioned("Enforce defaults on every drive",
+                          model.startupDiskDetail ?? "Keeps removing .DS_Store everywhere, so changes made in Finder last only for the session.")
+            }
+            .alert("Enforce Finder defaults everywhere?", isPresented: $model.startupDiskWarningShown) {
+                Button("Turn On", role: .destructive) { model.enableStartupDisk() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(AppModel.startupDiskWarning)
+            }
+            Picker("Turn off after", selection: model.startupDurationBinding) {
+                ForEach(AppModel.startupDurations, id: \.seconds) { choice in
+                    Text(choice.label).tag(choice.seconds)
+                }
+            }
+        } header: {
+            Text("Enforce")
+        }
+        Section {
             Toggle(isOn: $model.resetFoldersOnApply) {
-                Captioned("Reset existing folder settings when applying",
-                          "Removes .DS_Store across your home folder and Applications so every folder adopts the defaults. Folders above keep theirs.")
+                Captioned("Reset every folder to these defaults now",
+                          "Removes .DS_Store across your home folder, Applications and every connected drive. Folders above keep theirs.")
             }
             HStack {
                 Text(statusText)

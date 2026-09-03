@@ -36,7 +36,7 @@ public struct SweepTarget: Hashable, Identifiable {
 
     public init(startupDisk path: String) {
         self.path = SafetyPolicy.standardize(path)
-        label = "Startup disk · " + NSString(string: self.path).lastPathComponent
+        label = "Finder defaults · " + NSString(string: self.path).lastPathComponent
         recursive = true
         source = .startupDisk
         volume = nil
@@ -255,9 +255,15 @@ public final class Engine {
 
     private func startupTargets(_ current: Settings) -> [SweepTarget] {
         guard current.startupDisk.isActive() else { return [] }
-        return startupDiskRoots
-            .filter { FileStats.info($0)?.isDirectory == true }
-            .map { SweepTarget(startupDisk: $0) }
+        return dsStoreOnlyTargets()
+    }
+
+    /// Everywhere Finder defaults are enforced with the `.DS_Store` rule alone: the
+    /// startup disk's user areas plus every writable connected volume.
+    public func dsStoreOnlyTargets() -> [SweepTarget] {
+        let roots = startupDiskRoots.filter { FileStats.info($0)?.isDirectory == true }
+        let volumes = mountedVolumes.filter { $0.kind != .boot && !$0.isReadOnly }.map(\.mountPoint)
+        return (roots + volumes).map { SweepTarget(startupDisk: $0) }
     }
 
     /// Rules applied to one target: the startup disk only ever loses `.DS_Store`.
@@ -417,15 +423,12 @@ public final class Engine {
         return SafetyPolicy(volumeRoots: Set(mountedVolumes.map(\.mountPoint)).union(["/"]), exemptPaths: Set(kept))
     }
 
-    /// Removes `.DS_Store` across the startup-disk user areas so folders adopt the
-    /// Finder defaults. Folders with their own view keep theirs.
+    /// Removes `.DS_Store` across the startup disk's user areas and every connected
+    /// volume so folders adopt the Finder defaults. Folders with their own view keep theirs.
     public func resetFolderSettings(progress: ((SweepPhase) -> Void)? = nil,
                                     isCancelled: () -> Bool = { false }) throws -> SweepResult {
-        let targets = startupDiskRoots
-            .filter { FileStats.info($0)?.isDirectory == true }
-            .map { SweepTarget(startupDisk: $0) }
-        return try performSweep(targets: targets, dryRun: false, source: "Finder defaults reset",
-                                progress: progress, isCancelled: isCancelled)
+        try performSweep(targets: dsStoreOnlyTargets(), dryRun: false, source: "Finder defaults reset",
+                         progress: progress, isCancelled: isCancelled)
     }
 
     private func scanOptions(_ current: Settings, target: SweepTarget) -> ScanOptions {

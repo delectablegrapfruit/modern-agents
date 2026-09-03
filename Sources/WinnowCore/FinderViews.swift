@@ -340,8 +340,15 @@ public struct FolderView: Codable, Identifiable, Hashable {
 
 /// Writes a folder's view into its `.DS_Store`, keeping whatever else Finder stored there.
 public enum FolderViewWriter {
-    /// Record ids that describe the folder's own view.
-    public static let managedIDs: Set<String> = ["vstl", "vSrn", "icvp", "icvo", "lsvp", "lsvP", "lsvo", "glvp"]
+    /// Record ids that describe the folder's own view. `vstl` is what Finder writes for
+    /// "Always open in … view"; `icvl` is the form DMG tools use and Finder also honours.
+    public static let managedIDs: Set<String> = ["vstl", "icvl", "vSrn", "icvp", "icvo", "lsvp", "lsvP", "lsvo", "glvp"]
+
+    /// Window settings Finder expects next to a folder's view; only added when none exist.
+    static let defaultWindowSettings: [String: Any] = [
+        "ContainerShowSidebar": true, "ShowPathbar": true, "ShowSidebar": true, "ShowStatusBar": true,
+        "ShowTabView": false, "ShowToolbar": true, "SidebarWidth": 192, "WindowBounds": "{{120, 120}, {920, 600}}",
+    ]
 
     public static func plistData(_ dictionary: [String: Any]) throws -> Data {
         do {
@@ -354,6 +361,7 @@ public enum FolderViewWriter {
     public static func records(for view: FolderView) throws -> [DSStoreRecord] {
         var out = [
             DSStoreRecord(filename: ".", structID: "vstl", value: .type(view.viewStyle.rawValue)),
+            DSStoreRecord(filename: ".", structID: "icvl", value: .type(view.viewStyle.rawValue)),
             DSStoreRecord(filename: ".", structID: "vSrn", value: .long(1)),
         ]
         let sort = view.sortKey.rawValue
@@ -389,7 +397,10 @@ public enum FolderViewWriter {
         let url = URL(fileURLWithPath: view.dsStorePath)
         var file = existingFile(at: url) ?? DSStoreFile()
         file.records.removeAll { $0.filename == "." && managedIDs.contains($0.structID) }
-        let fresh = try records(for: view)
+        var fresh = try records(for: view)
+        if !file.records.contains(where: { $0.filename == "." && $0.structID == "bwsp" }) {
+            fresh.append(DSStoreRecord(filename: ".", structID: "bwsp", value: .blob(try plistData(defaultWindowSettings))))
+        }
         file.records += fresh
         let data: Data
         do {

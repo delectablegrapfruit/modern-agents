@@ -179,6 +179,7 @@ public struct FinderDefaults: Hashable {
         let desktop = FinderDefaults.desktopServicesDomain
         FinderDefaults.set(viewStyle.rawValue, for: "FXPreferredViewStyle", in: finder)
         FinderDefaults.set(foldersFirst, for: "_FXSortFoldersFirst", in: finder)
+        FinderDefaults.set(foldersFirst, for: "_FXSortFoldersFirstOnDesktop", in: finder)
         FinderDefaults.set(groupBy.rawValue, for: "FXPreferredGroupBy", in: finder)
         FinderDefaults.set(sortLabel, for: "FXArrangeGroupViewBy", in: finder)
         let standard = mergedStandardViewSettings(into: FinderDefaults.value("StandardViewSettings", in: finder) as? [String: Any])

@@ -28,13 +28,10 @@ public struct SafetyPolicy {
         self.exemptPaths = Set(exemptPaths.map { SafetyPolicy.standardize($0) })
     }
 
+    /// System locations. The home Library is deliberately not here: only folder-level
+    /// rules such as `.DS_Store` can match inside it, and Finder browses it too.
     public static var defaultProtectedPrefixes: [String] {
-        var list = ["/System", "/Library", "/usr", "/bin", "/sbin", "/private", "/etc", "/var", "/dev", "/cores", "/opt"]
-        let home = NSHomeDirectory()
-        if !home.isEmpty && home != "/" {
-            list.append(home + "/Library")
-        }
-        return list
+        ["/System", "/Library", "/usr", "/bin", "/sbin", "/private", "/etc", "/var", "/dev", "/cores", "/opt"]
     }
 
     public static func standardize(_ path: String) -> String {

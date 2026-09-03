@@ -63,7 +63,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var finderApplied: FinderDefaults
     @Published private(set) var folderViewsApplied: [FolderView]
     @Published private(set) var isApplyingFinder = false
-    @Published var resetFoldersOnApply = false
+    @Published var resetFoldersOnApply = true
     @Published private(set) var finderStatus: String?
     @Published var editingFolderView: FolderView?
     @Published var startupDiskWarningShown = false
@@ -436,6 +436,8 @@ final class AppModel: ObservableObject {
         let current = settings
         Task { @MainActor in
             var problems: [String] = []
+            // Finder writes its own .DS_Store files when it quits, so quit it first.
+            await FinderApplier.quitFinder()
             do { try draft.write() } catch { problems.append(error.localizedDescription) }
 
             let wanted = Dictionary(views.filter(\.isEnabled).map { ($0.path, $0) }, uniquingKeysWith: { a, _ in a })
@@ -454,7 +456,7 @@ final class AppModel: ObservableObject {
                 resetCount = result?.removedCount
             }
 
-            await FinderApplier.relaunchFinder()
+            await FinderApplier.launchFinder()
 
             finderApplied = problems.isEmpty ? draft : FinderDefaults.read()
             folderViewsApplied = views
@@ -523,8 +525,9 @@ final class AppModel: ObservableObject {
     ]
 
     static let startupDiskWarning = "Finder keeps each folder's view, sort order, icon positions and window size in its .DS_Store file. "
-        + "Removing those files continuously across your home folder and Applications resets every folder to the Finder defaults, "
-        + "again and again, until this is turned off. System folders and ~/Library are never touched."
+        + "Winnow will remove those files continuously across your home folder, Applications and every connected drive, "
+        + "so every folder follows the defaults and changes made in Finder last only until the folder is next opened. "
+        + "Folders with their own view keep theirs. System folders are never touched."
 
     /// Turning on goes through the warning first; turning off is immediate.
     var startupDiskBinding: Binding<Bool> {
@@ -557,6 +560,10 @@ final class AppModel: ObservableObject {
         guard settings.startupDisk.isEnabled else { return nil }
         guard let until = settings.startupDisk.expiresAt else { return "On until turned off" }
         return "On until " + until.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    func volumeIsStartupDisk(_ volume: VolumeInfo) -> Bool {
+        volume.kind == .boot
     }
 
     func clearActivity() {

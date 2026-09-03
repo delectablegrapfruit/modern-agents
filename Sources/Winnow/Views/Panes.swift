@@ -54,6 +54,11 @@ struct RulesPane: View {
     @EnvironmentObject private var model: AppModel
     @State private var newPattern = ""
 
+    private func addPattern() {
+        model.addCustomPattern(newPattern)
+        newPattern = ""
+    }
+
     var body: some View {
         Section("Remove") {
             ForEach(JunkCatalog.builtIn) { rule in
@@ -74,14 +79,17 @@ struct RulesPane: View {
                     .foregroundStyle(.secondary)
                 }
             }
-            TextField("Add a name or pattern, like Thumbs.db or *.bak", text: $newPattern)
-                .textFieldStyle(.plain)
-                .onSubmit {
-                    model.addCustomPattern(newPattern)
-                    newPattern = ""
-                }
+            HStack {
+                TextField("Name or pattern, e.g. Thumbs.db or *.bak", text: $newPattern)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit(addPattern)
+                Button("Add", action: addPattern)
+                    .disabled(newPattern.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
         } header: {
             Text("Also remove")
+        } footer: {
+            Text("Exact names or wildcards. Matched anywhere Winnow cleans.")
         }
         Section {
             TextEditor(text: $model.exclusionsDraft)
@@ -113,13 +121,14 @@ struct LocationsPane: View {
             ForEach(model.volumes) { volume in
                 Toggle(isOn: model.volumeBinding(volume)) {
                     Captioned(volume.name, model.volumeDetail(volume))
+                        .foregroundStyle(model.canToggle(volume) ? .primary : .secondary)
                 }
                 .disabled(!model.canToggle(volume))
             }
         } header: {
             Text("Connected now")
         } footer: {
-            Text("Switching a disk here overrides the policy above for that disk only.")
+            Text("Switching a disk here overrides the policy above for that disk only. The startup disk never has junk removed; its .DS_Store files are handled under Finder.")
         }
         Section {
             ForEach(model.settings.locations) { location in
@@ -140,26 +149,9 @@ struct LocationsPane: View {
             }
             Button("Add Folder…") { model.addFolders() }
         } header: {
-            Text("Folders")
-        }
-        Section {
-            Toggle(isOn: model.startupDiskBinding) {
-                Captioned("Remove .DS_Store on the startup disk",
-                          model.startupDiskDetail ?? "Home folder and Applications. Off by default.")
-            }
-            .alert("Remove .DS_Store on the startup disk?", isPresented: $model.startupDiskWarningShown) {
-                Button("Turn On", role: .destructive) { model.enableStartupDisk() }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text(AppModel.startupDiskWarning)
-            }
-            Picker("Turn off after", selection: model.startupDurationBinding) {
-                ForEach(AppModel.startupDurations, id: \.seconds) { choice in
-                    Text(choice.label).tag(choice.seconds)
-                }
-            }
-        } header: {
-            Text("Startup disk")
+            Text("Extra folders")
+        } footer: {
+            Text("Cleaned with every rule, even on disks switched off above — for a synced or shared folder on the startup disk, say.")
         }
     }
 }

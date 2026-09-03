@@ -52,20 +52,29 @@ enum LoginItem {
     }
 }
 
-/// Quits Finder so it relaunches and picks up new preferences and `.DS_Store` files.
+/// Finder must be quit before `.DS_Store` files are written (it flushes its own on
+/// quit) and relaunched afterwards so it reads the new preferences and files.
 enum FinderApplier {
     static let finderID = "com.apple.finder"
 
     @MainActor
-    static func relaunchFinder() async {
+    static func quitFinder() async {
         let running = NSRunningApplication.runningApplications(withBundleIdentifier: finderID)
+        guard !running.isEmpty else { return }
         running.forEach { $0.terminate() }
         for _ in 0..<30 where !running.allSatisfy(\.isTerminated) {
             try? await Task.sleep(nanoseconds: 100_000_000)
         }
         running.filter { !$0.isTerminated }.forEach { $0.forceTerminate() }
+        for _ in 0..<20 where !running.allSatisfy(\.isTerminated) {
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+    }
+
+    @MainActor
+    static func launchFinder() async {
         // launchd normally restarts Finder on its own; make sure.
-        try? await Task.sleep(nanoseconds: 1_500_000_000)
+        try? await Task.sleep(nanoseconds: 800_000_000)
         if NSRunningApplication.runningApplications(withBundleIdentifier: finderID).isEmpty {
             let url = URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app")
             _ = try? await NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
