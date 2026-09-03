@@ -75,6 +75,11 @@ public struct ScanOptions {
     public func firstMatch(name: String, isDirectory: Bool, atVolumeRoot: Bool) -> JunkRule? {
         rules.first { $0.matches(name: name, isDirectory: isDirectory, atVolumeRoot: atVolumeRoot) }
     }
+
+    /// Whether any rule could match this name regardless of kind or location.
+    public func couldMatch(name: String) -> Bool {
+        rules.contains { $0.matchesName(name) }
+    }
 }
 
 public enum ScanError: Error, LocalizedError, Equatable {

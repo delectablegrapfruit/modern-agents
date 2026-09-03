@@ -52,12 +52,15 @@ public final class PollingWatcher: ChangeWatcher {
 public final class FSEventsWatcher: ChangeWatcher {
     public var onEvent: ((WatchEvent) -> Void)?
     public let paths: [String]
+    /// Subtrees the kernel should not report at all (at most eight).
+    public let excludedPaths: [String]
     public let latency: TimeInterval
     private var stream: FSEventStreamRef?
     private let queue = DispatchQueue(label: "winnow.fsevents", qos: .utility)
 
-    public init(paths: [String], latency: TimeInterval = 2.0) {
+    public init(paths: [String], excluding excludedPaths: [String] = [], latency: TimeInterval = 0.5) {
         self.paths = paths
+        self.excludedPaths = Array(excludedPaths.prefix(8))
         self.latency = latency
     }
 
@@ -75,6 +78,9 @@ public final class FSEventsWatcher: ChangeWatcher {
                                                 FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
                                                 latency,
                                                 FSEventStreamCreateFlags(flags)) else { return }
+        if !excludedPaths.isEmpty {
+            FSEventStreamSetExclusionPaths(created, excludedPaths as CFArray)
+        }
         FSEventStreamSetDispatchQueue(created, queue)
         FSEventStreamStart(created)
         stream = created
@@ -102,6 +108,8 @@ private let fsEventsCallback: FSEventStreamCallback = { _, info, count, eventPat
     guard let paths = (cfArray as NSArray) as? [String] else { return }
     let mustRescan = FSEventStreamEventFlags(kFSEventStreamEventFlagMustScanSubDirs)
         | FSEventStreamEventFlags(kFSEventStreamEventFlagRootChanged)
+        | FSEventStreamEventFlags(kFSEventStreamEventFlagKernelDropped)
+        | FSEventStreamEventFlags(kFSEventStreamEventFlagUserDropped)
     for i in 0..<count where eventFlags[i] & mustRescan != 0 {
         watcher.emit(.rescan)
         return
@@ -110,12 +118,31 @@ private let fsEventsCallback: FSEventStreamCallback = { _, info, count, eventPat
 }
 #endif
 
+/// Runs several watchers as one; used on network volumes where file events
+/// arrive only for changes made from this Mac and polling catches the rest.
+public final class CompositeWatcher: ChangeWatcher {
+    public var onEvent: ((WatchEvent) -> Void)? {
+        didSet { members.forEach { $0.onEvent = onEvent } }
+    }
+    private let members: [ChangeWatcher]
+
+    public init(_ members: [ChangeWatcher]) {
+        self.members = members
+    }
+
+    public func start() { members.forEach { $0.start() } }
+    public func stop() { members.forEach { $0.stop() } }
+}
+
 public enum Watchers {
-    /// Best watcher for a root: FSEvents on macOS local volumes, polling elsewhere.
-    public static func make(root: String, preferPolling: Bool, pollInterval: TimeInterval) -> ChangeWatcher {
+    /// Best watcher for a root: FSEvents on macOS, plus polling where events are unreliable.
+    public static func make(root: String, excluding: [String] = [], alsoPoll: Bool, pollInterval: TimeInterval) -> ChangeWatcher {
         #if os(macOS)
-        if !preferPolling { return FSEventsWatcher(paths: [root]) }
-        #endif
+        let events = FSEventsWatcher(paths: [root], excluding: excluding)
+        if !alsoPoll { return events }
+        return CompositeWatcher([events, PollingWatcher(root: root, interval: pollInterval)])
+        #else
         return PollingWatcher(root: root, interval: pollInterval)
+        #endif
     }
 }

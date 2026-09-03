@@ -83,6 +83,11 @@ public struct JunkRule: Codable, Identifiable, Hashable {
         case .directory: if !isDirectory { return false }
         case .any: break
         }
+        return matchesName(name)
+    }
+
+    /// Name test alone, ignoring kind and scope. Cheap enough to run on every file event.
+    public func matchesName(_ name: String) -> Bool {
         switch matchKind {
         case .exact:
             return name.caseInsensitiveCompare(pattern) == .orderedSame

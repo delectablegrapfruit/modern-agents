@@ -28,6 +28,86 @@ public enum FinderPreferences {
     }
 }
 
+public enum FinderViewStyle: String, CaseIterable, Hashable {
+    case icons = "icnv"
+    case list = "Nlsv"
+    case columns = "clmv"
+    case gallery = "glyv"
+
+    public var label: String {
+        switch self {
+        case .icons: return "Icons"
+        case .list: return "List"
+        case .columns: return "Columns"
+        case .gallery: return "Gallery"
+        }
+    }
+}
+
+public enum FinderSortKey: String, CaseIterable, Hashable {
+    case name, dateModified, dateCreated, dateAdded, size, kind
+
+    public var label: String {
+        switch self {
+        case .name: return "Name"
+        case .dateModified: return "Date Modified"
+        case .dateCreated: return "Date Created"
+        case .dateAdded: return "Date Added"
+        case .size: return "Size"
+        case .kind: return "Kind"
+        }
+    }
+}
+
+/// Finder's global defaults for folders that carry no `.DS_Store` of their own.
+/// Equivalent to View Options → "Use as Defaults". Finder must relaunch to notice.
+public struct FinderDefaults: Hashable {
+    public static let domain = "com.apple.finder"
+
+    public var viewStyle: FinderViewStyle?
+    public var sortKey: FinderSortKey?
+    public var foldersFirst: Bool
+
+    public init(viewStyle: FinderViewStyle? = nil, sortKey: FinderSortKey? = nil, foldersFirst: Bool = false) {
+        self.viewStyle = viewStyle
+        self.sortKey = sortKey
+        self.foldersFirst = foldersFirst
+    }
+
+    public static var isSupported: Bool { FinderPreferences.isSupported }
+
+    public static func read() -> FinderDefaults {
+        guard isSupported, let defaults = UserDefaults(suiteName: domain) else { return FinderDefaults() }
+        let standard = defaults.dictionary(forKey: "StandardViewSettings")
+        let list = standard?["ListViewSettings"] as? [String: Any]
+        let sortRaw = list?["sortColumn"] as? String
+        return FinderDefaults(
+            viewStyle: defaults.string(forKey: "FXPreferredViewStyle").flatMap(FinderViewStyle.init(rawValue:)),
+            sortKey: sortRaw.flatMap(FinderSortKey.init(rawValue:)),
+            foldersFirst: defaults.bool(forKey: "_FXSortFoldersFirst"))
+    }
+
+    @discardableResult
+    public func write() -> Bool {
+        guard FinderDefaults.isSupported, let defaults = UserDefaults(suiteName: FinderDefaults.domain) else { return false }
+        if let viewStyle { defaults.set(viewStyle.rawValue, forKey: "FXPreferredViewStyle") }
+        defaults.set(foldersFirst, forKey: "_FXSortFoldersFirst")
+        if let sortKey {
+            var standard = defaults.dictionary(forKey: "StandardViewSettings") ?? [:]
+            for key in ["ListViewSettings", "ExtendedListViewSettingsV2"] {
+                var view = standard[key] as? [String: Any] ?? [:]
+                view["sortColumn"] = sortKey.rawValue
+                standard[key] = view
+            }
+            var icon = standard["IconViewSettings"] as? [String: Any] ?? [:]
+            icon["arrangeBy"] = sortKey.rawValue
+            standard["IconViewSettings"] = icon
+            defaults.set(standard, forKey: "StandardViewSettings")
+        }
+        return defaults.synchronize()
+    }
+}
+
 public enum VolumeMarkers {
     public static let spotlightMarker = ".metadata_never_index"
 

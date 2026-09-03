@@ -166,6 +166,47 @@ public struct PreventionSettings: Codable, Hashable {
     }
 }
 
+/// Opt-in cleaning of `.DS_Store` on the startup disk (user areas only), with an optional time limit.
+public struct StartupDiskSettings: Codable, Hashable {
+    public var isEnabled = false
+    /// nil = stay enabled indefinitely.
+    public var durationSeconds: Double?
+    public var expiresAt: Date?
+
+    public init() {}
+
+    enum CodingKeys: String, CodingKey { case isEnabled, durationSeconds, expiresAt }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        isEnabled = try c.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? false
+        durationSeconds = try c.decodeIfPresent(Double.self, forKey: .durationSeconds)
+        expiresAt = try c.decodeIfPresent(Date.self, forKey: .expiresAt)
+    }
+
+    public func isActive(at date: Date = Date()) -> Bool {
+        guard isEnabled else { return false }
+        if let expiresAt { return expiresAt > date }
+        return true
+    }
+
+    public func hasExpired(at date: Date = Date()) -> Bool {
+        guard isEnabled, let expiresAt else { return false }
+        return expiresAt <= date
+    }
+
+    /// Turns cleaning on now, computing the expiry from `durationSeconds`.
+    public mutating func enable(from date: Date = Date()) {
+        isEnabled = true
+        expiresAt = durationSeconds.map { date.addingTimeInterval($0) }
+    }
+
+    public mutating func disable() {
+        isEnabled = false
+        expiresAt = nil
+    }
+}
+
 public struct GeneralSettings: Codable, Hashable {
     /// Master switch for background watching.
     public var isWatching = true
@@ -174,7 +215,7 @@ public struct GeneralSettings: Codable, Hashable {
     public var launchAtLogin = false
     public var skipPackages = true
     /// Seconds between full re-scans of network volumes (which do not deliver file events).
-    public var pollIntervalSeconds: Double = 300
+    public var pollIntervalSeconds: Double = 60
 
     public init() {}
 
@@ -189,7 +230,7 @@ public struct GeneralSettings: Codable, Hashable {
         notify = try c.decodeIfPresent(Bool.self, forKey: .notify) ?? true
         launchAtLogin = try c.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? false
         skipPackages = try c.decodeIfPresent(Bool.self, forKey: .skipPackages) ?? true
-        pollIntervalSeconds = try c.decodeIfPresent(Double.self, forKey: .pollIntervalSeconds) ?? 300
+        pollIntervalSeconds = try c.decodeIfPresent(Double.self, forKey: .pollIntervalSeconds) ?? 60
     }
 }
 
@@ -202,11 +243,12 @@ public struct Settings: Codable, Hashable {
     public var locations: [WatchedLocation] = []
     public var volumes = VolumePolicy()
     public var prevention = PreventionSettings()
+    public var startupDisk = StartupDiskSettings()
     public var exclusions: [String] = []
 
     public init() {}
 
-    enum CodingKeys: String, CodingKey { case schema, general, rules, locations, volumes, prevention, exclusions }
+    enum CodingKeys: String, CodingKey { case schema, general, rules, locations, volumes, prevention, startupDisk, exclusions }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -216,6 +258,7 @@ public struct Settings: Codable, Hashable {
         locations = try c.decodeIfPresent([WatchedLocation].self, forKey: .locations) ?? []
         volumes = try c.decodeIfPresent(VolumePolicy.self, forKey: .volumes) ?? VolumePolicy()
         prevention = try c.decodeIfPresent(PreventionSettings.self, forKey: .prevention) ?? PreventionSettings()
+        startupDisk = try c.decodeIfPresent(StartupDiskSettings.self, forKey: .startupDisk) ?? StartupDiskSettings()
         exclusions = try c.decodeIfPresent([String].self, forKey: .exclusions) ?? []
     }
 
