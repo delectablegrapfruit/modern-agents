@@ -52,7 +52,7 @@ final class EngineTests: XCTestCase {
         settings.views.folders = [FolderView(path: box.path + "/Users/me/Pictures", view: FinderView(mode: .gallery))]
         engine.update(settings)
         engine.refreshVolumes()
-        XCTAssertEqual(engine.safety.keptStores, [box.path + "/Users/me/.DS_Store"])
+        XCTAssertEqual(engine.safety.keptStores, [box.path + "/Users/me/.DS_Store", box.path + "/Users/me/Pictures/.DS_Store"])
 
         let preview = try engine.sweep(roots: engine.roots(), dryRun: true)
         XCTAssertEqual(preview.removed.count, 5)
@@ -62,6 +62,7 @@ final class EngineTests: XCTestCase {
         XCTAssertEqual(relative(outcome.removed, from: box.path),
                        ["USB/.DS_Store", "USB/.Spotlight-V100", "USB/Docs/.DS_Store", "Users/me/Desktop/.DS_Store", "Users/me/Library/Preferences/.DS_Store"])
         XCTAssertTrue(box.exists("Users/me/.DS_Store"), "the store carrying Pictures' view stays")
+        XCTAssertFalse(box.exists("Users/me/Pictures/.DS_Store"), "a kept store that was never written is not created by a sweep")
         XCTAssertTrue(box.exists("USB/Docs/a"))
         XCTAssertTrue(box.exists("Elsewhere/.DS_Store"))
         XCTAssertEqual(engine.log.statistics.removed, 5)
@@ -126,6 +127,27 @@ final class EngineTests: XCTestCase {
         engine.update(settings)
         try engine.applyStores(previous: previous)
         XCTAssertFalse(box.exists("Users/me/.DS_Store"), "a retired view takes its store with it")
+        XCTAssertFalse(box.exists("Users/me/Pictures/.DS_Store"))
+    }
+
+    func testLockedItemsGoThroughTheHelperWhenThereIsOne() throws {
+        try XCTSkipIf(getuid() == 0, "root can delete anything")
+        try box.file("USB/Locked/.DS_Store")
+        XCTAssertEqual(chmod(box.path + "/USB/Locked", 0o500), 0)
+        defer { chmod(box.path + "/USB/Locked", 0o700) }
+        engine.refreshVolumes()
+        var asked: [Item] = []
+        let mount = box.path + "/USB"
+        engine.privilegedRemove = { items in
+            asked = items
+            chmod(mount + "/Locked", 0o700)
+            return Remover(safety: Safety(mountPoints: [mount])).remove(items)
+        }
+        let outcome = try engine.sweep(roots: engine.roots())
+        XCTAssertEqual(asked.map(\.name), [".DS_Store"], "what the user could not delete is handed to the helper")
+        XCTAssertEqual(relative(outcome.removed, from: box.path), ["USB/Locked/.DS_Store"])
+        XCTAssertTrue(outcome.locked.isEmpty)
+        XCTAssertTrue(engine.lockedItems.isEmpty)
     }
 
     func testUnmountedVolumesDropOut() throws {
@@ -153,5 +175,71 @@ final class EngineTests: XCTestCase {
         _ = try engine.sweep(roots: engine.roots())
         XCTAssertTrue(engine.lockedItems.isEmpty)
         XCTAssertTrue(reported.isEmpty)
+    }
+}
+
+final class HelperTests: XCTestCase {
+    var box: Sandbox!
+    var server: HelperServer!
+    var thread: Thread!
+
+    override func setUpWithError() throws {
+        box = try Sandbox()
+        try box.dir("USB")
+        // Socket paths are short; the sandbox path may not be.
+        let socket = "/tmp/sift-test-\(getpid())-\(Int.random(in: 0..<100000)).sock"
+        let mount = box.path + "/USB"
+        server = HelperServer(socketPath: socket, uid: getuid(), mountPoints: { [mount] })
+        XCTAssertTrue(server.listen())
+        let server = self.server!
+        thread = Thread { server.serve() }
+        thread.start()
+    }
+
+    override func tearDown() {
+        server.stop()
+        box.destroy()
+    }
+
+    func testRemovesOnlyCatalogJunkWhereItBelongs() throws {
+        try box.file("USB/.Spotlight-V100/index", "x")
+        try box.file("USB/.fseventsd/000001", "x")
+        try box.file("USB/Docs/.Trashes/501/a", "x")
+        try box.file("USB/Docs/real.txt", "keep")
+        XCTAssertTrue(HelperClient.isReady(at: server.socketPath))
+
+        let items = [
+            Item(path: box.path + "/USB/.Spotlight-V100", kind: .spotlight, isDirectory: true, size: 0),
+            Item(path: box.path + "/USB/.fseventsd", kind: .fsevents, isDirectory: true, size: 0),
+            Item(path: box.path + "/USB/Docs/.Trashes", kind: .trashes, isDirectory: true, size: 0),
+            Item(path: box.path + "/USB/Docs/real.txt", kind: .dsStore, isDirectory: false, size: 0),
+            Item(path: "/System/Library/.DS_Store", kind: .dsStore, isDirectory: false, size: 0),
+        ]
+        let outcome = HelperClient.remove(items, at: server.socketPath)
+        XCTAssertEqual(relative(outcome.removed, from: box.path), ["USB/.Spotlight-V100", "USB/.fseventsd"])
+        XCTAssertEqual(outcome.skipped.count, 3, "a Trash below the volume root, a real file and a system path are refused")
+        XCTAssertTrue(outcome.failed.isEmpty)
+        XCTAssertTrue(box.exists("USB/Docs/.Trashes/501/a"))
+        XCTAssertTrue(box.exists("USB/Docs/real.txt"))
+        XCTAssertTrue(box.exists("USB/.fseventsd/no_log"))
+        XCTAssertTrue(box.exists("USB/.metadata_never_index"))
+    }
+
+    func testUnreachableHelperReportsEveryItemAsStillLocked() {
+        let item = Item(path: box.path + "/USB/.Trashes", kind: .trashes, isDirectory: true, size: 0)
+        let outcome = HelperClient.remove([item], at: "/tmp/sift-nobody-\(getpid()).sock")
+        XCTAssertEqual(outcome.failed.count, 1)
+        XCTAssertTrue(outcome.failed[0].needsAdministrator)
+        XCTAssertFalse(HelperClient.isReady(at: "/tmp/sift-nobody-\(getpid()).sock"))
+    }
+
+    func testInstallScriptAndPlist() {
+        let plist = HelperInstall.plist(uid: 501)
+        XCTAssertTrue(plist.contains("<string>dev.sift.helper.501</string>"))
+        XCTAssertTrue(plist.contains("<string>/var/run/sift-501.sock</string>"))
+        let script = HelperInstall.script(bundledHelper: "/Applications/Sift.app/Contents/MacOS/sift-helper", uid: 501)
+        XCTAssertTrue(script.contains("/bin/cp -f '/Applications/Sift.app/Contents/MacOS/sift-helper' '/Library/PrivilegedHelperTools/dev.sift.helper'"))
+        XCTAssertTrue(script.contains("launchctl bootstrap system '/Library/LaunchDaemons/dev.sift.helper.501.plist'"))
+        XCTAssertFalse(plist.contains("'"), "the plist is passed through single quotes")
     }
 }

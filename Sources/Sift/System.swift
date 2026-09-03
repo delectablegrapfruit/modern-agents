@@ -61,6 +61,30 @@ enum Permissions {
     }
 }
 
+/// Sift's root helper: installed once with an administrator password, then
+/// used for anything the app itself may not delete.
+enum Helper {
+    static var bundled: String { Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/sift-helper").path }
+    static var socketPath: String { HelperInstall.socketPath(uid: getuid()) }
+
+    /// Installed, current, and answering.
+    static var isReady: Bool {
+        guard let installed = FileManager.default.contents(atPath: HelperInstall.binary),
+              let ours = FileManager.default.contents(atPath: bundled), installed == ours else { return false }
+        return HelperClient.isReady(at: socketPath)
+    }
+
+    /// One administrator password; the helper then starts at every boot.
+    static func install() throws {
+        guard AppBundle.isBundled, FileManager.default.fileExists(atPath: bundled) else {
+            throw HelperError.refused("The helper ships inside Sift.app; run Sift from the app bundle.")
+        }
+        try Privileged.run(HelperInstall.script(bundledHelper: bundled, uid: getuid()))
+        let deadline = Date().addingTimeInterval(5)
+        while !HelperClient.isReady(at: socketPath) && Date() < deadline { Thread.sleep(forTimeInterval: 0.2) }
+    }
+}
+
 /// Finder reads its preferences at launch and flushes `.DS_Store` on the way
 /// out, so it is stopped before anything is written and started again after.
 enum Finder {

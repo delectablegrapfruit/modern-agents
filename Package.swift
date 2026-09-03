@@ -4,12 +4,15 @@ import PackageDescription
 var products: [Product] = [
     .library(name: "SiftCore", targets: ["SiftCore"]),
     .executable(name: "sift-cli", targets: ["SiftCLI"]),
+    .executable(name: "sift-helper", targets: ["SiftHelper"]),
 ]
 
 var targets: [Target] = [
     // Platform-neutral engine: catalog, scanning, removal, views, `.DS_Store`, settings. Also builds on Linux.
     .target(name: "SiftCore", path: "Sources/SiftCore"),
     .executableTarget(name: "SiftCLI", dependencies: ["SiftCore"], path: "Sources/SiftCLI"),
+    // Root helper installed once as a launchd daemon; removes what the app itself may not.
+    .executableTarget(name: "SiftHelper", dependencies: ["SiftCore"], path: "Sources/SiftHelper"),
     .testTarget(name: "SiftCoreTests", dependencies: ["SiftCore"], path: "Tests/SiftCoreTests"),
 ]
 

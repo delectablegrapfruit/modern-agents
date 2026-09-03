@@ -2,11 +2,11 @@ import Foundation
 
 /// The `.DS_Store` files that carry folder views.
 ///
-/// Finder keeps a folder's own view ("Always open in … view") in the parent
-/// folder's `.DS_Store` under the folder's name; only a volume root, or a folder
-/// whose parent cannot be written, keeps it in its own store under ".". Sift
-/// writes the record where Finder looks for it and holds the store to exactly
-/// that: anything Finder adds is dropped again, so a view changed in Finder never
+/// Finder reads a folder's view ("Always open in … view") from the folder's own
+/// `.DS_Store` under "." when the folder is opened directly, and from the parent
+/// folder's store under the folder's name when it is reached from the parent.
+/// Sift writes the record in both places and holds each store to exactly that:
+/// anything Finder adds is dropped again, so a view changed in Finder never
 /// outlives the window it was changed in. Subfolders need no record: a window
 /// keeps its view while browsing down, and the window guard covers the rest.
 public struct StorePlan: Hashable {
@@ -17,10 +17,12 @@ public struct StorePlan: Hashable {
     public init(settings: ViewSettings, safety: Safety = Safety(), fileManager: FileManager = .default) {
         var stores: [String: [DSRecord]] = [:]
         for folder in settings.folders where Files.isDirectory(folder.path) && !safety.isProtected(folder.path) {
-            let directory = StorePlan.storeDirectory(for: folder.path, safety: safety, fileManager: fileManager)
-            let name = directory == folder.path ? "." : Paths.name(of: folder.path)
-            if let records = try? StorePlan.records(for: folder.view, as: name) {
-                stores[directory, default: []] += records
+            if let own = try? StorePlan.records(for: folder.view, as: ".") {
+                stores[folder.path, default: []] += own
+            }
+            let parent = StorePlan.storeDirectory(for: folder.path, safety: safety, fileManager: fileManager)
+            if parent != folder.path, let records = try? StorePlan.records(for: folder.view, as: Paths.name(of: folder.path)) {
+                stores[parent, default: []] += records
             }
         }
         self.stores = stores
@@ -31,7 +33,8 @@ public struct StorePlan: Hashable {
     /// Paths of every managed `.DS_Store`.
     public var storePaths: Set<String> { Set(stores.keys.map { $0 + "/.DS_Store" }) }
 
-    /// The directory whose `.DS_Store` holds `folder`'s view.
+    /// The parent directory whose `.DS_Store` also carries `folder`'s view, or the
+    /// folder itself when there is no writable parent on the same disk.
     public static func storeDirectory(for folder: String, safety: Safety = Safety(), fileManager: FileManager = .default) -> String {
         let f = Paths.standardize(folder)
         let parent = Paths.parent(of: f)

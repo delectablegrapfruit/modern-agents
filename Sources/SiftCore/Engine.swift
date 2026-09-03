@@ -38,6 +38,8 @@ public final class Engine {
     public var onRemoved: ((Outcome, Root) -> Void)?
     /// Items only an administrator can remove, as they are found and cleared.
     public var onLockedChanged: (([Item]) -> Void)?
+    /// Removes as root what the app itself could not. Set once the helper is installed.
+    public var privilegedRemove: (([Item]) -> Outcome)?
 
     private let state = DispatchQueue(label: "sift.engine.state")
     /// Live file events: kept short so a rescan never delays them.
@@ -318,8 +320,17 @@ public final class Engine {
                        progress: ((Phase) -> Void)? = nil, isCancelled: () -> Bool = { false },
                        quiet: Bool = false) -> Outcome {
         let remover = Remover(safety: safety, dryRun: dryRun, fileManager: fileManager)
-        let outcome = remover.remove(items, within: roots, progress: { progress?(.removing(done: $0, total: $1)) },
+        var outcome = remover.remove(items, within: roots, progress: { progress?(.removing(done: $0, total: $1)) },
                                      isCancelled: isCancelled)
+        // What the user may not delete, the helper may, without a word.
+        if !dryRun, let privileged = privilegedRemove, !outcome.locked.isEmpty {
+            let extra = privileged(outcome.locked)
+            let handled = Set((extra.removed + extra.failed.map(\.item) + extra.skipped.map(\.item)).map(\.path))
+            outcome.failed.removeAll { handled.contains($0.item.path) }
+            outcome.removed += extra.removed
+            outcome.failed += extra.failed
+            outcome.skipped += extra.skipped
+        }
         if !dryRun { noteLocked(outcome) }
         log.record(outcome, quiet: quiet)
         return outcome
@@ -345,40 +356,10 @@ public final class Engine {
         if Set(before) != Set(after) { onLockedChanged?(lockedItems) }
     }
 
-    #if os(macOS)
-    /// Removes what the current user may not, after an administrator password.
-    /// Main thread only. Spotlight is switched off on a disk before its index goes.
-    public func removeAsAdministrator(_ items: [Item]) -> Outcome {
-        var outcome = Outcome()
-        let safety = self.safety
-        var allowed: [Item] = []
-        for item in items {
-            switch safety.validate(path: item.path, within: roots().map(\.path)) {
-            case .refused(let reason): outcome.skipped.append(Failure(item: item, reason: reason))
-            case .allowed: allowed.append(item)
-            }
-        }
-        guard !allowed.isEmpty else { return outcome }
-        do {
-            try Privileged.run(Privileged.script(for: allowed))
-        } catch {
-            for item in allowed {
-                outcome.failed.append(Failure(item: item, reason: error.localizedDescription, needsAdministrator: true))
-            }
-            return outcome
-        }
-        for item in allowed {
-            let gone = Files.info(item.path) == nil || (item.kind == .fsevents && Junk.isQuietFSEvents(at: item.path))
-            if gone {
-                outcome.removed.append(item)
-            } else {
-                outcome.failed.append(Failure(item: item, reason: "Still present", needsAdministrator: true))
-            }
-        }
-        state.sync { for item in outcome.removed { _locked[item.path] = nil } }
-        onLockedChanged?(lockedItems)
-        log.record(outcome)
-        return outcome
+    /// Tries the items only an administrator could remove again, now with the helper.
+    public func retryLocked() {
+        let items = lockedItems
+        guard !items.isEmpty else { return }
+        _ = remove(items, within: roots().map(\.path), source: "administrator")
     }
-    #endif
 }

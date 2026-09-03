@@ -57,11 +57,22 @@ struct StatusSection: View {
                 }
             }
             if !model.locked.isEmpty {
-                HStack {
-                    Captioned("\(model.locked.count) item\(model.locked.count == 1 ? "" : "s") can only be removed by an administrator",
-                              model.locked.map { $0.name + " on " + Paths.name(of: $0.parent) }.joined(separator: ", "))
-                    Spacer()
-                    Button("Remove…") { model.removeAsAdministrator(model.locked) }
+                let count = "\(model.locked.count) item\(model.locked.count == 1 ? "" : "s")"
+                let names = model.locked.map { $0.name + " on " + Paths.name(of: $0.parent) }.joined(separator: ", ")
+                if model.helperReady {
+                    HStack {
+                        Captioned(count + " protected by macOS privacy controls",
+                                  "Add " + HelperInstall.binary + " under Full Disk Access · " + names)
+                        Spacer()
+                        Button("Open Settings") { model.openFullDiskAccess() }
+                    }
+                } else {
+                    HStack {
+                        Captioned(count + " can only be removed by an administrator",
+                                  "Allow once; Sift's helper then removes such items by itself · " + names)
+                        Spacer()
+                        Button("Allow…") { model.allowAdministrator() }
+                    }
                 }
             }
             if !model.hasFullDiskAccess {

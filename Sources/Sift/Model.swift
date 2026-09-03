@@ -57,6 +57,8 @@ final class Model: ObservableObject {
     @Published private(set) var hasFullDiskAccess = true
     @Published private(set) var canControlFinder = true
     @Published private(set) var reactsInstantly = false
+    /// The root helper is installed and answering.
+    @Published private(set) var helperReady = false
     /// The window shows itself once, the first time the app runs.
     private var wantsWindow: Bool
 
@@ -77,6 +79,7 @@ final class Model: ObservableObject {
 
         guardian.onNotAllowed = { [weak self] allowed in Task { @MainActor in self?.canControlFinder = allowed } }
         guardian.onModeChange = { [weak self] instant in Task { @MainActor in self?.reactsInstantly = instant } }
+        guardian.onProblem = { [weak self] message in self?.engine.log.info(message) }
         engine.onRootsChanged = { [weak self] list in Task { @MainActor in self?.roots = list } }
         engine.onLockedChanged = { [weak self] list in Task { @MainActor in self?.locked = list } }
         engine.log.onAppend = { [weak self] _ in Task { @MainActor in self?.scheduleActivityRefresh() } }
@@ -91,6 +94,7 @@ final class Model: ObservableObject {
             })
         }
         checkPermissions()
+        refreshHelper()
         try? FinderPrefs.preventStores()
         guardian.start()
         let settings = engine.settings
@@ -110,6 +114,29 @@ final class Model: ObservableObject {
 
     func checkPermissions() {
         hasFullDiskAccess = Permissions.hasFullDiskAccess
+    }
+
+    func refreshHelper() {
+        helperReady = Helper.isReady
+        let socket = Helper.socketPath
+        engine.privilegedRemove = helperReady ? { HelperClient.remove($0, at: socket) } : nil
+    }
+
+    /// Installs the helper (one password), then tries the locked items again.
+    func allowAdministrator() {
+        do {
+            try Helper.install()
+        } catch {
+            if (error as? Privileged.RunError) != .cancelled { self.error = error.localizedDescription }
+            return
+        }
+        refreshHelper()
+        guard helperReady else {
+            error = "The helper was installed but is not answering yet. Try again in a moment."
+            return
+        }
+        let engine = self.engine
+        Task.detached(priority: .utility) { engine.retryLocked() }
     }
 
     // MARK: - Status
@@ -194,23 +221,6 @@ final class Model: ObservableObject {
     func dismissSweep() {
         if case .removing = sweep { return }
         sweep = .idle
-    }
-
-    /// Removes what the current user could not, after an administrator password.
-    func removeAsAdministrator(_ items: [Item]) {
-        guard !items.isEmpty else { return }
-        let outcome = engine.removeAsAdministrator(items)
-        if case .finished(var previous) = sweep {
-            let paths = Set(items.map(\.path))
-            previous.failed.removeAll { paths.contains($0.item.path) }
-            previous.removed += outcome.removed
-            previous.failed += outcome.failed
-            previous.skipped += outcome.skipped
-            sweep = .finished(previous)
-        }
-        if let failure = outcome.failed.first, outcome.removed.isEmpty, !failure.reason.hasPrefix("Cancel") {
-            error = failure.reason
-        }
     }
 
     // MARK: - Views

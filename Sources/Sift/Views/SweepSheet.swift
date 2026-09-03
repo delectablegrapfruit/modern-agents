@@ -37,7 +37,9 @@ struct SweepSheet: View {
                     Spacer()
                 } else {
                     let locked = outcome.locked.count
-                    Text(locked > 0 ? "\(locked) belong\(locked == 1 ? "s" : "") to the system and need an administrator."
+                    Text(locked > 0
+                         ? (model.helperReady ? "\(locked) protected by macOS privacy controls; see the main window."
+                                              : "\(locked) belong\(locked == 1 ? "s" : "") to the system and need an administrator.")
                          : "\(outcome.failed.count) could not be removed.")
                         .foregroundStyle(.secondary)
                     List(outcome.failed, id: \.item.path) { failure in
@@ -46,9 +48,12 @@ struct SweepSheet: View {
                 }
                 HStack {
                     Spacer()
-                    if !outcome.locked.isEmpty {
-                        Button("Remove as Administrator…") { model.removeAsAdministrator(outcome.locked) }
-                            .buttonStyle(.borderedProminent)
+                    if !outcome.locked.isEmpty && !model.helperReady {
+                        Button("Allow Administrator…") {
+                            model.dismissSweep()
+                            model.allowAdministrator()
+                        }
+                        .buttonStyle(.borderedProminent)
                     }
                     Button("Done") { model.dismissSweep() }.keyboardShortcut(.defaultAction)
                 }

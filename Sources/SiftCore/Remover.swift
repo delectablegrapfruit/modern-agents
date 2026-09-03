@@ -122,35 +122,9 @@ public struct Remover {
     }
 }
 
-/// The shell script that removes items as root: Spotlight is switched off on the
-/// disk before its index goes, and the event journal is left in its quiet form,
-/// so neither grows back.
+/// Runs a shell as root after the administrator password dialog. Used once, to
+/// install the helper.
 public enum Privileged {
-    public static func script(for items: [Item]) -> String {
-        var commands: [String] = []
-        for item in items {
-            let quoted = quote(item.path)
-            switch item.kind {
-            case .spotlight:
-                let mount = quote(item.parent)
-                commands.append("/usr/bin/mdutil -i off \(mount) >/dev/null 2>&1 || true")
-                commands.append("/usr/bin/touch \(quote(item.parent + "/.metadata_never_index")) 2>/dev/null || true")
-                commands.append("/bin/rm -rf -- \(quoted)")
-            case .fsevents:
-                commands.append("/bin/rm -rf -- \(quoted)")
-                commands.append("/bin/mkdir -p \(quoted) && /usr/bin/touch \(quote(item.path + "/no_log"))")
-            default:
-                commands.append("/usr/bin/chflags -R nouchg,noschg \(quoted) 2>/dev/null || true")
-                commands.append("/bin/rm -rf -- \(quoted)")
-            }
-        }
-        return commands.joined(separator: "; ")
-    }
-
-    static func quote(_ s: String) -> String {
-        "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
-    }
-
     #if os(macOS)
     public enum RunError: Error, LocalizedError, Equatable {
         case cancelled

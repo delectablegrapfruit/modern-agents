@@ -7,9 +7,16 @@ Removes the hidden files macOS leaves on every disk, and makes Finder show folde
 **Cleans.** `.DS_Store`, `._` sidecar files and `.apdisk` are removed the moment they appear, everywhere
 Finder browses: your home folder, `/Users/Shared`, `/Applications` and every connected disk, internal,
 external or network. Disk-level folders (`.Spotlight-V100`, `.fseventsd`, `.Trashes`, `.TemporaryItems`)
-belong to the system; the window shows how many are waiting and removes them with an administrator
-password, switching Spotlight off on that disk and leaving the event journal in its quiet `no_log` form so
-neither grows back. Finder's own switches for not writing `.DS_Store` on network and USB disks are turned
+are removed too, switching Spotlight off on that disk and leaving the event journal in its quiet `no_log`
+form so neither grows back. On disks that enforce ownership those folders belong to root: the window says
+so and offers *Allow…*, which installs Sift's helper once (one administrator password, a launchd daemon at
+`/Library/PrivilegedHelperTools/dev.sift.helper` answering only your user, removing only catalog junk in
+catalog places). From then on such items go the same way as everything else, in the background. What is
+left after that is protected by macOS privacy controls (the Trash on other disks): add the helper under
+System Settings → Privacy & Security → Full Disk Access.
+
+To remove the helper, unload `dev.sift.helper.<your uid>` with `launchctl bootout system/…` and delete its
+plist in `/Library/LaunchDaemons` and the binary in `/Library/PrivilegedHelperTools`. Finder's own switches for not writing `.DS_Store` on network and USB disks are turned
 on. *Sweep* looks through everything on demand and shows what it found before removing it.
 
 Between sweeps Sift never walks a disk on its own: it only reacts to what the system reports, one wake-up
@@ -25,8 +32,9 @@ history, Time Machine markers, and `.metadata_never_index`.
 from Finder's View Options window for each mode, including the Desktop. Folders can have a view of their own,
 which the folders beneath them share unless they have one too. Applying relaunches Finder once.
 
-Finder keeps a folder's own view in the parent folder's `.DS_Store`; Sift writes that one record where Finder
-reads it and keeps the file to exactly that, so a view changed in Finder never outlives the window. Finder also
+Finder reads a folder's own view from the folder's `.DS_Store` when opened directly and from the parent
+folder's when reached from there; Sift writes the record in both and keeps each file to exactly that, so a
+view changed in Finder never outlives the window. Finder also
 keeps a window's view while you browse; Sift watches Finder's windows and gives each folder the view it should
 have as soon as a window shows it. That needs Automation access (asked once) and is instant with Accessibility
 access; otherwise Sift looks once a second, and only while Finder is the frontmost app.
@@ -76,6 +84,7 @@ The command line ships inside the app at `Sift.app/Contents/MacOS/sift-cli` and 
 | `Sources/SiftCore` | Catalog, safety, scanner, remover, volumes, watcher, views, Finder preferences, `.DS_Store` codec, folder stores, window guard, engine. Foundation only; builds on Linux. |
 | `Sources/Sift` | Menu bar app and its one window. |
 | `Sources/SiftCLI` | Command line (`sift-cli`). |
+| `Sources/SiftHelper` | Root helper (`sift-helper`), installed once as a launchd daemon. |
 | `Tests/SiftCoreTests` | Core tests. CI also checks `.DS_Store` files against the independent `ds_store` package. |
 
 MIT licensed.

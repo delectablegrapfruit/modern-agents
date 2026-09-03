@@ -13,6 +13,9 @@ final class Guardian {
     var onNotAllowed: ((Bool) -> Void)?
     /// Whether the guard reacts instantly (Accessibility granted) or by looking once a second.
     var onModeChange: ((Bool) -> Void)?
+    /// Finder refused a view; reported once per distinct message.
+    var onProblem: ((String) -> Void)?
+    private var lastProblem: String?
 
     private let views: () -> ViewSettings
     private var tracker = WindowGuard.Tracker()
@@ -132,7 +135,14 @@ final class Guardian {
                 onNotAllowed?(true)
             }
         } catch {
-            guard (error as? WindowGuard.ScriptError) == .notAllowed else { return }
+            guard (error as? WindowGuard.ScriptError) == .notAllowed else {
+                let message = error.localizedDescription
+                if message != lastProblem {
+                    lastProblem = message
+                    onProblem?(message)
+                }
+                return
+            }
             notAllowedSince = Date()
             wasNotAllowed = true
             onNotAllowed?(false)

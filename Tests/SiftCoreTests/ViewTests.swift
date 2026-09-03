@@ -203,13 +203,15 @@ final class StoreTests: XCTestCase {
         let plan = StorePlan(settings: settings([FolderView(path: box.path + "/Pictures", view: FinderView(mode: .gallery))]))
         XCTAssertEqual(StorePlan.storeDirectory(for: box.path + "/Pictures"), box.path)
         XCTAssertEqual(StorePlan.storeDirectory(for: "/"), "/")
-        XCTAssertEqual(plan.storePaths, [box.path + "/.DS_Store"])
-        XCTAssertEqual(try plan.writeAll(), 1)
+        XCTAssertEqual(plan.storePaths, [box.path + "/.DS_Store", box.path + "/Pictures/.DS_Store"])
+        XCTAssertEqual(try plan.writeAll(), 2)
         let records = try box.records(".DS_Store")
         XCTAssertEqual(Set(records.map(\.filename)), ["Pictures"])
         XCTAssertEqual(records.map(\.structID).sorted(), ["bwsp", "glvp", "vSrn", "vstl"])
         XCTAssertTrue(records.contains { $0.structID == "vstl" && $0.value == .type("glyv") })
-        XCTAssertFalse(box.exists("Pictures/.DS_Store"), "nothing of ours lives in the folder itself")
+        let own = try box.records("Pictures/.DS_Store")
+        XCTAssertEqual(Set(own.map(\.filename)), ["."], "the folder's own store carries the same view under \".\"")
+        XCTAssertTrue(own.contains { $0.structID == "vstl" && $0.value == .type("glyv") })
         XCTAssertEqual(try plan.writeAll(), 0, "already as planned")
     }
 
@@ -219,7 +221,7 @@ final class StoreTests: XCTestCase {
         XCTAssertEqual(chmod(box.path + "/Locked", 0o500), 0)
         defer { chmod(box.path + "/Locked", 0o700) }
         let plan = StorePlan(settings: settings([FolderView(path: box.path + "/Locked/Photos", view: FinderView(mode: .list))]))
-        XCTAssertEqual(plan.storePaths, [box.path + "/Locked/Photos/.DS_Store"])
+        XCTAssertEqual(plan.storePaths, [box.path + "/Locked/Photos/.DS_Store"], "no writable parent: the folder's own store alone")
         try plan.writeAll()
         XCTAssertEqual(Set(try box.records("Locked/Photos/.DS_Store").map(\.filename)), ["."])
     }
@@ -251,6 +253,7 @@ final class StoreTests: XCTestCase {
         let none = StorePlan(settings: ViewSettings())
         none.retire(from: plan)
         XCTAssertFalse(box.exists(".DS_Store"))
+        XCTAssertFalse(box.exists("Pictures/.DS_Store"))
     }
 
     func testMissingFoldersAreLeftOut() throws {

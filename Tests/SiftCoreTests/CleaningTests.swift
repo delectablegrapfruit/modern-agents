@@ -207,17 +207,4 @@ final class RemoverTests: XCTestCase {
         XCTAssertTrue(outcome.failed[0].needsAdministrator)
         XCTAssertEqual(outcome.locked.count, 1)
     }
-
-    func testPrivilegedScript() {
-        let items = [
-            Item(path: "/Volumes/U S'B/.Spotlight-V100", kind: .spotlight, isDirectory: true, size: 0),
-            Item(path: "/Volumes/USB/.fseventsd", kind: .fsevents, isDirectory: true, size: 0),
-            Item(path: "/Volumes/USB/.Trashes", kind: .trashes, isDirectory: true, size: 0),
-        ]
-        let script = Privileged.script(for: items)
-        XCTAssertTrue(script.contains("mdutil -i off '/Volumes/U S'\\''B'"))
-        XCTAssertTrue(script.contains("touch '/Volumes/U S'\\''B/.metadata_never_index'"))
-        XCTAssertTrue(script.contains("mkdir -p '/Volumes/USB/.fseventsd' && /usr/bin/touch '/Volumes/USB/.fseventsd/no_log'"))
-        XCTAssertTrue(script.contains("rm -rf -- '/Volumes/USB/.Trashes'"))
-    }
 }
