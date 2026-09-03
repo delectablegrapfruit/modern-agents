@@ -47,7 +47,7 @@ final class AppModel: ObservableObject {
 
     let engine: Engine
 
-    @Published var settings: Settings {
+    @Published var settings: WinnowCore.Settings {
         didSet { if settings != oldValue { scheduleSave() } }
     }
     @Published var exclusionsDraft: String {
@@ -99,7 +99,7 @@ final class AppModel: ObservableObject {
     func start() {
         let center = NSWorkspace.shared.notificationCenter
         let engine = self.engine
-        let refresh: (Notification) -> Void = { _ in
+        let refresh: @Sendable (Notification) -> Void = { _ in
             Task.detached(priority: .utility) { engine.refreshVolumes() }
         }
         observers.append(center.addObserver(forName: NSWorkspace.didMountNotification, object: nil, queue: nil, using: refresh))
@@ -278,7 +278,7 @@ final class AppModel: ObservableObject {
         var policy = settings.volumes
         policy.overrides[volume.id] = nil
         if Engine.decide(volume, policy: policy).isEligible != cleaned {
-            policy.overrides[volume.id] = cleaned ? .always : .never
+            policy.overrides[volume.id] = cleaned ? VolumeOverride.always : VolumeOverride.never
         }
         settings.volumes = policy
     }

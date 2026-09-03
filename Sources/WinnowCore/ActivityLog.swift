@@ -38,6 +38,8 @@ public struct ActivityStatistics: Hashable {
     public var itemsRemoved: Int = 0
     public var bytesFreed: Int64 = 0
     public var lastRemoval: Date?
+
+    public init() {}
 }
 
 /// Append-only JSON-lines record of what was removed and why.
