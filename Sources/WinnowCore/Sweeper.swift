@@ -1,6 +1,8 @@
 import Foundation
 #if canImport(Darwin)
 import Darwin
+#elseif canImport(Glibc)
+import Glibc
 #endif
 
 public struct SweepOptions {
@@ -19,6 +21,31 @@ public struct SweepOptions {
 public struct SweepFailure: Hashable, Codable {
     public let item: JunkItem
     public let reason: String
+    /// The item exists but this process lacks the rights to remove it (root-owned,
+    /// sticky-bit parent, or TCC-protected). Root or Full Disk Access would succeed.
+    public let needsPrivileges: Bool
+
+    public init(item: JunkItem, reason: String, needsPrivileges: Bool = false) {
+        self.item = item
+        self.reason = reason
+        self.needsPrivileges = needsPrivileges
+    }
+}
+
+public enum FailureClassifier {
+    /// True for EPERM/EACCES anywhere in the error chain.
+    public static func isPermissionError(_ error: Error) -> Bool {
+        var current: NSError? = error as NSError
+        while let err = current {
+            if err.domain == NSPOSIXErrorDomain, err.code == Int(EPERM) || err.code == Int(EACCES) { return true }
+            if err.domain == NSCocoaErrorDomain,
+               err.code == CocoaError.Code.fileWriteNoPermission.rawValue || err.code == CocoaError.Code.fileReadNoPermission.rawValue {
+                return true
+            }
+            current = err.userInfo[NSUnderlyingErrorKey] as? NSError
+        }
+        return false
+    }
 }
 
 public struct SweepResult: Codable, Hashable {
@@ -34,6 +61,8 @@ public struct SweepResult: Codable, Hashable {
     public init() {}
 
     public var removedCount: Int { removed.count }
+    /// Failed items that administrator rights would fix.
+    public var lockedItems: [JunkItem] { failed.filter(\.needsPrivileges).map(\.item) }
     public var duration: TimeInterval { finishedAt.timeIntervalSince(startedAt) }
     public var isEmpty: Bool { removed.isEmpty && failed.isEmpty && skipped.isEmpty }
 
@@ -97,7 +126,8 @@ public final class Sweeper {
                 result.removed.append(item)
                 result.bytesFreed += item.size
             } catch {
-                result.failed.append(SweepFailure(item: item, reason: error.localizedDescription))
+                result.failed.append(SweepFailure(item: item, reason: error.localizedDescription,
+                                                  needsPrivileges: FailureClassifier.isPermissionError(error)))
             }
         }
         result.finishedAt = Date()

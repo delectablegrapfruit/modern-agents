@@ -63,3 +63,33 @@ final class SweeperTests: XCTestCase {
         XCTAssertFalse(policy.isAtVolumeRoot("/Volumes/USB/a/.Trashes"))
     }
 }
+
+final class PermissionFailureTests: XCTestCase {
+    func testPermissionErrorsAreClassified() {
+        let posix = NSError(domain: NSPOSIXErrorDomain, code: Int(EACCES))
+        XCTAssertTrue(FailureClassifier.isPermissionError(posix))
+        let wrapped = NSError(domain: NSCocoaErrorDomain, code: CocoaError.Code.fileWriteUnknown.rawValue,
+                              userInfo: [NSUnderlyingErrorKey: NSError(domain: NSPOSIXErrorDomain, code: Int(EPERM))])
+        XCTAssertTrue(FailureClassifier.isPermissionError(wrapped))
+        let missing = NSError(domain: NSCocoaErrorDomain, code: CocoaError.Code.fileNoSuchFile.rawValue)
+        XCTAssertFalse(FailureClassifier.isPermissionError(missing))
+    }
+
+    func testUndeletableItemIsFlaggedAsLocked() throws {
+        try XCTSkipIf(getuid() == 0, "root can delete anything")
+        let box = try TestSandbox()
+        defer {
+            chmod(box.path + "/Locked", 0o700)
+            box.destroy()
+        }
+        try box.file("Locked/.DS_Store")
+        XCTAssertEqual(chmod(box.path + "/Locked", 0o500), 0)
+        let safety = SafetyPolicy(volumeRoots: [box.path])
+        let items = try JunkScanner(options: ScanOptions(rules: RuleSettings().activeRules, safety: safety)).scan(root: box.path)
+        XCTAssertEqual(items.map(\.name), [".DS_Store"])
+        let result = Sweeper(options: SweepOptions(), safety: safety).remove(items, within: [box.path])
+        XCTAssertEqual(result.failed.count, 1)
+        XCTAssertTrue(result.failed[0].needsPrivileges)
+        XCTAssertEqual(result.lockedItems.count, 1)
+    }
+}

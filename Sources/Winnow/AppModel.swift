@@ -225,6 +225,34 @@ final class AppModel: ObservableObject {
         sweep = .idle
     }
 
+    /// Retries the items the current user could not delete, as administrator.
+    func removeLockedItems() {
+        guard case .finished(let result) = sweep else { return }
+        let locked = result.lockedItems
+        guard !locked.isEmpty else { return }
+        let extra = engine.removeWithPrivileges(locked, within: result.rootsScanned, source: "locked items")
+        var merged = result
+        let lockedPaths = Set(locked.map(\.path))
+        merged.failed.removeAll { lockedPaths.contains($0.item.path) }
+        merged.removed += extra.removed
+        merged.bytesFreed += extra.bytesFreed
+        merged.failed += extra.failed
+        merged.skipped += extra.skipped
+        merged.finishedAt = Date()
+        sweep = .finished(merged)
+    }
+
+    /// Whether a failure looks like the Trash on another disk, which macOS gates behind Full Disk Access.
+    func needsFullDiskAccess(_ result: SweepResult) -> Bool {
+        result.failed.contains { $0.needsPrivileges && ($0.item.name == ".Trashes" || $0.item.path.contains("/.Trashes/")) }
+    }
+
+    func openFullDiskAccessSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
     func dismissSweep() {
         if case .removing = sweep { return }
         sweep = .idle
@@ -233,7 +261,9 @@ final class AppModel: ObservableObject {
     private func announce(_ result: SweepResult, label: String) {
         guard settings.general.notify, !result.removed.isEmpty || !result.failed.isEmpty else { return }
         var body = "\(result.removedCount) item\(result.removedCount == 1 ? "" : "s") · \(Format.bytes(result.bytesFreed))"
-        if !result.failed.isEmpty { body += " · \(result.failed.count) could not be removed" }
+        let locked = result.lockedItems.count
+        if locked > 0 { body += " · \(locked) need administrator access" }
+        if result.failed.count > locked { body += " · \(result.failed.count - locked) could not be removed" }
         Notifier.notify(title: "Cleaned \(label)", body: body)
     }
 

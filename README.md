@@ -26,6 +26,21 @@ A prebuilt app is committed at [`dist/Winnow.app.zip`](dist/Winnow.app.zip) (reb
 Unzip, move `Winnow.app` to Applications, open it. It is ad-hoc signed, so the first launch needs
 right-click → Open (or `xattr -d com.apple.quarantine Winnow.app`).
 
+## Permissions
+
+Some of what macOS leaves behind is owned by root or gated by privacy controls, so a normal
+user process cannot delete it:
+
+| Item | Why it fails | Fix |
+|------|--------------|-----|
+| `.Spotlight-V100`, `.fseventsd` | created by root daemons, mode 700 | *Remove as Administrator…* in the sweep result (asks for your password), or `sudo winnow-cli sweep /Volumes/Disk` |
+| `.TemporaryItems`, `.Trashes` subfolders | sticky-bit folders holding other users' entries | same as above |
+| `.Trashes` | protected by privacy controls on every disk | System Settings → Privacy & Security → Full Disk Access → add Winnow |
+| anything on APFS/HFS+ externals | ownership is enforced | Finder → Get Info on the disk → *Ignore ownership on this volume* (`diskutil disableOwnership /Volumes/Disk`) makes root-owned items deletable |
+
+Background cleaning never prompts for a password; it removes what it can and reports the rest in Activity once.
+Turn on *Spotlight: don't index cleaned disks* so `.Spotlight-V100` is not rebuilt after removal.
+
 ## Build
 
 Requires macOS 13 or later and Xcode 15 or later.

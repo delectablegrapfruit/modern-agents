@@ -54,8 +54,16 @@ struct SweepSheet: View {
                 Text("Removed \(result.removedCount) item\(result.removedCount == 1 ? "" : "s") · \(Format.bytes(result.bytesFreed))")
                     .font(.headline)
                 if !result.failed.isEmpty {
-                    Text("\(result.failed.count) could not be removed")
+                    let locked = result.lockedItems.count
+                    Text(locked > 0
+                         ? "\(locked) item\(locked == 1 ? "" : "s") belong to the system and need administrator access."
+                         : "\(result.failed.count) could not be removed")
                         .foregroundStyle(.secondary)
+                    if model.needsFullDiskAccess(result) {
+                        Text("The Trash on other disks is readable only with Full Disk Access for Winnow.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                     List(result.failed, id: \.item.path) { failure in
                         VStack(alignment: .leading, spacing: 2) {
                             Text(failure.item.path)
@@ -70,7 +78,14 @@ struct SweepSheet: View {
                     Spacer()
                 }
                 HStack {
+                    if model.needsFullDiskAccess(result) {
+                        Button("Open Privacy Settings") { model.openFullDiskAccessSettings() }
+                    }
                     Spacer()
+                    if !result.lockedItems.isEmpty {
+                        Button("Remove as Administrator…") { model.removeLockedItems() }
+                            .buttonStyle(.borderedProminent)
+                    }
                     Button("Done") { model.dismissSweep() }
                         .keyboardShortcut(.defaultAction)
                 }

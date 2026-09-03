@@ -89,6 +89,9 @@ func printSummary(_ result: SweepResult) {
     for failure in result.failed {
         FileHandle.standardError.write(Data("failed: \(failure.item.path): \(failure.reason)\n".utf8))
     }
+    if !result.lockedItems.isEmpty && getuid() != 0 {
+        FileHandle.standardError.write(Data("\(result.lockedItems.count) item(s) belong to the system; re-run with sudo to remove them.\n".utf8))
+    }
 }
 
 switch args.command {

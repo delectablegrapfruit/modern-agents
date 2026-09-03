@@ -80,6 +80,7 @@ public final class Engine {
     private var _volumes: [VolumeInfo] = []
     private var _watches: [String: (target: SweepTarget, watcher: ChangeWatcher)] = [:]
     private var _running = false
+    private var _reportedFailures: Set<String> = []
     private var volumeTimer: DispatchSourceTimer?
 
     public init(store: SettingsStore = SettingsStore(),
@@ -299,12 +300,12 @@ public final class Engine {
         switch event {
         case .rescan:
             guard let swept = try? performSweep(targets: [target], dryRun: false, source: target.label,
-                                                progress: nil, isCancelled: { false }) else { return }
+                                                progress: nil, isCancelled: { false }, quietRepeats: true) else { return }
             result = swept
         case .paths(let paths):
             let items = junkItems(fromEventPaths: paths, target: target, settings: current)
             guard !items.isEmpty else { return }
-            result = remove(items, within: [target.path], dryRun: false, source: target.label)
+            result = remove(items, within: [target.path], dryRun: false, source: target.label, quietRepeats: true)
         }
         if !result.removed.isEmpty || !result.failed.isEmpty {
             onAutoClean?(result, target)
@@ -383,18 +384,78 @@ public final class Engine {
     }
 
     /// Deletes `items`, refusing anything outside `roots`, and records the outcome.
+    /// With `quietRepeats`, failures already reported in this session are dropped
+    /// so background re-scans do not repeat the same complaint.
     public func remove(_ items: [JunkItem], within roots: [String], dryRun: Bool = false, source: String,
                        progress: ((SweepPhase) -> Void)? = nil,
-                       isCancelled: () -> Bool = { false }) -> SweepResult {
+                       isCancelled: () -> Bool = { false },
+                       quietRepeats: Bool = false) -> SweepResult {
         let current = settings
         let sweeper = Sweeper(options: SweepOptions(mode: current.general.deletionMode, dryRun: dryRun),
                               safety: safety(), fileManager: fileManager)
-        let result = sweeper.remove(items, within: roots,
+        var result = sweeper.remove(items, within: roots,
                                     progress: { done, total, item in progress?(.deleting(done: done, total: total, item: item)) },
                                     isCancelled: isCancelled)
+        if quietRepeats {
+            let failures = result.failed
+            result.failed = state.sync { failures.filter { _reportedFailures.insert($0.item.path).inserted } }
+        } else {
+            let removedPaths = result.removed.map(\.path)
+            state.sync { removedPaths.forEach { _reportedFailures.remove($0) } }
+        }
         log.recordResult(result, source: source)
         return result
     }
+
+    #if os(macOS)
+    /// Removes items the current user may not delete by asking for an administrator
+    /// password. Must be called on the main thread. Spotlight is switched off on the
+    /// affected volume when that prevention option is on, so the index is not rebuilt.
+    public func removeWithPrivileges(_ items: [JunkItem], within roots: [String], source: String) -> SweepResult {
+        var result = SweepResult()
+        result.rootsScanned = roots
+        let policy = safety()
+        var allowed: [JunkItem] = []
+        for item in items {
+            switch policy.validate(path: item.path, within: roots) {
+            case .denied(let reason): result.skipped.append(SweepFailure(item: item, reason: reason))
+            case .allowed: allowed.append(item)
+            }
+        }
+        guard !allowed.isEmpty else { return result }
+        var mounts: [String] = []
+        if settings.prevention.noSpotlightOnCleanedVolumes {
+            for item in allowed where item.ruleID == "spotlight" && !mounts.contains(item.parentPath) {
+                mounts.append(item.parentPath)
+            }
+        }
+        do {
+            try PrivilegedRemover.remove(paths: allowed.map(\.path), disableIndexingAt: mounts)
+        } catch {
+            let cancelled = (error as? PrivilegedRemovalError) == .cancelled
+            for item in allowed {
+                result.failed.append(SweepFailure(item: item, reason: error.localizedDescription, needsPrivileges: true))
+            }
+            result.finishedAt = Date()
+            if !cancelled { log.record(.error, "Administrator removal failed: \(error.localizedDescription)") }
+            return result
+        }
+        for item in allowed {
+            if FileStats.info(item.path) == nil {
+                result.removed.append(item)
+                result.bytesFreed += item.size
+            } else {
+                result.failed.append(SweepFailure(item: item, reason: "Still present after administrator removal", needsPrivileges: true))
+            }
+        }
+        for mount in mounts {
+            log.record(.prevention, "Stopped Spotlight indexing \(NSString(string: mount).lastPathComponent)", path: mount)
+        }
+        result.finishedAt = Date()
+        log.recordResult(result, source: source + " · administrator")
+        return result
+    }
+    #endif
 
     public func sweep(paths: [String], recursive: Bool = true, dryRun: Bool = false,
                       progress: ((SweepPhase) -> Void)? = nil,
@@ -418,10 +479,11 @@ public final class Engine {
 
     public func performSweep(targets: [SweepTarget], dryRun: Bool, source: String,
                              progress: ((SweepPhase) -> Void)?,
-                             isCancelled: () -> Bool) throws -> SweepResult {
+                             isCancelled: () -> Bool,
+                             quietRepeats: Bool = false) throws -> SweepResult {
         let items = try scan(targets: targets, progress: progress, isCancelled: isCancelled)
         var result = remove(items, within: targets.map(\.path), dryRun: dryRun, source: source,
-                            progress: progress, isCancelled: isCancelled)
+                            progress: progress, isCancelled: isCancelled, quietRepeats: quietRepeats)
         result.rootsScanned = targets.map(\.path)
         return result
     }
