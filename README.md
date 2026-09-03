@@ -52,16 +52,16 @@ Requires macOS 13 or later and Xcode 15 or later.
 ```sh
 make app     # builds build/Sift.app
 make test    # core tests (also run on Linux)
-make cli     # command-line tool (built as sift-cli; the app bundle carries it as sift)
+make cli     # command-line tool, sift-cli
 ```
 
 ```
-sift scan [folder…]     list junk without removing anything
-sift sweep [folder…]    remove junk (--dry-run to only list it)
-sift dsstore <folder>   show the records in a folder's .DS_Store
+sift-cli scan [folder…]     list junk without removing anything
+sift-cli sweep [folder…]    remove junk (--dry-run to only list it)
+sift-cli dsstore <folder>   show the records in a folder's .DS_Store
 ```
 
-The command line ships inside the app at `Sift.app/Contents/MacOS/sift` and shares its settings
+The command line ships inside the app at `Sift.app/Contents/MacOS/sift-cli` and shares its settings
 (`~/Library/Application Support/Sift/settings.json`).
 
 ## Layout
@@ -70,7 +70,7 @@ The command line ships inside the app at `Sift.app/Contents/MacOS/sift` and shar
 |------|---------|
 | `Sources/SiftCore` | Catalog, safety, scanner, remover, volumes, watcher, views, Finder preferences, `.DS_Store` codec, folder stores, window guard, engine. Foundation only; builds on Linux. |
 | `Sources/Sift` | Menu bar app and its one window. |
-| `Sources/SiftCLI` | Command line (`sift`). |
+| `Sources/SiftCLI` | Command line (`sift-cli`). |
 | `Tests/SiftCoreTests` | Core tests. CI also checks `.DS_Store` files against the independent `ds_store` package. |
 
 MIT licensed.

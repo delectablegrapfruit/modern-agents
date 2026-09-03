@@ -14,7 +14,7 @@ BINDIR="$(swift build -c "$CONFIG" --show-bin-path)"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BINDIR/Sift" "$APP/Contents/MacOS/Sift"
-cp "$BINDIR/sift-cli" "$APP/Contents/MacOS/sift"
+cp "$BINDIR/sift-cli" "$APP/Contents/MacOS/sift-cli"
 cp Packaging/Info.plist "$APP/Contents/Info.plist"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 

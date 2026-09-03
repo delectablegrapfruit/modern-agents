@@ -5,11 +5,11 @@ import Glibc
 #endif
 
 let usage = """
-sift — remove the hidden files macOS leaves on disks
+sift-cli — remove the hidden files macOS leaves on disks
 
-  sift scan [folder…]       list junk without removing anything
-  sift sweep [folder…]      remove junk (--dry-run to only list it)
-  sift dsstore <folder>     show the records in a folder's .DS_Store
+  sift-cli scan [folder…]       list junk without removing anything
+  sift-cli sweep [folder…]      remove junk (--dry-run to only list it)
+  sift-cli dsstore <folder>     show the records in a folder's .DS_Store
 
 With no folder, scan and sweep cover what the app covers: the startup disk's
 user areas and every connected disk. The command line shares the app's settings.
