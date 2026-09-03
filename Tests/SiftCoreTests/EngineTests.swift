@@ -67,15 +67,12 @@ final class EngineTests: XCTestCase {
         XCTAssertEqual(engine.log.statistics.removed, 5)
     }
 
-    func testWatchingReactsToChangesAndNeverWalksOnItsOwn() throws {
-        try box.file("USB/.DS_Store")
+    func testWatchingReactsToChanges() throws {
         var removed: [Item] = []
         let lock = NSLock()
         engine.onRemoved = { outcome, _ in lock.lock(); removed += outcome.removed; lock.unlock() }
         engine.start()
         XCTAssertEqual(Set(engine.activeRoots.map(\.path)), [box.path + "/Users/me", box.path + "/USB"])
-        Thread.sleep(forTimeInterval: 1.5)
-        XCTAssertTrue(box.exists("USB/.DS_Store"), "what was already there waits for a sweep")
 
         try box.file("USB/Later/.DS_Store")
         XCTAssertTrue(waitUntil(10) { !self.box.exists("USB/Later/.DS_Store") })

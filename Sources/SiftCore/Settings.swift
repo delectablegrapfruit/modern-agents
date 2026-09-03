@@ -167,10 +167,11 @@ public final class Log {
     /// Lines are gathered and written once a second, so a sweep that removes
     /// thousands of files does not open the log thousands of times.
     private func write(_ entry: Entry) {
-        guard fileURL != nil, var data = try? encoder.encode(entry) else { return }
-        data.append(0x0A)
+        guard fileURL != nil, var encoded = try? encoder.encode(entry) else { return }
+        encoded.append(0x0A)
+        let line = encoded
         io.async {
-            self.pending.append(data)
+            self.pending.append(line)
             guard !self.flushScheduled else { return }
             self.flushScheduled = true
             self.io.asyncAfter(deadline: .now() + 1) { self.flushPending() }
