@@ -109,8 +109,9 @@ final class Guardian {
 
     private func tick() {
         if observer == nil && AXIsProcessTrusted() { attach() }
-        // Event-driven when Accessibility is granted; otherwise a look each second, and only while browsing.
-        guard observer == nil, finderIsFrontmost else { return }
+        // Accessibility makes new and focused windows instant, but Finder posts nothing
+        // for navigation inside a window, so a look each second stays, while browsing.
+        guard finderIsFrontmost else { return }
         check()
     }
 

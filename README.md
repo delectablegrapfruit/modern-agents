@@ -37,9 +37,10 @@ folder's when reached from there; Sift writes the record in both and keeps each 
 view changed in Finder never outlives the window. Finder also
 keeps a window's view while you browse; Sift watches Finder's windows and gives each folder the view it should
 have as soon as a window shows it, the default included: a window leaving a custom folder for an ordinary one
-is put back to the default in that same step. That needs Automation access (asked once) and is instant with
-Accessibility access; otherwise Sift looks once a second, and only while Finder is the frontmost app. Every
-view it sets is listed under Activity, so it is easy to see it working.
+is put back to the default in that same step. That needs Automation access (asked once). Sift looks at
+Finder's windows once a second while Finder is the frontmost app, and with Accessibility access new and
+focused windows are handled at once. Every view it sets is listed under Activity, so it is easy to see it
+working.
 
 ## The window
 

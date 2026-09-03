@@ -51,7 +51,7 @@ struct ViewSection: View {
             }
         } else if !model.reactsInstantly {
             HStack {
-                Text("Windows take the view within a second of showing a folder. With Accessibility access they take it at once.")
+                Text("Windows take the view within a second of showing a folder. With Accessibility access new windows take it at once.")
                 Spacer()
                 Button("Allow…") { model.requestAccessibility() }
             }
