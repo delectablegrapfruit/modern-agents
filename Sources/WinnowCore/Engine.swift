@@ -279,7 +279,8 @@ public final class Engine {
         toStop.forEach { $0.stop() }
         for (target, watcher, sweepNow) in toStart {
             watcher.onEvent = { [weak self] event in
-                self?.work.async { self?.handle(event, for: target) }
+                guard let self else { return }
+                self.work.async { self.handle(event, for: target) }
             }
             watcher.start()
             if sweepNow {
@@ -292,7 +293,8 @@ public final class Engine {
     private func handle(_ event: WatchEvent, for target: SweepTarget) {
         let current = settings
         guard current.general.isWatching else { return }
-        guard state.sync({ _watches[target.path] != nil }) else { return }
+        let stillWatched: Bool = state.sync { _watches[target.path] != nil }
+        guard stillWatched else { return }
         let result: SweepResult
         switch event {
         case .rescan:
