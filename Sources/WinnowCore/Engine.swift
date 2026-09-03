@@ -421,8 +421,9 @@ public final class Engine {
     // MARK: - Scanning and sweeping
 
     private func safety() -> SafetyPolicy {
-        let kept = settings.folderViews.filter(\.isEnabled).map(\.dsStorePath)
-        return SafetyPolicy(volumeRoots: Set(mountedVolumes.map(\.mountPoint)).union(["/"]), exemptPaths: Set(kept))
+        let roots = settings.folderViews.filter(\.isEnabled)
+            .map { SafetyPolicy.ExemptRoot(path: $0.path, includesSubfolders: $0.includeSubfolders) }
+        return SafetyPolicy(volumeRoots: Set(mountedVolumes.map(\.mountPoint)).union(["/"]), exemptRoots: roots)
     }
 
     /// Removes `.DS_Store` across the startup disk's user areas and every connected

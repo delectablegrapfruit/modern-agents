@@ -278,9 +278,12 @@ public struct FolderView: Codable, Identifiable, Hashable {
     public var sortKey: FinderSortKey
     public var ascending: Bool
     public var options: ViewOptions
+    /// Apply the same view to every folder beneath, except folders with their own view.
+    public var includeSubfolders: Bool
 
     public init(id: UUID = UUID(), path: String, isEnabled: Bool = true, viewStyle: FinderViewStyle = .icons,
-                sortKey: FinderSortKey = .name, ascending: Bool? = nil, options: ViewOptions = ViewOptions()) {
+                sortKey: FinderSortKey = .name, ascending: Bool? = nil, options: ViewOptions = ViewOptions(),
+                includeSubfolders: Bool = true) {
         self.id = id
         self.path = SafetyPolicy.standardize(path)
         self.isEnabled = isEnabled
@@ -288,9 +291,10 @@ public struct FolderView: Codable, Identifiable, Hashable {
         self.sortKey = sortKey
         self.ascending = ascending ?? sortKey.defaultAscending
         self.options = options
+        self.includeSubfolders = includeSubfolders
     }
 
-    enum CodingKeys: String, CodingKey { case id, path, isEnabled, viewStyle, sortKey, ascending, options }
+    enum CodingKeys: String, CodingKey { case id, path, isEnabled, viewStyle, sortKey, ascending, options, includeSubfolders }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -301,9 +305,17 @@ public struct FolderView: Codable, Identifiable, Hashable {
         sortKey = try c.decodeIfPresent(FinderSortKey.self, forKey: .sortKey) ?? .name
         ascending = try c.decodeIfPresent(Bool.self, forKey: .ascending) ?? sortKey.defaultAscending
         options = try c.decodeIfPresent(ViewOptions.self, forKey: .options) ?? ViewOptions()
+        includeSubfolders = try c.decodeIfPresent(Bool.self, forKey: .includeSubfolders) ?? true
     }
 
     public var dsStorePath: String { path + "/.DS_Store" }
+
+    /// The same view for a folder beneath this one.
+    public func derived(for subfolder: String) -> FolderView {
+        var copy = self
+        copy.path = SafetyPolicy.standardize(subfolder)
+        return copy
+    }
 
     public var displayName: String {
         let home = NSHomeDirectory()
@@ -320,6 +332,7 @@ public struct FolderView: Codable, Identifiable, Hashable {
         case .list: if options.list.largeIcons { parts.append("large icons") }
         case .columns: break
         }
+        if includeSubfolders { parts.append("with subfolders") }
         return parts.joined(separator: " · ")
     }
 
@@ -410,6 +423,47 @@ public enum FolderViewWriter {
         }
         try data.write(to: url, options: .atomic)
         return url
+    }
+
+    /// Folders beneath `view.path` that inherit its view: not hidden, not packages,
+    /// not symlinks, on the same volume, and not inside another folder view.
+    public static func subfolders(of view: FolderView, excluding otherRoots: [String], fileManager: FileManager = .default) -> [String] {
+        guard view.includeSubfolders, let rootDevice = FileStats.info(view.path)?.device else { return [] }
+        let stops = Set(otherRoots.map(SafetyPolicy.standardize)).subtracting([view.path])
+        var out: [String] = []
+        var stack = [view.path]
+        while let dir = stack.popLast() {
+            guard let names = try? fileManager.contentsOfDirectory(atPath: dir) else { continue }
+            for name in names.sorted() where !name.hasPrefix(".") && name != "node_modules" {
+                let path = dir + "/" + name
+                guard let st = FileStats.info(path), st.isDirectory, !st.isSymlink, st.device == rootDevice else { continue }
+                if stops.contains(path) { continue }
+                if JunkScanner.isPackage(path: path, name: name) { continue }
+                out.append(path)
+                stack.append(path)
+            }
+        }
+        return out
+    }
+
+    /// Writes the view into the folder and, when it includes subfolders, into each of them.
+    /// Returns how many folders were written; individual subfolder failures are skipped.
+    @discardableResult
+    public static func writeTree(_ view: FolderView, excluding otherRoots: [String], fileManager: FileManager = .default) throws -> Int {
+        try write(view, fileManager: fileManager)
+        var count = 1
+        for subfolder in subfolders(of: view, excluding: otherRoots, fileManager: fileManager) {
+            if (try? write(view.derived(for: subfolder), fileManager: fileManager)) != nil { count += 1 }
+        }
+        return count
+    }
+
+    /// Strips the view from the folder and every subfolder it covered.
+    public static func removeTree(_ view: FolderView, excluding otherRoots: [String], fileManager: FileManager = .default) {
+        try? remove(view, fileManager: fileManager)
+        for subfolder in subfolders(of: view, excluding: otherRoots, fileManager: fileManager) {
+            try? remove(view.derived(for: subfolder), fileManager: fileManager)
+        }
     }
 
     /// Removes the folder's view; the file goes too once nothing else is in it.

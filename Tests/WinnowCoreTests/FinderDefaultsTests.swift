@@ -27,6 +27,8 @@ final class FinderDefaultsTests: XCTestCase {
 
         XCTAssertEqual((merged["IconViewSettings"] as! [String: Any])["arrangeBy"] as? String, "dateAdded")
         XCTAssertEqual((merged["GalleryViewSettings"] as! [String: Any])["arrangeBy"] as? String, "dateAdded")
+        XCTAssertEqual(merged["ViewStyle"] as? String, "icnv")
+        XCTAssertEqual(merged["SettingsType"] as? String, "StandardViewSettings")
     }
 
     func testMergePreservesWhatFinderAlreadyStored() {

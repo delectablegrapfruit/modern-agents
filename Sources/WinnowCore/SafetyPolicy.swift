@@ -15,17 +15,40 @@ public struct SafetyPolicy {
     public var neverDeleteNames: Set<String>
     /// Mount points. A mount point itself is never deleted.
     public var volumeRoots: Set<String>
-    /// Exact paths kept on purpose (the `.DS_Store` of folders with their own view).
-    public var exemptPaths: Set<String>
+    /// Folders with their own Finder view: their `.DS_Store` (and, when they include
+    /// subfolders, every `.DS_Store` beneath them) is kept. The deepest root decides.
+    public struct ExemptRoot: Hashable {
+        public let path: String
+        public let includesSubfolders: Bool
+
+        public init(path: String, includesSubfolders: Bool) {
+            self.path = SafetyPolicy.standardize(path)
+            self.includesSubfolders = includesSubfolders
+        }
+    }
+
+    public var exemptRoots: [ExemptRoot]
 
     public init(protectedPrefixes: [String] = SafetyPolicy.defaultProtectedPrefixes,
                 neverDeleteNames: Set<String> = [".metadata_never_index", "no_log"],
                 volumeRoots: Set<String> = [],
-                exemptPaths: Set<String> = []) {
+                exemptRoots: [ExemptRoot] = []) {
         self.protectedPrefixes = protectedPrefixes.map { SafetyPolicy.standardize($0) }
         self.neverDeleteNames = neverDeleteNames
         self.volumeRoots = Set(volumeRoots.map { SafetyPolicy.standardize($0) })
-        self.exemptPaths = Set(exemptPaths.map { SafetyPolicy.standardize($0) })
+        self.exemptRoots = exemptRoots
+    }
+
+    /// Whether `path` is a `.DS_Store` that belongs to a folder view.
+    public func isExemptFolderStore(_ path: String) -> Bool {
+        let p = SafetyPolicy.standardize(path)
+        guard NSString(string: p).lastPathComponent == ".DS_Store" else { return false }
+        let directory = NSString(string: p).deletingLastPathComponent
+        let owner = exemptRoots
+            .filter { directory == $0.path || directory.hasPrefix($0.path == "/" ? "/" : $0.path + "/") }
+            .max { $0.path.count < $1.path.count }
+        guard let owner else { return false }
+        return directory == owner.path || owner.includesSubfolders
     }
 
     /// System locations plus the home Library, which is never touched.
@@ -71,7 +94,7 @@ public struct SafetyPolicy {
         if isProtected(p) { return .denied("Path is inside a protected system location") }
         let name = NSString(string: p).lastPathComponent
         if neverDeleteNames.contains(name) { return .denied("\(name) is a protected marker") }
-        if exemptPaths.contains(p) { return .denied("Kept for the folder's own view settings") }
+        if isExemptFolderStore(p) { return .denied("Kept for the folder's own view settings") }
         if let roots {
             let inside = roots.contains { root in
                 let r = SafetyPolicy.standardize(root)

@@ -87,28 +87,68 @@ final class FolderViewTests: XCTestCase {
         XCTAssertTrue(none.folderViews.isEmpty)
     }
 
+    func testSubfolderViewsAndExemption() throws {
+        try box.dir("Pictures/2024/Trip")
+        try box.dir("Pictures/.hidden")
+        try box.dir("Pictures/node_modules/x")
+        try box.dir("Pictures/Album.photoslibrary/inner")
+        try box.dir("Pictures/Own/Deep")
+        let root = FolderView(path: box.path + "/Pictures", viewStyle: .gallery)
+        let own = FolderView(path: box.path + "/Pictures/Own", viewStyle: .list, includeSubfolders: false)
+
+        let subs = FolderViewWriter.subfolders(of: root, excluding: [own.path])
+        XCTAssertEqual(Set(subs.map { String($0.dropFirst(box.path.count + 1)) }), ["Pictures/2024", "Pictures/2024/Trip"])
+        XCTAssertTrue(FolderViewWriter.subfolders(of: own, excluding: [root.path]).isEmpty)
+
+        let written = try FolderViewWriter.writeTree(root, excluding: [own.path])
+        XCTAssertEqual(written, 3)
+        XCTAssertTrue(box.exists("Pictures/2024/Trip/.DS_Store"))
+        XCTAssertFalse(box.exists("Pictures/Own/.DS_Store"))
+
+        let policy = SafetyPolicy(exemptRoots: [
+            .init(path: root.path, includesSubfolders: true), .init(path: own.path, includesSubfolders: false),
+        ])
+        XCTAssertFalse(policy.validate(path: box.path + "/Pictures/.DS_Store").isAllowed)
+        XCTAssertFalse(policy.validate(path: box.path + "/Pictures/2024/Trip/.DS_Store").isAllowed)
+        XCTAssertFalse(policy.validate(path: box.path + "/Pictures/Own/.DS_Store").isAllowed, "nested view keeps its own")
+        XCTAssertTrue(policy.validate(path: box.path + "/Pictures/Own/Deep/.DS_Store").isAllowed, "nested view without subfolders does not cover deeper folders")
+        XCTAssertTrue(policy.validate(path: box.path + "/Elsewhere/.DS_Store").isAllowed)
+        XCTAssertTrue(policy.validate(path: box.path + "/Pictures/2024/photo.jpg").isAllowed, "only .DS_Store is exempt")
+
+        FolderViewWriter.removeTree(root, excluding: [own.path])
+        XCTAssertFalse(box.exists("Pictures/2024/Trip/.DS_Store"))
+        XCTAssertFalse(box.exists("Pictures/.DS_Store"))
+    }
+
     func testSweepsKeepManagedDSStore() throws {
         try box.dir("USB")
         try box.file("USB/.DS_Store")
         try box.file("USB/Pics/.DS_Store")
         try box.file("USB/Pics/Sub/.DS_Store")
+        try box.file("USB/Pics/Sub/Deeper/.DS_Store")
         let usb = VolumeInfo(id: "uuid:usb", name: "USB", mountPoint: box.path + "/USB", kind: .external, fileSystem: "exfat")
         let store = SettingsStore(fileURL: box.root.appendingPathComponent("config/settings.json"))
         let engine = Engine(store: store, inspector: StaticVolumeInspector([usb]),
                             log: ActivityLog(fileURL: box.root.appendingPathComponent("config/activity.jsonl")))
         var settings = engine.settings
-        settings.folderViews = [FolderView(path: box.path + "/USB/Pics", viewStyle: .list)]
+        settings.folderViews = [FolderView(path: box.path + "/USB/Pics", viewStyle: .list, includeSubfolders: false)]
         engine.update(settings)
         engine.refreshVolumes()
 
         let result = try engine.fullSweep()
-        XCTAssertEqual(relativePaths(result.removed, from: box.path), ["USB/.DS_Store", "USB/Pics/Sub/.DS_Store"])
+        XCTAssertEqual(relativePaths(result.removed, from: box.path), ["USB/.DS_Store", "USB/Pics/Sub/.DS_Store", "USB/Pics/Sub/Deeper/.DS_Store"])
         XCTAssertTrue(box.exists("USB/Pics/.DS_Store"))
+
+        try box.file("USB/Pics/Sub/.DS_Store")
+        settings.folderViews[0].includeSubfolders = true
+        engine.update(settings)
+        XCTAssertTrue(try engine.fullSweep().removed.isEmpty)
+        XCTAssertTrue(box.exists("USB/Pics/Sub/.DS_Store"))
 
         settings.folderViews[0].isEnabled = false
         engine.update(settings)
         let again = try engine.fullSweep()
-        XCTAssertEqual(relativePaths(again.removed, from: box.path), ["USB/Pics/.DS_Store"])
+        XCTAssertEqual(relativePaths(again.removed, from: box.path), ["USB/Pics/.DS_Store", "USB/Pics/Sub/.DS_Store"])
     }
 
     func testResetCoversStartupRootsAndEveryDriveButKeepsManaged() throws {

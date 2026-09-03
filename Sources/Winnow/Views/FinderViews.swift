@@ -238,6 +238,9 @@ struct FolderViewEditor: View {
                         Text("Ascending").tag(true)
                         Text("Descending").tag(false)
                     }
+                    Toggle(isOn: $draft.includeSubfolders) {
+                        Captioned("Include subfolders", "Folders inside with their own view keep it.")
+                    }
                 }
                 Section("Options") {
                     ViewOptionsForm(mode: draft.viewStyle, options: $draft.options)

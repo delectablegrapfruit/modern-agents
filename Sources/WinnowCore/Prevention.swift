@@ -123,6 +123,8 @@ public struct FinderDefaults: Hashable {
         standard["ExtendedListViewSettingsV2"] = options.list.extendedPlist(sortColumn: sort, ascending: ascending,
                                                                             existing: standard["ExtendedListViewSettingsV2"] as? [String: Any])
         standard["GalleryViewSettings"] = options.gallery.plist(arrangeBy: sort, existing: standard["GalleryViewSettings"] as? [String: Any])
+        standard["ViewStyle"] = viewStyle.rawValue
+        standard["SettingsType"] = "StandardViewSettings"
         return standard
     }
 

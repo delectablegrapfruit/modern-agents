@@ -444,11 +444,15 @@ final class AppModel: ObservableObject {
             finderPhase = "Writing preferences…"
             do { try draft.write() } catch { problems.append(error.localizedDescription) }
             let wanted = Dictionary(views.filter(\.isEnabled).map { ($0.path, $0) }, uniquingKeysWith: { a, _ in a })
+            let roots = Array(wanted.keys)
             for view in previous where view.isEnabled && wanted[view.path] == nil {
-                try? FolderViewWriter.remove(view)
+                FolderViewWriter.removeTree(view, excluding: roots)
             }
+            var foldersWritten = 0
             for view in wanted.values {
-                do { try FolderViewWriter.write(view) } catch { problems.append("\(view.displayName): \(error.localizedDescription)") }
+                do { foldersWritten += try FolderViewWriter.writeTree(view, excluding: roots) } catch {
+                    problems.append("\(view.displayName): \(error.localizedDescription)")
+                }
             }
             // Make sure the engine exempts the folder views before anything else runs.
             await Task.detached(priority: .userInitiated) { engine.update(current) }.value
@@ -467,7 +471,9 @@ final class AppModel: ObservableObject {
             finderApplied = problems.isEmpty ? draft : FinderDefaults.read()
             folderViewsApplied = views
             if !problems.isEmpty { lastError = problems.joined(separator: "\n") }
-            finderStatus = "Applied " + Date().formatted(date: .omitted, time: .shortened)
+            var status = "Applied " + Date().formatted(date: .omitted, time: .shortened)
+            if foldersWritten > 0 { status += " · \(foldersWritten) folder\(foldersWritten == 1 ? "" : "s")" }
+            finderStatus = status
             finderPhase = nil
             isApplyingFinder = false
             if reset { startFinderReset() }

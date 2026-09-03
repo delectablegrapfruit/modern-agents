@@ -17,7 +17,7 @@ USAGE
   winnow-cli finder                      show Finder defaults, folder views and enforcement state
   winnow-cli dsstore <folder>            show the records in a folder's .DS_Store
   winnow-cli set-view <folder> <mode>    give a folder its own view: icons | list | columns | gallery
-                                         (--sort=name|dateModified|dateCreated|dateAdded|size|kind  --icon-size=N)
+                                         (--sort=name|dateModified|dateCreated|dateAdded|size|kind  --icon-size=N  --recursive)
 
 OPTIONS
   --dry-run        report what would be removed, remove nothing
@@ -36,6 +36,7 @@ struct Arguments {
     var quiet = false
     var sort: String?
     var iconSize: Double?
+    var recursive = false
 
     init(_ argv: [String]) {
         var rest = argv.dropFirst()
@@ -50,6 +51,7 @@ struct Arguments {
             case "-h", "--help": command = "help"
             case _ where arg.hasPrefix("--sort="): sort = String(arg.dropFirst("--sort=".count))
             case _ where arg.hasPrefix("--icon-size="): iconSize = Double(arg.dropFirst("--icon-size=".count))
+            case "--recursive", "-r": recursive = true
             default:
                 if arg.hasPrefix("-") {
                     fail("Unknown option \(arg)")
@@ -239,14 +241,14 @@ case "set-view":
     let styles: [String: FinderViewStyle] = ["icons": .icons, "list": .list, "columns": .columns, "gallery": .gallery]
     guard let style = styles[args.paths[1].lowercased()] else { fail("mode must be icons, list, columns or gallery") }
     let key = args.sort.flatMap(FinderSortKey.init(rawValue:)) ?? .name
-    var view = FolderView(path: absolute(args.paths[0]), viewStyle: style, sortKey: key)
+    var view = FolderView(path: absolute(args.paths[0]), viewStyle: style, sortKey: key, includeSubfolders: args.recursive)
     if let size = args.iconSize {
         view.options.icon.iconSize = size
         view.options.gallery.thumbnailSize = size
     }
     do {
-        let url = try FolderViewWriter.write(view)
-        print("wrote \(url.path) · \(view.summary)")
+        let count = try FolderViewWriter.writeTree(view, excluding: [])
+        print("wrote \(count) folder\(count == 1 ? "" : "s") under \(view.path) · \(view.summary)")
     } catch {
         fail(error.localizedDescription, code: 1)
     }
