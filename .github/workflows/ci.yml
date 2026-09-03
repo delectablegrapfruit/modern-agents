@@ -49,8 +49,9 @@ jobs:
         run: |
           apt-get update -qq >/dev/null && apt-get install -y -qq python3 python3-pip >/dev/null
           pip3 install -q --break-system-packages ds_store
-          mkdir -p /tmp/dsdemo
-          .build/debug/winnow-cli set-view /tmp/dsdemo gallery --sort=dateAdded --icon-size=96
+          # Finder keeps a folder's view in its parent's store: the record for "Photos" lands in /tmp/dsdemo/.DS_Store.
+          mkdir -p /tmp/dsdemo/Photos
+          .build/debug/winnow-cli set-view /tmp/dsdemo/Photos gallery --sort=dateAdded --icon-size=96
           .build/debug/winnow-cli dsstore /tmp/dsdemo
           python3 - <<'EOF'
           from ds_store import DSStore
@@ -59,15 +60,15 @@ jobs:
               entries = [(e.filename, e.code, e.type) for e in d]
           print(entries)
           codes = {(f, c) for f, c, _ in entries}
-          assert ('.', b'vstl') in codes, entries
-          assert ('.', b'glvp') in codes, entries
+          assert ('Photos', b'vstl') in codes, entries
+          assert ('Photos', b'glvp') in codes, entries
           # Finder rewrites the file in place; make sure an independent implementation can too.
           with DSStore.open(path, 'r+') as d:
-              d['.']['vstl'] = ('type', b'Nlsv')
+              d['Photos']['vstl'] = ('type', b'Nlsv')
               d['photo.jpg']['Iloc'] = (10, 20)
           with DSStore.open(path, 'r') as d:
               after = {(e.filename, e.code): e.value for e in d}
-          assert after[('.', b'vstl')] == b'Nlsv', after
+          assert after[('Photos', b'vstl')] == b'Nlsv', after
           assert ('photo.jpg', b'Iloc') in after, after
           print('ds_store round trip ok')
           EOF
