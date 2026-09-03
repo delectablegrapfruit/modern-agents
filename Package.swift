@@ -3,13 +3,13 @@ import PackageDescription
 
 var products: [Product] = [
     .library(name: "SiftCore", targets: ["SiftCore"]),
-    .executable(name: "sift", targets: ["sift"]),
+    .executable(name: "sift", targets: ["SiftCLI"]),
 ]
 
 var targets: [Target] = [
     // Platform-neutral engine: catalog, scanning, removal, views, `.DS_Store`, settings. Also builds on Linux.
     .target(name: "SiftCore", path: "Sources/SiftCore"),
-    .executableTarget(name: "sift", dependencies: ["SiftCore"], path: "Sources/sift"),
+    .executableTarget(name: "SiftCLI", dependencies: ["SiftCore"], path: "Sources/SiftCLI"),
     .testTarget(name: "SiftCoreTests", dependencies: ["SiftCore"], path: "Tests/SiftCoreTests"),
 ]
 

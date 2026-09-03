@@ -66,7 +66,7 @@ The command line ships inside the app at `Sift.app/Contents/MacOS/sift` and shar
 |------|---------|
 | `Sources/SiftCore` | Catalog, safety, scanner, remover, volumes, watcher, views, Finder preferences, `.DS_Store` codec, folder stores, window guard, engine. Foundation only; builds on Linux. |
 | `Sources/Sift` | Menu bar app and its one window. |
-| `Sources/sift` | Command line. |
+| `Sources/SiftCLI` | Command line (`sift`). |
 | `Tests/SiftCoreTests` | Core tests. CI also checks `.DS_Store` files against the independent `ds_store` package. |
 
 MIT licensed.
