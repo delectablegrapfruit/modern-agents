@@ -74,7 +74,9 @@ final class FolderViewTests: XCTestCase {
         XCTAssertEqual(seeded[0].viewStyle, .icons)
         XCTAssertEqual(seeded[1].viewStyle, .gallery)
         XCTAssertTrue(seeded.allSatisfy(\.isEnabled))
+        XCTAssertEqual(seeded.map(\.id), [FolderView.picturesID, FolderView.moviesID])
         XCTAssertEqual(Settings().folderViews.count, 2)
+        XCTAssertEqual(Settings(), Settings())
         let none = try! JSONDecoder().decode(Settings.self, from: Data("{\"folderViews\": []}".utf8))
         XCTAssertTrue(none.folderViews.isEmpty)
     }

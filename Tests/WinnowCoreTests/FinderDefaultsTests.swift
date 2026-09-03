@@ -59,9 +59,13 @@ final class FinderDefaultsTests: XCTestCase {
         XCTAssertEqual((columns["size"] as! [String: Any])["visible"] as? Bool, true)
 
         let extendedColumns = (merged["ExtendedListViewSettingsV2"] as! [String: Any])["columns"] as! [[String: Any]]
-        XCTAssertEqual(extendedColumns.count, 2)
-        XCTAssertEqual(extendedColumns.last?["identifier"] as? String, "size")
-        XCTAssertEqual(extendedColumns.last?["visible"] as? Bool, true)
+        XCTAssertEqual(extendedColumns.count, 10, "missing columns are added so Finder can show them")
+        XCTAssertEqual(extendedColumns.first?["identifier"] as? String, "name")
+        XCTAssertEqual(extendedColumns.first?["width"] as? Int, 250, "existing column geometry is kept")
+        let sizeColumn = extendedColumns.first { $0["identifier"] as? String == "size" }!
+        XCTAssertEqual(sizeColumn["visible"] as? Bool, true)
+        let comments = extendedColumns.first { $0["identifier"] as? String == "comments" }!
+        XCTAssertEqual(comments["visible"] as? Bool, false)
     }
 
     func testColumnViewCodes() {
@@ -73,8 +77,10 @@ final class FinderDefaultsTests: XCTestCase {
         d.sortKey = .dateModified
         XCTAssertEqual(d.mergedColumnViewOptions(into: nil)["ArrangeBy"] as? String, "dmod")
         d.sortKey = .dateAdded
-        let kept = d.mergedColumnViewOptions(into: ["ArrangeBy": "dnam", "FontSize": 13])
-        XCTAssertEqual(kept["ArrangeBy"] as? String, "dnam")
+        d.options.column.textSize = 13
+        let kept = d.mergedColumnViewOptions(into: ["ArrangeBy": "dnam", "ColumnWidth": 245])
+        XCTAssertEqual(kept["ArrangeBy"] as? String, "dnam", "no known code for Date Added, so the old one stays")
+        XCTAssertEqual(kept["ColumnWidth"] as? Int, 245)
         XCTAssertEqual(kept["FontSize"] as? Int, 13)
     }
 

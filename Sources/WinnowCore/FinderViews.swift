@@ -323,12 +323,16 @@ public struct FolderView: Codable, Identifiable, Hashable {
         return parts.joined(separator: " · ")
     }
 
-    /// Pictures as large icons, Movies as a gallery.
+    /// Pictures as large icons, Movies as a gallery. Fixed ids so the entries are the
+    /// same on every launch and in every settings file.
+    public static let picturesID = UUID(uuidString: "5B2E1C1A-6F3D-4B8E-9C1D-000000000001")!
+    public static let moviesID = UUID(uuidString: "5B2E1C1A-6F3D-4B8E-9C1D-000000000002")!
+
     public static func seeded(home: String = NSHomeDirectory()) -> [FolderView] {
-        var pictures = FolderView(path: home + "/Pictures", viewStyle: .icons)
+        var pictures = FolderView(id: picturesID, path: home + "/Pictures", viewStyle: .icons)
         pictures.options.icon.iconSize = 128
         pictures.options.icon.gridSpacing = 70
-        var movies = FolderView(path: home + "/Movies", viewStyle: .gallery)
+        var movies = FolderView(id: moviesID, path: home + "/Movies", viewStyle: .gallery)
         movies.options.gallery.thumbnailSize = 128
         return [pictures, movies]
     }
