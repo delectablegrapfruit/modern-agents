@@ -145,6 +145,8 @@ final class EngineTests: XCTestCase {
 
         // Finder remembers Documents' view next to Pictures': that record does not survive.
         var file = try DSStoreFile.read(try Data(contentsOf: parentStore))
+        XCTAssertTrue(file.records.contains { $0.filename == "Documents" }, "neighbours are pinned to the defaults")
+        file.records.removeAll { $0.filename == "Documents" }
         file.records += try FolderViewWriter.records(for: FolderView(path: box.path + "/Documents", viewStyle: .columns), as: "Documents")
         try file.encoded().write(to: parentStore)
         XCTAssertTrue(waitUntil(10) {

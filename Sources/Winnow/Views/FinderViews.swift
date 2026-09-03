@@ -65,7 +65,7 @@ struct FinderPane: View {
         } header: {
             Text("Folders with their own view")
         } footer: {
-            Text("Each keeps a .DS_Store holding these settings; sweeps leave it alone.")
+            Text("Stored in the folder’s and its parent’s .DS_Store, which sweeps leave alone. Neighbouring folders are pinned to the defaults so the view does not carry over when you leave.")
         }
         Section(".DS_Store") {
             Toggle("Don’t write on network volumes", isOn: $model.finderDraft.noDSStoreOnNetwork)

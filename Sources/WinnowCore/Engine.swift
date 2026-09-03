@@ -290,9 +290,12 @@ public final class Engine {
         }
     }
 
+    /// The Finder defaults pinned next to folder views; nil leaves neighbours alone.
+    public var defaultViewTemplate: () -> FolderView? = { FolderViewPlan.template(from: FinderDefaults.read()) }
+
     /// The `.DS_Store` files Winnow maintains for the enabled folder views.
     public func folderViewPlan(_ current: Settings? = nil) -> FolderViewPlan {
-        FolderViewPlan(views: (current ?? settings).folderViews, fileManager: fileManager)
+        FolderViewPlan(views: (current ?? settings).folderViews, defaultView: defaultViewTemplate(), fileManager: fileManager)
     }
 
     // MARK: - Targets

@@ -361,14 +361,25 @@ public struct FolderView: Codable, Identifiable, Hashable {
 /// to the current session.
 public struct FolderViewPlan {
     public let views: [FolderView]
+    /// The Finder defaults as a view (path unused). When set, the parent folder of each
+    /// root and every sibling without its own view get a record for it, so leaving a
+    /// folder with its own view does not carry that view into the next folder.
+    public let defaultView: FolderView?
     let roots: [String: FolderView]
     let fileManager: FileManager
 
     /// Only enabled views whose folder exists take part.
-    public init(views: [FolderView], fileManager: FileManager = .default) {
+    public init(views: [FolderView], defaultView: FolderView? = nil, fileManager: FileManager = .default) {
         self.views = views.filter { $0.isEnabled && FileStats.info($0.path)?.isDirectory == true }
+        self.defaultView = defaultView
         roots = Dictionary(self.views.map { ($0.path, $0) }, uniquingKeysWith: { a, _ in a })
         self.fileManager = fileManager
+    }
+
+    /// The Finder defaults in the form a folder view takes.
+    public static func template(from defaults: FinderDefaults) -> FolderView {
+        FolderView(path: "/", viewStyle: defaults.viewStyle, sortKey: defaults.sortKey, ascending: defaults.ascending,
+                   options: defaults.options, includeSubfolders: false)
     }
 
     public var isEmpty: Bool { roots.isEmpty }
@@ -425,20 +436,26 @@ public struct FolderViewPlan {
     /// `full` includes per-child option blobs; without them only the view style is kept.
     public func records(in directory: String, full: Bool = true) throws -> [DSStoreRecord] {
         let d = SafetyPolicy.standardize(directory)
+        let children = childRoots(of: d)
         var out: [DSStoreRecord] = []
-        if let own = view(covering: d) {
+        // The folder's own view, or (around a root) the defaults pinned to the folder and its other children.
+        let own = view(covering: d)
+        let inherited: FolderView? = own?.includeSubfolders == true ? own : nil
+        let pinned: FolderView? = own == nil && !children.isEmpty ? defaultView : nil
+        if let own {
             out += try FolderViewWriter.records(for: own)
-            if own.includeSubfolders, let names = try? fileManager.contentsOfDirectory(atPath: d) {
-                let device = FileStats.info(d)?.device
-                for name in names.sorted() {
-                    let child = d + "/" + name
-                    guard roots[child] == nil,
-                          FolderViewPlan.isBrowsable(child, name: name, device: device) else { continue }
-                    out += try FolderViewWriter.records(for: own.derived(for: child), as: name, full: full)
-                }
+        } else if let pinned {
+            out += try FolderViewWriter.records(for: pinned.derived(for: d))
+        }
+        if let flow = inherited ?? pinned, let names = try? fileManager.contentsOfDirectory(atPath: d) {
+            let device = FileStats.info(d)?.device
+            for name in names.sorted() {
+                let child = d + "/" + name
+                guard roots[child] == nil, FolderViewPlan.isBrowsable(child, name: name, device: device) else { continue }
+                out += try FolderViewWriter.records(for: flow.derived(for: child), as: name, full: full)
             }
         }
-        for root in childRoots(of: d) {
+        for root in children {
             out += try FolderViewWriter.records(for: root, as: NSString(string: root.path).lastPathComponent, full: full)
         }
         return out

@@ -121,6 +121,35 @@ final class FolderViewTests: XCTestCase {
         XCTAssertTrue(box.exists(".DS_Store"))
     }
 
+    func testDefaultsArePinnedAroundARoot() throws {
+        try box.dir("Documents")
+        try box.dir("Pictures/2024")
+        try box.dir(".hidden")
+        let template = FolderViewPlan.template(from: FinderDefaults())
+        XCTAssertEqual(template.viewStyle, .icons)
+        var defaults = FinderDefaults()
+        defaults.viewStyle = .list
+        defaults.sortKey = .dateModified
+        let plan = FolderViewPlan(views: [FolderView(path: box.path + "/Pictures", viewStyle: .gallery)],
+                                  defaultView: FolderViewPlan.template(from: defaults))
+        XCTAssertEqual(try FolderViewWriter.apply(plan), 2, "pinned neighbours are not counted as folder views")
+
+        let parent = try records(at: ".DS_Store")
+        XCTAssertEqual(Set(parent.map(\.filename)), [".", "Documents", "Pictures"], "hidden folders are not pinned")
+        XCTAssertTrue(parent.contains { $0.filename == "." && $0.structID == "vstl" && $0.value == .type("Nlsv") })
+        XCTAssertTrue(parent.contains { $0.filename == "Documents" && $0.structID == "vstl" && $0.value == .type("Nlsv") })
+        XCTAssertTrue(parent.contains { $0.filename == "Documents" && $0.structID == "lsvp" })
+        XCTAssertTrue(parent.contains { $0.filename == "Pictures" && $0.value == .type("glyv") })
+        XCTAssertFalse(box.exists("Documents/.DS_Store"), "pinning lives in the parent store only")
+        XCTAssertEqual(Set(try records(at: "Pictures/.DS_Store").map(\.filename)), [".", "2024"], "inside a root nothing is pinned")
+
+        // Without defaults the parent store holds the root's record only.
+        FolderViewWriter.retire(plan)
+        XCTAssertFalse(box.exists(".DS_Store"))
+        try FolderViewWriter.apply(FolderViewPlan(views: plan.views))
+        XCTAssertEqual(Set(try records(at: ".DS_Store").map(\.filename)), ["Pictures"])
+    }
+
     func testEquivalenceIgnoresOrderAndPlistEncoding() throws {
         let a = DSStoreRecord(filename: ".", structID: "icvp", value: .blob(try FolderViewWriter.plistData(["iconSize": 64, "arrangeBy": "name", "labelOnBottom": true])))
         let xml = try PropertyListSerialization.data(fromPropertyList: ["arrangeBy": "name", "labelOnBottom": true, "iconSize": 64.0], format: .xml, options: 0)
