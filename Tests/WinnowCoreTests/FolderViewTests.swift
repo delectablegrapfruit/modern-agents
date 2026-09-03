@@ -79,6 +79,15 @@ final class FolderViewTests: XCTestCase {
         XCTAssertFalse(box.exists("Pictures/.DS_Store"))
     }
 
+    func testDefaultWindowRecordIsRecognisedAfterSerialisation() throws {
+        let data = try FolderViewWriter.plistData(FolderViewWriter.defaultWindowSettings)
+        XCTAssertTrue(FolderViewWriter.isDefaultWindowSettings(data))
+        var changed = FolderViewWriter.defaultWindowSettings
+        changed["SidebarWidth"] = 300
+        XCTAssertFalse(FolderViewWriter.isDefaultWindowSettings(try FolderViewWriter.plistData(changed)))
+        XCTAssertFalse(FolderViewWriter.isDefaultWindowSettings(Data([1, 2, 3])))
+    }
+
     func testWriteRefusesMissingFolder() {
         XCTAssertThrowsError(try FolderViewWriter.write(FolderView(path: box.path + "/Nope")))
     }

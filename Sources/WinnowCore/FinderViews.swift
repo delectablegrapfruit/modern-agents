@@ -399,7 +399,19 @@ public enum FolderViewWriter {
     static func isDefaultWindowSettings(_ data: Data) -> Bool {
         guard let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
               let dictionary = plist as? [String: Any] else { return false }
-        return NSDictionary(dictionary: dictionary).isEqual(to: defaultWindowSettings)
+        return canonical(dictionary) == canonical(defaultWindowSettings)
+    }
+
+    /// Order- and number-type-independent rendering of a flat plist dictionary,
+    /// so a decoded copy compares equal to the original on every platform.
+    static func canonical(_ dictionary: [String: Any]) -> [String] {
+        dictionary.keys.sorted().map { key in
+            let value = dictionary[key]
+            if let b = value as? Bool, !(value is Int && !(value is Bool)) { return "\(key)=b:\(b)" }
+            if let d = plistDouble(value) { return "\(key)=n:\(d)" }
+            if let s = value as? String { return "\(key)=s:\(s)" }
+            return "\(key)=?:\(String(describing: value))"
+        }
     }
 
     static func existingFile(at url: URL) -> DSStoreFile? {
