@@ -80,6 +80,7 @@ final class Model: ObservableObject {
         guardian.onNotAllowed = { [weak self] allowed in Task { @MainActor in self?.canControlFinder = allowed } }
         guardian.onModeChange = { [weak self] instant in Task { @MainActor in self?.reactsInstantly = instant } }
         guardian.onProblem = { [weak self] message in self?.engine.log.info(message) }
+        guardian.onApplied = { [weak self] path, view in self?.engine.log.info("Finder window set to " + view, path: path) }
         engine.onRootsChanged = { [weak self] list in Task { @MainActor in self?.roots = list } }
         engine.onLockedChanged = { [weak self] list in Task { @MainActor in self?.locked = list } }
         engine.log.onAppend = { [weak self] _ in Task { @MainActor in self?.scheduleActivityRefresh() } }

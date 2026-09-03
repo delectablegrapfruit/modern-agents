@@ -15,6 +15,8 @@ final class Guardian {
     var onModeChange: ((Bool) -> Void)?
     /// Finder refused a view; reported once per distinct message.
     var onProblem: ((String) -> Void)?
+    /// A window was given a view: the folder and what it was set to.
+    var onApplied: ((String, String) -> Void)?
     private var lastProblem: String?
 
     private let views: () -> ViewSettings
@@ -123,29 +125,44 @@ final class Guardian {
             tracker.reset()
             return
         }
+        let moved: [WindowGuard.Window]
         do {
-            let moved = tracker.moved(try session.windows())
-            guard !moved.isEmpty else { return }
-            let settings = views()
-            for window in moved {
-                try session.apply(settings.view(for: window.path).view, to: window.id)
-            }
-            if wasNotAllowed {
-                wasNotAllowed = false
-                onNotAllowed?(true)
-            }
+            moved = tracker.moved(try session.windows())
         } catch {
-            guard (error as? WindowGuard.ScriptError) == .notAllowed else {
-                let message = error.localizedDescription
-                if message != lastProblem {
-                    lastProblem = message
-                    onProblem?(message)
-                }
-                return
-            }
-            notAllowedSince = Date()
-            wasNotAllowed = true
-            onNotAllowed?(false)
+            report(error)
+            return
         }
+        guard !moved.isEmpty else { return }
+        let settings = views()
+        // Every window that moved gets the view of the folder it now shows: its own,
+        // the custom folder above it, or the default. One refusal never skips the rest.
+        for window in moved {
+            let (view, owner) = settings.view(for: window.path)
+            do {
+                try session.apply(view, to: window.id)
+                onApplied?(window.path, view.mode.label + (owner == nil ? " (default)" : ""))
+            } catch {
+                report(error)
+                if (error as? WindowGuard.ScriptError) == .notAllowed { return }
+            }
+        }
+        if wasNotAllowed {
+            wasNotAllowed = false
+            onNotAllowed?(true)
+        }
+    }
+
+    private func report(_ error: Error) {
+        guard (error as? WindowGuard.ScriptError) == .notAllowed else {
+            let message = error.localizedDescription
+            if message != lastProblem {
+                lastProblem = message
+                onProblem?(message)
+            }
+            return
+        }
+        notAllowedSince = Date()
+        wasNotAllowed = true
+        onNotAllowed?(false)
     }
 }
