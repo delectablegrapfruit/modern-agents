@@ -186,8 +186,10 @@ enum UnixSocket {
         var gid: gid_t = 0
         return getpeereid(fd, &uid, &gid) == 0 ? uid : nil
         #else
-        var cred = ucred()
-        var size = socklen_t(MemoryLayout<ucred>.size)
+        // Linux's `struct ucred`, which Glibc's Swift module leaves out.
+        struct Credentials { var pid: pid_t = 0; var uid: uid_t = 0; var gid: gid_t = 0 }
+        var cred = Credentials()
+        var size = socklen_t(MemoryLayout<Credentials>.size)
         return getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &cred, &size) == 0 ? cred.uid : nil
         #endif
     }
