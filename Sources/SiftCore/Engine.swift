@@ -33,6 +33,8 @@ public final class Engine {
     /// Fallback to mount notifications.
     public var volumePollInterval: TimeInterval = 10
     public var persistsSettings = true
+    /// No settings file existed when the engine was made.
+    public let isFirstLaunch: Bool
 
     public var onRootsChanged: (([Root]) -> Void)?
     public var onRemoved: ((Outcome, Root) -> Void)?
@@ -67,8 +69,9 @@ public final class Engine {
         self.log = log ?? Log(fileURL: AppPaths.activityFile(in: store.fileURL.deletingLastPathComponent()))
         self.fileManager = fileManager
         self.userRoots = userRoots ?? [NSHomeDirectory(), "/Users/Shared", "/Applications"]
+        isFirstLaunch = !store.exists
         var settings = store.load()
-        if !store.exists { settings.views = FinderPrefs.read() }
+        if isFirstLaunch { settings.views = FinderPrefs.read() }
         _settings = settings
         _plan = StorePlan(settings: settings.views, fileManager: fileManager)
         _safety = Safety(keptStores: _plan.storePaths)

@@ -57,6 +57,8 @@ final class Model: ObservableObject {
     @Published private(set) var hasFullDiskAccess = true
     @Published private(set) var canControlFinder = true
     @Published private(set) var reactsInstantly = false
+    /// The window shows itself once, the first time the app runs.
+    private var wantsWindow: Bool
 
     private var token = WorkToken()
     private var activityRefresh: Task<Void, Never>?
@@ -64,6 +66,7 @@ final class Model: ObservableObject {
 
     init(engine: Engine = Engine()) {
         self.engine = engine
+        wantsWindow = engine.isFirstLaunch
         let views = engine.settings.views
         draft = views
         applied = views
@@ -95,7 +98,19 @@ final class Model: ObservableObject {
         checkPermissions()
         try? FinderPrefs.preventStores()
         guardian.start()
-        Task.detached(priority: .utility) { engine.start() }
+        let settings = engine.settings
+        Task.detached(priority: .utility) {
+            // The first run writes the settings file, so the window opens by itself only once.
+            if engine.isFirstLaunch { engine.update(settings) }
+            engine.start()
+        }
+    }
+
+    /// Called once the menu bar item exists, which is when a window can be opened.
+    func openWindowIfWanted() {
+        guard wantsWindow else { return }
+        wantsWindow = false
+        WindowOpener.open()
     }
 
     func checkPermissions() {

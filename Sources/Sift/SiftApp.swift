@@ -44,7 +44,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
         LoginItem.registerOnFirstLaunch()
         AppDelegate.model?.start()
-        if !(AppDelegate.model?.engine.store.exists ?? true) { WindowOpener.open() }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

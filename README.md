@@ -28,15 +28,19 @@ access, otherwise it happens within a second.
 
 ## The window
 
-One window, top to bottom: what is being watched and what needs you · the default view and its options ·
-folders with their own view · what was removed. The menu bar item sweeps, pauses and opens the window.
+Sift has no Dock icon: it lives in the menu bar as a sieve glyph (three shortening lines). The window
+opens by itself the first time Sift runs; after that, open it from the menu bar item or by opening the app
+again. One window, top to bottom: what is being watched and what needs you · the default view and its
+options · folders with their own view · what was removed. The menu bar item also sweeps and pauses.
 
 ## Install
 
 A prebuilt app is committed at [`dist/Sift.app.zip`](dist/Sift.app.zip), rebuilt by CI on every push.
-Unzip, move `Sift.app` to Applications, open it. It is ad-hoc signed, so the first launch needs
-right-click → Open (or `xattr -d com.apple.quarantine Sift.app`). Sift adds itself to your login items;
-turn that off in its menu.
+Unzip, move `Sift.app` to Applications, open it. It is ad-hoc signed, so macOS blocks the first launch
+of the downloaded copy: on macOS 15 and later go to System Settings → Privacy & Security and choose
+*Open Anyway*; on earlier versions right-click → Open. Or clear the quarantine first:
+`xattr -d com.apple.quarantine /Applications/Sift.app`. Sift adds itself to your login items; turn that
+off in its menu.
 
 Full Disk Access (System Settings → Privacy & Security) lets Sift reach Desktop, Documents and the Trash on
 other disks without a prompt per folder. The window says so until it is granted.

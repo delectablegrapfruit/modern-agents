@@ -12,6 +12,7 @@ struct MenuBarLabel: View {
                     NSApp.activate(ignoringOtherApps: true)
                     openWindow(id: "main")
                 }
+                model.openWindowIfWanted()
             }
     }
 }
