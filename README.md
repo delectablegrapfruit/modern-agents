@@ -20,6 +20,12 @@ they appear, and sweeps whole disks on demand.
 
 Runs from the menu bar. One window configures everything.
 
+## Install
+
+A prebuilt app is committed at [`dist/Winnow.app.zip`](dist/Winnow.app.zip) (rebuilt by CI on every push).
+Unzip, move `Winnow.app` to Applications, open it. It is ad-hoc signed, so the first launch needs
+right-click → Open (or `xattr -d com.apple.quarantine Winnow.app`).
+
 ## Build
 
 Requires macOS 13 or later and Xcode 15 or later.

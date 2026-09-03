@@ -4,6 +4,9 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: write
+
 jobs:
   macos:
     name: macOS build, test, bundle
@@ -14,11 +17,25 @@ jobs:
       - run: swift build -v
       - run: swift test
       - run: scripts/make-app.sh release
+      - name: Package
+        run: |
+          mkdir -p dist
+          rm -f dist/Winnow.app.zip
+          ditto -c -k --keepParent build/Winnow.app dist/Winnow.app.zip
       - uses: actions/upload-artifact@v4
         with:
           name: Winnow.app
-          path: build/Winnow.app
+          path: dist/Winnow.app.zip
           if-no-files-found: error
+      - name: Commit prebuilt app
+        if: github.event_name == 'push'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dist/Winnow.app.zip
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Build: update prebuilt Winnow.app for ${GITHUB_SHA::7} [skip ci]"
+          git push
 
   linux:
     name: Linux core build and test
