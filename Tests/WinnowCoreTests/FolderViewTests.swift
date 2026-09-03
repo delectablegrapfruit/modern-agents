@@ -63,7 +63,16 @@ final class FolderViewTests: XCTestCase {
 
         try FolderViewWriter.remove(view)
         let stripped = try DSStoreFile.read(try Data(contentsOf: URL(fileURLWithPath: store)))
-        XCTAssertEqual(Set(stripped.records.map(\.structID)), ["Iloc", "bwsp"])
+        XCTAssertEqual(stripped.records, [foreign], "our default window record goes too")
+
+        // A window record Finder changed is not ours any more and stays.
+        var custom = DSStoreFile(records: [foreign])
+        custom.records.append(DSStoreRecord(filename: ".", structID: "bwsp", value: .blob(Data([1, 2, 3]))))
+        try custom.encoded().write(to: URL(fileURLWithPath: store))
+        try FolderViewWriter.write(view)
+        try FolderViewWriter.remove(view)
+        let kept = try DSStoreFile.read(try Data(contentsOf: URL(fileURLWithPath: store)))
+        XCTAssertEqual(Set(kept.records.map(\.structID)), ["Iloc", "bwsp"])
 
         try DSStoreFile(records: try FolderViewWriter.records(for: view)).encoded().write(to: URL(fileURLWithPath: store))
         try FolderViewWriter.remove(view)

@@ -475,6 +475,10 @@ public enum FolderViewWriter {
             return
         }
         file.records.removeAll { $0.filename == "." && managedIDs.contains($0.structID) }
+        // The window record is ours only if it is still exactly the default we added.
+        if let ours = try? plistData(defaultWindowSettings) {
+            file.records.removeAll { $0.filename == "." && $0.structID == "bwsp" && $0.value == .blob(ours) }
+        }
         if file.records.isEmpty {
             try fileManager.removeItem(at: url)
         } else {
