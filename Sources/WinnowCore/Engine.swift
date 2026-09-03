@@ -411,6 +411,7 @@ public final class Engine {
                     break
                 }
                 if !isDirectory { break }
+                if options.shouldSkipDescending(into: node, name: component) { break }
                 if options.skipPackages && JunkScanner.isPackage(path: node, name: component) { break }
             }
         }
@@ -433,8 +434,14 @@ public final class Engine {
     }
 
     private func scanOptions(_ current: Settings, target: SweepTarget) -> ScanOptions {
-        ScanOptions(rules: rules(for: target, settings: current), exclusions: current.exclusionMatcher, safety: safety(),
-                    skipPackages: current.general.skipPackages, recursive: target.recursive)
+        var options = ScanOptions(rules: rules(for: target, settings: current), exclusions: current.exclusionMatcher,
+                                  safety: safety(), skipPackages: current.general.skipPackages, recursive: target.recursive)
+        if case .startupDisk = target.source {
+            // Only Finder-browsable folders matter for view defaults.
+            options.skipHiddenDirectories = true
+            options.skipDirectoryNames = ["node_modules"]
+        }
+        return options
     }
 
     public func scan(paths: [String], recursive: Bool = true,

@@ -166,34 +166,48 @@ final class FinderScriptingTests: XCTestCase {
     func testScriptCoversEachMode() {
         var icons = FolderView(path: "/Users/x/My \"Pics\"", viewStyle: .icons, sortKey: .kind)
         icons.options.icon.iconSize = 128
-        let iconScript = FinderScripting.script(for: icons)
+        let iconScripts = FinderScripting.scripts(for: icons)
+        XCTAssertEqual(iconScripts.count, 2, "one with the view line, one without")
+        let iconScript = iconScripts[0]
         XCTAssertTrue(iconScript.contains("POSIX file \"/Users/x/My \\\"Pics\\\"\""))
         XCTAssertTrue(iconScript.contains("set current view of theWindow to icon view"))
-        XCTAssertTrue(iconScript.contains("set arrangement to arranged by kind"))
-        XCTAssertTrue(iconScript.contains("set icon size to 128"))
+        XCTAssertTrue(iconScript.contains("try\nset arrangement of icon view options of theWindow to arranged by kind\nend try"))
+        XCTAssertTrue(iconScript.contains("set icon size of icon view options of theWindow to 128"))
         XCTAssertTrue(iconScript.hasSuffix("close theWindow\nend tell"))
+        XCTAssertFalse(iconScripts[1].contains("set current view"))
 
-        let list = FinderScripting.script(for: FolderView(path: "/tmp/a", viewStyle: .list, sortKey: .dateModified))
-        XCTAssertTrue(list.contains("set sort column to modification date column"))
+        let list = FinderScripting.scripts(for: FolderView(path: "/tmp/a", viewStyle: .list, sortKey: .dateModified))[0]
+        XCTAssertTrue(list.contains("set sort column of list view options of theWindow to modification date column"))
         XCTAssertTrue(list.contains("small icon"))
 
-        let columns = FinderScripting.script(for: FolderView(path: "/tmp/a", viewStyle: .columns))
+        let columns = FinderScripting.scripts(for: FolderView(path: "/tmp/a", viewStyle: .columns))[0]
         XCTAssertTrue(columns.contains("column view options"))
 
-        let gallery = FinderScripting.script(for: FolderView(path: "/tmp/a", viewStyle: .gallery))
-        XCTAssertTrue(gallery.contains("gallery view"))
-        XCTAssertFalse(gallery.contains("view options"))
+        let gallery = FinderScripting.scripts(for: FolderView(path: "/tmp/a", viewStyle: .gallery))
+        XCTAssertEqual(gallery.count, 3)
+        XCTAssertTrue(gallery[0].contains("gallery view"))
+        XCTAssertTrue(gallery[1].contains("flow view"))
+        XCTAssertFalse(gallery[2].contains("set current view"))
+        XCTAssertFalse(gallery[0].contains("view options"))
     }
 }
 
 final class ScanSkipTests: XCTestCase {
-    func testSkipPrefixesAreNotDescended() throws {
+    func testSkipPrefixesHiddenAndNamedFoldersAreNotDescended() throws {
         let box = try TestSandbox()
         defer { box.destroy() }
         try box.file("Library/Caches/app/.DS_Store")
         try box.file("Library/Preferences/.DS_Store")
-        let options = ScanOptions(rules: RuleSettings().activeRules, skipPrefixes: [box.path + "/Library/Caches"])
-        let found = try JunkScanner(options: options).scan(root: box.path)
-        XCTAssertEqual(relativePaths(found, from: box.path), ["Library/Preferences/.DS_Store"])
+        try box.file(".npm/pkg/.DS_Store")
+        try box.file("Project/node_modules/x/.DS_Store")
+        try box.file("Project/src/.DS_Store")
+        var options = ScanOptions(rules: RuleSettings().activeRules, skipPrefixes: [box.path + "/Library/Caches"])
+        var found = try JunkScanner(options: options).scan(root: box.path)
+        XCTAssertEqual(relativePaths(found, from: box.path),
+                       ["Library/Preferences/.DS_Store", ".npm/pkg/.DS_Store", "Project/node_modules/x/.DS_Store", "Project/src/.DS_Store"])
+        options.skipHiddenDirectories = true
+        options.skipDirectoryNames = ["node_modules"]
+        found = try JunkScanner(options: options).scan(root: box.path)
+        XCTAssertEqual(relativePaths(found, from: box.path), ["Library/Preferences/.DS_Store", "Project/src/.DS_Store"])
     }
 }

@@ -70,12 +70,14 @@ public enum FinderDefaultsError: Error, LocalizedError, Equatable {
     case unsupported
     case writeFailed(String)
     case verifyFailed(String)
+    case scriptFailed(String)
 
     public var errorDescription: String? {
         switch self {
         case .unsupported: return "Finder preferences can only be changed on macOS."
         case .writeFailed(let domain): return "Could not save \(domain) preferences."
         case .verifyFailed(let key): return "Finder did not accept the new value for \(key)."
+        case .scriptFailed(let message): return "Finder did not apply the folder view: \(message)"
         }
     }
 }

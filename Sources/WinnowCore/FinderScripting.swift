@@ -4,60 +4,60 @@ import Foundation
 /// This is Apple's supported route and works even where Finder ignores a
 /// `.DS_Store` written by another process. Finder briefly opens the folder.
 public enum FinderScripting {
-    public static func script(for view: FolderView) -> String {
+    /// Candidate scripts, best first. Later ones drop constructs older or newer
+    /// Finder dictionaries do not compile (gallery view is `flow view` in the dictionary).
+    public static func scripts(for view: FolderView) -> [String] {
+        var candidates: [String] = []
+        for name in viewNames(view.viewStyle) {
+            candidates.append(script(for: view, viewLine: "set current view of theWindow to \(name)"))
+        }
+        candidates.append(script(for: view, viewLine: nil))
+        return candidates
+    }
+
+    static func script(for view: FolderView, viewLine: String?) -> String {
         let path = view.path.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
         var lines = [
             "tell application \"Finder\"",
             "set theFolder to POSIX file \"\(path)\" as alias",
             "set theWindow to make new Finder window to theFolder",
-            "set current view of theWindow to \(viewName(view.viewStyle))",
         ]
+        if let viewLine { lines.append(viewLine) }
         let o = view.options
+        func attempt(_ statement: String) { lines += ["try", statement, "end try"] }
         switch view.viewStyle {
         case .icons:
-            lines += [
-                "tell icon view options of theWindow",
-                "set arrangement to \(iconArrangement(view.sortKey))",
-                "set icon size to \(Int(o.icon.iconSize))",
-                "set text size to \(Int(o.icon.textSize))",
-                "set label position to \(o.icon.labelOnBottom ? "bottom" : "right")",
-                "set shows item info to \(o.icon.showItemInfo)",
-                "set shows icon preview to \(o.icon.showIconPreview)",
-                "end tell",
-            ]
+            attempt("set arrangement of icon view options of theWindow to \(iconArrangement(view.sortKey))")
+            attempt("set icon size of icon view options of theWindow to \(Int(o.icon.iconSize))")
+            attempt("set text size of icon view options of theWindow to \(Int(o.icon.textSize))")
+            attempt("set label position of icon view options of theWindow to \(o.icon.labelOnBottom ? "bottom" : "right")")
+            attempt("set shows item info of icon view options of theWindow to \(o.icon.showItemInfo)")
+            attempt("set shows icon preview of icon view options of theWindow to \(o.icon.showIconPreview)")
         case .list:
-            lines += [
-                "tell list view options of theWindow",
-                "set sort column to \(listColumn(view.sortKey))",
-                "set icon size to \(o.list.largeIcons ? "large icon" : "small icon")",
-                "set text size to \(Int(o.list.textSize))",
-                "set calculates folder sizes to \(o.list.calculateAllSizes)",
-                "set shows icon preview to \(o.list.showIconPreview)",
-                "set uses relative dates to \(o.list.useRelativeDates)",
-                "end tell",
-            ]
+            attempt("set sort column of list view options of theWindow to \(listColumn(view.sortKey))")
+            attempt("set icon size of list view options of theWindow to \(o.list.largeIcons ? "large icon" : "small icon")")
+            attempt("set text size of list view options of theWindow to \(Int(o.list.textSize))")
+            attempt("set calculates folder sizes of list view options of theWindow to \(o.list.calculateAllSizes)")
+            attempt("set shows icon preview of list view options of theWindow to \(o.list.showIconPreview)")
+            attempt("set uses relative dates of list view options of theWindow to \(o.list.useRelativeDates)")
         case .columns:
-            lines += [
-                "tell column view options of theWindow",
-                "set text size to \(o.column.textSize)",
-                "set shows icon to \(o.column.showIcons)",
-                "set shows icon preview to \(o.column.showIconPreview)",
-                "set shows preview column to \(o.column.showPreviewColumn)",
-                "end tell",
-            ]
+            attempt("set text size of column view options of theWindow to \(o.column.textSize)")
+            attempt("set shows icon of column view options of theWindow to \(o.column.showIcons)")
+            attempt("set shows icon preview of column view options of theWindow to \(o.column.showIconPreview)")
+            attempt("set shows preview column of column view options of theWindow to \(o.column.showPreviewColumn)")
         case .gallery:
             break
         }
-        lines += ["delay 0.3", "close theWindow", "end tell"]
+        lines += ["delay 0.5", "close theWindow", "end tell"]
         return lines.joined(separator: "\n")
     }
 
-    static func viewName(_ style: FinderViewStyle) -> String {
+    static func viewNames(_ style: FinderViewStyle) -> [String] {
         switch style {
-        case .icons: return "icon view"
-        case .list: return "list view"
-        case .columns: return "column view"
-        case .gallery: return "gallery view"
+        case .icons: return ["icon view"]
+        case .list: return ["list view"]
+        case .columns: return ["column view"]
+        case .gallery: return ["gallery view", "flow view"]
         }
     }
 
@@ -82,22 +82,26 @@ public enum FinderScripting {
     }
 
     #if os(macOS)
-    /// Must be called on the main thread. Throws with Finder's message on failure,
-    /// including "not authorized" when Automation access has been refused.
+    /// Must be called on the main thread. Tries each candidate script until one
+    /// compiles and runs; throws Finder's message otherwise.
     public static func apply(_ view: FolderView) throws {
-        guard let script = NSAppleScript(source: script(for: view)) else {
-            throw FinderDefaultsError.writeFailed("Finder script")
-        }
-        var errorInfo: NSDictionary?
-        script.executeAndReturnError(&errorInfo)
-        if let info = errorInfo {
-            let number = info[NSAppleScript.errorNumber] as? Int ?? 0
-            let message = info[NSAppleScript.errorMessage] as? String ?? "AppleScript error \(number)"
-            if number == -1743 {
-                throw FinderDefaultsError.writeFailed("Finder (allow Winnow under System Settings → Privacy & Security → Automation)")
+        var lastMessage = "no script"
+        for source in scripts(for: view) {
+            guard let script = NSAppleScript(source: source) else { continue }
+            var errorInfo: NSDictionary?
+            guard script.compileAndReturnError(&errorInfo) else {
+                lastMessage = errorInfo?[NSAppleScript.errorMessage] as? String ?? "did not compile"
+                continue
             }
-            throw FinderDefaultsError.writeFailed("Finder: \(message)")
+            script.executeAndReturnError(&errorInfo)
+            guard let info = errorInfo else { return }
+            let number = info[NSAppleScript.errorNumber] as? Int ?? 0
+            if number == -1743 {
+                throw FinderDefaultsError.scriptFailed("Winnow is not allowed to control Finder. Allow it under System Settings → Privacy & Security → Automation.")
+            }
+            lastMessage = info[NSAppleScript.errorMessage] as? String ?? "AppleScript error \(number)"
         }
+        throw FinderDefaultsError.scriptFailed(lastMessage)
     }
     #endif
 }

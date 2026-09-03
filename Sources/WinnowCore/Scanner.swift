@@ -64,19 +64,28 @@ public struct ScanOptions {
     public var recursive: Bool
     /// Subtrees not worth walking (machine-managed caches and containers).
     public var skipPrefixes: [String]
+    /// Do not enter dot-folders: Finder cannot browse them, so their view settings are moot.
+    public var skipHiddenDirectories: Bool
+    /// Folder names never entered (dependency trees such as `node_modules`).
+    public var skipDirectoryNames: Set<String>
 
     public init(rules: [JunkRule], exclusions: ExclusionMatcher = .none, safety: SafetyPolicy = SafetyPolicy(),
-                skipPackages: Bool = true, recursive: Bool = true, skipPrefixes: [String] = []) {
+                skipPackages: Bool = true, recursive: Bool = true, skipPrefixes: [String] = [],
+                skipHiddenDirectories: Bool = false, skipDirectoryNames: Set<String> = []) {
         self.rules = rules
         self.exclusions = exclusions
         self.safety = safety
         self.skipPackages = skipPackages
         self.recursive = recursive
         self.skipPrefixes = skipPrefixes.map(SafetyPolicy.standardize)
+        self.skipHiddenDirectories = skipHiddenDirectories
+        self.skipDirectoryNames = skipDirectoryNames
     }
 
-    public func shouldSkipDescending(into path: String) -> Bool {
-        skipPrefixes.contains { path == $0 || path.hasPrefix($0 + "/") }
+    public func shouldSkipDescending(into path: String, name: String) -> Bool {
+        if skipHiddenDirectories && name.hasPrefix(".") { return true }
+        if skipDirectoryNames.contains(name) { return true }
+        return skipPrefixes.contains { path == $0 || path.hasPrefix($0 + "/") }
     }
 
     public func firstMatch(name: String, isDirectory: Bool, atVolumeRoot: Bool) -> JunkRule? {
@@ -141,7 +150,7 @@ public final class JunkScanner {
                 guard treatAsDirectory, options.recursive else { continue }
                 if st.device != rootStat.device { continue }
                 if options.safety.isVolumeRoot(path) { continue }
-                if options.shouldSkipDescending(into: path) { continue }
+                if options.shouldSkipDescending(into: path, name: name) { continue }
                 if options.skipPackages && JunkScanner.isPackage(path: path, name: name) { continue }
                 stack.append(path)
             }
