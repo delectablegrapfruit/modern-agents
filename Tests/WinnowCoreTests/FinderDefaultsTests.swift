@@ -31,7 +31,7 @@ final class FinderDefaultsTests: XCTestCase {
 
     func testMergePreservesWhatFinderAlreadyStored() {
         let existing: [String: Any] = [
-            "IconViewSettings": ["iconSize": 128.0, "arrangeBy": "none", "textSize": 14.0],
+            "IconViewSettings": ["backgroundType": 2, "backgroundImageAlias": "x", "arrangeBy": "none"],
             "ListViewSettings": [
                 "textSize": 14.0, "sortColumn": "name",
                 "columns": ["name": ["visible": true, "ascending": true, "index": 0, "width": 250]],
@@ -42,10 +42,14 @@ final class FinderDefaultsTests: XCTestCase {
         ]
         var d = FinderDefaults()
         d.sortKey = .size
+        d.options.icon.iconSize = 128
+        d.options.list.textSize = 14
         let merged = d.mergedStandardViewSettings(into: existing)
 
         let icon = merged["IconViewSettings"] as! [String: Any]
         XCTAssertEqual(icon["iconSize"] as? Double, 128.0)
+        XCTAssertEqual(icon["backgroundType"] as? Int, 2)
+        XCTAssertEqual(icon["backgroundImageAlias"] as? String, "x")
         XCTAssertEqual(icon["arrangeBy"] as? String, "size")
 
         let list = merged["ListViewSettings"] as! [String: Any]

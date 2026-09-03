@@ -238,11 +238,13 @@ public struct Settings: Codable, Hashable {
     public var volumes = VolumePolicy()
     public var prevention = PreventionSettings()
     public var startupDisk = StartupDiskSettings()
+    /// Folders that keep their own Finder view (their `.DS_Store` is never swept).
+    public var folderViews: [FolderView] = FolderView.seeded()
     public var exclusions: [String] = []
 
     public init() {}
 
-    enum CodingKeys: String, CodingKey { case schema, general, rules, locations, volumes, prevention, startupDisk, exclusions }
+    enum CodingKeys: String, CodingKey { case schema, general, rules, locations, volumes, prevention, startupDisk, folderViews, exclusions }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -253,6 +255,7 @@ public struct Settings: Codable, Hashable {
         volumes = try c.decodeIfPresent(VolumePolicy.self, forKey: .volumes) ?? VolumePolicy()
         prevention = try c.decodeIfPresent(PreventionSettings.self, forKey: .prevention) ?? PreventionSettings()
         startupDisk = try c.decodeIfPresent(StartupDiskSettings.self, forKey: .startupDisk) ?? StartupDiskSettings()
+        folderViews = try c.decodeIfPresent([FolderView].self, forKey: .folderViews) ?? FolderView.seeded()
         exclusions = try c.decodeIfPresent([String].self, forKey: .exclusions) ?? []
     }
 

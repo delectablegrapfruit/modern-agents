@@ -413,7 +413,19 @@ public final class Engine {
     // MARK: - Scanning and sweeping
 
     private func safety() -> SafetyPolicy {
-        SafetyPolicy(volumeRoots: Set(mountedVolumes.map(\.mountPoint)).union(["/"]))
+        let kept = settings.folderViews.filter(\.isEnabled).map(\.dsStorePath)
+        return SafetyPolicy(volumeRoots: Set(mountedVolumes.map(\.mountPoint)).union(["/"]), exemptPaths: Set(kept))
+    }
+
+    /// Removes `.DS_Store` across the startup-disk user areas so folders adopt the
+    /// Finder defaults. Folders with their own view keep theirs.
+    public func resetFolderSettings(progress: ((SweepPhase) -> Void)? = nil,
+                                    isCancelled: () -> Bool = { false }) throws -> SweepResult {
+        let targets = startupDiskRoots
+            .filter { FileStats.info($0)?.isDirectory == true }
+            .map { SweepTarget(startupDisk: $0) }
+        return try performSweep(targets: targets, dryRun: false, source: "Finder defaults reset",
+                                progress: progress, isCancelled: isCancelled)
     }
 
     private func scanOptions(_ current: Settings, target: SweepTarget) -> ScanOptions {

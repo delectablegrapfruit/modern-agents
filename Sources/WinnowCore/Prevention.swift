@@ -4,7 +4,7 @@ import Foundation
 import CoreFoundation
 #endif
 
-public enum FinderViewStyle: String, CaseIterable, Hashable {
+public enum FinderViewStyle: String, CaseIterable, Hashable, Codable {
     case icons = "icnv"
     case list = "Nlsv"
     case columns = "clmv"
@@ -20,7 +20,7 @@ public enum FinderViewStyle: String, CaseIterable, Hashable {
     }
 }
 
-public enum FinderSortKey: String, CaseIterable, Hashable {
+public enum FinderSortKey: String, CaseIterable, Hashable, Codable {
     case name, dateModified, dateCreated, dateAdded, size, kind
 
     public var label: String {
@@ -55,7 +55,7 @@ public enum FinderSortKey: String, CaseIterable, Hashable {
     }
 }
 
-public enum FinderGroupBy: String, CaseIterable, Hashable {
+public enum FinderGroupBy: String, CaseIterable, Hashable, Codable {
     case none = "None"
     case kind = "Kind"
     case dateModified = "Date Modified"
@@ -94,6 +94,7 @@ public struct FinderDefaults: Hashable {
     public var foldersFirst = false
     public var noDSStoreOnNetwork = false
     public var noDSStoreOnUSB = false
+    public var options = ViewOptions()
 
     public init() {}
 
@@ -105,87 +106,27 @@ public struct FinderDefaults: Hashable {
         #endif
     }
 
+    /// Value Finder stores in `FXArrangeGroupViewBy`.
+    public var sortLabel: String { sortKey.label }
+
     // MARK: Pure transformation (testable everywhere)
 
-    static let listColumnOrder = ["name", "dateModified", "size", "kind", "dateCreated", "dateLastOpened", "dateAdded", "label", "version", "comments"]
-    static let listColumnDefaults: [String: (visible: Bool, width: Int)] = [
-        "name": (true, 300), "dateModified": (true, 181), "size": (true, 97), "kind": (true, 115),
-        "dateCreated": (false, 181), "dateLastOpened": (false, 200), "dateAdded": (false, 181),
-        "label": (false, 100), "version": (false, 75), "comments": (false, 300),
-    ]
-
-    /// Merges these defaults into an existing `StandardViewSettings` dictionary,
-    /// keeping every key Finder already stored and creating Finder's own defaults where absent.
+    /// Merges these defaults into Finder's `StandardViewSettings`, keeping keys we do not manage.
     public func mergedStandardViewSettings(into existing: [String: Any]?) -> [String: Any] {
         var standard = existing ?? [:]
         let sort = sortKey.rawValue
-
-        var icon = standard["IconViewSettings"] as? [String: Any] ?? [
-            "backgroundColorBlue": 1.0, "backgroundColorGreen": 1.0, "backgroundColorRed": 1.0, "backgroundType": 0,
-            "gridOffsetX": 0.0, "gridOffsetY": 0.0, "gridSpacing": 54.0, "iconSize": 64.0, "labelOnBottom": true,
-            "showIconPreview": true, "showItemInfo": false, "textSize": 12.0, "viewOptionsVersion": 1,
-        ]
-        icon["arrangeBy"] = sort
-        standard["IconViewSettings"] = icon
-
-        var list = standard["ListViewSettings"] as? [String: Any] ?? [
-            "calculateAllSizes": false, "iconSize": 16.0, "showIconPreview": true, "textSize": 12.0,
-            "useRelativeDates": true, "viewOptionsVersion": 1,
-        ]
-        var listColumns = list["columns"] as? [String: Any] ?? [:]
-        for (index, identifier) in FinderDefaults.listColumnOrder.enumerated() where listColumns[identifier] == nil {
-            let def = FinderDefaults.listColumnDefaults[identifier]!
-            listColumns[identifier] = ["ascending": identifier == sort ? ascending : true, "index": index,
-                                       "visible": def.visible, "width": def.width]
-        }
-        var sortColumn = listColumns[sort] as? [String: Any] ?? [:]
-        sortColumn["visible"] = true
-        sortColumn["ascending"] = ascending
-        listColumns[sort] = sortColumn
-        list["columns"] = listColumns
-        list["sortColumn"] = sort
-        standard["ListViewSettings"] = list
-
-        var extended = standard["ExtendedListViewSettingsV2"] as? [String: Any] ?? [
-            "calculateAllSizes": false, "iconSize": 16.0, "showIconPreview": true, "textSize": 12.0,
-            "useRelativeDates": true, "viewOptionsVersion": 1,
-        ]
-        var extendedColumns = extended["columns"] as? [[String: Any]] ?? []
-        if extendedColumns.isEmpty {
-            extendedColumns = FinderDefaults.listColumnOrder.enumerated().map { index, identifier in
-                let def = FinderDefaults.listColumnDefaults[identifier]!
-                return ["identifier": identifier, "ascending": identifier == sort ? ascending : true,
-                        "index": index, "visible": def.visible, "width": def.width]
-            }
-        }
-        if let position = extendedColumns.firstIndex(where: { $0["identifier"] as? String == sort }) {
-            extendedColumns[position]["visible"] = true
-            extendedColumns[position]["ascending"] = ascending
-        } else {
-            extendedColumns.append(["identifier": sort, "ascending": ascending, "index": extendedColumns.count,
-                                    "visible": true, "width": 181])
-        }
-        extended["columns"] = extendedColumns
-        extended["sortColumn"] = sort
-        standard["ExtendedListViewSettingsV2"] = extended
-
-        var gallery = standard["GalleryViewSettings"] as? [String: Any] ?? [
-            "iconSize": 48.0, "showIconPreview": true, "viewOptionsVersion": 1,
-        ]
-        gallery["arrangeBy"] = sort
-        standard["GalleryViewSettings"] = gallery
-
+        standard["IconViewSettings"] = options.icon.plist(arrangeBy: sort, existing: standard["IconViewSettings"] as? [String: Any])
+        standard["ListViewSettings"] = options.list.plist(sortColumn: sort, ascending: ascending,
+                                                          existing: standard["ListViewSettings"] as? [String: Any])
+        standard["ExtendedListViewSettingsV2"] = options.list.extendedPlist(sortColumn: sort, ascending: ascending,
+                                                                            existing: standard["ExtendedListViewSettingsV2"] as? [String: Any])
+        standard["GalleryViewSettings"] = options.gallery.plist(arrangeBy: sort, existing: standard["GalleryViewSettings"] as? [String: Any])
         return standard
     }
 
     public func mergedColumnViewOptions(into existing: [String: Any]?) -> [String: Any] {
-        var options = existing ?? ["ColumnShowIcons": true, "FontSize": 12, "ShowIconThumbnails": true, "ShowPreview": true]
-        if let code = sortKey.columnViewCode { options["ArrangeBy"] = code }
-        return options
+        options.column.plist(arrangeBy: sortKey.columnViewCode, existing: existing)
     }
-
-    /// Value Finder stores in `FXArrangeGroupViewBy`.
-    public var sortLabel: String { sortKey.label }
 
     // MARK: macOS I/O
 
@@ -211,20 +152,24 @@ public struct FinderDefaults: Hashable {
             d.ascending = key.defaultAscending
             if let columns = extended?["columns"] as? [[String: Any]],
                let column = columns.first(where: { $0["identifier"] as? String == raw }),
-               let asc = column["ascending"] as? Bool {
+               let asc = plistBool(column["ascending"]) {
                 d.ascending = asc
             } else if let columns = list?["columns"] as? [String: Any],
                       let column = columns[raw] as? [String: Any],
-                      let asc = column["ascending"] as? Bool {
+                      let asc = plistBool(column["ascending"]) {
                 d.ascending = asc
             }
         }
         if let raw = value("FXPreferredGroupBy", in: finderDomain) as? String, let group = FinderGroupBy(rawValue: raw) {
             d.groupBy = group
         }
-        d.foldersFirst = value("_FXSortFoldersFirst", in: finderDomain) as? Bool ?? false
-        d.noDSStoreOnNetwork = value("DSDontWriteNetworkStores", in: desktopServicesDomain) as? Bool ?? false
-        d.noDSStoreOnUSB = value("DSDontWriteUSBStores", in: desktopServicesDomain) as? Bool ?? false
+        d.foldersFirst = plistBool(value("_FXSortFoldersFirst", in: finderDomain)) ?? false
+        d.options.icon = IconViewOptions.read(standard?["IconViewSettings"] as? [String: Any])
+        d.options.list = ListViewOptions.read(list, extended: extended)
+        d.options.gallery = GalleryViewOptions.read(standard?["GalleryViewSettings"] as? [String: Any])
+        d.options.column = ColumnViewOptions.read(value("ColumnViewOptions", in: finderDomain) as? [String: Any])
+        d.noDSStoreOnNetwork = plistBool(value("DSDontWriteNetworkStores", in: desktopServicesDomain)) ?? false
+        d.noDSStoreOnUSB = plistBool(value("DSDontWriteUSBStores", in: desktopServicesDomain)) ?? false
         return d
     }
 
@@ -250,6 +195,7 @@ public struct FinderDefaults: Hashable {
         if check.viewStyle != viewStyle { throw FinderDefaultsError.verifyFailed("view") }
         if check.sortKey != sortKey { throw FinderDefaultsError.verifyFailed("sort order") }
         if check.foldersFirst != foldersFirst { throw FinderDefaultsError.verifyFailed("folders first") }
+        if Int(check.options.icon.iconSize) != Int(options.icon.iconSize) { throw FinderDefaultsError.verifyFailed("icon size") }
         if check.noDSStoreOnNetwork != noDSStoreOnNetwork || check.noDSStoreOnUSB != noDSStoreOnUSB {
             throw FinderDefaultsError.verifyFailed(".DS_Store")
         }

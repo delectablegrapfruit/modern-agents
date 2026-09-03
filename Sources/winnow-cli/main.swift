@@ -14,6 +14,9 @@ USAGE
   winnow-cli watch [<folder>...]         watch and clean continuously (Ctrl-C to stop)
   winnow-cli rules                       list rules and whether they are active
   winnow-cli volumes                     list mounted volumes and whether they would be cleaned
+  winnow-cli dsstore <folder>            show the records in a folder's .DS_Store
+  winnow-cli set-view <folder> <mode>    give a folder its own view: icons | list | columns | gallery
+                                         (--sort=name|dateModified|dateCreated|dateAdded|size|kind  --icon-size=N)
 
 OPTIONS
   --dry-run        report what would be removed, remove nothing
@@ -30,6 +33,8 @@ struct Arguments {
     var shallow = false
     var mode: DeletionMode?
     var quiet = false
+    var sort: String?
+    var iconSize: Double?
 
     init(_ argv: [String]) {
         var rest = argv.dropFirst()
@@ -42,6 +47,8 @@ struct Arguments {
             case "--permanent": mode = .permanent
             case "--quiet", "-q": quiet = true
             case "-h", "--help": command = "help"
+            case _ where arg.hasPrefix("--sort="): sort = String(arg.dropFirst("--sort=".count))
+            case _ where arg.hasPrefix("--icon-size="): iconSize = Double(arg.dropFirst("--icon-size=".count))
             default:
                 if arg.hasPrefix("-") {
                     fail("Unknown option \(arg)")
@@ -175,6 +182,51 @@ case "volumes":
     for volume in engine.refreshVolumes(announceNew: false) {
         let verdict = engine.decision(for: volume)
         print("\(verdict.isEligible ? "clean " : "skip  ") \(volume.name.padding(toLength: 24, withPad: " ", startingAt: 0)) \(volume.kind.label) · \(volume.fileSystemLabel) · \(volume.mountPoint) · \(verdict.reason)")
+    }
+
+case "dsstore":
+    guard let folder = args.paths.first else { fail("dsstore needs a folder") }
+    let url = URL(fileURLWithPath: absolute(folder)).appendingPathComponent(".DS_Store")
+    do {
+        let file = try DSStoreFile.read(try Data(contentsOf: url))
+        for record in file.records {
+            let value: String
+            switch record.value {
+            case .long(let v): value = "\(v)"
+            case .shor(let v): value = "\(v)"
+            case .bool(let v): value = "\(v)"
+            case .type(let v): value = "'\(v)'"
+            case .ustr(let v): value = "\"\(v)\""
+            case .comp(let v), .dutc(let v): value = "\(v)"
+            case .blob(let d):
+                if let plist = try? PropertyListSerialization.propertyList(from: d, options: [], format: nil) {
+                    value = "\(plist)"
+                } else {
+                    value = "<\(d.count) bytes>"
+                }
+            }
+            print("\(record.filename)\t\(record.structID)\t\(record.value.typeCode)\t\(value)")
+        }
+        print("\(file.records.count) record\(file.records.count == 1 ? "" : "s")")
+    } catch {
+        fail(error.localizedDescription, code: 1)
+    }
+
+case "set-view":
+    guard args.paths.count == 2 else { fail("set-view needs a folder and a mode") }
+    let styles: [String: FinderViewStyle] = ["icons": .icons, "list": .list, "columns": .columns, "gallery": .gallery]
+    guard let style = styles[args.paths[1].lowercased()] else { fail("mode must be icons, list, columns or gallery") }
+    let key = args.sort.flatMap(FinderSortKey.init(rawValue:)) ?? .name
+    var view = FolderView(path: absolute(args.paths[0]), viewStyle: style, sortKey: key)
+    if let size = args.iconSize {
+        view.options.icon.iconSize = size
+        view.options.gallery.thumbnailSize = size
+    }
+    do {
+        let url = try FolderViewWriter.write(view)
+        print("wrote \(url.path) · \(view.summary)")
+    } catch {
+        fail(error.localizedDescription, code: 1)
     }
 
 case "help", "", "-h", "--help":

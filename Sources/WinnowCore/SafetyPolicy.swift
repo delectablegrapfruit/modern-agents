@@ -15,13 +15,17 @@ public struct SafetyPolicy {
     public var neverDeleteNames: Set<String>
     /// Mount points. A mount point itself is never deleted.
     public var volumeRoots: Set<String>
+    /// Exact paths kept on purpose (the `.DS_Store` of folders with their own view).
+    public var exemptPaths: Set<String>
 
     public init(protectedPrefixes: [String] = SafetyPolicy.defaultProtectedPrefixes,
                 neverDeleteNames: Set<String> = [".metadata_never_index", "no_log"],
-                volumeRoots: Set<String> = []) {
+                volumeRoots: Set<String> = [],
+                exemptPaths: Set<String> = []) {
         self.protectedPrefixes = protectedPrefixes.map { SafetyPolicy.standardize($0) }
         self.neverDeleteNames = neverDeleteNames
         self.volumeRoots = Set(volumeRoots.map { SafetyPolicy.standardize($0) })
+        self.exemptPaths = Set(exemptPaths.map { SafetyPolicy.standardize($0) })
     }
 
     public static var defaultProtectedPrefixes: [String] {
@@ -66,6 +70,7 @@ public struct SafetyPolicy {
         if isProtected(p) { return .denied("Path is inside a protected system location") }
         let name = NSString(string: p).lastPathComponent
         if neverDeleteNames.contains(name) { return .denied("\(name) is a protected marker") }
+        if exemptPaths.contains(p) { return .denied("Kept for the folder's own view settings") }
         if let roots {
             let inside = roots.contains { root in
                 let r = SafetyPolicy.standardize(root)

@@ -15,7 +15,8 @@ they appear, and sweeps whole disks on demand.
 - **Rules** you can switch individually, plus your own name patterns.
 - **Disk policy**: external, network, internal, per-volume overrides, skip Mac-formatted disks.
 - **Prevention**: Finder's own `.DS_Store` switches for network and USB volumes; a Spotlight no-index marker on cleaned disks.
-- **Finder defaults**: view, sort key and direction, group-by and folders-first for every folder without its own `.DS_Store`, written to all four view styles, verified, then Finder is relaunched.
+- **Finder defaults**: default view mode, sort key and direction, group-by, folders-first, and per-mode view options (icon size, grid spacing, text size, label position, list columns, relative dates, column-view icons and preview, gallery thumbnail size). Written to Finder's own preferences, verified, then Finder is relaunched. *Reset existing folder settings* removes `.DS_Store` across your home folder and Applications so every folder actually adopts them.
+- **Folders with their own view**: give any folder its own mode and options (Pictures → 128 px icons and Movies → gallery are preconfigured). Winnow writes the folder's `.DS_Store` itself — no Automation permission, no Finder window flashing — and every sweep leaves that file alone.
 - **Startup disk** (off by default, warning on enable): removes `.DS_Store` from your home folder and Applications continuously, with an optional time limit (1 h … 1 week) or indefinitely. System folders and `~/Library` are never touched.
 - **Safety**: never the startup disk, never system folders, never outside the area being cleaned, never a mount point itself. Volume-level folders are matched only at the top of a volume.
 - **Activity log** of everything removed.
@@ -65,6 +66,8 @@ winnow-cli full-sweep              clean every configured location and eligible 
 winnow-cli watch [<folder>...]     watch and clean continuously
 winnow-cli rules                   list rules
 winnow-cli volumes                 list mounted volumes and whether they would be cleaned
+winnow-cli dsstore <folder>        show the records in a folder's .DS_Store
+winnow-cli set-view <folder> <mode>  give a folder its own view (icons|list|columns|gallery; --sort=…, --icon-size=N)
 ```
 
 The CLI shares its settings with the app (`~/Library/Application Support/Winnow/settings.json`).
@@ -73,7 +76,7 @@ The CLI shares its settings with the app (`~/Library/Application Support/Winnow/
 
 | Path | Purpose |
 |------|---------|
-| `Sources/WinnowCore` | Rules, scanner, sweeper, safety policy, settings, watchers, engine. Foundation only; also builds on Linux. |
+| `Sources/WinnowCore` | Rules, scanner, sweeper, safety policy, settings, watchers, engine, Finder defaults, `.DS_Store` reader/writer. Foundation only; also builds on Linux. |
 | `Sources/Winnow` | SwiftUI menu bar app and configuration window. |
 | `Sources/winnow-cli` | Command-line front end. |
 | `Tests/WinnowCoreTests` | Engine tests. |

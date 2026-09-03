@@ -45,3 +45,30 @@ jobs:
       - uses: actions/checkout@v4
       - run: swift build --product winnow-cli
       - run: swift test
+      - name: Cross-check .DS_Store output with the ds_store Python package
+        run: |
+          apt-get update -qq >/dev/null && apt-get install -y -qq python3 python3-pip >/dev/null
+          pip3 install -q ds_store
+          mkdir -p /tmp/dsdemo
+          .build/debug/winnow-cli set-view /tmp/dsdemo gallery --sort=dateAdded --icon-size=96
+          .build/debug/winnow-cli dsstore /tmp/dsdemo
+          python3 - <<'EOF'
+          from ds_store import DSStore
+          path = '/tmp/dsdemo/.DS_Store'
+          with DSStore.open(path, 'r') as d:
+              entries = [(e.filename, e.code, e.type) for e in d]
+          print(entries)
+          codes = {(f, c) for f, c, _ in entries}
+          assert ('.', b'vstl') in codes, entries
+          assert ('.', b'glvp') in codes, entries
+          # Finder rewrites the file in place; make sure an independent implementation can too.
+          with DSStore.open(path, 'r+') as d:
+              d['.']['vstl'] = ('type', b'Nlsv')
+              d['photo.jpg']['Iloc'] = (10, 20)
+          with DSStore.open(path, 'r') as d:
+              after = {(e.filename, e.code): e.value for e in d}
+          assert after[('.', b'vstl')] == b'Nlsv', after
+          assert ('photo.jpg', b'Iloc') in after, after
+          print('ds_store round trip ok')
+          EOF
+          .build/debug/winnow-cli dsstore /tmp/dsdemo

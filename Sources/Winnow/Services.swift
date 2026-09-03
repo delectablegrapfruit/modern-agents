@@ -52,13 +52,12 @@ enum LoginItem {
     }
 }
 
-/// Applies Finder defaults: write, verify, then quit Finder so it relaunches with them.
+/// Quits Finder so it relaunches and picks up new preferences and `.DS_Store` files.
 enum FinderApplier {
     static let finderID = "com.apple.finder"
 
     @MainActor
-    static func apply(_ defaults: FinderDefaults) async throws {
-        try defaults.write()
+    static func relaunchFinder() async {
         let running = NSRunningApplication.runningApplications(withBundleIdentifier: finderID)
         running.forEach { $0.terminate() }
         for _ in 0..<30 where !running.allSatisfy(\.isTerminated) {

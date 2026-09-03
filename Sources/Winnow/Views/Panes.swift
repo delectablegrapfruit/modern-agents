@@ -164,61 +164,6 @@ struct LocationsPane: View {
     }
 }
 
-// MARK: - Finder
-
-struct FinderPane: View {
-    @EnvironmentObject private var model: AppModel
-
-    var body: some View {
-        Section {
-            Picker("View", selection: $model.finderDraft.viewStyle) {
-                ForEach(FinderViewStyle.allCases, id: \.self) { Text($0.label).tag($0) }
-            }
-            Picker("Sort by", selection: $model.finderDraft.sortKey) {
-                ForEach(FinderSortKey.allCases, id: \.self) { Text($0.label).tag($0) }
-            }
-            Picker("Order", selection: $model.finderDraft.ascending) {
-                Text("Ascending").tag(true)
-                Text("Descending").tag(false)
-            }
-            Picker("Group by", selection: $model.finderDraft.groupBy) {
-                ForEach(FinderGroupBy.allCases, id: \.self) { Text($0.label).tag($0) }
-            }
-            Toggle("Folders first", isOn: $model.finderDraft.foldersFirst)
-        } header: {
-            Text("Folder defaults")
-        } footer: {
-            Text("What every folder without its own .DS_Store uses — the same as View Options → Use as Defaults. Applied to icon, list, column and gallery views.")
-        }
-        Section {
-            Toggle("Don’t write on network volumes", isOn: $model.finderDraft.noDSStoreOnNetwork)
-            Toggle("Don’t write on USB disks", isOn: $model.finderDraft.noDSStoreOnUSB)
-        } header: {
-            Text(".DS_Store")
-        }
-        Section {
-            HStack {
-                Text(statusText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                if model.finderHasChanges && !model.isApplyingFinder {
-                    Button("Revert") { model.revertFinderDraft() }
-                }
-                Button("Apply") { model.applyFinderDefaults() }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!model.finderHasChanges || model.isApplyingFinder)
-            }
-        }
-    }
-
-    private var statusText: String {
-        if model.isApplyingFinder { return "Relaunching Finder…" }
-        if model.finderHasChanges { return "Finder relaunches when you apply." }
-        return "Finder is up to date."
-    }
-}
-
 // MARK: - Options
 
 struct OptionsPane: View {
