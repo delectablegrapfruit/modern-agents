@@ -61,7 +61,8 @@ final class AppModel: ObservableObject {
     /// Finder defaults as edited in the window; written only on Apply.
     @Published var finderDraft: FinderDefaults
     @Published private(set) var finderApplied: FinderDefaults
-    @Published private(set) var folderViewsApplied: [FolderView]
+    /// Folder views as edited in the window; the engine enforces `settings.folderViews`, written on Apply.
+    @Published var folderViewsDraft: [FolderView]
     @Published private(set) var isApplyingFinder = false
     @Published private(set) var finderPhase: String?
     @Published var resetFoldersOnApply = true
@@ -82,7 +83,7 @@ final class AppModel: ObservableObject {
         let finder = FinderDefaults.read()
         finderDraft = finder
         finderApplied = finder
-        folderViewsApplied = initial.folderViews
+        folderViewsDraft = initial.folderViews
         if LoginItem.isAvailable {
             initial.general.launchAtLogin = LoginItem.isEnabled
         }
@@ -421,7 +422,7 @@ final class AppModel: ObservableObject {
     // MARK: - Finder
 
     var finderHasChanges: Bool {
-        finderDraft != finderApplied || settings.folderViews != folderViewsApplied
+        finderDraft != finderApplied || folderViewsDraft != settings.folderViews
     }
 
     /// Writes Finder's defaults and every folder view, relaunches Finder, asks Finder
@@ -430,10 +431,11 @@ final class AppModel: ObservableObject {
         guard finderHasChanges || resetFoldersOnApply, !isApplyingFinder else { return }
         isApplyingFinder = true
         let draft = finderDraft
-        let views = settings.folderViews
-        let previous = folderViewsApplied
+        let views = folderViewsDraft
+        let previous = settings.folderViews
         let reset = resetFoldersOnApply
         let engine = self.engine
+        settings.folderViews = views
         let current = settings
         Task { @MainActor in
             var problems: [String] = []
@@ -443,19 +445,22 @@ final class AppModel: ObservableObject {
 
             finderPhase = "Writing preferences…"
             do { try draft.write() } catch { problems.append(error.localizedDescription) }
+            // The engine exempts and watches the new folder views before their files change.
+            await Task.detached(priority: .userInitiated) { engine.update(current) }.value
             let wanted = Dictionary(views.filter(\.isEnabled).map { ($0.path, $0) }, uniquingKeysWith: { a, _ in a })
-            let roots = Array(wanted.keys)
-            for view in previous where view.isEnabled && wanted[view.path] == nil {
-                FolderViewWriter.removeTree(view, excluding: roots)
+            let dropped = previous.filter { view in
+                guard view.isEnabled else { return false }
+                guard let kept = wanted[view.path] else { return true }
+                return view.includeSubfolders && !kept.includeSubfolders
             }
             var foldersWritten = 0
-            for view in wanted.values {
-                do { foldersWritten += try FolderViewWriter.writeTree(view, excluding: roots) } catch {
-                    problems.append("\(view.displayName): \(error.localizedDescription)")
-                }
+            await Task.detached(priority: .userInitiated) {
+                if !dropped.isEmpty { FolderViewWriter.retire(FolderViewPlan(views: dropped)) }
+            }.value
+            let plan = engine.folderViewPlan(current)
+            do { foldersWritten = try await Task.detached(priority: .userInitiated) { try FolderViewWriter.apply(plan) }.value } catch {
+                problems.append(error.localizedDescription)
             }
-            // Make sure the engine exempts the folder views before anything else runs.
-            await Task.detached(priority: .userInitiated) { engine.update(current) }.value
 
             finderPhase = "Relaunching Finder…"
             await FinderApplier.launchFinder()
@@ -469,7 +474,6 @@ final class AppModel: ObservableObject {
             }
 
             finderApplied = problems.isEmpty ? draft : FinderDefaults.read()
-            folderViewsApplied = views
             if !problems.isEmpty { lastError = problems.joined(separator: "\n") }
             var status = "Applied " + Date().formatted(date: .omitted, time: .shortened)
             if foldersWritten > 0 { status += " · \(foldersWritten) folder\(foldersWritten == 1 ? "" : "s")" }
@@ -528,7 +532,7 @@ final class AppModel: ObservableObject {
 
     func revertFinderDraft() {
         finderDraft = finderApplied
-        settings.folderViews = folderViewsApplied
+        folderViewsDraft = settings.folderViews
     }
 
     // MARK: Folder views
@@ -542,36 +546,36 @@ final class AppModel: ObservableObject {
         panel.message = "Choose a folder that should keep its own view."
         guard panel.runModal() == .OK, let url = panel.url else { return }
         let path = SafetyPolicy.standardize(url.path)
-        if let existing = settings.folderViews.first(where: { $0.path == path }) {
+        if let existing = folderViewsDraft.first(where: { $0.path == path }) {
             editingFolderView = existing
             return
         }
         var view = FolderView(path: path, viewStyle: finderDraft.viewStyle, sortKey: finderDraft.sortKey,
                               ascending: finderDraft.ascending, options: finderDraft.options)
         view.isEnabled = true
-        settings.folderViews.append(view)
+        folderViewsDraft.append(view)
         editingFolderView = view
     }
 
     func removeFolderView(_ id: UUID) {
-        settings.folderViews.removeAll { $0.id == id }
+        folderViewsDraft.removeAll { $0.id == id }
     }
 
     func saveFolderView(_ view: FolderView) {
-        if let index = settings.folderViews.firstIndex(where: { $0.id == view.id }) {
-            settings.folderViews[index] = view
+        if let index = folderViewsDraft.firstIndex(where: { $0.id == view.id }) {
+            folderViewsDraft[index] = view
         } else {
-            settings.folderViews.append(view)
+            folderViewsDraft.append(view)
         }
         editingFolderView = nil
     }
 
     func folderViewEnabledBinding(_ id: UUID) -> Binding<Bool> {
         Binding(
-            get: { [weak self] in self?.settings.folderViews.first { $0.id == id }?.isEnabled ?? false },
+            get: { [weak self] in self?.folderViewsDraft.first { $0.id == id }?.isEnabled ?? false },
             set: { [weak self] on in
-                guard let self, let index = self.settings.folderViews.firstIndex(where: { $0.id == id }) else { return }
-                self.settings.folderViews[index].isEnabled = on
+                guard let self, let index = self.folderViewsDraft.firstIndex(where: { $0.id == id }) else { return }
+                self.folderViewsDraft[index].isEnabled = on
             }
         )
     }

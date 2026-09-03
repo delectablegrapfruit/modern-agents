@@ -19,6 +19,7 @@ final class EngineTests: XCTestCase {
         engine = Engine(store: store, inspector: inspector, log: ActivityLog(fileURL: box.root.appendingPathComponent("config/activity.jsonl")))
         var settings = engine.settings
         settings.general.pollIntervalSeconds = 1
+        settings.folderViews = []
         engine.update(settings)
     }
 
@@ -123,6 +124,50 @@ final class EngineTests: XCTestCase {
         wait(for: [again], timeout: 10)
         XCTAssertFalse(box.exists("USB/Later/.DS_Store"))
         XCTAssertTrue(box.exists("USB/Later"))
+    }
+
+    func testFolderViewsAreWatchedAndKept() throws {
+        try box.dir("Pictures/2024")
+        try box.dir("Documents")
+        var settings = engine.settings
+        settings.folderViews = [FolderView(path: box.path + "/Pictures", viewStyle: .gallery)]
+        engine.update(settings)
+        let plan = engine.folderViewPlan()
+
+        engine.start()
+        XCTAssertEqual(Set(engine.activeWatches.map(\.path)), [box.path + "/USB", box.path],
+                       "the parent of a folder view is watched so its record is kept")
+        XCTAssertEqual(engine.activeWatches.first { $0.path == box.path }?.source, .folderView)
+        let parentStore = box.root.appendingPathComponent(".DS_Store")
+        XCTAssertTrue(waitUntil(10) { self.box.exists(".DS_Store") && self.box.exists("Pictures/2024/.DS_Store") },
+                      "watching writes the stores straight away")
+        let expected = try DSStoreFile.read(try Data(contentsOf: parentStore)).records
+
+        // Finder remembers Documents' view next to Pictures': that record does not survive.
+        var file = try DSStoreFile.read(try Data(contentsOf: parentStore))
+        file.records += try FolderViewWriter.records(for: FolderView(path: box.path + "/Documents", viewStyle: .columns), as: "Documents")
+        try file.encoded().write(to: parentStore)
+        XCTAssertTrue(waitUntil(10) {
+            guard let now = try? DSStoreFile.read(try Data(contentsOf: parentStore)) else { return false }
+            return FolderViewWriter.equivalent(now.records, expected)
+        })
+        XCTAssertTrue(plan.manages(store: parentStore.path))
+
+        // Junk elsewhere under the watched parent is not touched: this watch deletes nothing.
+        try box.file("Documents/.DS_Store")
+        try box.file("Documents/._junk")
+        Thread.sleep(forTimeInterval: 2)
+        XCTAssertTrue(box.exists("Documents/.DS_Store"))
+        XCTAssertTrue(box.exists("Documents/._junk"))
+    }
+
+    private func waitUntil(_ seconds: TimeInterval, _ condition: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(seconds)
+        while Date() < deadline {
+            if condition() { return true }
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+        return condition()
     }
 
     func testPausingStopsWatching() throws {

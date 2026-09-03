@@ -43,40 +43,92 @@ final class FolderViewTests: XCTestCase {
         XCTAssertEqual(try FolderViewWriter.records(for: FolderView(path: box.path, viewStyle: .gallery)).map(\.structID), ["vstl", "icvl", "vSrn", "glvp"])
     }
 
-    func testWriteMergesWithExistingRecordsAndRemoveStripsThem() throws {
+    private func records(at relative: String) throws -> [DSStoreRecord] {
+        try DSStoreFile.read(try Data(contentsOf: box.root.appendingPathComponent(relative))).records
+    }
+
+    func testApplyWritesOwnAndParentRecordsAndRetireStripsThem() throws {
         let store = box.path + "/Pictures/.DS_Store"
         let foreign = DSStoreRecord(filename: "photo.jpg", structID: "Iloc", value: .blob(Data(repeating: 1, count: 16)))
         let stale = DSStoreRecord(filename: ".", structID: "icvo", value: .blob(Data(repeating: 2, count: 18)))
         try DSStoreFile(records: [foreign, stale]).encoded().write(to: URL(fileURLWithPath: store))
 
-        let view = FolderView(path: box.path + "/Pictures", viewStyle: .gallery)
-        try FolderViewWriter.write(view)
-        let merged = try DSStoreFile.read(try Data(contentsOf: URL(fileURLWithPath: store)))
-        XCTAssertTrue(merged.records.contains(foreign))
-        XCTAssertFalse(merged.records.contains(stale))
-        XCTAssertTrue(merged.records.contains { $0.structID == "vstl" && $0.value == .type("glyv") })
-        XCTAssertTrue(merged.records.contains { $0.structID == "bwsp" }, "window settings are added when missing")
+        let view = FolderView(path: box.path + "/Pictures", viewStyle: .gallery, includeSubfolders: false)
+        let plan = FolderViewPlan(views: [view])
+        XCTAssertEqual(plan.directories(), [box.path, box.path + "/Pictures"], "the parent store holds the folder's record")
+        XCTAssertTrue(plan.manages(store: store))
+        XCTAssertTrue(plan.manages(store: box.path + "/.DS_Store"))
+        XCTAssertFalse(plan.manages(store: box.path + "/Elsewhere/.DS_Store"))
+        XCTAssertFalse(plan.manages(store: box.path + "/Pictures/photo.jpg"))
 
-        try FolderViewWriter.write(view)
-        let twice = try DSStoreFile.read(try Data(contentsOf: URL(fileURLWithPath: store)))
-        XCTAssertEqual(twice.records.filter { $0.structID == "bwsp" }.count, 1)
+        XCTAssertEqual(try FolderViewWriter.apply(plan), 1)
+        let own = try records(at: "Pictures/.DS_Store")
+        XCTAssertFalse(own.contains(foreign), "Finder's own records do not persist")
+        XCTAssertFalse(own.contains(stale))
+        XCTAssertTrue(own.contains { $0.filename == "." && $0.structID == "vstl" && $0.value == .type("glyv") })
+        XCTAssertEqual(own.filter { $0.structID == "bwsp" }.count, 1, "window settings are added when missing")
+        let parent = try records(at: ".DS_Store")
+        XCTAssertEqual(Set(parent.map(\.filename)), ["Pictures"])
+        XCTAssertTrue(parent.contains { $0.structID == "vstl" && $0.value == .type("glyv") })
+        XCTAssertTrue(parent.contains { $0.structID == "glvp" })
+        XCTAssertTrue(parent.contains { $0.structID == "bwsp" })
 
-        try FolderViewWriter.remove(view)
-        let stripped = try DSStoreFile.read(try Data(contentsOf: URL(fileURLWithPath: store)))
-        XCTAssertEqual(stripped.records, [foreign], "our default window record goes too")
+        XCTAssertFalse(try FolderViewWriter.write(directory: view.path, plan: plan), "already as planned")
+        XCTAssertFalse(try FolderViewWriter.write(directory: box.path, plan: plan))
 
-        // A window record Finder changed is not ours any more and stays.
+        FolderViewWriter.retire(plan)
+        XCTAssertFalse(box.exists("Pictures/.DS_Store"), "our default window record goes too")
+        XCTAssertFalse(box.exists(".DS_Store"))
+
+        // A window record Finder changed is kept through rewrites and is not ours to remove.
         var custom = DSStoreFile(records: [foreign])
         custom.records.append(DSStoreRecord(filename: ".", structID: "bwsp", value: .blob(Data([1, 2, 3]))))
         try custom.encoded().write(to: URL(fileURLWithPath: store))
-        try FolderViewWriter.write(view)
-        try FolderViewWriter.remove(view)
-        let kept = try DSStoreFile.read(try Data(contentsOf: URL(fileURLWithPath: store)))
-        XCTAssertEqual(Set(kept.records.map(\.structID)), ["Iloc", "bwsp"])
+        try FolderViewWriter.apply(plan)
+        XCTAssertTrue(try records(at: "Pictures/.DS_Store").contains { $0.structID == "bwsp" && $0.value == .blob(Data([1, 2, 3])) })
+        FolderViewWriter.retire(plan)
+        XCTAssertEqual(try records(at: "Pictures/.DS_Store").map(\.structID), ["bwsp"])
+    }
 
-        try DSStoreFile(records: try FolderViewWriter.records(for: view)).encoded().write(to: URL(fileURLWithPath: store))
-        try FolderViewWriter.remove(view)
-        XCTAssertFalse(box.exists("Pictures/.DS_Store"))
+    func testReconcileRestoresWhatFinderChanged() throws {
+        try box.dir("Pictures/2024")
+        try box.dir("Documents")
+        let view = FolderView(path: box.path + "/Pictures", viewStyle: .gallery)
+        let plan = FolderViewPlan(views: [view])
+        try FolderViewWriter.apply(plan)
+        let before = try records(at: ".DS_Store")
+
+        // Finder persists a sibling's view in the parent store and flips the folder's own view.
+        var parent = try DSStoreFile.read(try Data(contentsOf: box.root.appendingPathComponent(".DS_Store")))
+        parent.records += try FolderViewWriter.records(for: FolderView(path: box.path + "/Documents", viewStyle: .columns), as: "Documents")
+        try parent.encoded().write(to: box.root.appendingPathComponent(".DS_Store"))
+        var own = try DSStoreFile.read(try Data(contentsOf: box.root.appendingPathComponent("Pictures/.DS_Store")))
+        own.records.removeAll { $0.structID == "vstl" }
+        own.records.append(DSStoreRecord(filename: ".", structID: "vstl", value: .type("clmv")))
+        own.records.append(DSStoreRecord(filename: "2024", structID: "vstl", value: .type("clmv")))
+        try own.encoded().write(to: box.root.appendingPathComponent("Pictures/.DS_Store"))
+
+        XCTAssertTrue(try FolderViewWriter.write(directory: box.path, plan: plan))
+        XCTAssertTrue(FolderViewWriter.equivalent(try records(at: ".DS_Store"), before))
+        XCTAssertTrue(try FolderViewWriter.write(directory: view.path, plan: plan))
+        let restored = try records(at: "Pictures/.DS_Store")
+        XCTAssertEqual(restored.filter { $0.structID == "vstl" }.map(\.value), [.type("glyv"), .type("glyv")])
+        XCTAssertFalse(try FolderViewWriter.write(directory: view.path, plan: plan))
+
+        // A deleted managed store comes back.
+        try FileManager.default.removeItem(at: box.root.appendingPathComponent(".DS_Store"))
+        XCTAssertTrue(try FolderViewWriter.write(directory: box.path, plan: plan))
+        XCTAssertTrue(box.exists(".DS_Store"))
+    }
+
+    func testEquivalenceIgnoresOrderAndPlistEncoding() throws {
+        let a = DSStoreRecord(filename: ".", structID: "icvp", value: .blob(try FolderViewWriter.plistData(["iconSize": 64, "arrangeBy": "name", "labelOnBottom": true])))
+        let xml = try PropertyListSerialization.data(fromPropertyList: ["arrangeBy": "name", "labelOnBottom": true, "iconSize": 64.0], format: .xml, options: 0)
+        let b = DSStoreRecord(filename: ".", structID: "icvp", value: .blob(xml))
+        let c = DSStoreRecord(filename: ".", structID: "vstl", value: .type("icnv"))
+        XCTAssertTrue(FolderViewWriter.equivalent([c, a], [b, c]))
+        XCTAssertFalse(FolderViewWriter.equivalent([a], [b, c]))
+        XCTAssertFalse(FolderViewWriter.equivalent([a, c], [b, DSStoreRecord(filename: ".", structID: "vstl", value: .type("Nlsv"))]))
     }
 
     func testDefaultWindowRecordIsRecognisedAfterSerialisation() throws {
@@ -88,8 +140,13 @@ final class FolderViewTests: XCTestCase {
         XCTAssertFalse(FolderViewWriter.isDefaultWindowSettings(Data([1, 2, 3])))
     }
 
-    func testWriteRefusesMissingFolder() {
-        XCTAssertThrowsError(try FolderViewWriter.write(FolderView(path: box.path + "/Nope")))
+    func testMissingFoldersAreLeftOut() throws {
+        let plan = FolderViewPlan(views: [FolderView(path: box.path + "/Nope"), FolderView(path: box.path + "/Pictures", isEnabled: false)])
+        XCTAssertTrue(plan.isEmpty)
+        XCTAssertTrue(plan.directories().isEmpty)
+        XCTAssertEqual(try FolderViewWriter.apply(plan), 0)
+        XCTAssertFalse(box.exists(".DS_Store"))
+        XCTAssertThrowsError(try FolderViewWriter.write(directory: box.path + "/Nope", plan: FolderViewPlan(views: [FolderView(path: box.path + "/Pictures")])))
     }
 
     func testSeededViews() {
@@ -113,29 +170,55 @@ final class FolderViewTests: XCTestCase {
         try box.dir("Pictures/Own/Deep")
         let root = FolderView(path: box.path + "/Pictures", viewStyle: .gallery)
         let own = FolderView(path: box.path + "/Pictures/Own", viewStyle: .list, includeSubfolders: false)
+        let plan = FolderViewPlan(views: [root, own])
 
-        let subs = FolderViewWriter.subfolders(of: root, excluding: [own.path])
-        XCTAssertEqual(Set(subs.map { String($0.dropFirst(box.path.count + 1)) }), ["Pictures/2024", "Pictures/2024/Trip"])
-        XCTAssertTrue(FolderViewWriter.subfolders(of: own, excluding: [root.path]).isEmpty)
+        XCTAssertEqual(Set(plan.subfolders(of: root).map { String($0.dropFirst(box.path.count + 1)) }), ["Pictures/2024", "Pictures/2024/Trip"])
+        XCTAssertTrue(plan.subfolders(of: own).isEmpty)
+        XCTAssertEqual(plan.directories().map { String($0.dropFirst(box.path.count)) }, ["", "/Pictures", "/Pictures/2024", "/Pictures/2024/Trip", "/Pictures/Own"])
+        XCTAssertEqual(plan.view(covering: box.path + "/Pictures/2024/Trip")?.viewStyle, .gallery)
+        XCTAssertEqual(plan.view(covering: box.path + "/Pictures/Own")?.viewStyle, .list)
+        XCTAssertNil(plan.view(covering: box.path + "/Pictures/Own/Deep"))
+        XCTAssertNil(plan.view(covering: box.path + "/Pictures/.hidden"))
+        XCTAssertNil(plan.view(covering: box.path + "/Pictures/Album.photoslibrary/inner"))
 
-        let written = try FolderViewWriter.writeTree(root, excluding: [own.path])
-        XCTAssertEqual(written, 3)
+        XCTAssertEqual(try FolderViewWriter.apply(plan), 4)
         XCTAssertTrue(box.exists("Pictures/2024/Trip/.DS_Store"))
-        XCTAssertFalse(box.exists("Pictures/Own/.DS_Store"))
+        XCTAssertTrue(box.exists("Pictures/Own/.DS_Store"))
+        XCTAssertFalse(box.exists("Pictures/Own/Deep/.DS_Store"))
+        XCTAssertFalse(box.exists("Pictures/.hidden/.DS_Store"))
+        let pictures = try records(at: "Pictures/.DS_Store")
+        XCTAssertEqual(Set(pictures.map(\.filename)), [".", "2024", "Own"], "browsable children carry the view, a nested root its own")
+        XCTAssertTrue(pictures.contains { $0.filename == "2024" && $0.structID == "vstl" && $0.value == .type("glyv") })
+        XCTAssertTrue(pictures.contains { $0.filename == "Own" && $0.structID == "vstl" && $0.value == .type("Nlsv") })
+        XCTAssertTrue(try records(at: "Pictures/Own/.DS_Store").contains { $0.filename == "." && $0.value == .type("Nlsv") })
 
         let policy = SafetyPolicy(exemptRoots: [
             .init(path: root.path, includesSubfolders: true), .init(path: own.path, includesSubfolders: false),
+            .init(path: box.path, includesSubfolders: false),
         ])
+        XCTAssertFalse(policy.validate(path: box.path + "/.DS_Store").isAllowed, "the parent store is kept")
         XCTAssertFalse(policy.validate(path: box.path + "/Pictures/.DS_Store").isAllowed)
         XCTAssertFalse(policy.validate(path: box.path + "/Pictures/2024/Trip/.DS_Store").isAllowed)
         XCTAssertFalse(policy.validate(path: box.path + "/Pictures/Own/.DS_Store").isAllowed, "nested view keeps its own")
         XCTAssertTrue(policy.validate(path: box.path + "/Pictures/Own/Deep/.DS_Store").isAllowed, "nested view without subfolders does not cover deeper folders")
-        XCTAssertTrue(policy.validate(path: box.path + "/Elsewhere/.DS_Store").isAllowed)
+        XCTAssertTrue(policy.validate(path: box.path + "/Elsewhere/.DS_Store").isAllowed, "siblings are not covered by the parent exemption")
         XCTAssertTrue(policy.validate(path: box.path + "/Pictures/2024/photo.jpg").isAllowed, "only .DS_Store is exempt")
 
-        FolderViewWriter.removeTree(root, excluding: [own.path])
+        FolderViewWriter.retire(plan)
         XCTAssertFalse(box.exists("Pictures/2024/Trip/.DS_Store"))
         XCTAssertFalse(box.exists("Pictures/.DS_Store"))
+        XCTAssertFalse(box.exists("Pictures/Own/.DS_Store"))
+        XCTAssertFalse(box.exists(".DS_Store"))
+    }
+
+    func testManyChildrenFallBackToViewStyleOnly() throws {
+        for i in 0..<60 { try box.dir("Pictures/Album \(i)") }
+        let plan = FolderViewPlan(views: [FolderView(path: box.path + "/Pictures", viewStyle: .list)])
+        XCTAssertTrue(try FolderViewWriter.write(directory: box.path + "/Pictures", plan: plan))
+        let records = try records(at: "Pictures/.DS_Store")
+        XCTAssertEqual(records.filter { $0.structID == "vstl" }.count, 61)
+        XCTAssertEqual(records.filter { $0.structID == "lsvp" }.map(\.filename), ["."], "only the folder itself keeps full options")
+        XCTAssertFalse(try FolderViewWriter.write(directory: box.path + "/Pictures", plan: plan), "the slim form is stable")
     }
 
     func testSweepsKeepManagedDSStore() throws {
@@ -154,8 +237,9 @@ final class FolderViewTests: XCTestCase {
         engine.refreshVolumes()
 
         let result = try engine.fullSweep()
-        XCTAssertEqual(relativePaths(result.removed, from: box.path), ["USB/.DS_Store", "USB/Pics/Sub/.DS_Store", "USB/Pics/Sub/Deeper/.DS_Store"])
+        XCTAssertEqual(relativePaths(result.removed, from: box.path), ["USB/Pics/Sub/.DS_Store", "USB/Pics/Sub/Deeper/.DS_Store"])
         XCTAssertTrue(box.exists("USB/Pics/.DS_Store"))
+        XCTAssertTrue(box.exists("USB/.DS_Store"), "the parent store carries the folder's record")
 
         try box.file("USB/Pics/Sub/.DS_Store")
         settings.folderViews[0].includeSubfolders = true
@@ -166,7 +250,7 @@ final class FolderViewTests: XCTestCase {
         settings.folderViews[0].isEnabled = false
         engine.update(settings)
         let again = try engine.fullSweep()
-        XCTAssertEqual(relativePaths(again.removed, from: box.path), ["USB/Pics/.DS_Store", "USB/Pics/Sub/.DS_Store"])
+        XCTAssertEqual(relativePaths(again.removed, from: box.path), ["USB/.DS_Store", "USB/Pics/.DS_Store", "USB/Pics/Sub/.DS_Store"])
     }
 
     func testResetCoversStartupRootsAndEveryDriveButKeepsManaged() throws {

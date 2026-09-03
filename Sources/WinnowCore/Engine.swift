@@ -6,6 +6,8 @@ public struct SweepTarget: Hashable, Identifiable {
         case location(UUID)
         case volume(String)
         case startupDisk
+        /// Watched only to keep a folder view's `.DS_Store` files as written.
+        case folderView
         case adHoc
     }
 
@@ -39,6 +41,14 @@ public struct SweepTarget: Hashable, Identifiable {
         label = "Finder defaults · " + NSString(string: self.path).lastPathComponent
         recursive = true
         source = .startupDisk
+        volume = nil
+    }
+
+    public init(folderView path: String) {
+        self.path = SafetyPolicy.standardize(path)
+        label = "Folder view · " + NSString(string: self.path).lastPathComponent
+        recursive = true
+        source = .folderView
         volume = nil
     }
 
@@ -98,6 +108,9 @@ public final class Engine {
     private var _watches: [String: (target: SweepTarget, watcher: ChangeWatcher)] = [:]
     private var _running = false
     private var _reportedFailures: Set<String> = []
+    /// Bytes last written per managed `.DS_Store`, so our own writes are not re-read.
+    private var _reconciled: [String: Data] = [:]
+    private var _reconcileCounts: [String: (count: Int, since: Date)] = [:]
     private var volumeTimer: DispatchSourceTimer?
 
     public init(store: SettingsStore = SettingsStore(),
@@ -267,12 +280,19 @@ public final class Engine {
         return (roots + volumes).map { SweepTarget(startupDisk: $0) }
     }
 
-    /// Rules applied to one target: the startup disk only ever loses `.DS_Store`.
+    /// Rules applied to one target: the startup disk only ever loses `.DS_Store`,
+    /// and a folder-view watch deletes nothing at all.
     func rules(for target: SweepTarget, settings current: Settings) -> [JunkRule] {
-        if case .startupDisk = target.source {
-            return [JunkCatalog.builtIn(id: "ds_store")].compactMap { $0 }
+        switch target.source {
+        case .startupDisk: return [JunkCatalog.builtIn(id: "ds_store")].compactMap { $0 }
+        case .folderView: return []
+        default: return current.rules.activeRules
         }
-        return current.rules.activeRules
+    }
+
+    /// The `.DS_Store` files Winnow maintains for the enabled folder views.
+    public func folderViewPlan(_ current: Settings? = nil) -> FolderViewPlan {
+        FolderViewPlan(views: (current ?? settings).folderViews, fileManager: fileManager)
     }
 
     // MARK: - Targets
@@ -284,7 +304,32 @@ public final class Engine {
 
     private func watchTargets(_ current: Settings) -> [SweepTarget] {
         guard current.general.isWatching else { return [] }
-        return withStartup(dedupe(locationTargets(current) + volumeTargets()), current)
+        let base = withStartup(dedupe(locationTargets(current) + volumeTargets()), current)
+        return base + folderViewTargets(current, covered: base)
+    }
+
+    /// Watches for folder-view roots (and the parent folders holding their records)
+    /// that no other recursive watch already covers.
+    private func folderViewTargets(_ current: Settings, covered: [SweepTarget]) -> [SweepTarget] {
+        let plan = folderViewPlan(current)
+        guard !plan.isEmpty else { return [] }
+        var out: [SweepTarget] = []
+        var seen = Set<String>()
+        func isCovered(_ path: String) -> Bool {
+            (covered + out).contains { $0.recursive && (path == $0.path || path.hasPrefix($0.path == "/" ? "/" : $0.path + "/")) }
+        }
+        let safety = SafetyPolicy()
+        for view in plan.views.sorted(by: { $0.path.count < $1.path.count }) {
+            var candidates = [view.path]
+            let parent = FolderViewPlan.parent(of: view.path)
+            if view.path != "/", !safety.isProtected(parent), fileManager.isWritableFile(atPath: parent) {
+                candidates.insert(parent, at: 0)
+            }
+            for path in candidates where !safety.isProtected(path) && !isCovered(path) && seen.insert(path).inserted {
+                out.append(SweepTarget(folderView: path))
+            }
+        }
+        return out
     }
 
     /// Startup-disk targets use a narrower rule set, so they never replace a user folder.
@@ -366,16 +411,81 @@ public final class Engine {
         let result: SweepResult
         switch event {
         case .rescan:
+            if case .folderView = target.source {
+                reconcileFolderStores(under: target.path, settings: current)
+                return
+            }
             guard let swept = try? performSweep(targets: [target], dryRun: false, source: target.label,
                                                 progress: nil, isCancelled: { false }, quietRepeats: true) else { return }
             result = swept
         case .paths(let paths):
+            reconcileFolderStores(changed: paths, settings: current)
             let items = junkItems(fromEventPaths: paths, target: target, settings: current)
             guard !items.isEmpty else { return }
             result = remove(items, within: [target.path], dryRun: false, source: target.label, quietRepeats: true)
         }
         if !result.removed.isEmpty || !result.failed.isEmpty {
             onAutoClean?(result, target)
+        }
+    }
+
+    // MARK: - Folder view stores
+
+    /// Puts every managed `.DS_Store` under `root` back to what the folder views say.
+    func reconcileFolderStores(under root: String, settings current: Settings) {
+        let plan = folderViewPlan(current)
+        let prefix = root == "/" ? "/" : root + "/"
+        for directory in plan.directories() where directory == root || directory.hasPrefix(prefix) {
+            reconcile(directory: directory, plan: plan)
+        }
+    }
+
+    /// Finder just wrote (or removed) some of these paths: any managed `.DS_Store`
+    /// among them is rewritten to Winnow's records, so the change lasts only as long
+    /// as Finder keeps it in memory.
+    func reconcileFolderStores(changed paths: [String], settings current: Settings) {
+        let plan = folderViewPlan(current)
+        guard !plan.isEmpty else { return }
+        var done = Set<String>()
+        for raw in paths {
+            let path = SafetyPolicy.standardize(raw)
+            guard NSString(string: path).lastPathComponent == ".DS_Store" else { continue }
+            let directory = FolderViewPlan.parent(of: path)
+            guard done.insert(directory).inserted, plan.manages(storeIn: directory) else { continue }
+            reconcile(directory: directory, plan: plan)
+        }
+    }
+
+    @discardableResult
+    func reconcile(directory: String, plan: FolderViewPlan) -> Bool {
+        let store = directory + "/.DS_Store"
+        let current = try? Data(contentsOf: URL(fileURLWithPath: store))
+        let last: Data? = state.sync { _reconciled[store] }
+        if let current, current == last { return false }
+        // A store that keeps coming back different is left alone for a while rather than fought over.
+        let overBudget: Bool = state.sync {
+            let now = Date()
+            var entry = _reconcileCounts[store] ?? (count: 0, since: now)
+            if now.timeIntervalSince(entry.since) > 60 { entry = (count: 0, since: now) }
+            entry.count += 1
+            _reconcileCounts[store] = entry
+            return entry.count > 30
+        }
+        if overBudget {
+            if state.sync({ _reconcileCounts[store]?.count == 31 }) {
+                log.record(.error, "Stopped rewriting \(store): it keeps changing")
+            }
+            return false
+        }
+        do {
+            guard try FolderViewWriter.write(directory: directory, plan: plan) else { return false }
+            let written = try? Data(contentsOf: URL(fileURLWithPath: store))
+            state.sync { _reconciled[store] = written }
+            log.record(.info, "Kept the folder view of \(FolderView(path: directory).displayName)")
+            return true
+        } catch {
+            log.record(.error, "Could not keep the folder view of \(directory): \(error.localizedDescription)")
+            return false
         }
     }
 
@@ -420,9 +530,18 @@ public final class Engine {
 
     // MARK: - Scanning and sweeping
 
+    /// Folder views keep their own `.DS_Store`, the ones beneath them when they include
+    /// subfolders, and the store of the parent folder that holds their record.
     private func safety() -> SafetyPolicy {
-        let roots = settings.folderViews.filter(\.isEnabled)
-            .map { SafetyPolicy.ExemptRoot(path: $0.path, includesSubfolders: $0.includeSubfolders) }
+        var roots: [SafetyPolicy.ExemptRoot] = []
+        let base = SafetyPolicy()
+        for view in settings.folderViews.filter(\.isEnabled) {
+            roots.append(.init(path: view.path, includesSubfolders: view.includeSubfolders))
+            let parent = FolderViewPlan.parent(of: view.path)
+            if view.path != "/", parent != view.path, !base.isProtected(parent) {
+                roots.append(.init(path: parent, includesSubfolders: false))
+            }
+        }
         return SafetyPolicy(volumeRoots: Set(mountedVolumes.map(\.mountPoint)).union(["/"]), exemptRoots: roots)
     }
 

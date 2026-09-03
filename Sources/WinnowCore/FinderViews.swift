@@ -352,12 +352,143 @@ public struct FolderView: Codable, Identifiable, Hashable {
 }
 
 /// Writes a folder's view into its `.DS_Store`, keeping whatever else Finder stored there.
+/// Every `.DS_Store` Winnow maintains for a set of folder views.
+///
+/// Finder keeps a folder's view in two places: under "." in the folder's own store,
+/// and under the folder's name in its parent's store. Current Finder reads and writes
+/// the parent copy, so both are written. Any other record in a managed store is
+/// Finder's own persistence and is dropped, which keeps view changes made in Finder
+/// to the current session.
+public struct FolderViewPlan {
+    public let views: [FolderView]
+    let roots: [String: FolderView]
+    let fileManager: FileManager
+
+    /// Only enabled views whose folder exists take part.
+    public init(views: [FolderView], fileManager: FileManager = .default) {
+        self.views = views.filter { $0.isEnabled && FileStats.info($0.path)?.isDirectory == true }
+        roots = Dictionary(self.views.map { ($0.path, $0) }, uniquingKeysWith: { a, _ in a })
+        self.fileManager = fileManager
+    }
+
+    public var isEmpty: Bool { roots.isEmpty }
+
+    static func parent(of path: String) -> String {
+        SafetyPolicy.standardize(NSString(string: path).deletingLastPathComponent)
+    }
+
+    /// A folder Finder shows and a view can flow into: visible, not a package, a real
+    /// directory on the same device as its parent.
+    static func isBrowsable(_ path: String, name: String, device: UInt64?) -> Bool {
+        guard !name.hasPrefix("."), name != "node_modules" else { return false }
+        guard let st = FileStats.info(path), st.isDirectory, !st.isSymlink else { return false }
+        if let device, st.device != device { return false }
+        return !JunkScanner.isPackage(path: path, name: name)
+    }
+
+    /// The view that applies to `directory`: its own root, or the deepest root above it
+    /// that includes subfolders and reaches it through browsable folders only.
+    public func view(covering directory: String) -> FolderView? {
+        let d = SafetyPolicy.standardize(directory)
+        if let exact = roots[d] { return exact }
+        let owner = roots.values.filter { d.hasPrefix($0.path + "/") }.max { $0.path.count < $1.path.count }
+        guard let owner, owner.includeSubfolders else { return nil }
+        let device = FileStats.info(owner.path)?.device
+        var node = owner.path
+        for component in d.dropFirst(owner.path.count + 1).split(separator: "/").map(String.init) {
+            node += "/" + component
+            guard FolderViewPlan.isBrowsable(node, name: component, device: device) else { return nil }
+        }
+        return owner.derived(for: d)
+    }
+
+    /// Roots whose parent is `directory`; their records go into this store under their name.
+    func childRoots(of directory: String) -> [FolderView] {
+        roots.values.filter { $0.path != "/" && FolderViewPlan.parent(of: $0.path) == directory }
+            .sorted { $0.path < $1.path }
+    }
+
+    /// Whether the `.DS_Store` in `directory` is Winnow's to keep and rewrite.
+    public func manages(storeIn directory: String) -> Bool {
+        let d = SafetyPolicy.standardize(directory)
+        return view(covering: d) != nil || !childRoots(of: d).isEmpty
+    }
+
+    /// Whether `path` is a `.DS_Store` this plan manages.
+    public func manages(store path: String) -> Bool {
+        let p = SafetyPolicy.standardize(path)
+        guard NSString(string: p).lastPathComponent == ".DS_Store" else { return false }
+        return manages(storeIn: FolderViewPlan.parent(of: p))
+    }
+
+    /// The records the store in `directory` should hold, without window records.
+    /// `full` includes per-child option blobs; without them only the view style is kept.
+    public func records(in directory: String, full: Bool = true) throws -> [DSStoreRecord] {
+        let d = SafetyPolicy.standardize(directory)
+        var out: [DSStoreRecord] = []
+        if let own = view(covering: d) {
+            out += try FolderViewWriter.records(for: own)
+            if own.includeSubfolders, let names = try? fileManager.contentsOfDirectory(atPath: d) {
+                let device = FileStats.info(d)?.device
+                for name in names.sorted() {
+                    let child = d + "/" + name
+                    guard roots[child] == nil,
+                          FolderViewPlan.isBrowsable(child, name: name, device: device) else { continue }
+                    out += try FolderViewWriter.records(for: own.derived(for: child), as: name, full: full)
+                }
+            }
+        }
+        for root in childRoots(of: d) {
+            out += try FolderViewWriter.records(for: root, as: NSString(string: root.path).lastPathComponent, full: full)
+        }
+        return out
+    }
+
+    /// Folders beneath a root that inherit its view: browsable folders on the same
+    /// device, stopping at other roots.
+    public func subfolders(of root: FolderView) -> [String] {
+        guard root.includeSubfolders, let device = FileStats.info(root.path)?.device else { return [] }
+        var out: [String] = []
+        var stack = [root.path]
+        while let dir = stack.popLast() {
+            guard let names = try? fileManager.contentsOfDirectory(atPath: dir) else { continue }
+            for name in names.sorted() {
+                let path = dir + "/" + name
+                guard roots[path] == nil, FolderViewPlan.isBrowsable(path, name: name, device: device) else { continue }
+                out.append(path)
+                stack.append(path)
+            }
+        }
+        return out
+    }
+
+    /// Every directory whose store this plan writes: each root's parent (when it can be
+    /// written and is not a protected location), the root, and the folders beneath it.
+    public func directories() -> [String] {
+        var seen = Set<String>()
+        var out: [String] = []
+        let safety = SafetyPolicy()
+        func add(_ path: String) {
+            if seen.insert(path).inserted { out.append(path) }
+        }
+        for root in views.sorted(by: { $0.path < $1.path }) {
+            let parent = FolderViewPlan.parent(of: root.path)
+            if root.path != "/", parent != root.path, !safety.isProtected(parent), fileManager.isWritableFile(atPath: parent) {
+                add(parent)
+            }
+            add(root.path)
+            subfolders(of: root).forEach(add)
+        }
+        return out
+    }
+}
+
 public enum FolderViewWriter {
-    /// Record ids that describe the folder's own view. `vstl` is what Finder writes for
+    /// Record ids that describe a folder's view. `vstl` is what Finder writes for
     /// "Always open in … view"; `icvl` is the form DMG tools use and Finder also honours.
     public static let managedIDs: Set<String> = ["vstl", "icvl", "vSrn", "icvp", "icvo", "lsvp", "lsvP", "lsvo", "glvp"]
 
-    /// Window settings Finder expects next to a folder's view; only added when none exist.
+    /// Window settings Finder expects next to a view; only added when none exist.
     static let defaultWindowSettings: [String: Any] = [
         "ContainerShowSidebar": true, "ShowPathbar": true, "ShowSidebar": true, "ShowStatusBar": true,
         "ShowTabView": false, "ShowToolbar": true, "SidebarWidth": 192, "WindowBounds": "{{120, 120}, {920, 600}}",
@@ -371,24 +502,27 @@ public enum FolderViewWriter {
         }
     }
 
-    public static func records(for view: FolderView) throws -> [DSStoreRecord] {
+    /// The view's records, filed under `filename`: "." for the folder's own store, the
+    /// folder's name for its parent's store.
+    public static func records(for view: FolderView, as filename: String = ".", full: Bool = true) throws -> [DSStoreRecord] {
         var out = [
-            DSStoreRecord(filename: ".", structID: "vstl", value: .type(view.viewStyle.rawValue)),
-            DSStoreRecord(filename: ".", structID: "icvl", value: .type(view.viewStyle.rawValue)),
-            DSStoreRecord(filename: ".", structID: "vSrn", value: .long(1)),
+            DSStoreRecord(filename: filename, structID: "vstl", value: .type(view.viewStyle.rawValue)),
+            DSStoreRecord(filename: filename, structID: "icvl", value: .type(view.viewStyle.rawValue)),
+            DSStoreRecord(filename: filename, structID: "vSrn", value: .long(1)),
         ]
+        guard full else { return out }
         let sort = view.sortKey.rawValue
         switch view.viewStyle {
         case .icons:
-            out.append(DSStoreRecord(filename: ".", structID: "icvp",
+            out.append(DSStoreRecord(filename: filename, structID: "icvp",
                                      value: .blob(try plistData(view.options.icon.plist(arrangeBy: sort)))))
         case .list:
-            out.append(DSStoreRecord(filename: ".", structID: "lsvp",
+            out.append(DSStoreRecord(filename: filename, structID: "lsvp",
                                      value: .blob(try plistData(view.options.list.plist(sortColumn: sort, ascending: view.ascending)))))
-            out.append(DSStoreRecord(filename: ".", structID: "lsvP",
+            out.append(DSStoreRecord(filename: filename, structID: "lsvP",
                                      value: .blob(try plistData(view.options.list.extendedPlist(sortColumn: sort, ascending: view.ascending)))))
         case .gallery:
-            out.append(DSStoreRecord(filename: ".", structID: "glvp",
+            out.append(DSStoreRecord(filename: filename, structID: "glvp",
                                      value: .blob(try plistData(view.options.gallery.plist(arrangeBy: sort)))))
         case .columns:
             break
@@ -397,21 +531,41 @@ public enum FolderViewWriter {
     }
 
     static func isDefaultWindowSettings(_ data: Data) -> Bool {
-        guard let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
-              let dictionary = plist as? [String: Any] else { return false }
-        return canonical(dictionary) == canonical(defaultWindowSettings)
+        guard let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) else { return false }
+        return canonical(plist) == canonical(defaultWindowSettings)
     }
 
-    /// Order- and number-type-independent rendering of a flat plist dictionary,
-    /// so a decoded copy compares equal to the original on every platform.
-    static func canonical(_ dictionary: [String: Any]) -> [String] {
-        dictionary.keys.sorted().map { key in
-            let value = dictionary[key]
-            if let b = value as? Bool, !(value is Int && !(value is Bool)) { return "\(key)=b:\(b)" }
-            if let d = plistDouble(value) { return "\(key)=n:\(d)" }
-            if let s = value as? String { return "\(key)=s:\(s)" }
-            return "\(key)=?:\(String(describing: value))"
+    /// Order- and number-type-independent rendering of a plist value, so a decoded
+    /// copy compares equal to the original on every platform.
+    static func canonical(_ value: Any) -> String {
+        if let b = value as? Bool { return "n:\(b ? 1.0 : 0.0)" }
+        if let d = plistDouble(value) { return "n:\(d)" }
+        if let s = value as? String { return "s:" + s }
+        if let data = value as? Data { return "d:" + data.map { String(format: "%02x", $0) }.joined() }
+        if let dictionary = value as? [String: Any] {
+            return "{" + dictionary.keys.sorted().map { "\($0)=" + canonical(dictionary[$0]!) }.joined(separator: ",") + "}"
         }
+        if let array = value as? [Any] { return "[" + array.map(canonical).joined(separator: ",") + "]" }
+        return "?:" + String(describing: value)
+    }
+
+    /// Whether two record values mean the same thing (blobs compare as plists when they parse).
+    static func equivalent(_ a: DSStoreRecord.Value, _ b: DSStoreRecord.Value) -> Bool {
+        if a == b { return true }
+        guard case .blob(let da) = a, case .blob(let db) = b,
+              let pa = try? PropertyListSerialization.propertyList(from: da, options: [], format: nil),
+              let pb = try? PropertyListSerialization.propertyList(from: db, options: [], format: nil) else { return false }
+        return canonical(pa) == canonical(pb)
+    }
+
+    /// Whether two record sets are the same, ignoring order and blob encoding.
+    public static func equivalent(_ a: [DSStoreRecord], _ b: [DSStoreRecord]) -> Bool {
+        guard a.count == b.count else { return false }
+        let sa = a.sorted(by: DSStoreRecord.ordered), sb = b.sorted(by: DSStoreRecord.ordered)
+        for (x, y) in zip(sa, sb) {
+            guard x.filename == y.filename, x.structID == y.structID, equivalent(x.value, y.value) else { return false }
+        }
+        return true
     }
 
     static func existingFile(at url: URL) -> DSStoreFile? {
@@ -419,89 +573,91 @@ public enum FolderViewWriter {
         return try? DSStoreFile.read(data)
     }
 
-    @discardableResult
-    public static func write(_ view: FolderView, fileManager: FileManager = .default) throws -> URL {
-        var isDirectory: ObjCBool = false
-        guard fileManager.fileExists(atPath: view.path, isDirectory: &isDirectory), isDirectory.boolValue else {
-            throw ScanError.notADirectory(view.path)
-        }
-        let url = URL(fileURLWithPath: view.dsStorePath)
-        var file = existingFile(at: url) ?? DSStoreFile()
-        file.records.removeAll { $0.filename == "." && managedIDs.contains($0.structID) }
-        var fresh = try records(for: view)
-        if !file.records.contains(where: { $0.filename == "." && $0.structID == "bwsp" }) {
-            fresh.append(DSStoreRecord(filename: ".", structID: "bwsp", value: .blob(try plistData(defaultWindowSettings))))
-        }
-        file.records += fresh
-        let data: Data
-        do {
-            data = try file.encoded()
-        } catch DSStoreError.tooManyRecords {
-            data = try DSStoreFile(records: fresh).encoded()
-        }
-        try data.write(to: url, options: .atomic)
-        return url
-    }
-
-    /// Folders beneath `view.path` that inherit its view: not hidden, not packages,
-    /// not symlinks, on the same volume, and not inside another folder view.
-    public static func subfolders(of view: FolderView, excluding otherRoots: [String], fileManager: FileManager = .default) -> [String] {
-        guard view.includeSubfolders, let rootDevice = FileStats.info(view.path)?.device else { return [] }
-        let stops = Set(otherRoots.map(SafetyPolicy.standardize)).subtracting([view.path])
-        var out: [String] = []
-        var stack = [view.path]
-        while let dir = stack.popLast() {
-            guard let names = try? fileManager.contentsOfDirectory(atPath: dir) else { continue }
-            for name in names.sorted() where !name.hasPrefix(".") && name != "node_modules" {
-                let path = dir + "/" + name
-                guard let st = FileStats.info(path), st.isDirectory, !st.isSymlink, st.device == rootDevice else { continue }
-                if stops.contains(path) { continue }
-                if JunkScanner.isPackage(path: path, name: name) { continue }
-                out.append(path)
-                stack.append(path)
+    /// The complete contents for a managed store: the plan's records plus a window
+    /// record per viewed name, reusing the one Finder already wrote when there is one.
+    static func contents(for directory: String, plan: FolderViewPlan, existing: DSStoreFile?, full: Bool) throws -> [DSStoreRecord]? {
+        let expected = try plan.records(in: directory, full: full)
+        guard !expected.isEmpty else { return nil }
+        var out = expected
+        for name in Set(expected.filter { $0.structID == "vstl" }.map(\.filename)).sorted() {
+            if let window = existing?.records.first(where: { $0.filename == name && $0.structID == "bwsp" }) {
+                out.append(window)
+            } else {
+                out.append(DSStoreRecord(filename: name, structID: "bwsp", value: .blob(try plistData(defaultWindowSettings))))
             }
         }
         return out
     }
 
-    /// Writes the view into the folder and, when it includes subfolders, into each of them.
-    /// Returns how many folders were written; individual subfolder failures are skipped.
+    /// Brings the store in `directory` to exactly what the plan says. Returns true when
+    /// the file was written, false when it already matched or the plan has nothing for it.
     @discardableResult
-    public static func writeTree(_ view: FolderView, excluding otherRoots: [String], fileManager: FileManager = .default) throws -> Int {
-        try write(view, fileManager: fileManager)
-        var count = 1
-        for subfolder in subfolders(of: view, excluding: otherRoots, fileManager: fileManager) {
-            if (try? write(view.derived(for: subfolder), fileManager: fileManager)) != nil { count += 1 }
+    public static func write(directory: String, plan: FolderViewPlan) throws -> Bool {
+        let d = SafetyPolicy.standardize(directory)
+        var isDirectory: ObjCBool = false
+        guard plan.fileManager.fileExists(atPath: d, isDirectory: &isDirectory), isDirectory.boolValue else {
+            throw ScanError.notADirectory(d)
         }
+        let url = URL(fileURLWithPath: d + "/.DS_Store")
+        let existing = existingFile(at: url)
+        guard let wanted = try contents(for: d, plan: plan, existing: existing, full: true) else { return false }
+        if let existing, equivalent(existing.records, wanted) { return false }
+        let data: Data
+        do {
+            data = try DSStoreFile(records: wanted).encoded()
+        } catch DSStoreError.tooManyRecords {
+            // Too many subfolders for one store: keep every child's view style, drop their options.
+            let slim = try contents(for: d, plan: plan, existing: existing, full: false) ?? wanted
+            if let existing, equivalent(existing.records, slim) { return false }
+            data = try DSStoreFile(records: slim).encoded()
+        }
+        try data.write(to: url, options: .atomic)
+        return true
+    }
+
+    /// Writes every store in the plan. Returns how many folders now carry a view;
+    /// failures inside a root's tree are skipped, a failure on the root itself is thrown.
+    @discardableResult
+    public static func apply(_ plan: FolderViewPlan) throws -> Int {
+        var count = 0
+        var rootFailure: Error?
+        for directory in plan.directories() {
+            do {
+                try write(directory: directory, plan: plan)
+                if plan.view(covering: directory) != nil { count += 1 }
+            } catch {
+                if plan.roots[directory] != nil, rootFailure == nil { rootFailure = error }
+            }
+        }
+        if let rootFailure { throw rootFailure }
         return count
     }
 
-    /// Strips the view from the folder and every subfolder it covered.
-    public static func removeTree(_ view: FolderView, excluding otherRoots: [String], fileManager: FileManager = .default) {
-        try? remove(view, fileManager: fileManager)
-        for subfolder in subfolders(of: view, excluding: otherRoots, fileManager: fileManager) {
-            try? remove(view.derived(for: subfolder), fileManager: fileManager)
-        }
-    }
-
-    /// Removes the folder's view; the file goes too once nothing else is in it.
-    public static func remove(_ view: FolderView, fileManager: FileManager = .default) throws {
-        let url = URL(fileURLWithPath: view.dsStorePath)
+    /// Strips Winnow's records from the store in `directory`; the file goes once nothing else is in it.
+    public static func remove(directory: String, fileManager: FileManager = .default) throws {
+        let url = URL(fileURLWithPath: SafetyPolicy.standardize(directory) + "/.DS_Store")
         guard fileManager.fileExists(atPath: url.path) else { return }
         guard var file = existingFile(at: url) else {
             try fileManager.removeItem(at: url)
             return
         }
-        file.records.removeAll { $0.filename == "." && managedIDs.contains($0.structID) }
-        // The window record is ours only if it still holds exactly the default we added.
+        file.records.removeAll { managedIDs.contains($0.structID) }
+        // A window record is ours only while it still holds exactly the default we added.
         file.records.removeAll { record in
-            guard record.filename == ".", record.structID == "bwsp", case .blob(let data) = record.value else { return false }
+            guard record.structID == "bwsp", case .blob(let data) = record.value else { return false }
             return isDefaultWindowSettings(data)
         }
         if file.records.isEmpty {
             try fileManager.removeItem(at: url)
         } else {
             try file.encoded().write(to: url, options: .atomic)
+        }
+    }
+
+    /// Strips every store a plan wrote.
+    public static func retire(_ plan: FolderViewPlan) {
+        for directory in plan.directories() {
+            try? remove(directory: directory, fileManager: plan.fileManager)
         }
     }
 }

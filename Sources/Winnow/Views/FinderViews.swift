@@ -48,7 +48,7 @@ struct FinderPane: View {
             Text("Used by every folder without its own settings — the same as View Options → Use as Defaults.")
         }
         Section {
-            ForEach(model.settings.folderViews) { view in
+            ForEach(model.folderViewsDraft) { view in
                 HStack {
                     Toggle(isOn: model.folderViewEnabledBinding(view.id)) {
                         Captioned(view.displayName, view.summary)

@@ -194,18 +194,18 @@ case "finder":
     let s = engine.settings
     print("Enforce defaults: \(s.startupDisk.isEnabled ? (s.startupDisk.expiresAt.map { "on until \($0)" } ?? "on") : "off")")
     print("Folder views:")
+    func describe(_ file: String, name: String) -> String {
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: file)) else { return "missing" }
+        guard let store = try? DSStoreFile.read(data) else { return "\(data.count) bytes · unreadable" }
+        let ids = store.records.filter { $0.filename == name }.map(\.structID).sorted().joined(separator: " ")
+        return "\(data.count) bytes · \(store.records.count) records · \(name) [\(ids)]"
+    }
     for view in s.folderViews {
-        let file = view.dsStorePath
-        var state = "missing"
-        if let data = try? Data(contentsOf: URL(fileURLWithPath: file)) {
-            if let store = try? DSStoreFile.read(data) {
-                let ids = store.records.filter { $0.filename == "." }.map(\.structID).sorted().joined(separator: " ")
-                state = "\(data.count) bytes · \(store.records.count) records · [\(ids)]"
-            } else {
-                state = "\(data.count) bytes · unreadable"
-            }
-        }
-        print("  \(view.isEnabled ? "on " : "off") \(view.displayName)  \(view.summary)\n       .DS_Store: \(state)")
+        let name = NSString(string: view.path).lastPathComponent
+        let parent = NSString(string: view.path).deletingLastPathComponent + "/.DS_Store"
+        print("  \(view.isEnabled ? "on " : "off") \(view.displayName)  \(view.summary)")
+        print("       own:    \(describe(view.dsStorePath, name: "."))")
+        print("       parent: \(describe(parent, name: name))")
     }
 
 case "dsstore":
@@ -254,7 +254,7 @@ case "set-view":
         view.options.gallery.thumbnailSize = size
     }
     do {
-        let count = try FolderViewWriter.writeTree(view, excluding: [])
+        let count = try FolderViewWriter.apply(FolderViewPlan(views: [view]))
         print("wrote \(count) folder\(count == 1 ? "" : "s") under \(view.path) · \(view.summary)")
     } catch {
         fail(error.localizedDescription, code: 1)
