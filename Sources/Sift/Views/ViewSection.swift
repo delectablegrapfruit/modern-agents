@@ -66,7 +66,7 @@ struct FoldersSection: View {
         Section {
             ForEach(model.draft.folders) { folder in
                 HStack {
-                    Captioned(Path.display(folder.path), folder.view.summary)
+                    Captioned(Paths.display(folder.path), folder.view.summary)
                     Spacer()
                     Button("Edit…") { model.editing = folder }
                     Button { model.removeFolder(folder.id) } label: { Image(systemName: "minus.circle") }
@@ -198,7 +198,7 @@ struct FolderEditor: View {
     var body: some View {
         VStack(spacing: 0) {
             Form {
-                Section(Path.display(draft.path)) {
+                Section(Paths.display(draft.path)) {
                     Picker("Open in", selection: $draft.view.mode) {
                         ForEach(ViewMode.allCases, id: \.self) { Text($0.label).tag($0) }
                     }

@@ -20,6 +20,7 @@ final class Guardian {
     private var ticks = 0
     private var checkPending = false
     private var notAllowedSince: Date?
+    private var wasNotAllowed = false
     private var workspaceObservers: [NSObjectProtocol] = []
 
     init(views: @escaping () -> ViewSettings) {
@@ -117,10 +118,14 @@ final class Guardian {
             for window in moved {
                 try session.apply(settings.view(for: window.path).view, to: window.id)
             }
-            onNotAllowed?(true)
+            if wasNotAllowed {
+                wasNotAllowed = false
+                onNotAllowed?(true)
+            }
         } catch {
             guard (error as? WindowGuard.ScriptError) == .notAllowed else { return }
             notAllowedSince = Date()
+            wasNotAllowed = true
             onNotAllowed?(false)
         }
     }

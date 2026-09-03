@@ -248,7 +248,7 @@ final class Model: ObservableObject {
         panel.prompt = "Choose"
         panel.message = "Choose a folder that should have its own view."
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        let path = Path.standardize(url.path)
+        let path = Paths.standardize(url.path)
         if let existing = draft.folders.first(where: { $0.path == path }) {
             editing = existing
             return

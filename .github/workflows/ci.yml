@@ -78,7 +78,7 @@ jobs:
           let package = Package(name: "writer", dependencies: [.package(path: "$PWD")],
               targets: [.executableTarget(name: "writer", dependencies: [.product(name: "SiftCore", package: "modern-agents")])])
           EOF
-          (cd /tmp/writer && swift run -q writer)
+          (cd /tmp/writer && swift run writer)
           python3 - <<'EOF'
           from ds_store import DSStore
           with DSStore.open('/tmp/dsdemo/written.DS_Store', 'r') as d:

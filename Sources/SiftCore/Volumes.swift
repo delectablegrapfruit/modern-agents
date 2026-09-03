@@ -17,7 +17,7 @@ public struct Volume: Identifiable, Hashable, Codable {
     public init(id: String, name: String, mountPoint: String, kind: Kind, isReadOnly: Bool = false) {
         self.id = id
         self.name = name
-        self.mountPoint = Path.standardize(mountPoint)
+        self.mountPoint = Paths.standardize(mountPoint)
         self.kind = kind
         self.isReadOnly = isReadOnly
     }

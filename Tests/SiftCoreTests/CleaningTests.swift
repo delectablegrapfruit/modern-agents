@@ -55,13 +55,13 @@ final class SafetyTests: XCTestCase {
     }
 
     func testPaths() {
-        XCTAssertEqual(Path.standardize("/a/b/"), "/a/b")
-        XCTAssertEqual(Path.join("/", "x"), "/x")
-        XCTAssertEqual(Path.parent(of: "/a/b"), "/a")
-        XCTAssertTrue(Path.isInside("/a/b", "/a"))
-        XCTAssertFalse(Path.isInside("/ab", "/a"))
-        XCTAssertEqual(Path.display("/Users/x/Pictures", home: "/Users/x"), "~/Pictures")
-        XCTAssertEqual(Path.display("/Users/x", home: "/Users/x"), "Home")
+        XCTAssertEqual(Paths.standardize("/a/b/"), "/a/b")
+        XCTAssertEqual(Paths.join("/", "x"), "/x")
+        XCTAssertEqual(Paths.parent(of: "/a/b"), "/a")
+        XCTAssertTrue(Paths.isInside("/a/b", "/a"))
+        XCTAssertFalse(Paths.isInside("/ab", "/a"))
+        XCTAssertEqual(Paths.display("/Users/x/Pictures", home: "/Users/x"), "~/Pictures")
+        XCTAssertEqual(Paths.display("/Users/x", home: "/Users/x"), "Home")
     }
 }
 
@@ -88,8 +88,8 @@ final class ScannerTests: XCTestCase {
 
     override func tearDown() { box.destroy() }
 
-    private func scanner(mount: Bool = true, kept: Set<String> = []) -> Scanner {
-        Scanner(safety: Safety(mountPoints: mount ? [box.path] : [], keptStores: kept))
+    private func scanner(mount: Bool = true, kept: Set<String> = []) -> JunkScanner {
+        JunkScanner(safety: Safety(mountPoints: mount ? [box.path] : [], keptStores: kept))
     }
 
     func testFindsJunkAndRespectsScope() throws {
@@ -119,7 +119,7 @@ final class ScannerTests: XCTestCase {
 
     func testDoesNotDescendIntoOtherMountPoints() throws {
         try box.file("Mount/.DS_Store")
-        let items = try Scanner(safety: Safety(mountPoints: [box.path, box.path + "/Mount"])).scan(root: box.path)
+        let items = try JunkScanner(safety: Safety(mountPoints: [box.path, box.path + "/Mount"])).scan(root: box.path)
         XCTAssertFalse(relative(items, from: box.path).contains("Mount/.DS_Store"))
     }
 
@@ -157,7 +157,7 @@ final class RemoverTests: XCTestCase {
     override func tearDown() { box.destroy() }
 
     private var safety: Safety { Safety(mountPoints: [box.path]) }
-    private func items() throws -> [Item] { try Scanner(safety: safety).scan(root: box.path) }
+    private func items() throws -> [Item] { try JunkScanner(safety: safety).scan(root: box.path) }
 
     func testDryRunKeepsEverything() throws {
         let outcome = Remover(safety: safety, dryRun: true).remove(try items(), within: [box.path])

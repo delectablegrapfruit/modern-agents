@@ -10,7 +10,7 @@ public struct Root: Hashable, Identifiable {
     public var id: String { path }
 
     public init(path: String, label: String, volume: Volume? = nil) {
-        self.path = Path.standardize(path)
+        self.path = Paths.standardize(path)
         self.label = label
         self.volume = volume
     }
@@ -168,7 +168,7 @@ public final class Engine {
         let volumes = mountedVolumes
         let system = Safety()
         var out: [Root] = []
-        for path in userRoots.map(Path.standardize) where Files.isDirectory(path) && !system.isProtected(path) {
+        for path in userRoots.map(Paths.standardize) where Files.isDirectory(path) && !system.isProtected(path) {
             out.append(Root(path: path, label: "Startup disk"))
         }
         for volume in volumes where volume.isCleanable(fileManager: fileManager) {
@@ -176,7 +176,7 @@ public final class Engine {
         }
         var seen = Set<String>()
         return out.filter { root in
-            guard !seen.contains(where: { Path.isInside(root.path, $0) }) else { return false }
+            guard !seen.contains(where: { Paths.isInside(root.path, $0) }) else { return false }
             seen.insert(root.path)
             return true
         }
@@ -197,7 +197,7 @@ public final class Engine {
             }
             let protected = Safety().protectedPrefixes
             for root in desired where _watches[root.path] == nil {
-                let excluded = protected.filter { Path.isInside($0, root.path) && $0 != root.path }
+                let excluded = protected.filter { Paths.isInside($0, root.path) && $0 != root.path }
                 let watcher = Watchers.make(root: root.path, excluding: excluded)
                 _watches[root.path] = (root, watcher)
                 toStart.append((root, watcher))
@@ -229,7 +229,7 @@ public final class Engine {
             outcome = swept
         case .paths(let paths):
             reconcileStores(changed: paths)
-            let items = Scanner(safety: safety, fileManager: fileManager).items(fromChangedPaths: paths, root: root.path)
+            let items = JunkScanner(safety: safety, fileManager: fileManager).items(fromChangedPaths: paths, root: root.path)
             guard !items.isEmpty else { return }
             outcome = remove(items, within: [root.path], source: root.label, quiet: true)
         }
@@ -238,7 +238,7 @@ public final class Engine {
 
     /// Runs a final, time-boxed sweep of a volume that is about to be ejected.
     public func handleWillUnmount(mountPoint: String) {
-        let path = Path.standardize(mountPoint)
+        let path = Paths.standardize(mountPoint)
         guard !isPaused, let root = roots().first(where: { $0.path == path }) else { return }
         let watcher: Watcher? = state.sync { _watches.removeValue(forKey: path)?.watcher }
         watcher?.stop()
@@ -265,7 +265,7 @@ public final class Engine {
     }
 
     private func reconcileStores(under root: String) {
-        for directory in plan.stores.keys where Path.isInside(directory, root) { reconcile(directory) }
+        for directory in plan.stores.keys where Paths.isInside(directory, root) { reconcile(directory) }
     }
 
     private func reconcileStores(changed paths: [String]) {
@@ -273,9 +273,9 @@ public final class Engine {
         guard !plan.isEmpty else { return }
         var done = Set<String>()
         for raw in paths {
-            let path = Path.standardize(raw)
-            guard Path.name(of: path) == ".DS_Store" else { continue }
-            let directory = Path.parent(of: path)
+            let path = Paths.standardize(raw)
+            guard Paths.name(of: path) == ".DS_Store" else { continue }
+            let directory = Paths.parent(of: path)
             if plan.stores[directory] != nil, done.insert(directory).inserted { reconcile(directory) }
         }
     }
@@ -302,10 +302,10 @@ public final class Engine {
             let written = try plan.write(directory: directory)
             let data = try? Data(contentsOf: URL(fileURLWithPath: store))
             state.sync { _written[store] = data }
-            if written { log.info("Kept the view of " + Path.display(directory), path: directory) }
+            if written { log.info("Kept the view of " + Paths.display(directory), path: directory) }
             return written
         } catch {
-            log.info("Could not keep the view of \(Path.display(directory)): \(error.localizedDescription)", path: directory)
+            log.info("Could not keep the view of \(Paths.display(directory)): \(error.localizedDescription)", path: directory)
             return false
         }
     }
@@ -314,7 +314,7 @@ public final class Engine {
 
     public func scan(roots: [Root], progress: ((Phase) -> Void)? = nil,
                      isCancelled: () -> Bool = { false }) throws -> [Item] {
-        let scanner = Scanner(safety: safety, fileManager: fileManager)
+        let scanner = JunkScanner(safety: safety, fileManager: fileManager)
         var seen = Set<String>()
         var items: [Item] = []
         for root in roots {

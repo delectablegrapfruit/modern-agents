@@ -22,7 +22,7 @@ arguments.removeAll { $0.hasPrefix("-") }
 
 func absolute(_ path: String) -> String {
     let expanded = NSString(string: path).expandingTildeInPath
-    return Path.standardize(expanded.hasPrefix("/") ? expanded : FileManager.default.currentDirectoryPath + "/" + expanded)
+    return Paths.standardize(expanded.hasPrefix("/") ? expanded : FileManager.default.currentDirectoryPath + "/" + expanded)
 }
 
 func fail(_ message: String) -> Never {
@@ -38,7 +38,7 @@ engine.refreshVolumes()
 
 func roots() -> [Root] {
     if arguments.isEmpty { return engine.roots() }
-    return arguments.map(absolute).map { Root(path: $0, label: Path.name(of: $0)) }
+    return arguments.map(absolute).map { Root(path: $0, label: Paths.name(of: $0)) }
 }
 
 switch command {

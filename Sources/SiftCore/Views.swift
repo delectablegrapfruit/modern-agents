@@ -158,7 +158,7 @@ public struct FolderView: Hashable, Codable, Identifiable {
 
     public init(id: UUID = UUID(), path: String, view: FinderView) {
         self.id = id
-        self.path = Path.standardize(path)
+        self.path = Paths.standardize(path)
         self.view = view
     }
 }
@@ -175,8 +175,8 @@ public struct ViewSettings: Hashable, Codable {
 
     /// The view for a folder: its own, the nearest folder view above it, or the default.
     public func view(for path: String) -> (view: FinderView, owner: String?) {
-        let p = Path.standardize(path)
-        let owner = folders.filter { Path.isInside(p, $0.path) }.max { $0.path.count < $1.path.count }
+        let p = Paths.standardize(path)
+        let owner = folders.filter { Paths.isInside(p, $0.path) }.max { $0.path.count < $1.path.count }
         guard let owner else { return (`default`, nil) }
         return (owner.view, owner.path)
     }

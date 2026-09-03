@@ -18,7 +18,7 @@ public struct StorePlan: Hashable {
         var stores: [String: [DSRecord]] = [:]
         for folder in settings.folders where Files.isDirectory(folder.path) && !safety.isProtected(folder.path) {
             let directory = StorePlan.storeDirectory(for: folder.path, safety: safety, fileManager: fileManager)
-            let name = directory == folder.path ? "." : Path.name(of: folder.path)
+            let name = directory == folder.path ? "." : Paths.name(of: folder.path)
             if let records = try? StorePlan.records(for: folder.view, as: name) {
                 stores[directory, default: []] += records
             }
@@ -33,8 +33,8 @@ public struct StorePlan: Hashable {
 
     /// The directory whose `.DS_Store` holds `folder`'s view.
     public static func storeDirectory(for folder: String, safety: Safety = Safety(), fileManager: FileManager = .default) -> String {
-        let f = Path.standardize(folder)
-        let parent = Path.parent(of: f)
+        let f = Paths.standardize(folder)
+        let parent = Paths.parent(of: f)
         guard f != "/", parent != f, !safety.isProtected(parent), fileManager.isWritableFile(atPath: parent),
               let own = Files.info(f), let up = Files.info(parent), own.device == up.device else { return f }
         return parent
@@ -76,7 +76,7 @@ public struct StorePlan: Hashable {
     /// The complete contents for a managed store: the plan's records plus a window
     /// record per viewed name, reusing the one Finder already wrote when there is one.
     public func contents(of directory: String, existing: DSStore?) throws -> [DSRecord]? {
-        guard let planned = stores[Path.standardize(directory)] else { return nil }
+        guard let planned = stores[Paths.standardize(directory)] else { return nil }
         var out = planned
         for name in Set(planned.map(\.filename)).sorted() {
             if let window = existing?.records.first(where: { $0.filename == name && $0.structID == "bwsp" }) {
@@ -97,7 +97,7 @@ public struct StorePlan: Hashable {
     /// the file was written.
     @discardableResult
     public func write(directory: String) throws -> Bool {
-        let d = Path.standardize(directory)
+        let d = Paths.standardize(directory)
         let url = URL(fileURLWithPath: d + "/.DS_Store")
         guard Files.isDirectory(d) else { throw ScanError.notADirectory(d) }
         let existing = StorePlan.existing(at: url)

@@ -77,7 +77,11 @@ public struct DSRecord: Hashable {
 
 public enum Plist {
     public static func data(_ dictionary: [String: Any]) throws -> Data {
-        try PropertyListSerialization.data(fromPropertyList: dictionary, format: .binary, options: 0)
+        do {
+            return try PropertyListSerialization.data(fromPropertyList: dictionary, format: .binary, options: 0)
+        } catch {
+            return try PropertyListSerialization.data(fromPropertyList: dictionary, format: .xml, options: 0)
+        }
     }
 
     /// Order- and number-type-independent rendering, so decoded copies compare equal on every platform.

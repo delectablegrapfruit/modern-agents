@@ -20,9 +20,9 @@ public struct Safety: Hashable {
     public init(protectedPrefixes: [String] = Safety.systemPrefixes(),
                 mountPoints: Set<String> = [],
                 keptStores: Set<String> = []) {
-        self.protectedPrefixes = protectedPrefixes.map(Path.standardize)
-        self.mountPoints = Set(mountPoints.map(Path.standardize)).union(["/"])
-        self.keptStores = Set(keptStores.map(Path.standardize))
+        self.protectedPrefixes = protectedPrefixes.map(Paths.standardize)
+        self.mountPoints = Set(mountPoints.map(Paths.standardize)).union(["/"])
+        self.keptStores = Set(keptStores.map(Paths.standardize))
     }
 
     /// System locations plus the home Library.
@@ -33,24 +33,24 @@ public struct Safety: Hashable {
     }
 
     public func isProtected(_ path: String) -> Bool {
-        let p = Path.standardize(path)
-        return protectedPrefixes.contains { Path.isInside(p, $0) }
+        let p = Paths.standardize(path)
+        return protectedPrefixes.contains { Paths.isInside(p, $0) }
     }
 
     public func isMountPoint(_ path: String) -> Bool {
-        mountPoints.contains(Path.standardize(path))
+        mountPoints.contains(Paths.standardize(path))
     }
 
     public func validate(path: String, within roots: [String]? = nil) -> Verdict {
-        let p = Path.standardize(path)
+        let p = Paths.standardize(path)
         guard p.hasPrefix("/") else { return .refused("Not an absolute path") }
         guard p != "/" else { return .refused("Refusing to delete the root directory") }
         if mountPoints.contains(p) { return .refused("A mount point") }
         if isProtected(p) { return .refused("Inside a protected system location") }
-        let name = Path.name(of: p)
+        let name = Paths.name(of: p)
         if Junk.markers.contains(name) { return .refused("A marker Sift relies on") }
         if keptStores.contains(p) { return .refused("Carries a folder's chosen view") }
-        if let roots, !roots.contains(where: { p != Path.standardize($0) && Path.isInside(p, Path.standardize($0)) }) {
+        if let roots, !roots.contains(where: { p != Paths.standardize($0) && Paths.isInside(p, Paths.standardize($0)) }) {
             return .refused("Outside the area being cleaned")
         }
         return .allowed

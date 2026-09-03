@@ -14,8 +14,8 @@ public struct Item: Identifiable, Hashable, Codable {
         self.size = size
     }
 
-    public var name: String { Path.name(of: path) }
-    public var parent: String { Path.parent(of: path) }
+    public var name: String { Paths.name(of: path) }
+    public var parent: String { Paths.parent(of: path) }
 }
 
 public enum ScanError: Error, LocalizedError, Equatable {
@@ -33,7 +33,7 @@ public enum ScanError: Error, LocalizedError, Equatable {
 /// Walks a tree and reports junk. Never follows symlinks, never crosses onto
 /// another volume, never enters protected locations, hidden folders, dependency
 /// trees or packages, and does not descend into matched folders.
-public struct Scanner {
+public struct JunkScanner {
     public let safety: Safety
     let fileManager: FileManager
 
@@ -45,7 +45,7 @@ public struct Scanner {
     /// Junk beneath `root`, deepest paths last.
     public func scan(root: String, progress: ((String) -> Void)? = nil,
                      isCancelled: () -> Bool = { false }) throws -> [Item] {
-        let rootPath = Path.standardize(root)
+        let rootPath = Paths.standardize(root)
         guard let rootInfo = Files.info(rootPath), rootInfo.isDirectory else { throw ScanError.notADirectory(rootPath) }
         var items: [Item] = []
         var stack = [rootPath]
@@ -55,7 +55,7 @@ public struct Scanner {
             guard let names = try? fileManager.contentsOfDirectory(atPath: dir) else { continue }
             let atVolumeRoot = safety.isMountPoint(dir)
             for name in names.sorted() {
-                let path = Path.join(dir, name)
+                let path = Paths.join(dir, name)
                 guard let st = Files.info(path) else { continue }
                 if safety.isProtected(path) { continue }
                 let isDirectory = st.isDirectory && !st.isSymlink
@@ -83,18 +83,18 @@ public struct Scanner {
     /// Maps changed paths to junk items, checking each ancestor down from `root`
     /// so a file created inside `.Trashes` flags `.Trashes` itself.
     public func items(fromChangedPaths paths: [String], root: String) -> [Item] {
-        let root = Path.standardize(root)
+        let root = Paths.standardize(root)
         var seen = Set<String>()
         var out: [Item] = []
         for raw in paths {
-            let path = Path.standardize(raw)
-            guard path != root, Path.isInside(path, root) else { continue }
+            let path = Paths.standardize(raw)
+            guard path != root, Paths.isInside(path, root) else { continue }
             let components = path.dropFirst(root == "/" ? 1 : root.count + 1).split(separator: "/").map(String.init)
             guard components.contains(where: Junk.couldMatch(name:)) else { continue }
             var node = root
             for component in components {
                 let parent = node
-                node = Path.join(node, component)
+                node = Paths.join(node, component)
                 if seen.contains(node) { break }
                 if safety.isProtected(node) { break }
                 guard let st = Files.info(node) else { break }

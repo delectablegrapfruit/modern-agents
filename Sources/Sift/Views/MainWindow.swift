@@ -59,7 +59,7 @@ struct StatusSection: View {
             if !model.locked.isEmpty {
                 HStack {
                     Captioned("\(model.locked.count) item\(model.locked.count == 1 ? "" : "s") can only be removed by an administrator",
-                              model.locked.map { $0.name + " on " + Path.name(of: $0.parent) }.joined(separator: ", "))
+                              model.locked.map { $0.name + " on " + Paths.name(of: $0.parent) }.joined(separator: ", "))
                     Spacer()
                     Button("Remove…") { model.removeAsAdministrator(model.locked) }
                 }

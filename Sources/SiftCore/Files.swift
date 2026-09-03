@@ -5,7 +5,7 @@ import Darwin
 import Glibc
 #endif
 
-public enum Path {
+public enum Paths {
     /// Absolute, without trailing slash or `..`.
     public static func standardize(_ path: String) -> String {
         var p = NSString(string: path).standardizingPath
@@ -94,7 +94,7 @@ public enum Files {
         while let dir = stack.popLast() {
             guard let names = try? fileManager.contentsOfDirectory(atPath: dir) else { continue }
             for name in names {
-                let path = Path.join(dir, name)
+                let path = Paths.join(dir, name)
                 guard let st = info(path), !st.isSymlink else { continue }
                 if st.isDirectory {
                     if st.device == device { stack.append(path) }

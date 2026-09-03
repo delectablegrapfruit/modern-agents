@@ -12,7 +12,7 @@ public enum WindowGuard {
 
         public init(id: Int, path: String) {
             self.id = id
-            self.path = Path.standardize(path)
+            self.path = Paths.standardize(path)
         }
     }
 
@@ -74,34 +74,34 @@ public enum WindowGuard {
         viewNames(view.mode).map { name in
             var lines = ["tell application \"Finder\"", "set w to Finder window id \(windowID)",
                          "set current view of w to \(name)"]
-            func set(_ property: String, _ value: String) {
+            func option(_ property: String, _ value: String) {
                 lines += ["try", "set \(property) of o to \(value)", "end try"]
             }
             let o = view.options
             switch view.mode {
             case .icons:
                 lines.append("set o to icon view options of w")
-                set("arrangement", arrangement(view.sortKey))
-                set("icon size", "\(Int(o.icon.iconSize))")
-                set("text size", "\(Int(o.icon.textSize))")
-                set("label position", o.icon.labelOnBottom ? "bottom" : "right")
-                set("shows item info", "\(o.icon.showItemInfo)")
-                set("shows icon preview", "\(o.icon.showIconPreview)")
+                option("arrangement", arrangement(view.sortKey))
+                option("icon size", "\(Int(o.icon.iconSize))")
+                option("text size", "\(Int(o.icon.textSize))")
+                option("label position", o.icon.labelOnBottom ? "bottom" : "right")
+                option("shows item info", "\(o.icon.showItemInfo)")
+                option("shows icon preview", "\(o.icon.showIconPreview)")
             case .list:
                 lines.append("set o to list view options of w")
-                set("sort column", column(view.sortKey))
-                set("sort direction of sort column", view.ascending ? "normal" : "reversed")
-                set("icon size", o.list.largeIcons ? "large icon" : "small icon")
-                set("text size", "\(Int(o.list.textSize))")
-                set("uses relative dates", "\(o.list.relativeDates)")
-                set("calculates folder sizes", "\(o.list.calculateAllSizes)")
-                set("shows icon preview", "\(o.list.showIconPreview)")
+                option("sort column", column(view.sortKey))
+                option("sort direction of sort column", view.ascending ? "normal" : "reversed")
+                option("icon size", o.list.largeIcons ? "large icon" : "small icon")
+                option("text size", "\(Int(o.list.textSize))")
+                option("uses relative dates", "\(o.list.relativeDates)")
+                option("calculates folder sizes", "\(o.list.calculateAllSizes)")
+                option("shows icon preview", "\(o.list.showIconPreview)")
             case .columns:
                 lines.append("set o to column view options of w")
-                set("text size", "\(Int(o.column.textSize))")
-                set("shows icon", "\(o.column.showIcons)")
-                set("shows icon preview", "\(o.column.showIconPreview)")
-                set("shows preview column", "\(o.column.showPreviewColumn)")
+                option("text size", "\(Int(o.column.textSize))")
+                option("shows icon", "\(o.column.showIcons)")
+                option("shows icon preview", "\(o.column.showIconPreview)")
+                option("shows preview column", "\(o.column.showPreviewColumn)")
             case .gallery:
                 break
             }
