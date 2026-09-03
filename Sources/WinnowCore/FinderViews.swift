@@ -396,6 +396,12 @@ public enum FolderViewWriter {
         return out
     }
 
+    static func isDefaultWindowSettings(_ data: Data) -> Bool {
+        guard let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
+              let dictionary = plist as? [String: Any] else { return false }
+        return NSDictionary(dictionary: dictionary).isEqual(to: defaultWindowSettings)
+    }
+
     static func existingFile(at url: URL) -> DSStoreFile? {
         guard let data = try? Data(contentsOf: url) else { return nil }
         return try? DSStoreFile.read(data)
@@ -475,9 +481,10 @@ public enum FolderViewWriter {
             return
         }
         file.records.removeAll { $0.filename == "." && managedIDs.contains($0.structID) }
-        // The window record is ours only if it is still exactly the default we added.
-        if let ours = try? plistData(defaultWindowSettings) {
-            file.records.removeAll { $0.filename == "." && $0.structID == "bwsp" && $0.value == .blob(ours) }
+        // The window record is ours only if it still holds exactly the default we added.
+        file.records.removeAll { record in
+            guard record.filename == ".", record.structID == "bwsp", case .blob(let data) = record.value else { return false }
+            return isDefaultWindowSettings(data)
         }
         if file.records.isEmpty {
             try fileManager.removeItem(at: url)
