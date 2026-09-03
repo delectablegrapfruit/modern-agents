@@ -37,18 +37,18 @@ enum Permissions {
     /// Full Disk Access shows as the ability to read a privacy-protected file.
     static var hasFullDiskAccess: Bool {
         let probe = NSHomeDirectory() + "/Library/Application Support/com.apple.TCC/TCC.db"
-        let fd = open(probe, O_RDONLY)
+        let fd = Darwin.open(probe, O_RDONLY)
         guard fd >= 0 else { return false }
         close(fd)
         return true
     }
 
     static func openFullDiskAccess() {
-        open("x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")
+        show("x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")
     }
 
     static func openAutomation() {
-        open("x-apple.systempreferences:com.apple.preference.security?Privacy_Automation")
+        show("x-apple.systempreferences:com.apple.preference.security?Privacy_Automation")
     }
 
     static func requestAccessibility() {
@@ -56,7 +56,7 @@ enum Permissions {
         _ = AXIsProcessTrustedWithOptions(options)
     }
 
-    private static func open(_ string: String) {
+    private static func show(_ string: String) {
         if let url = URL(string: string) { NSWorkspace.shared.open(url) }
     }
 }
