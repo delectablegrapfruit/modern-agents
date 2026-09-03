@@ -5,6 +5,7 @@ public struct SweepTarget: Hashable, Identifiable {
     public enum Source: Hashable {
         case location(UUID)
         case volume(String)
+        case startupDisk
         case adHoc
     }
 
@@ -31,6 +32,14 @@ public struct SweepTarget: Hashable, Identifiable {
         recursive = true
         source = .volume(volume.id)
         self.volume = volume
+    }
+
+    public init(startupDisk path: String) {
+        self.path = SafetyPolicy.standardize(path)
+        label = "Startup disk · " + NSString(string: self.path).lastPathComponent
+        recursive = true
+        source = .startupDisk
+        volume = nil
     }
 
     public init(adHoc path: String, recursive: Bool = true, volume: VolumeInfo? = nil) {
@@ -68,14 +77,21 @@ public final class Engine {
     public var volumePollInterval: TimeInterval = 10
     /// Set false to keep settings changes in memory only.
     public var persistsSettings = true
+    /// User areas of the startup disk covered by the opt-in `.DS_Store` cleaning.
+    public var startupDiskRoots = ["/Users", "/Applications"]
 
     public var onVolumesChanged: (([VolumeInfo]) -> Void)?
+    /// Fired when the engine changes settings on its own (startup-disk time limit reached).
+    public var onSettingsChanged: ((Settings) -> Void)?
     public var onWatchesChanged: (([SweepTarget]) -> Void)?
     public var onAutoClean: ((SweepResult, SweepTarget) -> Void)?
 
     private let fileManager: FileManager
     private let state = DispatchQueue(label: "winnow.engine.state")
-    private let work = DispatchQueue(label: "winnow.engine.work", qos: .utility)
+    /// Live file events: kept short so a rescan never delays them.
+    private let work = DispatchQueue(label: "winnow.engine.events", qos: .utility)
+    /// Full re-scans of a target.
+    private let scans = DispatchQueue(label: "winnow.engine.scans", qos: .utility)
     private var _settings: Settings
     private var _volumes: [VolumeInfo] = []
     private var _watches: [String: (target: SweepTarget, watcher: ChangeWatcher)] = [:]
@@ -128,9 +144,12 @@ public final class Engine {
         if wasRunning { return }
         refreshVolumes(announceNew: false)
         reconfigure()
-        let timer = DispatchSource.makeTimerSource(queue: work)
+        let timer = DispatchSource.makeTimerSource(queue: scans)
         timer.schedule(deadline: .now() + volumePollInterval, repeating: volumePollInterval, leeway: .seconds(2))
-        timer.setEventHandler { [weak self] in self?.refreshVolumes(announceNew: true) }
+        timer.setEventHandler { [weak self] in
+            self?.refreshVolumes(announceNew: true)
+            self?.expireStartupDiskIfNeeded()
+        }
         timer.resume()
         volumeTimer = timer
     }
@@ -220,15 +239,50 @@ public final class Engine {
         mountedVolumes.filter { decision(for: $0).isEligible }
     }
 
+    // MARK: - Startup disk
+
+    /// Turns startup-disk cleaning off once its time limit has passed.
+    @discardableResult
+    public func expireStartupDiskIfNeeded(now: Date = Date()) -> Bool {
+        var current = settings
+        guard current.startupDisk.hasExpired(at: now) else { return false }
+        current.startupDisk.disable()
+        update(current)
+        log.record(.info, "Startup disk cleaning turned off · time limit reached")
+        onSettingsChanged?(current)
+        return true
+    }
+
+    private func startupTargets(_ current: Settings) -> [SweepTarget] {
+        guard current.startupDisk.isActive() else { return [] }
+        return startupDiskRoots
+            .filter { FileStats.info($0)?.isDirectory == true }
+            .map { SweepTarget(startupDisk: $0) }
+    }
+
+    /// Rules applied to one target: the startup disk only ever loses `.DS_Store`.
+    func rules(for target: SweepTarget, settings current: Settings) -> [JunkRule] {
+        if case .startupDisk = target.source {
+            return [JunkCatalog.builtIn(id: "ds_store")].compactMap { $0 }
+        }
+        return current.rules.activeRules
+    }
+
     // MARK: - Targets
 
     public func fullSweepTargets() -> [SweepTarget] {
-        dedupe(locationTargets(settings) + volumeTargets())
+        let current = settings
+        return withStartup(dedupe(locationTargets(current) + volumeTargets()), current)
     }
 
     private func watchTargets(_ current: Settings) -> [SweepTarget] {
         guard current.general.isWatching else { return [] }
-        return dedupe(locationTargets(current) + volumeTargets())
+        return withStartup(dedupe(locationTargets(current) + volumeTargets()), current)
+    }
+
+    /// Startup-disk targets use a narrower rule set, so they never replace a user folder.
+    private func withStartup(_ base: [SweepTarget], _ current: Settings) -> [SweepTarget] {
+        base + startupTargets(current).filter { startup in !base.contains { $0.path == startup.path } }
     }
 
     private func locationTargets(_ current: Settings) -> [SweepTarget] {
@@ -268,8 +322,11 @@ public final class Engine {
                 toStop.append(entry.watcher)
                 _watches[path] = nil
             }
+            let protected = SafetyPolicy().protectedPrefixes
             for target in desiredByPath.values where _watches[target.path] == nil {
-                let watcher = Watchers.make(root: target.path, preferPolling: target.isNetwork,
+                let prefix = target.path == "/" ? "/" : target.path + "/"
+                let excluded = protected.filter { $0.hasPrefix(prefix) }
+                let watcher = Watchers.make(root: target.path, excluding: excluded, alsoPoll: target.isNetwork,
                                             pollInterval: current.general.pollIntervalSeconds)
                 _watches[target.path] = (target, watcher)
                 let sweepNow: Bool
@@ -281,11 +338,14 @@ public final class Engine {
         for (target, watcher, sweepNow) in toStart {
             watcher.onEvent = { [weak self] event in
                 guard let self else { return }
-                self.work.async { self.handle(event, for: target) }
+                switch event {
+                case .rescan: self.scans.async { self.handle(event, for: target) }
+                case .paths: self.work.async { self.handle(event, for: target) }
+                }
             }
             watcher.start()
             if sweepNow {
-                work.async { [weak self] in self?.handle(.rescan, for: target) }
+                scans.async { [weak self] in self?.handle(.rescan, for: target) }
             }
         }
         onWatchesChanged?(activeWatches)
@@ -315,7 +375,7 @@ public final class Engine {
     /// Maps changed paths to junk items, checking each ancestor down from the
     /// watched root so a file created inside `.Trashes` flags `.Trashes` itself.
     func junkItems(fromEventPaths paths: [String], target: SweepTarget, settings current: Settings) -> [JunkItem] {
-        let options = scanOptions(current, recursive: target.recursive)
+        let options = scanOptions(current, target: target)
         let root = target.path
         let rootPrefix = root == "/" ? "/" : root + "/"
         var seen = Set<String>()
@@ -324,13 +384,15 @@ public final class Engine {
             let path = SafetyPolicy.standardize(raw)
             guard path.hasPrefix(rootPrefix) else { continue }
             let components = path.dropFirst(rootPrefix.count).split(separator: "/").map(String.init)
+            // Cheap name test first: most file events are unrelated to any rule.
+            guard components.contains(where: options.couldMatch(name:)) else { continue }
             var node = root
             for (depth, component) in components.enumerated() {
                 if depth > 0 && !target.recursive { break }
                 node = node == "/" ? "/" + component : node + "/" + component
                 if seen.contains(node) { break }
-                guard let st = FileStats.info(node) else { break }
                 if options.exclusions.isExcluded(path: node, name: component) || options.safety.isProtected(node) { break }
+                guard let st = FileStats.info(node) else { break }
                 let isDirectory = st.isDirectory && !st.isSymlink
                 if let rule = options.firstMatch(name: component, isDirectory: isDirectory,
                                                  atVolumeRoot: options.safety.isAtVolumeRoot(node)),
@@ -354,9 +416,9 @@ public final class Engine {
         SafetyPolicy(volumeRoots: Set(mountedVolumes.map(\.mountPoint)).union(["/"]))
     }
 
-    private func scanOptions(_ current: Settings, recursive: Bool) -> ScanOptions {
-        ScanOptions(rules: current.rules.activeRules, exclusions: current.exclusionMatcher, safety: safety(),
-                    skipPackages: current.general.skipPackages, recursive: recursive)
+    private func scanOptions(_ current: Settings, target: SweepTarget) -> ScanOptions {
+        ScanOptions(rules: rules(for: target, settings: current), exclusions: current.exclusionMatcher, safety: safety(),
+                    skipPackages: current.general.skipPackages, recursive: target.recursive)
     }
 
     public func scan(paths: [String], recursive: Bool = true,
@@ -372,7 +434,7 @@ public final class Engine {
         var seen = Set<String>()
         var items: [JunkItem] = []
         for target in targets {
-            let scanner = JunkScanner(options: scanOptions(current, recursive: target.recursive), fileManager: fileManager)
+            let scanner = JunkScanner(options: scanOptions(current, target: target), fileManager: fileManager)
             let found = try scanner.scan(root: target.path,
                                          progress: { dir in progress?(.scanning(target: target.label, directory: dir)) },
                                          isCancelled: isCancelled)

@@ -224,10 +224,24 @@ struct OptionsSection: View {
             Toggle("Leave apps and packages alone", isOn: $model.settings.general.skipPackages)
             Toggle("Notify after cleaning", isOn: $model.settings.general.notify)
             Toggle("Launch at login", isOn: model.launchAtLoginBinding)
+            Toggle("Spotlight: don't index cleaned disks", isOn: model.spotlightBinding)
         }
-        Section("Prevent") {
-            Toggle("Finder: no .DS_Store on network volumes", isOn: model.dsStoreBinding(network: true))
-            Toggle("Finder: no .DS_Store on USB disks", isOn: model.dsStoreBinding(network: false))
+        Section {
+            Toggle("Don't write .DS_Store on network volumes", isOn: model.dsStoreBinding(network: true))
+            Toggle("Don't write .DS_Store on USB disks", isOn: model.dsStoreBinding(network: false))
+            Picker("Default view", selection: $model.finderDefaults.viewStyle) {
+                Text("Unchanged").tag(FinderViewStyle?.none)
+                ForEach(FinderViewStyle.allCases, id: \.self) { style in
+                    Text(style.label).tag(FinderViewStyle?.some(style))
+                }
+            }
+            Picker("Sort by", selection: $model.finderDefaults.sortKey) {
+                Text("Unchanged").tag(FinderSortKey?.none)
+                ForEach(FinderSortKey.allCases, id: \.self) { key in
+                    Text(key.label).tag(FinderSortKey?.some(key))
+                }
+            }
+            Toggle("Folders first", isOn: $model.finderDefaults.foldersFirst)
             if model.finderNeedsRelaunch {
                 HStack {
                     Text("Takes effect after Finder relaunches.")
@@ -237,7 +251,33 @@ struct OptionsSection: View {
                     Button("Relaunch Finder") { model.relaunchFinder() }
                 }
             }
-            Toggle("Spotlight: don't index cleaned disks", isOn: model.spotlightBinding)
+        } header: {
+            Text("Finder")
+        } footer: {
+            Text("Defaults apply to every folder without its own .DS_Store, so fewer of them are needed.")
+        }
+        Section {
+            Toggle(isOn: model.startupDiskBinding) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Remove .DS_Store on the startup disk")
+                    Text(model.startupDiskDetail ?? "Home folder and Applications. Off by default.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .alert("Remove .DS_Store on the startup disk?", isPresented: $model.startupDiskWarningShown) {
+                Button("Turn On", role: .destructive) { model.enableStartupDisk() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(AppModel.startupDiskWarning)
+            }
+            Picker("Turn off after", selection: model.startupDurationBinding) {
+                ForEach(AppModel.startupDurations, id: \.seconds) { choice in
+                    Text(choice.label).tag(choice.seconds)
+                }
+            }
+        } header: {
+            Text("Startup disk")
         }
         Section {
             TextEditor(text: $model.exclusionsDraft)

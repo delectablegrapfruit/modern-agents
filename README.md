@@ -9,12 +9,14 @@ they appear, and sweeps whole disks on demand.
 
 ## What it does
 
-- **Watches** every eligible volume and every folder you add, deleting junk as it is written (FSEvents locally, polling on network shares).
+- **Watches** every eligible volume and every folder you add, deleting junk within about half a second of it being written (FSEvents; network shares also poll, since remote writes produce no local events).
 - **Sweeps** on demand: everything at once, a single dropped folder, or via *Clean with Winnow* in Finder's Services menu.
 - **Cleans on connect and before eject**, so a USB stick leaves clean.
 - **Rules** you can switch individually, plus your own name patterns.
 - **Disk policy**: external, network, internal, per-volume overrides, skip Mac-formatted disks.
 - **Prevention**: Finder's own `.DS_Store` switches for network and USB volumes; a Spotlight no-index marker on cleaned disks.
+- **Finder defaults**: default view, sort order and folders-first for every folder that has no `.DS_Store` of its own, so fewer are needed.
+- **Startup disk** (off by default, warning on enable): removes `.DS_Store` from your home folder and Applications continuously, with an optional time limit (1 h … 1 week) or indefinitely. System folders and `~/Library` are never touched.
 - **Safety**: never the startup disk, never system folders, never outside the area being cleaned, never a mount point itself. Volume-level folders are matched only at the top of a volume.
 - **Activity log** of everything removed.
 

@@ -59,6 +59,14 @@ final class AppModel: ObservableObject {
     @Published private(set) var statistics = ActivityStatistics()
     @Published private(set) var sweep: SweepState = .idle
     @Published private(set) var finderNeedsRelaunch = false
+    @Published var finderDefaults = FinderDefaults.read() {
+        didSet {
+            guard finderDefaults != oldValue else { return }
+            finderDefaults.write()
+            finderNeedsRelaunch = true
+        }
+    }
+    @Published var startupDiskWarningShown = false
     @Published var lastError: String?
 
     private var saveTask: Task<Void, Never>?
@@ -94,6 +102,9 @@ final class AppModel: ObservableObject {
         engine.log.onAppend = { [weak self] _ in
             Task { @MainActor in self?.scheduleActivityRefresh() }
         }
+        engine.onSettingsChanged = { [weak self] changed in
+            Task { @MainActor in self?.settings = changed }
+        }
     }
 
     func start() {
@@ -128,10 +139,12 @@ final class AppModel: ObservableObject {
     var statusText: String {
         guard isWatching else { return "Paused" }
         let volumeCount = watches.filter { if case .volume = $0.source { return true } else { return false } }.count
-        let folderCount = watches.count - volumeCount
+        let startupCount = watches.filter { if case .startupDisk = $0.source { return true } else { return false } }.count
+        let folderCount = watches.count - volumeCount - startupCount
         var parts: [String] = []
         if volumeCount > 0 { parts.append("\(volumeCount) volume\(volumeCount == 1 ? "" : "s")") }
         if folderCount > 0 { parts.append("\(folderCount) folder\(folderCount == 1 ? "" : "s")") }
+        if startupCount > 0 { parts.append("startup disk") }
         return parts.isEmpty ? "Nothing to watch" : "Watching " + parts.joined(separator: ", ")
     }
 
@@ -422,6 +435,49 @@ final class AppModel: ObservableObject {
     func relaunchFinder() {
         Finder.relaunch()
         finderNeedsRelaunch = false
+    }
+
+    // MARK: - Startup disk
+
+    static let startupDurations: [(label: String, seconds: Double)] = [
+        ("1 hour", 3600), ("8 hours", 8 * 3600), ("24 hours", 24 * 3600), ("1 week", 7 * 24 * 3600), ("Never", 0),
+    ]
+
+    static let startupDiskWarning = "Finder keeps each folder's view, sort order, icon positions and window size in its .DS_Store file. "
+        + "Removing those files continuously across your home folder and Applications resets every folder to the Finder defaults, "
+        + "again and again, until this is turned off. System folders and ~/Library are never touched."
+
+    /// Turning on goes through the warning first; turning off is immediate.
+    var startupDiskBinding: Binding<Bool> {
+        Binding(
+            get: { [weak self] in self?.settings.startupDisk.isEnabled ?? false },
+            set: { [weak self] on in
+                guard let self else { return }
+                if on { self.startupDiskWarningShown = true } else { self.settings.startupDisk.disable() }
+            }
+        )
+    }
+
+    func enableStartupDisk() {
+        settings.startupDisk.enable()
+    }
+
+    /// 0 means indefinitely. Changing it while enabled restarts the clock.
+    var startupDurationBinding: Binding<Double> {
+        Binding(
+            get: { [weak self] in self?.settings.startupDisk.durationSeconds ?? 0 },
+            set: { [weak self] seconds in
+                guard let self else { return }
+                self.settings.startupDisk.durationSeconds = seconds > 0 ? seconds : nil
+                if self.settings.startupDisk.isEnabled { self.settings.startupDisk.enable() }
+            }
+        )
+    }
+
+    var startupDiskDetail: String? {
+        guard settings.startupDisk.isEnabled else { return nil }
+        guard let until = settings.startupDisk.expiresAt else { return "On until turned off" }
+        return "On until " + until.formatted(date: .abbreviated, time: .shortened)
     }
 
     func clearActivity() {
