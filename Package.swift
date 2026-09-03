@@ -3,7 +3,7 @@ import PackageDescription
 
 var products: [Product] = [
     .library(name: "SiftCore", targets: ["SiftCore"]),
-    .executable(name: "sift", targets: ["SiftCLI"]),
+    .executable(name: "sift-cli", targets: ["SiftCLI"]),
 ]
 
 var targets: [Target] = [

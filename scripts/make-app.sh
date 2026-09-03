@@ -8,13 +8,13 @@ CONFIG="${1:-release}"
 APP="build/Sift.app"
 
 swift build -c "$CONFIG" --product Sift
-swift build -c "$CONFIG" --product sift
+swift build -c "$CONFIG" --product sift-cli
 BINDIR="$(swift build -c "$CONFIG" --show-bin-path)"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BINDIR/Sift" "$APP/Contents/MacOS/Sift"
-cp "$BINDIR/sift" "$APP/Contents/MacOS/sift"
+cp "$BINDIR/sift-cli" "$APP/Contents/MacOS/sift"
 cp Packaging/Info.plist "$APP/Contents/Info.plist"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 

@@ -13,8 +13,8 @@ run: app
 	open build/Sift.app
 
 cli:
-	swift build -c release --product sift
-	@echo "binary: $$(swift build -c release --show-bin-path)/sift"
+	swift build -c release --product sift-cli
+	@echo "binary: $$(swift build -c release --show-bin-path)/sift-cli"
 
 clean:
 	rm -rf .build build

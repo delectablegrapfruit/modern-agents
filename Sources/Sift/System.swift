@@ -37,7 +37,10 @@ enum Permissions {
     /// Full Disk Access shows as the ability to read a privacy-protected file.
     static var hasFullDiskAccess: Bool {
         let probe = NSHomeDirectory() + "/Library/Application Support/com.apple.TCC/TCC.db"
-        return FileManager.default.isReadableFile(atPath: probe)
+        let fd = open(probe, O_RDONLY)
+        guard fd >= 0 else { return false }
+        close(fd)
+        return true
     }
 
     static func openFullDiskAccess() {

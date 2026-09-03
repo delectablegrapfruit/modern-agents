@@ -175,6 +175,18 @@ final class RemoverTests: XCTestCase {
         XCTAssertTrue(box.exists("A"))
     }
 
+    func testVolumeFoldersLeaveTheirQuietFormBehind() throws {
+        try box.file(".fseventsd/0000000001", "journal")
+        try box.file(".Spotlight-V100/Store/index", "spotlight")
+        let outcome = Remover(safety: safety).remove(try items(), within: [box.path])
+        XCTAssertEqual(outcome.removed.count, 5)
+        XCTAssertTrue(box.exists(".fseventsd/no_log"), "the journal stays in its quiet form")
+        XCTAssertFalse(box.exists(".fseventsd/0000000001"))
+        XCTAssertFalse(box.exists(".Spotlight-V100"))
+        XCTAssertTrue(box.exists(".metadata_never_index"), "Spotlight is told not to index the disk again")
+        XCTAssertTrue(try items().isEmpty, "nothing left to remove")
+    }
+
     func testSkipsOutsideRootsAndProtected() throws {
         let outside = Item(path: "/System/Library/.DS_Store", kind: .dsStore, isDirectory: false, size: 1)
         let outcome = Remover(safety: safety).remove(try items() + [outside], within: [box.path + "/A"])

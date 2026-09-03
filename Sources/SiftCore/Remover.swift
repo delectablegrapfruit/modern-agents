@@ -81,7 +81,7 @@ public struct Remover {
                 continue
             }
             do {
-                try delete(item.path)
+                try delete(item)
                 outcome.removed.append(item)
             } catch {
                 outcome.failed.append(Failure(item: item, reason: error.localizedDescription,
@@ -91,7 +91,22 @@ public struct Remover {
         return outcome
     }
 
-    private func delete(_ path: String) throws {
+    /// Removes the item, and leaves behind what stops it growing back: the
+    /// event journal in its quiet form, and Spotlight's marker not to index the disk.
+    private func delete(_ item: Item) throws {
+        try removeItem(at: item.path)
+        switch item.kind {
+        case .fsevents:
+            try fileManager.createDirectory(atPath: item.path, withIntermediateDirectories: false)
+            _ = fileManager.createFile(atPath: item.path + "/no_log", contents: Data())
+        case .spotlight:
+            _ = fileManager.createFile(atPath: item.parent + "/.metadata_never_index", contents: Data())
+        default:
+            break
+        }
+    }
+
+    private func removeItem(at path: String) throws {
         do {
             try fileManager.removeItem(atPath: path)
         } catch {

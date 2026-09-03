@@ -73,7 +73,7 @@ final class EngineTests: XCTestCase {
         cleaned.assertForOverFulfill = false
         engine.onRemoved = { _, _ in cleaned.fulfill() }
         engine.start()
-        XCTAssertEqual(engine.activeRoots.map(\.path), [box.path + "/Users/me", box.path + "/USB"])
+        XCTAssertEqual(Set(engine.activeRoots.map(\.path)), [box.path + "/Users/me", box.path + "/USB"])
         wait(for: [cleaned], timeout: 10)
         XCTAssertFalse(box.exists("USB/.DS_Store"))
 

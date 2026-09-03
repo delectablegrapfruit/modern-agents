@@ -48,7 +48,7 @@ Requires macOS 13 or later and Xcode 15 or later.
 ```sh
 make app     # builds build/Sift.app
 make test    # core tests (also run on Linux)
-make cli     # command-line tool
+make cli     # command-line tool (built as sift-cli; the app bundle carries it as sift)
 ```
 
 ```

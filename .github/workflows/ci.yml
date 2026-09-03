@@ -43,7 +43,7 @@ jobs:
     container: swift:6.0
     steps:
       - uses: actions/checkout@v4
-      - run: swift build --product sift
+      - run: swift build --product sift-cli
       - run: swift test
       - name: Cross-check .DS_Store output with the ds_store Python package
         run: |
@@ -58,7 +58,7 @@ jobs:
           with DSStore.open(path, 'w+') as d:
               d['Photos']['vstl'] = ('type', b'glyv')
               d['photo.jpg']['Iloc'] = (10, 20)
-          out = subprocess.check_output(['.build/debug/sift', 'dsstore', '/tmp/dsdemo']).decode()
+          out = subprocess.check_output(['.build/debug/sift-cli', 'dsstore', '/tmp/dsdemo']).decode()
           print(out)
           assert "Photos\tvstl\t'glyv'" in out, out
           assert '2 records' in out, out
