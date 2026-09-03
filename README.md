@@ -16,7 +16,7 @@ they appear, and sweeps whole disks on demand.
 - **Disk policy**: external, network, internal, per-volume overrides, skip Mac-formatted disks.
 - **Prevention**: Finder's own `.DS_Store` switches for network and USB volumes; a Spotlight no-index marker on cleaned disks.
 - **Finder defaults**: default view mode, sort key and direction, group-by, folders-first, and per-mode view options (icon size, grid spacing, text size, label position, list columns, relative dates, column-view icons and preview, gallery thumbnail size). Written to Finder's own preferences, verified, then Finder is relaunched. *Reset every folder* (on by default when applying) removes `.DS_Store` across your home folder, Applications and every connected drive so every folder actually adopts them. Finder is quit before anything is written, so it cannot overwrite the new files on exit.
-- **Folders with their own view**: give any folder its own mode and options (Pictures → 128 px icons and Movies → gallery are preconfigured). Winnow writes the folder's `.DS_Store` itself — no Automation permission, no Finder window flashing — and every sweep leaves that file alone.
+- **Folders with their own view**: give any folder its own mode and options (Pictures → 128 px icons and Movies → gallery are preconfigured). Winnow writes the folder's `.DS_Store` itself and, on Apply, also asks Finder (Automation permission, one prompt) to adopt the view; every sweep leaves that folder's `.DS_Store` alone.
 - **Enforce defaults everywhere** (off by default, warning on enable): keeps removing `.DS_Store` across your home folder, Applications and every connected drive, so every folder follows the defaults and view changes made in Finder last only for the session. Optional time limit (1 h … 1 week) or indefinite. System folders are never touched.
 - **Safety**: never the startup disk, never system folders, never outside the area being cleaned, never a mount point itself. Volume-level folders are matched only at the top of a volume.
 - **Activity log** of everything removed.
@@ -66,11 +66,12 @@ winnow-cli full-sweep              clean every configured location and eligible 
 winnow-cli watch [<folder>...]     watch and clean continuously
 winnow-cli rules                   list rules
 winnow-cli volumes                 list mounted volumes and whether they would be cleaned
+winnow-cli finder                  show Finder defaults, folder views and enforcement state
 winnow-cli dsstore <folder>        show the records in a folder's .DS_Store
 winnow-cli set-view <folder> <mode>  give a folder its own view (icons|list|columns|gallery; --sort=…, --icon-size=N)
 ```
 
-The CLI shares its settings with the app (`~/Library/Application Support/Winnow/settings.json`).
+The CLI ships inside the app: `/Applications/Winnow.app/Contents/MacOS/winnow-cli`. It shares its settings with the app (`~/Library/Application Support/Winnow/settings.json`).
 
 ## Layout
 

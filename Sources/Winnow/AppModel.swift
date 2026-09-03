@@ -63,6 +63,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var finderApplied: FinderDefaults
     @Published private(set) var folderViewsApplied: [FolderView]
     @Published private(set) var isApplyingFinder = false
+    @Published private(set) var finderPhase: String?
     @Published var resetFoldersOnApply = true
     @Published private(set) var finderStatus: String?
     @Published var editingFolderView: FolderView?
@@ -423,8 +424,8 @@ final class AppModel: ObservableObject {
         finderDraft != finderApplied || settings.folderViews != folderViewsApplied
     }
 
-    /// Writes Finder's defaults and every folder view, optionally resets existing
-    /// folder settings, then relaunches Finder.
+    /// Writes Finder's defaults and every folder view, relaunches Finder, asks Finder
+    /// to adopt each folder view, then (optionally) resets other folders in the background.
     func applyFinderDefaults() {
         guard finderHasChanges || resetFoldersOnApply, !isApplyingFinder else { return }
         isApplyingFinder = true
@@ -436,10 +437,12 @@ final class AppModel: ObservableObject {
         let current = settings
         Task { @MainActor in
             var problems: [String] = []
-            // Finder writes its own .DS_Store files when it quits, so quit it first.
-            await FinderApplier.quitFinder()
-            do { try draft.write() } catch { problems.append(error.localizedDescription) }
 
+            finderPhase = "Quitting Finder…"
+            await FinderApplier.quitFinder()
+
+            finderPhase = "Writing preferences…"
+            do { try draft.write() } catch { problems.append(error.localizedDescription) }
             let wanted = Dictionary(views.filter(\.isEnabled).map { ($0.path, $0) }, uniquingKeysWith: { a, _ in a })
             for view in previous where view.isEnabled && wanted[view.path] == nil {
                 try? FolderViewWriter.remove(view)
@@ -447,24 +450,73 @@ final class AppModel: ObservableObject {
             for view in wanted.values {
                 do { try FolderViewWriter.write(view) } catch { problems.append("\(view.displayName): \(error.localizedDescription)") }
             }
+            // Make sure the engine exempts the folder views before anything else runs.
+            await Task.detached(priority: .userInitiated) { engine.update(current) }.value
 
-            var resetCount: Int?
-            if reset {
-                // Make sure the engine exempts the folder views before sweeping.
-                await Task.detached(priority: .userInitiated) { engine.update(current) }.value
-                let result = try? await Task.detached(priority: .userInitiated) { try engine.resetFolderSettings() }.value
-                resetCount = result?.removedCount
-            }
-
+            finderPhase = "Relaunching Finder…"
             await FinderApplier.launchFinder()
+
+            if !wanted.isEmpty {
+                finderPhase = "Setting folder views in Finder…"
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                for view in wanted.values {
+                    do { try FinderScripting.apply(view) } catch { problems.append("\(view.displayName): \(error.localizedDescription)") }
+                }
+            }
 
             finderApplied = problems.isEmpty ? draft : FinderDefaults.read()
             folderViewsApplied = views
             if !problems.isEmpty { lastError = problems.joined(separator: "\n") }
-            var status = "Applied " + Date().formatted(date: .omitted, time: .shortened)
-            if let resetCount { status += " · reset \(resetCount) folder\(resetCount == 1 ? "" : "s")" }
-            finderStatus = status
+            finderStatus = "Applied " + Date().formatted(date: .omitted, time: .shortened)
+            finderPhase = nil
             isApplyingFinder = false
+            if reset { startFinderReset() }
+        }
+    }
+
+    /// Removes `.DS_Store` everywhere the defaults apply, as a normal cancellable sweep.
+    func startFinderReset() {
+        guard sweep == .idle else { return }
+        let token = WorkToken()
+        self.token = token
+        let label = AppModel.resetLabel
+        sweep = .scanning(label: label, detail: "")
+        let engine = self.engine
+        Task.detached(priority: .userInitiated) { [weak self] in
+            do {
+                let result = try engine.resetFolderSettings(progress: { phase in
+                    guard token.shouldReport() else { return }
+                    Task { @MainActor in
+                        guard let self, !token.isCancelled else { return }
+                        switch phase {
+                        case .scanning(_, let directory):
+                            if case .scanning = self.sweep { self.sweep = .scanning(label: label, detail: directory) }
+                        case .deleting(let done, let total, _):
+                            self.sweep = .removing(done: done, total: total)
+                        }
+                    }
+                }, isCancelled: { token.isCancelled })
+                await MainActor.run { [weak self] in
+                    guard let self else { return }
+                    self.sweep = token.isCancelled ? .idle : .finished(result)
+                }
+            } catch {
+                await MainActor.run { [weak self] in
+                    guard let self else { return }
+                    self.sweep = .idle
+                    if !token.isCancelled { self.lastError = error.localizedDescription }
+                }
+            }
+        }
+    }
+
+    static let resetLabel = "Finder reset"
+
+    var isResettingFolders: Bool {
+        switch sweep {
+        case .scanning(let label, _): return label == AppModel.resetLabel
+        case .removing: return true
+        default: return false
         }
     }
 

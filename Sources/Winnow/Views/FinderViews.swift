@@ -89,22 +89,34 @@ struct FinderPane: View {
                           "Removes .DS_Store across your home folder, Applications and every connected drive. Folders above keep theirs.")
             }
             HStack {
+                if model.isApplyingFinder || model.isResettingFolders {
+                    ProgressView().controlSize(.small)
+                }
                 Text(statusText)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
                 Spacer()
+                if model.isResettingFolders {
+                    Button("Cancel") { model.cancelSweep() }
+                }
                 if model.finderHasChanges && !model.isApplyingFinder {
                     Button("Revert") { model.revertFinderDraft() }
                 }
                 Button("Apply") { model.applyFinderDefaults() }
                     .buttonStyle(.borderedProminent)
-                    .disabled(!(model.finderHasChanges || model.resetFoldersOnApply) || model.isApplyingFinder)
+                    .disabled(!(model.finderHasChanges || model.resetFoldersOnApply) || model.isApplyingFinder || model.isResettingFolders)
             }
         }
     }
 
     private var statusText: String {
-        if model.isApplyingFinder { return "Relaunching Finder…" }
+        if let phase = model.finderPhase { return phase }
+        if model.isResettingFolders {
+            if case .scanning(_, let detail) = model.sweep, !detail.isEmpty { return "Resetting folders… " + detail }
+            return "Resetting folders…"
+        }
         if model.finderHasChanges { return "Finder relaunches when you apply." }
         return model.finderStatus ?? "Finder is up to date."
     }

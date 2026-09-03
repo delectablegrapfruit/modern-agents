@@ -14,6 +14,7 @@ USAGE
   winnow-cli watch [<folder>...]         watch and clean continuously (Ctrl-C to stop)
   winnow-cli rules                       list rules and whether they are active
   winnow-cli volumes                     list mounted volumes and whether they would be cleaned
+  winnow-cli finder                      show Finder defaults, folder views and enforcement state
   winnow-cli dsstore <folder>            show the records in a folder's .DS_Store
   winnow-cli set-view <folder> <mode>    give a folder its own view: icons | list | columns | gallery
                                          (--sort=name|dateModified|dateCreated|dateAdded|size|kind  --icon-size=N)
@@ -182,6 +183,27 @@ case "volumes":
     for volume in engine.refreshVolumes(announceNew: false) {
         let verdict = engine.decision(for: volume)
         print("\(verdict.isEligible ? "clean " : "skip  ") \(volume.name.padding(toLength: 24, withPad: " ", startingAt: 0)) \(volume.kind.label) · \(volume.fileSystemLabel) · \(volume.mountPoint) · \(verdict.reason)")
+    }
+
+case "finder":
+    let d = FinderDefaults.read()
+    print("Finder defaults: view=\(d.viewStyle.rawValue) sort=\(d.sortKey.rawValue) \(d.ascending ? "asc" : "desc") group=\(d.groupBy.rawValue) foldersFirst=\(d.foldersFirst) icon=\(Int(d.options.icon.iconSize))px")
+    print("Settings: \(engine.store.fileURL.path)")
+    let s = engine.settings
+    print("Enforce defaults: \(s.startupDisk.isEnabled ? (s.startupDisk.expiresAt.map { "on until \($0)" } ?? "on") : "off")")
+    print("Folder views:")
+    for view in s.folderViews {
+        let file = view.dsStorePath
+        var state = "missing"
+        if let data = try? Data(contentsOf: URL(fileURLWithPath: file)) {
+            if let store = try? DSStoreFile.read(data) {
+                let ids = store.records.filter { $0.filename == "." }.map(\.structID).sorted().joined(separator: " ")
+                state = "\(data.count) bytes · \(store.records.count) records · [\(ids)]"
+            } else {
+                state = "\(data.count) bytes · unreadable"
+            }
+        }
+        print("  \(view.isEnabled ? "on " : "off") \(view.displayName)  \(view.summary)\n       .DS_Store: \(state)")
     }
 
 case "dsstore":

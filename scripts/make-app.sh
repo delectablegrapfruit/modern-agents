@@ -8,11 +8,14 @@ CONFIG="${1:-release}"
 APP="build/Winnow.app"
 
 swift build -c "$CONFIG" --product Winnow
-BIN="$(swift build -c "$CONFIG" --show-bin-path)/Winnow"
+swift build -c "$CONFIG" --product winnow-cli
+BINDIR="$(swift build -c "$CONFIG" --show-bin-path)"
+BIN="$BINDIR/Winnow"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Winnow"
+cp "$BINDIR/winnow-cli" "$APP/Contents/MacOS/winnow-cli"
 cp Packaging/Info.plist "$APP/Contents/Info.plist"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
