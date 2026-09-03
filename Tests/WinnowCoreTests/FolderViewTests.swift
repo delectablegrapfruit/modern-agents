@@ -24,15 +24,15 @@ final class FolderViewTests: XCTestCase {
         let records = try FolderViewWriter.records(for: view)
         XCTAssertEqual(records.map(\.structID), ["vstl", "vSrn", "icvp"])
         XCTAssertEqual(records[0].value, .type("icnv"))
-        XCTAssertEqual(records[1].value, .type("icnv"))
-        let icvp = plist(records[3])!
+        XCTAssertEqual(records[1].value, .long(1))
+        let icvp = plist(records[2])!
         XCTAssertEqual(plistDouble(icvp["iconSize"]), 128)
         XCTAssertEqual(icvp["arrangeBy"] as? String, "dateAdded")
 
         let list = FolderView(path: box.path + "/Pictures", viewStyle: .list, sortKey: .size, ascending: false)
         let listRecords = try FolderViewWriter.records(for: list)
         XCTAssertEqual(listRecords.map(\.structID), ["vstl", "vSrn", "lsvp", "lsvP"])
-        let lsvP = plist(listRecords[4])!
+        let lsvP = plist(listRecords[3])!
         XCTAssertEqual(lsvP["sortColumn"] as? String, "size")
         let columns = lsvP["columns"] as! [[String: Any]]
         let size = columns.first { $0["identifier"] as? String == "size" }!
