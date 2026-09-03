@@ -48,7 +48,7 @@ jobs:
       - name: Cross-check .DS_Store output with the ds_store Python package
         run: |
           apt-get update -qq >/dev/null && apt-get install -y -qq python3 python3-pip >/dev/null
-          pip3 install -q ds_store
+          pip3 install -q --break-system-packages ds_store
           mkdir -p /tmp/dsdemo
           .build/debug/winnow-cli set-view /tmp/dsdemo gallery --sort=dateAdded --icon-size=96
           .build/debug/winnow-cli dsstore /tmp/dsdemo
