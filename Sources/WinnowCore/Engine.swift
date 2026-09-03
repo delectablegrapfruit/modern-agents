@@ -472,7 +472,8 @@ public final class Engine {
             return entry.count > 30
         }
         if overBudget {
-            if state.sync({ _reconcileCounts[store]?.count == 31 }) {
+            let firstTime: Bool = state.sync { _reconcileCounts[store]?.count == 31 }
+            if firstTime {
                 log.record(.error, "Stopped rewriting \(store): it keeps changing")
             }
             return false
