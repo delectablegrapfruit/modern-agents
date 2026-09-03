@@ -233,7 +233,14 @@ case "dsstore":
         }
         print("\(file.records.count) record\(file.records.count == 1 ? "" : "s")")
     } catch {
-        fail(error.localizedDescription, code: 1)
+        FileHandle.standardError.write(Data("\(error.localizedDescription)\n".utf8))
+    }
+    let folderPath = absolute(folder)
+    print("xattrs on \(folderPath):")
+    let attributes = ExtendedAttributes.list(at: folderPath)
+    if attributes.isEmpty { print("  (none)") }
+    for attribute in attributes {
+        print("  \(attribute.name)  \(attribute.summary)")
     }
 
 case "set-view":
