@@ -1,6 +1,13 @@
 import SwiftUI
 import WinnowCore
 
+func foldersFirstCaption(_ on: Bool, _ sortKey: FinderSortKey) -> String {
+    if on && sortKey != .name {
+        return "Won't take effect: Finder keeps folders on top only when sorting by Name. Sort by is \(sortKey.label)."
+    }
+    return "Finder applies this when sorting by name."
+}
+
 struct FinderPane: View {
     @EnvironmentObject private var model: AppModel
     @State private var optionsMode: FinderViewStyle = .icons
@@ -21,7 +28,7 @@ struct FinderPane: View {
                 ForEach(FinderGroupBy.allCases, id: \.self) { Text($0.label).tag($0) }
             }
             Toggle(isOn: $model.finderDraft.foldersFirst) {
-                Captioned("Folders first", "Finder applies this when sorting by name.")
+                Captioned("Folders first", foldersFirstCaption(model.finderDraft.foldersFirst, model.finderDraft.sortKey))
             }
         }
         Section {
@@ -240,6 +247,11 @@ struct FolderViewEditor: View {
                     }
                     Toggle(isOn: $draft.includeSubfolders) {
                         Captioned("Include subfolders", "Folders inside with their own view keep it.")
+                    }
+                    if draft.sortKey != .name {
+                        Text("Finder keeps folders on top only when sorting by Name.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
                 Section("Options") {
