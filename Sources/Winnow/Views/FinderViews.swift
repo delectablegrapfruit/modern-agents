@@ -72,6 +72,10 @@ struct FinderPane: View {
             Toggle("Don’t write on USB disks", isOn: $model.finderDraft.noDSStoreOnUSB)
         }
         Section {
+            Toggle(isOn: $model.settings.general.resetViewOnNavigation) {
+                Captioned("Reset the view when leaving a folder",
+                          "Finder keeps a window’s view until the next folder has its own. Winnow sets the default whenever a window moves to a folder without one, so a view changed in Finder lasts until you leave.")
+            }
             Toggle(isOn: model.startupDiskBinding) {
                 Captioned("Enforce defaults on every drive",
                           model.startupDiskDetail ?? "Keeps removing .DS_Store everywhere, so changes made in Finder last only for the session.")

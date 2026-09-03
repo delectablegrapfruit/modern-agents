@@ -48,8 +48,14 @@ final class AppModel: ObservableObject {
     let engine: Engine
 
     @Published var settings: WinnowCore.Settings {
-        didSet { if settings != oldValue { scheduleSave() } }
+        didSet {
+            guard settings != oldValue else { return }
+            scheduleSave()
+            finderGuard.isEnabled = settings.general.resetViewOnNavigation
+            if settings.folderViews != oldValue.folderViews { finderGuard.forgetPlan() }
+        }
     }
+    private let finderGuard: FinderGuard
     @Published var exclusionsDraft: String {
         didSet { scheduleExclusionsCommit() }
     }
@@ -79,6 +85,7 @@ final class AppModel: ObservableObject {
 
     init(engine: Engine = Engine()) {
         self.engine = engine
+        finderGuard = FinderGuard(plan: { engine.folderViewPlan() })
         var initial = engine.settings
         let finder = FinderDefaults.read()
         finderDraft = finder
@@ -91,6 +98,10 @@ final class AppModel: ObservableObject {
         exclusionsDraft = initial.exclusions.joined(separator: "\n")
         activity = engine.log.recent(200)
         statistics = engine.log.statistics
+        finderGuard.isEnabled = initial.general.resetViewOnNavigation
+        finderGuard.onFailure = { [weak self] message in
+            Task { @MainActor in self?.lastError = message }
+        }
 
         engine.onVolumesChanged = { [weak self] list in
             Task { @MainActor in self?.volumes = list }
@@ -123,6 +134,7 @@ final class AppModel: ObservableObject {
             engine.handleVolumeWillUnmount(mountPoint: url.path)
         })
         Notifier.requestAuthorization()
+        finderGuard.start()
         Task.detached(priority: .utility) {
             engine.start()
             let volumes = engine.mountedVolumes
@@ -430,6 +442,7 @@ final class AppModel: ObservableObject {
     func applyFinderDefaults() {
         guard finderHasChanges || resetFoldersOnApply, !isApplyingFinder else { return }
         isApplyingFinder = true
+        finderGuard.isPaused = true
         let draft = finderDraft
         let views = folderViewsDraft
         let previous = settings.folderViews
@@ -480,6 +493,7 @@ final class AppModel: ObservableObject {
             finderStatus = status
             finderPhase = nil
             isApplyingFinder = false
+            finderGuard.isPaused = false
             if reset { startFinderReset() }
         }
     }

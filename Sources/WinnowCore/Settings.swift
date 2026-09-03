@@ -210,11 +210,13 @@ public struct GeneralSettings: Codable, Hashable {
     public var skipPackages = true
     /// Seconds between full re-scans of network volumes (which do not deliver file events).
     public var pollIntervalSeconds: Double = 60
+    /// Set the default view whenever a Finder window moves to a folder without its own.
+    public var resetViewOnNavigation = true
 
     public init() {}
 
     enum CodingKeys: String, CodingKey {
-        case isWatching, deletionMode, notify, launchAtLogin, skipPackages, pollIntervalSeconds
+        case isWatching, deletionMode, notify, launchAtLogin, skipPackages, pollIntervalSeconds, resetViewOnNavigation
     }
 
     public init(from decoder: Decoder) throws {
@@ -225,6 +227,7 @@ public struct GeneralSettings: Codable, Hashable {
         launchAtLogin = try c.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? false
         skipPackages = try c.decodeIfPresent(Bool.self, forKey: .skipPackages) ?? true
         pollIntervalSeconds = try c.decodeIfPresent(Double.self, forKey: .pollIntervalSeconds) ?? 60
+        resetViewOnNavigation = try c.decodeIfPresent(Bool.self, forKey: .resetViewOnNavigation) ?? true
     }
 }
 
