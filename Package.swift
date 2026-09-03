@@ -2,39 +2,37 @@
 import PackageDescription
 
 var products: [Product] = [
-    .library(name: "WinnowCore", targets: ["WinnowCore"]),
-    .executable(name: "winnow-cli", targets: ["winnow-cli"]),
+    .library(name: "SiftCore", targets: ["SiftCore"]),
+    .executable(name: "sift", targets: ["sift"]),
 ]
 
 var targets: [Target] = [
-    // Platform-neutral engine: rules, scanning, deletion, settings, watching, logging.
-    .target(name: "WinnowCore", path: "Sources/WinnowCore"),
-    // Command-line front end (also runs on Linux for development/testing).
-    .executableTarget(name: "winnow-cli", dependencies: ["WinnowCore"], path: "Sources/winnow-cli"),
-    .testTarget(name: "WinnowCoreTests", dependencies: ["WinnowCore"], path: "Tests/WinnowCoreTests"),
+    // Platform-neutral engine: catalog, scanning, removal, views, `.DS_Store`, settings. Also builds on Linux.
+    .target(name: "SiftCore", path: "Sources/SiftCore"),
+    .executableTarget(name: "sift", dependencies: ["SiftCore"], path: "Sources/sift"),
+    .testTarget(name: "SiftCoreTests", dependencies: ["SiftCore"], path: "Tests/SiftCoreTests"),
 ]
 
 #if os(macOS)
-// The SwiftUI/AppKit application only builds on macOS hosts.
-products.append(.executable(name: "Winnow", targets: ["Winnow"]))
+products.append(.executable(name: "Sift", targets: ["Sift"]))
 targets.append(
     .executableTarget(
-        name: "Winnow",
-        dependencies: ["WinnowCore"],
-        path: "Sources/Winnow",
+        name: "Sift",
+        dependencies: ["SiftCore"],
+        path: "Sources/Sift",
         linkerSettings: [
             .linkedFramework("AppKit"),
             .linkedFramework("SwiftUI"),
             .linkedFramework("ServiceManagement"),
-            .linkedFramework("UserNotifications"),
             .linkedFramework("CoreServices"),
+            .linkedFramework("ApplicationServices"),
         ]
     )
 )
 #endif
 
 let package = Package(
-    name: "Winnow",
+    name: "Sift",
     platforms: [.macOS(.v13)],
     products: products,
     targets: targets

@@ -20,21 +20,21 @@ jobs:
       - name: Package
         run: |
           mkdir -p dist
-          rm -f dist/Winnow.app.zip
-          ditto -c -k --keepParent build/Winnow.app dist/Winnow.app.zip
+          rm -f dist/Sift.app.zip
+          ditto -c -k --keepParent build/Sift.app dist/Sift.app.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: Winnow.app
-          path: dist/Winnow.app.zip
+          name: Sift.app
+          path: dist/Sift.app.zip
           if-no-files-found: error
       - name: Commit prebuilt app
         if: github.event_name == 'push'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add dist/Winnow.app.zip
+          git add dist/Sift.app.zip
           if git diff --cached --quiet; then exit 0; fi
-          git commit -m "Build: update prebuilt Winnow.app for ${GITHUB_SHA::7} [skip ci]"
+          git commit -m "Build: update prebuilt Sift.app for ${GITHUB_SHA::7} [skip ci]"
           git push
 
   linux:
@@ -43,33 +43,53 @@ jobs:
     container: swift:6.0
     steps:
       - uses: actions/checkout@v4
-      - run: swift build --product winnow-cli
+      - run: swift build --product sift
       - run: swift test
       - name: Cross-check .DS_Store output with the ds_store Python package
         run: |
           apt-get update -qq >/dev/null && apt-get install -y -qq python3 python3-pip >/dev/null
           pip3 install -q --break-system-packages ds_store
-          # Finder keeps a folder's view in its parent's store: the record for "Photos" lands in /tmp/dsdemo/.DS_Store.
-          mkdir -p /tmp/dsdemo/Photos
-          .build/debug/winnow-cli set-view /tmp/dsdemo/Photos gallery --sort=dateAdded --icon-size=96
-          .build/debug/winnow-cli dsstore /tmp/dsdemo
+          python3 - <<'EOF'
+          import subprocess, os
+          from ds_store import DSStore
+          # The app writes a folder's view into its parent's store; the CLI can read any store back.
+          os.makedirs('/tmp/dsdemo/Photos', exist_ok=True)
+          path = '/tmp/dsdemo/.DS_Store'
+          with DSStore.open(path, 'w+') as d:
+              d['Photos']['vstl'] = ('type', b'glyv')
+              d['photo.jpg']['Iloc'] = (10, 20)
+          out = subprocess.check_output(['.build/debug/sift', 'dsstore', '/tmp/dsdemo']).decode()
+          print(out)
+          assert "Photos\tvstl\t'glyv'" in out, out
+          assert '2 records' in out, out
+          EOF
+      - name: Cross-check the codec's own files with ds_store
+        run: |
+          cat > /tmp/write.swift <<'EOF'
+          import Foundation
+          import SiftCore
+          let records = try StorePlan.records(for: FinderView(mode: .gallery, sortKey: .dateAdded), as: "Photos")
+          try DSStore(records: records).encoded().write(to: URL(fileURLWithPath: "/tmp/dsdemo/written.DS_Store"))
+          EOF
+          mkdir -p /tmp/writer/Sources/writer && cp /tmp/write.swift /tmp/writer/Sources/writer/main.swift
+          cat > /tmp/writer/Package.swift <<EOF
+          // swift-tools-version:5.9
+          import PackageDescription
+          let package = Package(name: "writer", dependencies: [.package(path: "$PWD")],
+              targets: [.executableTarget(name: "writer", dependencies: [.product(name: "SiftCore", package: "modern-agents")])])
+          EOF
+          (cd /tmp/writer && swift run -q writer)
           python3 - <<'EOF'
           from ds_store import DSStore
-          path = '/tmp/dsdemo/.DS_Store'
-          with DSStore.open(path, 'r') as d:
-              entries = [(e.filename, e.code, e.type) for e in d]
-          print(entries)
-          codes = {(f, c) for f, c, _ in entries}
-          assert ('Photos', b'vstl') in codes, entries
-          assert ('Photos', b'glvp') in codes, entries
-          # Finder rewrites the file in place; make sure an independent implementation can too.
-          with DSStore.open(path, 'r+') as d:
+          with DSStore.open('/tmp/dsdemo/written.DS_Store', 'r') as d:
+              entries = {(e.filename, e.code): e.value for e in d}
+          print(entries.keys())
+          assert entries[('Photos', b'vstl')] == b'glyv', entries
+          assert ('Photos', b'glvp') in entries, entries
+          # Finder rewrites the file in place; an independent implementation can too.
+          with DSStore.open('/tmp/dsdemo/written.DS_Store', 'r+') as d:
               d['Photos']['vstl'] = ('type', b'Nlsv')
-              d['photo.jpg']['Iloc'] = (10, 20)
-          with DSStore.open(path, 'r') as d:
-              after = {(e.filename, e.code): e.value for e in d}
-          assert after[('Photos', b'vstl')] == b'Nlsv', after
-          assert ('photo.jpg', b'Iloc') in after, after
+          with DSStore.open('/tmp/dsdemo/written.DS_Store', 'r') as d:
+              assert {(e.filename, e.code): e.value for e in d}[('Photos', b'vstl')] == b'Nlsv'
           print('ds_store round trip ok')
           EOF
-          .build/debug/winnow-cli dsstore /tmp/dsdemo

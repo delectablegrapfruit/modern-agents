@@ -10,11 +10,11 @@ app:
 	scripts/make-app.sh release
 
 run: app
-	open build/Winnow.app
+	open build/Sift.app
 
 cli:
-	swift build -c release --product winnow-cli
-	@echo "binary: $$(swift build -c release --show-bin-path)/winnow-cli"
+	swift build -c release --product sift
+	@echo "binary: $$(swift build -c release --show-bin-path)/sift"
 
 clean:
 	rm -rf .build build

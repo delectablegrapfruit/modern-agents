@@ -5,15 +5,15 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleExecutable</key>
-	<string>Winnow</string>
+	<string>Sift</string>
 	<key>CFBundleIdentifier</key>
-	<string>dev.winnow.Winnow</string>
+	<string>dev.sift.Sift</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>Winnow</string>
+	<string>Sift</string>
 	<key>CFBundleDisplayName</key>
-	<string>Winnow</string>
+	<string>Sift</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -29,7 +29,7 @@
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.utilities</string>
 	<key>NSAppleEventsUsageDescription</key>
-	<string>Winnow quits and relaunches Finder so new folder defaults take effect.</string>
+	<string>Sift sets the view of Finder windows.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>MIT License</string>
 	<key>NSPrincipalClass</key>
@@ -38,41 +38,5 @@
 	<false/>
 	<key>NSSupportsSuddenTermination</key>
 	<false/>
-	<key>CFBundleDocumentTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleTypeName</key>
-			<string>Folder</string>
-			<key>CFBundleTypeRole</key>
-			<string>Viewer</string>
-			<key>LSHandlerRank</key>
-			<string>None</string>
-			<key>LSItemContentTypes</key>
-			<array>
-				<string>public.folder</string>
-				<string>public.volume</string>
-			</array>
-		</dict>
-	</array>
-	<key>NSServices</key>
-	<array>
-		<dict>
-			<key>NSMenuItem</key>
-			<dict>
-				<key>default</key>
-				<string>Clean with Winnow</string>
-			</dict>
-			<key>NSMessage</key>
-			<string>cleanWithWinnow</string>
-			<key>NSPortName</key>
-			<string>Winnow</string>
-			<key>NSSendFileTypes</key>
-			<array>
-				<string>public.item</string>
-			</array>
-			<key>NSRequiredContext</key>
-			<dict/>
-		</dict>
-	</array>
 </dict>
 </plist>
