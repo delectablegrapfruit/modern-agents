@@ -80,8 +80,8 @@ public enum Junk: String, Codable, CaseIterable, Hashable {
 
     /// A `.fseventsd` holding only the `no_log` marker is the quiet form Sift
     /// leaves behind on purpose; it is not junk.
-    public static func isQuietFSEvents(at path: String, fileManager: FileManager = .default) -> Bool {
-        guard let names = try? fileManager.contentsOfDirectory(atPath: path) else { return false }
+    public static func isQuietFSEvents(at path: String) -> Bool {
+        guard let names = Files.names(in: path) else { return false }
         return names.allSatisfy { $0 == "no_log" }
     }
 }

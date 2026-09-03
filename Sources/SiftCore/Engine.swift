@@ -229,7 +229,7 @@ public final class Engine {
             outcome = swept
         case .paths(let paths):
             reconcileStores(changed: paths)
-            let items = JunkScanner(safety: safety, fileManager: fileManager).items(fromChangedPaths: paths, root: root.path)
+            let items = JunkScanner(safety: safety).items(fromChangedPaths: paths, root: root.path)
             guard !items.isEmpty else { return }
             outcome = remove(items, within: [root.path], source: root.label, quiet: true)
         }
@@ -314,7 +314,7 @@ public final class Engine {
 
     public func scan(roots: [Root], progress: ((Phase) -> Void)? = nil,
                      isCancelled: () -> Bool = { false }) throws -> [Item] {
-        let scanner = JunkScanner(safety: safety, fileManager: fileManager)
+        let scanner = JunkScanner(safety: safety)
         var seen = Set<String>()
         var items: [Item] = []
         for root in roots {
@@ -380,7 +380,7 @@ public final class Engine {
             return outcome
         }
         for item in allowed {
-            let gone = Files.info(item.path) == nil || (item.kind == .fsevents && Junk.isQuietFSEvents(at: item.path, fileManager: fileManager))
+            let gone = Files.info(item.path) == nil || (item.kind == .fsevents && Junk.isQuietFSEvents(at: item.path))
             if gone {
                 outcome.removed.append(item)
             } else {

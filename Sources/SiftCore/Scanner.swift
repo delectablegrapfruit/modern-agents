@@ -35,11 +35,9 @@ public enum ScanError: Error, LocalizedError, Equatable {
 /// trees or packages, and does not descend into matched folders.
 public struct JunkScanner {
     public let safety: Safety
-    let fileManager: FileManager
 
-    public init(safety: Safety, fileManager: FileManager = .default) {
+    public init(safety: Safety) {
         self.safety = safety
-        self.fileManager = fileManager
     }
 
     /// Junk beneath `root`, deepest paths last.
@@ -52,7 +50,7 @@ public struct JunkScanner {
         while let dir = stack.popLast() {
             if isCancelled() { throw ScanError.cancelled }
             progress?(dir)
-            guard let names = try? fileManager.contentsOfDirectory(atPath: dir) else { continue }
+            guard let names = Files.names(in: dir) else { continue }
             let atVolumeRoot = safety.isMountPoint(dir)
             for name in names.sorted() {
                 let path = Paths.join(dir, name)
@@ -75,8 +73,8 @@ public struct JunkScanner {
         let isDirectory = info.isDirectory && !info.isSymlink
         guard let kind = Junk.kind(name: name, isDirectory: isDirectory, atVolumeRoot: atVolumeRoot) else { return nil }
         guard safety.validate(path: path).isAllowed else { return nil }
-        if kind == .fsevents && Junk.isQuietFSEvents(at: path, fileManager: fileManager) { return nil }
-        let size = isDirectory ? Files.size(ofDirectory: path, fileManager: fileManager) : info.size
+        if kind == .fsevents && Junk.isQuietFSEvents(at: path) { return nil }
+        let size = isDirectory ? Files.size(ofDirectory: path) : info.size
         return Item(path: path, kind: kind, isDirectory: isDirectory, size: size)
     }
 

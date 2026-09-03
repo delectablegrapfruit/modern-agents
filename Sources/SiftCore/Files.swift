@@ -46,6 +46,21 @@ public struct FileInfo {
 }
 
 public enum Files {
+    /// Names in a directory, in no particular order; nil when it cannot be read.
+    /// Straight from `readdir`: Foundation's listing leaves `._` files out on macOS.
+    public static func names(in directory: String) -> [String]? {
+        guard let dir = opendir(directory) else { return nil }
+        defer { closedir(dir) }
+        var out: [String] = []
+        while let entry = readdir(dir) {
+            let name = withUnsafePointer(to: entry.pointee.d_name) { tuple in
+                tuple.withMemoryRebound(to: CChar.self, capacity: MemoryLayout.size(ofValue: entry.pointee.d_name)) { String(cString: $0) }
+            }
+            if name != "." && name != ".." { out.append(name) }
+        }
+        return out
+    }
+
     /// `lstat`; nil when the path is gone.
     public static func info(_ path: String) -> FileInfo? {
         var st = stat()
@@ -87,12 +102,12 @@ public enum Files {
     }
 
     /// Bytes beneath a directory on the same device.
-    public static func size(ofDirectory root: String, fileManager: FileManager = .default) -> Int64 {
+    public static func size(ofDirectory root: String) -> Int64 {
         var total: Int64 = 0
         var stack = [root]
         let device = info(root)?.device
         while let dir = stack.popLast() {
-            guard let names = try? fileManager.contentsOfDirectory(atPath: dir) else { continue }
+            guard let names = names(in: dir) else { continue }
             for name in names {
                 let path = Paths.join(dir, name)
                 guard let st = info(path), !st.isSymlink else { continue }
