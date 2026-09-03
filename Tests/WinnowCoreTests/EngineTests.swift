@@ -139,14 +139,12 @@ final class EngineTests: XCTestCase {
                        "the parent of a folder view is watched so its record is kept")
         XCTAssertEqual(engine.activeWatches.first { $0.path == box.path }?.source, .folderView)
         let parentStore = box.root.appendingPathComponent(".DS_Store")
-        XCTAssertTrue(waitUntil(10) { self.box.exists(".DS_Store") && self.box.exists("Pictures/2024/.DS_Store") },
+        XCTAssertTrue(waitUntil(10) { self.box.exists(".DS_Store") && self.box.exists("Pictures/.DS_Store") },
                       "watching writes the stores straight away")
         let expected = try DSStoreFile.read(try Data(contentsOf: parentStore)).records
 
         // Finder remembers Documents' view next to Pictures': that record does not survive.
         var file = try DSStoreFile.read(try Data(contentsOf: parentStore))
-        XCTAssertTrue(file.records.contains { $0.filename == "Documents" }, "neighbours are pinned to the defaults")
-        file.records.removeAll { $0.filename == "Documents" }
         file.records += try FolderViewWriter.records(for: FolderView(path: box.path + "/Documents", viewStyle: .columns), as: "Documents")
         try file.encoded().write(to: parentStore)
         XCTAssertTrue(waitUntil(10) {

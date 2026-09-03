@@ -290,12 +290,9 @@ public final class Engine {
         }
     }
 
-    /// The Finder defaults pinned next to folder views; nil leaves neighbours alone.
-    public var defaultViewTemplate: () -> FolderView? = { FolderViewPlan.template(from: FinderDefaults.read()) }
-
     /// The `.DS_Store` files Winnow maintains for the enabled folder views.
     public func folderViewPlan(_ current: Settings? = nil) -> FolderViewPlan {
-        FolderViewPlan(views: (current ?? settings).folderViews, defaultView: defaultViewTemplate(), fileManager: fileManager)
+        FolderViewPlan(views: (current ?? settings).folderViews, fileManager: fileManager)
     }
 
     // MARK: - Targets
@@ -323,11 +320,7 @@ public final class Engine {
         }
         let safety = SafetyPolicy()
         for view in plan.views.sorted(by: { $0.path.count < $1.path.count }) {
-            var candidates = [view.path]
-            let parent = FolderViewPlan.parent(of: view.path)
-            if view.path != "/", !safety.isProtected(parent), fileManager.isWritableFile(atPath: parent) {
-                candidates.insert(parent, at: 0)
-            }
+            let candidates = Array(Set([plan.storeDirectory(for: view.path), view.path])).sorted()
             for path in candidates where !safety.isProtected(path) && !isCovered(path) && seen.insert(path).inserted {
                 out.append(SweepTarget(folderView: path))
             }
@@ -538,13 +531,11 @@ public final class Engine {
     /// subfolders, and the store of the parent folder that holds their record.
     private func safety() -> SafetyPolicy {
         var roots: [SafetyPolicy.ExemptRoot] = []
-        let base = SafetyPolicy()
-        for view in settings.folderViews.filter(\.isEnabled) {
+        let plan = folderViewPlan()
+        for view in plan.views {
             roots.append(.init(path: view.path, includesSubfolders: view.includeSubfolders))
-            let parent = FolderViewPlan.parent(of: view.path)
-            if view.path != "/", parent != view.path, !base.isProtected(parent) {
-                roots.append(.init(path: parent, includesSubfolders: false))
-            }
+            let store = plan.storeDirectory(for: view.path)
+            if store != view.path { roots.append(.init(path: store, includesSubfolders: false)) }
         }
         return SafetyPolicy(volumeRoots: Set(mountedVolumes.map(\.mountPoint)).union(["/"]), exemptRoots: roots)
     }

@@ -1,10 +1,11 @@
 import Foundation
 
-/// Watches Finder's windows and, whenever one moves to a folder without its own
-/// view, sets the default view. Finder otherwise keeps a window's current view
-/// until it reaches a folder that has one stored, so a folder view carried one
-/// folder further and a view changed in Finder outlived the folder it was changed
-/// in. With the guard, a change lasts exactly until the window leaves the folder.
+/// Finder keeps a window's current view when it browses into a folder that has no
+/// view of its own; only a folder with "Always open in … view" changes it. So a
+/// folder view carried into the next folder, and a view changed in Finder outlived
+/// the folder it was changed in. The guard watches Finder's windows and, whenever
+/// one moves to a folder without its own view, sets the defaults, which makes a
+/// change made in Finder last exactly until the window leaves the folder.
 public enum FinderWindowGuard {
     public struct Window: Hashable {
         public let id: Int
@@ -38,17 +39,46 @@ public enum FinderWindowGuard {
         }
     }
 
-    /// Scripts that set one window to the defaults, best first (gallery view is
-    /// `flow view` in older dictionaries). Sort order follows the defaults too.
+    /// Finder's names for a view, best first (gallery view is `flow view` in older dictionaries).
+    static func viewNames(_ style: FinderViewStyle) -> [String] {
+        switch style {
+        case .icons: return ["icon view"]
+        case .list: return ["list view"]
+        case .columns: return ["column view"]
+        case .gallery: return ["gallery view", "flow view"]
+        }
+    }
+
+    static func iconArrangement(_ key: FinderSortKey) -> String {
+        switch key {
+        case .name, .dateAdded: return "arranged by name"
+        case .dateModified: return "arranged by modification date"
+        case .dateCreated: return "arranged by creation date"
+        case .size: return "arranged by size"
+        case .kind: return "arranged by kind"
+        }
+    }
+
+    static func listColumn(_ key: FinderSortKey) -> String {
+        switch key {
+        case .name, .dateAdded: return "name column"
+        case .dateModified: return "modification date column"
+        case .dateCreated: return "creation date column"
+        case .size: return "size column"
+        case .kind: return "kind column"
+        }
+    }
+
+    /// Scripts that set one window to the defaults, best first. Sort order follows too.
     public static func setViewScripts(windowID: Int, defaults: FinderDefaults) -> [String] {
-        FinderScripting.viewNames(defaults.viewStyle).map { name in
+        viewNames(defaults.viewStyle).map { name in
             var lines = ["tell application \"Finder\"", "set w to Finder window id \(windowID)",
                          "set current view of w to \(name)"]
             switch defaults.viewStyle {
             case .icons:
-                lines += ["try", "set arrangement of icon view options of w to \(FinderScripting.iconArrangement(defaults.sortKey))", "end try"]
+                lines += ["try", "set arrangement of icon view options of w to \(iconArrangement(defaults.sortKey))", "end try"]
             case .list:
-                lines += ["try", "set sort column of list view options of w to \(FinderScripting.listColumn(defaults.sortKey))", "end try"]
+                lines += ["try", "set sort column of list view options of w to \(listColumn(defaults.sortKey))", "end try"]
             case .columns, .gallery:
                 break
             }
@@ -77,39 +107,50 @@ public enum FinderWindowGuard {
     }
 
     #if os(macOS)
-    /// Main thread only.
-    public static func windows() throws -> [Window] {
-        guard let script = NSAppleScript(source: listScript) else { return [] }
-        var errorInfo: NSDictionary?
-        let result = script.executeAndReturnError(&errorInfo)
-        if let info = errorInfo { throw scriptError(info) }
-        var lines: [String] = []
-        if result.numberOfItems > 0 {
-            for index in 1...result.numberOfItems {
-                if let line = result.atIndex(index)?.stringValue { lines.append(line) }
-            }
-        } else if let single = result.stringValue, !single.isEmpty {
-            lines.append(single)
-        }
-        return parse(lines)
-    }
+    /// Talks to Finder with scripts compiled once. Main thread only.
+    public final class Session {
+        private var list: NSAppleScript?
 
-    /// Main thread only.
-    public static func setDefaultView(windowID: Int, defaults: FinderDefaults) throws {
-        var lastMessage = "no script"
-        for source in setViewScripts(windowID: windowID, defaults: defaults) {
-            guard let script = NSAppleScript(source: source) else { continue }
-            var errorInfo: NSDictionary?
-            guard script.compileAndReturnError(&errorInfo) else {
-                lastMessage = errorInfo?[NSAppleScript.errorMessage] as? String ?? "did not compile"
-                continue
+        public init() {}
+
+        public func windows() throws -> [Window] {
+            if list == nil {
+                var errorInfo: NSDictionary?
+                guard let script = NSAppleScript(source: FinderWindowGuard.listScript), script.compileAndReturnError(&errorInfo) else {
+                    throw FinderDefaultsError.scriptFailed(errorInfo?[NSAppleScript.errorMessage] as? String ?? "The window list script did not compile")
+                }
+                list = script
             }
-            script.executeAndReturnError(&errorInfo)
-            guard let info = errorInfo else { return }
-            if (info[NSAppleScript.errorNumber] as? Int) == -1743 { throw scriptError(info) }
-            lastMessage = info[NSAppleScript.errorMessage] as? String ?? "AppleScript error"
+            var errorInfo: NSDictionary?
+            let result = list!.executeAndReturnError(&errorInfo)
+            if let info = errorInfo { throw FinderWindowGuard.scriptError(info) }
+            var lines: [String] = []
+            if result.numberOfItems > 0 {
+                for index in 1...result.numberOfItems {
+                    if let line = result.atIndex(index)?.stringValue { lines.append(line) }
+                }
+            } else if let single = result.stringValue, !single.isEmpty {
+                lines.append(single)
+            }
+            return FinderWindowGuard.parse(lines)
         }
-        throw FinderDefaultsError.scriptFailed(lastMessage)
+
+        public func setDefaultView(windowID: Int, defaults: FinderDefaults) throws {
+            var lastMessage = "no script"
+            for source in FinderWindowGuard.setViewScripts(windowID: windowID, defaults: defaults) {
+                guard let script = NSAppleScript(source: source) else { continue }
+                var errorInfo: NSDictionary?
+                guard script.compileAndReturnError(&errorInfo) else {
+                    lastMessage = errorInfo?[NSAppleScript.errorMessage] as? String ?? "did not compile"
+                    continue
+                }
+                script.executeAndReturnError(&errorInfo)
+                guard let info = errorInfo else { return }
+                if (info[NSAppleScript.errorNumber] as? Int) == -1743 { throw FinderWindowGuard.scriptError(info) }
+                lastMessage = info[NSAppleScript.errorMessage] as? String ?? "AppleScript error"
+            }
+            throw FinderDefaultsError.scriptFailed(lastMessage)
+        }
     }
 
     static func scriptError(_ info: NSDictionary) -> FinderDefaultsError {

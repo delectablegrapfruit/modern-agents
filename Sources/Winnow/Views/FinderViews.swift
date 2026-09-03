@@ -65,7 +65,7 @@ struct FinderPane: View {
         } header: {
             Text("Folders with their own view")
         } footer: {
-            Text("Stored in the folder’s and its parent’s .DS_Store, which sweeps leave alone. Neighbouring folders are pinned to the defaults so the view does not carry over when you leave.")
+            Text("Stored where Finder looks: in the parent folder’s .DS_Store. Sweeps leave those files alone, and any view Finder adds to them is removed again.")
         }
         Section(".DS_Store") {
             Toggle("Don’t write on network volumes", isOn: $model.finderDraft.noDSStoreOnNetwork)
@@ -74,7 +74,16 @@ struct FinderPane: View {
         Section {
             Toggle(isOn: $model.settings.general.resetViewOnNavigation) {
                 Captioned("Reset the view when leaving a folder",
-                          "Finder keeps a window’s view until the next folder has its own. Winnow sets the default whenever a window moves to a folder without one, so a view changed in Finder lasts until you leave.")
+                          "Finder keeps a window’s view until the next folder has its own. Winnow sets the defaults whenever a window moves to a folder without one, so a view changed in Finder lasts until you leave.")
+            }
+            if model.settings.general.resetViewOnNavigation && !model.guardReactsInstantly {
+                HStack {
+                    Text("Checks once a second. With Accessibility access Winnow reacts as you navigate.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Allow…") { model.requestAccessibility() }
+                }
             }
             Toggle(isOn: model.startupDiskBinding) {
                 Captioned("Enforce defaults on every drive",

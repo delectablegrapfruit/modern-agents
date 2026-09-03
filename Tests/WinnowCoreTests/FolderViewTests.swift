@@ -22,7 +22,7 @@ final class FolderViewTests: XCTestCase {
         var view = FolderView(path: box.path + "/Pictures", viewStyle: .icons, sortKey: .dateAdded)
         view.options.icon.iconSize = 128
         let records = try FolderViewWriter.records(for: view)
-        XCTAssertEqual(records.map(\.structID), ["vstl", "icvl", "vSrn", "icvp"])
+        XCTAssertEqual(records.map(\.structID), ["vstl", "vSrn", "icvp"])
         XCTAssertEqual(records[0].value, .type("icnv"))
         XCTAssertEqual(records[1].value, .type("icnv"))
         let icvp = plist(records[3])!
@@ -31,7 +31,7 @@ final class FolderViewTests: XCTestCase {
 
         let list = FolderView(path: box.path + "/Pictures", viewStyle: .list, sortKey: .size, ascending: false)
         let listRecords = try FolderViewWriter.records(for: list)
-        XCTAssertEqual(listRecords.map(\.structID), ["vstl", "icvl", "vSrn", "lsvp", "lsvP"])
+        XCTAssertEqual(listRecords.map(\.structID), ["vstl", "vSrn", "lsvp", "lsvP"])
         let lsvP = plist(listRecords[4])!
         XCTAssertEqual(lsvP["sortColumn"] as? String, "size")
         let columns = lsvP["columns"] as! [[String: Any]]
@@ -39,15 +39,15 @@ final class FolderViewTests: XCTestCase {
         XCTAssertEqual(plistBool(size["visible"]), true)
         XCTAssertEqual(plistBool(size["ascending"]), false)
 
-        XCTAssertEqual(try FolderViewWriter.records(for: FolderView(path: box.path, viewStyle: .columns)).map(\.structID), ["vstl", "icvl", "vSrn"])
-        XCTAssertEqual(try FolderViewWriter.records(for: FolderView(path: box.path, viewStyle: .gallery)).map(\.structID), ["vstl", "icvl", "vSrn", "glvp"])
+        XCTAssertEqual(try FolderViewWriter.records(for: FolderView(path: box.path, viewStyle: .columns)).map(\.structID), ["vstl", "vSrn"])
+        XCTAssertEqual(try FolderViewWriter.records(for: FolderView(path: box.path, viewStyle: .gallery)).map(\.structID), ["vstl", "vSrn", "glvp"])
     }
 
     private func records(at relative: String) throws -> [DSStoreRecord] {
         try DSStoreFile.read(try Data(contentsOf: box.root.appendingPathComponent(relative))).records
     }
 
-    func testApplyWritesOwnAndParentRecordsAndRetireStripsThem() throws {
+    func testApplyWritesTheParentRecordAndRetireStripsIt() throws {
         let store = box.path + "/Pictures/.DS_Store"
         let foreign = DSStoreRecord(filename: "photo.jpg", structID: "Iloc", value: .blob(Data(repeating: 1, count: 16)))
         let stale = DSStoreRecord(filename: ".", structID: "icvo", value: .blob(Data(repeating: 2, count: 18)))
@@ -55,39 +55,38 @@ final class FolderViewTests: XCTestCase {
 
         let view = FolderView(path: box.path + "/Pictures", viewStyle: .gallery, includeSubfolders: false)
         let plan = FolderViewPlan(views: [view])
-        XCTAssertEqual(plan.directories(), [box.path, box.path + "/Pictures"], "the parent store holds the folder's record")
-        XCTAssertTrue(plan.manages(store: store))
+        XCTAssertEqual(plan.storeDirectory(for: view.path), box.path, "Finder keeps a folder's view in its parent's store")
+        XCTAssertEqual(plan.storeDirectory(for: "/"), "/")
+        XCTAssertEqual(plan.directories(), [box.path, box.path + "/Pictures"])
         XCTAssertTrue(plan.manages(store: box.path + "/.DS_Store"))
+        XCTAssertFalse(plan.manages(store: store), "nothing of ours lives in the folder's own store")
         XCTAssertFalse(plan.manages(store: box.path + "/Elsewhere/.DS_Store"))
         XCTAssertFalse(plan.manages(store: box.path + "/Pictures/photo.jpg"))
 
         XCTAssertEqual(try FolderViewWriter.apply(plan), 1)
-        let own = try records(at: "Pictures/.DS_Store")
-        XCTAssertFalse(own.contains(foreign), "Finder's own records do not persist")
-        XCTAssertFalse(own.contains(stale))
-        XCTAssertTrue(own.contains { $0.filename == "." && $0.structID == "vstl" && $0.value == .type("glyv") })
-        XCTAssertEqual(own.filter { $0.structID == "bwsp" }.count, 1, "window settings are added when missing")
         let parent = try records(at: ".DS_Store")
         XCTAssertEqual(Set(parent.map(\.filename)), ["Pictures"])
+        XCTAssertEqual(parent.map(\.structID).sorted(), ["bwsp", "glvp", "vSrn", "vstl"])
         XCTAssertTrue(parent.contains { $0.structID == "vstl" && $0.value == .type("glyv") })
-        XCTAssertTrue(parent.contains { $0.structID == "glvp" })
-        XCTAssertTrue(parent.contains { $0.structID == "bwsp" })
+        XCTAssertEqual(try records(at: "Pictures/.DS_Store"), [foreign], "stale view records go, Finder's other records stay")
 
-        XCTAssertFalse(try FolderViewWriter.write(directory: view.path, plan: plan), "already as planned")
-        XCTAssertFalse(try FolderViewWriter.write(directory: box.path, plan: plan))
+        XCTAssertFalse(try FolderViewWriter.write(directory: box.path, plan: plan), "already as planned")
+        XCTAssertFalse(try FolderViewWriter.write(directory: view.path, plan: plan))
+
+        // Finder's own window record for the folder is kept through rewrites.
+        var file = try DSStoreFile.read(try Data(contentsOf: box.root.appendingPathComponent(".DS_Store")))
+        file.records.removeAll { $0.structID == "bwsp" }
+        file.records.append(DSStoreRecord(filename: "Pictures", structID: "bwsp", value: .blob(Data([1, 2, 3]))))
+        file.records.append(DSStoreRecord(filename: "Pictures", structID: "vstl", value: .type("clmv")))
+        try file.encoded().write(to: box.root.appendingPathComponent(".DS_Store"))
+        XCTAssertTrue(try FolderViewWriter.write(directory: box.path, plan: plan))
+        let kept = try records(at: ".DS_Store")
+        XCTAssertTrue(kept.contains { $0.structID == "bwsp" && $0.value == .blob(Data([1, 2, 3])) })
+        XCTAssertEqual(kept.filter { $0.structID == "vstl" }.map(\.value), [.type("glyv")])
 
         FolderViewWriter.retire(plan)
-        XCTAssertFalse(box.exists("Pictures/.DS_Store"), "our default window record goes too")
-        XCTAssertFalse(box.exists(".DS_Store"))
-
-        // A window record Finder changed is kept through rewrites and is not ours to remove.
-        var custom = DSStoreFile(records: [foreign])
-        custom.records.append(DSStoreRecord(filename: ".", structID: "bwsp", value: .blob(Data([1, 2, 3]))))
-        try custom.encoded().write(to: URL(fileURLWithPath: store))
-        try FolderViewWriter.apply(plan)
-        XCTAssertTrue(try records(at: "Pictures/.DS_Store").contains { $0.structID == "bwsp" && $0.value == .blob(Data([1, 2, 3])) })
-        FolderViewWriter.retire(plan)
-        XCTAssertEqual(try records(at: "Pictures/.DS_Store").map(\.structID), ["bwsp"])
+        XCTAssertEqual(try records(at: ".DS_Store").map(\.structID), ["bwsp"], "a window record Finder changed is not ours to remove")
+        XCTAssertEqual(try records(at: "Pictures/.DS_Store"), [foreign])
     }
 
     func testReconcileRestoresWhatFinderChanged() throws {
@@ -97,57 +96,30 @@ final class FolderViewTests: XCTestCase {
         let plan = FolderViewPlan(views: [view])
         try FolderViewWriter.apply(plan)
         let before = try records(at: ".DS_Store")
+        XCTAssertEqual(Set(try records(at: "Pictures/.DS_Store").map(\.filename)), ["2024"], "subfolders' records live in the folder")
+        XCTAssertFalse(box.exists("Pictures/2024/.DS_Store"), "a leaf has nothing to hold")
 
-        // Finder persists a sibling's view in the parent store and flips the folder's own view.
+        // Finder persists a sibling's view in the parent store and flips a subfolder's view.
         var parent = try DSStoreFile.read(try Data(contentsOf: box.root.appendingPathComponent(".DS_Store")))
         parent.records += try FolderViewWriter.records(for: FolderView(path: box.path + "/Documents", viewStyle: .columns), as: "Documents")
         try parent.encoded().write(to: box.root.appendingPathComponent(".DS_Store"))
         var own = try DSStoreFile.read(try Data(contentsOf: box.root.appendingPathComponent("Pictures/.DS_Store")))
         own.records.removeAll { $0.structID == "vstl" }
-        own.records.append(DSStoreRecord(filename: ".", structID: "vstl", value: .type("clmv")))
         own.records.append(DSStoreRecord(filename: "2024", structID: "vstl", value: .type("clmv")))
+        own.records.append(DSStoreRecord(filename: ".", structID: "vstl", value: .type("clmv")))
         try own.encoded().write(to: box.root.appendingPathComponent("Pictures/.DS_Store"))
 
         XCTAssertTrue(try FolderViewWriter.write(directory: box.path, plan: plan))
         XCTAssertTrue(FolderViewWriter.equivalent(try records(at: ".DS_Store"), before))
         XCTAssertTrue(try FolderViewWriter.write(directory: view.path, plan: plan))
         let restored = try records(at: "Pictures/.DS_Store")
-        XCTAssertEqual(restored.filter { $0.structID == "vstl" }.map(\.value), [.type("glyv"), .type("glyv")])
+        XCTAssertEqual(restored.filter { $0.structID == "vstl" }.map { ($0.filename, $0.value) }.map { "\($0.0)=\($0.1)" }, ["2024=type(\"glyv\")"])
         XCTAssertFalse(try FolderViewWriter.write(directory: view.path, plan: plan))
 
         // A deleted managed store comes back.
         try FileManager.default.removeItem(at: box.root.appendingPathComponent(".DS_Store"))
         XCTAssertTrue(try FolderViewWriter.write(directory: box.path, plan: plan))
         XCTAssertTrue(box.exists(".DS_Store"))
-    }
-
-    func testDefaultsArePinnedAroundARoot() throws {
-        try box.dir("Documents")
-        try box.dir("Pictures/2024")
-        try box.dir(".hidden")
-        let template = FolderViewPlan.template(from: FinderDefaults())
-        XCTAssertEqual(template.viewStyle, .icons)
-        var defaults = FinderDefaults()
-        defaults.viewStyle = .list
-        defaults.sortKey = .dateModified
-        let plan = FolderViewPlan(views: [FolderView(path: box.path + "/Pictures", viewStyle: .gallery)],
-                                  defaultView: FolderViewPlan.template(from: defaults))
-        XCTAssertEqual(try FolderViewWriter.apply(plan), 2, "pinned neighbours are not counted as folder views")
-
-        let parent = try records(at: ".DS_Store")
-        XCTAssertEqual(Set(parent.map(\.filename)), [".", "Documents", "Pictures"], "hidden folders are not pinned")
-        XCTAssertTrue(parent.contains { $0.filename == "." && $0.structID == "vstl" && $0.value == .type("Nlsv") })
-        XCTAssertTrue(parent.contains { $0.filename == "Documents" && $0.structID == "vstl" && $0.value == .type("Nlsv") })
-        XCTAssertTrue(parent.contains { $0.filename == "Documents" && $0.structID == "lsvp" })
-        XCTAssertTrue(parent.contains { $0.filename == "Pictures" && $0.value == .type("glyv") })
-        XCTAssertFalse(box.exists("Documents/.DS_Store"), "pinning lives in the parent store only")
-        XCTAssertEqual(Set(try records(at: "Pictures/.DS_Store").map(\.filename)), [".", "2024"], "inside a root nothing is pinned")
-
-        // Without defaults the parent store holds the root's record only.
-        FolderViewWriter.retire(plan)
-        XCTAssertFalse(box.exists(".DS_Store"))
-        try FolderViewWriter.apply(FolderViewPlan(views: plan.views))
-        XCTAssertEqual(Set(try records(at: ".DS_Store").map(\.filename)), ["Pictures"])
     }
 
     func testEquivalenceIgnoresOrderAndPlistEncoding() throws {
@@ -210,16 +182,17 @@ final class FolderViewTests: XCTestCase {
         XCTAssertNil(plan.view(covering: box.path + "/Pictures/.hidden"))
         XCTAssertNil(plan.view(covering: box.path + "/Pictures/Album.photoslibrary/inner"))
 
-        XCTAssertEqual(try FolderViewWriter.apply(plan), 4)
-        XCTAssertTrue(box.exists("Pictures/2024/Trip/.DS_Store"))
-        XCTAssertTrue(box.exists("Pictures/Own/.DS_Store"))
-        XCTAssertFalse(box.exists("Pictures/Own/Deep/.DS_Store"))
-        XCTAssertFalse(box.exists("Pictures/.hidden/.DS_Store"))
+        XCTAssertEqual(try FolderViewWriter.apply(plan), 4, "Pictures, 2024, Trip and Own each get a record")
+        XCTAssertEqual(Set(try records(at: ".DS_Store").map(\.filename)), ["Pictures"])
         let pictures = try records(at: "Pictures/.DS_Store")
-        XCTAssertEqual(Set(pictures.map(\.filename)), [".", "2024", "Own"], "browsable children carry the view, a nested root its own")
+        XCTAssertEqual(Set(pictures.map(\.filename)), ["2024", "Own"], "browsable children carry the view, a nested root its own; hidden and package folders get nothing")
         XCTAssertTrue(pictures.contains { $0.filename == "2024" && $0.structID == "vstl" && $0.value == .type("glyv") })
         XCTAssertTrue(pictures.contains { $0.filename == "Own" && $0.structID == "vstl" && $0.value == .type("Nlsv") })
-        XCTAssertTrue(try records(at: "Pictures/Own/.DS_Store").contains { $0.filename == "." && $0.value == .type("Nlsv") })
+        XCTAssertEqual(Set(try records(at: "Pictures/2024/.DS_Store").map(\.filename)), ["Trip"])
+        XCTAssertFalse(box.exists("Pictures/2024/Trip/.DS_Store"))
+        XCTAssertFalse(box.exists("Pictures/Own/.DS_Store"))
+        XCTAssertTrue(plan.manages(store: box.path + "/Pictures/2024/.DS_Store"))
+        XCTAssertFalse(plan.manages(store: box.path + "/Pictures/2024/Trip/.DS_Store"))
 
         let policy = SafetyPolicy(exemptRoots: [
             .init(path: root.path, includesSubfolders: true), .init(path: own.path, includesSubfolders: false),
@@ -234,9 +207,8 @@ final class FolderViewTests: XCTestCase {
         XCTAssertTrue(policy.validate(path: box.path + "/Pictures/2024/photo.jpg").isAllowed, "only .DS_Store is exempt")
 
         FolderViewWriter.retire(plan)
-        XCTAssertFalse(box.exists("Pictures/2024/Trip/.DS_Store"))
+        XCTAssertFalse(box.exists("Pictures/2024/.DS_Store"))
         XCTAssertFalse(box.exists("Pictures/.DS_Store"))
-        XCTAssertFalse(box.exists("Pictures/Own/.DS_Store"))
         XCTAssertFalse(box.exists(".DS_Store"))
     }
 
@@ -245,8 +217,8 @@ final class FolderViewTests: XCTestCase {
         let plan = FolderViewPlan(views: [FolderView(path: box.path + "/Pictures", viewStyle: .list)])
         XCTAssertTrue(try FolderViewWriter.write(directory: box.path + "/Pictures", plan: plan))
         let records = try records(at: "Pictures/.DS_Store")
-        XCTAssertEqual(records.filter { $0.structID == "vstl" }.count, 61)
-        XCTAssertEqual(records.filter { $0.structID == "lsvp" }.map(\.filename), ["."], "only the folder itself keeps full options")
+        XCTAssertEqual(records.filter { $0.structID == "vstl" }.count, 60)
+        XCTAssertTrue(records.filter { $0.structID == "lsvp" }.isEmpty, "only the view style fits for that many children")
         XCTAssertFalse(try FolderViewWriter.write(directory: box.path + "/Pictures", plan: plan), "the slim form is stable")
     }
 
@@ -330,36 +302,6 @@ final class FolderViewTests: XCTestCase {
         XCTAssertTrue(back.largeIcons)
         let icon = IconViewOptions.read(IconViewOptions().plist(arrangeBy: "name"))
         XCTAssertEqual(icon, IconViewOptions())
-    }
-}
-
-final class FinderScriptingTests: XCTestCase {
-    func testScriptCoversEachMode() {
-        var icons = FolderView(path: "/Users/x/My \"Pics\"", viewStyle: .icons, sortKey: .kind)
-        icons.options.icon.iconSize = 128
-        let iconScripts = FinderScripting.scripts(for: icons)
-        XCTAssertEqual(iconScripts.count, 2, "one with the view line, one without")
-        let iconScript = iconScripts[0]
-        XCTAssertTrue(iconScript.contains("POSIX file \"/Users/x/My \\\"Pics\\\"\""))
-        XCTAssertTrue(iconScript.contains("set current view of theWindow to icon view"))
-        XCTAssertTrue(iconScript.contains("try\nset arrangement of icon view options of theWindow to arranged by kind\nend try"))
-        XCTAssertTrue(iconScript.contains("set icon size of icon view options of theWindow to 128"))
-        XCTAssertTrue(iconScript.hasSuffix("close theWindow\nend tell"))
-        XCTAssertFalse(iconScripts[1].contains("set current view"))
-
-        let list = FinderScripting.scripts(for: FolderView(path: "/tmp/a", viewStyle: .list, sortKey: .dateModified))[0]
-        XCTAssertTrue(list.contains("set sort column of list view options of theWindow to modification date column"))
-        XCTAssertTrue(list.contains("small icon"))
-
-        let columns = FinderScripting.scripts(for: FolderView(path: "/tmp/a", viewStyle: .columns))[0]
-        XCTAssertTrue(columns.contains("column view options"))
-
-        let gallery = FinderScripting.scripts(for: FolderView(path: "/tmp/a", viewStyle: .gallery))
-        XCTAssertEqual(gallery.count, 3)
-        XCTAssertTrue(gallery[0].contains("gallery view"))
-        XCTAssertTrue(gallery[1].contains("flow view"))
-        XCTAssertFalse(gallery[2].contains("set current view"))
-        XCTAssertFalse(gallery[0].contains("view options"))
     }
 }
 

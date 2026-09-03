@@ -16,6 +16,7 @@ USAGE
   winnow-cli volumes                     list mounted volumes and whether they would be cleaned
   winnow-cli finder                      show Finder defaults, folder views and enforcement state
   winnow-cli dsstore <folder>            show the records in a folder's .DS_Store
+  winnow-cli windows                     list Finder's windows and the folders they show (macOS)
   winnow-cli set-view <folder> <mode>    give a folder its own view: icons | list | columns | gallery
                                          (--sort=name|dateModified|dateCreated|dateAdded|size|kind  --icon-size=N  --recursive)
 
@@ -242,6 +243,19 @@ case "dsstore":
     for attribute in attributes {
         print("  \(attribute.name)  \(attribute.summary)")
     }
+
+case "windows":
+    #if os(macOS)
+    do {
+        let windows = try FinderWindowGuard.Session().windows()
+        if windows.isEmpty { print("No Finder window is showing a folder.") }
+        for window in windows { print("\(window.id)\t\(window.path)") }
+    } catch {
+        fail(error.localizedDescription, code: 1)
+    }
+    #else
+    fail("Finder windows can only be listed on macOS")
+    #endif
 
 case "set-view":
     guard args.paths.count == 2 else { fail("set-view needs a folder and a mode") }

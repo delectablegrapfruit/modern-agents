@@ -75,6 +75,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var finderStatus: String?
     @Published var editingFolderView: FolderView?
     @Published var startupDiskWarningShown = false
+    /// Whether the window guard reacts through Accessibility rather than once a second.
+    @Published private(set) var guardReactsInstantly = false
     @Published var lastError: String?
 
     private var saveTask: Task<Void, Never>?
@@ -101,6 +103,9 @@ final class AppModel: ObservableObject {
         finderGuard.isEnabled = initial.general.resetViewOnNavigation
         finderGuard.onFailure = { [weak self] message in
             Task { @MainActor in self?.lastError = message }
+        }
+        finderGuard.onModeChange = { [weak self] instant in
+            Task { @MainActor in self?.guardReactsInstantly = instant }
         }
 
         engine.onVolumesChanged = { [weak self] list in
@@ -437,8 +442,8 @@ final class AppModel: ObservableObject {
         finderDraft != finderApplied || folderViewsDraft != settings.folderViews
     }
 
-    /// Writes Finder's defaults and every folder view, relaunches Finder, asks Finder
-    /// to adopt each folder view, then (optionally) resets other folders in the background.
+    /// Writes Finder's defaults and every folder view, relaunches Finder so it reads
+    /// them, then (optionally) resets other folders in the background.
     func applyFinderDefaults() {
         guard finderHasChanges || resetFoldersOnApply, !isApplyingFinder else { return }
         isApplyingFinder = true
@@ -477,14 +482,6 @@ final class AppModel: ObservableObject {
 
             finderPhase = "Relaunching Finder…"
             await FinderApplier.launchFinder()
-
-            if !wanted.isEmpty {
-                finderPhase = "Setting folder views in Finder…"
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
-                for view in wanted.values {
-                    do { try FinderScripting.apply(view) } catch { problems.append("\(view.displayName): \(error.localizedDescription)") }
-                }
-            }
 
             finderApplied = problems.isEmpty ? draft : FinderDefaults.read()
             if !problems.isEmpty { lastError = problems.joined(separator: "\n") }
@@ -547,6 +544,10 @@ final class AppModel: ObservableObject {
     func revertFinderDraft() {
         finderDraft = finderApplied
         folderViewsDraft = settings.folderViews
+    }
+
+    func requestAccessibility() {
+        FinderGuard.requestAccessibility()
     }
 
     // MARK: Folder views
