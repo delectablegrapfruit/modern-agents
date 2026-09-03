@@ -30,8 +30,6 @@ public final class Engine {
 
     /// Areas of the startup disk Finder browses. Everything else on it stays.
     public var userRoots: [String]
-    /// Fallback to mount notifications.
-    public var volumePollInterval: TimeInterval = 10
     public var persistsSettings = true
     /// No settings file existed when the engine was made.
     public let isFirstLaunch: Bool
@@ -57,7 +55,6 @@ public final class Engine {
     /// Bytes last written per managed store, so its own writes are not re-read.
     private var _written: [String: Data] = [:]
     private var _rewrites: [String: (count: Int, since: Date)] = [:]
-    private var timer: DispatchSourceTimer?
 
     public init(store: SettingsStore = SettingsStore(),
                 volumes: VolumeSource = Volumes.system(),
@@ -130,22 +127,16 @@ public final class Engine {
         if wasRunning { return }
         refreshVolumes()
         reconfigure()
-        let t = DispatchSource.makeTimerSource(queue: scans)
-        t.schedule(deadline: .now() + volumePollInterval, repeating: volumePollInterval, leeway: .seconds(2))
-        t.setEventHandler { [weak self] in self?.refreshVolumes() }
-        t.resume()
-        timer = t
     }
 
     public func stop() {
-        timer?.cancel()
-        timer = nil
         let watchers: [Watcher] = state.sync {
             _running = false
             defer { _watches.removeAll() }
             return _watches.values.map(\.watcher)
         }
         watchers.forEach { $0.stop() }
+        log.flush()
         onRootsChanged?([])
     }
 
@@ -187,6 +178,8 @@ public final class Engine {
 
     // MARK: - Watching
 
+    /// Watching reacts to what the system reports and never walks a disk on its
+    /// own: junk that was already there waits for a sweep.
     private func reconfigure() {
         let desired = isPaused ? [] : roots()
         var toStart: [(Root, Watcher)] = []
@@ -211,12 +204,11 @@ public final class Engine {
             watcher.onChange = { [weak self] change in
                 guard let self else { return }
                 switch change {
-                case .rescan: self.scans.async { self.handle(change, root: root) }
+                case .subtree: self.scans.async { self.handle(change, root: root) }
                 case .paths: self.events.async { self.handle(change, root: root) }
                 }
             }
             watcher.start()
-            scans.async { [weak self] in self?.handle(.rescan, root: root) }
         }
         onRootsChanged?(activeRoots)
     }
@@ -226,10 +218,13 @@ public final class Engine {
         guard live else { return }
         let outcome: Outcome
         switch change {
-        case .rescan:
-            reconcileStores(under: root.path)
-            guard let swept = try? sweep(roots: [root], quiet: true) else { return }
-            outcome = swept
+        case .subtree(let directory):
+            let folder = Paths.standardize(directory)
+            guard Paths.isInside(folder, root.path) else { return }
+            reconcileStores(under: folder)
+            let scanner = JunkScanner(safety: safety)
+            guard let items = try? scanner.scan(root: folder, depth: Watchers.subtreeDepth), !items.isEmpty else { return }
+            outcome = remove(items, within: [root.path], source: root.label, quiet: true)
         case .paths(let paths):
             reconcileStores(changed: paths)
             let items = JunkScanner(safety: safety).items(fromChangedPaths: paths, root: root.path)
@@ -237,16 +232,6 @@ public final class Engine {
             outcome = remove(items, within: [root.path], source: root.label, quiet: true)
         }
         if !outcome.removed.isEmpty { onRemoved?(outcome, root) }
-    }
-
-    /// Runs a final, time-boxed sweep of a volume that is about to be ejected.
-    public func handleWillUnmount(mountPoint: String) {
-        let path = Paths.standardize(mountPoint)
-        guard !isPaused, let root = roots().first(where: { $0.path == path }) else { return }
-        let watcher: Watcher? = state.sync { _watches.removeValue(forKey: path)?.watcher }
-        watcher?.stop()
-        let deadline = Date().addingTimeInterval(20)
-        _ = try? sweep(roots: [root], quiet: true, isCancelled: { Date() > deadline })
     }
 
     // MARK: - Folder stores

@@ -276,8 +276,9 @@ public enum FinderPrefs {
 
     /// Finder's own switches for not writing `.DS_Store` on network and USB disks. Always on.
     public static func preventStores() throws {
-        set(true, "DSDontWriteNetworkStores", desktopServicesDomain)
-        set(true, "DSDontWriteUSBStores", desktopServicesDomain)
+        let keys = ["DSDontWriteNetworkStores", "DSDontWriteUSBStores"]
+        guard keys.contains(where: { plistBool(value($0, desktopServicesDomain)) != true }) else { return }
+        for key in keys { set(true, key, desktopServicesDomain) }
         guard CFPreferencesAppSynchronize(desktopServicesDomain as CFString) else { throw FinderPrefsError.writeFailed("Desktop Services") }
     }
     #else

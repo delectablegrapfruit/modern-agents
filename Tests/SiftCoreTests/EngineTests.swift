@@ -67,19 +67,21 @@ final class EngineTests: XCTestCase {
         XCTAssertEqual(engine.log.statistics.removed, 5)
     }
 
-    func testWatchingCleansOnStartAndAfterChanges() throws {
+    func testWatchingReactsToChangesAndNeverWalksOnItsOwn() throws {
         try box.file("USB/.DS_Store")
-        let cleaned = expectation(description: "cleaned on start")
-        cleaned.assertForOverFulfill = false
-        engine.onRemoved = { _, _ in cleaned.fulfill() }
+        var removed: [Item] = []
+        let lock = NSLock()
+        engine.onRemoved = { outcome, _ in lock.lock(); removed += outcome.removed; lock.unlock() }
         engine.start()
         XCTAssertEqual(Set(engine.activeRoots.map(\.path)), [box.path + "/Users/me", box.path + "/USB"])
-        wait(for: [cleaned], timeout: 10)
-        XCTAssertFalse(box.exists("USB/.DS_Store"))
+        Thread.sleep(forTimeInterval: 1.5)
+        XCTAssertTrue(box.exists("USB/.DS_Store"), "what was already there waits for a sweep")
 
         try box.file("USB/Later/.DS_Store")
         XCTAssertTrue(waitUntil(10) { !self.box.exists("USB/Later/.DS_Store") })
         XCTAssertTrue(box.exists("USB/Later"))
+        lock.lock(); let names = removed.map(\.path); lock.unlock()
+        XCTAssertEqual(names, [box.path + "/USB/Later/.DS_Store"])
 
         engine.isPaused = true
         XCTAssertTrue(engine.activeRoots.isEmpty)
@@ -87,7 +89,17 @@ final class EngineTests: XCTestCase {
         Thread.sleep(forTimeInterval: 1)
         XCTAssertTrue(box.exists("USB/Paused/.DS_Store"))
         engine.isPaused = false
-        XCTAssertTrue(waitUntil(10) { !self.box.exists("USB/Paused/.DS_Store") })
+        try box.file("USB/Resumed/.DS_Store")
+        XCTAssertTrue(waitUntil(10) { !self.box.exists("USB/Resumed/.DS_Store") })
+    }
+
+    func testSubtreeChangesAreFollowedToTheDepthTheSystemNames() throws {
+        try box.file("USB/Docs/.DS_Store")
+        try box.file("USB/Docs/Deep/.DS_Store")
+        engine.refreshVolumes()
+        let scanner = JunkScanner(safety: engine.safety)
+        XCTAssertEqual(relative(try scanner.scan(root: box.path + "/USB/Docs", depth: 1), from: box.path), ["USB/Docs/.DS_Store"])
+        XCTAssertEqual(relative(try scanner.scan(root: box.path + "/USB/Docs"), from: box.path), ["USB/Docs/.DS_Store", "USB/Docs/Deep/.DS_Store"])
     }
 
     func testFolderViewStoresAreWrittenAndKept() throws {
@@ -119,16 +131,13 @@ final class EngineTests: XCTestCase {
         XCTAssertFalse(box.exists("Users/me/.DS_Store"), "a retired view takes its store with it")
     }
 
-    func testUnmountedVolumesDropOutAndEjectSweeps() throws {
-        try box.file("USB/.DS_Store")
+    func testUnmountedVolumesDropOut() throws {
         engine.start()
         XCTAssertEqual(engine.activeRoots.count, 2)
-        engine.handleWillUnmount(mountPoint: box.path + "/USB")
-        XCTAssertFalse(box.exists("USB/.DS_Store"))
-        XCTAssertEqual(engine.activeRoots.count, 1)
         volumes.volumes = volumes.volumes.filter { $0.kind == .startup }
         engine.refreshVolumes()
         XCTAssertEqual(engine.roots().map(\.path), [box.path + "/Users/me"])
+        XCTAssertEqual(engine.activeRoots.count, 1)
     }
 
     func testLockedItemsAreTracked() throws {

@@ -338,6 +338,7 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(log.statistics.removed, 2)
         XCTAssertEqual(log.statistics.bytes, 15)
         XCTAssertEqual(log.entries.count, 2, "locked items are shown in the window, not logged")
+        log.flush()
         let again = Log(fileURL: box.url("activity.jsonl"))
         XCTAssertEqual(again.statistics, log.statistics)
         XCTAssertEqual(again.recent(1).first?.text, "Removed ._y")

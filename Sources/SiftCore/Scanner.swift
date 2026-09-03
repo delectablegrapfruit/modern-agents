@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(Darwin)
+import Darwin
+#endif
 
 public struct Item: Identifiable, Hashable, Codable {
     public var id: String { path }
@@ -40,14 +43,18 @@ public struct JunkScanner {
         self.safety = safety
     }
 
-    /// Junk beneath `root`, deepest paths last.
-    public func scan(root: String, progress: ((String) -> Void)? = nil,
+    /// Junk beneath `root`, at most `depth` levels down (1 = the folder itself).
+    /// The walk runs with the kernel's lowest disk priority, so it yields to
+    /// everything else and never makes the machine feel slow.
+    public func scan(root: String, depth: Int = Int.max, progress: ((String) -> Void)? = nil,
                      isCancelled: () -> Bool = { false }) throws -> [Item] {
         let rootPath = Paths.standardize(root)
         guard let rootInfo = Files.info(rootPath), rootInfo.isDirectory else { throw ScanError.notADirectory(rootPath) }
+        let restore = JunkScanner.throttleDiskIO()
+        defer { restore() }
         var items: [Item] = []
-        var stack = [rootPath]
-        while let dir = stack.popLast() {
+        var stack = [(rootPath, 1)]
+        while let (dir, level) = stack.popLast() {
             if isCancelled() { throw ScanError.cancelled }
             progress?(dir)
             guard let names = Files.names(in: dir) else { continue }
@@ -61,11 +68,23 @@ public struct JunkScanner {
                     items.append(item)
                     continue
                 }
-                guard isDirectory, st.device == rootInfo.device, !safety.isMountPoint(path) else { continue }
-                if Files.isBrowsable(path: path, name: name) { stack.append(path) }
+                guard level < depth, isDirectory, st.device == rootInfo.device, !safety.isMountPoint(path) else { continue }
+                if Files.isBrowsable(path: path, name: name) { stack.append((path, level + 1)) }
             }
         }
         return items.sorted { $0.path < $1.path }
+    }
+
+    /// Puts this thread's disk I/O in the background tier for the duration of a
+    /// walk. Returns the call that restores the previous policy.
+    static func throttleDiskIO() -> () -> Void {
+        #if canImport(Darwin)
+        let previous = getiopolicy_np(IOPOL_TYPE_DISK, IOPOL_SCOPE_THREAD)
+        guard previous >= 0, setiopolicy_np(IOPOL_TYPE_DISK, IOPOL_SCOPE_THREAD, IOPOL_THROTTLE) == 0 else { return {} }
+        return { _ = setiopolicy_np(IOPOL_TYPE_DISK, IOPOL_SCOPE_THREAD, previous) }
+        #else
+        return {}
+        #endif
     }
 
     /// The item at `path` if it is junk that may be removed.

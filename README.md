@@ -12,6 +12,11 @@ password, switching Spotlight off on that disk and leaving the event journal in 
 neither grows back. Finder's own switches for not writing `.DS_Store` on network and USB disks are turned
 on. *Sweep* looks through everything on demand and shows what it found before removing it.
 
+Between sweeps Sift never walks a disk on its own: it only reacts to what the system reports, one wake-up
+a second per disk at most, so idle cost is nothing, external disks can sleep, and nothing is read that was
+not just written. Sweeps run in the kernel's lowest disk priority and yield to everything else. Junk that
+was already on a disk before Sift ran waits for a sweep.
+
 Never touched: system folders and `~/Library`, packages (app bundles are sealed by their signature),
 hidden folders, `node_modules`, read-only disks, Time Machine disks, custom volume icons, document version
 history, Time Machine markers, and `.metadata_never_index`.
@@ -24,7 +29,7 @@ Finder keeps a folder's own view in the parent folder's `.DS_Store`; Sift writes
 reads it and keeps the file to exactly that, so a view changed in Finder never outlives the window. Finder also
 keeps a window's view while you browse; Sift watches Finder's windows and gives each folder the view it should
 have as soon as a window shows it. That needs Automation access (asked once) and is instant with Accessibility
-access, otherwise it happens within a second.
+access; otherwise Sift looks once a second, and only while Finder is the frontmost app.
 
 ## The window
 

@@ -90,11 +90,6 @@ final class Model: ObservableObject {
                 Task.detached(priority: .utility) { engine.refreshVolumes() }
             })
         }
-        observers.append(center.addObserver(forName: NSWorkspace.willUnmountNotification, object: nil, queue: nil) { note in
-            // Runs on the posting thread, before the unmount proceeds.
-            guard let url = note.userInfo?[NSWorkspace.volumeURLUserInfoKey] as? URL else { return }
-            engine.handleWillUnmount(mountPoint: url.path)
-        })
         checkPermissions()
         try? FinderPrefs.preventStores()
         guardian.start()
@@ -294,7 +289,7 @@ final class Model: ObservableObject {
     private func scheduleActivityRefresh() {
         guard activityRefresh == nil else { return }
         activityRefresh = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 250_000_000)
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
             guard let self else { return }
             self.activity = self.engine.log.recent(60)
             self.statistics = self.engine.log.statistics

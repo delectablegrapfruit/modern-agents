@@ -109,6 +109,9 @@ public final class Log {
 
     /// Called off the main thread whenever an entry is added.
     public var onAppend: ((Entry) -> Void)?
+    private let io = DispatchQueue(label: "sift.log.io", qos: .utility)
+    private var pending = Data()
+    private var flushScheduled = false
 
     public init(fileURL: URL?, keep: Int = 500) {
         self.fileURL = fileURL
@@ -161,9 +164,29 @@ public final class Log {
         }
     }
 
+    /// Lines are gathered and written once a second, so a sweep that removes
+    /// thousands of files does not open the log thousands of times.
     private func write(_ entry: Entry) {
-        guard let fileURL, var data = try? encoder.encode(entry) else { return }
+        guard fileURL != nil, var data = try? encoder.encode(entry) else { return }
         data.append(0x0A)
+        io.async {
+            self.pending.append(data)
+            guard !self.flushScheduled else { return }
+            self.flushScheduled = true
+            self.io.asyncAfter(deadline: .now() + 1) { self.flushPending() }
+        }
+    }
+
+    /// Writes everything gathered so far. Called when the engine stops.
+    public func flush() {
+        io.sync { flushPending() }
+    }
+
+    private func flushPending() {
+        flushScheduled = false
+        guard let fileURL, !pending.isEmpty else { return }
+        let data = pending
+        pending = Data()
         let fm = FileManager.default
         do {
             if !fm.fileExists(atPath: fileURL.path) {

@@ -3,7 +3,9 @@ import ApplicationServices
 import SiftCore
 
 /// Runs the window guard: reacts to Finder's window changes through
-/// Accessibility when allowed to, and looks once a second otherwise.
+/// Accessibility when allowed to, and otherwise looks once a second, but only
+/// while Finder is the frontmost app, since that is the only time its windows
+/// are being browsed. Idle cost is nothing.
 final class Guardian {
     /// Set while Finder is being quit and relaunched.
     var isPaused = false
@@ -17,7 +19,6 @@ final class Guardian {
     private let session = WindowGuard.Session()
     private var observer: AXObserver?
     private var timer: Timer?
-    private var ticks = 0
     private var checkPending = false
     private var notAllowedSince: Date?
     private var wasNotAllowed = false
@@ -38,8 +39,14 @@ final class Guardian {
                 self?.attach()
             })
         }
+        // Finder coming to the front is the moment browsing can start.
+        workspaceObservers.append(center.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
+            guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                  app.bundleIdentifier == Finder.bundleID else { return }
+            self?.scheduleCheck()
+        })
         let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in self?.tick() }
-        timer.tolerance = 0.2
+        timer.tolerance = 0.3
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
         attach()
@@ -48,6 +55,10 @@ final class Guardian {
     /// Windows will be looked at afresh (after Finder relaunches, or views change).
     func forget() {
         tracker.reset()
+    }
+
+    private var finderIsFrontmost: Bool {
+        NSWorkspace.shared.frontmostApplication?.bundleIdentifier == Finder.bundleID
     }
 
     // MARK: Accessibility
@@ -92,12 +103,10 @@ final class Guardian {
     }
 
     private func tick() {
-        ticks += 1
-        if observer == nil {
-            if AXIsProcessTrusted() { attach() } else { check() }
-        } else if ticks % 5 == 0 {
-            check()
-        }
+        if observer == nil && AXIsProcessTrusted() { attach() }
+        // Event-driven when Accessibility is granted; otherwise a look each second, and only while browsing.
+        guard observer == nil, finderIsFrontmost else { return }
+        check()
     }
 
     private func check() {

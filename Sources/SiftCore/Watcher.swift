@@ -6,8 +6,8 @@ import CoreServices
 public enum Change {
     /// These paths changed.
     case paths([String])
-    /// Too much changed to say; look at the whole root again.
-    case rescan
+    /// Something changed somewhere beneath this folder; the system could not say what.
+    case subtree(String)
 }
 
 public protocol Watcher: AnyObject {
@@ -17,7 +17,8 @@ public protocol Watcher: AnyObject {
 }
 
 #if os(macOS)
-/// File-level FSEvents stream for one root.
+/// File-level FSEvents stream for one root. Events are batched a second at a
+/// time, so the stream wakes the app at most once a second per root.
 public final class FSEventsWatcher: Watcher {
     public var onChange: ((Change) -> Void)?
     public let root: String
@@ -35,9 +36,9 @@ public final class FSEventsWatcher: Watcher {
         stop()
         var context = FSEventStreamContext()
         context.info = Unmanaged.passUnretained(self).toOpaque()
-        let flags = kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagNoDefer
+        let flags = kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagFileEvents
         guard let created = FSEventStreamCreate(kCFAllocatorDefault, fsEventsCallback, &context, [root] as CFArray,
-                                                FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 0.5,
+                                                FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 1.0,
                                                 FSEventStreamCreateFlags(flags)) else { return }
         if !excluded.isEmpty { FSEventStreamSetExclusionPaths(created, excluded as CFArray) }
         FSEventStreamSetDispatchQueue(created, queue)
@@ -62,31 +63,41 @@ private let fsEventsCallback: FSEventStreamCallback = { _, info, count, eventPat
     guard let info else { return }
     let watcher = Unmanaged<FSEventsWatcher>.fromOpaque(info).takeUnretainedValue()
     guard let paths = (Unmanaged<CFArray>.fromOpaque(eventPaths).takeUnretainedValue() as NSArray) as? [String] else { return }
-    let mustRescan = FSEventStreamEventFlags(kFSEventStreamEventFlagMustScanSubDirs)
-        | FSEventStreamEventFlags(kFSEventStreamEventFlagRootChanged)
+    let vague = FSEventStreamEventFlags(kFSEventStreamEventFlagMustScanSubDirs)
         | FSEventStreamEventFlags(kFSEventStreamEventFlagKernelDropped)
         | FSEventStreamEventFlags(kFSEventStreamEventFlagUserDropped)
-    for i in 0..<count where eventFlags[i] & mustRescan != 0 {
-        watcher.emit(.rescan)
-        return
+    var exact: [String] = []
+    for i in 0..<count {
+        if eventFlags[i] & vague != 0 {
+            watcher.emit(.subtree(paths[i]))
+        } else {
+            exact.append(paths[i])
+        }
     }
-    watcher.emit(.paths(paths))
+    if !exact.isEmpty { watcher.emit(.paths(exact)) }
 }
 #else
-/// Periodic rescan, for hosts without file events (development and tests).
+/// Periodic look at a root, for hosts without file events (development and tests).
 public final class PollingWatcher: Watcher {
     public var onChange: ((Change) -> Void)?
+    public let root: String
     public let interval: TimeInterval
     private var timer: DispatchSourceTimer?
     private let queue = DispatchQueue(label: "sift.polling", qos: .utility)
 
-    public init(interval: TimeInterval) { self.interval = max(0.2, interval) }
+    public init(root: String, interval: TimeInterval) {
+        self.root = root
+        self.interval = max(0.2, interval)
+    }
 
     public func start() {
         stop()
         let t = DispatchSource.makeTimerSource(queue: queue)
         t.schedule(deadline: .now() + interval, repeating: interval)
-        t.setEventHandler { [weak self] in self?.onChange?(.rescan) }
+        t.setEventHandler { [weak self] in
+            guard let self else { return }
+            self.onChange?(.subtree(self.root))
+        }
         t.resume()
         timer = t
     }
@@ -107,7 +118,17 @@ public enum Watchers {
         #if os(macOS)
         return FSEventsWatcher(root: root, excluding: excluding)
         #else
-        return PollingWatcher(interval: pollInterval)
+        return PollingWatcher(root: root, interval: pollInterval)
+        #endif
+    }
+
+    /// How far a vague change is followed: the folder itself on macOS, where the
+    /// kernel names the folder; the whole tree where polling is the only signal.
+    public static var subtreeDepth: Int {
+        #if os(macOS)
+        return 1
+        #else
+        return Int.max
         #endif
     }
 }
