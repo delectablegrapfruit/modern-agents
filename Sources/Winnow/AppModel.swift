@@ -579,7 +579,7 @@ final class AppModel: ObservableObject {
     static let startupDiskWarning = "Finder keeps each folder's view, sort order, icon positions and window size in its .DS_Store file. "
         + "Winnow will remove those files continuously across your home folder, Applications and every connected drive, "
         + "so every folder follows the defaults and changes made in Finder last only until the folder is next opened. "
-        + "Folders with their own view keep theirs. System folders are never touched."
+        + "Folders with their own view keep theirs. System folders and ~/Library are never touched."
 
     /// Turning on goes through the warning first; turning off is immediate.
     var startupDiskBinding: Binding<Bool> {

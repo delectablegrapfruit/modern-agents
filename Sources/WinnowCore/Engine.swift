@@ -80,13 +80,6 @@ public final class Engine {
     /// User areas of the startup disk covered by the opt-in `.DS_Store` cleaning.
     public var startupDiskRoots = ["/Users", "/Applications"]
 
-    /// Machine-managed subtrees of the home Library that are huge and never browsed;
-    /// scans do not descend into them and watchers exclude them at the kernel.
-    public static var heavyPrefixes: [String] {
-        let library = NSHomeDirectory() + "/Library/"
-        return ["Caches", "Containers", "Group Containers", "Developer", "Mail", "Metadata", "Biome", "Logs",
-                "HTTPStorages", "WebKit", "Daemon Containers", "Autosave Information"].map { library + $0 }
-    }
 
     public var onVolumesChanged: (([VolumeInfo]) -> Void)?
     /// Fired when the engine changes settings on its own (startup-disk time limit reached).
@@ -336,7 +329,7 @@ public final class Engine {
                 toStop.append(entry.watcher)
                 _watches[path] = nil
             }
-            let protected = SafetyPolicy().protectedPrefixes + Engine.heavyPrefixes
+            let protected = SafetyPolicy().protectedPrefixes
             for target in desiredByPath.values where _watches[target.path] == nil {
                 let prefix = target.path == "/" ? "/" : target.path + "/"
                 let excluded = protected.filter { $0.hasPrefix(prefix) }
@@ -441,8 +434,7 @@ public final class Engine {
 
     private func scanOptions(_ current: Settings, target: SweepTarget) -> ScanOptions {
         ScanOptions(rules: rules(for: target, settings: current), exclusions: current.exclusionMatcher, safety: safety(),
-                    skipPackages: current.general.skipPackages, recursive: target.recursive,
-                    skipPrefixes: Engine.heavyPrefixes)
+                    skipPackages: current.general.skipPackages, recursive: target.recursive)
     }
 
     public func scan(paths: [String], recursive: Bool = true,
