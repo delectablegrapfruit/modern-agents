@@ -69,7 +69,7 @@ enum FinderApplier {
         try? await Task.sleep(nanoseconds: 1_500_000_000)
         if NSRunningApplication.runningApplications(withBundleIdentifier: finderID).isEmpty {
             let url = URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app")
-            NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+            _ = try? await NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
         }
     }
 }
