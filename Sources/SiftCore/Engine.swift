@@ -259,7 +259,7 @@ public final class Engine {
         return watched.filter { root in
             guard let since = unwatched[root.path] else { return false }
             guard let last = sweeps[root.path] else { return true }
-            return last < since
+            return last <= since
         }.sorted { $0.path < $1.path }
     }
 
