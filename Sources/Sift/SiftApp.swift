@@ -41,6 +41,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static var model: Model?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // A child process or the helper hanging up is an error to handle, not a signal to die by.
+        signal(SIGPIPE, SIG_IGN)
         NSApp.setActivationPolicy(.accessory)
         LoginItem.registerOnFirstLaunch()
         AppDelegate.model?.start()

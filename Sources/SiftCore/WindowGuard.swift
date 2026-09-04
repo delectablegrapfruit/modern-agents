@@ -328,7 +328,7 @@ public enum WindowGuard {
             process.standardOutput = output
             process.standardError = errors
             try process.run()
-            input.fileHandleForWriting.write(Data(source.utf8))
+            try? input.fileHandleForWriting.write(contentsOf: Data(source.utf8))
             try? input.fileHandleForWriting.close()
             let killer = DispatchWorkItem { if process.isRunning { kill(process.processIdentifier, SIGKILL) } }
             DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + seconds, execute: killer)

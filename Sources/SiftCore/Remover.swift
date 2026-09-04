@@ -65,6 +65,8 @@ public struct Remover {
                        isCancelled: () -> Bool = { false }) -> Outcome {
         var outcome = Outcome()
         outcome.dryRun = dryRun
+        let restore = JunkScanner.throttleDiskIO()
+        defer { restore() }
         for (index, item) in items.enumerated() {
             if isCancelled() { break }
             progress?(index, items.count)

@@ -51,6 +51,18 @@ enum Permissions {
         show("x-apple.systempreferences:com.apple.preference.security?Privacy_Automation")
     }
 
+    /// Whether Sift may control Finder; nil when that cannot be told (Finder
+    /// not running). With `ask`, macOS puts the consent dialog up now.
+    static func automation(ask: Bool) -> Bool? {
+        guard let target = NSAppleEventDescriptor(bundleIdentifier: Finder.bundleID).aeDesc else { return nil }
+        let status = AEDeterminePermissionToAutomateTarget(target, AEEventClass(typeWildCard), AEEventID(typeWildCard), ask)
+        switch status {
+        case 0: return true
+        case -1743: return false  // errAEEventNotPermitted
+        default: return nil
+        }
+    }
+
     static func requestAccessibility() {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         _ = AXIsProcessTrustedWithOptions(options)
@@ -97,14 +109,18 @@ enum Finder {
         NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
     }
 
+    static var isFrontmost: Bool {
+        NSWorkspace.shared.frontmostApplication?.bundleIdentifier == bundleID
+    }
+
     /// True once Finder is gone.
     @MainActor
     static func quit() async -> Bool {
         let apps = running
         guard !apps.isEmpty else { return true }
         let session = WindowGuard.Session()
-        Task.detached(priority: .userInitiated) { try? session.quitFinder() }
-        if await gone(apps, within: 10) { return true }
+        let asked = await Task.detached(priority: .userInitiated) { (try? session.quitFinder()) != nil }.value
+        if asked, await gone(apps, within: 10) { return true }
         // Not scriptable (permission refused): the same request through AppKit.
         apps.forEach { $0.terminate() }
         return await gone(apps, within: 5)

@@ -54,9 +54,6 @@ public final class Engine {
     private var _plan: StorePlan
     private var _safety: Safety
     private var _locked: [String: Item] = [:]
-    /// Bytes last written per managed store, so its own writes are not re-read.
-    private var _written: [String: Data] = [:]
-    private var _rewrites: [String: (count: Int, since: Date)] = [:]
 
     public init(store: SettingsStore = SettingsStore(),
                 volumes: VolumeSource = Volumes.system(),
@@ -102,7 +99,6 @@ public final class Engine {
         state.sync {
             _plan = plan
             _safety = safety
-            _rewrites = [:]
         }
     }
 
@@ -129,6 +125,8 @@ public final class Engine {
         if wasRunning { return }
         refreshVolumes()
         reconfigure()
+        // Whatever Finder left in the managed stores last time is put right for its next start.
+        scans.async { self.reconcileStores() }
     }
 
     public func stop() {
@@ -147,13 +145,18 @@ public final class Engine {
     @discardableResult
     public func refreshVolumes() -> [Volume] {
         let now = volumes.mounted()
+        let before: [Volume] = state.sync { _volumes }
         let changed: Bool = state.sync {
             defer { _volumes = now }
             return Set(now.map(\.id)) != Set(_volumes.map(\.id))
         }
         if changed {
+            let known = Set(before.map(\.mountPoint))
             replan()
             if isRunning { reconfigure() }
+            // A disk that just arrived has stores Finder has not read yet.
+            let fresh = now.map(\.mountPoint).filter { !known.contains($0) }
+            if !fresh.isEmpty { scans.async { self.reconcileStores(under: fresh) } }
         }
         return now
     }
@@ -223,12 +226,10 @@ public final class Engine {
         case .subtree(let directory):
             let folder = Paths.standardize(directory)
             guard Paths.isInside(folder, root.path) else { return }
-            reconcileStores(under: folder)
             let scanner = JunkScanner(safety: safety)
             guard let items = try? scanner.scan(root: folder, depth: Watchers.subtreeDepth), !items.isEmpty else { return }
             outcome = remove(items, within: [root.path], source: root.label, quiet: true)
         case .paths(let paths):
-            reconcileStores(changed: paths)
             let items = JunkScanner(safety: safety).items(fromChangedPaths: paths, root: root.path)
             guard !items.isEmpty else { return }
             outcome = remove(items, within: [root.path], source: root.label, quiet: true)
@@ -244,59 +245,22 @@ public final class Engine {
         let plan = self.plan
         plan.retire(from: previous, fileManager: fileManager)
         try plan.writeAll()
-        remember(plan)
     }
 
-    private func remember(_ plan: StorePlan) {
-        for path in plan.storePaths {
-            let data = try? Data(contentsOf: URL(fileURLWithPath: path))
-            state.sync { _written[path] = data }
-        }
-    }
-
-    private func reconcileStores(under root: String) {
-        for directory in plan.stores.keys where Paths.isInside(directory, root) { reconcile(directory) }
-    }
-
-    private func reconcileStores(changed paths: [String]) {
+    /// Puts the managed stores back to what the views say. Finder keeps a
+    /// store in memory while it runs and writes its own copy back, so this is
+    /// done when Finder has quit (and when Sift starts, and when a disk
+    /// arrives), never on every write Finder makes: the file only matters the
+    /// next time Finder starts.
+    public func reconcileStores(under roots: [String]? = nil) {
         let plan = self.plan
-        guard !plan.isEmpty else { return }
-        var done = Set<String>()
-        for raw in paths {
-            let path = Paths.standardize(raw)
-            guard Paths.name(of: path) == ".DS_Store" else { continue }
-            let directory = Paths.parent(of: path)
-            if plan.stores[directory] != nil, done.insert(directory).inserted { reconcile(directory) }
-        }
-    }
-
-    /// Finder wrote (or removed) a managed store: put it back to what the view says.
-    /// A store that keeps coming back different is left alone for a while.
-    @discardableResult
-    func reconcile(_ directory: String) -> Bool {
-        let store = directory + "/.DS_Store"
-        let current = try? Data(contentsOf: URL(fileURLWithPath: store))
-        let last: Data? = state.sync { _written[store] }
-        if let current, current == last { return false }
-        let overBudget: Bool = state.sync {
-            let now = Date()
-            var entry = _rewrites[store] ?? (count: 0, since: now)
-            if now.timeIntervalSince(entry.since) > 60 { entry = (count: 0, since: now) }
-            entry.count += 1
-            _rewrites[store] = entry
-            if entry.count == 21 { log.info("Stopped rewriting \(store): it keeps changing") }
-            return entry.count > 20
-        }
-        if overBudget { return false }
-        do {
-            let written = try plan.write(directory: directory)
-            let data = try? Data(contentsOf: URL(fileURLWithPath: store))
-            state.sync { _written[store] = data }
-            if written { log.info("Kept the view of " + Paths.display(directory), path: directory) }
-            return written
-        } catch {
-            log.info("Could not keep the view of \(Paths.display(directory)): \(error.localizedDescription)", path: directory)
-            return false
+        for directory in plan.stores.keys.sorted() {
+            if let roots, !roots.contains(where: { Paths.isInside(directory, $0) }) { continue }
+            do {
+                if try plan.write(directory: directory) { log.info("Kept the view of " + Paths.display(directory), path: directory) }
+            } catch {
+                log.info("Could not keep the view of \(Paths.display(directory)): \(error.localizedDescription)", path: directory)
+            }
         }
     }
 
@@ -346,14 +310,19 @@ public final class Engine {
     }
 
     private func noteLocked(_ outcome: Outcome) {
-        let before: [String] = state.sync { Array(_locked.keys) }
-        let after: [String] = state.sync {
+        let previous: Set<String> = state.sync { Set(_locked.keys) }
+        let candidates: [String] = state.sync {
             for item in outcome.removed { _locked[item.path] = nil }
             for item in outcome.locked { _locked[item.path] = item }
-            for path in _locked.keys where Files.info(path) == nil { _locked[path] = nil }
             return Array(_locked.keys)
         }
-        if Set(before) != Set(after) { onLockedChanged?(lockedItems) }
+        // Looked at outside the lock: a slow disk must not hold everything else.
+        let gone = candidates.filter { Files.info($0) == nil }
+        let current: Set<String> = state.sync {
+            for path in gone { _locked[path] = nil }
+            return Set(_locked.keys)
+        }
+        if current != previous { onLockedChanged?(lockedItems) }
     }
 
     /// Tries the items only an administrator could remove again, now with the helper.

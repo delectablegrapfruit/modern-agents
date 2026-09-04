@@ -36,7 +36,8 @@ public final class FSEventsWatcher: Watcher {
         stop()
         var context = FSEventStreamContext()
         context.info = Unmanaged.passUnretained(self).toOpaque()
-        let flags = kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagFileEvents
+        // Sift's own removals and writes are not news.
+        let flags = kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagIgnoreSelf
         guard let created = FSEventStreamCreate(kCFAllocatorDefault, fsEventsCallback, &context, [root] as CFArray,
                                                 FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 1.0,
                                                 FSEventStreamCreateFlags(flags)) else { return }
@@ -50,6 +51,8 @@ public final class FSEventsWatcher: Watcher {
         guard let stream else { return }
         FSEventStreamStop(stream)
         FSEventStreamInvalidate(stream)
+        // A callback still running on the queue finishes before the stream goes.
+        queue.sync {}
         FSEventStreamRelease(stream)
         self.stream = nil
     }

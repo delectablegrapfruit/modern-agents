@@ -206,7 +206,7 @@ final class StoreTests: XCTestCase {
         try box.file("notes.txt")
         let plan = StorePlan(settings: settings([FolderView(path: box.path + "/Pictures", view: FinderView(mode: .gallery))]))
         XCTAssertEqual(StorePlan.storeDirectory(for: box.path + "/Pictures"), box.path)
-        XCTAssertEqual(StorePlan.storeDirectory(for: "/"), "/")
+        XCTAssertNil(StorePlan.storeDirectory(for: "/"))
         XCTAssertEqual(plan.storePaths, [box.path + "/.DS_Store"], "the parent's store alone: Finder ignores a folder's own \".\" record")
         XCTAssertEqual(try plan.writeAll(), 1)
         let records = try box.records(".DS_Store")
@@ -238,9 +238,10 @@ final class StoreTests: XCTestCase {
         XCTAssertEqual(chmod(box.path + "/Locked", 0o500), 0)
         defer { chmod(box.path + "/Locked", 0o700) }
         let plan = StorePlan(settings: settings([FolderView(path: box.path + "/Locked/Photos", view: FinderView(mode: .list))]))
-        XCTAssertEqual(plan.storePaths, [box.path + "/Locked/Photos/.DS_Store"], "no writable parent: the folder's own store alone")
-        try plan.writeAll()
-        XCTAssertEqual(Set(try box.records("Locked/Photos/.DS_Store").map(\.filename)), ["."])
+        XCTAssertNil(StorePlan.storeDirectory(for: box.path + "/Locked/Photos"))
+        XCTAssertTrue(plan.isEmpty, "no writable parent: no record anywhere, the window guard alone")
+        XCTAssertEqual(try plan.writeAll(), 0)
+        XCTAssertFalse(box.exists("Locked/Photos/.DS_Store"), "a record Finder would ignore is not written")
     }
 
     func testRewriteDropsWhatFinderAddedButKeepsItsWindow() throws {
@@ -387,21 +388,31 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(store.load().views.folders.first?.path, box.path + "/Photos")
     }
 
-    func testLogKeepsStatistics() throws {
+    func testLogKeepsTheLastEntriesAndTellsOncePerBatch() throws {
         let box = try Sandbox()
         defer { box.destroy() }
-        let log = Log(fileURL: box.url("activity.jsonl"))
+        let log = Log(fileURL: box.url("activity.jsonl"), keep: 5)
+        var told = 0
+        let lock = NSLock()
+        log.onAppend = { lock.lock(); told += 1; lock.unlock() }
         var outcome = Outcome()
         outcome.removed = [Item(path: "/x/.DS_Store", kind: .dsStore, isDirectory: false, size: 10),
                            Item(path: "/x/._y", kind: .appleDouble, isDirectory: false, size: 5)]
         outcome.failed = [Failure(item: Item(path: "/x/.Trashes", kind: .trashes, isDirectory: true, size: 0), reason: "no", needsAdministrator: true)]
         log.record(outcome)
-        XCTAssertEqual(log.statistics.removed, 2)
-        XCTAssertEqual(log.statistics.bytes, 15)
         XCTAssertEqual(log.entries.count, 2, "locked items are shown in the window, not logged")
+        lock.lock(); XCTAssertEqual(told, 1, "one word per batch, not per entry"); lock.unlock()
+        XCTAssertEqual(log.recent(1).first?.text, "Removed ._y")
+        log.info("later")
+        lock.lock(); XCTAssertEqual(told, 2, "told again once the last batch was read"); lock.unlock()
         log.flush()
-        let again = Log(fileURL: box.url("activity.jsonl"))
-        XCTAssertEqual(again.statistics, log.statistics)
-        XCTAssertEqual(again.recent(1).first?.text, "Removed ._y")
+        let again = Log(fileURL: box.url("activity.jsonl"), keep: 5)
+        XCTAssertEqual(again.entries.map(\.text), log.entries.map(\.text))
+
+        for i in 0..<20 { log.info("entry \(i)") }
+        log.flush()
+        let lines = try String(contentsOf: box.url("activity.jsonl")).split(separator: "\n").count
+        XCTAssertLessThanOrEqual(lines, 10, "the file is rewritten to the kept entries once it doubles")
+        XCTAssertEqual(Log(fileURL: box.url("activity.jsonl"), keep: 5).entries.map(\.text), (15..<20).map { "entry \($0)" })
     }
 }

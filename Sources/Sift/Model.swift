@@ -45,7 +45,6 @@ final class Model: ObservableObject {
     @Published private(set) var roots: [Root] = []
     @Published private(set) var locked: [Item] = []
     @Published private(set) var activity: [Entry] = []
-    @Published private(set) var statistics = Statistics()
     @Published private(set) var isPaused = false
     @Published private(set) var sweep: SweepState = .idle
     /// Views as edited in the window; `applied` is what Finder has.
@@ -74,16 +73,17 @@ final class Model: ObservableObject {
         applied = views
         guardian = Guardian(views: { engine.settings.views })
         activity = engine.log.recent(60)
-        statistics = engine.log.statistics
         locked = engine.lockedItems
 
         guardian.onNotAllowed = { [weak self] allowed in Task { @MainActor in self?.canControlFinder = allowed } }
         guardian.onModeChange = { [weak self] instant in Task { @MainActor in self?.reactsInstantly = instant } }
         guardian.onProblem = { [weak self] message in self?.engine.log.info(message) }
         guardian.onApplied = { [weak self] path, view in self?.engine.log.info("Finder window set to " + view, path: path) }
+        // Finder flushes its stores on the way out; they are put right for its next start.
+        guardian.onFinderQuit = { Task.detached(priority: .utility) { engine.reconcileStores() } }
         engine.onRootsChanged = { [weak self] list in Task { @MainActor in self?.roots = list } }
         engine.onLockedChanged = { [weak self] list in Task { @MainActor in self?.locked = list } }
-        engine.log.onAppend = { [weak self] _ in Task { @MainActor in self?.scheduleActivityRefresh() } }
+        engine.log.onAppend = { [weak self] in Task { @MainActor in self?.scheduleActivityRefresh() } }
     }
 
     func start() {
@@ -95,11 +95,11 @@ final class Model: ObservableObject {
             })
         }
         checkPermissions()
-        refreshHelper()
-        try? FinderPrefs.preventStores()
+        Task { await refreshHelper() }
         guardian.start()
         let settings = engine.settings
         Task.detached(priority: .utility) {
+            try? FinderPrefs.preventStores()
             // The first run writes the settings file, so the window opens by itself only once.
             if engine.isFirstLaunch { engine.update(settings) }
             engine.start()
@@ -113,14 +113,24 @@ final class Model: ObservableObject {
         WindowOpener.open()
     }
 
+    /// Called when the app comes to the front: permissions may have been granted meanwhile.
     func checkPermissions() {
         hasFullDiskAccess = Permissions.hasFullDiskAccess
+        if helperReady, !locked.isEmpty {
+            // The helper may have been given Full Disk Access since.
+            let engine = self.engine
+            Task.detached(priority: .utility) { engine.retryLocked() }
+        }
     }
 
-    func refreshHelper() {
-        helperReady = Helper.isReady
+    /// Whether the helper is installed and answering; asked off the main thread.
+    @discardableResult
+    func refreshHelper() async -> Bool {
         let socket = Helper.socketPath
-        engine.privilegedRemove = helperReady ? { HelperClient.remove($0, at: socket) } : nil
+        let ready = await Task.detached(priority: .utility) { Helper.isReady }.value
+        helperReady = ready
+        engine.privilegedRemove = ready ? { HelperClient.remove($0, at: socket) } : nil
+        return ready
     }
 
     /// Installs the helper (one password), then tries the locked items again.
@@ -131,13 +141,19 @@ final class Model: ObservableObject {
             if (error as? Privileged.RunError) != .cancelled { self.error = error.localizedDescription }
             return
         }
-        refreshHelper()
-        guard helperReady else {
-            error = "The helper was installed but is not answering yet. Try again in a moment."
-            return
-        }
         let engine = self.engine
-        Task.detached(priority: .utility) { engine.retryLocked() }
+        Task {
+            var ready = false
+            for _ in 0..<25 where !ready {
+                ready = await refreshHelper()
+                if !ready { try? await Task.sleep(nanoseconds: 200_000_000) }
+            }
+            guard ready else {
+                error = "The helper was installed but is not answering yet. Try again in a moment."
+                return
+            }
+            Task.detached(priority: .utility) { engine.retryLocked() }
+        }
     }
 
     // MARK: - Status
@@ -149,30 +165,32 @@ final class Model: ObservableObject {
         return labels.isEmpty ? "Nothing to watch" : "Watching " + labels.joined(separator: ", ")
     }
 
-    var statisticsText: String? {
-        guard statistics.removed > 0 else { return nil }
-        return "\(statistics.removed.formatted()) item\(statistics.removed == 1 ? "" : "s") removed · \(Format.bytes(statistics.bytes))"
-    }
-
+    /// Pause stops everything automatic: cleaning and the window guard.
     func togglePause() {
         isPaused.toggle()
-        engine.isPaused = isPaused
+        let paused = isPaused
+        let engine = self.engine
+        Task.detached(priority: .utility) { engine.isPaused = paused }
+        if paused { guardian.isPaused = true } else { guardian.resume() }
     }
 
     // MARK: - Sweeping
 
     func sweepNow() {
         guard sweep == .idle else { return }
-        let roots = engine.roots()
-        guard !roots.isEmpty else {
-            error = "Nothing to sweep: no disk is connected and no user folder could be read."
-            return
-        }
         let token = WorkToken()
         self.token = token
         sweep = .scanning("")
         let engine = self.engine
         Task.detached(priority: .userInitiated) { [weak self] in
+            let roots = engine.roots()
+            guard !roots.isEmpty else {
+                await MainActor.run { [weak self] in
+                    self?.sweep = .idle
+                    self?.error = "Nothing to sweep: no disk is connected and no user folder could be read."
+                }
+                return
+            }
             do {
                 let items = try engine.scan(roots: roots, progress: { phase in
                     guard case .scanning(let directory) = phase, token.shouldReport() else { return }
@@ -201,8 +219,8 @@ final class Model: ObservableObject {
         self.token = token
         sweep = .removing(done: 0, total: items.count)
         let engine = self.engine
-        let roots = engine.roots().map(\.path)
         Task.detached(priority: .userInitiated) { [weak self] in
+            let roots = engine.roots().map(\.path)
             let outcome = engine.remove(items, within: roots, source: "sweep", progress: { phase in
                 guard case .removing(let done, let total) = phase, token.shouldReport() else { return }
                 Task { @MainActor in
@@ -232,18 +250,24 @@ final class Model: ObservableObject {
     func apply() {
         guard hasChanges, applyPhase == nil else { return }
         applyPhase = "Applying…"
-        guardian.isPaused = true
         let views = draft
         let previous = engine.plan
         var settings = engine.settings
         settings.views = views
         let engine = self.engine
         Task { @MainActor in
+            await guardian.pause()
             var problems: [String] = []
             if !(await Finder.quit()) {
                 problems.append("Finder would not quit; it may show the previous views until it is restarted.")
             }
-            do { try FinderPrefs.write(views) } catch { problems.append(error.localizedDescription) }
+            var prefsWritten = true
+            do {
+                try await Task.detached(priority: .userInitiated) { try FinderPrefs.write(views) }.value
+            } catch {
+                prefsWritten = false
+                problems.append(error.localizedDescription)
+            }
             await Task.detached(priority: .userInitiated) { engine.update(settings) }.value
             do {
                 try await Task.detached(priority: .userInitiated) { try engine.applyStores(previous: previous) }.value
@@ -251,11 +275,11 @@ final class Model: ObservableObject {
                 problems.append(error.localizedDescription)
             }
             await Finder.launch()
-            applied = engine.settings.views
+            // Left as changes when Finder's defaults could not be written, so Apply can be tried again.
+            if prefsWritten { applied = engine.settings.views }
             if !problems.isEmpty { error = problems.joined(separator: "\n") }
             applyPhase = nil
-            guardian.forget()
-            guardian.isPaused = false
+            guardian.resume()
         }
     }
 
@@ -271,7 +295,8 @@ final class Model: ObservableObject {
         panel.prompt = "Choose"
         panel.message = "Choose a folder that should have its own view."
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        let path = Paths.standardize(url.path)
+        // Finder shows the real folder, so its view is recorded there.
+        let path = Paths.standardize(url.resolvingSymlinksInPath().path)
         if let existing = draft.folders.first(where: { $0.path == path }) {
             editing = existing
             return
@@ -293,9 +318,16 @@ final class Model: ObservableObject {
         editing = nil
     }
 
+    /// Whether the folder has a record Finder reads, or is served by the window guard alone.
+    func isRecorded(_ folder: FolderView) -> Bool {
+        StorePlan.storeDirectory(for: folder.path) != nil
+    }
+
     func requestAccessibility() { Permissions.requestAccessibility() }
     func openFullDiskAccess() { Permissions.openFullDiskAccess() }
     func openAutomation() { Permissions.openAutomation() }
+    func revealApp() { NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL]) }
+    func revealHelper() { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: HelperInstall.binary)]) }
 
     // MARK: - Activity
 
@@ -305,7 +337,6 @@ final class Model: ObservableObject {
             try? await Task.sleep(nanoseconds: 1_000_000_000)
             guard let self else { return }
             self.activity = self.engine.log.recent(60)
-            self.statistics = self.engine.log.statistics
             self.activityRefresh = nil
         }
     }

@@ -169,6 +169,14 @@ enum UnixSocket {
         return nil
     }
 
+    /// A peer that hangs up makes `write` fail instead of raising SIGPIPE.
+    static func quietOnClose(_ fd: Int32) {
+        #if canImport(Darwin)
+        var on: Int32 = 1
+        _ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
+        #endif
+    }
+
     static func writeAll(_ fd: Int32, _ data: Data) -> Bool {
         var offset = 0
         let bytes = [UInt8](data) + [0x0A]
@@ -201,6 +209,7 @@ public enum HelperClient {
         let fd = socket(AF_UNIX, UnixSocket.stream, 0)
         guard fd >= 0 else { throw HelperError.unreachable("no socket") }
         defer { close(fd) }
+        UnixSocket.quietOnClose(fd)
         var tv = timeval(tv_sec: timeoutSeconds, tv_usec: 0)
         _ = setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
         _ = setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
@@ -271,6 +280,7 @@ public final class HelperServer {
         while listener >= 0 {
             let client = accept(listener, nil, nil)
             if client < 0 { if errno == EINTR { continue } else { break } }
+            UnixSocket.quietOnClose(client)
             handle(client)
             close(client)
         }

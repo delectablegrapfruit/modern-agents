@@ -88,12 +88,13 @@ public struct JunkScanner {
     }
 
     /// The item at `path` if it is junk that may be removed.
-    public func classify(path: String, name: String, info: FileInfo, atVolumeRoot: Bool) -> Item? {
+    public func classify(path: String, name: String, info: FileInfo, atVolumeRoot: Bool, measured: Bool = true) -> Item? {
         let isDirectory = info.isDirectory && !info.isSymlink
         guard let kind = Junk.kind(name: name, isDirectory: isDirectory, atVolumeRoot: atVolumeRoot) else { return nil }
         guard safety.validate(path: path).isAllowed else { return nil }
         if kind == .fsevents && Junk.isQuietFSEvents(at: path) { return nil }
-        let size = isDirectory ? Files.size(ofDirectory: path) : info.size
+        // A directory is walked for its size only where the size is shown (a sweep).
+        let size = isDirectory ? (measured ? Files.size(ofDirectory: path) : 0) : info.size
         return Item(path: path, kind: kind, isDirectory: isDirectory, size: size)
     }
 
@@ -115,7 +116,7 @@ public struct JunkScanner {
                 if seen.contains(node) { break }
                 if safety.isProtected(node) { break }
                 guard let st = Files.info(node) else { break }
-                if let item = classify(path: node, name: component, info: st, atVolumeRoot: safety.isMountPoint(parent)) {
+                if let item = classify(path: node, name: component, info: st, atVolumeRoot: safety.isMountPoint(parent), measured: false) {
                     seen.insert(node)
                     out.append(item)
                     break

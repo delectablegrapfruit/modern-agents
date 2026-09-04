@@ -9,7 +9,8 @@ import Foundation
 /// changed in Finder never outlives the window it was changed in. Subfolders
 /// need no record: a window keeps its view while browsing down, and the window
 /// guard covers the rest. A folder with no writable parent on its disk (a
-/// volume's top level) gets the record in its own store instead.
+/// volume's top level, the home folder) has no record anywhere: the window
+/// guard alone gives it its view.
 ///
 /// The same store also records, for every other folder in it, the view that
 /// folder should have (the default, or an enclosing folder view): Finder would
@@ -26,11 +27,9 @@ public struct StorePlan: Hashable {
     public init(settings: ViewSettings, safety: Safety = Safety(), fileManager: FileManager = .default) {
         var stores: [String: [DSRecord]] = [:]
         for folder in settings.folders where Files.isDirectory(folder.path) && !safety.isProtected(folder.path) {
-            let parent = StorePlan.storeDirectory(for: folder.path, safety: safety, fileManager: fileManager)
-            let name = parent == folder.path ? "." : Paths.name(of: folder.path)
-            if let records = try? StorePlan.records(for: folder.view, as: name) {
-                stores[parent, default: []] += records
-            }
+            guard let parent = StorePlan.storeDirectory(for: folder.path, safety: safety, fileManager: fileManager),
+                  let records = try? StorePlan.records(for: folder.view, as: Paths.name(of: folder.path)) else { continue }
+            stores[parent, default: []] += records
         }
         self.stores = stores
         self.settings = settings
@@ -41,13 +40,13 @@ public struct StorePlan: Hashable {
     /// Paths of every managed `.DS_Store`.
     public var storePaths: Set<String> { Set(stores.keys.map { $0 + "/.DS_Store" }) }
 
-    /// The parent directory whose `.DS_Store` carries `folder`'s view, or the
-    /// folder itself when there is no writable parent on the same disk.
-    public static func storeDirectory(for folder: String, safety: Safety = Safety(), fileManager: FileManager = .default) -> String {
+    /// The parent directory whose `.DS_Store` carries `folder`'s view; nil when
+    /// there is no writable parent on the same disk.
+    public static func storeDirectory(for folder: String, safety: Safety = Safety(), fileManager: FileManager = .default) -> String? {
         let f = Paths.standardize(folder)
         let parent = Paths.parent(of: f)
         guard f != "/", parent != f, !safety.isProtected(parent), fileManager.isWritableFile(atPath: parent),
-              let own = Files.info(f), let up = Files.info(parent), own.device == up.device else { return f }
+              let own = Files.info(f), let up = Files.info(parent), own.device == up.device else { return nil }
         return parent
     }
 
@@ -60,8 +59,7 @@ public struct StorePlan: Hashable {
         "ShowTabView": false, "ShowToolbar": true, "SidebarWidth": 192, "WindowBounds": "{{120, 120}, {920, 600}}",
     ]
 
-    /// A view as records filed under `name`: the folder's name in its parent's
-    /// store, "." when the folder's own store has to carry it.
+    /// A view as records filed under `name`, the folder's name in its parent's store.
     public static func records(for view: FinderView, as name: String) throws -> [DSRecord] {
         var out = [
             DSRecord(filename: name, structID: "vstl", value: .type(view.mode.rawValue)),

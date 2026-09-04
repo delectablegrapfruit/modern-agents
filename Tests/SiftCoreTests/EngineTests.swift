@@ -65,7 +65,7 @@ final class EngineTests: XCTestCase {
         XCTAssertFalse(box.exists("Users/me/Pictures/.DS_Store"), "the folder's own store carries nothing")
         XCTAssertTrue(box.exists("USB/Docs/a"))
         XCTAssertTrue(box.exists("Elsewhere/.DS_Store"))
-        XCTAssertEqual(engine.log.statistics.removed, 5)
+        XCTAssertEqual(engine.log.entries.filter { $0.kind == .removed }.count, 5)
     }
 
     func testWatchingReactsToChanges() throws {
@@ -111,16 +111,22 @@ final class EngineTests: XCTestCase {
         let expected = try box.records("Users/me/.DS_Store")
 
         engine.start()
+        Thread.sleep(forTimeInterval: 1)  // the start-up reconcile has run
         var file = DSStore(records: expected)
         file.records += try StorePlan.records(for: FinderView(mode: .columns), as: "Documents")
         try file.encoded().write(to: store)
-        XCTAssertTrue(waitUntil(10) {
-            guard let now = try? self.box.records("Users/me/.DS_Store") else { return false }
-            return DSRecord.equivalent(now, expected)
-        }, "a view Finder adds is dropped again")
+        Thread.sleep(forTimeInterval: 2)
+        XCTAssertFalse(DSRecord.equivalent(try box.records("Users/me/.DS_Store"), expected),
+                       "while Finder runs its writes are left alone: it keeps the store in memory anyway")
+        engine.reconcileStores()
+        XCTAssertTrue(DSRecord.equivalent(try box.records("Users/me/.DS_Store"), expected), "put right once Finder has quit")
+        XCTAssertEqual(engine.log.recent(1).first?.text, "Kept the view of " + Paths.display(box.path + "/Users/me"))
 
         try FileManager.default.removeItem(at: store)
-        XCTAssertTrue(waitUntil(10) { self.box.exists("Users/me/.DS_Store") }, "a deleted store comes back")
+        engine.reconcileStores(under: [box.path + "/Elsewhere"])
+        XCTAssertFalse(box.exists("Users/me/.DS_Store"), "only stores under the named roots")
+        engine.reconcileStores(under: [box.path + "/Users"])
+        XCTAssertTrue(box.exists("Users/me/.DS_Store"), "a deleted store comes back")
 
         settings.views.folders = []
         let previous = engine.plan

@@ -86,20 +86,16 @@ public struct Entry: Codable, Identifiable, Hashable {
     }
 }
 
-public struct Statistics: Hashable {
-    public var removed = 0
-    public var bytes: Int64 = 0
-
-    public init() {}
-}
-
-/// Append-only record of what was removed and why, kept as JSON lines.
+/// Record of what was removed and why, kept as JSON lines. Only the last
+/// `keep` entries matter: the file is rewritten to just those when it has
+/// grown to twice that, so it never grows without bound.
 public final class Log {
     public let fileURL: URL?
     public let keep: Int
     private let lock = NSLock()
     private var _entries: [Entry] = []
-    private var _statistics = Statistics()
+    /// Set when something was added since `recent` was last read.
+    private var _unread = false
     private let encoder: JSONEncoder = {
         let e = JSONEncoder()
         e.dateEncodingStrategy = .iso8601
@@ -107,11 +103,15 @@ public final class Log {
         return e
     }()
 
-    /// Called off the main thread whenever an entry is added.
-    public var onAppend: ((Entry) -> Void)?
+    /// Called off the main thread when an entry is added and nothing has been
+    /// added since `recent` was last read: one call per batch, not per entry.
+    public var onAppend: (() -> Void)?
     private let io = DispatchQueue(label: "sift.log.io", qos: .utility)
     private var pending = Data()
+    private var pendingLines = 0
     private var flushScheduled = false
+    /// Lines in the file, counting those not yet flushed. Touched on `io` after `load`.
+    private var linesOnDisk = 0
 
     public init(fileURL: URL?, keep: Int = 500) {
         self.fileURL = fileURL
@@ -124,14 +124,10 @@ public final class Log {
         return _entries
     }
 
-    public var statistics: Statistics {
-        lock.lock(); defer { lock.unlock() }
-        return _statistics
-    }
-
     /// Newest first.
     public func recent(_ limit: Int) -> [Entry] {
         lock.lock(); defer { lock.unlock() }
+        _unread = false
         return Array(_entries.suffix(limit).reversed())
     }
 
@@ -139,13 +135,11 @@ public final class Log {
         lock.lock()
         _entries.append(entry)
         if _entries.count > keep { _entries.removeFirst(_entries.count - keep) }
-        if entry.kind == .removed {
-            _statistics.removed += 1
-            _statistics.bytes += entry.bytes ?? 0
-        }
+        let notify = !_unread
+        _unread = true
         lock.unlock()
         write(entry)
-        onAppend?(entry)
+        if notify { onAppend?() }
     }
 
     public func info(_ text: String, path: String? = nil) {
@@ -172,6 +166,7 @@ public final class Log {
         let line = encoded
         io.async {
             self.pending.append(line)
+            self.pendingLines += 1
             guard !self.flushScheduled else { return }
             self.flushScheduled = true
             self.io.asyncAfter(deadline: .now() + 1) { self.flushPending() }
@@ -187,18 +182,36 @@ public final class Log {
         flushScheduled = false
         guard let fileURL, !pending.isEmpty else { return }
         let data = pending
+        let lines = pendingLines
         pending = Data()
+        pendingLines = 0
         let fm = FileManager.default
         do {
+            if linesOnDisk + lines > keep * 2 {
+                // Rewrite the file as just the entries kept in memory.
+                let kept = entries
+                var whole = Data()
+                for entry in kept {
+                    guard var encoded = try? encoder.encode(entry) else { continue }
+                    encoded.append(0x0A)
+                    whole.append(encoded)
+                }
+                try fm.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try whole.write(to: fileURL, options: .atomic)
+                linesOnDisk = kept.count
+                return
+            }
             if !fm.fileExists(atPath: fileURL.path) {
                 try fm.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
                 try data.write(to: fileURL, options: .atomic)
+                linesOnDisk = lines
                 return
             }
             let handle = try FileHandle(forWritingTo: fileURL)
             defer { try? handle.close() }
             try handle.seekToEnd()
             try handle.write(contentsOf: data)
+            linesOnDisk += lines
         } catch {
             // Logging must never take the engine down.
         }
@@ -209,19 +222,16 @@ public final class Log {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         var loaded: [Entry] = []
-        var stats = Statistics()
+        var lines = 0
         for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
+            lines += 1
             guard let entry = try? decoder.decode(Entry.self, from: Data(line.utf8)) else { continue }
             loaded.append(entry)
-            if entry.kind == .removed {
-                stats.removed += 1
-                stats.bytes += entry.bytes ?? 0
-            }
         }
         if loaded.count > keep { loaded.removeFirst(loaded.count - keep) }
+        linesOnDisk = lines
         lock.lock()
         _entries = loaded
-        _statistics = stats
         lock.unlock()
     }
 }

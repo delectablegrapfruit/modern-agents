@@ -1,5 +1,7 @@
 import Foundation
 import SiftCore
+
+signal(SIGPIPE, SIG_IGN)
 #if canImport(Glibc)
 import Glibc
 #endif

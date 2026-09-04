@@ -8,16 +8,18 @@ Removes the hidden files macOS leaves on every disk, and makes Finder show folde
 Finder browses: your home folder, `/Users/Shared`, `/Applications` and every connected disk, internal,
 external or network. Disk-level folders (`.Spotlight-V100`, `.fseventsd`, `.Trashes`, `.TemporaryItems`)
 are removed too, switching Spotlight off on that disk and leaving the event journal in its quiet `no_log`
-form so neither grows back. On disks that enforce ownership those folders belong to root: the window says
-so and offers *Allow…*, which installs Sift's helper once (one administrator password, a launchd daemon at
+form so neither grows back. Finder's own switches for not writing `.DS_Store` on network and USB disks are
+turned on. *Sweep* looks through everything on demand and shows what it found before removing it.
+
+On disks that enforce ownership the disk-level folders belong to root: the window says so and offers
+*Allow Administrator…*, which installs Sift's helper once (one administrator password, a launchd daemon at
 `/Library/PrivilegedHelperTools/dev.sift.helper` answering only your user, removing only catalog junk in
 catalog places). From then on such items go the same way as everything else, in the background. What is
 left after that is protected by macOS privacy controls (the Trash on other disks): add the helper under
-System Settings → Privacy & Security → Full Disk Access.
+System Settings → Privacy & Security → Full Disk Access; the window has a button that reveals it.
 
 To remove the helper, unload `dev.sift.helper.<your uid>` with `launchctl bootout system/…` and delete its
-plist in `/Library/LaunchDaemons` and the binary in `/Library/PrivilegedHelperTools`. Finder's own switches for not writing `.DS_Store` on network and USB disks are turned
-on. *Sweep* looks through everything on demand and shows what it found before removing it.
+plist in `/Library/LaunchDaemons` and the binary in `/Library/PrivilegedHelperTools`.
 
 Between sweeps Sift never walks a disk on its own: it only reacts to what the system reports, one wake-up
 a second per disk at most, so idle cost is nothing, external disks can sleep, and nothing is read that was
@@ -34,20 +36,28 @@ which the folders beneath them share unless they have one too. Applying quits Fi
 preferences and the folder records, and starts it again.
 
 Finder reads a folder's own view from the parent folder's `.DS_Store`, under the folder's name; Sift writes
-that one record and keeps the file to exactly that, so a view changed in Finder never outlives the window.
-Finder also keeps a window's view while you browse; Sift watches Finder's windows and gives each folder the
-view it should have as soon as a window shows it, the default included: a window leaving a custom folder for
-an ordinary one is put back to the default in that same step. That needs Automation access (asked once).
-With Accessibility access a window is handled the moment it moves (Finder's windows say so); without it,
-Sift looks once a second while Finder is the frontmost app. Finder is spoken to from a separate process with a
+that one record, records the default for the folders next to it (so leaving the folder for a neighbour shows
+the neighbour right at once), and puts the file back to exactly that whenever Finder has quit, so a view
+changed in Finder never outlives the Finder session. A folder with no writable parent (the home folder, a
+disk's top level) has no record; its view is set when a window shows it. Finder also keeps a window's view
+while you browse; Sift watches Finder's windows and gives each folder the view it should have as soon as a
+window shows it, the default included: a window leaving a custom folder for an ordinary one is put back to
+the default in that same step. That needs permission to control Finder (asked at first launch). With
+Accessibility access a window is handled the moment it moves (Finder's windows say so); without it, Sift
+looks once a second while Finder is the frontmost app. Finder is spoken to from a separate process with a
 short timeout, so a busy Finder never holds Sift's window. Every view it sets is listed under Activity.
+
+Views that were set in Finder before Sift ran are replaced by these. *Folders first* is one Finder setting
+for every folder; Finder has no per-folder form of it. Sort by Date Added and column-view sorting take
+effect through the folder record and Finder's defaults, so they show after Finder has been relaunched.
 
 ## The window
 
 Sift has no Dock icon: it lives in the menu bar as a sieve glyph (three shortening lines). The window
 opens by itself the first time Sift runs; after that, open it from the menu bar item or by opening the app
 again. One window, top to bottom: what is being watched and what needs you · the default view and its
-options · folders with their own view · what was removed. The menu bar item also sweeps and pauses.
+options · folders with their own view · what happened. View changes are applied from a bar that stays at
+the bottom. The menu bar item pauses everything automatic (cleaning and views) and quits.
 
 ## Install
 
@@ -56,7 +66,7 @@ Unzip, move `Sift.app` to Applications, open it. It is ad-hoc signed, so macOS b
 of the downloaded copy: on macOS 15 and later go to System Settings → Privacy & Security and choose
 *Open Anyway*; on earlier versions right-click → Open. Or clear the quarantine first:
 `xattr -d com.apple.quarantine /Applications/Sift.app`. Sift adds itself to your login items; turn that
-off in its menu.
+off under System Settings → General → Login Items.
 
 Full Disk Access (System Settings → Privacy & Security) lets Sift reach Desktop, Documents and the Trash on
 other disks without a prompt per folder. The window says so until it is granted.

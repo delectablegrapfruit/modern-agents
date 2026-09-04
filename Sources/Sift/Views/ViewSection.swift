@@ -1,9 +1,12 @@
 import SwiftUI
 import SiftCore
 
+/// The default view: mode, sort, grouping, and the options of that mode. The
+/// other modes' options stay folded away; a window switched to one by hand
+/// uses them.
 struct ViewSection: View {
     @EnvironmentObject private var model: Model
-    @State private var optionsMode: ViewMode = .icons
+    @State private var otherMode: ViewMode = .list
 
     var body: some View {
         Section {
@@ -11,49 +14,54 @@ struct ViewSection: View {
                 ForEach(ViewMode.allCases, id: \.self) { Text($0.label).tag($0) }
             }
             .pickerStyle(.segmented)
-            .onChange(of: model.draft.default.mode) { optionsMode = $0 }
-            Picker("Sort by", selection: $model.draft.default.sortKey) {
-                ForEach(SortKey.allCases, id: \.self) { Text($0.label).tag($0) }
-            }
-            Picker("Order", selection: $model.draft.default.ascending) {
-                Text("Ascending").tag(true)
-                Text("Descending").tag(false)
-            }
+            SortPickers(view: $model.draft.default)
             Picker("Group by", selection: $model.draft.groupBy) {
                 ForEach(GroupBy.allCases, id: \.self) { Text($0.label).tag($0) }
             }
             Toggle(isOn: $model.draft.foldersFirst) {
                 Captioned("Folders first", model.draft.foldersFirst && model.draft.default.sortKey != .name
-                          ? "Finder keeps folders on top only when sorting by Name." : nil)
+                          ? "Finder keeps folders on top only when sorting by Name." : "One Finder setting, the same in every folder.")
             }
         } header: {
             Text("View")
-        } footer: {
-            guardFooter
         }
         Section {
-            Picker("Options for", selection: $optionsMode) {
-                ForEach(ViewMode.allCases, id: \.self) { Text($0.label).tag($0) }
-            }
-            .onAppear { optionsMode = model.draft.default.mode }
-            OptionsForm(mode: optionsMode, options: $model.draft.default.options)
+            OptionsForm(mode: model.draft.default.mode, options: $model.draft.default.options)
+        } header: {
+            Text(model.draft.default.mode.label + " options")
         } footer: {
-            Text("The same values as Finder's View Options window, used by every folder without a view of its own.")
+            Text("The same values as Finder's View Options window, for every folder without a view of its own.")
+        }
+        Section {
+            DisclosureGroup("Other views") {
+                Picker("Options for", selection: $otherMode) {
+                    ForEach(ViewMode.allCases.filter { $0 != model.draft.default.mode }, id: \.self) { Text($0.label).tag($0) }
+                }
+                .onAppear { if otherMode == model.draft.default.mode { otherMode = ViewMode.allCases.first { $0 != model.draft.default.mode }! } }
+                .onChange(of: model.draft.default.mode) { mode in
+                    if otherMode == mode { otherMode = ViewMode.allCases.first { $0 != mode }! }
+                }
+                OptionsForm(mode: otherMode, options: $model.draft.default.options)
+            }
+        } footer: {
+            Text("Used when a window is switched to another view by hand.")
         }
     }
+}
 
-    @ViewBuilder private var guardFooter: some View {
-        if !model.canControlFinder {
-            HStack {
-                Text("Sift is not allowed to control Finder, so windows keep whatever view they had. Allow it under Automation.")
-                Spacer()
-                Button("Open Settings") { model.openAutomation() }
-            }
-        } else if !model.reactsInstantly {
-            HStack {
-                Text("Windows take the view within a second of showing a folder. With Accessibility access new windows take it at once.")
-                Spacer()
-                Button("Allow…") { model.requestAccessibility() }
+/// Sort by, and the order where Finder has one (list view).
+struct SortPickers: View {
+    @Binding var view: FinderView
+
+    var body: some View {
+        Picker("Sort by", selection: $view.sortKey) {
+            ForEach(SortKey.allCases, id: \.self) { Text($0.label).tag($0) }
+        }
+        .onChange(of: view.sortKey) { view.ascending = $0.defaultAscending }
+        if view.mode == .list {
+            Picker("Order", selection: $view.ascending) {
+                Text("Ascending").tag(true)
+                Text("Descending").tag(false)
             }
         }
     }
@@ -66,7 +74,8 @@ struct FoldersSection: View {
         Section {
             ForEach(model.draft.folders) { folder in
                 HStack {
-                    Captioned(Paths.display(folder.path), folder.view.summary)
+                    Captioned(Paths.display(folder.path),
+                              folder.view.summary + (model.isRecorded(folder) ? "" : " · set when a window shows it"))
                     Spacer()
                     Button("Edit…") { model.editing = folder }
                     Button { model.removeFolder(folder.id) } label: { Image(systemName: "minus.circle") }
@@ -78,23 +87,7 @@ struct FoldersSection: View {
         } header: {
             Text("Folders with their own view")
         } footer: {
-            Text("A folder's view carries into the folders beneath it. Finder keeps it in the parent folder's .DS_Store; Sift keeps that one file and removes the rest.")
-        }
-        if model.hasChanges || model.applyPhase != nil {
-            Section {
-                HStack {
-                    if model.applyPhase != nil { ProgressView().controlSize(.small) }
-                    Text(model.applyPhase ?? "Finder relaunches when you apply.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Button("Revert") { model.revert() }
-                        .disabled(model.applyPhase != nil)
-                    Button("Apply") { model.apply() }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(model.applyPhase != nil)
-                }
-            }
+            Text("A folder's view carries into the folders beneath it.")
         }
     }
 }
@@ -187,6 +180,8 @@ struct TextSizePicker: View {
     }
 }
 
+/// One folder's view. Column view sorts and shows columns the same everywhere,
+/// so it has nothing to set here.
 struct FolderEditor: View {
     @EnvironmentObject private var model: Model
     @State private var draft: FolderView
@@ -203,16 +198,19 @@ struct FolderEditor: View {
                         ForEach(ViewMode.allCases, id: \.self) { Text($0.label).tag($0) }
                     }
                     .pickerStyle(.segmented)
-                    Picker("Sort by", selection: $draft.view.sortKey) {
-                        ForEach(SortKey.allCases, id: \.self) { Text($0.label).tag($0) }
-                    }
-                    Picker("Order", selection: $draft.view.ascending) {
-                        Text("Ascending").tag(true)
-                        Text("Descending").tag(false)
+                    if draft.view.mode != .columns {
+                        SortPickers(view: $draft.view)
                     }
                 }
-                Section("Options") {
-                    OptionsForm(mode: draft.view.mode, options: $draft.view.options)
+                if draft.view.mode == .columns {
+                    Section {
+                        Text("Column view sorts and looks the same in every folder.")
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    Section("Options") {
+                        OptionsForm(mode: draft.view.mode, options: $draft.view.options)
+                    }
                 }
             }
             .formStyle(.grouped)

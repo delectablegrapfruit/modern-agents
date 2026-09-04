@@ -17,22 +17,16 @@ struct MenuBarLabel: View {
     }
 }
 
+/// The menu bar item is the app's one persistent handle: its state, the way to
+/// stop it for a while, its window, and quitting. Everything else is in the window.
 struct MenuBarMenu: View {
     @EnvironmentObject private var model: Model
 
     var body: some View {
         Text(model.statusText)
         Divider()
-        Button("Sweep Now") {
-            WindowOpener.open()
-            model.sweepNow()
-        }
         Button(model.isPaused ? "Resume" : "Pause") { model.togglePause() }
-        Divider()
-        Button("Open Sift…") { WindowOpener.open() }
-        if LoginItem.isAvailable {
-            Toggle("Launch at Login", isOn: Binding(get: { LoginItem.isEnabled }, set: { try? LoginItem.set($0) }))
-        }
+        Button("Open Sift") { WindowOpener.open() }
         Divider()
         Button("Quit Sift") { NSApp.terminate(nil) }.keyboardShortcut("q")
     }
