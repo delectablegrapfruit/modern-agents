@@ -131,7 +131,7 @@ public struct FinderView: Hashable, Codable {
     public var ascending = true
     public var options = ViewOptions()
 
-    public init(mode: ViewMode = .icons, sortKey: SortKey = .name, ascending: Bool? = nil, options: ViewOptions = ViewOptions()) {
+    public init(mode: ViewMode = .list, sortKey: SortKey = .name, ascending: Bool? = nil, options: ViewOptions = ViewOptions()) {
         self.mode = mode
         self.sortKey = sortKey
         self.ascending = ascending ?? sortKey.defaultAscending
