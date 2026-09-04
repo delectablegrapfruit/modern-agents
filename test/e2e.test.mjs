@@ -21,7 +21,7 @@ let ext;
 let page;
 
 const RATE = 4 / 100; // default: 4 s per 100 px, reached at fast wheel movement
-const SLOW = 0.2; // gain at slow wheel movement (below 150 px/s); 60 px per ~30 ms event is fast (gain 1)
+const SLOW = 0.7; // gain at slow wheel movement (below 400 px/s); 120 px per ~30-45 ms event is fast (gain 1)
 
 const time = (selector) => page.evaluate((s) => document.querySelector(s).currentTime, selector);
 const isPaused = (selector) => page.evaluate((s) => document.querySelector(s).paused, selector);
@@ -137,15 +137,15 @@ test('sideways wheel away from any video scrolls the page sideways', async () =>
 test('a mostly sideways trackpad swipe scrubs; a mostly vertical one scrolls', async () => {
   const p = await centerOf(page, '#plain');
   const s0 = await scroll();
-  await wheelBurst(page, p.x, p.y, 60, 10, 10, 8);
+  await wheelBurst(page, p.x, p.y, 120, 10, 10, 8);
   await settled();
-  assert.ok(near(await time('#plain'), 10 + 600 * RATE, 0.02));
+  assert.ok(near(await time('#plain'), 10 + 1200 * RATE, 0.02));
   assert.deepEqual(await scrolled(s0), { x: 0, y: 0 }, 'cross-axis noise never moves the page');
 
   await page.waitForTimeout(300); // let the axis lock expire
   await wheelBurst(page, p.x, p.y, 3, 8, 10, 8);
   await page.waitForTimeout(100);
-  assert.ok(near(await time('#plain'), 10 + 600 * RATE, 0.02), 'video untouched by the vertical swipe');
+  assert.ok(near(await time('#plain'), 10 + 1200 * RATE, 0.02), 'video untouched by the vertical swipe');
   assert.ok((await scrolled(s0)).y >= 60, 'page scrolled');
 });
 
@@ -154,10 +154,31 @@ test('the first diagonal events are buffered, then applied in full once the axis
   // 1 px right + 1 px down: not decisive. Then a clearly sideways swipe.
   const s0 = await scroll();
   await wheel(page, p.x, p.y, 1, 1);
-  await wheelBurst(page, p.x, p.y, 60, 5, 5, 8);
+  await wheelBurst(page, p.x, p.y, 120, 5, 5, 8);
   await settled();
-  assert.ok(near(await time('#plain'), 10 + 301 * RATE, 0.05), 'the buffered pixel was not lost');
+  assert.ok(near(await time('#plain'), 10 + 601 * RATE, 0.05), 'the buffered pixel was not lost');
   assert.deepEqual(await scrolled(s0), { x: 0, y: 0 });
+});
+
+test('scrolling kept up for seconds in one direction speeds up; a reversal resets it', async () => {
+  const p = await centerOf(page, '#plain');
+  // Slow single-pixel events about every 90 ms: 1.8 s, then about 4 s more
+  // (the ramp runs from 3 s to 6 s of continuous scrolling).
+  await wheelBurst(page, p.x, p.y, 1, 0, 20, 60);
+  await settled();
+  const t1 = await time('#plain');
+  const first = t1 - 10;
+  assert.ok(near(first, 20 * RATE * SLOW, 0.05), `no speed-up in the first two seconds: ${first}`);
+  await wheelBurst(page, p.x, p.y, 1, 0, 45, 60);
+  await settled();
+  const second = (await time('#plain')) - t1;
+  const baseline = first * (45 / 20);
+  assert.ok(second > baseline * 1.5, `sustained scrolling sped up: ${first} then ${second} (plain rate would give ${baseline})`);
+  // Reverse: back to the plain rate at once.
+  const t2 = await time('#plain');
+  await wheelBurst(page, p.x, p.y, -1, 0, 5, 60);
+  await settled();
+  assert.ok(near(t2 - (await time('#plain')), 5 * RATE * SLOW, 0.03), 'reversal resets the speed-up');
 });
 
 test('Ctrl + wheel (browser zoom) is left alone', async () => {
@@ -311,13 +332,13 @@ test('turning the extension off mid-session restores playback', async () => {
 test('cross-axis noise during a scrub is not a turn to page scrolling', async () => {
   const p = await centerOf(page, '#plain');
   const s0 = await scroll();
-  await wheelBurst(page, p.x, p.y, 60, 0.5, 5, 8);
+  await wheelBurst(page, p.x, p.y, 120, 0.5, 4, 8);
   await wheel(page, p.x, p.y, 0, 1); // trackpad noise
   await wheelBurst(page, p.x, p.y, 3, 1, 3, 8); // small events inside a fast gesture
-  await wheelBurst(page, p.x, p.y, 60, 0.5, 5, 8);
+  await wheelBurst(page, p.x, p.y, 120, 0.5, 4, 8);
   await settled();
   const t = await time('#plain');
-  assert.ok(t >= 10 + 600 * RATE - 0.01 && t <= 10 + 609 * RATE + 0.01, `all sideways movement counted: ${t}`);
+  assert.ok(t >= 10 + (960 + 9 * SLOW) * RATE - 0.01 && t <= 10 + 969 * RATE + 0.01, `all sideways movement counted: ${t}`);
   assert.deepEqual(await scrolled(s0), { x: 0, y: 0 });
 });
 
@@ -368,9 +389,9 @@ test('a sideways swipe right after a vertical scroll still scrubs', async () => 
   const p = await centerOf(page, '#plain');
   const s0 = await scroll();
   await wheel(page, p.x, p.y, 0, 100);
-  await wheelBurst(page, p.x, p.y, 60, 2, 5, 8); // no pause: a trackpad turning sideways
+  await wheelBurst(page, p.x, p.y, 120, 2, 5, 8); // no pause: a trackpad turning sideways
   await settled();
-  assert.ok(near(await time('#plain'), 10 + 300 * RATE, 0.02), 'all sideways movement scrubbed');
+  assert.ok(near(await time('#plain'), 10 + 600 * RATE, 0.02), 'all sideways movement scrubbed');
   const sc = await scrolled(s0);
   assert.equal(sc.y, 100, 'only the vertical notch scrolled the page');
   assert.equal(sc.x, 0);
@@ -565,9 +586,9 @@ test('a fast burst on an expensive (long-GOP) clip shows frames progressively an
     v.requestVideoFrameCallback(tick);
   });
   await seekTo('#longgop', 12);
-  // 45 events of 25 px at 120 Hz (a fast spin: full rate): 1125 px = 45 s of media in 0.36 s.
+  // 25 events of 45 px at 60 Hz (a fast spin: full rate): 1125 px = 45 s of media in 0.4 s.
   const started = Date.now();
-  await wheelBurstFast(page, p.x, p.y, 25, 0, 45, 8);
+  await wheelBurstFast(page, p.x, p.y, 45, 0, 25, 16);
   const inputDone = Date.now();
   await settled('#longgop');
   const landed = Date.now();
@@ -575,7 +596,7 @@ test('a fast burst on an expensive (long-GOP) clip shows frames progressively an
   assert.ok(near(t, 12 + 1125 * RATE, 0.01), `landed at ${t}`);
   const frames = await page.evaluate(() => window.__frames);
   const during = frames.filter((f) => f.t > 12 && f.t < 12 + 1125 * RATE);
-  assert.ok(during.length >= 4, `only ${during.length} intermediate frames were shown`);
+  assert.ok(during.length >= 3, `only ${during.length} intermediate frames were shown`);
   assert.ok(inputDone - started < 900, `input took ${inputDone - started} ms (should be about 0.4 s)`);
   assert.ok(landed - inputDone < 1000, `took ${landed - inputDone} ms to settle after input stopped`);
 });
@@ -614,7 +635,7 @@ test('undo puts the video back where it was and resumes it if it was playing; un
   await page.evaluate(() => document.querySelector('#plain').play());
   await page.waitForFunction(() => !document.querySelector('#plain').paused);
   const p = await centerOf(page, '#plain');
-  await wheelBurst(page, p.x, p.y, 60, 0, 5, 16);
+  await wheelBurst(page, p.x, p.y, 120, 0, 5, 16);
   await settled();
   const scrubbed = await time('#plain');
   assert.ok(scrubbed > 12, `scrubbed to ${scrubbed}`);

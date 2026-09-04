@@ -45,14 +45,24 @@
    * applied in full once the gesture turns out to be a scrub. */
   const DECIDE_PX = 6;
   const DECIDE_EVENTS = 4;
-  /* Velocity curve. The configured speed is the rate reached at and above
-   * V_GROSS px/s (a fast spin of a free wheel, a flick of a trackpad); at
-   * and below V_FINE px/s the rate is GAIN_MIN of it, so a slow, deliberate
-   * turn moves frame by frame. A smooth ramp joins the two, and the wheel's
-   * own deceleration after a flick walks it back down into fine control. */
-  const V_FINE = 150;
-  const V_GROSS = 1200;
-  const GAIN_MIN = 0.2;
+  /* Rate modifiers.
+   *
+   * Velocity is a minor one: scrolls are quick flicks, so speed says little
+   * about intent. Below V_SLOW px/s the rate is VELOCITY_MIN of the set
+   * speed; from V_FAST px/s up it is the set speed; a smooth ramp joins them.
+   *
+   * Gross scrubbing comes from persistence instead: scrolling kept up in
+   * one direction, in quick succession (gaps under STREAK_GAP_MS), for
+   * SUSTAIN_START_MS ramps the rate up to SUSTAIN_MAX times the set speed by
+   * SUSTAIN_FULL_MS. A pause or a reversal (you reverse when you overshoot,
+   * which is when you want fine control) resets it. */
+  const V_SLOW = 400;
+  const V_FAST = 2400;
+  const VELOCITY_MIN = 0.7;
+  const STREAK_GAP_MS = 350;
+  const SUSTAIN_START_MS = 3000;
+  const SUSTAIN_FULL_MS = 6000;
+  const SUSTAIN_MAX = 4;
   const FRAME_MS = 16.7; // one frame: the time a single event is taken to span
   /* Seek scheduling. The first seek of a burst is issued immediately. While
    * a seek is in flight the newest target is held back until `seeked`, so
@@ -114,6 +124,9 @@
   let bufS = 0; // movement buffered while 'undecided'
   let bufN = 0;
   let bufT0 = 0;
+  let streakStart = 0; // continuous same-direction scrolling, see sustainGain()
+  let streakLast = 0;
+  let streakSign = 0;
   let lookAt = 0; // timestamp, position and modifier state of the last hit test in 'look'
   let lookX = NaN;
   let lookY = NaN;
@@ -889,13 +902,32 @@
     return Math.min(max, Math.max(min, value));
   }
 
-  /* Rate multiplier for `px` of movement delivered over `dtMs`. Chromium
-   * delivers wheel events once per frame with their deltas summed, so
-   * per-event velocity is stable and reacts to acceleration at once. */
+  function smoothstep(x) {
+    x = clamp(x, 0, 1);
+    return x * x * (3 - 2 * x);
+  }
+
+  /* Minor rate multiplier for `px` of movement delivered over `dtMs`.
+   * Chromium delivers wheel events once per frame with their deltas summed,
+   * so per-event velocity is stable. */
   function velocityGain(px, dtMs) {
     const v = Math.abs(px) / (Math.max(dtMs, FRAME_MS / 2) / 1000);
-    const x = clamp((v - V_FINE) / (V_GROSS - V_FINE), 0, 1);
-    return GAIN_MIN + (1 - GAIN_MIN) * x * x * (3 - 2 * x);
+    return VELOCITY_MIN + (1 - VELOCITY_MIN) * smoothstep((v - V_SLOW) / (V_FAST - V_SLOW));
+  }
+
+  /* Rate multiplier for persistence: how long scrolling has been kept up in
+   * this direction without a pause. */
+  function sustainGain(now, px) {
+    const sign = Math.sign(px);
+    if (!streakStart || now - streakLast > STREAK_GAP_MS || (sign && streakSign && sign !== streakSign)) {
+      streakStart = now;
+      streakSign = sign;
+    } else if (sign) {
+      streakSign = sign;
+    }
+    streakLast = now;
+    const held = now - streakStart;
+    return 1 + (SUSTAIN_MAX - 1) * smoothstep((held - SUSTAIN_START_MS) / (SUSTAIN_FULL_MS - SUSTAIN_START_MS));
   }
 
   /* Time since the previous event of this gesture, or one frame. */
@@ -911,8 +943,9 @@
     if (!range) return;
 
     const fine = settings.requireModifier !== FINE_MODIFIER && hasModifier(e, FINE_MODIFIER);
+    const sustain = sustainGain(e.timeStamp, px);
 
-    let dt = px * (settings.secondsPer100px / 100) * velocityGain(px, dtMs);
+    let dt = px * (settings.secondsPer100px / 100) * velocityGain(px, dtMs) * sustain;
     if (settings.invert) dt = -dt;
     if (fine) dt *= FINE_FACTOR;
 
@@ -923,7 +956,10 @@
     }
     s.pos = clamp(s.pos + dt, range[0], range[1]);
     requestSeek(s, s.pos);
-    if (settings.showTimeline) timeline.show(s.video, s.pos, range, fine, undo && undo.video === s.video ? undo.time : NaN);
+    const factor = (fine ? FINE_FACTOR : 1) * sustain;
+    if (settings.showTimeline) {
+      timeline.show(s.video, s.pos, range, factor, undo && undo.video === s.video ? undo.time : NaN);
+    }
 
     // The wheel stopped: the gesture is over shortly after.
     clearTimeout(s.idleTimer);
@@ -1273,8 +1309,8 @@
 
     /* Called on every wheel event: record the logical position; the frame
      * loop draws it. */
-    function show(video, pos, range, fine, originTime) {
-      state = { video, pos, range, fine, originTime, live: false, releasedAt: 0 };
+    function show(video, pos, range, factor, originTime) {
+      state = { video, pos, range, factor, originTime, live: false, releasedAt: 0 };
       if (fading) unfade();
       if (!frame) frame = requestAnimationFrame(tick);
     }
@@ -1335,7 +1371,8 @@
         if (showOrigin) origin.style.left = (originFrac * 100).toFixed(3) + '%';
         label.firstChild.nodeValue = formatTime(n.pos - n.range[0], true);
         durEl.textContent = ' / ' + formatTime(span, false);
-        fineEl.textContent = n.fine && !n.live ? '×0.1' : '';
+        const f = n.factor;
+        fineEl.textContent = !n.live && Math.abs(f - 1) > 0.05 ? '×' + (f < 10 ? f.toFixed(1) : f.toFixed(0)) : '';
         // Keep the label inside the track: right-align it near the end.
         const atEnd = frac > 0.75;
         label.style.left = atEnd ? 'auto' : (frac * 100).toFixed(3) + '%';
