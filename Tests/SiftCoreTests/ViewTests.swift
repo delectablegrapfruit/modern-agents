@@ -215,8 +215,8 @@ final class StoreTests: XCTestCase {
         XCTAssertEqual(pictures.map(\.structID).sorted(), ["bwsp", "glvp", "vSrn", "vstl"])
         XCTAssertTrue(pictures.contains { $0.structID == "vstl" && $0.value == .type("glyv") })
         let documents = records.filter { $0.filename == "Documents" }
-        XCTAssertEqual(documents.map(\.structID).sorted(), ["icvp", "vSrn", "vstl"], "the default view, no window record")
-        XCTAssertTrue(documents.contains { $0.structID == "vstl" && $0.value == .type("icnv") })
+        XCTAssertEqual(documents.map(\.structID).sorted(), ["lsvP", "lsvp", "vSrn", "vstl"], "the default view, no window record")
+        XCTAssertTrue(documents.contains { $0.structID == "vstl" && $0.value == .type("Nlsv") })
         XCTAssertFalse(box.exists("Pictures/.DS_Store"))
         XCTAssertEqual(try plan.writeAll(), 0, "already as planned")
     }
@@ -263,7 +263,7 @@ final class StoreTests: XCTestCase {
         XCTAssertEqual(Set(kept.map(\.filename)), ["Pictures", "Documents"], "icon positions go")
         XCTAssertTrue(kept.contains { $0.structID == "bwsp" && $0.value == .blob(Data([1, 2, 3])) }, "Finder's window geometry stays")
         XCTAssertEqual(kept.filter { $0.filename == "Pictures" && $0.structID == "vstl" }.map(\.value), [.type("glyv")])
-        XCTAssertEqual(kept.filter { $0.filename == "Documents" && $0.structID == "vstl" }.map(\.value), [.type("icnv")], "a view chosen in Finder for the folder next to it goes back to the default")
+        XCTAssertEqual(kept.filter { $0.filename == "Documents" && $0.structID == "vstl" }.map(\.value), [.type("Nlsv")], "a view chosen in Finder for the folder next to it goes back to the default")
         XCTAssertFalse(kept.contains { $0.filename == "Documents" && $0.structID == "bwsp" })
         XCTAssertFalse(try plan.write(directory: box.path))
 
@@ -380,7 +380,7 @@ final class SettingsTests: XCTestCase {
     func testEmptyDocumentYieldsDefaults() throws {
         let settings = try JSONDecoder().decode(Settings.self, from: Data("{}".utf8))
         XCTAssertEqual(settings, Settings())
-        XCTAssertEqual(settings.views.default.mode, .icons)
+        XCTAssertEqual(settings.views.default.mode, .list)
         let broken = try JSONDecoder().decode(Settings.self, from: Data("{\"views\": {\"default\": 5}}".utf8))
         XCTAssertEqual(broken, Settings(), "an unreadable section falls back to the defaults")
     }

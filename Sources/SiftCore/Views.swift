@@ -126,7 +126,7 @@ public struct ViewOptions: Hashable, Codable {
 }
 
 public struct FinderView: Hashable, Codable {
-    public var mode: ViewMode = .icons
+    public var mode: ViewMode = .list
     public var sortKey: SortKey = .name
     public var ascending = true
     public var options = ViewOptions()

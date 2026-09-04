@@ -1,12 +1,11 @@
 import SwiftUI
 import SiftCore
 
-/// The default view: mode, sort, grouping, and the options of that mode. The
-/// other modes' options stay folded away; a window switched to one by hand
-/// uses them.
+/// The default view: mode, sort, grouping; then the options, shown for the
+/// default mode until another is chosen.
 struct ViewSection: View {
     @EnvironmentObject private var model: Model
-    @State private var otherMode: ViewMode = .list
+    @State private var optionsMode: ViewMode = .list
 
     var body: some View {
         Section {
@@ -14,6 +13,8 @@ struct ViewSection: View {
                 ForEach(ViewMode.allCases, id: \.self) { Text($0.label).tag($0) }
             }
             .pickerStyle(.segmented)
+            .onAppear { optionsMode = model.draft.default.mode }
+            .onChange(of: model.draft.default.mode) { optionsMode = $0 }
             SortPickers(view: $model.draft.default)
             Picker("Group by", selection: $model.draft.groupBy) {
                 ForEach(GroupBy.allCases, id: \.self) { Text($0.label).tag($0) }
@@ -26,25 +27,15 @@ struct ViewSection: View {
             Text("View")
         }
         Section {
-            OptionsForm(mode: model.draft.default.mode, options: $model.draft.default.options)
-        } header: {
-            Text(model.draft.default.mode.label + " options")
-        } footer: {
-            Text("The same values as Finder's View Options window, for every folder without a view of its own.")
-        }
-        Section {
-            DisclosureGroup("Other views") {
-                Picker("Options for", selection: $otherMode) {
-                    ForEach(ViewMode.allCases.filter { $0 != model.draft.default.mode }, id: \.self) { Text($0.label).tag($0) }
-                }
-                .onAppear { if otherMode == model.draft.default.mode { otherMode = ViewMode.allCases.first { $0 != model.draft.default.mode }! } }
-                .onChange(of: model.draft.default.mode) { mode in
-                    if otherMode == mode { otherMode = ViewMode.allCases.first { $0 != mode }! }
-                }
-                OptionsForm(mode: otherMode, options: $model.draft.default.options)
+            Picker("Options for", selection: $optionsMode) {
+                ForEach(ViewMode.allCases, id: \.self) { Text($0.label).tag($0) }
             }
+            .pickerStyle(.segmented)
+            OptionsForm(mode: optionsMode, options: $model.draft.default.options)
+        } header: {
+            Text("Options")
         } footer: {
-            Text("Used when a window is switched to another view by hand.")
+            Text("The same values as Finder's View Options window. Those of the view folders open in apply everywhere; the others when a window is switched to that view by hand.")
         }
     }
 }
