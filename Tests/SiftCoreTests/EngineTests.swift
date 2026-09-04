@@ -288,8 +288,14 @@ final class HelperTests: XCTestCase {
         XCTAssertTrue(plist.contains("<string>dev.sift.helper.501</string>"))
         XCTAssertTrue(plist.contains("<string>/var/run/sift-501.sock</string>"))
         let script = HelperInstall.script(bundledHelper: "/Applications/Sift.app/Contents/MacOS/sift-helper", uid: 501)
-        XCTAssertTrue(script.contains("/bin/cp -f '/Applications/Sift.app/Contents/MacOS/sift-helper' '/Library/PrivilegedHelperTools/dev.sift.helper'"))
+        XCTAssertTrue(script.contains("/bin/cp -f '/Applications/Sift.app/Contents/MacOS/sift-helper' '/Library/PrivilegedHelperTools/dev.sift.helper.new'"))
+        XCTAssertTrue(script.contains("/bin/mv -f '/Library/PrivilegedHelperTools/dev.sift.helper.new' '/Library/PrivilegedHelperTools/dev.sift.helper'"), "put in place by rename, never written under a running copy")
+        XCTAssertLessThan(script.range(of: "bootout")!.lowerBound, script.range(of: "/bin/cp")!.lowerBound, "a running helper is stopped before its file is touched")
         XCTAssertTrue(script.contains("launchctl bootstrap system '/Library/LaunchDaemons/dev.sift.helper.501.plist'"))
         XCTAssertFalse(plist.contains("'"), "the plist is passed through single quotes")
+        let removal = HelperInstall.removeScript(uid: 501)
+        XCTAssertTrue(removal.contains("bootout system/dev.sift.helper.501"))
+        XCTAssertTrue(removal.contains("/bin/rm -f '/Library/LaunchDaemons/dev.sift.helper.501.plist'"))
+        XCTAssertTrue(removal.contains("|| /bin/rm -f '/Library/PrivilegedHelperTools/dev.sift.helper'"), "the binary goes only when no other user's daemon uses it")
     }
 }
