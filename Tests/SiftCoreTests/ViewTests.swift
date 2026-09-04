@@ -282,6 +282,8 @@ final class WindowGuardTests: XCTestCase {
         XCTAssertEqual(tracker.moved([a2, b]), [a2])
         XCTAssertEqual(tracker.moved([a2]), [])
         XCTAssertEqual(tracker.moved([a2, b]), [b], "a closed window counts as new when it comes back")
+        tracker.forget(2)
+        XCTAssertEqual(tracker.moved([a2, b]), [b], "a forgotten window is looked at again")
     }
 
     func testScriptsFollowTheView() {

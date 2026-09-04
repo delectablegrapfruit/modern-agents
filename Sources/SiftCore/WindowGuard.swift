@@ -154,6 +154,9 @@ public enum WindowGuard {
             return out
         }
 
+        /// The window will count as moved next time (its view could not be set).
+        public mutating func forget(_ id: Int) { known[id] = nil }
+
         public mutating func reset() { known = [:] }
     }
 

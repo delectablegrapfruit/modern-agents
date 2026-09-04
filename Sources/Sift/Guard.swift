@@ -6,6 +6,10 @@ import SiftCore
 /// Accessibility when allowed to, and otherwise looks once a second, but only
 /// while Finder is the frontmost app, since that is the only time its windows
 /// are being browsed. Idle cost is nothing.
+///
+/// Finder is only ever spoken to from a background queue, one script at a
+/// time: a busy Finder can take seconds to answer, and the app's own window
+/// and menu bar must never wait on it.
 final class Guardian {
     /// Set while Finder is being quit and relaunched.
     var isPaused = false
@@ -20,11 +24,16 @@ final class Guardian {
     private var lastProblem: String?
 
     private let views: () -> ViewSettings
+    /// Touched on `queue` only.
     private var tracker = WindowGuard.Tracker()
     private let session = WindowGuard.Session()
+    private let queue = DispatchQueue(label: "sift.guard", qos: .userInitiated)
     private var observer: AXObserver?
     private var timer: Timer?
     private var checkPending = false
+    /// A check is running on the queue; another asked for meanwhile runs after it.
+    private var busy = false
+    private var again = false
     private var notAllowedSince: Date?
     private var wasNotAllowed = false
     private var workspaceObservers: [NSObjectProtocol] = []
@@ -59,7 +68,7 @@ final class Guardian {
 
     /// Windows will be looked at afresh (after Finder relaunches, or views change).
     func forget() {
-        tracker.reset()
+        queue.async { [self] in tracker.reset() }
     }
 
     private var finderIsFrontmost: Bool {
@@ -115,6 +124,15 @@ final class Guardian {
         check()
     }
 
+    // MARK: Checking
+
+    private struct Outcome {
+        var applied: [(path: String, view: String)] = []
+        var errors: [Error] = []
+        var notAllowed = false
+    }
+
+    /// Main thread. Starts one look at Finder's windows on the queue.
     private func check() {
         guard !isPaused else { return }
         if let since = notAllowedSince {
@@ -123,33 +141,64 @@ final class Guardian {
             notAllowedSince = nil
         }
         guard !NSRunningApplication.runningApplications(withBundleIdentifier: Finder.bundleID).isEmpty else {
-            tracker.reset()
+            forget()
             return
         }
-        let moved: [WindowGuard.Window]
-        do {
-            moved = tracker.moved(try session.windows())
-        } catch {
-            report(error)
+        guard !busy else {
+            again = true
             return
         }
-        guard !moved.isEmpty else { return }
+        busy = true
         let settings = views()
-        // Every window that moved gets the view of the folder it now shows: its own,
-        // the custom folder above it, or the default. One refusal never skips the rest.
-        for window in moved {
+        queue.async { [self] in
+            let outcome = look(settings)
+            DispatchQueue.main.async { self.finish(outcome) }
+        }
+    }
+
+    /// Queue. Every window that moved gets the view of the folder it now shows: its own,
+    /// the custom folder above it, or the default. One refusal never skips the rest.
+    private func look(_ settings: ViewSettings) -> Outcome {
+        var outcome = Outcome()
+        let windows: [WindowGuard.Window]
+        do {
+            windows = try session.windows()
+        } catch {
+            outcome.errors.append(error)
+            outcome.notAllowed = (error as? WindowGuard.ScriptError) == .notAllowed
+            return outcome
+        }
+        for window in tracker.moved(windows) {
             let (view, owner) = settings.view(for: window.path)
             do {
                 try session.apply(view, to: window.id)
-                onApplied?(window.path, view.mode.label + (owner == nil ? " (default)" : ""))
+                outcome.applied.append((window.path, view.mode.label + (owner == nil ? " (default)" : "")))
             } catch {
-                report(error)
-                if (error as? WindowGuard.ScriptError) == .notAllowed { return }
+                outcome.errors.append(error)
+                // Not done: looked at again next time.
+                tracker.forget(window.id)
+                if (error as? WindowGuard.ScriptError) == .notAllowed {
+                    outcome.notAllowed = true
+                    tracker.reset()
+                    break
+                }
             }
         }
-        if wasNotAllowed {
+        return outcome
+    }
+
+    /// Main thread.
+    private func finish(_ outcome: Outcome) {
+        busy = false
+        for (path, view) in outcome.applied { onApplied?(path, view) }
+        for error in outcome.errors { report(error) }
+        if !outcome.notAllowed && wasNotAllowed {
             wasNotAllowed = false
             onNotAllowed?(true)
+        }
+        if again {
+            again = false
+            check()
         }
     }
 

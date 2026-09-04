@@ -30,17 +30,17 @@ history, Time Machine markers, and `.metadata_never_index`.
 
 **Governs views.** One default view for every folder on every disk: mode, sort, grouping, and every value
 from Finder's View Options window for each mode, including the Desktop. Folders can have a view of their own,
-which the folders beneath them share unless they have one too. Applying relaunches Finder once.
+which the folders beneath them share unless they have one too. Applying quits Finder, writes its
+preferences and the folder records, and starts it again.
 
-Finder reads a folder's own view from the folder's `.DS_Store` when opened directly and from the parent
-folder's when reached from there; Sift writes the record in both and keeps each file to exactly that, so a
-view changed in Finder never outlives the window. Finder also
-keeps a window's view while you browse; Sift watches Finder's windows and gives each folder the view it should
-have as soon as a window shows it, the default included: a window leaving a custom folder for an ordinary one
-is put back to the default in that same step. That needs Automation access (asked once). Sift looks at
-Finder's windows once a second while Finder is the frontmost app, and with Accessibility access new and
-focused windows are handled at once. Every view it sets is listed under Activity, so it is easy to see it
-working.
+Finder reads a folder's own view from the parent folder's `.DS_Store`, under the folder's name; Sift writes
+that one record and keeps the file to exactly that, so a view changed in Finder never outlives the window.
+Finder also keeps a window's view while you browse; Sift watches Finder's windows and gives each folder the
+view it should have as soon as a window shows it, the default included: a window leaving a custom folder for
+an ordinary one is put back to the default in that same step. That needs Automation access (asked once).
+Sift looks at Finder's windows once a second while Finder is the frontmost app, and with Accessibility
+access new and focused windows are handled at once. Finder is spoken to from a separate process with a
+short timeout, so a busy Finder never holds Sift's window. Every view it sets is listed under Activity.
 
 ## The window
 
