@@ -6,57 +6,165 @@ import Foundation
 /// view above it, or the default. Finder's habit of saving a view as you adjust
 /// it thus lasts exactly until you leave the folder.
 ///
-/// Finder is scripted from a separate `osascript` process, never from Sift's
-/// own threads: a Finder busy with a deletion can hold an Apple event for a
-/// long time, and that must never hold Sift's window or menu bar. Every script
+/// One script does the whole look: it carries the rules (folder views, longest
+/// path first, then the default) and the windows already seen, lists Finder's
+/// windows, and gives every window that moved its view right there. Finder is
+/// scripted from a separate `osascript` process, never from Sift's own
+/// threads: a Finder busy with a deletion can hold an Apple event for a long
+/// time, and that must never hold Sift's window or menu bar. Every script
 /// carries its own timeout, and the process is killed if it outlives it.
 public enum WindowGuard {
     public struct Window: Hashable {
         public let id: Int
         public let path: String
+        /// "id path" exactly as the script wrote it; handed back so the script knows it.
+        public let raw: String
 
         public init(id: Int, path: String) {
             self.id = id
             self.path = Paths.standardize(path)
+            raw = "\(id) \(path)"
         }
     }
 
-    /// Seconds Finder gets to answer one script.
+    /// A folder view as the script matches it: paths inside `prefix` get `view`.
+    /// The default rule has an empty prefix and comes last.
+    public struct Rule: Hashable {
+        public let prefix: String
+        public let view: FinderView
+        public let owner: String?
+
+        public var label: String { view.mode.label + (owner == nil ? " (default)" : "") }
+    }
+
+    /// Folder views longest path first, then the default: the first match is
+    /// the nearest folder view above a path, as `ViewSettings.view(for:)` decides.
+    public static func rules(_ settings: ViewSettings) -> [Rule] {
+        let custom = settings.folders
+            .sorted { ($0.path.count, $0.path) > ($1.path.count, $1.path) }
+            .map { Rule(prefix: Paths.standardize($0.path), view: $0.view, owner: $0.path) }
+        return custom + [Rule(prefix: "", view: settings.default, owner: nil)]
+    }
+
+    public struct Applied: Hashable {
+        public let window: Window
+        public let rule: Int
+    }
+
+    public struct Failure: Hashable {
+        public let id: Int
+        public let number: Int
+        public let path: String
+        public let message: String
+    }
+
+    /// What one look found: every window on a folder, those given a view, and
+    /// those that refused. A window that refused is not in `windows`.
+    public struct Report: Hashable {
+        public var windows: [Window] = []
+        public var applied: [Applied] = []
+        public var failures: [Failure] = []
+
+        public init() {}
+    }
+
+    /// Seconds Finder gets to answer one request.
     public static let scriptTimeout = 3
 
-    /// Every Finder window as "id posix-path", one per line. Windows on things
-    /// that are not folders (Recents, AirDrop, the Trash) are left out.
-    ///
-    /// The ids come in one request; each window is then addressed by id. A window
-    /// that closes or is mid-navigation meanwhile answers with an error and is
-    /// left out this time (it is seen the next second). The id is coerced only
-    /// as a local value: inside a `tell` block AppleScript folds `(id of w) as
-    /// text` into the request itself, and Finder answers that with "Unknown
-    /// object type".
-    public static let listScript = """
-    with timeout of \(scriptTimeout) seconds
-    set out to {}
-    tell application "Finder"
-    set ids to id of every Finder window
-    repeat with k from 1 to count of ids
-    set n to item k of ids
-    try
-    set p to POSIX path of ((target of Finder window id n) as alias)
-    set end of out to (n as text) & " " & p
-    end try
-    end repeat
-    end tell
-    set AppleScript's text item delimiters to linefeed
-    return out as text
-    end timeout
-    """
-
-    public static func parse(_ output: String) -> [Window] {
-        output.split(separator: "\n", omittingEmptySubsequences: true).compactMap { line in
-            let parts = line.split(separator: " ", maxSplits: 1).map(String.init)
-            guard parts.count == 2, let id = Int(parts[0]), parts[1].hasPrefix("/") else { return nil }
-            return Window(id: id, path: parts[1])
+    /// A string as AppleScript source. Plain ASCII is quoted; anything else is
+    /// built from code points, so the script stays ASCII whatever osascript
+    /// assumes about its input.
+    static func literal(_ string: String) -> String {
+        if string.unicodeScalars.allSatisfy({ $0.isASCII && $0.value >= 0x20 && $0.value < 0x7F }) {
+            return "\"" + string.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\""
         }
+        return "(string id {" + string.unicodeScalars.map { String($0.value) }.joined(separator: ", ") + "})"
+    }
+
+    /// The script for one look. Output, one line per window:
+    ///   `= id path`         seen before, left alone
+    ///   `+ rule id path`    moved: given the view of rule `rule`
+    ///   `! id number path<TAB>message`  moved, but Finder refused
+    /// Windows on things that are not folders (Recents, AirDrop, the Trash) are
+    /// left out. The ids come in one request; each window is then addressed by
+    /// id, so one that closes meanwhile only drops out of this look.
+    public static func lookScript(rules: [Rule], known: [String]) -> String {
+        var lines = [
+            "with timeout of \(scriptTimeout) seconds",
+            "set nl to linefeed",
+            "set sep to tab",
+            "set known to {" + known.map(literal).joined(separator: ", ") + "}",
+            "set out to {}",
+            "considering case",
+            "tell application \"Finder\"",
+            "set ids to id of every Finder window",
+            "repeat with k from 1 to count of ids",
+            "set n to item k of ids",
+            "set p to \"\"",
+            "try",
+            "set p to POSIX path of ((target of Finder window id n) as alias)",
+            "end try",
+            "if p is not \"\" then",
+            "if p does not end with \"/\" then set p to p & \"/\"",
+            "set entry to (n as text) & \" \" & p",
+            "if known contains entry then",
+            "set end of out to \"= \" & entry",
+            "else",
+            "try",
+            "set w to Finder window id n",
+        ]
+        for (index, rule) in rules.enumerated() {
+            if rule.prefix.isEmpty {
+                lines.append(index == 0 ? "if true then" : "else")
+            } else {
+                let prefix = rule.prefix == "/" ? "/" : rule.prefix + "/"
+                lines.append((index == 0 ? "if" : "else if") + " p starts with \(literal(prefix)) then")
+            }
+            lines += viewLines(rule.view)
+            lines.append("set end of out to \"+ \(index) \" & entry")
+        }
+        lines += [
+            "end if",
+            "on error msg number num",
+            "set end of out to \"! \" & (n as text) & \" \" & (num as text) & \" \" & p & sep & msg",
+            "end try",
+            "end if",
+            "end if",
+            "end repeat",
+            "end tell",
+            "end considering",
+            "set AppleScript's text item delimiters to nl",
+            "return out as text",
+            "end timeout",
+        ]
+        return lines.joined(separator: "\n")
+    }
+
+    public static func parse(_ output: String) -> Report {
+        var report = Report()
+        for line in output.split(separator: "\n", omittingEmptySubsequences: true) {
+            let parts = line.split(separator: " ", maxSplits: 3, omittingEmptySubsequences: false).map(String.init)
+            switch parts.first {
+            case "=":
+                guard parts.count >= 3, let id = Int(parts[1]) else { continue }
+                let path = parts.dropFirst(2).joined(separator: " ")
+                guard path.hasPrefix("/") else { continue }
+                report.windows.append(Window(id: id, path: path))
+            case "+":
+                guard parts.count == 4, let rule = Int(parts[1]), let id = Int(parts[2]), parts[3].hasPrefix("/") else { continue }
+                let window = Window(id: id, path: parts[3])
+                report.windows.append(window)
+                report.applied.append(Applied(window: window, rule: rule))
+            case "!":
+                guard parts.count == 4, let id = Int(parts[1]), let number = Int(parts[2]) else { continue }
+                let rest = parts[3].split(separator: "\t", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
+                report.failures.append(Failure(id: id, number: number, path: Paths.standardize(rest[0]),
+                                               message: rest.count > 1 ? rest[1] : ""))
+            default:
+                continue
+            }
+        }
+        return report
     }
 
     /// Finder's name for a mode. Gallery view is "flow view" in Finder's
@@ -70,34 +178,40 @@ public enum WindowGuard {
         }
     }
 
-    static func arrangement(_ key: SortKey) -> String {
+    /// Finder's dictionary has no term for Date Added: that sort is left to the
+    /// preferences and the folder record, which do know it.
+    static func arrangement(_ key: SortKey) -> String? {
         switch key {
-        case .name, .dateAdded: return "arranged by name"
+        case .name: return "arranged by name"
         case .dateModified: return "arranged by modification date"
         case .dateCreated: return "arranged by creation date"
         case .size: return "arranged by size"
         case .kind: return "arranged by kind"
+        case .dateAdded: return nil
         }
     }
 
-    static func column(_ key: SortKey) -> String {
+    static func column(_ key: SortKey) -> String? {
         switch key {
-        case .name, .dateAdded: return "name column"
+        case .name: return "name column"
         case .dateModified: return "modification date column"
         case .dateCreated: return "creation date column"
         case .size: return "size column"
         case .kind: return "kind column"
+        case .dateAdded: return nil
         }
     }
 
-    /// The script that gives one window a view. Each option is set on its own
-    /// so one Finder does not know about does not stop the rest.
-    public static func applyScript(windowID: Int, view: FinderView) -> String {
-        var lines = ["with timeout of \(scriptTimeout) seconds", "tell application \"Finder\"",
-                     "set w to Finder window id \(windowID)",
-                     "set current view of w to \(viewName(view.mode))"]
-        func option(_ property: String, _ value: String) {
-            lines += ["try", "set \(property) of o to \(value)", "end try"]
+    /// Lines that give window `w` a view. Mode and options are set only when
+    /// they differ: Finder records every change in a `.DS_Store`, and a window
+    /// keeps the last folder's options when the mode is the same. Each option
+    /// is set on its own so one Finder does not know about does not stop the rest.
+    public static func viewLines(_ view: FinderView) -> [String] {
+        let name = viewName(view.mode)
+        var lines = ["if current view of w is not \(name) then set current view of w to \(name)"]
+        func option(_ property: String, _ value: String?) {
+            guard let value else { return }
+            lines += ["try", "if \(property) of o is not \(value) then set \(property) of o to \(value)", "end try"]
         }
         let o = view.options
         switch view.mode {
@@ -112,7 +226,9 @@ public enum WindowGuard {
         case .list:
             lines.append("set o to list view options of w")
             option("sort column", column(view.sortKey))
-            option("sort direction of sort column", view.ascending ? "normal" : "reversed")
+            if column(view.sortKey) != nil {
+                option("sort direction of sort column", view.ascending ? "normal" : "reversed")
+            }
             option("icon size", o.list.largeIcons ? "large icon" : "small icon")
             option("text size", "\(Int(o.list.textSize))")
             option("uses relative dates", "\(o.list.relativeDates)")
@@ -127,8 +243,7 @@ public enum WindowGuard {
         case .gallery:
             break
         }
-        lines += ["end tell", "end timeout"]
-        return lines.joined(separator: "\n")
+        return lines
     }
 
     /// Quits Finder the way the Quit menu item would. Finder then stays quit
@@ -140,26 +255,20 @@ public enum WindowGuard {
     end timeout
     """
 
-    /// Remembers where each window was, so only windows that moved are acted on.
+    /// Remembers where each window was, so the script acts only on windows that moved.
     public struct Tracker {
         private var known: [Int: String] = [:]
 
         public init() {}
 
-        /// Windows that are new or now show a different folder; forgets closed windows.
-        public mutating func moved(_ windows: [Window]) -> [Window] {
-            var next: [Int: String] = [:]
-            var out: [Window] = []
-            for window in windows {
-                next[window.id] = window.path
-                if known[window.id] != window.path { out.append(window) }
-            }
-            known = next
-            return out
-        }
+        /// What the next look is told.
+        public var lines: [String] { known.values.sorted() }
 
-        /// The window will count as moved next time (its view could not be set).
-        public mutating func forget(_ id: Int) { known[id] = nil }
+        /// Windows the look reported are known from now on; a window that
+        /// refused, or is gone, is not, so it is looked at again next time.
+        public mutating func update(with report: Report) {
+            known = Dictionary(report.windows.map { ($0.id, $0.raw) }, uniquingKeysWith: { a, _ in a })
+        }
 
         public mutating func reset() { known = [:] }
     }
@@ -210,7 +319,7 @@ public enum WindowGuard {
     /// caller for at most a little over the script's timeout.
     public enum OSAScript {
         /// Returns the script's result as osascript prints it.
-        public static func run(_ source: String, killAfter seconds: TimeInterval = TimeInterval(scriptTimeout) + 3) throws -> String {
+        public static func run(_ source: String, killAfter seconds: TimeInterval = TimeInterval(scriptTimeout) * 2 + 2) throws -> String {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
             process.arguments = []  // no file: the script comes on standard input
@@ -239,12 +348,9 @@ public enum WindowGuard {
     public final class Session {
         public init() {}
 
-        public func windows() throws -> [Window] {
-            WindowGuard.parse(try OSAScript.run(WindowGuard.listScript))
-        }
-
-        public func apply(_ view: FinderView, to windowID: Int) throws {
-            _ = try OSAScript.run(WindowGuard.applyScript(windowID: windowID, view: view))
+        /// One look: lists the windows and gives the moved ones their view.
+        public func look(_ rules: [Rule], known: [String]) throws -> Report {
+            WindowGuard.parse(try OSAScript.run(WindowGuard.lookScript(rules: rules, known: known)))
         }
 
         public func quitFinder() throws {

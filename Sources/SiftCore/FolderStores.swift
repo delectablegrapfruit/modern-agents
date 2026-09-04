@@ -10,9 +10,17 @@ import Foundation
 /// need no record: a window keeps its view while browsing down, and the window
 /// guard covers the rest. A folder with no writable parent on its disk (a
 /// volume's top level) gets the record in its own store instead.
+///
+/// The same store also records, for every other folder in it, the view that
+/// folder should have (the default, or an enclosing folder view): Finder would
+/// otherwise carry the custom view into a folder next to it until the guard
+/// corrects the window, a visible flicker. With the record, the folder opens
+/// right at once.
 public struct StorePlan: Hashable {
     /// Records per store directory, keyed by the directory (not the file).
     public let stores: [String: [DSRecord]]
+    /// What every folder next to a custom one should look like.
+    let settings: ViewSettings
 
     /// Only folders that exist take part.
     public init(settings: ViewSettings, safety: Safety = Safety(), fileManager: FileManager = .default) {
@@ -25,6 +33,7 @@ public struct StorePlan: Hashable {
             }
         }
         self.stores = stores
+        self.settings = settings
     }
 
     public var isEmpty: Bool { stores.isEmpty }
@@ -75,17 +84,42 @@ public struct StorePlan: Hashable {
         return out
     }
 
+    /// A directory with more folders than this gets no sibling records: the
+    /// store would grow large, and the guard covers those folders anyway.
+    static let siblingLimit = 100
+
     /// The complete contents for a managed store: the plan's records plus a window
-    /// record per viewed name, reusing the one Finder already wrote when there is one.
+    /// record per viewed name, reusing the one Finder already wrote when there is
+    /// one, plus a record for every other folder in the directory.
     public func contents(of directory: String, existing: DSStore?) throws -> [DSRecord]? {
-        guard let planned = stores[Paths.standardize(directory)] else { return nil }
+        let d = Paths.standardize(directory)
+        guard let planned = stores[d] else { return nil }
         var out = planned
-        for name in Set(planned.map(\.filename)).sorted() {
+        let names = Set(planned.map(\.filename))
+        for name in names.sorted() {
             if let window = existing?.records.first(where: { $0.filename == name && $0.structID == "bwsp" }) {
                 out.append(window)
             } else {
                 out.append(DSRecord(filename: name, structID: "bwsp", value: .blob(try Plist.data(StorePlan.defaultWindow))))
             }
+        }
+        out += try siblingRecords(in: d, except: names)
+        return out
+    }
+
+    /// The view of every other folder in a managed directory, as records.
+    func siblingRecords(in directory: String, except names: Set<String>) throws -> [DSRecord] {
+        guard let entries = Files.names(in: directory) else { return [] }
+        let safety = Safety()
+        var folders: [String] = []
+        for name in entries where !names.contains(name) {
+            let path = Paths.join(directory, name)
+            if Files.isBrowsable(path: path, name: name), !safety.isProtected(path) { folders.append(name) }
+        }
+        guard folders.count <= StorePlan.siblingLimit else { return [] }
+        var out: [DSRecord] = []
+        for name in folders.sorted() {
+            out += try StorePlan.records(for: settings.view(for: Paths.join(directory, name)).view, as: name)
         }
         return out
     }

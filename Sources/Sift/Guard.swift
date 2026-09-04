@@ -180,38 +180,29 @@ final class Guardian {
         }
     }
 
-    /// Queue. Every window that moved gets the view of the folder it now shows: its own,
-    /// the custom folder above it, or the default. One refusal never skips the rest.
+    /// Queue. One script lists Finder's windows and gives every window that moved
+    /// the view of the folder it now shows: its own, the custom folder above it,
+    /// or the default. One refusal never skips the rest.
     private func look(_ settings: ViewSettings) -> Outcome {
         var outcome = Outcome()
-        let windows: [WindowGuard.Window]
+        let rules = WindowGuard.rules(settings)
+        let report: WindowGuard.Report
         do {
-            windows = try session.windows()
+            report = try session.look(rules, known: tracker.lines)
         } catch {
             outcome.notAllowed = (error as? WindowGuard.ScriptError) == .notAllowed
             outcome.errors.append(outcome.notAllowed ? error : Problem("Finder's windows could not be read: " + error.localizedDescription))
+            if outcome.notAllowed { tracker.reset() }
             return outcome
         }
-        for window in tracker.moved(windows) {
-            let (view, owner) = settings.view(for: window.path)
-            do {
-                try session.apply(view, to: window.id)
-                outcome.applied.append((window.path, view.mode.label + (owner == nil ? " (default)" : "")))
-            } catch {
-                // Not done: looked at again next time.
-                tracker.forget(window.id)
-                switch error as? WindowGuard.ScriptError {
-                case .notAllowed:
-                    outcome.notAllowed = true
-                    outcome.errors.append(error)
-                    tracker.reset()
-                    return outcome
-                case .gone:
-                    continue  // closed, or between folders: nothing to say
-                default:
-                    outcome.errors.append(Problem("Finder did not take the view of \(Paths.display(window.path)): " + error.localizedDescription))
-                }
-            }
+        tracker.update(with: report)
+        for applied in report.applied where rules.indices.contains(applied.rule) {
+            outcome.applied.append((applied.window.path, rules[applied.rule].label))
+        }
+        // A window that closed, or is between folders, has nothing to say; it is
+        // looked at again next time either way.
+        for failure in report.failures where failure.number != -1728 {
+            outcome.errors.append(Problem("Finder did not take the view of \(Paths.display(failure.path)): " + failure.message))
         }
         return outcome
     }

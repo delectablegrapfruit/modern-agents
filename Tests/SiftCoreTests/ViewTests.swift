@@ -200,17 +200,36 @@ final class StoreTests: XCTestCase {
     }
 
     func testStoreLivesInTheParent() throws {
+        try box.dir("Documents")
+        try box.dir("Tool.app/Contents")
+        try box.dir(".hidden")
+        try box.file("notes.txt")
         let plan = StorePlan(settings: settings([FolderView(path: box.path + "/Pictures", view: FinderView(mode: .gallery))]))
         XCTAssertEqual(StorePlan.storeDirectory(for: box.path + "/Pictures"), box.path)
         XCTAssertEqual(StorePlan.storeDirectory(for: "/"), "/")
         XCTAssertEqual(plan.storePaths, [box.path + "/.DS_Store"], "the parent's store alone: Finder ignores a folder's own \".\" record")
         XCTAssertEqual(try plan.writeAll(), 1)
         let records = try box.records(".DS_Store")
-        XCTAssertEqual(Set(records.map(\.filename)), ["Pictures"])
-        XCTAssertEqual(records.map(\.structID).sorted(), ["bwsp", "glvp", "vSrn", "vstl"])
-        XCTAssertTrue(records.contains { $0.structID == "vstl" && $0.value == .type("glyv") })
+        XCTAssertEqual(Set(records.map(\.filename)), ["Pictures", "Documents"], "the folder next to it gets the default; packages, hidden folders and files do not")
+        let pictures = records.filter { $0.filename == "Pictures" }
+        XCTAssertEqual(pictures.map(\.structID).sorted(), ["bwsp", "glvp", "vSrn", "vstl"])
+        XCTAssertTrue(pictures.contains { $0.structID == "vstl" && $0.value == .type("glyv") })
+        let documents = records.filter { $0.filename == "Documents" }
+        XCTAssertEqual(documents.map(\.structID).sorted(), ["icvp", "vSrn", "vstl"], "the default view, no window record")
+        XCTAssertTrue(documents.contains { $0.structID == "vstl" && $0.value == .type("icnv") })
         XCTAssertFalse(box.exists("Pictures/.DS_Store"))
         XCTAssertEqual(try plan.writeAll(), 0, "already as planned")
+    }
+
+    func testFoldersInsideAFolderViewInheritItInTheirRecords() throws {
+        try box.dir("Pictures/Raw")
+        let inner = FolderView(path: box.path + "/Pictures/Raw", view: FinderView(mode: .columns))
+        let plan = StorePlan(settings: settings([FolderView(path: box.path + "/Pictures", view: FinderView(mode: .gallery)), inner]))
+        XCTAssertEqual(plan.storePaths, [box.path + "/.DS_Store", box.path + "/Pictures/.DS_Store"])
+        try plan.writeAll()
+        let records = try box.records("Pictures/.DS_Store")
+        XCTAssertEqual(records.filter { $0.filename == "Raw" && $0.structID == "vstl" }.map(\.value), [.type("clmv")])
+        XCTAssertEqual(records.filter { $0.filename == "2024" && $0.structID == "vstl" }.map(\.value), [.type("glyv")], "a plain folder inside gets the enclosing view")
     }
 
     func testStoreLivesInTheFolderWhenTheParentCannotBeWritten() throws {
@@ -240,9 +259,11 @@ final class StoreTests: XCTestCase {
 
         XCTAssertTrue(try plan.write(directory: box.path))
         let kept = try box.records(".DS_Store")
-        XCTAssertEqual(Set(kept.map(\.filename)), ["Pictures"], "a sibling's view and icon positions go")
+        XCTAssertEqual(Set(kept.map(\.filename)), ["Pictures", "Documents"], "icon positions go")
         XCTAssertTrue(kept.contains { $0.structID == "bwsp" && $0.value == .blob(Data([1, 2, 3])) }, "Finder's window geometry stays")
-        XCTAssertEqual(kept.filter { $0.structID == "vstl" }.map(\.value), [.type("glyv")])
+        XCTAssertEqual(kept.filter { $0.filename == "Pictures" && $0.structID == "vstl" }.map(\.value), [.type("glyv")])
+        XCTAssertEqual(kept.filter { $0.filename == "Documents" && $0.structID == "vstl" }.map(\.value), [.type("icnv")], "a view chosen in Finder for the folder next to it goes back to the default")
+        XCTAssertFalse(kept.contains { $0.filename == "Documents" && $0.structID == "bwsp" })
         XCTAssertFalse(try plan.write(directory: box.path))
 
         try FileManager.default.removeItem(at: box.url(".DS_Store"))
@@ -263,54 +284,81 @@ final class StoreTests: XCTestCase {
 }
 
 final class WindowGuardTests: XCTestCase {
-    func testParsesWindowLines() {
+    func testParsesTheLookReport() {
         XCTAssertEqual(WindowGuard.errorNumber(in: "36:52: execution error: Not authorized to send Apple events to Finder. (-1743)"), -1743)
         XCTAssertEqual(WindowGuard.errorNumber(in: "syntax error: A identifier can't go after this identifier. (-2740)\n"), -2740)
         XCTAssertNil(WindowGuard.errorNumber(in: "killed"))
         XCTAssertEqual(WindowGuard.error("36:52: execution error: Finder got an error: Can’t get Finder window id 9. (-1728)"), .gone)
         XCTAssertEqual(WindowGuard.error("114:116: execution error: Finder got an error: Unknown object type. (-1731)\n"),
                        .failed("Finder got an error: Unknown object type. (-1731)"))
-        let windows = WindowGuard.parse("12 /Users/me/Documents/\nx /nope\nnospace\n\n7 /Volumes/USB/My Photos/\n")
-        XCTAssertEqual(windows, [.init(id: 12, path: "/Users/me/Documents"), .init(id: 7, path: "/Volumes/USB/My Photos")])
-        XCTAssertEqual(WindowGuard.parse(""), [])
+
+        let report = WindowGuard.parse("= 12 /Users/me/Documents/\n+ 1 7 /Volumes/USB/My Photos/\n! 9 -1728 /Users/me/Old/\tFinder got an error: Can’t get Finder window id 9.\nx /nope\n\n= 3 relative/\n")
+        XCTAssertEqual(report.windows, [.init(id: 12, path: "/Users/me/Documents/"), .init(id: 7, path: "/Volumes/USB/My Photos/")])
+        XCTAssertEqual(report.windows.map(\.path), ["/Users/me/Documents", "/Volumes/USB/My Photos"])
+        XCTAssertEqual(report.windows.map(\.raw), ["12 /Users/me/Documents/", "7 /Volumes/USB/My Photos/"], "handed back to the next look as written")
+        XCTAssertEqual(report.applied, [.init(window: .init(id: 7, path: "/Volumes/USB/My Photos/"), rule: 1)])
+        XCTAssertEqual(report.failures, [.init(id: 9, number: -1728, path: "/Users/me/Old", message: "Finder got an error: Can’t get Finder window id 9.")])
+        XCTAssertEqual(WindowGuard.parse("").windows, [])
     }
 
-    func testTrackerReportsOnlyWindowsThatMoved() {
+    func testTrackerTellsTheNextLookWhatItSaw() {
         var tracker = WindowGuard.Tracker()
-        let a = WindowGuard.Window(id: 1, path: "/Users/me/Pictures")
-        let b = WindowGuard.Window(id: 2, path: "/Users/me")
-        XCTAssertEqual(tracker.moved([a, b]), [a, b])
-        XCTAssertEqual(tracker.moved([a, b]), [])
-        let a2 = WindowGuard.Window(id: 1, path: "/Users/me/Documents")
-        XCTAssertEqual(tracker.moved([a2, b]), [a2])
-        XCTAssertEqual(tracker.moved([a2]), [])
-        XCTAssertEqual(tracker.moved([a2, b]), [b], "a closed window counts as new when it comes back")
-        tracker.forget(2)
-        XCTAssertEqual(tracker.moved([a2, b]), [b], "a forgotten window is looked at again")
+        XCTAssertEqual(tracker.lines, [])
+        tracker.update(with: WindowGuard.parse("= 1 /Users/me/Pictures/\n+ 0 2 /Users/me/\n! 3 -1728 /Users/me/Gone/\toops"))
+        XCTAssertEqual(tracker.lines, ["1 /Users/me/Pictures/", "2 /Users/me/"], "a window that refused is looked at again")
+        tracker.update(with: WindowGuard.parse("+ 0 1 /Users/me/Documents/"))
+        XCTAssertEqual(tracker.lines, ["1 /Users/me/Documents/"], "closed windows are forgotten")
+        tracker.reset()
+        XCTAssertEqual(tracker.lines, [])
     }
 
-    func testScriptsFollowTheView() {
-        var view = FinderView(mode: .list, sortKey: .dateModified)
-        view.options.list.largeIcons = true
-        let list = WindowGuard.applyScript(windowID: 42, view: view)
-        XCTAssertTrue(list.contains("Finder window id 42"))
-        XCTAssertTrue(list.contains("set current view of w to list view"))
-        XCTAssertTrue(list.contains("set sort column of o to modification date column"))
-        XCTAssertTrue(list.contains("set sort direction of sort column of o to reversed"))
-        XCTAssertTrue(list.contains("set icon size of o to large icon"))
-        XCTAssertTrue(list.hasPrefix("with timeout of"), "a busy Finder never holds the caller for long")
-        let gallery = WindowGuard.applyScript(windowID: 1, view: FinderView(mode: .gallery))
-        XCTAssertTrue(gallery.contains("set current view of w to flow view"), "Finder's name for the gallery view")
-        XCTAssertFalse(gallery.contains("gallery view"), "not a term Finder knows")
-        var icons = FinderView(mode: .icons, sortKey: .kind)
-        icons.options.icon.iconSize = 128
-        let script = WindowGuard.applyScript(windowID: 3, view: icons)
-        XCTAssertTrue(script.contains("set arrangement of o to arranged by kind"))
-        XCTAssertTrue(script.contains("set icon size of o to 128"))
-        XCTAssertTrue(WindowGuard.listScript.contains("POSIX path"))
-        XCTAssertTrue(WindowGuard.listScript.contains("set ids to id of every Finder window"), "one request for every id")
-        XCTAssertTrue(WindowGuard.listScript.contains("target of Finder window id n"), "each window addressed by id, never as item N of a changing list")
-        XCTAssertFalse(WindowGuard.listScript.contains("id of w) as text"), "Finder cannot fetch and coerce in one step")
+    func testRulesMatchTheNearestFolderView() {
+        var s = ViewSettings()
+        s.default = FinderView(mode: .list)
+        s.folders = [FolderView(path: "/Users/me/Pictures", view: FinderView(mode: .gallery)),
+                     FolderView(path: "/Users/me/Pictures/Raw", view: FinderView(mode: .columns)),
+                     FolderView(path: "/Volumes/USB", view: FinderView(mode: .icons))]
+        let rules = WindowGuard.rules(s)
+        XCTAssertEqual(rules.map(\.prefix), ["/Users/me/Pictures/Raw", "/Users/me/Pictures", "/Volumes/USB", ""], "longest path first, the default last")
+        XCTAssertEqual(rules.map(\.label), ["Columns", "Gallery", "Icons", "List (default)"])
+        for path in ["/Users/me/Pictures/Raw/2024", "/Users/me/Pictures", "/Users/me/Pictures2", "/Volumes/USB/x", "/"] {
+            let expected = s.view(for: path).view
+            let matched = rules.first { $0.prefix.isEmpty || Paths.isInside(path, $0.prefix) }!
+            XCTAssertEqual(matched.view, expected, path)
+        }
+    }
+
+    func testLookScriptCarriesRulesAndKnownWindows() {
+        var s = ViewSettings()
+        s.default = FinderView(mode: .list, sortKey: .dateModified)
+        s.default.options.list.largeIcons = true
+        s.folders = [FolderView(path: "/Users/me/Pictures", view: FinderView(mode: .gallery)),
+                     FolderView(path: "/Users/me/Zoë \"quoted\"", view: FinderView(mode: .icons, sortKey: .kind))]
+        let script = WindowGuard.lookScript(rules: WindowGuard.rules(s), known: ["12 /Users/me/Documents/"])
+        XCTAssertTrue(script.hasPrefix("with timeout of"), "a busy Finder never holds the caller for long")
+        XCTAssertTrue(script.contains("set known to {\"12 /Users/me/Documents/\"}"))
+        XCTAssertTrue(script.contains("set ids to id of every Finder window"), "one request for every id")
+        XCTAssertTrue(script.contains("target of Finder window id n"), "each window addressed by id, never as item N of a changing list")
+        XCTAssertFalse(script.contains("id of w) as text"), "Finder cannot fetch and coerce in one step")
+        XCTAssertTrue(script.contains("if p starts with (string id {47, 85, 115, 101, 114, 115, 47, 109, 101, 47, 90, 111, 235, 32, 34, 113, 117, 111, 116, 101, 100, 34, 47}) then"), "non-ASCII paths are built from code points so the script stays ASCII")
+        XCTAssertTrue(script.contains("else if p starts with \"/Users/me/Pictures/\" then"))
+        XCTAssertTrue(script.contains("if current view of w is not flow view then set current view of w to flow view"), "Finder's name for the gallery view")
+        XCTAssertFalse(script.contains("gallery view"), "not a term Finder knows")
+        XCTAssertTrue(script.contains("if arrangement of o is not arranged by kind then set arrangement of o to arranged by kind"), "set only when it differs: Finder records every change")
+        XCTAssertTrue(script.contains("then set sort column of o to modification date column"))
+        XCTAssertTrue(script.contains("then set sort direction of sort column of o to reversed"))
+        XCTAssertTrue(script.contains("then set icon size of o to large icon"))
+        let added = WindowGuard.viewLines(FinderView(mode: .list, sortKey: .dateAdded)).joined(separator: "\n")
+        XCTAssertFalse(added.contains("sort column"), "Finder has no term for Date Added; the preferences and the record keep it")
+        XCTAssertFalse(added.contains("sort direction"))
+        XCTAssertFalse(WindowGuard.viewLines(FinderView(mode: .icons, sortKey: .dateAdded)).joined().contains("arrangement"))
+        XCTAssertTrue(script.contains("set end of out to \"+ 2 \" & entry"), "the default is the last rule")
+        XCTAssertTrue(script.contains("on error msg number num"))
+        XCTAssertTrue(script.unicodeScalars.allSatisfy { $0.isASCII })
+        XCTAssertEqual(WindowGuard.literal("a\\b\"c"), "\"a\\\\b\\\"c\"")
+        let none = WindowGuard.lookScript(rules: WindowGuard.rules(ViewSettings()), known: [])
+        XCTAssertTrue(none.contains("set known to {}"))
+        XCTAssertTrue(none.contains("if true then"), "only the default: no folder to match")
     }
 }
 
