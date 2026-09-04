@@ -32,6 +32,25 @@
     return dbPromise;
   }
   const wrap = req => new Promise((res, rej) => { req.onsuccess = () => res(req.result); req.onerror = () => rej(req.error); });
+  /* Blobs are stored as raw bytes: some WebKit data stores (private/ephemeral sessions) cannot clone Blob objects
+     into IndexedDB ("Error preparing Blob/File data to be stored in object store"), and bytes round-trip everywhere.
+     Top-level Blob fields are frozen on write and thawed back into Blobs on read; callers never see the difference. */
+  const BLOB_TAG = '__blob__';
+  async function freeze(value) {
+    if (!value || typeof value !== 'object') return value;
+    let out = null;
+    for (const k of Object.keys(value)) {
+      const v = value[k];
+      if (v instanceof Blob) { out = out || Object.assign({}, value); out[k] = { [BLOB_TAG]: 1, type: v.type || '', buf: await v.arrayBuffer() }; }
+    }
+    return out || value;
+  }
+  function thaw(value) {
+    if (!value || typeof value !== 'object') return value;
+    for (const k of Object.keys(value)) { const v = value[k]; if (v && typeof v === 'object' && v[BLOB_TAG] === 1 && v.buf) value[k] = new Blob([v.buf], { type: v.type || '' }); }
+    return value;
+  }
+
   async function tx(store, mode, fn) {
     const db = await open();
     return new Promise((resolve, reject) => {
@@ -46,11 +65,11 @@
 
   const DB = {
     open,
-    get: (store, key) => tx(store, 'readonly', s => wrap(s.get(key))),
-    getAll: store => tx(store, 'readonly', s => wrap(s.getAll())),
-    byIndex: (store, index, value) => tx(store, 'readonly', s => wrap(s.index(index).getAll(value))),
-    put: (store, value) => tx(store, 'readwrite', s => wrap(s.put(value))).then(() => value),
-    putMany: (store, values) => tx(store, 'readwrite', s => { for (const v of values) s.put(v); }),
+    get: (store, key) => tx(store, 'readonly', s => wrap(s.get(key))).then(thaw),
+    getAll: store => tx(store, 'readonly', s => wrap(s.getAll())).then(rows => rows.map(thaw)),
+    byIndex: (store, index, value) => tx(store, 'readonly', s => wrap(s.index(index).getAll(value))).then(rows => rows.map(thaw)),
+    put: async (store, value) => { const frozen = await freeze(value); await tx(store, 'readwrite', s => wrap(s.put(frozen))); return value; },
+    putMany: async (store, values) => { const frozen = await Promise.all(values.map(freeze)); return tx(store, 'readwrite', s => { for (const v of frozen) s.put(v); }); },
     delete: (store, key) => tx(store, 'readwrite', s => wrap(s.delete(key))),
     deleteMany: (store, keys) => tx(store, 'readwrite', s => { for (const k of keys) s.delete(k); }),
     clear: store => tx(store, 'readwrite', s => wrap(s.clear())),
