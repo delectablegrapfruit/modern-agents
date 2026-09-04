@@ -128,6 +128,8 @@
       // a window-capture listener registered before the extension arms its
       // blocking listener may still see them).
       window.__pageWheel = { window: 0, document: 0, video: 0 };
+      window.__clicks = 0;
+      document.getElementById('plain').addEventListener('click', () => window.__clicks++);
       window.addEventListener('wheel', () => window.__pageWheel.window++, { capture: true, passive: true });
       document.addEventListener('wheel', () => window.__pageWheel.document++, { passive: true });
       document.getElementById('plain').addEventListener('wheel', () => window.__pageWheel.video++, { passive: true });

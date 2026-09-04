@@ -607,6 +607,54 @@ test('a fast burst on an expensive (long-GOP) clip shows frames progressively an
   assert.ok(landed - inputDone < 1000, `took ${landed - inputDone} ms to settle after input stopped`);
 });
 
+/* ---- Press and hold ---------------------------------------------------- */
+
+test('press and hold on a playing video plays it at 2x until release, and the release is not a click', async () => {
+  await page.evaluate(() => document.querySelector('#plain').play());
+  await page.waitForFunction(() => !document.querySelector('#plain').paused);
+  const p = await centerOf(page, '#plain');
+  const rate = () => page.evaluate(() => document.querySelector('#plain').playbackRate);
+  await page.mouse.move(p.x, p.y);
+  await page.mouse.down();
+  await page.waitForTimeout(200);
+  assert.equal(await rate(), 1, 'not yet: a short press is a click');
+  await page.waitForTimeout(500);
+  assert.equal(await rate(), 2, 'held: 2x');
+  const tl = await page.evaluate(() => {
+    const el = document.querySelector('scroll-to-scrub-hud');
+    return el && el.matches(':popover-open');
+  });
+  assert.equal(tl, true, 'the timeline shows while holding');
+  await page.mouse.up();
+  await page.waitForTimeout(50);
+  assert.equal(await rate(), 1, 'released: back to normal');
+  assert.equal(await page.evaluate(() => window.__clicks), 0, 'the hold did not register as a click');
+
+  await page.waitForTimeout(100);
+  await page.mouse.click(p.x, p.y);
+  assert.equal(await page.evaluate(() => window.__clicks), 1, 'a normal click still reaches the page');
+  assert.equal(await rate(), 1);
+});
+
+test('press and hold does nothing on a paused video or when the press moves (a drag)', async () => {
+  const p = await centerOf(page, '#plain');
+  const rate = () => page.evaluate(() => document.querySelector('#plain').playbackRate);
+  await page.mouse.move(p.x, p.y);
+  await page.mouse.down();
+  await page.waitForTimeout(700);
+  assert.equal(await rate(), 1, 'paused video: nothing');
+  await page.mouse.up();
+
+  await page.evaluate(() => document.querySelector('#plain').play());
+  await page.waitForFunction(() => !document.querySelector('#plain').paused);
+  await page.mouse.move(p.x, p.y);
+  await page.mouse.down();
+  await page.mouse.move(p.x + 40, p.y + 10, { steps: 4 });
+  await page.waitForTimeout(700);
+  assert.equal(await rate(), 1, 'a drag is not a hold');
+  await page.mouse.up();
+});
+
 /* ---- Undo ------------------------------------------------------------- */
 
 /* The undo point the content script reported to the service worker (what

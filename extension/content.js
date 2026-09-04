@@ -110,6 +110,13 @@
   /* In the 'look' state (sideways input with no video under the pointer)
    * re-run the hit test at most this often. */
   const LOOK_INTERVAL_MS = 40;
+  /* Press and hold on a playing video to play it at HOLD_RATE until release
+   * (YouTube's own feature; skipped on YouTube, which has it natively). A
+   * press that moves more than HOLD_SLOP_PX before the delay is a drag. */
+  const HOLD_MS = 500;
+  const HOLD_RATE = 2;
+  const HOLD_SLOP_PX = 8;
+  const HOLD_EXCLUDED = ['youtube.com', 'youtube-nocookie.com', 'youtu.be'];
   const HUD_LINGER_MS = 600;
   const LINE_PX = 16; // deltaMode === DOM_DELTA_LINE
   const PAGE_PX = 800; // deltaMode === DOM_DELTA_PAGE
@@ -120,6 +127,8 @@
   let siteDisabled = false;
   let session = null; // active scrub, see beginSession()
   let undo = null; // where the video was before the last scrub, see performUndo()
+  let hold = null; // press-and-hold in progress, see onHoldStart()
+  let suppressClick = 0; // timer: the one click a hold's release generates is swallowed
   let armed = false; // the wheel listener is blocking (non-passive), see setArmed()
   let blocking = false; // the event being handled came through the blocking registration
   let lastX = NaN; // last known pointer position
@@ -182,11 +191,17 @@
   }
 
   function teardown() {
+    cancelHold();
     if (session) endSession(session, true);
     window.removeEventListener('wheel', onWheel, true);
     window.removeEventListener('mouseover', onHover, true);
     window.removeEventListener('mouseout', onPointerLeftWindow, true);
     window.removeEventListener('mousemove', onHover, true);
+    window.removeEventListener('pointerdown', onHoldStart, true);
+    window.removeEventListener('pointermove', onHoldMove, true);
+    window.removeEventListener('pointerup', onHoldEnd, true);
+    window.removeEventListener('pointercancel', onHoldEnd, true);
+    window.removeEventListener('click', onClickCapture, true);
     armed = false;
     timeline.hide();
   }
@@ -197,6 +212,7 @@
     siteDisabled = settings.disabledSites.some((pattern) => hosts.some((h) => hostMatches(h, pattern)));
     if (!active()) {
       if (session) endSession(session, true);
+      cancelHold();
       setArmed(false);
     } else if (Number.isFinite(lastX)) {
       setArmed(!!findVideoAt(lastX, lastY, true));
@@ -897,7 +913,10 @@
 
   /* The user switched tab or window: put back whatever we changed. */
   function onPageAway() {
-    if (session && (document.visibilityState === 'hidden' || !document.hasFocus())) endSession(session, true);
+    if (document.visibilityState === 'hidden' || !document.hasFocus()) {
+      cancelHold();
+      if (session) endSession(session, true);
+    }
   }
 
   /* The page scrolled under a still pointer: is the video still there? */
@@ -1153,6 +1172,106 @@
     }
   }
 
+  /* ---- Press and hold to speed up --------------------------------------- */
+
+  let holdAllowed = null; // computed once per frame
+
+  function holdSupported() {
+    if (holdAllowed === null) holdAllowed = !frameHosts().some((h) => HOLD_EXCLUDED.some((p) => hostMatches(h, p)));
+    return holdAllowed;
+  }
+
+  /* Buttons, links, sliders and fields inside the player are for clicking,
+   * not holding. */
+  function isInteractive(el) {
+    try {
+      const name = el.localName;
+      if (name === 'button' || name === 'a' || name === 'input' || name === 'select' || name === 'textarea') return true;
+      if (el.isContentEditable) return true;
+      const role = el.getAttribute && el.getAttribute('role');
+      return /^(button|link|slider|menuitem|checkbox|switch|tab|option)$/.test(role || '');
+    } catch {
+      return false;
+    }
+  }
+
+  function onHoldStart(e) {
+    if (!active() || !e.isTrusted || e.button !== 0 || !holdSupported()) return;
+    cancelHold();
+    const path = e.composedPath ? e.composedPath() : [];
+    for (const el of path) {
+      if (el === document || el === window) break;
+      if (el.nodeType === 1 && !isVideo(el) && isInteractive(el)) return;
+    }
+    const found = locateVideo(e.clientX, e.clientY);
+    const video = found.ready || found.any;
+    if (!video) return;
+    hold = {
+      video,
+      x: e.clientX,
+      y: e.clientY,
+      pointerId: e.pointerId,
+      active: false,
+      rate: 1,
+      timer: setTimeout(beginHold, HOLD_MS),
+    };
+  }
+
+  function beginHold() {
+    const h = hold;
+    if (!h) return;
+    h.timer = 0;
+    const v = h.video;
+    if (!v.isConnected || v.paused || v.ended) return cancelHold();
+    try {
+      h.rate = v.playbackRate || 1;
+      v.playbackRate = HOLD_RATE;
+    } catch {
+      return cancelHold();
+    }
+    h.active = true;
+    if (settings.showTimeline) timeline.pin(v, HOLD_RATE + '×');
+  }
+
+  function onHoldMove(e) {
+    if (!hold || hold.active || e.pointerId !== hold.pointerId) return;
+    if (Math.hypot(e.clientX - hold.x, e.clientY - hold.y) > HOLD_SLOP_PX) cancelHold();
+  }
+
+  function onHoldEnd(e) {
+    if (!hold || (e && e.pointerId !== undefined && e.pointerId !== hold.pointerId)) return;
+    if (hold.active) {
+      // The press was a hold, not a click: swallow the click this release
+      // generates (it follows within the same input sequence), and only that.
+      clearTimeout(suppressClick);
+      suppressClick = setTimeout(() => (suppressClick = 0), 150);
+    }
+    cancelHold();
+  }
+
+  function cancelHold() {
+    const h = hold;
+    if (!h) return;
+    hold = null;
+    clearTimeout(h.timer);
+    if (h.active) {
+      try {
+        if (h.video.playbackRate === HOLD_RATE) h.video.playbackRate = h.rate;
+      } catch {
+        /* ignore */
+      }
+      timeline.unpin();
+    }
+  }
+
+  function onClickCapture(e) {
+    if (!suppressClick) return;
+    clearTimeout(suppressClick);
+    suppressClick = 0;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  }
+
   /* ---- Timeline ------------------------------------------------------- */
 
   /* A thin timeline drawn over the top of the video while scrubbing. It
@@ -1334,8 +1453,23 @@
 
     /* The gesture is over: keep following playback, then fade out. */
     function release() {
-      if (!state) return;
+      if (!state || state.pinned) return;
       state.live = true;
+      state.releasedAt = performance.now();
+    }
+
+    /* Keep the timeline up, following playback, with a label, until unpin(). */
+    function pin(video, label) {
+      const range = seekRange(video);
+      if (!range) return;
+      state = { video, pos: video.currentTime, range, factor: 1, originTime: NaN, live: true, releasedAt: 0, pinned: label };
+      if (fading) unfade();
+      if (!frame) frame = requestAnimationFrame(tick);
+    }
+
+    function unpin() {
+      if (!state || !state.pinned) return;
+      state.pinned = null;
       state.releasedAt = performance.now();
     }
 
@@ -1353,11 +1487,13 @@
         const range = seekRange(n.video) || n.range;
         n.range = range;
         if (Number.isFinite(n.video.currentTime)) n.pos = n.video.currentTime;
-        const since = performance.now() - n.releasedAt;
-        if (since >= TIMELINE_HOLD_MS + TIMELINE_FADE_MS) return hide();
-        if (since >= TIMELINE_HOLD_MS && !fading) {
-          fading = true;
-          host.style.setProperty('opacity', '0', 'important');
+        if (!n.pinned) {
+          const since = performance.now() - n.releasedAt;
+          if (since >= TIMELINE_HOLD_MS + TIMELINE_FADE_MS) return hide();
+          if (since >= TIMELINE_HOLD_MS && !fading) {
+            fading = true;
+            host.style.setProperty('opacity', '0', 'important');
+          }
         }
       }
 
@@ -1389,7 +1525,11 @@
         label.firstChild.nodeValue = formatTime(n.pos - n.range[0], true);
         durEl.textContent = ' / ' + formatTime(span, false);
         const f = n.factor;
-        fineEl.textContent = !n.live && Math.abs(f - 1) > 0.05 ? '×' + (f < 10 ? f.toFixed(1) : f.toFixed(0)) : '';
+        fineEl.textContent = n.pinned
+          ? n.pinned
+          : !n.live && Math.abs(f - 1) > 0.05
+            ? '×' + (f < 10 ? f.toFixed(1) : f.toFixed(0))
+            : '';
         // Keep the label inside the track: right-align it near the end.
         const atEnd = frac > 0.75;
         label.style.left = atEnd ? 'auto' : (frac * 100).toFixed(3) + '%';
@@ -1420,7 +1560,7 @@
       unfade(); // reset for the next appearance, once it is no longer rendered
     }
 
-    return { show, release, hide };
+    return { show, release, pin, unpin, hide };
   })();
 
   /* ---- Boot ----------------------------------------------------------- */
@@ -1437,4 +1577,12 @@
   // The pointer may already rest on a video when the page loads; the first
   // movement tells us where it is.
   window.addEventListener('mousemove', onHover, { capture: true, passive: true, once: true });
+  // Press and hold to speed up.
+  window.addEventListener('pointerdown', onHoldStart, { capture: true, passive: true });
+  window.addEventListener('pointermove', onHoldMove, { capture: true, passive: true });
+  window.addEventListener('pointerup', onHoldEnd, { capture: true, passive: true });
+  window.addEventListener('pointercancel', onHoldEnd, { capture: true, passive: true });
+  window.addEventListener('click', onClickCapture, { capture: true });
+  window.addEventListener('blur', onPageAway, { capture: true, passive: true });
+  document.addEventListener('visibilitychange', onPageAway, { capture: true, passive: true });
 })();
