@@ -88,13 +88,20 @@ public final class EPUBBook {
 
     public init(archive: ZipArchive) throws {
         self.archive = archive
-        guard archive.contains("META-INF/container.xml"), let container = try? XMLDocument(data: try archive.data("META-INF/container.xml"), options: []) else {
+        guard archive.contains("META-INF/container.xml"), let containerXML = try? archive.string("META-INF/container.xml") else {
             throw Error.noContainer
         }
-        guard let rootfile = XML.descendants(of: container.rootElement(), named: "rootfile").first,
-              let fullPath = rootfile.attribute(forName: "full-path")?.stringValue, !fullPath.isEmpty else {
-            throw Error.malformed("no rootfile in container.xml")
+        var fullPath: String?
+        if let container = try? XMLDocument(xmlString: containerXML, options: []),
+           let rootfile = XML.descendants(of: container.rootElement(), named: "rootfile").first,
+           let value = rootfile.attribute(forName: "full-path")?.stringValue, !value.isEmpty {
+            fullPath = value
+        } else if let range = containerXML.range(of: "full-path=\"([^\"]+)\"", options: .regularExpression) {
+            // The XML library could not read it (or reads it differently on this platform): the attribute is plain enough.
+            let match = String(containerXML[range])
+            fullPath = String(match.dropFirst("full-path=\"".count).dropLast())
         }
+        guard let fullPath, !fullPath.isEmpty else { throw Error.malformed("no rootfile in container.xml") }
         packagePath = Paths.normalize(fullPath)
         guard archive.contains(packagePath) else { throw Error.noPackage(packagePath) }
         try readPackage()
@@ -271,11 +278,14 @@ public final class EPUBBook {
 // MARK: - Helpers shared by the format code
 
 enum XML {
+    /// The element name without its prefix. Derived from `name`, which both Foundations report the same way;
+    /// `localName` differs between them.
     static func localName(_ node: XMLNode) -> String {
-        if let local = node.localName { return local }
-        let name = node.name ?? ""
-        if let colon = name.lastIndex(of: ":") { return String(name[name.index(after: colon)...]) }
-        return name
+        if let name = node.name, !name.isEmpty {
+            if let colon = name.lastIndex(of: ":") { return String(name[name.index(after: colon)...]) }
+            return name
+        }
+        return node.localName ?? ""
     }
 
     static func children(of element: XMLElement?, named name: String) -> [XMLElement] {
