@@ -1,5 +1,12 @@
-macos/.build/
+.build/
 build/
-dist/Books.app/
+.swiftpm/
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+DerivedData/
+Tests/Fixtures/
 tools/
+node_modules/
 .DS_Store
+._*

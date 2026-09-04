@@ -1,9 +1,9 @@
 # dist/
 
 Packaged builds of **Books.app**, produced by the *Build Books.app* GitHub Actions workflow
-(`.github/workflows/macos-app.yml`) on a macOS runner from the commit named in the commit message:
+(`.github/workflows/ci.yml`) on a macOS runner from the commit named in the commit message:
 
-- `Books.app.zip` — the app bundle (universal: Apple silicon + Intel, macOS 11+). Unzip, drag to Applications.
+- `Books.app.zip` — the app bundle (Apple silicon and Intel, macOS 14 or later). Unzip, drag to Applications.
 - `Books.dmg` — the same bundle as a disk image.
 - `SHA256SUMS.txt` — checksums of both.
 
