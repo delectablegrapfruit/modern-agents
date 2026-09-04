@@ -45,6 +45,15 @@
    * applied in full once the gesture turns out to be a scrub. */
   const DECIDE_PX = 6;
   const DECIDE_EVENTS = 4;
+  /* Velocity curve. The configured speed is the rate reached at and above
+   * V_GROSS px/s (a fast spin of a free wheel, a flick of a trackpad); at
+   * and below V_FINE px/s the rate is GAIN_MIN of it, so a slow, deliberate
+   * turn moves frame by frame. A smooth ramp joins the two, and the wheel's
+   * own deceleration after a flick walks it back down into fine control. */
+  const V_FINE = 150;
+  const V_GROSS = 1200;
+  const GAIN_MIN = 0.2;
+  const FRAME_MS = 16.7; // one frame: the time a single event is taken to span
   /* Seek scheduling. The first seek of a burst is issued immediately. While
    * a seek is in flight the newest target is held back until `seeked`, so
    * every seek the decoder finishes is a frame on screen (a superseded seek
@@ -104,6 +113,7 @@
   let modeVideo = null; // video for 'hold' / 'undecided'
   let bufS = 0; // movement buffered while 'undecided'
   let bufN = 0;
+  let bufT0 = 0;
   let lookAt = 0; // timestamp, position and modifier state of the last hit test in 'look'
   let lookX = NaN;
   let lookY = NaN;
@@ -540,7 +550,7 @@
           return;
         }
         consume(e);
-        scrub(e, s);
+        scrub(e, s, eventSpacing(now));
         return;
       }
       case 'page': {
@@ -580,7 +590,7 @@
           const video = modeVideo;
           mode = 'scrub';
           beginSession(video);
-          scrub(e, s);
+          scrub(e, s, eventSpacing(now));
         }
         return;
       }
@@ -594,7 +604,7 @@
           if (ws >= wo && video.isConnected) {
             mode = 'scrub';
             beginSession(video);
-            scrub(e, total);
+            scrub(e, total, Math.max(now - bufT0, FRAME_MS));
           } else {
             mode = 'page';
           }
@@ -640,6 +650,7 @@
       modeVideo = video;
       bufS = s;
       bufN = 1;
+      bufT0 = now;
       mode = 'undecided';
       consume(e);
       return;
@@ -647,7 +658,7 @@
     mode = 'scrub';
     consume(e);
     beginSession(video);
-    scrub(e, s);
+    scrub(e, s, eventSpacing(now));
   }
 
   function look(now, x, y, mod) {
@@ -878,7 +889,22 @@
     return Math.min(max, Math.max(min, value));
   }
 
-  function scrub(e, px) {
+  /* Rate multiplier for `px` of movement delivered over `dtMs`. Chromium
+   * delivers wheel events once per frame with their deltas summed, so
+   * per-event velocity is stable and reacts to acceleration at once. */
+  function velocityGain(px, dtMs) {
+    const v = Math.abs(px) / (Math.max(dtMs, FRAME_MS / 2) / 1000);
+    const x = clamp((v - V_FINE) / (V_GROSS - V_FINE), 0, 1);
+    return GAIN_MIN + (1 - GAIN_MIN) * x * x * (3 - 2 * x);
+  }
+
+  /* Time since the previous event of this gesture, or one frame. */
+  function eventSpacing(now) {
+    const prev = recent.length > 1 ? recent[recent.length - 2].t : NaN;
+    return Number.isFinite(prev) && now - prev <= WINDOW_MS ? now - prev : FRAME_MS;
+  }
+
+  function scrub(e, px, dtMs = FRAME_MS) {
     const s = session;
     if (!s) return;
     const range = scrubRange(s.video);
@@ -886,7 +912,7 @@
 
     const fine = settings.requireModifier !== FINE_MODIFIER && hasModifier(e, FINE_MODIFIER);
 
-    let dt = px * (settings.secondsPer100px / 100);
+    let dt = px * (settings.secondsPer100px / 100) * velocityGain(px, dtMs);
     if (settings.invert) dt = -dt;
     if (fine) dt *= FINE_FACTOR;
 
@@ -1086,6 +1112,7 @@
   const timeline = (() => {
     let host = null;
     let mark = null;
+    let fill = null;
     let origin = null;
     let label = null;
     let durEl = null;
@@ -1122,35 +1149,43 @@
     const SHEET = `
       .track {
         position: relative;
-        height: 2px;
-        background: rgba(255, 255, 255, 0.4);
-        box-shadow: 0 0 1px rgba(0, 0, 0, 0.6);
+        height: 4px;
+        background: rgba(255, 255, 255, 0.45);
+        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35), 0 1px 4px rgba(0, 0, 0, 0.6);
+      }
+      .fill {
+        position: absolute;
+        top: 0;
+        left: 0;
+        height: 100%;
+        background: #fff;
       }
       .origin {
         position: absolute;
-        top: -3px;
-        width: 1px;
-        height: 8px;
-        margin-left: -0.5px;
-        background: rgba(255, 255, 255, 0.7);
-      }
-      .mark {
-        position: absolute;
-        top: -5px;
+        top: -4px;
         width: 2px;
         height: 12px;
         margin-left: -1px;
+        background: rgba(255, 255, 255, 0.85);
+        box-shadow: 0 0 2px rgba(0, 0, 0, 0.7);
+      }
+      .mark {
+        position: absolute;
+        top: -6px;
+        width: 4px;
+        height: 16px;
+        margin-left: -2px;
         background: #fff;
-        box-shadow: 0 0 2px rgba(0, 0, 0, 0.8);
+        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4), 0 1px 4px rgba(0, 0, 0, 0.8);
       }
       .label {
         position: absolute;
-        top: 12px;
+        top: 16px;
         white-space: nowrap;
-        font: 500 12px/1 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        font: 600 14px/1 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
         font-variant-numeric: tabular-nums;
         color: #fff;
-        text-shadow: 0 0 2px rgba(0, 0, 0, 0.9), 0 1px 2px rgba(0, 0, 0, 0.7);
+        text-shadow: 0 0 3px rgba(0, 0, 0, 1), 0 1px 3px rgba(0, 0, 0, 0.9), 0 0 8px rgba(0, 0, 0, 0.6);
       }
       .dur { opacity: 0.7; }
       .fine { margin-left: 6px; opacity: 0.7; }
@@ -1164,6 +1199,8 @@
       style.textContent = SHEET;
       const track = document.createElement('div');
       track.className = 'track';
+      fill = document.createElement('div');
+      fill.className = 'fill';
       origin = document.createElement('div');
       origin.className = 'origin';
       mark = document.createElement('div');
@@ -1175,7 +1212,7 @@
       fineEl = document.createElement('span');
       fineEl.className = 'fine';
       label.append(document.createTextNode(''), durEl, fineEl);
-      track.append(origin, mark, label);
+      track.append(fill, origin, mark, label);
       root.append(style, track);
       if (typeof el.showPopover === 'function') el.setAttribute('popover', 'manual');
       el.style.cssText = HOST_STYLE;
@@ -1292,6 +1329,7 @@
         host.style.setProperty('top', top + 'px', 'important');
         host.style.setProperty('width', width + 'px', 'important');
         mark.style.left = (frac * 100).toFixed(3) + '%';
+        fill.style.width = (frac * 100).toFixed(3) + '%';
         const showOrigin = Number.isFinite(originFrac) && Math.abs(originFrac - frac) * width > 3;
         origin.style.display = showOrigin ? '' : 'none';
         if (showOrigin) origin.style.left = (originFrac * 100).toFixed(3) + '%';
