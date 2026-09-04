@@ -88,20 +88,18 @@ public final class EPUBBook {
 
     public init(archive: ZipArchive) throws {
         self.archive = archive
-        guard archive.contains("META-INF/container.xml"), let containerXML = try? archive.string("META-INF/container.xml") else {
+        guard archive.contains("META-INF/container.xml"), let containerData = try? archive.data("META-INF/container.xml") else {
             throw Error.noContainer
         }
-        var fullPath: String?
-        if let container = try? XMLDocument(xmlString: containerXML, options: []),
-           let rootfile = XML.descendants(of: container.rootElement(), named: "rootfile").first,
-           let value = rootfile.attribute(forName: "full-path")?.stringValue, !value.isEmpty {
-            fullPath = value
-        } else if let range = containerXML.range(of: "full-path=\"([^\"]+)\"", options: .regularExpression) {
-            // The XML library could not read it (or reads it differently on this platform): the attribute is plain enough.
-            let match = String(containerXML[range])
-            fullPath = String(match.dropFirst("full-path=\"".count).dropLast())
+        var fullPath = XMLTree.parse(containerData)?.descendants(named: "rootfile").first?.attribute("full-path") ?? ""
+        if fullPath.isEmpty {
+            // Not parsable as XML; the attribute is plain enough to pick out of the text.
+            let text = String(decoding: containerData, as: UTF8.self)
+            if let range = text.range(of: "full-path=\"([^\"]+)\"", options: .regularExpression) {
+                fullPath = String(text[range].dropFirst("full-path=\"".count).dropLast())
+            }
         }
-        guard let fullPath, !fullPath.isEmpty else { throw Error.malformed("no rootfile in container.xml") }
+        guard !fullPath.isEmpty else { throw Error.malformed("no rootfile in container.xml") }
         packagePath = Paths.normalize(fullPath)
         guard archive.contains(packagePath) else { throw Error.noPackage(packagePath) }
         try readPackage()
@@ -136,56 +134,56 @@ public final class EPUBBook {
     // MARK: - Package document
 
     private func readPackage() throws {
-        let doc: XMLDocument
-        do { doc = try XMLDocument(data: try archive.data(packagePath), options: []) } catch { throw Error.malformed("package document is not XML") }
-        guard let root = doc.rootElement() else { throw Error.malformed("empty package document") }
+        guard let data = try? archive.data(packagePath), let root = XMLTree.parse(data) else { throw Error.malformed("package document is not XML") }
         let dir = packageDirectory
+        let meta = root.child(named: "metadata")
 
-        if let meta = XML.child(of: root, named: "metadata") {
+        if let meta {
+            func texts(_ name: String) -> [String] {
+                meta.children(named: name).map { HTMLText.collapse($0.textContent) }.filter { !$0.isEmpty }
+            }
             var m = BookMetadata()
-            m.title = XML.children(of: meta, named: "title").compactMap { $0.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) }.first { !$0.isEmpty } ?? ""
-            m.authors = XML.children(of: meta, named: "creator").compactMap { $0.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
-            m.language = XML.children(of: meta, named: "language").first?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            m.description = HTMLText.plainText(XML.children(of: meta, named: "description").first?.stringValue ?? "")
-            m.publisher = XML.children(of: meta, named: "publisher").first?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            m.published = XML.children(of: meta, named: "date").first?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            m.subjects = XML.children(of: meta, named: "subject").compactMap { $0.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
-            let uniqueId = root.attribute(forName: "unique-identifier")?.stringValue
-            let identifiers = XML.children(of: meta, named: "identifier")
-            m.identifier = (identifiers.first { $0.attribute(forName: "id")?.stringValue == uniqueId } ?? identifiers.first)?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            m.title = texts("title").first ?? ""
+            m.authors = texts("creator")
+            m.language = texts("language").first ?? ""
+            m.description = HTMLText.plainText(meta.child(named: "description")?.textContent ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            m.publisher = texts("publisher").first ?? ""
+            m.published = texts("date").first ?? ""
+            m.subjects = texts("subject")
+            let uniqueId = root.attribute("unique-identifier")
+            let identifiers = meta.children(named: "identifier")
+            let identifier = identifiers.first { $0.attribute("id") == uniqueId } ?? identifiers.first
+            m.identifier = HTMLText.collapse(identifier?.textContent ?? "")
             metadata = m
-            for metaEl in XML.children(of: meta, named: "meta") {
-                if metaEl.attribute(forName: "property")?.stringValue == "rendition:layout", metaEl.stringValue?.contains("pre-paginated") == true { fixedLayout = true }
+            for metaEl in meta.children(named: "meta") where metaEl.attribute("property") == "rendition:layout" {
+                if metaEl.textContent.contains("pre-paginated") { fixedLayout = true }
             }
         }
+        let coverId = meta?.children(named: "meta").first { $0.attribute("name") == "cover" }?.attribute("content")
 
-        var coverId: String?
-        if let meta = XML.child(of: root, named: "metadata") {
-            coverId = XML.children(of: meta, named: "meta").first { $0.attribute(forName: "name")?.stringValue == "cover" }?.attribute(forName: "content")?.stringValue
-        }
-
-        guard let manifestEl = XML.child(of: root, named: "manifest") else { throw Error.malformed("no manifest") }
+        guard let manifestEl = root.child(named: "manifest") else { throw Error.malformed("no manifest") }
         var items: [String: ManifestItem] = [:]
-        for item in XML.children(of: manifestEl, named: "item") {
-            guard let id = item.attribute(forName: "id")?.stringValue, let href = item.attribute(forName: "href")?.stringValue else { continue }
-            let props = Set((item.attribute(forName: "properties")?.stringValue ?? "").split(separator: " ").map(String.init))
-            items[id] = ManifestItem(id: id, path: Paths.resolve(dir, href), mediaType: item.attribute(forName: "media-type")?.stringValue ?? MediaTypes.forPath(href, fallback: "application/octet-stream"), properties: props)
+        for item in manifestEl.children(named: "item") {
+            guard let id = item.attribute("id"), let href = item.attribute("href") else { continue }
+            let props = Set((item.attribute("properties") ?? "").split(separator: " ").map(String.init))
+            let mediaType = item.attribute("media-type") ?? MediaTypes.forPath(href, fallback: "application/octet-stream")
+            items[id] = ManifestItem(id: id, path: Paths.resolve(dir, href), mediaType: mediaType, properties: props)
         }
         manifest = items
 
-        guard let spineEl = XML.child(of: root, named: "spine") else { throw Error.malformed("no spine") }
+        guard let spineEl = root.child(named: "spine") else { throw Error.malformed("no spine") }
         var order: [String] = []
-        for ref in XML.children(of: spineEl, named: "itemref") {
-            guard let idref = ref.attribute(forName: "idref")?.stringValue, let item = items[idref] else { continue }
-            if ref.attribute(forName: "linear")?.stringValue == "no" && !order.isEmpty { continue } // keep a leading cover page
+        for ref in spineEl.children(named: "itemref") {
+            guard let idref = ref.attribute("idref"), let item = items[idref] else { continue }
+            if ref.attribute("linear") == "no" && !order.isEmpty { continue } // keep a leading cover page
             if archive.contains(item.path) { order.append(item.path) }
         }
         spine = order
-        if let ncxId = spineEl.attribute(forName: "toc")?.stringValue, let ncx = items[ncxId] { ncxPath = ncx.path }
+        if let ncxId = spineEl.attribute("toc"), let ncx = items[ncxId] { ncxPath = ncx.path }
         if ncxPath == nil { ncxPath = items.values.first { $0.mediaType == "application/x-dtbncx+xml" }?.path }
         navPath = items.values.first { $0.properties.contains("nav") }?.path
 
-        // Cover: EPUB 3 property, EPUB 2 meta, then a guess by name.
+        // Cover: EPUB 3 property, EPUB 2 meta, then a guess by name, then the guide's cover page.
         if let item = items.values.first(where: { $0.properties.contains("cover-image") }), archive.contains(item.path) {
             coverPath = item.path
         } else if let id = coverId, let item = items[id], archive.contains(item.path) {
@@ -198,9 +196,12 @@ public final class EPUBBook {
         if coverPath == nil {
             coverPath = items.values.first { $0.mediaType.hasPrefix("image/") && ($0.id.lowercased().contains("cover") || $0.path.lowercased().contains("cover")) }?.path
         }
-        if coverPath == nil, let guide = XML.child(of: root, named: "guide") {
-            for ref in XML.children(of: guide, named: "reference") where ref.attribute(forName: "type")?.stringValue?.lowercased() == "cover" {
-                if let href = ref.attribute(forName: "href")?.stringValue, let img = firstImage(inDocument: Paths.resolve(dir, Paths.stripFragment(href))) { coverPath = img; break }
+        if coverPath == nil, let guide = root.child(named: "guide") {
+            for ref in guide.children(named: "reference") where ref.attribute("type")?.lowercased() == "cover" {
+                if let href = ref.attribute("href"), let img = firstImage(inDocument: Paths.resolve(dir, Paths.stripFragment(href))) {
+                    coverPath = img
+                    break
+                }
             }
         }
     }
@@ -236,22 +237,28 @@ public final class EPUBBook {
     }
 
     private func readNav(_ path: String) -> [TOCEntry]? {
-        guard let data = try? archive.data(path), let doc = (try? XMLDocument(data: data, options: [])) ?? (try? XMLDocument(data: data, options: [.documentTidyHTML])) else { return nil }
+        guard let data = try? archive.data(path) else { return nil }
+        var root = XMLTree.parse(data)
+        if root == nil, let html = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) {
+            // Not well-formed XHTML: tidy it as HTML first.
+            root = XMLTree.parse(XHTML.document(fromHTML: html, options: XHTML.Options(title: "")))
+        }
+        guard let root else { return nil }
         let dir = Paths.directory(of: path)
-        let navs = XML.descendants(of: doc.rootElement(), named: "nav")
+        let navs = root.descendants(named: "nav")
         let tocNav = navs.first { nav in
-            nav.attributes?.contains { ($0.name ?? "").hasSuffix("type") && ($0.stringValue ?? "").split(separator: " ").contains("toc") } == true
+            nav.attributes.contains { $0.key.hasSuffix("type") && $0.value.split(separator: " ").contains("toc") }
         } ?? navs.first
-        guard let nav = tocNav, let list = XML.child(of: nav, named: "ol") else { return nil }
+        guard let nav = tocNav, let list = nav.child(named: "ol") else { return nil }
         var out: [TOCEntry] = []
-        func walk(_ ol: XMLElement, level: Int) {
-            for li in XML.children(of: ol, named: "li") {
-                if let a = XML.child(of: li, named: "a") ?? XML.child(of: li, named: "span") {
-                    let label = HTMLText.collapse(a.stringValue ?? "")
-                    let href = a.attribute(forName: "href")?.stringValue ?? ""
+        func walk(_ ol: XMLTree.Element, level: Int) {
+            for li in ol.children(named: "li") {
+                if let a = li.child(named: "a") ?? li.child(named: "span") {
+                    let label = HTMLText.collapse(a.textContent)
+                    let href = a.attribute("href") ?? ""
                     out.append(TOCEntry(label: label, href: href.isEmpty ? "" : Paths.resolveKeepingFragment(dir, href), level: level))
                 }
-                if let nested = XML.child(of: li, named: "ol") { walk(nested, level: level + 1) }
+                if let nested = li.child(named: "ol") { walk(nested, level: level + 1) }
             }
         }
         walk(list, level: 0)
@@ -259,14 +266,14 @@ public final class EPUBBook {
     }
 
     private func readNCX(_ path: String) -> [TOCEntry]? {
-        guard let data = try? archive.data(path), let doc = try? XMLDocument(data: data, options: []), let map = XML.descendants(of: doc.rootElement(), named: "navMap").first else { return nil }
+        guard let data = try? archive.data(path), let root = XMLTree.parse(data), let map = root.descendants(named: "navMap").first else { return nil }
         let dir = Paths.directory(of: path)
         var out: [TOCEntry] = []
-        func walk(_ parent: XMLElement, level: Int) {
-            for point in XML.children(of: parent, named: "navPoint") {
-                let label = XML.descendants(of: point, named: "text").first?.stringValue ?? ""
-                let src = XML.child(of: point, named: "content")?.attribute(forName: "src")?.stringValue ?? ""
-                out.append(TOCEntry(label: HTMLText.collapse(label), href: src.isEmpty ? "" : Paths.resolveKeepingFragment(dir, src), level: level))
+        func walk(_ parent: XMLTree.Element, level: Int) {
+            for point in parent.children(named: "navPoint") {
+                let labelElement = point.child(named: "navLabel")?.descendants(named: "text").first ?? point.descendants(named: "text").first
+                let src = point.child(named: "content")?.attribute("src") ?? ""
+                out.append(TOCEntry(label: HTMLText.collapse(labelElement?.textContent ?? ""), href: src.isEmpty ? "" : Paths.resolveKeepingFragment(dir, src), level: level))
                 walk(point, level: level + 1)
             }
         }
@@ -276,40 +283,6 @@ public final class EPUBBook {
 }
 
 // MARK: - Helpers shared by the format code
-
-enum XML {
-    /// The element name without its prefix. Derived from `name`, which both Foundations report the same way;
-    /// `localName` differs between them.
-    static func localName(_ node: XMLNode) -> String {
-        if let name = node.name, !name.isEmpty {
-            if let colon = name.lastIndex(of: ":") { return String(name[name.index(after: colon)...]) }
-            return name
-        }
-        return node.localName ?? ""
-    }
-
-    static func children(of element: XMLElement?, named name: String) -> [XMLElement] {
-        (element?.children ?? []).compactMap { $0 as? XMLElement }.filter { localName($0) == name }
-    }
-
-    static func child(of element: XMLElement?, named name: String) -> XMLElement? {
-        children(of: element, named: name).first
-    }
-
-    static func descendants(of element: XMLElement?, named name: String) -> [XMLElement] {
-        guard let element else { return [] }
-        var out: [XMLElement] = []
-        func walk(_ el: XMLElement) {
-            for child in el.children ?? [] {
-                guard let c = child as? XMLElement else { continue }
-                if localName(c) == name { out.append(c) }
-                walk(c)
-            }
-        }
-        walk(element)
-        return out
-    }
-}
 
 public enum Paths {
     /// Resolves `href` (possibly percent-encoded, possibly with `..`) against a directory inside the archive.

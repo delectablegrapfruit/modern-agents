@@ -144,7 +144,7 @@ final class ReaderSession {
 
     private func call(_ function: String, _ arguments: Any...) {
         let args = arguments.map { JSON.literal($0) }.joined(separator: ", ")
-        webView.evaluateJavaScript("window.reader && window.reader.\(function)(\(args));") { _, error in
+        webView.evaluateJavaScript("void (window.reader && window.reader.\(function)(\(args)));") { _, error in
             if let error { NSLog("reader.%@: %@", function, error.localizedDescription) }
         }
     }

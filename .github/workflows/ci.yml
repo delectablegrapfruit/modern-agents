@@ -24,11 +24,18 @@ jobs:
       - run: xcodebuild -version && swift --version
       - run: swift build -v
       - name: Kindle fixtures (libmobi test suite)
+        uses: actions/checkout@v4
+        with:
+          repository: bfabiszewski/libmobi
+          path: tools/libmobi
+          sparse-checkout: tests/samples
+      - name: Copy the Kindle fixtures the tests use
         run: |
           mkdir -p Tests/Fixtures/mobi
           for f in sample-cp1252 sample-ncx sample-multimedia sample-unicode-huffdic sample-unicode-uncompressed sample-obfuscated-fonts sample-textread sample-dict-infl2 sample-drm-v1; do
-            curl -fsSL --retry 3 -o "Tests/Fixtures/mobi/$f.mobi" "https://raw.githubusercontent.com/bfabiszewski/libmobi/master/tests/samples/$f.mobi" || echo "skip $f"
+            cp "tools/libmobi/tests/samples/$f.mobi" Tests/Fixtures/mobi/ || echo "missing $f"
           done
+          ls -la Tests/Fixtures/mobi
       - run: swift test
       - run: scripts/make-app.sh release
 
@@ -88,10 +95,16 @@ jobs:
       - uses: actions/checkout@v4
       - run: swift build --product books-cli
       - name: Kindle fixtures (libmobi test suite)
+        uses: actions/checkout@v4
+        with:
+          repository: bfabiszewski/libmobi
+          path: tools/libmobi
+          sparse-checkout: tests/samples
+      - name: Copy the Kindle fixtures the tests use
         run: |
           mkdir -p Tests/Fixtures/mobi
           for f in sample-cp1252 sample-ncx sample-multimedia sample-unicode-huffdic sample-unicode-uncompressed sample-obfuscated-fonts sample-textread sample-dict-infl2 sample-drm-v1; do
-            curl -fsSL --retry 3 -o "Tests/Fixtures/mobi/$f.mobi" "https://raw.githubusercontent.com/bfabiszewski/libmobi/master/tests/samples/$f.mobi" || echo "skip $f"
+            cp "tools/libmobi/tests/samples/$f.mobi" Tests/Fixtures/mobi/ || echo "missing $f"
           done
           ls -la Tests/Fixtures/mobi
       - run: swift test

@@ -116,7 +116,7 @@ final class EPUBTests: XCTestCase {
         XCTAssertEqual(book.metadata.language, "fr")
         XCTAssertEqual(book.spine, ["content/text/a.html", "content/text/b.html"])
         XCTAssertEqual(book.toc.map { "\($0.level):\($0.label)" }, ["0:One", "1:One & a half", "0:Two"])
-        XCTAssertEqual(book.toc[1].href, "content/text/a.html#half")
+        XCTAssertEqual(book.toc.dropFirst().first?.href, "content/text/a.html#half")
         XCTAssertEqual(book.coverPath, "content/img/c.jpg")
         XCTAssertEqual(book.wordCount(), 5)
     }
@@ -266,5 +266,41 @@ final class LibraryStoreTests: XCTestCase {
         XCTAssertEqual(settings.reader.fontSize, 100)
         XCTAssertEqual(settings.reader.effectiveTheme(systemIsDark: true), .calm)
         XCTAssertEqual(ReaderSettings().effectiveTheme(systemIsDark: true), .focus)
+    }
+}
+
+final class XMLTreeTests: XCTestCase {
+    func testNamespacesEntitiesAndLookup() throws {
+        let xml = """
+        <?xml version="1.0" encoding="ISO-8859-1"?>
+        <package xmlns="http://www.idpf.org/2007/opf" xmlns:dc="http://purl.org/dc/elements/1.1/" unique-identifier="uid">
+          <metadata><dc:title>Tom &amp; Jerry&nbsp;Go &copy; Home &amp; back</dc:title><dc:creator id="a">Ann</dc:creator><meta name="cover" content="c1"/></metadata>
+          <manifest><item id="c1" href="img/c.jpg" media-type="image/jpeg"/><item id="x" href="a.xhtml" media-type="application/xhtml+xml" properties="nav"/></manifest>
+          <nav epub:type="toc" xmlns:epub="http://www.idpf.org/2007/ops"><ol><li><a href="a.xhtml">One <span>two</span> &unknown; three</a></li></ol></nav>
+          <extra><![CDATA[<raw>]]> tail</extra>
+        </package>
+        """
+        let root = try XCTUnwrap(XMLTree.parse(Data(xml.utf8)))
+        XCTAssertEqual(root.name, "package")
+        XCTAssertEqual(root.attribute("unique-identifier"), "uid")
+        let meta = try XCTUnwrap(root.child(named: "metadata"))
+        XCTAssertEqual(meta.child(named: "title")?.textContent, "Tom & Jerry\u{00A0}Go © Home & back")
+        XCTAssertEqual(meta.children(named: "creator").first?.attribute("id"), "a")
+        XCTAssertEqual(meta.children(named: "meta").first?.attribute("content"), "c1")
+        let items = root.descendants(named: "item")
+        XCTAssertEqual(items.map { $0.attribute("href") ?? "" }, ["img/c.jpg", "a.xhtml"])
+        XCTAssertEqual(items[1].attribute("media-type"), "application/xhtml+xml")
+        let nav = try XCTUnwrap(root.child(named: "nav"))
+        XCTAssertEqual(nav.attribute("type"), "toc", "prefixed attribute found by local name")
+        XCTAssertEqual(HTMLText.collapse(nav.descendants(named: "a").first?.textContent ?? ""), "One two &unknown; three")
+        XCTAssertEqual(root.child(named: "extra")?.text, "<raw> tail")
+        XCTAssertNil(XMLTree.parse(Data("not xml at all".utf8)))
+    }
+
+    func testLatin1AndStrayAmpersand() throws {
+        let latin1 = Data("<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><r a=\"x\">caf\u{E9} & cr\u{E8}me</r>".unicodeScalars.map { UInt8($0.value) })
+        let root = try XCTUnwrap(XMLTree.parse(latin1))
+        XCTAssertEqual(root.text, "café & crème")
+        XCTAssertEqual(root.attribute("a"), "x")
     }
 }
