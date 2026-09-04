@@ -128,6 +128,8 @@ needs no SDK. It implements `WKUIDelegate` so `<input type=file>` opens a real `
 `application:openFiles:` for Finder, and exchanges messages with the page through
 `window.webkit.messageHandlers.books` (window drag/zoom from the HTML chrome, save panel for exports, files handed
 over as base64, self-test results).
+- **WebKit smoke test**: the same runner installs Playwright WebKit (the engine Books.app embeds) and drives the web app end to end — imports a Kindle sample from libmobi’s test suite, opens it, turns pages with the wheel, checks the timeline, vertical-scroll progress and dark theme (`tests/webkit-smoke.cjs`; run it locally with `PW_BROWSER=chromium`).
+
 
 ## Requirements and limitations
 

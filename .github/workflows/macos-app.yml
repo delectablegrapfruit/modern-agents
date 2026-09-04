@@ -45,6 +45,15 @@ jobs:
           BOOKS_SELFTEST=1 dist/Books.app/Contents/MacOS/Books
           wait
 
+      - name: WebKit smoke test — the web app in Playwright WebKit (Kindle import, paging, wheel, timeline, scrolling)
+        timeout-minutes: 15
+        run: |
+          mkdir -p build
+          npm install -g playwright@1.56.1
+          npx --yes playwright@1.56.1 install webkit
+          curl -fsSL --retry 3 -o build/sample.mobi https://raw.githubusercontent.com/bfabiszewski/libmobi/master/tests/samples/sample-unicode-huffdic.mobi || echo "sample download failed; Kindle check will be skipped"
+          NODE_PATH="$(npm root -g)" node tests/webkit-smoke.cjs build/sample.mobi
+
       - name: Package (zip + dmg + checksums)
         run: |
           rm -f dist/Books.app.zip dist/Books.dmg
