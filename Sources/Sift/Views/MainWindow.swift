@@ -53,15 +53,16 @@ struct StatusSection: View {
                 if model.isPaused { Button("Resume") { model.togglePause() } }
                 Button { model.sweepNow() } label: {
                     HStack(spacing: 6) {
-                        if let due = model.sweepDueText {
-                            // A sweep is due: junk may have arrived while nothing watched.
-                            Circle().fill(Color.orange).frame(width: 7, height: 7)
-                                .accessibilityLabel(due)
-                        }
+                        // Orange: junk may have arrived while nothing watched. Green: everything
+                        // watched has been swept since watching began.
+                        Circle()
+                            .fill(model.sweepDueText == nil ? Color.green : Color.orange)
+                            .frame(width: 7, height: 7)
+                            .accessibilityLabel(model.sweepDueText ?? "No sweep needed")
                         Text("Sweep")
                     }
                 }
-                .help(model.sweepDueText ?? "Looks through everything and shows what it found before removing it.")
+                .help(model.sweepDueText ?? "Nothing arrived unwatched since the last sweep.")
                 .disabled(model.sweep != .idle)
             }
             if case .scanning(let directory) = model.sweep {
