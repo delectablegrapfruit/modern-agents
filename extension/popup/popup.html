@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Scroll to Scrub</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header class="row head">
+      <img src="../icons/icon32.png" width="20" height="20" alt="" />
+      <span class="title">Scroll to Scrub</span>
+      <label class="switch" title="Turn the extension on or off (Alt+Shift+S)">
+        <input type="checkbox" id="enabled" />
+        <span class="track"></span>
+      </label>
+    </header>
+
+    <section class="row site" id="siteRow" hidden>
+      <span class="label">On <span id="siteName" class="host"></span></span>
+      <label class="switch">
+        <input type="checkbox" id="siteEnabled" />
+        <span class="track"></span>
+      </label>
+    </section>
+
+    <section class="speed">
+      <div class="row">
+        <span class="label">Speed</span>
+        <span class="value" id="speedValue"></span>
+      </div>
+      <input type="range" id="speed" min="0" max="1000" step="1" aria-label="Scrub speed" />
+      <div class="hint">seconds of video per 100 px of scrolling &middot; hold <kbd id="fineKey">Alt</kbd> for 1/10 speed</div>
+    </section>
+
+    <footer class="row">
+      <a href="#" id="options">All settings</a>
+      <span class="muted">Move off the video to resume</span>
+    </footer>
+
+    <script src="../shared/defaults.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>

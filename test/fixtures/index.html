@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Scroll to Scrub fixture</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 40px;
+        width: 3000px; /* horizontal overflow so sideways scrolling is observable */
+        font: 14px system-ui, sans-serif;
+      }
+      h1 {
+        margin: 0 0 20px;
+      }
+      section {
+        margin: 0 0 40px;
+        width: 700px; /* keep sections narrower than the viewport so their centres are on screen */
+      }
+      video {
+        display: block;
+        width: 640px;
+        height: 360px;
+        background: #000;
+      }
+      .wrap {
+        position: relative;
+        width: 640px;
+        height: 360px;
+      }
+      .wrap video {
+        position: absolute;
+        inset: 0;
+      }
+      .controls {
+        position: absolute;
+        inset: 0;
+        background: rgba(255, 0, 0, 0.05);
+      }
+      #noevents video {
+        pointer-events: none;
+      }
+      #spacer {
+        height: 2000px;
+      }
+      iframe {
+        display: block;
+        width: 700px;
+        height: 420px;
+        border: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Scroll to Scrub fixture</h1>
+
+    <section id="plain-section">
+      <h2>Plain video</h2>
+      <video id="plain" src="clip-short-gop.webm" preload="auto" muted></video>
+    </section>
+
+    <section id="overlay-section">
+      <h2>Video under a control overlay</h2>
+      <div class="wrap">
+        <video id="overlay" src="clip-short-gop.webm" preload="auto" muted></video>
+        <div class="controls" id="overlayControls"></div>
+      </div>
+    </section>
+
+    <section id="noevents">
+      <h2>Video with pointer-events: none</h2>
+      <div class="wrap" id="noeventsWrap">
+        <video id="noeventsVideo" src="clip-short-gop.webm" preload="auto" muted></video>
+      </div>
+    </section>
+
+    <section id="shadow-section">
+      <h2>Video inside an open shadow root</h2>
+      <div id="shadowHost"></div>
+    </section>
+
+    <section id="iframe-section">
+      <h2>Video inside an iframe</h2>
+      <iframe id="frame" src="frame.html"></iframe>
+    </section>
+
+    <section id="closed-section">
+      <h2>Video inside a closed shadow root</h2>
+      <div id="closedHost"></div>
+    </section>
+
+    <section id="lazy-section">
+      <h2>Video without metadata yet (preload="none")</h2>
+      <video id="lazy" data-lazy src="clip-short-gop.webm" preload="none" muted></video>
+    </section>
+
+    <section id="longgop-section">
+      <h2>Long-GOP clip (expensive seeks)</h2>
+      <video id="longgop" src="clip-long-gop.webm" preload="auto" muted></video>
+    </section>
+
+    <section id="text-section">
+      <h2>Plain text, no video</h2>
+      <p id="text">Scrolling here must scroll the page.</p>
+    </section>
+
+    <div id="spacer"></div>
+
+    <script src="decode-frame.js"></script>
+    <script>
+      // Shadow DOM player: the video lives inside an open shadow root.
+      const host = document.getElementById('shadowHost');
+      const root = host.attachShadow({ mode: 'open' });
+      root.innerHTML =
+        '<style>video{display:block;width:640px;height:360px;background:#000}</style>' +
+        '<video id="shadowVideo" src="clip-short-gop.webm" preload="auto" muted></video>';
+
+      // Closed shadow root player: reachable only through chrome.dom.
+      const closedHost = document.getElementById('closedHost');
+      const closedRoot = closedHost.attachShadow({ mode: 'closed' });
+      closedRoot.innerHTML =
+        '<style>video{display:block;width:640px;height:360px;background:#000}</style>' +
+        '<video id="closedVideo" src="clip-short-gop.webm" preload="auto" muted></video>';
+      window.__closedVideo = () => closedRoot.getElementById('closedVideo');
+
+      // Page-side wheel listeners, to check that the extension keeps consumed
+      // events away from the page's own handlers (document and element level;
+      // a window-capture listener registered before the extension arms its
+      // blocking listener may still see them).
+      window.__pageWheel = { window: 0, document: 0, video: 0 };
+      window.addEventListener('wheel', () => window.__pageWheel.window++, { capture: true, passive: true });
+      document.addEventListener('wheel', () => window.__pageWheel.document++, { passive: true });
+      document.getElementById('plain').addEventListener('wheel', () => window.__pageWheel.video++, { passive: true });
+    </script>
+  </body>
+</html>

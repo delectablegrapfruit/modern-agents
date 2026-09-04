@@ -1,0 +1,20 @@
+{
+  "name": "scroll-to-scrub",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Chrome extension: scrub any video by scrolling sideways while the mouse hovers over it.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test --test-timeout=600000 test/*.test.mjs",
+    "fixture": "node scripts/gen-fixture-video.mjs",
+    "fixture:verify": "node scripts/verify-fixture-video.mjs",
+    "icons": "node scripts/gen-icons.mjs",
+    "pack": "mkdir -p dist && rm -f dist/scroll-to-scrub.zip && cd extension && zip -r ../dist/scroll-to-scrub.zip . -x '.*'"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "playwright": "1.56.1"
+  }
+}

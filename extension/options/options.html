@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Scroll to Scrub settings</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <img src="../icons/icon48.png" width="32" height="32" alt="" />
+        <div>
+          <h1>Scroll to Scrub</h1>
+          <p class="sub">Hover a video and scroll sideways to scrub through it.</p>
+        </div>
+        <label class="switch big" title="Turn the extension on or off">
+          <input type="checkbox" id="enabled" />
+          <span class="track"></span>
+        </label>
+      </header>
+
+      <section>
+        <h2>Scrubbing</h2>
+        <div class="field">
+          <label for="speed">Speed</label>
+          <div class="control">
+            <input type="range" id="speed" min="0" max="1000" step="1" />
+            <span class="inline">
+              <input type="number" id="speedNumber" min="0.05" max="60" step="0.05" />
+              <span class="unit">s per 100 px</span>
+            </span>
+            <p class="help">
+              Seconds of video per 100 px of wheel or trackpad movement, whatever the video's length. Every bit of
+              movement counts; there is no dead zone and no snapping.
+            </p>
+          </div>
+        </div>
+        <div class="field">
+          <span class="label">Axis</span>
+          <div class="control">
+            <label class="radio"><input type="radio" name="axis" value="horizontal" /> Horizontal only</label>
+            <label class="radio"><input type="radio" name="axis" value="vertical" /> Vertical only</label>
+            <label class="radio"><input type="radio" name="axis" value="both" /> Both</label>
+            <p class="help">
+              Which wheel direction scrubs. With <em>Horizontal only</em>, vertical scrolling over a video still scrolls
+              the page.
+            </p>
+          </div>
+        </div>
+        <div class="field">
+          <span class="label">Shift + wheel</span>
+          <div class="control">
+            <label class="check"><input type="checkbox" id="shiftWheel" /> Treat Shift + vertical wheel as horizontal</label>
+            <p class="help">For mice without a tilt or thumb wheel.</p>
+          </div>
+        </div>
+        <div class="field">
+          <span class="label">Direction</span>
+          <div class="control">
+            <label class="check"><input type="checkbox" id="invert" /> Invert (scroll right to rewind)</label>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Modifier keys</h2>
+        <div class="field">
+          <label for="requireModifier">Only scrub while holding</label>
+          <div class="control">
+            <select id="requireModifier"></select>
+            <p class="help">Useful on sites with sideways-scrolling carousels that contain videos.</p>
+          </div>
+        </div>
+        <div class="field">
+          <label for="fineModifier">Fine control key</label>
+          <div class="control">
+            <select id="fineModifier"></select>
+            <p class="help">Scrubs at 1/10 speed while held, for landing on an exact frame.</p>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Playback</h2>
+        <div class="field">
+          <span class="label">While scrubbing</span>
+          <div class="control">
+            <label class="check"><input type="checkbox" id="pauseWhileScrubbing" /> Keep the video paused</label>
+            <label class="check"><input type="checkbox" id="resumeAfter" /> Resume playback when the pointer leaves the video</label>
+            <p class="help">
+              The video stays on the frame you stopped on for as long as the pointer rests on it. Clicking or pressing a
+              key hands control back to the player without restarting playback.
+            </p>
+          </div>
+        </div>
+        <div class="field">
+          <span class="label">Overlay</span>
+          <div class="control">
+            <label class="check"><input type="checkbox" id="showHud" /> Show a time / progress pill while scrubbing</label>
+            <p class="help">Off by default: the site's own player already shows the position.</p>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Sites</h2>
+        <div class="field">
+          <label for="disabledSites">Disabled on</label>
+          <div class="control">
+            <textarea id="disabledSites" rows="4" spellcheck="false" placeholder="example.com&#10;another.site"></textarea>
+            <p class="help">
+              One hostname per line. Subdomains are included, and so are players embedded from other sites (a
+              YouTube iframe on a disabled site stays off).
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Keyboard shortcut</h2>
+        <div class="field">
+          <span class="label">Toggle on / off</span>
+          <div class="control">
+            <p><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>S</kbd> by default. <a href="#" id="shortcuts">Change it</a>.</p>
+          </div>
+        </div>
+      </section>
+
+      <footer>
+        <button type="button" id="reset">Reset to defaults</button>
+        <span id="status" class="status" aria-live="polite"></span>
+      </footer>
+    </main>
+
+    <script src="../shared/defaults.js"></script>
+    <script src="options.js"></script>
+  </body>
+</html>
