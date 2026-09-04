@@ -131,7 +131,7 @@ struct ApplyBar: View {
     var body: some View {
         HStack {
             if model.applyPhase != nil { ProgressView().controlSize(.small) }
-            Text(model.applyPhase ?? "Finder quits and reopens when you apply; its windows close.")
+            Text(model.applyPhase ?? "Finder quits and reopens when you apply, with its windows.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Spacer()

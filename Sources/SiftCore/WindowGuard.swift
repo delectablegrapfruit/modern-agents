@@ -246,6 +246,64 @@ public enum WindowGuard {
         return lines
     }
 
+    /// A Finder window to bring back after Finder was quit: its folder and frame.
+    public struct OpenWindow: Hashable {
+        public let path: String
+        /// Finder's `bounds`: left, top, right, bottom.
+        public let bounds: [Int]
+
+        public init(path: String, bounds: [Int]) {
+            self.path = path
+            self.bounds = bounds
+        }
+    }
+
+    /// Every Finder window on a folder, front to back, as "left top right bottom path".
+    public static let openWindowsScript = """
+    with timeout of \(scriptTimeout) seconds
+    set out to {}
+    tell application "Finder"
+    set ids to id of every Finder window
+    repeat with k from 1 to count of ids
+    set n to item k of ids
+    try
+    set p to POSIX path of ((target of Finder window id n) as alias)
+    set b to bounds of Finder window id n
+    set end of out to (item 1 of b as text) & " " & (item 2 of b as text) & " " & (item 3 of b as text) & " " & (item 4 of b as text) & " " & p
+    end try
+    end repeat
+    end tell
+    set AppleScript's text item delimiters to linefeed
+    return out as text
+    end timeout
+    """
+
+    public static func parseOpenWindows(_ output: String) -> [OpenWindow] {
+        output.split(separator: "\n", omittingEmptySubsequences: true).compactMap { line in
+            let parts = line.split(separator: " ", maxSplits: 4, omittingEmptySubsequences: false).map(String.init)
+            guard parts.count == 5, parts[4].hasPrefix("/") else { return nil }
+            let bounds = parts[0..<4].compactMap(Int.init)
+            guard bounds.count == 4 else { return nil }
+            return OpenWindow(path: parts[4], bounds: bounds)
+        }
+    }
+
+    /// Opens the windows again, back to front, each where it was. A folder
+    /// that is gone by now is skipped.
+    public static func reopenScript(_ windows: [OpenWindow]) -> String {
+        var lines = ["with timeout of 10 seconds", "tell application \"Finder\""]
+        for window in windows.reversed() {
+            lines += [
+                "try",
+                "set w to make new Finder window to (POSIX file \(literal(window.path)) as alias)",
+                "set bounds of w to {\(window.bounds.map(String.init).joined(separator: ", "))}",
+                "end try",
+            ]
+        }
+        lines += ["end tell", "end timeout"]
+        return lines.joined(separator: "\n")
+    }
+
     /// Quits Finder the way the Quit menu item would. Finder then stays quit
     /// (launchd brings it back only after a crash or a signal), so what is
     /// written meanwhile is read when it is started again.
@@ -355,6 +413,15 @@ public enum WindowGuard {
 
         public func quitFinder() throws {
             _ = try OSAScript.run(WindowGuard.quitScript, killAfter: 12)
+        }
+
+        public func openWindows() throws -> [OpenWindow] {
+            WindowGuard.parseOpenWindows(try OSAScript.run(WindowGuard.openWindowsScript))
+        }
+
+        public func reopen(_ windows: [OpenWindow]) throws {
+            guard !windows.isEmpty else { return }
+            _ = try OSAScript.run(WindowGuard.reopenScript(windows), killAfter: 15)
         }
     }
     #endif

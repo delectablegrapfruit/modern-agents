@@ -33,7 +33,7 @@ history, Time Machine markers, and `.metadata_never_index`.
 **Governs views.** One default view for every folder on every disk: mode, sort, grouping, and every value
 from Finder's View Options window for each mode, including the Desktop. Folders can have a view of their own,
 which the folders beneath them share unless they have one too. Applying quits Finder, writes its
-preferences and the folder records, and starts it again.
+preferences and the folder records, and starts it again with the windows it had, where they were.
 
 Finder reads a folder's own view from the parent folder's `.DS_Store`, under the folder's name; Sift writes
 that one record, records the default for the folders next to it (so leaving the folder for a neighbour shows

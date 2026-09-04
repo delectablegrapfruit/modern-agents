@@ -246,7 +246,8 @@ final class Model: ObservableObject {
 
     var hasChanges: Bool { draft != applied }
 
-    /// Quits Finder, writes its defaults and every folder view, starts it again.
+    /// Quits Finder, writes its defaults and every folder view, starts it again
+    /// with the windows it had.
     func apply() {
         guard hasChanges, applyPhase == nil else { return }
         applyPhase = "Applying…"
@@ -258,6 +259,7 @@ final class Model: ObservableObject {
         Task { @MainActor in
             await guardian.pause()
             var problems: [String] = []
+            let windows = await Finder.openWindows()
             if !(await Finder.quit()) {
                 problems.append("Finder would not quit; it may show the previous views until it is restarted.")
             }
@@ -275,6 +277,7 @@ final class Model: ObservableObject {
                 problems.append(error.localizedDescription)
             }
             await Finder.launch()
+            await Finder.reopen(windows)
             // Left as changes when Finder's defaults could not be written, so Apply can be tried again.
             if prefsWritten { applied = engine.settings.views }
             if !problems.isEmpty { error = problems.joined(separator: "\n") }

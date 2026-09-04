@@ -302,6 +302,19 @@ final class WindowGuardTests: XCTestCase {
         XCTAssertEqual(WindowGuard.parse("").windows, [])
     }
 
+    func testOpenWindowsComeBackWhereTheyWere() {
+        let windows = WindowGuard.parseOpenWindows("0 44 900 700 /Users/me/My Files/\n100 100 500 400 /Volumes/USB/\nx y z w /nope\n1 2 3 4 relative\n")
+        XCTAssertEqual(windows, [.init(path: "/Users/me/My Files/", bounds: [0, 44, 900, 700]), .init(path: "/Volumes/USB/", bounds: [100, 100, 500, 400])])
+        let script = WindowGuard.reopenScript(windows)
+        let usb = script.range(of: "POSIX file \"/Volumes/USB/\"")!.lowerBound
+        let files = script.range(of: "POSIX file \"/Users/me/My Files/\"")!.lowerBound
+        XCTAssertLessThan(usb, files, "back to front, so the front window ends up in front")
+        XCTAssertTrue(script.contains("set bounds of w to {0, 44, 900, 700}"))
+        XCTAssertTrue(script.contains("make new Finder window to"))
+        XCTAssertTrue(WindowGuard.openWindowsScript.contains("bounds of Finder window id n"))
+        XCTAssertEqual(WindowGuard.parseOpenWindows(""), [])
+    }
+
     func testTrackerTellsTheNextLookWhatItSaw() {
         var tracker = WindowGuard.Tracker()
         XCTAssertEqual(tracker.lines, [])

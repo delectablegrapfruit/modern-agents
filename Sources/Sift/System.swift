@@ -135,10 +135,27 @@ enum Finder {
         return apps.allSatisfy(\.isTerminated)
     }
 
+    /// The windows open now, front to back, to bring back after a relaunch.
+    static func openWindows() async -> [WindowGuard.OpenWindow] {
+        let session = WindowGuard.Session()
+        return await Task.detached(priority: .userInitiated) { (try? session.openWindows()) ?? [] }.value
+    }
+
     @MainActor
     static func launch() async {
         guard running.isEmpty else { return }
         let url = URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app")
         _ = try? await NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+    }
+
+    /// Opens the windows again once Finder answers; it takes a moment after launch.
+    static func reopen(_ windows: [WindowGuard.OpenWindow]) async {
+        guard !windows.isEmpty else { return }
+        let session = WindowGuard.Session()
+        for _ in 0..<20 {
+            let done = await Task.detached(priority: .userInitiated) { (try? session.reopen(windows)) != nil }.value
+            if done { return }
+            try? await Task.sleep(nanoseconds: 500_000_000)
+        }
     }
 }
