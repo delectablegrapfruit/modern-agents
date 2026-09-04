@@ -37,40 +37,37 @@ struct MainWindow: View {
     }
 }
 
-/// What is being watched, and everything that needs the person: one row per
-/// permission, in the order a first run meets them.
+/// What is being watched, whether a sweep is needed, and everything that
+/// needs the person: one row each, the same shape (light · words · button).
 struct StatusSection: View {
     @EnvironmentObject private var model: Model
 
     var body: some View {
         Section {
+            // Watching.
             HStack(spacing: 10) {
-                Circle()
-                    .fill(model.isPaused ? Color.secondary.opacity(0.4) : Color.green)
-                    .frame(width: 8, height: 8)
-                Text(model.statusText)
+                Light(model.isPaused || model.roots.isEmpty ? .off : .good)
+                Captioned(model.statusText, model.isPaused || model.unwatchedNames.isEmpty ? nil
+                          : "Not watched: " + model.unwatchedNames.joined(separator: ", "))
                 Spacer()
                 if model.isPaused { Button("Resume") { model.togglePause() } }
-                Button { model.sweepNow() } label: {
-                    HStack(spacing: 6) {
-                        // Orange: junk may have arrived while nothing watched. Green: everything
-                        // watched has been swept since watching began.
-                        Circle()
-                            .fill(model.sweepDueText == nil ? Color.green : Color.orange)
-                            .frame(width: 7, height: 7)
-                            .accessibilityLabel(model.sweepDueText ?? "No sweep needed")
-                        Text("Sweep")
-                    }
-                }
-                .help(model.sweepDueText ?? "Nothing arrived unwatched since the last sweep.")
-                .disabled(model.sweep != .idle)
+                Button("Edit…") { model.editingWatch = true }
             }
-            if case .scanning(let directory) = model.sweep {
-                HStack(spacing: 10) {
+            // Sweeping.
+            HStack(spacing: 10) {
+                if case .scanning(let directory) = model.sweep {
+                    Light(.due)
                     ProgressView().controlSize(.small)
                     Captioned("Looking through every folder…", directory)
                     Spacer()
                     Button("Cancel") { model.cancelSweep() }
+                } else {
+                    let text = model.sweepText
+                    Light(model.sweepDue.isEmpty ? .good : .due)
+                    Captioned(text.title, text.reason)
+                    Spacer()
+                    Button("Sweep") { model.sweepNow() }
+                        .disabled(model.sweepDue.isEmpty || model.sweep != .idle)
                 }
             }
             if !model.hasFullDiskAccess {
@@ -109,8 +106,63 @@ struct StatusSection: View {
                 }
             }
         } footer: {
-            Text("Removes .DS_Store, ._ files and the disk-level folders macOS leaves behind, the moment they appear. What was there before waits for a sweep.")
+            Text("Removes .DS_Store, ._ files and the disk-level folders macOS leaves behind, the moment they appear.")
         }
+        .sheet(isPresented: $model.editingWatch) { WatchSheet().environmentObject(model) }
+    }
+}
+
+/// A status light: green for good, orange for something to do, grey for off.
+struct Light: View {
+    enum State { case good, due, off }
+    let state: State
+
+    init(_ state: State) { self.state = state }
+
+    var body: some View {
+        Circle()
+            .fill(state == .good ? Color.green : (state == .due ? Color.orange : Color.secondary.opacity(0.4)))
+            .frame(width: 8, height: 8)
+    }
+}
+
+/// Which disks are watched and swept. A disk that cannot be (read-only, Time
+/// Machine) is listed so it is clear why it is not.
+struct WatchSheet: View {
+    @EnvironmentObject private var model: Model
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Form {
+                Section {
+                    ForEach(model.volumes.sorted { ($0.kind == .startup ? 0 : 1, $0.name) < ($1.kind == .startup ? 0 : 1, $1.name) }) { volume in
+                        Toggle(isOn: Binding(get: { model.isWatchable(volume) && model.isWatched(volume) },
+                                             set: { model.setWatched(volume, $0) })) {
+                            Captioned(volume.kind == .startup ? "Startup disk" : volume.name, caption(for: volume))
+                        }
+                        .disabled(!model.isWatchable(volume))
+                    }
+                } header: {
+                    Text("Watch and sweep")
+                } footer: {
+                    Text("A disk left out is neither watched nor swept.")
+                }
+            }
+            .formStyle(.grouped)
+            HStack {
+                Spacer()
+                Button("Done") { model.editingWatch = false }.keyboardShortcut(.defaultAction)
+            }
+            .padding()
+        }
+        .frame(width: 420, height: 360)
+    }
+
+    private func caption(for volume: Volume) -> String? {
+        if volume.kind == .startup { return "Your folders, Shared, Applications" }
+        if volume.isReadOnly { return "Read-only" }
+        if !volume.isCleanable() { return "Time Machine backups" }
+        return nil
     }
 }
 

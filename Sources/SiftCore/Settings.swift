@@ -7,15 +7,19 @@ public struct Settings: Hashable, Codable {
     /// When each root (by path) was last swept through, so a sweep is known
     /// to be due where junk could have arrived unwatched since.
     public var sweeps: [String: Date] = [:]
+    /// Disks (by volume id, `Engine.startupKey` for the startup disk's user
+    /// areas) the person chose not to watch or sweep.
+    public var excludedVolumes: Set<String> = []
 
     public init() {}
 
-    enum CodingKeys: String, CodingKey { case views, sweeps }
+    enum CodingKeys: String, CodingKey { case views, sweeps, excludedVolumes }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         views = (try? c.decodeIfPresent(ViewSettings.self, forKey: .views)) ?? ViewSettings()
         sweeps = (try? c.decodeIfPresent([String: Date].self, forKey: .sweeps)) ?? [:]
+        excludedVolumes = (try? c.decodeIfPresent(Set<String>.self, forKey: .excludedVolumes)) ?? []
     }
 }
 

@@ -47,8 +47,11 @@ final class Model: ObservableObject {
     @Published private(set) var activity: [Entry] = []
     @Published private(set) var isPaused = false
     @Published private(set) var sweep: SweepState = .idle
-    /// Places where junk may have arrived unwatched since the last sweep.
-    @Published private(set) var sweepDue: [Root] = []
+    /// Places where junk may have arrived unwatched since the last sweep, and why.
+    @Published private(set) var sweepDue: [Engine.Due] = []
+    /// Every mounted disk, for choosing which to watch.
+    @Published private(set) var volumes: [Volume] = []
+    @Published var editingWatch = false
     /// Views as edited in the window; `applied` is what Finder has.
     @Published var draft: ViewSettings
     @Published private(set) var applied: ViewSettings
@@ -85,7 +88,13 @@ final class Model: ObservableObject {
         guardian.onApplied = { [weak self] path, view in self?.engine.log.info("Finder window set to " + view, path: path) }
         // Finder flushes its stores on the way out; they are put right for its next start.
         guardian.onFinderQuit = { Task.detached(priority: .utility) { engine.reconcileStores() } }
-        engine.onRootsChanged = { [weak self] list in Task { @MainActor in self?.roots = list } }
+        engine.onRootsChanged = { [weak self] list in
+            let volumes = engine.mountedVolumes
+            Task { @MainActor in
+                self?.roots = list
+                self?.volumes = volumes
+            }
+        }
         engine.onLockedChanged = { [weak self] list in Task { @MainActor in self?.locked = list } }
         engine.onSweepDueChanged = { [weak self] list in Task { @MainActor in self?.sweepDue = list } }
         engine.log.onAppend = { [weak self] in Task { @MainActor in self?.scheduleActivityRefresh() } }
@@ -170,12 +179,46 @@ final class Model: ObservableObject {
         return labels.isEmpty ? "Nothing to watch" : "Watching " + labels.joined(separator: ", ")
     }
 
-    /// Why a sweep is due, for the mark on the Sweep button.
-    var sweepDueText: String? {
-        guard !sweepDue.isEmpty else { return nil }
+    /// Disks the person left out, by the key `setWatched` takes.
+    var excludedDisks: Set<String> { engine.settings.excludedVolumes }
+
+    /// Names of connected disks left out, for the watching row.
+    var unwatchedNames: [String] {
+        let excluded = excludedDisks
+        return volumes.filter { isWatchable($0) && excluded.contains(watchKey($0)) }.map(\.name)
+    }
+
+    func watchKey(_ volume: Volume) -> String { volume.kind == .startup ? Engine.startupKey : volume.id }
+
+    /// Whether the disk can be watched at all (read-only and Time Machine disks cannot).
+    func isWatchable(_ volume: Volume) -> Bool { volume.kind == .startup || volume.isCleanable() }
+
+    func isWatched(_ volume: Volume) -> Bool { !excludedDisks.contains(watchKey(volume)) }
+
+    func setWatched(_ volume: Volume, _ on: Bool) {
+        var settings = engine.settings
+        if on { settings.excludedVolumes.remove(watchKey(volume)) } else { settings.excludedVolumes.insert(watchKey(volume)) }
+        let engine = self.engine
+        objectWillChange.send()
+        Task.detached(priority: .utility) { engine.update(settings) }
+    }
+
+    /// The sweep row: whether one is needed, and why, in a few words.
+    var sweepText: (title: String, reason: String?) {
+        guard let first = sweepDue.first else { return ("Nothing to sweep", nil) }
+        let names = sweepDue.filter { $0.reason == first.reason }.map(\.root.label)
         var labels: [String] = []
-        for root in sweepDue where !labels.contains(root.label) { labels.append(root.label) }
-        return "Not swept since watching began: " + labels.joined(separator: ", ")
+        for name in names where !labels.contains(name) { labels.append(name) }
+        let list = labels.joined(separator: ", ")
+        let reason: String
+        switch first.reason {
+        case .started: reason = "Files from before Sift ran on " + list
+        case .connected: reason = list + " connected since the last sweep"
+        case .paused: reason = "Nothing watched while paused on " + list
+        case .missed: reason = "Changes on " + list + " went unseen"
+        }
+        let more = Set(sweepDue.map(\.reason)).count - 1
+        return ("Sweep due", reason + (more > 0 ? " · and more" : ""))
     }
 
     /// Pause stops everything automatic: cleaning and the window guard.

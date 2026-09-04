@@ -38,8 +38,8 @@ public final class Engine {
     public var onRemoved: ((Outcome, Root) -> Void)?
     /// Items only an administrator can remove, as they are found and cleared.
     public var onLockedChanged: (([Item]) -> Void)?
-    /// The roots where a sweep is due, whenever that set changes.
-    public var onSweepDueChanged: (([Root]) -> Void)?
+    /// The roots where a sweep is due, whenever that changes.
+    public var onSweepDueChanged: (([Due]) -> Void)?
     /// Removes as root what the app itself could not. Set once the helper is installed.
     public var privilegedRemove: (([Item]) -> Outcome)?
 
@@ -56,11 +56,12 @@ public final class Engine {
     private var _plan: StorePlan
     private var _safety: Safety
     private var _locked: [String: Item] = [:]
-    /// When each root was last unwatched: watching began (start, resume, a
-    /// disk arriving) or the system reported changes it could not name. Junk
-    /// from before that moment is only found by a sweep.
-    private var _unwatched: [String: Date] = [:]
-    private var _lastDue: Set<String> = []
+    /// When each root was last unwatched, and why. Junk from before that
+    /// moment is only found by a sweep.
+    private var _unwatched: [String: Unwatched] = [:]
+    private var _everWatched: Set<String> = []
+    private var _stoppedByPause: Set<String> = []
+    private var _lastDue: [Due] = []
 
     public init(store: SettingsStore = SettingsStore(),
                 volumes: VolumeSource = Volumes.system(),
@@ -88,12 +89,19 @@ public final class Engine {
     }
 
     public func update(_ settings: Settings) {
-        state.sync { _settings = settings }
+        let watchedChanged: Bool = state.sync {
+            defer { _settings = settings }
+            return _settings.excludedVolumes != settings.excludedVolumes
+        }
         if persistsSettings {
             do { try store.save(settings) } catch { log.info("Could not save settings: \(error.localizedDescription)") }
         }
         replan()
+        if watchedChanged, isRunning { reconfigure() }
     }
+
+    /// The key under which the startup disk's user areas are excluded.
+    public static let startupKey = "startup"
 
     public var plan: StorePlan { state.sync { _plan } }
     public var safety: Safety { state.sync { _safety } }
@@ -171,13 +179,15 @@ public final class Engine {
     /// Everything that gets cleaned: the startup disk's user areas and every
     /// cleanable volume.
     public func roots() -> [Root] {
-        let volumes = mountedVolumes
+        let (volumes, excluded) = state.sync { (_volumes, _settings.excludedVolumes) }
         let system = Safety()
         var out: [Root] = []
-        for path in userRoots.map(Paths.standardize) where Files.isDirectory(path) && !system.isProtected(path) {
-            out.append(Root(path: path, label: "Startup disk"))
+        if !excluded.contains(Engine.startupKey) {
+            for path in userRoots.map(Paths.standardize) where Files.isDirectory(path) && !system.isProtected(path) {
+                out.append(Root(path: path, label: "Startup disk"))
+            }
         }
-        for volume in volumes where volume.isCleanable(fileManager: fileManager) {
+        for volume in volumes where volume.isCleanable(fileManager: fileManager) && !excluded.contains(volume.id) {
             out.append(Root(path: volume.mountPoint, label: volume.name, volume: volume))
         }
         var seen = Set<String>()
@@ -202,13 +212,18 @@ public final class Engine {
             for (path, entry) in _watches where wanted[path] == nil {
                 toStop.append(entry.watcher)
                 _watches[path] = nil
+                if _paused { _stoppedByPause.insert(path) }
             }
             let protected = Safety().protectedPrefixes
             for root in desired where _watches[root.path] == nil {
                 let excluded = protected.filter { Paths.isInside($0, root.path) && $0 != root.path }
                 let watcher = Watchers.make(root: root.path, excluding: excluded)
                 _watches[root.path] = (root, watcher)
-                _unwatched[root.path] = Date()
+                let reason: Unwatched.Reason = _stoppedByPause.contains(root.path) ? .paused
+                    : (_everWatched.contains(root.path) ? .connected : .started)
+                _unwatched[root.path] = Unwatched(since: Date(), reason: reason)
+                _everWatched.insert(root.path)
+                _stoppedByPause.remove(root.path)
                 toStart.append((root, watcher))
             }
         }
@@ -236,7 +251,7 @@ public final class Engine {
             let folder = Paths.standardize(directory)
             guard Paths.isInside(folder, root.path) else { return }
             // Only the folder itself is looked at; what lies deeper waits for a sweep.
-            state.sync { _unwatched[root.path] = Date() }
+            state.sync { _unwatched[root.path] = Unwatched(since: Date(), reason: .missed) }
             noteSweepDue()
             let scanner = JunkScanner(safety: safety)
             guard let items = try? scanner.scan(root: folder, depth: Watchers.subtreeDepth), !items.isEmpty else { return }
@@ -251,24 +266,45 @@ public final class Engine {
 
     // MARK: - Sweeps
 
-    /// Roots where junk could have arrived unwatched since the last sweep:
-    /// watching started after it, or the system reported changes it could not
-    /// name. Nothing is read from disk to know this.
-    public var sweepDue: [Root] {
+    /// A moment from which a root's junk is not caught as it appears.
+    public struct Unwatched: Hashable {
+        public enum Reason: Hashable {
+            /// Sift started: what was there before is unknown.
+            case started
+            /// The disk was connected (or came back).
+            case connected
+            /// Nothing was watched while paused.
+            case paused
+            /// The system reported changes it could not name.
+            case missed
+        }
+
+        public let since: Date
+        public let reason: Reason
+    }
+
+    /// A root where a sweep is due, and why.
+    public struct Due: Hashable {
+        public let root: Root
+        public let reason: Unwatched.Reason
+    }
+
+    /// Roots where junk could have arrived unwatched since the last sweep.
+    /// Nothing is read from disk to know this.
+    public var sweepDue: [Due] {
         let (sweeps, unwatched, watched) = state.sync { (_settings.sweeps, _unwatched, _watches.values.map(\.root)) }
-        return watched.filter { root in
-            guard let since = unwatched[root.path] else { return false }
-            guard let last = sweeps[root.path] else { return true }
-            return last <= since
-        }.sorted { $0.path < $1.path }
+        return watched.sorted { $0.path < $1.path }.compactMap { root in
+            guard let entry = unwatched[root.path] else { return nil }
+            if let last = sweeps[root.path], last > entry.since { return nil }
+            return Due(root: root, reason: entry.reason)
+        }
     }
 
     private func noteSweepDue() {
         let due = sweepDue
         let changed: Bool = state.sync {
-            let paths = Set(due.map(\.path))
-            defer { _lastDue = paths }
-            return paths != _lastDue
+            defer { _lastDue = due }
+            return due != _lastDue
         }
         if changed { onSweepDueChanged?(due) }
     }

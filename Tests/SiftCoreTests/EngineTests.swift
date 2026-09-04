@@ -72,19 +72,44 @@ final class EngineTests: XCTestCase {
     func testASweepIsDueWhereWatchingBeganAfterTheLastOne() throws {
         var due: [[String]] = []
         let lock = NSLock()
-        engine.onSweepDueChanged = { roots in lock.lock(); due.append(roots.map(\.path)); lock.unlock() }
+        engine.onSweepDueChanged = { list in lock.lock(); due.append(list.map(\.root.path)); lock.unlock() }
         XCTAssertTrue(engine.sweepDue.isEmpty, "nothing is watched yet")
         engine.start()
-        XCTAssertEqual(Set(engine.sweepDue.map(\.path)), [box.path + "/Users/me", box.path + "/USB"], "never swept: due everywhere")
+        XCTAssertEqual(Set(engine.sweepDue.map(\.root.path)), [box.path + "/Users/me", box.path + "/USB"], "never swept: due everywhere")
+        XCTAssertEqual(Set(engine.sweepDue.map(\.reason)), [.started])
         engine.noteSwept(engine.roots())
         XCTAssertTrue(engine.sweepDue.isEmpty)
         XCTAssertEqual(engine.settings.sweeps.count, 2, "remembered")
         engine.isPaused = true
         engine.isPaused = false
         XCTAssertEqual(engine.sweepDue.count, 2, "nothing watched while paused")
+        XCTAssertEqual(Set(engine.sweepDue.map(\.reason)), [.paused])
         engine.noteSwept([engine.roots().first { $0.path.hasSuffix("USB") }!])
-        XCTAssertEqual(engine.sweepDue.map(\.path), [box.path + "/Users/me"])
+        XCTAssertEqual(engine.sweepDue.map(\.root.path), [box.path + "/Users/me"])
         lock.lock(); XCTAssertEqual(due.last, [box.path + "/Users/me"]); lock.unlock()
+
+        volumes.volumes = volumes.volumes.filter { $0.kind == .startup }
+        engine.refreshVolumes()
+        XCTAssertEqual(engine.activeRoots.map(\.path), [box.path + "/Users/me"], "unplugged")
+        volumes.volumes.append(usb)
+        engine.refreshVolumes()
+        XCTAssertEqual(engine.sweepDue.first { $0.root.path.hasSuffix("USB") }?.reason, .connected, "back again: what arrived meanwhile is unknown")
+    }
+
+    func testDisksCanBeLeftOut() throws {
+        engine.start()
+        var settings = engine.settings
+        settings.excludedVolumes = [usb.id]
+        engine.update(settings)
+        XCTAssertEqual(engine.activeRoots.map(\.path), [box.path + "/Users/me"], "the excluded disk is neither watched nor swept")
+        XCTAssertEqual(engine.roots().map(\.path), [box.path + "/Users/me"])
+        settings.excludedVolumes = [Engine.startupKey]
+        engine.update(settings)
+        XCTAssertEqual(engine.activeRoots.map(\.path), [box.path + "/USB"])
+        settings.excludedVolumes = [Engine.startupKey, usb.id]
+        engine.update(settings)
+        XCTAssertTrue(engine.activeRoots.isEmpty, "nothing watched at all")
+        XCTAssertTrue(engine.sweepDue.isEmpty)
     }
 
     func testWatchingReactsToChanges() throws {
