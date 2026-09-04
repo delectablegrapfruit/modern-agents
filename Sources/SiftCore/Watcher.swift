@@ -27,17 +27,21 @@ public final class FSEventsWatcher: Watcher {
     private var stream: FSEventStreamRef?
     private let queue = DispatchQueue(label: "sift.fsevents", qos: .utility)
 
-    public init(root: String, excluding excluded: [String] = []) {
+    /// Whether this process's own writes and removals are left out (they are not news).
+    public let ignoresOwnChanges: Bool
+
+    public init(root: String, excluding excluded: [String] = [], ignoringOwnChanges: Bool = true) {
         self.root = root
         self.excluded = Array(excluded.prefix(8))
+        ignoresOwnChanges = ignoringOwnChanges
     }
 
     public func start() {
         stop()
         var context = FSEventStreamContext()
         context.info = Unmanaged.passUnretained(self).toOpaque()
-        // Sift's own removals and writes are not news.
-        let flags = kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagIgnoreSelf
+        var flags = kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagFileEvents
+        if ignoresOwnChanges { flags |= kFSEventStreamCreateFlagIgnoreSelf }
         guard let created = FSEventStreamCreate(kCFAllocatorDefault, fsEventsCallback, &context, [root] as CFArray,
                                                 FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 1.0,
                                                 FSEventStreamCreateFlags(flags)) else { return }
@@ -117,9 +121,12 @@ public final class PollingWatcher: Watcher {
 public enum Watchers {
     public static var pollInterval: TimeInterval = 1
 
+    /// Tests create files from the watching process itself, so they watch their own changes.
+    public static var watchOwnChanges = false
+
     public static func make(root: String, excluding: [String]) -> Watcher {
         #if os(macOS)
-        return FSEventsWatcher(root: root, excluding: excluding)
+        return FSEventsWatcher(root: root, excluding: excluding, ignoringOwnChanges: !watchOwnChanges)
         #else
         return PollingWatcher(root: root, interval: pollInterval)
         #endif

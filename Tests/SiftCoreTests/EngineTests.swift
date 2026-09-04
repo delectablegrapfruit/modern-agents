@@ -14,6 +14,7 @@ final class EngineTests: XCTestCase {
         usb = Volume(id: "uuid:usb", name: "USB", mountPoint: box.path + "/USB", kind: .external)
         volumes = FixedVolumes([Volume(id: "uuid:boot", name: "Macintosh HD", mountPoint: "/", kind: .startup), usb])
         Watchers.pollInterval = 0.3
+        Watchers.watchOwnChanges = true
         engine = Engine(store: SettingsStore(fileURL: box.url("config/settings.json")), volumes: volumes,
                         log: Log(fileURL: box.url("config/activity.jsonl")), userRoots: [box.path + "/Users/me"])
     }
