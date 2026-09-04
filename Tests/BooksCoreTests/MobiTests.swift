@@ -105,9 +105,10 @@ final class MobiTests: XCTestCase {
 
     // MARK: - Helpers
 
-    /// Every `OEBPS/text/*.xhtml` in the archive, in spine-ish (archive) order.
+    /// The book's content documents, in archive order. Kindle conversions put them under `OEBPS/text/`; the
+    /// plain-text branch hands off to the shared EPUB writer, which puts them straight in `OEBPS/`.
     private func textFiles(_ archive: ZipArchive) -> [String] {
-        archive.names.filter { $0.hasPrefix("OEBPS/text/") && $0.hasSuffix(".xhtml") }
+        archive.names.filter { $0.hasPrefix("OEBPS/") && $0.hasSuffix(".xhtml") && !$0.hasSuffix("/nav.xhtml") }
     }
 
     private func wordCount(_ archive: ZipArchive) throws -> Int {
@@ -161,7 +162,8 @@ final class MobiTests: XCTestCase {
         let archive = try ZipArchive(data: book.epub)
         // The mimetype entry has to come first for a reader to recognise the file without unzipping it all.
         XCTAssertEqual(archive.entries.first?.name, "mimetype", "\(name): mimetype is not the first entry")
-        XCTAssertEqual(try archive.string("mimetype"), "application/epub+zip", "\(name): wrong mimetype")
+        let mimetype = try archive.string("mimetype")
+        XCTAssertEqual(mimetype, "application/epub+zip", "\(name): wrong mimetype")
         XCTAssertTrue(archive.contains("META-INF/container.xml"), "\(name): no container.xml")
         XCTAssertTrue(archive.contains("OEBPS/content.opf"), "\(name): no content.opf")
         XCTAssertTrue(archive.contains("OEBPS/nav.xhtml"), "\(name): no navigation document")
@@ -200,7 +202,8 @@ final class MobiTests: XCTestCase {
             XCTAssertGreaterThan(cover.count, 1000, "\(name): the cover is suspiciously small")
             XCTAssertEqual([UInt8](cover.prefix(magic.count)), magic, "\(name): the cover is not the expected format")
             XCTAssertEqual(book.coverMediaType, "image/jpeg", "\(name): cover media type")
-            XCTAssertTrue(archive.names.contains { $0.hasPrefix("OEBPS/images/cover.") }, "\(name): no cover in the archive")
+            XCTAssertTrue(archive.names.contains(where: { $0.hasPrefix("OEBPS/images/cover.") }),
+                          "\(name): no cover in the archive")
             XCTAssertTrue(archive.contains("OEBPS/text/cover.xhtml"), "\(name): no cover page")
             XCTAssertTrue(opf.contains("properties=\"cover-image\""), "\(name): the cover is not marked in the OPF")
         }
@@ -213,7 +216,8 @@ final class MobiTests: XCTestCase {
             XCTAssertFalse(fonts.isEmpty, "\(name): expected embedded fonts")
             // A de-obfuscated font has to start with a real font magic, not the scrambled bytes.
             for font in fonts {
-                let bytes = [UInt8](try archive.data(font).prefix(4))
+                let head = try archive.data(font)
+                let bytes = [UInt8](head.prefix(4))
                 let isOTF = bytes == Array("OTTO".utf8)
                 let isTTF = bytes == [0x00, 0x01, 0x00, 0x00] || bytes == Array("true".utf8)
                 let isWOFF = bytes == Array("wOFF".utf8)
@@ -222,7 +226,8 @@ final class MobiTests: XCTestCase {
         }
 
         if let count = expectation.tocCount {
-            XCTAssertEqual(try navEntries(archive).count, count, "\(name): table of contents size")
+            let entries = try navEntries(archive)
+            XCTAssertEqual(entries.count, count, "\(name): table of contents size")
         }
         if let labels = expectation.tocLabels {
             let found = try navEntries(archive).map(\.label)
@@ -333,7 +338,8 @@ final class MobiTests: XCTestCase {
         XCTAssertTrue(opf.contains("Converted from Kindle MOBI"))
 
         // Windows-1252 text has to come out as the right characters, not as mojibake.
-        let text = try textFiles(archive).map { try archive.string($0) }.joined()
+        var text = ""
+        for file in textFiles(archive) { text += try archive.string(file) }
         XCTAssertFalse(text.contains("\u{FFFD}"), "the cp1252 text decoded with replacement characters")
         XCTAssertTrue(text.contains("libmobi"), "the sample text is missing")
     }
@@ -343,8 +349,8 @@ final class MobiTests: XCTestCase {
         let huffdic = try KindleBook.convertToEPUB(try fixture("sample-unicode-huffdic.mobi"))
         let uncompressed = try KindleBook.convertToEPUB(try fixture("sample-unicode-uncompressed.mobi"))
 
-        let a = try wordCount(try ZipArchive(data: huffdic.epub))
-        let b = try wordCount(try ZipArchive(data: uncompressed.epub))
+        let a = try wordCount(ZipArchive(data: huffdic.epub))
+        let b = try wordCount(ZipArchive(data: uncompressed.epub))
         XCTAssertGreaterThan(a, 1000, "the HUFF/CDIC book decompressed to almost nothing")
         XCTAssertGreaterThan(b, 1000, "the uncompressed book came out almost empty")
         let difference = Double(abs(a - b)) / Double(max(a, b))
@@ -394,7 +400,7 @@ final class MobiTests: XCTestCase {
             let book = try KindleBook.convertToEPUB(try fixture(name))
             XCTAssertTrue(book.isKF8, "\(name) should convert from its KF8 half")
             let archive = try ZipArchive(data: book.epub)
-            XCTAssertTrue(archive.names.contains { $0.hasPrefix("OEBPS/text/part") },
+            XCTAssertTrue(archive.names.contains(where: { $0.hasPrefix("OEBPS/text/part") }),
                           "\(name): KF8 sections should be named part*.xhtml")
             // The cover comes from the resource area the first header describes; if we used the wrong base it
             // would not be a JPEG.
@@ -409,8 +415,8 @@ final class MobiTests: XCTestCase {
         let archive = try ZipArchive(data: book.epub)
         let resources = archive.names.filter { $0.hasPrefix("OEBPS/images/res") }
         XCTAssertGreaterThanOrEqual(resources.count, 2, "expected the image and the media records: \(resources)")
-        XCTAssertTrue(resources.contains { $0.hasSuffix(".mp4") } || resources.contains { $0.hasSuffix(".mp3") },
-                      "expected an audio or video record in \(resources)")
+        let hasMedia = resources.contains(where: { $0.hasSuffix(".mp4") }) || resources.contains(where: { $0.hasSuffix(".mp3") })
+        XCTAssertTrue(hasMedia, "expected an audio or video record in \(resources)")
     }
 
     /// Obfuscated fonts are XOR-scrambled and zlib-compressed; both have to be undone.
@@ -439,7 +445,8 @@ final class MobiTests: XCTestCase {
         XCTAssertEqual(book.title, "Libmobi test sample")
         let archive = try ZipArchive(data: book.epub)
         XCTAssertEqual(archive.entries.first?.name, "mimetype")
-        XCTAssertGreaterThan(try wordCount(archive), 1000, "the PalmDOC text did not come through")
+        let words = try wordCount(archive)
+        XCTAssertGreaterThan(words, 1000, "the PalmDOC text did not come through")
     }
 
     /// A DRM file must fail with an explanation a reader can show, not with a corrupt book.
@@ -484,7 +491,8 @@ final class MobiTests: XCTestCase {
         if let book = try? KindleBook.convertToEPUB(data) {
             let archive = try ZipArchive(data: book.epub)
             XCTAssertEqual(archive.entries.first?.name, "mimetype")
-            XCTAssertGreaterThan(try wordCount(archive), 100)
+            let words = try wordCount(archive)
+            XCTAssertGreaterThan(words, 100)
         }
     }
 }

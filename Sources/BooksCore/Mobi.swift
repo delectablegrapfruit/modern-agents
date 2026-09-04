@@ -237,14 +237,14 @@ private struct Pattern {
     }
 
     func matches(in s: String) -> [Match] {
-        guard let re else { return [] }
+        guard let re = re else { return [] }
         let ns = s as NSString
         let results = re.matches(in: s, options: [], range: NSRange(location: 0, length: ns.length))
         return results.map { Pattern.match(from: $0, ns: ns) }
     }
 
     func firstMatch(in s: String) -> Match? {
-        guard let re else { return nil }
+        guard let re = re else { return nil }
         let ns = s as NSString
         guard let r = re.firstMatch(in: s, options: [], range: NSRange(location: 0, length: ns.length)) else { return nil }
         return Pattern.match(from: r, ns: ns)
@@ -255,7 +255,7 @@ private struct Pattern {
     /// Replaces every match with whatever `body` returns for it, the way JavaScript's `String.replace` with a
     /// function does.
     func replacingMatches(in s: String, using body: (Match) -> String) -> String {
-        guard let re else { return s }
+        guard let re = re else { return s }
         let ns = s as NSString
         let results = re.matches(in: s, options: [], range: NSRange(location: 0, length: ns.length))
         guard !results.isEmpty else { return s }
@@ -350,12 +350,11 @@ private func parseBase32(_ s: String) -> Int? {
     var value = 0
     var any = false
     for ch in s.lowercased() {
+        guard let code = ch.asciiValue else { return any ? value : nil }
         let digit: Int
-        switch ch {
-        case "0"..."9": digit = Int(ch.asciiValue ?? 48) - 48
-        case "a"..."v": digit = Int(ch.asciiValue ?? 97) - 97 + 10
-        default: return any ? value : nil
-        }
+        if code >= 0x30 && code <= 0x39 { digit = Int(code) - 0x30 }          // 0-9
+        else if code >= 0x61 && code <= 0x76 { digit = Int(code) - 0x61 + 10 } // a-v
+        else { return any ? value : nil }
         value = value * 32 + digit
         any = true
         if value > 0x7FFF_FFFF { return value }
@@ -858,9 +857,9 @@ private func readIndex(_ pdb: PalmDB, base: Int, indxIndex: Int) throws -> Index
                         k += 1
                     }
                 } else {
-                    let bytes = p.valueBytes ?? 0
+                    let byteCount = p.valueBytes ?? 0
                     var consumed = 0
-                    while consumed < bytes {
+                    while consumed < byteCount {
                         let v = varlen(rec, pos)
                         guard v.length > 0 else { break }
                         values.append(v.value)
@@ -998,7 +997,6 @@ private let SKIP_MAGIC: Set<String> = [
 // MARK: - The converter
 
 private final class MobiConverter {
-    private let bytes: [UInt8]
     private let pdb: PalmDB
 
     private var base = 0
@@ -1009,11 +1007,11 @@ private final class MobiConverter {
     private var isKF8 = false
 
     private enum Decompressor {
-        case none
+        case stored
         case palmDOC
         case huff(HuffCdic)
     }
-    private var decompressor = Decompressor.none
+    private var decompressor = Decompressor.stored
     private var multibyteTrailing = false
     private var numTrailingEntries = 0
     /// Set for old PalmDOC books, whose text is decompressed before the MOBI 7 path ever runs.
@@ -1023,7 +1021,6 @@ private final class MobiConverter {
     private var resourceMisses: Set<Int> = []
 
     init(bytes: [UInt8]) throws {
-        self.bytes = bytes
         self.pdb = try PalmDB(bytes)
     }
 
@@ -1071,7 +1068,7 @@ private final class MobiConverter {
     private func setUpText() throws {
         guard let mobi = headers.mobi else { throw KindleError.missingMOBIHeader }
         switch headers.palmdoc.compression {
-        case 1: decompressor = .none
+        case 1: decompressor = .stored
         case 2: decompressor = .palmDOC
         case 17480:
             let huff = try HuffCdic(pdb: pdb, base: base, huffIndex: mobi.huffcdic, numHuff: mobi.numHuffcdic)
@@ -1085,7 +1082,7 @@ private final class MobiConverter {
 
     private func decompress(_ a: [UInt8]) throws -> [UInt8] {
         switch decompressor {
-        case .none: return a
+        case .stored: return a
         case .palmDOC: return decompressPalmDOC(a)
         case .huff(let huff): return try huff.decompress(a)
         }
@@ -1140,7 +1137,7 @@ private final class MobiConverter {
         let absolute = resourceBase + index
         if let cached = resourceCache[absolute] { return cached }
         if resourceMisses.contains(absolute) { return nil }
-        guard index >= 0, let rec = try? pdb.record(absolute) else {
+        guard let rec = try? pdb.record(absolute) else {
             resourceMisses.insert(absolute)
             return nil
         }
@@ -1268,8 +1265,8 @@ private final class MobiConverter {
 
         var items = toc
         if items.isEmpty {
-            items = sections.enumerated().map { i, s in
-                TOCItem(label: s.title.isEmpty ? "Section \(i + 1)" : s.title, href: s.file)
+            for (i, section) in sections.enumerated() {
+                items.append(TOCItem(label: section.title.isEmpty ? "Section \(i + 1)" : section.title, href: section.file))
             }
             // A book with no table of contents at all can have thousands of sections; a reader only needs a map.
             if items.count > 200 {
@@ -1542,11 +1539,11 @@ private final class MobiConverter {
 
         var toc: [TOCItem] = []
         if let ncx, !ncx.isEmpty {
-            func map(_ item: NCXItem) -> TOCItem {
+            func tocItem(_ item: NCXItem) -> TOCItem {
                 TOCItem(label: item.label, href: item.offset.map { hrefFor($0) } ?? fileFor(0),
-                        children: item.children.map(map))
+                        children: item.children.map(tocItem))
             }
-            toc = ncx.map(map)
+            toc = ncx.map(tocItem)
         }
         if toc.isEmpty, let tocLandmark = landmarks.first(where: { $0.type == "toc" }) {
             // No index, but the book has a hand-written contents page: scrape its links.
@@ -1601,8 +1598,9 @@ private final class MobiConverter {
         // Flows: the main text plus stylesheets and SVG, laid end to end in one buffer.
         var flows: [(start: Int, end: Int)] = [(0, raw.count)]
         if kf8.fdst < MOBI_MAX, kf8.numFdst > 1, let f = try? pdb.record(base + kf8.fdst), latin1(f, 0, 4) == "FDST" {
-            let n = rd32(f, 8)
-            var list: [(Int, Int)] = []
+            // The table has to fit inside its record; a mangled count must not be believed.
+            let n = min(rd32(f, 8), max(0, (f.count - 12) / 8))
+            var list: [(start: Int, end: Int)] = []
             var i = 0
             while i < n {
                 list.append((rd32(f, 12 + i * 8), rd32(f, 16 + i * 8)))
@@ -1847,16 +1845,16 @@ private final class MobiConverter {
 
         var toc: [TOCItem] = []
         if let ncx, !ncx.isEmpty {
-            func map(_ item: NCXItem) -> TOCItem {
+            func tocItem(_ item: NCXItem) -> TOCItem {
                 let href: String
                 if let position = item.position, let fid = position.first {
                     href = hrefFor(fid, position.count > 1 ? position[1] : 0)
                 } else {
                     href = built.first?.file ?? "text/part0001.xhtml"
                 }
-                return TOCItem(label: item.label, href: href, children: item.children.map(map))
+                return TOCItem(label: item.label, href: href, children: item.children.map(tocItem))
             }
-            toc = ncx.map(map)
+            toc = ncx.map(tocItem)
         }
 
         var landmarks: [Landmark] = []
@@ -1901,9 +1899,10 @@ private final class MobiConverter {
         var raw = [UInt8]()
         raw.reserveCapacity(total)
         for part in parts { raw.append(contentsOf: part) }
-        raw.removeAll(where: { $0 == 0 })
 
-        let text = TextEncoding.cp1252.decode(raw)
+        // The sniff and the plain-text path work on text with the padding NULs taken out; the HTML path keeps the
+        // raw bytes, because `filepos` links in it are offsets into exactly those bytes.
+        let text = TextEncoding.cp1252.decode(raw).replacingOccurrences(of: "\0", with: "")
         if RE.looksLikeHTML.matched(String(text.prefix(64))) {
             // Some old PalmDOC readers stored Mobipocket HTML: reuse the MOBI 7 path with a synthetic header.
             base = 0
@@ -1916,7 +1915,7 @@ private final class MobiConverter {
             meta = Metadata()
             meta.title = pdb.name.isEmpty ? "Untitled" : pdb.name
             encoding = .cp1252
-            decompressor = .none
+            decompressor = .stored
             multibyteTrailing = false
             numTrailingEntries = 0
             textOverride = raw
@@ -1925,14 +1924,6 @@ private final class MobiConverter {
 
         // Plain text: the same chapter splitting a dropped-in .txt file gets, packaged by the shared EPUB writer.
         let title = pdb.name.isEmpty ? "Untitled" : pdb.name
-        meta = Metadata()
-        meta.title = title
-        meta.language = "en"
-        encoding = .cp1252
-        isKF8 = false
-        var mobi = MOBIHeader()
-        mobi.encoding = 1252
-        headers = Headers(palmdoc: palmdoc, mobi: mobi, meta: meta, kf8: nil)
         let spec = EPUBSpec(title: title, author: "", language: "en", chapters: TextBook.chapters(from: text))
         return ConvertedBook(epub: EPUBWriter.build(spec), title: title, authors: [], language: "en",
                              cover: nil, coverMediaType: nil, isKF8: false)
