@@ -640,15 +640,26 @@ test('press and hold on a playing video plays it at 2x until release, and the re
     'the timeline is not shown while holding'
   );
 
-  // Sideways scrolling while holding sets the speed.
-  await page.mouse.wheel(50, 0);
+  // Sideways scrolling while holding steps the speed by a quarter, unhurried:
+  // a flick is one step, however long it is.
+  await wheelBurst(page, p.x, p.y, 20, 0, 10, 8);
   await page.waitForTimeout(60);
-  assert.equal(await rate(), 2.5, 'scrolled right: faster');
-  assert.equal((await badge()).rate, 2.5);
-  await page.mouse.wheel(-100, 0);
+  assert.equal(await rate(), 2.25, 'a flick right: one step up');
+  assert.equal((await badge()).rate, 2.25);
+  await page.waitForTimeout(350);
+  await page.mouse.wheel(40, 0);
   await page.waitForTimeout(60);
-  assert.equal(await rate(), 1.5, 'scrolled left: slower');
-  assert.ok(near(await time('#plain'), 10, 1.5), 'the video kept playing, no scrub');
+  assert.equal(await rate(), 2.5, 'another movement after a pause: the next step');
+  await page.waitForTimeout(350);
+  await wheelBurst(page, p.x, p.y, -25, 0, 6, 8);
+  await page.waitForTimeout(60);
+  assert.equal(await rate(), 2.25, 'a flick left: one step down');
+  await page.waitForTimeout(350);
+  await page.mouse.wheel(10, 0); // too small on its own
+  await page.waitForTimeout(60);
+  assert.equal(await rate(), 2.25, 'a nudge below the threshold does nothing');
+  const played = await time('#plain');
+  assert.ok(played > 10.5 && played < 10 + 3 * 4, `the video kept playing at speed, no scrub: ${played}`);
   await page.mouse.up();
   await page.waitForTimeout(50);
   assert.equal(await rate(), 1, 'released: back to normal');

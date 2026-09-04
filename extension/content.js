@@ -117,7 +117,14 @@
   const HOLD_RATE = 2; // every hold starts here
   const HOLD_RATE_MIN = 0.25;
   const HOLD_RATE_MAX = 4;
-  const HOLD_RATE_PER_PX = 0.01; // sideways scrolling while holding: 100 px = 1x
+  /* Sideways scrolling while holding changes the speed in HOLD_STEP steps:
+   * one step per HOLD_STEP_PX of movement, then nothing for HOLD_STEP_GAP_MS,
+   * so a flick is one step and a sustained scroll is a slow climb. Movement
+   * that pauses longer than HOLD_STEP_RESET_MS is forgotten. */
+  const HOLD_STEP = 0.25;
+  const HOLD_STEP_PX = 30;
+  const HOLD_STEP_GAP_MS = 300;
+  const HOLD_STEP_RESET_MS = 200;
   const HOLD_SLOP_PX = 8;
   const HOLD_EXCLUDED = ['youtube.com', 'youtube-nocookie.com', 'youtu.be'];
   const HUD_LINGER_MS = 600;
@@ -576,9 +583,9 @@
     const { ws, wo } = windowTotals();
 
     if (hold && hold.active) {
-      // Holding to speed up: sideways scrolling sets the speed instead.
+      // Holding to speed up: sideways scrolling steps the speed instead.
       consume(e);
-      if (s !== 0) adjustHoldRate((settings.invert ? -s : s) * HOLD_RATE_PER_PX);
+      if (s !== 0) stepHoldRate(settings.invert ? -s : s, now);
       return;
     }
 
@@ -1224,7 +1231,10 @@
       pointerId: e.pointerId,
       active: false,
       rate: 1, // the site's rate, restored on release
-      current: HOLD_RATE, // the hold's rate; sideways scrolling changes it
+      current: HOLD_RATE, // the hold's rate; sideways scrolling steps it
+      acc: 0, // sideways movement towards the next step
+      accAt: 0,
+      steppedAt: -Infinity,
       timer: setTimeout(beginHold, HOLD_MS),
     };
   }
@@ -1247,16 +1257,25 @@
     speedBadge.show(v, h.current);
   }
 
-  function adjustHoldRate(delta) {
+  function stepHoldRate(px, now) {
     const h = hold;
     if (!h || !h.active) return;
-    h.current = clamp(h.current + delta, HOLD_RATE_MIN, HOLD_RATE_MAX);
+    if (now - h.steppedAt < HOLD_STEP_GAP_MS) return; // just stepped: let the flick pass
+    if (now - h.accAt > HOLD_STEP_RESET_MS) h.acc = 0;
+    h.acc += px;
+    h.accAt = now;
+    if (Math.abs(h.acc) < HOLD_STEP_PX) return;
+    const next = clamp(h.current + Math.sign(h.acc) * HOLD_STEP, HOLD_RATE_MIN, HOLD_RATE_MAX);
+    h.acc = 0;
+    h.steppedAt = now;
+    if (next === h.current) return;
+    h.current = next;
     try {
-      h.video.playbackRate = h.current;
+      h.video.playbackRate = next;
     } catch {
       /* ignore */
     }
-    speedBadge.show(h.video, h.current);
+    speedBadge.show(h.video, next);
   }
 
   function onHoldMove(e) {
