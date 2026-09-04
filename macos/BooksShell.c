@@ -189,12 +189,12 @@ static void dg_run_open_panel(id self, SEL _cmd, id webView, id params, id frame
    tilt right); shift adds the ⇧ modifier. `method` selects the delivery route: "direct" ([webView scrollWheel:]),
    "window" ([window sendEvent:]), "post" (application event queue) or "pid" (CGEventPostToPid to ourselves);
    `attach` stamps the event with our window number so AppKit associates it with the window. */
-static void post_wheel(int dy, int dx, bool shift, const char *method, bool attach) {
+static void post_wheel(int dy, int dx, bool shift, const char *method, bool attach, double px, double py) {
   if (!CGEventCreateScrollWheelEvent_ || !CGEventSetLocation_ || !CGEventSetFlags_ || !CGMainDisplayID_ || !CGDisplayBounds_) {
     fprintf(stderr, "SELFTEST: CoreGraphics is unavailable; cannot synthesize wheel events\n"); return;
   }
   CGRect display = CGDisplayBounds_(CGMainDisplayID_());
-  CGPoint inWindow = { 600, 400 }; /* a point well inside the book, in window coordinates */
+  CGPoint inWindow = { px > 0 ? px : 600, py > 0 ? py : 400 }; /* target in window coordinates (AppKit, origin bottom-left) */
   CGPoint scr = ((CGPoint (*)(id, SEL, CGPoint))objc_msgSend_)(g_window, S("convertPointToScreen:"), inWindow);
   /* Without a window, AppKit reports the location in screen coordinates and WebKit reads it as view coordinates, so
      aim at the screen point equal to the window point; with a window attached, aim at the real screen position. */
@@ -253,8 +253,14 @@ static void dg_script_message(id self, SEL _cmd, id controller, id message) {
   else if (!strcmp(t, "selftestWheel") && g_selftest && is_kind(body, "NSDictionary")) {
     id dy = call1(body, "objectForKey:", nsstr("dy")), dx = call1(body, "objectForKey:", nsstr("dx")), shift = call1(body, "objectForKey:", nsstr("shift"));
     id method = call1(body, "objectForKey:", nsstr("method")), attach = call1(body, "objectForKey:", nsstr("attach"));
+    id px = call1(body, "objectForKey:", nsstr("x")), py = call1(body, "objectForKey:", nsstr("y"));
+    double x = px ? ((double (*)(id, SEL))objc_msgSend_)(px, S("doubleValue")) : 0, y = py ? ((double (*)(id, SEL))objc_msgSend_)(py, S("doubleValue")) : 0;
+    /* The page gives CSS coordinates (origin top-left); convert to AppKit window coordinates (origin bottom-left). */
+    CGRect content = { 0, 0, 0, 0 };
+    id cv = call0(g_window, "contentView");
+    if (cv) { CGSize sz = ((CGSize (*)(id, SEL))objc_msgSend_)(cv, S("frameSize")); content.w = sz.w; content.h = sz.h; }
     post_wheel(dy ? (int)ret_long(dy, "integerValue") : 0, dx ? (int)ret_long(dx, "integerValue") : 0, shift ? ret_bool(shift, "boolValue") : false,
-               is_kind(method, "NSString") ? cstr(method) : "direct", attach ? ret_bool(attach, "boolValue") : false);
+               is_kind(method, "NSString") ? cstr(method) : "direct", attach ? ret_bool(attach, "boolValue") : false, x, y > 0 && content.h > 0 ? content.h - y : 0);
   }
   else if (!strcmp(t, "dragWindow")) { id ev = call0(g_app, "currentEvent"); if (ev && responds(g_window, "performWindowDragWithEvent:")) callv1(g_window, "performWindowDragWithEvent:", ev); }
   else if (!strcmp(t, "zoomWindow")) callv1(g_window, "performZoom:", NULL);

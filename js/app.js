@@ -263,21 +263,24 @@
         // Native shell: genuine scroll-wheel notches (down, tilt right, ⇧ + down, up) delivered through WKWebView.
         let wheelOk = true, wheelDetail = '';
         if (this.shell && window.webkit && window.webkit.messageHandlers) {
-          let domHits = 0, mainHits = 0; const probe = () => { domHits++; }, mainProbe = () => { mainHits++; };
+          let domHits = 0, mainHits = 0, lastTop = ''; const probe = () => { domHits++; }, mainProbe = e => { mainHits++; const t = e.target; lastTop = `${t && (t.id || t.tagName || t.nodeName)}@${Math.round(e.clientX)},${Math.round(e.clientY)}`; };
           Reader.doc.addEventListener('wheel', probe, { capture: true, passive: true });
           document.addEventListener('wheel', mainProbe, { capture: true, passive: true });
-          const send = async (dy, dx, shift, method, attach) => { const p = Reader.page, h = domHits, m = mainHits; this.shell.post({ type: 'selftestWheel', dy, dx, shift: !!shift, method, attach: !!attach }); await U.sleep(600); return { moved: Reader.page - p, dom: domHits - h, main: mainHits - m }; };
+          const send = async (dy, dx, shift, method, attach, x, y) => { const p = Reader.page, h = domHits, m = mainHits; lastTop = ''; this.shell.post({ type: 'selftestWheel', dy, dx, shift: !!shift, method, attach: !!attach, x: x || 0, y: y || 0 }); await U.sleep(600); return { moved: Reader.page - p, dom: domHits - h, main: mainHits - m, top: lastTop }; };
+          const under = (x, y) => { const el = document.elementFromPoint(x, y); return el ? (el.id || el.tagName) : 'none'; };
+          const geometry = `view ${innerWidth}x${innerHeight}, frame ${JSON.stringify((r => ({ x: r.left, y: r.top, w: r.width, h: r.height }))(Reader.frame.getBoundingClientRect()))}, under(600,420)=${under(600, 420)}, under(600,400)=${under(600, 400)}, under(640,300)=${under(640, 300)}`;
           // Find a delivery route that produces DOM wheel events in the book frame, then verify the four notch kinds through it.
           const trials = []; let best = null;
-          for (const method of ['direct', 'window']) for (const attach of [false, true]) {
-            const r = await send(-1, 0, false, method, attach);
-            trials.push(`${method}${attach ? '+win' : ''}: frame ${r.dom}, top ${r.main}, moved ${r.moved}`);
-            if (!best && r.dom > 0) best = { method, attach };
+          for (const [x, y] of [[600, 400], [640, 300], [300, 600]]) for (const attach of [false, true]) {
+            const r = await send(-1, 0, false, 'direct', attach, x, y);
+            trials.push(`(${x},${y})${attach ? '+win' : ''}: frame ${r.dom}, top ${r.main}${r.top ? ' on ' + r.top : ''}, moved ${r.moved}`);
+            if (!best && r.dom > 0) best = { method: 'direct', attach, x, y };
           }
+          trials.unshift(geometry);
           Reader.doc.removeEventListener('wheel', probe, true); document.removeEventListener('wheel', mainProbe, true);
           if (!best) { wheelOk = false; wheelDetail = `, wheel: no delivery route produced DOM events [${trials.join('; ')}]`; }
           else {
-            const notch = (dy, dx, shift) => send(dy, dx, shift, best.method, best.attach);
+            const notch = (dy, dx, shift) => send(dy, dx, shift, best.method, best.attach, best.x, best.y);
             const down = (await notch(-1, 0)).moved, tilt = (await notch(0, -1)).moved, shifted = (await notch(-1, 0, true)).moved, up = (await notch(1, 0)).moved;
             wheelOk = down > 0 && tilt > 0 && shifted > 0 && up < 0;
             wheelDetail = `, wheel via ${best.method}${best.attach ? '+win' : ''} (pages moved): down ${down}, tilt ${tilt}, shift+down ${shifted}, up ${up} [${trials.join('; ')}]`;
