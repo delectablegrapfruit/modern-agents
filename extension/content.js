@@ -116,15 +116,17 @@
   const HOLD_MS = 500;
   const HOLD_RATE = 2; // every hold starts here
   const HOLD_RATE_MIN = 0.25;
-  const HOLD_RATE_MAX = 4;
+  const HOLD_RATE_MAX = 8;
   /* Sideways scrolling while holding changes the speed in HOLD_STEP steps:
-   * one step per HOLD_STEP_PX of movement, then nothing for HOLD_STEP_GAP_MS,
-   * so a flick is one step and a sustained scroll is a slow climb. Movement
-   * that pauses longer than HOLD_STEP_RESET_MS is forgotten. */
+   * one step per HOLD_STEP_PX of movement, steps at least HOLD_STEP_GAP_MS
+   * apart, and at most HOLD_STEPS_PER_FLICK per flick (continuous events
+   * without a pause of HOLD_STEP_PAUSE_MS or a reversal). A short nudge is
+   * one step, a flick two, however long it spins. */
   const HOLD_STEP = 0.25;
   const HOLD_STEP_PX = 30;
-  const HOLD_STEP_GAP_MS = 300;
-  const HOLD_STEP_RESET_MS = 200;
+  const HOLD_STEP_GAP_MS = 150;
+  const HOLD_STEPS_PER_FLICK = 2;
+  const HOLD_STEP_PAUSE_MS = 150;
   const HOLD_SLOP_PX = 8;
   const HOLD_EXCLUDED = ['youtube.com', 'youtube-nocookie.com', 'youtu.be'];
   const HUD_LINGER_MS = 600;
@@ -1233,8 +1235,10 @@
       rate: 1, // the site's rate, restored on release
       current: HOLD_RATE, // the hold's rate; sideways scrolling steps it
       acc: 0, // sideways movement towards the next step
-      accAt: 0,
+      lastMoveAt: -Infinity,
       steppedAt: -Infinity,
+      flickSteps: 0, // steps taken in the current flick
+      flickSign: 0,
       timer: setTimeout(beginHold, HOLD_MS),
     };
   }
@@ -1260,14 +1264,22 @@
   function stepHoldRate(px, now) {
     const h = hold;
     if (!h || !h.active) return;
-    if (now - h.steppedAt < HOLD_STEP_GAP_MS) return; // just stepped: let the flick pass
-    if (now - h.accAt > HOLD_STEP_RESET_MS) h.acc = 0;
+    const sign = Math.sign(px);
+    if (now - h.lastMoveAt > HOLD_STEP_PAUSE_MS || sign !== h.flickSign) {
+      // The wheel stopped or turned: a new flick.
+      h.flickSteps = 0;
+      h.flickSign = sign;
+      h.acc = 0;
+    }
+    h.lastMoveAt = now;
+    if (h.flickSteps >= HOLD_STEPS_PER_FLICK) return; // this flick has had its steps
+    if (now - h.steppedAt < HOLD_STEP_GAP_MS) return; // pace: not two steps in one instant
     h.acc += px;
-    h.accAt = now;
     if (Math.abs(h.acc) < HOLD_STEP_PX) return;
-    const next = clamp(h.current + Math.sign(h.acc) * HOLD_STEP, HOLD_RATE_MIN, HOLD_RATE_MAX);
+    const next = clamp(h.current + sign * HOLD_STEP, HOLD_RATE_MIN, HOLD_RATE_MAX);
     h.acc = 0;
     h.steppedAt = now;
+    h.flickSteps += 1;
     if (next === h.current) return;
     h.current = next;
     try {

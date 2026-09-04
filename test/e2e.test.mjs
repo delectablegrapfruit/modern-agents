@@ -640,21 +640,20 @@ test('press and hold on a playing video plays it at 2x until release, and the re
     'the timeline is not shown while holding'
   );
 
-  // Sideways scrolling while holding steps the speed by a quarter, unhurried:
-  // a flick is one step, however long it is.
-  await wheelBurst(page, p.x, p.y, 20, 0, 10, 8);
+  // Sideways scrolling while holding steps the speed by quarters: a flick
+  // is two steps however long it spins, a short nudge one.
+  await wheelBurst(page, p.x, p.y, 20, 0, 30, 8); // about a second of events
   await page.waitForTimeout(60);
-  assert.equal(await rate(), 2.25, 'a flick right: one step up');
-  assert.equal((await badge()).rate, 2.25);
-  await page.waitForTimeout(350);
-  await page.mouse.wheel(40, 0);
+  assert.equal(await rate(), 2.5, 'a flick right: two steps up');
+  assert.equal((await badge()).rate, 2.5);
+  await page.waitForTimeout(250);
+  await page.mouse.wheel(40, 0); // a short nudge after the wheel stopped
   await page.waitForTimeout(60);
-  assert.equal(await rate(), 2.5, 'another movement after a pause: the next step');
-  await page.waitForTimeout(350);
-  await wheelBurst(page, p.x, p.y, -25, 0, 6, 8);
+  assert.equal(await rate(), 2.75, 'a nudge: one step');
+  await wheelBurst(page, p.x, p.y, -25, 0, 12, 8); // straight back the other way
   await page.waitForTimeout(60);
-  assert.equal(await rate(), 2.25, 'a flick left: one step down');
-  await page.waitForTimeout(350);
+  assert.equal(await rate(), 2.25, 'a flick left: two steps down, no pause needed to reverse');
+  await page.waitForTimeout(250);
   await page.mouse.wheel(10, 0); // too small on its own
   await page.waitForTimeout(60);
   assert.equal(await rate(), 2.25, 'a nudge below the threshold does nothing');
