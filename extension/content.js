@@ -89,6 +89,14 @@
   /* A session ends (and playback resumes, if it was playing) this long
    * after the wheel stops, or as soon as the pointer leaves the video. */
   const RESUME_IDLE_MS = 600;
+  /* Trackball mode (a setting): when the wheel stops after a flick, the
+   * playhead keeps moving at the last velocity and slows down with time
+   * constant INERTIA_TAU_S, until it drops under INERTIA_STOP_S_PER_S or the
+   * wheel moves again. A flick is anything at least INERTIA_MIN_S_PER_S. */
+  const INERTIA_START_MS = 80;
+  const INERTIA_MIN_S_PER_S = 1.5;
+  const INERTIA_STOP_S_PER_S = 0.25;
+  const INERTIA_TAU_S = 0.4;
   /* When a session ends, wait at most this long for the last seek to land
    * before resuming playback. */
   const FINAL_SEEK_WAIT_MS = 1500;
@@ -117,16 +125,16 @@
   const HOLD_RATE = 2; // every hold starts here
   const HOLD_RATE_MIN = 0.25;
   const HOLD_RATE_MAX = 8;
-  /* Sideways scrolling while holding changes the speed in HOLD_STEP steps:
-   * one step per HOLD_STEP_PX of movement, steps at least HOLD_STEP_GAP_MS
-   * apart, and at most HOLD_STEPS_PER_FLICK per flick (continuous events
-   * without a pause of HOLD_STEP_PAUSE_MS or a reversal). A short nudge is
-   * one step, a flick two, however long it spins. */
+  /* Sideways scrolling while holding changes the speed in HOLD_STEP steps,
+   * trackball-like: movement accumulates continuously and every
+   * HOLD_STEP_PX of it is a step, paced at least HOLD_STEP_GAP_MS apart (the
+   * remainder carries over, at most one step's worth), so the speed follows
+   * how far the wheel rolls. A pause of HOLD_STEP_RESET_MS or a reversal
+   * clears what was accumulated. */
   const HOLD_STEP = 0.25;
-  const HOLD_STEP_PX = 30;
-  const HOLD_STEP_GAP_MS = 150;
-  const HOLD_STEPS_PER_FLICK = 2;
-  const HOLD_STEP_PAUSE_MS = 150;
+  const HOLD_STEP_PX = 40;
+  const HOLD_STEP_GAP_MS = 120;
+  const HOLD_STEP_RESET_MS = 200;
   const HOLD_SLOP_PX = 8;
   const HOLD_EXCLUDED = ['youtube.com', 'youtube-nocookie.com', 'youtu.be'];
   const HUD_LINGER_MS = 600;
@@ -770,6 +778,10 @@
       finalTimer: 0,
       stallTimer: 0,
       idleTimer: 0,
+      inertiaTimer: 0,
+      inertiaFrame: 0,
+      vel: 0, // last scrub velocity, seconds of video per second
+      velSign: 0,
       ending: false,
       done: false,
       inFlight: false, // a seek we issued has not fired `seeked` yet
@@ -1004,6 +1016,8 @@
     let dt = capStep(px * (settings.secondsPer100px / 100) * velocityGain(px, dtMs) * sustain, STEP_MAX_S * sustain);
     if (settings.invert) dt = -dt;
     if (fine) dt *= FINE_FACTOR;
+    stopInertia(s);
+    s.vel = dt / (Math.max(Number.isFinite(dtMs) ? dtMs : FRAME_MS, FRAME_MS / 2) / 1000);
 
     if (!s.pending && !s.inFlight && !s.video.seeking && Math.abs(s.video.currentTime - s.target) > 0.5) {
       // The site moved playback while the session was idle (an ad break, a
@@ -1017,9 +1031,57 @@
       timeline.show(s.video, s.pos, range, factor, undo && undo.video === s.video ? undo.time : NaN);
     }
 
-    // The wheel stopped: the gesture is over shortly after.
+    // The wheel stopped: the gesture is over shortly after, unless a flick
+    // in trackball mode keeps the playhead rolling first.
+    armIdle(s);
+    clearTimeout(s.inertiaTimer);
+    if (settings.trackball && Math.abs(s.vel) >= INERTIA_MIN_S_PER_S) {
+      s.inertiaTimer = setTimeout(() => startInertia(s), INERTIA_START_MS);
+    }
+  }
+
+  function armIdle(s) {
     clearTimeout(s.idleTimer);
     s.idleTimer = setTimeout(() => endSession(s, true), RESUME_IDLE_MS);
+  }
+
+  function startInertia(s) {
+    s.inertiaTimer = 0;
+    if (s.done || s.ending || s.inertiaFrame) return;
+    clearTimeout(s.idleTimer);
+    let last = performance.now();
+    const step = (now) => {
+      s.inertiaFrame = 0;
+      const dt = Math.min((now - last) / 1000, 0.1);
+      last = now;
+      s.vel *= Math.exp(-dt / INERTIA_TAU_S);
+      const range = scrubRange(s.video);
+      if (!range || Math.abs(s.vel) < INERTIA_STOP_S_PER_S) {
+        s.vel = 0;
+        armIdle(s);
+        return;
+      }
+      const pos = clamp(s.pos + s.vel * dt, range[0], range[1]);
+      if (pos === s.pos) {
+        s.vel = 0;
+        armIdle(s);
+        return;
+      }
+      s.pos = pos;
+      requestSeek(s, s.pos);
+      if (settings.showTimeline) timeline.show(s.video, s.pos, range, 1, undo && undo.video === s.video ? undo.time : NaN);
+      s.inertiaFrame = requestAnimationFrame(step);
+    };
+    s.inertiaFrame = requestAnimationFrame(step);
+  }
+
+  function stopInertia(s) {
+    clearTimeout(s.inertiaTimer);
+    s.inertiaTimer = 0;
+    if (s.inertiaFrame) {
+      cancelAnimationFrame(s.inertiaFrame);
+      s.inertiaFrame = 0;
+    }
   }
 
   /* Hand the newest target to the video: right away unless a seek we issued
@@ -1083,6 +1145,7 @@
     if (!resume) s.resume = false;
     if (mode === 'scrub' || mode === 'undecided') resetMode();
     clearTimeout(s.idleTimer);
+    stopInertia(s);
     s.ending = true;
     if (s.pending && !s.stallTimer) issueSeek(s);
     if (s.inFlight && s.video.seeking && s.video.isConnected) {
@@ -1103,6 +1166,7 @@
     clearTimeout(s.stallTimer);
     clearTimeout(s.repauseTimer);
     clearTimeout(s.idleTimer);
+    stopInertia(s);
     timeline.release();
     const v = s.video;
     v.removeEventListener('seeked', s.onSeeked);
@@ -1237,8 +1301,6 @@
       acc: 0, // sideways movement towards the next step
       lastMoveAt: -Infinity,
       steppedAt: -Infinity,
-      flickSteps: 0, // steps taken in the current flick
-      flickSign: 0,
       timer: setTimeout(beginHold, HOLD_MS),
     };
   }
@@ -1264,22 +1326,14 @@
   function stepHoldRate(px, now) {
     const h = hold;
     if (!h || !h.active) return;
-    const sign = Math.sign(px);
-    if (now - h.lastMoveAt > HOLD_STEP_PAUSE_MS || sign !== h.flickSign) {
-      // The wheel stopped or turned: a new flick.
-      h.flickSteps = 0;
-      h.flickSign = sign;
-      h.acc = 0;
-    }
+    if (now - h.lastMoveAt > HOLD_STEP_RESET_MS || Math.sign(px) !== Math.sign(h.acc || px)) h.acc = 0;
     h.lastMoveAt = now;
-    if (h.flickSteps >= HOLD_STEPS_PER_FLICK) return; // this flick has had its steps
-    if (now - h.steppedAt < HOLD_STEP_GAP_MS) return; // pace: not two steps in one instant
     h.acc += px;
-    if (Math.abs(h.acc) < HOLD_STEP_PX) return;
+    if (Math.abs(h.acc) < HOLD_STEP_PX || now - h.steppedAt < HOLD_STEP_GAP_MS) return;
+    const sign = Math.sign(h.acc);
     const next = clamp(h.current + sign * HOLD_STEP, HOLD_RATE_MIN, HOLD_RATE_MAX);
-    h.acc = 0;
+    h.acc = clamp(h.acc - sign * HOLD_STEP_PX, -HOLD_STEP_PX, HOLD_STEP_PX); // carry at most one more step
     h.steppedAt = now;
-    h.flickSteps += 1;
     if (next === h.current) return;
     h.current = next;
     try {

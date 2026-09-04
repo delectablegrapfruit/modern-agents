@@ -37,6 +37,7 @@
     $('invert').checked = settings.invert;
     $('resumeAfter').checked = settings.resumeAfter;
     $('showTimeline').checked = settings.showTimeline;
+    $('trackball').checked = settings.trackball;
     $('requireModifier').value = settings.requireModifier;
     if (document.activeElement !== $('disabledSites')) $('disabledSites').value = settings.disabledSites.join('\n');
   }
@@ -63,7 +64,7 @@
   });
   $('speed').addEventListener('change', (e) => save({ secondsPer100px: roundSpeed(fromSlider(Number(e.target.value))) }));
   $('speedNumber').addEventListener('change', (e) => save({ secondsPer100px: parseFloat(e.target.value) }));
-  for (const id of ['invert', 'resumeAfter', 'showTimeline']) {
+  for (const id of ['invert', 'resumeAfter', 'showTimeline', 'trackball']) {
     $(id).addEventListener('change', (e) => save({ [id]: e.target.checked }));
   }
   $('requireModifier').addEventListener('change', (e) => save({ requireModifier: e.target.value }));

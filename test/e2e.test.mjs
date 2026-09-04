@@ -640,23 +640,25 @@ test('press and hold on a playing video plays it at 2x until release, and the re
     'the timeline is not shown while holding'
   );
 
-  // Sideways scrolling while holding steps the speed by quarters: a flick
-  // is two steps however long it spins, a short nudge one.
-  await wheelBurst(page, p.x, p.y, 20, 0, 30, 8); // about a second of events
+  // Sideways scrolling while holding steps the speed by quarters, trackball
+  // like: the further the wheel rolls, the more steps, paced 120 ms apart.
+  await wheelBurst(page, p.x, p.y, 20, 0, 12, 8); // 240 px over ~0.4 s
   await page.waitForTimeout(60);
-  assert.equal(await rate(), 2.5, 'a flick right: two steps up');
-  assert.equal((await badge()).rate, 2.5);
+  let r = await rate();
+  assert.ok(r >= 2.5 && r <= 3.25, `a flick right: several steps up: ${r}`);
+  assert.equal((await badge()).rate, r);
   await page.waitForTimeout(250);
   await page.mouse.wheel(40, 0); // a short nudge after the wheel stopped
   await page.waitForTimeout(60);
-  assert.equal(await rate(), 2.75, 'a nudge: one step');
-  await wheelBurst(page, p.x, p.y, -25, 0, 12, 8); // straight back the other way
+  assert.equal(await rate(), r + 0.25, 'a nudge: one step');
+  await wheelBurst(page, p.x, p.y, -20, 0, 12, 8); // straight back the other way
   await page.waitForTimeout(60);
-  assert.equal(await rate(), 2.25, 'a flick left: two steps down, no pause needed to reverse');
+  const back = await rate();
+  assert.ok(back <= r - 0.25 && back >= r - 1, `a flick left steps down: ${r + 0.25} -> ${back}`);
   await page.waitForTimeout(250);
   await page.mouse.wheel(10, 0); // too small on its own
   await page.waitForTimeout(60);
-  assert.equal(await rate(), 2.25, 'a nudge below the threshold does nothing');
+  assert.equal(await rate(), back, 'a nudge below the threshold does nothing');
   const played = await time('#plain');
   assert.ok(played > 10.5 && played < 10 + 3 * 4, `the video kept playing at speed, no scrub: ${played}`);
   await page.mouse.up();
@@ -695,6 +697,46 @@ test('press and hold does nothing on a paused video or when the press moves (a d
   await page.waitForTimeout(700);
   assert.equal(await rate(), 1, 'a drag is not a hold');
   await page.mouse.up();
+});
+
+/* ---- Trackball mode ------------------------------------------------------ */
+
+test('trackball mode: a flick keeps the playhead rolling and slowing after the wheel stops', async () => {
+  const p = await centerOf(page, '#plain');
+  // Off by default: the position stays where the last event put it.
+  await wheelBurstFast(page, p.x, p.y, 40, 0, 12, 16); // a flick: 480 px in 0.2 s
+  await page.waitForTimeout(150);
+  await settled();
+  const stopped = await time('#plain');
+  await page.waitForTimeout(300);
+  assert.equal(await time('#plain'), stopped, 'no momentum by default');
+  await page.waitForFunction(() => !document.querySelector('scroll-to-scrub-hud').matches(':popover-open'), null, {
+    timeout: 3000,
+  });
+
+  await setSettings(ext.worker, page, { trackball: true });
+  await seekTo('#plain', 10);
+  await page.waitForTimeout(300);
+  await wheelBurstFast(page, p.x, p.y, 40, 0, 12, 16);
+  await page.waitForTimeout(150);
+  const t1 = await time('#plain');
+  await page.waitForTimeout(250);
+  const t2 = await time('#plain');
+  assert.ok(t2 > t1 + 0.1, `kept rolling after the wheel stopped: ${t1} -> ${t2}`);
+  await page.waitForTimeout(1500);
+  const t3 = await time('#plain');
+  await page.waitForTimeout(300);
+  assert.equal(await time('#plain'), t3, 'came to rest');
+  assert.ok(t3 > t2 && t3 < t1 + 10, `slowed down rather than running away: ${t3}`);
+
+  // Scrolling again takes over at once: a small counter-nudge stops the roll.
+  await wheelBurstFast(page, p.x, p.y, 40, 0, 12, 16);
+  await page.waitForTimeout(50);
+  await wheel(page, p.x, p.y, -2, 0);
+  await page.waitForTimeout(100);
+  const t4 = await time('#plain');
+  await page.waitForTimeout(300);
+  assert.ok(near(await time('#plain'), t4, 0.02), 'a nudge the other way stopped the roll');
 });
 
 /* ---- Undo ------------------------------------------------------------- */
@@ -859,6 +901,9 @@ test('the options page saves settings', async () => {
   const stored = await ext.worker.evaluate(() => new Promise((r) => chrome.storage.sync.get(null, r)));
   assert.equal(stored.secondsPer100px, 2.5);
   assert.equal(stored.invert, true);
+  await options.check('#trackball');
+  await options.waitForTimeout(150);
+  assert.equal((await ext.worker.evaluate(() => new Promise((r) => chrome.storage.sync.get(null, r)))).trackball, true);
   assert.deepEqual(stored.disabledSites, ['example.com', 'vimeo.com']);
   await options.close();
 });

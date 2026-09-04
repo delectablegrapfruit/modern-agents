@@ -26,6 +26,7 @@ test('normalizeSettings fills in defaults and drops garbage', () => {
   assert.deepEqual(s.disabledSites, ['example.com']);
   assert.equal('unknownKey' in s, false);
   assert.equal('axis' in s, false);
+  assert.equal(s.trackball, false);
 });
 
 test('speed is clamped to its limits and accepts numeric strings', () => {

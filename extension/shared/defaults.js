@@ -20,6 +20,9 @@
     resumeAfter: true,
     /* Draw the timeline over the video while scrubbing. */
     showTimeline: true,
+    /* Trackball mode: a flick keeps the playhead rolling and slowing down
+     * after the wheel stops. */
+    trackball: false,
     /* Hostnames (and their subdomains) where the extension stays inactive.
      * Netflix's player crashes (error M7375) when its video element is
      * seeked directly. */
@@ -103,6 +106,7 @@
       requireModifier: pick(get('requireModifier'), MODIFIERS, DEFAULTS.requireModifier),
       resumeAfter: Boolean(get('resumeAfter')),
       showTimeline: r.showTimeline === undefined && r.showHud !== undefined ? Boolean(r.showHud) : Boolean(get('showTimeline')),
+      trackball: Boolean(get('trackball')),
       disabledSites: normalizeSites(get('disabledSites')),
     };
   }
