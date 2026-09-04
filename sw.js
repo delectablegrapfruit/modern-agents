@@ -1,9 +1,9 @@
 /* Offline cache for the app shell (only active when served over http(s); file:// needs no service worker). */
-const VERSION = 'books-offline-v1';
+const VERSION = 'books-offline-v2';
 const ASSETS = [
   './', './index.html', './manifest.webmanifest', './icon.svg',
   './css/app.css', './css/reader.css',
-  './js/util.js', './js/icons.js', './js/zip.js', './js/db.js', './js/epub.js', './js/ui.js', './js/library.js', './js/reader.js', './js/app.js', './js/samples.js',
+  './js/util.js', './js/icons.js', './js/zip.js', './js/db.js', './js/epub.js', './js/ui.js', './js/library.js', './js/reader.js', './js/app.js',
 ];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));

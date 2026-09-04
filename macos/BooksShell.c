@@ -207,6 +207,9 @@ static void dg_navigation_failed(id self, SEL _cmd, id webView, id navigation, i
 }
 static void dg_process_terminated(id self, SEL _cmd, id webView) { (void)self; (void)_cmd; (void)webView; if (g_selftest) selftest_exit(3, "SELFTEST FAIL: web content process terminated", NULL); }
 static void dg_selftest_timeout(id self, SEL _cmd, id timer) { (void)self; (void)_cmd; (void)timer; selftest_exit(1, "SELFTEST FAIL: timed out waiting for the page", NULL); }
+/* NSWindowDelegate: tell the page when the window enters / leaves native full screen so the reader can hide its chrome. */
+static void dg_did_enter_fullscreen(id self, SEL _cmd, id note) { (void)self; (void)_cmd; (void)note; eval_js("window.App && App.setNativeFullscreen && App.setNativeFullscreen(true);"); }
+static void dg_did_exit_fullscreen(id self, SEL _cmd, id note) { (void)self; (void)_cmd; (void)note; eval_js("window.App && App.setNativeFullscreen && App.setNativeFullscreen(false);"); }
 
 static Class make_delegate_class(void) {
   Class cls = objc_allocateClassPair_(C("NSObject"), "BooksShellDelegate", 0);
@@ -222,6 +225,8 @@ static Class make_delegate_class(void) {
   class_addMethod_(cls, S("webView:didFailNavigation:withError:"), (IMP)dg_navigation_failed, "v@:@@@");
   class_addMethod_(cls, S("webViewWebContentProcessDidTerminate:"), (IMP)dg_process_terminated, "v@:@");
   class_addMethod_(cls, S("selftestTimeout:"), (IMP)dg_selftest_timeout, "v@:@");
+  class_addMethod_(cls, S("windowDidEnterFullScreen:"), (IMP)dg_did_enter_fullscreen, "v@:@");
+  class_addMethod_(cls, S("windowDidExitFullScreen:"), (IMP)dg_did_exit_fullscreen, "v@:@");
   objc_registerClassPair_(cls);
   return cls;
 }
@@ -321,6 +326,7 @@ int main(void) {
   CGSize minSize = { 720, 480 };
   ((void (*)(id, SEL, CGSize))objc_msgSend_)(g_window, S("setMinSize:"), minSize);
   callv1(g_window, "setBackgroundColor:", call0(C("NSColor"), "windowBackgroundColor"));
+  callv1(g_window, "setDelegate:", g_delegate);
 
   id config = new_obj("WKWebViewConfiguration");
   id prefs = call0(config, "preferences");

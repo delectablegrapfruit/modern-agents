@@ -67,23 +67,25 @@
     sidebarCollapsed: false,
     dailyGoalMinutes: 5,           // Books' default daily reading goal
     yearlyGoalBooks: 12,
-    samplesInstalled: false,
+    homeContinue: true,            // Home sections (see Customize Home)
+    homeGoals: true,
+    homeStats: true,
     // Reader
     theme: 'original',             // original | quiet | paper | bold | calm | focus
     autoNight: true,
     font: 'original',
     fontSize: 100,                 // percent
     lineHeight: 'normal',          // tight | normal | loose
-    margins: 'normal',             // narrow | normal | wide
+    textWidth: 'medium',           // narrow | medium | wide | full  (text column width in both layouts)
     justify: false,
     hyphenate: true,
     layout: 'paginated',           // paginated | scroll
-    spread: 'auto',                // auto | single | double
-    pageTurn: 'slide',             // slide | none
+    spread: 'auto',                // auto | single | double  (paginated only)
+    pageTurn: 'slide',             // slide | none            (paginated only)
     wheelTurnsPages: true,
     wheelSensitivity: 'medium',    // low | medium | high
     wheelInvert: false,
-    wheelHorizontal: true,
+    wheelHorizontal: true,         // horizontal wheel, tilt wheel and ⇧-wheel turn pages
     showPageNumbers: true,
     showChapterProgress: true,
   };

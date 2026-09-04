@@ -11,7 +11,7 @@
     bookmarkFill: '<path fill="currentColor" d="M6.5 3.5h11v17l-5.5-4-5.5 4z"/>',
     checkCircle: '<circle cx="12" cy="12" r="8.5"/><path d="m8.5 12.3 2.3 2.3 4.7-5"/>',
     check: '<path d="m5.5 12.5 4 4 9-9.5"/>',
-    sample: '<path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H19v15H6.5A1.5 1.5 0 0 0 5 19.5z"/><path d="M5 19.5A1.5 1.5 0 0 0 6.5 21H19v-3"/><path d="M9 8h6M9 11h6M9 14h3"/>',
+    sliders: '<path d="M4 7h16M4 12h16M4 17h16"/><circle cx="9" cy="7" r="2.2" fill="var(--icon-bg, #fff)"/><circle cx="15" cy="12" r="2.2" fill="var(--icon-bg, #fff)"/><circle cx="7" cy="17" r="2.2" fill="var(--icon-bg, #fff)"/>',
     folder: '<path d="M3.5 6.5A1.5 1.5 0 0 1 5 5h4.2l2 2H19a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 19 19H5a1.5 1.5 0 0 1-1.5-1.5z"/>',
     folderPlus: '<path d="M3.5 6.5A1.5 1.5 0 0 1 5 5h4.2l2 2H19a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 19 19H5a1.5 1.5 0 0 1-1.5-1.5z"/><path d="M12 10.5v5M9.5 13h5"/>',
     plus: '<path d="M12 5v14M5 12h14"/>',

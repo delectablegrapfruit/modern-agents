@@ -34,18 +34,18 @@ python3 -m http.server 8000
 
 Add books with the **+** button, **⌘O**, or by dragging files onto the window. Supported: **EPUB** (2 and 3),
 **PDF** (rendered by the browser’s built-in viewer) and **plain text** (converted to an EPUB on import, with
-chapter detection). Seven public-domain sample books (Project Gutenberg) are installed on first launch and can be
-removed or re-added at any time.
+chapter detection). The library starts empty — nothing is bundled.
 
 ## What’s here
 
 | Area | Features |
 |---|---|
-| Sidebar | Home · Library (All, Want to Read, Finished, Books, PDFs, My Samples) · My Collections (create, rename, delete, drag books onto them) |
-| Home | **Continue** carousel with progress and time left · **Reading Goals** (daily minutes ring + streak, books per year) · library statistics. No store sections and nothing that duplicates the Library lists. |
-| Library | Grid / list view · sort by Recent, Title, Author · search · NEW / SAMPLE badges · finished check · multi-select (⌘/⇧-click) · keyboard navigation · right-click menu (Read, Get Info, Mark as Finished, Want to Read, Add to Collection, Reset Position, Delete) · Get Info sheet with editable title/author |
-| Reader | Paginated single or **two-page spread** (automatic on wide windows) or **vertical scrolling** · page counter and “pages left in this chapter” · scrubber · hover page-turn buttons · slide page turns · full screen with auto-hiding chrome · resumes exactly where you left off |
-| Themes & Settings | Six themes (Original, Quiet, Paper, Bold, Calm, Focus) · Auto-Night · ten fonts · text size · line spacing · margins · justification · hyphenation · page layout options · display toggles |
+| Presentation | Liquid Glass chrome: floating translucent sidebar and toolbar over the content, capsule controls, opaque menus, popovers and sheets; light and dark |
+| Sidebar | Home · Library (All, Finished, Books, PDFs) · My Collections (create, rename, delete, drag books onto them) |
+| Home | **Continue** carousel with progress and time left · **Reading Goals** (daily minutes ring + streak, books per year) · library statistics. Each section can be hidden with **Customize** (also in the ••• menu). |
+| Library | Grid / list view · sort by Recent, Title, Author · search · NEW badge · finished check · multi-select (⌘/⇧-click) · keyboard navigation · right-click menu (Read, Get Info, Mark as Finished, Add to Collection, Reset Position, Delete) · Get Info sheet with editable title/author |
+| Reader | Paginated single or **two-page spread** (automatic on wide windows) or **vertical scrolling** · page counter and “pages left in this chapter” · scrubber · hover page-turn buttons · slide page turns · full screen with chrome that hides and returns when the pointer nears the top or bottom · resumes exactly where you left off |
+| Themes & Settings | Six themes (Original, Quiet, Paper, Bold, Calm, Focus) · Auto-Night · ten fonts · text size · line spacing · **text width** (Narrow / Medium / Wide / Full, applies to both layouts) · justification · hyphenation · page layout options · display toggles |
 | Annotations | Five highlight colours + underline · notes · bookmarks (⌘D) · Contents / Bookmarks / Notes panel · click a highlight to change, annotate or remove it · export as Markdown |
 | Search | Full-text search in the book, grouped by chapter, Enter/⇧Enter to step through results |
 | Goals & stats | Reading time is tracked while a book is open (pauses after 2 min idle) · daily goal and streak · yearly books goal · books are marked Finished when you reach the end |
@@ -54,15 +54,17 @@ removed or re-added at any time.
 
 In paginated mode the scroll wheel turns pages: scroll **down or right** for the next page, **up or left** for the
 previous one. A single wheel notch or a two-finger swipe turns exactly one page — the inertial tail of a trackpad
-flick is ignored, while a steadily spinning wheel keeps turning pages. **⌘ + wheel** (or pinch) changes the text size.
-The behaviour is configurable in *Themes & Settings → Scroll Wheel & Trackpad*:
+flick is ignored, while a steadily spinning wheel keeps turning pages. A horizontal or tilt wheel and **⇧ + wheel**
+turn pages too. **⌘ + wheel** (or pinch) changes the text size. Configurable in *Themes & Settings → Scroll Wheel &
+Trackpad*:
 
 - Scroll Wheel Turns Pages (on/off)
 - Sensitivity: Low / Medium / High
 - Invert Direction
-- Horizontal Scrolling (two-finger swipes turn pages)
+- Horizontal Scrolling (horizontal/tilt wheel, ⇧ + wheel, two-finger swipes)
 
-With **Vertical Scrolling** enabled the wheel scrolls the text continuously instead, exactly like a web page.
+With **Vertical Scrolling** enabled the wheel scrolls the text continuously instead, exactly like a web page, and
+horizontal gestures move a screen at a time.
 
 ### Keyboard
 
@@ -87,12 +89,10 @@ js/zip.js             ZIP reader (DecompressionStream) and STORE writer
 js/db.js              IndexedDB layer, settings, reading statistics
 js/epub.js            EPUB 2/3 parser, resource + CSS scoping, EPUB builder, TXT → chapters
 js/ui.js              menus (with submenus), popovers, sheets, toasts, controls
-js/library.js         library data, views, import pipeline, collections, Get Info, samples
+js/library.js         library data, views, import pipeline, collections, Get Info
 js/reader.js          pagination engine, locators, wheel/keys, themes, annotations, search, stats
 js/app.js             bootstrap, toolbar, drag & drop, shortcuts, PWA plumbing
-js/samples.js         generated sample library (public-domain texts)
 sw.js                 offline cache when served over http(s)
-tools/build-samples.mjs  regenerates js/samples.js from Project Gutenberg mirrors
 ```
 
 ### How rendering works
@@ -111,8 +111,9 @@ what lets highlights, bookmarks and the reading position survive font, size, mar
 2. `macos/package.sh` assembles `dist/Books.app` (Info.plist, icon, the web app in `Contents/Resources/app`).
 3. `codesign --sign -` ad-hoc signs the bundle and `codesign --verify --deep --strict` checks it.
 4. **Launch test**: the app is started with `BOOKS_SELFTEST=1`. The shell loads `index.html`, waits for the page's
-   `ready` message, asks the page to open the first sample book and turn a page, prints the result and exits
-   non-zero on any failure (navigation error, crashed web process, 120 s timeout).
+   `ready` message, then the page imports a generated EPUB, opens it, turns a page (checking that the page really
+   scrolled) and reports back; the shell prints the result and exits non-zero on any failure (navigation error,
+   crashed web process, 120 s timeout).
 5. `ditto` and `hdiutil` produce `Books.app.zip` and `Books.dmg`; checksums go to `SHA256SUMS.txt`.
 6. The packages are uploaded as the `Books.app` artifact, committed to `dist/` (push events) and attached to
    releases.

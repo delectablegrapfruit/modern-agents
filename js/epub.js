@@ -1,5 +1,5 @@
 /* EPUB engine: parse EPUB 2/3 containers, resolve resources to blob URLs, scope stylesheets,
-   and build EPUB 3 files in memory (sample library, plain-text imports). No network, no third-party code. */
+   and build EPUB 3 files in memory (plain-text imports, the CI self-test). No network, no third-party code. */
 (function (global) {
   'use strict';
   const XHTML_NS = 'http://www.w3.org/1999/xhtml';

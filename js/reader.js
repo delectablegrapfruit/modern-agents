@@ -29,18 +29,20 @@
   ];
   const HL_COLORS = { yellow: '#ffd60a', green: '#30d158', blue: '#5ac8fa', pink: '#ff6482', purple: '#bf5af2' };
   const LINE_HEIGHTS = { tight: 1.3, normal: 1.55, loose: 1.85 };
-  const MARGINS = { narrow: 32, normal: 64, wide: 104 };
+  /* Text column width. Paginated: side margin of each page. Scrolling: maximum column width. */
+  const TEXT_WIDTH = { narrow: { margin: 120, scroll: 620 }, medium: { margin: 76, scroll: 880 }, wide: { margin: 44, scroll: 1120 }, full: { margin: 32, scroll: Infinity } };
   const WHEEL_THRESHOLD = { low: 140, medium: 60, high: 24 };
-  const M_TOP = 40, M_BOTTOM = 28;
+  const M_TOP = 68, M_BOTTOM = 56;          // page margins that keep text clear of the floating toolbar / footer
+  const SCROLL_TOP = 84, SCROLL_SIDE = 36;  // vertical-scrolling layout
 
   const BASE_CSS = `
-html, body { margin: 0 !important; padding: 0 !important; background: transparent !important; }
-html { height: 100%; font-size: var(--fs, 16px); }
-body { height: 100%; overflow: hidden; color: var(--fg, #000); font-size: 1rem; line-height: var(--lh, 1.55); -webkit-text-size-adjust: 100%; text-rendering: optimizeLegibility; overscroll-behavior: none; }
+html, body { margin: 0 !important; padding: 0 !important; }
+html { height: 100%; font-size: var(--fs, 16px); background: var(--bg, #fff) !important; }
+body { height: 100%; overflow: hidden; background: transparent !important; color: var(--fg, #000); font-size: 1rem; line-height: var(--lh, 1.55); -webkit-text-size-adjust: 100%; text-rendering: optimizeLegibility; overscroll-behavior: none; }
 body.scroll { overflow-y: auto; overflow-x: hidden; height: auto; min-height: 100%; }
 .book-root { position: relative; box-sizing: border-box; }
 body.paginated .book-root { height: var(--col-h); width: var(--box-w); margin: var(--m-top) var(--m-side) 0 !important; column-count: var(--cols); column-gap: var(--gap); column-fill: auto; overflow: visible; }
-body.scroll .book-root { max-width: var(--scroll-w); margin: 0 auto !important; padding: 36px var(--m-side) 45vh !important; }
+body.scroll .book-root { max-width: var(--scroll-w); margin: 0 auto !important; padding: var(--scroll-top) var(--scroll-side) 45vh !important; }
 .books-section { break-before: column; -webkit-column-break-before: always; }
 .books-section:first-child { break-before: auto; -webkit-column-break-before: auto; }
 body.scroll .books-section { break-before: auto; -webkit-column-break-before: auto; margin-bottom: 4em !important; }
@@ -73,8 +75,8 @@ p.books-error { text-align: center; opacity: 0.6; margin-top: 30%; }
     isOpen: false, book: null, epub: null, sections: [], secEls: [], doc: null, win: null, frame: null, root: null,
     layout: null, page: 0, sectionStarts: [], tocEntries: [], highlights: [], bookmarks: [],
     _wheel: { acc: 0, last: 0, lastDelta: 0, locked: false, zoom: 0 }, _ticker: null, _pendingSecs: 0, _pagesTurned: 0, _lastInteraction: 0,
-    _saveTimer: null, _endShown: false, _hlPopover: null, _relayoutTimer: null, _chromeTimer: null, _pdfURL: null,
-    THEMES, FONTS, HL_COLORS,
+    _saveTimer: null, _endShown: false, _hlPopover: null, _relayoutTimer: null, _chromeTimer: null, _pdfURL: null, lastError: null,
+    THEMES, FONTS, HL_COLORS, TEXT_WIDTH,
 
     init() {
       this.frame = $('#rd-frame');
@@ -92,11 +94,12 @@ p.books-error { text-align: center; opacity: 0.6; margin-top: 30%; }
       const scr = $('#rd-scrubber');
       scr.addEventListener('input', U.throttle(() => { if (this.layout) this.goTo(+scr.value, { instant: true }); }, 60));
       scr.addEventListener('change', () => { if (this.layout) this.goTo(+scr.value, { instant: true }); this.touch(); });
-      document.addEventListener('fullscreenchange', () => this.onFullscreenChange());
+      document.addEventListener('fullscreenchange', () => this.refreshChrome());
+      window.addEventListener('app:fullscreen', () => this.refreshChrome());
       window.addEventListener('settings:change', e => this.onSettingChange(e.detail.key));
       matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (this.isOpen) { this.applyTheme(); this.renderHighlights(); } });
       new ResizeObserver(() => { if (this.isOpen && this.doc) { clearTimeout(this._relayoutTimer); this._relayoutTimer = setTimeout(() => this.relayout(), 120); } }).observe($('#rd-stage'));
-      $('#reader').addEventListener('mousemove', () => this.onMouseMove());
+      $('#reader').addEventListener('mousemove', e => this.onMouseMove(e, false));
       this._onKey = e => this.onKey(e);
     },
 
@@ -104,7 +107,7 @@ p.books-error { text-align: center; opacity: 0.6; margin-top: 30%; }
     async open(book) {
       if (this.isOpen) await this.close({ silent: true });
       UI.closeAll();
-      this.book = book; this.isOpen = true; this._endShown = false; this.page = 0; this.layout = null; this._pagesTurned = 0; this.anchor = null;
+      this.book = book; this.isOpen = true; this._endShown = false; this.page = 0; this.layout = null; this._pagesTurned = 0; this.lastError = null;
       const reader = $('#reader'); reader.hidden = false; reader.classList.remove('chrome-hidden');
       $('#rd-book-title').textContent = book.title;
       for (const id of ['rd-toc', 'rd-appearance', 'rd-search', 'rd-bookmark']) $('#' + id).disabled = false;
@@ -133,6 +136,7 @@ p.books-error { text-align: center; opacity: 0.6; margin-top: 30%; }
         this.renderHighlights();
         this._hideLoading();
         this.win.focus();
+        this.refreshChrome();
         Library.updateBook(book.id, { lastOpenedAt: Date.now() }, { silent: true });
         this.startTicker();
       } catch (e) {
@@ -153,6 +157,7 @@ p.books-error { text-align: center; opacity: 0.6; margin-top: 30%; }
       for (const id of ['rd-toc', 'rd-appearance', 'rd-search', 'rd-bookmark']) $('#' + id).disabled = true;
       $('#rd-prev').disabled = true; $('#rd-next').disabled = true; $('#rd-spine').hidden = true;
       $('#rd-scrubber').value = 0;
+      this.refreshChrome();
       Library.updateBook(book.id, { lastOpenedAt: Date.now() }, { silent: true });
       this.startTicker(); this.touch();
     },
@@ -163,6 +168,7 @@ p.books-error { text-align: center; opacity: 0.6; margin-top: 30%; }
       await this.flushStats(); this.stopTicker();
       this.hideHLPopover(); UI.closeAll();
       document.removeEventListener('keydown', this._onKey);
+      clearTimeout(this._chromeTimer); this._chromeTimer = null;
       if (this.epub) { this.epub.dispose(); this.epub = null; }
       if (this._pdfURL) { URL.revokeObjectURL(this._pdfURL); this._pdfURL = null; }
       $('#rd-pdf').innerHTML = ''; $('#rd-pdf').hidden = true;
@@ -206,9 +212,13 @@ p.books-error { text-align: center; opacity: 0.6; margin-top: 30%; }
       doc.addEventListener('mouseup', () => setTimeout(() => this.onSelectionEnd(), 0));
       doc.addEventListener('mousedown', e => { this.touch(); if (!(e.target.closest && e.target.closest('.books-hl'))) this.hideHLPopover(); });
       doc.addEventListener('click', e => this.onDocClick(e));
-      doc.addEventListener('mousemove', () => this.onMouseMove());
+      doc.addEventListener('mousemove', e => this.onMouseMove(e, true));
       doc.addEventListener('scroll', U.throttle(() => this.onScroll(), 80), { passive: true });
-      doc.addEventListener('contextmenu', e => { const sel = this.win.getSelection(); if (sel && !sel.isCollapsed) { e.preventDefault(); this.onSelectionEnd(); } else if (App.shell && !e.altKey) e.preventDefault(); });
+      doc.addEventListener('contextmenu', e => {
+        const sel = this.win.getSelection();
+        if (sel && !sel.isCollapsed) { e.preventDefault(); this.onSelectionEnd(); }
+        else if (global.App && App.shell && !e.altKey) e.preventDefault();
+      });
     },
 
     /* ------------------------------------------------------------------ theme & type */
@@ -222,6 +232,7 @@ p.books-error { text-align: center; opacity: 0.6; margin-top: 30%; }
       const reader = $('#reader');
       reader.style.setProperty('--rd-bg', t.bg); reader.style.setProperty('--rd-fg', t.fg); reader.style.setProperty('--rd-accent', t.accent);
       reader.dataset.theme = id;
+      reader.classList.toggle('rd-dark', !!t.dark);
       if (this.doc && this.doc.body) {
         const b = this.doc.body, de = this.doc.documentElement;
         b.classList.toggle('theme-dark', !!t.dark); b.classList.toggle('theme-bold', !!t.bold); b.classList.toggle('theme-focus', !!t.focus); b.classList.toggle('keep-colors', !!t.keepColors);
@@ -242,75 +253,99 @@ p.books-error { text-align: center; opacity: 0.6; margin-top: 30%; }
     },
     changeFontSize(delta) { Settings.set('fontSize', U.clamp(Math.round((Settings.get('fontSize') + delta) / 5) * 5, 60, 240)); },
     onSettingChange(key) {
-      if (!this.isOpen || !this.doc || this.book?.kind === 'pdf') return;
-      if (['theme', 'autoNight'].includes(key)) {
-        // Capture the position before the theme changes: the Bold theme reflows the text.
-        const loc = this.anchor || (this.layout ? this.currentLocator() : null);
-        this.applyTheme(); this.renderHighlights(); this._queueRelayout(loc);
-      } else if (['font', 'fontSize', 'lineHeight', 'justify', 'hyphenate'].includes(key)) {
-        const loc = this.anchor || (this.layout ? this.currentLocator() : null); // before the reflow
-        this.applyTextSettings(); this._queueRelayout(loc);
-      } else if (['layout', 'spread', 'margins'].includes(key)) this._queueRelayout();
+      if (!this.isOpen || !this.doc) return;
+      if (['theme', 'autoNight'].includes(key)) { const loc = this.anchor || this.currentLocator(); this.applyTheme(); this.renderHighlights(); this._queueRelayout(loc); }
+      else if (['font', 'fontSize', 'lineHeight', 'justify', 'hyphenate'].includes(key)) { const loc = this.anchor || this.currentLocator(); this.applyTextSettings(); this._queueRelayout(loc); }
+      else if (['layout', 'spread', 'textWidth'].includes(key)) this._queueRelayout(this.anchor || this.currentLocator());
       else if (['showPageNumbers', 'showChapterProgress'].includes(key)) this.updateUI();
     },
-    _queueRelayout(loc) {
-      if (loc) this._pendingRestore = loc;
-      clearTimeout(this._relayoutTimer);
-      this._relayoutTimer = setTimeout(() => { const r = this._pendingRestore; this._pendingRestore = null; this.relayout(r ? { restore: r } : {}); }, 40);
-    },
+    _queueRelayout(loc) { if (loc) this.anchor = loc; clearTimeout(this._relayoutTimer); this._relayoutTimer = setTimeout(() => this.relayout(), 40); },
 
     /* ------------------------------------------------------------------ layout */
     async relayout(opts = {}) {
       if (!this.doc || !this.isOpen || this.book?.kind === 'pdf') return;
-      // Anchor to the same text position across successive re-layouts until the reader navigates, so
-      // repeated font/size/window changes never drift the reading position.
       const restore = opts.restore !== undefined ? opts.restore : (this.anchor || (this.layout ? this.currentLocator() : null));
-      this.anchor = restore;
+      if (restore) this.anchor = restore;
       const stage = $('#rd-stage');
       const W = stage.clientWidth, H = stage.clientHeight;
       const mode = Settings.get('layout') === 'scroll' ? 'scroll' : 'paginated';
       const spread = Settings.get('spread');
-      const mSide = MARGINS[Settings.get('margins')] || MARGINS.normal;
+      const tw = TEXT_WIDTH[Settings.get('textWidth')] || TEXT_WIDTH.medium;
+      const mSide = tw.margin;
       const cols = mode === 'paginated' ? (spread === 'double' ? 2 : spread === 'single' ? 1 : (W >= 1000 ? 2 : 1)) : 1;
       const gap = mSide * 2; // keeps neighbouring columns fully outside the viewport in single-page mode too
       const boxW = Math.max(200, W - 2 * mSide);
       const colW = (boxW - gap * (cols - 1)) / cols;
       const step = colW + gap;
       const colH = Math.max(200, H - M_TOP - M_BOTTOM);
+      const scrollW = Math.min(tw.scroll === Infinity ? Infinity : tw.scroll, Math.max(320, W - 2 * SCROLL_SIDE));
       const de = this.doc.documentElement, body = this.doc.body;
       de.style.setProperty('--cols', String(cols)); de.style.setProperty('--gap', gap + 'px'); de.style.setProperty('--box-w', boxW + 'px');
       de.style.setProperty('--col-h', colH + 'px'); de.style.setProperty('--col-w', colW + 'px'); de.style.setProperty('--m-top', M_TOP + 'px'); de.style.setProperty('--m-side', mSide + 'px');
-      de.style.setProperty('--scroll-w', Math.min(760, Math.max(320, W - 2 * mSide)) + 'px');
+      de.style.setProperty('--scroll-w', scrollW + 'px'); de.style.setProperty('--scroll-top', SCROLL_TOP + 'px'); de.style.setProperty('--scroll-side', SCROLL_SIDE + 'px');
       body.classList.toggle('paginated', mode === 'paginated'); body.classList.toggle('scroll', mode === 'scroll');
       $('#rd-spine').hidden = cols !== 2;
       this.layout = { mode, cols, colW, gap, step, colH, mSide, W, H, total: 1 };
       await U.nextFrame(); await U.nextFrame();
       if (!this.doc) return;
+      // A layout switch must not inherit the other axis' scroll offset (pages would sit shifted up / scrolling shifted left).
+      if (mode === 'paginated') this.se.scrollTop = 0; else this.se.scrollLeft = 0;
       this.measure();
       if (restore) this.goToLocator(restore, { instant: true, keepAnchor: true });
       else this.goTo(mode === 'paginated' ? this.page : 0, { instant: true, keepAnchor: true });
       this.recomputeBookmarkCols();
       this.updateUI();
     },
-    get se() { return this.doc.scrollingElement || this.doc.documentElement; },
+    get se() { return this.doc ? (this.doc.scrollingElement || this.doc.documentElement) : null; },
+    /** Measures the total extent (columns or scroll height) robustly: end marker, last section start and last visible glyph. */
     measure() {
       const L = this.layout, se = this.se;
+      const endRect = this.doc.getElementById('book-end').getBoundingClientRect();
+      const lastRect = this.lastContentRect();
       if (L.mode === 'paginated') {
-        const endEl = this.doc.getElementById('book-end');
-        const endCol = this.colOfStart(endEl.getBoundingClientRect().left + se.scrollLeft);
-        L.total = Math.max(1, endCol + 1);
         this.sectionStarts = this.secEls.map(s => this.colOfStart(s.getBoundingClientRect().left + se.scrollLeft));
-        for (const t of this.tocEntries) t.pos = this.hrefToPos(t.href);
+        let endCol = this.colOfStart(endRect.left + se.scrollLeft);
+        if (lastRect) endCol = Math.max(endCol, Math.floor((lastRect.left + se.scrollLeft - L.mSide + 2) / L.step));
+        const lastStart = this.sectionStarts.length ? this.sectionStarts[this.sectionStarts.length - 1] : 0;
+        L.total = Math.max(1, endCol + 1, lastStart + 1);
       } else {
-        L.total = Math.max(1, se.scrollHeight - se.clientHeight);
-        this.sectionStarts = this.secEls.map(s => Math.max(0, s.getBoundingClientRect().top + se.scrollTop - 36));
-        for (const t of this.tocEntries) t.pos = this.hrefToPos(t.href);
+        this.sectionStarts = this.secEls.map(s => Math.max(0, s.getBoundingClientRect().top + se.scrollTop - SCROLL_TOP + 12));
+        const byEnd = Math.round(endRect.bottom + se.scrollTop - se.clientHeight);
+        const byLast = lastRect ? Math.round(lastRect.bottom + se.scrollTop - se.clientHeight) : 0;
+        const byScroll = se.scrollHeight - se.clientHeight;
+        L.total = Math.max(1, byEnd, byLast, byScroll);
       }
-      const scr = $('#rd-scrubber'); scr.max = String(Math.max(0, L.mode === 'paginated' ? L.total - 1 : L.total));
+      for (const t of this.tocEntries) t.pos = this.hrefToPos(t.href);
+      $('#rd-scrubber').max = String(Math.max(0, L.mode === 'paginated' ? L.total - 1 : L.total));
+    },
+    lastContentRect() {
+      const range = this.doc.createRange();
+      for (let i = this.secEls.length - 1; i >= 0; i--) {
+        const sec = this.secEls[i];
+        const nodes = this.textNodes(sec);
+        for (let k = nodes.length - 1; k >= 0; k--) {
+          const text = nodes[k].node.nodeValue;
+          for (let c = text.length - 1; c >= 0 && c >= text.length - 300; c--) {
+            if (/\s/.test(text[c])) continue;
+            range.setStart(nodes[k].node, c); range.setEnd(nodes[k].node, c + 1);
+            const r = range.getClientRects()[0];
+            if (r && (r.width || r.height)) return r;
+          }
+        }
+        const media = sec.querySelectorAll('img, svg, video');
+        if (media.length) { const r = media[media.length - 1].getBoundingClientRect(); if (r.width || r.height) return r; }
+      }
+      return null;
     },
     colOfStart(absX) { const L = this.layout; return Math.max(0, Math.round((absX - L.mSide) / L.step)); },
     colOfPoint(absX) { const L = this.layout; return U.clamp(Math.floor((absX - L.mSide + 2) / L.step), 0, Math.max(0, L.total - 1)); },
     currentY() { return this.se ? this.se.scrollTop : 0; },
+    curPos() { return this.layout.mode === 'paginated' ? this.page : this.currentY(); },
+    isAtEnd() {
+      const L = this.layout; if (!L || !this.doc) return false;
+      if (L.mode === 'paginated') return this.page + L.cols >= L.total;
+      return this.currentY() >= L.total - 2;
+    },
 
     /* ------------------------------------------------------------------ navigation */
     goTo(pos, opts = {}) {
@@ -325,6 +360,7 @@ p.books-error { text-align: center; opacity: 0.6; margin-top: 30%; }
         col = Math.floor(col / L.cols) * L.cols;
         this.page = col;
         const x = col * L.step;
+        if (se.scrollTop) se.scrollTop = 0;
         if (smooth) se.scrollTo({ left: x, behavior: 'smooth' }); else se.scrollLeft = x;
       }
       this.hideHLPopover();
@@ -333,30 +369,27 @@ p.books-error { text-align: center; opacity: 0.6; margin-top: 30%; }
     },
     next() {
       const L = this.layout; if (!L) return;
-      if (L.mode === 'scroll') { if (this.currentY() >= L.total - 2) { this.reachedEnd(); return; } this.goTo(this.currentY() + L.H * 0.88); return; }
-      if (this.page + L.cols >= L.total) { this.reachedEnd(); return; }
+      if (this.isAtEnd()) { this.reachedEnd(); return; }
       this._pagesTurned++;
-      this.goTo(this.page + L.cols);
+      if (L.mode === 'scroll') this.goTo(this.currentY() + this.se.clientHeight * 0.85); else this.goTo(this.page + L.cols);
     },
     prev() {
       const L = this.layout; if (!L) return;
-      if (L.mode === 'scroll') { this.goTo(this.currentY() - L.H * 0.88); return; }
+      if (L.mode === 'scroll') { if (this.currentY() <= 0) return; this.goTo(this.currentY() - this.se.clientHeight * 0.85); return; }
       if (this.page <= 0) return;
       this._pagesTurned++;
       this.goTo(this.page - L.cols);
     },
-    nextChapter() { const cur = this.curPos(); const starts = this.chapterStarts().filter(s => s > cur + 0.5); if (starts.length) this.goTo(starts[0]); else this.reachedEnd(); },
+    nextChapter() { const cur = this.curPos(); const starts = this.chapterStarts().filter(s => s > cur + 0.5); if (starts.length) this.goTo(starts[0]); else if (this.isAtEnd()) this.reachedEnd(); else this.goTo(this.layout.mode === 'paginated' ? this.layout.total - 1 : this.layout.total); },
     prevChapter() { const cur = this.curPos(); const starts = this.chapterStarts().filter(s => s < cur - 0.5); this.goTo(starts.length ? starts[starts.length - 1] : 0); },
     chapterStarts() { const set = new Set(this.sectionStarts); for (const t of this.tocEntries) if (t.pos != null) set.add(t.pos); return [...set].sort((a, b) => a - b); },
-    curPos() { return this.layout.mode === 'paginated' ? this.page : this.currentY(); },
     goToLocator(loc, opts = {}) {
       const L = this.layout; if (!L || !loc) return;
       const idx = U.clamp(loc.spine || 0, 0, this.secEls.length - 1);
       const r = loc.offset ? this.positionRect(idx, loc.offset) : null;
       if (L.mode === 'paginated') this.goTo(r ? this.colOfPoint(r.left + this.se.scrollLeft) : (this.sectionStarts[idx] || 0), opts);
-      else this.goTo(r ? Math.max(0, r.top + this.se.scrollTop - 36) : (this.sectionStarts[idx] || 0), opts);
+      else this.goTo(r ? Math.max(0, r.top + this.se.scrollTop - SCROLL_TOP + 12) : (this.sectionStarts[idx] || 0), opts);
     },
-    goToSpine(idx) { const L = this.layout; if (!L) return; this.goTo(this.sectionStarts[U.clamp(idx, 0, this.sectionStarts.length - 1)] || 0); },
     hrefTarget(href) {
       if (!href || !this.epub) return null;
       const [path, frag] = href.split('#');
@@ -371,13 +404,12 @@ p.books-error { text-align: center; opacity: 0.6; margin-top: 30%; }
       const t = this.hrefTarget(href); if (!t) return null;
       if (t.target === t.sec) return this.sectionStarts[t.idx];
       const r = t.target.getBoundingClientRect();
-      return this.layout.mode === 'paginated' ? this.colOfPoint(r.left + this.se.scrollLeft) : Math.max(0, r.top + this.se.scrollTop - 36);
+      return this.layout.mode === 'paginated' ? this.colOfPoint(r.left + this.se.scrollLeft) : Math.max(0, r.top + this.se.scrollTop - SCROLL_TOP + 12);
     },
     goToHref(href) { const pos = this.hrefToPos(href); if (pos == null) return; this.goTo(pos); },
     onScroll() {
       if (!this.layout || this.layout.mode !== 'scroll') return;
-      if (!this._restoring) this.anchor = null;
-      this.page = this.currentY();
+      this.page = this.currentY(); this.anchor = null;
       this.updateUI(); this.scheduleSave(); this.touch();
     },
 
@@ -397,8 +429,8 @@ p.books-error { text-align: center; opacity: 0.6; margin-top: 30%; }
         const off = this.findFirstTextAt(secIdx, rect => rect.left + se.scrollLeft >= colLeft - 2);
         return { spine: secIdx, offset: off == null ? 0 : off };
       }
-      const y = se.scrollTop, secIdx = this.sectionAt(y + 36);
-      const off = this.findFirstTextAt(secIdx, rect => rect.bottom + se.scrollTop >= y + 2);
+      const y = se.scrollTop, secIdx = this.sectionAt(y + SCROLL_TOP);
+      const off = this.findFirstTextAt(secIdx, rect => rect.bottom + se.scrollTop >= y + SCROLL_TOP - 8);
       return { spine: secIdx, offset: off == null ? 0 : off };
     },
     findFirstTextAt(secIdx, pred) {
@@ -447,7 +479,7 @@ p.books-error { text-align: center; opacity: 0.6; margin-top: 30%; }
       }
       return this.firstBoxRect(sec);
     },
-    firstBoxRect(sec) { const img = sec.querySelector('img, svg, video'); const r = (img || sec).getBoundingClientRect(); return r; },
+    firstBoxRect(sec) { const img = sec.querySelector('img, svg, video'); return (img || sec).getBoundingClientRect(); },
     rangeFromOffsets(secIdx, start, end) {
       const sec = this.secEls[secIdx]; if (!sec) return null;
       const nodes = this.textNodes(sec); if (!nodes.length) return null;
@@ -466,9 +498,7 @@ p.books-error { text-align: center; opacity: 0.6; margin-top: 30%; }
     snippetAt(spine, offset, len = 140) { const t = this.secEls[spine]?.textContent || ''; return t.slice(offset, offset + len).replace(/\s+/g, ' ').trim(); },
 
     /* ------------------------------------------------------------------ chapters / footer */
-    buildTocEntries() {
-      this.tocEntries = this.epub.flatToc().filter(t => t.href).map(t => ({ label: t.label, href: t.href, depth: t.depth, pos: null }));
-    },
+    buildTocEntries() { this.tocEntries = this.epub.flatToc().filter(t => t.href).map(t => ({ label: t.label, href: t.href, depth: t.depth, pos: null })); },
     chapterAt(pos) {
       let best = null;
       for (const t of this.tocEntries) if (t.pos != null && t.pos <= pos + 0.5 && (!best || t.pos >= best.pos)) best = t;
@@ -512,11 +542,12 @@ p.books-error { text-align: center; opacity: 0.6; margin-top: 30%; }
       const percent = L.mode === 'paginated' ? Math.min(1, (this.page + L.cols) / L.total) : (L.total ? Math.min(1, cur / L.total) : 0);
       const entry = this.chapterAt(cur);
       const patch = { progress: { locator: { spine: loc.spine, offset: loc.offset }, percent, chapter: entry ? entry.label : '', updatedAt: Date.now() } };
-      if (percent >= 0.999 && L.total > 1 && !this.book.finishedAt) { patch.finishedAt = Date.now(); patch.wantToRead = false; this.book.finishedAt = patch.finishedAt; }
+      if (this.isAtEnd() && L.total > 1 && !this.book.finishedAt) { patch.finishedAt = Date.now(); this.book.finishedAt = patch.finishedAt; }
       Library.updateBook(this.book.id, patch, { silent: true });
     },
     reachedEnd() {
-      if (this._endShown) return; this._endShown = true;
+      if (this._endShown || !this.isAtEnd()) return;
+      this._endShown = true;
       this.saveProgress();
       const card = el('div.rd-end-card', el('div.card', U.svg(Icons.icon('checkCircle', { size: 44, stroke: 1.6 })), el('h3', 'You finished this book'),
         el('p', `“${this.book.title}” has been added to Finished.`),
@@ -534,14 +565,15 @@ p.books-error { text-align: center; opacity: 0.6; margin-top: 30%; }
         if (Math.abs(this._wheel.zoom) >= 40) { this.changeFontSize(this._wheel.zoom < 0 ? 10 : -10); this._wheel.zoom = 0; }
         return;
       }
-      if (L.mode === 'scroll') return; // native scrolling
-      e.preventDefault();
-      if (!Settings.get('wheelTurnsPages')) return;
       let dy = e.deltaY, dx = e.deltaX;
       if (e.deltaMode === 1) { dy *= 16; dx *= 16; } else if (e.deltaMode === 2) { dy *= L.H; dx *= L.W; }
-      const horizontal = Math.abs(dx) > Math.abs(dy);
-      if (horizontal && !Settings.get('wheelHorizontal')) return;
+      let horizontal = Math.abs(dx) > Math.abs(dy);
       let d = horizontal ? dx : dy;
+      if (e.shiftKey && !horizontal) { horizontal = true; d = dy; } // ⇧ + wheel behaves like a horizontal wheel
+      if (L.mode === 'scroll' && !horizontal) return;                 // vertical scrolling layout: the wheel scrolls the text
+      e.preventDefault();
+      if (!Settings.get('wheelTurnsPages')) return;
+      if (horizontal && !Settings.get('wheelHorizontal')) return;
       if (Settings.get('wheelInvert')) d = -d;
       if (!d) return;
       const w = this._wheel, now = performance.now();
@@ -549,7 +581,7 @@ p.books-error { text-align: center; opacity: 0.6; margin-top: 30%; }
       if (gap > 150) { w.acc = 0; w.locked = false; w.lastDelta = 0; }
       const threshold = WHEEL_THRESHOLD[Settings.get('wheelSensitivity')] || WHEEL_THRESHOLD.medium;
       if (w.locked) {
-        // After a turn, ignore the decaying tail of an inertial gesture; only steady/increasing input (a spinning wheel) counts, at double the threshold.
+        // After a turn, ignore the decaying tail of an inertial gesture; steady or increasing input (a spinning wheel) keeps turning at double the threshold.
         if (Math.abs(d) >= Math.abs(w.lastDelta) * 0.85) { w.acc += d; if (Math.abs(w.acc) >= threshold * 2) { w.acc > 0 ? this.next() : this.prev(); w.acc = 0; } }
         w.lastDelta = d; return;
       }
@@ -612,22 +644,36 @@ p.books-error { text-align: center; opacity: 0.6; margin-top: 30%; }
       if (end <= start) return;
       this.showHLPopover({ spine: s, start, end, text: text.slice(0, 3000) }, range.getBoundingClientRect(), null);
     },
+
+    /* ------------------------------------------------------------------ fullscreen & chrome */
     toggleFullscreen() {
-      const native = () => { if (App.shell) App.shell.post({ type: 'toggleFullScreen' }); };
-      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-      else if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(native);
+      const native = () => { if (global.App && App.shell) App.shell.post({ type: 'toggleFullScreen' }); };
+      if (document.fullscreenElement) { document.exitFullscreen().catch(() => {}); return; }
+      if (global.App && App._nativeFullscreen) { native(); return; }
+      if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(native);
       else native();
     },
-    onFullscreenChange() {
-      const fs = !!document.fullscreenElement;
+    /** In full screen the toolbar and footer hide; they come back when the pointer approaches the top or bottom edge. */
+    refreshChrome(pointerY) {
+      if (!this.isOpen) return;
+      const reader = $('#reader');
+      const fs = global.App ? App.isFullscreen() : !!document.fullscreenElement;
       const b = $('#rd-fullscreen'); b.innerHTML = Icons.icon(fs ? 'fullscreenExit' : 'fullscreen', { size: 16 }); b.title = fs ? 'Exit Full Screen' : 'Full Screen';
-      if (!fs) { clearTimeout(this._chromeTimer); $('#reader').classList.remove('chrome-hidden'); } else this.onMouseMove();
+      const show = () => { reader.classList.remove('chrome-hidden'); clearTimeout(this._chromeTimer); this._chromeTimer = null; };
+      if (!fs) { show(); return; }
+      const H = window.innerHeight;
+      const nearBars = pointerY != null && (pointerY < 96 || pointerY > H - 88);
+      if (nearBars || UI.hasOpen() || this._hlPopover) { show(); return; }
+      if (!this._chromeTimer) this._chromeTimer = setTimeout(() => {
+        this._chromeTimer = null;
+        if (this.isOpen && (global.App ? App.isFullscreen() : !!document.fullscreenElement) && !UI.hasOpen() && !this._hlPopover) reader.classList.add('chrome-hidden');
+      }, 1000);
     },
-    onMouseMove() {
-      if (!this.isOpen || !document.fullscreenElement) return;
-      $('#reader').classList.remove('chrome-hidden');
-      clearTimeout(this._chromeTimer);
-      this._chromeTimer = setTimeout(() => { if (document.fullscreenElement && !UI.hasOpen() && !this._hlPopover) $('#reader').classList.add('chrome-hidden'); }, 2600);
+    onMouseMove(e, fromFrame) {
+      if (!this.isOpen) return;
+      let y = e.clientY;
+      if (fromFrame && this.frame) y += this.frame.getBoundingClientRect().top;
+      this.refreshChrome(y);
     },
 
     /* ------------------------------------------------------------------ highlights */
@@ -711,6 +757,7 @@ p.books-error { text-align: center; opacity: 0.6; margin-top: 30%; }
       pop.style.left = left + 'px'; pop.style.top = top + 'px'; pop.classList.toggle('below', below);
       pop.style.setProperty('--arrow-x', U.clamp(cx - left, 16, w - 16) + 'px');
       this._hlPopover = pop;
+      this.refreshChrome();
     },
     hideHLPopover() { if (this._hlPopover) { this._hlPopover.remove(); this._hlPopover = null; } },
 
@@ -720,13 +767,13 @@ p.books-error { text-align: center; opacity: 0.6; margin-top: 30%; }
       const idx = U.clamp(loc.spine || 0, 0, this.secEls.length - 1);
       const r = loc.offset ? this.positionRect(idx, loc.offset) : null;
       if (L.mode === 'paginated') return r ? this.colOfPoint(r.left + this.se.scrollLeft) : (this.sectionStarts[idx] || 0);
-      return r ? Math.max(0, r.top + this.se.scrollTop - 36) : (this.sectionStarts[idx] || 0);
+      return r ? Math.max(0, r.top + this.se.scrollTop - SCROLL_TOP + 12) : (this.sectionStarts[idx] || 0);
     },
     recomputeBookmarkCols() { for (const b of this.bookmarks) b._pos = this.locatorToPos(b); },
     bookmarkOnPage() {
       const L = this.layout; if (!L) return null;
       if (L.mode === 'paginated') return this.bookmarks.find(b => b._pos >= this.page && b._pos < this.page + L.cols) || null;
-      const y = this.currentY(); return this.bookmarks.find(b => b._pos >= y - 10 && b._pos < y + L.H * 0.9) || null;
+      const y = this.currentY(); return this.bookmarks.find(b => b._pos >= y - 10 && b._pos < y + L.H * 0.85) || null;
     },
     updateBookmarkButton() { const b = $('#rd-bookmark'); const on = !!this.bookmarkOnPage(); b.classList.toggle('bookmarked', on); b.innerHTML = Icons.icon(on ? 'bookmarkFill' : 'bookmark'); b.title = on ? 'Remove Bookmark (⌘D)' : 'Add Bookmark (⌘D)'; },
     async toggleBookmark() {
@@ -818,10 +865,11 @@ p.books-error { text-align: center; opacity: 0.6; margin-top: 30%; }
         count.textContent = !input.value.trim() ? 'Type at least two characters' : results.length ? `${results.length >= 400 ? '400+' : results.length} ${results.length === 1 ? 'result' : 'results'}` : 'No results';
         let lastChapter = null;
         results.forEach((r, i) => {
-          const ch = this.chapterAt(this.locatorToPos({ spine: r.spine, offset: r.start }));
+          const pos = this.locatorToPos({ spine: r.spine, offset: r.start });
+          const ch = this.chapterAt(pos);
           const chLabel = ch ? ch.label : (this.sections[r.spine].title || `Section ${r.spine + 1}`);
           if (chLabel !== lastChapter) { list.appendChild(el('div.sr-chapter', chLabel)); lastChapter = chLabel; }
-          const row = el('div.sr-item', { tabindex: 0 }, el('div.sr-text', r.before, el('mark', r.match), r.after), el('span.sr-page', this.posLabel(this.locatorToPos({ spine: r.spine, offset: r.start }))));
+          const row = el('div.sr-item', { tabindex: 0 }, el('div.sr-text', r.before, el('mark', r.match), r.after), el('span.sr-page', this.posLabel(pos)));
           row.addEventListener('click', () => { current = i; this.showResult(r); rows.forEach((x, k) => x.classList.toggle('current', k === i)); });
           rows.push(row); list.appendChild(row);
         });
@@ -842,43 +890,45 @@ p.books-error { text-align: center; opacity: 0.6; margin-top: 30%; }
       const btn = $('#rd-appearance');
       if (btn._popover) { btn._popover.close(); return; }
       const box = el('div.appearance');
-      const row = (label, control, sub) => el('div.ap-row', el('div.ap-label', label, sub ? el('span.ap-sub', sub) : null), control);
+      const row = (label, control, sub, key) => el('div.ap-row', { dataset: key ? { row: key } : null }, el('div.ap-label', label, sub ? el('span.ap-sub', sub) : null), control);
       const sizeVal = el('div.ap-size-value');
+      const themes = el('div.themes');
+      const fontBtn = el('button.popup-button', { type: 'button' }, el('span.popup-label', ''), el('span.popup-chevrons', { html: Icons.icon('chevronUp', { size: 11, stroke: 2.6 }) + Icons.icon('chevronDown', { size: 11, stroke: 2.6 }) }));
       const refresh = () => {
         sizeVal.textContent = `Text size ${Settings.get('fontSize')}%`;
         for (const s of themes.children) s.classList.toggle('active', s.dataset.theme === Settings.get('theme'));
         fontBtn.firstChild.textContent = (FONTS.find(f => f.id === Settings.get('font')) || FONTS[0]).name;
+        const scrolling = Settings.get('layout') === 'scroll';
+        for (const r of box.querySelectorAll('[data-row="paginated-only"]')) r.classList.toggle('disabled', scrolling);
       };
       box.appendChild(el('div.ap-size', el('button', { type: 'button', title: 'Smaller text (⌘−)', onclick: () => this.changeFontSize(-10) }, 'A'), el('button', { type: 'button', title: 'Larger text (⌘+)', onclick: () => this.changeFontSize(10) }, 'A')));
       box.appendChild(sizeVal);
-      box.appendChild(el('div.ap-section-title', 'Themes'));
-      const themes = el('div.themes');
+      box.appendChild(el('div.section-title', 'Themes'));
       for (const [id, t] of Object.entries(THEMES)) {
         const sw = el('div.theme-swatch', { dataset: { theme: id }, class: t.bold ? 'bold' : '', style: { '--tbg': t.bg, '--tfg': t.fg }, role: 'button', tabindex: 0 }, 'Aa', el('small', t.name));
         sw.addEventListener('click', () => { Settings.set('theme', id); refresh(); });
         themes.appendChild(sw);
       }
       box.appendChild(themes);
-      box.appendChild(row('Auto-Night Theme', UI.switchEl(Settings.get('autoNight'), v => Settings.set('autoNight', v)), 'Switch to a dark theme when the system uses Dark Mode'));
-      box.appendChild(el('div.ap-section-title', 'Font'));
-      const fontBtn = el('button.font-picker', { type: 'button' }, el('span', ''), el('span.tb-popup-chevrons', { html: Icons.icon('chevronUp', { size: 12, stroke: 2.4 }) + Icons.icon('chevronDown', { size: 12, stroke: 2.4 }) }));
+      box.appendChild(row('Auto-Night Theme', UI.switchEl(Settings.get('autoNight'), v => Settings.set('autoNight', v)), 'Use a dark theme when the system is in Dark Mode'));
+      box.appendChild(el('div.section-title', 'Font'));
       fontBtn.addEventListener('click', () => UI.menu(FONTS.map(f => ({ label: f.name, font: f.css || undefined, checked: Settings.get('font') === f.id, action: () => { Settings.set('font', f.id); refresh(); } })), { anchor: fontBtn, matchWidth: true }));
       box.appendChild(row('Font', fontBtn));
-      box.appendChild(el('div.ap-section-title', 'Layout'));
-      box.appendChild(row('Vertical Scrolling', UI.switchEl(Settings.get('layout') === 'scroll', v => Settings.set('layout', v ? 'scroll' : 'paginated')), 'Read as one continuous scroll instead of pages'));
-      box.appendChild(row('Pages', UI.segmented([{ value: 'auto', label: 'Auto' }, { value: 'single', label: 'One', icon: 'page' }, { value: 'double', label: 'Two', icon: 'pages' }], Settings.get('spread'), v => Settings.set('spread', v))));
-      box.appendChild(row('Page Turn', UI.segmented([{ value: 'slide', label: 'Slide' }, { value: 'none', label: 'None' }], Settings.get('pageTurn'), v => Settings.set('pageTurn', v))));
+      box.appendChild(el('div.section-title', 'Layout'));
+      box.appendChild(row('Vertical Scrolling', UI.switchEl(Settings.get('layout') === 'scroll', v => { Settings.set('layout', v ? 'scroll' : 'paginated'); refresh(); }), 'Read as one continuous scroll instead of pages'));
+      box.appendChild(row('Pages', UI.segmented([{ value: 'auto', label: 'Auto' }, { value: 'single', label: 'One' }, { value: 'double', label: 'Two' }], Settings.get('spread'), v => Settings.set('spread', v)), 'Two pages need a window at least 1000 px wide · paginated layout only', 'paginated-only'));
+      box.appendChild(row('Page Turn', UI.segmented([{ value: 'slide', label: 'Slide' }, { value: 'none', label: 'None' }], Settings.get('pageTurn'), v => Settings.set('pageTurn', v)), 'Paginated layout only', 'paginated-only'));
+      box.appendChild(row('Text Width', UI.segmented([{ value: 'narrow', label: 'Narrow' }, { value: 'medium', label: 'Medium' }, { value: 'wide', label: 'Wide' }, { value: 'full', label: 'Full' }], Settings.get('textWidth'), v => Settings.set('textWidth', v)), 'How much of the page the text fills'));
       box.appendChild(row('Line Spacing', UI.segmented([{ value: 'tight', label: 'Tight' }, { value: 'normal', label: 'Normal' }, { value: 'loose', label: 'Loose' }], Settings.get('lineHeight'), v => Settings.set('lineHeight', v))));
-      box.appendChild(row('Margins', UI.segmented([{ value: 'narrow', label: 'Narrow' }, { value: 'normal', label: 'Normal' }, { value: 'wide', label: 'Wide' }], Settings.get('margins'), v => Settings.set('margins', v))));
       box.appendChild(row('Justified Text', UI.switchEl(Settings.get('justify'), v => Settings.set('justify', v))));
       box.appendChild(row('Hyphenation', UI.switchEl(Settings.get('hyphenate'), v => Settings.set('hyphenate', v))));
-      box.appendChild(el('div.ap-section-title', 'Scroll Wheel & Trackpad'));
+      box.appendChild(el('div.section-title', 'Scroll Wheel & Trackpad'));
       box.appendChild(row('Scroll Wheel Turns Pages', UI.switchEl(Settings.get('wheelTurnsPages'), v => Settings.set('wheelTurnsPages', v)), 'Scroll down or right for the next page, up or left for the previous one'));
       box.appendChild(row('Sensitivity', UI.segmented([{ value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }], Settings.get('wheelSensitivity'), v => Settings.set('wheelSensitivity', v))));
       box.appendChild(row('Invert Direction', UI.switchEl(Settings.get('wheelInvert'), v => Settings.set('wheelInvert', v))));
-      box.appendChild(row('Horizontal Scrolling', UI.switchEl(Settings.get('wheelHorizontal'), v => Settings.set('wheelHorizontal', v)), 'Two-finger swipes left and right also turn pages'));
-      box.appendChild(el('div.ap-note', `Hold ${U.modKey} while scrolling to change the text size. With Vertical Scrolling on, the wheel scrolls the text itself.`));
-      box.appendChild(el('div.ap-section-title', 'Display'));
+      box.appendChild(row('Horizontal Scrolling', UI.switchEl(Settings.get('wheelHorizontal'), v => Settings.set('wheelHorizontal', v)), 'A horizontal or tilt wheel, ⇧ + wheel and two-finger swipes turn pages'));
+      box.appendChild(el('div.ap-note', `Hold ${U.modKey} while scrolling to change the text size. With Vertical Scrolling on, the wheel scrolls the text and horizontal gestures move a screen at a time.`));
+      box.appendChild(el('div.section-title', 'Display'));
       box.appendChild(row('Page Numbers', UI.switchEl(Settings.get('showPageNumbers'), v => Settings.set('showPageNumbers', v))));
       box.appendChild(row('Pages Left in Chapter', UI.switchEl(Settings.get('showChapterProgress'), v => Settings.set('showChapterProgress', v))));
       const onChange = () => refresh();

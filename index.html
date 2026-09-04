@@ -8,8 +8,8 @@
 <meta name="description" content="An offline reader modelled on Books for macOS: library, collections, reading goals, highlights, notes and a paginated reader.">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Books">
-<meta name="theme-color" media="(prefers-color-scheme: light)" content="#f0f0f2">
-<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#2b2b2d">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#f4f4f7">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#191919">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon.svg">
@@ -18,7 +18,7 @@
 </head>
 <body>
 <div id="app" class="app">
-  <aside id="sidebar" class="sidebar" aria-label="Library sidebar">
+  <aside id="sidebar" class="sidebar glass" aria-label="Library sidebar">
     <div class="traffic-lights" aria-hidden="true">
       <span class="tl tl-red" id="tl-close" title="Close"></span>
       <span class="tl tl-yellow" id="tl-min" title="Minimize"></span>
@@ -33,7 +33,7 @@
   </aside>
 
   <main class="content" id="content">
-    <header class="toolbar" id="toolbar">
+    <header class="toolbar glass" id="toolbar">
       <div class="toolbar-left">
         <button class="tb-btn" id="btn-sidebar" type="button" title="Hide Sidebar (⌃⌘S)" aria-label="Toggle sidebar"></button>
         <div class="tb-nav">
@@ -44,8 +44,8 @@
       </div>
       <div class="toolbar-right">
         <button class="tb-btn" id="btn-add" type="button" title="Add to Library… (⌘O)"></button>
-        <button class="tb-popup" id="sort-btn" type="button" title="Sort By">
-          <span class="tb-popup-label" id="sort-label">Recent</span><span class="tb-popup-chevrons"></span>
+        <button class="popup-button" id="sort-btn" type="button" title="Sort By">
+          <span class="popup-label" id="sort-label">Recent</span><span class="popup-chevrons"></span>
         </button>
         <div class="segmented" id="view-seg" role="group" aria-label="View">
           <button type="button" data-view="grid" class="active" title="Grid View" aria-label="Grid"></button>
@@ -64,19 +64,6 @@
 </div>
 
 <div id="reader" class="reader" hidden>
-  <header class="reader-toolbar" id="rd-toolbar">
-    <div class="rd-group rd-left">
-      <button class="rd-btn rd-back" id="rd-back" type="button" title="Library (Esc)"><span class="rd-back-label">Library</span></button>
-      <button class="rd-btn" id="rd-toc" type="button" title="Table of Contents"></button>
-      <button class="rd-btn" id="rd-appearance" type="button" title="Themes &amp; Settings"></button>
-    </div>
-    <div class="rd-title" id="rd-title"><span class="rd-book-title" id="rd-book-title"></span></div>
-    <div class="rd-group rd-right">
-      <button class="rd-btn" id="rd-search" type="button" title="Search in Book (⌘F)"></button>
-      <button class="rd-btn" id="rd-bookmark" type="button" title="Add Bookmark (⌘D)"></button>
-      <button class="rd-btn" id="rd-fullscreen" type="button" title="Full Screen"></button>
-    </div>
-  </header>
   <div class="reader-stage" id="rd-stage">
     <iframe id="rd-frame" class="reader-frame" title="Book content" sandbox="allow-same-origin"></iframe>
     <div class="reader-spine" id="rd-spine" hidden></div>
@@ -85,10 +72,23 @@
     <div class="reader-loading" id="rd-loading"><div class="spinner"></div><div id="rd-loading-text">Opening…</div></div>
     <div class="reader-pdf" id="rd-pdf" hidden></div>
   </div>
+  <header class="reader-toolbar" id="rd-toolbar">
+    <div class="rd-group rd-glass rd-left">
+      <button class="rd-btn rd-back" id="rd-back" type="button" title="Library (Esc)"><span class="rd-back-label">Library</span></button>
+      <button class="rd-btn" id="rd-toc" type="button" title="Table of Contents"></button>
+      <button class="rd-btn" id="rd-appearance" type="button" title="Themes &amp; Settings"></button>
+    </div>
+    <div class="rd-title rd-glass" id="rd-title"><span id="rd-book-title"></span></div>
+    <div class="rd-group rd-glass rd-right">
+      <button class="rd-btn" id="rd-search" type="button" title="Search in Book (⌘F)"></button>
+      <button class="rd-btn" id="rd-bookmark" type="button" title="Add Bookmark (⌘D)"></button>
+      <button class="rd-btn" id="rd-fullscreen" type="button" title="Full Screen"></button>
+    </div>
+  </header>
   <footer class="reader-footer" id="rd-footer">
-    <div class="rd-foot-left" id="rd-chapter"></div>
-    <div class="rd-foot-center" id="rd-page"></div>
-    <div class="rd-foot-right" id="rd-left"></div>
+    <div class="rd-foot rd-glass rd-foot-left" id="rd-chapter"></div>
+    <div class="rd-foot rd-glass rd-foot-center" id="rd-page"></div>
+    <div class="rd-foot rd-glass rd-foot-right" id="rd-left"></div>
     <input type="range" class="reader-scrubber" id="rd-scrubber" min="0" max="100" value="0" step="1" aria-label="Book position">
   </footer>
 </div>

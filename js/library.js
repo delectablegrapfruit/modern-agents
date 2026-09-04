@@ -1,15 +1,16 @@
-/* Library: sidebar/source list, Home, All / Want to Read / Finished / Books / PDFs / My Samples, collections,
-   grid & list views, import pipeline (EPUB, PDF, TXT), sample books, context menus, Get Info. */
+/* Library: sidebar/source list, Home, All / Finished / Books / PDFs, collections, grid & list views,
+   import pipeline (EPUB, PDF, TXT), context menus, Get Info. */
 (function (global) {
   'use strict';
   const $ = s => document.querySelector(s);
   const el = U.el;
-  const VIEW_TITLES = { home: 'Home', all: 'All', want: 'Want to Read', finished: 'Finished', books: 'Books', pdfs: 'PDFs', samples: 'My Samples' };
-  const VIEW_ICONS = { home: 'house', all: 'books', want: 'bookmark', finished: 'checkCircle', books: 'book', pdfs: 'doc', samples: 'sample' };
+  const VIEW_TITLES = { home: 'Home', all: 'All', finished: 'Finished', books: 'Books', pdfs: 'PDFs' };
+  const VIEW_ICONS = { home: 'house', all: 'books', finished: 'checkCircle', books: 'book', pdfs: 'doc' };
+  const HOME_SECTIONS = [['homeContinue', 'Continue Reading'], ['homeGoals', 'Reading Goals'], ['homeStats', 'Your Library']];
 
   const Library = {
     books: [], collections: [], annotations: [], route: { view: 'home' }, history: [], future: [],
-    selection: new Set(), search: '', _covers: new Map(), _importing: null,
+    selection: new Set(), search: '', _covers: new Map(), HOME_SECTIONS,
 
     /* ------------------------------------------------------------------ data */
     async load() {
@@ -19,7 +20,7 @@
       const last = Settings.get('lastRoute');
       if (last && this.routeValid(last)) this.route = last;
     },
-    routeValid(r) { return r && (VIEW_TITLES[r.view] || (r.view === 'collection' && this.collections.some(c => c.id === r.id))); },
+    routeValid(r) { return !!r && (!!VIEW_TITLES[r.view] || (r.view === 'collection' && this.collections.some(c => c.id === r.id))); },
     get(id) { return this.books.find(b => b.id === id) || null; },
     collection(id) { return this.collections.find(c => c.id === id) || null; },
     annotationsFor(bookId) { return this.annotations.filter(a => a.bookId === bookId); },
@@ -64,12 +65,9 @@
     booksFor(route = this.route) {
       let list;
       switch (route.view) {
-        case 'all': list = this.books; break;
-        case 'want': list = this.books.filter(b => b.wantToRead); break;
         case 'finished': list = this.books.filter(b => b.finishedAt); break;
-        case 'books': list = this.books.filter(b => b.kind !== 'pdf' && !b.sample); break;
+        case 'books': list = this.books.filter(b => b.kind !== 'pdf'); break;
         case 'pdfs': list = this.books.filter(b => b.kind === 'pdf'); break;
-        case 'samples': list = this.books.filter(b => b.sample); break;
         case 'collection': { const c = this.collection(route.id); list = c ? c.bookIds.map(id => this.get(id)).filter(Boolean) : []; break; }
         default: list = this.books;
       }
@@ -77,12 +75,11 @@
       return this.sorted(list);
     },
     sorted(list) {
-      const sort = Settings.get('sort');
-      const c = U.collator;
+      const sort = Settings.get('sort'), c = U.collator;
       return [...list].sort((a, b) => {
         if (sort === 'title') return c.compare(U.titleSortKey(a.title), U.titleSortKey(b.title)) || c.compare(a.author, b.author);
         if (sort === 'author') return c.compare(a.authorSort || U.authorSortKey(a.author), b.authorSort || U.authorSortKey(b.author)) || c.compare(U.titleSortKey(a.title), U.titleSortKey(b.title));
-        return (Math.max(b.lastOpenedAt || 0, b.addedAt) - Math.max(a.lastOpenedAt || 0, a.addedAt));
+        return Math.max(b.lastOpenedAt || 0, b.addedAt) - Math.max(a.lastOpenedAt || 0, a.addedAt);
       });
     },
 
@@ -95,9 +92,9 @@
     },
     renderSidebar() {
       const nav = $('#source-list'); nav.innerHTML = '';
-      const active = r => (r.view === this.route.view && (r.view !== 'collection' || r.id === this.route.id));
+      const active = r => r.view === this.route.view && (r.view !== 'collection' || r.id === this.route.id);
       const item = (route, label, icon, count, opts = {}) => {
-        const it = el('div.sl-item', { class: active(route) ? 'active' : '', role: 'button', tabindex: 0, dataset: { route: JSON.stringify(route) } },
+        const it = el('div.sl-item', { class: active(route) ? 'active' : '', role: 'button', tabindex: 0 },
           U.svg(Icons.icon(icon, { size: 18 })), el('span.sl-label', label), count != null ? el('span.sl-count', count) : null);
         it.addEventListener('click', () => this.navigate(route));
         it.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); this.navigate(route); } });
@@ -108,11 +105,9 @@
       nav.appendChild(item({ view: 'home' }, 'Home', 'house'));
       nav.appendChild(el('div.sl-section', 'Library'));
       nav.appendChild(item({ view: 'all' }, 'All', 'books', this.books.length || null));
-      nav.appendChild(item({ view: 'want' }, 'Want to Read', 'bookmark', this.books.filter(b => b.wantToRead).length || null, { dropTarget: { want: true } }));
       nav.appendChild(item({ view: 'finished' }, 'Finished', 'checkCircle', this.books.filter(b => b.finishedAt).length || null, { dropTarget: { finished: true } }));
-      nav.appendChild(item({ view: 'books' }, 'Books', 'book', this.books.filter(b => b.kind !== 'pdf' && !b.sample).length || null));
+      nav.appendChild(item({ view: 'books' }, 'Books', 'book', this.books.filter(b => b.kind !== 'pdf').length || null));
       nav.appendChild(item({ view: 'pdfs' }, 'PDFs', 'doc', this.books.filter(b => b.kind === 'pdf').length || null));
-      if (this.books.some(b => b.sample)) nav.appendChild(item({ view: 'samples' }, 'My Samples', 'sample', this.books.filter(b => b.sample).length));
       nav.appendChild(el('div.sl-section', 'My Collections'));
       for (const c of this.collections) {
         nav.appendChild(item({ view: 'collection', id: c.id }, c.name, 'folder', c.bookIds.length || null, {
@@ -123,7 +118,7 @@
           ], { x: e.clientX, y: e.clientY }),
         }));
       }
-      if (!this.collections.length) nav.appendChild(el('div.sl-item', { style: { color: 'var(--text-3)', fontSize: '12px' } }, 'No collections yet'));
+      if (!this.collections.length) nav.appendChild(el('div.sl-empty', 'Drag books onto a collection to organise them.'));
     },
     _dropTarget(node, target) {
       node.addEventListener('dragover', e => { if ([...e.dataTransfer.types].includes('text/x-book-ids')) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; node.classList.add('drop-target'); } });
@@ -134,8 +129,7 @@
         if (!ids.length) return;
         e.preventDefault(); e.stopPropagation();
         if (target.collection) await this.addToCollection(ids, target.collection);
-        else if (target.want) { for (const id of ids) await this.updateBook(id, { wantToRead: true }, { silent: true }); this.render(); UI.toast(ids.length === 1 ? 'Added to Want to Read' : `Added ${ids.length} books to Want to Read`); }
-        else if (target.finished) { for (const id of ids) await this.updateBook(id, { finishedAt: Date.now() }, { silent: true }); this.render(); UI.toast('Marked as Finished'); }
+        else if (target.finished) await this.markFinished(ids, true);
       });
     },
     renderToolbar() {
@@ -151,49 +145,32 @@
       this._renderToken = (this._renderToken || 0) + 1;
       if (this.route.view === 'home') { this.renderHome(view, this._renderToken); return; }
       const books = this.booksFor();
-      const head = el('div.view-header', el('h1', this.routeTitle()), el('div.view-actions',
-        el('span.view-count', this.search ? `${books.length} of ${this.countFor(this.route)} ${this.kindWord(this.route)}` : `${books.length} ${this.kindWord(this.route, books.length)}`)));
-      view.appendChild(head);
+      const count = this.search ? `${books.length} of ${this.countFor(this.route)} ${this.kindWord(this.route)}` : `${books.length} ${this.kindWord(this.route, books.length)}`;
+      view.appendChild(el('div.view-header', el('h1', this.routeTitle()), el('div.view-actions', el('span.view-count', count))));
       if (!books.length) { view.appendChild(this.emptyState()); return; }
       view.appendChild(Settings.get('view') === 'list' ? this.renderList(books) : this.renderGrid(books));
     },
     countFor(route) { const s = this.search; this.search = ''; const n = this.booksFor(route).length; this.search = s; return n; },
-    kindWord(route, n = 2) { const one = route.view === 'pdfs' ? 'PDF' : route.view === 'samples' ? 'sample' : 'book'; return n === 1 ? one : one + 's'; },
+    kindWord(route, n = 2) { const one = route.view === 'pdfs' ? 'PDF' : 'book'; return n === 1 ? one : one + 's'; },
     emptyState() {
       const r = this.route;
+      if (this.search) return el('div.empty-state', U.svg(Icons.icon('search', { size: 56, stroke: 1.2 })), el('h3', 'No Results'), el('p', `Nothing in ${this.routeTitle()} matches “${this.search}”.`));
       const msg = {
         all: ['No Books', 'Books, PDFs and text files you add appear here.'],
-        want: ['Nothing to Read Yet', 'Mark books you want to read from the ••• menu or by right-clicking a book.'],
-        finished: ['No Finished Books', 'Books you finish show up here automatically.'],
+        finished: ['No Finished Books', 'Books you finish show up here automatically. You can also mark a book as finished from its menu.'],
         books: ['No Books', 'Add EPUB or text files to your library to see them here.'],
         pdfs: ['No PDFs', 'PDF files you add appear here.'],
-        samples: ['No Samples', 'Sample books have been removed. You can add them back from the ••• menu.'],
         collection: ['Empty Collection', 'Drag books here or use “Add to Collection” from a book’s menu.'],
       }[r.view] || ['No Books', ''];
-      if (this.search) return el('div.empty-state', U.svg(Icons.icon('search', { size: 64, stroke: 1.2 })), el('h3', 'No Results'), el('p', `Nothing in ${this.routeTitle()} matches “${this.search}”.`));
-      const actions = el('div.actions', el('button.btn', { type: 'button', onclick: () => App.pickFiles() }, 'Add to Library…'));
-      if (r.view === 'all' || r.view === 'books' || r.view === 'samples') actions.appendChild(el('button.btn', { type: 'button', onclick: () => this.installSamples() }, 'Add Sample Books'));
-      return el('div.empty-state', U.svg(Icons.icon(VIEW_ICONS[r.view] || 'folder', { size: 64, stroke: 1.2 })), el('h3', msg[0]), el('p', msg[1]), actions);
+      return el('div.empty-state', U.svg(Icons.icon(VIEW_ICONS[r.view] || 'folder', { size: 56, stroke: 1.2 })), el('h3', msg[0]), el('p', msg[1]),
+        el('div.actions', el('button.btn', { type: 'button', onclick: () => App.pickFiles() }, 'Add to Library…')));
     },
 
-    badgeFor(book) {
-      if (book.sample) return el('span.badge', 'SAMPLE');
-      if (!book.lastOpenedAt && !book.finishedAt) return el('span.badge.new', 'NEW');
-      return null;
-    },
-    coverEl(book, cls = 'cover') {
-      const img = el('img', { class: cls, src: this.coverURL(book), alt: '', draggable: false, loading: 'lazy' });
-      return img;
-    },
-    progressLabel(book) {
-      const p = book.progress;
-      if (book.finishedAt) return 'Finished';
-      if (!p || !p.percent) return '';
-      return Math.round(p.percent * 100) + '%';
-    },
+    badgeFor(book) { return !book.lastOpenedAt && !book.finishedAt ? el('span.badge.new', 'NEW') : null; },
+    coverEl(book, cls = 'cover') { return el('img', { class: cls, src: this.coverURL(book), alt: '', draggable: false, loading: 'lazy' }); },
     timeLeft(book) {
-      const p = book.progress; if (!book.words) return '';
-      const mins = book.words * (1 - (p?.percent || 0)) / U.WPM;
+      if (!book.words) return '';
+      const mins = book.words * (1 - (book.progress?.percent || 0)) / U.WPM;
       return mins < 1 ? 'Less than a minute left' : U.fmtMinutes(mins) + ' left';
     },
 
@@ -227,14 +204,14 @@
           el('td', { style: { width: '44px' } }, this.coverEl(book, 'cover-mini')),
           el('td', el('strong', book.title)),
           el('td.muted', book.author),
-          el('td.muted', book.kind === 'pdf' ? 'PDF' : book.sample ? 'Sample' : 'Book'),
+          el('td.muted', book.kind === 'pdf' ? 'PDF' : 'Book'),
           el('td', el('div.progress-cell', book.finishedAt ? el('span.muted', 'Finished') : pct ? [el('span.mini-bar', el('i', { style: { width: Math.round(pct * 100) + '%' } })), el('span.muted', Math.round(pct * 100) + '%')] : el('span.muted', book.lastOpenedAt ? 'Started' : 'New'))),
           el('td.muted', U.fmtDate(book.addedAt)));
         this._wireBookItem(tr, book, tbody);
         tbody.appendChild(tr);
       }
       table.append(thead, tbody);
-      return table;
+      return el('div.table-wrap', table);
     },
     _wireBookItem(node, book, container) {
       node.addEventListener('click', e => {
@@ -280,76 +257,93 @@
     selectAll() { for (const b of this.booksFor()) this.selection.add(b.id); const c = $('#view .book-grid, #view .book-table tbody'); if (c) this._syncSelection(c); },
 
     /* ------------------------------------------------------------------ Home */
+    homeMenu(anchor) {
+      UI.menu([
+        { title: 'Show on Home' },
+        ...HOME_SECTIONS.map(([key, label]) => ({ label, checked: !!Settings.get(key), action: () => { Settings.set(key, !Settings.get(key)); if (this.route.view === 'home') this.renderView(); } })),
+      ], { anchor, align: 'end' });
+    },
     async renderHome(view, token) {
-      view.appendChild(el('div.view-header', el('h1', 'Home')));
       const stale = () => token !== this._renderToken;
+      const customize = el('button.btn.subtle', { type: 'button', title: 'Choose which sections appear on Home' }, U.svg(Icons.icon('sliders', { size: 15 })), 'Customize');
+      customize.addEventListener('click', () => this.homeMenu(customize));
+      view.appendChild(el('div.view-header', el('h1', 'Home'), el('div.view-actions', customize)));
       if (!this.books.length) {
         view.appendChild(el('div.home-empty',
           el('div.big-icon', U.svg(Icons.icon('bookOpen', { size: 56, stroke: 1.5 }))),
           el('h2', 'Welcome to Books'),
           el('p', 'Add EPUB, PDF or plain-text files to build your library. Everything stays on this device — no account, no internet connection required.'),
-          el('div.actions', { style: { display: 'flex', gap: '10px', justifyContent: 'center' } },
-            el('button.btn.primary.large', { type: 'button', onclick: () => App.pickFiles() }, 'Add to Library…'),
-            el('button.btn.large', { type: 'button', onclick: () => this.installSamples() }, 'Add Sample Books'))));
+          el('div.actions', el('button.btn.primary.large', { type: 'button', onclick: () => App.pickFiles() }, 'Add to Library…'))));
         return;
       }
-      // Continue
-      const reading = this.sorted(this.books.filter(b => !b.finishedAt)).filter(b => b.kind !== 'pdf' || b.lastOpenedAt).slice(0, 10);
-      if (reading.length) {
-        const row = el('div.continue-row');
-        for (const book of reading) row.appendChild(this.continueCard(book));
-        view.appendChild(el('div.home-section', el('div.home-section-head', el('h2', reading.some(b => b.progress?.percent) ? 'Continue' : 'Start Reading')), row));
-        row.addEventListener('wheel', e => { if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && row.scrollWidth > row.clientWidth) { e.preventDefault(); row.scrollLeft += e.deltaY; } }, { passive: false });
+      const enabled = HOME_SECTIONS.filter(([k]) => Settings.get(k));
+      if (!enabled.length) { view.appendChild(el('div.empty-state', U.svg(Icons.icon('house', { size: 56, stroke: 1.2 })), el('h3', 'Nothing to Show'), el('p', 'All Home sections are hidden. Use Customize to bring some back.'))); return; }
+
+      if (Settings.get('homeContinue')) {
+        const reading = this.sorted(this.books.filter(b => !b.finishedAt)).filter(b => b.kind !== 'pdf' || b.lastOpenedAt).slice(0, 10);
+        if (reading.length) {
+          const row = el('div.continue-row');
+          for (const book of reading) row.appendChild(this.continueCard(book));
+          view.appendChild(el('section.home-section', el('div.home-section-head', el('h2', reading.some(b => b.progress?.percent) ? 'Continue' : 'Start Reading')), row));
+          row.addEventListener('wheel', e => { if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && row.scrollWidth > row.clientWidth) { e.preventDefault(); row.scrollLeft += e.deltaY; } }, { passive: false });
+        }
       }
-      // Reading goals
-      const rows = await Stats.all();
-      if (stale()) return;
+      if (Settings.get('homeGoals') || Settings.get('homeStats')) {
+        const rows = await Stats.all();
+        if (stale()) return;
+        if (Settings.get('homeGoals')) view.appendChild(this.goalsSection(rows));
+        if (Settings.get('homeStats')) view.appendChild(this.statsSection(rows));
+      }
+    },
+    goalsSection(rows) {
       const today = rows.find(r => r.day === U.todayKey()) || { seconds: 0 };
       const goalMin = Settings.get('dailyGoalMinutes'), yearGoal = Settings.get('yearlyGoalBooks');
-      const minutes = today.seconds / 60;
-      const pct = Math.min(1, minutes / goalMin);
+      const minutes = today.seconds / 60, pct = Math.min(1, minutes / goalMin);
       const streak = Stats.streak(rows, goalMin);
       const year = new Date().getFullYear();
       const finishedThisYear = this.books.filter(b => b.finishedAt && new Date(b.finishedAt).getFullYear() === year).sort((a, b) => b.finishedAt - a.finishedAt);
       const ring = (p, label, done) => {
         const r = 36, c = 2 * Math.PI * r;
-        return el('div.ring', { class: done ? 'done' : '' }, U.svg(`<svg width="84" height="84" viewBox="0 0 84 84"><circle class="track" cx="42" cy="42" r="${r}"/><circle class="fill" cx="42" cy="42" r="${r}" stroke-dasharray="${c}" stroke-dashoffset="${c * (1 - p)}"/></svg>`), el('div.ring-label', label));
+        return el('div.ring', { class: done ? 'done' : '' },
+          U.svg(`<svg class="ring-svg" width="84" height="84" viewBox="0 0 84 84"><circle class="track" cx="42" cy="42" r="${r}"/><circle class="fill" cx="42" cy="42" r="${r}" stroke-dasharray="${c}" stroke-dashoffset="${c * (1 - p)}"/></svg>`),
+          el('div.ring-label', label));
       };
       const goals = el('div.goals-grid',
-        el('div.goal-card', ring(pct, pct >= 1 ? U.svg(Icons.icon('check', { size: 22, stroke: 2.6 })) : Math.round(minutes) + 'm', pct >= 1),
+        el('div.goal-card.card', ring(pct, pct >= 1 ? U.svg(Icons.icon('check', { size: 22, stroke: 2.6 })) : Math.round(minutes) + 'm', pct >= 1),
           el('div.goal-body', el('div.goal-title', 'Today’s Reading'), el('div.goal-sub', pct >= 1 ? 'Goal reached — nice work.' : `${U.fmtMinutes(Math.max(0, goalMin - minutes))} to reach your goal`),
             el('div.goal-big', `${Math.round(minutes)} `, el('small', `of ${goalMin} min`)),
             el('div.goal-foot', streak ? el('span.streak', U.svg(Icons.icon('flame', { size: 14, stroke: 2 })), `${streak}-day streak`) : el('span', 'Read every day to start a streak')))),
-        el('div.goal-card', ring(Math.min(1, finishedThisYear.length / yearGoal), finishedThisYear.length, finishedThisYear.length >= yearGoal),
+        el('div.goal-card.card', ring(Math.min(1, finishedThisYear.length / yearGoal), String(finishedThisYear.length), finishedThisYear.length >= yearGoal),
           el('div.goal-body', el('div.goal-title', 'Books Read This Year'), el('div.goal-sub', finishedThisYear.length >= yearGoal ? `You beat your goal of ${yearGoal}.` : `${yearGoal - finishedThisYear.length} more to reach ${yearGoal} in ${year}`),
             finishedThisYear.length ? el('div.mini-covers', finishedThisYear.slice(0, 6).map(b => el('img', { src: this.coverURL(b), alt: b.title, title: b.title })), finishedThisYear.length > 6 ? el('span.more', '+' + (finishedThisYear.length - 6)) : null) : el('div.goal-big', '0 ', el('small', `of ${yearGoal}`)))));
-      view.appendChild(el('div.home-section', el('div.home-section-head', el('h2', 'Reading Goals'), el('button.see-all', { type: 'button', onclick: () => this.editGoals() }, 'Adjust Goals…')), goals));
-      // Library at a glance
+      return el('section.home-section', el('div.home-section-head', el('h2', 'Reading Goals'), el('button.btn.link', { type: 'button', onclick: () => this.editGoals() }, 'Adjust Goals…')), goals);
+    },
+    statsSection(rows) {
       const totalSecs = rows.reduce((n, r) => n + (r.seconds || 0), 0);
       const hl = this.annotations.filter(a => a.type !== 'bookmark').length;
       const tiles = el('div.stat-tiles',
         this.statTile(this.books.length, 'books', 'in your library', { view: 'all' }),
         this.statTile(this.books.filter(b => b.finishedAt).length, 'checkCircle', 'finished', { view: 'finished' }),
-        this.statTile(hl, 'highlighter', U.plural(hl, 'highlight & note', 'highlights & notes').replace(/^\d+ /, '')),
+        this.statTile(hl, 'highlighter', hl === 1 ? 'highlight or note' : 'highlights & notes'),
         this.statTile(totalSecs ? U.fmtDurationSec(totalSecs) : '0 min', 'clock', 'total reading time'));
-      view.appendChild(el('div.home-section', el('div.home-section-head', el('h2', 'Your Library')), tiles));
+      return el('section.home-section', el('div.home-section-head', el('h2', 'Your Library')), tiles);
     },
     statTile(value, icon, label, route) {
-      const t = el('div.stat-tile', { style: route ? { cursor: 'default' } : null }, el('div.stat-value', String(value)), el('div.stat-label', U.svg(Icons.icon(icon, { size: 13 })), label));
+      const t = el('div.stat-tile.card', { class: route ? 'clickable' : '' }, el('div.stat-value', String(value)), el('div.stat-label', U.svg(Icons.icon(icon, { size: 13 })), label));
       if (route) t.addEventListener('click', () => this.navigate(route));
       return t;
     },
     continueCard(book) {
       const pct = book.progress?.percent || 0;
-      const card = el('div.continue-card', { tabindex: 0, dataset: { id: book.id } },
+      const card = el('div.continue-card.card', { tabindex: 0, dataset: { id: book.id } },
         el('div.cover-wrap', this.coverEl(book)),
         el('div.continue-info',
           el('div.c-title', book.title), el('div.c-author', book.author),
           book.progress?.chapter ? el('div.c-chapter', book.progress.chapter) : null,
           el('div.c-progress', el('span', pct ? Math.round(pct * 100) + '%' : (book.kind === 'pdf' ? 'PDF' : 'Not started')), el('span', this.timeLeft(book))),
           el('div.progress-bar', el('i', { style: { width: Math.round(pct * 100) + '%' } })),
-          el('div.c-actions', el('button.btn.pill.filled', { type: 'button', onclick: e => { e.stopPropagation(); this.openBook(book.id); } }, pct ? 'Continue' : 'Read'),
-            el('button.btn.pill', { type: 'button', onclick: e => { e.stopPropagation(); this.showInfo(book); } }, 'Details'))));
+          el('div.c-actions', el('button.btn.primary', { type: 'button', onclick: e => { e.stopPropagation(); this.openBook(book.id); } }, pct ? 'Continue' : 'Read'),
+            el('button.btn', { type: 'button', onclick: e => { e.stopPropagation(); this.showInfo(book); } }, 'Details'))));
       card.addEventListener('dblclick', () => this.openBook(book.id));
       card.addEventListener('keydown', e => { if (e.key === 'Enter') this.openBook(book.id); });
       card.addEventListener('contextmenu', e => { e.preventDefault(); this.contextMenu(book, e.clientX, e.clientY); });
@@ -358,7 +352,7 @@
     async editGoals() {
       let daily = Settings.get('dailyGoalMinutes'), yearly = Settings.get('yearlyGoalBooks');
       const body = el('div',
-        el('div.form-row', el('div', el('label', 'Daily reading goal'), el('span.hint', 'Minutes read per day. Books uses 5 minutes by default.')), UI.stepper(daily, 1, 240, v => { daily = v; }, { step: 1 })),
+        el('div.form-row', el('div', el('label', 'Daily reading goal'), el('span.hint', 'Minutes read per day. Books uses 5 minutes by default.')), UI.stepper(daily, 1, 240, v => { daily = v; })),
         el('div.form-row', el('div', el('label', 'Books per year'), el('span.hint', `Finished books count toward ${new Date().getFullYear()}.`)), UI.stepper(yearly, 1, 365, v => { yearly = v; })));
       const ok = await UI.sheet({ title: 'Reading Goals', body, buttons: [{ label: 'Cancel', value: false }, { label: 'Save', primary: true, value: true }] });
       if (ok) { Settings.set('dailyGoalMinutes', daily); Settings.set('yearlyGoalBooks', yearly); this.render(); }
@@ -370,12 +364,11 @@
       const ids = this.selection.has(book.id) && this.selection.size > 1 ? [...this.selection] : [book.id];
       const many = ids.length > 1;
       const inColl = this.route.view === 'collection' ? this.collection(this.route.id) : null;
-      const items = [
+      UI.menu([
         !many && { label: book.progress?.percent && !book.finishedAt ? 'Continue Reading' : 'Read', icon: 'bookOpen', action: () => this.openBook(book.id) },
         !many && { label: 'Get Info', icon: 'info', shortcut: 'Space', action: () => this.showInfo(book) },
         { separator: true },
         { label: book.finishedAt ? 'Mark as Unfinished' : 'Mark as Finished', action: () => this.markFinished(ids, !book.finishedAt) },
-        { label: book.wantToRead ? 'Remove from Want to Read' : 'Add to Want to Read', action: () => this.setWantToRead(ids, !book.wantToRead) },
         { label: 'Add to Collection', submenu: [
           ...this.collections.map(c => ({ label: c.name, icon: 'folder', checked: ids.every(id => c.bookIds.includes(id)), action: () => this.addToCollection(ids, c.id) })),
           this.collections.length ? { separator: true } : null,
@@ -385,28 +378,24 @@
         { separator: true },
         !many && book.progress?.percent && { label: 'Reset Reading Position', action: () => this.updateBook(book.id, { progress: null }) },
         { label: many ? `Delete ${ids.length} Books…` : 'Delete…', danger: true, action: () => this.deleteBooks(ids) },
-      ].filter(Boolean);
-      UI.menu(items, { x, y });
+      ].filter(Boolean), { x, y });
     },
     async markFinished(ids, finished) {
-      for (const id of ids) await this.updateBook(id, { finishedAt: finished ? Date.now() : null, wantToRead: finished ? false : this.get(id)?.wantToRead }, { silent: true });
+      for (const id of ids) await this.updateBook(id, { finishedAt: finished ? Date.now() : null }, { silent: true });
       this.render();
       UI.toast(finished ? (ids.length === 1 ? 'Marked as Finished' : `Marked ${ids.length} books as Finished`) : 'Marked as Unfinished', { icon: finished ? 'checkCircle' : undefined });
     },
-    async setWantToRead(ids, want) {
-      for (const id of ids) await this.updateBook(id, { wantToRead: want }, { silent: true });
-      this.render();
-      UI.toast(want ? 'Added to Want to Read' : 'Removed from Want to Read', { icon: 'bookmark' });
-    },
-    async deleteBooks(ids) {
+    async deleteBooks(ids, opts = {}) {
       ids = ids.filter(id => this.get(id)); if (!ids.length) return;
-      const one = ids.length === 1 ? this.get(ids[0]) : null;
-      const ok = await UI.confirm({
-        title: one ? `Delete “${one.title}”?` : `Delete ${ids.length} books?`,
-        message: 'The file, your reading position, bookmarks, highlights and notes will be removed from this device. This cannot be undone.',
-        confirmLabel: 'Delete', danger: true,
-      });
-      if (!ok) return;
+      if (opts.confirm !== false) {
+        const one = ids.length === 1 ? this.get(ids[0]) : null;
+        const ok = await UI.confirm({
+          title: one ? `Delete “${one.title}”?` : `Delete ${ids.length} books?`,
+          message: 'The file, your reading position, bookmarks, highlights and notes will be removed from this device. This cannot be undone.',
+          confirmLabel: 'Delete', danger: true,
+        });
+        if (!ok) return;
+      }
       for (const id of ids) {
         const b = this.get(id);
         await DB.delete('books', id);
@@ -420,7 +409,7 @@
         this.selection.delete(id);
       }
       this.render();
-      UI.toast(ids.length === 1 ? 'Book deleted' : `${ids.length} books deleted`);
+      if (!opts.quiet) UI.toast(ids.length === 1 ? 'Book deleted' : `${ids.length} books deleted`);
     },
 
     async createCollection(bookIds = []) {
@@ -474,12 +463,12 @@
         el('div.info-main',
           el('div.info-title', book.title), el('div.info-author', book.author),
           el('div.info-actions',
-            el('button.btn.pill.filled', { type: 'button', onclick: () => { UI.closeAll(); this.openBook(book.id); } }, book.finishedAt ? 'Read Again' : book.progress?.percent ? 'Continue' : 'Read'),
-            el('button.btn.pill', { type: 'button', onclick: () => this.setWantToRead([book.id], !book.wantToRead).then(() => { UI.closeAll(); this.showInfo(this.get(book.id)); }) }, book.wantToRead ? 'Remove from Want to Read' : 'Want to Read')),
-          book.description ? el('div.info-desc', book.description) : el('div.info-desc', { style: { color: 'var(--text-3)' } }, 'No description.'),
+            el('button.btn.primary', { type: 'button', onclick: () => { UI.closeAll(); this.openBook(book.id); } }, book.finishedAt ? 'Read Again' : book.progress?.percent ? 'Continue' : 'Read'),
+            el('button.btn', { type: 'button', onclick: () => this.markFinished([book.id], !book.finishedAt).then(() => { UI.closeAll(); this.showInfo(this.get(book.id)); }) }, book.finishedAt ? 'Mark as Unfinished' : 'Mark as Finished')),
+          book.description ? el('div.info-desc', book.description) : el('div.info-desc.muted', 'No description.'),
           el('table.info-table',
             row('Title', title), row('Author', author),
-            row('Kind', book.kind === 'pdf' ? 'PDF Document' : book.sample ? 'Sample Book (EPUB)' : 'EPUB Book'),
+            row('Kind', book.kind === 'pdf' ? 'PDF Document' : 'EPUB Book'),
             row('Pages', pages), row('Size', U.fmtBytes(book.fileSize)),
             book.publisher ? row('Publisher', book.publisher) : null, book.published ? row('Published', String(book.published).slice(0, 10)) : null,
             book.language ? row('Language', book.language.toUpperCase()) : null,
@@ -512,10 +501,12 @@
       }
       status.close();
       this.render();
-      if (added.length && !opts.quiet) UI.toast(added.length === 1 ? `Added “${added[0].title}” to your library` : `Added ${added.length} books to your library`, { icon: 'check' });
-      if (skipped.length) UI.toast(skipped.length === 1 ? `“${skipped[0]}” is already in your library` : `${skipped.length} items were already in your library`);
-      if (failed.length) UI.sheet({ alert: true, icon: 'warning', title: failed.length === 1 ? `“${failed[0].name}” could not be added` : `${failed.length} items could not be added`, message: failed.map(f => f.name + ': ' + f.error).join('\n') });
-      if (added.length === 1 && !opts.quiet && this.route.view !== 'home') { this.selection.clear(); this.selection.add(added[0].id); this.render(); }
+      if (!opts.quiet) {
+        if (added.length) UI.toast(added.length === 1 ? `Added “${added[0].title}” to your library` : `Added ${added.length} books to your library`, { icon: 'check' });
+        if (skipped.length) UI.toast(skipped.length === 1 ? `“${skipped[0]}” is already in your library` : `${skipped.length} items were already in your library`);
+        if (failed.length) UI.sheet({ alert: true, icon: 'warning', title: failed.length === 1 ? `“${failed[0].name}” could not be added` : `${failed.length} items could not be added`, message: failed.map(f => f.name + ': ' + f.error).join('\n') });
+        if (added.length === 1 && this.route.view !== 'home') { this.selection.clear(); this.selection.add(added[0].id); this.render(); }
+      }
       return added;
     },
     _status(text) {
@@ -553,18 +544,18 @@
         meta = { title: guess.title, author: guess.author };
         kind = 'epub';
       }
-      const title = (opts.title || meta.title || name.replace(/\.[^.]+$/, '')).trim();
-      const author = (opts.author || meta.author || (kind === 'pdf' ? '' : 'Unknown Author')).trim() || (kind === 'pdf' ? 'PDF Document' : 'Unknown Author');
+      const title = (meta.title || name.replace(/\.[^.]+$/, '')).trim();
+      const author = (meta.author || '').trim() || (kind === 'pdf' ? 'PDF Document' : 'Unknown Author');
       const dup = this.books.find(b => (meta.identifier && b.identifier && b.identifier === meta.identifier && !/^urn:uuid/.test(meta.identifier)) || (b.title.toLowerCase() === title.toLowerCase() && b.author.toLowerCase() === author.toLowerCase() && b.fileSize === blob.size));
       if (dup && !opts.allowDuplicates) return { skipped: title };
-      if (!cover) cover = new Blob([U.makeCoverSVG(title, author, opts.palette || null, { kind: kind === 'pdf' ? 'PDF' : '' })], { type: 'image/svg+xml' });
+      if (!cover) cover = new Blob([U.makeCoverSVG(title, author, null, { kind: kind === 'pdf' ? 'PDF' : '' })], { type: 'image/svg+xml' });
       const id = U.uuid(), fileId = 'file-' + id;
       await DB.put('files', { id: fileId, blob, name, size: blob.size, type: blob.type || '' });
       const book = {
         id, title, author, authorSort: meta.authorSort || null, kind, fileId, fileName: name, fileSize: blob.size, cover,
-        description: opts.description || meta.description || '', publisher: opts.publisher || meta.publisher || '', published: opts.published || meta.date || '',
-        language: meta.language || '', subjects: opts.subjects || meta.subjects || [], identifier: meta.identifier || '',
-        addedAt: Date.now(), lastOpenedAt: null, finishedAt: null, wantToRead: false, sample: !!opts.sample, progress: null, words: opts.words || words || 0, pages,
+        description: meta.description || '', publisher: meta.publisher || '', published: meta.date || '',
+        language: meta.language || '', subjects: meta.subjects || [], identifier: meta.identifier || '',
+        addedAt: Date.now(), lastOpenedAt: null, finishedAt: null, progress: null, words: words || 0, pages,
       };
       await DB.put('books', book);
       this.books.push(book);
@@ -583,32 +574,6 @@
         const n = /\/Count\s+(\d+)/.exec(head); if (n && (!meta.pages || +n[1] > meta.pages)) meta.pages = +n[1];
       } catch (e) { /* ignore */ }
       return meta;
-    },
-
-    async installSamples() {
-      if (!window.SAMPLE_BOOKS) {
-        const status = this._status('Loading sample books…');
-        try { await new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'js/samples.js'; s.onload = res; s.onerror = () => rej(new Error('Could not load js/samples.js')); document.head.appendChild(s); }); }
-        catch (e) { status.close(); UI.sheet({ alert: true, icon: 'warning', title: 'Sample books unavailable', message: e.message }); return; }
-        status.close();
-      }
-      const status = this._status('Adding sample books…');
-      let n = 0;
-      for (const s of window.SAMPLE_BOOKS) {
-        status.update(`Adding “${s.title}”…`, n++ / window.SAMPLE_BOOKS.length);
-        if (this.books.some(b => b.sample && b.sampleId === s.id)) continue;
-        try {
-          const coverSVG = U.makeCoverSVG(s.title, s.author, s.palette);
-          const blob = EPUB.build({ title: s.title, author: s.author, language: s.language, year: s.year, publisher: s.publisher, description: s.description, subjects: s.subjects, chapters: s.chapters, coverSVG, source: s.source, sourceNote: 'Public domain text from Project Gutenberg' });
-          const file = new File([blob], s.title.replace(/[^\w\s-]/g, '') + '.epub', { type: 'application/epub+zip' });
-          const book = await this.importFile(file, { sample: true, allowDuplicates: true, words: s.words, palette: s.palette, description: s.description, publisher: s.publisher, published: String(s.year), subjects: s.subjects });
-          if (book && !book.skipped) { book.sampleId = s.id; await DB.put('books', book); }
-        } catch (e) { console.error('sample failed', s.id, e); }
-      }
-      status.close();
-      Settings.set('samplesInstalled', true);
-      this.render();
-      UI.toast('Sample books added to My Samples', { icon: 'sample' });
     },
   };
 
