@@ -99,7 +99,9 @@ sw.js                 offline cache when served over http(s)
 
 ### How rendering works
 
-The whole book is written into one sandboxed `<iframe>` (scripts disabled). Each spine document becomes a
+The whole book is written into one `<iframe>` after sanitizing (scripts, inline handlers, `javascript:` URLs, forms and
+embeds are removed; the frame's sandbox still blocks forms, popups and top-level navigation — it keeps `allow-scripts`
+because WebKit will not run event listeners, even parent-registered ones, in a script-disabled frame). Each spine document becomes a
 `<section>`; book stylesheets are rewritten so `html`/`body` rules target those sections and all images, fonts and
 CSS `url()`s are resolved to blob URLs. Pagination is CSS multi-column layout with a fixed column height; a page
 turn scrolls by one (or two) column widths. Positions are stored as `{spine, character offset}` locators, which is
