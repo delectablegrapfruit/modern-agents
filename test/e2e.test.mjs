@@ -636,20 +636,42 @@ test('undo puts the video back where it was and resumes it if it was playing; un
 
 /* ---- HUD, popup, options -------------------------------------------- */
 
-test('the timeline appears over the video while scrubbing and goes away afterwards', async () => {
+test('the timeline spans the video, follows playback after the gesture, tracks resizes, then fades out', async () => {
+  await page.evaluate(() => document.querySelector('#plain').play());
+  await page.waitForFunction(() => !document.querySelector('#plain').paused);
   const p = await centerOf(page, '#plain');
   const box = await page.locator('#plain').boundingBox();
   await wheel(page, p.x, p.y, 50, 0);
   await page.waitForTimeout(60);
-  const tl = await page.evaluate(() => {
-    const el = document.querySelector('scroll-to-scrub-hud');
-    if (!el) return null;
-    const r = el.getBoundingClientRect();
-    return { open: el.matches(':popover-open'), x: r.left, y: r.top, w: r.width };
+  const tl = () =>
+    page.evaluate(() => {
+      const el = document.querySelector('scroll-to-scrub-hud');
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { open: el.matches(':popover-open'), x: r.left, y: r.top, w: r.width, pos: Number(el.dataset.pos), opacity: getComputedStyle(el).opacity };
+    });
+  let t = await tl();
+  assert.ok(t && t.open, 'shown by default');
+  assert.ok(near(t.x, box.x + 16, 2) && near(t.w, box.width - 32, 2), `spans the video: ${JSON.stringify(t)}`);
+  assert.ok(t.y > box.y && t.y < box.y + 40, 'sits along the top edge of the video');
+
+  // The video resizes while the timeline is up: it follows within a frame.
+  await page.evaluate(() => (document.querySelector('#plain').style.width = '480px'));
+  await page.waitForTimeout(80);
+  t = await tl();
+  assert.ok(near(t.w, 480 - 32, 2), `resized with the video: ${JSON.stringify(t)}`);
+
+  // Playback resumes after the gesture; the mark keeps moving.
+  await page.waitForFunction(() => !document.querySelector('#plain').paused, null, { timeout: 3000 });
+  const a = await tl();
+  await page.waitForTimeout(300);
+  const b = await tl();
+  assert.ok(a.open && b.open && b.pos > a.pos, `follows playback: ${a.pos} -> ${b.pos}`);
+
+  // Then fades and goes away.
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('scroll-to-scrub-hud')).opacity !== '1', null, {
+    timeout: 3000,
   });
-  assert.ok(tl && tl.open, 'shown by default');
-  assert.ok(near(tl.x, box.x + 16, 2) && near(tl.w, box.width - 32, 2), `spans the video: ${JSON.stringify(tl)}`);
-  assert.ok(tl.y > box.y && tl.y < box.y + 40, 'sits along the top edge of the video');
   await page.waitForFunction(() => !document.querySelector('scroll-to-scrub-hud').matches(':popover-open'), null, {
     timeout: 3000,
   });

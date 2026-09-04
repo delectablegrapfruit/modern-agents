@@ -65,7 +65,10 @@
   /* When a session ends, wait at most this long for the last seek to land
    * before resuming playback. */
   const FINAL_SEEK_WAIT_MS = 1500;
-  const TIMELINE_LINGER_MS = 400;
+  /* After the gesture the timeline keeps following playback for HOLD, then
+   * fades over FADE. */
+  const TIMELINE_HOLD_MS = 1200;
+  const TIMELINE_FADE_MS = 500;
   /* Playback must stay paused during a session; a site that restarts it is
    * paused again, at most this often. A site that keeps restarting it is
    * held with playbackRate 0 instead (a pause war leaks about half of real
@@ -1082,19 +1085,20 @@
    * follows the logical position, which leads the video's own timeline by
    * however long the current seek takes, so it is the responsive view of
    * where the wheel is. A faint tick marks where the video was before the
-   * scrub began (what undo returns to). One DOM update per animation frame,
-   * however many wheel events arrive; reads before writes. */
+   * scrub began (what undo returns to). While it is visible it re-measures
+   * the video every frame, so it follows resizes and fullscreen; after the
+   * gesture it keeps following playback for a moment, then fades out. */
   const timeline = (() => {
     let host = null;
-    let track = null;
     let mark = null;
     let origin = null;
     let label = null;
+    let durEl = null;
     let fineEl = null;
-    let pendingFrame = 0;
-    let next = null;
-    let hideTimer = 0;
+    let state = null; // { video, pos, range, fine, originTime, live, releasedAt }
+    let frame = 0;
     let open = false;
+    let fading = false;
     let lastFullscreen = null;
 
     const HOST_STYLE = [
@@ -1112,6 +1116,8 @@
       'color:inherit',
       'pointer-events:none',
       'z-index:2147483647',
+      'opacity:1',
+      `transition:opacity ${TIMELINE_FADE_MS}ms ease-out`,
     ]
       .map((d) => d + ' !important')
       .join(';');
@@ -1160,7 +1166,7 @@
       const root = el.attachShadow({ mode: 'closed' });
       const style = document.createElement('style');
       style.textContent = SHEET;
-      track = document.createElement('div');
+      const track = document.createElement('div');
       track.className = 'track';
       origin = document.createElement('div');
       origin.className = 'origin';
@@ -1168,8 +1174,11 @@
       mark.className = 'mark';
       label = document.createElement('div');
       label.className = 'label';
+      durEl = document.createElement('span');
+      durEl.className = 'dur';
       fineEl = document.createElement('span');
       fineEl.className = 'fine';
+      label.append(document.createTextNode(''), durEl, fineEl);
       track.append(origin, mark, label);
       root.append(style, track);
       if (typeof el.showPopover === 'function') el.setAttribute('popover', 'manual');
@@ -1228,20 +1237,42 @@
       return (h ? h + ':' + String(m).padStart(2, '0') : String(m)) + ':' + ss;
     }
 
-    function show(video, time, range, fine, originTime) {
-      next = { video, time, range, fine, originTime };
-      if (!pendingFrame) pendingFrame = requestAnimationFrame(render);
-      if (hideTimer) {
-        clearTimeout(hideTimer);
-        hideTimer = 0;
-      }
+    /* Called on every wheel event: record the logical position; the frame
+     * loop draws it. */
+    function show(video, pos, range, fine, originTime) {
+      state = { video, pos, range, fine, originTime, live: false, releasedAt: 0 };
+      if (fading) unfade();
+      if (!frame) frame = requestAnimationFrame(tick);
     }
 
-    function render() {
-      pendingFrame = 0;
-      const n = next;
-      next = null;
-      if (!n || !ensure()) return;
+    /* The gesture is over: keep following playback, then fade out. */
+    function release() {
+      if (!state) return;
+      state.live = true;
+      state.releasedAt = performance.now();
+    }
+
+    function unfade() {
+      fading = false;
+      if (host) host.style.setProperty('opacity', '1', 'important');
+    }
+
+    function tick() {
+      frame = 0;
+      const n = state;
+      if (!n || !n.video.isConnected || !ensure()) return hide();
+
+      if (n.live) {
+        const range = seekRange(n.video) || n.range;
+        n.range = range;
+        if (Number.isFinite(n.video.currentTime)) n.pos = n.video.currentTime;
+        const since = performance.now() - n.releasedAt;
+        if (since >= TIMELINE_HOLD_MS + TIMELINE_FADE_MS) return hide();
+        if (since >= TIMELINE_HOLD_MS && !fading) {
+          fading = true;
+          host.style.setProperty('opacity', '0', 'important');
+        }
+      }
 
       // Reads.
       const r = n.video.getBoundingClientRect();
@@ -1250,49 +1281,46 @@
       const left = Math.max(0, r.left) + 16;
       const right = Math.min(vw, r.right) - 16;
       const width = right - left;
-      if (width < 40) return;
       const top = clamp(Math.max(0, r.top) + 16, 8, vh - 40);
       const span = n.range[1] - n.range[0];
-      const frac = span > 0 ? clamp((n.time - n.range[0]) / span, 0, 1) : 0;
-      const originFrac = Number.isFinite(n.originTime) && span > 0 ? clamp((n.originTime - n.range[0]) / span, 0, 1) : NaN;
+      const frac = span > 0 ? clamp((n.pos - n.range[0]) / span, 0, 1) : 0;
+      const originFrac =
+        Number.isFinite(n.originTime) && span > 0 ? clamp((n.originTime - n.range[0]) / span, 0, 1) : NaN;
 
       // Writes.
-      host.style.setProperty('left', left + 'px', 'important');
-      host.style.setProperty('top', top + 'px', 'important');
-      host.style.setProperty('width', width + 'px', 'important');
-      mark.style.left = (frac * 100).toFixed(3) + '%';
-      origin.style.display = Number.isFinite(originFrac) && Math.abs(originFrac - frac) * width > 3 ? '' : 'none';
-      if (Number.isFinite(originFrac)) origin.style.left = (originFrac * 100).toFixed(3) + '%';
-      label.textContent = '';
-      label.append(formatTime(n.time - n.range[0], true));
-      const dur = document.createElement('span');
-      dur.className = 'dur';
-      dur.textContent = ' / ' + formatTime(span, false);
-      fineEl.textContent = n.fine ? '×0.1' : '';
-      label.append(dur, fineEl);
-      // Keep the label inside the track: anchor it left of the mark near
-      // the right end.
-      const labelLeft = frac > 0.75 ? 'auto' : (frac * 100).toFixed(3) + '%';
-      label.style.left = labelLeft;
-      label.style.right = frac > 0.75 ? (100 - frac * 100).toFixed(3) + '%' : 'auto';
-      raise();
-    }
-
-    /* The session is over: leave the timeline up briefly, then hide. */
-    function release() {
-      if (hideTimer) clearTimeout(hideTimer);
-      hideTimer = setTimeout(hide, TIMELINE_LINGER_MS);
+      if (width < 40) {
+        host.style.setProperty('display', 'none', 'important');
+      } else {
+        host.style.setProperty('display', 'block', 'important');
+        host.style.setProperty('left', left + 'px', 'important');
+        host.style.setProperty('top', top + 'px', 'important');
+        host.style.setProperty('width', width + 'px', 'important');
+        mark.style.left = (frac * 100).toFixed(3) + '%';
+        const showOrigin = Number.isFinite(originFrac) && Math.abs(originFrac - frac) * width > 3;
+        origin.style.display = showOrigin ? '' : 'none';
+        if (showOrigin) origin.style.left = (originFrac * 100).toFixed(3) + '%';
+        label.firstChild.nodeValue = formatTime(n.pos - n.range[0], true);
+        durEl.textContent = ' / ' + formatTime(span, false);
+        fineEl.textContent = n.fine && !n.live ? '×0.1' : '';
+        // Keep the label inside the track: right-align it near the end.
+        const atEnd = frac > 0.75;
+        label.style.left = atEnd ? 'auto' : (frac * 100).toFixed(3) + '%';
+        label.style.right = atEnd ? (100 - frac * 100).toFixed(3) + '%' : 'auto';
+        host.dataset.pos = frac.toFixed(4); // for tests and debugging
+        raise();
+      }
+      frame = requestAnimationFrame(tick);
     }
 
     function hide() {
-      hideTimer = 0;
-      if (pendingFrame) {
-        cancelAnimationFrame(pendingFrame);
-        pendingFrame = 0;
-        next = null;
+      if (frame) {
+        cancelAnimationFrame(frame);
+        frame = 0;
       }
+      state = null;
       if (!host) return;
       open = false;
+      unfade();
       try {
         if (host.hasAttribute('popover')) {
           if (host.matches(':popover-open')) host.hidePopover();
