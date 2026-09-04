@@ -46,8 +46,8 @@ public struct JunkScanner {
     /// Junk beneath `root`, at most `depth` levels down (1 = the folder itself).
     /// The walk runs with the kernel's lowest disk priority, so it yields to
     /// everything else and never makes the machine feel slow.
-    public func scan(root: String, depth: Int = Int.max, progress: ((String) -> Void)? = nil,
-                     isCancelled: () -> Bool = { false }) throws -> [Item] {
+    public func scan(root: String, depth: Int = Int.max, liveOnly: Bool = false, measured: Bool = true,
+                     progress: ((String) -> Void)? = nil, isCancelled: () -> Bool = { false }) throws -> [Item] {
         let rootPath = Paths.standardize(root)
         guard let rootInfo = Files.info(rootPath), rootInfo.isDirectory else { throw ScanError.notADirectory(rootPath) }
         let restore = JunkScanner.throttleDiskIO()
@@ -64,8 +64,8 @@ public struct JunkScanner {
                 guard let st = Files.info(path) else { continue }
                 if safety.isProtected(path) { continue }
                 let isDirectory = st.isDirectory && !st.isSymlink
-                if let item = classify(path: path, name: name, info: st, atVolumeRoot: atVolumeRoot) {
-                    items.append(item)
+                if let item = classify(path: path, name: name, info: st, atVolumeRoot: atVolumeRoot, measured: measured) {
+                    if !liveOnly || item.kind.isLive { items.append(item) }
                     continue
                 }
                 guard level < depth, isDirectory, st.device == rootInfo.device, !safety.isMountPoint(path) else { continue }
@@ -98,6 +98,24 @@ public struct JunkScanner {
         return Item(path: path, kind: kind, isDirectory: isDirectory, size: size)
     }
 
+    /// Whether the walk from `root` would reach `folder`: every folder on the
+    /// way is one the walk enters (not protected, not a mount point, browsable,
+    /// on the same disk).
+    public func isReachable(_ folder: String, from root: String) -> Bool {
+        let root = Paths.standardize(root)
+        let target = Paths.standardize(folder)
+        guard target == root || Paths.isInside(target, root), let rootInfo = Files.info(root) else { return false }
+        guard target != root else { return true }
+        let components = target.dropFirst(root == "/" ? 1 : root.count + 1).split(separator: "/").map(String.init)
+        var node = root
+        for component in components {
+            node = Paths.join(node, component)
+            guard !safety.isProtected(node), !safety.isMountPoint(node), let info = Files.info(node),
+                  info.device == rootInfo.device, Files.isBrowsable(path: node, name: component) else { return false }
+        }
+        return true
+    }
+
     /// Maps changed paths to junk items, checking each ancestor down from `root`
     /// so a file created inside `.Trashes` flags `.Trashes` itself.
     public func items(fromChangedPaths paths: [String], root: String) -> [Item] {
@@ -117,8 +135,11 @@ public struct JunkScanner {
                 if safety.isProtected(node) { break }
                 guard let st = Files.info(node) else { break }
                 if let item = classify(path: node, name: component, info: st, atVolumeRoot: safety.isMountPoint(parent), measured: false) {
-                    seen.insert(node)
-                    out.append(item)
+                    // What appears inside the Trash or a save in progress is not news.
+                    if item.kind.isLive {
+                        seen.insert(node)
+                        out.append(item)
+                    }
                     break
                 }
                 let isDirectory = st.isDirectory && !st.isSymlink

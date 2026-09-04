@@ -11,12 +11,13 @@ import SiftCore
 /// time: a busy Finder can take seconds to answer, and the app's own window
 /// and menu bar must never wait on it.
 final class Guardian {
-    /// Set while Finder is being quit and relaunched.
-    var isPaused = false
+    /// The person paused Sift.
+    var userPaused = false
+    /// Finder is being quit and relaunched by Apply.
+    private(set) var applying = false
+    private var idle: Bool { userPaused || applying }
     /// Whether Sift may control Finder (Automation permission).
     var onNotAllowed: ((Bool) -> Void)?
-    /// Whether the guard reacts instantly (Accessibility granted) or by looking once a second.
-    var onModeChange: ((Bool) -> Void)?
     /// Finder refused a view; reported once per distinct message.
     var onProblem: ((String) -> Void)?
     /// A window was given a view: the folder and what it was set to.
@@ -61,10 +62,11 @@ final class Guardian {
             self?.attach()
         })
         workspaceObservers.append(center.addObserver(forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main) { [weak self] note in
-            guard finder(note) else { return }
-            self?.detach()
-            self?.forget()
-            self?.onFinderQuit?()
+            guard let self, finder(note) else { return }
+            detach()
+            forget()
+            // Apply quits Finder itself and writes the stores itself.
+            if !applying { onFinderQuit?() }
         })
         // Finder in front is the only time its windows are being browsed.
         workspaceObservers.append(center.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
@@ -98,15 +100,24 @@ final class Guardian {
         }
     }
 
-    /// Stops looking, once the look under way (if any) is done.
+    /// Apply: stops looking, once the look under way (if any) is done.
     @MainActor
     func pause() async {
-        isPaused = true
+        applying = true
         while busy { try? await Task.sleep(nanoseconds: 50_000_000) }
     }
 
+    /// Apply is over; looking resumes unless the person paused Sift.
     func resume() {
-        isPaused = false
+        applying = false
+        forget()
+        scheduleCheck()
+    }
+
+    /// Permission to control Finder was granted meanwhile.
+    func permissionGranted() {
+        notAllowedSince = nil
+        wasNotAllowed = false
         forget()
         scheduleCheck()
     }
@@ -157,7 +168,6 @@ final class Guardian {
         self.observer = observer
         self.app = app
         windows(of: app).forEach(watch(window:))
-        onModeChange?(true)
         scheduleCheck()
     }
 
@@ -173,7 +183,6 @@ final class Guardian {
         CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .commonModes)
         self.observer = nil
         app = nil
-        onModeChange?(false)
     }
 
     private func windows(of app: AXUIElement) -> [AXUIElement] {
@@ -189,17 +198,29 @@ final class Guardian {
         guard AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &value) == .success,
               let list = value as? [AXUIElement] else { return nil }
         return list.map { window in
+            AXUIElementSetMessagingTimeout(window, 0.5)
             var title: CFTypeRef?
             AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &title)
             return (title as? String) ?? "?"
         }
     }
 
-    /// Finder posts several notifications per navigation; one check shortly after covers them all.
+    /// Whether Finder has any ordinary window on screen. No permission needed;
+    /// spares a script when there is nothing to look at.
+    private static func finderHasWindows() -> Bool {
+        guard let finder = NSRunningApplication.runningApplications(withBundleIdentifier: Finder.bundleID).first,
+              let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
+            return true
+        }
+        let pid = Int(finder.processIdentifier)
+        return list.contains { ($0[kCGWindowOwnerPID as String] as? Int) == pid && ($0[kCGWindowLayer as String] as? Int) == 0 }
+    }
+
+    /// Finder posts several notifications per navigation; one check shortly after
+    /// covers them all. The window titles decide whether a script is needed.
     private func scheduleCheck() {
         guard !checkPending else { return }
         checkPending = true
-        queue.async { [self] in force = true }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
             self?.checkPending = false
             self?.check()
@@ -221,7 +242,7 @@ final class Guardian {
 
     /// Main thread. Starts one look at Finder's windows on the queue.
     private func check() {
-        guard !isPaused else { return }
+        guard !idle else { return }
         if let since = notAllowedSince {
             // Try again now and then in case permission was granted meanwhile.
             guard Date().timeIntervalSince(since) > 60 else { return }
@@ -231,6 +252,8 @@ final class Guardian {
             forget()
             return
         }
+        // Finder may not have served Accessibility when it launched.
+        if observer == nil, AXIsProcessTrusted() { attach() }
         guard !busy else {
             again = true
             return
@@ -251,10 +274,15 @@ final class Guardian {
     /// mean no move, except once in a while, for a folder named like the last.
     private func look(_ settings: ViewSettings, app: AXUIElement?) -> Outcome {
         var outcome = Outcome()
-        if !force, let app, let now = signature(of: app) {
-            let stale = Date().timeIntervalSince(lastFullLook) > 10
-            if now == lastSignature && !stale { return outcome }
+        if let app, let now = signature(of: app) {
+            // Same titles: nothing moved, unless a folder is named like the last
+            // one, which a look every few seconds covers. No windows: nothing at all.
+            let stale = Date().timeIntervalSince(lastFullLook) > 3
+            let same = now == lastSignature
             lastSignature = now
+            if !force, same, !stale || now.isEmpty { return outcome }
+        } else if !force, !Guardian.finderHasWindows() {
+            return outcome
         }
         force = false
         lastFullLook = Date()
@@ -278,7 +306,9 @@ final class Guardian {
         for failure in report.failures where failure.number != -1728 {
             outcome.errors.append(Problem("Finder did not take the view of \(Paths.display(failure.path)): " + failure.message))
         }
-        if !report.failures.isEmpty { force = true }
+        // A window between folders is looked at again at once; one that refuses
+        // its view is left until it moves.
+        if report.failures.contains(where: { $0.number == -1728 }) { force = true }
         return outcome
     }
 

@@ -3,8 +3,8 @@ import Foundation
 /// What macOS scatters across disks that nothing else needs.
 ///
 /// The catalog is fixed: every entry is metadata Finder or a system daemon
-/// regenerates on demand. Things a person chose (custom volume icons, document
-/// version history, Time Machine markers) are not in it.
+/// regenerates on demand. Custom volume icons, document version history (it is
+/// data: Browse All Versions) and Time Machine markers are not in it.
 public enum Junk: String, Codable, CaseIterable, Hashable {
     case dsStore
     case appleDouble
@@ -50,6 +50,17 @@ public enum Junk: String, Codable, CaseIterable, Hashable {
     }
 
     public var isDirectory: Bool { volumeRootOnly }
+
+    /// Whether the kind may be removed the moment it appears. A disk's Trash
+    /// holds what was just put there, and `.TemporaryItems` holds a document
+    /// in the middle of being saved: those go only in a sweep, when the person
+    /// sees them listed.
+    public var isLive: Bool {
+        switch self {
+        case .trashes, .temporaryItems: return false
+        case .dsStore, .appleDouble, .apdisk, .spotlight, .fsevents: return true
+        }
+    }
 
     /// The kind of junk an entry is, or nil when it is not junk.
     public static func kind(name: String, isDirectory: Bool, atVolumeRoot: Bool) -> Junk? {

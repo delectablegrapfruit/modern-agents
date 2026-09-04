@@ -49,8 +49,11 @@ final class Model: ObservableObject {
     @Published private(set) var sweep: SweepState = .idle
     /// Places where junk may have arrived unwatched since the last sweep, and why.
     @Published private(set) var sweepDue: [Engine.Due] = []
-    /// Every mounted disk, for choosing which to watch.
+    /// Every mounted disk, for choosing which to watch, and which of them can be.
     @Published private(set) var volumes: [Volume] = []
+    @Published private(set) var watchable: Set<String> = []
+    /// Folders in the draft that have a record Finder reads (the rest are served by the guard alone).
+    @Published private(set) var recorded: Set<String> = []
     /// Disks the person left out, by the key `watchKey` gives.
     @Published private(set) var excludedDisks: Set<String>
     @Published var editingWatch = false
@@ -86,18 +89,21 @@ final class Model: ObservableObject {
         locked = engine.lockedItems
 
         guardian.onNotAllowed = { [weak self] allowed in Task { @MainActor in self?.canControlFinder = allowed } }
-        guardian.onModeChange = { [weak self] instant in Task { @MainActor in self?.reactsInstantly = instant } }
         guardian.onProblem = { [weak self] message in self?.engine.log.info(message) }
         guardian.onApplied = { [weak self] path, view in self?.engine.log.info("Finder window set to " + view, path: path) }
         // Finder flushes its stores on the way out; they are put right for its next start.
         guardian.onFinderQuit = { Task.detached(priority: .utility) { engine.reconcileStores() } }
         engine.onRootsChanged = { [weak self] list in
             let volumes = engine.mountedVolumes
+            // Told off the main thread: it looks at every disk.
+            let watchable = Set(volumes.filter { $0.kind == .startup || $0.isCleanable() }.map(\.id))
             Task { @MainActor in
                 self?.roots = list
                 self?.volumes = volumes
+                self?.watchable = watchable
             }
         }
+        refreshRecorded()
         engine.onLockedChanged = { [weak self] list in Task { @MainActor in self?.locked = list } }
         engine.onSweepDueChanged = { [weak self] list in Task { @MainActor in self?.sweepDue = list } }
         engine.log.onAppend = { [weak self] in Task { @MainActor in self?.scheduleActivityRefresh() } }
@@ -133,6 +139,15 @@ final class Model: ObservableObject {
     /// Called when the app comes to the front: permissions may have been granted meanwhile.
     func checkPermissions() {
         hasFullDiskAccess = Permissions.hasFullDiskAccess
+        reactsInstantly = AXIsProcessTrusted()
+        if !canControlFinder {
+            Task {
+                if await Task.detached(priority: .utility) { Permissions.automation(ask: false) }.value == true {
+                    canControlFinder = true
+                    guardian.permissionGranted()
+                }
+            }
+        }
         if helperReady, !locked.isEmpty {
             // The helper may have been given Full Disk Access since.
             let engine = self.engine
@@ -185,22 +200,22 @@ final class Model: ObservableObject {
     /// Names of connected disks left out, for the watching row.
     var unwatchedNames: [String] {
         let excluded = excludedDisks
-        return volumes.filter { isWatchable($0) && excluded.contains(watchKey($0)) }.map(\.name)
+        return volumes.filter { isWatchable($0) && excluded.contains(watchKey($0)) }
+            .map { $0.kind == .startup ? "Startup disk" : $0.name }
     }
 
     func watchKey(_ volume: Volume) -> String { volume.kind == .startup ? Engine.startupKey : volume.id }
 
     /// Whether the disk can be watched at all (read-only and Time Machine disks cannot).
-    func isWatchable(_ volume: Volume) -> Bool { volume.kind == .startup || volume.isCleanable() }
+    func isWatchable(_ volume: Volume) -> Bool { watchable.contains(volume.id) }
 
     func isWatched(_ volume: Volume) -> Bool { !excludedDisks.contains(watchKey(volume)) }
 
     func setWatched(_ volume: Volume, _ on: Bool) {
         if on { excludedDisks.remove(watchKey(volume)) } else { excludedDisks.insert(watchKey(volume)) }
-        var settings = engine.settings
-        settings.excludedVolumes = excludedDisks
+        let excluded = excludedDisks
         let engine = self.engine
-        Task.detached(priority: .utility) { engine.update(settings) }
+        Task.detached(priority: .utility) { engine.modify { $0.excludedVolumes = excluded } }
     }
 
     /// The sweep row: whether one is needed, and why, in a few words.
@@ -223,11 +238,13 @@ final class Model: ObservableObject {
 
     /// Pause stops everything automatic: cleaning and the window guard.
     func togglePause() {
+        guard applyPhase == nil else { return }
         isPaused.toggle()
         let paused = isPaused
         let engine = self.engine
         Task.detached(priority: .utility) { engine.isPaused = paused }
-        if paused { guardian.isPaused = true } else { guardian.resume() }
+        guardian.userPaused = paused
+        if !paused { guardian.resume() }
     }
 
     // MARK: - Sweeping
@@ -294,6 +311,8 @@ final class Model: ObservableObject {
 
     func cancelSweep() {
         token.cancel()
+        // A removal under way ends on its own and reports what was done.
+        if case .removing = sweep { return }
         sweep = .idle
     }
 
@@ -313,16 +332,20 @@ final class Model: ObservableObject {
         applyPhase = "Applying…"
         let views = draft
         let previous = engine.plan
-        var settings = engine.settings
-        settings.views = views
         let engine = self.engine
         Task { @MainActor in
             await guardian.pause()
-            var problems: [String] = []
-            let windows = await Finder.openWindows()
-            if !(await Finder.quit()) {
-                problems.append("Finder would not quit; it may show the previous views until it is restarted.")
+            defer {
+                applyPhase = nil
+                guardian.resume()
             }
+            let windows = await Finder.openWindows()
+            guard await Finder.quit() else {
+                // Finder would write its own copies back on its way out: nothing is changed.
+                error = "Finder would not quit (a dialog may be open). Nothing was changed; try again."
+                return
+            }
+            var problems: [String] = []
             var prefsWritten = true
             do {
                 try await Task.detached(priority: .userInitiated) { try FinderPrefs.write(views) }.value
@@ -330,7 +353,7 @@ final class Model: ObservableObject {
                 prefsWritten = false
                 problems.append(error.localizedDescription)
             }
-            await Task.detached(priority: .userInitiated) { engine.update(settings) }.value
+            await Task.detached(priority: .userInitiated) { engine.modify { $0.views = views } }.value
             do {
                 try await Task.detached(priority: .userInitiated) { try engine.applyStores(previous: previous) }.value
             } catch {
@@ -340,14 +363,14 @@ final class Model: ObservableObject {
             await Finder.reopen(windows)
             // Left as changes when Finder's defaults could not be written, so Apply can be tried again.
             if prefsWritten { applied = engine.settings.views }
+            refreshRecorded()
             if !problems.isEmpty { error = problems.joined(separator: "\n") }
-            applyPhase = nil
-            guardian.resume()
         }
     }
 
     func revert() {
         draft = applied
+        refreshRecorded()
     }
 
     func addFolder() {
@@ -379,12 +402,21 @@ final class Model: ObservableObject {
             draft.folders.sort { $0.path < $1.path }
         }
         editing = nil
+        refreshRecorded()
+    }
+
+    /// Which draft folders have a record Finder reads; looked up off the main
+    /// thread, since it touches every folder's disk.
+    private func refreshRecorded() {
+        let paths = draft.folders.map(\.path)
+        Task.detached(priority: .utility) { [weak self] in
+            let recorded = Set(paths.filter { StorePlan.storeDirectory(for: $0) != nil })
+            await MainActor.run { self?.recorded = recorded }
+        }
     }
 
     /// Whether the folder has a record Finder reads, or is served by the window guard alone.
-    func isRecorded(_ folder: FolderView) -> Bool {
-        StorePlan.storeDirectory(for: folder.path) != nil
-    }
+    func isRecorded(_ folder: FolderView) -> Bool { recorded.contains(folder.path) }
 
     func requestAccessibility() { Permissions.requestAccessibility() }
     func openFullDiskAccess() { Permissions.openFullDiskAccess() }

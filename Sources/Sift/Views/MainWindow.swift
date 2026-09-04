@@ -84,8 +84,9 @@ struct StatusSection: View {
                 Captioned(model.statusText, model.isPaused || model.unwatchedNames.isEmpty ? nil
                           : "Not watched: " + model.unwatchedNames.joined(separator: ", "))
                 Spacer()
-                if model.isPaused { Button("Resume") { model.togglePause() } }
-                Button("Edit…") { model.editingWatch = true }
+                Button(model.isPaused ? "Resume" : "Pause") { model.togglePause() }
+                    .disabled(model.applyPhase != nil)
+                Button("Disks…") { model.editingWatch = true }
             }
             // Sweeping.
             HStack(spacing: 10) {
@@ -101,7 +102,7 @@ struct StatusSection: View {
                     Captioned(text.title, text.reason)
                     Spacer()
                     Button("Sweep") { model.sweepNow() }
-                        .disabled(model.sweepDue.isEmpty || model.sweep != .idle)
+                        .disabled(model.sweep != .idle)
                 }
             }
             if !model.hasFullDiskAccess {
@@ -147,14 +148,14 @@ struct StatusSection: View {
 
 /// A status light: green for good, orange for something to do, grey for off.
 struct Light: View {
-    enum State { case good, due, off }
-    let state: State
+    enum Tone { case good, due, off }
+    let tone: Tone
 
-    init(_ state: State) { self.state = state }
+    init(_ tone: Tone) { self.tone = tone }
 
     var body: some View {
         Circle()
-            .fill(state == .good ? Color.green : (state == .due ? Color.orange : Color.secondary.opacity(0.4)))
+            .fill(tone == .good ? Color.green : (tone == .due ? Color.orange : Color.secondary.opacity(0.4)))
             .frame(width: 8, height: 8)
     }
 }

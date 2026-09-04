@@ -22,17 +22,21 @@ public struct StorePlan: Hashable {
     public let stores: [String: [DSRecord]]
     /// What every folder next to a custom one should look like.
     let settings: ViewSettings
+    let safety: Safety
 
     /// Only folders that exist take part.
     public init(settings: ViewSettings, safety: Safety = Safety(), fileManager: FileManager = .default) {
         var stores: [String: [DSRecord]] = [:]
-        for folder in settings.folders where Files.isDirectory(folder.path) && !safety.isProtected(folder.path) {
+        // One record per folder; the last entry for a path wins.
+        let folders = Dictionary(settings.folders.map { ($0.path, $0) }, uniquingKeysWith: { _, b in b }).values.sorted { $0.path < $1.path }
+        for folder in folders where Files.isDirectory(folder.path) && !safety.isProtected(folder.path) {
             guard let parent = StorePlan.storeDirectory(for: folder.path, safety: safety, fileManager: fileManager),
                   let records = try? StorePlan.records(for: folder.view, as: Paths.name(of: folder.path)) else { continue }
             stores[parent, default: []] += records
         }
         self.stores = stores
         self.settings = settings
+        self.safety = safety
     }
 
     public var isEmpty: Bool { stores.isEmpty }
@@ -108,7 +112,6 @@ public struct StorePlan: Hashable {
     /// The view of every other folder in a managed directory, as records.
     func siblingRecords(in directory: String, except names: Set<String>) throws -> [DSRecord] {
         guard let entries = Files.names(in: directory) else { return [] }
-        let safety = Safety()
         var folders: [String] = []
         for name in entries where !names.contains(name) {
             let path = Paths.join(directory, name)

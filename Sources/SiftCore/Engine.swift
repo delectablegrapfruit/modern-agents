@@ -47,6 +47,8 @@ public final class Engine {
     /// Live file events: kept short so a rescan never delays them.
     private let events = DispatchQueue(label: "sift.engine.events", qos: .utility)
     private let scans = DispatchQueue(label: "sift.engine.scans", qos: .utility)
+    /// Every write of a managed `.DS_Store` goes through here, one at a time.
+    private let stores = DispatchQueue(label: "sift.engine.stores", qos: .utility)
     private let fileManager: FileManager
     private var _settings: Settings
     private var _volumes: [Volume] = []
@@ -72,7 +74,7 @@ public final class Engine {
         self.volumes = volumes
         self.log = log ?? Log(fileURL: AppPaths.activityFile(in: store.fileURL.deletingLastPathComponent()))
         self.fileManager = fileManager
-        self.userRoots = userRoots ?? [NSHomeDirectory(), "/Users/Shared", "/Applications"]
+        self.userRoots = userRoots ?? [NSHomeDirectory(), "/Users/Shared", "/Applications"] + Safety.cloudFolders()
         isFirstLaunch = !store.exists
         var settings = store.load()
         if isFirstLaunch { settings.views = FinderPrefs.read() }
@@ -89,9 +91,16 @@ public final class Engine {
     }
 
     public func update(_ settings: Settings) {
-        let watchedChanged: Bool = state.sync {
-            defer { _settings = settings }
-            return _settings.excludedVolumes != settings.excludedVolumes
+        modify { $0 = settings }
+    }
+
+    /// Changes the settings in place, under the lock, so concurrent changes to
+    /// different parts (views, sweeps, disks) never overwrite one another.
+    public func modify(_ change: (inout Settings) -> Void) {
+        let (settings, watchedChanged): (Settings, Bool) = state.sync {
+            let before = _settings.excludedVolumes
+            change(&_settings)
+            return (_settings, _settings.excludedVolumes != before)
         }
         if persistsSettings {
             do { try store.save(settings) } catch { log.info("Could not save settings: \(error.localizedDescription)") }
@@ -120,7 +129,11 @@ public final class Engine {
     public var isPaused: Bool {
         get { state.sync { _paused } }
         set {
-            state.sync { _paused = newValue }
+            state.sync {
+                _paused = newValue
+                // From now on nothing is watched: a sweep is due once resumed.
+                if newValue { for path in _watches.keys { _unwatched[path] = Unwatched(since: Date(), reason: .paused) } }
+            }
             if isRunning { reconfigure() }
         }
     }
@@ -151,6 +164,10 @@ public final class Engine {
             return _watches.values.map(\.watcher)
         }
         watchers.forEach { $0.stop() }
+        // Work under way finishes before the engine is gone.
+        events.sync {}
+        scans.sync {}
+        stores.sync {}
         log.flush()
         onRootsChanged?([])
     }
@@ -163,15 +180,21 @@ public final class Engine {
         let before: [Volume] = state.sync { _volumes }
         let changed: Bool = state.sync {
             defer { _volumes = now }
-            return Set(now.map(\.id)) != Set(_volumes.map(\.id))
+            return Set(now) != Set(_volumes)
         }
         if changed {
             let known = Set(before.map(\.mountPoint))
             replan()
             if isRunning { reconfigure() }
-            // A disk that just arrived has stores Finder has not read yet.
+            // A disk that just arrived has stores Finder has not read yet (the
+            // first refresh is the start: `start` reconciles everything once).
             let fresh = now.map(\.mountPoint).filter { !known.contains($0) }
-            if !fresh.isEmpty { scans.async { self.reconcileStores(under: fresh) } }
+            if !before.isEmpty, !fresh.isEmpty {
+                scans.async {
+                    self.retireForgotten(under: fresh)
+                    self.reconcileStores(under: fresh)
+                }
+            }
         }
         return now
     }
@@ -190,9 +213,15 @@ public final class Engine {
         for volume in volumes where volume.isCleanable(fileManager: fileManager) && !excluded.contains(volume.id) {
             out.append(Root(path: volume.mountPoint, label: volume.name, volume: volume))
         }
+        // A root inside another is redundant, unless the outer one does not enter
+        // it (the cloud folders under the home Library).
+        let exceptions = system.exceptions
         var seen = Set<String>()
         return out.filter { root in
-            guard !seen.contains(where: { Paths.isInside(root.path, $0) }) else { return false }
+            let covered = seen.contains { outer in
+                Paths.isInside(root.path, outer) && !exceptions.contains { Paths.isInside(root.path, $0) && !Paths.isInside(outer, $0) }
+            }
+            guard !covered else { return false }
             seen.insert(root.path)
             return true
         }
@@ -249,12 +278,16 @@ public final class Engine {
         switch change {
         case .subtree(let directory):
             let folder = Paths.standardize(directory)
-            guard Paths.isInside(folder, root.path) else { return }
-            // Only the folder itself is looked at; what lies deeper waits for a sweep.
-            state.sync { _unwatched[root.path] = Unwatched(since: Date(), reason: .missed) }
-            noteSweepDue()
             let scanner = JunkScanner(safety: safety)
-            guard let items = try? scanner.scan(root: folder, depth: Watchers.subtreeDepth), !items.isEmpty else { return }
+            // The folder is looked at only where the walk itself would go.
+            guard scanner.isReachable(folder, from: root.path) else { return }
+            if Watchers.subtreeDepth < Int.max {
+                // Only the top of it is looked at; what lies deeper waits for a sweep.
+                state.sync { _unwatched[root.path] = Unwatched(since: Date(), reason: .missed) }
+                noteSweepDue()
+            }
+            guard let items = try? scanner.scan(root: folder, depth: Watchers.subtreeDepth, liveOnly: true, measured: false),
+                  !items.isEmpty else { return }
             outcome = remove(items, within: [root.path], source: root.label, quiet: true)
         case .paths(let paths):
             let items = JunkScanner(safety: safety).items(fromChangedPaths: paths, root: root.path)
@@ -292,8 +325,8 @@ public final class Engine {
     /// Roots where junk could have arrived unwatched since the last sweep.
     /// Nothing is read from disk to know this.
     public var sweepDue: [Due] {
-        let (sweeps, unwatched, watched) = state.sync { (_settings.sweeps, _unwatched, _watches.values.map(\.root)) }
-        return watched.sorted { $0.path < $1.path }.compactMap { root in
+        let (sweeps, unwatched) = state.sync { (_settings.sweeps, _unwatched) }
+        return roots().compactMap { root in
             guard let entry = unwatched[root.path] else { return nil }
             if let last = sweeps[root.path], last > entry.since { return nil }
             return Due(root: root, reason: entry.reason)
@@ -311,35 +344,69 @@ public final class Engine {
 
     /// A sweep went through these roots in full.
     public func noteSwept(_ roots: [Root], at date: Date = Date()) {
-        var settings = self.settings
-        for root in roots { settings.sweeps[root.path] = date }
-        update(settings)
+        modify { settings in
+            for root in roots { settings.sweeps[root.path] = date }
+        }
         noteSweepDue()
     }
 
     // MARK: - Folder stores
 
-    /// Writes every store the views need and removes those no longer needed.
-    /// Called with Finder quit, so it cannot overwrite them on the way out.
+    /// Writes every store the views need and removes those no longer needed,
+    /// remembering which directories carry one. Called with Finder quit, so it
+    /// cannot overwrite them on the way out.
     public func applyStores(previous: StorePlan) throws {
-        let plan = self.plan
-        plan.retire(from: previous, fileManager: fileManager)
-        try plan.writeAll()
+        try stores.sync {
+            let plan = self.plan
+            plan.retire(from: previous, fileManager: fileManager)
+            retireForgotten(under: nil, plan: plan)
+            try plan.writeAll()
+            modify { settings in
+                // Directories on disks that are away stay remembered until they are back.
+                let away = settings.managedStores.filter { plan.stores[$0] == nil && !Files.isDirectory(Paths.parent(of: $0)) }
+                settings.managedStores = Set(plan.stores.keys).union(away)
+            }
+        }
+    }
+
+    /// Removes remembered stores that are no longer planned, where the disk is
+    /// present (all of them, or only under `roots`), and forgets them.
+    private func retireForgotten(under roots: [String]?, plan: StorePlan? = nil) {
+        let plan = plan ?? self.plan
+        let remembered: Set<String> = state.sync { _settings.managedStores }
+        var forgotten: Set<String> = []
+        for directory in remembered where plan.stores[directory] == nil {
+            if let roots, !roots.contains(where: { Paths.isInside(directory, $0) }) { continue }
+            guard Files.isDirectory(Paths.parent(of: directory)) else { continue }
+            try? fileManager.removeItem(atPath: directory + "/.DS_Store")
+            forgotten.insert(directory)
+        }
+        if !forgotten.isEmpty { modify { $0.managedStores.subtract(forgotten) } }
     }
 
     /// Puts the managed stores back to what the views say. Finder keeps a
     /// store in memory while it runs and writes its own copy back, so this is
     /// done when Finder has quit (and when Sift starts, and when a disk
     /// arrives), never on every write Finder makes: the file only matters the
-    /// next time Finder starts.
+    /// next time Finder starts. One that belongs to root is handed to the helper.
     public func reconcileStores(under roots: [String]? = nil) {
-        let plan = self.plan
-        for directory in plan.stores.keys.sorted() {
-            if let roots, !roots.contains(where: { Paths.isInside(directory, $0) }) { continue }
-            do {
-                if try plan.write(directory: directory) { log.info("Kept the view of " + Paths.display(directory), path: directory) }
-            } catch {
-                log.info("Could not keep the view of \(Paths.display(directory)): \(error.localizedDescription)", path: directory)
+        stores.sync {
+            let plan = self.plan
+            for directory in plan.stores.keys.sorted() {
+                if let roots, !roots.contains(where: { Paths.isInside(directory, $0) }) { continue }
+                do {
+                    if try plan.write(directory: directory) { log.info("Kept the view of " + Paths.display(directory), path: directory) }
+                } catch {
+                    let store = directory + "/.DS_Store"
+                    if Errors.isPermission(error), let privileged = privilegedRemove,
+                       let info = Files.info(store), !info.isDirectory,
+                       !privileged([Item(path: store, kind: .dsStore, isDirectory: false, size: info.size)]).removed.isEmpty,
+                       (try? plan.write(directory: directory)) == true {
+                        log.info("Kept the view of " + Paths.display(directory), path: directory)
+                        continue
+                    }
+                    log.info("Could not keep the view of \(Paths.display(directory)): \(error.localizedDescription)", path: directory)
+                }
             }
         }
     }

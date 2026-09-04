@@ -156,7 +156,9 @@ public struct DSStore: Hashable {
 
     private static func record(_ r: inout Reader) throws -> DSRecord {
         let filename = String(utf16BigEndian: try r.bytes(Int(try r.u32()) * 2))
-        let structID = String(decoding: try r.bytes(4), as: UTF8.self)
+        let idBytes = try r.bytes(4)
+        guard idBytes.allSatisfy({ $0 >= 0x20 && $0 < 0x7F }) else { throw DSStoreError.corrupt("structure id") }
+        let structID = String(decoding: idBytes, as: UTF8.self)
         let value: DSRecord.Value
         switch String(decoding: try r.bytes(4), as: UTF8.self) {
         case "long": value = .long(try r.u32())

@@ -74,8 +74,15 @@ public struct Remover {
                 outcome.skipped.append(Failure(item: item, reason: reason))
                 continue
             }
-            guard Files.info(item.path) != nil else {
+            guard let info = Files.info(item.path) else {
                 outcome.skipped.append(Failure(item: item, reason: "Already gone"))
+                continue
+            }
+            // Found a while ago, perhaps: it must still be the junk it was.
+            let isDirectory = info.isDirectory && !info.isSymlink
+            guard isDirectory == item.isDirectory,
+                  Junk.kind(name: item.name, isDirectory: isDirectory, atVolumeRoot: safety.isMountPoint(item.parent)) == item.kind else {
+                outcome.skipped.append(Failure(item: item, reason: "Changed since it was found"))
                 continue
             }
             if dryRun {
@@ -113,8 +120,11 @@ public struct Remover {
             try fileManager.removeItem(atPath: path)
         } catch {
             #if os(macOS)
-            // Locked (uchg) items refuse deletion until the flag is cleared.
-            if chflags(path, 0) == 0 {
+            // Locked (uchg) items refuse deletion until the flag is cleared. Only
+            // the item itself, never what a symlink points at.
+            var st = stat()
+            if lstat(path, &st) == 0, st.st_flags & UInt32(UF_IMMUTABLE | UF_APPEND) != 0,
+               lchflags(path, st.st_flags & ~UInt32(UF_IMMUTABLE | UF_APPEND)) == 0 {
                 try fileManager.removeItem(atPath: path)
                 return
             }

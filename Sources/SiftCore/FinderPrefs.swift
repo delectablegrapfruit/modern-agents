@@ -251,7 +251,7 @@ public enum FinderPrefs {
         s.default.options.icon = IconOptions.read(standard?["IconViewSettings"] as? [String: Any])
         s.default.options.list = ListOptions.read(list, extended: extended)
         s.default.options.gallery = GalleryOptions.read(standard?["GalleryViewSettings"] as? [String: Any])
-        s.default.options.column = ColumnOptions.read(value("ColumnViewOptions", finderDomain) as? [String: Any])
+        s.default.options.column = ColumnOptions.read(columnViewOptionsStored())
         return s
     }
 
@@ -265,13 +265,20 @@ public enum FinderPrefs {
         set(s.default.sortKey.label, "FXArrangeGroupViewBy", finderDomain)
         set(standardViewSettings(s, into: value("StandardViewSettings", finderDomain) as? [String: Any]), "StandardViewSettings", finderDomain)
         set(desktopViewSettings(s, into: value("DesktopViewSettings", finderDomain) as? [String: Any]), "DesktopViewSettings", finderDomain)
-        set(columnViewOptions(s, into: value("ColumnViewOptions", finderDomain) as? [String: Any]), "ColumnViewOptions", finderDomain)
+        // Finder keeps the column view's options inside StandardViewOptions.
+        var standardOptions = value("StandardViewOptions", finderDomain) as? [String: Any] ?? [:]
+        standardOptions["ColumnViewOptions"] = columnViewOptions(s, into: columnViewOptionsStored())
+        set(standardOptions, "StandardViewOptions", finderDomain)
         guard CFPreferencesAppSynchronize(finderDomain as CFString) else { throw FinderPrefsError.writeFailed("Finder") }
         try preventStores()
         let check = read()
         if check.default.mode != s.default.mode { throw FinderPrefsError.verifyFailed("view") }
         if check.default.sortKey != s.default.sortKey { throw FinderPrefsError.verifyFailed("sort order") }
         if Int(check.default.options.icon.iconSize) != Int(s.default.options.icon.iconSize) { throw FinderPrefsError.verifyFailed("icon size") }
+    }
+
+    private static func columnViewOptionsStored() -> [String: Any]? {
+        (value("StandardViewOptions", finderDomain) as? [String: Any])?["ColumnViewOptions"] as? [String: Any]
     }
 
     /// Finder's own switches for not writing `.DS_Store` on network and USB disks. Always on.

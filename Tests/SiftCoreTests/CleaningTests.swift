@@ -18,6 +18,10 @@ final class JunkTests: XCTestCase {
         XCTAssertNil(Junk.kind(name: ".VolumeIcon.icns", isDirectory: false, atVolumeRoot: true), "a person chose that")
     }
 
+    func testOnlySomeKindsGoTheMomentTheyAppear() {
+        XCTAssertEqual(Junk.allCases.filter { !$0.isLive }, [.trashes, .temporaryItems])
+    }
+
     func testPrefilter() {
         XCTAssertTrue(Junk.couldMatch(name: ".DS_Store"))
         XCTAssertTrue(Junk.couldMatch(name: "._sidecar"))
@@ -43,6 +47,9 @@ final class SafetyTests: XCTestCase {
         XCTAssertEqual(safety.validate(path: "/Volumes/USB"), .refused("A mount point"))
         XCTAssertFalse(safety.validate(path: "/System/.DS_Store").isAllowed)
         XCTAssertFalse(safety.validate(path: NSHomeDirectory() + "/Library/Caches/.DS_Store").isAllowed)
+        XCTAssertTrue(safety.validate(path: NSHomeDirectory() + "/Library/Mobile Documents/com~apple~CloudDocs/Notes/.DS_Store").isAllowed, "iCloud Drive is browsed like any folder")
+        XCTAssertTrue(safety.validate(path: NSHomeDirectory() + "/Library/CloudStorage/Dropbox/.DS_Store").isAllowed)
+        XCTAssertFalse(Safety(exceptions: []).validate(path: NSHomeDirectory() + "/Library/CloudStorage/Dropbox/.DS_Store").isAllowed)
         XCTAssertFalse(safety.validate(path: "/Volumes/USB/.metadata_never_index").isAllowed)
         XCTAssertFalse(safety.validate(path: "/Volumes/USB/.fseventsd/no_log").isAllowed)
         XCTAssertFalse(safety.validate(path: "/Users/me/.DS_Store").isAllowed, "carries a view")
@@ -140,7 +147,20 @@ final class ScannerTests: XCTestCase {
             box.path + "/Tool.app/Contents/.DS_Store",
             "/elsewhere/.DS_Store",
         ], root: box.path)
-        XCTAssertEqual(relative(items, from: box.path), [".Trashes", "Photos/.DS_Store"])
+        XCTAssertEqual(relative(items, from: box.path), ["Photos/.DS_Store"],
+                       "what appears inside the Trash is not news: the Trash goes only in a sweep")
+        XCTAssertEqual(relative(try scanner().scan(root: box.path, liveOnly: true), from: box.path),
+                       [".DS_Store", "Photos/.DS_Store", "Photos/._IMG_1.jpg", ".Spotlight-V100", "Project/src/.DS_Store"])
+    }
+
+    func testReachability() {
+        let scanner = scanner()
+        XCTAssertTrue(scanner.isReachable(box.path + "/Photos", from: box.path))
+        XCTAssertTrue(scanner.isReachable(box.path, from: box.path))
+        XCTAssertFalse(scanner.isReachable(box.path + "/Tool.app/Contents", from: box.path), "packages are never entered")
+        XCTAssertFalse(scanner.isReachable(box.path + "/.hidden", from: box.path))
+        XCTAssertFalse(scanner.isReachable(box.path + "/Project/node_modules/x", from: box.path))
+        XCTAssertFalse(scanner.isReachable("/elsewhere", from: box.path))
     }
 }
 

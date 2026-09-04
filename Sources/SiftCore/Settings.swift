@@ -10,16 +10,20 @@ public struct Settings: Hashable, Codable {
     /// Disks (by volume id, `Engine.startupKey` for the startup disk's user
     /// areas) the person chose not to watch or sweep.
     public var excludedVolumes: Set<String> = []
+    /// Directories whose `.DS_Store` Sift wrote, so one on a disk that is away
+    /// can still be retired when the disk comes back.
+    public var managedStores: Set<String> = []
 
     public init() {}
 
-    enum CodingKeys: String, CodingKey { case views, sweeps, excludedVolumes }
+    enum CodingKeys: String, CodingKey { case views, sweeps, excludedVolumes, managedStores }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         views = (try? c.decodeIfPresent(ViewSettings.self, forKey: .views)) ?? ViewSettings()
         sweeps = (try? c.decodeIfPresent([String: Date].self, forKey: .sweeps)) ?? [:]
         excludedVolumes = (try? c.decodeIfPresent(Set<String>.self, forKey: .excludedVolumes)) ?? []
+        managedStores = (try? c.decodeIfPresent(Set<String>.self, forKey: .managedStores)) ?? []
     }
 }
 
@@ -121,6 +125,9 @@ public final class Log {
     private var flushScheduled = false
     /// Lines in the file, counting those not yet flushed. Touched on `io` after `load`.
     private var linesOnDisk = 0
+    /// The last `keep` lines as they are (to be) on disk, on `io`: what a
+    /// compaction writes, so nothing is written twice or lost.
+    private var recentLines: [Data] = []
 
     public init(fileURL: URL?, keep: Int = 500) {
         self.fileURL = fileURL
@@ -176,6 +183,8 @@ public final class Log {
         io.async {
             self.pending.append(line)
             self.pendingLines += 1
+            self.recentLines.append(line)
+            if self.recentLines.count > self.keep { self.recentLines.removeFirst(self.recentLines.count - self.keep) }
             guard !self.flushScheduled else { return }
             self.flushScheduled = true
             self.io.asyncAfter(deadline: .now() + 1) { self.flushPending() }
@@ -197,17 +206,12 @@ public final class Log {
         let fm = FileManager.default
         do {
             if linesOnDisk + lines > keep * 2 {
-                // Rewrite the file as just the entries kept in memory.
-                let kept = entries
+                // Rewrite the file as just the last lines, pending ones included.
                 var whole = Data()
-                for entry in kept {
-                    guard var encoded = try? encoder.encode(entry) else { continue }
-                    encoded.append(0x0A)
-                    whole.append(encoded)
-                }
+                for line in recentLines { whole.append(line) }
                 try fm.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
                 try whole.write(to: fileURL, options: .atomic)
-                linesOnDisk = kept.count
+                linesOnDisk = recentLines.count
                 return
             }
             if !fm.fileExists(atPath: fileURL.path) {
@@ -231,14 +235,18 @@ public final class Log {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         var loaded: [Entry] = []
+        var raw: [Data] = []
         var lines = 0
         for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
             lines += 1
             guard let entry = try? decoder.decode(Entry.self, from: Data(line.utf8)) else { continue }
             loaded.append(entry)
+            raw.append(Data(line.utf8) + [0x0A])
         }
         if loaded.count > keep { loaded.removeFirst(loaded.count - keep) }
+        if raw.count > keep { raw.removeFirst(raw.count - keep) }
         linesOnDisk = lines
+        recentLines = raw
         lock.lock()
         _entries = loaded
         lock.unlock()

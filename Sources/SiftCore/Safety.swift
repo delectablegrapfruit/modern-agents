@@ -16,13 +16,18 @@ public struct Safety: Hashable {
     public var mountPoints: Set<String>
     /// `.DS_Store` files that carry a folder's chosen view. Kept.
     public var keptStores: Set<String>
+    /// Places inside a protected prefix that Finder browses all the same, and
+    /// whose junk travels to other devices: iCloud Drive and the cloud folders.
+    public var exceptions: [String]
 
     public init(protectedPrefixes: [String] = Safety.systemPrefixes(),
                 mountPoints: Set<String> = [],
-                keptStores: Set<String> = []) {
+                keptStores: Set<String> = [],
+                exceptions: [String] = Safety.cloudFolders()) {
         self.protectedPrefixes = protectedPrefixes.map(Paths.standardize)
         self.mountPoints = Set(mountPoints.map(Paths.standardize)).union(["/"])
         self.keptStores = Set(keptStores.map(Paths.standardize))
+        self.exceptions = exceptions.map(Paths.standardize)
     }
 
     /// System locations plus the home Library.
@@ -32,8 +37,16 @@ public struct Safety: Hashable {
         return list
     }
 
+    /// iCloud Drive and the File Provider clouds (Dropbox, OneDrive, Google
+    /// Drive…) live under the home Library but are browsed like any folder.
+    public static func cloudFolders(home: String = NSHomeDirectory()) -> [String] {
+        guard !home.isEmpty && home != "/" else { return [] }
+        return [home + "/Library/Mobile Documents/com~apple~CloudDocs", home + "/Library/CloudStorage"]
+    }
+
     public func isProtected(_ path: String) -> Bool {
         let p = Paths.standardize(path)
+        if exceptions.contains(where: { Paths.isInside(p, $0) }) { return false }
         return protectedPrefixes.contains { Paths.isInside(p, $0) }
     }
 

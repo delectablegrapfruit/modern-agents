@@ -54,8 +54,12 @@ enum Permissions {
     /// Whether Sift may control Finder; nil when that cannot be told (Finder
     /// not running). With `ask`, macOS puts the consent dialog up now.
     static func automation(ask: Bool) -> Bool? {
-        guard let target = NSAppleEventDescriptor(bundleIdentifier: Finder.bundleID).aeDesc else { return nil }
-        let status = AEDeterminePermissionToAutomateTarget(target, AEEventClass(typeWildCard), AEEventID(typeWildCard), ask)
+        let descriptor = NSAppleEventDescriptor(bundleIdentifier: Finder.bundleID)
+        // The descriptor owns the AEDesc: it must outlive the call.
+        let status: OSStatus = withExtendedLifetime(descriptor) {
+            guard let target = descriptor.aeDesc else { return -1 }
+            return AEDeterminePermissionToAutomateTarget(target, AEEventClass(typeWildCard), AEEventID(typeWildCard), ask)
+        }
         switch status {
         case 0: return true
         case -1743: return false  // errAEEventNotPermitted
@@ -79,21 +83,23 @@ enum Helper {
     static var bundled: String { Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/sift-helper").path }
     static var socketPath: String { HelperInstall.socketPath(uid: getuid()) }
 
-    /// Installed, current, and answering.
-    static var isReady: Bool {
-        guard let installed = FileManager.default.contents(atPath: HelperInstall.binary),
-              let ours = FileManager.default.contents(atPath: bundled), installed == ours else { return false }
-        return HelperClient.isReady(at: socketPath)
-    }
+    /// Installed and answering with the protocol this app speaks. A helper from
+    /// an older build keeps serving until the protocol changes; then the window
+    /// asks to allow it again.
+    static var isReady: Bool { HelperClient.isReady(at: socketPath) }
 
-    /// One administrator password; the helper then starts at every boot.
+    /// One administrator password; the helper then starts at every boot. The
+    /// caller waits for it to answer, off the main thread.
     static func install() throws {
         guard AppBundle.isBundled, FileManager.default.fileExists(atPath: bundled) else {
             throw HelperError.refused("The helper ships inside Sift.app; run Sift from the app bundle.")
         }
         try Privileged.run(HelperInstall.script(bundledHelper: bundled, uid: getuid()))
-        let deadline = Date().addingTimeInterval(5)
-        while !HelperClient.isReady(at: socketPath) && Date() < deadline { Thread.sleep(forTimeInterval: 0.2) }
+    }
+
+    /// One administrator password; the daemon and its definition are gone.
+    static func uninstall() throws {
+        try Privileged.run(HelperInstall.removeScript(uid: getuid()))
     }
 }
 

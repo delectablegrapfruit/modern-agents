@@ -30,6 +30,10 @@ struct SweepSheet: View {
             case .removing(let done, let total):
                 ProgressView(value: Double(done), total: Double(max(total, 1))) { Text("Removing…") }
                 Spacer()
+                HStack {
+                    Button("Cancel") { model.cancelSweep() }.keyboardShortcut(.cancelAction)
+                    Spacer()
+                }
             case .finished(let outcome):
                 Text("Removed \(outcome.removed.count) item\(outcome.removed.count == 1 ? "" : "s") · \(Format.bytes(outcome.bytes))")
                     .font(.headline)
@@ -72,7 +76,8 @@ struct ItemList: View {
     var body: some View {
         List(items) { item in
             HStack(alignment: .firstTextBaseline) {
-                Captioned(item.name, item.parent)
+                // A disk-level folder says what removing it means.
+                Captioned(item.name, item.isDirectory ? item.kind.summary + " · " + item.parent : item.parent)
                 Spacer()
                 Text(Format.bytes(item.size))
                     .font(.caption)

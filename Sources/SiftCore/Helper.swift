@@ -47,7 +47,8 @@ public enum HelperError: Error, LocalizedError, Equatable {
 
 /// Where the helper lives and how it is installed.
 public enum HelperInstall {
-    public static let protocolVersion = "1"
+    /// Bumped when what the helper does or accepts changes; the app reinstalls then.
+    public static let protocolVersion = "2"
     public static let binary = "/Library/PrivilegedHelperTools/dev.sift.helper"
 
     public static func label(uid: uid_t) -> String { "dev.sift.helper.\(uid)" }
@@ -81,21 +82,36 @@ public enum HelperInstall {
         """
     }
 
-    /// Shell run once as root: copies the helper out of the app bundle (the app
-    /// may move), writes the daemon definition and starts it.
+    /// Shell run once as root: stops a running helper, copies the new one out
+    /// of the app bundle (the app may move) into place by rename, so a running
+    /// copy is never overwritten under itself, writes the daemon definition and
+    /// starts it.
     public static func script(bundledHelper: String, uid: uid_t) -> String {
         let plist = plistPath(uid: uid)
+        let staged = binary + ".new"
         return [
             "set -e",
+            "/bin/launchctl bootout system/\(label(uid: uid)) 2>/dev/null || true",
             "/bin/mkdir -p /Library/PrivilegedHelperTools",
-            "/bin/cp -f \(quote(bundledHelper)) \(quote(binary))",
-            "/usr/sbin/chown root:wheel \(quote(binary))",
-            "/bin/chmod 755 \(quote(binary))",
+            "/bin/cp -f \(quote(bundledHelper)) \(quote(staged))",
+            "/usr/sbin/chown root:wheel \(quote(staged))",
+            "/bin/chmod 755 \(quote(staged))",
+            "/bin/mv -f \(quote(staged)) \(quote(binary))",
             "/usr/bin/printf '%s' \(quote(self.plist(uid: uid))) > \(quote(plist))",
             "/usr/sbin/chown root:wheel \(quote(plist))",
             "/bin/chmod 644 \(quote(plist))",
-            "/bin/launchctl bootout system/\(label(uid: uid)) 2>/dev/null || true",
             "/bin/launchctl bootstrap system \(quote(plist))",
+        ].joined(separator: "; ")
+    }
+
+    /// Shell run as root to undo `script`: stops the daemon and removes its
+    /// definition; the binary goes too unless another user's daemon still uses it.
+    public static func removeScript(uid: uid_t) -> String {
+        [
+            "/bin/launchctl bootout system/\(label(uid: uid)) 2>/dev/null || true",
+            "/bin/rm -f \(quote(plistPath(uid: uid)))",
+            "/bin/rm -f \(quote(socketPath(uid: uid)))",
+            "/bin/ls /Library/LaunchDaemons/dev.sift.helper.*.plist >/dev/null 2>&1 || /bin/rm -f \(quote(binary))",
         ].joined(separator: "; ")
     }
 
@@ -181,11 +197,23 @@ enum UnixSocket {
         var offset = 0
         let bytes = [UInt8](data) + [0x0A]
         while offset < bytes.count {
+            #if canImport(Darwin)
             let n = bytes.withUnsafeBufferPointer { write(fd, $0.baseAddress! + offset, bytes.count - offset) }
+            #else
+            let n = bytes.withUnsafeBufferPointer { send(fd, $0.baseAddress! + offset, bytes.count - offset, Int32(MSG_NOSIGNAL)) }
+            #endif
             if n <= 0 { return false }
             offset += n
         }
         return true
+    }
+
+    /// Reads and writes on the socket give up after `seconds`; 0 means never.
+    static func setTimeouts(_ fd: Int32, seconds: Int) {
+        guard seconds > 0 else { return }
+        var tv = timeval(tv_sec: seconds, tv_usec: 0)
+        _ = setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+        _ = setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
     }
 
     static func peerUID(_ fd: Int32) -> uid_t? {
@@ -210,9 +238,7 @@ public enum HelperClient {
         guard fd >= 0 else { throw HelperError.unreachable("no socket") }
         defer { close(fd) }
         UnixSocket.quietOnClose(fd)
-        var tv = timeval(tv_sec: timeoutSeconds, tv_usec: 0)
-        _ = setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
-        _ = setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+        UnixSocket.setTimeouts(fd, seconds: timeoutSeconds)
         var addr = UnixSocket.address(path)
         let connected = withUnsafePointer(to: &addr) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
@@ -233,7 +259,8 @@ public enum HelperClient {
     /// Asks the helper to remove `items`; what it cannot is reported as failed.
     public static func remove(_ items: [Item], at path: String) -> Outcome {
         do {
-            if let outcome = try send(HelperRequest(remove: items), to: path).outcome { return outcome }
+            // A large Trash or index on a slow disk takes as long as it takes.
+            if let outcome = try send(HelperRequest(remove: items), to: path, timeoutSeconds: 3600).outcome { return outcome }
             throw HelperError.unreachable("empty reply")
         } catch {
             var outcome = Outcome()
@@ -281,6 +308,8 @@ public final class HelperServer {
             let client = accept(listener, nil, nil)
             if client < 0 { if errno == EINTR { continue } else { break } }
             UnixSocket.quietOnClose(client)
+            // A client that connects and says nothing must not park the daemon.
+            UnixSocket.setTimeouts(client, seconds: 10)
             handle(client)
             close(client)
         }
@@ -307,11 +336,27 @@ public final class HelperServer {
         if let data = try? JSONEncoder().encode(reply) { _ = UnixSocket.writeAll(client, data) }
     }
 
-    /// Only items the catalog would find at that very place are removed.
+    /// The served user's home: the daemon runs as root, whose own home is not it.
+    static func home(of uid: uid_t) -> String? {
+        guard let entry = getpwuid(uid), let dir = entry.pointee.pw_dir else { return nil }
+        return String(cString: dir)
+    }
+
+    /// Where the served user's junk may be: the same places the app cleans.
+    func roots() -> [String] {
+        var out = [Self.home(of: uid) ?? "", "/Users/Shared", "/Applications"].filter { !$0.isEmpty }
+        out += mountPoints().filter { $0 != "/" && !$0.hasPrefix("/System/Volumes/") && !$0.hasPrefix("/private/") && !$0.hasPrefix("/dev") }
+        return out
+    }
+
+    /// Only items the catalog would find at that very place, in a place the
+    /// app cleans, are removed.
     public func respond(to request: HelperRequest) -> HelperResponse {
         if request.version { return HelperResponse(version: HelperInstall.protocolVersion) }
         guard let items = request.remove else { return HelperResponse(error: "Nothing asked") }
-        let safety = Safety(mountPoints: mountPoints())
+        let home = Self.home(of: uid) ?? ""
+        let safety = Safety(protectedPrefixes: Safety.systemPrefixes(home: home), mountPoints: mountPoints(),
+                            exceptions: Safety.cloudFolders(home: home))
         let scanner = JunkScanner(safety: safety)
         var outcome = Outcome()
         var allowed: [Item] = []
@@ -326,7 +371,7 @@ public final class HelperServer {
             }
             allowed.append(found)
         }
-        let removed = Remover(safety: safety).remove(allowed)
+        let removed = Remover(safety: safety).remove(allowed, within: roots())
         outcome.removed = removed.removed
         outcome.failed = removed.failed
         outcome.skipped += removed.skipped

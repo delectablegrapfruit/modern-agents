@@ -5,11 +5,16 @@ Removes the hidden files macOS leaves on every disk, and makes Finder show folde
 ## What it does
 
 **Cleans.** `.DS_Store`, `._` sidecar files and `.apdisk` are removed the moment they appear, everywhere
-Finder browses: your home folder, `/Users/Shared`, `/Applications` and every connected disk, internal,
-external or network. Disk-level folders (`.Spotlight-V100`, `.fseventsd`, `.Trashes`, `.TemporaryItems`)
-are removed too, switching Spotlight off on that disk and leaving the event journal in its quiet `no_log`
-form so neither grows back. Finder's own switches for not writing `.DS_Store` on network and USB disks are
-turned on. *Sweep* looks through everything on demand and shows what it found before removing it.
+Finder browses: your home folder, iCloud Drive and the cloud folders (Dropbox, OneDrive, Google Drive),
+`/Users/Shared`, `/Applications` and every connected disk, internal, external or network. Disk-level
+folders (`.Spotlight-V100`, `.fseventsd`) go the same way, switching Spotlight off on that disk and leaving
+the event journal in its quiet `no_log` form so neither grows back. A disk's `.Trashes` (its Trash, holding
+what was just put there) and `.TemporaryItems` (a document in the middle of being saved) are removed only
+by a sweep, where they are listed with what removing them means. Finder's own switches for not writing
+`.DS_Store` on network and USB disks are turned on. *Sweep* looks through everything on demand and shows
+what it found before removing it; the Sweep button's light says whether one is due (junk may have arrived
+while nothing watched: before Sift ran, while paused, while a disk was away) and why. *Disks…* chooses
+which disks are watched and swept; read-only and Time Machine disks never are.
 
 On disks that enforce ownership the disk-level folders belong to root: the window says so and offers
 *Allow Administrator…*, which installs Sift's helper once (one administrator password, a launchd daemon at
@@ -18,8 +23,7 @@ catalog places). From then on such items go the same way as everything else, in 
 left after that is protected by macOS privacy controls (the Trash on other disks): add the helper under
 System Settings → Privacy & Security → Full Disk Access; the window has a button that reveals it.
 
-To remove the helper, unload `dev.sift.helper.<your uid>` with `launchctl bootout system/…` and delete its
-plist in `/Library/LaunchDaemons` and the binary in `/Library/PrivilegedHelperTools`.
+To remove the helper: `sift-cli helper remove` (one administrator password).
 
 Between sweeps Sift never walks a disk on its own: it only reacts to what the system reports, one wake-up
 a second per disk at most, so idle cost is nothing, external disks can sleep, and nothing is read that was
@@ -69,7 +73,9 @@ of the downloaded copy: on macOS 15 and later go to System Settings → Privacy 
 off under System Settings → General → Login Items.
 
 Full Disk Access (System Settings → Privacy & Security) lets Sift reach Desktop, Documents and the Trash on
-other disks without a prompt per folder. The window says so until it is granted.
+other disks without a prompt per folder. The window says so until it is granted. The prebuilt app is signed
+ad hoc, so every new build is a different app to macOS: Full Disk Access, control of Finder and
+Accessibility have to be granted again after an update.
 
 ## Build
 

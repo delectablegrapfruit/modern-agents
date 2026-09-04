@@ -30,12 +30,11 @@ struct ViewSection: View {
             Picker("Options for", selection: $optionsMode) {
                 ForEach(ViewMode.allCases, id: \.self) { Text($0.label).tag($0) }
             }
-            .pickerStyle(.segmented)
             OptionsForm(mode: optionsMode, options: $model.draft.default.options)
         } header: {
             Text("Options")
         } footer: {
-            Text("The same values as Finder's View Options window. Those of the view folders open in apply everywhere; the others when a window is switched to that view by hand.")
+            Text("The same values as Finder's View Options window. Options for the view folders open in apply everywhere. Options for the other views are used when you switch a window to that view.")
         }
     }
 }
@@ -45,10 +44,13 @@ struct SortPickers: View {
     @Binding var view: FinderView
 
     var body: some View {
-        Picker("Sort by", selection: $view.sortKey) {
+        // Choosing a key takes Finder's own direction for it; Revert never counts as a choice.
+        Picker("Sort by", selection: Binding(get: { view.sortKey }, set: { key in
+            view.sortKey = key
+            view.ascending = key.defaultAscending
+        })) {
             ForEach(SortKey.allCases, id: \.self) { Text($0.label).tag($0) }
         }
-        .onChange(of: view.sortKey) { view.ascending = $0.defaultAscending }
         if view.mode == .list {
             Picker("Order", selection: $view.ascending) {
                 Text("Ascending").tag(true)

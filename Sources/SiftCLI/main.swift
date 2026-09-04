@@ -1,10 +1,11 @@
 import Foundation
 import SiftCore
-
-signal(SIGPIPE, SIG_IGN)
 #if canImport(Glibc)
 import Glibc
 #endif
+
+// A closed pipe is an error to handle, not a signal to die by.
+signal(SIGPIPE, SIG_IGN)
 
 let usage = """
 sift-cli — remove the hidden files macOS leaves on disks
@@ -12,6 +13,7 @@ sift-cli — remove the hidden files macOS leaves on disks
   sift-cli scan [folder…]       list junk without removing anything
   sift-cli sweep [folder…]      remove junk (--dry-run to only list it)
   sift-cli dsstore <folder>     show the records in a folder's .DS_Store
+  sift-cli helper remove        uninstall the administrator helper (asks for the password)
 
 With no folder, scan and sweep cover what the app covers: the startup disk's
 user areas and every connected disk. The command line shares the app's settings.
@@ -36,6 +38,11 @@ func bytes(_ n: Int64) -> String { ByteCountFormatter.string(fromByteCount: n, c
 
 let engine = Engine()
 engine.persistsSettings = false
+
+func finish(_ code: Int32) -> Never {
+    engine.log.flush()
+    exit(code)
+}
 engine.refreshVolumes()
 
 func roots() -> [Root] {
@@ -59,10 +66,21 @@ case "sweep":
         print("\(dryRun ? "Would remove" : "Removed") \(outcome.removed.count) item\(outcome.removed.count == 1 ? "" : "s"), \(bytes(outcome.bytes))"
               + (outcome.failed.isEmpty ? "" : ", \(outcome.failed.count) failed"))
         if !outcome.locked.isEmpty && getuid() != 0 {
-            FileHandle.standardError.write(Data("\(outcome.locked.count) belong to the system; the app removes them as administrator, or re-run with sudo.\n".utf8))
+            FileHandle.standardError.write(Data("\(outcome.locked.count) belong to the system; the app removes them as administrator once allowed.\n".utf8))
         }
-        exit(outcome.failed.isEmpty ? 0 : 1)
+        finish(outcome.failed.isEmpty ? 0 : 1)
+    } catch { engine.log.flush(); fail(error.localizedDescription) }
+
+case "helper":
+    guard arguments.first == "remove" else { fail("helper takes one word: remove") }
+    #if os(macOS)
+    do {
+        try Privileged.run(HelperInstall.removeScript(uid: getuid()))
+        print("Removed Sift's helper.")
     } catch { fail(error.localizedDescription) }
+    #else
+    fail("The helper exists only on macOS")
+    #endif
 
 case "dsstore":
     guard let folder = arguments.first else { fail("dsstore needs a folder") }

@@ -112,6 +112,8 @@ public enum WindowGuard {
             "else",
             "try",
             "set w to Finder window id n",
+            "set did to false",
+            "set r to 0",
         ]
         for (index, rule) in rules.enumerated() {
             if rule.prefix.isEmpty {
@@ -120,10 +122,16 @@ public enum WindowGuard {
                 let prefix = rule.prefix == "/" ? "/" : rule.prefix + "/"
                 lines.append((index == 0 ? "if" : "else if") + " p starts with \(literal(prefix)) then")
             }
+            lines.append("set r to \(index)")
             lines += viewLines(rule.view)
-            lines.append("set end of out to \"+ \(index) \" & entry")
         }
         lines += [
+            "end if",
+            // Only a window that was actually changed counts as set.
+            "if did then",
+            "set end of out to \"+ \" & (r as text) & \" \" & entry",
+            "else",
+            "set end of out to \"= \" & entry",
             "end if",
             "on error msg number num",
             "set end of out to \"! \" & (n as text) & \" \" & (num as text) & \" \" & p & sep & msg",
@@ -208,10 +216,12 @@ public enum WindowGuard {
     /// is set on its own so one Finder does not know about does not stop the rest.
     public static func viewLines(_ view: FinderView) -> [String] {
         let name = viewName(view.mode)
-        var lines = ["if current view of w is not \(name) then set current view of w to \(name)"]
-        func option(_ property: String, _ value: String?) {
+        var lines = ["if current view of w is not \(name) then", "set current view of w to \(name)", "set did to true", "end if"]
+        /// `read` is what is compared when the property answers with an object
+        /// rather than a value (a column, whose `name` is the enumerator).
+        func option(_ property: String, _ value: String?, read: String? = nil) {
             guard let value else { return }
-            lines += ["try", "if \(property) of o is not \(value) then set \(property) of o to \(value)", "end try"]
+            lines += ["try", "if \(read ?? property) of o is not \(value) then", "set \(property) of o to \(value)", "set did to true", "end if", "end try"]
         }
         let o = view.options
         switch view.mode {
@@ -225,7 +235,7 @@ public enum WindowGuard {
             option("shows icon preview", "\(o.icon.showIconPreview)")
         case .list:
             lines.append("set o to list view options of w")
-            option("sort column", column(view.sortKey))
+            option("sort column", column(view.sortKey), read: "name of sort column")
             if column(view.sortKey) != nil {
                 option("sort direction of sort column", view.ascending ? "normal" : "reversed")
             }
@@ -390,8 +400,15 @@ public enum WindowGuard {
             try? input.fileHandleForWriting.close()
             let killer = DispatchWorkItem { if process.isRunning { kill(process.processIdentifier, SIGKILL) } }
             DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + seconds, execute: killer)
+            // Both pipes are drained at once, so neither can fill and block the other.
+            var err = Data()
+            let drained = DispatchSemaphore(value: 0)
+            DispatchQueue.global(qos: .utility).async {
+                err = errors.fileHandleForReading.readDataToEndOfFile()
+                drained.signal()
+            }
             let out = output.fileHandleForReading.readDataToEndOfFile()
-            let err = errors.fileHandleForReading.readDataToEndOfFile()
+            drained.wait()
             process.waitUntilExit()
             killer.cancel()
             if process.terminationReason == .uncaughtSignal { throw ScriptError.timedOut }
