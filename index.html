@@ -59,7 +59,7 @@
       </div>
     </header>
     <section id="view" class="view" tabindex="-1"></section>
-    <div class="drop-overlay" id="drop-overlay" hidden><div class="drop-card"><div class="drop-icon"></div><div>Add to Library</div><small>EPUB, PDF and plain-text files</small></div></div>
+    <div class="drop-overlay" id="drop-overlay" hidden><div class="drop-card"><div class="drop-icon"></div><div>Add to Library</div><small>EPUB, Kindle (MOBI/AZW3), PDF and plain-text files</small></div></div>
   </main>
 </div>
 
@@ -89,18 +89,22 @@
     <div class="rd-foot rd-glass rd-foot-left" id="rd-chapter"></div>
     <div class="rd-foot rd-glass rd-foot-center" id="rd-page"></div>
     <div class="rd-foot rd-glass rd-foot-right" id="rd-left"></div>
-    <input type="range" class="reader-scrubber" id="rd-scrubber" min="0" max="100" value="0" step="1" aria-label="Book position">
+    <div class="reader-timeline" id="rd-timeline" role="slider" aria-label="Book position" aria-valuemin="0" aria-valuemax="100" tabindex="0">
+      <div class="tl-track"><div class="tl-marks" id="tl-marks"></div><div class="tl-fill" id="tl-fill"></div><div class="tl-bookmarks" id="tl-bookmarks"></div><div class="tl-thumb" id="tl-thumb"></div></div>
+      <div class="tl-label" id="tl-label"></div>
+    </div>
   </footer>
 </div>
 
 <div id="overlays"></div>
-<input type="file" id="file-input" multiple accept=".epub,.pdf,.txt,.md,.text,application/epub+zip,application/pdf,text/plain" hidden>
+<input type="file" id="file-input" multiple accept=".epub,.mobi,.azw,.azw3,.prc,.pdf,.txt,.md,.text,application/epub+zip,application/x-mobipocket-ebook,application/vnd.amazon.mobi8-ebook,application/pdf,text/plain" hidden>
 
 <script src="js/util.js"></script>
 <script src="js/icons.js"></script>
 <script src="js/zip.js"></script>
 <script src="js/db.js"></script>
 <script src="js/epub.js"></script>
+<script src="js/mobi.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/library.js"></script>
 <script src="js/reader.js"></script>

@@ -7,9 +7,6 @@
   --accent: #007aff; --accent-strong: #0060df; --danger: #ff3b30; --green: #34c759; --orange: #ff9500;
 
   --page: #f4f4f7;
-  --page-gradient: radial-gradient(1100px 620px at 12% -10%, rgba(0, 122, 255, 0.11), transparent 62%),
-                   radial-gradient(900px 560px at 105% 8%, rgba(255, 149, 0, 0.10), transparent 60%),
-                   radial-gradient(700px 500px at 60% 110%, rgba(52, 199, 89, 0.06), transparent 60%);
   --surface: #ffffff;                       /* opaque: menus, popovers, sheets */
   --surface-2: rgba(255, 255, 255, 0.66);   /* cards */
   --glass: rgba(255, 255, 255, 0.56);
@@ -36,9 +33,6 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --page: #191919;
-    --page-gradient: radial-gradient(1100px 620px at 12% -10%, rgba(10, 132, 255, 0.16), transparent 62%),
-                     radial-gradient(900px 560px at 105% 8%, rgba(255, 159, 10, 0.10), transparent 60%),
-                     radial-gradient(700px 500px at 60% 110%, rgba(48, 209, 88, 0.06), transparent 60%);
     --surface: #2a2a2d; --surface-2: rgba(255, 255, 255, 0.06);
     --glass: rgba(34, 34, 38, 0.56); --glass-strong: rgba(34, 34, 38, 0.82); --glass-edge: rgba(255, 255, 255, 0.13);
     --glass-shadow: 0 1px 1px rgba(0, 0, 0, 0.35), 0 10px 34px rgba(0, 0, 0, 0.5);
@@ -56,9 +50,6 @@
 }
 :root[data-theme="dark"] {
   --page: #191919;
-  --page-gradient: radial-gradient(1100px 620px at 12% -10%, rgba(10, 132, 255, 0.16), transparent 62%),
-                   radial-gradient(900px 560px at 105% 8%, rgba(255, 159, 10, 0.10), transparent 60%),
-                   radial-gradient(700px 500px at 60% 110%, rgba(48, 209, 88, 0.06), transparent 60%);
   --surface: #2a2a2d; --surface-2: rgba(255, 255, 255, 0.06);
   --glass: rgba(34, 34, 38, 0.56); --glass-strong: rgba(34, 34, 38, 0.82); --glass-edge: rgba(255, 255, 255, 0.13);
   --glass-shadow: 0 1px 1px rgba(0, 0, 0, 0.35), 0 10px 34px rgba(0, 0, 0, 0.5);
@@ -81,7 +72,6 @@ body {
   font-family: var(--font); font-size: 13px; line-height: 1.35; color: var(--text); background: var(--page);
   -webkit-font-smoothing: antialiased; overscroll-behavior: none; overflow: hidden; user-select: none; -webkit-user-select: none;
 }
-body::before { content: ""; position: fixed; inset: 0; background: var(--page-gradient); pointer-events: none; z-index: 0; }
 button, input, select, textarea { font-family: inherit; font-size: inherit; color: inherit; }
 button { cursor: default; -webkit-appearance: none; appearance: none; }
 input, textarea { user-select: text; -webkit-user-select: text; }
@@ -109,12 +99,15 @@ input[type="search"]::-webkit-search-decoration, input[type="search"]::-webkit-s
 .app.sidebar-collapsed .view { padding-left: 28px; }
 @media (max-width: 760px) { .toolbar-title { display: none; } }
 
-/* Traffic lights sit inside the sidebar pane, at the window's standard 12 px inset. */
-.traffic-lights { display: flex; gap: 8px; padding: 6px 0 12px 6px; flex: none; height: 40px; align-items: flex-start; }
+/* Traffic lights: drawn ones sit 12 px inside the pane; in Books.app the pane hugs the window's top-left corner so the
+   real buttons (at the window's standard inset) fall inside it and never overlap its edge. */
+.traffic-lights { display: flex; gap: 8px; padding: 12px 0 10px 12px; flex: none; height: 42px; align-items: flex-start; }
 .tl { width: 12px; height: 12px; border-radius: 50%; border: 0.5px solid rgba(0, 0, 0, 0.16); box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.2); }
 .tl-red { background: #ff5f57; } .tl-yellow { background: #febc2e; } .tl-green { background: #28c840; }
 .tl:hover { filter: brightness(0.9); }
 html[data-shell] .traffic-lights .tl { visibility: hidden; } /* the window's real buttons are drawn here */
+html[data-shell] .sidebar { top: 0; left: 0; border-top-left-radius: 10px; }
+html[data-shell] .app.sidebar-collapsed .toolbar { left: 84px; }
 
 /* ---------- Sidebar source list ---------- */
 .source-list { flex: 1; overflow-y: auto; padding: 0 8px 8px; }

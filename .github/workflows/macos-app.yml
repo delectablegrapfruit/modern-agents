@@ -38,7 +38,7 @@ jobs:
           codesign --verify --deep --strict --verbose=2 dist/Books.app
           plutil -lint dist/Books.app/Contents/Info.plist
 
-      - name: Launch test — start the app, load the web app, open a sample book
+      - name: Launch test — start the app, load the web app, open a generated test book
         timeout-minutes: 5
         run: |
           (sleep 25; screencapture -x build/launch-test.png || true) &

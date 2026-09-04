@@ -14,7 +14,7 @@
     calm:     { name: 'Calm',     bg: '#2e2926', fg: '#e8dece', accent: '#d6a35c', dark: true },
     focus:    { name: 'Focus',    bg: '#000000', fg: '#f5f5f7', accent: '#ffd60a', dark: true, focus: true },
   };
-  const NIGHT_MAP = { original: 'quiet', paper: 'calm', bold: 'focus' };
+  const NIGHT_MAP = { original: 'focus', paper: 'calm', bold: 'focus' };
   const FONTS = [
     { id: 'original', name: 'Original', css: null },
     { id: 'athelas', name: 'Athelas', css: 'Athelas, "Iowan Old Style", Georgia, serif' },
@@ -37,7 +37,12 @@
 
   const BASE_CSS = `
 html, body { margin: 0 !important; padding: 0 !important; }
-html { height: 100%; font-size: var(--fs, 16px); background: var(--bg, #fff) !important; }
+html { height: 100%; font-size: var(--fs, 16px); background: var(--bg, #fff) !important; color-scheme: light; scrollbar-color: var(--fg-3, rgba(0,0,0,0.3)) transparent; scrollbar-width: thin; }
+html.dark { color-scheme: dark; }
+::-webkit-scrollbar { width: 12px; height: 12px; background: transparent; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--fg-3, rgba(0,0,0,0.3)); border-radius: 8px; border: 3px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: var(--fg-2, rgba(0,0,0,0.5)); border: 3px solid transparent; background-clip: padding-box; }
 body { height: 100%; overflow: hidden; background: transparent !important; color: var(--fg, #000); font-size: 1rem; line-height: var(--lh, 1.55); -webkit-text-size-adjust: 100%; text-rendering: optimizeLegibility; overscroll-behavior: none; }
 body.scroll { overflow-y: auto; overflow-x: hidden; height: auto; min-height: 100%; }
 .book-root { position: relative; box-sizing: border-box; }
@@ -91,9 +96,8 @@ p.books-error { text-align: center; opacity: 0.6; margin-top: 30%; }
       $('#rd-fullscreen').addEventListener('click', () => this.toggleFullscreen());
       $('#rd-prev').addEventListener('click', () => { this.prev(); this.touch(); });
       $('#rd-next').addEventListener('click', () => { this.next(); this.touch(); });
-      const scr = $('#rd-scrubber');
-      scr.addEventListener('input', U.throttle(() => { if (this.layout) this.goTo(+scr.value, { instant: true }); }, 60));
-      scr.addEventListener('change', () => { if (this.layout) this.goTo(+scr.value, { instant: true }); this.touch(); });
+      this.initTimeline();
+      $('#reader').addEventListener('mouseleave', () => $('#rd-stage').classList.remove('near-left', 'near-right'));
       document.addEventListener('fullscreenchange', () => this.refreshChrome());
       window.addEventListener('app:fullscreen', () => this.refreshChrome());
       window.addEventListener('settings:change', e => this.onSettingChange(e.detail.key));
@@ -111,7 +115,8 @@ p.books-error { text-align: center; opacity: 0.6; margin-top: 30%; }
       const reader = $('#reader'); reader.hidden = false; reader.classList.remove('chrome-hidden');
       $('#rd-book-title').textContent = book.title;
       for (const id of ['rd-toc', 'rd-appearance', 'rd-search', 'rd-bookmark']) $('#' + id).disabled = false;
-      $('#rd-pdf').hidden = true;
+      $('#rd-pdf').hidden = true; $('#rd-timeline').hidden = false;
+      $('#rd-stage').classList.remove('near-left', 'near-right');
       this._showLoading(`Opening “${book.title}”…`);
       this.applyTheme();
       document.addEventListener('keydown', this._onKey);
@@ -154,9 +159,9 @@ p.books-error { text-align: center; opacity: 0.6; margin-top: 30%; }
       wrap.appendChild(el('div.pdf-note', 'PDF pages are rendered by the browser’s built-in viewer'));
       this._hideLoading();
       $('#rd-chapter').textContent = 'PDF'; $('#rd-page').textContent = book.pages ? U.plural(book.pages, 'page') : ''; $('#rd-left').textContent = U.fmtBytes(book.fileSize);
-      for (const id of ['rd-toc', 'rd-appearance', 'rd-search', 'rd-bookmark']) $('#' + id).disabled = true;
+      for (const id of ['rd-toc', 'rd-search', 'rd-bookmark']) $('#' + id).disabled = true;
       $('#rd-prev').disabled = true; $('#rd-next').disabled = true; $('#rd-spine').hidden = true;
-      $('#rd-scrubber').value = 0;
+      $('#rd-timeline').hidden = true;
       this.refreshChrome();
       Library.updateBook(book.id, { lastOpenedAt: Date.now() }, { silent: true });
       this.startTicker(); this.touch();
@@ -169,6 +174,7 @@ p.books-error { text-align: center; opacity: 0.6; margin-top: 30%; }
       this.hideHLPopover(); UI.closeAll();
       document.removeEventListener('keydown', this._onKey);
       clearTimeout(this._chromeTimer); this._chromeTimer = null;
+      this._watchScroll(false);
       if (this.epub) { this.epub.dispose(); this.epub = null; }
       if (this._pdfURL) { URL.revokeObjectURL(this._pdfURL); this._pdfURL = null; }
       $('#rd-pdf').innerHTML = ''; $('#rd-pdf').hidden = true;
@@ -233,10 +239,13 @@ p.books-error { text-align: center; opacity: 0.6; margin-top: 30%; }
       reader.style.setProperty('--rd-bg', t.bg); reader.style.setProperty('--rd-fg', t.fg); reader.style.setProperty('--rd-accent', t.accent);
       reader.dataset.theme = id;
       reader.classList.toggle('rd-dark', !!t.dark);
+      $('#rd-pdf').dataset.theme = id;
       if (this.doc && this.doc.body) {
         const b = this.doc.body, de = this.doc.documentElement;
         b.classList.toggle('theme-dark', !!t.dark); b.classList.toggle('theme-bold', !!t.bold); b.classList.toggle('theme-focus', !!t.focus); b.classList.toggle('keep-colors', !!t.keepColors);
+        de.classList.toggle('dark', !!t.dark);
         de.style.setProperty('--fg', t.fg); de.style.setProperty('--bg', t.bg); de.style.setProperty('--accent', t.accent);
+        de.style.setProperty('--fg-2', t.dark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.45)');
         de.style.setProperty('--fg-3', t.dark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.25)');
       }
     },
@@ -294,7 +303,16 @@ p.books-error { text-align: center; opacity: 0.6; margin-top: 30%; }
       if (restore) this.goToLocator(restore, { instant: true, keepAnchor: true });
       else this.goTo(mode === 'paginated' ? this.page : 0, { instant: true, keepAnchor: true });
       this.recomputeBookmarkCols();
+      this.renderTimelineMarks();
       this.updateUI();
+      this._watchScroll(mode === 'scroll');
+    },
+    /* Vertical scrolling: besides scroll events, poll the position so progress never stalls (engines differ in event delivery). */
+    _watchScroll(on) {
+      clearInterval(this._scrollPoll); this._scrollPoll = null;
+      if (!on) return;
+      this._lastY = this.currentY();
+      this._scrollPoll = setInterval(() => { if (!this.doc) return; const y = this.currentY(); if (y !== this._lastY) { this._lastY = y; this.onScroll(); } }, 200);
     },
     get se() { return this.doc ? (this.doc.scrollingElement || this.doc.documentElement) : null; },
     /** Measures the total extent (columns or scroll height) robustly: end marker, last section start and last visible glyph. */
@@ -316,7 +334,7 @@ p.books-error { text-align: center; opacity: 0.6; margin-top: 30%; }
         L.total = Math.max(1, byEnd, byLast, byScroll);
       }
       for (const t of this.tocEntries) t.pos = this.hrefToPos(t.href);
-      $('#rd-scrubber').max = String(Math.max(0, L.mode === 'paginated' ? L.total - 1 : L.total));
+      this.renderTimelineMarks();
     },
     lastContentRect() {
       const range = this.doc.createRange();
@@ -517,21 +535,19 @@ p.books-error { text-align: center; opacity: 0.6; margin-top: 30%; }
       const cur = isPag ? this.page : this.currentY();
       const entry = this.chapterAt(cur);
       $('#rd-chapter').textContent = entry ? entry.label : '';
-      const scr = $('#rd-scrubber');
       if (isPag) {
         const first = this.page + 1, last = Math.min(L.total, this.page + L.cols);
         $('#rd-page').textContent = Settings.get('showPageNumbers') ? (L.cols === 2 && last > first ? `Pages ${first}–${last} of ${L.total}` : `Page ${first} of ${L.total}`) : '';
         const left = Math.max(0, Math.ceil((this.nextChapterStart(this.page) - this.page) / L.cols) - 1);
         $('#rd-left').textContent = Settings.get('showChapterProgress') ? (left === 0 ? 'Last page in this chapter' : `${U.plural(left, 'page')} left in this chapter`) : '';
         $('#rd-prev').disabled = this.page <= 0; $('#rd-next').disabled = false;
-        scr.value = String(this.page); scr.style.setProperty('--pct', (L.total > 1 ? this.page / (L.total - 1) * 100 : 0) + '%');
       } else {
         const pct = L.total > 0 ? Math.min(1, cur / L.total) : 0;
         $('#rd-page').textContent = Settings.get('showPageNumbers') ? Math.round(pct * 100) + '%' : '';
         $('#rd-left').textContent = '';
         $('#rd-prev').disabled = cur <= 0; $('#rd-next').disabled = false;
-        scr.value = String(cur); scr.style.setProperty('--pct', pct * 100 + '%');
       }
+      this.updateTimeline();
       this.updateBookmarkButton();
     },
     scheduleSave() { clearTimeout(this._saveTimer); this._saveTimer = setTimeout(() => this.saveProgress(), 600); },
@@ -576,17 +592,22 @@ p.books-error { text-align: center; opacity: 0.6; margin-top: 30%; }
       if (horizontal && !Settings.get('wheelHorizontal')) return;
       if (Settings.get('wheelInvert')) d = -d;
       if (!d) return;
+      // A click of a notched mouse wheel (or tilt wheel) is one page, regardless of how many pixels the OS maps it to.
+      const legacy = horizontal ? (e.wheelDeltaX || 0) : (e.wheelDeltaY || 0);
+      const discrete = e.deltaMode !== 0 || Math.abs(legacy) >= 100 || Math.abs(d) >= 50;
+      const threshold = (WHEEL_THRESHOLD[Settings.get('wheelSensitivity')] || WHEEL_THRESHOLD.medium) * (horizontal ? 0.6 : 1);
       const w = this._wheel, now = performance.now();
       const gap = now - w.last; w.last = now;
-      if (gap > 150) { w.acc = 0; w.locked = false; w.lastDelta = 0; }
-      const threshold = WHEEL_THRESHOLD[Settings.get('wheelSensitivity')] || WHEEL_THRESHOLD.medium;
+      if (gap > 400) { w.acc = 0; w.locked = false; w.lastDelta = 0; }
+      const turn = () => { d > 0 ? this.next() : this.prev(); w.acc = 0; w.locked = true; };
+      if (discrete) { turn(); w.lastDelta = d; return; }
       if (w.locked) {
-        // After a turn, ignore the decaying tail of an inertial gesture; steady or increasing input (a spinning wheel) keeps turning at double the threshold.
-        if (Math.abs(d) >= Math.abs(w.lastDelta) * 0.85) { w.acc += d; if (Math.abs(w.acc) >= threshold * 2) { w.acc > 0 ? this.next() : this.prev(); w.acc = 0; } }
+        // After a turn, ignore the decaying tail of an inertial trackpad gesture; steady or increasing input keeps turning at double the threshold.
+        if (Math.abs(d) >= Math.abs(w.lastDelta) * 0.85) { w.acc += d; if (Math.abs(w.acc) >= threshold * 2) turn(); }
         w.lastDelta = d; return;
       }
       w.acc += d; w.lastDelta = d;
-      if (Math.abs(w.acc) >= threshold) { w.acc > 0 ? this.next() : this.prev(); w.acc = 0; w.locked = true; }
+      if (Math.abs(w.acc) >= threshold) turn();
     },
     onKey(e) {
       if (!this.isOpen) return;
@@ -662,17 +683,21 @@ p.books-error { text-align: center; opacity: 0.6; margin-top: 30%; }
       const show = () => { reader.classList.remove('chrome-hidden'); clearTimeout(this._chromeTimer); this._chromeTimer = null; };
       if (!fs) { show(); return; }
       const H = window.innerHeight;
-      const nearBars = pointerY != null && (pointerY < 96 || pointerY > H - 88);
-      if (nearBars || UI.hasOpen() || this._hlPopover) { show(); return; }
+      const nearBars = pointerY != null && (pointerY < 96 || pointerY > H - 120);
+      if (nearBars || UI.hasOpen() || this._hlPopover || this._tlDragging) { show(); return; }
       if (!this._chromeTimer) this._chromeTimer = setTimeout(() => {
         this._chromeTimer = null;
-        if (this.isOpen && (global.App ? App.isFullscreen() : !!document.fullscreenElement) && !UI.hasOpen() && !this._hlPopover) reader.classList.add('chrome-hidden');
+        if (this.isOpen && (global.App ? App.isFullscreen() : !!document.fullscreenElement) && !UI.hasOpen() && !this._hlPopover && !this._tlDragging) reader.classList.add('chrome-hidden');
       }, 1000);
     },
     onMouseMove(e, fromFrame) {
       if (!this.isOpen) return;
-      let y = e.clientY;
-      if (fromFrame && this.frame) y += this.frame.getBoundingClientRect().top;
+      let x = e.clientX, y = e.clientY;
+      if (fromFrame && this.frame) { const r = this.frame.getBoundingClientRect(); x += r.left; y += r.top; }
+      const stage = $('#rd-stage'), W = window.innerWidth;
+      const paged = this.layout && this.layout.mode === 'paginated' && this.book && this.book.kind !== 'pdf';
+      stage.classList.toggle('near-left', paged && x < 110);
+      stage.classList.toggle('near-right', paged && x > W - 110);
       this.refreshChrome(y);
     },
 
@@ -789,6 +814,7 @@ p.books-error { text-align: center; opacity: 0.6; margin-top: 30%; }
         UI.toast('Bookmark added', { icon: 'bookmarkFill' });
       }
       this.updateBookmarkButton();
+      this.renderTimelineMarks();
     },
 
     /* ------------------------------------------------------------------ panels */
@@ -890,6 +916,7 @@ p.books-error { text-align: center; opacity: 0.6; margin-top: 30%; }
       const btn = $('#rd-appearance');
       if (btn._popover) { btn._popover.close(); return; }
       const box = el('div.appearance');
+      const pdf = this.book && this.book.kind === 'pdf';
       const row = (label, control, sub, key) => el('div.ap-row', { dataset: key ? { row: key } : null }, el('div.ap-label', label, sub ? el('span.ap-sub', sub) : null), control);
       const sizeVal = el('div.ap-size-value');
       const themes = el('div.themes');
@@ -901,8 +928,10 @@ p.books-error { text-align: center; opacity: 0.6; margin-top: 30%; }
         const scrolling = Settings.get('layout') === 'scroll';
         for (const r of box.querySelectorAll('[data-row="paginated-only"]')) r.classList.toggle('disabled', scrolling);
       };
-      box.appendChild(el('div.ap-size', el('button', { type: 'button', title: 'Smaller text (⌘−)', onclick: () => this.changeFontSize(-10) }, 'A'), el('button', { type: 'button', title: 'Larger text (⌘+)', onclick: () => this.changeFontSize(10) }, 'A')));
-      box.appendChild(sizeVal);
+      if (!pdf) {
+        box.appendChild(el('div.ap-size', el('button', { type: 'button', title: 'Smaller text (⌘−)', onclick: () => this.changeFontSize(-10) }, 'A'), el('button', { type: 'button', title: 'Larger text (⌘+)', onclick: () => this.changeFontSize(10) }, 'A')));
+        box.appendChild(sizeVal);
+      }
       box.appendChild(el('div.section-title', 'Themes'));
       for (const [id, t] of Object.entries(THEMES)) {
         const sw = el('div.theme-swatch', { dataset: { theme: id }, class: t.bold ? 'bold' : '', style: { '--tbg': t.bg, '--tfg': t.fg }, role: 'button', tabindex: 0 }, 'Aa', el('small', t.name));
@@ -910,7 +939,15 @@ p.books-error { text-align: center; opacity: 0.6; margin-top: 30%; }
         themes.appendChild(sw);
       }
       box.appendChild(themes);
-      box.appendChild(row('Auto-Night Theme', UI.switchEl(Settings.get('autoNight'), v => Settings.set('autoNight', v)), 'Use a dark theme when the system is in Dark Mode'));
+      box.appendChild(row('Auto-Night Theme', UI.switchEl(Settings.get('autoNight'), v => Settings.set('autoNight', v)), 'Follow the system: Original in Light Mode, Focus in Dark Mode'));
+      if (pdf) {
+        box.appendChild(el('div.ap-note', 'Themes tint the PDF viewer. Text size, fonts and layout apply to books.'));
+        const onChangePdf = () => refresh();
+        window.addEventListener('settings:change', onChangePdf);
+        UI.popover(btn, box, { align: 'start', onClose: () => window.removeEventListener('settings:change', onChangePdf) });
+        refresh();
+        return;
+      }
       box.appendChild(el('div.section-title', 'Font'));
       fontBtn.addEventListener('click', () => UI.menu(FONTS.map(f => ({ label: f.name, font: f.css || undefined, checked: Settings.get('font') === f.id, action: () => { Settings.set('font', f.id); refresh(); } })), { anchor: fontBtn, matchWidth: true }));
       box.appendChild(row('Font', fontBtn));
@@ -935,6 +972,63 @@ p.books-error { text-align: center; opacity: 0.6; margin-top: 30%; }
       window.addEventListener('settings:change', onChange);
       UI.popover(btn, box, { align: 'start', onClose: () => window.removeEventListener('settings:change', onChange) });
       refresh();
+    },
+
+    /* ------------------------------------------------------------------ timeline */
+    initTimeline() {
+      const tl = $('#rd-timeline'), track = tl.querySelector('.tl-track');
+      const fractionAt = clientX => { const r = track.getBoundingClientRect(); return U.clamp((clientX - r.left) / r.width, 0, 1); };
+      const posAt = f => { const L = this.layout; if (!L) return 0; return L.mode === 'paginated' ? Math.round(f * Math.max(0, L.total - 1)) : Math.round(f * L.total); };
+      const preview = (f, pinned) => { this._tlPreview = pinned ? f : null; this.updateTimeline(f); };
+      tl.addEventListener('pointerdown', e => {
+        if (!this.layout || e.button !== 0) return;
+        e.preventDefault();
+        this._tlDragging = true; $('#reader').classList.add('tl-dragging');
+        tl.setPointerCapture(e.pointerId);
+        const f = fractionAt(e.clientX); preview(f, true); this.goTo(posAt(f), { instant: true });
+      });
+      tl.addEventListener('pointermove', e => {
+        if (!this.layout) return;
+        const f = fractionAt(e.clientX);
+        if (this._tlDragging) { preview(f, true); this.goTo(posAt(f), { instant: true }); }
+        else preview(f, false);
+      });
+      const release = e => {
+        if (!this._tlDragging) return;
+        this._tlDragging = false; $('#reader').classList.remove('tl-dragging'); this._tlPreview = null;
+        try { tl.releasePointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+        this.updateTimeline(); this.touch();
+      };
+      tl.addEventListener('pointerup', release); tl.addEventListener('pointercancel', release);
+      tl.addEventListener('pointerleave', () => { if (!this._tlDragging) { this._tlPreview = null; tl.classList.remove('hovering'); this.updateTimeline(); } });
+      tl.addEventListener('pointerenter', () => tl.classList.add('hovering'));
+      tl.addEventListener('keydown', e => { if (e.key === 'ArrowRight') { e.preventDefault(); this.next(); } else if (e.key === 'ArrowLeft') { e.preventDefault(); this.prev(); } });
+    },
+    /** Chapter ticks and bookmark dots along the track. */
+    renderTimelineMarks() {
+      const L = this.layout, marks = $('#tl-marks'), dots = $('#tl-bookmarks'); if (!L || !marks) return;
+      marks.innerHTML = ''; dots.innerHTML = '';
+      const span = L.mode === 'paginated' ? Math.max(1, L.total - 1) : Math.max(1, L.total);
+      for (const s of this.chapterStarts()) { if (s <= 0 || s >= span) continue; marks.appendChild(el('i', { style: { left: (s / span * 100) + '%' } })); }
+      for (const b of this.bookmarks) { if (b._pos == null) continue; dots.appendChild(el('i', { style: { left: (U.clamp(b._pos / span, 0, 1) * 100) + '%' }, title: b.chapter || 'Bookmark' })); }
+    },
+    /** Fill, thumb and label. `hoverFraction` previews a position under the pointer without moving. */
+    updateTimeline(hoverFraction) {
+      const L = this.layout, tl = $('#rd-timeline'); if (!L || !tl || tl.hidden) return;
+      const span = L.mode === 'paginated' ? Math.max(1, L.total - 1) : Math.max(1, L.total);
+      const cur = L.mode === 'paginated' ? this.page : this.currentY();
+      const curF = U.clamp(cur / span, 0, 1);
+      const f = hoverFraction != null ? hoverFraction : (this._tlPreview != null ? this._tlPreview : curF);
+      const pos = L.mode === 'paginated' ? Math.round(f * span) : Math.round(f * span);
+      $('#tl-fill').style.width = (curF * 100) + '%';
+      $('#tl-thumb').style.left = (curF * 100) + '%';
+      const label = $('#tl-label');
+      const entry = this.chapterAt(pos);
+      const where = L.mode === 'paginated' ? `Page ${Math.min(L.total, pos + 1)} of ${L.total}` : `${Math.round(f * 100)}%`;
+      label.textContent = entry && entry.label ? `${where} · ${entry.label}` : where;
+      label.style.left = (f * 100) + '%';
+      tl.classList.toggle('previewing', hoverFraction != null && !this._tlDragging);
+      tl.setAttribute('aria-valuenow', String(Math.round(curF * 100)));
     },
 
     /* ------------------------------------------------------------------ statistics */

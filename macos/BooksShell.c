@@ -122,10 +122,10 @@ static id open_panel(BOOL multiple) {
   call_bool(panel, "setAllowsMultipleSelection:", multiple);
   call_bool(panel, "setCanChooseFiles:", 1);
   call_bool(panel, "setCanChooseDirectories:", 0);
-  callv1(panel, "setMessage:", nsstr("Add EPUB, PDF or text files to your library"));
+  callv1(panel, "setMessage:", nsstr("Add EPUB, Kindle (MOBI/AZW3), PDF or text files to your library"));
   callv1(panel, "setPrompt:", nsstr("Add"));
-  id types[] = { nsstr("epub"), nsstr("pdf"), nsstr("txt"), nsstr("text"), nsstr("md"), nsstr("markdown") };
-  if (responds(panel, "setAllowedFileTypes:")) callv1(panel, "setAllowedFileTypes:", nsarray(types, 6));
+  id types[] = { nsstr("epub"), nsstr("mobi"), nsstr("azw"), nsstr("azw3"), nsstr("prc"), nsstr("pdf"), nsstr("txt"), nsstr("text"), nsstr("md"), nsstr("markdown") };
+  if (responds(panel, "setAllowedFileTypes:")) callv1(panel, "setAllowedFileTypes:", nsarray(types, 10));
   long result = ret_long(panel, "runModal");
   return result == 1 /* NSModalResponseOK */ ? call0(panel, "URLs") : NULL;
 }

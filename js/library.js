@@ -521,12 +521,18 @@
       let kind, blob = file, meta = {}, cover = null, words = 0, pages = null;
       if (ext === 'epub' || file.type === 'application/epub+zip') kind = 'epub';
       else if (ext === 'pdf' || file.type === 'application/pdf') kind = 'pdf';
+      else if (['mobi', 'azw', 'azw3', 'prc', 'kf8'].includes(ext) || /mobipocket|x-mobi8/.test(file.type)) kind = 'mobi';
       else if (['txt', 'text', 'md', 'markdown'].includes(ext) || /^text\//.test(file.type)) kind = 'text';
-      else throw new Error('Only EPUB, PDF and plain-text files can be added.');
+      else throw new Error('Only EPUB, Kindle (MOBI/AZW3), PDF and plain-text files can be added.');
 
+      if (kind === 'mobi') {
+        if (!global.MOBI) throw new Error('Kindle support is unavailable.');
+        blob = await MOBI.toEPUB(await file.arrayBuffer());   // converted once at import; stored and read as EPUB
+        kind = 'epub';
+      }
       if (kind === 'epub') {
         if (!Zip.supported) throw new Error('This browser cannot open EPUB files (no DecompressionStream support).');
-        const epub = await EPUB.open(file);
+        const epub = await EPUB.open(blob);
         meta = epub.metadata;
         try { cover = await epub.coverBlob(); } catch (e) { cover = null; }
         epub.dispose();

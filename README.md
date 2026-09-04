@@ -44,8 +44,9 @@ chapter detection). The library starts empty — nothing is bundled.
 | Sidebar | Home · Library (All, Finished, Books, PDFs) · My Collections (create, rename, delete, drag books onto them) |
 | Home | **Continue** carousel with progress and time left · **Reading Goals** (daily minutes ring + streak, books per year) · library statistics. Each section can be hidden with **Customize** (also in the ••• menu). |
 | Library | Grid / list view · sort by Recent, Title, Author · search · NEW badge · finished check · multi-select (⌘/⇧-click) · keyboard navigation · right-click menu (Read, Get Info, Mark as Finished, Add to Collection, Reset Position, Delete) · Get Info sheet with editable title/author |
-| Reader | Paginated single or **two-page spread** (automatic on wide windows) or **vertical scrolling** · page counter and “pages left in this chapter” · scrubber · hover page-turn buttons · slide page turns · full screen with chrome that hides and returns when the pointer nears the top or bottom · resumes exactly where you left off |
-| Themes & Settings | Six themes (Original, Quiet, Paper, Bold, Calm, Focus) · Auto-Night · ten fonts · text size · line spacing · **text width** (Narrow / Medium / Wide / Full, applies to both layouts) · justification · hyphenation · page layout options · display toggles |
+| Formats | EPUB 2/3 · **Kindle MOBI / AZW / AZW3 (KF8)** — DRM-free files are converted to EPUB on import, keeping images, fonts, styles and the table of contents · PDF (native viewer, themeable) · plain text / Markdown (typeset into a book) |
+| Reader | Paginated single or **two-page spread** (automatic on wide windows) or **vertical scrolling** · page counter and “pages left in this chapter” · **timeline** with chapter markers, bookmark dots and a page/chapter readout that follows the pointer (drag to scrub, stays put while dragging) · page-turn buttons that appear only when the pointer nears the left or right edge · slide page turns · full screen with chrome that hides and returns when the pointer nears the top or bottom · resumes exactly where you left off |
+| Themes & Settings | Six themes (Original, Quiet, Paper, Bold, Calm, Focus) · Auto-Night follows the system (Original in Light Mode, **Focus** in Dark Mode) · PDFs take the same themes · themed scrollbar in vertical scrolling · ten fonts · text size · line spacing · **text width** (Narrow / Medium / Wide / Full, applies to both layouts) · justification · hyphenation · page layout options · display toggles |
 | Annotations | Five highlight colours + underline · notes · bookmarks (⌘D) · Contents / Bookmarks / Notes panel · click a highlight to change, annotate or remove it · export as Markdown |
 | Search | Full-text search in the book, grouped by chapter, Enter/⇧Enter to step through results |
 | Goals & stats | Reading time is tracked while a book is open (pauses after 2 min idle) · daily goal and streak · yearly books goal · books are marked Finished when you reach the end |
@@ -53,9 +54,9 @@ chapter detection). The library starts empty — nothing is bundled.
 ### Mouse wheel & trackpad controls
 
 In paginated mode the scroll wheel turns pages: scroll **down or right** for the next page, **up or left** for the
-previous one. A single wheel notch or a two-finger swipe turns exactly one page — the inertial tail of a trackpad
-flick is ignored, while a steadily spinning wheel keeps turning pages. A horizontal or tilt wheel and **⇧ + wheel**
-turn pages too. **⌘ + wheel** (or pinch) changes the text size. Configurable in *Themes & Settings → Scroll Wheel &
+previous one. Each click of a notched mouse wheel is one page, however many pixels the system maps it to; a
+two-finger swipe turns exactly one page — the inertial tail of a trackpad flick is ignored, while steady input keeps
+turning pages. A horizontal or tilt wheel and **⇧ + wheel** turn pages too. **⌘ + wheel** (or pinch) changes the text size. Configurable in *Themes & Settings → Scroll Wheel &
 Trackpad*:
 
 - Scroll Wheel Turns Pages (on/off)
@@ -88,6 +89,7 @@ js/icons.js           SF-Symbols-style inline SVG icons
 js/zip.js             ZIP reader (DecompressionStream) and STORE writer
 js/db.js              IndexedDB layer, settings, reading statistics
 js/epub.js            EPUB 2/3 parser, resource + CSS scoping, EPUB builder, TXT → chapters
+- `js/mobi.js` — Kindle (MOBI/KF8) → EPUB converter
 js/ui.js              menus (with submenus), popovers, sheets, toasts, controls
 js/library.js         library data, views, import pipeline, collections, Get Info
 js/reader.js          pagination engine, locators, wheel/keys, themes, annotations, search, stats
@@ -132,7 +134,10 @@ over as base64, self-test results).
 - A current browser: EPUB decompression uses `DecompressionStream('deflate-raw')` (Safari 16.4+, Chrome 103+,
   Firefox 113+). Constructable stylesheets and `color-mix()` are used for CSS. Books.app uses the system WebKit,
   so it needs the macOS version that ships Safari 16.4 or newer (macOS 13.3+) for EPUBs.
-- PDFs use the browser’s native viewer, so their reading position and page count are not tracked like EPUBs.
+- PDFs use the browser’s native viewer, so their reading position and page count are not tracked like EPUBs; themes
+  are applied as colour filters over the viewer.
+- Kindle files must be DRM-free (files bought from the Kindle store are encrypted and are refused with a clear
+  message). Old MOBI 7 books keep their HTML-3 formatting; KF8/AZW3 books keep their CSS, fonts and images.
 - There are no audiobooks — Books only ever offered those through the store.
 - Storage is per browser profile; clearing site data removes the library. *Storage & Data…* in the ••• menu shows
   usage and offers a Markdown export of highlights and notes.
