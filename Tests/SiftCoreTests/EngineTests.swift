@@ -69,6 +69,24 @@ final class EngineTests: XCTestCase {
         XCTAssertEqual(engine.log.entries.filter { $0.kind == .removed }.count, 5)
     }
 
+    func testASweepIsDueWhereWatchingBeganAfterTheLastOne() throws {
+        var due: [[String]] = []
+        let lock = NSLock()
+        engine.onSweepDueChanged = { roots in lock.lock(); due.append(roots.map(\.path)); lock.unlock() }
+        XCTAssertTrue(engine.sweepDue.isEmpty, "nothing is watched yet")
+        engine.start()
+        XCTAssertEqual(Set(engine.sweepDue.map(\.path)), [box.path + "/Users/me", box.path + "/USB"], "never swept: due everywhere")
+        engine.noteSwept(engine.roots())
+        XCTAssertTrue(engine.sweepDue.isEmpty)
+        XCTAssertEqual(engine.settings.sweeps.count, 2, "remembered")
+        engine.isPaused = true
+        engine.isPaused = false
+        XCTAssertEqual(engine.sweepDue.count, 2, "nothing watched while paused")
+        engine.noteSwept([engine.roots().first { $0.path.hasSuffix("USB") }!])
+        XCTAssertEqual(engine.sweepDue.map(\.path), [box.path + "/Users/me"])
+        lock.lock(); XCTAssertEqual(due.last, [box.path + "/Users/me"]); lock.unlock()
+    }
+
     func testWatchingReactsToChanges() throws {
         var removed: [Item] = []
         let lock = NSLock()

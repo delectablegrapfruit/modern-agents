@@ -47,6 +47,8 @@ final class Model: ObservableObject {
     @Published private(set) var activity: [Entry] = []
     @Published private(set) var isPaused = false
     @Published private(set) var sweep: SweepState = .idle
+    /// Places where junk may have arrived unwatched since the last sweep.
+    @Published private(set) var sweepDue: [Root] = []
     /// Views as edited in the window; `applied` is what Finder has.
     @Published var draft: ViewSettings
     @Published private(set) var applied: ViewSettings
@@ -62,6 +64,8 @@ final class Model: ObservableObject {
     private var wantsWindow: Bool
 
     private var token = WorkToken()
+    /// The roots the found items came from, swept once they are removed.
+    private var sweptRoots: [Root] = []
     private var activityRefresh: Task<Void, Never>?
     private var observers: [NSObjectProtocol] = []
 
@@ -83,6 +87,7 @@ final class Model: ObservableObject {
         guardian.onFinderQuit = { Task.detached(priority: .utility) { engine.reconcileStores() } }
         engine.onRootsChanged = { [weak self] list in Task { @MainActor in self?.roots = list } }
         engine.onLockedChanged = { [weak self] list in Task { @MainActor in self?.locked = list } }
+        engine.onSweepDueChanged = { [weak self] list in Task { @MainActor in self?.sweepDue = list } }
         engine.log.onAppend = { [weak self] in Task { @MainActor in self?.scheduleActivityRefresh() } }
     }
 
@@ -165,6 +170,14 @@ final class Model: ObservableObject {
         return labels.isEmpty ? "Nothing to watch" : "Watching " + labels.joined(separator: ", ")
     }
 
+    /// Why a sweep is due, for the mark on the Sweep button.
+    var sweepDueText: String? {
+        guard !sweepDue.isEmpty else { return nil }
+        var labels: [String] = []
+        for root in sweepDue where !labels.contains(root.label) { labels.append(root.label) }
+        return "Not swept since watching began: " + labels.joined(separator: ", ")
+    }
+
     /// Pause stops everything automatic: cleaning and the window guard.
     func togglePause() {
         isPaused.toggle()
@@ -199,9 +212,11 @@ final class Model: ObservableObject {
                         self.sweep = .scanning(directory)
                     }
                 }, isCancelled: { token.isCancelled })
+                if items.isEmpty, !token.isCancelled { engine.noteSwept(roots) }
                 await MainActor.run { [weak self] in
                     guard let self, !token.isCancelled else { return }
                     self.sweep = .found(items)
+                    self.sweptRoots = items.isEmpty ? [] : roots
                 }
             } catch {
                 await MainActor.run { [weak self] in
@@ -219,6 +234,7 @@ final class Model: ObservableObject {
         self.token = token
         sweep = .removing(done: 0, total: items.count)
         let engine = self.engine
+        let swept = sweptRoots
         Task.detached(priority: .userInitiated) { [weak self] in
             let roots = engine.roots().map(\.path)
             let outcome = engine.remove(items, within: roots, source: "sweep", progress: { phase in
@@ -228,6 +244,7 @@ final class Model: ObservableObject {
                     self.sweep = .removing(done: done, total: total)
                 }
             }, isCancelled: { token.isCancelled })
+            if !token.isCancelled { engine.noteSwept(swept) }
             await MainActor.run { [weak self] in self?.sweep = .finished(outcome) }
         }
     }

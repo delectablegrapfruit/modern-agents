@@ -38,6 +38,8 @@ public final class Engine {
     public var onRemoved: ((Outcome, Root) -> Void)?
     /// Items only an administrator can remove, as they are found and cleared.
     public var onLockedChanged: (([Item]) -> Void)?
+    /// The roots where a sweep is due, whenever that set changes.
+    public var onSweepDueChanged: (([Root]) -> Void)?
     /// Removes as root what the app itself could not. Set once the helper is installed.
     public var privilegedRemove: (([Item]) -> Outcome)?
 
@@ -54,6 +56,11 @@ public final class Engine {
     private var _plan: StorePlan
     private var _safety: Safety
     private var _locked: [String: Item] = [:]
+    /// When each root was last unwatched: watching began (start, resume, a
+    /// disk arriving) or the system reported changes it could not name. Junk
+    /// from before that moment is only found by a sweep.
+    private var _unwatched: [String: Date] = [:]
+    private var _lastDue: Set<String> = []
 
     public init(store: SettingsStore = SettingsStore(),
                 volumes: VolumeSource = Volumes.system(),
@@ -201,10 +208,12 @@ public final class Engine {
                 let excluded = protected.filter { Paths.isInside($0, root.path) && $0 != root.path }
                 let watcher = Watchers.make(root: root.path, excluding: excluded)
                 _watches[root.path] = (root, watcher)
+                _unwatched[root.path] = Date()
                 toStart.append((root, watcher))
             }
         }
         toStop.forEach { $0.stop() }
+        noteSweepDue()
         for (root, watcher) in toStart {
             watcher.onChange = { [weak self] change in
                 guard let self else { return }
@@ -226,6 +235,9 @@ public final class Engine {
         case .subtree(let directory):
             let folder = Paths.standardize(directory)
             guard Paths.isInside(folder, root.path) else { return }
+            // Only the folder itself is looked at; what lies deeper waits for a sweep.
+            state.sync { _unwatched[root.path] = Date() }
+            noteSweepDue()
             let scanner = JunkScanner(safety: safety)
             guard let items = try? scanner.scan(root: folder, depth: Watchers.subtreeDepth), !items.isEmpty else { return }
             outcome = remove(items, within: [root.path], source: root.label, quiet: true)
@@ -235,6 +247,38 @@ public final class Engine {
             outcome = remove(items, within: [root.path], source: root.label, quiet: true)
         }
         if !outcome.removed.isEmpty { onRemoved?(outcome, root) }
+    }
+
+    // MARK: - Sweeps
+
+    /// Roots where junk could have arrived unwatched since the last sweep:
+    /// watching started after it, or the system reported changes it could not
+    /// name. Nothing is read from disk to know this.
+    public var sweepDue: [Root] {
+        let (sweeps, unwatched, watched) = state.sync { (_settings.sweeps, _unwatched, _watches.values.map(\.root)) }
+        return watched.filter { root in
+            guard let since = unwatched[root.path] else { return false }
+            guard let last = sweeps[root.path] else { return true }
+            return last < since
+        }.sorted { $0.path < $1.path }
+    }
+
+    private func noteSweepDue() {
+        let due = sweepDue
+        let changed: Bool = state.sync {
+            let paths = Set(due.map(\.path))
+            defer { _lastDue = paths }
+            return paths != _lastDue
+        }
+        if changed { onSweepDueChanged?(due) }
+    }
+
+    /// A sweep went through these roots in full.
+    public func noteSwept(_ roots: [Root], at date: Date = Date()) {
+        var settings = self.settings
+        for root in roots { settings.sweeps[root.path] = date }
+        update(settings)
+        noteSweepDue()
     }
 
     // MARK: - Folder stores

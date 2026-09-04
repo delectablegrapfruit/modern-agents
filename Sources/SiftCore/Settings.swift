@@ -1,16 +1,21 @@
 import Foundation
 
-/// Everything the app remembers: how folders look. Nothing else needs a setting.
+/// Everything the app remembers: how folders look, and when each place was
+/// last swept. Nothing else needs a setting.
 public struct Settings: Hashable, Codable {
     public var views = ViewSettings()
+    /// When each root (by path) was last swept through, so a sweep is known
+    /// to be due where junk could have arrived unwatched since.
+    public var sweeps: [String: Date] = [:]
 
     public init() {}
 
-    enum CodingKeys: String, CodingKey { case views }
+    enum CodingKeys: String, CodingKey { case views, sweeps }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         views = (try? c.decodeIfPresent(ViewSettings.self, forKey: .views)) ?? ViewSettings()
+        sweeps = (try? c.decodeIfPresent([String: Date].self, forKey: .sweeps)) ?? [:]
     }
 }
 
