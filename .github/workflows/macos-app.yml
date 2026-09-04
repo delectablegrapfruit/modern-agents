@@ -62,16 +62,17 @@ jobs:
           (cd dist && shasum -a 256 Books.app.zip Books.dmg | tee SHA256SUMS.txt)
           ls -la dist
 
-      - name: Upload packages
+      - name: Upload packages (and test screenshots, also when a test failed)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: Books.app
-          if-no-files-found: error
+          if-no-files-found: warn
           path: |
             dist/Books.app.zip
             dist/Books.dmg
             dist/SHA256SUMS.txt
-            build/launch-test.png
+            build/*.png
 
       - name: Commit packages to dist/
         if: github.event_name == 'push'
