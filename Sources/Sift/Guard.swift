@@ -77,26 +77,45 @@ final class Guardian {
 
     // MARK: Accessibility
 
+    /// Finder posts app-level notifications for new and focused windows, and each
+    /// window posts one when its title changes, which is what moving to another
+    /// folder does. Both are watched: a move is then seen within a fraction of a
+    /// second, and the look each second is only for a folder named like the last.
     private func attach() {
         detach()
         guard AXIsProcessTrusted(),
               let finder = NSRunningApplication.runningApplications(withBundleIdentifier: Finder.bundleID).first else { return }
         var created: AXObserver?
-        let callback: AXObserverCallback = { _, _, _, refcon in
+        let callback: AXObserverCallback = { _, element, notification, refcon in
             guard let refcon else { return }
-            Unmanaged<Guardian>.fromOpaque(refcon).takeUnretainedValue().scheduleCheck()
+            let guardian = Unmanaged<Guardian>.fromOpaque(refcon).takeUnretainedValue()
+            if notification as String == kAXWindowCreatedNotification { guardian.watch(window: element) }
+            guardian.scheduleCheck()
         }
         guard AXObserverCreate(finder.processIdentifier, callback, &created) == .success, let observer = created else { return }
         let app = AXUIElementCreateApplication(finder.processIdentifier)
+        // Never wait long on a busy Finder from the main thread.
+        AXUIElementSetMessagingTimeout(app, 0.5)
         let refcon = Unmanaged.passUnretained(self).toOpaque()
-        for name in [kAXFocusedWindowChangedNotification, kAXMainWindowChangedNotification,
-                     kAXWindowCreatedNotification, kAXTitleChangedNotification] {
+        for name in [kAXFocusedWindowChangedNotification, kAXMainWindowChangedNotification, kAXWindowCreatedNotification] {
             AXObserverAddNotification(observer, app, name as CFString, refcon)
         }
         CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .commonModes)
         self.observer = observer
+        var windows: CFTypeRef?
+        if AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &windows) == .success,
+           let list = windows as? [AXUIElement] {
+            list.forEach(watch(window:))
+        }
         onModeChange?(true)
         scheduleCheck()
+    }
+
+    /// A window's title is the folder it shows; a change is a move.
+    private func watch(window: AXUIElement) {
+        guard let observer else { return }
+        AXUIElementSetMessagingTimeout(window, 0.5)
+        AXObserverAddNotification(observer, window, kAXTitleChangedNotification as CFString, Unmanaged.passUnretained(self).toOpaque())
     }
 
     private func detach() {
@@ -110,7 +129,7 @@ final class Guardian {
     private func scheduleCheck() {
         guard !checkPending else { return }
         checkPending = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
             self?.checkPending = false
             self?.check()
         }
@@ -118,8 +137,8 @@ final class Guardian {
 
     private func tick() {
         if observer == nil && AXIsProcessTrusted() { attach() }
-        // Accessibility makes new and focused windows instant, but Finder posts nothing
-        // for navigation inside a window, so a look each second stays, while browsing.
+        // With Accessibility nearly every move is seen at once; the look each second
+        // covers what posts nothing (a folder named like the last) and the case without it.
         guard finderIsFrontmost else { return }
         check()
     }

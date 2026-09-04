@@ -38,8 +38,8 @@ that one record and keeps the file to exactly that, so a view changed in Finder 
 Finder also keeps a window's view while you browse; Sift watches Finder's windows and gives each folder the
 view it should have as soon as a window shows it, the default included: a window leaving a custom folder for
 an ordinary one is put back to the default in that same step. That needs Automation access (asked once).
-Sift looks at Finder's windows once a second while Finder is the frontmost app, and with Accessibility
-access new and focused windows are handled at once. Finder is spoken to from a separate process with a
+With Accessibility access a window is handled the moment it moves (Finder's windows say so); without it,
+Sift looks once a second while Finder is the frontmost app. Finder is spoken to from a separate process with a
 short timeout, so a busy Finder never holds Sift's window. Every view it sets is listed under Activity.
 
 ## The window
