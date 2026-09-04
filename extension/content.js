@@ -45,20 +45,28 @@
    * applied in full once the gesture turns out to be a scrub. */
   const DECIDE_PX = 6;
   const DECIDE_EVENTS = 4;
-  /* Rate modifiers.
+  /* Distance per movement.
    *
-   * Velocity is a minor one: scrolls are quick flicks, so speed says little
-   * about intent. Below V_SLOW px/s the rate is VELOCITY_MIN of the set
-   * speed; from V_FAST px/s up it is the set speed; a smooth ramp joins them.
+   * The set speed (seconds per 100 px) is the base: at the default, a small
+   * slow nudge of a few pixels moves tenths of a second and a long quick
+   * flick about a second. No single wheel event moves more than STEP_MAX_S
+   * (beyond it only STEP_OVER of the excess counts), so a flick never jumps
+   * much more than a second.
    *
-   * Gross scrubbing comes from persistence instead: scrolling kept up in
-   * one direction, in quick succession (gaps under STREAK_GAP_MS), for
-   * SUSTAIN_START_MS ramps the rate up to SUSTAIN_MAX times the set speed by
-   * SUSTAIN_FULL_MS. A pause or a reversal (you reverse when you overshoot,
-   * which is when you want fine control) resets it. */
-  const V_SLOW = 400;
-  const V_FAST = 2400;
-  const VELOCITY_MIN = 0.7;
+   * Velocity adds a very minor percentage at high speeds only: nothing up
+   * to V_BOOST_START px/s, BOOST_MAX (as a fraction) at V_BOOST_FULL px/s and
+   * above, a smooth ramp between.
+   *
+   * Gross scrubbing comes from persistence: scrolling kept up in one
+   * direction, in quick succession (gaps under STREAK_GAP_MS), for
+   * SUSTAIN_START_MS ramps the rate (and the per-event cap) up to SUSTAIN_MAX
+   * times by SUSTAIN_FULL_MS. A pause or a reversal (you reverse when you
+   * overshoot, which is when you want fine control) resets it. */
+  const STEP_MAX_S = 1;
+  const STEP_OVER = 0.1;
+  const V_BOOST_START = 1500;
+  const V_BOOST_FULL = 8000;
+  const BOOST_MAX = 0.2;
   const STREAK_GAP_MS = 350;
   const SUSTAIN_START_MS = 3000;
   const SUSTAIN_FULL_MS = 6000;
@@ -617,7 +625,7 @@
           if (ws >= wo && video.isConnected) {
             mode = 'scrub';
             beginSession(video);
-            scrub(e, total, Math.max(now - bufT0, FRAME_MS));
+            scrub(e, total, bufN > 1 ? Math.max(now - bufT0, FRAME_MS) : NaN);
           } else {
             mode = 'page';
           }
@@ -907,12 +915,21 @@
     return x * x * (3 - 2 * x);
   }
 
-  /* Minor rate multiplier for `px` of movement delivered over `dtMs`.
+  /* Very minor rate boost for `px` of movement delivered over `dtMs`.
    * Chromium delivers wheel events once per frame with their deltas summed,
    * so per-event velocity is stable. */
   function velocityGain(px, dtMs) {
+    if (!Number.isFinite(dtMs)) return 1; // a lone event has no measurable velocity
     const v = Math.abs(px) / (Math.max(dtMs, FRAME_MS / 2) / 1000);
-    return VELOCITY_MIN + (1 - VELOCITY_MIN) * smoothstep((v - V_SLOW) / (V_FAST - V_SLOW));
+    return 1 + BOOST_MAX * smoothstep((v - V_BOOST_START) / (V_BOOST_FULL - V_BOOST_START));
+  }
+
+  /* Limit what one wheel event may move: linear up to `cap` seconds, then
+   * only STEP_OVER of the excess. */
+  function capStep(seconds, cap) {
+    const a = Math.abs(seconds);
+    if (a <= cap) return seconds;
+    return Math.sign(seconds) * (cap + (a - cap) * STEP_OVER);
   }
 
   /* Rate multiplier for persistence: how long scrolling has been kept up in
@@ -930,13 +947,13 @@
     return 1 + (SUSTAIN_MAX - 1) * smoothstep((held - SUSTAIN_START_MS) / (SUSTAIN_FULL_MS - SUSTAIN_START_MS));
   }
 
-  /* Time since the previous event of this gesture, or one frame. */
+  /* Time since the previous event of this gesture, or NaN for a lone event. */
   function eventSpacing(now) {
     const prev = recent.length > 1 ? recent[recent.length - 2].t : NaN;
-    return Number.isFinite(prev) && now - prev <= WINDOW_MS ? now - prev : FRAME_MS;
+    return Number.isFinite(prev) && now - prev <= WINDOW_MS ? now - prev : NaN;
   }
 
-  function scrub(e, px, dtMs = FRAME_MS) {
+  function scrub(e, px, dtMs = NaN) {
     const s = session;
     if (!s) return;
     const range = scrubRange(s.video);
@@ -945,7 +962,7 @@
     const fine = settings.requireModifier !== FINE_MODIFIER && hasModifier(e, FINE_MODIFIER);
     const sustain = sustainGain(e.timeStamp, px);
 
-    let dt = px * (settings.secondsPer100px / 100) * velocityGain(px, dtMs) * sustain;
+    let dt = capStep(px * (settings.secondsPer100px / 100) * velocityGain(px, dtMs) * sustain, STEP_MAX_S * sustain);
     if (settings.invert) dt = -dt;
     if (fine) dt *= FINE_FACTOR;
 

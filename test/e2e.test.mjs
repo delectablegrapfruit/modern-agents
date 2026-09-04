@@ -20,8 +20,7 @@ let srv;
 let ext;
 let page;
 
-const RATE = 4 / 100; // default: 4 s per 100 px, reached at fast wheel movement
-const SLOW = 0.7; // gain at slow wheel movement (below 400 px/s); 120 px per ~30-45 ms event is fast (gain 1)
+const RATE = 0.5 / 100; // default: 0.5 s per 100 px (no velocity boost below 1500 px/s)
 
 const time = (selector) => page.evaluate((s) => document.querySelector(s).currentTime, selector);
 const isPaused = (selector) => page.evaluate((s) => document.querySelector(s).paused, selector);
@@ -95,21 +94,21 @@ test('every bit of movement counts: sub-pixel deltas accumulate without a dead z
   const p = await centerOf(page, '#plain');
   await wheelBurst(page, p.x, p.y, 0.5, 0, 40, 4);
   await settled();
-  assert.ok(near(await time('#plain'), 10 + 20 * RATE * SLOW, 0.01), 'forty 0.5 px events = 20 px, at the slow rate');
+  assert.ok(near(await time('#plain'), 10 + 20 * RATE, 0.01), 'forty 0.5 px events = 20 px');
   await wheelBurst(page, p.x, p.y, 0.1, 0, 50, 4);
   await settled();
-  assert.ok(near(await time('#plain'), 10 + 25 * RATE * SLOW, 0.01), 'fifty 0.1 px events = 5 px more');
+  assert.ok(near(await time('#plain'), 10 + 25 * RATE, 0.01), 'fifty 0.1 px events = 5 px more');
 });
 
 test('scrolling left rewinds and clamps at the start; right clamps at the end', async () => {
   const p = await centerOf(page, '#plain');
   await wheel(page, p.x, p.y, -100, 0);
   await settled();
-  assert.ok(near(await time('#plain'), 6, 0.01));
-  await wheel(page, p.x, p.y, -1000, 0);
+  assert.ok(near(await time('#plain'), 9.5, 0.01));
+  await wheelBurst(page, p.x, p.y, -100, 0, 25, 8); // 12.5 s back: past the start
   await settled();
   assert.equal(await time('#plain'), 0);
-  await wheel(page, p.x, p.y, 5000, 0);
+  await wheelBurst(page, p.x, p.y, 100, 0, 130, 8); // 65 s forward: past the end
   await settled();
   const duration = await page.evaluate(() => document.querySelector('#plain').duration);
   assert.ok(near(await time('#plain'), duration, 0.05));
@@ -137,15 +136,15 @@ test('sideways wheel away from any video scrolls the page sideways', async () =>
 test('a mostly sideways trackpad swipe scrubs; a mostly vertical one scrolls', async () => {
   const p = await centerOf(page, '#plain');
   const s0 = await scroll();
-  await wheelBurst(page, p.x, p.y, 120, 10, 10, 8);
+  await wheelBurst(page, p.x, p.y, 30, 5, 10, 8);
   await settled();
-  assert.ok(near(await time('#plain'), 10 + 1200 * RATE, 0.02));
+  assert.ok(near(await time('#plain'), 10 + 300 * RATE, 0.02));
   assert.deepEqual(await scrolled(s0), { x: 0, y: 0 }, 'cross-axis noise never moves the page');
 
   await page.waitForTimeout(300); // let the axis lock expire
   await wheelBurst(page, p.x, p.y, 3, 8, 10, 8);
   await page.waitForTimeout(100);
-  assert.ok(near(await time('#plain'), 10 + 1200 * RATE, 0.02), 'video untouched by the vertical swipe');
+  assert.ok(near(await time('#plain'), 10 + 300 * RATE, 0.02), 'video untouched by the vertical swipe');
   assert.ok((await scrolled(s0)).y >= 60, 'page scrolled');
 });
 
@@ -154,9 +153,9 @@ test('the first diagonal events are buffered, then applied in full once the axis
   // 1 px right + 1 px down: not decisive. Then a clearly sideways swipe.
   const s0 = await scroll();
   await wheel(page, p.x, p.y, 1, 1);
-  await wheelBurst(page, p.x, p.y, 120, 5, 5, 8);
+  await wheelBurst(page, p.x, p.y, 30, 2, 5, 8);
   await settled();
-  assert.ok(near(await time('#plain'), 10 + 601 * RATE, 0.05), 'the buffered pixel was not lost');
+  assert.ok(near(await time('#plain'), 10 + 151 * RATE, 0.02), 'the buffered pixel was not lost');
   assert.deepEqual(await scrolled(s0), { x: 0, y: 0 });
 });
 
@@ -168,7 +167,7 @@ test('scrolling kept up for seconds in one direction speeds up; a reversal reset
   await settled();
   const t1 = await time('#plain');
   const first = t1 - 10;
-  assert.ok(near(first, 20 * RATE * SLOW, 0.05), `no speed-up in the first two seconds: ${first}`);
+  assert.ok(near(first, 20 * RATE, 0.01), `no speed-up in the first two seconds: ${first}`);
   await wheelBurst(page, p.x, p.y, 1, 0, 45, 60);
   await settled();
   const second = (await time('#plain')) - t1;
@@ -178,7 +177,15 @@ test('scrolling kept up for seconds in one direction speeds up; a reversal reset
   const t2 = await time('#plain');
   await wheelBurst(page, p.x, p.y, -1, 0, 5, 60);
   await settled();
-  assert.ok(near(t2 - (await time('#plain')), 5 * RATE * SLOW, 0.03), 'reversal resets the speed-up');
+  assert.ok(near(t2 - (await time('#plain')), 5 * RATE, 0.01), 'reversal resets the speed-up');
+});
+
+test('one wheel event never jumps much more than a second; the boost above 1500 px/s is small', async () => {
+  const p = await centerOf(page, '#plain');
+  await wheel(page, p.x, p.y, 2000, 0); // 10 s raw in one event
+  await settled();
+  const t = await time('#plain');
+  assert.ok(t > 11 && t < 12.2, `capped at about a second: ${t}`);
 });
 
 test('Ctrl + wheel (browser zoom) is left alone', async () => {
@@ -198,11 +205,11 @@ test('a pointer parked over a video since page load still scrubs on the first wh
   await seekTo('#plain', 10);
   await page.mouse.wheel(100, 0);
   await settled();
-  assert.ok(near(await time('#plain'), 14, 0.01), 'first event scrubs');
+  assert.ok(near(await time('#plain'), 10.5, 0.01), 'first event scrubs');
   const s0 = await scroll();
   await page.mouse.wheel(100, 0);
   await settled();
-  assert.ok(near(await time('#plain'), 18, 0.01));
+  assert.ok(near(await time('#plain'), 11, 0.01));
   assert.deepEqual(await scrolled(s0), { x: 0, y: 0 }, 'from the second event on, the page never moves');
 });
 
@@ -332,13 +339,12 @@ test('turning the extension off mid-session restores playback', async () => {
 test('cross-axis noise during a scrub is not a turn to page scrolling', async () => {
   const p = await centerOf(page, '#plain');
   const s0 = await scroll();
-  await wheelBurst(page, p.x, p.y, 120, 0.5, 4, 8);
+  await wheelBurst(page, p.x, p.y, 30, 0.5, 4, 8);
   await wheel(page, p.x, p.y, 0, 1); // trackpad noise
-  await wheelBurst(page, p.x, p.y, 3, 1, 3, 8); // small events inside a fast gesture
-  await wheelBurst(page, p.x, p.y, 120, 0.5, 4, 8);
+  await wheelBurst(page, p.x, p.y, 3, 1, 3, 8); // small events inside the gesture
+  await wheelBurst(page, p.x, p.y, 30, 0.5, 4, 8);
   await settled();
-  const t = await time('#plain');
-  assert.ok(t >= 10 + (960 + 9 * SLOW) * RATE - 0.01 && t <= 10 + 969 * RATE + 0.01, `all sideways movement counted: ${t}`);
+  assert.ok(near(await time('#plain'), 10 + 249 * RATE, 0.02), 'all sideways movement counted');
   assert.deepEqual(await scrolled(s0), { x: 0, y: 0 });
 });
 
@@ -381,7 +387,7 @@ test('vertical scrolling works right after (and during) a scrub', async () => {
   await wheel(page, p.x, p.y, 0, 100); // a mouse wheel notch, no pause in between
   await page.waitForTimeout(100);
   const t = await time('#plain');
-  assert.ok(near(t, 10 + 20 * RATE * SLOW, 0.02), `video at ${t}`);
+  assert.ok(near(t, 10 + 20 * RATE, 0.02), `video at ${t}`);
   assert.equal((await scrolled(s0)).y, 100, 'the page scrolled');
 });
 
@@ -389,9 +395,9 @@ test('a sideways swipe right after a vertical scroll still scrubs', async () => 
   const p = await centerOf(page, '#plain');
   const s0 = await scroll();
   await wheel(page, p.x, p.y, 0, 100);
-  await wheelBurst(page, p.x, p.y, 120, 2, 5, 8); // no pause: a trackpad turning sideways
+  await wheelBurst(page, p.x, p.y, 30, 2, 5, 8); // no pause: a trackpad turning sideways
   await settled();
-  assert.ok(near(await time('#plain'), 10 + 600 * RATE, 0.02), 'all sideways movement scrubbed');
+  assert.ok(near(await time('#plain'), 10 + 150 * RATE, 0.02), 'all sideways movement scrubbed');
   const sc = await scrolled(s0);
   assert.equal(sc.y, 100, 'only the vertical notch scrolled the page');
   assert.equal(sc.x, 0);
@@ -452,7 +458,7 @@ test('a video that has no metadata yet swallows sideways input, then scrubs once
   await page.waitForTimeout(200); // a new gesture, not a continuation of the one above
   await wheel(page, p.x, p.y, 100, 0);
   await settled('#lazy');
-  assert.ok(near(await time('#lazy'), 4, 0.01));
+  assert.ok(near(await time('#lazy'), 0.5, 0.01));
 });
 
 test('a video replaced mid-gesture ends the session cleanly and the new media scrubs', async () => {
@@ -465,9 +471,9 @@ test('a video replaced mid-gesture ends the session cleanly and the new media sc
     v.src = 'clip-long-gop.webm'; // fires `emptied`
   });
   await page.waitForFunction(() => document.querySelector('#plain').readyState >= 1);
-  await wheelBurst(page, p.x, p.y, 1, 0, 5, 16);
+  await wheelBurst(page, p.x, p.y, 4, 0, 5, 16);
   await settled();
-  assert.ok(near(await time('#plain'), 5 * RATE * SLOW, 0.02), 'scrubbed the new media from its start');
+  assert.ok(near(await time('#plain'), 20 * RATE, 0.02), 'scrubbed the new media from its start');
   assert.equal(await isPaused('#plain'), true);
   await leaveVideo();
   await page.waitForTimeout(400);
@@ -488,11 +494,11 @@ test('a video inside an iframe is scrubbed and the parent page does not scroll',
 /* ---- Settings ------------------------------------------------------- */
 
 test('speed setting changes the rate', async () => {
-  await setSettings(ext.worker, page, { secondsPer100px: 1 });
+  await setSettings(ext.worker, page, { secondsPer100px: 2 });
   const p = await centerOf(page, '#plain');
-  await wheel(page, p.x, p.y, 100, 0);
+  await wheel(page, p.x, p.y, 40, 0);
   await settled();
-  assert.ok(near(await time('#plain'), 11, 0.01));
+  assert.ok(near(await time('#plain'), 10.8, 0.01));
 });
 
 test('invert swaps the direction', async () => {
@@ -500,14 +506,14 @@ test('invert swaps the direction', async () => {
   const p = await centerOf(page, '#plain');
   await wheel(page, p.x, p.y, 100, 0);
   await settled();
-  assert.ok(near(await time('#plain'), 6, 0.01));
+  assert.ok(near(await time('#plain'), 9.5, 0.01));
 });
 
 test('the fine-control modifier scrubs at a tenth of the speed', async () => {
   const p = await centerOf(page, '#plain');
   await wheel(page, p.x, p.y, 100, 0, ['Alt']);
   await settled();
-  assert.ok(near(await time('#plain'), 10 + 10 * RATE, 0.01));
+  assert.ok(near(await time('#plain'), 10 + 10 * RATE, 0.005));
 });
 
 test('a required modifier gates scrubbing', async () => {
@@ -521,7 +527,7 @@ test('a required modifier gates scrubbing', async () => {
   await page.waitForTimeout(300);
   await wheel(page, p.x, p.y, 100, 0, ['Shift']);
   await settled();
-  assert.ok(near(await time('#plain'), 14, 0.01));
+  assert.ok(near(await time('#plain'), 10.5, 0.01));
 });
 
 test('Shift + vertical wheel scrubs like a sideways wheel', async () => {
@@ -529,7 +535,7 @@ test('Shift + vertical wheel scrubs like a sideways wheel', async () => {
   const s0 = await scroll();
   await wheel(page, p.x, p.y, 0, 100, ['Shift']);
   await settled();
-  assert.ok(near(await time('#plain'), 14, 0.01));
+  assert.ok(near(await time('#plain'), 10.5, 0.01));
   assert.deepEqual(await scrolled(s0), { x: 0, y: 0 });
 });
 
@@ -564,13 +570,13 @@ test('a disabled top-level site also disables players embedded in its iframes', 
 
 test('the frame on screen matches the scrub position', async () => {
   const p = await centerOf(page, '#plain');
-  await wheel(page, p.x, p.y, 62.5, 0); // 2.5 s -> t = 12.5 s = frame 375
+  await wheel(page, p.x, p.y, 61, 0); // 0.305 s -> t = 10.305 s, inside frame 309
   await settled();
   const t = await time('#plain');
-  assert.ok(near(t, 12.5, 0.01));
+  assert.ok(near(t, 10.305, 0.01));
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
   const frame = await page.evaluate(() => window.readVideoFrame(document.querySelector('#plain')));
-  assert.ok(frame.ok && near(frame.frameIndex, 375, 1), `frame on screen is ${JSON.stringify(frame)}`);
+  assert.ok(frame.ok && near(frame.frameIndex, 309, 1), `frame on screen is ${JSON.stringify(frame)}`);
 });
 
 test('a fast burst on an expensive (long-GOP) clip shows frames progressively and lands exactly', async () => {
@@ -586,18 +592,18 @@ test('a fast burst on an expensive (long-GOP) clip shows frames progressively an
     v.requestVideoFrameCallback(tick);
   });
   await seekTo('#longgop', 12);
-  // 25 events of 45 px at 60 Hz (a fast spin: full rate): 1125 px = 45 s of media in 0.4 s.
+  // 60 events of 15 px at 60 Hz (under the boost threshold): 900 px = 4.5 s of media in 1 s.
   const started = Date.now();
-  await wheelBurstFast(page, p.x, p.y, 45, 0, 25, 16);
+  await wheelBurstFast(page, p.x, p.y, 15, 0, 60, 16);
   const inputDone = Date.now();
   await settled('#longgop');
   const landed = Date.now();
   const t = await time('#longgop');
-  assert.ok(near(t, 12 + 1125 * RATE, 0.01), `landed at ${t}`);
+  assert.ok(near(t, 12 + 900 * RATE, 0.01), `landed at ${t}`);
   const frames = await page.evaluate(() => window.__frames);
-  const during = frames.filter((f) => f.t > 12 && f.t < 12 + 1125 * RATE);
-  assert.ok(during.length >= 3, `only ${during.length} intermediate frames were shown`);
-  assert.ok(inputDone - started < 900, `input took ${inputDone - started} ms (should be about 0.4 s)`);
+  const during = frames.filter((f) => f.t > 12 && f.t < 12 + 900 * RATE);
+  assert.ok(during.length >= 6, `only ${during.length} intermediate frames were shown`);
+  assert.ok(inputDone - started < 1600, `input took ${inputDone - started} ms (should be about 1 s)`);
   assert.ok(landed - inputDone < 1000, `took ${landed - inputDone} ms to settle after input stopped`);
 });
 
@@ -635,7 +641,7 @@ test('undo puts the video back where it was and resumes it if it was playing; un
   await page.evaluate(() => document.querySelector('#plain').play());
   await page.waitForFunction(() => !document.querySelector('#plain').paused);
   const p = await centerOf(page, '#plain');
-  await wheelBurst(page, p.x, p.y, 120, 0, 5, 16);
+  await wheelBurst(page, p.x, p.y, 100, 0, 6, 16);
   await settled();
   const scrubbed = await time('#plain');
   assert.ok(scrubbed > 12, `scrubbed to ${scrubbed}`);
@@ -753,7 +759,7 @@ test('the popup shows the undo point the worker holds for its tab', async () => 
 test('the options page saves settings', async () => {
   const options = await ext.context.newPage();
   await options.goto(`chrome-extension://${ext.extensionId}/options/options.html`);
-  await options.waitForFunction(() => document.getElementById('speedNumber').value === '4');
+  await options.waitForFunction(() => document.getElementById('speedNumber').value === '0.5');
   await options.fill('#speedNumber', '2.5');
   await options.dispatchEvent('#speedNumber', 'change');
   await options.check('#invert');

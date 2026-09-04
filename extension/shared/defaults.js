@@ -10,8 +10,8 @@
   const DEFAULTS = Object.freeze({
     /* Master switch. */
     enabled: true,
-    /* Scrub rate: seconds of video per 100 px of wheel movement. */
-    secondsPer100px: 4,
+    /* Base scrub rate: seconds of video per 100 px of wheel movement. */
+    secondsPer100px: 0.5,
     /* Scroll right rewinds. */
     invert: false,
     /* Modifier that must be held for scrubbing to happen at all. */
@@ -29,7 +29,7 @@
   const MODIFIERS = ['none', 'alt', 'ctrl', 'shift', 'meta'];
 
   const LIMITS = Object.freeze({
-    secondsPer100px: { min: 0.05, max: 60 },
+    secondsPer100px: { min: 0.05, max: 10 },
   });
 
   /* Fixed behaviour, not settings. */
