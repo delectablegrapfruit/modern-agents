@@ -106,6 +106,23 @@ body.off .site {
   opacity: 0.5;
 }
 
+.undo {
+  border-bottom: 1px solid var(--line);
+}
+.undoBtn {
+  font: inherit;
+  font-weight: 600;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--accent-soft);
+  color: var(--fg);
+  cursor: pointer;
+}
+.undoBtn:hover {
+  border-color: var(--accent);
+}
+
 /* Toggle switch */
 .switch {
   position: relative;

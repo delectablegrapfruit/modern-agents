@@ -18,6 +18,7 @@ There is no build step. `npm run pack` zips `extension/` into `dist/` for the Ch
 | Hold <kbd>Alt</kbd> (Option) while scrolling | Fine control, 1/10 speed |
 | <kbd>Shift</kbd> + mouse wheel | Counts as sideways scrolling |
 | Vertical scroll over a video | Scrolls the page as usual |
+| <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> (or the popup button) | Undo the last scrub: back to where the video was, playing if it was playing. Again to redo. |
 | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> | Toggle the extension on / off |
 
 The video pauses when a gesture starts and stays on the frame you stopped on for as long as the pointer rests on it; move the mouse off the video and playback resumes (if it was playing). Clicking or pressing a key hands control back to the player without restarting playback. The position shows on the site's own player; the extension's own overlay is off by default. The toolbar popup toggles the extension globally or for the current site and adjusts the speed; the options page has everything else.
@@ -49,6 +50,7 @@ The video pauses when a gesture starts and stays on the frame you stopped on for
 - Targets are clamped to the media's `seekable` range, minus a safety margin (0.5 s for media-source players, 1 s for live streams): seeking exactly to the buffered or live edge leaves Chromium stuck in `seeking`.
 - A video under the pointer that cannot be seeked yet (no metadata, `preload="none"`, a live stream without a DVR window) still captures sideways input, so the page or a carousel does not scroll instead; scrubbing starts the moment the media becomes seekable.
 - The optional overlay lives in a closed shadow root and uses the Popover API, so it renders in the top layer even above fullscreen players. It updates once per animation frame however many wheel events arrive.
+- Undo: when a scrub session starts, the position and play state are remembered; the shortcut or the popup button (relayed through the service worker to every frame of the tab) puts the video back and, if it was playing, plays it. The position being left becomes the new undo point, so undo twice is a redo.
 - After an extension update or reload, the orphaned copy of the content script notices its lost extension context on the next event and steps aside instead of scrubbing with stale settings.
 
 ## Limitations
@@ -74,7 +76,7 @@ Layout:
 extension/              the unpacked extension
   manifest.json
   content.js            wheel handling, hit-testing, seek scheduling, overlay
-  background.js         badge + keyboard shortcut
+  background.js         badge + keyboard shortcuts (toggle, undo)
   shared/defaults.js    settings schema shared by all contexts
   popup/, options/      UI
   icons/

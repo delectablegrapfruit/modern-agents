@@ -610,6 +610,55 @@ test('a fast burst on an expensive (long-GOP) clip shows frames progressively an
   assert.ok(landed - inputDone < 1000, `took ${landed - inputDone} ms to settle after input stopped`);
 });
 
+/* ---- Undo ------------------------------------------------------------- */
+
+/* Send a message from the service worker to the fixture tab's content
+ * scripts (without the "tabs" permission the worker cannot see tab URLs, so
+ * ask every tab and keep the first answer). */
+const sendToTab = (msg) =>
+  ext.worker.evaluate(
+    (m) =>
+      new Promise((resolve) => {
+        chrome.tabs.query({}, (tabs) => {
+          let pending = tabs.length;
+          let answer;
+          if (!pending) return resolve({ error: 'no tab' });
+          for (const t of tabs) {
+            chrome.tabs.sendMessage(t.id, m, (r) => {
+              if (!chrome.runtime.lastError && r !== undefined && answer === undefined) answer = r;
+              if (--pending === 0) resolve(answer === undefined ? {} : answer);
+            });
+          }
+        });
+      }),
+    msg
+  );
+
+test('undo puts the video back where it was and resumes it if it was playing; undo again redoes', async () => {
+  assert.equal((await sendToTab({ type: 'undo-info' })).time, undefined, 'nothing to undo yet');
+  await page.evaluate(() => document.querySelector('#plain').play());
+  await page.waitForFunction(() => !document.querySelector('#plain').paused);
+  const p = await centerOf(page, '#plain');
+  await wheelBurst(page, p.x, p.y, 10, 0, 10, 16);
+  await settled();
+  const scrubbed = await time('#plain');
+  assert.ok(scrubbed > 12, `scrubbed to ${scrubbed}`);
+  const info = await sendToTab({ type: 'undo-info' });
+  assert.ok(near(info.time, 10, 0.3), `undo point ${JSON.stringify(info)}`);
+  assert.equal(info.wasPlaying, true);
+
+  assert.deepEqual(await sendToTab({ type: 'undo' }), { ok: true });
+  await settled();
+  assert.ok(near(await time('#plain'), info.time, 0.3), 'back where it was');
+  await page.waitForFunction(() => !document.querySelector('#plain').paused, null, { timeout: 3000 });
+
+  await page.evaluate(() => document.querySelector('#plain').pause());
+  assert.deepEqual(await sendToTab({ type: 'undo' }), { ok: true });
+  await settled();
+  assert.ok(near(await time('#plain'), scrubbed, 0.3), 'redo returns to the scrubbed position');
+  assert.equal(await isPaused('#plain'), true, 'and keeps the paused state it had when undone');
+});
+
 /* ---- HUD, popup, options -------------------------------------------- */
 
 test('the HUD is off by default and appears when enabled', async () => {

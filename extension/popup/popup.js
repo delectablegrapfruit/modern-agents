@@ -14,6 +14,7 @@
 
   let settings = normalizeSettings(DEFAULTS);
   let host = '';
+  let tabId = null;
 
   /* Logarithmic slider: 0..1000 <-> LIMITS.secondsPer100px.min..max. */
   const LOG_MIN = Math.log(LIMITS.secondsPer100px.min);
@@ -87,14 +88,40 @@
     render();
   });
 
+  function formatClock(seconds) {
+    const t = Math.max(0, seconds);
+    const h = Math.floor(t / 3600);
+    const m = Math.floor((t % 3600) / 60);
+    const sec = String(Math.floor(t % 60)).padStart(2, '0');
+    return h ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`;
+  }
+
+  /* Ask the tab's frames whether one of them can undo a scrub. */
+  function refreshUndo() {
+    if (tabId === null) return;
+    chrome.tabs.sendMessage(tabId, { type: 'undo-info' }, (info) => {
+      if (chrome.runtime.lastError || !info) return; // no content script, or nothing to undo
+      $('undoRow').hidden = false;
+      $('undoInfo').textContent = 'back to ' + formatClock(info.time) + (info.wasPlaying ? ', playing' : '');
+    });
+  }
+
+  $('undo').addEventListener('click', () => {
+    if (tabId === null) return;
+    chrome.tabs.sendMessage(tabId, { type: 'undo' }, () => void chrome.runtime.lastError);
+    window.close();
+  });
+
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    if (chrome.runtime.lastError || !tabs || !tabs[0] || !tabs[0].url) return;
+    if (chrome.runtime.lastError || !tabs || !tabs[0]) return;
+    tabId = tabs[0].id;
     try {
-      const url = new URL(tabs[0].url);
+      const url = new URL(tabs[0].url || '');
       if (url.protocol === 'http:' || url.protocol === 'https:') host = normalizeHost(url.hostname);
     } catch {
       host = '';
     }
     render();
+    refreshUndo();
   });
 })();

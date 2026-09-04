@@ -37,9 +37,16 @@ chrome.runtime.onInstalled.addListener(async () => {
 chrome.runtime.onStartup.addListener(refreshBadge);
 
 chrome.commands.onCommand.addListener(async (command) => {
-  if (command !== 'toggle-enabled') return;
-  const settings = await readSettings();
-  chrome.storage.sync.set({ enabled: !settings.enabled }, () => void chrome.runtime.lastError);
+  if (command === 'toggle-enabled') {
+    const settings = await readSettings();
+    chrome.storage.sync.set({ enabled: !settings.enabled }, () => void chrome.runtime.lastError);
+  } else if (command === 'undo-scrub') {
+    // Every frame's content script gets it; the one holding an undo point acts.
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (chrome.runtime.lastError || !tabs || !tabs[0]) return;
+      chrome.tabs.sendMessage(tabs[0].id, { type: 'undo' }, () => void chrome.runtime.lastError);
+    });
+  }
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {

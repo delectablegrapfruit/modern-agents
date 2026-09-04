@@ -4,14 +4,22 @@
   "version": "1.0.0",
   "description": "Scrub through any video by scrolling sideways while your mouse hovers over it. Works on every site.",
   "minimum_chrome_version": "114",
-  "permissions": ["storage", "activeTab"],
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
   "background": {
     "service_worker": "background.js"
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["shared/defaults.js", "content.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "shared/defaults.js",
+        "content.js"
+      ],
       "run_at": "document_start",
       "all_frames": true,
       "match_about_blank": true,
@@ -44,6 +52,12 @@
         "default": "Alt+Shift+S"
       },
       "description": "Turn Scroll to Scrub on or off"
+    },
+    "undo-scrub": {
+      "suggested_key": {
+        "default": "Alt+Shift+Z"
+      },
+      "description": "Undo the last scrub (back to where the video was)"
     }
   }
 }

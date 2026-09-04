@@ -85,6 +85,7 @@
   let settings = normalizeSettings(DEFAULTS);
   let siteDisabled = false;
   let session = null; // active scrub, see beginSession()
+  let undo = null; // where the video was before the last scrub, see performUndo()
   let armed = false; // the wheel listener is blocking (non-passive), see setArmed()
   let blocking = false; // the event being handled came through the blocking registration
   let lastX = NaN; // last known pointer position
@@ -680,6 +681,8 @@
     if (session) endSession(session, true);
 
     const pos = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+    // Remember where the video was, so an accidental scrub can be undone.
+    undo = { video, time: pos, wasPlaying: !video.paused && !video.ended, at: performance.now() };
     const s = {
       video,
       pos, // logical position, tracks the wheel exactly
@@ -1001,6 +1004,57 @@
     if (!session && Number.isFinite(lastX)) setArmed(active() && !!findVideoAt(lastX, lastY, true));
   }
 
+  /* ---- Undo ----------------------------------------------------------- */
+
+  /* Put the video back where it was before the last scrub session began,
+   * playing if it was playing. The position it is leaving becomes the new
+   * undo point, so pressing undo again redoes. Triggered from the keyboard
+   * shortcut or the popup, through the service worker. */
+  function performUndo() {
+    const u = undo;
+    if (!u || !u.video.isConnected) return false;
+    const v = u.video;
+    if (session) endSession(session, false);
+    const now = Number.isFinite(v.currentTime) ? v.currentTime : u.time;
+    undo = { video: v, time: now, wasPlaying: !v.paused && !v.ended, at: performance.now() };
+    try {
+      const range = seekRange(v);
+      v.currentTime = range ? clamp(u.time, range[0], range[1]) : u.time;
+      if (u.wasPlaying) {
+        const p = v.play();
+        if (p && typeof p.catch === 'function') p.catch(() => {});
+      } else if (!v.paused) {
+        v.pause();
+      }
+    } catch {
+      return false;
+    }
+    const range = scrubRange(v) || seekRange(v);
+    if (range) hud.show(v, u.time, range, false, 'undo');
+    return true;
+  }
+
+  function undoInfo() {
+    if (!undo || !undo.video.isConnected) return null;
+    return { time: undo.time, wasPlaying: undo.wasPlaying, at: undo.at };
+  }
+
+  function listenForMessages() {
+    try {
+      chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+        if (!msg || typeof msg !== 'object') return;
+        if (msg.type === 'undo-info') {
+          const info = undoInfo();
+          if (info) sendResponse(info); // frames without an undo point stay silent
+        } else if (msg.type === 'undo') {
+          if (undo && undo.video.isConnected) sendResponse({ ok: performUndo() });
+        }
+      });
+    } catch {
+      /* Extension context unavailable. */
+    }
+  }
+
   /* ---- Heads-up display --------------------------------------------- */
 
   const hud = (() => {
@@ -1149,8 +1203,8 @@
 
     /* One DOM update per animation frame, however many wheel events arrive:
      * writes after reads would otherwise force a layout on every event. */
-    function show(video, time, range, fine) {
-      next = { video, time, range, fine };
+    function show(video, time, range, fine, label) {
+      next = { video, time, range, fine, label };
       if (!pendingFrame) pendingFrame = requestAnimationFrame(render);
     }
 
@@ -1162,7 +1216,7 @@
       place(n.video);
       const span = n.range[1] - n.range[0];
       const pos = n.time - n.range[0];
-      timeEl.textContent = formatTime(pos, true) + ' / ' + formatTime(span, false);
+      timeEl.textContent = (n.label ? n.label + ' \u2192 ' : '') + formatTime(pos, true) + ' / ' + formatTime(span, false);
       timeEl.classList.toggle('fine', !!n.fine);
       fillEl.style.width = (span > 0 ? clamp((pos / span) * 100, 0, 100) : 0) + '%';
       raise();
@@ -1196,6 +1250,7 @@
   /* ---- Boot ----------------------------------------------------------- */
 
   loadSettings();
+  listenForMessages();
   // Capture on the window, registered at document_start, so page scripts
   // cannot swallow the event first. Passive until the pointer is over a
   // video, blocking from then on (see setArmed).
