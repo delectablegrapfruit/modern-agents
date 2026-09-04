@@ -2,7 +2,7 @@
  *
  * Loaded as a classic script by the content script, the popup, the options
  * page and the service worker (via importScripts), so it must not use ES
- * module syntax.
+ * module syntax. Few settings on purpose: defaults carry the load.
  */
 (function (root) {
   'use strict';
@@ -10,42 +10,30 @@
   const DEFAULTS = Object.freeze({
     /* Master switch. */
     enabled: true,
-    /* Scrub rate: seconds of video per 100 px of wheel movement. A
-     * constant, whatever the video's length. */
+    /* Scrub rate: seconds of video per 100 px of wheel movement. */
     secondsPer100px: 4,
-    /* Which wheel axis scrubs. 'horizontal' (tilt wheel, thumb wheel,
-     * trackpad swipe, Shift+wheel), 'vertical', or 'both'. */
-    axis: 'horizontal',
-    /* Treat Shift + vertical wheel as horizontal (mice without a tilt
-     * wheel). Only matters for axis 'horizontal'. */
-    shiftWheel: true,
-    /* Swap the direction: scroll right rewinds. */
+    /* Scroll right rewinds. */
     invert: false,
     /* Modifier that must be held for scrubbing to happen at all. */
     requireModifier: 'none',
-    /* Modifier that scrubs at 1/10 speed while held. */
-    fineModifier: 'alt',
-    /* Keep the video paused while a gesture is in progress. */
-    pauseWhileScrubbing: true,
-    /* When the pointer leaves the video, resume playback if it was playing
-     * before the gesture. */
+    /* Resume playback shortly after the wheel stops, if it was playing. */
     resumeAfter: true,
-    /* Show the extension's own time / progress pill while scrubbing. Off by
-     * default: the site's player already shows the position. */
-    showHud: false,
+    /* Draw the timeline over the video while scrubbing. */
+    showTimeline: true,
     /* Hostnames (and their subdomains) where the extension stays inactive.
      * Netflix's player crashes (error M7375) when its video element is
-     * seeked directly, so it is off until a player-API integration exists. */
+     * seeked directly. */
     disabledSites: ['netflix.com'],
   });
 
-  const AXES = ['horizontal', 'vertical', 'both'];
   const MODIFIERS = ['none', 'alt', 'ctrl', 'shift', 'meta'];
 
   const LIMITS = Object.freeze({
     secondsPer100px: { min: 0.05, max: 60 },
   });
 
+  /* Fixed behaviour, not settings. */
+  const FINE_MODIFIER = 'alt'; // 1/10 speed while held
   const FINE_FACTOR = 0.1;
 
   function clampNumber(value, fallback, { min, max }) {
@@ -104,30 +92,26 @@
 
   /* Validate an arbitrary object (partial, stale, or garbage) into a
    * complete settings object; anything missing or invalid falls back to
-   * DEFAULTS. */
+   * DEFAULTS. Keys from earlier versions are dropped. */
   function normalizeSettings(raw) {
     const r = raw && typeof raw === 'object' ? raw : {};
     const get = (k) => (r[k] === undefined || r[k] === null ? DEFAULTS[k] : r[k]);
     return {
       enabled: Boolean(get('enabled')),
       secondsPer100px: clampNumber(get('secondsPer100px'), DEFAULTS.secondsPer100px, LIMITS.secondsPer100px),
-      axis: pick(get('axis'), AXES, DEFAULTS.axis),
-      shiftWheel: Boolean(get('shiftWheel')),
       invert: Boolean(get('invert')),
       requireModifier: pick(get('requireModifier'), MODIFIERS, DEFAULTS.requireModifier),
-      fineModifier: pick(get('fineModifier'), MODIFIERS, DEFAULTS.fineModifier),
-      pauseWhileScrubbing: Boolean(get('pauseWhileScrubbing')),
       resumeAfter: Boolean(get('resumeAfter')),
-      showHud: Boolean(get('showHud')),
+      showTimeline: r.showTimeline === undefined && r.showHud !== undefined ? Boolean(r.showHud) : Boolean(get('showTimeline')),
       disabledSites: normalizeSites(get('disabledSites')),
     };
   }
 
   root.ScrollToScrub = Object.freeze({
     DEFAULTS,
-    AXES,
     MODIFIERS,
     LIMITS,
+    FINE_MODIFIER,
     FINE_FACTOR,
     normalizeSettings,
     normalizeHost,

@@ -14,7 +14,7 @@
   if (!api || globalThis.__scrollToScrubInstalled) return;
   globalThis.__scrollToScrubInstalled = true;
 
-  const { DEFAULTS, FINE_FACTOR, normalizeSettings, hostMatches } = api;
+  const { DEFAULTS, FINE_MODIFIER, FINE_FACTOR, normalizeSettings, hostMatches } = api;
 
   const MODIFIER_PROP = { alt: 'altKey', ctrl: 'ctrlKey', shift: 'shiftKey', meta: 'metaKey' };
   const MODIFIER_KEYS = new Set(['Alt', 'AltGraph', 'Control', 'Shift', 'Meta', 'Fn', 'CapsLock']);
@@ -59,9 +59,13 @@
   const SEEK_CAP_MAX_MS = 1500;
   const SEEK_CAP_FACTOR = 3;
   const SEEK_LATENCY_DECAY = 0.9; // per completed seek, for the recent maximum
+  /* A session ends (and playback resumes, if it was playing) this long
+   * after the wheel stops, or as soon as the pointer leaves the video. */
+  const RESUME_IDLE_MS = 600;
   /* When a session ends, wait at most this long for the last seek to land
    * before resuming playback. */
   const FINAL_SEEK_WAIT_MS = 1500;
+  const TIMELINE_LINGER_MS = 400;
   /* Playback must stay paused during a session; a site that restarts it is
    * paused again, at most this often. A site that keeps restarting it is
    * held with playbackRate 0 instead (a pause war leaks about half of real
@@ -150,7 +154,7 @@
     window.removeEventListener('mouseout', onPointerLeftWindow, true);
     window.removeEventListener('mousemove', onHover, true);
     armed = false;
-    hud.hide();
+    timeline.hide();
   }
 
   function applySettings(next) {
@@ -394,12 +398,10 @@
     if (!Number.isFinite(dx)) dx = 0;
     if (!Number.isFinite(dy)) dy = 0;
 
-    if (settings.axis === 'both') return { s: dx + dy, o: 0 };
-    if (settings.axis === 'vertical') return { s: dy, o: dx };
     // Mouse users scroll sideways with Shift + wheel. The DOM event keeps
     // deltaY (with shiftKey set); the browser only swaps the axis for the
     // scroll it would perform.
-    if (settings.shiftWheel && e.shiftKey && dx === 0 && dy !== 0) return { s: dy, o: 0 };
+    if (e.shiftKey && dx === 0 && dy !== 0) return { s: dy, o: 0 };
     return { s: dx, o: dy };
   }
 
@@ -610,7 +612,7 @@
       look(now, x, y, false);
       return;
     }
-    if (e.ctrlKey && settings.requireModifier !== 'ctrl' && settings.fineModifier !== 'ctrl') {
+    if (e.ctrlKey && settings.requireModifier !== 'ctrl') {
       // Ctrl+wheel is browser zoom (and trackpad pinch); leave it alone.
       mode = 'page';
       return;
@@ -670,8 +672,7 @@
     if (session && session.video === video) {
       const cur = session;
       if (cur.ending) {
-        // Caught it winding down (a click that turned out to be a wheel
-        // gesture): revive.
+        // Caught it winding down (the idle timer just fired): revive.
         cur.ending = false;
         clearTimeout(cur.finalTimer);
         cur.finalTimer = 0;
@@ -697,6 +698,7 @@
       onRateChange: null,
       finalTimer: 0,
       stallTimer: 0,
+      idleTimer: 0,
       ending: false,
       done: false,
       inFlight: false, // a seek we issued has not fired `seeked` yet
@@ -728,7 +730,7 @@
     s.onPlay = () => {
       // The page restarted playback mid-session (autoplay loops, players
       // that play after a seek). Hold it; resume when we are done.
-      if (s.ending || !settings.pauseWhileScrubbing) return;
+      if (s.ending) return;
       s.resume = settings.resumeAfter;
       s.replays += 1;
       if (!s.rateHoldFailed && (s.replays >= RATE_HOLD_AFTER || Number.isFinite(s.heldRate))) {
@@ -774,7 +776,7 @@
     video.addEventListener('ratechange', s.onRateChange);
     watchPointer(true);
 
-    if (settings.pauseWhileScrubbing && !video.paused && !video.ended) {
+    if (!video.paused && !video.ended) {
       try {
         video.pause();
         s.resume = settings.resumeAfter;
@@ -783,6 +785,7 @@
       }
     }
     session = s;
+    pushUndo();
   }
 
   function repause(s) {
@@ -878,10 +881,7 @@
     const range = scrubRange(s.video);
     if (!range) return;
 
-    const fine =
-      settings.fineModifier !== 'none' &&
-      settings.fineModifier !== settings.requireModifier &&
-      hasModifier(e, settings.fineModifier);
+    const fine = settings.requireModifier !== FINE_MODIFIER && hasModifier(e, FINE_MODIFIER);
 
     let dt = px * (settings.secondsPer100px / 100);
     if (settings.invert) dt = -dt;
@@ -894,7 +894,11 @@
     }
     s.pos = clamp(s.pos + dt, range[0], range[1]);
     requestSeek(s, s.pos);
-    if (settings.showHud) hud.show(s.video, s.pos, range, fine);
+    if (settings.showTimeline) timeline.show(s.video, s.pos, range, fine, undo && undo.video === s.video ? undo.time : NaN);
+
+    // The wheel stopped: the gesture is over shortly after.
+    clearTimeout(s.idleTimer);
+    s.idleTimer = setTimeout(() => endSession(s, true), RESUME_IDLE_MS);
   }
 
   /* Hand the newest target to the video: right away unless a seek we issued
@@ -957,6 +961,7 @@
     if (s.done) return;
     if (!resume) s.resume = false;
     if (mode === 'scrub' || mode === 'undecided') resetMode();
+    clearTimeout(s.idleTimer);
     s.ending = true;
     if (s.pending && !s.stallTimer) issueSeek(s);
     if (s.inFlight && s.video.seeking && s.video.isConnected) {
@@ -976,6 +981,8 @@
     clearTimeout(s.finalTimer);
     clearTimeout(s.stallTimer);
     clearTimeout(s.repauseTimer);
+    clearTimeout(s.idleTimer);
+    timeline.release();
     const v = s.video;
     v.removeEventListener('seeked', s.onSeeked);
     v.removeEventListener('play', s.onPlay);
@@ -1029,40 +1036,65 @@
     } catch {
       return false;
     }
+    pushUndo();
     const range = scrubRange(v) || seekRange(v);
-    if (range) hud.show(v, u.time, range, false, 'undo');
+    if (range) {
+      timeline.show(v, u.time, range, false, undo.time);
+      timeline.release();
+    }
     return true;
   }
 
   function undoInfo() {
     if (!undo || !undo.video.isConnected) return null;
-    return { time: undo.time, wasPlaying: undo.wasPlaying, at: undo.at };
+    let duration = NaN;
+    try {
+      duration = undo.video.duration;
+    } catch {
+      /* ignore */
+    }
+    return { time: undo.time, wasPlaying: undo.wasPlaying, duration: Number.isFinite(duration) ? duration : null };
+  }
+
+  /* Tell the service worker where this frame's undo point is, so the popup
+   * can show it and the shortcut can reach this frame. */
+  function pushUndo() {
+    try {
+      chrome.runtime.sendMessage({ type: 'undo-state', info: undoInfo() }, () => void chrome.runtime.lastError);
+    } catch {
+      /* Extension context unavailable. */
+    }
   }
 
   function listenForMessages() {
     try {
       chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-        if (!msg || typeof msg !== 'object') return;
-        if (msg.type === 'undo-info') {
-          const info = undoInfo();
-          if (info) sendResponse(info); // frames without an undo point stay silent
-        } else if (msg.type === 'undo') {
-          if (undo && undo.video.isConnected) sendResponse({ ok: performUndo() });
-        }
+        if (msg && msg.type === 'undo') sendResponse({ ok: performUndo() });
       });
     } catch {
       /* Extension context unavailable. */
     }
   }
 
-  /* ---- Heads-up display --------------------------------------------- */
+  /* ---- Timeline ------------------------------------------------------- */
 
-  const hud = (() => {
+  /* A thin timeline drawn over the top of the video while scrubbing. It
+   * follows the logical position, which leads the video's own timeline by
+   * however long the current seek takes, so it is the responsive view of
+   * where the wheel is. A faint tick marks where the video was before the
+   * scrub began (what undo returns to). One DOM update per animation frame,
+   * however many wheel events arrive; reads before writes. */
+  const timeline = (() => {
     let host = null;
-    let timeEl = null;
-    let fillEl = null;
+    let track = null;
+    let mark = null;
+    let origin = null;
+    let label = null;
+    let fineEl = null;
+    let pendingFrame = 0;
+    let next = null;
     let hideTimer = 0;
-    let shown = false;
+    let open = false;
     let lastFullscreen = null;
 
     const HOST_STYLE = [
@@ -1078,7 +1110,6 @@
       'overflow:visible',
       'background:transparent',
       'color:inherit',
-      'transform:translateX(-50%)',
       'pointer-events:none',
       'z-index:2147483647',
     ]
@@ -1086,26 +1117,42 @@
       .join(';');
 
     const SHEET = `
-      .pill {
-        display: inline-flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 6px;
-        padding: 8px 14px;
-        border-radius: 999px;
-        background: rgba(15, 23, 42, 0.84);
-        color: #fff;
-        font: 600 13px/1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-        font-variant-numeric: tabular-nums;
-        letter-spacing: 0.02em;
-        white-space: nowrap;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
-        backdrop-filter: blur(6px);
-        -webkit-backdrop-filter: blur(6px);
+      :host { display: block; }
+      .track {
+        position: relative;
+        height: 2px;
+        background: rgba(255, 255, 255, 0.4);
+        box-shadow: 0 0 1px rgba(0, 0, 0, 0.6);
       }
-      .bar { width: 160px; height: 3px; border-radius: 2px; background: rgba(255, 255, 255, 0.25); overflow: hidden; }
-      .fill { width: 0; height: 100%; border-radius: 2px; background: #fff; }
-      .fine { color: #a5b4fc; }
+      .origin {
+        position: absolute;
+        top: -3px;
+        width: 1px;
+        height: 8px;
+        margin-left: -0.5px;
+        background: rgba(255, 255, 255, 0.7);
+      }
+      .mark {
+        position: absolute;
+        top: -5px;
+        width: 2px;
+        height: 12px;
+        margin-left: -1px;
+        background: #fff;
+        box-shadow: 0 0 2px rgba(0, 0, 0, 0.8);
+      }
+      .label {
+        position: absolute;
+        top: 12px;
+        white-space: nowrap;
+        font: 500 12px/1 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        font-variant-numeric: tabular-nums;
+        color: #fff;
+        text-shadow: 0 0 2px rgba(0, 0, 0, 0.9), 0 1px 2px rgba(0, 0, 0, 0.7);
+      }
+      .dur { opacity: 0.7; }
+      .fine { margin-left: 6px; opacity: 0.7; }
+      .fine:empty { display: none; }
     `;
 
     function build() {
@@ -1113,16 +1160,18 @@
       const root = el.attachShadow({ mode: 'closed' });
       const style = document.createElement('style');
       style.textContent = SHEET;
-      const pill = document.createElement('div');
-      pill.className = 'pill';
-      timeEl = document.createElement('span');
-      const bar = document.createElement('div');
-      bar.className = 'bar';
-      fillEl = document.createElement('div');
-      fillEl.className = 'fill';
-      bar.appendChild(fillEl);
-      pill.append(timeEl, bar);
-      root.append(style, pill);
+      track = document.createElement('div');
+      track.className = 'track';
+      origin = document.createElement('div');
+      origin.className = 'origin';
+      mark = document.createElement('div');
+      mark.className = 'mark';
+      label = document.createElement('div');
+      label.className = 'label';
+      fineEl = document.createElement('span');
+      fineEl.className = 'fine';
+      track.append(origin, mark, label);
+      root.append(style, track);
       if (typeof el.showPopover === 'function') el.setAttribute('popover', 'manual');
       el.style.cssText = HOST_STYLE;
       return el;
@@ -1135,7 +1184,7 @@
       try {
         if (!host) host = build();
         parent.appendChild(host);
-        shown = false;
+        open = false;
         return true;
       } catch {
         host = null;
@@ -1143,19 +1192,15 @@
       }
     }
 
-    function usePopover() {
-      return host.hasAttribute('popover');
-    }
-
-    /* Keep the HUD in the top layer, above fullscreen players. A popover
-     * only stacks above a fullscreen element if it was shown after it, so
-     * re-open it whenever the fullscreen element changes. */
+    /* Keep the timeline in the top layer, above fullscreen players. A
+     * popover only stacks above a fullscreen element if it was shown after
+     * it, so re-open it whenever the fullscreen element changes. */
     function raise() {
       const fs = document.fullscreenElement || null;
-      if (usePopover()) {
+      if (host.hasAttribute('popover')) {
         try {
-          if (shown && fs !== lastFullscreen) host.hidePopover();
-          if (!shown || fs !== lastFullscreen) host.showPopover();
+          if (open && fs !== lastFullscreen) host.hidePopover();
+          if (!open || fs !== lastFullscreen) host.showPopover();
         } catch {
           /* ignore */
         }
@@ -1171,7 +1216,7 @@
         host.style.setProperty('display', 'block', 'important');
       }
       lastFullscreen = fs;
-      shown = true;
+      open = true;
     }
 
     function formatTime(seconds, tenths) {
@@ -1183,29 +1228,13 @@
       return (h ? h + ':' + String(m).padStart(2, '0') : String(m)) + ':' + ss;
     }
 
-    function place(video) {
-      const r = video.getBoundingClientRect();
-      const vw = window.innerWidth;
-      const vh = window.innerHeight;
-      const left = Math.max(0, r.left);
-      const right = Math.min(vw, r.right);
-      const top = Math.max(0, r.top);
-      const bottom = Math.min(vh, r.bottom);
-      const cx = (left + right) / 2;
-      let y = bottom - 56;
-      if (y < top + 8) y = Math.max(8, Math.min(top + 8, vh - 48));
-      host.style.setProperty('left', cx + 'px', 'important');
-      host.style.setProperty('top', y + 'px', 'important');
-    }
-
-    let pendingFrame = 0;
-    let next = null;
-
-    /* One DOM update per animation frame, however many wheel events arrive:
-     * writes after reads would otherwise force a layout on every event. */
-    function show(video, time, range, fine, label) {
-      next = { video, time, range, fine, label };
+    function show(video, time, range, fine, originTime) {
+      next = { video, time, range, fine, originTime };
       if (!pendingFrame) pendingFrame = requestAnimationFrame(render);
+      if (hideTimer) {
+        clearTimeout(hideTimer);
+        hideTimer = 0;
+      }
     }
 
     function render() {
@@ -1213,15 +1242,46 @@
       const n = next;
       next = null;
       if (!n || !ensure()) return;
-      place(n.video);
+
+      // Reads.
+      const r = n.video.getBoundingClientRect();
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const left = Math.max(0, r.left) + 16;
+      const right = Math.min(vw, r.right) - 16;
+      const width = right - left;
+      if (width < 40) return;
+      const top = clamp(Math.max(0, r.top) + 16, 8, vh - 40);
       const span = n.range[1] - n.range[0];
-      const pos = n.time - n.range[0];
-      timeEl.textContent = (n.label ? n.label + ' \u2192 ' : '') + formatTime(pos, true) + ' / ' + formatTime(span, false);
-      timeEl.classList.toggle('fine', !!n.fine);
-      fillEl.style.width = (span > 0 ? clamp((pos / span) * 100, 0, 100) : 0) + '%';
+      const frac = span > 0 ? clamp((n.time - n.range[0]) / span, 0, 1) : 0;
+      const originFrac = Number.isFinite(n.originTime) && span > 0 ? clamp((n.originTime - n.range[0]) / span, 0, 1) : NaN;
+
+      // Writes.
+      host.style.setProperty('left', left + 'px', 'important');
+      host.style.setProperty('top', top + 'px', 'important');
+      host.style.setProperty('width', width + 'px', 'important');
+      mark.style.left = (frac * 100).toFixed(3) + '%';
+      origin.style.display = Number.isFinite(originFrac) && Math.abs(originFrac - frac) * width > 3 ? '' : 'none';
+      if (Number.isFinite(originFrac)) origin.style.left = (originFrac * 100).toFixed(3) + '%';
+      label.textContent = '';
+      label.append(formatTime(n.time - n.range[0], true));
+      const dur = document.createElement('span');
+      dur.className = 'dur';
+      dur.textContent = ' / ' + formatTime(span, false);
+      fineEl.textContent = n.fine ? '×0.1' : '';
+      label.append(dur, fineEl);
+      // Keep the label inside the track: anchor it left of the mark near
+      // the right end.
+      const labelLeft = frac > 0.75 ? 'auto' : (frac * 100).toFixed(3) + '%';
+      label.style.left = labelLeft;
+      label.style.right = frac > 0.75 ? (100 - frac * 100).toFixed(3) + '%' : 'auto';
       raise();
+    }
+
+    /* The session is over: leave the timeline up briefly, then hide. */
+    function release() {
       if (hideTimer) clearTimeout(hideTimer);
-      hideTimer = setTimeout(hide, HUD_LINGER_MS);
+      hideTimer = setTimeout(hide, TIMELINE_LINGER_MS);
     }
 
     function hide() {
@@ -1232,9 +1292,9 @@
         next = null;
       }
       if (!host) return;
-      shown = false;
+      open = false;
       try {
-        if (usePopover()) {
+        if (host.hasAttribute('popover')) {
           if (host.matches(':popover-open')) host.hidePopover();
         } else {
           host.style.setProperty('display', 'none', 'important');
@@ -1244,13 +1304,14 @@
       }
     }
 
-    return { show, hide };
+    return { show, release, hide };
   })();
 
   /* ---- Boot ----------------------------------------------------------- */
 
   loadSettings();
   listenForMessages();
+  if (window === window.top) pushUndo(); // a fresh top document has nothing to undo
   // Capture on the window, registered at document_start, so page scripts
   // cannot swallow the event first. Passive until the pointer is over a
   // video, blocking from then on (see setArmed).

@@ -186,7 +186,7 @@ test('a pointer parked over a video since page load still scrubs on the first wh
 
 /* ---- Playback ------------------------------------------------------- */
 
-test('playback pauses while scrubbing, stays on the frame while the pointer rests, resumes when it leaves', async () => {
+test('playback pauses while scrubbing and resumes by itself shortly after the wheel stops', async () => {
   await page.evaluate(() => document.querySelector('#plain').play());
   await page.waitForFunction(() => !document.querySelector('#plain').paused);
   const p = await centerOf(page, '#plain');
@@ -194,29 +194,37 @@ test('playback pauses while scrubbing, stays on the frame while the pointer rest
   assert.equal(await isPaused('#plain'), true, 'paused during the gesture');
   await settled();
   const t = await time('#plain');
-  await page.waitForTimeout(1200);
-  assert.equal(await isPaused('#plain'), true, 'still paused while the pointer rests on the video');
-  assert.equal(await time('#plain'), t, 'the frame did not move');
-  await leaveVideo();
+  await page.waitForTimeout(250);
+  assert.equal(await isPaused('#plain'), true, 'still paused right after the wheel stops');
+  assert.equal(await time('#plain'), t, 'on the frame it landed on');
+  const t0 = Date.now();
   await page.waitForFunction(() => !document.querySelector('#plain').paused, null, { timeout: 3000 });
-  assert.equal(await isPaused('#plain'), false, 'resumed once the pointer left');
+  assert.ok(Date.now() - t0 < 1500, 'resumed without the pointer moving');
+});
+
+test('moving the pointer off the video resumes at once', async () => {
+  await page.evaluate(() => document.querySelector('#plain').play());
+  await page.waitForFunction(() => !document.querySelector('#plain').paused);
+  const p = await centerOf(page, '#plain');
+  await wheelBurst(page, p.x, p.y, 5, 0, 5, 16);
+  assert.equal(await isPaused('#plain'), true);
+  await leaveVideo();
+  await page.waitForFunction(() => !document.querySelector('#plain').paused, null, { timeout: 500 });
 });
 
 test('a slow, intermittent wheel keeps the video paused between events', async () => {
   await page.evaluate(() => document.querySelector('#plain').play());
   await page.waitForFunction(() => !document.querySelector('#plain').paused);
   const p = await centerOf(page, '#plain');
-  await wheel(page, p.x, p.y, 3, 0);
-  await page.waitForTimeout(400);
-  assert.equal(await isPaused('#plain'), true);
-  await wheel(page, p.x, p.y, 3, 0);
-  await page.waitForTimeout(400);
-  assert.equal(await isPaused('#plain'), true, 'still paused');
-  await leaveVideo();
+  for (let i = 0; i < 4; i++) {
+    await wheel(page, p.x, p.y, 3, 0);
+    await page.waitForTimeout(350);
+    assert.equal(await isPaused('#plain'), true, `still paused after gap ${i}`);
+  }
   await page.waitForFunction(() => !document.querySelector('#plain').paused, null, { timeout: 3000 });
 });
 
-test('a site that restarts playback after every seek is held paused until the pointer leaves', async () => {
+test('a site that restarts playback after every seek is held until the gesture ends', async () => {
   await page.evaluate(() => {
     const v = document.querySelector('#plain');
     window.__replays = 0;
@@ -238,10 +246,9 @@ test('a site that restarts playback after every seek is held paused until the po
   const h0 = await held();
   assert.ok(h0.still, 'held despite the site calling play()');
   assert.ok((await page.evaluate(() => window.__replays)) >= 1);
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(250);
   const h1 = await held();
   assert.ok(h1.still && near(h1.t, h0.t, 0.02), `still held on the same frame: ${JSON.stringify([h0, h1])}`);
-  await leaveVideo();
   await page.waitForFunction(
     () => {
       const v = document.querySelector('#plain');
@@ -267,7 +274,7 @@ test('a site that replays on every pause is held still with playbackRate 0', asy
   await wheelBurst(page, p.x, p.y, 5, 0, 10, 16);
   await settled();
   const t0 = await time('#plain');
-  await page.waitForTimeout(600);
+  await page.waitForTimeout(300);
   const state = await page.evaluate(() => {
     const v = document.querySelector('#plain');
     return { t: v.currentTime, rate: v.playbackRate, replays: window.__replays };
@@ -275,7 +282,6 @@ test('a site that replays on every pause is held still with playbackRate 0', asy
   assert.ok(near(state.t, t0, 0.02), `video did not advance: ${t0} -> ${state.t}`);
   assert.equal(state.rate, 0, 'held at playbackRate 0');
   assert.ok(state.replays < 50, `no pause war: ${state.replays} replays`);
-  await leaveVideo();
   await page.waitForFunction(() => document.querySelector('#plain').playbackRate === 1, null, { timeout: 3000 });
   await page.waitForTimeout(300);
   assert.ok((await time('#plain')) > state.t, 'playing again at normal rate');
@@ -331,26 +337,18 @@ test('a click or a key during a session hands control back without restarting pl
   await wheelBurst(page, p.x, p.y, 5, 0, 10, 16);
   assert.equal(await isPaused('#plain'), true);
   await page.keyboard.press('Alt'); // a modifier does not count as taking over
-  await page.waitForTimeout(100);
-  await leaveVideo();
   await page.waitForFunction(() => !document.querySelector('#plain').paused, null, { timeout: 3000 });
 });
 
-test('resumeAfter off leaves the video paused; pauseWhileScrubbing off keeps it playing', async () => {
+test('with resume off the video stays paused after scrubbing', async () => {
   await setSettings(ext.worker, page, { resumeAfter: false });
   await page.evaluate(() => document.querySelector('#plain').play());
   await page.waitForFunction(() => !document.querySelector('#plain').paused);
   const p = await centerOf(page, '#plain');
   await wheelBurst(page, p.x, p.y, 5, 0, 10, 16);
   await leaveVideo();
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(900);
   assert.equal(await isPaused('#plain'), true);
-
-  await setSettings(ext.worker, page, { resumeAfter: true, pauseWhileScrubbing: false });
-  await page.evaluate(() => document.querySelector('#plain').play());
-  await page.waitForFunction(() => !document.querySelector('#plain').paused);
-  await wheelBurst(page, p.x, p.y, 5, 0, 10, 16);
-  assert.equal(await isPaused('#plain'), false, 'kept playing');
 });
 
 test('vertical scrolling works right after (and during) a scrub', async () => {
@@ -489,7 +487,7 @@ test('the fine-control modifier scrubs at a tenth of the speed', async () => {
 });
 
 test('a required modifier gates scrubbing', async () => {
-  await setSettings(ext.worker, page, { requireModifier: 'shift', fineModifier: 'alt' });
+  await setSettings(ext.worker, page, { requireModifier: 'shift' });
   const p = await centerOf(page, '#plain');
   const s0 = await scroll();
   await wheel(page, p.x, p.y, 100, 0);
@@ -502,43 +500,12 @@ test('a required modifier gates scrubbing', async () => {
   assert.ok(near(await time('#plain'), 14, 0.01));
 });
 
-test('Shift + vertical wheel scrubs like a sideways wheel; not when the option is off', async () => {
+test('Shift + vertical wheel scrubs like a sideways wheel', async () => {
   const p = await centerOf(page, '#plain');
   const s0 = await scroll();
   await wheel(page, p.x, p.y, 0, 100, ['Shift']);
   await settled();
   assert.ok(near(await time('#plain'), 14, 0.01));
-  assert.deepEqual(await scrolled(s0), { x: 0, y: 0 });
-
-  await setSettings(ext.worker, page, { shiftWheel: false });
-  await page.waitForTimeout(300);
-  await wheel(page, p.x, p.y, 0, 100, ['Shift']);
-  await page.waitForTimeout(100);
-  assert.ok(near(await time('#plain'), 14, 0.01), 'unchanged');
-  const sc = await scrolled(s0);
-  assert.ok(sc.x === 100 || sc.y === 100, `the page scrolled: ${JSON.stringify(sc)}`);
-});
-
-test('axis: vertical scrubs with the vertical wheel; axis: both scrubs with either', async () => {
-  await setSettings(ext.worker, page, { axis: 'vertical' });
-  const p = await centerOf(page, '#plain');
-  let s0 = await scroll();
-  await wheel(page, p.x, p.y, 0, 100);
-  await settled();
-  assert.ok(near(await time('#plain'), 14, 0.01));
-  assert.deepEqual(await scrolled(s0), { x: 0, y: 0 });
-  await page.waitForTimeout(300);
-  await wheel(page, p.x, p.y, 100, 0);
-  await page.waitForTimeout(100);
-  assert.ok(near(await time('#plain'), 14, 0.01));
-  assert.equal((await scrolled(s0)).x, 100, 'sideways input scrolls the page in vertical mode');
-
-  await setSettings(ext.worker, page, { axis: 'both' });
-  await page.waitForTimeout(300);
-  s0 = await scroll();
-  await wheel(page, p.x, p.y, 50, 50);
-  await settled();
-  assert.ok(near(await time('#plain'), 18, 0.01));
   assert.deepEqual(await scrolled(s0), { x: 0, y: 0 });
 });
 
@@ -612,30 +579,35 @@ test('a fast burst on an expensive (long-GOP) clip shows frames progressively an
 
 /* ---- Undo ------------------------------------------------------------- */
 
-/* Send a message from the service worker to the fixture tab's content
- * scripts (without the "tabs" permission the worker cannot see tab URLs, so
- * ask every tab and keep the first answer). */
-const sendToTab = (msg) =>
+/* The undo point the content script reported to the service worker (what
+ * the popup shows), and the undo the shortcut performs. */
+const undoState = () =>
   ext.worker.evaluate(
-    (m) =>
-      new Promise((resolve) => {
-        chrome.tabs.query({}, (tabs) => {
-          let pending = tabs.length;
-          let answer;
-          if (!pending) return resolve({ error: 'no tab' });
-          for (const t of tabs) {
-            chrome.tabs.sendMessage(t.id, m, (r) => {
-              if (!chrome.runtime.lastError && r !== undefined && answer === undefined) answer = r;
-              if (--pending === 0) resolve(answer === undefined ? {} : answer);
-            });
-          }
-        });
-      }),
-    msg
+    () =>
+      new Promise((resolve) =>
+        chrome.storage.session.get(null, (all) => {
+          const key = Object.keys(all).find((k) => k.startsWith('undo:'));
+          resolve(key ? { tabId: Number(key.slice(5)), ...all[key] } : null);
+        })
+      )
   );
+const undoViaShortcut = async () => {
+  const u = await undoState();
+  assert.ok(u, 'an undo point is known to the worker');
+  return ext.worker.evaluate(
+    (u) =>
+      new Promise((resolve) =>
+        chrome.tabs.sendMessage(u.tabId, { type: 'undo' }, { frameId: u.frameId }, (r) =>
+          resolve(chrome.runtime.lastError ? { error: chrome.runtime.lastError.message } : r)
+        )
+      ),
+    u
+  );
+};
 
 test('undo puts the video back where it was and resumes it if it was playing; undo again redoes', async () => {
-  assert.equal((await sendToTab({ type: 'undo-info' })).time, undefined, 'nothing to undo yet');
+  await page.waitForTimeout(100);
+  assert.equal(await undoState(), null, 'nothing to undo yet');
   await page.evaluate(() => document.querySelector('#plain').play());
   await page.waitForFunction(() => !document.querySelector('#plain').paused);
   const p = await centerOf(page, '#plain');
@@ -643,17 +615,20 @@ test('undo puts the video back where it was and resumes it if it was playing; un
   await settled();
   const scrubbed = await time('#plain');
   assert.ok(scrubbed > 12, `scrubbed to ${scrubbed}`);
-  const info = await sendToTab({ type: 'undo-info' });
-  assert.ok(near(info.time, 10, 0.3), `undo point ${JSON.stringify(info)}`);
+  await page.waitForTimeout(100);
+  const info = await undoState();
+  assert.ok(info && near(info.time, 10, 0.3), `undo point ${JSON.stringify(info)}`);
   assert.equal(info.wasPlaying, true);
+  assert.equal(info.duration, 60);
 
-  assert.deepEqual(await sendToTab({ type: 'undo' }), { ok: true });
+  assert.deepEqual(await undoViaShortcut(), { ok: true });
   await settled();
   assert.ok(near(await time('#plain'), info.time, 0.3), 'back where it was');
   await page.waitForFunction(() => !document.querySelector('#plain').paused, null, { timeout: 3000 });
 
   await page.evaluate(() => document.querySelector('#plain').pause());
-  assert.deepEqual(await sendToTab({ type: 'undo' }), { ok: true });
+  await page.waitForTimeout(100);
+  assert.deepEqual(await undoViaShortcut(), { ok: true });
   await settled();
   assert.ok(near(await time('#plain'), scrubbed, 0.3), 'redo returns to the scrubbed position');
   assert.equal(await isPaused('#plain'), true, 'and keeps the paused state it had when undone');
@@ -661,24 +636,28 @@ test('undo puts the video back where it was and resumes it if it was playing; un
 
 /* ---- HUD, popup, options -------------------------------------------- */
 
-test('the HUD is off by default and appears when enabled', async () => {
+test('the timeline appears over the video while scrubbing and goes away afterwards', async () => {
   const p = await centerOf(page, '#plain');
+  const box = await page.locator('#plain').boundingBox();
   await wheel(page, p.x, p.y, 50, 0);
-  await page.waitForTimeout(50);
-  assert.equal(await page.evaluate(() => !!document.querySelector('scroll-to-scrub-hud')), false);
-
-  await setSettings(ext.worker, page, { showHud: true });
-  await page.waitForTimeout(300);
-  await wheel(page, p.x, p.y, 50, 0);
-  await page.waitForTimeout(50);
-  const hud = await page.evaluate(() => {
+  await page.waitForTimeout(60);
+  const tl = await page.evaluate(() => {
     const el = document.querySelector('scroll-to-scrub-hud');
     if (!el) return null;
     const r = el.getBoundingClientRect();
-    return { open: el.matches(':popover-open'), w: r.width, h: r.height };
+    return { open: el.matches(':popover-open'), x: r.left, y: r.top, w: r.width };
   });
-  assert.ok(hud && hud.open && hud.w > 40 && hud.h > 10, JSON.stringify(hud));
-  await page.waitForTimeout(900);
+  assert.ok(tl && tl.open, 'shown by default');
+  assert.ok(near(tl.x, box.x + 16, 2) && near(tl.w, box.width - 32, 2), `spans the video: ${JSON.stringify(tl)}`);
+  assert.ok(tl.y > box.y && tl.y < box.y + 40, 'sits along the top edge of the video');
+  await page.waitForFunction(() => !document.querySelector('scroll-to-scrub-hud').matches(':popover-open'), null, {
+    timeout: 3000,
+  });
+
+  await setSettings(ext.worker, page, { showTimeline: false });
+  await page.waitForTimeout(300);
+  await wheel(page, p.x, p.y, 50, 0);
+  await page.waitForTimeout(60);
   assert.equal(await page.evaluate(() => document.querySelector('scroll-to-scrub-hud').matches(':popover-open')), false);
 });
 
@@ -686,6 +665,8 @@ test('the popup toggles the extension and the current site', async () => {
   const popup = await ext.context.newPage();
   await popup.goto(`chrome-extension://${ext.extensionId}/popup/popup.html`);
   await popup.waitForFunction(() => document.getElementById('enabled').checked === true);
+  assert.equal(await popup.locator('#undo').isDisabled(), true, 'undo is visible but disabled without an undo point');
+  assert.equal(await popup.locator('#undoInfo').textContent(), 'Nothing to undo');
   const toggle = popup.locator('label:has(#enabled) .track'); // the input itself is visually hidden
   await toggle.click();
   await popup.waitForTimeout(100);
@@ -695,6 +676,23 @@ test('the popup toggles the extension and the current site', async () => {
   await popup.waitForTimeout(100);
   stored = await ext.worker.evaluate(() => new Promise((r) => chrome.storage.sync.get(null, r)));
   assert.equal(stored.enabled, true);
+  await popup.close();
+});
+
+test('the popup shows the undo point the worker holds for its tab', async () => {
+  const popup = await ext.context.newPage();
+  await popup.goto(`chrome-extension://${ext.extensionId}/popup/popup.html`);
+  await popup.waitForFunction(() => document.getElementById('undoInfo').textContent === 'Nothing to undo');
+  const popupTabId = await ext.worker.evaluate(
+    () => new Promise((r) => chrome.tabs.query({ active: true, currentWindow: true }, (t) => r(t[0].id)))
+  );
+  await ext.worker.evaluate(
+    (id) => chrome.storage.session.set({ ['undo:' + id]: { time: 83.4, wasPlaying: true, duration: 600, frameId: 0 } }),
+    popupTabId
+  );
+  await popup.reload();
+  await popup.waitForFunction(() => !document.getElementById('undo').disabled);
+  assert.equal(await popup.locator('#undoInfo').textContent(), 'Back to 1:23, playing');
   await popup.close();
 });
 

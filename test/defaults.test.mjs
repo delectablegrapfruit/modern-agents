@@ -14,19 +14,18 @@ test('normalizeSettings fills in defaults and drops garbage', () => {
   const s = normalizeSettings({
     enabled: 0,
     secondsPer100px: 'fast',
-    axis: 'diagonal',
     requireModifier: 'hyper',
-    fineModifier: 'ctrl',
+    showHud: true, // pre-1.1 name
     disabledSites: 'Example.com',
     unknownKey: true,
   });
   assert.equal(s.enabled, false);
   assert.equal(s.secondsPer100px, DEFAULTS.secondsPer100px);
-  assert.equal(s.axis, 'horizontal');
   assert.equal(s.requireModifier, 'none');
-  assert.equal(s.fineModifier, 'ctrl');
+  assert.equal(s.showTimeline, true);
   assert.deepEqual(s.disabledSites, ['example.com']);
   assert.equal('unknownKey' in s, false);
+  assert.equal('axis' in s, false);
 });
 
 test('speed is clamped to its limits and accepts numeric strings', () => {
