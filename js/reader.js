@@ -97,6 +97,9 @@ p.books-error { text-align: center; opacity: 0.6; margin-top: 30%; }
       $('#rd-prev').addEventListener('click', () => { this.prev(); this.touch(); });
       $('#rd-next').addEventListener('click', () => { this.next(); this.touch(); });
       this.initTimeline();
+      // WebKit dispatches DOM wheel events only where its event-region hit test finds a wheel listener; a listener on
+      // the top document marks the whole page, so wheel events over the (sandboxed) book frame reliably reach its handler.
+      document.addEventListener('wheel', () => {}, { passive: true });
       $('#reader').addEventListener('mouseleave', () => $('#rd-stage').classList.remove('near-left', 'near-right'));
       document.addEventListener('fullscreenchange', () => this.refreshChrome());
       window.addEventListener('app:fullscreen', () => this.refreshChrome());

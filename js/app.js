@@ -263,17 +263,18 @@
         // Native shell: genuine scroll-wheel notches (down, tilt right, ⇧ + down, up) delivered through WKWebView.
         let wheelOk = true, wheelDetail = '';
         if (this.shell && window.webkit && window.webkit.messageHandlers) {
-          let domHits = 0; const probe = () => { domHits++; };
+          let domHits = 0, mainHits = 0; const probe = () => { domHits++; }, mainProbe = () => { mainHits++; };
           Reader.doc.addEventListener('wheel', probe, { capture: true, passive: true });
-          const send = async (dy, dx, shift, method, attach) => { const p = Reader.page, h = domHits; this.shell.post({ type: 'selftestWheel', dy, dx, shift: !!shift, method, attach: !!attach }); await U.sleep(600); return { moved: Reader.page - p, dom: domHits - h }; };
-          // Find a delivery route that produces DOM wheel events, then verify the four notch kinds through it.
+          document.addEventListener('wheel', mainProbe, { capture: true, passive: true });
+          const send = async (dy, dx, shift, method, attach) => { const p = Reader.page, h = domHits, m = mainHits; this.shell.post({ type: 'selftestWheel', dy, dx, shift: !!shift, method, attach: !!attach }); await U.sleep(600); return { moved: Reader.page - p, dom: domHits - h, main: mainHits - m }; };
+          // Find a delivery route that produces DOM wheel events in the book frame, then verify the four notch kinds through it.
           const trials = []; let best = null;
-          for (const method of ['direct', 'window', 'post', 'pid']) for (const attach of [false, true]) {
+          for (const method of ['direct', 'window']) for (const attach of [false, true]) {
             const r = await send(-1, 0, false, method, attach);
-            trials.push(`${method}${attach ? '+win' : ''}: dom ${r.dom}, moved ${r.moved}`);
+            trials.push(`${method}${attach ? '+win' : ''}: frame ${r.dom}, top ${r.main}, moved ${r.moved}`);
             if (!best && r.dom > 0) best = { method, attach };
           }
-          Reader.doc.removeEventListener('wheel', probe, true);
+          Reader.doc.removeEventListener('wheel', probe, true); document.removeEventListener('wheel', mainProbe, true);
           if (!best) { wheelOk = false; wheelDetail = `, wheel: no delivery route produced DOM events [${trials.join('; ')}]`; }
           else {
             const notch = (dy, dx, shift) => send(dy, dx, shift, best.method, best.attach);
