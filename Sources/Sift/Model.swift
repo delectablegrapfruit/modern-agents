@@ -51,6 +51,8 @@ final class Model: ObservableObject {
     @Published private(set) var sweepDue: [Engine.Due] = []
     /// Every mounted disk, for choosing which to watch.
     @Published private(set) var volumes: [Volume] = []
+    /// Disks the person left out, by the key `watchKey` gives.
+    @Published private(set) var excludedDisks: Set<String>
     @Published var editingWatch = false
     /// Views as edited in the window; `applied` is what Finder has.
     @Published var draft: ViewSettings
@@ -78,6 +80,7 @@ final class Model: ObservableObject {
         let views = engine.settings.views
         draft = views
         applied = views
+        excludedDisks = engine.settings.excludedVolumes
         guardian = Guardian(views: { engine.settings.views })
         activity = engine.log.recent(60)
         locked = engine.lockedItems
@@ -179,9 +182,6 @@ final class Model: ObservableObject {
         return labels.isEmpty ? "Nothing to watch" : "Watching " + labels.joined(separator: ", ")
     }
 
-    /// Disks the person left out, by the key `setWatched` takes.
-    var excludedDisks: Set<String> { engine.settings.excludedVolumes }
-
     /// Names of connected disks left out, for the watching row.
     var unwatchedNames: [String] {
         let excluded = excludedDisks
@@ -196,10 +196,10 @@ final class Model: ObservableObject {
     func isWatched(_ volume: Volume) -> Bool { !excludedDisks.contains(watchKey(volume)) }
 
     func setWatched(_ volume: Volume, _ on: Bool) {
+        if on { excludedDisks.remove(watchKey(volume)) } else { excludedDisks.insert(watchKey(volume)) }
         var settings = engine.settings
-        if on { settings.excludedVolumes.remove(watchKey(volume)) } else { settings.excludedVolumes.insert(watchKey(volume)) }
+        settings.excludedVolumes = excludedDisks
         let engine = self.engine
-        objectWillChange.send()
         Task.detached(priority: .utility) { engine.update(settings) }
     }
 

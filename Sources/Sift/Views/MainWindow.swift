@@ -19,6 +19,7 @@ struct MainWindow: View {
         }
         .frame(minWidth: 520, minHeight: 480)
         .sheet(isPresented: sheetShown) { SweepSheet().environmentObject(model) }
+        .sheet(isPresented: $model.editingWatch) { WatchSheet().environmentObject(model) }
         .sheet(item: $model.editing) { folder in FolderEditor(folder: folder).environmentObject(model) }
         .alert("Sift", isPresented: errorShown, presenting: model.error) { _ in
             Button("OK") {}
@@ -108,7 +109,6 @@ struct StatusSection: View {
         } footer: {
             Text("Removes .DS_Store, ._ files and the disk-level folders macOS leaves behind, the moment they appear.")
         }
-        .sheet(isPresented: $model.editingWatch) { WatchSheet().environmentObject(model) }
     }
 }
 
