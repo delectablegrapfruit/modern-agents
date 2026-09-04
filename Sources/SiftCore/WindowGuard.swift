@@ -27,18 +27,22 @@ public enum WindowGuard {
     /// Every Finder window as "id posix-path", one per line. Windows on things
     /// that are not folders (Recents, AirDrop, the Trash) are left out.
     ///
-    /// The id is fetched into a variable before it is coerced: inside a `tell`
-    /// block AppleScript folds `(id of w) as text` into the request itself, and
-    /// Finder answers that with "Unknown object type".
+    /// The ids come in one request; each window is then addressed by id. A window
+    /// that closes or is mid-navigation meanwhile answers with an error and is
+    /// left out this time (it is seen the next second). The id is coerced only
+    /// as a local value: inside a `tell` block AppleScript folds `(id of w) as
+    /// text` into the request itself, and Finder answers that with "Unknown
+    /// object type".
     public static let listScript = """
     with timeout of \(scriptTimeout) seconds
     set out to {}
     tell application "Finder"
-    repeat with w in (every Finder window)
-    set i to id of w
+    set ids to id of every Finder window
+    repeat with k from 1 to count of ids
+    set n to item k of ids
     try
-    set p to POSIX path of ((target of w) as alias)
-    set end of out to (i as text) & " " & p
+    set p to POSIX path of ((target of Finder window id n) as alias)
+    set end of out to (n as text) & " " & p
     end try
     end repeat
     end tell
@@ -163,13 +167,16 @@ public enum WindowGuard {
     public enum ScriptError: Error, LocalizedError, Equatable {
         case notAllowed
         case timedOut
+        /// The window is gone or between folders (Finder's "can't get", -1728).
+        case gone
         case failed(String)
 
         public var errorDescription: String? {
             switch self {
             case .notAllowed: return "Sift is not allowed to control Finder. Allow it under System Settings → Privacy & Security → Automation."
             case .timedOut: return "Finder did not answer in time."
-            case .failed(let message): return "Finder did not apply the view: \(message)"
+            case .gone: return "The window is gone."
+            case .failed(let message): return message
             }
         }
     }
@@ -181,11 +188,20 @@ public enum WindowGuard {
         return Int(trimmed[trimmed.index(after: open)..<trimmed.index(before: trimmed.endIndex)])
     }
 
+    /// osascript's complaint without its character range: "Finder got an error: …".
+    static func complaint(_ message: String) -> String {
+        var text = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let range = text.range(of: #"^\d+:\d+: "#, options: .regularExpression) { text.removeSubrange(range) }
+        if let range = text.range(of: #"^execution error: "#, options: .regularExpression) { text.removeSubrange(range) }
+        return text
+    }
+
     static func error(_ message: String) -> ScriptError {
         switch errorNumber(in: message) {
         case -1743: return .notAllowed
         case -1712: return .timedOut
-        default: return .failed(message.trimmingCharacters(in: .whitespacesAndNewlines))
+        case -1728: return .gone
+        default: return .failed(WindowGuard.complaint(message))
         }
     }
 

@@ -126,6 +126,11 @@ final class Guardian {
 
     // MARK: Checking
 
+    private struct Problem: LocalizedError {
+        let errorDescription: String?
+        init(_ message: String) { errorDescription = message }
+    }
+
     private struct Outcome {
         var applied: [(path: String, view: String)] = []
         var errors: [Error] = []
@@ -164,8 +169,8 @@ final class Guardian {
         do {
             windows = try session.windows()
         } catch {
-            outcome.errors.append(error)
             outcome.notAllowed = (error as? WindowGuard.ScriptError) == .notAllowed
+            outcome.errors.append(outcome.notAllowed ? error : Problem("Finder's windows could not be read: " + error.localizedDescription))
             return outcome
         }
         for window in tracker.moved(windows) {
@@ -174,13 +179,18 @@ final class Guardian {
                 try session.apply(view, to: window.id)
                 outcome.applied.append((window.path, view.mode.label + (owner == nil ? " (default)" : "")))
             } catch {
-                outcome.errors.append(error)
                 // Not done: looked at again next time.
                 tracker.forget(window.id)
-                if (error as? WindowGuard.ScriptError) == .notAllowed {
+                switch error as? WindowGuard.ScriptError {
+                case .notAllowed:
                     outcome.notAllowed = true
+                    outcome.errors.append(error)
                     tracker.reset()
-                    break
+                    return outcome
+                case .gone:
+                    continue  // closed, or between folders: nothing to say
+                default:
+                    outcome.errors.append(Problem("Finder did not take the view of \(Paths.display(window.path)): " + error.localizedDescription))
                 }
             }
         }

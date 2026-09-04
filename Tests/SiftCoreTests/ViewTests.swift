@@ -267,6 +267,9 @@ final class WindowGuardTests: XCTestCase {
         XCTAssertEqual(WindowGuard.errorNumber(in: "36:52: execution error: Not authorized to send Apple events to Finder. (-1743)"), -1743)
         XCTAssertEqual(WindowGuard.errorNumber(in: "syntax error: A identifier can't go after this identifier. (-2740)\n"), -2740)
         XCTAssertNil(WindowGuard.errorNumber(in: "killed"))
+        XCTAssertEqual(WindowGuard.error("36:52: execution error: Finder got an error: Can’t get Finder window id 9. (-1728)"), .gone)
+        XCTAssertEqual(WindowGuard.error("114:116: execution error: Finder got an error: Unknown object type. (-1731)\n"),
+                       .failed("Finder got an error: Unknown object type. (-1731)"))
         let windows = WindowGuard.parse("12 /Users/me/Documents/\nx /nope\nnospace\n\n7 /Volumes/USB/My Photos/\n")
         XCTAssertEqual(windows, [.init(id: 12, path: "/Users/me/Documents"), .init(id: 7, path: "/Volumes/USB/My Photos")])
         XCTAssertEqual(WindowGuard.parse(""), [])
@@ -305,8 +308,9 @@ final class WindowGuardTests: XCTestCase {
         XCTAssertTrue(script.contains("set arrangement of o to arranged by kind"))
         XCTAssertTrue(script.contains("set icon size of o to 128"))
         XCTAssertTrue(WindowGuard.listScript.contains("POSIX path"))
-        XCTAssertTrue(WindowGuard.listScript.contains("set i to id of w"), "the id is fetched before it is coerced: Finder cannot do both in one step")
-        XCTAssertFalse(WindowGuard.listScript.contains("as text) & tab"))
+        XCTAssertTrue(WindowGuard.listScript.contains("set ids to id of every Finder window"), "one request for every id")
+        XCTAssertTrue(WindowGuard.listScript.contains("target of Finder window id n"), "each window addressed by id, never as item N of a changing list")
+        XCTAssertFalse(WindowGuard.listScript.contains("id of w) as text"), "Finder cannot fetch and coerce in one step")
     }
 }
 
