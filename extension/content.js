@@ -1040,11 +1040,6 @@
       return false;
     }
     pushUndo();
-    const range = scrubRange(v) || seekRange(v);
-    if (range) {
-      timeline.show(v, u.time, range, false, undo.time);
-      timeline.release();
-    }
     return true;
   }
 
@@ -1122,8 +1117,9 @@
       .map((d) => d + ' !important')
       .join(';');
 
+    // No `:host { display }` rule: it would beat the browser's `display: none`
+    // for a closed popover and keep the bar rendered after it is hidden.
     const SHEET = `
-      :host { display: block; }
       .track {
         position: relative;
         height: 2px;
@@ -1214,6 +1210,7 @@
           /* ignore */
         }
       } else {
+        // No Popover API: live inside the fullscreen element instead.
         const wanted = fs && !isVideo(fs) ? fs : document.documentElement;
         if (host.parentNode !== wanted) {
           try {
@@ -1287,11 +1284,10 @@
       const originFrac =
         Number.isFinite(n.originTime) && span > 0 ? clamp((n.originTime - n.range[0]) / span, 0, 1) : NaN;
 
-      // Writes.
-      if (width < 40) {
-        host.style.setProperty('display', 'none', 'important');
-      } else {
-        host.style.setProperty('display', 'block', 'important');
+      // Writes. (Never set `display` on the host: the browser hides a closed
+      // popover with `display: none`, and an inline value would override it.)
+      host.style.setProperty('visibility', width < 40 ? 'hidden' : 'visible', 'important');
+      if (width >= 40) {
         host.style.setProperty('left', left + 'px', 'important');
         host.style.setProperty('top', top + 'px', 'important');
         host.style.setProperty('width', width + 'px', 'important');
@@ -1307,8 +1303,8 @@
         label.style.left = atEnd ? 'auto' : (frac * 100).toFixed(3) + '%';
         label.style.right = atEnd ? (100 - frac * 100).toFixed(3) + '%' : 'auto';
         host.dataset.pos = frac.toFixed(4); // for tests and debugging
-        raise();
       }
+      raise();
       frame = requestAnimationFrame(tick);
     }
 
@@ -1320,7 +1316,6 @@
       state = null;
       if (!host) return;
       open = false;
-      unfade();
       try {
         if (host.hasAttribute('popover')) {
           if (host.matches(':popover-open')) host.hidePopover();
@@ -1330,6 +1325,7 @@
       } catch {
         /* ignore */
       }
+      unfade(); // reset for the next appearance, once it is no longer rendered
     }
 
     return { show, release, hide };

@@ -675,6 +675,14 @@ test('the timeline spans the video, follows playback after the gesture, tracks r
   await page.waitForFunction(() => !document.querySelector('scroll-to-scrub-hud').matches(':popover-open'), null, {
     timeout: 3000,
   });
+  const gone = () =>
+    page.evaluate(() => {
+      const el = document.querySelector('scroll-to-scrub-hud');
+      return getComputedStyle(el).display === 'none' && el.getBoundingClientRect().width === 0;
+    });
+  assert.equal(await gone(), true, 'not rendered at all once hidden');
+  await page.waitForTimeout(700); // still playing: it must not come back on its own
+  assert.equal(await gone(), true, 'stays hidden while the video plays');
 
   await setSettings(ext.worker, page, { showTimeline: false });
   await page.waitForTimeout(300);
