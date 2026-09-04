@@ -263,10 +263,24 @@
         // Native shell: genuine scroll-wheel notches (down, tilt right, ⇧ + down, up) delivered through WKWebView.
         let wheelOk = true, wheelDetail = '';
         if (this.shell && window.webkit && window.webkit.messageHandlers) {
-          const notch = async (dy, dx, shift) => { const p = Reader.page; this.shell.post({ type: 'selftestWheel', dy, dx, shift: !!shift }); await U.sleep(700); return Reader.page - p; };
-          const down = await notch(-1, 0), tilt = await notch(0, -1), shifted = await notch(-1, 0, true), up = await notch(1, 0);
-          wheelOk = down > 0 && tilt > 0 && shifted > 0 && up < 0;
-          wheelDetail = `, wheel notches (pages moved): down ${down}, tilt ${tilt}, shift+down ${shifted}, up ${up}`;
+          let domHits = 0; const probe = () => { domHits++; };
+          Reader.doc.addEventListener('wheel', probe, { capture: true, passive: true });
+          const send = async (dy, dx, shift, method, attach) => { const p = Reader.page, h = domHits; this.shell.post({ type: 'selftestWheel', dy, dx, shift: !!shift, method, attach: !!attach }); await U.sleep(600); return { moved: Reader.page - p, dom: domHits - h }; };
+          // Find a delivery route that produces DOM wheel events, then verify the four notch kinds through it.
+          const trials = []; let best = null;
+          for (const method of ['direct', 'window', 'post', 'pid']) for (const attach of [false, true]) {
+            const r = await send(-1, 0, false, method, attach);
+            trials.push(`${method}${attach ? '+win' : ''}: dom ${r.dom}, moved ${r.moved}`);
+            if (!best && r.dom > 0) best = { method, attach };
+          }
+          Reader.doc.removeEventListener('wheel', probe, true);
+          if (!best) { wheelOk = false; wheelDetail = `, wheel: no delivery route produced DOM events [${trials.join('; ')}]`; }
+          else {
+            const notch = (dy, dx, shift) => send(dy, dx, shift, best.method, best.attach);
+            const down = (await notch(-1, 0)).moved, tilt = (await notch(0, -1)).moved, shifted = (await notch(-1, 0, true)).moved, up = (await notch(1, 0)).moved;
+            wheelOk = down > 0 && tilt > 0 && shifted > 0 && up < 0;
+            wheelDetail = `, wheel via ${best.method}${best.attach ? '+win' : ''} (pages moved): down ${down}, tilt ${tilt}, shift+down ${shifted}, up ${up} [${trials.join('; ')}]`;
+          }
         }
         const ok = L.total > 3 && afterNext > before && scrolled > 0 && !Reader._endShown && wheelOk;
         const detail = `${L.total} pages, ${L.cols} column(s), page ${before + 1} → ${afterNext + 1}, scrollLeft ${Math.round(scrolled)}, end card ${Reader._endShown ? 'shown' : 'not shown'}, theme ${Reader.effectiveTheme()}${wheelDetail}; ${navigator.userAgent}`;
