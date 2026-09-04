@@ -65,7 +65,9 @@
 
 <div id="reader" class="reader" hidden>
   <div class="reader-stage" id="rd-stage">
-    <iframe id="rd-frame" class="reader-frame" title="Book content" sandbox="allow-same-origin"></iframe>
+    <!-- Book content is sanitized before it is written here (no scripts, handlers or javascript: URLs). allow-scripts is
+         required because WebKit does not run event listeners, even parent-registered ones, in a script-disabled frame. -->
+    <iframe id="rd-frame" class="reader-frame" title="Book content" sandbox="allow-same-origin allow-scripts"></iframe>
     <div class="reader-spine" id="rd-spine" hidden></div>
     <button class="reader-nav reader-nav-left" id="rd-prev" type="button" title="Previous Page" aria-label="Previous page"></button>
     <button class="reader-nav reader-nav-right" id="rd-next" type="button" title="Next Page" aria-label="Next page"></button>

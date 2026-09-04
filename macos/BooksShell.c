@@ -21,7 +21,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <dlfcn.h>
-#include <unistd.h>
 
 typedef struct objc_object *id;
 typedef struct objc_selector *SEL;
@@ -84,8 +83,6 @@ static void (*CGEventSetFlags_)(CGEventRef, uint64_t);
 static uint32_t (*CGMainDisplayID_)(void);
 static CGRect (*CGDisplayBounds_)(uint32_t);
 static void (*CFRelease_)(const void *);
-static void (*CGEventSetIntegerValueField_)(CGEventRef, uint32_t, int64_t);
-static void (*CGEventPostToPid_)(int32_t, CGEventRef);
 static void load_coregraphics(void) {
   void *cg = dlopen("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics", RTLD_NOW);
   void *cf = dlopen("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation", RTLD_NOW);
@@ -96,8 +93,6 @@ static void load_coregraphics(void) {
   CGMainDisplayID_ = (uint32_t (*)(void))dlsym(cg, "CGMainDisplayID");
   CGDisplayBounds_ = (CGRect (*)(uint32_t))dlsym(cg, "CGDisplayBounds");
   CFRelease_ = (void (*)(const void *))dlsym(cf, "CFRelease");
-  CGEventSetIntegerValueField_ = (void (*)(CGEventRef, uint32_t, int64_t))dlsym(cg, "CGEventSetIntegerValueField");
-  CGEventPostToPid_ = (void (*)(int32_t, CGEventRef))dlsym(cg, "CGEventPostToPid");
 }
 
 static void eval_js(const char *js) { ((void (*)(id, SEL, id, void *))objc_msgSend_)(g_webview, S("evaluateJavaScript:completionHandler:"), nsstr(js), NULL); }
@@ -186,43 +181,26 @@ static void dg_run_open_panel(id self, SEL _cmd, id webView, id params, id frame
 }
 /* Self-test only: deliver a real scroll-wheel event (mouse notch semantics: line units, no precise deltas) to the
    web view, as AppKit would for a physical mouse. dy/dx are wheel notches (negative dy = scroll down, negative dx =
-   tilt right); shift adds the ⇧ modifier. `method` selects the delivery route: "direct" ([webView scrollWheel:]),
-   "window" ([window sendEvent:]), "post" (application event queue) or "pid" (CGEventPostToPid to ourselves);
-   `attach` stamps the event with our window number so AppKit associates it with the window. */
-static void post_wheel(int dy, int dx, bool shift, const char *method, bool attach, double px, double py) {
+   tilt right); shift adds the ⇧ modifier; (px, py) is the target in AppKit window coordinates (origin bottom-left). */
+static void post_wheel(int dy, int dx, bool shift, double px, double py) {
   if (!CGEventCreateScrollWheelEvent_ || !CGEventSetLocation_ || !CGEventSetFlags_ || !CGMainDisplayID_ || !CGDisplayBounds_) {
     fprintf(stderr, "SELFTEST: CoreGraphics is unavailable; cannot synthesize wheel events\n"); return;
   }
   CGRect display = CGDisplayBounds_(CGMainDisplayID_());
-  CGPoint inWindow = { px > 0 ? px : 600, py > 0 ? py : 400 }; /* target in window coordinates (AppKit, origin bottom-left) */
-  CGPoint scr = ((CGPoint (*)(id, SEL, CGPoint))objc_msgSend_)(g_window, S("convertPointToScreen:"), inWindow);
-  /* Without a window, AppKit reports the location in screen coordinates and WebKit reads it as view coordinates, so
-     aim at the screen point equal to the window point; with a window attached, aim at the real screen position. */
-  CGPoint cg = attach ? (CGPoint){ scr.x, display.h - scr.y } : (CGPoint){ inWindow.x, display.h - inWindow.y };
+  CGPoint inWindow = { px > 0 ? px : 600, py > 0 ? py : 400 };
+  /* A CGEvent-made NSEvent has no window: AppKit reports its location in screen coordinates and WebKit reads them as
+     view coordinates, so aim at the screen point equal to the wanted window point. */
+  CGPoint cg = { inWindow.x, display.h - inWindow.y };
   CGEventRef ev = CGEventCreateScrollWheelEvent_(NULL, 1 /* kCGScrollEventUnitLine */, 2, (int32_t)dy, (int32_t)dx);
   if (!ev) { fprintf(stderr, "SELFTEST: CGEventCreateScrollWheelEvent failed\n"); return; }
   CGEventSetLocation_(ev, cg);
   CGEventSetFlags_(ev, shift ? (uint64_t)0x20000 /* kCGEventFlagMaskShift */ : 0);
-  if (attach && CGEventSetIntegerValueField_) {
-    long wn = ret_long(g_window, "windowNumber");
-    CGEventSetIntegerValueField_(ev, 91 /* kCGMouseEventWindowUnderMousePointer */, wn);
-    CGEventSetIntegerValueField_(ev, 92 /* kCGMouseEventWindowUnderMousePointerThatCanHandleThisEvent */, wn);
-  }
-  if (!strcmp(method, "pid")) {
-    if (CGEventPostToPid_) CGEventPostToPid_((int32_t)getpid(), ev);
-    printf("SELFTEST: wheel dy %d dx %d shift %d via pid%s at (%g, %g)\n", dy, dx, shift ? 1 : 0, attach ? "+win" : "", cg.x, cg.y); fflush(stdout);
-    if (CFRelease_) CFRelease_(ev);
-    return;
-  }
   id nsev = call1(C("NSEvent"), "eventWithCGEvent:", ev);
   if (CFRelease_) CFRelease_(ev);
   if (!nsev) { fprintf(stderr, "SELFTEST: could not create an NSEvent for the wheel\n"); return; }
   double evDy = ((double (*)(id, SEL))objc_msgSend_)(nsev, S("deltaY")), evDx = ((double (*)(id, SEL))objc_msgSend_)(nsev, S("deltaX"));
-  CGPoint loc = ((CGPoint (*)(id, SEL))objc_msgSend_)(nsev, S("locationInWindow"));
-  printf("SELFTEST: wheel deltaY %g deltaX %g shift %d via %s%s at (%g, %g) window %s\n", evDy, evDx, shift ? 1 : 0, method, attach ? "+win" : "", loc.x, loc.y, call0(nsev, "window") ? "attached" : "none"); fflush(stdout);
-  if (!strcmp(method, "window")) callv1(g_window, "sendEvent:", nsev);
-  else if (!strcmp(method, "post")) ((void (*)(id, SEL, id, BOOL))objc_msgSend_)(g_app, S("postEvent:atStart:"), nsev, 0);
-  else callv1(g_webview, "scrollWheel:", nsev);
+  printf("SELFTEST: wheel event deltaY %g deltaX %g shift %d at window point (%g, %g)\n", evDy, evDx, shift ? 1 : 0, inWindow.x, inWindow.y); fflush(stdout);
+  callv1(g_webview, "scrollWheel:", nsev);
 }
 
 /* WKScriptMessageHandler: window.webkit.messageHandlers.books.postMessage({type, ...}) */
@@ -252,15 +230,13 @@ static void dg_script_message(id self, SEL _cmd, id controller, id message) {
   }
   else if (!strcmp(t, "selftestWheel") && g_selftest && is_kind(body, "NSDictionary")) {
     id dy = call1(body, "objectForKey:", nsstr("dy")), dx = call1(body, "objectForKey:", nsstr("dx")), shift = call1(body, "objectForKey:", nsstr("shift"));
-    id method = call1(body, "objectForKey:", nsstr("method")), attach = call1(body, "objectForKey:", nsstr("attach"));
     id px = call1(body, "objectForKey:", nsstr("x")), py = call1(body, "objectForKey:", nsstr("y"));
     double x = px ? ((double (*)(id, SEL))objc_msgSend_)(px, S("doubleValue")) : 0, y = py ? ((double (*)(id, SEL))objc_msgSend_)(py, S("doubleValue")) : 0;
     /* The page gives CSS coordinates (origin top-left); convert to AppKit window coordinates (origin bottom-left). */
-    CGRect content = { 0, 0, 0, 0 };
-    id cv = call0(g_window, "contentView");
-    if (cv) { CGSize sz = ((CGSize (*)(id, SEL))objc_msgSend_)(cv, S("frameSize")); content.w = sz.w; content.h = sz.h; }
+    double contentH = 0; id cv = call0(g_window, "contentView");
+    if (cv) { CGSize sz = ((CGSize (*)(id, SEL))objc_msgSend_)(cv, S("frameSize")); contentH = sz.h; }
     post_wheel(dy ? (int)ret_long(dy, "integerValue") : 0, dx ? (int)ret_long(dx, "integerValue") : 0, shift ? ret_bool(shift, "boolValue") : false,
-               is_kind(method, "NSString") ? cstr(method) : "direct", attach ? ret_bool(attach, "boolValue") : false, x, y > 0 && content.h > 0 ? content.h - y : 0);
+               x, y > 0 && contentH > 0 ? contentH - y : 0);
   }
   else if (!strcmp(t, "dragWindow")) { id ev = call0(g_app, "currentEvent"); if (ev && responds(g_window, "performWindowDragWithEvent:")) callv1(g_window, "performWindowDragWithEvent:", ev); }
   else if (!strcmp(t, "zoomWindow")) callv1(g_window, "performZoom:", NULL);

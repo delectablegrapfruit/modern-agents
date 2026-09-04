@@ -263,28 +263,13 @@
         // Native shell: genuine scroll-wheel notches (down, tilt right, ⇧ + down, up) delivered through WKWebView.
         let wheelOk = true, wheelDetail = '';
         if (this.shell && window.webkit && window.webkit.messageHandlers) {
-          let domHits = 0, mainHits = 0, lastTop = ''; const probe = () => { domHits++; }, mainProbe = e => { mainHits++; const t = e.target; lastTop = `${t && (t.id || t.tagName || t.nodeName)}@${Math.round(e.clientX)},${Math.round(e.clientY)}`; };
+          let frameHits = 0; const probe = () => { frameHits++; };
           Reader.doc.addEventListener('wheel', probe, { capture: true, passive: true });
-          document.addEventListener('wheel', mainProbe, { capture: true, passive: true });
-          const send = async (dy, dx, shift, method, attach, x, y) => { const p = Reader.page, h = domHits, m = mainHits; lastTop = ''; this.shell.post({ type: 'selftestWheel', dy, dx, shift: !!shift, method, attach: !!attach, x: x || 0, y: y || 0 }); await U.sleep(600); return { moved: Reader.page - p, dom: domHits - h, main: mainHits - m, top: lastTop }; };
-          const under = (x, y) => { const el = document.elementFromPoint(x, y); return el ? (el.id || el.tagName) : 'none'; };
-          const geometry = `view ${innerWidth}x${innerHeight}, frame ${JSON.stringify((r => ({ x: r.left, y: r.top, w: r.width, h: r.height }))(Reader.frame.getBoundingClientRect()))}, under(600,420)=${under(600, 420)}, under(600,400)=${under(600, 400)}, under(640,300)=${under(640, 300)}`;
-          // Find a delivery route that produces DOM wheel events in the book frame, then verify the four notch kinds through it.
-          const trials = []; let best = null;
-          for (const [x, y] of [[600, 400], [640, 300], [300, 600]]) for (const attach of [false, true]) {
-            const r = await send(-1, 0, false, 'direct', attach, x, y);
-            trials.push(`(${x},${y})${attach ? '+win' : ''}: frame ${r.dom}, top ${r.main}${r.top ? ' on ' + r.top : ''}, moved ${r.moved}`);
-            if (!best && r.dom > 0) best = { method: 'direct', attach, x, y };
-          }
-          trials.unshift(geometry);
-          Reader.doc.removeEventListener('wheel', probe, true); document.removeEventListener('wheel', mainProbe, true);
-          if (!best) { wheelOk = false; wheelDetail = `, wheel: no delivery route produced DOM events [${trials.join('; ')}]`; }
-          else {
-            const notch = (dy, dx, shift) => send(dy, dx, shift, best.method, best.attach, best.x, best.y);
-            const down = (await notch(-1, 0)).moved, tilt = (await notch(0, -1)).moved, shifted = (await notch(-1, 0, true)).moved, up = (await notch(1, 0)).moved;
-            wheelOk = down > 0 && tilt > 0 && shifted > 0 && up < 0;
-            wheelDetail = `, wheel via ${best.method}${best.attach ? '+win' : ''} (pages moved): down ${down}, tilt ${tilt}, shift+down ${shifted}, up ${up} [${trials.join('; ')}]`;
-          }
+          const notch = async (dy, dx, shift) => { const p = Reader.page, h = frameHits; this.shell.post({ type: 'selftestWheel', dy, dx, shift: !!shift, x: 600, y: 420 }); await U.sleep(700); return { moved: Reader.page - p, events: frameHits - h }; };
+          const down = await notch(-1, 0), tilt = await notch(0, -1), shifted = await notch(-1, 0, true), up = await notch(1, 0);
+          Reader.doc.removeEventListener('wheel', probe, true);
+          wheelOk = down.moved > 0 && tilt.moved > 0 && shifted.moved > 0 && up.moved < 0;
+          wheelDetail = `, real wheel notches (pages moved / wheel events in the book frame): down ${down.moved}/${down.events}, tilt ${tilt.moved}/${tilt.events}, shift+down ${shifted.moved}/${shifted.events}, up ${up.moved}/${up.events}`;
         }
         const ok = L.total > 3 && afterNext > before && scrolled > 0 && !Reader._endShown && wheelOk;
         const detail = `${L.total} pages, ${L.cols} column(s), page ${before + 1} → ${afterNext + 1}, scrollLeft ${Math.round(scrolled)}, end card ${Reader._endShown ? 'shown' : 'not shown'}, theme ${Reader.effectiveTheme()}${wheelDetail}; ${navigator.userAgent}`;

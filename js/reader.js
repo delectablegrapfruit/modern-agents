@@ -1,4 +1,4 @@
-/* Reader: paginated (single/two-page) or vertically scrolling EPUB rendering inside a sandboxed iframe,
+/* Reader: paginated (single/two-page) or vertically scrolling EPUB rendering inside an iframe (content sanitized by epub.js),
    themes & typography, mouse-wheel/trackpad page turning, contents/bookmarks/notes, highlights, search,
    reading-time statistics and PDF viewing via the browser's built-in viewer. */
 (function (global) {
