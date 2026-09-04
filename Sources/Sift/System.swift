@@ -87,30 +87,42 @@ enum Helper {
 
 /// Finder reads its preferences at launch and flushes `.DS_Store` on the way
 /// out, so it is stopped before anything is written and started again after.
+/// It is asked to quit the way its Quit menu item would: after that launchd
+/// leaves it down (a signal would have it back within seconds, before the
+/// writes, reading the old files), so it is started again by Sift.
 enum Finder {
     static let bundleID = "com.apple.finder"
 
+    private static var running: [NSRunningApplication] {
+        NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+    }
+
+    /// True once Finder is gone.
     @MainActor
-    static func quit() async {
-        let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
-        guard !running.isEmpty else { return }
-        for app in running { kill(app.processIdentifier, SIGTERM) }
-        for _ in 0..<30 where !running.allSatisfy(\.isTerminated) {
-            try? await Task.sleep(nanoseconds: 100_000_000)
-        }
-        running.filter { !$0.isTerminated }.forEach { $0.forceTerminate() }
-        for _ in 0..<20 where !running.allSatisfy(\.isTerminated) {
-            try? await Task.sleep(nanoseconds: 100_000_000)
-        }
+    static func quit() async -> Bool {
+        let apps = running
+        guard !apps.isEmpty else { return true }
+        let session = WindowGuard.Session()
+        Task.detached(priority: .userInitiated) { try? session.quitFinder() }
+        if await gone(apps, within: 10) { return true }
+        // Not scriptable (permission refused): the same request through AppKit.
+        apps.forEach { $0.terminate() }
+        return await gone(apps, within: 5)
     }
 
     @MainActor
-    static func relaunch() async {
-        // launchd normally brings Finder back on its own; make sure.
-        try? await Task.sleep(nanoseconds: 800_000_000)
-        if NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).isEmpty {
-            let url = URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app")
-            _ = try? await NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+    private static func gone(_ apps: [NSRunningApplication], within seconds: Int) async -> Bool {
+        for _ in 0..<(seconds * 10) {
+            if apps.allSatisfy(\.isTerminated) { return true }
+            try? await Task.sleep(nanoseconds: 100_000_000)
         }
+        return apps.allSatisfy(\.isTerminated)
+    }
+
+    @MainActor
+    static func launch() async {
+        guard running.isEmpty else { return }
+        let url = URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app")
+        _ = try? await NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
     }
 }

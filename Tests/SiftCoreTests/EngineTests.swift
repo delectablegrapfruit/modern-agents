@@ -52,7 +52,7 @@ final class EngineTests: XCTestCase {
         settings.views.folders = [FolderView(path: box.path + "/Users/me/Pictures", view: FinderView(mode: .gallery))]
         engine.update(settings)
         engine.refreshVolumes()
-        XCTAssertEqual(engine.safety.keptStores, [box.path + "/Users/me/.DS_Store", box.path + "/Users/me/Pictures/.DS_Store"])
+        XCTAssertEqual(engine.safety.keptStores, [box.path + "/Users/me/.DS_Store"])
 
         let preview = try engine.sweep(roots: engine.roots(), dryRun: true)
         XCTAssertEqual(preview.removed.count, 5)
@@ -62,7 +62,7 @@ final class EngineTests: XCTestCase {
         XCTAssertEqual(relative(outcome.removed, from: box.path),
                        ["USB/.DS_Store", "USB/.Spotlight-V100", "USB/Docs/.DS_Store", "Users/me/Desktop/.DS_Store", "Users/me/Library/Preferences/.DS_Store"])
         XCTAssertTrue(box.exists("Users/me/.DS_Store"), "the store carrying Pictures' view stays")
-        XCTAssertFalse(box.exists("Users/me/Pictures/.DS_Store"), "a kept store that was never written is not created by a sweep")
+        XCTAssertFalse(box.exists("Users/me/Pictures/.DS_Store"), "the folder's own store carries nothing")
         XCTAssertTrue(box.exists("USB/Docs/a"))
         XCTAssertTrue(box.exists("Elsewhere/.DS_Store"))
         XCTAssertEqual(engine.log.statistics.removed, 5)

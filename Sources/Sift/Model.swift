@@ -228,7 +228,7 @@ final class Model: ObservableObject {
 
     var hasChanges: Bool { draft != applied }
 
-    /// Quits Finder, writes its defaults and every folder view, relaunches it.
+    /// Quits Finder, writes its defaults and every folder view, starts it again.
     func apply() {
         guard hasChanges, applyPhase == nil else { return }
         applyPhase = "Applying…"
@@ -240,7 +240,9 @@ final class Model: ObservableObject {
         let engine = self.engine
         Task { @MainActor in
             var problems: [String] = []
-            await Finder.quit()
+            if !(await Finder.quit()) {
+                problems.append("Finder would not quit; it may show the previous views until it is restarted.")
+            }
             do { try FinderPrefs.write(views) } catch { problems.append(error.localizedDescription) }
             await Task.detached(priority: .userInitiated) { engine.update(settings) }.value
             do {
@@ -248,12 +250,12 @@ final class Model: ObservableObject {
             } catch {
                 problems.append(error.localizedDescription)
             }
-            await Finder.relaunch()
+            await Finder.launch()
             applied = engine.settings.views
             if !problems.isEmpty { error = problems.joined(separator: "\n") }
             applyPhase = nil
-            guardian.isPaused = false
             guardian.forget()
+            guardian.isPaused = false
         }
     }
 
