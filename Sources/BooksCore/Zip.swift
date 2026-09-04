@@ -190,9 +190,18 @@ public struct ZipWriter {
 
     private static func dosDateTime(_ date: Date) -> (UInt16, UInt16) {
         let c = Calendar(identifier: .gregorian).dateComponents(in: TimeZone.current, from: date)
-        let year = max(1980, c.year ?? 1980)
-        let time = UInt16(((c.hour ?? 0) << 11) | ((c.minute ?? 0) << 5) | ((c.second ?? 0) / 2))
-        let day = UInt16(((year - 1980) << 9) | ((c.month ?? 1) << 5) | (c.day ?? 1))
-        return (time, day)
+        let year: Int = max(1980, c.year ?? 1980)
+        let hour: Int = c.hour ?? 0
+        let minute: Int = c.minute ?? 0
+        let second: Int = c.second ?? 0
+        let month: Int = c.month ?? 1
+        let dayOfMonth: Int = c.day ?? 1
+        var time: Int = hour << 11
+        time |= minute << 5
+        time |= second / 2
+        var day: Int = (year - 1980) << 9
+        day |= month << 5
+        day |= dayOfMonth
+        return (UInt16(time & 0xFFFF), UInt16(day & 0xFFFF))
     }
 }

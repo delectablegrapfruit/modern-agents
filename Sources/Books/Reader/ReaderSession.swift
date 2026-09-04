@@ -10,14 +10,14 @@ struct TimelineMark: Hashable {
     let level: Int
 }
 
-struct ReaderLayout {
-    var mode: ReaderLayoutMode = .paginated
+struct ReaderLayoutInfo {
+    var mode: Mode = .paginated
     var total: Double = 1
     var columns = 1
     var chapters: [TimelineMark] = []
     var bookmarks: [TimelineMark] = []
 
-    enum ReaderLayoutMode: String { case paginated, scroll }
+    enum Mode: String { case paginated, scroll }
 }
 
 struct ReaderPosition {
@@ -73,7 +73,7 @@ final class ReaderSession {
 
     private(set) var isPageReady = false
     private(set) var isOpen = false
-    private(set) var layout = ReaderLayout()
+    private(set) var layout = ReaderLayoutInfo()
     private(set) var position = ReaderPosition()
     private(set) var toc: [ReaderTOCItem] = []
     private(set) var annotations: [Annotation]
@@ -342,8 +342,8 @@ final class ReaderSession {
     var pendingNoteAfterHighlight = false
 
     private func updateLayout(_ m: JSON) {
-        var l = ReaderLayout()
-        l.mode = ReaderLayout.ReaderLayoutMode(rawValue: m.string("mode") ?? "paginated") ?? .paginated
+        var l = ReaderLayoutInfo()
+        l.mode = ReaderLayoutInfo.Mode(rawValue: m.string("mode") ?? "paginated") ?? .paginated
         l.total = m.double("total") ?? 1
         l.columns = m.int("cols") ?? 1
         l.chapters = m.array("chapters").map { TimelineMark(label: $0.string("label") ?? "", pos: $0.double("pos") ?? 0, level: $0.int("level") ?? 0) }
