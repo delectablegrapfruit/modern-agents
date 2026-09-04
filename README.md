@@ -10,6 +10,15 @@ installable PWA when served over HTTP.
 
 ## Running
 
+**macOS app (prebuilt):** `Books.app` in the repository root is a native, universal (Apple silicon + Intel) app —
+double-click it. It is a tiny Cocoa shell (see `macos/`) that hosts the web app in a WKWebView with a unified
+title bar, the standard menu bar, Finder “Open With” for EPUB/PDF/TXT, native open/save panels and drag & drop.
+It needs macOS 11 or later and is not notarised: if you downloaded the repository as a ZIP (rather than cloning
+it), macOS quarantines the app — right-click ▸ Open, or on macOS 15+ allow it under System Settings ▸ Privacy &
+Security, or run `xattr -dr com.apple.quarantine Books.app`.
+
+**Any browser:**
+
 ```sh
 # Option A — just open the file
 open index.html            # macOS
@@ -60,6 +69,9 @@ With **Vertical Scrolling** enabled the wheel scrolls the text continuously inst
 ## Layout of the code
 
 ```
+Books.app/            prebuilt macOS app (universal binary + copy of the web app in Contents/Resources/app)
+macos/BooksShell.c    the native shell: NSWindow + WKWebView via the Objective-C runtime (no SDK needed)
+macos/build.sh        rebuilds Books.app with `zig cc` (arm64 + x86_64), packs the icon, copies the web app
 index.html            app shell (sidebar, toolbar, library view, reader overlay)
 css/app.css           macOS-style chrome, light & dark
 css/reader.css        reader chrome, panels, popovers
@@ -85,10 +97,26 @@ CSS `url()`s are resolved to blob URLs. Pagination is CSS multi-column layout wi
 turn scrolls by one (or two) column widths. Positions are stored as `{spine, character offset}` locators, which is
 what lets highlights, bookmarks and the reading position survive font, size, margin and window changes.
 
+### Rebuilding Books.app
+
+The bundle is committed prebuilt. To rebuild after changing the web app or the shell:
+
+```sh
+pip install ziglang            # or install Zig from ziglang.org
+ZIG="python3 -m ziglang" ./macos/build.sh
+```
+
+`build.sh` cross-compiles `macos/BooksShell.c` for arm64 and x86_64 (Zig ad-hoc signs the arm64 slice), joins
+them into a universal binary, renders `icon.svg` into `AppIcon.icns` (Playwright, optional) and copies the web
+app into `Contents/Resources/app`. The shell talks to the page through `window.webkit.messageHandlers.books`
+(window drag/zoom from the HTML chrome, save panel for exports, files handed over as base64) and implements
+`WKUIDelegate` so `<input type=file>` opens a real `NSOpenPanel`.
+
 ## Requirements and limitations
 
 - A current browser: EPUB decompression uses `DecompressionStream('deflate-raw')` (Safari 16.4+, Chrome 103+,
-  Firefox 113+). Constructable stylesheets and `color-mix()` are used for CSS.
+  Firefox 113+). Constructable stylesheets and `color-mix()` are used for CSS. Books.app uses the system WebKit,
+  so it needs the macOS version that ships Safari 16.4 or newer (macOS 13.3+) for EPUBs.
 - PDFs use the browser’s native viewer, so their reading position and page count are not tracked like EPUBs.
 - There are no audiobooks — Books only ever offered those through the store.
 - Storage is per browser profile; clearing site data removes the library. *Storage & Data…* in the ••• menu shows
