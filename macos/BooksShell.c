@@ -35,6 +35,8 @@ typedef signed char BOOL;
 #endif
 typedef struct { double x, y, w, h; } CGRect;
 typedef struct { double w, h; } CGSize;
+typedef struct { double x, y; } CGPoint;
+typedef void *CGEventRef;
 typedef struct { void *isa; int flags; int reserved; void (*invoke)(void *, ...); void *descriptor; } BlockLiteral;
 
 static id (*objc_msgSend_)(id, SEL, ...);
@@ -73,6 +75,25 @@ static void invoke_block_id(id block, id arg) { if (block) ((void (*)(void *, id
 static id g_app, g_window, g_webview, g_delegate, g_pending;
 static bool g_ready = false;
 static bool g_selftest = false; /* BOOKS_SELFTEST=1: load the page, open a sample book, report and exit (used by CI) */
+
+/* CoreGraphics (only used by the self-test to synthesize real scroll-wheel events) */
+static CGEventRef (*CGEventCreateScrollWheelEvent_)(void *, uint32_t, uint32_t, int32_t, ...);
+static void (*CGEventSetLocation_)(CGEventRef, CGPoint);
+static void (*CGEventSetFlags_)(CGEventRef, uint64_t);
+static uint32_t (*CGMainDisplayID_)(void);
+static CGRect (*CGDisplayBounds_)(uint32_t);
+static void (*CFRelease_)(const void *);
+static void load_coregraphics(void) {
+  void *cg = dlopen("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics", RTLD_NOW);
+  void *cf = dlopen("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation", RTLD_NOW);
+  if (!cg || !cf) return;
+  CGEventCreateScrollWheelEvent_ = (CGEventRef (*)(void *, uint32_t, uint32_t, int32_t, ...))dlsym(cg, "CGEventCreateScrollWheelEvent");
+  CGEventSetLocation_ = (void (*)(CGEventRef, CGPoint))dlsym(cg, "CGEventSetLocation");
+  CGEventSetFlags_ = (void (*)(CGEventRef, uint64_t))dlsym(cg, "CGEventSetFlags");
+  CGMainDisplayID_ = (uint32_t (*)(void))dlsym(cg, "CGMainDisplayID");
+  CGDisplayBounds_ = (CGRect (*)(uint32_t))dlsym(cg, "CGDisplayBounds");
+  CFRelease_ = (void (*)(const void *))dlsym(cf, "CFRelease");
+}
 
 static void eval_js(const char *js) { ((void (*)(id, SEL, id, void *))objc_msgSend_)(g_webview, S("evaluateJavaScript:completionHandler:"), nsstr(js), NULL); }
 static void selftest_exit(int code, const char *prefix, const char *detail) {
@@ -158,6 +179,41 @@ static void dg_run_open_panel(id self, SEL _cmd, id webView, id params, id frame
   BOOL multiple = responds(params, "allowsMultipleSelection") ? ret_bool(params, "allowsMultipleSelection") : 1;
   invoke_block_id(completion, open_panel(multiple));
 }
+/* Self-test only: deliver a real scroll-wheel event (mouse notch semantics: line units, no precise deltas) to the
+   web view, exactly as AppKit would for a physical mouse. dy/dx are wheel notches (negative dy = scroll down,
+   negative dx = tilt right); shift adds the ⇧ modifier. */
+static id wheel_event_at(int dy, int dx, bool shift, CGPoint cgLocation) {
+  CGEventRef ev = CGEventCreateScrollWheelEvent_(NULL, 1 /* kCGScrollEventUnitLine */, 2, (int32_t)dy, (int32_t)dx);
+  if (!ev) return NULL;
+  CGEventSetLocation_(ev, cgLocation);
+  CGEventSetFlags_(ev, shift ? (uint64_t)0x20000 /* kCGEventFlagMaskShift */ : 0);
+  id nsev = call1(C("NSEvent"), "eventWithCGEvent:", ev);
+  if (CFRelease_) CFRelease_(ev);
+  return nsev;
+}
+static void post_wheel(int dy, int dx, bool shift) {
+  if (!CGEventCreateScrollWheelEvent_ || !CGEventSetLocation_ || !CGEventSetFlags_ || !CGMainDisplayID_ || !CGDisplayBounds_) {
+    fprintf(stderr, "SELFTEST: CoreGraphics is unavailable; cannot synthesize wheel events\n"); return;
+  }
+  CGRect display = CGDisplayBounds_(CGMainDisplayID_());
+  CGPoint inWindow = { 600, 400 }; /* a point well inside the book, in window coordinates */
+  /* AppKit gives a windowless event's location in screen coordinates and WebKit reads it as view coordinates, so
+     aim for the screen point that equals the window point. If AppKit attached our window instead, re-aim so the
+     window-relative location lands on the same spot. */
+  CGPoint cg = { inWindow.x, display.h - inWindow.y };
+  id nsev = wheel_event_at(dy, dx, shift, cg);
+  if (nsev && call0(nsev, "window")) {
+    CGPoint scr = ((CGPoint (*)(id, SEL, CGPoint))objc_msgSend_)(g_window, S("convertPointToScreen:"), inWindow);
+    CGPoint cg2 = { scr.x, display.h - scr.y };
+    nsev = wheel_event_at(dy, dx, shift, cg2);
+  }
+  if (!nsev) { fprintf(stderr, "SELFTEST: could not create an NSEvent for the wheel\n"); return; }
+  double evDy = ((double (*)(id, SEL))objc_msgSend_)(nsev, S("deltaY")), evDx = ((double (*)(id, SEL))objc_msgSend_)(nsev, S("deltaX"));
+  CGPoint loc = ((CGPoint (*)(id, SEL))objc_msgSend_)(nsev, S("locationInWindow"));
+  printf("SELFTEST: wheel event deltaY %g deltaX %g shift %d at (%g, %g) window %s\n", evDy, evDx, shift ? 1 : 0, loc.x, loc.y, call0(nsev, "window") ? "attached" : "none"); fflush(stdout);
+  callv1(g_webview, "scrollWheel:", nsev);
+}
+
 /* WKScriptMessageHandler: window.webkit.messageHandlers.books.postMessage({type, ...}) */
 static void dg_script_message(id self, SEL _cmd, id controller, id message) {
   (void)self; (void)_cmd; (void)controller;
@@ -182,6 +238,10 @@ static void dg_script_message(id self, SEL _cmd, id controller, id message) {
     id detail = is_kind(body, "NSDictionary") ? call1(body, "objectForKey:", nsstr("detail")) : NULL;
     bool pass = ok && ret_bool(ok, "boolValue");
     if (g_selftest) selftest_exit(pass ? 0 : 1, pass ? "SELFTEST OK: " : "SELFTEST FAIL: ", cstr(detail));
+  }
+  else if (!strcmp(t, "selftestWheel") && g_selftest && is_kind(body, "NSDictionary")) {
+    id dy = call1(body, "objectForKey:", nsstr("dy")), dx = call1(body, "objectForKey:", nsstr("dx")), shift = call1(body, "objectForKey:", nsstr("shift"));
+    post_wheel(dy ? (int)ret_long(dy, "integerValue") : 0, dx ? (int)ret_long(dx, "integerValue") : 0, shift ? ret_bool(shift, "boolValue") : false);
   }
   else if (!strcmp(t, "dragWindow")) { id ev = call0(g_app, "currentEvent"); if (ev && responds(g_window, "performWindowDragWithEvent:")) callv1(g_window, "performWindowDragWithEvent:", ev); }
   else if (!strcmp(t, "zoomWindow")) callv1(g_window, "performZoom:", NULL);
@@ -300,6 +360,7 @@ int main(void) {
   objc_autoreleasePoolPush_ = (void *(*)(void))need(objc, "objc_autoreleasePoolPush");
   if (!dlopen("/System/Library/Frameworks/AppKit.framework/AppKit", RTLD_NOW)) { fprintf(stderr, "Books: cannot load AppKit\n"); return 1; }
   if (!dlopen("/System/Library/Frameworks/WebKit.framework/WebKit", RTLD_NOW)) { fprintf(stderr, "Books: cannot load WebKit\n"); return 1; }
+  if (getenv("BOOKS_SELFTEST")) load_coregraphics();
   objc_autoreleasePoolPush_();
   g_selftest = getenv("BOOKS_SELFTEST") != NULL;
   if (g_selftest) { printf("SELFTEST: starting Books shell\n"); fflush(stdout); }

@@ -259,8 +259,17 @@
         Reader.next();
         await U.sleep(600);
         const se = Reader.se, scrolled = se ? se.scrollLeft : -1;
-        const ok = L.total > 3 && Reader.page > before && scrolled > 0 && !Reader._endShown;
-        const detail = `${L.total} pages, ${L.cols} column(s), page ${before + 1} → ${Reader.page + 1}, scrollLeft ${Math.round(scrolled)}, end card ${Reader._endShown ? 'shown' : 'not shown'}, theme ${Reader.effectiveTheme()}; ${navigator.userAgent}`;
+        const afterNext = Reader.page;
+        // Native shell: genuine scroll-wheel notches (down, tilt right, ⇧ + down, up) delivered through WKWebView.
+        let wheelOk = true, wheelDetail = '';
+        if (this.shell && window.webkit && window.webkit.messageHandlers) {
+          const notch = async (dy, dx, shift) => { const p = Reader.page; this.shell.post({ type: 'selftestWheel', dy, dx, shift: !!shift }); await U.sleep(700); return Reader.page - p; };
+          const down = await notch(-1, 0), tilt = await notch(0, -1), shifted = await notch(-1, 0, true), up = await notch(1, 0);
+          wheelOk = down > 0 && tilt > 0 && shifted > 0 && up < 0;
+          wheelDetail = `, wheel notches (pages moved): down ${down}, tilt ${tilt}, shift+down ${shifted}, up ${up}`;
+        }
+        const ok = L.total > 3 && afterNext > before && scrolled > 0 && !Reader._endShown && wheelOk;
+        const detail = `${L.total} pages, ${L.cols} column(s), page ${before + 1} → ${afterNext + 1}, scrollLeft ${Math.round(scrolled)}, end card ${Reader._endShown ? 'shown' : 'not shown'}, theme ${Reader.effectiveTheme()}${wheelDetail}; ${navigator.userAgent}`;
         await Reader.close({ silent: true });
         return report({ ok, detail });
       } catch (e) { return report({ ok: false, detail: 'exception: ' + ((e && e.stack) || e) }); }
