@@ -69,7 +69,7 @@ final class ZipTests: XCTestCase {
 }
 
 final class EPUBTests: XCTestCase {
-    func sampleSpec() -> EPUBSpec {
+    static func sampleSpec() -> EPUBSpec {
         let chapters = (1...3).map { i in
             EPUBChapter(label: "Chapter \(i)", title: "Title \(i)", html: "<p>" + String(repeating: "Words in chapter \(i) go here. ", count: 30) + "</p>")
         }
@@ -77,7 +77,7 @@ final class EPUBTests: XCTestCase {
     }
 
     func testBuildAndParse() throws {
-        let data = EPUBWriter.build(sampleSpec())
+        let data = EPUBWriter.build(EPUBTests.sampleSpec())
         let archive = try ZipArchive(data: data)
         XCTAssertEqual(archive.names.first, "mimetype", "mimetype must be the first entry")
         XCTAssertEqual(archive.entries.first?.method, 0, "mimetype must be stored")
@@ -152,12 +152,15 @@ final class TextBookTests: XCTestCase {
         Text with _emphasis_ and **strength** and a lone * star.
         """
         let chapters = TextBook.chapters(from: text)
-        XCTAssertEqual(chapters.map { $0.title ?? "" }, ["CHAPTER I", "Chapter Two", "Third heading in markdown"])
-        XCTAssertTrue(chapters[0].html.contains("<p class=\"verse\">Roses are red,<br/>violets are blue,<br/>this is a verse block.</p>"))
-        XCTAssertTrue(chapters[0].html.contains("<p>It was a bright cold day in April, and the clocks were striking thirteen. Winston Smith slipped quickly through the glass doors.</p>"))
-        XCTAssertTrue(chapters[2].html.contains("<em>emphasis</em>"))
-        XCTAssertTrue(chapters[2].html.contains("<strong>strength</strong>"))
-        XCTAssertTrue(chapters[2].html.contains("lone * star"))
+        // A heading with nothing under it labels the chapter that follows ("Chapter Two" over the markdown heading).
+        XCTAssertEqual(chapters.map { $0.title ?? "" }, ["CHAPTER I", "Third heading in markdown"])
+        XCTAssertEqual(chapters.map { $0.label ?? "" }, ["", "Chapter Two"])
+        guard chapters.count == 2 else { return XCTFail("expected two chapters") }
+        XCTAssertTrue(chapters[0].html.contains("<p class=\"verse\">Roses are red,<br/>violets are blue,<br/>this is a verse block.</p>"), chapters[0].html)
+        XCTAssertTrue(chapters[0].html.contains("<p>It was a bright cold day in April, and the clocks were striking thirteen. Winston Smith slipped quickly through the glass doors.</p>"), chapters[0].html)
+        XCTAssertTrue(chapters[1].html.contains("<em>emphasis</em>"), chapters[1].html)
+        XCTAssertTrue(chapters[1].html.contains("<strong>strength</strong>"), chapters[1].html)
+        XCTAssertTrue(chapters[1].html.contains("lone * star"), chapters[1].html)
         let guess = TextBook.guessTitleAuthor(fileName: "whatever.txt", text: text)
         XCTAssertEqual(guess.title, "The Test")
         XCTAssertEqual(guess.author, "Tess Ter")
@@ -194,7 +197,7 @@ final class LibraryStoreTests: XCTestCase {
     func testImportEPUBTextAndCollections() throws {
         let store = LibraryStore(directory: dir.appendingPathComponent("Library"))
         let epubURL = dir.appendingPathComponent("test.epub")
-        try EPUBWriter.build(EPUBTests().sampleSpec()).write(to: epubURL)
+        try EPUBWriter.build(EPUBTests.sampleSpec()).write(to: epubURL)
         guard case .added(let book) = try store.importFile(at: epubURL) else { return XCTFail("not added") }
         XCTAssertEqual(book.title, "A Test Book")
         XCTAssertEqual(book.kind, .epub)

@@ -242,7 +242,7 @@ public final class EPUBBook {
                 if let a = XML.child(of: li, named: "a") ?? XML.child(of: li, named: "span") {
                     let label = HTMLText.collapse(a.stringValue ?? "")
                     let href = a.attribute(forName: "href")?.stringValue ?? ""
-                    out.append(TOCEntry(label: label, href: href.isEmpty ? "" : Paths.resolve(dir, href), level: level))
+                    out.append(TOCEntry(label: label, href: href.isEmpty ? "" : Paths.resolveKeepingFragment(dir, href), level: level))
                 }
                 if let nested = XML.child(of: li, named: "ol") { walk(nested, level: level + 1) }
             }
@@ -259,7 +259,7 @@ public final class EPUBBook {
             for point in XML.children(of: parent, named: "navPoint") {
                 let label = XML.descendants(of: point, named: "text").first?.stringValue ?? ""
                 let src = XML.child(of: point, named: "content")?.attribute(forName: "src")?.stringValue ?? ""
-                out.append(TOCEntry(label: HTMLText.collapse(label), href: src.isEmpty ? "" : Paths.resolve(dir, src), level: level))
+                out.append(TOCEntry(label: HTMLText.collapse(label), href: src.isEmpty ? "" : Paths.resolveKeepingFragment(dir, src), level: level))
                 walk(point, level: level + 1)
             }
         }
@@ -307,6 +307,13 @@ public enum Paths {
         let decoded = stripFragment(href).removingPercentEncoding ?? stripFragment(href)
         if decoded.hasPrefix("/") { return normalize(String(decoded.dropFirst())) }
         return normalize(directory + decoded)
+    }
+
+    /// Like `resolve`, but keeps the `#fragment` a table of contents points at.
+    public static func resolveKeepingFragment(_ directory: String, _ href: String) -> String {
+        let path = resolve(directory, href)
+        if let fragment = fragment(of: href), !fragment.isEmpty { return path + "#" + fragment }
+        return path
     }
 
     public static func normalize(_ path: String) -> String {

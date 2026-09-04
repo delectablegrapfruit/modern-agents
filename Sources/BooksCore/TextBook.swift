@@ -57,21 +57,28 @@ public enum TextBook {
         text = stripGutenbergBoilerplate(text)
         let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
 
-        struct Draft { var title: String?; var lines: [String] = [] }
+        struct Draft { var label: String?; var title: String?; var lines: [String] = []; var hasText: Bool { lines.contains { !$0.trimmingCharacters(in: .whitespaces).isEmpty } } }
         var drafts: [Draft] = []
-        var current = Draft(title: nil)
+        var current = Draft()
         for (i, line) in lines.enumerated() {
             if let heading = headingText(lines, i) {
-                if current.lines.contains(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) { drafts.append(current) }
-                current = Draft(title: heading)
+                if current.hasText {
+                    drafts.append(current)
+                    current = Draft(title: heading)
+                } else if let above = current.title {
+                    // A heading right under a heading ("PART ONE" over "CHAPTER I") labels the chapter it opens.
+                    current = Draft(label: [current.label, above].compactMap { $0 }.joined(separator: " · "), title: heading)
+                } else {
+                    current = Draft(title: heading)
+                }
             } else {
                 current.lines.append(line)
             }
         }
-        if current.title != nil || current.lines.contains(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) { drafts.append(current) }
+        if current.title != nil || current.hasText { drafts.append(current) }
 
-        var built = drafts.filter { $0.title != nil || $0.lines.contains { !$0.trimmingCharacters(in: .whitespaces).isEmpty } }
-            .map { EPUBChapter(title: $0.title, html: html(fromLines: $0.lines)) }
+        var built = drafts.filter { $0.title != nil || $0.hasText }
+            .map { EPUBChapter(label: $0.label, title: $0.title, html: html(fromLines: $0.lines)) }
         if built.count > 1, built[0].title == nil {
             // An untitled preamble is title/author lines when short; otherwise it is front matter worth keeping.
             let words = HTMLText.wordCount(HTMLText.plainText(built[0].html))
