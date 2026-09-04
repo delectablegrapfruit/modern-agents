@@ -5,6 +5,7 @@ import SiftCore
 /// what happened. Changes to views are committed from a bar that stays put.
 struct MainWindow: View {
     @EnvironmentObject private var model: Model
+    @State private var showsAbout = false
 
     var body: some View {
         Form {
@@ -14,6 +15,14 @@ struct MainWindow: View {
             ActivitySection()
         }
         .formStyle(.grouped)
+        .toolbar {
+            // What Sift is, on demand: the window itself shows what it does.
+            ToolbarItem(placement: .primaryAction) {
+                Button { showsAbout.toggle() } label: { Image(systemName: "info.circle") }
+                    .help("About Sift")
+                    .popover(isPresented: $showsAbout, arrowEdge: .bottom) { About() }
+            }
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if model.hasChanges || model.applyPhase != nil { ApplyBar() }
         }
@@ -35,6 +44,30 @@ struct MainWindow: View {
 
     private var errorShown: Binding<Bool> {
         Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })
+    }
+}
+
+/// What Sift does, in three short paragraphs, behind the toolbar's ⓘ.
+struct About: View {
+    private var version: String {
+        let info = Bundle.main.infoDictionary
+        let short = info?["CFBundleShortVersionString"] as? String ?? ""
+        return short.isEmpty ? "" : "Version " + short
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Sift").font(.headline)
+                if !version.isEmpty { Text(version).font(.caption).foregroundStyle(.secondary) }
+            }
+            Text("Removes the hidden files macOS leaves on every disk, such as .DS_Store, ._ sidecar files and the disk-level folders, the moment they appear. Sweep clears what was there before.")
+            Text("Makes Finder show folders your way: one view for every folder on every disk, folders with a view of their own, and no more remembering whatever view a window last had.")
+            Text("Never touched: system folders, apps, Time Machine disks, and anything of yours.")
+                .foregroundStyle(.secondary)
+        }
+        .padding(16)
+        .frame(width: 340)
     }
 }
 
