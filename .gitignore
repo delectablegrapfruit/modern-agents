@@ -1,4 +1,5 @@
 macos/.build/
 build/
 dist/Books.app/
+tools/
 .DS_Store
