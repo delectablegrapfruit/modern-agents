@@ -1,0 +1,2 @@
+0dd499d3ffda3c6c43e787bf329f990df320475b4c8f2ad421b9807cee7555b7  Books.app.zip
+f2258f5c6b65f30a1b3c8e636181bd4cbf62dc1cef14cbe3cfce87753db1a593  Books.dmg
