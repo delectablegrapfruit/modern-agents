@@ -1,0 +1,85 @@
+name: Build Books.app
+
+on:
+  push:
+    branches: ['**']
+    paths-ignore: ['dist/**']
+  pull_request:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: books-app-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build, sign, launch-test and package
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compile universal shell (arm64 + x86_64, macOS 11+)
+        run: |
+          mkdir -p build
+          clang -arch arm64 -arch x86_64 -mmacosx-version-min=11.0 -O2 -Wall -Wextra -Wno-cast-function-type -o build/Books macos/BooksShell.c
+          lipo -info build/Books
+
+      - name: Assemble Books.app
+        run: macos/package.sh build/Books dist
+
+      - name: Sign (ad-hoc) and verify the bundle
+        run: |
+          codesign --force --deep --sign - dist/Books.app
+          codesign --verify --deep --strict --verbose=2 dist/Books.app
+          plutil -lint dist/Books.app/Contents/Info.plist
+
+      - name: Launch test — start the app, load the web app, open a sample book
+        timeout-minutes: 5
+        run: |
+          (sleep 25; screencapture -x build/launch-test.png || true) &
+          BOOKS_SELFTEST=1 dist/Books.app/Contents/MacOS/Books
+          wait
+
+      - name: Package (zip + dmg + checksums)
+        run: |
+          rm -f dist/Books.app.zip dist/Books.dmg
+          ditto -c -k --keepParent dist/Books.app dist/Books.app.zip
+          hdiutil create -volname Books -srcfolder dist/Books.app -ov -format UDZO dist/Books.dmg
+          (cd dist && shasum -a 256 Books.app.zip Books.dmg | tee SHA256SUMS.txt)
+          ls -la dist
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: Books.app
+          if-no-files-found: error
+          path: |
+            dist/Books.app.zip
+            dist/Books.dmg
+            dist/SHA256SUMS.txt
+            build/launch-test.png
+
+      - name: Commit packages to dist/
+        if: github.event_name == 'push'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f dist/Books.app.zip dist/Books.dmg dist/SHA256SUMS.txt
+          if git diff --cached --quiet; then echo "dist/ unchanged"; exit 0; fi
+          git commit -m "ci: package Books.app into dist/ (${GITHUB_SHA::7}) [skip ci]"
+          git pull --rebase --autostash origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+
+      - name: Attach packages to the release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/Books.app.zip
+            dist/Books.dmg
+            dist/SHA256SUMS.txt

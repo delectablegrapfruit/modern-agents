@@ -72,6 +72,15 @@ static void invoke_block_id(id block, id arg) { if (block) ((void (*)(void *, id
 /* ---- state ---------------------------------------------------------------------------- */
 static id g_app, g_window, g_webview, g_delegate, g_pending;
 static bool g_ready = false;
+static bool g_selftest = false; /* BOOKS_SELFTEST=1: load the page, open a sample book, report and exit (used by CI) */
+
+static void eval_js(const char *js) { ((void (*)(id, SEL, id, void *))objc_msgSend_)(g_webview, S("evaluateJavaScript:completionHandler:"), nsstr(js), NULL); }
+static void selftest_exit(int code, const char *prefix, const char *detail) {
+  FILE *out = code ? stderr : stdout;
+  fprintf(out, "%s%s\n", prefix, detail ? detail : "");
+  fflush(stdout); fflush(stderr);
+  exit(code);
+}
 
 /* Read files and hand them to the page as base64 (App.receiveFiles). */
 static void send_files(id paths) {
@@ -160,7 +169,20 @@ static void dg_script_message(id self, SEL _cmd, id controller, id message) {
     content = call1(body, "objectForKey:", nsstr("content"));
   } else if (is_kind(body, "NSString")) type = body;
   const char *t = cstr(type);
-  if (!strcmp(t, "ready")) { g_ready = true; flush_pending(); }
+  if (!strcmp(t, "ready")) {
+    g_ready = true; flush_pending();
+    if (g_selftest) {
+      id books = is_kind(body, "NSDictionary") ? call1(body, "objectForKey:", nsstr("books")) : NULL;
+      printf("SELFTEST: page ready (%ld books in library)\n", books ? ret_long(books, "integerValue") : -1L); fflush(stdout);
+      eval_js("window.App && App.selfTest && App.selfTest();");
+    }
+  }
+  else if (!strcmp(t, "selftest")) {
+    id ok = is_kind(body, "NSDictionary") ? call1(body, "objectForKey:", nsstr("ok")) : NULL;
+    id detail = is_kind(body, "NSDictionary") ? call1(body, "objectForKey:", nsstr("detail")) : NULL;
+    bool pass = ok && ret_bool(ok, "boolValue");
+    if (g_selftest) selftest_exit(pass ? 0 : 1, pass ? "SELFTEST OK: " : "SELFTEST FAIL: ", cstr(detail));
+  }
   else if (!strcmp(t, "dragWindow")) { id ev = call0(g_app, "currentEvent"); if (ev && responds(g_window, "performWindowDragWithEvent:")) callv1(g_window, "performWindowDragWithEvent:", ev); }
   else if (!strcmp(t, "zoomWindow")) callv1(g_window, "performZoom:", NULL);
   else if (!strcmp(t, "minimize")) callv1(g_window, "performMiniaturize:", NULL);
@@ -177,6 +199,15 @@ static void dg_script_message(id self, SEL _cmd, id controller, id message) {
   }
 }
 
+/* WKNavigationDelegate / timer hooks used by the self-test */
+static void dg_did_finish_navigation(id self, SEL _cmd, id webView, id navigation) { (void)self; (void)_cmd; (void)webView; (void)navigation; if (g_selftest) { printf("SELFTEST: index.html loaded\n"); fflush(stdout); } }
+static void dg_navigation_failed(id self, SEL _cmd, id webView, id navigation, id error) {
+  (void)self; (void)_cmd; (void)webView; (void)navigation;
+  if (g_selftest) selftest_exit(2, "SELFTEST FAIL: navigation failed: ", cstr(call0(error, "localizedDescription")));
+}
+static void dg_process_terminated(id self, SEL _cmd, id webView) { (void)self; (void)_cmd; (void)webView; if (g_selftest) selftest_exit(3, "SELFTEST FAIL: web content process terminated", NULL); }
+static void dg_selftest_timeout(id self, SEL _cmd, id timer) { (void)self; (void)_cmd; (void)timer; selftest_exit(1, "SELFTEST FAIL: timed out waiting for the page", NULL); }
+
 static Class make_delegate_class(void) {
   Class cls = objc_allocateClassPair_(C("NSObject"), "BooksShellDelegate", 0);
   class_addMethod_(cls, S("applicationShouldTerminateAfterLastWindowClosed:"), (IMP)dg_terminate_after_last_window, BOOL_ENC "@:@");
@@ -186,6 +217,11 @@ static Class make_delegate_class(void) {
   class_addMethod_(cls, S("addToLibrary:"), (IMP)dg_add_to_library, "v@:@");
   class_addMethod_(cls, S("webView:runOpenPanelWithParameters:initiatedByFrame:completionHandler:"), (IMP)dg_run_open_panel, "v@:@@@@?");
   class_addMethod_(cls, S("userContentController:didReceiveScriptMessage:"), (IMP)dg_script_message, "v@:@@");
+  class_addMethod_(cls, S("webView:didFinishNavigation:"), (IMP)dg_did_finish_navigation, "v@:@@");
+  class_addMethod_(cls, S("webView:didFailProvisionalNavigation:withError:"), (IMP)dg_navigation_failed, "v@:@@@");
+  class_addMethod_(cls, S("webView:didFailNavigation:withError:"), (IMP)dg_navigation_failed, "v@:@@@");
+  class_addMethod_(cls, S("webViewWebContentProcessDidTerminate:"), (IMP)dg_process_terminated, "v@:@");
+  class_addMethod_(cls, S("selftestTimeout:"), (IMP)dg_selftest_timeout, "v@:@");
   objc_registerClassPair_(cls);
   return cls;
 }
@@ -260,6 +296,8 @@ int main(void) {
   if (!dlopen("/System/Library/Frameworks/AppKit.framework/AppKit", RTLD_NOW)) { fprintf(stderr, "Books: cannot load AppKit\n"); return 1; }
   if (!dlopen("/System/Library/Frameworks/WebKit.framework/WebKit", RTLD_NOW)) { fprintf(stderr, "Books: cannot load WebKit\n"); return 1; }
   objc_autoreleasePoolPush_();
+  g_selftest = getenv("BOOKS_SELFTEST") != NULL;
+  if (g_selftest) { printf("SELFTEST: starting Books shell\n"); fflush(stdout); }
 
   g_app = call0(C("NSApplication"), "sharedApplication");
   call_long(g_app, "setActivationPolicy:", 0 /* NSApplicationActivationPolicyRegular */);
@@ -296,6 +334,7 @@ int main(void) {
   g_webview = ((id (*)(id, SEL, CGRect, id))objc_msgSend_)(call0(C("WKWebView"), "alloc"), S("initWithFrame:configuration:"), frame, config);
   call_ulong(g_webview, "setAutoresizingMask:", 2 /* width sizable */ | 16 /* height sizable */);
   callv1(g_webview, "setUIDelegate:", g_delegate);
+  callv1(g_webview, "setNavigationDelegate:", g_delegate);
   callv1(call0(g_window, "contentView"), "addSubview:", g_webview);
 
   id defaults = call0(C("NSUserDefaults"), "standardUserDefaults");
@@ -306,6 +345,8 @@ int main(void) {
   id indexURL = call1(C("NSURL"), "fileURLWithPath:", indexPath);
   id dirURL = ((id (*)(id, SEL, id, BOOL))objc_msgSend_)(C("NSURL"), S("fileURLWithPath:isDirectory:"), appDir, 1);
   call2(g_webview, "loadFileURL:allowingReadAccessToURL:", indexURL, dirURL);
+
+  if (g_selftest) ((id (*)(id, SEL, double, id, SEL, id, BOOL))objc_msgSend_)(C("NSTimer"), S("scheduledTimerWithTimeInterval:target:selector:userInfo:repeats:"), 120.0, g_delegate, S("selftestTimeout:"), NULL, 0);
 
   callv1(g_window, "makeKeyAndOrderFront:", NULL);
   call_bool(g_app, "activateIgnoringOtherApps:", 1);

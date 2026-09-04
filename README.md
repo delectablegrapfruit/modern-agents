@@ -1,5 +1,7 @@
 # Books (offline)
 
+[![Build Books.app](https://github.com/delectablegrapfruit/modern-agents/actions/workflows/macos-app.yml/badge.svg?branch=book-reader)](https://github.com/delectablegrapfruit/modern-agents/actions/workflows/macos-app.yml)
+
 A self-contained reader that reproduces the presentation and features of **Books for macOS** without any of its
 online parts: no Book Store, no Audiobook Store, no account, no sync, no “For You” recommendations. Everything —
 the library, reading positions, bookmarks, highlights, notes, collections and reading goals — lives in the browser’s
@@ -10,12 +12,14 @@ installable PWA when served over HTTP.
 
 ## Running
 
-**macOS app (prebuilt):** `Books.app` in the repository root is a native, universal (Apple silicon + Intel) app —
-double-click it. It is a tiny Cocoa shell (see `macos/`) that hosts the web app in a WKWebView with a unified
-title bar, the standard menu bar, Finder “Open With” for EPUB/PDF/TXT, native open/save panels and drag & drop.
-It needs macOS 11 or later and is not notarised: if you downloaded the repository as a ZIP (rather than cloning
-it), macOS quarantines the app — right-click ▸ Open, or on macOS 15+ allow it under System Settings ▸ Privacy &
-Security, or run `xattr -dr com.apple.quarantine Books.app`.
+**macOS app:** download [`dist/Books.app.zip`](dist/Books.app.zip) (or [`dist/Books.dmg`](dist/Books.dmg)),
+unzip and drag `Books.app` to Applications. The packages are built by GitHub Actions on a macOS runner from every
+push (workflow *Build Books.app*, `.github/workflows/macos-app.yml`) and committed to `dist/`; the same files are
+attached to each run as artifacts and to releases. The app is a universal (Apple silicon + Intel) Cocoa shell
+(see `macos/`) that hosts the web app in a WKWebView with a unified title bar, the standard menu bar, Finder “Open
+With” for EPUB/PDF/TXT, native open/save panels and drag & drop. It needs macOS 11 or later (13.3+ for EPUBs) and
+is ad-hoc signed but not notarised: if macOS refuses to open it, right-click ▸ Open, or allow it under System
+Settings ▸ Privacy & Security, or run `xattr -dr com.apple.quarantine Books.app`.
 
 **Any browser:**
 
@@ -69,9 +73,11 @@ With **Vertical Scrolling** enabled the wheel scrolls the text continuously inst
 ## Layout of the code
 
 ```
-Books.app/            prebuilt macOS app (universal binary + copy of the web app in Contents/Resources/app)
+dist/                 packaged Books.app.zip / Books.dmg / SHA256SUMS.txt, committed by CI
+.github/workflows/    macos-app.yml — builds, signs, launch-tests and packages the app on a macOS runner
 macos/BooksShell.c    the native shell: NSWindow + WKWebView via the Objective-C runtime (no SDK needed)
-macos/build.sh        rebuilds Books.app with `zig cc` (arm64 + x86_64), packs the icon, copies the web app
+macos/package.sh      assembles Books.app from a compiled shell binary (used by CI and build.sh)
+macos/build.sh        local cross-build with `zig cc` (arm64 + x86_64) → dist/Books.app(.zip)
 index.html            app shell (sidebar, toolbar, library view, reader overlay)
 css/app.css           macOS-style chrome, light & dark
 css/reader.css        reader chrome, panels, popovers
@@ -97,20 +103,28 @@ CSS `url()`s are resolved to blob URLs. Pagination is CSS multi-column layout wi
 turn scrolls by one (or two) column widths. Positions are stored as `{spine, character offset}` locators, which is
 what lets highlights, bookmarks and the reading position survive font, size, margin and window changes.
 
-### Rebuilding Books.app
+### How Books.app is built
 
-The bundle is committed prebuilt. To rebuild after changing the web app or the shell:
+`.github/workflows/macos-app.yml` runs on `macos-14` for every push (and on `workflow_dispatch` / releases):
 
-```sh
-pip install ziglang            # or install Zig from ziglang.org
-ZIG="python3 -m ziglang" ./macos/build.sh
-```
+1. `clang -arch arm64 -arch x86_64 -mmacosx-version-min=11.0` compiles `macos/BooksShell.c` into a universal binary.
+2. `macos/package.sh` assembles `dist/Books.app` (Info.plist, icon, the web app in `Contents/Resources/app`).
+3. `codesign --sign -` ad-hoc signs the bundle and `codesign --verify --deep --strict` checks it.
+4. **Launch test**: the app is started with `BOOKS_SELFTEST=1`. The shell loads `index.html`, waits for the page's
+   `ready` message, asks the page to open the first sample book and turn a page, prints the result and exits
+   non-zero on any failure (navigation error, crashed web process, 120 s timeout).
+5. `ditto` and `hdiutil` produce `Books.app.zip` and `Books.dmg`; checksums go to `SHA256SUMS.txt`.
+6. The packages are uploaded as the `Books.app` artifact, committed to `dist/` (push events) and attached to
+   releases.
 
-`build.sh` cross-compiles `macos/BooksShell.c` for arm64 and x86_64 (Zig ad-hoc signs the arm64 slice), joins
-them into a universal binary, renders `icon.svg` into `AppIcon.icns` (Playwright, optional) and copies the web
-app into `Contents/Resources/app`. The shell talks to the page through `window.webkit.messageHandlers.books`
-(window drag/zoom from the HTML chrome, save panel for exports, files handed over as base64) and implements
-`WKUIDelegate` so `<input type=file>` opens a real `NSOpenPanel`.
+To build locally without a Mac: `pip install ziglang && ZIG="python3 -m ziglang" ./macos/build.sh` cross-compiles
+the same source with Zig (which ad-hoc signs the arm64 slice) and writes `dist/Books.app` + `dist/Books.app.zip`.
+
+The shell is one C file talking to AppKit/WebKit through the Objective-C runtime (`dlopen`/`objc_msgSend`), so it
+needs no SDK. It implements `WKUIDelegate` so `<input type=file>` opens a real `NSOpenPanel`, handles
+`application:openFiles:` for Finder, and exchanges messages with the page through
+`window.webkit.messageHandlers.books` (window drag/zoom from the HTML chrome, save panel for exports, files handed
+over as base64, self-test results).
 
 ## Requirements and limitations
 

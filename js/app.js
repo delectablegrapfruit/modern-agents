@@ -33,7 +33,27 @@
       this.handleLaunchFiles();
       DB.persist();
       if (!Library.books.length && !Settings.get('samplesInstalled')) await Library.installSamples();
-      if (this.shell) this.shell.post({ type: 'ready' });
+      if (this.shell) this.shell.post({ type: 'ready', books: Library.books.length });
+    },
+
+    /** Exercised by CI (BOOKS_SELFTEST=1): open the first book in the native shell, turn a page, report back. */
+    async selfTest() {
+      const report = r => { if (this.shell) this.shell.post({ type: 'selftest', ...r }); return r; };
+      this._selfTesting = true;
+      try {
+        const book = Library.books.find(b => b.kind !== 'pdf') || Library.books[0];
+        if (!book) return report({ ok: false, detail: 'library is empty' });
+        await Reader.open(book);
+        if (!Reader.isOpen || !Reader.layout) return report({ ok: false, detail: `“${book.title}” did not open: ${Reader.lastError || 'unknown error'}` });
+        const L = Reader.layout, before = Reader.page;
+        Reader.next();
+        await U.sleep(400);
+        const ok = L.total > 1 && Reader.page > before;
+        const detail = `“${book.title}”: ${L.total} pages, ${L.cols} column(s), page ${before + 1} → ${Reader.page + 1}; ${Library.books.length} books in library; ${navigator.userAgent}`;
+        await Reader.close({ silent: true });
+        return report({ ok, detail });
+      } catch (e) { return report({ ok: false, detail: 'exception: ' + ((e && e.stack) || e) }); }
+      finally { this._selfTesting = false; }
     },
 
     /* Native shell bridge (macos/BooksShell.c): window drag/zoom from HTML chrome, file hand-off, save panel. */

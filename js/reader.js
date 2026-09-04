@@ -137,8 +137,9 @@ p.books-error { text-align: center; opacity: 0.6; margin-top: 30%; }
         this.startTicker();
       } catch (e) {
         console.error(e);
+        this.lastError = e && e.message ? e.message : String(e);
         this._hideLoading();
-        await UI.sheet({ alert: true, icon: 'warning', title: 'The book could not be opened', message: e.message || String(e) });
+        if (!(global.App && App._selfTesting)) await UI.sheet({ alert: true, icon: 'warning', title: 'The book could not be opened', message: e.message || String(e) });
         this.close();
       }
     },

@@ -1,3 +1,5 @@
 tools/.cache/
 macos/.build/
+build/
+dist/Books.app/
 .DS_Store
