@@ -114,7 +114,10 @@
    * (YouTube's own feature; skipped on YouTube, which has it natively). A
    * press that moves more than HOLD_SLOP_PX before the delay is a drag. */
   const HOLD_MS = 500;
-  const HOLD_RATE = 2;
+  const HOLD_RATE = 2; // every hold starts here
+  const HOLD_RATE_MIN = 0.25;
+  const HOLD_RATE_MAX = 4;
+  const HOLD_RATE_PER_PX = 0.01; // sideways scrolling while holding: 100 px = 1x
   const HOLD_SLOP_PX = 8;
   const HOLD_EXCLUDED = ['youtube.com', 'youtube-nocookie.com', 'youtu.be'];
   const HUD_LINGER_MS = 600;
@@ -204,6 +207,7 @@
     window.removeEventListener('click', onClickCapture, true);
     armed = false;
     timeline.hide();
+    speedBadge.hide();
   }
 
   function applySettings(next) {
@@ -570,6 +574,13 @@
 
     if (!updateWindow(now, s, o)) resetMode();
     const { ws, wo } = windowTotals();
+
+    if (hold && hold.active) {
+      // Holding to speed up: sideways scrolling sets the speed instead.
+      consume(e);
+      if (s !== 0) adjustHoldRate((settings.invert ? -s : s) * HOLD_RATE_PER_PX);
+      return;
+    }
 
     switch (mode) {
       case 'scrub': {
@@ -1212,7 +1223,8 @@
       y: e.clientY,
       pointerId: e.pointerId,
       active: false,
-      rate: 1,
+      rate: 1, // the site's rate, restored on release
+      current: HOLD_RATE, // the hold's rate; sideways scrolling changes it
       timer: setTimeout(beginHold, HOLD_MS),
     };
   }
@@ -1225,12 +1237,26 @@
     if (!v.isConnected || v.paused || v.ended) return cancelHold();
     try {
       h.rate = v.playbackRate || 1;
-      v.playbackRate = HOLD_RATE;
+      v.playbackRate = h.current;
     } catch {
       return cancelHold();
     }
     h.active = true;
-    if (settings.showTimeline) timeline.pin(v, HOLD_RATE + '×');
+    setArmed(true); // sideways scrolling now sets the speed; it must be cancelable
+    timeline.hide();
+    speedBadge.show(v, h.current);
+  }
+
+  function adjustHoldRate(delta) {
+    const h = hold;
+    if (!h || !h.active) return;
+    h.current = clamp(h.current + delta, HOLD_RATE_MIN, HOLD_RATE_MAX);
+    try {
+      h.video.playbackRate = h.current;
+    } catch {
+      /* ignore */
+    }
+    speedBadge.show(h.video, h.current);
   }
 
   function onHoldMove(e) {
@@ -1256,11 +1282,11 @@
     clearTimeout(h.timer);
     if (h.active) {
       try {
-        if (h.video.playbackRate === HOLD_RATE) h.video.playbackRate = h.rate;
+        if (h.video.playbackRate === h.current) h.video.playbackRate = h.rate;
       } catch {
         /* ignore */
       }
-      timeline.unpin();
+      speedBadge.hide();
     }
   }
 
@@ -1453,25 +1479,12 @@
 
     /* The gesture is over: keep following playback, then fade out. */
     function release() {
-      if (!state || state.pinned) return;
+      if (!state) return;
       state.live = true;
       state.releasedAt = performance.now();
     }
 
-    /* Keep the timeline up, following playback, with a label, until unpin(). */
-    function pin(video, label) {
-      const range = seekRange(video);
-      if (!range) return;
-      state = { video, pos: video.currentTime, range, factor: 1, originTime: NaN, live: true, releasedAt: 0, pinned: label };
-      if (fading) unfade();
-      if (!frame) frame = requestAnimationFrame(tick);
-    }
 
-    function unpin() {
-      if (!state || !state.pinned) return;
-      state.pinned = null;
-      state.releasedAt = performance.now();
-    }
 
     function unfade() {
       fading = false;
@@ -1487,13 +1500,11 @@
         const range = seekRange(n.video) || n.range;
         n.range = range;
         if (Number.isFinite(n.video.currentTime)) n.pos = n.video.currentTime;
-        if (!n.pinned) {
-          const since = performance.now() - n.releasedAt;
-          if (since >= TIMELINE_HOLD_MS + TIMELINE_FADE_MS) return hide();
-          if (since >= TIMELINE_HOLD_MS && !fading) {
-            fading = true;
-            host.style.setProperty('opacity', '0', 'important');
-          }
+        const since = performance.now() - n.releasedAt;
+        if (since >= TIMELINE_HOLD_MS + TIMELINE_FADE_MS) return hide();
+        if (since >= TIMELINE_HOLD_MS && !fading) {
+          fading = true;
+          host.style.setProperty('opacity', '0', 'important');
         }
       }
 
@@ -1525,11 +1536,7 @@
         label.firstChild.nodeValue = formatTime(n.pos - n.range[0], true);
         durEl.textContent = ' / ' + formatTime(span, false);
         const f = n.factor;
-        fineEl.textContent = n.pinned
-          ? n.pinned
-          : !n.live && Math.abs(f - 1) > 0.05
-            ? '×' + (f < 10 ? f.toFixed(1) : f.toFixed(0))
-            : '';
+        fineEl.textContent = !n.live && Math.abs(f - 1) > 0.05 ? '×' + (f < 10 ? f.toFixed(1) : f.toFixed(0)) : '';
         // Keep the label inside the track: right-align it near the end.
         const atEnd = frac > 0.75;
         label.style.left = atEnd ? 'auto' : (frac * 100).toFixed(3) + '%';
@@ -1560,7 +1567,158 @@
       unfade(); // reset for the next appearance, once it is no longer rendered
     }
 
-    return { show, release, pin, unpin, hide };
+    return { show, release, hide };
+  })();
+
+  /* ---- Speed badge ------------------------------------------------------- */
+
+  /* The "2×" pill at the top centre of the video while holding to speed up,
+   * as on YouTube. Re-measures the video every frame while shown. */
+  const speedBadge = (() => {
+    let host = null;
+    let textEl = null;
+    let state = null; // { video, rate }
+    let frame = 0;
+    let open = false;
+    let lastFullscreen = null;
+
+    const HOST_STYLE = [
+      'position:fixed',
+      'inset:auto',
+      'margin:0',
+      'padding:0',
+      'border:0',
+      'width:auto',
+      'height:auto',
+      'max-width:none',
+      'max-height:none',
+      'overflow:visible',
+      'background:transparent',
+      'color:inherit',
+      'pointer-events:none',
+      'z-index:2147483647',
+      'transform:translateX(-50%)',
+    ]
+      .map((d) => d + ' !important')
+      .join(';');
+
+    const SHEET = `
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 12px;
+        border-radius: 999px;
+        background: rgba(0, 0, 0, 0.6);
+        color: #fff;
+        font: 600 14px/1 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+      .ff { display: inline-flex; gap: 1px; }
+      .ff i {
+        display: block;
+        width: 0;
+        height: 0;
+        border-top: 5px solid transparent;
+        border-bottom: 5px solid transparent;
+        border-left: 7px solid #fff;
+      }
+    `;
+
+    function build() {
+      const el = document.createElement('scroll-to-scrub-speed');
+      const root = el.attachShadow({ mode: 'closed' });
+      const style = document.createElement('style');
+      style.textContent = SHEET;
+      const pill = document.createElement('div');
+      pill.className = 'pill';
+      textEl = document.createElement('span');
+      const ff = document.createElement('span');
+      ff.className = 'ff';
+      ff.append(document.createElement('i'), document.createElement('i'));
+      pill.append(textEl, ff);
+      root.append(style, pill);
+      if (typeof el.showPopover === 'function') el.setAttribute('popover', 'manual');
+      el.style.cssText = HOST_STYLE;
+      return el;
+    }
+
+    function ensure() {
+      if (host && host.isConnected) return true;
+      const parent = document.documentElement;
+      if (!parent) return false;
+      try {
+        if (!host) host = build();
+        parent.appendChild(host);
+        open = false;
+        return true;
+      } catch {
+        host = null;
+        return false;
+      }
+    }
+
+    function formatRate(rate) {
+      return (Math.round(rate * 100) / 100).toString() + '×';
+    }
+
+    function show(video, rate) {
+      state = { video, rate };
+      if (!frame) frame = requestAnimationFrame(tick);
+    }
+
+    function tick() {
+      frame = 0;
+      const n = state;
+      if (!n || !n.video.isConnected || !ensure()) return hide();
+      const r = n.video.getBoundingClientRect();
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const left = Math.max(0, r.left);
+      const right = Math.min(vw, r.right);
+      const top = clamp(Math.max(0, r.top) + 16, 8, vh - 40);
+      host.style.setProperty('visibility', right - left < 60 ? 'hidden' : 'visible', 'important');
+      host.style.setProperty('left', (left + right) / 2 + 'px', 'important');
+      host.style.setProperty('top', top + 'px', 'important');
+      textEl.textContent = formatRate(n.rate);
+      host.dataset.rate = String(n.rate);
+      const fs = document.fullscreenElement || null;
+      if (host.hasAttribute('popover')) {
+        try {
+          if (open && fs !== lastFullscreen) host.hidePopover();
+          if (!open || fs !== lastFullscreen) host.showPopover();
+        } catch {
+          /* ignore */
+        }
+      } else {
+        host.style.setProperty('display', 'block', 'important');
+      }
+      lastFullscreen = fs;
+      open = true;
+      frame = requestAnimationFrame(tick);
+    }
+
+    function hide() {
+      if (frame) {
+        cancelAnimationFrame(frame);
+        frame = 0;
+      }
+      state = null;
+      if (!host) return;
+      open = false;
+      try {
+        if (host.hasAttribute('popover')) {
+          if (host.matches(':popover-open')) host.hidePopover();
+        } else {
+          host.style.setProperty('display', 'none', 'important');
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+
+    return { show, hide };
   })();
 
   /* ---- Boot ----------------------------------------------------------- */

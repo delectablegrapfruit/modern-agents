@@ -620,11 +620,35 @@ test('press and hold on a playing video plays it at 2x until release, and the re
   assert.equal(await rate(), 1, 'not yet: a short press is a click');
   await page.waitForTimeout(500);
   assert.equal(await rate(), 2, 'held: 2x');
-  const tl = await page.evaluate(() => {
-    const el = document.querySelector('scroll-to-scrub-hud');
-    return el && el.matches(':popover-open');
-  });
-  assert.equal(tl, true, 'the timeline shows while holding');
+  const badge = () =>
+    page.evaluate(() => {
+      const el = document.querySelector('scroll-to-scrub-speed');
+      if (!el || !el.matches(':popover-open')) return null;
+      const r = el.getBoundingClientRect();
+      return { rate: Number(el.dataset.rate), x: r.left + r.width / 2, y: r.top };
+    });
+  const box = await page.locator('#plain').boundingBox();
+  let b = await badge();
+  assert.ok(b && b.rate === 2, `the speed badge shows: ${JSON.stringify(b)}`);
+  assert.ok(near(b.x, box.x + box.width / 2, 3) && b.y > box.y && b.y < box.y + 40, 'at the top centre of the video');
+  assert.equal(
+    await page.evaluate(() => {
+      const el = document.querySelector('scroll-to-scrub-hud');
+      return !!el && el.matches(':popover-open');
+    }),
+    false,
+    'the timeline is not shown while holding'
+  );
+
+  // Sideways scrolling while holding sets the speed.
+  await page.mouse.wheel(50, 0);
+  await page.waitForTimeout(60);
+  assert.equal(await rate(), 2.5, 'scrolled right: faster');
+  assert.equal((await badge()).rate, 2.5);
+  await page.mouse.wheel(-100, 0);
+  await page.waitForTimeout(60);
+  assert.equal(await rate(), 1.5, 'scrolled left: slower');
+  assert.ok(near(await time('#plain'), 10, 1.5), 'the video kept playing, no scrub');
   await page.mouse.up();
   await page.waitForTimeout(50);
   assert.equal(await rate(), 1, 'released: back to normal');
@@ -633,6 +657,14 @@ test('press and hold on a playing video plays it at 2x until release, and the re
   await page.waitForTimeout(100);
   await page.mouse.click(p.x, p.y);
   assert.equal(await page.evaluate(() => window.__clicks), 1, 'a normal click still reaches the page');
+  assert.equal(await rate(), 1);
+
+  // A new hold starts at 2x again, whatever the last one was set to.
+  await page.mouse.down();
+  await page.waitForTimeout(700);
+  assert.equal(await rate(), 2, 'reset to 2x');
+  await page.mouse.up();
+  await page.waitForTimeout(50);
   assert.equal(await rate(), 1);
 });
 
