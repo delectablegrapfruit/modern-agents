@@ -239,8 +239,16 @@ final class ReaderSession {
         let horizontal = event.scrollingDeltaX != 0 ? event.scrollingDeltaX : event.deltaX
         let sideways = abs(horizontal) > abs(vertical) || (event.modifierFlags.contains(.shift) && horizontal == 0)
         if layout.mode == .scroll {
+            if sideways {
+                // A tilt of the wheel or ⇧ + wheel moves a screen (a page, in a PDF) at a time, as it does in pages.
+                guard settings.wheelTurnsPages, settings.wheelHorizontal else { return true }
+                var delta = horizontal != 0 ? horizontal : vertical
+                if settings.wheelInvert { delta = -delta }
+                if delta < 0 { next() } else if delta > 0 { previous() }
+                return true
+            }
             if isPDF { return false }   // PDFKit scrolls its own pages
-            if !sideways, vertical != 0 { call("scrollBy", -vertical * 40) }   // 40 points a line, as WebKit scrolls
+            if vertical != 0 { call("scrollBy", -vertical * 40) }   // 40 points a line, as WebKit scrolls
             return true
         }
         guard settings.wheelTurnsPages else { return true }

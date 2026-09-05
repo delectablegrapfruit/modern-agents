@@ -324,10 +324,9 @@ public enum ReaderLayout: String, Codable, CaseIterable, Hashable {
 }
 
 public enum Spread: String, Codable, CaseIterable, Hashable {
-    case auto, one, two
+    case one, two
     public var label: String {
         switch self {
-        case .auto: return "Automatic"
         case .one: return "One Page"
         case .two: return "Two Pages"
         }
@@ -356,7 +355,7 @@ public struct ReaderSettings: Codable, Hashable {
     public var justify = false
     public var hyphenate = true
     public var layout: ReaderLayout = .paginated
-    public var spread: Spread = .auto
+    public var spread: Spread = .two
     public var pageTurn: PageTurn = .slide
     public var wheelTurnsPages = true
     public var wheelSensitivity: WheelSensitivity = .medium
@@ -384,7 +383,7 @@ public struct ReaderSettings: Codable, Hashable {
         justify = (try? c.decodeIfPresent(Bool.self, forKey: .justify)) ?? false
         hyphenate = (try? c.decodeIfPresent(Bool.self, forKey: .hyphenate)) ?? true
         layout = (try? c.decodeIfPresent(ReaderLayout.self, forKey: .layout)) ?? .paginated
-        spread = (try? c.decodeIfPresent(Spread.self, forKey: .spread)) ?? .auto
+        spread = (try? c.decodeIfPresent(Spread.self, forKey: .spread)) ?? .two
         pageTurn = (try? c.decodeIfPresent(PageTurn.self, forKey: .pageTurn)) ?? .slide
         wheelTurnsPages = (try? c.decodeIfPresent(Bool.self, forKey: .wheelTurnsPages)) ?? true
         wheelSensitivity = (try? c.decodeIfPresent(WheelSensitivity.self, forKey: .wheelSensitivity)) ?? .medium

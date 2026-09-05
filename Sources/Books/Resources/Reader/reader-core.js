@@ -60,7 +60,7 @@
 
   const DEFAULTS = {
     theme: 'original', font: 'original', fontSize: 100, lineHeight: 'normal', textWidth: 'medium',
-    justify: false, hyphenate: true, layout: 'paginated', spread: 'auto', pageTurn: 'slide',
+    justify: false, hyphenate: true, layout: 'paginated', spread: 'two', pageTurn: 'slide',
     wheelTurnsPages: true, wheelSensitivity: 'medium', wheelInvert: false, wheelHorizontal: true,
   };
   /* Settings that change where the text falls: they need a relayout with the reading position kept. */
@@ -75,7 +75,7 @@
     if (!WHEEL_THRESHOLD[out.wheelSensitivity]) out.wheelSensitivity = DEFAULTS.wheelSensitivity;
     out.layout = out.layout === 'scroll' ? 'scroll' : 'paginated';
     // The web reader called the spreads single/double; the app's protocol says one/two. Accept both.
-    out.spread = (out.spread === 'one' || out.spread === 'single') ? 'one' : (out.spread === 'two' || out.spread === 'double') ? 'two' : 'auto';
+    out.spread = (out.spread === 'one' || out.spread === 'single') ? 'one' : 'two';
     out.pageTurn = out.pageTurn === 'none' ? 'none' : 'slide';
     out.fontSize = U.clamp(Math.round(+out.fontSize || 100), 50, 300);
     for (const k of ['justify', 'hyphenate', 'wheelTurnsPages', 'wheelInvert', 'wheelHorizontal']) out[k] = !!out[k];
@@ -261,7 +261,7 @@
       const mode = s.layout;
       const tw = TEXT_WIDTH[s.textWidth] || TEXT_WIDTH.medium;
       const mSide = tw.margin;
-      const cols = mode === 'paginated' ? (s.spread === 'two' ? 2 : s.spread === 'one' ? 1 : (W >= 1000 ? 2 : 1)) : 1;
+      const cols = mode === 'paginated' ? (s.spread === 'one' ? 1 : 2) : 1;
       const gap = mSide * 2; // keeps neighbouring columns fully outside the viewport in single-page mode too
       const boxW = Math.max(200, W - 2 * mSide);
       const colW = (boxW - gap * (cols - 1)) / cols;

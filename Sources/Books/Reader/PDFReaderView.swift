@@ -48,6 +48,7 @@ final class BooksPDFView: PDFView {
 
     override func scrollWheel(with event: NSEvent) {
         if presenter?.session.handleWheel(event) == true { return }
+        if presenter?.handleTrackpad(event) == true { return }
         super.scrollWheel(with: event)
     }
 
@@ -75,6 +76,8 @@ final class PDFPresenter {
     private var hits: [UUID: PDFSelection] = [:]
     private var pendingSelection: PDFSelection?
     private var zoomFactor: CGFloat = 1
+    private var swipeDistance: CGFloat = 0
+    private var swipeTurned = false
     private var lastSize: CGSize = .zero
     private var opened = false
 
@@ -96,11 +99,7 @@ final class PDFPresenter {
     private var mode: ReaderLayoutInfo.Mode { settings.layout == .scroll ? .scroll : .paginated }
     private var columns: Int {
         guard mode == .paginated else { return 1 }
-        switch settings.spread {
-        case .two: return 2
-        case .one: return 1
-        case .auto: return view.bounds.width >= 1000 ? 2 : 1
-        }
+        return settings.spread == .one ? 1 : 2
     }
     var pageCount: Int { document?.pageCount ?? 0 }
     var currentIndex: Int {
@@ -208,7 +207,9 @@ final class PDFPresenter {
             }
         }
         view.layer?.filters = filters.isEmpty ? nil : filters
-        view.backgroundColor = NSColor(white: 0.93, alpha: 1)
+        // The surround must end up the theme's page colour: for the filtered themes white is what the filters turn
+        // into exactly that colour (and what PDFKit's page placeholder is), so a page never flashes against it.
+        view.backgroundColor = filters.isEmpty ? page : NSColor(srgbRed: 1, green: 1, blue: 1, alpha: 1)
     }
 
     private func applyLayout() {
@@ -258,16 +259,42 @@ final class PDFPresenter {
         let size = view.bounds.size
         guard size != lastSize, size.width > 0 else { return }
         lastSize = size
-        if mode == .paginated, (view.displayMode == .twoUp) != (columns == 2) {
-            applyLayout()   // the automatic spread crossed its width threshold
-        } else {
-            fitPages()
-        }
+        fitPages()
     }
 
     func zoom(_ direction: Int) {
         zoomFactor = min(4, max(0.5, zoomFactor * (direction > 0 ? 1.15 : 1 / 1.15)))
         fitPages()
+    }
+
+    /// Two-finger swipes in the paginated layout turn one page per gesture, sideways or vertical; PDFKit would
+    /// otherwise scroll a page that already fits. The inertial tail never turns another page.
+    func handleTrackpad(_ event: NSEvent) -> Bool {
+        guard mode == .paginated, event.hasPreciseScrollingDeltas else { return false }
+        if event.phase.contains(.began) || event.phase.contains(.mayBegin) {
+            swipeDistance = 0
+            swipeTurned = false
+        }
+        if event.momentumPhase != [] { return true }
+        let settings = self.settings
+        guard settings.wheelTurnsPages else { return true }
+        let dx = event.scrollingDeltaX, dy = event.scrollingDeltaY
+        let sideways = abs(dx) > abs(dy)
+        if sideways && !settings.wheelHorizontal { return true }
+        var delta = sideways ? dx : dy
+        if settings.wheelInvert { delta = -delta }
+        if !swipeTurned {
+            swipeDistance += delta
+            if abs(swipeDistance) >= 60 {
+                swipeTurned = true
+                if swipeDistance < 0 { next() } else { previous() }
+            }
+        }
+        if event.phase.contains(.ended) || event.phase.contains(.cancelled) {
+            swipeDistance = 0
+            swipeTurned = false
+        }
+        return true
     }
 
     // MARK: - Navigation
