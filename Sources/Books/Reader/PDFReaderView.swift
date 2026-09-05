@@ -193,7 +193,7 @@ final class PDFPresenter: PDFReading {
         applyLayout()
         restoreHighlights()
         observe()
-        session.pdfOpened(units: document.pageCount, unitsPerPage: 1, sections: sections, columns: columns)
+        session.pdfOpened(units: document.pageCount, pageStarts: Array(0...document.pageCount), sections: sections, columns: columns)
         let saved = session.book.position
         var page = 0
         if let pdfPage = saved?.pdfPage {
@@ -254,7 +254,7 @@ final class PDFPresenter: PDFReading {
     /// Where a sample of pages actually draws, in display space, as one box for the document — or two, when the
     /// pages carry two columns of text with clear space between them. Paper margins are cut away so the text can
     /// fill the width. Median edges resist the odd full-bleed page; blank pages are skipped.
-    static func contentBoxes(of document: PDFDocument) -> [CGRect] {
+    nonisolated static func contentBoxes(of document: PDFDocument) -> [CGRect] {
         let count = document.pageCount
         guard count > 0, let first = document.page(at: 0) else { return [] }
         let size = displaySize(of: first)
@@ -264,7 +264,7 @@ final class PDFPresenter: PDFReading {
         var profile = [Int](repeating: 0, count: 200)
         for i in 0..<samples {
             let index = count <= samples ? i : Int((Double(i) * Double(count - 1) / Double(max(1, samples - 1))).rounded())
-            guard let page = document.page(at: index), let scan = inkScan(of: page) else { continue }
+            guard let page = document.page(at: index), let scan = inkScan(of: page, width: 200) else { continue }
             boxes.append(scan.box)
             for (bin, value) in scan.profile.enumerated() where bin < profile.count { profile[bin] += value }
         }
@@ -307,12 +307,16 @@ final class PDFPresenter: PDFReading {
         return [box]
     }
 
+    /// Where one page draws, from a small rendering; nil for a blank page.
+    nonisolated static func inkBox(of page: PDFPage, width: Int) -> CGRect? {
+        inkScan(of: page, width: width)?.box
+    }
+
     /// The box of non-white pixels in a small rendering of the page (display space), and how much ink each of 200
     /// vertical strips of the page carries.
-    private static func inkScan(of page: PDFPage) -> (box: CGRect, profile: [Int])? {
+    nonisolated private static func inkScan(of page: PDFPage, width: Int) -> (box: CGRect, profile: [Int])? {
         let size = displaySize(of: page)
         guard size.width > 0, size.height > 0 else { return nil }
-        let width = 200
         let height = max(1, Int(CGFloat(width) * size.height / size.width))
         let image = page.thumbnail(of: NSSize(width: width, height: height), for: .mediaBox)
         guard let tiff = image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff), rep.bitsPerSample == 8, !rep.isPlanar, let data = rep.bitmapData else { return nil }
@@ -610,7 +614,7 @@ final class PDFPresenter: PDFReading {
     // MARK: - Search
 
     /// Every match of a query, with a little context, and the selections they came from, for `show`.
-    static func searchHits(for query: String, in document: PDFDocument, sections: [PDFSection], unitsPerPage: Int) -> (hits: [SearchHit], selections: [UUID: PDFSelection]) {
+    static func searchHits(for query: String, in document: PDFDocument, sections: [PDFSection], unitOfPage: (Int) -> Int) -> (hits: [SearchHit], selections: [UUID: PDFSelection]) {
         var results: [SearchHit] = []
         var selections: [UUID: PDFSelection] = [:]
         let trimmed = query.trimmingCharacters(in: .whitespaces)
@@ -623,7 +627,7 @@ final class PDFPresenter: PDFReading {
             context?.extend(atEnd: 60)
             let excerpt = HTMLText.collapse(context?.string ?? selection.string ?? "")
             let section = sections.last { $0.page <= index }
-            let hit = SearchHit(locator: Locator(spine: index, offset: results.count), excerpt: excerpt, chapter: section?.label ?? "Page \(index + 1)", pos: Double(index * unitsPerPage))
+            let hit = SearchHit(locator: Locator(spine: index, offset: results.count), excerpt: excerpt, chapter: section?.label ?? "Page \(index + 1)", pos: Double(unitOfPage(index)))
             selections[hit.id] = selection
             results.append(hit)
         }
@@ -635,7 +639,7 @@ final class PDFPresenter: PDFReading {
             session.pdfSearchResults([], for: query)
             return
         }
-        let found = PDFPresenter.searchHits(for: query, in: document, sections: sections, unitsPerPage: 1)
+        let found = PDFPresenter.searchHits(for: query, in: document, sections: sections, unitOfPage: { $0 })
         hits = found.selections
         session.pdfSearchResults(found.hits, for: query)
     }

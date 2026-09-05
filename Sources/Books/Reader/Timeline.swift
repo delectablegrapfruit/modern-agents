@@ -80,10 +80,14 @@ struct Timeline: View {
         let chapter = session.layout.chapters.last { $0.pos <= pos + 0.5 }?.label ?? ""
         let where_: String
         if session.layout.mode == .paginated {
-            let per = Double(max(1, session.pdfUnitsPerPage))
-            let page = per > 1 ? whole((pos / per).rounded(.down)) + 1 : whole(pos.rounded()) + 1
-            let total = whole(session.layout.total / per)
-            where_ = "Page \(min(page, total)) of \(total)"
+            let pages = session.pdfPageStarts.count - 1
+            if session.book.kind == .pdf, pages > 0 {
+                let page = session.pdfPage(forUnit: whole(pos.rounded(.down))) + 1
+                where_ = "Page \(min(page, pages)) of \(pages)"
+            } else {
+                let total = whole(session.layout.total)
+                where_ = "Page \(min(whole(pos.rounded()) + 1, total)) of \(total)"
+            }
         } else {
             where_ = "\(whole((fraction * 100).rounded()))%"
         }

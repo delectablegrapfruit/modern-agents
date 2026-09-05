@@ -232,6 +232,8 @@ enum SelfTest {
         try await sleep(0.8)
         let screensTwoUp = fitSession.layout.total
         guard screensTwoUp >= 8, fitSession.layout.columns == 2 else { throw Failure("Zoom & Split made \(Int(screensTwoUp)) screens of 8 pages in \(fitSession.layout.columns) column(s); expected two columns") }
+        guard let split = fitSession.pdf as? SplitPDFPresenter else { throw Failure("Zoom & Split is not using the split presenter") }
+        try checkFlow(split)
         var fitSettings = model.settings
         fitSettings.reader.spread = .one
         model.settings = fitSettings
@@ -239,6 +241,7 @@ enum SelfTest {
         try await sleep(0.6)
         let screensOneUp = fitSession.layout.total
         guard screensOneUp > screensTwoUp, fitSession.layout.columns == 1 else { throw Failure("one column did not enlarge the text (\(screensTwoUp) → \(screensOneUp) screens)") }
+        try checkFlow(split)
         for _ in 0..<5 { fitSession.changeFontSize(by: -10) }
         try await sleep(0.6)
         guard fitSession.layout.total < screensOneUp else { throw Failure("a smaller text size did not reduce the screens (\(screensOneUp) → \(fitSession.layout.total))") }
@@ -265,7 +268,7 @@ enum SelfTest {
         fitSession.toggleBookmark()
         try await sleep(0.3)
         guard fitSession.isBookmarked else { throw Failure("Zoom & Split bookmark was not added") }
-        log("Zoom & Split: \(Int(screensTwoUp)) screens two-up, \(Int(screensOneUp)) one-up; turns, \(fitHits) matches, bookmark; footer “\(fitSession.pdfPageLabel ?? "")”")
+        log("Zoom & Split: \(Int(screensTwoUp)) screens two-up, \(Int(screensOneUp)) one-up, no repeats; turns, \(fitHits) matches, bookmark; footer “\(fitSession.pdfPageLabel ?? "")”")
 
         // Text: the PDF reflowed into a book, read by the page script like any other.
         fitSession.setPDFLayout(.text)
@@ -285,6 +288,26 @@ enum SelfTest {
         try await sleep(0.4)
         let savedPercent = model.book(book.id)?.position?.percent ?? 0
         guard model.reading == nil, savedPercent > 0 else { throw Failure("PDF position was not saved (\(savedPercent)%)") }
+    }
+
+    /// The screens of Zoom & Split read on like a book: no screen repeats ink an earlier one showed, every screen
+    /// but the last is filled, and each holds at most a screen's worth.
+    private static func checkFlow(_ split: SplitPDFPresenter) throws {
+        let screens = split.screens
+        guard screens.count > 1, split.screenHeight > 0 else { throw Failure("Zoom & Split has no screens to check") }
+        for u in 1..<screens.count {
+            for a in screens[u - 1].pieces {
+                for b in screens[u].pieces where a.page == b.page && b.rect.maxY > a.rect.minY + 0.5 {
+                    throw Failure("screen \(u + 1) repeats page \(a.page + 1) from \(Int(b.rect.maxY)) down; the screen before ended at \(Int(a.rect.minY))")
+                }
+            }
+        }
+        for (i, screen) in screens.enumerated() {
+            guard screen.height <= split.screenHeight + 0.5 else { throw Failure("screen \(i + 1) holds \(Int(screen.height)) of \(Int(split.screenHeight)) points") }
+            if i < screens.count - 1, screen.height < split.screenHeight * 0.5 { throw Failure("screen \(i + 1) is only \(Int(screen.height / split.screenHeight * 100))% full") }
+        }
+        var lastPage = -1
+        for screen in screens { for piece in screen.pieces { guard piece.page >= lastPage else { throw Failure("screens run out of page order") }; lastPage = piece.page } }
     }
 
     private static func XCTUnwrapView(_ view: NSView?) throws -> NSView {

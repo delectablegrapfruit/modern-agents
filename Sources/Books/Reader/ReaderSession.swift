@@ -76,8 +76,8 @@ final class ReaderSession {
     @ObservationIgnored private var pdfSections: [PDFSection] = []
     /// PDFs shown by PDFKit (Pages, Zoom & Split); as reflowed Text they go through the page script like a book.
     let usesPDFView: Bool
-    /// Zoom & Split counts screens, not pages: how many make a page.
-    private(set) var pdfUnitsPerPage = 1
+    /// Zoom & Split counts screens, not pages: the first screen showing each page, and the total at the end.
+    private(set) var pdfPageStarts: [Int] = []
     /// Zoom & Split's footer text ("Page 3 of 120 · 2/4"); nil means the ordinary page count.
     private(set) var pdfPageLabel: String?
     /// Reflowing a PDF into text takes a moment; the reader shows a spinner meanwhile.
@@ -537,15 +537,37 @@ final class ReaderSession {
 
     // MARK: - PDFs (the presenter reports what the page script reports for books)
 
-    func pdfOpened(units: Int, unitsPerPage: Int, sections: [PDFSection], columns: Int) {
+    /// The screen (unit) where a place on a page is: its first screen, plus the offset within the page.
+    func pdfUnit(page: Int, offset: Int) -> Int {
+        guard pdfPageStarts.count >= 2 else { return max(0, page + offset) }
+        let p = min(max(0, page), pdfPageStarts.count - 2)
+        let next = p + 1 < pdfPageStarts.count - 1 ? pdfPageStarts[p + 1] : pdfPageStarts[pdfPageStarts.count - 1]
+        return min(pdfPageStarts[p] + max(0, offset), max(pdfPageStarts[p], next - 1))
+    }
+
+    /// The first page a screen shows.
+    func pdfPage(forUnit unit: Int) -> Int {
+        guard pdfPageStarts.count >= 2 else { return max(0, unit) }
+        var lo = 0, hi = pdfPageStarts.count - 2
+        while lo < hi {
+            let mid = (lo + hi) / 2
+            if pdfPageStarts[mid + 1] > unit { hi = mid } else { lo = mid + 1 }
+        }
+        return lo
+    }
+
+    /// Zoom & Split prepares its screens off the main thread; the reader shows a spinner meanwhile.
+    func pdfPreparing(_ flag: Bool) { preparing = flag }
+
+    func pdfOpened(units: Int, pageStarts: [Int], sections: [PDFSection], columns: Int) {
         pdfSections = sections
-        pdfUnitsPerPage = max(1, unitsPerPage)
-        toc = sections.map { ReaderTOCItem(label: $0.label, href: String($0.page), level: $0.level, pos: Double($0.page * pdfUnitsPerPage), spine: $0.page) }
+        pdfPageStarts = pageStarts.count >= 2 ? pageStarts : Array(0...max(1, units))
+        toc = sections.map { ReaderTOCItem(label: $0.label, href: String($0.page), level: $0.level, pos: Double(pdfUnit(page: $0.page, offset: 0)), spine: $0.page) }
         var l = ReaderLayoutInfo()
         l.mode = .paginated
         l.total = Double(max(1, units))
         l.columns = columns
-        l.chapters = sections.map { TimelineMark(label: $0.label, pos: Double($0.page * pdfUnitsPerPage), level: $0.level) }
+        l.chapters = sections.map { TimelineMark(label: $0.label, pos: Double(pdfUnit(page: $0.page, offset: 0)), level: $0.level) }
         layout = l
         isOpen = true
         refreshPDFMarks()
@@ -569,7 +591,7 @@ final class ReaderSession {
         let section = pdfSections.last { $0.page <= page }
         p.chapter = section?.label ?? ""
         p.chapterIndex = section.flatMap { pdfSections.firstIndex(of: $0) } ?? 0
-        let nextStart = (pdfSections.first { $0.page > page }?.page).map { $0 * pdfUnitsPerPage } ?? units
+        let nextStart = (pdfSections.first { $0.page > page }?.page).map { pdfUnit(page: $0, offset: 0) } ?? units
         p.pagesLeftInChapter = max(0, nextStart - shown)
         p.atEnd = shown >= units
         p.bookmarkID = bookmarks.first { $0.locator.spine == page && $0.locator.offset == slice }?.id
@@ -582,7 +604,7 @@ final class ReaderSession {
     }
 
     private func refreshPDFMarks() {
-        layout.bookmarks = bookmarks.map { TimelineMark(label: $0.id.uuidString, pos: Double($0.locator.spine * pdfUnitsPerPage + $0.locator.offset), level: 0) }
+        layout.bookmarks = bookmarks.map { TimelineMark(label: $0.id.uuidString, pos: Double(pdfUnit(page: $0.locator.spine, offset: $0.locator.offset)), level: 0) }
         if let locator = position.locator {
             position.bookmarkID = bookmarks.first { $0.locator.spine == locator.spine && $0.locator.offset == locator.offset }?.id
         }
