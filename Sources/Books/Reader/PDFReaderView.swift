@@ -378,6 +378,12 @@ final class PDFPresenter {
         if fit { showSlice() }
     }
 
+    /// After PDFKit changes page its layout may settle a moment later; place the screen now and once more then.
+    private func settleSlice() {
+        showSlice()
+        DispatchQueue.main.async { [weak self] in self?.showSlice() }
+    }
+
     /// ⌘+ and ⌘−: the text size in Zoom & Split (kept in the settings), a plain zoom for whole pages.
     func zoom(_ direction: Int) {
         if fit {
@@ -404,7 +410,7 @@ final class PDFPresenter {
             } else if view.canGoToNextPage {
                 slice = 0
                 view.goToNextPage(nil)
-                showSlice()
+                settleSlice()
                 report()
             } else {
                 session.showEndCard = true
@@ -423,7 +429,7 @@ final class PDFPresenter {
             } else if view.canGoToPreviousPage {
                 view.goToPreviousPage(nil)
                 slice = max(0, slicesPerPage - 1)
-                showSlice()
+                settleSlice()
                 report()
             }
             return
@@ -445,7 +451,7 @@ final class PDFPresenter {
         guard let document, document.pageCount > 0, let page = document.page(at: min(max(0, index), document.pageCount - 1)) else { return }
         slice = fit ? min(max(0, target), max(0, slicesPerPage - 1)) : 0
         view.go(to: page)
-        if fit { showSlice() }
+        if fit { settleSlice() }
         report()
     }
 

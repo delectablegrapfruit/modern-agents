@@ -238,7 +238,8 @@ enum SelfTest {
         fitSession.next()
         try await sleep(0.4)
         guard fitSession.position.page > unitBefore else { throw Failure("Zoom & Split next() did not move (\(unitBefore) → \(fitSession.position.page))") }
-        try postWheel(dy: -1, dx: 0, shift: false, to: try XCTUnwrapView(fitSession.pdf?.view))
+        let fitView = try XCTUnwrapView(fitSession.pdf?.view)
+        try postWheel(dy: -1, dx: 0, shift: false, to: fitView)
         try await sleep(0.4)
         guard fitSession.position.page > unitBefore + 1 else { throw Failure("a wheel notch did not turn a screen") }
         log("Zoom & Split: \(Int(screensAt100)) screens at 100%, \(Int(fitSession.layout.total)) at 150%; footer “\(fitSession.pdfPageLabel ?? "")”")
