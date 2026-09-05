@@ -251,29 +251,27 @@ final class PDFPresenter: PDFReading {
         return page.rotation % 180 != 0 ? CGSize(width: bounds.height, height: bounds.width) : bounds.size
     }
 
-    /// Where a sample of pages actually draws, in display space, as one box for the document — or two, when the
-    /// pages carry two columns of text with clear space between them. Paper margins are cut away so the text can
-    /// fill the width. Median edges resist the odd full-bleed page; blank pages are skipped. Also the ink in each
-    /// of 200 vertical bins across the page, summed over the sample, for cutting the box into parts later.
-    nonisolated static func contentBoxes(of document: PDFDocument) -> (boxes: [CGRect], profile: [Int]) {
-        let count = document.pageCount
-        guard count > 0, let first = document.page(at: 0) else { return ([], []) }
+    /// Where a sample of the given pages actually draws, in display space, as one box — or two, when the pages
+    /// carry two columns of text with clear space between them. Paper margins are cut away so the text can fill the
+    /// width. Median edges resist the odd full-bleed page; blank pages are skipped.
+    nonisolated static func contentBoxes(of document: PDFDocument, pages: [Int]) -> [CGRect] {
+        guard let firstIndex = pages.first, let first = document.page(at: firstIndex) else { return [] }
         let size = displaySize(of: first)
         let media = CGRect(origin: .zero, size: size)
-        let samples = min(count, 12)
+        let samples = min(pages.count, 12)
         var boxes: [CGRect] = []
         var profile = [Int](repeating: 0, count: 200)
         for i in 0..<samples {
-            let index = count <= samples ? i : Int((Double(i) * Double(count - 1) / Double(max(1, samples - 1))).rounded())
-            guard let page = document.page(at: index), let scan = inkScan(of: page, width: 200) else { continue }
+            let position = pages.count <= samples ? i : Int((Double(i) * Double(pages.count - 1) / Double(max(1, samples - 1))).rounded())
+            guard let page = document.page(at: pages[min(position, pages.count - 1)]), let scan = inkScan(of: page, width: 200) else { continue }
             boxes.append(scan.box)
             for (bin, value) in scan.profile.enumerated() where bin < profile.count { profile[bin] += value }
         }
-        guard !boxes.isEmpty else { return ([media], profile) }
+        guard !boxes.isEmpty else { return [media] }
         func median(_ values: [CGFloat]) -> CGFloat { values.sorted()[values.count / 2] }
         let minX = median(boxes.map(\.minX)), maxX = median(boxes.map(\.maxX))
         let minY = median(boxes.map(\.minY)), maxY = median(boxes.map(\.maxY))
-        guard maxX > minX, maxY > minY else { return ([media], profile) }
+        guard maxX > minX, maxY > minY else { return [media] }
         let pad = size.width * 0.015
         let box = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY).insetBy(dx: -pad, dy: -pad).intersection(media)
 
@@ -303,9 +301,9 @@ final class PDFPresenter: PDFReading {
             let gapStart = CGFloat(bestStart) * binWidth, gapEnd = CGFloat(bestStart + bestLength) * binWidth
             let left = CGRect(x: box.minX, y: box.minY, width: max(1, gapStart - box.minX + pad), height: box.height)
             let right = CGRect(x: gapEnd - pad, y: box.minY, width: max(1, box.maxX - gapEnd + pad), height: box.height)
-            if left.width > size.width * 0.2, right.width > size.width * 0.2 { return ([left, right], profile) }
+            if left.width > size.width * 0.2, right.width > size.width * 0.2 { return [left, right] }
         }
-        return ([box], profile)
+        return [box]
     }
 
     /// Where one page draws, from a small rendering; nil for a blank page.

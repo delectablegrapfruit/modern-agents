@@ -25,13 +25,15 @@ Bookmarks · Notes popover, search within the book, an end-of-book card, and you
 shows the system's definition popover, and the text's context menu is the system's (Look Up, Copy, Translate,
 Search). PDFs read like books, three ways. **Pages**: whole pages on the theme colour with no frame or shadow, one or two to a
 screen, turned the same way. **Zoom & Split**: the ink of every page — running headers, footers and page numbers cut away, two text columns
-read in order — runs on as one column, scaled so it fills a screen's width at the text size and cut into screens
-on blank bands that cross the whole column (found in a small rendering of each page, so figures, tables and scans
-are respected as well as text), so a screen ends after a whole line and the next begins with the next line, across
-page boundaries too, as a book reads. Above 100% a page is read in two or three parts side by side. Screens show
-one or two to a spread and turn with the book's slide; selection, search, highlights and bookmarks work as in
-books. The analysis is kept beside the PDF, so a book is prepared once. While reading, the pointer hides after a
-couple of seconds still over the page and returns the moment it moves. **Text**: the text is reflowed into a book the way converters like calibre do it (running
+read in order — runs on as one column at the text size and is dealt out to screens block by block, a block being
+the ink between two blank bands that cross the page (found in a small rendering of every page, so figures, tables
+and scans count as well as text). Nothing is cut through: a block that does not fit moves whole to the next
+screen, a picture taller than a screen is fitted to one, and a picture-only page such as a cover stands alone.
+Text size is the page's own scale, 50–300%: two screens share the spread while two columns fit the window,
+otherwise one does, and the size stops where one column would no longer fit. Screens turn with the book's slide;
+selection, search, highlights, bookmarks and the PDF's links work as in books. The analysis is kept beside the
+PDF, so a book is prepared once. While reading, the pointer hides after a couple of seconds still over the page
+and returns the moment it moves. **Text**: the text is reflowed into a book the way converters like calibre do it (running
 headers dropped, lines joined into paragraphs, larger type as headings) and read with every book setting; the layout
 is not kept, so tables and figures suffer. Themes are colour filters (paper tints in the light themes; in the dark
 ones luminance is inverted with hues kept, so pictures and highlights keep their colours). Contents and timeline
