@@ -155,15 +155,19 @@ final class LibraryModel {
         return item.title
     }
 
-    /// Every shelf and collection in the user's order, hidden ones included; new collections join at the end.
-    var sidebarEntries: [SidebarItem] {
-        let known: [SidebarItem] = [.all, .finished, .books, .pdfs] + collections.map { .collection($0.id) }
+    enum SidebarGroup { case library, collections }
+
+    /// The shelves, or the collections, in the user's order with hidden ones included; new collections join at the end.
+    func sidebarEntries(in group: SidebarGroup) -> [SidebarItem] {
+        let known: [SidebarItem] = group == .library ? [.all, .finished, .books, .pdfs] : collections.map { .collection($0.id) }
         var ordered = settings.sidebarOrder.compactMap { SidebarItem(key: $0) }.filter { known.contains($0) }
         for item in known where !ordered.contains(item) { ordered.append(item) }
         return ordered
     }
 
-    var visibleSidebarEntries: [SidebarItem] { sidebarEntries.filter { !isHidden($0) } }
+    func visibleSidebarEntries(in group: SidebarGroup) -> [SidebarItem] {
+        sidebarEntries(in: group).filter { !isHidden($0) }
+    }
 
     /// "All" is always there; anything else can be hidden.
     func isHidden(_ item: SidebarItem) -> Bool { item != .all && settings.sidebarHidden.contains(item.key) }
@@ -176,24 +180,21 @@ final class LibraryModel {
         if hidden, sidebarSelection == item { sidebarSelection = .all }
     }
 
-    /// Drag reordering of the visible rows; hidden rows keep their places between their neighbours.
-    func moveSidebarEntries(from source: IndexSet, to destination: Int) {
-        var visible = visibleSidebarEntries
+    /// Drag reordering of one section's visible rows; hidden rows keep their places between their neighbours.
+    func moveSidebarEntries(in group: SidebarGroup, from source: IndexSet, to destination: Int) {
+        var visible = visibleSidebarEntries(in: group)
         let moving = source.sorted().compactMap { visible.indices.contains($0) ? visible[$0] : nil }
         for index in source.sorted(by: >) where visible.indices.contains(index) { visible.remove(at: index) }
         let insertAt = min(max(0, destination - source.filter { $0 < destination }.count), visible.count)
         visible.insert(contentsOf: moving, at: insertAt)
-        var full = sidebarEntries
+        var full = sidebarEntries(in: group)
         var next = visible.makeIterator()
         for i in full.indices where !isHidden(full[i]) {
             if let item = next.next() { full[i] = item }
         }
-        settings.sidebarOrder = full.map(\.key)
+        let other = sidebarEntries(in: group == .library ? .collections : .library)
+        settings.sidebarOrder = (group == .library ? full + other : other + full).map(\.key)
     }
-
-    func collection(_ id: UUID) -> BookCollection? { collections.first { $0.id == id } }
-
-    var selectedBooks: [Book] { books.filter { selectedBookIDs.contains($0.id) } }
 
     // MARK: - Covers
 

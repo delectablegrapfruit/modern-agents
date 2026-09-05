@@ -132,6 +132,7 @@
         this._render(css);
         await this._waitForAssets();
         this.applyTextSettings();
+        this.unwrapMonolithic(0.6);
         this.buildTocEntries();
         this.highlights = (opts.highlights || []).map(normHighlight);
         this.bookmarks = (opts.bookmarks || []).map(normBookmark);
@@ -148,6 +149,7 @@
       clearTimeout(this._relayoutTimer);
       if (this.epub) { this.epub.dispose(); this.epub = null; }
       this.sections = []; this.secEls = []; this.sectionStarts = []; this.tocEntries = []; this.highlights = []; this.bookmarks = [];
+      this._unwrapped = false;
       document.getElementById('book-css').textContent = '';
       this.root.innerHTML = '<div class="book-end" id="book-end"></div>';
       document.body.className = '';
@@ -161,6 +163,40 @@
         `<div class="book-body${s.bodyClass ? ' ' + U.esc(s.bodyClass) : ''}"${s.bodyId ? ` id="${U.esc(s.bodyId)}"` : ''}>${s.html}</div></section>`).join('') +
         '<div class="book-end" id="book-end"></div>';
       this.secEls = this.sections.map(s => document.getElementById('sec-' + s.idx));
+    },
+    /* Multi-column pagination cannot break a scroll container (overflow other than visible), an absolutely positioned
+       box or an atomic inline: a wrapper like that around a chapter leaves the whole chapter in one clipped column and
+       the book measures one page. Wrappers holding at least `share` of a section's text are made plain blocks. */
+    unwrapMonolithic(share) {
+      const fix = ['overflow', 'overflow-x', 'overflow-y', 'position', 'height', 'max-height', 'min-height', 'width', 'max-width', 'transform', 'column-count', 'columns', 'float', 'clip-path', 'contain'];
+      for (const sec of this.secEls) {
+        const total = (sec.textContent || '').replace(/\s+/g, '').length;
+        if (total < 200) continue;
+        const stack = [sec.firstElementChild];
+        while (stack.length) {
+          const el = stack.pop(); if (!el) continue;
+          for (const child of el.children) {
+            const len = (child.textContent || '').replace(/\s+/g, '').length;
+            if (len < total * share) continue;
+            const tag = child.tagName.toLowerCase();
+            if (['table', 'tbody', 'tr', 'td', 'th', 'pre', 'svg', 'img', 'ol', 'ul'].includes(tag)) { stack.push(child); continue; }
+            const cs = getComputedStyle(child);
+            const display = cs.display;
+            for (const prop of fix) child.style.removeProperty(prop);
+            child.style.setProperty('overflow', 'visible', 'important');
+            child.style.setProperty('position', 'static', 'important');
+            child.style.setProperty('height', 'auto', 'important');
+            child.style.setProperty('max-height', 'none', 'important');
+            child.style.setProperty('width', 'auto', 'important');
+            child.style.setProperty('max-width', 'none', 'important');
+            child.style.setProperty('transform', 'none', 'important');
+            child.style.setProperty('column-count', 'auto', 'important');
+            child.style.setProperty('float', 'none', 'important');
+            if (/inline|flex|grid|table/.test(display)) child.style.setProperty('display', 'block', 'important');
+            stack.push(child);
+          }
+        }
+      }
     },
     /* Images and web fonts must be laid out before the first measurement, or the page count is wrong. */
     async _waitForAssets() {
@@ -273,6 +309,12 @@
         if (lastRect) endCol = Math.max(endCol, Math.floor((lastRect.left + se.scrollLeft - L.mSide + 2) / L.step));
         const lastStart = this.sectionStarts.length ? this.sectionStarts[this.sectionStarts.length - 1] : 0;
         L.total = Math.max(1, endCol + 1, lastStart + 1);
+        // Content taller than a column means something did not fragment: unwrap harder and measure again, once.
+        if (!this._unwrapped && this.root.scrollHeight > L.colH + 40) {
+          this._unwrapped = true;
+          this.unwrapMonolithic(0.3);
+          return this.measure();
+        }
       } else {
         this.sectionStarts = this.secEls.map(s => Math.max(0, s.getBoundingClientRect().top + se.scrollTop - SCROLL_TOP + 12));
         const byEnd = Math.round(endRect.bottom + se.scrollTop - se.clientHeight);

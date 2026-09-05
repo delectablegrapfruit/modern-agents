@@ -131,10 +131,41 @@ enum SelfTest {
         guard let saved, saved.percent > 0 else { throw Failure("position was not saved") }
         log("book closed, position saved at \(Int(saved.percent))%")
 
+        try await runWrappedBook(model: model)
         try await runPDF(model: model)
         print("SELFTEST OK: \(Int(layout.total)) pages, \(layout.columns) column(s), wheel \(wheelReport.joined(separator: " · ")), position saved at \(Int(saved.percent))%; PDF checked; macOS \(ProcessInfo.processInfo.operatingSystemVersionString)")
         fflush(stdout)
         exit(0)
+    }
+
+    /// A book whose chapters sit inside wrappers that cannot fragment (a scroll container around an atomic inline
+    /// around an absolutely positioned box) must still paginate; such books used to measure one page and finish at
+    /// once.
+    @MainActor
+    private static func runWrappedBook(model: LibraryModel) async throws {
+        let paragraph = "<p>" + String(repeating: "Wrapped text keeps flowing from column to column. ", count: 60) + "</p>"
+        let chapters = (1...3).map { i in
+            EPUBChapter(label: "Part \(i)", title: "Wrapped part \(i)",
+                        html: "<div style=\"overflow:hidden;height:100%\"><span style=\"display:inline-block\"><div style=\"position:absolute;top:0\">" + String(repeating: paragraph, count: 4) + "</div></span></div>")
+        }
+        let spec = EPUBSpec(title: "Books Wrapped Self-Test", author: "Continuous Integration", chapters: chapters)
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("Books Wrapped \(UUID().uuidString).epub")
+        try EPUBWriter.build(spec).write(to: file)
+        let added: [Book] = await withCheckedContinuation { continuation in
+            model.importFiles([file], quiet: true, allowDuplicates: true) { continuation.resume(returning: $0) }
+        }
+        guard let book = added.first else { throw Failure("the wrapped book could not be imported") }
+        defer { model.delete([book.id]) }
+        model.open(book)
+        let session = try await waitFor("the wrapped book to lay out", timeout: 30) {
+            if let s = currentSession, s.book.id == book.id, s.isOpen, s.position.locator != nil { return s }
+            return nil
+        }
+        try await sleep(0.8)
+        guard session.layout.total > 6 else { throw Failure("the wrapped book measured \(Int(session.layout.total)) page(s); its wrappers were not unwrapped") }
+        log("wrapped book: \(Int(session.layout.total)) pages despite scroll-container, inline-block and absolute wrappers")
+        session.close()
+        try await sleep(0.4)
     }
 
     /// A generated eight-page PDF goes through the same motions: open, turn, wheel notch, scrub, search, bookmark,

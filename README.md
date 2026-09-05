@@ -8,9 +8,9 @@ Mac and never talks to a store or a server.
 
 ## What it does
 
-**Library.** Home shows what you were reading, your reading goals and the library in numbers; the sidebar lists All,
-Finished, Books, PDFs and the collections you make, in the order you drag them into — any row but All can be hidden
-from its context menu and brought back from the section's menu. Drag books onto Finished or a collection. Grid or
+**Library.** Home shows what you were reading, your reading goals and the library in numbers; the sidebar has a Library
+section (All, Finished, Books, PDFs) and a My Collections section, each in the order you drag its rows into — any row
+but All can be hidden from its context menu and brought back from its section's menu. Drag books onto Finished or a collection. Grid or
 list, sort by recent, title or author, search by title, author and subject. Get Info edits title and author. Files come in through File ▸ Add to
 Library (⌘O), by dropping them on the window, or by opening them from the Finder: **EPUB**, **Kindle** (MOBI, AZW,
 AZW3; DRM-free — converted to EPUB once, at import), **PDF**, and **plain text or Markdown** (typeset into a book
@@ -23,8 +23,8 @@ in the chapter; bringing the pointer to the bottom shows the timeline — chapte
 the pointer — which you can scrub. Highlights in five colours or underline, notes, bookmarks (⌘D), a Contents ·
 Bookmarks · Notes popover, search within the book, an end-of-book card, and your place kept to the character. Look Up
 shows the system's definition popover, and the text's context menu is the system's (Look Up, Copy, Translate,
-Search). PDFs have the same reader: themes drawn onto the pages (paper tints in the light themes, inverted pages
-lifted to the theme's colour in the dark ones), paginated or scrolling layouts with one or two pages, contents and
+Search). PDFs have the same reader: themes as colour filters over the pages (paper tints in the light themes; in the dark
+ones luminance is inverted with hues kept, so pictures and highlights keep their colours), paginated or scrolling layouts with one or two pages, contents and
 timeline marks from the outline, search, bookmarks by page, highlights and underlines with notes, and zoom in place
 of text size. In full screen the toolbar leaves with the menu bar and both come back when the pointer reaches the top
 edge. The reading position, statistics (minutes per day, streaks, books per year) and every annotation are files in
@@ -91,8 +91,8 @@ reading position survive font, size and window changes. Book content is sanitize
 
 - Kindle files must be DRM-free; files bought from the Kindle store are encrypted and are refused with a clear
   message. Old MOBI 7 books keep their HTML-3 formatting; KF8/AZW3 books keep CSS, fonts and images.
-- PDFs are shown by PDFKit. Themes are drawn over the pages, so pictures come out inverted in the dark themes;
-  fonts, text size, spacing and width are fixed by the file.
+- PDFs are shown by PDFKit. Themes are colour filters, so pictures in the dark themes are darkened rather than shown
+  as the author lit them; fonts, text size, spacing and width are fixed by the file.
 - No audiobooks, no store, no sync — everything stays in `~/Library/Application Support/Books`.
 
 MIT licensed.

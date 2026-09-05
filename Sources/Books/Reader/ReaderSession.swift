@@ -382,6 +382,7 @@ final class ReaderSession {
             position = p
             schedulePositionSave()
         case "end":
+            guard layout.total > 1 else { return }   // a book that measured one page has a layout problem, not an ending
             showEndCard = true
             model.savePosition(ReadingPosition(locator: position.locator, percent: 100), for: book.id, finished: true)
         case "selection":

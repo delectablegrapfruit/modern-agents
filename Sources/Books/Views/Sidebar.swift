@@ -2,9 +2,9 @@ import SwiftUI
 import UniformTypeIdentifiers
 import BooksCore
 
-/// Home, then the library's shelves and your collections in one list you arrange by dragging. Any row but All can
-/// be hidden from its context menu and brought back from the section's menu. Books can be dropped on Finished and
-/// on collections. The "New Collection" button sits at the bottom, as in Books.
+/// Home, the library's shelves and your collections, each section in the order you drag its rows into. Any row but
+/// All can be hidden from its context menu and brought back from its section's menu. Books can be dropped on
+/// Finished and on collections. The "New Collection" button sits at the bottom, as in Books.
 struct Sidebar: View {
     @Environment(LibraryModel.self) private var model
 
@@ -12,28 +12,8 @@ struct Sidebar: View {
         @Bindable var model = model
         List(selection: $model.sidebarSelection) {
             Label("Home", systemImage: "house").tag(SidebarItem.home)
-            Section {
-                ForEach(model.visibleSidebarEntries, id: \.self) { item in
-                    row(item)
-                }
-                .onMove { source, destination in model.moveSidebarEntries(from: source, to: destination) }
-            } header: {
-                HStack {
-                    Text("Library")
-                    Spacer()
-                    Menu {
-                        ForEach(model.sidebarEntries.filter { $0 != .all }, id: \.self) { item in
-                            Toggle(model.name(of: item), isOn: Binding(get: { !model.isHidden(item) }, set: { model.setHidden(item, !$0) }))
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                    }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
-                    .fixedSize()
-                    .help("Choose which shelves and collections are shown")
-                }
-            }
+            section("Library", group: .library)
+            section("My Collections", group: .collections)
         }
         .listStyle(.sidebar)
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -48,6 +28,34 @@ struct Sidebar: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
+        }
+    }
+
+    private func section(_ title: String, group: LibraryModel.SidebarGroup) -> some View {
+        let hideable = model.sidebarEntries(in: group).filter { $0 != .all }
+        return Section {
+            ForEach(model.visibleSidebarEntries(in: group), id: \.self) { item in
+                row(item)
+            }
+            .onMove { source, destination in model.moveSidebarEntries(in: group, from: source, to: destination) }
+        } header: {
+            HStack {
+                Text(title)
+                Spacer()
+                if !hideable.isEmpty {
+                    Menu {
+                        ForEach(hideable, id: \.self) { item in
+                            Toggle(model.name(of: item), isOn: Binding(get: { !model.isHidden(item) }, set: { model.setHidden(item, !$0) }))
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .help("Choose which rows of this section are shown")
+                }
+            }
         }
     }
 

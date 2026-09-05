@@ -26,6 +26,8 @@ body.scroll .book-root { max-width: var(--scroll-w); margin: 0 auto !important; 
 .books-section { break-before: column; -webkit-column-break-before: always; }
 .books-section:first-child { break-before: auto; -webkit-column-break-before: auto; }
 body.scroll .books-section { break-before: auto; -webkit-column-break-before: auto; margin-bottom: 4em !important; }
+/* Block wrappers must stay fragmentable: a scroll container cannot be split across columns. */
+body.paginated .books-section :is(div, section, article, main, aside, header, footer, nav, blockquote, li) { overflow: visible !important; }
 .books-section, .book-body { width: auto !important; max-width: none !important; min-width: 0 !important; margin: 0 !important; padding: 0 !important; height: auto !important; min-height: 0 !important; max-height: none !important; position: static !important; overflow: visible !important; columns: auto !important; column-count: auto !important; float: none !important; transform: none !important; }
 .book-body { font-size: 1em !important; }
 .book-end { height: 0; }

@@ -1,4 +1,5 @@
 import AppKit
+import CoreImage
 import PDFKit
 import SwiftUI
 import BooksCore
@@ -24,44 +25,6 @@ struct PDFSection: Hashable {
     let label: String
     let page: Int
     let level: Int
-}
-
-/// Draws pages with the reader theme laid over them: light themes tint the paper, dark themes invert the page and
-/// lift the black to the theme's page colour. Pictures come out inverted in the dark themes, which is what reading
-/// a PDF at night usually wants.
-final class ThemedPDFPage: PDFPage {
-    static var theme: Theme = .original
-
-    override func draw(with box: PDFDisplayBox, to context: CGContext) {
-        super.draw(with: box, to: context)
-        let theme = ThemedPDFPage.theme
-        guard theme != .original, theme != .bold else { return }
-        let page = bounds(for: box)
-        let cover = page.insetBy(dx: -page.width, dy: -page.height)
-        context.saveGState()
-        if theme.isDark {
-            context.setBlendMode(.difference)
-            context.setFillColor(CGColor(gray: 1, alpha: 1))
-            context.fill(cover)
-            context.setBlendMode(.screen)
-            context.setFillColor(ThemedPDFPage.cgColor(theme.colors.background))
-            context.fill(cover)
-        } else {
-            context.setBlendMode(.multiply)
-            context.setFillColor(ThemedPDFPage.cgColor(theme.colors.background))
-            context.fill(cover)
-        }
-        context.restoreGState()
-    }
-
-    static func cgColor(_ hex: String) -> CGColor {
-        NSColor(Color(hex: hex)).usingColorSpace(.sRGB)?.cgColor ?? CGColor(gray: 1, alpha: 1)
-    }
-}
-
-/// Tells the document to make its pages themed.
-final class ThemedPageProvider: NSObject, PDFDocumentDelegate {
-    func classForPage() -> AnyClass { ThemedPDFPage.self }
 }
 
 /// PDFKit's view with the reader's input: notched wheels go to the session (one notch, one page), the pointer
@@ -107,7 +70,6 @@ final class PDFPresenter {
     let view = BooksPDFView()
     unowned let session: ReaderSession
     private(set) var document: PDFDocument?
-    private let pageProvider = ThemedPageProvider()
     private var observers: [NSObjectProtocol] = []
     private var sections: [PDFSection] = []
     private var hits: [UUID: PDFSelection] = [:]
@@ -124,6 +86,10 @@ final class PDFPresenter {
         view.pageShadowsEnabled = true
         view.enableDataDetectors = false
         view.interpolationQuality = .high
+        // Themes are Core Image filters on the view's layer: they colour everything PDFKit composites, including the
+        // white page placeholder it shows before a page has rendered, so nothing flashes when pages change.
+        view.wantsLayer = true
+        view.layerUsesCoreImageFilters = true
     }
 
     private var settings: ReaderSettings { session.model.settings.reader }
@@ -152,7 +118,6 @@ final class PDFPresenter {
             session.error = "This PDF could not be opened."
             return
         }
-        document.delegate = pageProvider
         self.document = document
         sections = PDFPresenter.sections(of: document)
         applyTheme()
@@ -209,24 +174,41 @@ final class PDFPresenter {
     // MARK: - Appearance and layout
 
     func applySettings() {
-        let themeBefore = ThemedPDFPage.theme
         applyTheme()
         applyLayout()
-        if themeBefore != ThemedPDFPage.theme { redrawPages() }
         pageChanged()
     }
 
+    /// Light themes tint the white of the paper; dark themes invert luminance while keeping hues (so pictures and
+    /// highlights keep their colours) and lift black to the theme's page colour. The surround is a light grey that
+    /// the same filters turn into a darker or lighter frame around the pages.
     private func applyTheme() {
         let theme = session.effectiveTheme
-        ThemedPDFPage.theme = theme
-        view.backgroundColor = NSColor(Color(hex: theme.colors.background))
-    }
-
-    /// PDFKit keeps rendered pages; telling it their annotations changed makes it draw them again with the theme.
-    private func redrawPages() {
-        for page in view.visiblePages { view.annotationsChanged(on: page) }
-        view.layoutDocumentView()
-        view.needsDisplay = true
+        let page = NSColor(Color(hex: theme.colors.background)).usingColorSpace(.sRGB) ?? .white
+        var filters: [CIFilter] = []
+        switch theme {
+        case .original, .bold:
+            break
+        case .paper:
+            if let tint = CIFilter(name: "CIColorMatrix") {
+                tint.setValue(CIVector(x: page.redComponent, y: 0, z: 0, w: 0), forKey: "inputRVector")
+                tint.setValue(CIVector(x: 0, y: page.greenComponent, z: 0, w: 0), forKey: "inputGVector")
+                tint.setValue(CIVector(x: 0, y: 0, z: page.blueComponent, w: 0), forKey: "inputBVector")
+                filters.append(tint)
+            }
+        case .quiet, .calm, .focus:
+            if let invert = CIFilter(name: "CIColorInvert") { filters.append(invert) }
+            if let hue = CIFilter(name: "CIHueAdjust") {
+                hue.setValue(Double.pi, forKey: kCIInputAngleKey)
+                filters.append(hue)
+            }
+            if let lift = CIFilter(name: "CIColorMatrix") {
+                lift.setValue(CIVector(x: page.redComponent, y: page.greenComponent, z: page.blueComponent, w: 0), forKey: "inputBiasVector")
+                filters.append(lift)
+            }
+        }
+        view.layer?.filters = filters.isEmpty ? nil : filters
+        view.backgroundColor = NSColor(white: 0.93, alpha: 1)
     }
 
     private func applyLayout() {
