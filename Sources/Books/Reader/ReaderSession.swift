@@ -272,7 +272,7 @@ final class ReaderSession {
     }
     func goToPos(_ pos: Double) { if usesPDFView { pdf?.go(toUnit: whole(pos)) } else { call("goToPos", pos) }; activity() }
     func goToHref(_ href: String) {
-        if usesPDFView { if let page = Int(href) { pdf?.go(toPage: page) } } else { call("goToHref", href) }
+        if usesPDFView { if let page = Int(href) { pdf?.go(toPage: page, slice: 0) } } else { call("goToHref", href) }
         activity()
     }
     func goToLocator(_ locator: Locator) {
