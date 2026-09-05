@@ -27,53 +27,6 @@ struct PDFSection: Hashable {
     let level: Int
 }
 
-/// Sits over the PDF view and draws what PDFKit cannot be asked for: in the dark themes it lightens the surround
-/// outside the pages (before the theme filters run) so the inverted page shadow glows about half as much; with page
-/// shadows off it gives each page a faint edge and puts a hairline between neighbouring pages. Mouse events pass
-/// straight through.
-final class PageEdgeOverlay: NSView {
-    weak var presenter: PDFPresenter?
-
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-
-    override func draw(_ dirtyRect: NSRect) {
-        guard let presenter, let context = NSGraphicsContext.current?.cgContext else { return }
-        let pages = presenter.visiblePageRects(in: self)
-        guard !pages.isEmpty else { return }
-        if presenter.dimsSurround {
-            context.saveGState()
-            let path = CGMutablePath()
-            path.addRect(bounds)
-            for rect in pages { path.addRect(rect) }
-            context.addPath(path)
-            context.clip(using: .evenOdd)
-            context.setFillColor(CGColor(gray: 1, alpha: 0.6))
-            context.fill(bounds)
-            context.restoreGState()
-        }
-        if presenter.drawsPageEdges {
-            context.setLineWidth(1)
-            context.setStrokeColor(CGColor(gray: 0, alpha: 0.14))
-            for rect in pages { context.stroke(rect.insetBy(dx: 0.5, dy: 0.5)) }
-            context.setStrokeColor(CGColor(gray: 0, alpha: 0.28))
-            let stacked = pages.sorted { $0.minY > $1.minY }
-            for (upper, lower) in zip(stacked, stacked.dropFirst()) where upper.minY > lower.maxY {
-                let y = ((upper.minY + lower.maxY) / 2).rounded() + 0.5
-                context.move(to: CGPoint(x: min(upper.minX, lower.minX) + 6, y: y))
-                context.addLine(to: CGPoint(x: max(upper.maxX, lower.maxX) - 6, y: y))
-                context.strokePath()
-            }
-            let sideBySide = pages.sorted { $0.minX < $1.minX }
-            for (left, right) in zip(sideBySide, sideBySide.dropFirst()) where right.minX > left.maxX && abs(left.midY - right.midY) < left.height / 2 {
-                let x = ((left.maxX + right.minX) / 2).rounded() + 0.5
-                context.move(to: CGPoint(x: x, y: min(left.minY, right.minY) + 6))
-                context.addLine(to: CGPoint(x: x, y: max(left.maxY, right.maxY) - 6))
-                context.strokePath()
-            }
-        }
-    }
-}
-
 /// PDFKit's view with the reader's input: notched wheels go to the session (one notch, one page), the pointer
 /// position drives the chrome, and the end of a click opens the reader's menus over a selection or a highlight.
 final class BooksPDFView: PDFView {
@@ -125,43 +78,26 @@ final class PDFPresenter {
     private var zoomFactor: CGFloat = 1
     private var swipeDistance: CGFloat = 0
     private var swipeTurned = false
-    private let overlay = PageEdgeOverlay()
-    private var scrollObserved = false
     private var lastSize: CGSize = .zero
     private var opened = false
 
     init(session: ReaderSession) {
         self.session = session
         view.presenter = self
-        view.autoScales = true
-        view.pageBreakMargins = NSEdgeInsets(top: 10, left: 0, bottom: 10, right: 0)
-        view.pageShadowsEnabled = true
+        view.autoScales = false
+        view.displaysPageBreaks = false
+        view.pageShadowsEnabled = false
         view.enableDataDetectors = false
         view.interpolationQuality = .high
         // Themes are Core Image filters on the view's layer: they colour everything PDFKit composites, including the
         // white page placeholder it shows before a page has rendered, so nothing flashes when pages change.
         view.wantsLayer = true
         view.layerUsesCoreImageFilters = true
-        overlay.presenter = self
-        overlay.frame = view.bounds
-        overlay.autoresizingMask = [.width, .height]
-        view.addSubview(overlay)
-    }
-
-    /// Dark themes turn PDFKit's page shadow into a glow; the overlay halves it.
-    var dimsSurround: Bool { settings.pdfPageShadows && session.effectiveTheme.isDark }
-    var drawsPageEdges: Bool { !settings.pdfPageShadows }
-
-    func visiblePageRects(in overlayView: NSView) -> [CGRect] {
-        view.visiblePages.map { page in overlayView.convert(view.convert(page.bounds(for: view.displayBox), from: page), from: view) }
     }
 
     private var settings: ReaderSettings { session.model.settings.reader }
-    private var mode: ReaderLayoutInfo.Mode { settings.layout == .scroll ? .scroll : .paginated }
-    private var columns: Int {
-        guard mode == .paginated else { return 1 }
-        return settings.spread == .one ? 1 : 2
-    }
+    /// PDFs read like books: pages, one or two at a time; the scrolling layout does not apply.
+    private var columns: Int { settings.spread == .one ? 1 : 2 }
     var pageCount: Int { document?.pageCount ?? 0 }
     var currentIndex: Int {
         guard let document, let page = view.currentPage else { return 0 }
@@ -185,8 +121,7 @@ final class PDFPresenter {
         applyLayout()
         restoreHighlights()
         observe()
-        observeScrolling()
-        session.pdfOpened(pageCount: document.pageCount, sections: sections, columns: columns, mode: mode)
+        session.pdfOpened(pageCount: document.pageCount, sections: sections, columns: columns, mode: .paginated)
         if let saved = session.book.position?.pdfPage, saved > 1, let page = document.page(at: saved - 1) {
             view.go(to: page)
         }
@@ -206,26 +141,10 @@ final class PDFPresenter {
         observers.append(center.addObserver(forName: .PDFViewDisplayModeChanged, object: view, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.pageChanged() }
         })
-        for name in [Notification.Name.PDFViewScaleChanged, .PDFViewVisiblePagesChanged] {
-            observers.append(center.addObserver(forName: name, object: view, queue: .main) { [weak self] _ in
-                Task { @MainActor in self?.overlay.needsDisplay = true }
-            })
-        }
-    }
-
-    /// The clip view's bounds move as the pages scroll; the overlay follows.
-    private func observeScrolling() {
-        guard !scrollObserved, let clip = view.documentView?.enclosingScrollView?.contentView else { return }
-        scrollObserved = true
-        clip.postsBoundsChangedNotifications = true
-        observers.append(NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification, object: clip, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.overlay.needsDisplay = true }
-        })
     }
 
     private func pageChanged() {
         guard let document else { return }
-        overlay.needsDisplay = true
         session.pdfPageChanged(index: currentIndex, count: document.pageCount)
     }
 
@@ -285,8 +204,6 @@ final class PDFPresenter {
             }
         }
         view.layer?.filters = filters.isEmpty ? nil : filters
-        view.pageShadowsEnabled = settings.pdfPageShadows
-        overlay.needsDisplay = true
         // The surround must end up the theme's page colour: for the filtered themes white is what the filters turn
         // into exactly that colour (and what PDFKit's page placeholder is), so a page never flashes against it.
         view.backgroundColor = filters.isEmpty ? page : NSColor(srgbRed: 1, green: 1, blue: 1, alpha: 1)
@@ -294,40 +211,22 @@ final class PDFPresenter {
 
     private func applyLayout() {
         let current = view.currentPage
-        switch mode {
-        case .scroll:
-            view.displayMode = .singlePageContinuous
-            view.displayDirection = .vertical
-            view.displaysPageBreaks = true
-        case .paginated:
-            view.displayMode = columns == 2 ? .twoUp : .singlePage
-            view.displayDirection = .horizontal
-            view.displaysPageBreaks = false
-            view.displaysAsBook = false
-        }
+        view.displayMode = columns == 2 ? .twoUp : .singlePage
+        view.displaysAsBook = false
+        view.displaysPageBreaks = false
         fitPages()
         if let current { view.go(to: current) }
-        session.pdfLayoutChanged(columns: columns, mode: mode)
+        session.pdfLayoutChanged(columns: columns, mode: .paginated)
     }
 
-    /// Paginated: the whole page (or spread) fits the view, times the zoom. Scrolling: fit to width, times the zoom.
+    /// The page (or spread) fits the view inside book-like margins, times the zoom.
     private func fitPages() {
-        guard let document, document.pageCount > 0 else { return }
-        if mode == .scroll {
-            if abs(zoomFactor - 1) < 0.01 {
-                view.autoScales = true
-            } else {
-                view.autoScales = false
-                view.scaleFactor = view.scaleFactorForSizeToFit * zoomFactor
-            }
-            return
-        }
-        guard let page = view.currentPage ?? document.page(at: 0) else { return }
+        guard let document, document.pageCount > 0, let page = view.currentPage ?? document.page(at: 0) else { return }
         let bounds = page.bounds(for: view.displayBox)
         let rotated = page.rotation % 180 != 0
         let pageWidth = max(1, rotated ? bounds.height : bounds.width), pageHeight = max(1, rotated ? bounds.width : bounds.height)
-        let availableWidth = max(100, view.bounds.width - 24), availableHeight = max(100, view.bounds.height - 24)
-        let neededWidth = columns == 2 ? pageWidth * 2 + 8 : pageWidth
+        let availableWidth = max(100, view.bounds.width - 96), availableHeight = max(100, view.bounds.height - 80)
+        let neededWidth = columns == 2 ? pageWidth * 2 + 24 : pageWidth
         let scale = min(availableWidth / neededWidth, availableHeight / pageHeight) * zoomFactor
         view.autoScales = false
         view.minScaleFactor = scale * 0.25
@@ -336,9 +235,6 @@ final class PDFPresenter {
     }
 
     func viewResized() {
-        observeScrolling()
-        if view.subviews.last !== overlay { view.addSubview(overlay, positioned: .above, relativeTo: nil) }
-        overlay.needsDisplay = true
         let size = view.bounds.size
         guard size != lastSize, size.width > 0 else { return }
         lastSize = size
@@ -348,7 +244,7 @@ final class PDFPresenter {
     /// Whether a zoomed page can still scroll in the direction of a wheel or swipe (AppKit's negative deltas are down
     /// and to the right). While it can, PDFKit scrolls; the page turns only from its edge.
     func canScroll(dx: CGFloat, dy: CGFloat) -> Bool {
-        guard mode == .paginated, let documentView = view.documentView, let scrollView = documentView.enclosingScrollView else { return false }
+        guard let documentView = view.documentView, let scrollView = documentView.enclosingScrollView else { return false }
         let visible = scrollView.contentView.documentVisibleRect
         let bounds = documentView.bounds
         let slack: CGFloat = 1
@@ -373,7 +269,7 @@ final class PDFPresenter {
     /// Two-finger swipes in the paginated layout turn one page per gesture, sideways or vertical; PDFKit would
     /// otherwise scroll a page that already fits. The inertial tail never turns another page.
     func handleTrackpad(_ event: NSEvent) -> Bool {
-        guard mode == .paginated, event.hasPreciseScrollingDeltas else { return false }
+        guard event.hasPreciseScrollingDeltas else { return false }
         if event.phase.contains(.began) || event.phase.contains(.mayBegin) {
             swipeDistance = 0
             swipeTurned = false
@@ -407,7 +303,7 @@ final class PDFPresenter {
     // MARK: - Navigation
 
     func next() {
-        if view.canGoToNextPage { view.goToNextPage(nil) } else if mode == .paginated { session.showEndCard = true }
+        if view.canGoToNextPage { view.goToNextPage(nil) } else { session.showEndCard = true }
     }
 
     func previous() {

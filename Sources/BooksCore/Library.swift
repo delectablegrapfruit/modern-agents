@@ -363,14 +363,12 @@ public struct ReaderSettings: Codable, Hashable {
     public var wheelHorizontal = true
     public var showPageNumbers = true
     public var showChapterProgress = true
-    /// PDFs: PDFKit's drop shadow under each page (a glow, in the dark themes). Off, pages get a hairline edge instead.
-    public var pdfPageShadows = true
 
     public init() {}
 
     enum CodingKeys: String, CodingKey {
         case theme, autoNight, font, fontSize, lineHeight, textWidth, justify, hyphenate, layout, spread, pageTurn
-        case wheelTurnsPages, wheelSensitivity, wheelInvert, wheelHorizontal, showPageNumbers, showChapterProgress, pdfPageShadows
+        case wheelTurnsPages, wheelSensitivity, wheelInvert, wheelHorizontal, showPageNumbers, showChapterProgress
     }
 
     /// Every value falls back to its default, so a settings file from another version still loads.
@@ -393,7 +391,6 @@ public struct ReaderSettings: Codable, Hashable {
         wheelHorizontal = (try? c.decodeIfPresent(Bool.self, forKey: .wheelHorizontal)) ?? true
         showPageNumbers = (try? c.decodeIfPresent(Bool.self, forKey: .showPageNumbers)) ?? true
         showChapterProgress = (try? c.decodeIfPresent(Bool.self, forKey: .showChapterProgress)) ?? true
-        pdfPageShadows = (try? c.decodeIfPresent(Bool.self, forKey: .pdfPageShadows)) ?? true
     }
 
     /// The theme actually shown: the night variant when Auto-Night is on and the system is dark.

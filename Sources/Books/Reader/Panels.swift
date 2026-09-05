@@ -165,12 +165,6 @@ struct AppearancePopover: View {
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 Text(pdf ? "Zoom" : "Text size \(model.settings.reader.fontSize)%").font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .center)
                 themes
-                if pdf {
-                    Toggle(isOn: Binding(get: { model.settings.reader.pdfPageShadows }, set: { model.settings.reader.pdfPageShadows = $0; session.applySettings() })) {
-                        Text("Page shadows")
-                        Text("Off, a hairline separates the pages").font(.caption).foregroundStyle(.secondary)
-                    }
-                }
                 Divider()
                 if !pdf {
                     Picker("Font", selection: Binding(get: { model.settings.reader.font }, set: { model.settings.reader.font = $0; session.applySettings() })) {
@@ -188,14 +182,16 @@ struct AppearancePopover: View {
                     Toggle("Hyphenation", isOn: Binding(get: { model.settings.reader.hyphenate }, set: { model.settings.reader.hyphenate = $0; session.applySettings() }))
                     Divider()
                 }
-                Picker("Layout", selection: Binding(get: { model.settings.reader.layout }, set: { model.settings.reader.layout = $0; session.applySettings() })) {
-                    ForEach(ReaderLayout.allCases, id: \.self) { Text($0.label).tag($0) }
+                if !pdf {
+                    Picker("Layout", selection: Binding(get: { model.settings.reader.layout }, set: { model.settings.reader.layout = $0; session.applySettings() })) {
+                        ForEach(ReaderLayout.allCases, id: \.self) { Text($0.label).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
                 }
-                .pickerStyle(.segmented)
                 Picker("Pages", selection: Binding(get: { model.settings.reader.spread }, set: { model.settings.reader.spread = $0; session.applySettings() })) {
                     ForEach(Spread.allCases, id: \.self) { Text($0.label).tag($0) }
                 }
-                .disabled(model.settings.reader.layout == .scroll)
+                .disabled(!pdf && model.settings.reader.layout == .scroll)
                 if !pdf {
                     Picker("Page Turn", selection: Binding(get: { model.settings.reader.pageTurn }, set: { model.settings.reader.pageTurn = $0; session.applySettings() })) {
                         ForEach(PageTurn.allCases, id: \.self) { Text($0.label).tag($0) }

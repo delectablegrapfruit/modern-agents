@@ -211,16 +211,16 @@ enum SelfTest {
         session.applySettings()
         try await sleep(0.4)
         settings = model.settings
-        settings.reader.layout = .scroll
+        settings.reader.spread = .one
         model.settings = settings
         session.applySettings()
         try await sleep(0.5)
-        guard session.layout.mode == .scroll else { throw Failure("PDF did not switch to the scrolling layout") }
+        guard session.layout.mode == .paginated, session.layout.columns == 1 else { throw Failure("PDF did not switch to one page (\(session.layout.mode), \(session.layout.columns) columns)") }
         settings = model.settings
-        settings.reader.layout = .paginated
+        settings.reader.spread = .two
         model.settings = settings
         session.applySettings()
-        log("PDF: next, wheel notch, scrub to the end, \(hits) matches, bookmark, paper theme, scrolling layout")
+        log("PDF: next, wheel notch, scrub to the end, \(hits) matches, bookmark, paper theme, one page then two")
         session.close()
         try await sleep(0.4)
         let savedPage = model.book(book.id)?.position?.pdfPage ?? 0
