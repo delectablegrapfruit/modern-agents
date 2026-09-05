@@ -412,7 +412,7 @@ public struct ReaderSettings: Codable, Hashable {
         showPageNumbers = (try? c.decodeIfPresent(Bool.self, forKey: .showPageNumbers)) ?? true
         showChapterProgress = (try? c.decodeIfPresent(Bool.self, forKey: .showChapterProgress)) ?? true
         pdfLayout = (try? c.decodeIfPresent(PDFLayout.self, forKey: .pdfLayout)) ?? .pages
-        pdfZoom = min(300, max(50, (try? c.decodeIfPresent(Int.self, forKey: .pdfZoom)) ?? 100))
+        pdfZoom = min(400, max(50, (try? c.decodeIfPresent(Int.self, forKey: .pdfZoom)) ?? 100))
     }
 
     /// The theme actually shown: the night variant when Auto-Night is on and the system is dark.

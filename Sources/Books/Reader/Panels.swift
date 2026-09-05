@@ -233,7 +233,7 @@ struct AppearancePopover: View {
     private var pdfLayoutHelp: String {
         switch model.settings.reader.pdfLayout {
         case .pages: return "Whole pages, as printed."
-        case .fit: return "Pages cropped to their ink and dealt out to screens that turn like pages, never cutting through a line or a picture. 100% is the page's printed size; two screens share the spread while two fit the window."
+        case .fit: return "Pages cropped to their ink and dealt out to screens that turn like pages, never cutting through a line or a picture. 100% is the page's printed size; the size stops where the pages you chose would no longer fit the window."
         case .text: return "The text reflowed into a book: fonts, sizes and themes apply; the layout is not kept."
         }
     }

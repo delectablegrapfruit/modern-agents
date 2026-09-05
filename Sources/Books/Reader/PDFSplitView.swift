@@ -484,22 +484,27 @@ final class SplitPDFPresenter: PDFReading {
         return columns == 2 ? clamped - clamped % 2 : clamped
     }
 
-    /// The text size that fills the window with one column: the largest the size can be without cutting.
-    private var largestZoom: Int {
-        guard let p = preparation, p.bodyStripWidth > 0, view.bounds.width > 60 else { return 300 }
-        let fit = (view.bounds.width - 2 * sideMargin) / p.bodyStripWidth * 100
-        return max(50, min(300, Int(fit / 10) * 10))
+    /// The largest text size (a step of 10) at which the given number of columns still fits the window.
+    private func largestZoom(columns: Int) -> Int {
+        guard let p = preparation, p.bodyStripWidth > 0, view.bounds.width > 60 else { return 400 }
+        let width = (view.bounds.width - 2 * sideMargin - CGFloat(columns - 1) * gutter) / CGFloat(columns)
+        return max(50, min(400, Int(width / p.bodyStripWidth * 100 / 10) * 10))
     }
 
-    /// The text size is the page's own scale: 100% shows ink at its printed size. Two screens share the spread
-    /// while two columns of the body's width fit the window; otherwise one does.
+    /// The pages chosen: two, unless two columns would not fit the window even at the smallest text size.
+    private var wantedColumns: Int {
+        guard let p = preparation, view.bounds.width > 60 else { return settings.spread == .one ? 1 : 2 }
+        return settings.spread == .two && p.bodyStripWidth + gutter + 2 * sideMargin <= view.bounds.width ? 2 : 1
+    }
+
+    /// The text size is the page's own scale: 100% shows ink at its printed size. The pages stay as chosen; the size
+    /// stops where they would no longer fit the window.
     private func computeGeometry() {
         let size = view.bounds.size
         guard let p = preparation, size.width > 60, size.height > 60, p.bodyStripWidth > 0 else { return }
-        let zoom = min(largestZoom, max(50, settings.pdfZoom))
+        columns = wantedColumns
+        let zoom = min(largestZoom(columns: columns), max(50, settings.pdfZoom))
         scale = CGFloat(zoom) / 100
-        let body = p.bodyStripWidth * scale
-        columns = settings.spread == .two && body * 2 + gutter + 2 * sideMargin <= size.width ? 2 : 1
         let availableWidth = size.width - 2 * sideMargin - CGFloat(columns - 1) * gutter
         tileSize = CGSize(width: max(40, availableWidth / CGFloat(columns)), height: max(40, size.height - topMargin - bottomMargin))
     }
@@ -911,11 +916,12 @@ final class SplitPDFPresenter: PDFReading {
         report()
     }
 
-    /// The text size steps by 10%, from 50% to the largest that fits the window in one column.
+    /// The text size steps by 10%, from 50% to the largest at which the chosen pages still fit the window.
     func zoom(_ direction: Int) {
         var all = session.model.settings
-        let current = min(largestZoom, max(50, all.reader.pdfZoom))
-        let next = direction > 0 ? min(largestZoom, current + 10) : max(50, current - 10)
+        let cap = largestZoom(columns: wantedColumns)
+        let current = min(cap, max(50, all.reader.pdfZoom))
+        let next = direction > 0 ? min(cap, current + 10) : max(50, current - 10)
         all.reader.pdfZoom = next
         session.model.settings = all
         applySettings()
