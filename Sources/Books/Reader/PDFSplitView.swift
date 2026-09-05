@@ -31,7 +31,7 @@ struct SplitPreparation: Codable, Sendable {
         let box: CGRect?
     }
 
-    static let currentVersion = 4
+    static let currentVersion = 5
 
     var version = SplitPreparation.currentVersion
     /// Per page, the displayed size (rotation applied).
@@ -43,9 +43,9 @@ struct SplitPreparation: Codable, Sendable {
     /// Per page; nil when the document was too long to render every page.
     let ink: [PageInk?]
     let typicalLineHeight: CGFloat
-    /// Per page: the running header / page number line at the top and the footer at the bottom, if any.
-    let headers: [Line?]
-    let footers: [Line?]
+    /// Per page: the lines of the running header (title, page number) at the top and of the footer at the bottom.
+    let headers: [[Line]]
+    let footers: [[Line]]
     /// The widest strip among pages of the commonest size: what 100% is measured against.
     let bodyStripWidth: CGFloat
 
@@ -263,7 +263,7 @@ final class SplitPDFPresenter: PDFReading {
         if bodyWidth <= 0 { bodyWidth = strips.flatMap { $0 }.map(\.width).max() ?? 400 }
         let heights = lines.flatMap { $0.map(\.height) }.filter { $0 > 2 && $0 < 80 }.sorted()
         let typical = heights.isEmpty ? 12 : heights[heights.count / 2]
-        let (headers, footers) = runningLines(lines, strips: strips, typical: typical)
+        let (headers, footers) = runningLines(lines, sizes: sizes, typical: typical)
         return SplitPreparation(pageSizes: sizes, strips: strips, lines: lines, ink: ink, typicalLineHeight: typical, headers: headers, footers: footers, bodyStripWidth: bodyWidth)
     }
 
@@ -332,10 +332,10 @@ final class SplitPDFPresenter: PDFReading {
         return SplitPreparation.PageInk(rows: rows, stripRows: perStrip ? stripRows : nil, rowHeight: rowHeight, width: w, box: box)
     }
 
-    /// Running headers and footers: the topmost or bottommost line of a page, when the same words (numbers aside)
-    /// top or tail a quarter of the pages, or when the line is nothing but a page number.
-    nonisolated static func runningLines(_ lines: [[SplitPreparation.Line]], strips: [[CGRect]], typical: CGFloat) -> ([SplitPreparation.Line?], [SplitPreparation.Line?]) {
-        let zone = typical * 2.5
+    /// Running headers and footers: the band of lines in a page's top or bottom margin (the outer 12% of the page)
+    /// that stands off from the body by a clear gap and is a page number, words that recur on a quarter of the
+    /// pages, or at most two short lines. Whole bands, so a running title and its page number go together.
+    nonisolated static func runningLines(_ lines: [[SplitPreparation.Line]], sizes: [CGSize], typical: CGFloat) -> (headers: [[SplitPreparation.Line]], footers: [[SplitPreparation.Line]]) {
         func key(_ text: String) -> String {
             var s = text.lowercased().replacingOccurrences(of: "[0-9]+", with: "#", options: .regularExpression)
             s = s.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -346,27 +346,53 @@ final class SplitPDFPresenter: PDFReading {
             guard !t.isEmpty, t.count <= 12 else { return false }
             return t.range(of: "^[-–—•·.\\s]*([0-9]+|[ivxlcdm]+)[-–—•·.\\s]*$", options: .regularExpression) != nil
         }
+        /// The lines in the margin zone that a gap separates from the body, nearest the edge first.
+        func band(_ zone: [SplitPreparation.Line], fromTop: Bool) -> [SplitPreparation.Line] {
+            guard !zone.isEmpty else { return [] }
+            // Group lines sharing a baseline row, then walk away from the edge until the gap to the next row is clear.
+            var rows: [[SplitPreparation.Line]] = []
+            for line in zone {
+                if let last = rows.last, let ref = last.first, abs(ref.minY - line.minY) < typical * 0.6 { rows[rows.count - 1].append(line) } else { rows.append([line]) }
+            }
+            var out: [SplitPreparation.Line] = []
+            for (i, row) in rows.enumerated() {
+                out.append(contentsOf: row)
+                let edge = fromTop ? row.map(\.minY).min()! : row.map(\.maxY).max()!
+                if i + 1 < rows.count {
+                    let nextRow = rows[i + 1]
+                    let nextEdge = fromTop ? nextRow.map(\.maxY).max()! : nextRow.map(\.minY).min()!
+                    if (fromTop ? edge - nextEdge : nextEdge - edge) >= typical * 1.2 { return out }
+                } else {
+                    return []   // the zone ran into the body with no clear gap
+                }
+            }
+            return []
+        }
+        var headerBands: [[SplitPreparation.Line]] = [], footerBands: [[SplitPreparation.Line]] = []
         var topCounts: [String: Int] = [:], bottomCounts: [String: Int] = [:]
-        var tops: [SplitPreparation.Line?] = [], bottoms: [SplitPreparation.Line?] = []
         for (i, pageLines) in lines.enumerated() {
-            let top = (i < strips.count ? strips[i] : []).map(\.maxY).max() ?? 0
-            let bottom = (i < strips.count ? strips[i] : []).map(\.minY).min() ?? 0
-            // Headers and footers are short; a body line that happens to end a page is not.
-            let t = pageLines.first.flatMap { $0.minY > top - zone && $0.height < typical * 2.5 && $0.text.count <= 60 ? $0 : nil }
-            let b = pageLines.last.flatMap { $0.maxY < bottom + zone && $0.height < typical * 2.5 && $0.text.count <= 60 && pageLines.count > 1 ? $0 : nil }
-            tops.append(t)
-            bottoms.append(b)
-            if let t { topCounts[key(t.text), default: 0] += 1 }
-            if let b { bottomCounts[key(b.text), default: 0] += 1 }
+            let height = i < sizes.count ? sizes[i].height : 792
+            let sorted = pageLines.sorted { $0.maxY > $1.maxY }
+            let topZone = sorted.filter { $0.maxY >= height * 0.88 && $0.height < typical * 2.5 }
+            let bottomZone = sorted.filter { $0.minY <= height * 0.12 && $0.height < typical * 2.5 }.reversed()
+            let h = band(topZone, fromTop: true), f = band(Array(bottomZone), fromTop: false)
+            headerBands.append(h)
+            footerBands.append(f)
+            for l in h { topCounts[key(l.text), default: 0] += 1 }
+            for l in f { bottomCounts[key(l.text), default: 0] += 1 }
         }
         let threshold = max(3, lines.count / 4)
-        var headers: [SplitPreparation.Line?] = [], footers: [SplitPreparation.Line?] = []
-        for i in 0..<lines.count {
-            let t = tops[i], b = bottoms[i]
-            headers.append(t.flatMap { (topCounts[key($0.text), default: 0] >= threshold || isNumber($0.text)) ? $0 : nil })
-            footers.append(b.flatMap { (bottomCounts[key($0.text), default: 0] >= threshold || isNumber($0.text)) ? $0 : nil })
+        func qualifies(_ band: [SplitPreparation.Line], _ counts: [String: Int]) -> Bool {
+            guard !band.isEmpty, band.count <= 4 else { return false }
+            if band.contains(where: { isNumber($0.text) }) { return true }
+            if band.contains(where: { counts[key($0.text), default: 0] >= threshold }) { return true }
+            return band.count <= 2 && band.reduce(0) { $0 + $1.text.count } <= 40
         }
-        return (headers, footers)
+        for i in 0..<lines.count {
+            if !qualifies(headerBands[i], topCounts) { headerBands[i] = [] }
+            if !qualifies(footerBands[i], bottomCounts) { footerBands[i] = [] }
+        }
+        return (headerBands, footerBands)
     }
 
     // MARK: - Ink
@@ -471,30 +497,40 @@ final class SplitPDFPresenter: PDFReading {
         tileSize = CGSize(width: max(40, availableWidth / CGFloat(columns)), height: max(40, size.height - topMargin - bottomMargin))
     }
 
-    /// One page's run of a strip for the column: the strip, cut below the page's header and above its footer.
+    /// One page's run of a strip for the column: the strip's columns, over the page's own ink from top to bottom
+    /// (the group's strip is a median; a full page runs past it), cut below the page's header band and above its
+    /// footer band.
     private func segment(page: Int, strip: Int) -> CGRect? {
         guard let p = preparation, page < p.strips.count, strip < p.strips[page].count else { return nil }
         let rect = p.strips[page][strip]
+        let size = pageSize(page)
         let lines = page < p.lines.count ? p.lines[page] : []
-        let header = page < p.headers.count ? p.headers[page] : nil
-        let footer = page < p.footers.count ? p.footers[page] : nil
-        let body = lines.filter { l in !(header.map { $0.minY == l.minY && $0.maxY == l.maxY } ?? false) && !(footer.map { $0.minY == l.minY && $0.maxY == l.maxY } ?? false) }
-        var top = rect.maxY
-        var bottom = rect.minY
-        if let header {
-            if let next = body.first(where: { $0.maxY <= header.minY }) { top = min(top, (header.minY + next.maxY) / 2) } else { top = min(top, header.minY - 1) }
+        let header = page < p.headers.count ? p.headers[page] : []
+        let footer = page < p.footers.count ? p.footers[page] : []
+        let pad = p.typicalLineHeight * 0.35
+        var top = rect.maxY, bottom = rect.minY
+        if page < p.ink.count, let box = p.ink[page]?.box {
+            top = max(top, min(size.height, box.maxY + pad))
+            bottom = min(bottom, max(0, box.minY - pad))
+        } else if let first = lines.first, let last = lines.last {
+            top = max(top, min(size.height, first.maxY + pad))
+            bottom = min(bottom, max(0, last.minY - pad))
         }
-        if let footer {
-            if let previous = body.last(where: { $0.minY >= footer.maxY }) { bottom = max(bottom, (footer.maxY + previous.minY) / 2) } else { bottom = max(bottom, footer.maxY + 1) }
+        func isBand(_ l: SplitPreparation.Line, _ band: [SplitPreparation.Line]) -> Bool { band.contains { $0.minY == l.minY && $0.maxY == l.maxY && $0.minX == l.minX } }
+        let body = lines.filter { !isBand($0, header) && !isBand($0, footer) }
+        if let bandBottom = header.map(\.minY).min() {
+            if let next = body.first(where: { $0.maxY <= bandBottom }) { top = min(top, (bandBottom + next.maxY) / 2) } else { top = min(top, bandBottom - 1) }
+        }
+        if let bandTop = footer.map(\.maxY).max() {
+            if let previous = body.last(where: { $0.minY >= bandTop }) { bottom = max(bottom, (bandTop + previous.minY) / 2) } else { bottom = max(bottom, bandTop + 1) }
         }
         guard top - bottom > 1 else { return nil }
         var minX = rect.minX, maxX = rect.maxX
         // A page inked wider than its group's strip (a table, a figure, a wide line) keeps all of it; a piece wider
         // than the tile is drawn smaller to fit.
         if p.strips[page].count == 1, page < p.ink.count, let box = p.ink[page]?.box {
-            let pad = p.typicalLineHeight * 0.35
-            minX = min(minX, box.minX - pad)
-            maxX = max(maxX, box.maxX + pad)
+            minX = max(0, min(minX, box.minX - pad))
+            maxX = min(size.width, max(maxX, box.maxX + pad))
         }
         return CGRect(x: minX, y: bottom, width: maxX - minX, height: top - bottom)
     }
