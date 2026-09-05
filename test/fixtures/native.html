@@ -34,7 +34,8 @@
     <script>
       const player = document.getElementById('player');
       const video = document.getElementById('main');
-      window.__native = { pointerdown: 0, mousedown: 0, mouseup: 0, clicks: 0, keydown: 0, keyup: 0 };
+      window.__native = { pointerdown: 0, mousedown: 0, mouseup: 0, clicks: 0, dblclicks: 0, keydown: 0, keyup: 0 };
+      let pressedAt = 0;
       let timer = 0;
       function nativeHold() {
         video.playbackRate = 2;
@@ -50,13 +51,22 @@
       player.addEventListener('pointerdown', () => window.__native.pointerdown++);
       player.addEventListener('mousedown', () => {
         window.__native.mousedown++;
+        pressedAt = performance.now();
         timer = setTimeout(nativeHold, 400);
       });
       player.addEventListener('mouseup', () => {
         window.__native.mouseup++;
+        // Click-to-pause handled on the release (as the site does), only
+        // for a press it saw start and that was not a hold.
+        if (pressedAt && performance.now() - pressedAt < 400) {
+          if (video.paused) video.play();
+          else video.pause();
+        }
+        pressedAt = 0;
         nativeRelease();
       });
       player.addEventListener('click', () => window.__native.clicks++);
+      player.addEventListener('dblclick', () => window.__native.dblclicks++);
       document.addEventListener('keydown', (e) => {
         if (e.key !== ' ') return;
         e.preventDefault();

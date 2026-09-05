@@ -142,8 +142,9 @@
   const HOLD_STEP_RESET_MS = 200;
   const HOLD_SLOP_PX = 8;
   const HOLD_KEY = ' ';
-  /* Sites with a native hold-to-speed-up: their press and space handlers are
-   * suppressed so that this one replaces it rather than doubling it. */
+  /* Sites with a native hold-to-speed-up: their press and space bar handlers
+   * are kept from seeing the events, so that this one replaces it rather
+   * than doubling it; what a tap would have done (play/pause) is done here. */
   const HOLD_NATIVE = ['youtube.com', 'youtube-nocookie.com', 'youtu.be'];
   const HUD_LINGER_MS = 600;
   const LINE_PX = 16; // deltaMode === DOM_DELTA_LINE
@@ -1330,25 +1331,31 @@
     const found = locateVideo(e.clientX, e.clientY);
     const video = found.ready || found.any;
     if (!video) return;
-    startHold(video, { x: e.clientX, y: e.clientY, pointerId: e.pointerId });
+    startHold(video, { x: e.clientX, y: e.clientY, pointerId: e.pointerId, moved: false, owned: false });
     if (replacesNativeHold()) {
-      // The site's own hold starts from this press: keep it from seeing it.
-      // The click still fires on release (a short press toggles playback as
-      // before), and mouseup/pointerup are stopped too, see onHoldEnd().
+      // The site's own hold starts from this press, and so does its
+      // click-to-pause (which may well be handled on mouseup rather than
+      // click). The whole press is ours then: pointerdown, mousedown,
+      // pointerup, mouseup and the click are all stopped, and a release
+      // before the delay toggles playback here, see onHoldEnd(). A
+      // double-click still reaches the site (`dblclick` is dispatched by the
+      // browser whatever became of the clicks), so its fullscreen toggle
+      // keeps working.
+      hold.owned = true;
+      if (session) onUserTakeover(e); // stopping the event below keeps the session's own listener from seeing it
       e.stopImmediatePropagation();
-      hold.stopMouse = true;
     }
   }
 
-  /* On a site whose own hold starts from `mousedown`, that event follows
-   * the pointerdown that started ours: stop it too. */
+  /* On a site whose own handlers start from `mousedown`, that event follows
+   * the pointerdown that started an owned press: stop it too. */
   function onMouseDownCapture(e) {
-    if (hold && hold.stopMouse && e.isTrusted && e.button === 0) e.stopImmediatePropagation();
+    if (hold && hold.owned && e.isTrusted && e.button === 0) e.stopImmediatePropagation();
   }
 
   function onMouseUpCapture(e) {
     if (!e.isTrusted || e.button !== 0) return;
-    if ((hold && hold.stopMouse) || stopMouseUp) {
+    if ((hold && hold.owned) || stopMouseUp) {
       clearTimeout(stopMouseUp);
       stopMouseUp = 0;
       e.stopImmediatePropagation();
@@ -1432,19 +1439,7 @@
     if (!h || !h.key) return; // the press only started playback
     const tap = !h.active;
     cancelHold();
-    if (tap) {
-      // Released before the delay: the tap the player would have handled.
-      try {
-        if (h.video.paused) {
-          const p = h.video.play();
-          if (p && p.catch) p.catch(() => {});
-        } else {
-          h.video.pause();
-        }
-      } catch {
-        /* ignore */
-      }
-    }
+    if (tap) togglePlayback(h.video); // released before the delay: the tap the player would have handled
   }
 
   function beginHold() {
@@ -1487,20 +1482,46 @@
   }
 
   function onHoldMove(e) {
-    if (!hold || hold.key || hold.active || e.pointerId !== hold.pointerId) return;
-    if (Math.hypot(e.clientX - hold.x, e.clientY - hold.y) > HOLD_SLOP_PX) cancelHold();
+    const h = hold;
+    if (!h || h.key || h.active || h.moved || e.pointerId !== h.pointerId) return;
+    if (Math.hypot(e.clientX - h.x, e.clientY - h.y) <= HOLD_SLOP_PX) return;
+    // A drag, not a hold.
+    if (!h.owned) return cancelHold();
+    // The press stays ours until its release (the site never saw it start),
+    // but it will not speed up and will not toggle playback.
+    h.moved = true;
+    clearTimeout(h.timer);
+    h.timer = 0;
   }
 
   function onHoldEnd(e) {
-    if (!hold || hold.key || (e && e.pointerId !== undefined && e.pointerId !== hold.pointerId)) return;
-    if (hold.stopMouse && e && e.type === 'pointerup') e.stopImmediatePropagation();
-    if (hold.active) {
-      // The press was a hold, not a click: swallow the click this release
-      // generates (it follows within the same input sequence), and only that.
+    const h = hold;
+    if (!h || h.key || (e && e.pointerId !== undefined && e.pointerId !== h.pointerId)) return;
+    const up = !!e && e.type === 'pointerup';
+    if (h.owned && up) e.stopImmediatePropagation();
+    if (h.active || h.owned) {
+      // The press was a hold, not a click, or the site is not to see it at
+      // all: swallow the click this release generates (it follows within the
+      // same input sequence), and only that.
       clearTimeout(suppressClick);
       suppressClick = setTimeout(() => (suppressClick = 0), 150);
     }
+    const tap = h.owned && up && !h.active && !h.moved;
     cancelHold();
+    if (tap) togglePlayback(h.video); // what the click would have done
+  }
+
+  function togglePlayback(v) {
+    try {
+      if (v.paused || v.ended) {
+        const p = v.play();
+        if (p && p.catch) p.catch(() => {});
+      } else {
+        v.pause();
+      }
+    } catch {
+      /* ignore */
+    }
   }
 
   function cancelHold() {
@@ -1508,7 +1529,7 @@
     if (!h) return;
     hold = null;
     clearTimeout(h.timer);
-    if (h.stopMouse) {
+    if (h.owned) {
       // The mouseup that follows this release must be stopped too, so the
       // site does not see a release it never saw the press for.
       clearTimeout(stopMouseUp);

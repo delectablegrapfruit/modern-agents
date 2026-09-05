@@ -3,6 +3,7 @@
  * can be read back from pixels. */
 import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import {
   startServer,
   launchWithExtension,
@@ -777,9 +778,22 @@ test('on YouTube the native hold to speed up is replaced: its handlers never see
   // it has its own press-and-hold and space bar speed-up, like the site.
   const { context } = ext;
   const nativeUrl = 'https://www.youtube.com/native.html';
-  await context.route('https://www.youtube.com/**', (route) => {
+  await context.route('https://www.youtube.com/**', async (route) => {
+    // Range support matters: without it Chromium treats the media as
+    // unseekable and there is nothing to scrub.
     const name = new URL(route.request().url()).pathname.slice(1);
-    return route.fulfill({ path: new URL(`./fixtures/${name}`, import.meta.url).pathname });
+    const body = await readFile(new URL(`./fixtures/${name}`, import.meta.url));
+    const type = name.endsWith('.webm') ? 'video/webm' : 'text/html; charset=utf-8';
+    const m = /^bytes=(\d*)-(\d*)$/.exec(route.request().headers().range || '');
+    if (!m) return route.fulfill({ status: 200, contentType: type, headers: { 'accept-ranges': 'bytes' }, body });
+    const start = m[1] ? Number(m[1]) : 0;
+    const end = m[2] ? Math.min(Number(m[2]), body.length - 1) : body.length - 1;
+    return route.fulfill({
+      status: 206,
+      contentType: type,
+      headers: { 'accept-ranges': 'bytes', 'content-range': `bytes ${start}-${end}/${body.length}` },
+      body: body.subarray(start, end + 1),
+    });
   });
   try {
     await page.goto(nativeUrl);
@@ -805,13 +819,46 @@ test('on YouTube the native hold to speed up is replaced: its handlers never see
     assert.equal(n.pointerdown + n.mousedown + n.mouseup, 0, `the page saw no press or release: ${JSON.stringify(n)}`);
     assert.equal(n.clicks, 0, 'and no click from the hold');
 
-    // A short press is still a click for the page.
+    // A short press toggles playback, as it did natively (the page handles
+    // that on the release it no longer sees, so the extension does it).
+    const paused = () => page.evaluate(() => document.querySelector('#main').paused);
     await page.mouse.click(p.x, p.y);
     await page.waitForTimeout(50);
+    assert.equal(await paused(), true, 'a tap pauses');
     n = await native();
-    assert.equal(n.clicks, 1, 'a click reaches the page');
-    assert.equal(n.mousedown, 0, 'without the mousedown the native hold would start from');
+    assert.equal(n.mousedown + n.mouseup + n.clicks, 0, `the page saw none of it: ${JSON.stringify(n)}`);
+    await page.mouse.click(p.x, p.y);
+    await page.waitForFunction(() => !document.querySelector('#main').paused);
     assert.equal(await rate(), 1);
+
+    // A double-click still reaches the page (fullscreen on the site), and
+    // its two taps cancel out.
+    await page.mouse.dblclick(p.x, p.y);
+    await page.waitForTimeout(100);
+    assert.equal((await native()).dblclicks, 1, 'dblclick reaches the page');
+    assert.equal(await paused(), false, 'two taps: still playing');
+
+    // A drag (press, move, release) neither toggles nor speeds up.
+    await page.mouse.down();
+    await page.mouse.move(p.x + 60, p.y + 20, { steps: 4 });
+    await page.waitForTimeout(600);
+    assert.equal(await rate(), 1, 'a drag is not a hold');
+    await page.mouse.up();
+    await page.waitForTimeout(50);
+    assert.equal(await paused(), false, 'a drag is not a tap');
+    assert.equal((await native()).mouseup, 0);
+
+    // A click during a scrub ends the scrub and plays (the tap on a video
+    // the scrub had paused), instead of the scrub holding the video paused.
+    await wheelBurst(page, p.x, p.y, 20, 0, 5, 30);
+    await page.waitForTimeout(50);
+    assert.equal(await paused(), true, 'scrubbing paused it');
+    await page.mouse.click(p.x, p.y);
+    await page.waitForFunction(() => !document.querySelector('#main').paused, null, { timeout: 2000 });
+    await page.waitForTimeout(300);
+    assert.equal(await paused(), false, 'the click ended the scrub and played');
+    assert.equal(await rate(), 1);
+    await page.mouse.move(p.x, p.y);
 
     // The space bar, pointer over the player.
     await page.keyboard.down('Space');
