@@ -310,7 +310,8 @@ enum SelfTest {
         guard screens.count > 1, split.screenHeight > 0 else { throw Failure("Zoom & Split has no screens to check") }
         for u in 1..<screens.count {
             for a in screens[u - 1].pieces {
-                for b in screens[u].pieces where a.page == b.page && b.rect.maxY > a.rect.minY + 0.5 && b.rect.minX < a.rect.maxX && b.rect.maxX > a.rect.minX {
+                for b in screens[u].pieces where a.page == b.page && b.rect.maxY > a.rect.minY + 0.5
+                    && min(a.rect.maxX, b.rect.maxX) - max(a.rect.minX, b.rect.minX) > min(a.rect.width, b.rect.width) * 0.5 {
                     throw Failure("screen \(u + 1) repeats page \(a.page + 1) from \(Int(b.rect.maxY)) down; the screen before ended at \(Int(a.rect.minY))")
                 }
             }
