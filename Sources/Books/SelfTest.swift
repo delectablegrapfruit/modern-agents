@@ -233,7 +233,7 @@ enum SelfTest {
         let screensTwoUp = fitSession.layout.total
         guard screensTwoUp >= 8, fitSession.layout.columns == 2 else { throw Failure("Zoom & Split made \(Int(screensTwoUp)) screens of 8 pages in \(fitSession.layout.columns) column(s); expected two columns") }
         guard let split = fitSession.pdf as? SplitPDFPresenter else { throw Failure("Zoom & Split is not using the split presenter") }
-        try checkFlow(split)
+        try checkFlow(split, expectCuts: false)   // two-up, a letter page may just fit a screen
         var fitSettings = model.settings
         fitSettings.reader.spread = .one
         model.settings = fitSettings
@@ -241,7 +241,7 @@ enum SelfTest {
         try await sleep(0.6)
         let screensOneUp = fitSession.layout.total
         guard screensOneUp > screensTwoUp, fitSession.layout.columns == 1 else { throw Failure("one column did not enlarge the text (\(screensTwoUp) → \(screensOneUp) screens)") }
-        try checkFlow(split)
+        try checkFlow(split, expectCuts: true)
         for _ in 0..<5 { fitSession.changeFontSize(by: -10) }
         try await sleep(0.6)
         guard fitSession.layout.total < screensOneUp else { throw Failure("a smaller text size did not reduce the screens (\(screensOneUp) → \(fitSession.layout.total))") }
@@ -256,7 +256,7 @@ enum SelfTest {
         guard model.settings.reader.pdfZoom == 200 else { throw Failure("the text size did not step from 100% to 200% (\(model.settings.reader.pdfZoom)%)") }
         let screensInParts = fitSession.layout.total
         guard screensInParts > screensOneUp else { throw Failure("two parts did not add screens (\(screensOneUp) → \(screensInParts))") }
-        try checkFlow(split)
+        try checkFlow(split, expectCuts: true)
         fitSettings = model.settings
         fitSettings.reader.spread = .two
         fitSettings.reader.pdfZoom = 100
@@ -305,7 +305,7 @@ enum SelfTest {
     /// The screens of Zoom & Split read on like a book: no screen repeats ink an earlier one showed, every screen
     /// but the last is filled, and each holds at most a screen's worth.
     @MainActor
-    private static func checkFlow(_ split: SplitPDFPresenter) throws {
+    private static func checkFlow(_ split: SplitPDFPresenter, expectCuts: Bool) throws {
         let screens = split.screens
         guard screens.count > 1, split.screenHeight > 0 else { throw Failure("Zoom & Split has no screens to check") }
         for u in 1..<screens.count {
@@ -325,7 +325,7 @@ enum SelfTest {
                 throw Failure("screen \(u) was cut through ink on page \(a.page + 1) at \(Int(a.rect.minY)) (\(Int(ink * 100))% of the row)")
             }
         }
-        guard cuts > 0 else { throw Failure("no screen was cut within a page; the flow did not split pages") }
+        if expectCuts, cuts == 0 { throw Failure("no screen was cut within a page; the flow did not split pages") }
         for (i, screen) in screens.enumerated() {
             guard screen.height <= split.screenHeight + 0.5 else { throw Failure("screen \(i + 1) holds \(Int(screen.height)) of \(Int(split.screenHeight)) points") }
             if i < screens.count - 1, screen.height < split.screenHeight * 0.5 { throw Failure("screen \(i + 1) is only \(Int(screen.height / split.screenHeight * 100))% full") }
