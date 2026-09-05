@@ -235,30 +235,27 @@ enum SelfTest {
         guard screensAt100 >= 8, fitSession.layout.columns == 2 else { throw Failure("Zoom & Split made \(Int(screensAt100)) screens of 8 pages in \(fitSession.layout.columns) column(s); expected two columns") }
         guard let split = fitSession.pdf as? SplitPDFPresenter else { throw Failure("Zoom & Split is not using the split presenter") }
         try checkFlow(split, expectCuts: false)
-        // Larger text keeps two pages: the size stops where two columns would no longer fit the window.
+        // Larger text keeps two pages: when two columns no longer fit side by side, the two screens stack.
         for _ in 0..<5 { fitSession.changeFontSize(by: 10) }
         try await sleep(0.8)
-        let zoomTwoUp = model.settings.reader.pdfZoom
         let screensTwoUpLarge = fitSession.layout.total
-        guard zoomTwoUp > 100, zoomTwoUp <= 150, screensTwoUpLarge > screensAt100, fitSession.layout.columns == 2 else {
-            throw Failure("larger text did not keep two pages (\(zoomTwoUp)%, \(screensAt100) → \(screensTwoUpLarge) screens, \(fitSession.layout.columns) column(s))")
+        guard model.settings.reader.pdfZoom == 150, screensTwoUpLarge > screensAt100, fitSession.layout.columns == 2, split.stacked else {
+            throw Failure("150% did not keep two pages stacked (\(model.settings.reader.pdfZoom)%, \(screensAt100) → \(screensTwoUpLarge) screens, \(fitSession.layout.columns) column(s), stacked \(split.stacked))")
         }
         try checkFlow(split, expectCuts: true)
-        // One page allows larger text still.
+        // One page: the same size shows fewer, wider screens.
         var fitSettings = model.settings
         fitSettings.reader.spread = .one
         model.settings = fitSettings
         fitSession.applySettings()
-        try await sleep(0.6)
-        for _ in 0..<4 { fitSession.changeFontSize(by: 10) }
         try await sleep(0.8)
-        let zoomOneUp = model.settings.reader.pdfZoom
-        guard zoomOneUp > zoomTwoUp, fitSession.layout.columns == 1, fitSession.layout.total > screensTwoUpLarge else {
-            throw Failure("one page did not allow larger text (\(zoomOneUp)%, \(fitSession.layout.total) screens, \(fitSession.layout.columns) column(s))")
+        let screensOneUpLarge = fitSession.layout.total
+        guard fitSession.layout.columns == 1, screensOneUpLarge > screensAt100, screensOneUpLarge < screensTwoUpLarge else {
+            throw Failure("one page at 150% did not lay out as expected (\(screensOneUpLarge) screens vs \(screensTwoUpLarge) two-up, \(fitSession.layout.columns) column(s))")
         }
         try checkFlow(split, expectCuts: true)
         // Smaller text: pages run on into one another, fewer screens.
-        for _ in 0..<20 { fitSession.changeFontSize(by: -10) }
+        for _ in 0..<10 { fitSession.changeFontSize(by: -10) }
         try await sleep(0.8)
         guard model.settings.reader.pdfZoom == 50, fitSession.layout.total < screensAt100 else {
             throw Failure("50% did not reduce the screens (\(model.settings.reader.pdfZoom)%, \(fitSession.layout.total) screens)")
@@ -287,7 +284,7 @@ enum SelfTest {
         fitSession.toggleBookmark()
         try await sleep(0.3)
         guard fitSession.isBookmarked else { throw Failure("Zoom & Split bookmark was not added") }
-        log("Zoom & Split: \(Int(screensAt100)) screens at 100%, \(Int(screensTwoUpLarge)) at \(zoomTwoUp)% two-up, one-up to \(zoomOneUp)%; blocks never cut, no repeats; turns, \(fitHits) matches, bookmark; footer “\(fitSession.pdfPageLabel ?? "")”")
+        log("Zoom & Split: \(Int(screensAt100)) screens at 100%, \(Int(screensTwoUpLarge)) at 150% two-up stacked, \(Int(screensOneUpLarge)) one-up; blocks never cut, no repeats; turns, \(fitHits) matches, bookmark; footer “\(fitSession.pdfPageLabel ?? "")”")
 
         // Text: the PDF reflowed into a book, read by the page script like any other.
         fitSession.setPDFLayout(.text)

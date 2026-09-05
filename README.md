@@ -29,8 +29,9 @@ read in order — runs on as one column at the text size and is dealt out to scr
 the ink between two blank bands that cross the page (found in a small rendering of every page, so figures, tables
 and scans count as well as text). Nothing is cut through: a block that does not fit moves whole to the next
 screen, a picture taller than a screen is fitted to one, and a picture-only page such as a cover stands alone.
-Text size is the page's own scale, from 50% up to the largest size at which the pages you chose — one or two —
-still fit the window. Screens turn with the book's slide;
+Text size is the page's own scale, from 50% up to the size at which the text fills the window's width. Two
+pages sit side by side while two columns fit; larger, they stack — each the full width and half the height, so
+the screens get shorter as the text grows — and the pages you chose stay. Screens turn with the book's slide;
 selection, search, highlights, bookmarks and the PDF's links work as in books. The analysis is kept beside the
 PDF, so a book is prepared once. While reading, the pointer hides after a couple of seconds still over the page
 and returns the moment it moves. **Text**: the text is reflowed into a book the way converters like calibre do it (running

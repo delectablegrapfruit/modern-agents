@@ -59,7 +59,8 @@ struct SplitPreparation: Codable, Sendable {
 /// column at the text size, and that column is dealt out to screens block by block — a block being the ink between
 /// two blank bands that cross the page — so nothing is ever cut through: a block that does not fit moves whole to
 /// the next screen, a picture taller than a screen is shown fitted to one, and a picture-only page stands alone.
-/// Two screens share a spread while two fit the window; otherwise one does. Screens turn with a slide. The drawing
+/// Two screens sit side by side while two columns of the text fit the window; larger, they stack, each the full
+/// width and half the height, so the text keeps growing on shorter screens. Screens turn with a slide. The drawing
 /// is the reader's own; selection, highlights, search, links and Look Up come from PDFKit.
 @MainActor
 final class SplitPDFPresenter: PDFReading {
@@ -103,6 +104,9 @@ final class SplitPDFPresenter: PDFReading {
 
     // Geometry, recomputed when the view, the spread or the text size changes.
     private(set) var columns = 2
+    /// Two-page mode with text too wide for two columns side by side: the two screens stack, each the full width and
+    /// half the height, so the text keeps growing and each screen holds fewer lines.
+    private(set) var stacked = false
     private(set) var scale: CGFloat = 1
     private var tileSize: CGSize = .zero
     /// The height of a screen in view points.
@@ -124,6 +128,8 @@ final class SplitPDFPresenter: PDFReading {
     let topMargin: CGFloat = 24
     let bottomMargin: CGFloat = 56
     let gutter: CGFloat = 32
+    /// Between two stacked screens.
+    let stackGap: CGFloat = 24
 
     init(session: ReaderSession) {
         self.session = session
@@ -484,29 +490,33 @@ final class SplitPDFPresenter: PDFReading {
         return columns == 2 ? clamped - clamped % 2 : clamped
     }
 
-    /// The largest text size (a step of 10) at which the given number of columns still fits the window.
-    private func largestZoom(columns: Int) -> Int {
+    /// The largest text size (a step of 10) at which the body's width still fits the window in one column.
+    var largestZoom: Int {
         guard let p = preparation, p.bodyStripWidth > 0, view.bounds.width > 60 else { return 400 }
-        let width = (view.bounds.width - 2 * sideMargin - CGFloat(columns - 1) * gutter) / CGFloat(columns)
-        return max(50, min(400, Int(width / p.bodyStripWidth * 100 / 10) * 10))
+        return max(50, min(400, Int((view.bounds.width - 2 * sideMargin) / p.bodyStripWidth * 100 / 10) * 10))
     }
 
-    /// The pages chosen: two, unless two columns would not fit the window even at the smallest text size.
-    private var wantedColumns: Int {
-        guard let p = preparation, view.bounds.width > 60 else { return settings.spread == .one ? 1 : 2 }
-        return settings.spread == .two && p.bodyStripWidth + gutter + 2 * sideMargin <= view.bounds.width ? 2 : 1
-    }
-
-    /// The text size is the page's own scale: 100% shows ink at its printed size. The pages stay as chosen; the size
-    /// stops where they would no longer fit the window.
+    /// The text size is the page's own scale: 100% shows ink at its printed size. The pages stay as chosen. Two
+    /// screens sit side by side while two columns of the body fit the window; larger, they stack — each the full
+    /// width and half the height, shorter screens with fewer lines — until the text fills the width.
     private func computeGeometry() {
         let size = view.bounds.size
         guard let p = preparation, size.width > 60, size.height > 60, p.bodyStripWidth > 0 else { return }
-        columns = wantedColumns
-        let zoom = min(largestZoom(columns: columns), max(50, settings.pdfZoom))
-        scale = CGFloat(zoom) / 100
-        let availableWidth = size.width - 2 * sideMargin - CGFloat(columns - 1) * gutter
-        tileSize = CGSize(width: max(40, availableWidth / CGFloat(columns)), height: max(40, size.height - topMargin - bottomMargin))
+        columns = settings.spread == .one ? 1 : 2
+        scale = CGFloat(min(largestZoom, max(50, settings.pdfZoom))) / 100
+        let body = p.bodyStripWidth * scale
+        let fullWidth = max(40, size.width - 2 * sideMargin)
+        let fullHeight = max(40, size.height - topMargin - bottomMargin)
+        if columns == 2, body * 2 + gutter + 2 * sideMargin <= size.width {
+            stacked = false
+            tileSize = CGSize(width: max(40, (size.width - 2 * sideMargin - gutter) / 2), height: fullHeight)
+        } else if columns == 2 {
+            stacked = true
+            tileSize = CGSize(width: fullWidth, height: max(40, (fullHeight - stackGap) / 2))
+        } else {
+            stacked = false
+            tileSize = CGSize(width: fullWidth, height: fullHeight)
+        }
     }
 
     /// One page's run of a strip for the column: the strip's columns, over the page's own ink from top to bottom
@@ -732,9 +742,13 @@ final class SplitPDFPresenter: PDFReading {
         return min(pageStarts[p] + max(0, slice), max(pageStarts[p], pageEnds[p]), max(0, units - 1))
     }
 
-    /// Where the tile of a column sits in the view (bottom-left origin).
+    /// Where the tile of a column sits in the view (bottom-left origin): beside the first, or below it when stacked.
     private func tileFrame(column: Int) -> CGRect {
-        CGRect(x: sideMargin + CGFloat(column) * (tileSize.width + gutter), y: bottomMargin, width: tileSize.width, height: tileSize.height)
+        if stacked {
+            let y = column == 0 ? bottomMargin + tileSize.height + stackGap : bottomMargin
+            return CGRect(x: sideMargin, y: y, width: tileSize.width, height: tileSize.height)
+        }
+        return CGRect(x: sideMargin + CGFloat(column) * (tileSize.width + gutter), y: bottomMargin, width: tileSize.width, height: tileSize.height)
     }
 
     /// The scale a piece is drawn at: the text size, unless the piece is wider than the tile, or fitted to it.
@@ -884,9 +898,9 @@ final class SplitPDFPresenter: PDFReading {
     /// Re-lays the screens out for a new size, spread or text size, keeping the place: the top of the first piece.
     private func relayout() {
         let anchor = units > 0 ? screens[unit].pieces.first : nil
-        let before = (tileSize, scale, columns)
+        let before = (tileSize, scale, columns, stacked)
         computeGeometry()
-        if before == (tileSize, scale, columns) && !screens.isEmpty { return }
+        if before == (tileSize, scale, columns, stacked) && !screens.isEmpty { return }
         buildScreens()
         if let pendingRestore, units > 0 {
             unit = aligned(pendingRestore())
@@ -916,10 +930,10 @@ final class SplitPDFPresenter: PDFReading {
         report()
     }
 
-    /// The text size steps by 10%, from 50% to the largest at which the chosen pages still fit the window.
+    /// The text size steps by 10%, from 50% to the largest at which the text still fits the window's width.
     func zoom(_ direction: Int) {
         var all = session.model.settings
-        let cap = largestZoom(columns: wantedColumns)
+        let cap = largestZoom
         let current = min(cap, max(50, all.reader.pdfZoom))
         let next = direction > 0 ? min(cap, current + 10) : max(50, current - 10)
         all.reader.pdfZoom = next
