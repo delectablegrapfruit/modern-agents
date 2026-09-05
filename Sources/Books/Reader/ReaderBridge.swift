@@ -81,12 +81,37 @@ final class ReaderMessageHandler: NSObject, WKScriptMessageHandler {
 
 /// The web view that typesets the book. It stays first responder so arrow keys and the wheel reach the page.
 final class ReaderWebView: WKWebView {
+    weak var session: ReaderSession?
+
     override var acceptsFirstResponder: Bool { true }
 
-    /// Links to other apps or the web are refused by the page itself; the native side opens them in the browser.
+    /// Notched mouse wheels are the session's (one notch, one page); trackpads go to the page, which accumulates.
+    override func scrollWheel(with event: NSEvent) {
+        let handled = MainActor.assumeIsolated { session?.handleWheel(event) ?? false }
+        if handled { return }
+        super.scrollWheel(with: event)
+    }
+
+    /// WebKit's context menu keeps the system's Look Up, Copy, Translate, Search and speech items; Reload, Inspect
+    /// Element and the like are not what a book needs.
     override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
-        // WebKit's own context menu (Reload, Inspect…) is not what a book needs.
-        menu.removeAllItems()
+        let keep: Set<String> = [
+            "WKMenuItemIdentifierLookUp", "WKMenuItemIdentifierCopy", "WKMenuItemIdentifierTranslate", "WKMenuItemIdentifierSearchWeb",
+            "WKMenuItemIdentifierSpeechMenu", "WKMenuItemIdentifierWritingTools", "WKMenuItemIdentifierShareMenu",
+        ]
+        for item in menu.items where !item.isSeparatorItem && !keep.contains(item.identifier?.rawValue ?? "") {
+            menu.removeItem(item)
+        }
+        var previousWasSeparator = true
+        for item in menu.items {
+            if item.isSeparatorItem {
+                if previousWasSeparator { menu.removeItem(item) } else { previousWasSeparator = true }
+            } else {
+                previousWasSeparator = false
+            }
+        }
+        if let last = menu.items.last, last.isSeparatorItem { menu.removeItem(last) }
+        super.willOpenMenu(menu, with: event)
     }
 }
 

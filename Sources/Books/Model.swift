@@ -1,6 +1,7 @@
 import AppKit
 import Observation
 import PDFKit
+import SwiftUI
 import UniformTypeIdentifiers
 import BooksCore
 
@@ -34,6 +35,32 @@ enum SidebarItem: Hashable {
         case .collection: return "folder"
         }
     }
+
+    /// Stable key for the sidebar preferences.
+    var key: String {
+        switch self {
+        case .home: return "home"
+        case .all: return "all"
+        case .finished: return "finished"
+        case .books: return "books"
+        case .pdfs: return "pdfs"
+        case .collection(let id): return "collection:" + id.uuidString
+        }
+    }
+
+    init?(key: String) {
+        switch key {
+        case "home": self = .home
+        case "all": self = .all
+        case "finished": self = .finished
+        case "books": self = .books
+        case "pdfs": self = .pdfs
+        default:
+            let prefix = "collection:"
+            guard key.hasPrefix(prefix), let id = UUID(uuidString: String(key.dropFirst(prefix.count))) else { return nil }
+            self = .collection(id)
+        }
+    }
 }
 
 /// The library as the window sees it: the store's records plus selection, navigation, import progress and errors.
@@ -60,8 +87,9 @@ final class LibraryModel {
     var renamingCollection: BookCollection?
     var importProgress: (done: Int, total: Int)?
     var error: String?
-    /// Books that were just added, for the "new" badge until first opened.
-    private var coverCache: [UUID: NSImage] = [:]
+    /// Decoded covers. Filled while views draw, so it must stay outside observation: a tracked write during a
+    /// SwiftUI update is undefined behaviour and has crashed the shelf.
+    @ObservationIgnored private var coverCache: [UUID: NSImage] = [:]
 
     init(store: LibraryStore = LibraryStore()) {
         self.store = store
@@ -120,6 +148,46 @@ final class LibraryModel {
     }
 
     func book(_ id: UUID) -> Book? { books.first { $0.id == id } }
+
+    // MARK: - Sidebar
+
+    func name(of item: SidebarItem) -> String {
+        if case .collection(let id) = item { return collection(id)?.name ?? "Collection" }
+        return item.title
+    }
+
+    /// Every shelf and collection in the user's order, hidden ones included; new collections join at the end.
+    var sidebarEntries: [SidebarItem] {
+        let known: [SidebarItem] = [.all, .finished, .books, .pdfs] + collections.map { .collection($0.id) }
+        var ordered = settings.sidebarOrder.compactMap { SidebarItem(key: $0) }.filter { known.contains($0) }
+        for item in known where !ordered.contains(item) { ordered.append(item) }
+        return ordered
+    }
+
+    var visibleSidebarEntries: [SidebarItem] { sidebarEntries.filter { !isHidden($0) } }
+
+    /// "All" is always there; anything else can be hidden.
+    func isHidden(_ item: SidebarItem) -> Bool { item != .all && settings.sidebarHidden.contains(item.key) }
+
+    func setHidden(_ item: SidebarItem, _ hidden: Bool) {
+        guard item != .all else { return }
+        var keys = settings.sidebarHidden.filter { $0 != item.key }
+        if hidden { keys.append(item.key) }
+        settings.sidebarHidden = keys
+        if hidden, sidebarSelection == item { sidebarSelection = .all }
+    }
+
+    /// Drag reordering of the visible rows; hidden rows keep their places between their neighbours.
+    func moveSidebarEntries(from source: IndexSet, to destination: Int) {
+        var visible = visibleSidebarEntries
+        visible.move(fromOffsets: source, toOffset: destination)
+        var full = sidebarEntries
+        var next = visible.makeIterator()
+        for i in full.indices where !isHidden(full[i]) {
+            if let item = next.next() { full[i] = item }
+        }
+        settings.sidebarOrder = full.map(\.key)
+    }
 
     func collection(_ id: UUID) -> BookCollection? { collections.first { $0.id == id } }
 
@@ -202,6 +270,9 @@ final class LibraryModel {
     func deleteCollection(_ id: UUID) {
         store.deleteCollection(id)
         if sidebarSelection == .collection(id) { sidebarSelection = .all }
+        let key = SidebarItem.collection(id).key
+        settings.sidebarOrder.removeAll { $0 == key }
+        settings.sidebarHidden.removeAll { $0 == key }
         reload()
     }
 

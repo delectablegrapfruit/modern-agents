@@ -71,6 +71,9 @@ final class ReaderSession {
     private let schemeHandler = BooksSchemeHandler()
     private let messages = ReaderMessageHandler()
     private let navigation = ReaderNavigationDelegate()
+    /// PDFs: the PDFKit presenter, created by the PDF view when it appears.
+    @ObservationIgnored var pdf: PDFPresenter?
+    @ObservationIgnored private var pdfSections: [PDFSection] = []
 
     private(set) var isPageReady = false
     private(set) var isOpen = false
@@ -124,6 +127,7 @@ final class ReaderSession {
         messages.onMessage = { [weak self] body in Task { @MainActor in self?.receive(JSON(body)) } }
         navigation.onFailure = { [weak self] message in Task { @MainActor in self?.error = message } }
         webView.navigationDelegate = navigation
+        webView.session = self
         if book.kind == .epub {
             if BooksSchemeHandler.readerDirectory == nil {
                 error = "This copy of Books is missing its reader page (Contents/Resources/Reader). Reinstall the app."
@@ -140,6 +144,8 @@ final class ReaderSession {
 
     func teardown() {
         flushPosition()
+        pdf?.close()
+        pdf = nil
         readingTimer?.invalidate()
         chromeTimer?.invalidate()
         appearanceObserver = nil
@@ -181,25 +187,77 @@ final class ReaderSession {
         annotations.filter { $0.kind == .bookmark }.map { ["id": $0.id.uuidString, "locator": ["spine": $0.locator.spine, "offset": $0.locator.offset]] }
     }
 
+    private var isPDF: Bool { book.kind == .pdf }
+
     func applySettings() {
+        if isPDF { pdf?.applySettings(); return }
         guard isOpen else { return }
         call("applySettings", model.settings.reader.webSettings(systemIsDark: systemIsDark))
     }
 
-    func next() { call("next"); activity() }
-    func previous() { call("prev"); activity() }
-    func nextChapter() { call("nextChapter"); activity() }
-    func previousChapter() { call("prevChapter"); activity() }
-    func goToFraction(_ f: Double) { call("goToFraction", min(1, max(0, f))); activity() }
-    func goToPos(_ pos: Double) { call("goToPos", pos); activity() }
-    func goToHref(_ href: String) { call("goToHref", href); activity() }
-    func goToLocator(_ locator: Locator) { call("goToLocator", ["spine": locator.spine, "offset": locator.offset]); activity() }
+    func next() { if isPDF { pdf?.next() } else { call("next") }; activity() }
+    func previous() { if isPDF { pdf?.previous() } else { call("prev") }; activity() }
+    func nextChapter() { if isPDF { pdf?.nextSection() } else { call("nextChapter") }; activity() }
+    func previousChapter() { if isPDF { pdf?.previousSection() } else { call("prevChapter") }; activity() }
+    func goToFraction(_ fraction: Double) {
+        let f = min(1, max(0, fraction))
+        if isPDF { pdf?.go(toFraction: f) } else { call("goToFraction", f) }
+        activity()
+    }
+    func goToPos(_ pos: Double) { if isPDF { pdf?.go(toPage: whole(pos)) } else { call("goToPos", pos) }; activity() }
+    func goToHref(_ href: String) {
+        if isPDF { if let page = Int(href) { pdf?.go(toPage: page) } } else { call("goToHref", href) }
+        activity()
+    }
+    func goToLocator(_ locator: Locator) {
+        if isPDF { pdf?.go(toPage: locator.spine) } else { call("goToLocator", ["spine": locator.spine, "offset": locator.offset]) }
+        activity()
+    }
+    /// A contents entry: a document and fragment in a book, a page in a PDF.
+    func open(_ item: ReaderTOCItem) { if isPDF { pdf?.go(toPage: item.spine) } else { goToHref(item.href) } }
+    /// A search result: the page script scrolls to the locator; the PDF view selects the match.
+    func open(_ hit: SearchHit) { if isPDF { pdf?.show(hit) } else { goToLocator(hit.locator) } }
 
+    /// ⌘+ and ⌘−: text size for books, zoom for PDFs.
     func changeFontSize(by delta: Int) {
+        if isPDF { pdf?.zoom(delta > 0 ? 1 : -1); return }
         var settings = model.settings
         settings.reader.fontSize = min(300, max(50, settings.reader.fontSize + delta))
         model.settings = settings
         applySettings()
+    }
+
+    /// A notched mouse wheel: one notch turns one page in the paginated layout, or scrolls the text by the
+    /// system's scroll distance in the scrolling layout. Trackpads (precise deltas, gesture phases) are left to the
+    /// view, which accumulates them. Returns true when the event was consumed.
+    func handleWheel(_ event: NSEvent) -> Bool {
+        guard isOpen, !event.hasPreciseScrollingDeltas, event.phase == [], event.momentumPhase == [] else { return false }
+        activity()
+        let settings = model.settings.reader
+        // AppKit reports scrolling down and to the right as negative deltas, in lines for notched wheels.
+        let vertical = event.scrollingDeltaY, horizontal = event.scrollingDeltaX
+        let sideways = abs(horizontal) > abs(vertical) || (event.modifierFlags.contains(.shift) && horizontal == 0)
+        if layout.mode == .scroll {
+            if isPDF { return false }   // PDFKit scrolls its own pages
+            if !sideways, vertical != 0 { call("scrollBy", -vertical * 40) }   // 40 points a line, as WebKit scrolls
+            return true
+        }
+        guard settings.wheelTurnsPages else { return true }
+        if sideways && !settings.wheelHorizontal { return true }
+        var delta = sideways ? (horizontal != 0 ? horizontal : vertical) : vertical
+        if settings.wheelInvert { delta = -delta }
+        guard delta != 0 else { return true }
+        if delta < 0 { next() } else { previous() }
+        return true
+    }
+
+    /// The system's definition popover, the one Look Up in a context menu shows, over the selected words.
+    func lookUpSelection() {
+        guard let sel = selection else { return }
+        let host: NSView = isPDF ? (pdf?.view ?? webView) : webView
+        let origin = host.isFlipped ? NSPoint(x: sel.rect.minX, y: sel.rect.maxY) : NSPoint(x: sel.rect.minX, y: host.bounds.height - sel.rect.maxY)
+        host.showDefinition(for: NSAttributedString(string: sel.text), at: origin)
+        clearSelection()
     }
 
     // MARK: - Annotations
@@ -215,14 +273,22 @@ final class ReaderSession {
             return
         }
         persistAnnotations()
-        call("setBookmarks", bookmarkPayload())
+        syncBookmarks()
+    }
+
+    private func syncBookmarks() {
+        if isPDF { refreshPDFMarks() } else { call("setBookmarks", bookmarkPayload()) }
     }
 
     func removeAnnotation(_ id: UUID) {
         guard let a = annotations.first(where: { $0.id == id }) else { return }
         annotations.removeAll { $0.id == id }
         persistAnnotations()
-        if a.kind == .highlight { call("removeHighlight", id.uuidString) } else { call("setBookmarks", bookmarkPayload()) }
+        if a.kind == .highlight {
+            if isPDF { pdf?.removeHighlight(id) } else { call("removeHighlight", id.uuidString) }
+        } else {
+            syncBookmarks()
+        }
         if tappedHighlight?.annotation.id == id { tappedHighlight = nil }
         if editingNote?.id == id { editingNote = nil }
     }
@@ -230,6 +296,15 @@ final class ReaderSession {
     /// Highlights the current selection; the page answers with `highlightAdded`, which stores it.
     func highlightSelection(color: HighlightColor, note: String = "") {
         guard selection != nil else { return }
+        if isPDF {
+            guard var annotation = pdf?.highlightSelection(color: color) else { selection = nil; return }
+            annotation.note = note
+            annotations.append(annotation)
+            persistAnnotations()
+            selection = nil
+            if !note.isEmpty || pendingNoteAfterHighlight { pendingNoteAfterHighlight = false; editingNote = annotation }
+            return
+        }
         let id = UUID()
         pendingHighlight[id] = note
         call("addHighlight", ["id": id.uuidString, "color": color.rawValue, "note": note])
@@ -243,7 +318,7 @@ final class ReaderSession {
         annotations[i].color = color
         annotations[i].updatedAt = Date()
         persistAnnotations()
-        call("updateHighlight", ["id": id.uuidString, "color": color.rawValue, "note": annotations[i].note])
+        if isPDF { pdf?.recolor(id) } else { call("updateHighlight", ["id": id.uuidString, "color": color.rawValue, "note": annotations[i].note]) }
         if let tapped = tappedHighlight, tapped.annotation.id == id { tappedHighlight = (annotations[i], tapped.rect) }
     }
 
@@ -252,12 +327,12 @@ final class ReaderSession {
         annotations[i].note = note
         annotations[i].updatedAt = Date()
         persistAnnotations()
-        call("updateHighlight", ["id": id.uuidString, "color": annotations[i].color?.rawValue ?? "yellow", "note": note])
+        if isPDF { pdf?.setNote(note, for: id) } else { call("updateHighlight", ["id": id.uuidString, "color": annotations[i].color?.rawValue ?? "yellow", "note": note]) }
     }
 
     func clearSelection() {
         selection = nil
-        call("clearSelection")
+        if isPDF { pdf?.clearSelection() } else { call("clearSelection") }
     }
 
     private func persistAnnotations() {
@@ -273,7 +348,7 @@ final class ReaderSession {
         searchQuery = query
         searchResults = []
         searchDone = query.trimmingCharacters(in: .whitespaces).isEmpty
-        call("search", query)
+        if isPDF { pdf?.search(query) } else { call("search", query) }
     }
 
     // MARK: - Messages from the page
@@ -327,9 +402,7 @@ final class ReaderSession {
         case "link":
             if let href = m.string("href"), let url = URL(string: href), let scheme = url.scheme, ["http", "https", "mailto"].contains(scheme.lowercased()) { NSWorkspace.shared.open(url) }
         case "pointer":
-            pointerY = CGFloat(m.double("y") ?? 0)
-            refreshChrome()
-            activity()
+            pointerMoved(y: CGFloat(m.double("y") ?? 0))
         case "activity":
             activity()
         case "searchResults":
@@ -372,21 +445,81 @@ final class ReaderSession {
     }
 
     func flushPosition() {
-        guard isOpen, let locator = position.locator else { return }
+        if pagesTurned > 0 { model.recordReading(seconds: 0, pages: pagesTurned); pagesTurned = 0 }
+        guard !isPDF, isOpen, let locator = position.locator else { return }   // PDFs save as their page changes
         let finished: Bool? = position.atEnd && layout.total > 1 ? true : nil
         model.savePosition(ReadingPosition(locator: locator, percent: position.percent), for: book.id, finished: finished)
-        if pagesTurned > 0 { model.recordReading(seconds: 0, pages: pagesTurned); pagesTurned = 0 }
     }
 
-    /// PDFs: the PDF view reports pages directly.
+    // MARK: - PDFs (the presenter reports what the page script reports for books)
+
+    func pdfOpened(pageCount: Int, sections: [PDFSection], columns: Int, mode: ReaderLayoutInfo.Mode) {
+        pdfSections = sections
+        toc = sections.map { ReaderTOCItem(label: $0.label, href: String($0.page), level: $0.level, pos: Double($0.page), spine: $0.page) }
+        var l = ReaderLayoutInfo()
+        l.mode = mode
+        l.total = Double(max(1, pageCount))
+        l.columns = columns
+        l.chapters = sections.map { TimelineMark(label: $0.label, pos: Double($0.page), level: $0.level) }
+        layout = l
+        isOpen = true
+        refreshPDFMarks()
+    }
+
+    func pdfLayoutChanged(columns: Int, mode: ReaderLayoutInfo.Mode) {
+        layout.mode = mode
+        layout.columns = columns
+    }
+
     func pdfPageChanged(index: Int, count: Int) {
         guard count > 0 else { return }
-        let percent = Double(index + 1) / Double(count) * 100
-        position.percent = percent
-        position.page = Double(index)
-        position.total = Double(count)
-        position.chapter = "Page \(index + 1) of \(count)"
-        model.savePosition(ReadingPosition(pdfPage: index + 1, percent: percent), for: book.id, finished: index + 1 == count && count > 1 ? true : nil)
+        let shown = min(index + max(1, layout.columns), count)
+        let percent = Double(shown) / Double(count) * 100
+        var p = position
+        p.page = Double(index)
+        p.total = Double(count)
+        p.percent = percent
+        p.locator = Locator(spine: index, offset: 0)
+        let section = pdfSections.last { $0.page <= index }
+        p.chapter = section?.label ?? ""
+        p.chapterIndex = section.flatMap { pdfSections.firstIndex(of: $0) } ?? 0
+        let nextStart = pdfSections.first { $0.page > index }?.page ?? count
+        p.pagesLeftInChapter = max(0, nextStart - shown)
+        p.atEnd = shown >= count
+        p.bookmarkID = bookmarks.first { $0.locator.spine == index }?.id
+        if let last = lastPage, Double(index) > last { pagesTurned += index - whole(last) }
+        lastPage = Double(index)
+        position = p
+        model.savePosition(ReadingPosition(pdfPage: index + 1, percent: percent), for: book.id, finished: p.atEnd && count > 1 ? true : nil)
+        activity()
+    }
+
+    private func refreshPDFMarks() {
+        layout.bookmarks = bookmarks.map { TimelineMark(label: $0.id.uuidString, pos: Double($0.locator.spine), level: 0) }
+        position.bookmarkID = bookmarks.first { $0.locator.spine == whole(position.page) }?.id
+    }
+
+    func pdfSelectionChanged(text: String?, rect: CGRect, page: Int) {
+        guard let text, !text.isEmpty else { selection = nil; return }
+        selection = ReaderSelection(text: text, locator: Locator(spine: page, offset: 0), endOffset: 0, rect: rect, chapter: position.chapter)
+        tappedHighlight = nil
+    }
+
+    func pdfHighlightTapped(_ id: UUID, rect: CGRect) {
+        guard let a = annotations.first(where: { $0.id == id }) else { return }
+        selection = nil
+        tappedHighlight = (a, rect)
+    }
+
+    func pdfSearchResults(_ hits: [SearchHit], for query: String) {
+        guard query == searchQuery else { return }
+        searchResults = hits
+        searchDone = true
+    }
+
+    func pointerMoved(y: CGFloat) {
+        pointerY = y
+        refreshChrome()
         activity()
     }
 

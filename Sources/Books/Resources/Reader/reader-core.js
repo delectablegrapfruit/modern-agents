@@ -394,6 +394,13 @@
       return this.layout.mode === 'paginated' ? this.colOfPoint(r.left + this.se.scrollLeft) : Math.max(0, r.top + this.se.scrollTop - SCROLL_TOP + 12);
     },
     goToHref(href) { const pos = this.hrefToPos(href); if (pos == null) return; this.goTo(pos); },
+    /* A notch of a mouse wheel, delivered by the app: scrolls the text in the scrolling layout, turns a page otherwise. */
+    scrollBy(dy) {
+      const L = this.layout; if (!L || !this.isOpen || !dy) return;
+      this.activity();
+      if (L.mode === 'scroll') { this.se.scrollTop += dy; this.onScroll(); }
+      else if (dy > 0) this.next(); else this.prev();
+    },
     onScroll() {
       if (!this.layout || this.layout.mode !== 'scroll' || !this.isOpen) return;
       this.page = this.currentY(); this.anchor = null;
@@ -802,6 +809,7 @@
     clearSelection: () => Reader.clearSelection(),
     state: () => Reader.state(),
     setFullscreen: v => Reader.setFullscreen(v),
+    scrollBy: dy => Reader.scrollBy(dy),
     _core: Reader,   // self-tests and the shell's diagnostics reach the internals here
   };
 

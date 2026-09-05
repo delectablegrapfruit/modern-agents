@@ -57,7 +57,7 @@ struct ReaderContent: View {
             .onChange(of: geo.size.height, initial: true) { _, height in session.viewResized(height: height) }
         }
         .navigationTitle(session.book.title)
-        .navigationSubtitle(session.book.kind == .pdf ? "" : session.position.chapter)
+        .navigationSubtitle(session.position.chapter)
         .toolbar { toolbar }
         .focusedSceneValue(\.readerActions, actions)
         .sheet(item: $session.editingNote) { annotation in NoteEditor(session: session, annotation: annotation) }
@@ -89,7 +89,6 @@ struct ReaderContent: View {
                 .labelStyle(.titleAndIcon)
                 .help("Back to the library (⇧⌘L)")
             Button { session.showContents.toggle() } label: { Label("Contents", systemImage: "list.bullet") }
-                .disabled(session.book.kind == .pdf)
                 .help("Table of contents, bookmarks and notes")
                 .popover(isPresented: $session.showContents, arrowEdge: .bottom) { ContentsPopover(session: session) }
         }
@@ -98,11 +97,10 @@ struct ReaderContent: View {
                 .help("Themes, fonts and layout")
                 .popover(isPresented: $session.showAppearance, arrowEdge: .bottom) { AppearancePopover(session: session) }
             Button { session.showSearch.toggle() } label: { Label("Search", systemImage: "magnifyingglass") }
-                .disabled(session.book.kind == .pdf)
                 .help("Search this book (⌘F)")
                 .popover(isPresented: $session.showSearch, arrowEdge: .bottom) { SearchPopover(session: session) }
             Button { session.toggleBookmark() } label: { Label("Bookmark", systemImage: session.isBookmarked ? "bookmark.fill" : "bookmark") }
-                .disabled(session.book.kind == .pdf || !session.isOpen)
+                .disabled(!session.isOpen)
                 .help(session.isBookmarked ? "Remove bookmark (⌘D)" : "Add bookmark (⌘D)")
         }
     }
@@ -123,7 +121,7 @@ struct ReaderContent: View {
     private func footer(width: CGFloat) -> some View {
         let settings = model.settings.reader
         return VStack(spacing: 10) {
-            if session.timelineVisible, session.book.kind == .epub, session.isOpen {
+            if session.timelineVisible, session.isOpen {
                 Timeline(session: session)
                     .frame(maxWidth: min(760, width * 0.72))
                     .padding(.horizontal, 16)
@@ -131,7 +129,7 @@ struct ReaderContent: View {
                     .glassCapsule()
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
-            if session.footerVisible, session.isOpen || session.book.kind == .pdf, settings.showPageNumbers {
+            if session.footerVisible, session.isOpen, settings.showPageNumbers {
                 HStack {
                     Text(session.position.chapter).lineLimit(1)
                     Spacer()
@@ -152,15 +150,14 @@ struct ReaderContent: View {
 
     private var pageText: String {
         let p = session.position
-        if session.book.kind == .pdf { return "" }
-        if session.layout.mode == .scroll { return "\(whole(p.percent.rounded()))%" }
+        if session.layout.mode == .scroll, session.book.kind == .epub { return "\(whole(p.percent.rounded()))%" }
         let total = whole(p.total), page = whole(p.page) + 1
         if session.layout.columns == 2, page < total { return "Pages \(page)–\(page + 1) of \(total)" }
         return "Page \(page) of \(total)"
     }
 
     private var leftText: String {
-        guard session.book.kind == .epub, session.layout.mode == .paginated else { return "" }
+        guard session.layout.mode == .paginated, !session.position.chapter.isEmpty else { return "" }
         let n = session.position.pagesLeftInChapter
         return n <= 0 ? "Last page in this chapter" : Format.plural(n, "page") + " left in this chapter"
     }

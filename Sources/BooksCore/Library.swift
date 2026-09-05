@@ -129,7 +129,25 @@ public enum AnnotationKind: String, Codable, Hashable {
     case highlight, bookmark
 }
 
-/// A highlight (with an optional note) or a bookmark, anchored by locator.
+/// A rectangle on a PDF page in page space: one line of a highlight.
+public struct PDFRect: Codable, Hashable {
+    public var page: Int
+    public var x: Double
+    public var y: Double
+    public var width: Double
+    public var height: Double
+
+    public init(page: Int, x: Double, y: Double, width: Double, height: Double) {
+        self.page = page
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+    }
+}
+
+/// A highlight (with an optional note) or a bookmark, anchored by locator. In a PDF the locator's spine is the
+/// page index and highlights carry the page rectangles they cover.
 public struct Annotation: Codable, Identifiable, Hashable {
     public var id: UUID
     public var kind: AnnotationKind
@@ -143,11 +161,13 @@ public struct Annotation: Codable, Identifiable, Hashable {
     public var chapter: String
     public var createdAt: Date
     public var updatedAt: Date
+    public var pdfRects: [PDFRect]?
 
     public init(id: UUID = UUID(), kind: AnnotationKind, locator: Locator, endOffset: Int? = nil, color: HighlightColor? = nil,
-                text: String = "", note: String = "", chapter: String = "", createdAt: Date = Date(), updatedAt: Date = Date()) {
+                text: String = "", note: String = "", chapter: String = "", createdAt: Date = Date(), updatedAt: Date = Date(), pdfRects: [PDFRect]? = nil) {
         self.id = id
         self.kind = kind
+        self.pdfRects = pdfRects
         self.locator = locator
         self.endOffset = endOffset
         self.color = color
@@ -414,10 +434,13 @@ public struct Settings: Codable, Hashable {
     public var showContinueReading = true
     public var showGoals = true
     public var showStatistics = true
+    /// Sidebar rows in the user's order and the ones hidden, by key ("all", "finished", "collection:<id>", …).
+    public var sidebarOrder: [String] = []
+    public var sidebarHidden: [String] = []
 
     public init() {}
 
-    enum CodingKeys: String, CodingKey { case reader, libraryView, sort, goals, showContinueReading, showGoals, showStatistics }
+    enum CodingKeys: String, CodingKey { case reader, libraryView, sort, goals, showContinueReading, showGoals, showStatistics, sidebarOrder, sidebarHidden }
 
     /// Missing or unknown values fall back to defaults, so settings written by another version still load.
     public init(from decoder: Decoder) throws {
@@ -429,6 +452,8 @@ public struct Settings: Codable, Hashable {
         showContinueReading = (try? c.decodeIfPresent(Bool.self, forKey: .showContinueReading)) ?? true
         showGoals = (try? c.decodeIfPresent(Bool.self, forKey: .showGoals)) ?? true
         showStatistics = (try? c.decodeIfPresent(Bool.self, forKey: .showStatistics)) ?? true
+        sidebarOrder = (try? c.decodeIfPresent([String].self, forKey: .sidebarOrder)) ?? []
+        sidebarHidden = (try? c.decodeIfPresent([String].self, forKey: .sidebarHidden)) ?? []
     }
 }
 

@@ -106,14 +106,115 @@ enum SelfTest {
         try await sleep(0.5)
         guard session.effectiveTheme == .focus else { throw Failure("theme did not switch") }
 
+        // The scrolling layout: a wheel notch scrolls the text.
+        settings = model.settings
+        settings.reader.layout = .scroll
+        model.settings = settings
+        session.applySettings()
+        _ = try await waitFor("the scrolling layout", timeout: 10) { session.layout.mode == .scroll ? true : nil }
+        try await sleep(0.4)
+        let y0 = session.position.page
+        try postWheel(dy: -1, dx: 0, shift: false, to: session.webView)
+        try await sleep(0.7)
+        guard session.position.page > y0 else { throw Failure("a wheel notch did not scroll the text in the scrolling layout (\(y0) → \(session.position.page))") }
+        log("scrolling layout: a notch scrolled \(Int(session.position.page - y0)) px")
+        settings = model.settings
+        settings.reader.layout = .paginated
+        model.settings = settings
+        session.applySettings()
+        try await sleep(0.5)
+
         session.close()
         try await sleep(0.4)
         guard model.reading == nil else { throw Failure("reader did not close") }
         let saved = model.book(book.id)?.position
         guard let saved, saved.percent > 0 else { throw Failure("position was not saved") }
-        print("SELFTEST OK: \(Int(layout.total)) pages, \(layout.columns) column(s), wheel \(wheelReport.joined(separator: " · ")), position saved at \(Int(saved.percent))%; macOS \(ProcessInfo.processInfo.operatingSystemVersionString)")
+        log("book closed, position saved at \(Int(saved.percent))%")
+
+        try await runPDF(model: model)
+        print("SELFTEST OK: \(Int(layout.total)) pages, \(layout.columns) column(s), wheel \(wheelReport.joined(separator: " · ")), position saved at \(Int(saved.percent))%; PDF checked; macOS \(ProcessInfo.processInfo.operatingSystemVersionString)")
         fflush(stdout)
         exit(0)
+    }
+
+    /// A generated eight-page PDF goes through the same motions: open, turn, wheel notch, scrub, search, bookmark,
+    /// theme, layout, close.
+    @MainActor
+    private static func runPDF(model: LibraryModel) async throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("Books Self-Test \(UUID().uuidString).pdf")
+        try makePDF(pages: 8).write(to: file)
+        let added: [Book] = await withCheckedContinuation { continuation in
+            model.importFiles([file], quiet: true, allowDuplicates: true) { continuation.resume(returning: $0) }
+        }
+        guard let book = added.first else { throw Failure("the generated PDF could not be imported") }
+        log("imported \(book.title): \(book.pageCount ?? 0) pages, cover \(book.coverFile ?? "none")")
+        defer { model.delete([book.id]) }
+
+        model.open(book)
+        let session = try await waitFor("the PDF to open", timeout: 20) {
+            if let s = currentSession, s.book.id == book.id, s.isOpen, s.layout.total == 8 { return s }
+            return nil
+        }
+        log("PDF open: \(Int(session.layout.total)) pages, \(session.layout.columns) column(s), page \(Int(session.position.page) + 1)")
+        session.next()
+        try await sleep(0.5)
+        guard session.position.page >= 1 else { throw Failure("PDF next() did not turn the page") }
+        guard let pdfView = session.pdf?.view else { throw Failure("no PDF view") }
+        let before = session.position.page
+        try postWheel(dy: -1, dx: 0, shift: false, to: pdfView)
+        try await sleep(0.5)
+        guard session.position.page > before else { throw Failure("a wheel notch did not turn the PDF page (\(before) → \(session.position.page))") }
+        session.goToFraction(1)
+        try await sleep(0.5)
+        guard session.position.page >= 6 else { throw Failure("PDF goToFraction(1) landed on page \(Int(session.position.page) + 1)") }
+        session.search("lazy dog")
+        let hits = try await waitFor("PDF search results", timeout: 10) { session.searchDone && !session.searchResults.isEmpty ? session.searchResults.count : nil }
+        guard hits == 8 else { throw Failure("PDF search found \(hits) matches, expected 8") }
+        session.toggleBookmark()
+        try await sleep(0.3)
+        guard session.isBookmarked, session.layout.bookmarks.count == 1 else { throw Failure("PDF bookmark was not added") }
+        var settings = model.settings
+        settings.reader.theme = .paper
+        settings.reader.autoNight = false
+        model.settings = settings
+        session.applySettings()
+        try await sleep(0.4)
+        settings = model.settings
+        settings.reader.layout = .scroll
+        model.settings = settings
+        session.applySettings()
+        try await sleep(0.5)
+        guard session.layout.mode == .scroll else { throw Failure("PDF did not switch to the scrolling layout") }
+        settings = model.settings
+        settings.reader.layout = .paginated
+        model.settings = settings
+        session.applySettings()
+        log("PDF: next, wheel notch, scrub to the end, \(hits) matches, bookmark, paper theme, scrolling layout")
+        session.close()
+        try await sleep(0.4)
+        let savedPage = model.book(book.id)?.position?.pdfPage ?? 0
+        guard model.reading == nil, savedPage >= 7 else { throw Failure("PDF position was not saved (page \(savedPage))") }
+    }
+
+    /// Letter-size pages, each with a line of text the search looks for.
+    private static func makePDF(pages: Int) throws -> Data {
+        let data = NSMutableData()
+        var mediaBox = CGRect(x: 0, y: 0, width: 612, height: 792)
+        guard let consumer = CGDataConsumer(data: data as CFMutableData), let context = CGContext(consumer: consumer, mediaBox: &mediaBox, nil) else {
+            throw Failure("could not create a PDF context")
+        }
+        let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 18), .foregroundColor: NSColor.black]
+        for i in 1...pages {
+            context.beginPDFPage(nil)
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+            ("PDF self-test page \(i)" as NSString).draw(at: NSPoint(x: 72, y: 700), withAttributes: attributes)
+            ("The quick brown fox jumps over the lazy dog." as NSString).draw(at: NSPoint(x: 72, y: 660), withAttributes: attributes)
+            NSGraphicsContext.restoreGraphicsState()
+            context.endPDFPage()
+        }
+        context.closePDF()
+        return data as Data
     }
 
     private static func sleep(_ seconds: Double) async throws {

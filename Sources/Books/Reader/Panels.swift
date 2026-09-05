@@ -34,7 +34,7 @@ struct ContentsPopover: View {
             }
             ForEach(session.toc) { item in
                 Button {
-                    session.goToHref(item.href)
+                    session.open(item)
                     session.showContents = false
                 } label: {
                     HStack {
@@ -42,7 +42,7 @@ struct ContentsPopover: View {
                             .lineLimit(2)
                             .fontWeight(item.label == session.position.chapter ? .semibold : .regular)
                         Spacer()
-                        if session.layout.mode == .paginated, item.pos > 0 {
+                        if item.pos > 0, session.layout.mode == .paginated || session.book.kind == .pdf {
                             Text("\(whole(item.pos) + 1)").font(.caption).foregroundStyle(.tertiary).monospacedDigit()
                         }
                     }
@@ -61,21 +61,24 @@ struct ContentsPopover: View {
                 Text("No bookmarks yet. Press ⌘D on a page to keep your place.").foregroundStyle(.secondary)
             }
             ForEach(session.bookmarks) { mark in
-                Button {
-                    session.goToLocator(mark.locator)
-                    session.showContents = false
-                } label: {
-                    HStack(alignment: .firstTextBaseline) {
-                        Image(systemName: "bookmark.fill").foregroundStyle(Color.accentColor)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(mark.chapter.isEmpty ? "Bookmark" : mark.chapter).lineLimit(1)
-                            Text(mark.createdAt.formatted(date: .abbreviated, time: .shortened)).font(.caption).foregroundStyle(.secondary)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Button {
+                        session.goToLocator(mark.locator)
+                        session.showContents = false
+                    } label: {
+                        HStack(alignment: .firstTextBaseline) {
+                            Image(systemName: "bookmark.fill").foregroundStyle(Color.accentColor)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(mark.chapter.isEmpty ? (session.book.kind == .pdf ? "Page \(mark.locator.spine + 1)" : "Bookmark") : mark.chapter).lineLimit(1)
+                                Text(mark.createdAt.formatted(date: .abbreviated, time: .shortened)).font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
                         }
-                        Spacer()
+                        .contentShape(Rectangle())
                     }
-                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
+                    removeButton("Remove bookmark") { session.removeAnnotation(mark.id) }
                 }
-                .buttonStyle(.plain)
                 .contextMenu { Button("Remove Bookmark", role: .destructive) { session.removeAnnotation(mark.id) } }
             }
         }
@@ -88,22 +91,25 @@ struct ContentsPopover: View {
                 Text("Select text in the book to highlight it or add a note.").foregroundStyle(.secondary)
             }
             ForEach(session.highlights) { h in
-                Button {
-                    session.goToLocator(h.locator)
-                    session.showContents = false
-                } label: {
-                    HStack(alignment: .top, spacing: 10) {
-                        RoundedRectangle(cornerRadius: 2).fill(HighlightSwatch.color(h.color ?? .yellow)).frame(width: 4)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(h.text).lineLimit(3)
-                            if !h.note.isEmpty { Text(h.note).font(.callout).foregroundStyle(.secondary).lineLimit(3) }
-                            Text(h.chapter).font(.caption).foregroundStyle(.tertiary).lineLimit(1)
+                HStack(alignment: .top, spacing: 8) {
+                    Button {
+                        session.goToLocator(h.locator)
+                        session.showContents = false
+                    } label: {
+                        HStack(alignment: .top, spacing: 10) {
+                            RoundedRectangle(cornerRadius: 2).fill(HighlightSwatch.color(h.color ?? .yellow)).frame(width: 4)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(h.text).lineLimit(3)
+                                if !h.note.isEmpty { Text(h.note).font(.callout).foregroundStyle(.secondary).lineLimit(3) }
+                                Text(h.chapter).font(.caption).foregroundStyle(.tertiary).lineLimit(1)
+                            }
+                            Spacer()
                         }
-                        Spacer()
+                        .contentShape(Rectangle())
                     }
-                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
+                    removeButton(h.color == .underline ? "Remove underline" : "Remove highlight") { session.removeAnnotation(h.id) }
                 }
-                .buttonStyle(.plain)
                 .contextMenu {
                     Button(h.note.isEmpty ? "Add Note…" : "Edit Note…") { session.editingNote = h; session.showContents = false }
                     Divider()
@@ -112,6 +118,18 @@ struct ContentsPopover: View {
             }
         }
         .listStyle(.plain)
+    }
+
+    /// The small trash can at the end of a bookmark or note row.
+    private func removeButton(_ help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: "trash")
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .foregroundStyle(.secondary)
+        .help(help)
     }
 }
 
@@ -138,45 +156,17 @@ struct AppearancePopover: View {
         let pdf = session.book.kind == .pdf
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 0) {
+                    Button { session.changeFontSize(by: -10) } label: { sizeLabel(pdf ? nil : 15, symbol: "minus.magnifyingglass") }
+                    Divider().frame(height: 22)
+                    Button { session.changeFontSize(by: 10) } label: { sizeLabel(pdf ? nil : 24, symbol: "plus.magnifyingglass") }
+                }
+                .buttonStyle(.plain)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                Text(pdf ? "Zoom" : "Text size \(model.settings.reader.fontSize)%").font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .center)
+                themes
+                Divider()
                 if !pdf {
-                    HStack(spacing: 0) {
-                        Button { session.changeFontSize(by: -10) } label: { Text("A").font(.system(size: 15)).frame(maxWidth: .infinity, minHeight: 34) }
-                        Divider().frame(height: 22)
-                        Button { session.changeFontSize(by: 10) } label: { Text("A").font(.system(size: 24)).frame(maxWidth: .infinity, minHeight: 34) }
-                    }
-                    .buttonStyle(.plain)
-                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    Text("Text size \(model.settings.reader.fontSize)%").font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .center)
-                }
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Themes").font(.caption).foregroundStyle(.secondary)
-                    HStack(spacing: 10) {
-                        ForEach(Theme.allCases, id: \.self) { theme in
-                            Button {
-                                model.settings.reader.theme = theme
-                                if theme.isDark != session.effectiveTheme.isDark { model.settings.reader.autoNight = false }
-                                session.applySettings()
-                            } label: {
-                                Text("Aa")
-                                    .font(.system(size: 14, weight: theme == .bold ? .bold : .regular, design: .serif))
-                                    .foregroundStyle(Color(hex: theme.colors.text))
-                                    .frame(width: 42, height: 42)
-                                    .background(Color(hex: theme.colors.background), in: Circle())
-                                    .overlay(Circle().strokeBorder(model.settings.reader.theme == theme ? Color.accentColor : Color.primary.opacity(0.15), lineWidth: model.settings.reader.theme == theme ? 2.5 : 1))
-                            }
-                            .buttonStyle(.plain)
-                            .help(theme.label)
-                        }
-                    }
-                    Toggle(isOn: Binding(get: { model.settings.reader.autoNight }, set: { model.settings.reader.autoNight = $0; session.applySettings() })) {
-                        Text("Auto-Night Theme")
-                        Text("Original in Light Mode, Focus in Dark Mode").font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-                if pdf {
-                    Text("Themes tint the PDF. Text size, fonts and layout apply to books.").font(.caption).foregroundStyle(.secondary)
-                } else {
-                    Divider()
                     Picker("Font", selection: Binding(get: { model.settings.reader.font }, set: { model.settings.reader.font = $0; session.applySettings() })) {
                         ForEach(ReaderFont.allCases, id: \.self) { Text($0.label).tag($0) }
                     }
@@ -191,36 +181,78 @@ struct AppearancePopover: View {
                     Toggle("Justify text", isOn: Binding(get: { model.settings.reader.justify }, set: { model.settings.reader.justify = $0; session.applySettings() }))
                     Toggle("Hyphenation", isOn: Binding(get: { model.settings.reader.hyphenate }, set: { model.settings.reader.hyphenate = $0; session.applySettings() }))
                     Divider()
-                    Picker("Layout", selection: Binding(get: { model.settings.reader.layout }, set: { model.settings.reader.layout = $0; session.applySettings() })) {
-                        ForEach(ReaderLayout.allCases, id: \.self) { Text($0.label).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    Picker("Pages", selection: Binding(get: { model.settings.reader.spread }, set: { model.settings.reader.spread = $0; session.applySettings() })) {
-                        ForEach(Spread.allCases, id: \.self) { Text($0.label).tag($0) }
-                    }
-                    .disabled(model.settings.reader.layout == .scroll)
+                }
+                Picker("Layout", selection: Binding(get: { model.settings.reader.layout }, set: { model.settings.reader.layout = $0; session.applySettings() })) {
+                    ForEach(ReaderLayout.allCases, id: \.self) { Text($0.label).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                Picker("Pages", selection: Binding(get: { model.settings.reader.spread }, set: { model.settings.reader.spread = $0; session.applySettings() })) {
+                    ForEach(Spread.allCases, id: \.self) { Text($0.label).tag($0) }
+                }
+                .disabled(model.settings.reader.layout == .scroll)
+                if !pdf {
                     Picker("Page Turn", selection: Binding(get: { model.settings.reader.pageTurn }, set: { model.settings.reader.pageTurn = $0; session.applySettings() })) {
                         ForEach(PageTurn.allCases, id: \.self) { Text($0.label).tag($0) }
                     }
                     .disabled(model.settings.reader.layout == .scroll)
-                    DisclosureGroup("Scroll Wheel & Trackpad") {
-                        Toggle("Scroll wheel turns pages", isOn: Binding(get: { model.settings.reader.wheelTurnsPages }, set: { model.settings.reader.wheelTurnsPages = $0; session.applySettings() }))
-                        Picker("Sensitivity", selection: Binding(get: { model.settings.reader.wheelSensitivity }, set: { model.settings.reader.wheelSensitivity = $0; session.applySettings() })) {
+                }
+                DisclosureGroup("Scroll Wheel & Trackpad") {
+                    Toggle("Scroll wheel turns pages", isOn: Binding(get: { model.settings.reader.wheelTurnsPages }, set: { model.settings.reader.wheelTurnsPages = $0; session.applySettings() }))
+                    if !pdf {
+                        Picker("Trackpad sensitivity", selection: Binding(get: { model.settings.reader.wheelSensitivity }, set: { model.settings.reader.wheelSensitivity = $0; session.applySettings() })) {
                             ForEach(WheelSensitivity.allCases, id: \.self) { Text($0.label).tag($0) }
                         }
                         .pickerStyle(.segmented)
-                        Toggle("Invert direction", isOn: Binding(get: { model.settings.reader.wheelInvert }, set: { model.settings.reader.wheelInvert = $0; session.applySettings() }))
-                        Toggle("Horizontal wheel and ⇧ + wheel", isOn: Binding(get: { model.settings.reader.wheelHorizontal }, set: { model.settings.reader.wheelHorizontal = $0; session.applySettings() }))
                     }
-                    .font(.callout)
-                    Toggle("Show page numbers", isOn: $model.settings.reader.showPageNumbers)
-                    Toggle("Show pages left in chapter", isOn: $model.settings.reader.showChapterProgress)
+                    Toggle("Invert direction", isOn: Binding(get: { model.settings.reader.wheelInvert }, set: { model.settings.reader.wheelInvert = $0; session.applySettings() }))
+                    Toggle("Horizontal wheel and ⇧ + wheel", isOn: Binding(get: { model.settings.reader.wheelHorizontal }, set: { model.settings.reader.wheelHorizontal = $0; session.applySettings() }))
                 }
+                .font(.callout)
+                Toggle("Show page numbers", isOn: $model.settings.reader.showPageNumbers)
+                Toggle("Show pages left in chapter", isOn: $model.settings.reader.showChapterProgress)
             }
             .padding(16)
         }
         .frame(width: 340)
         .frame(maxHeight: 620)
+    }
+
+    /// Both halves of the size control respond across their whole width, not only on the glyph.
+    private func sizeLabel(_ fontSize: CGFloat?, symbol: String) -> some View {
+        Group {
+            if let fontSize { Text("A").font(.system(size: fontSize)) } else { Image(systemName: symbol) }
+        }
+        .frame(maxWidth: .infinity, minHeight: 34)
+        .contentShape(Rectangle())
+    }
+
+    private var themes: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Themes").font(.caption).foregroundStyle(.secondary)
+            HStack(spacing: 10) {
+                ForEach(Theme.allCases, id: \.self) { theme in
+                    Button {
+                        model.settings.reader.theme = theme
+                        if theme.isDark != session.effectiveTheme.isDark { model.settings.reader.autoNight = false }
+                        session.applySettings()
+                    } label: {
+                        Text("Aa")
+                            .font(.system(size: 14, weight: theme == .bold ? .bold : .regular, design: .serif))
+                            .foregroundStyle(Color(hex: theme.colors.text))
+                            .frame(width: 42, height: 42)
+                            .background(Color(hex: theme.colors.background), in: Circle())
+                            .overlay(Circle().strokeBorder(model.settings.reader.theme == theme ? Color.accentColor : Color.primary.opacity(0.15), lineWidth: model.settings.reader.theme == theme ? 2.5 : 1))
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(theme.label)
+                }
+            }
+            Toggle(isOn: Binding(get: { model.settings.reader.autoNight }, set: { model.settings.reader.autoNight = $0; session.applySettings() })) {
+                Text("Auto-Night Theme")
+                Text("Original in Light Mode, Focus in Dark Mode").font(.caption).foregroundStyle(.secondary)
+            }
+        }
     }
 }
 
@@ -260,7 +292,7 @@ struct SearchPopover: View {
                         Section(chapter.isEmpty ? "Untitled" : chapter) {
                             ForEach(session.searchResults.filter { $0.chapter == chapter }) { hit in
                                 Button {
-                                    session.goToLocator(hit.locator)
+                                    session.open(hit)
                                     session.showSearch = false
                                 } label: {
                                     Text(hit.excerpt).lineLimit(3).contentShape(Rectangle())
@@ -320,7 +352,7 @@ struct HighlightMenu: View {
             } else if let sel = session.selection {
                 Button("Add Note") { session.pendingNoteAfterHighlight = true; session.highlightSelection(color: .yellow) }
                 Button("Copy") { copy(sel.text); session.clearSelection() }
-                Button("Look Up") { lookUp(sel.text); session.clearSelection() }
+                Button("Look Up") { session.lookUpSelection() }
                 Button("Search") { session.searchQuery = sel.text; session.search(sel.text); session.clearSelection(); session.showSearch = true }
             }
         }
@@ -337,13 +369,6 @@ struct HighlightMenu: View {
     private func copy(_ text: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
-    }
-
-    private func lookUp(_ text: String) {
-        let word = text.split(separator: " ").prefix(4).joined(separator: " ")
-        if let encoded = word.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed), let url = URL(string: "dict://" + encoded) {
-            NSWorkspace.shared.open(url)
-        }
     }
 }
 

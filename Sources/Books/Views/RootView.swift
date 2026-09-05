@@ -24,6 +24,7 @@ struct RootView: View {
             model.importFiles(urls)
             return true
         }
+        .background(WindowAccessor { FullScreenChrome.install(on: $0) })
     }
 }
 
