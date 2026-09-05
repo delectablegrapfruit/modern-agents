@@ -292,6 +292,7 @@ enum SelfTest {
 
     /// The screens of Zoom & Split read on like a book: no screen repeats ink an earlier one showed, every screen
     /// but the last is filled, and each holds at most a screen's worth.
+    @MainActor
     private static func checkFlow(_ split: SplitPDFPresenter) throws {
         let screens = split.screens
         guard screens.count > 1, split.screenHeight > 0 else { throw Failure("Zoom & Split has no screens to check") }
