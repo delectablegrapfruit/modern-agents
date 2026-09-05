@@ -166,7 +166,7 @@ struct AppearancePopover: View {
                 }
                 .buttonStyle(.plain)
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                Text(plainZoom ? "Zoom" : fit ? "Text size \(model.settings.reader.pdfZoom)%" : "Text size \(model.settings.reader.fontSize)%")
+                Text(plainZoom ? "Zoom" : fit ? (model.settings.reader.pdfZoom > 100 ? "Text size \(model.settings.reader.pdfZoom)% · pages in \(model.settings.reader.pdfZoom >= 300 ? "three" : "two") parts" : "Text size \(model.settings.reader.pdfZoom)%") : "Text size \(model.settings.reader.fontSize)%")
                     .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .center)
                 if pdfBook {
                     VStack(alignment: .leading, spacing: 6) {
@@ -233,7 +233,7 @@ struct AppearancePopover: View {
     private var pdfLayoutHelp: String {
         switch model.settings.reader.pdfLayout {
         case .pages: return "Whole pages, as printed."
-        case .fit: return "Pages cropped to their text (two text columns become two strips) and cut into screens that turn like pages, one or two at a time. 100% fills a screen; One page shows larger text."
+        case .fit: return "Pages cropped to their text (two text columns become two strips) and cut into screens that turn like pages, one or two at a time. 100% fills a screen; above it a page is read in two or three parts, side by side."
         case .text: return "The text reflowed into a book: fonts, sizes and themes apply; the layout is not kept."
         }
     }

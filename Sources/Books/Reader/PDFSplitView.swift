@@ -6,32 +6,56 @@ import SwiftUI
 import BooksCore
 
 /// What the split presenter learns about a PDF off the main thread before it can lay screens out: the document's
-/// ink strips, every page's text lines (where a screen may not cut) and, for documents that are not too long, each
-/// page's own ink box (so a short page ends where its ink ends).
-struct SplitPreparation: Sendable {
-    struct Line: Sendable {
+/// ink strips and the column profile that found them, every page's text lines, and — for documents that are not
+/// very long — how much ink each row of each page carries within each strip, so screens can be cut where a blank
+/// band crosses the whole strip, whether or not the page has extractable text. Kept beside the PDF, so a book is
+/// analysed once.
+struct SplitPreparation: Codable, Sendable {
+    struct Line: Codable, Sendable {
         let minX: CGFloat, maxX: CGFloat, minY: CGFloat, maxY: CGFloat
         let text: String
         var height: CGFloat { maxY - minY }
     }
 
+    /// One page's ink, from a small rendering.
+    struct PageInk: Codable, Sendable {
+        /// Per strip: ink pixels in each row of the page, top row first.
+        let rows: [[Int]]
+        /// The height of a row in page units.
+        let rowHeight: CGFloat
+        /// Pixels across a strip, per strip — the scale of the row counts.
+        let stripWidths: [Int]
+        /// The page's ink, all strips together, in display space; nil for a blank page.
+        let box: CGRect?
+    }
+
+    static let currentVersion = 3
+
+    var version = SplitPreparation.currentVersion
     let strips: [CGRect]
+    /// Ink in each of 200 vertical bins across the page width, summed over the sampled pages.
+    let columnProfile: [Int]
     /// Per page, top to bottom.
     let lines: [[Line]]
-    /// Per page; nil when the document was too long to scan, or the page has no ink.
-    let inkBoxes: [CGRect?]
+    /// Per page; nil when the document was too long to render every page.
+    let ink: [PageInk?]
     let typicalLineHeight: CGFloat
     /// Per page: the running header / page number line at the top and the footer at the bottom, if any.
     let headers: [Line?]
     let footers: [Line?]
+
+    static func cacheURL(for pdf: URL) -> URL {
+        pdf.deletingLastPathComponent().appendingPathComponent("split-v\(currentVersion).json")
+    }
 }
 
 /// Zoom & Split: the reader's own presentation of a PDF as a book. Each page is cropped to the document's ink
 /// (running headers, footers and page numbers cut away; two text columns read in order), the ink of all pages runs
 /// on as one column, and that column is scaled so it fills one screen's width at the text size and cut into
-/// screens between lines of text — so a screen ends after a whole line and the next screen begins with the next,
-/// across page boundaries too, as a book's pages do. Screens show one or two to a spread and turn with a slide.
-/// The drawing is the reader's own; selection, highlights, search and Look Up still come from PDFKit's text.
+/// screens on blank bands that cross the whole column — so a screen ends after a whole line or figure and the next
+/// screen begins with the next, across page boundaries too, as a book's pages do. Above 100% the column is cut
+/// into two or three parts side by side, each filling a screen. Screens show one or two to a spread and turn with
+/// a slide. The drawing is the reader's own; selection, highlights, search and Look Up come from PDFKit's text.
 @MainActor
 final class SplitPDFPresenter: PDFReading {
     /// A run of one page's ink shown on a screen, and where it sits below the screen's top (page units).
@@ -47,6 +71,13 @@ final class SplitPDFPresenter: PDFReading {
         var height: CGFloat = 0
     }
 
+    /// A strip of the page (or part of one, above 100%) that the column reads through, with the strip whose row
+    /// profile describes it.
+    private struct Column {
+        let rect: CGRect
+        let strip: Int
+    }
+
     let view = SplitPDFView()
     var hostView: NSView { view }
     unowned let session: ReaderSession
@@ -54,8 +85,6 @@ final class SplitPDFPresenter: PDFReading {
     private var sections: [PDFSection] = []
     private var hits: [UUID: PDFSelection] = [:]
     private var preparation: SplitPreparation?
-    /// Per page, the strips of ink that run on into the column (already trimmed of headers, footers and blank ends).
-    private var segments: [[CGRect]] = []
     private var pageCount = 0
     private var opened = false
     /// Set once the first spread is up; before that, layout passes must not report or present.
@@ -64,6 +93,8 @@ final class SplitPDFPresenter: PDFReading {
 
     // Geometry, recomputed when the view, the spread or the text size changes.
     private(set) var columns = 2
+    private var parts = 1
+    private var activeColumns: [Column] = []
     private var scale: CGFloat = 1
     private var tileSize: CGSize = .zero
     private(set) var screenHeight: CGFloat = 0
@@ -116,13 +147,12 @@ final class SplitPDFPresenter: PDFReading {
 
     private func prepared(_ prepared: SplitPreparation?) {
         session.pdfPreparing(false)
-        guard let document else { return }
+        guard document != nil else { return }
         guard let prepared else {
             session.error = "This PDF could not be opened."
             return
         }
         preparation = prepared
-        segments = SplitPDFPresenter.segments(of: prepared, pageCount: document.pageCount)
         computeGeometry()
         buildScreens()
         reportLayout()
@@ -167,29 +197,46 @@ final class SplitPDFPresenter: PDFReading {
 
     // MARK: - Preparation (off the main thread)
 
-    /// Reads the document once more on its own thread and gathers what the layout needs.
+    /// The analysis of a PDF, from the cache beside it when that is newer than the PDF, else made and cached.
     nonisolated static func prepare(url: URL) -> SplitPreparation? {
+        let cache = SplitPreparation.cacheURL(for: url)
+        let cachedDate = try? cache.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+        let sourceDate = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+        if let cachedDate, let sourceDate, cachedDate >= sourceDate, let data = try? Data(contentsOf: cache),
+           let stored = try? JSONDecoder().decode(SplitPreparation.self, from: data), stored.version == SplitPreparation.currentVersion {
+            return stored
+        }
+        guard let made = analyse(url: url) else { return nil }
+        if let data = try? JSONEncoder().encode(made) { try? data.write(to: cache, options: .atomic) }
+        return made
+    }
+
+    /// Reads the document on its own thread and gathers what the layout needs.
+    nonisolated static func analyse(url: URL) -> SplitPreparation? {
         guard let document = PDFDocument(url: url), document.pageCount > 0 else { return nil }
         let count = document.pageCount
-        var strips = PDFPresenter.contentBoxes(of: document)
+        let found = PDFPresenter.contentBoxes(of: document)
+        var strips = found.boxes
         if strips.isEmpty, let first = document.page(at: 0) { strips = [CGRect(origin: .zero, size: PDFPresenter.displaySize(of: first))] }
-        let scanEveryPage = count <= 150
+        // Every page is rendered small to find its blank bands; the longer the book, the smaller the rendering.
+        let scanWidth = count <= 120 ? 480 : count <= 400 ? 320 : count <= 900 ? 220 : 0
         var lines: [[SplitPreparation.Line]] = []
-        var boxes: [CGRect?] = []
+        var ink: [SplitPreparation.PageInk?] = []
         lines.reserveCapacity(count)
+        ink.reserveCapacity(count)
         for i in 0..<count {
             guard let page = document.page(at: i) else {
                 lines.append([])
-                boxes.append(nil)
+                ink.append(nil)
                 continue
             }
             lines.append(textLines(of: page))
-            boxes.append(scanEveryPage ? PDFPresenter.inkBox(of: page, width: 90) : nil)
+            ink.append(scanWidth > 0 ? pageInk(of: page, strips: strips, width: scanWidth) : nil)
         }
         let heights = lines.flatMap { $0.map(\.height) }.filter { $0 > 2 && $0 < 80 }.sorted()
         let typical = heights.isEmpty ? 12 : heights[heights.count / 2]
         let (headers, footers) = runningLines(lines, strips: strips, typical: typical)
-        return SplitPreparation(strips: strips, lines: lines, inkBoxes: boxes, typicalLineHeight: typical, headers: headers, footers: footers)
+        return SplitPreparation(strips: strips, columnProfile: found.profile, lines: lines, ink: ink, typicalLineHeight: typical, headers: headers, footers: footers)
     }
 
     /// The page's text lines in display space, top to bottom.
@@ -203,6 +250,54 @@ final class SplitPDFPresenter: PDFReading {
             out.append(SplitPreparation.Line(minX: b.minX, maxX: b.maxX, minY: b.minY, maxY: b.maxY, text: line.string ?? ""))
         }
         return out.sorted { $0.maxY > $1.maxY }
+    }
+
+    /// How much ink each row of the page carries within each strip, and where the page's ink lies, from a small
+    /// rendering `width` pixels across.
+    nonisolated static func pageInk(of page: PDFPage, strips: [CGRect], width: Int) -> SplitPreparation.PageInk? {
+        let size = PDFPresenter.displaySize(of: page)
+        guard size.width > 0, size.height > 0, width > 0 else { return nil }
+        let height = max(1, Int((CGFloat(width) * size.height / size.width).rounded()))
+        let image = page.thumbnail(of: NSSize(width: width, height: height), for: .mediaBox)
+        guard let tiff = image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff), rep.bitsPerSample == 8, !rep.isPlanar, let data = rep.bitmapData else { return nil }
+        let w = rep.pixelsWide, h = rep.pixelsHigh, spp = rep.samplesPerPixel, rowBytes = rep.bytesPerRow
+        let alphaFirst = rep.bitmapFormat.contains(.alphaFirst)
+        let colorOffset = alphaFirst && rep.hasAlpha ? 1 : 0
+        let sx = CGFloat(w) / size.width
+        // Strip x-ranges in pixels.
+        let ranges: [Range<Int>] = strips.map { strip in
+            let a = max(0, min(w, Int((strip.minX * sx).rounded(.down)))), b = max(a, min(w, Int((strip.maxX * sx).rounded(.up))))
+            return a..<b
+        }
+        var rows = [[Int]](repeating: [Int](repeating: 0, count: h), count: strips.count)
+        var minX = w, maxX = -1, minY = h, maxY = -1, total = 0
+        for y in 0..<h {
+            let rowStart = data + y * rowBytes
+            for x in 0..<w {
+                let p = rowStart + x * spp
+                let luminance: Int
+                if spp - colorOffset >= 3 {
+                    luminance = (Int(p[colorOffset]) * 299 + Int(p[colorOffset + 1]) * 587 + Int(p[colorOffset + 2]) * 114) / 1000
+                } else {
+                    luminance = Int(p[colorOffset])
+                }
+                let alpha = rep.hasAlpha ? Int(p[alphaFirst ? 0 : spp - 1]) : 255
+                guard luminance < 225 && alpha > 40 else { continue }
+                total += 1
+                if x < minX { minX = x }
+                if x > maxX { maxX = x }
+                if y < minY { minY = y }
+                if y > maxY { maxY = y }
+                for (s, range) in ranges.enumerated() where range.contains(x) { rows[s][y] += 1 }
+            }
+        }
+        let rowHeight = size.height / CGFloat(h)
+        var box: CGRect?
+        if total >= 20, maxX >= minX, maxY >= minY {
+            let px = size.width / CGFloat(w)
+            box = CGRect(x: CGFloat(minX) * px, y: size.height - CGFloat(maxY + 1) * rowHeight, width: CGFloat(maxX - minX + 1) * px, height: CGFloat(maxY - minY + 1) * rowHeight)
+        }
+        return SplitPreparation.PageInk(rows: rows, rowHeight: rowHeight, stripWidths: ranges.map { max(1, $0.count) }, box: box)
     }
 
     /// Running headers and footers: the topmost or bottommost line of a page, when the same words (numbers aside)
@@ -241,45 +336,29 @@ final class SplitPDFPresenter: PDFReading {
         return (headers, footers)
     }
 
-    /// Each page's runs of ink for the column: the document's strips, cut below its header and above its footer,
-    /// and ending where the page's own ink ends. A page without ink contributes nothing.
-    nonisolated static func segments(of p: SplitPreparation, pageCount: Int) -> [[CGRect]] {
-        var out: [[CGRect]] = []
-        let typical = p.typicalLineHeight
-        for page in 0..<pageCount {
-            let lines = page < p.lines.count ? p.lines[page] : []
-            let header = page < p.headers.count ? p.headers[page] : nil
-            let footer = page < p.footers.count ? p.footers[page] : nil
-            let body = lines.filter { l in !(header.map { $0.minY == l.minY && $0.maxY == l.maxY } ?? false) && !(footer.map { $0.minY == l.minY && $0.maxY == l.maxY } ?? false) }
-            var top = p.strips.map(\.maxY).max() ?? 0
-            var bottom = p.strips.map(\.minY).min() ?? 0
-            if let header {
-                // Cut midway between the header and the line below it.
-                if let next = body.first(where: { $0.maxY <= header.minY }) { top = min(top, (header.minY + next.maxY) / 2) } else { top = min(top, header.minY - 1) }
-            }
-            if let footer {
-                if let previous = body.last(where: { $0.minY >= footer.maxY }) { bottom = max(bottom, (footer.maxY + previous.minY) / 2) } else { bottom = max(bottom, footer.maxY + 1) }
-            }
-            if page < p.inkBoxes.count, let ink = p.inkBoxes[page] {
-                let pad = typical * 0.35
-                // The page's ink may end well before the strip does (a chapter's last page); never cut into a line.
-                var inkTop = min(top, ink.maxY + pad), inkBottom = max(bottom, ink.minY - pad)
-                if let l = body.first(where: { $0.minY < inkTop && $0.maxY > inkTop }) { inkTop = max(inkTop, l.maxY + 0.5) }
-                if let l = body.first(where: { $0.minY < inkBottom && $0.maxY > inkBottom }) { inkBottom = min(inkBottom, l.minY - 0.5) }
-                top = min(top, inkTop)
-                bottom = max(bottom, inkBottom)
-            } else if pageCount <= 150, lines.isEmpty {
-                // Scanned for ink and none found, and no text either: a blank page, which a reader skips.
-                out.append([])
-                continue
-            }
-            if top - bottom < max(2, typical * 0.5) {
-                out.append([])
-                continue
-            }
-            out.append(p.strips.map { CGRect(x: $0.minX, y: bottom, width: $0.width, height: top - bottom) })
-        }
-        return out
+    // MARK: - Ink profile helpers
+
+    /// Ink in the row of a strip at a display-space y, as a fraction of the strip's width; nil without a scan.
+    private func inkFraction(page: Int, strip: Int, y: CGFloat) -> Double? {
+        guard let p = preparation, page < p.ink.count, let ink = p.ink[page], strip < ink.rows.count, ink.rowHeight > 0, let pageSize = pageSize(page) else { return nil }
+        let row = Int(((pageSize.height - y) / ink.rowHeight).rounded(.down))
+        guard row >= 0, row < ink.rows[strip].count else { return 0 }
+        return Double(ink.rows[strip][row]) / Double(max(1, ink.stripWidths[strip]))
+    }
+
+    /// For the self-test: how inked the band is where a screen was cut.
+    func inkFraction(page: Int, y: CGFloat) -> Double? {
+        guard let column = activeColumns.first else { return nil }
+        return inkFraction(page: page, strip: column.strip, y: y)
+    }
+
+    private var pageSizes: [Int: CGSize] = [:]
+    private func pageSize(_ page: Int) -> CGSize? {
+        if let cached = pageSizes[page] { return cached }
+        guard let document, let p = document.page(at: page) else { return nil }
+        let size = PDFPresenter.displaySize(of: p)
+        pageSizes[page] = size
+        return size
     }
 
     // MARK: - Geometry
@@ -289,27 +368,183 @@ final class SplitPDFPresenter: PDFReading {
         return columns == 2 ? clamped - clamped % 2 : clamped
     }
 
-    /// Scale and screen height follow the view: the widest strip fills one column's width at the text size; the
-    /// column's height in page units is a screen.
+    /// Text sizes: 50–100% fill a column with the whole strip; 200% and 300% cut the strip into two or three parts
+    /// side by side, each filling a column.
+    static func zoomSteps() -> [Int] { [50, 60, 70, 80, 90, 100, 200, 300] }
+
+    /// Scale and screen height follow the view: the widest column fills one tile's width at the text size; the
+    /// tile's height in page units is a screen.
     private func computeGeometry() {
         let size = view.bounds.size
-        guard let preparation, size.width > 60, size.height > 60, let widest = preparation.strips.map(\.width).max(), widest > 0 else { return }
+        guard let preparation, size.width > 60, size.height > 60 else { return }
         columns = settings.spread == .one ? 1 : 2
+        let zoom = min(300, max(50, settings.pdfZoom))
+        parts = zoom > 100 ? max(2, min(3, zoom / 100)) : 1
+        activeColumns = SplitPDFPresenter.columns(of: preparation, parts: parts)
+        guard let widest = activeColumns.map(\.rect.width).max(), widest > 0 else { return }
         let availableWidth = size.width - 2 * sideMargin - CGFloat(columns - 1) * gutter
         let tileWidth = max(40, availableWidth / CGFloat(columns))
         let tileHeight = max(40, size.height - topMargin - bottomMargin)
-        scale = tileWidth / widest * CGFloat(min(100, max(50, settings.pdfZoom))) / 100
+        scale = tileWidth / widest * (parts > 1 ? 1 : CGFloat(zoom) / 100)
         tileSize = CGSize(width: tileWidth, height: tileHeight)
         screenHeight = tileHeight / scale
     }
 
-    /// Cuts the column of ink into screens: a screen takes as much as fits, ending between two lines of text so no
-    /// line is split, and runs on into the next page (after a small gap) when a page ends with room to spare.
+    /// The strips as read: whole, or each cut into parts at the quietest vertical bands near the even divisions.
+    private static func columns(of p: SplitPreparation, parts: Int) -> [Column] {
+        var out: [Column] = []
+        for (index, strip) in p.strips.enumerated() {
+            guard parts > 1, strip.width > 0 else {
+                out.append(Column(rect: strip, strip: index))
+                continue
+            }
+            var cuts: [CGFloat] = [strip.minX]
+            let bins = p.columnProfile.count
+            let pageWidth = p.strips.map(\.maxX).max() ?? strip.maxX
+            let binWidth = bins > 0 ? max(pageWidth, strip.maxX) / CGFloat(bins) : 0
+            for k in 1..<parts {
+                let target = strip.minX + strip.width * CGFloat(k) / CGFloat(parts)
+                var cut = target
+                if binWidth > 0 {
+                    let window = strip.width * 0.15
+                    let lo = max(0, Int((target - window) / binWidth)), hi = min(bins - 1, Int((target + window) / binWidth))
+                    if lo <= hi {
+                        var best = lo, bestInk = Int.max
+                        for bin in lo...hi {
+                            let ink = p.columnProfile[bin]
+                            let distance = abs(CGFloat(bin) * binWidth + binWidth / 2 - target)
+                            // Quietest wins; among equals, the one nearest the even division.
+                            if ink < bestInk || (ink == bestInk && distance < abs(CGFloat(best) * binWidth + binWidth / 2 - target)) {
+                                best = bin
+                                bestInk = ink
+                            }
+                        }
+                        cut = CGFloat(best) * binWidth + binWidth / 2
+                    }
+                }
+                cuts.append(cut)
+            }
+            cuts.append(strip.maxX)
+            for k in 0..<parts {
+                let overlap = strip.width * 0.01
+                let x0 = max(strip.minX, cuts[k] - (k > 0 ? overlap : 0)), x1 = min(strip.maxX, cuts[k + 1] + (k + 1 < parts ? overlap : 0))
+                out.append(Column(rect: CGRect(x: x0, y: strip.minY, width: max(1, x1 - x0), height: strip.height), strip: index))
+            }
+        }
+        return out
+    }
+
+    /// One page's runs of ink for a column: the column's rectangle, cut below the page's header and above its
+    /// footer, and ending where the strip's ink ends on that page (by its row profile; by its text lines where there
+    /// is no profile). Nil for a page with no ink there.
+    private func segment(page: Int, column: Column) -> CGRect? {
+        guard let p = preparation else { return nil }
+        let typical = p.typicalLineHeight
+        let lines = page < p.lines.count ? p.lines[page] : []
+        let header = page < p.headers.count ? p.headers[page] : nil
+        let footer = page < p.footers.count ? p.footers[page] : nil
+        let body = lines.filter { l in !(header.map { $0.minY == l.minY && $0.maxY == l.maxY } ?? false) && !(footer.map { $0.minY == l.minY && $0.maxY == l.maxY } ?? false) }
+        var top = column.rect.maxY
+        var bottom = column.rect.minY
+        if let header {
+            if let next = body.first(where: { $0.maxY <= header.minY }) { top = min(top, (header.minY + next.maxY) / 2) } else { top = min(top, header.minY - 1) }
+        }
+        if let footer {
+            if let previous = body.last(where: { $0.minY >= footer.maxY }) { bottom = max(bottom, (footer.maxY + previous.minY) / 2) } else { bottom = max(bottom, footer.maxY + 1) }
+        }
+        if page < p.ink.count, let ink = p.ink[page], let pageSize = pageSize(page) {
+            // The strip's own ink on this page: its first and last inked rows.
+            guard column.strip < ink.rows.count else { return nil }
+            let rows = ink.rows[column.strip]
+            let quiet = max(1, ink.stripWidths[column.strip] / 200)
+            let topRow = max(0, Int(((pageSize.height - top) / ink.rowHeight).rounded(.down)))
+            let bottomRow = min(rows.count - 1, Int(((pageSize.height - bottom) / ink.rowHeight).rounded(.up)))
+            guard topRow <= bottomRow, let first = (topRow...bottomRow).first(where: { rows[$0] > quiet }), let last = (topRow...bottomRow).last(where: { rows[$0] > quiet }) else { return nil }
+            let pad = ink.rowHeight
+            var inkTop = min(top, pageSize.height - CGFloat(first) * ink.rowHeight + pad)
+            var inkBottom = max(bottom, pageSize.height - CGFloat(last + 1) * ink.rowHeight - pad)
+            // Never cut into a line of text the rendering might have thinned away.
+            if let l = body.first(where: { $0.minY < inkTop && $0.maxY > inkTop && $0.maxX > column.rect.minX && $0.minX < column.rect.maxX }) { inkTop = max(inkTop, l.maxY + 0.5) }
+            if let l = body.first(where: { $0.minY < inkBottom && $0.maxY > inkBottom && $0.maxX > column.rect.minX && $0.minX < column.rect.maxX }) { inkBottom = min(inkBottom, l.minY - 0.5) }
+            top = min(top, inkTop)
+            bottom = max(bottom, inkBottom)
+        } else if !lines.isEmpty {
+            // No rendering: trust the text.
+            let inColumn = body.filter { $0.maxX > column.rect.minX && $0.minX < column.rect.maxX }
+            if let first = inColumn.first, let last = inColumn.last {
+                top = min(top, first.maxY + typical * 0.35)
+                bottom = max(bottom, last.minY - typical * 0.35)
+            }
+        }
+        guard top - bottom >= max(2, typical * 0.5) else { return nil }
+        var rect = CGRect(x: column.rect.minX, y: bottom, width: column.rect.width, height: top - bottom)
+        // A page whose ink runs wider than the document's strip (a table, a figure) keeps all of it; the piece is
+        // drawn smaller to fit the column.
+        if parts == 1, preparation?.strips.count == 1, page < p.ink.count, let box = p.ink[page]?.box {
+            let pad = typical * 0.35
+            let minX = min(rect.minX, box.minX - pad), maxX = max(rect.maxX, box.maxX + pad)
+            rect = CGRect(x: minX, y: rect.minY, width: maxX - minX, height: rect.height)
+        }
+        return rect
+    }
+
+    /// Where to end a screen whose nominal bottom is `nominal`, within a column of a page: the lowest blank band
+    /// in the reach above it, so the screen stays as full as it can while nothing is cut through. Blank means the
+    /// row profile shows next to no ink across the column; a midpoint between two lines of text counts when the
+    /// profile does not disagree. With neither, the row with the least ink.
+    private func cut(nominal: CGFloat, top: CGFloat, page: Int, column: Column, reach: CGFloat) -> CGFloat {
+        guard let p = preparation else { return nominal }
+        let typical = p.typicalLineHeight
+        let highest = min(top - typical * 0.9, nominal + reach)
+        guard highest > nominal else { return nominal }
+        let lines = (page < p.lines.count ? p.lines[page] : []).filter { $0.maxX > column.rect.minX && $0.minX < column.rect.maxX }
+        // Midpoints between consecutive lines, lowest first.
+        var midpoints: [CGFloat] = []
+        for i in 1..<max(1, lines.count) {
+            let above = lines[i - 1], below = lines[i]
+            guard below.maxY < above.minY + 0.5 else { continue }
+            let m = (below.maxY + above.minY) / 2
+            if m >= nominal && m <= highest { midpoints.append(m) }
+        }
+        midpoints.sort()
+        let ink = page < p.ink.count ? p.ink[page] : nil
+        guard let ink, column.strip < ink.rows.count, let pageSize = pageSize(page), ink.rowHeight > 0 else {
+            return midpoints.first ?? nominal
+        }
+        let rows = ink.rows[column.strip]
+        let width = max(1, ink.stripWidths[column.strip])
+        let quiet = max(1, width / 100)
+        func rowIndex(_ y: CGFloat) -> Int { min(rows.count - 1, max(0, Int(((pageSize.height - y) / ink.rowHeight).rounded(.down)))) }
+        // A text midpoint whose row is quiet is exact: take the lowest.
+        for m in midpoints where rows[rowIndex(m)] <= max(quiet, width / 12) { return m }
+        // Else the lowest blank band: rows from the nominal upward, the first run of quiet rows, cut at its centre.
+        let lowRow = rowIndex(nominal), highRow = rowIndex(highest)
+        guard highRow <= lowRow else { return midpoints.first ?? nominal }
+        var r = lowRow
+        while r >= highRow {
+            if rows[r] <= quiet {
+                var start = r
+                while start - 1 >= highRow, rows[start - 1] <= quiet { start -= 1 }
+                let centre = CGFloat(start + r + 1) / 2
+                return pageSize.height - centre * ink.rowHeight
+            }
+            r -= 1
+        }
+        if let m = midpoints.first { return m }
+        // Nothing blank: the least ink.
+        var best = lowRow
+        for r in highRow...lowRow where rows[r] < rows[best] { best = r }
+        return pageSize.height - (CGFloat(best) + 0.5) * ink.rowHeight
+    }
+
+    /// Cuts the column of ink into screens: a screen takes as much as fits, ends on a blank band so nothing is cut
+    /// through, and runs on into the next page (after a small gap) when a page ends with room to spare.
     private func buildScreens() {
-        guard let preparation, screenHeight > 0 else { return }
+        guard let preparation, screenHeight > 0, !activeColumns.isEmpty else { return }
         let typical = preparation.typicalLineHeight
         let gap = typical * 0.6
         let minimum = typical * 1.5
+        let reach = max(typical * 1.5, screenHeight * 0.08)
         var out: [Screen] = []
         var current = Screen()
         var starts = [Int](repeating: -1, count: pageCount), ends = [Int](repeating: -1, count: pageCount)
@@ -318,8 +553,8 @@ final class SplitPDFPresenter: PDFReading {
             ends[page] = index
         }
         for page in 0..<pageCount {
-            let lines = page < preparation.lines.count ? preparation.lines[page] : []
-            for segment in (page < segments.count ? segments[page] : []) {
+            for column in activeColumns {
+                guard let segment = segment(page: page, column: column) else { continue }
                 var top = segment.maxY
                 var guardCount = 0
                 while top - segment.minY > 0.5, guardCount < 400 {
@@ -338,14 +573,7 @@ final class SplitPDFPresenter: PDFReading {
                         bottom = segment.minY
                         full = false
                     } else {
-                        // Move a straddled line whole to the next screen, cutting midway to the line above it.
-                        let straddlers = lines.filter { $0.minY < bottom && $0.maxY > bottom && $0.maxX > segment.minX && $0.minX < segment.maxX && $0.height < typical * 3 }
-                        if let line = straddlers.max(by: { $0.maxY < $1.maxY }) {
-                            let above = lines.filter { $0.minY >= line.maxY - 0.5 && $0.maxX > segment.minX && $0.minX < segment.maxX }.min { $0.minY < $1.minY }
-                            var cut = line.maxY + 0.5
-                            if let above, above.minY > line.maxY { cut = (line.maxY + above.minY) / 2 }
-                            if cut < top - typical * 0.9 { bottom = cut }
-                        }
+                        bottom = max(bottom, min(top - 0.5, cut(nominal: bottom, top: top, page: page, column: column, reach: reach)))
                     }
                     let index = out.count
                     current.pieces.append(Piece(page: page, rect: CGRect(x: segment.minX, y: bottom, width: segment.width, height: top - bottom), offset: current.height))
@@ -363,7 +591,7 @@ final class SplitPDFPresenter: PDFReading {
         if out.isEmpty {
             // Nothing found to show (a document with no ink at all): whole pages, one a screen.
             for page in 0..<pageCount {
-                let size = document?.page(at: page).map { PDFPresenter.displaySize(of: $0) } ?? CGSize(width: 612, height: 792)
+                let size = pageSize(page) ?? CGSize(width: 612, height: 792)
                 out.append(Screen(pieces: [Piece(page: page, rect: CGRect(origin: .zero, size: size), offset: 0)], height: size.height))
                 touch(page, page)
             }
@@ -371,7 +599,12 @@ final class SplitPDFPresenter: PDFReading {
         // Pages without ink share the screen where the flow was at the time.
         var lastEnd = 0
         for page in 0..<pageCount {
-            if starts[page] < 0 { starts[page] = min(lastEnd, out.count - 1); ends[page] = starts[page] } else { lastEnd = ends[page] }
+            if starts[page] < 0 {
+                starts[page] = min(lastEnd, out.count - 1)
+                ends[page] = starts[page]
+            } else {
+                lastEnd = ends[page]
+            }
         }
         screens = out
         pageStarts = starts + [out.count]
@@ -401,9 +634,15 @@ final class SplitPDFPresenter: PDFReading {
         CGRect(x: sideMargin + CGFloat(column) * (tileSize.width + gutter), y: bottomMargin, width: tileSize.width, height: tileSize.height)
     }
 
+    /// The scale a piece is drawn at: the layout's, unless the piece is wider than the tile.
+    private func pieceScale(_ piece: Piece, in frame: CGRect) -> CGFloat {
+        piece.rect.width > 0 ? min(scale, frame.width / piece.rect.width) : scale
+    }
+
     /// Where a piece of a screen sits inside its tile (bottom-left origin, view points): centred, below the pieces above.
     private func pieceFrame(_ piece: Piece, in frame: CGRect) -> CGRect {
-        let width = piece.rect.width * scale, height = piece.rect.height * scale
+        let s = pieceScale(piece, in: frame)
+        let width = piece.rect.width * s, height = piece.rect.height * s
         let x = frame.midX - width / 2
         let top = frame.maxY - piece.offset * scale
         return CGRect(x: x, y: top - height, width: width, height: height)
@@ -453,9 +692,10 @@ final class SplitPDFPresenter: PDFReading {
         for piece in screens[u].pieces {
             guard let page = document.page(at: piece.page) else { continue }
             let dest = pieceFrame(piece, in: tile)
+            let s = pieceScale(piece, in: tile)
             context.saveGState()
             context.translateBy(x: dest.minX * backing, y: dest.minY * backing)
-            context.scaleBy(x: backing * scale, y: backing * scale)
+            context.scaleBy(x: backing * s, y: backing * s)
             context.translateBy(x: -piece.rect.minX, y: -piece.rect.minY)
             context.clip(to: piece.rect)
             page.draw(with: .mediaBox, to: context)
@@ -537,9 +777,9 @@ final class SplitPDFPresenter: PDFReading {
     /// Re-lays the screens out for a new size, spread or text size, keeping the place: the top of the first piece.
     private func relayout() {
         let anchor = units > 0 ? screens[unit].pieces.first : nil
-        let before = (tileSize, screenHeight, columns)
+        let before = (tileSize, screenHeight, columns, parts)
         computeGeometry()
-        if before == (tileSize, screenHeight, columns) && !screens.isEmpty { return }
+        if before == (tileSize, screenHeight, columns, parts) && !screens.isEmpty { return }
         buildScreens()
         if let pendingRestore, units > 0 {
             unit = aligned(pendingRestore())
@@ -569,10 +809,14 @@ final class SplitPDFPresenter: PDFReading {
         report()
     }
 
-    /// The text size: 100% fills a column with the widest strip; smaller sizes put more on a screen.
+    /// The text size steps: 50–100% fill a column with the strip; 200% and 300% cut it into parts.
     func zoom(_ direction: Int) {
         var all = session.model.settings
-        all.reader.pdfZoom = min(100, max(50, all.reader.pdfZoom + (direction > 0 ? 10 : -10)))
+        let steps = SplitPDFPresenter.zoomSteps()
+        let current = all.reader.pdfZoom
+        let index = steps.lastIndex(where: { $0 <= current }) ?? 0
+        let next = direction > 0 ? min(steps.count - 1, index + 1) : max(0, steps[index] < current ? index : index - 1)
+        all.reader.pdfZoom = steps[next]
         session.model.settings = all
         applySettings()
     }
@@ -658,8 +902,9 @@ final class SplitPDFPresenter: PDFReading {
 
     /// A view point to a point in the page's own space, through the piece it lands on (or the piece a drag began in).
     private func pagePoint(at point: NSPoint, in hit: PieceHit) -> NSPoint? {
-        guard let document, let page = document.page(at: hit.piece.page) else { return nil }
-        let display = NSPoint(x: hit.piece.rect.minX + (point.x - hit.frame.minX) / scale, y: hit.piece.rect.minY + (point.y - hit.frame.minY) / scale)
+        guard let document, let page = document.page(at: hit.piece.page), hit.frame.width > 0 else { return nil }
+        let s = hit.frame.width / hit.piece.rect.width
+        let display = NSPoint(x: hit.piece.rect.minX + (point.x - hit.frame.minX) / s, y: hit.piece.rect.minY + (point.y - hit.frame.minY) / s)
         return display.applying(page.transform(for: .mediaBox).inverted())
     }
 
@@ -676,7 +921,8 @@ final class SplitPDFPresenter: PDFReading {
                 let part = display.intersection(piece.rect)
                 guard !part.isNull, part.width > 0, part.height > 0 else { continue }
                 let pf = pieceFrame(piece, in: frame)
-                let shown = CGRect(x: pf.minX + (part.minX - piece.rect.minX) * scale, y: pf.minY + (part.minY - piece.rect.minY) * scale, width: part.width * scale, height: part.height * scale)
+                let s = pieceScale(piece, in: frame)
+                let shown = CGRect(x: pf.minX + (part.minX - piece.rect.minX) * s, y: pf.minY + (part.minY - piece.rect.minY) * s, width: part.width * s, height: part.height * s)
                 union = union.map { $0.union(shown) } ?? shown
             }
         }

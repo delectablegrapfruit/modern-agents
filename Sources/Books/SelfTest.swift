@@ -245,6 +245,18 @@ enum SelfTest {
         for _ in 0..<5 { fitSession.changeFontSize(by: -10) }
         try await sleep(0.6)
         guard fitSession.layout.total < screensOneUp else { throw Failure("a smaller text size did not reduce the screens (\(screensOneUp) → \(fitSession.layout.total))") }
+        // Above 100% a page is read in parts: the next step up from 100% is two parts.
+        fitSettings = model.settings
+        fitSettings.reader.pdfZoom = 100
+        model.settings = fitSettings
+        fitSession.applySettings()
+        try await sleep(0.4)
+        fitSession.changeFontSize(by: 10)
+        try await sleep(0.6)
+        guard model.settings.reader.pdfZoom == 200 else { throw Failure("the text size did not step from 100% to 200% (\(model.settings.reader.pdfZoom)%)") }
+        let screensInParts = fitSession.layout.total
+        guard screensInParts > screensOneUp else { throw Failure("two parts did not add screens (\(screensOneUp) → \(screensInParts))") }
+        try checkFlow(split)
         fitSettings = model.settings
         fitSettings.reader.spread = .two
         fitSettings.reader.pdfZoom = 100
@@ -268,7 +280,7 @@ enum SelfTest {
         fitSession.toggleBookmark()
         try await sleep(0.3)
         guard fitSession.isBookmarked else { throw Failure("Zoom & Split bookmark was not added") }
-        log("Zoom & Split: \(Int(screensTwoUp)) screens two-up, \(Int(screensOneUp)) one-up, no repeats; turns, \(fitHits) matches, bookmark; footer “\(fitSession.pdfPageLabel ?? "")”")
+        log("Zoom & Split: \(Int(screensTwoUp)) screens two-up, \(Int(screensOneUp)) one-up, \(Int(screensInParts)) in two parts; cuts on blank bands, no repeats; turns, \(fitHits) matches, bookmark; footer “\(fitSession.pdfPageLabel ?? "")”")
 
         // Text: the PDF reflowed into a book, read by the page script like any other.
         fitSession.setPDFLayout(.text)
@@ -298,11 +310,21 @@ enum SelfTest {
         guard screens.count > 1, split.screenHeight > 0 else { throw Failure("Zoom & Split has no screens to check") }
         for u in 1..<screens.count {
             for a in screens[u - 1].pieces {
-                for b in screens[u].pieces where a.page == b.page && b.rect.maxY > a.rect.minY + 0.5 {
+                for b in screens[u].pieces where a.page == b.page && b.rect.maxY > a.rect.minY + 0.5 && b.rect.minX < a.rect.maxX && b.rect.maxX > a.rect.minX {
                     throw Failure("screen \(u + 1) repeats page \(a.page + 1) from \(Int(b.rect.maxY)) down; the screen before ended at \(Int(a.rect.minY))")
                 }
             }
         }
+        // Where one piece of a page ends and the next begins, the page shows a blank band: no line was cut through.
+        var cuts = 0
+        for u in 1..<screens.count {
+            guard let a = screens[u - 1].pieces.last, let b = screens[u].pieces.first, a.page == b.page, abs(a.rect.minY - b.rect.maxY) < 0.01 else { continue }
+            cuts += 1
+            if let ink = split.inkFraction(page: a.page, y: a.rect.minY), ink > 0.1 {
+                throw Failure("screen \(u) was cut through ink on page \(a.page + 1) at \(Int(a.rect.minY)) (\(Int(ink * 100))% of the row)")
+            }
+        }
+        guard cuts > 0 else { throw Failure("no screen was cut within a page; the flow did not split pages") }
         for (i, screen) in screens.enumerated() {
             guard screen.height <= split.screenHeight + 0.5 else { throw Failure("screen \(i + 1) holds \(Int(screen.height)) of \(Int(split.screenHeight)) points") }
             if i < screens.count - 1, screen.height < split.screenHeight * 0.5 { throw Failure("screen \(i + 1) is only \(Int(screen.height / split.screenHeight * 100))% full") }

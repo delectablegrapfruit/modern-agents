@@ -112,6 +112,8 @@ final class ReaderSession {
     private var pointerY: CGFloat = 0
     private var viewHeight: CGFloat = 800
     private var chromeTimer: Timer?
+    private var cursorTimer: Timer?
+    private var cursorMonitor: Any?
     private var saveTask: Task<Void, Never>?
     private var readingTimer: Timer?
     private var lastActivity = Date()
@@ -152,6 +154,11 @@ final class ReaderSession {
         }
         startReadingTimer()
         if book.kind == .pdf, !usesPDFView { prepareReflow() }
+        // Every mouse move in the app (over the page, the toolbar, a popover) restarts the cursor's cooldown.
+        cursorMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged, .leftMouseDown, .rightMouseDown, .scrollWheel]) { [weak self] event in
+            MainActor.assumeIsolated { self?.armCursorHiding() }
+            return event
+        }
     }
 
     // MARK: - PDFs as text
@@ -216,6 +223,9 @@ final class ReaderSession {
         pdf = nil
         readingTimer?.invalidate()
         chromeTimer?.invalidate()
+        cursorTimer?.invalidate()
+        if let cursorMonitor { NSEvent.removeMonitor(cursorMonitor) }
+        cursorMonitor = nil
         appearanceObserver = nil
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "reader")
         webView.stopLoading()
@@ -628,8 +638,28 @@ final class ReaderSession {
         searchDone = true
     }
 
+    /// The pointer hides after a couple of seconds still over the page and comes back the moment it moves — like a
+    /// film's, so nothing sits on the text while reading.
+    private func armCursorHiding() {
+        cursorTimer?.invalidate()
+        cursorTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: false) { [weak self] _ in
+            Task { @MainActor in self?.hideCursorIfIdle() }
+        }
+    }
+
+    private func hideCursorIfIdle() {
+        guard isOpen, !showContents, !showSearch, !showAppearance, !showEndCard, !timelineDragging, !preparing,
+              selection == nil, tappedHighlight == nil, editingNote == nil else { return }
+        let host: NSView = usesPDFView ? (pdf?.hostView ?? webView) : webView
+        guard let window = host.window, window.isKeyWindow, NSApp.isActive else { return }
+        let location = host.convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        guard host.bounds.contains(location) else { return }
+        NSCursor.setHiddenUntilMouseMoves(true)
+    }
+
     func pointerMoved(y: CGFloat) {
         pointerY = y
+        armCursorHiding()
         refreshChrome()
         activity()
     }

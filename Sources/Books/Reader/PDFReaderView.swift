@@ -253,10 +253,11 @@ final class PDFPresenter: PDFReading {
 
     /// Where a sample of pages actually draws, in display space, as one box for the document — or two, when the
     /// pages carry two columns of text with clear space between them. Paper margins are cut away so the text can
-    /// fill the width. Median edges resist the odd full-bleed page; blank pages are skipped.
-    nonisolated static func contentBoxes(of document: PDFDocument) -> [CGRect] {
+    /// fill the width. Median edges resist the odd full-bleed page; blank pages are skipped. Also the ink in each
+    /// of 200 vertical bins across the page, summed over the sample, for cutting the box into parts later.
+    nonisolated static func contentBoxes(of document: PDFDocument) -> (boxes: [CGRect], profile: [Int]) {
         let count = document.pageCount
-        guard count > 0, let first = document.page(at: 0) else { return [] }
+        guard count > 0, let first = document.page(at: 0) else { return ([], []) }
         let size = displaySize(of: first)
         let media = CGRect(origin: .zero, size: size)
         let samples = min(count, 12)
@@ -268,11 +269,11 @@ final class PDFPresenter: PDFReading {
             boxes.append(scan.box)
             for (bin, value) in scan.profile.enumerated() where bin < profile.count { profile[bin] += value }
         }
-        guard !boxes.isEmpty else { return [media] }
+        guard !boxes.isEmpty else { return ([media], profile) }
         func median(_ values: [CGFloat]) -> CGFloat { values.sorted()[values.count / 2] }
         let minX = median(boxes.map(\.minX)), maxX = median(boxes.map(\.maxX))
         let minY = median(boxes.map(\.minY)), maxY = median(boxes.map(\.maxY))
-        guard maxX > minX, maxY > minY else { return [media] }
+        guard maxX > minX, maxY > minY else { return ([media], profile) }
         let pad = size.width * 0.015
         let box = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY).insetBy(dx: -pad, dy: -pad).intersection(media)
 
@@ -302,9 +303,9 @@ final class PDFPresenter: PDFReading {
             let gapStart = CGFloat(bestStart) * binWidth, gapEnd = CGFloat(bestStart + bestLength) * binWidth
             let left = CGRect(x: box.minX, y: box.minY, width: max(1, gapStart - box.minX + pad), height: box.height)
             let right = CGRect(x: gapEnd - pad, y: box.minY, width: max(1, box.maxX - gapEnd + pad), height: box.height)
-            if left.width > size.width * 0.2, right.width > size.width * 0.2 { return [left, right] }
+            if left.width > size.width * 0.2, right.width > size.width * 0.2 { return ([left, right], profile) }
         }
-        return [box]
+        return ([box], profile)
     }
 
     /// Where one page draws, from a small rendering; nil for a blank page.
