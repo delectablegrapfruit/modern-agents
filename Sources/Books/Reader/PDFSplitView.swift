@@ -312,7 +312,8 @@ final class SplitPDFPresenter: PDFReading {
                     luminance = Int(p[colorOffset])
                 }
                 let alpha = rep.hasAlpha ? Int(p[alphaFirst ? 0 : spp - 1]) : 255
-                guard luminance < 225 && alpha > 40 else { continue }
+                // Darker than the grey speckle of a scan, so noise between lines does not join them.
+                guard luminance < 160 && alpha > 40 else { continue }
                 count += 1
                 if x < minX { minX = x }
                 if x > maxX { maxX = x }
@@ -463,11 +464,15 @@ final class SplitPDFPresenter: PDFReading {
         return !p.lines[page].contains { $0.minY < block.top && $0.maxY > block.bottom }
     }
 
-    /// A page that is a picture and nothing else (a cover, a plate): no text, ink over much of the page.
+    /// A page that is a picture and nothing else (a cover, a plate): ink over much of the page, and either no text
+    /// or ink that is one solid block (a cover's title, read by OCR, does not make it text).
     private func isPicturePage(_ page: Int) -> Bool {
-        guard let p = preparation, page < p.lines.count, p.lines[page].isEmpty, page < p.ink.count, let box = p.ink[page]?.box else { return false }
+        guard let p = preparation, page < p.lines.count, page < p.ink.count, let box = p.ink[page]?.box else { return false }
         let size = pageSize(page)
-        return box.width * box.height >= size.width * size.height * 0.35
+        guard box.width * box.height >= size.width * size.height * 0.35 else { return false }
+        if p.lines[page].isEmpty { return true }
+        let runs = blocks(page: page, strip: 0)
+        return runs.count <= 2 && (runs.map(\.height).max() ?? 0) >= size.height * 0.5
     }
 
     // MARK: - Geometry
@@ -586,12 +591,22 @@ final class SplitPDFPresenter: PDFReading {
                     if let o = open {
                         // Extend the open piece down to this block, keeping the page's spacing.
                         let extended = (o.rect.maxY - block.bottom) * scale
-                        if extended - o.rect.height * scale <= room {
-                            let added = extended - o.rect.height * scale
+                        let added = extended - o.rect.height * scale
+                        if added <= room {
                             open = (page, strip, CGRect(x: seg.minX, y: block.bottom, width: seg.width, height: o.rect.maxY - block.bottom), o.offset)
                             current.height += added
                             pending.removeFirst()
                             continue
+                        }
+                        // Part of the block may still fit, if a blank gap between its lines allows.
+                        let usable = room - (o.rect.minY - block.top) * scale
+                        if !isPicture(block, page: page), usable > typical * scale * 2 {
+                            let split = cut(block: block, page: page, strip: strip, maxHeight: usable / scale)
+                            if split.blank, split.y < block.top - typical * 0.9, split.y > block.bottom + typical * 0.9 {
+                                pending[0] = Block(top: split.y, bottom: block.bottom)
+                                pending.insert(Block(top: block.top, bottom: split.y), at: 0)
+                                continue
+                            }
                         }
                         closeOpen()
                         push()
@@ -608,7 +623,17 @@ final class SplitPDFPresenter: PDFReading {
                         continue
                     }
                     if !current.pieces.isEmpty {
-                        // Room for it on a fresh screen.
+                        // Fill the room with the lines of the block that fit, if a blank gap between its lines allows;
+                        // otherwise the whole block moves to a fresh screen.
+                        let usable = room - lead
+                        if !isPicture(block, page: page), usable > typical * scale * 2 {
+                            let split = cut(block: block, page: page, strip: strip, maxHeight: usable / scale)
+                            if split.blank, split.y < block.top - typical * 0.9, split.y > block.bottom + typical * 0.9 {
+                                pending[0] = Block(top: split.y, bottom: block.bottom)
+                                pending.insert(Block(top: block.top, bottom: split.y), at: 0)
+                                continue
+                            }
+                        }
                         push()
                         continue
                     }
@@ -622,7 +647,7 @@ final class SplitPDFPresenter: PDFReading {
                         continue
                     }
                     // Text taller than a screen (its lines' gaps too fine for the rendering): cut between lines.
-                    let cutAt = cut(block: block, page: page, strip: strip, maxHeight: tileSize.height / scale)
+                    let cutAt = cut(block: block, page: page, strip: strip, maxHeight: tileSize.height / scale).y
                     pending[0] = Block(top: cutAt, bottom: block.bottom)
                     pending.insert(Block(top: block.top, bottom: cutAt), at: 0)
                 }
@@ -656,10 +681,10 @@ final class SplitPDFPresenter: PDFReading {
         if unit >= units { unit = max(0, units - 1) }
     }
 
-    /// Where to cut a block of text that is taller than a screen: the lowest midpoint between two of its lines that
-    /// keeps the top part within `maxHeight`, checked against the rendering; else the row with the least ink there.
-    private func cut(block: Block, page: Int, strip: Int, maxHeight: CGFloat) -> CGFloat {
-        guard let p = preparation else { return block.top - maxHeight }
+    /// Where to cut a block of text so that its top part is at most `maxHeight` tall: the lowest midpoint between two
+    /// of its lines that the rendering confirms is blank; else the row with the least ink there, which is not blank.
+    private func cut(block: Block, page: Int, strip: Int, maxHeight: CGFloat) -> (y: CGFloat, blank: Bool) {
+        guard let p = preparation else { return (block.top - maxHeight, false) }
         let typical = p.typicalLineHeight
         let nominal = block.top - maxHeight
         let highest = block.top - typical * 0.9
@@ -672,15 +697,16 @@ final class SplitPDFPresenter: PDFReading {
             if m >= nominal && m <= highest { midpoints.append(m) }
         }
         midpoints.sort()
-        guard let r = rows(page: page, strip: strip) else { return midpoints.first ?? max(nominal, block.bottom + 1) }
+        guard let r = rows(page: page, strip: strip) else { return midpoints.first.map { ($0, true) } ?? (max(nominal, block.bottom + 1), false) }
         let height = pageSize(page).height
         func rowIndex(_ y: CGFloat) -> Int { min(r.rows.count - 1, max(0, Int(((height - y) / r.rowHeight).rounded(.down)))) }
-        for m in midpoints where r.rows[rowIndex(m)] <= r.width / 4 { return m }
+        for m in midpoints where r.rows[rowIndex(m)] <= r.width / 10 { return (m, true) }
         let lowRow = rowIndex(max(nominal, block.bottom)), highRow = rowIndex(highest)
-        guard highRow <= lowRow else { return max(nominal, block.bottom + 1) }
+        guard highRow <= lowRow else { return (max(nominal, block.bottom + 1), false) }
         var best = lowRow
         for row in highRow...lowRow where r.rows[row] < r.rows[best] { best = row }
-        return min(block.top - 1, max(block.bottom + 1, height - (CGFloat(best) + 0.5) * r.rowHeight))
+        let y = min(block.top - 1, max(block.bottom + 1, height - (CGFloat(best) + 0.5) * r.rowHeight))
+        return (y, r.rows[best] <= r.width / 10)
     }
 
     /// The screen that shows a place on a page (its first, when the place is not on any).
