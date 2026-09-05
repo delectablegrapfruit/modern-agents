@@ -68,7 +68,7 @@ The command line ships inside the app at `Books.app/Contents/MacOS/books-cli`.
 | `Sources/BooksCLI` | `books-cli`. |
 | `Tests/BooksCoreTests` | Core tests; the Kindle tests run against libmobi's sample files when present (`BOOKS_FIXTURES` or `Tests/Fixtures/mobi`). |
 | `Packaging/Info.plist`, `scripts/` | Bundle assembly (`make-app.sh`), icon rendering, ad-hoc signing. |
-| `.github/workflows/ci.yml` | macOS 26 runner: build, tests, bundle, launch self-test (imports a generated book, turns pages with real scroll-wheel notches through WebKit, searches, scrubs, saves the position), zip + dmg, commit to `dist/`. Linux runner: core build and tests, Kindle fixtures converted with the command line. |
+| `.github/workflows/ci.yml` | macOS 26 runner: build, tests, bundle, launch self-test of the packaged zip, unzipped elsewhere with the build directory hidden (imports a generated book, turns pages with real scroll-wheel notches through WebKit, searches, scrubs, saves the position), zip + dmg, commit to `dist/`. Linux runner: core build and tests, Kindle fixtures converted with the command line. |
 
 ## How reading works
 

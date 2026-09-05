@@ -72,7 +72,7 @@ struct Timeline: View {
         }
         .frame(height: 28)
         .accessibilityLabel("Book position")
-        .accessibilityValue("\(Int(session.position.percent)) percent")
+        .accessibilityValue("\(whole(session.position.percent)) percent")
     }
 
     private func label(at fraction: Double, span: Double) -> String {
@@ -80,10 +80,10 @@ struct Timeline: View {
         let chapter = session.layout.chapters.last { $0.pos <= pos + 0.5 }?.label ?? ""
         let where_: String
         if session.layout.mode == .paginated {
-            let page = Int(pos.rounded()) + 1
-            where_ = "Page \(min(page, Int(session.layout.total))) of \(Int(session.layout.total))"
+            let page = whole(pos.rounded()) + 1
+            where_ = "Page \(min(page, whole(session.layout.total))) of \(whole(session.layout.total))"
         } else {
-            where_ = "\(Int((fraction * 100).rounded()))%"
+            where_ = "\(whole((fraction * 100).rounded()))%"
         }
         return chapter.isEmpty ? where_ : where_ + " · " + chapter
     }

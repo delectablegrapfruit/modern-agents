@@ -70,6 +70,7 @@ final class ReaderSession {
     let webView: ReaderWebView
     private let schemeHandler = BooksSchemeHandler()
     private let messages = ReaderMessageHandler()
+    private let navigation = ReaderNavigationDelegate()
 
     private(set) var isPageReady = false
     private(set) var isOpen = false
@@ -121,7 +122,15 @@ final class ReaderSession {
         webView.allowsBackForwardNavigationGestures = false
         webView.allowsMagnification = false
         messages.onMessage = { [weak self] body in Task { @MainActor in self?.receive(JSON(body)) } }
-        if book.kind == .epub { webView.load(URLRequest(url: BooksSchemeHandler.pageURL)) }
+        navigation.onFailure = { [weak self] message in Task { @MainActor in self?.error = message } }
+        webView.navigationDelegate = navigation
+        if book.kind == .epub {
+            if BooksSchemeHandler.readerDirectory == nil {
+                error = "This copy of Books is missing its reader page (Contents/Resources/Reader). Reinstall the app."
+            } else {
+                webView.load(URLRequest(url: BooksSchemeHandler.pageURL))
+            }
+        }
 
         appearanceObserver = NSApp.observe(\.effectiveAppearance) { [weak self] _, _ in
             Task { @MainActor in self?.applySettings() }
@@ -291,7 +300,7 @@ final class ReaderSession {
             p.locator = m.locator("locator")
             p.atEnd = m.bool("atEnd") ?? false
             p.bookmarkID = m.string("bookmark").flatMap(UUID.init(uuidString:))
-            if let last = lastPage, layout.mode == .paginated, p.page > last { pagesTurned += Int(p.page - last) }
+            if let last = lastPage, layout.mode == .paginated, p.page > last { pagesTurned += whole(p.page - last) }
             lastPage = p.page
             position = p
             schedulePositionSave()

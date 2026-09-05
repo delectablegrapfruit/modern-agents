@@ -43,7 +43,7 @@ struct ContentsPopover: View {
                             .fontWeight(item.label == session.position.chapter ? .semibold : .regular)
                         Spacer()
                         if session.layout.mode == .paginated, item.pos > 0 {
-                            Text("\(Int(item.pos) + 1)").font(.caption).foregroundStyle(.tertiary).monospacedDigit()
+                            Text("\(whole(item.pos) + 1)").font(.caption).foregroundStyle(.tertiary).monospacedDigit()
                         }
                     }
                     .padding(.leading, CGFloat(min(item.level, 3)) * 16)

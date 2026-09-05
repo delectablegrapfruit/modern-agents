@@ -12,7 +12,35 @@ final class BooksSchemeHandler: NSObject, WKURLSchemeHandler {
     /// The EPUB of the book being read.
     var bookURL: URL?
 
-    private let readerDirectory: URL? = Bundle.module.resourceURL?.appendingPathComponent("Reader", isDirectory: true)
+    /// The folder with reader.html and its scripts. In the app bundle it is Contents/Resources/Reader; when the
+    /// executable runs from the build directory (`swift run`) it is inside the package's resource bundle next to it.
+    /// Looked up by hand rather than through `Bundle.module`, whose generated accessor traps when the bundle is not
+    /// exactly where the build machine had it.
+    static let readerDirectory: URL? = {
+        let fm = FileManager.default
+        var candidates: [URL] = []
+        if let resources = Bundle.main.resourceURL {
+            candidates.append(resources.appendingPathComponent("Reader", isDirectory: true))
+            candidates.append(resources.appendingPathComponent("Books_Books.bundle", isDirectory: true))
+        }
+        if let executable = Bundle.main.executableURL?.deletingLastPathComponent() {
+            candidates.append(executable.appendingPathComponent("Books_Books.bundle", isDirectory: true))
+        }
+        candidates.append(Bundle.main.bundleURL.appendingPathComponent("Books_Books.bundle", isDirectory: true))
+        func hasPage(_ url: URL) -> Bool { fm.fileExists(atPath: url.appendingPathComponent("reader.html").path) }
+        for candidate in candidates {
+            if hasPage(candidate) { return candidate }
+            if let bundle = Bundle(url: candidate), let inside = bundle.resourceURL?.appendingPathComponent("Reader", isDirectory: true), hasPage(inside) {
+                return inside
+            }
+            let flat = candidate.appendingPathComponent("Reader", isDirectory: true)
+            if hasPage(flat) { return flat }
+        }
+        NSLog("Books: reader.html was not found; looked in %@", candidates.map(\.path).joined(separator: ", "))
+        return nil
+    }()
+
+    private var readerDirectory: URL? { BooksSchemeHandler.readerDirectory }
 
     func webView(_ webView: WKWebView, start task: WKURLSchemeTask) {
         guard let url = task.request.url else { return }
@@ -74,11 +102,12 @@ struct JSON {
     func string(_ key: String) -> String? { dict[key] as? String }
     func int(_ key: String) -> Int? {
         if let i = dict[key] as? Int { return i }
-        if let d = dict[key] as? Double, d.isFinite { return Int(d) }
+        if let d = dict[key] as? Double, d.isFinite, abs(d) < 1e15 { return Int(d) }
         return nil
     }
+    /// JavaScript can send NaN and infinities; they are treated as absent so no display math trips over them.
     func double(_ key: String) -> Double? {
-        if let d = dict[key] as? Double { return d }
+        if let d = dict[key] as? Double { return d.isFinite ? d : nil }
         if let i = dict[key] as? Int { return Double(i) }
         return nil
     }
@@ -106,5 +135,23 @@ struct JSON {
             return s
         }
         return "null"
+    }
+}
+
+/// Reports a reader page that failed to load or a web content process that died, so the session can show it
+/// instead of leaving a blank reader.
+final class ReaderNavigationDelegate: NSObject, WKNavigationDelegate {
+    var onFailure: ((String) -> Void)?
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        onFailure?("The reader page could not be loaded: " + error.localizedDescription)
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        onFailure?("The reader page failed: " + error.localizedDescription)
+    }
+
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        onFailure?("The reader stopped unexpectedly. Close the book and open it again.")
     }
 }

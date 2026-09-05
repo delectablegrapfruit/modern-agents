@@ -37,14 +37,7 @@ jobs:
           done
           ls -la Tests/Fixtures/mobi
       - run: swift test
-      - run: scripts/make-app.sh release
-
-      - name: Launch test — start the app, import a generated book, read it with real wheel notches
-        timeout-minutes: 5
-        run: |
-          (sleep 30; screencapture -x build/launch-test.png || true) &
-          BOOKS_SELFTEST=1 build/Books.app/Contents/MacOS/Books
-          wait
+      - run: scripts/make-app.sh release && test -f build/Books.app/Contents/Resources/AppIcon.icns && test -f build/Books.app/Contents/Resources/Reader/reader.html
 
       - name: Package (zip + dmg + checksums)
         run: |
@@ -54,6 +47,17 @@ jobs:
           hdiutil create -volname Books -srcfolder build/Books.app -ov -format UDZO dist/Books.dmg
           (cd dist && shasum -a 256 Books.app.zip Books.dmg | tee SHA256SUMS.txt)
           ls -la dist
+
+      - name: Launch test — the packaged app, unzipped elsewhere with the build directory hidden, imports a generated book and reads it with real wheel notches
+        timeout-minutes: 5
+        run: |
+          mv .build "$RUNNER_TEMP/hidden-build"
+          rm -rf "$RUNNER_TEMP/launch" && mkdir -p "$RUNNER_TEMP/launch"
+          ditto -x -k dist/Books.app.zip "$RUNNER_TEMP/launch"
+          (sleep 30; screencapture -x build/launch-test.png || true) &
+          BOOKS_SELFTEST=1 "$RUNNER_TEMP/launch/Books.app/Contents/MacOS/Books"
+          wait
+          mv "$RUNNER_TEMP/hidden-build" .build
 
       - name: Upload packages (and test screenshots, also when a test failed)
         if: always()

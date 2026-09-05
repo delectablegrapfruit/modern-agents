@@ -15,9 +15,9 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BINDIR/Books" "$APP/Contents/MacOS/Books"
 cp "$BINDIR/books-cli" "$APP/Contents/MacOS/books-cli"
-# The typesetting page and its scripts live in the package's resource bundle, which Bundle.module finds next
-# to the executable's resources.
-cp -R "$BINDIR/Books_Books.bundle" "$APP/Contents/Resources/Books_Books.bundle"
+# The typesetting page and its scripts: a plain folder in Resources, where BooksSchemeHandler looks first.
+cp -R Sources/Books/Resources/Reader "$APP/Contents/Resources/Reader"
+test -f "$APP/Contents/Resources/Reader/reader.html"
 cp Packaging/Info.plist "$APP/Contents/Info.plist"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 cmp -s "$BINDIR/Books" "$APP/Contents/MacOS/Books" || { echo "app binary was overwritten in the bundle" >&2; exit 1; }

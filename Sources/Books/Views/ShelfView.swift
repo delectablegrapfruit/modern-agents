@@ -131,7 +131,7 @@ struct ShelfView: View {
             TableColumn("Author", value: \.author)
             TableColumn("Kind", value: \.kind.rawValue) { Text($0.kind.label) }.width(60)
             TableColumn("Progress", value: \.progress) { book in
-                Text(book.isFinished ? "Finished" : (book.hasStarted ? "\(Int(book.progress * 100))%" : "—")).foregroundStyle(.secondary)
+                Text(book.isFinished ? "Finished" : (book.hasStarted ? "\(whole(book.progress * 100))%" : "—")).foregroundStyle(.secondary)
             }
             .width(80)
             TableColumn("Added", value: \.addedAt) { Text(Display.added($0.addedAt)).foregroundStyle(.secondary) }.width(110)
@@ -180,7 +180,7 @@ struct BookCard: View {
 
     private var statusLine: String? {
         if book.isFinished { return "Finished" }
-        if book.hasStarted { return [String(Int(book.progress * 100)) + "%", Display.timeLeft(book)].compactMap { $0 }.joined(separator: " · ") }
+        if book.hasStarted { return [String(whole(book.progress * 100)) + "%", Display.timeLeft(book)].compactMap { $0 }.joined(separator: " · ") }
         if book.kind == .pdf, let pages = book.pageCount { return Format.plural(pages, "page") }
         return nil
     }

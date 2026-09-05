@@ -153,8 +153,8 @@ struct ReaderContent: View {
     private var pageText: String {
         let p = session.position
         if session.book.kind == .pdf { return "" }
-        if session.layout.mode == .scroll { return "\(Int(p.percent.rounded()))%" }
-        let total = Int(p.total), page = Int(p.page) + 1
+        if session.layout.mode == .scroll { return "\(whole(p.percent.rounded()))%" }
+        let total = whole(p.total), page = whole(p.page) + 1
         if session.layout.columns == 2, page < total { return "Pages \(page)–\(page + 1) of \(total)" }
         return "Page \(page) of \(total)"
     }

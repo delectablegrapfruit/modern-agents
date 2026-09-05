@@ -78,7 +78,7 @@ struct ContinueItem: View {
     }
 
     private var status: String {
-        var parts: [String] = ["\(Int(book.progress * 100))%"]
+        var parts: [String] = ["\(whole(book.progress * 100))%"]
         if let left = Display.timeLeft(book) { parts.append(left) }
         return parts.joined(separator: " · ")
     }
@@ -137,7 +137,7 @@ struct GoalRing: View {
             if done {
                 Image(systemName: "checkmark").font(.title2.weight(.bold)).foregroundStyle(.green)
             } else {
-                Text("\(Int(min(1, max(0, progress)) * 100))%").font(.callout.weight(.semibold)).monospacedDigit()
+                Text("\(whole(min(1, max(0, progress)) * 100))%").font(.callout.weight(.semibold)).monospacedDigit()
             }
         }
     }
