@@ -199,17 +199,15 @@ struct AppearancePopover: View {
                     }
                     .pickerStyle(.segmented)
                 }
-                if !fit {
-                    Picker("Pages", selection: Binding(get: { model.settings.reader.spread }, set: { model.settings.reader.spread = $0; session.applySettings() })) {
-                        ForEach(Spread.allCases, id: \.self) { Text($0.label).tag($0) }
-                    }
-                    .disabled(!pdfView && model.settings.reader.layout == .scroll)
+                Picker("Pages", selection: Binding(get: { model.settings.reader.spread }, set: { model.settings.reader.spread = $0; session.applySettings() })) {
+                    ForEach(Spread.allCases, id: \.self) { Text($0.label).tag($0) }
                 }
-                if !pdfView {
+                .disabled(!pdfView && model.settings.reader.layout == .scroll)
+                if !plainZoom {
                     Picker("Page Turn", selection: Binding(get: { model.settings.reader.pageTurn }, set: { model.settings.reader.pageTurn = $0; session.applySettings() })) {
                         ForEach(PageTurn.allCases, id: \.self) { Text($0.label).tag($0) }
                     }
-                    .disabled(model.settings.reader.layout == .scroll)
+                    .disabled(!pdfView && model.settings.reader.layout == .scroll)
                 }
                 DisclosureGroup("Scroll Wheel & Trackpad") {
                     Toggle("Scroll wheel turns pages", isOn: Binding(get: { model.settings.reader.wheelTurnsPages }, set: { model.settings.reader.wheelTurnsPages = $0; session.applySettings() }))
@@ -235,7 +233,7 @@ struct AppearancePopover: View {
     private var pdfLayoutHelp: String {
         switch model.settings.reader.pdfLayout {
         case .pages: return "Whole pages, as printed."
-        case .fit: return "Pages cropped to their text, zoomed to the text size and cut into screens that turn like pages."
+        case .fit: return "Pages cropped to their text (two text columns become two strips) and cut into screens that turn like pages, one or two at a time. 100% fills a screen; One page shows larger text."
         case .text: return "The text reflowed into a book: fonts, sizes and themes apply; the layout is not kept."
         }
     }

@@ -72,7 +72,7 @@ final class ReaderSession {
     private let messages = ReaderMessageHandler()
     private let navigation = ReaderNavigationDelegate()
     /// PDFs: the PDFKit presenter, created by the PDF view when it appears.
-    @ObservationIgnored var pdf: PDFPresenter?
+    @ObservationIgnored var pdf: (any PDFReading)?
     @ObservationIgnored private var pdfSections: [PDFSection] = []
     /// PDFs shown by PDFKit (Pages, Zoom & Split); as reflowed Text they go through the page script like a book.
     let usesPDFView: Bool
@@ -280,7 +280,7 @@ final class ReaderSession {
         activity()
     }
     /// A contents entry: a document and fragment in a book, a page in a PDF.
-    func open(_ item: ReaderTOCItem) { if usesPDFView { pdf?.go(toPage: item.spine) } else { goToHref(item.href) } }
+    func open(_ item: ReaderTOCItem) { if usesPDFView { pdf?.go(toPage: item.spine, slice: 0) } else { goToHref(item.href) } }
     /// A search result: the page script scrolls to the locator; the PDF view selects the match.
     func open(_ hit: SearchHit) { if usesPDFView { pdf?.show(hit) } else { goToLocator(hit.locator) } }
 
@@ -331,7 +331,7 @@ final class ReaderSession {
     func lookUpSelection() {
         guard let sel = selection else { return }
         let host: NSView
-        if usesPDFView, let pdfView = pdf?.view { host = pdfView } else { host = webView }
+        if usesPDFView, let pdfView = pdf?.hostView { host = pdfView } else { host = webView }
         let origin = host.isFlipped ? NSPoint(x: sel.rect.minX, y: sel.rect.maxY) : NSPoint(x: sel.rect.minX, y: host.bounds.height - sel.rect.maxY)
         host.showDefinition(for: NSAttributedString(string: sel.text), at: origin)
         clearSelection()

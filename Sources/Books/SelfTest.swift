@@ -190,7 +190,7 @@ enum SelfTest {
         session.next()
         try await sleep(0.5)
         guard session.position.page >= 1 else { throw Failure("PDF next() did not turn the page") }
-        guard let pdfView = session.pdf?.view else { throw Failure("no PDF view") }
+        guard let pdfView = session.pdf?.hostView else { throw Failure("no PDF view") }
         let before = session.position.page
         try postWheel(dy: -1, dx: 0, shift: false, to: pdfView)
         try await sleep(0.5)
@@ -222,27 +222,47 @@ enum SelfTest {
         session.applySettings()
         log("PDF: next, wheel notch, scrub to the end, \(hits) matches, bookmark, paper theme, one page then two")
 
-        // Zoom & Split: pages cropped to their text and cut into screens; a larger text size makes more of them.
+        // Zoom & Split: pages cropped to their text and cut into screens shown two at a time; one at a time enlarges
+        // the text (more screens), a smaller text size reduces them; turns, search and bookmarks work as in a book.
         session.setPDFLayout(.fit)
         let fitSession = try await waitFor("the PDF in Zoom & Split", timeout: 30) {
             if let s = currentSession, s !== session, s.book.id == book.id, s.isOpen, s.usesPDFView { return s }
             return nil
         }
         try await sleep(0.8)
-        let screensAt100 = fitSession.layout.total
-        guard screensAt100 > 8 else { throw Failure("Zoom & Split made \(Int(screensAt100)) screens of 8 pages; expected more than one a page") }
-        for _ in 0..<5 { fitSession.changeFontSize(by: 10) }
+        let screensTwoUp = fitSession.layout.total
+        guard screensTwoUp > 8, fitSession.layout.columns == 2 else { throw Failure("Zoom & Split made \(Int(screensTwoUp)) screens of 8 pages in \(fitSession.layout.columns) column(s); expected two columns and more than one screen a page") }
+        var fitSettings = model.settings
+        fitSettings.reader.spread = .one
+        model.settings = fitSettings
+        fitSession.applySettings()
         try await sleep(0.6)
-        guard fitSession.layout.total > screensAt100 else { throw Failure("a larger text size did not add screens (\(screensAt100) → \(fitSession.layout.total))") }
+        let screensOneUp = fitSession.layout.total
+        guard screensOneUp > screensTwoUp, fitSession.layout.columns == 1 else { throw Failure("one column did not enlarge the text (\(screensTwoUp) → \(screensOneUp) screens)") }
+        for _ in 0..<5 { fitSession.changeFontSize(by: -10) }
+        try await sleep(0.6)
+        guard fitSession.layout.total < screensOneUp else { throw Failure("a smaller text size did not reduce the screens (\(screensOneUp) → \(fitSession.layout.total))") }
+        fitSettings = model.settings
+        fitSettings.reader.spread = .two
+        fitSettings.reader.pdfZoom = 100
+        model.settings = fitSettings
+        fitSession.applySettings()
+        try await sleep(0.6)
         let unitBefore = fitSession.position.page
         fitSession.next()
-        try await sleep(0.4)
+        try await sleep(0.5)
         guard fitSession.position.page > unitBefore else { throw Failure("Zoom & Split next() did not move (\(unitBefore) → \(fitSession.position.page))") }
-        let fitView = try XCTUnwrapView(fitSession.pdf?.view)
+        let fitView = try XCTUnwrapView(fitSession.pdf?.hostView)
         try postWheel(dy: -1, dx: 0, shift: false, to: fitView)
-        try await sleep(0.4)
+        try await sleep(0.5)
         guard fitSession.position.page > unitBefore + 1 else { throw Failure("a wheel notch did not turn a screen") }
-        log("Zoom & Split: \(Int(screensAt100)) screens at 100%, \(Int(fitSession.layout.total)) at 150%; footer “\(fitSession.pdfPageLabel ?? "")”")
+        fitSession.search("lazy dog")
+        let fitHits = try await waitFor("Zoom & Split search results", timeout: 10) { fitSession.searchDone && !fitSession.searchResults.isEmpty ? fitSession.searchResults.count : nil }
+        guard fitHits == 8 else { throw Failure("Zoom & Split search found \(fitHits) matches, expected 8") }
+        fitSession.toggleBookmark()
+        try await sleep(0.3)
+        guard fitSession.isBookmarked else { throw Failure("Zoom & Split bookmark was not added") }
+        log("Zoom & Split: \(Int(screensTwoUp)) screens two-up, \(Int(screensOneUp)) one-up; turns, \(fitHits) matches, bookmark; footer “\(fitSession.pdfPageLabel ?? "")”")
 
         // Text: the PDF reflowed into a book, read by the page script like any other.
         fitSession.setPDFLayout(.text)
