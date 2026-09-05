@@ -32,6 +32,8 @@ struct SplitPreparation: Codable, Sendable {
     static let currentVersion = 3
 
     var version = SplitPreparation.currentVersion
+    /// The displayed width of the first page, which the column profile's bins divide.
+    let pageWidth: CGFloat
     let strips: [CGRect]
     /// Ink in each of 200 vertical bins across the page width, summed over the sampled pages.
     let columnProfile: [Int]
@@ -213,11 +215,12 @@ final class SplitPDFPresenter: PDFReading {
 
     /// Reads the document on its own thread and gathers what the layout needs.
     nonisolated static func analyse(url: URL) -> SplitPreparation? {
-        guard let document = PDFDocument(url: url), document.pageCount > 0 else { return nil }
+        guard let document = PDFDocument(url: url), document.pageCount > 0, let first = document.page(at: 0) else { return nil }
         let count = document.pageCount
+        let pageSize = PDFPresenter.displaySize(of: first)
         let found = PDFPresenter.contentBoxes(of: document)
         var strips = found.boxes
-        if strips.isEmpty, let first = document.page(at: 0) { strips = [CGRect(origin: .zero, size: PDFPresenter.displaySize(of: first))] }
+        if strips.isEmpty { strips = [CGRect(origin: .zero, size: pageSize)] }
         // Every page is rendered small to find its blank bands; the longer the book, the smaller the rendering.
         let scanWidth = count <= 120 ? 480 : count <= 400 ? 320 : count <= 900 ? 220 : 0
         var lines: [[SplitPreparation.Line]] = []
@@ -236,7 +239,7 @@ final class SplitPDFPresenter: PDFReading {
         let heights = lines.flatMap { $0.map(\.height) }.filter { $0 > 2 && $0 < 80 }.sorted()
         let typical = heights.isEmpty ? 12 : heights[heights.count / 2]
         let (headers, footers) = runningLines(lines, strips: strips, typical: typical)
-        return SplitPreparation(strips: strips, columnProfile: found.profile, lines: lines, ink: ink, typicalLineHeight: typical, headers: headers, footers: footers)
+        return SplitPreparation(pageWidth: pageSize.width, strips: strips, columnProfile: found.profile, lines: lines, ink: ink, typicalLineHeight: typical, headers: headers, footers: footers)
     }
 
     /// The page's text lines in display space, top to bottom.
@@ -400,8 +403,7 @@ final class SplitPDFPresenter: PDFReading {
             }
             var cuts: [CGFloat] = [strip.minX]
             let bins = p.columnProfile.count
-            let pageWidth = p.strips.map(\.maxX).max() ?? strip.maxX
-            let binWidth = bins > 0 ? max(pageWidth, strip.maxX) / CGFloat(bins) : 0
+            let binWidth = bins > 0 && p.pageWidth > 0 ? p.pageWidth / CGFloat(bins) : 0
             for k in 1..<parts {
                 let target = strip.minX + strip.width * CGFloat(k) / CGFloat(parts)
                 var cut = target
