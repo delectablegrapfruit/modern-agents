@@ -118,9 +118,14 @@
   /* In the 'look' state (sideways input with no video under the pointer)
    * re-run the hit test at most this often. */
   const LOOK_INTERVAL_MS = 40;
-  /* Press and hold on a playing video to play it at HOLD_RATE until release
-   * (YouTube's own feature; skipped on YouTube, which has it natively). A
-   * press that moves more than HOLD_SLOP_PX before the delay is a drag. */
+  /* Press and hold on a playing video, or hold the space bar while the
+   * pointer is over one (or the focus is inside its player), to play it at
+   * HOLD_RATE until release. YouTube's own feature, replaced on YouTube
+   * itself: there the press and the key are stopped before the page's
+   * handlers see them, so only one badge and one rate change happen. A
+   * press that moves more than HOLD_SLOP_PX before the delay is a drag. A
+   * space bar released before the delay toggles play/pause instead, as the
+   * player would have. */
   const HOLD_MS = 500;
   const HOLD_RATE = 2; // every hold starts here
   const HOLD_RATE_MIN = 0.25;
@@ -136,7 +141,10 @@
   const HOLD_STEP_GAP_MS = 120;
   const HOLD_STEP_RESET_MS = 200;
   const HOLD_SLOP_PX = 8;
-  const HOLD_EXCLUDED = ['youtube.com', 'youtube-nocookie.com', 'youtu.be'];
+  const HOLD_KEY = ' ';
+  /* Sites with a native hold-to-speed-up: their press and space handlers are
+   * suppressed so that this one replaces it rather than doubling it. */
+  const HOLD_NATIVE = ['youtube.com', 'youtube-nocookie.com', 'youtu.be'];
   const HUD_LINGER_MS = 600;
   const LINE_PX = 16; // deltaMode === DOM_DELTA_LINE
   const PAGE_PX = 800; // deltaMode === DOM_DELTA_PAGE
@@ -149,6 +157,8 @@
   let undo = null; // where the video was before the last scrub, see performUndo()
   let hold = null; // press-and-hold in progress, see onHoldStart()
   let suppressClick = 0; // timer: the one click a hold's release generates is swallowed
+  let stopMouseUp = 0; // timer: the mouseup that follows a stopped press is stopped too
+  let holdKeyDown = false; // the space bar is down and taken over, until its keyup
   let armed = false; // the wheel listener is blocking (non-passive), see setArmed()
   let blocking = false; // the event being handled came through the blocking registration
   let lastX = NaN; // last known pointer position
@@ -519,6 +529,8 @@
 
   function onPointerLeftWindow(e) {
     if (e.relatedTarget !== null) return;
+    lastX = NaN;
+    lastY = NaN;
     if (session) endSession(session, true);
     else setArmed(false);
   }
@@ -927,6 +939,7 @@
     if (!session || !e.isTrusted) return;
     if (e.type === 'keydown') {
       if (MODIFIER_KEYS.has(e.key)) return;
+      if (e.key === HOLD_KEY && hold) return; // the space bar held for speed, see onHoldKey()
       const t = e.composedPath ? e.composedPath()[0] : e.target;
       if (isEditable(t)) return; // typing in a chat or comment box is not player control
     }
@@ -946,6 +959,7 @@
   /* The user switched tab or window: put back whatever we changed. */
   function onPageAway() {
     if (document.visibilityState === 'hidden' || !document.hasFocus()) {
+      holdKeyDown = false; // its keyup goes elsewhere now
       cancelHold();
       if (session) endSession(session, true);
     }
@@ -1258,11 +1272,40 @@
 
   /* ---- Press and hold to speed up --------------------------------------- */
 
-  let holdAllowed = null; // computed once per frame
+  let nativeHold = null; // computed once per frame
 
-  function holdSupported() {
-    if (holdAllowed === null) holdAllowed = !frameHosts().some((h) => HOLD_EXCLUDED.some((p) => hostMatches(h, p)));
-    return holdAllowed;
+  /* On a site with its own hold-to-speed-up, the events that would start it
+   * are stopped from reaching the page. */
+  function replacesNativeHold() {
+    if (nativeHold === null) nativeHold = frameHosts().some((h) => HOLD_NATIVE.some((p) => hostMatches(h, p)));
+    return nativeHold;
+  }
+
+  /* An element in the event path that is for clicking or typing, not
+   * holding. Stops at the document. */
+  function pathHasInteractive(e) {
+    const path = e.composedPath ? e.composedPath() : [];
+    for (const el of path) {
+      if (el === document || el === window) break;
+      if (el.nodeType === 1 && !isVideo(el) && isInteractive(el)) return true;
+    }
+    return false;
+  }
+
+  function startHold(video, extra) {
+    hold = Object.assign(
+      {
+        video,
+        active: false,
+        rate: 1, // the site's rate, restored on release
+        current: HOLD_RATE, // the hold's rate; sideways scrolling steps it
+        acc: 0, // sideways movement towards the next step
+        lastMoveAt: -Infinity,
+        steppedAt: -Infinity,
+        timer: setTimeout(beginHold, HOLD_MS),
+      },
+      extra
+    );
   }
 
   /* Buttons, links, sliders and fields inside the player are for clicking,
@@ -1280,29 +1323,128 @@
   }
 
   function onHoldStart(e) {
-    if (!active() || !e.isTrusted || e.button !== 0 || !holdSupported()) return;
+    if (!active() || !e.isTrusted || e.button !== 0) return;
+    if (hold && hold.key) return; // the space bar is already holding
     cancelHold();
-    const path = e.composedPath ? e.composedPath() : [];
-    for (const el of path) {
-      if (el === document || el === window) break;
-      if (el.nodeType === 1 && !isVideo(el) && isInteractive(el)) return;
-    }
+    if (pathHasInteractive(e)) return;
     const found = locateVideo(e.clientX, e.clientY);
     const video = found.ready || found.any;
     if (!video) return;
-    hold = {
-      video,
-      x: e.clientX,
-      y: e.clientY,
-      pointerId: e.pointerId,
-      active: false,
-      rate: 1, // the site's rate, restored on release
-      current: HOLD_RATE, // the hold's rate; sideways scrolling steps it
-      acc: 0, // sideways movement towards the next step
-      lastMoveAt: -Infinity,
-      steppedAt: -Infinity,
-      timer: setTimeout(beginHold, HOLD_MS),
-    };
+    startHold(video, { x: e.clientX, y: e.clientY, pointerId: e.pointerId });
+    if (replacesNativeHold()) {
+      // The site's own hold starts from this press: keep it from seeing it.
+      // The click still fires on release (a short press toggles playback as
+      // before), and mouseup/pointerup are stopped too, see onHoldEnd().
+      e.stopImmediatePropagation();
+      hold.stopMouse = true;
+    }
+  }
+
+  /* On a site whose own hold starts from `mousedown`, that event follows
+   * the pointerdown that started ours: stop it too. */
+  function onMouseDownCapture(e) {
+    if (hold && hold.stopMouse && e.isTrusted && e.button === 0) e.stopImmediatePropagation();
+  }
+
+  function onMouseUpCapture(e) {
+    if (!e.isTrusted || e.button !== 0) return;
+    if ((hold && hold.stopMouse) || stopMouseUp) {
+      clearTimeout(stopMouseUp);
+      stopMouseUp = 0;
+      e.stopImmediatePropagation();
+    }
+  }
+
+  /* The video a key press is aimed at: the one under the pointer, else the
+   * one inside the focused element (a player that took focus when clicked),
+   * else, on a site whose own space bar handling is being replaced, the
+   * largest playing one in this frame. */
+  function keyTargetVideo(e) {
+    if (Number.isFinite(lastX)) {
+      const found = locateVideo(lastX, lastY);
+      if (found.ready || found.any) return found.ready || found.any;
+    }
+    const t = e.composedPath ? e.composedPath()[0] : e.target;
+    if (t && t.nodeType === 1 && t !== document.body && t !== document.documentElement) {
+      if (isVideo(t)) return t;
+      try {
+        const inside = t.querySelector('video');
+        if (inside) return inside;
+      } catch {
+        /* ignore */
+      }
+    }
+    if (!replacesNativeHold()) return null;
+    // The site's own space bar aims at its main player from anywhere on the
+    // page. That is the playing video filling a good part of the viewport;
+    // an inline preview does not count.
+    let best = null;
+    let bestArea = 0;
+    const viewport = window.innerWidth * window.innerHeight;
+    for (const v of document.querySelectorAll('video')) {
+      if (v.paused || !isVisible(v)) continue;
+      const r = v.getBoundingClientRect();
+      const area = r.width * r.height;
+      if (area > bestArea && area >= viewport * 0.2) {
+        best = v;
+        bestArea = area;
+      }
+    }
+    return best;
+  }
+
+  /* The space bar: hold it to speed up, tap it to toggle playback. Taken
+   * over on the first keydown (the page's own action, a scroll or a toggle,
+   * happens then, so it cannot be deferred), only when a video is under the
+   * pointer or inside the focused element, and never while typing or on a
+   * button. */
+  function onHoldKey(e) {
+    if (!active() || !e.isTrusted || e.key !== HOLD_KEY) return;
+    if (holdKeyDown) {
+      // Auto-repeat of a key that was taken over.
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      return;
+    }
+    if (e.repeat || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (hold || session) return; // a press is in progress, or a scrub: leave the key to the page
+    if (pathHasInteractive(e)) return;
+    const video = keyTargetVideo(e);
+    if (!video) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    holdKeyDown = true;
+    if (video.paused || video.ended) {
+      // Nothing to speed up: play, as a tap would.
+      const p = video.play();
+      if (p && p.catch) p.catch(() => {});
+      return;
+    }
+    startHold(video, { key: true });
+  }
+
+  function onHoldKeyUp(e) {
+    if (!holdKeyDown || e.key !== HOLD_KEY) return;
+    holdKeyDown = false;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    const h = hold;
+    if (!h || !h.key) return; // the press only started playback
+    const tap = !h.active;
+    cancelHold();
+    if (tap) {
+      // Released before the delay: the tap the player would have handled.
+      try {
+        if (h.video.paused) {
+          const p = h.video.play();
+          if (p && p.catch) p.catch(() => {});
+        } else {
+          h.video.pause();
+        }
+      } catch {
+        /* ignore */
+      }
+    }
   }
 
   function beginHold() {
@@ -1345,12 +1487,13 @@
   }
 
   function onHoldMove(e) {
-    if (!hold || hold.active || e.pointerId !== hold.pointerId) return;
+    if (!hold || hold.key || hold.active || e.pointerId !== hold.pointerId) return;
     if (Math.hypot(e.clientX - hold.x, e.clientY - hold.y) > HOLD_SLOP_PX) cancelHold();
   }
 
   function onHoldEnd(e) {
-    if (!hold || (e && e.pointerId !== undefined && e.pointerId !== hold.pointerId)) return;
+    if (!hold || hold.key || (e && e.pointerId !== undefined && e.pointerId !== hold.pointerId)) return;
+    if (hold.stopMouse && e && e.type === 'pointerup') e.stopImmediatePropagation();
     if (hold.active) {
       // The press was a hold, not a click: swallow the click this release
       // generates (it follows within the same input sequence), and only that.
@@ -1365,6 +1508,12 @@
     if (!h) return;
     hold = null;
     clearTimeout(h.timer);
+    if (h.stopMouse) {
+      // The mouseup that follows this release must be stopped too, so the
+      // site does not see a release it never saw the press for.
+      clearTimeout(stopMouseUp);
+      stopMouseUp = setTimeout(() => (stopMouseUp = 0), 150);
+    }
     if (h.active) {
       try {
         if (h.video.playbackRate === h.current) h.video.playbackRate = h.rate;
@@ -1372,6 +1521,9 @@
         /* ignore */
       }
       speedBadge.hide();
+      // beginHold() armed the wheel listener; keep it so only if a video is
+      // under the pointer.
+      if (!session) setArmed(Number.isFinite(lastX) && !!findVideoAt(lastX, lastY, true));
     }
   }
 
@@ -1825,6 +1977,10 @@
   window.addEventListener('pointermove', onHoldMove, { capture: true, passive: true });
   window.addEventListener('pointerup', onHoldEnd, { capture: true, passive: true });
   window.addEventListener('pointercancel', onHoldEnd, { capture: true, passive: true });
+  window.addEventListener('mousedown', onMouseDownCapture, { capture: true, passive: true });
+  window.addEventListener('mouseup', onMouseUpCapture, { capture: true, passive: true });
+  window.addEventListener('keydown', onHoldKey, { capture: true });
+  window.addEventListener('keyup', onHoldKeyUp, { capture: true });
   window.addEventListener('click', onClickCapture, { capture: true });
   window.addEventListener('blur', onPageAway, { capture: true, passive: true });
   document.addEventListener('visibilitychange', onPageAway, { capture: true, passive: true });

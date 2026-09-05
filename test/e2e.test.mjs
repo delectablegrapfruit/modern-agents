@@ -701,6 +701,146 @@ test('press and hold does nothing on a paused video or when the press moves (a d
 
 /* ---- Trackball mode ------------------------------------------------------ */
 
+test('holding the space bar over a playing video speeds it up; a tap toggles playback; typing and empty pages are left alone', async () => {
+  await page.evaluate(() => document.querySelector('#plain').play());
+  await page.waitForFunction(() => !document.querySelector('#plain').paused);
+  const p = await centerOf(page, '#plain');
+  const rate = () => page.evaluate(() => document.querySelector('#plain').playbackRate);
+  const badge = () =>
+    page.evaluate(() => {
+      const el = document.querySelector('scroll-to-scrub-speed');
+      return el && el.matches(':popover-open') ? Number(el.dataset.rate) : null;
+    });
+  await page.mouse.move(p.x, p.y);
+  await page.keyboard.down('Space');
+  await page.waitForTimeout(200);
+  assert.equal(await rate(), 1, 'not yet');
+  await page.waitForTimeout(500);
+  assert.equal(await rate(), 2, 'held: 2x');
+  assert.equal(await badge(), 2, 'the speed badge shows');
+  await wheelBurst(page, p.x, p.y, 20, 0, 12, 8); // sideways scrolling steps the speed, as with a press
+  await page.waitForTimeout(60);
+  const r = await rate();
+  assert.ok(r >= 2.5 && r <= 3.25, `a flick right while holding the key: several steps up: ${r}`);
+  assert.equal(await badge(), r);
+  await page.keyboard.up('Space');
+  await page.waitForTimeout(50);
+  assert.equal(await rate(), 1, 'released: back to normal');
+  assert.equal(await badge(), null, 'badge gone');
+  assert.equal(await isPaused('#plain'), false, 'a hold does not toggle playback');
+
+  // A tap (released before the delay) toggles playback, as the player would.
+  await page.keyboard.down('Space');
+  await page.waitForTimeout(80);
+  await page.keyboard.up('Space');
+  await page.waitForTimeout(50);
+  assert.equal(await isPaused('#plain'), true, 'tap: paused');
+  assert.equal(await rate(), 1);
+  await page.keyboard.press('Space');
+  await page.waitForFunction(() => !document.querySelector('#plain').paused);
+  assert.equal(await isPaused('#plain'), false, 'tap again: playing');
+
+  // Holding on a paused video just plays it.
+  await page.evaluate(() => document.querySelector('#plain').pause());
+  await page.keyboard.down('Space');
+  await page.waitForTimeout(700);
+  assert.equal(await isPaused('#plain'), false, 'a hold on a paused video plays it');
+  assert.equal(await rate(), 1, 'at normal speed');
+  await page.keyboard.up('Space');
+  await page.waitForTimeout(50);
+  assert.equal(await isPaused('#plain'), false, 'and the release does not pause it again');
+
+  // Typing a space into a field while hovering the video is typing.
+  await page.focus('#field');
+  await page.keyboard.press('Space');
+  await page.waitForTimeout(50);
+  assert.equal(await page.evaluate(() => document.querySelector('#field').value), ' ', 'the field got the space');
+  assert.equal(await rate(), 1);
+  assert.equal(await isPaused('#plain'), false);
+  await page.evaluate(() => document.querySelector('#field').blur());
+
+  // Nothing under the pointer and nothing focused: the space bar scrolls the page.
+  const t = await centerOf(page, '#text');
+  await page.mouse.move(t.x, t.y);
+  const s0 = await scroll();
+  await page.keyboard.down('Space');
+  await page.waitForTimeout(700);
+  await page.keyboard.up('Space');
+  await page.waitForTimeout(100);
+  assert.ok((await scrolled(s0)).y > 50, 'the page scrolled');
+  assert.equal(await rate(), 1, 'the video was left alone');
+  assert.equal(await isPaused('#plain'), false);
+});
+
+test('on YouTube the native hold to speed up is replaced: its handlers never see the press or the key', async () => {
+  // The fixture is served as www.youtube.com through request interception;
+  // it has its own press-and-hold and space bar speed-up, like the site.
+  const { context } = ext;
+  const nativeUrl = 'https://www.youtube.com/native.html';
+  await context.route('https://www.youtube.com/**', (route) => {
+    const name = new URL(route.request().url()).pathname.slice(1);
+    return route.fulfill({ path: new URL(`./fixtures/${name}`, import.meta.url).pathname });
+  });
+  try {
+    await page.goto(nativeUrl);
+    await page.waitForFunction(() => {
+      const v = document.querySelector('#main');
+      return v.readyState >= 2 && !v.paused && v.currentTime > 0;
+    });
+    const rate = () => page.evaluate(() => document.querySelector('#main').playbackRate);
+    const native = () => page.evaluate(() => ({ ...window.__native }));
+    const nativeHeld = () => page.evaluate(() => !!document.querySelector('#main').dataset.nativeHold);
+    const p = await centerOf(page, '#main');
+
+    // A press.
+    await page.mouse.move(p.x, p.y);
+    await page.mouse.down();
+    await page.waitForTimeout(700);
+    assert.equal(await rate(), 2, 'our hold: 2x');
+    assert.equal(await nativeHeld(), false, 'the native hold never started');
+    await page.mouse.up();
+    await page.waitForTimeout(50);
+    assert.equal(await rate(), 1, 'released');
+    let n = await native();
+    assert.equal(n.pointerdown + n.mousedown + n.mouseup, 0, `the page saw no press or release: ${JSON.stringify(n)}`);
+    assert.equal(n.clicks, 0, 'and no click from the hold');
+
+    // A short press is still a click for the page.
+    await page.mouse.click(p.x, p.y);
+    await page.waitForTimeout(50);
+    n = await native();
+    assert.equal(n.clicks, 1, 'a click reaches the page');
+    assert.equal(n.mousedown, 0, 'without the mousedown the native hold would start from');
+    assert.equal(await rate(), 1);
+
+    // The space bar, pointer over the player.
+    await page.keyboard.down('Space');
+    await page.waitForTimeout(700);
+    assert.equal(await rate(), 2, 'our key hold: 2x');
+    assert.equal(await nativeHeld(), false);
+    await page.keyboard.up('Space');
+    await page.waitForTimeout(50);
+    assert.equal(await rate(), 1);
+    n = await native();
+    assert.equal(n.keydown + n.keyup, 0, `the page saw no key: ${JSON.stringify(n)}`);
+
+    // The space bar from anywhere on the page (the site aims it at its main
+    // player from the body too).
+    const t = await centerOf(page, '#text');
+    await page.mouse.move(t.x, t.y);
+    await page.evaluate(() => document.activeElement && document.activeElement.blur());
+    await page.keyboard.down('Space');
+    await page.waitForTimeout(700);
+    assert.equal(await rate(), 2, 'main player sped up from the body');
+    await page.keyboard.up('Space');
+    await page.waitForTimeout(50);
+    assert.equal(await rate(), 1);
+    assert.equal((await native()).keydown, 0);
+  } finally {
+    await context.unroute('https://www.youtube.com/**');
+  }
+});
+
 test('trackball mode: a flick keeps the playhead rolling and slowing after the wheel stops', async () => {
   const p = await centerOf(page, '#plain');
   // Off by default: the position stays where the last event put it.

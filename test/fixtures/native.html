@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Native hold fixture</title>
+    <style>
+      body {
+        margin: 0;
+      }
+      #player {
+        position: relative;
+        width: 1280px;
+        height: 720px;
+        background: #000;
+      }
+      video {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      p {
+        margin: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- A page (served as www.youtube.com in the tests) with its own hold to
+         speed up on press and on the space bar, like YouTube's. The extension
+         must keep these handlers from ever seeing the press or the key. -->
+    <div id="player" tabindex="-1">
+      <video id="main" src="clip-short-gop.webm" preload="auto" muted loop autoplay></video>
+    </div>
+    <p id="text">Text below the player.</p>
+    <script>
+      const player = document.getElementById('player');
+      const video = document.getElementById('main');
+      window.__native = { pointerdown: 0, mousedown: 0, mouseup: 0, clicks: 0, keydown: 0, keyup: 0 };
+      let timer = 0;
+      function nativeHold() {
+        video.playbackRate = 2;
+        video.dataset.nativeHold = '1';
+      }
+      function nativeRelease() {
+        clearTimeout(timer);
+        if (video.dataset.nativeHold) {
+          video.playbackRate = 1;
+          delete video.dataset.nativeHold;
+        }
+      }
+      player.addEventListener('pointerdown', () => window.__native.pointerdown++);
+      player.addEventListener('mousedown', () => {
+        window.__native.mousedown++;
+        timer = setTimeout(nativeHold, 400);
+      });
+      player.addEventListener('mouseup', () => {
+        window.__native.mouseup++;
+        nativeRelease();
+      });
+      player.addEventListener('click', () => window.__native.clicks++);
+      document.addEventListener('keydown', (e) => {
+        if (e.key !== ' ') return;
+        e.preventDefault();
+        window.__native.keydown++;
+        if (!e.repeat) timer = setTimeout(nativeHold, 400);
+      });
+      document.addEventListener('keyup', (e) => {
+        if (e.key !== ' ') return;
+        window.__native.keyup++;
+        nativeRelease();
+      });
+    </script>
+  </body>
+</html>
