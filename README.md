@@ -25,8 +25,8 @@ Bookmarks · Notes popover, search within the book, an end-of-book card, and you
 shows the system's definition popover, and the text's context menu is the system's (Look Up, Copy, Translate,
 Search). PDFs have the same reader: themes as colour filters over the pages (paper tints in the light themes; in the dark
 ones luminance is inverted with hues kept, so pictures and highlights keep their colours), paginated or scrolling layouts with one or two pages, contents and
-timeline marks from the outline, search, bookmarks by page, highlights and underlines with notes, and zoom in place
-of text size. In full screen the toolbar leaves with the menu bar and both come back when the pointer reaches the top
+timeline marks from the outline, search, bookmarks by page, highlights and underlines with notes, page shadows you can turn off (a hairline then separates pages), and zoom in
+place of text size; a zoomed page scrolls before it turns. In full screen the toolbar leaves with the menu bar and both come back when the pointer reaches the top
 edge. The reading position, statistics (minutes per day, streaks, books per year) and every annotation are files in
 `~/Library/Application Support/Books`.
 

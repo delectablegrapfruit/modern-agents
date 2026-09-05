@@ -165,6 +165,12 @@ struct AppearancePopover: View {
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 Text(pdf ? "Zoom" : "Text size \(model.settings.reader.fontSize)%").font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .center)
                 themes
+                if pdf {
+                    Toggle(isOn: Binding(get: { model.settings.reader.pdfPageShadows }, set: { model.settings.reader.pdfPageShadows = $0; session.applySettings() })) {
+                        Text("Page shadows")
+                        Text("Off, a hairline separates the pages").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
                 Divider()
                 if !pdf {
                     Picker("Font", selection: Binding(get: { model.settings.reader.font }, set: { model.settings.reader.font = $0; session.applySettings() })) {

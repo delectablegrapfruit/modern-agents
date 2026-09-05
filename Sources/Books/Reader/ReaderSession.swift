@@ -252,6 +252,7 @@ final class ReaderSession {
             return true
         }
         guard settings.wheelTurnsPages else { return true }
+        if isPDF, pdf?.canScroll(dx: horizontal, dy: vertical) == true { return false }   // a zoomed page scrolls before it turns
         if sideways && !settings.wheelHorizontal { return true }
         var delta = sideways ? (horizontal != 0 ? horizontal : vertical) : vertical
         if settings.wheelInvert { delta = -delta }
