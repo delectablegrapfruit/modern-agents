@@ -347,7 +347,8 @@ final class SplitPDFPresenter: PDFReading {
             guard !t.isEmpty, t.count <= 12 else { return false }
             return t.range(of: "^[-–—•·.\\s]*([0-9]+|[ivxlcdm]+)[-–—•·.\\s]*$", options: .regularExpression) != nil
         }
-        /// The lines in the margin zone that a gap separates from the body, nearest the edge first.
+        /// The lines in the margin zone that a gap separates from the body, nearest the edge first. A row with a page
+        /// number needs only a small gap: scans often set the running head close to the text.
         func band(_ zone: [SplitPreparation.Line], fromTop: Bool) -> [SplitPreparation.Line] {
             guard !zone.isEmpty else { return [] }
             // Group lines sharing a baseline row, then walk away from the edge until the gap to the next row is clear.
@@ -362,7 +363,8 @@ final class SplitPDFPresenter: PDFReading {
                 if i + 1 < rows.count {
                     let nextRow = rows[i + 1]
                     let nextEdge = fromTop ? nextRow.map(\.maxY).max()! : nextRow.map(\.minY).min()!
-                    if (fromTop ? edge - nextEdge : nextEdge - edge) >= typical * 1.2 { return out }
+                    let gap = fromTop ? edge - nextEdge : nextEdge - edge
+                    if gap >= typical * 1.2 || (gap >= typical * 0.4 && out.contains(where: { isNumber($0.text) })) { return out }
                 } else {
                     return []   // the zone ran into the body with no clear gap
                 }
