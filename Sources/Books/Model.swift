@@ -196,6 +196,10 @@ final class LibraryModel {
         settings.sidebarOrder = (group == .library ? full + other : other + full).map(\.key)
     }
 
+    func collection(_ id: UUID) -> BookCollection? { collections.first { $0.id == id } }
+
+    var selectedBooks: [Book] { books.filter { selectedBookIDs.contains($0.id) } }
+
     // MARK: - Covers
 
     func cover(for book: Book) -> NSImage? {
