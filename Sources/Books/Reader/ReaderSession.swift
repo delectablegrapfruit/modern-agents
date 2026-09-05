@@ -235,7 +235,8 @@ final class ReaderSession {
         activity()
         let settings = model.settings.reader
         // AppKit reports scrolling down and to the right as negative deltas, in lines for notched wheels.
-        let vertical = event.scrollingDeltaY, horizontal = event.scrollingDeltaX
+        let vertical = event.scrollingDeltaY != 0 ? event.scrollingDeltaY : event.deltaY
+        let horizontal = event.scrollingDeltaX != 0 ? event.scrollingDeltaX : event.deltaX
         let sideways = abs(horizontal) > abs(vertical) || (event.modifierFlags.contains(.shift) && horizontal == 0)
         if layout.mode == .scroll {
             if isPDF { return false }   // PDFKit scrolls its own pages
@@ -254,7 +255,8 @@ final class ReaderSession {
     /// The system's definition popover, the one Look Up in a context menu shows, over the selected words.
     func lookUpSelection() {
         guard let sel = selection else { return }
-        let host: NSView = isPDF ? (pdf?.view ?? webView) : webView
+        let host: NSView
+        if isPDF, let pdfView = pdf?.view { host = pdfView } else { host = webView }
         let origin = host.isFlipped ? NSPoint(x: sel.rect.minX, y: sel.rect.maxY) : NSPoint(x: sel.rect.minX, y: host.bounds.height - sel.rect.maxY)
         host.showDefinition(for: NSAttributedString(string: sel.text), at: origin)
         clearSelection()

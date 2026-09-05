@@ -1,7 +1,6 @@
 import AppKit
 import Observation
 import PDFKit
-import SwiftUI
 import UniformTypeIdentifiers
 import BooksCore
 
@@ -180,7 +179,10 @@ final class LibraryModel {
     /// Drag reordering of the visible rows; hidden rows keep their places between their neighbours.
     func moveSidebarEntries(from source: IndexSet, to destination: Int) {
         var visible = visibleSidebarEntries
-        visible.move(fromOffsets: source, toOffset: destination)
+        let moving = source.sorted().compactMap { visible.indices.contains($0) ? visible[$0] : nil }
+        for index in source.sorted(by: >) where visible.indices.contains(index) { visible.remove(at: index) }
+        let insertAt = min(max(0, destination - source.filter { $0 < destination }.count), visible.count)
+        visible.insert(contentsOf: moving, at: insertAt)
         var full = sidebarEntries
         var next = visible.makeIterator()
         for i in full.indices where !isHidden(full[i]) {

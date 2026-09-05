@@ -275,10 +275,12 @@ final class PDFPresenter {
     func viewResized() {
         let size = view.bounds.size
         guard size != lastSize, size.width > 0 else { return }
-        let spreadBefore = columns
         lastSize = size
-        fitPages()
-        if spreadBefore != columns, settings.spread == .auto { applyLayout() }
+        if mode == .paginated, (view.displayMode == .twoUp) != (columns == 2) {
+            applyLayout()   // the automatic spread crossed its width threshold
+        } else {
+            fitPages()
+        }
     }
 
     func zoom(_ direction: Int) {
