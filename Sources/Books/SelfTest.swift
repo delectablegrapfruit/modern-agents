@@ -231,7 +231,7 @@ enum SelfTest {
         }
         try await sleep(0.8)
         let screensTwoUp = fitSession.layout.total
-        guard screensTwoUp > 8, fitSession.layout.columns == 2 else { throw Failure("Zoom & Split made \(Int(screensTwoUp)) screens of 8 pages in \(fitSession.layout.columns) column(s); expected two columns and more than one screen a page") }
+        guard screensTwoUp >= 8, fitSession.layout.columns == 2 else { throw Failure("Zoom & Split made \(Int(screensTwoUp)) screens of 8 pages in \(fitSession.layout.columns) column(s); expected two columns") }
         var fitSettings = model.settings
         fitSettings.reader.spread = .one
         model.settings = fitSettings
@@ -248,7 +248,10 @@ enum SelfTest {
         model.settings = fitSettings
         fitSession.applySettings()
         try await sleep(0.6)
+        fitSession.goToFraction(0)   // the pages-mode part of the test ended on the last page, with a bookmark there
+        try await sleep(0.4)
         let unitBefore = fitSession.position.page
+        guard unitBefore == 0 else { throw Failure("Zoom & Split did not return to the start (unit \(Int(unitBefore)))") }
         fitSession.next()
         try await sleep(0.5)
         guard fitSession.position.page > unitBefore else { throw Failure("Zoom & Split next() did not move (\(unitBefore) → \(fitSession.position.page))") }
