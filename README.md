@@ -51,6 +51,10 @@ classic appearance).
 ```sh
 make app     # builds build/Books.app
 make test    # core tests (also run on Linux)
+
+# CI builds on GitHub's macOS 26 runners, which bill at ten times the Linux rate. To build on your own Mac instead,
+# add it as a self-hosted runner (Settings ▸ Actions ▸ Runners) and set the repository variable
+# BOOKS_MACOS_RUNNER to its label, e.g. self-hosted.
 make cli     # command-line tool, books-cli
 ```
 

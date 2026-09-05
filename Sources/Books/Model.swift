@@ -159,7 +159,7 @@ final class LibraryModel {
 
     /// The shelves, or the collections, in the user's order with hidden ones included; new collections join at the end.
     func sidebarEntries(in group: SidebarGroup) -> [SidebarItem] {
-        let known: [SidebarItem] = group == .library ? [.all, .finished, .books, .pdfs] : collections.map { .collection($0.id) }
+        let known: [SidebarItem] = group == .library ? [.all, .finished, .books, .pdfs] : collections.map { SidebarItem.collection($0.id) }
         var ordered = settings.sidebarOrder.compactMap { SidebarItem(key: $0) }.filter { known.contains($0) }
         for item in known where !ordered.contains(item) { ordered.append(item) }
         return ordered

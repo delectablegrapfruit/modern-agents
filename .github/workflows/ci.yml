@@ -17,12 +17,12 @@ jobs:
     permissions:
       contents: write
     # macOS 26 with Xcode 26 by default: the app is linked against the macOS 26 SDK, which is what gives the
-    # standard controls their Liquid Glass appearance.
-    runs-on: macos-26
+    # standard controls their Liquid Glass appearance. Hosted macOS minutes bill at ten times the rate of Linux
+    # ones; a repository variable BOOKS_MACOS_RUNNER (for example "self-hosted") points the job at your own Mac.
+    runs-on: ${{ vars.BOOKS_MACOS_RUNNER || 'macos-26' }}
     steps:
       - uses: actions/checkout@v4
       - run: xcodebuild -version && swift --version
-      - run: swift build -v
       - name: Kindle fixtures (libmobi test suite)
         uses: actions/checkout@v4
         with:

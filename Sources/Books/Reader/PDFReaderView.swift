@@ -184,7 +184,7 @@ final class PDFPresenter {
     /// the same filters turn into a darker or lighter frame around the pages.
     private func applyTheme() {
         let theme = session.effectiveTheme
-        let page = NSColor(Color(hex: theme.colors.background)).usingColorSpace(.sRGB) ?? .white
+        let page = NSColor(Color(hex: theme.colors.background)).usingColorSpace(.sRGB) ?? NSColor(srgbRed: 1, green: 1, blue: 1, alpha: 1)
         var filters: [CIFilter] = []
         switch theme {
         case .original, .bold:
