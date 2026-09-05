@@ -162,12 +162,15 @@ public struct Annotation: Codable, Identifiable, Hashable {
     public var createdAt: Date
     public var updatedAt: Date
     public var pdfRects: [PDFRect]?
+    /// PDFs read as reflowed text: the locator is a place in that text, not a page.
+    public var pdfText: Bool?
 
     public init(id: UUID = UUID(), kind: AnnotationKind, locator: Locator, endOffset: Int? = nil, color: HighlightColor? = nil,
-                text: String = "", note: String = "", chapter: String = "", createdAt: Date = Date(), updatedAt: Date = Date(), pdfRects: [PDFRect]? = nil) {
+                text: String = "", note: String = "", chapter: String = "", createdAt: Date = Date(), updatedAt: Date = Date(), pdfRects: [PDFRect]? = nil, pdfText: Bool? = nil) {
         self.id = id
         self.kind = kind
         self.pdfRects = pdfRects
+        self.pdfText = pdfText
         self.locator = locator
         self.endOffset = endOffset
         self.color = color
@@ -333,6 +336,20 @@ public enum Spread: String, Codable, CaseIterable, Hashable {
     }
 }
 
+/// How a PDF is shown: whole pages; pages zoomed to their text and cut into screens that turn like pages; or the
+/// text reflowed into a book.
+public enum PDFLayout: String, Codable, CaseIterable, Hashable {
+    case pages, fit, text
+
+    public var label: String {
+        switch self {
+        case .pages: return "Pages"
+        case .fit: return "Zoom & Split"
+        case .text: return "Text"
+        }
+    }
+}
+
 public enum PageTurn: String, Codable, CaseIterable, Hashable {
     case slide, none
     public var label: String { self == .slide ? "Slide" : "None" }
@@ -363,12 +380,15 @@ public struct ReaderSettings: Codable, Hashable {
     public var wheelHorizontal = true
     public var showPageNumbers = true
     public var showChapterProgress = true
+    public var pdfLayout: PDFLayout = .pages
+    /// Zoom & Split: the text width as a percentage of the view, the PDF's text size.
+    public var pdfZoom = 100
 
     public init() {}
 
     enum CodingKeys: String, CodingKey {
         case theme, autoNight, font, fontSize, lineHeight, textWidth, justify, hyphenate, layout, spread, pageTurn
-        case wheelTurnsPages, wheelSensitivity, wheelInvert, wheelHorizontal, showPageNumbers, showChapterProgress
+        case wheelTurnsPages, wheelSensitivity, wheelInvert, wheelHorizontal, showPageNumbers, showChapterProgress, pdfLayout, pdfZoom
     }
 
     /// Every value falls back to its default, so a settings file from another version still loads.
@@ -391,6 +411,8 @@ public struct ReaderSettings: Codable, Hashable {
         wheelHorizontal = (try? c.decodeIfPresent(Bool.self, forKey: .wheelHorizontal)) ?? true
         showPageNumbers = (try? c.decodeIfPresent(Bool.self, forKey: .showPageNumbers)) ?? true
         showChapterProgress = (try? c.decodeIfPresent(Bool.self, forKey: .showChapterProgress)) ?? true
+        pdfLayout = (try? c.decodeIfPresent(PDFLayout.self, forKey: .pdfLayout)) ?? .pages
+        pdfZoom = min(300, max(50, (try? c.decodeIfPresent(Int.self, forKey: .pdfZoom)) ?? 100))
     }
 
     /// The theme actually shown: the night variant when Auto-Night is on and the system is dark.

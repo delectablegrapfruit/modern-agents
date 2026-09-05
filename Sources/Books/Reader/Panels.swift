@@ -42,8 +42,8 @@ struct ContentsPopover: View {
                             .lineLimit(2)
                             .fontWeight(item.label == session.position.chapter ? .semibold : .regular)
                         Spacer()
-                        if item.pos > 0, session.layout.mode == .paginated || session.book.kind == .pdf {
-                            Text("\(whole(item.pos) + 1)").font(.caption).foregroundStyle(.tertiary).monospacedDigit()
+                        if session.usesPDFView || (item.pos > 0 && session.layout.mode == .paginated) {
+                            Text("\(session.usesPDFView ? item.spine + 1 : whole(item.pos) + 1)").font(.caption).foregroundStyle(.tertiary).monospacedDigit()
                         }
                     }
                     .padding(.leading, CGFloat(min(item.level, 3)) * 16)
@@ -153,20 +153,33 @@ struct AppearancePopover: View {
 
     var body: some View {
         @Bindable var model = model
-        let pdf = session.book.kind == .pdf
+        let pdfBook = session.book.kind == .pdf
+        let pdfView = session.usesPDFView
+        let fit = pdfView && model.settings.reader.pdfLayout == .fit
+        let plainZoom = pdfView && !fit
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(spacing: 0) {
-                    Button { session.changeFontSize(by: -10) } label: { sizeLabel(pdf ? nil : 15, symbol: "minus.magnifyingglass") }
+                    Button { session.changeFontSize(by: -10) } label: { sizeLabel(plainZoom ? nil : 15, symbol: "minus.magnifyingglass") }
                     Divider().frame(height: 22)
-                    Button { session.changeFontSize(by: 10) } label: { sizeLabel(pdf ? nil : 24, symbol: "plus.magnifyingglass") }
+                    Button { session.changeFontSize(by: 10) } label: { sizeLabel(plainZoom ? nil : 24, symbol: "plus.magnifyingglass") }
                 }
                 .buttonStyle(.plain)
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                Text(pdf ? "Zoom" : "Text size \(model.settings.reader.fontSize)%").font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .center)
+                Text(plainZoom ? "Zoom" : fit ? "Text size \(model.settings.reader.pdfZoom)%" : "Text size \(model.settings.reader.fontSize)%")
+                    .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .center)
+                if pdfBook {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Picker("PDF", selection: Binding(get: { model.settings.reader.pdfLayout }, set: { session.setPDFLayout($0) })) {
+                            ForEach(PDFLayout.allCases, id: \.self) { Text($0.label).tag($0) }
+                        }
+                        .pickerStyle(.segmented)
+                        Text(pdfLayoutHelp).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
                 themes
                 Divider()
-                if !pdf {
+                if !pdfView {
                     Picker("Font", selection: Binding(get: { model.settings.reader.font }, set: { model.settings.reader.font = $0; session.applySettings() })) {
                         ForEach(ReaderFont.allCases, id: \.self) { Text($0.label).tag($0) }
                     }
@@ -181,18 +194,18 @@ struct AppearancePopover: View {
                     Toggle("Justify text", isOn: Binding(get: { model.settings.reader.justify }, set: { model.settings.reader.justify = $0; session.applySettings() }))
                     Toggle("Hyphenation", isOn: Binding(get: { model.settings.reader.hyphenate }, set: { model.settings.reader.hyphenate = $0; session.applySettings() }))
                     Divider()
-                }
-                if !pdf {
                     Picker("Layout", selection: Binding(get: { model.settings.reader.layout }, set: { model.settings.reader.layout = $0; session.applySettings() })) {
                         ForEach(ReaderLayout.allCases, id: \.self) { Text($0.label).tag($0) }
                     }
                     .pickerStyle(.segmented)
                 }
-                Picker("Pages", selection: Binding(get: { model.settings.reader.spread }, set: { model.settings.reader.spread = $0; session.applySettings() })) {
-                    ForEach(Spread.allCases, id: \.self) { Text($0.label).tag($0) }
+                if !fit {
+                    Picker("Pages", selection: Binding(get: { model.settings.reader.spread }, set: { model.settings.reader.spread = $0; session.applySettings() })) {
+                        ForEach(Spread.allCases, id: \.self) { Text($0.label).tag($0) }
+                    }
+                    .disabled(!pdfView && model.settings.reader.layout == .scroll)
                 }
-                .disabled(!pdf && model.settings.reader.layout == .scroll)
-                if !pdf {
+                if !pdfView {
                     Picker("Page Turn", selection: Binding(get: { model.settings.reader.pageTurn }, set: { model.settings.reader.pageTurn = $0; session.applySettings() })) {
                         ForEach(PageTurn.allCases, id: \.self) { Text($0.label).tag($0) }
                     }
@@ -200,7 +213,7 @@ struct AppearancePopover: View {
                 }
                 DisclosureGroup("Scroll Wheel & Trackpad") {
                     Toggle("Scroll wheel turns pages", isOn: Binding(get: { model.settings.reader.wheelTurnsPages }, set: { model.settings.reader.wheelTurnsPages = $0; session.applySettings() }))
-                    if !pdf {
+                    if !pdfView {
                         Picker("Trackpad sensitivity", selection: Binding(get: { model.settings.reader.wheelSensitivity }, set: { model.settings.reader.wheelSensitivity = $0; session.applySettings() })) {
                             ForEach(WheelSensitivity.allCases, id: \.self) { Text($0.label).tag($0) }
                         }
@@ -216,7 +229,15 @@ struct AppearancePopover: View {
             .padding(16)
         }
         .frame(width: 340)
-        .frame(maxHeight: 620)
+        .frame(maxHeight: 640)
+    }
+
+    private var pdfLayoutHelp: String {
+        switch model.settings.reader.pdfLayout {
+        case .pages: return "Whole pages, as printed."
+        case .fit: return "Pages cropped to their text, zoomed to the text size and cut into screens that turn like pages."
+        case .text: return "The text reflowed into a book: fonts, sizes and themes apply; the layout is not kept."
+        }
     }
 
     /// Both halves of the size control respond across their whole width, not only on the glyph.

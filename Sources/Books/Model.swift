@@ -224,6 +224,12 @@ final class LibraryModel {
         reload()
     }
 
+    /// Closes and reopens a book, for changes that need a fresh reader (a PDF shown another way).
+    func reopen(_ book: Book) {
+        closeReader()
+        DispatchQueue.main.async { [weak self] in self?.open(book) }
+    }
+
     func savePosition(_ position: ReadingPosition, for id: UUID, finished: Bool? = nil) {
         store.savePosition(position, for: id, finished: finished)
         reload()

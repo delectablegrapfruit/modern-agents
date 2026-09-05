@@ -221,26 +221,73 @@ enum SelfTest {
         model.settings = settings
         session.applySettings()
         log("PDF: next, wheel notch, scrub to the end, \(hits) matches, bookmark, paper theme, one page then two")
-        session.close()
+
+        // Zoom & Split: pages cropped to their text and cut into screens; a larger text size makes more of them.
+        session.setPDFLayout(.fit)
+        let fitSession = try await waitFor("the PDF in Zoom & Split", timeout: 30) {
+            if let s = currentSession, s !== session, s.book.id == book.id, s.isOpen, s.usesPDFView { return s }
+            return nil
+        }
+        try await sleep(0.8)
+        let screensAt100 = fitSession.layout.total
+        guard screensAt100 > 8 else { throw Failure("Zoom & Split made \(Int(screensAt100)) screens of 8 pages; expected more than one a page") }
+        for _ in 0..<5 { fitSession.changeFontSize(by: 10) }
+        try await sleep(0.6)
+        guard fitSession.layout.total > screensAt100 else { throw Failure("a larger text size did not add screens (\(screensAt100) → \(fitSession.layout.total))") }
+        let unitBefore = fitSession.position.page
+        fitSession.next()
         try await sleep(0.4)
-        let savedPage = model.book(book.id)?.position?.pdfPage ?? 0
-        guard model.reading == nil, savedPage >= 7 else { throw Failure("PDF position was not saved (page \(savedPage))") }
+        guard fitSession.position.page > unitBefore else { throw Failure("Zoom & Split next() did not move (\(unitBefore) → \(fitSession.position.page))") }
+        try postWheel(dy: -1, dx: 0, shift: false, to: try XCTUnwrapView(fitSession.pdf?.view))
+        try await sleep(0.4)
+        guard fitSession.position.page > unitBefore + 1 else { throw Failure("a wheel notch did not turn a screen") }
+        log("Zoom & Split: \(Int(screensAt100)) screens at 100%, \(Int(fitSession.layout.total)) at 150%; footer “\(fitSession.pdfPageLabel ?? "")”")
+
+        // Text: the PDF reflowed into a book, read by the page script like any other.
+        fitSession.setPDFLayout(.text)
+        let textSession = try await waitFor("the reflowed PDF to open", timeout: 60) {
+            if let s = currentSession, s !== fitSession, s.book.id == book.id, s.isOpen, !s.usesPDFView, s.layout.total > 0 { return s }
+            return nil
+        }
+        textSession.search("lazy dog")
+        let textHits = try await waitFor("search in the reflowed text", timeout: 15) { textSession.searchDone && !textSession.searchResults.isEmpty ? textSession.searchResults.count : nil }
+        guard textHits == 8 else { throw Failure("the reflowed text has \(textHits) matches, expected 8") }
+        log("Text: reflowed into \(textSession.toc.count) chapters and \(Int(textSession.layout.total)) pages, \(textHits) matches")
+        var reset = model.settings
+        reset.reader.pdfLayout = .pages
+        reset.reader.pdfZoom = 100
+        model.settings = reset
+        textSession.close()
+        try await sleep(0.4)
+        let savedPercent = model.book(book.id)?.position?.percent ?? 0
+        guard model.reading == nil, savedPercent > 0 else { throw Failure("PDF position was not saved (\(savedPercent)%)") }
     }
 
-    /// Letter-size pages, each with a line of text the search looks for.
+    private static func XCTUnwrapView(_ view: NSView?) throws -> NSView {
+        guard let view else { throw Failure("no PDF view") }
+        return view
+    }
+
+    /// Letter-size pages: a heading and 26 lines each, one of them the line the search looks for.
     private static func makePDF(pages: Int) throws -> Data {
         let data = NSMutableData()
         var mediaBox = CGRect(x: 0, y: 0, width: 612, height: 792)
         guard let consumer = CGDataConsumer(data: data as CFMutableData), let context = CGContext(consumer: consumer, mediaBox: &mediaBox, nil) else {
             throw Failure("could not create a PDF context")
         }
-        let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 18), .foregroundColor: NSColor.black]
+        let heading: [NSAttributedString.Key: Any] = [.font: NSFont.boldSystemFont(ofSize: 22), .foregroundColor: NSColor.black]
+        let body: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.black]
         for i in 1...pages {
             context.beginPDFPage(nil)
             NSGraphicsContext.saveGraphicsState()
             NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
-            ("PDF self-test page \(i)" as NSString).draw(at: NSPoint(x: 72, y: 700), withAttributes: attributes)
-            ("The quick brown fox jumps over the lazy dog." as NSString).draw(at: NSPoint(x: 72, y: 660), withAttributes: attributes)
+            ("PDF self-test page \(i)" as NSString).draw(at: NSPoint(x: 72, y: 720), withAttributes: heading)
+            var y: CGFloat = 680
+            for line in 1...26 {
+                let text = line == 3 ? "The quick brown fox jumps over the lazy dog." : "Line \(line) of page \(i): the vixen jumped quickly over the fence and then rested a while."
+                (text as NSString).draw(at: NSPoint(x: 72, y: y), withAttributes: body)
+                y -= 22
+            }
             NSGraphicsContext.restoreGraphicsState()
             context.endPDFPage()
         }

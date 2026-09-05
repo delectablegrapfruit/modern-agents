@@ -74,6 +74,16 @@ final class ReaderSession {
     /// PDFs: the PDFKit presenter, created by the PDF view when it appears.
     @ObservationIgnored var pdf: PDFPresenter?
     @ObservationIgnored private var pdfSections: [PDFSection] = []
+    /// PDFs shown by PDFKit (Pages, Zoom & Split); as reflowed Text they go through the page script like a book.
+    let usesPDFView: Bool
+    /// Zoom & Split counts screens, not pages: how many make a page.
+    private(set) var pdfUnitsPerPage = 1
+    /// Zoom & Split's footer text ("Page 3 of 120 · 2/4"); nil means the ordinary page count.
+    private(set) var pdfPageLabel: String?
+    /// Reflowing a PDF into text takes a moment; the reader shows a spinner meanwhile.
+    private(set) var preparing = false
+    @ObservationIgnored private var reflowReady = false
+    @ObservationIgnored private var pendingFraction: Double?
 
     private(set) var isPageReady = false
     private(set) var isOpen = false
@@ -113,6 +123,7 @@ final class ReaderSession {
     init(book: Book, model: LibraryModel) {
         self.book = book
         self.model = model
+        usesPDFView = book.kind == .pdf && model.settings.reader.pdfLayout != .text
         annotations = model.store.annotations(for: book.id)
         schemeHandler.bookURL = model.store.fileURL(for: book)
 
@@ -128,7 +139,7 @@ final class ReaderSession {
         navigation.onFailure = { [weak self] message in Task { @MainActor in self?.error = message } }
         webView.navigationDelegate = navigation
         webView.session = self
-        if book.kind == .epub {
+        if !usesPDFView {
             if BooksSchemeHandler.readerDirectory == nil {
                 error = "This copy of Books is missing its reader page (Contents/Resources/Reader). Reinstall the app."
             } else {
@@ -140,6 +151,63 @@ final class ReaderSession {
             Task { @MainActor in self?.applySettings() }
         }
         startReadingTimer()
+        if book.kind == .pdf, !usesPDFView { prepareReflow() }
+    }
+
+    // MARK: - PDFs as text
+
+    /// Converts the PDF to a book once (cached next to it) and opens that when the page is ready.
+    private func prepareReflow() {
+        let pdfURL = model.store.fileURL(for: book)
+        let cache = PDFReflow.cacheURL(for: pdfURL)
+        let title = book.title, author = book.author
+        preparing = true
+        if let saved = book.position, saved.pdfPage != nil, saved.percent > 0 { pendingFraction = saved.percent / 100 }
+        Task.detached(priority: .userInitiated) { [weak self] in
+            var failure: String?
+            let cachedDate = try? cache.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+            let sourceDate = try? pdfURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+            if let cachedDate, let sourceDate, cachedDate >= sourceDate {
+                // Converted before.
+            } else {
+                do {
+                    try PDFReflow.epub(from: pdfURL, title: title, author: author).write(to: cache, options: .atomic)
+                } catch {
+                    failure = "\(error)"
+                }
+            }
+            await MainActor.run { [weak self] in self?.reflowPrepared(cache: cache, failure: failure) }
+        }
+    }
+
+    private func reflowPrepared(cache: URL, failure: String?) {
+        preparing = false
+        if let failure {
+            // Back to whole pages, with the reason; the library's alert outlives this reader.
+            var all = model.settings
+            all.reader.pdfLayout = .pages
+            model.settings = all
+            model.error = failure
+            model.reopen(book)
+            return
+        }
+        schemeHandler.bookURL = cache
+        reflowReady = true
+        if isPageReady { openBook() }
+    }
+
+    /// Pages, Zoom & Split or Text: the book reopens the chosen way.
+    func setPDFLayout(_ layout: PDFLayout) {
+        var all = model.settings
+        all.reader.pdfLayout = layout
+        model.settings = all
+        model.reopen(book)
+    }
+
+    /// A PDF's annotations belong to the way it was read: page places for the PDF view, text places for the reflow.
+    private var modeAnnotations: [Annotation] {
+        guard book.kind == .pdf else { return annotations }
+        return annotations.filter { ($0.pdfText ?? false) == !usesPDFView }
     }
 
     func teardown() {
@@ -166,7 +234,7 @@ final class ReaderSession {
 
     private func openBook() {
         var highlights: [[String: Any]] = []
-        for a in annotations where a.kind == .highlight {
+        for a in modeAnnotations where a.kind == .highlight {
             highlights.append(["id": a.id.uuidString, "locator": ["spine": a.locator.spine, "start": a.locator.offset, "end": a.endOffset ?? a.locator.offset], "color": a.color?.rawValue ?? "yellow", "note": a.note])
         }
         var arguments: [String: Any] = [
@@ -184,43 +252,41 @@ final class ReaderSession {
     }
 
     private func bookmarkPayload() -> [[String: Any]] {
-        annotations.filter { $0.kind == .bookmark }.map { ["id": $0.id.uuidString, "locator": ["spine": $0.locator.spine, "offset": $0.locator.offset]] }
+        modeAnnotations.filter { $0.kind == .bookmark }.map { ["id": $0.id.uuidString, "locator": ["spine": $0.locator.spine, "offset": $0.locator.offset]] }
     }
 
-    private var isPDF: Bool { book.kind == .pdf }
-
     func applySettings() {
-        if isPDF { pdf?.applySettings(); return }
+        if usesPDFView { pdf?.applySettings(); return }
         guard isOpen else { return }
         call("applySettings", model.settings.reader.webSettings(systemIsDark: systemIsDark))
     }
 
-    func next() { if isPDF { pdf?.next() } else { call("next") }; activity() }
-    func previous() { if isPDF { pdf?.previous() } else { call("prev") }; activity() }
-    func nextChapter() { if isPDF { pdf?.nextSection() } else { call("nextChapter") }; activity() }
-    func previousChapter() { if isPDF { pdf?.previousSection() } else { call("prevChapter") }; activity() }
+    func next() { if usesPDFView { pdf?.next() } else { call("next") }; activity() }
+    func previous() { if usesPDFView { pdf?.previous() } else { call("prev") }; activity() }
+    func nextChapter() { if usesPDFView { pdf?.nextSection() } else { call("nextChapter") }; activity() }
+    func previousChapter() { if usesPDFView { pdf?.previousSection() } else { call("prevChapter") }; activity() }
     func goToFraction(_ fraction: Double) {
         let f = min(1, max(0, fraction))
-        if isPDF { pdf?.go(toFraction: f) } else { call("goToFraction", f) }
+        if usesPDFView { pdf?.go(toFraction: f) } else { call("goToFraction", f) }
         activity()
     }
-    func goToPos(_ pos: Double) { if isPDF { pdf?.go(toPage: whole(pos)) } else { call("goToPos", pos) }; activity() }
+    func goToPos(_ pos: Double) { if usesPDFView { pdf?.go(toUnit: whole(pos)) } else { call("goToPos", pos) }; activity() }
     func goToHref(_ href: String) {
-        if isPDF { if let page = Int(href) { pdf?.go(toPage: page) } } else { call("goToHref", href) }
+        if usesPDFView { if let page = Int(href) { pdf?.go(toPage: page) } } else { call("goToHref", href) }
         activity()
     }
     func goToLocator(_ locator: Locator) {
-        if isPDF { pdf?.go(toPage: locator.spine) } else { call("goToLocator", ["spine": locator.spine, "offset": locator.offset]) }
+        if usesPDFView { pdf?.go(toPage: locator.spine, slice: locator.offset) } else { call("goToLocator", ["spine": locator.spine, "offset": locator.offset]) }
         activity()
     }
     /// A contents entry: a document and fragment in a book, a page in a PDF.
-    func open(_ item: ReaderTOCItem) { if isPDF { pdf?.go(toPage: item.spine) } else { goToHref(item.href) } }
+    func open(_ item: ReaderTOCItem) { if usesPDFView { pdf?.go(toPage: item.spine) } else { goToHref(item.href) } }
     /// A search result: the page script scrolls to the locator; the PDF view selects the match.
-    func open(_ hit: SearchHit) { if isPDF { pdf?.show(hit) } else { goToLocator(hit.locator) } }
+    func open(_ hit: SearchHit) { if usesPDFView { pdf?.show(hit) } else { goToLocator(hit.locator) } }
 
     /// ⌘+ and ⌘−: text size for books, zoom for PDFs.
     func changeFontSize(by delta: Int) {
-        if isPDF { pdf?.zoom(delta > 0 ? 1 : -1); return }
+        if usesPDFView { pdf?.zoom(delta > 0 ? 1 : -1); return }
         var settings = model.settings
         settings.reader.fontSize = min(300, max(50, settings.reader.fontSize + delta))
         model.settings = settings
@@ -247,12 +313,12 @@ final class ReaderSession {
                 if delta < 0 { next() } else if delta > 0 { previous() }
                 return true
             }
-            if isPDF { return false }   // PDFKit scrolls its own pages
+            if usesPDFView { return false }   // PDFKit scrolls its own pages
             if vertical != 0 { call("scrollBy", -vertical * 40) }   // 40 points a line, as WebKit scrolls
             return true
         }
         guard settings.wheelTurnsPages else { return true }
-        if isPDF, pdf?.canScroll(dx: horizontal, dy: vertical) == true { return false }   // a zoomed page scrolls before it turns
+        if usesPDFView, pdf?.canScroll(dx: horizontal, dy: vertical) == true { return false }   // a zoomed page scrolls before it turns
         if sideways && !settings.wheelHorizontal { return true }
         var delta = sideways ? (horizontal != 0 ? horizontal : vertical) : vertical
         if settings.wheelInvert { delta = -delta }
@@ -265,7 +331,7 @@ final class ReaderSession {
     func lookUpSelection() {
         guard let sel = selection else { return }
         let host: NSView
-        if isPDF, let pdfView = pdf?.view { host = pdfView } else { host = webView }
+        if usesPDFView, let pdfView = pdf?.view { host = pdfView } else { host = webView }
         let origin = host.isFlipped ? NSPoint(x: sel.rect.minX, y: sel.rect.maxY) : NSPoint(x: sel.rect.minX, y: host.bounds.height - sel.rect.maxY)
         host.showDefinition(for: NSAttributedString(string: sel.text), at: origin)
         clearSelection()
@@ -279,7 +345,7 @@ final class ReaderSession {
         if let id = position.bookmarkID, let i = annotations.firstIndex(where: { $0.id == id }) {
             annotations.remove(at: i)
         } else if let locator = position.locator {
-            annotations.append(Annotation(kind: .bookmark, locator: locator, text: "", chapter: position.chapter))
+            annotations.append(Annotation(kind: .bookmark, locator: locator, text: "", chapter: position.chapter, pdfText: textFlag))
         } else {
             return
         }
@@ -288,7 +354,7 @@ final class ReaderSession {
     }
 
     private func syncBookmarks() {
-        if isPDF { refreshPDFMarks() } else { call("setBookmarks", bookmarkPayload()) }
+        if usesPDFView { refreshPDFMarks() } else { call("setBookmarks", bookmarkPayload()) }
     }
 
     func removeAnnotation(_ id: UUID) {
@@ -296,7 +362,7 @@ final class ReaderSession {
         annotations.removeAll { $0.id == id }
         persistAnnotations()
         if a.kind == .highlight {
-            if isPDF { pdf?.removeHighlight(id) } else { call("removeHighlight", id.uuidString) }
+            if usesPDFView { pdf?.removeHighlight(id) } else { call("removeHighlight", id.uuidString) }
         } else {
             syncBookmarks()
         }
@@ -307,7 +373,7 @@ final class ReaderSession {
     /// Highlights the current selection; the page answers with `highlightAdded`, which stores it.
     func highlightSelection(color: HighlightColor, note: String = "") {
         guard selection != nil else { return }
-        if isPDF {
+        if usesPDFView {
             guard var annotation = pdf?.highlightSelection(color: color) else { selection = nil; return }
             annotation.note = note
             annotations.append(annotation)
@@ -329,7 +395,7 @@ final class ReaderSession {
         annotations[i].color = color
         annotations[i].updatedAt = Date()
         persistAnnotations()
-        if isPDF { pdf?.recolor(id) } else { call("updateHighlight", ["id": id.uuidString, "color": color.rawValue, "note": annotations[i].note]) }
+        if usesPDFView { pdf?.recolor(id) } else { call("updateHighlight", ["id": id.uuidString, "color": color.rawValue, "note": annotations[i].note]) }
         if let tapped = tappedHighlight, tapped.annotation.id == id { tappedHighlight = (annotations[i], tapped.rect) }
     }
 
@@ -338,20 +404,22 @@ final class ReaderSession {
         annotations[i].note = note
         annotations[i].updatedAt = Date()
         persistAnnotations()
-        if isPDF { pdf?.setNote(note, for: id) } else { call("updateHighlight", ["id": id.uuidString, "color": annotations[i].color?.rawValue ?? "yellow", "note": note]) }
+        if usesPDFView { pdf?.setNote(note, for: id) } else { call("updateHighlight", ["id": id.uuidString, "color": annotations[i].color?.rawValue ?? "yellow", "note": note]) }
     }
 
     func clearSelection() {
         selection = nil
-        if isPDF { pdf?.clearSelection() } else { call("clearSelection") }
+        if usesPDFView { pdf?.clearSelection() } else { call("clearSelection") }
     }
 
     private func persistAnnotations() {
         model.store.saveAnnotations(annotations, for: book.id)
     }
 
-    var highlights: [Annotation] { annotations.filter { $0.kind == .highlight }.sorted { ($0.locator.spine, $0.locator.offset) < ($1.locator.spine, $1.locator.offset) } }
-    var bookmarks: [Annotation] { annotations.filter { $0.kind == .bookmark }.sorted { ($0.locator.spine, $0.locator.offset) < ($1.locator.spine, $1.locator.offset) } }
+    var highlights: [Annotation] { modeAnnotations.filter { $0.kind == .highlight }.sorted { ($0.locator.spine, $0.locator.offset) < ($1.locator.spine, $1.locator.offset) } }
+    var bookmarks: [Annotation] { modeAnnotations.filter { $0.kind == .bookmark }.sorted { ($0.locator.spine, $0.locator.offset) < ($1.locator.spine, $1.locator.offset) } }
+    /// Text places in a reflowed PDF are marked so the PDF view does not mistake them for pages.
+    private var textFlag: Bool? { book.kind == .pdf && !usesPDFView ? true : nil }
 
     // MARK: - Search
 
@@ -359,7 +427,7 @@ final class ReaderSession {
         searchQuery = query
         searchResults = []
         searchDone = query.trimmingCharacters(in: .whitespaces).isEmpty
-        if isPDF { pdf?.search(query) } else { call("search", query) }
+        if usesPDFView { pdf?.search(query) } else { call("search", query) }
     }
 
     // MARK: - Messages from the page
@@ -368,11 +436,15 @@ final class ReaderSession {
         switch m.string("type") ?? "" {
         case "ready":
             isPageReady = true
-            openBook()
+            if book.kind != .pdf || reflowReady { openBook() }
         case "opened":
             isOpen = true
             toc = m.array("toc").map { ReaderTOCItem(label: $0.string("label") ?? "", href: $0.string("href") ?? "", level: $0.int("level") ?? 0, pos: $0.double("pos") ?? 0, spine: $0.int("spine") ?? 0) }
             updateLayout(m)
+            if let fraction = pendingFraction {
+                pendingFraction = nil
+                goToFraction(fraction)
+            }
         case "layout":
             updateLayout(m)
         case "position":
@@ -407,7 +479,7 @@ final class ReaderSession {
         case "highlightAdded":
             guard let id = m.string("id").flatMap(UUID.init(uuidString:)), let o = m.object("locator"), let spine = o.int("spine") else { return }
             let color = HighlightColor(rawValue: m.string("color") ?? "yellow") ?? .yellow
-            let annotation = Annotation(id: id, kind: .highlight, locator: Locator(spine: spine, offset: o.int("start") ?? 0), endOffset: o.int("end"), color: color, text: m.string("text") ?? "", note: pendingHighlight.removeValue(forKey: id) ?? m.string("note") ?? "", chapter: m.string("chapter") ?? position.chapter)
+            let annotation = Annotation(id: id, kind: .highlight, locator: Locator(spine: spine, offset: o.int("start") ?? 0), endOffset: o.int("end"), color: color, text: m.string("text") ?? "", note: pendingHighlight.removeValue(forKey: id) ?? m.string("note") ?? "", chapter: m.string("chapter") ?? position.chapter, pdfText: textFlag)
             annotations.append(annotation)
             persistAnnotations()
             if !annotation.note.isEmpty || pendingNoteAfterHighlight { pendingNoteAfterHighlight = false; editingNote = annotation }
@@ -458,21 +530,22 @@ final class ReaderSession {
 
     func flushPosition() {
         if pagesTurned > 0 { model.recordReading(seconds: 0, pages: pagesTurned); pagesTurned = 0 }
-        guard !isPDF, isOpen, let locator = position.locator else { return }   // PDFs save as their page changes
+        guard !usesPDFView, isOpen, let locator = position.locator else { return }   // PDFs save as their page changes
         let finished: Bool? = position.atEnd && layout.total > 1 ? true : nil
         model.savePosition(ReadingPosition(locator: locator, percent: position.percent), for: book.id, finished: finished)
     }
 
     // MARK: - PDFs (the presenter reports what the page script reports for books)
 
-    func pdfOpened(pageCount: Int, sections: [PDFSection], columns: Int, mode: ReaderLayoutInfo.Mode) {
+    func pdfOpened(units: Int, unitsPerPage: Int, sections: [PDFSection], columns: Int) {
         pdfSections = sections
-        toc = sections.map { ReaderTOCItem(label: $0.label, href: String($0.page), level: $0.level, pos: Double($0.page), spine: $0.page) }
+        pdfUnitsPerPage = max(1, unitsPerPage)
+        toc = sections.map { ReaderTOCItem(label: $0.label, href: String($0.page), level: $0.level, pos: Double($0.page * pdfUnitsPerPage), spine: $0.page) }
         var l = ReaderLayoutInfo()
-        l.mode = mode
-        l.total = Double(max(1, pageCount))
+        l.mode = .paginated
+        l.total = Double(max(1, units))
         l.columns = columns
-        l.chapters = sections.map { TimelineMark(label: $0.label, pos: Double($0.page), level: $0.level) }
+        l.chapters = sections.map { TimelineMark(label: $0.label, pos: Double($0.page * pdfUnitsPerPage), level: $0.level) }
         layout = l
         isOpen = true
         refreshPDFMarks()
@@ -483,32 +556,36 @@ final class ReaderSession {
         layout.columns = columns
     }
 
-    func pdfPageChanged(index: Int, count: Int) {
-        guard count > 0 else { return }
-        let shown = min(index + max(1, layout.columns), count)
-        let percent = Double(shown) / Double(count) * 100
+    /// The presenter's place: a unit is a page, or a screen of a page in Zoom & Split.
+    func pdfPositionChanged(unit: Int, units: Int, page: Int, slice: Int, label: String?) {
+        guard units > 0 else { return }
+        let shown = min(unit + max(1, layout.columns), units)
+        let percent = Double(shown) / Double(units) * 100
         var p = position
-        p.page = Double(index)
-        p.total = Double(count)
+        p.page = Double(unit)
+        p.total = Double(units)
         p.percent = percent
-        p.locator = Locator(spine: index, offset: 0)
-        let section = pdfSections.last { $0.page <= index }
+        p.locator = Locator(spine: page, offset: slice)
+        let section = pdfSections.last { $0.page <= page }
         p.chapter = section?.label ?? ""
         p.chapterIndex = section.flatMap { pdfSections.firstIndex(of: $0) } ?? 0
-        let nextStart = pdfSections.first { $0.page > index }?.page ?? count
+        let nextStart = (pdfSections.first { $0.page > page }?.page).map { $0 * pdfUnitsPerPage } ?? units
         p.pagesLeftInChapter = max(0, nextStart - shown)
-        p.atEnd = shown >= count
-        p.bookmarkID = bookmarks.first { $0.locator.spine == index }?.id
-        if let last = lastPage, Double(index) > last { pagesTurned += index - whole(last) }
-        lastPage = Double(index)
+        p.atEnd = shown >= units
+        p.bookmarkID = bookmarks.first { $0.locator.spine == page && $0.locator.offset == slice }?.id
+        if let last = lastPage, Double(unit) > last { pagesTurned += unit - whole(last) }
+        lastPage = Double(unit)
         position = p
-        model.savePosition(ReadingPosition(pdfPage: index + 1, percent: percent), for: book.id, finished: p.atEnd && count > 1 ? true : nil)
+        pdfPageLabel = label
+        model.savePosition(ReadingPosition(locator: Locator(spine: page, offset: slice), pdfPage: page + 1, percent: percent), for: book.id, finished: p.atEnd && units > 1 ? true : nil)
         activity()
     }
 
     private func refreshPDFMarks() {
-        layout.bookmarks = bookmarks.map { TimelineMark(label: $0.id.uuidString, pos: Double($0.locator.spine), level: 0) }
-        position.bookmarkID = bookmarks.first { $0.locator.spine == whole(position.page) }?.id
+        layout.bookmarks = bookmarks.map { TimelineMark(label: $0.id.uuidString, pos: Double($0.locator.spine * pdfUnitsPerPage + $0.locator.offset), level: 0) }
+        if let locator = position.locator {
+            position.bookmarkID = bookmarks.first { $0.locator.spine == locator.spine && $0.locator.offset == locator.offset }?.id
+        }
     }
 
     func pdfSelectionChanged(text: String?, rect: CGRect, page: Int) {

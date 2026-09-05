@@ -23,11 +23,14 @@ in the chapter; bringing the pointer to the bottom shows the timeline — chapte
 the pointer — which you can scrub. Highlights in five colours or underline, notes, bookmarks (⌘D), a Contents ·
 Bookmarks · Notes popover, search within the book, an end-of-book card, and your place kept to the character. Look Up
 shows the system's definition popover, and the text's context menu is the system's (Look Up, Copy, Translate,
-Search). PDFs read like books: pages sit on the theme colour with no frame or shadow, one or two to a screen, turned the
-same way; themes are colour filters (paper tints in the light themes; in the dark ones luminance is inverted with
-hues kept, so pictures and highlights keep their colours). Contents and timeline marks come from the outline;
-search, bookmarks by page, highlights and underlines with notes work as in books; ⌘+ and ⌘− zoom in place of text
-size, and a zoomed page scrolls before it turns. In full screen the toolbar leaves with the menu bar and both come back when the pointer reaches the top
+Search). PDFs read like books, three ways. **Pages**: whole pages on the theme colour with no frame or shadow, one or two to a
+screen, turned the same way. **Zoom & Split**: each page is cropped to its ink, scaled so the text fills the width at
+the text size you choose, and cut into screens that turn like pages — text size for a PDF, with selection, search
+and highlights intact. **Text**: the text is reflowed into a book the way converters like calibre do it (running
+headers dropped, lines joined into paragraphs, larger type as headings) and read with every book setting; the layout
+is not kept, so tables and figures suffer. Themes are colour filters (paper tints in the light themes; in the dark
+ones luminance is inverted with hues kept, so pictures and highlights keep their colours). Contents and timeline
+marks come from the outline; search, bookmarks and highlights with notes work in every mode. In full screen the toolbar leaves with the menu bar and both come back when the pointer reaches the top
 edge. The reading position, statistics (minutes per day, streaks, books per year) and every annotation are files in
 `~/Library/Application Support/Books`.
 

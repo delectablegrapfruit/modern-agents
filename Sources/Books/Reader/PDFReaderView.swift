@@ -28,7 +28,8 @@ struct PDFSection: Hashable {
 }
 
 /// PDFKit's view with the reader's input: notched wheels go to the session (one notch, one page), the pointer
-/// position drives the chrome, and the end of a click opens the reader's menus over a selection or a highlight.
+/// position drives the chrome, keys turn screens in Zoom & Split, and the end of a click opens the reader's menus
+/// over a selection or a highlight.
 final class BooksPDFView: PDFView {
     weak var presenter: PDFPresenter?
     private var trackingArea: NSTrackingArea?
@@ -52,6 +53,11 @@ final class BooksPDFView: PDFView {
         super.scrollWheel(with: event)
     }
 
+    override func keyDown(with event: NSEvent) {
+        if presenter?.handleKey(event) == true { return }
+        super.keyDown(with: event)
+    }
+
     override func mouseUp(with event: NSEvent) {
         super.mouseUp(with: event)
         presenter?.mouseUp(at: convert(event.locationInWindow, from: nil))
@@ -63,9 +69,10 @@ final class BooksPDFView: PDFView {
     }
 }
 
-/// Everything the reader needs from a PDF: PDFKit's view with the reader's behaviours around it — themes, the
-/// paginated and scrolling layouts, the outline as contents and timeline marks, search, bookmarks by page and
-/// highlights kept as annotations. Reports to the session the way the page script does for books.
+/// Everything the reader needs from a PDF: PDFKit's view with the reader's behaviours around it — themes, whole
+/// pages or Zoom & Split (pages cropped to their ink, scaled to the text size and cut into screens that turn like
+/// pages), the outline as contents and timeline marks, search, bookmarks by page and highlights kept as
+/// annotations. Reports to the session in "units": pages, or screens in Zoom & Split.
 @MainActor
 final class PDFPresenter {
     let view = BooksPDFView()
@@ -76,13 +83,25 @@ final class PDFPresenter {
     private var hits: [UUID: PDFSelection] = [:]
     private var pendingSelection: PDFSelection?
     private var zoomFactor: CGFloat = 1
-    private var swipeDistance: CGFloat = 0
-    private var swipeTurned = false
     private var lastSize: CGSize = .zero
     private var opened = false
+    private var swipeDistance: CGFloat = 0
+    private var swipeTurned = false
+
+    /// Zoom & Split, fixed for the presenter's life: switching layouts reopens the book.
+    let fit: Bool
+    private var fitBox: CGRect = .zero
+    /// Height of one screen in page units.
+    private var sliceHeight: CGFloat = 0
+    private(set) var slicesPerPage = 1
+    private(set) var slice = 0
+    private let fitSide: CGFloat = 40
+    private let fitTop: CGFloat = 24
+    private let fitBottom: CGFloat = 56
 
     init(session: ReaderSession) {
         self.session = session
+        fit = session.model.settings.reader.pdfLayout == .fit
         view.presenter = self
         view.autoScales = false
         view.displaysPageBreaks = false
@@ -96,8 +115,9 @@ final class PDFPresenter {
     }
 
     private var settings: ReaderSettings { session.model.settings.reader }
-    /// PDFs read like books: pages, one or two at a time; the scrolling layout does not apply.
-    private var columns: Int { settings.spread == .one ? 1 : 2 }
+    /// PDFs read like books: pages, one or two at a time; Zoom & Split shows one screen at a time.
+    private var columns: Int { fit ? 1 : (settings.spread == .one ? 1 : 2) }
+    private var unitsPerPage: Int { fit ? max(1, slicesPerPage) : 1 }
     var pageCount: Int { document?.pageCount ?? 0 }
     var currentIndex: Int {
         guard let document, let page = view.currentPage else { return 0 }
@@ -116,16 +136,22 @@ final class PDFPresenter {
         }
         self.document = document
         sections = PDFPresenter.sections(of: document)
+        if fit { fitBox = PDFPresenter.contentBox(of: document) }
         applyTheme()
         view.document = document
         applyLayout()
         restoreHighlights()
         observe()
-        session.pdfOpened(pageCount: document.pageCount, sections: sections, columns: columns, mode: .paginated)
-        if let saved = session.book.position?.pdfPage, saved > 1, let page = document.page(at: saved - 1) {
-            view.go(to: page)
+        reportLayout()
+        let saved = session.book.position
+        var page = 0, savedSlice = 0
+        if let pdfPage = saved?.pdfPage {
+            page = pdfPage - 1
+            savedSlice = saved?.locator?.offset ?? 0
+        } else if let percent = saved?.percent, percent > 0 {
+            page = whole((percent / 100 * Double(document.pageCount)).rounded(.down))
         }
-        pageChanged()
+        if page > 0 || savedSlice > 0 { go(toPage: page, slice: savedSlice) } else { report() }
     }
 
     func close() {
@@ -135,21 +161,27 @@ final class PDFPresenter {
 
     private func observe() {
         let center = NotificationCenter.default
-        observers.append(center.addObserver(forName: .PDFViewPageChanged, object: view, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.pageChanged() }
-        })
-        observers.append(center.addObserver(forName: .PDFViewDisplayModeChanged, object: view, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.pageChanged() }
-        })
+        for name in [Notification.Name.PDFViewPageChanged, .PDFViewDisplayModeChanged] {
+            observers.append(center.addObserver(forName: name, object: view, queue: .main) { [weak self] _ in
+                Task { @MainActor in self?.report() }
+            })
+        }
     }
 
-    private func pageChanged() {
+    private func reportLayout() {
+        session.pdfOpened(units: pageCount * unitsPerPage, unitsPerPage: unitsPerPage, sections: sections, columns: columns)
+    }
+
+    private func report() {
         guard let document else { return }
-        session.pdfPageChanged(index: currentIndex, count: document.pageCount)
+        let page = currentIndex
+        let per = unitsPerPage
+        let label = fit && per > 1 ? "Page \(page + 1) of \(document.pageCount) · \(slice + 1)/\(per)" : nil
+        session.pdfPositionChanged(unit: page * per + (fit ? slice : 0), units: document.pageCount * per, page: page, slice: fit ? slice : 0, label: label)
     }
 
-    /// The outline, flattened, in page order.
-    private static func sections(of document: PDFDocument) -> [PDFSection] {
+    /// The outline, flattened, in page order. Also used off the main actor by the reflow converter.
+    nonisolated static func sections(of document: PDFDocument) -> [PDFSection] {
         var out: [(section: PDFSection, order: Int)] = []
         func walk(_ node: PDFOutline, level: Int) {
             for i in 0..<node.numberOfChildren {
@@ -167,17 +199,76 @@ final class PDFPresenter {
         return out.sorted { ($0.section.page, $0.order) < ($1.section.page, $1.order) }.map(\.section)
     }
 
+    // MARK: - Zoom & Split geometry
+
+    /// Where a sample of pages actually draws, as one box for the document: paper margins are cut away so the
+    /// text can fill the width. Median edges resist the odd full-bleed page; blank pages are skipped.
+    static func contentBox(of document: PDFDocument) -> CGRect {
+        let count = document.pageCount
+        guard count > 0, let first = document.page(at: 0) else { return .zero }
+        let media = first.bounds(for: .mediaBox)
+        let samples = min(count, 12)
+        var boxes: [CGRect] = []
+        for i in 0..<samples {
+            let index = count <= samples ? i : Int((Double(i) * Double(count - 1) / Double(max(1, samples - 1))).rounded())
+            if let page = document.page(at: index), let box = inkBox(of: page) { boxes.append(box) }
+        }
+        guard !boxes.isEmpty else { return media }
+        func median(_ values: [CGFloat]) -> CGFloat { values.sorted()[values.count / 2] }
+        let minX = median(boxes.map(\.minX)), maxX = median(boxes.map(\.maxX))
+        let minY = median(boxes.map(\.minY)), maxY = median(boxes.map(\.maxY))
+        guard maxX > minX, maxY > minY else { return media }
+        let pad = media.width * 0.015
+        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY).insetBy(dx: -pad, dy: -pad).intersection(media)
+    }
+
+    /// The box of non-white pixels in a small rendering of the page, in page space.
+    private static func inkBox(of page: PDFPage) -> CGRect? {
+        let media = page.bounds(for: .mediaBox)
+        guard media.width > 0, media.height > 0 else { return nil }
+        let width = 120
+        let height = max(1, Int(CGFloat(width) * media.height / media.width))
+        let image = page.thumbnail(of: NSSize(width: width, height: height), for: .mediaBox)
+        guard let tiff = image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff), rep.bitsPerSample == 8, !rep.isPlanar, let data = rep.bitmapData else { return nil }
+        let w = rep.pixelsWide, h = rep.pixelsHigh, spp = rep.samplesPerPixel, row = rep.bytesPerRow
+        let alphaFirst = rep.bitmapFormat.contains(.alphaFirst)
+        var minX = w, maxX = -1, minY = h, maxY = -1, ink = 0
+        for y in 0..<h {
+            for x in 0..<w {
+                let p = data + y * row + x * spp
+                let colorOffset = alphaFirst && rep.hasAlpha ? 1 : 0
+                let luminance: Int
+                if spp - colorOffset >= 3 {
+                    luminance = (Int(p[colorOffset]) * 299 + Int(p[colorOffset + 1]) * 587 + Int(p[colorOffset + 2]) * 114) / 1000
+                } else {
+                    luminance = Int(p[colorOffset])
+                }
+                let alpha = rep.hasAlpha ? Int(p[alphaFirst ? 0 : spp - 1]) : 255
+                if luminance < 225 && alpha > 40 {
+                    ink += 1
+                    if x < minX { minX = x }
+                    if x > maxX { maxX = x }
+                    if y < minY { minY = y }
+                    if y > maxY { maxY = y }
+                }
+            }
+        }
+        guard ink >= 20, maxX >= minX, maxY >= minY else { return nil }
+        let sx = media.width / CGFloat(w), sy = media.height / CGFloat(h)
+        return CGRect(x: media.minX + CGFloat(minX) * sx, y: media.maxY - CGFloat(maxY + 1) * sy,
+                      width: CGFloat(maxX - minX + 1) * sx, height: CGFloat(maxY - minY + 1) * sy)
+    }
+
     // MARK: - Appearance and layout
 
     func applySettings() {
         applyTheme()
         applyLayout()
-        pageChanged()
+        report()
     }
 
     /// Light themes tint the white of the paper; dark themes invert luminance while keeping hues (so pictures and
-    /// highlights keep their colours) and lift black to the theme's page colour. The surround is a light grey that
-    /// the same filters turn into a darker or lighter frame around the pages.
+    /// highlights keep their colours) and lift black to the theme's page colour.
     private func applyTheme() {
         let theme = session.effectiveTheme
         let page = NSColor(Color(hex: theme.colors.background)).usingColorSpace(.sRGB) ?? NSColor(srgbRed: 1, green: 1, blue: 1, alpha: 1)
@@ -216,13 +307,34 @@ final class PDFPresenter {
         view.displaysPageBreaks = false
         fitPages()
         if let current { view.go(to: current) }
+        if fit { showSlice() }
         session.pdfLayoutChanged(columns: columns, mode: .paginated)
     }
 
-    /// The page (or spread) fits the view inside book-like margins, times the zoom.
+    /// Pages: the page (or spread) fits the view inside book-like margins, times the zoom. Zoom & Split: the ink box
+    /// fills the width times the text size, and the page is cut into as many screens as that needs.
     private func fitPages() {
         guard let document, document.pageCount > 0, let page = view.currentPage ?? document.page(at: 0) else { return }
         let bounds = page.bounds(for: view.displayBox)
+        if fit {
+            let box = fitBox.isEmpty ? bounds : fitBox
+            let scale = max(0.05, (view.bounds.width - 2 * fitSide) / max(1, box.width) * CGFloat(settings.pdfZoom) / 100)
+            view.autoScales = false
+            view.minScaleFactor = 0.05
+            view.maxScaleFactor = 20
+            view.scaleFactor = scale
+            view.minScaleFactor = scale
+            view.maxScaleFactor = scale
+            sliceHeight = max(10, (view.bounds.height - fitTop - fitBottom) / scale)
+            let count = max(1, Int(ceil((box.height - 1) / sliceHeight)))
+            if count != slicesPerPage {
+                let fraction = Double(slice) / Double(max(1, slicesPerPage))
+                slicesPerPage = count
+                slice = min(count - 1, whole((fraction * Double(count)).rounded()))
+                if opened { reportLayout() }
+            }
+            return
+        }
         let rotated = page.rotation % 180 != 0
         let pageWidth = max(1, rotated ? bounds.height : bounds.width), pageHeight = max(1, rotated ? bounds.width : bounds.height)
         let availableWidth = max(100, view.bounds.width - 96), availableHeight = max(100, view.bounds.height - 80)
@@ -234,17 +346,149 @@ final class PDFPresenter {
         view.scaleFactor = scale
     }
 
+    /// Scrolls the zoomed page so the current screen sits under the top margin; the last screen ends at the ink's
+    /// bottom edge.
+    private func showSlice() {
+        guard fit, let page = view.currentPage, let documentView = view.documentView, let scrollView = documentView.enclosingScrollView else { return }
+        let box = fitBox.isEmpty ? page.bounds(for: view.displayBox) : fitBox
+        var top = box.maxY - CGFloat(slice) * sliceHeight
+        var bottom = top - sliceHeight
+        if bottom < box.minY {
+            bottom = box.minY
+            top = bottom + sliceHeight
+        }
+        let onPage = CGRect(x: box.minX, y: bottom, width: box.width, height: top - bottom)
+        let inDocument = documentView.convert(view.convert(onPage, from: page), from: view)
+        let clip = scrollView.contentView
+        var origin = inDocument.origin
+        origin.x -= fitSide
+        origin.y -= documentView.isFlipped ? fitTop : (clip.bounds.height - inDocument.height - fitTop)
+        let doc = documentView.bounds
+        origin.x = min(max(doc.minX, origin.x), max(doc.minX, doc.maxX - clip.bounds.width))
+        origin.y = min(max(doc.minY, origin.y), max(doc.minY, doc.maxY - clip.bounds.height))
+        clip.scroll(to: origin)
+        scrollView.reflectScrolledClipView(clip)
+    }
+
     func viewResized() {
         let size = view.bounds.size
         guard size != lastSize, size.width > 0 else { return }
         lastSize = size
         fitPages()
+        if fit { showSlice() }
+    }
+
+    /// ⌘+ and ⌘−: the text size in Zoom & Split (kept in the settings), a plain zoom for whole pages.
+    func zoom(_ direction: Int) {
+        if fit {
+            var all = session.model.settings
+            all.reader.pdfZoom = min(300, max(50, all.reader.pdfZoom + (direction > 0 ? 10 : -10)))
+            session.model.settings = all
+            fitPages()
+            showSlice()
+            report()
+            return
+        }
+        zoomFactor = min(4, max(0.5, zoomFactor * (direction > 0 ? 1.15 : 1 / 1.15)))
+        fitPages()
+    }
+
+    // MARK: - Navigation
+
+    func next() {
+        if fit {
+            if slice + 1 < slicesPerPage {
+                slice += 1
+                showSlice()
+                report()
+            } else if view.canGoToNextPage {
+                slice = 0
+                view.goToNextPage(nil)
+                showSlice()
+                report()
+            } else {
+                session.showEndCard = true
+            }
+            return
+        }
+        if view.canGoToNextPage { view.goToNextPage(nil) } else { session.showEndCard = true }
+    }
+
+    func previous() {
+        if fit {
+            if slice > 0 {
+                slice -= 1
+                showSlice()
+                report()
+            } else if view.canGoToPreviousPage {
+                view.goToPreviousPage(nil)
+                slice = max(0, slicesPerPage - 1)
+                showSlice()
+                report()
+            }
+            return
+        }
+        if view.canGoToPreviousPage { view.goToPreviousPage(nil) }
+    }
+
+    func nextSection() {
+        let current = currentIndex
+        if let next = sections.first(where: { $0.page > current }) { go(toPage: next.page) } else { go(toPage: pageCount - 1) }
+    }
+
+    func previousSection() {
+        let current = currentIndex
+        go(toPage: sections.last { $0.page < current }?.page ?? 0)
+    }
+
+    func go(toPage index: Int, slice target: Int = 0) {
+        guard let document, document.pageCount > 0, let page = document.page(at: min(max(0, index), document.pageCount - 1)) else { return }
+        slice = fit ? min(max(0, target), max(0, slicesPerPage - 1)) : 0
+        view.go(to: page)
+        if fit { showSlice() }
+        report()
+    }
+
+    func go(toUnit unit: Int) {
+        let per = unitsPerPage
+        go(toPage: max(0, unit) / per, slice: max(0, unit) % per)
+    }
+
+    func go(toFraction fraction: Double) {
+        let units = pageCount * unitsPerPage
+        go(toUnit: whole((fraction * Double(max(0, units - 1))).rounded()))
+    }
+
+    /// Zoom & Split: arrows, space and the paging keys turn screens; PDFKit would scroll instead.
+    func handleKey(_ event: NSEvent) -> Bool {
+        guard fit, let scalar = event.charactersIgnoringModifiers?.unicodeScalars.first else { return false }
+        let code = Int(scalar.value)
+        switch code {
+        case NSRightArrowFunctionKey, NSDownArrowFunctionKey, NSPageDownFunctionKey:
+            next()
+            return true
+        case 32:
+            if event.modifierFlags.contains(.shift) { previous() } else { next() }
+            return true
+        case NSLeftArrowFunctionKey, NSUpArrowFunctionKey, NSPageUpFunctionKey:
+            previous()
+            return true
+        case NSHomeFunctionKey:
+            go(toPage: 0)
+            return true
+        case NSEndFunctionKey:
+            go(toPage: pageCount - 1, slice: slicesPerPage - 1)
+            return true
+        default:
+            return false
+        }
     }
 
     /// Whether a zoomed page can still scroll in the direction of a wheel or swipe (AppKit's negative deltas are down
-    /// and to the right). While it can, PDFKit scrolls; the page turns only from its edge.
+    /// and to the right). While it can, PDFKit scrolls; the page turns only from its edge. Never in Zoom & Split,
+    /// where screens turn like pages.
     func canScroll(dx: CGFloat, dy: CGFloat) -> Bool {
-        guard let documentView = view.documentView, let scrollView = documentView.enclosingScrollView else { return false }
+        guard !fit, let documentView = view.documentView, let scrollView = documentView.enclosingScrollView else { return false }
         let visible = scrollView.contentView.documentVisibleRect
         let bounds = documentView.bounds
         let slack: CGFloat = 1
@@ -261,13 +505,8 @@ final class PDFPresenter {
         return false
     }
 
-    func zoom(_ direction: Int) {
-        zoomFactor = min(4, max(0.5, zoomFactor * (direction > 0 ? 1.15 : 1 / 1.15)))
-        fitPages()
-    }
-
-    /// Two-finger swipes in the paginated layout turn one page per gesture, sideways or vertical; PDFKit would
-    /// otherwise scroll a page that already fits. The inertial tail never turns another page.
+    /// Two-finger swipes turn one page (or screen) per gesture, sideways or vertical; PDFKit would otherwise scroll
+    /// a page that already fits. The inertial tail never turns another page.
     func handleTrackpad(_ event: NSEvent) -> Bool {
         guard event.hasPreciseScrollingDeltas else { return false }
         if event.phase.contains(.began) || event.phase.contains(.mayBegin) {
@@ -298,35 +537,6 @@ final class PDFPresenter {
             swipeTurned = false
         }
         return true
-    }
-
-    // MARK: - Navigation
-
-    func next() {
-        if view.canGoToNextPage { view.goToNextPage(nil) } else { session.showEndCard = true }
-    }
-
-    func previous() {
-        if view.canGoToPreviousPage { view.goToPreviousPage(nil) }
-    }
-
-    func nextSection() {
-        let current = currentIndex
-        if let next = sections.first(where: { $0.page > current }) { go(toPage: next.page) } else { go(toPage: pageCount - 1) }
-    }
-
-    func previousSection() {
-        let current = currentIndex
-        go(toPage: sections.last { $0.page < current }?.page ?? 0)
-    }
-
-    func go(toPage index: Int) {
-        guard let document, document.pageCount > 0, let page = document.page(at: min(max(0, index), document.pageCount - 1)) else { return }
-        view.go(to: page)
-    }
-
-    func go(toFraction fraction: Double) {
-        go(toPage: whole((fraction * Double(max(0, pageCount - 1))).rounded()))
     }
 
     // MARK: - Pointer, selection, highlights
@@ -368,7 +578,7 @@ final class PDFPresenter {
     }
 
     private func restoreHighlights() {
-        for annotation in session.annotations where annotation.kind == .highlight { addPDFAnnotations(for: annotation) }
+        for annotation in session.annotations where annotation.kind == .highlight && annotation.pdfRects != nil { addPDFAnnotations(for: annotation) }
     }
 
     /// One PDF annotation per highlighted line, tagged with the reader's id so a click finds the record.
@@ -463,7 +673,7 @@ final class PDFPresenter {
             context?.extend(atEnd: 60)
             let excerpt = HTMLText.collapse(context?.string ?? selection.string ?? "")
             let section = sections.last { $0.page <= index }
-            let hit = SearchHit(locator: Locator(spine: index, offset: results.count), excerpt: excerpt, chapter: section?.label ?? "Page \(index + 1)", pos: Double(index))
+            let hit = SearchHit(locator: Locator(spine: index, offset: results.count), excerpt: excerpt, chapter: section?.label ?? "Page \(index + 1)", pos: Double(index * unitsPerPage))
             hits[hit.id] = selection
             results.append(hit)
         }
@@ -471,11 +681,18 @@ final class PDFPresenter {
     }
 
     func show(_ hit: SearchHit) {
-        guard let selection = hits[hit.id] else {
+        guard let selection = hits[hit.id], let page = selection.pages.first else {
             go(toPage: hit.locator.spine)
             return
         }
         view.go(to: selection)
+        if fit {
+            let box = fitBox.isEmpty ? page.bounds(for: view.displayBox) : fitBox
+            let bounds = selection.bounds(for: page)
+            slice = min(max(0, whole(Double((box.maxY - bounds.maxY) / max(1, sliceHeight)).rounded(.down))), max(0, slicesPerPage - 1))
+            showSlice()
+            report()
+        }
         view.setCurrentSelection(selection, animate: true)
     }
 }

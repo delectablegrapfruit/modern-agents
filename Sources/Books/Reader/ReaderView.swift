@@ -42,7 +42,7 @@ struct ReaderContent: View {
         GeometryReader { geo in
             ZStack {
                 Color(hex: session.effectiveTheme.colors.background)
-                if session.book.kind == .pdf {
+                if session.usesPDFView {
                     PDFReaderView(session: session)
                 } else {
                     ReaderWebViewRepresentable(session: session)
@@ -52,6 +52,12 @@ struct ReaderContent: View {
                     footer(width: geo.size.width)
                 }
                 anchors
+                if session.preparing {
+                    ProgressView("Preparing the text…")
+                        .controlSize(.large)
+                        .padding(28)
+                        .glassRounded(16)
+                }
                 if session.showEndCard { EndCard(session: session) }
             }
             .onChange(of: geo.size.height, initial: true) { _, height in session.viewResized(height: height) }
@@ -150,7 +156,8 @@ struct ReaderContent: View {
 
     private var pageText: String {
         let p = session.position
-        if session.layout.mode == .scroll, session.book.kind == .epub { return "\(whole(p.percent.rounded()))%" }
+        if let label = session.pdfPageLabel { return label }
+        if session.layout.mode == .scroll, !session.usesPDFView { return "\(whole(p.percent.rounded()))%" }
         let total = whole(p.total), page = whole(p.page) + 1
         if session.layout.columns == 2, page < total { return "Pages \(page)–\(page + 1) of \(total)" }
         return "Page \(page) of \(total)"
