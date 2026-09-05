@@ -11,6 +11,12 @@ on:
 permissions:
   contents: read
 
+# One build per branch at a time: a newer push cancels the run before it, which also keeps two runs from committing
+# dist/ at once.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   macos:
     name: macOS build, test, launch-test, bundle
@@ -79,7 +85,8 @@ jobs:
           git add -f dist/Books.app.zip dist/Books.dmg dist/SHA256SUMS.txt
           if git diff --cached --quiet; then echo "dist/ unchanged"; exit 0; fi
           git commit -m "ci: package Books.app into dist/ (${GITHUB_SHA::7}) [skip ci]"
-          git pull --rebase --autostash origin "${GITHUB_REF_NAME}"
+          # Should another run have committed dist/ meanwhile, this build's files win.
+          git pull --rebase --autostash -X theirs origin "${GITHUB_REF_NAME}"
           git push origin "HEAD:${GITHUB_REF_NAME}"
 
       - name: Attach packages to the release
