@@ -466,13 +466,28 @@ enum ComicAnalysis {
             let y0 = Int(((size.height - rect.maxY) / rowHeight).rounded(.down)) - pad, y1 = Int(((size.height - rect.minY) / rowHeight).rounded(.up)) + pad
             return Region(x0: max(0, min(w, x0)), x1: max(0, min(w, x1)), y0: max(0, min(h, y0)), y1: max(0, min(h, y1)))
         }
-        let panelDetections: [(box: Region, mask: PanelDetector.Mask?)] = detections.filter { $0.kind == .panel && $0.confidence >= 0.25 }.compactMap {
+        let allPanels: [(box: Region, mask: PanelDetector.Mask?)] = detections.filter { $0.kind == .panel && $0.confidence >= 0.25 }.compactMap {
             let box = region(of: $0.rect, pad: max(2, w / 100))
             return box.area > 0 ? (box, $0.mask) : nil
         }
+        // A box lying almost wholly within a larger one is an inset or a double: it stays with its panel, as the
+        // gutters read it.
+        let panelDetections = allPanels.indices.filter { i in
+            !allPanels.indices.contains { j in
+                j != i && (allPanels[j].box.area > allPanels[i].box.area || (allPanels[j].box.area == allPanels[i].box.area && j < i))
+                    && allPanels[i].box.intersection(allPanels[j].box).area * 100 >= allPanels[i].box.area * 85
+            }
+        }.map { allPanels[$0] }
         let panelBoxes = panelDetections.map(\.box)
         if !panelBoxes.isEmpty {
-            let textBoxes = detections.filter { $0.kind == .text && $0.confidence >= 0.25 }.map { region(of: $0.rect, pad: 2) }.filter { $0.area > 0 }
+            // Text worth moving: confident, reaching into more than one panel, and no bigger than a balloon can be
+            // beside the smaller of the panels it touches.
+            let textBoxes = detections.filter { $0.kind == .text && $0.confidence >= 0.4 }.map { region(of: $0.rect, pad: 2) }.filter { t in
+                guard t.area > 0 else { return false }
+                let touched = panelBoxes.filter { $0.intersection(t).area > 0 }
+                guard touched.count >= 2, let smallest = touched.map(\.area).min() else { return false }
+                return t.area * 100 <= smallest * 40
+            }
             var owner = [Int32](repeating: -1, count: w * h)
             let byArea = panelBoxes.indices.sorted(by: { panelBoxes[$0].area > panelBoxes[$1].area })
             for b in byArea {
