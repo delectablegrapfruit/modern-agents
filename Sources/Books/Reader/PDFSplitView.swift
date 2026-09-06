@@ -31,7 +31,26 @@ struct SplitPreparation: Codable, Sendable {
         let box: CGRect?
     }
 
-    static let currentVersion = 5
+    /// The ink pixels of a rendering, kept only while the analysis runs (not cached).
+    struct Bitmap {
+        let width: Int, height: Int
+        let inked: [Bool]
+        let rowHeight: CGFloat
+        let columnWidth: CGFloat
+    }
+
+    static let currentVersion = 6
+
+    /// A run of ink between two blank bands on a strip — a line of text, a heading, a picture band — and where the
+    /// blank gaps between its words fall, so it can be rewrapped.
+    struct Run: Codable, Sendable {
+        let top: CGFloat, bottom: CGFloat
+        /// The ink's extent across the strip.
+        let minX: CGFloat, maxX: CGFloat
+        /// The middles of the gaps between words, left to right; empty for a picture or a single word.
+        let cuts: [CGFloat]
+        var height: CGFloat { top - bottom }
+    }
 
     var version = SplitPreparation.currentVersion
     /// Per page, the displayed size (rotation applied).
@@ -42,6 +61,8 @@ struct SplitPreparation: Codable, Sendable {
     let lines: [[Line]]
     /// Per page; nil when the document was too long to render every page.
     let ink: [PageInk?]
+    /// Per page, per strip: the runs of ink, top to bottom (from the rendering; from the text lines without one).
+    let runs: [[[Run]]]
     let typicalLineHeight: CGFloat
     /// Per page: the lines of the running header (title, page number) at the top and of the footer at the bottom.
     let headers: [[Line]]
@@ -59,9 +80,10 @@ struct SplitPreparation: Codable, Sendable {
 /// column at the text size, and that column is dealt out to screens block by block — a block being the ink between
 /// two blank bands that cross the page — so nothing is ever cut through: a block that does not fit moves whole to
 /// the next screen, a picture taller than a screen is shown fitted to one, and a picture-only page stands alone.
-/// Two screens sit side by side while two columns of the text fit the window; larger, they stack, each the full
-/// width and half the height, so the text keeps growing on shorter screens. Screens turn with a slide. The drawing
-/// is the reader's own; selection, highlights, search, links and Look Up come from PDFKit.
+/// Past the width of a column, each line is cut into its words at the blank gaps between them and the words are laid
+/// out again in shorter lines that fit — the page's own glyphs, rewrapped — so the text keeps growing while two pages
+/// stay side by side. Screens turn with a slide. The drawing is the reader's own; selection, highlights, search,
+/// links and Look Up come from PDFKit.
 @MainActor
 final class SplitPDFPresenter: PDFReading {
     /// A run of one page's ink shown on a screen: where it sits below the screen's top (view points), and whether
@@ -71,6 +93,8 @@ final class SplitPDFPresenter: PDFReading {
         let rect: CGRect
         let offset: CGFloat
         var fitted = false
+        /// A rewrapped word: its left edge from the tile's left, in view points. Nil centres the piece.
+        var x: CGFloat? = nil
     }
 
     struct Screen {
@@ -81,11 +105,19 @@ final class SplitPDFPresenter: PDFReading {
         var standalone = false
     }
 
-    /// A run of ink between two blank bands, in display space.
+    /// A run of ink between two blank bands, in display space, with the gaps between its words.
     private struct Block {
         let top: CGFloat
         let bottom: CGFloat
+        var minX: CGFloat = 0
+        var maxX: CGFloat = 0
+        var cuts: [CGFloat] = []
         var height: CGFloat { top - bottom }
+        /// The words, left to right, as display-space rectangles over the run's band.
+        var words: [CGRect] {
+            let edges = [minX] + cuts + [maxX]
+            return (0..<max(0, edges.count - 1)).map { CGRect(x: edges[$0], y: bottom, width: max(0.5, edges[$0 + 1] - edges[$0]), height: height) }
+        }
     }
 
     let view = SplitPDFView()
@@ -104,9 +136,6 @@ final class SplitPDFPresenter: PDFReading {
 
     // Geometry, recomputed when the view, the spread or the text size changes.
     private(set) var columns = 2
-    /// Two-page mode with text too wide for two columns side by side: the two screens stack, each the full width and
-    /// half the height, so the text keeps growing and each screen holds fewer lines.
-    private(set) var stacked = false
     private(set) var scale: CGFloat = 1
     private var tileSize: CGSize = .zero
     /// The height of a screen in view points.
@@ -119,6 +148,8 @@ final class SplitPDFPresenter: PDFReading {
     /// The place to restore once screens exist (the view may not have been laid out when preparation finished).
     private var pendingRestore: (() -> Int)?
     private var tiles: [Int: CGImage] = [:]
+    /// Pages rendered once at a pixel scale, for cutting rewrapped words out of.
+    private var pageImages: [String: (image: CGImage, area: CGRect, pixelScale: CGFloat)] = [:]
     private var spreadLayer: CALayer?
     private var selection: PDFSelection?
     private var selectionPage: Int?
@@ -128,8 +159,6 @@ final class SplitPDFPresenter: PDFReading {
     let topMargin: CGFloat = 24
     let bottomMargin: CGFloat = 56
     let gutter: CGFloat = 32
-    /// Between two stacked screens.
-    let stackGap: CGFloat = 24
 
     init(session: ReaderSession) {
         self.session = session
@@ -249,28 +278,93 @@ final class SplitPDFPresenter: PDFReading {
         let scanWidth = count <= 300 ? 640 : count <= 700 ? 480 : count <= 1200 ? 360 : 0
         var lines: [[SplitPreparation.Line]] = []
         var ink: [SplitPreparation.PageInk?] = []
+        var runs: [[[SplitPreparation.Run]]] = []
         lines.reserveCapacity(count)
         ink.reserveCapacity(count)
+        runs.reserveCapacity(count)
         for i in 0..<count {
             guard let page = document.page(at: i) else {
                 lines.append([])
                 ink.append(nil)
+                runs.append([])
                 if strips[i].isEmpty { strips[i] = [CGRect(origin: .zero, size: sizes[i])] }
                 continue
             }
-            lines.append(textLines(of: page))
+            let pageLines = textLines(of: page)
+            lines.append(pageLines)
             let scanned = scanWidth > 0 ? pageInk(of: page, strips: strips[i], width: scanWidth) : nil
-            ink.append(scanned)
+            ink.append(scanned?.ink)
             if strips[i].isEmpty {
                 let media = CGRect(origin: .zero, size: sizes[i])
-                strips[i] = [scanned?.box.map { $0.insetBy(dx: -sizes[i].width * 0.015, dy: -sizes[i].width * 0.015).intersection(media) } ?? media]
+                strips[i] = [scanned?.ink.box.map { $0.insetBy(dx: -sizes[i].width * 0.015, dy: -sizes[i].width * 0.015).intersection(media) } ?? media]
+            }
+            if let scanned {
+                runs.append(strips[i].indices.map { runsOf(strip: $0, strips: strips[i], bitmap: scanned.bitmap, ink: scanned.ink, lines: pageLines, size: sizes[i]) })
+            } else {
+                // No rendering: lines of text are the runs; without text, the whole strip is one.
+                runs.append(strips[i].map { strip in
+                    let inStrip = pageLines.filter { $0.maxX > strip.minX && $0.minX < strip.maxX }
+                    if inStrip.isEmpty { return [SplitPreparation.Run(top: strip.maxY, bottom: strip.minY, minX: strip.minX, maxX: strip.maxX, cuts: [])] }
+                    return inStrip.map { SplitPreparation.Run(top: $0.maxY, bottom: $0.minY, minX: $0.minX, maxX: $0.maxX, cuts: []) }
+                })
             }
         }
         if bodyWidth <= 0 { bodyWidth = strips.flatMap { $0 }.map(\.width).max() ?? 400 }
         let heights = lines.flatMap { $0.map(\.height) }.filter { $0 > 2 && $0 < 80 }.sorted()
         let typical = heights.isEmpty ? 12 : heights[heights.count / 2]
         let (headers, footers) = runningLines(lines, sizes: sizes, typical: typical)
-        return SplitPreparation(pageSizes: sizes, strips: strips, lines: lines, ink: ink, typicalLineHeight: typical, headers: headers, footers: footers, bodyStripWidth: bodyWidth)
+        return SplitPreparation(pageSizes: sizes, strips: strips, lines: lines, ink: ink, runs: runs, typicalLineHeight: typical, headers: headers, footers: footers, bodyStripWidth: bodyWidth)
+    }
+
+    /// The runs of ink on a strip between blank bands, top to bottom, each with the gaps between its words. Rows a
+    /// text line crosses count as inked, so a tall heading's thin rows never split it. A gap is a word gap when it
+    /// is at least three tenths of the run's height wide.
+    nonisolated static func runsOf(strip index: Int, strips: [CGRect], bitmap: SplitPreparation.Bitmap, ink: SplitPreparation.PageInk, lines: [SplitPreparation.Line], size: CGSize) -> [SplitPreparation.Run] {
+        let strip = strips[index]
+        let w = bitmap.width, h = bitmap.height
+        let rows = ink.stripRows.flatMap { index < $0.count ? $0[index] : nil } ?? ink.rows
+        let width = ink.stripRows != nil ? max(1, w / max(1, strips.count)) : w
+        let quiet = max(1, width / 100)
+        var inked = rows.map { $0 > quiet }
+        for line in lines where line.maxX > strip.minX && line.minX < strip.maxX && line.height > 1 {
+            let inset = line.height * 0.2
+            let first = max(0, Int(((size.height - (line.maxY - inset)) / bitmap.rowHeight).rounded(.down)))
+            let last = min(inked.count - 1, Int(((size.height - (line.minY + inset)) / bitmap.rowHeight).rounded(.down)))
+            if first <= last { for r in first...last { inked[r] = true } }
+        }
+        let x0 = max(0, min(w - 1, Int((strip.minX / bitmap.columnWidth).rounded(.down))))
+        let x1 = max(x0, min(w - 1, Int((strip.maxX / bitmap.columnWidth).rounded(.up))))
+        var out: [SplitPreparation.Run] = []
+        var y = 0
+        while y < h {
+            guard inked[y] else {
+                y += 1
+                continue
+            }
+            let start = y
+            while y < h, inked[y] { y += 1 }
+            // Ink per column across the band, for the extent and the word gaps.
+            var columns = [Int](repeating: 0, count: x1 - x0 + 1)
+            for r in start..<y {
+                let base = r * w
+                for x in x0...x1 where bitmap.inked[base + x] { columns[x - x0] += 1 }
+            }
+            guard let firstInk = columns.firstIndex(where: { $0 > 0 }), let lastInk = columns.lastIndex(where: { $0 > 0 }) else { continue }
+            let gapMin = max(2, Int((CGFloat(y - start) * 0.3).rounded()))
+            var cuts: [CGFloat] = []
+            var gapStart = -1
+            for x in firstInk...lastInk {
+                if columns[x] == 0 {
+                    if gapStart < 0 { gapStart = x }
+                } else if gapStart >= 0 {
+                    if x - gapStart >= gapMin { cuts.append(CGFloat(x0) * bitmap.columnWidth + CGFloat(gapStart + x) / 2 * bitmap.columnWidth) }
+                    gapStart = -1
+                }
+            }
+            out.append(SplitPreparation.Run(top: size.height - CGFloat(start) * bitmap.rowHeight, bottom: size.height - CGFloat(y) * bitmap.rowHeight,
+                                            minX: CGFloat(x0 + firstInk) * bitmap.columnWidth, maxX: CGFloat(x0 + lastInk + 1) * bitmap.columnWidth, cuts: cuts))
+        }
+        return out
     }
 
     /// The page's text lines in display space, top to bottom.
@@ -288,7 +382,7 @@ final class SplitPDFPresenter: PDFReading {
 
     /// How much ink each row of the page carries (across the page, and within each strip when there are two), and
     /// where the page's ink lies, from a small rendering `width` pixels across.
-    nonisolated static func pageInk(of page: PDFPage, strips: [CGRect], width: Int) -> SplitPreparation.PageInk? {
+    nonisolated static func pageInk(of page: PDFPage, strips: [CGRect], width: Int) -> (ink: SplitPreparation.PageInk, bitmap: SplitPreparation.Bitmap)? {
         let size = PDFPresenter.displaySize(of: page)
         guard size.width > 0, size.height > 0, width > 0 else { return nil }
         let height = max(1, Int((CGFloat(width) * size.height / size.width).rounded()))
@@ -305,6 +399,7 @@ final class SplitPDFPresenter: PDFReading {
         } : []
         var rows = [Int](repeating: 0, count: h)
         var stripRows = perStrip ? [[Int]](repeating: [Int](repeating: 0, count: h), count: strips.count) : []
+        var inkedPixels = [Bool](repeating: false, count: w * h)
         var minX = w, maxX = -1, minY = h, maxY = -1, total = 0
         for y in 0..<h {
             let rowStart = data + y * rowBytes
@@ -320,6 +415,7 @@ final class SplitPDFPresenter: PDFReading {
                 let alpha = rep.hasAlpha ? Int(p[alphaFirst ? 0 : spp - 1]) : 255
                 // Darker than the grey speckle of a scan, so noise between lines does not join them.
                 guard luminance < 160 && alpha > 40 else { continue }
+                inkedPixels[y * w + x] = true
                 count += 1
                 if x < minX { minX = x }
                 if x > maxX { maxX = x }
@@ -336,7 +432,8 @@ final class SplitPDFPresenter: PDFReading {
             let px = size.width / CGFloat(w)
             box = CGRect(x: CGFloat(minX) * px, y: size.height - CGFloat(maxY + 1) * rowHeight, width: CGFloat(maxX - minX + 1) * px, height: CGFloat(maxY - minY + 1) * rowHeight)
         }
-        return SplitPreparation.PageInk(rows: rows, stripRows: perStrip ? stripRows : nil, rowHeight: rowHeight, width: w, box: box)
+        let ink = SplitPreparation.PageInk(rows: rows, stripRows: perStrip ? stripRows : nil, rowHeight: rowHeight, width: w, box: box)
+        return (ink, SplitPreparation.Bitmap(width: w, height: h, inked: inkedPixels, rowHeight: rowHeight, columnWidth: size.width / CGFloat(w)))
     }
 
     /// Running headers and footers: the band of lines in a page's top or bottom margin (the outer 12% of the page)
@@ -426,45 +523,15 @@ final class SplitPDFPresenter: PDFReading {
         return Double(r.rows[row]) / Double(max(1, r.width))
     }
 
-    /// The runs of ink on a page's strip between blank bands, top to bottom. Rows a text line crosses count as
-    /// inked, so a tall heading's thin rows never split it.
+    /// The runs of ink on a page's strip between blank bands, top to bottom, from the analysis.
     private func blocks(page: Int, strip: Int) -> [Block] {
         let key = page * 4 + strip
         if let cached = blockCache[key] { return cached }
-        guard let p = preparation, let r = rows(page: page, strip: strip) else {
-            // No rendering: lines of text are the blocks; without text, the whole strip is one.
-            let stripRect = page < p_strips.count && strip < p_strips[page].count ? p_strips[page][strip] : CGRect(origin: .zero, size: pageSize(page))
-            let lines = (preparation?.lines[page] ?? []).filter { $0.maxX > stripRect.minX && $0.minX < stripRect.maxX }
-            let out = lines.isEmpty ? [Block(top: stripRect.maxY, bottom: stripRect.minY)] : lines.map { Block(top: $0.maxY, bottom: $0.minY) }
-            blockCache[key] = out
-            return out
-        }
-        let height = pageSize(page).height
-        let quiet = max(1, r.width / 100)
-        var inked = r.rows.map { $0 > quiet }
-        let stripRect = page < p.strips.count && strip < p.strips[page].count ? p.strips[page][strip] : CGRect(origin: .zero, size: pageSize(page))
-        for line in p.lines[page] where line.maxX > stripRect.minX && line.minX < stripRect.maxX && line.height > 1 {
-            let inset = line.height * 0.2
-            let first = max(0, Int(((height - (line.maxY - inset)) / r.rowHeight).rounded(.down)))
-            let last = min(inked.count - 1, Int(((height - (line.minY + inset)) / r.rowHeight).rounded(.down)))
-            if first <= last { for i in first...last { inked[i] = true } }
-        }
-        var out: [Block] = []
-        var y = 0
-        while y < inked.count {
-            if inked[y] {
-                let start = y
-                while y < inked.count, inked[y] { y += 1 }
-                out.append(Block(top: height - CGFloat(start) * r.rowHeight, bottom: height - CGFloat(y) * r.rowHeight))
-            } else {
-                y += 1
-            }
-        }
+        guard let p = preparation, page < p.runs.count, strip < p.runs[page].count else { return [] }
+        let out = p.runs[page][strip].map { Block(top: $0.top, bottom: $0.bottom, minX: $0.minX, maxX: $0.maxX, cuts: $0.cuts) }
         blockCache[key] = out
         return out
     }
-
-    private var p_strips: [[CGRect]] { preparation?.strips ?? [] }
 
     /// Whether a block is a picture rather than text: no line of text crosses it.
     private func isPicture(_ block: Block, page: Int) -> Bool {
@@ -490,34 +557,19 @@ final class SplitPDFPresenter: PDFReading {
         return columns == 2 ? clamped - clamped % 2 : clamped
     }
 
-    /// The largest text size (a step of 10) at which the body's width still fits the window in one column.
-    var largestZoom: Int {
-        guard let p = preparation, p.bodyStripWidth > 0, view.bounds.width > 60 else { return 400 }
-        return max(50, min(400, Int((view.bounds.width - 2 * sideMargin) / p.bodyStripWidth * 100 / 10) * 10))
-    }
-
-    /// The text size is the page's own scale: 100% shows ink at its printed size. The pages stay as chosen. Two
-    /// screens sit side by side while two columns of the body fit the window; larger, they stack — each the full
-    /// width and half the height, shorter screens with fewer lines — until the text fills the width.
+    /// The text size is the page's own scale: 100% shows ink at its printed size. The pages stay as chosen, side by
+    /// side; when a line no longer fits its column, the lines are rewrapped into shorter ones (see `buildScreens`).
     private func computeGeometry() {
         let size = view.bounds.size
-        guard let p = preparation, size.width > 60, size.height > 60, p.bodyStripWidth > 0 else { return }
+        guard preparation != nil, size.width > 60, size.height > 60 else { return }
         columns = settings.spread == .one ? 1 : 2
-        scale = CGFloat(min(largestZoom, max(50, settings.pdfZoom))) / 100
-        let body = p.bodyStripWidth * scale
-        let fullWidth = max(40, size.width - 2 * sideMargin)
-        let fullHeight = max(40, size.height - topMargin - bottomMargin)
-        if columns == 2, body * 2 + gutter + 2 * sideMargin <= size.width {
-            stacked = false
-            tileSize = CGSize(width: max(40, (size.width - 2 * sideMargin - gutter) / 2), height: fullHeight)
-        } else if columns == 2 {
-            stacked = true
-            tileSize = CGSize(width: fullWidth, height: max(40, (fullHeight - stackGap) / 2))
-        } else {
-            stacked = false
-            tileSize = CGSize(width: fullWidth, height: fullHeight)
-        }
+        scale = CGFloat(min(400, max(50, settings.pdfZoom))) / 100
+        let availableWidth = size.width - 2 * sideMargin - CGFloat(columns - 1) * gutter
+        tileSize = CGSize(width: max(40, availableWidth / CGFloat(columns)), height: max(40, size.height - topMargin - bottomMargin))
     }
+
+    /// For the self-test: whether any screen shows rewrapped words.
+    var rewrapped: Bool { screens.contains { $0.pieces.contains { $0.x != nil } } }
 
     /// One page's run of a strip for the column: the strip's columns, over the page's own ink from top to bottom
     /// (the group's strip is a median; a full page runs past it), cut below the page's header band and above its
@@ -582,6 +634,67 @@ final class SplitPDFPresenter: PDFReading {
             if let o = open { current.pieces.append(Piece(page: o.page, rect: o.rect, offset: o.offset)) }
             open = nil
         }
+        /// Lines wider than the tile at this size are cut into their words at the blank gaps between them and laid
+        /// out again in shorter lines that fit, keeping the page's own spacing between words, its line gap between
+        /// lines and its indents at paragraph starts. A screen ends before a line that would not fit whole.
+        func flowWords(page: Int, strip: Int, seg: CGRect) {
+            closeOpen()
+            let maxWidth = tileSize.width
+            let runs = blocks(page: page, strip: strip).filter { $0.bottom < seg.maxY && $0.top > seg.minY }
+            var gaps: [CGFloat] = []
+            for i in 1..<max(1, runs.count) { gaps.append(max(0, runs[i - 1].bottom - runs[i].top)) }
+            let lineGap = gaps.isEmpty ? typical * 0.3 : gaps.sorted()[gaps.count / 2]
+            let space = typical * 0.3
+            var lineWords: [(rect: CGRect, x: CGFloat)] = []
+            var lineX: CGFloat = 0
+            var lineHeight: CGFloat = 0
+            var lastWord: CGRect?
+            func flushLine() {
+                guard !lineWords.isEmpty else { return }
+                let h = lineHeight * scale
+                let lead = current.pieces.isEmpty ? 0 : lineGap * scale
+                if current.height + lead + h > tileSize.height, !current.pieces.isEmpty { push() }
+                if !current.pieces.isEmpty { current.height += lineGap * scale }
+                for word in lineWords { current.pieces.append(Piece(page: page, rect: word.rect, offset: current.height, x: word.x)) }
+                current.height += h
+                touch(page, out.count)
+                lineWords = []
+                lineX = 0
+                lineHeight = 0
+                lastWord = nil
+            }
+            var previousEndedShort = false
+            for run in runs {
+                if isPicture(run, page: page), run.height > typical * 2.5 {
+                    flushLine()
+                    let h = run.height * scale
+                    if current.height + h > tileSize.height, !current.pieces.isEmpty { push() }
+                    let rect = CGRect(x: seg.minX, y: run.bottom, width: seg.width, height: run.height)
+                    let fitted = h > tileSize.height || seg.width * scale > tileSize.width
+                    current.pieces.append(Piece(page: page, rect: rect, offset: current.height, fitted: fitted))
+                    current.height = fitted ? tileSize.height : current.height + h
+                    touch(page, out.count)
+                    if fitted { push() }
+                    previousEndedShort = true
+                    continue
+                }
+                let indented = run.minX > seg.minX + typical * 1.2
+                if indented || previousEndedShort, !lineWords.isEmpty { flushLine() }
+                if lineWords.isEmpty, indented { lineX = min(maxWidth * 0.3, (run.minX - seg.minX) * scale) }
+                for word in run.words {
+                    let gap: CGFloat = lastWord.map { last in abs(last.midY - word.midY) < 0.5 * max(last.height, word.height) ? max(0, word.minX - last.maxX) : space } ?? 0
+                    let width = word.width * scale
+                    if !lineWords.isEmpty, lineX + gap * scale + width > maxWidth { flushLine() }
+                    let x = lineWords.isEmpty ? lineX : lineX + gap * scale
+                    lineWords.append((word, x))
+                    lineX = x + width
+                    lineHeight = max(lineHeight, run.height)
+                    lastWord = word
+                }
+                previousEndedShort = run.maxX < seg.maxX - typical * 3
+            }
+            flushLine()
+        }
         for page in 0..<pageCount {
             if isPicturePage(page), let box = p.ink[page]?.box {
                 closeOpen()
@@ -597,6 +710,10 @@ final class SplitPDFPresenter: PDFReading {
             }
             for strip in 0..<max(1, p.strips[page].count) {
                 guard let seg = segment(page: page, strip: strip) else { continue }
+                if seg.width * scale > tileSize.width + 0.5 {
+                    flowWords(page: page, strip: strip, seg: seg)
+                    continue
+                }
                 var pending = blocks(page: page, strip: strip).filter { $0.bottom < seg.maxY && $0.top > seg.minY }
                     .map { Block(top: min($0.top, seg.maxY), bottom: max($0.bottom, seg.minY)) }
                 var guardCount = 0
@@ -695,6 +812,7 @@ final class SplitPDFPresenter: PDFReading {
         pageStarts = starts + [out.count]
         pageEnds = ends
         tiles.removeAll()
+        pageImages.removeAll()
         if unit >= units { unit = max(0, units - 1) }
     }
 
@@ -742,13 +860,9 @@ final class SplitPDFPresenter: PDFReading {
         return min(pageStarts[p] + max(0, slice), max(pageStarts[p], pageEnds[p]), max(0, units - 1))
     }
 
-    /// Where the tile of a column sits in the view (bottom-left origin): beside the first, or below it when stacked.
+    /// Where the tile of a column sits in the view (bottom-left origin).
     private func tileFrame(column: Int) -> CGRect {
-        if stacked {
-            let y = column == 0 ? bottomMargin + tileSize.height + stackGap : bottomMargin
-            return CGRect(x: sideMargin, y: y, width: tileSize.width, height: tileSize.height)
-        }
-        return CGRect(x: sideMargin + CGFloat(column) * (tileSize.width + gutter), y: bottomMargin, width: tileSize.width, height: tileSize.height)
+        CGRect(x: sideMargin + CGFloat(column) * (tileSize.width + gutter), y: bottomMargin, width: tileSize.width, height: tileSize.height)
     }
 
     /// The scale a piece is drawn at: the text size, unless the piece is wider than the tile, or fitted to it.
@@ -764,7 +878,7 @@ final class SplitPDFPresenter: PDFReading {
     private func pieceFrame(_ piece: Piece, in frame: CGRect, standalone: Bool = false) -> CGRect {
         let s = pieceScale(piece, in: frame)
         let width = piece.rect.width * s, height = piece.rect.height * s
-        let x = frame.midX - width / 2
+        let x = piece.x.map { frame.minX + $0 } ?? frame.midX - width / 2
         let top = standalone ? frame.maxY - (frame.height - height) / 2 : frame.maxY - piece.offset
         return CGRect(x: x, y: top - height, width: width, height: height)
     }
@@ -798,8 +912,32 @@ final class SplitPDFPresenter: PDFReading {
         view.layer?.backgroundColor = theme.background.cgColor
     }
 
-    /// One screen as an image at the window's scale: the paper, each piece's page drawn through its rectangle, and
-    /// the highlights that fall on it.
+    /// A page's inked area rendered once at a pixel scale, so rewrapped words can be cut out of it cheaply.
+    private func pageImage(page: Int, pixelScale: CGFloat) -> (image: CGImage, area: CGRect, pixelScale: CGFloat)? {
+        let key = "\(page)-\(Int((pixelScale * 100).rounded()))"
+        if let cached = pageImages[key] { return cached }
+        guard let document, let pdfPage = document.page(at: page), let p = preparation, page < p.strips.count else { return nil }
+        var area = p.strips[page].reduce(CGRect.null) { $0.union($1) }
+        if page < p.ink.count, let box = p.ink[page]?.box { area = area.union(box) }
+        if area.isNull { area = CGRect(origin: .zero, size: pageSize(page)) }
+        area = area.insetBy(dx: -2, dy: -2)
+        let w = Int((area.width * pixelScale).rounded(.up)), h = Int((area.height * pixelScale).rounded(.up))
+        guard w > 0, h > 0, w * h <= 30_000_000, let context = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        context.setFillColor(CGColor(gray: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: w, height: h))
+        context.interpolationQuality = .high
+        context.scaleBy(x: pixelScale, y: pixelScale)
+        context.translateBy(x: -area.minX, y: -area.minY)
+        pdfPage.draw(with: .mediaBox, to: context)
+        guard let image = context.makeImage() else { return nil }
+        if pageImages.count >= 2 { pageImages.removeAll() }
+        let entry = (image, area, pixelScale)
+        pageImages[key] = entry
+        return entry
+    }
+
+    /// One screen as an image at the window's scale: the paper, each piece's page drawn through its rectangle (a
+    /// rewrapped word cut from the page's rendering), and the highlights that fall on it.
     private func tileImage(for u: Int) -> CGImage? {
         if let cached = tiles[u] { return cached }
         guard let document, u >= 0, u < units else { return nil }
@@ -810,36 +948,51 @@ final class SplitPDFPresenter: PDFReading {
         context.fill(CGRect(x: 0, y: 0, width: width, height: height))
         context.interpolationQuality = .high
         let tile = CGRect(origin: .zero, size: tileSize)
+        let highlights = session.annotations.filter { $0.kind == .highlight && $0.pdfRects != nil }
         for piece in screens[u].pieces {
             guard let page = document.page(at: piece.page) else { continue }
             let dest = pieceFrame(piece, in: tile, standalone: screens[u].standalone)
             let s = pieceScale(piece, in: tile)
-            context.saveGState()
-            context.translateBy(x: dest.minX * backing, y: dest.minY * backing)
-            context.scaleBy(x: backing * s, y: backing * s)
-            context.translateBy(x: -piece.rect.minX, y: -piece.rect.minY)
-            context.clip(to: piece.rect)
-            page.draw(with: .mediaBox, to: context)
-            // Highlights, in the page's display space.
+            let destPixels = CGRect(x: dest.minX * backing, y: dest.minY * backing, width: dest.width * backing, height: dest.height * backing)
+            var drawn = false
+            if piece.x != nil, let source = pageImage(page: piece.page, pixelScale: backing * s) {
+                let crop = CGRect(x: (piece.rect.minX - source.area.minX) * source.pixelScale, y: (source.area.maxY - piece.rect.maxY) * source.pixelScale,
+                                  width: piece.rect.width * source.pixelScale, height: piece.rect.height * source.pixelScale)
+                if let cut = source.image.cropping(to: crop.integral) {
+                    context.draw(cut, in: destPixels)
+                    drawn = true
+                }
+            }
+            if !drawn {
+                context.saveGState()
+                context.translateBy(x: destPixels.minX, y: destPixels.minY)
+                context.scaleBy(x: backing * s, y: backing * s)
+                context.translateBy(x: -piece.rect.minX, y: -piece.rect.minY)
+                context.clip(to: piece.rect)
+                page.draw(with: .mediaBox, to: context)
+                context.restoreGState()
+            }
+            // Highlights on this piece, in the tile's pixels.
+            guard !highlights.isEmpty else { continue }
             let toDisplay = page.transform(for: .mediaBox)
-            for record in session.annotations where record.kind == .highlight {
-                guard let rects = record.pdfRects else { continue }
+            for record in highlights {
                 let color = PDFPresenter.nsColor(for: record.color ?? .yellow).usingColorSpace(.sRGB)?.cgColor ?? CGColor(gray: 1, alpha: 1)
-                for r in rects where r.page == piece.page {
-                    let shown = CGRect(x: r.x, y: r.y, width: r.width, height: r.height).applying(toDisplay)
-                    guard shown.intersects(piece.rect) else { continue }
+                for r in record.pdfRects ?? [] where r.page == piece.page {
+                    let shown = CGRect(x: r.x, y: r.y, width: r.width, height: r.height).applying(toDisplay).intersection(piece.rect)
+                    guard !shown.isNull, shown.width > 0, shown.height > 0 else { continue }
+                    let box = CGRect(x: destPixels.minX + (shown.minX - piece.rect.minX) * s * backing, y: destPixels.minY + (shown.minY - piece.rect.minY) * s * backing,
+                                     width: shown.width * s * backing, height: shown.height * s * backing)
                     context.saveGState()
                     context.setFillColor(color)
                     if record.color == .underline {
-                        context.fill(CGRect(x: shown.minX, y: shown.minY, width: shown.width, height: max(0.8, shown.height * 0.08)))
+                        context.fill(CGRect(x: box.minX, y: box.minY, width: box.width, height: max(1, box.height * 0.08)))
                     } else {
                         context.setBlendMode(.multiply)
-                        context.fill(shown)
+                        context.fill(box)
                     }
                     context.restoreGState()
                 }
             }
-            context.restoreGState()
         }
         guard let image = context.makeImage() else { return nil }
         if tiles.count > 24 { tiles.removeAll() }
@@ -898,9 +1051,9 @@ final class SplitPDFPresenter: PDFReading {
     /// Re-lays the screens out for a new size, spread or text size, keeping the place: the top of the first piece.
     private func relayout() {
         let anchor = units > 0 ? screens[unit].pieces.first : nil
-        let before = (tileSize, scale, columns, stacked)
+        let before = (tileSize, scale, columns)
         computeGeometry()
-        if before == (tileSize, scale, columns, stacked) && !screens.isEmpty { return }
+        if before == (tileSize, scale, columns) && !screens.isEmpty { return }
         buildScreens()
         if let pendingRestore, units > 0 {
             unit = aligned(pendingRestore())
@@ -930,12 +1083,11 @@ final class SplitPDFPresenter: PDFReading {
         report()
     }
 
-    /// The text size steps by 10%, from 50% to the largest at which the text still fits the window's width.
+    /// The text size steps by 10%, from 50% to 400%; past the width of a column the lines are rewrapped.
     func zoom(_ direction: Int) {
         var all = session.model.settings
-        let cap = largestZoom
-        let current = min(cap, max(50, all.reader.pdfZoom))
-        let next = direction > 0 ? min(cap, current + 10) : max(50, current - 10)
+        let current = min(400, max(50, all.reader.pdfZoom))
+        let next = direction > 0 ? min(400, current + 10) : max(50, current - 10)
         all.reader.pdfZoom = next
         session.model.settings = all
         applySettings()
@@ -1028,11 +1180,11 @@ final class SplitPDFPresenter: PDFReading {
         return display.applying(page.transform(for: .mediaBox).inverted())
     }
 
-    /// A page-space rectangle to view coordinates, when the page is showing (the union over the pieces it crosses).
-    private func viewRect(_ rect: CGRect, onPage pageIndex: Int) -> CGRect? {
-        guard let document, let page = document.page(at: pageIndex) else { return nil }
+    /// A page-space rectangle to view coordinates, piece by piece, where the page is showing.
+    private func viewRects(_ rect: CGRect, onPage pageIndex: Int) -> [CGRect] {
+        guard let document, let page = document.page(at: pageIndex) else { return [] }
         let display = rect.applying(page.transform(for: .mediaBox))
-        var union: CGRect?
+        var out: [CGRect] = []
         for column in 0..<columns {
             let u = unit + column
             guard u < units else { continue }
@@ -1042,11 +1194,15 @@ final class SplitPDFPresenter: PDFReading {
                 guard !part.isNull, part.width > 0, part.height > 0 else { continue }
                 let pf = pieceFrame(piece, in: frame, standalone: screens[u].standalone)
                 let s = pieceScale(piece, in: frame)
-                let shown = CGRect(x: pf.minX + (part.minX - piece.rect.minX) * s, y: pf.minY + (part.minY - piece.rect.minY) * s, width: part.width * s, height: part.height * s)
-                union = union.map { $0.union(shown) } ?? shown
+                out.append(CGRect(x: pf.minX + (part.minX - piece.rect.minX) * s, y: pf.minY + (part.minY - piece.rect.minY) * s, width: part.width * s, height: part.height * s))
             }
         }
-        return union
+        return out
+    }
+
+    /// The union of `viewRects`, for anchoring a menu.
+    private func viewRect(_ rect: CGRect, onPage pageIndex: Int) -> CGRect? {
+        viewRects(rect, onPage: pageIndex).reduce(nil) { $0.map { $0.union($1) } ?? $1 }
     }
 
     /// View (bottom-left origin) to the top-left-origin coordinates the SwiftUI overlays use.
@@ -1100,8 +1256,10 @@ final class SplitPDFPresenter: PDFReading {
     }
 
     func mouseDragged(to point: NSPoint) {
-        guard let start = dragStart, let hit = dragHit, let document, let page = document.page(at: hit.piece.page),
-              let from = pagePoint(at: start, in: hit), let to = pagePoint(at: point, in: hit) else { return }
+        guard let start = dragStart, let hit = dragHit, let document, let page = document.page(at: hit.piece.page), let from = pagePoint(at: start, in: hit) else { return }
+        // Over rewrapped words the piece under the pointer maps the point; between them, the piece the drag began in.
+        let under = pieceHit(at: point).flatMap { $0.piece.page == hit.piece.page ? $0 : nil } ?? hit
+        guard let to = pagePoint(at: point, in: under) else { return }
         selection = page.selection(from: from, to: to)
         selectionPage = hit.piece.page
         drawSelection()
@@ -1142,7 +1300,7 @@ final class SplitPDFPresenter: PDFReading {
         }
         let path = CGMutablePath()
         for line in selection.selectionsByLine() {
-            if let rect = viewRect(line.bounds(for: page), onPage: pageIndex) { path.addRect(rect) }
+            for rect in viewRects(line.bounds(for: page), onPage: pageIndex) { path.addRect(rect) }
         }
         view.set(path: path, on: view.selectionLayer)
     }
@@ -1155,7 +1313,7 @@ final class SplitPDFPresenter: PDFReading {
         let pageIndex = document.index(for: page)
         let path = CGMutablePath()
         for line in flash.selectionsByLine() {
-            if let rect = viewRect(line.bounds(for: page), onPage: pageIndex) { path.addRect(rect) }
+            for rect in viewRects(line.bounds(for: page), onPage: pageIndex) { path.addRect(rect) }
         }
         view.set(path: path, on: view.flashLayer)
     }

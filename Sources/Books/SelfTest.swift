@@ -235,12 +235,12 @@ enum SelfTest {
         guard screensAt100 >= 8, fitSession.layout.columns == 2 else { throw Failure("Zoom & Split made \(Int(screensAt100)) screens of 8 pages in \(fitSession.layout.columns) column(s); expected two columns") }
         guard let split = fitSession.pdf as? SplitPDFPresenter else { throw Failure("Zoom & Split is not using the split presenter") }
         try checkFlow(split, expectCuts: false)
-        // Larger text keeps two pages: when two columns no longer fit side by side, the two screens stack.
+        // Larger text keeps two pages side by side: lines wider than a column are rewrapped into shorter ones.
         for _ in 0..<5 { fitSession.changeFontSize(by: 10) }
         try await sleep(0.8)
         let screensTwoUpLarge = fitSession.layout.total
-        guard model.settings.reader.pdfZoom == 150, screensTwoUpLarge > screensAt100, fitSession.layout.columns == 2, split.stacked else {
-            throw Failure("150% did not keep two pages stacked (\(model.settings.reader.pdfZoom)%, \(screensAt100) → \(screensTwoUpLarge) screens, \(fitSession.layout.columns) column(s), stacked \(split.stacked))")
+        guard model.settings.reader.pdfZoom == 150, screensTwoUpLarge > screensAt100, fitSession.layout.columns == 2, split.rewrapped else {
+            throw Failure("150% did not rewrap into two pages (\(model.settings.reader.pdfZoom)%, \(screensAt100) → \(screensTwoUpLarge) screens, \(fitSession.layout.columns) column(s), rewrapped \(split.rewrapped))")
         }
         try checkFlow(split, expectCuts: true)
         // One page: the same size shows fewer, wider screens.
@@ -284,7 +284,7 @@ enum SelfTest {
         fitSession.toggleBookmark()
         try await sleep(0.3)
         guard fitSession.isBookmarked else { throw Failure("Zoom & Split bookmark was not added") }
-        log("Zoom & Split: \(Int(screensAt100)) screens at 100%, \(Int(screensTwoUpLarge)) at 150% two-up stacked, \(Int(screensOneUpLarge)) one-up; blocks never cut, no repeats; turns, \(fitHits) matches, bookmark; footer “\(fitSession.pdfPageLabel ?? "")”")
+        log("Zoom & Split: \(Int(screensAt100)) screens at 100%, \(Int(screensTwoUpLarge)) at 150% two-up rewrapped, \(Int(screensOneUpLarge)) one-up; blocks never cut, no repeats; turns, \(fitHits) matches, bookmark; footer “\(fitSession.pdfPageLabel ?? "")”")
 
         // Text: the PDF reflowed into a book, read by the page script like any other.
         fitSession.setPDFLayout(.text)
