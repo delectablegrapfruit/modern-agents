@@ -330,7 +330,8 @@ enum SelfTest {
                 throw Failure("screen \(u) was cut through ink on page \(a.page + 1) at \(Int(band)) (\(Int(ink * 100))% of the row)")
             }
         }
-        if expectCuts, cuts == 0 { throw Failure("no screen was cut within a page; the flow did not split pages") }
+        // Rewrapped words are never cut through by construction, and a screen boundary usually falls inside a line's words.
+        if expectCuts, cuts == 0, !split.rewrapped { throw Failure("no screen was cut within a page; the flow did not split pages") }
         for (i, screen) in screens.enumerated() {
             guard screen.height <= split.screenPoints + 0.5 else { throw Failure("screen \(i + 1) holds \(Int(screen.height)) of \(Int(split.screenPoints)) points") }
             if i < screens.count - 1, !screens[i + 1].standalone, screen.height < split.screenPoints * 0.5 { throw Failure("screen \(i + 1) is only \(Int(screen.height / split.screenPoints * 100))% full") }
