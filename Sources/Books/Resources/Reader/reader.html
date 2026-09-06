@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Reader</title>
+<!-- The book's own stylesheets, scoped to .book-root/.book-body by epub.js, are injected here at open() time.
+     They come first so the reader's own rules below always win. -->
+<style id="book-css"></style>
+<style id="base-css">
+/* The page IS the book: WKWebView loads this document directly, so html/body carry the theme and the
+   multi-column pagination instead of an iframe. Ported from the web reader's BASE_CSS. */
+html, body { margin: 0 !important; padding: 0 !important; }
+html { height: 100%; font-size: var(--fs, 16px); background: var(--bg, #fff) !important; color: var(--fg, #000); color-scheme: light; overscroll-behavior: none; scrollbar-color: var(--fg-3, rgba(0,0,0,0.3)) transparent; scrollbar-width: thin; }
+html.dark { color-scheme: dark; }
+::-webkit-scrollbar { width: 12px; height: 12px; background: transparent; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--fg-3, rgba(0,0,0,0.3)); border-radius: 8px; border: 3px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: var(--fg-2, rgba(0,0,0,0.5)); border: 3px solid transparent; background-clip: padding-box; }
+/* overflow:hidden still leaves the box programmatically scrollable — that is how the column strip is paged. */
+body { height: 100%; overflow: hidden; background: transparent !important; color: var(--fg, #000); font-size: 1rem; line-height: var(--lh, 1.55); -webkit-text-size-adjust: 100%; text-rendering: optimizeLegibility; overscroll-behavior: none; }
+body.scroll { overflow-y: auto; overflow-x: hidden; height: auto; min-height: 100%; }
+.book-root { position: relative; box-sizing: border-box; }
+body.paginated .book-root { height: var(--col-h); width: var(--box-w); margin: var(--m-top) var(--m-side) 0 !important; column-count: var(--cols); column-gap: var(--gap); column-fill: auto; overflow: visible; }
+body.scroll .book-root { max-width: var(--scroll-w); margin: 0 auto !important; padding: var(--scroll-top) var(--scroll-side) 45vh !important; }
+.books-section { break-before: column; -webkit-column-break-before: always; }
+.books-section:first-child { break-before: auto; -webkit-column-break-before: auto; }
+body.scroll .books-section { break-before: auto; -webkit-column-break-before: auto; margin-bottom: 4em !important; }
+/* Block wrappers must stay fragmentable: a scroll container cannot be split across columns. */
+body.paginated .books-section :is(div, section, article, main, aside, header, footer, nav, blockquote, li) { overflow: visible !important; }
+.books-section, .book-body { width: auto !important; max-width: none !important; min-width: 0 !important; margin: 0 !important; padding: 0 !important; height: auto !important; min-height: 0 !important; max-height: none !important; position: static !important; overflow: visible !important; columns: auto !important; column-count: auto !important; float: none !important; transform: none !important; }
+.book-body { font-size: 1em !important; }
+.book-end { height: 0; }
+img, svg, video, canvas { max-width: 100% !important; max-height: var(--col-h, 100vh) !important; height: auto; box-sizing: border-box; object-fit: contain; break-inside: avoid; -webkit-column-break-inside: avoid; }
+body.scroll img, body.scroll svg, body.scroll video { max-height: 90vh !important; }
+figure { break-inside: avoid; margin-left: 0; margin-right: 0; max-width: 100%; }
+table { max-width: 100% !important; } pre { white-space: pre-wrap !important; overflow-wrap: anywhere; }
+h1, h2, h3, h4, h5, h6 { break-after: avoid; -webkit-column-break-after: avoid; }
+.books-section, .books-section :is(p, li, dd, dt, blockquote, div, figcaption, td, th) { line-height: var(--lh, 1.55) !important; }
+.books-section { -webkit-hyphens: var(--hyphens, auto); hyphens: var(--hyphens, auto); overflow-wrap: break-word; }
+body.justify .books-section p { text-align: justify !important; }
+body.font-custom .books-section, body.font-custom .books-section :not(pre, code, kbd, samp, tt, var) { font-family: var(--font-family) !important; }
+body.theme-bold .books-section :is(p, li, dd, dt, td, th, blockquote, figcaption, div) { font-weight: 600 !important; }
+body.theme-focus .books-section { letter-spacing: 0.01em; word-spacing: 0.06em; }
+body:not(.keep-colors) .books-section, body:not(.keep-colors) .books-section *:not(.books-hl):not(img):not(svg):not(svg *) { color: var(--fg) !important; background-color: transparent !important; border-color: var(--fg-3) !important; text-shadow: none !important; }
+body:not(.keep-colors) .books-section a, body:not(.keep-colors) .books-section a * { color: var(--accent) !important; }
+body.theme-dark img { filter: brightness(0.92); }
+a { color: var(--accent); }
+span.books-hl { background: var(--hl); color: inherit; border-radius: 2px; box-decoration-break: clone; -webkit-box-decoration-break: clone; padding: 0.06em 0; cursor: pointer; }
+span.books-hl.underline { background: transparent; border-bottom: 2px solid var(--hl); text-decoration: none; }
+::selection { background: color-mix(in srgb, var(--accent, #007aff) 32%, transparent); }
+body:not(.keep-colors) ::selection { background: color-mix(in srgb, var(--accent, #007aff) 45%, transparent); }
+p.books-error { text-align: center; opacity: 0.6; margin-top: 30%; }
+</style>
+</head>
+<body>
+<!-- The spine sections are written into this container by reader-core.js; nothing else lives on the page. -->
+<div class="book-root" id="book-root"><div class="book-end" id="book-end"></div></div>
+<script src="util.js"></script>
+<script src="zip.js"></script>
+<script src="epub.js"></script>
+<script src="reader-core.js"></script>
+</body>
+</html>

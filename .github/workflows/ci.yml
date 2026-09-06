@@ -1,0 +1,128 @@
+name: CI
+
+on:
+  push:
+    paths-ignore:
+      - "dist/**"
+  pull_request:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+# One build per branch at a time: a newer push cancels the run before it, which also keeps two runs from committing
+# dist/ at once.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    name: macOS build, test, launch-test, bundle
+    permissions:
+      contents: write
+    # macOS 26 with Xcode 26 by default: the app is linked against the macOS 26 SDK, which is what gives the
+    # standard controls their Liquid Glass appearance. Hosted macOS minutes bill at ten times the rate of Linux
+    # ones; a repository variable BOOKS_MACOS_RUNNER (for example "self-hosted") points the job at your own Mac.
+    runs-on: ${{ vars.BOOKS_MACOS_RUNNER || 'macos-26' }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: xcodebuild -version && swift --version
+      - name: Kindle fixtures (libmobi test suite)
+        uses: actions/checkout@v4
+        with:
+          repository: bfabiszewski/libmobi
+          path: tools/libmobi
+          sparse-checkout: tests/samples
+      - name: Copy the Kindle fixtures the tests use
+        run: |
+          mkdir -p Tests/Fixtures/mobi
+          for f in sample-cp1252 sample-ncx sample-multimedia sample-unicode-huffdic sample-unicode-uncompressed sample-obfuscated-fonts sample-textread sample-dict-infl2 sample-drm-v1; do
+            cp "tools/libmobi/tests/samples/$f.mobi" Tests/Fixtures/mobi/ || echo "missing $f"
+          done
+          ls -la Tests/Fixtures/mobi
+      - run: swift test
+      - run: scripts/make-app.sh release && test -f build/Books.app/Contents/Resources/AppIcon.icns && test -f build/Books.app/Contents/Resources/Reader/reader.html
+
+      - name: Package (zip + dmg + checksums)
+        run: |
+          mkdir -p dist
+          rm -f dist/Books.app.zip dist/Books.dmg
+          ditto -c -k --keepParent build/Books.app dist/Books.app.zip
+          hdiutil create -volname Books -srcfolder build/Books.app -ov -format UDZO dist/Books.dmg
+          (cd dist && shasum -a 256 Books.app.zip Books.dmg | tee SHA256SUMS.txt)
+          ls -la dist
+
+      - name: Launch test — the packaged app, unzipped elsewhere with the build directory hidden, imports a generated book and reads it with real wheel notches
+        timeout-minutes: 5
+        run: |
+          mv .build "$RUNNER_TEMP/hidden-build"
+          rm -rf "$RUNNER_TEMP/launch" && mkdir -p "$RUNNER_TEMP/launch"
+          ditto -x -k dist/Books.app.zip "$RUNNER_TEMP/launch"
+          (sleep 30; screencapture -x build/launch-test.png || true) &
+          BOOKS_SELFTEST=1 "$RUNNER_TEMP/launch/Books.app/Contents/MacOS/Books"
+          wait
+          mv "$RUNNER_TEMP/hidden-build" .build
+
+      - name: Upload packages (and test screenshots, also when a test failed)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Books.app
+          if-no-files-found: warn
+          path: |
+            dist/Books.app.zip
+            dist/Books.dmg
+            dist/SHA256SUMS.txt
+            build/*.png
+
+      - name: Commit packages to dist/
+        if: github.event_name == 'push'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f dist/Books.app.zip dist/Books.dmg dist/SHA256SUMS.txt
+          if git diff --cached --quiet; then echo "dist/ unchanged"; exit 0; fi
+          git commit -m "ci: package Books.app into dist/ (${GITHUB_SHA::7}) [skip ci]"
+          # Should another run have committed dist/ meanwhile, this build's files win.
+          git pull --rebase --autostash -X theirs origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+
+      - name: Attach packages to the release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/Books.app.zip
+            dist/Books.dmg
+            dist/SHA256SUMS.txt
+
+  linux:
+    name: Linux core build and test
+    runs-on: ubuntu-latest
+    container: swift:6.0
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift build --product books-cli
+      - name: Kindle fixtures (libmobi test suite)
+        uses: actions/checkout@v4
+        with:
+          repository: bfabiszewski/libmobi
+          path: tools/libmobi
+          sparse-checkout: tests/samples
+      - name: Copy the Kindle fixtures the tests use
+        run: |
+          mkdir -p Tests/Fixtures/mobi
+          for f in sample-cp1252 sample-ncx sample-multimedia sample-unicode-huffdic sample-unicode-uncompressed sample-obfuscated-fonts sample-textread sample-dict-infl2 sample-drm-v1; do
+            cp "tools/libmobi/tests/samples/$f.mobi" Tests/Fixtures/mobi/ || echo "missing $f"
+          done
+          ls -la Tests/Fixtures/mobi
+      - run: swift test
+      - name: Convert the fixtures with the command line
+        run: |
+          for f in Tests/Fixtures/mobi/*.mobi; do
+            case "$f" in *drm*) continue;; esac
+            .build/debug/books-cli convert "$f" /tmp/out.epub
+            .build/debug/books-cli info /tmp/out.epub | head -4
+          done

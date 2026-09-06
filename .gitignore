@@ -1,0 +1,12 @@
+.build/
+build/
+.swiftpm/
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+DerivedData/
+Tests/Fixtures/
+tools/
+node_modules/
+.DS_Store
+._*
