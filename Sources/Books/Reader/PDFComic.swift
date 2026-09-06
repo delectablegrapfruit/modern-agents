@@ -466,17 +466,35 @@ enum ComicAnalysis {
             let y0 = Int(((size.height - rect.maxY) / rowHeight).rounded(.down)) - pad, y1 = Int(((size.height - rect.minY) / rowHeight).rounded(.up)) + pad
             return Region(x0: max(0, min(w, x0)), x1: max(0, min(w, x1)), y0: max(0, min(h, y0)), y1: max(0, min(h, y1)))
         }
-        let panelBoxes = detections.filter { $0.kind == .panel && $0.confidence >= 0.25 }.map { region(of: $0.rect, pad: max(2, w / 100)) }.filter { $0.area > 0 }
+        let panelDetections: [(box: Region, mask: PanelDetector.Mask?)] = detections.filter { $0.kind == .panel && $0.confidence >= 0.25 }.compactMap {
+            let box = region(of: $0.rect, pad: max(2, w / 100))
+            return box.area > 0 ? (box, $0.mask) : nil
+        }
+        let panelBoxes = panelDetections.map(\.box)
         if !panelBoxes.isEmpty {
             let textBoxes = detections.filter { $0.kind == .text && $0.confidence >= 0.25 }.map { region(of: $0.rect, pad: 2) }.filter { $0.area > 0 }
             var owner = [Int32](repeating: -1, count: w * h)
-            for b in panelBoxes.indices.sorted(by: { panelBoxes[$0].area > panelBoxes[$1].area }) {
+            let byArea = panelBoxes.indices.sorted(by: { panelBoxes[$0].area > panelBoxes[$1].area })
+            for b in byArea {
                 let r = panelBoxes[b]
                 for y in r.y0..<r.y1 {
                     let row = y * w
                     for x in r.x0..<r.x1 where inside.bits[row + x] { owner[row + x] = Int32(b) }
                 }
             }
+            // A segmentation model's own shapes decide where boxes overlap: a pixel under a mask goes to that panel
+            // (the smallest, where masks overlap too); the box alone decides only where no mask reaches.
+            var byMask = [Int32](repeating: -1, count: w * h)
+            for b in byArea {
+                guard let mask = panelDetections[b].mask else { continue }
+                let r = panelBoxes[b]
+                for y in r.y0..<r.y1 {
+                    let row = y * w
+                    let ny = (Double(y) + 0.5) / Double(h)
+                    for x in r.x0..<r.x1 where inside.bits[row + x] && mask.covers(x: (Double(x) + 0.5) / Double(w), y: ny) { byMask[row + x] = Int32(b) }
+                }
+            }
+            for i in 0..<(w * h) where byMask[i] >= 0 { owner[i] = byMask[i] }
             let pieces = Components(of: inside, eight: true)
             var votes = [[Int]](repeating: [Int](repeating: 0, count: panelBoxes.count), count: pieces.count)
             for i in 0..<(w * h) {

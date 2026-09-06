@@ -46,12 +46,13 @@ shapes a slanted or curved gutter divides — so panels of any shape are found, 
 balloon or figure that spills across a gutter goes whole to the panel it comes from (the one it reaches farther
 into) and is cut out of the neighbour, so overlapping panels are shown apart. Captions and lettering beside a frame
 stay with it; page numbers are left out; a page without gutters is one panel. Panels within a row read left to
-right, or right to left for manga (Appearance ▸ Reading). When the build bundles the detector model — a YOLO
-network trained on comic panels and text ([Oliverdsfdsf/comic-panels-text-detect](https://huggingface.co/Oliverdsfdsf/comic-panels-text-detect)
-on Hugging Face, converted to Core ML by `scripts/panel-detector.sh` at build time) — it runs on the Mac through
-Vision, on the Neural Engine where there is one, and says where the panels and the balloons are: every inked
-pixel goes to the panel box it lies in, what a text box covers goes to the panel that balloon belongs to, and the
-gutter analysis still draws the exact outlines; ink the model misses is kept as a panel of its own. Appearance ▸
+right, or right to left for manga (Appearance ▸ Reading). When the build bundles the detector model — a YOLO26n
+segmentation network trained on comic panels and text ([Oliverdsfdsf/comic-panels-text-detect](https://huggingface.co/Oliverdsfdsf/comic-panels-text-detect)
+on Hugging Face, Apache-2.0, rebuilt around its weights and converted to Core ML by `scripts/panel-detector.sh` at
+build time) — it runs on the Mac through Core ML, on the Neural Engine where there is one, and says where the
+panels and the balloons are: every inked pixel goes to the panel whose mask covers it, or else to the panel box
+it lies in; what a text box covers goes to the panel that balloon belongs to; the gutter analysis still draws the
+exact outlines; ink the model misses is kept as a panel of its own. Appearance ▸
 "Find panels with the detector model" turns it off for the gutter analysis alone; a model of your own goes in
 `~/Library/Application Support/Books/Models/PanelDetector.mlmodelc`. Nothing leaves the machine. Comics added as
 archives open this way by default; any
