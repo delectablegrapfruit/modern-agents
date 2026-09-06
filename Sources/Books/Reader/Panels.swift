@@ -155,7 +155,7 @@ struct AppearancePopover: View {
         @Bindable var model = model
         let pdfBook = session.book.kind == .pdf
         let pdfView = session.usesPDFView
-        let fit = pdfView && model.settings.reader.pdfLayout == .fit
+        let fit = pdfView && session.pdfLayout == .fit
         let plainZoom = pdfView && !fit
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -166,11 +166,11 @@ struct AppearancePopover: View {
                 }
                 .buttonStyle(.plain)
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                Text(plainZoom ? "Zoom" : fit ? "Text size \(model.settings.reader.pdfZoom)%" : "Text size \(model.settings.reader.fontSize)%")
+                Text(plainZoom ? "Zoom" : fit ? "Text size \(session.reader.pdfZoom)%" : "Text size \(model.settings.reader.fontSize)%")
                     .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .center)
                 if pdfBook {
                     VStack(alignment: .leading, spacing: 6) {
-                        Picker("PDF", selection: Binding(get: { model.settings.reader.pdfLayout }, set: { session.setPDFLayout($0) })) {
+                        Picker("PDF", selection: Binding(get: { session.pdfLayout }, set: { session.setPDFLayout($0) })) {
                             ForEach(PDFLayout.allCases, id: \.self) { Text($0.label).tag($0) }
                         }
                         .pickerStyle(.segmented)
@@ -194,20 +194,22 @@ struct AppearancePopover: View {
                     Toggle("Justify text", isOn: Binding(get: { model.settings.reader.justify }, set: { model.settings.reader.justify = $0; session.applySettings() }))
                     Toggle("Hyphenation", isOn: Binding(get: { model.settings.reader.hyphenate }, set: { model.settings.reader.hyphenate = $0; session.applySettings() }))
                     Divider()
-                    Picker("Layout", selection: Binding(get: { model.settings.reader.layout }, set: { model.settings.reader.layout = $0; session.applySettings() })) {
+                    Picker("Layout", selection: Binding(get: { session.reader.layout }, set: { value in session.setView { $0.layout = value }; session.applySettings() })) {
                         ForEach(ReaderLayout.allCases, id: \.self) { Text($0.label).tag($0) }
                     }
                     .pickerStyle(.segmented)
                 }
-                Picker("Pages", selection: Binding(get: { model.settings.reader.spread }, set: { model.settings.reader.spread = $0; session.applySettings() })) {
+                Picker("Pages", selection: Binding(get: { session.reader.spread }, set: { value in session.setView { $0.spread = value }; session.applySettings() })) {
                     ForEach(Spread.allCases, id: \.self) { Text($0.label).tag($0) }
                 }
-                .disabled(!pdfView && model.settings.reader.layout == .scroll)
+                .disabled(!pdfView && session.reader.layout == .scroll)
+                Text(pdfBook ? "The PDF's way, the layout, the pages and the text size of Zoom & Split are kept with this book." : "The layout and the pages are kept with this book.")
+                    .font(.caption).foregroundStyle(.secondary)
                 if !plainZoom {
                     Picker("Page Turn", selection: Binding(get: { model.settings.reader.pageTurn }, set: { model.settings.reader.pageTurn = $0; session.applySettings() })) {
                         ForEach(PageTurn.allCases, id: \.self) { Text($0.label).tag($0) }
                     }
-                    .disabled(!pdfView && model.settings.reader.layout == .scroll)
+                    .disabled(!pdfView && session.reader.layout == .scroll)
                 }
                 DisclosureGroup("Scroll Wheel & Trackpad") {
                     Toggle("Scroll wheel turns pages", isOn: Binding(get: { model.settings.reader.wheelTurnsPages }, set: { model.settings.reader.wheelTurnsPages = $0; session.applySettings() }))
@@ -231,7 +233,7 @@ struct AppearancePopover: View {
     }
 
     private var pdfLayoutHelp: String {
-        switch model.settings.reader.pdfLayout {
+        switch session.pdfLayout {
         case .pages: return "Whole pages, as printed."
         case .fit: return "Pages cropped to their ink and dealt out to screens that turn like pages, never cutting through a line or a picture. 100% is the page's printed size; past the width of a column, the lines are rewrapped into shorter ones, in the page's own type."
         case .text: return "The text reflowed into a book: fonts, sizes and themes apply; the layout is not kept."

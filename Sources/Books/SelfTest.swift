@@ -239,8 +239,12 @@ enum SelfTest {
         for _ in 0..<5 { fitSession.changeFontSize(by: 10) }
         try await sleep(0.8)
         let screensTwoUpLarge = fitSession.layout.total
-        guard model.settings.reader.pdfZoom == 150, screensTwoUpLarge > screensAt100, fitSession.layout.columns == 2, split.rewrapped else {
-            throw Failure("150% did not rewrap into two pages (\(model.settings.reader.pdfZoom)%, \(screensAt100) → \(screensTwoUpLarge) screens, \(fitSession.layout.columns) column(s), rewrapped \(split.rewrapped))")
+        guard fitSession.reader.pdfZoom == 150, screensTwoUpLarge > screensAt100, fitSession.layout.columns == 2, split.rewrapped else {
+            throw Failure("150% did not rewrap into two pages (\(fitSession.reader.pdfZoom)%, \(screensAt100) → \(screensTwoUpLarge) screens, \(fitSession.layout.columns) column(s), rewrapped \(split.rewrapped))")
+        }
+        // The text size is this book's: kept with it, not in the reader settings.
+        guard model.settings.reader.pdfZoom == 100, model.book(book.id)?.view?.pdfZoom == 150, model.book(book.id)?.view?.pdfLayout == .fit else {
+            throw Failure("the view was not kept with the book (settings \(model.settings.reader.pdfZoom)%, book \(String(describing: model.book(book.id)?.view)))")
         }
         try checkFlow(split, expectCuts: true)
         // One page: the same size shows fewer, wider screens.
@@ -257,14 +261,14 @@ enum SelfTest {
         // Smaller text: pages run on into one another, fewer screens.
         for _ in 0..<10 { fitSession.changeFontSize(by: -10) }
         try await sleep(0.8)
-        guard model.settings.reader.pdfZoom == 50, fitSession.layout.total < screensAt100 else {
-            throw Failure("50% did not reduce the screens (\(model.settings.reader.pdfZoom)%, \(fitSession.layout.total) screens)")
+        guard fitSession.reader.pdfZoom == 50, fitSession.layout.total < screensAt100 else {
+            throw Failure("50% did not reduce the screens (\(fitSession.reader.pdfZoom)%, \(fitSession.layout.total) screens)")
         }
         try checkFlow(split, expectCuts: false)
         fitSettings = model.settings
         fitSettings.reader.spread = .two
-        fitSettings.reader.pdfZoom = 100
         model.settings = fitSettings
+        fitSession.setView { $0.pdfZoom = 100 }
         fitSession.applySettings()
         try await sleep(0.6)
         fitSession.goToFraction(0)   // the pages-mode part of the test ended on the last page, with a bookmark there

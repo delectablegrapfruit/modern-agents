@@ -55,10 +55,12 @@ public struct Book: Codable, Identifiable, Hashable {
     public var position: ReadingPosition?
     /// File name of the cover inside the book's folder ("cover.jpg"), when it has one.
     public var coverFile: String?
+    /// How this book is viewed, where it differs from the reader settings.
+    public var view: BookView?
 
     public init(id: UUID = UUID(), title: String, author: String, kind: BookKind, fileName: String, fileSize: Int64, metadata: BookMetadata = BookMetadata(),
                 words: Int = 0, pageCount: Int? = nil, addedAt: Date = Date(), lastOpenedAt: Date? = nil, finishedAt: Date? = nil,
-                position: ReadingPosition? = nil, coverFile: String? = nil) {
+                position: ReadingPosition? = nil, coverFile: String? = nil, view: BookView? = nil) {
         self.id = id
         self.title = title
         self.author = author
@@ -73,6 +75,7 @@ public struct Book: Codable, Identifiable, Hashable {
         self.finishedAt = finishedAt
         self.position = position
         self.coverFile = coverFile
+        self.view = view
     }
 
     public var isNew: Bool { lastOpenedAt == nil }
@@ -336,6 +339,28 @@ public enum Spread: String, Codable, CaseIterable, Hashable {
     }
 }
 
+/// The view settings of one book, kept with the book: whatever is set here stands in for the reader settings while
+/// that book is read, so a dense PDF keeps its text size and a reference its scrolling.
+public struct BookView: Codable, Hashable {
+    /// Paginated or scrolling.
+    public var layout: ReaderLayout?
+    /// One or two pages a screen.
+    public var spread: Spread?
+    /// PDFs: Pages, Zoom & Split or Text.
+    public var pdfLayout: PDFLayout?
+    /// Zoom & Split: the text size, 50–400%.
+    public var pdfZoom: Int?
+
+    public init(layout: ReaderLayout? = nil, spread: Spread? = nil, pdfLayout: PDFLayout? = nil, pdfZoom: Int? = nil) {
+        self.layout = layout
+        self.spread = spread
+        self.pdfLayout = pdfLayout
+        self.pdfZoom = pdfZoom
+    }
+
+    public var isEmpty: Bool { layout == nil && spread == nil && pdfLayout == nil && pdfZoom == nil }
+}
+
 /// How a PDF is shown: whole pages; pages zoomed to their text and cut into screens that turn like pages; or the
 /// text reflowed into a book.
 public enum PDFLayout: String, Codable, CaseIterable, Hashable {
@@ -389,6 +414,17 @@ public struct ReaderSettings: Codable, Hashable {
     enum CodingKeys: String, CodingKey {
         case theme, autoNight, font, fontSize, lineHeight, textWidth, justify, hyphenate, layout, spread, pageTurn
         case wheelTurnsPages, wheelSensitivity, wheelInvert, wheelHorizontal, showPageNumbers, showChapterProgress, pdfLayout, pdfZoom
+    }
+
+    /// These settings with a book's own choices laid over them.
+    public func applying(_ view: BookView?) -> ReaderSettings {
+        guard let view else { return self }
+        var s = self
+        if let v = view.layout { s.layout = v }
+        if let v = view.spread { s.spread = v }
+        if let v = view.pdfLayout { s.pdfLayout = v }
+        if let v = view.pdfZoom { s.pdfZoom = min(400, max(50, v)) }
+        return s
     }
 
     /// Every value falls back to its default, so a settings file from another version still loads.

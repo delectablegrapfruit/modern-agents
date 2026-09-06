@@ -64,8 +64,10 @@ struct SearchHit: Hashable, Identifiable {
 @MainActor
 @Observable
 final class ReaderSession {
-    let book: Book
+    private(set) var book: Book
     unowned let model: LibraryModel
+    /// How this book is viewed: its own choices, kept with it, over the reader settings.
+    private(set) var view: BookView
 
     let webView: ReaderWebView
     private let schemeHandler = BooksSchemeHandler()
@@ -125,7 +127,8 @@ final class ReaderSession {
     init(book: Book, model: LibraryModel) {
         self.book = book
         self.model = model
-        usesPDFView = book.kind == .pdf && model.settings.reader.pdfLayout != .text
+        view = book.view ?? BookView()
+        usesPDFView = book.kind == .pdf && ReaderSession.pdfLayout(of: book, in: model.settings.reader) != .text
         annotations = model.store.annotations(for: book.id)
         schemeHandler.bookURL = model.store.fileURL(for: book)
 
@@ -191,9 +194,7 @@ final class ReaderSession {
         preparing = false
         if let failure {
             // Back to whole pages, with the reason; the library's alert outlives this reader.
-            var all = model.settings
-            all.reader.pdfLayout = .pages
-            model.settings = all
+            setView { $0.pdfLayout = .pages }
             model.error = failure
             model.reopen(book)
             return
@@ -205,10 +206,26 @@ final class ReaderSession {
 
     /// Pages, Zoom & Split or Text: the book reopens the chosen way.
     func setPDFLayout(_ layout: PDFLayout) {
-        var all = model.settings
-        all.reader.pdfLayout = layout
-        model.settings = all
+        setView { $0.pdfLayout = layout }
         model.reopen(book)
+    }
+
+    /// The reader settings with this book's own choices over them.
+    var reader: ReaderSettings { model.settings.reader.applying(view) }
+
+    /// The way a PDF is shown: the book's own choice, else the reader setting.
+    static func pdfLayout(of book: Book, in settings: ReaderSettings) -> PDFLayout { book.view?.pdfLayout ?? settings.pdfLayout }
+
+    var pdfLayout: PDFLayout { ReaderSession.pdfLayout(of: book, in: model.settings.reader) }
+
+    /// Changes how this book is viewed and keeps the choice with the book (over the record as the store has it, so
+    /// a place saved meanwhile is not lost).
+    func setView(_ change: (inout BookView) -> Void) {
+        change(&view)
+        var updated = model.book(book.id) ?? book
+        updated.view = view.isEmpty ? nil : view
+        book.view = updated.view
+        model.update(updated)
     }
 
     /// A PDF's annotations belong to the way it was read: page places for the PDF view, text places for the reflow.
@@ -249,7 +266,7 @@ final class ReaderSession {
         }
         var arguments: [String: Any] = [
             "url": BooksSchemeHandler.bookURLString,
-            "settings": model.settings.reader.webSettings(systemIsDark: systemIsDark),
+            "settings": reader.webSettings(systemIsDark: systemIsDark),
             "bookmarks": bookmarkPayload(),
             "highlights": highlights,
         ]
@@ -268,7 +285,7 @@ final class ReaderSession {
     func applySettings() {
         if usesPDFView { pdf?.applySettings(); return }
         guard isOpen else { return }
-        call("applySettings", model.settings.reader.webSettings(systemIsDark: systemIsDark))
+        call("applySettings", reader.webSettings(systemIsDark: systemIsDark))
     }
 
     func next() { if usesPDFView { pdf?.next() } else { call("next") }; activity() }
@@ -309,7 +326,7 @@ final class ReaderSession {
     func handleWheel(_ event: NSEvent) -> Bool {
         guard isOpen, !event.hasPreciseScrollingDeltas, event.phase == [], event.momentumPhase == [] else { return false }
         activity()
-        let settings = model.settings.reader
+        let settings = reader
         // AppKit reports scrolling down and to the right as negative deltas, in lines for notched wheels.
         let vertical = event.scrollingDeltaY != 0 ? event.scrollingDeltaY : event.deltaY
         let horizontal = event.scrollingDeltaX != 0 ? event.scrollingDeltaX : event.deltaX

@@ -37,7 +37,10 @@ selection, search, highlights, bookmarks and the PDF's links work as in books. T
 PDF, so a book is prepared once. While reading, the pointer hides after a couple of seconds still over the page
 and returns the moment it moves. **Text**: the text is reflowed into a book the way converters like calibre do it (running
 headers dropped, lines joined into paragraphs, larger type as headings) and read with every book setting; the layout
-is not kept, so tables and figures suffer. Themes are colour filters (paper tints in the light themes; in the dark
+is not kept, so tables and figures suffer. How a book is viewed is kept with the book: the layout (Pages, Zoom &
+Split or Text for a PDF; paginated or scrolling), one or two pages and the text size of Zoom & Split are the book's
+own choices, made in the Appearance popover, and the reader settings (the Settings sheet) stand for books that have
+not made one. Themes are colour filters (paper tints in the light themes; in the dark
 ones luminance is inverted with hues kept, so pictures and highlights keep their colours). Contents and timeline
 marks come from the outline; search, bookmarks and highlights with notes work in every mode. In full screen the toolbar leaves with the menu bar and both come back when the pointer reaches the top
 edge. The reading position, statistics (minutes per day, streaks, books per year) and every annotation are files in

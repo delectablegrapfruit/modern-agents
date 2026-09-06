@@ -173,7 +173,7 @@ final class SplitPDFPresenter: PDFReading {
         view.presenter = self
     }
 
-    private var settings: ReaderSettings { session.model.settings.reader }
+    private var settings: ReaderSettings { session.reader }
     var units: Int { screens.count }
 
     // MARK: - Opening
@@ -1165,11 +1165,9 @@ final class SplitPDFPresenter: PDFReading {
 
     /// The text size steps by 10%, from 50% to 400%; past the width of a column the lines are rewrapped.
     func zoom(_ direction: Int) {
-        var all = session.model.settings
-        let current = min(400, max(50, all.reader.pdfZoom))
+        let current = min(400, max(50, settings.pdfZoom))
         let next = direction > 0 ? min(400, current + 10) : max(50, current - 10)
-        all.reader.pdfZoom = next
-        session.model.settings = all
+        session.setView { $0.pdfZoom = next }
         applySettings()
     }
 
