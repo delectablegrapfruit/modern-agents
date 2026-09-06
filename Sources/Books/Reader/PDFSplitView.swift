@@ -1210,7 +1210,9 @@ final class SplitPDFPresenter: PDFReading {
 
     /// The union of `viewRects`, for anchoring a menu.
     private func viewRect(_ rect: CGRect, onPage pageIndex: Int) -> CGRect? {
-        viewRects(rect, onPage: pageIndex).reduce(nil) { $0.map { $0.union($1) } ?? $1 }
+        var union: CGRect?
+        for shown in viewRects(rect, onPage: pageIndex) { union = union.map { $0.union(shown) } ?? shown }
+        return union
     }
 
     /// View (bottom-left origin) to the top-left-origin coordinates the SwiftUI overlays use.
