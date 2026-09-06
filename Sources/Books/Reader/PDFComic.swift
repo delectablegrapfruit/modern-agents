@@ -4,7 +4,7 @@ import BooksCore
 
 /// The panels of a comic, page by page, found once off the main thread and kept beside the PDF.
 struct ComicPreparation: Codable, Sendable {
-    static let currentVersion = 1
+    static let currentVersion = 2
 
     /// A panel: where it is on the page and, when it is not simply its rectangle (a slanted panel, one with a
     /// balloon spilling out of it, one a neighbour's balloon spills into), its shape.
@@ -31,9 +31,12 @@ struct ComicPreparation: Codable, Sendable {
 
     var version = ComicPreparation.currentVersion
     let pages: [Page]
+    /// The detector model that steered the analysis, when one did.
+    var detector: String? = nil
 
-    static func cacheURL(for pdf: URL) -> URL {
-        pdf.deletingLastPathComponent().appendingPathComponent("comic-v\(currentVersion).json")
+    /// Beside the PDF; the analysis with a detector model is kept apart from the one without.
+    static func cacheURL(for pdf: URL, detector: Bool) -> URL {
+        pdf.deletingLastPathComponent().appendingPathComponent(detector ? "comic-v\(currentVersion)-model.json" : "comic-v\(currentVersion).json")
     }
 }
 
@@ -50,21 +53,22 @@ struct ComicPreparation: Codable, Sendable {
 /// Small pieces (a caption beside a frame, a sound effect in the gutter) join the nearest panel; only page-number
 /// sized strays far from every panel are left out. A page without gutters is one panel.
 enum ComicAnalysis {
-    /// The analysis, from the cache beside the PDF when that is newer than the PDF, else made and cached.
-    nonisolated static func prepare(url: URL) -> ComicPreparation? {
-        let cache = ComicPreparation.cacheURL(for: url)
+    /// The analysis, from the cache beside the PDF when that is newer than the PDF, else made and cached. With a
+    /// detector, its boxes steer the analysis page by page.
+    nonisolated static func prepare(url: URL, detector: PanelDetector? = nil) -> ComicPreparation? {
+        let cache = ComicPreparation.cacheURL(for: url, detector: detector != nil)
         let cachedDate = try? cache.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
         let sourceDate = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
         if let cachedDate, let sourceDate, cachedDate >= sourceDate, let data = try? Data(contentsOf: cache),
            let stored = try? JSONDecoder().decode(ComicPreparation.self, from: data), stored.version == ComicPreparation.currentVersion {
             return stored
         }
-        guard let made = analyse(url: url) else { return nil }
+        guard let made = analyse(url: url, detector: detector) else { return nil }
         if let data = try? JSONEncoder().encode(made) { try? data.write(to: cache, options: .atomic) }
         return made
     }
 
-    nonisolated static func analyse(url: URL) -> ComicPreparation? {
+    nonisolated static func analyse(url: URL, detector: PanelDetector? = nil) -> ComicPreparation? {
         guard let document = PDFDocument(url: url), document.pageCount > 0 else { return nil }
         var pages: [ComicPreparation.Page] = []
         for i in 0..<document.pageCount {
@@ -74,9 +78,11 @@ enum ComicAnalysis {
                 pages.append(ComicPreparation.Page(size: size, width: 1, height: 1, background: 255, panels: [whole], rightToLeft: [0]))
                 continue
             }
-            pages.append(analyse(page: page, size: PDFPresenter.displaySize(of: page)))
+            let size = PDFPresenter.displaySize(of: page)
+            let detections = detector?.detect(page: page, size: size) ?? []
+            pages.append(analyse(page: page, size: size, detections: detections))
         }
-        return ComicPreparation(pages: pages)
+        return ComicPreparation(pages: pages, detector: detector?.name)
     }
 
     // MARK: - Pixels
@@ -341,8 +347,9 @@ enum ComicAnalysis {
         let horizontal: Bool
     }
 
-    /// The panels of one page, in reading order, from a rendering about 640 pixels across.
-    nonisolated static func analyse(page: PDFPage, size: CGSize, width analysisWidth: Int = 640) -> ComicPreparation.Page {
+    /// The panels of one page, in reading order, from a rendering about 640 pixels across — and, when a detector
+    /// model has looked at the page, from where its boxes say the panels and the text are.
+    nonisolated static func analyse(page: PDFPage, size: CGSize, width analysisWidth: Int = 640, detections: [PanelDetector.Detection] = []) -> ComicPreparation.Page {
         let whole = ComicPreparation.Panel(rect: CGRect(origin: .zero, size: size), runs: nil)
         guard size.width > 0, size.height > 0, let grey = render(page, size: size, width: analysisWidth) else {
             return ComicPreparation.Page(size: size, width: 1, height: 1, background: 255, panels: [whole], rightToLeft: [0])
@@ -420,6 +427,117 @@ enum ComicAnalysis {
             var position = [Int: Int]()
             for (i, p) in leftToRight.enumerated() { position[p] = i }
             return ComicPreparation.Page(size: size, width: w, height: h, background: background, panels: ordered, rightToLeft: rightToLeft.compactMap { position[$0] })
+        }
+
+        /// Reading order of boxes: rows top to bottom (a box joins a row it overlaps by more than half the smaller
+        /// height), within a row left to right or right to left, a column of boxes top to bottom.
+        func rowOrder(_ ids: [Int], boxes: [Region], rightToLeft: Bool) -> [Int] {
+            let mine = ids.sorted { boxes[$0].y0 < boxes[$1].y0 }
+            var rows: [[Int]] = []
+            for id in mine {
+                let b = boxes[id]
+                if let row = rows.indices.first(where: { row in
+                    let top = rows[row].map { boxes[$0].y0 }.min()!, bottom = rows[row].map { boxes[$0].y1 }.max()!
+                    let overlap = min(bottom, b.y1) - max(top, b.y0)
+                    return overlap * 2 > min(bottom - top, b.height)
+                }) {
+                    rows[row].append(id)
+                } else {
+                    rows.append([id])
+                }
+            }
+            rows.sort { boxes[$0[0]].y0 < boxes[$1[0]].y0 }
+            return rows.flatMap { row in
+                row.sorted { a, b in
+                    let x = boxes[a].x0, y = boxes[b].x0
+                    if x == y { return boxes[a].y0 < boxes[b].y0 }
+                    return rightToLeft ? x > y : x < y
+                }
+            }
+        }
+
+        // With a detector's boxes the panels are where it says. Every inked pixel goes to the panel box it lies in
+        // (the smallest, for an inset); a piece reaching outside every box goes with the box holding most of it;
+        // what a text box covers goes to the panel that box belongs to, so a balloon spilling into a neighbour
+        // stays with its own panel and is taken out of the other. Ink no box touches is a panel the detector missed.
+        let columnWidth = size.width / CGFloat(w), rowHeight = size.height / CGFloat(h)
+        func region(of rect: CGRect, pad: Int) -> Region {
+            let x0 = Int((rect.minX / columnWidth).rounded(.down)) - pad, x1 = Int((rect.maxX / columnWidth).rounded(.up)) + pad
+            let y0 = Int(((size.height - rect.maxY) / rowHeight).rounded(.down)) - pad, y1 = Int(((size.height - rect.minY) / rowHeight).rounded(.up)) + pad
+            return Region(x0: max(0, min(w, x0)), x1: max(0, min(w, x1)), y0: max(0, min(h, y0)), y1: max(0, min(h, y1)))
+        }
+        let panelBoxes = detections.filter { $0.kind == .panel && $0.confidence >= 0.25 }.map { region(of: $0.rect, pad: max(2, w / 100)) }.filter { $0.area > 0 }
+        if !panelBoxes.isEmpty {
+            let textBoxes = detections.filter { $0.kind == .text && $0.confidence >= 0.25 }.map { region(of: $0.rect, pad: 2) }.filter { $0.area > 0 }
+            var owner = [Int32](repeating: -1, count: w * h)
+            for b in panelBoxes.indices.sorted(by: { panelBoxes[$0].area > panelBoxes[$1].area }) {
+                let r = panelBoxes[b]
+                for y in r.y0..<r.y1 {
+                    let row = y * w
+                    for x in r.x0..<r.x1 where inside.bits[row + x] { owner[row + x] = Int32(b) }
+                }
+            }
+            let pieces = Components(of: inside, eight: true)
+            var votes = [[Int]](repeating: [Int](repeating: 0, count: panelBoxes.count), count: pieces.count)
+            for i in 0..<(w * h) {
+                let l = pieces.labels[i]
+                if l >= 0, owner[i] >= 0 { votes[Int(l)][Int(owner[i])] += 1 }
+            }
+            var pieceOwner = [Int](repeating: -1, count: pieces.count)
+            var missed: [Int] = []
+            for k in 0..<pieces.count {
+                if let best = votes[k].indices.max(by: { votes[k][$0] < votes[k][$1] }), votes[k][best] > 0 { pieceOwner[k] = best } else { missed.append(k) }
+            }
+            for i in 0..<(w * h) {
+                let l = pieces.labels[i]
+                if l >= 0, owner[i] < 0, pieceOwner[Int(l)] >= 0 { owner[i] = Int32(pieceOwner[Int(l)]) }
+            }
+            for t in textBoxes {
+                let cx = (t.x0 + t.x1) / 2, cy = (t.y0 + t.y1) / 2
+                var home = panelBoxes.indices.filter { let b = panelBoxes[$0]; return cx >= b.x0 && cx < b.x1 && cy >= b.y0 && cy < b.y1 }.min { panelBoxes[$0].area < panelBoxes[$1].area }
+                if home == nil, let most = panelBoxes.indices.max(by: { panelBoxes[$0].intersection(t).area < panelBoxes[$1].intersection(t).area }), panelBoxes[most].intersection(t).area > 0 { home = most }
+                if home == nil { home = panelBoxes.indices.min { panelBoxes[$0].gap(to: t) < panelBoxes[$1].gap(to: t) } }
+                guard let home else { continue }
+                for y in t.y0..<t.y1 {
+                    let row = y * w
+                    for x in t.x0..<t.x1 where inside.bits[row + x] { owner[row + x] = Int32(home) }
+                }
+            }
+            var found: [WorkPanel] = []
+            for b in panelBoxes.indices {
+                var mask = Mask(width: w, height: h)
+                var count = 0
+                for i in 0..<(w * h) where owner[i] == Int32(b) { mask.bits[i] = true; count += 1 }
+                guard count > 0, let bounds = mask.bounds() else { continue }
+                if count * 10 < panelBoxes[b].area * 4 {
+                    // Sparse — borderless art, or a panel the analysis reads as gutter: the box itself, less what other panels own.
+                    var box = Mask(width: w, height: h)
+                    box.fill(panelBoxes[b])
+                    for i in 0..<(w * h) where owner[i] >= 0 && owner[i] != Int32(b) { box.bits[i] = false }
+                    found.append(WorkPanel(box: panelBoxes[b], mask: box))
+                } else {
+                    found.append(WorkPanel(box: bounds, mask: mask))
+                }
+            }
+            func substantial(_ k: Int) -> Bool { pieces.areas[k] >= Int(0.006 * Double(pageArea)) && pieces.boxes[k].width >= w * 3 / 100 && pieces.boxes[k].height >= h * 3 / 100 }
+            for k in missed where substantial(k) { found.append(WorkPanel(box: pieces.boxes[k], mask: pieces.mask(of: k, width: w, height: h))) }
+            if !found.isEmpty {
+                // Small pieces no box touched join the nearest panel; page-number-sized ones far from every panel are left out.
+                var home = [Int](repeating: -1, count: pieces.count)
+                for k in missed where !substantial(k) {
+                    let box = pieces.boxes[k]
+                    guard let nearest = found.indices.min(by: { found[$0].box.gap(to: box) < found[$1].box.gap(to: box) }) else { continue }
+                    if box.area < Int(0.002 * Double(pageArea)), found[nearest].box.gap(to: box) > Double(w) * 0.015 { continue }
+                    home[k] = nearest
+                    found[nearest].box = found[nearest].box.union(box)
+                }
+                for i in 0..<(w * h) {
+                    let l = pieces.labels[i]
+                    if l >= 0, home[Int(l)] >= 0 { found[home[Int(l)]].mask?.bits[i] = true }
+                }
+                let ids = Array(found.indices), boxes = found.map(\.box)
+                return finish(found, leftToRight: rowOrder(ids, boxes: boxes, rightToLeft: false), rightToLeft: rowOrder(ids, boxes: boxes, rightToLeft: true))
+            }
         }
 
         guard let content = major.bounds() else {
@@ -633,22 +751,7 @@ enum ComicAnalysis {
         func order(_ n: Node, rightToLeft: Bool) -> [Int] {
             switch n {
             case .leaf(let ids):
-                let mine = ids.filter { kept.contains($0) }.sorted { panels[$0].box.y0 < panels[$1].box.y0 }
-                var rows: [[Int]] = []
-                for id in mine {
-                    let b = panels[id].box
-                    if let row = rows.indices.first(where: { row in
-                        let top = rows[row].map { panels[$0].box.y0 }.min()!, bottom = rows[row].map { panels[$0].box.y1 }.max()!
-                        let overlap = min(bottom, b.y1) - max(top, b.y0)
-                        return overlap * 2 > min(bottom - top, b.height)
-                    }) {
-                        rows[row].append(id)
-                    } else {
-                        rows.append([id])
-                    }
-                }
-                rows.sort { panels[$0[0]].box.y0 < panels[$1[0]].box.y0 }
-                return rows.flatMap { row in row.sorted { rightToLeft ? panels[$0].box.x0 > panels[$1].box.x0 : panels[$0].box.x0 < panels[$1].box.x0 } }
+                return rowOrder(ids.filter { kept.contains($0) }, boxes: panels.map(\.box), rightToLeft: rightToLeft)
             case .cut(let horizontal, let children):
                 let kids = (!horizontal && rightToLeft) ? Array(children.reversed()) : children
                 return kids.flatMap { order($0, rightToLeft: rightToLeft) }

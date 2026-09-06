@@ -1,5 +1,6 @@
 import AppKit
 import CoreGraphics
+import PDFKit
 import SwiftUI
 import BooksCore
 
@@ -324,9 +325,18 @@ enum SelfTest {
         }
         guard let comicBook = comicAdded.first else { throw Failure("the generated comic could not be imported") }
         defer { model.delete([comicBook.id]) }
+        // The detector model, when the build bundled one: what it sees on the grid page (the counts below are checked
+        // on the gutter analysis alone, whose answer is exact for these pages).
+        if let detector = PanelDetector.shared, let document = PDFDocument(url: comicFile), let page = document.page(at: 0) {
+            let seen = detector.detect(page: page, size: PDFPresenter.displaySize(of: page))
+            log("detector \(detector.name): \(seen.filter { $0.kind == .panel }.count) panels and \(seen.filter { $0.kind == .text }.count) text boxes on the grid page")
+        } else {
+            log("no detector model bundled; panels from the gutters alone")
+        }
         var comicSettings = model.settings
         comicSettings.reader.pdfLayout = .comic
         comicSettings.reader.comicRightToLeft = false
+        comicSettings.reader.comicDetector = false
         model.settings = comicSettings
         model.open(comicBook)
         let comicSession = try await waitFor("the comic to open in Comics", timeout: 40) {
@@ -453,6 +463,23 @@ enum SelfTest {
         bookAgain.close()
         try await sleep(0.4)
         log("EPUB as comic: \(Int(pictureComic.layout.total)) panels from 3 page images, \(pictureComic.toc.count) contents entries, the choice kept with the book, back to the book")
+
+        // With the detector model steering the analysis, the CBZ still reads panel by panel.
+        var detectorSettings = model.settings
+        detectorSettings.reader.comicDetector = true
+        model.settings = detectorSettings
+        if PanelDetector.shared != nil {
+            model.open(cbzBook)
+            let steered = try await waitFor("the CBZ to open with the detector", timeout: 60) {
+                if let s = currentSession, s !== cbzSession, s.book.id == cbzBook.id, s.isOpen, s.usesPDFView, s.layout.total > 0 { return s }
+                return nil
+            }
+            try await sleep(0.5)
+            guard Int(steered.layout.total) >= 3 else { throw Failure("with the detector the CBZ made \(steered.layout.total) screens; expected at least one a page") }
+            steered.close()
+            try await sleep(0.4)
+            log("Detector-steered CBZ: \(Int(steered.layout.total)) panels on 3 pages")
+        }
     }
 
     /// Three letter pages: a 2×3 grid of framed panels with a page number; two panels with a balloon from the top one

@@ -221,8 +221,9 @@ final class SplitPDFPresenter: PDFReading {
         applyTheme()
         session.pdfPreparing(true)
         if comicMode {
+            let useDetector = settings.comicDetector
             Task.detached(priority: .userInitiated) { [weak self] in
-                let prepared = ComicAnalysis.prepare(url: url)
+                let prepared = ComicAnalysis.prepare(url: url, detector: useDetector ? PanelDetector.shared : nil)
                 await MainActor.run { [weak self] in self?.comicPrepared(prepared) }
             }
         } else {

@@ -419,13 +419,15 @@ public struct ReaderSettings: Codable, Hashable {
     public var pdfZoom = 100
     /// Comics: panels within a row read right to left, as manga is.
     public var comicRightToLeft = false
+    /// Comics: let the bundled detector model say where the panels and balloons are, when the build has one.
+    public var comicDetector = true
 
     public init() {}
 
     enum CodingKeys: String, CodingKey {
         case theme, autoNight, font, fontSize, lineHeight, textWidth, justify, hyphenate, layout, spread, pageTurn
         case wheelTurnsPages, wheelSensitivity, wheelInvert, wheelHorizontal, showPageNumbers, showChapterProgress, pdfLayout, pdfZoom
-        case comicRightToLeft
+        case comicRightToLeft, comicDetector
     }
 
     /// These settings with a book's own choices laid over them.
@@ -463,6 +465,7 @@ public struct ReaderSettings: Codable, Hashable {
         pdfLayout = (try? c.decodeIfPresent(PDFLayout.self, forKey: .pdfLayout)) ?? .pages
         pdfZoom = min(400, max(50, (try? c.decodeIfPresent(Int.self, forKey: .pdfZoom)) ?? 100))
         comicRightToLeft = (try? c.decodeIfPresent(Bool.self, forKey: .comicRightToLeft)) ?? false
+        comicDetector = (try? c.decodeIfPresent(Bool.self, forKey: .comicDetector)) ?? true
     }
 
     /// The theme actually shown: the night variant when Auto-Night is on and the system is dark.

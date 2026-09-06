@@ -194,6 +194,9 @@ struct AppearancePopover: View {
                         }
                         .pickerStyle(.segmented)
                         Text("Panels within a row, left to right as in comics, or right to left as in manga. Kept with this book, as are the layout, the pages and the text size of Zoom & Split.").font(.caption).foregroundStyle(.secondary)
+                        Toggle("Find panels with the detector model", isOn: Binding(get: { model.settings.reader.comicDetector }, set: { model.settings.reader.comicDetector = $0; session.reopen() }))
+                            .disabled(PanelDetector.bundledName == nil)
+                        Text(PanelDetector.bundledName.map { "The bundled model (\($0)) says where the panels and balloons are; the gutter analysis draws their outlines. It runs on this Mac only." } ?? "No detector model is bundled in this build: the panels are found from the gutters alone.").font(.caption).foregroundStyle(.secondary)
                     }
                 }
                 themes

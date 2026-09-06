@@ -234,6 +234,9 @@ final class ReaderSession {
         model.reopen(book)
     }
 
+    /// The book again, freshly: for changes that need the reader rebuilt.
+    func reopen() { model.reopen(book) }
+
     /// A book that could not be read as a comic (no page images) goes back to being read as itself.
     func comicUnavailable(_ reason: String) {
         setView { $0.pdfLayout = nil }
