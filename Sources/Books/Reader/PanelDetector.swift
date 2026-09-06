@@ -42,6 +42,8 @@ final class PanelDetector: @unchecked Sendable {
     private let inputName: String
     private let inputSize: (width: Int, height: Int)
     private let names: [Int: String]
+    /// Whether the model's table is already the final boxes (an end-to-end model) rather than every anchor's guess.
+    private let endToEnd: Bool
 
     /// The detector the build bundled (or the user installed), loaded once; nil when there is none.
     static let shared: PanelDetector? = load()
@@ -84,17 +86,19 @@ final class PanelDetector: @unchecked Sendable {
             // A pipeline with Apple's NMS reports recognised objects; anything else is read as a table.
             let recognises = loaded.modelDescription.outputDescriptionsByName.keys.contains("coordinates")
             let vision = recognises ? try? VNCoreMLModel(for: loaded) : nil
-            return PanelDetector(model: loaded, vision: vision, inputName: inputName, inputSize: (constraint.pixelsWide, constraint.pixelsHigh), names: names, name: meta["repo"] as? String ?? "PanelDetector")
+            return PanelDetector(model: loaded, vision: vision, inputName: inputName, inputSize: (constraint.pixelsWide, constraint.pixelsHigh), names: names,
+                                 endToEnd: meta["end2end"] as? Bool ?? true, name: meta["repo"] as? String ?? "PanelDetector")
         }
         return nil
     }
 
-    private init(model: MLModel, vision: VNCoreMLModel?, inputName: String, inputSize: (width: Int, height: Int), names: [Int: String], name: String) {
+    private init(model: MLModel, vision: VNCoreMLModel?, inputName: String, inputSize: (width: Int, height: Int), names: [Int: String], endToEnd: Bool, name: String) {
         self.model = model
         self.vision = vision
         self.inputName = inputName
         self.inputSize = inputSize
         self.names = names
+        self.endToEnd = endToEnd
         self.name = name
     }
 
@@ -188,14 +192,53 @@ final class PanelDetector: @unchecked Sendable {
         var found: [Detection] = []
         let protoValues = protos.map(floats(of:))
         let protoShape = protos?.shape.map { $0.intValue } ?? []
-        for r in 0..<rows {
-            func at(_ c: Int) -> Float { values[r * rowStride + c * columnStride] }
-            let score = at(4)
-            guard score >= 0.25 else { continue }
-            var x1 = CGFloat(at(0)), y1 = CGFloat(at(1)), x2 = CGFloat(at(2)), y2 = CGFloat(at(3))
+        // Every anchor's guess (a raw head): centre boxes and a score per class, thinned by suppression first.
+        let raw = !endToEnd || rows > 2000
+        var kept: [(row: Int, score: Float, index: Int, box: (CGFloat, CGFloat, CGFloat, CGFloat))] = []
+        if raw {
+            let nc = max(1, names.count)
+            guard columns >= 4 + nc else { return [] }
+            var candidates: [(row: Int, score: Float, index: Int, box: (CGFloat, CGFloat, CGFloat, CGFloat))] = []
+            for r in 0..<rows {
+                var best = 0, bestScore: Float = 0
+                for c in 0..<nc {
+                    let s = values[r * rowStride + (4 + c) * columnStride]
+                    if s > bestScore { bestScore = s; best = c }
+                }
+                guard bestScore >= 0.25 else { continue }
+                let cx = CGFloat(values[r * rowStride]), cy = CGFloat(values[r * rowStride + columnStride])
+                let bw = CGFloat(values[r * rowStride + 2 * columnStride]), bh = CGFloat(values[r * rowStride + 3 * columnStride])
+                candidates.append((r, bestScore, best, (cx - bw / 2, cy - bh / 2, cx + bw / 2, cy + bh / 2)))
+            }
+            candidates.sort { $0.score > $1.score }
+            for candidate in candidates {
+                let a = candidate.box
+                let overlaps = kept.contains { other in
+                    guard other.index == candidate.index else { return false }
+                    let b = other.box
+                    let iw = max(0, min(a.2, b.2) - max(a.0, b.0)), ih = max(0, min(a.3, b.3) - max(a.1, b.1))
+                    let inter = iw * ih
+                    let union = (a.2 - a.0) * (a.3 - a.1) + (b.2 - b.0) * (b.3 - b.1) - inter
+                    return union > 0 && inter / union > 0.45
+                }
+                if !overlaps { kept.append(candidate) }
+                if kept.count >= 300 { break }
+            }
+        } else {
+            for r in 0..<rows {
+                let score = values[r * rowStride + 4 * columnStride]
+                guard score >= 0.25 else { continue }
+                let x1 = CGFloat(values[r * rowStride]), y1 = CGFloat(values[r * rowStride + columnStride])
+                let x2 = CGFloat(values[r * rowStride + 2 * columnStride]), y2 = CGFloat(values[r * rowStride + 3 * columnStride])
+                kept.append((r, score, Int(values[r * rowStride + 5 * columnStride].rounded()), (x1, y1, x2, y2)))
+            }
+        }
+        let coefficientsFrom = raw ? 4 + max(1, names.count) : 6
+        for detection in kept {
+            let r = detection.row, score = detection.score, index = detection.index
+            var (x1, y1, x2, y2) = detection.box
             // Normalised outputs (a model exported that way) come in 0…1; pixels otherwise.
             if x2 <= 1.5, y2 <= 1.5 { x1 *= inputW; x2 *= inputW; y1 *= inputH; y2 *= inputH }
-            let index = Int(at(5).rounded())
             // Back from the letterbox to the image, normalised, y down from the top.
             let left = max(0, min(1, (x1 - box.dx) / box.scale / imageW)), right = max(0, min(1, (x2 - box.dx) / box.scale / imageW))
             let top = max(0, min(1, (y1 - box.dy) / box.scale / imageH)), bottom = max(0, min(1, (y2 - box.dy) / box.scale / imageH))
@@ -203,8 +246,8 @@ final class PanelDetector: @unchecked Sendable {
             let rect = CGRect(x: left, y: 1 - bottom, width: right - left, height: bottom - top)
             let kind = kind(ofClass: index)
             var mask: Mask?
-            if kind == .panel, let protoValues, protoShape.count == 4, columns >= 6 + protoShape[1] {
-                mask = self.mask(row: r, coefficientsFrom: 6, count: protoShape[1], values: values, rowStride: rowStride, columnStride: columnStride,
+            if kind == .panel, let protoValues, protoShape.count == 4, columns >= coefficientsFrom + protoShape[1] {
+                mask = self.mask(row: r, coefficientsFrom: coefficientsFrom, count: protoShape[1], values: values, rowStride: rowStride, columnStride: columnStride,
                                  protos: protoValues, protoShape: protoShape, box: (x1, y1, x2, y2), letterbox: box, image: (imageW, imageH))
             }
             found.append(Detection(kind: kind, rect: rect, confidence: score, mask: mask))

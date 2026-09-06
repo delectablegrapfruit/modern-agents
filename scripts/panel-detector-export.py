@@ -10,6 +10,7 @@ read off the detection head. End-to-end (NMS-free) families export as they are; 
 import json
 import re
 import sys
+import traceback
 
 weights, meta_path, out_json, out_path, imgsz = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], int(sys.argv[5])
 readme = sys.argv[6] if len(sys.argv) > 6 else None
@@ -144,6 +145,9 @@ def load_safetensors(path):
     names = names_from_readme(nc) or default_names(nc)
     net.names = names
     net.nc = nc
+    # A family built for NMS-free inference (the yaml says so) runs its one-to-one head.
+    if net.yaml.get("end2end") and hasattr(net.model[-1], "one2one_cv2"):
+        net.end2end = True
     note(f"architecture: {cfg}, classes {names}, end-to-end {bool(getattr(net, 'end2end', False))}")
     model = YOLO(cfg, task="segment" if segment else "detect")
     model.model = net
@@ -158,9 +162,26 @@ def main():
     task = getattr(model, "task", None) or "detect"
     print("classes:", names, "task:", task, "end2end:", end2end)
     # NMS-free models export as they are (top-k boxes, scores, classes, mask coefficients); older detectors get
-    # Apple's NMS pipeline so Vision hands back recognised objects.
+    # Apple's NMS pipeline so Vision hands back recognised objects. Should the end-to-end graph not convert, the
+    # raw one-to-many head is exported instead and the app does the suppression.
     nms = not end2end and task == "detect"
-    exported = model.export(format="coreml", nms=nms, imgsz=imgsz, half=True)
+    try:
+        exported = model.export(format="coreml", nms=nms, imgsz=imgsz, half=True)
+    except Exception:
+        text = traceback.format_exc()
+        print(text)
+        note("end-to-end export failed: " + text.strip().split("\n")[-1][:600] + " | " + text[-900:])
+        if not end2end:
+            raise
+        model.model.end2end = False
+        end2end = False
+        try:
+            exported = model.export(format="coreml", nms=False, imgsz=imgsz, half=True)
+        except Exception:
+            text = traceback.format_exc()
+            print(text)
+            note("raw export failed too: " + text.strip().split("\n")[-1][:600] + " | " + text[-900:])
+            raise
     print("exported:", exported)
     meta = json.load(open(meta_path))
     meta.update({"names": names, "imgsz": imgsz, "task": task, "end2end": end2end, "nms": nms, "weights": weights.rsplit("/", 1)[-1]})
