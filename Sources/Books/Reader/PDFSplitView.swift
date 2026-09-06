@@ -39,7 +39,7 @@ struct SplitPreparation: Codable, Sendable {
         let columnWidth: CGFloat
     }
 
-    static let currentVersion = 7
+    static let currentVersion = 8
 
     /// A run of ink between two blank bands on a strip — a line of text, a heading, a picture band — and where the
     /// blank gaps between its words fall, so it can be rewrapped.
@@ -344,8 +344,11 @@ final class SplitPDFPresenter: PDFReading {
             let last = min(inked.count - 1, Int(((size.height - (line.minY + inset)) / bitmap.rowHeight).rounded(.down)))
             if first <= last { for r in first...last { inked[r] = true } }
         }
-        let x0 = max(0, min(w - 1, Int((strip.minX / bitmap.columnWidth).rounded(.down))))
-        let x1 = max(x0, min(w - 1, Int((strip.maxX / bitmap.columnWidth).rounded(.up))))
+        // Words are measured across the whole page when the page has one column (a long line may run past the
+        // strip the size group shares); within the strip when it has two.
+        let scan = strips.count == 1 ? CGRect(x: 0, y: 0, width: size.width, height: size.height) : strip
+        let x0 = max(0, min(w - 1, Int((scan.minX / bitmap.columnWidth).rounded(.down))))
+        let x1 = max(x0, min(w - 1, Int((scan.maxX / bitmap.columnWidth).rounded(.up))))
         let pad = bitmap.columnWidth
         var out: [SplitPreparation.Run] = []
         var y = 0
@@ -371,8 +374,9 @@ final class SplitPDFPresenter: PDFReading {
                     if gapStart < 0 { gapStart = x }
                 } else if gapStart >= 0 {
                     if x - gapStart >= gapMin {
-                        gaps.append(CGFloat(x0 + gapStart) * bitmap.columnWidth - pad)
-                        gaps.append(CGFloat(x0 + x) * bitmap.columnWidth + pad)
+                        // Each word reaches a pixel into the gap, so its edge letters keep their anti-aliased rims.
+                        gaps.append(CGFloat(x0 + gapStart) * bitmap.columnWidth + pad)
+                        gaps.append(CGFloat(x0 + x) * bitmap.columnWidth - pad)
                     }
                     gapStart = -1
                 }
