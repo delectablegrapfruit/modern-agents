@@ -426,6 +426,75 @@ final class SplitPDFPresenter: PDFReading {
         return merged
     }
 
+    /// The page's text lines in display space, top to bottom.
+    nonisolated static func textLines(of page: PDFPage) -> [SplitPreparation.Line] {
+        guard let all = page.selection(for: page.bounds(for: .mediaBox)) else { return [] }
+        let toDisplay = page.transform(for: .mediaBox)
+        var out: [SplitPreparation.Line] = []
+        for line in all.selectionsByLine() {
+            let b = line.bounds(for: page).applying(toDisplay)
+            guard b.width > 0.5, b.height > 0.5 else { continue }
+            out.append(SplitPreparation.Line(minX: b.minX, maxX: b.maxX, minY: b.minY, maxY: b.maxY, text: line.string ?? ""))
+        }
+        return out.sorted { $0.maxY > $1.maxY }
+    }
+
+    /// How much ink each row of the page carries (across the page, and within each strip when there are two), where
+    /// the page's ink lies, and the ink pixels themselves (for the runs), from a small rendering `width` pixels across.
+    nonisolated static func pageInk(of page: PDFPage, strips: [CGRect], width: Int) -> (ink: SplitPreparation.PageInk, bitmap: SplitPreparation.Bitmap)? {
+        let size = PDFPresenter.displaySize(of: page)
+        guard size.width > 0, size.height > 0, width > 0 else { return nil }
+        let height = max(1, Int((CGFloat(width) * size.height / size.width).rounded()))
+        let image = page.thumbnail(of: NSSize(width: width, height: height), for: .mediaBox)
+        guard let tiff = image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff), rep.bitsPerSample == 8, !rep.isPlanar, let data = rep.bitmapData else { return nil }
+        let w = rep.pixelsWide, h = rep.pixelsHigh, spp = rep.samplesPerPixel, rowBytes = rep.bytesPerRow
+        let alphaFirst = rep.bitmapFormat.contains(.alphaFirst)
+        let colorOffset = alphaFirst && rep.hasAlpha ? 1 : 0
+        let sx = CGFloat(w) / size.width
+        let perStrip = strips.count == 2
+        let ranges: [Range<Int>] = perStrip ? strips.map { strip in
+            let a = max(0, min(w, Int((strip.minX * sx).rounded(.down)))), b = max(a, min(w, Int((strip.maxX * sx).rounded(.up))))
+            return a..<b
+        } : []
+        var rows = [Int](repeating: 0, count: h)
+        var stripRows = perStrip ? [[Int]](repeating: [Int](repeating: 0, count: h), count: strips.count) : []
+        var inkedPixels = [Bool](repeating: false, count: w * h)
+        var minX = w, maxX = -1, minY = h, maxY = -1, total = 0
+        for y in 0..<h {
+            let rowStart = data + y * rowBytes
+            var count = 0
+            for x in 0..<w {
+                let p = rowStart + x * spp
+                let luminance: Int
+                if spp - colorOffset >= 3 {
+                    luminance = (Int(p[colorOffset]) * 299 + Int(p[colorOffset + 1]) * 587 + Int(p[colorOffset + 2]) * 114) / 1000
+                } else {
+                    luminance = Int(p[colorOffset])
+                }
+                let alpha = rep.hasAlpha ? Int(p[alphaFirst ? 0 : spp - 1]) : 255
+                // Darker than the grey speckle of a scan, so noise between lines does not join them.
+                guard luminance < 160 && alpha > 40 else { continue }
+                inkedPixels[y * w + x] = true
+                count += 1
+                if x < minX { minX = x }
+                if x > maxX { maxX = x }
+                if y < minY { minY = y }
+                if y > maxY { maxY = y }
+                if perStrip { for (s, range) in ranges.enumerated() where range.contains(x) { stripRows[s][y] += 1 } }
+            }
+            rows[y] = count
+            total += count
+        }
+        let rowHeight = size.height / CGFloat(h)
+        var box: CGRect?
+        if total >= 20, maxX >= minX, maxY >= minY {
+            let px = size.width / CGFloat(w)
+            box = CGRect(x: CGFloat(minX) * px, y: size.height - CGFloat(maxY + 1) * rowHeight, width: CGFloat(maxX - minX + 1) * px, height: CGFloat(maxY - minY + 1) * rowHeight)
+        }
+        let ink = SplitPreparation.PageInk(rows: rows, stripRows: perStrip ? stripRows : nil, rowHeight: rowHeight, width: w, box: box)
+        return (ink, SplitPreparation.Bitmap(width: w, height: h, inked: inkedPixels, rowHeight: rowHeight, columnWidth: size.width / CGFloat(w)))
+    }
+
     /// Running headers and footers: the band of lines in a page's top or bottom margin (the outer 12% of the page)
     /// that stands off from the body by a clear gap and is a page number, words that recur on a quarter of the
     /// pages, or at most two short lines. Whole bands, so a running title and its page number go together.
