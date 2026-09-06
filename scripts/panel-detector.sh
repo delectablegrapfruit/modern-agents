@@ -37,41 +37,31 @@ data = card.get("cardData") or {}
 meta = {"repo": card.get("id"), "sha": card.get("sha"), "license": data.get("license"), "tags": card.get("tags"), "files": files, "gated": card.get("gated"), "private": card.get("private")}
 json.dump(meta, open(sys.argv[2], "w"))
 print(json.dumps(meta, indent=1), file=sys.stderr)
-weights = [f for f in files if f.endswith(".pt")]
-weights.sort(key=lambda f: (not f.endswith("best.pt"), f.count("/"), f))
+weights = [f for f in files if f.endswith(".pt") or f.endswith(".safetensors")]
+weights.sort(key=lambda f: (not f.endswith(".pt"), not f.endswith("best.pt"), f.count("/"), f))
 print(weights[0] if weights else "")
 PY
 )
 note "model card: $("$PYTHON" -c 'import json,sys; m=json.load(open(sys.argv[1])); print("license", m.get("license"), "| gated", m.get("gated"), "| tags", m.get("tags"), "| files", m.get("files"))' "$WORK/meta.json")"
 if [ -z "$WEIGHTS" ]; then
-  warn "no PyTorch (.pt) weights in $REPO; nothing to convert"
+  warn "no PyTorch (.pt or .safetensors) weights in $REPO; nothing to convert"
   exit 1
 fi
 note "weights: $WEIGHTS"
 echo "== weights: $WEIGHTS"
-curl -fsSL "https://huggingface.co/$REPO/resolve/main/$WEIGHTS" -o "$WORK/weights.pt"
-ls -la "$WORK/weights.pt"
+WEIGHTS_FILE="$WORK/weights.${WEIGHTS##*.}"
+curl -fsSL "https://huggingface.co/$REPO/resolve/main/$WEIGHTS" -o "$WEIGHTS_FILE"
+ls -la "$WEIGHTS_FILE"
+curl -fsSL "https://huggingface.co/$REPO/resolve/main/README.md" -o "$WORK/README.md" || true
+if [ -s "$WORK/README.md" ]; then note "model card text: $(tr -s '[:space:]' ' ' < "$WORK/README.md" | cut -c1-1500)"; fi
 
 echo "== converting with Ultralytics and coremltools"
 if [ ! -x "$WORK/venv/bin/python" ]; then "$PYTHON" -m venv "$WORK/venv"; fi
 # shellcheck disable=SC1091
 source "$WORK/venv/bin/activate"
 pip install -q --upgrade pip
-pip install -q "ultralytics>=8.3" "coremltools>=8.0"
-python - "$WORK/weights.pt" "$WORK/meta.json" "$OUT/PanelDetector.json" "$WORK/mlpackage.txt" "$IMGSZ" <<'PY'
-import json, sys
-from ultralytics import YOLO
-weights, meta_path, out_json, out_path, imgsz = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], int(sys.argv[5])
-model = YOLO(weights)
-names = {int(k): str(v) for k, v in model.names.items()}
-print("classes:", names)
-exported = model.export(format="coreml", nms=True, imgsz=imgsz, half=True)
-print("exported:", exported)
-meta = json.load(open(meta_path))
-meta.update({"names": names, "imgsz": imgsz, "task": getattr(model, "task", None)})
-json.dump(meta, open(out_json, "w"), indent=1)
-open(out_path, "w").write(str(exported))
-PY
+pip install -q "ultralytics>=8.3" "coremltools>=8.0" safetensors
+python scripts/panel-detector-export.py "$WEIGHTS_FILE" "$WORK/meta.json" "$OUT/PanelDetector.json" "$WORK/mlpackage.txt" "$IMGSZ" "$WORK/README.md"
 MLPACKAGE=$(cat "$WORK/mlpackage.txt")
 test -d "$MLPACKAGE" || test -f "$MLPACKAGE"
 
