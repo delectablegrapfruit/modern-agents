@@ -60,7 +60,10 @@ if [ ! -x "$WORK/venv/bin/python" ]; then "$PYTHON" -m venv "$WORK/venv"; fi
 # shellcheck disable=SC1091
 source "$WORK/venv/bin/activate"
 pip install -q --upgrade pip
-pip install -q "ultralytics>=8.3" "coremltools>=8.0" safetensors
+# numpy 2.4 breaks coremltools' torch frontend (apple/coremltools#2633); Ultralytics pins it at export time, too late
+# for a process that has numpy loaded already.
+pip install -q "numpy>=1.26,<=2.3.5" "ultralytics>=8.3" "coremltools>=9.0" safetensors
+python -c 'import numpy, coremltools, ultralytics; print("numpy", numpy.__version__, "coremltools", coremltools.__version__, "ultralytics", ultralytics.__version__)'
 python scripts/panel-detector-export.py "$WEIGHTS_FILE" "$WORK/meta.json" "$OUT/PanelDetector.json" "$WORK/mlpackage.txt" "$IMGSZ" "$WORK/README.md"
 MLPACKAGE=$(cat "$WORK/mlpackage.txt")
 test -d "$MLPACKAGE" || test -f "$MLPACKAGE"
