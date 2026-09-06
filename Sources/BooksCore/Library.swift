@@ -55,11 +55,16 @@ public struct Book: Codable, Identifiable, Hashable {
     public var position: ReadingPosition?
     /// File name of the cover inside the book's folder ("cover.jpg"), when it has one.
     public var coverFile: String?
+    /// A comic (added as CBZ, CBR, CB7 or CBT and kept as a PDF of its pages): opens in the comics layout.
+    public var comic: Bool?
+
+    public var isComic: Bool { comic ?? false }
 
     public init(id: UUID = UUID(), title: String, author: String, kind: BookKind, fileName: String, fileSize: Int64, metadata: BookMetadata = BookMetadata(),
                 words: Int = 0, pageCount: Int? = nil, addedAt: Date = Date(), lastOpenedAt: Date? = nil, finishedAt: Date? = nil,
-                position: ReadingPosition? = nil, coverFile: String? = nil) {
+                position: ReadingPosition? = nil, coverFile: String? = nil, comic: Bool? = nil) {
         self.id = id
+        self.comic = comic
         self.title = title
         self.author = author
         self.kind = kind
@@ -339,13 +344,14 @@ public enum Spread: String, Codable, CaseIterable, Hashable {
 /// How a PDF is shown: whole pages; pages zoomed to their text and cut into screens that turn like pages; or the
 /// text reflowed into a book.
 public enum PDFLayout: String, Codable, CaseIterable, Hashable {
-    case pages, fit, text
+    case pages, fit, text, comic
 
     public var label: String {
         switch self {
         case .pages: return "Pages"
         case .fit: return "Zoom & Split"
         case .text: return "Text"
+        case .comic: return "Comics"
         }
     }
 }
@@ -383,12 +389,17 @@ public struct ReaderSettings: Codable, Hashable {
     public var pdfLayout: PDFLayout = .pages
     /// Zoom & Split: the text width as a percentage of the view, the PDF's text size.
     public var pdfZoom = 100
+    /// How comics (CBZ and the like, converted to PDF) are shown; kept apart from other PDFs' choice.
+    public var comicLayout: PDFLayout = .comic
+    /// Comics: panels within a row read right to left, as manga is.
+    public var comicRightToLeft = false
 
     public init() {}
 
     enum CodingKeys: String, CodingKey {
         case theme, autoNight, font, fontSize, lineHeight, textWidth, justify, hyphenate, layout, spread, pageTurn
         case wheelTurnsPages, wheelSensitivity, wheelInvert, wheelHorizontal, showPageNumbers, showChapterProgress, pdfLayout, pdfZoom
+        case comicLayout, comicRightToLeft
     }
 
     /// Every value falls back to its default, so a settings file from another version still loads.
@@ -413,6 +424,8 @@ public struct ReaderSettings: Codable, Hashable {
         showChapterProgress = (try? c.decodeIfPresent(Bool.self, forKey: .showChapterProgress)) ?? true
         pdfLayout = (try? c.decodeIfPresent(PDFLayout.self, forKey: .pdfLayout)) ?? .pages
         pdfZoom = min(400, max(50, (try? c.decodeIfPresent(Int.self, forKey: .pdfZoom)) ?? 100))
+        comicLayout = (try? c.decodeIfPresent(PDFLayout.self, forKey: .comicLayout)) ?? .comic
+        comicRightToLeft = (try? c.decodeIfPresent(Bool.self, forKey: .comicRightToLeft)) ?? false
     }
 
     /// The theme actually shown: the night variant when Auto-Night is on and the system is dark.

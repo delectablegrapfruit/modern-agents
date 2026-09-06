@@ -125,7 +125,7 @@ final class ReaderSession {
     init(book: Book, model: LibraryModel) {
         self.book = book
         self.model = model
-        usesPDFView = book.kind == .pdf && model.settings.reader.pdfLayout != .text
+        usesPDFView = book.kind == .pdf && ReaderSession.pdfLayout(of: book, in: model.settings.reader) != .text
         annotations = model.store.annotations(for: book.id)
         schemeHandler.bookURL = model.store.fileURL(for: book)
 
@@ -192,7 +192,7 @@ final class ReaderSession {
         if let failure {
             // Back to whole pages, with the reason; the library's alert outlives this reader.
             var all = model.settings
-            all.reader.pdfLayout = .pages
+            if book.isComic { all.reader.comicLayout = .pages } else { all.reader.pdfLayout = .pages }
             model.settings = all
             model.error = failure
             model.reopen(book)
@@ -203,10 +203,17 @@ final class ReaderSession {
         if isPageReady { openBook() }
     }
 
-    /// Pages, Zoom & Split or Text: the book reopens the chosen way.
+    /// The way a PDF is shown: comics keep a choice of their own.
+    static func pdfLayout(of book: Book, in settings: ReaderSettings) -> PDFLayout {
+        book.isComic ? settings.comicLayout : settings.pdfLayout
+    }
+
+    var pdfLayout: PDFLayout { ReaderSession.pdfLayout(of: book, in: model.settings.reader) }
+
+    /// Pages, Zoom & Split, Text or Comics: the book reopens the chosen way.
     func setPDFLayout(_ layout: PDFLayout) {
         var all = model.settings
-        all.reader.pdfLayout = layout
+        if book.isComic { all.reader.comicLayout = layout } else { all.reader.pdfLayout = layout }
         model.settings = all
         model.reopen(book)
     }

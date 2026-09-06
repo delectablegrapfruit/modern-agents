@@ -155,26 +155,38 @@ struct AppearancePopover: View {
         @Bindable var model = model
         let pdfBook = session.book.kind == .pdf
         let pdfView = session.usesPDFView
-        let fit = pdfView && model.settings.reader.pdfLayout == .fit
-        let plainZoom = pdfView && !fit
+        let pdfLayout = session.pdfLayout
+        let fit = pdfView && pdfLayout == .fit
+        let comic = pdfView && pdfLayout == .comic
+        let plainZoom = pdfView && !fit && !comic
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                HStack(spacing: 0) {
-                    Button { session.changeFontSize(by: -10) } label: { sizeLabel(plainZoom ? nil : 15, symbol: "minus.magnifyingglass") }
-                    Divider().frame(height: 22)
-                    Button { session.changeFontSize(by: 10) } label: { sizeLabel(plainZoom ? nil : 24, symbol: "plus.magnifyingglass") }
+                if !comic {
+                    HStack(spacing: 0) {
+                        Button { session.changeFontSize(by: -10) } label: { sizeLabel(plainZoom ? nil : 15, symbol: "minus.magnifyingglass") }
+                        Divider().frame(height: 22)
+                        Button { session.changeFontSize(by: 10) } label: { sizeLabel(plainZoom ? nil : 24, symbol: "plus.magnifyingglass") }
+                    }
+                    .buttonStyle(.plain)
+                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    Text(plainZoom ? "Zoom" : fit ? "Text size \(model.settings.reader.pdfZoom)%" : "Text size \(model.settings.reader.fontSize)%")
+                        .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .center)
                 }
-                .buttonStyle(.plain)
-                .background(.quaternary, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                Text(plainZoom ? "Zoom" : fit ? "Text size \(model.settings.reader.pdfZoom)%" : "Text size \(model.settings.reader.fontSize)%")
-                    .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .center)
                 if pdfBook {
                     VStack(alignment: .leading, spacing: 6) {
-                        Picker("PDF", selection: Binding(get: { model.settings.reader.pdfLayout }, set: { session.setPDFLayout($0) })) {
+                        Picker(session.book.isComic ? "Comic" : "PDF", selection: Binding(get: { pdfLayout }, set: { session.setPDFLayout($0) })) {
                             ForEach(PDFLayout.allCases, id: \.self) { Text($0.label).tag($0) }
                         }
                         .pickerStyle(.segmented)
                         Text(pdfLayoutHelp).font(.caption).foregroundStyle(.secondary)
+                        if comic {
+                            Picker("Reading", selection: Binding(get: { model.settings.reader.comicRightToLeft }, set: { model.settings.reader.comicRightToLeft = $0; session.applySettings() })) {
+                                Text("Left to right").tag(false)
+                                Text("Right to left").tag(true)
+                            }
+                            .pickerStyle(.segmented)
+                            Text("Panels within a row, left to right as in comics, or right to left as in manga.").font(.caption).foregroundStyle(.secondary)
+                        }
                     }
                 }
                 themes
@@ -199,10 +211,12 @@ struct AppearancePopover: View {
                     }
                     .pickerStyle(.segmented)
                 }
-                Picker("Pages", selection: Binding(get: { model.settings.reader.spread }, set: { model.settings.reader.spread = $0; session.applySettings() })) {
-                    ForEach(Spread.allCases, id: \.self) { Text($0.label).tag($0) }
+                if !comic {
+                    Picker("Pages", selection: Binding(get: { model.settings.reader.spread }, set: { model.settings.reader.spread = $0; session.applySettings() })) {
+                        ForEach(Spread.allCases, id: \.self) { Text($0.label).tag($0) }
+                    }
+                    .disabled(!pdfView && model.settings.reader.layout == .scroll)
                 }
-                .disabled(!pdfView && model.settings.reader.layout == .scroll)
                 if !plainZoom {
                     Picker("Page Turn", selection: Binding(get: { model.settings.reader.pageTurn }, set: { model.settings.reader.pageTurn = $0; session.applySettings() })) {
                         ForEach(PageTurn.allCases, id: \.self) { Text($0.label).tag($0) }
@@ -231,10 +245,11 @@ struct AppearancePopover: View {
     }
 
     private var pdfLayoutHelp: String {
-        switch model.settings.reader.pdfLayout {
+        switch session.pdfLayout {
         case .pages: return "Whole pages, as printed."
         case .fit: return "Pages cropped to their ink and dealt out to screens that turn like pages, never cutting through a line or a picture. 100% is the page's printed size; past the width of a column, the lines are rewrapped into shorter ones, in the page's own type."
         case .text: return "The text reflowed into a book: fonts, sizes and themes apply; the layout is not kept."
+        case .comic: return "One panel a screen, fitted and centred, in the page's own colours. The panels are found from the gutters, whatever their shape; a balloon or figure spilling out of a panel stays with it and is taken out of its neighbour."
         }
     }
 

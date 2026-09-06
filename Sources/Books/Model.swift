@@ -1,4 +1,5 @@
 import AppKit
+import ImageIO
 import Observation
 import PDFKit
 import UniformTypeIdentifiers
@@ -98,6 +99,7 @@ final class LibraryModel {
         stats = store.stats
         store.pdfInspector = { url in PDFInspector.inspect(url) }
         store.svgRasterizer = { svg in Rasterizer.png(fromSVG: svg) }
+        store.comicPDFMaker = { images in ComicPDF.make(images) }
     }
 
     func flush() {
@@ -304,7 +306,7 @@ final class LibraryModel {
     static let readableTypes: [UTType] = {
         var types: [UTType] = [.epub, .pdf, .plainText, .text]
         for id in ["com.amazon.mobi8-ebook", "com.amazon.azw", "org.mobipocket.ebook", "net.daringfireball.markdown"] { if let t = UTType(id) { types.append(t) } }
-        for ext in ["mobi", "azw", "azw3", "prc", "md", "markdown", "txt"] { if let t = UTType(filenameExtension: ext) { types.append(t) } }
+        for ext in ["mobi", "azw", "azw3", "prc", "md", "markdown", "txt", "cbz", "cbr", "cb7", "cbt"] { if let t = UTType(filenameExtension: ext) { types.append(t) } }
         return types
     }()
 
@@ -313,7 +315,7 @@ final class LibraryModel {
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         panel.allowedContentTypes = LibraryModel.readableTypes
-        panel.message = "Add EPUB, Kindle (MOBI, AZW3), PDF or text files to your library"
+        panel.message = "Add EPUB, Kindle (MOBI, AZW3), PDF, comic (CBZ, CBR, CB7, CBT) or text files to your library"
         panel.prompt = "Add"
         guard panel.runModal() == .OK else { return }
         importFiles(panel.urls)
@@ -381,6 +383,32 @@ enum PDFInspector {
             }
         }
         return info
+    }
+}
+
+/// A comic's page images as a PDF, one image a page, at the image's size (the longer side at most 1600 points).
+enum ComicPDF {
+    static func make(_ images: [Data]) -> (pdf: Data, pageCount: Int)? {
+        let data = NSMutableData()
+        var mediaBox = CGRect(x: 0, y: 0, width: 612, height: 792)
+        guard let consumer = CGDataConsumer(data: data as CFMutableData), let context = CGContext(consumer: consumer, mediaBox: &mediaBox, nil) else { return nil }
+        var pages = 0
+        for imageData in images {
+            guard let source = CGImageSourceCreateWithData(imageData as CFData, nil),
+                  let image = CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCache as String: false] as CFDictionary) else { continue }
+            let w = CGFloat(image.width), h = CGFloat(image.height)
+            guard w > 0, h > 0 else { continue }
+            let s = min(1, 1600 / max(w, h))
+            var box = CGRect(x: 0, y: 0, width: (w * s).rounded(), height: (h * s).rounded())
+            let boxData = Data(bytes: &box, count: MemoryLayout<CGRect>.size)
+            context.beginPDFPage([kCGPDFContextMediaBox as String: boxData] as CFDictionary)
+            context.interpolationQuality = .high
+            context.draw(image, in: box)
+            context.endPDFPage()
+            pages += 1
+        }
+        context.closePDF()
+        return pages > 0 ? (data as Data, pages) : nil
     }
 }
 

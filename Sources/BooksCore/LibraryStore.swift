@@ -30,13 +30,15 @@ public enum ImportError: Error, LocalizedError {
     case unreadable(String)
     case kindle(Error)
     case epub(String)
+    case comic(String)
 
     public var errorDescription: String? {
         switch self {
-        case .unsupportedType(let name): return "“\(name)” is not a kind of file Books can add. Books opens EPUB, Kindle (MOBI, AZW3), PDF and text files."
+        case .unsupportedType(let name): return "“\(name)” is not a kind of file Books can add. Books opens EPUB, Kindle (MOBI, AZW3), PDF, comic (CBZ, CBR, CB7, CBT) and text files."
         case .unreadable(let name): return "“\(name)” could not be read."
         case .kindle(let error): return (error as? LocalizedError)?.errorDescription ?? "The Kindle file could not be converted: \(error)"
         case .epub(let what): return "The book could not be opened: \(what)"
+        case .comic(let what): return "The comic could not be added: \(what)"
         }
     }
 }
@@ -89,6 +91,8 @@ public final class LibraryStore {
     public var pdfInspector: ((URL) -> PDFInfo?)?
     /// Renders an SVG cover to a raster image; set by the app, since the core has no graphics.
     public var svgRasterizer: ((String) -> (data: Data, mediaType: String)?)?
+    /// Makes a PDF of a comic's page images, one a page; set by the app, since the core has no graphics.
+    public var comicPDFMaker: (([Data]) -> (pdf: Data, pageCount: Int)?)?
 
     private let fileManager: FileManager
     private var annotationCache: [UUID: [Annotation]] = [:]
@@ -278,10 +282,11 @@ public final class LibraryStore {
 
     // MARK: - Import
 
-    public static let readableExtensions: Set<String> = ["epub", "mobi", "azw", "azw3", "prc", "kf8", "pdf", "txt", "text", "md", "markdown"]
+    public static let readableExtensions: Set<String> = ["epub", "mobi", "azw", "azw3", "prc", "kf8", "pdf", "txt", "text", "md", "markdown", "cbz", "cbr", "cb7", "cbt"]
 
-    /// Adds a file: EPUBs are copied, Kindle and text files are converted to EPUB, PDFs are copied. The cover and
-    /// metadata are extracted here so the shelf never has to open the file again.
+    /// Adds a file: EPUBs are copied, Kindle and text files are converted to EPUB, PDFs are copied, comic archives
+    /// become a PDF of their pages. The cover and metadata are extracted here so the shelf never has to open the
+    /// file again.
     public func importFile(at url: URL, allowDuplicates: Bool = false) throws -> ImportOutcome {
         let name = url.lastPathComponent
         let ext = url.pathExtension.lowercased()
@@ -293,13 +298,33 @@ public final class LibraryStore {
 
         var kind: BookKind = .epub
         var epubData: Data?
+        var pdfData: Data?
+        var isComic = false
         var metadata = BookMetadata()
         var title = "", author = ""
         var cover: (data: Data, mediaType: String)?
         var words = 0
         var pageCount: Int?
 
-        if isPDF || (ext == "pdf" && !isZip) {
+        let isComicArchive = ComicArchive.isRAR(data) || ComicArchive.is7Zip(data) || ComicArchive.extensions.contains(ext)
+            || (isZip && ext != "epub" && (try? ZipArchive(data: data)).map(ComicArchive.isComic) == true)
+        if isComicArchive {
+            kind = .pdf
+            isComic = true
+            let archive: ComicArchive
+            do { archive = try ComicArchive(data: data, fileExtension: ext) } catch let error as ImportError { throw error } catch { throw ImportError.comic("\(error)") }
+            guard let maker = comicPDFMaker else { throw ImportError.comic("comics need the app to make their pages") }
+            guard let made = maker(archive.images) else { throw ImportError.comic("its page images could not be read") }
+            pdfData = made.pdf
+            pageCount = made.pageCount
+            title = archive.info.title ?? ""
+            author = archive.info.author ?? ""
+            let temp = fileManager.temporaryDirectory.appendingPathComponent("comic-\(UUID().uuidString).pdf")
+            if (try? made.pdf.write(to: temp)) != nil {
+                if let c = pdfInspector?(temp)?.cover { cover = (c, "image/jpeg") }
+                try? fileManager.removeItem(at: temp)
+            }
+        } else if isPDF || (ext == "pdf" && !isZip) {
             kind = .pdf
             let info = pdfInspector?(url)
             title = info?.title?.trimmingCharacters(in: .whitespaces) ?? ""
@@ -334,8 +359,8 @@ public final class LibraryStore {
         }
 
         if title.isEmpty { title = TextBook.guessTitleAuthor(fileName: name, text: "").title }
-        if author.isEmpty { author = kind == .pdf ? "PDF Document" : "Unknown Author" }
-        let size = Int64(epubData?.count ?? data.count)
+        if author.isEmpty { author = isComic ? "Comic" : kind == .pdf ? "PDF Document" : "Unknown Author" }
+        let size = Int64(epubData?.count ?? pdfData?.count ?? data.count)
 
         if !allowDuplicates, let existing = books.first(where: { existing in
             (!metadata.identifier.isEmpty && !metadata.identifier.lowercased().hasPrefix("urn:uuid") && existing.metadata.identifier == metadata.identifier)
@@ -344,10 +369,10 @@ public final class LibraryStore {
             return .duplicate(existing)
         }
 
-        var book = Book(title: title, author: author, kind: kind, fileName: name, fileSize: size, metadata: metadata, words: words, pageCount: pageCount)
+        var book = Book(title: title, author: author, kind: kind, fileName: name, fileSize: size, metadata: metadata, words: words, pageCount: pageCount, comic: isComic ? true : nil)
         let dir = folder(for: book.id)
         try fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
-        try (epubData ?? data).write(to: fileURL(for: book), options: .atomic)
+        try (epubData ?? pdfData ?? data).write(to: fileURL(for: book), options: .atomic)
         if let cover {
             let file = "cover." + MediaTypes.fileExtension(forMediaType: cover.mediaType)
             try cover.data.write(to: dir.appendingPathComponent(file), options: .atomic)

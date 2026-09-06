@@ -14,7 +14,7 @@ struct PDFReaderView: NSViewRepresentable {
         let presenter: any PDFReading
         if let existing = session.pdf {
             presenter = existing
-        } else if session.model.settings.reader.pdfLayout == .fit {
+        } else if session.pdfLayout == .fit || session.pdfLayout == .comic {
             presenter = SplitPDFPresenter(session: session)
         } else {
             presenter = PDFPresenter(session: session)
