@@ -65,6 +65,7 @@ def load_safetensors(path):
     from safetensors.torch import load_file
     from ultralytics import YOLO
     from ultralytics.nn.tasks import DetectionModel, SegmentationModel
+    from ultralytics.utils import DEFAULT_CFG_DICT
 
     with safe_open(path, framework="pt") as f:
         metadata = f.metadata() or {}
@@ -149,9 +150,11 @@ def load_safetensors(path):
     if net.yaml.get("end2end") and hasattr(net.model[-1], "one2one_cv2"):
         net.end2end = True
     note(f"architecture: {cfg}, classes {names}, end-to-end {bool(getattr(net, 'end2end', False))}")
+    # Into the wrapper the way it builds a model from a yaml itself: full default args, the task.
     model = YOLO(cfg, task="segment" if segment else "detect")
     model.model = net
-    model.model.args = model.overrides
+    model.model.args = {**DEFAULT_CFG_DICT, **model.overrides}
+    model.model.task = model.task
     return model
 
 
