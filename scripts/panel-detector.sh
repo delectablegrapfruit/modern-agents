@@ -7,6 +7,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# What happened, as workflow annotations too: the run's log is long, its annotations are short.
+note() { echo "::notice title=panel detector::$*"; echo "$*"; }
+warn() { echo "::warning title=panel detector::$*"; echo "$*" >&2; }
+trap 'warn "failed at line $LINENO: $BASH_COMMAND (exit $?)"' ERR
+
 REPO="${PANEL_MODEL_REPO:-Oliverdsfdsf/comic-panels-text-detect}"
 IMGSZ="${PANEL_MODEL_IMGSZ:-1280}"
 OUT="build/PanelDetector"
@@ -20,13 +25,16 @@ fi
 mkdir -p "$OUT" "$WORK"
 
 echo "== model card of $REPO"
-curl -fsSL "https://huggingface.co/api/models/$REPO" -o "$WORK/card.json"
+if ! curl -fsSL "https://huggingface.co/api/models/$REPO" -o "$WORK/card.json"; then
+  warn "the model card of $REPO could not be fetched from huggingface.co"
+  exit 1
+fi
 WEIGHTS=$("$PYTHON" - "$WORK/card.json" "$WORK/meta.json" <<'PY'
 import json, sys
 card = json.load(open(sys.argv[1]))
 files = [s["rfilename"] for s in card.get("siblings", [])]
 data = card.get("cardData") or {}
-meta = {"repo": card.get("id"), "sha": card.get("sha"), "license": data.get("license"), "tags": card.get("tags"), "files": files}
+meta = {"repo": card.get("id"), "sha": card.get("sha"), "license": data.get("license"), "tags": card.get("tags"), "files": files, "gated": card.get("gated"), "private": card.get("private")}
 json.dump(meta, open(sys.argv[2], "w"))
 print(json.dumps(meta, indent=1), file=sys.stderr)
 weights = [f for f in files if f.endswith(".pt")]
@@ -34,10 +42,12 @@ weights.sort(key=lambda f: (not f.endswith("best.pt"), f.count("/"), f))
 print(weights[0] if weights else "")
 PY
 )
+note "model card: $("$PYTHON" -c 'import json,sys; m=json.load(open(sys.argv[1])); print("license", m.get("license"), "| gated", m.get("gated"), "| tags", m.get("tags"), "| files", m.get("files"))' "$WORK/meta.json")"
 if [ -z "$WEIGHTS" ]; then
-  echo "no PyTorch (.pt) weights in $REPO; nothing to convert" >&2
+  warn "no PyTorch (.pt) weights in $REPO; nothing to convert"
   exit 1
 fi
+note "weights: $WEIGHTS"
 echo "== weights: $WEIGHTS"
 curl -fsSL "https://huggingface.co/$REPO/resolve/main/$WEIGHTS" -o "$WORK/weights.pt"
 ls -la "$WORK/weights.pt"
@@ -73,4 +83,5 @@ COMPILED=$(find "$WORK/compiled" -maxdepth 1 -name '*.mlmodelc' | head -1)
 test -n "$COMPILED"
 mv "$COMPILED" "$OUT/PanelDetector.mlmodelc"
 du -sh "$OUT/PanelDetector.mlmodelc"
-echo "built $OUT/PanelDetector.mlmodelc: $(cat "$OUT/PanelDetector.json")"
+note "built PanelDetector.mlmodelc ($(du -sh "$OUT/PanelDetector.mlmodelc" | cut -f1)): $(tr -d '\n' < "$OUT/PanelDetector.json" | tr -s ' ')"
+echo "built $OUT/PanelDetector.mlmodelc"
