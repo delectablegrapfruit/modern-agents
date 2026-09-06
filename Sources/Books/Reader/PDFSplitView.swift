@@ -95,15 +95,7 @@ final class SplitPDFPresenter: PDFReading {
         var fitted = false
         /// A rewrapped word: its left edge from the tile's left, in view points. Nil centres the piece.
         var x: CGFloat? = nil
-        /// A comic panel that is not its rectangle: the page is drawn only through these rectangles (display space).
-        var clip: [CGRect]? = nil
     }
-
-    /// Comics: the panels found on every page, one a screen.
-    private var comicPreparation: ComicPreparation?
-    private var comicMode = false
-    /// The reading order the screens were built for.
-    private var comicRightToLeft = false
 
     struct Screen {
         var pieces: [Piece] = []
@@ -181,7 +173,7 @@ final class SplitPDFPresenter: PDFReading {
         view.presenter = self
     }
 
-    private var settings: ReaderSettings { session.reader }
+    private var settings: ReaderSettings { session.model.settings.reader }
     var units: Int { screens.count }
 
     // MARK: - Opening
@@ -189,29 +181,8 @@ final class SplitPDFPresenter: PDFReading {
     func open() {
         guard !opened else { return }
         opened = true
-        comicMode = session.pdfLayout == .comic
-        let book = session.book, store = session.model.store
-        if book.kind == .pdf {
-            start(with: store.fileURL(for: book))
-            return
-        }
-        // A book that is not a PDF is read as a comic from a PDF of its page images, made once beside it.
-        session.pdfPreparing(true)
-        Task.detached(priority: .userInitiated) { [weak self] in
-            let result = Result { try ComicPages.pdfURL(for: book, store: store) }
-            await MainActor.run { [weak self] in
-                guard let self else { return }
-                switch result {
-                case .success(let url): self.start(with: url)
-                case .failure(let error): self.session.pdfPreparing(false); self.session.comicUnavailable(error.localizedDescription)
-                }
-            }
-        }
-    }
-
-    private func start(with url: URL) {
+        let url = session.model.store.fileURL(for: session.book)
         guard let document = PDFDocument(url: url), document.pageCount > 0 else {
-            session.pdfPreparing(false)
             session.error = "This PDF could not be opened."
             return
         }
@@ -220,29 +191,10 @@ final class SplitPDFPresenter: PDFReading {
         sections = PDFPresenter.sections(of: document)
         applyTheme()
         session.pdfPreparing(true)
-        if comicMode {
-            let useDetector = settings.comicDetector
-            Task.detached(priority: .userInitiated) { [weak self] in
-                let prepared = ComicAnalysis.prepare(url: url, detector: useDetector ? PanelDetector.shared : nil)
-                await MainActor.run { [weak self] in self?.comicPrepared(prepared) }
-            }
-        } else {
-            Task.detached(priority: .userInitiated) { [weak self] in
-                let prepared = SplitPDFPresenter.prepare(url: url)
-                await MainActor.run { [weak self] in self?.prepared(prepared) }
-            }
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let prepared = SplitPDFPresenter.prepare(url: url)
+            await MainActor.run { [weak self] in self?.prepared(prepared) }
         }
-    }
-
-    private func comicPrepared(_ prepared: ComicPreparation?) {
-        session.pdfPreparing(false)
-        guard document != nil else { return }
-        guard let prepared, prepared.pages.count == pageCount else {
-            session.error = "The panels of this comic could not be found."
-            return
-        }
-        comicPreparation = prepared
-        finishOpening()
     }
 
     private func prepared(_ prepared: SplitPreparation?) {
@@ -253,11 +205,6 @@ final class SplitPDFPresenter: PDFReading {
             return
         }
         preparation = prepared
-        finishOpening()
-    }
-
-    /// Lays the screens out, goes back to the saved place and shows it.
-    private func finishOpening() {
         computeGeometry()
         buildScreens()
         reportLayout()
@@ -620,9 +567,8 @@ final class SplitPDFPresenter: PDFReading {
     // MARK: - Ink
 
     private func pageSize(_ page: Int) -> CGSize {
-        if let p = preparation, page < p.pageSizes.count { return p.pageSizes[page] }
-        if let c = comicPreparation, page < c.pages.count { return c.pages[page].size }
-        return CGSize(width: 612, height: 792)
+        guard let p = preparation, page < p.pageSizes.count else { return CGSize(width: 612, height: 792) }
+        return p.pageSizes[page]
     }
 
     /// The row counts that describe a strip of a page: the strip's own on a two-column page, else the whole page's.
@@ -678,76 +624,15 @@ final class SplitPDFPresenter: PDFReading {
     /// side; when a line no longer fits its column, the lines are rewrapped into shorter ones (see `buildScreens`).
     private func computeGeometry() {
         let size = view.bounds.size
-        guard preparation != nil || comicPreparation != nil, size.width > 60, size.height > 60 else { return }
-        if comicMode {
-            // One panel a screen, fitted to it however small it is on the page.
-            columns = 1
-            scale = 100
-        } else {
-            columns = settings.spread == .one ? 1 : 2
-            scale = CGFloat(min(400, max(50, settings.pdfZoom))) / 100
-        }
+        guard preparation != nil, size.width > 60, size.height > 60 else { return }
+        columns = settings.spread == .one ? 1 : 2
+        scale = CGFloat(min(400, max(50, settings.pdfZoom))) / 100
         let availableWidth = size.width - 2 * sideMargin - CGFloat(columns - 1) * gutter
         tileSize = CGSize(width: max(40, availableWidth / CGFloat(columns)), height: max(40, size.height - topMargin - bottomMargin))
     }
 
-    /// Comics: every panel of every page is a screen of its own, in the chosen reading order, centred and fitted.
-    /// A panel that is not its rectangle is drawn through its own shape, so a neighbour's spill-over is left out.
-    private func buildComicScreens() {
-        guard let c = comicPreparation, tileSize.height > 0 else { return }
-        comicRightToLeft = settings.comicRightToLeft
-        var out: [Screen] = []
-        var starts = [Int](repeating: -1, count: pageCount), ends = [Int](repeating: -1, count: pageCount)
-        for page in 0..<min(pageCount, c.pages.count) {
-            let p = c.pages[page]
-            let order = comicRightToLeft && p.rightToLeft.count == p.panels.count ? p.rightToLeft : Array(p.panels.indices)
-            var panels = order.compactMap { $0 < p.panels.count ? p.panels[$0] : nil }
-            if panels.isEmpty { panels = [ComicPreparation.Panel(rect: CGRect(origin: .zero, size: p.size), runs: nil)] }
-            for panel in panels {
-                var piece = Piece(page: page, rect: panel.rect, offset: 0, fitted: true)
-                if let runs = panel.runs, p.width > 0, p.height > 0 {
-                    let columnWidth = p.size.width / CGFloat(p.width), rowHeight = p.size.height / CGFloat(p.height)
-                    var rects: [CGRect] = []
-                    for entry in runs where entry.count >= 3 {
-                        let y = p.size.height - CGFloat(entry[0] + 1) * rowHeight
-                        var i = 1
-                        while i + 1 < entry.count {
-                            rects.append(CGRect(x: CGFloat(entry[i]) * columnWidth, y: y - rowHeight * 0.25, width: CGFloat(entry[i + 1] - entry[i]) * columnWidth, height: rowHeight * 1.5))
-                            i += 2
-                        }
-                    }
-                    piece.clip = rects
-                }
-                if starts[page] < 0 { starts[page] = out.count }
-                ends[page] = out.count
-                out.append(Screen(pieces: [piece], height: tileSize.height, standalone: true))
-            }
-        }
-        var lastEnd = 0
-        for page in 0..<pageCount {
-            if starts[page] < 0 {
-                starts[page] = min(lastEnd, max(0, out.count - 1))
-                ends[page] = starts[page]
-            } else {
-                lastEnd = ends[page]
-            }
-        }
-        screens = out
-        pageStarts = starts + [out.count]
-        pageEnds = ends
-        tiles.removeAll()
-        pageImages.removeAll()
-        if unit >= units { unit = max(0, units - 1) }
-    }
-
     /// For the self-test: whether any screen shows rewrapped words.
     var rewrapped: Bool { screens.contains { $0.pieces.contains { $0.x != nil } } }
-
-    /// For the self-test: each screen's first piece's rectangle on its page.
-    var panelRects: [CGRect] { screens.compactMap { $0.pieces.first?.rect } }
-
-    /// For the self-test: how many screens draw their panel through its own shape rather than its rectangle.
-    var clippedPanels: Int { screens.filter { $0.pieces.first?.clip != nil }.count }
 
     /// One page's run of a strip for the column: the strip's columns, over the page's own ink from top to bottom
     /// (the group's strip is a median; a full page runs past it), cut below the page's header band and above its
@@ -792,7 +677,6 @@ final class SplitPDFPresenter: PDFReading {
     /// screen is fitted to one; a picture-only page stands alone. Pieces keep the page's own spacing between the
     /// blocks they span; a small gap separates pieces of different pages on one screen.
     private func buildScreens() {
-        if comicMode { buildComicScreens(); return }
         guard let p = preparation, tileSize.height > 0, scale > 0 else { return }
         let typical = p.typicalLineHeight
         let pageGap = typical * 0.6 * scale
@@ -1103,20 +987,9 @@ final class SplitPDFPresenter: PDFReading {
     // MARK: - Drawing
 
     private func applyTheme() {
-        if comicMode {
-            // Comics keep their colours: no filters; the panel is a cut-out on the theme's page colour.
-            view.layer?.filters = nil
-            view.layer?.backgroundColor = comicPaper
-            return
-        }
         let theme = PDFPresenter.themeFilters(for: session.effectiveTheme)
         view.layer?.filters = theme.filters.isEmpty ? nil : theme.filters
         view.layer?.backgroundColor = theme.background.cgColor
-    }
-
-    /// The theme's page colour, the paper of comic screens.
-    private var comicPaper: CGColor {
-        (NSColor(Color(hex: session.effectiveTheme.colors.background)).usingColorSpace(.sRGB) ?? .white).cgColor
     }
 
     /// A page's inked area rendered once at a pixel scale, so rewrapped words can be cut out of it cheaply.
@@ -1151,7 +1024,7 @@ final class SplitPDFPresenter: PDFReading {
         let backing = view.window?.backingScaleFactor ?? 2
         let width = Int(tileSize.width * backing), height = Int(tileSize.height * backing)
         guard width > 0, height > 0, let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
-        context.setFillColor(comicMode ? comicPaper : CGColor(gray: 1, alpha: 1))
+        context.setFillColor(CGColor(gray: 1, alpha: 1))
         context.fill(CGRect(x: 0, y: 0, width: width, height: height))
         context.interpolationQuality = .high
         let tile = CGRect(origin: .zero, size: tileSize)
@@ -1175,22 +1048,7 @@ final class SplitPDFPresenter: PDFReading {
                 context.translateBy(x: destPixels.minX, y: destPixels.minY)
                 context.scaleBy(x: backing * s, y: backing * s)
                 context.translateBy(x: -piece.rect.minX, y: -piece.rect.minY)
-                if let clip = piece.clip, !clip.isEmpty {
-                    let path = CGMutablePath()
-                    for r in clip {
-                        let shown = r.intersection(piece.rect)
-                        if !shown.isNull, shown.width > 0, shown.height > 0 { path.addRect(shown) }
-                    }
-                    context.addPath(path)
-                    context.clip()
-                } else {
-                    context.clip(to: piece.rect)
-                }
-                if comicMode {
-                    // The page's own paper under the panel, whatever the theme.
-                    context.setFillColor(CGColor(gray: 1, alpha: 1))
-                    context.fill(piece.rect)
-                }
+                context.clip(to: piece.rect)
                 page.draw(with: .mediaBox, to: context)
                 context.restoreGState()
             }
@@ -1275,14 +1133,11 @@ final class SplitPDFPresenter: PDFReading {
         let anchor = units > 0 ? screens[unit].pieces.first : nil
         let before = (tileSize, scale, columns)
         computeGeometry()
-        let directionChanged = comicMode && comicRightToLeft != settings.comicRightToLeft
-        if before == (tileSize, scale, columns) && !screens.isEmpty && !directionChanged { return }
+        if before == (tileSize, scale, columns) && !screens.isEmpty { return }
         buildScreens()
         if let pendingRestore, units > 0 {
             unit = aligned(pendingRestore())
             self.pendingRestore = nil
-        } else if let anchor, comicMode, let same = screens.firstIndex(where: { $0.pieces.first?.page == anchor.page && $0.pieces.first?.rect == anchor.rect }) {
-            unit = same
         } else if let anchor {
             unit = aligned(unitContaining(page: anchor.page, y: anchor.rect.maxY - 0.5))
         }
@@ -1310,10 +1165,11 @@ final class SplitPDFPresenter: PDFReading {
 
     /// The text size steps by 10%, from 50% to 400%; past the width of a column the lines are rewrapped.
     func zoom(_ direction: Int) {
-        guard !comicMode else { return }
-        let current = min(400, max(50, settings.pdfZoom))
+        var all = session.model.settings
+        let current = min(400, max(50, all.reader.pdfZoom))
         let next = direction > 0 ? min(400, current + 10) : max(50, current - 10)
-        session.setView { $0.pdfZoom = next }
+        all.reader.pdfZoom = next
+        session.model.settings = all
         applySettings()
     }
 

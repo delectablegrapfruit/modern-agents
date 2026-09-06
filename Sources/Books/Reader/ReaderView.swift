@@ -53,7 +53,7 @@ struct ReaderContent: View {
                 }
                 anchors
                 if session.preparing {
-                    ProgressView(session.pdfLayout == .comic ? "Finding the panels…" : session.pdfLayout == .fit ? "Preparing the pages…" : "Preparing the text…")
+                    ProgressView(session.model.settings.reader.pdfLayout == .fit ? "Preparing the pages…" : "Preparing the text…")
                         .controlSize(.large)
                         .padding(28)
                         .glassRounded(16)

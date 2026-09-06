@@ -1,6 +1,5 @@
 import AppKit
 import CoreGraphics
-import PDFKit
 import SwiftUI
 import BooksCore
 
@@ -20,7 +19,7 @@ enum SelfTest {
                 fail("\(error)")
             }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 180) { fail("timed out") }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 120) { fail("timed out") }
     }
 
     private static func log(_ message: String) {
@@ -240,12 +239,8 @@ enum SelfTest {
         for _ in 0..<5 { fitSession.changeFontSize(by: 10) }
         try await sleep(0.8)
         let screensTwoUpLarge = fitSession.layout.total
-        guard fitSession.reader.pdfZoom == 150, screensTwoUpLarge > screensAt100, fitSession.layout.columns == 2, split.rewrapped else {
-            throw Failure("150% did not rewrap into two pages (\(fitSession.reader.pdfZoom)%, \(screensAt100) → \(screensTwoUpLarge) screens, \(fitSession.layout.columns) column(s), rewrapped \(split.rewrapped))")
-        }
-        // The text size is this book's: kept with it, not in the reader settings.
-        guard model.settings.reader.pdfZoom == 100, model.book(book.id)?.view?.pdfZoom == 150 else {
-            throw Failure("the text size was not kept with the book (settings \(model.settings.reader.pdfZoom)%, book \(model.book(book.id)?.view?.pdfZoom ?? 0)%)")
+        guard model.settings.reader.pdfZoom == 150, screensTwoUpLarge > screensAt100, fitSession.layout.columns == 2, split.rewrapped else {
+            throw Failure("150% did not rewrap into two pages (\(model.settings.reader.pdfZoom)%, \(screensAt100) → \(screensTwoUpLarge) screens, \(fitSession.layout.columns) column(s), rewrapped \(split.rewrapped))")
         }
         try checkFlow(split, expectCuts: true)
         // One page: the same size shows fewer, wider screens.
@@ -262,14 +257,14 @@ enum SelfTest {
         // Smaller text: pages run on into one another, fewer screens.
         for _ in 0..<10 { fitSession.changeFontSize(by: -10) }
         try await sleep(0.8)
-        guard fitSession.reader.pdfZoom == 50, fitSession.layout.total < screensAt100 else {
-            throw Failure("50% did not reduce the screens (\(fitSession.reader.pdfZoom)%, \(fitSession.layout.total) screens)")
+        guard model.settings.reader.pdfZoom == 50, fitSession.layout.total < screensAt100 else {
+            throw Failure("50% did not reduce the screens (\(model.settings.reader.pdfZoom)%, \(fitSession.layout.total) screens)")
         }
         try checkFlow(split, expectCuts: false)
         fitSettings = model.settings
         fitSettings.reader.spread = .two
+        fitSettings.reader.pdfZoom = 100
         model.settings = fitSettings
-        fitSession.setView { $0.pdfZoom = 100 }
         fitSession.applySettings()
         try await sleep(0.6)
         fitSession.goToFraction(0)   // the pages-mode part of the test ended on the last page, with a bookmark there
@@ -309,285 +304,6 @@ enum SelfTest {
         try await sleep(0.4)
         let savedPercent = model.book(book.id)?.position?.percent ?? 0
         guard model.reading == nil, savedPercent > 0 else { throw Failure("PDF position was not saved (\(savedPercent)%)") }
-
-        try await runComics(model: model)
-    }
-
-    /// Comics: a generated comic — a 2×3 grid, a page with a balloon spilling from the top panel into the bottom one,
-    /// a page with a slanted gutter — reads one panel a screen in either direction; a CBZ of page images comes in as
-    /// a comic and opens the same way.
-    @MainActor
-    private static func runComics(model: LibraryModel) async throws {
-        let comicFile = FileManager.default.temporaryDirectory.appendingPathComponent("Books Self-Test Comic \(UUID().uuidString).pdf")
-        try makeComicPDF().write(to: comicFile)
-        let comicAdded: [Book] = await withCheckedContinuation { continuation in
-            model.importFiles([comicFile], quiet: true, allowDuplicates: true) { continuation.resume(returning: $0) }
-        }
-        guard let comicBook = comicAdded.first else { throw Failure("the generated comic could not be imported") }
-        defer { model.delete([comicBook.id]) }
-        // The detector model, when the build bundled one: what it sees on the grid page (the counts below are checked
-        // on the gutter analysis alone, whose answer is exact for these pages).
-        if let detector = PanelDetector.shared, let document = PDFDocument(url: comicFile), let page = document.page(at: 0) {
-            let seen = detector.detect(page: page, size: PDFPresenter.displaySize(of: page))
-            log("detector \(detector.name): \(seen.filter { $0.kind == .panel }.count) panels and \(seen.filter { $0.kind == .text }.count) text boxes on the grid page")
-        } else {
-            log("no detector model bundled; panels from the gutters alone")
-        }
-        var comicSettings = model.settings
-        comicSettings.reader.pdfLayout = .comic
-        comicSettings.reader.comicRightToLeft = false
-        comicSettings.reader.comicDetector = false
-        model.settings = comicSettings
-        model.open(comicBook)
-        let comicSession = try await waitFor("the comic to open in Comics", timeout: 40) {
-            if let s = currentSession, s.book.id == comicBook.id, s.isOpen, s.usesPDFView, s.layout.total > 0 { return s }
-            return nil
-        }
-        try await sleep(0.8)
-        guard let comic = comicSession.pdf as? SplitPDFPresenter else { throw Failure("Comics is not using the split presenter") }
-        let panels = comic.panelRects
-        guard panels.count == 11, comicSession.layout.columns == 1 else {
-            throw Failure("Comics found \(panels.count) panels in \(comicSession.layout.columns) column(s); expected 11 (6 + 2 + 3) in one: \(panels.map { "\(Int($0.minX)),\(Int($0.minY)) \(Int($0.width))×\(Int($0.height))" })")
-        }
-        guard comic.clippedPanels >= 4 else { throw Failure("Comics shaped only \(comic.clippedPanels) panels; expected the balloon page's two and the slanted pair") }
-        // The grid reads left to right, row by row (page space has its origin at the bottom).
-        guard panels[0].minX < panels[1].minX, abs(panels[0].minY - panels[1].minY) < 5, panels[2].maxY < panels[0].minY else {
-            throw Failure("Comics did not read the grid left to right, row by row: \(panels.prefix(3))")
-        }
-        // The balloon stays with the panel it comes from: the top panel of page 2 reaches below the gutter, the bottom
-        // one still starts at its frame, and the two are shown apart.
-        guard panels[6].minY < 385, panels[7].maxY > panels[6].minY else { throw Failure("the balloon did not go to its panel: top \(panels[6]), bottom \(panels[7])") }
-        let unitBefore = comicSession.position.page
-        comicSession.next()
-        try await sleep(0.5)
-        guard comicSession.position.page == unitBefore + 1, comicSession.pdfPageLabel?.hasPrefix("Page 1 of 3") == true else {
-            throw Failure("Comics next() went from \(unitBefore) to \(comicSession.position.page), footer “\(comicSession.pdfPageLabel ?? "")”")
-        }
-        comicSettings = model.settings
-        comicSettings.reader.comicRightToLeft = true
-        model.settings = comicSettings
-        comicSession.applySettings()
-        try await sleep(0.6)
-        let rightToLeft = comic.panelRects
-        guard rightToLeft.count == 11, rightToLeft[0] == panels[1], rightToLeft[1] == panels[0], rightToLeft[6] == panels[6] else {
-            throw Failure("right to left did not swap the panels of a row: \(rightToLeft.prefix(2)) vs \(panels.prefix(2))")
-        }
-        // The book's own choice stands over the reader settings, and is kept with the book.
-        comicSession.setView { $0.comicRightToLeft = false }
-        comicSession.applySettings()
-        try await sleep(0.6)
-        guard comic.panelRects == panels, model.book(comicBook.id)?.view?.comicRightToLeft == false, model.settings.reader.comicRightToLeft else {
-            throw Failure("the book's own reading direction did not stand over the settings")
-        }
-        comicSettings = model.settings
-        comicSettings.reader.comicRightToLeft = false
-        comicSettings.reader.pdfLayout = .pages
-        model.settings = comicSettings
-        comicSession.close()
-        try await sleep(0.4)
-        log("Comics: \(panels.count) panels on 3 pages, \(comic.clippedPanels) shaped, balloon kept with its panel, next, right to left, the book's own direction; footer “\(comicSession.pdfPageLabel ?? "")”")
-
-        // A CBZ: page images in a zip with a ComicInfo.xml become a comic in the library, a PDF of its pages, and
-        // open in Comics.
-        var zip = ZipWriter()
-        for i in 1...3 { zip.add(String(format: "pages/page-%02d.png", i), try makePagePNG(i)) }
-        zip.add("ComicInfo.xml", "<?xml version=\"1.0\"?><ComicInfo><Series>Self-Test Comic</Series><Number>1</Number><Writer>Continuous Integration</Writer></ComicInfo>")
-        let cbz = FileManager.default.temporaryDirectory.appendingPathComponent("Books Self-Test \(UUID().uuidString).cbz")
-        try zip.finish().write(to: cbz)
-        let cbzAdded: [Book] = await withCheckedContinuation { continuation in
-            model.importFiles([cbz], quiet: true, allowDuplicates: true) { continuation.resume(returning: $0) }
-        }
-        guard let cbzBook = cbzAdded.first else { throw Failure("the CBZ could not be imported: \(model.error ?? "no error")") }
-        defer { model.delete([cbzBook.id]) }
-        guard cbzBook.kind == .pdf, cbzBook.isComic, cbzBook.pageCount == 3, cbzBook.title == "Self-Test Comic #1", cbzBook.author == "Continuous Integration", cbzBook.coverFile != nil else {
-            throw Failure("the CBZ was not imported as a comic: \(cbzBook.title) by \(cbzBook.author), \(cbzBook.pageCount ?? 0) pages, comic \(cbzBook.isComic), cover \(cbzBook.coverFile ?? "none")")
-        }
-        model.open(cbzBook)
-        let cbzSession = try await waitFor("the CBZ to open in Comics", timeout: 40) {
-            if let s = currentSession, s.book.id == cbzBook.id, s.isOpen, s.usesPDFView, s.layout.total > 0 { return s }
-            return nil
-        }
-        try await sleep(0.5)
-        guard cbzSession.pdfLayout == .comic, Int(cbzSession.layout.total) == 12 else {
-            throw Failure("the CBZ opened as \(cbzSession.pdfLayout) with \(cbzSession.layout.total) screens; expected Comics with 12 panels")
-        }
-        cbzSession.close()
-        try await sleep(0.4)
-        log("CBZ: imported as “\(cbzBook.title)” by \(cbzBook.author), \(cbzBook.pageCount ?? 0) pages, opened in Comics with \(Int(cbzSession.layout.total)) panels")
-
-        // Any book as a comic: an EPUB whose pages are images opens in Comics from a PDF of them, with its contents;
-        // the choice is the book's own and the book can go back to being read as itself.
-        var epubZip = ZipWriter()
-        epubZip.add("mimetype", "application/epub+zip")
-        epubZip.add("META-INF/container.xml", "<?xml version=\"1.0\"?><container version=\"1.0\" xmlns=\"urn:oasis:names:tc:opendocument:xmlns:container\"><rootfiles><rootfile full-path=\"OEBPS/content.opf\" media-type=\"application/oebps-package+xml\"/></rootfiles></container>")
-        var manifest = "", spineItems = "", navItems = ""
-        for i in 1...3 {
-            epubZip.add("OEBPS/images/p\(i).png", try makePagePNG(i))
-            epubZip.add("OEBPS/p\(i).xhtml", "<?xml version=\"1.0\" encoding=\"utf-8\"?><html xmlns=\"http://www.w3.org/1999/xhtml\"><head><title>Page \(i)</title></head><body><img src=\"images/p\(i).png\" alt=\"Page \(i)\"/></body></html>")
-            manifest += "<item id=\"p\(i)\" href=\"p\(i).xhtml\" media-type=\"application/xhtml+xml\"/><item id=\"i\(i)\" href=\"images/p\(i).png\" media-type=\"image/png\"/>"
-            spineItems += "<itemref idref=\"p\(i)\"/>"
-            navItems += "<li><a href=\"p\(i).xhtml\">Page \(i)</a></li>"
-        }
-        epubZip.add("OEBPS/nav.xhtml", "<?xml version=\"1.0\" encoding=\"utf-8\"?><html xmlns=\"http://www.w3.org/1999/xhtml\" xmlns:epub=\"http://www.idpf.org/2007/ops\"><head><title>Contents</title></head><body><nav epub:type=\"toc\"><ol>\(navItems)</ol></nav></body></html>")
-        epubZip.add("OEBPS/content.opf", "<?xml version=\"1.0\" encoding=\"utf-8\"?><package xmlns=\"http://www.idpf.org/2007/opf\" version=\"3.0\" unique-identifier=\"id\"><metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\"><dc:identifier id=\"id\">urn:uuid:\(UUID().uuidString)</dc:identifier><dc:title>Self-Test Picture Book</dc:title><dc:creator>Continuous Integration</dc:creator><dc:language>en</dc:language></metadata><manifest><item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>\(manifest)</manifest><spine>\(spineItems)</spine></package>")
-        let epubFile = FileManager.default.temporaryDirectory.appendingPathComponent("Books Self-Test Pictures \(UUID().uuidString).epub")
-        try epubZip.finish().write(to: epubFile)
-        let epubAdded: [Book] = await withCheckedContinuation { continuation in
-            model.importFiles([epubFile], quiet: true, allowDuplicates: true) { continuation.resume(returning: $0) }
-        }
-        guard let pictureBook = epubAdded.first, pictureBook.kind == .epub else { throw Failure("the picture EPUB could not be imported: \(model.error ?? "no error")") }
-        defer { model.delete([pictureBook.id]) }
-        model.open(pictureBook)
-        let bookSession = try await waitFor("the picture EPUB to open as a book", timeout: 40) {
-            if let s = currentSession, s.book.id == pictureBook.id, s.isOpen, !s.usesPDFView { return s }
-            return nil
-        }
-        bookSession.setPDFLayout(.comic)
-        let pictureComic = try await waitFor("the picture EPUB to open in Comics", timeout: 40) {
-            if let s = currentSession, s !== bookSession, s.book.id == pictureBook.id, s.isOpen, s.usesPDFView, s.layout.total > 0 { return s }
-            return nil
-        }
-        try await sleep(0.5)
-        guard pictureComic.pdfLayout == .comic, Int(pictureComic.layout.total) == 12, pictureComic.toc.count == 3 else {
-            throw Failure("the picture EPUB opened as \(pictureComic.pdfLayout) with \(pictureComic.layout.total) screens and \(pictureComic.toc.count) contents entries; expected Comics, 12 panels, 3 entries")
-        }
-        guard model.settings.reader.pdfLayout == .pages, model.book(pictureBook.id)?.view?.pdfLayout == .comic else {
-            throw Failure("Comics for the EPUB was not kept with the book alone (settings \(model.settings.reader.pdfLayout), book \(String(describing: model.book(pictureBook.id)?.view?.pdfLayout)))")
-        }
-        pictureComic.setPDFLayout(nil)
-        let bookAgain = try await waitFor("the picture EPUB to open as a book again", timeout: 40) {
-            if let s = currentSession, s !== pictureComic, s.book.id == pictureBook.id, s.isOpen, !s.usesPDFView { return s }
-            return nil
-        }
-        guard model.book(pictureBook.id)?.view == nil else { throw Failure("going back to the book left a view record: \(String(describing: model.book(pictureBook.id)?.view))") }
-        bookAgain.close()
-        try await sleep(0.4)
-        log("EPUB as comic: \(Int(pictureComic.layout.total)) panels from 3 page images, \(pictureComic.toc.count) contents entries, the choice kept with the book, back to the book")
-
-        // With the detector model steering the analysis, the CBZ still reads panel by panel.
-        var detectorSettings = model.settings
-        detectorSettings.reader.comicDetector = true
-        model.settings = detectorSettings
-        if PanelDetector.shared != nil {
-            model.open(cbzBook)
-            let steered = try await waitFor("the CBZ to open with the detector", timeout: 60) {
-                if let s = currentSession, s !== cbzSession, s.book.id == cbzBook.id, s.isOpen, s.usesPDFView, s.layout.total > 0 { return s }
-                return nil
-            }
-            try await sleep(0.5)
-            guard Int(steered.layout.total) >= 3 else { throw Failure("with the detector the CBZ made \(steered.layout.total) screens; expected at least one a page") }
-            steered.close()
-            try await sleep(0.4)
-            log("Detector-steered CBZ: \(Int(steered.layout.total)) panels on 3 pages")
-        }
-    }
-
-    /// Three letter pages: a 2×3 grid of framed panels with a page number; two panels with a balloon from the top one
-    /// hanging over the gutter into the bottom one; two panels a slanted gutter divides above a wide one.
-    private static func makeComicPDF() throws -> Data {
-        let data = NSMutableData()
-        var mediaBox = CGRect(x: 0, y: 0, width: 612, height: 792)
-        guard let consumer = CGDataConsumer(data: data as CFMutableData), let context = CGContext(consumer: consumer, mediaBox: &mediaBox, nil) else {
-            throw Failure("could not create a PDF context")
-        }
-        func frame(_ rect: CGRect, art seed: Int) {
-            context.setLineWidth(3)
-            context.setStrokeColor(CGColor(gray: 0, alpha: 1))
-            context.stroke(rect)
-            context.setFillColor(CGColor(gray: 0.55, alpha: 1))
-            context.fill(rect.insetBy(dx: rect.width * 0.1, dy: rect.height * 0.1))
-            context.setFillColor(CGColor(gray: 0.1, alpha: 1))
-            context.fillEllipse(in: CGRect(x: rect.minX + rect.width * (0.2 + 0.05 * CGFloat(seed % 4)), y: rect.minY + rect.height * 0.3, width: rect.width * 0.3, height: rect.height * 0.35))
-            context.setLineWidth(2)
-            context.move(to: CGPoint(x: rect.minX + 6, y: rect.minY + 6))
-            context.addLine(to: CGPoint(x: rect.maxX - 6, y: rect.maxY - 6))
-            context.strokePath()
-        }
-        // Page 1: the grid and a page number.
-        context.beginPDFPage(nil)
-        let margin: CGFloat = 36, gap: CGFloat = 14
-        let width = (612 - 2 * margin - gap) / 2, height = (792 - 2 * margin - 20 - 2 * gap) / 3
-        var index = 0
-        for row in 0..<3 {
-            for column in 0..<2 {
-                frame(CGRect(x: margin + CGFloat(column) * (width + gap), y: 792 - margin - height - CGFloat(row) * (height + gap), width: width, height: height), art: index)
-                index += 1
-            }
-        }
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
-        ("1" as NSString).draw(at: NSPoint(x: 303, y: 22), withAttributes: [.font: NSFont.systemFont(ofSize: 10), .foregroundColor: NSColor.black])
-        NSGraphicsContext.restoreGraphicsState()
-        context.endPDFPage()
-        // Page 2: two panels and the balloon.
-        context.beginPDFPage(nil)
-        let middle: CGFloat = 396
-        frame(CGRect(x: margin, y: middle + gap / 2, width: 612 - 2 * margin, height: 792 - margin - middle - gap / 2), art: 6)
-        frame(CGRect(x: margin, y: margin + 20, width: 612 - 2 * margin, height: middle - gap / 2 - margin - 20), art: 7)
-        let balloon = CGRect(x: 200, y: middle - 40, width: 220, height: 130)
-        context.setFillColor(CGColor(gray: 1, alpha: 1))
-        context.fillEllipse(in: balloon)
-        context.setLineWidth(3)
-        context.setStrokeColor(CGColor(gray: 0, alpha: 1))
-        context.strokeEllipse(in: balloon)
-        context.move(to: CGPoint(x: 250, y: balloon.maxY - 10))
-        context.addLine(to: CGPoint(x: 230, y: balloon.maxY + 40))
-        context.addLine(to: CGPoint(x: 300, y: balloon.maxY - 20))
-        context.closePath()
-        context.setFillColor(CGColor(gray: 1, alpha: 1))
-        context.drawPath(using: .fillStroke)
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
-        ("HELLO THERE" as NSString).draw(at: NSPoint(x: 250, y: middle + 30), withAttributes: [.font: NSFont.boldSystemFont(ofSize: 14), .foregroundColor: NSColor.black])
-        ("OVER THE GUTTER" as NSString).draw(at: NSPoint(x: 240, y: middle), withAttributes: [.font: NSFont.boldSystemFont(ofSize: 14), .foregroundColor: NSColor.black])
-        NSGraphicsContext.restoreGraphicsState()
-        context.endPDFPage()
-        // Page 3: a slanted gutter between two panels, a wide panel below.
-        context.beginPDFPage(nil)
-        let top = 792 - margin, rowBottom = middle + 8
-        let leftPolygon = [CGPoint(x: margin, y: top), CGPoint(x: 370, y: top), CGPoint(x: 250, y: rowBottom), CGPoint(x: margin, y: rowBottom)]
-        let rightPolygon = [CGPoint(x: 384, y: top), CGPoint(x: 612 - margin, y: top), CGPoint(x: 612 - margin, y: rowBottom), CGPoint(x: 264, y: rowBottom)]
-        for (polygon, seed) in [(leftPolygon, 8), (rightPolygon, 9)] {
-            context.move(to: polygon[0])
-            for point in polygon.dropFirst() { context.addLine(to: point) }
-            context.closePath()
-            context.setFillColor(CGColor(gray: 0.6, alpha: 1))
-            context.setLineWidth(3)
-            context.setStrokeColor(CGColor(gray: 0, alpha: 1))
-            context.drawPath(using: .fillStroke)
-            context.setFillColor(CGColor(gray: 0.1, alpha: 1))
-            context.fillEllipse(in: CGRect(x: seed == 8 ? 80 : 420, y: middle + 120, width: 100, height: 120))
-        }
-        frame(CGRect(x: margin, y: margin + 20, width: 612 - 2 * margin, height: middle - 8 - margin - 20), art: 10)
-        context.endPDFPage()
-        context.closePDF()
-        return data as Data
-    }
-
-    /// A page image for the CBZ: four framed panels.
-    private static func makePagePNG(_ page: Int) throws -> Data {
-        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 600, pixelsHigh: 900, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
-              let graphics = NSGraphicsContext(bitmapImageRep: rep) else { throw Failure("could not make a page image") }
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = graphics
-        NSColor.white.setFill()
-        NSBezierPath(rect: NSRect(x: 0, y: 0, width: 600, height: 900)).fill()
-        for row in 0..<2 {
-            for column in 0..<2 {
-                let rect = NSRect(x: 40 + CGFloat(column) * 270, y: 60 + CGFloat(row) * 400, width: 250, height: 380)
-                NSColor(white: 0.6, alpha: 1).setFill()
-                NSBezierPath(rect: rect.insetBy(dx: 20, dy: 20)).fill()
-                NSColor(white: 0.1 + 0.1 * CGFloat(page), alpha: 1).setFill()
-                NSBezierPath(ovalIn: rect.insetBy(dx: 70, dy: 120)).fill()
-                let border = NSBezierPath(rect: rect)
-                border.lineWidth = 4
-                NSColor.black.setStroke()
-                border.stroke()
-            }
-        }
-        NSGraphicsContext.restoreGraphicsState()
-        guard let png = rep.representation(using: .png, properties: [:]) else { throw Failure("could not encode a page image") }
-        return png
     }
 
     /// The screens of Zoom & Split read on like a book: no screen repeats ink an earlier one showed, every screen

@@ -64,10 +64,8 @@ struct SearchHit: Hashable, Identifiable {
 @MainActor
 @Observable
 final class ReaderSession {
-    private(set) var book: Book
+    let book: Book
     unowned let model: LibraryModel
-    /// How this book is viewed: its own choices, kept with it, over the reader settings.
-    private(set) var view: BookView
 
     let webView: ReaderWebView
     private let schemeHandler = BooksSchemeHandler()
@@ -127,9 +125,7 @@ final class ReaderSession {
     init(book: Book, model: LibraryModel) {
         self.book = book
         self.model = model
-        view = book.view ?? BookView()
-        let layout = ReaderSession.pdfLayout(of: book, in: model.settings.reader)
-        usesPDFView = (book.kind == .pdf && layout != .text) || layout == .comic
+        usesPDFView = book.kind == .pdf && model.settings.reader.pdfLayout != .text
         annotations = model.store.annotations(for: book.id)
         schemeHandler.bookURL = model.store.fileURL(for: book)
 
@@ -195,7 +191,9 @@ final class ReaderSession {
         preparing = false
         if let failure {
             // Back to whole pages, with the reason; the library's alert outlives this reader.
-            setView { $0.pdfLayout = .pages }
+            var all = model.settings
+            all.reader.pdfLayout = .pages
+            model.settings = all
             model.error = failure
             model.reopen(book)
             return
@@ -205,42 +203,11 @@ final class ReaderSession {
         if isPageReady { openBook() }
     }
 
-    /// The reader settings with this book's own choices over them.
-    var reader: ReaderSettings { model.settings.reader.applying(view) }
-
-    /// The way a book is shown: its own choice; else Comics for a comic archive, the PDF setting for a PDF, and the
-    /// book as typeset (reported as Pages) for anything else.
-    static func pdfLayout(of book: Book, in settings: ReaderSettings) -> PDFLayout {
-        if let own = book.view?.pdfLayout { return book.kind == .pdf || own == .comic ? own : .pages }
-        if book.kind != .pdf { return .pages }
-        return book.isComic ? .comic : settings.pdfLayout
-    }
-
-    var pdfLayout: PDFLayout { ReaderSession.pdfLayout(of: book, in: model.settings.reader) }
-
-    /// Changes how this book is viewed and keeps the choice with the book (over the record as the store has it, so
-    /// a place saved meanwhile is not lost).
-    func setView(_ change: (inout BookView) -> Void) {
-        change(&view)
-        var updated = model.book(book.id) ?? book
-        updated.view = view.isEmpty ? nil : view
-        book.view = updated.view
-        model.update(updated)
-    }
-
-    /// Pages, Zoom & Split, Text or Comics — nil for a book as typeset: the book reopens the chosen way.
-    func setPDFLayout(_ layout: PDFLayout?) {
-        setView { $0.pdfLayout = layout }
-        model.reopen(book)
-    }
-
-    /// The book again, freshly: for changes that need the reader rebuilt.
-    func reopen() { model.reopen(book) }
-
-    /// A book that could not be read as a comic (no page images) goes back to being read as itself.
-    func comicUnavailable(_ reason: String) {
-        setView { $0.pdfLayout = nil }
-        model.error = reason
+    /// Pages, Zoom & Split or Text: the book reopens the chosen way.
+    func setPDFLayout(_ layout: PDFLayout) {
+        var all = model.settings
+        all.reader.pdfLayout = layout
+        model.settings = all
         model.reopen(book)
     }
 
@@ -282,7 +249,7 @@ final class ReaderSession {
         }
         var arguments: [String: Any] = [
             "url": BooksSchemeHandler.bookURLString,
-            "settings": reader.webSettings(systemIsDark: systemIsDark),
+            "settings": model.settings.reader.webSettings(systemIsDark: systemIsDark),
             "bookmarks": bookmarkPayload(),
             "highlights": highlights,
         ]
@@ -301,7 +268,7 @@ final class ReaderSession {
     func applySettings() {
         if usesPDFView { pdf?.applySettings(); return }
         guard isOpen else { return }
-        call("applySettings", reader.webSettings(systemIsDark: systemIsDark))
+        call("applySettings", model.settings.reader.webSettings(systemIsDark: systemIsDark))
     }
 
     func next() { if usesPDFView { pdf?.next() } else { call("next") }; activity() }
@@ -342,7 +309,7 @@ final class ReaderSession {
     func handleWheel(_ event: NSEvent) -> Bool {
         guard isOpen, !event.hasPreciseScrollingDeltas, event.phase == [], event.momentumPhase == [] else { return false }
         activity()
-        let settings = reader
+        let settings = model.settings.reader
         // AppKit reports scrolling down and to the right as negative deltas, in lines for notched wheels.
         let vertical = event.scrollingDeltaY != 0 ? event.scrollingDeltaY : event.deltaY
         let horizontal = event.scrollingDeltaX != 0 ? event.scrollingDeltaX : event.deltaX

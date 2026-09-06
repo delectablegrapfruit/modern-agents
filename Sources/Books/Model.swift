@@ -1,5 +1,4 @@
 import AppKit
-import ImageIO
 import Observation
 import PDFKit
 import UniformTypeIdentifiers
@@ -99,7 +98,6 @@ final class LibraryModel {
         stats = store.stats
         store.pdfInspector = { url in PDFInspector.inspect(url) }
         store.svgRasterizer = { svg in Rasterizer.png(fromSVG: svg) }
-        store.comicPDFMaker = { images in ComicPDF.make(images) }
     }
 
     func flush() {
@@ -306,7 +304,7 @@ final class LibraryModel {
     static let readableTypes: [UTType] = {
         var types: [UTType] = [.epub, .pdf, .plainText, .text]
         for id in ["com.amazon.mobi8-ebook", "com.amazon.azw", "org.mobipocket.ebook", "net.daringfireball.markdown"] { if let t = UTType(id) { types.append(t) } }
-        for ext in ["mobi", "azw", "azw3", "prc", "md", "markdown", "txt", "cbz", "cbr", "cb7", "cbt"] { if let t = UTType(filenameExtension: ext) { types.append(t) } }
+        for ext in ["mobi", "azw", "azw3", "prc", "md", "markdown", "txt"] { if let t = UTType(filenameExtension: ext) { types.append(t) } }
         return types
     }()
 
@@ -315,7 +313,7 @@ final class LibraryModel {
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         panel.allowedContentTypes = LibraryModel.readableTypes
-        panel.message = "Add EPUB, Kindle (MOBI, AZW3), PDF, comic (CBZ, CBR, CB7, CBT) or text files to your library"
+        panel.message = "Add EPUB, Kindle (MOBI, AZW3), PDF or text files to your library"
         panel.prompt = "Add"
         guard panel.runModal() == .OK else { return }
         importFiles(panel.urls)
@@ -383,53 +381,6 @@ enum PDFInspector {
             }
         }
         return info
-    }
-}
-
-/// A comic's page images as a PDF, one image a page, at the image's size (the longer side at most 1600 points).
-enum ComicPDF {
-    static func make(_ images: [Data]) -> (pdf: Data, pageCount: Int)? {
-        let decoded = images.compactMap(decode)
-        guard let pdf = make(images: decoded) else { return nil }
-        return (pdf, decoded.count)
-    }
-
-    static func make(images: [CGImage]) -> Data? {
-        let data = NSMutableData()
-        var mediaBox = CGRect(x: 0, y: 0, width: 612, height: 792)
-        guard !images.isEmpty, let consumer = CGDataConsumer(data: data as CFMutableData), let context = CGContext(consumer: consumer, mediaBox: &mediaBox, nil) else { return nil }
-        for image in images {
-            let w = CGFloat(image.width), h = CGFloat(image.height)
-            let s = min(1, 1600 / max(w, h))
-            var box = CGRect(x: 0, y: 0, width: (w * s).rounded(), height: (h * s).rounded())
-            let boxData = Data(bytes: &box, count: MemoryLayout<CGRect>.size)
-            context.beginPDFPage([kCGPDFContextMediaBox as String: boxData] as CFDictionary)
-            context.interpolationQuality = .high
-            context.draw(image, in: box)
-            context.endPDFPage()
-        }
-        context.closePDF()
-        return data as Data
-    }
-
-    /// An image file as pixels: through ImageIO, or drawn by AppKit for what ImageIO does not read (SVG).
-    static func decode(_ data: Data) -> CGImage? {
-        if let source = CGImageSourceCreateWithData(data as CFData, nil),
-           let image = CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCache as String: false] as CFDictionary), image.width > 0, image.height > 0 {
-            return image
-        }
-        guard let picture = NSImage(data: data), picture.size.width > 0, picture.size.height > 0 else { return nil }
-        let scale = min(4, 1600 / max(picture.size.width, picture.size.height))
-        let width = Int((picture.size.width * scale).rounded()), height = Int((picture.size.height * scale).rounded())
-        guard width > 0, height > 0, let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
-              let graphics = NSGraphicsContext(bitmapImageRep: bitmap) else { return nil }
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = graphics
-        NSColor.white.setFill()
-        NSBezierPath(rect: NSRect(x: 0, y: 0, width: width, height: height)).fill()
-        picture.draw(in: NSRect(x: 0, y: 0, width: width, height: height))
-        NSGraphicsContext.restoreGraphicsState()
-        return bitmap.cgImage
     }
 }
 

@@ -18,14 +18,6 @@ cp "$BINDIR/books-cli" "$APP/Contents/MacOS/books-cli"
 # The typesetting page and its scripts: a plain folder in Resources, where BooksSchemeHandler looks first.
 cp -R Sources/Books/Resources/Reader "$APP/Contents/Resources/Reader"
 test -f "$APP/Contents/Resources/Reader/reader.html"
-# The comic panel detector model, when scripts/panel-detector.sh has built it.
-if [ -d build/PanelDetector/PanelDetector.mlmodelc ]; then
-  cp -R build/PanelDetector/PanelDetector.mlmodelc "$APP/Contents/Resources/PanelDetector.mlmodelc"
-  cp build/PanelDetector/PanelDetector.json "$APP/Contents/Resources/PanelDetector.json" 2>/dev/null || true
-  echo "bundled the panel detector"
-else
-  echo "no panel detector built; the app finds panels from the gutters alone"
-fi
 cp Packaging/Info.plist "$APP/Contents/Info.plist"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 cmp -s "$BINDIR/Books" "$APP/Contents/MacOS/Books" || { echo "app binary was overwritten in the bundle" >&2; exit 1; }

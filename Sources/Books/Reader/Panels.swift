@@ -155,48 +155,26 @@ struct AppearancePopover: View {
         @Bindable var model = model
         let pdfBook = session.book.kind == .pdf
         let pdfView = session.usesPDFView
-        let pdfLayout = session.pdfLayout
-        let fit = pdfView && pdfLayout == .fit
-        let comic = pdfView && pdfLayout == .comic
-        let plainZoom = pdfView && !fit && !comic
+        let fit = pdfView && model.settings.reader.pdfLayout == .fit
+        let plainZoom = pdfView && !fit
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                if !comic {
-                    HStack(spacing: 0) {
-                        Button { session.changeFontSize(by: -10) } label: { sizeLabel(plainZoom ? nil : 15, symbol: "minus.magnifyingglass") }
-                        Divider().frame(height: 22)
-                        Button { session.changeFontSize(by: 10) } label: { sizeLabel(plainZoom ? nil : 24, symbol: "plus.magnifyingglass") }
-                    }
-                    .buttonStyle(.plain)
-                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    Text(plainZoom ? "Zoom" : fit ? "Text size \(session.reader.pdfZoom)%" : "Text size \(model.settings.reader.fontSize)%")
-                        .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .center)
+                HStack(spacing: 0) {
+                    Button { session.changeFontSize(by: -10) } label: { sizeLabel(plainZoom ? nil : 15, symbol: "minus.magnifyingglass") }
+                    Divider().frame(height: 22)
+                    Button { session.changeFontSize(by: 10) } label: { sizeLabel(plainZoom ? nil : 24, symbol: "plus.magnifyingglass") }
                 }
-                VStack(alignment: .leading, spacing: 6) {
-                    if pdfBook {
-                        Picker(session.book.isComic ? "Comic" : "PDF", selection: Binding(get: { pdfLayout }, set: { session.setPDFLayout($0) })) {
+                .buttonStyle(.plain)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                Text(plainZoom ? "Zoom" : fit ? "Text size \(model.settings.reader.pdfZoom)%" : "Text size \(model.settings.reader.fontSize)%")
+                    .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .center)
+                if pdfBook {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Picker("PDF", selection: Binding(get: { model.settings.reader.pdfLayout }, set: { session.setPDFLayout($0) })) {
                             ForEach(PDFLayout.allCases, id: \.self) { Text($0.label).tag($0) }
                         }
                         .pickerStyle(.segmented)
                         Text(pdfLayoutHelp).font(.caption).foregroundStyle(.secondary)
-                    } else {
-                        Picker("Read as", selection: Binding(get: { comic }, set: { session.setPDFLayout($0 ? .comic : nil) })) {
-                            Text("Book").tag(false)
-                            Text("Comics").tag(true)
-                        }
-                        .pickerStyle(.segmented)
-                        Text(comic ? comicHelp : "The book as typeset: fonts, sizes and themes apply. Comics shows the book's page images panel by panel.").font(.caption).foregroundStyle(.secondary)
-                    }
-                    if comic {
-                        Picker("Reading", selection: Binding(get: { session.reader.comicRightToLeft }, set: { value in session.setView { $0.comicRightToLeft = value }; session.applySettings() })) {
-                            Text("Left to right").tag(false)
-                            Text("Right to left").tag(true)
-                        }
-                        .pickerStyle(.segmented)
-                        Text("Panels within a row, left to right as in comics, or right to left as in manga. Kept with this book, as are the layout, the pages and the text size of Zoom & Split.").font(.caption).foregroundStyle(.secondary)
-                        Toggle("Find panels with the detector model", isOn: Binding(get: { model.settings.reader.comicDetector }, set: { model.settings.reader.comicDetector = $0; session.reopen() }))
-                            .disabled(PanelDetector.bundledName == nil)
-                        Text(PanelDetector.bundledName.map { "The bundled model (\($0)) says where the panels and balloons are; the gutter analysis draws their outlines. It runs on this Mac only." } ?? "No detector model is bundled in this build: the panels are found from the gutters alone.").font(.caption).foregroundStyle(.secondary)
                     }
                 }
                 themes
@@ -216,22 +194,20 @@ struct AppearancePopover: View {
                     Toggle("Justify text", isOn: Binding(get: { model.settings.reader.justify }, set: { model.settings.reader.justify = $0; session.applySettings() }))
                     Toggle("Hyphenation", isOn: Binding(get: { model.settings.reader.hyphenate }, set: { model.settings.reader.hyphenate = $0; session.applySettings() }))
                     Divider()
-                    Picker("Layout", selection: Binding(get: { session.reader.layout }, set: { value in session.setView { $0.layout = value }; session.applySettings() })) {
+                    Picker("Layout", selection: Binding(get: { model.settings.reader.layout }, set: { model.settings.reader.layout = $0; session.applySettings() })) {
                         ForEach(ReaderLayout.allCases, id: \.self) { Text($0.label).tag($0) }
                     }
                     .pickerStyle(.segmented)
                 }
-                if !comic {
-                    Picker("Pages", selection: Binding(get: { session.reader.spread }, set: { value in session.setView { $0.spread = value }; session.applySettings() })) {
-                        ForEach(Spread.allCases, id: \.self) { Text($0.label).tag($0) }
-                    }
-                    .disabled(!pdfView && session.reader.layout == .scroll)
+                Picker("Pages", selection: Binding(get: { model.settings.reader.spread }, set: { model.settings.reader.spread = $0; session.applySettings() })) {
+                    ForEach(Spread.allCases, id: \.self) { Text($0.label).tag($0) }
                 }
+                .disabled(!pdfView && model.settings.reader.layout == .scroll)
                 if !plainZoom {
                     Picker("Page Turn", selection: Binding(get: { model.settings.reader.pageTurn }, set: { model.settings.reader.pageTurn = $0; session.applySettings() })) {
                         ForEach(PageTurn.allCases, id: \.self) { Text($0.label).tag($0) }
                     }
-                    .disabled(!pdfView && session.reader.layout == .scroll)
+                    .disabled(!pdfView && model.settings.reader.layout == .scroll)
                 }
                 DisclosureGroup("Scroll Wheel & Trackpad") {
                     Toggle("Scroll wheel turns pages", isOn: Binding(get: { model.settings.reader.wheelTurnsPages }, set: { model.settings.reader.wheelTurnsPages = $0; session.applySettings() }))
@@ -255,16 +231,11 @@ struct AppearancePopover: View {
     }
 
     private var pdfLayoutHelp: String {
-        switch session.pdfLayout {
+        switch model.settings.reader.pdfLayout {
         case .pages: return "Whole pages, as printed."
         case .fit: return "Pages cropped to their ink and dealt out to screens that turn like pages, never cutting through a line or a picture. 100% is the page's printed size; past the width of a column, the lines are rewrapped into shorter ones, in the page's own type."
         case .text: return "The text reflowed into a book: fonts, sizes and themes apply; the layout is not kept."
-        case .comic: return comicHelp
         }
-    }
-
-    private var comicHelp: String {
-        "One panel a screen, fitted and centred, in the page's own colours. The panels are found from the gutters, whatever their shape; a balloon or figure spilling out of a panel stays with it and is taken out of its neighbour."
     }
 
     /// Both halves of the size control respond across their whole width, not only on the glyph.

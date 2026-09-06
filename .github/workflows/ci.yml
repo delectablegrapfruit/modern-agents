@@ -43,16 +43,6 @@ jobs:
           done
           ls -la Tests/Fixtures/mobi
       - run: swift test
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Panel detector model, kept between builds while its script is unchanged
-        uses: actions/cache@v4
-        with:
-          path: build/PanelDetector
-          key: panel-detector-${{ runner.os }}-${{ hashFiles('scripts/panel-detector.sh') }}
-      - name: Panel detector — the Hugging Face YOLO converted to Core ML (the app works without it)
-        run: scripts/panel-detector.sh || echo "::warning::panel detector not built; the app will find panels from the gutters alone"
       - run: scripts/make-app.sh release && test -f build/Books.app/Contents/Resources/AppIcon.icns && test -f build/Books.app/Contents/Resources/Reader/reader.html
 
       - name: Package (zip + dmg + checksums)
