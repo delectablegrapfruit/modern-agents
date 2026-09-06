@@ -645,6 +645,14 @@ final class SplitPDFPresenter: PDFReading {
             for i in 1..<max(1, runs.count) { gaps.append(max(0, runs[i - 1].bottom - runs[i].top)) }
             let lineGap = gaps.isEmpty ? typical * 0.3 : gaps.sorted()[gaps.count / 2]
             let space = typical * 0.3
+            // The text's own edges on this page: an indent is measured from the left one, a paragraph's short last
+            // line against the right one (a ragged setting falls short by a little on every line; the end of a
+            // paragraph by much more).
+            let bodyRuns = runs.filter { $0.height > typical * 0.5 }
+            let leftEdge = bodyRuns.map(\.minX).min() ?? seg.minX
+            let rightEdge = bodyRuns.map(\.maxX).max() ?? seg.maxX
+            let indentMin = max(5, typical * 0.8)
+            let shortMin = max(typical * 3, (rightEdge - leftEdge) * 0.12)
             var lineWords: [(rect: CGRect, x: CGFloat)] = []
             var lineX: CGFloat = 0
             var lineHeight: CGFloat = 0
@@ -678,9 +686,9 @@ final class SplitPDFPresenter: PDFReading {
                     previousEndedShort = true
                     continue
                 }
-                let indented = run.minX > seg.minX + typical * 1.2
+                let indented = run.minX > leftEdge + indentMin
                 if indented || previousEndedShort, !lineWords.isEmpty { flushLine() }
-                if lineWords.isEmpty, indented { lineX = min(maxWidth * 0.3, (run.minX - seg.minX) * scale) }
+                if lineWords.isEmpty, indented { lineX = min(maxWidth * 0.3, (run.minX - leftEdge) * scale) }
                 for word in run.words {
                     let gap: CGFloat = lastWord.map { last in abs(last.midY - word.midY) < 0.5 * max(last.height, word.height) ? max(0, word.minX - last.maxX) : space } ?? 0
                     let width = word.width * scale
@@ -691,7 +699,7 @@ final class SplitPDFPresenter: PDFReading {
                     lineHeight = max(lineHeight, run.height)
                     lastWord = word
                 }
-                previousEndedShort = run.maxX < seg.maxX - typical * 3
+                previousEndedShort = run.maxX < rightEdge - shortMin
             }
             flushLine()
         }
