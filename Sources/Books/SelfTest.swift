@@ -239,8 +239,12 @@ enum SelfTest {
         for _ in 0..<5 { fitSession.changeFontSize(by: 10) }
         try await sleep(0.8)
         let screensTwoUpLarge = fitSession.layout.total
-        guard model.settings.reader.pdfZoom == 150, screensTwoUpLarge > screensAt100, fitSession.layout.columns == 2, split.rewrapped else {
-            throw Failure("150% did not rewrap into two pages (\(model.settings.reader.pdfZoom)%, \(screensAt100) → \(screensTwoUpLarge) screens, \(fitSession.layout.columns) column(s), rewrapped \(split.rewrapped))")
+        guard fitSession.reader.pdfZoom == 150, screensTwoUpLarge > screensAt100, fitSession.layout.columns == 2, split.rewrapped else {
+            throw Failure("150% did not rewrap into two pages (\(fitSession.reader.pdfZoom)%, \(screensAt100) → \(screensTwoUpLarge) screens, \(fitSession.layout.columns) column(s), rewrapped \(split.rewrapped))")
+        }
+        // The text size is this book's: kept with it, not in the reader settings.
+        guard model.settings.reader.pdfZoom == 100, model.book(book.id)?.view?.pdfZoom == 150 else {
+            throw Failure("the text size was not kept with the book (settings \(model.settings.reader.pdfZoom)%, book \(model.book(book.id)?.view?.pdfZoom ?? 0)%)")
         }
         try checkFlow(split, expectCuts: true)
         // One page: the same size shows fewer, wider screens.
@@ -257,14 +261,14 @@ enum SelfTest {
         // Smaller text: pages run on into one another, fewer screens.
         for _ in 0..<10 { fitSession.changeFontSize(by: -10) }
         try await sleep(0.8)
-        guard model.settings.reader.pdfZoom == 50, fitSession.layout.total < screensAt100 else {
-            throw Failure("50% did not reduce the screens (\(model.settings.reader.pdfZoom)%, \(fitSession.layout.total) screens)")
+        guard fitSession.reader.pdfZoom == 50, fitSession.layout.total < screensAt100 else {
+            throw Failure("50% did not reduce the screens (\(fitSession.reader.pdfZoom)%, \(fitSession.layout.total) screens)")
         }
         try checkFlow(split, expectCuts: false)
         fitSettings = model.settings
         fitSettings.reader.spread = .two
-        fitSettings.reader.pdfZoom = 100
         model.settings = fitSettings
+        fitSession.setView { $0.pdfZoom = 100 }
         fitSession.applySettings()
         try await sleep(0.6)
         fitSession.goToFraction(0)   // the pages-mode part of the test ended on the last page, with a bookmark there
@@ -358,13 +362,20 @@ enum SelfTest {
         guard rightToLeft.count == 11, rightToLeft[0] == panels[1], rightToLeft[1] == panels[0], rightToLeft[6] == panels[6] else {
             throw Failure("right to left did not swap the panels of a row: \(rightToLeft.prefix(2)) vs \(panels.prefix(2))")
         }
+        // The book's own choice stands over the reader settings, and is kept with the book.
+        comicSession.setView { $0.comicRightToLeft = false }
+        comicSession.applySettings()
+        try await sleep(0.6)
+        guard comic.panelRects == panels, model.book(comicBook.id)?.view?.comicRightToLeft == false, model.settings.reader.comicRightToLeft else {
+            throw Failure("the book's own reading direction did not stand over the settings")
+        }
         comicSettings = model.settings
         comicSettings.reader.comicRightToLeft = false
         comicSettings.reader.pdfLayout = .pages
         model.settings = comicSettings
         comicSession.close()
         try await sleep(0.4)
-        log("Comics: \(panels.count) panels on 3 pages, \(comic.clippedPanels) shaped, balloon kept with its panel, next, right to left; footer “\(comicSession.pdfPageLabel ?? "")”")
+        log("Comics: \(panels.count) panels on 3 pages, \(comic.clippedPanels) shaped, balloon kept with its panel, next, right to left, the book's own direction; footer “\(comicSession.pdfPageLabel ?? "")”")
 
         // A CBZ: page images in a zip with a ComicInfo.xml become a comic in the library, a PDF of its pages, and
         // open in Comics.
@@ -393,6 +404,55 @@ enum SelfTest {
         cbzSession.close()
         try await sleep(0.4)
         log("CBZ: imported as “\(cbzBook.title)” by \(cbzBook.author), \(cbzBook.pageCount ?? 0) pages, opened in Comics with \(Int(cbzSession.layout.total)) panels")
+
+        // Any book as a comic: an EPUB whose pages are images opens in Comics from a PDF of them, with its contents;
+        // the choice is the book's own and the book can go back to being read as itself.
+        var epubZip = ZipWriter()
+        epubZip.add("mimetype", "application/epub+zip")
+        epubZip.add("META-INF/container.xml", "<?xml version=\"1.0\"?><container version=\"1.0\" xmlns=\"urn:oasis:names:tc:opendocument:xmlns:container\"><rootfiles><rootfile full-path=\"OEBPS/content.opf\" media-type=\"application/oebps-package+xml\"/></rootfiles></container>")
+        var manifest = "", spineItems = "", navItems = ""
+        for i in 1...3 {
+            epubZip.add("OEBPS/images/p\(i).png", try makePagePNG(i))
+            epubZip.add("OEBPS/p\(i).xhtml", "<?xml version=\"1.0\" encoding=\"utf-8\"?><html xmlns=\"http://www.w3.org/1999/xhtml\"><head><title>Page \(i)</title></head><body><img src=\"images/p\(i).png\" alt=\"Page \(i)\"/></body></html>")
+            manifest += "<item id=\"p\(i)\" href=\"p\(i).xhtml\" media-type=\"application/xhtml+xml\"/><item id=\"i\(i)\" href=\"images/p\(i).png\" media-type=\"image/png\"/>"
+            spineItems += "<itemref idref=\"p\(i)\"/>"
+            navItems += "<li><a href=\"p\(i).xhtml\">Page \(i)</a></li>"
+        }
+        epubZip.add("OEBPS/nav.xhtml", "<?xml version=\"1.0\" encoding=\"utf-8\"?><html xmlns=\"http://www.w3.org/1999/xhtml\" xmlns:epub=\"http://www.idpf.org/2007/ops\"><head><title>Contents</title></head><body><nav epub:type=\"toc\"><ol>\(navItems)</ol></nav></body></html>")
+        epubZip.add("OEBPS/content.opf", "<?xml version=\"1.0\" encoding=\"utf-8\"?><package xmlns=\"http://www.idpf.org/2007/opf\" version=\"3.0\" unique-identifier=\"id\"><metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\"><dc:identifier id=\"id\">urn:uuid:\(UUID().uuidString)</dc:identifier><dc:title>Self-Test Picture Book</dc:title><dc:creator>Continuous Integration</dc:creator><dc:language>en</dc:language></metadata><manifest><item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>\(manifest)</manifest><spine>\(spineItems)</spine></package>")
+        let epubFile = FileManager.default.temporaryDirectory.appendingPathComponent("Books Self-Test Pictures \(UUID().uuidString).epub")
+        try epubZip.finish().write(to: epubFile)
+        let epubAdded: [Book] = await withCheckedContinuation { continuation in
+            model.importFiles([epubFile], quiet: true, allowDuplicates: true) { continuation.resume(returning: $0) }
+        }
+        guard let pictureBook = epubAdded.first, pictureBook.kind == .epub else { throw Failure("the picture EPUB could not be imported: \(model.error ?? "no error")") }
+        defer { model.delete([pictureBook.id]) }
+        model.open(pictureBook)
+        let bookSession = try await waitFor("the picture EPUB to open as a book", timeout: 40) {
+            if let s = currentSession, s.book.id == pictureBook.id, s.isOpen, !s.usesPDFView { return s }
+            return nil
+        }
+        bookSession.setPDFLayout(.comic)
+        let pictureComic = try await waitFor("the picture EPUB to open in Comics", timeout: 40) {
+            if let s = currentSession, s !== bookSession, s.book.id == pictureBook.id, s.isOpen, s.usesPDFView, s.layout.total > 0 { return s }
+            return nil
+        }
+        try await sleep(0.5)
+        guard pictureComic.pdfLayout == .comic, Int(pictureComic.layout.total) == 12, pictureComic.toc.count == 3 else {
+            throw Failure("the picture EPUB opened as \(pictureComic.pdfLayout) with \(pictureComic.layout.total) screens and \(pictureComic.toc.count) contents entries; expected Comics, 12 panels, 3 entries")
+        }
+        guard model.settings.reader.pdfLayout == .pages, model.book(pictureBook.id)?.view?.pdfLayout == .comic else {
+            throw Failure("Comics for the EPUB was not kept with the book alone (settings \(model.settings.reader.pdfLayout), book \(String(describing: model.book(pictureBook.id)?.view?.pdfLayout)))")
+        }
+        pictureComic.setPDFLayout(nil)
+        let bookAgain = try await waitFor("the picture EPUB to open as a book again", timeout: 40) {
+            if let s = currentSession, s !== pictureComic, s.book.id == pictureBook.id, s.isOpen, !s.usesPDFView { return s }
+            return nil
+        }
+        guard model.book(pictureBook.id)?.view == nil else { throw Failure("going back to the book left a view record: \(String(describing: model.book(pictureBook.id)?.view))") }
+        bookAgain.close()
+        try await sleep(0.4)
+        log("EPUB as comic: \(Int(pictureComic.layout.total)) panels from 3 page images, \(pictureComic.toc.count) contents entries, the choice kept with the book, back to the book")
     }
 
     /// Three letter pages: a 2×3 grid of framed panels with a page number; two panels with a balloon from the top one

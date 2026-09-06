@@ -168,7 +168,7 @@ final class PDFPresenter: PDFReading {
         view.layerUsesCoreImageFilters = true
     }
 
-    private var settings: ReaderSettings { session.model.settings.reader }
+    private var settings: ReaderSettings { session.reader }
     private var columns: Int { settings.spread == .one ? 1 : 2 }
     var pageCount: Int { document?.pageCount ?? 0 }
     var currentIndex: Int {

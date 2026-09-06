@@ -389,15 +389,17 @@ enum PDFInspector {
 /// A comic's page images as a PDF, one image a page, at the image's size (the longer side at most 1600 points).
 enum ComicPDF {
     static func make(_ images: [Data]) -> (pdf: Data, pageCount: Int)? {
+        let decoded = images.compactMap(decode)
+        guard let pdf = make(images: decoded) else { return nil }
+        return (pdf, decoded.count)
+    }
+
+    static func make(images: [CGImage]) -> Data? {
         let data = NSMutableData()
         var mediaBox = CGRect(x: 0, y: 0, width: 612, height: 792)
-        guard let consumer = CGDataConsumer(data: data as CFMutableData), let context = CGContext(consumer: consumer, mediaBox: &mediaBox, nil) else { return nil }
-        var pages = 0
-        for imageData in images {
-            guard let source = CGImageSourceCreateWithData(imageData as CFData, nil),
-                  let image = CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCache as String: false] as CFDictionary) else { continue }
+        guard !images.isEmpty, let consumer = CGDataConsumer(data: data as CFMutableData), let context = CGContext(consumer: consumer, mediaBox: &mediaBox, nil) else { return nil }
+        for image in images {
             let w = CGFloat(image.width), h = CGFloat(image.height)
-            guard w > 0, h > 0 else { continue }
             let s = min(1, 1600 / max(w, h))
             var box = CGRect(x: 0, y: 0, width: (w * s).rounded(), height: (h * s).rounded())
             let boxData = Data(bytes: &box, count: MemoryLayout<CGRect>.size)
@@ -405,10 +407,29 @@ enum ComicPDF {
             context.interpolationQuality = .high
             context.draw(image, in: box)
             context.endPDFPage()
-            pages += 1
         }
         context.closePDF()
-        return pages > 0 ? (data as Data, pages) : nil
+        return data as Data
+    }
+
+    /// An image file as pixels: through ImageIO, or drawn by AppKit for what ImageIO does not read (SVG).
+    static func decode(_ data: Data) -> CGImage? {
+        if let source = CGImageSourceCreateWithData(data as CFData, nil),
+           let image = CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCache as String: false] as CFDictionary), image.width > 0, image.height > 0 {
+            return image
+        }
+        guard let picture = NSImage(data: data), picture.size.width > 0, picture.size.height > 0 else { return nil }
+        let scale = min(4, 1600 / max(picture.size.width, picture.size.height))
+        let width = Int((picture.size.width * scale).rounded()), height = Int((picture.size.height * scale).rounded())
+        guard width > 0, height > 0, let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
+              let graphics = NSGraphicsContext(bitmapImageRep: bitmap) else { return nil }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = graphics
+        NSColor.white.setFill()
+        NSBezierPath(rect: NSRect(x: 0, y: 0, width: width, height: height)).fill()
+        picture.draw(in: NSRect(x: 0, y: 0, width: width, height: height))
+        NSGraphicsContext.restoreGraphicsState()
+        return bitmap.cgImage
     }
 }
 

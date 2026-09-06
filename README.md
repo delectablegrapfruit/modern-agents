@@ -47,7 +47,12 @@ balloon or figure that spills across a gutter goes whole to the panel it comes f
 into) and is cut out of the neighbour, so overlapping panels are shown apart. Captions and lettering beside a frame
 stay with it; page numbers are left out; a page without gutters is one panel. Panels within a row read left to
 right, or right to left for manga (Appearance ▸ Reading). Comics added as archives open this way by default; any
-PDF can be read this way. Themes are colour filters (paper tints in the light themes; in the dark
+PDF can be read this way, and so can any other book (Appearance ▸ Read as ▸ Comics): its page images, in reading
+order, become a PDF once beside the book, with the book's contents as its outline — so an EPUB or Kindle comic reads
+panel by panel too (only the images are shown, not text laid over them). How a book is viewed is kept with the book:
+the layout (Pages, Zoom & Split, Text, Comics; paginated or scrolling), one or two pages, the text size of Zoom &
+Split and the reading direction of Comics are the book's own choices, and the reader settings stand for books that
+have not made one. Themes are colour filters (paper tints in the light themes; in the dark
 ones luminance is inverted with hues kept, so pictures and highlights keep their colours). Contents and timeline
 marks come from the outline; search, bookmarks and highlights with notes work in every mode. In full screen the toolbar leaves with the menu bar and both come back when the pointer reaches the top
 edge. The reading position, statistics (minutes per day, streaks, books per year) and every annotation are files in

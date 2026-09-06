@@ -181,7 +181,7 @@ final class SplitPDFPresenter: PDFReading {
         view.presenter = self
     }
 
-    private var settings: ReaderSettings { session.model.settings.reader }
+    private var settings: ReaderSettings { session.reader }
     var units: Int { screens.count }
 
     // MARK: - Opening
@@ -189,15 +189,35 @@ final class SplitPDFPresenter: PDFReading {
     func open() {
         guard !opened else { return }
         opened = true
-        let url = session.model.store.fileURL(for: session.book)
+        comicMode = session.pdfLayout == .comic
+        let book = session.book, store = session.model.store
+        if book.kind == .pdf {
+            start(with: store.fileURL(for: book))
+            return
+        }
+        // A book that is not a PDF is read as a comic from a PDF of its page images, made once beside it.
+        session.pdfPreparing(true)
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let result = Result { try ComicPages.pdfURL(for: book, store: store) }
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                switch result {
+                case .success(let url): self.start(with: url)
+                case .failure(let error): self.session.pdfPreparing(false); self.session.comicUnavailable(error.localizedDescription)
+                }
+            }
+        }
+    }
+
+    private func start(with url: URL) {
         guard let document = PDFDocument(url: url), document.pageCount > 0 else {
+            session.pdfPreparing(false)
             session.error = "This PDF could not be opened."
             return
         }
         self.document = document
         pageCount = document.pageCount
         sections = PDFPresenter.sections(of: document)
-        comicMode = session.pdfLayout == .comic
         applyTheme()
         session.pdfPreparing(true)
         if comicMode {
@@ -1290,11 +1310,9 @@ final class SplitPDFPresenter: PDFReading {
     /// The text size steps by 10%, from 50% to 400%; past the width of a column the lines are rewrapped.
     func zoom(_ direction: Int) {
         guard !comicMode else { return }
-        var all = session.model.settings
-        let current = min(400, max(50, all.reader.pdfZoom))
+        let current = min(400, max(50, settings.pdfZoom))
         let next = direction > 0 ? min(400, current + 10) : max(50, current - 10)
-        all.reader.pdfZoom = next
-        session.model.settings = all
+        session.setView { $0.pdfZoom = next }
         applySettings()
     }
 
