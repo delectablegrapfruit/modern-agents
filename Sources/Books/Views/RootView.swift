@@ -112,9 +112,9 @@ struct LibraryView: View {
                         Text("Descending").tag(false)
                     }
                     .pickerStyle(.inline)
-                    if item == .all {
+                    if item.isLibraryShelf {
                         Divider()
-                        Picker("Group By", selection: $model.settings.groupAllByCollection) {
+                        Picker("Group By", selection: $model.settings.groupByCollection) {
                             Text("Collection").tag(true)
                             Text("None").tag(false)
                         }

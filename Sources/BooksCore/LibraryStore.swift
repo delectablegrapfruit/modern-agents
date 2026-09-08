@@ -324,6 +324,14 @@ public final class LibraryStore {
         books.filter { $0.finishedAt.map { calendar.component(.year, from: $0) == year } ?? false }.count
     }
 
+    public func booksFinished(inMonth month: Int, year: Int, calendar: Calendar = .current) -> Int {
+        books.filter { book in
+            guard let finished = book.finishedAt else { return false }
+            let c = calendar.dateComponents([.year, .month], from: finished)
+            return c.year == year && c.month == month
+        }.count
+    }
+
     // MARK: - Import
 
     public static let readableExtensions: Set<String> = ["epub", "mobi", "azw", "azw3", "prc", "kf8", "pdf", "txt", "text", "md", "markdown"]

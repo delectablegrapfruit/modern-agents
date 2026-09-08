@@ -11,15 +11,18 @@ Mac and never talks to a store or a server.
 **Library.** Home shows what you were reading, your reading goals and the library in numbers; the sidebar has a Library
 section (All, Finished, Books, PDFs) and a My Collections section, each in the order you drag its rows into — any row
 but All can be hidden from its context menu and brought back from the menu under the arrow that appears beside the
-section's name when the pointer is over it. Drag books onto Finished or a collection. Grid or list; the grid's cards are
-all one size, scaled together with the toolbar slider or ⌥⌘+ and ⌥⌘−; All Books is shown collection by collection
-(a book in several counts with the first; the rest under Not in a Collection) or, from the Sort menu, ungrouped. Sort
-by recent, title, author, time read, percentage read, pages read or length, ascending or descending — each sort starts
-in its natural direction — and search by title, author and subject. Time and pages read are counted per book as well
-as in the statistics. Get Info edits title and author and the cover: choose a picture of your own (or drop an image
-file on the cover; the book's own cover is kept for Restore Original) and how it fills its 2:3 box — Fit, Fill,
-Stretch, or Custom, where the picture is dragged into place, sized from its corners and stretched from its sides,
-what lies outside the box being cropped. Files come in through File ▸ Add to
+section's name when the pointer is over it. Drag books onto Finished or a collection. Grid or list: the grid's cards
+are all one size — a 2:3 box with the artwork centred and fitted in it — scaled together with the toolbar slider or
+⌥⌘+ and ⌥⌘−; the list is drawn by the app itself (no table view: the system's crashed between collections), its
+column names sorting the shelf and a second click turning the order round. The Library's shelves (All, Books,
+PDFs, Finished) are shown collection by collection (a book in several counts with the first; the rest under Not in
+a Collection) or, from the Sort menu, ungrouped. Sort by recent, title, author, time read, percentage read, pages
+read or length, ascending or descending — each sort starts in its natural direction — and search by title, author
+and subject. Time and pages read are counted per book as well as in the statistics. Home's goals row has a daily
+minutes ring, books this month and books this year. Get Info edits title and author and the cover: choose a picture
+of your own (or drop an image file on the cover; the book's own cover is kept for Restore Original) and how it
+fills its box — Fit, Fill, Stretch, or Custom, where the picture is dragged into place, sized from its corners and
+stretched from its sides, what lies outside the box being cropped. Files come in through File ▸ Add to
 Library (⌘O), by dropping them on the window, or by opening them from the Finder: **EPUB**, **Kindle** (MOBI, AZW,
 AZW3; DRM-free — converted to EPUB once, at import), **PDF**, and **plain text or Markdown** (typeset into a book
 with chapters and a generated cover). Folders can be added too, several at once, searched through to any depth;

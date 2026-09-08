@@ -345,9 +345,11 @@ enum SelfTest {
             var s = model.settings
             s.sort = saved.sort
             s.sortAscending = saved.sortAscending
-            s.groupAllByCollection = saved.groupAllByCollection
+            s.groupByCollection = saved.groupByCollection
             s.gridScale = saved.gridScale
+            s.libraryView = saved.libraryView
             model.settings = s
+            model.sidebarSelection = .home
             try? FileManager.default.removeItem(at: longURL)
             try? FileManager.default.removeItem(at: shortURL)
         }
@@ -376,17 +378,55 @@ enum SelfTest {
         guard model.sortAscending, index(long.id) < index(short.id) else { throw Failure("Title did not sort A to Z") }
         log("sorts: time read, pages read, length and title order the shelf, in both directions")
 
-        // All Books grouped: a collection holding one of the two, the other among the rest.
+        // The shelves grouped: a collection holding one of the two, the other among the rest; Books (EPUBs) groups the
+        // same way; a collection's own shelf and Home never group; with no collection holding a book there is
+        // nothing to group.
+        var s2 = model.settings
+        s2.groupByCollection = true
+        model.settings = s2
         model.addCollection(named: "Shelf Test Collection")
         guard let collection = model.collections.first(where: { $0.name == "Shelf Test Collection" }) else { throw Failure("the shelf collection was not made") }
         defer { model.deleteCollection(collection.id) }
+        guard model.groupedShelf(.all, books: model.books(for: .all)) == nil || model.collections.count > 1 else { throw Failure("a shelf grouped with no collection holding a book") }
         model.add([short.id], to: collection.id)
-        let groups = model.shelfGroups(for: model.books(for: .all))
-        guard let mine = groups.first(where: { $0.name == "Shelf Test Collection" }), mine.books.map(\.id) == [short.id],
+        guard let groups = model.groupedShelf(.all, books: model.books(for: .all)),
+              let mine = groups.first(where: { $0.name == "Shelf Test Collection" }), mine.books.map(\.id) == [short.id],
               let rest = groups.first(where: { $0.name == "Not in a Collection" }), rest.books.contains(where: { $0.id == long.id }), !rest.books.contains(where: { $0.id == short.id }) else {
-            throw Failure("All Books did not group by collection: \(groups.map { "\($0.name): \($0.books.count)" })")
+            throw Failure("All Books did not group by collection: \(model.shelfGroups(for: model.books(for: .all)).map { "\($0.name): \($0.books.count)" })")
         }
-        log("All Books grouped: \(groups.map { "\($0.name) (\($0.books.count))" }.joined(separator: ", "))")
+        guard let epubGroups = model.groupedShelf(.books, books: model.books(for: .books)), epubGroups.contains(where: { $0.name == "Shelf Test Collection" }) else { throw Failure("the Books shelf did not group by collection") }
+        guard model.groupedShelf(.collection(collection.id), books: model.books(for: .collection(collection.id))) == nil else { throw Failure("a collection's own shelf grouped") }
+        s2.groupByCollection = false
+        model.settings = s2
+        guard model.groupedShelf(.all, books: model.books(for: .all)) == nil else { throw Failure("grouping stayed on when turned off") }
+        s2.groupByCollection = true
+        model.settings = s2
+        log("shelves grouped: \(groups.map { "\($0.name) (\($0.books.count))" }.joined(separator: ", "))")
+
+        // The list view is walked across the shelves and collections, as the table that crashed was.
+        model.addCollection(named: "Shelf Test Two")
+        guard let two = model.collections.first(where: { $0.name == "Shelf Test Two" }) else { throw Failure("the second shelf collection was not made") }
+        defer { model.deleteCollection(two.id) }
+        model.add([long.id, short.id], to: two.id)
+        s2.libraryView = .list
+        model.settings = s2
+        for stop in [SidebarItem.all, .collection(collection.id), .collection(two.id), .books, .finished, .pdfs, .collection(collection.id), .all, .collection(two.id)] {
+            model.sidebarSelection = stop
+            model.selectedBookIDs = [long.id]
+            try await sleep(0.15)
+        }
+        model.setFinished([short.id], true)
+        model.sidebarSelection = .finished
+        try await sleep(0.2)
+        let now = Date()
+        let month = Calendar.current.component(.month, from: now), year = Calendar.current.component(.year, from: now)
+        guard model.store.booksFinished(inMonth: month, year: year) >= 1 else { throw Failure("a book finished now did not count for this month") }
+        model.setFinished([short.id], false)
+        s2.libraryView = .grid
+        model.settings = s2
+        model.sidebarSelection = .all
+        try await sleep(0.15)
+        log("list view walked across 9 shelves and collections; a finished book counts for the month")
 
         // A picture of one's own as the cover, laid out, styled, and the original back.
         let picture = NSImage(size: NSSize(width: 300, height: 200), flipped: false) { rect in
@@ -402,7 +442,7 @@ enum SelfTest {
         guard abs(loaded.size.width / loaded.size.height - 1.5) < 0.01 else { throw Failure("the cover picture lost its shape: \(loaded.size)") }
         let box = CGSize(width: 200, height: 300)
         let fit = CoverLayout.rect(image: loaded.size, box: box, style: CoverStyle(fit: .fit))
-        guard abs(fit.maxY - 300) < 0.01, abs(fit.width - 200) < 0.01 else { throw Failure("fitted layout wrong: \(fit)") }
+        guard abs(fit.midY - 150) < 0.01, abs(fit.width - 200) < 0.01 else { throw Failure("fitted layout wrong: \(fit)") }
         let fill = CoverLayout.rect(image: loaded.size, box: box, style: CoverStyle(fit: .fill))
         guard abs(fill.height - 300) < 0.01, fill.minX < 0 else { throw Failure("filling layout wrong: \(fill)") }
         var styled = swapped
@@ -411,7 +451,7 @@ enum SelfTest {
         guard model.book(long.id)?.coverStyle?.fit == .custom, model.book(long.id)?.coverStyle?.frame?.width == 1.4 else { throw Failure("the cover style was not kept") }
         model.restoreCover(for: long.id)
         guard let restored = model.book(long.id), !restored.coverReplaced, restored.coverFile == before, !FileManager.default.fileExists(atPath: url.path) else { throw Failure("the original cover did not come back") }
-        log("cover: picture set (\(Int(loaded.size.width))×\(Int(loaded.size.height))), fitted and filling layouts, style kept, original restored")
+        log("cover: picture set (\(Int(loaded.size.width))×\(Int(loaded.size.height))), fitted (centred) and filling layouts, style kept, original restored")
 
         model.zoomGrid(50)
         guard model.settings.gridScale == Settings.gridScaleRange.upperBound else { throw Failure("grid scale not clamped: \(model.settings.gridScale)") }

@@ -83,7 +83,7 @@ struct ContinueItem: View {
     }
 }
 
-/// Daily minutes ring with streak, and books per year.
+/// Daily minutes ring with streak, books this month and books this year, spread across the row.
 struct GoalsCard: View {
     @Environment(LibraryModel.self) private var model
 
@@ -92,8 +92,11 @@ struct GoalsCard: View {
         let today = model.stats.todaySeconds
         let goalSeconds = goals.dailyMinutes * 60
         let streak = model.stats.streak(goalMinutes: goals.dailyMinutes)
-        let year = Calendar.current.component(.year, from: Date())
-        let finished = model.store.booksFinished(inYear: year)
+        let now = Date()
+        let year = Calendar.current.component(.year, from: now)
+        let month = Calendar.current.component(.month, from: now)
+        let finishedThisYear = model.store.booksFinished(inYear: year)
+        let finishedThisMonth = model.store.booksFinished(inMonth: month, year: year)
         HomeCard(title: "Reading Goals", action: { model.editingGoals = true }, actionLabel: "Edit Goals…") {
             HStack(alignment: .center, spacing: 28) {
                 GoalRing(progress: goalSeconds > 0 ? Double(today) / Double(goalSeconds) : 0, done: today >= goalSeconds)
@@ -110,13 +113,30 @@ struct GoalsCard: View {
                         .font(.callout)
                 }
                 Spacer(minLength: 20)
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Books This Year").font(.headline)
-                    Text("\(finished) of \(goals.yearlyBooks) finished").foregroundStyle(.secondary)
-                    ProgressView(value: Double(min(finished, goals.yearlyBooks)), total: Double(max(goals.yearlyBooks, 1)))
-                        .frame(width: 220)
-                }
+                BooksGoal(title: "Books This Month", finished: finishedThisMonth, goal: goals.monthlyBooks, period: now.formatted(.dateTime.month(.wide)))
+                Spacer(minLength: 20)
+                BooksGoal(title: "Books This Year", finished: finishedThisYear, goal: goals.yearlyBooks, period: String(year))
             }
+        }
+    }
+}
+
+/// Books finished against a goal, with a bar.
+struct BooksGoal: View {
+    let title: String
+    let finished: Int
+    let goal: Int
+    let period: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(.headline)
+            Text(finished >= goal ? "\(Format.plural(finished, "book")) finished in \(period) · goal reached" : "\(finished) of \(goal) finished in \(period)")
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            ProgressView(value: Double(min(finished, goal)), total: Double(max(goal, 1)))
+                .tint(finished >= goal ? .green : .accentColor)
+                .frame(minWidth: 160, maxWidth: 260)
         }
     }
 }

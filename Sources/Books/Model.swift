@@ -24,6 +24,14 @@ enum SidebarItem: Hashable {
         }
     }
 
+    /// The Library section's shelves, which can be shown collection by collection.
+    var isLibraryShelf: Bool {
+        switch self {
+        case .all, .finished, .books, .pdfs: return true
+        case .home, .collection: return false
+        }
+    }
+
     var symbol: String {
         switch self {
         case .home: return "house"
@@ -190,8 +198,9 @@ final class LibraryModel {
         }
     }
 
-    /// All Books shelf by shelf: each collection in the sidebar's order with the books in it, a book in several
-    /// collections counted with the first, and the rest under "Not in a Collection". Empty groups are left out.
+    /// A shelf collection by collection: each collection in the sidebar's order with the books in it, a book in
+    /// several collections counted with the first, and the rest under "Not in a Collection". Empty groups are left
+    /// out; with no collection holding any of the books there is one group, "rest", and nothing to group.
     func shelfGroups(for books: [Book]) -> [ShelfGroup] {
         var placed = Set<UUID>()
         var groups: [ShelfGroup] = []
@@ -204,7 +213,15 @@ final class LibraryModel {
             groups.append(ShelfGroup(id: "collection:" + id.uuidString, name: found.name, books: mine))
         }
         let rest = books.filter { !placed.contains($0.id) }
-        if !rest.isEmpty { groups.append(ShelfGroup(id: "rest", name: groups.isEmpty ? "All Books" : "Not in a Collection", books: rest)) }
+        if !rest.isEmpty { groups.append(ShelfGroup(id: "rest", name: "Not in a Collection", books: rest)) }
+        return groups
+    }
+
+    /// The groups of a shelf when it is to be shown by collection and there is a collection to show; nil otherwise.
+    func groupedShelf(_ item: SidebarItem, books: [Book]) -> [ShelfGroup]? {
+        guard item.isLibraryShelf, settings.groupByCollection else { return nil }
+        let groups = shelfGroups(for: books)
+        guard groups.contains(where: { $0.id != "rest" }) else { return nil }
         return groups
     }
 

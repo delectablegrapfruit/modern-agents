@@ -174,6 +174,9 @@ struct GoalsSheet: View {
                     Stepper(value: $model.settings.goals.dailyMinutes, in: 1...240, step: model.settings.goals.dailyMinutes < 10 ? 1 : 5) {
                         LabeledContent("Daily reading", value: "\(model.settings.goals.dailyMinutes) min")
                     }
+                    Stepper(value: $model.settings.goals.monthlyBooks, in: 1...100) {
+                        LabeledContent("Books per month", value: "\(model.settings.goals.monthlyBooks)")
+                    }
                     Stepper(value: $model.settings.goals.yearlyBooks, in: 1...365) {
                         LabeledContent("Books per year", value: "\(model.settings.goals.yearlyBooks)")
                     }
@@ -190,7 +193,7 @@ struct GoalsSheet: View {
             }
             .padding()
         }
-        .frame(width: 420, height: 260)
+        .frame(width: 420, height: 300)
     }
 }
 
@@ -209,6 +212,7 @@ struct SettingsView: View {
                 }
                 Section("Goals") {
                     Stepper(value: $model.settings.goals.dailyMinutes, in: 1...240) { LabeledContent("Daily reading", value: "\(model.settings.goals.dailyMinutes) min") }
+                    Stepper(value: $model.settings.goals.monthlyBooks, in: 1...100) { LabeledContent("Books per month", value: "\(model.settings.goals.monthlyBooks)") }
                     Stepper(value: $model.settings.goals.yearlyBooks, in: 1...365) { LabeledContent("Books per year", value: "\(model.settings.goals.yearlyBooks)") }
                 }
                 Section("Library") {

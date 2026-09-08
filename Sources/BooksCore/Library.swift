@@ -220,10 +220,23 @@ public struct DailyReading: Codable, Hashable {
 public struct ReadingGoals: Codable, Hashable {
     public var dailyMinutes: Int
     public var yearlyBooks: Int
+    /// Books to finish in a month.
+    public var monthlyBooks: Int
 
-    public init(dailyMinutes: Int = 5, yearlyBooks: Int = 12) {
+    public init(dailyMinutes: Int = 5, yearlyBooks: Int = 12, monthlyBooks: Int = 1) {
         self.dailyMinutes = dailyMinutes
         self.yearlyBooks = yearlyBooks
+        self.monthlyBooks = monthlyBooks
+    }
+
+    enum CodingKeys: String, CodingKey { case dailyMinutes, yearlyBooks, monthlyBooks }
+
+    /// Goals saved before the monthly one existed still load.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        dailyMinutes = (try? c.decodeIfPresent(Int.self, forKey: .dailyMinutes)) ?? 5
+        yearlyBooks = (try? c.decodeIfPresent(Int.self, forKey: .yearlyBooks)) ?? 12
+        monthlyBooks = (try? c.decodeIfPresent(Int.self, forKey: .monthlyBooks)) ?? 1
     }
 }
 
@@ -539,8 +552,8 @@ public enum CoverLayout {
         return max(width * 1.2, width * image.height / image.width)
     }
 
-    /// The rectangle a picture of `image` size takes in a box of `box` size. Fitted pictures stand on the box's
-    /// floor, centred; filling ones are centred and cropped; stretched ones are the box.
+    /// The rectangle a picture of `image` size takes in a box of `box` size. Fitted pictures are centred in it,
+    /// whole; filling ones are centred and cropped; stretched ones are the box.
     public static func rect(image: CGSize, box: CGSize, style: CoverStyle) -> CGRect {
         let whole = CGRect(x: 0, y: 0, width: box.width, height: box.height)
         guard image.width > 0, image.height > 0, box.width > 0, box.height > 0 else { return whole }
@@ -550,7 +563,7 @@ public enum CoverLayout {
             let w: CGFloat = image.width * s
             let h: CGFloat = image.height * s
             let x: CGFloat = (box.width - w) / 2
-            let y: CGFloat = box.height - h
+            let y: CGFloat = (box.height - h) / 2
             return CGRect(x: x, y: y, width: w, height: h)
         case .fill:
             return rect(frame: fillFrame(image: image, box: box), box: box)
@@ -652,14 +665,15 @@ public struct Settings: Codable, Hashable {
     public var library = LibraryFolderSettings()
     /// The sort's direction; nil for the sort's own default.
     public var sortAscending: Bool?
-    /// All Books shown collection by collection.
-    public var groupAllByCollection = true
+    /// The library's shelves (All, Books, PDFs, Finished) shown collection by collection.
+    public var groupByCollection = true
     /// Size of the covers in the grid, as a factor of the usual: 0.6 to 1.6.
     public var gridScale: Double = 1
 
     public init() {}
 
-    enum CodingKeys: String, CodingKey { case reader, libraryView, sort, goals, showContinueReading, showGoals, showStatistics, sidebarOrder, sidebarHidden, library, sortAscending, groupAllByCollection, gridScale }
+    enum CodingKeys: String, CodingKey { case reader, libraryView, sort, goals, showContinueReading, showGoals, showStatistics, sidebarOrder, sidebarHidden, library, sortAscending, groupByCollection, gridScale }
+    private enum LegacyKeys: String, CodingKey { case groupAllByCollection }
 
     /// Missing or unknown values fall back to defaults, so settings written by another version still load.
     public init(from decoder: Decoder) throws {
@@ -675,7 +689,8 @@ public struct Settings: Codable, Hashable {
         sidebarHidden = (try? c.decodeIfPresent([String].self, forKey: .sidebarHidden)) ?? []
         library = (try? c.decodeIfPresent(LibraryFolderSettings.self, forKey: .library)) ?? LibraryFolderSettings()
         sortAscending = try? c.decodeIfPresent(Bool.self, forKey: .sortAscending)
-        groupAllByCollection = (try? c.decodeIfPresent(Bool.self, forKey: .groupAllByCollection)) ?? true
+        let legacy = try? decoder.container(keyedBy: LegacyKeys.self)
+        groupByCollection = (try? c.decodeIfPresent(Bool.self, forKey: .groupByCollection)) ?? (try? legacy?.decodeIfPresent(Bool.self, forKey: .groupAllByCollection)) ?? true
         gridScale = Settings.clampedGridScale((try? c.decodeIfPresent(Double.self, forKey: .gridScale)) ?? 1)
     }
 

@@ -313,7 +313,9 @@ final class CoverLayoutTests: XCTestCase {
         let box = CGSize(width: 200, height: 300)
         let wide = CGSize(width: 400, height: 200)
         let fit = CoverLayout.rect(image: wide, box: box, style: CoverStyle(fit: .fit))
-        XCTAssertEqual(fit, CGRect(x: 0, y: 200, width: 200, height: 100), "a wide picture fitted stands on the floor of the box")
+        XCTAssertEqual(fit, CGRect(x: 0, y: 100, width: 200, height: 100), "a wide picture fitted is centred in the box")
+        let tall = CoverLayout.rect(image: CGSize(width: 100, height: 400), box: box, style: CoverStyle(fit: .fit))
+        XCTAssertEqual(tall, CGRect(x: 62.5, y: 0, width: 75, height: 300), "a tall picture fitted is centred across")
         XCTAssertEqual(CoverLayout.rect(image: CGSize(width: 0, height: 0), box: box, style: CoverStyle()), CGRect(x: 0, y: 0, width: 200, height: 300))
         let fill = CoverLayout.rect(image: wide, box: box, style: CoverStyle(fit: .fill))
         XCTAssertEqual(fill.height, 300, accuracy: 0.001)
@@ -356,9 +358,16 @@ final class CoverLayoutTests: XCTestCase {
         XCTAssertEqual(Settings.clampedGridScale(9), 1.6)
         XCTAssertEqual(Settings.clampedGridScale(.nan), 1)
         let settings = try JSONDecoder().decode(Settings.self, from: Data("{}".utf8))
-        XCTAssertTrue(settings.groupAllByCollection)
+        XCTAssertTrue(settings.groupByCollection)
         XCTAssertNil(settings.sortAscending)
         XCTAssertEqual(settings.gridScale, 1)
+        XCTAssertEqual(settings.goals.monthlyBooks, 1)
+        let legacy = try JSONDecoder().decode(Settings.self, from: Data(#"{"groupAllByCollection": false, "goals": {"dailyMinutes": 10, "yearlyBooks": 5}}"#.utf8))
+        XCTAssertFalse(legacy.groupByCollection, "the grouping choice made under its earlier name is kept")
+        XCTAssertEqual(legacy.goals.dailyMinutes, 10)
+        XCTAssertEqual(legacy.goals.monthlyBooks, 1, "goals saved without a monthly one get the default")
+        let goals = try JSONDecoder().decode(ReadingGoals.self, from: JSONEncoder().encode(ReadingGoals(dailyMinutes: 7, yearlyBooks: 20, monthlyBooks: 3)))
+        XCTAssertEqual(goals.monthlyBooks, 3)
     }
 }
 
@@ -394,6 +403,16 @@ final class CoverSwapTests: XCTestCase {
         XCTAssertFalse(restored.coverReplaced)
         XCTAssertEqual(restored.coverFile, "cover.svg")
         XCTAssertFalse(FileManager.default.fileExists(atPath: store.folder(for: book.id).appendingPathComponent(swapped.coverFile!).path))
+
+        // Finishing a book counts for the month and the year it was finished in.
+        let now = Date(), calendar = Calendar.current
+        let month = calendar.component(.month, from: now), year = calendar.component(.year, from: now)
+        XCTAssertEqual(store.booksFinished(inMonth: month, year: year), 0)
+        store.setFinished(book.id, true)
+        XCTAssertEqual(store.booksFinished(inMonth: month, year: year), 1)
+        XCTAssertEqual(store.booksFinished(inYear: year), 1)
+        XCTAssertEqual(store.booksFinished(inMonth: month == 1 ? 12 : month - 1, year: month == 1 ? year - 1 : year), 0)
+        store.setFinished(book.id, false)
 
         // Reading counts land on the book as well as in the statistics, and survive a reload.
         store.recordReading(seconds: 60, pages: 2, in: book.id)

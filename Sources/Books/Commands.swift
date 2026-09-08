@@ -63,7 +63,7 @@ struct BooksCommands: Commands {
                 Button("Ascending") { model.settings.sortAscending = true }
                 Button("Descending") { model.settings.sortAscending = false }
             }
-            Toggle("Group All Books by Collection", isOn: Binding(get: { model.settings.groupAllByCollection }, set: { model.settings.groupAllByCollection = $0 }))
+            Toggle("Group Library by Collection", isOn: Binding(get: { model.settings.groupByCollection }, set: { model.settings.groupByCollection = $0 }))
         }
         CommandMenu("Book") {
             Button("Next Page") { reader?.nextPage() }
