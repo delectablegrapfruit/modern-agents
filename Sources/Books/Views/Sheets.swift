@@ -120,6 +120,27 @@ struct SettingsView: View {
                         .textSelection(.enabled)
                     Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([model.store.directory]) }
                     Button("Export Highlights and Notes…") { exportAnnotations() }
+                    Toggle("Make collections from subfolders when adding folders", isOn: $model.settings.library.importCollections)
+                }
+                Section("Library Folder") {
+                    if let folder = model.settings.library.folder {
+                        LabeledContent("Folder", value: folder)
+                            .textSelection(.enabled)
+                        HStack {
+                            Button("Choose…") { model.chooseLibraryFolder() }
+                            Button("Clear") { model.clearLibraryFolder() }
+                        }
+                        Toggle("Keep the library in sync with this folder", isOn: $model.settings.library.sync)
+                        Toggle("Collections from its subfolders", isOn: $model.settings.library.syncCollections)
+                        HStack {
+                            Button("Scan Now") { model.scanLibraryFolder(manual: true) }
+                            if let status = model.libraryFolderStatus { Text(status).font(.caption).foregroundStyle(.secondary) }
+                        }
+                    } else {
+                        Text("Books put in a folder you choose — and in its subfolders, which become collections — appear in the library by themselves.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Button("Choose Folder…") { model.chooseLibraryFolder() }
+                    }
                 }
             }
             .formStyle(.grouped)

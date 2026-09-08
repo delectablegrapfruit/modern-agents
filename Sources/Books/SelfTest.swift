@@ -133,6 +133,7 @@ enum SelfTest {
 
         try await runWrappedBook(model: model)
         try await runPDF(model: model)
+        try await runFolders(model: model)
         print("SELFTEST OK: \(Int(layout.total)) pages, \(layout.columns) column(s), wheel \(wheelReport.joined(separator: " · ")), position saved at \(Int(saved.percent))%; PDF checked; macOS \(ProcessInfo.processInfo.operatingSystemVersionString)")
         fflush(stdout)
         exit(0)
@@ -246,6 +247,8 @@ enum SelfTest {
         guard model.settings.reader.pdfZoom == 100, model.book(book.id)?.view?.pdfZoom == 150, model.book(book.id)?.view?.pdfLayout == .fit else {
             throw Failure("the view was not kept with the book (settings \(model.settings.reader.pdfZoom)%, book \(String(describing: model.book(book.id)?.view)))")
         }
+        // Every fifth line of the test pages begins an indented paragraph; rewrapped, those paragraphs still begin indented.
+        guard split.indentedLineStarts >= 20 else { throw Failure("rewrapped at 150%, only \(split.indentedLineStarts) lines begin with an indent; the paragraphs' indents were lost") }
         try checkFlow(split, expectCuts: true)
         // One page: the same size shows fewer, wider screens.
         var fitSettings = model.settings
@@ -310,6 +313,82 @@ enum SelfTest {
         guard model.reading == nil, savedPercent > 0 else { throw Failure("PDF position was not saved (\(savedPercent)%)") }
     }
 
+    /// Folders: a library folder scanned and synced — its files come in from every depth, its subfolders name
+    /// collections (an existing one of the same name in another case is used), a second scan adds nothing, a file
+    /// moved to another subfolder moves collection — and a folder added by hand with collections from its
+    /// subfolders.
+    @MainActor
+    private static func runFolders(model: LibraryModel) async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("Books Self-Test Folder \(UUID().uuidString)", isDirectory: true)
+        let fiction = root.appendingPathComponent("Fiction", isDirectory: true), science = root.appendingPathComponent("Science", isDirectory: true)
+        try FileManager.default.createDirectory(at: fiction.appendingPathComponent("Deeper", isDirectory: true), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: science, withIntermediateDirectories: true)
+        func epub(_ title: String) throws -> Data {
+            let chapter = EPUBChapter(label: "One", title: "One", html: "<p>\(title): " + String(repeating: "words and words. ", count: 40) + "</p>")
+            return try EPUBWriter.build(EPUBSpec(title: title, author: "Folder Test", chapters: [chapter], coverSVG: CoverArt.svg(title: title, author: "Folder Test")))
+        }
+        try epub("Folder Novel").write(to: fiction.appendingPathComponent("Deeper/novel.epub"))
+        try makePDF(pages: 2).write(to: science.appendingPathComponent("paper.pdf"))
+        try epub("Folder Loose").write(to: root.appendingPathComponent("loose.epub"))
+        var created: [UUID] = []
+        var madeCollections: [UUID] = []
+        defer {
+            model.delete(created)
+            for id in madeCollections { model.deleteCollection(id) }
+            var s = model.settings
+            s.library.folder = nil
+            model.settings = s
+            try? FileManager.default.removeItem(at: root)
+        }
+        // A collection of the same name in another case is used, not doubled.
+        model.addCollection(named: "fiction")
+        guard let fictionCollection = model.collections.first(where: { $0.name == "fiction" }) else { throw Failure("the fiction collection was not made") }
+        madeCollections.append(fictionCollection.id)
+        let collectionsBefore = model.collections.count
+        var s = model.settings
+        s.library.folder = root.path
+        s.library.sync = false
+        s.library.syncCollections = true
+        model.settings = s
+        var scan = await withCheckedContinuation { continuation in model.scanLibraryFolder(manual: true) { continuation.resume(returning: ($0, $1)) } }
+        guard scan.1 == 3, scan.0 == 3 else { throw Failure("the library folder scan saw \(scan.1) files and added \(scan.0); expected 3 and 3") }
+        let novel = model.books.first { $0.title == "Folder Novel" }, loose = model.books.first { $0.title == "Folder Loose" }, paper = model.books.first { $0.title.lowercased().hasPrefix("paper") }
+        guard let novel, let loose, let paper else { throw Failure("the folder's books were not all added: \(model.books.map(\.title))") }
+        created += [novel.id, loose.id, paper.id]
+        guard model.collections.count == collectionsBefore + 1, let scienceCollection = model.collections.first(where: { $0.name == "Science" }) else {
+            throw Failure("collections after the scan: \(model.collections.map(\.name)); expected fiction (kept) and Science (made)")
+        }
+        madeCollections.append(scienceCollection.id)
+        guard model.collections.first(where: { $0.id == fictionCollection.id })?.bookIDs == [novel.id], scienceCollection.bookIDs == [paper.id] else {
+            throw Failure("the folder's books were not put in their subfolders' collections")
+        }
+        scan = await withCheckedContinuation { continuation in model.scanLibraryFolder(manual: true) { continuation.resume(returning: ($0, $1)) } }
+        guard scan.0 == 0, scan.1 == 3 else { throw Failure("a second scan added \(scan.0) books") }
+        // The loose book moves into Fiction.
+        try FileManager.default.moveItem(at: root.appendingPathComponent("loose.epub"), to: fiction.appendingPathComponent("loose.epub"))
+        scan = await withCheckedContinuation { continuation in model.scanLibraryFolder(manual: true) { continuation.resume(returning: ($0, $1)) } }
+        guard scan.0 == 0, model.collections.first(where: { $0.id == fictionCollection.id })?.bookIDs.contains(loose.id) == true, model.book(loose.id)?.source == fiction.appendingPathComponent("loose.epub").path else {
+            throw Failure("a moved file did not move its book into the subfolder's collection")
+        }
+        log("library folder: 3 files from 3 levels, collections fiction (kept, case aside) and Science, nothing doubled on a rescan, a moved file followed")
+
+        // A folder added by hand, its subfolders as collections when asked.
+        let other = FileManager.default.temporaryDirectory.appendingPathComponent("Books Self-Test Import \(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: other.appendingPathComponent("History", isDirectory: true), withIntermediateDirectories: true)
+        try epub("Folder History").write(to: other.appendingPathComponent("History/history.epub"))
+        try epub("Folder Top").write(to: other.appendingPathComponent("top.epub"))
+        defer { try? FileManager.default.removeItem(at: other) }
+        let imported: [Book] = await withCheckedContinuation { continuation in
+            model.importFiles([other], quiet: true, allowDuplicates: true, collections: true) { continuation.resume(returning: $0) }
+        }
+        created += imported.map(\.id)
+        guard imported.count == 2, let history = model.collections.first(where: { $0.name == "History" }), history.bookIDs.count == 1 else {
+            throw Failure("adding a folder gave \(imported.count) books and collections \(model.collections.map(\.name))")
+        }
+        madeCollections.append(history.id)
+        log("folder added by hand: 2 books, collection History from its subfolder")
+    }
+
     /// The screens of Zoom & Split read on like a book: no screen repeats ink an earlier one showed, every screen
     /// but the last is filled, and each holds at most a screen's worth.
     @MainActor
@@ -366,7 +445,8 @@ enum SelfTest {
             var y: CGFloat = 680
             for line in 1...26 {
                 let text = line == 3 ? "The quick brown fox jumps over the lazy dog." : "Line \(line) of page \(i): the vixen jumped quickly over the fence."
-                (text as NSString).draw(at: NSPoint(x: 72, y: y), withAttributes: body)
+                // Every fifth line begins a paragraph, indented as a book's are.
+                (text as NSString).draw(at: NSPoint(x: line % 5 == 1 ? 92 : 72, y: y), withAttributes: body)
                 y -= 22
             }
             NSGraphicsContext.restoreGraphicsState()

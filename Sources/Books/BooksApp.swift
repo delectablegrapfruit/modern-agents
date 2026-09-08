@@ -41,6 +41,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         signal(SIGPIPE, SIG_IGN)
         if ProcessInfo.processInfo.environment["BOOKS_SELFTEST"] != nil, let model = AppDelegate.model {
             SelfTest.start(model: model)
+        } else {
+            AppDelegate.model?.refreshFolderSync(scanNow: true)
         }
     }
 

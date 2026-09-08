@@ -81,6 +81,22 @@ final class ReaderMessageHandler: NSObject, WKScriptMessageHandler {
 
 /// The web view that typesets the book. It stays first responder so arrow keys and the wheel reach the page.
 final class ReaderWebView: WKWebView {
+    private var exitTracking: NSTrackingArea?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let exitTracking { removeTrackingArea(exitTracking) }
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self, userInfo: nil)
+        addTrackingArea(area)
+        exitTracking = area
+    }
+
+    /// The text cursor WebKit sets over the page must not follow the pointer out to the toolbar and menus.
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        NSCursor.arrow.set()
+    }
+
     weak var session: ReaderSession?
 
     override var acceptsFirstResponder: Bool { true }
@@ -111,8 +127,29 @@ final class ReaderWebView: WKWebView {
             }
         }
         if let last = menu.items.last, last.isSeparatorItem { menu.removeItem(last) }
+        // Over a highlight: its note and its removal, first.
+        if let session, let hovered = MainActor.assumeIsolated({ session.hoveredHighlight }) {
+            let items = MainActor.assumeIsolated { session.menuItems(forHighlight: hovered.annotation) }
+            if !menu.items.isEmpty { menu.insertItem(.separator(), at: 0) }
+            for item in items.reversed() { menu.insertItem(item, at: 0) }
+        }
         super.willOpenMenu(menu, with: event)
     }
+}
+
+/// A menu item that runs a closure.
+final class ClosureMenuItem: NSMenuItem {
+    private let handler: () -> Void
+
+    init(_ title: String, handler: @escaping () -> Void) {
+        self.handler = handler
+        super.init(title: title, action: #selector(fire), keyEquivalent: "")
+        target = self
+    }
+
+    required init(coder: NSCoder) { fatalError("not used") }
+
+    @objc private func fire() { handler() }
 }
 
 // MARK: - Reading the page's dictionaries

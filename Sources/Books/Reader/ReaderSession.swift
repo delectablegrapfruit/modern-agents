@@ -1,5 +1,6 @@
 import AppKit
 import Observation
+import SwiftUI
 import WebKit
 import BooksCore
 
@@ -93,8 +94,12 @@ final class ReaderSession {
     private(set) var position = ReaderPosition()
     private(set) var toc: [ReaderTOCItem] = []
     private(set) var annotations: [Annotation]
-    var selection: ReaderSelection?
-    var tappedHighlight: (annotation: Annotation, rect: CGRect)?
+    var selection: ReaderSelection? { didSet { presentMenu() } }
+    var tappedHighlight: (annotation: Annotation, rect: CGRect)? { didSet { presentMenu() } }
+    /// The highlight under the pointer in the page (for the context menu).
+    var hoveredHighlight: (annotation: Annotation, rect: CGRect)?
+    @ObservationIgnored private var menuPopover: NSPopover?
+    @ObservationIgnored private var menuCloser: PopoverCloser?
     var editingNote: Annotation?
     var showContents = false
     var showSearch = false
@@ -426,6 +431,33 @@ final class ReaderSession {
         if let tapped = tappedHighlight, tapped.annotation.id == id { tappedHighlight = (annotations[i], tapped.rect) }
     }
 
+    /// A context menu's items for a highlight: its note, and its removal.
+    func menuItems(forHighlight record: Annotation) -> [NSMenuItem] {
+        var items: [NSMenuItem] = []
+        items.append(ClosureMenuItem(record.note.isEmpty ? "Add Note…" : "Edit Note…") { [weak self] in
+            self?.tappedHighlight = nil
+            self?.editingNote = self?.annotations.first { $0.id == record.id }
+        })
+        if !record.note.isEmpty {
+            items.append(ClosureMenuItem("Remove Note") { [weak self] in self?.setNote("", for: record.id) })
+        }
+        items.append(ClosureMenuItem(record.color == .underline ? "Remove Underline" : "Remove Highlight") { [weak self] in self?.removeAnnotation(record.id) })
+        return items
+    }
+
+    /// A context menu's items for selected text in a PDF: what the highlight menu offers, as menu items.
+    func menuItemsForSelection() -> [NSMenuItem] {
+        guard let sel = selection else { return [] }
+        var items: [NSMenuItem] = []
+        items.append(ClosureMenuItem("Copy") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(sel.text, forType: .string) })
+        items.append(ClosureMenuItem("Look Up") { [weak self] in self?.lookUpSelection() })
+        items.append(.separator())
+        items.append(ClosureMenuItem("Highlight") { [weak self] in self?.highlightSelection(color: .yellow) })
+        items.append(ClosureMenuItem("Underline") { [weak self] in self?.highlightSelection(color: .underline) })
+        items.append(ClosureMenuItem("Add Note…") { [weak self] in self?.pendingNoteAfterHighlight = true; self?.highlightSelection(color: .yellow) })
+        return items
+    }
+
     func setNote(_ note: String, for id: UUID) {
         guard let i = annotations.firstIndex(where: { $0.id == id }) else { return }
         annotations[i].note = note
@@ -437,6 +469,39 @@ final class ReaderSession {
     func clearSelection() {
         selection = nil
         if usesPDFView { pdf?.clearSelection() } else { call("clearSelection") }
+    }
+
+    /// The highlight menu beside the words it concerns — above them, or below when there is no room above — and
+    /// gone when the selection or the tapped highlight is.
+    private func presentMenu() {
+        let target: (rect: CGRect, existing: Annotation?)? = tappedHighlight.map { ($0.rect, $0.annotation) } ?? selection.map { ($0.rect, nil) }
+        guard let target else {
+            if let open = menuPopover { menuPopover = nil; open.performClose(nil) }
+            return
+        }
+        let host: NSView = usesPDFView ? (pdf?.hostView ?? webView) : webView
+        guard host.window != nil, host.bounds.width > 0, host.bounds.height > 0 else { return }
+        // The rects arrive with the origin at the top left; the host may count from the bottom.
+        let y = host.isFlipped ? target.rect.minY : host.bounds.height - target.rect.maxY
+        var anchor = NSRect(x: target.rect.minX, y: y, width: max(target.rect.width, 2), height: max(target.rect.height, 2)).intersection(host.bounds)
+        if anchor.isNull || anchor.isEmpty {
+            anchor = NSRect(x: min(max(0, target.rect.minX), host.bounds.width - 2), y: min(max(0, y), host.bounds.height - 2), width: 2, height: 2)
+        }
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.animates = false
+        let closer = PopoverCloser { [weak self, weak popover] in
+            guard let self, self.menuPopover === popover else { return }
+            self.menuPopover = nil
+            if self.tappedHighlight != nil { self.tappedHighlight = nil } else if self.selection != nil { self.clearSelection() }
+        }
+        popover.delegate = closer
+        popover.contentViewController = NSHostingController(rootView: HighlightMenu(session: self, existing: target.existing))
+        let previous = menuPopover
+        menuPopover = popover
+        menuCloser = closer
+        previous?.performClose(nil)
+        popover.show(relativeTo: anchor, of: host, preferredEdge: host.isFlipped ? .minY : .maxY)
     }
 
     private func persistAnnotations() {
@@ -503,6 +568,12 @@ final class ReaderSession {
             guard let id = m.string("id").flatMap(UUID.init(uuidString:)), let a = annotations.first(where: { $0.id == id }), let rect = m.rect("rect") else { return }
             selection = nil
             tappedHighlight = (a, rect)
+        case "highlightHover":
+            if let id = m.string("id").flatMap(UUID.init(uuidString:)), let a = annotations.first(where: { $0.id == id }) {
+                hoveredHighlight = (a, m.rect("rect") ?? .zero)
+            } else {
+                hoveredHighlight = nil
+            }
         case "highlightAdded":
             guard let id = m.string("id").flatMap(UUID.init(uuidString:)), let o = m.object("locator"), let spine = o.int("spine") else { return }
             let color = HighlightColor(rawValue: m.string("color") ?? "yellow") ?? .yellow
@@ -718,4 +789,11 @@ final class ReaderSession {
         flushPosition()
         model.closeReader()
     }
+}
+
+/// Tells the session when a popover it showed has closed.
+final class PopoverCloser: NSObject, NSPopoverDelegate {
+    private let onClose: () -> Void
+    init(onClose: @escaping () -> Void) { self.onClose = onClose }
+    func popoverDidClose(_ notification: Notification) { onClose() }
 }

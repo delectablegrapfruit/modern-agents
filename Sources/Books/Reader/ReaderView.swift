@@ -51,7 +51,6 @@ struct ReaderContent: View {
                     Spacer()
                     footer(width: geo.size.width)
                 }
-                anchors
                 if session.preparing {
                     ProgressView(session.pdfLayout == .fit ? "Preparing the pages…" : "Preparing the text…")
                         .controlSize(.large)
@@ -169,27 +168,6 @@ struct ReaderContent: View {
         return n <= 0 ? "Last page in this chapter" : Format.plural(n, "page") + " left in this chapter"
     }
 
-    // MARK: - Popover anchors over the text
-
-    @ViewBuilder
-    private var anchors: some View {
-        if let sel = session.selection {
-            Color.clear
-                .frame(width: max(sel.rect.width, 2), height: max(sel.rect.height, 2))
-                .position(x: sel.rect.midX, y: sel.rect.midY)
-                .popover(isPresented: Binding(get: { session.selection != nil }, set: { if !$0 { session.clearSelection() } }), arrowEdge: .top) {
-                    HighlightMenu(session: session, existing: nil)
-                }
-        }
-        if let tapped = session.tappedHighlight {
-            Color.clear
-                .frame(width: max(tapped.rect.width, 2), height: max(tapped.rect.height, 2))
-                .position(x: tapped.rect.midX, y: tapped.rect.midY)
-                .popover(isPresented: Binding(get: { session.tappedHighlight != nil }, set: { if !$0 { session.tappedHighlight = nil } }), arrowEdge: .top) {
-                    HighlightMenu(session: session, existing: tapped.annotation)
-                }
-        }
-    }
 }
 
 /// Hosts the session's web view.

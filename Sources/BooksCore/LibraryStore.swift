@@ -208,6 +208,20 @@ public final class LibraryStore {
         return collection
     }
 
+    /// The collection of a name, however it is capitalised or accented.
+    public func collection(named name: String) -> BookCollection? {
+        collections.first { $0.name.compare(name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame }
+    }
+
+    /// The book that was added from a file, by its path.
+    public func book(withSource path: String) -> Book? { books.first { $0.source == path } }
+
+    public func setSource(_ path: String?, for id: UUID) {
+        guard let i = books.firstIndex(where: { $0.id == id }), books[i].source != path else { return }
+        books[i].source = path
+        try? save()
+    }
+
     public func renameCollection(_ id: UUID, to name: String) {
         guard let i = collections.firstIndex(where: { $0.id == id }) else { return }
         collections[i].name = name
@@ -363,5 +377,41 @@ public final class LibraryStore {
         guard !sample.isEmpty, String(data: sample, encoding: .utf8) != nil || String(data: sample, encoding: .isoLatin1) != nil else { return false }
         let control = sample.filter { $0 < 0x09 || ($0 > 0x0D && $0 < 0x20) }.count
         return control * 100 < sample.count
+    }
+}
+
+/// The readable files under a folder, with the first-level subfolder each lies in: the collection it belongs to.
+public enum FolderScan {
+    public struct Entry: Hashable {
+        public let url: URL
+        /// Below the folder, "Fiction/Deeper/novel.epub".
+        public let relativePath: String
+        /// The first-level subfolder, nil for a file in the folder itself.
+        public let folder: String?
+    }
+
+    public static func files(in root: URL, fileManager: FileManager = .default) -> [Entry] {
+        let base = root.standardizedFileURL.resolvingSymlinksInPath().path
+        let keys: [URLResourceKey] = [.isRegularFileKey, .isPackageKey]
+        guard let walk = fileManager.enumerator(at: URL(fileURLWithPath: base), includingPropertiesForKeys: keys, options: [.skipsHiddenFiles, .skipsPackageDescendants]) else { return [] }
+        var out: [Entry] = []
+        for case let url as URL in walk {
+            let values = try? url.resourceValues(forKeys: Set(keys))
+            if values?.isPackage == true { walk.skipDescendants(); continue }
+            guard values?.isRegularFile == true, LibraryStore.readableExtensions.contains(url.pathExtension.lowercased()) else { continue }
+            let path = url.standardizedFileURL.resolvingSymlinksInPath().path
+            guard path.hasPrefix(base + "/") else { continue }
+            let relative = String(path.dropFirst(base.count + 1))
+            let parts = relative.split(separator: "/")
+            out.append(Entry(url: URL(fileURLWithPath: path), relativePath: relative, folder: parts.count > 1 ? String(parts[0]) : nil))
+        }
+        return out.sorted { $0.relativePath < $1.relativePath }
+    }
+
+    /// The first-level subfolder of a path below a folder, nil for a file in the folder itself or outside it.
+    public static func folder(of path: String, under root: String) -> String? {
+        guard path.hasPrefix(root + "/") else { return nil }
+        let parts = path.dropFirst(root.count + 1).split(separator: "/")
+        return parts.count > 1 ? String(parts[0]) : nil
     }
 }

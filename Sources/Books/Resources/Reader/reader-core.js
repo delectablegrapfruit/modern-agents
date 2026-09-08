@@ -104,6 +104,7 @@
       document.addEventListener('mouseup', () => setTimeout(() => this.onSelectionEnd(), 0));
       document.addEventListener('click', e => this.onClick(e));
       document.addEventListener('mousemove', e => this.onMouseMove(e));
+      document.addEventListener('contextmenu', e => this.onContextMenu(e));
       document.addEventListener('scroll', U.throttle(() => this.onScroll(), 80), { passive: true });
       document.addEventListener('selectionchange', () => this.onSelectionChange());
       global.addEventListener('resize', () => {
@@ -674,7 +675,21 @@
         post({ type: 'highlightTapped', id: hl.dataset.id, rect: rectOf(hl.getBoundingClientRect()) });
       }
     },
-    onMouseMove(e) { if (this.isOpen) this._postPointer(e.clientX, e.clientY); },
+    onMouseMove(e) {
+      if (!this.isOpen) return;
+      this._postPointer(e.clientX, e.clientY);
+      this._trackHover(e.target);
+    },
+    /** Tells the app which highlight the pointer is over (once per change), for its context menu. */
+    _trackHover(target) {
+      const t = target && target.nodeType === 1 ? target : (target && target.parentElement);
+      const hl = t && t.closest ? t.closest('span.books-hl') : null;
+      const id = hl ? hl.dataset.id : null;
+      if (id === this._hoverId) return;
+      this._hoverId = id;
+      post({ type: 'highlightHover', id, rect: hl ? rectOf(hl.getBoundingClientRect()) : null });
+    },
+    onContextMenu(e) { this._hoverId = undefined; this._trackHover(e.target); },
 
     /* ------------------------------------------------------------------ selection */
     /** The live selection as {spine, start, end, text, rect}, or null when there is none inside the book. */

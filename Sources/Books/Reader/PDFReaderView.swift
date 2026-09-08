@@ -108,6 +108,18 @@ final class BooksPDFView: PDFView {
     weak var presenter: PDFPresenter?
     private var trackingArea: NSTrackingArea?
 
+    /// PDFKit's menu, with a highlight's note and removal added over a highlight.
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let menu = super.menu(for: event) ?? NSMenu()
+        let point = convert(event.locationInWindow, from: nil)
+        if let session = presenter?.session, let page = page(for: point, nearest: false), let hit = page.annotation(at: convert(point, to: page)),
+           let name = hit.userName, let id = UUID(uuidString: name), let record = session.annotations.first(where: { $0.id == id }) {
+            if !menu.items.isEmpty { menu.addItem(.separator()) }
+            for item in session.menuItems(forHighlight: record) { menu.addItem(item) }
+        }
+        return menu.items.isEmpty ? nil : menu
+    }
+
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let trackingArea { removeTrackingArea(trackingArea) }

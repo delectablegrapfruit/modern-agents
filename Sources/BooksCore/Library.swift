@@ -57,10 +57,12 @@ public struct Book: Codable, Identifiable, Hashable {
     public var coverFile: String?
     /// How this book is viewed, where it differs from the reader settings.
     public var view: BookView?
+    /// Where the file came from, for books added from folders: a rescan knows them, and a move is followed.
+    public var source: String?
 
     public init(id: UUID = UUID(), title: String, author: String, kind: BookKind, fileName: String, fileSize: Int64, metadata: BookMetadata = BookMetadata(),
                 words: Int = 0, pageCount: Int? = nil, addedAt: Date = Date(), lastOpenedAt: Date? = nil, finishedAt: Date? = nil,
-                position: ReadingPosition? = nil, coverFile: String? = nil, view: BookView? = nil) {
+                position: ReadingPosition? = nil, coverFile: String? = nil, view: BookView? = nil, source: String? = nil) {
         self.id = id
         self.title = title
         self.author = author
@@ -76,6 +78,7 @@ public struct Book: Codable, Identifiable, Hashable {
         self.position = position
         self.coverFile = coverFile
         self.view = view
+        self.source = source
     }
 
     public var isNew: Bool { lastOpenedAt == nil }
@@ -483,6 +486,35 @@ public enum LibrarySort: String, Codable, CaseIterable, Hashable {
     }
 }
 
+/// The library folder: a folder whose files, and its subfolders' files, are in the library by themselves.
+public struct LibraryFolderSettings: Codable, Hashable {
+    /// The folder's path; nil when none is chosen.
+    public var folder: String?
+    /// Watch the folder and take in what appears there.
+    public var sync = true
+    /// Books in the folder's subfolders go into collections named after them.
+    public var syncCollections = true
+    /// Folders added by hand: their subfolders become collections too.
+    public var importCollections = true
+
+    public init(folder: String? = nil, sync: Bool = true, syncCollections: Bool = true, importCollections: Bool = true) {
+        self.folder = folder
+        self.sync = sync
+        self.syncCollections = syncCollections
+        self.importCollections = importCollections
+    }
+
+    enum CodingKeys: String, CodingKey { case folder, sync, syncCollections, importCollections }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        folder = try? c.decodeIfPresent(String.self, forKey: .folder)
+        sync = (try? c.decodeIfPresent(Bool.self, forKey: .sync)) ?? true
+        syncCollections = (try? c.decodeIfPresent(Bool.self, forKey: .syncCollections)) ?? true
+        importCollections = (try? c.decodeIfPresent(Bool.self, forKey: .importCollections)) ?? true
+    }
+}
+
 public struct Settings: Codable, Hashable {
     public var reader = ReaderSettings()
     public var libraryView: LibraryViewMode = .grid
@@ -494,10 +526,11 @@ public struct Settings: Codable, Hashable {
     /// Sidebar rows in the user's order and the ones hidden, by key ("all", "finished", "collection:<id>", …).
     public var sidebarOrder: [String] = []
     public var sidebarHidden: [String] = []
+    public var library = LibraryFolderSettings()
 
     public init() {}
 
-    enum CodingKeys: String, CodingKey { case reader, libraryView, sort, goals, showContinueReading, showGoals, showStatistics, sidebarOrder, sidebarHidden }
+    enum CodingKeys: String, CodingKey { case reader, libraryView, sort, goals, showContinueReading, showGoals, showStatistics, sidebarOrder, sidebarHidden, library }
 
     /// Missing or unknown values fall back to defaults, so settings written by another version still load.
     public init(from decoder: Decoder) throws {
@@ -511,6 +544,7 @@ public struct Settings: Codable, Hashable {
         showStatistics = (try? c.decodeIfPresent(Bool.self, forKey: .showStatistics)) ?? true
         sidebarOrder = (try? c.decodeIfPresent([String].self, forKey: .sidebarOrder)) ?? []
         sidebarHidden = (try? c.decodeIfPresent([String].self, forKey: .sidebarHidden)) ?? []
+        library = (try? c.decodeIfPresent(LibraryFolderSettings.self, forKey: .library)) ?? LibraryFolderSettings()
     }
 }
 

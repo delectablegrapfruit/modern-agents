@@ -14,7 +14,14 @@ but All can be hidden from its context menu and brought back from its section's 
 list, sort by recent, title or author, search by title, author and subject. Get Info edits title and author. Files come in through File ▸ Add to
 Library (⌘O), by dropping them on the window, or by opening them from the Finder: **EPUB**, **Kindle** (MOBI, AZW,
 AZW3; DRM-free — converted to EPUB once, at import), **PDF**, and **plain text or Markdown** (typeset into a book
-with chapters and a generated cover).
+with chapters and a generated cover). Folders can be added too, several at once, searched through to any depth;
+when asked (a checkbox in the open panel, a setting) their first-level subfolders become collections — an existing
+collection of the same name, in any case, is used rather than doubled. A **library folder** (Settings ▸ General)
+is kept in sync: what appears in it, and in its subfolders, comes into the library by itself (the folder is watched
+while the app runs and scanned at launch; Scan Now and File ▸ Scan Library Folder do it by hand), subfolders name
+collections with the same rule, and a file moved to another subfolder moves collection; both the watching and the
+collections have their own switches. A book already in the library from elsewhere is recognised, not doubled;
+files removed from the folder leave their books in the library.
 
 **Reading.** The book takes over the window: paginated with one or two pages, or vertical scrolling. Six themes
 (Original, Quiet, Paper, Bold, Calm, Focus) with Auto-Night following the system, ten fonts, text size, line spacing,
@@ -23,7 +30,9 @@ in the chapter; bringing the pointer to the bottom shows the timeline — chapte
 the pointer — which you can scrub. Highlights in five colours or underline, notes, bookmarks (⌘D), a Contents ·
 Bookmarks · Notes popover, search within the book, an end-of-book card, and your place kept to the character. Look Up
 shows the system's definition popover, and the text's context menu is the system's (Look Up, Copy, Translate,
-Search). PDFs read like books, three ways. **Pages**: whole pages on the theme colour with no frame or shadow, one or two to a
+Search) — over a highlight it also offers the note and the highlight's removal, and in the PDF views selected text gets
+Copy, Look Up, Highlight, Underline and Add Note. The highlight menu opens beside the words it concerns, above
+them or below when there is no room. The pointer is the arrow over margins and chrome, the text cursor over text. PDFs read like books, three ways. **Pages**: whole pages on the theme colour with no frame or shadow, one or two to a
 screen, turned the same way. **Zoom & Split**: the ink of every page — running headers, footers and page numbers cut away, two text columns
 read in order — runs on as one column at the text size and is dealt out to screens block by block, a block being
 the ink between two blank bands that cross the page (found in a small rendering of every page, so figures, tables
@@ -37,7 +46,9 @@ selection, search, highlights, bookmarks and the PDF's links work as in books. T
 PDF, so a book is prepared once. While reading, the pointer hides after a couple of seconds still over the page
 and returns the moment it moves. **Text**: the text is reflowed into a book the way converters like calibre do it (running
 headers dropped, lines joined into paragraphs, larger type as headings) and read with every book setting; the layout
-is not kept, so tables and figures suffer. How a book is viewed is kept with the book: the layout (Pages, Zoom &
+is not kept, so tables and figures suffer. Rewrapped lines keep their paragraphs' indents at every size: a first line's indent, a
+quotation's narrower measure, a list's hanging indent; a selection or a highlight over rewrapped words is one
+band, the gaps between the words included. How a book is viewed is kept with the book: the layout (Pages, Zoom &
 Split or Text for a PDF; paginated or scrolling), one or two pages and the text size of Zoom & Split are the book's
 own choices, made in the Appearance popover, and the reader settings (the Settings sheet) stand for books that have
 not made one. Themes are colour filters (paper tints in the light themes; in the dark

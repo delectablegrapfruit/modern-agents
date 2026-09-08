@@ -35,6 +35,8 @@ struct BooksCommands: Commands {
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
             Button("Add to Library…") { model.chooseFiles() }
+            Button("Scan Library Folder") { model.scanLibraryFolder(manual: true) }
+                .disabled(model.settings.library.folder == nil)
                 .keyboardShortcut("o")
             Button("New Collection") { model.creatingCollection = true }
                 .keyboardShortcut("n", modifiers: [.command, .shift])

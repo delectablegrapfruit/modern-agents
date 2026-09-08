@@ -634,6 +634,20 @@ final class SplitPDFPresenter: PDFReading {
     /// For the self-test: whether any screen shows rewrapped words.
     var rewrapped: Bool { screens.contains { $0.pieces.contains { $0.x != nil } } }
 
+    /// For the self-test: rewrapped lines that begin with an indent — paragraph starts kept at this size.
+    var indentedLineStarts: Int {
+        var count = 0
+        for screen in screens {
+            var firstByLine: [CGFloat: CGFloat] = [:]
+            for piece in screen.pieces {
+                guard let x = piece.x else { continue }
+                firstByLine[piece.offset] = min(firstByLine[piece.offset] ?? .infinity, x)
+            }
+            count += firstByLine.values.filter { $0 > 4 }.count
+        }
+        return count
+    }
+
     /// One page's run of a strip for the column: the strip's columns, over the page's own ink from top to bottom
     /// (the group's strip is a median; a full page runs past it), cut below the page's header band and above its
     /// footer band.
@@ -700,6 +714,9 @@ final class SplitPDFPresenter: PDFReading {
         // Rewrapped text: the line being filled, carried from page to page so a sentence runs on across a page break.
         var lineWords: [(page: Int, rect: CGRect, x: CGFloat)] = []
         var lineX: CGFloat = 0
+        /// Where the current paragraph's lines begin and must end, in view points: its indents at this size.
+        var lineStart: CGFloat = 0
+        var lineLimit: CGFloat = tileSize.width
         var lineHeight: CGFloat = 0
         var lineGapPoints = typical * 0.3 * scale
         var lastWord: (page: Int, rect: CGRect)?
@@ -716,31 +733,73 @@ final class SplitPDFPresenter: PDFReading {
             }
             current.height += h
             lineWords = []
-            lineX = 0
+            lineX = lineStart
             lineHeight = 0
             lastWord = nil
         }
+        /// The commonest of some positions, to a tolerance: where most lines of a page begin.
+        func commonest(_ values: [CGFloat], tolerance: CGFloat) -> CGFloat? {
+            let sorted = values.sorted()
+            var best: CGFloat?, bestCount = 0
+            for v in sorted {
+                let count = sorted.filter { abs($0 - v) <= tolerance }.count
+                if count > bestCount { best = v; bestCount = count }
+            }
+            return best
+        }
         /// Lines wider than the tile at this size are cut into their words at the blank gaps between them and laid
         /// out again in shorter lines that fit, keeping the page's own spacing between words, its line gap between
-        /// lines and its indents at paragraph starts. A screen ends before a line that would not fit whole.
+        /// lines, and its paragraphs' indents at this size: a first line's indent, a quotation's margins on the
+        /// left and the right, a hanging indent's continuation. A screen ends before a line that would not fit whole.
         func flowWords(page: Int, strip: Int, seg: CGRect) {
             closeOpen()
             let maxWidth = tileSize.width
             let runs = blocks(page: page, strip: strip).filter { $0.bottom < seg.maxY && $0.top > seg.minY }
             var gaps: [CGFloat] = []
             for i in 1..<max(1, runs.count) { gaps.append(max(0, runs[i - 1].bottom - runs[i].top)) }
-            if !gaps.isEmpty { lineGapPoints = gaps.sorted()[gaps.count / 2] * scale }
+            let medianGap = gaps.isEmpty ? typical * 0.3 : gaps.sorted()[gaps.count / 2]
+            lineGapPoints = medianGap * scale
             let space = typical * 0.3
-            // The text's own edges on this page: an indent is measured from the left one, a paragraph's short last
-            // line against the right one (a ragged setting falls short by a little on every line; the end of a
-            // paragraph by much more).
+            // The body's margins on this page: where most lines begin (an indent is measured from there) and the
+            // farthest the lines reach (a paragraph's last line falls well short of it; a ragged setting only a little).
             let bodyRuns = runs.filter { $0.height > typical * 0.5 }
-            let leftEdge = bodyRuns.map(\.minX).min() ?? seg.minX
+            let leftEdge = commonest(bodyRuns.map(\.minX), tolerance: typical * 0.3) ?? bodyRuns.map(\.minX).min() ?? seg.minX
             let rightEdge = bodyRuns.map(\.maxX).max() ?? seg.maxX
-            let indentMin = max(5, typical * 0.8)
+            let indentMin = max(3, typical * 0.35)
             let shortMin = max(typical * 3, (rightEdge - leftEdge) * 0.12)
-            for run in runs {
+            func median(_ values: [CGFloat]) -> CGFloat { let s = values.sorted(); return s[s.count / 2] }
+
+            // Paragraphs: runs of lines, cut where a line ends short, a gap widens, a line begins indented against
+            // the one before (a first line), or a block returns to the margin. Lines indented alike below a full
+            // line at the margin are that line's hanging continuation, as in a list.
+            var paragraphs: [(lines: [Block], picture: Bool)] = []
+            var group: [Block] = []
+            for (i, run) in runs.enumerated() {
                 if isPicture(run, page: page), run.height > typical * 2.5 {
+                    if !group.isEmpty { paragraphs.append((group, false)); group = [] }
+                    paragraphs.append(([run], true))
+                    continue
+                }
+                if let prev = group.last {
+                    var starts = false
+                    if prev.maxX < rightEdge - shortMin || prev.bottom - run.top > medianGap * 1.35 + 1 {
+                        starts = true
+                    } else if run.minX > prev.minX + indentMin {
+                        let next: Block? = i + 1 < runs.count ? runs[i + 1] : nil
+                        let hanging = abs(prev.minX - leftEdge) <= indentMin && (next.map { abs($0.minX - run.minX) <= indentMin } ?? false)
+                        starts = !hanging
+                    } else if prev.minX > run.minX + indentMin {
+                        // Back to the left: the body line after an indented first line stays; after a block, a new paragraph.
+                        starts = group.count > 1
+                    }
+                    if starts { paragraphs.append((group, false)); group = [] }
+                }
+                group.append(run)
+            }
+            if !group.isEmpty { paragraphs.append((group, false)) }
+
+            for (index, paragraph) in paragraphs.enumerated() {
+                if paragraph.picture, let run = paragraph.lines.first {
                     flushLine()
                     let h = run.height * scale
                     if current.height + h > tileSize.height, !current.pieces.isEmpty { push() }
@@ -753,22 +812,39 @@ final class SplitPDFPresenter: PDFReading {
                     previousEndedShort = true
                     continue
                 }
-                let indented = run.height >= typical * 0.5 && run.minX > leftEdge + indentMin
-                if indented || previousEndedShort, !lineWords.isEmpty { flushLine() }
-                if lineWords.isEmpty, indented { lineX = min(maxWidth * 0.3, (run.minX - leftEdge) * scale) }
-                for word in run.words {
-                    let gap: CGFloat = lastWord.map { last in
-                        last.page == page && abs(last.rect.midY - word.midY) < 0.5 * max(last.rect.height, word.height) ? max(0, word.minX - last.rect.maxX) : space
-                    } ?? 0
-                    let width = word.width * scale
-                    if !lineWords.isEmpty, lineX + gap * scale + width > maxWidth { flushLine() }
-                    let x = lineWords.isEmpty ? lineX : lineX + gap * scale
-                    lineWords.append((page, word, x))
-                    lineX = x + width
-                    lineHeight = max(lineHeight, run.height)
-                    lastWord = (page, word)
+                let lines = paragraph.lines
+                guard let first = lines.first else { continue }
+                let firstIndent = max(0, first.minX - leftEdge)
+                let startsIndented = firstIndent > indentMin
+                // The page's first lines carry on the line left open by the page before, unless that ended a
+                // paragraph or these begin one.
+                let carriesOn = index == 0 && !lineWords.isEmpty && !previousEndedShort && !startsIndented
+                // The body's own indent: the other lines' (a quotation keeps it, a hanging indent gains it); a
+                // single indented line is a first line unless it is set far in.
+                let bodyIndent: CGFloat = lines.count > 1 ? max(0, median(lines.dropFirst().map(\.minX)) - leftEdge) : (firstIndent > typical * 3 ? firstIndent : 0)
+                var rightIndent: CGFloat = 0
+                if lines.count > 1, let reach = lines.dropLast().map(\.maxX).max(), rightEdge - reach > indentMin { rightIndent = rightEdge - reach }
+                if !carriesOn {
+                    flushLine()
+                    lineStart = min(maxWidth * 0.3, bodyIndent * scale)
+                    lineLimit = max(lineStart + maxWidth * 0.4, maxWidth - min(maxWidth * 0.3, rightIndent * scale))
+                    lineX = min(maxWidth * 0.3, firstIndent * scale)
                 }
-                previousEndedShort = run.maxX < rightEdge - shortMin
+                for run in lines {
+                    for word in run.words {
+                        let gap: CGFloat = lastWord.map { last in
+                            last.page == page && abs(last.rect.midY - word.midY) < 0.5 * max(last.rect.height, word.height) ? max(0, word.minX - last.rect.maxX) : space
+                        } ?? 0
+                        let width = word.width * scale
+                        if !lineWords.isEmpty, lineX + gap * scale + width > lineLimit { flushLine() }
+                        let x = lineWords.isEmpty ? lineX : lineX + gap * scale
+                        lineWords.append((page, word, x))
+                        lineX = x + width
+                        lineHeight = max(lineHeight, run.height)
+                        lastWord = (page, word)
+                    }
+                    previousEndedShort = run.maxX < rightEdge - shortMin
+                }
             }
             // The line runs on into the next page, unless a paragraph ends here.
         }
@@ -1052,26 +1128,39 @@ final class SplitPDFPresenter: PDFReading {
                 page.draw(with: .mediaBox, to: context)
                 context.restoreGState()
             }
-            // Highlights on this piece, in the tile's pixels.
-            guard !highlights.isEmpty else { continue }
-            let toDisplay = page.transform(for: .mediaBox)
-            for record in highlights {
-                let color = PDFPresenter.nsColor(for: record.color ?? .yellow).usingColorSpace(.sRGB)?.cgColor ?? CGColor(gray: 1, alpha: 1)
+        }
+        // Highlights, in the tile's pixels: for each record and each line, one box over the words it covers —
+        // rewrapped words' gaps included — filled or underlined.
+        for record in highlights {
+            let color = PDFPresenter.nsColor(for: record.color ?? .yellow).usingColorSpace(.sRGB)?.cgColor ?? CGColor(gray: 1, alpha: 1)
+            var boxes: [CGRect] = []
+            var lineBoxes: [CGFloat: CGRect] = [:]
+            for piece in screens[u].pieces {
+                guard let page = document.page(at: piece.page) else { continue }
+                let toDisplay = page.transform(for: .mediaBox)
+                let dest = pieceFrame(piece, in: tile, standalone: screens[u].standalone)
+                let s = pieceScale(piece, in: tile)
+                var covered: CGRect?
                 for r in record.pdfRects ?? [] where r.page == piece.page {
                     let shown = CGRect(x: r.x, y: r.y, width: r.width, height: r.height).applying(toDisplay).intersection(piece.rect)
                     guard !shown.isNull, shown.width > 0, shown.height > 0 else { continue }
-                    let box = CGRect(x: destPixels.minX + (shown.minX - piece.rect.minX) * s * backing, y: destPixels.minY + (shown.minY - piece.rect.minY) * s * backing,
+                    let box = CGRect(x: (dest.minX + (shown.minX - piece.rect.minX) * s) * backing, y: (dest.minY + (shown.minY - piece.rect.minY) * s) * backing,
                                      width: shown.width * s * backing, height: shown.height * s * backing)
-                    context.saveGState()
-                    context.setFillColor(color)
-                    if record.color == .underline {
-                        context.fill(CGRect(x: box.minX, y: box.minY, width: box.width, height: max(1, box.height * 0.08)))
-                    } else {
-                        context.setBlendMode(.multiply)
-                        context.fill(box)
-                    }
-                    context.restoreGState()
+                    covered = covered.map { $0.union(box) } ?? box
                 }
+                guard let covered else { continue }
+                if piece.x != nil { lineBoxes[piece.offset] = lineBoxes[piece.offset].map { $0.union(covered) } ?? covered } else { boxes.append(covered) }
+            }
+            for box in boxes + Array(lineBoxes.values) {
+                context.saveGState()
+                context.setFillColor(color)
+                if record.color == .underline {
+                    context.fill(CGRect(x: box.minX, y: box.minY, width: box.width, height: max(1, box.height * 0.08)))
+                } else {
+                    context.setBlendMode(.multiply)
+                    context.fill(box)
+                }
+                context.restoreGState()
             }
         }
         guard let image = context.makeImage() else { return nil }
@@ -1267,13 +1356,17 @@ final class SplitPDFPresenter: PDFReading {
             let u = unit + column
             guard u < units else { continue }
             let frame = tileFrame(column: column)
+            // Rewrapped words on one line make one rectangle, the gaps between them included.
+            var lines: [CGFloat: CGRect] = [:]
             for piece in screens[u].pieces where piece.page == pageIndex {
                 let part = display.intersection(piece.rect)
                 guard !part.isNull, part.width > 0, part.height > 0 else { continue }
                 let pf = pieceFrame(piece, in: frame, standalone: screens[u].standalone)
                 let s = pieceScale(piece, in: frame)
-                out.append(CGRect(x: pf.minX + (part.minX - piece.rect.minX) * s, y: pf.minY + (part.minY - piece.rect.minY) * s, width: part.width * s, height: part.height * s))
+                let shown = CGRect(x: pf.minX + (part.minX - piece.rect.minX) * s, y: pf.minY + (part.minY - piece.rect.minY) * s, width: part.width * s, height: part.height * s)
+                if piece.x != nil { lines[piece.offset] = lines[piece.offset].map { $0.union(shown) } ?? shown } else { out.append(shown) }
             }
+            out += lines.values
         }
         return out
     }
@@ -1373,6 +1466,33 @@ final class SplitPDFPresenter: PDFReading {
         session.pdfSelectionChanged(text: nil, rect: .zero, page: 0)
     }
 
+    /// The highlight under a view point, if any.
+    private func highlight(at point: NSPoint) -> Annotation? {
+        guard let hit = pieceHit(at: point), let pagePoint = pagePoint(at: point, in: hit) else { return nil }
+        for record in session.annotations where record.kind == .highlight {
+            for r in record.pdfRects ?? [] where r.page == hit.piece.page {
+                if CGRect(x: r.x, y: r.y, width: r.width, height: r.height).insetBy(dx: -2, dy: -2).contains(pagePoint) { return record }
+            }
+        }
+        return nil
+    }
+
+    /// The context menu at a point: a highlight's note and removal over a highlight, the selection's actions over
+    /// selected text, nothing elsewhere.
+    func contextMenu(at point: NSPoint) -> NSMenu? {
+        if let record = highlight(at: point) {
+            let menu = NSMenu()
+            for item in session.menuItems(forHighlight: record) { menu.addItem(item) }
+            return menu
+        }
+        if session.selection != nil {
+            let menu = NSMenu()
+            for item in session.menuItemsForSelection() { menu.addItem(item) }
+            return menu
+        }
+        return nil
+    }
+
     private func drawSelection() {
         guard let selection, let pageIndex = selectionPage, let document, let page = document.page(at: pageIndex) else {
             view.set(path: nil, on: view.selectionLayer)
@@ -1456,12 +1576,16 @@ final class SplitPDFPresenter: PDFReading {
 
     func pointerMoved(to point: NSPoint) {
         session.pointerMoved(y: view.bounds.height - point.y)
-        // A pointing hand over a link, the text cursor elsewhere.
-        var overLink = false
-        if let hit = pieceHit(at: point), let document, let page = document.page(at: hit.piece.page), let pagePoint = pagePoint(at: point, in: hit) {
-            overLink = link(at: pagePoint, on: page) != nil
+        // A pointing hand over a link, the text cursor over text, the arrow everywhere else.
+        var cursor = NSCursor.arrow
+        if let hit = pieceHit(at: point), let document, let page = document.page(at: hit.piece.page) {
+            if let pagePoint = pagePoint(at: point, in: hit), link(at: pagePoint, on: page) != nil {
+                cursor = .pointingHand
+            } else if !hit.piece.fitted {
+                cursor = .iBeam
+            }
         }
-        if overLink { NSCursor.pointingHand.set() } else { NSCursor.iBeam.set() }
+        cursor.set()
     }
 }
 
@@ -1506,13 +1630,19 @@ final class SplitPDFView: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let trackingArea { removeTrackingArea(trackingArea) }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self, userInfo: nil)
+        let area = NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self, userInfo: nil)
         addTrackingArea(area)
         trackingArea = area
     }
 
     override func resetCursorRects() {
-        addCursorRect(bounds, cursor: .iBeam)
+        addCursorRect(bounds, cursor: .arrow)
+    }
+
+    /// The cursor set while over the text must not follow the pointer out to the toolbar.
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        NSCursor.arrow.set()
     }
 
     /// Shape layers animate path changes by default; selections and search flashes must just appear.
@@ -1530,6 +1660,10 @@ final class SplitPDFView: NSView {
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
         presenter?.mouseDown(at: convert(event.locationInWindow, from: nil), clicks: event.clickCount)
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        presenter?.contextMenu(at: convert(event.locationInWindow, from: nil)) ?? super.menu(for: event)
     }
 
     override func mouseDragged(with event: NSEvent) {

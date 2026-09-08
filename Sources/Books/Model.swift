@@ -71,7 +71,11 @@ final class LibraryModel {
     private(set) var books: [Book] = []
     private(set) var collections: [BookCollection] = []
     var settings: Settings {
-        didSet { store.settings = settings; try? store.saveSettings() }
+        didSet {
+            store.settings = settings
+            try? store.saveSettings()
+            if oldValue.library != settings.library { refreshFolderSync(scanNow: settings.library.sync && settings.library.folder != nil && (!oldValue.library.sync || oldValue.library.folder != settings.library.folder)) }
+        }
     }
     private(set) var stats: ReadingStats
 
@@ -86,6 +90,11 @@ final class LibraryModel {
     var renamingCollection: BookCollection?
     var importProgress: (done: Int, total: Int)?
     var error: String?
+    /// What the last scan of the library folder found.
+    var libraryFolderStatus: String?
+    @ObservationIgnored private var folderWatcher: FolderWatcher?
+    @ObservationIgnored private var folderScanTimer: Timer?
+    @ObservationIgnored private var scanningFolder = false
     /// Decoded covers. Filled while views draw, so it must stay outside observation: a tracked write during a
     /// SwiftUI update is undefined behaviour and has crashed the shelf.
     @ObservationIgnored private var coverCache: [UUID: NSImage] = [:]
@@ -311,30 +320,58 @@ final class LibraryModel {
     func chooseFiles() {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = true
-        panel.canChooseDirectories = false
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = true
         panel.allowedContentTypes = LibraryModel.readableTypes
-        panel.message = "Add EPUB, Kindle (MOBI, AZW3), PDF or text files to your library"
+        panel.message = "Add EPUB, Kindle (MOBI, AZW3), PDF or text files — or folders of them, searched through — to your library"
         panel.prompt = "Add"
+        let collections = NSButton(checkboxWithTitle: "Make collections from the folders' subfolders", target: nil, action: nil)
+        collections.state = settings.library.importCollections ? .on : .off
+        panel.accessoryView = collections
+        panel.isAccessoryViewDisclosed = true
         guard panel.runModal() == .OK else { return }
+        settings.library.importCollections = collections.state == .on
         importFiles(panel.urls)
     }
 
-    /// Adds files in the background, one at a time, reporting progress; duplicates are skipped silently.
-    func importFiles(_ urls: [URL], quiet: Bool = false, allowDuplicates: Bool = false, completion: (([Book]) -> Void)? = nil) {
-        let files = urls.filter { LibraryStore.readableExtensions.contains($0.pathExtension.lowercased()) || (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == false }
+    /// What to add from files and folders chosen or dropped: files as they are, folders searched through, each
+    /// file with the first-level subfolder it lies in.
+    private func expand(_ urls: [URL]) -> [(url: URL, folder: String?)] {
+        var out: [(url: URL, folder: String?)] = []
+        for url in urls {
+            let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey])
+            if values?.isDirectory == true, values?.isPackage != true {
+                for entry in FolderScan.files(in: url) { out.append((entry.url, entry.folder)) }
+            } else {
+                out.append((url, nil))
+            }
+        }
+        return out
+    }
+
+    /// Adds files in the background, one at a time, reporting progress; duplicates are skipped silently. Folders are
+    /// searched through, and when asked their subfolders become collections (an existing one of the same name in
+    /// any case is used).
+    func importFiles(_ urls: [URL], quiet: Bool = false, allowDuplicates: Bool = false, collections: Bool? = nil, completion: (([Book]) -> Void)? = nil) {
+        let files = expand(urls)
         guard !files.isEmpty else { return }
+        let makeCollections = collections ?? settings.library.importCollections
         importProgress = (0, files.count)
         let store = self.store
         Task.detached(priority: .userInitiated) {
             var added: [Book] = []
             var failures: [String] = []
             var skipped = 0
-            for (i, url) in files.enumerated() {
+            for (i, file) in files.enumerated() {
+                let url = file.url
                 do {
+                    let book: Book
                     switch try store.importFile(at: url, allowDuplicates: allowDuplicates) {
-                    case .added(let book): added.append(book)
-                    case .duplicate: skipped += 1
+                    case .added(let b): added.append(b); book = b
+                    case .duplicate(let b): skipped += 1; book = b
                     }
+                    store.setSource(url.path, for: book.id)
+                    if makeCollections, let folder = file.folder { LibraryModel.place(book.id, from: nil, inCollectionNamed: folder, store: store) }
                 } catch {
                     failures.append("\(url.lastPathComponent): \(error.localizedDescription)")
                 }
@@ -354,6 +391,103 @@ final class LibraryModel {
                     if !result.0.isEmpty, self.sidebarSelection == .home || self.sidebarSelection == nil { self.sidebarSelection = .all }
                 }
                 completion?(result.0)
+            }
+        }
+    }
+}
+
+// MARK: - The library folder
+
+extension LibraryModel {
+    /// Puts a book in the collection a subfolder names, making the collection when there is none of that name
+    /// (in any case); when it came from another subfolder before, it leaves that one's collection.
+    nonisolated static func place(_ id: UUID, from previousFolder: String?, inCollectionNamed folder: String?, store: LibraryStore) {
+        if let previousFolder, previousFolder.compare(folder ?? "", options: .caseInsensitive) != .orderedSame, let old = store.collection(named: previousFolder), old.bookIDs.contains(id) {
+            store.remove([id], from: old.id)
+        }
+        guard let folder, !folder.isEmpty else { return }
+        let collection = store.collection(named: folder) ?? store.addCollection(named: folder)
+        if !collection.bookIDs.contains(id) { store.add([id], to: collection.id) }
+    }
+
+    func chooseLibraryFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.message = "Choose the folder whose books — and whose subfolders' books — belong in the library"
+        panel.prompt = "Choose"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        settings.library.folder = url.standardizedFileURL.resolvingSymlinksInPath().path
+        scanLibraryFolder(manual: true)
+    }
+
+    func clearLibraryFolder() {
+        settings.library.folder = nil
+        libraryFolderStatus = nil
+    }
+
+    /// Watches the library folder while sync is on (and scans now when asked), stops when it is off or gone.
+    func refreshFolderSync(scanNow: Bool) {
+        folderWatcher = nil
+        folderScanTimer?.invalidate()
+        guard let path = settings.library.folder else { return }
+        if settings.library.sync {
+            folderWatcher = FolderWatcher(path: path) { [weak self] in self?.libraryFolderChanged() }
+        }
+        if scanNow { scanLibraryFolder(manual: false) }
+    }
+
+    private func libraryFolderChanged() {
+        folderScanTimer?.invalidate()
+        folderScanTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: false) { [weak self] _ in
+            Task { @MainActor in self?.scanLibraryFolder(manual: false) }
+        }
+    }
+
+    /// Takes in what the library folder holds that the library does not (a book already in the library from
+    /// elsewhere is recognised, not doubled), and, when asked, puts every book in the collection its subfolder
+    /// names — a file moved to another subfolder moves with it. Files gone from the folder leave their books be.
+    func scanLibraryFolder(manual: Bool, completion: ((_ added: Int, _ scanned: Int) -> Void)? = nil) {
+        guard let path = settings.library.folder, !scanningFolder else { completion?(0, 0); return }
+        let root = URL(fileURLWithPath: path)
+        let wantCollections = settings.library.syncCollections
+        scanningFolder = true
+        if manual { libraryFolderStatus = "Scanning…" }
+        let store = self.store
+        Task.detached(priority: .utility) {
+            let entries = FolderScan.files(in: root)
+            var added = 0
+            var failures: [String] = []
+            for entry in entries {
+                let sourcePath = entry.url.path
+                var book = store.book(withSource: sourcePath)
+                var previousFolder: String?
+                if book == nil {
+                    do {
+                        switch try store.importFile(at: entry.url, allowDuplicates: false) {
+                        case .added(let b): book = b; added += 1
+                        case .duplicate(let b): book = b; previousFolder = b.source.flatMap { FolderScan.folder(of: $0, under: path) }
+                        }
+                    } catch {
+                        failures.append("\(entry.relativePath): \(error.localizedDescription)")
+                        continue
+                    }
+                    if let b = book { store.setSource(sourcePath, for: b.id) }
+                }
+                guard let book else { continue }
+                if wantCollections { LibraryModel.place(book.id, from: previousFolder, inCollectionNamed: entry.folder, store: store) }
+            }
+            let result = (added: added, scanned: entries.count, failures: failures)
+            await MainActor.run {
+                self.scanningFolder = false
+                self.reload()
+                let time = Date().formatted(date: .omitted, time: .shortened)
+                var status = "Scanned at \(time): \(result.scanned) files, \(result.added) added"
+                if !result.failures.isEmpty { status += ", \(result.failures.count) not readable" }
+                self.libraryFolderStatus = status
+                if manual, !result.failures.isEmpty { self.error = result.failures.joined(separator: "\n") }
+                completion?(result.added, result.scanned)
             }
         }
     }
