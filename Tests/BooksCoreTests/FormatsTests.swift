@@ -314,6 +314,8 @@ final class CoverLayoutTests: XCTestCase {
         let wide = CGSize(width: 400, height: 200)
         let fit = CoverLayout.rect(image: wide, box: box, style: CoverStyle(fit: .fit))
         XCTAssertEqual(fit, CGRect(x: 0, y: 100, width: 200, height: 100), "a wide picture fitted is centred in the box")
+        XCTAssertTrue(ReaderSettings().applying(BookView(themeBackgroundOnly: true)).themeBackgroundOnly, "a PDF's own choice lies over the settings")
+        XCTAssertFalse(ReaderSettings().applying(BookView()).themeBackgroundOnly)
         let tall = CoverLayout.rect(image: CGSize(width: 100, height: 400), box: box, style: CoverStyle(fit: .fit))
         XCTAssertEqual(tall, CGRect(x: 62.5, y: 0, width: 75, height: 300), "a tall picture fitted is centred across")
         XCTAssertEqual(CoverLayout.rect(image: CGSize(width: 0, height: 0), box: box, style: CoverStyle()), CGRect(x: 0, y: 0, width: 200, height: 300))
@@ -325,9 +327,12 @@ final class CoverLayoutTests: XCTestCase {
         let custom = CoverLayout.rect(image: wide, box: box, style: CoverStyle(fit: .custom, frame: CoverFrame(x: -0.5, y: 0.25, width: 2, height: 0.5)))
         XCTAssertEqual(custom, CGRect(x: -100, y: 75, width: 400, height: 150))
         XCTAssertEqual(CoverLayout.rect(image: wide, box: box, style: CoverStyle(fit: .custom)), fill, "a custom placement starts as filling")
-        XCTAssertEqual(CoverLayout.naturalHeight(image: CGSize(width: 100, height: 160), width: 100, style: CoverStyle()), 160)
-        XCTAssertEqual(CoverLayout.naturalHeight(image: wide, width: 100, style: CoverStyle()), 120, "a fitted box is never flatter than 1.2")
-        XCTAssertEqual(CoverLayout.naturalHeight(image: wide, width: 100, style: CoverStyle(fit: .fill)), 150)
+        XCTAssertEqual(CoverLayout.naturalHeight(image: CGSize(width: 100, height: 160), width: 100, style: CoverStyle(fit: .fit)), 160)
+        XCTAssertEqual(CoverLayout.naturalHeight(image: wide, width: 100, style: CoverStyle(fit: .fit)), 120, "a fitted box is never flatter than 1.2")
+        XCTAssertEqual(CoverLayout.naturalHeight(image: wide, width: 100, style: CoverStyle()), 150, "filling is the usual look")
+        XCTAssertTrue(CoverStyle().isDefault)
+        XCTAssertFalse(CoverStyle(fit: .fit).isDefault)
+        XCTAssertEqual(CoverLayout.rect(image: wide, box: box, style: CoverStyle()), fill)
         let clamped = CoverLayout.clamped(CoverFrame(x: 5, y: -9, width: 0.01, height: 40))
         XCTAssertEqual(clamped.width, 0.1)
         XCTAssertEqual(clamped.height, 20)
@@ -539,5 +544,34 @@ final class HomeDataTests: XCTestCase {
         let partial = HomeSettings(order: [.statistics])
         XCTAssertEqual(partial.elements.first, .statistics)
         XCTAssertEqual(partial.elements.count, HomeElement.allCases.count, "pieces the order does not name follow it")
+    }
+}
+
+final class GenreDatabaseTests: XCTestCase {
+    func testTableLookups() {
+        let csv = """
+        # key,subjects
+        isbn,subjects
+        978-0-14-044913-6,Fiction; Classics
+        urn:isbn:0140449132,Science Fiction
+        Dune|Frank Herbert,Science fiction;Adventure
+        Walden,Nature; Essays
+        """
+        let table = GenreDatabase(csv: csv)
+        XCTAssertEqual(table.count, 4)
+        XCTAssertEqual(table.subjects(identifier: "urn:isbn:9780140449136", title: "x", author: "y"), ["Fiction", "Classics"], "hyphens and the urn prefix do not matter")
+        XCTAssertEqual(table.subjects(identifier: "0140449132", title: "x", author: "y"), ["Science Fiction"])
+        XCTAssertEqual(table.subjects(identifier: "", title: "DUNE", author: "frank  herbert"), ["Science fiction", "Adventure"], "title and author are matched loosely")
+        XCTAssertEqual(table.subjects(identifier: "", title: "Walden", author: "Henry David Thoreau"), ["Nature", "Essays"], "a title alone stands for any author")
+        XCTAssertEqual(table.subjects(identifier: "", title: "Nothing", author: ""), [])
+        XCTAssertEqual(Genres.genres(for: table.subjects(identifier: "", title: "Dune", author: "Frank Herbert")), ["Science Fiction", "Adventure"])
+        XCTAssertNil(GenreDatabase.isbn(in: "Dune|Frank Herbert"))
+        XCTAssertNil(GenreDatabase.isbn(in: "12345"))
+        XCTAssertEqual(GenreDatabase.isbn(in: "ISBN 0-14-044913-X"), "014044913x")
+        XCTAssertEqual(GenreDatabase.titleKey("  Émile  Zola ", "L'Assommoir"), "emile zola|l'assommoir")
+        var merged = GenreDatabase(csv: "Walden,Philosophy")
+        merged.merge(table)
+        XCTAssertEqual(merged.subjects(identifier: "", title: "Walden", author: ""), ["Nature", "Essays"], "a later table's line wins")
+        XCTAssertTrue(GenreDatabase(csv: "").isEmpty)
     }
 }

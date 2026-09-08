@@ -18,14 +18,19 @@ the authors you read; Recently Added; Recently Finished. Strips of books run the
 sidebar has a Library section (All, Finished, Books, PDFs) and a My Collections section, each in the order you drag
 its rows into — any row but All can be hidden from its context menu and brought back from the menu under the arrow
 that appears beside the section's name when the pointer is over it. Drag books onto Finished or a collection. Every
-shelf keeps its own view, sort and grouping: grid or list — the grid's cards are all one size, a 2:3 box with the
-artwork centred and fitted in it, scaled together with the toolbar slider or ⌥⌘+ and ⌥⌘−; the list is drawn by the
+shelf keeps its own view, sort and grouping: grid or list — the grid's cards are all one size, a 2:3 box the
+artwork fills (Get Info offers Fit, Stretch and Custom instead), scaled together with the toolbar slider or ⌥⌘+ and
+⌥⌘−; the list is drawn by the
 app itself (no table view: the system's crashed between collections), its column names sorting the shelf and a
 second click turning the order round. The Library's shelves group by collection (a book in several counts with the
-first; the rest under Not in a Collection), any shelf can group by genre, or not at all. Genres are read off the
-books' own subjects (an EPUB's dc:subject entries, a PDF's subject and keywords) by a table built into the app that
-folds "FICTION / Science Fiction / Space Opera", "sci-fi" and the like into a few dozen names; no catalogue is
-downloaded, and a book without subjects has no genre. Sort by recent, title, author, time read, percentage read,
+first; the rest under Not in a Collection), any shelf can group by genre, or not at all; a group's title floats
+over the shelf while that group is the greater part of what is shown, and fades as the next comes up. Genres are
+read off the books' own subjects (an EPUB's dc:subject entries, a PDF's subject and keywords) by a table built into
+the app that folds "FICTION / Science Fiction / Space Opera", "sci-fi" and the like into a few dozen names; no
+catalogue is downloaded, and a book without subjects has no genre — unless a `Genres.csv` of your own lies beside
+the library (Settings ▸ Library shows where) or in the library folder: one book a line, an ISBN or `title|author`,
+a comma, then subjects separated by semicolons. `tools/genres_from_openlibrary.py` writes one for a library's books
+from the free Open Library dumps (see its help). Sort by recent, title, author, time read, percentage read,
 pages read or length, ascending or descending — each sort starts in its natural direction — and search by title,
 author and subject. Time, pages and chapters read (a chapter counts when you read to its end) are counted per book
 as well as per day. Get Info edits title and author (Reset to Original puts back what the file came with) and the
@@ -79,8 +84,8 @@ edge. The reading position, statistics (minutes per day, streaks, books per year
 
 **Wheel and keys.** A notch of a mouse wheel — or a tilt of the wheel, or ⇧ + wheel — is exactly one page in
 paginated mode, handled by the app before WebKit sees it; a two-finger swipe is one page, its inertial tail ignored.
-Themes can colour only what lies around the pages (Theme the Background Only, under the themes): PDF pages
-and the pictures in books stay as printed. Arrow keys, space, Page Up/Down, Home and End move too; ⌘] and ⌘[ jump chapters, ⌘+ and ⌘− change the text size (zoom,
+For a PDF, the theme can colour only what lies around the pages (Theme the Background Only, under the themes, a
+choice kept with that PDF): its pages stay as printed. Arrow keys, space, Page Up/Down, Home and End move too; ⌘] and ⌘[ jump chapters, ⌘+ and ⌘− change the text size (zoom,
 for PDFs). In vertical scrolling a notch scrolls the text by the system's line distance.
 
 ## Install

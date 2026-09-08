@@ -139,7 +139,11 @@ final class ReaderSession {
         self.model = model
         view = book.view ?? BookView()
         usesPDFView = book.kind == .pdf && ReaderSession.pdfLayout(of: book, in: model.settings.reader) != .text
-        annotations = model.store.annotations(for: book.id)
+        // Records made before highlights were joined along their lines may hold a rectangle a word: joined now.
+        let loaded = model.store.annotations(for: book.id)
+        let joined = loaded.map(PDFPresenter.joinedRecord)
+        annotations = joined
+        if joined != loaded { model.store.saveAnnotations(joined, for: book.id) }
         schemeHandler.bookURL = model.store.fileURL(for: book)
 
         let configuration = WKWebViewConfiguration()

@@ -17,7 +17,7 @@ struct InfoSheet: View {
         _frame = State(initialValue: book.coverStyle?.frame)
     }
 
-    private var fit: CoverFit { draft.coverStyle?.fit ?? .fit }
+    private var fit: CoverFit { draft.coverStyle?.fit ?? .fill }
     /// The book as it is now on disk, for the cover: the picture may have been swapped while the sheet is up.
     private var current: Book { model.book(draft.id) ?? draft }
     private var image: NSImage? { model.cover(for: current) }
@@ -260,6 +260,8 @@ struct SettingsView: View {
                     Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([model.store.directory]) }
                     Button("Export Highlights and Notes…") { exportAnnotations() }
                     Toggle("Make collections from subfolders when adding folders", isOn: $model.settings.library.importCollections)
+                    LabeledContent("Genre table", value: model.genreDatabase.isEmpty ? "None — put a Genres.csv beside the library (tools/genres_from_openlibrary.py makes one)" : "\(Format.plural(model.genreDatabase.count, "book")) from \(model.genreDatabaseFiles.map(\.lastPathComponent).joined(separator: ", "))")
+                    Button("Reload Genre Table") { model.reloadGenreDatabase() }
                 }
                 Section("Library Folder") {
                     if let folder = model.settings.library.folder {

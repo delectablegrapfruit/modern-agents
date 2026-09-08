@@ -112,6 +112,9 @@ final class LibraryModel {
     /// Decoded covers. Filled while views draw, so it must stay outside observation: a tracked write during a
     /// SwiftUI update is undefined behaviour and has crashed the shelf.
     @ObservationIgnored private var coverCache: [UUID: NSImage] = [:]
+    /// Genres.csv beside the library and in the library folder, for books whose subjects say too little.
+    private(set) var genreDatabase = GenreDatabase()
+    private(set) var genreDatabaseFiles: [URL] = []
 
     init(store: LibraryStore = LibraryStore()) {
         self.store = store
@@ -121,6 +124,36 @@ final class LibraryModel {
         stats = store.stats
         store.pdfInspector = { url in PDFInspector.inspect(url) }
         store.svgRasterizer = { svg in Rasterizer.png(fromSVG: svg) }
+        reloadGenreDatabase()
+    }
+
+    // MARK: - Genres
+
+    /// Where a Genres.csv is looked for: beside the library, and in the library folder when one is set.
+    var genreDatabaseLocations: [URL] {
+        var urls = [store.directory.appendingPathComponent("Genres.csv")]
+        if let folder = settings.library.folder { urls.append(URL(fileURLWithPath: folder).appendingPathComponent("Genres.csv")) }
+        return urls
+    }
+
+    /// Reads the genre tables again; a later file's line for a book wins.
+    func reloadGenreDatabase() {
+        var merged = GenreDatabase()
+        var found: [URL] = []
+        for url in genreDatabaseLocations {
+            guard let table = GenreDatabase.load(from: url) else { continue }
+            merged.merge(table)
+            found.append(url)
+        }
+        genreDatabase = merged
+        genreDatabaseFiles = found
+    }
+
+    /// A book's genres: what your table says of it first, then what its own subjects say.
+    func genres(of book: Book) -> [String] {
+        var genres = Genres.genres(for: genreDatabase.subjects(identifier: book.metadata.identifier, title: book.title, author: book.author))
+        for genre in book.genres where !genres.contains(genre) { genres.append(genre) }
+        return genres
     }
 
     func flush() {
@@ -265,7 +298,7 @@ final class LibraryModel {
         var byGenre: [String: [Book]] = [:]
         var rest: [Book] = []
         for book in books {
-            if let genre = book.genres.first { byGenre[genre, default: []].append(book) } else { rest.append(book) }
+            if let genre = genres(of: book).first { byGenre[genre, default: []].append(book) } else { rest.append(book) }
         }
         var groups = byGenre.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }.map { ShelfGroup(id: "genre:" + $0, name: $0, books: byGenre[$0] ?? []) }
         if !rest.isEmpty { groups.append(ShelfGroup(id: "rest", name: "No Genre", books: rest)) }
@@ -310,7 +343,7 @@ final class LibraryModel {
         let read = books.filter { $0.hasStarted || $0.isFinished }
         guard !read.isEmpty else { return [] }
         var genreWeight: [String: Int] = [:]
-        for book in read { for genre in book.genres { genreWeight[genre, default: 0] += 1 } }
+        for book in read { for genre in genres(of: book) { genreWeight[genre, default: 0] += 1 } }
         let authors = Set(read.map { $0.author.lowercased() }.filter { !$0.isEmpty && $0 != "unknown author" && $0 != "pdf document" })
         var scored: [(Suggestion, Int)] = []
         for book in books where book.isNew && !book.isFinished {
@@ -320,7 +353,7 @@ final class LibraryModel {
                 score += 3
                 reason = "More by \(book.author)"
             }
-            let shared = book.genres.filter { genreWeight[$0] != nil }.sorted { genreWeight[$0] ?? 0 > genreWeight[$1] ?? 0 }
+            let shared = genres(of: book).filter { genreWeight[$0] != nil }.sorted { genreWeight[$0] ?? 0 > genreWeight[$1] ?? 0 }
             score += shared.reduce(0) { $0 + (genreWeight[$1] ?? 0) }
             if reason == nil, let genre = shared.first { reason = "Because you read \(genre)" }
             if let reason, score > 0 { scored.append((Suggestion(book: book, reason: reason), score)) }
@@ -675,6 +708,7 @@ extension LibraryModel {
     /// elsewhere is recognised, not doubled), and, when asked, puts every book in the collection its subfolder
     /// names — a file moved to another subfolder moves with it. Files gone from the folder leave their books be.
     func scanLibraryFolder(manual: Bool, completion: ((_ added: Int, _ scanned: Int) -> Void)? = nil) {
+        reloadGenreDatabase()
         guard let path = settings.library.folder, !scanningFolder else { completion?(0, 0); return }
         let root = URL(fileURLWithPath: path)
         let wantCollections = settings.library.syncCollections

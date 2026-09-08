@@ -408,15 +408,18 @@ public struct BookView: Codable, Hashable {
     public var pdfLayout: PDFLayout?
     /// Zoom & Split: the text size, 50–400%.
     public var pdfZoom: Int?
+    /// PDFs: the theme colours only what lies around the pages, which stay as printed.
+    public var themeBackgroundOnly: Bool?
 
-    public init(layout: ReaderLayout? = nil, spread: Spread? = nil, pdfLayout: PDFLayout? = nil, pdfZoom: Int? = nil) {
+    public init(layout: ReaderLayout? = nil, spread: Spread? = nil, pdfLayout: PDFLayout? = nil, pdfZoom: Int? = nil, themeBackgroundOnly: Bool? = nil) {
         self.layout = layout
         self.spread = spread
         self.pdfLayout = pdfLayout
         self.pdfZoom = pdfZoom
+        self.themeBackgroundOnly = themeBackgroundOnly
     }
 
-    public var isEmpty: Bool { layout == nil && spread == nil && pdfLayout == nil && pdfZoom == nil }
+    public var isEmpty: Bool { layout == nil && spread == nil && pdfLayout == nil && pdfZoom == nil && themeBackgroundOnly == nil }
 }
 
 /// How a PDF is shown: whole pages; pages zoomed to their text and cut into screens that turn like pages; or the
@@ -447,7 +450,8 @@ public enum WheelSensitivity: String, Codable, CaseIterable, Hashable {
 public struct ReaderSettings: Codable, Hashable {
     public var theme: Theme = .original
     public var autoNight = true
-    /// The theme colours only what lies around the pages: PDF pages and pictures stay as printed.
+    /// PDFs: the theme colours only what lies around the pages, which stay as printed. A book's own choice, kept
+    /// in its BookView, lies over this.
     public var themeBackgroundOnly = false
     public var font: ReaderFont = .original
     /// Percent of the book's own size.
@@ -484,6 +488,7 @@ public struct ReaderSettings: Codable, Hashable {
         if let v = view.spread { s.spread = v }
         if let v = view.pdfLayout { s.pdfLayout = v }
         if let v = view.pdfZoom { s.pdfZoom = min(400, max(50, v)) }
+        if let v = view.themeBackgroundOnly { s.themeBackgroundOnly = v }
         return s
     }
 
@@ -520,7 +525,7 @@ public struct ReaderSettings: Codable, Hashable {
     /// The settings object of the reader page's protocol.
     public func webSettings(systemIsDark: Bool) -> [String: Any] {
         [
-            "theme": effectiveTheme(systemIsDark: systemIsDark).rawValue, "themeBackgroundOnly": themeBackgroundOnly, "font": font.rawValue, "fontSize": fontSize,
+            "theme": effectiveTheme(systemIsDark: systemIsDark).rawValue, "font": font.rawValue, "fontSize": fontSize,
             "lineHeight": lineHeight.rawValue, "textWidth": textWidth.rawValue, "justify": justify, "hyphenate": hyphenate,
             "layout": layout.rawValue, "spread": spread.rawValue, "pageTurn": pageTurn.rawValue,
             "wheelTurnsPages": wheelTurnsPages, "wheelSensitivity": wheelSensitivity.rawValue, "wheelInvert": wheelInvert, "wheelHorizontal": wheelHorizontal,
@@ -567,12 +572,13 @@ public struct CoverStyle: Codable, Hashable {
     /// The placement for `.custom`; a filling one is used until the picture is moved.
     public var frame: CoverFrame?
 
-    public init(fit: CoverFit = .fit, frame: CoverFrame? = nil) {
+    /// Filling the box is the usual look; Fit, Stretch and Custom are chosen in Get Info.
+    public init(fit: CoverFit = .fill, frame: CoverFrame? = nil) {
         self.fit = fit
         self.frame = frame
     }
 
-    public var isDefault: Bool { fit == .fit }
+    public var isDefault: Bool { fit == .fill && frame == nil }
 }
 
 /// Lays a cover picture in its box.

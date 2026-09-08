@@ -59,7 +59,7 @@
   const SEARCH_BATCH = 40, SEARCH_MAX = 400;
 
   const DEFAULTS = {
-    theme: 'original', themeBackgroundOnly: false, font: 'original', fontSize: 100, lineHeight: 'normal', textWidth: 'medium',
+    theme: 'original', font: 'original', fontSize: 100, lineHeight: 'normal', textWidth: 'medium',
     justify: false, hyphenate: true, layout: 'paginated', spread: 'two', pageTurn: 'slide',
     wheelTurnsPages: true, wheelSensitivity: 'medium', wheelInvert: false, wheelHorizontal: true,
   };
@@ -233,8 +233,6 @@
       de.style.setProperty('--fg-3', t.dark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.25)');
       b.classList.toggle('theme-dark', !!t.dark); b.classList.toggle('theme-bold', !!t.bold);
       b.classList.toggle('theme-focus', !!t.focus); b.classList.toggle('keep-colors', !!t.keepColors);
-      // Pictures as printed: the dark themes' dimming of pictures is left off when the theme is for the background only.
-      b.classList.toggle('pictures-as-printed', !!this.settings.themeBackgroundOnly);
     },
     applyTextSettings() {
       const de = document.documentElement, b = document.body, s = this.settings;

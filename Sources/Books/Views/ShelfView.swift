@@ -11,6 +11,9 @@ struct ShelfView: View {
     @Environment(LibraryModel.self) private var model
     let item: SidebarItem
     @State private var confirmDelete: [Book] = []
+    /// Where each group lies against the visible shelf, for the floating title.
+    @State private var groupFrames: [String: CGRect] = [:]
+    @State private var viewportHeight: CGFloat = 0
 
     private var books: [Book] { model.books(for: item) }
     private var collectionID: UUID? { if case .collection(let id) = item { return id } else { return nil } }
@@ -81,22 +84,26 @@ struct ShelfView: View {
     private var grid: some View {
         ScrollView {
             if let groups {
-                LazyVStack(alignment: .leading, spacing: 0, pinnedViews: .sectionHeaders) {
+                LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(groups) { group in
-                        Section {
+                        VStack(alignment: .leading, spacing: 0) {
+                            groupHeader(group, inset: 36)
                             cards(group.books)
                                 .padding(.horizontal, 28)
                                 .padding(.top, 12)
                                 .padding(.bottom, 28)
-                        } header: {
-                            groupHeader(group, inset: 36)
                         }
+                        .reportGroupFrame(group.id)
                     }
                 }
             } else {
                 cards(books).padding(28)
             }
         }
+        .floatingGroupTitle(groups: groups, frames: groupFrames, viewportHeight: viewportHeight, inset: 36)
+        .coordinateSpace(name: "shelf")
+        .onPreferenceChange(GroupFramesKey.self) { groupFrames = $0 }
+        .background(ViewportHeightReader(height: $viewportHeight))
         .background(Color.clear.contentShape(Rectangle()).onTapGesture { model.selectedBookIDs = [] })
         .focusable()
         .focusEffectDisabled()
@@ -121,14 +128,7 @@ struct ShelfView: View {
     }
 
     private func groupHeader(_ group: ShelfGroup, inset: CGFloat) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(group.name).font(.title3.weight(.semibold))
-            Text(Format.plural(group.books.count, "book")).font(.callout).foregroundStyle(.secondary)
-            Spacer()
-        }
-        .padding(.horizontal, inset)
-        .padding(.vertical, 8)
-        .background(.bar)
+        GroupTitle(group: group, inset: inset)
     }
 
     private func select(_ book: Book) {
@@ -177,14 +177,14 @@ struct ShelfView: View {
                 ListHeader(item: item, widths: widths)
                 Divider()
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0, pinnedViews: .sectionHeaders) {
+                    LazyVStack(alignment: .leading, spacing: 0) {
                         if let groups {
                             ForEach(groups) { group in
-                                Section {
-                                    rows(group.books, widths: widths)
-                                } header: {
+                                VStack(alignment: .leading, spacing: 0) {
                                     groupHeader(group, inset: ListColumns.inset)
+                                    rows(group.books, widths: widths)
                                 }
+                                .reportGroupFrame(group.id)
                             }
                         } else {
                             rows(books, widths: widths)
@@ -192,6 +192,10 @@ struct ShelfView: View {
                     }
                     .padding(.bottom, 20)
                 }
+                .floatingGroupTitle(groups: groups, frames: groupFrames, viewportHeight: viewportHeight, inset: ListColumns.inset)
+                .coordinateSpace(name: "shelf")
+                .onPreferenceChange(GroupFramesKey.self) { groupFrames = $0 }
+                .background(ViewportHeightReader(height: $viewportHeight))
                 .background(Color.clear.contentShape(Rectangle()).onTapGesture { model.selectedBookIDs = [] })
             }
         }
@@ -215,6 +219,90 @@ struct ShelfView: View {
                 }
                 .draggable(BookDrag.payload(book.id))
         }
+    }
+}
+
+/// A group's name and count, as the heading of its books and as the title floating over them.
+struct GroupTitle: View {
+    let group: ShelfGroup
+    let inset: CGFloat
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(group.name).font(.title3.weight(.semibold))
+            Text(Format.plural(group.books.count, "book")).font(.callout).foregroundStyle(.secondary)
+            Spacer()
+        }
+        .padding(.horizontal, inset)
+        .padding(.vertical, 8)
+        .background(.bar)
+    }
+
+    static let height: CGFloat = 40
+}
+
+/// Where the groups of a shelf lie against its visible part, by group id, in the "shelf" coordinate space.
+struct GroupFramesKey: PreferenceKey {
+    static var defaultValue: [String: CGRect] { [:] }
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue()) { $1 }
+    }
+}
+
+/// The height of the shelf's visible part.
+struct ViewportHeightReader: View {
+    @Binding var height: CGFloat
+
+    var body: some View {
+        GeometryReader { geo in
+            Color.clear
+                .onAppear { height = geo.size.height }
+                .onChange(of: geo.size.height) { _, new in height = new }
+        }
+    }
+}
+
+extension View {
+    /// Reports where a group lies in the shelf, for the floating title.
+    func reportGroupFrame(_ id: String) -> some View {
+        background(GeometryReader { geo in
+            Color.clear.preference(key: GroupFramesKey.self, value: [id: geo.frame(in: .named("shelf"))])
+        })
+    }
+
+    /// The title of the group that fills most of the shelf, floating over its top edge once the group's own
+    /// heading has scrolled away — and only while that group is the greater part of what is shown, so a title
+    /// fades out as the next group comes up and the next fades in when it takes over, never two meeting.
+    func floatingGroupTitle(groups: [ShelfGroup]?, frames: [String: CGRect], viewportHeight: CGFloat, inset: CGFloat) -> some View {
+        let floating = ShelfView.floatingGroup(groups: groups, frames: frames, viewportHeight: viewportHeight)
+        return overlay(alignment: .top) {
+            if let floating {
+                GroupTitle(group: floating, inset: inset)
+                    .shadow(color: .black.opacity(0.1), radius: 4, y: 2)
+                    .transition(.opacity)
+                    .id(floating.id)
+                    .allowsHitTesting(false)
+            }
+        }
+        .animation(.easeInOut(duration: 0.18), value: floating?.id)
+    }
+}
+
+extension ShelfView {
+    /// The group whose title floats: the one with the most of itself on show, once its own heading has scrolled
+    /// past the top and while it holds at least half of the visible shelf.
+    static func floatingGroup(groups: [ShelfGroup]?, frames: [String: CGRect], viewportHeight: CGFloat) -> ShelfGroup? {
+        guard let groups, viewportHeight > 0 else { return nil }
+        var best: ShelfGroup?
+        var bestVisible: CGFloat = 0
+        for group in groups {
+            guard let frame = frames[group.id] else { continue }
+            let visible = min(frame.maxY, viewportHeight) - max(frame.minY, 0)
+            if visible > bestVisible { best = group; bestVisible = visible }
+        }
+        guard let best, let frame = frames[best.id] else { return nil }
+        guard frame.minY < -GroupTitle.height * 0.5, bestVisible >= viewportHeight * 0.5 else { return nil }
+        return best
     }
 }
 

@@ -275,9 +275,11 @@ struct AppearancePopover: View {
                 Text("Auto-Night Theme")
                 Text("Original in Light Mode, Focus in Dark Mode").font(.caption).foregroundStyle(.secondary)
             }
-            Toggle(isOn: Binding(get: { model.settings.reader.themeBackgroundOnly }, set: { model.settings.reader.themeBackgroundOnly = $0; session.applySettings() })) {
-                Text("Theme the Background Only")
-                Text("PDF pages and pictures stay as printed; the theme colours what lies around them").font(.caption).foregroundStyle(.secondary)
+            if session.book.kind == .pdf, session.usesPDFView {
+                Toggle(isOn: Binding(get: { session.reader.themeBackgroundOnly }, set: { on in session.setView { $0.themeBackgroundOnly = on }; session.applySettings() })) {
+                    Text("Theme the Background Only")
+                    Text("This PDF’s pages stay as printed; the theme colours what lies around them").font(.caption).foregroundStyle(.secondary)
+                }
             }
         }
     }

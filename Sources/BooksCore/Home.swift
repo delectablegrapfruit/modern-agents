@@ -92,6 +92,75 @@ public enum Genres {
     }
 }
 
+/// A table of your own for books whose subjects say too little: Genres.csv beside the library (and in the library
+/// folder, if one is set), one book a line — an ISBN, or `title|author`, then a comma and the subjects or genres
+/// separated by semicolons. Subjects are folded through the built-in table like a book's own. Such a file can be
+/// made from the Open Library dumps with tools/genres_from_openlibrary.py.
+public struct GenreDatabase {
+    public private(set) var byISBN: [String: [String]] = [:]
+    public private(set) var byTitle: [String: [String]] = [:]
+    public var count: Int { byISBN.count + byTitle.count }
+    public var isEmpty: Bool { byISBN.isEmpty && byTitle.isEmpty }
+
+    public init() {}
+
+    public init(csv: String) {
+        for rawLine in csv.split(whereSeparator: { $0 == "\n" || $0 == "\r\n" }) {
+            let line = rawLine.trimmingCharacters(in: .whitespaces)
+            guard !line.isEmpty, !line.hasPrefix("#"), let comma = line.firstIndex(of: ",") else { continue }
+            let key = line[..<comma].trimmingCharacters(in: .whitespaces)
+            let subjects = line[line.index(after: comma)...].split(separator: ";").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+            guard !subjects.isEmpty else { continue }
+            if let isbn = GenreDatabase.isbn(in: key) {
+                byISBN[isbn] = subjects
+            } else if key.contains("|") {
+                let parts = key.split(separator: "|", maxSplits: 1).map(String.init)
+                byTitle[GenreDatabase.titleKey(parts[0], parts.count > 1 ? parts[1] : "")] = subjects
+            } else if key.lowercased() != "key" && key.lowercased() != "isbn" {
+                byTitle[GenreDatabase.titleKey(key, "")] = subjects
+            }
+        }
+    }
+
+    /// The file at the URL, or nil when there is none or it cannot be read.
+    public static func load(from url: URL) -> GenreDatabase? {
+        guard let data = try? Data(contentsOf: url), let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) else { return nil }
+        return GenreDatabase(csv: text)
+    }
+
+    /// Several files together; a later one's line for a book wins.
+    public mutating func merge(_ other: GenreDatabase) {
+        byISBN.merge(other.byISBN) { $1 }
+        byTitle.merge(other.byTitle) { $1 }
+    }
+
+    /// The subjects the table has for a book, by its ISBN first, then by title and author, then by title alone.
+    public func subjects(identifier: String, title: String, author: String) -> [String] {
+        if let isbn = GenreDatabase.isbn(in: identifier), let found = byISBN[isbn] { return found }
+        if let found = byTitle[GenreDatabase.titleKey(title, author)] { return found }
+        if let found = byTitle[GenreDatabase.titleKey(title, "")] { return found }
+        return []
+    }
+
+    /// The digits of an ISBN-10 or ISBN-13 in a string such as "urn:isbn:978-0-14-044913-6", or nil.
+    public static func isbn(in text: String) -> String? {
+        let lowered = text.lowercased()
+        let start = lowered.range(of: "isbn").map { lowered[$0.upperBound...] } ?? Substring(lowered)
+        let digits = start.filter { $0.isNumber || $0 == "x" }
+        guard digits.count == 10 || digits.count == 13, start.filter({ $0.isLetter && $0 != "x" }).isEmpty else { return nil }
+        return String(digits)
+    }
+
+    /// Title and author folded to lower case without accents, spaces squeezed.
+    public static func titleKey(_ title: String, _ author: String) -> String {
+        func fold(_ s: String) -> String {
+            s.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil).split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        }
+        let a = fold(author)
+        return a.isEmpty ? fold(title) : fold(title) + "|" + a
+    }
+}
+
 // MARK: - Goal periods
 
 /// The stretch a pages or chapters goal is set for.

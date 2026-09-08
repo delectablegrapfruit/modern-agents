@@ -398,6 +398,21 @@ enum SelfTest {
         model.update(renamed)
         log("genres: Science Fiction and Mystery & Crime from the subjects; original title and author found again")
 
+        // A Genres.csv beside the library names a genre the subjects did not; its line comes first.
+        let tableURL = model.store.directory.appendingPathComponent("Genres.csv")
+        let hadTable = FileManager.default.fileExists(atPath: tableURL.path)
+        let earlier = hadTable ? try? Data(contentsOf: tableURL) : nil
+        defer {
+            if let earlier { try? earlier.write(to: tableURL) } else { try? FileManager.default.removeItem(at: tableURL) }
+            model.reloadGenreDatabase()
+        }
+        try "Shelf Long|Shelf Test,Classics; Adventure stories\n".write(to: tableURL, atomically: true, encoding: .utf8)
+        model.reloadGenreDatabase()
+        guard !model.genreDatabase.isEmpty, let longNow = model.book(long.id), model.genres(of: longNow) == ["Classics", "Adventure", "Science Fiction"] else {
+            throw Failure("the genre table was not read: \(model.book(long.id).map { model.genres(of: $0) } ?? [])")
+        }
+        log("genre table: Classics and Adventure from Genres.csv, then the book's own Science Fiction")
+
         // The shelves grouped: a collection holding one of the two, the other among the rest; Books (EPUBs) groups the
         // same way; a collection's own shelf never groups by collection; grouping by genre works on any shelf; a
         // shelf can choose not to group.

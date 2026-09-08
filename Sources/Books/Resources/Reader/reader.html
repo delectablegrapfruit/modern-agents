@@ -44,8 +44,7 @@ body.theme-bold .books-section :is(p, li, dd, dt, td, th, blockquote, figcaption
 body.theme-focus .books-section { letter-spacing: 0.01em; word-spacing: 0.06em; }
 body:not(.keep-colors) .books-section, body:not(.keep-colors) .books-section *:not(.books-hl):not(img):not(svg):not(svg *) { color: var(--fg) !important; background-color: transparent !important; border-color: var(--fg-3) !important; text-shadow: none !important; }
 body:not(.keep-colors) .books-section a, body:not(.keep-colors) .books-section a * { color: var(--accent) !important; }
-body.theme-dark:not(.pictures-as-printed) img { filter: brightness(0.92); }
-body.pictures-as-printed .books-section :is(img, svg, video, canvas, picture) { filter: none !important; opacity: 1 !important; mix-blend-mode: normal !important; }
+body.theme-dark img { filter: brightness(0.92); }
 a { color: var(--accent); }
 span.books-hl { background: var(--hl); color: inherit; border-radius: 2px; box-decoration-break: clone; -webkit-box-decoration-break: clone; padding: 0.06em 0; cursor: pointer; }
 span.books-hl.underline { background: transparent; border-bottom: 2px solid var(--hl); text-decoration: none; }

@@ -607,6 +607,27 @@ final class PDFPresenter: PDFReading {
         return out
     }
 
+    /// A highlight record with its rectangles joined along their lines, page by page; other records unchanged.
+    static func joinedRecord(_ record: Annotation) -> Annotation {
+        guard record.kind == .highlight, let rects = record.pdfRects, rects.count > 1 else { return record }
+        var byPage: [Int: [CGRect]] = [:]
+        var order: [Int] = []
+        for r in rects {
+            if byPage[r.page] == nil { order.append(r.page) }
+            byPage[r.page, default: []].append(CGRect(x: r.x, y: r.y, width: r.width, height: r.height))
+        }
+        var joined: [PDFRect] = []
+        for page in order {
+            for b in joinedAlongLines(byPage[page] ?? []).sorted(by: { $0.maxY > $1.maxY }) {
+                joined.append(PDFRect(page: page, x: b.minX, y: b.minY, width: b.width, height: b.height))
+            }
+        }
+        guard joined.count < rects.count else { return record }
+        var out = record
+        out.pdfRects = joined
+        return out
+    }
+
     static func highlightRecord(for selection: PDFSelection, in document: PDFDocument, color: HighlightColor, chapter: String) -> Annotation? {
         guard let text = selection.string, !text.isEmpty else { return nil }
         // One rectangle per line and page, the words' gaps included: PDFKit may hand a line back word by word.
