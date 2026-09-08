@@ -66,9 +66,10 @@ public struct Book: Codable, Identifiable, Hashable {
     public var view: BookView?
     /// Where the file came from, for books added from folders: a rescan knows them, and a move is followed.
     public var source: String?
-    /// Time spent reading this book, in seconds, and pages turned in it.
+    /// Time spent reading this book, in seconds, pages turned in it, and chapters read to their end.
     public var secondsRead: Int?
     public var pagesRead: Int?
+    public var chaptersRead: Int?
 
     public init(id: UUID = UUID(), title: String, author: String, kind: BookKind, fileName: String, fileSize: Int64, metadata: BookMetadata = BookMetadata(),
                 words: Int = 0, pageCount: Int? = nil, addedAt: Date = Date(), lastOpenedAt: Date? = nil, finishedAt: Date? = nil,
@@ -97,6 +98,8 @@ public struct Book: Codable, Identifiable, Hashable {
     public var coverReplaced: Bool { originalCoverFile != nil }
     /// The book's length as words: its own count, or about 300 a page for a PDF.
     public var lengthInWords: Int { words > 0 ? words : (pageCount ?? 0) * 300 }
+    /// The genres its subjects name, most particular first.
+    public var genres: [String] { Genres.genres(for: metadata.subjects) }
     /// 0…1
     public var progress: Double { min(1, max(0, (position?.percent ?? 0) / 100)) }
     public var hasStarted: Bool { (position?.percent ?? 0) > 0 }
@@ -209,11 +212,25 @@ public struct DailyReading: Codable, Hashable {
     public var day: String
     public var seconds: Int
     public var pages: Int
+    /// Chapters read to their end.
+    public var chapters: Int
 
-    public init(day: String, seconds: Int = 0, pages: Int = 0) {
+    public init(day: String, seconds: Int = 0, pages: Int = 0, chapters: Int = 0) {
         self.day = day
         self.seconds = seconds
         self.pages = pages
+        self.chapters = chapters
+    }
+
+    enum CodingKeys: String, CodingKey { case day, seconds, pages, chapters }
+
+    /// Days saved before chapters were counted still load.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        day = try c.decode(String.self, forKey: .day)
+        seconds = (try? c.decodeIfPresent(Int.self, forKey: .seconds)) ?? 0
+        pages = (try? c.decodeIfPresent(Int.self, forKey: .pages)) ?? 0
+        chapters = (try? c.decodeIfPresent(Int.self, forKey: .chapters)) ?? 0
     }
 }
 
@@ -222,21 +239,31 @@ public struct ReadingGoals: Codable, Hashable {
     public var yearlyBooks: Int
     /// Books to finish in a month.
     public var monthlyBooks: Int
+    /// Pages and chapters to read in each `period`.
+    public var pages: Int
+    public var chapters: Int
+    public var period: GoalPeriod
 
-    public init(dailyMinutes: Int = 5, yearlyBooks: Int = 12, monthlyBooks: Int = 1) {
+    public init(dailyMinutes: Int = 5, yearlyBooks: Int = 12, monthlyBooks: Int = 1, pages: Int = 250, chapters: Int = 7, period: GoalPeriod = .week) {
         self.dailyMinutes = dailyMinutes
         self.yearlyBooks = yearlyBooks
         self.monthlyBooks = monthlyBooks
+        self.pages = pages
+        self.chapters = chapters
+        self.period = period
     }
 
-    enum CodingKeys: String, CodingKey { case dailyMinutes, yearlyBooks, monthlyBooks }
+    enum CodingKeys: String, CodingKey { case dailyMinutes, yearlyBooks, monthlyBooks, pages, chapters, period }
 
-    /// Goals saved before the monthly one existed still load.
+    /// Goals saved before some of these existed still load.
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         dailyMinutes = (try? c.decodeIfPresent(Int.self, forKey: .dailyMinutes)) ?? 5
         yearlyBooks = (try? c.decodeIfPresent(Int.self, forKey: .yearlyBooks)) ?? 12
         monthlyBooks = (try? c.decodeIfPresent(Int.self, forKey: .monthlyBooks)) ?? 1
+        pages = (try? c.decodeIfPresent(Int.self, forKey: .pages)) ?? 250
+        chapters = (try? c.decodeIfPresent(Int.self, forKey: .chapters)) ?? 7
+        period = (try? c.decodeIfPresent(GoalPeriod.self, forKey: .period)) ?? .week
     }
 }
 
@@ -258,13 +285,14 @@ public struct ReadingStats: Codable, Hashable {
 
     public var totalPages: Int { days.reduce(0) { $0 + $1.pages } }
 
-    public mutating func add(seconds: Int, pages: Int = 0, on date: Date = Date()) {
+    public mutating func add(seconds: Int, pages: Int = 0, chapters: Int = 0, on date: Date = Date()) {
         let key = ReadingStats.dayKey(date)
         if let i = days.firstIndex(where: { $0.day == key }) {
             days[i].seconds += seconds
             days[i].pages += pages
+            days[i].chapters += chapters
         } else {
-            days.append(DailyReading(day: key, seconds: seconds, pages: pages))
+            days.append(DailyReading(day: key, seconds: seconds, pages: pages, chapters: chapters))
         }
     }
 
@@ -419,6 +447,8 @@ public enum WheelSensitivity: String, Codable, CaseIterable, Hashable {
 public struct ReaderSettings: Codable, Hashable {
     public var theme: Theme = .original
     public var autoNight = true
+    /// The theme colours only what lies around the pages: PDF pages and pictures stay as printed.
+    public var themeBackgroundOnly = false
     public var font: ReaderFont = .original
     /// Percent of the book's own size.
     public var fontSize = 100
@@ -442,7 +472,7 @@ public struct ReaderSettings: Codable, Hashable {
     public init() {}
 
     enum CodingKeys: String, CodingKey {
-        case theme, autoNight, font, fontSize, lineHeight, textWidth, justify, hyphenate, layout, spread, pageTurn
+        case theme, autoNight, themeBackgroundOnly, font, fontSize, lineHeight, textWidth, justify, hyphenate, layout, spread, pageTurn
         case wheelTurnsPages, wheelSensitivity, wheelInvert, wheelHorizontal, showPageNumbers, showChapterProgress, pdfLayout, pdfZoom
     }
 
@@ -462,6 +492,7 @@ public struct ReaderSettings: Codable, Hashable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         theme = (try? c.decodeIfPresent(Theme.self, forKey: .theme)) ?? .original
         autoNight = (try? c.decodeIfPresent(Bool.self, forKey: .autoNight)) ?? true
+        themeBackgroundOnly = (try? c.decodeIfPresent(Bool.self, forKey: .themeBackgroundOnly)) ?? false
         font = (try? c.decodeIfPresent(ReaderFont.self, forKey: .font)) ?? .original
         fontSize = (try? c.decodeIfPresent(Int.self, forKey: .fontSize)) ?? 100
         lineHeight = (try? c.decodeIfPresent(LineHeight.self, forKey: .lineHeight)) ?? .normal
@@ -489,7 +520,7 @@ public struct ReaderSettings: Codable, Hashable {
     /// The settings object of the reader page's protocol.
     public func webSettings(systemIsDark: Bool) -> [String: Any] {
         [
-            "theme": effectiveTheme(systemIsDark: systemIsDark).rawValue, "font": font.rawValue, "fontSize": fontSize,
+            "theme": effectiveTheme(systemIsDark: systemIsDark).rawValue, "themeBackgroundOnly": themeBackgroundOnly, "font": font.rawValue, "fontSize": fontSize,
             "lineHeight": lineHeight.rawValue, "textWidth": textWidth.rawValue, "justify": justify, "hyphenate": hyphenate,
             "layout": layout.rawValue, "spread": spread.rawValue, "pageTurn": pageTurn.rawValue,
             "wheelTurnsPages": wheelTurnsPages, "wheelSensitivity": wheelSensitivity.rawValue, "wheelInvert": wheelInvert, "wheelHorizontal": wheelHorizontal,
@@ -651,29 +682,48 @@ public struct LibraryFolderSettings: Codable, Hashable {
     }
 }
 
+/// What one shelf chose for itself; nil means the library-wide setting.
+public struct ShelfSettings: Codable, Hashable {
+    public var view: LibraryViewMode?
+    public var sort: LibrarySort?
+    public var sortAscending: Bool?
+    public var grouping: ShelfGrouping?
+
+    public init(view: LibraryViewMode? = nil, sort: LibrarySort? = nil, sortAscending: Bool? = nil, grouping: ShelfGrouping? = nil) {
+        self.view = view
+        self.sort = sort
+        self.sortAscending = sortAscending
+        self.grouping = grouping
+    }
+
+    public var isEmpty: Bool { view == nil && sort == nil && sortAscending == nil && grouping == nil }
+}
+
 public struct Settings: Codable, Hashable {
     public var reader = ReaderSettings()
     public var libraryView: LibraryViewMode = .grid
     public var sort: LibrarySort = .recent
     public var goals = ReadingGoals()
-    public var showContinueReading = true
-    public var showGoals = true
-    public var showStatistics = true
+    /// What Home shows, in what order.
+    public var home = HomeSettings()
     /// Sidebar rows in the user's order and the ones hidden, by key ("all", "finished", "collection:<id>", …).
     public var sidebarOrder: [String] = []
     public var sidebarHidden: [String] = []
     public var library = LibraryFolderSettings()
     /// The sort's direction; nil for the sort's own default.
     public var sortAscending: Bool?
-    /// The library's shelves (All, Books, PDFs, Finished) shown collection by collection.
-    public var groupByCollection = true
+    /// How the Library's shelves (All, Books, PDFs, Finished) are grouped unless a shelf chooses for itself.
+    public var shelfGrouping: ShelfGrouping = .collection
     /// Size of the covers in the grid, as a factor of the usual: 0.6 to 1.6.
     public var gridScale: Double = 1
+    /// What a shelf chose for itself — view, sort, direction, grouping — by sidebar key; the fields above stand
+    /// for shelves that have not chosen.
+    public var shelves: [String: ShelfSettings] = [:]
 
     public init() {}
 
-    enum CodingKeys: String, CodingKey { case reader, libraryView, sort, goals, showContinueReading, showGoals, showStatistics, sidebarOrder, sidebarHidden, library, sortAscending, groupByCollection, gridScale }
-    private enum LegacyKeys: String, CodingKey { case groupAllByCollection }
+    enum CodingKeys: String, CodingKey { case reader, libraryView, sort, goals, home, sidebarOrder, sidebarHidden, library, sortAscending, shelfGrouping, gridScale, shelves }
+    private enum LegacyKeys: String, CodingKey { case groupAllByCollection, groupByCollection, showContinueReading, showGoals, showStatistics }
 
     /// Missing or unknown values fall back to defaults, so settings written by another version still load.
     public init(from decoder: Decoder) throws {
@@ -682,16 +732,28 @@ public struct Settings: Codable, Hashable {
         libraryView = (try? c.decodeIfPresent(LibraryViewMode.self, forKey: .libraryView)) ?? .grid
         sort = (try? c.decodeIfPresent(LibrarySort.self, forKey: .sort)) ?? .recent
         goals = (try? c.decodeIfPresent(ReadingGoals.self, forKey: .goals)) ?? ReadingGoals()
-        showContinueReading = (try? c.decodeIfPresent(Bool.self, forKey: .showContinueReading)) ?? true
-        showGoals = (try? c.decodeIfPresent(Bool.self, forKey: .showGoals)) ?? true
-        showStatistics = (try? c.decodeIfPresent(Bool.self, forKey: .showStatistics)) ?? true
+        let legacy = try? decoder.container(keyedBy: LegacyKeys.self)
+        if let saved = try? c.decodeIfPresent(HomeSettings.self, forKey: .home) {
+            home = saved
+        } else {
+            // The three switches Home had before it could be arranged.
+            home = HomeSettings()
+            if (try? legacy?.decodeIfPresent(Bool.self, forKey: .showContinueReading)) == false { home.setShown(.continueReading, false) }
+            if (try? legacy?.decodeIfPresent(Bool.self, forKey: .showGoals)) == false { home.setShown(.goals, false) }
+            if (try? legacy?.decodeIfPresent(Bool.self, forKey: .showStatistics)) == false { home.setShown(.statistics, false) }
+        }
         sidebarOrder = (try? c.decodeIfPresent([String].self, forKey: .sidebarOrder)) ?? []
         sidebarHidden = (try? c.decodeIfPresent([String].self, forKey: .sidebarHidden)) ?? []
         library = (try? c.decodeIfPresent(LibraryFolderSettings.self, forKey: .library)) ?? LibraryFolderSettings()
         sortAscending = try? c.decodeIfPresent(Bool.self, forKey: .sortAscending)
-        let legacy = try? decoder.container(keyedBy: LegacyKeys.self)
-        groupByCollection = (try? c.decodeIfPresent(Bool.self, forKey: .groupByCollection)) ?? (try? legacy?.decodeIfPresent(Bool.self, forKey: .groupAllByCollection)) ?? true
+        if let grouping = try? c.decodeIfPresent(ShelfGrouping.self, forKey: .shelfGrouping) {
+            shelfGrouping = grouping
+        } else {
+            let byCollection = (try? legacy?.decodeIfPresent(Bool.self, forKey: .groupByCollection)) ?? (try? legacy?.decodeIfPresent(Bool.self, forKey: .groupAllByCollection)) ?? true
+            shelfGrouping = byCollection ? .collection : .none
+        }
         gridScale = Settings.clampedGridScale((try? c.decodeIfPresent(Double.self, forKey: .gridScale)) ?? 1)
+        shelves = (try? c.decodeIfPresent([String: ShelfSettings].self, forKey: .shelves)) ?? [:]
     }
 
     public static let gridScaleRange: ClosedRange<Double> = 0.6...1.6

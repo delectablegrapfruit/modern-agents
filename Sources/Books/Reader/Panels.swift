@@ -275,6 +275,10 @@ struct AppearancePopover: View {
                 Text("Auto-Night Theme")
                 Text("Original in Light Mode, Focus in Dark Mode").font(.caption).foregroundStyle(.secondary)
             }
+            Toggle(isOn: Binding(get: { model.settings.reader.themeBackgroundOnly }, set: { model.settings.reader.themeBackgroundOnly = $0; session.applySettings() })) {
+                Text("Theme the Background Only")
+                Text("PDF pages and pictures stay as printed; the theme colours what lies around them").font(.caption).foregroundStyle(.secondary)
+            }
         }
     }
 }
@@ -344,45 +348,66 @@ struct SearchPopover: View {
 
 /// The menu that appears over selected text: colours, underline, note, copy, look up — and Remove for an
 /// existing highlight.
+/// The menu over selected words or a tapped highlight: a row of colours (and Underline, and Remove for a
+/// highlight), then a row of actions with an icon each. Laid out at its own size, so nothing wraps.
 struct HighlightMenu: View {
     @Bindable var session: ReaderSession
     let existing: Annotation?
 
     var body: some View {
-        HStack(spacing: 10) {
-            ForEach([HighlightColor.yellow, .green, .blue, .pink, .purple], id: \.self) { color in
-                Button { apply(color) } label: {
-                    Circle()
-                        .fill(HighlightSwatch.color(color))
-                        .frame(width: 22, height: 22)
-                        .overlay(Circle().strokeBorder(.black.opacity(0.12), lineWidth: 0.5))
-                        .overlay { if existing?.color == color { Image(systemName: "checkmark").font(.caption2.bold()).foregroundStyle(.black.opacity(0.7)) } }
+        VStack(spacing: 8) {
+            HStack(spacing: 12) {
+                ForEach([HighlightColor.yellow, .green, .blue, .pink, .purple], id: \.self) { color in
+                    Button { apply(color) } label: {
+                        Circle()
+                            .fill(HighlightSwatch.color(color))
+                            .frame(width: 24, height: 24)
+                            .overlay(Circle().strokeBorder(.black.opacity(0.12), lineWidth: 0.5))
+                            .overlay { if existing?.color == color { Image(systemName: "checkmark").font(.caption2.bold()).foregroundStyle(.black.opacity(0.7)) } }
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(color.label)
+                }
+                Button { apply(.underline) } label: {
+                    Image(systemName: "underline")
+                        .font(.system(size: 13, weight: .medium))
+                        .frame(width: 24, height: 24)
+                        .background(Color.primary.opacity(0.06), in: Circle())
+                        .overlay { if existing?.color == .underline { Circle().strokeBorder(Color.accentColor, lineWidth: 1.5) } }
+                        .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
-                .help(color.label)
+                .help("Underline")
+                if let existing {
+                    Divider().frame(height: 18)
+                    Button { session.removeAnnotation(existing.id) } label: {
+                        Image(systemName: "trash")
+                            .font(.system(size: 13))
+                            .frame(width: 24, height: 24)
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(existing.color == .underline ? "Remove Underline" : "Remove Highlight")
+                }
             }
-            Button { apply(.underline) } label: {
-                Image(systemName: "underline").frame(width: 22, height: 22)
-                    .overlay { if existing?.color == .underline { Circle().strokeBorder(Color.accentColor, lineWidth: 1.5) } }
-            }
-            .buttonStyle(.plain)
-            .help("Underline")
-            Divider().frame(height: 18)
-            if let existing {
-                Button(existing.note.isEmpty ? "Add Note" : "Edit Note") { session.tappedHighlight = nil; session.editingNote = existing }
-                Button("Copy") { copy(existing.text) }
-                Button("Remove") { session.removeAnnotation(existing.id) }
-            } else if let sel = session.selection {
-                Button("Add Note") { session.pendingNoteAfterHighlight = true; session.highlightSelection(color: .yellow) }
-                Button("Copy") { copy(sel.text); session.clearSelection() }
-                Button("Look Up") { session.lookUpSelection() }
-                Button("Search") { session.searchQuery = sel.text; session.search(sel.text); session.clearSelection(); session.showSearch = true }
+            Divider()
+            HStack(spacing: 2) {
+                if let existing {
+                    MenuAction(title: existing.note.isEmpty ? "Add Note" : "Edit Note", symbol: "note.text") { session.tappedHighlight = nil; session.editingNote = existing }
+                    MenuAction(title: "Copy", symbol: "doc.on.doc") { copy(existing.text); session.tappedHighlight = nil }
+                    if !existing.note.isEmpty { MenuAction(title: "Remove Note", symbol: "note.text.badge.plus") { session.setNote("", for: existing.id) } }
+                } else if let sel = session.selection {
+                    MenuAction(title: "Add Note", symbol: "note.text") { session.pendingNoteAfterHighlight = true; session.highlightSelection(color: .yellow) }
+                    MenuAction(title: "Copy", symbol: "doc.on.doc") { copy(sel.text); session.clearSelection() }
+                    MenuAction(title: "Look Up", symbol: "character.book.closed") { session.lookUpSelection() }
+                    MenuAction(title: "Search", symbol: "magnifyingglass") { session.searchQuery = sel.text; session.search(sel.text); session.clearSelection(); session.showSearch = true }
+                }
             }
         }
-        .buttonStyle(.borderless)
-        .controlSize(.small)
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.vertical, 10)
+        .fixedSize()
     }
 
     private func apply(_ color: HighlightColor) {
@@ -392,6 +417,31 @@ struct HighlightMenu: View {
     private func copy(_ text: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+    }
+}
+
+/// One action of the highlight menu: an icon over a word, lit while the pointer is over it.
+struct MenuAction: View {
+    let title: String
+    let symbol: String
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 3) {
+                Image(systemName: symbol).font(.system(size: 14))
+                Text(title).font(.caption).lineLimit(1)
+            }
+            .fixedSize()
+            .frame(minWidth: 60)
+            .padding(.vertical, 5)
+            .padding(.horizontal, 6)
+            .background(hovering ? Color.primary.opacity(0.08) : Color.clear, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
     }
 }
 

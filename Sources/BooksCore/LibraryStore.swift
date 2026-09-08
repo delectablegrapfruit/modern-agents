@@ -60,6 +60,8 @@ public struct PDFInfo {
     public var pageCount: Int?
     public var cover: Data?
     public var coverMediaType: String?
+    /// The document's subject and keywords, for genres.
+    public var subjects: [String] = []
 
     public init(title: String? = nil, author: String? = nil, pageCount: Int? = nil, cover: Data? = nil, coverMediaType: String? = nil) {
         self.title = title
@@ -310,14 +312,38 @@ public final class LibraryStore {
 
     // MARK: - Statistics
 
-    public func recordReading(seconds: Int, pages: Int = 0, in bookID: UUID? = nil) {
-        stats.add(seconds: seconds, pages: pages)
+    public func recordReading(seconds: Int, pages: Int = 0, chapters: Int = 0, in bookID: UUID? = nil) {
+        stats.add(seconds: seconds, pages: pages, chapters: chapters)
         try? saveStats()
         if let bookID, let i = books.firstIndex(where: { $0.id == bookID }) {
             books[i].secondsRead = (books[i].secondsRead ?? 0) + seconds
             books[i].pagesRead = (books[i].pagesRead ?? 0) + pages
+            books[i].chaptersRead = (books[i].chaptersRead ?? 0) + chapters
             try? save()
         }
+    }
+
+    /// A title and author where the file gave none: the file name's, and a stand-in author.
+    static func fallbackDetails(title: String, author: String, fileName: String, kind: BookKind) -> (String, String) {
+        var title = title, author = author
+        if title.isEmpty { title = TextBook.guessTitleAuthor(fileName: fileName, text: "").title }
+        if author.isEmpty { author = kind == .pdf ? "PDF Document" : "Unknown Author" }
+        return (title, author)
+    }
+
+    /// The title and author the book came with: an EPUB's own metadata, a PDF's document information read again,
+    /// or, failing those, the file name's. For Get Info's reset.
+    public func originalDetails(for book: Book) -> (title: String, author: String) {
+        var title = "", author = ""
+        if book.kind == .pdf {
+            let info = pdfInspector?(fileURL(for: book))
+            title = info?.title?.trimmingCharacters(in: .whitespaces) ?? ""
+            author = info?.author?.trimmingCharacters(in: .whitespaces) ?? ""
+        } else {
+            title = book.metadata.title.trimmingCharacters(in: .whitespaces)
+            author = book.metadata.author.trimmingCharacters(in: .whitespaces)
+        }
+        return LibraryStore.fallbackDetails(title: title, author: author, fileName: book.fileName, kind: book.kind)
     }
 
     public func booksFinished(inYear year: Int, calendar: Calendar = .current) -> Int {
@@ -361,6 +387,7 @@ public final class LibraryStore {
             title = info?.title?.trimmingCharacters(in: .whitespaces) ?? ""
             author = info?.author?.trimmingCharacters(in: .whitespaces) ?? ""
             pageCount = info?.pageCount
+            metadata.subjects = info?.subjects ?? []
             if let c = info?.cover { cover = (c, info?.coverMediaType ?? "image/jpeg") }
         } else if isKindle || ["mobi", "azw", "azw3", "prc", "kf8"].contains(ext) {
             let converted: ConvertedBook
@@ -389,8 +416,7 @@ public final class LibraryStore {
             }
         }
 
-        if title.isEmpty { title = TextBook.guessTitleAuthor(fileName: name, text: "").title }
-        if author.isEmpty { author = kind == .pdf ? "PDF Document" : "Unknown Author" }
+        (title, author) = LibraryStore.fallbackDetails(title: title, author: author, fileName: name, kind: kind)
         let size = Int64(epubData?.count ?? data.count)
 
         if !allowDuplicates, let existing = books.first(where: { existing in

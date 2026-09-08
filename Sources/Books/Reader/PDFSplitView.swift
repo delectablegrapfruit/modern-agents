@@ -1063,7 +1063,7 @@ final class SplitPDFPresenter: PDFReading {
     // MARK: - Drawing
 
     private func applyTheme() {
-        let theme = PDFPresenter.themeFilters(for: session.effectiveTheme)
+        let theme = PDFPresenter.themeFilters(for: session.effectiveTheme, backgroundOnly: session.reader.themeBackgroundOnly)
         view.layer?.filters = theme.filters.isEmpty ? nil : theme.filters
         view.layer?.backgroundColor = theme.background.cgColor
     }
@@ -1151,7 +1151,8 @@ final class SplitPDFPresenter: PDFReading {
                 guard let covered else { continue }
                 if piece.x != nil { lineBoxes[piece.offset] = lineBoxes[piece.offset].map { $0.union(covered) } ?? covered } else { boxes.append(covered) }
             }
-            for box in boxes + Array(lineBoxes.values) {
+            // Boxes on one line become one, whatever line of the page their words came from.
+            for box in PDFPresenter.joinedAlongLines(boxes + Array(lineBoxes.values)) {
                 context.saveGState()
                 context.setFillColor(color)
                 if record.color == .underline {
@@ -1498,10 +1499,12 @@ final class SplitPDFPresenter: PDFReading {
             view.set(path: nil, on: view.selectionLayer)
             return
         }
+        // One band per line on the screen, the gaps between words included: the lines PDFKit hands back may be
+        // words, and a rewrapped line may hold words from two lines of the page.
+        var rects: [CGRect] = []
+        for line in selection.selectionsByLine() { rects += viewRects(line.bounds(for: page), onPage: pageIndex) }
         let path = CGMutablePath()
-        for line in selection.selectionsByLine() {
-            for rect in viewRects(line.bounds(for: page), onPage: pageIndex) { path.addRect(rect) }
-        }
+        for rect in PDFPresenter.joinedAlongLines(rects) { path.addRect(rect) }
         view.set(path: path, on: view.selectionLayer)
     }
 
@@ -1512,9 +1515,9 @@ final class SplitPDFPresenter: PDFReading {
         }
         let pageIndex = document.index(for: page)
         let path = CGMutablePath()
-        for line in flash.selectionsByLine() {
-            for rect in viewRects(line.bounds(for: page), onPage: pageIndex) { path.addRect(rect) }
-        }
+        var rects: [CGRect] = []
+        for line in flash.selectionsByLine() { rects += viewRects(line.bounds(for: page), onPage: pageIndex) }
+        for rect in PDFPresenter.joinedAlongLines(rects) { path.addRect(rect) }
         view.set(path: path, on: view.flashLayer)
     }
 

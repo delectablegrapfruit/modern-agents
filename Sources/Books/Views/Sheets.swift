@@ -8,6 +8,8 @@ struct InfoSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var draft: Book
     @State private var frame: CoverFrame?
+    /// The title and author the file came with, read once the sheet is up.
+    @State private var original: (title: String, author: String)?
     private let box = CGSize(width: 200, height: 300)
 
     init(book: Book) {
@@ -30,6 +32,18 @@ struct InfoSheet: View {
                     Section {
                         TextField("Title", text: $draft.title)
                         TextField("Author", text: $draft.author)
+                        HStack {
+                            Spacer()
+                            Button("Reset to Original") {
+                                if let original {
+                                    draft.title = original.title
+                                    draft.author = original.author
+                                }
+                            }
+                            .controlSize(.small)
+                            .disabled(original == nil || (original?.title == draft.title && original?.author == draft.author))
+                            .help("Put back the title and author the file came with")
+                        }
                     }
                     Section("Details") {
                         LabeledContent("Kind", value: draft.kind == .pdf ? "PDF Document" : "EPUB Book")
@@ -68,6 +82,7 @@ struct InfoSheet: View {
         }
         .padding(.leading, 20)
         .frame(width: 800, height: 600)
+        .onAppear { if original == nil { original = model.originalDetails(for: current) } }
     }
 
     /// The cover, as it will look on the shelf — or, for Custom, the editor — with the fit choice and the
@@ -185,6 +200,21 @@ struct GoalsSheet: View {
                 } footer: {
                     Text("Reading time counts while a book is open and you are turning pages. A streak grows every day you reach the daily goal.")
                 }
+                Section {
+                    Picker("Counted by", selection: $model.settings.goals.period) {
+                        ForEach(GoalPeriod.allCases, id: \.self) { Text($0.label).tag($0) }
+                    }
+                    Stepper(value: $model.settings.goals.pages, in: 0...100_000, step: model.settings.goals.pages < 100 ? 10 : 50) {
+                        LabeledContent("Pages per \(model.settings.goals.period.label.lowercased())", value: model.settings.goals.pages == 0 ? "Off" : "\(model.settings.goals.pages)")
+                    }
+                    Stepper(value: $model.settings.goals.chapters, in: 0...1000) {
+                        LabeledContent("Chapters per \(model.settings.goals.period.label.lowercased())", value: model.settings.goals.chapters == 0 ? "Off" : "\(model.settings.goals.chapters)")
+                    }
+                } header: {
+                    Text("Pages & Chapters")
+                } footer: {
+                    Text("Pages count as you turn them; a chapter counts when you read to its end. A goal of 0 leaves it out.")
+                }
             }
             .formStyle(.grouped)
             HStack {
@@ -193,7 +223,7 @@ struct GoalsSheet: View {
             }
             .padding()
         }
-        .frame(width: 420, height: 300)
+        .frame(width: 440, height: 460)
     }
 }
 
@@ -205,15 +235,24 @@ struct SettingsView: View {
         @Bindable var model = model
         TabView {
             Form {
-                Section("Home") {
-                    Toggle("Continue Reading", isOn: $model.settings.showContinueReading)
-                    Toggle("Reading Goals", isOn: $model.settings.showGoals)
-                    Toggle("Statistics", isOn: $model.settings.showStatistics)
+                Section {
+                    ForEach(model.settings.home.elements, id: \.self) { element in
+                        Toggle(element.label, isOn: Binding(get: { model.settings.home.isShown(element) }, set: { model.setHomeElement(element, shown: $0) }))
+                    }
+                } header: {
+                    Text("Home")
+                } footer: {
+                    Text("Home ▸ Customize Home… in the library window puts these in your own order.")
                 }
                 Section("Goals") {
                     Stepper(value: $model.settings.goals.dailyMinutes, in: 1...240) { LabeledContent("Daily reading", value: "\(model.settings.goals.dailyMinutes) min") }
                     Stepper(value: $model.settings.goals.monthlyBooks, in: 1...100) { LabeledContent("Books per month", value: "\(model.settings.goals.monthlyBooks)") }
                     Stepper(value: $model.settings.goals.yearlyBooks, in: 1...365) { LabeledContent("Books per year", value: "\(model.settings.goals.yearlyBooks)") }
+                    Picker("Pages and chapters counted by", selection: $model.settings.goals.period) {
+                        ForEach(GoalPeriod.allCases, id: \.self) { Text($0.label).tag($0) }
+                    }
+                    Stepper(value: $model.settings.goals.pages, in: 0...100_000, step: model.settings.goals.pages < 100 ? 10 : 50) { LabeledContent("Pages per \(model.settings.goals.period.label.lowercased())", value: model.settings.goals.pages == 0 ? "Off" : "\(model.settings.goals.pages)") }
+                    Stepper(value: $model.settings.goals.chapters, in: 0...1000) { LabeledContent("Chapters per \(model.settings.goals.period.label.lowercased())", value: model.settings.goals.chapters == 0 ? "Off" : "\(model.settings.goals.chapters)") }
                 }
                 Section("Library") {
                     LabeledContent("Location", value: model.store.directory.path)

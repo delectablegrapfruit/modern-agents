@@ -126,6 +126,11 @@ final class ReaderSession {
     private var lastActivity = Date()
     private var pagesTurned = 0
     private var lastPage: Double?
+    /// Chapters read to their end since the last flush: a page turn from a chapter's last page into the next, or
+    /// reaching the book's end.
+    private var chaptersFinished = 0
+    private var lastChapter: (index: Int, pagesLeft: Int)?
+    private var endReached = false
     private var systemIsDark: Bool { NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua }
     private var appearanceObserver: NSKeyValueObservation?
 
@@ -496,7 +501,12 @@ final class ReaderSession {
             if self.tappedHighlight != nil { self.tappedHighlight = nil } else if self.selection != nil { self.clearSelection() }
         }
         popover.delegate = closer
-        popover.contentViewController = NSHostingController(rootView: HighlightMenu(session: self, existing: target.existing))
+        // The menu is laid out at its own size: a hosting view given a narrow width had wrapped the words letter by letter.
+        let hosting = NSHostingController(rootView: HighlightMenu(session: self, existing: target.existing))
+        hosting.sizingOptions = [.preferredContentSize]
+        popover.contentViewController = hosting
+        let size = hosting.view.fittingSize
+        if size.width > 0, size.height > 0 { popover.contentSize = size }
         let previous = menuPopover
         menuPopover = popover
         menuCloser = closer
@@ -552,6 +562,7 @@ final class ReaderSession {
             p.bookmarkID = m.string("bookmark").flatMap(UUID.init(uuidString:))
             if let last = lastPage, layout.mode == .paginated, p.page > last { pagesTurned += whole(p.page - last) }
             lastPage = p.page
+            countChapter(p)
             position = p
             schedulePositionSave()
         case "end":
@@ -626,8 +637,20 @@ final class ReaderSession {
         }
     }
 
+    /// A chapter counts as read when the reader moves from its last page into the next chapter, and the last one
+    /// when the book's end is reached.
+    private func countChapter(_ p: ReaderPosition) {
+        if let last = lastChapter, p.chapterIndex == last.index + 1, last.pagesLeft <= 1 { chaptersFinished += 1 }
+        if p.atEnd, !endReached, lastPage != nil { chaptersFinished += 1; endReached = true }
+        lastChapter = (p.chapterIndex, p.pagesLeftInChapter)
+    }
+
     func flushPosition() {
-        if pagesTurned > 0 { model.recordReading(seconds: 0, pages: pagesTurned, in: book.id); pagesTurned = 0 }
+        if pagesTurned > 0 || chaptersFinished > 0 {
+            model.recordReading(seconds: 0, pages: pagesTurned, chapters: chaptersFinished, in: book.id)
+            pagesTurned = 0
+            chaptersFinished = 0
+        }
         guard !usesPDFView, isOpen, let locator = position.locator else { return }   // PDFs save as their page changes
         let finished: Bool? = position.atEnd && layout.total > 1 ? true : nil
         model.savePosition(ReadingPosition(locator: locator, percent: position.percent), for: book.id, finished: finished)
@@ -695,6 +718,7 @@ final class ReaderSession {
         p.bookmarkID = bookmarks.first { $0.locator.spine == page && $0.locator.offset == slice }?.id
         if let last = lastPage, Double(unit) > last { pagesTurned += unit - whole(last) }
         lastPage = Double(unit)
+        countChapter(p)
         position = p
         pdfPageLabel = label
         model.savePosition(ReadingPosition(locator: Locator(spine: page, offset: slice), pdfPage: page + 1, percent: percent), for: book.id, finished: p.atEnd && units > 1 ? true : nil)

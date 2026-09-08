@@ -49,21 +49,27 @@ struct BooksCommands: Commands {
             Button("Books") { show(.books) }.keyboardShortcut("4")
             Button("PDFs") { show(.pdfs) }.keyboardShortcut("5")
             Divider()
-            Button("as Grid") { model.settings.libraryView = .grid }
-            Button("as List") { model.settings.libraryView = .list }
+            Button("as Grid") { model.setShelfView(.grid, for: model.currentShelf) }
+            Button("as List") { model.setShelfView(.list, for: model.currentShelf) }
             Button("Bigger Covers") { model.zoomGrid(1) }
                 .keyboardShortcut("=", modifiers: [.command, .option])
             Button("Smaller Covers") { model.zoomGrid(-1) }
                 .keyboardShortcut("-", modifiers: [.command, .option])
             Menu("Sort By") {
                 ForEach(LibrarySort.allCases, id: \.self) { sort in
-                    Button(sort.label) { model.setSort(sort) }
+                    Button(sort.label) { model.setShelfSort(sort, for: model.currentShelf) }
                 }
                 Divider()
-                Button("Ascending") { model.settings.sortAscending = true }
-                Button("Descending") { model.settings.sortAscending = false }
+                Button("Ascending") { model.setShelfSortAscending(true, for: model.currentShelf) }
+                Button("Descending") { model.setShelfSortAscending(false, for: model.currentShelf) }
             }
-            Toggle("Group Library by Collection", isOn: Binding(get: { model.settings.groupByCollection }, set: { model.settings.groupByCollection = $0 }))
+            Menu("Group By") {
+                ForEach(ShelfGrouping.allCases, id: \.self) { grouping in
+                    Button(grouping.label) { model.setShelfGrouping(grouping, for: model.currentShelf) }
+                }
+            }
+            Divider()
+            Button("Customize Home…") { model.customizingHome = true }
         }
         CommandMenu("Book") {
             Button("Next Page") { reader?.nextPage() }

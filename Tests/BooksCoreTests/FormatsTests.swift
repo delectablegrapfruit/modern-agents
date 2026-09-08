@@ -358,16 +358,38 @@ final class CoverLayoutTests: XCTestCase {
         XCTAssertEqual(Settings.clampedGridScale(9), 1.6)
         XCTAssertEqual(Settings.clampedGridScale(.nan), 1)
         let settings = try JSONDecoder().decode(Settings.self, from: Data("{}".utf8))
-        XCTAssertTrue(settings.groupByCollection)
+        XCTAssertEqual(settings.shelfGrouping, .collection)
         XCTAssertNil(settings.sortAscending)
         XCTAssertEqual(settings.gridScale, 1)
         XCTAssertEqual(settings.goals.monthlyBooks, 1)
-        let legacy = try JSONDecoder().decode(Settings.self, from: Data(#"{"groupAllByCollection": false, "goals": {"dailyMinutes": 10, "yearlyBooks": 5}}"#.utf8))
-        XCTAssertFalse(legacy.groupByCollection, "the grouping choice made under its earlier name is kept")
+        XCTAssertEqual(settings.goals.pages, 250)
+        XCTAssertEqual(settings.goals.period, .week)
+        XCTAssertEqual(settings.home.visible, HomeElement.allCases)
+        XCTAssertTrue(settings.shelves.isEmpty)
+        let legacy = try JSONDecoder().decode(Settings.self, from: Data(#"{"groupAllByCollection": false, "showGoals": false, "goals": {"dailyMinutes": 10, "yearlyBooks": 5}}"#.utf8))
+        XCTAssertEqual(legacy.shelfGrouping, .none, "the grouping choice made under its earliest name is kept")
+        XCTAssertFalse(legacy.home.isShown(.goals), "the old Home switch is kept")
+        XCTAssertTrue(legacy.home.isShown(.statistics))
         XCTAssertEqual(legacy.goals.dailyMinutes, 10)
         XCTAssertEqual(legacy.goals.monthlyBooks, 1, "goals saved without a monthly one get the default")
-        let goals = try JSONDecoder().decode(ReadingGoals.self, from: JSONEncoder().encode(ReadingGoals(dailyMinutes: 7, yearlyBooks: 20, monthlyBooks: 3)))
+        XCTAssertEqual(legacy.goals.chapters, 7)
+        let later = try JSONDecoder().decode(Settings.self, from: Data(#"{"groupByCollection": false}"#.utf8))
+        XCTAssertEqual(later.shelfGrouping, .none)
+        let goals = try JSONDecoder().decode(ReadingGoals.self, from: JSONEncoder().encode(ReadingGoals(dailyMinutes: 7, yearlyBooks: 20, monthlyBooks: 3, pages: 100, chapters: 2, period: .quarter)))
         XCTAssertEqual(goals.monthlyBooks, 3)
+        XCTAssertEqual(goals.period, .quarter)
+        // A shelf's own choices travel with the settings; a version that knows other Home pieces keeps unknown names out.
+        var chosen = Settings()
+        chosen.shelves["collection:abc"] = ShelfSettings(view: .list, sort: .length, sortAscending: true, grouping: .genre)
+        chosen.home = HomeSettings(order: [.statistics, .goals], hidden: [.activity])
+        let back = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(chosen))
+        XCTAssertEqual(back.shelves["collection:abc"]?.sort, .length)
+        XCTAssertEqual(back.shelves["collection:abc"]?.grouping, .genre)
+        XCTAssertEqual(back.home.elements.prefix(3), [.statistics, .goals, .continueReading])
+        XCTAssertEqual(back.home.hidden, [.activity])
+        let odd = try JSONDecoder().decode(HomeSettings.self, from: Data(#"{"order": ["goals", "somethingNew"], "hidden": ["gone"]}"#.utf8))
+        XCTAssertEqual(odd.order, [.goals])
+        XCTAssertTrue(odd.hidden.isEmpty)
     }
 }
 
@@ -415,13 +437,105 @@ final class CoverSwapTests: XCTestCase {
         store.setFinished(book.id, false)
 
         // Reading counts land on the book as well as in the statistics, and survive a reload.
-        store.recordReading(seconds: 60, pages: 2, in: book.id)
+        store.recordReading(seconds: 60, pages: 2, chapters: 1, in: book.id)
         store.recordReading(seconds: 30, in: book.id)
         XCTAssertEqual(store.book(book.id)?.secondsRead, 90)
         XCTAssertEqual(store.book(book.id)?.pagesRead, 2)
+        XCTAssertEqual(store.book(book.id)?.chaptersRead, 1)
         XCTAssertEqual(store.stats.totalSeconds, 90)
+        XCTAssertEqual(store.stats.totalChapters, 1)
         let again = LibraryStore(directory: dir.appendingPathComponent("Library"))
         XCTAssertEqual(again.book(book.id)?.secondsRead, 90)
         XCTAssertEqual(again.book(book.id)?.coverFile, "cover.svg")
+        XCTAssertEqual(again.stats.totalChapters, 1)
+
+        // The title and author the file came with come back after a rename.
+        var renamed = store.book(book.id)!
+        renamed.title = "Something Else"
+        renamed.author = "Nobody"
+        store.update(renamed)
+        let original = store.originalDetails(for: store.book(book.id)!)
+        XCTAssertEqual(original.title, "A Test Book")
+        XCTAssertEqual(original.author, book.author)
+    }
+}
+
+final class HomeDataTests: XCTestCase {
+    func testGenresFromSubjects() {
+        XCTAssertEqual(Genres.genres(for: ["Science Fiction"]), ["Science Fiction"])
+        XCTAssertEqual(Genres.genres(for: ["FICTION / Science Fiction / Space Opera"]), ["Science Fiction"], "the generic Fiction gives way to the particular")
+        XCTAssertEqual(Genres.genres(for: ["sci-fi", "Adventure stories"]), ["Science Fiction", "Adventure"])
+        XCTAssertEqual(Genres.genres(for: ["Detective and mystery stories"]), ["Mystery & Crime"])
+        XCTAssertEqual(Genres.genres(for: ["Fiction"]), ["Fiction"])
+        XCTAssertEqual(Genres.genres(for: ["Cooking -- Italian"]), ["Cooking & Food"])
+        XCTAssertEqual(Genres.genres(for: ["Martial arts"]), [], "a word inside another word is not a match")
+        XCTAssertEqual(Genres.genres(for: ["Art"]), ["Art & Design"])
+        XCTAssertEqual(Genres.genres(for: ["Biography & Autobiography / Personal Memoirs", "History / Europe"]), ["Biography & Memoir", "History"])
+        XCTAssertEqual(Genres.genres(for: []), [])
+        XCTAssertEqual(Genres.genres(for: ["Something nobody classifies"]), [])
+        XCTAssertEqual(Set(Genres.all).count, Genres.all.count, "genre names are distinct")
+    }
+
+    func testGoalPeriodsAndTotals() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        calendar.firstWeekday = 2
+        var c = DateComponents()
+        c.year = 2026; c.month = 9; c.day = 8; c.hour = 12
+        let date = calendar.date(from: c)!
+        let week = GoalPeriod.week.interval(containing: date, calendar: calendar)
+        XCTAssertEqual(calendar.component(.day, from: week.start), 7, "the week starts on Monday the 7th")
+        XCTAssertEqual(calendar.dateComponents([.day], from: week.start, to: week.end).day, 7)
+        let month = GoalPeriod.month.interval(containing: date, calendar: calendar)
+        XCTAssertEqual(calendar.component(.day, from: month.start), 1)
+        XCTAssertEqual(calendar.component(.month, from: month.end), 10)
+        let quarter = GoalPeriod.quarter.interval(containing: date, calendar: calendar)
+        XCTAssertEqual(calendar.component(.month, from: quarter.start), 7)
+        XCTAssertEqual(calendar.component(.month, from: quarter.end), 10)
+        XCTAssertEqual(GoalPeriod.year.days(containing: date, calendar: calendar), 365)
+
+        var stats = ReadingStats()
+        stats.add(seconds: 600, pages: 10, chapters: 1, on: date)
+        stats.add(seconds: 300, pages: 5, on: calendar.date(byAdding: .day, value: -1, to: date)!)
+        stats.add(seconds: 1200, pages: 20, chapters: 2, on: calendar.date(byAdding: .day, value: -10, to: date)!)
+        XCTAssertEqual(ReadingStats.date(fromKey: "2026-09-08", calendar: calendar), calendar.startOfDay(for: date))
+        let thisWeek = stats.totals(in: .week, containing: date, calendar: calendar)
+        XCTAssertEqual(thisWeek.pages, 15)
+        XCTAssertEqual(thisWeek.chapters, 1)
+        XCTAssertEqual(stats.totals(in: .month, containing: date, calendar: calendar).seconds, 1500, "the 29th of August is not this month")
+        XCTAssertEqual(stats.totals(in: .quarter, containing: date, calendar: calendar).pages, 35)
+        XCTAssertEqual(stats.totalChapters, 3)
+        XCTAssertEqual(stats.activeDays, 3)
+        XCTAssertEqual(stats.bestDay?.seconds, 1200)
+        XCTAssertEqual(stats.longestStreak(goalMinutes: 5, calendar: calendar), 2)
+        XCTAssertEqual(stats.longestStreak(goalMinutes: 15, calendar: calendar), 1)
+        let days = stats.month(containing: date, calendar: calendar)
+        XCTAssertEqual(days.count, 30)
+        XCTAssertEqual(days.first?.day, "2026-09-01")
+        XCTAssertEqual(days[7].pages, 10)
+        let weeks = stats.weeks(3, ending: date, calendar: calendar)
+        XCTAssertEqual(weeks.count, 3)
+        XCTAssertEqual(weeks.last?.count, 7)
+        XCTAssertEqual(weeks.last?.first?.day, "2026-09-07")
+        XCTAssertEqual(weeks.last?[1].pages, 10)
+
+        // Days saved before chapters were counted still load.
+        let old = try JSONDecoder().decode(DailyReading.self, from: Data(#"{"day": "2026-01-01", "seconds": 5, "pages": 1}"#.utf8))
+        XCTAssertEqual(old.chapters, 0)
+    }
+
+    func testHomeSettingsMoves() {
+        var home = HomeSettings()
+        home.move(fromOffsets: IndexSet(integer: 0), toOffset: 3)
+        XCTAssertEqual(home.elements.prefix(3), [.pickUpAgain, .goals, .continueReading])
+        home.setShown(.calendar, false)
+        home.setShown(.calendar, false)
+        XCTAssertEqual(home.hidden, [.calendar], "hiding twice hides once")
+        XCTAssertFalse(home.visible.contains(.calendar))
+        home.setShown(.calendar, true)
+        XCTAssertTrue(home.hidden.isEmpty)
+        let partial = HomeSettings(order: [.statistics])
+        XCTAssertEqual(partial.elements.first, .statistics)
+        XCTAssertEqual(partial.elements.count, HomeElement.allCases.count, "pieces the order does not name follow it")
     }
 }

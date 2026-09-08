@@ -99,6 +99,7 @@ final class LibraryModel {
     var reading: Book?
     var infoBook: Book?
     var editingGoals = false
+    var customizingHome = false
     var creatingCollection = false
     var renamingCollection: BookCollection?
     var importProgress: (done: Int, total: Int)?
@@ -152,24 +153,65 @@ final class LibraryModel {
         if !query.isEmpty {
             list = list.filter { $0.title.lowercased().contains(query) || $0.author.lowercased().contains(query) || $0.metadata.subjects.contains { $0.lowercased().contains(query) } }
         }
-        // A book once only, whatever a collection's list says: a table given the same row twice can crash.
+        // A book once only, whatever a collection's list says: a list given the same row twice can go wrong.
         var seen = Set<UUID>()
         list = list.filter { seen.insert($0.id).inserted }
-        return sorted(list)
+        return sorted(list, for: item)
     }
 
-    /// The direction the shelf is sorted in: as chosen, or the sort's own.
-    var sortAscending: Bool { settings.sortAscending ?? settings.sort.ascendingByDefault }
+    // MARK: - What each shelf chose
 
-    /// Chooses the sort; a new kind of sort starts in its own direction.
-    func setSort(_ sort: LibrarySort) {
-        guard sort != settings.sort else { return }
-        settings.sort = sort
-        settings.sortAscending = nil
+    /// The shelf the window shows.
+    var currentShelf: SidebarItem { sidebarSelection ?? .home }
+
+    func shelfSettings(for item: SidebarItem) -> ShelfSettings { settings.shelves[item.key] ?? ShelfSettings() }
+
+    private func updateShelf(_ item: SidebarItem, _ change: (inout ShelfSettings) -> Void) {
+        var s = shelfSettings(for: item)
+        change(&s)
+        if s.isEmpty { settings.shelves.removeValue(forKey: item.key) } else { settings.shelves[item.key] = s }
     }
 
-    func sorted(_ list: [Book]) -> [Book] {
-        let ascending = sortAscending
+    func shelfView(for item: SidebarItem) -> LibraryViewMode { shelfSettings(for: item).view ?? settings.libraryView }
+    func shelfSort(for item: SidebarItem) -> LibrarySort { shelfSettings(for: item).sort ?? settings.sort }
+
+    /// The direction the shelf is sorted in: as chosen for it, or its sort's own.
+    func shelfSortAscending(for item: SidebarItem) -> Bool {
+        let s = shelfSettings(for: item)
+        if let own = s.sortAscending { return own }
+        if s.sort == nil, let global = settings.sortAscending { return global }
+        return shelfSort(for: item).ascendingByDefault
+    }
+
+    /// How the shelf is grouped: as it chose, else by collection for the Library's shelves (unless that default was
+    /// turned off) and not at all for a collection's own shelf, which cannot group by collection.
+    func shelfGrouping(for item: SidebarItem) -> ShelfGrouping {
+        let chosen = shelfSettings(for: item).grouping ?? (item.isLibraryShelf ? settings.shelfGrouping : .none)
+        if chosen == .collection, !item.isLibraryShelf { return .none }
+        return chosen
+    }
+
+    func setShelfView(_ view: LibraryViewMode, for item: SidebarItem) { updateShelf(item) { $0.view = view } }
+
+    /// Chooses a shelf's sort; a new kind of sort starts in its own direction.
+    func setShelfSort(_ sort: LibrarySort, for item: SidebarItem) {
+        updateShelf(item) { s in
+            if s.sort != sort || (s.sort == nil && sort != settings.sort) { s.sortAscending = nil }
+            s.sort = sort
+        }
+    }
+
+    func setShelfSortAscending(_ ascending: Bool, for item: SidebarItem) {
+        updateShelf(item) { s in
+            if s.sort == nil { s.sort = settings.sort }
+            s.sortAscending = ascending
+        }
+    }
+
+    func setShelfGrouping(_ grouping: ShelfGrouping, for item: SidebarItem) { updateShelf(item) { $0.grouping = grouping } }
+
+    func sorted(_ list: [Book], for item: SidebarItem) -> [Book] {
+        let ascending = shelfSortAscending(for: item)
         func byTitle(_ a: Book, _ b: Book) -> Bool { a.title.localizedStandardCompare(b.title) == .orderedAscending }
         func ordered<T: Comparable>(_ key: (Book) -> T) -> [Book] {
             list.sorted { a, b in
@@ -178,7 +220,7 @@ final class LibraryModel {
                 return byTitle(a, b)
             }
         }
-        switch settings.sort {
+        switch shelfSort(for: item) {
         case .recent: return ordered { $0.lastOpenedAt ?? $0.addedAt }
         case .title:
             return list.sorted { a, b in
@@ -217,13 +259,81 @@ final class LibraryModel {
         return groups
     }
 
-    /// The groups of a shelf when it is to be shown by collection and there is a collection to show; nil otherwise.
+    /// A shelf genre by genre, in alphabetical order, a book with several genres counted with the first and the
+    /// rest under "No Genre".
+    func genreGroups(for books: [Book]) -> [ShelfGroup] {
+        var byGenre: [String: [Book]] = [:]
+        var rest: [Book] = []
+        for book in books {
+            if let genre = book.genres.first { byGenre[genre, default: []].append(book) } else { rest.append(book) }
+        }
+        var groups = byGenre.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }.map { ShelfGroup(id: "genre:" + $0, name: $0, books: byGenre[$0] ?? []) }
+        if !rest.isEmpty { groups.append(ShelfGroup(id: "rest", name: "No Genre", books: rest)) }
+        return groups
+    }
+
+    /// The groups of a shelf as it is to be grouped, when there is something to group by; nil for a shelf shown
+    /// as one.
     func groupedShelf(_ item: SidebarItem, books: [Book]) -> [ShelfGroup]? {
-        guard item.isLibraryShelf, settings.groupByCollection else { return nil }
-        let groups = shelfGroups(for: books)
+        let groups: [ShelfGroup]
+        switch shelfGrouping(for: item) {
+        case .none: return nil
+        case .collection: groups = shelfGroups(for: books)
+        case .genre: groups = genreGroups(for: books)
+        }
         guard groups.contains(where: { $0.id != "rest" }) else { return nil }
         return groups
     }
+
+    // MARK: - Home
+
+    /// Books begun but not opened for a fortnight, the longest left first.
+    var pickUpAgain: [Book] {
+        let cutoff = Date().addingTimeInterval(-14 * 86400)
+        return books.filter { $0.hasStarted && !$0.isFinished && ($0.lastOpenedAt ?? $0.addedAt) < cutoff }
+            .sorted { ($0.lastOpenedAt ?? $0.addedAt) < ($1.lastOpenedAt ?? $1.addedAt) }
+    }
+
+    /// Books never opened, the newest first.
+    var recentlyAdded: [Book] {
+        books.filter { $0.isNew && !$0.isFinished }.sorted { $0.addedAt > $1.addedAt }
+    }
+
+    /// Books finished, the latest first.
+    var recentlyFinished: [Book] {
+        books.filter(\.isFinished).sorted { ($0.finishedAt ?? .distantPast) > ($1.finishedAt ?? .distantPast) }
+    }
+
+    /// Unopened books in the genres, and by the authors, of the books you have read: the more of those they
+    /// share, the earlier they come.
+    var forYou: [Suggestion] {
+        let read = books.filter { $0.hasStarted || $0.isFinished }
+        guard !read.isEmpty else { return [] }
+        var genreWeight: [String: Int] = [:]
+        for book in read { for genre in book.genres { genreWeight[genre, default: 0] += 1 } }
+        let authors = Set(read.map { $0.author.lowercased() }.filter { !$0.isEmpty && $0 != "unknown author" && $0 != "pdf document" })
+        var scored: [(Suggestion, Int)] = []
+        for book in books where book.isNew && !book.isFinished {
+            var score = 0
+            var reason: String?
+            if authors.contains(book.author.lowercased()) {
+                score += 3
+                reason = "More by \(book.author)"
+            }
+            let shared = book.genres.filter { genreWeight[$0] != nil }.sorted { genreWeight[$0] ?? 0 > genreWeight[$1] ?? 0 }
+            score += shared.reduce(0) { $0 + (genreWeight[$1] ?? 0) }
+            if reason == nil, let genre = shared.first { reason = "Because you read \(genre)" }
+            if let reason, score > 0 { scored.append((Suggestion(book: book, reason: reason), score)) }
+        }
+        return scored.sorted { a, b in a.1 != b.1 ? a.1 > b.1 : a.0.book.addedAt > b.0.book.addedAt }.map(\.0)
+    }
+
+    func setHomeElement(_ element: HomeElement, shown: Bool) { settings.home.setShown(element, shown) }
+    func moveHomeElements(fromOffsets source: IndexSet, toOffset destination: Int) { settings.home.move(fromOffsets: source, toOffset: destination) }
+    func resetHome() { settings.home = HomeSettings() }
+
+    /// The title and author the book came with, for Get Info's reset.
+    func originalDetails(for book: Book) -> (title: String, author: String) { store.originalDetails(for: book) }
 
     /// Cover size in the grid, in steps: +1 bigger, -1 smaller.
     func zoomGrid(_ steps: Int) {
@@ -382,8 +492,8 @@ final class LibraryModel {
         reload()
     }
 
-    func recordReading(seconds: Int, pages: Int = 0, in bookID: UUID? = nil) {
-        store.recordReading(seconds: seconds, pages: pages, in: bookID)
+    func recordReading(seconds: Int, pages: Int = 0, chapters: Int = 0, in bookID: UUID? = nil) {
+        store.recordReading(seconds: seconds, pages: pages, chapters: chapters, in: bookID)
         stats = store.stats
         if bookID != nil { books = store.books }
     }
@@ -620,6 +730,12 @@ enum PDFInspector {
         info.title = (attrs[PDFDocumentAttribute.titleAttribute] as? String)?.trimmingCharacters(in: .whitespaces)
         info.author = (attrs[PDFDocumentAttribute.authorAttribute] as? String)?.trimmingCharacters(in: .whitespaces)
         if info.title?.isEmpty == true { info.title = nil }
+        // The subject and keywords, for genres: keywords come as one string or a list.
+        var subjects: [String] = []
+        if let subject = attrs[PDFDocumentAttribute.subjectAttribute] as? String { subjects.append(subject) }
+        if let keywords = attrs[PDFDocumentAttribute.keywordsAttribute] as? String { subjects += keywords.components(separatedBy: CharacterSet(charactersIn: ",;")) }
+        if let keywords = attrs[PDFDocumentAttribute.keywordsAttribute] as? [String] { subjects += keywords }
+        info.subjects = subjects.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
         if let page = document.page(at: 0) {
             let bounds = page.bounds(for: .mediaBox)
             let scale = 600 / max(bounds.width, 1)
@@ -650,11 +766,18 @@ enum Rasterizer {
     }
 }
 
-/// One shelf of the grouped All Books view.
+/// One group of a shelf shown by collection or genre.
 struct ShelfGroup: Identifiable, Hashable {
     let id: String
     let name: String
     let books: [Book]
+}
+
+/// A book Home puts forward, and why.
+struct Suggestion: Identifiable, Hashable {
+    let book: Book
+    let reason: String
+    var id: UUID { book.id }
 }
 
 /// Pictures chosen as covers, made into files.

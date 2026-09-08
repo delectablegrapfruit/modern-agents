@@ -3,10 +3,10 @@ import Combine
 import SwiftUI
 import BooksCore
 
-/// A shelf: the books of one sidebar item as a grid of covers or a list. Every card in the grid is the same size,
-/// scaled together from the toolbar slider or ⌥⌘+ and ⌥⌘-. The Library's shelves are shown collection by
-/// collection unless grouping is off. Double-click reads; ⌘- and ⇧-click select several; the context menu
-/// carries the actions; books drag to the sidebar.
+/// A shelf: the books of one sidebar item as a grid of covers or a list, each shelf keeping its own view, sort and
+/// grouping (by collection for the Library's shelves, by genre for any). Every card in the grid is the same size,
+/// scaled together from the toolbar slider or ⌥⌘+ and ⌥⌘-. Double-click reads; ⌘- and ⇧-click select several;
+/// the context menu carries the actions; books drag to the sidebar.
 struct ShelfView: View {
     @Environment(LibraryModel.self) private var model
     let item: SidebarItem
@@ -25,7 +25,7 @@ struct ShelfView: View {
         Group {
             if books.isEmpty {
                 emptyState
-            } else if model.settings.libraryView == .grid {
+            } else if model.shelfView(for: item) == .grid {
                 grid
             } else {
                 list
@@ -174,7 +174,7 @@ struct ShelfView: View {
         GeometryReader { geo in
             let widths = ListColumns(width: geo.size.width)
             VStack(spacing: 0) {
-                ListHeader(widths: widths)
+                ListHeader(item: item, widths: widths)
                 Divider()
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0, pinnedViews: .sectionHeaders) {
@@ -240,6 +240,7 @@ struct ListColumns {
 
 struct ListHeader: View {
     @Environment(LibraryModel.self) private var model
+    let item: SidebarItem
     let widths: ListColumns
 
     var body: some View {
@@ -259,12 +260,12 @@ struct ListHeader: View {
     private func column(_ title: String, sort: LibrarySort?, width: CGFloat) -> some View {
         Button {
             guard let sort else { return }
-            if model.settings.sort == sort { model.settings.sortAscending = !model.sortAscending } else { model.setSort(sort) }
+            if model.shelfSort(for: item) == sort { model.setShelfSortAscending(!model.shelfSortAscending(for: item), for: item) } else { model.setShelfSort(sort, for: item) }
         } label: {
             HStack(spacing: 4) {
                 Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                if let sort, model.settings.sort == sort {
-                    Image(systemName: model.sortAscending ? "chevron.up" : "chevron.down")
+                if let sort, model.shelfSort(for: item) == sort {
+                    Image(systemName: model.shelfSortAscending(for: item) ? "chevron.up" : "chevron.down")
                         .font(.system(size: 8, weight: .bold))
                         .foregroundStyle(.secondary)
                 }

@@ -124,6 +124,7 @@ extension View {
 /// A card on Home: white on light, elevated on dark, the way Books and Fitness draw theirs.
 struct HomeCard<Content: View>: View {
     let title: String
+    var subtitle: String?
     var action: (() -> Void)?
     var actionLabel: String?
     @ViewBuilder let content: () -> Content
@@ -131,7 +132,10 @@ struct HomeCard<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
-                Text(title).font(.title2.weight(.bold))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.title2.weight(.bold))
+                    if let subtitle { Text(subtitle).font(.callout).foregroundStyle(.secondary) }
+                }
                 Spacer()
                 if let action, let actionLabel {
                     Button(actionLabel, action: action).buttonStyle(.link)

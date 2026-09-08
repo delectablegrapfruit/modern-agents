@@ -328,13 +328,13 @@ enum SelfTest {
     /// out fitted and filling, keeps its style and gives way to the original again; the grid scale is clamped.
     @MainActor
     private static func runShelf(model: LibraryModel) async throws {
-        func epub(_ title: String, paragraphs: Int) throws -> URL {
+        func epub(_ title: String, paragraphs: Int, subjects: [String]) throws -> URL {
             let chapter = EPUBChapter(label: "One", title: "One", html: String(repeating: "<p>\(title): " + String(repeating: "words and more words. ", count: 40) + "</p>", count: paragraphs))
             let url = FileManager.default.temporaryDirectory.appendingPathComponent("Books Self-Test \(title) \(UUID().uuidString).epub")
-            try EPUBWriter.build(EPUBSpec(title: title, author: "Shelf Test", chapters: [chapter], coverSVG: CoverArt.svg(title: title, author: "Shelf Test"))).write(to: url)
+            try EPUBWriter.build(EPUBSpec(title: title, author: "Shelf Test", subjects: subjects, chapters: [chapter], coverSVG: CoverArt.svg(title: title, author: "Shelf Test"))).write(to: url)
             return url
         }
-        let longURL = try epub("Shelf Long", paragraphs: 30), shortURL = try epub("Shelf Short", paragraphs: 2)
+        let longURL = try epub("Shelf Long", paragraphs: 30, subjects: ["Science Fiction"]), shortURL = try epub("Shelf Short", paragraphs: 2, subjects: ["FICTION / Mystery & Detective / Traditional"])
         let added: [Book] = await withCheckedContinuation { continuation in
             model.importFiles([longURL, shortURL], quiet: true, allowDuplicates: true) { continuation.resume(returning: $0) }
         }
@@ -345,72 +345,93 @@ enum SelfTest {
             var s = model.settings
             s.sort = saved.sort
             s.sortAscending = saved.sortAscending
-            s.groupByCollection = saved.groupByCollection
+            s.shelfGrouping = saved.shelfGrouping
             s.gridScale = saved.gridScale
             s.libraryView = saved.libraryView
+            s.shelves = saved.shelves
+            s.home = saved.home
             model.settings = s
             model.sidebarSelection = .home
             try? FileManager.default.removeItem(at: longURL)
             try? FileManager.default.removeItem(at: shortURL)
         }
 
-        // Reading counts land on the book.
-        model.recordReading(seconds: 120, pages: 3, in: short.id)
+        // Reading counts land on the book and in the day.
+        let chaptersBefore = model.stats.totals(in: .week).chapters
+        model.recordReading(seconds: 120, pages: 3, chapters: 1, in: short.id)
         model.recordReading(seconds: 30, in: short.id)
-        guard model.book(short.id)?.secondsRead == 150, model.book(short.id)?.pagesRead == 3 else {
-            throw Failure("reading counts were not kept on the book: \(model.book(short.id)?.secondsRead ?? -1) s, \(model.book(short.id)?.pagesRead ?? -1) pages")
+        guard model.book(short.id)?.secondsRead == 150, model.book(short.id)?.pagesRead == 3, model.book(short.id)?.chaptersRead == 1 else {
+            throw Failure("reading counts were not kept on the book: \(model.book(short.id)?.secondsRead ?? -1) s, \(model.book(short.id)?.pagesRead ?? -1) pages, \(model.book(short.id)?.chaptersRead ?? -1) chapters")
         }
+        guard model.stats.totals(in: .week).chapters == chaptersBefore + 1, model.stats.totals(in: .year).pages >= 3 else { throw Failure("the week's chapters or the year's pages did not grow") }
 
-        // Sorts, judged between the two books: the read one first by time and pages read, after by the same sorts
-        // ascending; the long one first by length.
+        // Sorts, chosen for the All shelf and judged between the two books: the read one first by time and pages
+        // read, after by the same sorts ascending; the long one first by length. Another shelf keeps its own sort.
         func index(_ id: UUID) -> Int { model.books(for: .all).firstIndex { $0.id == id } ?? Int.max }
-        model.setSort(.timeRead)
-        guard !model.sortAscending, index(short.id) < index(long.id) else { throw Failure("Time Read did not put the read book first") }
-        var s = model.settings
-        s.sortAscending = true
-        model.settings = s
+        model.setShelfSort(.timeRead, for: .all)
+        guard !model.shelfSortAscending(for: .all), index(short.id) < index(long.id) else { throw Failure("Time Read did not put the read book first") }
+        model.setShelfSortAscending(true, for: .all)
         guard index(short.id) > index(long.id) else { throw Failure("ascending Time Read did not put the read book after the unread") }
-        model.setSort(.pagesRead)
-        guard !model.sortAscending, index(short.id) < index(long.id) else { throw Failure("Pages Read did not put the read book first, or kept the direction") }
-        model.setSort(.length)
+        model.setShelfSort(.pagesRead, for: .all)
+        guard !model.shelfSortAscending(for: .all), index(short.id) < index(long.id) else { throw Failure("Pages Read did not put the read book first, or kept the direction") }
+        model.setShelfSort(.length, for: .all)
         guard index(long.id) < index(short.id) else { throw Failure("Length did not put the longer book first") }
-        model.setSort(.title)
-        guard model.sortAscending, index(long.id) < index(short.id) else { throw Failure("Title did not sort A to Z") }
-        log("sorts: time read, pages read, length and title order the shelf, in both directions")
+        model.setShelfSort(.title, for: .all)
+        guard model.shelfSortAscending(for: .all), index(long.id) < index(short.id) else { throw Failure("Title did not sort A to Z") }
+        guard model.shelfSort(for: .books) == saved.sort, model.shelfView(for: .books) == saved.libraryView else { throw Failure("the Books shelf took the All shelf's choices") }
+        model.setShelfView(.list, for: .books)
+        guard model.shelfView(for: .books) == .list, model.shelfView(for: .all) == saved.libraryView else { throw Failure("a shelf's view was not its own") }
+        log("sorts: time read, pages read, length and title order the shelf, in both directions; each shelf keeps its own view and sort")
+
+        // Genres from subjects, and the details a book came with.
+        guard model.book(long.id)?.genres == ["Science Fiction"], model.book(short.id)?.genres == ["Mystery & Crime"] else {
+            throw Failure("genres were not read off the subjects: \(model.book(long.id)?.genres ?? []), \(model.book(short.id)?.genres ?? [])")
+        }
+        var renamed = model.book(long.id)!
+        renamed.title = "Renamed"
+        renamed.author = "Somebody"
+        model.update(renamed)
+        let original = model.originalDetails(for: model.book(long.id)!)
+        guard original.title == "Shelf Long", original.author == "Shelf Test" else { throw Failure("the original details were not found: \(original)") }
+        renamed.title = original.title
+        renamed.author = original.author
+        model.update(renamed)
+        log("genres: Science Fiction and Mystery & Crime from the subjects; original title and author found again")
 
         // The shelves grouped: a collection holding one of the two, the other among the rest; Books (EPUBs) groups the
-        // same way; a collection's own shelf and Home never group; with no collection holding a book there is
-        // nothing to group.
-        var s2 = model.settings
-        s2.groupByCollection = true
-        model.settings = s2
+        // same way; a collection's own shelf never groups by collection; grouping by genre works on any shelf; a
+        // shelf can choose not to group.
+        model.setShelfGrouping(.collection, for: .all)
         model.addCollection(named: "Shelf Test Collection")
         guard let collection = model.collections.first(where: { $0.name == "Shelf Test Collection" }) else { throw Failure("the shelf collection was not made") }
         defer { model.deleteCollection(collection.id) }
-        guard model.groupedShelf(.all, books: model.books(for: .all)) == nil || model.collections.count > 1 else { throw Failure("a shelf grouped with no collection holding a book") }
         model.add([short.id], to: collection.id)
         guard let groups = model.groupedShelf(.all, books: model.books(for: .all)),
               let mine = groups.first(where: { $0.name == "Shelf Test Collection" }), mine.books.map(\.id) == [short.id],
               let rest = groups.first(where: { $0.name == "Not in a Collection" }), rest.books.contains(where: { $0.id == long.id }), !rest.books.contains(where: { $0.id == short.id }) else {
             throw Failure("All Books did not group by collection: \(model.shelfGroups(for: model.books(for: .all)).map { "\($0.name): \($0.books.count)" })")
         }
+        model.setShelfGrouping(.collection, for: .books)
         guard let epubGroups = model.groupedShelf(.books, books: model.books(for: .books)), epubGroups.contains(where: { $0.name == "Shelf Test Collection" }) else { throw Failure("the Books shelf did not group by collection") }
-        guard model.groupedShelf(.collection(collection.id), books: model.books(for: .collection(collection.id))) == nil else { throw Failure("a collection's own shelf grouped") }
-        s2.groupByCollection = false
-        model.settings = s2
-        guard model.groupedShelf(.all, books: model.books(for: .all)) == nil else { throw Failure("grouping stayed on when turned off") }
-        s2.groupByCollection = true
-        model.settings = s2
-        log("shelves grouped: \(groups.map { "\($0.name) (\($0.books.count))" }.joined(separator: ", "))")
-
-        // The list view is walked across the shelves and collections, as the table that crashed was.
+        model.setShelfGrouping(.collection, for: .collection(collection.id))
+        guard model.groupedShelf(.collection(collection.id), books: model.books(for: .collection(collection.id))) == nil else { throw Failure("a collection's own shelf grouped by collection") }
         model.addCollection(named: "Shelf Test Two")
         guard let two = model.collections.first(where: { $0.name == "Shelf Test Two" }) else { throw Failure("the second shelf collection was not made") }
         defer { model.deleteCollection(two.id) }
         model.add([long.id, short.id], to: two.id)
-        s2.libraryView = .list
-        model.settings = s2
+        model.setShelfGrouping(.genre, for: .collection(two.id))
+        guard let genreGroups = model.groupedShelf(.collection(two.id), books: model.books(for: .collection(two.id))),
+              genreGroups.map(\.name) == ["Mystery & Crime", "Science Fiction"] else {
+            throw Failure("the collection did not group by genre: \(model.groupedShelf(.collection(two.id), books: model.books(for: .collection(two.id)))?.map(\.name) ?? [])")
+        }
+        model.setShelfGrouping(.none, for: .all)
+        guard model.groupedShelf(.all, books: model.books(for: .all)) == nil else { throw Failure("grouping stayed on when turned off") }
+        model.setShelfGrouping(.collection, for: .all)
+        log("shelves grouped: \(groups.map { "\($0.name) (\($0.books.count))" }.joined(separator: ", ")); a collection by genre: \(genreGroups.map(\.name).joined(separator: ", "))")
+
+        // The list view is walked across the shelves and collections, as the table that crashed was.
         for stop in [SidebarItem.all, .collection(collection.id), .collection(two.id), .books, .finished, .pdfs, .collection(collection.id), .all, .collection(two.id)] {
+            model.setShelfView(.list, for: stop)
             model.sidebarSelection = stop
             model.selectedBookIDs = [long.id]
             try await sleep(0.15)
@@ -421,12 +442,34 @@ enum SelfTest {
         let now = Date()
         let month = Calendar.current.component(.month, from: now), year = Calendar.current.component(.year, from: now)
         guard model.store.booksFinished(inMonth: month, year: year) >= 1 else { throw Failure("a book finished now did not count for this month") }
+        guard model.recentlyFinished.first?.id == short.id else { throw Failure("the finished book did not lead Recently Finished") }
         model.setFinished([short.id], false)
-        s2.libraryView = .grid
-        model.settings = s2
         model.sidebarSelection = .all
         try await sleep(0.15)
         log("list view walked across 9 shelves and collections; a finished book counts for the month")
+
+        // Home: a book begun three weeks ago waits under Pick Up Again; the unopened one by the same author is
+        // put forward For You; pieces can be hidden, moved and put back.
+        var begun = model.book(long.id)!
+        begun.position = ReadingPosition(percent: 30)
+        begun.lastOpenedAt = Date().addingTimeInterval(-21 * 86400)
+        model.update(begun)
+        guard model.pickUpAgain.contains(where: { $0.id == long.id }), !model.continueReading.isEmpty else { throw Failure("a book begun three weeks ago is not under Pick Up Again") }
+        guard let suggestion = model.forYou.first(where: { $0.book.id == short.id }), suggestion.reason.contains("Shelf Test") else { throw Failure("the unopened book by a read author was not put forward: \(model.forYou.map(\.reason))") }
+        guard model.recentlyAdded.contains(where: { $0.id == short.id }), !model.recentlyAdded.contains(where: { $0.id == long.id }) else { throw Failure("Recently Added did not hold the unopened book alone") }
+        begun.position = nil
+        begun.lastOpenedAt = nil
+        model.update(begun)
+        model.setHomeElement(.activity, shown: false)
+        guard !model.settings.home.visible.contains(.activity), model.settings.home.visible.count == HomeElement.allCases.count - 1 else { throw Failure("a Home piece could not be hidden") }
+        model.moveHomeElements(fromOffsets: IndexSet(integer: 0), toOffset: 3)
+        guard model.settings.home.elements.first != .continueReading, model.settings.home.elements.count == HomeElement.allCases.count else { throw Failure("Home pieces could not be moved") }
+        model.resetHome()
+        guard model.settings.home.elements == HomeElement.allCases, model.settings.home.hidden.isEmpty else { throw Failure("Home did not reset") }
+        model.sidebarSelection = .home
+        try await sleep(0.3)
+        model.sidebarSelection = .all
+        log("Home: Pick Up Again, For You (\(suggestion.reason)), Recently Added; pieces hidden, moved and reset")
 
         // A picture of one's own as the cover, laid out, styled, and the original back.
         let picture = NSImage(size: NSSize(width: 300, height: 200), flipped: false) { rect in

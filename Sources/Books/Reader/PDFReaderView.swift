@@ -367,9 +367,11 @@ final class PDFPresenter: PDFReading {
     }
 
     /// Light themes tint the white of the paper; dark themes invert luminance while keeping hues (so pictures and
-    /// highlights keep their colours) and lift black to the theme's page colour.
-    static func themeFilters(for theme: Theme) -> (filters: [CIFilter], background: NSColor) {
+    /// highlights keep their colours) and lift black to the theme's page colour. With `backgroundOnly` the pages
+    /// are left as printed and only the surround takes the theme's colour.
+    static func themeFilters(for theme: Theme, backgroundOnly: Bool = false) -> (filters: [CIFilter], background: NSColor) {
         let page = NSColor(Color(hex: theme.colors.background)).usingColorSpace(.sRGB) ?? NSColor(srgbRed: 1, green: 1, blue: 1, alpha: 1)
+        if backgroundOnly { return ([], page) }
         var filters: [CIFilter] = []
         switch theme {
         case .original, .bold:
@@ -406,7 +408,7 @@ final class PDFPresenter: PDFReading {
     }
 
     private func applyTheme() {
-        let theme = PDFPresenter.themeFilters(for: session.effectiveTheme)
+        let theme = PDFPresenter.themeFilters(for: session.effectiveTheme, backgroundOnly: session.reader.themeBackgroundOnly)
         view.layer?.filters = theme.filters.isEmpty ? nil : theme.filters
         view.backgroundColor = theme.background
     }
@@ -584,14 +586,45 @@ final class PDFPresenter: PDFReading {
     }
 
     /// A highlight record for a selection: its line rectangles in page space, with the first line's place as locator.
+    /// Rectangles on one line joined into one, the gaps between words included: rectangles whose vertical ranges
+    /// overlap by half their height or more and lie within a line's height of each other sideways. Rectangles in
+    /// different columns stay apart.
+    static func joinedAlongLines(_ rects: [CGRect]) -> [CGRect] {
+        var out: [CGRect] = []
+        for rect in rects.sorted(by: { $0.minX < $1.minX }) where rect.width > 0 && rect.height > 0 {
+            if let i = out.firstIndex(where: { existing in
+                let overlap = min(existing.maxY, rect.maxY) - max(existing.minY, rect.minY)
+                let least = min(existing.height, rect.height)
+                guard least > 0, overlap >= least * 0.5 else { return false }
+                let gap = max(rect.minX - existing.maxX, existing.minX - rect.maxX)
+                return gap <= max(6, least * 1.5)
+            }) {
+                out[i] = out[i].union(rect)
+            } else {
+                out.append(rect)
+            }
+        }
+        return out
+    }
+
     static func highlightRecord(for selection: PDFSelection, in document: PDFDocument, color: HighlightColor, chapter: String) -> Annotation? {
         guard let text = selection.string, !text.isEmpty else { return nil }
-        var rects: [PDFRect] = []
+        // One rectangle per line and page, the words' gaps included: PDFKit may hand a line back word by word.
+        var byPage: [Int: [CGRect]] = [:]
+        var pageOrder: [Int] = []
         for line in selection.selectionsByLine() {
             for page in line.pages {
                 let b = line.bounds(for: page)
                 guard b.width > 0, b.height > 0 else { continue }
-                rects.append(PDFRect(page: document.index(for: page), x: b.minX, y: b.minY, width: b.width, height: b.height))
+                let index = document.index(for: page)
+                if byPage[index] == nil { pageOrder.append(index) }
+                byPage[index, default: []].append(b)
+            }
+        }
+        var rects: [PDFRect] = []
+        for index in pageOrder {
+            for b in joinedAlongLines(byPage[index] ?? []).sorted(by: { $0.maxY > $1.maxY }) {
+                rects.append(PDFRect(page: index, x: b.minX, y: b.minY, width: b.width, height: b.height))
             }
         }
         guard let first = rects.first else { return nil }

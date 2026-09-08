@@ -52,6 +52,7 @@ struct LibraryView: View {
         .searchable(text: $model.searchText, placement: .toolbar, prompt: "Search")
         .sheet(item: $model.infoBook) { book in InfoSheet(book: book) }
         .sheet(isPresented: $model.editingGoals) { GoalsSheet() }
+        .sheet(isPresented: $model.customizingHome) { HomeCustomizeSheet() }
         .sheet(isPresented: $model.creatingCollection) {
             NameSheet(title: "New Collection", prompt: "Name", initial: "", action: "Create") { model.addCollection(named: $0) }
         }
@@ -71,59 +72,64 @@ struct LibraryView: View {
     @ToolbarContentBuilder
     private func toolbarItems(for item: SidebarItem) -> some ToolbarContent {
         @Bindable var model = model
+        if item != .home, model.shelfView(for: item) == .grid {
+            // The cover-size slider in a capsule of its own, wide enough for its thumb to travel.
+            ToolbarItem(placement: .primaryAction) {
+                Slider(value: Binding(get: { model.settings.gridScale }, set: { model.settings.gridScale = Settings.clampedGridScale($0) }), in: Settings.gridScaleRange) {
+                    Text("Cover Size")
+                } minimumValueLabel: {
+                    Image(systemName: "square.grid.3x3").font(.caption2)
+                } maximumValueLabel: {
+                    Image(systemName: "square.grid.2x2").font(.callout)
+                }
+                .labelsHidden()
+                .controlSize(.small)
+                .frame(width: 190)
+                .padding(.horizontal, 8)
+                .help("Size of the covers (⌥⌘+ and ⌥⌘-)")
+            }
+        }
         ToolbarItemGroup(placement: .primaryAction) {
             if item == .home {
                 Menu {
-                    Toggle("Continue Reading", isOn: $model.settings.showContinueReading)
-                    Toggle("Reading Goals", isOn: $model.settings.showGoals)
-                    Toggle("Statistics", isOn: $model.settings.showStatistics)
+                    ForEach(model.settings.home.elements, id: \.self) { element in
+                        Toggle(element.label, isOn: Binding(get: { model.settings.home.isShown(element) }, set: { model.setHomeElement(element, shown: $0) }))
+                    }
+                    Divider()
+                    Button("Customize Home…") { model.customizingHome = true }
                 } label: {
                     Label("Customize Home", systemImage: "slider.horizontal.3")
                 }
-                .help("Choose what Home shows")
+                .help("Choose what Home shows, and in what order")
             } else {
-                if model.settings.libraryView == .grid {
-                    Slider(value: Binding(get: { model.settings.gridScale }, set: { model.settings.gridScale = Settings.clampedGridScale($0) }), in: Settings.gridScaleRange) {
-                        Text("Cover Size")
-                    } minimumValueLabel: {
-                        Image(systemName: "square.grid.3x3").font(.caption2)
-                    } maximumValueLabel: {
-                        Image(systemName: "square.grid.2x2").font(.callout)
-                    }
-                    .labelsHidden()
-                    .controlSize(.small)
-                    .frame(width: 130)
-                    .help("Size of the covers (⌥⌘+ and ⌥⌘-)")
-                }
-                Picker("View", selection: $model.settings.libraryView) {
+                Picker("View", selection: Binding(get: { model.shelfView(for: item) }, set: { model.setShelfView($0, for: item) })) {
                     Label("Grid", systemImage: "square.grid.2x2").tag(LibraryViewMode.grid)
                     Label("List", systemImage: "list.bullet").tag(LibraryViewMode.list)
                 }
                 .pickerStyle(.segmented)
-                .help("Show as a grid or a list")
+                .help("Show this shelf as a grid or a list")
                 Menu {
-                    Picker("Sort By", selection: Binding(get: { model.settings.sort }, set: { model.setSort($0) })) {
+                    Picker("Sort By", selection: Binding(get: { model.shelfSort(for: item) }, set: { model.setShelfSort($0, for: item) })) {
                         ForEach(LibrarySort.allCases, id: \.self) { Text($0.label).tag($0) }
                     }
                     .pickerStyle(.inline)
                     Divider()
-                    Picker("Order", selection: Binding(get: { model.sortAscending }, set: { model.settings.sortAscending = $0 })) {
+                    Picker("Order", selection: Binding(get: { model.shelfSortAscending(for: item) }, set: { model.setShelfSortAscending($0, for: item) })) {
                         Text("Ascending").tag(true)
                         Text("Descending").tag(false)
                     }
                     .pickerStyle(.inline)
-                    if item.isLibraryShelf {
-                        Divider()
-                        Picker("Group By", selection: $model.settings.groupByCollection) {
-                            Text("Collection").tag(true)
-                            Text("None").tag(false)
-                        }
-                        .pickerStyle(.inline)
+                    Divider()
+                    Picker("Group By", selection: Binding(get: { model.shelfGrouping(for: item) }, set: { model.setShelfGrouping($0, for: item) })) {
+                        Text("None").tag(ShelfGrouping.none)
+                        if item.isLibraryShelf { Text("Collection").tag(ShelfGrouping.collection) }
+                        Text("Genre").tag(ShelfGrouping.genre)
                     }
+                    .pickerStyle(.inline)
                 } label: {
                     Label("Sort", systemImage: "arrow.up.arrow.down")
                 }
-                .help("Sort and group")
+                .help("Sort and group this shelf")
             }
             Button { model.chooseFiles() } label: { Label("Add Books", systemImage: "plus") }
                 .help("Add books to your library (⌘O)")
