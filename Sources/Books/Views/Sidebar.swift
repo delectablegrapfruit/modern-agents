@@ -3,8 +3,9 @@ import UniformTypeIdentifiers
 import BooksCore
 
 /// Home, the library's shelves and your collections, each section in the order you drag its rows into. Any row but
-/// All can be hidden from its context menu and brought back from its section's menu. Books can be dropped on
-/// Finished and on collections. The "New Collection" button sits at the bottom, as in Books.
+/// All can be hidden from its context menu and brought back from the menu under the arrow that appears beside the
+/// section's name when the pointer is over it. Books can be dropped on Finished and on collections. The "New
+/// Collection" button sits at the bottom, as in Books.
 struct Sidebar: View {
     @Environment(LibraryModel.self) private var model
 
@@ -39,23 +40,7 @@ struct Sidebar: View {
             }
             .onMove { source, destination in model.moveSidebarEntries(in: group, from: source, to: destination) }
         } header: {
-            HStack {
-                Text(title)
-                Spacer()
-                if !hideable.isEmpty {
-                    Menu {
-                        ForEach(hideable, id: \.self) { item in
-                            Toggle(model.name(of: item), isOn: Binding(get: { !model.isHidden(item) }, set: { model.setHidden(item, !$0) }))
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                    }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
-                    .fixedSize()
-                    .help("Choose which rows of this section are shown")
-                }
-            }
+            SectionHeader(title: title, hideable: hideable)
         }
     }
 
@@ -89,6 +74,42 @@ struct Sidebar: View {
                     return false
                 }
             }
+    }
+}
+
+/// A section's name with, while the pointer is over the header, a small arrow beside it opening the menu of the
+/// section's rows: each can be shown or hidden.
+private struct SectionHeader: View {
+    @Environment(LibraryModel.self) private var model
+    let title: String
+    let hideable: [SidebarItem]
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 2) {
+            Text(title)
+            if !hideable.isEmpty {
+                Menu {
+                    ForEach(hideable, id: \.self) { item in
+                        Toggle(model.name(of: item), isOn: Binding(get: { !model.isHidden(item) }, set: { model.setHidden(item, !$0) }))
+                    }
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 9, weight: .bold))
+                        .frame(width: 16, height: 16)
+                        .contentShape(Rectangle())
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .opacity(hovering ? 1 : 0)
+                .accessibilityLabel("Show or hide rows of \(title)")
+                .help("Choose which rows of this section are shown")
+            }
+            Spacer(minLength: 0)
+        }
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
     }
 }
 

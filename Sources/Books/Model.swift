@@ -79,9 +79,14 @@ final class LibraryModel {
     }
     private(set) var stats: ReadingStats
 
-    var sidebarSelection: SidebarItem? = .home
+    /// Moving to another shelf drops the selection: the table must not carry rows of one shelf into the next.
+    var sidebarSelection: SidebarItem? = .home {
+        didSet { if sidebarSelection != oldValue { selectedBookIDs = [] } }
+    }
     var searchText = ""
     var selectedBookIDs: Set<UUID> = []
+    /// Bumped when a cover changes on disk, so the views draw it again.
+    private(set) var coverVersion = 0
     /// The book open in the reader, replacing the library in the window.
     var reading: Book?
     var infoBook: Book?
@@ -139,15 +144,73 @@ final class LibraryModel {
         if !query.isEmpty {
             list = list.filter { $0.title.lowercased().contains(query) || $0.author.lowercased().contains(query) || $0.metadata.subjects.contains { $0.lowercased().contains(query) } }
         }
+        // A book once only, whatever a collection's list says: a table given the same row twice can crash.
+        var seen = Set<UUID>()
+        list = list.filter { seen.insert($0.id).inserted }
         return sorted(list)
     }
 
+    /// The direction the shelf is sorted in: as chosen, or the sort's own.
+    var sortAscending: Bool { settings.sortAscending ?? settings.sort.ascendingByDefault }
+
+    /// Chooses the sort; a new kind of sort starts in its own direction.
+    func setSort(_ sort: LibrarySort) {
+        guard sort != settings.sort else { return }
+        settings.sort = sort
+        settings.sortAscending = nil
+    }
+
     func sorted(_ list: [Book]) -> [Book] {
-        switch settings.sort {
-        case .recent: return list.sorted { ($0.lastOpenedAt ?? $0.addedAt) > ($1.lastOpenedAt ?? $1.addedAt) }
-        case .title: return list.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
-        case .author: return list.sorted { ($0.authorSortKey, $0.title) < ($1.authorSortKey, $1.title) }
+        let ascending = sortAscending
+        func byTitle(_ a: Book, _ b: Book) -> Bool { a.title.localizedStandardCompare(b.title) == .orderedAscending }
+        func ordered<T: Comparable>(_ key: (Book) -> T) -> [Book] {
+            list.sorted { a, b in
+                let ka = key(a), kb = key(b)
+                if ka != kb { return ascending ? ka < kb : ka > kb }
+                return byTitle(a, b)
+            }
         }
+        switch settings.sort {
+        case .recent: return ordered { $0.lastOpenedAt ?? $0.addedAt }
+        case .title:
+            return list.sorted { a, b in
+                let order = a.title.localizedStandardCompare(b.title)
+                if order == .orderedSame { return a.addedAt < b.addedAt }
+                return ascending ? order == .orderedAscending : order == .orderedDescending
+            }
+        case .author:
+            return list.sorted { a, b in
+                if a.authorSortKey != b.authorSortKey { return ascending ? a.authorSortKey < b.authorSortKey : a.authorSortKey > b.authorSortKey }
+                return byTitle(a, b)
+            }
+        case .timeRead: return ordered { $0.secondsRead ?? 0 }
+        case .percentRead: return ordered { $0.isFinished ? 1.0 : $0.progress }
+        case .pagesRead: return ordered { $0.pagesRead ?? 0 }
+        case .length: return ordered { $0.lengthInWords }
+        }
+    }
+
+    /// All Books shelf by shelf: each collection in the sidebar's order with the books in it, a book in several
+    /// collections counted with the first, and the rest under "Not in a Collection". Empty groups are left out.
+    func shelfGroups(for books: [Book]) -> [ShelfGroup] {
+        var placed = Set<UUID>()
+        var groups: [ShelfGroup] = []
+        for case .collection(let id) in sidebarEntries(in: .collections) {
+            guard let found = self.collection(id) else { continue }
+            let members = Set(found.bookIDs)
+            let mine = books.filter { members.contains($0.id) && !placed.contains($0.id) }
+            guard !mine.isEmpty else { continue }
+            placed.formUnion(mine.map(\.id))
+            groups.append(ShelfGroup(id: "collection:" + id.uuidString, name: found.name, books: mine))
+        }
+        let rest = books.filter { !placed.contains($0.id) }
+        if !rest.isEmpty { groups.append(ShelfGroup(id: "rest", name: groups.isEmpty ? "All Books" : "Not in a Collection", books: rest)) }
+        return groups
+    }
+
+    /// Cover size in the grid, in steps: +1 bigger, -1 smaller.
+    func zoomGrid(_ steps: Int) {
+        settings.gridScale = Settings.clampedGridScale(settings.gridScale + Double(steps) * 0.1)
     }
 
     /// Books with a position, most recently read first: the Continue Reading shelf.
@@ -218,6 +281,41 @@ final class LibraryModel {
         return image
     }
 
+    /// Puts a picture of your own on a book, from an image file.
+    func setCover(fileAt url: URL, for id: UUID) {
+        guard let image = NSImage(contentsOf: url), image.isValid else {
+            error = "“\(url.lastPathComponent)” isn’t a picture Books can use as a cover."
+            return
+        }
+        setCover(image, for: id)
+    }
+
+    /// Puts a picture of your own on a book. It is kept as a JPEG no larger than 1600 pixels on its long side;
+    /// the book's own cover stays on disk for Restore.
+    func setCover(_ image: NSImage, for id: UUID) {
+        guard let data = Covers.jpegData(image) else {
+            error = "That picture couldn’t be read."
+            return
+        }
+        do {
+            try store.replaceCover(with: data, ext: "jpg", for: id)
+        } catch {
+            self.error = "The cover couldn’t be saved: \(error.localizedDescription)"
+            return
+        }
+        coverCache[id] = nil
+        coverVersion += 1
+        reload()
+    }
+
+    /// Takes a picture of your own off a book; its own cover, or none, shows again.
+    func restoreCover(for id: UUID) {
+        store.restoreCover(for: id)
+        coverCache[id] = nil
+        coverVersion += 1
+        reload()
+    }
+
     // MARK: - Reading
 
     func open(_ book: Book) {
@@ -267,9 +365,10 @@ final class LibraryModel {
         reload()
     }
 
-    func recordReading(seconds: Int, pages: Int = 0) {
-        store.recordReading(seconds: seconds, pages: pages)
+    func recordReading(seconds: Int, pages: Int = 0, in bookID: UUID? = nil) {
+        store.recordReading(seconds: seconds, pages: pages, in: bookID)
         stats = store.stats
+        if bookID != nil { books = store.books }
     }
 
     // MARK: - Collections
@@ -531,5 +630,29 @@ enum Rasterizer {
         NSGraphicsContext.restoreGraphicsState()
         guard let png = bitmap.representation(using: .png, properties: [:]) else { return nil }
         return (png, "image/png")
+    }
+}
+
+/// One shelf of the grouped All Books view.
+struct ShelfGroup: Identifiable, Hashable {
+    let id: String
+    let name: String
+    let books: [Book]
+}
+
+/// Pictures chosen as covers, made into files.
+enum Covers {
+    /// The picture as JPEG, no larger than `maxSide` pixels on its long side, on white where it was transparent.
+    static func jpegData(_ image: NSImage, maxSide: CGFloat = 1600) -> Data? {
+        guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil), cg.width > 0, cg.height > 0 else { return nil }
+        let scale = min(1, maxSide / CGFloat(max(cg.width, cg.height)))
+        let width = max(1, Int(CGFloat(cg.width) * scale)), height = max(1, Int(CGFloat(cg.height) * scale))
+        guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return nil }
+        context.interpolationQuality = .high
+        context.setFillColor(CGColor(gray: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        context.draw(cg, in: CGRect(x: 0, y: 0, width: width, height: height))
+        guard let drawn = context.makeImage() else { return nil }
+        return NSBitmapImageRep(cgImage: drawn).representation(using: .jpeg, properties: [.compressionFactor: 0.9])
     }
 }

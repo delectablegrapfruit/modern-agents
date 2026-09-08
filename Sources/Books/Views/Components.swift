@@ -1,40 +1,66 @@
 import SwiftUI
 import BooksCore
 
-/// A book cover at a given width, with the shadow and corner the system's book art has; a typographic
-/// placeholder while there is none.
+/// A book's cover in its box. The box is `width` wide and `height` high — 2:3 when a height is given, the
+/// picture's own shape when fitted and none is — and the picture lies in it as the book's cover style says:
+/// fitted (standing on the floor of the box), filling it, stretched to it, or where it was placed by hand.
+/// The progress bar and the New and Finished badges sit on the part of the picture that shows.
 struct CoverView: View {
     @Environment(LibraryModel.self) private var model
     let book: Book
     let width: CGFloat
+    var height: CGFloat? = nil
+    var badges = false
 
     var body: some View {
-        Group {
-            if let image = model.cover(for: book) {
+        let _ = model.coverVersion
+        let image = model.cover(for: book)
+        let style = book.coverStyle ?? CoverStyle()
+        let box = CGSize(width: width, height: height ?? CoverLayout.naturalHeight(image: image?.size, width: width, style: style))
+        let rect = image.map { CoverLayout.rect(image: $0.size, box: box, style: style) } ?? CGRect(origin: .zero, size: box)
+        let shown = rect.intersection(CGRect(origin: .zero, size: box))
+        let radius = max(2, width * 0.025)
+        ZStack(alignment: .topLeading) {
+            if let image {
                 Image(nsImage: image)
                     .resizable()
-                    .aspectRatio(contentMode: .fit)
+                    .frame(width: rect.width, height: rect.height)
+                    .position(x: rect.midX, y: rect.midY)
             } else {
-                placeholder
+                placeholder(box)
+            }
+            if !shown.isNull, !shown.isEmpty {
+                Color.clear
+                    .frame(width: shown.width, height: shown.height)
+                    .overlay(alignment: .bottom) {
+                        if !book.isFinished, book.hasStarted {
+                            ProgressView(value: book.progress)
+                                .progressViewStyle(.linear)
+                                .tint(.white)
+                                .frame(width: shown.width * 0.6)
+                                .padding(.bottom, 6)
+                                .shadow(radius: 2)
+                        }
+                    }
+                    .overlay(alignment: .topTrailing) { if badges, book.isNew { NewBadge().padding(6) } }
+                    .overlay(alignment: .topLeading) {
+                        if badges, book.isFinished {
+                            Image(systemName: "checkmark.seal.fill")
+                                .font(.title3)
+                                .foregroundStyle(.white, Color.accentColor)
+                                .shadow(radius: 2)
+                                .padding(6)
+                        }
+                    }
+                    .position(x: shown.midX, y: shown.midY)
             }
         }
-        .frame(width: width)
-        .frame(minHeight: width * 1.2, alignment: .bottom)
-        .clipShape(RoundedRectangle(cornerRadius: max(2, width * 0.025), style: .continuous))
+        .frame(width: box.width, height: box.height)
+        .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
         .shadow(color: .black.opacity(0.28), radius: width * 0.05, y: width * 0.03)
-        .overlay(alignment: .bottom) {
-            if !book.isFinished, book.hasStarted {
-                ProgressView(value: book.progress)
-                    .progressViewStyle(.linear)
-                    .tint(.white)
-                    .frame(width: width * 0.6)
-                    .padding(.bottom, 6)
-                    .shadow(radius: 2)
-            }
-        }
     }
 
-    private var placeholder: some View {
+    private func placeholder(_ box: CGSize) -> some View {
         ZStack {
             LinearGradient(colors: [Color(nsColor: .systemGray).opacity(0.7), Color(nsColor: .systemGray)], startPoint: .top, endPoint: .bottom)
             VStack(spacing: 6) {
@@ -50,7 +76,7 @@ struct CoverView: View {
             .foregroundStyle(.white)
             .padding(width * 0.08)
         }
-        .frame(width: width, height: width * 1.5)
+        .frame(width: box.width, height: box.height)
     }
 }
 

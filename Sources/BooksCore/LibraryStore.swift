@@ -216,6 +216,35 @@ public final class LibraryStore {
     /// The book that was added from a file, by its path.
     public func book(withSource path: String) -> Book? { books.first { $0.source == path } }
 
+    /// Puts a cover of your own on a book: the image data is written into the book's folder and the book's own
+    /// cover, if any, is remembered so it can come back. `ext` names the format ("jpg", "png").
+    public func replaceCover(with data: Data, ext: String, for id: UUID) throws {
+        guard let i = books.firstIndex(where: { $0.id == id }) else { return }
+        let folder = self.folder(for: id)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let name = "cover-custom-\(UUID().uuidString.prefix(8)).\(ext)"
+        try data.write(to: folder.appendingPathComponent(name), options: .atomic)
+        if let old = books[i].coverFile, books[i].originalCoverFile != nil || old.hasPrefix("cover-custom-") {
+            // A custom cover replacing another: the earlier file goes; the original stays remembered.
+            try? FileManager.default.removeItem(at: folder.appendingPathComponent(old))
+        } else {
+            books[i].originalCoverFile = books[i].coverFile ?? ""
+        }
+        books[i].coverFile = name
+        try save()
+    }
+
+    /// Takes a cover of your own off again; the book's own cover, or none, shows.
+    public func restoreCover(for id: UUID) {
+        guard let i = books.firstIndex(where: { $0.id == id }), let original = books[i].originalCoverFile else { return }
+        if let custom = books[i].coverFile, custom.hasPrefix("cover-custom-") {
+            try? FileManager.default.removeItem(at: folder(for: id).appendingPathComponent(custom))
+        }
+        books[i].coverFile = original.isEmpty ? nil : original
+        books[i].originalCoverFile = nil
+        try? save()
+    }
+
     public func setSource(_ path: String?, for id: UUID) {
         guard let i = books.firstIndex(where: { $0.id == id }), books[i].source != path else { return }
         books[i].source = path
@@ -281,9 +310,14 @@ public final class LibraryStore {
 
     // MARK: - Statistics
 
-    public func recordReading(seconds: Int, pages: Int = 0) {
+    public func recordReading(seconds: Int, pages: Int = 0, in bookID: UUID? = nil) {
         stats.add(seconds: seconds, pages: pages)
         try? saveStats()
+        if let bookID, let i = books.firstIndex(where: { $0.id == bookID }) {
+            books[i].secondsRead = (books[i].secondsRead ?? 0) + seconds
+            books[i].pagesRead = (books[i].pagesRead ?? 0) + pages
+            try? save()
+        }
     }
 
     public func booksFinished(inYear year: Int, calendar: Calendar = .current) -> Int {

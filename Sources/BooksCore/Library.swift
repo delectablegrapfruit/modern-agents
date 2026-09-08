@@ -55,10 +55,17 @@ public struct Book: Codable, Identifiable, Hashable {
     public var position: ReadingPosition?
     /// File name of the cover inside the book's folder ("cover.jpg"), when it has one.
     public var coverFile: String?
+    /// The book's own cover, kept while a cover of your own stands in for it.
+    public var originalCoverFile: String?
+    /// How the cover sits in its box on the shelf, where it differs from fitting.
+    public var coverStyle: CoverStyle?
     /// How this book is viewed, where it differs from the reader settings.
     public var view: BookView?
     /// Where the file came from, for books added from folders: a rescan knows them, and a move is followed.
     public var source: String?
+    /// Time spent reading this book, in seconds, and pages turned in it.
+    public var secondsRead: Int?
+    public var pagesRead: Int?
 
     public init(id: UUID = UUID(), title: String, author: String, kind: BookKind, fileName: String, fileSize: Int64, metadata: BookMetadata = BookMetadata(),
                 words: Int = 0, pageCount: Int? = nil, addedAt: Date = Date(), lastOpenedAt: Date? = nil, finishedAt: Date? = nil,
@@ -83,6 +90,10 @@ public struct Book: Codable, Identifiable, Hashable {
 
     public var isNew: Bool { lastOpenedAt == nil }
     public var isFinished: Bool { finishedAt != nil }
+    /// Whether the cover shown is a picture of your own rather than the book's.
+    public var coverReplaced: Bool { originalCoverFile != nil }
+    /// The book's length as words: its own count, or about 300 a page for a PDF.
+    public var lengthInWords: Int { words > 0 ? words : (pageCount ?? 0) * 300 }
     /// 0…1
     public var progress: Double { min(1, max(0, (position?.percent ?? 0) / 100)) }
     public var hasStarted: Bool { (position?.percent ?? 0) > 0 }
@@ -474,16 +485,116 @@ public enum LibraryViewMode: String, Codable, CaseIterable, Hashable {
     case grid, list
 }
 
+/// How a cover fills the box it is shown in: fitted inside it, filling it (cropped), stretched to it, or placed
+/// by hand.
+public enum CoverFit: String, Codable, CaseIterable, Hashable {
+    case fit, fill, stretch, custom
+
+    public var label: String {
+        switch self {
+        case .fit: return "Fit"
+        case .fill: return "Fill"
+        case .stretch: return "Stretch"
+        case .custom: return "Custom"
+        }
+    }
+}
+
+/// Where a hand-placed cover lies, in units of its box: (0, 0, 1, 1) is the box itself.
+public struct CoverFrame: Codable, Hashable {
+    public var x: Double
+    public var y: Double
+    public var width: Double
+    public var height: Double
+
+    public init(x: Double, y: Double, width: Double, height: Double) {
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+    }
+}
+
+public struct CoverStyle: Codable, Hashable {
+    public var fit: CoverFit
+    /// The placement for `.custom`; a filling one is used until the picture is moved.
+    public var frame: CoverFrame?
+
+    public init(fit: CoverFit = .fit, frame: CoverFrame? = nil) {
+        self.fit = fit
+        self.frame = frame
+    }
+
+    public var isDefault: Bool { fit == .fit }
+}
+
+/// Lays a cover picture in its box.
+public enum CoverLayout {
+    /// The box's height for a width, when nothing fixes it: the picture's own shape when fitted, 2:3 otherwise.
+    public static func naturalHeight(image: CGSize?, width: CGFloat, style: CoverStyle) -> CGFloat {
+        guard let image, image.width > 0, image.height > 0, style.fit == .fit else { return width * 1.5 }
+        return max(width * 1.2, width * image.height / image.width)
+    }
+
+    /// The rectangle a picture of `image` size takes in a box of `box` size. Fitted pictures stand on the box's
+    /// floor, centred; filling ones are centred and cropped; stretched ones are the box.
+    public static func rect(image: CGSize, box: CGSize, style: CoverStyle) -> CGRect {
+        guard image.width > 0, image.height > 0, box.width > 0, box.height > 0 else { return CGRect(origin: .zero, size: box) }
+        switch style.fit {
+        case .fit:
+            let s = min(box.width / image.width, box.height / image.height)
+            let w = image.width * s, h = image.height * s
+            return CGRect(x: (box.width - w) / 2, y: box.height - h, width: w, height: h)
+        case .fill:
+            return rect(frame: fillFrame(image: image, box: box), box: box)
+        case .stretch:
+            return CGRect(origin: .zero, size: box)
+        case .custom:
+            return rect(frame: style.frame ?? fillFrame(image: image, box: box), box: box)
+        }
+    }
+
+    public static func rect(frame: CoverFrame, box: CGSize) -> CGRect {
+        CGRect(x: CGFloat(frame.x) * box.width, y: CGFloat(frame.y) * box.height, width: CGFloat(frame.width) * box.width, height: CGFloat(frame.height) * box.height)
+    }
+
+    /// The placement that fills the box, centred: the start of a custom one.
+    public static func fillFrame(image: CGSize, box: CGSize) -> CoverFrame {
+        guard image.width > 0, image.height > 0, box.width > 0, box.height > 0 else { return CoverFrame(x: 0, y: 0, width: 1, height: 1) }
+        let s = max(box.width / image.width, box.height / image.height)
+        let w = Double(image.width * s / box.width), h = Double(image.height * s / box.height)
+        return CoverFrame(x: (1 - w) / 2, y: (1 - h) / 2, width: w, height: h)
+    }
+
+    /// Keeps a hand placement sensible: no smaller than a tenth of the box either way, and not left entirely
+    /// outside it.
+    public static func clamped(_ frame: CoverFrame) -> CoverFrame {
+        var f = frame
+        f.width = max(0.1, min(20, f.width.isFinite ? f.width : 1))
+        f.height = max(0.1, min(20, f.height.isFinite ? f.height : 1))
+        f.x = max(-f.width + 0.05, min(0.95, f.x.isFinite ? f.x : 0))
+        f.y = max(-f.height + 0.05, min(0.95, f.y.isFinite ? f.y : 0))
+        return f
+    }
+}
+
 public enum LibrarySort: String, Codable, CaseIterable, Hashable {
-    case recent, title, author
+    case recent, title, author, timeRead, percentRead, pagesRead, length
 
     public var label: String {
         switch self {
         case .recent: return "Recent"
         case .title: return "Title"
         case .author: return "Author"
+        case .timeRead: return "Time Read"
+        case .percentRead: return "Percentage Read"
+        case .pagesRead: return "Pages Read"
+        case .length: return "Length"
         }
     }
+
+    /// The order a sort is wanted in first: names A to Z, amounts and times largest or latest first.
+    public var ascendingByDefault: Bool { self == .title || self == .author }
 }
 
 /// The library folder: a folder whose files, and its subfolders' files, are in the library by themselves.
@@ -527,10 +638,16 @@ public struct Settings: Codable, Hashable {
     public var sidebarOrder: [String] = []
     public var sidebarHidden: [String] = []
     public var library = LibraryFolderSettings()
+    /// The sort's direction; nil for the sort's own default.
+    public var sortAscending: Bool?
+    /// All Books shown collection by collection.
+    public var groupAllByCollection = true
+    /// Size of the covers in the grid, as a factor of the usual: 0.6 to 1.6.
+    public var gridScale: Double = 1
 
     public init() {}
 
-    enum CodingKeys: String, CodingKey { case reader, libraryView, sort, goals, showContinueReading, showGoals, showStatistics, sidebarOrder, sidebarHidden, library }
+    enum CodingKeys: String, CodingKey { case reader, libraryView, sort, goals, showContinueReading, showGoals, showStatistics, sidebarOrder, sidebarHidden, library, sortAscending, groupAllByCollection, gridScale }
 
     /// Missing or unknown values fall back to defaults, so settings written by another version still load.
     public init(from decoder: Decoder) throws {
@@ -545,7 +662,13 @@ public struct Settings: Codable, Hashable {
         sidebarOrder = (try? c.decodeIfPresent([String].self, forKey: .sidebarOrder)) ?? []
         sidebarHidden = (try? c.decodeIfPresent([String].self, forKey: .sidebarHidden)) ?? []
         library = (try? c.decodeIfPresent(LibraryFolderSettings.self, forKey: .library)) ?? LibraryFolderSettings()
+        sortAscending = try? c.decodeIfPresent(Bool.self, forKey: .sortAscending)
+        groupAllByCollection = (try? c.decodeIfPresent(Bool.self, forKey: .groupAllByCollection)) ?? true
+        gridScale = Settings.clampedGridScale((try? c.decodeIfPresent(Double.self, forKey: .gridScale)) ?? 1)
     }
+
+    public static let gridScaleRange: ClosedRange<Double> = 0.6...1.6
+    public static func clampedGridScale(_ value: Double) -> Double { value.isFinite ? min(max(value, gridScaleRange.lowerBound), gridScaleRange.upperBound) : 1 }
 }
 
 /// Formatting shared by the app and the command line.

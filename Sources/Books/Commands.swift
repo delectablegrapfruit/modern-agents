@@ -51,11 +51,19 @@ struct BooksCommands: Commands {
             Divider()
             Button("as Grid") { model.settings.libraryView = .grid }
             Button("as List") { model.settings.libraryView = .list }
+            Button("Bigger Covers") { model.zoomGrid(1) }
+                .keyboardShortcut("=", modifiers: [.command, .option])
+            Button("Smaller Covers") { model.zoomGrid(-1) }
+                .keyboardShortcut("-", modifiers: [.command, .option])
             Menu("Sort By") {
                 ForEach(LibrarySort.allCases, id: \.self) { sort in
-                    Button(sort.label) { model.settings.sort = sort }
+                    Button(sort.label) { model.setSort(sort) }
                 }
+                Divider()
+                Button("Ascending") { model.settings.sortAscending = true }
+                Button("Descending") { model.settings.sortAscending = false }
             }
+            Toggle("Group All Books by Collection", isOn: Binding(get: { model.settings.groupAllByCollection }, set: { model.settings.groupAllByCollection = $0 }))
         }
         CommandMenu("Book") {
             Button("Next Page") { reader?.nextPage() }

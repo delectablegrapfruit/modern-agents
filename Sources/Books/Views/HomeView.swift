@@ -29,7 +29,6 @@ struct HomeView: View {
                 }
             }
             .padding(28)
-            .frame(maxWidth: 1100, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
@@ -61,7 +60,7 @@ struct ContinueItem: View {
     var body: some View {
         Button { model.open(book) } label: {
             VStack(alignment: .leading, spacing: 8) {
-                CoverView(book: book, width: 132)
+                CoverView(book: book, width: 132, height: 198)
                     .scaleEffect(hovering ? 1.03 : 1)
                     .animation(.easeOut(duration: 0.15), value: hovering)
                 VStack(alignment: .leading, spacing: 2) {

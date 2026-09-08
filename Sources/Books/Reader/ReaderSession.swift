@@ -627,7 +627,7 @@ final class ReaderSession {
     }
 
     func flushPosition() {
-        if pagesTurned > 0 { model.recordReading(seconds: 0, pages: pagesTurned); pagesTurned = 0 }
+        if pagesTurned > 0 { model.recordReading(seconds: 0, pages: pagesTurned, in: book.id); pagesTurned = 0 }
         guard !usesPDFView, isOpen, let locator = position.locator else { return }   // PDFs save as their page changes
         let finished: Bool? = position.atEnd && layout.total > 1 ? true : nil
         model.savePosition(ReadingPosition(locator: locator, percent: position.percent), for: book.id, finished: finished)
@@ -756,7 +756,7 @@ final class ReaderSession {
         readingTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self, NSApp.isActive, Date().timeIntervalSince(self.lastActivity) < 120 else { return }
-                self.model.recordReading(seconds: 30)
+                self.model.recordReading(seconds: 30, in: self.book.id)
             }
         }
     }

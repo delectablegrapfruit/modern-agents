@@ -133,6 +133,7 @@ enum SelfTest {
 
         try await runWrappedBook(model: model)
         try await runPDF(model: model)
+        try await runShelf(model: model)
         try await runFolders(model: model)
         print("SELFTEST OK: \(Int(layout.total)) pages, \(layout.columns) column(s), wheel \(wheelReport.joined(separator: " · ")), position saved at \(Int(saved.percent))%; PDF checked; macOS \(ProcessInfo.processInfo.operatingSystemVersionString)")
         fflush(stdout)
@@ -319,6 +320,108 @@ enum SelfTest {
     /// subfolders.
     @MainActor
     private static func runFolders(model: LibraryModel) async throws {
+        try await runFoldersBody(model: model)
+    }
+
+    /// Shelves and covers: reading time and pages are counted on the book and the shelf sorts by them, by length
+    /// and in either direction; All Books groups by collection; a picture of one's own becomes a cover, is laid
+    /// out fitted and filling, keeps its style and gives way to the original again; the grid scale is clamped.
+    @MainActor
+    private static func runShelf(model: LibraryModel) async throws {
+        func epub(_ title: String, paragraphs: Int) throws -> URL {
+            let chapter = EPUBChapter(label: "One", title: "One", html: String(repeating: "<p>\(title): " + String(repeating: "words and more words. ", count: 40) + "</p>", count: paragraphs))
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("Books Self-Test \(title) \(UUID().uuidString).epub")
+            try EPUBWriter.build(EPUBSpec(title: title, author: "Shelf Test", chapters: [chapter], coverSVG: CoverArt.svg(title: title, author: "Shelf Test"))).write(to: url)
+            return url
+        }
+        let longURL = try epub("Shelf Long", paragraphs: 30), shortURL = try epub("Shelf Short", paragraphs: 2)
+        let added: [Book] = await withCheckedContinuation { continuation in
+            model.importFiles([longURL, shortURL], quiet: true, allowDuplicates: true) { continuation.resume(returning: $0) }
+        }
+        guard let long = added.first(where: { $0.title == "Shelf Long" }), let short = added.first(where: { $0.title == "Shelf Short" }) else { throw Failure("the shelf books could not be imported (\(added.count) added)") }
+        let saved = model.settings
+        defer {
+            model.delete(added.map(\.id))
+            var s = model.settings
+            s.sort = saved.sort
+            s.sortAscending = saved.sortAscending
+            s.groupAllByCollection = saved.groupAllByCollection
+            s.gridScale = saved.gridScale
+            model.settings = s
+            try? FileManager.default.removeItem(at: longURL)
+            try? FileManager.default.removeItem(at: shortURL)
+        }
+
+        // Reading counts land on the book.
+        model.recordReading(seconds: 120, pages: 3, in: short.id)
+        model.recordReading(seconds: 30, in: short.id)
+        guard model.book(short.id)?.secondsRead == 150, model.book(short.id)?.pagesRead == 3 else {
+            throw Failure("reading counts were not kept on the book: \(model.book(short.id)?.secondsRead ?? -1) s, \(model.book(short.id)?.pagesRead ?? -1) pages")
+        }
+
+        // Sorts, judged between the two books: the read one first by time and pages read, after by the same sorts
+        // ascending; the long one first by length.
+        func index(_ id: UUID) -> Int { model.books(for: .all).firstIndex { $0.id == id } ?? Int.max }
+        model.setSort(.timeRead)
+        guard !model.sortAscending, index(short.id) < index(long.id) else { throw Failure("Time Read did not put the read book first") }
+        var s = model.settings
+        s.sortAscending = true
+        model.settings = s
+        guard index(short.id) > index(long.id) else { throw Failure("ascending Time Read did not put the read book after the unread") }
+        model.setSort(.pagesRead)
+        guard !model.sortAscending, index(short.id) < index(long.id) else { throw Failure("Pages Read did not put the read book first, or kept the direction") }
+        model.setSort(.length)
+        guard index(long.id) < index(short.id) else { throw Failure("Length did not put the longer book first") }
+        model.setSort(.title)
+        guard model.sortAscending, index(long.id) < index(short.id) else { throw Failure("Title did not sort A to Z") }
+        log("sorts: time read, pages read, length and title order the shelf, in both directions")
+
+        // All Books grouped: a collection holding one of the two, the other among the rest.
+        model.addCollection(named: "Shelf Test Collection")
+        guard let collection = model.collections.first(where: { $0.name == "Shelf Test Collection" }) else { throw Failure("the shelf collection was not made") }
+        defer { model.deleteCollection(collection.id) }
+        model.add([short.id], to: collection.id)
+        let groups = model.shelfGroups(for: model.books(for: .all))
+        guard let mine = groups.first(where: { $0.name == "Shelf Test Collection" }), mine.books.map(\.id) == [short.id],
+              let rest = groups.first(where: { $0.name == "Not in a Collection" }), rest.books.contains(where: { $0.id == long.id }), !rest.books.contains(where: { $0.id == short.id }) else {
+            throw Failure("All Books did not group by collection: \(groups.map { "\($0.name): \($0.books.count)" })")
+        }
+        log("All Books grouped: \(groups.map { "\($0.name) (\($0.books.count))" }.joined(separator: ", "))")
+
+        // A picture of one's own as the cover, laid out, styled, and the original back.
+        let picture = NSImage(size: NSSize(width: 300, height: 200), flipped: false) { rect in
+            NSColor.systemRed.setFill()
+            rect.fill()
+            return true
+        }
+        let before = model.book(long.id)?.coverFile
+        model.setCover(picture, for: long.id)
+        guard let swapped = model.book(long.id), swapped.coverReplaced, swapped.originalCoverFile == before,
+              let url = model.store.coverURL(for: swapped), FileManager.default.fileExists(atPath: url.path),
+              let loaded = model.cover(for: swapped), loaded.size.height > 0 else { throw Failure("the chosen picture did not become the cover: \(model.error ?? "no error")") }
+        guard abs(loaded.size.width / loaded.size.height - 1.5) < 0.01 else { throw Failure("the cover picture lost its shape: \(loaded.size)") }
+        let box = CGSize(width: 200, height: 300)
+        let fit = CoverLayout.rect(image: loaded.size, box: box, style: CoverStyle(fit: .fit))
+        guard abs(fit.maxY - 300) < 0.01, abs(fit.width - 200) < 0.01 else { throw Failure("fitted layout wrong: \(fit)") }
+        let fill = CoverLayout.rect(image: loaded.size, box: box, style: CoverStyle(fit: .fill))
+        guard abs(fill.height - 300) < 0.01, fill.minX < 0 else { throw Failure("filling layout wrong: \(fill)") }
+        var styled = swapped
+        styled.coverStyle = CoverStyle(fit: .custom, frame: CoverFrame(x: -0.2, y: 0, width: 1.4, height: 1))
+        model.update(styled)
+        guard model.book(long.id)?.coverStyle?.fit == .custom, model.book(long.id)?.coverStyle?.frame?.width == 1.4 else { throw Failure("the cover style was not kept") }
+        model.restoreCover(for: long.id)
+        guard let restored = model.book(long.id), !restored.coverReplaced, restored.coverFile == before, !FileManager.default.fileExists(atPath: url.path) else { throw Failure("the original cover did not come back") }
+        log("cover: picture set (\(Int(loaded.size.width))×\(Int(loaded.size.height))), fitted and filling layouts, style kept, original restored")
+
+        model.zoomGrid(50)
+        guard model.settings.gridScale == Settings.gridScaleRange.upperBound else { throw Failure("grid scale not clamped: \(model.settings.gridScale)") }
+        model.zoomGrid(-50)
+        guard model.settings.gridScale == Settings.gridScaleRange.lowerBound else { throw Failure("grid scale not clamped below: \(model.settings.gridScale)") }
+        log("shelf: reading counts, sorts, grouping, cover swap and cover size checked")
+    }
+
+    @MainActor
+    private static func runFoldersBody(model: LibraryModel) async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("Books Self-Test Folder \(UUID().uuidString)", isDirectory: true)
         let fiction = root.appendingPathComponent("Fiction", isDirectory: true), science = root.appendingPathComponent("Science", isDirectory: true)
         try FileManager.default.createDirectory(at: fiction.appendingPathComponent("Deeper", isDirectory: true), withIntermediateDirectories: true)

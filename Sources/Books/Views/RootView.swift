@@ -28,7 +28,7 @@ struct RootView: View {
     }
 }
 
-/// Sidebar plus shelf, with the toolbar Books has: view switch, sort, search, add.
+/// Sidebar plus shelf, with the toolbar Books has: cover size, view switch, sort, search, add.
 struct LibraryView: View {
     @Environment(LibraryModel.self) private var model
     @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
@@ -82,6 +82,19 @@ struct LibraryView: View {
                 }
                 .help("Choose what Home shows")
             } else {
+                if model.settings.libraryView == .grid {
+                    Slider(value: Binding(get: { model.settings.gridScale }, set: { model.settings.gridScale = Settings.clampedGridScale($0) }), in: Settings.gridScaleRange) {
+                        Text("Cover Size")
+                    } minimumValueLabel: {
+                        Image(systemName: "square.grid.3x3").font(.caption2)
+                    } maximumValueLabel: {
+                        Image(systemName: "square.grid.2x2").font(.callout)
+                    }
+                    .labelsHidden()
+                    .controlSize(.small)
+                    .frame(width: 130)
+                    .help("Size of the covers (⌥⌘+ and ⌥⌘-)")
+                }
                 Picker("View", selection: $model.settings.libraryView) {
                     Label("Grid", systemImage: "square.grid.2x2").tag(LibraryViewMode.grid)
                     Label("List", systemImage: "list.bullet").tag(LibraryViewMode.list)
@@ -89,13 +102,28 @@ struct LibraryView: View {
                 .pickerStyle(.segmented)
                 .help("Show as a grid or a list")
                 Menu {
-                    Picker("Sort By", selection: $model.settings.sort) {
+                    Picker("Sort By", selection: Binding(get: { model.settings.sort }, set: { model.setSort($0) })) {
                         ForEach(LibrarySort.allCases, id: \.self) { Text($0.label).tag($0) }
+                    }
+                    .pickerStyle(.inline)
+                    Divider()
+                    Picker("Order", selection: Binding(get: { model.sortAscending }, set: { model.settings.sortAscending = $0 })) {
+                        Text("Ascending").tag(true)
+                        Text("Descending").tag(false)
+                    }
+                    .pickerStyle(.inline)
+                    if item == .all {
+                        Divider()
+                        Picker("Group By", selection: $model.settings.groupAllByCollection) {
+                            Text("Collection").tag(true)
+                            Text("None").tag(false)
+                        }
+                        .pickerStyle(.inline)
                     }
                 } label: {
                     Label("Sort", systemImage: "arrow.up.arrow.down")
                 }
-                .help("Sort by")
+                .help("Sort and group")
             }
             Button { model.chooseFiles() } label: { Label("Add Books", systemImage: "plus") }
                 .help("Add books to your library (⌘O)")

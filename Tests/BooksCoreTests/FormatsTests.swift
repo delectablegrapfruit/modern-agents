@@ -304,3 +304,101 @@ final class XMLTreeTests: XCTestCase {
         XCTAssertEqual(root.attribute("a"), "x")
     }
 }
+
+final class CoverLayoutTests: XCTestCase {
+    func testFitFillStretchAndCustom() {
+        let box = CGSize(width: 200, height: 300)
+        let wide = CGSize(width: 400, height: 200)
+        let fit = CoverLayout.rect(image: wide, box: box, style: CoverStyle(fit: .fit))
+        XCTAssertEqual(fit, CGRect(x: 0, y: 200, width: 200, height: 100), "a wide picture fitted stands on the floor of the box")
+        let fill = CoverLayout.rect(image: wide, box: box, style: CoverStyle(fit: .fill))
+        XCTAssertEqual(fill.height, 300, accuracy: 0.001)
+        XCTAssertEqual(fill.width, 600, accuracy: 0.001)
+        XCTAssertEqual(fill.midX, 100, accuracy: 0.001, "filling is centred")
+        XCTAssertEqual(CoverLayout.rect(image: wide, box: box, style: CoverStyle(fit: .stretch)), CGRect(origin: .zero, size: box))
+        let custom = CoverLayout.rect(image: wide, box: box, style: CoverStyle(fit: .custom, frame: CoverFrame(x: -0.5, y: 0.25, width: 2, height: 0.5)))
+        XCTAssertEqual(custom, CGRect(x: -100, y: 75, width: 400, height: 150))
+        XCTAssertEqual(CoverLayout.rect(image: wide, box: box, style: CoverStyle(fit: .custom)), fill, "a custom placement starts as filling")
+        XCTAssertEqual(CoverLayout.naturalHeight(image: CGSize(width: 100, height: 160), width: 100, style: CoverStyle()), 160)
+        XCTAssertEqual(CoverLayout.naturalHeight(image: wide, width: 100, style: CoverStyle()), 120, "a fitted box is never flatter than 1.2")
+        XCTAssertEqual(CoverLayout.naturalHeight(image: wide, width: 100, style: CoverStyle(fit: .fill)), 150)
+        let clamped = CoverLayout.clamped(CoverFrame(x: 5, y: -9, width: 0.01, height: 40))
+        XCTAssertEqual(clamped.width, 0.1)
+        XCTAssertEqual(clamped.height, 20)
+        XCTAssertEqual(clamped.x, 0.95)
+        XCTAssertEqual(clamped.y, -9, "a placement inside the allowed range is left alone")
+        let far = CoverLayout.clamped(CoverFrame(x: 0, y: -30, width: 1, height: 1))
+        XCTAssertEqual(far.y, -0.95, accuracy: 0.0001, "a picture cannot be dragged wholly out of the box")
+    }
+
+    func testCoverStyleAndReadingCountsRoundTrip() throws {
+        var book = Book(title: "T", author: "A", kind: .epub, fileName: "t.epub", fileSize: 1)
+        book.coverStyle = CoverStyle(fit: .custom, frame: CoverFrame(x: 0.1, y: 0.2, width: 1.5, height: 1.2))
+        book.secondsRead = 90
+        book.pagesRead = 4
+        let data = try JSONEncoder().encode(book)
+        let back = try JSONDecoder().decode(Book.self, from: data)
+        XCTAssertEqual(back.coverStyle, book.coverStyle)
+        XCTAssertEqual(back.secondsRead, 90)
+        XCTAssertEqual(back.pagesRead, 4)
+        XCTAssertEqual(back.lengthInWords, 0)
+        var pdf = book
+        pdf.words = 0
+        pdf.pageCount = 10
+        XCTAssertEqual(pdf.lengthInWords, 3000, "a PDF's length counts 300 words a page")
+        XCTAssertTrue(LibrarySort.title.ascendingByDefault)
+        XCTAssertFalse(LibrarySort.timeRead.ascendingByDefault)
+        XCTAssertEqual(LibrarySort.allCases.count, 7)
+        XCTAssertEqual(Settings.clampedGridScale(9), 1.6)
+        XCTAssertEqual(Settings.clampedGridScale(.nan), 1)
+        let settings = try JSONDecoder().decode(Settings.self, from: Data("{}".utf8))
+        XCTAssertTrue(settings.groupAllByCollection)
+        XCTAssertNil(settings.sortAscending)
+        XCTAssertEqual(settings.gridScale, 1)
+    }
+}
+
+final class CoverSwapTests: XCTestCase {
+    func testReplaceAndRestoreCoverAndReadingCounts() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("books-cover-tests-" + UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = LibraryStore(directory: dir.appendingPathComponent("Library"))
+        let epubURL = dir.appendingPathComponent("test.epub")
+        try EPUBWriter.build(EPUBTests.sampleSpec()).write(to: epubURL)
+        guard case .added(let book) = try store.importFile(at: epubURL) else { return XCTFail("not added") }
+        XCTAssertEqual(book.coverFile, "cover.svg")
+
+        try store.replaceCover(with: Data([0xFF, 0xD8, 0xFF, 0xD9]), ext: "jpg", for: book.id)
+        var swapped = store.book(book.id)!
+        XCTAssertTrue(swapped.coverReplaced)
+        XCTAssertEqual(swapped.originalCoverFile, "cover.svg")
+        XCTAssertTrue(swapped.coverFile!.hasPrefix("cover-custom-"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: store.coverURL(for: swapped)!.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: store.folder(for: book.id).appendingPathComponent("cover.svg").path), "the book's own cover stays on disk")
+
+        // Another picture replaces the first; the original is still remembered.
+        let firstFile = swapped.coverFile!
+        try store.replaceCover(with: Data([0x89, 0x50, 0x4E, 0x47]), ext: "png", for: book.id)
+        swapped = store.book(book.id)!
+        XCTAssertEqual(swapped.originalCoverFile, "cover.svg")
+        XCTAssertTrue(swapped.coverFile!.hasSuffix(".png"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: store.folder(for: book.id).appendingPathComponent(firstFile).path), "the picture replaced is removed")
+
+        store.restoreCover(for: book.id)
+        let restored = store.book(book.id)!
+        XCTAssertFalse(restored.coverReplaced)
+        XCTAssertEqual(restored.coverFile, "cover.svg")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: store.folder(for: book.id).appendingPathComponent(swapped.coverFile!).path))
+
+        // Reading counts land on the book as well as in the statistics, and survive a reload.
+        store.recordReading(seconds: 60, pages: 2, in: book.id)
+        store.recordReading(seconds: 30, in: book.id)
+        XCTAssertEqual(store.book(book.id)?.secondsRead, 90)
+        XCTAssertEqual(store.book(book.id)?.pagesRead, 2)
+        XCTAssertEqual(store.stats.totalSeconds, 90)
+        let again = LibraryStore(directory: dir.appendingPathComponent("Library"))
+        XCTAssertEqual(again.book(book.id)?.secondsRead, 90)
+        XCTAssertEqual(again.book(book.id)?.coverFile, "cover.svg")
+    }
+}
