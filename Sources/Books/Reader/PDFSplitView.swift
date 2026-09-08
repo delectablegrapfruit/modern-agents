@@ -156,6 +156,10 @@ final class SplitPDFPresenter: PDFReading {
     /// The place to restore once screens exist (the view may not have been laid out when preparation finished).
     private var pendingRestore: (() -> Int)?
     private var tiles: [Int: CGImage] = [:]
+    /// The filters the page tiles are drawn through for the theme. Only the tiles are filtered: the surround, the
+    /// selection, the search flash and the highlights lie over them in their own colours, so a dark theme never
+    /// inverts a selection into dark bars between the words.
+    private var tileFilters: [CIFilter] = []
     /// Pages rendered once at a pixel scale, for cutting rewrapped words out of.
     private var pageImages: [String: (image: CGImage, area: CGRect, pixelScale: CGFloat)] = [:]
     private var spreadLayer: CALayer?
@@ -1063,9 +1067,65 @@ final class SplitPDFPresenter: PDFReading {
     // MARK: - Drawing
 
     private func applyTheme() {
-        let theme = PDFPresenter.themeFilters(for: session.effectiveTheme, backgroundOnly: session.reader.themeBackgroundOnly)
-        view.layer?.filters = theme.filters.isEmpty ? nil : theme.filters
-        view.layer?.backgroundColor = theme.background.cgColor
+        let theme = session.effectiveTheme
+        let backgroundOnly = session.reader.themeBackgroundOnly
+        tileFilters = PDFPresenter.themeFilters(for: theme, backgroundOnly: backgroundOnly).filters
+        view.layer?.filters = nil
+        view.layer?.backgroundColor = PDFPresenter.pageColor(for: theme).cgColor
+        let dark = theme.isDark && !backgroundOnly
+        view.selectionLayer.fillColor = NSColor.controlAccentColor.withAlphaComponent(dark ? 0.5 : 0.32).cgColor
+        view.flashLayer.fillColor = NSColor.systemYellow.withAlphaComponent(dark ? 0.55 : 0.4).cgColor
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for tile in spreadLayer?.sublayers ?? [] where tile.name == "tile" { tile.filters = tileFilters.isEmpty ? nil : tileFilters }
+        CATransaction.commit()
+        refreshHighlightOverlay()
+    }
+
+    /// The highlights that fall on the spread shown, as shapes over the pages: for each record one band per line,
+    /// the gaps between words included, from the same geometry as the selection. Light themes multiply the colour
+    /// into the paper like a marker; on a dark page the colour lies translucent over it.
+    private func highlightLayer() -> CALayer {
+        let layer = CALayer()
+        layer.name = "highlights"
+        layer.frame = view.bounds
+        let dark = session.effectiveTheme.isDark && !session.reader.themeBackgroundOnly
+        for record in session.annotations where record.kind == .highlight {
+            guard let rects = record.pdfRects, !rects.isEmpty else { continue }
+            var boxes: [CGRect] = []
+            for r in rects { boxes += viewRects(CGRect(x: r.x, y: r.y, width: r.width, height: r.height), onPage: r.page) }
+            let joined = PDFPresenter.joinedAlongLines(boxes)
+            guard !joined.isEmpty else { continue }
+            let shape = CAShapeLayer()
+            shape.frame = view.bounds
+            let path = CGMutablePath()
+            for box in joined {
+                if record.color == .underline {
+                    path.addRect(CGRect(x: box.minX, y: box.minY, width: box.width, height: max(1.5, box.height * 0.08)))
+                } else {
+                    path.addRect(box)
+                }
+            }
+            shape.path = path
+            let color = PDFPresenter.nsColor(for: record.color ?? .yellow)
+            if dark {
+                shape.fillColor = color.withAlphaComponent(record.color == .underline ? 0.9 : 0.45).cgColor
+            } else {
+                shape.fillColor = color.withAlphaComponent(record.color == .underline ? 1 : 0.85).cgColor
+                shape.compositingFilter = "multiplyBlendMode"
+            }
+            layer.addSublayer(shape)
+        }
+        return layer
+    }
+
+    private func refreshHighlightOverlay() {
+        guard let spread = spreadLayer else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for old in spread.sublayers ?? [] where old.name == "highlights" { old.removeFromSuperlayer() }
+        spread.addSublayer(highlightLayer())
+        CATransaction.commit()
     }
 
     /// A page's inked area rendered once at a pixel scale, so rewrapped words can be cut out of it cheaply.
@@ -1092,8 +1152,8 @@ final class SplitPDFPresenter: PDFReading {
         return entry
     }
 
-    /// One screen as an image at the window's scale: the paper, each piece's page drawn through its rectangle (a
-    /// rewrapped word cut from the page's rendering), and the highlights that fall on it.
+    /// One screen as an image at the window's scale: the paper and each piece's page drawn through its rectangle (a
+    /// rewrapped word cut from the page's rendering). Highlights lie over it as a layer of their own.
     private func tileImage(for u: Int) -> CGImage? {
         if let cached = tiles[u] { return cached }
         guard let document, u >= 0, u < units else { return nil }
@@ -1104,7 +1164,6 @@ final class SplitPDFPresenter: PDFReading {
         context.fill(CGRect(x: 0, y: 0, width: width, height: height))
         context.interpolationQuality = .high
         let tile = CGRect(origin: .zero, size: tileSize)
-        let highlights = session.annotations.filter { $0.kind == .highlight && $0.pdfRects != nil }
         for piece in screens[u].pieces {
             guard let page = document.page(at: piece.page) else { continue }
             let dest = pieceFrame(piece, in: tile, standalone: screens[u].standalone)
@@ -1129,41 +1188,6 @@ final class SplitPDFPresenter: PDFReading {
                 context.restoreGState()
             }
         }
-        // Highlights, in the tile's pixels: for each record and each line, one box over the words it covers —
-        // rewrapped words' gaps included — filled or underlined.
-        for record in highlights {
-            let color = PDFPresenter.nsColor(for: record.color ?? .yellow).usingColorSpace(.sRGB)?.cgColor ?? CGColor(gray: 1, alpha: 1)
-            var boxes: [CGRect] = []
-            var lineBoxes: [CGFloat: CGRect] = [:]
-            for piece in screens[u].pieces {
-                guard let page = document.page(at: piece.page) else { continue }
-                let toDisplay = page.transform(for: .mediaBox)
-                let dest = pieceFrame(piece, in: tile, standalone: screens[u].standalone)
-                let s = pieceScale(piece, in: tile)
-                var covered: CGRect?
-                for r in record.pdfRects ?? [] where r.page == piece.page {
-                    let shown = CGRect(x: r.x, y: r.y, width: r.width, height: r.height).applying(toDisplay).intersection(piece.rect)
-                    guard !shown.isNull, shown.width > 0, shown.height > 0 else { continue }
-                    let box = CGRect(x: (dest.minX + (shown.minX - piece.rect.minX) * s) * backing, y: (dest.minY + (shown.minY - piece.rect.minY) * s) * backing,
-                                     width: shown.width * s * backing, height: shown.height * s * backing)
-                    covered = covered.map { $0.union(box) } ?? box
-                }
-                guard let covered else { continue }
-                if piece.x != nil { lineBoxes[piece.offset] = lineBoxes[piece.offset].map { $0.union(covered) } ?? covered } else { boxes.append(covered) }
-            }
-            // Boxes on one line become one, whatever line of the page their words came from.
-            for box in PDFPresenter.joinedAlongLines(boxes + Array(lineBoxes.values)) {
-                context.saveGState()
-                context.setFillColor(color)
-                if record.color == .underline {
-                    context.fill(CGRect(x: box.minX, y: box.minY, width: box.width, height: max(1, box.height * 0.08)))
-                } else {
-                    context.setBlendMode(.multiply)
-                    context.fill(box)
-                }
-                context.restoreGState()
-            }
-        }
         guard let image = context.makeImage() else { return nil }
         if tiles.count > 24 { tiles.removeAll() }
         tiles[u] = image
@@ -1177,12 +1201,15 @@ final class SplitPDFPresenter: PDFReading {
         for column in 0..<columns {
             guard let image = tileImage(for: unit + column) else { continue }
             let tile = CALayer()
+            tile.name = "tile"
             tile.frame = tileFrame(column: column)
             tile.contents = image
             tile.contentsScale = backing
             tile.contentsGravity = .resize
+            tile.filters = tileFilters.isEmpty ? nil : tileFilters
             spread.addSublayer(tile)
         }
+        spread.addSublayer(highlightLayer())
         return spread
     }
 
@@ -1542,11 +1569,10 @@ final class SplitPDFPresenter: PDFReading {
     func setNote(_ note: String, for id: UUID) {}
 
     private func redrawAfterHighlightChange() {
-        // The session updates its records right after asking; tiles draw from them.
+        // The session updates its records right after asking; the overlay draws from them.
         DispatchQueue.main.async { [weak self] in
             guard let self, self.ready else { return }
-            self.tiles.removeAll()
-            self.present(direction: 0)
+            self.refreshHighlightOverlay()
         }
     }
 

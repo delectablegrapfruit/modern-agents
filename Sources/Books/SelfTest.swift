@@ -479,16 +479,20 @@ enum SelfTest {
         begun.position = nil
         begun.lastOpenedAt = nil
         model.update(begun)
+        model.setHomeElement(.activity, shown: true)
+        let shownBefore = model.settings.home.visible.count
         model.setHomeElement(.activity, shown: false)
-        guard !model.settings.home.visible.contains(.activity), model.settings.home.visible.count == HomeElement.allCases.count - 1 else { throw Failure("a Home piece could not be hidden") }
+        guard !model.settings.home.visible.contains(.activity), model.settings.home.visible.count == shownBefore - 1 else { throw Failure("a Home widget could not be hidden") }
+        model.setHomeSize(.small, for: .goals)
+        guard model.settings.home.size(of: .goals) == .small else { throw Failure("a Home widget's size was not kept") }
         model.moveHomeElements(fromOffsets: IndexSet(integer: 0), toOffset: 3)
-        guard model.settings.home.elements.first != .continueReading, model.settings.home.elements.count == HomeElement.allCases.count else { throw Failure("Home pieces could not be moved") }
+        guard model.settings.home.elements.first != .continueReading, model.settings.home.elements.count == HomeElement.allCases.count else { throw Failure("Home widgets could not be moved") }
         model.resetHome()
-        guard model.settings.home.elements == HomeElement.allCases, model.settings.home.hidden.isEmpty else { throw Failure("Home did not reset") }
+        guard model.settings.home == HomeSettings(), model.settings.home.visible == [.continueReading, .goals, .activity, .recentlyAdded] else { throw Failure("Home did not reset to its simple start") }
         model.sidebarSelection = .home
         try await sleep(0.3)
         model.sidebarSelection = .all
-        log("Home: Pick Up Again, For You (\(suggestion.reason)), Recently Added; pieces hidden, moved and reset")
+        log("Home: Pick Up Again, For You (\(suggestion.reason)), Recently Added; widgets hidden, sized, moved and reset")
 
         // A picture of one's own as the cover, laid out, styled, and the original back.
         let picture = NSImage(size: NSSize(width: 300, height: 200), flipped: false) { rect in

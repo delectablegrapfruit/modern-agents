@@ -122,30 +122,35 @@ extension View {
 }
 
 /// A card on Home: white on light, elevated on dark, the way Books and Fitness draw theirs.
+/// A Home widget: a rounded card with a small title row and its content, filling the frame it is given.
 struct HomeCard<Content: View>: View {
     let title: String
     var subtitle: String?
+    var symbol: String?
     var action: (() -> Void)?
     var actionLabel: String?
     @ViewBuilder let content: () -> Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.title2.weight(.bold))
-                    if let subtitle { Text(subtitle).font(.callout).foregroundStyle(.secondary) }
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                if let symbol { Image(systemName: symbol).font(.subheadline.weight(.semibold)).foregroundStyle(Color.accentColor) }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title).font(.headline)
+                    if let subtitle { Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
                 }
-                Spacer()
+                Spacer(minLength: 8)
                 if let action, let actionLabel {
-                    Button(actionLabel, action: action).buttonStyle(.link)
+                    Button(actionLabel, action: action).buttonStyle(.link).font(.caption)
                 }
             }
             content()
         }
-        .padding(20)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(.separator.opacity(0.6), lineWidth: 0.5))
+        .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(.separator.opacity(0.6), lineWidth: 0.5))
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 }
 

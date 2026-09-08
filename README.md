@@ -8,13 +8,15 @@ Mac and never talks to a store or a server.
 
 ## What it does
 
-**Library.** Home is made of pieces you choose and arrange (the toolbar's Customize menu; Customize Home… to drag
-them into order): Continue Reading; Pick Up Again (books begun but not opened for two weeks); Reading Goals (today's
-minutes with a streak, books this month, books this year); Pages & Chapters read against a goal for the week, month,
-three months or year; a Reading Calendar of the month's days, darker the more you read, with earlier months in
-reach; Activity, half a year of days as a heat map; Statistics (books, time, pages, chapters finished, days with
-reading, longest streak, an average reading day, the last fortnight); For You, unopened books in the genres and by
-the authors you read; Recently Added; Recently Finished. Strips of books run the width; the cards share rows. The
+**Library.** Home is a board of widgets, as on the desktop: each a rounded card in a size of its own — small
+(a quarter of a row), medium (half) or wide (the row) — switched on or off, sized and dragged into order from the
+toolbar's Customize menu and Customize Home…. It starts simple: Continue Reading, Reading Goals (today's minutes
+with a streak, books this month and this year), Activity (a heat map of the last weeks) and Recently Added. The
+others are a switch away: Pick Up Again (books begun but not opened for two weeks); Pages & Chapters read against a
+goal for the week, month, three months or year; a Reading Calendar of the month's days, darker the more you read,
+with earlier months in reach; Statistics (books, time, pages, chapters finished, days with reading, longest streak,
+an average reading day, the last fortnight); For You, unopened books in the genres and by the authors you read;
+Recently Finished. Wide widgets take a row; small and medium ones share one. The
 sidebar has a Library section (All, Finished, Books, PDFs) and a My Collections section, each in the order you drag
 its rows into — any row but All can be hidden from its context menu and brought back from the menu under the arrow
 that appears beside the section's name when the pointer is over it. Drag books onto Finished or a collection. Every
@@ -85,7 +87,11 @@ edge. The reading position, statistics (minutes per day, streaks, books per year
 **Wheel and keys.** A notch of a mouse wheel — or a tilt of the wheel, or ⇧ + wheel — is exactly one page in
 paginated mode, handled by the app before WebKit sees it; a two-finger swipe is one page, its inertial tail ignored.
 For a PDF, the theme can colour only what lies around the pages (Theme the Background Only, under the themes, a
-choice kept with that PDF): its pages stay as printed. Arrow keys, space, Page Up/Down, Home and End move too; ⌘] and ⌘[ jump chapters, ⌘+ and ⌘− change the text size (zoom,
+choice kept with that PDF): its pages stay as printed. In Zoom & Split the theme is applied to the pages alone, so the
+selection, the search flash and the highlights lie over them in their own colours whatever the theme, one unbroken
+band a line. In full screen the window's toolbar is put away — the menu bar and the window's buttons come down
+alone when the pointer touches the top edge — and the reader's own bar floats over the book while the pointer is
+near the top, over the bar, or a popover is open, and for a moment on entering full screen. Arrow keys, space, Page Up/Down, Home and End move too; ⌘] and ⌘[ jump chapters, ⌘+ and ⌘− change the text size (zoom,
 for PDFs). In vertical scrolling a notch scrolls the text by the system's line distance.
 
 ## Install

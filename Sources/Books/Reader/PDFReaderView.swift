@@ -369,6 +369,11 @@ final class PDFPresenter: PDFReading {
     /// Light themes tint the white of the paper; dark themes invert luminance while keeping hues (so pictures and
     /// highlights keep their colours) and lift black to the theme's page colour. With `backgroundOnly` the pages
     /// are left as printed and only the surround takes the theme's colour.
+    /// The theme's page colour as an AppKit colour.
+    static func pageColor(for theme: Theme) -> NSColor {
+        NSColor(Color(hex: theme.colors.background)).usingColorSpace(.sRGB) ?? NSColor(srgbRed: 1, green: 1, blue: 1, alpha: 1)
+    }
+
     static func themeFilters(for theme: Theme, backgroundOnly: Bool = false) -> (filters: [CIFilter], background: NSColor) {
         let page = NSColor(Color(hex: theme.colors.background)).usingColorSpace(.sRGB) ?? NSColor(srgbRed: 1, green: 1, blue: 1, alpha: 1)
         if backgroundOnly { return ([], page) }

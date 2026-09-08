@@ -1,112 +1,137 @@
 import SwiftUI
 import BooksCore
 
-/// Home: the pieces you chose, in your order — strips of books across the width (Continue Reading, Pick Up Again,
-/// For You, Recently Added, Recently Finished) and cards side by side in a grid (Reading Goals, Pages & Chapters,
-/// the Reading Calendar, Activity, Statistics). Each can be hidden from the toolbar's Customize menu; Customize
-/// Home… puts them in order. A strip with nothing to show stays out of the way.
+/// Home: widgets, as on the desktop — each a rounded card of a size of its own (small, medium or wide), shown or
+/// hidden and put in order from the toolbar's Customize menu and Customize Home…; strips of books run the width,
+/// the rest share rows of four units. Home starts simple: Continue Reading, Reading Goals, Activity and Recently
+/// Added; the other widgets are a switch away. A strip with nothing to show stays out of the way.
 struct HomeView: View {
     @Environment(LibraryModel.self) private var model
 
-    /// Consecutive cards share a grid; a strip breaks it.
-    private enum Block: Identifiable {
-        case strip(HomeElement)
-        case grid([HomeElement])
-
-        var id: String {
-            switch self {
-            case .strip(let e): return e.rawValue
-            case .grid(let es): return es.map(\.rawValue).joined(separator: "+")
-            }
-        }
+    /// One widget as placed: the element, its size and the units of the row it takes.
+    private struct Placed: Identifiable {
+        let element: HomeElement
+        let size: WidgetSize
+        let units: Int
+        var id: HomeElement { element }
     }
 
-    private var blocks: [Block] {
-        var blocks: [Block] = []
-        var pending: [HomeElement] = []
-        for element in model.settings.home.visible {
-            if element.isStrip {
-                if !pending.isEmpty { blocks.append(.grid(pending)); pending = [] }
-                blocks.append(.strip(element))
-            } else {
-                pending.append(element)
+    private struct Row: Identifiable {
+        let items: [Placed]
+        var id: String { items.map(\.element.rawValue).joined(separator: "+") }
+    }
+
+    private static let gap: CGFloat = 20
+    private static let unitMinimum: CGFloat = 230
+    private static let widgetHeight: CGFloat = 236
+
+    /// How many units fit a row at this width: four on a wide window, two on a narrow one, one when very narrow.
+    private func capacity(for width: CGFloat) -> Int {
+        if width >= 4 * HomeView.unitMinimum + 3 * HomeView.gap { return 4 }
+        if width >= 2 * HomeView.unitMinimum + HomeView.gap { return 2 }
+        return 1
+    }
+
+    /// The visible widgets dealt into rows, in order, each taking its units of the row; a wide one takes the row.
+    private func rows(capacity: Int) -> [Row] {
+        var rows: [Row] = []
+        var current: [Placed] = []
+        var used = 0
+        for element in model.settings.home.visible where hasContent(element) {
+            let size = model.settings.home.size(of: element)
+            let units = min(capacity, size == .wide ? capacity : size.units)
+            if used + units > capacity, !current.isEmpty {
+                rows.append(Row(items: current))
+                current = []
+                used = 0
+            }
+            current.append(Placed(element: element, size: size, units: units))
+            used += units
+            if used >= capacity {
+                rows.append(Row(items: current))
+                current = []
+                used = 0
             }
         }
-        if !pending.isEmpty { blocks.append(.grid(pending)) }
-        return blocks
+        if !current.isEmpty { rows.append(Row(items: current)) }
+        return rows
+    }
+
+    /// Strips with no books stay away; every other widget shows.
+    private func hasContent(_ element: HomeElement) -> Bool {
+        switch element {
+        case .continueReading: return !model.continueReading.isEmpty
+        case .pickUpAgain: return !model.pickUpAgain.isEmpty
+        case .forYou: return !model.forYou.isEmpty
+        case .recentlyAdded: return !model.recentlyAdded.isEmpty
+        case .recentlyFinished: return !model.recentlyFinished.isEmpty
+        case .goals, .progress, .calendar, .activity, .statistics: return true
+        }
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                if model.books.isEmpty {
-                    ContentUnavailableView {
-                        Label("Your Library Is Empty", systemImage: "books.vertical")
-                    } description: {
-                        Text("Add EPUB, Kindle (MOBI, AZW3), PDF and text files, or drop them on the window. Everything stays on this Mac.")
-                    } actions: {
-                        Button("Add Books…") { model.chooseFiles() }.buttonStyle(.borderedProminent)
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 420)
-                } else if model.settings.home.visible.isEmpty {
-                    ContentUnavailableView("Home Is Hidden", systemImage: "house", description: Text("Use Customize in the toolbar to choose what Home shows."))
-                        .frame(maxWidth: .infinity, minHeight: 320)
-                } else {
-                    ForEach(blocks) { block in
-                        switch block {
-                        case .strip(let element):
-                            card(element)
-                        case .grid(let elements):
-                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 400, maximum: 760), spacing: 24, alignment: .top)], alignment: .leading, spacing: 24) {
-                                ForEach(elements, id: \.self) { card($0) }
+        GeometryReader { geo in
+            let inset: CGFloat = 28
+            let available = max(200, geo.size.width - 2 * inset)
+            let capacity = capacity(for: available)
+            let unit = (available - CGFloat(capacity - 1) * HomeView.gap) / CGFloat(capacity)
+            ScrollView {
+                VStack(alignment: .leading, spacing: HomeView.gap) {
+                    if model.books.isEmpty {
+                        ContentUnavailableView {
+                            Label("Your Library Is Empty", systemImage: "books.vertical")
+                        } description: {
+                            Text("Add EPUB, Kindle (MOBI, AZW3), PDF and text files, or drop them on the window. Everything stays on this Mac.")
+                        } actions: {
+                            Button("Add Books…") { model.chooseFiles() }.buttonStyle(.borderedProminent)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 420)
+                    } else if model.settings.home.visible.isEmpty {
+                        ContentUnavailableView("Home Is Hidden", systemImage: "house", description: Text("Use Customize in the toolbar to choose what Home shows."))
+                            .frame(maxWidth: .infinity, minHeight: 320)
+                    } else {
+                        ForEach(rows(capacity: capacity)) { row in
+                            HStack(alignment: .top, spacing: HomeView.gap) {
+                                ForEach(row.items) { placed in
+                                    widget(placed)
+                                        .frame(width: unit * CGFloat(placed.units) + HomeView.gap * CGFloat(placed.units - 1))
+                                        .frame(height: placed.element.isStrip ? nil : HomeView.widgetHeight)
+                                }
+                                if row.items.reduce(0, { $0 + $1.units }) < capacity { Spacer(minLength: 0) }
                             }
                         }
                     }
                 }
+                .padding(inset)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(28)
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
     @ViewBuilder
-    private func card(_ element: HomeElement) -> some View {
-        switch element {
+    private func widget(_ placed: Placed) -> some View {
+        let compact = placed.size == .small
+        switch placed.element {
         case .continueReading:
-            let books = model.continueReading
-            if !books.isEmpty {
-                BookStripCard(title: "Continue Reading", items: books.prefix(12).map { StripItem(book: $0, line: Display.progressLine($0)) }, action: { model.sidebarSelection = .all }, actionLabel: "See All")
-            }
+            BookStripCard(title: "Continue Reading", symbol: "book", items: model.continueReading.prefix(12).map { StripItem(book: $0, line: Display.progressLine($0)) }, action: { model.sidebarSelection = .all }, actionLabel: "See All")
         case .pickUpAgain:
-            let books = model.pickUpAgain
-            if !books.isEmpty {
-                BookStripCard(title: "Pick Up Again", subtitle: "Started, but not opened for a while", items: books.prefix(12).map { StripItem(book: $0, line: "Last read \(Display.ago($0.lastOpenedAt ?? $0.addedAt)) · \(whole($0.progress * 100))%") })
-            }
+            BookStripCard(title: "Pick Up Again", subtitle: "Started, but not opened for a while", symbol: "clock.arrow.circlepath", items: model.pickUpAgain.prefix(12).map { StripItem(book: $0, line: "Last read \(Display.ago($0.lastOpenedAt ?? $0.addedAt)) · \(whole($0.progress * 100))%") })
         case .goals:
-            GoalsCard()
+            GoalsCard(compact: compact)
         case .progress:
-            ProgressGoalsCard()
+            ProgressGoalsCard(compact: compact)
         case .calendar:
             CalendarCard()
         case .activity:
-            ActivityCard()
+            ActivityCard(weeks: placed.units >= 4 ? 26 : 13)
         case .statistics:
-            StatisticsCard()
+            StatisticsCard(size: placed.size)
         case .forYou:
-            let suggestions = model.forYou
-            if !suggestions.isEmpty {
-                BookStripCard(title: "For You", subtitle: "Unopened books in the genres and by the authors you read", items: suggestions.prefix(12).map { StripItem(book: $0.book, line: $0.reason) })
-            }
+            BookStripCard(title: "For You", subtitle: "Unopened books in the genres and by the authors you read", symbol: "sparkles", items: model.forYou.prefix(12).map { StripItem(book: $0.book, line: $0.reason) })
         case .recentlyAdded:
-            let books = model.recentlyAdded
-            if !books.isEmpty {
-                BookStripCard(title: "Recently Added", subtitle: "Not yet opened", items: books.prefix(12).map { StripItem(book: $0, line: "Added \(Display.ago($0.addedAt))") })
-            }
+            BookStripCard(title: "Recently Added", subtitle: "Not yet opened", symbol: "plus.circle", items: model.recentlyAdded.prefix(12).map { StripItem(book: $0, line: "Added \(Display.ago($0.addedAt))") })
         case .recentlyFinished:
-            let books = model.recentlyFinished
-            if !books.isEmpty {
-                BookStripCard(title: "Recently Finished", items: books.prefix(12).map { StripItem(book: $0, line: "Finished \(Display.added($0.finishedAt ?? Date()))") }, action: { model.sidebarSelection = .finished }, actionLabel: "See All")
-            }
+            BookStripCard(title: "Recently Finished", symbol: "checkmark.seal", items: model.recentlyFinished.prefix(12).map { StripItem(book: $0, line: "Finished \(Display.added($0.finishedAt ?? Date()))") }, action: { model.sidebarSelection = .finished }, actionLabel: "See All")
         }
     }
 }
@@ -123,12 +148,13 @@ struct StripItem: Identifiable {
 struct BookStripCard: View {
     let title: String
     var subtitle: String?
+    var symbol: String?
     let items: [StripItem]
     var action: (() -> Void)?
     var actionLabel: String?
 
     var body: some View {
-        HomeCard(title: title, subtitle: subtitle, action: action, actionLabel: actionLabel) {
+        HomeCard(title: title, subtitle: subtitle, symbol: symbol, action: action, actionLabel: actionLabel) {
             ScrollView(.horizontal) {
                 HStack(alignment: .top, spacing: 22) {
                     ForEach(items) { item in
@@ -151,7 +177,7 @@ struct StripBook: View {
     var body: some View {
         Button { model.open(book) } label: {
             VStack(alignment: .leading, spacing: 8) {
-                CoverView(book: book, width: 132, height: 198)
+                CoverView(book: book, width: 108, height: 162)
                     .scaleEffect(hovering ? 1.03 : 1)
                     .animation(.easeOut(duration: 0.15), value: hovering)
                 VStack(alignment: .leading, spacing: 2) {
@@ -159,7 +185,7 @@ struct StripBook: View {
                     Text(book.author).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     Text(line).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
-                .frame(width: 132, alignment: .leading)
+                .frame(width: 108, alignment: .leading)
             }
         }
         .buttonStyle(.plain)
@@ -173,6 +199,7 @@ struct StripBook: View {
 /// Daily minutes ring with streak, books this month and books this year.
 struct GoalsCard: View {
     @Environment(LibraryModel.self) private var model
+    var compact = false
 
     var body: some View {
         let goals = model.settings.goals
@@ -184,27 +211,48 @@ struct GoalsCard: View {
         let month = Calendar.current.component(.month, from: now)
         let finishedThisYear = model.store.booksFinished(inYear: year)
         let finishedThisMonth = model.store.booksFinished(inMonth: month, year: year)
-        HomeCard(title: "Reading Goals", action: { model.editingGoals = true }, actionLabel: "Edit Goals…") {
-            VStack(alignment: .leading, spacing: 18) {
-                HStack(alignment: .center, spacing: 20) {
-                    GoalRing(progress: goalSeconds > 0 ? Double(today) / Double(goalSeconds) : 0, done: today >= goalSeconds)
-                        .frame(width: 84, height: 84)
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(today >= goalSeconds ? "Goal reached" : "Today’s Reading")
-                            .font(.headline)
-                        Text(today >= goalSeconds
-                             ? "\(Format.duration(seconds: today)) read today · Goal \(goals.dailyMinutes) min"
-                             : "\(Format.duration(seconds: today)) of \(goals.dailyMinutes) min")
-                            .foregroundStyle(.secondary)
-                        Label(streak == 0 ? "No streak yet — read \(goals.dailyMinutes) min today to start one" : "\(streak)-day streak", systemImage: "flame.fill")
-                            .foregroundStyle(streak == 0 ? .secondary : Color.orange)
-                            .font(.callout)
+        HomeCard(title: "Reading Goals", symbol: "target", action: compact ? nil : { model.editingGoals = true }, actionLabel: compact ? nil : "Edit Goals…") {
+            if compact {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 14) {
+                        GoalRing(progress: goalSeconds > 0 ? Double(today) / Double(goalSeconds) : 0, done: today >= goalSeconds)
+                            .frame(width: 64, height: 64)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(today >= goalSeconds ? "Goal reached" : "\(Format.duration(seconds: today)) of \(goals.dailyMinutes) min").font(.callout.weight(.medium)).lineLimit(2)
+                            Label(streak == 0 ? "No streak" : "\(streak)-day streak", systemImage: "flame.fill")
+                                .foregroundStyle(streak == 0 ? .secondary : Color.orange)
+                                .font(.caption)
+                        }
                     }
-                    Spacer(minLength: 0)
+                    Text("\(finishedThisMonth) of \(goals.monthlyBooks) this month · \(finishedThisYear) of \(goals.yearlyBooks) this year")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
                 }
-                HStack(alignment: .top, spacing: 24) {
-                    BooksGoal(title: "Books This Month", finished: finishedThisMonth, goal: goals.monthlyBooks, period: now.formatted(.dateTime.month(.wide)))
-                    BooksGoal(title: "Books This Year", finished: finishedThisYear, goal: goals.yearlyBooks, period: String(year))
+            } else {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(alignment: .center, spacing: 18) {
+                        GoalRing(progress: goalSeconds > 0 ? Double(today) / Double(goalSeconds) : 0, done: today >= goalSeconds)
+                            .frame(width: 76, height: 76)
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(today >= goalSeconds ? "Goal reached" : "Today’s Reading")
+                                .font(.subheadline.weight(.semibold))
+                            Text(today >= goalSeconds
+                                 ? "\(Format.duration(seconds: today)) read today · Goal \(goals.dailyMinutes) min"
+                                 : "\(Format.duration(seconds: today)) of \(goals.dailyMinutes) min")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                            Label(streak == 0 ? "No streak yet — read \(goals.dailyMinutes) min today to start one" : "\(streak)-day streak", systemImage: "flame.fill")
+                                .foregroundStyle(streak == 0 ? .secondary : Color.orange)
+                                .font(.caption)
+                                .lineLimit(2)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    HStack(alignment: .top, spacing: 20) {
+                        BooksGoal(title: "Books This Month", finished: finishedThisMonth, goal: goals.monthlyBooks, period: now.formatted(.dateTime.month(.wide)))
+                        BooksGoal(title: "Books This Year", finished: finishedThisYear, goal: goals.yearlyBooks, period: String(year))
+                    }
                 }
             }
         }
@@ -219,11 +267,11 @@ struct BooksGoal: View {
     let period: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.headline)
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title).font(.subheadline.weight(.semibold))
             Text(finished >= goal ? "\(Format.plural(finished, "book")) finished in \(period) · goal reached" : "\(finished) of \(goal) finished in \(period)")
                 .foregroundStyle(.secondary)
-                .font(.callout)
+                .font(.caption)
                 .lineLimit(2)
             ProgressView(value: Double(min(finished, goal)), total: Double(max(goal, 1)))
                 .tint(finished >= goal ? .green : .accentColor)
@@ -257,6 +305,7 @@ struct GoalRing: View {
 /// goals — against the goal, with the pace so far.
 struct ProgressGoalsCard: View {
     @Environment(LibraryModel.self) private var model
+    var compact = false
 
     var body: some View {
         let goals = model.settings.goals
@@ -265,17 +314,22 @@ struct ProgressGoalsCard: View {
         let totals = model.stats.totals(in: period, containing: now)
         let (start, _) = period.interval(containing: now)
         let daysSoFar = max(1, (Calendar.current.dateComponents([.day], from: start, to: now).day ?? 0) + 1)
-        HomeCard(title: "Pages & Chapters", action: { model.editingGoals = true }, actionLabel: "Edit Goals…") {
-            VStack(alignment: .leading, spacing: 16) {
-                Picker("Period", selection: Binding(get: { model.settings.goals.period }, set: { model.settings.goals.period = $0 })) {
-                    ForEach(GoalPeriod.allCases, id: \.self) { Text($0.label).tag($0) }
+        HomeCard(title: compact ? "Pages" : "Pages & Chapters", subtitle: period.thisLabel, symbol: "doc.text", action: compact ? nil : { model.editingGoals = true }, actionLabel: compact ? nil : "Edit Goals…") {
+            VStack(alignment: .leading, spacing: compact ? 10 : 12) {
+                if !compact {
+                    Picker("Period", selection: Binding(get: { model.settings.goals.period }, set: { model.settings.goals.period = $0 })) {
+                        ForEach(GoalPeriod.allCases, id: \.self) { Text($0.label).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .controlSize(.small)
+                    .frame(maxWidth: 320)
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(maxWidth: 360)
-                CountGoal(title: "Pages \(period.thisLabel.lowercased())", count: totals.pages, goal: goals.pages, unit: "page", perDay: Double(totals.pages) / Double(daysSoFar))
-                CountGoal(title: "Chapters \(period.thisLabel.lowercased())", count: totals.chapters, goal: goals.chapters, unit: "chapter", perDay: Double(totals.chapters) / Double(daysSoFar))
-                Text("\(Format.duration(seconds: totals.seconds)) read \(period.thisLabel.lowercased()) · \(Format.plural(daysSoFar, "day")) in")
+                CountGoal(title: "Pages", count: totals.pages, goal: goals.pages, unit: "page", perDay: Double(totals.pages) / Double(daysSoFar))
+                if !compact {
+                    CountGoal(title: "Chapters", count: totals.chapters, goal: goals.chapters, unit: "chapter", perDay: Double(totals.chapters) / Double(daysSoFar))
+                }
+                Text("\(Format.duration(seconds: totals.seconds)) read · \(Format.plural(daysSoFar, "day")) in")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -294,7 +348,7 @@ struct CountGoal: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
-                Text(title).font(.headline)
+                Text(title).font(.subheadline.weight(.semibold))
                 Spacer()
                 Text(goal > 0 ? "\(count) of \(goal)" : Format.plural(count, unit))
                     .font(.callout.weight(.medium))
@@ -331,13 +385,13 @@ struct CalendarCard: View {
         let firstIndex = max(0, min(allSymbols.count - 1, calendar.firstWeekday - 1))
         let symbols: [String] = Array(allSymbols[firstIndex...]) + Array(allSymbols[..<firstIndex])
         let todayKey = ReadingStats.dayKey(Date(), calendar: calendar)
-        HomeCard(title: "Reading Calendar", subtitle: "\(Format.plural(readDays, "day")) with reading in \(shown.formatted(.dateTime.month(.wide).year()))") {
-            VStack(alignment: .leading, spacing: 10) {
+        HomeCard(title: "Reading Calendar", subtitle: "\(Format.plural(readDays, "day")) with reading in \(shown.formatted(.dateTime.month(.wide).year()))", symbol: "calendar") {
+            VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Button { monthOffset -= 1 } label: { Image(systemName: "chevron.left") }
                         .buttonStyle(.borderless)
                         .help("The month before")
-                    Text(shown.formatted(.dateTime.month(.wide).year())).font(.headline).frame(minWidth: 150)
+                    Text(shown.formatted(.dateTime.month(.wide).year())).font(.subheadline.weight(.semibold)).frame(minWidth: 130)
                     Button { monthOffset += 1 } label: { Image(systemName: "chevron.right") }
                         .buttonStyle(.borderless)
                         .disabled(monthOffset >= 0)
@@ -345,17 +399,17 @@ struct CalendarCard: View {
                     Spacer()
                     if monthOffset != 0 { Button("Today") { monthOffset = 0 }.buttonStyle(.link).controlSize(.small) }
                 }
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 24, maximum: 44), spacing: 4), count: 7), spacing: 4) {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 18, maximum: 44), spacing: 3), count: 7), spacing: 3) {
                     ForEach(symbols, id: \.self) { symbol in
                         Text(symbol).font(.caption2.weight(.semibold)).foregroundStyle(.secondary).frame(maxWidth: .infinity)
                     }
-                    ForEach(0..<leading, id: \.self) { _ in Color.clear.frame(height: 30) }
+                    ForEach(0..<leading, id: \.self) { _ in Color.clear.frame(height: 22) }
                     ForEach(days, id: \.day) { day in
                         let read = day.seconds > 0 || day.pages > 0
                         let level = min(1, 0.35 + 0.65 * Double(day.seconds) / Double(peak))
                         Text(String(day.day.suffix(2).drop { $0 == "0" }))
-                            .font(.caption.monospacedDigit())
-                            .frame(maxWidth: .infinity, minHeight: 30)
+                            .font(.caption2.monospacedDigit())
+                            .frame(maxWidth: .infinity, minHeight: 22)
                             .background(read ? Color.accentColor.opacity(level) : Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                             .overlay {
                                 if day.day == todayKey { RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Color.accentColor, lineWidth: 1.5) }
@@ -372,16 +426,17 @@ struct CalendarCard: View {
 /// Half a year of days as a heat map, week by week, darker the more was read.
 struct ActivityCard: View {
     @Environment(LibraryModel.self) private var model
+    var weeks: Int = 26
 
     var body: some View {
         let calendar = Calendar.current
-        let weeks = model.stats.weeks(26, calendar: calendar)
+        let weeks = model.stats.weeks(self.weeks, calendar: calendar)
         let peak = max(1, weeks.flatMap { $0 }.map(\.seconds).max() ?? 1)
         let all = weeks.flatMap { $0 }
         let active = all.filter { $0.seconds > 0 || $0.pages > 0 }.count
         let total = all.reduce(0) { $0 + $1.seconds }
         let todayKey = ReadingStats.dayKey(Date(), calendar: calendar)
-        HomeCard(title: "Activity", subtitle: "\(Format.plural(active, "day")) with reading in the last 26 weeks · \(Format.duration(seconds: total))") {
+        HomeCard(title: "Activity", subtitle: "\(Format.plural(active, "day")) with reading in \(self.weeks) weeks · \(Format.duration(seconds: total))", symbol: "chart.bar.fill") {
             VStack(alignment: .leading, spacing: 8) {
                 ScrollView(.horizontal) {
                     VStack(alignment: .leading, spacing: 3) {
@@ -439,6 +494,7 @@ struct ActivityCard: View {
 
 struct StatisticsCard: View {
     @Environment(LibraryModel.self) private var model
+    var size: WidgetSize = .medium
 
     var body: some View {
         let recent = model.stats.recent(14)
@@ -446,26 +502,30 @@ struct StatisticsCard: View {
         let goals = model.settings.goals
         let activeDays = model.stats.activeDays
         let total = model.stats.totalSeconds
-        HomeCard(title: "Statistics") {
-            VStack(alignment: .leading, spacing: 18) {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 110, maximum: 180), spacing: 16, alignment: .topLeading)], alignment: .leading, spacing: 14) {
+        HomeCard(title: "Statistics", symbol: "chart.pie") {
+            VStack(alignment: .leading, spacing: 14) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 88, maximum: 160), spacing: 12, alignment: .topLeading)], alignment: .leading, spacing: 10) {
                     StatTile(value: "\(model.books.count)", label: model.books.count == 1 ? "book" : "books")
                     StatTile(value: "\(model.books.filter(\.isFinished).count)", label: "finished")
                     StatTile(value: Format.duration(seconds: total), label: "reading time")
                     StatTile(value: "\(model.stats.totalPages)", label: "pages turned")
-                    StatTile(value: "\(model.stats.totalChapters)", label: "chapters finished")
-                    StatTile(value: "\(activeDays)", label: activeDays == 1 ? "day with reading" : "days with reading")
-                    StatTile(value: "\(model.stats.longestStreak(goalMinutes: goals.dailyMinutes))", label: "longest streak (days)")
-                    StatTile(value: activeDays > 0 ? Format.duration(seconds: total / activeDays) : "—", label: "a reading day, on average")
+                    if size != .small {
+                        StatTile(value: "\(model.stats.totalChapters)", label: "chapters finished")
+                        StatTile(value: "\(activeDays)", label: activeDays == 1 ? "day with reading" : "days with reading")
+                        StatTile(value: "\(model.stats.longestStreak(goalMinutes: goals.dailyMinutes))", label: "longest streak (days)")
+                        StatTile(value: activeDays > 0 ? Format.duration(seconds: total / activeDays) : "—", label: "a reading day, on average")
+                    }
                 }
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Last 14 days").font(.caption).foregroundStyle(.secondary)
-                    HStack(alignment: .bottom, spacing: 4) {
-                        ForEach(recent, id: \.day) { day in
-                            RoundedRectangle(cornerRadius: 2)
-                                .fill(day.seconds > 0 ? Color.accentColor : Color.secondary.opacity(0.25))
-                                .frame(width: 10, height: max(4, 44 * CGFloat(day.seconds) / CGFloat(peak)))
-                                .help("\(Display.dayName(day.day)): \(Format.duration(seconds: day.seconds))")
+                if size != .small {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Last 14 days").font(.caption2).foregroundStyle(.secondary)
+                        HStack(alignment: .bottom, spacing: 4) {
+                            ForEach(recent, id: \.day) { day in
+                                RoundedRectangle(cornerRadius: 2)
+                                    .fill(day.seconds > 0 ? Color.accentColor : Color.secondary.opacity(0.25))
+                                    .frame(width: 10, height: max(4, 32 * CGFloat(day.seconds) / CGFloat(peak)))
+                                    .help("\(Display.dayName(day.day)): \(Format.duration(seconds: day.seconds))")
+                            }
                         }
                     }
                 }
@@ -480,8 +540,8 @@ struct StatTile: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(value).font(.system(size: 24, weight: .semibold, design: .rounded)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
-            Text(label).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+            Text(value).font(.system(size: 20, weight: .semibold, design: .rounded)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
+            Text(label).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
         }
     }
 }
@@ -497,19 +557,33 @@ struct HomeCustomizeSheet: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Customize Home").font(.headline)
-                Text("Switch pieces on or off, and drag them into the order you want. Strips of books run across; the rest share rows.").font(.callout).foregroundStyle(.secondary)
+                Text("Switch widgets on or off, choose their size, and drag them into the order you want. Wide widgets take a row; small and medium ones share one.").font(.callout).foregroundStyle(.secondary)
             }
             .padding(20)
             List {
                 ForEach(model.settings.home.elements, id: \.self) { element in
-                    Toggle(isOn: Binding(get: { model.settings.home.isShown(element) }, set: { model.setHomeElement(element, shown: $0) })) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(element.label)
-                            Text(element.detail).font(.caption).foregroundStyle(.secondary)
+                    HStack(spacing: 12) {
+                        Toggle(isOn: Binding(get: { model.settings.home.isShown(element) }, set: { model.setHomeElement(element, shown: $0) })) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(element.label)
+                                Text(element.detail).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                        Spacer(minLength: 0)
+                        if element.sizes.count > 1 {
+                            Picker("Size", selection: Binding(get: { model.settings.home.size(of: element) }, set: { model.setHomeSize($0, for: element) })) {
+                                ForEach(element.sizes, id: \.self) { Text($0.label).tag($0) }
+                            }
+                            .pickerStyle(.segmented)
+                            .labelsHidden()
+                            .controlSize(.small)
+                            .frame(width: element.sizes.count == 3 ? 190 : 130)
+                            .disabled(!model.settings.home.isShown(element))
+                            .help("How much of a row the widget takes")
                         }
                     }
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
                     .padding(.vertical, 2)
                 }
                 .onMove { source, destination in model.moveHomeElements(fromOffsets: source, toOffset: destination) }
@@ -522,7 +596,7 @@ struct HomeCustomizeSheet: View {
             }
             .padding(16)
         }
-        .frame(width: 480, height: 560)
+        .frame(width: 560, height: 600)
     }
 }
 

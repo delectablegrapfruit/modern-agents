@@ -112,7 +112,14 @@ final class ReaderSession {
     /// Native chrome (footer, timeline) is shown while the pointer is near the bottom or the app is not full screen.
     private(set) var timelineVisible = false
     private(set) var footerVisible = true
-    var isFullScreen = false
+    /// Full screen: the reader's own bar floating over the top of the book, shown while the pointer is near the
+    /// top, over the bar itself, or a popover is open; and for a moment on entering full screen.
+    private(set) var topBarVisible = false
+    private var topBarHovered = false
+    private var topBarRevealUntil = Date.distantPast
+    var isFullScreen = false {
+        didSet { if isFullScreen != oldValue, isFullScreen { topBarRevealUntil = Date().addingTimeInterval(2.5); topBarVisible = true } }
+    }
     var timelineDragging = false { didSet { refreshChrome() } }
     var previewFraction: Double?
 
@@ -797,20 +804,32 @@ final class ReaderSession {
 
     func refreshChrome() {
         let nearBottom = pointerY > viewHeight - 120
+        let nearTop = pointerY < 96 || topBarHovered || Date() < topBarRevealUntil
+        let popoverOpen = showContents || showSearch || showAppearance
         timelineVisible = nearBottom || timelineDragging
         chromeTimer?.invalidate()
         if isFullScreen {
-            footerVisible = nearBottom || timelineDragging || showContents || showSearch || showAppearance
-            if !footerVisible { return }
+            footerVisible = nearBottom || timelineDragging || popoverOpen
+            topBarVisible = nearTop || popoverOpen
+            if !footerVisible && !topBarVisible { return }
             chromeTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: false) { [weak self] _ in
                 Task { @MainActor in
                     guard let self, !self.timelineDragging else { return }
-                    if !(self.pointerY > self.viewHeight - 120) { self.footerVisible = false; self.timelineVisible = false }
+                    let open = self.showContents || self.showSearch || self.showAppearance
+                    if !(self.pointerY > self.viewHeight - 120), !open { self.footerVisible = false; self.timelineVisible = false }
+                    if !(self.pointerY < 96), !self.topBarHovered, !open { self.topBarVisible = false }
                 }
             }
         } else {
             footerVisible = true
+            topBarVisible = false
         }
+    }
+
+    /// The pointer over the floating bar keeps it: the book beneath sees no movement then.
+    func topBarHover(_ inside: Bool) {
+        topBarHovered = inside
+        if inside { topBarVisible = true; chromeTimer?.invalidate() } else { refreshChrome() }
     }
 
     func close() {

@@ -260,6 +260,54 @@ public enum HomeElement: String, Codable, CaseIterable, Hashable {
         case .goals, .progress, .calendar, .activity, .statistics: return false
         }
     }
+
+    /// The sizes the widget can take.
+    public var sizes: [WidgetSize] {
+        switch self {
+        case .continueReading, .pickUpAgain, .forYou, .recentlyAdded, .recentlyFinished: return [.medium, .wide]
+        case .goals, .progress: return [.small, .medium]
+        case .calendar: return [.medium]
+        case .activity: return [.medium, .wide]
+        case .statistics: return [.small, .medium, .wide]
+        }
+    }
+
+    public var defaultSize: WidgetSize {
+        switch self {
+        case .continueReading, .pickUpAgain, .forYou, .recentlyAdded, .recentlyFinished: return .wide
+        case .goals, .progress, .calendar, .activity, .statistics: return .medium
+        }
+    }
+
+    /// Home starts simple: what you are reading, the goals, the activity of the half year and the newest books.
+    public var isShownByDefault: Bool {
+        switch self {
+        case .continueReading, .goals, .activity, .recentlyAdded: return true
+        case .pickUpAgain, .progress, .calendar, .statistics, .forYou, .recentlyFinished: return false
+        }
+    }
+}
+
+/// How much of a row a Home widget takes: a quarter, half, or all of it.
+public enum WidgetSize: String, Codable, CaseIterable, Hashable {
+    case small, medium, wide
+
+    public var label: String {
+        switch self {
+        case .small: return "Small"
+        case .medium: return "Medium"
+        case .wide: return "Wide"
+        }
+    }
+
+    /// Units of a four-unit row.
+    public var units: Int {
+        switch self {
+        case .small: return 1
+        case .medium: return 2
+        case .wide: return 4
+        }
+    }
 }
 
 /// Which pieces Home shows and in what order. Pieces the order does not name follow it in the usual order, so
@@ -267,13 +315,16 @@ public enum HomeElement: String, Codable, CaseIterable, Hashable {
 public struct HomeSettings: Codable, Hashable {
     public var order: [HomeElement]
     public var hidden: [HomeElement]
+    /// A widget's size where it differs from its usual one, by the element's name.
+    public var sizes: [String: WidgetSize]
 
-    public init(order: [HomeElement] = HomeElement.allCases, hidden: [HomeElement] = []) {
+    public init(order: [HomeElement] = HomeElement.allCases, hidden: [HomeElement] = HomeElement.allCases.filter { !$0.isShownByDefault }, sizes: [String: WidgetSize] = [:]) {
         self.order = order
         self.hidden = hidden
+        self.sizes = sizes
     }
 
-    enum CodingKeys: String, CodingKey { case order, hidden }
+    enum CodingKeys: String, CodingKey { case order, hidden, sizes }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -281,6 +332,18 @@ public struct HomeSettings: Codable, Hashable {
         let names = (try? c.decodeIfPresent([String].self, forKey: .order)) ?? []
         order = names.compactMap(HomeElement.init(rawValue:))
         hidden = ((try? c.decodeIfPresent([String].self, forKey: .hidden)) ?? []).compactMap(HomeElement.init(rawValue:))
+        sizes = (try? c.decodeIfPresent([String: WidgetSize].self, forKey: .sizes)) ?? [:]
+    }
+
+    /// The widget's size: as chosen, if the widget can take it, else its usual one.
+    public func size(of element: HomeElement) -> WidgetSize {
+        if let chosen = sizes[element.rawValue], element.sizes.contains(chosen) { return chosen }
+        return element.defaultSize
+    }
+
+    public mutating func setSize(_ size: WidgetSize, for element: HomeElement) {
+        guard element.sizes.contains(size) else { return }
+        if size == element.defaultSize { sizes.removeValue(forKey: element.rawValue) } else { sizes[element.rawValue] = size }
     }
 
     /// Every piece, the chosen order first, then any the order does not name.

@@ -362,6 +362,7 @@ final class LibraryModel {
     }
 
     func setHomeElement(_ element: HomeElement, shown: Bool) { settings.home.setShown(element, shown) }
+    func setHomeSize(_ size: WidgetSize, for element: HomeElement) { settings.home.setSize(size, for: element) }
     func moveHomeElements(fromOffsets source: IndexSet, toOffset destination: Int) { settings.home.move(fromOffsets: source, toOffset: destination) }
     func resetHome() { settings.home = HomeSettings() }
 
