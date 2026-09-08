@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(CoreGraphics)
+import CoreGraphics   // the geometry types' Swift face; Foundation alone no longer brings it on macOS
+#endif
 
 // The library's records: books, collections, annotations, reading statistics and settings. Everything is a plain
 // Codable value stored as JSON; the app owns the objects and asks the store to persist them.
@@ -539,30 +542,39 @@ public enum CoverLayout {
     /// The rectangle a picture of `image` size takes in a box of `box` size. Fitted pictures stand on the box's
     /// floor, centred; filling ones are centred and cropped; stretched ones are the box.
     public static func rect(image: CGSize, box: CGSize, style: CoverStyle) -> CGRect {
-        guard image.width > 0, image.height > 0, box.width > 0, box.height > 0 else { return CGRect(origin: .zero, size: box) }
+        let whole = CGRect(x: 0, y: 0, width: box.width, height: box.height)
+        guard image.width > 0, image.height > 0, box.width > 0, box.height > 0 else { return whole }
         switch style.fit {
         case .fit:
-            let s = min(box.width / image.width, box.height / image.height)
-            let w = image.width * s, h = image.height * s
-            return CGRect(x: (box.width - w) / 2, y: box.height - h, width: w, height: h)
+            let s: CGFloat = min(box.width / image.width, box.height / image.height)
+            let w: CGFloat = image.width * s
+            let h: CGFloat = image.height * s
+            let x: CGFloat = (box.width - w) / 2
+            let y: CGFloat = box.height - h
+            return CGRect(x: x, y: y, width: w, height: h)
         case .fill:
             return rect(frame: fillFrame(image: image, box: box), box: box)
         case .stretch:
-            return CGRect(origin: .zero, size: box)
+            return whole
         case .custom:
             return rect(frame: style.frame ?? fillFrame(image: image, box: box), box: box)
         }
     }
 
     public static func rect(frame: CoverFrame, box: CGSize) -> CGRect {
-        CGRect(x: CGFloat(frame.x) * box.width, y: CGFloat(frame.y) * box.height, width: CGFloat(frame.width) * box.width, height: CGFloat(frame.height) * box.height)
+        let x: CGFloat = CGFloat(frame.x) * box.width
+        let y: CGFloat = CGFloat(frame.y) * box.height
+        let w: CGFloat = CGFloat(frame.width) * box.width
+        let h: CGFloat = CGFloat(frame.height) * box.height
+        return CGRect(x: x, y: y, width: w, height: h)
     }
 
     /// The placement that fills the box, centred: the start of a custom one.
     public static func fillFrame(image: CGSize, box: CGSize) -> CoverFrame {
         guard image.width > 0, image.height > 0, box.width > 0, box.height > 0 else { return CoverFrame(x: 0, y: 0, width: 1, height: 1) }
-        let s = max(box.width / image.width, box.height / image.height)
-        let w = Double(image.width * s / box.width), h = Double(image.height * s / box.height)
+        let s: CGFloat = max(box.width / image.width, box.height / image.height)
+        let w = Double(image.width * s / box.width)
+        let h = Double(image.height * s / box.height)
         return CoverFrame(x: (1 - w) / 2, y: (1 - h) / 2, width: w, height: h)
     }
 

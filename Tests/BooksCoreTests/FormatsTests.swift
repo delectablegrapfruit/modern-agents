@@ -1,4 +1,7 @@
 import XCTest
+#if canImport(CoreGraphics)
+import CoreGraphics
+#endif
 @testable import BooksCore
 
 final class InflateTests: XCTestCase {
@@ -311,11 +314,12 @@ final class CoverLayoutTests: XCTestCase {
         let wide = CGSize(width: 400, height: 200)
         let fit = CoverLayout.rect(image: wide, box: box, style: CoverStyle(fit: .fit))
         XCTAssertEqual(fit, CGRect(x: 0, y: 200, width: 200, height: 100), "a wide picture fitted stands on the floor of the box")
+        XCTAssertEqual(CoverLayout.rect(image: CGSize(width: 0, height: 0), box: box, style: CoverStyle()), CGRect(x: 0, y: 0, width: 200, height: 300))
         let fill = CoverLayout.rect(image: wide, box: box, style: CoverStyle(fit: .fill))
         XCTAssertEqual(fill.height, 300, accuracy: 0.001)
         XCTAssertEqual(fill.width, 600, accuracy: 0.001)
         XCTAssertEqual(fill.midX, 100, accuracy: 0.001, "filling is centred")
-        XCTAssertEqual(CoverLayout.rect(image: wide, box: box, style: CoverStyle(fit: .stretch)), CGRect(origin: .zero, size: box))
+        XCTAssertEqual(CoverLayout.rect(image: wide, box: box, style: CoverStyle(fit: .stretch)), CGRect(x: 0, y: 0, width: 200, height: 300))
         let custom = CoverLayout.rect(image: wide, box: box, style: CoverStyle(fit: .custom, frame: CoverFrame(x: -0.5, y: 0.25, width: 2, height: 0.5)))
         XCTAssertEqual(custom, CGRect(x: -100, y: 75, width: 400, height: 150))
         XCTAssertEqual(CoverLayout.rect(image: wide, box: box, style: CoverStyle(fit: .custom)), fill, "a custom placement starts as filling")
