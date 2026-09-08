@@ -327,7 +327,9 @@ struct CalendarCard: View {
         let peak = max(1, days.map(\.seconds).max() ?? 1)
         let firstWeekday = days.first.flatMap { ReadingStats.date(fromKey: $0.day, calendar: calendar) }.map { calendar.component(.weekday, from: $0) } ?? 1
         let leading = (firstWeekday - calendar.firstWeekday + 7) % 7
-        let symbols = Array(calendar.veryShortStandaloneWeekdaySymbols[calendar.firstWeekday - 1...] + calendar.veryShortStandaloneWeekdaySymbols[..<(calendar.firstWeekday - 1)])
+        let allSymbols: [String] = calendar.veryShortStandaloneWeekdaySymbols
+        let firstIndex = max(0, min(allSymbols.count - 1, calendar.firstWeekday - 1))
+        let symbols: [String] = Array(allSymbols[firstIndex...]) + Array(allSymbols[..<firstIndex])
         let todayKey = ReadingStats.dayKey(Date(), calendar: calendar)
         HomeCard(title: "Reading Calendar", subtitle: "\(Format.plural(readDays, "day")) with reading in \(shown.formatted(.dateTime.month(.wide).year()))") {
             VStack(alignment: .leading, spacing: 10) {

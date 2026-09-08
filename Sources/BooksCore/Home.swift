@@ -60,16 +60,22 @@ public enum Genres {
 
     /// The genres of a book with these subjects, most particular first and each once. Subjects are split at the
     /// slashes, semicolons and dashes publishers use for hierarchies ("FICTION / Science Fiction / Space Opera").
+    /// Phrases of several words are looked for first and use up their words, so "science fiction" is not also
+    /// science and "natural history" not also history; then single words are matched whole.
     public static func genres(for subjects: [String]) -> [String] {
         var found: [String] = []
+        func note(_ genre: String) { if !found.contains(genre) { found.append(genre) } }
         for subject in subjects {
             for segment in segments(of: subject) {
-                let words = Set(segment.split { !$0.isLetter && !$0.isNumber && $0 != "-" && $0 != "'" && $0 != "’" }.map { String($0) })
-                for rule in rules where !found.contains(rule.genre) {
-                    for phrase in rule.phrases {
-                        let matched = phrase.contains(" ") || phrase.contains("-") ? segment.contains(phrase) : words.contains(phrase)
-                        if matched { found.append(rule.genre); break }
+                var words = Set(segment.split { !$0.isLetter && !$0.isNumber && $0 != "-" && $0 != "'" && $0 != "’" }.map { String($0) })
+                for rule in rules {
+                    for phrase in rule.phrases where phrase.contains(" ") && segment.contains(phrase) {
+                        note(rule.genre)
+                        for word in phrase.split(separator: " ") { words.remove(String(word)) }
                     }
+                }
+                for rule in rules {
+                    if rule.phrases.contains(where: { !$0.contains(" ") && words.contains($0) }) { note(rule.genre) }
                 }
             }
         }
