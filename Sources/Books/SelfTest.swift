@@ -411,7 +411,11 @@ enum SelfTest {
         guard !model.genreDatabase.isEmpty, let longNow = model.book(long.id), model.genres(of: longNow) == ["Classics", "Adventure", "Science Fiction"] else {
             throw Failure("the genre table was not read: \(model.book(long.id).map { model.genres(of: $0) } ?? [])")
         }
-        log("genre table: Classics and Adventure from Genres.csv, then the book's own Science Fiction")
+        // The table is put back as it was before the shelves are grouped below, so the book's own genre stands again.
+        if let earlier { try? earlier.write(to: tableURL) } else { try? FileManager.default.removeItem(at: tableURL) }
+        model.reloadGenreDatabase()
+        guard model.book(long.id).map({ model.genres(of: $0) }) == ["Science Fiction"] else { throw Failure("the genre table lingered after its file was removed") }
+        log("genre table: Classics and Adventure from Genres.csv, then the book's own Science Fiction; the book's own genre back without the file")
 
         // The shelves grouped: a collection holding one of the two, the other among the rest; Books (EPUBs) groups the
         // same way; a collection's own shelf never groups by collection; grouping by genre works on any shelf; a
