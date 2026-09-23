@@ -53,7 +53,7 @@ jobs:
 
       - name: Tap test (informational) — builds a process tap and an aggregate device for the runner's first output device, if it has one, and takes them down
         continue-on-error: true
-        timeout-minutes: 2
+        timeout-minutes: 6
         run: LIMITER_SELFTEST=1 LIMITER_SELFTEST_TAP=1 "$RUNNER_TEMP/launch/$APP/Contents/MacOS/AudioLimiter"
 
       - name: Upload packages

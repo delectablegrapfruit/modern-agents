@@ -1,4 +1,5 @@
 import AppKit
+import CoreAudio
 import LimiterCore
 import SwiftUI
 
@@ -45,14 +46,27 @@ enum SelfTest {
                 return
             }
             let ownProcess = AudioObject.process(pid: getpid())
-            log("own process object \(ownProcess)")
+            log("own process object \(ownProcess), audio capture permission \(AudioCaptureAccess.status())")
+            var lapStart = Date()
+            func lap(_ step: String) {
+                log(step + String(format: " (%.2f s)", -lapStart.timeIntervalSinceNow))
+                lapStart = Date()
+            }
+            // A bare tap first, then the whole limiter, so a slow step shows which call it is.
+            let bare = CATapDescription(excludingProcesses: [ownProcess], deviceUID: device.id, stream: 0)
+            bare.isPrivate = true
+            var tap = AudioObject.unknown
+            try check(AudioHardwareCreateProcessTap(bare, &tap), "Creating a bare tap")
+            lap("created a bare tap on \(device.name)")
+            AudioHardwareDestroyProcessTap(tap)
+            lap("destroyed it")
             let limiter = try DeviceLimiter(deviceID: device.objectID, uid: device.id, name: device.name, ignoring: ownProcess, gain: 0.5)
-            log("built a tap and an aggregate device for \(device.name)")
+            lap("built a tap and an aggregate device")
             limiter.invalidate()
+            lap("took them down")
             guard !OutputDevice.all().contains(where: { $0.uid.hasPrefix(DeviceLimiter.uidPrefix) }) else {
                 throw Failure("the aggregate device outlived the limiter")
             }
-            log("took them down")
         }
     }
 
