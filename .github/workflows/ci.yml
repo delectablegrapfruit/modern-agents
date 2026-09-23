@@ -22,69 +22,59 @@ jobs:
     name: macOS build, test, launch-test, bundle
     permissions:
       contents: write
-    # macOS 26 with Xcode 26 by default: the app is linked against the macOS 26 SDK, which is what gives the
-    # standard controls their Liquid Glass appearance. Hosted macOS minutes bill at ten times the rate of Linux
-    # ones; a repository variable BOOKS_MACOS_RUNNER (for example "self-hosted") points the job at your own Mac.
-    runs-on: ${{ vars.BOOKS_MACOS_RUNNER || 'macos-26' }}
+    # Hosted macOS minutes bill at ten times the rate of Linux ones; a repository variable LIMITER_MACOS_RUNNER (or
+    # BOOKS_MACOS_RUNNER, shared with the Books branch) set to e.g. "self-hosted" points the job at your own Mac.
+    runs-on: ${{ vars.LIMITER_MACOS_RUNNER || vars.BOOKS_MACOS_RUNNER || 'macos-26' }}
+    env:
+      APP: Audio Limiter.app
     steps:
       - uses: actions/checkout@v4
       - run: xcodebuild -version && swift --version
-      - name: Kindle fixtures (libmobi test suite)
-        uses: actions/checkout@v4
-        with:
-          repository: bfabiszewski/libmobi
-          path: tools/libmobi
-          sparse-checkout: tests/samples
-      - name: Copy the Kindle fixtures the tests use
-        run: |
-          mkdir -p Tests/Fixtures/mobi
-          for f in sample-cp1252 sample-ncx sample-multimedia sample-unicode-huffdic sample-unicode-uncompressed sample-obfuscated-fonts sample-textread sample-dict-infl2 sample-drm-v1; do
-            cp "tools/libmobi/tests/samples/$f.mobi" Tests/Fixtures/mobi/ || echo "missing $f"
-          done
-          ls -la Tests/Fixtures/mobi
       - run: swift test
-      - run: scripts/make-app.sh release && test -f build/Books.app/Contents/Resources/AppIcon.icns && test -f build/Books.app/Contents/Resources/Reader/reader.html
+      - run: scripts/make-app.sh release && test -f "build/$APP/Contents/Resources/AppIcon.icns" && plutil -lint "build/$APP/Contents/Info.plist"
 
       - name: Package (zip + dmg + checksums)
         run: |
           mkdir -p dist
-          rm -f dist/Books.app.zip dist/Books.dmg
-          ditto -c -k --keepParent build/Books.app dist/Books.app.zip
-          hdiutil create -volname Books -srcfolder build/Books.app -ov -format UDZO dist/Books.dmg
-          (cd dist && shasum -a 256 Books.app.zip Books.dmg | tee SHA256SUMS.txt)
+          rm -f dist/AudioLimiter.app.zip dist/AudioLimiter.dmg
+          ditto -c -k --keepParent "build/$APP" dist/AudioLimiter.app.zip
+          hdiutil create -volname "Audio Limiter" -srcfolder "build/$APP" -ov -format UDZO dist/AudioLimiter.dmg
+          (cd dist && shasum -a 256 AudioLimiter.app.zip AudioLimiter.dmg | tee SHA256SUMS.txt)
           ls -la dist
 
-      - name: Launch test — the packaged app, unzipped elsewhere with the build directory hidden, imports a generated book and reads it with real wheel notches
+      - name: Launch test — the packaged app, unzipped elsewhere with the build directory hidden, lists the output devices, checks the volume mapping on their curves and lays out its menu
         timeout-minutes: 5
         run: |
           mv .build "$RUNNER_TEMP/hidden-build"
           rm -rf "$RUNNER_TEMP/launch" && mkdir -p "$RUNNER_TEMP/launch"
-          ditto -x -k dist/Books.app.zip "$RUNNER_TEMP/launch"
-          (sleep 30; screencapture -x build/launch-test.png || true) &
-          BOOKS_SELFTEST=1 "$RUNNER_TEMP/launch/Books.app/Contents/MacOS/Books"
-          wait
+          ditto -x -k dist/AudioLimiter.app.zip "$RUNNER_TEMP/launch"
+          LIMITER_SELFTEST=1 "$RUNNER_TEMP/launch/$APP/Contents/MacOS/AudioLimiter"
           mv "$RUNNER_TEMP/hidden-build" .build
 
-      - name: Upload packages (and test screenshots, also when a test failed)
+      - name: Tap test (informational) — builds a process tap and an aggregate device for the runner's first output device, if it has one, and takes them down
+        continue-on-error: true
+        timeout-minutes: 2
+        run: LIMITER_SELFTEST=1 LIMITER_SELFTEST_TAP=1 "$RUNNER_TEMP/launch/$APP/Contents/MacOS/AudioLimiter"
+
+      - name: Upload packages
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Books.app
+          name: AudioLimiter.app
           if-no-files-found: warn
           path: |
-            dist/Books.app.zip
-            dist/Books.dmg
+            dist/AudioLimiter.app.zip
+            dist/AudioLimiter.dmg
             dist/SHA256SUMS.txt
-            build/*.png
 
       - name: Commit packages to dist/
         if: github.event_name == 'push'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f dist/Books.app.zip dist/Books.dmg dist/SHA256SUMS.txt
+          git add -f dist/AudioLimiter.app.zip dist/AudioLimiter.dmg dist/SHA256SUMS.txt
           if git diff --cached --quiet; then echo "dist/ unchanged"; exit 0; fi
-          git commit -m "ci: package Books.app into dist/ (${GITHUB_SHA::7}) [skip ci]"
+          git commit -m "ci: package Audio Limiter.app into dist/ (${GITHUB_SHA::7}) [skip ci]"
           # Should another run have committed dist/ meanwhile, this build's files win.
           git pull --rebase --autostash -X theirs origin "${GITHUB_REF_NAME}"
           git push origin "HEAD:${GITHUB_REF_NAME}"
@@ -94,8 +84,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/Books.app.zip
-            dist/Books.dmg
+            dist/AudioLimiter.app.zip
+            dist/AudioLimiter.dmg
             dist/SHA256SUMS.txt
 
   linux:
@@ -104,25 +94,5 @@ jobs:
     container: swift:6.0
     steps:
       - uses: actions/checkout@v4
-      - run: swift build --product books-cli
-      - name: Kindle fixtures (libmobi test suite)
-        uses: actions/checkout@v4
-        with:
-          repository: bfabiszewski/libmobi
-          path: tools/libmobi
-          sparse-checkout: tests/samples
-      - name: Copy the Kindle fixtures the tests use
-        run: |
-          mkdir -p Tests/Fixtures/mobi
-          for f in sample-cp1252 sample-ncx sample-multimedia sample-unicode-huffdic sample-unicode-uncompressed sample-obfuscated-fonts sample-textread sample-dict-infl2 sample-drm-v1; do
-            cp "tools/libmobi/tests/samples/$f.mobi" Tests/Fixtures/mobi/ || echo "missing $f"
-          done
-          ls -la Tests/Fixtures/mobi
+      - run: swift build
       - run: swift test
-      - name: Convert the fixtures with the command line
-        run: |
-          for f in Tests/Fixtures/mobi/*.mobi; do
-            case "$f" in *drm*) continue;; esac
-            .build/debug/books-cli convert "$f" /tmp/out.epub
-            .build/debug/books-cli info /tmp/out.epub | head -4
-          done

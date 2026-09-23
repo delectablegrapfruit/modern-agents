@@ -1,26 +1,20 @@
 #!/usr/bin/env bash
-# Builds Books.app from the Swift package (macOS only).
+# Builds "Audio Limiter.app" from the Swift package (macOS only).
 #   scripts/make-app.sh [debug|release]
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 CONFIG="${1:-release}"
-APP="build/Books.app"
+APP="build/Audio Limiter.app"
 
-swift build -c "$CONFIG" --product Books
-swift build -c "$CONFIG" --product books-cli
+swift build -c "$CONFIG" --product AudioLimiter
 BINDIR="$(swift build -c "$CONFIG" --show-bin-path)"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BINDIR/Books" "$APP/Contents/MacOS/Books"
-cp "$BINDIR/books-cli" "$APP/Contents/MacOS/books-cli"
-# The typesetting page and its scripts: a plain folder in Resources, where BooksSchemeHandler looks first.
-cp -R Sources/Books/Resources/Reader "$APP/Contents/Resources/Reader"
-test -f "$APP/Contents/Resources/Reader/reader.html"
+cp "$BINDIR/AudioLimiter" "$APP/Contents/MacOS/AudioLimiter"
 cp Packaging/Info.plist "$APP/Contents/Info.plist"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
-cmp -s "$BINDIR/Books" "$APP/Contents/MacOS/Books" || { echo "app binary was overwritten in the bundle" >&2; exit 1; }
 
 if command -v swiftc >/dev/null && command -v iconutil >/dev/null; then
   ICONSET="build/AppIcon.iconset"
@@ -31,7 +25,8 @@ if command -v swiftc >/dev/null && command -v iconutil >/dev/null; then
     || echo "icon skipped"
 fi
 
-# Ad-hoc signature: enough for Gatekeeper's "Open Anyway" and for WebKit's web content process to launch.
+# Ad-hoc signature: enough for Gatekeeper's "Open Anyway". macOS keys the audio-capture permission to the signature,
+# so a rebuilt copy asks again.
 codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || echo "codesign skipped"
 
 echo "built $APP"

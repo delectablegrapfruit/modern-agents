@@ -2,41 +2,38 @@
 import PackageDescription
 
 var products: [Product] = [
-    .library(name: "BooksCore", targets: ["BooksCore"]),
-    .executable(name: "books-cli", targets: ["BooksCLI"]),
+    .library(name: "LimiterCore", targets: ["LimiterCore"]),
 ]
 
 var targets: [Target] = [
-    // Formats and the library: ZIP/inflate, EPUB, Kindle → EPUB, plain text → EPUB, catalog, settings, reading
-    // statistics. Foundation only, so it builds and is tested on Linux as well as macOS.
-    .target(name: "BooksCore", path: "Sources/BooksCore"),
-    .executableTarget(name: "BooksCLI", dependencies: ["BooksCore"], path: "Sources/BooksCLI"),
-    .testTarget(name: "BooksCoreTests", dependencies: ["BooksCore"], path: "Tests/BooksCoreTests"),
+    // The volume mapping, the gain applied to the sound, and the settings. Foundation only, so it builds and is
+    // tested on Linux as well as macOS.
+    .target(name: "LimiterCore", path: "Sources/LimiterCore"),
+    .testTarget(name: "LimiterCoreTests", dependencies: ["LimiterCore"], path: "Tests/LimiterCoreTests"),
 ]
 
 #if os(macOS)
-products.append(.executable(name: "Books", targets: ["Books"]))
+products.append(.executable(name: "AudioLimiter", targets: ["AudioLimiter"]))
 targets.append(
     .executableTarget(
-        name: "Books",
-        dependencies: ["BooksCore"],
-        path: "Sources/Books",
-        // The typesetting engine: a small web page WebKit lays the book out with, served to WKWebView from the bundle.
-        resources: [.copy("Resources/Reader")],
+        name: "AudioLimiter",
+        dependencies: ["LimiterCore"],
+        path: "Sources/AudioLimiter",
         linkerSettings: [
             .linkedFramework("AppKit"),
             .linkedFramework("SwiftUI"),
-            .linkedFramework("WebKit"),
-            .linkedFramework("PDFKit"),
-            .linkedFramework("UniformTypeIdentifiers"),
+            .linkedFramework("CoreAudio"),
+            .linkedFramework("AudioToolbox"),
+            .linkedFramework("ServiceManagement"),
         ]
     )
 )
 #endif
 
 let package = Package(
-    name: "Books",
-    platforms: [.macOS(.v14)],
+    name: "AudioLimiter",
+    // Core Audio process taps, which the limiter is built on, arrived in macOS 14.2.
+    platforms: [.macOS("14.2")],
     products: products,
     targets: targets
 )

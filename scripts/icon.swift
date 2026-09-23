@@ -1,5 +1,5 @@
-// Renders the app icon set: a deep indigo tile with a small pile of books and an amber bookmark. A library rather
-// than the orange open book of the system's own Books app, so the two are told apart at a glance in the Dock.
+// Renders the app icon set: a graphite tile with a row of rising volume bars under an amber ceiling line. The bars
+// stop at the line and the loud end above it is only a ghost — the range the app sets aside.
 import AppKit
 
 let out = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "AppIcon.iconset"
@@ -9,8 +9,10 @@ func rgb(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat, _ a: CGFloat = 1) -> NSColor 
     NSColor(calibratedRed: r, green: g, blue: b, alpha: a)
 }
 
-let indigoLight = rgb(0.45, 0.40, 0.95)
-let indigoDark = rgb(0.16, 0.13, 0.44)
+let graphiteLight = rgb(0.30, 0.33, 0.40)
+let graphiteDark = rgb(0.09, 0.10, 0.13)
+let tealLight = rgb(0.55, 0.95, 0.88)
+let teal = rgb(0.16, 0.72, 0.68)
 let amber = rgb(1.0, 0.72, 0.22)
 
 func render(_ size: Int, scale: Int) {
@@ -25,67 +27,50 @@ func render(_ size: Int, scale: Int) {
     // The tile, with the soft drop shadow macOS icons carry, a vertical gradient and a sheen across the top.
     ctx.saveGState()
     ctx.setShadow(offset: CGSize(width: 0, height: -px * 0.012), blur: px * 0.03, color: NSColor.black.withAlphaComponent(0.35).cgColor)
-    indigoDark.setFill()
+    graphiteDark.setFill()
     tile.fill()
     ctx.restoreGState()
-    NSGradient(colors: [indigoLight, indigoDark])!.draw(in: tile, angle: -90)
+    NSGradient(colors: [graphiteLight, graphiteDark])!.draw(in: tile, angle: -90)
     ctx.saveGState()
     tile.addClip()
     let sheen = NSBezierPath(ovalIn: NSRect(x: rect.minX - rect.width * 0.25, y: rect.midY - rect.height * 0.02, width: rect.width * 1.5, height: rect.height * 0.95))
-    NSGradient(colors: [NSColor.white.withAlphaComponent(0.14), NSColor.white.withAlphaComponent(0)])!.draw(in: sheen, angle: -90)
+    NSGradient(colors: [NSColor.white.withAlphaComponent(0.12), NSColor.white.withAlphaComponent(0)])!.draw(in: sheen, angle: -90)
     ctx.restoreGState()
 
-    // Books lying on their sides in a loose pile, spines facing out. Small sizes get two thicker books so the
-    // shape survives at 16 points.
-    let w = rect.width, cx = rect.midX, cy = rect.midY
+    // Bars rising left to right. Small sizes get fewer, wider bars so the shape survives at 16 points.
+    let w = rect.width
     let small = size <= 32
-    let bookH = w * (small ? 0.24 : 0.165), gapY = w * (small ? 0.05 : 0.035)
-    var books: [(width: CGFloat, shift: CGFloat, alpha: CGFloat)] = [
-        (w * 0.64, -w * 0.02, 0.97),
-        (w * 0.55, w * 0.05, 0.86),
-        (w * 0.60, -w * 0.01, 0.97),
-    ]
-    if small { books.removeFirst() }
-    let stackH = CGFloat(books.count) * bookH + CGFloat(books.count - 1) * gapY
-    var y = cy - stackH / 2
-    for (index, book) in books.enumerated() {
-        let frame = NSRect(x: cx + book.shift - book.width / 2, y: y, width: book.width, height: bookH)
-        let path = NSBezierPath(roundedRect: frame, xRadius: bookH * 0.2, yRadius: bookH * 0.2)
-        ctx.saveGState()
-        ctx.setShadow(offset: CGSize(width: 0, height: -px * 0.006), blur: px * 0.018, color: NSColor.black.withAlphaComponent(0.3).cgColor)
-        NSColor(calibratedWhite: 1, alpha: book.alpha).setFill()
-        path.fill()
-        ctx.restoreGState()
+    let count = small ? 4 : 6
+    let areaX = rect.minX + w * 0.17, areaW = w * 0.66
+    let baseY = rect.minY + w * 0.18, tallest = w * 0.58
+    let gap = areaW * (small ? 0.16 : 0.1) / CGFloat(count - 1)
+    let barW = (areaW - gap * CGFloat(count - 1)) / CGFloat(count)
+    let ceilingY = baseY + tallest * 0.56
+    let radius = barW * 0.3
 
+    for index in 0..<count {
+        let height = tallest * (0.22 + 0.78 * CGFloat(index) / CGFloat(count - 1))
+        let frame = NSRect(x: areaX + CGFloat(index) * (barW + gap), y: baseY, width: barW, height: height)
+        let bar = NSBezierPath(roundedRect: frame, xRadius: radius, yRadius: radius)
+        // The part above the ceiling: a ghost.
+        NSColor.white.withAlphaComponent(0.13).setFill()
+        bar.fill()
+        // The part below: lit.
         ctx.saveGState()
-        path.addClip()
-        // The page block: a paler strip along the book's open end.
-        rgb(0.84, 0.84, 0.93).setFill()
-        NSRect(x: frame.maxX - frame.width * 0.09, y: frame.minY, width: frame.width * 0.09, height: frame.height).fill()
-        // A title band on the spine.
-        indigoLight.withAlphaComponent(0.4).setFill()
-        NSRect(x: frame.minX + frame.width * 0.11, y: frame.minY + bookH * 0.3, width: frame.width * 0.2, height: bookH * 0.4).fill()
+        NSRect(x: frame.minX, y: frame.minY, width: frame.width, height: min(frame.height, ceilingY - frame.minY)).clip()
+        NSGradient(colors: [tealLight, teal])!.draw(in: bar, angle: -90)
         ctx.restoreGState()
-
-        if index == books.count - 1 {
-            // The bookmark: an amber ribbon out of the top book's pages, with a notched end.
-            let ribbonH = bookH * 0.42, ribbonY = frame.midY - ribbonH / 2
-            let startX = frame.maxX - frame.width * 0.12, endX = frame.maxX + w * 0.11, notch = ribbonH * 0.45
-            let ribbon = NSBezierPath()
-            ribbon.move(to: NSPoint(x: startX, y: ribbonY))
-            ribbon.line(to: NSPoint(x: endX, y: ribbonY))
-            ribbon.line(to: NSPoint(x: endX - notch, y: ribbonY + ribbonH / 2))
-            ribbon.line(to: NSPoint(x: endX, y: ribbonY + ribbonH))
-            ribbon.line(to: NSPoint(x: startX, y: ribbonY + ribbonH))
-            ribbon.close()
-            ctx.saveGState()
-            ctx.setShadow(offset: CGSize(width: 0, height: -px * 0.004), blur: px * 0.012, color: NSColor.black.withAlphaComponent(0.3).cgColor)
-            amber.setFill()
-            ribbon.fill()
-            ctx.restoreGState()
-        }
-        y += bookH + gapY
     }
+
+    // The ceiling: an amber line across the bars, a little wider than they are.
+    let lineH = w * (small ? 0.06 : 0.04)
+    let line = NSBezierPath(roundedRect: NSRect(x: areaX - w * 0.05, y: ceilingY - lineH / 2, width: areaW + w * 0.1, height: lineH),
+                            xRadius: lineH / 2, yRadius: lineH / 2)
+    ctx.saveGState()
+    ctx.setShadow(offset: CGSize(width: 0, height: -px * 0.004), blur: px * 0.012, color: NSColor.black.withAlphaComponent(0.35).cgColor)
+    amber.setFill()
+    line.fill()
+    ctx.restoreGState()
     image.unlockFocus()
 
     guard let tiff = image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff),
