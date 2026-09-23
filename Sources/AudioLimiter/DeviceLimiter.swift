@@ -86,7 +86,7 @@ final class DeviceLimiter {
         guard ownProcess != AudioObject.unknown else { throw LimiterFailure("Audio Limiter is missing from Core Audio's process list") }
 
         // Every process but this one, on the device's first output stream, in the stream's own channel layout.
-        let description = CATapDescription(excludingProcesses: [NSNumber(value: ownProcess)], deviceUID: uid, stream: 0)
+        let description = CATapDescription(excludingProcesses: [ownProcess], deviceUID: uid, stream: 0)
         description.name = "Audio Limiter: \(name)"
         description.uuid = UUID()
         description.isPrivate = true

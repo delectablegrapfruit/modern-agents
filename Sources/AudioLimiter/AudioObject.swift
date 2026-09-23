@@ -66,15 +66,16 @@ enum AudioObject {
         var address = address
         var value = initial
         var size = UInt32(MemoryLayout<Value>.size)
-        guard AudioObjectGetPropertyData(object, &address, 0, nil, &size, &value) == noErr else { return nil }
-        return value
+        let status = withUnsafeMutablePointer(to: &value) { AudioObjectGetPropertyData(object, &address, 0, nil, &size, $0) }
+        return status == noErr ? value : nil
     }
 
     @discardableResult
     static func set<Value>(_ object: AudioObjectID, _ address: AudioObjectPropertyAddress, _ value: Value) -> Bool {
         var address = address
         var value = value
-        return AudioObjectSetPropertyData(object, &address, 0, nil, UInt32(MemoryLayout<Value>.size), &value) == noErr
+        let status = withUnsafePointer(to: &value) { AudioObjectSetPropertyData(object, &address, 0, nil, UInt32(MemoryLayout<Value>.size), $0) }
+        return status == noErr
     }
 
     static func string(_ object: AudioObjectID, _ address: AudioObjectPropertyAddress) -> String? {
