@@ -74,6 +74,10 @@ reverb — Typewriter with carriage-return zips and bells, Chiptune coins and po
 Marimba, Analog Synth stabs, ringing Glass, Wind Chimes — all synthesized, each with its own clears, with a Listen
 button); a few are factory rewards.
 
+**Achievements** — 27 quiet milestones that pay ◆ lines: a small toast when one is earned, otherwise only under
+Stats ▸ Achievements. None is a gimme — the easiest is a quad (15 ◆); the hardest are eight back-to-backs, three
+perfect clears on one board, 300,000 in Classic, 25 Hard puzzles or a decomino press (150–300 ◆).
+
 **Stats** — lines by source and day, clears, T-spins, combos, pieces per minute, inputs per piece, puzzle solves
 and first-try rates by difficulty and wildcard, factory quality control, items bought and used, time by mode.
 
@@ -118,6 +122,6 @@ first time. The save lives in `~/Library/Application Support/Lull/save.json` (Se
 
 | Path | |
 |---|---|
-| `Game/` | the game: `index.html`, `css/`, and `js/` — `pieces` (SRS tetrominoes, pentominoes, big and custom shapes, polyomino enumeration), `board`, `engine` (the floating-piece rules and every item), `puzzlegen` (seeds, wildcards, reverse construction, reachability search, forward verification), `factory` (orders, grading, ranks, upgrades, the idle line), `store` (save, catalog, stats), `render` (canvas: skins, frames, effects, item animations, rotated views), `factoryview` (the workshop's stations, drawn), `modes`, `ui`, `app` |
+| `Game/` | the game: `index.html`, `css/`, and `js/` — `pieces` (SRS tetrominoes, pentominoes, big and custom shapes, polyomino enumeration), `board`, `engine` (the floating-piece rules and every item), `puzzlegen` (seeds, wildcards, reverse construction, reachability search, forward verification), `factory` (presses, milestones, crates, the belt, offline time), `store` (save, catalog, stats), `achievements`, `render` (canvas: skins, frames, effects, item animations, rotated views), `factoryview` (the belt, drawn like the board), `modes`, `ui`, `app` |
 | `Sources/Lull/` | the macOS shell: a borderless `NSPanel` (floating, all Spaces, edge-resizable, draggable by the page's title bar) around a transparent `WKWebView`, a blur for the Glass background, the save file, the ⌥⌘L hot key, and a self-test CI runs |
 | `scripts/` | `make-app.sh`, `icon.swift`, `test.cjs`, `browser-test.cjs` |

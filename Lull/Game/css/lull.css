@@ -526,3 +526,17 @@ kbd.big { font-size: 12px; padding: 3px 7px; }
 }
 .classic-controls { flex: none; display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; padding: 6px 10px 10px; border-top: 1px solid var(--line); }
 .classic-controls .btn.on { color: var(--accent); }
+
+/* ---- achievements ---------------------------------------------------------------------------------------------- */
+
+.ach-list { display: flex; flex-direction: column; gap: 4px; }
+.ach { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); }
+.ach .grow { flex: 1; min-width: 0; }
+.ach .t { font-weight: 700; font-size: 12.5px; color: var(--muted); }
+.ach .d { color: var(--muted); font-size: 11px; }
+.ach .bar { margin-top: 4px; }
+.ach-i { flex: none; width: 20px; text-align: center; color: var(--faint); font-size: 14px; }
+.ach-pay { flex: none; font: 700 11px var(--mono-font); color: var(--muted); }
+.ach.got { border-color: color-mix(in srgb, var(--gem) 45%, transparent); }
+.ach.got .t { color: var(--fg); }
+.ach.got .ach-pay { color: var(--gem); }

@@ -234,7 +234,7 @@
   function renderStats(app, sub) {
     const tabs = document.getElementById('stats-tabs');
     const body = document.getElementById('stats-body');
-    const subs = [['overview', 'Overview'], ['free', 'Free Play'], ['classic', 'Classic'], ['puzzle', 'Puzzles'], ['factory', 'Factory'], ['items', 'Items & Shop']];
+    const subs = [['overview', 'Overview'], ['free', 'Free Play'], ['classic', 'Classic'], ['puzzle', 'Puzzles'], ['factory', 'Factory'], ['items', 'Items & Shop'], ['achievements', 'Achievements']];
     tabs.replaceChildren(...subs.map(([k, label]) => h('button', { 'aria-selected': String(k === sub), onclick: () => { app.statsSub = k; renderStats(app, k); } }, label)));
     const st = app.store.state, S = st.stats;
     const look = lookWith(app);
@@ -252,7 +252,7 @@
         kpi(fmtInt(S.sessions), 'Sessions'),
         kpi(Object.keys(st.history).length + '', 'Days played')));
       els.push(h('h4', null, 'Lines earned, last 14 days'), historyChart(app, 'lines', 14));
-      els.push(h('h4', null, 'Where lines came from'), hbars([['Free Play', S.lines.play], ['Puzzles', S.lines.puzzles], ['Factory', S.lines.contracts]]));
+      els.push(h('h4', null, 'Where lines came from'), hbars([['Free Play', S.lines.play], ['Puzzles', S.lines.puzzles], ['Factory', S.lines.contracts], ['Achievements', S.lines.achievements || 0]]));
       els.push(h('h4', null, 'Time by mode'), table([
         ['Free Play', fmtDuration(S.timeMs.play)], ['Classic', fmtDuration(S.timeMs.classic || 0)], ['Puzzles', fmtDuration(S.timeMs.puzzle)], ['Factory (watching)', fmtDuration(S.timeMs.factory)],
       ]));
@@ -304,6 +304,23 @@
         ['Defects shipped (refunded)', count(fs.escaped)], ['Good minos binned', count(fs.wasted)], ['Catch rate', (pulled + fs.escaped) ? pct(pulled / (pulled + fs.escaped), 1) : '—'],
         ['Best streak', fmtInt(f.bestStreak)], ['Earned while away', fmt(fs.offlineEarned) + '¢'], ['Time in the factory', fmtDuration(S.timeMs.factory)],
       ]));
+    } else if (sub === 'achievements') {
+      const A = L.Achievements, got = st.achievements || {};
+      const n = A.LIST.filter((a) => got[a.id]).length;
+      els.push(h('div', { class: 'kpis' }, kpi(n + ' / ' + A.LIST.length, 'Earned'), kpi(fmtInt(S.lines.achievements || 0) + ' ◆', 'Lines from them'), kpi(fmtInt(A.total()) + ' ◆', 'All of them pay')));
+      for (const g of A.GROUPS) {
+        els.push(h('h4', null, g.name));
+        els.push(h('div', { class: 'ach-list' }, A.LIST.filter((a) => a.group === g.id).map((a) => {
+          const when = got[a.id], pr = !when && a.progress ? a.progress(st) : null;
+          return h('div', { class: 'ach' + (when ? ' got' : '') },
+            h('span', { class: 'ach-i' }, when ? '🏆' : '·'),
+            h('div', { class: 'grow' },
+              h('div', { class: 't' }, a.name),
+              h('div', { class: 'd' }, a.desc + (when ? ' · ' + new Date(when).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : '')),
+              pr ? h('div', { class: 'bar' }, h('i', { style: { width: (100 * Math.min(1, pr[0] / pr[1])).toFixed(1) + '%' } })) : null),
+            h('span', { class: 'ach-pay' }, (pr ? Math.min(pr[0], pr[1]) + '/' + pr[1] + ' · ' : '') + '+' + a.pay + ' ◆'));
+        })));
+      }
     } else {
       const bought = S.items.bought, used = S.items.used;
       els.push(h('div', { class: 'kpis' }, kpi(fmtInt(S.lines.spent), 'Lines spent'), kpi(fmtInt(S.cosmetics.bought), 'Cosmetics bought'),

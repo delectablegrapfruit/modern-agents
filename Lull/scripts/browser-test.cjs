@@ -55,8 +55,8 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await page.keyboard.press('ArrowUp'); // vertical
   for (let i = 0; i < 6; i++) await page.keyboard.press('ArrowLeft');
   await page.keyboard.press('Space');
-  const after = await ev(() => ({ lines: Lull.app.store.state.lines, wallet: document.getElementById('wallet-n').textContent, board: Lull.app.modes.play.game.board.count() }));
-  check('quad banks 4 lines', after.lines === cleared + 4, JSON.stringify(after));
+  const after = await ev(() => ({ lines: Lull.app.store.state.lines, fromAch: Lull.app.store.state.stats.lines.achievements, wallet: document.getElementById('wallet-n').textContent, board: Lull.app.modes.play.game.board.count(), ach: Object.keys(Lull.app.store.state.achievements).sort() }));
+  check('quad banks 4 lines (plus the first-quad and perfect-clear achievements)', after.lines === cleared + 4 + after.fromAch && after.ach.join() === 'pc,quad', JSON.stringify(after));
   check('board empty after the quad', after.board === 0);
   await page.waitForTimeout(120);
   await shot('10-quad');
@@ -442,11 +442,14 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
 
   console.log('stats and settings');
   await page.click('.tabs button[data-tab="stats"]');
-  for (let n = 1; n <= 5; n++) {
+  const nTabs = await page.$$eval('#stats-tabs button', (b) => b.length);
+  for (let n = 1; n <= nTabs; n++) {
     await page.click('#stats-tabs button:nth-child(' + n + ')');
     await page.waitForTimeout(50);
     await shot('50-stats-' + n);
   }
+  const ach = await ev(() => ({ got: document.querySelectorAll('.ach.got').length, all: document.querySelectorAll('.ach').length, quad: !!Lull.app.store.state.achievements.quad, paid: Lull.app.store.state.stats.lines.achievements }));
+  check('achievements: earned in play, listed under Stats, and paid', ach.quad && ach.got >= 1 && ach.all >= 25 && ach.paid >= 15, JSON.stringify(ach));
   await page.click('#btn-settings');
   await page.waitForTimeout(100);
   await shot('60-settings');

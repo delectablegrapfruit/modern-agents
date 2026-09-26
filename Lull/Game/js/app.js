@@ -193,6 +193,19 @@
 
     activity() { this.lastActivity = performance.now(); },
 
+    /** Checks achievements after something happened; a new one pays lines and says so, once, quietly. */
+    achieve(event) {
+      const got = L.Achievements.check(this.state, event);
+      if (!got.length) return;
+      for (const a of got) {
+        this.store.addLines(a.pay, 'achievements');
+        toast('🏆 ' + a.name + ' · +' + a.pay + ' ◆', 'good', 3200);
+      }
+      this.sound.play('solve');
+      this.refreshWallet(true);
+      this.store.touch();
+    },
+
     onResize() {
       for (const k of ['play', 'classic', 'puzzle']) { const v = this.modes[k] && this.modes[k].view; if (v) { v.resize(); v.dirty = true; } }
       if (this.modes.factory) this.modes.factory.view.resize();

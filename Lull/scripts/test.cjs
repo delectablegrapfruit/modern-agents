@@ -5,7 +5,7 @@
 'use strict';
 const assert = require('assert');
 const load = require('./load.cjs');
-const L = load(['util.js', 'pieces.js', 'board.js', 'engine.js', 'puzzlegen.js', 'factory.js', 'store.js']);
+const L = load(['util.js', 'pieces.js', 'board.js', 'engine.js', 'puzzlegen.js', 'factory.js', 'store.js', 'achievements.js']);
 const { Pieces, Board, Game, Puzzles, Factory, RNG } = L;
 
 let passed = 0, failed = 0;
@@ -407,6 +407,27 @@ test('older factories start over, with a little money', () => {
   assert(f.credits > 10 && f.credits <= 500);
   assert.strictEqual(f.stats.caught, 40);
   assert.deepStrictEqual(f.owned, {});
+});
+
+console.log('achievements');
+test('achievements: earned once, by the right events, none of them a gimme', () => {
+  const st = L.defaultState();
+  const A = L.Achievements;
+  assert(A.LIST.length >= 25 && new Set(A.LIST.map((a) => a.id)).size === A.LIST.length);
+  assert(A.LIST.every((a) => a.pay >= 15), 'every one pays something real');
+  const g = new Game({ w: 10, h: 20, seed: 1 });
+  // An ordinary single clear earns nothing.
+  assert.deepStrictEqual(A.check(st, { mode: 'play', r: { lines: 1, combo: 0 }, g }), []);
+  const quad = A.check(st, { mode: 'play', r: { lines: 4, combo: 0 }, g }).map((a) => a.id);
+  assert.deepStrictEqual(quad, ['quad']);
+  assert.deepStrictEqual(A.check(st, { mode: 'play', r: { lines: 4, combo: 0 }, g }), [], 'only once');
+  g.s.b2b = 8; g.s.score = 300000;
+  const big = A.check(st, { mode: 'play', r: { lines: 2, tspin: true, combo: 10 }, g }).map((a) => a.id).sort();
+  assert.deepStrictEqual(big, ['b2b3', 'b2b8', 'combo10', 'combo5', 'score250k', 'score50k', 'tsd'].sort());
+  assert.deepStrictEqual(A.check(st, { mode: 'classic', score: 120000, level: 10, tetrises: 1 }).map((a) => a.id).sort(), ['cl_100k', 'cl_l10']);
+  st.factory.owned[6] = 1;
+  assert.deepStrictEqual(A.check(st, { mode: 'factory' }).map((a) => a.id), ['fa_hexo']);
+  assert.deepStrictEqual(A.check(st, { mode: 'puzzle', diff: 'H', firstTry: true, hinted: true, mods: [] }), [], 'a hinted solve is not a Hard Nut');
 });
 
 console.log('save');

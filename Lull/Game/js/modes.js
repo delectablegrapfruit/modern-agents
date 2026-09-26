@@ -227,7 +227,7 @@
       const game = new Game({ w: 10, h: 20, previewCount: 3, maxHistory: 0, freeHold: false });
       this.attachGame(game, {});
       this.view.showBank = true;
-      Object.assign(this, { level: 1, lines: 0, score: 0, acc: 0, lockT: 0, resets: 0, over: false, paused: false, started: !!start });
+      Object.assign(this, { tetrises: 0, level: 1, lines: 0, score: 0, acc: 0, lockT: 0, resets: 0, over: false, paused: false, started: !!start });
       if (start) { this.hideCard(); this.cs.games++; this.app.store.touch(); L.Music.rewind(); }
       else this.showStart();
       this.renderStatus();
@@ -342,8 +342,10 @@
       if (this.level > before) { this.app.sound.play('solve'); const b = this.view.lay.board; this.view.fx.text('LEVEL ' + this.level, b.x + b.w / 2, b.y + b.h * 0.3, '#ffe28a', 20); }
       S.bestLevel = Math.max(S.bestLevel, this.level);
       S.bestLines = Math.max(S.bestLines, this.lines);
+      if (r.lines >= 4) this.tetrises++;
       this.renderStatus();
       st.touch();
+      this.app.achieve({ mode: 'classic', r, score: this.score, level: this.level, tetrises: this.tetrises });
     }
 
     onTopout() {
@@ -447,6 +449,7 @@
       this.view.onLock(r, this.reduced);
       this.renderStatus();
       st.touch();
+      this.app.achieve({ mode: 'play', r, g });
     }
 
     onTopout(silent) {
@@ -842,6 +845,7 @@
         if (this.meta.daily) { this.pstats.daily++; this.pstats.lastDaily = this.meta.daily; }
         st.day().puzzles++;
         if (reward) { st.addLines(reward, 'puzzles'); this.app.refreshWallet(true); }
+        this.app.achieve({ mode: 'puzzle', diff: p.diff, firstTry: cur.attempts === 1, hinted: !!cur.hint, mods: p.mods });
       }
       if (this.meta.number && this.ps.next[p.diff] <= this.meta.number) this.ps.next[p.diff] = this.meta.number + 1;
       this.ps.current = null;
@@ -1167,6 +1171,7 @@
           toast('Unlocked: ' + L.COSMETICS[u.kind][u.id].name + ' (' + L.COSMETIC_LABELS[u.kind].toLowerCase() + ') — equip it in the Shop', 'good', 5000);
         }
       }
+      this.app.achieve({ mode: 'factory' });
       this.store.touch();
     }
 
