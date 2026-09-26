@@ -471,6 +471,20 @@ enum PDFReflow {
         return false
     }
 
+    /// Whether PDFKit read three or more single letters or figures in a row, spaced apart: its reading of tracked type.
+    static func hasSpacedLetters(_ text: String) -> Bool {
+        var run = 0
+        for token in text.split(whereSeparator: { $0.isWhitespace }) {
+            if token.count == 1, let c = token.first, c.isLetter || c.isNumber {
+                run += 1
+                if run >= 3 { return true }
+            } else {
+                run = 0
+            }
+        }
+        return false
+    }
+
     /// A letter-spaced line's text, read again from where its glyphs stand: the gap between letters is the line's
     /// median gap between glyphs, and a word space is a gap clearly wider than that (by a fifth of the type size,
     /// where a word space in tracked type adds the space's own width and one more step of tracking). Nil — the line
@@ -495,37 +509,64 @@ enum PDFReflow {
                 let index = i
                 i = max(i + 1, NSMaxRange(composed))
                 if piece.allSatisfy({ $0.isWhitespace }) { continue }
-                guard piece.unicodeScalars.allSatisfy(spacesWords) else { return nil }
+                guard piece.unicodeScalars.allSatisfy(spacesWords) else { return rejected(read, "a script without word spaces") }
                 let box = page.characterBounds(at: index)
-                guard !box.isNull, box.minX.isFinite, box.maxX.isFinite else { return nil }
+                guard !box.isNull, box.minX.isFinite, box.maxX.isFinite else { return rejected(read, "no box for character \(index)") }
                 if let last = glyphs.last, box.width < 0.01 || abs(box.minX - last.box.minX) < 0.01 {
                     // A mark, or a ligature's later letter, drawn in its glyph's box.
                     glyphs[glyphs.count - 1].text += piece
                     continue
                 }
-                if let last = glyphs.last, box.midX < last.box.midX { return nil }
+                if let last = glyphs.last, box.midX < last.box.midX { return rejected(read, "“\(piece)” stands left of “\(last.text)”") }
                 glyphs.append(Glyph(text: piece, box: box))
             }
         }
-        guard glyphs.count >= 3 else { return nil }
+        guard glyphs.count >= 3 else { return rejected(read, "\(glyphs.count) glyphs from \(selection.numberOfTextRanges(on: page)) ranges") }
         var gaps: [CGFloat] = []
         for k in 1..<glyphs.count { gaps.append(glyphs[k].box.minX - glyphs[k - 1].box.maxX) }
         let letterGap = gaps.sorted()[(gaps.count - 1) / 2]
-        guard letterGap >= size * 0.08, letterGap <= size * 0.6 else { return nil }
+        // The tracking shows in the gaps between the glyphs' boxes; or, where PDFKit's boxes take the tracking in and
+        // the letters seem to touch, in PDFKit's own reading, which spaced single letters apart. A word space is then
+        // the space's own box, still a clear gap.
+        let trackedByGaps = letterGap >= size * 0.08 && letterGap <= size * 0.6
+        let trackedInBoxes = !trackedByGaps && hasSpacedLetters(read) && letterGap > -size * 0.1 && letterGap < size * 0.08
+        guard trackedByGaps || trackedInBoxes else { return rejected(read, "letter gap \(measure(letterGap)) at \(measure(size)) pt; gaps \(gaps.map(measure))") }
         // Tracking spaces every pair of letters alike; a line where many pairs sit solid (a title run out to its page
         // number in leader dots) only looks wide, and is left alone.
-        let solid = gaps.filter { $0 < letterGap * 0.4 }.count
-        guard solid * 4 <= gaps.count else { return nil }
-        let wordGap = letterGap + size * 0.2
+        if trackedByGaps {
+            let solid = gaps.filter { $0 < letterGap * 0.4 }.count
+            guard solid * 4 <= gaps.count else { return rejected(read, "\(solid) of \(gaps.count) pairs solid; gaps \(gaps.map(measure))") }
+        }
+        let wordGap = max(letterGap, 0) + size * 0.2
         var out = glyphs[0].text
         for k in 1..<glyphs.count {
             if gaps[k - 1] > wordGap { out += " " }
             out += glyphs[k].text
         }
         func unspaced(_ s: String) -> String { s.filter { !$0.isWhitespace } }
-        guard unspaced(out) == unspaced(read) else { return nil }
+        guard unspaced(out) == unspaced(read) else { return rejected(read, "read again as “\(out)”") }
         return out
     }
+
+    /// Why the latest lines that looked letter-spaced kept PDFKit's text, a line and a reason each: what the self-test
+    /// reports when tracked type does not come through.
+    static var letterSpacingNotes: [String] {
+        notesLock.lock()
+        defer { notesLock.unlock() }
+        return notes
+    }
+    private static let notesLock = NSLock()
+    private static var notes: [String] = []
+
+    private static func rejected(_ line: String, _ reason: String) -> String? {
+        notesLock.lock()
+        notes.append("“\(line)”: \(reason)")
+        if notes.count > 16 { notes.removeFirst(notes.count - 16) }
+        notesLock.unlock()
+        return nil
+    }
+
+    private static func measure(_ value: CGFloat) -> String { String(format: "%.2f", Double(value)) }
 
     /// Scripts that put spaces between words and run left to right: what the glyph gaps can be read for. Chinese,
     /// Japanese, Hebrew and Arabic lines keep PDFKit's text.
