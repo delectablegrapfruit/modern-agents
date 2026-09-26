@@ -312,8 +312,9 @@ public final class LibraryStore {
 
     // MARK: - Statistics
 
-    public func recordReading(seconds: Int, pages: Int = 0, chapters: Int = 0, in bookID: UUID? = nil) {
-        stats.add(seconds: seconds, pages: pages, chapters: chapters)
+    /// Reading done on a day — today unless a date is given (the showcase lays down a history).
+    public func recordReading(seconds: Int, pages: Int = 0, chapters: Int = 0, in bookID: UUID? = nil, on date: Date = Date()) {
+        stats.add(seconds: seconds, pages: pages, chapters: chapters, on: date)
         try? saveStats()
         if let bookID, let i = books.firstIndex(where: { $0.id == bookID }) {
             books[i].secondsRead = (books[i].secondsRead ?? 0) + seconds
