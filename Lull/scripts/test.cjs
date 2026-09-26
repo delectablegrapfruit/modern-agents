@@ -182,6 +182,17 @@ test('the saved game comes back exactly', () => {
   assert.deepStrictEqual(h.toJSON(), g.toJSON(), 'same future');
 });
 
+test('a board saved full comes back full, and a new board fixes it', () => {
+  const g = new Game({ w: 6, h: 8, seed: 9 });
+  let guard = 0;
+  while (!g.over && guard++ < 200) g.drop();
+  assert(g.over);
+  const h = new Game({ saved: JSON.parse(JSON.stringify(g.toJSON())) });
+  assert(h.over, 'still over after loading');
+  h.resetBoard();
+  assert(!h.over && h.piece && h.drop());
+});
+
 console.log('puzzles');
 function replay(p) {
   const g = new Game({ board: Board.fromArray(p.w, p.h, p.cells, { wrap: p.wrap }), queue: p.pieces, mods: { noRotate: p.mods.includes('rigid'), heavy: p.mods.includes('heavy'), noHold: p.mods.includes('nohold') } });

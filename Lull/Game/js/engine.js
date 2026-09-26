@@ -54,6 +54,8 @@
         }
         this.fillQueue();
         if (!this.piece) this.spawnNext();
+        // Saved with the board full: the piece has nowhere to be.
+        else if (!this.fitsAt(this.piece, this.piece.rot, this.piece.x, this.piece.y)) this.over = true;
         return;
       }
       this.board = o.board ? o.board.clone() : new Board(o.w || 10, o.h || 20, { wrap: o.wrap });

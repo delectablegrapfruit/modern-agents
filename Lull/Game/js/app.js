@@ -152,6 +152,11 @@
       root.addEventListener('blur', () => this.keys.releaseAll());
       root.addEventListener('focus', () => { this.focusedAt = performance.now(); });
       root.addEventListener('mousedown', () => this.activity(), true);
+      // Clicked buttons let go of focus, so Space and Enter keep playing instead of pressing them again.
+      document.addEventListener('mouseup', (e) => {
+        const b = e.target && e.target.closest && e.target.closest('button');
+        if (b && !b.closest('.modal')) setTimeout(() => b.blur(), 0);
+      });
       document.addEventListener('visibilitychange', () => { if (document.hidden) this.saveNow(); else this.modes.factory.catchUp(true); });
       root.addEventListener('pagehide', () => this.saveNow());
       root.addEventListener('beforeunload', () => this.saveNow());
@@ -189,7 +194,7 @@
     postDragRegions() {
       if (!native.available) return;
       const rect = (el) => { const r = el.getBoundingClientRect(); return [r.left, r.top, r.width, r.height].map((n) => Math.round(n * 10) / 10); };
-      const drag = Array.from(document.querySelectorAll('[data-drag]')).map(rect);
+      const drag = UI.modalOpen() ? [] : Array.from(document.querySelectorAll('[data-drag]')).map(rect);
       const noDrag = Array.from(document.querySelectorAll('#titlebar button, #titlebar input')).map(rect);
       native.post('dragRegions', { drag, noDrag });
     },
@@ -202,7 +207,12 @@
       this.keys.update(t);
       if (this.tab === 'play') this.modes.play.frame(t, dt);
       else if (this.tab === 'puzzle') this.modes.puzzle.frame(t, dt);
-      else if (this.tab === 'factory') this.modes.factory.frame(t, dt);
+      else if (this.tab === 'factory') {
+        // The belt is ambient: 30 fps in front, 12 behind other windows, 10 with reduced effects.
+        this.beltAcc = (this.beltAcc || 0) + dt;
+        const gap = this.settings.motion === 'reduced' ? 0.1 : document.hasFocus() ? 1 / 30 : 1 / 12;
+        if (this.beltAcc >= gap) { this.modes.factory.frame(t, this.beltAcc); this.beltAcc = 0; }
+      }
       requestAnimationFrame((tt) => this.frame(tt));
     },
 

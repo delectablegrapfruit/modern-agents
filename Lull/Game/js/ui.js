@@ -55,6 +55,7 @@
       const i = modals.indexOf(handle);
       if (i >= 0) modals.splice(i, 1);
       scrim.remove();
+      if (L.app) L.app.postDragRegions();
       if (opts.onClose) opts.onClose();
     };
     const footer = opts.buttons && opts.buttons.length ? h('footer', null, opts.buttons.map((b) => h('button', {
@@ -69,6 +70,7 @@
     rootEl.appendChild(scrim);
     const handle = { close, el: modal, opts };
     modals.push(handle);
+    if (L.app) L.app.postDragRegions(); // a tall dialog covers the title bar: it must take its clicks
     const first = modal.querySelector('input, textarea');
     if (first) setTimeout(() => first.focus(), 30);
     return handle;

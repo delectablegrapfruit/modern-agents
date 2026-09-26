@@ -45,6 +45,8 @@ body.browser { background: radial-gradient(1200px 700px at 30% 20%, #26324a 0%, 
 :root[data-theme="light"] body.browser { background: radial-gradient(1200px 700px at 30% 20%, #eef2f8 0%, var(--desk) 70%); }
 button, input, select { font: inherit; color: inherit; }
 button { cursor: pointer; }
+button:focus { outline: none; }
+button:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 80%, transparent); outline-offset: 1px; }
 .hidden { display: none !important; }
 
 /* ---- the window ------------------------------------------------------------------------------------------------- */
