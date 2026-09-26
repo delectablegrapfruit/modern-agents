@@ -206,7 +206,10 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   check('ten lines: level 2', await ev(() => Lull.app.modes.classic.level === 2));
   await page.keyboard.press('KeyP');
   await page.waitForTimeout(100);
-  check('P pauses (and the music stops)', await ev(() => Lull.app.modes.classic.paused && !Lull.Music.playing));
+  const ann = await ev(() => { const A = Lull.Announcer; return [A.phrase({ lines: 1 }), A.phrase({ lines: 4, b2b: true }), A.phrase({ tspin: true, lines: 2 }), A.phrase({ mini: true, lines: 0 }), A.phrase({ lines: 0 }), A.phrase({ lines: 2, perfect: true }, 3)]; });
+  check('the announcer knows its lines', JSON.stringify(ann) === JSON.stringify(['single', 'back to back, tetris', 'T-spin double', 'T-spin mini', null, 'double. perfect clear. level 3']), JSON.stringify(ann));
+  check('the remix is a long suite', await ev(() => Lull.SONG.bars.length >= 48 && Lull.SONG.loopFrom === 4));
+    check('P pauses (and the music stops)', await ev(() => Lull.app.modes.classic.paused && !Lull.Music.playing));
   await shot('14-classic-paused');
   await page.keyboard.press('KeyP');
   await ev(() => { const g = Lull.app.modes.classic.game; for (let y = 0; y < 19; y++) for (let x = 0; x < 10; x++) if (x !== y % 10) g.board.set(x, y, 8); });
@@ -256,7 +259,14 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
       const keys = { L: map.moveL, R: map.moveR, D: map.lower, CW: m.inverted ? 'ccw' : 'cw', CCW: m.inverted ? 'cw' : 'ccw', '180': 'r180', DROP: 'drop' };
       return { targets: m.puzzle.targets.map((t) => t.path), keys, lower: map.lower, mods: m.puzzle.mods };
     });
-    for (const pathMoves of plan.targets) {
+    for (let i = 0; i < plan.targets.length; i++) {
+      const pathMoves = plan.targets[i];
+      // Hold puzzles: hold until the piece the solution wants is in play.
+      for (let k = 0; k < 2; k++) {
+        const ok = await ev((j) => { const m = Lull.app.modes.puzzle, pc = m.game.piece, s = m.puzzle.solution[j]; return pc.type.id === s.id && (pc.entry.rot || 0) === (s.rot || 0); }, i);
+        if (ok) break;
+        await page.keyboard.press(KEY_FOR.hold);
+      }
       for (const mv of pathMoves) await page.keyboard.press(KEY_FOR[plan.keys[mv]]);
       if (pathMoves[pathMoves.length - 1] !== 'DROP') await page.keyboard.press(KEY_FOR[plan.lower]);
     }
@@ -275,7 +285,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
       if (r.solved) { solved++; r.mods.forEach((m) => modsSolved.add(m)); } else console.log('    unsolved ' + seed + ' ' + r.mods.join(','));
     }
   }
-  check('puzzles solved with the keyboard', solved === tried, solved + '/' + tried + ' · wildcards seen: ' + Array.from(modsSolved).sort().join(' '));
+  check('puzzles solved with the keyboard (Hold ones by holding)', solved === tried && modsSolved.has('hold'), solved + '/' + tried + ' · wildcards seen: ' + Array.from(modsSolved).sort().join(' '));
   const linesAfter = await ev(() => Lull.app.store.state.lines);
   check('puzzle rewards banked', linesAfter > linesBefore, (linesAfter - linesBefore) + ' lines');
   await shot('21-solved');

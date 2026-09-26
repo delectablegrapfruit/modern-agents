@@ -223,9 +223,13 @@ test('a board saved full comes back full, and a new board fixes it', () => {
 
 console.log('puzzles');
 function replay(p) {
-  const g = new Game({ board: Board.fromArray(p.w, p.h, p.cells, { wrap: p.wrap }), queue: p.pieces, mods: { noRotate: p.mods.includes('rigid'), heavy: p.mods.includes('heavy'), noHold: p.mods.includes('nohold') } });
-  let lines = 0;
-  for (const t of p.targets) {
+  const g = new Game({ board: Board.fromArray(p.w, p.h, p.cells, { wrap: p.wrap }), queue: p.pieces, mods: { noRotate: p.mods.includes('rigid'), heavy: p.mods.includes('heavy'), noHold: !p.mods.includes('hold') } });
+  let lines = 0, holds = 0;
+  p.targets.forEach((t, i) => {
+    // Hold puzzles: the piece the solution wants next is in the hold slot (or comes after the one in play).
+    const want = (pc) => pc.type.id === t.id && (pc.entry.rot || 0) === (p.solution[i].rot || 0);
+    if (!want(g.piece)) { assert(g.holdPiece(), 'hold in ' + p.seed); holds++; }
+    if (!want(g.piece)) { assert(g.holdPiece(), 'hold again in ' + p.seed); holds++; }
     assert.strictEqual(g.piece.type.id, t.id);
     let res = null;
     for (const m of t.path) {
@@ -243,9 +247,39 @@ function replay(p) {
     const type = Pieces.get(t.id);
     assert.strictEqual(cellKey(res.cells), cellKey(type.rots[t.r].map(([x, y]) => [g.board.wx(t.x + x), t.y + y])));
     lines += res.lines;
-  }
+  });
   assert(Puzzles.goalMet(p, g.board, lines), 'goal met in ' + p.seed);
+  if (p.mods.includes('hold')) assert(holds > 0, 'a Hold puzzle needs a hold: ' + p.seed);
+  return holds;
 }
+test('puzzles have no hold unless the Hold wildcard is on, and then it is needed', () => {
+  let n = 0;
+  for (let i = 1; i <= 400 && n < 12; i++) {
+    const p = Puzzles.generate(Puzzles.numberedSeed(i % 2 ? 'M' : 'H', i));
+    if (!p.mods.includes('hold')) {
+      const g = new Game({ board: Board.fromArray(p.w, p.h, p.cells, { wrap: p.wrap }), queue: p.pieces, mods: { noHold: true } });
+      assert(!g.holdPiece(), 'no hold slot in ' + p.seed);
+      continue;
+    }
+    n++;
+    assert.strictEqual(Puzzles.solvableInOrder(p, p.pieces, 1e6), false, 'cannot be solved without holding: ' + p.seed);
+    assert.strictEqual(Puzzles.solvableInOrder(p, p.solution.map((s) => ({ id: s.id, rot: s.rot })), 1e6), true, 'the solution order works: ' + p.seed);
+  }
+  assert(n >= 5, 'Hold puzzles turn up (' + n + ')');
+});
+test('dailies: one seed per date, the same everywhere, and every seed knows its date', () => {
+  const seen = new Set();
+  for (let d = 0; d < 800; d++) {
+    const key = new Date(Date.UTC(2026, 0, 1) + d * 86400000).toISOString().slice(0, 10);
+    const s = Puzzles.dailySeed('M', key);
+    assert(!seen.has(s)); seen.add(s);
+    assert.strictEqual(Puzzles.dailyDateOf(s).key, key);
+  }
+  assert.strictEqual(Puzzles.dailySeed('E', '2026-09-26'), Puzzles.dailySeed('E', '2026-09-26'));
+  assert.notStrictEqual(Puzzles.dailySeed('E', '2026-09-26'), Puzzles.dailySeed('H', '2026-09-26'));
+  assert.strictEqual(Puzzles.SEEDS_PER_DIFF, 2 ** 32);
+  assert.strictEqual(Puzzles.parseSeed('M-ZZZZZZZ').seed, Puzzles.parseSeed('M-' + L.codeFromInt(L.intFromCode('ZZZZZZZ'))).seed, 'codes past 2^32 read as the seed they wrap to');
+});
 test('the same seed builds the same puzzle', () => {
   for (const d of ['E', 'M', 'H']) {
     const s = Puzzles.numberedSeed(d, 42);

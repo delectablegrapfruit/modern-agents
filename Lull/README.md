@@ -15,16 +15,20 @@ board; the lines stay yours.
 
 **Classic** — the ▶ Classic button in the corner of the Play board. Plain Tetris: pieces fall, faster every ten
 lines (guideline speed curve), half-second lock delay, soft and hard drop, hold (once per piece), game over, best
-score. Lines you clear still bank as ◆. Music: Korobeiniki (the public-domain folk tune), arranged soft — an electric
-piano over a round bass, a quiet pad and a little echo; it keeps its tempo and only quickens as the stack nears the
-top. Toggle it under the board or in Settings ▸ Sound. P pauses; ‹ Relaxed, another tab or another window pauses too.
+score. Lines you clear still bank as ◆. Music: Korobeiniki (the public-domain folk tune), remixed in A major as a two-minute
+suite — intro chords, the tune on electric piano, then kalimba with a harmony and a soft beat, the bridge on bells,
+an interlude with a counter-melody, the tune on flute; it keeps its tempo and only quickens as the stack nears the
+top. A whispering announcer calls singles, doubles, triples, tetrises, T-spins, back-to-backs and perfect clears
+(the macOS Whisper voice when present; Settings ▸ Sound). Toggle it under the board or in Settings ▸ Sound. P pauses; ‹ Relaxed, another tab or another window pauses too.
 
 **Puzzles** — procedurally generated, infinite, short, in Easy, Medium and Hard. Each has a seed (`M-3K7Q2XA`): the
 same seed is the same puzzle for everyone, so it can be shared, replayed or retried (R) as often as you like; Undo is
 free. Every puzzle is built backwards from a solution — rows are filled solid, pieces are lifted out only where they
 could have been flown in and set, and the result is played forward on the real rules before it is kept — so every seed
 is solvable, and Hard ones need tucks and spins. Goals: clear the board, clear N lines over bedrock, or clear the gems.
-Solving pays lines (more on the first try, double for the Daily). History lists every puzzle you opened — solved or
+Solving pays lines (more on the first try, double for the Daily). Dailies are the same in every copy of Lull: day
+numbers run through a fixed, keyed shuffle of all 2³² seeds per difficulty, so every date has one seed and every seed
+belongs to exactly one date (hover a seed to see which). That is 4,294,967,296 seeds per difficulty, 12,884,901,888 in all. History lists every puzzle you opened — solved or
 not, tries, time — with its seed and a Replay button. Solutions only ever need turns a person expects (in place, or
 nudged sideways off a wall), never SRS kicks that hop a piece through a gap. Wildcards:
 
@@ -40,7 +44,8 @@ nudged sideways off a wall), never SRS kicks that hop a piece through a gap. Wil
 | Fog | only blocks near your piece are visible |
 | Vanishing | pieces turn invisible once set |
 | Blind Queue | no preview |
-| No Hold, Monochrome | as named |
+| Hold | puzzles have no hold slot unless this is on — and then the queue arrives out of order, and a search proves the puzzle cannot be solved without holding |
+| Monochrome | as named |
 
 **Factory** — a little workshop in the spirit of the Papa's games, run station by station:
 - **Orders** — online orders land in the inbox (only while you're there; none pile up while you're away). Accept
@@ -64,8 +69,10 @@ Slip, Drill, Bomb, Phase (passes through blocks into any gap), Settle (closes ev
 before you set it: the old piece and the item come back.
 
 **Shop** — cosmetics: palettes (Prism animates), mino skins (Gem, Glass, Neon, Jelly, Pixel …), board
-frames, backdrops, line-clear effects, ghost styles and **sound packs** (Soft, Typewriter, Chiptune, Bubbles,
-Marimba, Analog Synth, Glass, Wind Chimes — all synthesized, with a Listen button); a few are factory rewards.
+frames, backdrops, line-clear effects, ghost styles and **sound packs** (Drift — the airy default, in a soft
+reverb — Typewriter with carriage-return zips and bells, Chiptune coins and power-ups, fizzing Bubbles, rolling
+Marimba, Analog Synth stabs, ringing Glass, Wind Chimes — all synthesized, each with its own clears, with a Listen
+button); a few are factory rewards.
 
 **Stats** — lines by source and day, clears, T-spins, combos, pieces per minute, inputs per piece, puzzle solves
 and first-try rates by difficulty and wildcard, factory quality control, items bought and used, time by mode.

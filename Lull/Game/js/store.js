@@ -100,14 +100,14 @@
 
   // Sound packs (the synth voices live in audio.js).
   const SOUNDS = {
-    soft:       { name: 'Soft', price: 0, desc: 'Quiet ticks and a gentle thud.' },
-    typewriter: { name: 'Typewriter', price: 300, desc: 'Keys, carriage, a satisfying clack.' },
-    chip:       { name: 'Chiptune', price: 400, desc: 'Square waves from an old handheld.' },
-    bubbles:    { name: 'Bubbles', price: 450, desc: 'Everything goes bloop.' },
-    marimba:    { name: 'Marimba', price: 600, desc: 'Wooden, warm, a little tropical.' },
-    synth:      { name: 'Analog Synth', price: 750, desc: 'Filtered saws with some weight to them.' },
-    glass:      { name: 'Glass', price: 900, desc: 'Crystal pings that ring out.' },
-    chimes:     { name: 'Wind Chimes', price: 1200, desc: 'Every move a random note from one calm scale.' },
+    soft:       { name: 'Drift', price: 0, desc: 'Airy bells and soft thuds in a big, calm room.' },
+    typewriter: { name: 'Typewriter', price: 300, desc: 'Keys and clacks; every clear zips the carriage back and rings the bell.' },
+    chip:       { name: 'Chiptune', price: 400, desc: 'An old handheld: a coin for every line, a power-up for four.' },
+    bubbles:    { name: 'Bubbles', price: 450, desc: 'Everything goes bloop; clears fizz up like soda.' },
+    marimba:    { name: 'Marimba', price: 600, desc: 'Wooden bars and soft mallets; clears roll up a chord.' },
+    synth:      { name: 'Analog Synth', price: 750, desc: 'Plucks, a bass thump, chord stabs that open their filters.' },
+    glass:      { name: 'Glass', price: 900, desc: 'Tapped wine glasses, ringing long; clears run up the rims.' },
+    chimes:     { name: 'Wind Chimes', price: 1200, desc: 'Random notes from one calm scale, drifting in a wide space.' },
   };
 
   const COSMETICS = { palette: PALETTES, skin: SKINS, frame: FRAMES, backdrop: BACKDROPS, effect: EFFECTS, ghost: GHOSTS, sound: SOUNDS };
@@ -131,7 +131,7 @@
       settings: {
         bg: 'glass', tint: 0.78, accent: ACCENTS[0], theme: 'dark', onTop: true,
         sound: true, volume: 0.35, das: 230, arr: 55, lowerRepeat: 70, mouse: true, preview: 5,
-        motion: 'full', showKeys: true, music: true, musicVolume: 0.25,
+        motion: 'full', showKeys: true, music: true, musicVolume: 0.25, announcer: true,
       },
       tab: 'play',
       free: null,

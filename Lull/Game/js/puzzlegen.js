@@ -7,7 +7,7 @@
   const L = (root.Lull = root.Lull || {});
   const { Board, CELL, Pieces, RNG, hash32, codeFromInt, intFromCode, spawnPos } = L;
 
-  const GEN_VERSION = 2;
+  const GEN_VERSION = 3;
   const DIFFS = {
     E: { id: 'E', name: 'Easy', reward: 4, color: '#7bd88f' },
     M: { id: 'M', name: 'Medium', reward: 10, color: '#f6c177' },
@@ -27,7 +27,8 @@
     fog:    { name: 'Fog', icon: '☁', desc: 'Blocks are only visible near your piece.', w: { E: 0, M: 1.2, H: 1.5 } },
     vanish: { name: 'Vanishing', icon: '◌', desc: 'Pieces turn invisible once set.', w: { E: 0, M: 0.6, H: 1.5 } },
     blind:  { name: 'Blind Queue', icon: '?', desc: 'You only see the piece in play.', w: { E: 0, M: 1, H: 1.5 } },
-    nohold: { name: 'No Hold', icon: '✕', desc: 'The hold slot is sealed.', w: { E: 1, M: 1, H: 1 } },
+    // Puzzles have no hold slot, except with this wildcard — and then the queue comes out of order, so it is needed.
+    hold:   { name: 'Hold', icon: '⇆', desc: 'The hold slot is open, and you will need it: the queue arrives out of order.', w: { E: 0.8, M: 1.3, H: 1.6 } },
     mono:   { name: 'Monochrome', icon: '◐', desc: 'Garbage and pieces share one colour.', w: { E: 1, M: 1, H: 1 } },
   };
 
@@ -43,13 +44,40 @@
   // ---- seeds ----------------------------------------------------------------------------------------------------------
 
   function numberedSeed(diff, n) { return diff + '-' + codeFromInt(hash32('lull:' + diff + ':' + n)); }
-  function dailySeed(diff, key) { return diff + '-' + codeFromInt(hash32('lull:daily:' + key + ':' + diff)); }
+
+  /**
+   * Dailies. Every date has its own seed per difficulty and every seed belongs to exactly one date: day numbers
+   * (days since 1 January 2000) go through a fixed, keyed shuffle of all 2^32 seed numbers — a four-round Feistel
+   * network, which can be run backwards to find the date a seed belongs to. The keys are built in, so every copy
+   * of Lull agrees on today's puzzle.
+   */
+  const DAY0 = Date.UTC(2000, 0, 1);
+  function feistel(n, diff, back) {
+    let l = (n >>> 16) & 0xffff, r = n & 0xffff;
+    const round = (i, x) => hash32('lull:daily:' + diff + ':' + i + ':' + x) & 0xffff;
+    if (!back) for (let i = 0; i < 4; i++) { const t = l ^ round(i, r); l = r; r = t; }
+    else for (let i = 3; i >= 0; i--) { const t = r ^ round(i, l); r = l; l = t; }
+    return ((l << 16) | r) >>> 0;
+  }
+  function dayOf(key) { const [y, m, d] = key.split('-').map(Number); return Math.round((Date.UTC(y, m - 1, d) - DAY0) / 86400000); }
+  function keyOfDay(day) { const dt = new Date(DAY0 + day * 86400000); return dt.getUTCFullYear() + '-' + String(dt.getUTCMonth() + 1).padStart(2, '0') + '-' + String(dt.getUTCDate()).padStart(2, '0'); }
+  function dailySeed(diff, key) { return diff + '-' + codeFromInt(feistel(dayOf(key) >>> 0, diff)); }
+  /** The date whose Daily a seed is (every seed has one; it may be thousands of years away). */
+  function dailyDateOf(seed) {
+    const p = parseSeed(seed);
+    if (!p) return null;
+    const day = feistel(intFromCode(p.code), p.diff, true);
+    return { day, key: day < 2900000 ? keyOfDay(day) : null, years: Math.floor(day / 365.2425) };
+  }
+  const SEEDS_PER_DIFF = 4294967296;
   function randomSeed(diff) { return diff + '-' + codeFromInt((Math.random() * 4294967296) >>> 0); }
   function parseSeed(s) {
     const m = /^\s*([EMH])\s*[-–·:\s]?\s*([0-9A-Za-z]{7})\s*$/i.exec(String(s || ''));
     if (!m) return null;
-    const diff = m[1].toUpperCase(), code = m[2].toUpperCase();
-    if (intFromCode(code) == null) return null;
+    const diff = m[1].toUpperCase(), n = intFromCode(m[2]);
+    if (n == null) return null;
+    // Seven symbols can spell more than 2^32 numbers; the ones that wrap around read as the seed they wrap to.
+    const code = codeFromInt(n);
     return { diff, code, seed: diff + '-' + code };
   }
 
@@ -152,6 +180,145 @@
     return true;
   }
 
+  // ---- hold puzzles ----------------------------------------------------------------------------------------------------
+
+  /** Every spot a piece can come to rest from its spawn (same moves and kicks as reach), one per distinct shape. */
+  function restingStates(board, type, startRot, opts, accept) {
+    opts = opts || {};
+    const W = board.w, wrap = board.wrap;
+    const norm = (x) => (wrap ? ((x % W) + W) % W : x);
+    const start = spawnPos(W, board.h, type, startRot);
+    const sx = norm(start.x), sy = start.y;
+    if (!board.fits(type.rots[startRot], sx, sy)) return [];
+    const seen = new Set([startRot + ',' + sx + ',' + sy]);
+    const q = [[startRot, sx, sy]];
+    const out = new Map();
+    const canRotate = !opts.noRotate && type.kicks !== 'none';
+    const maxKick = type.kicks === 'i' || type.big ? 2 : 1;
+    const rest = (r, x, y) => {
+      let yy = y;
+      while (board.fits(type.rots[r], x, yy - 1)) yy--;
+      if (!opts.heavy && yy !== y) return;
+      if (accept && !accept(r, x, yy)) return;
+      const cells = type.rots[r].map(([cx, cy]) => [board.wx(x + cx), yy + cy]).sort((a, b) => a[1] - b[1] || a[0] - b[0]);
+      const k = cells.join(';');
+      if (!out.has(k)) out.set(k, [r, x, yy]);
+    };
+    for (let head = 0; head < q.length && head < 6000; head++) {
+      const [r, x, y] = q[head];
+      rest(r, x, y);
+      for (let m = 0; m < 6; m++) {
+        let nr = r, nx = x, ny = y;
+        if (m === 0) nx = x - 1;
+        else if (m === 1) nx = x + 1;
+        else if (m === 2) { if (opts.heavy) continue; ny = y - 1; }
+        else {
+          if (!canRotate) break;
+          nr = (r + (m === 3 ? 1 : m === 4 ? 3 : 2)) % 4;
+          let ok = false;
+          for (const [kx, ky] of Pieces.kicksFor(type, r, nr)) {
+            if (board.fits(type.rots[nr], x + kx, y + ky)) { if (ky !== 0 || Math.abs(kx) > maxKick) break; nx = x + kx; ny = y + ky; ok = true; break; }
+          }
+          if (!ok) continue;
+        }
+        if (m < 3 && !board.fits(type.rots[nr], nx, ny)) continue;
+        nx = norm(nx);
+        const k = nr + ',' + nx + ',' + ny;
+        if (seen.has(k)) continue;
+        seen.add(k); q.push([nr, nx, ny]);
+      }
+    }
+    return Array.from(out.values());
+  }
+
+  /**
+   * Can the puzzle be solved playing the queue exactly in order (no hold)? Exhaustive search. For the "clear" and
+   * "lines" goals every piece cell must land in a hole of the band (the pieces fill it exactly), which keeps the
+   * search small. Returns true, false, or null when it gave up (too many positions to be sure).
+   */
+  function solvableInOrder(puzzle, queue, limit) {
+    const opts = { noRotate: puzzle.mods.includes('rigid'), heavy: puzzle.mods.includes('heavy') };
+    const board = Board.fromArray(puzzle.w, puzzle.h, puzzle.cells, { wrap: puzzle.wrap });
+    const exact = puzzle.goal.type !== 'gems';
+    const seen = new Set();
+    let nodes = 0, gaveUp = false;
+    const types = queue.map((e) => Pieces.get(e.id));
+    // Exact goals: only spots where every cell fills a hole in the band and the piece rests; each is then checked
+    // for a way in. (Cheaper than listing every reachable spot.)
+    const holeSpots = (type, band) => {
+      const out = [], seenShape = new Set();
+      for (let r = 0; r < 4; r++) {
+        if (seenShape.has(type.keys[r])) continue;
+        seenShape.add(type.keys[r]);
+        const cells = type.rots[r], bnd = type.rotBounds[r];
+        const xs = board.wrap ? board.w : board.w - bnd.w + 1;
+        for (let i = 0; i < xs; i++) {
+          const x = board.wrap ? i : i - bnd.minX;
+          for (const y0 of band) {
+            const y = y0 - bnd.minY;
+            if (cells.some(([, cy]) => !band.includes(y + cy))) continue;
+            if (!board.fits(cells, x, y) || board.fits(cells, x, y - 1)) continue;
+            out.push([r, x, y]);
+          }
+        }
+      }
+      return out;
+    };
+    const dfs = (i, band, lines) => {
+      if (i === queue.length) return goalMet(puzzle, board, lines);
+      const k = i + '|' + board.cells.join('');
+      if (seen.has(k)) return false;
+      seen.add(k);
+      const type = types[i], rot = queue[i].rot || 0;
+      let spots;
+      if (exact) {
+        const holes = holeSpots(type, band);
+        if (!holes.length) return false;
+        const want = new Set(holes.map(([r, x, y]) => type.rots[r].map(([cx, cy]) => board.wx(x + cx) + ',' + (y + cy)).sort().join(';')));
+        spots = restingStates(board, type, rot, opts, (r, x, y) => want.has(type.rots[r].map(([cx, cy]) => board.wx(x + cx) + ',' + (y + cy)).sort().join(';')));
+      } else spots = restingStates(board, type, rot, opts);
+      for (const [r, x, y] of spots) {
+        if (++nodes > limit) { gaveUp = true; return false; }
+        const cells = type.rots[r];
+        const snap = board.snapshot();
+        board.place(cells, x, y, type.color);
+        const rows = board.fullRows();
+        board.clearRows(rows);
+        const nb = band.filter((b) => !rows.includes(b)).map((b) => b - rows.filter((rr) => rr < b).length);
+        const ok = dfs(i + 1, nb, lines + rows.length);
+        board.restore(snap);
+        if (ok) return true;
+        if (gaveUp) return false;
+      }
+      return false;
+    };
+    const band = [];
+    for (let y = puzzle.base; y < puzzle.base + puzzle.goal.lines; y++) band.push(y);
+    const found = dfs(0, band, 0);
+    return found ? true : gaveUp ? null : false;
+  }
+
+  /**
+   * Makes a Hold puzzle: the queue is the solution's order with pieces swapped (one pair; two on Hard), kept only
+   * when the search proves the puzzle cannot be solved without holding.
+   */
+  function requireHold(puzzle, rng) {
+    const n = puzzle.pieces.length;
+    const pairs = [];
+    for (let i = 0; i + 1 < n; i++) if (puzzle.pieces[i].id !== puzzle.pieces[i + 1].id) pairs.push(i);
+    rng.shuffle(pairs);
+    for (const i of pairs.slice(0, 6)) {
+      const q = puzzle.pieces.slice();
+      [q[i], q[i + 1]] = [q[i + 1], q[i]];
+      if (puzzle.diff === 'H') {
+        const j = pairs.find((k) => k > i + 1 && q[k].id !== q[k + 1].id);
+        if (j != null) [q[j], q[j + 1]] = [q[j + 1], q[j]];
+      }
+      if (solvableInOrder(puzzle, q, puzzle.goal.type === 'gems' ? 600 : 1500) === false) return q;
+    }
+    return null;
+  }
+
   // ---- specs ----------------------------------------------------------------------------------------------------------
 
   function pickMods(rng, diff) {
@@ -177,6 +344,8 @@
       spec.pieces = diff === 'E' ? rng.range(3, 4) : diff === 'M' ? rng.range(4, 6) : rng.range(6, 8);
       spec.w = diff === 'E' ? rng.range(5, 7) : diff === 'M' ? rng.range(6, 8) : rng.range(7, 10);
     }
+    // Hold puzzles stay short: the out-of-order queue is the puzzle (and proving hold is needed stays quick).
+    if (has('hold') && !has('big')) spec.pieces = Math.min(spec.pieces, diff === 'E' ? 3 : diff === 'M' ? 4 : 5);
     spec.tuck = { E: 0.12, M: 0.45, H: 0.75 }[diff];
     spec.fill = { E: [0.55, 0.75], M: [0.45, 0.65], H: [0.4, 0.6] }[diff];
     const gw = { E: { clear: 5, lines: 3.5, gems: 1.5 }, M: { clear: 3.5, lines: 3.5, gems: 3 }, H: { clear: 4, lines: 3, gems: 3 } }[diff];
@@ -367,7 +536,14 @@
       if (!built) continue;
       const puzzle = finish(built, spec, seed, diff, title, rng);
       const targets = verify(puzzle);
-      if (targets) { puzzle.targets = targets; puzzle.attempts = attempt + 1; return puzzle; }
+      if (!targets) continue;
+      if (spec.mods.includes('hold')) {
+        const q = requireHold(puzzle, rng);
+        if (!q) continue;
+        puzzle.pieces = q;
+      }
+      puzzle.targets = targets; puzzle.attempts = attempt + 1;
+      return puzzle;
     }
     for (let attempt = 0; attempt < 200; attempt++) {
       const spec2 = fallbackSpec(diff);
@@ -408,5 +584,5 @@
     return 'Clear ' + p.goal.lines + ' line' + (p.goal.lines === 1 ? '' : 's');
   }
 
-  L.Puzzles = { DIFFS, MODS, GOALS, generate, verify, reach, goalStates, goalMet, parseSeed, numberedSeed, dailySeed, randomSeed, goalText, GEN_VERSION };
+  L.Puzzles = { DIFFS, MODS, GOALS, generate, verify, reach, goalStates, goalMet, parseSeed, numberedSeed, dailySeed, dailyDateOf, randomSeed, goalText, GEN_VERSION, SEEDS_PER_DIFF, restingStates, solvableInOrder };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

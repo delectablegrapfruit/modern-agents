@@ -206,7 +206,7 @@
       this.attachGame(game, {});
       this.view.showBank = true;
       Object.assign(this, { level: 1, lines: 0, score: 0, acc: 0, lockT: 0, resets: 0, over: false, paused: false, started: !!start });
-      if (start) { this.hideCard(); this.cs.games++; this.app.store.touch(); }
+      if (start) { this.hideCard(); this.cs.games++; this.app.store.touch(); L.Music.rewind(); }
       else this.showStart();
       this.renderStatus();
       this.renderControls();
@@ -312,6 +312,11 @@
       st.day().pieces++;
       playLockSound(this.app.sound, r);
       this.view.onLock(r, this.reduced);
+      const st2 = this.app.settings;
+      if (st2.announcer !== false && st2.sound) {
+        const say = L.Announcer.phrase(r, this.level > before && this.level);
+        if (say) L.Announcer.say(say);
+      }
       if (this.level > before) { this.app.sound.play('solve'); const b = this.view.lay.board; this.view.fx.text('LEVEL ' + this.level, b.x + b.w / 2, b.y + b.h * 0.3, '#ffe28a', 20); }
       S.bestLevel = Math.max(S.bestLevel, this.level);
       S.bestLines = Math.max(S.bestLines, this.lines);
@@ -326,6 +331,7 @@
       S.best = Math.max(S.best, this.score);
       this.app.store.touch();
       this.app.sound.play('fail');
+      if (this.app.settings.announcer !== false && this.app.settings.sound) L.Announcer.say('game over');
       this.showCard([
         h('h2', null, best ? 'New best!' : 'Game over'),
         h('p', null, h('span', { class: 'big' }, fmtInt(this.score)), ' points'),
@@ -652,7 +658,7 @@
       const game = new Game({
         board: Board.fromArray(p.w, p.h, p.cells, { wrap: p.wrap }),
         queue: p.pieces,
-        mods: { noRotate: has('rigid'), heavy: has('heavy'), noHold: has('nohold'), vanish: has('vanish') },
+        mods: { noRotate: has('rigid'), heavy: has('heavy'), noHold: !has('hold'), vanish: has('vanish') },
         previewCount: 8, maxHistory: 80,
       });
       this.inverted = has('invert');
@@ -841,7 +847,8 @@
       }
       for (let i = 0; i < b.cells.length; i++) if (!!b.cells[i] !== !!g.board.cells[i]) return { off: true };
       const t = p.targets[k];
-      if (g.piece.type.id !== t.id) return { swap: t.id };
+      const sol = p.solution[k] || {};
+      if (g.piece.type.id !== t.id || (g.piece.entry.rot || 0) !== (sol.rot || 0)) return { swap: t.id };
       const type = Pieces.get(t.id);
       return { cells: type.rots[t.r].map(([x, y]) => [g.board.wx(t.x + x), t.y + y]) };
     }
@@ -890,6 +897,9 @@
       const solved = this.ps.solved[p.seed];
       this.el.id.replaceChildren(label, ' ', h('span', { class: 'sub' }, '· ' + p.title + (solved ? ' ✓' : '')));
       this.el.seed.textContent = p.seed;
+      // Every seed is some date's Daily.
+      const dd = Puzzles.dailyDateOf(p.seed);
+      this.el.seed.title = 'Copy this seed' + (dd && dd.key ? ' · the Daily for ' + dd.key : dd ? ' · the Daily in ' + dd.years.toLocaleString() + ' years' : '');
       this.el.goal.replaceChildren(
         h('span', { class: 'goal' }, Puzzles.goalText(p)),
         h('span', { style: { color: 'var(--muted)' } }, p.pieces.length + ' pieces'),
