@@ -28,8 +28,8 @@ enum Showcase {
     static func start(model: LibraryModel) {
         log("starting Books with a sample library")
         let limit = timeLimit
-        // On a queue of its own, so a main thread that hangs is caught too.
-        DispatchQueue.global().asyncAfter(deadline: .now() + limit) { Showcase.fail("timed out after \(Int(limit)) seconds") }
+        // On a thread of its own, so a main thread that hangs is caught too, with where it hangs.
+        HangWatchdog.start(label: "SHOWCASE", limit: limit)
         Task { @MainActor in await run(model: model) }
     }
 

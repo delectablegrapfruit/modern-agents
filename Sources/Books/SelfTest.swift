@@ -20,12 +20,19 @@ enum SelfTest {
                 fail("\(error)")
             }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 240) { fail("timed out") }
+        HangWatchdog.start(label: "SELFTEST", limit: 240)
     }
 
     private static func log(_ message: String) {
         print("SELFTEST: " + message)
         fflush(stdout)
+    }
+
+    /// What the window and the app look like: the appearance each has been given, and the one each shows.
+    @MainActor
+    private static func logAppearance(_ moment: String, window: NSWindow?) {
+        func name(_ appearance: NSAppearance?) -> String { appearance?.name.rawValue ?? "none" }
+        log("\(moment): window given \(name(window?.appearance)), shows \(name(window?.effectiveAppearance)); app given \(name(NSApp.appearance)), shows \(name(NSApp.effectiveAppearance))")
     }
 
     private static func fail(_ message: String) -> Never {
@@ -116,6 +123,7 @@ enum SelfTest {
         session.applySettings()
         try await sleep(0.5)
         guard session.effectiveTheme == .focus else { throw Failure("theme did not switch") }
+        logAppearance("dark theme", window: session.webView.window)
 
         // The scrolling layout: a wheel notch scrolls the text.
         settings = model.settings
@@ -140,6 +148,7 @@ enum SelfTest {
         session.close()
         try await sleep(0.4)
         guard model.reading == nil else { throw Failure("reader did not close") }
+        logAppearance("reader closed", window: NSApp.windows.first(where: { $0.isVisible }))
         let saved = model.book(book.id)?.position
         guard let saved, saved.percent > 0 else { throw Failure("position was not saved") }
         log("book closed, position saved at \(Int(saved.percent))%")
@@ -1017,5 +1026,111 @@ enum SelfTest {
         guard let nsEvent = NSEvent(cgEvent: event) else { throw Failure("could not wrap the wheel event") }
         _ = window
         view.scrollWheel(with: nsEvent)
+    }
+}
+
+/// Watches a test run from a thread of its own, so that it reports even when the main thread is stuck, which a timer
+/// on the main queue cannot: a main thread that has not answered for 45 s, or a run past its limit, prints where the
+/// main thread is — its stack as `/usr/bin/sample` sees it, or failing that as the thread itself unwinds it — and
+/// fails the run.
+final class HangWatchdog: @unchecked Sendable {
+    private let label: String
+    private let limit: TimeInterval
+    private let started = Date()
+    private let lock = NSLock()
+    private var answered = Date()
+    private let mainThread: pthread_t
+
+    private init(label: String, limit: TimeInterval) {
+        self.label = label
+        self.limit = limit
+        mainThread = pthread_self()
+    }
+
+    /// Call on the main thread.
+    static func start(label: String, limit: TimeInterval) {
+        let dog = HangWatchdog(label: label, limit: limit)
+        signal(SIGUSR2) { _ in
+            // Runs on the stuck main thread: its own frames, symbolised, straight to standard error.
+            let frames = UnsafeMutablePointer<UnsafeMutableRawPointer?>.allocate(capacity: 256)
+            let count = backtrace(frames, 256)
+            backtrace_symbols_fd(frames, count, 2)
+        }
+        Thread.detachNewThread { dog.watch() }
+    }
+
+    private func watch() {
+        while true {
+            Thread.sleep(forTimeInterval: 5)
+            DispatchQueue.main.async { [self] in
+                lock.lock()
+                answered = Date()
+                lock.unlock()
+            }
+            lock.lock()
+            let silent = Date().timeIntervalSince(answered)
+            lock.unlock()
+            if silent > 45 {
+                report("the main thread has not answered for \(Int(silent)) s")
+            } else if Date().timeIntervalSince(started) > limit {
+                report("timed out after \(Int(limit)) s")
+            }
+        }
+    }
+
+    private func report(_ reason: String) -> Never {
+        write("\(label) FAIL: \(reason); the main thread:\n")
+        if let stack = sampledMainThread() {
+            write(stack)
+        } else {
+            write("(sample gave nothing; the main thread's own backtrace follows)\n")
+            pthread_kill(mainThread, SIGUSR2)
+            Thread.sleep(forTimeInterval: 2)
+        }
+        write("\(label) FAIL: \(reason)\n")
+        _exit(1)
+    }
+
+    private func write(_ text: String) {
+        FileHandle.standardError.write(Data(text.utf8))
+    }
+
+    /// The main thread's call tree and the busiest frames from a two-second `sample` of this process, with the
+    /// tree's indentation written as a depth so deep stacks stay readable.
+    private func sampledMainThread() -> String? {
+        let pid = ProcessInfo.processInfo.processIdentifier
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("hang-\(pid).txt")
+        let sample = Process()
+        sample.executableURL = URL(fileURLWithPath: "/usr/bin/sample")
+        sample.arguments = [String(pid), "2", "-file", file.path]
+        sample.standardOutput = FileHandle.nullDevice
+        sample.standardError = FileHandle.nullDevice
+        do { try sample.run() } catch { return nil }
+        let deadline = Date().addingTimeInterval(20)
+        while sample.isRunning, Date() < deadline { Thread.sleep(forTimeInterval: 0.2) }
+        guard let text = try? String(contentsOf: file, encoding: .utf8) else { return nil }
+        let lines = text.components(separatedBy: "\n")
+        guard let graph = lines.firstIndex(where: { $0.hasPrefix("Call graph:") }) else { return nil }
+        var out: [String] = []
+        var inMain = false
+        for line in lines[(graph + 1)...] {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { if inMain { break } else { continue } }
+            let isThread = trimmed.range(of: #"^\d+ Thread_"#, options: .regularExpression) != nil
+            if isThread {
+                if inMain { break }
+                inMain = line.contains("main-thread") || out.isEmpty
+            }
+            guard inMain else { continue }
+            let body = line.drop(while: { " +!:|".contains($0) })
+            let depth = (line.count - body.count) / 2
+            out.append("\(depth) " + String(body.prefix(200)))
+            if out.count >= 400 { out.append("…"); break }
+        }
+        if let top = lines.firstIndex(where: { $0.hasPrefix("Sort by top of stack") }) {
+            out.append("-- busiest frames --")
+            out.append(contentsOf: lines[top...].dropFirst().prefix(25).map { String($0.prefix(200)) })
+        }
+        return out.isEmpty ? nil : out.joined(separator: "\n") + "\n"
     }
 }

@@ -350,25 +350,21 @@ extension Theme {
 extension View {
     /// Dresses the window this view is in — the reading window, or a popover, the highlight menu or the note editor
     /// opened from it — to match the page: dark with a dark theme, as Books does, and in the system's look with a
-    /// light one, changing the moment the theme does. SwiftUI is told through the preferred colour scheme, which it
-    /// applies to the window or popover the view is in and keeps as it updates the window: an appearance set on the
-    /// window behind its back alone did not hold, and the toolbar, its popovers and the title stayed light over a
-    /// dark page. Each window is also set directly — the popovers' and the note editor's as well as the reading
-    /// window, rather than trusting them to inherit — so the change is immediate, and a light theme or a closed
-    /// reader gives the window back to the system's look whatever SwiftUI keeps. The app's own appearance is never
-    /// touched: the session follows it for Auto-Night, and the showcase sets it for its pictures. `window` marks the
-    /// reading window itself, whose toolbar also loses its separator.
+    /// light one. SwiftUI is told through the preferred colour scheme, which it applies to the window or popover the
+    /// view is in. The window's own appearance is set as well, once each time the theme turns dark or light and after
+    /// SwiftUI's update rather than inside it, and never again in answer to a change of the window's look: setting it
+    /// on every update fought SwiftUI's own setting and hung the app. `window` marks the reading window itself, whose
+    /// toolbar also loses its separator.
     func readerAppearance(dark: Bool, window: Bool = false) -> some View {
         preferredColorScheme(dark ? .dark : nil)
             .background { ReaderWindowAppearance(dark: dark, readingWindow: window) }
     }
 }
 
-/// Sets the appearance of the window it is in: dark aqua for a dark theme, nil — the app's, which is the system's
-/// unless the app sets its own — for a light one, and nil again when it goes; a dark window lightened by something
-/// else is darkened again at the next update. For the reading window it also takes away the separator AppKit draws
-/// under the toolbar over a PDF's scroll view, so the page runs up under the toolbar as a book's does, and puts the
-/// window's own style back when the reader closes.
+/// Sets the appearance of the window it is in when the theme turns dark or light: dark aqua for a dark theme, nil —
+/// the app's, which is the system's unless the app sets its own — for a light one, and nil again when it goes. For
+/// the reading window it also takes away the separator AppKit draws under the toolbar over a PDF's scroll view, so
+/// the page runs up under the toolbar as a book's does, and puts the window's own style back when the reader closes.
 private struct ReaderWindowAppearance: NSViewRepresentable {
     let dark: Bool
     let readingWindow: Bool
@@ -397,16 +393,12 @@ private struct ReaderWindowAppearance: NSViewRepresentable {
 
         var readingWindow = false
 
+        /// Changes only when the theme turns dark or light. An update with the same value does nothing, whatever the
+        /// window shows: the setter never answers a change it did not ask for, so it cannot fight SwiftUI.
         var dark = false {
-            didSet {
-                if dark != oldValue {
-                    apply()
-                } else if dark, let host, host.appearance?.name != .darkAqua {
-                    // Put back if something else has lightened the window since.
-                    apply()
-                }
-            }
+            didSet { if dark != oldValue { scheduleApply() } }
         }
+        private var applyPending = false
 
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
@@ -415,7 +407,7 @@ private struct ReaderWindowAppearance: NSViewRepresentable {
             guard window !== host else { return }
             giveBack()
             host = window
-            apply()
+            scheduleApply()
         }
 
         /// Hands the window back to the system's look, unless another reader has dressed it since.
@@ -445,8 +437,20 @@ private struct ReaderWindowAppearance: NSViewRepresentable {
             window.appearance = nil
         }
 
+        /// Applies on the next turn of the main queue, after the SwiftUI update that asked for it: setting a window's
+        /// appearance inside the update makes SwiftUI update again at once. Several requests in one turn apply once.
+        private func scheduleApply() {
+            guard !applyPending else { return }
+            applyPending = true
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.applyPending = false
+                self.apply()
+            }
+        }
+
         private func apply() {
-            guard let host else { return }
+            guard let host, host === window else { return }
             let id = ObjectIdentifier(host)
             AppearanceSetter.owners[id] = ObjectIdentifier(self)
             let appearance: NSAppearance? = dark ? NSAppearance(named: .darkAqua) : nil
