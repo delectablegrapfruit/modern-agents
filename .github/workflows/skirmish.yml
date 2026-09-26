@@ -1,0 +1,96 @@
+name: Skirmish
+
+on:
+  push:
+    paths:
+      - "Skirmish/**"
+      - "!Skirmish/dist/**"
+      - ".github/workflows/skirmish.yml"
+  pull_request:
+    paths:
+      - "Skirmish/**"
+      - ".github/workflows/skirmish.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One build per branch at a time: a newer push cancels the run before it, which also keeps two runs from committing
+# Skirmish/dist/ at once.
+concurrency:
+  group: skirmish-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: Skirmish
+
+jobs:
+  macos:
+    name: macOS build, test, self-test, bundle
+    permissions:
+      contents: write
+    # A repository variable SKIRMISH_MACOS_RUNNER (or the Books one) points the job at your own Mac.
+    runs-on: ${{ vars.SKIRMISH_MACOS_RUNNER || vars.BOOKS_MACOS_RUNNER || 'macos-26' }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: xcodebuild -version && swift --version
+      - run: swift test
+      - name: Balance — every sector on autopilot
+        run: swift run -c release skirmish-sim --sectors 1-20 --seeds 12
+      - name: Bundle
+        run: |
+          scripts/make-app.sh release
+          test -f build/Skirmish.app/Contents/Resources/AppIcon.icns || echo "::warning::no app icon"
+
+      - name: Package (zip + dmg + checksums)
+        run: |
+          mkdir -p dist
+          rm -f dist/Skirmish.app.zip dist/Skirmish.dmg
+          ditto -c -k --keepParent build/Skirmish.app dist/Skirmish.app.zip
+          hdiutil create -volname Skirmish -srcfolder build/Skirmish.app -ov -format UDZO dist/Skirmish.dmg
+          (cd dist && shasum -a 256 Skirmish.app.zip Skirmish.dmg | tee SHA256SUMS.txt)
+
+      - name: Self-test — the packaged app, unzipped elsewhere, plays a battle and writes what it showed
+        timeout-minutes: 5
+        run: |
+          rm -rf "$RUNNER_TEMP/launch" && mkdir -p "$RUNNER_TEMP/launch"
+          ditto -x -k dist/Skirmish.app.zip "$RUNNER_TEMP/launch"
+          rm -rf dist/screenshots
+          (sleep 12; screencapture -x build/desktop.png || true) &
+          SKIRMISH_SELFTEST=1 SKIRMISH_SNAPSHOTS="$PWD/dist/screenshots" "$RUNNER_TEMP/launch/Skirmish.app/Contents/MacOS/Skirmish"
+          wait
+          ls -la dist/screenshots || true
+
+      - name: Upload packages and screenshots (also when a test failed)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Skirmish.app
+          if-no-files-found: warn
+          path: |
+            Skirmish/dist/
+            Skirmish/build/*.png
+
+      - name: Commit packages to Skirmish/dist/
+        if: github.event_name == 'push'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f dist/Skirmish.app.zip dist/Skirmish.dmg dist/SHA256SUMS.txt
+          git add -f dist/screenshots 2>/dev/null || true
+          if git diff --cached --quiet; then echo "dist/ unchanged"; exit 0; fi
+          git commit -m "ci: package Skirmish.app into Skirmish/dist/ (${GITHUB_SHA::7}) [skip ci]"
+          git pull --rebase --autostash -X theirs origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+
+  linux:
+    name: Linux core build, test, balance
+    runs-on: ubuntu-latest
+    container: swift:6.0
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift build
+      - run: swift test
+      - run: swift run -c release skirmish-sim --sectors 1-20 --seeds 12
+      - run: swift run -c release skirmish-sim --trace 5 | tail -25

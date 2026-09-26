@@ -4,7 +4,12 @@ on:
   push:
     paths-ignore:
       - "dist/**"
+      - "Skirmish/**"
+      - ".github/workflows/skirmish.yml"
   pull_request:
+    paths-ignore:
+      - "Skirmish/**"
+      - ".github/workflows/skirmish.yml"
   release:
     types: [published]
 
