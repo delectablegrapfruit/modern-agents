@@ -10,7 +10,9 @@ same game runs in any browser from `Game/index.html`.
 
 ## Play
 
-**Free Play** — endless, relaxed. Every cleared line is banked as ◆ *lines*, the currency. A full board just ends that
+**Free Play** — endless, relaxed. Every cleared line is banked as ◆ *lines*, the currency. A quad or T-spin is worth one
+line more, and a *chain* multiplies it all: every back-to-back quad or T-spin in a streak and every piece in a combo
+adds one, up to ×20 — a quad on a full chain pays 100. A full board just ends that
 board; the lines stay yours. Retiring a board (New board, or when it fills up) shows its whole life: how long it
 lived and was played, pieces, lines, score, quads, T-spins, perfect clears, best combo and back-to-back, holds and
 every power-up used on it; Stats ▸ Free Play keeps the last boards.
@@ -20,8 +22,8 @@ lines (guideline speed curve), half-second lock delay, soft and hard drop, hold 
 score. Lines you clear still bank as ◆. Music: Korobeiniki (the public-domain folk tune) in its own key, A minor,
 arranged soft as a two-minute suite — electric piano over a round bass and a quiet pad, a soft beat in places, a
 breathy lead for the bridge and an interlude with a counter-melody; it keeps its tempo and only quickens as the stack
-nears the top. A whispering announcer (a female voice, pre-rendered, so it is the same everywhere and needs nothing
-installed) calls singles, doubles, triples, tetrises, T-spins, back-to-backs, perfect clears, the next level and game
+nears the top. A whispering announcer (a soft female voice, pre-rendered, so it is the same everywhere and needs
+nothing installed) calls singles, doubles, triples, tetrises, T-spins, back-to-backs, perfect clears, the next level and game
 over. Both toggle under the board or in Settings ▸ Sound. P pauses; ‹ Relaxed, another tab or another window pauses
 too.
 
@@ -35,7 +37,8 @@ numbers run through a fixed, keyed shuffle of all 2³² seeds per difficulty, so
 belongs to exactly one date (hover a seed to see which). That is 4,294,967,296 seeds per difficulty, 12,884,901,888 in all. History lists every puzzle you opened — solved or
 not, tries, time — with its seed and a ▶ button; ☆ saves a seed (from a row, or the ☆ beside History for the puzzle
 in play), and History ▸ Saved keeps them. Solutions only ever need turns a person expects (in place, or
-nudged sideways off a wall), never SRS kicks that hop a piece through a gap. Wildcards:
+nudged sideways off a wall), never SRS kicks that hop a piece through a gap — and only clockwise ones, so a single
+turn button (Up, or a right-click) solves every puzzle. Wildcards:
 
 | Wildcard | |
 |---|---|
@@ -78,9 +81,10 @@ reverb — Typewriter with carriage-return zips and bells, Chiptune coins and po
 Marimba, Analog Synth stabs, ringing Glass, Wind Chimes — all synthesized, each with its own clears, with a Listen
 button); a few are factory rewards.
 
-**Achievements** — 27 quiet milestones that pay ◆ lines: a small toast when one is earned, otherwise only under
-Stats ▸ Achievements. None is a gimme — the easiest is a quad (15 ◆); the hardest are eight back-to-backs, three
-perfect clears on one board, 300,000 in Classic, 25 Hard puzzles or a decomino press (150–300 ◆).
+**Achievements** — 42 quiet milestones that pay ◆ lines, in their own tab: a small toast when one is earned. None is a gimme — the easiest is a quad (15 ◆); the hardest are eight back-to-backs, three
+perfect clears on one board, 300,000 in Classic, 25 Hard puzzles or a decomino press (150–300 ◆). Fifteen are
+legendary — a ×20 chain, ten perfect clears on one board, a 20-combo, a million or 1,000 lines without a power-up,
+Classic level 20 or a million, fifty Hard puzzles in a row, 400 decomino presses — paying 800–3,000 ◆.
 
 **Stats** — lines by source and day, clears, T-spins, combos, pieces per minute, inputs per piece, puzzle solves
 and first-try rates by difficulty and wildcard, factory quality control, items bought and used, time by mode.
@@ -100,7 +104,7 @@ and first-try rates by difficulty and wildcard, factory quality control, items b
 | P | pause Classic |
 | mouse: point | slide the piece left and right (at its height; sticky near column edges; mirrored under Inverted Controls; keys keep working while the pointer rests there) |
 | left click | drop it straight down — anywhere on the board side (a slip in the last 0.1 s before the click is ignored) |
-| right click | turn clockwise |
+| right click | turn — with the pointer on the right half of the piece's column clockwise, on the left half counter-clockwise (a small arrow shows which) |
 | wheel | lower one row (never sets the piece) |
 | click HOLD | hold, or swap back |
 
@@ -128,4 +132,10 @@ first time. The save lives in `~/Library/Application Support/Lull/save.json` (Se
 |---|---|
 | `Game/` | the game: `index.html`, `css/`, and `js/` — `pieces` (SRS tetrominoes, pentominoes, big and custom shapes, polyomino enumeration), `board`, `engine` (the floating-piece rules and every item), `puzzlegen` (seeds, wildcards, reverse construction, reachability search, forward verification), `factory` (presses, milestones, crates, the belt, offline time), `store` (save, catalog, stats), `achievements`, `render` (canvas: skins, frames, effects, item animations, rotated views), `factoryview` (the belt, drawn like the board), `modes`, `ui`, `app` |
 | `Sources/Lull/` | the macOS shell: a borderless `NSPanel` (floating, all Spaces, edge-resizable, draggable by the page's title bar) around a transparent `WKWebView`, a blur for the Glass background, the save file, the ⌥⌘L hot key, and a self-test CI runs |
-| `scripts/` | `make-app.sh`, `icon.swift`, `test.cjs`, `browser-test.cjs`, `make-voice.py` (renders the whispered announcer: Kathleen Piper voice, CC0 data) |
+| `scripts/` | `make-app.sh`, `icon.swift`, `test.cjs`, `browser-test.cjs`, `make-voice.py` (renders the whispered announcer) |
+
+## Credits
+
+The Classic announcer's voice is Piper's LibriTTS voice (speaker 6), whispered by `scripts/make-voice.py`. LibriTTS:
+H. Zen et al., 2019, http://www.openslr.org/60/ — CC BY 4.0. Korobeiniki is a 19th-century folk song in the public
+domain.

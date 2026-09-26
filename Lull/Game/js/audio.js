@@ -550,8 +550,8 @@
 
   /**
    * A whisper calls out the big moments — "single", "double", "triple", "tetris", "T-spin", "mini", "back to back",
-   * "perfect clear", "next level", "game over". The clips are pre-rendered (scripts/make-voice.py: a female Piper
-   * voice turned into a whisper) and embedded, so it sounds the same on every machine, offline.
+   * "perfect clear", "next level", "game over". The clips are pre-rendered (scripts/make-voice.py: a soft female
+   * LibriTTS voice, whispered) and embedded, so it sounds the same on every machine, offline.
    */
   const Announcer = {
     enabled: true,
@@ -578,9 +578,8 @@
       const token = this.token = (this.token || 0) + 1;
       if (this.out) { try { this.out.gain.setTargetAtTime(0, ctx.currentTime, 0.03); } catch (e) { /* gone */ } }
       const out = this.out = ctx.createGain();
-      out.gain.value = 1.6;
-      out.connect(Sound.master);
-      if (Sound.reverb) { const s = ctx.createGain(); s.gain.value = 0.12; out.connect(s).connect(Sound.reverb); }
+      out.gain.value = 1.1;
+      out.connect(Sound.master); // dry: a close whisper, no room
       Promise.all(keys.map((k) => this.decode(k))).then((bufs) => {
         if (token !== this.token) return;
         let at = ctx.currentTime + 0.02;
