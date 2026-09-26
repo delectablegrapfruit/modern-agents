@@ -124,13 +124,18 @@
     }
 
     // Draws fn() twice: a half-strength pass that carries the green glow, then the sharp core on top.
+    // The glow pass is drawn source-over: Chrome renders a shadowed draw under any other composite mode through
+    // two full-canvas offscreen layers per call, which made the HUD cost hundreds of times more to raster. The
+    // core pass (no shadow) is added with 'lighter' on top.
     twice(fn, alpha = 1, glow = HUD_GLOW) {
       const ctx = this.ctx;
+      ctx.globalCompositeOperation = 'source-over';
       ctx.shadowColor = glow;
       ctx.shadowBlur = 0.6 * this.u * this.dpr;
       ctx.globalAlpha = 0.5 * alpha;
       fn();
       ctx.shadowBlur = 0;
+      ctx.globalCompositeOperation = 'lighter';
       ctx.globalAlpha = alpha;
       fn();
     }
