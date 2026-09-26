@@ -105,6 +105,8 @@ final class LibraryModel {
     var editingGoals = false
     /// Home in edit mode: remove badges on the widgets and the widget gallery below them.
     var editingHome = false
+    /// The tab the Settings window shows.
+    var settingsTab: SettingsTab = .general
     var creatingCollection = false
     var renamingCollection: BookCollection?
     var importProgress: (done: Int, total: Int)?

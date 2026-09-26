@@ -5,8 +5,9 @@ import BooksCore
 
 /// A shelf: the books of one sidebar item as a grid of covers or a list, each shelf keeping its own view, sort and
 /// grouping (by collection for the Library's shelves, by genre for any). Every card in the grid is the same size,
-/// scaled together from the toolbar slider or ⌘+ and ⌘-, and the columns are spread evenly across the width with
-/// the first cover in line with the group titles, as the Finder lays out its icons. Double-click reads; ⌘- and
+/// scaled together from the toolbar slider or ⌘+ and ⌘-, and the columns are spread evenly across the width — or,
+/// where even the widest gaps leave room over, grown a little and set in the middle — with the first cover in line
+/// with the group titles and the floating title, as the Finder lays out its icons. Double-click reads; ⌘- and
 /// ⇧-click select several; the arrow keys move the selection; the context menu carries the actions; books drag to
 /// the sidebar, several at once when several are selected. Selections turn grey when the window is not key.
 struct ShelfView: View {
@@ -17,6 +18,9 @@ struct ShelfView: View {
     @State private var groupFrames: [String: CGRect] = [:]
     /// The height of the list's visible part, under its header.
     @State private var viewportHeight: CGFloat = 0
+    /// The system's scroller style once it has changed while the shelf is shown (a mouse plugged in, or the setting
+    /// changed in System Settings), so the grid is laid out again for it.
+    @State private var scrollerStyle: NSScroller.Style?
 
     private var books: [Book] { model.books(for: item) }
     private var collectionID: UUID? { if case .collection(let id) = item { return id } else { return nil } }
@@ -25,8 +29,12 @@ struct ShelfView: View {
     /// The books in the order they are shown, for ⇧-click and the arrow keys.
     private var shown: [Book] { groups?.flatMap(\.books) ?? books }
     private var coverWidth: CGFloat { 150 * CGFloat(model.settings.gridScale) }
-    /// The grid's group titles start where its first covers do: the page's inset plus a card's own padding.
-    private var gridTitleInset: CGFloat { ShelfGridColumns.inset + Design.Space.s }
+    /// The width a legacy scroller takes from the side of the grid's scroll view, which the columns must leave free
+    /// or the last one would run under it; overlay scrollers take none.
+    private var scrollerWidth: CGFloat {
+        let style = scrollerStyle ?? NSScroller.preferredScrollerStyle
+        return style == .legacy ? NSScroller.scrollerWidth(for: .regular, scrollerStyle: .legacy) : 0
+    }
 
     var body: some View {
         @Bindable var model = model
@@ -47,6 +55,9 @@ struct ShelfView: View {
         .onReceive(NotificationCenter.default.publisher(for: .booksDeleteSelection)) { _ in
             let selected = model.selectedBooks
             if !selected.isEmpty { confirmDelete = selected }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSScroller.preferredScrollerStyleDidChangeNotification)) { _ in
+            scrollerStyle = NSScroller.preferredScrollerStyle
         }
     }
 
@@ -82,20 +93,22 @@ struct ShelfView: View {
     // MARK: - Grid
 
     /// The grid measures its width itself rather than through a preference, so its columns are right on the first
-    /// frame instead of starting as one and jumping.
+    /// frame instead of starting as one and jumping. The cards, the group titles and the floating title all start
+    /// from the columns' leading edge, so they stay in line however the columns are spread or centred.
     private var grid: some View {
         GeometryReader { geo in
             let groups = self.groups
-            let columns = ShelfGridColumns(width: geo.size.width, coverWidth: coverWidth)
+            let columns = ShelfGridColumns(width: geo.size.width - scrollerWidth, coverWidth: coverWidth)
             ScrollViewReader { proxy in
                 ScrollView {
                     if let groups {
                         LazyVStack(alignment: .leading, spacing: 0) {
                             ForEach(groups) { group in
                                 VStack(alignment: .leading, spacing: 0) {
-                                    GroupTitle(group: group, inset: gridTitleInset, style: .grid)
+                                    GroupTitle(group: group, inset: columns.titleInset, style: .grid)
                                     cards(group.books, columns: columns)
-                                        .padding(.horizontal, ShelfGridColumns.inset)
+                                        .padding(.leading, columns.leading)
+                                        .padding(.trailing, ShelfGridColumns.inset)
                                         .padding(.top, Design.Space.xs)
                                         .padding(.bottom, Design.Space.xxxl)
                                 }
@@ -105,11 +118,12 @@ struct ShelfView: View {
                         .padding(.top, Design.Space.s)
                     } else {
                         cards(books, columns: columns)
-                            .padding(.horizontal, ShelfGridColumns.inset)
+                            .padding(.leading, columns.leading)
+                            .padding(.trailing, ShelfGridColumns.inset)
                             .padding(.vertical, Design.Space.xl)
                     }
                 }
-                .floatingGroupTitle(groups: groups, frames: groupFrames, viewportHeight: geo.size.height, inset: gridTitleInset, style: .grid)
+                .floatingGroupTitle(groups: groups, frames: groupFrames, viewportHeight: geo.size.height, inset: columns.titleInset, style: .grid)
                 .coordinateSpace(name: "shelf")
                 .onPreferenceChange(GroupFramesKey.self) { groupFrames = $0 }
                 .background(Color.clear.contentShape(Rectangle()).onTapGesture { model.selectedBookIDs = [] })
@@ -130,7 +144,7 @@ struct ShelfView: View {
     private func cards(_ list: [Book], columns: ShelfGridColumns) -> some View {
         LazyVGrid(columns: columns.items, alignment: .leading, spacing: Design.Space.xxl) {
             ForEach(list) { book in
-                BookCard(book: book, selected: model.selectedBookIDs.contains(book.id), coverWidth: coverWidth)
+                BookCard(book: book, selected: model.selectedBookIDs.contains(book.id), coverWidth: columns.cover)
                     .id(book.id)
                     .onTapGesture(count: 2) { model.open(book) }
                     .simultaneousGesture(TapGesture().onEnded { select(book) })
@@ -263,9 +277,12 @@ struct ShelfView: View {
     }
 }
 
-/// The grid's columns for a shelf so wide: as many cards as fit with at least `minGap` between them, the room left
-/// over shared evenly between the gaps up to `maxGap`, and the first card always `inset` from the edge so its cover
-/// lines up with the group titles at every width.
+/// The grid's columns for a shelf so wide: as many cards as fit at the size chosen with at least `minGap` between
+/// them, and the room left over shared evenly between the gaps up to `maxGap`. Where even the widest gaps leave room
+/// over, the cards grow together to take it up, by no more than `maxGrowth` so the size stays the one chosen, and
+/// whatever is still over is split between the two sides, so the grid sits in the middle of a wide shelf instead of
+/// hugging its left edge. Every card is the same size. `leading` is where the first card starts, and the group
+/// titles start with its cover at every width.
 struct ShelfGridColumns {
     /// Cards in a row.
     let count: Int
@@ -273,23 +290,48 @@ struct ShelfGridColumns {
     let card: CGFloat
     /// The space between two cards; the visible gap between covers is this and two margins.
     let gap: CGFloat
+    /// The first card's distance from the shelf's leading edge: the page's inset, and half of any width the cards
+    /// and the gaps between them leave over.
+    let leading: CGFloat
 
     /// The page's inset from the shelf's edges, as on Home.
     static let inset = Design.Space.page
     static let minGap = Design.Space.xxl
     static let maxGap: CGFloat = 48
+    /// The most the cards grow past the size chosen, to fill a row the widest gaps cannot: an eighth.
+    static let maxGrowth: CGFloat = 1.125
+    /// The selection margin on each side of a cover.
+    static let margin = Design.Space.s
+
+    /// A cover's width, as the cards are drawn.
+    var cover: CGFloat { card - 2 * ShelfGridColumns.margin }
+    /// Where the group titles start, in line with the first cover.
+    var titleInset: CGFloat { leading + ShelfGridColumns.margin }
 
     init(width: CGFloat, coverWidth: CGFloat) {
-        card = coverWidth + 2 * Design.Space.s
+        let margins = 2 * ShelfGridColumns.margin
         let inner = max(0, width - 2 * ShelfGridColumns.inset)
-        let fitting = ((inner + ShelfGridColumns.minGap) / (card + ShelfGridColumns.minGap)).rounded(.down)
-        count = max(1, fitting.isFinite ? Int(fitting) : 1)
-        if count > 1 {
-            let spread = (inner - CGFloat(count) * card) / CGFloat(count - 1)
-            gap = min(ShelfGridColumns.maxGap, max(ShelfGridColumns.minGap, spread))
-        } else {
-            gap = 0
+        let chosen = coverWidth + margins
+        let fitting = ((inner + ShelfGridColumns.minGap) / (chosen + ShelfGridColumns.minGap)).rounded(.down)
+        let columns = max(1, fitting.isFinite ? Int(fitting) : 1)
+        let gaps = CGFloat(columns - 1)
+        // The cover that fills the row at the widest gaps, held between the size chosen and the growth allowed.
+        let widest = gaps * ShelfGridColumns.maxGap
+        let filling = ((inner - widest) / CGFloat(columns) - margins).rounded(.down)
+        let largest = (coverWidth * ShelfGridColumns.maxGrowth).rounded(.down)
+        let coverSize = max(coverWidth, min(largest, filling))
+        let cardWidth = coverSize + margins
+        var spacing: CGFloat = 0
+        if columns > 1 {
+            let spread = (inner - CGFloat(columns) * cardWidth) / gaps
+            spacing = min(ShelfGridColumns.maxGap, max(ShelfGridColumns.minGap, spread))
         }
+        let used = CGFloat(columns) * cardWidth + gaps * spacing
+        let over = max(0, ((inner - used) / 2).rounded(.down))
+        count = columns
+        card = cardWidth
+        gap = spacing
+        leading = ShelfGridColumns.inset + over
     }
 
     var items: [GridItem] { Array(repeating: GridItem(.fixed(card), spacing: gap, alignment: .top), count: count) }

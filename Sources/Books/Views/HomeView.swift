@@ -30,7 +30,7 @@ struct HomeView: View {
                 }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     if model.editingHome, !model.books.isEmpty {
-                        WidgetGallery(height: min(340, (geo.size.height * 0.45).rounded()), reveal: { scrollTarget = $0 })
+                        WidgetGallery(width: geo.size.width, height: min(340, (geo.size.height * 0.45).rounded()), reveal: { scrollTarget = $0 })
                             .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
                 }
@@ -170,6 +170,12 @@ enum WidgetTokens {
     static let noShadow = Design.Shadow(color: .clear, radius: 0, y: 0)
     /// Under the gallery panel where there is no Liquid Glass to lift it.
     static let panelShadow = Design.Shadow(color: .black.opacity(0.18), radius: 24, y: 8)
+    /// The remove badge in edit mode: Apple's light grey disc in Light Mode, a dark grey one in Dark Mode, lifted
+    /// off the card by a soft shadow, and a hit area well beyond the disc.
+    static let badgeFill = color(light: 0xE2E2E7, dark: 0x4A4A4E)
+    static let badgeShadow = Design.Shadow(color: .black.opacity(0.22), radius: 3, y: 1)
+    static let badgeDiameter: CGFloat = 22
+    static let badgeHitSize: CGFloat = 36
 
     /// Widgets move with a spring, or a plain fade when Reduce Motion is on.
     @MainActor static var motion: Animation {
@@ -267,6 +273,39 @@ struct WidgetMetrics: Equatable {
     /// The cover height at which four covers of 2:3 fill the width with the gaps between them.
     func fourAcross(_ inner: CGSize) -> CGFloat {
         (1.5 * (inner.width - 3 * Design.Space.xl) / 4).rounded(.down)
+    }
+
+    /// How far in from the top and the leading edge the middle of the corner's curve lies: where the remove badge
+    /// is centred, so half of it hangs outside the card.
+    var cornerInset: CGFloat { (radius * 0.29).rounded() }
+
+    /// One line or two for a title of this size in a column this wide, reckoning its letters at a little over
+    /// half the type size each.
+    func titleLines(_ title: String, size: CGFloat, width: CGFloat) -> Int {
+        let length = CGFloat(title.count) * points(size) * 0.58
+        return length > width ? 2 : 1
+    }
+
+    /// The least height of a book's row that holds the title, the author and the widget's line beside its cover,
+    /// with the progress bar of a book begun, and room to spare; shorter rows take the list's two lines.
+    func cardHeight(progress: Bool) -> CGFloat {
+        let text: CGFloat = line(15) + 2 * line(12) + 3 * Design.Space.xs
+        let bar: CGFloat = progress ? 6 + Design.Space.xs : 0
+        return text + bar + Design.Space.m
+    }
+
+    /// The lines of a book's description that fit a column this tall beside its cover, under the widget's name
+    /// when it is shown there, the title and the author, and over the progress bar and the widget's line: none
+    /// when fewer than two fit, since one cut-off line says little, and eight at most.
+    func blurbLines(height: CGFloat, titleSize: CGFloat, titleLines: Int, header: Bool, progress: Bool) -> Int {
+        var used: CGFloat = line(titleSize) * CGFloat(titleLines)
+        used += 2 * line(12) + 5 * Design.Space.xs
+        if header { used += line(13) + Design.Space.xs + Design.Space.xxs }
+        if progress { used += 6 + Design.Space.xs }
+        let room = height - used - Design.Space.xs
+        guard room > 0 else { return 0 }
+        let lines = Int(room / line(12))
+        return lines >= 2 ? min(8, lines) : 0
     }
 }
 
@@ -424,10 +463,13 @@ struct WidgetShell<Content: View>: View {
         }
         .overlay(alignment: .topLeading) {
             if editing {
-                WidgetRemoveBadge {
+                // Centred on the middle of the corner's curve: the hit area's centre moved there from its own
+                // top-left corner.
+                let shift = metrics.cornerInset - WidgetTokens.badgeHitSize / 2
+                WidgetRemoveBadge(name: element.label) {
                     withAnimation(WidgetTokens.motion) { model.setHomeElement(element, shown: false) }
                 }
-                .offset(x: -8, y: -8)
+                .offset(x: shift, y: shift)
                 .transition(.scale.combined(with: .opacity))
             }
         }
@@ -475,23 +517,35 @@ private struct WidgetHoverHighlight: ViewModifier {
     }
 }
 
-/// The round (−) over a widget's top-left corner in edit mode.
+/// The round (−) Apple puts on a widget's top-left corner in edit mode: a 22-point disc centred on the corner's
+/// curve, half of it outside the card, with a bold minus, in a hit area well beyond the disc.
 private struct WidgetRemoveBadge: View {
+    /// The widget's name, for VoiceOver.
+    let name: String
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             Image(systemName: "minus")
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(.primary)
-                .frame(width: 22, height: 22)
-                .widgetBadgeBackground()
-                .frame(width: 30, height: 30)
-                .contentShape(Circle())
+                .font(.system(size: 12, weight: .bold))
+                .frame(width: WidgetTokens.badgeDiameter, height: WidgetTokens.badgeDiameter)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(WidgetBadgeStyle())
         .help("Remove Widget")
-        .accessibilityLabel("Remove Widget")
+        .accessibilityLabel("Remove \(name)")
+    }
+}
+
+/// The remove badge's disc under its minus, darkening a little while pressed, and the generous round hit area
+/// around it.
+private struct WidgetBadgeStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(Color.primary)
+            .widgetBadgeBackground()
+            .brightness(configuration.isPressed ? -0.08 : 0)
+            .frame(width: WidgetTokens.badgeHitSize, height: WidgetTokens.badgeHitSize)
+            .contentShape(Circle())
     }
 }
 
@@ -552,24 +606,14 @@ extension View {
             }
     }
 
-    /// Liquid Glass under the remove badge on macOS 26; an opaque disc with a hairline and a small shadow before.
-    @ViewBuilder
+    /// The remove badge's disc: an opaque grey, light in Light Mode and dark in Dark Mode, with a hairline and a
+    /// soft shadow, on every system. Clear Liquid Glass all but vanished over a white card, so the disc is drawn
+    /// as Apple's desktop draws it.
     fileprivate func widgetBadgeBackground() -> some View {
-        #if compiler(>=6.2)
-        if #available(macOS 26.0, *) {
-            self.glassEffect(.regular.interactive(), in: Circle())
-        } else {
-            self.widgetBadgeFallback()
-        }
-        #else
-        self.widgetBadgeFallback()
-        #endif
-    }
-
-    fileprivate func widgetBadgeFallback() -> some View {
-        self.background { Circle().fill(Color(nsColor: .windowBackgroundColor)) }
-            .overlay { Circle().strokeBorder(.separator, lineWidth: Design.Stroke.hairline) }
-            .shadow(Design.Shadow.glyph)
+        self.background { Circle().fill(WidgetTokens.badgeFill) }
+            .overlay { Circle().strokeBorder(Color.primary.opacity(0.1), lineWidth: Design.Stroke.hairline) }
+            .compositingGroup()
+            .shadow(WidgetTokens.badgeShadow)
     }
 
     /// The gallery panel: Liquid Glass on macOS 26; the regular material with a hairline and a soft shadow before.
@@ -755,6 +799,13 @@ private struct WidgetBook: Identifiable {
     let rowLine: String
     var progress: Double? = nil
     var id: UUID { book.id }
+
+    /// The line at the foot of a book shown at length, beside its cover: the short line, with how far in for a
+    /// book begun ("Last read 3 weeks ago · 30%").
+    var detailLine: String {
+        guard let progress else { return line }
+        return "\(line) · \(whole(progress * 100))%"
+    }
 }
 
 /// A book in a widget's list: a small cover, the title and a line, and for books in progress a small ring.
@@ -840,7 +891,9 @@ private struct WidgetCoverTile: View {
     }
 }
 
-/// As many covers as fit the width: spread evenly when the row is full, from the leading edge when it is not.
+/// Covers side by side across the width, as tall as `coverHeight` allows: as many as fill the row, shrunk a
+/// little when one more then ends it at the trailing edge, so a full row runs edge to edge with even gaps. Three
+/// or more covers that do not fill it are spread evenly across it; one or two start at the leading edge.
 private struct WidgetCoverRow: View {
     let element: HomeElement
     let items: [WidgetBook]
@@ -851,18 +904,109 @@ private struct WidgetCoverRow: View {
     var minimumGap: CGFloat = Design.Space.xl
 
     var body: some View {
-        let coverWidth = WidgetCover.width(for: coverHeight)
-        let fit = max(1, Int((width + minimumGap) / (coverWidth + minimumGap)))
-        let shown = Array(items.prefix(fit))
-        let full = shown.count == fit && fit > 1
-        let spacing = full ? (width - CGFloat(fit) * coverWidth) / CGFloat(fit - 1) : minimumGap
-        HStack(alignment: .top, spacing: spacing) {
+        let fitted = WidgetCoverRow.fit(count: items.count, width: width, tallest: coverHeight, gap: minimumGap)
+        let shown = Array(items.prefix(fitted.count))
+        HStack(alignment: .top, spacing: fitted.spacing) {
             ForEach(shown) { item in
-                WidgetCoverTile(element: element, item: item, coverHeight: coverHeight, capsule: capsule, captions: captions)
+                WidgetCoverTile(element: element, item: item, coverHeight: fitted.height, capsule: capsule, captions: captions)
             }
-            if !full { Spacer(minLength: 0) }
+            if fitted.leading { Spacer(minLength: 0) }
         }
         .frame(width: width, alignment: .leading)
+    }
+
+    /// How many covers the row shows, how tall, how far apart, and whether they start at the leading edge rather
+    /// than spread across the width.
+    static func fit(count: Int, width: CGFloat, tallest: CGFloat, gap: CGFloat) -> (count: Int, height: CGFloat, spacing: CGFloat, leading: Bool) {
+        let widest = WidgetCover.width(for: tallest)
+        let slots = max(1, Int(((width + gap) / (widest + gap)).rounded()))
+        let shown = max(1, min(count, slots))
+        let gaps = CGFloat(shown - 1) * gap
+        var height = tallest
+        if CGFloat(shown) * widest + gaps > width {
+            let each = (width - gaps) / CGFloat(shown)
+            height = (each * 1.5).rounded(.down)
+        }
+        let coverWidth = WidgetCover.width(for: height)
+        guard shown > 1, shown >= min(slots, 3) else { return (shown, height, gap, true) }
+        let spread = ((width - CGFloat(shown) * coverWidth) / CGFloat(shown - 1)).rounded(.down)
+        return (shown, height, max(0, spread), false)
+    }
+}
+
+/// A book at length: its cover and beside it the title, the author, as much of its description as `blurbLines`
+/// allows, and at the foot the progress of a book begun over the widget's line. When the book has the widget to
+/// itself the widget's name heads the column.
+private struct WidgetBookSpread: View {
+    @Environment(\.homeWidgetMetrics) private var metrics
+    let element: HomeElement
+    let item: WidgetBook
+    let coverHeight: CGFloat
+    var showsHeader = false
+    var titleSize: CGFloat = 15
+    var blurbLines = 0
+
+    var body: some View {
+        let blurb = blurbLines > 0 ? Display.widgetBlurb(item.book) : ""
+        let authorSize: CGFloat = titleSize >= 17 ? 13 : 12
+        HStack(alignment: .top, spacing: metrics.space(Design.Space.l)) {
+            WidgetCover(book: item.book, height: coverHeight)
+            VStack(alignment: .leading, spacing: Design.Space.xs) {
+                if showsHeader {
+                    WidgetHeader(element: element)
+                        .padding(.bottom, Design.Space.xxs)
+                }
+                Text(item.book.title)
+                    .font(metrics.font(titleSize, .semibold))
+                    .lineLimit(2)
+                Text(item.book.author)
+                    .font(metrics.font(authorSize))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                if !blurb.isEmpty {
+                    Text(blurb)
+                        .font(metrics.font(12))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(blurbLines)
+                        .padding(.top, Design.Space.xs)
+                }
+                Spacer(minLength: 0)
+                if let progress = item.progress {
+                    WidgetCapsule(value: progress, height: 6)
+                }
+                Text(item.detailLine)
+                    .font(metrics.font(12))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .frame(height: coverHeight)
+    }
+}
+
+/// A book given a tall row of its own when a widget holds only a few: the spread, a click on which opens the book.
+private struct WidgetBookCard: View {
+    @Environment(LibraryModel.self) private var model
+    @Environment(\.homeWidgetMetrics) private var metrics
+    @Environment(\.homeDeleteRequest) private var requestDelete
+    let element: HomeElement
+    let item: WidgetBook
+    let height: CGFloat
+    let width: CGFloat
+
+    var body: some View {
+        let titleSize: CGFloat = height >= metrics.space(130) ? 17 : 15
+        let textWidth = width - WidgetCover.width(for: height) - metrics.space(Design.Space.l)
+        let titleLines = metrics.titleLines(item.book.title, size: titleSize, width: textWidth)
+        let lines = metrics.blurbLines(height: height, titleSize: titleSize, titleLines: titleLines, header: false, progress: item.progress != nil)
+        Button { model.open(item.book) } label: {
+            WidgetBookSpread(element: element, item: item, coverHeight: height, titleSize: titleSize, blurbLines: lines)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(WidgetItemPressStyle())
+        .modifier(WidgetHoverHighlight())
+        .widgetBookActions(item.book, element: element, requestDelete: requestDelete)
     }
 }
 
@@ -1017,13 +1161,20 @@ private struct ContinueReadingWidget: View {
     private func large(_ book: Book, starting: Bool) -> some View {
         let inner = metrics.inner(.large)
         let rest = upNext(after: book, starting: starting)
-        let heroHeight = (inner.height * (rest.isEmpty ? 0.7 : 0.46)).rounded()
-        let rowHeight = (40 * metrics.scale).rounded()
         let rowGap = Design.Space.s
         let divider: CGFloat = Design.Space.m + Design.Stroke.hairline
         let eyebrow: CGFloat = Design.Space.s + metrics.line(11) + Design.Space.s
-        let used = heroHeight + divider + eyebrow
-        let count = max(0, min(rest.count, Int((inner.height - used + rowGap) / (rowHeight + rowGap))))
+        // Up Next takes as many rows as fit under a hero of at least 46% of the height and shares out the room, so
+        // the list reaches the foot; with only a row or two the hero takes what they leave.
+        let room = inner.height - (inner.height * 0.46).rounded() - divider - eyebrow
+        let shortest = (34 * metrics.scale).rounded()
+        let count = max(0, min(4, rest.count, Int((room + rowGap) / (shortest + rowGap))))
+        let gaps = CGFloat(max(0, count - 1)) * rowGap
+        let shared: CGFloat = count > 0 ? ((room - gaps) / CGFloat(count)).rounded(.down) : 0
+        let rowHeight = min((44 * metrics.scale).rounded(), shared)
+        let rowsHeight = CGFloat(count) * rowHeight + gaps
+        let below = divider + eyebrow + rowsHeight
+        let heroHeight = rest.isEmpty ? (inner.height * 0.7).rounded() : (inner.height - below).rounded(.down)
         return WidgetShell(element: .continueReading, family: .large, link: .background({ model.sidebarSelection = .all })) {
             VStack(alignment: .leading, spacing: 0) {
                 if rest.isEmpty { Spacer(minLength: 0) }
@@ -1113,8 +1264,12 @@ private struct ReadingHero: View {
 
 // MARK: - Book collections
 
-/// Pick Up Again, For You, Recently Added and Recently Finished: one cover and its line when small, a row of
-/// covers when medium, a list when large and a row of big captioned covers when extra large.
+/// Pick Up Again, For You, Recently Added and Recently Finished, laid out for the books they hold so no size is
+/// left with holes. Small shows the first book. A single book at any larger size is drawn at length: its cover
+/// as big as the widget allows with the title, the author and the widget's line beside it, and the description
+/// where there is room. Two share a medium widget as rows, and more fill it with a row of covers edge to edge.
+/// Large gives a few books a tall row each and more the rows of a list; extra large gives two or three a row each
+/// and four or more a row of big captioned covers.
 private struct BookCollectionWidget: View {
     @Environment(LibraryModel.self) private var model
     @Environment(\.homeWidgetMetrics) private var metrics
@@ -1125,10 +1280,30 @@ private struct BookCollectionWidget: View {
         let items = self.items
         if let first = items.first {
             switch family {
-            case .small: small(first)
-            case .medium: medium(items)
-            case .large: large(items)
-            case .extraLarge: extraLarge(items)
+            case .small:
+                small(first)
+            case .medium:
+                if items.count == 1 {
+                    WidgetBookHero(element: element, item: first, family: .medium)
+                } else if items.count == 2 {
+                    list(items, family: .medium)
+                } else {
+                    medium(items)
+                }
+            case .large:
+                if items.count == 1 {
+                    WidgetBookHero(element: element, item: first, family: .large)
+                } else {
+                    list(items, family: .large)
+                }
+            case .extraLarge:
+                if items.count == 1 {
+                    WidgetBookHero(element: element, item: first, family: .extraLarge)
+                } else if items.count < 4 {
+                    list(items, family: .extraLarge)
+                } else {
+                    extraLarge(items)
+                }
             }
         } else {
             WidgetShell(element: element, family: family) {
@@ -1210,30 +1385,44 @@ private struct BookCollectionWidget: View {
         }
     }
 
-    private func large(_ items: [WidgetBook]) -> some View {
-        let inner = metrics.inner(.large)
-        let rowHeight = (52 * metrics.scale).rounded()
+    /// Books one under another under the widget's name, sharing out the whole height: up to five, as many as fit
+    /// at the list's least row height. Rows tall enough get the title, the author, the description where there is
+    /// room and the widget's line beside a big cover; shorter ones the list's two lines and a small cover.
+    private func list(_ items: [WidgetBook], family: WidgetSize) -> some View {
+        let inner = metrics.inner(family)
         let gap = Design.Space.m
         let available = inner.height - metrics.line(13) - Design.Space.s
-        let count = max(1, min(5, items.count, Int((available + gap) / (rowHeight + gap))))
+        let shortest = (44 * metrics.scale).rounded()
+        let fit = max(1, Int((available + gap) / (shortest + gap)))
+        let count = max(1, min(5, items.count, fit))
+        let gaps = CGFloat(count - 1) * gap
+        let rowHeight = ((available - gaps) / CGFloat(count)).rounded(.down)
+        let spacious = rowHeight >= metrics.cardHeight(progress: capsule != nil)
+        let coverGap = spacious ? metrics.space(Design.Space.l) : Design.Space.m
+        let separatorInset = WidgetCover.width(for: rowHeight) + coverGap
         let rows = Array(items.prefix(count))
-        let separatorInset = WidgetCover.width(for: rowHeight) + Design.Space.m
-        return WidgetShell(element: element, family: .large, link: .background({ model.sidebarSelection = shelf })) {
+        return WidgetShell(element: element, family: family, link: .background({ model.sidebarSelection = shelf })) {
             VStack(alignment: .leading, spacing: Design.Space.s) {
                 WidgetHeader(element: element)
                 VStack(alignment: .leading, spacing: gap) {
                     ForEach(Array(rows.enumerated()), id: \.offset) { index, item in
-                        WidgetBookRow(element: element, item: item, coverHeight: rowHeight)
-                            .overlay(alignment: .top) {
-                                if index > 0 {
-                                    Rectangle()
-                                        .fill(Color.primary.opacity(0.08))
-                                        .frame(height: Design.Stroke.hairline)
-                                        .padding(.leading, separatorInset)
-                                        .offset(y: -gap / 2)
-                                        .allowsHitTesting(false)
-                                }
+                        Group {
+                            if spacious {
+                                WidgetBookCard(element: element, item: item, height: rowHeight, width: inner.width)
+                            } else {
+                                WidgetBookRow(element: element, item: item, coverHeight: rowHeight, showsRing: item.progress != nil)
                             }
+                        }
+                        .overlay(alignment: .top) {
+                            if index > 0 {
+                                Rectangle()
+                                    .fill(Color.primary.opacity(0.08))
+                                    .frame(height: Design.Stroke.hairline)
+                                    .padding(.leading, separatorInset)
+                                    .offset(y: -gap / 2)
+                                    .allowsHitTesting(false)
+                            }
+                        }
                     }
                 }
             }
@@ -1249,6 +1438,68 @@ private struct BookCollectionWidget: View {
                 WidgetHeader(element: element)
                 WidgetCoverRow(element: element, items: items, width: inner.width, coverHeight: coverHeight, capsule: bar, captions: true)
             }
+        }
+    }
+}
+
+/// A book widget with a single book, as Apple Books draws the book you are reading: the cover as big as the widget
+/// allows and beside it the widget's name, the title, the author and the widget's line. Large adds the book's
+/// description under the two, extra large beside them; a click anywhere opens the book.
+private struct WidgetBookHero: View {
+    @Environment(LibraryModel.self) private var model
+    @Environment(\.homeWidgetMetrics) private var metrics
+    let element: HomeElement
+    let item: WidgetBook
+    let family: WidgetSize
+
+    var body: some View {
+        let book = item.book
+        WidgetShell(element: element, family: family, link: .whole({ model.open(book) })) {
+            layout
+        }
+    }
+
+    @ViewBuilder
+    private var layout: some View {
+        let inner = metrics.inner(family)
+        switch family {
+        case .small, .medium:
+            spread(coverHeight: inner.height, width: inner.width, titleSize: 15)
+        case .large:
+            let blurb = Display.widgetBlurb(item.book)
+            if blurb.isEmpty {
+                // No description: the cover as tall as half the width lets it be, the two in the middle.
+                let coverHeight = min(inner.height, (inner.width * 0.75).rounded(.down))
+                spread(coverHeight: coverHeight, width: inner.width, titleSize: 17)
+                    .frame(width: inner.width, height: inner.height)
+            } else {
+                large(inner, blurb: blurb)
+            }
+        case .extraLarge:
+            spread(coverHeight: inner.height, width: inner.width, titleSize: 20)
+        }
+    }
+
+    /// The cover at a height and the book beside it, with as much of the description as fits the column.
+    private func spread(coverHeight: CGFloat, width: CGFloat, titleSize: CGFloat) -> some View {
+        let textWidth = width - WidgetCover.width(for: coverHeight) - metrics.space(Design.Space.l)
+        let titleLines = metrics.titleLines(item.book.title, size: titleSize, width: textWidth)
+        let lines = metrics.blurbLines(height: coverHeight, titleSize: titleSize, titleLines: titleLines, header: true, progress: item.progress != nil)
+        return WidgetBookSpread(element: element, item: item, coverHeight: coverHeight, showsHeader: true, titleSize: titleSize, blurbLines: lines)
+    }
+
+    /// The cover and the book beside it over the top three fifths, the description across the width below.
+    private func large(_ inner: CGSize, blurb: String) -> some View {
+        let coverHeight = (inner.height * 0.6).rounded()
+        let gap = Design.Space.m
+        let lines = max(1, Int((inner.height - coverHeight - gap) / metrics.line(12)))
+        return VStack(alignment: .leading, spacing: gap) {
+            WidgetBookSpread(element: element, item: item, coverHeight: coverHeight, showsHeader: true, titleSize: 17)
+            Text(blurb)
+                .font(metrics.font(12))
+                .foregroundStyle(.secondary)
+                .lineLimit(lines)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
         }
     }
 }
@@ -1355,10 +1606,13 @@ private struct GoalsWidget: View {
                 }
             }
             .frame(width: height, height: height)
-            VStack(alignment: .leading, spacing: metrics.space(Design.Space.s)) {
+            // The month, the year and the streak spread evenly down the ring's height, as Fitness spreads its three
+            // rings' figures, rather than two bunched at the top over a gap.
+            VStack(alignment: .leading, spacing: 0) {
                 WidgetGoalBar(label: "This Month", done: goals.monthDone, goal: goals.monthGoal)
+                Spacer(minLength: metrics.space(Design.Space.s))
                 WidgetGoalBar(label: "This Year", done: goals.yearDone, goal: goals.yearGoal)
-                Spacer(minLength: 0)
+                Spacer(minLength: metrics.space(Design.Space.s))
                 if goals.streak > 0 {
                     Label("\(goals.streak)-day streak", systemImage: "flame.fill")
                         .font(metrics.font(12, .semibold))
@@ -1740,8 +1994,13 @@ private struct WidgetMonthGrid: View {
     let month: MonthSnapshot
 
     var body: some View {
+        // The grid takes the tight margin, but the month's name sits at the standard one, level with the names of
+        // the widgets beside it and over the first column's initial.
+        let offset = metrics.margin - metrics.tightMargin
         VStack(alignment: .leading, spacing: Design.Space.xxs) {
             WidgetEyebrow(text: month.monthName)
+                .padding(.leading, offset)
+                .padding(.top, offset)
             HStack(spacing: 0) {
                 ForEach(Array(month.symbols.enumerated()), id: \.offset) { _, symbol in
                     Text(symbol)
@@ -2176,6 +2435,8 @@ private struct WidgetBars: View {
 private struct WidgetGallery: View {
     @Environment(LibraryModel.self) private var model
     @Environment(\.homeWidgetMetrics) private var metrics
+    /// Home's width, which the panel spans less its margins.
+    let width: CGFloat
     let height: CGFloat
     let reveal: (HomeElement) -> Void
     @State private var selection: HomeElement = .continueReading
@@ -2187,11 +2448,18 @@ private struct WidgetGallery: View {
         return HomeElement.allCases.filter { $0.label.localizedCaseInsensitiveContains(query) || $0.galleryDescription.localizedCaseInsensitiveContains(query) }
     }
 
+    /// The list's column: wide enough for the longest name ("Recently Finished") on one line beside its tile and
+    /// check with a scroll bar showing, even at the narrowest window, and a little wider when the panel has room,
+    /// leaving the rest to the previews. A name that still does not fit wraps to a second line.
+    private var listWidth: CGFloat {
+        let panel = width - 2 * Design.Space.m
+        return min(248, max(224, (panel * 0.36).rounded()))
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             VStack(alignment: .leading, spacing: Design.Space.s) {
-                TextField("Search Widgets", text: $search)
-                    .textFieldStyle(.roundedBorder)
+                searchField
                 ScrollView {
                     VStack(alignment: .leading, spacing: Design.Space.xxs) {
                         ForEach(matches, id: \.self) { element in
@@ -2201,7 +2469,7 @@ private struct WidgetGallery: View {
                 }
             }
             .padding(Design.Space.m)
-            .frame(width: 220)
+            .frame(width: listWidth)
             Divider()
             detail
         }
@@ -2245,6 +2513,33 @@ private struct WidgetGallery: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
+    /// A search field as the desktop's gallery has: a magnifying glass, the field, and a clear button once
+    /// something is typed, on a rounded grey well.
+    private var searchField: some View {
+        HStack(spacing: Design.Space.xs) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            TextField("Search Widgets", text: $search)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+            if !search.isEmpty {
+                Button { search = "" } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+                .help("Clear Search")
+                .accessibilityLabel("Clear Search")
+            }
+        }
+        .padding(.horizontal, Design.Space.s)
+        .frame(height: 28)
+        .background(Design.Fill.empty, in: Design.rounded(Design.Radius.control))
+    }
+
     /// One scale for every size, so the previews show the sizes against each other, and a large one fits the panel
     /// under the name, the two lines of description and the size's label.
     private var previewScale: CGFloat {
@@ -2254,7 +2549,8 @@ private struct WidgetGallery: View {
     }
 }
 
-/// A widget in the gallery's list: its symbol on an accent tile and its name, checked when it is on Home.
+/// A widget in the gallery's list: its symbol on an accent tile and its name, checked when it is on Home. The name
+/// takes all the room between the two and wraps to a second line rather than be cut short.
 private struct WidgetGalleryRow: View {
     @Environment(LibraryModel.self) private var model
     let element: HomeElement
@@ -2265,14 +2561,16 @@ private struct WidgetGalleryRow: View {
         Button(action: action) {
             HStack(spacing: Design.Space.s) {
                 Image(systemName: element.symbol)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.white)
-                    .frame(width: 28, height: 28)
-                    .background(Color.accentColor, in: Design.rounded(Design.Radius.control))
+                    .frame(width: 26, height: 26)
+                    .background(Color.accentColor, in: Design.rounded(7))
                 Text(element.label)
                     .font(.system(size: 13))
-                    .lineLimit(1)
-                Spacer(minLength: 0)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 if model.settings.home.isShown(element) {
                     Image(systemName: "checkmark")
                         .font(.system(size: 11, weight: .semibold))
@@ -2280,7 +2578,7 @@ private struct WidgetGalleryRow: View {
                         .help("On Home")
                 }
             }
-            .padding(.horizontal, Design.Space.s)
+            .padding(.horizontal, Design.Space.xs + Design.Space.xxs)
             .padding(.vertical, Design.Space.xs)
             .background(selected ? Design.Fill.selection : Color.clear, in: Design.rounded(Design.Radius.control))
             .contentShape(Rectangle())
@@ -2406,6 +2704,20 @@ extension Display {
         if minutes < 60 { return (String(minutes), "min") }
         let hours = Double(seconds) / 3600
         return hours < 10 ? (String(format: "%.1f", hours), "hr") : (String(Int(hours.rounded())), "hr")
+    }
+
+    /// A book's description as plain text for a widget: the tags publishers put in it dropped, the commonest
+    /// entities written out and the white space closed up. Empty when the book has none.
+    static func widgetBlurb(_ book: Book) -> String {
+        var text = book.metadata.description
+        guard !text.isEmpty else { return "" }
+        text = text.replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
+        let entities: [(String, String)] = [("&nbsp;", " "), ("&quot;", "\""), ("&#39;", "'"), ("&apos;", "'"),
+                                            ("&lt;", "<"), ("&gt;", ">"), ("&amp;", "&")]
+        for (entity, character) in entities {
+            text = text.replacingOccurrences(of: entity, with: character)
+        }
+        return text.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
     }
 
     /// "40% · 2 hr left" for a book in progress.

@@ -39,6 +39,14 @@ struct ReaderView: View {
 struct ReaderContent: View {
     @Bindable var session: ReaderSession
     @Environment(LibraryModel.self) private var model
+    /// The height of the page under the toolbar, which bounds the popovers.
+    @State private var pageHeight: CGFloat = 0
+
+    /// Room kept under a popover, for its arrow and a margin above the page numbers; the part of the toolbar under a
+    /// button, where the popovers hang from out of full screen; and the least height a popover is given.
+    private static let popoverMargin: CGFloat = 40
+    private static let toolbarAllowance: CGFloat = 24
+    private static let popoverMinHeight: CGFloat = 240
 
     var body: some View {
         GeometryReader { geo in
@@ -66,7 +74,7 @@ struct ReaderContent: View {
                 if session.isFullScreen {
                     VStack {
                         if session.topBarVisible {
-                            ReaderTopBar(session: session)
+                            ReaderTopBar(session: session, popoverMaxHeight: popoverMaxHeight)
                                 .transition(.move(edge: .top).combined(with: .opacity))
                         }
                         Spacer()
@@ -76,9 +84,12 @@ struct ReaderContent: View {
             }
             .animation(Design.Motion.standard, value: session.preparing)
             .animation(Design.Motion.standard, value: session.showEndCard)
-            .onChange(of: geo.size.height, initial: true) { _, height in session.viewResized(height: height) }
+            .onChange(of: geo.size.height, initial: true) { _, height in
+                pageHeight = height
+                session.viewResized(height: height)
+            }
         }
-        .background { ReaderWindowAppearance(dark: session.effectiveTheme.isDark) }
+        .readerAppearance(dark: session.effectiveTheme.isDark, window: true)
         .navigationTitle(session.book.title)
         .navigationSubtitle(session.position.chapter)
         .toolbar(session.isFullScreen ? .hidden : .visible, for: .windowToolbar)
@@ -106,6 +117,13 @@ struct ReaderContent: View {
 
     // MARK: - Toolbar
 
+    /// The tallest a popover may be: the page under the bar it opens from, less room for its arrow and a margin, so it
+    /// opens downwards whole instead of being pushed beside its button or off the screen in a short window.
+    private var popoverMaxHeight: CGFloat {
+        let bar = session.isFullScreen ? ReaderTopBar.reach : ReaderContent.toolbarAllowance
+        return max(ReaderContent.popoverMinHeight, pageHeight - bar - ReaderContent.popoverMargin)
+    }
+
     /// The popovers belong to the toolbar out of full screen and to the floating bar in it; the other set stays shut.
     private func gated(_ binding: Binding<Bool>, _ active: Bool) -> Binding<Bool> {
         Binding(get: { active && binding.wrappedValue }, set: { binding.wrappedValue = $0 })
@@ -119,15 +137,15 @@ struct ReaderContent: View {
                 .help(ReaderHelp.library)
             Button { session.showContents.toggle() } label: { Label("Contents", systemImage: "list.bullet") }
                 .help(ReaderHelp.contents)
-                .popover(isPresented: gated($session.showContents, !session.isFullScreen), arrowEdge: .bottom) { ContentsPopover(session: session) }
+                .popover(isPresented: gated($session.showContents, !session.isFullScreen), arrowEdge: .bottom) { ContentsPopover(session: session, maxHeight: popoverMaxHeight) }
         }
         ToolbarItemGroup(placement: .primaryAction) {
             Button { session.showAppearance.toggle() } label: { Label("Appearance", systemImage: "textformat.size") }
                 .help(ReaderHelp.appearance)
-                .popover(isPresented: gated($session.showAppearance, !session.isFullScreen), arrowEdge: .bottom) { AppearancePopover(session: session) }
+                .popover(isPresented: gated($session.showAppearance, !session.isFullScreen), arrowEdge: .bottom) { AppearancePopover(session: session, maxHeight: popoverMaxHeight) }
             Button { session.showSearch.toggle() } label: { Label("Search", systemImage: "magnifyingglass") }
                 .help(ReaderHelp.search)
-                .popover(isPresented: gated($session.showSearch, !session.isFullScreen), arrowEdge: .bottom) { SearchPopover(session: session) }
+                .popover(isPresented: gated($session.showSearch, !session.isFullScreen), arrowEdge: .bottom) { SearchPopover(session: session, maxHeight: popoverMaxHeight) }
             Button { session.toggleBookmark() } label: {
                 Label { Text("Bookmark") } icon: { BookmarkGlyph(on: session.isBookmarked) }
             }
@@ -218,9 +236,13 @@ struct ReaderContent: View {
 /// insets of the timeline's capsule at the foot of the page.
 struct ReaderTopBar: View {
     @Bindable var session: ReaderSession
+    /// The tallest its popovers may be.
+    var popoverMaxHeight: CGFloat = 640
 
     /// Every button is at least this big, so the pointer finds it without having to land on the glyph itself.
     private static let hitSize: CGFloat = 28
+    /// How far down the window the bar reaches: its margin from the top edge, and the buttons with the bar's insets.
+    static var reach: CGFloat { Design.Space.m + hitSize + 2 * Design.Space.s }
     /// The room the centred title leaves on either side for the buttons.
     private static let titleInset: CGFloat = 128
 
@@ -239,14 +261,14 @@ struct ReaderTopBar: View {
             .help(ReaderHelp.library)
             Button { session.showContents.toggle() } label: { icon("list.bullet", "Contents") }
                 .help(ReaderHelp.contents)
-                .popover(isPresented: gated($session.showContents), arrowEdge: .bottom) { ContentsPopover(session: session) }
+                .popover(isPresented: gated($session.showContents), arrowEdge: .bottom) { ContentsPopover(session: session, maxHeight: popoverMaxHeight) }
             Spacer(minLength: Design.Space.xl)
             Button { session.showAppearance.toggle() } label: { icon("textformat.size", "Appearance") }
                 .help(ReaderHelp.appearance)
-                .popover(isPresented: gated($session.showAppearance), arrowEdge: .bottom) { AppearancePopover(session: session) }
+                .popover(isPresented: gated($session.showAppearance), arrowEdge: .bottom) { AppearancePopover(session: session, maxHeight: popoverMaxHeight) }
             Button { session.showSearch.toggle() } label: { icon("magnifyingglass", "Search") }
                 .help(ReaderHelp.search)
-                .popover(isPresented: gated($session.showSearch), arrowEdge: .bottom) { SearchPopover(session: session) }
+                .popover(isPresented: gated($session.showSearch), arrowEdge: .bottom) { SearchPopover(session: session, maxHeight: popoverMaxHeight) }
             Button { session.toggleBookmark() } label: {
                 Label { Text("Bookmark") } icon: { BookmarkGlyph(on: session.isBookmarked) }
                     .labelStyle(.iconOnly)
@@ -325,15 +347,43 @@ extension Theme {
     }
 }
 
-/// Dresses the reading window to match the page: a dark theme darkens the toolbar, the glass bars, the popovers and
-/// the highlight menu with it, as Books does, and leaving the book gives the window back the system's look. The
-/// session watches the app's appearance rather than the window's, so this does not feed back into Auto-Night.
+extension View {
+    /// Dresses the window this view is in — the reading window, or a popover, the highlight menu or the note editor
+    /// opened from it — to match the page: dark with a dark theme, as Books does, and in the system's look with a
+    /// light one, changing the moment the theme does. SwiftUI is told through the preferred colour scheme, which it
+    /// applies to the window or popover the view is in and keeps as it updates the window: an appearance set on the
+    /// window behind its back alone did not hold, and the toolbar, its popovers and the title stayed light over a
+    /// dark page. Each window is also set directly — the popovers' and the note editor's as well as the reading
+    /// window, rather than trusting them to inherit — so the change is immediate, and a light theme or a closed
+    /// reader gives the window back to the system's look whatever SwiftUI keeps. The app's own appearance is never
+    /// touched: the session follows it for Auto-Night, and the showcase sets it for its pictures. `window` marks the
+    /// reading window itself, whose toolbar also loses its separator.
+    func readerAppearance(dark: Bool, window: Bool = false) -> some View {
+        preferredColorScheme(dark ? .dark : nil)
+            .background { ReaderWindowAppearance(dark: dark, readingWindow: window) }
+    }
+}
+
+/// Sets the appearance of the window it is in: dark aqua for a dark theme, nil — the app's, which is the system's
+/// unless the app sets its own — for a light one, and nil again when it goes; a dark window lightened by something
+/// else is darkened again at the next update. For the reading window it also takes away the separator AppKit draws
+/// under the toolbar over a PDF's scroll view, so the page runs up under the toolbar as a book's does, and puts the
+/// window's own style back when the reader closes.
 private struct ReaderWindowAppearance: NSViewRepresentable {
     let dark: Bool
+    let readingWindow: Bool
 
-    func makeNSView(context: Context) -> AppearanceSetter { AppearanceSetter() }
+    func makeNSView(context: Context) -> AppearanceSetter {
+        let setter = AppearanceSetter()
+        setter.readingWindow = readingWindow
+        setter.dark = dark
+        return setter
+    }
 
-    func updateNSView(_ nsView: AppearanceSetter, context: Context) { nsView.dark = dark }
+    func updateNSView(_ nsView: AppearanceSetter, context: Context) {
+        nsView.readingWindow = readingWindow
+        nsView.dark = dark
+    }
 
     static func dismantleNSView(_ nsView: AppearanceSetter, coordinator: ()) { nsView.giveBack() }
 
@@ -341,10 +391,21 @@ private struct ReaderWindowAppearance: NSViewRepresentable {
         /// The setter that last dressed each window, so a reader going away cannot undo the look of the one that
         /// replaced it (a PDF reopened another way).
         private static var owners: [ObjectIdentifier: ObjectIdentifier] = [:]
+        /// Each dressed window's separator style from before the reader, to put back when it closes.
+        private static var separators: [ObjectIdentifier: NSTitlebarSeparatorStyle] = [:]
         private weak var host: NSWindow?
 
+        var readingWindow = false
+
         var dark = false {
-            didSet { if dark != oldValue { apply() } }
+            didSet {
+                if dark != oldValue {
+                    apply()
+                } else if dark, let host, host.appearance?.name != .darkAqua {
+                    // Put back if something else has lightened the window since.
+                    apply()
+                }
+            }
         }
 
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -360,16 +421,40 @@ private struct ReaderWindowAppearance: NSViewRepresentable {
         /// Hands the window back to the system's look, unless another reader has dressed it since.
         func giveBack() {
             if let host, AppearanceSetter.owners[ObjectIdentifier(host)] == ObjectIdentifier(self) {
-                AppearanceSetter.owners[ObjectIdentifier(host)] = nil
+                let id = ObjectIdentifier(host)
+                AppearanceSetter.owners[id] = nil
                 host.appearance = nil
+                if let separator = AppearanceSetter.separators.removeValue(forKey: id) {
+                    host.titlebarSeparatorStyle = separator
+                }
+                // SwiftUI lets the reader's preferred colour scheme go in the same update, and may put back a look of
+                // its own as it does: once it has, a window no reader has dressed since is given back again.
+                let window = host
+                DispatchQueue.main.async { [weak window] in AppearanceSetter.release(window) }
+                Task { @MainActor [weak window] in
+                    try? await Task.sleep(nanoseconds: 400_000_000)
+                    AppearanceSetter.release(window)
+                }
             }
             host = nil
         }
 
+        /// The system's look for a window that no setter dresses any more.
+        private static func release(_ window: NSWindow?) {
+            guard let window, owners[ObjectIdentifier(window)] == nil, window.appearance != nil else { return }
+            window.appearance = nil
+        }
+
         private func apply() {
             guard let host else { return }
-            AppearanceSetter.owners[ObjectIdentifier(host)] = ObjectIdentifier(self)
-            host.appearance = dark ? NSAppearance(named: .darkAqua) : nil
+            let id = ObjectIdentifier(host)
+            AppearanceSetter.owners[id] = ObjectIdentifier(self)
+            let appearance: NSAppearance? = dark ? NSAppearance(named: .darkAqua) : nil
+            if host.appearance?.name != appearance?.name { host.appearance = appearance }
+            if readingWindow {
+                if AppearanceSetter.separators[id] == nil { AppearanceSetter.separators[id] = host.titlebarSeparatorStyle }
+                host.titlebarSeparatorStyle = .none
+            }
         }
     }
 }

@@ -5,11 +5,12 @@ import BooksCore
 /// Contents · Bookmarks · Notes, behind the toolbar's list button.
 struct ContentsPopover: View {
     @Bindable var session: ReaderSession
-    @State private var tab = 0
+    /// The tallest it may be in the window it opens over.
+    var maxHeight: CGFloat = 440
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker("Show", selection: $tab) {
+            Picker("Show", selection: $session.contentsTab) {
                 Text("Contents").tag(0)
                 Text("Bookmarks").tag(1)
                 Text("Notes").tag(2)
@@ -18,13 +19,16 @@ struct ContentsPopover: View {
             .labelsHidden()
             .padding(Design.Space.m)
             Divider()
-            switch tab {
+            switch session.contentsTab {
             case 0: contents
             case 1: bookmarks
             default: notes
             }
         }
-        .frame(width: Design.popoverWidth, height: 440)
+        .frame(width: Design.popoverWidth, height: min(440, maxHeight))
+        .readerAppearance(dark: session.effectiveTheme.isDark)
+        // Each opening starts at Contents, as it did when the tab was the popover's own state.
+        .onDisappear { session.contentsTab = 0 }
     }
 
     /// The chapters, opened on the one being read, which is set in the accent colour so it is found at a glance.
@@ -186,11 +190,17 @@ enum HighlightSwatch {
 }
 
 /// Text size, themes, fonts and layout: everything Books offers under "Aa", in its order. The size buttons come
-/// first, then the theme circles and the fonts, each set in its own face, then the text and page settings, the
-/// wheel and the footer.
+/// first, then the theme circles and the fonts, each set in its own face in two short columns, then the text and
+/// page settings, the wheel and the footer. It is as tall as its contents where the window has the room, and
+/// scrolls within the window's height where it has not.
 struct AppearancePopover: View {
     @Bindable var session: ReaderSession
+    /// The tallest it may be in the window it opens over.
+    var maxHeight: CGFloat = 720
     @Environment(LibraryModel.self) private var model
+
+    /// Tall enough for everything at once, which a window has room for when it is not short.
+    static let tallest: CGFloat = 720
 
     /// The layout and the spread as one choice, since a spread means nothing while the text scrolls.
     private enum Arrangement: Hashable {
@@ -205,7 +215,7 @@ struct AppearancePopover: View {
         let plainZoom = pdfView && !fit
         let scrolling = !pdfView && session.reader.layout == .scroll
         ScrollView {
-            VStack(alignment: .leading, spacing: Design.Space.l) {
+            VStack(alignment: .leading, spacing: Design.Space.m) {
                 VStack(spacing: Design.Space.xs) {
                     sizeButtons(plainZoom: plainZoom)
                     Text(sizeCaption(plainZoom: plainZoom, fit: fit))
@@ -304,8 +314,10 @@ struct AppearancePopover: View {
             }
             .padding(Design.Space.l)
         }
+        .scrollBounceBehavior(.basedOnSize)
         .frame(width: Design.popoverWidth)
-        .frame(maxHeight: 640)
+        .frame(maxHeight: min(AppearancePopover.tallest, maxHeight))
+        .readerAppearance(dark: session.effectiveTheme.isDark)
     }
 
     private var pdfLayoutHelp: String {
@@ -416,18 +428,30 @@ struct AppearancePopover: View {
 
     // MARK: Fonts
 
+    /// The fonts in two columns, read down the first and then the second: half as long as one list, so the popover
+    /// keeps to a short window.
     private var fonts: some View {
         let chosen = model.settings.reader.font
-        return VStack(spacing: 0) {
-            ForEach(ReaderFont.allCases, id: \.self) { font in
+        let all = ReaderFont.allCases
+        let half = (all.count + 1) / 2
+        return HStack(alignment: .top, spacing: Design.Space.xs) {
+            fontColumn(Array(all.prefix(half)), chosen: chosen)
+            fontColumn(Array(all.dropFirst(half)), chosen: chosen)
+        }
+        // The rows' hover pills reach a little past the column, so the names line up with the text above and below.
+        .padding(.horizontal, -Design.Space.s)
+    }
+
+    private func fontColumn(_ list: [ReaderFont], chosen: ReaderFont) -> some View {
+        VStack(spacing: 0) {
+            ForEach(list, id: \.self) { font in
                 ReaderFontRow(title: font.label, sample: AppearancePopover.sample(font), chosen: font == chosen) {
                     model.settings.reader.font = font
                     session.applySettings()
                 }
             }
         }
-        // The rows' hover pills reach a little past the column, so the names line up with the text above and below.
-        .padding(.horizontal, -Design.Space.s)
+        .frame(maxWidth: .infinity, alignment: .top)
     }
 
     /// Each font's name in its own face; the book's own fonts and San Francisco in the system face.
@@ -487,8 +511,8 @@ private struct ReaderFontRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: Design.Space.s) {
-                Text(title).font(sample).foregroundStyle(Color.primary)
-                Spacer(minLength: Design.Space.s)
+                Text(title).font(sample).foregroundStyle(Color.primary).lineLimit(1)
+                Spacer(minLength: Design.Space.xs)
                 if chosen {
                     Image(systemName: "checkmark")
                         .font(Design.Fonts.meta.weight(.semibold))
@@ -519,6 +543,8 @@ private extension View {
 /// Search this book: results grouped by chapter, click to go there.
 struct SearchPopover: View {
     @Bindable var session: ReaderSession
+    /// The tallest it may be in the window it opens over.
+    var maxHeight: CGFloat = 440
     @State private var query = ""
     @FocusState private var focused: Bool
 
@@ -578,7 +604,8 @@ struct SearchPopover: View {
                     .padding(Design.Space.s)
             }
         }
-        .frame(width: Design.popoverWidth, height: 440)
+        .frame(width: Design.popoverWidth, height: min(440, maxHeight))
+        .readerAppearance(dark: session.effectiveTheme.isDark)
         .onAppear { query = session.searchQuery; focused = true }
     }
 
@@ -664,6 +691,7 @@ struct HighlightMenu: View {
         .padding(.horizontal, Design.Space.m)
         .padding(.vertical, Design.Space.s)
         .fixedSize()
+        .readerAppearance(dark: session.effectiveTheme.isDark)
     }
 
     /// A glyph in a tinted circle the size of a colour swatch: Underline and Remove.
@@ -749,6 +777,7 @@ struct NoteEditor: View {
         }
         .padding(Design.Space.xl)
         .frame(width: 420)
+        .readerAppearance(dark: session.effectiveTheme.isDark)
         .onAppear { note = annotation.note }
     }
 }

@@ -17,7 +17,7 @@ enum Showcase {
     }
 
     /// The whole run must fit in this; the CI step allows a little more.
-    private static let timeLimit: Double = 240
+    private static let timeLimit: Double = 360
 
     @MainActor private static var directory = URL(fileURLWithPath: "build/showcase", isDirectory: true)
     @MainActor private static var window: NSWindow?
@@ -65,13 +65,14 @@ enum Showcase {
         log("screenshots go to \(directory.path)")
 
         NSApp.appearance = NSAppearance(named: .aqua)
-        NSApp.activate()
+        NSApp.activate(ignoringOtherApps: true)
         guard let main = try? await waitFor("the window", timeout: 15, { mainWindow() }) else { fail("no window appeared") }
         window = main
         place(main)
+        await bringForward(main, for: "the window")
         let screen = main.screen ?? NSScreen.main
         let permission = screenCaptureAllowed.map { $0 ? "granted" : "not granted" } ?? "unknown"
-        log("window \(describe(main.frame)) on a \(describe(screen?.frame ?? .zero)) screen at \(screen?.backingScaleFactor ?? 1)×; screen recording \(permission)")
+        log("window \(describe(main.frame)) on a \(describe(screen?.frame ?? .zero)) screen at \(screen?.backingScaleFactor ?? 1)×; screen recording \(permission); app \(NSApp.isActive ? "active" : "not active"), window \(main.isKeyWindow ? "key" : "not key")")
 
         let samples: Samples
         do {
@@ -115,12 +116,18 @@ enum Showcase {
             try await capture("05-collection-list", settle: 1.8)
         }
         tidy(model)
+        let gridScale = model.settings.gridScale
         await attempt("06-shelf-by-genre") {
-            model.setShelfView(.grid, for: .books)
-            model.setShelfGrouping(.genre, for: .books)
-            model.sidebarSelection = .books
+            // The whole library genre by genre, its covers smaller so that the first two groups show whole; then All
+            // goes back to its collections, and the covers to their size.
+            model.setShelfView(.grid, for: .all)
+            model.setShelfGrouping(.genre, for: .all)
+            setGridScale(0.7, model)
+            model.sidebarSelection = .all
             try await capture("06-shelf-by-genre", settle: 2)
         }
+        model.setShelfGrouping(.collection, for: .all)
+        setGridScale(gridScale, model)
         tidy(model)
         await attempt("07-covers-monochrome") {
             setCovers(.monochrome, model)
@@ -129,8 +136,9 @@ enum Showcase {
         }
         tidy(model)
         await attempt("08-covers-text-only") {
+            // The same shelf as 04 and 07, so the three looks compare cover for cover.
             setCovers(.textOnly, model)
-            model.sidebarSelection = .books
+            model.sidebarSelection = .all
             try await capture("08-covers-text-only", settle: 2)
         }
         setCovers(.color, model)
@@ -167,7 +175,30 @@ enum Showcase {
         if let id = samples.books["essays"] { await pdfShots(model: model, book: id) } else { missed("15-pdf-pages", Failure("the sample PDF is missing")) }
         tidy(model)
         model.sidebarSelection = .home
-        await attempt("17-settings") { try await settingsShot("17-settings") }
+        // Settings' General tab draws its covers with the book last opened, the PDF by now: Pride and Prejudice is
+        // opened and closed again, its place kept, so that its cover is the one shown.
+        if let id = samples.books["pride"] { await openBriefly(model: model, book: id) }
+        await settingsShots(model: model)
+
+        // Home once more, with two widgets at their large size.
+        tidy(model)
+        let home = model.settings.home
+        await attempt("24-home-large-widgets") {
+            // The Reading Calendar and Statistics large, side by side, over the goals and the activity.
+            let shown: [HomeElement] = [.calendar, .statistics, .goals, .activity]
+            let rest: [HomeElement] = HomeElement.allCases.filter { !shown.contains($0) }
+            var large = HomeSettings(order: shown + rest, hidden: rest)
+            large.setSize(.large, for: .calendar)
+            large.setSize(.large, for: .statistics)
+            var settings = model.settings
+            settings.home = large
+            model.settings = settings
+            model.sidebarSelection = .home
+            try await capture("24-home-large-widgets", settle: 2.4)
+        }
+        var restored = model.settings
+        restored.home = home
+        model.settings = restored
 
         if !failures.isEmpty { log("not taken: " + failures.joined(separator: ", ")) }
         guard saved > 0 else { fail("no screenshots were taken") }
@@ -212,8 +243,17 @@ enum Showcase {
         model.settings = settings
     }
 
+    /// The size of the covers in the grid, as the toolbar's slider sets it.
+    @MainActor
+    private static func setGridScale(_ scale: Double, _ model: LibraryModel) {
+        var settings = model.settings
+        settings.gridScale = scale
+        model.settings = settings
+    }
+
     /// Pride and Prejudice in two pages with its highlights, the Appearance popover, the Contents popover in a dark
-    /// theme, and full screen with the floating bar.
+    /// theme, and full screen with the floating bar; then, back in the Original theme, a search, the menu of a
+    /// highlight, and the notes.
     @MainActor
     private static func readerShots(model: LibraryModel, book id: UUID) async {
         guard let book = model.book(id) else { return }
@@ -264,12 +304,87 @@ enum Showcase {
         var plain = model.settings
         plain.reader.theme = .original
         model.settings = plain
+        session.applySettings()
+        await pause(1)
+        await attempt("18-reader-search") {
+            session.search("Bingley")
+            _ = try await waitFor("the search results", timeout: 12) { session.searchDone && !session.searchResults.isEmpty ? true : nil }
+            session.showSearch = true
+            try await capture("18-reader-search", settle: 1.4)
+        }
+        session.showSearch = false
+        await pause(0.6)
+        await attempt("19-reader-highlight-menu") { try await highlightMenuShot(session, name: "19-reader-highlight-menu") }
+        session.tappedHighlight = nil
+        await pause(0.6)
+        await attempt("20-reader-notes") {
+            // The Contents popover opened at its Notes tab.
+            session.contentsTab = 2
+            session.showContents = true
+            try await capture("20-reader-notes", settle: 1.6)
+        }
+        session.showContents = false
+        session.contentsTab = 0
+        await pause(0.6)
         session.close()
         _ = try? await waitFor("the reader to close", timeout: 6) { model.reading == nil ? true : nil }
         await pause(0.8)
     }
 
-    /// The essays as whole pages, then zoomed to their text and cut into screens.
+    /// The menu a click on a highlight opens, over one of the sample's highlights that lies wholly on the pages shown
+    /// (one with a note if one does). Where it lies is asked of the page as the page itself measures a highlight that
+    /// is clicked, and the session is told of it as the page's message tells it.
+    @MainActor
+    private static func highlightMenuShot(_ session: ReaderSession, name: String) async throws {
+        let marks = session.highlights.filter { !$0.note.isEmpty } + session.highlights.filter { $0.note.isEmpty }
+        guard let found = await visibleHighlight(session, among: marks) else {
+            throw Failure("no highlight lies wholly on the pages shown, so its menu was not opened")
+        }
+        let before = Set(NSApp.windows.filter(\.isVisible).map(\.windowNumber))
+        session.tappedHighlight = found
+        let shown = try? await waitFor("the highlight menu", timeout: 2) {
+            NSApp.windows.contains(where: { $0.isVisible && !before.contains($0.windowNumber) }) ? true : nil
+        }
+        guard shown != nil else {
+            session.tappedHighlight = nil
+            throw Failure("the highlight menu did not appear")
+        }
+        try await capture(name, settle: 1.2)
+    }
+
+    /// The first of these highlights with a piece wholly within the web view, and that piece's rectangle in the web
+    /// view's points from its top left — getBoundingClientRect, as the page reports a highlight clicked; nil when
+    /// none is in view.
+    @MainActor
+    private static func visibleHighlight(_ session: ReaderSession, among marks: [Annotation]) async -> (annotation: Annotation, rect: CGRect)? {
+        guard !marks.isEmpty else { return nil }
+        let ids = marks.map { "\"" + $0.id.uuidString + "\"" }.joined(separator: ", ")
+        let script = """
+            (function (ids) {
+              for (var i = 0; i < ids.length; i++) {
+                var pieces = document.querySelectorAll('span.books-hl[data-id="' + ids[i] + '"]');
+                for (var j = 0; j < pieces.length; j++) {
+                  var r = pieces[j].getBoundingClientRect();
+                  if (r.width > 2 && r.height > 2 && r.left >= 0 && r.top >= 0 && r.right <= window.innerWidth && r.bottom <= window.innerHeight) {
+                    return [i, r.left, r.top, r.width, r.height];
+                  }
+                }
+              }
+              return null;
+            })([\(ids)]);
+            """
+        let answer: [Double]? = await withCheckedContinuation { (continuation: CheckedContinuation<[Double]?, Never>) in
+            session.webView.evaluateJavaScript(script) { result, _ in
+                continuation.resume(returning: (result as? [NSNumber])?.map(\.doubleValue))
+            }
+        }
+        guard let found = answer, found.count == 5 else { return nil }
+        let index = Int(found[0])
+        guard marks.indices.contains(index) else { return nil }
+        return (annotation: marks[index], rect: CGRect(x: found[1], y: found[2], width: found[3], height: found[4]))
+    }
+
+    /// The essays as whole pages, then zoomed to their text and cut into screens, then reflowed as text.
     @MainActor
     private static func pdfShots(model: LibraryModel, book id: UUID) async {
         guard let book = model.book(id) else { return }
@@ -292,7 +407,18 @@ enum Showcase {
                 return nil
             }
             await attempt("16-pdf-zoom-and-split") { try await capture("16-pdf-zoom-and-split", settle: 2.4) }
-            split.close()
+            split.setPDFLayout(.text)
+            do {
+                let text = try await waitFor("the PDF as text", timeout: 40) {
+                    if let s = SelfTest.currentSession, s !== split, s.book.id == id, s.isOpen, !s.usesPDFView, s.layout.total > 0 { return s }
+                    return nil
+                }
+                await attempt("21-pdf-text") { try await capture("21-pdf-text", settle: 2.4) }
+                text.close()
+            } catch {
+                missed("21-pdf-text", error)
+                SelfTest.currentSession?.close()
+            }
         } catch {
             missed("16-pdf-zoom-and-split", error)
             SelfTest.currentSession?.close()
@@ -326,9 +452,85 @@ enum Showcase {
         place(main)
     }
 
+    /// Opens a book in the reader and closes it again, so that it is the book last opened, and gives it back the place
+    /// it had: opening a book is not reading it.
+    @MainActor
+    private static func openBriefly(model: LibraryModel, book id: UUID) async {
+        guard let book = model.book(id) else { return }
+        let place = book.position
+        let finished = book.finishedAt
+        log("opening and closing \(book.title), so that it is the book last opened")
+        model.open(book)
+        let session = try? await waitFor("the reader to open", timeout: 30) {
+            if let s = SelfTest.currentSession, s.book.id == id, s.isOpen { return s }
+            return nil
+        }
+        await pause(0.5)
+        if let session { session.close() } else { model.closeReader() }
+        _ = try? await waitFor("the reader to close", timeout: 6) { model.reading == nil ? true : nil }
+        if var after = model.book(id), after.position != place || after.finishedAt != finished {
+            after.position = place
+            after.finishedAt = finished
+            model.update(after)
+        }
+        await pause(0.6)
+    }
+
+    /// The Settings window's General tab, its covers drawn with the book last opened, then its Library and Reading
+    /// tabs, each chosen through the model's selection of the tab.
+    @MainActor
+    private static func settingsShots(model: LibraryModel) async {
+        model.settingsTab = .general
+        let settings: NSWindow
+        do {
+            settings = try await openSettings()
+        } catch {
+            for name in ["17-settings", "22-settings-library", "23-settings-reading"] { missed(name, error) }
+            return
+        }
+        await attempt("17-settings") {
+            let general = await selectSettingsTab(.general, label: "General", in: settings, model: model)
+            if !general { log("17-settings: the General tab could not be chosen; the window shows “\(settings.title)”") }
+            try await capture("17-settings", settle: 1.4, window: settings)
+        }
+        let others: [(name: String, tab: SettingsTab, label: String)] = [
+            (name: "22-settings-library", tab: .library, label: "Library"),
+            (name: "23-settings-reading", tab: .reading, label: "Reading"),
+        ]
+        for shot in others {
+            await attempt(shot.name) {
+                let chosen = await selectSettingsTab(shot.tab, label: shot.label, in: settings, model: model)
+                guard chosen else { throw Failure("the \(shot.label) tab could not be chosen; the window shows “\(settings.title)”") }
+                try await capture(shot.name, settle: 1.4, window: settings)
+            }
+        }
+        settings.close()
+        model.settingsTab = .general
+        await pause(0.6)
+    }
+
+    /// Chooses a tab of the Settings window: through the model, which holds the window's selection, and failing that
+    /// with the tab's toolbar item, as a click on the item does. True once the window shows the tab: its title is the
+    /// tab's name, or its toolbar has the tab's item selected.
+    @MainActor
+    private static func selectSettingsTab(_ tab: SettingsTab, label: String, in settings: NSWindow, model: LibraryModel) async -> Bool {
+        func showing() -> Bool {
+            if settings.title == label { return true }
+            guard let toolbar = settings.toolbar, let selected = toolbar.selectedItemIdentifier else { return false }
+            return toolbar.items.first(where: { $0.itemIdentifier == selected })?.label == label
+        }
+        model.settingsTab = tab
+        let selected = try? await waitFor("the \(label) tab", timeout: 2) { showing() ? true : nil }
+        if selected != nil { return true }
+        guard let toolbar = settings.toolbar, let item = toolbar.items.first(where: { $0.label == label }), let action = item.action else { return false }
+        _ = NSApp.sendAction(action, to: item.target, from: item)
+        let clicked = try? await waitFor("the \(label) tab", timeout: 2) { showing() ? true : nil }
+        return clicked != nil
+    }
+
     /// The Settings window, opened as a person would, with Settings… in the app menu.
     @MainActor
-    private static func settingsShot(_ name: String) async throws {
+    private static func openSettings() async throws -> NSWindow {
         guard let main = window else { throw Failure("there is no window") }
         func settingsWindow() -> NSWindow? {
             NSApp.windows.first { $0 !== main && $0.isVisible && !($0 is NSPanel) && $0.styleMask.contains(.titled) && $0.sheetParent == nil }
@@ -344,8 +546,7 @@ enum Showcase {
         }
         guard let settings = found else { throw Failure("the Settings window did not open") }
         settings.makeKeyAndOrderFront(nil)
-        defer { settings.close() }
-        try await capture(name, settle: 1.4, window: settings)
+        return settings
     }
 
     // MARK: - The window
@@ -364,6 +565,35 @@ enum Showcase {
         let origin = NSPoint(x: (area.midX - size.width / 2).rounded(), y: (area.midY - size.height / 2).rounded())
         main.setFrame(NSRect(origin: origin, size: size), display: true)
         main.makeKeyAndOrderFront(nil)
+    }
+
+    /// Whether the window shows as the active one: the app is active, and the window is key or holds the key window
+    /// (a sheet, or a popover whose field has the focus).
+    @MainActor
+    private static func isFrontmost(_ target: NSWindow) -> Bool {
+        guard NSApp.isActive, let key = NSApp.keyWindow else { return false }
+        var current: NSWindow? = key
+        while let shown = current {
+            if shown === target { return true }
+            current = shown.sheetParent ?? shown.parent
+        }
+        return target.isMainWindow && String(describing: type(of: key)).contains("Popover")
+    }
+
+    /// Makes the app active and the window key, as a click on it would, and waits up to a second for it to show as
+    /// the active window: an app launched from a shell on the CI's runner is not frontmost, and an inactive window
+    /// has grey traffic lights, dimmed toolbar text and grey selections. A window already frontmost, or holding the
+    /// key window, is left alone, so a sheet or a popover over it stays.
+    @MainActor
+    private static func bringForward(_ target: NSWindow, for name: String) async {
+        if isFrontmost(target) { return }
+        NSApp.activate(ignoringOtherApps: true)
+        _ = try? await waitFor("the app to become active", timeout: 0.4) { NSApp.isActive ? true : nil }
+        if !isFrontmost(target) { target.makeKeyAndOrderFront(nil) }
+        let keyed = try? await waitFor("the window to become key", timeout: 1) { isFrontmost(target) ? true : nil }
+        if keyed == nil {
+            log("\(name): the window is not key (the app is \(NSApp.isActive ? "active" : "not active")); it is taken as it is")
+        }
     }
 
     private static func describe(_ rect: NSRect) -> String {
@@ -413,8 +643,11 @@ enum Showcase {
     /// and closes the popovers.
     @MainActor
     private static func capture(_ name: String, settle: Double, window chosen: NSWindow? = nil) async throws {
-        await pause(settle)
         guard let target = chosen ?? window else { throw Failure("there is no window to capture") }
+        // The app active and the window key before the pause, and still so after it.
+        await bringForward(target, for: name)
+        await pause(settle)
+        if !isFrontmost(target) { await bringForward(target, for: name) }
         let frame = target.frame
         let rect = globalRect(frame)
         let permitted = screenCaptureAllowed == true
@@ -721,10 +954,9 @@ enum Showcase {
             model.update(book)
         }
 
-        // Pride and Prejudice opens at its first chapter, with highlights, a note and a bookmark to show.
+        // Pride and Prejudice, with highlights, notes and a bookmark to show, opens in its first chapter at the second
+        // highlight, on the spread that holds the third and the fourth as well.
         if let id = samples.books["pride"], var book = model.book(id), let pride = classics.first(where: { $0.slug == "pride" }), pride.parts.count > 1 {
-            book.position = ReadingPosition(locator: Locator(spine: 1, offset: 0), percent: 18, updatedAt: ago(0.08))
-            model.update(book)
             let first = pride.parts[0]
             let marks: [(String, HighlightColor, String)] = [
                 ("It is a truth universally acknowledged, that a single man in possession of a good fortune, must be in want of a wife.", .yellow,
@@ -733,6 +965,9 @@ enum Showcase {
                 ("When a woman has five grown-up daughters, she ought to give over thinking of her own beauty.", .blue, ""),
                 ("In such cases, a woman has not often much beauty to think of.", .pink, "Mr. Bennet in a single line."),
             ]
+            let opening = offsets(of: marks[1].0, in: first)?.start ?? 0
+            book.position = ReadingPosition(locator: Locator(spine: 1, offset: opening), percent: 18, updatedAt: ago(0.08))
+            model.update(book)
             var annotations: [Annotation] = []
             for (index, mark) in marks.enumerated() {
                 guard let range = offsets(of: mark.0, in: first) else {
@@ -1258,51 +1493,118 @@ enum Showcase {
         let paragraphs: [String]
     }
 
-    /// Francis Bacon's essays set on A4 pages: a title page that opens the text, running heads and folios after it,
-    /// justified and hyphenated text in Hoefler Text. Title, author, subject and keywords go in the document's
-    /// information, so the library reads its details and genres off it as it would any PDF's.
+    /// Francis Bacon's essays set as a small book on A5 pages: a title page that opens the text, and on every page
+    /// after it a running head over a rule and a folio at the foot, as a printed book has them, so that Zoom & Split
+    /// and Text find furniture to leave out as they would in a real one. Justified and hyphenated text in Hoefler
+    /// Text, paginated here line by line: each page's text starts at the head of the text block and — but where the
+    /// last page has room for FINIS at its foot — ends at its foot, what a page is short by spread between its essays
+    /// and its lines as a compositor feathers a page, and no essay's heading is left at the foot of a page without
+    /// two lines of its text. Title, author, subject and keywords go in the document's information, so the library
+    /// reads its details and genres off it as it would any PDF's.
     @MainActor
     private static func essaysPDF() -> Data? {
-        let page = CGSize(width: 595, height: 842)
-        let margin: CGFloat = 72
+        let page = CGSize(width: 420, height: 595)
+        let margin: CGFloat = 54
         let column = page.width - 2 * margin
-        let top: CGFloat = 92, bottom: CGFloat = 86, firstTop: CGFloat = 316
+        // The text block, down from the top of the page; on the first page it starts below the title. The running
+        // head, the rule under it and the folio lie outside it, in the outer tenth of the page.
+        let top: CGFloat = 64, bottom: CGFloat = 533, firstTop: CGFloat = 236
         let ink = color(0x1D1D1F), grey = color(0x6E6E73), accent = color(0x9C3D2E)
         func font(_ name: String, _ size: CGFloat) -> NSFont {
             NSFont(name: name, size: size) ?? NSFont(name: "Georgia", size: size) ?? NSFont.systemFont(ofSize: size)
         }
 
+        // The essays, each a numeral and a title over its paragraphs. A title is more than 1.35 times the size of the
+        // text, which is what makes it a chapter when the PDF is read as Text.
         let text = NSMutableAttributedString()
         let numeralStyle = NSMutableParagraphStyle()
-        numeralStyle.paragraphSpacingBefore = 22
+        numeralStyle.paragraphSpacingBefore = 18
         let headingStyle = NSMutableParagraphStyle()
-        headingStyle.paragraphSpacing = 8
+        headingStyle.paragraphSpacing = 6
+        var openings: [Int] = []
         for essay in baconEssays() {
+            openings.append(text.length)
             text.append(NSAttributedString(string: "ESSAY " + essay.numeral + "\n",
-                                           attributes: [.font: font("HoeflerText-Regular", 8.5), .foregroundColor: accent, .kern: CGFloat(2), .paragraphStyle: numeralStyle]))
-            text.append(NSAttributedString(string: essay.title + "\n", attributes: [.font: font("HoeflerText-Italic", 17), .foregroundColor: ink, .paragraphStyle: headingStyle]))
+                                           attributes: [.font: font("HoeflerText-Regular", 8), .foregroundColor: accent, .kern: CGFloat(1.8), .paragraphStyle: numeralStyle]))
+            text.append(NSAttributedString(string: essay.title + "\n", attributes: [.font: font("HoeflerText-Italic", 15), .foregroundColor: ink, .paragraphStyle: headingStyle]))
             for (index, paragraph) in essay.paragraphs.enumerated() {
                 let style = NSMutableParagraphStyle()
                 style.alignment = .justified
                 style.lineHeightMultiple = 1.16
-                style.firstLineHeadIndent = index == 0 ? 0 : 16
+                style.firstLineHeadIndent = index == 0 ? 0 : 14
                 style.hyphenationFactor = 0.9
-                text.append(NSAttributedString(string: paragraph + "\n", attributes: [.font: font("HoeflerText-Regular", 11.5), .foregroundColor: ink, .paragraphStyle: style]))
+                text.append(NSAttributedString(string: paragraph + "\n", attributes: [.font: font("HoeflerText-Regular", 11), .foregroundColor: ink, .paragraphStyle: style]))
             }
         }
 
-        // A text container a page: the first shorter, below the title.
+        // Laid out once in a column as long as it needs, then dealt out to pages a line at a time.
         let storage = NSTextStorage(attributedString: text)
         let layout = NSLayoutManager()
         storage.addLayoutManager(layout)
-        var containers: [NSTextContainer] = []
-        repeat {
-            let height = containers.isEmpty ? page.height - firstTop - bottom : page.height - top - bottom
-            let container = NSTextContainer(size: NSSize(width: column, height: height))
-            container.lineFragmentPadding = 0
-            layout.addTextContainer(container)
-            containers.append(container)
-        } while NSMaxRange(layout.glyphRange(for: containers[containers.count - 1])) < layout.numberOfGlyphs && containers.count < 24
+        let container = NSTextContainer(size: NSSize(width: column, height: 100_000))
+        container.lineFragmentPadding = 0
+        layout.addTextContainer(container)
+        layout.ensureLayout(for: container)
+
+        /// A line of the column: its glyphs, the top and the foot of its letters (ascender to descender, whatever
+        /// space its paragraph puts around it), and whether it opens an essay.
+        struct Line {
+            let glyphs: NSRange
+            let top: CGFloat
+            let foot: CGFloat
+            let opensEssay: Bool
+        }
+        let openingGlyphs = Set(openings.map { layout.glyphIndexForCharacter(at: $0) })
+        var lines: [Line] = []
+        var next = 0
+        while next < layout.numberOfGlyphs {
+            var range = NSRange(location: 0, length: 0)
+            let fragment = layout.lineFragmentRect(forGlyphAt: next, effectiveRange: &range)
+            guard range.length > 0 else { break }
+            let baseline = fragment.minY + layout.location(forGlyphAt: range.location).y
+            let character = layout.characterIndexForGlyph(at: range.location)
+            let lineFont = (storage.attribute(.font, at: character, effectiveRange: nil) as? NSFont) ?? font("HoeflerText-Regular", 11)
+            lines.append(Line(glyphs: range, top: baseline - lineFont.ascender, foot: baseline - lineFont.descender, opensEssay: openingGlyphs.contains(range.location)))
+            next = NSMaxRange(range)
+        }
+        guard !lines.isEmpty else { return nil }
+
+        // Each page takes the lines that fit its block, less an essay's heading that would have fewer than two lines
+        // of the essay under it (a heading is a numeral and a title: four lines in all).
+        var pages: [Range<Int>] = []
+        var first = 0
+        while first < lines.count && pages.count < 24 {
+            let room = pages.isEmpty ? bottom - firstTop : bottom - top
+            var end = first + 1
+            while end < lines.count && lines[end].foot - lines[first].top <= room { end += 1 }
+            if end < lines.count, let opening = (first + 1..<end).last(where: { lines[$0].opensEssay }), end - opening < 4 { end = opening }
+            pages.append(first..<end)
+            first = end
+        }
+
+        /// How far down each line of a page moves so that its last line ends at the foot of the block: more room
+        /// before each essay the page opens (up to 24 points), and what is left shared between all its lines.
+        func feathered(_ range: Range<Int>, room: CGFloat) -> [CGFloat] {
+            var moves = [CGFloat](repeating: 0, count: range.count)
+            guard range.count > 1, let last = range.last else { return moves }
+            var short = max(0, room - (lines[last].foot - lines[range.lowerBound].top))
+            let breaks = range.dropFirst().filter { lines[$0].opensEssay }.count
+            let perBreak: CGFloat = breaks > 0 ? min(24, short / CGFloat(breaks)) : 0
+            short -= perBreak * CGFloat(breaks)
+            let perLine = short / CGFloat(range.count - 1)
+            var moved: CGFloat = 0
+            for (k, index) in range.enumerated() where k > 0 {
+                moved += perLine
+                if lines[index].opensEssay { moved += perBreak }
+                moves[k] = moved
+            }
+            return moves
+        }
+
+        // FINIS at the foot of the last page, where its text leaves room for it; else that page is filled like the rest.
+        guard let lastPage = pages.last, let lastLine = lastPage.last else { return nil }
+        let lastRoom = pages.count == 1 ? bottom - firstTop : bottom - top
+        let finis = lastRoom - (lines[lastLine].foot - lines[lastPage.lowerBound].top) >= 36
 
         let data = NSMutableData()
         var mediaBox = CGRect(origin: .zero, size: page)
@@ -1324,9 +1626,7 @@ enum Showcase {
             color.setStroke()
             path.stroke()
         }
-        for (index, container) in containers.enumerated() {
-            let range = layout.glyphRange(for: container)
-            if index > 0 && range.length == 0 { break }
+        for (index, range) in pages.enumerated() {
             context.beginPDFPage(nil)
             // The text system draws top down, so the page is turned to run that way.
             context.saveGState()
@@ -1334,25 +1634,35 @@ enum Showcase {
             context.scaleBy(x: 1, y: -1)
             NSGraphicsContext.saveGraphicsState()
             NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
+            let blockTop = index == 0 ? firstTop : top
             if index == 0 {
-                typeset("FRANCIS BACON", font("HoeflerText-Regular", 10.5), grey, kern: 3, in: NSRect(x: margin, y: 104, width: column, height: 18))
-                typeset("Essays", font("HoeflerText-Regular", 48), ink, in: NSRect(x: margin, y: 126, width: column, height: 66))
-                typeset("or Counsels, Civil and Moral", font("HoeflerText-Italic", 15), grey, in: NSRect(x: margin, y: 192, width: column, height: 24))
-                rule(from: NSPoint(x: page.width / 2 - 36, y: 236), to: NSPoint(x: page.width / 2 + 36, y: 236), color: accent, width: 0.8)
-                typeset("The openings of eight essays, and the whole of “Of Studies”, from the edition of 1625.", font("HoeflerText-Italic", 10.5), grey,
-                        in: NSRect(x: margin + 50, y: 252, width: column - 100, height: 40))
+                typeset("FRANCIS BACON", font("HoeflerText-Regular", 9), grey, kern: 2.5, in: NSRect(x: margin, y: 84, width: column, height: 14))
+                typeset("Essays", font("HoeflerText-Regular", 38), ink, in: NSRect(x: margin, y: 100, width: column, height: 52))
+                typeset("or Counsels, Civil and Moral", font("HoeflerText-Italic", 12.5), grey, in: NSRect(x: margin, y: 152, width: column, height: 20))
+                rule(from: NSPoint(x: page.width / 2 - 28, y: 184), to: NSPoint(x: page.width / 2 + 28, y: 184), color: accent, width: 0.8)
+                typeset("Ten essays from the edition of 1625: “Of Adversity” and “Of Studies” whole, the rest in part.", font("HoeflerText-Italic", 8.5), grey,
+                        in: NSRect(x: margin + 30, y: 194, width: column - 60, height: 30))
             } else {
-                typeset("FRANCIS BACON", font("HoeflerText-Regular", 8.5), grey, kern: 2, alignment: .left, in: NSRect(x: margin, y: 50, width: column / 2, height: 14))
-                typeset("ESSAYS, CIVIL AND MORAL", font("HoeflerText-Regular", 8.5), grey, kern: 2, alignment: .right, in: NSRect(x: margin + column / 2, y: 50, width: column / 2, height: 14))
-                rule(from: NSPoint(x: margin, y: 68), to: NSPoint(x: page.width - margin, y: 68), color: grey.withAlphaComponent(0.5), width: 0.5)
-                typeset("\(index + 1)", font("HoeflerText-Regular", 9.5), grey, in: NSRect(x: margin, y: page.height - 58, width: column, height: 14))
+                typeset("FRANCIS BACON", font("HoeflerText-Regular", 7.5), grey, kern: 1.6, alignment: .left, in: NSRect(x: margin, y: 30, width: column / 2, height: 12))
+                typeset("ESSAYS, CIVIL AND MORAL", font("HoeflerText-Regular", 7.5), grey, kern: 1.6, alignment: .right, in: NSRect(x: margin + column / 2, y: 30, width: column / 2, height: 12))
+                rule(from: NSPoint(x: margin, y: 44), to: NSPoint(x: page.width - margin, y: 44), color: grey.withAlphaComponent(0.5), width: 0.5)
+                typeset("\(index + 1)", font("HoeflerText-Regular", 8.5), grey, in: NSRect(x: margin, y: 555, width: column, height: 12))
             }
-            layout.drawGlyphs(forGlyphRange: range, at: NSPoint(x: margin, y: index == 0 ? firstTop : top))
+            let closing = index == pages.count - 1 && finis
+            let moves = closing ? [CGFloat](repeating: 0, count: range.count) : feathered(range, room: bottom - blockTop)
+            let shift = blockTop - lines[range.lowerBound].top
+            for (k, lineIndex) in range.enumerated() {
+                layout.drawGlyphs(forGlyphRange: lines[lineIndex].glyphs, at: NSPoint(x: margin, y: shift + moves[k]))
+            }
+            if closing {
+                typeset("FINIS", font("HoeflerText-Regular", 8), accent, kern: 3, in: NSRect(x: margin, y: bottom - 11, width: column, height: 12))
+            }
             NSGraphicsContext.restoreGraphicsState()
             context.restoreGState()
             context.endPDFPage()
         }
         context.closePDF()
+        log("the sample PDF has \(pages.count) pages")
         return data as Data
     }
 
@@ -1361,18 +1671,24 @@ enum Showcase {
         [
             Essay(numeral: "I", title: "Of Truth", paragraphs: [
                 "What is truth? said jesting Pilate, and would not stay for an answer. Certainly there be, that delight in giddiness, and count it a bondage to fix a belief; affecting free will in thinking, as well as in acting. And though the sects of philosophers of that kind be gone, yet there remain certain discoursing wits, which are of the same veins, though there be not so much blood in them, as was in those of the ancients. But it is not only the difficulty and labor, which men take in finding out of truth, nor again, that when it is found, it imposeth upon men’s thoughts, that doth bring lies in favor; but a natural, though corrupt love, of the lie itself. But I cannot tell; this same truth, is a naked, and open day-light, that doth not show the masks, and mummeries, and triumphs, of the world, half so stately and daintily as candle-lights.",
+                "Truth may perhaps come to the price of a pearl, that showeth best by day; but it will not rise to the price of a diamond, or carbuncle, that showeth best in varied lights. A mixture of a lie doth ever add pleasure. Doth any man doubt, that if there were taken out of men’s minds, vain opinions, flattering hopes, false valuations, imaginations as one would, and the like, but it would leave the minds, of a number of men, poor shrunken things, full of melancholy and indisposition, and unpleasing to themselves?",
             ]),
             Essay(numeral: "II", title: "Of Death", paragraphs: [
                 "Men fear death, as children fear to go in the dark; and as that natural fear in children, is increased with tales, so is the other. Certainly, the contemplation of death, as the wages of sin, and passage to another world, is holy and religious; but the fear of it, as a tribute due unto nature, is weak.",
+                "It is worthy the observing, that there is no passion in the mind of man, so weak, but it mates, and masters, the fear of death; and therefore, death is no such terrible enemy, when a man hath so many attendants about him, that can win the combat of him. Revenge triumphs over death; love slights it; honor aspireth to it; grief flieth to it; fear preoccupateth it.",
             ]),
             Essay(numeral: "IV", title: "Of Revenge", paragraphs: [
                 "Revenge is a kind of wild justice; which the more man’s nature runs to, the more ought law to weed it out. For as for the first wrong, it doth but offend the law; but the revenge of that wrong, putteth the law out of office. Certainly, in taking revenge, a man is but even with his enemy; but in passing it over, he is superior; for it is a prince’s part to pardon. And Solomon, I am sure, saith, It is the glory of a man, to pass by an offence.",
             ]),
+            Essay(numeral: "V", title: "Of Adversity", paragraphs: [
+                "It was an high speech of Seneca (after the manner of the Stoics), that the good things, which belong to prosperity, are to be wished; but the good things, that belong to adversity, are to be admired. Bona rerum secundarum optabilia; adversarum mirabilia. Certainly if miracles be the command over nature, they appear most in adversity. It is yet a higher speech of his, than the other (much too high for a heathen), It is true greatness, to have in one the frailty of a man, and the security of a God. Vere magnum habere fragilitatem hominis, securitatem Dei. This would have done better in poesy, where transcendences are more allowed. And the poets indeed have been busy with it; for it is in effect the thing, which figured in that strange fiction of the ancient poets, which seemeth not to be without mystery; nay, and to have some approach to the state of a Christian; that Hercules, when he went to unbind Prometheus (by whom human nature is represented), sailed the length of the great ocean, in an earthen pot or pitcher; lively describing Christian resolution, that saileth in the frail bark of the flesh, through the waves of the world.",
+                "But to speak in a mean. The virtue of prosperity, is temperance; the virtue of adversity, is fortitude; which in morals is the more heroical virtue. Prosperity is the blessing of the Old Testament; adversity is the blessing of the New; which carrieth the greater benediction, and the clearer revelation of God’s favor. Yet even in the Old Testament, if you listen to David’s harp, you shall hear as many hearse-like airs as carols; and the pencil of the Holy Ghost hath labored more in describing the afflictions of Job, than the felicities of Solomon. Prosperity is not without many fears and distastes; and adversity is not without comforts and hopes. We see in needle-works and embroideries, it is more pleasing to have a lively work, upon a sad and solemn ground, than to have a dark and melancholy work, upon a lightsome ground: judge therefore of the pleasure of the heart, by the pleasure of the eye. Certainly virtue is like precious odors, most fragrant when they are incensed, or crushed: for prosperity doth best discover vice, but adversity doth best discover virtue.",
+            ]),
             Essay(numeral: "VII", title: "Of Parents and Children", paragraphs: [
-                "The joys of parents are secret; and so are their griefs and fears. They cannot utter the one; nor they will not utter the other. Children sweeten labors; but they make misfortunes more bitter. They increase the cares of life; but they mitigate the remembrance of death.",
+                "The joys of parents are secret; and so are their griefs and fears. They cannot utter the one; nor they will not utter the other. Children sweeten labors; but they make misfortunes more bitter. They increase the cares of life; but they mitigate the remembrance of death. The perpetuity by generation is common to beasts; but memory, merit, and noble works, are proper to men. And surely a man shall see the noblest works and foundations have proceeded from childless men; which have sought to express the images of their minds, where those of their bodies have failed. So the care of posterity is most in them, that have no posterity.",
             ]),
             Essay(numeral: "VIII", title: "Of Marriage and Single Life", paragraphs: [
-                "He that hath wife and children hath given hostages to fortune; for they are impediments to great enterprises, either of virtue or mischief. Certainly the best works, and of greatest merit for the public, have proceeded from the unmarried or childless men; which both in affection and means, have married and endowed the public.",
+                "He that hath wife and children hath given hostages to fortune; for they are impediments to great enterprises, either of virtue or mischief. Certainly the best works, and of greatest merit for the public, have proceeded from the unmarried or childless men; which both in affection and means, have married and endowed the public. Yet it were great reason that those that have children, should have greatest care of future times; unto which they know they must transmit their dearest pledges.",
             ]),
             Essay(numeral: "XI", title: "Of Great Place", paragraphs: [
                 "Men in great place are thrice servants: servants of the sovereign or state; servants of fame; and servants of business. So as they have no freedom; neither in their persons, nor in their actions, nor in their times. It is a strange desire, to seek power and to lose liberty: or to seek power over others, and to lose power over a man’s self.",
@@ -1381,7 +1697,7 @@ enum Showcase {
                 "Travel, in the younger sort, is a part of education; in the elder, a part of experience. He that travelleth into a country, before he hath some entrance into the language, goeth to school, and not to travel. That young men travel under some tutor, or grave servant, I allow well; so that he be such a one that hath the language, and hath been in the country before; whereby he may be able to tell them what things are worthy to be seen, in the country where they go; what acquaintances they are to seek; what exercises, or discipline, the place yieldeth. For else, young men shall go hooded, and look abroad little.",
             ]),
             Essay(numeral: "XLVI", title: "Of Gardens", paragraphs: [
-                "God Almighty first planted a garden. And indeed it is the purest of human pleasures. It is the greatest refreshment to the spirits of man; without which, buildings and palaces are but gross handiworks; and a man shall ever see, that when ages grow to civility and elegancy, men come to build stately sooner than to garden finely; as if gardening were the greater perfection.",
+                "God Almighty first planted a garden. And indeed it is the purest of human pleasures. It is the greatest refreshment to the spirits of man; without which, buildings and palaces are but gross handiworks; and a man shall ever see, that when ages grow to civility and elegancy, men come to build stately sooner than to garden finely; as if gardening were the greater perfection. I do hold it, in the royal ordering of gardens, there ought to be gardens, for all the months in the year; in which severally things of beauty may be then in season.",
             ]),
             Essay(numeral: "L", title: "Of Studies", paragraphs: [
                 "Studies serve for delight, for ornament, and for ability. Their chief use for delight, is in privateness and retiring; for ornament, is in discourse; and for ability, is in the judgment, and disposition of business. For expert men can execute, and perhaps judge of particulars, one by one; but the general counsels, and the plots and marshalling of affairs, come best, from those that are learned. To spend too much time in studies is sloth; to use them too much for ornament, is affectation; to make judgment wholly by their rules, is the humor of a scholar. They perfect nature, and are perfected by experience: for natural abilities are like natural plants, that need proyning, by study; and studies themselves, do give forth directions too much at large, except they be bounded in by experience.",
@@ -1424,7 +1740,7 @@ enum Showcase {
     }
 
     private static func pride() -> Classic {
-        Classic(slug: "pride", title: "Pride and Prejudice", author: "Jane Austen", subjects: ["Romance", "Classics", "Domestic fiction"],
+        Classic(slug: "pride", title: "Pride and Prejudice", author: "Jane Austen", subjects: ["Classics", "Romance", "Domestic fiction"],
                 blurb: "Elizabeth Bennet, her four sisters and a mother set on marrying them well: Austen’s comedy of first impressions and second thoughts.",
                 words: 122_000,
                 jacket: Jacket(top: 0xF7ECE6, bottom: 0xE8CCC1, ink: 0x5B2333, accent: 0xB5838D, motif: .rings, titleFont: "Didot-Italic", authorFont: "AvenirNext-Medium"),
@@ -1589,7 +1905,7 @@ enum Showcase {
     }
 
     private static func alice() -> Classic {
-        Classic(slug: "alice", title: "Alice’s Adventures in Wonderland", author: "Lewis Carroll", subjects: ["Fantasy", "Children’s stories"],
+        Classic(slug: "alice", title: "Alice’s Adventures in Wonderland", author: "Lewis Carroll", subjects: ["Adventure stories", "Fantasy", "Children’s stories"],
                 blurb: "Alice follows a White Rabbit down a hole into a world where nothing, least of all she herself, stays the same size for long.",
                 words: 26_500,
                 jacket: Jacket(top: 0xE3F4F1, bottom: 0xB7E0DA, ink: 0x173F4F, accent: 0xD62839, motif: .checks, titleFont: "Cochin-Bold", authorFont: "Cochin"),
@@ -1612,7 +1928,7 @@ enum Showcase {
     }
 
     private static func taleOfTwoCities() -> Classic {
-        Classic(slug: "tale", title: "A Tale of Two Cities", author: "Charles Dickens", subjects: ["Historical fiction", "French Revolution", "Classics"],
+        Classic(slug: "tale", title: "A Tale of Two Cities", author: "Charles Dickens", subjects: ["Classics", "Historical fiction", "French Revolution"],
                 blurb: "London and Paris before and during the Revolution, and the lives of Charles Darnay, Lucie Manette and Sydney Carton.",
                 words: 135_000,
                 jacket: Jacket(top: 0x1D3557, bottom: 0x14213D, ink: 0xF1FAEE, accent: 0x9B2226, motif: .split, titleFont: "BodoniSvtyTwoITCTT-Bold", authorFont: "BodoniSvtyTwoITCTT-Book"),
@@ -1672,7 +1988,7 @@ enum Showcase {
     }
 
     private static func janeEyre() -> Classic {
-        Classic(slug: "jane", title: "Jane Eyre", author: "Charlotte Brontë", subjects: ["Romance", "Gothic fiction", "Bildungsroman"],
+        Classic(slug: "jane", title: "Jane Eyre", author: "Charlotte Brontë", subjects: ["Classics", "Romance", "Gothic fiction", "Bildungsroman"],
                 blurb: "An orphan governess of fierce independence, the master of Thornfield Hall, and the secret the house keeps.",
                 words: 183_000,
                 jacket: Jacket(top: 0x2E2A36, bottom: 0x3F3947, ink: 0xF3E9DC, accent: 0xF4A259, motif: .flame, titleFont: "Didot", authorFont: "Didot"),
@@ -1737,7 +2053,7 @@ enum Showcase {
     }
 
     private static func walden() -> Classic {
-        Classic(slug: "walden", title: "Walden", author: "Henry David Thoreau", subjects: ["Philosophy", "Nature", "Essays"],
+        Classic(slug: "walden", title: "Walden", author: "Henry David Thoreau", subjects: ["Essays", "Philosophy", "Nature"],
                 blurb: "Two years and two months in a cabin Thoreau built beside Walden Pond, and what they taught him about living simply.",
                 words: 114_000,
                 jacket: Jacket(top: 0xEEF5E0, bottom: 0xCFE1B9, ink: 0x2D4A22, accent: 0x6A8D73, motif: .pond, titleFont: "GillSans-SemiBold", authorFont: "GillSans", capitals: true),
@@ -1756,7 +2072,7 @@ enum Showcase {
     }
 
     private static func odyssey() -> Classic {
-        Classic(slug: "odyssey", title: "The Odyssey", author: "Homer", subjects: ["Epic poetry", "Mythology, Greek", "Classics"],
+        Classic(slug: "odyssey", title: "The Odyssey", author: "Homer", subjects: ["Adventure", "Epic poetry", "Mythology, Greek", "Classics"],
                 blurb: "Ten years after Troy, Ulysses makes his way home to Ithaca, where suitors crowd his house and court his wife. In Samuel Butler’s prose translation.",
                 words: 117_000,
                 jacket: Jacket(top: 0xD0643F, bottom: 0xA8452C, ink: 0x1B1512, accent: 0xF2D0A4, motif: .meander, titleFont: "Palatino-Bold", authorFont: "Palatino-Roman", capitals: true),

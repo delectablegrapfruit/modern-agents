@@ -647,6 +647,16 @@ enum SelfTest {
         }
         let narrow = ShelfGridColumns(width: 100, coverWidth: 150)
         guard narrow.count == 1, narrow.gap == 0 else { throw Failure("a narrow shelf did not fall back to one column") }
+        // A shelf whose widest gaps still leave room over (1024-point window less the sidebar): the covers grow by no
+        // more than allowed, and the columns sit in the middle.
+        let roomy = ShelfGridColumns(width: 784, coverWidth: 150)
+        let roomyInner = 784 - 2 * ShelfGridColumns.inset
+        let roomyUsed = CGFloat(roomy.count) * roomy.card + CGFloat(roomy.count - 1) * roomy.gap
+        let roomyOffCentre = abs((roomy.leading - ShelfGridColumns.inset) - (roomyInner - roomyUsed) / 2)
+        guard roomy.count == 3, roomy.cover >= 150, roomy.cover <= 150 * ShelfGridColumns.maxGrowth, roomy.gap == ShelfGridColumns.maxGap,
+              roomy.leading > ShelfGridColumns.inset, roomyOffCentre <= 1 else {
+            throw Failure("a roomy shelf grid was not grown and centred: \(roomy.count) × \(roomy.cover) pt covers, gap \(roomy.gap) pt, leading \(roomy.leading) pt")
+        }
         let firstDragged = UUID(), secondDragged = UUID()
         guard BookDrag.ids([BookDrag.payload([firstDragged, secondDragged])]) == [firstDragged, secondDragged],
               BookDrag.ids([BookDrag.payload(firstDragged)]) == [firstDragged],

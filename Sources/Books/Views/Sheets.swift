@@ -306,6 +306,12 @@ struct GoalsSheet: View {
     }
 }
 
+/// The tabs of the Settings window, in their order. The one shown is kept on the library model, so it can be chosen
+/// from outside the window (the showcase does).
+enum SettingsTab: Hashable {
+    case general, home, library, goals, reading
+}
+
 /// Books ▸ Settings…: how covers and the sidebar behave, what Home shows, where the library lives, the goals, and
 /// how books open. Every tab is the same width; each is as tall as it needs.
 struct SettingsView: View {
@@ -320,22 +326,27 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        TabView {
+        TabView(selection: Binding(get: { model.settingsTab }, set: { model.settingsTab = $0 })) {
             general
                 .frame(width: SettingsView.width, height: 330)
                 .tabItem { Label("General", systemImage: "gearshape") }
+                .tag(SettingsTab.general)
             home
                 .frame(width: SettingsView.width, height: 470)
                 .tabItem { Label("Home", systemImage: "house") }
+                .tag(SettingsTab.home)
             library
                 .frame(width: SettingsView.width, height: 500)
                 .tabItem { Label("Library", systemImage: "books.vertical") }
+                .tag(SettingsTab.library)
             GoalsForm()
                 .frame(width: SettingsView.width, height: 430)
                 .tabItem { Label("Goals", systemImage: "target") }
+                .tag(SettingsTab.goals)
             reading
                 .frame(width: SettingsView.width, height: 600)
                 .tabItem { Label("Reading", systemImage: "book") }
+                .tag(SettingsTab.reading)
         }
     }
 

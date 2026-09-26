@@ -116,6 +116,9 @@ final class ReaderSession {
     var showContents = false { didSet { if showContents != oldValue { refreshChrome() } } }
     var showSearch = false { didSet { if showSearch != oldValue { refreshChrome() } } }
     var showAppearance = false { didSet { if showAppearance != oldValue { refreshChrome() } } }
+    /// The Contents popover's tab: 0 Contents, 1 Bookmarks, 2 Notes. The popover opens at Contents each time; kept
+    /// here so that another tab can be chosen before it opens (the showcase does, for the notes).
+    var contentsTab = 0
     var showEndCard = false
     var searchQuery = ""
     private(set) var searchResults: [SearchHit] = []
