@@ -13,6 +13,7 @@
     { id: 'factory', label: 'Factory', icon: 'factory' },
     { id: 'shop', label: 'Shop', icon: 'shop' },
     { id: 'stats', label: 'Stats', icon: 'stats' },
+    { id: 'achievements', label: 'Achievements', icon: 'trophy' },
   ];
 
   const app = {
@@ -126,6 +127,7 @@
       if (id === 'factory') { this.modes.factory.show(); }
       if (id === 'shop') UI.renderShop(this, this.shopSub);
       if (id === 'stats') UI.renderStats(this, this.statsSub);
+      if (id === 'achievements') UI.renderAchievements(this);
       if (id === 'play' || id === 'puzzle' || id === 'classic') { const m = this.modes[id]; m.view.resize(); m.view.dirty = true; }
       this.store.touch();
       this.postDragRegions();
@@ -151,7 +153,7 @@
           return;
         }
         if (typing) return;
-        if ((e.metaKey || e.ctrlKey) && /^Digit[1-5]$/.test(e.code)) { this.setTab(TABS[Number(e.code.slice(5)) - 1].id); e.preventDefault(); return; }
+        if ((e.metaKey || e.ctrlKey) && /^Digit[1-6]$/.test(e.code)) { this.setTab(TABS[Number(e.code.slice(5)) - 1].id); e.preventDefault(); return; }
         if ((e.metaKey || e.ctrlKey) && e.code === 'Comma') { UI.openSettings(this); e.preventDefault(); return; }
         if ((e.metaKey || e.ctrlKey) && e.code === 'KeyZ' && this.tab === 'puzzle') { this.modes.puzzle.undo(); e.preventDefault(); return; }
         if (e.key === 'Escape' && this.tab === 'play' && this.modes.play.closeTray()) { e.preventDefault(); return; }
@@ -199,9 +201,10 @@
       if (!got.length) return;
       for (const a of got) {
         this.store.addLines(a.pay, 'achievements');
-        toast('★ ' + a.name + ' · +' + a.pay + ' ◆', 'good', 3200);
+        toast((a.tier === 'legend' ? '◆ Legendary: ' : '★ ') + a.name + ' · +' + a.pay + ' ◆', 'good', a.tier === 'legend' ? 6000 : 3200);
       }
-      this.sound.play('solve');
+      this.sound.play(got.some((a) => a.tier === 'legend') ? 'perfect' : 'solve');
+      if (this.tab === 'achievements') UI.renderAchievements(this);
       this.refreshWallet(true);
       this.store.touch();
     },
@@ -232,9 +235,9 @@
       else if (this.tab === 'classic') this.modes.classic.frame(t, dt);
       else if (this.tab === 'puzzle') this.modes.puzzle.frame(t, dt);
       else if (this.tab === 'factory') {
-        // The belt is ambient: 30 fps in front, 12 behind other windows.
+        // Every frame in front (a smooth belt); 12 fps behind other windows.
         this.beltAcc = (this.beltAcc || 0) + dt;
-        const gap = document.hasFocus() ? 1 / 30 : 1 / 12;
+        const gap = document.hasFocus() ? 0 : 1 / 12;
         if (this.beltAcc >= gap) { this.modes.factory.frame(t, this.beltAcc); this.beltAcc = 0; }
       }
       requestAnimationFrame((tt) => this.frame(tt));

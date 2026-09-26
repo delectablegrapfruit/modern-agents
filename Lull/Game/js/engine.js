@@ -23,7 +23,7 @@
   }
 
   function freshStats() {
-    return { pieces: 0, lines: 0, score: 0, clears: [0, 0, 0, 0, 0, 0], tspins: 0, tspinLines: 0, perfect: 0, combo: -1, maxCombo: 0, b2b: -1, maxB2B: 0, holds: 0, rotations: 0, moves: 0, lowers: 0, drops: 0, byType: {}, startedAt: Date.now(), playMs: 0, items: {} };
+    return { pieces: 0, lines: 0, score: 0, clears: [0, 0, 0, 0, 0, 0], tspins: 0, tspinLines: 0, perfect: 0, combo: -1, maxCombo: 0, b2b: -1, maxB2B: 0, holds: 0, rotations: 0, moves: 0, lowers: 0, drops: 0, byType: {}, startedAt: Date.now(), playMs: 0, items: {}, banked: 0, chain: 0, bestChain: 0, tst: 0 };
   }
 
   class Game extends Emitter {
@@ -415,6 +415,7 @@
       if (result.tspin) {
         pts = TSPIN_SCORE[Math.min(n, 3)];
         s.tspins++;
+        if (n >= 3) s.tst = (s.tst || 0) + 1;
         s.tspinLines += n;
       } else if (result.mini) {
         pts = MINI_SCORE[Math.min(n, 2)];

@@ -195,7 +195,7 @@
     constructor(f, rng) {
       this.f = f; this.rng = rng;
       this.items = []; this.events = [];
-      this.length = 40; this.gap = 2; this.speed = 3.2; this.acc = 1; this.nextId = 1; this.tallest = 1;
+      this.length = 40; this.gap = 2; this.speed = 1.4; this.acc = 1; this.nextId = 1; this.tallest = 1;
     }
 
     step(dt) {

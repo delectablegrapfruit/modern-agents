@@ -32,6 +32,7 @@
     factory: '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 14.5V7.2l4 2.3V7.2l4 2.3V3h1.8v-1.5h1.6V3h1.6v11.5z"/></svg>',
     shop: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M3 5.5h10l-.8 8.5H3.8z"/><path d="M5.8 5.5V4.3a2.2 2.2 0 0 1 4.4 0v1.2"/></svg>',
     classic: '<svg viewBox="0 0 16 16" fill="currentColor"><rect x="6" y="1.5" width="4" height="4" rx="0.7"/><rect x="2" y="10.5" width="4" height="4" rx="0.7"/><rect x="6" y="10.5" width="4" height="4" rx="0.7"/><rect x="10" y="10.5" width="4" height="4" rx="0.7"/><path d="M8 6.5v2.5M6.6 7.8L8 9.2l1.4-1.4" stroke="currentColor" stroke-width="1.2" fill="none" stroke-linecap="round"/></svg>',
+    trophy: '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 2h8v1.2h2.2v1.3c0 1.8-1.2 3.1-2.9 3.3A4 4 0 0 1 8.7 10v1.6h2.1V14H5.2v-2.4h2.1V10a4 4 0 0 1-2.6-2.2C3 7.6 1.8 6.3 1.8 4.5V3.2H4zm0 2.4H3.1v.1c0 .9.4 1.6 1.1 1.9A5 5 0 0 1 4 5.3zm8 0v.9c0 .4 0 .7-.2 1.1.7-.3 1.1-1 1.1-1.9v-.1z"/></svg>',
     stats: '<svg viewBox="0 0 16 16" fill="currentColor"><rect x="2" y="8" width="3" height="6" rx="0.7"/><rect x="6.5" y="3" width="3" height="11" rx="0.7"/><rect x="11" y="6" width="3" height="8" rx="0.7"/></svg>',
     settings: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M2 4h7M12 4h2M2 8h2M7 8h7M2 12h8M13 12h1"/><circle cx="10.5" cy="4" r="1.5"/><circle cx="5.5" cy="8" r="1.5"/><circle cx="11.5" cy="12" r="1.5"/></svg>',
     pin: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><rect x="3" y="2.5" width="10" height="7" rx="1.5"/><path d="M5.5 12.5h5M8 9.5v4"/></svg>',
@@ -231,10 +232,35 @@
       h('i', { style: { height: (100 * o.v / max).toFixed(1) + '%' } }), h('span', null, o.label))));
   }
 
+  /** The Achievements tab: every milestone, earned or not, the legendary ones set apart. */
+  function renderAchievements(app) {
+    const st = app.state, S = st.stats, A = L.Achievements, got = st.achievements || {};
+    const n = A.LIST.filter((a) => got[a.id]).length;
+    const els = [h('div', { class: 'kpis' }, kpi(n + ' / ' + A.LIST.length, 'Earned'), kpi(fmtInt(S.lines.achievements || 0) + ' ◆', 'Lines from them'), kpi(fmtInt(A.total()) + ' ◆', 'All of them pay'))];
+    const row = (a) => {
+      const when = got[a.id], pr = !when && a.progress ? a.progress(st) : null;
+      return h('div', { class: 'ach' + (when ? ' got' : '') + (a.tier === 'legend' ? ' legend' : '') },
+        h('span', { class: 'ach-i' }, when ? '★' : a.tier === 'legend' ? '◆' : '·'),
+        h('div', { class: 'grow' },
+          h('div', { class: 't' }, a.name, a.tier === 'legend' ? h('span', { class: 'tier' }, 'Legendary') : null),
+          h('div', { class: 'd' }, a.desc + (when ? ' · ' + new Date(when).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : '')),
+          pr ? h('div', { class: 'bar' }, h('i', { style: { width: (100 * Math.min(1, pr[0] / pr[1])).toFixed(1) + '%' } })) : null),
+        h('span', { class: 'ach-pay' }, (pr ? fmtInt(Math.min(pr[0], pr[1])) + '/' + fmtInt(pr[1]) + ' · ' : '') + '+' + fmtInt(a.pay) + ' ◆'));
+    };
+    for (const g of A.GROUPS) {
+      const list = A.LIST.filter((a) => a.group === g.id);
+      els.push(h('h4', null, g.name));
+      els.push(h('div', { class: 'ach-list' }, list.filter((a) => a.tier !== 'legend').map(row)));
+      const leg = list.filter((a) => a.tier === 'legend');
+      if (leg.length) els.push(h('div', { class: 'ach-list legend-list' }, leg.map(row)));
+    }
+    document.getElementById('ach-body').replaceChildren(...els);
+  }
+
   function renderStats(app, sub) {
     const tabs = document.getElementById('stats-tabs');
     const body = document.getElementById('stats-body');
-    const subs = [['overview', 'Overview'], ['free', 'Free Play'], ['classic', 'Classic'], ['puzzle', 'Puzzles'], ['factory', 'Factory'], ['items', 'Items & Shop'], ['achievements', 'Achievements']];
+    const subs = [['overview', 'Overview'], ['free', 'Free Play'], ['classic', 'Classic'], ['puzzle', 'Puzzles'], ['factory', 'Factory'], ['items', 'Items & Shop']];
     tabs.replaceChildren(...subs.map(([k, label]) => h('button', { 'aria-selected': String(k === sub), onclick: () => { app.statsSub = k; renderStats(app, k); } }, label)));
     const st = app.store.state, S = st.stats;
     const look = lookWith(app);
@@ -312,23 +338,6 @@
         ['Defects shipped (refunded)', count(fs.escaped)], ['Good minos binned', count(fs.wasted)], ['Catch rate', (pulled + fs.escaped) ? pct(pulled / (pulled + fs.escaped), 1) : '—'],
         ['Best streak', fmtInt(f.bestStreak)], ['Earned while away', fmt(fs.offlineEarned) + '¢'], ['Time in the factory', fmtDuration(S.timeMs.factory)],
       ]));
-    } else if (sub === 'achievements') {
-      const A = L.Achievements, got = st.achievements || {};
-      const n = A.LIST.filter((a) => got[a.id]).length;
-      els.push(h('div', { class: 'kpis' }, kpi(n + ' / ' + A.LIST.length, 'Earned'), kpi(fmtInt(S.lines.achievements || 0) + ' ◆', 'Lines from them'), kpi(fmtInt(A.total()) + ' ◆', 'All of them pay')));
-      for (const g of A.GROUPS) {
-        els.push(h('h4', null, g.name));
-        els.push(h('div', { class: 'ach-list' }, A.LIST.filter((a) => a.group === g.id).map((a) => {
-          const when = got[a.id], pr = !when && a.progress ? a.progress(st) : null;
-          return h('div', { class: 'ach' + (when ? ' got' : '') },
-            h('span', { class: 'ach-i' }, when ? '★' : '·'),
-            h('div', { class: 'grow' },
-              h('div', { class: 't' }, a.name),
-              h('div', { class: 'd' }, a.desc + (when ? ' · ' + new Date(when).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : '')),
-              pr ? h('div', { class: 'bar' }, h('i', { style: { width: (100 * Math.min(1, pr[0] / pr[1])).toFixed(1) + '%' } })) : null),
-            h('span', { class: 'ach-pay' }, (pr ? Math.min(pr[0], pr[1]) + '/' + pr[1] + ' · ' : '') + '+' + a.pay + ' ◆'));
-        })));
-      }
     } else {
       const bought = S.items.bought, used = S.items.used;
       els.push(h('div', { class: 'kpis' }, kpi(fmtInt(S.lines.spent), 'Lines spent'), kpi(fmtInt(S.cosmetics.bought), 'Cosmetics bought'),
@@ -558,5 +567,5 @@
     document.addEventListener('keydown', hide, true);
   }
 
-  L.UI = { initTooltips, h, ICONS, toast, openModal, modalOpen, closeTopModal, submitTopModal, confirm, canvasFor, renderShop, renderStats, openSettings, openOrderSlip, openBlueprint, copyText, lookWith, drawMiniPiece };
+  L.UI = { initTooltips, h, ICONS, toast, openModal, modalOpen, closeTopModal, submitTopModal, confirm, canvasFor, renderShop, renderStats, renderAchievements, openSettings, openOrderSlip, openBlueprint, copyText, lookWith, drawMiniPiece };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

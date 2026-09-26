@@ -175,6 +175,7 @@ main { flex: 1; position: relative; min-height: 0; }
 /* One line, always the same height: nothing it shows (a combo, a longer number) may move the board. */
 .statusbar > * { flex: none; }
 .statusbar .slot-off { visibility: hidden; }
+.statusbar .chain b { color: var(--accent); }
 @media (max-width: 400px) { .statusbar { gap: 10px; } .statusbar .opt, .statusbar .slot-off, .statusbar .lbl { display: none; } }
 .statusbar .btn.sm { padding-top: 2px; padding-bottom: 2px; }
 .statusbar b { color: var(--fg); font-weight: 700; }
@@ -546,3 +547,11 @@ kbd.big { font-size: 12px; padding: 3px 7px; }
 .ach.got { border-color: color-mix(in srgb, var(--gem) 45%, transparent); }
 .ach.got .t { color: var(--fg); }
 .ach.got .ach-pay { color: var(--gem); }
+
+.legend-list { margin-top: 4px; }
+.ach.legend { border-color: color-mix(in srgb, #f2c14e 30%, var(--line)); background: linear-gradient(100deg, color-mix(in srgb, #f2c14e 7%, var(--panel)), var(--panel) 60%); }
+.ach.legend .ach-i { color: color-mix(in srgb, #f2c14e 60%, var(--faint)); }
+.ach.legend.got { border-color: #f2c14e; box-shadow: 0 0 14px rgba(242,193,78,0.25); }
+.ach.legend.got .ach-pay { color: #f2c14e; }
+.ach .tier { margin-left: 6px; font: 700 9px var(--mono-font); letter-spacing: 0.08em; text-transform: uppercase; color: #d9a93a; border: 1px solid color-mix(in srgb, #f2c14e 45%, transparent); border-radius: 5px; padding: 0 4px; vertical-align: 1px; }
+#view-achievements .stats-body { padding-top: 10px; }

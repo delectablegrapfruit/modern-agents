@@ -263,6 +263,7 @@ function replay(p) {
     if (!want(g.piece)) { assert(g.holdPiece(), 'hold again in ' + p.seed); holds++; }
     assert.strictEqual(g.piece.type.id, t.id);
     let res = null;
+    assert(!t.path.includes('CCW') && !t.path.includes('180'), 'solutions only turn clockwise: ' + p.seed);
     for (const m of t.path) {
       const ok = m === 'L' ? g.move(-1) : m === 'R' ? g.move(1) : m === 'D' ? g.lower() === 'moved' : m === 'CW' ? g.rotate(1) : m === 'CCW' ? g.rotate(-1) : m === '180' ? g.rotate(2) : (res = g.drop());
       assert(ok, 'move ' + m + ' in ' + p.seed);

@@ -131,16 +131,17 @@
         const hold = this.view.onHold(...this.pointer);
         if (hold !== this.view.holdHover) { this.view.holdHover = hold; this.view.dirty = true; }
         if (moved) this.follow();
+        this.showTurnHint();
         c.style.cursor = hold ? 'pointer' : 'default';
       });
-      c.addEventListener('mouseleave', () => { this.pointer = null; this.rawCol = null; this.view.pointerCol = null; this.view.holdHover = false; this.view.dirty = true; });
+      c.addEventListener('mouseleave', () => { this.pointer = null; this.rawCol = null; this.view.turnHint = null; this.view.pointerCol = null; this.view.holdHover = false; this.view.dirty = true; });
       c.addEventListener('mousedown', (e) => {
         if (!enabled()) return;
         if (performance.now() - this.app.focusedAt < 300) return; // the click that brought the window forward
         const [px, py] = pos(e);
         this.pointer = [px, py];
         if (e.button === 0 && this.view.onHold(px, py)) { mouse(() => this.action('hold')); return; }
-        if (e.button === 2) { mouse(() => { this.follow(); this.action('cw'); this.follow(); }); return; }
+        if (e.button === 2) { const dir = this.turnDir(); mouse(() => { this.action(dir); this.follow(); }); return; }
         if (e.button !== 0) return;
         mouse(() => {
           this.follow();
@@ -162,6 +163,33 @@
       }, { passive: false });
     }
 
+    /**
+     * Which way a right-click turns: toward the side of the piece's middle column the pointer is on — the right half
+     * turns it clockwise, the left half counter-clockwise (the "board right" side, whatever way the board faces).
+     * The piece keeps its column while the pointer moves within it (sticky aim), so either half is always in reach,
+     * and a tight spin can go either way with nothing but the mouse. A small arrow at the pointer shows which.
+     */
+    turnDir() {
+      const g = this.game, v = this.view;
+      if (!this.pointer || !g || !g.piece || !v.lay) return 'cw';
+      const p = g.piece, cells = p.type.rots[p.rot];
+      const cx = p.x + cells.reduce((a, [x]) => a + x, 0) / cells.length, cy = p.y + cells.reduce((a, [, y]) => a + y, 0) / cells.length;
+      const col = Math.round(cx - 0.01), s = v.lay.s;
+      const [sx, sy] = v.toScreen(col, Math.round(cy));
+      const [ax, ay] = v.screenDir(1, 0);
+      const off = (this.pointer[0] - (sx + s / 2)) * ax + (this.pointer[1] - (sy + s / 2)) * ay;
+      return off < -s * 0.06 ? 'ccw' : 'cw';
+    }
+
+    showTurnHint() {
+      const v = this.view;
+      const on = this.settings.mouse && this.pointer && this.game && this.game.piece && !this.blocked() && !this.game.mods.noRotate && this.game.piece.type.kicks !== 'none' && this.lastInput === 'mouse';
+      let hint = on ? this.turnDir() : null;
+      if (hint && this.inverted) hint = hint === 'cw' ? 'ccw' : 'cw'; // what will actually happen
+      const at = on ? this.pointer.slice() : null;
+      if (hint !== v.turnHint || (at && (!v.turnAt || at[0] !== v.turnAt[0] || at[1] !== v.turnAt[1]))) { v.turnHint = hint; v.turnAt = at; v.dirty = true; }
+    }
+
     /** Slides the piece toward the pointer's column, at the height it floats at. */
     follow() {
       const g = this.game;
@@ -180,6 +208,7 @@
       if (col !== cur) { this.prevCol = this.target; this.colAt = performance.now(); this.rawCol = col; this.target = target; }
       this.aimAt(target);
       this.view.pointerCol = col;
+      this.showTurnHint();
     }
 
     aimAt(col) {
@@ -421,13 +450,25 @@
       const st = this.app.store, F = st.state.stats.free, g = this.game;
       this.syncCounters();
       if (this.armed) { this.armed = null; this.renderItems(); }
-      if (r.golden && r.lines) {
-        // Golden piece: its lines pay triple.
-        st.addLines(r.lines * 2, 'play');
-        const b = this.view.lay.board;
-        this.view.fx.text('×3 ◆ +' + r.lines * 3, b.x + b.w / 2, b.y + b.h * 0.3, '#ffd35a', 20);
-        this.app.sound.play('golden');
-      }
+      // What the lines pay: a back-to-back quad or T-spin (or 5+ lines) is worth one extra; the chain multiplier —
+      // one step for every back-to-back difficult clear in the streak plus one for every piece in the combo, ×20 at
+      // most — multiplies it; a golden piece triples that. So a quad on a ×20 chain pays 100.
+      if (r.lines) {
+        const difficult = r.lines >= 4 || r.tspin || r.mini;
+        const streak = difficult ? g.s.b2b + 1 : 0;
+        const mult = Math.max(1, Math.min(20, streak + Math.max(0, g.s.combo)));
+        let pay = (r.lines + (difficult ? 1 : 0)) * mult;
+        if (r.golden) {
+          pay *= 3;
+          const b = this.view.lay.board;
+          this.view.fx.text('GOLDEN ×3', b.x + b.w / 2, b.y + b.h * 0.3, '#ffd35a', 20);
+          this.app.sound.play('golden');
+        }
+        r.banked = pay; r.mult = mult;
+        g.s.banked = (g.s.banked || 0) + pay;
+        g.s.chain = mult; g.s.bestChain = Math.max(g.s.bestChain || 0, mult);
+        F.bestChain = Math.max(F.bestChain || 0, mult);
+      } else g.s.chain = g.s.b2b >= 0 ? g.s.b2b + 1 : 0; // the combo broke; a back-to-back streak lives on
       if (r.special !== 'settle' && r.special !== 'tornado') {
         F.pieces++;
         st.day().pieces++;
@@ -437,7 +478,7 @@
       if (r.lines) {
         F.lines += r.lines;
         F.clears[Math.min(5, r.lines)]++;
-        st.addLines(r.lines, 'play');
+        st.addLines(r.banked, 'play');
         this.app.refreshWallet(true);
       }
       if (r.tspin) { F.tspins++; F.tspinLines += r.lines; }
@@ -491,7 +532,8 @@
         tile(life ? fmtDuration(life) : '—', 'Lifetime'), tile(s.playMs ? fmtDuration(s.playMs) : '—', 'Played'), tile(fmtInt(s.pieces), 'Pieces'),
         tile(fmtInt(s.lines), 'Lines'), tile(fmtInt(s.score), 'Score'), tile(ppm, 'Pieces / min'),
         tile(fmtInt((s.clears && s.clears[4]) || 0), 'Quads'), tile(fmtInt(s.tspins || 0), 'T-spins'), tile(fmtInt(s.perfect || 0), 'Perfect clears'),
-        tile(fmtInt(Math.max(0, s.maxCombo || 0)), 'Best combo'), tile(fmtInt(Math.max(0, s.maxB2B || 0)), 'Best back-to-back'), tile(fmtInt(s.holds || 0), 'Holds'),
+        tile(fmtInt(Math.max(0, s.maxCombo || 0)), 'Best combo'), tile(fmtInt(Math.max(0, s.maxB2B || 0)), 'Best back-to-back'), tile('×' + (s.bestChain || 1), 'Best chain'),
+        tile(fmtInt(s.banked || 0) + ' ◆', 'Lines banked'), tile(fmtInt(s.holds || 0), 'Holds'), tile(fmtInt(s.drops || 0), 'Hard drops'),
         h('div', { class: 'bs wide' }, h('div', { class: 'v' }, nItems ? fmtInt(nItems) + ' used' : 'none'), h('div', { class: 'l' }, 'Power-ups' + (items.length ? ': ' + items.slice(0, 6).map(([id, n]) => ITEMS[id].name + (n > 1 ? ' ×' + n : '')).join(', ') : ''))));
     }
 
@@ -519,7 +561,7 @@
       this.status.replaceChildren(...[
         h('span', null, 'Lines ', h('b', null, fmtInt(s.lines))),
         h('span', null, 'Score ', h('b', null, fmtInt(s.score))),
-        h('span', { class: s.combo > 0 ? '' : 'slot-off' }, 'Combo ', h('b', null, String(Math.max(0, s.combo)))),
+        h('span', { class: s.chain > 1 ? 'chain' : 'slot-off', title: 'Chain: back-to-back quads and T-spins plus combos multiply the lines you bank (up to ×20)' }, 'Chain ', h('b', null, '×' + Math.max(1, s.chain || 0))),
         h('span', { class: 'opt' }, 'Pieces ', h('b', null, fmtInt(s.pieces))),
         h('button', { class: 'btn sm', title: 'Retire this board and start fresh', onclick: () => this.askRetire() }, '↺', h('span', { class: 'lbl' }, ' New board'))].filter(Boolean));
     }
@@ -662,10 +704,12 @@
           if (g.setSpecial(id)) done(); else toast('No room for that here', 'bad');
           break;
         case 'rewind': {
+          const banked0 = g.s.banked || 0;
           const res = g.undo();
           if (!res) { toast('Nothing to rewind', 'bad'); return; }
+          const refund = Math.max(0, banked0 - (g.s.banked || 0));
+          if (refund) st.addLines(-refund, 'rewind');
           if (res.lines) {
-            st.addLines(-res.lines, 'rewind');
             st.state.stats.free.lines = Math.max(0, st.state.stats.free.lines - res.lines);
             this.app.refreshWallet();
           }
@@ -840,9 +884,12 @@
     onLock(r) {
       this.lines += r.lines;
       this.view.onLock(r, this.reduced);
-      const snd = this.app.sound;
-      playLockSound(snd, r);
-      if (Puzzles.goalMet(this.puzzle, this.game.board, this.lines)) this.solved();
+      const snd = this.app.sound, g = this.game;
+      const met = Puzzles.goalMet(this.puzzle, g.board, this.lines);
+      // The last piece set without meeting the goal: that is a failure, so no cheerful clear (the fail sound follows).
+      const last = !met && !g.queue.length && !g.hold;
+      if (last) snd.play('lock'); else playLockSound(snd, r);
+      if (met) this.solved();
       this.updateHint();
       this.renderActions();
     }

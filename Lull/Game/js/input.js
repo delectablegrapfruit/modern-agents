@@ -26,10 +26,10 @@
     ['R', 'Retry puzzle · restart Classic'],
     ['P', 'Pause Classic'],
     ['N', 'Next puzzle'],
-    ['⌘1 – ⌘5', 'Switch tabs'],
+    ['⌘1 – ⌘6', 'Switch tabs'],
     ['Mouse: point', 'Slide the piece left and right'],
     ['Left click', 'Drop it straight down (anywhere on the board side)'],
-    ['Right click', 'Turn clockwise'],
+    ['Right click', 'Turn: pointer on the right half of the piece clockwise, left half counter-clockwise (the arrow shows which)'],
     ['Wheel', 'Lower one row (never sets the piece)'],
     ['Click HOLD', 'Hold, or swap back'],
   ];

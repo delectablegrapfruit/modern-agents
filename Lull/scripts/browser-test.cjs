@@ -56,7 +56,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   for (let i = 0; i < 6; i++) await page.keyboard.press('ArrowLeft');
   await page.keyboard.press('Space');
   const after = await ev(() => ({ lines: Lull.app.store.state.lines, fromAch: Lull.app.store.state.stats.lines.achievements, wallet: document.getElementById('wallet-n').textContent, board: Lull.app.modes.play.game.board.count(), ach: Object.keys(Lull.app.store.state.achievements).sort() }));
-  check('quad banks 4 lines (plus the first-quad and perfect-clear achievements)', after.lines === cleared + 4 + after.fromAch && after.ach.join() === 'pc,quad', JSON.stringify(after));
+  check('a quad banks 5 lines (4 + 1 for the quad; plus the first-quad and perfect-clear achievements)', after.lines === cleared + 5 + after.fromAch && after.ach.join() === 'pc,quad', JSON.stringify(after));
   check('board empty after the quad', after.board === 0);
   await page.waitForTimeout(120);
   await shot('10-quad');
@@ -82,6 +82,19 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     return c.height === c2.height && c.width === c2.width;
   });
   check('a combo (or a long score) never resizes the board', steady);
+  // The chain: back-to-back quads and combos multiply what lines pay (a quad is worth 5).
+  const chain = await ev(() => {
+    const m = Lull.app.modes.play, g = m.game, out = [];
+    g.resetBoard();
+    for (let k = 0; k < 2; k++) {
+      for (let y = 0; y < 4; y++) for (let x = 1; x < 10; x++) g.board.set(x, y, 8);
+      g.replacePiece({ id: 'I' }); g.rotate(1); while (g.move(-1));
+      const w0 = Lull.app.store.state.lines, r = g.drop();
+      out.push([r.banked, r.mult, Lull.app.store.state.lines - w0 - (Lull.app.store.state.stats.lines.achievements || 0) * 0]);
+    }
+    return { out, status: document.getElementById('play-status').textContent };
+  });
+  check('the chain multiplies quads: 5, then 15 (×3)', chain.out[0][0] === 5 && chain.out[1][0] === 15 && chain.out[1][1] === 3 && /Chain ×3/.test(chain.status), JSON.stringify(chain));
   // Retiring a board shows its whole life, and logs it.
   await ev(() => { const m = Lull.app.modes.play; m.game.s.items = { bomb: 2, laser: 1 }; m.game.s.startedAt = Date.now() - 3 * 86400e3; });
   await page.click('#play-status .btn');
@@ -166,6 +179,14 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   const rot0 = await ev(() => Lull.app.modes.play.game.piece.rot);
   await page.mouse.click(pt[0], pt[1], { button: 'right' });
   check('right-click turns', (await ev(() => Lull.app.modes.play.game.piece.rot)) === (rot0 + 1) % 4);
+  // Pointer on the left half of the piece's column: right-click turns the other way, and the arrow says so.
+  const s1 = await ev(() => Lull.app.modes.play.view.lay.s);
+  await page.mouse.move(pt[0] - s1 * 0.3, pt[1]);
+  check('the turn arrow shows counter-clockwise on the left half', (await ev(() => Lull.app.modes.play.view.turnHint)) === 'ccw');
+  const rot1 = await ev(() => Lull.app.modes.play.game.piece.rot);
+  await page.mouse.click(pt[0] - s1 * 0.3, pt[1], { button: 'right' });
+  check('right-click on the left half turns counter-clockwise', (await ev(() => Lull.app.modes.play.game.piece.rot)) === (rot1 + 3) % 4);
+  await page.mouse.move(pt[0], pt[1]);
   const y0w = await ev(() => Lull.app.modes.play.game.piece.y), pw = await ev(() => Lull.app.modes.play.game.s.pieces);
   await page.mouse.wheel(0, 120);
   await page.waitForTimeout(80);
@@ -411,7 +432,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   const dpt = await ev(() => { const m = Lull.app.modes.factory, it = m.belt.items.find((i) => i.defect), c = m.view.itemCenter(it), r = m.canvas.getBoundingClientRect(); return [r.left + c[0], r.top + c[1]]; });
   await page.mouse.click(dpt[0], dpt[1]);
   check('clicking a cracked mino pulls it off the belt', (await ev(() => Lull.app.store.state.factory.stats.caught)) === caught0 + 1);
-  await ev(() => { Lull.app.modes.factory.belt.speed = 3.2; });
+  await ev(() => { Lull.app.modes.factory.belt.speed = 1.4; });
   // A full crate trades for lines.
   const lines0 = await ev(() => { const f = Lull.app.store.state.factory; f.crate = Lull.Factory.crateSize(f); return Lull.app.store.state.lines; });
   await page.waitForTimeout(300);
@@ -465,8 +486,11 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     await page.waitForTimeout(50);
     await shot('50-stats-' + n);
   }
-  const ach = await ev(() => ({ got: document.querySelectorAll('.ach.got').length, all: document.querySelectorAll('.ach').length, quad: !!Lull.app.store.state.achievements.quad, paid: Lull.app.store.state.stats.lines.achievements }));
-  check('achievements: earned in play, listed under Stats, and paid', ach.quad && ach.got >= 1 && ach.all >= 25 && ach.paid >= 15, JSON.stringify(ach));
+  await page.click('.tabs button[data-tab="achievements"]');
+  await page.waitForTimeout(80);
+  await shot('51-achievements');
+  const ach = await ev(() => ({ legends: document.querySelectorAll('.ach.legend').length, got: document.querySelectorAll('.ach.got').length, all: document.querySelectorAll('.ach').length, quad: !!Lull.app.store.state.achievements.quad, paid: Lull.app.store.state.stats.lines.achievements }));
+  check('achievements: earned in play, listed in their own tab (legendary ones too), and paid', ach.quad && ach.got >= 1 && ach.all >= 40 && ach.legends >= 15 && ach.paid >= 15, JSON.stringify(ach));
   await page.click('#btn-settings');
   await page.waitForTimeout(100);
   await shot('60-settings');

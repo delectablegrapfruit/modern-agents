@@ -48,6 +48,7 @@
       this.t += dt;
       this.fx.update(dt);
       ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+      ctx.__dpr = this.dpr; // crisp cell sprites
       ctx.clearRect(0, 0, this.w, this.h);
       const ln = this.lane(), s = ln.s;
       // The well, as on the board.

@@ -7,7 +7,7 @@
   const L = (root.Lull = root.Lull || {});
   const { Board, CELL, Pieces, RNG, hash32, codeFromInt, intFromCode, spawnPos } = L;
 
-  const GEN_VERSION = 3;
+  const GEN_VERSION = 4;
   const DIFFS = {
     E: { id: 'E', name: 'Easy', reward: 4, color: '#7bd88f' },
     M: { id: 'M', name: 'Medium', reward: 10, color: '#f6c177' },
@@ -134,7 +134,10 @@
         else if (m === 2) { if (opts.heavy) continue; ny = y - 1; }
         else {
           if (!canRotate) break;
-          nr = (r + (m === 3 ? 1 : m === 4 ? 3 : 2)) % 4;
+          // Clockwise only: every puzzle can be solved with a single turn button (Up, or a right-click), so nobody
+          // playing with arrows or the mouse alone meets a spin that needs the other direction.
+          if (m !== 3) continue;
+          nr = (r + 1) % 4;
           const kicks = Pieces.kicksFor(type, r, nr);
           let ok = false;
           for (const [kx, ky] of kicks) {
@@ -214,7 +217,8 @@
         else if (m === 2) { if (opts.heavy) continue; ny = y - 1; }
         else {
           if (!canRotate) break;
-          nr = (r + (m === 3 ? 1 : m === 4 ? 3 : 2)) % 4;
+          if (m !== 3) continue;
+          nr = (r + 1) % 4;
           let ok = false;
           for (const [kx, ky] of Pieces.kicksFor(type, r, nr)) {
             if (board.fits(type.rots[nr], x + kx, y + ky)) { if (ky !== 0 || Math.abs(kx) > maxKick) break; nx = x + kx; ny = y + ky; ok = true; break; }
