@@ -4,6 +4,9 @@ on:
   push:
     paths-ignore:
       - "dist/**"
+      # Onslaught has its own workflow (onslaught.yml).
+      - "Onslaught/**"
+      - ".github/workflows/onslaught.yml"
   pull_request:
   release:
     types: [published]
