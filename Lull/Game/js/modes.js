@@ -74,6 +74,7 @@
         case 'moveL': ok = g.move(-1); if (ok) snd.play('move'); break;
         case 'moveR': ok = g.move(1); if (ok) snd.play('move'); break;
         case 'lower': {
+          if (this.softDrop) { ok = this.softDrop(rep); break; }
           const p = g.piece;
           if (rep && (!p || g.mods.heavy || !g.fitsAt(p, p.rot, p.x, p.y - 1))) return false;
           ok = !!g.lower();
@@ -206,6 +207,169 @@
         if (this.view.look.animated) this.view.setLook(this.app.look());
         this.view.render(now);
       }
+    }
+  }
+
+  // ---- classic ----------------------------------------------------------------------------------------------------
+
+  /**
+   * Plain Tetris: pieces fall, faster every ten lines, with a half-second lock delay (renewed up to 15 times by
+   * moving or turning), soft and hard drops, hold, and a game over. Lines still bank as ◆. Music optional.
+   */
+  class ClassicMode extends BoardMode {
+    constructor(app) {
+      super(app, 'cv-classic', 'classic-overlay');
+      this.statusEl = document.getElementById('classic-status');
+      this.controlsEl = document.getElementById('classic-controls');
+      this.newGame(false);
+    }
+
+    get cs() { return this.app.store.state.stats.classic; }
+
+    newGame(start) {
+      const game = new Game({ w: 10, h: 20, previewCount: 3, maxHistory: 0 });
+      this.attachGame(game, {});
+      this.view.showBank = true;
+      Object.assign(this, { level: 1, lines: 0, score: 0, acc: 0, lockT: 0, resets: 0, over: false, paused: false, started: !!start });
+      if (start) { this.hideCard(); this.cs.games++; this.app.store.touch(); }
+      else this.showStart();
+      this.renderStatus();
+      this.renderControls();
+    }
+
+    showStart() {
+      this.showCard([
+        h('h2', null, 'Classic'),
+        h('p', null, 'The one you know: pieces fall, and fall faster every ten lines. Lines you clear still bank as ◆.'),
+        this.cs.best ? h('p', null, 'Best ', h('span', { class: 'big' }, fmtInt(this.cs.best))) : null,
+        h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: () => this.newGame(true) }, 'Start ', h('kbd', null, 'Space'))),
+      ]);
+    }
+
+    blocked() { return this.cardOpen || this.paused || this.over || !this.started; }
+
+    /** Seconds per row at the current level (the guideline curve). */
+    gravity() { const l = Math.min(this.level, 20); return Math.max(0.012, Math.pow(0.8 - (l - 1) * 0.007, l - 1)); }
+
+    running() { return this.app.tab === 'classic' && this.started && !this.paused && !this.over && !UI.modalOpen(); }
+
+    frame(now, dt) {
+      const g = this.game, p = g.piece;
+      if (this.running() && p && !g.fitsAt(p, p.rot, p.x, p.y)) { g.over = true; this.onTopout(); }
+      else if (this.running() && p) {
+        this.acc += dt;
+        const iv = this.gravity();
+        while (this.acc >= iv) {
+          this.acc -= iv;
+          if (g.fitsAt(p, p.rot, p.x, p.y - 1)) { p.y--; this.lockT = 0; this.view.dirty = true; } else { this.acc = 0; break; }
+        }
+        if (g.piece === p && !g.fitsAt(p, p.rot, p.x, p.y - 1)) {
+          this.lockT += dt;
+          if (this.lockT >= 0.5) { this.lockT = 0; g.lock(); }
+        }
+      }
+      this.syncMusic();
+      super.frame(now, dt);
+    }
+
+    syncMusic() {
+      const st = this.app.settings;
+      const want = st.music && this.running() && !document.hidden;
+      L.Music.tempo = 1 + (Math.min(this.level, 15) - 1) * 0.035;
+      L.Music.setVolume(st.musicVolume);
+      if (want && !L.Music.playing) L.Music.start();
+      else if (!want && L.Music.playing) L.Music.stop();
+    }
+
+    /** Moving or turning a resting piece buys it more time (up to 15 times). */
+    afterAction(a) {
+      const g = this.game, p = g.piece;
+      if (!p || !/^(moveL|moveR|rotate|rotateInv|cw|ccw|r180)$/.test(a)) return;
+      if (!g.fitsAt(p, p.rot, p.x, p.y - 1) && this.resets < 15) { this.lockT = 0; this.resets++; }
+    }
+
+    softDrop(rep) {
+      const g = this.game, p = g.piece;
+      if (!p) return false;
+      if (g.fitsAt(p, p.rot, p.x, p.y - 1)) { p.y--; this.score += 1; this.acc = 0; this.renderStatus(); return true; }
+      if (rep) return false;
+      g.lock();
+      return true;
+    }
+
+    modeAction(a) {
+      if (a === 'retry') { this.restart(); return true; }
+      return false;
+    }
+
+    action(act, rep) {
+      if (!rep && act === 'drop' && !this.started && !this.over) { this.newGame(true); return true; }
+      if (!rep && act === 'drop' && this.over) { this.newGame(true); return true; }
+      if (!rep && act === 'pause') { this.togglePause(); return true; }
+      return super.action(act, rep);
+    }
+
+    togglePause(force) {
+      if (!this.started || this.over) return;
+      this.paused = force != null ? force : !this.paused;
+      if (this.paused) this.showCard([h('h2', null, 'Paused'), h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: () => this.togglePause(false) }, 'Resume ', h('kbd', null, 'P')))]);
+      else this.hideCard();
+      this.renderControls();
+    }
+
+    restart() {
+      this.newGame(true);
+    }
+
+    onLock(r) {
+      const st = this.app.store, S = this.cs;
+      const before = this.level;
+      this.lines += r.lines;
+      this.level = 1 + Math.floor(this.lines / 10);
+      this.score += (r.score || 0) * before + (r.dropDist ? r.dropDist * 2 : 0);
+      this.resets = 0; this.lockT = 0; this.acc = 0;
+      if (r.lines) { st.addLines(r.lines, 'play'); this.app.refreshWallet(true); S.lines += r.lines; }
+      S.pieces++;
+      st.day().pieces++;
+      playLockSound(this.app.sound, r);
+      this.view.onLock(r, this.reduced);
+      if (this.level > before) { this.app.sound.play('solve'); const b = this.view.lay.board; this.view.fx.text('LEVEL ' + this.level, b.x + b.w / 2, b.y + b.h * 0.3, '#ffe28a', 20); }
+      S.bestLevel = Math.max(S.bestLevel, this.level);
+      S.bestLines = Math.max(S.bestLines, this.lines);
+      this.renderStatus();
+      st.touch();
+    }
+
+    onTopout() {
+      if (this.over) return;
+      this.over = true;
+      const S = this.cs, best = this.score > S.best;
+      S.best = Math.max(S.best, this.score);
+      this.app.store.touch();
+      this.app.sound.play('fail');
+      this.showCard([
+        h('h2', null, best ? 'New best!' : 'Game over'),
+        h('p', null, h('span', { class: 'big' }, fmtInt(this.score)), ' points'),
+        h('p', null, 'Level ' + this.level + ' · ' + this.lines + ' lines'),
+        h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: () => this.newGame(true) }, 'Play again ', h('kbd', null, 'Space'))),
+      ]);
+      this.renderControls();
+    }
+
+    renderStatus() {
+      this.statusEl.replaceChildren(
+        h('span', null, 'Score ', h('b', null, fmtInt(this.score))),
+        h('span', null, 'Level ', h('b', null, String(this.level))),
+        h('span', null, 'Lines ', h('b', null, String(this.lines))),
+        h('span', null, 'Best ', h('b', null, fmtInt(Math.max(this.cs.best, this.score)))));
+    }
+
+    renderControls() {
+      const st = this.app.settings;
+      this.controlsEl.replaceChildren(
+        h('button', { class: 'btn sm' + (st.music ? ' on' : ''), 'data-tip': 'Music for Classic (Korobeiniki, the old folk tune)', onclick: () => { st.music = !st.music; this.app.store.touch(); this.renderControls(); } }, st.music ? '♪ Music on' : '♪ Music off'),
+        h('button', { class: 'btn sm', disabled: !this.started || this.over, onclick: () => this.togglePause() }, this.paused ? '▶ Resume' : '⏸ Pause', ' ', h('kbd', null, 'P')),
+        h('button', { class: 'btn sm', onclick: () => this.restart() }, '↺ Restart ', h('kbd', null, 'R')));
     }
   }
 
@@ -1045,6 +1209,6 @@
     }
   }
 
-  L.Modes = { BoardMode, PlayMode, PuzzleMode, FactoryMode };
+  L.Modes = { ClassicMode, BoardMode, PlayMode, PuzzleMode, FactoryMode };
   void CELL;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

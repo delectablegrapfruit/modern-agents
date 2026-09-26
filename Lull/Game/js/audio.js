@@ -190,5 +190,93 @@
     },
   };
 
+  // ---- music for Classic: Korobeiniki (a 19th-century Russian folk song, public domain) as a little chiptune ----
+
+  const NOTE = (n) => { // 'E5', 'G#4', '-' (rest)
+    if (n === '-') return 0;
+    const m = /^([A-G])(#?)(\d)$/.exec(n);
+    const semis = { C: -9, D: -7, E: -5, F: -4, G: -2, A: 0, B: 2 }[m[1]] + (m[2] ? 1 : 0) + (Number(m[3]) - 4) * 12;
+    return 440 * Math.pow(2, semis / 12);
+  };
+  // [note, length in eighths]
+  const MELODY_A = 'E5 2,B4 1,C5 1,D5 2,C5 1,B4 1,A4 2,A4 1,C5 1,E5 2,D5 1,C5 1,B4 3,C5 1,D5 2,E5 2,C5 2,A4 2,A4 4,- 1,D5 2,F5 1,A5 2,G5 1,F5 1,E5 3,C5 1,E5 2,D5 1,C5 1,B4 2,B4 1,C5 1,D5 2,E5 2,C5 2,A4 2,A4 2,- 2';
+  const MELODY_B = 'E5 4,C5 4,D5 4,B4 4,C5 4,A4 4,G#4 4,B4 2,- 2,E5 4,C5 4,D5 4,B4 4,C5 2,E5 2,A5 4,G#5 8';
+  const BASS_A = ['E2', 'A2', 'G#2', 'A2', 'D2', 'C2', 'G#2', 'A2'];
+  const BASS_B = ['A2', 'G#2', 'A2', 'E2', 'A2', 'G#2', 'A2', 'E2'];
+  const parse = (str) => str.split(',').map((t) => { const [n, l] = t.trim().split(' '); return [NOTE(n), Number(l)]; });
+  const SONG = (() => {
+    const lead = [], bass = [];
+    const part = (mel, roots) => {
+      for (const n of parse(mel)) lead.push(n);
+      for (const r of roots) { const f = NOTE(r); for (let i = 0; i < 8; i++) bass.push([i % 2 ? f * 2 : f, 1]); }
+    };
+    part(MELODY_A, BASS_A); part(MELODY_A, BASS_A); part(MELODY_B, BASS_B);
+    return { lead, bass, length: lead.reduce((a, n) => a + n[1], 0) };
+  })();
+
+  const Music = {
+    playing: false,
+    volume: 0.25,
+    tempo: 1,
+    timer: null,
+    gain: null,
+
+    start() {
+      const ctx = Sound.ensure();
+      if (!ctx || this.playing) return;
+      if (ctx.state === 'suspended') ctx.resume();
+      this.playing = true;
+      this.gain = ctx.createGain();
+      this.gain.gain.value = this.volume;
+      this.gain.connect(Sound.master);
+      Sound.master.gain.value = Sound.volume || 0.35;
+      this.pos = { lead: 0, bass: 0, leadAt: ctx.currentTime + 0.1, bassAt: ctx.currentTime + 0.1 };
+      this.timer = setInterval(() => this.schedule(), 50);
+      this.schedule();
+    },
+
+    stop() {
+      if (!this.playing) return;
+      this.playing = false;
+      clearInterval(this.timer);
+      const g = this.gain, ctx = Sound.ctx;
+      if (g && ctx) { g.gain.setTargetAtTime(0, ctx.currentTime, 0.05); setTimeout(() => g.disconnect(), 400); }
+      this.gain = null;
+    },
+
+    setVolume(v) { this.volume = v; if (this.gain) this.gain.gain.value = v; },
+
+    /** Queues notes a little ahead of time, as Web Audio likes it. */
+    schedule() {
+      const ctx = Sound.ctx;
+      if (!ctx || !this.playing) return;
+      const eighth = 60 / (144 * this.tempo) / 2;
+      const until = ctx.currentTime + 0.25;
+      const voice = (f, at, dur, type, gain) => {
+        if (!f) return;
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = type; o.frequency.value = f;
+        g.gain.setValueAtTime(0.0001, at);
+        g.gain.exponentialRampToValueAtTime(gain, at + 0.01);
+        g.gain.setValueAtTime(gain, at + dur * 0.7);
+        g.gain.exponentialRampToValueAtTime(0.0001, at + dur * 0.95);
+        o.connect(g).connect(this.gain); o.start(at); o.stop(at + dur);
+      };
+      const p = this.pos;
+      while (p.leadAt < until) {
+        const [f, l] = SONG.lead[p.lead];
+        voice(f, p.leadAt, l * eighth, 'square', 0.09);
+        p.leadAt += l * eighth; p.lead = (p.lead + 1) % SONG.lead.length;
+      }
+      while (p.bassAt < until) {
+        const [f, l] = SONG.bass[p.bass];
+        voice(f, p.bassAt, l * eighth, 'triangle', 0.16);
+        p.bassAt += l * eighth; p.bass = (p.bass + 1) % SONG.bass.length;
+      }
+    },
+  };
+
   L.Sound = Sound;
+  L.Music = Music;
+  L.SONG = SONG;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

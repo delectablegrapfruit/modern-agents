@@ -387,9 +387,9 @@ test('old saves gain new fields and keep their own', () => {
 });
 test('the shop takes lines and hands over items', () => {
   const s = new L.Store();
-  s.state.lines = 100;
+  s.state.lines = 50;
   assert(s.buyItem('reroll'));
-  assert.strictEqual(s.state.lines, 60);
+  assert.strictEqual(s.state.lines, 35);
   assert(!s.buyItem('blueprint'));
   assert(s.useItem('reroll'));
   assert(!s.useItem('reroll'));

@@ -9,6 +9,7 @@
 
   const TABS = [
     { id: 'play', label: 'Play', icon: 'play' },
+    { id: 'classic', label: 'Classic', icon: 'classic' },
     { id: 'puzzle', label: 'Puzzles', icon: 'puzzle' },
     { id: 'factory', label: 'Factory', icon: 'factory' },
     { id: 'shop', label: 'Shop', icon: 'shop' },
@@ -32,6 +33,7 @@
       UI.initTooltips();
       this.keys = new Keys(() => this.settings);
       this.modes.play = new Modes.PlayMode(this);
+      this.modes.classic = new Modes.ClassicMode(this);
       this.modes.puzzle = new Modes.PuzzleMode(this);
       this.modes.factory = new Modes.FactoryMode(this);
       this.modes.factory.catchUp(true);
@@ -78,7 +80,7 @@
 
     applyLook() {
       this.sound.pack = this.state.equipped.sound || 'soft';
-      for (const k of ['play', 'puzzle']) if (this.modes[k]) { this.modes[k].view.setLook(this.look()); this.modes[k].view.dirty = true; }
+      for (const k of ['play', 'classic', 'puzzle']) if (this.modes[k]) { this.modes[k].view.setLook(this.look()); this.modes[k].view.dirty = true; }
       if (this.tab === 'shop') UI.renderShop(this, this.shopSub);
     },
 
@@ -111,16 +113,17 @@
       if (!TABS.some((t) => t.id === id)) id = 'play';
       const prev = this.tab;
       if (prev === 'factory' && id !== 'factory') this.modes.factory.hide();
+      if (prev === 'classic' && id !== 'classic') { this.modes.classic.togglePause(true); L.Music.stop(); }
       this.tab = id;
       this.state.tab = id;
       for (const b of document.querySelectorAll('.tabs button')) b.setAttribute('aria-selected', String(b.dataset.tab === id));
       for (const v of document.querySelectorAll('.view')) v.classList.toggle('active', v.dataset.tab === id);
-      this.keys && this.keys.setTarget(id === 'play' ? this.modes.play : id === 'puzzle' ? this.modes.puzzle : null);
+      this.keys && this.keys.setTarget(id === 'play' ? this.modes.play : id === 'classic' ? this.modes.classic : id === 'puzzle' ? this.modes.puzzle : null);
       if (id === 'puzzle') this.modes.puzzle.show();
       if (id === 'factory') { this.modes.factory.show(); }
       if (id === 'shop') UI.renderShop(this, this.shopSub);
       if (id === 'stats') UI.renderStats(this, this.statsSub);
-      if (id === 'play' || id === 'puzzle') { const m = this.modes[id]; m.view.resize(); m.view.dirty = true; }
+      if (id === 'play' || id === 'puzzle' || id === 'classic') { const m = this.modes[id]; m.view.resize(); m.view.dirty = true; }
       this.store.touch();
       this.postDragRegions();
     },
@@ -145,14 +148,14 @@
           return;
         }
         if (typing) return;
-        if ((e.metaKey || e.ctrlKey) && /^Digit[1-5]$/.test(e.code)) { this.setTab(TABS[Number(e.code.slice(5)) - 1].id); e.preventDefault(); return; }
+        if ((e.metaKey || e.ctrlKey) && /^Digit[1-6]$/.test(e.code)) { this.setTab(TABS[Number(e.code.slice(5)) - 1].id); e.preventDefault(); return; }
         if ((e.metaKey || e.ctrlKey) && e.code === 'Comma') { UI.openSettings(this); e.preventDefault(); return; }
         if ((e.metaKey || e.ctrlKey) && e.code === 'KeyZ' && this.tab === 'puzzle') { this.modes.puzzle.undo(); e.preventDefault(); return; }
         if (e.key === 'Escape' && native.available) { this.saveNow(); native.post('hide'); return; }
         if (this.keys.down(e)) this.activity();
       });
       root.addEventListener('keyup', (e) => this.keys.up(e));
-      root.addEventListener('blur', () => this.keys.releaseAll());
+      root.addEventListener('blur', () => { this.keys.releaseAll(); if (this.modes.classic && this.modes.classic.running()) this.modes.classic.togglePause(true); });
       root.addEventListener('focus', () => { this.focusedAt = performance.now(); });
       root.addEventListener('mousedown', () => this.activity(), true);
       // Clicked buttons let go of focus, so Space and Enter keep playing instead of pressing them again.
@@ -160,13 +163,13 @@
         const b = e.target && e.target.closest && e.target.closest('button');
         if (b && !b.closest('.modal')) setTimeout(() => b.blur(), 0);
       });
-      document.addEventListener('visibilitychange', () => { if (document.hidden) this.saveNow(); else this.modes.factory.catchUp(true); });
+      document.addEventListener('visibilitychange', () => { if (document.hidden) { this.saveNow(); L.Music.stop(); } else this.modes.factory.catchUp(true); });
       root.addEventListener('pagehide', () => this.saveNow());
       root.addEventListener('beforeunload', () => this.saveNow());
       root.addEventListener('resize', () => { this.onResize(); });
       if (root.ResizeObserver) {
         const ro = new ResizeObserver(() => this.onResize());
-        for (const id of ['cv-play', 'cv-puzzle', 'cv-belt']) ro.observe(document.getElementById(id).parentElement);
+        for (const id of ['cv-play', 'cv-classic', 'cv-puzzle', 'cv-belt']) ro.observe(document.getElementById(id).parentElement);
       }
       if (root.matchMedia) {
         const mq = root.matchMedia('(prefers-color-scheme: light)');
@@ -187,7 +190,7 @@
     activity() { this.lastActivity = performance.now(); },
 
     onResize() {
-      for (const k of ['play', 'puzzle']) { const v = this.modes[k] && this.modes[k].view; if (v) { v.resize(); v.dirty = true; } }
+      for (const k of ['play', 'classic', 'puzzle']) { const v = this.modes[k] && this.modes[k].view; if (v) { v.resize(); v.dirty = true; } }
       if (this.modes.factory) this.modes.factory.view.resize();
       clearTimeout(this.dragTimer);
       this.dragTimer = setTimeout(() => this.postDragRegions(), 120);
@@ -209,6 +212,7 @@
       this.lastTime = t;
       this.keys.update(t);
       if (this.tab === 'play') this.modes.play.frame(t, dt);
+      else if (this.tab === 'classic') this.modes.classic.frame(t, dt);
       else if (this.tab === 'puzzle') this.modes.puzzle.frame(t, dt);
       else if (this.tab === 'factory') {
         // The belt is ambient: 30 fps in front, 12 behind other windows, 10 with reduced effects.
@@ -227,6 +231,7 @@
         const S = this.state.stats.timeMs;
         S.total += 1000;
         if (this.tab === 'play') S.play += 1000;
+        else if (this.tab === 'classic') S.classic = (S.classic || 0) + 1000;
         else if (this.tab === 'puzzle') S.puzzle += 1000;
         else if (this.tab === 'factory') S.factory += 1000;
         this.store.day().ms += 1000;

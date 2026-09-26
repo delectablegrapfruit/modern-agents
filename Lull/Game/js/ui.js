@@ -31,6 +31,7 @@
     puzzle: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="5" height="5" rx="0.8" fill="currentColor" stroke="none"/><rect x="9" y="9" width="5" height="5" rx="0.8" fill="currentColor" stroke="none"/><rect x="9" y="2" width="5" height="5" rx="0.8" stroke-dasharray="1.6 1.4"/><rect x="2" y="9" width="5" height="5" rx="0.8" stroke-dasharray="1.6 1.4"/></svg>',
     factory: '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 14.5V7.2l4 2.3V7.2l4 2.3V3h1.8v-1.5h1.6V3h1.6v11.5z"/></svg>',
     shop: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M3 5.5h10l-.8 8.5H3.8z"/><path d="M5.8 5.5V4.3a2.2 2.2 0 0 1 4.4 0v1.2"/></svg>',
+    classic: '<svg viewBox="0 0 16 16" fill="currentColor"><rect x="6" y="1.5" width="4" height="4" rx="0.7"/><rect x="2" y="10.5" width="4" height="4" rx="0.7"/><rect x="6" y="10.5" width="4" height="4" rx="0.7"/><rect x="10" y="10.5" width="4" height="4" rx="0.7"/><path d="M8 6.5v2.5M6.6 7.8L8 9.2l1.4-1.4" stroke="currentColor" stroke-width="1.2" fill="none" stroke-linecap="round"/></svg>',
     stats: '<svg viewBox="0 0 16 16" fill="currentColor"><rect x="2" y="8" width="3" height="6" rx="0.7"/><rect x="6.5" y="3" width="3" height="11" rx="0.7"/><rect x="11" y="6" width="3" height="8" rx="0.7"/></svg>',
     settings: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M2 4h7M12 4h2M2 8h2M7 8h7M2 12h8M13 12h1"/><circle cx="10.5" cy="4" r="1.5"/><circle cx="5.5" cy="8" r="1.5"/><circle cx="11.5" cy="12" r="1.5"/></svg>',
     pin: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><rect x="3" y="2.5" width="10" height="7" rx="1.5"/><path d="M5.5 12.5h5M8 9.5v4"/></svg>',
@@ -233,7 +234,7 @@
   function renderStats(app, sub) {
     const tabs = document.getElementById('stats-tabs');
     const body = document.getElementById('stats-body');
-    const subs = [['overview', 'Overview'], ['free', 'Free Play'], ['puzzle', 'Puzzles'], ['factory', 'Factory'], ['items', 'Items & Shop']];
+    const subs = [['overview', 'Overview'], ['free', 'Free Play'], ['classic', 'Classic'], ['puzzle', 'Puzzles'], ['factory', 'Factory'], ['items', 'Items & Shop']];
     tabs.replaceChildren(...subs.map(([k, label]) => h('button', { 'aria-selected': String(k === sub), onclick: () => { app.statsSub = k; renderStats(app, k); } }, label)));
     const st = app.store.state, S = st.stats;
     const look = lookWith(app);
@@ -253,8 +254,12 @@
       els.push(h('h4', null, 'Lines earned, last 14 days'), historyChart(app, 'lines', 14));
       els.push(h('h4', null, 'Where lines came from'), hbars([['Free Play', S.lines.play], ['Puzzles', S.lines.puzzles], ['Factory', S.lines.contracts]]));
       els.push(h('h4', null, 'Time by mode'), table([
-        ['Free Play', fmtDuration(S.timeMs.play)], ['Puzzles', fmtDuration(S.timeMs.puzzle)], ['Factory (watching)', fmtDuration(S.timeMs.factory)],
+        ['Free Play', fmtDuration(S.timeMs.play)], ['Classic', fmtDuration(S.timeMs.classic || 0)], ['Puzzles', fmtDuration(S.timeMs.puzzle)], ['Factory (watching)', fmtDuration(S.timeMs.factory)],
       ]));
+    } else if (sub === 'classic') {
+      const C = S.classic;
+      els.push(h('div', { class: 'kpis' }, kpi(fmtInt(C.best), 'Best score'), kpi(String(C.bestLevel || '—'), 'Highest level'), kpi(fmtInt(C.bestLines), 'Most lines, one game'),
+        kpi(fmtInt(C.games), 'Games'), kpi(fmtInt(C.lines), 'Lines, all games'), kpi(fmtInt(C.pieces), 'Pieces'), kpi(fmtDuration(S.timeMs.classic || 0), 'Time played')));
     } else if (sub === 'free') {
       const F = S.free;
       const ppm = S.timeMs.play > 60000 ? F.pieces / (S.timeMs.play / 60000) : 0;
@@ -382,6 +387,8 @@
         body: () => [card(null,
           row('Sound effects', null, toggle('sound')),
           row('Volume', null, range('volume', 0, 100, 1, '%', 100)),
+          row('Classic music', 'Korobeiniki, as a little chiptune, while a Classic game runs', toggle('music', () => app.modes.classic && app.modes.classic.renderControls())),
+          row('Music volume', null, range('musicVolume', 0, 60, 1, '%', 100)),
           row('Sound pack', (L.SOUNDS[app.state.equipped.sound] || L.SOUNDS.soft).name + ' — more in the Shop', h('button', { class: 'btn sm', onclick: () => app.sound.preview(app.state.equipped.sound) }, '▶ Listen')))],
       },
       keys: {

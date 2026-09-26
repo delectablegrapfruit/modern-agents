@@ -10,20 +10,20 @@
 
   // ---- the catalog --------------------------------------------------------------------------------------------------
 
-  // Single-use items. Lines come quickly (a relaxed game clears ~8–12 a minute), so these are priced to be a treat.
+  // Single-use items: a few minutes of play buys most of them.
   const ITEMS = {
-    reroll:    { name: 'Reroll', icon: '⟳', price: 40, desc: 'Swap the piece in play for a different one.' },
-    mirror:    { name: 'Mirror', icon: '⇋', price: 45, desc: 'Flip the piece in play: J↔L, S↔Z, any shape reflected.' },
-    pebble:    { name: 'Pebble', icon: '●', price: 60, desc: 'The piece in play becomes a single block. Perfect for one hole.' },
-    sand:      { name: 'Sand', icon: '⁘', price: 75, desc: 'When this piece sets, each of its blocks falls on its own and fills the gaps below.' },
-    rewind:    { name: 'Rewind', icon: '↶', price: 80, desc: 'Take back your last placement (and the lines it cleared).' },
-    order:     { name: 'Order Slip', icon: '✎', price: 110, desc: 'Choose exactly which piece you get next.' },
-    drill:     { name: 'Drill', icon: '⇣', price: 120, desc: 'Becomes a drill bit that bores out every block in its column.' },
-    bomb:      { name: 'Bomb', icon: '✹', price: 130, desc: 'Becomes a bomb. Wherever it lands, it blasts a 13-block diamond.' },
-    phase:     { name: 'Phase', icon: '◇', price: 150, desc: 'The piece passes through blocks. Drop it into any gap it fits, even under overhangs.' },
-    settle:    { name: 'Settle', icon: '⤋', price: 200, desc: 'Every block falls straight down and closes every hole. Rows that fill up clear.' },
-    purge:     { name: 'Chroma Purge', icon: '◍', price: 220, desc: 'Removes every block the same colour as the piece in play.' },
-    blueprint: { name: 'Blueprint', icon: '▦', price: 300, desc: 'Draw your own piece — up to six connected blocks.' },
+    reroll:    { name: 'Reroll', icon: '⟳', price: 15, desc: 'Swap the piece in play for a different one.' },
+    mirror:    { name: 'Mirror', icon: '⇋', price: 15, desc: 'Flip the piece in play: J↔L, S↔Z, any shape reflected.' },
+    pebble:    { name: 'Pebble', icon: '●', price: 20, desc: 'The piece in play becomes a single block. Perfect for one hole.' },
+    sand:      { name: 'Sand', icon: '⁘', price: 25, desc: 'When this piece sets, each of its blocks falls on its own and fills the gaps below.' },
+    rewind:    { name: 'Rewind', icon: '↶', price: 25, desc: 'Take back your last placement (and the lines it cleared).' },
+    order:     { name: 'Order Slip', icon: '✎', price: 35, desc: 'Choose exactly which piece you get next.' },
+    drill:     { name: 'Drill', icon: '⇣', price: 40, desc: 'Becomes a drill bit that bores out every block in its column.' },
+    bomb:      { name: 'Bomb', icon: '✹', price: 45, desc: 'Becomes a bomb. Wherever it lands, it blasts a 13-block diamond.' },
+    phase:     { name: 'Phase', icon: '◇', price: 50, desc: 'The piece passes through blocks. Drop it into any gap it fits, even under overhangs.' },
+    settle:    { name: 'Settle', icon: '⤋', price: 70, desc: 'Every block falls straight down and closes every hole. Rows that fill up clear.' },
+    purge:     { name: 'Chroma Purge', icon: '◍', price: 75, desc: 'Removes every block the same colour as the piece in play.' },
+    blueprint: { name: 'Blueprint', icon: '▦', price: 100, desc: 'Draw your own piece — up to six connected blocks.' },
   };
   const ITEM_ORDER = Object.keys(ITEMS);
 
@@ -131,14 +131,15 @@
       settings: {
         bg: 'glass', tint: 0.78, accent: ACCENTS[0], theme: 'dark', onTop: true,
         sound: true, volume: 0.35, das: 230, arr: 55, lowerRepeat: 70, mouse: true, preview: 5,
-        motion: 'full', showKeys: true,
+        motion: 'full', showKeys: true, music: true, musicVolume: 0.25,
       },
       tab: 'play',
       free: null,
       puzzle: { diff: 'E', next: { E: 1, M: 1, H: 1 }, current: null, solved: {}, history: [] },
       factory: Factory.create(),
       stats: {
-        sessions: 0, timeMs: { play: 0, puzzle: 0, factory: 0, total: 0 },
+        sessions: 0, timeMs: { play: 0, classic: 0, puzzle: 0, factory: 0, total: 0 },
+        classic: { games: 0, best: 0, bestLevel: 0, bestLines: 0, lines: 0, pieces: 0 },
         lines: { earned: 0, spent: 0, play: 0, puzzles: 0, contracts: 0, refunded: 0 },
         free: { boards: 1, pieces: 0, lines: 0, score: 0, bestScore: 0, bestLines: 0, clears: [0, 0, 0, 0, 0, 0], tspins: 0, tspinLines: 0, perfect: 0, maxCombo: 0, maxB2B: 0, holds: 0, rotations: 0, moves: 0, lowers: 0, drops: 0, byType: {}, topouts: 0 },
         puzzle: { E: freshPuzzleDiff(), M: freshPuzzleDiff(), H: freshPuzzleDiff(), mods: {}, daily: 0, lastDaily: null },

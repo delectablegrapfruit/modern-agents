@@ -13,6 +13,11 @@ same game runs in any browser from `Game/index.html`.
 **Free Play** — endless, relaxed. Every cleared line is banked as ◆ *lines*, the currency. A full board just ends that
 board; the lines stay yours.
 
+**Classic** — plain Tetris: pieces fall, faster every ten lines (guideline speed curve), half-second lock delay,
+soft and hard drop, hold, game over, best score. Lines you clear still bank as ◆. Music: Korobeiniki (the public-domain
+folk tune) as a small synthesized chiptune that speeds up with the level — toggle it under the board or in Settings ▸
+Sound. P pauses; leaving the tab or the window pauses too.
+
 **Puzzles** — procedurally generated, infinite, short, in Easy, Medium and Hard. Each has a seed (`M-3K7Q2XA`): the
 same seed is the same puzzle for everyone, so it can be shared, replayed or retried (R) as often as you like; Undo is
 free. Every puzzle is built backwards from a solution — rows are filled solid, pieces are lifted out only where they
@@ -70,7 +75,8 @@ and first-try rates by difficulty and wildcard, factory quality control, items b
 | C / Shift | hold |
 | 1–0, −, = | use an item |
 | ⌫ / U, R, N, H | undo, retry, next puzzle, hint |
-| ⌘1–⌘5, ⌘, | tabs, settings |
+| ⌘1–⌘6, ⌘, | tabs, settings |
+| P | pause Classic |
 | mouse: point | aim: the ghost goes to the resting spot nearest the pointer that the piece can reach, under ledges too |
 | mouse: click | place it there — anywhere on the board side, on the grid or off it |
 | wheel | turn (down clockwise, up counter-clockwise) |

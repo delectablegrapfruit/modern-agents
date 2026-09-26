@@ -159,6 +159,35 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   const barFits = await ev(() => { const bar = document.getElementById('itembar'); const r = bar.getBoundingClientRect(); return Array.from(bar.children).every((b) => { const q = b.getBoundingClientRect(); return q.right <= r.right + 0.5 && q.top - r.top < 12; }); });
   check('all twelve items fit on one row', barFits);
 
+  // ---- classic ------------------------------------------------------------------------------------------------------
+  console.log('classic');
+  await page.mouse.move(5, 300);
+  await page.click('.tabs button[data-tab="classic"]');
+  await page.waitForTimeout(150);
+  check('classic waits for a start', await ev(() => !Lull.app.modes.classic.started && Lull.app.modes.classic.cardOpen));
+  await page.keyboard.press('Space');
+  const y0 = await ev(() => Lull.app.modes.classic.game.piece.y);
+  await page.waitForTimeout(2200);
+  const fell = await ev(() => ({ y: Lull.app.modes.classic.game.piece.y, pieces: Lull.app.modes.classic.game.s.pieces, music: Lull.Music.playing }));
+  check('pieces fall on their own', fell.y < y0 || fell.pieces > 0, JSON.stringify([y0, fell]));
+  check('music plays during a game', fell.music);
+  await page.keyboard.press('Space');
+  check('hard drop scores', await ev(() => Lull.app.modes.classic.score > 0));
+  await ev(() => { const m = Lull.app.modes.classic; m.lines = 9; const g = m.game; for (let x = 1; x < 10; x++) g.board.set(x, 0, 8); g.replacePiece({ id: 'I' }); g.rotate(1); while (g.move(-1)); });
+  await page.keyboard.press('Space');
+  check('ten lines: level 2', await ev(() => Lull.app.modes.classic.level === 2));
+  await page.keyboard.press('KeyP');
+  await page.waitForTimeout(100);
+  check('P pauses (and the music stops)', await ev(() => Lull.app.modes.classic.paused && !Lull.Music.playing));
+  await shot('14-classic-paused');
+  await page.keyboard.press('KeyP');
+  await ev(() => { const g = Lull.app.modes.classic.game; for (let y = 0; y < 19; y++) for (let x = 0; x < 10; x++) if (x !== y % 10) g.board.set(x, y, 8); });
+  await page.waitForTimeout(2500);
+  check('topping out ends the game', await ev(() => Lull.app.modes.classic.over && Lull.app.store.state.stats.classic.best > 0));
+  await shot('15-classic-over');
+  await page.click('.tabs button[data-tab="play"]');
+  check('leaving Classic stops the music', await ev(() => !Lull.Music.playing));
+
   // ---- puzzles solved through the real keys --------------------------------------------------------------------------
   console.log('puzzles');
   await page.click('.tabs button[data-tab="puzzle"]');
@@ -348,7 +377,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   console.log('sizes');
   for (const [w, hgt] of [[300, 440], [900, 560], [420, 900]]) {
     await page.setViewportSize({ width: w, height: hgt });
-    for (const tab of ['play', 'puzzle', 'factory']) {
+    for (const tab of ['play', 'classic', 'puzzle', 'factory']) {
       await page.click('.tabs button[data-tab="' + tab + '"]');
       await page.waitForTimeout(150);
       const overflow = await ev(() => document.documentElement.scrollWidth > window.innerWidth + 1);
