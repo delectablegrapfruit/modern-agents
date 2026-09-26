@@ -1,5 +1,5 @@
-// Boot, main loop, and the menus: title (with the attract-mode demo behind it), pause, game over, high
-// scores, achievements, how to play and options.
+// Boot, main loop, and the menus: title (with the attract-mode demo behind it), Help and Options (controls,
+// how to play, options), pause, game over with name entry, high scores and achievements.
 'use strict';
 (function () {
   const GW = window.GW;
@@ -20,16 +20,28 @@
   $('#gl').addEventListener('webglcontextlost', (e) => e.preventDefault());
   $('#gl').addEventListener('webglcontextrestored', () => location.reload());
 
-  const DEFAULTS = { master: 80, music: 55, sfx: 80, bloom: 2, grid: 'hi', res: 'full', autofire: false };
+  const DEFAULTS = { master: 80, music: 55, sfx: 80, bloom: 2, grid: 'hi', res: 'full' };
   const opts = Object.assign({}, DEFAULTS, GW.store.get('options', {}));
+  delete opts.autofire; // mouse fire mode now lives with the other controls settings
+
+  // The PC table ships pre-filled with enemy names, so nearly every game earns a place.
+  const SEED = [
+    ['WANDERER', 50000], ['GRUNT', 40000], ['WEAVER', 30000], ['SPINNER', 25000], ['SNAKE', 20000],
+    ['BLACK HOLE', 15000], ['REPULSOR', 10000], ['PROTON', 7500], ['MAYFLY', 5000], ['TINY SPINNER', 2500],
+  ];
+  const seedScores = () => SEED.map(([name, score]) => ({ name, score }));
   let scores = GW.store.get('scores', []);
+  if (!Array.isArray(scores) || !scores.length) {
+    scores = seedScores();
+    GW.store.set('scores', scores);
+  }
 
   const audio = new GW.Sound();
   const input = new GW.Input($('#gl'));
   const hud = new GW.HUD($('#hud'));
   const game = new GW.Game(audio);
   const ach = new GW.Achievements((a) => {
-    toast('Achievement unlocked', a.name, a.desc);
+    toast('Achievement unlocked', a.name);
     audio.play('achieve');
   });
 
@@ -38,10 +50,9 @@
   let stack = [];
   let lastRank = -1;
 
-  game.onEvent = (name, data) => {
-    if (game.demo) return;
-    ach.event(name, data);
-  };
+  // Achievements are polled each step (ach.check), so game events need no handler here.
+  game.onEvent = () => {};
+  input.onPause = () => pause();
 
   // ---- settings ---------------------------------------------------------------------------------------
 
@@ -49,16 +60,17 @@
     bloom: { label: 'Glow', values: [[2, 'High'], [1, 'Low'], [0, 'Off']] },
     grid: { label: 'Grid detail', values: [['hi', 'High'], ['lo', 'Normal']] },
     res: { label: 'Resolution', values: [['full', 'Full'], ['balanced', 'Balanced'], ['perf', 'Performance']] },
-    autofire: { label: 'Mouse fire', values: [[false, 'Hold button'], [true, 'Automatic']] },
+    fullscreen: { label: 'Fullscreen', values: [[false, 'Off'], [true, 'On']] }, // follows the browser; not saved
   };
 
   function applyOptions() {
     R.bloom = opts.bloom;
-    input.autofire = opts.autofire;
     audio.setVolumes({ master: opts.master / 100, music: opts.music / 100, sfx: opts.sfx / 100 });
     GW.store.set('options', opts);
     resize();
   }
+
+  const optValue = (k) => (k === 'fullscreen' ? !!document.fullscreenElement : opts[k]);
 
   function renderOptions() {
     for (const el of $$('[data-opt]')) {
@@ -66,14 +78,39 @@
       if (el.type === 'range') el.value = opts[k];
       else {
         const c = CYCLES[k];
-        const v = c.values.find((x) => x[0] === opts[k]) || c.values[0];
+        const v = c.values.find((x) => x[0] === optValue(k)) || c.values[0];
         el.innerHTML = `<span>${c.label}</span><em>${v[1]}</em>`;
       }
     }
   }
 
+  // Fullscreen, with Esc held by the page (where the browser allows it) so it pauses instead of leaving.
+  const fsButton = $('[data-opt=fullscreen]');
+  if (fsButton && !document.documentElement.requestFullscreen) fsButton.hidden = true;
+  function setFullscreen(on) {
+    const d = document;
+    if (on && !d.fullscreenElement) {
+      const p = d.documentElement.requestFullscreen();
+      if (p && p.then) {
+        p.then(() => navigator.keyboard?.lock?.(['Escape']).catch(() => {}))
+          .catch(() => toast('Fullscreen', 'Not available here'))
+          .finally(renderOptions);
+      }
+    } else if (!on && d.fullscreenElement) {
+      navigator.keyboard?.unlock?.();
+      const p = d.exitFullscreen();
+      if (p && p.catch) p.catch(() => {}).finally(renderOptions);
+    }
+  }
+  document.addEventListener('fullscreenchange', () => { if (current === 'options') renderOptions(); });
+
   function cycle(el, dir) {
     const k = el.dataset.opt;
+    if (k === 'fullscreen') {
+      setFullscreen(!document.fullscreenElement);
+      audio.play('menu');
+      return;
+    }
     const vals = CYCLES[k].values;
     let i = vals.findIndex((x) => x[0] === opts[k]);
     i = (i + dir + vals.length) % vals.length;
@@ -92,7 +129,8 @@
 
   $('#reset-data').addEventListener('click', () => {
     if (!confirm('Erase all high scores and achievements?')) return;
-    scores = [];
+    scores = seedScores();
+    lastRank = -1;
     GW.store.set('scores', scores);
     ach.reset();
     toast('Reset', 'Scores and achievements erased');
@@ -107,8 +145,14 @@
     if (id === 'achievements') renderAchievements();
     if (id === 'howto') renderHowto();
     if (id === 'options') renderOptions();
+    if (id === 'controls') {
+      if (GW.renderControls) GW.renderControls(input);
+      else renderControlsFallback();
+    }
     const first = focusables()[0];
     if (first && !(id === 'over' && !$('#name-form').hidden)) first.focus({ preventScroll: true });
+    const scr = $('#scr-' + id);
+    if (scr) scr.scrollTop = 0; // long pages (How to Play on a phone) always open at the top
     updateTouchUi();
   }
 
@@ -149,6 +193,8 @@
   function adjust(d) {
     const el = document.activeElement;
     if (!el || !el.dataset) return false;
+    // Controls-page cycles belong to js/controls-ui.js; anything but an explicit false counts as handled.
+    if (el.dataset.ctl && GW.adjustControl) return GW.adjustControl(el, d) !== false;
     if (el.type === 'range') {
       el.value = +el.value + d * 5;
       el.dispatchEvent(new Event('input'));
@@ -160,14 +206,31 @@
   }
 
   function renderScores() {
-    const rows = scores.map((s, i) => `<tr class="${i === lastRank ? 'new' : ''}"><td>${i + 1}</td><td>${esc(s.name)}</td><td>${GW.fmt(s.score)}</td><td>${fmtTime(s.time || 0)}</td></tr>`);
-    $('#score-rows').innerHTML = rows.join('') || '<tr><td class="empty" colspan="4">No scores yet. Go set one.</td></tr>';
+    const rows = scores.map((s, i) => `<tr class="${i === lastRank ? 'new' : ''}"><td>${i + 1}</td><td>${esc(s.name)}</td><td>${GW.fmt(s.score)}</td></tr>`);
+    $('#score-rows').innerHTML = rows.join('') || '<tr><td class="empty" colspan="3">No scores yet. Go set one.</td></tr>';
   }
 
   function renderAchievements() {
     const got = ach.got;
-    $('#ach-count').textContent = `${Object.keys(got).length} of ${GW.ACHIEVEMENTS.length} unlocked`;
-    $('#ach-list').innerHTML = GW.ACHIEVEMENTS.map((a) => `<li class="${got[a.id] ? 'got' : ''}"><b>${a.name}</b><span>${a.desc}</span></li>`).join('');
+    const n = GW.ACHIEVEMENTS.filter((a) => got[a.id]).length;
+    $('#ach-count').textContent = `${n} of ${GW.ACHIEVEMENTS.length} unlocked`;
+    $('#ach-list').innerHTML = GW.ACHIEVEMENTS.map((a) => `<li class="${got[a.id] ? 'got' : ''}"><i class="ring" aria-hidden="true"></i><div><b>${esc(a.name)}</b><span>${esc(a.desc)}</span></div></li>`).join('');
+  }
+
+  // Only used when js/controls-ui.js (the rebinding page) is absent: a read-only list of the default controls.
+  function renderControlsFallback() {
+    const root = $('#controls-root');
+    if (!root || root.childElementCount) return;
+    const rows = [
+      ['Move', 'W A S D'],
+      ['Fire', 'Hold the left mouse button (aims at the cursor) · arrow keys · I J K L'],
+      ['Bomb', 'Space · E · right mouse button'],
+      ['Pause', 'Esc · P'],
+      ['Sound', 'M mutes'],
+      ['Gamepad', 'Movement: Left stick<br>Firing: Right stick<br>Bomb: Triggers<br>Pause: Start', 'gap'],
+      ['Touch', 'Left thumb moves, right thumb fires, BOMB button bombs'],
+    ];
+    root.innerHTML = `<table class="ctl-fallback">${rows.map(([k, v, c]) => `<tr${c ? ` class="${c}"` : ''}><th>${k}</th><td>${v}</td></tr>`).join('')}</table>`;
   }
 
   let howtoDone = false;
@@ -181,19 +244,23 @@
       const cv = document.createElement('canvas');
       li.appendChild(cv);
       const txt = document.createElement('div');
-      txt.innerHTML = `<b style="color:${GW.css(d.col)}">${d.name}</b><i>${d.points}${type === 'blackhole' ? '+' : ''}</i><span>${d.desc}</span>`;
+      txt.innerHTML = `<b>${d.name}</b><i>${d.points}${type === 'blackhole' ? '+' : ''}</i><span>${d.desc}</span>`;
       li.appendChild(txt);
       list.appendChild(li);
       GW.drawEnemyIcon(cv, type, 56);
     }
   }
 
-  function toast(kind, title, body) {
+  // Pill toast at bottom centre: ring glyph, a small grey line and a white name. Used for achievements,
+  // the mute key and the reset.
+  function toast(kind, title) {
     const el = document.createElement('div');
     el.className = 'toast';
-    el.innerHTML = `<small>${esc(kind)}</small><b>${esc(title)}</b>${body ? `<span>${esc(body)}</span>` : ''}`;
-    $('#toasts').appendChild(el);
-    setTimeout(() => el.remove(), 4300);
+    el.innerHTML = `<i class="ring" aria-hidden="true"></i><div><small>${esc(kind)}</small><b>${esc(title)}</b></div>`;
+    const box = $('#toasts');
+    box.appendChild(el);
+    while (box.children.length > 3) box.firstElementChild.remove(); // a burst of unlocks keeps only the newest three
+    setTimeout(() => el.remove(), 4700);
   }
 
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -222,12 +289,14 @@
     audio.music.start('game');
     audio.play('select');
     updateTouchUi();
+    input.requestLock?.();
   }
 
   function pause() {
     if (state !== 'playing') return;
     state = 'paused';
     input.gameKeys = false;
+    input.releaseLock?.();
     document.body.classList.remove('playing');
     audio.setDuck(true);
     audio.hum(0);
@@ -245,11 +314,13 @@
     audio.setDuck(false);
     audio.play('select');
     updateTouchUi();
+    input.requestLock?.();
   }
 
   function toTitle() {
     state = 'title';
     input.gameKeys = false;
+    input.releaseLock?.();
     document.body.classList.remove('playing');
     game.newGame(true);
     audio.setDuck(false);
@@ -263,6 +334,7 @@
   function gameOver() {
     state = 'over';
     input.gameKeys = false;
+    input.releaseLock?.();
     document.body.classList.remove('playing');
     audio.play('gameover');
     audio.setDuck(true);
@@ -275,6 +347,7 @@
       ['Best multiplier', 'x' + s.maxMult],
       ['Bombs used', s.bombs],
     ].map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+    // A place in the top ten means beating row 10 of the (pre-seeded) table.
     const qualifies = game.score > 0 && (scores.length < 10 || game.score > scores[scores.length - 1].score);
     $('#name-form').hidden = !qualifies;
     $('#over-rank').textContent = qualifies ? '' : scores.length ? `Top ten needs ${GW.fmt(scores[scores.length - 1].score)}` : '';
@@ -291,7 +364,7 @@
     ev.preventDefault();
     const name = ($('#name-input').value.trim() || 'PLAYER').toUpperCase().slice(0, 12);
     GW.store.set('lastName', name);
-    const entry = { name, score: game.score, time: game.stats.frames, mult: game.stats.maxMult, date: Date.now() };
+    const entry = { name, score: game.score, mult: game.stats.maxMult, date: Date.now() };
     scores.push(entry);
     scores.sort((a, b) => b.score - a.score);
     scores = scores.slice(0, 10);
@@ -342,7 +415,7 @@
       return;
     }
     if (state === 'playing') {
-      if (e.code === 'Escape' || e.code === 'KeyP') { e.preventDefault(); pause(); }
+      if (input.isPause ? input.isPause(e.code) : (e.code === 'Escape' || e.code === 'KeyP')) { e.preventDefault(); pause(); }
       return;
     }
     if (!current) return;
@@ -378,7 +451,7 @@
           if (el.id === 'name-input') $('#name-form').requestSubmit();
           else el.click();
         } else moveFocus(0);
-      } else if (k === 'Pad1') {
+      } else if (k === 'Pad1' || k === 'Pad8') { // B, or Back/View, goes back
         if (current === 'pause') resume();
         else if (stack.length) back();
       } else if (k === 'Pad9') {
@@ -430,9 +503,38 @@
     }
     if (state === 'playing' && game.over) gameOver();
     game.draw(R, { gridHi: opts.grid === 'hi' });
-    hud.draw(game, state === 'playing' || state === 'paused' || state === 'over', input, bestScore());
+    hud.draw(game, state === 'playing' || state === 'paused' || state === 'over', input, bestScore(), state === 'playing');
     updateTouchUi();
   }
+
+  // ---- logo ---------------------------------------------------------------------------------------------
+
+  // The wordmark is laid out around the claw at x = 0 ("GE" ends at its left, "METRY WARS" starts at its right).
+  // index.html carries the numbers for Orbitron; once the real font is in, re-fit the viewBox, the gradient and
+  // the subtitle to the measured text so a fallback font still gives a centred, full-sweep logo.
+  const LOGO_GAP = 52.6; // claw ring radius 44.64 + clearance, in font units (font size 100)
+  function fitLogo() {
+    const svg = $('#logo'), ge = $('#logo-ge'), me = $('#logo-metry'), sub = $('#logo-sub'), grad = $('#gwGrad');
+    if (!svg || !ge || !me || !ge.getComputedTextLength) return;
+    let wGe, wMe;
+    try { wGe = ge.getComputedTextLength(); wMe = me.getComputedTextLength(); } catch (err) { return; }
+    if (!(wGe > 0 && wMe > 0)) return;
+    const x0 = -LOGO_GAP - wGe, x1 = LOGO_GAP + wMe;
+    const cs = getComputedStyle(sub);
+    const fs = parseFloat(cs.fontSize) || 32, ls = parseFloat(cs.letterSpacing) || 0;
+    const base = 35 + 0.72 * fs; // subtitle caps start 0.35 em below the main baseline
+    svg.setAttribute('viewBox', `${(x0 - 2).toFixed(1)} -82 ${(x1 - x0 + 4).toFixed(1)} ${(base + 84).toFixed(1)}`);
+    grad.setAttribute('x1', x0.toFixed(1));
+    grad.setAttribute('x2', x1.toFixed(1));
+    sub.setAttribute('x', ((x0 + x1) / 2 + ls / 2).toFixed(1)); // letter-spacing trails the last letter
+    sub.setAttribute('y', base.toFixed(1));
+  }
+  fitLogo();
+  if (document.fonts) {
+    document.fonts.ready.then(fitLogo);
+    document.fonts.addEventListener?.('loadingdone', fitLogo);
+  }
+  addEventListener('resize', fitLogo);
 
   applyOptions();
   audio.music.start('title');
