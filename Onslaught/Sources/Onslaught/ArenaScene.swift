@@ -1030,7 +1030,10 @@ final class ArenaScene: SKScene {
 
     private func rankLine(_ career: Career) -> String {
         var text = "rank: \(career.rank.uppercased())"
-        if let next = career.nextRank { text += "  ·  \(next.kills - career.kills) kills to \(next.title.uppercased())" }
+        if let next = career.nextRank {
+            let left = next.kills - career.kills
+            text += "  ·  \(left) \(left == 1 ? "kill" : "kills") to \(next.title.uppercased())"
+        }
         return text
     }
 
