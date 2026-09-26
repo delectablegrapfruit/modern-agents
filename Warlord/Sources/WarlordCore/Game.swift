@@ -124,7 +124,7 @@ public struct Game: Codable, Sendable {
 
     /// Seconds until the next order arrives; nil while the stock is full.
     public func nextOrder(now: Date) -> TimeInterval? {
-        orders >= Rules.orderCap ? nil : max(0, Rules.orderInterval - now.timeIntervalSince(ordersClock))
+        orders >= Rules.orderCap ? nil : min(max(0, Rules.orderInterval - now.timeIntervalSince(ordersClock)), Rules.orderInterval)
     }
 
     /// The odds of attacking `to` from `from`, if that is an attack you could order.

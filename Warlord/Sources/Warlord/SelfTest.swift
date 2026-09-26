@@ -65,17 +65,12 @@ enum SelfTest {
     }
 
     private static func finish(board: BoardView, session: Session) {
-        // Leave a lively board for the screenshot: a few breaks' play by the advisor, then an army picked.
-        var now = Date()
-        for _ in 0..<3 {
-            now += 30 * 60
-            session.apply { game in
-                game.accrue(now: now)
-                var moves = 0
-                while moves < 100, let move = Advisor.suggest(game) {
-                    moves += 1
-                    do { try game.play(move, now: now) } catch { break }
-                }
+        // Leave a lively board for the picture: the advisor spends the orders left, then an army is picked.
+        session.apply { game in
+            var moves = 0
+            while moves < 100, game.orders > 0, let move = Advisor.suggest(game) {
+                moves += 1
+                do { try game.play(move, now: Date()) } catch { break }
             }
         }
         let realm = session.game.realm
@@ -94,14 +89,21 @@ enum SelfTest {
         DispatchQueue.main.asyncAfter(deadline: .now() + 4) { exit(code) }
     }
 
-    /// Renders the board at twice its size into a PNG.
+    /// Renders the board at twice its size into a PNG, on a dark ground standing in for the HUD material behind it.
     private static func snapshot(_ view: NSView, to url: URL) -> Bool {
         let size = view.bounds.size
         guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(size.width * 2), pixelsHigh: Int(size.height * 2),
                                          bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
-                                         colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { return false }
+                                         colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
+              let context = NSGraphicsContext(bitmapImageRep: rep) else { return false }
         rep.size = size
-        view.cacheDisplay(in: view.bounds, to: rep)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = context
+        Style.rgb(0x1E2026).setFill()
+        NSBezierPath(roundedRect: view.bounds, xRadius: 11, yRadius: 11).fill()
+        NSGraphicsContext.restoreGraphicsState()
+        view.displayIgnoringOpacity(view.bounds, in: context)
+        context.flushGraphics()
         guard let png = rep.representation(using: .png, properties: [:]) else { return false }
         return (try? png.write(to: url)) != nil
     }

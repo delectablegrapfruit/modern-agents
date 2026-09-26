@@ -146,6 +146,8 @@ final class ClockTests: XCTestCase {
         game.accrue(now: epoch + Rules.orderInterval * 2.5)
         XCTAssertEqual(game.orders, 3)
         XCTAssertEqual(game.nextOrder(now: epoch + Rules.orderInterval * 2.5)!, Rules.orderInterval / 2, accuracy: 1e-6)
+        // A clock set back never shows a wait longer than one interval.
+        XCTAssertEqual(game.nextOrder(now: epoch - 3600), Rules.orderInterval)
         game.accrue(now: epoch + Rules.orderInterval * 100)
         XCTAssertEqual(game.orders, Rules.orderCap)
         XCTAssertNil(game.nextOrder(now: epoch + Rules.orderInterval * 100))
