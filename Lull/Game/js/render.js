@@ -550,6 +550,15 @@
       return { x: g.w - 1 - r, y: g.h - 1 - c };
     }
 
+    /** The logical cell nearest a screen point — off the grid it clamps to the edge. */
+    cellClamped(px, py) {
+      if (!this.lay || !this.game) return null;
+      const { board } = this.lay;
+      const x = Math.max(board.x + 1, Math.min(board.x + board.w - 1, px));
+      const y = Math.max(board.y + 1, Math.min(board.y + board.h - 1, py));
+      return this.cellAt(x, y);
+    }
+
     /** Is a screen point on the hold box? */
     onHold(px, py) {
       if (!this.lay || !this.game || this.game.mods.noHold) return false;
@@ -602,7 +611,7 @@
       const p = g.piece;
       const pieceCells = p ? g.cellsOf(p) : [];
       const gy = p ? g.ghostY(p) : null;
-      const ghostCells = p && gy != null && gy !== p.y ? g.cellsOf(p, p.rot, p.x, gy) : [];
+      const ghostCells = this.mouseGhost && p ? this.mouseGhost : p && gy != null && gy !== p.y ? g.cellsOf(p, p.rot, p.x, gy) : [];
 
       // Fog: only what is near the piece (and where it would land) can be seen.
       let near = null;

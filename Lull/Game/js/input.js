@@ -26,11 +26,10 @@
     ['R', 'Retry puzzle'],
     ['N', 'Next puzzle'],
     ['⌘1 – ⌘5', 'Switch tabs'],
-    ['Mouse: hover', 'The piece follows the pointer'],
-    ['Mouse: click', 'Hard drop'],
-    ['Mouse: drag', 'Pull the piece down and sideways; let go on the stack to set it'],
-    ['Wheel / right-click', 'Turn'],
-    ['Click HOLD', 'Hold, or swap back'],
+    ['Mouse: point', 'Aim — the ghost goes to the spot nearest the pointer, under ledges too'],
+    ['Mouse: click', 'Place it there (anywhere, on the grid or off it)'],
+    ['Wheel', 'Turn (down: clockwise, up: counter-clockwise)'],
+    ['Right-click', 'Hold, or swap back (or click the HOLD box)'],
   ];
 
   class Keys {

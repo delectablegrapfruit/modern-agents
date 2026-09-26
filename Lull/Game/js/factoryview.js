@@ -39,13 +39,15 @@
 
     geom() {
       const W = this.cssW, H = this.cssH;
+      // The machinery keeps a sensible height; a taller window just shows more wall.
+      const Hs = Math.min(H, 360), oy = H - Hs;
       const x0 = Math.round(Math.min(96, W * 0.2)), x1 = Math.round(W - Math.min(78, W * 0.17));
       const floorY = Math.round(H - 18);
-      const beltH = Math.max(12, Math.round(H * 0.07));
+      const beltH = Math.max(12, Math.round(Hs * 0.07));
       const beltY = Math.round(floorY - beltH - 26);
-      const room = beltY - Math.max(58, H * 0.26);
+      const room = beltY - (oy + Math.max(58, Hs * 0.26));
       const cs = Math.max(6, Math.min(24, Math.floor(room / Math.max(2, TIER_MAX_H[this.belt.f.tier] + 0.6))));
-      return { W, H, x0, x1, beltY, beltH, floorY, cs, gateX: x0 + (x1 - x0) * Factory.Belt.INSPECT, bin: { x: x0 + 6, y: floorY - 4 }, crate: { x: x1 + 8, y: floorY } };
+      return { W, H, Hs, oy, x0, x1, beltY, beltH, floorY, cs, gateX: x0 + (x1 - x0) * Factory.Belt.INSPECT, bin: { x: x0 + 6, y: floorY - 4 }, crate: { x: x1 + 8, y: floorY } };
     }
 
     /** The cells of an item laid out landscape, cached on the item. */
@@ -96,18 +98,16 @@
     handleEvents(events, fmtCredits) {
       const g = this.geom();
       for (const e of events) {
-        if (e.kind === 'stamp') { this.lastStamp = this.t; this.puff(g.x0 - 10, Math.max(48, g.H * 0.2) + 6, 4); continue; }
+        if (e.kind === 'stamp') { this.lastStamp = this.t; this.puff(g.x0 - 10, g.oy + Math.max(48, g.Hs * 0.2) + 6, 4); continue; }
         const it = e.item;
         const r = it ? this.itemRect(it, g) : { x: g.W / 2, y: g.beltY - 40, w: 0, h: 0 };
         const x = r.x + r.w / 2, y = r.y - 8;
         const V = Factory.rates(this.belt.f).V * (it ? it.batch : 1);
-        if (e.kind === 'caught') { this.pop('Pulled ✓ +' + fmtCredits(V * 0.5 * this.belt.streakMult()), x, y, '#7bd88f'); this.burst(x, y + r.h / 2, '#7bd88f', 10); }
-        else if (e.kind === 'auto') { this.armT = this.t; this.pop('Inspector', x, y, '#9ccfd8'); }
-        else if (e.kind === 'escaped') { this.pop('Defect shipped −' + fmtCredits(V * 0.6), g.x1 - 10, g.beltY - 64, '#eb6f92'); this.flash = { color: '#eb6f92', t: this.t }; }
-        else if (e.kind === 'wasted') { this.pop('That one was fine', x, y, '#f6c177'); this.flash = { color: '#f6c177', t: this.t }; }
-        else if (e.kind === 'golden') { this.pop('Golden! +' + e.lines + ' ◆', x, y, '#ffd866'); this.burst(x, y + r.h / 2, '#ffd866', 22); }
-        else if (e.kind === 'packed') { this.pop('Packed ' + e.rush.got + '/' + e.rush.need, x, y, '#c4a7e7'); this.burst(x, y + r.h / 2, '#c4a7e7', 10); }
-        else if (e.kind === 'rushDone') { this.pop('Rush order filled!', g.W / 2, 60, '#c4a7e7'); this.burst(g.W / 2, 40, '#c4a7e7', 30); }
+        if (e.kind === 'caught') { this.pop('+' + fmtCredits(V * 0.5 * this.belt.streakMult()), x, y, '#7bd88f'); this.burst(x, y + r.h / 2, '#7bd88f', 10); }
+        else if (e.kind === 'auto') { this.armT = this.t; }
+        else if (e.kind === 'escaped') { this.pop('−' + fmtCredits(V * 0.6), g.x1 - 10, g.beltY - 64, '#eb6f92'); this.flash = { color: '#eb6f92', t: this.t }; }
+        else if (e.kind === 'wasted') { this.pop('✗', x, y, '#f6c177'); this.flash = { color: '#f6c177', t: this.t }; }
+        else if (e.kind === 'golden') { this.pop('+' + e.lines + ' ◆', x, y, '#ffd866'); this.burst(x, y + r.h / 2, '#ffd866', 22); }
         else if (e.kind === 'shipped') { this.crate = Math.min(1, this.crate + 0.12); if (this.crate >= 1 && !this.crateOut) this.crateOut = this.t; }
       }
     }
@@ -137,7 +137,7 @@
       const wall = ctx.createLinearGradient(0, 0, 0, g.H);
       wall.addColorStop(0, dark ? '#1b2030' : '#e4e8f0'); wall.addColorStop(1, dark ? '#10131b' : '#cfd5df');
       ctx.fillStyle = wall; ctx.fillRect(0, 0, g.W, g.H);
-      const winY = 14, winH = Math.max(24, g.beltY * 0.28);
+      const winY = 14, winH = Math.max(24, Math.min(110, g.beltY * 0.28));
       for (let k = 0; k < 5; k++) {
         const wx = g.W * (0.08 + k * 0.19), ww = g.W * 0.12;
         const sky = ctx.createLinearGradient(0, winY, 0, winY + winH);
@@ -182,20 +182,16 @@
       const bin = g.bin;
       ctx.fillStyle = '#4a2f36'; rr(ctx, bin.x - 20, bin.y - 24, 40, 24, 4); ctx.fill();
       ctx.fillStyle = '#eb6f92'; ctx.fillRect(bin.x - 20, bin.y - 24, 40, 4);
-      ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.font = '700 8px ' + FONT; ctx.textAlign = 'center'; ctx.fillText('REJECT', bin.x, bin.y - 9); ctx.textAlign = 'start';
+      ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(bin.x - 5, bin.y - 17); ctx.lineTo(bin.x + 5, bin.y - 7); ctx.moveTo(bin.x + 5, bin.y - 17); ctx.lineTo(bin.x - 5, bin.y - 7); ctx.stroke();
 
       // The press: stamps, then steams.
-      const pressW = Math.max(36, Math.min(56, g.x0 - 36)), pressX = 6, pressTop = Math.max(48, g.H * 0.2);
+      const pressW = Math.max(36, Math.min(56, g.x0 - 36)), pressX = 6, pressTop = g.oy + Math.max(48, g.Hs * 0.2);
       const since = this.t - this.lastStamp;
       const stroke = since < 0.3 ? Math.sin((since / 0.3) * Math.PI) : 0;
       const body = ctx.createLinearGradient(pressX, 0, pressX + pressW, 0);
       body.addColorStop(0, '#4a556b'); body.addColorStop(1, '#2d3442');
       ctx.fillStyle = body; rr(ctx, pressX, pressTop, pressW, g.floorY - pressTop, 7); ctx.fill();
       ctx.fillStyle = theme.accent; ctx.fillRect(pressX + 6, pressTop + 7, pressW - 12, 4);
-      ctx.fillStyle = '#e8eaf0'; ctx.font = '700 10px ' + FONT; ctx.textAlign = 'center';
-      ctx.fillText('×' + L.fmt(Factory.rates(f).presses), pressX + pressW / 2, pressTop + 26);
-      ctx.font = '600 8px ' + FONT; ctx.fillStyle = 'rgba(232,234,240,0.6)'; ctx.fillText(Factory.TIERS[f.tier].short.toUpperCase(), pressX + pressW / 2, pressTop + 38);
-      ctx.textAlign = 'start';
       // Gauge that swings with every stamp.
       const gx = pressX + pressW / 2, gy = pressTop + 58;
       ctx.fillStyle = '#1b1f28'; ctx.beginPath(); ctx.arc(gx, gy, 9, 0, Math.PI * 2); ctx.fill();
@@ -211,7 +207,7 @@
 
       // Inspector's gate and arm.
       const inspect = f.up.inspect > 0;
-      const gTop = Math.max(40, g.H * 0.18);
+      const gTop = g.oy + Math.max(40, g.Hs * 0.18);
       ctx.strokeStyle = inspect ? '#7fb2bd' : rgba('#9ccfd8', 0.25); ctx.lineWidth = 4;
       ctx.beginPath(); ctx.moveTo(g.gateX - 20, g.beltY); ctx.lineTo(g.gateX - 20, gTop); ctx.lineTo(g.gateX + 20, gTop); ctx.lineTo(g.gateX + 20, g.beltY); ctx.stroke();
       if (inspect) {
@@ -221,8 +217,6 @@
         ctx.beginPath(); ctx.moveTo(g.gateX, gTop); ctx.lineTo(g.gateX - 8 * grab, (gTop + reach) / 2); ctx.lineTo(g.gateX, reach); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(g.gateX - 8, reach + 8); ctx.lineTo(g.gateX, reach); ctx.lineTo(g.gateX + 8, reach + 8); ctx.stroke();
         ctx.fillStyle = at < 0.6 ? '#eb6f92' : '#7bd88f'; ctx.beginPath(); ctx.arc(g.gateX, gTop - 6, 4, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = theme.muted; ctx.font = '600 9px ' + FONT; ctx.textAlign = 'center';
-        ctx.fillText(Math.round(Factory.rates(f).C * 100) + '%', g.gateX, gTop - 14); ctx.textAlign = 'start';
       }
 
       // Shipping crate: fills up, rolls away, a new one rolls in.
@@ -234,18 +228,15 @@
       ctx.strokeStyle = '#6a4220'; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.moveTo(crateX, g.floorY - ch); ctx.lineTo(crateX + cw, g.floorY); ctx.moveTo(crateX + cw, g.floorY - ch); ctx.lineTo(crateX, g.floorY); ctx.stroke();
       ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.fillRect(crateX + 4, g.floorY - ch - 4, (cw - 8) * (out > 0 ? 1 : this.crate), 3);
-      ctx.fillStyle = theme.muted; ctx.font = '700 8px ' + FONT; ctx.textAlign = 'center'; ctx.fillText('SHIP', crateX + cw / 2, g.floorY - ch - 8); ctx.textAlign = 'start';
+
 
       // Items.
-      const rush = belt.rush;
       for (const it of belt.items) {
         const r = this.itemRect(it, g);
         const alpha = it.gone ? Math.max(0, 1 - Math.max(0, it.fade - 0.55) / 0.45) : 1;
         if (alpha <= 0) continue;
         const color = it.golden ? '#ffd24a' : hsl(it.hue, 62, 64);
         if (!it.gone) { ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.beginPath(); ctx.ellipse(r.x + r.w / 2, g.beltY + 2, r.w / 2 + 2, 3, 0, 0, Math.PI * 2); ctx.fill(); }
-        const wanted = rush && !it.gone && !it.defect && Pieces.freeKey(it.cells) === rush.key;
-        if (wanted) { ctx.save(); ctx.strokeStyle = '#c4a7e7'; ctx.lineWidth = 2; ctx.setLineDash([4, 3]); ctx.lineDashOffset = -this.t * 20; rr(ctx, r.x - 5, r.y - 5, r.w + 10, r.h + 10, 5); ctx.stroke(); ctx.restore(); }
         if (it.golden && !it.gone) { ctx.save(); ctx.shadowColor = '#ffd24a'; ctx.shadowBlur = 14 + Math.sin(this.t * 6) * 5; ctx.fillStyle = 'rgba(255,210,74,0.2)'; rr(ctx, r.x - 3, r.y - 3, r.w + 6, r.h + 6, 4); ctx.fill(); ctx.restore(); }
         if (this.hover === it && !it.gone) { ctx.strokeStyle = rgba(theme.accent, 0.95); ctx.lineWidth = 2; rr(ctx, r.x - 4, r.y - 4, r.w + 8, r.h + 8, 5); ctx.stroke(); }
         const cells = this.shape(it);
@@ -274,23 +265,11 @@
         else { ctx.fillStyle = rgba(p.color, 1 - k); ctx.fillRect(p.x - 1.5, p.y - 1.5, 3, 3); }
       }
 
-      // HUD: QC streak (top left) and a rush order (top centre).
+      // The QC streak: a small chip, only once there is one.
       const st = f.streak, mult = belt.streakMult();
-      ctx.fillStyle = dark ? 'rgba(10,12,18,0.72)' : 'rgba(255,255,255,0.8)'; rr(ctx, 8, 8, 132, 30, 7); ctx.fill();
-      ctx.fillStyle = theme.fg; ctx.font = '700 11px ' + FONT; ctx.fillText('QC streak ' + st, 16, 21);
-      ctx.fillStyle = mult > 1 ? '#7bd88f' : theme.muted; ctx.textAlign = 'right'; ctx.fillText('×' + mult.toFixed(2), 132, 21); ctx.textAlign = 'start';
-      ctx.fillStyle = rgba(theme.accent, 0.2); rr(ctx, 16, 27, 116, 4, 2); ctx.fill();
-      ctx.fillStyle = '#7bd88f'; rr(ctx, 16, 27, 116 * Math.min(1, st / 20), 4, 2); ctx.fill();
-      if (rush) {
-        const bw2 = Math.min(230, g.W - 170), bxx = Math.max(148, (g.W - bw2) / 2);
-        ctx.fillStyle = dark ? 'rgba(40,26,60,0.88)' : 'rgba(240,230,255,0.92)'; rr(ctx, bxx, 8, bw2, 30, 7); ctx.fill();
-        ctx.strokeStyle = '#c4a7e7'; ctx.lineWidth = 1.5; rr(ctx, bxx, 8, bw2, 30, 7); ctx.stroke();
-        ctx.fillStyle = theme.fg; ctx.font = '700 10px ' + FONT; ctx.fillText('RUSH ' + rush.got + '/' + rush.need, bxx + 8, 21);
-        const ib = Pieces.boundsOf(rush.cells), is = Math.min(5, 18 / Math.max(ib.w, ib.h));
-        for (const [cx, cy] of rush.cells) { ctx.fillStyle = '#c4a7e7'; ctx.fillRect(bxx + 78 + (cx - ib.minX) * is, 11 + (ib.maxY - cy) * is, is - 0.5, is - 0.5); }
-        ctx.fillStyle = theme.muted; ctx.font = '600 9px ' + FONT; ctx.fillText('click matching shapes', bxx + 104, 21);
-        ctx.fillStyle = rgba('#c4a7e7', 0.25); rr(ctx, bxx + 8, 29, bw2 - 16, 4, 2); ctx.fill();
-        ctx.fillStyle = '#c4a7e7'; rr(ctx, bxx + 8, 29, (bw2 - 16) * Math.max(0, rush.time / rush.total), 4, 2); ctx.fill();
+      if (st > 0) {
+        ctx.fillStyle = dark ? 'rgba(10,12,18,0.7)' : 'rgba(255,255,255,0.85)'; rr(ctx, 8, 8, 86, 24, 12); ctx.fill();
+        ctx.fillStyle = '#7bd88f'; ctx.font = '700 11px ' + FONT; ctx.textAlign = 'center'; ctx.fillText('✓ ' + st + '   ×' + mult.toFixed(2), 51, 24); ctx.textAlign = 'start';
       }
 
       // Floating notes.

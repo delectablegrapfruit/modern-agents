@@ -41,12 +41,8 @@
     burnt:    { name: 'Scorched', note: 'burnt cell' },
   };
 
-  const SYL = ['quad', 'tro', 'mino', 'blok', 'pent', 'hex', 'cube', 'tile', 'grid', 'stack', 'brick', 'lat', 'pix', 'mor', 'ten', 'vox', 'nib', 'zel', 'cor', 'fen'];
-  const FIRM = ['Logistics', '& Sons', 'Holdings', 'Supply', 'Toys', 'Architects', 'Freight', 'Co-op', 'Studios', 'Depot', 'Works', 'Guild'];
   const PLANT_ADJ = ['Cobalt', 'Maple', 'Harbor', 'Granite', 'Copper', 'Willow', 'Signal', 'Juniper', 'Ember', 'Northgate', 'Saffron', 'Tin'];
   const PLANT_NOUN = ['Works', 'Foundry', 'Mill', 'Yard', 'Assembly', 'Pressworks', 'Plant', 'Forge'];
-
-  function cap(s) { return s[0].toUpperCase() + s.slice(1); }
 
   function plantName(seed) {
     const r = new RNG(hash32('plant:' + seed));
@@ -55,15 +51,15 @@
 
   function create() {
     return {
-      v: 2,
+      v: 3,
       credits: 0, runEarned: 0, lifetime: 0,
       tier: 1, maxTierRun: 1,
       up: { press: 0, quality: 0, inspect: 0 },
       streak: 0, bestStreak: 0,
       patents: 0, retools: 0, plantSeed: (Math.random() * 1e9) | 0,
-      contracts: [], contractCounter: 0,
+      ordersMade: 0,
       flawless: 0,
-      stats: { shipped: 0, byTier: {}, caughtManual: 0, caughtAuto: 0, escaped: 0, falseRejects: 0, contractsDone: 0, bestRate: 0, offlineEarned: 0, watchedMs: 0, retooled: 0, golden: 0, rushDone: 0 },
+      stats: { shipped: 0, byTier: {}, caughtManual: 0, caughtAuto: 0, escaped: 0, falseRejects: 0, contractsDone: 0, bestRate: 0, offlineEarned: 0, watchedMs: 0, retooled: 0, golden: 0, orders: 0, orderPoints: 0, perfectOrders: 0, bestOrder: 0 },
       lastTick: Date.now(),
       unlocks: {},
     };
@@ -71,13 +67,14 @@
 
   /** Saves from before the factory was simplified: seven upgrades fold into three. */
   function migrate(f) {
-    if (f.v === 2) return f;
+    if (f.v === 3) return f;
+    if (f.v === 2) { delete f.contracts; delete f.contractCounter; f.stats = Object.assign({ orders: 0, orderPoints: 0, perfectOrders: 0, bestOrder: 0 }, f.stats); f.v = 3; return f; }
     const up = f.up || {};
     f.up = { press: up.press || 0, quality: Math.floor(((up.mold || 0) + (up.calib || 0)) / 2), inspect: Math.min(18, up.inspect || 0) };
     f.streak = f.streak || 0; f.bestStreak = f.bestStreak || 0;
-    f.stats = Object.assign({ golden: 0, rushDone: 0 }, f.stats);
-    f.contracts = (f.contracts || []).slice(0, 2);
-    f.v = 2;
+    f.stats = Object.assign({ golden: 0, orders: 0, orderPoints: 0, perfectOrders: 0, bestOrder: 0 }, f.stats);
+    delete f.contracts; delete f.contractCounter;
+    f.v = 3;
     return f;
   }
 
@@ -178,76 +175,70 @@
     f.up = { press: 0, quality: 0, inspect: 0 };
     f.plantSeed = (f.plantSeed * 7919 + 13) | 0;
     f.flawless = 0;
-    f.contracts = [];
     return gain;
   }
 
-  // ---- contracts -----------------------------------------------------------------------------------------------------
+  // ---- orders: the hands-on part (in the spirit of the Papa's restaurant games) ------------------------------------
+  //
+  // A customer walks up and orders one mino: a shape and a paint. You build it cell by cell in the mold, paint it,
+  // press it (stop the needle in the green), and hand it over. They grade each step; the grade sets the pay.
 
-  function clientName(r) { return cap(r.pick(SYL)) + r.pick(SYL) + ' ' + r.pick(FIRM); }
+  const PAINTS = ['#ef6f6c', '#f7c548', '#6cc486', '#5aa9e6', '#b784d8', '#f39a4a'];
+  const CUSTOMER_NAMES = ['Ada', 'Bo', 'Cleo', 'Dex', 'Edie', 'Finn', 'Gus', 'Hana', 'Ivo', 'Juno', 'Kit', 'Lou', 'Mo', 'Nell', 'Otto', 'Pip', 'Quin', 'Rae', 'Sol', 'Tess', 'Uma', 'Vic', 'Wren', 'Yuki', 'Zed'];
 
-  function niceRound(x) {
-    if (x < 10) return Math.max(1, Math.round(x));
-    const p = Math.pow(10, Math.floor(Math.log10(x)) - 1);
-    return Math.round(x / p) * p;
+  /** Paints on the shelf: three to start, one more every other product line. */
+  function paintCount(f) { return Math.min(PAINTS.length, 3 + Math.floor((f.tier - 1) / 2)); }
+  /** Orders are three-cell pieces at first and grow with the product line (up to eight cells). */
+  function orderSize(f) { return Math.max(3, Math.min(8, f.tier)); }
+
+  function newOrder(f, r) {
+    const n = orderSize(f);
+    const cat = catalog(n);
+    let cells = cat[r.int(cat.length)].map((c) => c.slice());
+    for (let t = r.int(4); t > 0; t--) cells = cells.map(([x, y]) => [y, -x]);
+    cells = Pieces.normalize(cells);
+    return {
+      id: (f.ordersMade = (f.ordersMade || 0) + 1),
+      cells, paint: r.int(paintCount(f)),
+      customer: { name: r.pick(CUSTOMER_NAMES), hue: r.int(360), hat: r.int(4), size: 0.9 + r.next() * 0.25 },
+      created: Date.now(),
+    };
   }
 
-  function newContract(f) {
-    const r = new RNG(hash32('contract:' + f.plantSeed + ':' + f.contractCounter));
-    f.contractCounter++;
-    const rt = rates(f);
-    const kinds = f.tier >= 3 ? ['ship', 'catch', 'earn', 'flawless', 'rush'] : ['ship', 'catch', 'earn', 'flawless'];
-    const kind = r.pick(kinds);
-    const c = { id: f.contractCounter, kind, client: clientName(r), progress: 0, reward: {} };
-    const minutes = r.range(3, 10);
-    if (kind === 'ship') {
-      c.target = niceRound(rt.P * minutes * 60);
-      c.reward.credits = Math.round(c.target * rt.V * 0.6);
-      if (r.chance(0.5)) c.reward.lines = r.range(4, 12);
-    } else if (kind === 'catch') {
-      c.target = r.range(3, 8 + Math.min(12, f.tier * 2));
-      c.reward.lines = r.range(10, 18) + f.tier * 2;
-      c.reward.credits = Math.round(rt.perSec * 60 * r.range(2, 5));
-    } else if (kind === 'earn') {
-      c.target = niceRound(rt.perSec * minutes * 60 + 20);
-      c.reward.item = r.pick(['reroll', 'mirror', 'pebble', 'rewind', 'sand', 'order', 'bomb']);
-      c.reward.credits = Math.round(c.target * 0.25);
-    } else if (kind === 'rush') {
-      c.target = r.range(2, 4);
-      c.reward.lines = r.range(14, 24) + f.tier * 2;
-      c.reward.credits = Math.round(rt.perSec * 60 * r.range(3, 6));
-    } else {
-      c.target = niceRound(Math.min(rt.P * minutes * 60, 40 + rt.P * 120));
-      c.reward.lines = r.range(16, 30) + f.tier * 2;
-      if (r.chance(0.35)) c.reward.item = r.pick(['drill', 'phase', 'settle', 'order']);
+  /**
+   * Grades a finished order, each step out of 100: the shape (any turn or flip counts), the paint, the press
+   * (0 = dead centre of the green), and the wait. Returns the scores, the total and the pay.
+   */
+  function gradeOrder(f, order, built) {
+    const want = order.cells, got = built.cells;
+    let shape;
+    if (got.length && Pieces.freeKey(got) === Pieces.freeKey(want)) shape = 100;
+    else {
+      const off = Math.abs(got.length - want.length);
+      shape = Math.max(0, 70 - off * 20 - (got.length && Pieces.isConnected(got) ? 0 : 30));
     }
-    c.minutes = minutes;
-    return c;
+    const paint = built.paint === order.paint ? 100 : 30;
+    const press = Math.round(Math.max(0, 100 - Math.abs(built.press == null ? 1 : built.press) * 100));
+    const waited = (Date.now() - order.created) / 1000;
+    const wait = Math.round(Math.max(50, Math.min(100, 100 - (waited - 60) / 3)));
+    const total = Math.round((shape * 2 + paint + press + wait) / 5);
+    const r = rates(f);
+    const credits = Math.round((r.perSec * 30 + TIERS[f.tier].value * 25) * (0.3 + total / 100));
+    const tip = total >= 90 ? Math.round(credits * 0.3) : 0;
+    const lines = total >= 97 ? 3 : total >= 88 ? 2 : total >= 70 ? 1 : 0;
+    return { shape, paint, press, wait, total, credits, tip, lines, stars: total >= 95 ? 3 : total >= 80 ? 2 : total >= 55 ? 1 : 0 };
   }
 
-  function fillContracts(f) {
-    while (f.contracts.length < 2) f.contracts.push(newContract(f));
+  function serveOrder(f, grade) {
+    earn(f, grade.credits + grade.tip);
+    const s = f.stats;
+    s.orders = (s.orders || 0) + 1;
+    s.orderPoints = (s.orderPoints || 0) + grade.total;
+    if (grade.total >= 95) s.perfectOrders = (s.perfectOrders || 0) + 1;
+    s.bestOrder = Math.max(s.bestOrder || 0, grade.total);
   }
 
-  function progress(f, kind, amount) {
-    for (const c of f.contracts) {
-      if (c.done) continue;
-      if (kind === 'flawless' && c.kind === 'flawless') c.progress = Math.min(c.target, f.flawless);
-      else if (c.kind === kind) c.progress = Math.min(c.target, c.progress + amount);
-      if (c.progress >= c.target) c.done = true;
-    }
-  }
-
-  /** Takes a finished contract's reward (credits applied here; lines and items returned for the caller). */
-  function claim(f, id) {
-    const i = f.contracts.findIndex((c) => c.id === id);
-    if (i < 0 || !f.contracts[i].done) return null;
-    const c = f.contracts[i];
-    if (c.reward.credits) earn(f, c.reward.credits);
-    f.stats.contractsDone++;
-    f.contracts.splice(i, 1, newContract(f));
-    return c.reward;
-  }
+  function progress() { /* contracts are gone; kept so older callers stay harmless */ }
 
   // ---- products and defects ------------------------------------------------------------------------------------------
 
@@ -321,7 +312,6 @@
    *  - Click a defect: pulled, and your QC streak grows (worth up to double on everything you ship while watching).
    *    Pull a good one or let a defect ship and the streak starts over.
    *  - Golden minos: rare, click them for lines.
-   *  - Rush orders: a client wants a handful of one shape; click good ones of that shape to pack them.
    */
   class Belt {
     constructor(f) {
@@ -332,8 +322,6 @@
       this.travel = 14; // seconds end to end
       this.events = [];
       this.nextId = 1;
-      this.rush = null;
-      this.rushIn = 25 + this.rng.next() * 30;
     }
     static get INSPECT() { return 0.64; }
     // Bigger products need more room on the belt, so they come in fewer, larger batches.
@@ -343,9 +331,7 @@
 
     spawn(x) {
       const f = this.f;
-      let forceIdx = null;
-      if (this.rush && this.rng.chance(0.4)) forceIdx = this.rush.idx;
-      const it = makeItem(f, this.rng, forceIdx != null ? this.rng.chance(rates(f).D * 0.6) : null, forceIdx);
+      const it = makeItem(f, this.rng);
       it.id = this.nextId++;
       it.x = x;
       it.batch = this.batch();
@@ -377,23 +363,6 @@
         if (it.x >= 1 && !it.gone) this.ship(it);
       }
       this.items = this.items.filter((it) => !(it.gone && it.fade >= 1));
-      this.stepRush(dt);
-    }
-
-    stepRush(dt) {
-      const cat = catalog(this.f.tier);
-      if (this.rush) {
-        this.rush.time -= dt;
-        if (this.rush.time <= 0) { this.events.push({ kind: 'rushMissed', rush: this.rush }); this.rush = null; this.rushIn = 40 + this.rng.next() * 50; }
-        return;
-      }
-      if (cat.length < 2) return;
-      this.rushIn -= dt;
-      if (this.rushIn > 0) return;
-      const idx = this.rng.int(cat.length);
-      const need = this.rng.range(3, 5);
-      this.rush = { idx, key: Pieces.freeKey(cat[idx]), cells: cat[idx], need, got: 0, time: 30 + need * 6, total: 30 + need * 6 };
-      this.events.push({ kind: 'rush', rush: this.rush });
     }
 
     /** Items already on their way when you look (their output was counted while nobody watched). */
@@ -455,21 +424,6 @@
         earn(f, 5 * r.V * it.batch);
         f.stats.golden++;
         this.events.push({ kind: 'golden', item: it, lines });
-      } else if (this.rush && Pieces.freeKey(it.cells) === this.rush.key) {
-        it.gone = 'packed';
-        earn(f, r.V * it.batch * this.streakMult());
-        f.stats.shipped += it.batch;
-        this.rush.got++;
-        this.events.push({ kind: 'packed', item: it, rush: this.rush });
-        if (this.rush.got >= this.rush.need) {
-          const reward = { credits: Math.round(r.perSec * 45 + r.V * 10), lines: 2 + this.rng.int(4) };
-          earn(f, reward.credits);
-          f.stats.rushDone++;
-          progress(f, 'rush', 1);
-          this.events.push({ kind: 'rushDone', rush: this.rush, reward });
-          this.rush = null;
-          this.rushIn = 45 + this.rng.next() * 60;
-        }
       } else {
         it.gone = 'wasted';
         f.stats.falseRejects += it.batch;
@@ -486,6 +440,6 @@
   L.Factory = {
     TIERS, MAX_TIER, UPGRADES, DEFECTS, PATENTS_FOR_TIER,
     create, migrate, rates, cost, buy, OFFLINE_HOURS, nextTier, unlockTier, earn, runExpected, catchUp,
-    retoolGain, retool, newContract, fillContracts, progress, claim, catalog, makeItem, productName, plantName, Belt,
+    retoolGain, retool, progress, PAINTS, paintCount, orderSize, newOrder, gradeOrder, serveOrder, catalog, makeItem, productName, plantName, Belt,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

@@ -46,7 +46,7 @@
       game.on('blocked', () => { if (this.quiet) return; this.app.sound.play('blocked'); this.view.bump(this.reduced); });
       game.on('spawn', () => {
         // A new piece meets the pointer where it is.
-        if (this.pointer && this.settings.mouse) setTimeout(() => { if (this.pointer && !this.drag) this.follow(this.pointer[0], this.pointer[1], false); }, 0);
+        if (this.pointer && this.settings.mouse) setTimeout(() => this.follow(), 0);
       });
       game.on('topout', () => this.onTopout && this.onTopout());
       game.on('empty', () => this.onEmpty && this.onEmpty());
@@ -93,6 +93,7 @@
         if (a === 'lower' && !rep) snd.play('lower');
       }
       this.view.dirty = true;
+      if (this.pointer && ok) this.follow();
       if (this.afterAction) this.afterAction(a);
       return ok;
     }
@@ -101,48 +102,42 @@
 
     /**
      * Mouse-only play (left and right buttons, wheel, pointer):
-     *  - hover: the piece follows the pointer's column
-     *  - click: hard drop
-     *  - drag: the piece follows the pointer down and sideways (slide it under ledges); let go on the stack to set it,
-     *    or in the air to leave it floating
-     *  - wheel: turn · right-click: turn clockwise · click the hold box: hold / swap back
+     *  - point: the piece follows the pointer's column, and its ghost goes to the resting spot nearest the pointer
+     *    that the piece can actually get to — under a ledge too, if there is a way in
+     *  - click (anywhere on the board's canvas, on the grid or off it): the piece goes where the ghost is
+     *  - wheel: turn (down clockwise, up counter-clockwise)
+     *  - right-click, or a click on the HOLD box: hold / swap back
      */
     bindMouse() {
       const c = this.canvas;
       const pos = (e) => { const r = c.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
-      this.drag = null;
       this.pointer = null;
       const enabled = () => this.settings.mouse && this.game && !this.blocked();
       c.addEventListener('mousemove', (e) => {
-        const [px, py] = pos(e);
-        this.pointer = [px, py];
+        this.pointer = pos(e);
         if (!enabled()) return;
-        const hold = this.view.onHold(px, py);
+        const hold = this.view.onHold(...this.pointer);
         if (hold !== this.view.holdHover) { this.view.holdHover = hold; this.view.dirty = true; }
-        if (this.drag && Math.hypot(px - this.drag.x, py - this.drag.y) > 6) this.drag.moved = true;
-        this.follow(px, py, !!(this.drag && this.drag.moved));
-        c.style.cursor = hold ? 'pointer' : this.drag && this.drag.moved ? 'grabbing' : this.view.cellAt(px, py) ? 'grab' : 'default';
+        this.follow();
+        c.style.cursor = hold ? 'pointer' : 'default';
       });
-      c.addEventListener('mouseleave', () => { this.pointer = null; this.view.pointerCol = null; this.view.holdHover = false; this.view.dirty = true; });
+      c.addEventListener('mouseleave', () => { this.pointer = null; this.view.pointerCol = null; this.view.mouseGhost = null; this.view.holdHover = false; this.view.dirty = true; });
       c.addEventListener('mousedown', (e) => {
         if (!enabled()) return;
         if (performance.now() - this.app.focusedAt < 300) return; // the click that brought the window forward
         const [px, py] = pos(e);
-        if (this.view.onHold(px, py)) { if (e.button === 0 || e.button === 2) this.action('hold'); return; }
-        if (!this.view.cellAt(px, py)) return;
-        if (e.button === 0) this.drag = { x: px, y: py, t: performance.now(), moved: false };
-        else if (e.button === 2) this.action('cw');
-      });
-      root.addEventListener('mouseup', (e) => {
-        if (e.button !== 0 || !this.drag) return;
-        const d = this.drag;
-        this.drag = null;
-        if (!enabled() || !this.game.piece) return;
-        if (!d.moved) { if (performance.now() - d.t < 500) this.action('drop'); return; }
-        // Let go on the stack: set it there. Let go in the air: it stays put.
-        const g = this.game, p = g.piece;
-        if (!g.mods.heavy && !g.fitsAt(p, p.rot, p.x, p.y - 1)) this.action('down');
-        c.style.cursor = 'grab';
+        if (e.button === 2 || this.view.onHold(px, py)) { if (e.button === 0 || e.button === 2) this.action('hold'); return; }
+        if (e.button !== 0) return;
+        this.pointer = [px, py];
+        this.follow();
+        const t = this.mouseTarget;
+        const g = this.game;
+        if (t && g.piece && t.piece === g.piece) {
+          g.piece.x = t.x; g.piece.y = t.y; g.piece.lastRot = false;
+          g.s.drops++;
+          g.lock();
+          this.view.dirty = true;
+        } else this.action('drop');
       });
       c.addEventListener('contextmenu', (e) => e.preventDefault());
       c.addEventListener('wheel', (e) => {
@@ -152,28 +147,48 @@
         if (now - this.wheelAt < 110 || Math.abs(e.deltaY) < 2) return;
         this.wheelAt = now;
         this.action(e.deltaY > 0 ? 'cw' : 'ccw');
+        this.follow();
       }, { passive: false });
     }
 
-    /** Steps the piece toward the pointer: sideways always, and down too while dragging. */
-    follow(px, py, lower) {
+    /** Moves the piece to the pointer's column and works out where a click would put it. */
+    follow() {
       const g = this.game;
-      const cell = this.view.cellAt(px, py);
-      const col = cell ? cell.x : null;
-      if (col !== this.view.pointerCol) { this.view.pointerCol = col; this.view.dirty = true; }
-      if (!cell || !g || !g.piece || g.over) return;
+      this.mouseTarget = null;
+      this.view.mouseGhost = null;
+      if (!this.pointer || !g || !g.piece || g.over || !this.settings.mouse) return;
+      const cell = this.view.cellClamped(this.pointer[0], this.pointer[1]);
+      if (!cell) return;
+      if (cell.x !== this.view.pointerCol) this.view.pointerCol = cell.x;
       this.quiet = true;
-      for (let i = 0; i < g.w + g.h; i++) {
-        let moved = g.moveToward(cell.x);
-        const p = g.piece;
-        if (lower && p && !g.mods.heavy) {
-          const b = p.type.rotBounds[p.rot];
-          if (p.y + b.minY + (b.h - 1) / 2 > cell.y + 0.01 && g.fitsAt(p, p.rot, p.x, p.y - 1)) { g.lower(); moved = true; }
-        }
-        if (!moved) break;
-      }
+      for (let i = 0; i < g.w; i++) if (!g.moveToward(cell.x)) break;
       this.quiet = false;
+      const p = g.piece;
       this.view.dirty = true;
+      if (p.special === 'phase' || p.special === 'drill' || g.mods.heavy) return; // those use the plain drop
+      // Every spot the piece can reach from here by sliding and lowering; the resting ones are candidates.
+      const b = p.type.rotBounds[p.rot], cells = p.type.rots[p.rot], board = g.board;
+      const want = cell.x - (b.minX + Math.floor((b.w - 1) / 2));
+      const seen = new Set([p.x + ',' + p.y]);
+      const q = [[p.x, p.y]];
+      let best = null, bestScore = Infinity;
+      for (let head = 0; head < q.length && head < 4000; head++) {
+        const [x, y] = q[head];
+        if (!board.fits(cells, x, y - 1)) {
+          let dx = board.wrap ? Math.abs(((x - want) % g.w + g.w) % g.w) : Math.abs(x - want);
+          if (board.wrap) dx = Math.min(dx, g.w - dx);
+          const score = dx * 100 + Math.abs(y + b.minY + (b.h - 1) / 2 - cell.y);
+          if (score < bestScore) { bestScore = score; best = [x, y]; }
+        }
+        for (const [nx, ny] of [[x - 1, y], [x + 1, y], [x, y - 1]]) {
+          const wx = board.wx(nx), k = wx + ',' + ny;
+          if (seen.has(k) || !board.fits(cells, wx, ny)) continue;
+          seen.add(k); q.push([wx, ny]);
+        }
+      }
+      if (!best) return;
+      this.mouseTarget = { piece: p, x: best[0], y: best[1] };
+      this.view.mouseGhost = g.cellsOf(p, p.rot, best[0], best[1]);
     }
 
     showCard(content) {
@@ -732,41 +747,70 @@
     { kind: 'frame', id: 'hazard', test: (f) => f.tier >= 6 || (f.bestTier || 0) >= 6 },
     { kind: 'skin', id: 'steel', test: (f) => f.retools >= 1 },
     { kind: 'backdrop', id: 'belt', test: (f) => f.stats.caughtManual >= 250 },
-    { kind: 'effect', id: 'sparks', test: (f) => f.stats.contractsDone >= 25 },
+    { kind: 'effect', id: 'sparks', test: (f) => (f.stats.orders || 0) >= 25 },
   ];
 
+  const STATIONS = [
+    { id: 'order', icon: '🛎', label: 'Counter' },
+    { id: 'build', icon: '▦', label: 'Mold' },
+    { id: 'press', icon: '⤓', label: 'Press' },
+    { id: 'line', icon: '⚙', label: 'Line' },
+  ];
+
+  /**
+   * The factory: a counter where customers order minos (build them in the mold, press them, get graded), and the
+   * assembly line that runs by itself — you pull defects off it when you look in.
+   */
   class FactoryMode {
     constructor(app) {
       this.app = app;
       this.f = Factory.migrate(app.store.state.factory);
-      Factory.fillContracts(this.f);
       this.belt = new Factory.Belt(this.f);
-      this.canvas = document.getElementById('cv-belt');
-      this.view = new L.BeltView(this.canvas, this.belt);
+      this.beltCanvas = document.getElementById('cv-belt');
+      this.stationCanvas = document.getElementById('cv-station');
+      this.view = new L.BeltView(this.beltCanvas, this.belt);
+      this.scene = new L.StationView(this.stationCanvas);
       this.head = document.getElementById('fac-head');
-      this.panel = document.getElementById('fac-panel');
+      this.bar = document.getElementById('fac-stations');
+      this.station = 'order';
+      this.queue = [];
+      this.tickets = [];
+      this.active = null;
+      this.rating = null;
+      this.rng = new L.RNG((Date.now() ^ 0x5eed) >>> 0);
+      this.nextCustomer = 2.5;
       this.visible = false;
       this.panelAt = 0;
-      this.doneIds = new Set(this.f.contracts.filter((c) => c.done).map((c) => c.id));
-      const pos = (e) => { const r = this.canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
-      this.canvas.addEventListener('mousemove', (e) => { this.view.hover = this.view.itemAt(...pos(e)); this.canvas.style.cursor = this.view.hover ? 'pointer' : 'default'; });
-      this.canvas.addEventListener('mouseleave', () => { this.view.hover = null; });
-      this.canvas.addEventListener('mousedown', (e) => {
+      const pos = (c, e) => { const r = c.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+      this.beltCanvas.addEventListener('mousemove', (e) => { this.view.hover = this.view.itemAt(...pos(this.beltCanvas, e)); this.beltCanvas.style.cursor = this.view.hover ? 'pointer' : 'default'; });
+      this.beltCanvas.addEventListener('mouseleave', () => { this.view.hover = null; });
+      this.beltCanvas.addEventListener('mousedown', (e) => {
         if (e.button !== 0) return;
-        const it = this.view.itemAt(...pos(e));
+        const it = this.view.itemAt(...pos(this.beltCanvas, e));
         if (!it) return;
         this.belt.remove(it, 'manual');
         this.onBeltEvents(this.belt.drain());
+      });
+      this.stationCanvas.addEventListener('mousemove', (e) => {
+        const hit = this.scene.hitAt(...pos(this.stationCanvas, e));
+        this.scene.hover = hit;
+        this.stationCanvas.style.cursor = hit ? 'pointer' : 'default';
+      });
+      this.stationCanvas.addEventListener('mouseleave', () => { this.scene.hover = null; });
+      this.stationCanvas.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
+        const hit = this.scene.hitAt(...pos(this.stationCanvas, e));
+        if (hit) this.onHit(hit);
       });
     }
 
     get store() { return this.app.store; }
 
-    /** Time that passed with nobody watching (or the app closed). */
+    /** Time that passed with nobody watching (or the app closed): the line kept running. */
     catchUp(announce) {
       const res = Factory.catchUp(this.f, Date.now());
       if (res && announce && res.seconds > 90) {
-        toast('While you were away (' + fmtDuration(res.seconds * 1000) + '): +' + fmt(res.credits) + '¢, ' + fmt(res.shipped) + ' minos shipped' + (res.cappedSeconds < res.seconds ? ' (the plant stops after ' + Factory.OFFLINE_HOURS + ' h)' : ''), 'good', 6000);
+        toast('While you were away the line shipped ' + fmt(res.shipped) + ' minos: +' + fmt(res.credits) + '¢', 'good', 5000);
       }
       if (res) this.afterEvents();
       return res;
@@ -776,13 +820,12 @@
       this.catchUp(false);
       if (!this.belt.items.length) this.belt.prefill();
       this.visible = true;
-      this.view.resize();
-      this.renderPanel();
+      this.setStation(this.station);
       this.renderHead();
     }
     hide() { this.visible = false; this.f.lastTick = Date.now(); }
 
-    /** Background tick (every second) while the belt is not on screen. */
+    /** Background tick (every second) while the factory is not on screen. */
     tick() {
       if (this.visible) return;
       const now = Date.now();
@@ -792,6 +835,31 @@
       else { Factory.runExpected(this.f, dt); this.f.lastTick = now; this.afterEvents(); }
     }
 
+    setStation(id) {
+      if (id === 'build' && (!this.active || this.active.stage !== 'build')) this.active = this.tickets.find((t) => t.stage === 'build') || this.active;
+      if (id === 'press' && (!this.active || this.active.stage !== 'press')) this.active = this.tickets.find((t) => t.stage === 'press') || this.active;
+      this.station = id;
+      const line = id === 'line';
+      this.beltCanvas.classList.toggle('hidden', !line);
+      this.stationCanvas.classList.toggle('hidden', line);
+      this.view.resize(); this.scene.resize();
+      this.renderBar();
+    }
+
+    renderBar() {
+      const badge = {
+        order: this.queue.length,
+        build: this.tickets.filter((t) => t.stage === 'build').length,
+        press: this.tickets.filter((t) => t.stage === 'press').length,
+        line: 0,
+      };
+      this.bar.replaceChildren(...STATIONS.map((st) => h('button', {
+        class: 'station' + (st.id === this.station ? ' on' : ''), 'aria-pressed': String(st.id === this.station),
+        onclick: () => { this.setStation(st.id); this.app.sound.play('move'); },
+      }, h('span', { class: 'si' }, st.icon), h('span', { class: 'sl' }, st.label), badge[st.id] ? h('span', { class: 'sb' }, String(badge[st.id])) : null)));
+      this.barSig = JSON.stringify(badge) + this.station;
+    }
+
     frame(now, dt) {
       const nowMs = Date.now();
       const gap = (nowMs - this.f.lastTick) / 1000;
@@ -799,34 +867,110 @@
       this.f.lastTick = nowMs;
       this.belt.step(dt);
       this.onBeltEvents(this.belt.drain());
-      this.view.render(dt, this.app.look(), this.app.theme);
-      if (now - this.panelAt > 400) { this.panelAt = now; this.renderHead(); this.refreshPanel(); }
+      // Customers wander in while you are here (never while you are away: nobody waits on you).
+      this.nextCustomer -= dt;
+      if (this.nextCustomer <= 0) {
+        if (this.queue.length < 3 && this.queue.length + this.tickets.length < 6) {
+          this.queue.push({ order: Factory.newOrder(this.f, this.rng), arrived: this.scene.t });
+          this.app.sound.play('bell');
+        }
+        this.nextCustomer = 14 + this.rng.next() * 22;
+      }
+      this.needle = (Math.sin(this.scene.t * (1.8 + this.f.tier * 0.12)) + 1) / 2;
+      const tk = this.active;
+      if (tk && tk.stage === 'press' && tk.pressAt != null && this.scene.t - tk.pressAt > 0.95) this.serve(tk);
+      if (this.station === 'line') { this.view.resize(); this.view.render(dt, this.app.look(), this.app.theme); this.scene.t += dt; }
+      else { this.scene.resize(); this.scene.render(dt, { station: this.station, queue: this.queue, tickets: this.tickets, active: this.active, rating: this.rating, look: this.app.look(), theme: this.app.theme, f: this.f, needle: this.needle }); }
+      if (now - this.panelAt > 400) {
+        this.panelAt = now;
+        this.renderHead();
+        const sig = JSON.stringify({ order: this.queue.length, build: this.tickets.filter((t) => t.stage === 'build').length, press: this.tickets.filter((t) => t.stage === 'press').length, line: 0 }) + this.station;
+        if (sig !== this.barSig) this.renderBar();
+      }
+    }
+
+    onHit(hit) {
+      const snd = this.app.sound, t = this.scene.t;
+      const tk = this.active;
+      switch (hit.id) {
+        case 'take': case 'takeBtn': {
+          if (this.tickets.length >= 3 || !this.queue.length) return;
+          const c = this.queue.shift();
+          const n = c.order.cells.length;
+          const ticket = { order: c.order, grid: Math.max(4, Math.min(7, n + 1)), cells: new Set(), paint: 0, stage: 'build' };
+          this.tickets.push(ticket);
+          this.active = ticket;
+          snd.play('pack');
+          this.setStation('build');
+          break;
+        }
+        case 'ticket': {
+          const pick = this.tickets[hit.data];
+          if (!pick) return;
+          this.active = pick;
+          this.setStation(pick.stage === 'press' ? 'press' : 'build');
+          break;
+        }
+        case 'cell':
+          if (!tk || tk.stage !== 'build') return;
+          if (tk.cells.has(hit.data)) { tk.cells.delete(hit.data); snd.play('lower'); }
+          else { tk.cells.add(hit.data); snd.play('move'); }
+          break;
+        case 'paint': if (tk) { tk.paint = hit.data; snd.play('rotate'); } break;
+        case 'clear': if (tk) { tk.cells.clear(); snd.play('blocked'); } break;
+        case 'toPress':
+          if (!tk || !tk.cells.size) return;
+          tk.stage = 'press';
+          snd.play('hold');
+          this.setStation('press');
+          break;
+        case 'press': {
+          if (!tk || tk.stage !== 'press' || tk.pressAt != null) return;
+          tk.pressAt = t; tk.slamAt = t; tk.pressValue = this.needle;
+          const off = Math.abs(this.needle - 0.5) * 2;
+          tk.pressOff = off;
+          [tk.verdict, tk.verdictColor] = off < 0.08 ? ['Perfect!', '#6cc486'] : off < 0.16 ? ['Great!', '#6cc486'] : off < 0.4 ? ['Good', '#f6c177'] : ['Okay', '#eb6f92'];
+          snd.play('boom');
+          break;
+        }
+        case 'next':
+          this.rating = null;
+          snd.play('move');
+          break;
+        case 'goto': this.setStation(hit.data); break;
+        default: break;
+      }
+      this.renderBar();
+    }
+
+    serve(tk) {
+      const cells = Array.from(tk.cells).map((k) => k.split(',').map(Number));
+      const grade = Factory.gradeOrder(this.f, tk.order, { cells, paint: tk.paint, press: tk.pressOff });
+      Factory.serveOrder(this.f, grade);
+      if (grade.lines) { this.store.addLines(grade.lines, 'contracts'); this.app.refreshWallet(true); }
+      this.tickets = this.tickets.filter((x) => x !== tk);
+      this.active = this.tickets[0] || null;
+      this.rating = { order: tk.order, grade, at: this.scene.t };
+      this.app.sound.play(grade.total >= 80 ? 'solve' : grade.total >= 55 ? 'buy' : 'fail');
+      this.setStation('order');
+      this.afterEvents();
     }
 
     onBeltEvents(events) {
       if (!events.length) return;
       this.view.handleEvents(events, (v) => fmt(v) + '¢');
-      const snd = this.app.sound;
+      const snd = this.app.sound, looking = this.station === 'line' && this.visible;
       for (const e of events) {
         if (e.kind === 'caught') snd.play('catch', Math.min(e.streak, 20));
         else if (e.kind === 'wasted') snd.play('error');
-        else if (e.kind === 'escaped') snd.play('blocked');
-        else if (e.kind === 'streakLost' && e.from >= 5) toast('QC streak of ' + e.from + ' lost', 'bad', 1600);
+        else if (e.kind === 'escaped' && looking) snd.play('blocked');
         else if (e.kind === 'golden') { snd.play('golden'); this.store.addLines(e.lines, 'contracts'); this.app.refreshWallet(true); }
-        else if (e.kind === 'rush') { snd.play('rush'); }
-        else if (e.kind === 'packed') snd.play('pack');
-        else if (e.kind === 'rushDone') { snd.play('solve'); this.store.addLines(e.reward.lines, 'contracts'); this.app.refreshWallet(true); toast('Rush order filled: +' + fmt(e.reward.credits) + '¢, ◆ ' + e.reward.lines + ' lines', 'good'); }
-        else if (e.kind === 'stamp') snd.play('stamp');
+        else if (e.kind === 'stamp' && looking) snd.play('stamp');
       }
       this.afterEvents();
     }
 
     afterEvents() {
-      const fresh = this.f.contracts.filter((c) => c.done && !this.doneIds.has(c.id));
-      for (const c of fresh) this.doneIds.add(c.id);
-      if (fresh.length === 1) toast('Contract done: ' + fresh[0].client + ' — claim it in the Factory', 'good', 3500);
-      else if (fresh.length > 1) toast(fresh.length + ' contracts done — claim them in the Factory', 'good', 3500);
-      if (fresh.length) { this.app.setBadge('factory', true); if (this.visible) this.renderPanel(); }
       this.f.bestTier = Math.max(this.f.bestTier || 1, this.f.tier);
       for (const u of REWARD_UNLOCKS) {
         if (!this.store.owns(u.kind, u.id) && u.test(this.f)) {
@@ -840,90 +984,64 @@
 
     renderHead() {
       const f = this.f, r = Factory.rates(f);
+      const affordable = Object.keys(Factory.UPGRADES).some((k) => f.credits >= Factory.cost(f, k)) || (Factory.nextTier(f) && f.credits >= Factory.nextTier(f).unlock);
       this.head.replaceChildren(
-        h('div', { class: 'plant' }, Factory.plantName(f.plantSeed) + (f.retools ? ' · Plant ' + (f.retools + 1) : ''),
-          h('span', { class: 'sub' }, Factory.TIERS[f.tier].name + ' line · ' + fmt(r.P) + ' minos/s · ' + (r.D * 100).toFixed(1) + '% defective' + (f.patents ? ' · ' + f.patents + ' patents' : ''))),
-        h('div', { class: 'credits' }, h('div', { class: 'v' }, fmt(f.credits) + '¢'), h('div', { class: 'r' }, '+' + fmt(r.perSec) + '¢/s')));
+        h('div', { class: 'plant' }, Factory.plantName(f.plantSeed), h('span', { class: 'sub' }, Factory.TIERS[f.tier].name + 's')),
+        h('div', { class: 'credits' }, h('div', { class: 'v' }, fmt(f.credits) + '¢'), h('div', { class: 'r' }, '+' + fmt(r.perSec) + '/s')),
+        h('button', { class: 'btn' + (affordable ? ' primary' : ''), onclick: () => this.openUpgrades() }, 'Upgrades'));
     }
 
-    refreshPanel() {
-      for (const b of this.panel.querySelectorAll('button[data-cost]')) b.disabled = !(this.f.credits >= Number(b.dataset.cost));
-      const sig = this.f.contracts.map((c) => c.id + ':' + Math.floor(c.progress / Math.max(1, c.target) * 40) + (c.done ? 'd' : '')).join('|') + '|' + Factory.retoolGain(this.f) + '|' + this.f.tier;
-      if (sig !== this.sig) this.renderPanel();
-    }
-
-    renderPanel() {
+    openUpgrades() {
       const f = this.f;
-      this.sig = f.contracts.map((c) => c.id + ':' + Math.floor(c.progress / Math.max(1, c.target) * 40) + (c.done ? 'd' : '')).join('|') + '|' + Factory.retoolGain(f) + '|' + f.tier;
-      const r0 = Factory.rates(f);
-      const cards = Object.entries(Factory.UPGRADES).map(([key, u]) => {
-        const c = Factory.cost(f, key), maxed = !isFinite(c);
-        const nf = JSON.parse(JSON.stringify(f)); nf.up[key]++;
-        const r1 = Factory.rates(nf);
-        const effect = key === 'press' ? fmt(r0.P) + ' → ' + fmt(r1.P) + ' /s' : key === 'quality' ? '×' + (r1.V / r0.V).toFixed(2) + ' value' : Math.round(r0.C * 100) + '% → ' + Math.round(r1.C * 100) + '%';
-        const buy = () => { if (Factory.buy(f, key)) { this.app.sound.play('buy'); this.renderPanel(); this.renderHead(); } };
-        return h('div', { class: 'up-card', 'data-tip-title': u.icon + '  ' + u.name, 'data-tip': u.desc },
-          h('div', { class: 'up-top' }, h('span', { class: 'up-icon' }, u.icon), h('span', { class: 'up-name' }, u.name), h('span', { class: 'up-lvl' }, String(f.up[key]))),
-          h('div', { class: 'up-eff' }, maxed ? 'Maxed' : effect),
-          maxed ? null : h('button', { class: 'btn sm', 'data-cost': c, disabled: f.credits < c, onclick: buy }, fmt(c) + '¢'));
-      });
-      const els = [h('div', { class: 'up-row' }, cards)];
-      const nt = Factory.nextTier(f), gain = Factory.retoolGain(f);
-      els.push(h('div', { class: 'row-card highlight' },
-        h('div', { class: 'grow' },
-          h('div', { class: 't' }, nt ? 'Next line: ' + nt.name + 's' : 'Every product line is running'),
-          h('div', { class: 'd' }, nt ? nt.n + '-cell pieces, worth ×' + Math.round(nt.value / Factory.TIERS[f.tier].value) + (gain ? '' : '') : 'Decominoes: the finest ten-cell pieces money can buy.')),
-        nt ? h('button', { class: 'btn primary', 'data-cost': nt.unlock, disabled: f.credits < nt.unlock, onclick: () => {
-          if (Factory.unlockTier(f)) { this.app.sound.play('solve'); toast(nt.name + ' line running', 'good'); this.belt.items = []; this.belt.rush = null; this.belt.prefill(); this.afterEvents(); this.renderPanel(); }
-        } }, fmt(nt.unlock) + '¢') : null,
-        h('button', { class: 'btn', disabled: !gain, title: gain ? 'Start over with +' + gain + ' patents (+25% value each, for good)' : 'Reach Pentominoes to earn patents', onclick: () => UI.confirm('Retool?', 'Close ' + Factory.plantName(f.plantSeed) + ' and open a new plant with ' + (f.patents + gain) + ' patents (+25% value each). Presses, upgrades and product lines start over.', 'Retool', () => {
-          Factory.retool(f); Factory.fillContracts(f); this.belt.items = []; this.belt.rush = null; this.doneIds.clear(); this.app.sound.play('solve'); toast('New plant: ' + Factory.plantName(f.plantSeed), 'good'); this.afterEvents(); this.renderPanel(); this.renderHead();
-        }) }, gain ? 'Retool +' + gain : 'Retool')));
-      for (const c of f.contracts) {
-        const what = c.kind === 'ship' ? 'Ship ' + fmt(c.target) + ' minos' : c.kind === 'catch' ? 'Pull ' + c.target + ' defects by hand' : c.kind === 'earn' ? 'Earn ' + fmt(c.target) + '¢' : c.kind === 'rush' ? 'Fill ' + c.target + ' rush orders' : 'Ship ' + fmt(c.target) + ' in a row with no defect escaping';
-        const rw = [];
-        if (c.reward.credits) rw.push(h('b', null, fmt(c.reward.credits) + '¢'));
-        if (c.reward.lines) rw.push(h('b', { style: { color: 'var(--gem)' } }, ' ◆' + c.reward.lines));
-        if (c.reward.item) rw.push(h('b', null, ' ' + ITEMS[c.reward.item].icon + ' ' + ITEMS[c.reward.item].name));
-        els.push(h('div', { class: 'row-card contract' + (c.done ? ' highlight' : '') },
-          h('div', { class: 'grow' }, h('div', { class: 't' }, what, h('span', { class: 'lvl' }, c.client)),
-            h('div', { class: 'bar' + (c.done ? ' good' : '') }, h('i', { style: { width: Math.min(100, 100 * c.progress / c.target).toFixed(1) + '%' } })),
-            h('div', { class: 'reward' }, fmt(Math.floor(c.progress)) + ' / ' + fmt(c.target), ' · ', rw)),
-          c.done ? h('button', { class: 'btn primary', onclick: () => this.claim(c.id) }, 'Claim') : null));
-      }
-      els.push(h('div', { class: 'fac-foot' },
-        h('button', { class: 'btn sm', onclick: () => this.openSpecSheet() }, '▦ Spec sheet'),
-        h('span', null, 'Click defects off the belt to build a QC streak · golden minos pay lines · rush orders want one shape')));
-      this.panel.replaceChildren(...els);
+      let handle = null;
+      const body = h('div');
+      const draw = () => {
+        const r0 = Factory.rates(f);
+        const cards = Object.entries(Factory.UPGRADES).map(([key, u]) => {
+          const c = Factory.cost(f, key), maxed = !isFinite(c);
+          const nf = JSON.parse(JSON.stringify(f)); nf.up[key]++;
+          const r1 = Factory.rates(nf);
+          const effect = key === 'press' ? fmt(r0.P) + ' → ' + fmt(r1.P) + ' minos/s' : key === 'quality' ? '×' + (r1.V / r0.V).toFixed(2) + ' value' : Math.round(r0.C * 100) + '% → ' + Math.round(r1.C * 100) + '% caught';
+          return h('div', { class: 'up-card' },
+            h('div', { class: 'up-top' }, h('span', { class: 'up-icon' }, u.icon), h('span', { class: 'up-name' }, u.name), h('span', { class: 'up-lvl' }, String(f.up[key]))),
+            h('div', { class: 'up-eff' }, u.desc),
+            h('div', { class: 'up-eff' }, maxed ? 'Maxed' : effect),
+            maxed ? null : h('button', { class: 'btn sm primary', disabled: f.credits < c, onclick: () => { if (Factory.buy(f, key)) { this.app.sound.play('buy'); draw(); this.renderHead(); } } }, fmt(c) + '¢'));
+        });
+        const nt = Factory.nextTier(f), gain = Factory.retoolGain(f);
+        body.replaceChildren(
+          h('div', { class: 'up-row' }, cards),
+          h('div', { class: 'row-card', style: { marginTop: '8px' } },
+            h('div', { class: 'grow' }, h('div', { class: 't' }, nt ? 'Next line: ' + nt.name + 's' : 'Every line is running'),
+              h('div', { class: 'd' }, nt ? 'Bigger orders, bigger pay (×' + Math.round(nt.value / Factory.TIERS[f.tier].value) + ')' : 'Decominoes: nothing bigger exists.')),
+            nt ? h('button', { class: 'btn primary', disabled: f.credits < nt.unlock, onclick: () => {
+              if (Factory.unlockTier(f)) { this.app.sound.play('solve'); this.belt.items = []; this.belt.prefill(); this.afterEvents(); draw(); this.renderHead(); }
+            } }, fmt(nt.unlock) + '¢') : null),
+          h('div', { class: 'row-card' },
+            h('div', { class: 'grow' }, h('div', { class: 't' }, 'Retool'), h('div', { class: 'd' }, gain ? 'Start a new plant with +' + gain + ' patents (+25% value each, for good).' : 'Reach Pentominoes to earn patents.')),
+            h('button', { class: 'btn', disabled: !gain, onclick: () => UI.confirm('Retool?', 'Presses, upgrades and product lines start over; patents stay.', 'Retool', () => {
+              Factory.retool(f); this.belt.items = []; this.app.sound.play('solve'); this.afterEvents(); draw(); this.renderHead();
+            }) }, 'Retool')),
+          h('div', { class: 'fac-foot' }, h('button', { class: 'btn sm', onclick: () => this.openSpecSheet() }, 'Spec sheet: every legal shape')));
+      };
+      draw();
+      handle = UI.openModal({ title: Factory.plantName(f.plantSeed), width: 520, body });
+      void handle;
     }
 
     openSpecSheet() {
       const f = this.f, cat = Factory.catalog(f.tier), look = this.app.look();
       const shown = cat.slice(0, 160);
       UI.openModal({
-        title: 'Spec sheet — ' + Factory.TIERS[f.tier].name + 's (' + cat.length + ')', width: 520,
+        title: Factory.TIERS[f.tier].name + 's (' + cat.length + ')', width: 520,
         body: h('div', null,
-          h('p', null, 'Exactly ' + f.tier + ' cell' + (f.tier > 1 ? 's' : '') + ', joined edge to edge. Anything else is a defect: a cell too many or too few, a piece broken off or hanging by a corner, a crack, a scorch mark.'),
+          h('p', null, 'Exactly ' + f.tier + ' cell' + (f.tier > 1 ? 's' : '') + ', joined edge to edge. Anything else on the line is a defect.'),
           h('div', { class: 'catalog' }, shown.map((cells) => UI.canvasFor(44, 44, (ctx) => {
             const b = Pieces.boundsOf(cells), s = Math.floor(Math.min(36 / b.w, 36 / b.h, 10));
             for (const [x, y] of cells) Render.drawCell(ctx, look.skin, Render.hsl(200 + f.tier * 20, 55, 64), (44 - b.w * s) / 2 + (x - b.minX) * s, (44 - b.h * s) / 2 + (b.maxY - y) * s, s);
           }))),
           cat.length > shown.length ? h('p', null, '… and ' + (cat.length - shown.length) + ' more.') : null),
       });
-    }
-
-    claim(id) {
-      const reward = Factory.claim(this.f, id);
-      if (!reward) return;
-      const parts = [];
-      if (reward.credits) parts.push(fmt(reward.credits) + '¢');
-      if (reward.lines) { this.store.addLines(reward.lines, 'contracts'); parts.push('◆ ' + reward.lines + ' lines'); this.app.refreshWallet(true); }
-      if (reward.item) { this.store.grantItem(reward.item); parts.push(ITEMS[reward.item].icon + ' ' + ITEMS[reward.item].name); this.app.modes.play.renderItems(); }
-      this.app.sound.play('buy');
-      toast('Claimed: ' + parts.join(' · '), 'good');
-      if (!this.f.contracts.some((c) => c.done)) this.app.setBadge('factory', false);
-      this.store.touch();
-      this.renderPanel();
     }
   }
 

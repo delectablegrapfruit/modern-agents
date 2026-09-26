@@ -47,10 +47,13 @@
     </section>
 
     <!-- Factory -->
-    <section class="view scroll" id="view-factory" data-tab="factory">
+    <section class="view" id="view-factory" data-tab="factory">
       <div class="fac-head" id="fac-head"></div>
-      <div class="beltwrap"><canvas id="cv-belt"></canvas></div>
-      <div class="fac-panel" id="fac-panel"></div>
+      <div class="stage">
+        <canvas id="cv-station"></canvas>
+        <canvas id="cv-belt" class="hidden"></canvas>
+      </div>
+      <nav class="stations" id="fac-stations"></nav>
     </section>
 
     <!-- Shop -->
@@ -80,6 +83,7 @@
 <script src="js/store.js"></script>
 <script src="js/render.js"></script>
 <script src="js/factoryview.js"></script>
+<script src="js/stations.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/input.js"></script>
 <script src="js/ui.js"></script>

@@ -167,31 +167,12 @@
   function renderShop(app, sub) {
     const tabs = document.getElementById('shop-tabs');
     const grid = document.getElementById('shop-grid');
-    const subs = [['items', 'Items']].concat(Object.keys(COSMETICS).map((k) => [k, COSMETIC_LABELS[k]]));
+    if (!COSMETICS[sub]) sub = 'palette';
+    const subs = Object.keys(COSMETICS).map((k) => [k, COSMETIC_LABELS[k]]);
     tabs.replaceChildren(...subs.map(([k, label]) => h('button', { 'aria-selected': String(k === sub), onclick: () => { app.shopSub = k; renderShop(app, k); } }, label)));
     const st = app.store.state;
     const cards = [];
-    if (sub === 'items') {
-      cards.push(h('div', { class: 'shop-note' }, 'Single-use items for Free Play. Press the number key (or click the bar under the board) to use one.'));
-      ITEM_ORDER.forEach((id, i) => {
-        const it = ITEMS[id];
-        const have = st.inventory[id] || 0;
-        const afford = st.lines >= it.price;
-        const buy = (n) => {
-          if (app.store.buyItem(id, n)) { app.sound.play('buy'); toast('Bought ' + (n > 1 ? n + '× ' : '') + it.name, 'good'); app.refreshWallet(); app.modes.play.renderItems(); renderShop(app, sub); }
-          else { app.sound.play('error'); toast('Not enough lines', 'bad'); }
-        };
-        cards.push(h('div', { class: 'card' },
-          h('div', { class: 'preview' }, h('span', { class: 'big-icon' }, it.icon)),
-          h('h3', null, it.name, h('span', { class: 'owned', style: { marginLeft: '6px' } }, 'key ' + ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '−', '='][i])),
-          h('p', null, it.desc),
-          h('div', { class: 'foot' },
-            h('span', { class: 'owned' }, 'Have ' + have),
-            h('span', null,
-              h('button', { class: 'btn sm', disabled: st.lines < it.price * 5, title: 'Buy five', onclick: () => buy(5) }, '×5'), ' ',
-              h('button', { class: 'btn sm primary', disabled: !afford, onclick: () => buy(1) }, h('span', { class: 'gem' }, '◆'), fmtInt(it.price))))));
-      });
-    } else {
+    {
       const cat = COSMETICS[sub];
       for (const [id, c] of Object.entries(cat)) {
         const owned = app.store.owns(sub, id);
@@ -270,7 +251,7 @@
         kpi(fmtInt(S.sessions), 'Sessions'),
         kpi(Object.keys(st.history).length + '', 'Days played')));
       els.push(h('h4', null, 'Lines earned, last 14 days'), historyChart(app, 'lines', 14));
-      els.push(h('h4', null, 'Where lines came from'), hbars([['Free Play', S.lines.play], ['Puzzles', S.lines.puzzles], ['Contracts', S.lines.contracts]]));
+      els.push(h('h4', null, 'Where lines came from'), hbars([['Free Play', S.lines.play], ['Puzzles', S.lines.puzzles], ['Factory', S.lines.contracts]]));
       els.push(h('h4', null, 'Time by mode'), table([
         ['Free Play', fmtDuration(S.timeMs.play)], ['Puzzles', fmtDuration(S.timeMs.puzzle)], ['Factory (watching)', fmtDuration(S.timeMs.factory)],
       ]));
@@ -307,7 +288,7 @@
       const f = st.factory, fs = f.stats, r = Factory.rates(f);
       els.push(h('div', { class: 'kpis' },
         kpi(fmt(f.lifetime), 'Credits, all time'), kpi(count(fs.shipped), 'Minos shipped'), kpi(Factory.TIERS[f.tier].name, 'Product line'),
-        kpi(fmtInt(f.patents), 'Patents'), kpi(fmtInt(f.retools), 'Retools'), kpi(fmtInt(fs.contractsDone), 'Contracts done')));
+        kpi(fmtInt(f.patents), 'Patents'), kpi(fmtInt(f.retools), 'Retools'), kpi(fmtInt(fs.orders || 0), 'Orders served'), kpi(fs.orders ? Math.round(fs.orderPoints / fs.orders) + '' : '—', 'Average grade')));
       els.push(h('h4', null, 'Quality control'), table([
         ['Defects pulled by hand', count(fs.caughtManual)], ['Defects pulled by inspectors', count(fs.caughtAuto)], ['Defects shipped', count(fs.escaped)],
         ['Good minos thrown out', count(fs.falseRejects)], ['Catch rate', (fs.caughtManual + fs.caughtAuto + fs.escaped) ? pct((fs.caughtManual + fs.caughtAuto) / (fs.caughtManual + fs.caughtAuto + fs.escaped), 1) : '—'],
@@ -333,55 +314,106 @@
 
   // ---- settings -------------------------------------------------------------------------------------------------------
 
-  function openSettings(app) {
+  function openSettings(app, section) {
     const s = app.store.state.settings;
+    const isNative = L.native.available;
     const set = (k, v) => { s[k] = v; app.store.touch(); app.applySettings(); };
-    const sw = (k, label, hint, disabled) => {
-      const b = h('button', { class: 'switch', role: 'switch', 'aria-checked': String(!!s[k]), disabled, onclick: () => { set(k, !s[k]); b.setAttribute('aria-checked', String(!!s[k])); } });
-      return h('div', { class: 'set-row' }, h('div', { class: 'lbl' }, label, hint ? h('span', { class: 'hint' }, hint) : null), b);
+    const row = (label, hint, control) => h('div', { class: 'set-row' }, h('div', { class: 'lbl' }, label, hint ? h('span', { class: 'hint' }, hint) : null), control);
+    const card = (title, ...rows) => h('div', { class: 'set-card' }, title ? h('div', { class: 'set-card-title' }, title) : null, rows);
+    const toggle = (k, onChange) => {
+      const b = h('button', { class: 'switch', role: 'switch', 'aria-checked': String(!!s[k]), onclick: () => { set(k, !s[k]); b.setAttribute('aria-checked', String(!!s[k])); if (onChange) onChange(); } });
+      return b;
     };
-    const seg = (k, label, options, hint) => h('div', { class: 'set-row' }, h('div', { class: 'lbl' }, label, hint ? h('span', { class: 'hint' }, hint) : null),
-      h('div', { class: 'seg' }, options.map(([v, l]) => {
-        const b = h('button', { 'aria-pressed': String(s[k] === v), onclick: () => { set(k, v); b.parentNode.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); } }, l);
-        return b;
-      })));
-    const range = (k, label, min, max, step, unit, hint, scale) => {
+    const range = (k, min, max, step, unit, scale) => {
       scale = scale || 1;
       const val = h('span', { class: 'val' }, Math.round(s[k] * scale) + unit);
-      return h('div', { class: 'set-row' }, h('div', { class: 'lbl' }, label, hint ? h('span', { class: 'hint' }, hint) : null),
-        h('input', { type: 'range', min, max, step, value: s[k] * scale, oninput: (e) => { set(k, Number(e.target.value) / scale); val.textContent = Math.round(s[k] * scale) + unit; } }), val);
+      return h('div', { class: 'range' }, h('input', { type: 'range', min, max, step, value: s[k] * scale, oninput: (e) => { set(k, Number(e.target.value) / scale); val.textContent = Math.round(s[k] * scale) + unit; } }), val);
     };
-    const swatches = h('div', { class: 'swatches' }, ACCENTS.map((c) => {
-      const b = h('button', { class: 'swatch', style: { background: c }, 'aria-pressed': String(s.accent === c), title: c, onclick: () => { set('accent', c); swatches.querySelectorAll('.swatch').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); } });
-      return b;
-    }));
-    const isNative = L.native.available;
-    const body = h('div', null,
-      h('div', { class: 'set-group' }, 'Window'),
-      seg('bg', 'Background', [['clear', 'Clear'], ['glass', 'Glass'], ['tint', 'Tint'], ['solid', 'Solid']], 'Clear floats over your work; Solid hides it.'),
-      range('tint', 'Tint strength', 20, 98, 1, '%', 'For the Tint background', 100),
-      h('div', { class: 'set-row' }, h('div', { class: 'lbl' }, 'Border and accent'), swatches),
-      seg('theme', 'Theme', [['dark', 'Dark'], ['light', 'Light'], ['auto', 'Auto']]),
-      isNative ? sw('onTop', 'Float above other windows', '⌥⌘L shows and hides Lull from anywhere') : null,
-      h('div', { class: 'set-group' }, 'Controls'),
-      range('das', 'Repeat delay (DAS)', 60, 300, 5, ' ms', 'How long an arrow is held before it repeats'),
-      range('arr', 'Repeat rate (ARR)', 0, 150, 5, ' ms', '0 slides straight to the wall'),
-      range('lowerRepeat', 'Lower repeat', 0, 150, 5, ' ms', 'Held ↓ never sets a piece; tap again to set'),
-      range('preview', 'Next pieces shown', 1, 6, 1, ''),
-      sw('mouse', 'Mouse control', 'Hover to aim, click to drop, drag to pull it down, wheel or right-click to turn, click HOLD to hold'),
-      h('div', { class: 'set-group' }, 'Sound and motion'),
-      sw('sound', 'Sound effects'),
-      range('volume', 'Volume', 0, 100, 1, '%', null, 100),
-      seg('motion', 'Effects', [['full', 'Full'], ['reduced', 'Reduced']], 'Reduced keeps line clears to a quick fade and redraws less'),
-      h('div', { class: 'set-group' }, 'Keys'),
-      h('div', { class: 'keys' }, L.KEY_HELP.map(([k, d]) => [h('span', { class: 'k' }, h('kbd', null, k)), h('span', null, d)])),
-      h('div', { class: 'set-group' }, 'Your data'),
-      h('div', { class: 'set-row' }, h('div', { class: 'lbl' }, 'Save file', h('span', { class: 'hint' }, isNative ? 'Kept in ~/Library/Application Support/Lull' : 'Kept in this browser')),
-        h('button', { class: 'btn sm', onclick: () => openExport(app) }, 'Export'), h('button', { class: 'btn sm', onclick: () => openImport(app) }, 'Import')),
-      h('div', { class: 'set-row' }, h('div', { class: 'lbl' }, 'Start over', h('span', { class: 'hint' }, 'Lines, items, cosmetics, puzzles, factory and stats. Settings stay.')),
-        h('button', { class: 'btn sm danger', onclick: () => confirm('Start over?', 'Everything except your settings is wiped. This cannot be undone.', 'Wipe', () => { app.store.reset(); location.reload(); }, 'danger') }, 'Reset…')),
-      h('p', { style: { textAlign: 'center', marginTop: '14px', fontSize: '11px' } }, 'Lull ' + (L.VERSION || '') + ' · puzzle generator v' + Puzzles.GEN_VERSION));
-    openModal({ title: 'Settings', body, width: 460 });
+    const tiles = (k, options, cls) => {
+      const wrap = h('div', { class: 'tiles ' + (cls || '') });
+      options.forEach(([v, label, preview]) => {
+        const b = h('button', { class: 'tile', 'aria-pressed': String(s[k] === v), onclick: () => { set(k, v); wrap.querySelectorAll('.tile').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); } }, preview, h('span', null, label));
+        wrap.appendChild(b);
+      });
+      return wrap;
+    };
+    const bgPreview = (mode) => h('span', { class: 'tile-prev bgp bgp-' + mode }, h('i'));
+    const themePreview = (t) => h('span', { class: 'tile-prev thp thp-' + t }, h('i'), h('i'), h('i'));
+
+    const sections = {
+      look: {
+        icon: '◐', label: 'Look',
+        body: () => [
+          card('Window background',
+            tiles('bg', [['clear', 'Clear', bgPreview('clear')], ['glass', 'Glass', bgPreview('glass')], ['tint', 'Tint', bgPreview('tint')], ['solid', 'Solid', bgPreview('solid')]]),
+            row('Tint strength', 'For the Tint background', range('tint', 20, 98, 1, '%', 100))),
+          card('Theme', tiles('theme', [['dark', 'Dark', themePreview('dark')], ['light', 'Light', themePreview('light')], ['auto', 'Auto', themePreview('auto')]])),
+          card('Border and accent', (() => {
+            const sw = h('div', { class: 'swatches big' });
+            ACCENTS.forEach((c) => {
+              const b = h('button', { class: 'swatch', style: { background: c }, 'aria-pressed': String(s.accent === c), title: c, onclick: () => { set('accent', c); sw.querySelectorAll('.swatch').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); } });
+              sw.appendChild(b);
+            });
+            return sw;
+          })()),
+          card('Motion', row('Effects', 'Reduced keeps line clears to a quick fade and redraws less', tiles('motion', [['full', 'Full', null], ['reduced', 'Reduced', null]], 'small'))),
+        ],
+      },
+      window: isNative ? {
+        icon: '▭', label: 'Window',
+        body: () => [card(null,
+          row('Float above other windows', 'Keeps Lull in view while you work', toggle('onTop')),
+          row('Show and hide from anywhere', 'Press ⌥⌘L in any app. Esc tucks Lull away.', h('kbd', { class: 'big' }, '⌥⌘L')))],
+      } : null,
+      controls: {
+        icon: '⌨', label: 'Controls',
+        body: () => [
+          card('Keyboard',
+            row('Repeat delay', 'How long an arrow is held before it repeats', range('das', 60, 400, 5, ' ms')),
+            row('Repeat rate', 'Time between repeats; 0 slides straight to the wall', range('arr', 0, 150, 5, ' ms')),
+            row('Lower repeat', 'Held ↓ never sets a piece — tap again to set', range('lowerRepeat', 0, 150, 5, ' ms'))),
+          card('Mouse',
+            row('Mouse control', 'Point to aim (the ghost follows, even under ledges) · click to place · wheel to turn · right-click to hold', toggle('mouse'))),
+          card('Board', row('Next pieces shown', null, range('preview', 1, 6, 1, ''))),
+        ],
+      },
+      sound: {
+        icon: '♪', label: 'Sound',
+        body: () => [card(null,
+          row('Sound effects', null, toggle('sound')),
+          row('Volume', null, range('volume', 0, 100, 1, '%', 100)),
+          row('Sound pack', (L.SOUNDS[app.state.equipped.sound] || L.SOUNDS.soft).name + ' — more in the Shop', h('button', { class: 'btn sm', onclick: () => app.sound.preview(app.state.equipped.sound) }, '▶ Listen')))],
+      },
+      keys: {
+        icon: '⌘', label: 'Keys',
+        body: () => [card(null, h('div', { class: 'keys' }, L.KEY_HELP.map(([k, d]) => [h('span', { class: 'k' }, h('kbd', null, k)), h('span', null, d)])))],
+      },
+      data: {
+        icon: '⛁', label: 'Data',
+        body: () => [
+          card('Save', row('Your progress', isNative ? 'Kept in ~/Library/Application Support/Lull' : 'Kept in this browser',
+            h('div', { class: 'btns' }, h('button', { class: 'btn sm', onclick: () => openExport(app) }, 'Export'), h('button', { class: 'btn sm', onclick: () => openImport(app) }, 'Import')))),
+          card('Start over', row('Reset everything', 'Lines, items, cosmetics, puzzles, factory and stats. Settings stay.',
+            h('button', { class: 'btn sm danger', onclick: () => confirm('Start over?', 'Everything except your settings is wiped. This cannot be undone.', 'Wipe', () => { app.store.reset(); location.reload(); }, 'danger') }, 'Reset…'))),
+          h('p', { class: 'set-about' }, 'Lull ' + (L.VERSION || '') + ' · puzzle generator v' + Puzzles.GEN_VERSION),
+        ],
+      },
+    };
+    const ids = Object.keys(sections).filter((k) => sections[k]);
+    let cur = section && sections[section] ? section : 'look';
+    const pane = h('div', { class: 'set-pane scroll' });
+    const nav = h('nav', { class: 'set-nav' });
+    const show = (id) => {
+      cur = id;
+      nav.querySelectorAll('button').forEach((b) => b.setAttribute('aria-current', String(b.dataset.id === id)));
+      pane.replaceChildren(...sections[id].body());
+      pane.scrollTop = 0;
+    };
+    ids.forEach((id) => nav.appendChild(h('button', { 'data-id': id, onclick: () => show(id) }, h('span', { class: 'ni' }, sections[id].icon), h('span', null, sections[id].label))));
+    const body = h('div', { class: 'settings' }, nav, pane);
+    const handle = openModal({ title: 'Settings', body, width: 620 });
+    handle.el.classList.add('modal-settings');
+    show(cur);
   }
 
   function openExport(app) {

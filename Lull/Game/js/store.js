@@ -87,7 +87,7 @@
     ripple:   { name: 'Ripple', price: 700 },
     shatter:  { name: 'Shatter', price: 900 },
     confetti: { name: 'Confetti', price: 1200 },
-    sparks:   { name: 'Welding Sparks', price: 0, reward: 'Complete 25 factory contracts' },
+    sparks:   { name: 'Welding Sparks', price: 0, reward: 'Serve 25 factory orders' },
   };
 
   const GHOSTS = {

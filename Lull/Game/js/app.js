@@ -17,7 +17,7 @@
 
   const app = {
     store: null, keys: null, sound: Sound, modes: {}, tab: null, theme: null,
-    shopSub: 'items', statsSub: 'overview', focusedAt: 0, lastTime: 0, lastSave: 0, activeMs: 0,
+    shopSub: 'palette', statsSub: 'overview', focusedAt: 0, lastTime: 0, lastSave: 0, activeMs: 0,
 
     get state() { return this.store.state; },
     get settings() { return this.store.state.settings; },

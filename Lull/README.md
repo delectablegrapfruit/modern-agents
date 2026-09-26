@@ -36,19 +36,23 @@ nudged sideways off a wall), never SRS kicks that hop a piece through a gap. Wil
 | Blind Queue | no preview |
 | No Hold, Monochrome | as named |
 
-**Factory** — the idle part: a mino assembly line that runs while you work (and up to 8 hours while Lull is
-closed). Three upgrades — Presses, Quality, Inspector — and the rest is played on the belt:
-- **Defects** — a cell too many or too few, a piece broken off or held by a corner, cracked, scorched. Click them
-  into the reject bin: each one grows your **QC streak**, worth up to ×2 on everything shipped while you watch.
-  Throw out a good piece or let a defect ship and the streak starts over. The spec sheet shows every legal shape.
-- **Golden minos** — rare; click them for lines.
-- **Rush orders** — a client wants a handful of one shape, on a timer; click matching pieces to pack them.
-Product lines climb from monominoes to decominoes (4,655 legal shapes); two contracts at a time pay credits, lines
-and items; retooling trades a plant for patents that make the next one richer. Progress is tuned in weeks.
+**Factory** — a little mino shop in the spirit of the Papa's restaurant games, with four stations:
+- **Counter** — customers wander in (only while you're there; nobody waits on you while you're away) and ask for
+  one mino: a shape and a paint. Take the order; the ticket hangs on the rail.
+- **Mold** — click cells to build the shape (any turn or flip counts), pick the paint, send it on.
+- **Press** — stop the needle in the green.
+- The customer grades shape, paint, press and wait; the grade sets the pay, stars and bonus ◆ lines.
+- **Line** — the idle part: an assembly line that runs by itself (up to 8 hours while Lull is closed). Click
+  defective minos (a cell too many or too few, broken off, cracked, scorched) into the reject bin to build a QC
+  streak worth up to ×2; golden minos pay lines.
+Upgrades (Presses, Quality, Inspector), new product lines (bigger orders, up to decominoes) and retooling for patents
+live behind one Upgrades button. Progress is tuned in weeks.
 
-**Shop** — single-use items for Free Play, priced so they stay a treat: Reroll, Mirror, Pebble, Sand, Rewind, Order
+**Items** — single-use, bought and used straight from the bar under the board (hover one to see what it does): Reroll, Mirror, Pebble, Sand, Rewind, Order
 Slip, Drill, Bomb, Phase (passes through blocks into any gap), Settle (closes every hole), Chroma Purge, and Blueprint
-(draw your own piece). Cosmetics: palettes (Prism animates), mino skins (Gem, Glass, Neon, Jelly, Pixel …), board
+(draw your own piece).
+
+**Shop** — cosmetics: palettes (Prism animates), mino skins (Gem, Glass, Neon, Jelly, Pixel …), board
 frames, backdrops, line-clear effects, ghost styles and **sound packs** (Soft, Typewriter, Chiptune, Bubbles,
 Marimba, Analog Synth, Glass, Wind Chimes — all synthesized, with a Listen button); a few are factory rewards.
 
@@ -67,11 +71,10 @@ and first-try rates by difficulty and wildcard, factory quality control, items b
 | 1–0, −, = | use an item |
 | ⌫ / U, R, N, H | undo, retry, next puzzle, hint |
 | ⌘1–⌘5, ⌘, | tabs, settings |
-| mouse: hover | the piece follows the pointer |
-| mouse: click | hard drop |
-| mouse: drag | pull the piece down and sideways (under ledges); let go on the stack to set it, in the air to leave it |
-| wheel / right-click | turn |
-| click HOLD | hold, or swap back |
+| mouse: point | aim: the ghost goes to the resting spot nearest the pointer that the piece can reach, under ledges too |
+| mouse: click | place it there — anywhere on the board side, on the grid or off it |
+| wheel | turn (down clockwise, up counter-clockwise) |
+| right-click / click HOLD | hold, or swap back |
 
 Every item on the bar explains itself on hover. Repeat delay (230 ms) and rate, preview length, sound, effects, background, theme and accent are in Settings.
 

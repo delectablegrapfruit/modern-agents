@@ -162,6 +162,7 @@
         case 'pack': return [{ f: note(base * 2, 5), d: 0.08, w, g: 0.08 }, { n: 1, d: 0.03, g: 0.04, q: 1800 }];
         case 'stamp': return [{ n: 1, d: 0.05, g: 0.035, q: 600 }];
         case 'item': return [{ f: note(base, 4), d: 0.14, w: 'sine', g: 0.1, to: note(base, 7) }];
+        case 'bell': return [{ f: 1568, d: 0.5, w: 'sine', g: 0.08, h: 2.4 }, { f: 1568, d: 0.4, w: 'sine', g: 0.05, at: 0.12, h: 2.4 }];
         case 'land': return [{ n: 1, d: 0.05, g: 0.06, q: 700 }];
         default: return null;
       }
