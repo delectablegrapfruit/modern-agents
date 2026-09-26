@@ -75,7 +75,7 @@ enum SelfTest {
         guard session.fight.outcome == .victory else { throw Failure("the autopilot lost stage 1") }
         print("stage 1: \(session.fight.stats.kills) kills in \(Int(session.fight.time))s, best combo \(session.fight.stats.bestCombo)")
         try await until("the banner", timeout: 5) { scene.isShowingBanner }
-        try await pause(0.4)
+        try await pause(0.7)
         try snapshot("4-cleared", panel)
         guard session.career.stage == 2, session.career.kills == session.fight.stats.kills else { throw Failure("the win was not booked") }
         guard let saved = session.store.load(), saved.career == session.career else { throw Failure("the win was not saved") }
@@ -124,7 +124,7 @@ enum SelfTest {
         try await until("the ronin fell", timeout: 60) { session.fight.outcome != nil }
         guard session.fight.outcome == .defeat else { throw Failure("stage \(stage) was won with nobody cutting") }
         try await until("the banner", timeout: 5) { scene.isShowingBanner }
-        try await pause(0.4)
+        try await pause(0.7)
         try snapshot("8-fallen", panel)
         guard session.career.falls == 1, session.career.stage == stage, session.career.attempt == 2 else { throw Failure("the fall was not booked") }
         scene.pointerDown(at: CGPoint(x: scene.size.width / 2, y: scene.size.height / 2))
