@@ -290,19 +290,17 @@
       els.push(h('h4', null, 'Wildcards (solved / met)'), table(modRows));
       els.push(h('h4', null, 'Puzzles solved, last 14 days'), historyChart(app, 'puzzles', 14));
     } else if (sub === 'factory') {
-      const f = st.factory, fs = f.stats, r = Factory.rates(f);
+      const f = st.factory, fs = f.stats, r = Factory.rates(f), n = fs.orders || 0;
       els.push(h('div', { class: 'kpis' },
-        kpi(fmt(f.lifetime), 'Credits, all time'), kpi(count(fs.shipped), 'Minos shipped'), kpi(Factory.TIERS[f.tier].name, 'Product line'),
-        kpi(fmtInt(f.patents), 'Patents'), kpi(fmtInt(f.retools), 'Retools'), kpi(fmtInt(fs.orders || 0), 'Orders served'), kpi(fs.orders ? Math.round(fs.orderPoints / fs.orders) + '' : '—', 'Average grade')));
-      els.push(h('h4', null, 'Quality control'), table([
-        ['Defects pulled by hand', count(fs.caughtManual)], ['Defects pulled by inspectors', count(fs.caughtAuto)], ['Defects shipped', count(fs.escaped)],
-        ['Good minos thrown out', count(fs.falseRejects)], ['Catch rate', (fs.caughtManual + fs.caughtAuto + fs.escaped) ? pct((fs.caughtManual + fs.caughtAuto) / (fs.caughtManual + fs.caughtAuto + fs.escaped), 1) : '—'],
-        ['Current defect rate', pct(r.D, 1)], ['Inspector catch chance', pct(r.C, 0)],
-      ]));
-      els.push(h('h4', null, 'Shipped by product line'), hbars(Object.keys(fs.byTier).map((t) => [Factory.TIERS[t].short, Math.round(fs.byTier[t])])));
-      els.push(h('h4', null, 'Plant'), table([
-        ['Presses', fmtInt(r.presses)], ['Output', fmt(r.P) + ' minos/s'], ['Value per mino', fmt(r.V) + '¢'], ['Income', fmt(r.perSec) + '¢/s'],
-        ['Earned while away', fmt(fs.offlineEarned) + '¢'], ['Runs while away for', r.offlineHours + ' h'], ['Watched the belt', fmtDuration(S.timeMs.factory)],
+        kpi(fmtInt(f.rank), 'Rank'), kpi(fmtInt(n), 'Orders shipped'), kpi(n ? Math.round(fs.points / n) + '' : '—', 'Average score'),
+        kpi(fmtInt(fs.perfect), '5-star reviews'), kpi(fmtInt(fs.stars), 'Stars earned'), kpi(fmt(f.lifetime), 'Credits, all time')));
+      const avg = (k, d) => (d ? Math.round((fs.byStation[k] || 0) / d) : 0);
+      els.push(h('h4', null, 'Average score by station'), hbars([['Mold (shape)', avg('shape', n)], ['Kiln (firing)', avg('fire', n)], ['Paint', avg('paint', n)], ['Stickers', avg('stickers', fs.stickerOrders)]]));
+      const pulled = fs.caught + fs.caughtAuto;
+      els.push(h('h4', null, 'Assembly line'), table([
+        ['Minos shipped', count(fs.shipped)], ['Defects pulled by hand', count(fs.caught)], ['Defects pulled by the QC arm', count(fs.caughtAuto)],
+        ['Defects shipped (refunded)', count(fs.escaped)], ['Good minos binned', count(fs.wasted)], ['Catch rate', (pulled + fs.escaped) ? pct(pulled / (pulled + fs.escaped), 1) : '—'],
+        ['Best streak', fmtInt(f.bestStreak)], ['Income', r.perSec.toFixed(2) + '¢/s'], ['Earned while away', fmt(fs.offlineEarned) + '¢'], ['Time in the workshop', fmtDuration(S.timeMs.factory)],
       ]));
     } else {
       const bought = S.items.bought, used = S.items.used;

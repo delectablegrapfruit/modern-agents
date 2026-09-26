@@ -1,99 +1,281 @@
-// Lull — the Mino Factory: an idle assembly line. Presses stamp polyominoes onto a belt, the belt ships them for
-// credits, and a share come out defective — the wrong number of cells, split in two, cracked or scorched. Pull them
-// off the belt yourself (maintenance) or buy inspectors to do it. Product lines climb from monominoes to decominoes;
-// retooling the plant trades it all in for patents that make the next plant faster.
+// Lull — the Mino Works: a little workshop in the spirit of the Papa's games. Online orders print as tickets;
+// each ticket goes down the line — pour the shape in the Mold, fire it in the Kiln, spray and sticker it in the
+// Paint booth, ship it — and after a short wait the customer's review comes back, graded station by station.
+// Stars raise your rank, and rank brings new work (more colours, stickers, two-tone jobs, pentominoes …).
+// Beside that, an automatic assembly line stamps stock minos for pocket money (it runs while you are away, too);
+// now and then one comes out defective, and you flick it into the bin.
 (function (root) {
   'use strict';
   const L = (root.Lull = root.Lull || {});
-  const { Pieces, RNG, hash32 } = L;
+  const { Pieces, RNG } = L;
 
-  const TIERS = [
-    null,
-    { n: 1, name: 'Monomino', short: 'Mono', value: 1, unlock: 0 },
-    { n: 2, name: 'Domino', short: 'Di', value: 6, unlock: 150 },
-    { n: 3, name: 'Tromino', short: 'Tri', value: 36, unlock: 1.2e4 },
-    { n: 4, name: 'Tetromino', short: 'Tetro', value: 216, unlock: 2e6 },
-    { n: 5, name: 'Pentomino', short: 'Pento', value: 1300, unlock: 5e8 },
-    { n: 6, name: 'Hexomino', short: 'Hexo', value: 7800, unlock: 2e11 },
-    { n: 7, name: 'Heptomino', short: 'Hepto', value: 4.7e4, unlock: 1e14 },
-    { n: 8, name: 'Octomino', short: 'Octo', value: 2.8e5, unlock: 8e16 },
-    { n: 9, name: 'Enneomino', short: 'Ennea', value: 1.7e6, unlock: 2e19 },
-    { n: 10, name: 'Decomino', short: 'Deco', value: 1e7, unlock: 1e22 },
+  const VERSION = 4;
+
+  // The paints, in the order a rank unlocks them.
+  const PAINTS = [
+    { name: 'Tomato', c: '#ef6f6c' },
+    { name: 'Sky', c: '#5aa9e6' },
+    { name: 'Lemon', c: '#f7c548' },
+    { name: 'Mint', c: '#6cc486' },
+    { name: 'Grape', c: '#a77fd8' },
+    { name: 'Tangerine', c: '#f39a4a' },
+    { name: 'Bubblegum', c: '#f28dc0' },
+    { name: 'Ink', c: '#3d4a66' },
   ];
-  // Patents a retool grants, by the highest product line the plant reached.
-  const PATENTS_FOR_TIER = { 5: 1, 6: 3, 7: 8, 8: 20, 9: 50, 10: 120 };
-  const MAX_TIER = 10;
 
-  // Three things to invest in; the rest of the factory is played by hand.
+  // Firing: how long a piece stays in the kiln. The gauge fills in KILN_SECONDS.
+  const FIRING = [null, { name: 'Soft', at: 0.32 }, { name: 'Firm', at: 0.57 }, { name: 'Hard', at: 0.82 }];
+  const KILN_SECONDS = 15;
+  const FIRE_BAND = 0.075;
+
   const UPGRADES = {
-    press:   { name: 'Presses', icon: '⚙', desc: 'More presses, more minos.', base: 10, growth: 1.28, max: 1000 },
-    quality: { name: 'Quality', icon: '✦', desc: 'Finer molds: minos worth more, and fewer defects.', base: 60, growth: 2.2, max: 200 },
-    inspect: { name: 'Inspector', icon: '⌖', desc: 'A robot arm at the gate that pulls defects you miss.', base: 250, growth: 2.7, max: 18 },
+    line:   { name: 'Faster line', icon: '⚙', desc: 'The assembly line stamps more minos.', base: 25, growth: 1.55, max: 40 },
+    qc:     { name: 'QC arm', icon: '🦾', desc: 'A robot arm pulls defects you miss.', base: 90, growth: 1.9, max: 12 },
+    kiln:   { name: 'Kiln slot', icon: '🔥', desc: 'Fire one more piece at a time.', base: 160, growth: 5, max: 2 },
+    nozzle: { name: 'Wide nozzle', icon: '🎨', desc: 'Paint goes on faster.', base: 70, growth: 2.6, max: 4 },
   };
   const OFFLINE_HOURS = 8;
 
-  const DEFECTS = {
-    extra:    { name: 'Overweight', note: 'one cell too many' },
-    missing:  { name: 'Underweight', note: 'one cell short' },
-    split:    { name: 'Split', note: 'a cell broke away' },
-    diagonal: { name: 'Corner-joined', note: 'held on by a corner' },
-    crack:    { name: 'Cracked', note: 'hairline crack' },
-    burnt:    { name: 'Scorched', note: 'burnt cell' },
-  };
-
-  const PLANT_ADJ = ['Cobalt', 'Maple', 'Harbor', 'Granite', 'Copper', 'Willow', 'Signal', 'Juniper', 'Ember', 'Northgate', 'Saffron', 'Tin'];
-  const PLANT_NOUN = ['Works', 'Foundry', 'Mill', 'Yard', 'Assembly', 'Pressworks', 'Plant', 'Forge'];
-
-  function plantName(seed) {
-    const r = new RNG(hash32('plant:' + seed));
-    return r.pick(PLANT_ADJ) + ' ' + r.pick(PLANT_NOUN);
-  }
+  const DEFECTS = ['crack', 'chip', 'blob', 'burnt'];
 
   function create() {
     return {
-      v: 3,
-      credits: 0, runEarned: 0, lifetime: 0,
-      tier: 1, maxTierRun: 1,
-      up: { press: 0, quality: 0, inspect: 0 },
+      v: VERSION,
+      credits: 0, lifetime: 0,
+      rank: 1, rp: 0,
+      up: { line: 0, qc: 0, kiln: 0, nozzle: 0 },
+      orderNo: 100,
       streak: 0, bestStreak: 0,
-      patents: 0, retools: 0, plantSeed: (Math.random() * 1e9) | 0,
-      ordersMade: 0,
-      flawless: 0,
-      stats: { shipped: 0, byTier: {}, caughtManual: 0, caughtAuto: 0, escaped: 0, falseRejects: 0, contractsDone: 0, bestRate: 0, offlineEarned: 0, watchedMs: 0, retooled: 0, golden: 0, orders: 0, orderPoints: 0, perfectOrders: 0, bestOrder: 0 },
       lastTick: Date.now(),
-      unlocks: {},
+      // Work in progress (saved, so a half-painted piece is still there tomorrow).
+      work: { inbox: [], tickets: [] },
+      stats: {
+        orders: 0, stars: 0, perfect: 0, bestScore: 0, points: 0, orderCredits: 0, orderLines: 0,
+        byStation: { shape: 0, fire: 0, paint: 0, stickers: 0 }, stickerOrders: 0,
+        shipped: 0, caught: 0, caughtAuto: 0, escaped: 0, wasted: 0, lineCredits: 0, offlineEarned: 0,
+      },
     };
   }
 
-  /** Saves from before the factory was simplified: seven upgrades fold into three. */
+  /** Saves from the older factories: the workshop starts fresh, with a little money for the trouble. */
   function migrate(f) {
-    if (f.v === 3) return f;
-    if (f.v === 2) { delete f.contracts; delete f.contractCounter; f.stats = Object.assign({ orders: 0, orderPoints: 0, perfectOrders: 0, bestOrder: 0 }, f.stats); f.v = 3; return f; }
-    const up = f.up || {};
-    f.up = { press: up.press || 0, quality: Math.floor(((up.mold || 0) + (up.calib || 0)) / 2), inspect: Math.min(18, up.inspect || 0) };
-    f.streak = f.streak || 0; f.bestStreak = f.bestStreak || 0;
-    f.stats = Object.assign({ golden: 0, orders: 0, orderPoints: 0, perfectOrders: 0, bestOrder: 0 }, f.stats);
-    delete f.contracts; delete f.contractCounter;
-    f.v = 3;
-    return f;
+    if (f && f.v === VERSION) { f.work = f.work || { inbox: [], tickets: [] }; return f; }
+    const n = create();
+    if (f && f.stats) {
+      n.credits = Math.round(Math.min(600, 60 * Math.log10(1 + (f.lifetime || 0))));
+      n.stats.caught = f.stats.caughtManual || 0;
+      n.stats.orders = f.stats.orders || 0;
+    }
+    return n;
   }
 
-  // ---- rates ---------------------------------------------------------------------------------------------------------
+  // ---- rank ------------------------------------------------------------------------------------------------------
 
-  function rates(f) {
-    const presses = 1 + f.up.press;
-    const P = 0.35 * (1 + 0.5 * f.up.press);
-    const V = TIERS[f.tier].value * Math.pow(1.18, f.up.quality) * (1 + 0.25 * f.patents);
-    const D = Math.min(0.5, Math.max(0.03, (0.08 + 0.02 * f.tier) * Math.pow(0.92, f.up.quality)));
-    const C = Math.min(0.95, 1 - Math.pow(0.85, f.up.inspect));
-    const perMino = (1 - D) + D * (C * 0.2 - (1 - C) * 0.6);
-    const offlineHours = OFFLINE_HOURS;
-    return { presses, P, V, D, C, perMino, perSec: P * V * perMino, offlineHours };
+  /** Stars needed to go from rank r to r + 1. */
+  function rankNeed(r) { return 6 + 4 * r; }
+
+  /** What the work looks like at a rank. */
+  function rankInfo(rank) {
+    const r = rank;
+    return {
+      rank: r,
+      colors: Math.min(PAINTS.length, 3 + (r >= 2) + (r >= 4) + (r >= 7) + (r >= 10) + (r >= 14)),
+      stickers: r >= 3 ? Math.min(4, 1 + Math.floor((r - 3) / 4)) : 0,
+      twoTone: r >= 6,
+      sizes: r >= 12 ? [4, 5, 5, 6] : r >= 9 ? [4, 5, 5] : r >= 5 ? [4, 4, 5] : [4],
+      maxQty: Math.min(4, 1 + Math.floor(r / 4)),
+      pay: 1 + 0.35 * (r - 1),
+    };
   }
+
+  /** The unlocks a new rank brings, for the rank-up card. */
+  function rankNews(r) {
+    const a = rankInfo(r - 1), b = rankInfo(r), out = [];
+    if (b.colors > a.colors) out.push('New paint: ' + PAINTS[b.colors - 1].name);
+    if (b.stickers && !a.stickers) out.push('Sticker jobs');
+    else if (b.stickers > a.stickers) out.push('Up to ' + b.stickers + ' stickers');
+    if (b.twoTone && !a.twoTone) out.push('Two-tone jobs');
+    if (Math.max(...b.sizes) > Math.max(...a.sizes)) out.push(Math.max(...b.sizes) === 5 ? 'Pentominoes' : 'Hexominoes');
+    if (b.maxQty > a.maxQty) out.push('Orders of up to ' + b.maxQty);
+    out.push('Better pay');
+    return out;
+  }
+
+  // ---- orders ----------------------------------------------------------------------------------------------------
+
+  const catalogCache = {};
+  function catalog(n) {
+    if (!catalogCache[n]) catalogCache[n] = Pieces.freePolyominoes(n);
+    return catalogCache[n];
+  }
+
+  /** Cells in screen order (x right, y down), shifted to start at 0,0 and sorted. */
+  function norm(cells) {
+    let mx = Infinity, my = Infinity;
+    for (const [x, y] of cells) { mx = Math.min(mx, x); my = Math.min(my, y); }
+    return cells.map(([x, y]) => [x - mx, y - my]).sort((a, b) => a[1] - b[1] || a[0] - b[0]);
+  }
+  function bounds(cells) {
+    let w = 0, h = 0;
+    for (const [x, y] of cells) { w = Math.max(w, x + 1); h = Math.max(h, y + 1); }
+    return { w, h };
+  }
+
+  /**
+   * A new online order: one shape, in the orientation shown on the ticket, with a paint (two for a two-tone job,
+   * split by rows or columns), a firing, maybe stickers on some cells, and a quantity.
+   */
+  function newOrder(f, r) {
+    const info = rankInfo(f.rank);
+    const n = r.pick(info.sizes);
+    let cells = r.pick(catalog(n)).map((c) => c.slice());
+    const turns = r.int(4);
+    for (let i = 0; i < turns; i++) cells = cells.map(([x, y]) => [-y, x]);
+    if (r.next() < 0.5) cells = cells.map(([x, y]) => [-x, y]);
+    cells = norm(cells);
+    const paint = r.int(info.colors);
+    const colors = cells.map(() => paint);
+    let second = null;
+    if (info.twoTone && r.next() < 0.5) {
+      second = (paint + 1 + r.int(info.colors - 1)) % info.colors;
+      const b = bounds(cells), byRow = b.h >= b.w;
+      const cut = byRow ? 1 + r.int(b.h - 1) : 1 + r.int(b.w - 1);
+      cells.forEach(([x, y], i) => { if ((byRow ? y : x) >= cut) colors[i] = second; });
+    }
+    const stickers = [];
+    if (info.stickers && r.next() < 0.6) {
+      const k = 1 + r.int(Math.min(info.stickers, cells.length - 1));
+      const idx = cells.map((_, i) => i);
+      for (let i = 0; i < k; i++) stickers.push(idx.splice(r.int(idx.length), 1)[0]);
+      stickers.sort((a, b) => a - b);
+    }
+    f.orderNo++;
+    return {
+      no: f.orderNo, cells, colors, paint, second, fire: 1 + r.int(3), stickers,
+      qty: 1 + (info.maxQty > 1 && r.next() < 0.45 ? r.int(info.maxQty) : 0),
+      rank: f.rank,
+    };
+  }
+
+  // ---- grading ---------------------------------------------------------------------------------------------------
+
+  /**
+   * How the poured shape matches the ticket (same orientation; it may sit anywhere in the mold).
+   * Returns { score 0–100, dx, dy }: the shift that lays the ticket over the pour.
+   */
+  function gradeShape(order, built) {
+    if (!built.length) return { score: 0, dx: 0, dy: 0 };
+    const want = order.cells, set = new Set(built.map((c) => c.join(',')));
+    let best = { score: -1, dx: 0, dy: 0 };
+    let bx = Infinity, by = Infinity;
+    for (const [x, y] of built) { bx = Math.min(bx, x); by = Math.min(by, y); }
+    for (let dy = by - 6; dy <= by + 6; dy++) {
+      for (let dx = bx - 6; dx <= bx + 6; dx++) {
+        let hit = 0;
+        for (const [x, y] of want) if (set.has((x + dx) + ',' + (y + dy))) hit++;
+        const union = want.length + built.length - hit;
+        const score = Math.round((hit / union) * 100);
+        if (score > best.score) best = { score, dx, dy };
+      }
+    }
+    return best;
+  }
+
+  /** Firing: full marks inside the band, falling away outside it. */
+  function gradeFire(order, heat) {
+    const d = Math.abs(heat - FIRING[order.fire].at);
+    if (d <= FIRE_BAND) return 100;
+    return Math.max(15, Math.round(100 - (d - FIRE_BAND) * 420));
+  }
+
+  /**
+   * Paint: every poured cell's coat. `coat[i]` is an array of paint amounts on built cell i. A cell scores for
+   * coverage (up to a full coat) times the share of the right colour. Cells the ticket does not have count against.
+   */
+  function gradePaint(order, built, coat, shift) {
+    if (!built.length) return 0;
+    const target = new Map(order.cells.map(([x, y], i) => [(x + shift.dx) + ',' + (y + shift.dy), order.colors[i]]));
+    let sum = 0;
+    built.forEach(([x, y], i) => {
+      const a = coat[i] || [];
+      const total = a.reduce((s, v) => s + (v || 0), 0);
+      const want = target.has(x + ',' + y) ? target.get(x + ',' + y) : order.paint;
+      const cover = Math.min(1, total / 0.9);
+      const pure = total ? (a[want] || 0) / total : 0;
+      sum += cover * pure;
+    });
+    return Math.round((sum / Math.max(built.length, order.cells.length)) * 100);
+  }
+
+  /** Stickers: the right cells, and nothing else. */
+  function gradeStickers(order, built, placed, shift) {
+    const want = new Set(order.stickers.map((i) => (order.cells[i][0] + shift.dx) + ',' + (order.cells[i][1] + shift.dy)));
+    const got = new Set(Array.from(placed).map((i) => built[i] && built[i].join(',')).filter(Boolean));
+    if (!want.size) return got.size ? Math.max(0, 100 - got.size * 25) : null;
+    let hit = 0;
+    for (const k of got) if (want.has(k)) hit++;
+    return Math.round((hit / (want.size + got.size - hit)) * 100);
+  }
+
+  function starsFor(score) { return score >= 96 ? 5 : score >= 86 ? 4 : score >= 70 ? 3 : score >= 50 ? 2 : 1; }
+
+  const REVIEWS = {
+    5: ['Exactly what I ordered. Perfect!', 'Flawless. Ordering again!', 'Could not be better.'],
+    4: ['Really nice work.', 'Great — tiny nitpicks only.', 'Very happy with this.'],
+    3: ['It’s fine.', 'Close enough, thanks.', 'Decent.'],
+    2: ['Not quite what I asked for.', 'Hmm. It’ll do, I guess.', 'Some mix-ups here.'],
+    1: ['This is not my order…', 'Was this a joke?', 'Wrong in every way.'],
+  };
+
+  /**
+   * The customer's review of a finished piece.
+   * job: { built: [[x, y]], heat: 0–1, coat: [[amounts]], stickers: Set of built-cell indexes }
+   */
+  function review(f, order, job, rng) {
+    const shape = gradeShape(order, job.built);
+    const shift = { dx: shape.dx, dy: shape.dy };
+    const rows = [
+      { id: 'shape', label: 'Shape', score: shape.score },
+      { id: 'fire', label: 'Firing', score: job.heat == null ? 0 : gradeFire(order, job.heat) },
+      { id: 'paint', label: 'Paint', score: gradePaint(order, job.built, job.coat || [], shift) },
+    ];
+    const st = gradeStickers(order, job.built, job.stickers || new Set(), shift);
+    if (st != null && (order.stickers.length || (job.stickers && job.stickers.size))) rows.push({ id: 'stickers', label: 'Stickers', score: st });
+    // Shape matters most: a wrong shape spoils everything after it.
+    const weights = { shape: 1.4, fire: 1, paint: 1.2, stickers: 0.8 };
+    let wsum = 0, sum = 0;
+    for (const r of rows) { sum += r.score * weights[r.id]; wsum += weights[r.id]; }
+    const score = Math.round(sum / wsum);
+    const stars = starsFor(score);
+    const info = rankInfo(order.rank || f.rank);
+    const qty = order.qty || 1;
+    const size = order.cells.length;
+    const credits = Math.round((8 + size * 3) * info.pay * qty * (score / 100) * (stars === 5 ? 1.25 : 1));
+    const lines = Math.max(1, Math.round((2 + size * 0.5 + order.stickers.length * 0.5 + (order.second != null ? 1 : 0)) * (score / 100) * (1 + (qty - 1) * 0.5) * (stars === 5 ? 1.5 : 1)));
+    const text = (rng ? rng.pick(REVIEWS[stars]) : REVIEWS[stars][0]);
+    return { rows, score, stars, credits, lines, text, order };
+  }
+
+  /** Books a review: money, stats, rank. Returns the ranks gained (usually none). */
+  function settle(f, rev) {
+    const S = f.stats;
+    f.credits += rev.credits; f.lifetime += rev.credits;
+    S.orders++; S.stars += rev.stars; S.points += rev.score;
+    S.orderCredits += rev.credits; S.orderLines += rev.lines;
+    if (rev.stars === 5) S.perfect++;
+    S.bestScore = Math.max(S.bestScore, rev.score);
+    for (const r of rev.rows) S.byStation[r.id] = (S.byStation[r.id] || 0) + r.score;
+    if (rev.rows.some((r) => r.id === 'stickers')) S.stickerOrders++;
+    f.rp += rev.stars;
+    const gained = [];
+    while (f.rp >= rankNeed(f.rank)) { f.rp -= rankNeed(f.rank); f.rank++; gained.push(f.rank); }
+    return gained;
+  }
+
+  // ---- upgrades --------------------------------------------------------------------------------------------------
 
   function cost(f, key) {
-    const u = UPGRADES[key];
-    const lvl = f.up[key];
+    const u = UPGRADES[key], lvl = f.up[key] || 0;
     if (lvl >= u.max) return Infinity;
     return Math.ceil(u.base * Math.pow(u.growth, lvl));
   }
@@ -102,344 +284,156 @@
     const c = cost(f, key);
     if (!(f.credits >= c)) return false;
     f.credits -= c;
-    f.up[key]++;
+    f.up[key] = (f.up[key] || 0) + 1;
     return true;
   }
 
-  function nextTier(f) { return f.tier < MAX_TIER ? TIERS[f.tier + 1] : null; }
+  function kilnSlots(f) { return 1 + (f.up.kiln || 0); }
+  function sprayRate(f) { return 1.4 * (1 + 0.3 * (f.up.nozzle || 0)); }
 
-  function unlockTier(f) {
-    const t = nextTier(f);
-    if (!t || f.credits < t.unlock) return false;
-    f.credits -= t.unlock;
-    f.tier = t.n;
-    f.maxTierRun = Math.max(f.maxTierRun || 1, t.n);
-    return true;
+  // ---- the assembly line (idle) ----------------------------------------------------------------------------------
+
+  /**
+   * Rates for the line: M minos a second, worth V each; a share D come out defective; the QC arm catches a
+   * share C of those. A shipped defect costs its value back (a refund); a caught one is scrap (a fifth).
+   */
+  function rates(f) {
+    const lvl = f.up.line || 0;
+    const M = 0.25 * (1 + 0.3 * lvl);
+    const V = 1 + 0.2 * (f.rank - 1);
+    const D = 0.12;
+    const C = Math.min(0.95, 1 - Math.pow(0.8, f.up.qc || 0));
+    const perMino = (1 - D) + D * (C * 0.2 - (1 - C) * 0.5);
+    return { M, V, D, C, perSec: M * V * perMino, offlineHours: OFFLINE_HOURS };
   }
-
-  // ---- earning -------------------------------------------------------------------------------------------------------
 
   function earn(f, amount) {
     f.credits = Math.max(0, f.credits + amount);
-    if (amount > 0) { f.runEarned += amount; f.lifetime += amount; }
-    progress(f, 'earn', Math.max(0, amount));
+    if (amount > 0) { f.lifetime += amount; f.stats.lineCredits += amount; }
   }
 
-  /** Unwatched running: the expected outcome of dt seconds of production. */
+  /** The line running unwatched for dt seconds, in expectation. */
   function runExpected(f, dt) {
-    if (dt <= 0) return { shipped: 0, credits: 0 };
-    const r = rates(f);
-    const made = r.P * dt;
-    const good = made * (1 - r.D), bad = made * r.D;
-    const caught = bad * r.C, escaped = bad - caught;
-    const credits = r.P * r.V * r.perMino * dt;
-    earn(f, credits);
-    const shipped = good + escaped;
-    f.stats.shipped += shipped;
-    f.stats.byTier[f.tier] = (f.stats.byTier[f.tier] || 0) + shipped;
-    f.stats.caughtAuto += caught;
-    f.stats.escaped += escaped;
-    progress(f, 'ship', shipped);
-    // A flawless streak survives only as long as nothing escapes: about 1/(D(1−C)) minos.
-    if (escaped >= 1) f.flawless = Math.min(f.flawless + shipped, Math.floor(1 / Math.max(1e-9, r.D * (1 - r.C))));
-    else f.flawless += shipped;
-    progress(f, 'flawless', 0);
-    return { shipped, credits, caught, escaped };
+    if (!(dt > 0)) return 0;
+    const r = rates(f), n = r.M * dt;
+    const gained = r.perSec * dt;
+    earn(f, gained);
+    const S = f.stats;
+    S.shipped += n * (1 - r.D) + n * r.D * (1 - r.C);
+    S.caughtAuto += n * r.D * r.C;
+    S.escaped += n * r.D * (1 - r.C);
+    return gained;
   }
 
-  /** Time passed while the page was closed or asleep, capped by the warehouse. */
+  /** Time away (the app closed, or the machine asleep), up to OFFLINE_HOURS. */
   function catchUp(f, now) {
-    const r = rates(f);
-    const dt = Math.max(0, (now - f.lastTick) / 1000);
-    const capped = Math.min(dt, r.offlineHours * 3600);
+    const dt = (now - (f.lastTick || now)) / 1000;
     f.lastTick = now;
-    if (capped < 1) return null;
-    const res = runExpected(f, capped);
-    f.stats.offlineEarned += res.credits;
-    return Object.assign(res, { seconds: dt, cappedSeconds: capped });
+    if (!(dt > 1)) return null;
+    const capped = Math.min(dt, OFFLINE_HOURS * 3600);
+    const credits = runExpected(f, capped);
+    f.stats.offlineEarned += credits;
+    return { seconds: dt, cappedSeconds: capped, credits };
   }
 
-  // ---- retooling (prestige) ------------------------------------------------------------------------------------------
-
-  function retoolGain(f) { return PATENTS_FOR_TIER[Math.max(f.tier, f.maxTierRun || 1)] || 0; }
-  function retool(f) {
-    const gain = retoolGain(f);
-    if (!gain) return 0;
-    f.patents += gain;
-    f.retools++;
-    f.stats.retooled++;
-    f.credits = 0;
-    f.runEarned = 0;
-    f.tier = 1;
-    f.maxTierRun = 1;
-    f.up = { press: 0, quality: 0, inspect: 0 };
-    f.plantSeed = (f.plantSeed * 7919 + 13) | 0;
-    f.flawless = 0;
-    return gain;
-  }
-
-  // ---- orders: the hands-on part (in the spirit of the Papa's restaurant games) ------------------------------------
-  //
-  // A customer walks up and orders one mino: a shape and a paint. You build it cell by cell in the mold, paint it,
-  // press it (stop the needle in the green), and hand it over. They grade each step; the grade sets the pay.
-
-  const PAINTS = ['#ef6f6c', '#f7c548', '#6cc486', '#5aa9e6', '#b784d8', '#f39a4a'];
-  const CUSTOMER_NAMES = ['Ada', 'Bo', 'Cleo', 'Dex', 'Edie', 'Finn', 'Gus', 'Hana', 'Ivo', 'Juno', 'Kit', 'Lou', 'Mo', 'Nell', 'Otto', 'Pip', 'Quin', 'Rae', 'Sol', 'Tess', 'Uma', 'Vic', 'Wren', 'Yuki', 'Zed'];
-
-  /** Paints on the shelf: three to start, one more every other product line. */
-  function paintCount(f) { return Math.min(PAINTS.length, 3 + Math.floor((f.tier - 1) / 2)); }
-  /** Orders are three-cell pieces at first and grow with the product line (up to eight cells). */
-  function orderSize(f) { return Math.max(3, Math.min(8, f.tier)); }
-
-  function newOrder(f, r) {
-    const n = orderSize(f);
-    const cat = catalog(n);
-    let cells = cat[r.int(cat.length)].map((c) => c.slice());
-    for (let t = r.int(4); t > 0; t--) cells = cells.map(([x, y]) => [y, -x]);
-    cells = Pieces.normalize(cells);
-    return {
-      id: (f.ordersMade = (f.ordersMade || 0) + 1),
-      cells, paint: r.int(paintCount(f)),
-      customer: { name: r.pick(CUSTOMER_NAMES), hue: r.int(360), hat: r.int(4), size: 0.9 + r.next() * 0.25 },
-      created: Date.now(),
-    };
-  }
-
-  /**
-   * Grades a finished order, each step out of 100: the shape (any turn or flip counts), the paint, the press
-   * (0 = dead centre of the green), and the wait. Returns the scores, the total and the pay.
-   */
-  function gradeOrder(f, order, built) {
-    const want = order.cells, got = built.cells;
-    let shape;
-    if (got.length && Pieces.freeKey(got) === Pieces.freeKey(want)) shape = 100;
-    else {
-      const off = Math.abs(got.length - want.length);
-      shape = Math.max(0, 70 - off * 20 - (got.length && Pieces.isConnected(got) ? 0 : 30));
-    }
-    const paint = built.paint === order.paint ? 100 : 30;
-    const press = Math.round(Math.max(0, 100 - Math.abs(built.press == null ? 1 : built.press) * 100));
-    const waited = (Date.now() - order.created) / 1000;
-    const wait = Math.round(Math.max(50, Math.min(100, 100 - (waited - 60) / 3)));
-    const total = Math.round((shape * 2 + paint + press + wait) / 5);
-    const r = rates(f);
-    const credits = Math.round((r.perSec * 30 + TIERS[f.tier].value * 25) * (0.3 + total / 100));
-    const tip = total >= 90 ? Math.round(credits * 0.3) : 0;
-    const lines = total >= 97 ? 3 : total >= 88 ? 2 : total >= 70 ? 1 : 0;
-    return { shape, paint, press, wait, total, credits, tip, lines, stars: total >= 95 ? 3 : total >= 80 ? 2 : total >= 55 ? 1 : 0 };
-  }
-
-  function serveOrder(f, grade) {
-    earn(f, grade.credits + grade.tip);
-    const s = f.stats;
-    s.orders = (s.orders || 0) + 1;
-    s.orderPoints = (s.orderPoints || 0) + grade.total;
-    if (grade.total >= 95) s.perfectOrders = (s.perfectOrders || 0) + 1;
-    s.bestOrder = Math.max(s.bestOrder || 0, grade.total);
-  }
-
-  function progress() { /* contracts are gone; kept so older callers stay harmless */ }
-
-  // ---- products and defects ------------------------------------------------------------------------------------------
-
-  const catalogCache = {};
-  function catalog(n) {
-    if (!catalogCache[n]) catalogCache[n] = Pieces.freePolyominoes(n);
-    return catalogCache[n];
-  }
-
-  function productName(n, idx) {
-    return TIERS[n].short + '-' + String(idx + 1).padStart(n > 6 ? 3 : 2, '0');
-  }
-
-  function neighbors(x, y) { return [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]; }
-
-  /** A belt item: a random product of the plant's tier, sometimes defective. */
-  function makeItem(f, r, forceDefect, forceIdx) {
-    const n = f.tier;
-    const cat = catalog(n);
-    const idx = forceIdx != null ? forceIdx : r.int(cat.length);
-    let cells = cat[idx].map((c) => c.slice());
-    // Random orientation.
-    const turns = r.int(4);
-    for (let t = 0; t < turns; t++) cells = cells.map(([x, y]) => [y, -x]);
-    if (r.chance(0.5)) cells = cells.map(([x, y]) => [-x, y]);
-    cells = Pieces.normalize(cells);
-    const rt = rates(f);
-    const defective = forceDefect != null ? forceDefect : r.chance(rt.D);
-    let defect = null, mark = null;
-    if (defective) {
-      const kinds = n === 1 ? ['extra', 'crack', 'burnt'] : n === 2 ? ['extra', 'missing', 'diagonal', 'crack', 'burnt'] : ['extra', 'missing', 'split', 'diagonal', 'crack', 'burnt'];
-      defect = r.pick(kinds);
+  /** A stock mino for the line: one of the rank's shapes, sometimes defective. */
+  function makeItem(f, r, forceDefect) {
+    const n = rankInfo(f.rank).sizes[0];
+    let cells = norm(r.pick(catalog(n)).map((c) => c.slice()));
+    const defect = forceDefect === true ? r.pick(DEFECTS) : forceDefect === false ? null : r.next() < rates(f).D ? r.pick(DEFECTS) : null;
+    const item = { cells, color: r.int(rankInfo(f.rank).colors), defect, mark: null, x: 0, golden: false };
+    if (defect === 'chip') { item.mark = r.int(cells.length); }
+    else if (defect === 'burnt' || defect === 'crack') item.mark = r.int(cells.length);
+    else if (defect === 'blob') {
+      // A stray lump of material on one side.
       const set = new Set(cells.map((c) => c.join(',')));
-      const free = (x, y) => !set.has(x + ',' + y);
-      if (defect === 'extra') {
-        const opts = [];
-        for (const [x, y] of cells) for (const [nx, ny] of neighbors(x, y)) if (free(nx, ny)) opts.push([nx, ny]);
-        cells.push(r.pick(opts));
-      } else if (defect === 'missing') {
-        const opts = cells.filter((c) => Pieces.isConnected(cells.filter((d) => d !== c)));
-        const gone = r.pick(opts);
-        cells = cells.filter((c) => c !== gone);
-      } else if (defect === 'split' || defect === 'diagonal') {
-        // Move a leaf cell somewhere it only touches by a corner (diagonal) or not at all (split).
-        const leaves = cells.filter((c) => Pieces.isConnected(cells.filter((d) => d !== c)));
-        const moved = r.pick(leaves);
-        const rest = cells.filter((c) => c !== moved);
-        const restSet = new Set(rest.map((c) => c.join(',')));
-        const touches4 = (x, y) => neighbors(x, y).some(([a, b]) => restSet.has(a + ',' + b));
-        const touches8 = (x, y) => [[1, 1], [1, -1], [-1, 1], [-1, -1]].some(([dx, dy]) => restSet.has((x + dx) + ',' + (y + dy)));
-        const b = Pieces.boundsOf(rest);
-        const opts = [];
-        for (let y = b.minY - 2; y <= b.maxY + 2; y++) for (let x = b.minX - 2; x <= b.maxX + 2; x++) {
-          if (restSet.has(x + ',' + y) || touches4(x, y)) continue;
-          if (defect === 'diagonal' ? touches8(x, y) : (!touches8(x, y) && (Math.abs(x - b.minX) <= 1 || Math.abs(x - b.maxX) <= 1 || Math.abs(y - b.minY) <= 1 || Math.abs(y - b.maxY) <= 1))) opts.push([x, y]);
-        }
-        cells = rest.concat([opts.length ? r.pick(opts) : [b.maxX + 2, b.minY]]);
-      } else {
-        mark = r.int(cells.length);
+      const opts = [];
+      for (const [x, y] of cells) for (const [dx, dy] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+        const k = (x + dx) + ',' + (y + dy);
+        if (!set.has(k) && !set.has((x + dx) + ',' + y) && !set.has(x + ',' + (y + dy))) opts.push([x + dx, y + dy]);
       }
-      cells = Pieces.normalize(cells);
+      if (opts.length) { cells = norm(cells.concat([r.pick(opts)])); item.cells = cells; item.mark = cells.length - 1; }
+      else { item.defect = 'burnt'; item.mark = 0; }
     }
-    return { cells, n, idx, name: productName(n, idx), defect, mark, hue: (idx * 47 + n * 31) % 360, golden: !defective && r.chance(1 / 70) };
+    if (!item.defect && r.next() < 0.03) item.golden = true;
+    return item;
   }
 
-  // ---- the belt you can watch ---------------------------------------------------------------------------------------
-
-  /**
-   * The line on screen, and what you do there. Items ride from the press (x = 0) past the inspector's gate to the
-   * shipping crate (x = 1); each stands for a batch of minos so the belt stays readable however fast the plant runs.
-   *  - Click a defect: pulled, and your QC streak grows (worth up to double on everything you ship while watching).
-   *    Pull a good one or let a defect ship and the streak starts over.
-   *  - Golden minos: rare, click them for lines.
-   */
-  class Belt {
-    constructor(f) {
+  /** The line on screen: minos ride from the press (x = 0) to the crate (x = 1). */
+  class Line {
+    constructor(f, seed) {
       this.f = f;
+      this.rng = new RNG(seed == null ? (Date.now() >>> 0) : seed);
       this.items = [];
-      this.acc = 0;
-      this.rng = new RNG((Date.now() ^ (Math.random() * 1e9)) >>> 0);
-      this.travel = 14; // seconds end to end
       this.events = [];
+      this.acc = 0.6;
       this.nextId = 1;
-    }
-    static get INSPECT() { return 0.64; }
-    // Bigger products need more room on the belt, so they come in fewer, larger batches.
-    batch() { return Math.max(1, Math.ceil(rates(this.f).P * (2.4 + 0.45 * this.f.tier))); }
-    spawnInterval() { return this.batch() / rates(this.f).P; }
-    streakMult() { return 1 + Math.min(1, this.f.streak * 0.05); }
-
-    spawn(x) {
-      const f = this.f;
-      const it = makeItem(f, this.rng);
-      it.id = this.nextId++;
-      it.x = x;
-      it.batch = this.batch();
-      it.stamp = 0;
-      return it;
+      this.speed = 0.075;
     }
 
     step(dt) {
-      const f = this.f;
-      const r = rates(f);
-      this.acc += dt;
-      const interval = this.batch() / r.P;
-      if (this.acc > interval * 4) this.acc = interval * 4;
-      while (this.acc >= interval) {
-        this.acc -= interval;
-        this.items.push(this.spawn(0));
-        this.events.push({ kind: 'stamp' });
+      const r = rates(this.f);
+      this.acc += dt * r.M;
+      while (this.acc >= 1) {
+        this.acc -= 1;
+        const it = makeItem(this.f, this.rng);
+        it.id = this.nextId++;
+        it.x = 0;
+        this.items.push(it);
+        this.events.push({ kind: 'stamp', item: it });
       }
-      const v = 1 / this.travel;
       for (const it of this.items) {
-        if (it.gone) { it.fade += dt * 2.2; continue; }
-        const before = it.x;
-        it.x += v * dt;
-        it.stamp += dt;
-        if (before < Belt.INSPECT && it.x >= Belt.INSPECT && it.defect && !it.checked) {
+        if (it.leaving) continue;
+        it.x += dt * this.speed * Math.max(1, r.M / 0.25); // a faster line runs a faster belt, so minos keep their spacing
+        // The QC arm looks at each defect once as it passes, near the end.
+        if (it.defect && !it.checked && it.x > 0.72) {
           it.checked = true;
-          if (this.rng.chance(r.C)) this.remove(it, 'auto');
+          if (this.rng.next() < r.C) this.remove(it, 'auto');
         }
-        if (it.x >= 1 && !it.gone) this.ship(it);
       }
-      this.items = this.items.filter((it) => !(it.gone && it.fade >= 1));
+      const done = this.items.filter((it) => !it.leaving && it.x >= 1);
+      for (const it of done) {
+        it.leaving = true;
+        const S = this.f.stats;
+        if (it.defect) { earn(this.f, -r.V * 0.5); S.escaped++; this.f.streak = 0; this.events.push({ kind: 'escaped', item: it, value: -r.V * 0.5 }); }
+        else {
+          const v = r.V * (it.golden ? 10 : 1);
+          earn(this.f, v); S.shipped++;
+          this.events.push({ kind: it.golden ? 'golden' : 'shipped', item: it, value: v });
+        }
+      }
+      this.items = this.items.filter((it) => !it.leaving);
     }
 
-    /** Items already on their way when you look (their output was counted while nobody watched). */
-    prefill() {
-      const step = this.spawnInterval() / this.travel;
-      for (let x = 0.9 - this.rng.next() * step; x > 0.02; x -= step) {
-        const it = this.spawn(x);
-        it.stamp = 1; it.pre = true;
-        if (x > Belt.INSPECT) it.checked = true;
-        this.items.unshift(it);
-      }
-    }
-
-    ship(it) {
-      const f = this.f, r = rates(f);
-      it.gone = 'shipped'; it.fade = 0;
-      if (it.pre) return;
-      f.stats.shipped += it.batch;
-      f.stats.byTier[f.tier] = (f.stats.byTier[f.tier] || 0) + it.batch;
-      progress(f, 'ship', it.batch);
-      if (it.defect) {
-        earn(f, -0.6 * r.V * it.batch);
-        f.stats.escaped += it.batch;
-        f.flawless = 0;
-        if (f.streak) this.events.push({ kind: 'streakLost', from: f.streak });
-        f.streak = 0;
-        progress(f, 'flawless', 0);
-        this.events.push({ kind: 'escaped', item: it });
-      } else {
-        const v = r.V * it.batch * this.streakMult() * (it.golden ? 3 : 1);
-        earn(f, v);
-        f.flawless += it.batch;
-        progress(f, 'flawless', 0);
-        this.events.push({ kind: 'shipped', item: it, value: v });
-      }
-    }
-
-    /** A click on an item (how = 'manual'), or the inspector's arm (how = 'auto'). */
+    /** A mino pulled off the line, by hand (manual) or by the arm (auto). */
     remove(it, how) {
-      const f = this.f, r = rates(f);
-      if (it.gone) return null;
-      it.fade = 0;
-      if (how === 'auto') {
-        it.gone = 'auto';
-        earn(f, 0.2 * r.V * it.batch);
-        f.stats.caughtAuto += it.batch;
-        this.events.push({ kind: 'auto', item: it });
-      } else if (it.defect) {
-        it.gone = 'caught';
-        f.streak++;
-        f.bestStreak = Math.max(f.bestStreak, f.streak);
-        earn(f, 0.5 * r.V * it.batch * this.streakMult());
-        f.stats.caughtManual += it.batch;
-        progress(f, 'catch', 1);
-        this.events.push({ kind: 'caught', item: it, streak: f.streak });
-      } else if (it.golden) {
-        it.gone = 'golden';
-        const lines = 1 + this.rng.int(3);
-        earn(f, 5 * r.V * it.batch);
-        f.stats.golden++;
-        this.events.push({ kind: 'golden', item: it, lines });
-      } else {
-        it.gone = 'wasted';
-        f.stats.falseRejects += it.batch;
-        if (f.streak) this.events.push({ kind: 'streakLost', from: f.streak });
-        f.streak = 0;
-        this.events.push({ kind: 'wasted', item: it });
+      if (it.leaving || !this.items.includes(it)) return null;
+      it.leaving = true;
+      this.items = this.items.filter((x) => x !== it);
+      const r = rates(this.f), S = this.f.stats;
+      if (it.defect) {
+        const v = r.V * 0.2;
+        earn(this.f, v);
+        if (how === 'manual') { S.caught++; this.f.streak++; this.f.bestStreak = Math.max(this.f.bestStreak, this.f.streak); }
+        else S.caughtAuto++;
+        const e = { kind: 'caught', how, item: it, value: v, streak: this.f.streak };
+        this.events.push(e);
+        return e;
       }
-      return it.gone;
+      S.wasted++;
+      this.f.streak = 0;
+      const e = { kind: 'wasted', item: it, value: 0 };
+      this.events.push(e);
+      return e;
     }
 
     drain() { const e = this.events; this.events = []; return e; }
   }
 
   L.Factory = {
-    TIERS, MAX_TIER, UPGRADES, DEFECTS, PATENTS_FOR_TIER,
-    create, migrate, rates, cost, buy, OFFLINE_HOURS, nextTier, unlockTier, earn, runExpected, catchUp,
-    retoolGain, retool, progress, PAINTS, paintCount, orderSize, newOrder, gradeOrder, serveOrder, catalog, makeItem, productName, plantName, Belt,
+    VERSION, PAINTS, FIRING, KILN_SECONDS, FIRE_BAND, UPGRADES, DEFECTS, OFFLINE_HOURS,
+    create, migrate, rankNeed, rankInfo, rankNews, catalog, norm, bounds, newOrder,
+    gradeShape, gradeFire, gradePaint, gradeStickers, starsFor, review, settle,
+    cost, buy, kilnSlots, sprayRate, rates, runExpected, catchUp, makeItem, Line,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

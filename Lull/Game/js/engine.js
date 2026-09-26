@@ -7,6 +7,9 @@
 
   const CLEAR_SCORE = [0, 100, 300, 500, 800, 1200, 1600, 2000];
   const TSPIN_SCORE = [400, 800, 1200, 1600];
+  const MINI_SCORE = [100, 200, 400];
+  // The two corners on the side the T points to, per rotation (box coordinates, y up).
+  const T_FRONT = [[[0, 2], [2, 2]], [[2, 0], [2, 2]], [[0, 0], [2, 0]], [[0, 0], [0, 2]]];
   const BOMB_PATTERN = [];
   for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (Math.abs(dx) + Math.abs(dy) <= 2 || (Math.abs(dx) <= 1 && Math.abs(dy) <= 1)) BOMB_PATTERN.push([dx, dy]);
 
@@ -26,7 +29,8 @@
   class Game extends Emitter {
     /**
      * o: { w, h, wrap, mode, mods: {noRotate, heavy, noHold, vanish}, queue: [{id, rot}] (fixed list: puzzles),
-     *      seed, previewCount, board (Board), saved (from toJSON) }
+     *      seed, previewCount, board (Board), saved (from toJSON), freeHold (hold swaps back and forth as often as
+     *      you like; Classic turns it off: once per piece) }
      */
     constructor(o) {
       super();
@@ -35,6 +39,7 @@
       this.mods = Object.assign({ noRotate: false, heavy: false, noHold: false, vanish: false }, o.mods || {});
       this.previewCount = o.previewCount == null ? 5 : o.previewCount;
       this.maxHistory = o.maxHistory == null ? 30 : o.maxHistory;
+      this.freeHold = o.freeHold !== false;
       this.history = [];
       this.over = false;
       const sv = o.saved;
@@ -226,6 +231,8 @@
       const y = this.ghostY(p);
       if (y == null) { this.emit('blocked', 'drop'); return false; }
       this.pendingDrop = { dist: p.y - y, cells: this.cellsOf(p) };
+      // Falling is a move: a piece turned in the air and then dropped is not a spin.
+      if (y !== p.y) p.lastRot = false;
       p.y = y;
       this.s.drops++;
       const r = this.lock();
@@ -235,7 +242,7 @@
 
     holdPiece() {
       const p = this.piece;
-      if (!p || this.over || this.mods.noHold || this.holdLocked) { this.emit('blocked', 'hold'); return false; }
+      if (!p || this.over || this.mods.noHold || (this.holdLocked && !this.freeHold)) { this.emit('blocked', 'hold'); return false; }
       const cur = Object.assign({}, p.entry, { special: p.special || null });
       this.s.holds++;
       const prev = this.hold;
@@ -299,11 +306,18 @@
         }
         result.blastCenter = [cx, cy];
       } else {
-        // T-spin: the last move was a turn and three of the box's four corners are blocked.
+        // T-spin (guideline): the last move was a turn and three of the box's four corners are blocked. With both
+        // corners the T points at blocked it is a full T-spin; with only one it is a Mini, unless the turn needed
+        // the last, far kick (the T-spin triple shape), which counts as full.
         if (p.type.id === 'T' && p.lastRot) {
+          const blocked = (dx, dy) => this.board.get(p.x + dx, p.y + dy) !== 0;
           let corners = 0;
-          for (const [dx, dy] of [[0, 0], [2, 0], [0, 2], [2, 2]]) if (this.board.get(p.x + dx, p.y + dy) !== 0) corners++;
-          result.tspin = corners >= 3;
+          for (const [dx, dy] of [[0, 0], [2, 0], [0, 2], [2, 2]]) if (blocked(dx, dy)) corners++;
+          if (corners >= 3) {
+            const front = T_FRONT[p.rot].filter(([dx, dy]) => blocked(dx, dy)).length;
+            if (front === 2 || p.kick === 4) result.tspin = true;
+            else result.mini = true;
+          }
         }
         this.board.place(shape, p.x, p.y, v);
         if (p.special === 'sand') this.settleCells(cells, v, result);
@@ -362,10 +376,12 @@
         pts = TSPIN_SCORE[Math.min(n, 3)];
         s.tspins++;
         s.tspinLines += n;
+      } else if (result.mini) {
+        pts = MINI_SCORE[Math.min(n, 2)];
       } else if (n) pts = CLEAR_SCORE[Math.min(n, CLEAR_SCORE.length - 1)];
       if (n) {
         s.combo++;
-        const difficult = n >= 4 || result.tspin;
+        const difficult = n >= 4 || result.tspin || result.mini;
         if (difficult) { s.b2b++; if (s.b2b > 0) { pts = Math.round(pts * 1.5); result.b2b = true; } }
         else s.b2b = -1;
         if (s.combo > 0) pts += 50 * s.combo;

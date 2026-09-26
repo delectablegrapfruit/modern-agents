@@ -13,10 +13,11 @@ same game runs in any browser from `Game/index.html`.
 **Free Play** — endless, relaxed. Every cleared line is banked as ◆ *lines*, the currency. A full board just ends that
 board; the lines stay yours.
 
-**Classic** — plain Tetris: pieces fall, faster every ten lines (guideline speed curve), half-second lock delay,
-soft and hard drop, hold, game over, best score. Lines you clear still bank as ◆. Music: Korobeiniki (the public-domain
-folk tune) as a small synthesized chiptune that speeds up with the level — toggle it under the board or in Settings ▸
-Sound. P pauses; leaving the tab or the window pauses too.
+**Classic** — the ▶ Classic button in the corner of the Play board. Plain Tetris: pieces fall, faster every ten
+lines (guideline speed curve), half-second lock delay, soft and hard drop, hold (once per piece), game over, best
+score. Lines you clear still bank as ◆. Music: Korobeiniki (the public-domain folk tune), arranged soft — an electric
+piano over a round bass, a quiet pad and a little echo; it keeps its tempo and only quickens as the stack nears the
+top. Toggle it under the board or in Settings ▸ Sound. P pauses; ‹ Relaxed, another tab or another window pauses too.
 
 **Puzzles** — procedurally generated, infinite, short, in Easy, Medium and Hard. Each has a seed (`M-3K7Q2XA`): the
 same seed is the same puzzle for everyone, so it can be shared, replayed or retried (R) as often as you like; Undo is
@@ -41,21 +42,26 @@ nudged sideways off a wall), never SRS kicks that hop a piece through a gap. Wil
 | Blind Queue | no preview |
 | No Hold, Monochrome | as named |
 
-**Factory** — a little mino shop in the spirit of the Papa's restaurant games, with four stations:
-- **Counter** — customers wander in (only while you're there; nobody waits on you while you're away) and ask for
-  one mino: a shape and a paint. Take the order; the ticket hangs on the rail.
-- **Mold** — click cells to build the shape (any turn or flip counts), pick the paint, send it on.
-- **Press** — stop the needle in the green.
-- The customer grades shape, paint, press and wait; the grade sets the pay, stars and bonus ◆ lines.
-- **Line** — the idle part: an assembly line that runs by itself (up to 8 hours while Lull is closed). Click
-  defective minos (a cell too many or too few, broken off, cracked, scorched) into the reject bin to build a QC
-  streak worth up to ×2; golden minos pay lines.
-Upgrades (Presses, Quality, Inspector), new product lines (bigger orders, up to decominoes) and retooling for patents
-live behind one Upgrades button. Progress is tuned in weeks.
+**Factory** — a little workshop in the spirit of the Papa's games, run station by station:
+- **Orders** — online orders land in the inbox (only while you're there; none pile up while you're away). Accept
+  one and the printer prints its ticket: the shape (as shown), its paint (or two), stickers, the firing and a
+  quantity. Tickets hang on the rail over every station; click one to pick it up.
+- **Mold** — pour the shape cell by cell, copying the ticket pinned beside the tray.
+- **Kiln** — the piece fires while you do other things; take it out while the needle is in the green band (a bell
+  rings when it gets there, and the ticket's badge turns green, then red when it's overdone).
+- **Paint** — hold the button and sweep the spray gun over the piece in the right colours; stick stars where the
+  ticket shows them; a rag wipes it back to clay. Ship it.
+- Then the wait: packing, the van, the customer looking it over — and the review: stars, a score per station, credits
+  and ◆ lines. Stars raise your rank, which brings more paints, stickers, two-tone jobs, pentominoes, hexominoes,
+  bigger orders and better pay.
+- **Line** — the idle part: an assembly line stamps stock minos for credits (up to 8 hours while Lull is closed).
+  Click the defective ones (cracked, chipped, scorched, lumpy) into the bin; a QC arm can help.
+Upgrades (faster line, QC arm, kiln slots, a wider nozzle) cost credits.
 
 **Items** — single-use, bought and used straight from the bar under the board (hover one to see what it does): Reroll, Mirror, Pebble, Sand, Rewind, Order
 Slip, Drill, Bomb, Phase (passes through blocks into any gap), Settle (closes every hole), Chroma Purge, and Blueprint
-(draw your own piece).
+(draw your own piece). Each has its own animation. Changed your mind? Press an item that changed the piece again
+before you set it: the old piece and the item come back.
 
 **Shop** — cosmetics: palettes (Prism animates), mino skins (Gem, Glass, Neon, Jelly, Pixel …), board
 frames, backdrops, line-clear effects, ghost styles and **sound packs** (Soft, Typewriter, Chiptune, Bubbles,
@@ -72,15 +78,16 @@ and first-try rates by difficulty and wildcard, factory quality control, items b
 | ↓ | lower one row; on the stack, a fresh press sets the piece (holding never does) |
 | Space | hard drop |
 | ↑ / X, Z, A | turn clockwise, counter-clockwise, 180° |
-| C / Shift | hold |
+| C / Shift | hold; again to swap back (Free Play and Puzzles: as often as you like) |
 | 1–0, −, = | use an item |
 | ⌫ / U, R, N, H | undo, retry, next puzzle, hint |
-| ⌘1–⌘6, ⌘, | tabs, settings |
+| ⌘1–⌘5, ⌘, | tabs, settings |
 | P | pause Classic |
-| mouse: point | aim: the ghost goes to the resting spot nearest the pointer that the piece can reach, under ledges too |
-| mouse: click | place it there — anywhere on the board side, on the grid or off it |
-| wheel | turn (down clockwise, up counter-clockwise) |
-| right-click / click HOLD | hold, or swap back |
+| mouse: point | slide the piece left and right (at its height; keys keep working while the pointer rests there) |
+| left click | drop it straight down — anywhere on the board side |
+| right click | turn clockwise |
+| wheel | lower one row (never sets the piece) |
+| click HOLD | hold, or swap back |
 
 Every item on the bar explains itself on hover. Repeat delay (230 ms) and rate, preview length, sound, effects, background, theme and accent are in Settings.
 
@@ -104,6 +111,6 @@ first time. The save lives in `~/Library/Application Support/Lull/save.json` (Se
 
 | Path | |
 |---|---|
-| `Game/` | the game: `index.html`, `css/`, and `js/` — `pieces` (SRS tetrominoes, pentominoes, big and custom shapes, polyomino enumeration), `board`, `engine` (the floating-piece rules and every item), `puzzlegen` (seeds, wildcards, reverse construction, reachability search, forward verification), `factory` (economy, defects, contracts, retooling), `store` (save, catalog, stats), `render` / `factoryview` (canvas: skins, frames, effects, rotated views), `modes`, `ui`, `app` |
+| `Game/` | the game: `index.html`, `css/`, and `js/` — `pieces` (SRS tetrominoes, pentominoes, big and custom shapes, polyomino enumeration), `board`, `engine` (the floating-piece rules and every item), `puzzlegen` (seeds, wildcards, reverse construction, reachability search, forward verification), `factory` (orders, grading, ranks, upgrades, the idle line), `store` (save, catalog, stats), `render` (canvas: skins, frames, effects, item animations, rotated views), `factoryview` (the workshop's stations, drawn), `modes`, `ui`, `app` |
 | `Sources/Lull/` | the macOS shell: a borderless `NSPanel` (floating, all Spaces, edge-resizable, draggable by the page's title bar) around a transparent `WKWebView`, a blur for the Glass background, the save file, the ⌥⌘L hot key, and a self-test CI runs |
 | `scripts/` | `make-app.sh`, `icon.swift`, `test.cjs`, `browser-test.cjs` |

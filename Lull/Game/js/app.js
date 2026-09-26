@@ -9,7 +9,6 @@
 
   const TABS = [
     { id: 'play', label: 'Play', icon: 'play' },
-    { id: 'classic', label: 'Classic', icon: 'classic' },
     { id: 'puzzle', label: 'Puzzles', icon: 'puzzle' },
     { id: 'factory', label: 'Factory', icon: 'factory' },
     { id: 'shop', label: 'Shop', icon: 'shop' },
@@ -99,6 +98,8 @@
       document.getElementById('btn-hide').addEventListener('click', () => { this.saveNow(); native.post('hide'); });
       document.getElementById('btn-close').addEventListener('click', () => { this.saveNow(); native.post('quit'); });
       document.getElementById('wallet').addEventListener('click', () => this.setTab('shop'));
+      document.getElementById('to-classic').addEventListener('click', () => { this.sound.play('move'); this.setTab('classic'); });
+      document.getElementById('to-free').addEventListener('click', () => { this.sound.play('move'); this.setTab('play'); });
     },
 
     setBadge(tab, on) {
@@ -110,13 +111,15 @@
     },
 
     setTab(id) {
-      if (!TABS.some((t) => t.id === id)) id = 'play';
+      if (!TABS.some((t) => t.id === id) && id !== 'classic') id = 'play';
       const prev = this.tab;
       if (prev === 'factory' && id !== 'factory') this.modes.factory.hide();
       if (prev === 'classic' && id !== 'classic') { this.modes.classic.togglePause(true); L.Music.stop(); }
       this.tab = id;
       this.state.tab = id;
-      for (const b of document.querySelectorAll('.tabs button')) b.setAttribute('aria-selected', String(b.dataset.tab === id));
+      // Classic lives inside Play: its tab stays lit.
+      const lit = id === 'classic' ? 'play' : id;
+      for (const b of document.querySelectorAll('.tabs button')) b.setAttribute('aria-selected', String(b.dataset.tab === lit));
       for (const v of document.querySelectorAll('.view')) v.classList.toggle('active', v.dataset.tab === id);
       this.keys && this.keys.setTarget(id === 'play' ? this.modes.play : id === 'classic' ? this.modes.classic : id === 'puzzle' ? this.modes.puzzle : null);
       if (id === 'puzzle') this.modes.puzzle.show();
@@ -148,7 +151,7 @@
           return;
         }
         if (typing) return;
-        if ((e.metaKey || e.ctrlKey) && /^Digit[1-6]$/.test(e.code)) { this.setTab(TABS[Number(e.code.slice(5)) - 1].id); e.preventDefault(); return; }
+        if ((e.metaKey || e.ctrlKey) && /^Digit[1-5]$/.test(e.code)) { this.setTab(TABS[Number(e.code.slice(5)) - 1].id); e.preventDefault(); return; }
         if ((e.metaKey || e.ctrlKey) && e.code === 'Comma') { UI.openSettings(this); e.preventDefault(); return; }
         if ((e.metaKey || e.ctrlKey) && e.code === 'KeyZ' && this.tab === 'puzzle') { this.modes.puzzle.undo(); e.preventDefault(); return; }
         if (e.key === 'Escape' && native.available) { this.saveNow(); native.post('hide'); return; }
@@ -169,7 +172,7 @@
       root.addEventListener('resize', () => { this.onResize(); });
       if (root.ResizeObserver) {
         const ro = new ResizeObserver(() => this.onResize());
-        for (const id of ['cv-play', 'cv-classic', 'cv-puzzle', 'cv-belt']) ro.observe(document.getElementById(id).parentElement);
+        for (const id of ['cv-play', 'cv-classic', 'cv-puzzle', 'cv-station']) ro.observe(document.getElementById(id).parentElement);
       }
       if (root.matchMedia) {
         const mq = root.matchMedia('(prefers-color-scheme: light)');
@@ -215,9 +218,9 @@
       else if (this.tab === 'classic') this.modes.classic.frame(t, dt);
       else if (this.tab === 'puzzle') this.modes.puzzle.frame(t, dt);
       else if (this.tab === 'factory') {
-        // The belt is ambient: 30 fps in front, 12 behind other windows, 10 with reduced effects.
+        // Full speed in front; 12 fps behind other windows.
         this.beltAcc = (this.beltAcc || 0) + dt;
-        const gap = this.settings.motion === 'reduced' ? 0.1 : document.hasFocus() ? 1 / 30 : 1 / 12;
+        const gap = document.hasFocus() ? 0 : 1 / 12;
         if (this.beltAcc >= gap) { this.modes.factory.frame(t, this.beltAcc); this.beltAcc = 0; }
       }
       requestAnimationFrame((tt) => this.frame(tt));
@@ -260,7 +263,7 @@
           h('p', null, 'Blocks here never fall on their own. Line them up, lower them, drop them when you are ready — or leave and come back. Nothing is timed and nothing is lost.'),
           h('p', null, h('b', null, 'Play'), ' — endless and relaxed. Every cleared line is banked as ◆ lines to spend in the ', h('b', null, 'Shop'), ' on one-shot items (bombs, drills, a piece you draw yourself) and cosmetics.'),
           h('p', null, h('b', null, 'Puzzles'), ' — short, seeded, infinite, with wildcards like Big Minos, Wraparound and Upside Down. Every seed has a solution.'),
-          h('p', null, h('b', null, 'Factory'), ' — an assembly line that runs while you work. Pull defective minos off the belt now and then.'),
+          h('p', null, h('b', null, 'Factory'), ' — a little workshop: take online orders, pour, fire and paint each mino, ship it and wait for the review. An assembly line earns on the side.'),
           h('div', { class: 'keys', style: { marginTop: '10px' } }, L.KEY_HELP.slice(0, 7).map(([k, d]) => [h('span', { class: 'k' }, h('kbd', null, k)), h('span', null, d)]))),
         buttons: [{ label: 'Start', kind: 'primary' }],
       });

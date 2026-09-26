@@ -103,6 +103,20 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     }
     await page.waitForTimeout(40);
   }
+  // Pressing an item again takes it back: the old piece returns, and so does the item.
+  const toggle = await ev(async () => {
+    const m = Lull.app.modes.play, g = m.game, inv = Lull.app.store.state.inventory;
+    if (g.over) m.newBoard();
+    g.board.cells.fill(0);
+    g.replacePiece({ id: 'L' });
+    const n0 = inv.bomb;
+    m.useItem('bomb');
+    const armed = g.piece.special === 'bomb' && inv.bomb === n0 - 1 && !!document.querySelector('#itembar .item-btn.on');
+    m.useItem('bomb');
+    return { armed, back: g.piece.type.id === 'L' && !g.piece.special && inv.bomb === n0 };
+  });
+  check('an item in use shows as on', toggle.armed);
+  check('pressing it again puts it back', toggle.back, JSON.stringify(toggle));
   await page.waitForTimeout(200);
   await shot('11-items');
 
@@ -116,32 +130,45 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await page.mouse.move(pt[0], pt[1]);
   check('hover: the piece follows the pointer', (await pieceCol()) === 1);
   const rot0 = await ev(() => Lull.app.modes.play.game.piece.rot);
-  await page.mouse.wheel(0, 120);
-  check('wheel turns', (await ev(() => Lull.app.modes.play.game.piece.rot)) !== rot0);
-  const pre = await ev(() => Lull.app.modes.play.game.piece.type.id);
   await page.mouse.click(pt[0], pt[1], { button: 'right' });
-  check('right-click holds', (await ev(() => Lull.app.modes.play.game.hold && Lull.app.modes.play.game.hold.id)) === pre);
-  await ev(() => { const g = Lull.app.modes.play.game; g.hold = null; g.holdLocked = false; });
-  // Point under a ledge: the ghost goes in there, and a click places it.
-  await ev(() => { const g = Lull.app.modes.play.game; g.board.cells.fill(0); for (let x = 0; x < 6; x++) g.board.set(x, 3, 8); g.replacePiece({ id: 'O' }); });
+  check('right-click turns', (await ev(() => Lull.app.modes.play.game.piece.rot)) === (rot0 + 1) % 4);
+  const y0w = await ev(() => Lull.app.modes.play.game.piece.y), pw = await ev(() => Lull.app.modes.play.game.s.pieces);
+  await page.mouse.wheel(0, 120);
+  await page.waitForTimeout(80);
+  await page.mouse.wheel(0, 120);
+  const yw = await ev(() => Lull.app.modes.play.game.piece.y);
+  check('the wheel lowers', yw === y0w - 2, y0w + ' → ' + yw);
+  for (let i = 0; i < 30; i++) { await page.mouse.wheel(0, 120); await page.waitForTimeout(50); }
+  check('the wheel never sets the piece', (await ev(() => Lull.app.modes.play.game.s.pieces)) === pw);
+  // Keys still work with the pointer resting on the board.
+  await ev(() => { Lull.app.modes.play.game.replacePiece({ id: 'T' }); });
+  const colK = await pieceCol();
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowRight');
+  await page.waitForTimeout(100);
+  check('arrow keys work with the pointer over the board', (await pieceCol()) === colK + 2, colK + ' → ' + (await pieceCol()));
+  // No slipping under ledges: a click drops straight down.
+  await ev(() => { const g = Lull.app.modes.play.game; g.board.cells.fill(0); for (let x = 0; x < 6; x++) g.board.set(x, 3, 8); g.replacePiece({ id: 'O' }); g.piece.y = 17; });
   pt = await cellPt(1, 0);
+  await page.mouse.move(pt[0] + 3, pt[1]);
   await page.mouse.move(pt[0], pt[1]);
-  const aimed = await ev(() => Lull.app.modes.play.view.mouseGhost);
-  check('pointing under a ledge aims there', aimed && aimed.every(([, y]) => y <= 1), JSON.stringify(aimed));
   const pcs = await ev(() => Lull.app.modes.play.game.s.pieces);
   await page.mouse.click(pt[0], pt[1]);
-  const set = await ev(() => { const b = Lull.app.modes.play.game.board; return { under: !!(b.get(1, 0) && b.get(1, 1)), pieces: Lull.app.modes.play.game.s.pieces }; });
-  check('click places it under the ledge', set.under && set.pieces === pcs + 1, JSON.stringify(set));
+  const set = await ev(() => { const b = Lull.app.modes.play.game.board; return { under: !!(b.get(1, 0) || b.get(1, 1)), onTop: !!(b.get(1, 4) && b.get(1, 5)), pieces: Lull.app.modes.play.game.s.pieces }; });
+  check('a click drops straight down (never under a ledge)', !set.under && set.onTop && set.pieces === pcs + 1, JSON.stringify(set));
   // Off the grid still places.
   const offPt = await ev(() => { const v = Lull.app.modes.play.view; const r = v.canvas.getBoundingClientRect(); return [r.left + v.lay.board.x + v.lay.board.w + 8, r.top + v.lay.board.y + v.lay.board.h - 10]; });
   const pcs2 = await ev(() => Lull.app.modes.play.game.s.pieces);
   await page.mouse.click(offPt[0], offPt[1]);
   check('a click off the grid still places', (await ev(() => Lull.app.modes.play.game.s.pieces)) === pcs2 + 1);
-  // Click the hold box.
+  // Click the hold box, then again to swap back.
   const holdPt = await ev(() => { const v = Lull.app.modes.play.view; const b = v.lay.hold; const r = v.canvas.getBoundingClientRect(); return [r.left + b.x + b.w / 2, r.top + b.y + b.h / 2]; });
+  await ev(() => { const g = Lull.app.modes.play.game; g.hold = null; g.holdLocked = false; });
   const cur = await ev(() => Lull.app.modes.play.game.piece.type.id);
   await page.mouse.click(holdPt[0], holdPt[1]);
   check('clicking HOLD holds the piece', (await ev(() => Lull.app.modes.play.game.hold && Lull.app.modes.play.game.hold.id)) === cur);
+  await page.mouse.click(holdPt[0], holdPt[1]);
+  check('clicking HOLD again brings it back', (await ev(() => Lull.app.modes.play.game.piece.type.id)) === cur);
   // A click on the board drops.
   const before2 = await ev(() => Lull.app.modes.play.game.s.pieces);
   pt = await cellPt(5, 10);
@@ -162,7 +189,8 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   // ---- classic ------------------------------------------------------------------------------------------------------
   console.log('classic');
   await page.mouse.move(5, 300);
-  await page.click('.tabs button[data-tab="classic"]');
+  await page.click('#to-classic');
+  check('Classic opens from the corner of Play (Play stays lit)', await ev(() => Lull.app.tab === 'classic' && document.querySelector('.tabs button[aria-selected="true"]').dataset.tab === 'play' && !document.querySelector('.tabs button[data-tab="classic"]')));
   await page.waitForTimeout(150);
   check('classic waits for a start', await ev(() => !Lull.app.modes.classic.started && Lull.app.modes.classic.cardOpen));
   await page.keyboard.press('Space');
@@ -270,58 +298,72 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   // ---- factory -------------------------------------------------------------------------------------------------------
   console.log('factory');
   await page.click('.tabs button[data-tab="factory"]');
-  await page.waitForTimeout(300);
-  const fm = 'Lull.app.modes.factory';
-  // A customer walks up; take the order.
-  await ev(() => { Lull.app.modes.factory.nextCustomer = 0; });
-  await page.waitForTimeout(1600);
-  await shot('30-counter');
-  const hitCenter = (id, data) => ev(([i, d]) => { const sc = Lull.app.modes.factory.scene; const hh = sc.hits.find((x) => x.id === i && (d === undefined || x.data === d)); if (!hh) return null; const r = sc.canvas.getBoundingClientRect(); return [r.left + hh.x + hh.w / 2, r.top + hh.y + hh.h / 2]; }, [id, data]);
-  let at = await hitCenter('takeBtn');
-  check('a customer is at the counter', !!at);
+  await page.waitForTimeout(200);
+  const hitCenter = (id, data) => ev(([i, d]) => { const v = Lull.app.modes.factory.view; const hh = v.hits.find((x) => x.id === i && (d === undefined || x.data === d)); if (!hh) return null; const r = v.canvas.getBoundingClientRect(); return [r.left + v.ox + (hh.x + hh.w / 2) * v.k, r.top + v.oy + (hh.y + hh.h / 2) * v.k]; }, [id, data]);
+  await ev(() => { const m = Lull.app.modes.factory; m.work.inbox = []; m.work.tickets = []; m.active = null; m.nextOrder = 0; });
+  await page.waitForTimeout(400);
+  check('an online order arrives', await ev(() => Lull.app.modes.factory.work.inbox.length === 1));
+  await shot('30-orders');
+  let at = await hitCenter('accept');
   await page.mouse.click(at[0], at[1]);
-  await page.waitForTimeout(120);
-  const order = await ev(() => { const m = Lull.app.modes.factory; return { station: m.station, cells: m.active && m.active.order.cells, paint: m.active && m.active.order.paint }; });
-  check('taking the order goes to the mold', order.station === 'build' && order.cells);
-  // Build it by clicking the mold, in the right paint.
-  for (const [x, y] of order.cells) { const q = await hitCenter('cell', (x + 1) + ',' + (y + 1)); await page.mouse.click(q[0], q[1]); }
-  at = await hitCenter('paint', order.paint); await page.mouse.click(at[0], at[1]);
-  await page.waitForTimeout(80);
-  await shot('31-mold');
-  at = await hitCenter('toPress'); await page.mouse.click(at[0], at[1]);
-  check('on to the press', await ev(() => Lull.app.modes.factory.station === 'press'));
-  // Press when the needle is centred.
-  await ev(() => { const m = Lull.app.modes.factory; m.scene.t = Math.PI / (1.8 + m.f.tier * 0.12) * 2 * 10; });
-  await page.waitForTimeout(40);
-  await shot('32-press');
-  const pp = await ev(() => { const r = Lull.app.modes.factory.stationCanvas.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; });
-  await ev(() => { const m = Lull.app.modes.factory; m.needle = 0.5; m.onHit({ id: 'press' }); });
-  await page.waitForTimeout(1300);
-  const graded = await ev(() => { const m = Lull.app.modes.factory; return m.rating && m.rating.grade; });
-  check('the customer grades the order', graded && graded.shape === 100 && graded.paint === 100 && graded.total >= 90, JSON.stringify(graded));
-  await shot('33-rating');
-  await page.mouse.click(pp[0], pp[1]);
-  check('Next closes the grade card', await ev(() => !Lull.app.modes.factory.rating));
-  // The line: click a defect off it.
-  await page.click('#fac-stations .station:nth-child(4)');
-  await ev(() => { const b = Lull.app.modes.factory.belt; b.items = []; for (let k = 0; k < 4; k++) { const it = Lull.Factory.makeItem(b.f, b.rng, k % 2 === 0); it.id = 900 + k; it.x = 0.15 + k * 0.2; it.batch = 1; it.stamp = 1; it.golden = false; b.items.push(it); } });
+  await page.waitForTimeout(450);
+  await shot('31-printing');
+  await page.waitForTimeout(1100);
+  const order = await ev(() => { const m = Lull.app.modes.factory, j = m.work.tickets[0]; return j && { stage: j.stage, cells: j.order.cells, colors: j.order.colors, fire: j.order.fire }; });
+  check('accepting prints a ticket onto the rail', order && order.stage === 'mold');
+  await page.click('#fac-stations [data-station="mold"]');
   await page.waitForTimeout(60);
-  const target = await ev(() => { const v = Lull.app.modes.factory.view; const g = v.geom(); const it = v.belt.items.find((i) => i.defect); const r = v.itemRect(it, g); const c = v.canvas.getBoundingClientRect(); return { x: c.left + r.x + r.w / 2, y: c.top + r.y + r.h / 2, caught: Lull.app.store.state.factory.stats.caughtManual }; });
-  await page.mouse.click(target.x, target.y);
-  check('clicking a defect on the line pulls it', (await ev(() => Lull.app.store.state.factory.stats.caughtManual)) === target.caught + 1);
-  await page.waitForTimeout(500);
-  await shot('34-line');
-  // Upgrades live in one dialog.
-  await ev(() => { Lull.app.store.state.factory.credits = 5e6; });
+  for (const [x, y] of order.cells) { const q = await hitCenter('cell', (x + 1) + ',' + (y + 1)); await page.mouse.click(q[0], q[1]); }
+  await page.waitForTimeout(80);
+  await shot('32-mold');
+  at = await hitCenter('toKiln'); await page.mouse.click(at[0], at[1]);
+  check('into the kiln', await ev(() => Lull.app.modes.factory.station === 'kiln' && Lull.app.modes.factory.work.tickets[0].stage === 'kiln'));
+  await ev(() => { const j = Lull.app.modes.factory.work.tickets[0]; j.heat = Lull.Factory.FIRING[j.order.fire].at - 0.02; });
+  await page.waitForTimeout(150);
+  await shot('33-kiln');
+  at = await hitCenter('pull', 0); await page.mouse.click(at[0], at[1]);
+  check('taken out, on to the paint booth', await ev(() => Lull.app.modes.factory.station === 'paint' && Lull.app.modes.factory.work.tickets[0].stage === 'paint'));
+  await page.waitForTimeout(60);
+  // Spray every cell in its paint.
+  const cellPts = await ev(() => { const m = Lull.app.modes.factory, v = m.view, g = v.paintG, r = v.canvas.getBoundingClientRect(); return m.active.built.map((k, i) => { const c = v.cellRect(g, i); return [r.left + v.ox + (c.x + c.s / 2) * v.k, r.top + v.oy + (c.y + c.s / 2) * v.k]; }); });
+  at = await hitCenter('can', order.colors[0]); await page.mouse.click(at[0], at[1]);
+  for (const [x, y] of cellPts) { await page.mouse.move(x, y); await page.mouse.down(); await page.waitForTimeout(700); await page.mouse.up(); }
+  await page.mouse.move(cellPts[0][0] + 5, cellPts[0][1] + 5);
+  await shot('34-paint');
+  at = await hitCenter('ship'); await page.mouse.click(at[0], at[1]);
+  await page.waitForTimeout(1600);
+  await shot('35-delivery');
+  const lines0 = await ev(() => Lull.app.store.state.lines);
+  check('the review waits', await ev(() => !Lull.app.modes.factory.judge.booked));
+  await page.waitForTimeout(4400);
+  await shot('36-review');
+  const rev = await ev(() => { const J = Lull.app.modes.factory.judge; return J && { booked: J.booked, score: J.review.score, stars: J.review.stars, rows: J.review.rows }; });
+  check('then the customer reviews it', rev && rev.booked && rev.score >= 90 && rev.stars >= 4, JSON.stringify(rev));
+  check('the review pays lines', (await ev(() => Lull.app.store.state.lines)) > lines0);
+  at = await hitCenter('continue'); await page.mouse.click(at[0], at[1]);
+  check('Continue closes the review', await ev(() => !Lull.app.modes.factory.judge));
+  // The line: click a defect off it.
+  await page.click('#fac-stations [data-station="line"]');
+  await ev(() => { const L2 = Lull.app.modes.factory.line; L2.items = []; for (let k = 0; k < 4; k++) { const it = Lull.Factory.makeItem(L2.f, L2.rng, k % 2 === 0); it.id = 900 + k; it.x = 0.1 + k * 0.2; it.golden = false; L2.items.push(it); } L2.speed = 0.0001; });
+  await page.waitForTimeout(80);
+  const caught0 = await ev(() => Lull.app.store.state.factory.stats.caught);
+  const def = await ev(() => { const it = Lull.app.modes.factory.line.items.find((i) => i.defect); return it.id; });
+  at = await ev((id) => { const v = Lull.app.modes.factory.view; const hh = v.hits.find((x) => x.id === 'item' && x.data.id === id); const r = v.canvas.getBoundingClientRect(); return [r.left + v.ox + (hh.x + hh.w / 2) * v.k, r.top + v.oy + (hh.y + hh.h / 2) * v.k]; }, def);
+  await page.mouse.click(at[0], at[1]);
+  check('clicking a defect on the line pulls it', (await ev(() => Lull.app.store.state.factory.stats.caught)) === caught0 + 1);
+  await page.waitForTimeout(250);
+  await shot('37-line');
+  await ev(() => { Lull.app.modes.factory.line.speed = 0.075; });
+  // Upgrades
+  await ev(() => { Lull.app.store.state.factory.credits = 1e5; });
   await page.click('#fac-head .btn');
   await page.waitForTimeout(100);
-  for (let i = 0; i < 3; i++) await page.click('.modal .row-card .btn.primary');
-  check('product lines unlock', (await ev(() => Lull.app.store.state.factory.tier)) === 4);
-  await shot('35-upgrades');
+  await page.click('.modal .up-card .btn.primary');
+  check('upgrades can be bought', (await ev(() => Lull.app.store.state.factory.up.line)) === 1);
+  await shot('38-upgrades');
   await page.keyboard.press('Escape');
   const offline = await ev(() => { const f = Lull.app.store.state.factory; const c0 = f.credits; f.lastTick = Date.now() - 12 * 3600e3; const r = Lull.Factory.catchUp(f, Date.now()); return { gained: f.credits - c0, capped: r.cappedSeconds }; });
   check('offline progress capped at eight hours', offline.gained > 0 && offline.capped === 8 * 3600, JSON.stringify(offline));
-  void fm;
 
   // ---- shop and settings ---------------------------------------------------------------------------------------------
   console.log('shop');
@@ -378,7 +420,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   for (const [w, hgt] of [[300, 440], [900, 560], [420, 900]]) {
     await page.setViewportSize({ width: w, height: hgt });
     for (const tab of ['play', 'classic', 'puzzle', 'factory']) {
-      await page.click('.tabs button[data-tab="' + tab + '"]');
+      await ev((t) => Lull.app.setTab(t), tab);
       await page.waitForTimeout(150);
       const overflow = await ev(() => document.documentElement.scrollWidth > window.innerWidth + 1);
       check(w + '×' + hgt + ' ' + tab + ' fits', !overflow);

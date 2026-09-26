@@ -214,10 +214,16 @@
     return { lead, bass, length: lead.reduce((a, n) => a + n[1], 0) };
   })();
 
+  /**
+   * Classic's music: the tune above, arranged to be easy to listen to — a soft electric piano (two sine
+   * oscillators, one gently frequency-modulating the other) over a round sine bass, a quiet pad, a low-pass
+   * filter and a little echo. The tempo stays put; only a stack near the top quickens it (tempo, set by Classic).
+   */
   const Music = {
     playing: false,
     volume: 0.25,
     tempo: 1,
+    bpm: 112,
     timer: null,
     gain: null,
 
@@ -228,6 +234,15 @@
       this.playing = true;
       this.gain = ctx.createGain();
       this.gain.gain.value = this.volume;
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass'; lp.frequency.value = 2600; lp.Q.value = 0.3;
+      // Echo: a quiet, filtered repeat a dotted eighth later.
+      const delay = ctx.createDelay(1), fb = ctx.createGain(), wet = ctx.createGain(), dlp = ctx.createBiquadFilter();
+      delay.delayTime.value = 0.4; fb.gain.value = 0.28; wet.gain.value = 0.22; dlp.type = 'lowpass'; dlp.frequency.value = 1600;
+      this.bus = ctx.createGain();
+      this.bus.connect(lp);
+      lp.connect(this.gain);
+      lp.connect(delay); delay.connect(dlp); dlp.connect(fb); fb.connect(delay); dlp.connect(wet); wet.connect(this.gain);
       this.gain.connect(Sound.master);
       Sound.master.gain.value = Sound.volume || 0.35;
       this.pos = { lead: 0, bass: 0, leadAt: ctx.currentTime + 0.1, bassAt: ctx.currentTime + 0.1 };
@@ -240,38 +255,60 @@
       this.playing = false;
       clearInterval(this.timer);
       const g = this.gain, ctx = Sound.ctx;
-      if (g && ctx) { g.gain.setTargetAtTime(0, ctx.currentTime, 0.05); setTimeout(() => g.disconnect(), 400); }
+      if (g && ctx) { g.gain.setTargetAtTime(0, ctx.currentTime, 0.08); setTimeout(() => g.disconnect(), 700); }
       this.gain = null;
     },
 
     setVolume(v) { this.volume = v; if (this.gain) this.gain.gain.value = v; },
 
+    /** Electric piano: a sine whose brightness (the modulator) fades fast while the tone fades slowly. */
+    piano(f, at, dur, gain) {
+      const ctx = Sound.ctx;
+      const o = ctx.createOscillator(), m = ctx.createOscillator(), mg = ctx.createGain(), g = ctx.createGain();
+      o.type = 'sine'; o.frequency.value = f;
+      m.type = 'sine'; m.frequency.value = f * 2;
+      mg.gain.setValueAtTime(f * 0.9, at); mg.gain.exponentialRampToValueAtTime(f * 0.05, at + 0.25);
+      m.connect(mg).connect(o.frequency);
+      const len = Math.max(0.25, dur * 1.3);
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.exponentialRampToValueAtTime(gain, at + 0.012);
+      g.gain.exponentialRampToValueAtTime(gain * 0.35, at + Math.min(0.3, len * 0.5));
+      g.gain.exponentialRampToValueAtTime(0.0001, at + len);
+      o.connect(g).connect(this.bus);
+      o.start(at); m.start(at); o.stop(at + len + 0.02); m.stop(at + len + 0.02);
+    },
+
+    soft(f, at, dur, gain, type, attack) {
+      const ctx = Sound.ctx;
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = type || 'sine'; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.exponentialRampToValueAtTime(gain, at + (attack || 0.02));
+      g.gain.setValueAtTime(gain, at + dur * 0.6);
+      g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+      o.connect(g).connect(this.bus);
+      o.start(at); o.stop(at + dur + 0.02);
+    },
+
     /** Queues notes a little ahead of time, as Web Audio likes it. */
     schedule() {
       const ctx = Sound.ctx;
       if (!ctx || !this.playing) return;
-      const eighth = 60 / (144 * this.tempo) / 2;
-      const until = ctx.currentTime + 0.25;
-      const voice = (f, at, dur, type, gain) => {
-        if (!f) return;
-        const o = ctx.createOscillator(), g = ctx.createGain();
-        o.type = type; o.frequency.value = f;
-        g.gain.setValueAtTime(0.0001, at);
-        g.gain.exponentialRampToValueAtTime(gain, at + 0.01);
-        g.gain.setValueAtTime(gain, at + dur * 0.7);
-        g.gain.exponentialRampToValueAtTime(0.0001, at + dur * 0.95);
-        o.connect(g).connect(this.gain); o.start(at); o.stop(at + dur);
-      };
+      const eighth = 60 / (this.bpm * this.tempo) / 2;
+      const until = ctx.currentTime + 0.3;
       const p = this.pos;
       while (p.leadAt < until) {
         const [f, l] = SONG.lead[p.lead];
-        voice(f, p.leadAt, l * eighth, 'square', 0.09);
+        if (f) this.piano(f, p.leadAt, l * eighth, 0.13);
         p.leadAt += l * eighth; p.lead = (p.lead + 1) % SONG.lead.length;
       }
       while (p.bassAt < until) {
-        const [f, l] = SONG.bass[p.bass];
-        voice(f, p.bassAt, l * eighth, 'triangle', 0.16);
-        p.bassAt += l * eighth; p.bass = (p.bass + 1) % SONG.bass.length;
+        // The bass line moves in quarter notes (root, then its octave, softly); a pad holds the root each bar.
+        const [f] = SONG.bass[p.bass];
+        const beat = p.bass % 8;
+        if (beat % 2 === 0) this.soft(beat % 4 === 0 ? f : f * 2, p.bassAt, eighth * 1.9, beat % 4 === 0 ? 0.2 : 0.1, 'sine', 0.015);
+        if (beat === 0) { this.soft(f * 4, p.bassAt, eighth * 8, 0.025, 'triangle', 0.4); this.soft(f * 6, p.bassAt, eighth * 8, 0.018, 'triangle', 0.5); }
+        p.bassAt += eighth; p.bass = (p.bass + 1) % SONG.bass.length;
       }
     },
   };

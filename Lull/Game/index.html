@@ -24,14 +24,14 @@
   <main id="main">
     <!-- Free play -->
     <section class="view" id="view-play" data-tab="play">
-      <div class="boardwrap"><canvas id="cv-play"></canvas><div class="overlay hidden" id="play-overlay"></div></div>
+      <div class="boardwrap"><canvas id="cv-play"></canvas><button class="corner-btn" id="to-classic" data-tip-title="Classic" data-tip="Plain Tetris: pieces fall, faster every ten lines, with music. Lines still bank as ◆.">▶ Classic</button><div class="overlay hidden" id="play-overlay"></div></div>
       <div class="statusbar" id="play-status"></div>
       <div class="itembar" id="itembar"></div>
     </section>
 
     <!-- Classic -->
     <section class="view" id="view-classic" data-tab="classic">
-      <div class="boardwrap"><canvas id="cv-classic"></canvas><div class="overlay hidden" id="classic-overlay"></div></div>
+      <div class="boardwrap"><canvas id="cv-classic"></canvas><button class="corner-btn" id="to-free" data-tip="Back to the relaxed board (Classic pauses)">‹ Relaxed</button><div class="overlay hidden" id="classic-overlay"></div></div>
       <div class="statusbar" id="classic-status"></div>
       <div class="classic-controls" id="classic-controls"></div>
     </section>
@@ -58,7 +58,6 @@
       <div class="fac-head" id="fac-head"></div>
       <div class="stage">
         <canvas id="cv-station"></canvas>
-        <canvas id="cv-belt" class="hidden"></canvas>
       </div>
       <nav class="stations" id="fac-stations"></nav>
     </section>
@@ -90,7 +89,6 @@
 <script src="js/store.js"></script>
 <script src="js/render.js"></script>
 <script src="js/factoryview.js"></script>
-<script src="js/stations.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/input.js"></script>
 <script src="js/ui.js"></script>

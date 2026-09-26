@@ -121,6 +121,12 @@ main { flex: 1; position: relative; min-height: 0; }
 
 .boardwrap { flex: 1; position: relative; min-height: 120px; }
 .boardwrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.corner-btn {
+  position: absolute; left: 10px; bottom: 6px; z-index: 2;
+  border: 1px solid var(--line); background: var(--panel); color: var(--muted);
+  border-radius: 999px; padding: 3px 10px; font: 700 11px var(--font); letter-spacing: 0.02em;
+}
+.corner-btn:hover { color: var(--fg); border-color: color-mix(in srgb, var(--accent) 60%, transparent); background: color-mix(in srgb, var(--accent) 14%, var(--panel)); }
 
 /* ---- buttons and chips ---------------------------------------------------------------------------------------- */
 
@@ -181,7 +187,9 @@ main { flex: 1; position: relative; min-height: 0; }
   position: absolute; right: 2px; bottom: 1px; font: 700 9.5px var(--mono-font); color: var(--fg);
 }
 .item-btn .k { position: absolute; left: 3px; top: 1px; font: 600 8.5px var(--mono-font); color: var(--faint); }
-.item-btn.armed { outline: 2px solid var(--accent); }
+.item-btn.armed, .item-btn.on { outline: 2px solid var(--accent); }
+.item-btn.on { background: color-mix(in srgb, var(--accent) 22%, var(--panel)); animation: armed 1.4s ease-in-out infinite; }
+@keyframes armed { 50% { box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 60%, transparent); } }
 
 .overlay {
   position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none;
@@ -229,18 +237,19 @@ main { flex: 1; position: relative; min-height: 0; }
 .station.on { background: color-mix(in srgb, var(--accent) 18%, var(--panel)); border-color: color-mix(in srgb, var(--accent) 55%, transparent); color: var(--fg); }
 .station .si { font-size: 18px; line-height: 1.1; }
 .station .sl { font-size: 11px; font-weight: 700; }
+.station .sb.hot { background: #4caf6a; animation: armed 1s ease-in-out infinite; }
 .station .sb { position: absolute; top: -5px; right: -3px; min-width: 18px; height: 18px; border-radius: 9px; background: #f28c38; color: #fff; font: 800 11px var(--font); display: grid; place-items: center; padding: 0 4px; }
-.fac-head { flex: none; display: flex; align-items: center; gap: 14px; padding: 8px 12px 8px; }
+.fac-head { flex: none; display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding: 6px 12px; }
 .fac-head .plant { font-weight: 700; }
 .fac-head .plant { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fac-head .plant .sub { display: block; color: var(--muted); font-weight: 500; font-size: 11.5px; }
 .fac-head .credits { text-align: right; font-variant-numeric: tabular-nums; }
-.fac-head .credits .v { font-size: 20px; font-weight: 800; }
+.fac-head .credits .v { font-size: 17px; font-weight: 800; }
 .fac-head .credits .r { color: var(--muted); font-size: 11.5px; }
 .beltwrap { flex: none; position: relative; height: clamp(210px, 44vh, 340px); margin: 0 10px 8px; }
 .beltwrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 .fac-panel { flex: none; padding: 0 10px; display: flex; flex-direction: column; gap: 6px; }
-.up-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.up-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-top: 8px; }
 .up-card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px; display: flex; flex-direction: column; gap: 4px; }
 .up-top { display: flex; align-items: center; gap: 5px; font-weight: 700; }
 .up-icon { color: var(--accent); }
@@ -472,5 +481,5 @@ kbd.big { font-size: 12px; padding: 3px 7px; }
   .set-nav { flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--line); padding: 4px 10px 8px; }
   .set-nav button { padding: 6px 9px; }
 }
-.classic-controls { flex: none; display: flex; gap: 6px; justify-content: center; padding: 4px 10px 10px; border-top: 1px solid var(--line); }
+.classic-controls { flex: none; display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; padding: 6px 10px 10px; border-top: 1px solid var(--line); }
 .classic-controls .btn.on { color: var(--accent); }

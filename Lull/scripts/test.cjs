@@ -110,7 +110,35 @@ test('hard drop, hold, and a quad', () => {
   const before = g.piece.type.id;
   assert(g.holdPiece());
   assert.strictEqual(g.hold.id, before);
-  assert(!g.holdPiece(), 'one hold per piece');
+  const second = g.piece.type.id;
+  assert(g.holdPiece(), 'hold again swaps back');
+  assert.strictEqual(g.piece.type.id, before, 'the held piece returns');
+  assert.strictEqual(g.hold.id, second);
+  const c = new Game({ w: 10, h: 20, seed: 3, freeHold: false });
+  assert(c.holdPiece());
+  assert(!c.holdPiece(), 'Classic: one hold per piece');
+});
+test('T-spins: dropped from a turn is not one; one front corner is a Mini', () => {
+  const setup = () => {
+    const g = new Game({ w: 10, h: 20, seed: 4 });
+    const fill = (y, row) => { for (let x = 0; x < 10; x++) if (row[x] === 'X') g.board.set(x, y, 8); };
+    fill(0, 'XXX.XXXXXX');
+    fill(1, 'XX...XXXXX');
+    g.board.set(4, 2, 8);
+    g.replacePiece({ id: 'T' });
+    return g;
+  };
+  let g = setup();
+  Object.assign(g.piece, { rot: 2, x: 2, y: 6, lastRot: true });
+  let r = g.drop();
+  assert(!r.tspin && !r.mini, 'turned high up, then dropped: no spin');
+  g = setup();
+  g.board.set(2, 0, 0); g.board.set(4, 0, 0);
+  g.board.set(4, 0, 8); g.board.set(2, 2, 8);
+  // rot 2 points down: front corners (2,0) and (4,0); now only (4,0) is blocked, plus both back corners.
+  Object.assign(g.piece, { rot: 2, x: 2, y: 0, lastRot: true, kick: 1 });
+  r = g.lock();
+  assert(r.mini && !r.tspin, 'one front corner: T-spin Mini');
 });
 test('T-spin double is recognised', () => {
   const g = new Game({ w: 10, h: 20, seed: 4 });
@@ -253,35 +281,83 @@ test('daily seeds change with the day', () => {
 });
 
 console.log('factory');
-test('upgrades raise output, value and quality', () => {
+test('orders fit the rank: tetrominoes first, stickers and two-tone later', () => {
   const f = Factory.create();
+  const r = new RNG(11);
+  for (let i = 0; i < 40; i++) {
+    const o = Factory.newOrder(f, r);
+    assert.strictEqual(o.cells.length, 4);
+    assert(o.colors.every((c) => c < 3), 'three paints at rank 1');
+    assert.strictEqual(o.stickers.length, 0);
+    assert.strictEqual(o.second, null);
+    assert(o.fire >= 1 && o.fire <= 3);
+  }
+  f.rank = 12;
+  let two = 0, stick = 0, big = 0;
+  for (let i = 0; i < 200; i++) {
+    const o = Factory.newOrder(f, r);
+    if (o.second != null) { two++; assert(o.colors.includes(o.second) && o.colors.includes(o.paint)); }
+    if (o.stickers.length) stick++;
+    if (o.cells.length > 4) big++;
+    assert.strictEqual(new Set(o.cells.map((c) => c.join(','))).size, o.cells.length);
+  }
+  assert(two > 20 && stick > 20 && big > 20);
+});
+test('a faithful job earns five stars; a sloppy one fewer, but still pays', () => {
+  const f = Factory.create();
+  const o = Factory.newOrder(f, new RNG(3));
+  const built = o.cells.map(([x, y]) => [x + 1, y + 2]); // anywhere in the mold
+  const coat = o.cells.map((_, i) => { const a = []; a[o.colors[i]] = 1; return a; });
+  const good = Factory.review(f, o, { built, heat: Factory.FIRING[o.fire].at, coat, stickers: new Set(o.stickers) });
+  assert.strictEqual(good.score, 100);
+  assert.strictEqual(good.stars, 5);
+  const bad = Factory.review(f, o, { built: built.slice(1), heat: 1, coat: [], stickers: new Set() });
+  assert(bad.stars < 3 && bad.credits > 0 && bad.lines >= 1);
+  assert(bad.credits < good.credits && bad.lines < good.lines);
+});
+test('shape grading: same orientation only, placement free', () => {
+  const o = { cells: [[0, 0], [1, 0], [2, 0], [1, 1]], colors: [0, 0, 0, 0], paint: 0, stickers: [] };
+  assert.strictEqual(Factory.gradeShape(o, [[3, 3], [4, 3], [5, 3], [4, 4]]).score, 100);
+  assert(Factory.gradeShape(o, [[1, 0], [0, 1], [1, 1], [2, 1]]).score < 100, 'upside down is not the same');
+  assert.strictEqual(Factory.gradeShape(o, []).score, 0);
+});
+test('paint and firing grades', () => {
+  const o = { cells: [[0, 0], [1, 0]], colors: [0, 1], paint: 0, second: 1, stickers: [0], fire: 2 };
+  const built = [[0, 0], [1, 0]], shift = { dx: 0, dy: 0 };
+  assert.strictEqual(Factory.gradePaint(o, built, [[1], [0, 1]], shift), 100);
+  assert.strictEqual(Factory.gradePaint(o, built, [[0, 1], [1]], shift), 0, 'colours swapped');
+  assert.strictEqual(Factory.gradePaint(o, built, [[0.45], [0, 0.45]], shift), 50, 'half a coat');
+  assert.strictEqual(Factory.gradeFire(o, Factory.FIRING[2].at), 100);
+  assert(Factory.gradeFire(o, 1) < 30);
+  assert.strictEqual(Factory.gradeStickers(o, built, new Set([0]), shift), 100);
+  assert.strictEqual(Factory.gradeStickers(o, built, new Set([1]), shift), 0);
+});
+test('stars raise the rank; ranks bring news', () => {
+  const f = Factory.create();
+  const o = Factory.newOrder(f, new RNG(8));
+  const rev = { rows: [{ id: 'shape', score: 100 }], score: 100, stars: 5, credits: 20, lines: 4, order: o };
+  let gained = [];
+  for (let i = 0; i < 3; i++) gained = gained.concat(Factory.settle(f, rev));
+  assert.deepStrictEqual(gained, [2]);
+  assert.strictEqual(f.rank, 2);
+  assert.strictEqual(f.credits, 60);
+  assert(Factory.rankNews(3).includes('Sticker jobs'));
+  assert(Factory.rankNews(6).includes('Two-tone jobs'));
+});
+test('upgrades cost credits and do what they say', () => {
+  const f = Factory.create();
+  assert(!Factory.buy(f, 'line'));
+  f.credits = 1e6;
   const r0 = Factory.rates(f);
-  f.up.press = 3; f.up.quality = 2; f.up.inspect = 2;
+  assert(Factory.buy(f, 'line') && Factory.buy(f, 'qc'));
   const r1 = Factory.rates(f);
-  assert(r1.P > r0.P && r1.V > r0.V && r1.D < r0.D && r1.C > r0.C && r1.perSec > r0.perSec);
-  assert.deepStrictEqual(Object.keys(Factory.UPGRADES), ['press', 'quality', 'inspect']);
+  assert(r1.M > r0.M && r1.C > r0.C && r1.perSec > r0.perSec);
+  assert.strictEqual(Factory.kilnSlots(f), 1);
+  assert(Factory.buy(f, 'kiln') && Factory.buy(f, 'kiln') && !Factory.buy(f, 'kiln'));
+  assert.strictEqual(Factory.kilnSlots(f), 3);
+  assert(Factory.cost(f, 'line') > Factory.UPGRADES.line.base);
 });
-test('old factories fold seven upgrades into three', () => {
-  const old = Factory.create();
-  old.v = 1; old.up = { press: 12, tempo: 4, mold: 6, calib: 2, inspect: 3, warehouse: 2, lens: 1 };
-  old.contracts = [{}];
-  Factory.migrate(old);
-  assert.deepStrictEqual(old.up, { press: 12, quality: 4, inspect: 3 });
-  assert.strictEqual(old.v, 3);
-  assert(!old.contracts);
-  assert(Factory.rates(old).P > 0);
-});
-test('buying spends credits; costs grow', () => {
-  const f = Factory.create();
-  f.credits = 1000;
-  const c0 = Factory.cost(f, 'press');
-  assert(Factory.buy(f, 'press'));
-  assert.strictEqual(f.credits, 1000 - c0);
-  assert(Factory.cost(f, 'press') > c0);
-  f.credits = 0;
-  assert(!Factory.buy(f, 'press'));
-});
-test('time away is paid, up to eight hours', () => {
+test('the line pays while away, up to eight hours', () => {
   const f = Factory.create();
   f.lastTick = Date.now() - 20 * 3600e3;
   const r = Factory.catchUp(f, Date.now());
@@ -289,81 +365,36 @@ test('time away is paid, up to eight hours', () => {
   assert(f.credits > 0 && f.stats.shipped > 0);
   assert(Factory.catchUp(f, Date.now()) === null, 'nothing more to pay');
 });
-test('retooling needs Pentominoes and grants patents', () => {
+test('the line: defects pulled by hand build a streak; good minos binned break it', () => {
   const f = Factory.create();
-  assert.strictEqual(Factory.retoolGain(f), 0);
-  f.credits = 1e12;
-  while (f.tier < 6) assert(Factory.unlockTier(f));
-  assert.strictEqual(Factory.retoolGain(f), 3);
-  assert.strictEqual(Factory.retool(f), 3);
-  assert.strictEqual(f.tier, 1);
-  assert.strictEqual(f.patents, 3);
-  assert(Factory.rates(f).V > 1);
+  const line = new Factory.Line(f, 1);
+  const r = new RNG(2);
+  for (let i = 0; i < 3; i++) { const it = Factory.makeItem(f, r, true); line.items.push(it); line.remove(it, 'manual'); }
+  assert.strictEqual(f.streak, 3);
+  assert.strictEqual(f.stats.caught, 3);
+  const good = Factory.makeItem(f, r, false); line.items.push(good);
+  assert.strictEqual(line.remove(good, 'manual').kind, 'wasted');
+  assert.strictEqual(f.streak, 0);
+  for (const d of Factory.DEFECTS) void d;
+  let shipped = 0;
+  for (let i = 0; i < 2000; i++) { line.step(0.1); shipped += line.drain().filter((e) => e.kind === 'shipped').length; }
+  assert(shipped > 20 && f.credits > 0);
 });
-test('orders: a perfect build pays best; a wrong one still pays something', () => {
-  const f = Factory.create();
-  f.tier = 4;
-  const r = new RNG(11);
-  const o = Factory.newOrder(f, r);
-  assert.strictEqual(o.cells.length, 4);
-  assert(o.paint < Factory.paintCount(f));
-  // Any turn or flip of the right shape is the right shape.
-  const flipped = o.cells.map(([x, y]) => [-y, -x]);
-  const best = Factory.gradeOrder(f, o, { cells: flipped, paint: o.paint, press: 0 });
-  assert.strictEqual(best.shape, 100);
-  assert(best.total >= 95 && best.stars === 3 && best.lines >= 2);
-  const wrong = Factory.gradeOrder(f, o, { cells: [[0, 0], [2, 0]], paint: (o.paint + 1) % 3, press: 0.9 });
-  assert(wrong.total < 50 && wrong.credits > 0 && wrong.lines === 0);
-  const c0 = f.credits;
-  Factory.serveOrder(f, best);
-  assert(f.credits > c0 && f.stats.orders === 1 && f.stats.perfectOrders === 1);
-});
-test('orders grow with the product line', () => {
-  const f = Factory.create();
-  assert.strictEqual(Factory.orderSize(f), 3);
-  f.tier = 7; assert.strictEqual(Factory.orderSize(f), 7);
-  f.tier = 10; assert.strictEqual(Factory.orderSize(f), 8);
-  assert.strictEqual(Factory.paintCount(f), 6);
-});
-test('good products are legal polyominoes; defects are not (or visibly damaged)', () => {
+test('every defect looks different from a good mino', () => {
   const f = Factory.create();
   const r = new RNG(9);
-  for (let tier = 1; tier <= 8; tier++) {
-    f.tier = tier;
-    for (let i = 0; i < 150; i++) {
-      const good = Factory.makeItem(f, r, false);
-      assert.strictEqual(Pieces.defectOf(good.cells, tier), null, 'good ' + tier);
-      const bad = Factory.makeItem(f, r, true);
-      const why = Pieces.defectOf(bad.cells, tier);
-      if (bad.defect === 'crack' || bad.defect === 'burnt') assert.strictEqual(why, null);
-      else assert(why, bad.defect + ' should be illegal at tier ' + tier + ': ' + JSON.stringify(bad.cells));
-    }
+  for (let i = 0; i < 60; i++) {
+    const it = Factory.makeItem(f, r, true);
+    assert(Factory.DEFECTS.includes(it.defect) && it.mark != null && it.mark < it.cells.length);
   }
 });
-test('the belt ships and pays while watched', () => {
-  const f = Factory.create();
-  const b = new Factory.Belt(f);
-  for (let i = 0; i < 400; i++) b.step(0.1);
-  assert(f.stats.shipped > 0 && f.credits > 0);
-});
-test('QC streak: pulled defects build it, a pulled good piece breaks it', () => {
-  const f = Factory.create();
-  f.tier = 4;
-  const b = new Factory.Belt(f);
-  const r = new RNG(3);
-  for (let i = 0; i < 4; i++) { const it = Factory.makeItem(f, r, true); it.batch = 1; b.items.push(it); b.remove(it, 'manual'); }
-  assert.strictEqual(f.streak, 4);
-  assert(b.streakMult() > 1);
-  const good = Factory.makeItem(f, r, false); good.batch = 1; good.golden = false; b.items.push(good);
-  assert.strictEqual(b.remove(good, 'manual'), 'wasted');
-  assert.strictEqual(f.streak, 0);
-});
-test('golden minos pay lines', () => {
-  const f = Factory.create();
-  const b = new Factory.Belt(f);
-  const it = Factory.makeItem(f, new RNG(5), false); it.batch = 1; it.golden = true; b.items.push(it);
-  assert.strictEqual(b.remove(it, 'manual'), 'golden');
-  assert(b.drain().some((e) => e.kind === 'golden' && e.lines >= 1));
+test('old factories start over as the workshop, with a little money', () => {
+  const old = { v: 3, credits: 5e9, lifetime: 1e12, tier: 6, up: { press: 30 }, stats: { caughtManual: 40, orders: 7 } };
+  const f = Factory.migrate(old);
+  assert.strictEqual(f.v, Factory.VERSION);
+  assert(f.credits > 0 && f.credits <= 600);
+  assert.strictEqual(f.stats.caught, 40);
+  assert.deepStrictEqual(f.work, { inbox: [], tickets: [] });
 });
 
 console.log('save');
