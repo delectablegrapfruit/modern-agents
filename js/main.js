@@ -16,13 +16,27 @@
     return;
   }
 
-  // A lost GL context (driver reset, GPU switch) cannot be patched up in place; start over when it returns.
-  $('#gl').addEventListener('webglcontextlost', (e) => e.preventDefault());
-  $('#gl').addEventListener('webglcontextrestored', () => location.reload());
+  // A lost GL context (driver reset, GPU switch, a backgrounded mobile tab): pause, since the player cannot see
+  // anything, and when it comes back rebuild the renderer on the same canvas so the run carries on.
+  $('#gl').addEventListener('webglcontextlost', (e) => {
+    e.preventDefault();
+    pause();
+  });
+  $('#gl').addEventListener('webglcontextrestored', () => {
+    try {
+      R = new GW.Renderer($('#gl'));
+    } catch (err) {
+      location.reload(); // could not rebuild: starting over beats a dead screen
+      return;
+    }
+    applyOptions(); // bloom level and render-target size
+  });
 
   const DEFAULTS = { master: 80, music: 55, sfx: 80, bloom: 2, grid: 'hi', res: 'full' };
   const opts = Object.assign({}, DEFAULTS, GW.store.get('options', {}));
-  delete opts.autofire; // mouse fire mode now lives with the other controls settings
+  // Mouse fire mode now lives with the other controls settings; an older build kept it here as a boolean.
+  const legacyAutofire = opts.autofire === true;
+  delete opts.autofire;
 
   // The PC table ships pre-filled with enemy names, so nearly every game earns a place.
   const SEED = [
@@ -30,14 +44,24 @@
     ['BLACK HOLE', 15000], ['REPULSOR', 10000], ['PROTON', 7500], ['MAYFLY', 5000], ['TINY SPINNER', 2500],
   ];
   const seedScores = () => SEED.map(([name, score]) => ({ name, score }));
+  // Keep only well-formed rows from storage (hand-edited or damaged tables would otherwise throw every frame).
   let scores = GW.store.get('scores', []);
-  if (!Array.isArray(scores) || !scores.length) {
+  scores = (Array.isArray(scores) ? scores : [])
+    .filter((s) => s && typeof s === 'object' && typeof s.score === 'number' && Number.isFinite(s.score))
+    .map((s) => Object.assign({}, s, { name: String(s.name ?? '') }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 10);
+  if (!scores.length) {
     scores = seedScores();
     GW.store.set('scores', scores);
   }
 
   const audio = new GW.Sound();
   const input = new GW.Input($('#gl'));
+  // Carry an old "Mouse fire: Automatic" choice over to Controls unless Controls already has its own.
+  if (legacyAutofire && (GW.store.get('controls', null) || {}).autofire === undefined && input.setControl) {
+    input.setControl('autofire', 'auto');
+  }
   const hud = new GW.HUD($('#hud'));
   const game = new GW.Game(audio);
   const ach = new GW.Achievements((a) => {
@@ -392,7 +416,14 @@
       else if (a === 'quit') toTitle();
     }
   });
-  $('#ui').addEventListener('mouseover', (ev) => {
+  // Hover moves focus, but only when the pointer really moved. A menu that re-renders under a resting cursor
+  // makes Chrome send mouseover (and a zero-distance mousemove) to the new element; following that would pull
+  // keyboard/gamepad focus onto whatever setting the idle cursor happens to sit over.
+  let lastPtr = null;
+  $('#ui').addEventListener('mousemove', (ev) => {
+    const moved = !lastPtr || lastPtr[0] !== ev.clientX || lastPtr[1] !== ev.clientY;
+    lastPtr = [ev.clientX, ev.clientY];
+    if (!moved) return;
     const b = ev.target.closest('button');
     if (b && document.activeElement !== b && !(document.activeElement && document.activeElement.id === 'name-input')) b.focus({ preventScroll: true });
   });
@@ -414,12 +445,17 @@
       toast('Sound', m ? 'Muted' : 'On');
       return;
     }
+    const isPauseKey = (code) => (input.isPause ? input.isPause(code) : (code === 'Escape' || code === 'KeyP'));
+    // Auto-repeat of a pause/back key must not flip pause on and off or unwind several menus at once.
+    if (e.repeat && (e.code === 'Escape' || e.code === 'Backspace' || isPauseKey(e.code))) { e.preventDefault(); return; }
     if (state === 'playing') {
-      if (input.isPause ? input.isPause(e.code) : (e.code === 'Escape' || e.code === 'KeyP')) { e.preventDefault(); pause(); }
+      if (isPauseKey(e.code)) { e.preventDefault(); pause(); }
       return;
     }
     if (!current) return;
     const c = e.code;
+    // Any key bound to pause (Esc, P, or a rebinding) also resumes from the pause screen, like gamepad Start.
+    if (current === 'pause' && isPauseKey(c)) { e.preventDefault(); resume(); return; }
     if (c === 'ArrowDown' || c === 'KeyS' || (c === 'Tab' && !e.shiftKey)) { e.preventDefault(); moveFocus(1); }
     else if (c === 'ArrowUp' || c === 'KeyW' || (c === 'Tab' && e.shiftKey)) { e.preventDefault(); moveFocus(-1); }
     else if (c === 'ArrowLeft' || c === 'KeyA') { if (adjust(-1)) e.preventDefault(); else if (current === 'over' || stack.length) { e.preventDefault(); moveFocus(-1); } }
@@ -502,7 +538,7 @@
       if (n === 4) acc = 0;
     }
     if (state === 'playing' && game.over) gameOver();
-    game.draw(R, { gridHi: opts.grid === 'hi' });
+    if (!R.gl.isContextLost()) game.draw(R, { gridHi: opts.grid === 'hi' });
     hud.draw(game, state === 'playing' || state === 'paused' || state === 'over', input, bestScore(), state === 'playing');
     updateTouchUi();
   }
@@ -542,5 +578,5 @@
   requestAnimationFrame(frame);
 
   // Exposed for debugging from the console.
-  GW.debug = { game, audio, input, R, hud, opts, state: () => state };
+  GW.debug = { game, audio, input, get R() { return R; }, hud, opts, state: () => state };
 })();
