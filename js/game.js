@@ -207,6 +207,11 @@
       const es = this.enemies;
       for (const e of es) {
         if (!e.alive) continue;
+        if (e.indicate > 0) {
+          // The enemy that took the player's life blinks in place, then vanishes without an explosion.
+          if (--e.indicate <= 0) e.alive = false;
+          continue;
+        }
         if (e.flash > 0) e.flash--;
         if (e.immune > 0) e.immune--;
         if (e.spawn > 0) { e.spawn--; continue; }
@@ -225,15 +230,15 @@
 
       const p = this.player;
       for (const h of holes) {
-        if (!h.alive) continue;
+        if (!h.alive || h.indicate > 0) continue;
         for (const e of es) {
-          if (!e.alive || e === h || e.spawn > 0 || e.type === 'blackhole') continue;
+          if (!e.alive || e === h || e.spawn > 0 || e.indicate > 0 || e.type === 'blackhole') continue;
           const dx = h.x - e.x, dy = h.y - e.y;
           const d2 = dx * dx + dy * dy;
           if (d2 > 102400) continue;
           const d = Math.sqrt(d2) + 0.01;
           if (d < h.r * 0.85 + e.r * 0.4) { this.absorb(h, e); if (!h.alive) break; continue; }
-          const f = lerp(1.6, 0, d / 320);
+          const f = 1.6 * (1 - d / 320);
           e.vx += (dx / d) * f;
           e.vy += (dy / d) * f;
         }
@@ -241,7 +246,7 @@
           const dx = h.x - p.x, dy = h.y - p.y;
           const d = Math.hypot(dx, dy) + 0.01;
           if (d < 320) {
-            const f = lerp(0.72, 0, d / 320);
+            const f = 0.72 * (1 - d / 320);
             p.ex += (dx / d) * f;
             p.ey += (dy / d) * f;
           }
@@ -251,12 +256,12 @@
       // Enemies shoulder each other apart (sweep and prune along x).
       const act = this.pushList || (this.pushList = []);
       act.length = 0;
-      for (const e of es) if (e.alive && e.spawn <= 0 && !e.def.noPush) act.push(e);
+      for (const e of es) if (e.alive && e.spawn <= 0 && !(e.indicate > 0) && !e.def.noPush) act.push(e);
       act.sort((a, b) => a.x - b.x);
       const n = act.length;
       for (let i = 0; i < n; i++) {
         const a = act[i];
-        const reach = a.r + 20; // no pushable enemy is wider than 20
+        const reach = a.r + 24; // no pushable enemy is wider than 22
         for (let j = i + 1; j < n; j++) {
           const b = act[j];
           const dx = a.x - b.x;
@@ -280,21 +285,22 @@
       h.value += e.value || e.points;
       h.hp += 2;
       h.flash = 4;
-      this.particles.burst(e.x, e.y, 24, e.def.col, WHITE, 0.4, 70);
+      this.particles.burst(e.x, e.y, 24, e.def.col, [1, 1, 1], 0.4, 70);
       this.audio.play('absorb');
       if (h.absorbed >= 20) this.burstHole(h);
     }
 
+    // An overfed Gravity Well bursts into 18 Protons.
     burstHole(h) {
       h.alive = false;
-      const n = Math.min(26, 8 + h.absorbed);
-      for (let i = 0; i < n; i++) this.spawn('proton', h.x + rand(-10, 10), h.y + rand(-10, 10), true);
-      this.particles.burst(h.x, h.y, 400, h.def.col, YELLOW, 1.4, 190);
+      for (let i = 0; i < 18; i++) this.spawn('proton', h.x + rand(-10, 10), h.y + rand(-10, 10), true);
+      this.particles.burst(h.x, h.y, 400, h.def.col, [1, 0.85, 0.29], 1.4, 190);
       this.grid.applyExplosive(160, h.x, h.y, 320);
       this.audio.play('bhburst');
     }
 
     spawn(type, x, y, quiet) {
+      if (!GW.Enemies[type]) return null;
       const e = GW.makeEnemy(type, x, y);
       this.enemies.push(e);
       if (!quiet) this.audio.play('spawn_' + type);
@@ -303,10 +309,16 @@
 
     collide() {
       const es = this.enemies, p = this.player;
+      const spark = (x, y, n, speed, life, c) => {
+        for (let i = 0; i < n; i++) {
+          const a = rand(0, TAU), m = rand(0, speed);
+          this.particles.add(x, y, Math.cos(a) * m, Math.sin(a) * m, life, c, 0.6);
+        }
+      };
       for (const b of this.bullets) {
         if (!b.alive) continue;
         for (const e of es) {
-          if (!e.alive || e.spawn > 0 || e.immune > 0) continue;
+          if (!e.alive || e.spawn > 0 || e.immune > 0 || e.indicate > 0) continue;
           const rr = e.r + 4;
           const dx = e.x - b.x;
           if (dx > rr || dx < -rr) continue;
@@ -317,19 +329,19 @@
             b.alive = false;
             this.killEnemy(e, true);
           } else if (res === 'absorb') {
-            b.alive = false;
-            for (let i = 0; i < 6; i++) { const [vx, vy] = randVec(5); this.particles.add(b.x, b.y, vx, vy, 30, e.def.col, 0.6); }
+            b.alive = false; // the enemy's hit() made its own sparks
           }
           break;
         }
         if (!b.alive) continue;
+        // Snake tails soak up bullets.
         for (const e of es) {
-          if (e.type !== 'snake' || !e.alive || e.spawn > 0) continue;
+          if (e.type !== 'snake' || !e.alive || e.spawn > 0 || e.indicate > 0) continue;
           for (let s = 1; s < e.len; s++) {
             const dx = e.segs[s * 2] - b.x, dy = e.segs[s * 2 + 1] - b.y;
             if (dx * dx + dy * dy < 81) {
               b.alive = false;
-              for (let i = 0; i < 8; i++) { const [vx, vy] = randVec(6); this.particles.add(b.x, b.y, vx, vy, 35, YELLOW, 0.6); }
+              spark(b.x, b.y, 8, 6, 35, e.def.tailCol || e.def.col);
               this.audio.play('tail');
               break;
             }
@@ -339,16 +351,17 @@
       }
 
       if (!p.alive) return;
+      const hitR = p.hitR || p.r * 0.75;
       for (const e of es) {
-        if (!e.alive || e.spawn > 0) continue;
-        const rr = p.r * 0.75 + e.r * 0.8;
+        if (!e.alive || e.spawn > 0 || e.indicate > 0) continue;
+        const rr = hitR + e.r * 0.8;
         const dx = e.x - p.x, dy = e.y - p.y;
-        if (dx * dx + dy * dy < rr * rr) { this.killPlayer(); return; }
+        if (dx * dx + dy * dy < rr * rr) { this.killPlayer(e); return; }
         if (e.type === 'snake') {
-          const tr = p.r * 0.7 + 4;
+          const tr = hitR * 0.9 + 5;
           for (let s = 1; s < e.len; s++) {
             const sx = e.segs[s * 2] - p.x, sy = e.segs[s * 2 + 1] - p.y;
-            if (sx * sx + sy * sy < tr * tr) { this.killPlayer(); return; }
+            if (sx * sx + sy * sy < tr * tr) { this.killPlayer(e); return; }
           }
         }
       }

@@ -5,6 +5,9 @@
   const GW = window.GW;
   const { rand, TAU, weighted, clamp } = GW;
 
+  // Set-piece sizes are 0.7x the original tuning, to make up for the ~1.9x larger enemy bodies.
+  const N = (n) => Math.max(1, Math.round(n * 0.7));
+
   class Spawner {
     constructor(g) {
       this.g = g;
@@ -24,7 +27,7 @@
       if (!g.player.alive) return;
       if (this.lull > 0) { this.lull--; return; }
       const t = g.time / 60;
-      const cap = Math.min(500, 80 + t * 2);
+      const cap = Math.min(320, 60 + t * 1.6);
       if (--this.trickle <= 0) {
         this.trickle = Math.max(8, Math.round(42 - t * 0.2));
         if (g.enemies.length < cap) this.single(t);
@@ -39,7 +42,7 @@
     holeCap(t) { return Math.min(8, 2 + Math.floor(t / 60)); }
 
     // A random spot at least minD from the player.
-    spot(minD = 230, margin = 40) {
+    spot(minD = 280, margin = 40) {
       const g = this.g, p = g.player;
       for (let i = 0; i < 16; i++) {
         const x = rand(margin, g.W - margin), y = rand(margin, g.H - margin);
@@ -67,7 +70,7 @@
         ['blackhole', holesOk ? 0.8 : 0],
         ['repulsor', t < 80 ? 0 : 1 + Math.min(2, t / 120)],
       ]);
-      const s = this.spot(type === 'blackhole' ? 300 : 230);
+      const s = type === 'blackhole' ? this.spot(300) : this.spot();
       if (type && s) this.put(type, s[0], s[1]);
     }
 
@@ -81,7 +84,7 @@
     }
 
     corners(type, n) {
-      const g = this.g, m = 45;
+      const g = this.g, m = 60;
       const cs = [[m, m, 1, 1], [g.W - m, m, -1, 1], [m, g.H - m, 1, -1], [g.W - m, g.H - m, -1, -1]];
       for (const [cx, cy, dx, dy] of cs) {
         if (Math.hypot(cx - g.player.x, cy - g.player.y) < 260) continue;
@@ -107,13 +110,13 @@
       if (!ev) return;
       switch (ev) {
         case 'corners':
-          this.corners(this.groupType(t), 3 + Math.floor(Math.min(12, t / 20)));
+          this.corners(this.groupType(t), N(3 + Math.floor(Math.min(12, t / 20))));
           break;
         case 'cluster': {
           const s = this.spot(380, 90);
           if (!s) break;
           const type = this.groupType(t);
-          const n = 6 + Math.floor(Math.min(24, t / 10));
+          const n = N(6 + Math.floor(Math.min(24, t / 10)));
           for (let i = 0; i < n; i++) {
             const a = rand(0, TAU), r = rand(0, 70);
             this.put(type, s[0] + Math.cos(a) * r, s[1] + Math.sin(a) * r);
@@ -122,7 +125,7 @@
         }
         case 'edge': {
           const type = GW.pick(t < 60 ? ['grunt', 'wanderer'] : ['grunt', 'weaver', 'wanderer']);
-          const n = 10 + Math.floor(Math.min(30, t / 6));
+          const n = N(10 + Math.floor(Math.min(30, t / 6)));
           // The wall furthest from the player.
           const d = [p.x, g.W - p.x, p.y, g.H - p.y];
           const side = d.indexOf(Math.max(...d));
@@ -137,8 +140,8 @@
         }
         case 'ring': {
           const type = GW.pick(['grunt', 'weaver']);
-          const n = 10 + Math.floor(Math.min(22, t / 10));
-          const rad = 290;
+          const n = N(10 + Math.floor(Math.min(22, t / 10)));
+          const rad = 330;
           for (let i = 0; i < n; i++) {
             const a = (i / n) * TAU;
             this.put(type, p.x + Math.cos(a) * rad, p.y + Math.sin(a) * rad, 200);
@@ -146,7 +149,7 @@
           break;
         }
         case 'holes': {
-          const n = Math.min(this.holeCap(t) - this.holes(), 2 + Math.floor(Math.min(3, t / 120)));
+          const n = Math.min(this.holeCap(t) - this.holes(), N(2 + Math.floor(Math.min(3, t / 120))));
           for (let i = 0; i < n; i++) {
             const s = this.spot(320, 120);
             if (s) this.put('blackhole', s[0], s[1], 300);
@@ -154,7 +157,7 @@
           break;
         }
         case 'snakes': {
-          const n = 2 + Math.floor(Math.min(4, t / 100));
+          const n = N(2 + Math.floor(Math.min(4, t / 100)));
           for (let i = 0; i < n; i++) {
             const s = this.spot(350, 100);
             if (s) this.put('snake', s[0], s[1]);
@@ -162,10 +165,10 @@
           break;
         }
         case 'mayflies':
-          this.corners('mayfly', 10 + Math.floor(Math.min(25, t / 10)));
+          this.corners('mayfly', N(10 + Math.floor(Math.min(25, t / 10))));
           break;
         case 'repulsors':
-          this.corners('repulsor', 1 + Math.floor(Math.min(4, t / 120)));
+          this.corners('repulsor', N(1 + Math.floor(Math.min(4, t / 120))));
           break;
       }
     }
