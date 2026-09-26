@@ -1,4 +1,4 @@
-.PHONY: build test app run cli clean
+.PHONY: build test sim app run clean
 
 build:
 	swift build
@@ -6,15 +6,14 @@ build:
 test:
 	swift test
 
+sim:
+	swift run -c release ronin-sim
+
 app:
 	scripts/make-app.sh release
 
 run: app
-	open build/Books.app
-
-cli:
-	swift build -c release --product books-cli
-	@echo "binary: $$(swift build -c release --show-bin-path)/books-cli"
+	open build/Ronin.app
 
 clean:
 	rm -rf .build build

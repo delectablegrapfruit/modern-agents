@@ -1,118 +1,75 @@
-# Books
+# Ronin
 
-An offline reader for the Mac, made the way Apple makes its own apps: a native AppKit/SwiftUI application with the
-system's sidebar, toolbar, menus, popovers and sheets — Liquid Glass on macOS 26 — that keeps every book on this
-Mac and never talks to a store or a server.
+A pocket sword-fight for the Mac. One lone swordsman stands in the middle of a thin strip that floats over your
+work. Enemies charge from both sides. Click the side you want to cut. A stage takes about half a minute, which
+fits in the gap between two tasks. Move the pointer away and the fight freezes where it is.
 
-[![CI](https://github.com/delectablegrapfruit/modern-agents/actions/workflows/ci.yml/badge.svg?branch=book-reader)](https://github.com/delectablegrapfruit/modern-agents/actions/workflows/ci.yml)
+![Bloodlust](dist/screenshots/7-bloodlust.png)
+![The warlord](dist/screenshots/5-warlord.png)
 
-## What it does
+## Play
 
-**Library.** Home shows what you were reading, your reading goals and the library in numbers; the sidebar has a Library
-section (All, Finished, Books, PDFs) and a My Collections section, each in the order you drag its rows into — any row
-but All can be hidden from its context menu and brought back from its section's menu. Drag books onto Finished or a collection. Grid or
-list, sort by recent, title or author, search by title, author and subject. Get Info edits title and author. Files come in through File ▸ Add to
-Library (⌘O), by dropping them on the window, or by opening them from the Finder: **EPUB**, **Kindle** (MOBI, AZW,
-AZW3; DRM-free — converted to EPUB once, at import), **PDF**, and **plain text or Markdown** (typeset into a book
-with chapters and a generated cover).
+- **Cut:** click left of the ronin to cut left, right of him to cut right. Once the panel has the keys you can
+  also use **←/→**, **A/D** or **F/J**. A cut hits the nearest enemy (or incoming arrow) on that side if it is
+  within reach. The ticks on the ground show the reach, and they light up when a cut would land.
+- **Don't whiff:** a cut with nothing in reach makes him stumble. For a third of a second he can't cut, and your
+  combo is gone.
+- **Enemies:** *Ashigaru* spearmen (one cut). *Runners* (fast). *Brutes* (three cuts, each one knocks him back,
+  and his blow costs two hearts). *Archers* stop out of reach and shoot: cut the arrow once it is in reach and it
+  flies back into them. *Blade dancers* take two cuts, and the first one sends them flipping over your head to
+  your other side. A red flush and a glint on an enemy mean his blow is coming.
+- **Warlord:** every fifth stage ends with one. He takes many cuts, and after each one he is either knocked back
+  or leaps over you. His blow costs two hearts.
+- **Combo:** every kill and every deflected arrow adds one. The combo multiplies your score (×2 at 10, up to ×8).
+  At **20** you go into **bloodlust**: the screen turns red and your reach gets longer. A wound or a whiff ends the combo.
+- **Stages:** you have five hearts per stage. Clear the whole roster to move on. If you fall, you retry the same
+  stage with a new roll. Each stage brings more enemies, faster ones, and new kinds, across eight settings: Crimson
+  Dusk, Bamboo Grove, Blood Moon, Frozen Pass, Storm Bridge, Burning Village, Sakura Temple and Ash Fields.
+- **Rank:** kills count toward your rank whether you win or lose. The ranks run from Wanderer through Swordsman,
+  Ronin, Duelist, Blademaster, Kensei, Sword Saint and Demon Blade up to Legend.
 
-**Reading.** The book takes over the window: paginated with one or two pages, or vertical scrolling. Six themes
-(Original, Quiet, Paper, Bold, Calm, Focus) with Auto-Night following the system, ten fonts, text size, line spacing,
-text width, justification and hyphenation. A footer shows the chapter, the page numbers and how many pages are left
-in the chapter; bringing the pointer to the bottom shows the timeline — chapter ticks, bookmark dots, the page under
-the pointer — which you can scrub. Highlights in five colours or underline, notes, bookmarks (⌘D), a Contents ·
-Bookmarks · Notes popover, search within the book, an end-of-book card, and your place kept to the character. Look Up
-shows the system's definition popover, and the text's context menu is the system's (Look Up, Copy, Translate,
-Search). PDFs read like books, three ways. **Pages**: whole pages on the theme colour with no frame or shadow, one or two to a
-screen, turned the same way. **Zoom & Split**: the ink of every page — running headers, footers and page numbers cut away, two text columns
-read in order — runs on as one column at the text size and is dealt out to screens block by block, a block being
-the ink between two blank bands that cross the page (found in a small rendering of every page, so figures, tables
-and scans count as well as text). Nothing is cut through: a block that does not fit moves whole to the next
-screen, a picture taller than a screen is fitted to one, and a picture-only page such as a cover stands alone.
-Text size is the page's own scale, 50–400%. Past the width of a column, each line is cut into its words at the
-blank gaps between them and the words are laid out again in shorter lines that fit — the page's own type,
-rewrapped, with its word spacing, line gaps and paragraph indents — so dense small print can be read large with
-two pages still side by side. Screens turn with the book's slide;
-selection, search, highlights, bookmarks and the PDF's links work as in books. The analysis is kept beside the
-PDF, so a book is prepared once. While reading, the pointer hides after a couple of seconds still over the page
-and returns the moment it moves. **Text**: the text is reflowed into a book the way converters like calibre do it (running
-headers dropped, lines joined into paragraphs, larger type as headings) and read with every book setting; the layout
-is not kept, so tables and figures suffer. How a book is viewed is kept with the book: the layout (Pages, Zoom &
-Split or Text for a PDF; paginated or scrolling), one or two pages and the text size of Zoom & Split are the book's
-own choices, made in the Appearance popover, and the reader settings (the Settings sheet) stand for books that have
-not made one. Themes are colour filters (paper tints in the light themes; in the dark
-ones luminance is inverted with hues kept, so pictures and highlights keep their colours). Contents and timeline
-marks come from the outline; search, bookmarks and highlights with notes work in every mode. In full screen the toolbar leaves with the menu bar and both come back when the pointer reaches the top
-edge. The reading position, statistics (minutes per day, streaks, books per year) and every annotation are files in
-`~/Library/Application Support/Books`.
+## Stays out of the way
 
-**Wheel and keys.** A notch of a mouse wheel — or a tilt of the wheel, or ⇧ + wheel — is exactly one page in
-paginated mode, handled by the app before WebKit sees it; a two-finger swipe is one page, its inertial tail ignored.
-Arrow keys, space, Page Up/Down, Home and End move too; ⌘] and ⌘[ jump chapters, ⌘+ and ⌘− change the text size (zoom,
-for PDFs). In vertical scrolling a notch scrolls the text by the system's line distance.
-
-## Install
-
-A prebuilt app is committed in [`dist/`](dist/) — [`Books.app.zip`](dist/Books.app.zip) and
-[`Books.dmg`](dist/Books.dmg), with [checksums](dist/SHA256SUMS.txt) — rebuilt by CI on every push. Unzip (or open
-the disk image), drag Books to Applications, open it. It is ad-hoc signed, so macOS blocks the first launch of a
-downloaded copy: right-click ▸ Open, or System Settings ▸ Privacy & Security ▸ Open Anyway, or
-`xattr -dr com.apple.quarantine /Applications/Books.app`. Requires macOS 14; Liquid Glass appears on macOS 26.
+| | |
+|---|---|
+| Pause | Starts the moment the pointer leaves the panel. When the pointer comes back it has to rest for a third of a second (a ring fills) before the fight resumes, so crossing the panel on the way to something else costs nothing. Click to skip the wait. That click never cuts. SpriteKit stops drawing while paused, so a paused game uses no CPU. |
+| Focus | Clicking the panel never activates Ronin. The app you were working in stays the active app. |
+| Size | A strip 340, 420 or 520 pt wide and under 180 pt tall (menu ▸ Size). Press **C** or the header's – button to fold it into a 188×28 pill that shows the stage, your hearts and how many enemies are left. Click the pill to unfold it. |
+| Presence | No Dock icon. It has a menu bar icon. **⌃⌥R** shows and hides the panel from anywhere. It floats on every Space and over full-screen apps. It dims to 60% while the pointer is elsewhere. |
+| Sound | None. |
+| Save | Continuous (`~/Library/Application Support/Ronin/save.json`). If you quit mid-fight, you resume on the same frame. |
 
 ## Build
 
-Requires macOS 14 or later and Xcode 26 (the app is linked against the macOS 26 SDK; older Xcodes build it with the
-classic appearance).
-
 ```sh
-make app     # builds build/Books.app
-make test    # core tests (also run on Linux)
-
-# CI builds on GitHub's macOS 26 runners, which bill at ten times the Linux rate. To build on your own Mac instead,
-# add it as a self-hosted runner (Settings ▸ Actions ▸ Runners) and set the repository variable
-# BOOKS_MACOS_RUNNER to its label, e.g. self-hosted.
-make cli     # command-line tool, books-cli
+make test    # the core: cuts, reach, whiffs, every enemy, arrows, stages, career, saves (Linux too)
+make sim     # the autopilot plays every stage: win rate, fight length, wounds
+make run     # builds build/Ronin.app (macOS 14+) and opens it
 ```
 
-```
-books-cli info <file>                 metadata, spine and table of contents of an EPUB, Kindle or text file
-books-cli convert <file> <out.epub>   convert a Kindle (MOBI/AZW3) or text file to EPUB
-books-cli text <file>                 print the plain text of a book
-books-cli library [list|stats]        the app's library
-books-cli add <file…>                 add files to the app's library
-```
+- `RoninCore` is the game. It runs a fixed 120 Hz step, is seeded, and uses Foundation only. The same stage and
+  seed always make the same fight, and a saved fight resumes exactly.
+- `Ronin` is the app. It uses AppKit (the panel, the menu bar, a Carbon hot key) and SpriteKit (the lane). All art
+  is drawn in code, with no asset files: the silhouettes are posed from a small skeleton and drawn frame by frame
+  into textures, and the effects include slash crescents, enemies cut in half, ink sprays, hit-stop, slow motion,
+  screen shake and weather.
+- `ronin-sim` plays stages with a human-like pilot (0.22 s reaction, 7 cuts a second, an occasional wrong-way cut)
+  and with a perfect one. CI fails if the early stages stop being winnable, if the perfect pilot ever loses, or if
+  fights last less than 15 or more than 150 seconds.
 
-The command line ships inside the app at `Books.app/Contents/MacOS/books-cli`.
+CI (`.github/workflows/ci.yml`) runs the tests and the balance check on Linux and macOS, bundles the app, and
+launches it with `RONIN_SELFTEST=1`. The self-test does these things in order:
 
-## Layout
+1. Makes the first cut and a whiff the way clicks do.
+2. Lets the autopilot clear stage 1, then advances from the banner.
+3. Fights a warlord.
+4. Rides a combo into bloodlust.
+5. Falls and rises again.
+6. Folds into the pill and back.
+7. Checks that leaving pauses and that coming back takes the dwell.
+8. Checks the save.
 
-| Path | Purpose |
-|------|---------|
-| `Sources/BooksCore` | Formats and the library, Foundation only: RFC 1951 inflate, ZIP, EPUB 2/3 (package, spine, table of contents, cover), EPUB writer, plain text → chapters, Kindle MOBI/KF8 → EPUB, the catalog (books, collections, annotations, positions, statistics, settings) and the import pipeline. Builds and is tested on Linux. |
-| `Sources/Books` | The app: SwiftUI window with the system sidebar and toolbar, Home, shelves, Get Info, Settings, menus; the reader (toolbar, timeline, Contents/Appearance/Search popovers, highlight menu, notes, end card, PDF view) around one `WKWebView`. |
-| `Sources/Books/Resources/Reader` | The typesetting page the web view loads (`reader.html`, `reader-core.js`, `epub.js`, `zip.js`): CSS multi-column pagination, locators, highlights, search, wheel handling. No chrome; `Documentation/PROTOCOL.md` lists the messages exchanged with the app, `scripts/reader-core-harness.cjs` exercises it in a browser. |
-| `Sources/BooksCLI` | `books-cli`. |
-| `Tests/BooksCoreTests` | Core tests; the Kindle tests run against libmobi's sample files when present (`BOOKS_FIXTURES` or `Tests/Fixtures/mobi`). |
-| `Packaging/Info.plist`, `scripts/` | Bundle assembly (`make-app.sh`), icon rendering, ad-hoc signing. |
-| `.github/workflows/ci.yml` | macOS 26 runner: build, tests, bundle, launch self-test of the packaged zip, unzipped elsewhere with the build directory hidden (imports a generated book, turns pages with real scroll-wheel notches through WebKit, searches, scrubs, saves the position), zip + dmg, commit to `dist/`. Linux runner: core build and tests, Kindle fixtures converted with the command line. |
+It writes the screenshots above. CI then commits `dist/Ronin.app.zip`, `dist/Ronin.dmg` and the screenshots.
 
-## How reading works
-
-Apple Books typesets EPUB with WebKit, and so does this app: one `WKWebView`, loading a page from the bundle over a
-custom `books-reader://` scheme, lays the book out as CSS multi-column pages (or one long column for scrolling) and
-reports positions, selections and search hits to the app. Everything you see around the text — sidebar, toolbar,
-popovers, the timeline, the highlight menu, sheets — is AppKit/SwiftUI, which is what makes the chrome real Liquid
-Glass on macOS 26 rather than an imitation: `NSGlassEffectView`-backed materials sample what lies behind the window,
-something a web view cannot do. Positions are `{spine, character offset}` locators, so highlights, bookmarks and the
-reading position survive font, size and window changes. Book content is sanitized before it is written into the page
-(no scripts, handlers or `javascript:` URLs).
-
-## Limitations
-
-- Kindle files must be DRM-free; files bought from the Kindle store are encrypted and are refused with a clear
-  message. Old MOBI 7 books keep their HTML-3 formatting; KF8/AZW3 books keep CSS, fonts and images.
-- PDFs are shown by PDFKit. Themes are colour filters, so pictures in the dark themes are darkened rather than shown
-  as the author lit them; fonts, text size, spacing and width are fixed by the file.
-- No audiobooks, no store, no sync — everything stays in `~/Library/Application Support/Books`.
-
-MIT licensed.
+The app is ad-hoc signed and not notarised. The first time you open it, right-click ▸ Open, or run
+`xattr -dr com.apple.quarantine Ronin.app`.

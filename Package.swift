@@ -2,40 +2,37 @@
 import PackageDescription
 
 var products: [Product] = [
-    .library(name: "BooksCore", targets: ["BooksCore"]),
-    .executable(name: "books-cli", targets: ["BooksCLI"]),
+    .library(name: "RoninCore", targets: ["RoninCore"]),
+    .executable(name: "ronin-sim", targets: ["RoninSim"]),
 ]
 
 var targets: [Target] = [
-    // Formats and the library: ZIP/inflate, EPUB, Kindle → EPUB, plain text → EPUB, catalog, settings, reading
-    // statistics. Foundation only, so it builds and is tested on Linux as well as macOS.
-    .target(name: "BooksCore", path: "Sources/BooksCore"),
-    .executableTarget(name: "BooksCLI", dependencies: ["BooksCore"], path: "Sources/BooksCLI"),
-    .testTarget(name: "BooksCoreTests", dependencies: ["BooksCore"], path: "Tests/BooksCoreTests"),
+    // The fight: the lane, the foes, strikes, arrows, stages and the career. Foundation only, a fixed step and a
+    // seed, so it builds and is tested on Linux as well as macOS, and a saved fight resumes on the same frame.
+    .target(name: "RoninCore", path: "Sources/RoninCore"),
+    // Headless stages flown by the autopilot, for balancing.
+    .executableTarget(name: "RoninSim", dependencies: ["RoninCore"], path: "Sources/RoninSim"),
+    .testTarget(name: "RoninCoreTests", dependencies: ["RoninCore"], path: "Tests/RoninCoreTests"),
 ]
 
 #if os(macOS)
-products.append(.executable(name: "Books", targets: ["Books"]))
+products.append(.executable(name: "Ronin", targets: ["Ronin"]))
 targets.append(
     .executableTarget(
-        name: "Books",
-        dependencies: ["BooksCore"],
-        path: "Sources/Books",
-        // The typesetting engine: a small web page WebKit lays the book out with, served to WKWebView from the bundle.
-        resources: [.copy("Resources/Reader")],
+        name: "Ronin",
+        dependencies: ["RoninCore"],
+        path: "Sources/Ronin",
         linkerSettings: [
             .linkedFramework("AppKit"),
-            .linkedFramework("SwiftUI"),
-            .linkedFramework("WebKit"),
-            .linkedFramework("PDFKit"),
-            .linkedFramework("UniformTypeIdentifiers"),
+            .linkedFramework("SpriteKit"),
+            .linkedFramework("Carbon"),
         ]
     )
 )
 #endif
 
 let package = Package(
-    name: "Books",
+    name: "Ronin",
     platforms: [.macOS(.v14)],
     products: products,
     targets: targets
