@@ -33,7 +33,13 @@ extension SelfTest {
 
         // Letter-spaced lines read as their words; lines set solid are as PDFKit reads them.
         guard whole.contains("FRANCIS BACON"), whole.contains("ESSAY I"), whole.contains("ESSAY II") else {
-            throw Failure("the letter-spaced lines did not come through as “FRANCIS BACON”, “ESSAY I” and “ESSAY II”: \(excerpt(whole)); why lines kept PDFKit's text: \(PDFReflow.letterSpacingNotes.joined(separator: "; "))")
+            // What stands before the second essay's title, where its numeral should be.
+            var beforeDeath = "(no “Death”)"
+            if let death = whole.range(of: "Death") {
+                let start = whole.index(death.lowerBound, offsetBy: -120, limitedBy: whole.startIndex) ?? whole.startIndex
+                beforeDeath = String(whole[start..<death.upperBound]).replacingOccurrences(of: "\n", with: " | ")
+            }
+            throw Failure("the letter-spaced lines did not come through as “FRANCIS BACON”, “ESSAY I” and “ESSAY II”: \(excerpt(whole)); \(files.count) chapters; before “Death”: \(beforeDeath); letter-spaced lines: \(PDFReflow.letterSpacingNotes.joined(separator: "; "))")
         }
         for broken in ["FRANCISBACON", "E S S", "F R A", "ESSAYI"] where whole.contains(broken) {
             throw Failure("the reflowed text has “\(broken)”, letter spacing misread: \(excerpt(whole))")

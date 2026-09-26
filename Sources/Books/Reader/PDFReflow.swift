@@ -559,11 +559,12 @@ enum PDFReflow {
         }
         func unspaced(_ s: String) -> String { s.filter { !$0.isWhitespace } }
         guard unspaced(out) == unspaced(read) else { return rejected(read, "read again as “\(out)”") }
+        _ = rejected(read, "→ “\(out)”")
         return out
     }
 
-    /// Why the latest lines that looked letter-spaced kept PDFKit's text, a line and a reason each: what the self-test
-    /// reports when tracked type does not come through.
+    /// The latest lines that looked letter-spaced, each with what it was read as or why it kept PDFKit's text: what
+    /// the self-test reports when tracked type does not come through.
     static var letterSpacingNotes: [String] {
         notesLock.lock()
         defer { notesLock.unlock() }
