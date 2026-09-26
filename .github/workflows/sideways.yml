@@ -1,0 +1,103 @@
+name: Sideways
+
+on:
+  push:
+    paths:
+      - "Sideways/**"
+      - "!Sideways/dist/**"
+      - ".github/workflows/sideways.yml"
+  pull_request:
+    paths:
+      - "Sideways/**"
+      - ".github/workflows/sideways.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sideways-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    name: macOS build, test, snapshots, windowed self-test, bundle
+    permissions:
+      contents: write
+    # The same runner as Books: a repository variable BOOKS_MACOS_RUNNER points both at your own Mac.
+    runs-on: ${{ vars.BOOKS_MACOS_RUNNER || 'macos-26' }}
+    defaults:
+      run:
+        working-directory: Sideways
+    steps:
+      - uses: actions/checkout@v4
+      - run: xcodebuild -version && swift --version
+      - run: swift test
+      - run: scripts/make-app.sh release && test -f build/Sideways.app/Contents/Resources/AppIcon.icns
+
+      - name: Snapshots — frames of play rendered offscreen, also printed into the log as JPEG
+        run: |
+          SIDEWAYS_SNAPSHOT="$PWD/build/snapshots" build/Sideways.app/Contents/MacOS/Sideways
+          cp build/AppIcon.iconset/icon_256x256.png build/snapshots/0-icon.png
+          for f in build/snapshots/*.png; do
+            name="$(basename "${f%.png}")"
+            sips -s format jpeg -s formatOptions 82 "$f" --out "build/snapshots/$name.jpg" >/dev/null
+            echo "BEGIN-IMAGE $name"; base64 -i "build/snapshots/$name.jpg" | fold -w 120; echo "END-IMAGE $name"
+          done
+
+      - name: Package
+        run: |
+          mkdir -p dist
+          rm -f dist/Sideways.app.zip
+          ditto -c -k --keepParent build/Sideways.app dist/Sideways.app.zip
+          (cd dist && shasum -a 256 Sideways.app.zip | tee SHA256SUMS.txt)
+
+      - name: Self-test — the packaged app, unzipped elsewhere, in its window, driven through its own key handling
+        timeout-minutes: 3
+        run: |
+          rm -rf "$RUNNER_TEMP/launch" && mkdir -p "$RUNNER_TEMP/launch"
+          ditto -x -k dist/Sideways.app.zip "$RUNNER_TEMP/launch"
+          SIDEWAYS_SELFTEST=1 SIDEWAYS_SELFTEST_SHOT="$PWD/build/selftest.png" "$RUNNER_TEMP/launch/Sideways.app/Contents/MacOS/Sideways"
+
+      - name: Self-test frame, printed into the log
+        if: always()
+        run: |
+          test -f build/selftest.png || exit 0
+          sips -s format jpeg -s formatOptions 82 build/selftest.png --out build/selftest.jpg >/dev/null
+          echo "BEGIN-IMAGE selftest"; base64 -i build/selftest.jpg | fold -w 120; echo "END-IMAGE selftest"
+
+      - name: Upload the app and the frames
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sideways.app
+          if-no-files-found: warn
+          path: |
+            Sideways/dist/Sideways.app.zip
+            Sideways/dist/SHA256SUMS.txt
+            Sideways/build/snapshots/*.png
+            Sideways/build/selftest.png
+
+      - name: Commit the app to Sideways/dist/
+        if: github.event_name == 'push'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f dist/Sideways.app.zip dist/SHA256SUMS.txt
+          if git diff --cached --quiet; then echo "dist/ unchanged"; exit 0; fi
+          git commit -m "ci: package Sideways.app into Sideways/dist/ (${GITHUB_SHA::7}) [skip ci]"
+          git pull --rebase --autostash -X theirs origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+
+  linux:
+    name: Linux core build and test
+    runs-on: ubuntu-latest
+    container: swift:6.0
+    defaults:
+      run:
+        working-directory: Sideways
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift build --product sideways-sim
+      - run: swift test
+      - name: Autopilot laps on every circuit and today's road
+        run: .build/debug/sideways-sim 1
