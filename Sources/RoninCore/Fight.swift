@@ -57,6 +57,7 @@ public struct Fight: Codable, Equatable, Sendable {
 
     public var stage: Int
     public var seed: UInt64
+    public var mode: Mode
     public var difficulty: Difficulty
     public var roster: [Kind]
     public var rng: SeededRNG
@@ -88,24 +89,27 @@ public struct Fight: Codable, Equatable, Sendable {
     public var pilot: Pilot?
     var accumulator = 0.0
 
-    public init(stage: Int, seed: UInt64) {
-        let difficulty = Difficulty(stage: stage)
+    public init(stage: Int, seed: UInt64, mode: Mode = .bushido) {
+        let difficulty = Difficulty(stage: stage, mode: mode)
         var rng = SeededRNG(seed: seed)
         let roster = difficulty.roster(rng: &rng)
-        self.init(stage: stage, seed: seed, roster: roster, rng: rng)
+        self.init(stage: stage, seed: seed, mode: mode, roster: roster, rng: rng)
     }
 
     /// A fight with a given roster (tests use it to stage a situation).
-    public init(stage: Int, seed: UInt64, roster: [Kind]) {
-        self.init(stage: stage, seed: seed, roster: roster, rng: SeededRNG(seed: seed ^ 0x5EED))
+    public init(stage: Int, seed: UInt64, mode: Mode = .bushido, roster: [Kind]) {
+        self.init(stage: stage, seed: seed, mode: mode, roster: roster, rng: SeededRNG(seed: seed ^ 0x5EED))
     }
 
-    private init(stage: Int, seed: UInt64, roster: [Kind], rng: SeededRNG) {
+    private init(stage: Int, seed: UInt64, mode: Mode, roster: [Kind], rng: SeededRNG) {
         self.stage = max(1, stage)
         self.seed = seed
-        difficulty = Difficulty(stage: stage)
+        self.mode = mode
+        difficulty = Difficulty(stage: stage, mode: mode)
         self.roster = roster
         self.rng = rng
+        hp = mode.hearts
+        maxHP = mode.hearts
     }
 
     // MARK: Reading the fight
@@ -116,7 +120,7 @@ public struct Fight: Codable, Equatable, Sendable {
     }
 
     public var inBloodlust: Bool { combo >= Tuning.bloodlust }
-    public var reach: Double { inBloodlust ? Tuning.bloodlustReach : Tuning.reach }
+    public var reach: Double { (inBloodlust ? Tuning.bloodlustReach : Tuning.reach) * mode.reach }
     /// The combo's score multiplier: ×1, then one more for every ten links, at most ×8.
     public var multiplier: Int { min(8, 1 + combo / 10) }
     public var remaining: Int { roster.count - defeated }
@@ -178,7 +182,7 @@ public struct Fight: Codable, Equatable, Sendable {
             arrows[i].velocity = side.sign * Tuning.deflectSpeed
             cooldown = Tuning.cooldown
             stats.deflects += 1
-            score += 50 * multiplier
+            score += points(50 * multiplier)
             events.append(.deflected(side, arrow: id))
             raiseCombo(&events)
         case .foe(let id)?:
@@ -190,7 +194,7 @@ public struct Fight: Codable, Equatable, Sendable {
             events.append(.cut(side, foe: id, killed: killed))
             events += after
         case nil:
-            stumble = Tuning.stumble
+            stumble = Tuning.stumble * mode.stumble
             stats.whiffs += 1
             breakCombo(&events)
             events.append(.whiff(side))
@@ -241,7 +245,7 @@ public struct Fight: Codable, Equatable, Sendable {
             events.append(.ended(.defeat))
         } else if defeated >= roster.count {
             outcome = .victory
-            bonus = 250 * stage + 150 * hp + (stats.damage == 0 ? 500 * stage : 0)
+            bonus = points(250 * stage + 150 * hp + (stats.damage == 0 ? 500 * stage : 0))
             score += bonus
             arrows.removeAll()
             events.append(.ended(.victory))
@@ -413,7 +417,7 @@ public struct Fight: Codable, Equatable, Sendable {
         foes[i].hp -= 1
         foes[i].hits += 1
         if foes[i].hp <= 0 {
-            score += foes[i].kind.bounty * multiplier
+            score += points(foes[i].kind.bounty * multiplier)
             foes[i].enter(.dying, for: 0)
             defeated += 1
             stats.kills += 1
@@ -439,6 +443,9 @@ public struct Fight: Codable, Equatable, Sendable {
         }
         return false
     }
+
+    /// Points, scaled by the mode.
+    private func points(_ base: Int) -> Int { Int((Double(base) * mode.score).rounded()) }
 
     private mutating func hurt(_ damage: Int, by foe: Int?, _ events: inout [FightEvent]) {
         guard outcome == nil else { return }

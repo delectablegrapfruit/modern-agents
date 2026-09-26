@@ -3,7 +3,8 @@ import RoninCore
 
 // ronin-sim: plays stages headless with the autopilot and prints how they went.
 //
-//   ronin-sim [--stages 1-20] [--seeds 12] [--reaction 0.22] [--rate 7] [--slips 0.02] [--perfect] [--check]
+//   ronin-sim [--stages 1-20] [--seeds 12] [--mode bushido|shoshin|shura|oni|all] [--reaction 0.22] [--rate 7]
+//             [--slips 0.02] [--perfect] [--check]
 //   ronin-sim --trace <stage>     one fight, second by second
 //
 // The default pilot is human-like: it sees, decides, and its cut lands `reaction` seconds later, at most `rate` a
@@ -19,6 +20,7 @@ var slips = 0.02
 var perfect = false
 var check = false
 var trace: Int?
+var modes: [Mode] = [.bushido]
 
 var arguments = CommandLine.arguments.dropFirst().makeIterator()
 while let argument = arguments.next() {
@@ -30,6 +32,12 @@ while let argument = arguments.next() {
     case "--reaction": reaction = Double(arguments.next() ?? "") ?? reaction
     case "--rate": rate = Double(arguments.next() ?? "") ?? rate
     case "--slips": slips = Double(arguments.next() ?? "") ?? slips
+    case "--mode":
+        let name = arguments.next() ?? ""
+        if name == "all" { modes = Mode.allCases } else if let mode = Mode(rawValue: name) { modes = [mode] } else {
+            print("unknown mode \(name)")
+            exit(2)
+        }
     case "--perfect": perfect = true
     case "--check": check = true
     case "--trace": trace = Int(arguments.next() ?? "")
@@ -45,8 +53,8 @@ func pilot(_ seed: Int) -> Pilot {
 
 func clock(_ t: Double) -> String { String(format: "%6.2f", t) }
 
-func play(stage: Int, seed: Int, log: Bool = false) -> Fight {
-    var fight = Fight(stage: stage, seed: mixSeed(0xC0FFEE, UInt64(stage), UInt64(seed)))
+func play(stage: Int, seed: Int, mode: Mode, log: Bool = false) -> Fight {
+    var fight = Fight(stage: stage, seed: mixSeed(0xC0FFEE, UInt64(stage), UInt64(seed)), mode: mode)
     fight.pilot = pilot(seed)
     var next = 1.0
     while fight.outcome == nil, fight.time < 600 {
@@ -75,37 +83,50 @@ func play(stage: Int, seed: Int, log: Bool = false) -> Fight {
 }
 
 if let stage = trace {
-    let fight = play(stage: stage, seed: 1, log: true)
+    let fight = play(stage: stage, seed: 1, mode: modes[0], log: true)
     print("stage \(stage): \(fight.outcome?.rawValue ?? "unfinished") in \(Int(fight.time))s, score \(fight.score), best combo \(fight.stats.bestCombo), roster \(fight.roster.count)")
     exit(0)
 }
 
 print(perfect ? "perfect pilot" : "pilot: reaction \(reaction)s, \(rate) cuts/s, slips \(slips)")
-print("stage  setting          foes  win%   time  wounds  combo  whiffs")
 var failures: [String] = []
-for stage in stages {
-    var wins = 0
-    var time = 0.0, wounds = 0.0, combo = 0.0, whiffs = 0.0
-    for seed in 0..<seeds {
-        let fight = play(stage: stage, seed: seed)
-        if fight.outcome == .victory { wins += 1 }
-        time += fight.time
-        wounds += Double(fight.stats.damage)
-        combo += Double(fight.stats.bestCombo)
-        whiffs += Double(fight.stats.whiffs)
-        if fight.outcome == nil { failures.append("stage \(stage) seed \(seed) never finished") }
-    }
-    let n = Double(seeds)
-    let rate = Double(wins) / n
-    let roster = Fight(stage: stage, seed: 1).roster.count
-    let name = Setting.of(stage: stage).name.padding(toLength: 16, withPad: " ", startingAt: 0)
-    print(String(format: "%5d  ", stage) + name + String(format: " %5d  %4.0f  %5.1f  %6.1f  %5.1f  %6.1f", roster, rate * 100, time / n, wounds / n, combo / n, whiffs / n))
-    if check {
-        let mean = time / n
-        if perfect && wins < seeds { failures.append("stage \(stage): the perfect pilot lost \(seeds - wins) of \(seeds)") }
-        if !perfect && stage <= 3 && rate < 0.9 { failures.append("stage \(stage): only \(Int(rate * 100))% won") }
-        if !perfect && stage <= 8 && rate < 0.5 { failures.append("stage \(stage): only \(Int(rate * 100))% won") }
-        if perfect && (mean < 15 || mean > 150) { failures.append("stage \(stage): fights last \(Int(mean))s") }
+for mode in modes {
+    print("\n\(mode.title) (\(mode.gist)): \(mode.hearts) hearts")
+    print("stage  setting          foes  win%   time  wounds  combo  whiffs")
+    for stage in stages {
+        var wins = 0
+        var time = 0.0, wounds = 0.0, combo = 0.0, whiffs = 0.0
+        for seed in 0..<seeds {
+            let fight = play(stage: stage, seed: seed, mode: mode)
+            if fight.outcome == .victory { wins += 1 }
+            time += fight.time
+            wounds += Double(fight.stats.damage)
+            combo += Double(fight.stats.bestCombo)
+            whiffs += Double(fight.stats.whiffs)
+            if fight.outcome == nil { failures.append("stage \(stage) seed \(seed) never finished") }
+        }
+        let n = Double(seeds)
+        let rate = Double(wins) / n
+        let roster = Fight(stage: stage, seed: 1, mode: mode).roster.count
+        let name = Setting.of(stage: stage).name.padding(toLength: 16, withPad: " ", startingAt: 0)
+        print(String(format: "%5d  ", stage) + name + String(format: " %5d  %4.0f  %5.1f  %6.1f  %5.1f  %6.1f", roster, rate * 100, time / n, wounds / n, combo / n, whiffs / n))
+        if check {
+            let mean = time / n
+            if perfect && wins < seeds { failures.append("\(mode.title) stage \(stage): the perfect pilot lost \(seeds - wins) of \(seeds)") }
+            // What a person with these hands should manage in each mode.
+            let bars: [(through: Int, rate: Double)]
+            switch mode {
+            case .shoshin: bars = [(10, 0.9), (14, 0.6)]
+            case .bushido: bars = [(3, 0.9), (8, 0.5)]
+            case .shura: bars = [(3, 0.75), (6, 0.4)]
+            case .oni: bars = [(2, 0.4)]
+            }
+            for bar in bars where !perfect && stage <= bar.through && rate < bar.rate {
+                failures.append("\(mode.title) stage \(stage): only \(Int(rate * 100))% won")
+                break
+            }
+            if perfect && (mean < 15 || mean > 150) { failures.append("\(mode.title) stage \(stage): fights last \(Int(mean))s") }
+        }
     }
 }
 if !failures.isEmpty {

@@ -42,8 +42,9 @@ final class RoundedView: NSView {
     required init?(coder: NSCoder) { nil }
 }
 
-/// The SpriteKit view. It routes the pointer: the header drags the window (and holds its buttons), a click on the
-/// lane is a cut to that side. Entering and leaving it is what resumes and pauses the fight.
+/// The SpriteKit view. It routes the pointer: the header drags the window (and holds its buttons); on the lane the
+/// left button cuts left and the right button (or a control-click) cuts right. Entering and leaving it is what resumes
+/// and pauses the fight.
 final class GameView: SKView {
     weak var controller: PanelController?
     private var tracking: NSTrackingArea?
@@ -91,14 +92,19 @@ final class GameView: SKView {
         case .drag: windowDrag = (mouse: NSEvent.mouseLocation, origin: window.frame.origin, moved: false)
         case .compact: controller?.setCompact(true)
         case .close: controller?.hide()
-        case .none: scene.pointerDown(at: p)
+        case .none: scene.press(event.modifierFlags.contains(.control) ? .right : .left)
         }
     }
 
     override func rightMouseDown(with event: NSEvent) {
         guard let scene = duelScene, let p = scenePoint(event), scene.headerHit(at: p) == .none else { return }
-        scene.pointerDown(at: p)
+        window?.makeKey()
+        window?.makeFirstResponder(self)
+        scene.press(.right)
     }
+
+    /// No context menu: the right button is a sword.
+    override func menu(for event: NSEvent) -> NSMenu? { nil }
 
     override func mouseDragged(with event: NSEvent) {
         if var drag = windowDrag, let window {

@@ -76,7 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(item)
         }
 
-        note("Stage \(session.fight.stage) · \(session.fight.setting.name)")
+        note("\(career.mode.title) · stage \(session.fight.stage) · \(session.fight.setting.name)")
         var record = "\(career.rank) · \(career.kills) kills"
         if career.streak > 1 { record += " · \(career.streak) in a row" }
         note(record)
@@ -85,6 +85,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(.separator())
         add(panel.panel.isVisible ? "Hide Ronin" : "Show Ronin", #selector(toggleWindow), key: "r", modifiers: [.control, .option])
         add("Compact", #selector(toggleCompact), on: panel.scene.isCompact)
+        let modes = NSMenu()
+        for mode in Mode.allCases {
+            var probe = career
+            probe.choose(mode)
+            let item = NSMenuItem(title: "\(mode.title) — \(mode.gist), \(mode.hearts) hearts · stage \(probe.stage)",
+                                  action: #selector(chooseMode(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = mode.level
+            item.state = mode == career.mode ? .on : .off
+            modes.addItem(item)
+        }
+        let modeItem = NSMenuItem(title: "Difficulty", action: nil, keyEquivalent: "")
+        modeItem.submenu = modes
+        menu.addItem(modeItem)
         let sizes = NSMenu()
         for size in Settings.Size.allCases {
             let item = NSMenuItem(title: size.title, action: #selector(chooseSize(_:)), keyEquivalent: "")
@@ -110,6 +124,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func toggleCompact() {
         if !panel.panel.isVisible { panel.show() }
         panel.setCompact(!panel.scene.isCompact)
+    }
+
+    @objc private func chooseMode(_ sender: NSMenuItem) {
+        guard Mode.allCases.indices.contains(sender.tag) else { return }
+        session.choose(Mode.allCases[sender.tag])
+        panel.scene.loadFight(intro: true)
+        panel.show()
     }
 
     @objc private func chooseSize(_ sender: NSMenuItem) {

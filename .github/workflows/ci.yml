@@ -30,8 +30,8 @@ jobs:
       - run: swift test
       - name: Balance — a human-like pilot and a perfect one play every stage
         run: |
-          swift run -c release ronin-sim --stages 1-20 --seeds 10 --check
-          swift run -c release ronin-sim --stages 1-20 --seeds 6 --perfect --check
+          swift run -c release ronin-sim --mode all --stages 1-20 --seeds 10 --check
+          swift run -c release ronin-sim --mode all --stages 1-20 --seeds 4 --perfect --check
       - name: Bundle
         run: |
           scripts/make-app.sh release
@@ -86,8 +86,8 @@ jobs:
       - uses: actions/checkout@v4
       - run: swift build
       - run: swift test
-      - run: swift run -c release ronin-sim --stages 1-20 --seeds 10 --check
-      - run: swift run -c release ronin-sim --stages 1-25 --seeds 6 --perfect --check
+      - run: swift run -c release ronin-sim --mode all --stages 1-20 --seeds 10 --check
+      - run: swift run -c release ronin-sim --mode all --stages 1-25 --seeds 4 --perfect --check
       - name: Slower hands (closer to a first-time player)
-        run: swift run -c release ronin-sim --stages 1-12 --seeds 10 --reaction 0.3 --rate 5 --slips 0.05
+        run: swift run -c release ronin-sim --mode shoshin --stages 1-12 --seeds 10 --reaction 0.3 --rate 5 --slips 0.05
       - run: swift run -c release ronin-sim --trace 5 | tail -25

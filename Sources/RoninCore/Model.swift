@@ -201,6 +201,50 @@ public struct Arrow: Codable, Equatable, Sendable {
     public var side: Side { Side.of(x) }
 }
 
+/// How hard the whole game is, from forgiving to merciless. Each keeps its own stage.
+public enum Mode: String, Codable, Sendable, CaseIterable {
+    /// Beginner's mind: seven hearts, slower foes, a longer reach.
+    case shoshin
+    /// The way of the sword: the game as designed.
+    case bushido
+    /// The realm of carnage: four hearts, faster and more foes.
+    case shura
+    /// The demon: three hearts, quick blows, a crowded lane, a short reach.
+    case oni
+
+    public var title: String {
+        switch self {
+        case .shoshin: return "Shoshin"
+        case .bushido: return "Bushidō"
+        case .shura: return "Shura"
+        case .oni: return "Oni"
+        }
+    }
+
+    /// What it means, in a few words.
+    public var gist: String {
+        switch self {
+        case .shoshin: return "easy"
+        case .bushido: return "normal"
+        case .shura: return "hard"
+        case .oni: return "insane"
+        }
+    }
+
+    public var level: Int { Mode.allCases.firstIndex(of: self) ?? 1 }
+    public var hearts: Int { [7, 5, 4, 3][level] }
+    /// Multiplies foe speed, wind-ups, the time between arrivals, and the ronin's stumble.
+    public var pace: Double { [0.85, 1, 1.2, 1.45][level] }
+    public var windup: Double { [1.25, 1, 0.8, 0.62][level] }
+    public var interval: Double { [1.2, 1, 0.82, 0.66][level] }
+    public var stumble: Double { [0.75, 1, 1.2, 1.4][level] }
+    /// Added to the most foes on the lane at once.
+    public var crowd: Int { [-1, 0, 1, 3][level] }
+    public var reach: Double { [1.08, 1, 0.97, 0.92][level] }
+    /// Multiplies every point scored.
+    public var score: Double { [0.5, 1, 1.6, 3][level] }
+}
+
 /// Where each stage is fought. The app paints it; the name is the same everywhere.
 public enum Setting: Int, Codable, Sendable, CaseIterable {
     case crimsonDusk, bambooGrove, bloodMoon, frozenPass, stormBridge, burningVillage, sakuraTemple, ashFields

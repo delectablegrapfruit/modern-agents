@@ -259,6 +259,57 @@ final class RoninCoreTests: XCTestCase {
         XCTAssertNotEqual(career.makeFight().seed, lost.seed, "a retry is a fresh roll")
     }
 
+    // MARK: Modes
+
+    func testModesSetHeartsReachAndPace() {
+        XCTAssertEqual(Mode.allCases.map { Fight(stage: 1, seed: 1, mode: $0).hp }, [7, 5, 4, 3])
+        let easy = Fight(stage: 6, seed: 1, mode: .shoshin), normal = Fight(stage: 6, seed: 1), insane = Fight(stage: 6, seed: 1, mode: .oni)
+        XCTAssertLessThan(easy.difficulty.pace, normal.difficulty.pace)
+        XCTAssertLessThan(normal.difficulty.pace, insane.difficulty.pace)
+        XCTAssertGreaterThan(easy.difficulty.windup, insane.difficulty.windup)
+        XCTAssertGreaterThan(easy.reach, normal.reach)
+        XCTAssertGreaterThan(normal.reach, insane.reach)
+        XCTAssertGreaterThan(insane.difficulty.crowd, normal.difficulty.crowd)
+    }
+
+    func testHarderModesScoreMore() {
+        var scores: [Int] = []
+        for mode in Mode.allCases {
+            var fight = Fight(stage: 1, seed: 1, mode: mode, roster: [.grunt, .grunt])
+            fight.arrived = 2
+            fight.place(.grunt, at: 0.2)
+            fight.strike(.right)
+            scores.append(fight.score)
+        }
+        XCTAssertEqual(scores, scores.sorted())
+        XCTAssertEqual(scores[1], Kind.grunt.bounty)
+        XCTAssertLessThan(scores[0], scores[3])
+    }
+
+    func testEachModeKeepsItsOwnStage() {
+        var career = Career(seed: 9)
+        func win() {
+            var fight = career.makeFight()
+            XCTAssertEqual(fight.mode, career.mode)
+            fight.pilot = .perfect
+            while fight.outcome == nil { _ = fight.step(0.1) }
+            XCTAssertEqual(fight.outcome, .victory)
+            career.record(fight)
+        }
+        win()
+        XCTAssertEqual(career.stage, 2)
+        career.choose(.oni)
+        XCTAssertEqual(career.stage, 1)
+        XCTAssertEqual(career.cleared, 0)
+        win()
+        win()
+        XCTAssertEqual(career.stage, 3)
+        career.choose(.bushido)
+        XCTAssertEqual(career.stage, 2)
+        XCTAssertEqual(career.cleared, 1)
+        XCTAssertNotEqual(Career(seed: 9).makeFight().seed, { var c = Career(seed: 9); c.choose(.oni); return c.makeFight().seed }())
+    }
+
     func testRanksClimbWithKills() {
         XCTAssertEqual(Rank.title(kills: 0), "Wanderer")
         XCTAssertEqual(Rank.title(kills: 130), "Ronin")

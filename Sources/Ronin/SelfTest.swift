@@ -3,10 +3,11 @@ import Metal
 import SpriteKit
 import RoninCore
 
-/// `RONIN_SELFTEST=1 Ronin.app/Contents/MacOS/Ronin`: in a scratch save, makes the first cut and a whiff the way
-/// clicks make them, lets the autopilot clear stage 1, advances from the banner, fights a warlord, rides a combo into
-/// bloodlust, falls and rises again, folds into the pill and back, checks that leaving pauses and that coming back
-/// takes the dwell, and checks the save. Exits 0, or 1 saying what failed. With `RONIN_SNAPSHOTS=<dir>` it also writes
+/// `RONIN_SELFTEST=1 Ronin.app/Contents/MacOS/Ronin`: in a scratch save, makes the first cut and a whiff with real
+/// left and right mouse-button events, lets the autopilot clear stage 1, advances from the banner, shows a new foe's
+/// card, fights a warlord, switches to Oni and rides a combo into bloodlust, falls and rises again, switches back and
+/// finds Bushidō's stage kept, folds into the pill and back, checks that leaving pauses and that coming back takes the
+/// dwell, and checks the save. Exits 0, or 1 saying what failed. With `RONIN_SNAPSHOTS=<dir>` it also writes
 /// what the panel showed along the way as PNGs.
 enum SelfTest {
     static var enabled: Bool { ProcessInfo.processInfo.environment["RONIN_SELFTEST"] != nil }
@@ -48,23 +49,24 @@ enum SelfTest {
         guard panel.panel.isVisible, panel.gameView.scene === scene else { throw Failure("panel not on screen") }
         guard !scene.isAwayPaused else { throw Failure("the fight did not start with pausing turned off") }
         print("metal device: \(MTLCreateSystemDefaultDevice()?.name ?? "none")")
-        try snapshot("1-intro", panel)
+        
+        try snapshot("1-hint", panel)
 
-        // The first cut, the way a click makes it: on the side a spearman has walked into reach.
+        // The first cut, with the mouse button for the side a spearman has walked into reach on.
         try await until("a foe came into reach", timeout: 15) { session.fight.target(.left) != nil || session.fight.target(.right) != nil }
         let side: Side = session.fight.target(.left) != nil ? .left : .right
-        scene.pointerDown(at: click(side, scene))
-        guard session.fight.stats.kills == 1, session.fight.combo == 1 else { throw Failure("the click did not cut the foe down") }
-        guard Settings.hintShown else { throw Failure("the hint did not go away after the first kill") }
+        click(side, panel)
+        guard session.fight.stats.kills == 1, session.fight.combo == 1, session.fight.facing == side
+        else { throw Failure("the \(side == .left ? "left" : "right") button did not cut that way") }
         try await pause(0.05)
         try snapshot("2-cut", panel)
 
-        // A cut at nothing stumbles.
+        // The other button, at nothing: a whiff that way, and a stumble.
         try await pause(0.3)
-        try await until("a side with nothing in reach", timeout: 10) { session.fight.target(.left) == nil || session.fight.target(.right) == nil }
-        let empty: Side = session.fight.target(.left) == nil ? .left : .right
-        scene.pointerDown(at: click(empty, scene))
-        guard session.fight.stats.whiffs == 1, session.fight.isStumbling else { throw Failure("a cut at nothing did not stumble") }
+        try await until("nothing in reach on the other side", timeout: 10) { session.fight.target(side.opposite) == nil }
+        click(side.opposite, panel)
+        guard session.fight.stats.whiffs == 1, session.fight.isStumbling, session.fight.facing == side.opposite
+        else { throw Failure("the \(side == .left ? "right" : "left") button did not swing that way") }
 
         // The rest of stage 1 on autopilot, fast.
         session.autopilot = true
@@ -79,11 +81,18 @@ enum SelfTest {
         try snapshot("4-cleared", panel)
         guard session.career.stage == 2, session.career.kills == session.fight.stats.kills else { throw Failure("the win was not booked") }
         guard let saved = session.store.load(), saved.career == session.career else { throw Failure("the win was not saved") }
+        guard Settings.hintShown else { throw Failure("the button hint stayed up after kills on both sides") }
 
         // Clicking the banner starts stage 2.
-        scene.pointerDown(at: CGPoint(x: scene.size.width / 2, y: scene.size.height / 2))
+        click(.right, panel)
         guard session.fight.stage == 2, session.fight.outcome == nil, session.fight.time == 0 else { throw Failure("the banner did not advance") }
         try await pause(0.5)
+
+        // A new kind of foe gets a card: stage 4's archer.
+        session.jump(to: 4)
+        scene.loadFight(intro: true)
+        try await pause(0.45)
+        try snapshot("5-newcomer", panel)
 
         // A warlord, at the end of stage 5.
         session.jump(to: 5)
@@ -94,14 +103,16 @@ enum SelfTest {
         scene.timeScale = 1
         try await until("the warlord closed in", timeout: 10) { (session.fight.boss?.distance ?? 0) < 0.55 }
         try await pause(0.2)
-        try snapshot("5-warlord", panel)
+        try snapshot("6-warlord", panel)
         scene.timeScale = 3
         try await until("stage 5 ended", timeout: 40) { session.fight.outcome != nil }
         guard session.fight.outcome == .victory else { throw Failure("the autopilot lost to the warlord") }
         try await pause(0.35)
-        try snapshot("6-warlord-slain", panel)
+        try snapshot("7-warlord-slain", panel)
 
-        // Bloodlust, in the thick of stage 7.
+        // Oni: three hearts and its own stage count. Bloodlust in the thick of its stage 7.
+        session.choose(.oni)
+        guard session.fight.mode == .oni, session.fight.hp == 3, session.fight.stage == 1 else { throw Failure("Oni did not start at stage 1 with 3 hearts") }
         session.jump(to: 7)
         scene.loadFight(intro: true)
         scene.timeScale = 2
@@ -111,7 +122,7 @@ enum SelfTest {
         if session.fight.outcome == nil {
             scene.timeScale = 1
             try await pause(0.5)
-            try snapshot("7-bloodlust", panel)
+            try snapshot("8-oni-bloodlust", panel)
         } else {
             print("stage 7 ended before a crowd met bloodlust; no snapshot")
             session.next()
@@ -126,16 +137,21 @@ enum SelfTest {
         guard session.fight.outcome == .defeat else { throw Failure("stage \(stage) was won with nobody cutting") }
         try await until("the banner", timeout: 5) { scene.isShowingBanner }
         try await pause(0.7)
-        try snapshot("8-fallen", panel)
+        try snapshot("9-fallen", panel)
         guard session.career.falls == 1, session.career.stage == stage, session.career.attempt == 2 else { throw Failure("the fall was not booked") }
-        scene.pointerDown(at: CGPoint(x: scene.size.width / 2, y: scene.size.height / 2))
+        click(.left, panel)
         guard session.fight.stage == stage, session.fight.outcome == nil else { throw Failure("rising again did not restart the stage") }
+
+        // Back to Bushidō: its stage is where it was left (stage 5 won, so 6), and it has five hearts again.
+        session.choose(.bushido)
+        guard session.fight.mode == .bushido, session.fight.stage == 6, session.fight.hp == 5 else { throw Failure("Bushidō's stage was not kept") }
+        session.autopilot = true
 
         // The pill and back.
         panel.setCompact(true)
         try await pause(0.4)
         guard panel.panel.frame.size == DuelScene.pillSize, scene.isCompact else { throw Failure("compact did not fold to the pill") }
-        try snapshot("9-compact", panel)
+        try snapshot("10-compact", panel)
         panel.setCompact(false)
         try await pause(0.4)
         guard panel.panel.frame.width == Settings.size.width else { throw Failure("the panel did not unfold") }
@@ -159,11 +175,16 @@ enum SelfTest {
         else { throw Failure("the save did not round-trip") }
     }
 
-    /// A point on the lane to one side of the ronin.
+    /// A real mouse-button event on the lane: the left button, or the right.
     @MainActor
-    private static func click(_ side: Side, _ scene: DuelScene) -> CGPoint {
-        let p = scene.point(lane: side == .left ? -0.5 : 0.5)
-        return CGPoint(x: p.x, y: p.y)
+    private static func click(_ side: Side, _ panel: PanelController) {
+        let view = panel.gameView
+        let location = view.convert(NSPoint(x: view.bounds.midX, y: view.bounds.height * 0.35), to: nil)
+        guard let event = NSEvent.mouseEvent(with: side == .left ? .leftMouseDown : .rightMouseDown, location: location, modifierFlags: [],
+                                             timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: panel.panel.windowNumber,
+                                             context: nil, eventNumber: 0, clickCount: 1, pressure: 1)
+        else { return }
+        if side == .left { view.mouseDown(with: event) } else { view.rightMouseDown(with: event) }
     }
 
     @MainActor

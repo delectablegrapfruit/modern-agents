@@ -15,14 +15,16 @@ public struct Difficulty: Codable, Equatable, Sendable {
     /// Chance that an arrival brings a second one close behind.
     public var pairs: Double
     public var boss: Bool
+    public var mode: Mode
 
-    public init(stage: Int) {
+    public init(stage: Int, mode: Mode = .bushido) {
         let s = Double(max(1, stage) - 1)
         self.stage = max(1, stage)
-        pace = min(1.75, 1 + 0.04 * s)
-        windup = max(0.55, 1 - 0.028 * s)
-        interval = max(0.34, 1.3 - 0.07 * s)
-        crowd = min(10, 3 + (self.stage + 1) / 2)
+        self.mode = mode
+        pace = min(1.75, 1 + 0.04 * s) * mode.pace
+        windup = max(0.55, 1 - 0.028 * s) * mode.windup
+        interval = max(0.34, 1.3 - 0.07 * s) * mode.interval
+        crowd = max(2, min(10, 3 + (self.stage + 1) / 2) + mode.crowd)
         pairs = min(0.35, s * 0.03)
         boss = self.stage % 5 == 0
     }

@@ -60,8 +60,17 @@ final class GameSession {
         next()
     }
 
+    /// Switches the difficulty. The fight in progress is dropped (it counts as nothing) for the mode's own stage.
+    func choose(_ mode: Mode) {
+        guard mode != career.mode else { return }
+        career.choose(mode)
+        next()
+    }
+
     func reset() {
+        let mode = career.mode
         career = Career(seed: UInt64.random(in: 1...UInt64.max))
+        career.choose(mode)
         next()
     }
 

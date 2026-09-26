@@ -4,11 +4,12 @@ import Foundation
 /// stage on a fresh roll. Kills count toward your rank either way.
 public struct Career: Codable, Equatable, Sendable {
     public var seed: UInt64
-    /// The stage being fought.
-    public var stage = 1
+    public var mode = Mode.bushido
+    /// The stage each mode has reached, and the highest each has cleared (by mode name).
+    public var stages: [String: Int] = [:]
+    public var highest: [String: Int] = [:]
     /// Tries at this stage, counting this one.
     public var attempt = 1
-    public var cleared = 0
     public var kills = 0
     public var falls = 0
     public var flawless = 0
@@ -20,11 +21,30 @@ public struct Career: Codable, Equatable, Sendable {
 
     public init(seed: UInt64) { self.seed = seed }
 
+    /// The stage being fought, in the current mode.
+    public var stage: Int {
+        get { stages[mode.rawValue] ?? 1 }
+        set { stages[mode.rawValue] = max(1, newValue) }
+    }
+
+    /// The highest stage cleared in the current mode.
+    public var cleared: Int {
+        get { highest[mode.rawValue] ?? 0 }
+        set { highest[mode.rawValue] = newValue }
+    }
+
+    /// Switches modes. Each keeps its own stage; the next fight is a fresh roll.
+    public mutating func choose(_ mode: Mode) {
+        guard mode != self.mode else { return }
+        self.mode = mode
+        attempt = 1
+    }
+
     public var rank: String { Rank.title(kills: kills) }
     public var nextRank: (kills: Int, title: String)? { Rank.next(kills: kills) }
 
     public func makeFight() -> Fight {
-        Fight(stage: stage, seed: mixSeed(seed, UInt64(stage), UInt64(attempt)))
+        Fight(stage: stage, seed: mixSeed(seed, UInt64(stage), UInt64(attempt) | UInt64(mode.level) << 32), mode: mode)
     }
 
     /// Books a finished fight. Returns the rank it earned, if it earned one.
@@ -54,7 +74,7 @@ public struct Career: Codable, Equatable, Sendable {
 
 /// The save file: the career and the fight in progress, down to the step.
 public struct SaveGame: Codable, Equatable, Sendable {
-    public static let currentVersion = 1
+    public static let currentVersion = 2
 
     public var version = SaveGame.currentVersion
     public var career: Career
