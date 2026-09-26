@@ -10,7 +10,7 @@
 <style id="base-css">
 /* The page IS the book: WKWebView loads this document directly, so html/body carry the theme and the
    multi-column pagination instead of an iframe. Ported from the web reader's BASE_CSS. */
-html, body { margin: 0 !important; padding: 0 !important; }
+html, body { margin: 0 !important; padding: 0 !important; overflow-anchor: none; }
 html { height: 100%; font-size: var(--fs, 16px); background: var(--bg, #fff) !important; color: var(--fg, #000); color-scheme: light; overscroll-behavior: none; scrollbar-color: var(--fg-3, rgba(0,0,0,0.3)) transparent; scrollbar-width: thin; }
 html.dark { color-scheme: dark; }
 ::-webkit-scrollbar { width: 12px; height: 12px; background: transparent; }
@@ -22,7 +22,7 @@ body { height: 100%; overflow: hidden; background: transparent !important; color
 body.scroll { overflow-y: auto; overflow-x: hidden; height: auto; min-height: 100%; }
 .book-root { position: relative; box-sizing: border-box; }
 body.paginated .book-root { height: var(--col-h); width: var(--box-w); margin: var(--m-top) var(--m-side) 0 !important; column-count: var(--cols); column-gap: var(--gap); column-fill: auto; overflow: visible; }
-body.scroll .book-root { max-width: var(--scroll-w); margin: 0 auto !important; padding: var(--scroll-top) var(--scroll-side) 45vh !important; }
+body.scroll .book-root { max-width: var(--scroll-w); margin: 0 auto !important; padding: var(--scroll-top) var(--scroll-side) var(--scroll-end, 45vh) !important; }
 .books-section { break-before: column; -webkit-column-break-before: always; }
 .books-section:first-child { break-before: auto; -webkit-column-break-before: auto; }
 body.scroll .books-section { break-before: auto; -webkit-column-break-before: auto; margin-bottom: 4em !important; }
@@ -31,8 +31,11 @@ body.paginated .books-section :is(div, section, article, main, aside, header, fo
 .books-section, .book-body { width: auto !important; max-width: none !important; min-width: 0 !important; margin: 0 !important; padding: 0 !important; height: auto !important; min-height: 0 !important; max-height: none !important; position: static !important; overflow: visible !important; columns: auto !important; column-count: auto !important; float: none !important; transform: none !important; }
 .book-body { font-size: 1em !important; }
 .book-end { height: 0; }
+/* Scroll room past the last column, so the last spread can be scrolled fully into place (placed by measure()). */
+#book-spacer { position: absolute; top: 0; left: 0; width: 1px; height: 1px; visibility: hidden; pointer-events: none; }
+body.scroll #book-spacer { display: none; }
 img, svg, video, canvas { max-width: 100% !important; max-height: var(--col-h, 100vh) !important; height: auto; box-sizing: border-box; object-fit: contain; break-inside: avoid; -webkit-column-break-inside: avoid; }
-body.scroll img, body.scroll svg, body.scroll video { max-height: 90vh !important; }
+body.scroll img, body.scroll svg, body.scroll video { max-height: var(--media-h, 90vh) !important; }
 figure { break-inside: avoid; margin-left: 0; margin-right: 0; max-width: 100%; }
 table { max-width: 100% !important; } pre { white-space: pre-wrap !important; overflow-wrap: anywhere; }
 h1, h2, h3, h4, h5, h6 { break-after: avoid; -webkit-column-break-after: avoid; }
@@ -56,6 +59,7 @@ p.books-error { text-align: center; opacity: 0.6; margin-top: 30%; }
 <body>
 <!-- The spine sections are written into this container by reader-core.js; nothing else lives on the page. -->
 <div class="book-root" id="book-root"><div class="book-end" id="book-end"></div></div>
+<div id="book-spacer" aria-hidden="true"></div>
 <script src="util.js"></script>
 <script src="zip.js"></script>
 <script src="epub.js"></script>

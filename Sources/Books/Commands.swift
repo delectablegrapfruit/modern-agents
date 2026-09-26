@@ -69,7 +69,10 @@ struct BooksCommands: Commands {
                 }
             }
             Divider()
-            Button("Customize Home…") { model.customizingHome = true }
+            Button("Edit Widgets…") {
+                model.sidebarSelection = .home
+                model.editingHome = true
+            }
         }
         CommandMenu("Book") {
             Button("Next Page") { reader?.nextPage() }

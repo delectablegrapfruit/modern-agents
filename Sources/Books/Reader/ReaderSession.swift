@@ -560,6 +560,9 @@ final class ReaderSession {
             }
         case "layout":
             updateLayout(m)
+            // A relayout (text size, width, spread, window…) renumbers the pages: the jump in `page` that the position
+            // report after it carries is not pages read.
+            lastPage = nil
         case "position":
             var p = ReaderPosition()
             p.page = m.double("page") ?? 0

@@ -11,6 +11,10 @@ struct CoverView: View {
     let width: CGFloat
     var height: CGFloat? = nil
     var badges = false
+    /// Draw the reading progress on the cover; widgets and lists that show progress elsewhere turn it off.
+    var showsProgress = true
+    /// How the cover looks; nil follows Settings ▸ Cover Appearance. Get Info's editor passes `.color`.
+    var appearance: CoverAppearance? = nil
 
     var body: some View {
         let _ = model.coverVersion
@@ -33,7 +37,7 @@ struct CoverView: View {
                 Color.clear
                     .frame(width: shown.width, height: shown.height)
                     .overlay(alignment: .bottom) {
-                        if !book.isFinished, book.hasStarted {
+                        if showsProgress, !book.isFinished, book.hasStarted {
                             ProgressView(value: book.progress)
                                 .progressViewStyle(.linear)
                                 .tint(.white)

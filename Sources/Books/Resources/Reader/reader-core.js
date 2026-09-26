@@ -56,6 +56,11 @@
   const M_TOP = 68, M_BOTTOM = 56;          // page margins that keep text clear of the app's floating chrome
   const FS_TOP = 40, FS_BOTTOM = 40;        // …which is hidden in full screen, so the text may breathe wider
   const SCROLL_TOP = 84, SCROLL_SIDE = 36;  // vertical-scrolling layout
+  /* Scrolling: the line (viewport px from the top) a locator is read from and put back on — the same line both ways,
+     so a relayout round trip cannot creep up or down the book. */
+  const SCROLL_REF = SCROLL_TOP - 12;
+  /* Boxes that hold a place of their own besides text: a page may open with a picture, a rule or a table. */
+  const BOXES = /^(img|svg|video|canvas|hr|table|figure)$/i;
   const SEARCH_BATCH = 40, SEARCH_MAX = 400;
 
   const DEFAULTS = {
@@ -90,7 +95,8 @@
     layout: null, page: 0, sectionStarts: [], tocEntries: [], highlights: [], bookmarks: [],
     settings: normalizeSettings(null), anchor: null, fullscreen: false,
     _wheel: { acc: 0, last: 0, lastDelta: 0, locked: false },
-    _sel: null, _searchToken: 0, _relayoutTimer: null, _resizeTimer: null, _scrollPoll: null, _lastY: 0, _relayoutToken: 0, _locCache: null,
+    _sel: null, _searchToken: 0, _relayoutTimer: null, _resizeTimer: null, _lateTimer: null, _scrollPoll: null, _lastY: 0, _relayoutToken: 0, _locCache: null,
+    _scrollTarget: null,
 
     init() {
       this.root = document.getElementById('book-root');
@@ -109,9 +115,15 @@
       document.addEventListener('selectionchange', () => this.onSelectionChange());
       global.addEventListener('resize', () => {
         if (!this.isOpen) return;
+        // Pin the place at the first event of a burst, while the page still shows it: the book keeps its old geometry
+        // (nothing in it depends on the viewport's size) until the relayout sets the new one.
+        this._pin();
         clearTimeout(this._resizeTimer);
-        this._resizeTimer = setTimeout(() => this._queueRelayout(this.anchor || this.currentLocator()), 120);
+        this._resizeTimer = setTimeout(() => { this._resizeTimer = null; this._queueRelayout(this.anchor); }, 120);
       });
+      // Web fonts and pictures that arrive after a relayout move the text again: measure again, put the place back.
+      if (document.fonts && document.fonts.addEventListener) document.fonts.addEventListener('loadingdone', () => this._lateLayout());
+      document.addEventListener('load', e => { if (e.target && e.target.nodeType === 1) this._lateLayout(); }, true);
       this.applyTheme(); // paint the themed background before a book is even open
     },
 
@@ -131,8 +143,8 @@
         const { sections, css, words } = await epub.loadAll();
         this.sections = sections; this.words = words; this.title = epub.metadata.title || '';
         this._render(css);
+        this.applyTextSettings();   // before waiting, so the fonts waited for are the ones the settings use
         await this._waitForAssets();
-        this.applyTextSettings();
         this.unwrapMonolithic(0.6);
         this.buildTocEntries();
         this.highlights = (opts.highlights || []).map(normHighlight);
@@ -146,8 +158,9 @@
     },
     _reset() {
       this.isOpen = false; this.layout = null; this.anchor = null; this.page = 0; this._sel = null; this._locCache = null;
-      this._searchToken++; this._watchScroll(false);
-      clearTimeout(this._relayoutTimer);
+      this._searchToken++; this._relayoutToken++; this._watchScroll(false); this._scrollTarget = null;
+      clearTimeout(this._relayoutTimer); clearTimeout(this._resizeTimer); clearTimeout(this._lateTimer);
+      this._relayoutTimer = this._resizeTimer = this._lateTimer = null;
       if (this.epub) { this.epub.dispose(); this.epub = null; }
       this.sections = []; this.secEls = []; this.sectionStarts = []; this.tocEntries = []; this.highlights = []; this.bookmarks = [];
       this._unwrapped = false;
@@ -201,6 +214,7 @@
     },
     /* Images and web fonts must be laid out before the first measurement, or the page count is wrong. */
     async _waitForAssets() {
+      void this.root.getBoundingClientRect();   // lay the book out once: the web fonts it uses start loading now
       const imgs = [...document.images].filter(i => !i.complete);
       const waits = imgs.map(i => new Promise(r => { i.addEventListener('load', r, { once: true }); i.addEventListener('error', r, { once: true }); }));
       if (document.fonts && document.fonts.ready) waits.push(document.fonts.ready.catch(() => {}));
@@ -212,17 +226,23 @@
     applySettings(s) {
       const before = this.settings;
       this.settings = normalizeSettings(Object.assign({}, this.settings, s || {}));
-      this.applyTextSettings();
-      if (!this.isOpen) return;
-      if (this.settings.theme !== before.theme) this.renderHighlights();  // the tint depends on whether the theme is dark
-      if (LAYOUT_KEYS.some(k => this.settings[k] !== before[k])) this._queueRelayout(this.anchor || this.currentLocator());
-      else this._sendPosition();
+      if (!this.isOpen) { this.applyTextSettings(); return; }
+      const relayout = LAYOUT_KEYS.some(k => this.settings[k] !== before[k]);
+      // Pin the place while the page still shows it: the new size, font or spacing would otherwise reflow the text
+      // under the old page index before the relayout reads where the reader was.
+      if (relayout) this._pin();
+      if (this.settings.theme !== before.theme) { this.applyTheme(); this.renderHighlights(); }  // colours at once; the tint depends on whether the theme is dark
+      if (relayout) this._queueRelayout(this.anchor);   // brings the text settings in together with the new geometry
+      else {
+        if (!this._relayoutTimer) this.applyTextSettings();   // a queued relayout applies them itself
+        this._sendPosition();
+      }
     },
     setFullscreen(on) {
       const v = !!on;
       if (v === this.fullscreen) return;
       this.fullscreen = v;
-      if (this.isOpen) this._queueRelayout(this.anchor || this.currentLocator());
+      if (this.isOpen) this._queueRelayout(this._pin());
     },
     applyTheme() {
       const t = THEMES[this.settings.theme] || THEMES.original;
@@ -247,16 +267,40 @@
     _queueRelayout(loc) {
       if (loc) this.anchor = loc;
       clearTimeout(this._relayoutTimer);
-      this._relayoutTimer = setTimeout(() => this.relayout(), 40);
+      this._relayoutTimer = setTimeout(() => { this._relayoutTimer = null; this.relayout(); }, 40);
+    },
+    /** The place to keep through a relayout. It stays pinned — over any number of changes in a row, each laid out
+        from the same character rather than from the page the last one landed on — until the reader moves on. */
+    _pin() {
+      if (!this.anchor && this.layout && this.isOpen) this.anchor = this.currentLocator();
+      return this.anchor;
+    },
+    /** A web font or picture finished loading and the text moved: lay out again around the pinned place. */
+    _lateLayout() {
+      if (!this.isOpen || !this.layout) return;
+      // Paginated, the page being read is pinned (its locator is cached from before the text moved). Scrolling, only a
+      // place a relayout or a jump pinned is put back: the reader's own scrolling is never fought.
+      if (this.layout.mode === 'paginated') this._pin();
+      clearTimeout(this._lateTimer);
+      this._lateTimer = setTimeout(() => {
+        this._lateTimer = null;
+        if (!this.isOpen || !this.layout) return;
+        if (this.anchor) this._queueRelayout(this.anchor);
+        else { this.measure(); this.recomputeBookmarkPositions(); this.postLayout(); this._sendPosition(); }
+      }, 80);
     },
 
     /* ------------------------------------------------------------------ layout */
     async relayout(opts) {
       opts = opts || {};
       if (!this.isOpen || !this.root) return;
-      const token = ++this._relayoutToken;
+      // The place to keep, read before anything moves (and before the token changes, so the locator cache still
+      // answers for the page as the reader sees it): the caller's, else the pinned anchor, else the page as it stands.
       const restore = opts.restore !== undefined ? opts.restore : (this.anchor || (this.layout ? this.currentLocator() : null));
+      const token = ++this._relayoutToken;
+      clearTimeout(this._relayoutTimer); this._relayoutTimer = null;
       if (restore) this.anchor = restore;
+      this.applyTextSettings();
       const de = document.documentElement, body = document.body, s = this.settings;
       const W = de.clientWidth || global.innerWidth, H = de.clientHeight || global.innerHeight;
       const mode = s.layout;
@@ -273,18 +317,38 @@
       de.style.setProperty('--cols', String(cols)); de.style.setProperty('--gap', gap + 'px'); de.style.setProperty('--box-w', boxW + 'px');
       de.style.setProperty('--col-h', colH + 'px'); de.style.setProperty('--col-w', colW + 'px'); de.style.setProperty('--m-top', mTop + 'px'); de.style.setProperty('--m-side', mSide + 'px');
       de.style.setProperty('--scroll-w', scrollW + 'px'); de.style.setProperty('--scroll-top', SCROLL_TOP + 'px'); de.style.setProperty('--scroll-side', SCROLL_SIDE + 'px');
+      // Viewport-relative sizes are fixed here, in px, so that nothing moves between a resize and its relayout.
+      de.style.setProperty('--scroll-end', Math.round(H * 0.45) + 'px'); de.style.setProperty('--media-h', Math.round(H * 0.9) + 'px');
       body.classList.toggle('paginated', mode === 'paginated'); body.classList.toggle('scroll', mode === 'scroll');
       this.layout = { mode, cols, colW, gap, step, colH, mSide, W, H, total: 1 };
-      await U.nextFrame(); await U.nextFrame();
-      if (token !== this._relayoutToken || !this.root) return; // a newer relayout took over
-      // A layout switch must not inherit the other axis' scroll offset (pages would sit shifted up / scrolling shifted left).
-      if (mode === 'paginated') this.se.scrollTop = 0; else this.se.scrollLeft = 0;
-      this.measure();
-      if (restore) this.goToLocator(restore, { instant: true, keepAnchor: true, silent: true });
-      else this.goTo(mode === 'paginated' ? this.page : 0, { instant: true, keepAnchor: true, silent: true });
-      this.recomputeBookmarkPositions();
+      // Measured and put back in this same task: no frame shows the new text at the old page index, and nothing (a key,
+      // a position report) can run in between and read a half-made layout.
+      this._place(restore);
       this._watchScroll(mode === 'scroll');
       if (!opts.silent) { this.postLayout(); this._sendPosition(); }
+      // …and again once the page has painted and any web font the new settings called for (the book's own faces, a
+      // bold weight) has loaded: those arrive asynchronously and move the text after the first measurement.
+      await U.nextFrame(); await U.nextFrame();
+      if (token !== this._relayoutToken || !this.isOpen) return; // a newer relayout took over
+      const fonts = document.fonts;
+      if (fonts && fonts.status === 'loading') {
+        await Promise.race([fonts.ready.catch(() => {}), U.sleep(3000)]);
+        if (token !== this._relayoutToken || !this.isOpen) return;
+      }
+      // Unless the reader moved on meanwhile (a page turn released the anchor, a jump replaced it), put it back.
+      if (restore && this.anchor === restore) this._place(restore);
+      else { this.measure(); this.recomputeBookmarkPositions(); }
+      if (!opts.silent) { this.postLayout(); this._sendPosition(); }
+    },
+    /** Measures the book as it is now laid out and puts `loc` back on screen (without one: keeps the page). */
+    _place(loc) {
+      const L = this.layout, se = this.se;
+      // A layout switch must not inherit the other axis' scroll offset (pages would sit shifted up / scrolling shifted left).
+      if (L.mode === 'paginated') { if (se.scrollTop) se.scrollTop = 0; } else if (se.scrollLeft) se.scrollLeft = 0;
+      this.measure();
+      if (loc) this.goToLocator(loc, { instant: true, keepAnchor: true, silent: true });
+      else this.goTo(L.mode === 'paginated' ? this.page : 0, { instant: true, keepAnchor: true, silent: true });
+      this.recomputeBookmarkPositions();
     },
     /* Vertical scrolling: besides scroll events, poll the position so progress never stalls (engines differ in event delivery). */
     _watchScroll(on) {
@@ -316,8 +380,12 @@
           this.unwrapMonolithic(0.3);
           return this.measure();
         }
+        // The columns' overflow ends at the last column's right edge, a margin short of a whole screen: without room
+        // beyond it the last spread would be scrolled in only that far and sit shifted by a margin.
+        const spacer = document.getElementById('book-spacer');
+        if (spacer) spacer.style.left = (Math.ceil(L.total / L.cols) * L.cols * L.step - 1) + 'px';
       } else {
-        this.sectionStarts = this.secEls.map(s => Math.max(0, s.getBoundingClientRect().top + se.scrollTop - SCROLL_TOP + 12));
+        this.sectionStarts = this.secEls.map(s => Math.max(0, s.getBoundingClientRect().top + se.scrollTop - SCROLL_REF));
         const byEnd = Math.round(endRect.bottom + se.scrollTop - se.clientHeight);
         const byLast = lastRect ? Math.round(lastRect.bottom + se.scrollTop - se.clientHeight) : 0;
         const byScroll = se.scrollHeight - se.clientHeight;
@@ -327,26 +395,28 @@
     },
     /** The last glyph (or image) that actually renders — an empty trailing element must not add a blank page. */
     lastContentRect() {
+      for (let i = this.secEls.length - 1; i >= 0; i--) { const r = this.lastRectIn(this.secEls[i]); if (r) return r; }
+      return null;
+    },
+    lastRectIn(sec) {
       const range = document.createRange();
-      for (let i = this.secEls.length - 1; i >= 0; i--) {
-        const sec = this.secEls[i];
-        const nodes = this.textNodes(sec);
-        for (let k = nodes.length - 1; k >= 0; k--) {
-          const text = nodes[k].node.nodeValue;
-          for (let c = text.length - 1; c >= 0 && c >= text.length - 300; c--) {
-            if (/\s/.test(text[c])) continue;
-            range.setStart(nodes[k].node, c); range.setEnd(nodes[k].node, c + 1);
-            const r = range.getClientRects()[0];
-            if (r && (r.width || r.height)) return r;
-          }
+      const nodes = this.textNodes(sec);
+      for (let k = nodes.length - 1; k >= 0; k--) {
+        const text = nodes[k].node.nodeValue;
+        for (let c = text.length - 1; c >= 0 && c >= text.length - 300; c--) {
+          if (/\s/.test(text[c])) continue;
+          range.setStart(nodes[k].node, c); range.setEnd(nodes[k].node, c + 1);
+          const r = range.getClientRects()[0];
+          if (r && (r.width || r.height)) return r;
         }
-        const media = sec.querySelectorAll('img, svg, video');
-        if (media.length) { const r = media[media.length - 1].getBoundingClientRect(); if (r.width || r.height) return r; }
       }
+      const media = sec.querySelectorAll('img, svg, video');
+      if (media.length) { const r = media[media.length - 1].getBoundingClientRect(); if (r.width || r.height) return r; }
       return null;
     },
     colOfStart(absX) { const L = this.layout; return Math.max(0, Math.round((absX - L.mSide) / L.step)); },
-    colOfPoint(absX) { const L = this.layout; return U.clamp(Math.floor((absX - L.mSide + 2) / L.step), 0, Math.max(0, L.total - 1)); },
+    /** The column a point lies in; a point in a gap belongs to the nearer column (glyphs may hang a little outside theirs). */
+    colOfPoint(absX) { const L = this.layout; return U.clamp(Math.floor((absX - L.mSide + L.gap / 2) / L.step), 0, Math.max(0, L.total - 1)); },
     currentY() { return this.se ? this.se.scrollTop : 0; },
     curPos() { return this.layout.mode === 'paginated' ? this.page : this.currentY(); },
     isAtEnd() {
@@ -359,11 +429,14 @@
     goTo(pos, opts) {
       opts = opts || {};
       const L = this.layout; if (!L) return;
-      if (!opts.keepAnchor) this.anchor = null;
+      // The reader moving on releases the pinned place (a jump pins where it went instead); a relayout keeps it.
+      if (!opts.keepAnchor) this.anchor = opts.anchor || null;
       const se = this.se, smooth = !opts.instant && this.settings.pageTurn !== 'none';
       if (L.mode === 'scroll') {
         const y = U.clamp(Math.round(pos), 0, L.total); this.page = y;
         if (smooth) se.scrollTo({ top: y, behavior: 'smooth' }); else se.scrollTop = y;
+        // The scroll events this causes are the reader's own doing, not a move by the reader: see onScroll().
+        this._scrollTarget = { y: smooth ? y : se.scrollTop, until: performance.now() + (smooth ? 1000 : 150) };
       } else {
         let col = U.clamp(Math.round(pos), 0, Math.max(0, L.total - 1));
         col = Math.floor(col / L.cols) * L.cols;  // a spread always starts on an even column
@@ -407,11 +480,12 @@
     },
     goToLocator(loc, opts) {
       const L = this.layout; if (!L || !loc) return;
+      opts = opts || {};
       const idx = U.clamp(loc.spine || 0, 0, this.secEls.length - 1);
-      const offset = loc.offset != null ? loc.offset : loc.start;
-      const r = offset ? this.positionRect(idx, offset) : null;
-      if (L.mode === 'paginated') this.goTo(r ? this.colOfPoint(r.left + this.se.scrollLeft) : (this.sectionStarts[idx] || 0), opts);
-      else this.goTo(r ? Math.max(0, r.top + this.se.scrollTop - SCROLL_TOP + 12) : (this.sectionStarts[idx] || 0), opts);
+      const offset = loc.offset != null ? loc.offset : (loc.start || 0);
+      // A jump pins the place it went to: until the reader moves on, a change of size, font, width or window keeps
+      // that on screen rather than whatever the page it landed on happens to begin with.
+      this.goTo(this.locatorToPos(loc), opts.keepAnchor ? opts : Object.assign({}, opts, { anchor: { spine: idx, offset } }));
       // A range locator ({spine, start, end} — what highlights and search hits carry) is also shown selected, so the
       // reader can see what was jumped to. A plain {spine, offset} locator only scrolls.
       if (loc.start != null && loc.end != null) {
@@ -434,19 +508,28 @@
       const t = this.hrefTarget(href); if (!t) return null;
       if (t.target === t.sec) return this.sectionStarts[t.idx];
       const r = t.target.getBoundingClientRect();
-      return this.layout.mode === 'paginated' ? this.colOfPoint(r.left + this.se.scrollLeft) : Math.max(0, r.top + this.se.scrollTop - SCROLL_TOP + 12);
+      return this.layout.mode === 'paginated' ? this.colOfPoint(r.left + this.se.scrollLeft) : Math.max(0, r.top + this.se.scrollTop - SCROLL_REF);
     },
-    goToHref(href) { const pos = this.hrefToPos(href); if (pos == null) return; this.goTo(pos); },
+    goToHref(href) {
+      const t = this.hrefTarget(href), pos = this.hrefToPos(href); if (!t || pos == null) return;
+      // The target is pinned, so a spread that opens it on the right-hand page keeps it in view through relayouts.
+      this.goTo(pos, { anchor: { spine: t.idx, offset: t.target === t.sec ? 0 : this.offsetIn(t.sec, t.target, 0) } });
+    },
     /* A notch of a mouse wheel, delivered by the app: scrolls the text in the scrolling layout, turns a page otherwise. */
     scrollBy(dy) {
       const L = this.layout; if (!L || !this.isOpen || !dy) return;
       this.activity();
-      if (L.mode === 'scroll') { this.se.scrollTop += dy; this.onScroll(); }
+      if (L.mode === 'scroll') { this.anchor = null; this._scrollTarget = null; this.se.scrollTop += dy; this.onScroll(); }
       else if (dy > 0) this.next(); else this.prev();
     },
     onScroll() {
       if (!this.layout || this.layout.mode !== 'scroll' || !this.isOpen) return;
-      this.page = this.currentY(); this.anchor = null;
+      const y = this.currentY(), t = this._scrollTarget;
+      this.page = y;
+      // Only the reader's own scrolling releases the pinned place: the scroll events that follow a relayout putting it
+      // back or a jump's smooth scroll, and a resize clamping the offset before its relayout, are not the reader moving.
+      const ours = (t && (Math.abs(y - t.y) <= 2 || performance.now() < t.until)) || this._relayoutTimer || this._resizeTimer;
+      if (!ours) this.anchor = null;
       this.postPosition();
     },
 
@@ -472,25 +555,46 @@
     },
     _computeLocator() {
       const L = this.layout, se = this.se;
+      let first, pred;
       if (L.mode === 'paginated') {
-        const col = this.page, secIdx = this.sectionAt(col);
-        const colLeft = L.mSide + col * L.step;
-        const off = this.findFirstTextAt(secIdx, rect => rect.left + se.scrollLeft >= colLeft - 2);
-        return { spine: secIdx, offset: off == null ? 0 : off };
+        // The first glyph whose middle lies on this page's column or beyond (viewport x): a glyph hanging a little into
+        // the gap still belongs to its own column — the rule colOfPoint() maps it back with.
+        const edge = L.mSide + this.page * L.step - L.gap / 2 - se.scrollLeft;
+        first = this.sectionAt(this.page);
+        pred = r => (r.left + r.right) / 2 >= edge;
+      } else {
+        // The first glyph whose middle lies below the line locatorToPos() puts a locator's line on.
+        first = this.sectionAt(se.scrollTop);
+        pred = r => (r.top + r.bottom) / 2 >= SCROLL_REF - 2;
       }
-      const y = se.scrollTop, secIdx = this.sectionAt(y + SCROLL_TOP);
-      const off = this.findFirstTextAt(secIdx, rect => rect.bottom + se.scrollTop >= y + SCROLL_TOP - 8);
-      return { spine: secIdx, offset: off == null ? 0 : off };
+      // A section with nothing left from here on (a blank last page, the space between chapters when scrolling) hands
+      // over to the next one — never back to its own start.
+      for (let i = first; i < this.secEls.length && i <= first + 8; i++) {
+        const hit = this.findFirstTextAt(i, pred);
+        if (hit) return Object.assign({ spine: i }, hit);
+      }
+      return { spine: first, offset: 0 };
     },
-    /** First character of the section whose rect satisfies `pred` — binary search inside the text node that straddles it. */
+    /** Text, and the boxes that hold a place of their own, in document order. */
+    _walker(sec) {
+      return document.createTreeWalker(sec, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, {
+        acceptNode: n => (n.nodeType === 3 || BOXES.test(n.localName)) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP,
+      });
+    },
+    /** The first thing in a section whose box satisfies `pred`: {offset} of a glyph — binary search inside the text node
+        that holds it — or {offset, box} for a picture, rule or table that comes first (`box` counts the boxes before it
+        at the same offset, which pictures in a row share). */
     findFirstTextAt(secIdx, pred) {
       const sec = this.secEls[secIdx]; if (!sec) return null;
-      const range = document.createRange();
-      const walker = document.createTreeWalker(sec, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, {
-        acceptNode: n => n.nodeType === 3 ? NodeFilter.FILTER_ACCEPT : (/^(img|svg|video|canvas|hr|table|figure)$/i.test(n.localName) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP),
-      });
-      let acc = 0, n;
-      const rectAt = (node, i) => { for (let k = i; k < Math.min(node.nodeValue.length, i + 4); k++) { range.setStart(node, k); range.setEnd(node, k + 1); const r = range.getClientRects()[0]; if (r && (r.width || r.height)) return r; } return null; };
+      const range = document.createRange(), walker = this._walker(sec);
+      // Character i is judged by the first glyph drawn at or after it: collapsed white space has no box of its own, and
+      // looking ahead keeps the search monotonic (a glyph further on is never on an earlier page).
+      const glyphAt = (node, i) => {
+        const end = Math.min(node.nodeValue.length, i + 64);
+        for (let k = i; k < end; k++) { range.setStart(node, k); range.setEnd(node, k + 1); const r = range.getClientRects()[0]; if (r && (r.width || r.height)) return r; }
+        return null;
+      };
+      let acc = 0, n, boxAt = -1, boxes = 0;
       while ((n = walker.nextNode())) {
         if (n.nodeType === 3) {
           const len = n.nodeValue.length;
@@ -499,35 +603,52 @@
             const rects = [...range.getClientRects()].filter(r => r.width > 0 || r.height > 0);
             if (rects.some(pred)) {
               let lo = 0, hi = len - 1;
-              while (lo < hi) { const mid = (lo + hi) >> 1; const r = rectAt(n, mid); if (!r || pred(r)) hi = mid; else lo = mid + 1; }
-              return acc + lo;
+              while (lo < hi) { const mid = (lo + hi) >> 1; const r = glyphAt(n, mid); if (!r || pred(r)) hi = mid; else lo = mid + 1; }
+              return { offset: acc + lo };
             }
           }
           acc += len;
         } else {
+          if (acc !== boxAt) { boxAt = acc; boxes = 0; }
+          const k = boxes++;
+          // A box counts by its start edge: a table or figure running on over the next page is not that page's place.
           const r = n.getBoundingClientRect();
-          if ((r.width > 0 || r.height > 0) && pred(r)) return acc;
+          if ((r.width > 0 || r.height > 0) && pred({ left: r.left, right: r.left, top: r.top, bottom: r.top })) return { offset: acc, box: k };
         }
       }
       return null;
     },
-    positionRect(secIdx, offset) {
+    /** The box of the first thing drawn at or after `offset` in a section: a glyph — or, for a locator that names a
+        picture, rule or table (`box`), that box. Past the section's text: its last glyph. */
+    positionRect(secIdx, offset, box) {
       const sec = this.secEls[secIdx]; if (!sec) return null;
-      const nodes = this.textNodes(sec);
-      let i = nodes.findIndex(t => offset < t.end);
-      if (i < 0) { if (!nodes.length) return this.firstBoxRect(sec); i = nodes.length - 1; }
-      const range = document.createRange();
-      let steps = 0;
-      for (let k = i; k < nodes.length && steps < 4000; k++) {
-        const t = nodes[k], text = t.node.nodeValue;
-        for (let c = k === i ? Math.max(0, offset - t.start) : 0; c < text.length && steps < 4000; c++, steps++) {
-          if (/\s/.test(text[c])) continue;
-          range.setStart(t.node, c); range.setEnd(t.node, c + 1);
-          const r = range.getClientRects()[0];
-          if (r && (r.width || r.height)) return r;
+      const media = box != null;
+      const range = document.createRange(), walker = this._walker(sec);
+      let acc = 0, n, steps = 0, k = 0;
+      while ((n = walker.nextNode()) && steps < 4000) {
+        if (n.nodeType === 3) {
+          const text = n.nodeValue, len = text.length;
+          if (!media && acc + len > offset && text.trim()) {
+            range.selectNodeContents(n);
+            if (range.getClientRects().length) {   // text drawn nowhere (hidden, a stray <style>) holds no place
+              for (let c = Math.max(0, offset - acc); c < len && steps < 4000; c++, steps++) {
+                if (/\s/.test(text[c])) continue;
+                range.setStart(n, c); range.setEnd(n, c + 1);
+                const r = range.getClientRects()[0];
+                if (r && (r.width || r.height)) return r;
+              }
+            }
+          }
+          acc += len;
+        } else if (media ? acc >= offset : acc > offset) {
+          steps++;
+          if (media && acc === offset && k++ < box) continue;
+          const r = n.getBoundingClientRect();
+          if (r.width > 0 || r.height > 0) return r;
         }
       }
-      return this.firstBoxRect(sec);
+      if (media) return this.positionRect(secIdx, offset);
+      return (offset > 0 && this.lastRectIn(sec)) || this.firstBoxRect(sec);
     },
     firstBoxRect(sec) { const img = sec.querySelector('img, svg, video'); return (img || sec).getBoundingClientRect(); },
     rangeFromOffsets(secIdx, start, end) {
@@ -791,12 +912,14 @@
     },
 
     /* ------------------------------------------------------------------ bookmarks */
+    /** Where a locator is: its page (column) index, or the scroll offset that puts its line on SCROLL_REF. */
     locatorToPos(loc) {
-      const L = this.layout; if (!L) return 0;
+      const L = this.layout; if (!L || !loc) return 0;
       const idx = U.clamp(loc.spine || 0, 0, this.secEls.length - 1);
-      const r = loc.offset ? this.positionRect(idx, loc.offset) : null;
+      const offset = loc.offset != null ? loc.offset : (loc.start || 0);
+      const r = offset || loc.box != null ? this.positionRect(idx, offset, loc.box) : null;
       if (L.mode === 'paginated') return r ? this.colOfPoint(r.left + this.se.scrollLeft) : (this.sectionStarts[idx] || 0);
-      return r ? Math.max(0, r.top + this.se.scrollTop - SCROLL_TOP + 12) : (this.sectionStarts[idx] || 0);
+      return r ? Math.max(0, r.top + this.se.scrollTop - SCROLL_REF) : (this.sectionStarts[idx] || 0);
     },
     recomputeBookmarkPositions() { for (const b of this.bookmarks) b.pos = this.locatorToPos(b); },
     bookmarkOnPage() {

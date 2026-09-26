@@ -88,8 +88,12 @@ final class LibraryModel {
     private(set) var stats: ReadingStats
 
     /// Moving to another shelf drops the selection: the table must not carry rows of one shelf into the next.
+    /// Leaving Home ends its edit mode.
     var sidebarSelection: SidebarItem? = .home {
-        didSet { if sidebarSelection != oldValue { selectedBookIDs = [] } }
+        didSet {
+            if sidebarSelection != oldValue { selectedBookIDs = [] }
+            if sidebarSelection != .home, editingHome { editingHome = false }
+        }
     }
     var searchText = ""
     var selectedBookIDs: Set<UUID> = []
@@ -99,7 +103,8 @@ final class LibraryModel {
     var reading: Book?
     var infoBook: Book?
     var editingGoals = false
-    var customizingHome = false
+    /// Home in edit mode: remove badges on the widgets and the widget gallery below them.
+    var editingHome = false
     var creatingCollection = false
     var renamingCollection: BookCollection?
     var importProgress: (done: Int, total: Int)?

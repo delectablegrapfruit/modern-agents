@@ -52,7 +52,6 @@ struct LibraryView: View {
         .searchable(text: $model.searchText, placement: .toolbar, prompt: "Search")
         .sheet(item: $model.infoBook) { book in InfoSheet(book: book) }
         .sheet(isPresented: $model.editingGoals) { GoalsSheet() }
-        .sheet(isPresented: $model.customizingHome) { HomeCustomizeSheet() }
         .sheet(isPresented: $model.creatingCollection) {
             NameSheet(title: "New Collection", prompt: "Name", initial: "", action: "Create") { model.addCollection(named: $0) }
         }
@@ -96,7 +95,7 @@ struct LibraryView: View {
                         Toggle(element.label, isOn: Binding(get: { model.settings.home.isShown(element) }, set: { model.setHomeElement(element, shown: $0) }))
                     }
                     Divider()
-                    Button("Customize Home…") { model.customizingHome = true }
+                    Button("Edit Widgets…") { model.editingHome = true }
                 } label: {
                     Label("Customize Home", systemImage: "slider.horizontal.3")
                 }

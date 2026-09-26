@@ -1,6 +1,7 @@
 import AppKit
 import CoreGraphics
 import SwiftUI
+import WebKit
 import BooksCore
 
 /// `BOOKS_SELFTEST=1 Books.app/Contents/MacOS/Books`: builds a book, adds it to a scratch library, opens it, turns
@@ -19,7 +20,7 @@ enum SelfTest {
                 fail("\(error)")
             }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 120) { fail("timed out") }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 180) { fail("timed out") }
     }
 
     private static func log(_ message: String) {
@@ -124,6 +125,8 @@ enum SelfTest {
         session.applySettings()
         try await sleep(0.5)
 
+        try await checkPlaceKept(session: session, model: model)
+
         session.close()
         try await sleep(0.4)
         guard model.reading == nil else { throw Failure("reader did not close") }
@@ -138,6 +141,85 @@ enum SelfTest {
         print("SELFTEST OK: \(Int(layout.total)) pages, \(layout.columns) column(s), wheel \(wheelReport.joined(separator: " · ")), position saved at \(Int(saved.percent))%; PDF checked; macOS \(ProcessInfo.processInfo.operatingSystemVersionString)")
         fflush(stdout)
         exit(0)
+    }
+
+    /// Appearance changes and resizes keep the place: through any number of them in a row the same character is
+    /// reported and stays on screen, the page comes back exactly when the settings do, and a page turn moves on.
+    @MainActor
+    private static func checkPlaceKept(session: ReaderSession, model: LibraryModel) async throws {
+        session.goToFraction(0.41)
+        try await sleep(0.6)
+        let home = session.position
+        guard let kept = home.locator else { throw Failure("no reading position to keep") }
+        let settingsBefore = model.settings
+        let viewBefore = session.view
+        func onScreen() async throws -> Bool {
+            let js = """
+            (function () { var c = window.reader._core, L = c.layout, p = c.locatorToPos({ spine: \(kept.spine), offset: \(kept.offset) });
+              return L.mode === 'paginated' ? (p >= c.page && p < c.page + L.cols) : (p >= c.currentY() - 2 && p <= c.currentY() + c.se.clientHeight * 0.8); })()
+            """
+            return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Bool, Error>) in
+                session.webView.evaluateJavaScript(js) { value, error in
+                    if let error { continuation.resume(throwing: error) } else { continuation.resume(returning: (value as? Bool) ?? false) }
+                }
+            }
+        }
+        func settle(_ step: String) async throws {
+            try await sleep(0.6)
+            guard session.position.locator == kept else {
+                throw Failure("\(step): the place moved from \(kept) to \(session.position.locator.map { "\($0)" } ?? "nothing")")
+            }
+            guard try await onScreen() else {
+                throw Failure("\(step): the kept place is off screen (page \(Int(session.position.page) + 1) of \(Int(session.position.total)))")
+            }
+        }
+        let changes: [(String, (inout ReaderSettings) -> Void)] = [
+            ("text 160%", { $0.fontSize = 160 }), ("text 70%", { $0.fontSize = 70 }), ("text 250%", { $0.fontSize = 250 }),
+            ("loose lines", { $0.lineHeight = .loose }), ("narrow text", { $0.textWidth = .narrow }), ("full width", { $0.textWidth = .full }),
+            ("Georgia", { $0.font = .georgia }), ("justified", { $0.justify = true }), ("no hyphenation", { $0.hyphenate = false }),
+            ("Bold theme", { $0.theme = .bold; $0.autoNight = false }),
+        ]
+        for (name, change) in changes {
+            var settings = model.settings
+            change(&settings.reader)
+            model.settings = settings
+            session.applySettings()
+            try await settle(name)
+        }
+        for spread in [Spread.one, .two] {
+            session.setView { $0.spread = spread }
+            session.applySettings()
+            try await settle("\(spread.rawValue) page(s) a screen")
+        }
+        session.setView { $0.layout = .scroll }
+        session.applySettings()
+        try await settle("vertical scrolling")
+        var settings = model.settings
+        settings.reader.fontSize = 130
+        model.settings = settings
+        session.applySettings()
+        try await settle("vertical scrolling at 130%")
+        session.setView { $0.layout = .paginated }
+        session.applySettings()
+        try await settle("pages again")
+        if let window = session.webView.window, !window.styleMask.contains(.fullScreen) {
+            let frame = window.frame
+            window.setFrame(frame.insetBy(dx: 90, dy: 50), display: true)
+            try await settle("a smaller window")
+            window.setFrame(frame, display: true)
+            try await settle("the window as it was")
+        }
+        model.settings = settingsBefore
+        session.setView { $0 = viewBefore }
+        session.applySettings()
+        try await settle("settings put back")
+        guard session.position.page == home.page else {
+            throw Failure("settings put back, but the reader is on page \(Int(session.position.page) + 1), not \(Int(home.page) + 1)")
+        }
+        session.next()
+        try await sleep(0.7)
+        guard session.position.page > home.page, session.position.locator != kept else { throw Failure("a page turn after the changes did not move on") }
+        log("the place held through \(changes.count + 7) appearance changes and resizes, came back to page \(Int(home.page) + 1) exactly, and a page turn moved on")
     }
 
     /// A book whose chapters sit inside wrappers that cannot fragment (a scroll container around an atomic inline
