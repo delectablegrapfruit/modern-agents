@@ -451,12 +451,12 @@
       this.status.replaceChildren(...[
         h('span', null, 'Lines ', h('b', null, fmtInt(s.lines))),
         h('span', null, 'Score ', h('b', null, fmtInt(s.score))),
-        s.combo > 0 ? h('span', null, 'Combo ', h('b', null, s.combo)) : null,
-        h('span', null, 'Pieces ', h('b', null, fmtInt(s.pieces))),
+        h('span', { class: s.combo > 0 ? '' : 'slot-off' }, 'Combo ', h('b', null, String(Math.max(0, s.combo)))),
+        h('span', { class: 'opt' }, 'Pieces ', h('b', null, fmtInt(s.pieces))),
         h('button', { class: 'btn sm', title: 'Start a fresh board', onclick: () => {
           if (this.game.board.isEmpty()) return this.newBoard();
           UI.confirm('New board?', 'Clear this board and start fresh. Lines you cleared stay banked.', 'New board', () => this.newBoard());
-        } }, '↺ New board')].filter(Boolean));
+        } }, '↺', h('span', { class: 'lbl' }, ' New board'))].filter(Boolean));
     }
 
     renderItems() {
@@ -588,12 +588,13 @@
       super(app, 'cv-puzzle', 'puz-overlay');
       this.puzzle = null;
       this.el = {
-        diff: document.getElementById('puz-diff'), id: document.getElementById('puz-id'), seed: document.getElementById('puz-seed'),
+        diff: document.getElementById('puz-diff'), id: document.getElementById('puz-id'), seed: document.getElementById('puz-seed'), save: document.getElementById('puz-save'),
         goal: document.getElementById('puz-goal'), actions: document.getElementById('puz-actions'),
       };
       document.getElementById('puz-seedbtn').addEventListener('click', () => this.askSeed());
       document.getElementById('puz-daily').addEventListener('click', () => this.loadDaily());
       document.getElementById('puz-history').addEventListener('click', () => this.openHistory());
+      this.el.save.addEventListener('click', () => { const p = this.puzzle; if (p) this.toggleSaved(p.seed, { diff: p.diff, title: p.title, mods: p.mods, number: this.meta.number, daily: this.meta.daily }); });
       this.el.seed.addEventListener('click', () => { if (this.puzzle) { UI.copyText(this.puzzle.seed); toast('Seed ' + this.puzzle.seed + ' copied', 'good'); } });
       this.renderDiff();
     }
@@ -792,32 +793,63 @@
 
     historyEntry() { return this.puzzle ? this.ps.history.find((e) => e.seed === this.puzzle.seed) : null; }
 
-    openHistory() {
-      let filter = 'all', handle = null;
+    isSaved(seed) { return this.ps.saved.some((e) => e.seed === seed); }
+
+    /** Saves (or unsaves) a seed, with enough to list it without generating the puzzle. */
+    toggleSaved(seed, info) {
+      const i = this.ps.saved.findIndex((e) => e.seed === seed);
+      if (i >= 0) { this.ps.saved.splice(i, 1); toast('Seed ' + seed + ' removed from Saved', null, 1400); }
+      else {
+        this.ps.saved.unshift({ seed, diff: info.diff, title: info.title, mods: info.mods || [], number: info.number || null, daily: info.daily || null, at: Date.now() });
+        toast('Seed ' + seed + ' saved', 'good', 1400);
+      }
+      this.app.store.touch();
+      this.app.sound.play('hold');
+      this.renderSaveBtn();
+    }
+
+    renderSaveBtn() {
+      const on = this.puzzle && this.isSaved(this.puzzle.seed);
+      this.el.save.textContent = on ? '★' : '☆';
+      this.el.save.classList.toggle('on', !!on);
+      this.el.save.title = on ? 'Saved — click to remove' : 'Save this seed (find it under History ▸ Saved)';
+    }
+
+    openHistory(start) {
+      let filter = start || 'all', handle = null;
       const list = h('div', { class: 'hist' });
       const draw = () => {
-        const rows = this.ps.history.filter((e) => filter === 'all' || (filter === 'solved' ? e.solved : !e.solved));
+        const hist = this.ps.history, byseed = new Map(hist.map((e) => [e.seed, e]));
+        const rows = filter === 'saved'
+          ? this.ps.saved.map((s) => Object.assign({ saved: true, attempts: 0 }, s, byseed.get(s.seed) ? { solved: byseed.get(s.seed).solved, ms: byseed.get(s.seed).ms, attempts: byseed.get(s.seed).attempts } : {}))
+          : hist.filter((e) => filter === 'all' || (filter === 'solved' ? e.solved : !e.solved));
         list.replaceChildren(...(rows.length ? rows.map((e) => {
           const d = Puzzles.DIFFS[e.diff];
-          const label = e.daily ? 'Daily ' + d.name + ' · ' + e.daily : e.number ? d.name + ' #' + e.number : d.name + ' · seed';
+          const label = e.daily ? 'Daily ' + e.daily : e.number ? d.name + ' #' + e.number : d.name;
           const when = new Date(e.at);
+          const saved = this.isSaved(e.seed);
+          const status = e.solved ? '✓ ' + (e.ms ? fmtClock(e.ms) : 'solved') : e.attempts ? '✗ unsolved' : 'not played';
+          const tries = e.attempts ? e.attempts + (e.attempts === 1 ? ' try' : ' tries') : null;
+          const date = when.toLocaleDateString([], { month: 'short', day: 'numeric' });
           return h('div', { class: 'hist-row' + (e.solved ? ' solved' : '') },
-            h('span', { class: 'dot', style: { background: d.color } }),
+            h('span', { class: 'dot', style: { background: d.color }, title: d.name }),
             h('div', { class: 'grow' },
-              h('div', { class: 't' }, label, h('span', { class: 'sub' }, ' · ' + e.title)),
-              h('div', { class: 'd' }, (e.solved ? '✓ solved' + (e.ms ? ' in ' + fmtClock(e.ms) : '') : '✗ unsolved') + ' · ' + e.attempts + (e.attempts === 1 ? ' try' : ' tries') + ' · ' + when.toLocaleDateString() + ' ' + when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                e.mods.length ? ' · ' + e.mods.map((m) => Puzzles.MODS[m].icon).join(' ') : '')),
-            h('button', { class: 'chip', title: 'Copy seed', onclick: () => { UI.copyText(e.seed); toast('Seed ' + e.seed + ' copied', 'good', 1400); } }, e.seed),
-            h('button', { class: 'btn sm' + (e.solved ? '' : ' primary'), onclick: () => { handle.close(); this.load(e.seed, { number: e.number, daily: e.daily }); } }, e.solved ? 'Replay' : 'Try again'));
-        }) : [h('p', null, filter === 'all' ? 'No puzzles yet — every one you open lands here.' : 'Nothing here yet.')]));
+              h('div', { class: 't', title: label + ' · ' + e.title }, label, h('span', { class: 'sub' }, ' · ' + e.title)),
+              h('div', { class: 'd' }, [status, tries, date].filter(Boolean).join(' · '),
+                e.mods && e.mods.length ? h('span', { class: 'mods' }, ' ' + e.mods.map((m) => (Puzzles.MODS[m] || { icon: '' }).icon).join(' ')) : null)),
+            h('button', { class: 'seedchip', title: 'Copy seed', onclick: () => { UI.copyText(e.seed); toast('Seed ' + e.seed + ' copied', 'good', 1400); } }, e.seed),
+            h('button', { class: 'icon-btn star' + (saved ? ' on' : ''), title: saved ? 'Unsave' : 'Save this seed', onclick: () => { this.toggleSaved(e.seed, e); draw(); } }, saved ? '★' : '☆'),
+            h('button', { class: 'icon-btn play', title: e.solved ? 'Replay' : 'Play', onclick: () => { handle.close(); this.load(e.seed, { number: e.number, daily: e.daily }); } }, '▶'));
+        }) : [h('p', { class: 'empty' }, filter === 'saved' ? 'No saved seeds yet — press ☆ on a puzzle or a row to keep it here.' : filter === 'all' ? 'No puzzles yet — every one you open lands here.' : 'Nothing here yet.')]));
       };
-      const seg = h('div', { class: 'seg' }, [['all', 'All'], ['unsolved', 'Unsolved'], ['solved', 'Solved']].map(([k, l]) => {
+      const tabs = [['all', 'All'], ['unsolved', 'Unsolved'], ['solved', 'Solved'], ['saved', '★ Saved']];
+      const seg = h('div', { class: 'seg' }, tabs.map(([k, l]) => {
         const b = h('button', { 'aria-pressed': String(k === filter), onclick: () => { filter = k; seg.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); draw(); } }, l);
         return b;
       }));
       const total = this.ps.history.length, solved = this.ps.history.filter((e) => e.solved).length;
       draw();
-      handle = UI.openModal({ title: 'Puzzle history', width: 520, body: h('div', null, h('div', { class: 'hist-head' }, seg, h('span', null, solved + ' of ' + total + ' solved')), list) });
+      handle = UI.openModal({ title: 'Puzzle history', width: 520, cls: 'modal-hist', body: h('div', { class: 'hist-wrap' }, h('div', { class: 'hist-head' }, seg, h('span', null, solved + '/' + total + ' solved')), list), onClose: () => this.renderSaveBtn() });
     }
 
     buyHint() {
@@ -897,6 +929,7 @@
       const solved = this.ps.solved[p.seed];
       this.el.id.replaceChildren(label, ' ', h('span', { class: 'sub' }, '· ' + p.title + (solved ? ' ✓' : '')));
       this.el.seed.textContent = p.seed;
+      this.renderSaveBtn();
       // Every seed is some date's Daily.
       const dd = Puzzles.dailyDateOf(p.seed);
       this.el.seed.title = 'Copy this seed' + (dd && dd.key ? ' · the Daily for ' + dd.key : dd ? ' · the Daily in ' + dd.years.toLocaleString() + ' years' : '');

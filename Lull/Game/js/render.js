@@ -749,13 +749,15 @@
         this.alive = true;
       } else this.alive = false;
       if (this.view.wrap) {
+        // Wraparound: the two side walls are portals — a still glow on each, with ⇆ at mid-height.
         ctx.save();
-        ctx.strokeStyle = look.theme.accent; ctx.lineWidth = 3; ctx.setLineDash([4, 5]); ctx.lineDashOffset = -(now / 60) % 9;
-        const rot = this.view.rot;
-        ctx.beginPath();
-        if (rot % 180 === 0) { ctx.moveTo(board.x - 4, board.y); ctx.lineTo(board.x - 4, board.y + board.h); ctx.moveTo(board.x + board.w + 4, board.y); ctx.lineTo(board.x + board.w + 4, board.y + board.h); }
-        else { ctx.moveTo(board.x, board.y - 4); ctx.lineTo(board.x + board.w, board.y - 4); ctx.moveTo(board.x, board.y + board.h + 4); ctx.lineTo(board.x + board.w, board.y + board.h + 4); }
-        ctx.stroke();
+        const acc = look.theme.accent, vert = this.view.rot % 180 === 0, glow = Math.max(6, s * 0.35);
+        const band = (x, y, w, h, x0, y0, x1, y1) => { const gr = ctx.createLinearGradient(x0, y0, x1, y1); gr.addColorStop(0, rgba(acc, 0.45)); gr.addColorStop(1, rgba(acc, 0)); ctx.fillStyle = gr; ctx.fillRect(x, y, w, h); };
+        if (vert) { band(board.x, board.y, glow, board.h, board.x, 0, board.x + glow, 0); band(board.x + board.w - glow, board.y, glow, board.h, board.x + board.w, 0, board.x + board.w - glow, 0); }
+        else { band(board.x, board.y, board.w, glow, 0, board.y, 0, board.y + glow); band(board.x, board.y + board.h - glow, board.w, glow, 0, board.y + board.h, 0, board.y + board.h - glow); }
+        ctx.fillStyle = acc; ctx.font = '700 ' + Math.max(10, Math.min(14, s * 0.55)) + 'px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        if (vert) { ctx.fillText('⇆', board.x - glow * 0.9, board.y + board.h / 2); ctx.fillText('⇆', board.x + board.w + glow * 0.9, board.y + board.h / 2); }
+        else { ctx.fillText('⇅', board.x + board.w / 2, board.y - glow * 0.9); ctx.fillText('⇅', board.x + board.w / 2, board.y + board.h + glow * 0.9); }
         ctx.restore();
       }
 
@@ -844,7 +846,7 @@
           const [sx, sy0] = this.toScreen(x, top), [, sy1] = this.toScreen(x, top - result.dropDist);
           this.fx.streak(sx, sy0, sy1, s, pieceColor);
         }
-        this.fx.shake = Math.max(this.fx.shake, Math.min(3, result.dropDist * 0.25));
+        this.fx.shake = Math.max(this.fx.shake, Math.min(1.5, result.dropDist * 0.12));
       }
       if (!reduced && result.cells && result.cells.length && !result.lines) {
         // Dust where it landed.
@@ -866,7 +868,7 @@
             this.fx.ring((ax + bx) / 2 + s / 2, (ay + by) / 2 + s / 2, look.theme.accent, s * this.game.w * 0.7);
           }
         }
-        if (!reduced) this.fx.shake = Math.min(6, 1.5 * result.lines);
+        if (!reduced) this.fx.shake = Math.max(this.fx.shake, Math.min(2.5, 0.6 * result.lines));
         const b = this.lay.board;
         if (this.showBank) this.fx.text('+' + result.lines + ' ◆', b.x + b.w / 2, b.y + b.h * 0.55, '#8fe3ff', Math.max(12, Math.min(18, s * 0.75)));
         const label = labelFor(result);

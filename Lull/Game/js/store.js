@@ -135,7 +135,7 @@
       },
       tab: 'play',
       free: null,
-      puzzle: { diff: 'E', next: { E: 1, M: 1, H: 1 }, current: null, solved: {}, history: [] },
+      puzzle: { diff: 'E', next: { E: 1, M: 1, H: 1 }, current: null, solved: {}, history: [], saved: [] },
       factory: Factory.create(),
       stats: {
         sessions: 0, timeMs: { play: 0, classic: 0, puzzle: 0, factory: 0, total: 0 },
@@ -178,6 +178,7 @@
       if (!COSMETICS[k][st.equipped[k]] || !st.owned[k].includes(st.equipped[k])) st.equipped[k] = free;
     }
     if (!Array.isArray(st.puzzle.history)) st.puzzle.history = [];
+    if (!Array.isArray(st.puzzle.saved)) st.puzzle.saved = [];
     st.v = SAVE_VERSION;
     return st;
   }

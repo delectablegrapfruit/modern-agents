@@ -63,7 +63,7 @@
       class: 'btn ' + (b.kind || ''), disabled: b.disabled,
       onclick: () => { if (b.onClick && b.onClick() === false) return; close(); },
     }, b.label))) : null;
-    const modal = h('div', { class: 'modal', role: 'dialog', style: opts.width ? { width: 'min(' + opts.width + 'px, calc(100% - 24px))' } : null },
+    const modal = h('div', { class: 'modal' + (opts.cls ? ' ' + opts.cls : ''), role: 'dialog', style: opts.width ? { width: 'min(' + opts.width + 'px, calc(100% - 24px))' } : null },
       h('header', null, opts.title || '', h('button', { class: 'icon-btn x', html: ICONS.close, title: 'Close', onclick: close })),
       h('div', { class: 'body' }, opts.body),
       footer);

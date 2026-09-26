@@ -73,6 +73,15 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   check('held ↓ lowers without setting', lowered.rested);
   check('a fresh ↓ on the stack sets the piece', lowered.set);
 
+  // Nothing in the status bar may move the board (a combo appearing used to wrap it onto a second line).
+  const steady = await ev(() => {
+    const m = Lull.app.modes.play, c = m.canvas.getBoundingClientRect();
+    m.game.s.combo = 7; m.game.s.score = 123456789; m.renderStatus();
+    const c2 = m.canvas.getBoundingClientRect();
+    m.game.s.combo = -1; m.renderStatus();
+    return c.height === c2.height && c.width === c2.width;
+  });
+  check('a combo (or a long score) never resizes the board', steady);
   // ---- items ---------------------------------------------------------------------------------------------------------
   console.log('items');
   await ev(() => { const s = Lull.app.store; s.state.lines = 20000; Lull.app.refreshWallet(); for (const id of Lull.ITEM_ORDER) s.buyItem(id, 2); Lull.app.modes.play.renderItems(); });
@@ -292,8 +301,27 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await page.click('#puz-history');
   const histRows = await page.$$eval('.hist-row', (r) => r.length);
   check('puzzle history lists what was played', histRows >= 36, histRows + ' rows');
+  const fits = await ev(() => {
+    const m = document.querySelector('.modal-hist').getBoundingClientRect(), app = document.getElementById('app').getBoundingClientRect();
+    const rows = Array.from(document.querySelectorAll('.hist-row'));
+    return { inWindow: m.top >= app.top && m.bottom <= app.bottom + 0.5, oneLine: rows.every((r) => r.getBoundingClientRect().height < 48 && r.scrollWidth <= r.clientWidth + 1), scrolls: document.querySelector('.hist').scrollHeight > document.querySelector('.hist').clientHeight };
+  });
+  check('history fits the window: compact rows, a scrolling list', fits.inWindow && fits.oneLine && fits.scrolls, JSON.stringify(fits));
   await shot('23-history');
+  // Save a seed from a row, then find it under Saved.
+  const rowSeed = await page.textContent('.hist-row .seedchip');
+  await page.click('.hist-row .star');
+  await page.click('.modal-hist .seg button:nth-child(4)');
+  check('a saved seed shows under Saved', (await page.$$eval('.hist-row .seedchip', (r) => r.map((x) => x.textContent))).includes(rowSeed));
+  await shot('24-saved');
   await page.keyboard.press('Escape');
+  // And the current puzzle's ☆ in the header.
+  const was = await ev(() => { const m = Lull.app.modes.puzzle; return m.isSaved(m.puzzle.seed); });
+  await page.click('#puz-save');
+  const savedNow = await ev(() => { const m = Lull.app.modes.puzzle; return [m.isSaved(m.puzzle.seed), document.getElementById('puz-save').textContent]; });
+  check('☆ / ★ in the header saves and unsaves the puzzle in play', savedNow[0] === !was && savedNow[1] === (was ? '☆' : '★'), JSON.stringify(savedNow));
+  await page.click('#puz-save');
+  check('and back', await ev((w) => { const m = Lull.app.modes.puzzle; return m.isSaved(m.puzzle.seed) === w; }, was));
 
   // Retry, undo and failing.
   await ev(() => Lull.app.modes.puzzle.loadNumbered('H', 3));
@@ -433,6 +461,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
       await ev((t) => Lull.app.setTab(t), tab);
       await page.waitForTimeout(150);
       const overflow = await ev(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+      if (tab === 'play' || tab === 'classic') check(w + '×' + hgt + ' ' + tab + ' status bar shows everything', await ev((t) => { const b = document.getElementById(t === 'play' ? 'play-status' : 'classic-status'); return b.scrollWidth <= b.clientWidth + 1; }, tab));
       check(w + '×' + hgt + ' ' + tab + ' fits', !overflow);
       await shot('70-' + w + 'x' + hgt + '-' + tab);
     }

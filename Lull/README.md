@@ -29,14 +29,15 @@ is solvable, and Hard ones need tucks and spins. Goals: clear the board, clear N
 Solving pays lines (more on the first try, double for the Daily). Dailies are the same in every copy of Lull: day
 numbers run through a fixed, keyed shuffle of all 2³² seeds per difficulty, so every date has one seed and every seed
 belongs to exactly one date (hover a seed to see which). That is 4,294,967,296 seeds per difficulty, 12,884,901,888 in all. History lists every puzzle you opened — solved or
-not, tries, time — with its seed and a Replay button. Solutions only ever need turns a person expects (in place, or
+not, tries, time — with its seed and a ▶ button; ☆ saves a seed (from a row, or the ☆ beside History for the puzzle
+in play), and History ▸ Saved keeps them. Solutions only ever need turns a person expects (in place, or
 nudged sideways off a wall), never SRS kicks that hop a piece through a gap. Wildcards:
 
 | Wildcard | |
 |---|---|
 | Big Minos | every piece is 2×2 per block, moving one cell at a time |
 | Odd Shapes | trominoes and all twelve pentominoes |
-| Wraparound | the side walls are portals |
+| Wraparound | the side walls are portals (they glow, with ⇆) |
 | Rigid | no turning; each piece arrives already facing its way |
 | Heavy | no lowering, hard drops only |
 | Inverted Controls | left is right and turns are reversed |
