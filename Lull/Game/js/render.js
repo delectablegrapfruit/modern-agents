@@ -804,17 +804,6 @@
 
       this.drawSide(ctx, now);
       this.fx.draw(ctx);
-      if (this.turnHint && this.turnAt) {
-        // The way a right-click will turn the piece: a small arc beside the pointer.
-        const [px, py] = this.turnAt, r = 6, cw = this.turnHint === 'cw', x = px + 14, y = py - 12;
-        ctx.save();
-        ctx.strokeStyle = look.theme.accent; ctx.fillStyle = look.theme.accent; ctx.lineWidth = 2; ctx.globalAlpha = 0.85;
-        const a0 = cw ? -Math.PI * 0.9 : -Math.PI * 0.1, a1 = cw ? Math.PI * 0.35 : Math.PI * 1.35;
-        ctx.beginPath(); ctx.arc(x, y, r, a0, a1, !cw); ctx.stroke();
-        const ex = x + Math.cos(a1) * r, ey = y + Math.sin(a1) * r, t = a1 + (cw ? Math.PI / 2 : -Math.PI / 2);
-        ctx.beginPath(); ctx.moveTo(ex + Math.cos(t) * 4, ey + Math.sin(t) * 4); ctx.lineTo(ex + Math.cos(t + 2.3) * 4, ey + Math.sin(t + 2.3) * 4); ctx.lineTo(ex + Math.cos(t - 2.3) * 4, ey + Math.sin(t - 2.3) * 4); ctx.closePath(); ctx.fill();
-        ctx.restore();
-      }
       this.dirty = false;
     }
 

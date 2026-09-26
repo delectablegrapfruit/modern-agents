@@ -29,7 +29,7 @@
     ['⌘1 – ⌘6', 'Switch tabs'],
     ['Mouse: point', 'Slide the piece left and right'],
     ['Left click', 'Drop it straight down (anywhere on the board side)'],
-    ['Right click', 'Turn: pointer on the right half of the piece clockwise, left half counter-clockwise (the arrow shows which)'],
+    ['Right click', 'Turn clockwise'],
     ['Wheel', 'Lower one row (never sets the piece)'],
     ['Click HOLD', 'Hold, or swap back'],
   ];

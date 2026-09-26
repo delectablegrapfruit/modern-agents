@@ -22,9 +22,9 @@ lines (guideline speed curve), half-second lock delay, soft and hard drop, hold 
 score. Lines you clear still bank as ◆. Music: Korobeiniki (the public-domain folk tune) in its own key, A minor,
 arranged soft as a two-minute suite — electric piano over a round bass and a quiet pad, a soft beat in places, a
 breathy lead for the bridge and an interlude with a counter-melody; it keeps its tempo and only quickens as the stack
-nears the top. A whispering announcer (a soft female voice, pre-rendered, so it is the same everywhere and needs
-nothing installed) calls singles, doubles, triples, tetrises, T-spins, back-to-backs, perfect clears, the next level and game
-over. Both toggle under the board or in Settings ▸ Sound. P pauses; ‹ Relaxed, another tab or another window pauses
+nears the top. The Tetris Worlds announcer (her lines cut from the game's recording by `scripts/splice-voice.py`, embedded)
+calls singles, doubles, triples, tetrises, T-spin singles/doubles/triples, back-to-backs, "amazing" for a perfect
+clear, "rank up" for a new level and "top out" at the end. Both toggle under the board or in Settings ▸ Sound. P pauses; ‹ Relaxed, another tab or another window pauses
 too.
 
 **Puzzles** — procedurally generated, infinite, short, in Easy, Medium and Hard. Each has a seed (`M-3K7Q2XA`): the
@@ -38,7 +38,9 @@ belongs to exactly one date (hover a seed to see which). That is 4,294,967,296 s
 not, tries, time — with its seed and a ▶ button; ☆ saves a seed (from a row, or the ☆ beside History for the puzzle
 in play), and History ▸ Saved keeps them. Solutions only ever need turns a person expects (in place, or
 nudged sideways off a wall), never SRS kicks that hop a piece through a gap — and only clockwise ones, so a single
-turn button (Up, or a right-click) solves every puzzle. Wildcards:
+turn button (Up, or a right-click) solves every puzzle. Settings ▸ Controls ▸ Counter-clockwise puzzles (off by
+default) switches new puzzles to the both-ways seeds (`ES-`, `MS-`, `HS-` + the same seven symbols, a different
+puzzle), each built so it cannot be solved clockwise-only. Wildcards:
 
 | Wildcard | |
 |---|---|
@@ -54,6 +56,7 @@ turn button (Up, or a right-click) solves every puzzle. Wildcards:
 | Blind Queue | no preview |
 | Hold | puzzles have no hold slot unless this is on — and then the queue arrives out of order, and a search proves the puzzle cannot be solved without holding |
 | Monochrome | as named |
+| Both Ways | only on `S` seeds: a spot needs Z (counter-clockwise) or A (half turn) |
 
 **Factory** — a small idler built from the same parts as the rest of Lull. Buy presses that stamp minos, from
 monominoes to decominoes; each earns credits a second and doubles its output at 10, 25, 50, 100, 200 and 400
@@ -104,7 +107,7 @@ and first-try rates by difficulty and wildcard, factory quality control, items b
 | P | pause Classic |
 | mouse: point | slide the piece left and right (at its height; sticky near column edges; mirrored under Inverted Controls; keys keep working while the pointer rests there) |
 | left click | drop it straight down — anywhere on the board side (a slip in the last 0.1 s before the click is ignored) |
-| right click | turn — with the pointer on the right half of the piece's column clockwise, on the left half counter-clockwise (a small arrow shows which) |
+| right click | turn clockwise |
 | wheel | lower one row (never sets the piece) |
 | click HOLD | hold, or swap back |
 
@@ -132,10 +135,12 @@ first time. The save lives in `~/Library/Application Support/Lull/save.json` (Se
 |---|---|
 | `Game/` | the game: `index.html`, `css/`, and `js/` — `pieces` (SRS tetrominoes, pentominoes, big and custom shapes, polyomino enumeration), `board`, `engine` (the floating-piece rules and every item), `puzzlegen` (seeds, wildcards, reverse construction, reachability search, forward verification), `factory` (presses, milestones, crates, the belt, offline time), `store` (save, catalog, stats), `achievements`, `render` (canvas: skins, frames, effects, item animations, rotated views), `factoryview` (the belt, drawn like the board), `modes`, `ui`, `app` |
 | `Sources/Lull/` | the macOS shell: a borderless `NSPanel` (floating, all Spaces, edge-resizable, draggable by the page's title bar) around a transparent `WKWebView`, a blur for the Glass background, the save file, the ⌥⌘L hot key, and a self-test CI runs |
-| `scripts/` | `make-app.sh`, `icon.swift`, `test.cjs`, `browser-test.cjs`, `make-voice.py` (renders the whispered announcer) |
+| `scripts/` | `make-app.sh`, `icon.swift`, `test.cjs`, `browser-test.cjs`, `splice-voice.py` (cuts the announcer's lines from a recording), `make-voice.py` (the older synthesized whisper) |
 
 ## Credits
 
-The Classic announcer's voice is Piper's LibriTTS voice (speaker 6), whispered by `scripts/make-voice.py`. LibriTTS:
-H. Zen et al., 2019, http://www.openslr.org/60/ — CC BY 4.0. Korobeiniki is a 19th-century folk song in the public
+The Classic announcer's lines are cut from the announcer of *Tetris Worlds* (2001); that recording belongs to its
+rights holders (The Tetris Company / THQ) and is not covered by this project's terms. `scripts/make-voice.py` can
+render a freely licensed stand-in (Piper's LibriTTS voice, CC BY 4.0: H. Zen et al., 2019, http://www.openslr.org/60/).
+Korobeiniki is a 19th-century folk song in the public
 domain.

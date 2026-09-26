@@ -179,14 +179,6 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   const rot0 = await ev(() => Lull.app.modes.play.game.piece.rot);
   await page.mouse.click(pt[0], pt[1], { button: 'right' });
   check('right-click turns', (await ev(() => Lull.app.modes.play.game.piece.rot)) === (rot0 + 1) % 4);
-  // Pointer on the left half of the piece's column: right-click turns the other way, and the arrow says so.
-  const s1 = await ev(() => Lull.app.modes.play.view.lay.s);
-  await page.mouse.move(pt[0] - s1 * 0.3, pt[1]);
-  check('the turn arrow shows counter-clockwise on the left half', (await ev(() => Lull.app.modes.play.view.turnHint)) === 'ccw');
-  const rot1 = await ev(() => Lull.app.modes.play.game.piece.rot);
-  await page.mouse.click(pt[0] - s1 * 0.3, pt[1], { button: 'right' });
-  check('right-click on the left half turns counter-clockwise', (await ev(() => Lull.app.modes.play.game.piece.rot)) === (rot1 + 3) % 4);
-  await page.mouse.move(pt[0], pt[1]);
   const y0w = await ev(() => Lull.app.modes.play.game.piece.y), pw = await ev(() => Lull.app.modes.play.game.s.pieces);
   await page.mouse.wheel(0, 120);
   await page.waitForTimeout(80);
@@ -288,10 +280,10 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   check('ten lines: level 2', await ev(() => Lull.app.modes.classic.level === 2));
   await page.keyboard.press('KeyP');
   await page.waitForTimeout(100);
-  const ann = await ev(() => { const A = Lull.Announcer; return [A.phrase({ lines: 1 }), A.phrase({ lines: 4, b2b: true }), A.phrase({ tspin: true, lines: 2 }), A.phrase({ mini: true, lines: 0 }), A.phrase({ lines: 0 }), A.phrase({ lines: 2, perfect: true }, 3)]; });
-  check('the announcer knows its lines', JSON.stringify(ann) === JSON.stringify([['single'], ['b2b', 'tetris'], ['tspin', 'double'], ['tspin', 'mini'], null, ['double', 'perfect', 'levelup']]), JSON.stringify(ann));
+  const ann = await ev(() => { const A = Lull.Announcer; return [A.phrase({ lines: 1 }), A.phrase({ lines: 4, b2b: true }), A.phrase({ tspin: true, lines: 2 }), A.phrase({ tspin: true, lines: 3 }), A.phrase({ mini: true, lines: 0 }), A.phrase({ lines: 0 }), A.phrase({ lines: 2, perfect: true }, 3)]; });
+  check('the announcer knows its lines', JSON.stringify(ann) === JSON.stringify([['single'], ['b2b', 'tetris'], ['tspin_double'], ['tspin', 'triple'], ['tspin'], null, ['double', 'perfect', 'levelup']]), JSON.stringify(ann));
   const clips = await ev(async () => { const out = {}; for (const k of Object.keys(Lull.VOICE_CLIPS)) { const b = await Lull.Announcer.decode(k); out[k] = b ? +b.duration.toFixed(2) : 0; } return out; });
-  check('every whispered clip decodes (0.3–2 s)', Object.values(clips).length === 10 && Object.values(clips).every((d) => d > 0.3 && d < 2), JSON.stringify(clips));
+  check('every announcer clip decodes (0.3–2 s)', Object.values(clips).length === 11 && ['single', 'double', 'triple', 'tetris', 'tspin', 'tspin_single', 'tspin_double', 'b2b', 'perfect', 'levelup', 'gameover'].every((k) => clips[k] > 0) && Object.values(clips).every((d) => d > 0.3 && d < 2), JSON.stringify(clips));
   check('the remix is a long suite', await ev(() => Lull.SONG.bars.length >= 48 && Lull.SONG.loopFrom === 4));
     check('P pauses (and the music stops)', await ev(() => Lull.app.modes.classic.paused && !Lull.Music.playing));
   await shot('14-classic-paused');

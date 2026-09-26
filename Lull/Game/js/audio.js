@@ -549,9 +549,9 @@
   // ---- the announcer (Classic) ------------------------------------------------------------------------------------
 
   /**
-   * A whisper calls out the big moments — "single", "double", "triple", "tetris", "T-spin", "mini", "back to back",
-   * "perfect clear", "next level", "game over". The clips are pre-rendered (scripts/make-voice.py: a soft female
-   * LibriTTS voice, whispered) and embedded, so it sounds the same on every machine, offline.
+   * The announcer calls out the big moments — "single", "double", "triple", "tetris", "T-spin single/double",
+   * "back to back", and "amazing" for a perfect clear, "rank up" for a new level, "top out" at the end. The clips are
+   * cut from the Tetris Worlds announcer (scripts/splice-voice.py) and embedded, so it sounds the same everywhere.
    */
   const Announcer = {
     enabled: true,
@@ -593,13 +593,15 @@
       this.last = keys.join(' ');
       return true;
     },
-    /** The clips for a lock result (and a level-up), or null. */
+    /** The clips for a lock result (and a level-up), or null. A T-spin single or double is one clip; a triple (and
+     * a Mini, which has no clip of its own) is "T-spin" and the line count. */
     phrase(r, levelUp) {
       const names = ['', 'single', 'double', 'triple', 'tetris'];
       let k = [];
-      if (r.tspin) k = ['tspin'].concat(r.lines ? [names[Math.min(r.lines, 3)]] : []);
-      else if (r.mini) k = ['tspin', 'mini'].concat(r.lines ? [names[Math.min(r.lines, 2)]] : []);
-      else if (r.lines) k = [names[Math.min(r.lines, 4)]];
+      if (r.tspin || r.mini) {
+        const n = Math.min(r.lines, r.mini ? 2 : 3);
+        k = n === 1 || n === 2 ? ['tspin_' + names[n]] : n ? ['tspin', names[n]] : ['tspin'];
+      } else if (r.lines) k = [names[Math.min(r.lines, 4)]];
       if (k.length && r.b2b) k.unshift('b2b');
       if (r.perfect) k.push('perfect');
       if (levelUp) k.push('levelup');

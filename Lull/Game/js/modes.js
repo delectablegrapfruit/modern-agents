@@ -131,17 +131,16 @@
         const hold = this.view.onHold(...this.pointer);
         if (hold !== this.view.holdHover) { this.view.holdHover = hold; this.view.dirty = true; }
         if (moved) this.follow();
-        this.showTurnHint();
         c.style.cursor = hold ? 'pointer' : 'default';
       });
-      c.addEventListener('mouseleave', () => { this.pointer = null; this.rawCol = null; this.view.turnHint = null; this.view.pointerCol = null; this.view.holdHover = false; this.view.dirty = true; });
+      c.addEventListener('mouseleave', () => { this.pointer = null; this.rawCol = null; this.view.pointerCol = null; this.view.holdHover = false; this.view.dirty = true; });
       c.addEventListener('mousedown', (e) => {
         if (!enabled()) return;
         if (performance.now() - this.app.focusedAt < 300) return; // the click that brought the window forward
         const [px, py] = pos(e);
         this.pointer = [px, py];
         if (e.button === 0 && this.view.onHold(px, py)) { mouse(() => this.action('hold')); return; }
-        if (e.button === 2) { const dir = this.turnDir(); mouse(() => { this.action(dir); this.follow(); }); return; }
+        if (e.button === 2) { mouse(() => { this.follow(); this.action('cw'); this.follow(); }); return; }
         if (e.button !== 0) return;
         mouse(() => {
           this.follow();
@@ -163,33 +162,6 @@
       }, { passive: false });
     }
 
-    /**
-     * Which way a right-click turns: toward the side of the piece's middle column the pointer is on — the right half
-     * turns it clockwise, the left half counter-clockwise (the "board right" side, whatever way the board faces).
-     * The piece keeps its column while the pointer moves within it (sticky aim), so either half is always in reach,
-     * and a tight spin can go either way with nothing but the mouse. A small arrow at the pointer shows which.
-     */
-    turnDir() {
-      const g = this.game, v = this.view;
-      if (!this.pointer || !g || !g.piece || !v.lay) return 'cw';
-      const p = g.piece, cells = p.type.rots[p.rot];
-      const cx = p.x + cells.reduce((a, [x]) => a + x, 0) / cells.length, cy = p.y + cells.reduce((a, [, y]) => a + y, 0) / cells.length;
-      const col = Math.round(cx - 0.01), s = v.lay.s;
-      const [sx, sy] = v.toScreen(col, Math.round(cy));
-      const [ax, ay] = v.screenDir(1, 0);
-      const off = (this.pointer[0] - (sx + s / 2)) * ax + (this.pointer[1] - (sy + s / 2)) * ay;
-      return off < -s * 0.06 ? 'ccw' : 'cw';
-    }
-
-    showTurnHint() {
-      const v = this.view;
-      const on = this.settings.mouse && this.pointer && this.game && this.game.piece && !this.blocked() && !this.game.mods.noRotate && this.game.piece.type.kicks !== 'none' && this.lastInput === 'mouse';
-      let hint = on ? this.turnDir() : null;
-      if (hint && this.inverted) hint = hint === 'cw' ? 'ccw' : 'cw'; // what will actually happen
-      const at = on ? this.pointer.slice() : null;
-      if (hint !== v.turnHint || (at && (!v.turnAt || at[0] !== v.turnAt[0] || at[1] !== v.turnAt[1]))) { v.turnHint = hint; v.turnAt = at; v.dirty = true; }
-    }
-
     /** Slides the piece toward the pointer's column, at the height it floats at. */
     follow() {
       const g = this.game;
@@ -208,7 +180,6 @@
       if (col !== cur) { this.prevCol = this.target; this.colAt = performance.now(); this.rawCol = col; this.target = target; }
       this.aimAt(target);
       this.view.pointerCol = col;
-      this.showTurnHint();
     }
 
     aimAt(col) {
@@ -804,6 +775,8 @@
 
     get ps() { return this.app.store.state.puzzle; }
     get pstats() { return this.app.store.state.stats.puzzle; }
+    /** Counter-clockwise puzzles (off by default): new puzzles come from the both-ways seeds. */
+    get spin() { return !!this.app.settings.ccwPuzzles; }
 
     show() { if (!this.puzzle) this.loadCurrent(); }
 
@@ -815,12 +788,12 @@
 
     loadNumbered(diff, n) {
       n = n || this.ps.next[diff] || 1;
-      this.load(Puzzles.numberedSeed(diff, n), { number: n });
+      this.load(Puzzles.numberedSeed(diff, n, this.spin), { number: n });
     }
 
     loadDaily() {
       const key = L.dateKey();
-      this.load(Puzzles.dailySeed(this.ps.diff, key), { daily: key });
+      this.load(Puzzles.dailySeed(this.ps.diff, key, this.spin), { daily: key });
     }
 
     askSeed() {
@@ -828,10 +801,10 @@
       const note = h('p', null, 'Every puzzle has a seed. The same seed is the same puzzle for everyone — share it, or come back to one.');
       UI.openModal({
         title: 'Play a seed', body: h('div', null, note, input),
-        buttons: [{ label: 'Random', onClick: () => { this.load(Puzzles.randomSeed(this.ps.diff), {}); } },
+        buttons: [{ label: 'Random', onClick: () => { this.load(Puzzles.randomSeed(this.ps.diff, this.spin), {}); } },
           { label: 'Play', kind: 'primary', onClick: () => {
             const p = Puzzles.parseSeed(input.value);
-            if (!p) { toast('Seeds look like E-, M- or H- and seven letters or digits', 'bad'); return false; }
+            if (!p) { toast('Seeds look like E-, M- or H- (or ES-, MS-, HS-) and seven letters or digits', 'bad'); return false; }
             this.load(p.seed, {});
           } }],
       });

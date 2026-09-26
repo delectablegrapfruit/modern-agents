@@ -29,6 +29,8 @@
     blind:  { name: 'Blind Queue', icon: '?', desc: 'You only see the piece in play.', w: { E: 0, M: 1, H: 1.5 } },
     // Puzzles have no hold slot, except with this wildcard — and then the queue comes out of order, so it is needed.
     hold:   { name: 'Hold', icon: '⇆', desc: 'The hold slot is open, and you will need it: the queue arrives out of order.', w: { E: 0.8, M: 1.3, H: 1.6 } },
+    // Only on "S" seeds (Settings ▸ Controls ▸ Counter-clockwise puzzles): turns go both ways, and the puzzle needs it.
+    spin:   { name: 'Both Ways', icon: '↺', desc: 'A spot here needs a counter-clockwise turn (Z) or a half turn (A).', w: { E: 0, M: 0, H: 0 }, x: ['rigid'] },
     mono:   { name: 'Monochrome', icon: '◐', desc: 'Garbage and pieces share one colour.', w: { E: 1, M: 1, H: 1 } },
   };
 
@@ -43,7 +45,9 @@
 
   // ---- seeds ----------------------------------------------------------------------------------------------------------
 
-  function numberedSeed(diff, n) { return diff + '-' + codeFromInt(hash32('lull:' + diff + ':' + n)); }
+  // An "S" after the difficulty (MS-3K7Q2XA) is the both-ways puzzle for that code: counter-clockwise turns count.
+  const tag = (diff, spin) => diff + (spin ? 'S' : '');
+  function numberedSeed(diff, n, spin) { return tag(diff, spin) + '-' + codeFromInt(hash32('lull:' + diff + ':' + n)); }
 
   /**
    * Dailies. Every date has its own seed per difficulty and every seed belongs to exactly one date: day numbers
@@ -61,7 +65,7 @@
   }
   function dayOf(key) { const [y, m, d] = key.split('-').map(Number); return Math.round((Date.UTC(y, m - 1, d) - DAY0) / 86400000); }
   function keyOfDay(day) { const dt = new Date(DAY0 + day * 86400000); return dt.getUTCFullYear() + '-' + String(dt.getUTCMonth() + 1).padStart(2, '0') + '-' + String(dt.getUTCDate()).padStart(2, '0'); }
-  function dailySeed(diff, key) { return diff + '-' + codeFromInt(feistel(dayOf(key) >>> 0, diff)); }
+  function dailySeed(diff, key, spin) { return tag(diff, spin) + '-' + codeFromInt(feistel(dayOf(key) >>> 0, diff)); }
   /** The date whose Daily a seed is (every seed has one; it may be thousands of years away). */
   function dailyDateOf(seed) {
     const p = parseSeed(seed);
@@ -70,15 +74,15 @@
     return { day, key: day < 2900000 ? keyOfDay(day) : null, years: Math.floor(day / 365.2425) };
   }
   const SEEDS_PER_DIFF = 4294967296;
-  function randomSeed(diff) { return diff + '-' + codeFromInt((Math.random() * 4294967296) >>> 0); }
+  function randomSeed(diff, spin) { return tag(diff, spin) + '-' + codeFromInt((Math.random() * 4294967296) >>> 0); }
   function parseSeed(s) {
-    const m = /^\s*([EMH])\s*[-–·:\s]?\s*([0-9A-Za-z]{7})\s*$/i.exec(String(s || ''));
+    const m = /^\s*([EMH])(S?)\s*[-–·:\s]?\s*([0-9A-Za-z]{7})\s*$/i.exec(String(s || ''));
     if (!m) return null;
-    const diff = m[1].toUpperCase(), n = intFromCode(m[2]);
+    const diff = m[1].toUpperCase(), spin = !!m[2], n = intFromCode(m[3]);
     if (n == null) return null;
     // Seven symbols can spell more than 2^32 numbers; the ones that wrap around read as the seed they wrap to.
     const code = codeFromInt(n);
-    return { diff, code, seed: diff + '-' + code };
+    return { diff, spin, code, seed: tag(diff, spin) + '-' + code };
   }
 
   // ---- reachability ---------------------------------------------------------------------------------------------------
@@ -134,10 +138,11 @@
         else if (m === 2) { if (opts.heavy) continue; ny = y - 1; }
         else {
           if (!canRotate) break;
-          // Clockwise only: every puzzle can be solved with a single turn button (Up, or a right-click), so nobody
-          // playing with arrows or the mouse alone meets a spin that needs the other direction.
-          if (m !== 3) continue;
-          nr = (r + 1) % 4;
+          // Clockwise only, unless the puzzle turns both ways: every ordinary puzzle can be solved with a single turn
+          // button (Up, or a right-click), so nobody playing with arrows or the mouse alone meets a spin that needs
+          // the other direction.
+          if (m !== 3 && !opts.ccw) continue;
+          nr = (r + (m === 3 ? 1 : m === 4 ? 3 : 2)) % 4;
           const kicks = Pieces.kicksFor(type, r, nr);
           let ok = false;
           for (const [kx, ky] of kicks) {
@@ -217,8 +222,8 @@
         else if (m === 2) { if (opts.heavy) continue; ny = y - 1; }
         else {
           if (!canRotate) break;
-          if (m !== 3) continue;
-          nr = (r + 1) % 4;
+          if (m !== 3 && !opts.ccw) continue;
+          nr = (r + (m === 3 ? 1 : m === 4 ? 3 : 2)) % 4;
           let ok = false;
           for (const [kx, ky] of Pieces.kicksFor(type, r, nr)) {
             if (board.fits(type.rots[nr], x + kx, y + ky)) { if (ky !== 0 || Math.abs(kx) > maxKick) break; nx = x + kx; ny = y + ky; ok = true; break; }
@@ -241,7 +246,7 @@
    * search small. Returns true, false, or null when it gave up (too many positions to be sure).
    */
   function solvableInOrder(puzzle, queue, limit) {
-    const opts = { noRotate: puzzle.mods.includes('rigid'), heavy: puzzle.mods.includes('heavy') };
+    const opts = optsOf(puzzle.mods);
     const board = Board.fromArray(puzzle.w, puzzle.h, puzzle.cells, { wrap: puzzle.wrap });
     const exact = puzzle.goal.type !== 'gems';
     const seen = new Set();
@@ -323,11 +328,13 @@
     return null;
   }
 
+  function optsOf(mods) { return { noRotate: mods.includes('rigid'), heavy: mods.includes('heavy'), ccw: mods.includes('spin') }; }
+
   // ---- specs ----------------------------------------------------------------------------------------------------------
 
-  function pickMods(rng, diff) {
+  function pickMods(rng, diff, spin) {
     const count = diff === 'E' ? (rng.chance(0.45) ? 1 : 0) : diff === 'M' ? (rng.chance(0.35) ? 2 : 1) : (rng.chance(0.4) ? 3 : 2);
-    const chosen = [];
+    const chosen = spin ? ['spin'] : [];
     for (let i = 0; i < count; i++) {
       const pool = Object.keys(MODS).filter((id) => MODS[id].w[diff] > 0 && !chosen.includes(id) &&
         !chosen.some((c) => (MODS[c].x || []).includes(id) || (MODS[id].x || []).includes(c)));
@@ -367,7 +374,7 @@
   // ---- construction ---------------------------------------------------------------------------------------------------
 
   function build(spec, rng) {
-    const opts = { noRotate: spec.mods.includes('rigid'), heavy: spec.mods.includes('heavy') };
+    const opts = optsOf(spec.mods);
     const wrap = spec.mods.includes('wrap');
     const W = spec.w;
     // Choose the pieces first: their total size and the fill fraction fix the band's height.
@@ -481,9 +488,10 @@
    * Plays the solution forwards on the real rules (line clears shift later targets down) and returns the per-step
    * targets as they appear in play, or null if any step cannot be reached or the goal is not met.
    */
-  function verify(puzzle) {
+  function verify(puzzle, cwOnly) {
     const board = Board.fromArray(puzzle.w, puzzle.h, puzzle.cells, { wrap: puzzle.wrap });
-    const opts = { noRotate: puzzle.mods.includes('rigid'), heavy: puzzle.mods.includes('heavy') };
+    const opts = optsOf(puzzle.mods);
+    if (cwOnly) opts.ccw = false;
     const cleared = []; // original row indices already cleared
     const targets = [];
     let lines = 0;
@@ -520,27 +528,29 @@
     return false;
   }
 
-  function fallbackSpec(diff) {
-    return { diff, mods: [], pieces: 3, w: 6, tuck: 0, fill: [0.6, 0.7], goal: 'clear', base: 0, pool: Pieces.TETROMINOES.slice() };
+  function fallbackSpec(diff, spin) {
+    return { diff, mods: spin ? ['spin'] : [], pieces: 3, w: 6, tuck: 0, fill: [0.6, 0.7], goal: 'clear', base: 0, pool: Pieces.TETROMINOES.slice() };
   }
 
   /** The puzzle for a seed like "M-3K7Q2XA". Deterministic: the same seed always gives the same puzzle. */
   function generate(seedStr) {
     const parsed = parseSeed(seedStr);
     if (!parsed) return null;
-    const { diff, seed } = parsed;
+    const { diff, seed, spin } = parsed;
     const rng = new RNG(hash32('lull-puzzle:v' + GEN_VERSION + ':' + seed));
     const title = rng.pick(ADJ) + ' ' + rng.pick(NOUN);
-    let spec = makeSpec(rng, diff);
+    let spec = makeSpec(rng, diff, pickMods(rng, diff, spin));
     for (let attempt = 0; attempt < 80; attempt++) {
       // After a run of failures, loosen: keep the wildcards but try a fresh size and queue.
-      if (attempt && attempt % 8 === 0) spec = makeSpec(rng, diff, attempt >= 48 ? pickMods(rng, diff) : spec.mods);
+      if (attempt && attempt % 8 === 0) spec = makeSpec(rng, diff, attempt >= 48 ? pickMods(rng, diff, spin) : spec.mods);
       else if (attempt) spec = Object.assign(makeSpec(rng, diff, spec.mods), {});
       const built = build(spec, rng);
       if (!built) continue;
       const puzzle = finish(built, spec, seed, diff, title, rng);
       const targets = verify(puzzle);
       if (!targets) continue;
+      // A both-ways puzzle has to need it: no clockwise-only way through (the last tries let that go).
+      if (spin && attempt < 64 && verify(puzzle, true)) continue;
       if (spec.mods.includes('hold')) {
         const q = requireHold(puzzle, rng);
         if (!q) continue;
@@ -550,7 +560,7 @@
       return puzzle;
     }
     for (let attempt = 0; attempt < 200; attempt++) {
-      const spec2 = fallbackSpec(diff);
+      const spec2 = fallbackSpec(diff, spin);
       const built = build(spec2, rng);
       if (!built) continue;
       const puzzle = finish(built, spec2, seed, diff, title, rng);

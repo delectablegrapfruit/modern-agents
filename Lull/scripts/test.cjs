@@ -27,7 +27,7 @@ test('seed codes round-trip', () => {
   const r = new RNG(1);
   for (let i = 0; i < 1000; i++) { const n = r.u32(); assert.strictEqual(L.intFromCode(L.codeFromInt(n)), n); }
   assert.strictEqual(L.intFromCode('bad'), null);
-  assert.deepStrictEqual(Puzzles.parseSeed(' m-3k7q2xa '), { diff: 'M', code: '3K7Q2XA', seed: 'M-3K7Q2XA' });
+  assert.deepStrictEqual(Puzzles.parseSeed(' m-3k7q2xa '), { diff: 'M', spin: false, code: '3K7Q2XA', seed: 'M-3K7Q2XA' });
   assert.strictEqual(Puzzles.parseSeed('Q-3K7Q2XA'), null);
   assert.strictEqual(Puzzles.parseSeed('M-3K7Q2X'), null);
   assert.strictEqual(Puzzles.parseSeed('M-3K7Q2X0'), null, 'no 0, O, 1 or I');
@@ -263,7 +263,7 @@ function replay(p) {
     if (!want(g.piece)) { assert(g.holdPiece(), 'hold again in ' + p.seed); holds++; }
     assert.strictEqual(g.piece.type.id, t.id);
     let res = null;
-    assert(!t.path.includes('CCW') && !t.path.includes('180'), 'solutions only turn clockwise: ' + p.seed);
+    if (!p.mods.includes('spin')) assert(!t.path.includes('CCW') && !t.path.includes('180'), 'solutions only turn clockwise: ' + p.seed);
     for (const m of t.path) {
       const ok = m === 'L' ? g.move(-1) : m === 'R' ? g.move(1) : m === 'D' ? g.lower() === 'moved' : m === 'CW' ? g.rotate(1) : m === 'CCW' ? g.rotate(-1) : m === '180' ? g.rotate(2) : (res = g.drop());
       assert(ok, 'move ' + m + ' in ' + p.seed);
@@ -284,6 +284,18 @@ function replay(p) {
   if (p.mods.includes('hold')) assert(holds > 0, 'a Hold puzzle needs a hold: ' + p.seed);
   return holds;
 }
+test('counter-clockwise puzzles: only on S seeds, and each one needs it', () => {
+  assert.strictEqual(Puzzles.parseSeed('ms3k7q2xa').seed, 'MS-3K7Q2XA');
+  assert(!Puzzles.parseSeed('M-3K7Q2XA').spin);
+  assert.strictEqual(Puzzles.dailyDateOf(Puzzles.dailySeed('H', '2026-09-26', true)).key, '2026-09-26');
+  for (const d of ['E', 'M', 'H']) for (let n = 1; n <= 4; n++) {
+    const p = Puzzles.generate(Puzzles.numberedSeed(d, n, true));
+    assert(p.mods.includes('spin') && !p.fallback, 'both ways: ' + p.seed);
+    assert(!Puzzles.verify(p, true), 'no clockwise-only way through ' + p.seed);
+    replay(p);
+    assert(!Puzzles.generate(Puzzles.numberedSeed(d, n)).mods.includes('spin'));
+  }
+});
 test('puzzles have no hold unless the Hold wildcard is on, and then it is needed', () => {
   let n = 0;
   for (let i = 1; i <= 400 && n < 12; i++) {
