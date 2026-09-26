@@ -268,18 +268,13 @@ struct Renderer {
 
     enum Align { case left, center, right }
 
+    /// Draws a line of HUD text. A glow is a Core Graphics shadow around the drawing rather than an `NSShadow`
+    /// attribute: on macOS 26 an `NSShadow` in the attributes made CoreText throw while the view was drawn.
     @discardableResult
-    private func text(_ string: String, _ font: NSFont, _ color: NSColor, at point: CGPoint, _ align: Align = .left,
-                      glow: NSColor? = nil, kern: CGFloat = 0) -> CGSize {
+    func text(_ string: String, _ font: NSFont, _ color: NSColor, at point: CGPoint, _ align: Align = .left,
+              glow: NSColor? = nil, kern: CGFloat = 0) -> CGSize {
         var attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
-        if kern != 0 { attributes[.kern] = kern * ui }
-        if let glow {
-            let shadow = NSShadow()
-            shadow.shadowColor = glow
-            shadow.shadowBlurRadius = 7 * ui
-            shadow.shadowOffset = .zero
-            attributes[.shadow] = shadow
-        }
+        if kern != 0 { attributes[.kern] = NSNumber(value: Double(kern * ui)) }
         let string = NSAttributedString(string: string, attributes: attributes)
         let measured = string.size()
         var origin = point
@@ -288,8 +283,40 @@ struct Renderer {
         case .center: origin.x -= measured.width / 2
         case .right: origin.x -= measured.width
         }
-        string.draw(at: origin)
+        if let glow, let ctx = NSGraphicsContext.current?.cgContext {
+            ctx.saveGState()
+            ctx.setShadow(offset: .zero, blur: 7 * ui, color: glow.cgColor)
+            string.draw(at: origin)
+            ctx.restoreGState()
+        } else {
+            string.draw(at: origin)
+        }
         return measured
+    }
+
+    /// Every size, weight and glow the HUD uses, with the strings it draws: CI draws this in the live window and
+    /// offscreen, so a text style that upsets the system fails the build rather than a game.
+    func drawSpecimen(log: Bool) {
+        let strings = ["CLOSE", "+1,234,567", "\u{00D7}8", "WRONG WAY", "\u{2191} GO", "NEW BEST 23.91", "\u{2212}0.42 \u{00B7} 900 pts"]
+        let sizes: [CGFloat] = [6.5, 7.5, 8, 8.5, 9, 10, 11, 12, 14, 15]
+        let weights: [NSFont.Weight] = [.regular, .medium, .semibold, .bold, .heavy]
+        var y: CGFloat = 4
+        for size in sizes {
+            for weight in weights {
+                if log {
+                    print("SPECIMEN \(size) \(weight.rawValue)")
+                    fflush(stdout)
+                }
+                for glow in [nil, Renderer.gold] as [NSColor?] {
+                    var x: CGFloat = 4
+                    for string in strings {
+                        x += text(string, mono(size, weight), .white, at: CGPoint(x: x, y: y), glow: glow).width + 4
+                        x += text(string, sans(size, weight), .white, at: CGPoint(x: x, y: y), glow: glow, kern: 1).width + 4
+                    }
+                }
+                y = (y + 3).truncatingRemainder(dividingBy: max(size, 1) * 20)
+            }
+        }
     }
 
     private func drawHUD(_ ctx: CGContext) {

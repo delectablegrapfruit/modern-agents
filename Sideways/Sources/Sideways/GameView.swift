@@ -18,6 +18,8 @@ final class GameView: NSView {
     /// Held while frames run: the app is never frontmost, and App Nap would otherwise slow a game in play.
     private var activity: NSObjectProtocol?
     private(set) var isHovering = false
+    /// The self-test sets this to draw every HUD text style once through the live view.
+    var drawsSpecimen = false
     private var observers: [NSObjectProtocol] = []
 
     init(game: Game, size: CGSize) {
@@ -134,7 +136,13 @@ final class GameView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
         if game.track.info.id != art.id { art = TrackArt(track: game.track) }
-        Renderer(game: game, art: art, size: bounds.size, focused: isFocused, hovering: isHovering).draw(in: ctx)
+        let renderer = Renderer(game: game, art: art, size: bounds.size, focused: isFocused, hovering: isHovering)
+        renderer.draw(in: ctx)
+        if drawsSpecimen {
+            drawsSpecimen = false
+            renderer.drawSpecimen(log: true)
+            print("SPECIMEN drawn in the window")
+        }
     }
 
     // MARK: Keys

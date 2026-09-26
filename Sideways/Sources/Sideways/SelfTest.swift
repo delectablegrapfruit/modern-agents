@@ -9,8 +9,11 @@ enum SelfTest {
 
     static func start(game: Game, view: GameView, panel: GamePanel) {
         activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiatedAllowingIdleSystemSleep, .latencyCritical], reason: "Self-test")
+        setvbuf(stdout, nil, _IOLBF, 0)
         panel.makeKeyAndOrderFront(nil)
         let becameKey = panel.isKeyWindow
+        view.drawsSpecimen = true
+        view.display()
         var pilot = Autopilot(style: .drift)
         var held: Set<UInt16> = []
         let start = game.session.car.position

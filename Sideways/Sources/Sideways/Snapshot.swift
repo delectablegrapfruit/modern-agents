@@ -18,6 +18,12 @@ enum Snapshot {
             ("7-large", .racing, 3, 2, 5),
         ]
         var ok = true
+        let specimen = Game(records: Records())
+        if let rep = image(of: specimen, size: GamePanel.size(2), focused: true, specimen: true),
+           let data = rep.representation(using: .png, properties: [:]) {
+            try? data.write(to: directory.appendingPathComponent("8-specimen.png"))
+            print("SNAPSHOT 8-specimen")
+        }
         for shot in shots {
             var records = Records()
             records.seenHelp = shot.moment != .help
@@ -79,14 +85,15 @@ enum Snapshot {
         }
     }
 
-    static func image(of game: Game, size: CGSize, focused: Bool, scale: CGFloat = 2) -> NSBitmapImageRep? {
+    static func image(of game: Game, size: CGSize, focused: Bool, scale: CGFloat = 2, specimen: Bool = false) -> NSBitmapImageRep? {
         guard let space = CGColorSpace(name: CGColorSpace.sRGB),
               let cg = CGContext(data: nil, width: Int(size.width * scale), height: Int(size.height * scale), bitsPerComponent: 8,
                                  bytesPerRow: 0, space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
         cg.scaleBy(x: scale, y: scale)
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(cgContext: cg, flipped: false)
-        Renderer(game: game, art: TrackArt(track: game.track), size: size, focused: focused, hovering: false).draw(in: cg)
+        let renderer = Renderer(game: game, art: TrackArt(track: game.track), size: size, focused: focused, hovering: false)
+        if specimen { renderer.drawSpecimen(log: false) } else { renderer.draw(in: cg) }
         NSGraphicsContext.restoreGraphicsState()
         return cg.makeImage().map(NSBitmapImageRep.init(cgImage:))
     }
