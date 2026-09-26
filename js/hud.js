@@ -82,7 +82,7 @@
     }
     if (type === 'blackhole') e.active = true;
     if (type === 'mayfly') e.ph = 1.2;
-    const extent = type === 'snake' ? 70 : e.r * 1.9;
+    const extent = type === 'snake' ? 70 : type === 'blackhole' ? 44 : e.r * 1.9;
     const s = (size * dpr * 0.42) / extent;
     ctx.translate(size * dpr * (type === 'snake' ? 0.66 : 0.5), size * dpr * (type === 'snake' ? 0.32 : 0.5));
     ctx.scale(s, s);
