@@ -459,8 +459,14 @@ enum Showcase {
         guard main.styleMask.contains(.fullScreen) else { return }
         main.toggleFullScreen(nil)
         _ = try? await waitFor("the window to leave full screen", timeout: 10) { !main.styleMask.contains(.fullScreen) ? true : nil }
+        // AppKit puts the window's frame back from before full screen once the move is over: placed after that, and
+        // again should the frame still change.
         await pause(1.2)
         place(main)
+        await pause(1.0)
+        let area = (main.screen ?? NSScreen.main)?.visibleFrame ?? main.frame
+        if !area.insetBy(dx: -1, dy: -1).contains(main.frame) { place(main) }
+        hideDock()
     }
 
     /// Opens a book in the reader and closes it again, so that it is the book last opened, and gives it back the place
@@ -724,6 +730,14 @@ enum Showcase {
         // yet, while the pause gives it time to go.
         await bringForward(target, for: name)
         if hideDock() { log("\(name): the Dock was hidden only now") }
+        // The main window back inside the screen, should something have moved or grown it since it was placed:
+        // leaving full screen puts back the window's saved frame, after the move is done and in its own time.
+        if target === window, !target.styleMask.contains(.fullScreen), let area = (target.screen ?? NSScreen.main)?.visibleFrame,
+           !area.insetBy(dx: -1, dy: -1).contains(target.frame) {
+            log("\(name): the window was \(Int(target.frame.width)) × \(Int(target.frame.height)) at \(Int(target.frame.minX)),\(Int(target.frame.minY)), past the screen; placed again")
+            place(target)
+            await pause(0.6)
+        }
         await pause(settle)
         if !isFrontmost(target) { await bringForward(target, for: name) }
         let frame = target.frame
