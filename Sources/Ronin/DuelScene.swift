@@ -63,7 +63,9 @@ final class DuelScene: SKScene {
     private let hud = SKNode()
     private let comboLabel = Art.label(Art.headingFont, size: 24, color: .white)
     private let comboShadow = Art.label(Art.headingFont, size: 24, color: SKColor(white: 0, alpha: 0.55))
-    private let comboCaption = Art.label(Art.textFont, size: 7.5, color: SKColor(white: 1, alpha: 0.75))
+    private let comboCaption = Art.label(Art.textFont, size: 7.5, color: SKColor(white: 1, alpha: 0.85))
+    /// A dark haze behind the combo, so it reads over the sun.
+    private let comboBack = SKSpriteNode(texture: Art.glow)
     private let bossTrack = SKSpriteNode(color: SKColor(white: 0, alpha: 0.5), size: .zero)
     private let bossFill = SKSpriteNode(color: Palette.gold.color(), size: .zero)
     private let bossLabel = Art.label(Art.headingFont, size: 8, color: Palette.gold.color(), align: .left)
@@ -155,7 +157,11 @@ final class DuelScene: SKScene {
         hud.zPosition = 50
         addChild(hud)
         comboShadow.zPosition = -1
-        for node in [comboShadow, comboLabel, comboCaption] as [SKNode] { hud.addChild(node) }
+        comboBack.color = .black
+        comboBack.colorBlendFactor = 1
+        comboBack.alpha = 0.6
+        comboBack.zPosition = -2
+        for node in [comboBack, comboShadow, comboLabel, comboCaption] as [SKNode] { hud.addChild(node) }
         bossTrack.anchorPoint = CGPoint(x: 0, y: 0.5)
         bossFill.anchorPoint = CGPoint(x: 0, y: 0.5)
         for node in [bossTrack, bossFill, bossLabel] as [SKNode] { hud.addChild(node) }
@@ -683,20 +689,20 @@ final class DuelScene: SKScene {
                 comboLabel.run(SKAction.scale(to: 1, duration: 0.14).easedOut(), withKey: "pop")
             }
             shownCombo = fight.combo
-            let show = fight.combo >= 3
-            comboLabel.isHidden = !show
-            comboShadow.isHidden = !show
-            comboCaption.isHidden = !show
             comboLabel.text = "\(fight.combo)"
             comboShadow.text = comboLabel.text
             comboLabel.fontColor = fight.inBloodlust ? Palette.blood.mix(.white, 0.25).color() : fight.combo >= 10 ? Palette.gold.color() : .white
             comboCaption.text = fight.inBloodlust ? "BLOODLUST  ·  ×\(fight.multiplier)" : "COMBO  ·  ×\(fight.multiplier)"
         }
+        let showCombo = fight.combo >= 3 && fight.outcome == nil
+        for node in [comboBack, comboLabel, comboShadow, comboCaption] as [SKNode] { node.isHidden = !showCombo }
         let bossAlive = fight.boss != nil
         let comboY = top - (bossAlive ? 30 : 22) * fontScale
         comboLabel.position = CGPoint(x: field.midX, y: comboY)
         comboShadow.position = CGPoint(x: field.midX + 1.5, y: comboY - 1.5)
         comboCaption.position = CGPoint(x: field.midX, y: comboY - 16 * fontScale)
+        comboBack.size = CGSize(width: 150 * fontScale, height: 70 * fontScale)
+        comboBack.position = CGPoint(x: field.midX, y: comboY - 6 * fontScale)
         bossTrack.isHidden = !bossAlive
         bossFill.isHidden = !bossAlive
         bossLabel.isHidden = !bossAlive

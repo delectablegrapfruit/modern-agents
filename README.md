@@ -5,7 +5,8 @@ work. Enemies charge from both sides. Click the side you want to cut. A stage ta
 fits in the gap between two tasks. Move the pointer away and the fight freezes where it is.
 
 ![Bloodlust](dist/screenshots/7-bloodlust.png)
-![The warlord](dist/screenshots/5-warlord.png)
+![The warlord falls](dist/screenshots/6-warlord-slain.png)
+![Cut](dist/screenshots/2-cut.png)
 
 ## Play
 
