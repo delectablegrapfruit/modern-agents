@@ -373,7 +373,9 @@ void main() {
     }
 
     // Segment in world units; w is the width in world units (never thinner than one device pixel).
-    line(x1, y1, x2, y2, w, r, g, b) {
+    // cap = false leaves the ends square at the endpoints (no half-width overhang), so consecutive segments of
+    // one polyline do not overlap and double up under additive blending (the CPU grid path relies on this).
+    line(x1, y1, x2, y2, w, r, g, b, cap = true) {
       if ((x1 < this.vx0 && x2 < this.vx0) || (x1 > this.vx1 && x2 > this.vx1) ||
           (y1 < this.vy0 && y2 < this.vy0) || (y1 > this.vy1 && y2 > this.vy1)) return;
       let wp = w * this.zoom;
@@ -387,7 +389,7 @@ void main() {
       const len = Math.sqrt(dx * dx + dy * dy);
       if (len > 1e-6) { dx /= len; dy /= len; } else { dx = 1; dy = 0; }
       const nx = -dy * hw, ny = dx * hw;
-      const ex = dx * hw * 0.5, ey = dy * hw * 0.5;
+      const ex = cap ? dx * hw * 0.5 : 0, ey = cap ? dy * hw * 0.5 : 0;
       const v = this.verts;
       let o = this.nq * 4 * STRIDE;
       const ax = x1 - ex, ay = y1 - ey, bx = x2 + ex, by = y2 + ey;

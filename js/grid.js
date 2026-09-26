@@ -8,6 +8,7 @@
   const K = 0.28, D = 0.06;   // spring stiffness and damping
   const DAMP = 0.98;          // velocity kept per pass
   const MAJOR_EVERY = 4;      // every 4th line is a brighter major line
+  const GAP = 0.2;            // closest two neighbouring points may get, as a fraction of the spacing
 
   class Grid {
     constructor(w, h, spacing) {
@@ -54,6 +55,7 @@
 
     update() {
       for (let p = 0; p < this.passes; p++) this.pass();
+      this.untangle();
     }
 
     // One spring + anchor + integration pass. Forces queued by the apply* calls are consumed by the first.
@@ -108,6 +110,35 @@
         vx[i] = x * dm; vy[i] = y * dm;
         damp[i] = DAMP;
       }
+    }
+
+    // Keeps every line from folding over itself: along a row x must keep increasing, down a column y must.
+    // The springs only pull, so a strong blast (a death on this dense lattice) would otherwise throw inner
+    // points past outer ones and leave a tangled ring. Each line is projected onto the nearest order with at
+    // least GAP of the spacing between neighbours (the mean of a forward and a backward sweep, so neither
+    // direction is favoured); moved points lose half their speed on that axis. Lines bunch up, and look
+    // brighter, instead of crossing.
+    untangle() {
+      const { px, py, vx, vy, cols, rows } = this;
+      const f = this._f || (this._f = new Float32Array(Math.max(cols, rows)));
+      const g = this._g || (this._g = new Float32Array(Math.max(cols, rows)));
+      const line = (p, v, start, stride, count, gap) => {
+        let bad = false;
+        for (let k = 1, i = start + stride; k < count; k++, i += stride) if (p[i] - p[i - stride] < gap) { bad = true; break; }
+        if (!bad) return;
+        f[0] = p[start];
+        for (let k = 1, i = start + stride; k < count; k++, i += stride) f[k] = Math.max(p[i], f[k - 1] + gap);
+        const last = count - 1;
+        g[last] = p[start + last * stride];
+        for (let k = last - 1, i = start + k * stride; k >= 0; k--, i -= stride) g[k] = Math.min(p[i], g[k + 1] - gap);
+        for (let k = 0, i = start; k < count; k++, i += stride) {
+          const q = 0.5 * (f[k] + g[k]);
+          if (q !== p[i]) { p[i] = q; v[i] *= 0.5; }
+        }
+      };
+      const gx = this.sx * GAP, gy = this.sy * GAP;
+      for (let y = 0; y < rows; y++) line(px, vx, y * cols, 1, cols, gx);
+      for (let x = 0; x < cols; x++) line(py, vy, x, cols, rows, gy);
     }
 
     // Column / row bounds of the points whose rest position lies within `radius` (plus a margin) of (x, y).
@@ -201,12 +232,12 @@
           const mx = lx + 0.0625 * (px[j] - px[p0] + px[i] - px[p3]);
           const my = ly + 0.0625 * (py[j] - py[p0] + py[i] - py[p3]);
           if ((mx - lx) * (mx - lx) + (my - ly) * (my - ly) > 0.5) {
-            R.line(px[j], py[j], mx, my, lineW, c[0], c[1], c[2]);
-            R.line(mx, my, px[i], py[i], lineW, c[0], c[1], c[2]);
+            R.line(px[j], py[j], mx, my, lineW, c[0], c[1], c[2], false);
+            R.line(mx, my, px[i], py[i], lineW, c[0], c[1], c[2], false);
             return;
           }
         }
-        R.line(px[j], py[j], px[i], py[i], lineW, c[0], c[1], c[2]);
+        R.line(px[j], py[j], px[i], py[i], lineW, c[0], c[1], c[2], false);
       };
       for (let y = 0; y < rows; y++) {
         const c = y % every === 0 ? major : minor;
