@@ -2,40 +2,37 @@
 import PackageDescription
 
 var products: [Product] = [
-    .library(name: "BooksCore", targets: ["BooksCore"]),
-    .executable(name: "books-cli", targets: ["BooksCLI"]),
+    .library(name: "SkirmishCore", targets: ["SkirmishCore"]),
+    .executable(name: "skirmish-sim", targets: ["SkirmishSim"]),
 ]
 
 var targets: [Target] = [
-    // Formats and the library: ZIP/inflate, EPUB, Kindle → EPUB, plain text → EPUB, catalog, settings, reading
-    // statistics. Foundation only, so it builds and is tested on Linux as well as macOS.
-    .target(name: "BooksCore", path: "Sources/BooksCore"),
-    .executableTarget(name: "BooksCLI", dependencies: ["BooksCore"], path: "Sources/BooksCLI"),
-    .testTarget(name: "BooksCoreTests", dependencies: ["BooksCore"], path: "Tests/BooksCoreTests"),
+    // The rules: maps, fleets, combat, the enemy commanders and the campaign. Foundation only, deterministic from a
+    // seed, so it builds and is tested on Linux as well as macOS, and a saved battle resumes exactly.
+    .target(name: "SkirmishCore", path: "Sources/SkirmishCore"),
+    // Headless battles, bot against bot, for balancing the sectors.
+    .executableTarget(name: "SkirmishSim", dependencies: ["SkirmishCore"], path: "Sources/SkirmishSim"),
+    .testTarget(name: "SkirmishCoreTests", dependencies: ["SkirmishCore"], path: "Tests/SkirmishCoreTests"),
 ]
 
 #if os(macOS)
-products.append(.executable(name: "Books", targets: ["Books"]))
+products.append(.executable(name: "Skirmish", targets: ["Skirmish"]))
 targets.append(
     .executableTarget(
-        name: "Books",
-        dependencies: ["BooksCore"],
-        path: "Sources/Books",
-        // The typesetting engine: a small web page WebKit lays the book out with, served to WKWebView from the bundle.
-        resources: [.copy("Resources/Reader")],
+        name: "Skirmish",
+        dependencies: ["SkirmishCore"],
+        path: "Sources/Skirmish",
         linkerSettings: [
             .linkedFramework("AppKit"),
-            .linkedFramework("SwiftUI"),
-            .linkedFramework("WebKit"),
-            .linkedFramework("PDFKit"),
-            .linkedFramework("UniformTypeIdentifiers"),
+            .linkedFramework("SpriteKit"),
+            .linkedFramework("Carbon"),
         ]
     )
 )
 #endif
 
 let package = Package(
-    name: "Books",
+    name: "Skirmish",
     platforms: [.macOS(.v14)],
     products: products,
     targets: targets
