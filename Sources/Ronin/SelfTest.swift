@@ -89,7 +89,8 @@ enum SelfTest {
         session.jump(to: 5)
         scene.loadFight(intro: true)
         scene.timeScale = 5
-        try await until("the warlord arrived", timeout: 60) { session.fight.boss != nil }
+        try await until("the warlord arrived", timeout: 60) { session.fight.boss != nil || session.fight.outcome != nil }
+        guard session.fight.outcome == nil else { throw Failure("stage 5 ended (\(session.fight.outcome!.rawValue)) before its warlord came") }
         scene.timeScale = 1
         try await until("the warlord closed in", timeout: 10) { (session.fight.boss?.distance ?? 0) < 0.55 }
         try await pause(0.2)

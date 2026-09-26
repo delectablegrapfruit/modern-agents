@@ -214,6 +214,17 @@ final class RoninCoreTests: XCTestCase {
         }
     }
 
+    func testAPilotCarriedIntoTheNextFightKeepsCutting() {
+        var first = Fight(stage: 1, seed: 1)
+        first.pilot = .perfect
+        while first.outcome == nil { _ = first.step(0.1) }
+        var next = Fight(stage: 2, seed: 2)
+        next.pilot = first.pilot
+        while next.outcome == nil, next.time < 400 { _ = next.step(0.1) }
+        XCTAssertEqual(next.outcome, .victory)
+        XCTAssertEqual(next.stats.damage, 0)
+    }
+
     func testAFallEndsTheFight() {
         var fight = Fight(stage: 3, seed: 5)
         while fight.outcome == nil, fight.time < 600 { _ = fight.step(0.1) }

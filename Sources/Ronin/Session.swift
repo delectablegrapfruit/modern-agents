@@ -48,9 +48,9 @@ final class GameSession {
     /// The next fight: the next stage after a win, the same one on a fresh roll after a fall.
     func next() {
         promotion = nil
-        let pilot = fight.pilot
+        let autopilot = fight.autopilot
         fight = career.makeFight()
-        fight.pilot = pilot
+        fight.autopilot = autopilot
         save()
     }
 

@@ -31,6 +31,11 @@ public struct Pilot: Codable, Equatable, Sendable {
     }
 
     mutating func act(on fight: inout Fight, events: inout [FightEvent]) {
+        // Carried into a new fight, whose clock starts again at zero: forget the old one's plans.
+        if ready > fight.time + 1 || (queue.first?.at ?? 0) > fight.time + reaction + 1 {
+            ready = 0
+            queue.removeAll()
+        }
         while let next = queue.first, next.at <= fight.time + 1e-9 {
             queue.removeFirst()
             fight.strike(next.side, into: &events)
