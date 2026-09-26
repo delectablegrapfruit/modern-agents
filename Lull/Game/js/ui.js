@@ -181,7 +181,7 @@
         let action;
         if (equipped) action = h('button', { class: 'btn sm', disabled: true }, 'Equipped');
         else if (owned) action = h('button', { class: 'btn sm primary', onclick: () => { app.store.equip(sub, id); app.applyLook(); renderShop(app, sub); } }, 'Equip');
-        else if (c.reward) action = h('span', { class: 'lock' }, '🔒 Factory');
+        else if (c.reward) action = h('span', { class: 'lock' }, 'Factory reward');
         else action = h('button', {
           class: 'btn sm primary', disabled: st.lines < c.price,
           onclick: () => {
@@ -193,7 +193,7 @@
         const isSound = sub === 'sound';
         cards.push(h('div', { class: 'card' + (equipped ? ' equipped' : '') },
           isSound
-            ? h('button', { class: 'preview sound-preview', title: 'Play a sample', onclick: () => app.sound.preview(id) }, h('span', { class: 'big-icon' }, '▶'), h('span', null, 'Listen'))
+            ? h('button', { class: 'preview sound-preview', title: 'Play a sample', onclick: () => app.sound.preview(id) }, h('span', { class: 'big-icon' }, '►'), h('span', null, 'Listen'))
             : h('div', { class: 'preview' }, cosmeticPreview(app, sub, id, 150, 64)),
           h('h3', null, c.name),
           c.desc ? h('p', null, c.desc) : null,
@@ -276,6 +276,14 @@
         ['Boards started', fmtInt(F.boards)], ['Boards filled to the top', fmtInt(F.topouts)],
         ['Inputs per piece', F.pieces ? ((F.moves + F.rotations + F.lowers + F.drops + F.holds) / F.pieces).toFixed(2) : '—'],
       ]));
+      const log = F.boardLog || [];
+      if (log.length) {
+        els.push(h('h4', null, 'Past boards'), h('table', { class: 'st cols' },
+          h('tr', null, ['Retired', 'Lived', 'Lines', 'Score', 'Pieces', 'Items'].map((c) => h('th', null, c))),
+          log.slice(0, 15).map((b) => h('tr', null,
+            h('td', null, new Date(b.at).toLocaleDateString([], { month: 'short', day: 'numeric' }) + (b.reason === 'full' ? ' · full' : '')),
+            h('td', null, b.life ? fmtDuration(b.life) : '—'), h('td', null, fmtInt(b.lines)), h('td', null, fmtInt(b.score)), h('td', null, fmtInt(b.pieces)), h('td', null, fmtInt(b.items))))));
+      }
     } else if (sub === 'puzzle') {
       const rows = [['', 'Solved', '1st try', 'Tries', 'Best', 'Streak']];
       for (const d of ['E', 'M', 'H']) {
@@ -313,7 +321,7 @@
         els.push(h('div', { class: 'ach-list' }, A.LIST.filter((a) => a.group === g.id).map((a) => {
           const when = got[a.id], pr = !when && a.progress ? a.progress(st) : null;
           return h('div', { class: 'ach' + (when ? ' got' : '') },
-            h('span', { class: 'ach-i' }, when ? '🏆' : '·'),
+            h('span', { class: 'ach-i' }, when ? '★' : '·'),
             h('div', { class: 'grow' },
               h('div', { class: 't' }, a.name),
               h('div', { class: 'd' }, a.desc + (when ? ' · ' + new Date(when).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : '')),
@@ -388,7 +396,7 @@
           row('Show and hide from anywhere', 'Press ⌥⌘L in any app. Esc tucks Lull away.', h('kbd', { class: 'big' }, '⌥⌘L')))],
       } : null,
       controls: {
-        icon: '⌨', label: 'Controls',
+        icon: '⌘', label: 'Controls',
         body: () => [
           card('Keyboard',
             row('Repeat delay', 'How long an arrow is held before it repeats', range('das', 60, 400, 5, ' ms')),
@@ -407,7 +415,7 @@
           row('Classic music', 'Korobeiniki, remixed soft and bright, while a Classic game runs', toggle('music', () => app.modes.classic && app.modes.classic.renderControls())),
           row('Classic announcer', 'A whisper calls out singles, doubles, triples, tetrises and T-spins', toggle('announcer')),
           row('Music volume', null, range('musicVolume', 0, 60, 1, '%', 100)),
-          row('Sound pack', (L.SOUNDS[app.state.equipped.sound] || L.SOUNDS.soft).name + ' — more in the Shop', h('button', { class: 'btn sm', onclick: () => app.sound.preview(app.state.equipped.sound) }, '▶ Listen')))],
+          row('Sound pack', (L.SOUNDS[app.state.equipped.sound] || L.SOUNDS.soft).name + ' — more in the Shop', h('button', { class: 'btn sm', onclick: () => app.sound.preview(app.state.equipped.sound) }, '► Listen')))],
       },
       keys: {
         icon: '⌘', label: 'Keys',

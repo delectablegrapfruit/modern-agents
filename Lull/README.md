@@ -11,15 +11,19 @@ same game runs in any browser from `Game/index.html`.
 ## Play
 
 **Free Play** — endless, relaxed. Every cleared line is banked as ◆ *lines*, the currency. A full board just ends that
-board; the lines stay yours.
+board; the lines stay yours. Retiring a board (New board, or when it fills up) shows its whole life: how long it
+lived and was played, pieces, lines, score, quads, T-spins, perfect clears, best combo and back-to-back, holds and
+every power-up used on it; Stats ▸ Free Play keeps the last boards.
 
-**Classic** — the ▶ Classic button in the corner of the Play board. Plain Tetris: pieces fall, faster every ten
+**Classic** — the ► Classic button in the corner of the Play board. Plain Tetris: pieces fall, faster every ten
 lines (guideline speed curve), half-second lock delay, soft and hard drop, hold (once per piece), game over, best
-score. Lines you clear still bank as ◆. Music: Korobeiniki (the public-domain folk tune), remixed in A major as a two-minute
-suite — intro chords, the tune on electric piano, then kalimba with a harmony and a soft beat, the bridge on bells,
-an interlude with a counter-melody, the tune on flute; it keeps its tempo and only quickens as the stack nears the
-top. A whispering announcer calls singles, doubles, triples, tetrises, T-spins, back-to-backs and perfect clears
-(the macOS Whisper voice when present; Settings ▸ Sound). Toggle it under the board or in Settings ▸ Sound. P pauses; ‹ Relaxed, another tab or another window pauses too.
+score. Lines you clear still bank as ◆. Music: Korobeiniki (the public-domain folk tune) in its own key, A minor,
+arranged soft as a two-minute suite — electric piano over a round bass and a quiet pad, a soft beat in places, a
+breathy lead for the bridge and an interlude with a counter-melody; it keeps its tempo and only quickens as the stack
+nears the top. A whispering announcer (a female voice, pre-rendered, so it is the same everywhere and needs nothing
+installed) calls singles, doubles, triples, tetrises, T-spins, back-to-backs, perfect clears, the next level and game
+over. Both toggle under the board or in Settings ▸ Sound. P pauses; ‹ Relaxed, another tab or another window pauses
+too.
 
 **Puzzles** — procedurally generated, infinite, short, in Easy, Medium and Hard. Each has a seed (`M-3K7Q2XA`): the
 same seed is the same puzzle for everyone, so it can be shared, replayed or retried (R) as often as you like; Undo is
@@ -50,8 +54,8 @@ nudged sideways off a wall), never SRS kicks that hop a piece through a gap. Wil
 
 **Factory** — a small idler built from the same parts as the rest of Lull. Buy presses that stamp minos, from
 monominoes to decominoes; each earns credits a second and doubles its output at 10, 25, 50, 100, 200 and 400
-owned, and each opens the next line. The belt (drawn like the board, in your skin and palette) now and then carries
-a cracked mino: click it off before it ships (a streak pays more), or buy an Inspector. Income fills crates; a full
+owned, and each opens the next line. The belt (drawn like the board, in your skin and palette; minos slide in and out,
+evenly spaced) now and then carries a cracked mino: click it off before it ships (a streak pays more), or buy an Inspector. Income fills crates; a full
 crate trades for ◆ lines. It runs while Lull is closed, for up to 8 hours.
 
 **Items** — single-use, bought and used from the bar under the board, grouped into five types; a type's button
@@ -94,7 +98,7 @@ and first-try rates by difficulty and wildcard, factory quality control, items b
 | ⌫ / U, R, N, H | undo, retry, next puzzle, hint |
 | ⌘1–⌘5, ⌘, | tabs, settings |
 | P | pause Classic |
-| mouse: point | slide the piece left and right (at its height; sticky near column edges; keys keep working while the pointer rests there) |
+| mouse: point | slide the piece left and right (at its height; sticky near column edges; mirrored under Inverted Controls; keys keep working while the pointer rests there) |
 | left click | drop it straight down — anywhere on the board side (a slip in the last 0.1 s before the click is ignored) |
 | right click | turn clockwise |
 | wheel | lower one row (never sets the piece) |
@@ -124,4 +128,4 @@ first time. The save lives in `~/Library/Application Support/Lull/save.json` (Se
 |---|---|
 | `Game/` | the game: `index.html`, `css/`, and `js/` — `pieces` (SRS tetrominoes, pentominoes, big and custom shapes, polyomino enumeration), `board`, `engine` (the floating-piece rules and every item), `puzzlegen` (seeds, wildcards, reverse construction, reachability search, forward verification), `factory` (presses, milestones, crates, the belt, offline time), `store` (save, catalog, stats), `achievements`, `render` (canvas: skins, frames, effects, item animations, rotated views), `factoryview` (the belt, drawn like the board), `modes`, `ui`, `app` |
 | `Sources/Lull/` | the macOS shell: a borderless `NSPanel` (floating, all Spaces, edge-resizable, draggable by the page's title bar) around a transparent `WKWebView`, a blur for the Glass background, the save file, the ⌥⌘L hot key, and a self-test CI runs |
-| `scripts/` | `make-app.sh`, `icon.swift`, `test.cjs`, `browser-test.cjs` |
+| `scripts/` | `make-app.sh`, `icon.swift`, `test.cjs`, `browser-test.cjs`, `make-voice.py` (renders the whispered announcer: Kathleen Piper voice, CC0 data) |

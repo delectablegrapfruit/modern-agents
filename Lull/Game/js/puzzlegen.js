@@ -16,15 +16,15 @@
 
   // Wildcards. w = weight per difficulty (0 = never), x = incompatible with.
   const MODS = {
-    big:    { name: 'Big Minos', icon: '⬛', desc: 'Every piece is twice the size.', w: { E: 1, M: 2, H: 2 }, x: ['odd'] },
-    odd:    { name: 'Odd Shapes', icon: '✳', desc: 'Trominoes and pentominoes join the queue.', w: { E: 0.6, M: 2, H: 2 }, x: ['big'] },
-    wrap:   { name: 'Wraparound', icon: '↔', desc: 'The side walls are portals: leave on one side, arrive on the other.', w: { E: 0.6, M: 2, H: 2 } },
+    big:    { name: 'Big Minos', icon: '▣', desc: 'Every piece is twice the size.', w: { E: 1, M: 2, H: 2 }, x: ['odd'] },
+    odd:    { name: 'Odd Shapes', icon: '✲', desc: 'Trominoes and pentominoes join the queue.', w: { E: 0.6, M: 2, H: 2 }, x: ['big'] },
+    wrap:   { name: 'Wraparound', icon: '⇆', desc: 'The side walls are portals: leave on one side, arrive on the other.', w: { E: 0.6, M: 2, H: 2 } },
     rigid:  { name: 'Rigid', icon: '⊘', desc: 'Pieces cannot turn. Each one arrives already facing its way.', w: { E: 1, M: 1.5, H: 1.5 } },
     heavy:  { name: 'Heavy', icon: '⤓', desc: 'No lowering: pieces only hard-drop, so nothing slides under a ledge.', w: { E: 1.5, M: 1, H: 0.6 } },
     invert: { name: 'Inverted Controls', icon: '⇄', desc: 'Left moves right, right moves left, and turns go the other way.', w: { E: 0.7, M: 1.5, H: 1.5 } },
-    flip:   { name: 'Upside Down', icon: '↕', desc: 'The board hangs from the ceiling; pieces fall up.', w: { E: 1, M: 1.2, H: 1.2 }, x: ['side'] },
-    side:   { name: 'Sideways', icon: '↩', desc: 'Gravity pulls to the left. Arrow keys follow the screen.', w: { E: 1, M: 1.2, H: 1.2 }, x: ['flip'] },
-    fog:    { name: 'Fog', icon: '☁', desc: 'Blocks are only visible near your piece.', w: { E: 0, M: 1.2, H: 1.5 } },
+    flip:   { name: 'Upside Down', icon: '⇅', desc: 'The board hangs from the ceiling; pieces fall up.', w: { E: 1, M: 1.2, H: 1.2 }, x: ['side'] },
+    side:   { name: 'Sideways', icon: '↰', desc: 'Gravity pulls to the left. Arrow keys follow the screen.', w: { E: 1, M: 1.2, H: 1.2 }, x: ['flip'] },
+    fog:    { name: 'Fog', icon: '≋', desc: 'Blocks are only visible near your piece.', w: { E: 0, M: 1.2, H: 1.5 } },
     vanish: { name: 'Vanishing', icon: '◌', desc: 'Pieces turn invisible once set.', w: { E: 0, M: 0.6, H: 1.5 } },
     blind:  { name: 'Blind Queue', icon: '?', desc: 'You only see the piece in play.', w: { E: 0, M: 1, H: 1.5 } },
     // Puzzles have no hold slot, except with this wildcard — and then the queue comes out of order, so it is needed.

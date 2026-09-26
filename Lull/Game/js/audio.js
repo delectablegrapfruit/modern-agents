@@ -18,30 +18,30 @@
   const PACKS = {
     // The default: airy sines in a big soft room, on a D major pentatonic.
     soft: {
-      base: 294, wave: 'sine', decay: 0.9, reverb: 0.5, attack: 0.012, chorus: 7,
-      move: () => [{ f: 1175, d: 0.1, g: 0.026, a: 0.004, rv: 0.35 }],
-      rotate: () => [{ f: 1480, d: 0.28, g: 0.03, a: 0.006, rv: 0.6, dt: 8 }, { f: 2217, d: 0.22, g: 0.012, at: 0.025, rv: 0.7 }],
-      lower: () => [{ f: 587, d: 0.12, g: 0.03, a: 0.006, rv: 0.35 }],
+      base: 294, wave: 'sine', decay: 0.9, reverb: 0.12, attack: 0.012, chorus: 7,
+      move: () => [{ f: 1175, d: 0.1, g: 0.026, a: 0.004, rv: 0.1 }],
+      rotate: () => [{ f: 1480, d: 0.28, g: 0.03, a: 0.006, rv: 0.18, dt: 8 }, { f: 2217, d: 0.22, g: 0.012, at: 0.025, rv: 0.21 }],
+      lower: () => [{ f: 587, d: 0.12, g: 0.03, a: 0.006, rv: 0.1 }],
       lock: () => [
-        { f: 147, d: 0.5, g: 0.15, a: 0.01, rv: 0.35 },
-        { f: 294, d: 0.4, g: 0.04, a: 0.012, rv: 0.5, dt: 6 },
-        { n: 1, d: 0.2, g: 0.014, hp: 3500, rv: 0.6 },
+        { f: 147, d: 0.5, g: 0.15, a: 0.01, rv: 0.1 },
+        { f: 294, d: 0.4, g: 0.04, a: 0.012, rv: 0.15, dt: 6 },
+        { n: 1, d: 0.2, g: 0.014, hp: 3500, rv: 0.18 },
       ],
-      hold: () => [{ f: 587, to: 880, d: 0.4, g: 0.045, a: 0.04, rv: 0.7, dt: 10 }],
+      hold: () => [{ f: 587, to: 880, d: 0.4, g: 0.045, a: 0.04, rv: 0.21, dt: 10 }],
       blocked: () => [{ f: 196, d: 0.12, g: 0.03, a: 0.004, q: 700 }],
       clear: (s, n) => {
         n = Math.min(n || 1, 4);
         const steps = [0, 2, 4, 5, 7, 9, 10, 12].slice(0, 2 + n * 2);
-        return steps.map((st, i) => ({ f: note(587, st), d: 1.1, g: 0.05, a: 0.01, at: i * 0.055, rv: 0.7, dt: 6, p: [[2, 0.2, 0.3]] }));
+        return steps.map((st, i) => ({ f: note(587, st), d: 1.1, g: 0.05, a: 0.01, at: i * 0.055, rv: 0.21, dt: 6, p: [[2, 0.2, 0.3]] }));
       },
       quad: () => {
-        const pad = [294, 370, 440, 659].map((f) => ({ f, d: 2.2, g: 0.035, a: 0.25, rv: 0.8, dt: 9 }));
-        const run = [0, 2, 4, 5, 7, 9, 10, 12, 11].map((st, i) => ({ f: note(587, st), d: 1.2, g: 0.045, a: 0.01, at: i * 0.05, rv: 0.75, p: [[2, 0.2, 0.3]] }));
+        const pad = [294, 370, 440, 659].map((f) => ({ f, d: 2.2, g: 0.035, a: 0.25, rv: 0.24, dt: 9 }));
+        const run = [0, 2, 4, 5, 7, 9, 10, 12, 11].map((st, i) => ({ f: note(587, st), d: 1.2, g: 0.045, a: 0.01, at: i * 0.05, rv: 0.22, p: [[2, 0.2, 0.3]] }));
         return pad.concat(run);
       },
-      tspin: () => [7, 4, 9, 12].map((st, i) => ({ f: note(587, st), d: 1, g: 0.05, at: i * 0.07, rv: 0.75, dt: 8, vib: 12 })),
-      perfect: () => [0, 2, 4, 5, 7, 9, 10, 12, 13].map((st, i) => ({ f: note(587, st), d: 1.8, g: 0.045, at: i * 0.08, a: 0.02, rv: 0.85, dt: 8, p: [[2, 0.25, 0.4]] })),
-      combo: (s, n) => [{ f: note(1175, Math.min(9, n || 1)), d: 0.7, g: 0.035, a: 0.008, rv: 0.7, dt: 7 }],
+      tspin: () => [7, 4, 9, 12].map((st, i) => ({ f: note(587, st), d: 1, g: 0.05, at: i * 0.07, rv: 0.22, dt: 8, vib: 12 })),
+      perfect: () => [0, 2, 4, 5, 7, 9, 10, 12, 13].map((st, i) => ({ f: note(587, st), d: 1.8, g: 0.045, at: i * 0.08, a: 0.02, rv: 0.26, dt: 8, p: [[2, 0.25, 0.4]] })),
+      combo: (s, n) => [{ f: note(1175, Math.min(9, n || 1)), d: 0.7, g: 0.035, a: 0.008, rv: 0.21, dt: 7 }],
     },
 
     // A desk-bound machine: clicks, clacks, the carriage return's zip and its bell.
@@ -305,9 +305,9 @@
 
   // ---- Classic's music: Korobeiniki (a 19th-century Russian folk song, public domain), remixed ------------------------
   //
-  // Moved from A minor to A major, with lush seventh chords, and laid out as a two-minute suite so it rarely repeats:
-  // an intro of chords, the tune on electric piano, again an octave up on kalimba with a harmony and a soft beat,
-  // the bridge on bells and again in full, a dreamy interlude with a counter-melody, and the tune once more on flute.
+  // Kept in A minor, the tune as written, arranged soft and laid out as a two-minute suite so it rarely repeats:
+  // an intro of chords, the tune on electric piano, again an octave up with a harmony and a soft beat, the bridge on
+  // a breathy lead and again in full, an interlude with a counter-melody, and the tune once more.
 
   const MIDI = (n) => { // 'E5', 'C#4', '-' (rest)
     if (n === '-') return null;
@@ -327,26 +327,26 @@
     out.pop();
     return out;
   };
-  const TUNE_A = bars('E5 2,B4 1,C#5 1,D5 2,C#5 1,B4 1,A4 2,A4 1,C#5 1,E5 2,D5 1,C#5 1,B4 3,C#5 1,D5 2,E5 2,C#5 2,A4 2,A4 4,- 1,D5 2,F#5 1,A5 2,G#5 1,F#5 1,E5 3,C#5 1,E5 2,D5 1,C#5 1,B4 2,B4 1,C#5 1,D5 2,E5 2,C#5 2,A4 2,A4 2,- 2');
-  const TUNE_B = bars('E5 4,C#5 4,D5 4,B4 4,C#5 4,A4 4,G#4 4,B4 2,- 2,E5 4,C#5 4,D5 4,B4 4,C#5 2,E5 2,A5 4,G#5 8');
-  const COUNTER = bars('F#5 6,E5 2,E5 8,D5 6,C#5 2,B4 8,F#5 6,G#5 2,A5 8,G#5 4,F#5 4,E5 8');
+  const TUNE_A = bars('E5 2,B4 1,C5 1,D5 2,C5 1,B4 1,A4 2,A4 1,C5 1,E5 2,D5 1,C5 1,B4 3,C5 1,D5 2,E5 2,C5 2,A4 2,A4 4,- 1,D5 2,F5 1,A5 2,G5 1,F5 1,E5 3,C5 1,E5 2,D5 1,C5 1,B4 2,B4 1,C5 1,D5 2,E5 2,C5 2,A4 2,A4 2,- 2');
+  const TUNE_B = bars('E5 4,C5 4,D5 4,B4 4,C5 4,A4 4,G#4 4,B4 2,- 2,E5 4,C5 4,D5 4,B4 4,C5 2,E5 2,A5 4,G#5 8');
+  const COUNTER = bars('A5 6,G5 2,G5 8,F5 6,E5 2,D5 8,C5 6,D5 2,E5 8,D5 4,C5 4,B4 8');
   // Chords: [bass note, voicing]
   const CH = {
-    A: [45, [57, 61, 64, 68]], E: [40, [56, 59, 64, 66]], D: [38, [57, 61, 62, 66]], Fm: [42, [54, 57, 61, 64]],
-    Eg: [44, [56, 59, 64, 68]], Cm: [49, [56, 59, 61, 64]], Bm: [47, [57, 59, 62, 66]], Es: [40, [57, 59, 64, 69]],
+    Am: [45, [57, 60, 64, 67]], E7: [40, [56, 59, 62, 64]], Dm: [38, [57, 60, 62, 65]], C: [48, [55, 59, 60, 64]],
+    F: [41, [57, 60, 64, 65]], Em: [40, [55, 59, 62, 64]], Es: [40, [57, 59, 62, 64]],
   };
-  const PROG_A = ['E', 'A', 'E', 'A', 'D', 'Fm', 'E', 'A'];
-  const PROG_B = ['A', 'Eg', 'Fm', 'E', 'A', 'Eg', 'Fm', 'E'];
-  const PROG_I = ['D', 'Cm', 'Bm', 'E', 'D', 'Cm', 'Bm', 'Es'];
+  const PROG_A = ['E7', 'Am', 'E7', 'Am', 'Dm', 'C', 'E7', 'Am'];
+  const PROG_B = ['Am', 'E7', 'Am', 'E7', 'Am', 'E7', 'Am', 'E7'];
+  const PROG_I = ['F', 'Em', 'Dm', 'Es', 'F', 'Em', 'Dm', 'E7'];
 
   const SECTIONS = [
     { name: 'intro', prog: PROG_I.slice(0, 4), lead: null, groove: 0, arp: true, once: true },
     { name: 'A1', prog: PROG_A, lead: TUNE_A, voice: 'piano', groove: 1 },
-    { name: 'A2', prog: PROG_A, lead: TUNE_A, voice: 'kalimba', up: 12, harmony: true, groove: 2, arp: true },
-    { name: 'B1', prog: PROG_B, lead: TUNE_B, voice: 'bell', groove: 1 },
+    { name: 'A2', prog: PROG_A, lead: TUNE_A, voice: 'piano', up: 12, harmony: true, groove: 2, arp: true },
+    { name: 'B1', prog: PROG_B, lead: TUNE_B, voice: 'flute', groove: 1 },
     { name: 'B2', prog: PROG_B, lead: TUNE_B, voice: 'piano', harmony: true, groove: 2, arp: true },
     { name: 'interlude', prog: PROG_I, lead: COUNTER, voice: 'flute', groove: 1, arp: true },
-    { name: 'A3', prog: PROG_A, lead: TUNE_A, voice: 'flute', groove: 2 },
+    { name: 'A3', prog: PROG_A, lead: TUNE_A, voice: 'piano', groove: 2 },
   ];
   const SONG = (() => {
     const list = [];
@@ -354,8 +354,8 @@
     return { bars: list, loopFrom: list.findIndex((b) => !b.once) };
   })();
 
-  // A major, for harmonies a third below the tune.
-  const SCALE = [1, 2, 4, 6, 8, 9, 11];
+  // A harmonic minor (with G#), for harmonies a third below the tune.
+  const SCALE = [0, 2, 4, 5, 8, 9, 11];
   function thirdBelow(m) {
     const pc = ((m % 12) + 12) % 12;
     let i = SCALE.indexOf(pc);
@@ -373,7 +373,7 @@
     playing: false,
     volume: 0.25,
     tempo: 1,
-    bpm: 116,
+    bpm: 112,
     timer: null,
     gain: null,
 
@@ -549,53 +549,64 @@
   // ---- the announcer (Classic) ------------------------------------------------------------------------------------
 
   /**
-   * A whisper calls out the big moments — "single", "double", "triple", "tetris", "T-spin …", "back to back",
-   * "perfect clear". Uses the system's speech voices: the macOS "Whisper" voice when there is one, otherwise a
-   * quiet, low, slow voice.
+   * A whisper calls out the big moments — "single", "double", "triple", "tetris", "T-spin", "mini", "back to back",
+   * "perfect clear", "next level", "game over". The clips are pre-rendered (scripts/make-voice.py: a female Piper
+   * voice turned into a whisper) and embedded, so it sounds the same on every machine, offline.
    */
   const Announcer = {
     enabled: true,
-    voice: null,
-    pick() {
-      const ss = root.speechSynthesis;
-      if (!ss) return null;
-      const voices = ss.getVoices() || [];
-      this.voice = voices.find((v) => /whisper/i.test(v.name)) ||
-        voices.find((v) => /^en/i.test(v.lang) && /(samantha|daniel|karen|moira|serena|google uk english female)/i.test(v.name)) ||
-        voices.find((v) => /^en/i.test(v.lang)) || null;
-      return this.voice;
+    buffers: {},
+    decode(key) {
+      const ctx = Sound.ensure();
+      const b64 = (L.VOICE_CLIPS || {})[key];
+      if (!ctx || !b64) return Promise.resolve(null);
+      if (!this.buffers[key]) {
+        const bin = root.atob(b64), bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        this.buffers[key] = new Promise((res) => {
+          try { const p = ctx.decodeAudioData(bytes.buffer, res, () => res(null)); if (p && p.catch) p.catch(() => res(null)); } catch (e) { res(null); }
+        });
+      }
+      return this.buffers[key];
     },
-    say(text) {
-      const ss = root.speechSynthesis;
-      if (!this.enabled || !ss || !root.SpeechSynthesisUtterance) return false;
-      if (!this.voice) this.pick();
-      try {
-        ss.cancel();
-        const u = new root.SpeechSynthesisUtterance(text);
-        if (this.voice) { u.voice = this.voice; u.lang = this.voice.lang; }
-        const whisper = this.voice && /whisper/i.test(this.voice.name);
-        u.rate = whisper ? 0.95 : 0.85;
-        u.pitch = whisper ? 1 : 0.55;
-        u.volume = Math.min(1, (Sound.volume || 0.35) * (whisper ? 2 : 1.4));
-        ss.speak(u);
-        this.last = text;
-        return true;
-      } catch (e) { return false; }
+    /** Says a list of clip keys in order, with a breath between them. Cuts off anything still being said. */
+    say(keys) {
+      if (!this.enabled || !keys || !keys.length) return false;
+      const ctx = Sound.ensure();
+      if (!ctx) return false;
+      if (ctx.state === 'suspended') ctx.resume();
+      const token = this.token = (this.token || 0) + 1;
+      if (this.out) { try { this.out.gain.setTargetAtTime(0, ctx.currentTime, 0.03); } catch (e) { /* gone */ } }
+      const out = this.out = ctx.createGain();
+      out.gain.value = 1.6;
+      out.connect(Sound.master);
+      if (Sound.reverb) { const s = ctx.createGain(); s.gain.value = 0.12; out.connect(s).connect(Sound.reverb); }
+      Promise.all(keys.map((k) => this.decode(k))).then((bufs) => {
+        if (token !== this.token) return;
+        let at = ctx.currentTime + 0.02;
+        for (const buf of bufs) {
+          if (!buf) continue;
+          const src = ctx.createBufferSource();
+          src.buffer = buf; src.connect(out); src.start(at);
+          at += buf.duration + 0.06;
+        }
+      });
+      this.last = keys.join(' ');
+      return true;
     },
-    /** What to say for a lock result, or null. */
+    /** The clips for a lock result (and a level-up), or null. */
     phrase(r, levelUp) {
       const names = ['', 'single', 'double', 'triple', 'tetris'];
-      let s = '';
-      if (r.tspin) s = 'T-spin' + (r.lines ? ' ' + names[Math.min(r.lines, 3)] : '');
-      else if (r.mini) s = 'T-spin mini' + (r.lines ? ' ' + names[Math.min(r.lines, 2)] : '');
-      else if (r.lines) s = names[Math.min(r.lines, 4)];
-      if (s && r.b2b) s = 'back to back, ' + s;
-      if (r.perfect) s = (s ? s + '. ' : '') + 'perfect clear';
-      if (levelUp) s = (s ? s + '. ' : '') + 'level ' + levelUp;
-      return s || null;
+      let k = [];
+      if (r.tspin) k = ['tspin'].concat(r.lines ? [names[Math.min(r.lines, 3)]] : []);
+      else if (r.mini) k = ['tspin', 'mini'].concat(r.lines ? [names[Math.min(r.lines, 2)]] : []);
+      else if (r.lines) k = [names[Math.min(r.lines, 4)]];
+      if (k.length && r.b2b) k.unshift('b2b');
+      if (r.perfect) k.push('perfect');
+      if (levelUp) k.push('levelup');
+      return k.length ? k : null;
     },
   };
-  if (root.speechSynthesis && root.speechSynthesis.addEventListener) root.speechSynthesis.addEventListener('voiceschanged', () => Announcer.pick());
 
   L.Sound = Sound;
   L.Music = Music;

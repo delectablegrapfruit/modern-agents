@@ -82,6 +82,15 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     return c.height === c2.height && c.width === c2.width;
   });
   check('a combo (or a long score) never resizes the board', steady);
+  // Retiring a board shows its whole life, and logs it.
+  await ev(() => { const m = Lull.app.modes.play; m.game.s.items = { bomb: 2, laser: 1 }; m.game.s.startedAt = Date.now() - 3 * 86400e3; });
+  await page.click('#play-status .btn');
+  const sum = await ev(() => { const c = document.querySelector('#play-overlay .board-sum'); return c ? c.textContent : ''; });
+  check('retiring asks, showing the board\'s life', /Lifetime/.test(sum) && /3 used/.test(sum) && /Bomb ×2/.test(sum), sum.slice(0, 200));
+  await shot('10b-retire');
+  const logN = await ev(() => (Lull.app.store.state.stats.free.boardLog || []).length);
+  await page.click('#play-overlay .btn.primary');
+  check('a retired board is logged', (await ev(() => Lull.app.store.state.stats.free.boardLog.length)) === logN + 1 && (await ev(() => Lull.app.modes.play.game.s.pieces)) === 0);
   // ---- items ---------------------------------------------------------------------------------------------------------
   console.log('items');
   await ev(() => { const s = Lull.app.store; s.state.lines = 20000; Lull.app.refreshWallet(); for (const id of Lull.ITEM_ORDER) s.buyItem(id, 2); Lull.app.modes.play.renderItems(); });
@@ -194,6 +203,12 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await page.mouse.down(); await page.mouse.up();
   const landed = await ev(() => { const b = Lull.app.modes.play.game.board; const cols = []; for (let x = 0; x < 10; x++) if (b.get(x, 0)) cols.push(x); return cols; });
   check('click grace: a slip just before the click drops where it was', landed.includes(3) && (await ev(() => Lull.app.modes.play.game.s.pieces)) === pcsG + 1, JSON.stringify([col3, landed]));
+  // Inverted Controls turn the mouse around too.
+  await ev(() => { const m = Lull.app.modes.play; m.inverted = true; m.rawCol = null; const g = m.game; g.board.cells.fill(0); g.replacePiece({ id: 'O' }); g.piece.y = 17; });
+  const inv = await cellPt(2, 10);
+  await page.mouse.move(inv[0] + 3, inv[1]); await page.mouse.move(inv[0], inv[1]);
+  check('Inverted Controls mirror the mouse aim', (await pieceCol()) === 7, String(await pieceCol()));
+  await ev(() => { Lull.app.modes.play.inverted = false; });
   // Off the grid still places.
   const offPt = await ev(() => { const v = Lull.app.modes.play.view; const r = v.canvas.getBoundingClientRect(); return [r.left + v.lay.board.x + v.lay.board.w + 8, r.top + v.lay.board.y + v.lay.board.h - 10]; });
   const pcs2 = await ev(() => Lull.app.modes.play.game.s.pieces);
@@ -253,7 +268,9 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await page.keyboard.press('KeyP');
   await page.waitForTimeout(100);
   const ann = await ev(() => { const A = Lull.Announcer; return [A.phrase({ lines: 1 }), A.phrase({ lines: 4, b2b: true }), A.phrase({ tspin: true, lines: 2 }), A.phrase({ mini: true, lines: 0 }), A.phrase({ lines: 0 }), A.phrase({ lines: 2, perfect: true }, 3)]; });
-  check('the announcer knows its lines', JSON.stringify(ann) === JSON.stringify(['single', 'back to back, tetris', 'T-spin double', 'T-spin mini', null, 'double. perfect clear. level 3']), JSON.stringify(ann));
+  check('the announcer knows its lines', JSON.stringify(ann) === JSON.stringify([['single'], ['b2b', 'tetris'], ['tspin', 'double'], ['tspin', 'mini'], null, ['double', 'perfect', 'levelup']]), JSON.stringify(ann));
+  const clips = await ev(async () => { const out = {}; for (const k of Object.keys(Lull.VOICE_CLIPS)) { const b = await Lull.Announcer.decode(k); out[k] = b ? +b.duration.toFixed(2) : 0; } return out; });
+  check('every whispered clip decodes (0.3–2 s)', Object.values(clips).length === 10 && Object.values(clips).every((d) => d > 0.3 && d < 2), JSON.stringify(clips));
   check('the remix is a long suite', await ev(() => Lull.SONG.bars.length >= 48 && Lull.SONG.loopFrom === 4));
     check('P pauses (and the music stops)', await ev(() => Lull.app.modes.classic.paused && !Lull.Music.playing));
   await shot('14-classic-paused');
@@ -388,13 +405,13 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   check('the belt carries minos', await ev(() => Lull.app.modes.factory.belt.items.length > 0));
   await shot('30-factory');
   // Click a defect off the belt.
-  await ev(() => { const b = Lull.app.modes.factory.belt; b.items = []; for (let k = 0; k < 4; k++) { const it = Lull.Factory.makeItem(b.f, b.rng, k % 2 === 0); it.id = 900 + k; it.x = 0.1 + k * 0.22; it.value = 1; b.items.push(it); } b.speed = 0.0001; });
+  await ev(() => { const b = Lull.app.modes.factory.belt; b.items = []; for (let k = 0; k < 4; k++) { const it = Lull.Factory.makeItem(b.f, b.rng, k % 2 === 0); it.id = 900 + k; it.x = 2 + k * 8; it.value = 1; b.items.push(it); } b.speed = 0.0001; });
   await page.waitForTimeout(120);
   const caught0 = await ev(() => Lull.app.store.state.factory.stats.caught);
   const dpt = await ev(() => { const m = Lull.app.modes.factory, it = m.belt.items.find((i) => i.defect), c = m.view.itemCenter(it), r = m.canvas.getBoundingClientRect(); return [r.left + c[0], r.top + c[1]]; });
   await page.mouse.click(dpt[0], dpt[1]);
   check('clicking a cracked mino pulls it off the belt', (await ev(() => Lull.app.store.state.factory.stats.caught)) === caught0 + 1);
-  await ev(() => { Lull.app.modes.factory.belt.speed = 0.09; });
+  await ev(() => { Lull.app.modes.factory.belt.speed = 3.2; });
   // A full crate trades for lines.
   const lines0 = await ev(() => { const f = Lull.app.store.state.factory; f.crate = Lull.Factory.crateSize(f); return Lull.app.store.state.lines; });
   await page.waitForTimeout(300);

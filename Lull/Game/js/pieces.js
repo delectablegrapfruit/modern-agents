@@ -158,7 +158,7 @@
 
   const MIRROR = { I: 'I', O: 'O', T: 'T', S: 'Z', Z: 'S', J: 'L', L: 'J' };
 
-  /** The mirror image of a type (J↔L, S↔Z; any other shape is reflected). */
+  /** The mirror image of a type (J and L, S and Z; any other shape is reflected). */
   function mirrorOf(type) {
     if (MIRROR[type.id]) return TYPES[MIRROR[type.id]];
     const cells = type.rots[0].map(([x, y]) => [-x, y]);

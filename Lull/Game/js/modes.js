@@ -101,7 +101,7 @@
       }
       this.view.dirty = true;
       // Keys are in charge until the mouse moves again (so arrows work with the pointer resting on the board).
-      if (!this.mouseActing) { this.lastInput = 'key'; this.view.pointerCol = null; }
+      if (!this.mouseActing) { this.lastInput = 'key'; this.view.pointerCol = null; this.rawCol = null; }
       if (this.afterAction) this.afterAction(a);
       return ok;
     }
@@ -133,7 +133,7 @@
         if (moved) this.follow();
         c.style.cursor = hold ? 'pointer' : 'default';
       });
-      c.addEventListener('mouseleave', () => { this.pointer = null; this.view.pointerCol = null; this.view.holdHover = false; this.view.dirty = true; });
+      c.addEventListener('mouseleave', () => { this.pointer = null; this.rawCol = null; this.view.pointerCol = null; this.view.holdHover = false; this.view.dirty = true; });
       c.addEventListener('mousedown', (e) => {
         if (!enabled()) return;
         if (performance.now() - this.app.focusedAt < 300) return; // the click that brought the window forward
@@ -166,7 +166,7 @@
     follow() {
       const g = this.game;
       if (!this.pointer || !g || !g.piece || g.over || !this.settings.mouse) return;
-      const [px, py] = this.pointer, cur = this.view.pointerCol;
+      const [px, py] = this.pointer, cur = this.rawCol;
       const cell = this.view.cellClamped(px, py);
       if (!cell) return;
       let col = cell.x;
@@ -175,8 +175,11 @@
         const d = this.view.lay.s * 0.33;
         for (const [dx, dy] of [[d, 0], [-d, 0], [0, d], [0, -d]]) { const c = this.view.cellClamped(px + dx, py + dy); if (c && c.x === cur) { col = cur; break; } }
       }
-      if (col !== cur) { this.prevCol = cur; this.colAt = performance.now(); this.view.pointerCol = col; }
-      this.aimAt(col);
+      // Inverted Controls turn the mouse around too: the piece goes to the mirror of the pointer's column.
+      const target = this.inverted ? g.w - 1 - col : col;
+      if (col !== cur) { this.prevCol = this.target; this.colAt = performance.now(); this.rawCol = col; this.target = target; }
+      this.aimAt(target);
+      this.view.pointerCol = col;
     }
 
     aimAt(col) {
@@ -184,7 +187,6 @@
       this.quiet = true;
       for (let i = 0; i < g.w; i++) if (!g.moveToward(col)) break;
       this.quiet = false;
-      this.view.pointerCol = col;
       this.view.dirty = true;
     }
 
@@ -355,7 +357,7 @@
       S.best = Math.max(S.best, this.score);
       this.app.store.touch();
       this.app.sound.play('fail');
-      if (this.app.settings.announcer !== false && this.app.settings.sound) L.Announcer.say('game over');
+      if (this.app.settings.announcer !== false && this.app.settings.sound) L.Announcer.say(['gameover']);
       this.showCard([
         h('h2', null, best ? 'New best!' : 'Game over'),
         h('p', null, h('span', { class: 'big' }, fmtInt(this.score)), ' points'),
@@ -377,7 +379,7 @@
       const st = this.app.settings;
       this.controlsEl.replaceChildren(
         h('button', { class: 'btn sm' + (st.music ? ' on' : ''), 'data-tip': 'Music for Classic (Korobeiniki, the old folk tune)', onclick: () => { st.music = !st.music; this.app.store.touch(); this.renderControls(); } }, st.music ? '♪ On' : '♪ Off'),
-        h('button', { class: 'btn sm', disabled: !this.started || this.over, onclick: () => this.togglePause() }, this.paused ? '▶ Resume' : '⏸ Pause', ' ', h('kbd', null, 'P')),
+        h('button', { class: 'btn sm', disabled: !this.started || this.over, onclick: () => this.togglePause() }, this.paused ? '► Resume' : '‖ Pause', ' ', h('kbd', null, 'P')),
         h('button', { class: 'btn sm', onclick: () => this.restart() }, '↺ Restart ', h('kbd', null, 'R')));
     }
   }
@@ -458,15 +460,49 @@
       this.showCard([
         h('h2', null, 'Board full'),
         h('p', null, 'No room for the next piece. Nothing is lost — the lines you cleared are banked.'),
-        h('p', null, h('span', { class: 'big' }, fmtInt(g.s.lines)), ' lines · ', fmtInt(g.s.score), ' points'),
+        this.boardSummary(g.s),
         h('div', { class: 'row' },
           g.history.length && this.app.store.state.inventory.rewind ? h('button', { class: 'btn', onclick: () => { this.hideCard(); this.useItem('rewind'); } }, '↶ Rewind (have ' + this.app.store.state.inventory.rewind + ')') : null,
-          h('button', { class: 'btn primary', onclick: () => this.newBoard() }, 'New board')),
+          h('button', { class: 'btn primary', onclick: () => this.newBoard('full') }, 'New board')),
       ]);
     }
 
-    newBoard() {
+    /** Asks before retiring a board, showing its whole life so far. */
+    askRetire() {
+      if (this.game.board.isEmpty() && !this.game.s.pieces) return this.newBoard('manual');
+      this.showCard([
+        h('h2', null, 'Retire this board?'),
+        h('p', null, 'Its lines stay banked. Here is how it went:'),
+        this.boardSummary(this.game.s),
+        h('div', { class: 'row' },
+          h('button', { class: 'btn', onclick: () => this.hideCard() }, 'Keep playing'),
+          h('button', { class: 'btn primary', onclick: () => this.newBoard('manual') }, 'Retire and start fresh')),
+      ]);
+    }
+
+    /** A board's lifelong numbers, as a grid of small tiles. */
+    boardSummary(s) {
+      const life = s.startedAt ? Date.now() - s.startedAt : 0;
+      const items = Object.entries(s.items || {}).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
+      const nItems = items.reduce((a, [, n]) => a + n, 0);
+      const ppm = s.playMs > 30000 ? (s.pieces / (s.playMs / 60000)).toFixed(1) : '—';
+      const tile = (v, l) => h('div', { class: 'bs' }, h('div', { class: 'v' }, v), h('div', { class: 'l' }, l));
+      return h('div', { class: 'board-sum' },
+        tile(life ? fmtDuration(life) : '—', 'Lifetime'), tile(s.playMs ? fmtDuration(s.playMs) : '—', 'Played'), tile(fmtInt(s.pieces), 'Pieces'),
+        tile(fmtInt(s.lines), 'Lines'), tile(fmtInt(s.score), 'Score'), tile(ppm, 'Pieces / min'),
+        tile(fmtInt((s.clears && s.clears[4]) || 0), 'Quads'), tile(fmtInt(s.tspins || 0), 'T-spins'), tile(fmtInt(s.perfect || 0), 'Perfect clears'),
+        tile(fmtInt(Math.max(0, s.maxCombo || 0)), 'Best combo'), tile(fmtInt(Math.max(0, s.maxB2B || 0)), 'Best back-to-back'), tile(fmtInt(s.holds || 0), 'Holds'),
+        h('div', { class: 'bs wide' }, h('div', { class: 'v' }, nItems ? fmtInt(nItems) + ' used' : 'none'), h('div', { class: 'l' }, 'Power-ups' + (items.length ? ': ' + items.slice(0, 6).map(([id, n]) => ITEMS[id].name + (n > 1 ? ' ×' + n : '')).join(', ') : ''))));
+    }
+
+    newBoard(reason) {
       this.hideCard();
+      const s = this.game.s, F = this.app.store.state.stats.free;
+      if (s.pieces) {
+        F.boardLog = F.boardLog || [];
+        F.boardLog.unshift({ at: Date.now(), reason: reason || 'manual', life: s.startedAt ? Date.now() - s.startedAt : 0, playMs: s.playMs || 0, pieces: s.pieces, lines: s.lines, score: s.score, quads: (s.clears && s.clears[4]) || 0, tspins: s.tspins || 0, perfect: s.perfect || 0, maxCombo: Math.max(0, s.maxCombo || 0), items: Object.values(s.items || {}).reduce((a, b) => a + b, 0) });
+        if (F.boardLog.length > 30) F.boardLog.length = 30;
+      }
       this.game.resetBoard();
       this.app.store.state.stats.free.boards++;
       this.snapshot();
@@ -485,10 +521,7 @@
         h('span', null, 'Score ', h('b', null, fmtInt(s.score))),
         h('span', { class: s.combo > 0 ? '' : 'slot-off' }, 'Combo ', h('b', null, String(Math.max(0, s.combo)))),
         h('span', { class: 'opt' }, 'Pieces ', h('b', null, fmtInt(s.pieces))),
-        h('button', { class: 'btn sm', title: 'Start a fresh board', onclick: () => {
-          if (this.game.board.isEmpty()) return this.newBoard();
-          UI.confirm('New board?', 'Clear this board and start fresh. Lines you cleared stay banked.', 'New board', () => this.newBoard());
-        } }, '↺', h('span', { class: 'lbl' }, ' New board'))].filter(Boolean));
+        h('button', { class: 'btn sm', title: 'Retire this board and start fresh', onclick: () => this.askRetire() }, '↺', h('span', { class: 'lbl' }, ' New board'))].filter(Boolean));
     }
 
     /**
@@ -594,6 +627,8 @@
       const done = () => {
         arm();
         this.tray = null;
+        g.s.items = g.s.items || {};
+        g.s.items[id] = (g.s.items[id] || 0) + 1;
         st.useItem(id);
         this.app.sound.play('item');
         this.renderItems();
@@ -622,7 +657,7 @@
         case 'nuke': if (g.nuke()) done(); else toast('The board is already empty', 'bad'); break;
         case 'tornado': if (g.tornado()) done(); else toast('The board is already empty', 'bad'); break;
         case 'flip': if (g.flipWorld()) done(); else toast(g.board.isEmpty() ? 'The board is empty' : 'The piece would not fit — move it first', 'bad'); break;
-        case 'jackpot': st.useItem(id); this.tray = null; this.jackpot(); this.renderItems(); break;
+        case 'jackpot': g.s.items = g.s.items || {}; g.s.items.jackpot = (g.s.items.jackpot || 0) + 1; st.useItem(id); this.tray = null; this.jackpot(); this.renderItems(); break;
         case 'sand': case 'phase': case 'drill': case 'bomb': case 'anvil': case 'magnet': case 'laser': case 'blackhole': case 'golden':
           if (g.setSpecial(id)) done(); else toast('No room for that here', 'bad');
           break;
@@ -671,7 +706,7 @@
       const reels = wins.map(() => h('div', { class: 'reel' }, '?'));
       const note = h('p', { class: 'jp-note' }, 'Spinning…');
       let handle = null;
-      handle = UI.openModal({ title: '🎰 Jackpot', width: 340, cls: 'modal-jackpot', body: h('div', null, h('div', { class: 'reels' }, reels), note), buttons: [{ label: 'Collect', kind: 'primary' }], onClose: () => { clearInterval(timer); finish(); } });
+      handle = UI.openModal({ title: 'Jackpot', width: 340, cls: 'modal-jackpot', body: h('div', null, h('div', { class: 'reels' }, reels), note), buttons: [{ label: 'Collect', kind: 'primary' }], onClose: () => { clearInterval(timer); finish(); } });
       let t = 0, stopped = 0, done = false;
       const finish = () => {
         if (done) return;
@@ -964,7 +999,7 @@
                 e.mods && e.mods.length ? h('span', { class: 'mods' }, ' ' + e.mods.map((m) => (Puzzles.MODS[m] || { icon: '' }).icon).join(' ')) : null)),
             h('button', { class: 'seedchip', title: 'Copy seed', onclick: () => { UI.copyText(e.seed); toast('Seed ' + e.seed + ' copied', 'good', 1400); } }, e.seed),
             h('button', { class: 'icon-btn star' + (saved ? ' on' : ''), title: saved ? 'Unsave' : 'Save this seed', onclick: () => { this.toggleSaved(e.seed, e); draw(); } }, saved ? '★' : '☆'),
-            h('button', { class: 'icon-btn play', title: e.solved ? 'Replay' : 'Play', onclick: () => { handle.close(); this.load(e.seed, { number: e.number, daily: e.daily }); } }, '▶'));
+            h('button', { class: 'icon-btn play', title: e.solved ? 'Replay' : 'Play', onclick: () => { handle.close(); this.load(e.seed, { number: e.number, daily: e.daily }); } }, '►'));
         }) : [h('p', { class: 'empty' }, filter === 'saved' ? 'No saved seeds yet — press ☆ on a puzzle or a row to keep it here.' : filter === 'all' ? 'No puzzles yet — every one you open lands here.' : 'Nothing here yet.')]));
       };
       const tabs = [['all', 'All'], ['unsolved', 'Unsolved'], ['solved', 'Solved'], ['saved', '★ Saved']];
@@ -1071,7 +1106,7 @@
       this.el.actions.replaceChildren(
         h('button', { class: 'btn sm', disabled: !this.game || !this.game.history.length || this.done, onclick: () => this.undo() }, '↶ Undo ', h('kbd', null, '⌫')),
         h('button', { class: 'btn sm', onclick: () => this.retry() }, '↺ Retry ', h('kbd', null, 'R')),
-        h('button', { class: 'btn sm', disabled: this.done, onclick: () => this.buyHint(), title: 'See where the known solution puts each piece' }, hinted ? '💡 Hints on' : '💡 Hint ', hinted ? null : h('span', { class: 'gem' }, '◆' + cost)),
+        h('button', { class: 'btn sm', disabled: this.done, onclick: () => this.buyHint(), title: 'See where the known solution puts each piece' }, hinted ? 'Hints on' : 'Hint ', hinted ? null : h('span', { class: 'gem' }, '◆' + cost)),
         h('button', { class: 'btn sm', onclick: () => this.next() }, this.done ? 'Next ▸ ' : 'Skip ▸ ', h('kbd', null, 'N')));
     }
   }
@@ -1141,6 +1176,7 @@
       const nowMs = Date.now();
       if ((nowMs - this.f.lastTick) / 1000 > 5) this.catchUp(false);
       this.f.lastTick = nowMs;
+      this.belt.tallest = Factory.tallest(this.f);
       this.belt.step(dt);
       this.onBelt(this.belt.drain());
       this.view.resize();
@@ -1205,14 +1241,14 @@
       this.crateBar = h('i');
       this.crateTxt = h('span');
       this.crateBtn = h('button', { class: 'btn sm', onclick: () => this.openCrate() }, 'Open');
-      this.top.appendChild(h('div', { class: 'kpi crate' }, h('div', { class: 'crate-row' }, h('span', { class: 'v' }, '📦'), this.crateTxt, this.crateBtn), h('div', { class: 'bar' }, this.crateBar)));
+      this.top.appendChild(h('div', { class: 'kpi crate' }, h('div', { class: 'crate-row' }, h('span', { class: 'v crate-ico' }, '▤'), this.crateTxt, this.crateBtn), h('div', { class: 'bar' }, this.crateBar)));
       const look = this.app.look();
       this.rows = [];
       const els = [h('div', { class: 'fac-h' }, 'Presses')];
       for (let t = 1; t <= Factory.MAX_TIER; t++) {
         const T = Factory.TIERS[t];
         if (!Factory.unlocked(f, t)) {
-          els.push(h('div', { class: 'row-card locked' }, h('div', { class: 'fac-ico' }, '🔒'), h('div', { class: 'grow' }, h('div', { class: 't' }, T.name + ' press'), h('div', { class: 'd' }, 'Opens when you own a ' + Factory.TIERS[t - 1].name.toLowerCase() + ' press.'))));
+          els.push(h('div', { class: 'row-card locked' }, h('div', { class: 'fac-ico' }, '—'), h('div', { class: 'grow' }, h('div', { class: 't' }, T.name + ' press'), h('div', { class: 'd' }, 'Opens when you own a ' + Factory.TIERS[t - 1].name.toLowerCase() + ' press.'))));
           break;
         }
         const shape = Factory.shapes(t)[Math.min(Factory.shapes(t).length - 1, t === 4 ? 5 : Math.floor(Factory.shapes(t).length / 2))];
@@ -1229,7 +1265,7 @@
       }
       els.push(h('div', { class: 'fac-h' }, 'Quality control'));
       this.qc = { lvl: h('span', { class: 'lvl' }), d: h('div', { class: 'd' }), b: h('button', { class: 'btn sm primary', onclick: () => { if (Factory.buyInspector(f)) { this.app.sound.play('buy'); this.afterEvents(); this.update(); } } }) };
-      els.push(h('div', { class: 'row-card' }, h('div', { class: 'fac-ico big' }, '🔍'), h('div', { class: 'grow' }, h('div', { class: 't' }, 'Inspector', this.qc.lvl), this.qc.d), h('div', { class: 'fac-buy' }, this.qc.b)));
+      els.push(h('div', { class: 'row-card' }, h('div', { class: 'fac-ico big' }, '⌕'), h('div', { class: 'grow' }, h('div', { class: 't' }, 'Inspector', this.qc.lvl), this.qc.d), h('div', { class: 'fac-buy' }, this.qc.b)));
       els.push(h('p', { class: 'fac-note' }, 'About one mino in ten comes off the line cracked. Click it off the belt before it ships — a shipped defect is refunded at a loss; a caught one pays, more on a streak. Presses double their output at ' + Factory.MILESTONES.slice(0, 4).join(', ') + ' … owned. The factory runs while Lull is closed, for up to ' + Factory.OFFLINE_HOURS + ' hours.'));
       this.list.replaceChildren(...els);
       this.update();

@@ -162,42 +162,61 @@
   const shapeCache = {};
   function shapes(n) { return shapeCache[n] || (shapeCache[n] = Pieces.freePolyominoes(n)); }
 
-  /** A mino for the belt: from a line you own (the bigger lines more often), sometimes defective. */
+  /** A mino for the belt: from a line you own (the bigger lines more often), lying flat, sometimes defective. */
   function makeItem(f, rng, forceDefect) {
     const lines = [];
     for (let t = 1; t <= MAX_TIER; t++) if (owned(f, t)) lines.push(t);
     const t = lines.length ? lines[Math.min(lines.length - 1, Math.floor(Math.pow(rng.next(), 0.6) * lines.length))] : 1;
-    const cells = rng.pick(shapes(t)).map((c) => c.slice());
+    let cells = rng.pick(shapes(t)).map((c) => c.slice());
+    let w = 0, h = 0;
+    for (const [x, y] of cells) { w = Math.max(w, x + 1); h = Math.max(h, y + 1); }
+    if (h > w) { cells = cells.map(([x, y]) => [y, x]); [w, h] = [h, w]; }
     const defect = forceDefect === true || (forceDefect == null && rng.next() < DEFECT_RATE);
-    return { t, cells, color: 1 + rng.int(7), defect, mark: defect ? rng.int(cells.length) : -1, x: 0 };
+    return { t, cells, w, h, color: 1 + rng.int(7), defect, mark: defect ? rng.int(cells.length) : -1, x: 0 };
   }
 
-  /** The belt on screen: minos ride from x = 0 to x = 1 and ship. */
+  /** The tallest mino the lines you own can make, lying flat (the belt sizes its cells by it). */
+  const tallCache = {};
+  function tallest(f) {
+    let top = 1;
+    for (let t = 1; t <= MAX_TIER; t++) if (owned(f, t)) top = t;
+    if (tallCache[top]) return tallCache[top];
+    let hmax = 1;
+    for (const c of shapes(top)) { let w = 0, h = 0; for (const [x, y] of c) { w = Math.max(w, x + 1); h = Math.max(h, y + 1); } hmax = Math.max(hmax, Math.min(w, h)); }
+    return (tallCache[top] = hmax);
+  }
+
+  /**
+   * The belt on screen, measured in cells: minos slide in from off the left edge (x = -width), ride along, and slide
+   * off the right (x > length) to ship. A new one is stamped only when the last has cleared a gap, so they never
+   * overlap; income runs on regardless (the belt only shows it).
+   */
   class Belt {
     constructor(f, rng) {
       this.f = f; this.rng = rng;
       this.items = []; this.events = [];
-      this.acc = 0.5; this.speed = 0.09; this.nextId = 1;
+      this.length = 40; this.gap = 2; this.speed = 3.2; this.acc = 1; this.nextId = 1; this.tallest = 1;
     }
 
     step(dt) {
-      const f = this.f, r = rates(f), per = r.gross / Math.max(0.0001, minosPerSec(f));
+      const f = this.f, r = rates(f), mps = minosPerSec(f), per = r.gross / Math.max(0.0001, mps);
       earn(f, r.gross * dt * (1 - DEFECT_RATE)); // good minos pay as they are made; defects settle when they ship
-      this.acc += dt * minosPerSec(f);
-      while (this.acc >= 1) {
+      this.acc = Math.min(1, this.acc + dt * mps);
+      const last = this.items[this.items.length - 1];
+      if (mps > 0 && this.acc >= 1 && (!last || last.x >= this.gap)) {
         this.acc -= 1;
         const it = makeItem(f, this.rng);
-        it.id = this.nextId++; it.value = per;
+        it.id = this.nextId++; it.value = per; it.x = -it.w;
         this.items.push(it);
       }
       for (const it of this.items) {
         it.x += dt * this.speed;
-        if (it.defect && !it.checked && it.x > 0.7) {
+        if (it.defect && !it.checked && it.x > this.length * 0.7) {
           it.checked = true;
           if (this.rng.next() < r.C) this.remove(it, 'auto');
         }
       }
-      for (const it of this.items.filter((i) => i.x >= 1)) {
+      for (const it of this.items.filter((i) => i.x >= this.length)) {
         this.items.splice(this.items.indexOf(it), 1);
         if (it.defect) { f.stats.escaped++; f.streak = 0; earn(f, -it.value * 0.5); this.events.push({ kind: 'escaped', item: it }); }
         else { f.stats.shipped++; this.events.push({ kind: 'shipped', item: it }); }
@@ -225,7 +244,7 @@
 
   L.Factory = {
     VERSION, TIERS, MAX_TIER, MILESTONES, OFFLINE_HOURS, DEFECT_RATE,
-    create, migrate, multiplier, nextMilestone, cost, affordable, buy, unlocked, tierRate, inspectCost, buyInspector,
+    create, migrate, tallest, multiplier, nextMilestone, cost, affordable, buy, unlocked, tierRate, inspectCost, buyInspector,
     rates, crateSize, crateLines, earn, openCrate, runExpected, catchUp, minosPerSec, makeItem, Belt, shapes,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

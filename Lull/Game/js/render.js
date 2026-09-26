@@ -1031,7 +1031,7 @@
       this.fx.ring(cx, cy, '#ffffff', b.h * 0.9, { max: 0.8, width: 5 });
       this.fx.ring(cx, cy, '#ff9f43', b.h * 0.6, { max: 1, width: 3 });
       this.fx.puff(cx, cy, '#9a8f86', 30, s * 1.2);
-      this.fx.text('☢  KABOOM', cx, b.y + b.h * 0.35, '#ffe28a', 24);
+      this.fx.text('KABOOM', cx, b.y + b.h * 0.35, '#ffe28a', 24);
       this.fx.shake = 14;
       this.dirty = true;
     }

@@ -199,7 +199,7 @@
       if (!got.length) return;
       for (const a of got) {
         this.store.addLines(a.pay, 'achievements');
-        toast('🏆 ' + a.name + ' · +' + a.pay + ' ◆', 'good', 3200);
+        toast('★ ' + a.name + ' · +' + a.pay + ' ◆', 'good', 3200);
       }
       this.sound.play('solve');
       this.refreshWallet(true);
@@ -247,7 +247,7 @@
       if (focused && performance.now() - (this.lastActivity || 0) < 120000) {
         const S = this.state.stats.timeMs;
         S.total += 1000;
-        if (this.tab === 'play') S.play += 1000;
+        if (this.tab === 'play') { S.play += 1000; const bs = this.modes.play.game.s; bs.playMs = (bs.playMs || 0) + 1000; }
         else if (this.tab === 'classic') S.classic = (S.classic || 0) + 1000;
         else if (this.tab === 'puzzle') S.puzzle += 1000;
         else if (this.tab === 'factory') S.factory += 1000;

@@ -55,33 +55,36 @@
       ctx.save();
       ctx.beginPath(); rr(ctx, ln.x, ln.y, ln.w, ln.h, 10); ctx.clip();
       // The belt: faint slats sliding along (the board's grid colour).
-      const off = (this.t * belt.speed * (ln.w - 2 * s)) % (s * 2);
+      const off = (this.t * belt.speed * Math.max(4, Math.min(16, Math.floor((ln.h * 0.66) / (belt.tallest || 1))))) % (s * 2);
       ctx.strokeStyle = th.grid; ctx.lineWidth = 1;
       for (let x = ln.x - s * 2 + off; x < ln.x + ln.w; x += s * 2) { ctx.beginPath(); ctx.moveTo(x + 0.5, ln.y + ln.h * 0.22); ctx.lineTo(x + 0.5, ln.y + ln.h * 0.78); ctx.stroke(); }
       ctx.fillStyle = rgba(th.accent, 0.05); ctx.fillRect(ln.x, ln.y + ln.h * 0.22, ln.w, ln.h * 0.56);
       ctx.restore();
       ctx.strokeStyle = th.line; ctx.lineWidth = 1; rr(ctx, ln.x + 0.5, ln.y + 0.5, ln.w - 1, ln.h - 1, 10); ctx.stroke();
-      // Minos
+      // Minos, at one cell size (the tallest flat mino fills about two thirds of the belt), clipped to the belt so
+      // they slide in and out of view.
       this.rects = [];
+      const cs = Math.max(4, Math.min(16, Math.floor((ln.h * 0.66) / belt.tallest)));
+      belt.length = ln.w / cs;
       const cy = ln.y + ln.h / 2;
+      ctx.save();
+      ctx.beginPath(); rr(ctx, ln.x, ln.y, ln.w, ln.h, 10); ctx.clip();
       for (const it of belt.items) {
-        let w = 0, h = 0;
-        for (const [x, y] of it.cells) { w = Math.max(w, x + 1); h = Math.max(h, y + 1); }
-        const cs = Math.max(4, Math.min(s, Math.floor((ln.h * 0.62) / h)));
-        const x0 = ln.x + s + it.x * (ln.w - 2 * s - w * cs), y0 = cy - (h * cs) / 2;
+        const x0 = ln.x + it.x * cs, y0 = cy - (it.h * cs) / 2;
         const color = look.colors[it.color] || th.accent;
         it.cells.forEach(([x, y], i) => {
-          const px = x0 + x * cs, py = y0 + (h - 1 - y) * cs;
+          const px = x0 + x * cs, py = y0 + (it.h - 1 - y) * cs;
           drawCell(ctx, look.skin, i === it.mark ? Render.mix(color, '#3a2a22', 0.55) : color, px, py, cs);
           if (i === it.mark) {
             ctx.strokeStyle = '#140f0c'; ctx.lineWidth = Math.max(1, cs * 0.12);
             ctx.beginPath(); ctx.moveTo(px + cs * 0.2, py + cs * 0.1); ctx.lineTo(px + cs * 0.55, py + cs * 0.45); ctx.lineTo(px + cs * 0.35, py + cs * 0.6); ctx.lineTo(px + cs * 0.8, py + cs * 0.95); ctx.stroke();
           }
         });
-        const r = { x: x0, y: y0, w: w * cs, h: h * cs, item: it };
+        const r = { x: x0, y: y0, w: it.w * cs, h: it.h * cs, item: it };
         this.rects.push(r);
         if (this.hover === it) { ctx.strokeStyle = it.defect ? th.accent : th.muted; ctx.lineWidth = 1.5; rr(ctx, r.x - 4, r.y - 4, r.w + 8, r.h + 8, 6); ctx.stroke(); }
       }
+      ctx.restore();
       this.fx.draw(ctx);
     }
   }

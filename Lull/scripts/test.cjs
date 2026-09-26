@@ -400,6 +400,15 @@ test('the belt: defects pulled by hand build a streak; good ones binned break it
   let shipped = 0;
   for (let i = 0; i < 3000; i++) { b.step(0.1); shipped += b.drain().filter((e) => e.kind === 'shipped').length; }
   assert(shipped > 20 && f.credits > 0 && f.stats.escaped > 0);
+  // Bigger minos never overlap: each starts off the left edge and keeps a gap to the one before.
+  f.owned = { 1: 5, 2: 5, 3: 5, 4: 5, 5: 5, 6: 5 };
+  const b2 = new Factory.Belt(f, new RNG(4));
+  for (let i = 0; i < 2000; i++) {
+    b2.step(0.05); b2.drain();
+    for (let k = 1; k < b2.items.length; k++) assert(b2.items[k - 1].x - (b2.items[k].x + b2.items[k].w) >= b2.gap - 1e-9, 'minos keep their distance');
+  }
+  const fresh = new Factory.Belt(f, new RNG(5)); fresh.step(0.01);
+  assert(fresh.items.length === 1 && fresh.items[0].x < 0, 'a new mino starts off screen and slides in');
 });
 test('older factories start over, with a little money', () => {
   const f = Factory.migrate({ v: 4, credits: 5e9, lifetime: 1e12, rank: 9, stats: { caught: 40 } });
@@ -431,6 +440,14 @@ test('achievements: earned once, by the right events, none of them a gimme', () 
 });
 
 console.log('save');
+test('no emoji anywhere in the app', () => {
+  const fs = require('fs'), path = require('path'), dir = path.join(__dirname, '..', 'Game');
+  const files = fs.readdirSync(path.join(dir, 'js')).filter((f) => f.endsWith('.js')).map((f) => path.join(dir, 'js', f))
+    .concat([path.join(dir, 'index.html')], fs.readdirSync(path.join(dir, 'css')).map((f) => path.join(dir, 'css', f)));
+  const found = [];
+  for (const f of files) for (const ch of fs.readFileSync(f, 'utf8')) if (/\p{Extended_Pictographic}|\p{Emoji_Presentation}/u.test(ch)) found.push(path.basename(f) + ' ' + ch);
+  assert.deepStrictEqual(found, []);
+});
 test('v1 saves move to v2: sound on, slower key repeat, puzzle history', () => {
   const st = L.mergeState(L.defaultState(), { v: 1, settings: { sound: false, das: 150, arr: 45 }, puzzle: { solved: {} } });
   delete st.puzzle.history;
