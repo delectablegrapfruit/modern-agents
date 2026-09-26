@@ -328,7 +328,10 @@
       const now = pad.buttons.map((b, i) => {
         if (!b) return false;
         // Analogue triggers: press above 0.5, release only below 0.3, so a resting finger cannot chatter.
-        if (i === 6 || i === 7) return this.padPrev[i] ? b.value >= 0.3 : b.value > 0.5;
+        if (i === 6 || i === 7) {
+          if (b.pressed && !b.value) return true; // digital trigger that reports no analogue value
+          return this.padPrev[i] ? b.value >= 0.3 : b.value > 0.5;
+        }
         return b.pressed || b.value > 0.5;
       });
       now.forEach((d, i) => {

@@ -175,7 +175,7 @@
     removeEventListener('keydown', onCaptureKey, true);
     removeEventListener('pointerdown', onCapturePointer, true);
     // Swallow the matching keyup a moment longer so it does not reach the menus.
-    setTimeout(() => removeEventListener('keyup', swallow, true), 0);
+    setTimeout(() => { if (!state.capture) removeEventListener('keyup', swallow, true); }, 0);
   }
 
   function swallow(e) { e.stopImmediatePropagation(); }
@@ -217,9 +217,13 @@
   }
 
   function onCapturePointer(e) {
-    if (e.target && e.target.closest && e.target.closest('.ctl-key.capturing')) return;
+    const t = e.target && e.target.closest ? e.target : null;
+    if (t && t.closest('.ctl-key.capturing')) return;
     stopCapture();
     say('');
+    // A press on another button of the page: leave the DOM alone so its click lands (it re-renders itself).
+    const b = t && t.closest('button');
+    if (b && state.root && state.root.contains(b)) return;
     render();
   }
 
