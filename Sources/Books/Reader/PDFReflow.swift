@@ -505,22 +505,32 @@ enum PDFReflow {
             let end = min(NSMaxRange(range), length)
             while i < end {
                 let composed = pageText.rangeOfComposedCharacterSequence(at: i)
-                let piece = pageText.substring(with: composed)
                 let index = i
                 i = max(i + 1, NSMaxRange(composed))
+                // Each letter through a selection of its own, so that its text and its box come from one reading of
+                // the page (the page's string and its character boxes need not count characters alike).
+                guard let one = page.selection(for: NSRange(location: index, length: max(1, composed.length))),
+                      let piece = one.string, !piece.isEmpty else { continue }
                 if piece.allSatisfy({ $0.isWhitespace }) { continue }
                 guard piece.unicodeScalars.allSatisfy(spacesWords) else { return rejected(read, "a script without word spaces") }
-                let box = page.characterBounds(at: index)
-                guard !box.isNull, box.minX.isFinite, box.maxX.isFinite else { return rejected(read, "no box for character \(index)") }
+                let box = one.bounds(for: page)
+                guard !box.isNull, box.minX.isFinite, box.maxX.isFinite else { return rejected(read, "no box for “\(piece)”") }
                 if let last = glyphs.last, box.width < 0.01 || abs(box.minX - last.box.minX) < 0.01 {
                     // A mark, or a ligature's later letter, drawn in its glyph's box.
                     glyphs[glyphs.count - 1].text += piece
                     continue
                 }
-                if let last = glyphs.last, box.midX < last.box.midX { return rejected(read, "“\(piece)” stands left of “\(last.text)”") }
                 glyphs.append(Glyph(text: piece, box: box))
             }
         }
+        // PDFKit's order is the order the text was drawn in, which need not run left to right (a kerned pair such as
+        // "AY" can come as a run of its own): the glyphs are read in the order they stand. Letters PDFKit counts on
+        // this line that stand off it are not the line's, and the line keeps its text.
+        let line = selection.bounds(for: page)
+        guard glyphs.allSatisfy({ $0.box.midY >= line.minY - 1 && $0.box.midY <= line.maxY + 1 }) else {
+            return rejected(read, "letters beyond the line's bounds")
+        }
+        glyphs.sort { (a: Glyph, b: Glyph) -> Bool in a.box.minX < b.box.minX }
         guard glyphs.count >= 3 else { return rejected(read, "\(glyphs.count) glyphs from \(selection.numberOfTextRanges(on: page)) ranges") }
         var gaps: [CGFloat] = []
         for k in 1..<glyphs.count { gaps.append(glyphs[k].box.minX - glyphs[k - 1].box.maxX) }
