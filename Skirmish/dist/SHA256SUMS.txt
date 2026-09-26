@@ -1,0 +1,2 @@
+05210d6bbd4f39525adab43ffcaabdfe577029644300cc2fc749de163bb0d8df  Skirmish.app.zip
+2340c0a06a9f06a176db90f994409df241dfe23aebca9c20a7f7cc117a99e65a  Skirmish.dmg
