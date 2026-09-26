@@ -268,6 +268,9 @@ final class BattleScene: SKScene {
         }
         let card = SKNode()
         card.position = CGPoint(x: field.midX, y: field.midY)
+        let band = SKSpriteNode(color: SKColor(white: 0, alpha: 0.55), size: CGSize(width: size.width, height: 46))
+        band.position = CGPoint(x: 0, y: -1)
+        card.addChild(band)
         let glow = SKSpriteNode(texture: Art.glow)
         glow.size = CGSize(width: field.width * 1.1, height: 70)
         glow.color = Palette.faction(battle.difficulty.siege ? 2 : Side.player).color()

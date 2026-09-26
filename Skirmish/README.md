@@ -13,7 +13,7 @@ your work. Play a battle in the minute between two tasks. Move the pointer away 
 - **Force:** **1–4**, the scroll wheel, or the pips in the header set how much of each garrison goes (25–100%).
 - **Combat:** every outpost you hold builds troops, and bigger outposts build faster. The unclaimed build nothing.
   A fleet that lands on a hostile outpost trades one for one with the garrison, and if more attackers are left, the
-  outpost is yours. Citadels have walls, so each defender counts as 1.5.
+  outpost is yours. Citadels have walls, so each defender counts as 1.25.
 - **Win:** wipe out every enemy faction. **Lose:** hold nothing and have nothing in flight.
 - **Campaign:** each victory takes a sector and moves you to the next one. Every fifth sector is a siege of a walled
   citadel. From sector 4 on, some sectors have two or three enemy factions, and they fight each other as well as you.

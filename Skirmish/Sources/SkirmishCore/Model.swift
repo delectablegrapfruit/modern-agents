@@ -44,7 +44,7 @@ public struct Outpost: Codable, Equatable, Identifiable, Sendable {
     public var kind: Kind
     public var owner: Int
     public var troops: Double
-    /// How many attackers each defender is worth. A citadel's walls make it 1.5.
+    /// How many attackers each defender is worth. A citadel's walls make it 1.25.
     public var armor: Double
 
     public init(id: Int, position: Vec2, kind: Kind, owner: Int, troops: Double, armor: Double = 1) {
@@ -63,7 +63,7 @@ public struct Outpost: Codable, Equatable, Identifiable, Sendable {
     /// Radius as a fraction of the battlefield's side.
     public var radius: Double { Outpost.radiusTable[kind.rawValue] }
 
-    static let productionTable: [Double] = [0, 0.55, 0.9, 1.3, 1.7]
+    static let productionTable: [Double] = [0, 0.3, 0.5, 0.7, 0.95]
     static let capacityTable: [Double] = [0, 30, 55, 90, 150]
     static let radiusTable: [Double] = [0, 0.040, 0.050, 0.061, 0.074]
 }
@@ -136,21 +136,21 @@ public struct Difficulty: Codable, Equatable, Sendable {
     /// Every fifth sector: the enemy home is a walled citadel with a guard.
     public var siege: Bool
 
+    /// The enemy sharpens over the first thirty-odd sectors and then holds: late sectors stay winnable. Sectors
+    /// with more enemy factions give each of them less, since they gang up (on each other too). Checked with
+    /// `skirmish-sim`, which plays your side with the enemy's own commander.
     public static func forSector(_ sector: Int) -> Difficulty {
         let s = max(1, sector)
         let siege = s % 5 == 0
-        let enemies: Int
-        if siege { enemies = s >= 15 ? 2 : 1 }
-        else if s < 4 { enemies = 1 }
-        else if s < 12 { enemies = s % 2 == 0 ? 2 : 1 }
-        else { enemies = s % 3 == 0 ? 3 : 2 }
+        let enemies = siege || s < 4 ? 1 : [s >= 12 ? 3 : 2, 2, 1][s % 3]
         let t = Double(s - 1)
+        let crowd = [1, 1, 0.8, 0.65][enemies]
         return Difficulty(
             enemies: enemies,
-            think: max(0.9, 3.2 - 0.11 * t),
-            production: min(1.35, 0.8 + 0.025 * t),
-            homeTroops: min(60, 20 + 2 * t),
-            aggression: min(0.9, 0.3 + 0.035 * t),
+            think: max(1.6, 3.5 - 0.05 * t),
+            production: min(0.95, 0.72 + 0.01 * t) * crowd * (siege ? 0.85 : 1),
+            homeTroops: min(27, 20 + 0.4 * t),
+            aggression: min(0.55, 0.25 + 0.015 * t),
             siege: siege
         )
     }

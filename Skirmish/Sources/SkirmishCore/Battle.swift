@@ -4,7 +4,7 @@ import Foundation
 /// random numbers, so it can be saved at any moment and resumed exactly.
 public struct Battle: Codable, Equatable, Sendable {
     /// Battlefield widths per second.
-    public static let speed = 0.2
+    public static let speed = 0.1
     /// The simulation's fixed step, in seconds.
     static let tick = 0.05
 
@@ -202,7 +202,7 @@ public struct Battle: Codable, Equatable, Sendable {
             if fleet.owner == faction { ownIncoming[fleet.to] += Double(fleet.count) }
             else if outposts[fleet.to].owner == faction { hostileIncoming[fleet.to] += Double(fleet.count) }
         }
-        func spare(_ i: Int) -> Double { (outposts[i].troops * 0.85).rounded(.down) }
+        func spare(_ i: Int) -> Double { (outposts[i].troops * 0.75).rounded(.down) }
         func travel(_ a: Int, _ b: Int) -> Double { outposts[a].position.distance(to: outposts[b].position) / Battle.speed }
 
         // Defence.
@@ -220,9 +220,8 @@ public struct Battle: Codable, Equatable, Sendable {
         for t in outposts.indices where outposts[t].owner != faction {
             let target = outposts[t]
             var value = Double(target.kind.rawValue) + 0.5
-            if target.owner == Side.neutral { value *= 1.2 - 0.6 * bias }
-            else if target.owner == Side.player { value *= 0.7 + bias }
-            else { value *= 0.6 + 0.5 * bias }
+            // Any rival is a rival: the enemy factions fight each other as readily as they fight you.
+            value *= target.owner == Side.neutral ? 1.2 - 0.6 * bias : 0.7 + bias
             let sources = mine.sorted { travel($0, t) < travel($1, t) }.prefix(3)
             var gathered = 0.0, used: [Int] = [], farthest = 0.0
             for s in sources where spare(s) >= 1 {

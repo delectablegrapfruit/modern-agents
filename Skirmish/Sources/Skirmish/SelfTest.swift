@@ -66,7 +66,7 @@ enum SelfTest {
         // The rest of the battle on autopilot, fast.
         session.autopilot = true
         scene.timeScale = 6
-        try await pause(5)
+        try await pause(3)
         try snapshot("3-battle", panel)
         let started = Date()
         while session.battle.outcome == nil {

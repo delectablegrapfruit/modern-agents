@@ -174,13 +174,13 @@ final class FleetSprite: SKNode {
         var jitter = SeededRNG(seed: UInt64(fleet.id) &+ 17)
         for k in 0..<ships {
             let ship = SKSpriteNode(texture: Art.ship)
-            ship.size = CGSize(width: 9 * scale, height: 6 * scale)
+            ship.size = CGSize(width: 11 * scale, height: 7.5 * scale)
             ship.color = color.mix(RGB(1, 1, 1), 0.25).color()
             ship.colorBlendFactor = 1
             let row = CGFloat((k + 1) / 2)
             let side: CGFloat = k == 0 ? 0 : (k % 2 == 0 ? 1 : -1)
-            ship.position = CGPoint(x: -row * 5.5 * scale + CGFloat(jitter.range(-1, 1)) * scale,
-                                    y: side * row * 3.4 * scale + CGFloat(jitter.range(-0.8, 0.8)) * scale)
+            ship.position = CGPoint(x: -row * 6.5 * scale + CGFloat(jitter.range(-1, 1)) * scale,
+                                    y: side * row * 4 * scale + CGFloat(jitter.range(-0.8, 0.8)) * scale)
             formation.addChild(ship)
         }
         label.text = "\(fleet.count)"

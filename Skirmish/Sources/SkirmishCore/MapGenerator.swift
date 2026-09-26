@@ -21,7 +21,7 @@ public enum MapGenerator {
             ? Vec2(1 - player.x, 1 - player.y)
             : Vec2(0.86 + rng.range(-0.03, 0.03), 0.86 + rng.range(-0.03, 0.03))
         if difficulty.siege {
-            sites.append(Site(position: rival, kind: .citadel, owner: 2, troops: difficulty.homeTroops * 1.6, armor: 1.5))
+            sites.append(Site(position: rival, kind: .citadel, owner: 2, troops: difficulty.homeTroops * 0.7, armor: 1.25))
         } else {
             sites.append(Site(position: rival, kind: .stronghold, owner: 2, troops: difficulty.homeTroops))
         }
@@ -29,7 +29,7 @@ public enum MapGenerator {
         if rng.chance(0.5) { corners.swapAt(0, 1) }
         for k in 0..<max(0, min(2, difficulty.enemies - 1)) {
             let corner = Vec2(corners[k].x + rng.range(-0.03, 0.03), corners[k].y + rng.range(-0.03, 0.03))
-            sites.append(Site(position: corner, kind: .stronghold, owner: 3 + k, troops: difficulty.homeTroops * 0.85))
+            sites.append(Site(position: corner, kind: .stronghold, owner: 3 + k, troops: difficulty.homeTroops * 0.7))
         }
 
         func randomKind() -> Outpost.Kind {
@@ -96,7 +96,7 @@ public enum MapGenerator {
                 .prefix(2)
             for i in guards {
                 sites[i].owner = 2
-                sites[i].troops = 10 + Double(s) / 2
+                sites[i].troops = 3 + Double(s) / 10
             }
         }
 

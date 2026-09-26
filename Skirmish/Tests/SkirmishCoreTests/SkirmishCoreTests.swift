@@ -57,7 +57,7 @@ final class MapTests: XCTestCase {
         XCTAssert(battle.difficulty.siege)
         let citadel = battle.outposts.first { $0.kind == .citadel }
         XCTAssertEqual(citadel?.owner, 2)
-        XCTAssertEqual(citadel?.armor, 1.5)
+        XCTAssertEqual(citadel?.armor, 1.25)
         XCTAssertEqual(battle.outposts.filter { $0.owner == 2 }.count, 3, "the citadel and its guard")
     }
 
@@ -140,15 +140,15 @@ final class BattleTests: XCTestCase {
         ])
     }
 
-    func testCitadelWallsMakeDefendersCountHalfAgainMore() {
+    func testCitadelWallsMakeDefendersCountForMore() {
         var battle = Battle(sector: 5, seed: 1)
         let citadel = battle.outposts.first { $0.kind == .citadel }!.id
-        battle.outposts[citadel].troops = 30
+        battle.outposts[citadel].troops = 40
         var events: [BattleEvent] = []
-        battle.arrive(fleet(battle, owner: Side.player, count: 30, to: citadel), &events)
-        XCTAssertEqual(battle.outposts[citadel].owner, 2)
-        XCTAssertEqual(battle.outposts[citadel].troops, 10, accuracy: 1e-9, "45 worth of wall less 30")
-        battle.arrive(fleet(battle, owner: Side.player, count: 16, to: citadel), &events)
+        battle.arrive(fleet(battle, owner: Side.player, count: 40, to: citadel), &events)
+        XCTAssertEqual(battle.outposts[citadel].owner, 2, "40 attackers do not take 40 walled defenders")
+        XCTAssertEqual(battle.outposts[citadel].troops, 8, accuracy: 1e-9, "50 worth of wall less 40, in defenders")
+        battle.arrive(fleet(battle, owner: Side.player, count: 11, to: citadel), &events)
         XCTAssertEqual(battle.outposts[citadel].owner, Side.player)
         XCTAssertEqual(battle.outposts[citadel].troops, 1, accuracy: 1e-9)
     }
