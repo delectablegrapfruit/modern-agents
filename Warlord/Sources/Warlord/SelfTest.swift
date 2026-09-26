@@ -91,19 +91,22 @@ enum SelfTest {
 
     /// Renders the board at twice its size into a PNG, on a dark ground standing in for the HUD material behind it.
     private static func snapshot(_ view: NSView, to url: URL) -> Bool {
-        let size = view.bounds.size
-        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(size.width * 2), pixelsHigh: Int(size.height * 2),
-                                         bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
-                                         colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
-              let context = NSGraphicsContext(bitmapImageRep: rep) else { return false }
-        rep.size = size
+        let size = view.bounds.size, width = Int(size.width * 2), height = Int(size.height * 2)
+        func canvas() -> NSBitmapImageRep? {
+            NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height, bitsPerSample: 8, samplesPerPixel: 4,
+                             hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)
+        }
+        guard let board = canvas(), let rep = canvas(), let context = NSGraphicsContext(bitmapImageRep: rep) else { return false }
+        board.size = size
+        view.cacheDisplay(in: view.bounds, to: board)
+        // The second canvas is drawn in pixels.
+        let pixels = NSRect(x: 0, y: 0, width: width, height: height)
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = context
         Style.rgb(0x1E2026).setFill()
-        NSBezierPath(roundedRect: view.bounds, xRadius: 11, yRadius: 11).fill()
+        NSBezierPath(roundedRect: pixels, xRadius: 22, yRadius: 22).fill()
+        board.draw(in: pixels, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: false, hints: nil)
         NSGraphicsContext.restoreGraphicsState()
-        view.displayIgnoringOpacity(view.bounds, in: context)
-        context.flushGraphics()
         guard let png = rep.representation(using: .png, properties: [:]) else { return false }
         return (try? png.write(to: url)) != nil
     }
