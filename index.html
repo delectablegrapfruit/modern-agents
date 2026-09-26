@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>Geometry Wars: Retro Evolved</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="gl" aria-label="Game"></canvas>
+<canvas id="hud" aria-hidden="true"></canvas>
+
+<div id="ui">
+  <section id="scr-title" class="screen">
+    <h1 class="logo"><span class="logo-top">GEOMETRY WARS</span><span class="logo-sub">RETRO EVOLVED</span></h1>
+    <nav class="menu">
+      <button data-action="play">Play</button>
+      <button data-go="scores">High Scores</button>
+      <button data-go="achievements">Achievements</button>
+      <button data-go="howto">How to Play</button>
+      <button data-go="options">Options</button>
+    </nav>
+    <p class="hint">Mouse &amp; keyboard · Keyboard only · Gamepad · Touch</p>
+    <p class="fine">Unofficial fan recreation. Every shape and sound is generated in code.</p>
+  </section>
+
+  <section id="scr-scores" class="screen panel">
+    <h2>High Scores</h2>
+    <table class="scores"><tbody id="score-rows"></tbody></table>
+    <nav class="menu row"><button data-back>Back</button></nav>
+  </section>
+
+  <section id="scr-achievements" class="screen panel wide">
+    <h2>Achievements</h2>
+    <p class="sub" id="ach-count"></p>
+    <ul class="ach" id="ach-list"></ul>
+    <nav class="menu row"><button data-back>Back</button></nav>
+  </section>
+
+  <section id="scr-howto" class="screen panel wide">
+    <h2>How to Play</h2>
+    <div class="howto">
+      <div class="controls">
+        <h3>Controls</h3>
+        <table>
+          <tr><th>Move</th><td>W A S D · left stick · left thumb</td></tr>
+          <tr><th>Fire</th><td>Hold left mouse button (aims at the cursor) · arrow keys · right stick · right thumb</td></tr>
+          <tr><th>Bomb</th><td>Space · right mouse button · E · bumpers or triggers · BOMB</td></tr>
+          <tr><th>Pause</th><td>Esc · P · Start</td></tr>
+          <tr><th>Sound</th><td>M mutes</td></tr>
+        </table>
+        <h3>Rules</h3>
+        <ul class="rules">
+          <li>Every 25 kills without dying raises the multiplier: <b>x2</b> at 25, then 50, 100, 200, 400, 800, 1,200, 1,600 and <b>x10</b> at 2,000. Dying resets it.</li>
+          <li>You start with 3 ships and 3 bombs. <b>Extra ship</b> every 75,000 points; <b>extra bomb</b> every 100,000.</li>
+          <li>At 10,000 points your gun upgrades, alternating between <b>Rapid Fire</b> and <b>Spread Fire</b> every 10 seconds.</li>
+          <li>A bomb clears the arena but scores nothing. Losing a ship clears it too.</li>
+          <li>Touching anything is fatal, including the walls of a Gravity Well and a Snake's tail.</li>
+        </ul>
+      </div>
+      <div class="bestiary">
+        <h3>Enemies</h3>
+        <ul id="enemy-list"></ul>
+      </div>
+    </div>
+    <nav class="menu row"><button data-back>Back</button></nav>
+  </section>
+
+  <section id="scr-options" class="screen panel">
+    <h2>Options</h2>
+    <div class="opts">
+      <label class="opt"><span>Master volume</span><input type="range" min="0" max="100" step="5" data-opt="master"></label>
+      <label class="opt"><span>Music</span><input type="range" min="0" max="100" step="5" data-opt="music"></label>
+      <label class="opt"><span>Effects</span><input type="range" min="0" max="100" step="5" data-opt="sfx"></label>
+      <button class="cycle" data-opt="bloom"></button>
+      <button class="cycle" data-opt="grid"></button>
+      <button class="cycle" data-opt="res"></button>
+      <button class="cycle" data-opt="autofire"></button>
+      <button id="reset-data" class="danger">Reset scores &amp; achievements</button>
+    </div>
+    <nav class="menu row"><button data-back>Back</button></nav>
+  </section>
+
+  <section id="scr-pause" class="screen panel">
+    <h2>Paused</h2>
+    <nav class="menu">
+      <button data-action="resume">Resume</button>
+      <button data-action="restart">Restart</button>
+      <button data-go="options">Options</button>
+      <button data-go="howto">How to Play</button>
+      <button data-action="quit">Quit to Title</button>
+    </nav>
+  </section>
+
+  <section id="scr-over" class="screen panel">
+    <h2 class="over">Game Over</h2>
+    <div class="final" id="over-score"></div>
+    <dl class="stats" id="over-stats"></dl>
+    <form id="name-form" hidden>
+      <label for="name-input">New high score! Enter your name</label>
+      <div class="name-row"><input id="name-input" maxlength="12" autocomplete="off" spellcheck="false"><button type="submit">Save</button></div>
+    </form>
+    <p class="sub" id="over-rank"></p>
+    <nav class="menu row">
+      <button data-action="play">Play Again</button>
+      <button data-go="scores">High Scores</button>
+      <button data-action="quit">Title</button>
+    </nav>
+  </section>
+</div>
+
+<div id="toasts" aria-live="polite"></div>
+<div id="touch-ui" hidden>
+  <button id="t-pause" aria-label="Pause">II</button>
+  <button id="t-bomb">BOMB</button>
+</div>
+<div id="fatal" hidden></div>
+
+<script src="js/util.js"></script>
+<script src="js/renderer.js"></script>
+<script src="js/grid.js"></script>
+<script src="js/particles.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/input.js"></script>
+<script src="js/enemies.js"></script>
+<script src="js/spawner.js"></script>
+<script src="js/game.js"></script>
+<script src="js/achievements.js"></script>
+<script src="js/hud.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
