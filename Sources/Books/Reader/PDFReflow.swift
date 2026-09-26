@@ -507,6 +507,8 @@ enum PDFReflow {
                 let composed = pageText.rangeOfComposedCharacterSequence(at: i)
                 let index = i
                 i = max(i + 1, NSMaxRange(composed))
+                // The spaces PDFKit put in are not glyphs: a selection of one of them comes back as the letter beside it.
+                if pageText.substring(with: composed).allSatisfy({ $0.isWhitespace }) { continue }
                 // Each letter through a selection of its own, so that its text and its box come from one reading of
                 // the page (the page's string and its character boxes need not count characters alike).
                 guard let one = page.selection(for: NSRange(location: index, length: max(1, composed.length))),
@@ -515,6 +517,8 @@ enum PDFReflow {
                 guard piece.unicodeScalars.allSatisfy(spacesWords) else { return rejected(read, "a script without word spaces") }
                 let box = one.bounds(for: page)
                 guard !box.isNull, box.minX.isFinite, box.maxX.isFinite else { return rejected(read, "no box for “\(piece)”") }
+                // The same glyph read twice is taken once.
+                if let last = glyphs.last, abs(box.minX - last.box.minX) < 0.01, abs(box.maxX - last.box.maxX) < 0.01, last.text.hasSuffix(piece) { continue }
                 if let last = glyphs.last, box.width < 0.01 || abs(box.minX - last.box.minX) < 0.01 {
                     // A mark, or a ligature's later letter, drawn in its glyph's box.
                     glyphs[glyphs.count - 1].text += piece
