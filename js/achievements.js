@@ -1,27 +1,27 @@
-// Twelve achievements, kept in localStorage.
+// The twelve Xbox Live Arcade achievements, polled once per step of a real game and kept in localStorage.
 'use strict';
 (function () {
   const GW = window.GW;
 
+  const THRESHOLDS = [[100000, '100k', '100,000'], [250000, '250k', '250,000'], [500000, '500k', '500,000'], [1000000, '1m', '1,000,000']];
+
   const LIST = [
-    { id: 'pacifism', name: 'Pacifism', desc: 'Survive the first 60 seconds of a game without firing a shot.' },
-    { id: 'retro', name: 'Retro', desc: 'Score 100,000 points in one game.' },
-    { id: 'evolved', name: 'Evolved', desc: 'Score 1,000,000 points in one game.' },
-    { id: 'master', name: 'Geometry Master', desc: 'Score 5,000,000 points in one game.' },
-    { id: 'survivor', name: 'Survivor', desc: 'Stay alive for 3 minutes on a single life.' },
-    { id: 'nobomb', name: 'Hold Your Fire', desc: 'Score 250,000 points without using a bomb.' },
-    { id: 'multiplier', name: 'Top Multiplier', desc: 'Reach the x10 multiplier.' },
-    { id: 'horizon', name: 'Event Horizon', desc: 'Destroy a Gravity Well that has swallowed 10 or more enemies.' },
-    { id: 'snakes', name: 'Snake Charmer', desc: 'Destroy 10 Snakes in one game.' },
-    { id: 'mayflies', name: 'Swatter', desc: 'Destroy 200 Mayflies in one game.' },
-    { id: 'carpet', name: 'Carpet Bomber', desc: 'Take out 100 enemies with a single bomb.' },
-    { id: 'gunner', name: 'Gunner', desc: 'Destroy 2,500 enemies in one game.' },
+    { id: 'pacifism', name: 'Pacifism', desc: 'Survive the first 60 seconds of the game without firing.' },
+    { id: 'madcat', name: 'Mad Cat Skillz', desc: 'Get nine lives.' },
+    { id: 'multitastic', name: 'Multitastic', desc: 'Earn x10 multiplier.' },
+    { id: 'quartermaster', name: 'Quartermaster', desc: 'Collect nine bombs.' },
+    ...THRESHOLDS.map(([, key, text]) => ({ id: 'score' + key, name: 'Score ' + text, desc: `Score ${text} points in one game.` })),
+    ...THRESHOLDS.map(([, key, text]) => ({ id: 'surv' + key, name: 'Survived ' + text, desc: `Earn ${text} points without dying.` })),
   ];
+  const KNOWN = new Set(LIST.map((a) => a.id));
 
   class Achievements {
     constructor(onUnlock) {
       this.onUnlock = onUnlock;
-      this.got = GW.store.get('achievements', {});
+      // Drop ids from older versions of the list so the count stays honest.
+      const saved = GW.store.get('achievements', {}) || {};
+      this.got = {};
+      for (const id in saved) if (KNOWN.has(id)) this.got[id] = saved[id];
     }
 
     unlock(id) {
@@ -36,24 +36,18 @@
       GW.store.set('achievements', this.got);
     }
 
-    // Once per simulation step of a real (non-demo) game.
+    // Once per simulation step of a real (non-demo) game. `lives` counts reserve ships.
     check(g) {
       const s = g.stats;
-      if (s.shots === 0 && s.deaths === 0 && g.time >= 3600) this.unlock('pacifism');
-      if (g.score >= 100000) this.unlock('retro');
-      if (g.score >= 1000000) this.unlock('evolved');
-      if (g.score >= 5000000) this.unlock('master');
-      if (g.player.alive && g.lifeFrames >= 60 * 180) this.unlock('survivor');
-      if (g.score >= 250000 && s.bombs === 0) this.unlock('nobomb');
-      if (g.mult >= 10) this.unlock('multiplier');
-      if ((s.byType.snake || 0) >= 10) this.unlock('snakes');
-      if ((s.byType.mayfly || 0) >= 200) this.unlock('mayflies');
-      if (s.kills >= 2500) this.unlock('gunner');
-    }
-
-    event(name, data) {
-      if (name === 'holekill' && data.absorbed >= 10) this.unlock('horizon');
-      if (name === 'bombdone' && data >= 100) this.unlock('carpet');
+      if (g.time >= 3600 && s.shots === 0 && s.bombs === 0 && s.deaths === 0) this.unlock('pacifism');
+      if (g.lives >= 9) this.unlock('madcat');
+      if (g.mult >= 10) this.unlock('multitastic');
+      if (g.bombs >= 9) this.unlock('quartermaster');
+      for (const [n, key] of THRESHOLDS) {
+        if (g.score < n) break;
+        this.unlock('score' + key);
+        if (s.deaths === 0) this.unlock('surv' + key);
+      }
     }
   }
 

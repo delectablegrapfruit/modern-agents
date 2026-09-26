@@ -7,8 +7,9 @@
 <title>Geometry Wars: Retro Evolved</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;600;900&display=swap">
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="controls.css">
 </head>
 <body>
 <canvas id="gl" aria-label="Game"></canvas>
@@ -16,17 +17,61 @@
 
 <div id="ui">
   <section id="scr-title" class="screen">
-    <h1 class="logo"><span class="logo-top">GEOMETRY WARS</span><span class="logo-sub">RETRO EVOLVED</span></h1>
+    <!-- Hollow gradient wordmark; the "O" is the ship's claw in a ring. Font size is 100 user units; main.js
+         re-fits the viewBox and gradient to the measured text once the font has loaded. -->
+    <svg id="logo" class="logo" viewBox="-214.6 -82 1074.2 142" role="img" aria-label="Geometry Wars: Retro Evolved">
+      <defs>
+        <linearGradient id="gwGrad" gradientUnits="userSpaceOnUse" x1="-212.6" y1="0" x2="857.6" y2="0">
+          <stop offset="0" stop-color="#FFF22A"/>
+          <stop offset="0.18" stop-color="#FFC21E"/>
+          <stop offset="0.35" stop-color="#FF7A18"/>
+          <stop offset="0.52" stop-color="#FF2A14"/>
+          <stop offset="0.66" stop-color="#FF1E8C"/>
+          <stop offset="0.78" stop-color="#C82EFF"/>
+          <stop offset="0.90" stop-color="#6A3CFF"/>
+          <stop offset="1" stop-color="#2E46FF"/>
+        </linearGradient>
+        <filter id="gwGlow" filterUnits="userSpaceOnUse" x="-420" y="-300" width="1500" height="560" color-interpolation-filters="sRGB">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="18" result="wide"/>
+          <feComponentTransfer in="wide" result="wideDim"><feFuncA type="linear" slope="0.45"/></feComponentTransfer>
+          <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="near"/>
+          <feMerge><feMergeNode in="wideDim"/><feMergeNode in="near"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+        <filter id="gwSoft" filterUnits="userSpaceOnUse" x="-420" y="-300" width="1500" height="560" color-interpolation-filters="sRGB">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="soft"/>
+          <feComponentTransfer in="soft" result="softDim"><feFuncA type="linear" slope="0.75"/></feComponentTransfer>
+          <feMerge><feMergeNode in="softDim"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+      <g filter="url(#gwGlow)">
+        <text id="logo-ge" class="logo-word" x="-52.6" y="0" text-anchor="end">GE</text>
+        <circle cx="0" cy="-36" r="44.64" fill="none" stroke="#FFFFFF" stroke-width="1.5"/>
+        <polygon transform="translate(0,-36) scale(0.962) translate(0,-3.5)" fill="none" stroke="#FFFFFF" stroke-width="4.16" stroke-linejoin="round"
+          points="0,23.2 23.2,3.5 11.6,-16.2 16.7,-0.5 0,9.3 -16.7,-0.5 -11.6,-16.2 -23.2,3.5"/>
+        <text id="logo-metry" class="logo-word" x="52.6" y="0" text-anchor="start">METRY WARS</text>
+      </g>
+      <text id="logo-sub" class="logo-sub" x="332.1" y="58" text-anchor="middle" filter="url(#gwSoft)">RETRO EVOLVED</text>
+    </svg>
     <nav class="menu">
-      <button data-action="play">Play</button>
+      <button data-action="play">Evolved</button>
       <button data-go="scores">High Scores</button>
       <button data-go="achievements">Achievements</button>
-      <button data-go="howto">How to Play</button>
-      <button data-go="options">Options</button>
+      <button data-go="help">Help and Options</button>
     </nav>
-    <p class="hint">Mouse &amp; keyboard · Keyboard only · Gamepad · Touch</p>
     <p class="fine">Unofficial fan recreation. Every shape and sound is generated in code.</p>
   </section>
+
+  <section id="scr-help" class="screen panel">
+    <h2>Help and Options</h2>
+    <nav class="menu">
+      <button data-go="controls">Controls</button>
+      <button data-go="howto">How to Play</button>
+      <button data-go="options">Options</button>
+      <button data-back>Back</button>
+    </nav>
+  </section>
+
+  <section id="scr-controls" class="screen panel wide"><h2>Controls</h2><div id="controls-root"></div><nav class="menu row"><button data-back>Back</button></nav></section>
 
   <section id="scr-scores" class="screen panel">
     <h2>High Scores</h2>
@@ -44,23 +89,18 @@
   <section id="scr-howto" class="screen panel wide">
     <h2>How to Play</h2>
     <div class="howto">
-      <div class="controls">
-        <h3>Controls</h3>
-        <table>
-          <tr><th>Move</th><td>W A S D · left stick · left thumb</td></tr>
-          <tr><th>Fire</th><td>Hold left mouse button (aims at the cursor) · arrow keys · right stick · right thumb</td></tr>
-          <tr><th>Bomb</th><td>Space · right mouse button · E · bumpers or triggers · BOMB</td></tr>
-          <tr><th>Pause</th><td>Esc · P · Start</td></tr>
-          <tr><th>Sound</th><td>M mutes</td></tr>
-        </table>
+      <div class="rules-col">
         <h3>Rules</h3>
         <ul class="rules">
           <li>Every 25 kills without dying raises the multiplier: <b>x2</b> at 25, then 50, 100, 200, 400, 800, 1,200, 1,600 and <b>x10</b> at 2,000. Dying resets it.</li>
-          <li>You start with 3 ships and 3 bombs. <b>Extra ship</b> every 75,000 points; <b>extra bomb</b> every 100,000.</li>
-          <li>At 10,000 points your gun upgrades, alternating between <b>Rapid Fire</b> and <b>Spread Fire</b> every 10 seconds.</li>
+          <li>You start with 3 bombs and 3 spare ships (max 9 each); extra ship every 75,000, extra bomb every 100,000.</li>
+          <li>Every 10,000 points your gun may change.</li>
+          <li>An awake Gravity Well pulls you in and bends your bullets away.</li>
           <li>A bomb clears the arena but scores nothing. Losing a ship clears it too.</li>
           <li>Touching anything is fatal, including the walls of a Gravity Well and a Snake's tail.</li>
         </ul>
+        <h3>Controls</h3>
+        <p class="see">See Help and Options › Controls.</p>
       </div>
       <div class="bestiary">
         <h3>Enemies</h3>
@@ -79,8 +119,8 @@
       <button class="cycle" data-opt="bloom"></button>
       <button class="cycle" data-opt="grid"></button>
       <button class="cycle" data-opt="res"></button>
-      <button class="cycle" data-opt="autofire"></button>
-      <button id="reset-data" class="danger">Reset scores &amp; achievements</button>
+      <button class="cycle" data-opt="fullscreen"></button>
+      <button id="reset-data" class="danger">Reset scores and achievements</button>
     </div>
     <nav class="menu row"><button data-back>Back</button></nav>
   </section>
@@ -90,8 +130,7 @@
     <nav class="menu">
       <button data-action="resume">Resume</button>
       <button data-action="restart">Restart</button>
-      <button data-go="options">Options</button>
-      <button data-go="howto">How to Play</button>
+      <button data-go="help">Help and Options</button>
       <button data-action="quit">Quit to Title</button>
     </nav>
   </section>
@@ -102,7 +141,7 @@
     <dl class="stats" id="over-stats"></dl>
     <form id="name-form" hidden>
       <label for="name-input">New high score! Enter your name</label>
-      <div class="name-row"><input id="name-input" maxlength="12" autocomplete="off" spellcheck="false"><button type="submit">Save</button></div>
+      <div class="name-row"><input id="name-input" maxlength="12" autocomplete="off" spellcheck="false" enterkeyhint="done"><button type="submit">Save</button></div>
     </form>
     <p class="sub" id="over-rank"></p>
     <nav class="menu row">
@@ -131,6 +170,7 @@
 <script src="js/game.js"></script>
 <script src="js/achievements.js"></script>
 <script src="js/hud.js"></script>
+<script src="js/controls-ui.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>
