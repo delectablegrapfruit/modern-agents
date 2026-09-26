@@ -26,7 +26,7 @@ enum Snapshot {
             records.trackID = TrackCatalog.circuits[shot.circuit].id
             let game = Game(records: records)
             play(game, until: shot.moment)
-            let size = GamePanel.sizes[shot.size]
+            let size = GamePanel.size(shot.size)
             guard let data = image(of: game, size: size, focused: shot.moment != .parked)?.representation(using: .png, properties: [:]) else {
                 ok = false
                 continue

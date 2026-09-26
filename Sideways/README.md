@@ -5,6 +5,12 @@ tasks: a night road seen from above, neon walls, a car that slides. Click it (or
 two, click back into your work — the game pauses the moment it loses the keyboard and waits, exactly where you left
 it, for as long as you like.
 
+<p>
+<img src="dist/screenshots/drift.png" width="336" alt="Mid-drift: light trails and tyre smoke behind the car, the chain counting up below">
+<img src="dist/screenshots/racing.png" width="336" alt="Racing the ghost of the best lap, 0.37 seconds up">
+<img src="dist/screenshots/parked.png" width="336" alt="Parked while you work: the track, your best lap and your rank">
+</p>
+
 ## How it plays
 
 **One lap is half a minute.** Each track is a closed road of about 25 seconds a lap. The timer starts when you cross

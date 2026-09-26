@@ -15,6 +15,8 @@ final class GameView: NSView {
     var onChange: (() -> Void)?
     private var link: CADisplayLink?
     private var lastTimestamp: CFTimeInterval = 0
+    /// Held while frames run: the app is never frontmost, and App Nap would otherwise slow a game in play.
+    private var activity: NSObjectProtocol?
     private(set) var isHovering = false
     private var observers: [NSObjectProtocol] = []
 
@@ -109,6 +111,10 @@ final class GameView: NSView {
         guard let link, game.isAnimating, link.isPaused else { return }
         lastTimestamp = 0
         link.isPaused = false
+        if activity == nil {
+            activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiatedAllowingIdleSystemSleep, .latencyCritical],
+                                                             reason: "Driving")
+        }
     }
 
     @objc private func step(_ link: CADisplayLink) {
@@ -120,6 +126,8 @@ final class GameView: NSView {
         if !game.isAnimating {
             link.isPaused = true
             lastTimestamp = 0
+            if let activity { ProcessInfo.processInfo.endActivity(activity) }
+            activity = nil
         }
     }
 

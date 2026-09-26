@@ -126,16 +126,21 @@ struct Renderer {
         }
     }
 
+    /// Sodium street lamps: a soft pool of light and a bright point.
     private func drawLamps(_ ctx: CGContext, _ visible: CGRect) {
-        let warm = NSColor(srgbRed: 1, green: 0.78, blue: 0.45, alpha: 1)
+        guard let pool = Renderer.lampPool else { return }
         for lamp in art.lamps where visible.contains(lamp) {
-            ctx.setFillColor(warm.withAlphaComponent(0.06).cgColor)
-            ctx.fillEllipse(in: CGRect(x: lamp.x - 22, y: lamp.y - 22, width: 44, height: 44))
-            ctx.setFillColor(warm.withAlphaComponent(0.12).cgColor)
-            ctx.fillEllipse(in: CGRect(x: lamp.x - 9, y: lamp.y - 9, width: 18, height: 18))
-            ctx.setFillColor(warm.withAlphaComponent(0.9).cgColor)
-            ctx.fillEllipse(in: CGRect(x: lamp.x - 1.8, y: lamp.y - 1.8, width: 3.6, height: 3.6))
+            ctx.drawRadialGradient(pool, startCenter: lamp, startRadius: 0, endCenter: lamp, endRadius: 30, options: [])
+            ctx.setFillColor(NSColor(srgbRed: 1, green: 0.86, blue: 0.62, alpha: 0.95).cgColor)
+            ctx.fillEllipse(in: CGRect(x: lamp.x - 1.6, y: lamp.y - 1.6, width: 3.2, height: 3.2))
         }
+    }
+
+    static let lampPool = gradient([NSColor(srgbRed: 1, green: 0.72, blue: 0.4, alpha: 0.16), NSColor(srgbRed: 1, green: 0.72, blue: 0.4, alpha: 0)])
+    static let beam = gradient([NSColor(srgbRed: 1, green: 0.95, blue: 0.82, alpha: 0.16), NSColor(srgbRed: 1, green: 0.95, blue: 0.82, alpha: 0)])
+
+    static func gradient(_ colors: [NSColor]) -> CGGradient? {
+        CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB), colors: colors.map(\.cgColor) as CFArray, locations: nil)
     }
 
     /// Light trails from the rear wheels, bucketed by brightness so a few strokes draw hundreds of segments.
@@ -143,7 +148,7 @@ struct Renderer {
         let trail = game.effects.trail
         guard trail.count > 1 else { return }
         let buckets = 6
-        var paths = (0..<buckets).map { _ in CGMutablePath() }
+        let paths = (0..<buckets).map { _ in CGMutablePath() }
         for i in 1..<trail.count where trail[i].connected {
             let mark = trail[i], previous = trail[i - 1]
             let alpha = mark.strength * max(0, 1 - mark.age / Effects.trailLife)
@@ -208,14 +213,17 @@ struct Renderer {
         // Underglow and headlight beams first, under the body.
         ctx.setFillColor(paint.withAlphaComponent(0.2).cgColor)
         ctx.fillEllipse(in: CGRect(x: -15, y: -9, width: 30, height: 18))
-        for (spread, reach, alpha) in [(26.0, 78.0, 0.045), (14.0, 60.0, 0.07)] {
+        if let beam = Renderer.beam {
+            // One cone ahead of the car, fading with distance.
+            ctx.saveGState()
             ctx.move(to: CGPoint(x: 8, y: 3.5))
-            ctx.addLine(to: CGPoint(x: 8 + reach, y: spread))
-            ctx.addLine(to: CGPoint(x: 8 + reach, y: -spread))
+            ctx.addLine(to: CGPoint(x: 86, y: 24))
+            ctx.addLine(to: CGPoint(x: 86, y: -24))
             ctx.addLine(to: CGPoint(x: 8, y: -3.5))
             ctx.closePath()
-            ctx.setFillColor(NSColor(srgbRed: 1, green: 0.95, blue: 0.82, alpha: alpha).cgColor)
-            ctx.fillPath()
+            ctx.clip()
+            ctx.drawLinearGradient(beam, start: CGPoint(x: 8, y: 0), end: CGPoint(x: 86, y: 0), options: [])
+            ctx.restoreGState()
         }
         ctx.addPath(body)
         ctx.setFillColor(paint.cgColor)
@@ -317,7 +325,7 @@ struct Renderer {
                 drawHelp(ctx)
             } else {
                 let pulse = 0.55 + 0.45 * sin(CACurrentMediaTime() * 4)
-                text("\u{2191}  GO", mono(11, .bold), art.leftNeon.withAlphaComponent(CGFloat(pulse)),
+                text("\u{2191} GO", mono(11, .bold), art.leftNeon.withAlphaComponent(CGFloat(pulse)),
                      at: CGPoint(x: size.width / 2, y: 16 * ui), .center, glow: art.leftNeon)
             }
         }

@@ -8,6 +8,8 @@ final class GamePanel: NSPanel {
     static let sizeNames = ["Small", "Medium", "Large"]
     static let margin: CGFloat = 14
 
+    static func size(_ index: Int) -> CGSize { sizes[min(max(index, 0), sizes.count - 1)] }
+
     init(size: CGSize) {
         super.init(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless, .nonactivatingPanel],
                    backing: .buffered, defer: false)

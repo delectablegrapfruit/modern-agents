@@ -29,16 +29,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         game = Game(records: store.load()) { records in
             queue.async { try? store.save(records) }
         }
-        panel = GamePanel(size: GamePanel.sizes[game.records.size])
-        view = GameView(game: game, size: GamePanel.sizes[game.records.size])
+        panel = GamePanel(size: GamePanel.size(game.records.size))
+        view = GameView(game: game, size: GamePanel.size(game.records.size))
         panel.contentView = view
         panel.delegate = self
         view.menuProvider = { [weak self] in self?.makeMenu() }
         view.onHide = { [weak self] in self?.hidePanel() }
 
-        panel.setFrameAutosaveName("Sideways")
+        // Where it was last time; the size is the one chosen in the menu.
         if !panel.setFrameUsingName("Sideways") { panel.placeInDefaultCorner() }
-        panel.resize(to: GamePanel.sizes[game.records.size])
+        panel.setFrameAutosaveName("Sideways")
+        panel.resize(to: GamePanel.size(game.records.size))
         panel.keepOnScreen()
         panel.orderFrontRegardless()
 
@@ -197,7 +198,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
     @objc private func chooseSize(_ sender: NSMenuItem) {
         game.setSize(sender.tag)
-        let size = GamePanel.sizes[game.records.size]
+        let size = GamePanel.size(game.records.size)
         panel.resize(to: size)
         view.setFrameSize(size)
         view.wake()

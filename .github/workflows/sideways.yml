@@ -46,13 +46,14 @@ jobs:
 
       - name: Package
         run: |
-          mkdir -p dist
+          mkdir -p dist/screenshots
           rm -f dist/Sideways.app.zip
           ditto -c -k --keepParent build/Sideways.app dist/Sideways.app.zip
+          for shot in 2-drift 3-racing 4-parked; do cp "build/snapshots/$shot.png" "dist/screenshots/${shot#?-}.png"; done
           (cd dist && shasum -a 256 Sideways.app.zip | tee SHA256SUMS.txt)
 
       - name: Self-test — the packaged app, unzipped elsewhere, in its window, driven through its own key handling
-        timeout-minutes: 3
+        timeout-minutes: 4
         run: |
           rm -rf "$RUNNER_TEMP/launch" && mkdir -p "$RUNNER_TEMP/launch"
           ditto -x -k dist/Sideways.app.zip "$RUNNER_TEMP/launch"
@@ -82,7 +83,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f dist/Sideways.app.zip dist/SHA256SUMS.txt
+          git add -f dist/Sideways.app.zip dist/SHA256SUMS.txt dist/screenshots
           if git diff --cached --quiet; then echo "dist/ unchanged"; exit 0; fi
           git commit -m "ci: package Sideways.app into Sideways/dist/ (${GITHUB_SHA::7}) [skip ci]"
           git pull --rebase --autostash -X theirs origin "${GITHUB_REF_NAME}"
