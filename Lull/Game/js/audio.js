@@ -412,7 +412,17 @@
     /** Back to the top (a new game). */
     rewind() { this.pos = null; },
 
-    setVolume(v) { this.volume = v; if (this.gain) this.gain.gain.value = v; },
+    setVolume(v) { if (v === this.volume) return; this.volume = v; if (this.gain) this.gain.gain.value = v; },
+
+    /** Dips the music a little while the announcer speaks, so the two do not fight. */
+    duck(from, to) {
+      const g = this.gain;
+      if (!g) return;
+      const p = g.gain, v = this.volume;
+      p.cancelScheduledValues(from - 0.01);
+      p.setTargetAtTime(v * 0.55, from - 0.01, 0.04);
+      p.setTargetAtTime(v, to, 0.25);
+    },
 
     env(o, at, dur, gain, attack, dest, release) {
       const ctx = Sound.ctx, g = ctx.createGain();
@@ -555,7 +565,38 @@
    */
   const Announcer = {
     enabled: true,
+    volume: 0.4,
     buffers: {},
+    /**
+     * The voice's mixing desk, built once: the raw clips are thinned below 170 Hz, the boxy low-mids and the bright,
+     * close-mic top are eased off, a gentle compressor evens the words, and it sits back in the mix at a modest level
+     * with sends to the room everything else plays in (the shared reverb) and a soft, filtered stereo echo.
+     */
+    bus() {
+      const ctx = Sound.ctx;
+      if (this.input && this.input.context === ctx) return this.input;
+      const node = (type, f, q, g) => { const b = ctx.createBiquadFilter(); b.type = type; b.frequency.value = f; if (q != null) b.Q.value = q; if (g != null) b.gain.value = g; return b; };
+      const hp = node('highpass', 170, 0.7), mud = node('peaking', 380, 1, -3.5), air = node('highshelf', 5200, null, -6), lp = node('lowpass', 8500, 0.5);
+      const comp = ctx.createDynamicsCompressor();
+      comp.threshold.value = -26; comp.knee.value = 12; comp.ratio.value = 3; comp.attack.value = 0.006; comp.release.value = 0.18;
+      const level = this.level = ctx.createGain(); level.gain.value = this.volume * 0.62;
+      this.input = ctx.createGain();
+      this.input.connect(hp).connect(mud).connect(air).connect(lp).connect(comp).connect(level);
+      level.connect(Sound.master);
+      // Room: the same reverb as the sound effects and music, a touch more of it than they use.
+      if (Sound.reverb) { const rs = ctx.createGain(); rs.gain.value = 0.32; level.connect(rs).connect(Sound.reverb); }
+      // A soft echo either side (not in time with anything), darker on each repeat.
+      const echoIn = ctx.createGain(); echoIn.gain.value = 0.16; level.connect(echoIn);
+      const merger = ctx.createChannelMerger(2);
+      [[0.19, 0], [0.27, 1]].forEach(([t, ch]) => {
+        const d = ctx.createDelay(1), fb = ctx.createGain(), f = node('lowpass', 2600, 0.4);
+        d.delayTime.value = t; fb.gain.value = 0.24;
+        echoIn.connect(d); d.connect(f); f.connect(fb); fb.connect(d); f.connect(merger, 0, ch);
+      });
+      merger.connect(Sound.master);
+      return this.input;
+    },
+    setVolume(v) { if (v === this.volume) return; this.volume = v; if (this.level) this.level.gain.value = v * 0.62; },
     decode(key) {
       const ctx = Sound.ensure();
       const b64 = (L.VOICE_CLIPS || {})[key];
@@ -578,17 +619,18 @@
       const token = this.token = (this.token || 0) + 1;
       if (this.out) { try { this.out.gain.setTargetAtTime(0, ctx.currentTime, 0.03); } catch (e) { /* gone */ } }
       const out = this.out = ctx.createGain();
-      out.gain.value = 1.1;
-      out.connect(Sound.master); // dry: a close whisper, no room
+      out.connect(this.bus());
       Promise.all(keys.map((k) => this.decode(k))).then((bufs) => {
         if (token !== this.token) return;
-        let at = ctx.currentTime + 0.02;
+        const start = ctx.currentTime + 0.02;
+        let at = start;
         for (const buf of bufs) {
           if (!buf) continue;
           const src = ctx.createBufferSource();
           src.buffer = buf; src.connect(out); src.start(at);
           at += buf.duration + 0.06;
         }
+        Music.duck(start, at);
       });
       this.last = keys.join(' ');
       return true;

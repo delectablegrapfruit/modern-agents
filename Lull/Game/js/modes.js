@@ -280,6 +280,7 @@
       L.Music.tempo += (target - L.Music.tempo) * 0.05;
       if (Math.abs(target - L.Music.tempo) < 0.002) L.Music.tempo = target;
       L.Music.setVolume(st.musicVolume);
+      L.Announcer.setVolume(st.announcerVolume != null ? st.announcerVolume : 0.4);
       if (want && !L.Music.playing) L.Music.start();
       else if (!want && L.Music.playing) L.Music.stop();
     }

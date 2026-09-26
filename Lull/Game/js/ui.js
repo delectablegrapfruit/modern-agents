@@ -426,6 +426,7 @@
           row('Classic music', 'Korobeiniki, remixed soft and bright, while a Classic game runs', toggle('music', () => app.modes.classic && app.modes.classic.renderControls())),
           row('Classic announcer', 'The Tetris Worlds announcer calls singles, doubles, triples, tetrises and T-spins', toggle('announcer')),
           row('Music volume', null, range('musicVolume', 0, 60, 1, '%', 100)),
+          row('Announcer volume', null, range('announcerVolume', 0, 100, 1, '%', 100)),
           row('Sound pack', (L.SOUNDS[app.state.equipped.sound] || L.SOUNDS.soft).name + ' — more in the Shop', h('button', { class: 'btn sm', onclick: () => app.sound.preview(app.state.equipped.sound) }, '► Listen')))],
       },
       keys: {

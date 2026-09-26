@@ -24,7 +24,9 @@ arranged soft as a two-minute suite — electric piano over a round bass and a q
 breathy lead for the bridge and an interlude with a counter-melody; it keeps its tempo and only quickens as the stack
 nears the top. The Tetris Worlds announcer (her lines cut from the game's recording by `scripts/splice-voice.py`, embedded)
 calls singles, doubles, triples, tetrises, T-spin singles/doubles/triples, back-to-backs, "amazing" for a perfect
-clear, "rank up" for a new level and "top out" at the end. Both toggle under the board or in Settings ▸ Sound. P pauses; ‹ Relaxed, another tab or another window pauses
+clear, "rank up" for a new level and "top out" at the end. Her raw takes are mixed in on the fly: thinned lows, eased
+low-mids and top, a gentle compressor, the same reverb as everything else and a soft stereo echo, with the music
+dipping under her; Settings ▸ Sound ▸ Announcer volume sets her level. Both toggle under the board or in Settings ▸ Sound. P pauses; ‹ Relaxed, another tab or another window pauses
 too.
 
 **Puzzles** — procedurally generated, infinite, short, in Easy, Medium and Hard. Each has a seed (`M-3K7Q2XA`): the

@@ -150,7 +150,7 @@
       settings: {
         bg: 'glass', tint: 0.78, accent: ACCENTS[0], theme: 'dark', onTop: true,
         sound: true, volume: 0.35, das: 230, arr: 55, lowerRepeat: 70, mouse: true, preview: 5,
-        motion: 'full', showKeys: true, music: true, musicVolume: 0.25, announcer: true, ccwPuzzles: false,
+        motion: 'full', showKeys: true, music: true, musicVolume: 0.25, announcer: true, announcerVolume: 0.4, ccwPuzzles: false,
       },
       tab: 'play',
       free: null,
