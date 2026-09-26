@@ -178,7 +178,17 @@
     setTimeout(() => { if (!state.capture) removeEventListener('keyup', swallow, true); }, 0);
   }
 
-  function swallow(e) { e.stopImmediatePropagation(); }
+  // The keyup is hidden from the menus, but input.js must still learn the key is up: the Enter that started a
+  // capture went down through input.js, and would otherwise stay "held" into the next game.
+  function swallow(e) {
+    const inp = state.input;
+    if (inp && inp.keys) {
+      inp.keys.delete(e.code);
+      const k = inp.order ? inp.order.indexOf(e.code) : -1;
+      if (k >= 0) inp.order.splice(k, 1);
+    }
+    e.stopImmediatePropagation();
+  }
 
   function pageVisible() {
     const scr = document.getElementById('scr-controls');
