@@ -1,5 +1,5 @@
 /* Controls page (Help and Options > Controls). Green vector-HUD scheme, no boxes. */
-#controls-root { width: 100%; max-height: min(66vh, 640px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #2E6B26 transparent; }
+#controls-root { width: min(980px, 100%); max-height: min(66vh, 640px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #2E6B26 transparent; }
 .ctl { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 8px 40px; text-align: left; }
 .ctl-col { display: flex; flex-direction: column; align-items: stretch; min-width: 0; }
 .ctl h3 {
@@ -21,6 +21,15 @@
   outline: none; color: #C4FF8A; text-shadow: 0 0 6px #2BFF2B, 0 0 18px #19C019; background: none; border: 0; box-shadow: none;
 }
 .ctl button.ctl-cycle:focus em { color: #E6FFD0; }
+.ctl button.ctl-cycle > span { flex: 1; }
+/* The claw marks the focused item, as on every other menu (style.css); its space is always reserved. */
+.ctl button.ctl-cycle::before, .ctl button.ctl-reset::before {
+  content: ''; display: inline-block; flex: none; width: 0.9em; height: 0.9em; align-self: center;
+  margin-right: -6px; /* the row's 16px gap plus this gives the same claw spacing as the other menus */
+  background: var(--claw) center / contain no-repeat; filter: drop-shadow(0 0 3px #2BFF2B); visibility: hidden;
+}
+.ctl button.ctl-cycle:hover::before, .ctl button.ctl-cycle:focus::before,
+.ctl button.ctl-reset:hover::before, .ctl button.ctl-reset:focus::before { visibility: visible; }
 
 .ctl-rows { display: flex; flex-direction: column; margin: 4px 0 6px; }
 .ctl-row { display: grid; grid-template-columns: 9.5em minmax(0, 1fr); align-items: center; gap: 10px; padding: 1px 10px; }

@@ -198,6 +198,8 @@ button::-moz-focus-inner { border: 0; }
 .opt:focus-within, .opt:hover { color: var(--g-focus); text-shadow: 0 0 6px var(--g-glow), 0 0 18px #19C019; }
 .opt > span { white-space: nowrap; }
 .opt input[type=range] { width: 38%; min-width: 96px; margin: 0; accent-color: var(--g-accent); cursor: pointer; }
+/* Focus shows on the row (green glow and claw), never as the browser's focus ring box. */
+.opt input[type=range]:focus, .opt input[type=range]:focus-visible { outline: none; }
 .cycle em { font-style: normal; color: var(--g-core); }
 .cycle:focus em, .cycle:hover em { color: #fff; }
 .opts .danger { margin-top: 10px; justify-content: center; }
