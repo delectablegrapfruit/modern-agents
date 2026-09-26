@@ -1,5 +1,6 @@
 // Pooled spark particles: streaks stretched along their velocity that slow down, fade, bounce off the
-// arena walls and are swept around active gravity wells. The oldest particle is recycled when full.
+// arena walls and are swept around (and swallowed by) active gravity wells. The oldest particle is recycled
+// when full.
 'use strict';
 (function () {
   const GW = window.GW;
@@ -54,6 +55,7 @@
           const d2 = dx * dx + dy * dy;
           if (d2 > 250000) continue;
           const d = Math.sqrt(d2) + 0.001;
+          if (d < hb.r) life[i] *= 0.7; // swallowed: fade out fast inside the well
           const nx = dx / d, ny = dy / d;
           const pull = 10000 / (d2 + 10000);
           VX += nx * pull; VY += ny * pull;
