@@ -373,6 +373,14 @@ final class CoverLayoutTests: XCTestCase {
         XCTAssertEqual(settings.home.size(of: .goals), .medium)
         XCTAssertEqual(settings.home.size(of: .continueReading), .wide)
         XCTAssertTrue(settings.shelves.isEmpty)
+        XCTAssertEqual(settings.coverAppearance, .color)
+        XCTAssertTrue(settings.sidebarScrollSwitchesShelves)
+        var covers = Settings()
+        covers.coverAppearance = .textOnly
+        covers.sidebarScrollSwitchesShelves = false
+        let coversBack = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(covers))
+        XCTAssertEqual(coversBack.coverAppearance, .textOnly)
+        XCTAssertFalse(coversBack.sidebarScrollSwitchesShelves)
         let legacy = try JSONDecoder().decode(Settings.self, from: Data(#"{"groupAllByCollection": false, "showGoals": false, "goals": {"dailyMinutes": 10, "yearlyBooks": 5}}"#.utf8))
         XCTAssertEqual(legacy.shelfGrouping, .none, "the grouping choice made under its earliest name is kept")
         XCTAssertFalse(legacy.home.isShown(.goals), "the old Home switch is kept")

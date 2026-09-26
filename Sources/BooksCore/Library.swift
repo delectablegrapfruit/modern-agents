@@ -705,6 +705,27 @@ public struct ShelfSettings: Codable, Hashable {
     public var isEmpty: Bool { view == nil && sort == nil && sortAscending == nil && grouping == nil }
 }
 
+/// How covers are shown across the library: as they are, in grey with the art kept, or as plain lettered covers.
+public enum CoverAppearance: String, Codable, CaseIterable, Hashable {
+    case color, monochrome, textOnly
+
+    public var label: String {
+        switch self {
+        case .color: return "Color"
+        case .monochrome: return "Monochrome"
+        case .textOnly: return "Text Only"
+        }
+    }
+
+    public var detail: String {
+        switch self {
+        case .color: return "Covers as they are"
+        case .monochrome: return "The artwork in shades of grey"
+        case .textOnly: return "Plain covers with the title and author"
+        }
+    }
+}
+
 public struct Settings: Codable, Hashable {
     public var reader = ReaderSettings()
     public var libraryView: LibraryViewMode = .grid
@@ -725,10 +746,14 @@ public struct Settings: Codable, Hashable {
     /// What a shelf chose for itself — view, sort, direction, grouping — by sidebar key; the fields above stand
     /// for shelves that have not chosen.
     public var shelves: [String: ShelfSettings] = [:]
+    /// How covers look everywhere in the library.
+    public var coverAppearance: CoverAppearance = .color
+    /// A scroll over the sidebar steps from shelf to shelf instead of scrolling the list.
+    public var sidebarScrollSwitchesShelves = true
 
     public init() {}
 
-    enum CodingKeys: String, CodingKey { case reader, libraryView, sort, goals, home, sidebarOrder, sidebarHidden, library, sortAscending, shelfGrouping, gridScale, shelves }
+    enum CodingKeys: String, CodingKey { case reader, libraryView, sort, goals, home, sidebarOrder, sidebarHidden, library, sortAscending, shelfGrouping, gridScale, shelves, coverAppearance, sidebarScrollSwitchesShelves }
     private enum LegacyKeys: String, CodingKey { case groupAllByCollection, groupByCollection, showContinueReading, showGoals, showStatistics }
 
     /// Missing or unknown values fall back to defaults, so settings written by another version still load.
@@ -760,6 +785,8 @@ public struct Settings: Codable, Hashable {
         }
         gridScale = Settings.clampedGridScale((try? c.decodeIfPresent(Double.self, forKey: .gridScale)) ?? 1)
         shelves = (try? c.decodeIfPresent([String: ShelfSettings].self, forKey: .shelves)) ?? [:]
+        coverAppearance = (try? c.decodeIfPresent(CoverAppearance.self, forKey: .coverAppearance)) ?? .color
+        sidebarScrollSwitchesShelves = (try? c.decodeIfPresent(Bool.self, forKey: .sidebarScrollSwitchesShelves)) ?? true
     }
 
     public static let gridScaleRange: ClosedRange<Double> = 0.6...1.6
