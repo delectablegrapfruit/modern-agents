@@ -1,0 +1,11 @@
+{
+  "name": "tokentrainer",
+  "private": true,
+  "description": "Duolingo-style crypto trading trainer on real Binance token data.",
+  "scripts": {
+    "test": "node --test tests/engine.test.js",
+    "calibrate": "node tests/calibrate.js",
+    "data": "python3 scripts/fetch_data.py",
+    "start": "python3 -m http.server 8000"
+  }
+}
