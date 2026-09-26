@@ -153,6 +153,16 @@ final class SplitPDFPresenter: PDFReading {
     private var pageStarts: [Int] = []
     private var pageEnds: [Int] = []
     private(set) var unit = 0
+    /// A place in the book that no layout changes: a point on a page, in the page's display space, on a line of it.
+    struct Place: Equatable {
+        var page: Int
+        var point: CGPoint
+    }
+    /// The place the reader is at, kept while the screens are dealt out again (a new text size, spread or window
+    /// size) through any number of relayouts, and given up only when the reader moves on (a turn, a jump). Each
+    /// relayout shows the spread whose screens hold it. Taking the place afresh from the screen shown after each step
+    /// lost a little at every step. Nil: the line at the top of the left screen.
+    private var place: Place?
     /// The place to restore once screens exist (the view may not have been laid out when preparation finished).
     private var pendingRestore: (() -> Int)?
     private var tiles: [Int: CGImage] = [:]
@@ -214,9 +224,23 @@ final class SplitPDFPresenter: PDFReading {
         reportLayout()
         let saved = session.book.position
         let restore: () -> Int
-        if let pdfPage = saved?.pdfPage {
-            let slice = saved?.locator?.offset ?? 0
-            restore = { [unowned self] in self.unitFor(page: pdfPage - 1, slice: slice) }
+        place = nil
+        if let saved, let pdfPage = saved.pdfPage, pdfPage >= 1 {
+            let page = min(pdfPage - 1, pageCount - 1)
+            if let top = saved.pdfTop {
+                // The very line the reader was at, whatever text size, window, spread or view it was saved in; kept as
+                // the place, so the first layouts (the window settling) keep it too.
+                let size = pageSize(page)
+                let x: CGFloat = saved.pdfLeft.map { CGFloat($0) } ?? size.width / 2
+                let target = Place(page: page, point: CGPoint(x: x, y: size.height - CGFloat(top)))
+                place = target
+                restore = { [unowned self] in self.unitShowing(target) }
+            } else {
+                // Saved before places were kept: the screen within the page (Pages saved 0; Text's locator is a place
+                // in the text, not a screen).
+                let slice = saved.pdfLayout == .text ? 0 : (saved.locator?.offset ?? 0)
+                restore = { [unowned self] in self.unitFor(page: page, slice: slice) }
+            }
         } else if let percent = saved?.percent, percent > 0 {
             restore = { [unowned self] in whole((percent / 100 * Double(self.units)).rounded(.down)) }
         } else {
@@ -229,6 +253,8 @@ final class SplitPDFPresenter: PDFReading {
     }
 
     func close() {}
+
+    func savePlace() { if ready { report() } }
 
     private func reportLayout() {
         session.pdfOpened(units: units, pageStarts: pageStarts, sections: sections, columns: columns)
@@ -248,7 +274,13 @@ final class SplitPDFPresenter: PDFReading {
         } else {
             label = "Page \(page + 1) of \(pageCount)"
         }
-        session.pdfPositionChanged(unit: unit, units: units, page: page, slice: slice, label: label)
+        // The place saved is the kept one (after a relayout it may lie on the right-hand screen), else the top line of
+        // the left screen: a point on its page, which reopening at any size, or as Pages or Text, finds again.
+        var kept: PDFPlace?
+        if let at = place ?? topPlace(of: unit) {
+            kept = PDFPlace(page: at.page, top: Double(pageSize(at.page).height - at.point.y), left: Double(at.point.x))
+        }
+        session.pdfPositionChanged(unit: unit, units: units, page: page, slice: slice, label: label, place: kept)
     }
 
     // MARK: - Preparation (off the main thread)
@@ -1004,14 +1036,63 @@ final class SplitPDFPresenter: PDFReading {
         return (y, r.rows[best] <= r.width / 10)
     }
 
-    /// The screen that shows a place on a page (its first, when the place is not on any).
-    private func unitContaining(page: Int, y: CGFloat) -> Int {
-        guard pageCount > 0, !pageStarts.isEmpty else { return 0 }
-        let p = min(max(0, page), pageCount - 1)
-        for u in pageStarts[p]...max(pageStarts[p], pageEnds[p]) where u < units {
-            if screens[u].pieces.contains(where: { $0.page == p && $0.rect.minY - 0.5 <= y && y <= $0.rect.maxY + 0.5 }) { return u }
+    /// The screen that shows a place: the one whose piece of the page holds the point (the word itself in rewrapped
+    /// text; the right column on a two-column page, where a height alone finds the left one). A point no piece holds
+    /// (a blank band; a place carried over from Text, which knows its paragraph, not its word) goes to the screen of
+    /// the nearest piece, a line's height counting more than a column's width; the earlier on a tie.
+    private func unitShowing(_ place: Place) -> Int {
+        guard pageCount > 0, units > 0, pageStarts.count > pageCount, pageEnds.count >= pageCount else { return 0 }
+        let p = min(max(0, place.page), pageCount - 1)
+        let first = min(max(0, pageStarts[p]), units - 1)
+        let last = min(max(first, pageEnds[p]), units - 1)
+        let x = place.point.x, y = place.point.y
+        var best: (unit: Int, distance: CGFloat)?
+        for u in first...last {
+            for piece in screens[u].pieces where piece.page == p {
+                let r = piece.rect
+                let dx = max(CGFloat(0), max(r.minX - x, x - r.maxX))
+                let dy = max(CGFloat(0), max(r.minY - y, y - r.maxY))
+                if dx == 0 && dy == 0 { return u }
+                let distance = hypot(dx / 4, dy)
+                if let b = best, b.distance <= distance { continue }
+                best = (unit: u, distance: distance)
+            }
         }
-        return min(pageStarts[p], max(0, units - 1))
+        return best?.unit ?? first
+    }
+
+    /// The line at the top of a screen, as a place: the middle of its first word in rewrapped text, of a picture, else
+    /// of the first word of the first line of ink its top piece shows. With `page`, the top of that page's first piece
+    /// on the screen instead (a screen may open with the end of the page before).
+    private func topPlace(of u: Int, page: Int? = nil) -> Place? {
+        guard u >= 0, u < units else { return nil }
+        let pieces = screens[u].pieces.filter { piece in page.map { piece.page == $0 } ?? true }
+        guard let top = pieces.min(by: { a, b in a.offset != b.offset ? a.offset < b.offset : (a.x ?? 0) < (b.x ?? 0) }) else {
+            return page == nil ? nil : topPlace(of: u)
+        }
+        let rect = top.rect
+        if top.x != nil || top.fitted { return Place(page: top.page, point: CGPoint(x: rect.midX, y: rect.midY)) }
+        let typical: CGFloat = preparation?.typicalLineHeight ?? 12
+        var strips: [CGRect] = []
+        if let p = preparation, top.page < p.strips.count { strips = p.strips[top.page] }
+        let strip = strips.firstIndex(where: { $0.minX <= rect.midX && rect.midX <= $0.maxX }) ?? 0
+        if let run = blocks(page: top.page, strip: strip).first(where: { $0.bottom < rect.maxY - 0.5 && $0.top > rect.minY + 0.5 }) {
+            let lineTop = min(run.top, rect.maxY), lineBottom = max(run.bottom, rect.minY)
+            let y = lineTop - min((lineTop - lineBottom) / 2, typical / 2)
+            var x = rect.midX
+            if let word = run.words.first { x = min(max(word.midX, rect.minX), rect.maxX) }
+            return Place(page: top.page, point: CGPoint(x: x, y: y))
+        }
+        return Place(page: top.page, point: CGPoint(x: rect.midX, y: rect.maxY - min(rect.height / 2, typical / 2)))
+    }
+
+    /// For the self-test: the place the reader is at.
+    var currentPlace: Place? { place ?? topPlace(of: unit) }
+
+    /// For the self-test: whether the spread shown holds a place.
+    func spreadShows(_ place: Place) -> Bool {
+        let u = unitShowing(place)
+        return u >= unit && u < unit + columns
     }
 
     private func unitFor(page: Int, slice: Int) -> Int {
@@ -1111,7 +1192,7 @@ final class SplitPDFPresenter: PDFReading {
             if dark {
                 shape.fillColor = color.withAlphaComponent(record.color == .underline ? 0.9 : 0.45).cgColor
             } else {
-                shape.fillColor = color.withAlphaComponent(record.color == .underline ? 1 : 0.85).cgColor
+                shape.fillColor = color.withAlphaComponent(record.color == .underline ? 1 : 0.6).cgColor
                 shape.compositingFilter = "multiplyBlendMode"
             }
             layer.addSublayer(shape)
@@ -1231,7 +1312,7 @@ final class SplitPDFPresenter: PDFReading {
         guard let old else { return }
         if slides {
             CATransaction.begin()
-            CATransaction.setAnimationDuration(0.3)
+            CATransaction.setAnimationDuration(Design.Motion.pageTurn)
             CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeInEaseOut))
             CATransaction.setCompletionBlock { old.removeFromSuperlayer() }
             old.position.x -= CGFloat(direction) * width
@@ -1245,18 +1326,22 @@ final class SplitPDFPresenter: PDFReading {
         }
     }
 
-    /// Re-lays the screens out for a new size, spread or text size, keeping the place: the top of the first piece.
+    /// Re-lays the screens out for a new size, spread or text size, keeping the place: the one kept since the reader
+    /// last moved, else the line at the top of the left screen. The new spread is the one whose screens show it, and
+    /// the place stays the same through every further relayout, so steps never walk away from it.
     private func relayout() {
-        let anchor = units > 0 ? screens[unit].pieces.first : nil
         let before = (tileSize, scale, columns)
         computeGeometry()
         if before == (tileSize, scale, columns) && !screens.isEmpty { return }
+        // Taken from the screens as they were dealt before this change (the geometry does not enter into it).
+        let kept = place ?? topPlace(of: unit)
         buildScreens()
         if let pendingRestore, units > 0 {
             unit = aligned(pendingRestore())
             self.pendingRestore = nil
-        } else if let anchor {
-            unit = aligned(unitContaining(page: anchor.page, y: anchor.rect.maxY - 0.5))
+        } else if let kept, units > 0 {
+            unit = aligned(unitShowing(kept))
+            place = kept
         }
         reportLayout()
     }
@@ -1290,14 +1375,29 @@ final class SplitPDFPresenter: PDFReading {
 
     // MARK: - Navigation
 
-    private func show(unit target: Int, direction: Int) {
+    /// Shows a screen's spread. A jump to a particular place (a page, a link, a search match) keeps that place for
+    /// relayouts; a turn leaves the place to the top of the new left screen. Anything else that moves `unit` must set
+    /// or clear `place` too.
+    private func show(unit target: Int, direction: Int, arriving arrival: Place?) {
         guard units > 0 else { return }
         let next = aligned(target)
-        guard next != unit || direction == 0 else { return }
+        guard next != unit || direction == 0 else {
+            // Already on that spread (the other page of it): what was asked for becomes the place.
+            if let arrival, arrival != place {
+                place = arrival
+                report()
+            }
+            return
+        }
         unit = next
+        place = arrival
         flash = nil
         present(direction: direction)
         report()
+    }
+
+    private func show(unit target: Int, direction: Int) {
+        show(unit: target, direction: direction, arriving: nil)
     }
 
     func next() {
@@ -1322,7 +1422,8 @@ final class SplitPDFPresenter: PDFReading {
 
     func go(toPage index: Int, slice: Int) {
         let target = unitFor(page: index, slice: slice)
-        show(unit: target, direction: target > unit ? 1 : (target < unit ? -1 : 0))
+        let page = min(max(0, index), max(0, pageCount - 1))
+        show(unit: target, direction: target > unit ? 1 : (target < unit ? -1 : 0), arriving: topPlace(of: target, page: page))
     }
 
     func go(toUnit u: Int) {
@@ -1429,9 +1530,16 @@ final class SplitPDFPresenter: PDFReading {
         if let destination = link.destination ?? (link.action as? PDFActionGoTo)?.destination, let page = destination.page, let document {
             let index = document.index(for: page)
             let point = destination.point
-            let y = point.y.isFinite && point.y < 1_000_000 ? point.applying(page.transform(for: .mediaBox)).y : pageSize(index).height
-            let target = unitContaining(page: index, y: y)
-            show(unit: target, direction: target > unit ? 1 : (target < unit ? -1 : 0))
+            let size = pageSize(index)
+            let bounds = page.bounds(for: .mediaBox)
+            // A coordinate the link leaves unspecified is a huge number: the middle across, the top of the page down.
+            let hasX = point.x.isFinite && abs(point.x) < 1_000_000, hasY = point.y.isFinite && abs(point.y) < 1_000_000
+            let shown = CGPoint(x: hasX ? point.x : bounds.midX, y: hasY ? point.y : bounds.maxY).applying(page.transform(for: .mediaBox))
+            // The link's place on the page, kept for relayouts: a hair below the top it names, in its line rather than
+            // in the gap above it.
+            let arrival = Place(page: index, point: CGPoint(x: hasX ? shown.x : size.width / 2, y: (hasY ? shown.y : size.height) - 1))
+            let target = unitShowing(arrival)
+            show(unit: target, direction: target > unit ? 1 : (target < unit ? -1 : 0), arriving: arrival)
             return true
         }
         return false
@@ -1595,8 +1703,9 @@ final class SplitPDFPresenter: PDFReading {
         }
         let pageIndex = document.index(for: page)
         let display = selection.bounds(for: page).applying(page.transform(for: .mediaBox))
-        let target = unitContaining(page: pageIndex, y: display.midY)
-        show(unit: target, direction: target > unit ? 1 : (target < unit ? -1 : 0))
+        let arrival = Place(page: pageIndex, point: CGPoint(x: display.midX, y: display.midY))
+        let target = unitShowing(arrival)
+        show(unit: target, direction: target > unit ? 1 : (target < unit ? -1 : 0), arriving: arrival)
         flash = selection
         drawFlash()
     }

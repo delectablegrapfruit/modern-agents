@@ -42,6 +42,9 @@ protocol PDFReading: AnyObject {
     var hostView: NSView { get }
     func open()
     func close()
+    /// Saves the reader's place now, before the book closes or reopens another way: for what does not report on its
+    /// own (a zoomed page scrolled).
+    func savePlace()
     func applySettings()
     func next()
     func previous()
@@ -164,6 +167,13 @@ final class PDFPresenter: PDFReading {
     private var hits: [UUID: PDFSelection] = [:]
     private var pendingSelection: PDFSelection?
     private var zoomFactor: CGFloat = 1
+    /// The page the reader is on, kept through changes of spread, zoom and window size while it stays in view: the
+    /// page itself one to a screen, the page of the spread the reader arrived at two to a screen. PDFKit's current page
+    /// is the left page of a spread, so taking it back after two pages → one stepped back a page each time.
+    private var readingPage: Int?
+    /// The line the book was opened at when another view saved it (Zoom & Split, Text): kept while the reader stays on
+    /// that page, so going back to that view finds the line again rather than the top of the page.
+    private var openedPlace: PDFPlace?
     private var lastSize: CGSize = .zero
     private var opened = false
     private var swipe = SwipeTurner()
@@ -210,6 +220,7 @@ final class PDFPresenter: PDFReading {
         var page = 0
         if let pdfPage = saved?.pdfPage {
             page = pdfPage - 1
+            if let top = saved?.pdfTop { openedPlace = PDFPlace(page: page, top: top, left: saved?.pdfLeft) }
         } else if let percent = saved?.percent, percent > 0 {
             page = whole((percent / 100 * Double(document.pageCount)).rounded(.down))
         }
@@ -221,6 +232,8 @@ final class PDFPresenter: PDFReading {
         observers = []
     }
 
+    func savePlace() { report() }
+
     private func observe() {
         let center = NotificationCenter.default
         for name in [Notification.Name.PDFViewPageChanged, .PDFViewDisplayModeChanged] {
@@ -230,10 +243,37 @@ final class PDFPresenter: PDFReading {
         }
     }
 
+    /// The left page of the spread a page is shown in (the page itself, one to a screen): with `displaysAsBook` off,
+    /// spreads pair pages 1–2, 3–4, …
+    private func spreadStart(_ index: Int) -> Int { columns == 2 ? index - index % 2 : index }
+
     private func report() {
-        guard let document else { return }
-        let page = currentIndex
-        session.pdfPositionChanged(unit: page, units: document.pageCount, page: page, slice: 0, label: nil)
+        guard let document, document.pageCount > 0 else { return }
+        let current = currentIndex
+        let shown = spreadStart(current)
+        // The kept page holds while it is in view (a change of spread, zoom or size keeps it); a turn or a jump elsewhere
+        // moves it to the page now shown.
+        let inView = readingPage.map { $0 >= shown && $0 < shown + columns } ?? false
+        if !inView { readingPage = current }
+        let page = min(max(0, readingPage ?? current), document.pageCount - 1)
+        if let opened = openedPlace, opened.page != page { openedPlace = nil }
+        session.pdfPositionChanged(unit: shown, units: document.pageCount, page: page, slice: 0, label: nil, place: place(on: page))
+    }
+
+    /// Where on the page the reader is, for the other views: while the page is larger than the view, the point of it at
+    /// the view's top-left; else the line another view opened the book at, while on its page; else the top.
+    private func place(on index: Int) -> PDFPlace {
+        if pageOverflows, let document, let destination = view.currentDestination, let page = destination.page, document.index(for: page) == index {
+            let shown = destination.point.applying(page.transform(for: .mediaBox))
+            let size = PDFPresenter.displaySize(of: page)
+            if shown.x.isFinite, shown.y.isFinite {
+                let top = min(max(CGFloat(0), size.height - shown.y), size.height)
+                let left = min(max(CGFloat(0), shown.x), size.width)
+                return PDFPlace(page: index, top: Double(top), left: Double(left))
+            }
+        }
+        if let openedPlace, openedPlace.page == index { return openedPlace }
+        return PDFPlace(page: index, top: nil, left: nil)
     }
 
     // MARK: - Shared helpers
@@ -363,7 +403,7 @@ final class PDFPresenter: PDFReading {
     }
 
     static func nsColor(for color: HighlightColor) -> NSColor {
-        color == .underline ? NSColor.systemRed : NSColor(HighlightSwatch.color(color))
+        NSColor(HighlightSwatch.color(color))
     }
 
     /// Light themes tint the white of the paper; dark themes invert luminance while keeping hues (so pictures and
@@ -419,13 +459,38 @@ final class PDFPresenter: PDFReading {
     }
 
     private func applyLayout() {
-        let current = view.currentPage
-        view.displayMode = columns == 2 ? .twoUp : .singlePage
-        view.displaysAsBook = false
-        view.displaysPageBreaks = false
-        fitPages()
-        if let current { view.go(to: current) }
+        keepingPlace(scroll: true) {
+            view.displayMode = columns == 2 ? .twoUp : .singlePage
+            view.displaysAsBook = false
+            view.displaysPageBreaks = false
+            fitPages()
+        }
         session.pdfLayoutChanged(columns: columns, mode: .paginated)
+    }
+
+    /// Makes a change of spread, scale or size and puts the reader back: on the kept page (not PDFKit's current page,
+    /// the left one of a spread) and, with `scroll`, while the page is larger than the view, with the point of it that
+    /// was at the view's top-left there again; a new scale otherwise leaves the page scrolled elsewhere.
+    private func keepingPlace(scroll: Bool, _ change: () -> Void) {
+        guard let document, document.pageCount > 0 else {
+            change()
+            return
+        }
+        let index = min(max(0, readingPage ?? currentIndex), document.pageCount - 1)
+        let destination: PDFDestination? = scroll && pageOverflows ? view.currentDestination : nil
+        change()
+        if let destination, let page = destination.page, spreadStart(document.index(for: page)) == spreadStart(index) {
+            view.go(to: destination)
+        } else if spreadStart(currentIndex) != spreadStart(index), let page = document.page(at: index) {
+            view.go(to: page)
+        }
+    }
+
+    /// Whether the page (or spread) is larger than the view, so part of it is scrolled out of sight.
+    private var pageOverflows: Bool {
+        guard let documentView = view.documentView, let scrollView = documentView.enclosingScrollView else { return false }
+        let visible = scrollView.contentView.documentVisibleRect
+        return documentView.bounds.width > visible.width + 1 || documentView.bounds.height > visible.height + 1
     }
 
     /// The page (or spread) fits the view inside book-like margins, times the zoom.
@@ -445,12 +510,14 @@ final class PDFPresenter: PDFReading {
         let size = view.bounds.size
         guard size != lastSize, size.width > 0 else { return }
         lastSize = size
-        fitPages()
+        // While the window is dragged, the page only: putting the point back at each of many steps can creep.
+        keepingPlace(scroll: !view.inLiveResize) { fitPages() }
     }
 
     func zoom(_ direction: Int) {
         zoomFactor = min(4, max(0.5, zoomFactor * (direction > 0 ? 1.15 : 1 / 1.15)))
-        fitPages()
+        keepingPlace(scroll: true) { fitPages() }
+        report()
     }
 
     // MARK: - Navigation
@@ -475,6 +542,7 @@ final class PDFPresenter: PDFReading {
 
     func go(toPage index: Int, slice: Int) {
         guard let document, document.pageCount > 0, let page = document.page(at: min(max(0, index), document.pageCount - 1)) else { return }
+        readingPage = document.index(for: page)
         view.go(to: page)
         report()
     }
@@ -557,7 +625,7 @@ final class PDFPresenter: PDFReading {
             let bounds = NSRect(x: r.x, y: r.y, width: r.width, height: r.height)
             let kind: PDFAnnotationSubtype = record.color == .underline ? .underline : .highlight
             let annotation = PDFAnnotation(bounds: bounds, forType: kind, withProperties: nil)
-            annotation.color = PDFPresenter.nsColor(for: record.color ?? .yellow)
+            annotation.color = kind == .highlight ? PDFPresenter.nsColor(for: record.color ?? .yellow).withAlphaComponent(0.6) : PDFPresenter.nsColor(for: record.color ?? .yellow)
             annotation.quadrilateralPoints = [
                 NSValue(point: NSPoint(x: 0, y: bounds.height)), NSValue(point: NSPoint(x: bounds.width, y: bounds.height)),
                 NSValue(point: NSPoint(x: 0, y: 0)), NSValue(point: NSPoint(x: bounds.width, y: 0)),
@@ -719,7 +787,9 @@ final class PDFPresenter: PDFReading {
             go(toPage: hit.locator.spine, slice: 0)
             return
         }
+        if let document, let page = selection.pages.first { readingPage = document.index(for: page) }
         view.go(to: selection)
         view.setCurrentSelection(selection, animate: true)
+        report()
     }
 }

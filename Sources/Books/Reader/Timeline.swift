@@ -12,18 +12,19 @@ struct Timeline: View {
             let width = geo.size.width
             let current = session.previewFraction ?? session.position.fraction
             let span = max(1, session.layout.total - (session.layout.mode == .paginated ? 1 : 0))
+            let track: CGFloat = session.timelineDragging ? 7 : 5
             ZStack(alignment: .leading) {
-                Capsule().fill(.primary.opacity(0.14)).frame(height: session.timelineDragging ? 7 : 5)
-                Capsule().fill(Color.accentColor).frame(width: max(0, width * current), height: session.timelineDragging ? 7 : 5)
+                Capsule().fill(Design.Fill.track).frame(height: track)
+                Capsule().fill(Color.accentColor).frame(width: max(0, width * current), height: track)
                 ForEach(session.layout.chapters.filter { $0.pos > 0 && $0.pos < span }, id: \.self) { mark in
-                    RoundedRectangle(cornerRadius: 1)
+                    Capsule()
                         .fill(.primary.opacity(0.35))
                         .frame(width: 2, height: 11)
                         .offset(x: width * CGFloat(mark.pos / span) - 1)
                 }
                 ForEach(session.layout.bookmarks, id: \.self) { mark in
                     Circle()
-                        .fill(Color.accentColor)
+                        .fill(HighlightSwatch.bookmark)
                         .frame(width: 6, height: 6)
                         .overlay(Circle().strokeBorder(.background, lineWidth: 1.5))
                         .offset(x: width * CGFloat(min(1, mark.pos / span)) - 3, y: -11)
@@ -31,22 +32,25 @@ struct Timeline: View {
                 Circle()
                     .fill(.white)
                     .frame(width: 16, height: 16)
-                    .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
-                    .overlay(Circle().strokeBorder(.black.opacity(0.15), lineWidth: 0.5))
+                    .shadow(Design.Shadow.glyph)
+                    .overlay(Circle().strokeBorder(.black.opacity(0.15), lineWidth: Design.Stroke.hairline))
                     .scaleEffect(session.timelineDragging ? 1.15 : 1)
                     .offset(x: width * CGFloat(current) - 8)
             }
             .frame(height: 28)
+            // The track thickens and the thumb grows as a drag starts; both settle back as it ends.
+            .animation(Design.Motion.spring, value: session.timelineDragging)
             .contentShape(Rectangle())
             .overlay(alignment: .topLeading) {
                 if let f = session.timelineDragging ? session.previewFraction : hoverFraction {
+                    // Clear of the bar's capsule, so on macOS 26 the two pieces of glass stay apart.
                     Text(label(at: f, span: span))
-                        .font(.caption)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
+                        .font(Design.Fonts.meta)
+                        .padding(.horizontal, Design.Space.m)
+                        .padding(.vertical, Design.Space.xs)
                         .glassCapsule()
                         .fixedSize()
-                        .offset(x: min(max(0, width * CGFloat(f) - 80), max(0, width - 160)), y: -34)
+                        .offset(x: min(max(0, width * CGFloat(f) - 80), max(0, width - 160)), y: -38)
                         .allowsHitTesting(false)
                 }
             }

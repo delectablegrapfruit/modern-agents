@@ -60,6 +60,13 @@ struct SearchHit: Hashable, Identifiable {
     let pos: Double
 }
 
+/// A place on a PDF's page as the presenters report it: see `ReadingPosition.pdfTop`.
+struct PDFPlace: Equatable {
+    var page: Int
+    var top: Double?
+    var left: Double?
+}
+
 /// The state of one book being read, and the bridge to the page that typesets it. Owns the web view, feeds it
 /// settings, positions and annotations, and turns the page's messages into library records.
 @MainActor
@@ -86,6 +93,9 @@ final class ReaderSession {
     /// Reflowing a PDF into text takes a moment; the reader shows a spinner meanwhile.
     private(set) var preparing = false
     @ObservationIgnored private var reflowReady = false
+    /// The reflowed text's paragraphs and the places on the PDF's pages they came from: how a place is carried between
+    /// Text and the page views.
+    @ObservationIgnored private var reflowMap: PDFReflow.PageMap?
     @ObservationIgnored private var pendingFraction: Double?
 
     private(set) var isPageReady = false
@@ -101,9 +111,11 @@ final class ReaderSession {
     @ObservationIgnored private var menuPopover: NSPopover?
     @ObservationIgnored private var menuCloser: PopoverCloser?
     var editingNote: Annotation?
-    var showContents = false
-    var showSearch = false
-    var showAppearance = false
+    /// The toolbar's popovers. In full screen their anchor is the floating bar, which shows while one is open: a
+    /// shortcut brings the bar down with it, and the bar goes once the popover closes and the pointer has left.
+    var showContents = false { didSet { if showContents != oldValue { refreshChrome() } } }
+    var showSearch = false { didSet { if showSearch != oldValue { refreshChrome() } } }
+    var showAppearance = false { didSet { if showAppearance != oldValue { refreshChrome() } } }
     var showEndCard = false
     var searchQuery = ""
     private(set) var searchResults: [SearchHit] = []
@@ -118,7 +130,7 @@ final class ReaderSession {
     private var topBarHovered = false
     private var topBarRevealUntil = Date.distantPast
     var isFullScreen = false {
-        didSet { if isFullScreen != oldValue, isFullScreen { topBarRevealUntil = Date().addingTimeInterval(2.5); topBarVisible = true } }
+        didSet { if isFullScreen != oldValue, isFullScreen { topBarRevealUntil = Date().addingTimeInterval(ReaderSession.fullScreenReveal); topBarVisible = true } }
     }
     var timelineDragging = false { didSet { refreshChrome() } }
     var previewFraction: Double?
@@ -128,6 +140,9 @@ final class ReaderSession {
     private var chromeTimer: Timer?
     private var cursorTimer: Timer?
     private var cursorMonitor: Any?
+    /// A menu is open (a context menu, the menu bar): the pointer stays while it is.
+    @ObservationIgnored private var menuTracking = false
+    @ObservationIgnored private var menuObservers: [NSObjectProtocol] = []
     private var saveTask: Task<Void, Never>?
     private var readingTimer: Timer?
     private var lastActivity = Date()
@@ -138,12 +153,17 @@ final class ReaderSession {
     private var chaptersFinished = 0
     private var lastChapter: (index: Int, pagesLeft: Int)?
     private var endReached = false
-    private var systemIsDark: Bool { NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua }
+    /// Whether the system is in Dark Mode: stored (and updated when it changes), so views that draw with the
+    /// effective theme follow the switch as the page does.
+    private var systemIsDark: Bool
     private var appearanceObserver: NSKeyValueObservation?
+
+    private static var appIsDark: Bool { NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua }
 
     init(book: Book, model: LibraryModel) {
         self.book = book
         self.model = model
+        systemIsDark = ReaderSession.appIsDark
         view = book.view ?? BookView()
         usesPDFView = book.kind == .pdf && ReaderSession.pdfLayout(of: book, in: model.settings.reader) != .text
         // Records made before highlights were joined along their lines may hold a rectangle a word: joined now.
@@ -158,7 +178,11 @@ final class ReaderSession {
         configuration.userContentController.add(messages, name: "reader")
         configuration.preferences.isElementFullscreenEnabled = false
         configuration.suppressesIncrementalRendering = true
+        // The page paints the book's theme from its first frame, instead of white until open() arrives.
+        let initial = model.settings.reader.applying(book.view).webSettings(systemIsDark: ReaderSession.appIsDark)
+        configuration.userContentController.addUserScript(WKUserScript(source: "window.__initialSettings = " + JSON.literal(initial) + ";", injectionTime: .atDocumentStart, forMainFrameOnly: true))
         webView = ReaderWebView(frame: .zero, configuration: configuration)
+        webView.underPageBackgroundColor = NSColor(Color(hex: model.settings.reader.effectiveTheme(systemIsDark: ReaderSession.appIsDark).colors.background))
         webView.allowsBackForwardNavigationGestures = false
         webView.allowsMagnification = false
         messages.onMessage = { [weak self] body in Task { @MainActor in self?.receive(JSON(body)) } }
@@ -174,44 +198,64 @@ final class ReaderSession {
         }
 
         appearanceObserver = NSApp.observe(\.effectiveAppearance) { [weak self] _, _ in
-            Task { @MainActor in self?.applySettings() }
+            Task { @MainActor in self?.systemAppearanceChanged() }
         }
         startReadingTimer()
         if book.kind == .pdf, !usesPDFView { prepareReflow() }
-        // Every mouse move in the app (over the page, the toolbar, a popover) restarts the cursor's cooldown.
-        cursorMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged, .leftMouseDown, .rightMouseDown, .scrollWheel]) { [weak self] event in
-            MainActor.assumeIsolated { self?.armCursorHiding() }
+        // Every mouse event in the app (over the page, the toolbar, a popover) restarts the pointer's countdown; a key
+        // that moves through the book hides it at once.
+        cursorMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged, .leftMouseDown, .rightMouseDown, .scrollWheel, .keyDown]) { [weak self] event in
+            MainActor.assumeIsolated {
+                if event.type == .keyDown { self?.keyPressed(event) } else { self?.armCursorHiding() }
+            }
             return event
         }
+        for (name, tracking) in [(NSMenu.didBeginTrackingNotification, true), (NSMenu.didEndTrackingNotification, false)] {
+            menuObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.menuTrackingChanged(tracking) }
+            })
+        }
+    }
+
+    private func systemAppearanceChanged() {
+        systemIsDark = ReaderSession.appIsDark
+        applySettings()
     }
 
     // MARK: - PDFs as text
 
-    /// Converts the PDF to a book once (cached next to it) and opens that when the page is ready.
+    /// Converts the PDF to a book once (cached next to it, with the map from its paragraphs to the pages) and opens
+    /// that when the page is ready.
     private func prepareReflow() {
         let pdfURL = model.store.fileURL(for: book)
         let cache = PDFReflow.cacheURL(for: pdfURL)
+        let mapURL = PDFReflow.mapURL(for: pdfURL)
         let title = book.title, author = book.author
         preparing = true
-        if let saved = book.position, saved.pdfPage != nil, saved.percent > 0 { pendingFraction = saved.percent / 100 }
         Task.detached(priority: .userInitiated) { [weak self] in
             var failure: String?
             let cachedDate = try? cache.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
             let sourceDate = try? pdfURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
-            if let cachedDate, let sourceDate, cachedDate >= sourceDate {
-                // Converted before.
-            } else {
+            var converted = false
+            if let cachedDate, let sourceDate, cachedDate >= sourceDate { converted = true }
+            if !converted || !FileManager.default.fileExists(atPath: mapURL.path) {
                 do {
-                    try PDFReflow.epub(from: pdfURL, title: title, author: author).write(to: cache, options: .atomic)
+                    let made = try PDFReflow.convert(from: pdfURL, title: title, author: author)
+                    if let data = try? JSONEncoder().encode(made.map) { try? data.write(to: mapURL, options: .atomic) }
+                    // A book converted before keeps its file (highlights made in it point into its text) and only
+                    // gains the map.
+                    if !converted { try made.epub.write(to: cache, options: .atomic) }
                 } catch {
-                    failure = "\(error)"
+                    if !converted { failure = "\(error)" }
                 }
             }
-            await MainActor.run { [weak self] in self?.reflowPrepared(cache: cache, failure: failure) }
+            let map = (try? Data(contentsOf: mapURL)).flatMap { try? JSONDecoder().decode(PDFReflow.PageMap.self, from: $0) }
+            let outcome = failure
+            await MainActor.run { [weak self] in self?.reflowPrepared(cache: cache, map: map, failure: outcome) }
         }
     }
 
-    private func reflowPrepared(cache: URL, failure: String?) {
+    private func reflowPrepared(cache: URL, map: PDFReflow.PageMap?, failure: String?) {
         preparing = false
         if let failure {
             // Back to whole pages, with the reason; the library's alert outlives this reader.
@@ -221,12 +265,16 @@ final class ReaderSession {
             return
         }
         schemeHandler.bookURL = cache
+        reflowMap = map
         reflowReady = true
         if isPageReady { openBook() }
     }
 
     /// Pages, Zoom & Split or Text: the book reopens the chosen way.
     func setPDFLayout(_ layout: PDFLayout) {
+        // The place goes with the book into the other view: saved now, not when this reader is torn down, which may
+        // come after the book has already opened again.
+        flushPosition()
         setView { $0.pdfLayout = layout }
         model.reopen(book)
     }
@@ -264,6 +312,8 @@ final class ReaderSession {
         cursorTimer?.invalidate()
         if let cursorMonitor { NSEvent.removeMonitor(cursorMonitor) }
         cursorMonitor = nil
+        for observer in menuObservers { NotificationCenter.default.removeObserver(observer) }
+        menuObservers = []
         appearanceObserver = nil
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "reader")
         webView.stopLoading()
@@ -291,10 +341,22 @@ final class ReaderSession {
             "bookmarks": bookmarkPayload(),
             "highlights": highlights,
         ]
-        if let locator = book.position?.locator, !(book.isFinished && (book.position?.percent ?? 0) >= 100) {
-            arguments["locator"] = ["spine": locator.spine, "offset": locator.offset]
-        } else {
-            arguments["locator"] = NSNull()
+        arguments["locator"] = NSNull()
+        if let saved = book.position, !(book.isFinished && saved.percent >= 100) {
+            if book.kind == .pdf, let pdfPage = saved.pdfPage, saved.pdfLayout != .text {
+                // A place on the PDF's pages (it was read as Pages or Zoom & Split last), not a place in this text: the
+                // paragraph that came from it, as far along as the place was down it. Without the map, the share of the
+                // pages before it; the saved share counts to the end of the spread shown, a page or two on.
+                if let locator = reflowMap?.locator(page: pdfPage - 1, top: saved.pdfTop, left: saved.pdfLeft) {
+                    arguments["locator"] = ["spine": locator.spine, "offset": locator.offset]
+                } else if let pages = book.pageCount, pages > 1 {
+                    pendingFraction = min(1, Double(max(0, pdfPage - 1)) / Double(pages - 1))
+                } else {
+                    pendingFraction = saved.percent / 100
+                }
+            } else if let locator = saved.locator {
+                arguments["locator"] = ["spine": locator.spine, "offset": locator.offset]
+            }
         }
         call("open", arguments)
     }
@@ -465,12 +527,12 @@ final class ReaderSession {
     func menuItemsForSelection() -> [NSMenuItem] {
         guard let sel = selection else { return [] }
         var items: [NSMenuItem] = []
-        items.append(ClosureMenuItem("Copy") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(sel.text, forType: .string) })
-        items.append(ClosureMenuItem("Look Up") { [weak self] in self?.lookUpSelection() })
-        items.append(.separator())
         items.append(ClosureMenuItem("Highlight") { [weak self] in self?.highlightSelection(color: .yellow) })
         items.append(ClosureMenuItem("Underline") { [weak self] in self?.highlightSelection(color: .underline) })
         items.append(ClosureMenuItem("Add Note…") { [weak self] in self?.pendingNoteAfterHighlight = true; self?.highlightSelection(color: .yellow) })
+        items.append(.separator())
+        items.append(ClosureMenuItem("Copy") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(sel.text, forType: .string) })
+        items.append(ClosureMenuItem("Look Up") { [weak self] in self?.lookUpSelection() })
         return items
     }
 
@@ -582,7 +644,7 @@ final class ReaderSession {
         case "end":
             guard layout.total > 1 else { return }   // a book that measured one page has a layout problem, not an ending
             showEndCard = true
-            model.savePosition(ReadingPosition(locator: position.locator, percent: 100), for: book.id, finished: true)
+            model.savePosition(textPosition(position.locator, percent: 100), for: book.id, finished: true)
         case "selection":
             guard let text = m.string("text"), let o = m.object("locator"), let spine = o.int("spine"), let rect = m.rect("rect") else { return }
             selection = ReaderSelection(text: text, locator: Locator(spine: spine, offset: o.int("start") ?? 0), endOffset: o.int("end") ?? 0, rect: rect, chapter: m.string("chapter") ?? position.chapter)
@@ -660,14 +722,30 @@ final class ReaderSession {
     }
 
     func flushPosition() {
+        // PDF views save as their place changes; this catches what does not report on its own (a zoomed page scrolled).
+        if usesPDFView, isOpen { pdf?.savePlace() }
         if pagesTurned > 0 || chaptersFinished > 0 {
             model.recordReading(seconds: 0, pages: pagesTurned, chapters: chaptersFinished, in: book.id)
             pagesTurned = 0
             chaptersFinished = 0
         }
-        guard !usesPDFView, isOpen, let locator = position.locator else { return }   // PDFs save as their page changes
+        guard !usesPDFView, isOpen, let locator = position.locator else { return }
         let finished: Bool? = position.atEnd && layout.total > 1 ? true : nil
-        model.savePosition(ReadingPosition(locator: locator, percent: position.percent), for: book.id, finished: finished)
+        model.savePosition(textPosition(locator, percent: position.percent), for: book.id, finished: finished)
+    }
+
+    /// A place in the text as the library keeps it; for a PDF read as text, with the page and the point on it that its
+    /// paragraph came from, so Pages and Zoom & Split open where the text was left.
+    private func textPosition(_ locator: Locator?, percent: Double) -> ReadingPosition {
+        var saved = ReadingPosition(locator: locator, percent: percent)
+        guard book.kind == .pdf else { return saved }
+        saved.pdfLayout = .text
+        if let locator, let place = reflowMap?.place(of: locator) {
+            saved.pdfPage = place.page + 1
+            saved.pdfTop = place.top
+            saved.pdfLeft = place.left
+        }
+        return saved
     }
 
     // MARK: - PDFs (the presenter reports what the page script reports for books)
@@ -695,6 +773,8 @@ final class ReaderSession {
     func pdfPreparing(_ flag: Bool) { preparing = flag }
 
     func pdfOpened(units: Int, pageStarts: [Int], sections: [PDFSection], columns: Int) {
+        // Screens are counted afresh (a relayout deals them out again): the next report is no turn of pages.
+        lastPage = nil
         pdfSections = sections
         pdfPageStarts = pageStarts.count >= 2 ? pageStarts : Array(0...max(1, units))
         toc = sections.map { ReaderTOCItem(label: $0.label, href: String($0.page), level: $0.level, pos: Double(pdfUnit(page: $0.page, offset: 0)), spine: $0.page) }
@@ -711,10 +791,14 @@ final class ReaderSession {
     func pdfLayoutChanged(columns: Int, mode: ReaderLayoutInfo.Mode) {
         layout.mode = mode
         layout.columns = columns
+        // A new spread moves the unit shown to the left page of the reader's spread: that is no page read.
+        lastPage = nil
     }
 
-    /// The presenter's place: a unit is a page, or a screen of a page in Zoom & Split.
-    func pdfPositionChanged(unit: Int, units: Int, page: Int, slice: Int, label: String?) {
+    /// The presenter's place: a unit is a page, or a screen of a page in Zoom & Split. `place` is where on which page
+    /// the reader is, whatever the layout (after a relayout it may lie past the left screen): what reopening, at any
+    /// size or in another way of showing the PDF, goes back to.
+    func pdfPositionChanged(unit: Int, units: Int, page: Int, slice: Int, label: String?, place: PDFPlace? = nil) {
         guard units > 0 else { return }
         let shown = min(unit + max(1, layout.columns), units)
         let percent = Double(shown) / Double(units) * 100
@@ -735,7 +819,16 @@ final class ReaderSession {
         countChapter(p)
         position = p
         pdfPageLabel = label
-        model.savePosition(ReadingPosition(locator: Locator(spine: page, offset: slice), pdfPage: page + 1, percent: percent), for: book.id, finished: p.atEnd && units > 1 ? true : nil)
+        var at = place ?? PDFPlace(page: page, top: nil, left: nil)
+        // JSONEncoder refuses a non-finite number, and with it every later save of the catalog: such a point is the top.
+        if !(at.top?.isFinite ?? true) || !(at.left?.isFinite ?? true) { at.top = nil; at.left = nil }
+        // Which view saved the place: the presenter's own kind, not the book's setting, which a switch changes before
+        // the old view is torn down.
+        let shownAs: PDFLayout
+        if let presenter = pdf, presenter is SplitPDFPresenter { shownAs = .fit } else { shownAs = .pages }
+        let saved = ReadingPosition(locator: Locator(spine: page, offset: slice), pdfPage: at.page + 1, pdfTop: at.top, pdfLeft: at.left,
+                                    pdfLayout: shownAs, percent: percent)
+        model.savePosition(saved, for: book.id, finished: p.atEnd && units > 1 ? true : nil)
         activity()
     }
 
@@ -764,23 +857,73 @@ final class ReaderSession {
         searchDone = true
     }
 
-    /// The pointer hides after a couple of seconds still over the page and comes back the moment it moves — like a
-    /// film's, so nothing sits on the text while reading.
+    // MARK: - Pointer
+
+    /// How far up from the bottom of the book the footer and the timeline reach, and down from the top the floating
+    /// bar in full screen: the pointer there brings them up, and is not hidden over them.
+    private static let bottomChromeReach: CGFloat = 120
+    private static let topChromeReach: CGFloat = 96
+    /// On entering full screen the floating bar stays a little longer than the idle time, so it is noticed.
+    private static let fullScreenReveal: TimeInterval = 2.5
+
+    /// The pointer hides after `Design.Motion.idle` still over the book (the time full screen's chrome takes to go)
+    /// and comes back the moment it moves, like a film's, so nothing sits on the text while reading. Each mouse event
+    /// moves the countdown on rather than making a new timer.
     private func armCursorHiding() {
-        cursorTimer?.invalidate()
-        cursorTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: false) { [weak self] _ in
-            Task { @MainActor in self?.hideCursorIfIdle() }
+        if let timer = cursorTimer, timer.isValid {
+            timer.fireDate = Date().addingTimeInterval(Design.Motion.idle)
+            return
+        }
+        cursorTimer = Timer.scheduledTimer(withTimeInterval: Design.Motion.idle, repeats: false) { [weak self] _ in
+            Task { @MainActor in self?.hideCursorNow() }
         }
     }
 
-    private func hideCursorIfIdle() {
-        guard isOpen, !showContents, !showSearch, !showAppearance, !showEndCard, !timelineDragging, !preparing,
-              selection == nil, tappedHighlight == nil, editingNote == nil else { return }
-        let host: NSView = usesPDFView ? (pdf?.hostView ?? webView) : webView
-        guard let window = host.window, window.isKeyWindow, NSApp.isActive else { return }
-        let location = host.convert(window.mouseLocationOutsideOfEventStream, from: nil)
-        guard host.bounds.contains(location) else { return }
+    /// Hides the pointer until it moves, unless something needs it: when the countdown ends, and at once when a key
+    /// turns the page, as macOS hides it while typing.
+    func hideCursorNow() {
+        guard pointerMayHide else { return }
         NSCursor.setHiddenUntilMouseMoves(true)
+    }
+
+    /// Whether the pointer may go: the book is up and nothing is open over it (a popover, the highlight menu, a
+    /// selection, a note, a menu), the window is key and the app active, and the pointer rests on the book itself,
+    /// not on the toolbar, the floating bar, the footer and timeline, or another window such as a popover.
+    private var pointerMayHide: Bool {
+        guard isOpen, !showContents, !showSearch, !showAppearance, !showEndCard, !timelineDragging, !preparing, !menuTracking, !topBarHovered,
+              selection == nil, tappedHighlight == nil, editingNote == nil, menuPopover == nil else { return false }
+        let host: NSView = usesPDFView ? (pdf?.hostView ?? webView) : webView
+        guard let window = host.window, window.isKeyWindow, NSApp.isActive else { return false }
+        guard NSWindow.windowNumber(at: NSEvent.mouseLocation, belowWindowWithWindowNumber: 0) == window.windowNumber else { return false }
+        // Below the title bar and toolbar, whether or not the book's view reaches up under them.
+        let inWindow = window.mouseLocationOutsideOfEventStream
+        guard window.contentLayoutRect.contains(inWindow) else { return false }
+        let location = host.convert(inWindow, from: nil)
+        guard host.bounds.contains(location) else { return false }
+        let fromTop = host.isFlipped ? location.y : host.bounds.height - location.y
+        if fromTop > host.bounds.height - ReaderSession.bottomChromeReach { return false }
+        if isFullScreen, topBarVisible, fromTop < ReaderSession.topChromeReach { return false }
+        return true
+    }
+
+    /// A key that moves through the book (an arrow, Space, Page Up or Down, Home or End, without ⌘ or ⌃) is reading,
+    /// not pointing: the pointer goes at once. Keys typed into a field leave it be.
+    private func keyPressed(_ event: NSEvent) {
+        guard event.modifierFlags.intersection([.command, .control]).isEmpty, (NSApp.keyWindow?.firstResponder as? NSText) == nil,
+              let scalar = event.charactersIgnoringModifiers?.unicodeScalars.first else { return }
+        switch Int(scalar.value) {
+        case NSRightArrowFunctionKey, NSLeftArrowFunctionKey, NSDownArrowFunctionKey, NSUpArrowFunctionKey,
+             NSPageDownFunctionKey, NSPageUpFunctionKey, NSHomeFunctionKey, NSEndFunctionKey, 32:
+            hideCursorNow()
+        default:
+            break
+        }
+    }
+
+    /// While a menu is open the pointer stays; once it closes, the countdown starts afresh.
+    private func menuTrackingChanged(_ tracking: Bool) {
+        menuTracking = tracking
+        if !tracking { armCursorHiding() }
     }
 
     func pointerMoved(y: CGFloat) {
@@ -806,8 +949,8 @@ final class ReaderSession {
     func viewResized(height: CGFloat) { viewHeight = height; refreshChrome() }
 
     func refreshChrome() {
-        let nearBottom = pointerY > viewHeight - 120
-        let nearTop = pointerY < 96 || topBarHovered || Date() < topBarRevealUntil
+        let nearBottom = pointerY > viewHeight - ReaderSession.bottomChromeReach
+        let nearTop = pointerY < ReaderSession.topChromeReach || topBarHovered || Date() < topBarRevealUntil
         let popoverOpen = showContents || showSearch || showAppearance
         timelineVisible = nearBottom || timelineDragging
         chromeTimer?.invalidate()
@@ -815,18 +958,26 @@ final class ReaderSession {
             footerVisible = nearBottom || timelineDragging || popoverOpen
             topBarVisible = nearTop || popoverOpen
             if !footerVisible && !topBarVisible { return }
-            chromeTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: false) { [weak self] _ in
-                Task { @MainActor in
-                    guard let self, !self.timelineDragging else { return }
-                    let open = self.showContents || self.showSearch || self.showAppearance
-                    if !(self.pointerY > self.viewHeight - 120), !open { self.footerVisible = false; self.timelineVisible = false }
-                    if !(self.pointerY < 96), !self.topBarHovered, !open { self.topBarVisible = false }
-                }
+            // The chrome goes after the pointer's idle time; the bar shown on entering full screen stays its whole reveal.
+            let delay = max(Design.Motion.idle, topBarRevealUntil.timeIntervalSinceNow)
+            chromeTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+                Task { @MainActor in self?.chromeIdle() }
             }
         } else {
             footerVisible = true
             topBarVisible = false
         }
+    }
+
+    /// Full screen's chrome goes when the idle time is up, where the pointer has left it and nothing holds it open.
+    private func chromeIdle() {
+        guard !timelineDragging else { return }
+        let open = showContents || showSearch || showAppearance
+        if !(pointerY > viewHeight - ReaderSession.bottomChromeReach), !open {
+            footerVisible = false
+            timelineVisible = false
+        }
+        if !(pointerY < ReaderSession.topChromeReach), !topBarHovered, !open, Date() >= topBarRevealUntil { topBarVisible = false }
     }
 
     /// The pointer over the floating bar keeps it: the book beneath sees no movement then.

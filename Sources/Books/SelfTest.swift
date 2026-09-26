@@ -20,7 +20,7 @@ enum SelfTest {
                 fail("\(error)")
             }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 180) { fail("timed out") }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 240) { fail("timed out") }
     }
 
     private static func log(_ message: String) {
@@ -43,6 +43,7 @@ enum SelfTest {
         try await Task.sleep(nanoseconds: 1_500_000_000)
         guard NSApp.windows.contains(where: { $0.isVisible }) else { throw Failure("no window appeared") }
         log("window shown, library has \(model.books.count) books")
+        try checkReaderPalette()
 
         // A six-chapter book long enough to paginate into dozens of pages.
         let paragraph = "<p>" + String(repeating: "The quick brown fox jumps over the lazy dog while the five boxing wizards jump quickly. ", count: 90) + "</p>"
@@ -65,6 +66,15 @@ enum SelfTest {
         }
         let layout = session.layout
         log("laid out: \(Int(layout.total)) pages, \(layout.columns) column(s), \(layout.chapters.count) chapters, page \(Int(session.position.page) + 1)")
+        let pageColour: String = await withCheckedContinuation { continuation in
+            session.webView.evaluateJavaScript("getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()") { value, _ in
+                continuation.resume(returning: (value as? String) ?? "")
+            }
+        }
+        guard pageColour.lowercased() == session.effectiveTheme.colors.background.lowercased() else {
+            throw Failure("the page is \(pageColour) but the footer and PDFs paint \(session.effectiveTheme.colors.background)")
+        }
+        log("page colour \(pageColour) matches Theme.colors")
         guard layout.mode == .paginated else { throw Failure("expected paginated layout") }
 
         let before = session.position.page
@@ -141,6 +151,40 @@ enum SelfTest {
         print("SELFTEST OK: \(Int(layout.total)) pages, \(layout.columns) column(s), wheel \(wheelReport.joined(separator: " · ")), position saved at \(Int(saved.percent))%; PDF checked; macOS \(ProcessInfo.processInfo.operatingSystemVersionString)")
         fflush(stdout)
         exit(0)
+    }
+
+    /// The page, the footer, the PDF surround and the swatches share one set of colours: the reader page's THEMES and
+    /// highlight colours hold exactly the Swift values, and every theme's footer reads at 4.5:1 or better on its page.
+    @MainActor
+    private static func checkReaderPalette() throws {
+        guard let directory = BooksSchemeHandler.readerDirectory,
+              let js = try? String(contentsOf: directory.appendingPathComponent("reader-core.js"), encoding: .utf8).lowercased() else {
+            throw Failure("reader-core.js was not found")
+        }
+        func luminance(_ hex: String) -> Double {
+            let digits = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex
+            let value = Int(digits, radix: 16) ?? 0
+            func linear(_ channel: Int) -> Double {
+                let c = Double(channel) / 255
+                return c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
+            }
+            let red: Double = linear((value >> 16) & 0xFF), green: Double = linear((value >> 8) & 0xFF), blue: Double = linear(value & 0xFF)
+            return 0.2126 * red + 0.7152 * green + 0.0722 * blue
+        }
+        for theme in Theme.allCases {
+            let c = theme.colors
+            guard js.contains("bg: '\(c.background.lowercased())', fg: '\(c.text.lowercased())'") else {
+                throw Failure("\(theme.label): Swift paints \(c.text) on \(c.background), which reader-core.js's THEMES does not")
+            }
+            let a = luminance(theme.footerText), b = luminance(c.background)
+            let ratio = (max(a, b) + 0.05) / (min(a, b) + 0.05)
+            guard ratio >= 4.5 else { throw Failure("\(theme.label): footer text \(theme.footerText) is only \(ratio):1 on \(c.background)") }
+        }
+        for color in HighlightColor.allCases {
+            let hex = HighlightSwatch.hex(color).lowercased()
+            guard js.contains("'\(hex)'") else { throw Failure("\(color.label): \(hex) is not among reader-core.js's highlight colours") }
+        }
+        log("reader palette: \(Theme.allCases.count) themes and \(HighlightColor.allCases.count) highlight colours match the page; footers at 4.5:1 or better")
     }
 
     /// Appearance changes and resizes keep the place: through any number of them in a row the same character is
@@ -310,6 +354,32 @@ enum SelfTest {
         model.settings = settings
         session.applySettings()
         log("PDF: next, wheel notch, scrub to the end, \(hits) matches, bookmark, paper theme, one page then two")
+        try await sleep(0.4)
+        // Pages keeps a right-hand page through changes of spread and zoom: PDFKit's current page is the left one of a
+        // spread, and taking it back after two pages → one stepped back a page each time.
+        session.goToLocator(Locator(spine: 5, offset: 0))
+        try await sleep(0.3)
+        func mustKeepPageSix(_ what: String) throws {
+            let savedPage = model.book(book.id)?.position?.pdfPage
+            guard session.position.locator?.spine == 5, savedPage == 6 else {
+                throw Failure("\(what) moved Pages off page 6 (on page \((session.position.locator?.spine ?? -1) + 1), saved page \(savedPage ?? 0))")
+            }
+        }
+        try mustKeepPageSix("the jump")
+        for spread in [Spread.one, .two, .one, .two] {
+            var toggled = model.settings
+            toggled.reader.spread = spread
+            model.settings = toggled
+            session.applySettings()
+            try await sleep(0.3)
+            try mustKeepPageSix("one page ↔ two pages")
+        }
+        for _ in 0..<3 { session.changeFontSize(by: 10) }
+        try await sleep(0.3)
+        try mustKeepPageSix("zooming in")
+        for _ in 0..<3 { session.changeFontSize(by: -10) }
+        try await sleep(0.3)
+        try mustKeepPageSix("zooming out")
 
         // Zoom & Split: pages cropped to their text and cut into screens shown two at a time; one at a time enlarges
         // the text (more screens), a smaller text size reduces them; turns, search and bookmarks work as in a book.
@@ -362,6 +432,49 @@ enum SelfTest {
         fitSession.setView { $0.pdfZoom = 100 }
         fitSession.applySettings()
         try await sleep(0.6)
+        // Zoom & Split keeps the line being read on screen through zoom steps, spread changes and window sizes, and
+        // comes back to the very screen once the geometry is back; a turn moves on from it.
+        fitSession.goToFraction(0.5)
+        try await sleep(0.4)
+        let u0 = split.unit
+        guard let p0 = split.currentPlace else { throw Failure("Zoom & Split has no place") }
+        func mustShow(_ what: String) throws {
+            guard split.spreadShows(p0) else {
+                throw Failure("\(what) lost the place: page \(p0.page + 1) is not on screens \(split.unit + 1)–\(split.unit + split.columns)")
+            }
+        }
+        for _ in 0..<8 { fitSession.changeFontSize(by: 10); try mustShow("zooming in") }
+        var placeSettings = model.settings
+        placeSettings.reader.spread = .one
+        model.settings = placeSettings
+        fitSession.applySettings()
+        try mustShow("one page")
+        placeSettings.reader.spread = .two
+        model.settings = placeSettings
+        fitSession.applySettings()
+        try mustShow("two pages")
+        if let window = split.view.window, !window.styleMask.contains(.fullScreen) {
+            let frame = window.frame
+            for inset: CGFloat in [60, 20, -30, -50] {
+                window.setFrame(frame.insetBy(dx: inset, dy: 0), display: true)
+                split.view.layoutSubtreeIfNeeded()
+                try mustShow("resizing")
+            }
+            window.setFrame(frame, display: true)
+            split.view.layoutSubtreeIfNeeded()
+        }
+        for _ in 0..<8 { fitSession.changeFontSize(by: -10); try mustShow("zooming out") }
+        // The same geometry as at the start deals the same screens: the kept place must be on the very screen again.
+        guard split.unit == u0, split.currentPlace == p0 else { throw Failure("back at 100% the reader is on screen \(split.unit + 1), not \(u0 + 1)") }
+        let keptSave = model.book(book.id)?.position
+        guard keptSave?.pdfPage == p0.page + 1, keptSave?.pdfTop != nil, keptSave?.pdfLayout == .fit else {
+            throw Failure("the kept place was not saved (\(String(describing: keptSave)))")
+        }
+        fitSession.next()
+        try await sleep(0.4)
+        guard split.unit == u0 + 2, split.currentPlace != p0 else { throw Failure("a turn did not move on from the kept place") }
+        fitSession.previous()
+        try await sleep(0.4)
         fitSession.goToFraction(0)   // the pages-mode part of the test ended on the last page, with a bookmark there
         try await sleep(0.4)
         let unitBefore = fitSession.position.page
@@ -399,6 +512,62 @@ enum SelfTest {
         try await sleep(0.4)
         let savedPercent = model.book(book.id)?.position?.percent ?? 0
         guard model.reading == nil, savedPercent > 0 else { throw Failure("PDF position was not saved (\(savedPercent)%)") }
+        // Switching views keeps the place through a point on the page that means the same in every view: Text saves the
+        // line its paragraph came from; Zoom & Split and Pages open on it and keep it; Text finds it again.
+        model.open(book)
+        let text1 = try await waitFor("the reflowed PDF to open again", timeout: 60) {
+            if let s = currentSession, s !== textSession, s.book.id == book.id, s.isOpen, !s.usesPDFView, s.layout.total > 0 { return s }
+            return nil
+        }
+        text1.goToFraction(0.5)
+        try await sleep(0.8)
+        text1.flushPosition()
+        guard let fromText = model.book(book.id)?.position, fromText.pdfLayout == .text, let textPage = fromText.pdfPage, let textTop = fromText.pdfTop else {
+            throw Failure("Text did not save the place on the page its paragraph came from (\(String(describing: model.book(book.id)?.position)))")
+        }
+        text1.setPDFLayout(.fit)
+        let splitSession1 = try await waitFor("Zoom & Split from Text", timeout: 30) {
+            if let s = currentSession, s !== text1, s.book.id == book.id, s.isOpen, s.usesPDFView, (s.pdf as? SplitPDFPresenter) != nil { return s }
+            return nil
+        }
+        try await sleep(0.8)
+        guard let split1 = splitSession1.pdf as? SplitPDFPresenter, let q0 = split1.currentPlace else { throw Failure("Zoom & Split from Text has no place") }
+        let q0Unit = split1.unit
+        guard q0.page == textPage - 1, split1.spreadShows(q0) else { throw Failure("Zoom & Split opened on page \(q0.page + 1), not page \(textPage) where Text was") }
+        guard let splitTop = model.book(book.id)?.position?.pdfTop, abs(splitTop - textTop) < 0.01 else {
+            throw Failure("Zoom & Split did not keep Text's line (\(String(describing: model.book(book.id)?.position?.pdfTop)) vs \(textTop))")
+        }
+        splitSession1.setPDFLayout(.pages)
+        let pagesSession1 = try await waitFor("Pages from Zoom & Split", timeout: 20) {
+            if let s = currentSession, s !== splitSession1, s.book.id == book.id, s.isOpen, s.usesPDFView, (s.pdf as? PDFPresenter) != nil { return s }
+            return nil
+        }
+        try await sleep(0.5)
+        guard pagesSession1.position.locator?.spine == q0.page, let pagesTop = model.book(book.id)?.position?.pdfTop, abs(pagesTop - textTop) < 0.01 else {
+            throw Failure("Pages did not keep the place (page \((pagesSession1.position.locator?.spine ?? -1) + 1), top \(String(describing: model.book(book.id)?.position?.pdfTop)))")
+        }
+        pagesSession1.setPDFLayout(.fit)
+        let splitSession2 = try await waitFor("Zoom & Split from Pages", timeout: 30) {
+            if let s = currentSession, s !== pagesSession1, s.book.id == book.id, s.isOpen, s.usesPDFView, (s.pdf as? SplitPDFPresenter) != nil { return s }
+            return nil
+        }
+        try await sleep(0.8)
+        guard let split2 = splitSession2.pdf as? SplitPDFPresenter, split2.unit == q0Unit, split2.spreadShows(q0) else {
+            throw Failure("Zoom & Split → Pages → Zoom & Split did not come back to screen \(q0Unit + 1)")
+        }
+        splitSession2.setPDFLayout(.text)
+        let text2 = try await waitFor("Text from Zoom & Split", timeout: 60) {
+            if let s = currentSession, s !== splitSession2, s.book.id == book.id, s.isOpen, !s.usesPDFView, s.layout.total > 0 { return s }
+            return nil
+        }
+        try await sleep(0.8)
+        text2.flushPosition()
+        guard let back = model.book(book.id)?.position, back.pdfLayout == .text, back.pdfPage == textPage, let backTop = back.pdfTop, abs(backTop - textTop) < 22 else {
+            throw Failure("Text did not come back to its line (\(String(describing: model.book(book.id)?.position)) vs page \(textPage), top \(textTop))")
+        }
+        text2.close()
+        try await sleep(0.4)
+        log("Place kept: Zoom & Split through 16 zoom steps, spreads and window sizes; Text → Zoom & Split → Pages → Zoom & Split → Text on page \(textPage)")
     }
 
     /// Folders: a library folder scanned and synced — its files come in from every depth, its subfolders name
@@ -469,6 +638,22 @@ enum SelfTest {
         model.setShelfView(.list, for: .books)
         guard model.shelfView(for: .books) == .list, model.shelfView(for: .all) == saved.libraryView else { throw Failure("a shelf's view was not its own") }
         log("sorts: time read, pages read, length and title order the shelf, in both directions; each shelf keeps its own view and sort")
+        // The shelf grid spreads its columns across the width; drags carry one book or several; Home's widget drags
+        // and plain text are refused.
+        let grid = ShelfGridColumns(width: 1000, coverWidth: 150)
+        let used = CGFloat(grid.count) * grid.card + CGFloat(grid.count - 1) * grid.gap
+        guard grid.count == 5, grid.card == 166, grid.gap >= ShelfGridColumns.minGap, grid.gap <= ShelfGridColumns.maxGap, used <= 1000 - 2 * ShelfGridColumns.inset + 0.5 else {
+            throw Failure("the shelf grid did not fit its width: \(grid.count) × \(grid.card) pt, gap \(grid.gap) pt")
+        }
+        let narrow = ShelfGridColumns(width: 100, coverWidth: 150)
+        guard narrow.count == 1, narrow.gap == 0 else { throw Failure("a narrow shelf did not fall back to one column") }
+        let firstDragged = UUID(), secondDragged = UUID()
+        guard BookDrag.ids([BookDrag.payload([firstDragged, secondDragged])]) == [firstDragged, secondDragged],
+              BookDrag.ids([BookDrag.payload(firstDragged)]) == [firstDragged],
+              BookDrag.ids(["widget:goals", "plain text"]).isEmpty else {
+            throw Failure("book drags did not carry their books")
+        }
+        log("shelf grid: \(grid.count) columns of \(Int(grid.card)) pt at 1000 pt, gap \(grid.gap) pt; drags carry one book or several")
 
         // Genres from subjects, and the details a book came with.
         guard model.book(long.id)?.genres == ["Science Fiction"], model.book(short.id)?.genres == ["Mystery & Crime"] else {
@@ -574,6 +759,26 @@ enum SelfTest {
         guard model.settings.home.size(of: .goals) == .small else { throw Failure("a Home widget's size was not kept") }
         model.moveHomeElements(fromOffsets: IndexSet(integer: 0), toOffset: 3)
         guard model.settings.home.elements.first != .continueReading, model.settings.home.elements.count == HomeElement.allCases.count else { throw Failure("Home widgets could not be moved") }
+        // Every widget at every size it comes in, drawn on Home, then the gallery, the gallery's add and a drag's move.
+        model.sidebarSelection = .home
+        for element in HomeElement.allCases { model.setHomeElement(element, shown: true) }
+        for family in WidgetSize.allCases {
+            for element in HomeElement.allCases where element.families.contains(family) { model.setHomeSize(family, for: element) }
+            try await sleep(0.3)
+        }
+        model.editingHome = true
+        try await sleep(0.4)
+        guard model.editingHome else { throw Failure("Home left edit mode by itself") }
+        model.setHomeElement(.statistics, shown: false)
+        model.addHomeWidget(.statistics, size: .small)
+        guard model.settings.home.visible.last == .statistics, model.settings.home.size(of: .statistics) == .small else { throw Failure("a widget added from the gallery did not join the end of Home at its size") }
+        model.moveHomeWidget(.statistics, to: model.settings.home.visible[0])
+        guard model.settings.home.visible.first == .statistics else { throw Failure("a widget dragged onto the first did not take its place") }
+        let fresh = HomeSettings()
+        let placed = HomeGrid.place(fresh.visible.map { ($0, fresh.size(of: $0)) }, columns: 4)
+        guard placed.map(\.column) == [0, 2, 2, 0], placed.map(\.row) == [0, 0, 1, 2] else { throw Failure("the default Home does not fill four by four: \(placed)") }
+        model.sidebarSelection = .all
+        guard !model.editingHome else { throw Failure("leaving Home did not end its edit mode") }
         model.resetHome()
         guard model.settings.home == HomeSettings(), model.settings.home.visible == [.continueReading, .goals, .activity, .recentlyAdded] else { throw Failure("Home did not reset to its simple start") }
         model.sidebarSelection = .home
@@ -606,6 +811,27 @@ enum SelfTest {
         guard let restored = model.book(long.id), !restored.coverReplaced, restored.coverFile == before, !FileManager.default.fileExists(atPath: url.path) else { throw Failure("the original cover did not come back") }
         log("cover: picture set (\(Int(loaded.size.width))×\(Int(loaded.size.height))), fitted (centred) and filling layouts, style kept, original restored")
 
+        // Settings and Get Info lay out in every cover appearance, and the setting comes back as it was.
+        let appearanceBefore = model.settings.coverAppearance
+        for appearance in CoverAppearance.allCases {
+            var changed = model.settings
+            changed.coverAppearance = appearance
+            model.settings = changed
+            let settingsView = NSHostingView(rootView: SettingsView().environment(model))
+            settingsView.frame = NSRect(x: 0, y: 0, width: 500, height: 600)
+            settingsView.layoutSubtreeIfNeeded()
+            if let book = model.book(long.id) {
+                let info = NSHostingView(rootView: InfoSheet(book: book).environment(model))
+                info.frame = NSRect(x: 0, y: 0, width: 740, height: 540)
+                info.layoutSubtreeIfNeeded()
+            }
+            try await sleep(0.1)
+        }
+        var back = model.settings
+        back.coverAppearance = appearanceBefore
+        model.settings = back
+        guard model.settings.coverAppearance == appearanceBefore else { throw Failure("the cover appearance did not come back") }
+        log("settings and Get Info laid out in every cover appearance")
         model.zoomGrid(50)
         guard model.settings.gridScale == Settings.gridScaleRange.upperBound else { throw Failure("grid scale not clamped: \(model.settings.gridScale)") }
         model.zoomGrid(-50)

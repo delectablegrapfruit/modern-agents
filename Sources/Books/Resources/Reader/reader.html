@@ -50,9 +50,12 @@ body:not(.keep-colors) .books-section a, body:not(.keep-colors) .books-section a
 body.theme-dark img { filter: brightness(0.92); }
 a { color: var(--accent); }
 span.books-hl { background: var(--hl); color: inherit; border-radius: 0; box-decoration-break: slice; -webkit-box-decoration-break: slice; padding: 0.06em 0; cursor: pointer; }
-span.books-hl.underline { background: transparent; border-bottom: 2px solid var(--hl); text-decoration: none; }
-::selection { background: color-mix(in srgb, var(--accent, #007aff) 32%, transparent); }
-body:not(.keep-colors) ::selection { background: color-mix(in srgb, var(--accent, #007aff) 45%, transparent); }
+/* An underline is a real one, in the red PDFs draw theirs in, a little below the baseline and unbroken by descenders. */
+span.books-hl.underline { background: transparent; text-decoration-line: underline; text-decoration-color: var(--hl); text-decoration-thickness: 2px; text-underline-offset: 0.18em; text-decoration-skip-ink: none; }
+/* The system's selection colour, as PDFs are selected in, so a selection is never taken for a highlight. The rgba
+   values stand in where the keyword is not understood. */
+::selection { background: rgba(0, 122, 255, 0.24); background: -apple-system-selected-text-background; }
+html.dark ::selection { background: rgba(10, 132, 255, 0.42); background: -apple-system-selected-text-background; }
 p.books-error { text-align: center; opacity: 0.6; margin-top: 30%; }
 </style>
 </head>

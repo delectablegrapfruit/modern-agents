@@ -7,6 +7,8 @@ on:
   pull_request:
   release:
     types: [published]
+  # Run by hand from the Actions tab: builds, tests and packages as a push does, and takes the showcase screenshots.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -65,6 +67,17 @@ jobs:
           wait
           mv "$RUNNER_TEMP/hidden-build" .build
 
+      # The packaged app lays out a sample library and saves a screenshot of each part of itself into docs/showcase,
+      # for a commit whose message holds [showcase] or a run started by hand. A failure here leaves the build green.
+      - name: Showcase screenshots
+        if: contains(github.event.head_commit.message, '[showcase]') || github.event_name == 'workflow_dispatch'
+        continue-on-error: true
+        timeout-minutes: 8
+        run: |
+          mkdir -p docs/showcase
+          BOOKS_SHOWCASE=1 BOOKS_SHOWCASE_DIR="$GITHUB_WORKSPACE/docs/showcase" "$RUNNER_TEMP/launch/Books.app/Contents/MacOS/Books"
+          ls -la docs/showcase
+
       - name: Upload packages (and test screenshots, also when a test failed)
         if: always()
         uses: actions/upload-artifact@v4
@@ -76,13 +89,16 @@ jobs:
             dist/Books.dmg
             dist/SHA256SUMS.txt
             build/*.png
+            docs/showcase/*.png
 
       - name: Commit packages to dist/
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -f dist/Books.app.zip dist/Books.dmg dist/SHA256SUMS.txt
+          # The showcase screenshots, when this run took them, go in with the packages.
+          if [ -d docs/showcase ]; then git add -f docs/showcase; fi
           if git diff --cached --quiet; then echo "dist/ unchanged"; exit 0; fi
           git commit -m "ci: package Books.app into dist/ (${GITHUB_SHA::7}) [skip ci]"
           # Should another run have committed dist/ meanwhile, this build's files win.

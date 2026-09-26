@@ -28,9 +28,10 @@ struct WindowAccessor: NSViewRepresentable {
     }
 }
 
-/// In full screen the toolbar leaves with the menu bar and both slide back when the pointer reaches the top edge,
-/// as in Preview and Safari. Everything else the window asks its delegate is passed on to the delegate SwiftUI
-/// installed.
+/// In full screen the menu bar hides and slides back when the pointer reaches the top edge, while the library keeps
+/// its toolbar — search, Add and the view controls — the way the Finder, Music and Photos do. The reader hides its
+/// own toolbar in full screen, so it needs nothing from here. Everything else the window asks its delegate is passed
+/// on to the delegate SwiftUI installed.
 final class FullScreenChrome: NSObject, NSWindowDelegate {
     private static var installed: [ObjectIdentifier: FullScreenChrome] = [:]
     private weak var original: NSWindowDelegate?
@@ -53,6 +54,6 @@ final class FullScreenChrome: NSObject, NSWindowDelegate {
     }
 
     func window(_ window: NSWindow, willUseFullScreenPresentationOptions proposedOptions: NSApplication.PresentationOptions = []) -> NSApplication.PresentationOptions {
-        [.fullScreen, .autoHideMenuBar, .autoHideToolbar]
+        [.fullScreen, .autoHideMenuBar]
     }
 }

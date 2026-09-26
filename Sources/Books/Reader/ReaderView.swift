@@ -43,7 +43,9 @@ struct ReaderContent: View {
     var body: some View {
         GeometryReader { geo in
             ZStack {
+                // The page's colour runs up under the toolbar, so the window reads as one page as in Books.
                 Color(hex: session.effectiveTheme.colors.background)
+                    .ignoresSafeArea()
                 if session.usesPDFView {
                     PDFReaderView(session: session)
                 } else {
@@ -56,8 +58,9 @@ struct ReaderContent: View {
                 if session.preparing {
                     ProgressView(session.pdfLayout == .fit ? "Preparing the pages…" : "Preparing the text…")
                         .controlSize(.large)
-                        .padding(28)
-                        .glassRounded(16)
+                        .padding(Design.Space.xxxl)
+                        .glassRounded(Design.Radius.card)
+                        .transition(.opacity)
                 }
                 if session.showEndCard { EndCard(session: session) }
                 if session.isFullScreen {
@@ -68,11 +71,14 @@ struct ReaderContent: View {
                         }
                         Spacer()
                     }
-                    .animation(.easeInOut(duration: 0.18), value: session.topBarVisible)
+                    .animation(Design.Motion.standard, value: session.topBarVisible)
                 }
             }
+            .animation(Design.Motion.standard, value: session.preparing)
+            .animation(Design.Motion.standard, value: session.showEndCard)
             .onChange(of: geo.size.height, initial: true) { _, height in session.viewResized(height: height) }
         }
+        .background { ReaderWindowAppearance(dark: session.effectiveTheme.isDark) }
         .navigationTitle(session.book.title)
         .navigationSubtitle(session.position.chapter)
         .toolbar(session.isFullScreen ? .hidden : .visible, for: .windowToolbar)
@@ -110,65 +116,84 @@ struct ReaderContent: View {
         ToolbarItemGroup(placement: .navigation) {
             Button { session.close() } label: { Label("Library", systemImage: "chevron.left") }
                 .labelStyle(.titleAndIcon)
-                .help("Back to the library (⇧⌘L)")
+                .help(ReaderHelp.library)
             Button { session.showContents.toggle() } label: { Label("Contents", systemImage: "list.bullet") }
-                .help("Table of contents, bookmarks and notes")
+                .help(ReaderHelp.contents)
                 .popover(isPresented: gated($session.showContents, !session.isFullScreen), arrowEdge: .bottom) { ContentsPopover(session: session) }
         }
         ToolbarItemGroup(placement: .primaryAction) {
             Button { session.showAppearance.toggle() } label: { Label("Appearance", systemImage: "textformat.size") }
-                .help("Themes, fonts and layout")
+                .help(ReaderHelp.appearance)
                 .popover(isPresented: gated($session.showAppearance, !session.isFullScreen), arrowEdge: .bottom) { AppearancePopover(session: session) }
             Button { session.showSearch.toggle() } label: { Label("Search", systemImage: "magnifyingglass") }
-                .help("Search this book (⌘F)")
+                .help(ReaderHelp.search)
                 .popover(isPresented: gated($session.showSearch, !session.isFullScreen), arrowEdge: .bottom) { SearchPopover(session: session) }
-            Button { session.toggleBookmark() } label: { Label("Bookmark", systemImage: session.isBookmarked ? "bookmark.fill" : "bookmark") }
-                .disabled(!session.isOpen)
-                .help(session.isBookmarked ? "Remove bookmark (⌘D)" : "Add bookmark (⌘D)")
+            Button { session.toggleBookmark() } label: {
+                Label { Text("Bookmark") } icon: { BookmarkGlyph(on: session.isBookmarked) }
+            }
+            .disabled(!session.isOpen)
+            .help(ReaderHelp.bookmark(session.isBookmarked))
         }
     }
 
+    /// ← and → are the Book menu's shortcuts for turning pages, and a menu's shortcuts come before the key window's
+    /// first responder: while a note or the search field is being typed in, they move the caret instead.
     private var actions: ReaderActions {
         ReaderActions(
-            nextPage: { session.next() }, previousPage: { session.previous() },
+            nextPage: {
+                if let text = NSApp.keyWindow?.firstResponder as? NSTextView { text.moveRight(nil) } else { session.next() }
+            },
+            previousPage: {
+                if let text = NSApp.keyWindow?.firstResponder as? NSTextView { text.moveLeft(nil) } else { session.previous() }
+            },
             nextChapter: { session.nextChapter() }, previousChapter: { session.previousChapter() },
             toggleBookmark: { session.toggleBookmark() },
             showContents: { session.showContents = true }, showSearch: { session.showSearch = true }, showAppearance: { session.showAppearance = true },
             biggerText: { session.changeFontSize(by: 10) }, smallerText: { session.changeFontSize(by: -10) },
-            backToLibrary: { session.close() }
+            backToLibrary: { session.close() },
+            isBookmarked: session.isBookmarked,
+            actualSize: session.usesPDFView ? nil : { () -> Void in session.changeFontSize(by: 100 - model.settings.reader.fontSize) }
         )
     }
 
     // MARK: - Footer
 
+    /// The page numbers sit on the page's centre whatever the texts either side of them say, in the theme's own
+    /// secondary colour; the timeline floats above them while the pointer is near.
     private func footer(width: CGFloat) -> some View {
         let settings = model.settings.reader
-        return VStack(spacing: 10) {
+        return VStack(spacing: Design.Space.s) {
             if session.timelineVisible, session.isOpen {
                 Timeline(session: session)
                     .frame(maxWidth: min(760, width * 0.72))
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
+                    .padding(.horizontal, Design.Space.l)
+                    .padding(.vertical, Design.Space.s)
                     .glassCapsule()
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
             if session.footerVisible, session.isOpen, settings.showPageNumbers {
-                HStack {
-                    Text(session.position.chapter).lineLimit(1)
-                    Spacer()
-                    Text(pageText).monospacedDigit()
-                    Spacer()
-                    Text(settings.showChapterProgress ? leftText : "").lineLimit(1)
+                HStack(spacing: Design.Space.l) {
+                    // Out of full screen the window's subtitle already names the chapter.
+                    Text(session.isFullScreen ? session.position.chapter : "")
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Text(pageText)
+                        .monospacedDigit()
+                        .fixedSize()
+                    Text(settings.showChapterProgress ? leftText : "")
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                 }
-                .font(.caption)
-                .foregroundStyle(Color(hex: session.effectiveTheme.colors.text).opacity(0.55))
-                .padding(.horizontal, 24)
+                .font(.subheadline)
+                .foregroundStyle(Color(hex: session.effectiveTheme.footerText))
+                .padding(.horizontal, Design.Space.xxl)
                 .allowsHitTesting(false)
             }
         }
-        .padding(.bottom, 10)
-        .animation(.easeInOut(duration: 0.18), value: session.timelineVisible)
-        .animation(.easeInOut(duration: 0.18), value: session.footerVisible)
+        .padding(.bottom, Design.Space.m)
+        .glassGroup(spacing: Design.Space.xs)
+        .animation(Design.Motion.standard, value: session.timelineVisible)
+        .animation(Design.Motion.standard, value: session.footerVisible)
     }
 
     private var pageText: String {
@@ -183,53 +208,186 @@ struct ReaderContent: View {
     private var leftText: String {
         guard session.layout.mode == .paginated, !session.position.chapter.isEmpty else { return "" }
         let n = session.position.pagesLeftInChapter
-        return n <= 0 ? "Last page in this chapter" : Format.plural(n, "page") + " left in this chapter"
+        return n <= 0 ? "Last page in chapter" : Format.plural(n, "page") + " left in chapter"
     }
 
 }
 
 /// Full screen's bar over the book: the toolbar's buttons and the title in a capsule that floats under the top
-/// edge while the pointer is near it, without the menu bar.
+/// edge while the pointer is near it, without the menu bar. It has the toolbar's type, glyphs and tooltips, and the
+/// insets of the timeline's capsule at the foot of the page.
 struct ReaderTopBar: View {
     @Bindable var session: ReaderSession
+
+    /// Every button is at least this big, so the pointer finds it without having to land on the glyph itself.
+    private static let hitSize: CGFloat = 28
+    /// The room the centred title leaves on either side for the buttons.
+    private static let titleInset: CGFloat = 128
 
     private func gated(_ binding: Binding<Bool>) -> Binding<Bool> {
         Binding(get: { session.isFullScreen && binding.wrappedValue }, set: { binding.wrappedValue = $0 })
     }
 
     var body: some View {
-        HStack(spacing: 14) {
-            Button { session.close() } label: { Label("Library", systemImage: "chevron.left").labelStyle(.titleAndIcon) }
-                .help("Back to the library (⇧⌘L)")
-            Button { session.showContents.toggle() } label: { Image(systemName: "list.bullet") }
-                .help("Table of contents, bookmarks and notes")
-                .popover(isPresented: gated($session.showContents), arrowEdge: .bottom) { ContentsPopover(session: session) }
-            Spacer(minLength: 20)
-            VStack(spacing: 1) {
-                Text(session.book.title).font(.callout.weight(.semibold)).lineLimit(1)
-                if !session.position.chapter.isEmpty { Text(session.position.chapter).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+        HStack(spacing: Design.Space.s) {
+            Button { session.close() } label: {
+                Label("Library", systemImage: "chevron.left")
+                    .labelStyle(.titleAndIcon)
+                    .frame(height: ReaderTopBar.hitSize)
+                    .contentShape(Rectangle())
             }
-            .frame(maxWidth: 420)
-            Spacer(minLength: 20)
-            Button { session.showAppearance.toggle() } label: { Image(systemName: "textformat.size") }
-                .help("Themes, fonts and layout")
+            .help(ReaderHelp.library)
+            Button { session.showContents.toggle() } label: { icon("list.bullet", "Contents") }
+                .help(ReaderHelp.contents)
+                .popover(isPresented: gated($session.showContents), arrowEdge: .bottom) { ContentsPopover(session: session) }
+            Spacer(minLength: Design.Space.xl)
+            Button { session.showAppearance.toggle() } label: { icon("textformat.size", "Appearance") }
+                .help(ReaderHelp.appearance)
                 .popover(isPresented: gated($session.showAppearance), arrowEdge: .bottom) { AppearancePopover(session: session) }
-            Button { session.showSearch.toggle() } label: { Image(systemName: "magnifyingglass") }
-                .help("Search this book (⌘F)")
+            Button { session.showSearch.toggle() } label: { icon("magnifyingglass", "Search") }
+                .help(ReaderHelp.search)
                 .popover(isPresented: gated($session.showSearch), arrowEdge: .bottom) { SearchPopover(session: session) }
-            Button { session.toggleBookmark() } label: { Image(systemName: session.isBookmarked ? "bookmark.fill" : "bookmark") }
-                .disabled(!session.isOpen)
-                .help(session.isBookmarked ? "Remove bookmark (⌘D)" : "Add bookmark (⌘D)")
+            Button { session.toggleBookmark() } label: {
+                Label { Text("Bookmark") } icon: { BookmarkGlyph(on: session.isBookmarked) }
+                    .labelStyle(.iconOnly)
+                    .frame(width: ReaderTopBar.hitSize, height: ReaderTopBar.hitSize)
+                    .contentShape(Rectangle())
+            }
+            .disabled(!session.isOpen)
+            .help(ReaderHelp.bookmark(session.isBookmarked))
         }
         .buttonStyle(.borderless)
         .imageScale(.large)
-        .padding(.horizontal, 18)
-        .padding(.vertical, 9)
+        .overlay {
+            // The title sits on the bar's centre, whatever the widths of the groups either side, and never over them.
+            VStack(spacing: 0) {
+                Text(session.book.title).font(.headline).lineLimit(1)
+                if !session.position.chapter.isEmpty {
+                    Text(session.position.chapter).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                }
+            }
+            .frame(maxWidth: 420)
+            .padding(.horizontal, ReaderTopBar.titleInset)
+            .allowsHitTesting(false)
+        }
+        .padding(.horizontal, Design.Space.l)
+        .padding(.vertical, Design.Space.s)
         .glassCapsule()
+        .shadow(Design.Shadow.raised)
         .frame(maxWidth: 980)
-        .padding(.top, 12)
-        .padding(.horizontal, 16)
+        .padding(.top, Design.Space.m)
+        .padding(.horizontal, Design.Space.l)
         .onHover { session.topBarHover($0) }
+    }
+
+    /// An icon-only button's label: the glyph in a square the size of the bar's other buttons.
+    private func icon(_ symbol: String, _ title: String) -> some View {
+        Label(title, systemImage: symbol)
+            .labelStyle(.iconOnly)
+            .frame(width: ReaderTopBar.hitSize, height: ReaderTopBar.hitSize)
+            .contentShape(Rectangle())
+    }
+}
+
+/// The tooltips of the reader's buttons, the same in the toolbar and in full screen's bar, each with its shortcut.
+private enum ReaderHelp {
+    static let library = "Back to the library (⇧⌘L)"
+    static let contents = "Table of contents, bookmarks and notes (⌥⌘T)"
+    static let appearance = "Themes, fonts and layout (⇧⌘A)"
+    static let search = "Search this book (⌘F)"
+    static func bookmark(_ on: Bool) -> String { on ? "Remove bookmark (⌘D)" : "Add bookmark (⌘D)" }
+}
+
+/// The bookmark button's glyph: an outline, or filled in the bookmark red once the page is marked.
+private struct BookmarkGlyph: View {
+    let on: Bool
+
+    var body: some View {
+        if on {
+            Image(systemName: "bookmark.fill").foregroundStyle(HighlightSwatch.bookmark)
+        } else {
+            Image(systemName: "bookmark")
+        }
+    }
+}
+
+extension Theme {
+    /// The footer's colour on this theme's page (the chapter, the page numbers, the pages left), at 5:1 or better
+    /// against `colors.background`: small text needs 4.5:1, which the text colour at partial opacity missed on Paper.
+    var footerText: String {
+        switch self {
+        case .original, .bold: return "#6e6e73"
+        case .quiet: return "#b4b4b8"
+        case .paper: return "#7a6450"
+        case .calm: return "#b3a48c"
+        case .focus: return "#98989d"
+        }
+    }
+}
+
+/// Dresses the reading window to match the page: a dark theme darkens the toolbar, the glass bars, the popovers and
+/// the highlight menu with it, as Books does, and leaving the book gives the window back the system's look. The
+/// session watches the app's appearance rather than the window's, so this does not feed back into Auto-Night.
+private struct ReaderWindowAppearance: NSViewRepresentable {
+    let dark: Bool
+
+    func makeNSView(context: Context) -> AppearanceSetter { AppearanceSetter() }
+
+    func updateNSView(_ nsView: AppearanceSetter, context: Context) { nsView.dark = dark }
+
+    static func dismantleNSView(_ nsView: AppearanceSetter, coordinator: ()) { nsView.giveBack() }
+
+    final class AppearanceSetter: NSView {
+        /// The setter that last dressed each window, so a reader going away cannot undo the look of the one that
+        /// replaced it (a PDF reopened another way).
+        private static var owners: [ObjectIdentifier: ObjectIdentifier] = [:]
+        private weak var host: NSWindow?
+
+        var dark = false {
+            didSet { if dark != oldValue { apply() } }
+        }
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            guard window !== host else { return }
+            giveBack()
+            host = window
+            apply()
+        }
+
+        /// Hands the window back to the system's look, unless another reader has dressed it since.
+        func giveBack() {
+            if let host, AppearanceSetter.owners[ObjectIdentifier(host)] == ObjectIdentifier(self) {
+                AppearanceSetter.owners[ObjectIdentifier(host)] = nil
+                host.appearance = nil
+            }
+            host = nil
+        }
+
+        private func apply() {
+            guard let host else { return }
+            AppearanceSetter.owners[ObjectIdentifier(host)] = ObjectIdentifier(self)
+            host.appearance = dark ? NSAppearance(named: .darkAqua) : nil
+        }
+    }
+}
+
+private extension View {
+    /// On macOS 26 the timeline's capsule and the page label over it are one Liquid Glass group rather than glass
+    /// stacked on glass; earlier systems draw their materials as they are.
+    @ViewBuilder
+    func glassGroup(spacing: CGFloat) -> some View {
+        #if compiler(>=6.2)
+        if #available(macOS 26.0, *) {
+            GlassEffectContainer(spacing: spacing) { self }
+        } else {
+            self
+        }
+        #else
+        self
+        #endif
     }
 }
 

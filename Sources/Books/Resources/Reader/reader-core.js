@@ -26,7 +26,9 @@
      lives far to the right of the viewport in document coordinates. */
   const rectOf = r => ({ x: r.left, y: r.top, width: r.width, height: r.height });
 
-  /* ------------------------------------------------------------------ appearance tables (same values as the web reader) */
+  /* ------------------------------------------------------------------ appearance tables
+     The page and text colours are the app's own: Theme.colors in BooksCore (Library.swift) holds the same values, so
+     an EPUB, a PDF, the theme circles and the footer show one page colour per theme. Change them together. */
   const THEMES = {
     original: { name: 'Original', bg: '#ffffff', fg: '#1c1c1e', accent: '#007aff', keepColors: true },
     quiet:    { name: 'Quiet',    bg: '#3d3d3f', fg: '#e4e4e7', accent: '#7cc0ff', dark: true },
@@ -48,7 +50,10 @@
     seravek: 'Seravek, "Gill Sans", "Trebuchet MS", Verdana, sans-serif',
     times: '"Times New Roman", Times, "Liberation Serif", serif',
   };
-  const HL_COLORS = { yellow: '#ffd60a', green: '#30d158', blue: '#5ac8fa', pink: '#ff6482', purple: '#bf5af2' };
+  /* The highlight colours: the same as HighlightSwatch in Panels.swift, which the highlight menu, the Notes list and
+     the PDF views draw with. An underline is a solid line in HL_UNDERLINE, as PDFs draw it. */
+  const HL_COLORS = { yellow: '#ffd93d', green: '#99db73', blue: '#8cc7ff', pink: '#ff9ebf', purple: '#c7a6ff' };
+  const HL_UNDERLINE = '#ff3b30';
   const LINE_HEIGHTS = { tight: 1.3, normal: 1.55, relaxed: 1.7, loose: 1.85 };
   /* Text column width. Paginated: side margin of each page. Scrolling: maximum column width. */
   const TEXT_WIDTH = { narrow: { margin: 120, scroll: 620 }, medium: { margin: 76, scroll: 880 }, wide: { margin: 44, scroll: 1120 }, full: { margin: 32, scroll: Infinity } };
@@ -93,7 +98,7 @@
   const Reader = {
     isOpen: false, epub: null, sections: [], secEls: [], root: null, title: '', words: 0,
     layout: null, page: 0, sectionStarts: [], tocEntries: [], highlights: [], bookmarks: [],
-    settings: normalizeSettings(null), anchor: null, fullscreen: false,
+    settings: normalizeSettings(global.__initialSettings || null), anchor: null, fullscreen: false,
     _wheel: { acc: 0, last: 0, lastDelta: 0, locked: false },
     _sel: null, _searchToken: 0, _relayoutTimer: null, _resizeTimer: null, _lateTimer: null, _scrollPoll: null, _lastY: 0, _relayoutToken: 0, _locCache: null,
     _scrollTarget: null,
@@ -853,7 +858,7 @@
     hlColor(name) {
       const hex = HL_COLORS[name] || HL_COLORS.yellow;
       const dark = !!(THEMES[this.settings.theme] || THEMES.original).dark;
-      return `rgba(${parseInt(hex.slice(1, 3), 16)},${parseInt(hex.slice(3, 5), 16)},${parseInt(hex.slice(5, 7), 16)},${dark ? 0.42 : 0.45})`;
+      return `rgba(${parseInt(hex.slice(1, 3), 16)},${parseInt(hex.slice(3, 5), 16)},${parseInt(hex.slice(5, 7), 16)},${dark ? 0.42 : 0.5})`;
     },
     renderHighlights() {
       if (!this.root) return;
@@ -866,7 +871,7 @@
     /** Splits the text nodes the range covers and wraps each piece: a highlight may span elements and pages. */
     wrapHighlight(h) {
       const sec = this.secEls[h.spine]; if (!sec) return;
-      // `underline` is a style rather than a colour in the protocol; it keeps the yellow stroke the web reader drew.
+      // `underline` is a style rather than a colour in the protocol; it is drawn as a red line, as PDFs draw it.
       const underline = h.color === 'underline';
       for (const t of this.textNodes(sec)) {
         if (t.end <= h.start || t.start >= h.end || !t.node.nodeValue.trim()) continue;
@@ -878,7 +883,7 @@
         const span = document.createElement('span');
         span.className = 'books-hl' + (underline ? ' underline' : '');
         span.dataset.id = h.id;
-        span.style.setProperty('--hl', underline ? HL_COLORS.yellow : this.hlColor(h.color));
+        span.style.setProperty('--hl', underline ? HL_UNDERLINE : this.hlColor(h.color));
         node.parentNode.insertBefore(span, node); span.appendChild(node);
       }
     },

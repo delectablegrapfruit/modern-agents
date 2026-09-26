@@ -3,7 +3,9 @@ import SwiftUI
 import BooksCore
 
 /// Placing a cover by hand: the picture is dragged to move it, its corners to size it (keeping its shape), its
-/// sides to stretch it one way. The box is outlined; what lies outside it is dimmed and will be cropped.
+/// sides to stretch it one way. The box is outlined; what lies outside it is dimmed and will be cropped. The picture
+/// is drawn as it is, in its own colours, whatever the library's cover appearance: placing it needs the real thing.
+/// Its well has the same size and corners as Get Info's well around a cover that is not placed by hand.
 struct CoverEditor: View {
     let image: NSImage
     @Binding var frame: CoverFrame
@@ -74,7 +76,7 @@ struct CoverEditor: View {
                     .fill(.white)
                     .overlay(Circle().strokeBorder(.black.opacity(0.45), lineWidth: 1))
                     .frame(width: handle.isCorner ? 12 : 10, height: handle.isCorner ? 12 : 10)
-                    .shadow(radius: 1.5)
+                    .shadow(Design.Shadow.glyph)
                     .contentShape(Circle().inset(by: -6))
                     .position(x: min(max(point.x, 6), area.width - 6), y: min(max(point.y, 6), area.height - 6))
                     .gesture(drag { s, t in resize(s, by: t, handle: handle) })
@@ -82,7 +84,7 @@ struct CoverEditor: View {
             }
         }
         .frame(width: area.width, height: area.height)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(Design.rounded(Design.Radius.tile))
     }
 
     private func picture(_ rect: CGRect) -> some View {

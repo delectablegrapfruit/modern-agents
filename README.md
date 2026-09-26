@@ -8,21 +8,27 @@ Mac and never talks to a store or a server.
 
 ## What it does
 
-**Library.** Home is a board of widgets, as on the desktop: each a rounded card in a size of its own — small
-(a quarter of a row), medium (half) or wide (the row) — switched on or off, sized and dragged into order from the
-toolbar's Customize menu and Customize Home…. It starts simple: Continue Reading, Reading Goals (today's minutes
-with a streak, books this month and this year), Activity (a heat map of the last weeks) and Recently Added. The
-others are a switch away: Pick Up Again (books begun but not opened for two weeks); Pages & Chapters read against a
-goal for the week, month, three months or year; a Reading Calendar of the month's days, darker the more you read,
-with earlier months in reach; Statistics (books, time, pages, chapters finished, days with reading, longest streak,
-an average reading day, the last fortnight); For You, unopened books in the genres and by the authors you read;
-Recently Finished. Wide widgets take a row; small and medium ones share one. The
+**Library.** Home is made of widgets drawn the way macOS and iPadOS draw theirs: rounded cards on a square
+grid in four sizes — Small (1×1), Medium (2×1), Large (2×2) and Extra Large (4×2) — white on a pale page in Light
+Mode and graphite in Dark, with continuous corners, 16-pt margins, SF Rounded figures and no buttons in their
+headers; clicking a widget opens what it shows. Right-click one for its sizes, Edit Goals…, Remove Widget and Edit
+Widgets…; Edit Widgets (the toolbar, the View menu) puts a remove badge on every widget, lets them be dragged into
+order, and opens a gallery with live previews of every widget at every size, one click adding it. Home starts
+simple: Continue Reading (Large), Reading Goals and Activity (Medium) and Recently Added (Extra Large) fill a
+four-by-four block; the others are a click away: Pick Up Again (books begun but not opened for two weeks), Pages &
+Chapters against a goal for the week, month, three months or year, a Reading Calendar, Statistics, For You
+(unopened books in the genres and by the authors you read) and Recently Finished. The grid is four units wide, two
+in a narrow window, and a widget too wide for it takes its largest size that fits. The
 sidebar has a Library section (All, Finished, Books, PDFs) and a My Collections section, each in the order you drag
 its rows into — any row but All can be hidden from its context menu and brought back from the menu under the arrow
-that appears beside the section's name when the pointer is over it. Drag books onto Finished or a collection. Every
+that appears beside the section's name when the pointer is over it. A scroll over the sidebar steps from shelf to
+shelf — a wheel notch a shelf, a trackpad every 28 pt, momentum ignored — and ⌥⌘↑/↓ do the same (Settings ▸ General
+turns the scrolling off). Drag books onto Finished or a collection. Every
 shelf keeps its own view, sort and grouping: grid or list — the grid's cards are all one size, a 2:3 box the
-artwork fills (Get Info offers Fit, Stretch and Custom instead), scaled together with the toolbar slider or ⌥⌘+ and
-⌥⌘−; the list is drawn by the
+artwork fills (Get Info offers Fit, Stretch and Custom instead), scaled together with the toolbar slider or ⌘+ and
+⌘−. Covers can be shown in colour, in monochrome with the art intact, or as plain lettered covers with the title and
+author (View ▸ Covers, Settings ▸ General). Reading progress sits on a cover as a small dark plate with a white bar,
+legible on light, dark and busy covers alike; the list is drawn by the
 app itself (no table view: the system's crashed between collections), its column names sorting the shelf and a
 second click turning the order round. The Library's shelves group by collection (a book in several counts with the
 first; the rest under Not in a Collection), any shelf can group by genre, or not at all; a group's title floats
@@ -70,15 +76,19 @@ blank gaps between them and the words are laid out again in shorter lines that f
 rewrapped, with its word spacing, line gaps and paragraph indents — so dense small print can be read large with
 two pages still side by side. Screens turn with the book's slide;
 selection, search, highlights, bookmarks and the PDF's links work as in books. The analysis is kept beside the
-PDF, so a book is prepared once. While reading, the pointer hides after a couple of seconds still over the page
-and returns the moment it moves. **Text**: the text is reflowed into a book the way converters like calibre do it (running
+PDF, so a book is prepared once. While reading, the pointer hides after a second and a half still over the page —
+at once on a keyboard page turn, never over the chrome or while a popover is open — and returns the moment it
+moves. **Text**: the text is reflowed into a book the way converters like calibre do it (running
 headers dropped, lines joined into paragraphs, larger type as headings) and read with every book setting; the layout
 is not kept, so tables and figures suffer. Rewrapped lines keep their paragraphs' indents at every size: a first line's indent, a
 quotation's narrower measure, a list's hanging indent; a selection or a highlight over rewrapped words is one
 band, the gaps between the words included. How a book is viewed is kept with the book: the layout (Pages, Zoom &
 Split or Text for a PDF; paginated or scrolling), one or two pages and the text size of Zoom & Split are the book's
 own choices, made in the Appearance popover, and the reader settings (the Settings sheet) stand for books that have
-not made one. Themes are colour filters (paper tints in the light themes; in the dark
+not made one. Changing any of them — text size, font, spacing, width, theme, one or two pages, scrolling, the window's
+size or full screen — keeps the place: a book keeps the very character at the top of the page through any number of
+changes until a page is turned, a PDF in Zoom & Split keeps the line being read, Pages keeps a right-hand page, and
+switching between Pages, Zoom & Split and Text goes through a point on the page that means the same in each. Themes are colour filters (paper tints in the light themes; in the dark
 ones luminance is inverted with hues kept, so pictures and highlights keep their colours). Contents and timeline
 marks come from the outline; search, bookmarks and highlights with notes work in every mode. In full screen the toolbar leaves with the menu bar and both come back when the pointer reaches the top
 edge. The reading position, statistics (minutes per day, streaks, books per year) and every annotation are files in
@@ -137,6 +147,7 @@ The command line ships inside the app at `Books.app/Contents/MacOS/books-cli`.
 | `Sources/BooksCLI` | `books-cli`. |
 | `Tests/BooksCoreTests` | Core tests; the Kindle tests run against libmobi's sample files when present (`BOOKS_FIXTURES` or `Tests/Fixtures/mobi`). |
 | `Packaging/Info.plist`, `scripts/` | Bundle assembly (`make-app.sh`), icon rendering, ad-hoc signing. |
+| `docs/showcase` | Screenshots of every part of the app with a sample library, taken by `BOOKS_SHOWCASE=1` on CI for commits whose message says `[showcase]`. |
 | `.github/workflows/ci.yml` | macOS 26 runner: build, tests, bundle, launch self-test of the packaged zip, unzipped elsewhere with the build directory hidden (imports a generated book, turns pages with real scroll-wheel notches through WebKit, searches, scrubs, saves the position), zip + dmg, commit to `dist/`. Linux runner: core build and tests, Kindle fixtures converted with the command line. |
 
 ## How reading works

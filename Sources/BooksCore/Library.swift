@@ -28,15 +28,43 @@ public struct ReadingPosition: Codable, Hashable {
     public var locator: Locator?
     /// PDFs: the page shown last (1-based).
     public var pdfPage: Int?
+    /// PDFs: where on that page the reader was — a point on the line at the top of what was shown, in points from
+    /// the page's top-left corner as it is displayed (rotation applied). Unlike a screen's index within the page, it
+    /// means the same at every text size, window size and spread, and in every way of showing the PDF. Nil: the top
+    /// of the page.
+    public var pdfTop: Double?
+    public var pdfLeft: Double?
+    /// PDFs: how the book was shown when the place was saved. For `.text` the locator is a place in the reflowed
+    /// text; otherwise it is a page and a screen of it. Nil for places saved before this was kept.
+    public var pdfLayout: PDFLayout?
     /// 0…100
     public var percent: Double
     public var updatedAt: Date
 
-    public init(locator: Locator? = nil, pdfPage: Int? = nil, percent: Double, updatedAt: Date = Date()) {
+    public init(locator: Locator? = nil, pdfPage: Int? = nil, pdfTop: Double? = nil, pdfLeft: Double? = nil, pdfLayout: PDFLayout? = nil,
+                percent: Double, updatedAt: Date = Date()) {
         self.locator = locator
         self.pdfPage = pdfPage
+        self.pdfTop = pdfTop
+        self.pdfLeft = pdfLeft
+        self.pdfLayout = pdfLayout
         self.percent = percent
         self.updatedAt = updatedAt
+    }
+
+    enum CodingKeys: String, CodingKey { case locator, pdfPage, pdfTop, pdfLeft, pdfLayout, percent, updatedAt }
+
+    /// Places saved before the point on the page was kept still load; a point or a way of showing a PDF that this
+    /// version cannot read costs only itself, not the book (and with it the whole catalog).
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        locator = try c.decodeIfPresent(Locator.self, forKey: .locator)
+        pdfPage = try c.decodeIfPresent(Int.self, forKey: .pdfPage)
+        pdfTop = try? c.decodeIfPresent(Double.self, forKey: .pdfTop)
+        pdfLeft = try? c.decodeIfPresent(Double.self, forKey: .pdfLeft)
+        pdfLayout = try? c.decodeIfPresent(PDFLayout.self, forKey: .pdfLayout)
+        percent = try c.decode(Double.self, forKey: .percent)
+        updatedAt = try c.decode(Date.self, forKey: .updatedAt)
     }
 }
 
@@ -340,21 +368,23 @@ public enum Theme: String, Codable, CaseIterable, Hashable {
         }
     }
 
-    /// Page and text colours, for native views that sit on the book (the PDF viewer, the end-of-book card).
+    /// Page and text colours, for native views that sit on the book (the PDF viewer, the theme circles, the footer).
+    /// The reader page's THEMES table in reader-core.js holds the same values, so an EPUB and a PDF in one theme show
+    /// one page: change them together.
     public var colors: (background: String, text: String) {
         switch self {
-        case .original: return ("#ffffff", "#000000")
-        case .quiet: return ("#4a4a4a", "#f2f2f2")
-        case .paper: return ("#f6ecd9", "#4d3b2a")
+        case .original: return ("#ffffff", "#1c1c1e")
+        case .quiet: return ("#3d3d3f", "#e4e4e7")
+        case .paper: return ("#f8f1e2", "#4a3c2d")
         case .bold: return ("#ffffff", "#000000")
-        case .calm: return ("#2f2a24", "#e8dcc4")
-        case .focus: return ("#000000", "#ffffff")
+        case .calm: return ("#2e2926", "#e8dece")
+        case .focus: return ("#000000", "#f5f5f7")
         }
     }
 }
 
 public enum ReaderFont: String, Codable, CaseIterable, Hashable {
-    case original, athelas, charter, georgia, iowan, palatino, sanfrancisco, seravek, times, newyork
+    case original, athelas, charter, georgia, iowan, newyork, palatino, sanfrancisco, seravek, times
 
     public var label: String {
         switch self {

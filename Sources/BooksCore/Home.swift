@@ -218,7 +218,7 @@ public enum GoalPeriod: String, Codable, CaseIterable, Hashable {
 
 // MARK: - Home
 
-/// The pieces Home is made of, each shown or not and in an order of your own.
+/// The widgets Home is made of, each shown or not, in an order of your own and at a size of its own.
 public enum HomeElement: String, Codable, CaseIterable, Hashable {
     case continueReading, pickUpAgain, goals, progress, calendar, activity, statistics, forYou, recentlyAdded, recentlyFinished
 
@@ -237,45 +237,69 @@ public enum HomeElement: String, Codable, CaseIterable, Hashable {
         }
     }
 
-    /// What the piece shows, for the customizing list.
-    public var detail: String {
+    /// What the widget does, for the widget gallery: one sentence starting with a verb, as Apple's widget
+    /// descriptions do.
+    public var galleryDescription: String {
         switch self {
-        case .continueReading: return "Books you are in the middle of, the latest first"
-        case .pickUpAgain: return "Books you started but haven’t opened for two weeks"
-        case .goals: return "Today’s minutes, books this month and this year"
-        case .progress: return "Pages and chapters read against a goal for the week, month, 3 months or year"
-        case .calendar: return "A month of days, marked when you read"
-        case .activity: return "Half a year of days, darker the more you read"
-        case .statistics: return "The library and your reading in numbers"
-        case .forYou: return "Unopened books in the genres and by the authors you read"
-        case .recentlyAdded: return "The newest books not yet opened"
-        case .recentlyFinished: return "The books you finished last"
+        case .continueReading: return "Pick up where you left off in the books you’re reading."
+        case .pickUpAgain: return "Return to books you started but haven’t opened for a while."
+        case .goals: return "Track today’s reading, your streak and the books you finish."
+        case .progress: return "Follow the pages and chapters you read this week, month or year."
+        case .calendar: return "See the days you read this month."
+        case .activity: return "See months of reading at a glance, darker the more you read."
+        case .statistics: return "Keep an eye on your library and your reading in numbers."
+        case .forYou: return "Discover unopened books in the genres and by the authors you read."
+        case .recentlyAdded: return "Find the newest books in your library."
+        case .recentlyFinished: return "Look back at the books you finished last."
         }
     }
 
-    /// Strips of books run the width; the rest sit in a grid.
-    public var isStrip: Bool {
+    /// The line under the name wherever widgets are listed; the same as the gallery's description.
+    public var detail: String { galleryDescription }
+
+    /// The SF Symbol that stands for the widget in its header, the gallery and the lists of widgets.
+    public var symbol: String {
         switch self {
-        case .continueReading, .pickUpAgain, .forYou, .recentlyAdded, .recentlyFinished: return true
-        case .goals, .progress, .calendar, .activity, .statistics: return false
+        case .continueReading: return "book.fill"
+        case .pickUpAgain: return "clock.arrow.circlepath"
+        case .goals: return "target"
+        case .progress: return "doc.text.fill"
+        case .calendar: return "calendar"
+        case .activity: return "square.grid.3x3.fill"
+        case .statistics: return "chart.bar.xaxis"
+        case .forYou: return "sparkles"
+        case .recentlyAdded: return "plus.circle.fill"
+        case .recentlyFinished: return "checkmark.circle.fill"
         }
     }
 
-    /// The sizes the widget can take.
-    public var sizes: [WidgetSize] {
+    /// The sizes the widget comes in, smallest first. A widget offers only the sizes it has a real layout for:
+    /// a calendar has no row of four, and a heat map has no square of one.
+    public var families: [WidgetSize] {
         switch self {
-        case .continueReading, .pickUpAgain, .forYou, .recentlyAdded, .recentlyFinished: return [.medium, .wide]
-        case .goals, .progress: return [.small, .medium]
-        case .calendar: return [.medium]
-        case .activity: return [.medium, .wide]
-        case .statistics: return [.small, .medium, .wide]
+        case .continueReading, .pickUpAgain, .forYou, .recentlyAdded, .recentlyFinished: return [.small, .medium, .large, .extraLarge]
+        case .goals, .calendar, .statistics: return [.small, .medium, .large]
+        case .progress: return [.small, .medium]
+        case .activity: return [.medium, .large, .extraLarge]
         }
     }
 
+    /// The size a widget takes until you choose another. Home's first four fill a block of four by four exactly:
+    /// Continue Reading large beside Reading Goals and Activity, both medium, over a row of Recently Added.
     public var defaultSize: WidgetSize {
         switch self {
-        case .continueReading, .pickUpAgain, .forYou, .recentlyAdded, .recentlyFinished: return .wide
-        case .goals, .progress, .calendar, .activity, .statistics: return .medium
+        case .continueReading: return .large
+        case .recentlyAdded: return .extraLarge
+        case .pickUpAgain, .goals, .activity, .statistics, .forYou, .recentlyFinished: return .medium
+        case .progress, .calendar: return .small
+        }
+    }
+
+    /// Widgets with settings of their own, offered as Edit “Name”… in the widget's menu; both open the goals.
+    public var isConfigurable: Bool {
+        switch self {
+        case .goals, .progress: return true
+        case .continueReading, .pickUpAgain, .calendar, .activity, .statistics, .forYou, .recentlyAdded, .recentlyFinished: return false
         }
     }
 
@@ -288,30 +312,64 @@ public enum HomeElement: String, Codable, CaseIterable, Hashable {
     }
 }
 
-/// How much of a row a Home widget takes: a quarter, half, or all of it.
+/// How many columns and rows of Home's square grid a widget covers.
+public struct GridSpan: Hashable {
+    public let columns: Int
+    public let rows: Int
+
+    public init(columns: Int, rows: Int) {
+        self.columns = columns
+        self.rows = rows
+    }
+}
+
+/// A widget's size, as Apple's widget families: small is one square of the grid, medium two side by side, large
+/// two by two and extra large four by two.
 public enum WidgetSize: String, Codable, CaseIterable, Hashable {
-    case small, medium, wide
+    case small, medium, large, extraLarge
 
     public var label: String {
         switch self {
         case .small: return "Small"
         case .medium: return "Medium"
-        case .wide: return "Wide"
+        case .large: return "Large"
+        case .extraLarge: return "Extra Large"
         }
     }
 
-    /// Units of a four-unit row.
-    public var units: Int {
+    public var span: GridSpan {
         switch self {
-        case .small: return 1
-        case .medium: return 2
-        case .wide: return 4
+        case .small: return GridSpan(columns: 1, rows: 1)
+        case .medium: return GridSpan(columns: 2, rows: 1)
+        case .large: return GridSpan(columns: 2, rows: 2)
+        case .extraLarge: return GridSpan(columns: 4, rows: 2)
         }
+    }
+
+    /// A size by its stored name. "wide", the full-row size of the version before, is extra large now.
+    public static func named(_ name: String) -> WidgetSize? {
+        name == "wide" ? .extraLarge : WidgetSize(rawValue: name)
+    }
+
+    public init(from decoder: Decoder) throws {
+        let name = try decoder.singleValueContainer().decode(String.self)
+        guard let size = WidgetSize.named(name) else {
+            throw DecodingError.dataCorrupted(DecodingError.Context(codingPath: decoder.codingPath, debugDescription: "No widget size is called \(name)"))
+        }
+        self = size
+    }
+
+    /// This size when it fits a grid of so many columns, else the biggest of the supported sizes that does, so
+    /// an extra large widget is drawn large on a narrow Home rather than squeezed.
+    public func fitting(columns: Int, supported: [WidgetSize]) -> WidgetSize {
+        if span.columns <= columns { return self }
+        let fits = supported.filter { $0.span.columns <= columns }
+        return fits.max { $0.span.columns * $0.span.rows < $1.span.columns * $1.span.rows } ?? .small
     }
 }
 
-/// Which pieces Home shows and in what order. Pieces the order does not name follow it in the usual order, so
-/// a version with new pieces shows them.
+/// Which widgets Home shows, in what order and at what size. Widgets the order does not name follow it in the
+/// usual order, so a version with new widgets shows them.
 public struct HomeSettings: Codable, Hashable {
     public var order: [HomeElement]
     public var hidden: [HomeElement]
@@ -326,23 +384,33 @@ public struct HomeSettings: Codable, Hashable {
 
     enum CodingKeys: String, CodingKey { case order, hidden, sizes }
 
+    /// One stored size that never fails to decode, so a value this version does not know costs only itself.
+    private struct StoredSize: Decodable {
+        let size: WidgetSize?
+
+        init(from decoder: Decoder) throws {
+            size = (try? decoder.singleValueContainer().decode(String.self)).flatMap(WidgetSize.named)
+        }
+    }
+
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         // Unknown names — a piece this version no longer has — are dropped rather than failing the whole thing.
         let names = (try? c.decodeIfPresent([String].self, forKey: .order)) ?? []
         order = names.compactMap(HomeElement.init(rawValue:))
         hidden = ((try? c.decodeIfPresent([String].self, forKey: .hidden)) ?? []).compactMap(HomeElement.init(rawValue:))
-        sizes = (try? c.decodeIfPresent([String: WidgetSize].self, forKey: .sizes)) ?? [:]
+        let stored = (try? c.decodeIfPresent([String: StoredSize].self, forKey: .sizes)) ?? [:]
+        sizes = stored.compactMapValues { $0.size }
     }
 
     /// The widget's size: as chosen, if the widget can take it, else its usual one.
     public func size(of element: HomeElement) -> WidgetSize {
-        if let chosen = sizes[element.rawValue], element.sizes.contains(chosen) { return chosen }
+        if let chosen = sizes[element.rawValue], element.families.contains(chosen) { return chosen }
         return element.defaultSize
     }
 
     public mutating func setSize(_ size: WidgetSize, for element: HomeElement) {
-        guard element.sizes.contains(size) else { return }
+        guard element.families.contains(size) else { return }
         if size == element.defaultSize { sizes.removeValue(forKey: element.rawValue) } else { sizes[element.rawValue] = size }
     }
 
@@ -370,6 +438,113 @@ public struct HomeSettings: Codable, Hashable {
         let target = destination - source.filter { $0 < destination }.count
         all.insert(contentsOf: moving, at: max(0, min(all.count, target)))
         order = all
+    }
+
+    /// Puts a widget in another's place, as dragging one onto another does: after it when coming from before it,
+    /// before it when coming from after, so the two change places when they are neighbours.
+    public mutating func move(_ element: HomeElement, to target: HomeElement) {
+        guard element != target else { return }
+        var all = elements
+        guard let from = all.firstIndex(of: element), let to = all.firstIndex(of: target) else { return }
+        all.remove(at: from)
+        guard let landing = all.firstIndex(of: target) else { return }
+        all.insert(element, at: from < to ? landing + 1 : landing)
+        order = all
+    }
+
+    /// Puts a widget after all the others.
+    public mutating func moveToEnd(_ element: HomeElement) {
+        var all = elements
+        all.removeAll { $0 == element }
+        all.append(element)
+        order = all
+    }
+
+    /// Shows a widget at a size, as clicking it in the widget gallery does: a hidden widget joins at the end of
+    /// Home, one already shown keeps its place and takes the size.
+    public mutating func add(_ element: HomeElement, size: WidgetSize) {
+        if !isShown(element) {
+            moveToEnd(element)
+            setShown(element, true)
+        }
+        setSize(size, for: element)
+    }
+}
+
+/// A widget where Home's grid puts it: its size as drawn, and the column and row of its top-left square.
+public struct HomePlacement: Hashable, Identifiable {
+    public let element: HomeElement
+    public let size: WidgetSize
+    public let column: Int
+    public let row: Int
+
+    public init(element: HomeElement, size: WidgetSize, column: Int, row: Int) {
+        self.element = element
+        self.size = size
+        self.column = column
+        self.row = row
+    }
+
+    public var id: HomeElement { element }
+}
+
+/// Home's grid, as on the iPad and the Mac desktop: square units in two or four columns with one gap between
+/// them on both axes, and the widgets placed in reading order, each in the first place further on where it fits
+/// whole. Smaller widgets later in the order fill the holes left earlier, and nothing is stretched to fill a row.
+public enum HomeGrid {
+    /// The gap between widgets, across and down.
+    public static let gap: Double = 20
+    /// Four columns need at least this much of a unit; narrower, Home has two.
+    public static let minimumUnit: Double = 150
+    /// Units stop growing here; a wider Home centres its grid rather than stretch the widgets.
+    public static let maximumUnit: Double = 240
+
+    /// Two columns, or four when four units of at least the minimum fit the width.
+    public static func columns(forWidth width: Double) -> Int {
+        width >= 4 * minimumUnit + 3 * gap ? 4 : 2
+    }
+
+    /// The side of a unit: the width shared by the columns less their gaps, in whole points, no more than the maximum.
+    public static func unit(forWidth width: Double, columns: Int) -> Double {
+        let count = max(1, columns)
+        return max(1, min(maximumUnit, ((width - Double(count - 1) * gap) / Double(count)).rounded(.down)))
+    }
+
+    /// Rows the placed widgets take, the last one's bottom included.
+    public static func rows(_ placements: [HomePlacement]) -> Int {
+        placements.map { $0.row + $0.size.span.rows }.max() ?? 0
+    }
+
+    /// The widgets placed in order, dense first-fit: each goes to the first row, and the first column in it, where
+    /// its whole span is free. A widget wider than the grid takes the biggest of its sizes that fits. The grid is
+    /// never narrower than two columns, so every widget has a size that fits.
+    public static func place(_ items: [(HomeElement, WidgetSize)], columns requested: Int) -> [HomePlacement] {
+        let columns = max(2, requested)
+        var taken: [[Bool]] = []
+        func free(_ column: Int, _ row: Int, _ span: GridSpan) -> Bool {
+            for y in row..<(row + span.rows) where y < taken.count {
+                for x in column..<(column + span.columns) where taken[y][x] { return false }
+            }
+            return true
+        }
+        var placed: [HomePlacement] = []
+        for (element, chosen) in items {
+            let size = chosen.fitting(columns: columns, supported: element.families)
+            let span = GridSpan(columns: min(columns, size.span.columns), rows: size.span.rows)
+            var row = 0
+            var spot: Int?
+            while spot == nil {
+                spot = (0...(columns - span.columns)).first { free($0, row, span) }
+                if spot == nil { row += 1 }
+            }
+            let column = spot ?? 0
+            while taken.count < row + span.rows { taken.append(Array(repeating: false, count: columns)) }
+            for y in row..<(row + span.rows) {
+                for x in column..<(column + span.columns) { taken[y][x] = true }
+            }
+            placed.append(HomePlacement(element: element, size: size, column: column, row: row))
+        }
+        return placed
     }
 }
 
@@ -455,6 +630,27 @@ public extension ReadingStats {
             day = next
         }
         return result
+    }
+
+    /// The month holding the date as rows of seven days, the calendar's first weekday first, the way a month is
+    /// printed; the places before the first and after the last day are nil.
+    func monthWeeks(containing date: Date, calendar: Calendar = .current) -> [[DailyReading?]] {
+        let days = month(containing: date, calendar: calendar)
+        guard let firstKey = days.first?.day, let first = ReadingStats.date(fromKey: firstKey, calendar: calendar) else { return [] }
+        let leading = (calendar.component(.weekday, from: first) - calendar.firstWeekday + 7) % 7
+        var cells = [DailyReading?](repeating: nil, count: leading)
+        for day in days { cells.append(day) }
+        while cells.count % 7 != 0 { cells.append(nil) }
+        return stride(from: 0, to: cells.count, by: 7).map { Array(cells[$0..<($0 + 7)]) }
+    }
+
+    /// How dark a day is drawn on the calendar and the heat map: 0 when nothing was read, else 1 to 4 by the
+    /// quarter of the busiest day's time it reaches. A day with pages turned but no time counted is 1.
+    static func heatLevel(seconds: Int, pages: Int = 0, peak: Int) -> Int {
+        guard seconds > 0 || pages > 0 else { return 0 }
+        guard seconds > 0, peak > 0 else { return 1 }
+        let share = min(1, Double(seconds) / Double(peak))
+        return max(1, min(4, Int((share * 4).rounded(.up))))
     }
 
     /// The last `count` weeks as columns of seven days, the first day of each week first, ending with the week

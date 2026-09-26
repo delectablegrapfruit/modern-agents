@@ -127,13 +127,33 @@ final class ReaderWebView: WKWebView {
             }
         }
         if let last = menu.items.last, last.isSeparatorItem { menu.removeItem(last) }
-        // Over a highlight: its note and its removal, first.
+        // Over a highlight: its note and its removal, first. Over selected words: Highlight, Underline and Add Note,
+        // first, as a PDF's menu has them; the system's Look Up and Copy follow in both.
         if let session, let hovered = MainActor.assumeIsolated({ session.hoveredHighlight }) {
             let items = MainActor.assumeIsolated { session.menuItems(forHighlight: hovered.annotation) }
-            if !menu.items.isEmpty { menu.insertItem(.separator(), at: 0) }
-            for item in items.reversed() { menu.insertItem(item, at: 0) }
+            insertReaderItems(items, into: menu)
+        } else if let session {
+            let items: [NSMenuItem] = MainActor.assumeIsolated { () -> [NSMenuItem] in
+                guard session.selection != nil else { return [] }
+                return [
+                    ClosureMenuItem("Highlight") { [weak session] in session?.highlightSelection(color: .yellow) },
+                    ClosureMenuItem("Underline") { [weak session] in session?.highlightSelection(color: .underline) },
+                    ClosureMenuItem("Add Note…") { [weak session] in
+                        session?.pendingNoteAfterHighlight = true
+                        session?.highlightSelection(color: .yellow)
+                    },
+                ]
+            }
+            insertReaderItems(items, into: menu)
         }
         super.willOpenMenu(menu, with: event)
+    }
+
+    /// The reader's items go at the top of the menu, with a separator between them and the system's.
+    private func insertReaderItems(_ items: [NSMenuItem], into menu: NSMenu) {
+        guard !items.isEmpty else { return }
+        if !menu.items.isEmpty { menu.insertItem(.separator(), at: 0) }
+        for item in items.reversed() { menu.insertItem(item, at: 0) }
     }
 }
 

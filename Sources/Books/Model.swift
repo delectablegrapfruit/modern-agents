@@ -590,7 +590,7 @@ final class LibraryModel {
         panel.allowedContentTypes = LibraryModel.readableTypes
         panel.message = "Add EPUB, Kindle (MOBI, AZW3), PDF or text files — or folders of them, searched through — to your library"
         panel.prompt = "Add"
-        let collections = NSButton(checkboxWithTitle: "Make collections from the folders' subfolders", target: nil, action: nil)
+        let collections = NSButton(checkboxWithTitle: "Make collections from subfolders", target: nil, action: nil)
         collections.state = settings.library.importCollections ? .on : .off
         panel.accessoryView = collections
         panel.isAccessoryViewDisclosed = true
