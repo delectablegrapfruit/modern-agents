@@ -660,11 +660,25 @@ final class SplitPDFPresenter: PDFReading {
             headerBands.append(band(topRows[i], fromTop: true, height: height, counts: topCounts))
             footerBands.append(band(bottomRows[i], fromTop: false, height: height, counts: bottomCounts))
         }
+        /// The baselines a band spans. PDFKit may read one letter-spaced line as a line a word ("F R A N C I S",
+        /// "B A C O N", …), so a band is judged by its rows rather than by the pieces it was read in.
+        func rowCount(_ band: [SplitPreparation.Line]) -> Int {
+            var baselines: [CGFloat] = []
+            for line in band where !baselines.contains(where: { abs($0 - line.minY) < typical * 0.6 }) {
+                baselines.append(line.minY)
+            }
+            return baselines.count
+        }
+        /// A band is furniture when it holds a page number or words that recur, in at most three rows (a running head,
+        /// a rule's caption, a number), or else when it is at most two short rows.
         func qualifies(_ band: [SplitPreparation.Line], _ counts: [String: Int]) -> Bool {
-            guard !band.isEmpty, band.count <= 4 else { return false }
+            guard !band.isEmpty, band.count <= 24 else { return false }
+            let rows = rowCount(band)
+            guard rows <= 3 else { return false }
             if band.contains(where: { isNumber($0.text) }) { return true }
             if band.contains(where: { counts[key($0.text), default: 0] >= threshold }) { return true }
-            return band.count <= 2 && band.reduce(0) { $0 + $1.text.count } <= 40
+            let characters = band.reduce(0) { (sum: Int, line: SplitPreparation.Line) -> Int in sum + line.text.count }
+            return rows <= 2 && characters <= 40
         }
         for i in 0..<lines.count {
             if !qualifies(headerBands[i], topCounts) { headerBands[i] = [] }
