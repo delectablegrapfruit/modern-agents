@@ -154,6 +154,7 @@
         if ((e.metaKey || e.ctrlKey) && /^Digit[1-5]$/.test(e.code)) { this.setTab(TABS[Number(e.code.slice(5)) - 1].id); e.preventDefault(); return; }
         if ((e.metaKey || e.ctrlKey) && e.code === 'Comma') { UI.openSettings(this); e.preventDefault(); return; }
         if ((e.metaKey || e.ctrlKey) && e.code === 'KeyZ' && this.tab === 'puzzle') { this.modes.puzzle.undo(); e.preventDefault(); return; }
+        if (e.key === 'Escape' && this.tab === 'play' && this.modes.play.closeTray()) { e.preventDefault(); return; }
         if (e.key === 'Escape' && native.available) { this.saveNow(); native.post('hide'); return; }
         if (this.keys.down(e)) this.activity();
       });

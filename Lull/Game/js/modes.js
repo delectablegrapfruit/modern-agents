@@ -2,7 +2,7 @@
 (function (root) {
   'use strict';
   const L = (root.Lull = root.Lull || {});
-  const { Game, Board, CELL, Pieces, Puzzles, Factory, Render, UI, ITEMS, ITEM_ORDER, fmt, fmtInt, fmtClock, fmtDuration } = L;
+  const { Game, Board, CELL, Pieces, Puzzles, Factory, Render, UI, ITEMS, ITEM_ORDER, ITEM_GROUPS, fmt, fmtInt, fmtClock, fmtDuration } = L;
   const { h, toast } = UI;
 
   const ARROWS = { left: [-1, 0], right: [1, 0], up: [0, -1], down: [0, 1] };
@@ -10,11 +10,12 @@
   const INVERT = { moveL: 'moveR', moveR: 'moveL', cw: 'ccw', ccw: 'cw', rotate: 'rotateInv' };
 
   // Items that only change the piece in play, so they can be put back.
-  const UNDOABLE = new Set(['reroll', 'mirror', 'pebble', 'sand', 'phase', 'drill', 'bomb', 'order', 'blueprint']);
+  const UNDOABLE = new Set(['reroll', 'mirror', 'pebble', 'noodle', 'giant', 'sand', 'magnet', 'phase', 'anvil', 'drill', 'bomb', 'laser', 'blackhole', 'golden', 'order', 'blueprint']);
 
   function playLockSound(snd, r) {
-    if (r.special === 'bomb') snd.play('boom');
-    else if (r.special === 'drill') snd.play('drill');
+    if (r.special === 'bomb' || r.special === 'blackhole' || r.special === 'anvil') snd.play('boom');
+    else if (r.special === 'drill' || r.special === 'laser') { snd.play('drill'); if (r.lines) setTimeout(() => snd.play('quad'), 150); }
+    else if (r.special === 'tornado') { snd.play('drill'); setTimeout(() => snd.play(r.lines ? 'quad' : 'lock'), 380); }
     else if (r.perfect) snd.play('perfect');
     else if (r.tspin) snd.play('tspin');
     else if (r.lines >= 4) snd.play('quad');
@@ -54,6 +55,8 @@
       game.on('topout', () => this.onTopout && this.onTopout());
       game.on('empty', () => this.onEmpty && this.onEmpty());
       game.on('purge', (gone) => this.view.onPurge(gone, this.reduced));
+      game.on('nuke', (gone) => { this.view.onNuke(gone, this.reduced); this.app.sound.play('boom'); setTimeout(() => this.app.sound.play('boom'), 180); });
+      game.on('flip', (moves) => this.view.onMoves(moves, 'x', this.reduced));
     }
 
     mapArrow(act) {
@@ -139,7 +142,13 @@
         if (e.button === 0 && this.view.onHold(px, py)) { mouse(() => this.action('hold')); return; }
         if (e.button === 2) { mouse(() => { this.follow(); this.action('cw'); this.follow(); }); return; }
         if (e.button !== 0) return;
-        mouse(() => { this.follow(); this.action('drop'); });
+        mouse(() => {
+          this.follow();
+          // Click grace: a pointer that slipped into the next column just before the click (under ~0.1 s) does not
+          // count; the piece drops where it had settled.
+          if (this.prevCol != null && performance.now() - this.colAt < 110) this.aimAt(this.prevCol);
+          this.action('drop');
+        });
       });
       c.addEventListener('contextmenu', (e) => e.preventDefault());
       c.addEventListener('wheel', (e) => {
@@ -157,12 +166,25 @@
     follow() {
       const g = this.game;
       if (!this.pointer || !g || !g.piece || g.over || !this.settings.mouse) return;
-      const cell = this.view.cellClamped(this.pointer[0], this.pointer[1]);
+      const [px, py] = this.pointer, cur = this.view.pointerCol;
+      const cell = this.view.cellClamped(px, py);
       if (!cell) return;
-      if (cell.x !== this.view.pointerCol) this.view.pointerCol = cell.x;
+      let col = cell.x;
+      // Sticky aim: stay in the current column until the pointer is well past its edge (a third of a cell).
+      if (cur != null && col !== cur && this.view.lay) {
+        const d = this.view.lay.s * 0.33;
+        for (const [dx, dy] of [[d, 0], [-d, 0], [0, d], [0, -d]]) { const c = this.view.cellClamped(px + dx, py + dy); if (c && c.x === cur) { col = cur; break; } }
+      }
+      if (col !== cur) { this.prevCol = cur; this.colAt = performance.now(); this.view.pointerCol = col; }
+      this.aimAt(col);
+    }
+
+    aimAt(col) {
+      const g = this.game;
       this.quiet = true;
-      for (let i = 0; i < g.w; i++) if (!g.moveToward(cell.x)) break;
+      for (let i = 0; i < g.w; i++) if (!g.moveToward(col)) break;
       this.quiet = false;
+      this.view.pointerCol = col;
       this.view.dirty = true;
     }
 
@@ -395,7 +417,14 @@
       const st = this.app.store, F = st.state.stats.free, g = this.game;
       this.syncCounters();
       if (this.armed) { this.armed = null; this.renderItems(); }
-      if (r.special !== 'settle') {
+      if (r.golden && r.lines) {
+        // Golden piece: its lines pay triple.
+        st.addLines(r.lines * 2, 'play');
+        const b = this.view.lay.board;
+        this.view.fx.text('×3 ◆ +' + r.lines * 3, b.x + b.w / 2, b.y + b.h * 0.3, '#ffd35a', 20);
+        this.app.sound.play('golden');
+      }
+      if (r.special !== 'settle' && r.special !== 'tornado') {
         F.pieces++;
         st.day().pieces++;
         const key = Pieces.TYPES[r.type] && Pieces.TYPES[r.type].family === 'tetromino' ? r.type : (Pieces.get(r.type) || { family: 'other' }).family;
@@ -459,27 +488,69 @@
         } }, '↺', h('span', { class: 'lbl' }, ' New board'))].filter(Boolean));
     }
 
+    /**
+     * The item bar: one button per type. A button opens its tray above the bar; the tray holds the type's items
+     * (hover one for what it does). Keys: 1–5 open a tray, then 1–9 use an item in it; Esc closes it.
+     */
     renderItems() {
       const inv = this.app.store.state.inventory;
-      const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '−', '='];
-      this.itembar.replaceChildren(...ITEM_ORDER.map((id, i) => {
-        const it = ITEMS[id], n = inv[id] || 0;
-        const on = this.armed && this.armed.id === id && this.armed.piece === this.game.piece;
+      const armedId = this.armed && this.armed.piece === this.game.piece ? this.armed.id : null;
+      this.itembar.replaceChildren(...ITEM_GROUPS.map((g, gi) => {
+        const ids = ITEM_ORDER.filter((id) => ITEMS[id].group === g.id);
+        const have = ids.reduce((a, id) => a + (inv[id] || 0), 0);
+        const open = this.tray === g.id, on = armedId && ids.includes(armedId);
         return h('button', {
-          class: 'item-btn' + (n || on ? '' : ' empty') + (on ? ' on' : ''),
-          'data-tip-title': it.icon + '  ' + it.name,
-          'data-tip': it.desc,
-          'data-tip-foot': on ? 'In use — press again to put it back' : (n ? 'You have ' + n + ' · ' : 'None left · buy for ◆' + it.price + ' · ') + 'key ' + keys[i],
-          onclick: () => this.useItem(id),
-        }, it.icon, h('span', { class: 'k' }, keys[i]), h('span', { class: 'n' }, n ? String(n) : ''));
+          class: 'group-btn' + (open ? ' open' : '') + (on ? ' on' : ''), 'data-group': g.id,
+          'data-tip-title': g.icon + '  ' + g.name, 'data-tip': g.desc, 'data-tip-foot': ids.length + ' items · you have ' + have + ' · key ' + (gi + 1),
+          onclick: () => this.openTray(open ? null : g.id),
+        }, h('span', { class: 'gi' }, g.icon), h('span', { class: 'gl' }, g.name), h('span', { class: 'k' }, String(gi + 1)), have ? h('span', { class: 'n' }, String(have)) : null);
       }));
+      this.renderTray();
+    }
+
+    openTray(id) {
+      this.tray = id;
+      this.app.sound.play(id ? 'rotate' : 'lower');
+      this.renderItems();
+    }
+
+    renderTray() {
+      let el = this.trayEl;
+      if (!el) { el = this.trayEl = h('div', { class: 'item-tray hidden' }); this.itembar.parentElement.appendChild(el); }
+      const g = ITEM_GROUPS.find((x) => x.id === this.tray);
+      el.classList.toggle('hidden', !g);
+      if (!g) { el.replaceChildren(); return; }
+      const inv = this.app.store.state.inventory;
+      const ids = ITEM_ORDER.filter((id) => ITEMS[id].group === g.id);
+      el.style.setProperty('--tray-at', ITEM_GROUPS.indexOf(g) / (ITEM_GROUPS.length - 1));
+      el.replaceChildren(
+        h('div', { class: 'tray-head' }, h('b', null, g.icon + ' ' + g.name), h('span', null, g.desc), h('button', { class: 'icon-btn', title: 'Close (Esc)', html: UI.ICONS.close, onclick: () => this.openTray(null) })),
+        h('div', { class: 'tray-items' }, ids.map((id, i) => {
+          const it = ITEMS[id], n = inv[id] || 0;
+          const on = this.armed && this.armed.id === id && this.armed.piece === this.game.piece;
+          return h('button', {
+            class: 'item-btn' + (n || on ? '' : ' empty') + (on ? ' on' : ''), 'data-item': id,
+            'data-tip-title': it.icon + '  ' + it.name, 'data-tip': it.desc,
+            'data-tip-foot': on ? 'In use — press again to put it back' : (n ? 'You have ' + n + ' · ' : 'None left · buy for ◆' + it.price + ' · ') + 'key ' + (i + 1),
+            onclick: () => this.useItem(id),
+          }, h('span', { class: 'ii' }, it.icon), h('span', { class: 'il' }, it.name), h('span', { class: 'k' }, String(i + 1)), h('span', { class: 'n' }, n ? String(n) : '◆' + it.price));
+        })));
     }
 
     modeAction(a) {
       const m = /^item(\d+)$/.exec(a);
-      if (m) { const id = ITEM_ORDER[Number(m[1]) - 1]; if (id) this.useItem(id); return true; }
+      if (m) {
+        const k = Number(m[1]);
+        if (!this.tray) { const g = ITEM_GROUPS[k - 1]; if (g) this.openTray(g.id); return true; }
+        const ids = ITEM_ORDER.filter((id) => ITEMS[id].group === this.tray);
+        if (ids[k - 1]) this.useItem(ids[k - 1]);
+        return true;
+      }
       return false;
     }
+
+    /** Esc closes an open tray first (the app's own Esc handling comes after). */
+    closeTray() { if (!this.tray) return false; this.openTray(null); return true; }
 
     useItem(id) {
       const st = this.app.store, it = ITEMS[id];
@@ -519,6 +590,7 @@
       const g = this.game, st = this.app.store;
       const done = () => {
         arm();
+        this.tray = null;
         st.useItem(id);
         this.app.sound.play('item');
         this.renderItems();
@@ -537,7 +609,18 @@
         }
         case 'mirror': if (g.replacePiece({ id: Pieces.mirrorOf(cur.type).id, special: cur.special })) done(); break;
         case 'pebble': if (g.replacePiece({ id: 'M1' })) done(); break;
-        case 'sand': case 'phase': case 'drill': case 'bomb':
+        case 'noodle': if (g.replacePiece({ id: Pieces.customType([[0, 0], [1, 0], [2, 0], [3, 0], [4, 0], [5, 0]]).id })) done(); else toast('No room for a noodle up there', 'bad'); break;
+        case 'giant': {
+          const base = Pieces.TYPES[cur.type.id] && Pieces.TYPES[cur.type.id].family === 'tetromino' ? cur.type.id : null;
+          if (!base) { toast('Giant works on the seven standard pieces', 'bad'); return; }
+          if (g.replacePiece({ id: Pieces.bigOf(base).id, special: cur.special })) done(); else toast('Too big to fit up there', 'bad');
+          break;
+        }
+        case 'nuke': if (g.nuke()) done(); else toast('The board is already empty', 'bad'); break;
+        case 'tornado': if (g.tornado()) done(); else toast('The board is already empty', 'bad'); break;
+        case 'flip': if (g.flipWorld()) done(); else toast(g.board.isEmpty() ? 'The board is empty' : 'The piece would not fit — move it first', 'bad'); break;
+        case 'jackpot': st.useItem(id); this.tray = null; this.jackpot(); this.renderItems(); break;
+        case 'sand': case 'phase': case 'drill': case 'bomb': case 'anvil': case 'magnet': case 'laser': case 'blackhole': case 'golden':
           if (g.setSpecial(id)) done(); else toast('No room for that here', 'bad');
           break;
         case 'rewind': {
@@ -576,6 +659,44 @@
           break;
         default: break;
       }
+    }
+
+    /** Jackpot: three reels spin and stop on three items, which are yours. */
+    jackpot() {
+      const st = this.app.store, pool = ITEM_ORDER.filter((id) => id !== 'jackpot');
+      const wins = [0, 1, 2].map(() => pool[Math.floor(Math.random() * pool.length)]);
+      const reels = wins.map(() => h('div', { class: 'reel' }, '?'));
+      const note = h('p', { class: 'jp-note' }, 'Spinning…');
+      let handle = null;
+      handle = UI.openModal({ title: '🎰 Jackpot', width: 340, cls: 'modal-jackpot', body: h('div', null, h('div', { class: 'reels' }, reels), note), buttons: [{ label: 'Collect', kind: 'primary' }], onClose: () => { clearInterval(timer); finish(); } });
+      let t = 0, stopped = 0, done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        for (const id of wins) st.grantItem(id, 1);
+        this.renderItems();
+      };
+      const timer = setInterval(() => {
+        t++;
+        reels.forEach((r, i) => {
+          if (i < stopped) return;
+          r.textContent = ITEMS[pool[(t * 7 + i * 5) % pool.length]].icon;
+        });
+        if (t % 6 === 0) this.app.sound.play('move');
+        if (t === 14 + stopped * 8) {
+          const r = reels[stopped];
+          r.textContent = ITEMS[wins[stopped]].icon; r.classList.add('win'); r.title = ITEMS[wins[stopped]].name;
+          this.app.sound.play('combo', 3 + stopped * 2);
+          stopped++;
+          if (stopped === 3) {
+            clearInterval(timer);
+            note.textContent = 'You won ' + wins.map((w) => ITEMS[w].name).join(', ') + '!';
+            this.app.sound.play('golden');
+            finish();
+          }
+        }
+      }, 60);
+      void handle;
     }
 
     save() { this.app.store.state.free = this.game.toJSON(); }

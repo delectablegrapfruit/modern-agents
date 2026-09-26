@@ -118,6 +118,37 @@ test('hard drop, hold, and a quad', () => {
   assert(c.holdPiece());
   assert(!c.holdPiece(), 'Classic: one hold per piece');
 });
+test('the pointer centres on a piece\'s middle: a T pointing left follows by its stem', () => {
+  const g = new Game({ w: 10, h: 20, seed: 1 });
+  g.replacePiece({ id: 'T' });
+  g.piece.rot = 3; // nub to the left
+  for (let i = 0; i < 12; i++) if (!g.moveToward(5)) break;
+  const xs = g.cellsOf().map(([x]) => x);
+  const stem = xs.filter((x) => xs.filter((y) => y === x).length === 3)[0];
+  assert.strictEqual(stem, 5, 'the three-block stem sits under the pointer');
+  g.piece.rot = 0;
+  for (let i = 0; i < 12; i++) if (!g.moveToward(5)) break;
+  assert.deepStrictEqual(g.cellsOf().map(([x]) => x).sort(), [4, 5, 5, 6]);
+});
+test('new items: anvil, magnet, laser, black hole, golden, nuke, tornado, mirror world', () => {
+  const mk = () => { const g = new Game({ w: 10, h: 20, seed: 9 }); for (let y = 0; y < 4; y++) for (let x = 0; x < 10; x++) if ((x + y) % 3) g.board.set(x, y, 8); g.replacePiece({ id: 'O' }); return g; };
+  let g = mk(); const before = g.board.count();
+  assert(g.setSpecial('anvil')); g.piece.y = 12;
+  let r = g.drop();
+  assert(r.smashed.length > 0 && r.cells.every(([, y]) => y <= 1), 'the anvil lands on the floor, smashing its columns');
+  g = mk(); g.setSpecial('magnet'); r = g.drop();
+  assert(r.moves && r.moves.length > 0, 'the magnet pulls its columns down');
+  g = mk(); g.setSpecial('laser'); r = g.drop();
+  assert(r.laser.length === 2 && r.lines >= 2, 'the laser vaporises both rows it touches');
+  g = mk(); assert(g.setSpecial('blackhole')); g.piece.y = 6; r = g.drop();
+  assert(r.swallowed.length > 5, 'the black hole swallows its surroundings');
+  g = mk(); g.setSpecial('golden'); r = g.drop(); assert(r.golden);
+  g = mk(); assert(g.nuke().length === before && g.board.isEmpty());
+  g = mk(); r = g.tornado(); assert.strictEqual(r.lines, Math.floor(before / 10)); assert.strictEqual(g.board.count(), before % 10);
+  g = mk(); const row0 = [...Array(10)].map((_, x) => g.board.get(x, 0)); assert(g.flipWorld()); assert.deepStrictEqual([...Array(10)].map((_, x) => g.board.get(x, 0)), row0.reverse());
+  assert(g.undo(), 'rewind undoes a board item');
+  assert.deepStrictEqual([...Array(10)].map((_, x) => g.board.get(x, 0)), row0.reverse());
+});
 test('T-spins: dropped from a turn is not one; one front corner is a Mini', () => {
   const setup = () => {
     const g = new Game({ w: 10, h: 20, seed: 4 });

@@ -127,7 +127,7 @@
 
     // ---- movement -----------------------------------------------------------------------------------------------------
 
-    passes(p) { return p.special === 'phase' || p.special === 'drill'; }
+    passes(p) { return p.special === 'phase' || p.special === 'drill' || p.special === 'anvil'; }
 
     fitsAt(p, rot, x, y) {
       const cells = p.type.rots[rot];
@@ -194,8 +194,10 @@
     moveToward(targetX) {
       const p = this.piece;
       if (!p) return false;
-      const b = p.type.rotBounds[p.rot];
-      const cur = p.x + b.minX + Math.floor((b.w - 1) / 2);
+      // The piece's middle column: the average of its cells' columns (so a T pointing left is centred on its stem,
+      // not its nub), rounding halves down.
+      const cells = p.type.rots[p.rot];
+      const cur = p.x + Math.round(cells.reduce((a, [cx]) => a + cx, 0) / cells.length - 0.01);
       let dx = targetX - cur;
       if (this.board.wrap) {
         dx = ((dx % this.w) + this.w) % this.w;
@@ -210,6 +212,7 @@
       if (!p) return null;
       if (p.special === 'drill') return null;
       if (p.special === 'phase') return this.phaseTarget(p);
+      if (p.special === 'anvil') return -p.type.rotBounds[p.rot].minY; // straight to the floor, through everything
       let y = p.y;
       while (this.board.fits(p.type.rots[p.rot], p.x, y - 1)) y--;
       return y;
@@ -288,14 +291,32 @@
       const p = this.piece;
       if (!p) return false;
       const shape = p.type.rots[p.rot];
-      if (!this.board.fits(shape, p.x, p.y)) { this.emit('blocked', 'lock'); return false; }
+      if (p.special !== 'anvil' && !this.board.fits(shape, p.x, p.y)) { this.emit('blocked', 'lock'); return false; }
       this.pushHistory();
       const cells = this.cellsOf(p);
       const result = { type: p.type.id, color: p.type.color, special: p.special, cells, rows: [], removed: [], lines: 0, tspin: false, perfect: false, combo: 0, b2b: false, score: 0, blast: null };
       if (this.pendingDrop) { result.dropDist = this.pendingDrop.dist; result.dropCells = this.pendingDrop.cells; }
       const v = p.type.color | (this.mods.vanish ? CELL.HIDDEN : 0);
 
-      if (p.special === 'bomb') {
+      if (p.special === 'anvil') {
+        // Smashes every block in its columns from where it was down to the floor.
+        const from = this.pendingDrop ? this.pendingDrop.cells : cells;
+        const top = new Map();
+        for (const [x, y] of from) top.set(x, Math.max(top.has(x) ? top.get(x) : -1, y));
+        result.smashed = [];
+        for (const [x, t] of top) for (let y = 0; y <= Math.min(t, this.h - 1); y++) { const old = this.board.get(x, y); if (old) { result.smashed.push([x, y, old]); this.board.set(x, y, 0); } }
+        this.board.place(shape, p.x, p.y, v);
+      } else if (p.special === 'blackhole') {
+        const [cx, cy] = cells[0];
+        result.swallowed = [];
+        for (let y = 0; y < this.h; y++) for (let x = 0; x < this.w; x++) {
+          const dx = this.board.wrap ? Math.min(Math.abs(x - cx), this.w - Math.abs(x - cx)) : x - cx;
+          if (dx * dx + (y - cy) * (y - cy) > 11) continue;
+          const old = this.board.get(x, y);
+          if (old) { result.swallowed.push([x, y, old]); this.board.set(x, y, 0); }
+        }
+        result.center = [cx, cy];
+      } else if (p.special === 'bomb') {
         const [cx, cy] = cells[0];
         result.blast = [];
         for (const [dx, dy] of BOMB_PATTERN) {
@@ -321,9 +342,28 @@
         }
         this.board.place(shape, p.x, p.y, v);
         if (p.special === 'sand') this.settleCells(cells, v, result);
+        if (p.special === 'magnet') {
+          // Pulls every block in the piece's columns down tight.
+          result.moves = [];
+          for (const x of new Set(cells.map(([cx]) => cx))) {
+            let dst = 0;
+            for (let y = 0; y < this.h; y++) {
+              const val = this.board.get(x, y);
+              if (!val) continue;
+              if (dst !== y) { this.board.set(x, dst, val); this.board.set(x, y, 0); result.moves.push([x, y, x, dst, val]); }
+              dst++;
+            }
+          }
+        }
       }
+      if (p.special === 'golden') result.golden = true;
 
-      const rows = this.board.fullRows();
+      let rows = this.board.fullRows();
+      if (p.special === 'laser') {
+        // Every row the piece touches is vaporised, full or not.
+        result.laser = Array.from(new Set(cells.map(([, cy]) => cy))).filter((y) => y >= 0 && y < this.h).sort((a, b) => a - b);
+        rows = Array.from(new Set(rows.concat(result.laser))).sort((a, b) => a - b);
+      }
       result.rows = rows;
       result.removed = this.board.clearRows(rows);
       result.lines = rows.length;
@@ -427,8 +467,8 @@
 
     setSpecial(special) {
       if (!this.piece) return false;
-      if (special === 'bomb' || special === 'drill') return this.replacePiece({ id: 'M1', special });
-      if (special === 'phase' || special === 'sand') {
+      if (special === 'bomb' || special === 'drill' || special === 'blackhole') return this.replacePiece({ id: 'M1', special });
+      if (['phase', 'sand', 'anvil', 'magnet', 'laser', 'golden'].includes(special)) {
         this.piece.special = special;
         this.piece.entry = Object.assign({}, this.piece.entry, { special });
         this.emit('replace', this.piece);
@@ -448,6 +488,55 @@
       this.score(result);
       this.emit('lock', result);
       return result;
+    }
+
+    /** Nuke: the whole board, gone. (No lines for it — it is not tidy, it is a nuke.) */
+    nuke() {
+      if (!this.piece || this.board.isEmpty()) return null;
+      this.pushHistory();
+      const gone = [];
+      for (let y = 0; y < this.h; y++) for (let x = 0; x < this.w; x++) { const v = this.board.get(x, y); if (v) gone.push([x, y, v]); }
+      this.board.cells.fill(0);
+      this.emit('nuke', gone);
+      return gone;
+    }
+
+    /** Tornado: lifts every block and drops them back packed into solid rows from the floor up; full rows clear. */
+    tornado() {
+      if (!this.piece || this.board.isEmpty()) return null;
+      this.pushHistory();
+      const blocks = [];
+      for (let y = 0; y < this.h; y++) for (let x = 0; x < this.w; x++) { const v = this.board.get(x, y); if (v) blocks.push([x, y, v]); }
+      this.board.cells.fill(0);
+      const moves = [];
+      const order = this.rng.shuffle(blocks.slice());
+      order.forEach(([x, y, v], i) => {
+        const nx = i % this.w, ny = Math.floor(i / this.w);
+        this.board.set(nx, ny, v);
+        moves.push([x, y, nx, ny, v]);
+      });
+      const rows = this.board.fullRows();
+      const result = { type: 'tornado', special: 'tornado', cells: [], rows, removed: this.board.clearRows(rows), lines: rows.length, score: 0, moves };
+      this.score(result);
+      this.emit('lock', result);
+      return result;
+    }
+
+    /** Mirror World: the whole board flips left to right. */
+    flipWorld() {
+      if (!this.piece || this.board.isEmpty()) return null;
+      const before = this.board.snapshot();
+      this.pushHistory();
+      const moves = [];
+      for (let y = 0; y < this.h; y++) {
+        const row = [];
+        for (let x = 0; x < this.w; x++) row.push(this.board.get(x, y));
+        for (let x = 0; x < this.w; x++) { this.board.set(x, y, row[this.w - 1 - x]); if (row[this.w - 1 - x]) moves.push([this.w - 1 - x, y, x, y, row[this.w - 1 - x]]); }
+      }
+      const p = this.piece;
+      if (!this.fitsAt(p, p.rot, p.x, p.y)) { this.board.restore(before); this.history.pop(); return null; }
+      this.emit('flip', moves);
+      return moves;
     }
 
     /** Purge: removes every block the colour of the current piece. */

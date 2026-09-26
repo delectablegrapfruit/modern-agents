@@ -197,6 +197,17 @@
       ctx.beginPath(); ctx.moveTo(x + s * 0.62, y + s * 0.26); ctx.quadraticCurveTo(x + s * 0.74, y + s * 0.08, x + s * 0.86, y + s * 0.14); ctx.stroke();
       const f = (Math.sin((t || 0) / 90) + 1) / 2;
       ctx.fillStyle = f > 0.5 ? '#ffd166' : '#ff7a3d'; ctx.beginPath(); ctx.arc(x + s * 0.87, y + s * 0.13, s * (0.06 + f * 0.05), 0, Math.PI * 2); ctx.fill();
+    } else if (special === 'blackhole') {
+      const cx = x + s / 2, cy = y + s / 2, t2 = (t || 0) / 400;
+      const g = ctx.createRadialGradient(cx, cy, s * 0.05, cx, cy, s * 0.62);
+      g.addColorStop(0, '#000'); g.addColorStop(0.45, '#0b0614'); g.addColorStop(0.7, 'rgba(160,90,255,0.55)'); g.addColorStop(1, 'rgba(160,90,255,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, s * 0.62, 0, Math.PI * 2); ctx.fill();
+      ctx.lineWidth = Math.max(1, s * 0.07);
+      for (let k = 0; k < 3; k++) {
+        ctx.strokeStyle = k === 1 ? 'rgba(255,170,80,0.85)' : 'rgba(190,140,255,0.8)';
+        ctx.beginPath(); ctx.arc(cx, cy, s * (0.3 + k * 0.08), t2 * (3 - k) + k * 2, t2 * (3 - k) + k * 2 + 1.6); ctx.stroke();
+      }
+      ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(cx, cy, s * 0.2, 0, Math.PI * 2); ctx.fill();
     } else if (special === 'drill') {
       ctx.fillStyle = '#c0c7d2';
       ctx.beginPath(); ctx.moveTo(x + s * 0.18, y + s * 0.12); ctx.lineTo(x + s * 0.82, y + s * 0.12); ctx.lineTo(x + s * 0.5, y + s * 0.92); ctx.closePath(); ctx.fill();
@@ -380,6 +391,7 @@
         p.vy += (p.g || 0) * dt;
         p.x += p.vx * dt; p.y += p.vy * dt;
         if (p.vr) p.rot += p.vr * dt;
+        if (p.kind === 'spiral') { p.ang += p.w * dt; p.rad *= Math.exp(-p.pull * dt); p.x = p.cx + Math.cos(p.ang) * p.rad; p.y = p.cy + Math.sin(p.ang) * p.rad; }
       }
       this.parts = this.parts.filter((p) => p.life < p.max);
       for (const f of this.flashes) f.t += dt;
@@ -465,6 +477,9 @@
         } else if (p.kind === 'puff') {
           ctx.fillStyle = rgba(p.color, 0.35 * a);
           ctx.beginPath(); ctx.arc(p.x, p.y, p.size * (0.6 + k * 0.9), 0, Math.PI * 2); ctx.fill();
+        } else if (p.kind === 'spiral') {
+          const sz = p.size * (1 - k * 0.85);
+          ctx.fillStyle = rgba(p.color, a); ctx.fillRect(p.x - sz / 2, p.y - sz / 2, sz, sz);
         } else if (p.kind === 'grain') {
           ctx.fillStyle = rgba(p.color, a); ctx.fillRect(p.x, p.y, p.size, p.size);
         } else if (p.kind === 'ring') {
@@ -722,18 +737,44 @@
 
       if (p) {
         const color = this.colorOf(p.type.color);
-        if (p.special === 'drill') {
-          const [dx, dy] = pieceCells[0];
+        if (p.special === 'drill' || p.special === 'anvil') {
+          // What goes: the drill's column; everything under the anvil.
+          const tops = new Map();
+          for (const [cx, cy] of pieceCells) tops.set(cx, Math.min(tops.has(cx) ? tops.get(cx) : Infinity, cy));
           ctx.fillStyle = 'rgba(255,90,90,0.16)';
-          for (let y = dy - 1; y >= 0; y--) { const [sx, sy] = this.toScreen(dx, y); ctx.fillRect(sx, sy, s, s); }
+          for (const [cx, cy] of tops) for (let y = cy - 1; y >= 0; y--) { const [sx, sy] = this.toScreen(cx, y); ctx.fillRect(sx, sy, s, s); }
+          if (p.special === 'anvil' && look.ghost !== 'off') for (const [cx, cy] of ghostCells) { const [sx, sy] = this.toScreen(cx, cy); ghostCell(ctx, look.ghost, '#9aa3b2', sx, sy, s); }
         } else if (look.ghost !== 'off') {
           for (const [cx, cy] of ghostCells) { const [sx, sy] = this.toScreen(cx, cy); ghostCell(ctx, look.ghost, color, sx, sy, s); }
         }
-        const overlapping = p.special === 'phase' && !g.board.fits(p.type.rots[p.rot], p.x, p.y);
+        if (p.special === 'laser' && ghostCells.length) {
+          // The beam to come: a faint red line across every row the piece will land in.
+          const rowsL = new Set(ghostCells.map(([, cy]) => cy));
+          const pulse = 0.12 + 0.08 * Math.sin(now / 120);
+          for (const y of rowsL) { const [ax, ay] = this.toScreen(0, y), [bx, by] = this.toScreen(g.w - 1, y); ctx.fillStyle = 'rgba(255,60,80,' + pulse + ')'; ctx.fillRect(Math.min(ax, bx), Math.min(ay, by) + s * 0.35, Math.abs(bx - ax) + s, s * 0.3); }
+          this.alive = true;
+        }
+        const overlapping = (p.special === 'phase' || p.special === 'anvil') && !g.board.fits(p.type.rots[p.rot], p.x, p.y);
         for (const [cx, cy] of pieceCells) {
           const [sx, sy] = this.toScreen(cx, cy);
-          if (p.special === 'bomb' || p.special === 'drill') { drawSpecial(ctx, p.special, sx, sy, s, now); continue; }
-          drawCell(ctx, look.skin, color, sx, sy, s, p.special === 'phase' ? (overlapping ? 0.45 : 0.75) : 1);
+          if (p.special === 'bomb' || p.special === 'drill' || p.special === 'blackhole') { drawSpecial(ctx, p.special, sx, sy, s, now); continue; }
+          const tint = p.special === 'anvil' ? '#5b6270' : p.special === 'golden' ? '#f2c14e' : color;
+          drawCell(ctx, look.skin, tint, sx, sy, s, p.special === 'phase' ? (overlapping ? 0.45 : 0.75) : p.special === 'anvil' && overlapping ? 0.7 : 1);
+          if (p.special === 'golden') {
+            const k = ((now / 900 + (cx + cy) * 0.12) % 1.4) - 0.2;
+            ctx.save(); ctx.beginPath(); ctx.rect(sx, sy, s, s); ctx.clip();
+            ctx.fillStyle = 'rgba(255,255,230,0.55)'; ctx.beginPath(); ctx.moveTo(sx + s * (k * 2 - 0.4), sy + s); ctx.lineTo(sx + s * (k * 2 - 0.1), sy + s); ctx.lineTo(sx + s * (k * 2 + 0.4), sy); ctx.lineTo(sx + s * (k * 2 + 0.1), sy); ctx.closePath(); ctx.fill();
+            ctx.restore();
+          }
+          if (p.special === 'anvil') { ctx.strokeStyle = '#1d2026'; ctx.lineWidth = Math.max(1, s * 0.08); ctx.strokeRect(sx + s * 0.1, sy + s * 0.1, s * 0.8, s * 0.8); ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.fillRect(sx + s * 0.15, sy + s * 0.15, s * 0.7, s * 0.12); }
+          if (p.special === 'magnet') {
+            ctx.save(); ctx.lineWidth = Math.max(2, s * 0.14); ctx.lineCap = 'butt';
+            ctx.strokeStyle = '#e04848'; ctx.beginPath(); ctx.arc(sx + s / 2, sy + s * 0.42, s * 0.24, Math.PI, Math.PI * 1.5); ctx.lineTo(sx + s / 2, sy + s * 0.18); ctx.stroke();
+            ctx.strokeStyle = '#4878e0'; ctx.beginPath(); ctx.moveTo(sx + s / 2, sy + s * 0.18); ctx.arc(sx + s / 2, sy + s * 0.42, s * 0.24, Math.PI * 1.5, 0); ctx.stroke();
+            ctx.fillStyle = '#d8dde6'; ctx.fillRect(sx + s * 0.26 - s * 0.07, sy + s * 0.42, s * 0.14, s * 0.3); ctx.fillRect(sx + s * 0.74 - s * 0.07, sy + s * 0.42, s * 0.14, s * 0.3);
+            ctx.restore();
+          }
+          if (p.special === 'laser') { ctx.save(); ctx.strokeStyle = 'rgba(255,60,80,' + (0.6 + 0.4 * Math.sin(now / 90)) + ')'; ctx.lineWidth = 2; ctx.strokeRect(sx + 2, sy + 2, s - 4, s - 4); ctx.fillStyle = '#fff'; ctx.fillRect(sx + s * 0.42, sy + s * 0.42, s * 0.16, s * 0.16); ctx.restore(); }
           if (p.special === 'phase') { ctx.save(); ctx.setLineDash([2, 3]); ctx.strokeStyle = '#ffffff'; ctx.globalAlpha = 0.7; ctx.strokeRect(sx + 1.5, sy + 1.5, s - 3, s - 3); ctx.restore(); }
           if (p.special === 'sand') { ctx.fillStyle = 'rgba(0,0,0,0.28)'; for (let k = 0; k < 4; k++) ctx.fillRect(sx + s * (0.2 + 0.5 * (k % 2)), sy + s * (0.25 + 0.4 * (k >> 1)), Math.max(1, s * 0.1), Math.max(1, s * 0.1)); }
         }
@@ -901,6 +942,52 @@
           this.fx.mover({ x0: sx, y0: sy0, x1: sx, y1: sy1, s, color: pieceColor, skin: look.skin, dur: 0.1 + Math.sqrt(y - ny) * 0.06, delay: Math.random() * 0.05, key: x + ',' + ny });
         }
       }
+      const toCells = (list) => list.map(([x, y, v]) => { const [sx, sy] = this.toScreen(x, y); return { x: sx, y: sy, color: this.colorOf(v) }; });
+      if (result.smashed && result.smashed.length) {
+        this.fx.burst(reduced ? 'fade' : 'shatter', toCells(result.smashed), s, reduced);
+        if (!reduced) { this.fx.shake = 9; for (const [x] of new Set(result.smashed.map(([x]) => x)).entries()) { const [sx, sy] = this.toScreen(x, 0); this.fx.puff(sx + s / 2, sy + s, look.theme.muted, 5, s * 0.4); } }
+      }
+      if (result.special === 'anvil' && !reduced) { this.fx.shake = Math.max(this.fx.shake, 6); const b = this.lay.board; this.fx.text('CLANG', b.x + b.w / 2, b.y + b.h * 0.35, '#c7ced9', 20); }
+      if (result.swallowed && !reduced) {
+        const [cx0, cy0] = this.toScreen(result.center[0], result.center[1]), cx = cx0 + s / 2, cy = cy0 + s / 2;
+        for (const c of toCells(result.swallowed)) {
+          const dx = c.x + s / 2 - cx, dy = c.y + s / 2 - cy;
+          this.fx.parts.push({ kind: 'spiral', cx, cy, ang: Math.atan2(dy, dx), rad: Math.hypot(dx, dy) + 1, w: 5 + Math.random() * 3, pull: 3.2, x: c.x, y: c.y, vx: 0, vy: 0, g: 0, life: 0, max: 0.9, size: s, color: c.color });
+        }
+        this.fx.ring(cx, cy, '#b48cff', s * 4, { inward: true, max: 0.8, width: 3 });
+        this.fx.ring(cx, cy, '#ffb35c', s * 2.5, { max: 0.5 });
+        this.fx.shake = Math.max(this.fx.shake, 5);
+      } else if (result.swallowed) this.fx.burst('fade', toCells(result.swallowed), s, true);
+      if (result.laser && !reduced) {
+        for (const y of result.laser) {
+          const [ax, ay] = this.toScreen(0, y), [bx] = this.toScreen(this.game.w - 1, y);
+          const x0 = Math.min(ax, bx), w = Math.abs(bx - ax) + s;
+          this.fx.flash(x0 - s, ay + s * 0.3, w + 2 * s, s * 0.4, '#ffffff', 0.35);
+          this.fx.flash(x0, ay, w, s, '#ff3c50', 0.5);
+          for (let k = 0; k < 8; k++) this.fx.parts.push({ kind: 'spark', x: x0 + Math.random() * w, y: ay + s / 2, vx: (Math.random() - 0.5) * 300, vy: (Math.random() - 0.5) * 200, g: 300, life: 0, max: 0.5, size: 2, color: Math.random() < 0.5 ? '#ff6b7a' : '#ffffff' });
+        }
+        this.fx.shake = Math.max(this.fx.shake, 4);
+        const b = this.lay.board; this.fx.text('ZAP', b.x + b.w / 2, b.y + b.h * 0.3, '#ff6b7a', 22);
+      }
+      if (result.moves && result.moves.length && !reduced) {
+        const all = result.special === 'tornado';
+        for (const [x0, y0, x1, y1, v] of result.moves) {
+          const [sx0, sy0] = this.toScreen(x0, y0), [sx1, sy1] = this.toScreen(x1, y1);
+          this.fx.mover({ x0: sx0, y0: sy0, x1: sx1, y1: sy1, s, color: this.colorOf(v), skin: look.skin, dur: all ? 0.45 : 0.18 + Math.sqrt(Math.abs(y0 - y1)) * 0.05, delay: all ? Math.random() * 0.25 : 0, hideAll: all, key: all || result.lines ? null : x1 + ',' + y1 });
+        }
+        const b = this.lay.board;
+        if (all) {
+          for (let k = 0; k < 40; k++) this.fx.parts.push({ kind: 'spiral', cx: b.x + b.w / 2, cy: b.y + b.h * 0.6, ang: Math.random() * 6.3, rad: b.w * (0.2 + Math.random() * 0.4), w: 7, pull: 0.6, x: 0, y: 0, vx: 0, vy: 0, g: 0, life: 0, max: 0.8 + Math.random() * 0.4, size: s * 0.3, color: '#cfd8e6' });
+          this.fx.text('TORNADO', b.x + b.w / 2, b.y + b.h * 0.3, '#cfe3ff', 20);
+          this.fx.shake = Math.max(this.fx.shake, 4);
+        } else {
+          const cols = new Set(result.moves.map(([x]) => x));
+          for (const x of cols) { const [sx, sy] = this.toScreen(x, 0); this.fx.ring(sx + s / 2, sy + s / 2, x % 2 ? '#4878e0' : '#e04848', s * 1.2, { max: 0.5 }); }
+        }
+      }
+      if (result.golden && result.cells && !reduced) {
+        for (const c of this.screenCells(result.cells)) for (let k = 0; k < 3; k++) this.fx.parts.push({ kind: 'conf', x: c.x + s / 2, y: c.y + s / 2, vx: (Math.random() - 0.5) * 180, vy: -100 - Math.random() * 120, g: 380, drag: 1.5, life: 0, max: 1.2, size: s * 0.3, color: Math.random() < 0.5 ? '#ffd35a' : '#fff1b8', rot: 0, vr: (Math.random() - 0.5) * 16 });
+      }
       if (result.blast && result.blast.length && !reduced) {
         const b = this.lay.board;
         this.fx.flash(b.x, b.y, b.w, b.h, '#fff3d6', 0.22);
@@ -928,6 +1015,38 @@
         }
       }
       if (result.drilled && result.drilled.length) this.fx.burst(reduced ? 'fade' : 'sparks', result.drilled.map(([x, y, v]) => { const [sx, sy] = this.toScreen(x, y); return { x: sx, y: sy, color: this.colorOf(v) }; }), s, reduced);
+      this.dirty = true;
+    }
+
+    /** Nuke: everything goes, very brightly. */
+    onNuke(gone, reduced) {
+      if (!this.lay) this.layout();
+      const s = this.lay.s, b = this.lay.board;
+      const cells = gone.map(([x, y, v]) => { const [sx, sy] = this.toScreen(x, y); return { x: sx, y: sy, color: this.colorOf(v) }; });
+      if (reduced) { this.fx.burst('fade', cells, s, true); this.dirty = true; return; }
+      this.fx.burst('shatter', cells.length > 140 ? cells.filter((_, i) => i % 2 === 0) : cells, s, false);
+      this.fx.flash(b.x - s, b.y - s, b.w + 2 * s, b.h + 2 * s, '#fffbe6', 0.9);
+      this.fx.flash(b.x, b.y, b.w, b.h, '#ffb347', 0.5);
+      const cx = b.x + b.w / 2, cy = b.y + b.h * 0.75;
+      this.fx.ring(cx, cy, '#ffffff', b.h * 0.9, { max: 0.8, width: 5 });
+      this.fx.ring(cx, cy, '#ff9f43', b.h * 0.6, { max: 1, width: 3 });
+      this.fx.puff(cx, cy, '#9a8f86', 30, s * 1.2);
+      this.fx.text('☢  KABOOM', cx, b.y + b.h * 0.35, '#ffe28a', 24);
+      this.fx.shake = 14;
+      this.dirty = true;
+    }
+
+    /** Blocks sliding to new spots (Mirror World). */
+    onMoves(moves, dir, reduced) {
+      if (!this.lay) this.layout();
+      const s = this.lay.s;
+      if (!reduced) {
+        for (const [x0, y0, x1, y1, v] of moves) {
+          const [sx0, sy0] = this.toScreen(x0, y0), [sx1, sy1] = this.toScreen(x1, y1);
+          this.fx.mover({ x0: sx0, y0: sy0, x1: sx1, y1: sy1, s, color: this.colorOf(v), skin: this.look.skin, dur: 0.35, hideAll: true });
+        }
+        this.fx.sweep(this.lay.board, '#ffffff', 'x', 0.45);
+      }
       this.dirty = true;
     }
 
@@ -972,6 +1091,14 @@
         case 'bomb': fx.pop(sc, '#ff9f43'); fx.ring(cx, cy, '#ff9f43', s * 1.8, { inward: true, max: 0.4, width: 3 }); fx.shake = Math.max(fx.shake, 2); break;
         case 'order': case 'blueprint': fx.pop(sc, this.look.theme.accent, 0.55); fx.stars(cx, cy, ['#fffbe6', this.look.theme.accent], 10, 90); break;
         case 'undo': fx.pop(sc, this.look.theme.muted, 0.35); fx.puff(cx, cy, this.look.theme.muted, 6, s * 0.35); break;
+        case 'noodle': fx.pop(sc, color, 0.5); fx.sweep({ x: Math.min(...sc.map((c) => c.x)) - s, y: sc[0].y - s * 0.3, w: sc.length * s + 2 * s, h: s * 1.6 }, '#ffffff', 'x', 0.4); break;
+        case 'giant': fx.pop(sc, color, 0.6); fx.ring(cx, cy, color, s * 4, { width: 4 }); fx.shake = Math.max(fx.shake, 3); break;
+        case 'anvil': fx.pop(sc, '#9aa3b2', 0.4); fx.shake = Math.max(fx.shake, 3); fx.puff(cx, cy, '#9aa3b2', 8, s * 0.4); break;
+        case 'magnet': fx.pop(sc, '#4878e0', 0.5); fx.ring(cx, cy, '#e04848', s * 2); fx.ring(cx, cy, '#4878e0', s * 2.6, { max: 0.85 }); break;
+        case 'laser': fx.pop(sc, '#ff3c50', 0.5); fx.stars(cx, cy, ['#ff6b7a', '#ffffff'], 10, 140); break;
+        case 'blackhole': fx.ring(cx, cy, '#b48cff', s * 3, { inward: true, max: 0.6, width: 3 }); fx.pop(sc, '#b48cff', 0.5); break;
+        case 'golden': fx.pop(sc, '#ffd35a', 0.6); fx.stars(cx, cy, ['#ffd35a', '#fff1b8'], 14, 130); break;
+        case 'nuke': case 'tornado': case 'flip': break;
         default: fx.pop(sc, color);
       }
     }
@@ -991,6 +1118,11 @@
         if (Math.random() < 0.4) fx.parts.push({ kind: 'grain', x: c.x + s * 0.5, y: c.y + s * 0.9, vx: (Math.random() - 0.5) * 70, vy: -20 - Math.random() * 40, g: 300, life: 0, max: 0.4, size: 2, color: '#c0c7d2' });
       } else if (p.special === 'sand') {
         fx.parts.push({ kind: 'grain', x: c.x + Math.random() * s, y: c.y + s, vx: 0, vy: 10, g: 200, life: 0, max: 0.45, size: Math.max(1.5, s * 0.07), color: '#e8c07a' });
+      } else if (p.special === 'blackhole') {
+        const cx = c.x + s / 2, cy = c.y + s / 2, a = Math.random() * 6.3, r = s * (1.5 + Math.random());
+        fx.parts.push({ kind: 'spiral', cx, cy, ang: a, rad: r, w: 6, pull: 3, x: cx, y: cy, vx: 0, vy: 0, g: 0, life: 0, max: 0.7, size: 3, color: Math.random() < 0.5 ? '#b48cff' : '#ffb35c' });
+      } else if (p.special === 'golden') {
+        fx.parts.push({ kind: 'star', x: c.x + Math.random() * s, y: c.y + Math.random() * s, vx: 0, vy: -10, g: 0, life: 0, max: 0.6, size: 2 + Math.random() * 2, color: '#fff1b8' });
       } else if (p.special === 'phase') {
         if (Math.random() < 0.5) fx.parts.push({ kind: 'star', x: c.x + Math.random() * s, y: c.y + Math.random() * s, vx: 0, vy: -12, g: 0, life: 0, max: 0.6, size: 2 + Math.random() * 2, color: '#e4dcff' });
       }

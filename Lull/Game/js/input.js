@@ -21,7 +21,7 @@
     ['Z', 'Turn counter-clockwise'],
     ['A', 'Turn 180°'],
     ['C / Shift', 'Hold (again: swap back)'],
-    ['1 – 0, −, =', 'Use an item (Free Play)'],
+    ['1 – 5', 'Open an item tray (Free Play); then 1 – 9 uses an item, Esc closes'],
     ['Backspace / U', 'Undo (Puzzles)'],
     ['R', 'Retry puzzle · restart Classic'],
     ['P', 'Pause Classic'],

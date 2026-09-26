@@ -10,22 +10,41 @@
 
   // ---- the catalog --------------------------------------------------------------------------------------------------
 
+  // Item types: the bar under the board shows one button per type; each opens a tray of its items.
+  const ITEM_GROUPS = [
+    { id: 'shape', name: 'Shapers', icon: '◆', desc: 'Change the piece in play.' },
+    { id: 'physics', name: 'Physics', icon: '☄', desc: 'Change how the piece moves and lands.' },
+    { id: 'boom', name: 'Demolition', icon: '✹', desc: 'Blow things up.' },
+    { id: 'board', name: 'Board', icon: '⟲', desc: 'Rework the whole board at once.' },
+    { id: 'luck', name: 'Luck', icon: '★', desc: 'Money, chance and shine.' },
+  ];
   // Single-use items: a few minutes of play buys most of them.
   const ITEMS = {
-    reroll:    { name: 'Reroll', icon: '⟳', price: 15, desc: 'Swap the piece in play for a different one.' },
-    mirror:    { name: 'Mirror', icon: '⇋', price: 15, desc: 'Flip the piece in play: J↔L, S↔Z, any shape reflected.' },
-    pebble:    { name: 'Pebble', icon: '●', price: 20, desc: 'The piece in play becomes a single block. Perfect for one hole.' },
-    sand:      { name: 'Sand', icon: '⁘', price: 25, desc: 'When this piece sets, each of its blocks falls on its own and fills the gaps below.' },
-    rewind:    { name: 'Rewind', icon: '↶', price: 25, desc: 'Take back your last placement (and the lines it cleared).' },
-    order:     { name: 'Order Slip', icon: '✎', price: 35, desc: 'Choose exactly which piece you get next.' },
-    drill:     { name: 'Drill', icon: '⇣', price: 40, desc: 'Becomes a drill bit that bores out every block in its column.' },
-    bomb:      { name: 'Bomb', icon: '✹', price: 45, desc: 'Becomes a bomb. Wherever it lands, it blasts a 13-block diamond.' },
-    phase:     { name: 'Phase', icon: '◇', price: 50, desc: 'The piece passes through blocks. Drop it into any gap it fits, even under overhangs.' },
-    settle:    { name: 'Settle', icon: '⤋', price: 70, desc: 'Every block falls straight down and closes every hole. Rows that fill up clear.' },
-    purge:     { name: 'Chroma Purge', icon: '◍', price: 75, desc: 'Removes every block the same colour as the piece in play.' },
-    blueprint: { name: 'Blueprint', icon: '▦', price: 100, desc: 'Draw your own piece — up to six connected blocks.' },
+    reroll:    { group: 'shape', name: 'Reroll', icon: '⟳', price: 15, desc: 'Swap the piece in play for a different one.' },
+    mirror:    { group: 'shape', name: 'Mirror', icon: '⇋', price: 15, desc: 'Flip the piece in play: J↔L, S↔Z, any shape reflected.' },
+    pebble:    { group: 'shape', name: 'Pebble', icon: '●', price: 20, desc: 'The piece in play becomes a single block. Perfect for one hole.' },
+    noodle:    { group: 'shape', name: 'Noodle', icon: '〰', price: 25, desc: 'The piece becomes a ridiculous six-long rod.' },
+    giant:     { group: 'shape', name: 'Giant', icon: '⬛', price: 30, desc: 'The piece grows to twice its size: every block becomes four.' },
+    order:     { group: 'shape', name: 'Order Slip', icon: '✎', price: 35, desc: 'Choose exactly which piece you get next.' },
+    blueprint: { group: 'shape', name: 'Blueprint', icon: '▦', price: 100, desc: 'Draw your own piece — up to six connected blocks.' },
+    sand:      { group: 'physics', name: 'Sand', icon: '⁘', price: 25, desc: 'When this piece sets, each of its blocks falls on its own and fills the gaps below.' },
+    magnet:    { group: 'physics', name: 'Magnet', icon: '∪', price: 45, desc: 'When it sets, every block in its columns is yanked straight down, closing the holes.' },
+    phase:     { group: 'physics', name: 'Phase', icon: '◇', price: 50, desc: 'The piece passes through blocks. Drop it into any gap it fits, even under overhangs.' },
+    anvil:     { group: 'physics', name: 'Anvil', icon: '⚓', price: 55, desc: 'Drops straight to the floor, flattening every block in its columns on the way down.' },
+    drill:     { group: 'boom', name: 'Drill', icon: '⇣', price: 40, desc: 'Becomes a drill bit that bores out every block in its column.' },
+    bomb:      { group: 'boom', name: 'Bomb', icon: '✹', price: 45, desc: 'Becomes a bomb. Wherever it lands, it blasts a 13-block diamond.' },
+    laser:     { group: 'boom', name: 'Laser', icon: '⚡', price: 65, desc: 'When it sets, a beam vaporises every row it touches — full or not. They count as lines.' },
+    purge:     { group: 'boom', name: 'Chroma Purge', icon: '◍', price: 75, desc: 'Removes every block the same colour as the piece in play.' },
+    blackhole: { group: 'boom', name: 'Black Hole', icon: '◉', price: 90, desc: 'Becomes a black hole. Where it sets, it swallows everything within three blocks.' },
+    nuke:      { group: 'boom', name: 'Nuke', icon: '☢', price: 120, desc: 'Erases the entire board. Pays no lines. Very bright.' },
+    flip:      { group: 'board', name: 'Mirror World', icon: '⇄', price: 20, desc: 'Flips the whole board left to right.' },
+    rewind:    { group: 'board', name: 'Rewind', icon: '↶', price: 25, desc: 'Take back your last placement (and the lines it cleared).' },
+    settle:    { group: 'board', name: 'Settle', icon: '⤋', price: 70, desc: 'Every block falls straight down and closes every hole. Rows that fill up clear.' },
+    tornado:   { group: 'board', name: 'Tornado', icon: '🌀', price: 160, desc: 'Lifts every block and drops them back packed into solid rows from the floor up. Full rows clear.' },
+    golden:    { group: 'luck', name: 'Golden Piece', icon: '✦', price: 40, desc: 'The piece turns to gold: lines it clears pay triple.' },
+    jackpot:   { group: 'luck', name: 'Jackpot', icon: '🎰', price: 60, desc: 'Pull the lever: three reels, three random items for you.' },
   };
-  const ITEM_ORDER = Object.keys(ITEMS);
+  const ITEM_ORDER = ITEM_GROUPS.flatMap((g) => Object.keys(ITEMS).filter((id) => ITEMS[id].group === g.id));
 
   // Colour slots: 1 I, 2 O, 3 T, 4 S, 5 Z, 6 J, 7 L, 8 garbage, 9–14 other shapes, 15 custom.
   const PALETTES = {
@@ -325,5 +344,5 @@
   }
 
   L.Store = Store;
-  Object.assign(L, { SOUNDS, migrateState: migrate, ITEMS, ITEM_ORDER, PALETTES, SKINS, FRAMES, BACKDROPS, EFFECTS, GHOSTS, COSMETICS, COSMETIC_LABELS, ACCENTS, SAVE_VERSION, defaultState: defaults, mergeState: merge });
+  Object.assign(L, { SOUNDS, migrateState: migrate, ITEMS, ITEM_ORDER, ITEM_GROUPS, PALETTES, SKINS, FRAMES, BACKDROPS, EFFECTS, GHOSTS, COSMETICS, COSMETIC_LABELS, ACCENTS, SAVE_VERSION, defaultState: defaults, mergeState: merge });
 })(typeof globalThis !== 'undefined' ? globalThis : this);

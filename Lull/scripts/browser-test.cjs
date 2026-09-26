@@ -86,9 +86,9 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   console.log('items');
   await ev(() => { const s = Lull.app.store; s.state.lines = 20000; Lull.app.refreshWallet(); for (const id of Lull.ITEM_ORDER) s.buyItem(id, 2); Lull.app.modes.play.renderItems(); });
   const invBefore = await ev(() => Object.assign({}, Lull.app.store.state.inventory));
-  const itemKeys = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0', 'Minus', 'Equal'];
-  for (let i = 0; i < itemKeys.length; i++) {
-    const id = await ev((k) => Lull.ITEM_ORDER[k], i);
+  const itemPlan = await ev(() => Lull.ITEM_ORDER.map((id) => { const g = Lull.ITEMS[id].group; const gi = Lull.ITEM_GROUPS.findIndex((x) => x.id === g); return { id, gi, ii: Lull.ITEM_ORDER.filter((k) => Lull.ITEMS[k].group === g).indexOf(id) }; }));
+  check('every item belongs to a type', itemPlan.every((x) => x.gi >= 0 && x.ii >= 0) && itemPlan.length >= 20, itemPlan.length + ' items');
+  for (const { id, gi, ii } of itemPlan) {
     // Give every item something to work on.
     await ev(() => {
       const g = Lull.app.modes.play.game;
@@ -97,19 +97,35 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
       for (let y = 0; y < 3; y++) for (let x = 0; x < 10; x++) if ((x + y) % 4) g.board.set(x, y, 1 + ((x + y) % 7));
       g.board.set(4, 5, 3);
       if (!g.piece) g.spawnNext();
+      g.replacePiece({ id: 'T' });
     });
     if (id === 'rewind') { await page.keyboard.press('Space'); }
-    await page.keyboard.press(itemKeys[i]);
+    await page.keyboard.press('Digit' + (gi + 1));
+    check('  tray ' + (gi + 1) + ' opens for ' + id, await page.isVisible('.item-tray:not(.hidden) [data-item="' + id + '"]'));
+    await page.keyboard.press('Digit' + (ii + 1));
     await page.waitForTimeout(60);
     if (id === 'order') { await page.click('.picker button'); }
     if (id === 'blueprint') { await page.click('.modal footer .btn.primary'); }
+    if (id === 'jackpot') {
+      await page.waitForTimeout(2600);
+      const won = await ev(() => document.querySelectorAll('.reel.win').length);
+      check('  jackpot: three reels stop', won === 3);
+      await shot('11-jackpot');
+      await page.click('.modal footer .btn.primary');
+    }
     const inv = await ev((k) => Lull.app.store.state.inventory[k], id);
-    check('item ' + id + ' used', inv === invBefore[id] - 1, 'have ' + inv);
-    if (['bomb', 'drill', 'phase', 'sand'].includes(id)) {
+    const expect = id === 'jackpot' ? inv >= invBefore[id] - 1 : inv === invBefore[id] - 1;
+    check('item ' + id + ' used', expect, 'have ' + inv);
+    if (['bomb', 'drill', 'phase', 'sand', 'anvil', 'magnet', 'laser', 'blackhole', 'golden'].includes(id)) {
       const sp = await ev(() => Lull.app.modes.play.game.piece && Lull.app.modes.play.game.piece.special);
       check('  ' + id + ' piece in play', sp === id);
+      if (id === 'laser' || id === 'blackhole') await shot('11-' + id);
       await page.keyboard.press('Space');
+      await page.waitForTimeout(90);
+      if (id === 'blackhole' || id === 'anvil' || id === 'laser') await shot('11-' + id + '-hit');
     }
+    if (id === 'nuke' || id === 'tornado') { await page.waitForTimeout(120); await shot('11-' + id); }
+    check('  the tray closes after use', !(await page.isVisible('.item-tray:not(.hidden)')));
     await page.waitForTimeout(40);
   }
   // Pressing an item again takes it back: the old piece returns, and so does the item.
@@ -120,7 +136,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     g.replacePiece({ id: 'L' });
     const n0 = inv.bomb;
     m.useItem('bomb');
-    const armed = g.piece.special === 'bomb' && inv.bomb === n0 - 1 && !!document.querySelector('#itembar .item-btn.on');
+    const armed = g.piece.special === 'bomb' && inv.bomb === n0 - 1 && !!document.querySelector('#itembar .group-btn.on');
     m.useItem('bomb');
     return { armed, back: g.piece.type.id === 'L' && !g.piece.special && inv.bomb === n0 };
   });
@@ -165,6 +181,19 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await page.mouse.click(pt[0], pt[1]);
   const set = await ev(() => { const b = Lull.app.modes.play.game.board; return { under: !!(b.get(1, 0) || b.get(1, 1)), onTop: !!(b.get(1, 4) && b.get(1, 5)), pieces: Lull.app.modes.play.game.s.pieces }; });
   check('a click drops straight down (never under a ledge)', !set.under && set.onTop && set.pieces === pcs + 1, JSON.stringify(set));
+  // Steady aim: a pointer barely over a column edge keeps the column; a slip right before the click is ignored.
+  await ev(() => { const g = Lull.app.modes.play.game; g.board.cells.fill(0); g.replacePiece({ id: 'O' }); g.piece.y = 17; });
+  const c3 = await cellPt(3, 10), s0 = await ev(() => Lull.app.modes.play.view.lay.s);
+  await page.mouse.move(c3[0] + 4, c3[1]); await page.mouse.move(c3[0], c3[1]);
+  await page.waitForTimeout(250);
+  const col3 = await pieceCol();
+  await page.mouse.move(c3[0] + s0 * 0.6, c3[1]);
+  check('sticky aim: just over the edge keeps the column', (await pieceCol()) === col3);
+  const pcsG = await ev(() => Lull.app.modes.play.game.s.pieces);
+  await page.mouse.move(c3[0] + s0 * 1.0, c3[1]);
+  await page.mouse.down(); await page.mouse.up();
+  const landed = await ev(() => { const b = Lull.app.modes.play.game.board; const cols = []; for (let x = 0; x < 10; x++) if (b.get(x, 0)) cols.push(x); return cols; });
+  check('click grace: a slip just before the click drops where it was', landed.includes(3) && (await ev(() => Lull.app.modes.play.game.s.pieces)) === pcsG + 1, JSON.stringify([col3, landed]));
   // Off the grid still places.
   const offPt = await ev(() => { const v = Lull.app.modes.play.view; const r = v.canvas.getBoundingClientRect(); return [r.left + v.lay.board.x + v.lay.board.w + 8, r.top + v.lay.board.y + v.lay.board.h - 10]; });
   const pcs2 = await ev(() => Lull.app.modes.play.game.s.pieces);
@@ -186,14 +215,22 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await page.waitForTimeout(100);
   await shot('12-mouse');
   // Tooltip on an item.
-  const ib = await page.$('#itembar .item-btn');
+  const ib = await page.$('#itembar .group-btn');
   await ib.hover();
   await page.waitForTimeout(450);
-  check('hovering an item explains it', await page.isVisible('.tip:not(.hidden)') && /Swap the piece/.test(await page.textContent('.tip')));
+  check('hovering an item type explains it', await page.isVisible('.tip:not(.hidden)') && /Change the piece/.test(await page.textContent('.tip')));
+  await ib.click();
+  const it0 = await page.$('.item-tray .item-btn');
+  await it0.hover();
+  await page.waitForTimeout(450);
+  check('hovering an item explains it', /Swap the piece/.test(await page.textContent('.tip')));
+  await shot('13-tray');
+  await page.keyboard.press('Escape');
+  check('Esc closes the tray', !(await page.isVisible('.item-tray:not(.hidden)')));
   await shot('13-tooltip');
   await page.mouse.move(5, 300);
   const barFits = await ev(() => { const bar = document.getElementById('itembar'); const r = bar.getBoundingClientRect(); return Array.from(bar.children).every((b) => { const q = b.getBoundingClientRect(); return q.right <= r.right + 0.5 && q.top - r.top < 12; }); });
-  check('all twelve items fit on one row', barFits);
+  check('the item types fit on one row', barFits);
 
   // ---- classic ------------------------------------------------------------------------------------------------------
   console.log('classic');

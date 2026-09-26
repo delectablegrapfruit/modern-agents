@@ -182,20 +182,49 @@ main { flex: 1; position: relative; min-height: 0; }
   flex: none; display: flex; gap: 3px; justify-content: center; flex-wrap: nowrap;
   padding: 5px 8px 8px; border-top: 1px solid var(--line);
 }
+/* Item types: one button each; a button opens its tray. */
+.group-btn {
+  position: relative; flex: 1 1 0; min-width: 0; max-width: 110px; height: 38px; border-radius: 9px;
+  border: 1px solid var(--line); background: var(--panel); color: var(--fg); padding: 0 6px;
+  display: flex; align-items: center; justify-content: center; gap: 5px; font-size: 12px; font-weight: 700;
+}
+.group-btn:hover { background: var(--panel-2); border-color: var(--line-2); }
+.group-btn.open { background: color-mix(in srgb, var(--accent) 18%, var(--panel)); border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
+.group-btn.on { outline: 2px solid var(--accent); animation: armed 1.4s ease-in-out infinite; }
+.group-btn .gi { font-size: 15px; }
+.group-btn .gl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.group-btn .k { position: absolute; left: 4px; top: 1px; font: 600 8.5px var(--mono-font); color: var(--faint); }
+.group-btn .n { position: absolute; right: 3px; top: -6px; min-width: 15px; height: 15px; border-radius: 8px; padding: 0 3px; background: var(--accent); color: #fff; font: 800 9.5px var(--mono-font); display: grid; place-items: center; }
+@media (max-width: 460px) { .group-btn .gl { display: none; } .group-btn .gi { font-size: 17px; } }
+.item-tray {
+  position: absolute; left: 8px; right: 8px; bottom: 56px; z-index: 5;
+  background: rgb(var(--bg)); border: 1px solid var(--line-2); border-radius: 12px; box-shadow: var(--shadow);
+  padding: 8px; animation: rise 0.14s ease; max-height: 60%; overflow-y: auto;
+}
+.item-tray.hidden { display: none; }
+.tray-head { display: flex; align-items: center; gap: 8px; margin: 0 2px 6px; font-size: 12px; }
+.tray-head span { color: var(--muted); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tray-items { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 5px; }
 .item-btn {
-  position: relative; flex: 1 1 0; min-width: 22px; max-width: 40px; height: 36px; border-radius: 8px;
-  border: 1px solid var(--line); background: var(--panel);
-  display: grid; place-items: center; font-size: 16px; padding: 0; color: var(--fg);
+  position: relative; height: 56px; border-radius: 9px; border: 1px solid var(--line); background: var(--panel);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 4px 4px 3px; color: var(--fg);
 }
-.item-btn:hover { background: var(--panel-2); border-color: var(--line-2); }
-.item-btn.empty { opacity: 0.4; }
-.item-btn .n {
-  position: absolute; right: 2px; bottom: 1px; font: 700 9.5px var(--mono-font); color: var(--fg);
-}
-.item-btn .k { position: absolute; left: 3px; top: 1px; font: 600 8.5px var(--mono-font); color: var(--faint); }
+.item-btn:hover { background: var(--panel-2); border-color: var(--line-2); transform: translateY(-1px); }
+.item-btn .ii { font-size: 18px; line-height: 1; }
+.item-btn .il { font-size: 10.5px; font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item-btn.empty .ii, .item-btn.empty .il { opacity: 0.55; }
+.item-btn .n { position: absolute; right: 4px; top: 2px; font: 700 9.5px var(--mono-font); color: var(--fg); }
+.item-btn.empty .n { color: var(--muted); }
+.item-btn .k { position: absolute; left: 4px; top: 2px; font: 600 8.5px var(--mono-font); color: var(--faint); }
 .item-btn.armed, .item-btn.on { outline: 2px solid var(--accent); }
 .item-btn.on { background: color-mix(in srgb, var(--accent) 22%, var(--panel)); animation: armed 1.4s ease-in-out infinite; }
 @keyframes armed { 50% { box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 60%, transparent); } }
+/* Jackpot */
+.reels { display: flex; gap: 8px; justify-content: center; margin: 8px 0 4px; }
+.reel { width: 64px; height: 72px; border-radius: 10px; background: var(--panel); border: 2px solid var(--line-2); display: grid; place-items: center; font-size: 30px; }
+.reel.win { border-color: #f2c14e; box-shadow: 0 0 16px rgba(242,193,78,0.55); animation: pop 0.3s ease; }
+@keyframes pop { 50% { transform: scale(1.15); } }
+.jp-note { text-align: center; }
 
 .overlay {
   position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none;
