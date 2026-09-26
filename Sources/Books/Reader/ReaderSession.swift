@@ -231,17 +231,30 @@ final class ReaderSession {
     /// that when the page is ready.
     private func prepareReflow() {
         let pdfURL = model.store.fileURL(for: book)
-        let cache = PDFReflow.cacheURL(for: pdfURL)
-        let mapURL = PDFReflow.mapURL(for: pdfURL)
+        var cache = PDFReflow.cacheURL(for: pdfURL)
+        var mapURL = PDFReflow.mapURL(for: pdfURL)
+        // Highlights, notes and bookmarks made in Text point into the converted text by chapter and offset. A PDF that
+        // has them and was converted by an earlier converter keeps that conversion, so they stay on their words; the
+        // newer converter is used for it only once the PDF itself changes.
+        let legacy = PDFReflow.legacyURLs(for: pdfURL)
+        let keepsLegacy = annotations.contains { $0.pdfText == true }
+            && !FileManager.default.fileExists(atPath: cache.path)
+            && FileManager.default.fileExists(atPath: legacy.epub.path)
+        if keepsLegacy {
+            cache = legacy.epub
+            mapURL = legacy.map
+        }
         let title = book.title, author = book.author
         preparing = true
-        Task.detached(priority: .userInitiated) { [weak self] in
+        Task.detached(priority: .userInitiated) { [weak self, cache, mapURL] in
             var failure: String?
             let cachedDate = try? cache.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
             let sourceDate = try? pdfURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
             var converted = false
             if let cachedDate, let sourceDate, cachedDate >= sourceDate { converted = true }
-            if !converted || !FileManager.default.fileExists(atPath: mapURL.path) {
+            // A kept earlier conversion is never given a map made by the newer converter, whose chapters differ.
+            let needsMap = !FileManager.default.fileExists(atPath: mapURL.path) && !(keepsLegacy && converted)
+            if !converted || needsMap {
                 do {
                     let made = try PDFReflow.convert(from: pdfURL, title: title, author: author)
                     if let data = try? JSONEncoder().encode(made.map) { try? data.write(to: mapURL, options: .atomic) }

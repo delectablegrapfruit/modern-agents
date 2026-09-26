@@ -29,7 +29,7 @@ struct HomeView: View {
                     page(placements, metrics: metrics, minHeight: geo.size.height)
                 }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
-                    if model.editingHome, !model.books.isEmpty {
+                    if model.showsWidgetGallery {
                         WidgetGallery(width: geo.size.width, height: min(340, (geo.size.height * 0.45).rounded()), reveal: { scrollTarget = $0 })
                             .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
@@ -142,6 +142,11 @@ struct HomeView: View {
 }
 
 extension LibraryModel {
+    /// Whether the widget gallery is docked at the foot of Home: while Home is edited and there are books for its
+    /// widgets to show. The gallery holds the one Done that ends the editing, so the toolbar asks this too, and keeps
+    /// a Done of its own only when there is no gallery.
+    var showsWidgetGallery: Bool { editingHome && !books.isEmpty }
+
     /// Shows a widget chosen in the gallery at a size: a hidden one joins at the end of Home, a shown one takes the size.
     func addHomeWidget(_ element: HomeElement, size: WidgetSize) { settings.home.add(element, size: size) }
 

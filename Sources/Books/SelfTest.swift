@@ -154,6 +154,8 @@ enum SelfTest {
         log("book closed, position saved at \(Int(saved.percent))%")
 
         try await runWrappedBook(model: model)
+        try checkRunningHeads()
+        try await checkReflowLetterSpacing()
         try await runPDF(model: model)
         try await runShelf(model: model)
         try await runFolders(model: model)

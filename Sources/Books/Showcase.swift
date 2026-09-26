@@ -23,6 +23,8 @@ enum Showcase {
     @MainActor private static var window: NSWindow?
     @MainActor private static var saved = 0
     @MainActor private static var failures: [String] = []
+    /// The app's presentation options from before the showcase hid the Dock, given back at the end; nil until then.
+    @MainActor private static var optionsBeforeHidingDock: NSApplication.PresentationOptions?
 
     @MainActor
     static func start(model: LibraryModel) {
@@ -70,9 +72,17 @@ enum Showcase {
         window = main
         place(main)
         await bringForward(main, for: "the window")
+        if hideDock() {
+            // The Dock slides away and the screen's visible part grows by its height, so the window is placed again
+            // to take it.
+            await pause(0.8)
+            place(main)
+            await pause(0.3)
+        }
         let screen = main.screen ?? NSScreen.main
         let permission = screenCaptureAllowed.map { $0 ? "granted" : "not granted" } ?? "unknown"
-        log("window \(describe(main.frame)) on a \(describe(screen?.frame ?? .zero)) screen at \(screen?.backingScaleFactor ?? 1)×; screen recording \(permission); app \(NSApp.isActive ? "active" : "not active"), window \(main.isKeyWindow ? "key" : "not key")")
+        let dock = optionsBeforeHidingDock != nil ? "hidden" : "not hidden"
+        log("window \(describe(main.frame)) on a \(describe(screen?.frame ?? .zero)) screen at \(screen?.backingScaleFactor ?? 1)×, its visible part \(describe(screen?.visibleFrame ?? .zero)); Dock \(dock); screen recording \(permission); app \(NSApp.isActive ? "active" : "not active"), window \(main.isKeyWindow ? "key" : "not key")")
 
         let samples: Samples
         do {
@@ -200,6 +210,7 @@ enum Showcase {
         restored.home = home
         model.settings = restored
 
+        restoreDock()
         if !failures.isEmpty { log("not taken: " + failures.joined(separator: ", ")) }
         guard saved > 0 else { fail("no screenshots were taken") }
         print("SHOWCASE OK: \(saved) screenshots")
@@ -477,7 +488,8 @@ enum Showcase {
     }
 
     /// The Settings window's General tab, its covers drawn with the book last opened, then its Library and Reading
-    /// tabs, each chosen through the model's selection of the tab.
+    /// tabs, each chosen through the model's selection of the tab. Each is moved wholly onto the screen before it is
+    /// taken, and taken from the app's own windows, so that neither the Dock nor another app's window is in it.
     @MainActor
     private static func settingsShots(model: LibraryModel) async {
         model.settingsTab = .general
@@ -491,7 +503,8 @@ enum Showcase {
         await attempt("17-settings") {
             let general = await selectSettingsTab(.general, label: "General", in: settings, model: model)
             if !general { log("17-settings: the General tab could not be chosen; the window shows “\(settings.title)”") }
-            try await capture("17-settings", settle: 1.4, window: settings)
+            await keepOnScreen(settings, for: "17-settings")
+            try await capture("17-settings", settle: 1.4, window: settings, ownWindowsFirst: true)
         }
         let others: [(name: String, tab: SettingsTab, label: String)] = [
             (name: "22-settings-library", tab: .library, label: "Library"),
@@ -501,7 +514,8 @@ enum Showcase {
             await attempt(shot.name) {
                 let chosen = await selectSettingsTab(shot.tab, label: shot.label, in: settings, model: model)
                 guard chosen else { throw Failure("the \(shot.label) tab could not be chosen; the window shows “\(settings.title)”") }
-                try await capture(shot.name, settle: 1.4, window: settings)
+                await keepOnScreen(settings, for: shot.name)
+                try await capture(shot.name, settle: 1.4, window: settings, ownWindowsFirst: true)
             }
         }
         settings.close()
@@ -565,6 +579,66 @@ enum Showcase {
         let origin = NSPoint(x: (area.midX - size.width / 2).rounded(), y: (area.midY - size.height / 2).rounded())
         main.setFrame(NSRect(origin: origin, size: size), display: true)
         main.makeKeyAndOrderFront(nil)
+    }
+
+    /// Moves a window, once it has stopped changing size, into the middle of the screen's visible part — below the
+    /// menu bar and above the Dock — keeping its size. The Settings window grows downward from its top when a taller
+    /// tab is chosen, so on the runner's 1024 × 768 screen the Reading tab's 600 points and the toolbar over them
+    /// would otherwise run under the Dock and off the foot of the screen. A window taller than the visible part is
+    /// set against its top, so that its toolbar and the head of the tab show, and the log says so.
+    @MainActor
+    private static func keepOnScreen(_ target: NSWindow, for name: String) async {
+        // A tab's change of size is animated: the frame is read until it has held still for two looks running.
+        await pause(0.3)
+        var frame: NSRect = target.frame
+        var steady = 0
+        let deadline = Date().addingTimeInterval(2.5)
+        while steady < 2 && Date() < deadline {
+            await pause(0.15)
+            let now: NSRect = target.frame
+            if now == frame {
+                steady += 1
+            } else {
+                steady = 0
+                frame = now
+            }
+        }
+        guard let area = (target.screen ?? NSScreen.main)?.visibleFrame else { return }
+        let x: CGFloat = max(area.minX, (area.midX - frame.width / 2).rounded())
+        let top: CGFloat = min(area.maxY, (area.midY + frame.height / 2).rounded())
+        let origin = NSPoint(x: x, y: top - frame.height)
+        if origin != frame.origin { target.setFrameOrigin(origin) }
+        if frame.height > area.height {
+            log("\(name): the window is \(Int(frame.height)) points tall and the screen shows \(Int(area.height)) of them; it is set against the top")
+        }
+    }
+
+    /// Hides the Dock while the pictures are taken, as an app may with its presentation options: on the runner's
+    /// 1024 × 768 screen it otherwise lies over the foot of any window that reaches down to it, and a picture of the
+    /// screen's rectangle shows it there. The options take effect only while the app is active, so this is asked
+    /// after the app is made active and again before each picture, in case it was not active the first time. Full
+    /// screen is left alone: the system sets the options itself there, and a combination it does not allow raises.
+    /// True when the Dock was hidden just now, so that the caller can give it a moment to slide away.
+    @MainActor
+    @discardableResult
+    private static func hideDock() -> Bool {
+        guard NSApp.isActive else { return false }
+        if NSApp.windows.contains(where: { $0.styleMask.contains(.fullScreen) }) { return false }
+        let current: NSApplication.PresentationOptions = NSApp.presentationOptions
+        if current.contains(.autoHideDock) || current.contains(.hideDock) || current.contains(.fullScreen) { return false }
+        if optionsBeforeHidingDock == nil { optionsBeforeHidingDock = current }
+        NSApp.presentationOptions = current.union(.autoHideDock)
+        return true
+    }
+
+    /// Gives the app back the presentation options it had before the Dock was hidden. The system does the same when
+    /// the app quits, so a run that fails part way leaves nothing behind either.
+    @MainActor
+    private static func restoreDock() {
+        guard let previous = optionsBeforeHidingDock else { return }
+        if NSApp.windows.contains(where: { $0.styleMask.contains(.fullScreen) }) { return }
+        NSApp.presentationOptions = previous
+        optionsBeforeHidingDock = nil
     }
 
     /// Whether the window shows as the active one: the app is active, and the window is key or holds the key window
@@ -640,12 +714,16 @@ enum Showcase {
     /// the same function; screencapture; and last the windows drawn by AppKit, with WebKit's snapshots of the book
     /// pages. With screen-recording permission the screen's rectangle comes first; without it (CI grants none) it
     /// comes second, since asking for more than the app's own windows can put up a system prompt that takes the focus
-    /// and closes the popovers.
+    /// and closes the popovers. `ownWindowsFirst` puts the app's own windows first either way, as the Settings shots
+    /// ask, so that nothing of another app's, nor the Dock, can be in the picture of a window that reaches down to
+    /// the foot of the screen.
     @MainActor
-    private static func capture(_ name: String, settle: Double, window chosen: NSWindow? = nil) async throws {
+    private static func capture(_ name: String, settle: Double, window chosen: NSWindow? = nil, ownWindowsFirst: Bool = false) async throws {
         guard let target = chosen ?? window else { throw Failure("there is no window to capture") }
-        // The app active and the window key before the pause, and still so after it.
+        // The app active and the window key before the pause, and still so after it; the Dock hidden, if it was not
+        // yet, while the pause gives it time to go.
         await bringForward(target, for: name)
+        if hideDock() { log("\(name): the Dock was hidden only now") }
         await pause(settle)
         if !isFrontmost(target) { await bringForward(target, for: name) }
         let frame = target.frame
@@ -655,7 +733,8 @@ enum Showcase {
         let reference = alone.flatMap { isBlank($0) ? nil : $0 }
         var picture: CGImage?
         var method = ""
-        if !permitted, reference != nil, let composite = ownWindows(over: target, frame: frame), !isBlank(composite) {
+        let windowsFirst = !permitted || ownWindowsFirst
+        if windowsFirst, reference != nil, let composite = ownWindows(over: target, frame: frame), !isBlank(composite) {
             picture = composite
             method = "CGWindowListCreateImage of each of the app's windows, laid over each other"
         }
@@ -667,7 +746,7 @@ enum Showcase {
                 method = "CGWindowListCreateImage of the screen's rectangle"
             }
         }
-        if picture == nil, permitted, reference != nil, let composite = ownWindows(over: target, frame: frame), !isBlank(composite) {
+        if picture == nil, !windowsFirst, reference != nil, let composite = ownWindows(over: target, frame: frame), !isBlank(composite) {
             picture = composite
             method = "CGWindowListCreateImage of each of the app's windows, laid over each other"
         }

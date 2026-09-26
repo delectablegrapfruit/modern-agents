@@ -39,8 +39,8 @@ struct RootView: View {
 }
 
 /// Sidebar plus shelf, with the toolbar Books has. On a shelf: the cover size, then the view and the sort in one
-/// group, then Add on its own, then search, as the Finder arranges its toolbar. On Home: Edit Widgets, or Done while
-/// Home is being edited.
+/// group, then Add on its own, then search, as the Finder arranges its toolbar. On Home: Edit Widgets; while Home is
+/// being edited the gallery at its foot holds the one Done, and the toolbar has a Done only when there is no gallery.
 struct LibraryView: View {
     @Environment(LibraryModel.self) private var model
     @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
@@ -82,7 +82,9 @@ struct LibraryView: View {
 
     @ToolbarContentBuilder
     private func toolbarItems(for item: SidebarItem) -> some ToolbarContent {
-        if item == .home {
+        // While the widget gallery is docked at the foot of Home, its Done is the only one, as in the desktop's
+        // gallery; a second in the toolbar would ask the same thing twice.
+        if item == .home, !model.showsWidgetGallery {
             ToolbarItem(placement: .primaryAction) {
                 EditWidgetsButton(model: model)
             }
@@ -120,7 +122,8 @@ struct LibraryView: View {
                 .help("Sort and group this shelf")
             }
         }
-        // While Home is edited its toolbar is Done alone, as on the desktop.
+        // While Home is edited its toolbar holds nothing to act on but the search, as on the desktop: Done is in the
+        // gallery, or alone in the toolbar when the library is empty and there is no gallery.
         if !(item == .home && model.editingHome) {
             ToolbarItem(placement: .primaryAction) {
                 Button { model.chooseFiles() } label: { Label("Add Books", systemImage: "plus") }
@@ -130,9 +133,11 @@ struct LibraryView: View {
     }
 }
 
-/// Home's toolbar button, the way the Mac desktop and the iPad do it: Edit Widgets starts arranging Home, and Done,
-/// in the accent, ends it. The widgets themselves are shown, hidden and resized from the gallery that editing
-/// opens and from each widget's own menu, so the toolbar needs nothing more.
+/// Home's toolbar button, the way the Mac desktop and the iPad do it: Edit Widgets starts arranging Home. The widgets
+/// themselves are shown, hidden and resized from the gallery that editing opens and from each widget's own menu, and
+/// the gallery's Done ends it, so while the gallery shows the toolbar leaves this button out. Only with an empty
+/// library, where there is no gallery, does it turn to Done while Home is edited — in the accent, and on Escape —
+/// so that the editing can always be ended.
 private struct EditWidgetsButton: View {
     let model: LibraryModel
 
@@ -141,8 +146,9 @@ private struct EditWidgetsButton: View {
             Button("Done") {
                 withAnimation(Design.Motion.spring) { model.editingHome = false }
             }
+            .keyboardShortcut(.cancelAction)
             .prominentToolbarButton()
-            .help("Finish editing Home")
+            .help("Finish editing Home (Esc)")
         } else {
             Button("Edit Widgets") {
                 withAnimation(Design.Motion.spring) { model.editingHome = true }

@@ -16,6 +16,8 @@ enum PDFReflow {
         var edge: Bool
         /// Where the line sits on the page as displayed (rotation applied), measured from its top-left corner.
         var shown: CGRect = .null
+        /// Set in letter-spaced type, whose text was read again from where its glyphs stand (see `letterSpacedText`).
+        var tracked: Bool = false
     }
 
     struct Block {
@@ -24,13 +26,27 @@ enum PDFReflow {
         var page: Int
         /// The block's extent on its page as displayed, from the page's top-left corner (y downwards).
         var shown: CGRect = .null
+        /// Every line of it is letter-spaced: the mark of a kicker such as "ESSAY I" over a chapter's heading.
+        var tracked: Bool = false
+    }
+
+    /// One chapter of the converted book, as the blocks it is made of: where it begins, the blocks over its heading
+    /// that label it (a kicker such as "ESSAY I", or a heading stacked over another), the heading itself, and the
+    /// title it goes by. The label and the heading become the chapter's head in the EPUB, so they are not repeated
+    /// among its paragraphs.
+    struct ChapterPlan {
+        var first: Int
+        var label: [Int] = []
+        var heading: Int?
+        var title: String
+        var isFrontMatter = false
     }
 
     /// Where each paragraph of the converted book came from: its place in the text as the reader counts it — the
     /// spine item of its chapter and the characters (UTF-16 code units, as JavaScript counts them) before it there —
     /// and where it lies on its page, measured as `ReadingPosition.pdfTop` is. This is how a place goes between Text
     /// and the page views: both ways through the same paragraph, so a round trip comes back to the line it left.
-    /// It copies EPUBWriter's chapter layout (see `convert`); the two must change together.
+    /// It copies EPUBWriter's chapter layout (see `chapters(of:title:)`); the two must change together.
     struct PageMap: Codable, Sendable {
         struct Entry: Codable, Sendable {
             let spine: Int
@@ -121,13 +137,22 @@ enum PDFReflow {
     }
 
     /// The converted book, and where it is cached next to the PDF. Version the name so a better converter redoes it.
+    /// Version 2 reads letter-spaced lines from their glyphs, keeps the text before the first chapter as front matter,
+    /// and shows each chapter's heading once, in its head.
     static func cacheURL(for pdf: URL) -> URL {
-        pdf.deletingLastPathComponent().appendingPathComponent("reflow-v1.epub")
+        pdf.deletingLastPathComponent().appendingPathComponent("reflow-v2.epub")
     }
 
     /// The map from the converted book's paragraphs to the pages they came from, cached beside it (same version).
     static func mapURL(for pdf: URL) -> URL {
-        pdf.deletingLastPathComponent().appendingPathComponent("reflow-v1-pages.json")
+        pdf.deletingLastPathComponent().appendingPathComponent("reflow-v2-pages.json")
+    }
+
+    /// The files of the converter before version 2. A PDF with highlights or bookmarks made in its Text keeps using
+    /// them, since those point into that text by chapter and offset.
+    static func legacyURLs(for pdf: URL) -> (epub: URL, map: URL) {
+        let folder = pdf.deletingLastPathComponent()
+        return (folder.appendingPathComponent("reflow-v1.epub"), folder.appendingPathComponent("reflow-v1-pages.json"))
     }
 
     static func epub(from url: URL, title: String, author: String) throws -> Data {
@@ -137,6 +162,14 @@ enum PDFReflow {
     /// The converted book, and the map from its paragraphs back to the places on the pages they came from.
     static func convert(from url: URL, title: String, author: String) throws -> (epub: Data, map: PageMap) {
         guard let document = PDFDocument(url: url) else { throw ReflowError.unreadable }
+        let book = try chapters(of: document, title: title)
+        let spec = EPUBSpec(title: title, author: author, chapters: book.chapters, sourceNote: "Reflowed from a PDF by Books; layout is not kept.")
+        return (epub: EPUBWriter.build(spec), map: book.map)
+    }
+
+    /// The chapters the PDF's text makes, as EPUBWriter will package them, and the map from their paragraphs to the
+    /// pages. `title` is the book's, for the front matter when that has no heading of its own.
+    static func chapters(of document: PDFDocument, title: String) throws -> (chapters: [EPUBChapter], map: PageMap) {
         let count = document.pageCount
         var pages: [[Line]] = []
         for i in 0..<count { pages.append(lines(of: document.page(at: i))) }
@@ -164,27 +197,40 @@ enum PDFReflow {
         let totalText = blocks.reduce(0) { $0 + $1.text.count }
         guard totalText >= 200 else { throw ReflowError.noText }
 
-        // Chapters: the outline's top level; failing that, the large headings; failing that, groups of pages.
-        var starts: [(label: String, page: Int)] = PDFPresenter.sections(of: document).filter { $0.level == 0 }.map { (label: $0.label, page: $0.page) }
-        if starts.count < 2 {
-            starts = blocks.filter { headingLevel(of: $0, bodySize: bodySize) == 2 }.map { (label: collapse($0.text), page: $0.page) }
-        }
-        if starts.count < 2 {
-            starts = stride(from: 0, to: count, by: 15).map { (label: "Pages \($0 + 1)–\(min(count, $0 + 15))", page: $0) }
-        }
-        starts.sort { $0.page < $1.page }
+        // Chapters: the outline's top level; failing that, the large headings; failing that, groups of pages. Each
+        // begins at a block rather than a page, as a chapter may open halfway down one; the text before the first is
+        // the front matter.
+        let outline: [PDFSection] = PDFPresenter.sections(of: document).filter { $0.level == 0 }
+        let plans = plan(blocks, outline: outline, pageCount: count, bodySize: bodySize, title: title)
         var chapters: [EPUBChapter] = []
         var map = PageMap()
-        for (i, start) in starts.enumerated() {
-            let end = i + 1 < starts.count ? starts[i + 1].page : count
-            let chapterBlocks = blocks.filter { $0.page >= start.page && $0.page < end }
-            guard !chapterBlocks.isEmpty else { continue }
+        for (n, planned) in plans.enumerated() {
+            let end = n + 1 < plans.count ? plans[n + 1].first : blocks.count
             // EPUBWriter puts the title page first (and no cover here), so this chapter is spine item count + 1. Its
-            // head shows the label twice, as label and as title, before the paragraphs, each followed by a line break.
+            // head is the label and then the title, with nothing between or after them; the paragraphs follow, each
+            // followed by a line break. The offsets count the text the reader finds, in that order.
             let spine = chapters.count + 1
-            var offset = 2 * PageMap.textLength(start.label)
+            var offset = 0
+            let labelParts: [String] = planned.label.map { collapse(blocks[$0].text) }
+            let labelText = labelParts.joined(separator: labelSeparator)
+            // A label that only repeats the title is left out, since the reader names a chapter "label: title".
+            let label: String? = labelText.isEmpty || repeats(labelText, in: planned.title) ? nil : labelText
+            if label != nil {
+                for (part, index) in zip(labelParts, planned.label) {
+                    let length = PageMap.textLength(part)
+                    map.add(blocks[index], spine: spine, offset: offset, length: length)
+                    offset += length + PageMap.textLength(labelSeparator)
+                }
+                offset = PageMap.textLength(labelText)
+            }
+            if let heading = planned.heading {
+                map.add(blocks[heading], spine: spine, offset: offset, length: PageMap.textLength(planned.title))
+            }
+            offset += PageMap.textLength(planned.title)
+            // The heading is the chapter's title, shown in its head; the paragraphs begin after it.
+            let bodyStart = min(end, planned.heading.map { $0 + 1 } ?? planned.first)
             var html = ""
-            for block in chapterBlocks {
+            for block in blocks[bodyStart..<end] {
                 let plain = collapse(block.text)
                 let text = XHTML.escape(plain)
                 switch headingLevel(of: block, bodySize: bodySize) {
@@ -196,19 +242,166 @@ enum PDFReflow {
                 map.add(block, spine: spine, offset: offset, length: length)
                 offset += length + 1
             }
-            chapters.append(EPUBChapter(label: start.label, title: start.label, html: html))
+            chapters.append(EPUBChapter(label: label, title: planned.title, html: html, isFrontMatter: planned.isFrontMatter))
         }
-        if chapters.isEmpty {
-            var offset = 2 * PageMap.textLength(title)
-            for block in blocks {
-                let length = PageMap.textLength(collapse(block.text))
-                map.add(block, spine: 1, offset: offset, length: length)
-                offset += length + 1
+        return (chapters: chapters, map: map)
+    }
+
+    // MARK: - Chapters
+
+    /// Between the parts of a label made of several blocks, as TextBook joins a heading stacked over another.
+    static let labelSeparator = " · "
+
+    /// Where the chapters begin, as blocks: at the outline's top-level entries (at the heading an entry names, when
+    /// its page shows one), else at the large headings, else every fifteen pages. A heading takes the kicker over it,
+    /// and a heading stacked right over another labels the chapter the lower one opens. What comes before the first
+    /// chapter is the front matter, named by its own heading when it opens with one, and else by the book's title.
+    static func plan(_ blocks: [Block], outline: [PDFSection], pageCount: Int, bodySize: CGFloat, title: String) -> [ChapterPlan] {
+        guard !blocks.isEmpty else { return [] }
+        var starts: [ChapterPlan] = []
+        if outline.count >= 2 {
+            for entry in outline {
+                guard let first = blocks.firstIndex(where: { $0.page >= entry.page }) else { continue }
+                let page = blocks[first].page
+                let onPage: ArraySlice<Block> = blocks[first...].prefix(while: { $0.page == page })
+                var named: Int? = onPage.firstIndex { sameWords($0.text, entry.label) }
+                if named == nil {
+                    // A heading near the top of the page that says part of what the entry does, or the entry and more:
+                    // "Loomings" for "Chapter 1: Loomings".
+                    named = onPage.prefix(4).firstIndex { block in
+                        headingLevel(of: block, bodySize: bodySize) > 0 && (repeats(block.text, in: entry.label) || repeats(entry.label, in: block.text))
+                    }
+                }
+                // The chapter goes by the fuller of the entry's name and its heading's words.
+                var chapterTitle = entry.label
+                if let named, words(blocks[named].text).count > words(chapterTitle).count { chapterTitle = collapse(blocks[named].text) }
+                starts.append(ChapterPlan(first: named ?? first, heading: named, title: chapterTitle))
             }
-            chapters.append(EPUBChapter(label: title, title: title, html: blocks.map { "<p>\(XHTML.escape(collapse($0.text)))</p>" }.joined(separator: "\n")))
+            starts = ordered(starts)
         }
-        let spec = EPUBSpec(title: title, author: author, chapters: chapters, sourceNote: "Reflowed from a PDF by Books; layout is not kept.")
-        return (epub: EPUBWriter.build(spec), map: map)
+        if starts.count < 2 {
+            // A title set larger than the chapter headings, on the first page of text, is the book's own title page
+            // and stays in the front matter; the chapter headings are the size most headings are set in.
+            let headings: [Int] = blocks.indices.filter { headingLevel(of: blocks[$0], bodySize: bodySize) == 2 }
+            var sizes: [CGFloat: Int] = [:]
+            for i in headings { sizes[blocks[i].size, default: 0] += 1 }
+            let common: CGFloat = sizes.max { a, b in a.value != b.value ? a.value < b.value : a.key > b.key }?.key ?? bodySize
+            let firstPage = blocks[0].page
+            let chapterHeadings: [Int] = headings.filter { blocks[$0].page != firstPage || blocks[$0].size <= common * 1.15 }
+            let chosen: [Int] = chapterHeadings.count >= 2 ? chapterHeadings : headings
+            starts = chosen.map { ChapterPlan(first: $0, heading: $0, title: collapse(blocks[$0].text)) }
+        }
+        if starts.count < 2 {
+            let groups: [Int] = blocks.indices.filter { $0 == 0 || blocks[$0].page / 15 != blocks[$0 - 1].page / 15 }
+            starts = groups.map { i in
+                let from = blocks[i].page / 15 * 15
+                return ChapterPlan(first: i, title: "Pages \(from + 1)–\(min(pageCount, from + 15))")
+            }
+        }
+
+        var j = 0
+        while j < starts.count {
+            guard let h = starts[j].heading, h > 0 else {
+                j += 1
+                continue
+            }
+            let k = h - 1
+            if j > 0, starts[j - 1].heading == k, isKicker(blocks[k], over: blocks[h], stacked: true) {
+                // A heading right over a heading ("PART ONE" over "The Road"): the upper labels the chapter the lower
+                // opens, rather than being a chapter with nothing in it.
+                starts[j].label = starts[j - 1].label + [k]
+                starts[j].first = starts[j - 1].first
+                starts.remove(at: j - 1)
+                continue
+            }
+            // A kicker is taken from the end of the chapter before (or the front matter), never from its head.
+            let lowest = j > 0 ? (starts[j - 1].heading ?? starts[j - 1].first) + 1 : 0
+            if k >= lowest, isKicker(blocks[k], over: blocks[h], stacked: false) {
+                starts[j].label = [k]
+                starts[j].first = k
+            }
+            j += 1
+        }
+
+        guard let bodyStart = starts.first?.first, bodyStart > 0 else { return starts }
+        let bookTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        var front = ChapterPlan(first: 0, title: bookTitle.isEmpty ? "Front Matter" : bookTitle, isFrontMatter: true)
+        let opensWithHeading = headingLevel(of: blocks[0], bodySize: bodySize) == 2
+        if bodyStart > 1, headingLevel(of: blocks[1], bodySize: bodySize) == 2, isKicker(blocks[0], over: blocks[1], stacked: opensWithHeading) {
+            front.label = [0]
+            front.heading = 1
+            front.title = collapse(blocks[1].text)
+        } else if opensWithHeading {
+            front.heading = 0
+            front.title = collapse(blocks[0].text)
+        }
+        return [front] + starts
+    }
+
+    /// Chapter starts in the order of their blocks, one to a block. Of two that begin at the same block (outline
+    /// entries for one page), the later is kept, as the more particular, unless only the earlier names a heading.
+    static func ordered(_ plans: [ChapterPlan]) -> [ChapterPlan] {
+        let sorted = plans.enumerated().sorted { a, b in (a.element.first, a.offset) < (b.element.first, b.offset) }
+        var out: [ChapterPlan] = []
+        for item in sorted {
+            if let last = out.last, last.first == item.element.first {
+                if last.heading == nil || item.element.heading != nil { out[out.count - 1] = item.element }
+            } else {
+                out.append(item.element)
+            }
+        }
+        return out
+    }
+
+    /// Words that open a kicker: "Chapter 3", "Part Two", "Essay I".
+    static let kickerWords: Set<String> = [
+        "chapter", "part", "book", "volume", "essay", "section", "letter", "lecture", "lesson", "act", "scene", "canto",
+        "stave", "prologue", "epilogue", "appendix", "chapitre", "partie", "kapitel", "teil", "capítulo", "capitolo", "parte",
+    ]
+
+    /// Whether a short block right over a heading, on its page and across the same stretch of it, is the heading's
+    /// kicker: in smaller or equal type, and letter-spaced, in capitals, a chapter word or a numeral. A heading stacked
+    /// over another (`stacked`) needs only to be short and close.
+    static func isKicker(_ block: Block, over heading: Block, stacked: Bool) -> Bool {
+        let text = collapse(block.text)
+        let tokens = text.split(separator: " ")
+        guard block.page == heading.page, !text.isEmpty, text.count <= 60, tokens.count <= 8 else { return false }
+        guard block.size <= heading.size * 1.05, !block.shown.isNull, !heading.shown.isNull else { return false }
+        // Boxes of large type reach above its letters, so the heading's may overlap the line over it a little.
+        let gap = heading.shown.minY - block.shown.maxY
+        let reach = max(block.size, heading.size)
+        guard gap > -reach * 0.5, gap < reach * 2.5, block.shown.midY < heading.shown.midY else { return false }
+        guard block.shown.minX < heading.shown.maxX, heading.shown.minX < block.shown.maxX else { return false }
+        if stacked || block.tracked { return true }
+        if text.rangeOfCharacter(from: .letters) != nil, text == text.uppercased() { return true }
+        if let first = tokens.first, kickerWords.contains(first.lowercased()) { return true }
+        return text.range(of: "^[0-9IVXLCDMivxlcdm]+[.:]?$", options: .regularExpression) != nil
+    }
+
+    /// Two texts that read the same, whatever their case, spacing or punctuation: "Of Truth" and "OF  TRUTH.".
+    static func sameWords(_ a: String, _ b: String) -> Bool {
+        let x = lettersAndDigits(a)
+        return !x.isEmpty && x == lettersAndDigits(b)
+    }
+
+    /// Whether a label says nothing its title does not: it reads the same ("OF TRUTH" over "Of Truth"), or its words
+    /// run on in the title ("CHAPTER 1" over "Chapter 1: Loomings"). Whole words, so "I" is not found in "Of Time".
+    static func repeats(_ label: String, in title: String) -> Bool {
+        if sameWords(label, title) { return true }
+        let l = words(label), t = words(title)
+        guard !l.isEmpty, l.count <= t.count else { return false }
+        for start in 0...(t.count - l.count) where t[start..<(start + l.count)].elementsEqual(l) { return true }
+        return false
+    }
+
+    static func words(_ text: String) -> [String] {
+        text.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }
+    }
+
+    static func lettersAndDigits(_ text: String) -> String {
+        var out = String.UnicodeScalarView()
+        for scalar in text.lowercased().unicodeScalars where CharacterSet.alphanumerics.contains(scalar) { out.append(scalar) }
+        return String(out)
     }
 
     // MARK: - Lines
@@ -220,19 +413,125 @@ enum PDFReflow {
         // Where each line sits on the page as displayed, from its top-left corner: how the text finds its way back.
         let toDisplay = page.transform(for: .mediaBox)
         let displayHeight = PDFPresenter.displaySize(of: page).height
+        // The page's text, which the character indices of its lines count into: read once, and only for a page with a
+        // line that may be letter-spaced.
+        var pageText: NSString?
         var out: [Line] = []
         for selection in all.selectionsByLine() {
             guard let raw = selection.string else { continue }
-            let text = raw.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+            var text = raw.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty else { continue }
             let rect = selection.bounds(for: page)
             guard rect.width > 0, rect.height > 0 else { continue }
             let size = dominantFontSize(selection.attributedString) ?? max(6, rect.height * 0.8)
+            // The type size as the glyphs' gaps are measured against: no less than the line's height suggests, should a
+            // PDF report its fonts at a nominal size and scale them in drawing.
+            let typeSize = max(size, rect.height * 0.6)
+            var tracked = false
+            if mayBeLetterSpaced(text, width: rect.width, size: typeSize) {
+                let known: NSString
+                if let pageText {
+                    known = pageText
+                } else {
+                    known = (page.string ?? "") as NSString
+                    pageText = known
+                }
+                if let spaced = letterSpacedText(of: selection, on: page, pageText: known, size: typeSize, read: text) {
+                    text = spaced
+                    tracked = true
+                }
+            }
             let edge = rect.midY < media.minY + media.height * 0.07 || rect.midY > media.maxY - media.height * 0.07
             let d = rect.applying(toDisplay)
-            out.append(Line(text: text, rect: rect, size: size, edge: edge, shown: CGRect(x: d.minX, y: displayHeight - d.maxY, width: d.width, height: d.height)))
+            let shown = CGRect(x: d.minX, y: displayHeight - d.maxY, width: d.width, height: d.height)
+            out.append(Line(text: text, rect: rect, size: size, edge: edge, shown: shown, tracked: tracked))
         }
         return out
+    }
+
+    // MARK: - Letter spacing
+
+    /// Letter-spaced type (running heads, small capitals, the numeral over a chapter's title) is where PDFKit's
+    /// spacing goes wrong: the tracking between letters reads as word spaces ("E S S AY I"), or the word space is lost
+    /// in it ("FRANCISBACON"). A line is looked at again only when its text has single letters in a row, or when it
+    /// is wider for its letters than type set solid ever is; most lines never are, and cost nothing more.
+    static func mayBeLetterSpaced(_ text: String, width: CGFloat, size: CGFloat) -> Bool {
+        let letters = text.reduce(0) { $1.isWhitespace ? $0 : $0 + 1 }
+        guard letters >= 3, size > 0 else { return false }
+        if width / CGFloat(letters) > size * 0.75 { return true }
+        var run = 0
+        for token in text.split(whereSeparator: { $0.isWhitespace }) {
+            if token.count == 1, let c = token.first, c.isLetter || c.isNumber {
+                run += 1
+                if run >= 3 { return true }
+            } else {
+                run = 0
+            }
+        }
+        return false
+    }
+
+    /// A letter-spaced line's text, read again from where its glyphs stand: the gap between letters is the line's
+    /// median gap between glyphs, and a word space is a gap clearly wider than that (by a fifth of the type size,
+    /// where a word space in tracked type adds the space's own width and one more step of tracking). Nil — the line
+    /// keeps PDFKit's text — unless the line is tracked (its letters evenly apart, by a twelfth to three fifths of
+    /// the type size), reads left to right in a script that spaces its words, and comes out with the same letters
+    /// PDFKit read.
+    static func letterSpacedText(of selection: PDFSelection, on page: PDFPage, pageText: NSString, size: CGFloat, read: String) -> String? {
+        struct Glyph {
+            var text: String
+            var box: CGRect
+        }
+        var glyphs: [Glyph] = []
+        let length = pageText.length
+        for r in 0..<selection.numberOfTextRanges(on: page) {
+            let range = selection.range(at: r, on: page)
+            guard range.location != NSNotFound, range.length > 0 else { continue }
+            var i = range.location
+            let end = min(NSMaxRange(range), length)
+            while i < end {
+                let composed = pageText.rangeOfComposedCharacterSequence(at: i)
+                let piece = pageText.substring(with: composed)
+                let index = i
+                i = max(i + 1, NSMaxRange(composed))
+                if piece.allSatisfy({ $0.isWhitespace }) { continue }
+                guard piece.unicodeScalars.allSatisfy(spacesWords) else { return nil }
+                let box = page.characterBounds(at: index)
+                guard !box.isNull, box.minX.isFinite, box.maxX.isFinite else { return nil }
+                if let last = glyphs.last, box.width < 0.01 || abs(box.minX - last.box.minX) < 0.01 {
+                    // A mark, or a ligature's later letter, drawn in its glyph's box.
+                    glyphs[glyphs.count - 1].text += piece
+                    continue
+                }
+                if let last = glyphs.last, box.midX < last.box.midX { return nil }
+                glyphs.append(Glyph(text: piece, box: box))
+            }
+        }
+        guard glyphs.count >= 3 else { return nil }
+        var gaps: [CGFloat] = []
+        for k in 1..<glyphs.count { gaps.append(glyphs[k].box.minX - glyphs[k - 1].box.maxX) }
+        let letterGap = gaps.sorted()[(gaps.count - 1) / 2]
+        guard letterGap >= size * 0.08, letterGap <= size * 0.6 else { return nil }
+        // Tracking spaces every pair of letters alike; a line where many pairs sit solid (a title run out to its page
+        // number in leader dots) only looks wide, and is left alone.
+        let solid = gaps.filter { $0 < letterGap * 0.4 }.count
+        guard solid * 4 <= gaps.count else { return nil }
+        let wordGap = letterGap + size * 0.2
+        var out = glyphs[0].text
+        for k in 1..<glyphs.count {
+            if gaps[k - 1] > wordGap { out += " " }
+            out += glyphs[k].text
+        }
+        func unspaced(_ s: String) -> String { s.filter { !$0.isWhitespace } }
+        guard unspaced(out) == unspaced(read) else { return nil }
+        return out
+    }
+
+    /// Scripts that put spaces between words and run left to right: what the glyph gaps can be read for. Chinese,
+    /// Japanese, Hebrew and Arabic lines keep PDFKit's text.
+    static func spacesWords(_ scalar: Unicode.Scalar) -> Bool {
+        let v = scalar.value
+        return v < 0x0590 || (0x1E00...0x1FFF).contains(v) || (0x2000...0x206F).contains(v) || (0x20A0...0x20CF).contains(v) || (0xFB00...0xFB06).contains(v)
     }
 
     static func dominantFontSize(_ string: NSAttributedString?) -> CGFloat? {
@@ -247,8 +546,8 @@ enum PDFReflow {
     // MARK: - Paragraphs
 
     /// Lines in PDFKit's reading order become blocks: a new one starts at a gap, a column change, a change of type
-    /// size or a first-line indent after a sentence ends. Consecutive lines join with a space, or without one when
-    /// the first ends in a hyphen and the next starts in lower case.
+    /// size, a change between letter-spaced and solid type, or a first-line indent after a sentence ends. Consecutive
+    /// lines join with a space, or without one when the first ends in a hyphen and the next starts in lower case.
     static func paragraphs(_ lines: [Line], bodySize: CGFloat, pageIndex: Int) -> [Block] {
         guard !lines.isEmpty else { return [] }
         let longLines = lines.filter { $0.text.count > 20 }
@@ -257,12 +556,14 @@ enum PDFReflow {
         var current = ""
         var currentSize: CGFloat = 0
         var currentShown = CGRect.null
+        var currentTracked = false
         var previous: Line?
         func flush() {
-            if !current.isEmpty { out.append(Block(text: current, size: currentSize, page: pageIndex, shown: currentShown)) }
+            if !current.isEmpty { out.append(Block(text: current, size: currentSize, page: pageIndex, shown: currentShown, tracked: currentTracked)) }
             current = ""
             currentSize = 0
             currentShown = .null
+            currentTracked = false
         }
         for line in lines {
             var startsBlock = previous == nil
@@ -271,6 +572,7 @@ enum PDFReflow {
                 let lineHeight = max(p.rect.height, line.rect.height, 1)
                 if gap > lineHeight * 0.7 || gap < -lineHeight * 1.5 { startsBlock = true }
                 if abs(line.size - p.size) > max(line.size, p.size) * 0.15 { startsBlock = true }
+                if line.tracked != p.tracked { startsBlock = true }
                 if line.rect.minX > columnLeft + line.size * 1.2, p.rect.minX <= columnLeft + line.size * 0.5, endsSentence(p.text) { startsBlock = true }
                 if endsSentence(p.text), p.rect.maxX < line.rect.maxX - line.size * 6 { startsBlock = true }   // a short last line
             }
@@ -278,6 +580,7 @@ enum PDFReflow {
                 flush()
                 current = line.text
                 currentSize = line.size
+                currentTracked = line.tracked
             } else if current.hasSuffix("-"), let first = line.text.first, first.isLowercase {
                 current.removeLast()
                 current += line.text

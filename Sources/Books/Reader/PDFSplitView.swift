@@ -39,7 +39,7 @@ struct SplitPreparation: Codable, Sendable {
         let columnWidth: CGFloat
     }
 
-    static let currentVersion = 8
+    static let currentVersion = 9
 
     /// A run of ink between two blank bands on a strip — a line of text, a heading, a picture band — and where the
     /// blank gaps between its words fall, so it can be rewrapped.
@@ -538,6 +538,13 @@ final class SplitPDFPresenter: PDFReading {
     /// Running headers and footers: the band of lines in a page's top or bottom margin (the outer 12% of the page)
     /// that stands off from the body by a clear gap and is a page number, words that recur on a quarter of the
     /// pages, or at most two short lines. Whole bands, so a running title and its page number go together.
+    ///
+    /// Two passes. The first counts the words of the outermost rows in every page's margins, so that a running head
+    /// is known by its recurrence before any page is judged. The second walks each page's rows away from the edge
+    /// while they lie in the margin, and ends the band at the first row that stands off from the rest of the page:
+    /// by a small gap for a page number or recurring words (a letter-spaced head set a line's space above the text
+    /// stands off by little more than the text's own line), by a clear gap for anything else. The gap is measured to
+    /// the nearest ink of the rows beyond, in the margin or not, since the text often begins just past the margin.
     nonisolated static func runningLines(_ lines: [[SplitPreparation.Line]], sizes: [CGSize], typical: CGFloat) -> (headers: [[SplitPreparation.Line]], footers: [[SplitPreparation.Line]]) {
         func key(_ text: String) -> String {
             var s = text.lowercased().replacingOccurrences(of: "[0-9]+", with: "#", options: .regularExpression)
@@ -549,44 +556,110 @@ final class SplitPDFPresenter: PDFReading {
             guard !t.isEmpty, t.count <= 12 else { return false }
             return t.range(of: "^[-–—•·.\\s]*([0-9]+|[ivxlcdm]+)[-–—•·.\\s]*$", options: .regularExpression) != nil
         }
-        /// The lines in the margin zone that a gap separates from the body, nearest the edge first. A row with a page
-        /// number needs only a small gap: scans often set the running head close to the text.
-        func band(_ zone: [SplitPreparation.Line], fromTop: Bool) -> [SplitPreparation.Line] {
-            guard !zone.isEmpty else { return [] }
-            // Group lines sharing a baseline row, then walk away from the edge until the gap to the next row is clear.
-            var rows: [[SplitPreparation.Line]] = []
-            for line in zone {
-                if let last = rows.last, let ref = last.first, abs(ref.minY - line.minY) < typical * 0.6 { rows[rows.count - 1].append(line) } else { rows.append([line]) }
+        let threshold = max(3, lines.count / 4)
+        /// A page's lines in rows that share a baseline, the row nearest the edge first.
+        func baselineRows(_ pageLines: [SplitPreparation.Line], fromTop: Bool) -> [[SplitPreparation.Line]] {
+            let ordered: [SplitPreparation.Line] = pageLines.sorted { (a: SplitPreparation.Line, b: SplitPreparation.Line) -> Bool in
+                fromTop ? a.minY > b.minY : a.minY < b.minY
             }
-            var out: [SplitPreparation.Line] = []
-            for (i, row) in rows.enumerated() {
-                out.append(contentsOf: row)
-                let edge = fromTop ? row.map(\.minY).min()! : row.map(\.maxY).max()!
-                if i + 1 < rows.count {
-                    let nextRow = rows[i + 1]
-                    let nextEdge = fromTop ? nextRow.map(\.maxY).max()! : nextRow.map(\.minY).min()!
-                    let gap = fromTop ? edge - nextEdge : nextEdge - edge
-                    if gap >= typical * 1.2 || (gap >= typical * 0.4 && out.contains(where: { isNumber($0.text) })) { return out }
+            var out: [[SplitPreparation.Line]] = []
+            for line in ordered {
+                if let ref = out.last?.first, abs(ref.minY - line.minY) < typical * 0.6 {
+                    out[out.count - 1].append(line)
                 } else {
-                    return []   // the zone ran into the body with no clear gap
+                    out.append([line])
                 }
+            }
+            return out
+        }
+        /// A row's edge towards the edge of the page, and its edge towards the body.
+        func outer(_ row: [SplitPreparation.Line], _ fromTop: Bool) -> CGFloat {
+            fromTop ? (row.map(\.maxY).max() ?? 0) : (row.map(\.minY).min() ?? 0)
+        }
+        func inner(_ row: [SplitPreparation.Line], _ fromTop: Bool) -> CGFloat {
+            fromTop ? (row.map(\.minY).min() ?? 0) : (row.map(\.maxY).max() ?? 0)
+        }
+        func inMargin(_ edge: CGFloat, _ fromTop: Bool, _ height: CGFloat) -> Bool {
+            fromTop ? edge >= height * 0.88 : edge <= height * 0.12
+        }
+        /// Display type (a chapter's title or number) or a figure read as text: never furniture, and the end of the walk.
+        func isTall(_ line: SplitPreparation.Line) -> Bool { line.height >= typical * 2.5 }
+        /// The words of the first two rows in a page's margin, once each: what a running head or foot would say.
+        func marginKeys(_ rows: [[SplitPreparation.Line]], _ fromTop: Bool, _ height: CGFloat) -> Set<String> {
+            var keys = Set<String>()
+            for row in rows.prefix(2) {
+                guard inMargin(outer(row, fromTop), fromTop, height) else { break }
+                for line in row where !isTall(line) {
+                    let k = key(line.text)
+                    if !k.isEmpty { keys.insert(k) }
+                }
+            }
+            return keys
+        }
+        var topRows: [[[SplitPreparation.Line]]] = [], bottomRows: [[[SplitPreparation.Line]]] = []
+        topRows.reserveCapacity(lines.count)
+        bottomRows.reserveCapacity(lines.count)
+        var topCounts: [String: Int] = [:], bottomCounts: [String: Int] = [:]
+        for (i, pageLines) in lines.enumerated() {
+            let height = i < sizes.count ? sizes[i].height : 792
+            let headRows = baselineRows(pageLines, fromTop: true), footRows = baselineRows(pageLines, fromTop: false)
+            topRows.append(headRows)
+            bottomRows.append(footRows)
+            for k in marginKeys(headRows, true, height) { topCounts[k, default: 0] += 1 }
+            for k in marginKeys(footRows, false, height) { bottomCounts[k, default: 0] += 1 }
+        }
+        /// Words that recur in the margins, set no larger than the text: a running head, not a heading that every page
+        /// repeats with its own number (display type is judged by the gap a plain line needs).
+        func recurs(_ line: SplitPreparation.Line, _ counts: [String: Int]) -> Bool {
+            guard line.height < typical * 1.3 else { return false }
+            let k = key(line.text)
+            return !k.isEmpty && counts[k, default: 0] >= threshold
+        }
+        /// The band at one edge of a page, nearest the edge first: empty when the rows in the margin run on into the
+        /// body, or into display type, with no gap that sets them off.
+        func band(_ pageRows: [[SplitPreparation.Line]], fromTop: Bool, height: CGFloat, counts: [String: Int]) -> [SplitPreparation.Line] {
+            var out: [SplitPreparation.Line] = []
+            var numbered = false
+            for (i, row) in pageRows.enumerated() {
+                guard inMargin(outer(row, fromTop), fromTop, height), !row.contains(where: isTall) else { return [] }
+                out.append(contentsOf: row)
+                if row.contains(where: { isNumber($0.text) }) { numbered = true }
+                // A page number anywhere in the band, or words that recur, need only a small gap: scans and books
+                // alike often set the running head close to the text.
+                let furniture = numbered || row.contains(where: { recurs($0, counts) })
+                let beyond = pageRows[(i + 1)...]
+                guard !beyond.isEmpty else {
+                    // Nothing else on the page: only a page number or recurring words are taken for furniture, so a
+                    // short lone line of real content is kept.
+                    return furniture ? out : []
+                }
+                let nearest: CGFloat
+                let gap: CGFloat
+                if fromTop {
+                    nearest = beyond.map { outer($0, true) }.max() ?? 0
+                    gap = inner(row, true) - nearest
+                } else {
+                    nearest = beyond.map { outer($0, false) }.min() ?? 0
+                    gap = nearest - inner(row, false)
+                }
+                guard gap >= typical * (furniture ? 0.4 : 1.2) else { continue }
+                // Any other row whose gap leads out of the margin is taken for a running head only at the top of the
+                // page and only when it is set smaller than the text: a full-size line at the head of the text block
+                // is its first line or a heading, and a small line at the foot of the text is as likely a footnote.
+                let smallHead = fromTop && out.allSatisfy { $0.height < typical * 0.85 }
+                if furniture || inMargin(nearest, fromTop, height) || smallHead { return out }
+                return []
             }
             return []
         }
         var headerBands: [[SplitPreparation.Line]] = [], footerBands: [[SplitPreparation.Line]] = []
-        var topCounts: [String: Int] = [:], bottomCounts: [String: Int] = [:]
-        for (i, pageLines) in lines.enumerated() {
+        headerBands.reserveCapacity(lines.count)
+        footerBands.reserveCapacity(lines.count)
+        for i in 0..<lines.count {
             let height = i < sizes.count ? sizes[i].height : 792
-            let sorted = pageLines.sorted { $0.maxY > $1.maxY }
-            let topZone = sorted.filter { $0.maxY >= height * 0.88 && $0.height < typical * 2.5 }
-            let bottomZone = sorted.filter { $0.minY <= height * 0.12 && $0.height < typical * 2.5 }.reversed()
-            let h = band(topZone, fromTop: true), f = band(Array(bottomZone), fromTop: false)
-            headerBands.append(h)
-            footerBands.append(f)
-            for l in h { topCounts[key(l.text), default: 0] += 1 }
-            for l in f { bottomCounts[key(l.text), default: 0] += 1 }
+            headerBands.append(band(topRows[i], fromTop: true, height: height, counts: topCounts))
+            footerBands.append(band(bottomRows[i], fromTop: false, height: height, counts: bottomCounts))
         }
-        let threshold = max(3, lines.count / 4)
         func qualifies(_ band: [SplitPreparation.Line], _ counts: [String: Int]) -> Bool {
             guard !band.isEmpty, band.count <= 4 else { return false }
             if band.contains(where: { isNumber($0.text) }) { return true }
