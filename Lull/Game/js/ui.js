@@ -247,7 +247,7 @@
         kpi(fmtInt(S.lines.earned), 'Lines earned, all time'),
         kpi(fmtInt(S.free.lines), 'Lines cleared in Free Play'),
         kpi(fmtInt(solvedAll), 'Puzzles solved'),
-        kpi(count(st.factory.stats.shipped), 'Minos shipped'),
+        kpi(count(st.factory.stats.shipped), 'Factory minos shipped'),
         kpi(fmtDuration(S.timeMs.total), 'Time with Lull'),
         kpi(fmtInt(S.sessions), 'Sessions'),
         kpi(Object.keys(st.history).length + '', 'Days played')));
@@ -290,17 +290,19 @@
       els.push(h('h4', null, 'Wildcards (solved / met)'), table(modRows));
       els.push(h('h4', null, 'Puzzles solved, last 14 days'), historyChart(app, 'puzzles', 14));
     } else if (sub === 'factory') {
-      const f = st.factory, fs = f.stats, r = Factory.rates(f), n = fs.orders || 0;
+      const f = st.factory, fs = f.stats, r = Factory.rates(f);
+      const presses = Object.values(f.owned).reduce((a, b) => a + b, 0);
       els.push(h('div', { class: 'kpis' },
-        kpi(fmtInt(f.rank), 'Rank'), kpi(fmtInt(n), 'Orders shipped'), kpi(n ? Math.round(fs.points / n) + '' : '—', 'Average score'),
-        kpi(fmtInt(fs.perfect), '5-star reviews'), kpi(fmtInt(fs.stars), 'Stars earned'), kpi(fmt(f.lifetime), 'Credits, all time')));
-      const avg = (k, d) => (d ? Math.round((fs.byStation[k] || 0) / d) : 0);
-      els.push(h('h4', null, 'Average score by station'), hbars([['Mold (shape)', avg('shape', n)], ['Kiln (firing)', avg('fire', n)], ['Paint', avg('paint', n)], ['Stickers', avg('stickers', fs.stickerOrders)]]));
+        kpi(fmt(r.perSec) + '¢', 'Per second'), kpi(fmt(f.lifetime) + '¢', 'Credits, all time'), kpi(fmtInt(presses), 'Presses'),
+        kpi(fmtInt(f.crates), 'Crates opened'), kpi(fmtInt(fs.lines), 'Lines from crates'), kpi(count(fs.shipped), 'Minos shipped')));
+      const lines = [];
+      for (let t = 1; t <= Factory.MAX_TIER; t++) if (f.owned[t]) lines.push([Factory.TIERS[t].name, Math.round(Factory.tierRate(f, t))]);
+      if (lines.length) els.push(h('h4', null, 'Income by press (¢/s)'), hbars(lines));
       const pulled = fs.caught + fs.caughtAuto;
-      els.push(h('h4', null, 'Assembly line'), table([
-        ['Minos shipped', count(fs.shipped)], ['Defects pulled by hand', count(fs.caught)], ['Defects pulled by the QC arm', count(fs.caughtAuto)],
+      els.push(h('h4', null, 'Quality control'), table([
+        ['Defects pulled by hand', count(fs.caught)], ['Defects pulled by the inspector', count(fs.caughtAuto)],
         ['Defects shipped (refunded)', count(fs.escaped)], ['Good minos binned', count(fs.wasted)], ['Catch rate', (pulled + fs.escaped) ? pct(pulled / (pulled + fs.escaped), 1) : '—'],
-        ['Best streak', fmtInt(f.bestStreak)], ['Income', r.perSec.toFixed(2) + '¢/s'], ['Earned while away', fmt(fs.offlineEarned) + '¢'], ['Time in the workshop', fmtDuration(S.timeMs.factory)],
+        ['Best streak', fmtInt(f.bestStreak)], ['Earned while away', fmt(fs.offlineEarned) + '¢'], ['Time in the factory', fmtDuration(S.timeMs.factory)],
       ]));
     } else {
       const bought = S.items.bought, used = S.items.used;

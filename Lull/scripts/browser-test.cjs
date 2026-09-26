@@ -372,71 +372,40 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
 
   // ---- factory -------------------------------------------------------------------------------------------------------
   console.log('factory');
+  await ev(() => { const f = Lull.app.store.state.factory; Object.assign(f, Lull.Factory.create()); f.lastTick = Date.now(); });
   await page.click('.tabs button[data-tab="factory"]');
   await page.waitForTimeout(200);
-  const hitCenter = (id, data) => ev(([i, d]) => { const v = Lull.app.modes.factory.view; const hh = v.hits.find((x) => x.id === i && (d === undefined || x.data === d)); if (!hh) return null; const r = v.canvas.getBoundingClientRect(); return [r.left + v.ox + (hh.x + hh.w / 2) * v.k, r.top + v.oy + (hh.y + hh.h / 2) * v.k]; }, [id, data]);
-  await ev(() => { const m = Lull.app.modes.factory; m.work.inbox = []; m.work.tickets = []; m.active = null; m.nextOrder = 0; });
-  await page.waitForTimeout(400);
-  check('an online order arrives', await ev(() => Lull.app.modes.factory.work.inbox.length === 1));
-  await shot('30-orders');
-  let at = await hitCenter('accept');
-  await page.mouse.click(at[0], at[1]);
-  await page.waitForTimeout(450);
-  await shot('31-printing');
-  await page.waitForTimeout(1100);
-  const order = await ev(() => { const m = Lull.app.modes.factory, j = m.work.tickets[0]; return j && { stage: j.stage, cells: j.order.cells, colors: j.order.colors, fire: j.order.fire }; });
-  check('accepting prints a ticket onto the rail', order && order.stage === 'mold');
-  await page.click('#fac-stations [data-station="mold"]');
-  await page.waitForTimeout(60);
-  for (const [x, y] of order.cells) { const q = await hitCenter('cell', (x + 1) + ',' + (y + 1)); await page.mouse.click(q[0], q[1]); }
-  await page.waitForTimeout(80);
-  await shot('32-mold');
-  at = await hitCenter('toKiln'); await page.mouse.click(at[0], at[1]);
-  check('into the kiln', await ev(() => Lull.app.modes.factory.station === 'kiln' && Lull.app.modes.factory.work.tickets[0].stage === 'kiln'));
-  await ev(() => { const j = Lull.app.modes.factory.work.tickets[0]; j.heat = Lull.Factory.FIRING[j.order.fire].at - 0.02; });
-  await page.waitForTimeout(150);
-  await shot('33-kiln');
-  at = await hitCenter('pull', 0); await page.mouse.click(at[0], at[1]);
-  check('taken out, on to the paint booth', await ev(() => Lull.app.modes.factory.station === 'paint' && Lull.app.modes.factory.work.tickets[0].stage === 'paint'));
-  await page.waitForTimeout(60);
-  // Spray every cell in its paint.
-  const cellPts = await ev(() => { const m = Lull.app.modes.factory, v = m.view, g = v.paintG, r = v.canvas.getBoundingClientRect(); return m.active.built.map((k, i) => { const c = v.cellRect(g, i); return [r.left + v.ox + (c.x + c.s / 2) * v.k, r.top + v.oy + (c.y + c.s / 2) * v.k]; }); });
-  at = await hitCenter('can', order.colors[0]); await page.mouse.click(at[0], at[1]);
-  for (const [x, y] of cellPts) { await page.mouse.move(x, y); await page.mouse.down(); await page.waitForTimeout(700); await page.mouse.up(); }
-  await page.mouse.move(cellPts[0][0] + 5, cellPts[0][1] + 5);
-  await shot('34-paint');
-  at = await hitCenter('ship'); await page.mouse.click(at[0], at[1]);
-  await page.waitForTimeout(1600);
-  await shot('35-delivery');
-  const lines0 = await ev(() => Lull.app.store.state.lines);
-  check('the review waits', await ev(() => !Lull.app.modes.factory.judge.booked));
-  await page.waitForTimeout(4400);
-  await shot('36-review');
-  const rev = await ev(() => { const J = Lull.app.modes.factory.judge; return J && { booked: J.booked, score: J.review.score, stars: J.review.stars, rows: J.review.rows }; });
-  check('then the customer reviews it', rev && rev.booked && rev.score >= 90 && rev.stars >= 4, JSON.stringify(rev));
-  check('the review pays lines', (await ev(() => Lull.app.store.state.lines)) > lines0);
-  at = await hitCenter('continue'); await page.mouse.click(at[0], at[1]);
-  check('Continue closes the review', await ev(() => !Lull.app.modes.factory.judge));
-  // The line: click a defect off it.
-  await page.click('#fac-stations [data-station="line"]');
-  await ev(() => { const L2 = Lull.app.modes.factory.line; L2.items = []; for (let k = 0; k < 4; k++) { const it = Lull.Factory.makeItem(L2.f, L2.rng, k % 2 === 0); it.id = 900 + k; it.x = 0.1 + k * 0.2; it.golden = false; L2.items.push(it); } L2.speed = 0.0001; });
-  await page.waitForTimeout(80);
+  check('a fresh factory offers its first press', await ev(() => { const b = document.querySelector('#fac-list .row-card[data-tier="1"] .btn.primary'); return b && !b.disabled; }));
+  await page.click('#fac-list .row-card[data-tier="1"] .btn.primary');
+  check('buying a press opens the next line', await ev(() => Lull.app.store.state.factory.owned[1] === 1 && !!document.querySelector('#fac-list .row-card[data-tier="2"]')));
+  await ev(() => { const f = Lull.app.store.state.factory; f.credits = 5e5; });
+  await page.waitForTimeout(300);
+  await page.click('#fac-list .row-card[data-tier="1"] .fac-buy .btn:not(.primary)');
+  check('Max buys as many as the credits allow', await ev(() => Lull.app.store.state.factory.owned[1] > 20));
+  await page.click('#fac-list .row-card[data-tier="2"] .btn.primary');
+  await page.click('#fac-list .row-card[data-tier="3"] .btn.primary');
+  await page.waitForTimeout(1500);
+  check('the belt carries minos', await ev(() => Lull.app.modes.factory.belt.items.length > 0));
+  await shot('30-factory');
+  // Click a defect off the belt.
+  await ev(() => { const b = Lull.app.modes.factory.belt; b.items = []; for (let k = 0; k < 4; k++) { const it = Lull.Factory.makeItem(b.f, b.rng, k % 2 === 0); it.id = 900 + k; it.x = 0.1 + k * 0.22; it.value = 1; b.items.push(it); } b.speed = 0.0001; });
+  await page.waitForTimeout(120);
   const caught0 = await ev(() => Lull.app.store.state.factory.stats.caught);
-  const def = await ev(() => { const it = Lull.app.modes.factory.line.items.find((i) => i.defect); return it.id; });
-  at = await ev((id) => { const v = Lull.app.modes.factory.view; const hh = v.hits.find((x) => x.id === 'item' && x.data.id === id); const r = v.canvas.getBoundingClientRect(); return [r.left + v.ox + (hh.x + hh.w / 2) * v.k, r.top + v.oy + (hh.y + hh.h / 2) * v.k]; }, def);
-  await page.mouse.click(at[0], at[1]);
-  check('clicking a defect on the line pulls it', (await ev(() => Lull.app.store.state.factory.stats.caught)) === caught0 + 1);
-  await page.waitForTimeout(250);
-  await shot('37-line');
-  await ev(() => { Lull.app.modes.factory.line.speed = 0.075; });
-  // Upgrades
-  await ev(() => { Lull.app.store.state.factory.credits = 1e5; });
-  await page.click('#fac-head .btn');
-  await page.waitForTimeout(100);
-  await page.click('.modal .up-card .btn.primary');
-  check('upgrades can be bought', (await ev(() => Lull.app.store.state.factory.up.line)) === 1);
-  await shot('38-upgrades');
-  await page.keyboard.press('Escape');
+  const dpt = await ev(() => { const m = Lull.app.modes.factory, it = m.belt.items.find((i) => i.defect), c = m.view.itemCenter(it), r = m.canvas.getBoundingClientRect(); return [r.left + c[0], r.top + c[1]]; });
+  await page.mouse.click(dpt[0], dpt[1]);
+  check('clicking a cracked mino pulls it off the belt', (await ev(() => Lull.app.store.state.factory.stats.caught)) === caught0 + 1);
+  await ev(() => { Lull.app.modes.factory.belt.speed = 0.09; });
+  // A full crate trades for lines.
+  const lines0 = await ev(() => { const f = Lull.app.store.state.factory; f.crate = Lull.Factory.crateSize(f); return Lull.app.store.state.lines; });
+  await page.waitForTimeout(300);
+  await shot('31-crate');
+  await page.click('#fac-top .crate .btn');
+  check('a full crate pays lines', (await ev(() => Lull.app.store.state.lines)) === lines0 + 3);
+  // The inspector.
+  await ev(() => { Lull.app.store.state.factory.credits = 1e6; });
+  await page.waitForTimeout(300);
+  await page.click('#fac-list .row-card:has(.fac-ico.big) .btn');
+  check('the inspector can be bought', await ev(() => Lull.app.store.state.factory.inspect === 1));
   const offline = await ev(() => { const f = Lull.app.store.state.factory; const c0 = f.credits; f.lastTick = Date.now() - 12 * 3600e3; const r = Lull.Factory.catchUp(f, Date.now()); return { gained: f.credits - c0, capped: r.cappedSeconds }; });
   check('offline progress capped at eight hours', offline.gained > 0 && offline.capped === 8 * 3600, JSON.stringify(offline));
 

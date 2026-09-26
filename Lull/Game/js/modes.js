@@ -1075,86 +1075,54 @@
   // ---- factory ------------------------------------------------------------------------------------------------------
 
   const REWARD_UNLOCKS = [
-    { kind: 'palette', id: 'assembly', test: (f) => f.rank >= 3 },
-    { kind: 'frame', id: 'hazard', test: (f) => f.rank >= 6 },
-    { kind: 'skin', id: 'steel', test: (f) => f.stats.perfect >= 10 },
+    { kind: 'palette', id: 'assembly', test: (f) => (f.owned[4] || 0) > 0 },
+    { kind: 'frame', id: 'hazard', test: (f) => (f.owned[6] || 0) > 0 },
+    { kind: 'skin', id: 'steel', test: (f) => Object.values(f.owned).reduce((a, b) => a + b, 0) >= 100 },
     { kind: 'backdrop', id: 'belt', test: (f) => f.stats.caught >= 150 },
-    { kind: 'effect', id: 'sparks', test: (f) => f.stats.orders >= 25 },
-  ];
-
-  const STATIONS = [
-    { id: 'orders', icon: '✉', label: 'Orders' },
-    { id: 'mold', icon: '▦', label: 'Mold' },
-    { id: 'kiln', icon: '♨', label: 'Kiln' },
-    { id: 'paint', icon: '🎨', label: 'Paint' },
-    { id: 'line', icon: '⚙', label: 'Line' },
+    { kind: 'effect', id: 'sparks', test: (f) => f.crates >= 25 },
   ];
 
   /**
-   * The Mino Works. Online orders arrive in the inbox; accepting one prints a ticket that hangs on the rail and
-   * rides the stations: pour the shape in the Mold, fire it in the Kiln (take it out in the green), spray it (and
-   * sticker it) in the Paint booth, ship it — and after the delivery the customer's review comes back.
-   * The Line is the idle part: stock minos, now and then a defect to flick into the bin.
+   * The Factory: a small idler in the app's own parts — tiles up top (credits, income, the crate), the belt drawn
+   * like the board, and a list of presses to buy.
    */
   class FactoryMode {
     constructor(app) {
       this.app = app;
       this.f = app.store.state.factory = Factory.migrate(app.store.state.factory);
-      this.canvas = document.getElementById('cv-station');
-      this.view = new L.WorksView(this.canvas);
-      this.head = document.getElementById('fac-head');
-      this.bar = document.getElementById('fac-stations');
-      this.station = 'orders';
-      this.active = this.work.tickets[0] || null;
-      this.printing = null;
-      this.judge = null;
-      this.paintTool = 0;
-      this.spraying = false;
+      this.canvas = document.getElementById('cv-belt');
+      this.view = new L.BeltView(this.canvas);
+      this.top = document.getElementById('fac-top');
+      this.list = document.getElementById('fac-list');
       this.rng = new L.RNG((Date.now() ^ 0x5eed) >>> 0);
-      this.line = new Factory.Line(this.f);
-      this.nextOrder = this.work.inbox.length ? 20 : 1.2;
+      this.belt = new Factory.Belt(this.f, this.rng);
       this.visible = false;
-      this.t = 0;
       this.panelAt = 0;
       const pos = (e) => { const r = this.canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
-      this.canvas.addEventListener('mousemove', (e) => {
-        const [px, py] = pos(e);
-        this.view.pointer = this.view.toDesign(px, py);
-        const hit = this.view.hitAt(px, py);
-        this.view.hover = hit;
-        this.canvas.style.cursor = this.station === 'paint' && typeof this.paintTool === 'number' && hit && hit.id === 'canvas' ? 'none' : hit ? 'pointer' : 'default';
-        if (this.spraying) this.spray();
-      });
-      this.canvas.addEventListener('mouseleave', () => { this.view.hover = null; this.view.pointer = null; this.spraying = false; });
+      this.canvas.addEventListener('mousemove', (e) => { const it = this.view.itemAt(...pos(e)); this.view.hover = it; this.canvas.style.cursor = it ? 'pointer' : 'default'; });
+      this.canvas.addEventListener('mouseleave', () => { this.view.hover = null; });
       this.canvas.addEventListener('mousedown', (e) => {
         if (e.button !== 0) return;
-        const [px, py] = pos(e);
-        this.view.pointer = this.view.toDesign(px, py);
-        const hit = this.view.hitAt(px, py);
-        if (hit) this.onHit(hit);
+        const it = this.view.itemAt(...pos(e));
+        if (!it) return;
+        const at = this.view.itemCenter(it);
+        const ev = this.belt.remove(it, 'manual');
+        if (ev) this.onBelt([ev].concat(this.belt.drain().filter((x) => x !== ev)), at);
       });
-      root.addEventListener('mouseup', () => { this.spraying = false; });
-      this.renderBar();
+      this.build();
     }
 
     get store() { return this.app.store; }
-    get work() { return this.f.work; }
 
-    /** Time that passed with nobody watching (or the app closed): the line kept running. */
     catchUp(announce) {
       const res = Factory.catchUp(this.f, Date.now());
-      if (res && announce && res.seconds > 90 && res.credits >= 1) toast('While you were away the line earned +' + fmt(res.credits) + '¢', 'good', 5000);
+      if (res && announce && res.seconds > 90 && res.credits >= 1) toast('While you were away the factory earned +' + fmt(res.credits) + '¢', 'good', 5000);
       if (res) this.afterEvents();
       return res;
     }
 
-    show() {
-      this.catchUp(false);
-      this.visible = true;
-      this.setStation(this.station);
-      this.renderHead();
-    }
-    hide() { this.visible = false; this.spraying = false; this.f.lastTick = Date.now(); }
+    show() { this.catchUp(false); this.visible = true; this.view.resize(); this.build(); }
+    hide() { this.visible = false; this.f.lastTick = Date.now(); }
 
     /** Background tick (every second) while the factory is not on screen. */
     tick() {
@@ -1162,250 +1130,32 @@
       const now = Date.now(), dt = (now - this.f.lastTick) / 1000;
       if (dt <= 0) return;
       if (dt > 30) this.catchUp(false);
-      else { Factory.runExpected(this.f, dt); this.f.lastTick = now; }
-    }
-
-    setStation(id) {
-      if (!STATIONS.some((s) => s.id === id)) id = 'orders';
-      this.station = id;
-      // The ticket in hand follows you to the station that needs it.
-      if (id === 'mold' || id === 'paint') {
-        if (!this.active || this.active.stage !== id) this.active = this.work.tickets.find((j) => j.stage === id) || this.active;
-      }
-      this.spraying = false;
-      this.view.hover = null;
-      this.view.fx = this.view.fx.filter((f) => f.kind === 'text');
-      this.view.resize();
-      this.renderBar();
-    }
-
-    counts() {
-      const T = this.work.tickets, kilnReady = T.filter((j) => j.stage === 'kiln' && j.heat >= Factory.FIRING[j.order.fire].at - Factory.FIRE_BAND).length;
-      return { orders: this.work.inbox.length, mold: T.filter((j) => j.stage === 'mold').length, kiln: kilnReady, paint: T.filter((j) => j.stage === 'paint').length, line: 0 };
-    }
-
-    renderBar() {
-      const badge = this.counts();
-      this.bar.replaceChildren(...STATIONS.map((st) => h('button', {
-        class: 'station' + (st.id === this.station ? ' on' : ''), 'aria-pressed': String(st.id === this.station), 'data-station': st.id,
-        onclick: () => { this.setStation(st.id); this.app.sound.play('move'); },
-      }, h('span', { class: 'si' }, st.icon), h('span', { class: 'sl' }, st.label), badge[st.id] ? h('span', { class: 'sb' + (st.id === 'kiln' ? ' hot' : '') }, String(badge[st.id])) : null)));
-      this.barSig = JSON.stringify(badge) + this.station;
-    }
-
-    kilnSlots() {
-      const slots = [null, null, null];
-      for (const j of this.work.tickets) if (j.stage === 'kiln' && j.slot != null) slots[j.slot] = j;
-      return slots;
-    }
-
-    freeSlot() {
-      const slots = this.kilnSlots(), n = Factory.kilnSlots(this.f);
-      for (let i = 0; i < n; i++) if (!slots[i]) return i;
-      return null;
+      else { Factory.runExpected(this.f, dt); this.f.lastTick = now; this.afterEvents(); }
     }
 
     frame(now, dt) {
       const nowMs = Date.now();
-      if ((nowMs - this.f.lastTick) / 1000 > 5) this.catchUp(false); // the window slept
+      if ((nowMs - this.f.lastTick) / 1000 > 5) this.catchUp(false);
       this.f.lastTick = nowMs;
-      this.t += dt;
-      const snd = this.app.sound;
-      // Orders come in while you are here (none pile up while you are away: nobody waits on you).
-      this.nextOrder -= dt;
-      if (this.nextOrder <= 0) {
-        if (this.work.inbox.length < 3 && this.work.inbox.length + this.work.tickets.length < 6) {
-          this.work.inbox.push(Factory.newOrder(this.f, this.rng));
-          snd.play('bell');
-          this.store.touch();
-        }
-        this.nextOrder = 16 + this.rng.next() * 18;
-      }
-      // Printing a ticket, then hanging it on the rail.
-      if (this.printing) {
-        this.printing.t += dt;
-        if (this.printing.t >= this.printing.dur) {
-          const job = { order: this.printing.order, stage: 'mold', built: [], grid: Math.max(5, Math.min(7, Math.max(...Object.values(Factory.bounds(this.printing.order.cells))) + 2)), heat: null, slot: null, coat: [], stickers: [], fly: 0 };
-          this.work.tickets.push(job);
-          this.active = job;
-          this.printing = null;
-          snd.play('pack');
-          this.store.touch();
-        }
-      }
-      for (const j of this.work.tickets) {
-        if (j.fly != null && j.fly < 1) { j.fly = Math.min(1, j.fly + dt * 2.4); if (j.fly >= 1) { j.hung = this.t; snd.play('stamp'); } }
-        if (j.stage === 'kiln') {
-          const was = j.heat;
-          j.heat = Math.min(1, j.heat + dt / Factory.KILN_SECONDS);
-          const at = Factory.FIRING[j.order.fire].at;
-          if (was < at - Factory.FIRE_BAND && j.heat >= at - Factory.FIRE_BAND) snd.play('bell');
-        }
-      }
-      if (this.spraying) this.spray(dt);
-      // The line: played for real on its station, in expectation elsewhere.
-      if (this.station === 'line') { this.line.step(dt); this.onLineEvents(this.line.drain()); }
-      else Factory.runExpected(this.f, dt);
-      if (this.judge) this.stepJudge(dt);
+      this.belt.step(dt);
+      this.onBelt(this.belt.drain());
       this.view.resize();
-      this.view.render({
-        station: this.station, f: this.f, work: this.work, active: this.active, printing: this.printing, judge: this.judge,
-        kiln: this.kilnSlots(), kilnSlots: Factory.kilnSlots(this.f), freeSlot: this.freeSlot(), paintTool: this.paintTool,
-        line: this.line, lastStamp: this.lastStamp, lastArm: this.lastArm, t: this.t, dt,
-      });
-      if (now - this.panelAt > 300) {
-        this.panelAt = now;
-        this.renderHead();
-        const sig = JSON.stringify(this.counts()) + this.station;
-        if (sig !== this.barSig) this.renderBar();
-      }
+      this.view.render(dt, this.belt, this.app.look());
+      if (now - this.panelAt > 250) { this.panelAt = now; this.update(); }
     }
 
-    /** Paint lands on every cell near the nozzle. */
-    spray(dt) {
-      const job = this.active, g = this.view.paintG, p = this.view.pointer;
-      if (!job || job.stage !== 'paint' || !g || !p || typeof this.paintTool !== 'number' || this.judge) return;
-      dt = dt || 0;
-      const rate = Factory.sprayRate(this.f), R = g.s * 0.75;
-      const color = Factory.PAINTS[this.paintTool].c;
-      let any = false;
-      job.built.forEach((k, i) => {
-        const c = this.view.cellRect(g, i), cx = c.x + c.s / 2, cy = c.y + c.s / 2;
-        const d = Math.hypot(cx - p[0], cy - p[1]);
-        if (d > R + c.s * 0.35) return;
-        const w = 1 - Math.max(0, d - c.s * 0.25) / (R + c.s * 0.1);
-        if (w <= 0) return;
-        const coat = job.coat[i] = job.coat[i] || [];
-        const total = coat.reduce((a, v) => a + (v || 0), 0);
-        if (total >= 1.6) return;
-        coat[this.paintTool] = (coat[this.paintTool] || 0) + rate * dt * w;
-        any = true;
-      });
-      if (dt && Math.random() < 0.9) this.view.mist(p[0], p[1], color);
-      if (any) this.store.touch();
-      if (any && (this.hissAt || 0) < this.t - 0.12) { this.hissAt = this.t; this.app.sound.play('stamp'); }
-    }
-
-    onHit(hit) {
-      const snd = this.app.sound, job = this.active;
-      switch (hit.id) {
-        case 'ticket': {
-          const pick = this.work.tickets[hit.data];
-          if (!pick) return;
-          this.active = pick;
-          snd.play('move');
-          this.setStation(pick.stage);
-          break;
-        }
-        case 'rank': this.openUpgrades(); break;
-        case 'accept': {
-          if (this.printing || !this.work.inbox.length || this.work.tickets.length >= 3) return;
-          this.printing = { order: this.work.inbox.shift(), t: 0, dur: 0.9 };
-          snd.play('rotate');
-          break;
-        }
-        case 'goto': this.setStation(hit.data); snd.play('move'); break;
-        case 'cell': {
-          if (!job || job.stage !== 'mold') return;
-          const i = job.built.indexOf(hit.data);
-          if (i >= 0) { job.built.splice(i, 1); snd.play('lower'); }
-          else { job.built.push(hit.data); snd.play('move'); this.view.puff(hit.x + hit.w / 2, hit.y + hit.h / 2, '#ffb347', 4); }
-          this.store.touch();
-          break;
-        }
-        case 'clear': if (job) { job.built = []; snd.play('blocked'); this.store.touch(); } break;
-        case 'toKiln': {
-          const slot = this.freeSlot();
-          if (!job || job.stage !== 'mold' || !job.built.length || slot == null) return;
-          Object.assign(job, { stage: 'kiln', slot, heat: 0 });
-          snd.play('hold');
-          this.setStation('kiln');
-          this.store.touch();
-          break;
-        }
-        case 'pull': {
-          const k = this.kilnSlots()[hit.data];
-          if (!k) return;
-          Object.assign(k, { stage: 'paint', slot: null });
-          this.active = k;
-          const d = this.view.kilnDoor(hit.data);
-          this.view.puff(d.x + d.w / 2, d.y + d.h / 2, '#bbbbbb', 10);
-          snd.play('pack');
-          this.store.touch();
-          if (!this.kilnSlots().some(Boolean)) this.setStation('paint');
-          break;
-        }
-        case 'can': this.paintTool = hit.data; snd.play('rotate'); break;
-        case 'sticker': this.paintTool = 'sticker'; snd.play('rotate'); break;
-        case 'rag': if (job && job.stage === 'paint') { job.coat = []; job.stickers = []; snd.play('lower'); this.store.touch(); } break;
-        case 'canvas': {
-          if (!job || job.stage !== 'paint') return;
-          if (this.paintTool === 'sticker') {
-            const g = this.view.paintG, p = this.view.pointer;
-            const i = job.built.findIndex((k, idx) => { const c = this.view.cellRect(g, idx); return p[0] >= c.x && p[0] < c.x + c.s && p[1] >= c.y && p[1] < c.y + c.s; });
-            if (i < 0) return;
-            const at = job.stickers.indexOf(i);
-            if (at >= 0) job.stickers.splice(at, 1); else job.stickers.push(i);
-            snd.play('pack');
-            this.store.touch();
-          } else { this.spraying = true; this.spray(); }
-          break;
-        }
-        case 'ship': {
-          if (!job || job.stage !== 'paint') return;
-          const built = job.built.map((k) => k.split(',').map(Number));
-          const rev = Factory.review(this.f, job.order, { built, heat: job.heat, coat: job.coat, stickers: new Set(job.stickers) }, this.rng);
-          this.work.tickets = this.work.tickets.filter((x) => x !== job);
-          this.active = this.work.tickets[0] || null;
-          this.judge = { review: rev, t: 0, booked: false };
-          this.spraying = false;
-          snd.play('pack');
-          this.store.touch();
-          break;
-        }
-        case 'continue': this.judge = null; snd.play('move'); this.setStation('orders'); break;
-        case 'item': {
-          const it = hit.data;
-          const [x0, y0] = [this.view.beltX(it.x), 330];
-          const e = this.line.remove(it, 'manual');
-          if (e) { this.view.fling(it, x0, y0, 241, 425, 16); this.onLineEvents(this.line.drain()); }
-          break;
-        }
-        default: break;
-      }
-      this.renderBar();
-    }
-
-    /** The review: packing, the drive, the customer's pause — then the verdict (and the pay) arrives. */
-    stepJudge(dt) {
-      const J = this.judge;
-      J.t += dt;
-      if (!J.booked && J.t >= 4.2) {
-        J.booked = true;
-        const rev = J.review;
-        J.ranks = Factory.settle(this.f, rev);
-        this.store.addLines(rev.lines, 'contracts');
-        this.app.refreshWallet(true);
-        const snd = this.app.sound;
-        snd.play(rev.stars >= 4 ? 'solve' : rev.stars >= 3 ? 'buy' : 'fail');
-        if (J.ranks.length) setTimeout(() => snd.play('perfect'), 500);
-        this.afterEvents();
-      }
-    }
-
-    onLineEvents(events) {
+    onBelt(events, at) {
       if (!events.length) return;
       const snd = this.app.sound, v = this.view;
       for (const e of events) {
-        if (e.kind === 'stamp') { this.lastStamp = this.t; snd.play('stamp'); }
-        else if (e.kind === 'caught') {
-          if (e.how === 'auto') { this.lastArm = this.t; v.fling(e.item, v.beltX(e.item.x), 330, 241, 420, 16); }
-          else snd.play('catch', Math.min(e.streak, 20));
-          v.float('+' + fmt(e.value) + '¢', 241, 390, '#9be39b', 13);
-        } else if (e.kind === 'wasted') { snd.play('error'); v.float('good one!', 241, 390, '#ffb3a7', 13); }
-        else if (e.kind === 'escaped') { snd.play('blocked'); v.float('refund ' + fmt(e.value) + '¢', 440, 300, '#ff8a80', 13); }
-        else if (e.kind === 'shipped') v.float('+' + fmt(e.value) + '¢', 440, 300, '#ffffff', 12);
-        else if (e.kind === 'golden') { snd.play('golden'); v.float('+' + fmt(e.value) + '¢ ★', 440, 296, '#ffd35a', 15); }
+        const c = at || v.itemCenter(e.item);
+        if (e.kind === 'caught') {
+          if (e.how === 'manual') {
+            snd.play('catch', Math.min(e.streak, 12));
+            if (c) { v.fx.burst('sparkle', [{ x: c[0] - 6, y: c[1] - 6, color: '#ffffff' }], 12, this.app.settings.motion === 'reduced'); v.fx.text(e.streak > 1 ? '×' + e.streak : '✓', c[0], c[1] - 14, '#9be39b', 13); }
+          } else if (c) v.fx.text('QC', c[0], c[1] - 14, '#8fe3ff', 11);
+        } else if (e.kind === 'wasted') { snd.play('error'); if (c) v.fx.text('that one was fine', c[0], c[1] - 14, '#ffb3a7', 11); }
+        else if (e.kind === 'escaped') { snd.play('blocked'); v.fx.text('refund', v.w - 30, v.h / 2 - 12, '#ff8a80', 11); }
       }
       this.afterEvents();
     }
@@ -1420,35 +1170,92 @@
       this.store.touch();
     }
 
-    renderHead() {
-      const f = this.f;
-      const affordable = Object.keys(Factory.UPGRADES).some((k) => f.credits >= Factory.cost(f, k));
-      const sig = Math.floor(f.credits) + '|' + affordable;
-      if (sig === this.headSig) return;
-      this.headSig = sig;
-      this.head.replaceChildren(
-        h('div', { class: 'credits', 'data-tip': 'Credits: from orders and the assembly line. Spend them on upgrades.' }, h('span', { class: 'v' }, fmt(Math.floor(f.credits)) + '¢')),
-        h('button', { class: 'btn sm' + (affordable ? ' primary' : ''), onclick: () => this.openUpgrades() }, 'Upgrades'));
+    openCrate() {
+      const lines = Factory.openCrate(this.f);
+      if (!lines) return;
+      this.store.addLines(lines, 'contracts');
+      this.app.refreshWallet(true);
+      this.app.sound.play('golden');
+      toast('Crate opened: +' + lines + ' ◆', 'good', 1800);
+      this.afterEvents();
+      this.update();
     }
 
-    openUpgrades() {
+    buy(t, qty) {
+      if (!Factory.buy(this.f, t, qty)) return;
+      this.app.sound.play('buy');
+      this.afterEvents();
+      const before = this.rows.length;
+      this.build();
+      if (this.rows.length > before) this.app.sound.play('solve');
+    }
+
+    /** Builds the tiles and rows (on show, and when a new line opens); update() keeps their numbers fresh. */
+    build() {
       const f = this.f;
-      const body = h('div');
-      const draw = () => {
-        const need = Factory.rankNeed(f.rank);
-        body.replaceChildren(
-          h('div', { class: 'row-card' },
-            h('div', { class: 'grow' }, h('div', { class: 't' }, 'Rank ' + f.rank), h('div', { class: 'd' }, f.rp + ' / ' + need + ' ★ to rank ' + (f.rank + 1) + ': ' + Factory.rankNews(f.rank + 1).join(', ')))),
-          h('div', { class: 'up-row' }, Object.entries(Factory.UPGRADES).map(([key, u]) => {
-            const c = Factory.cost(f, key), maxed = !isFinite(c), lvl = f.up[key] || 0;
-            return h('div', { class: 'up-card' },
-              h('div', { class: 'up-top' }, h('span', { class: 'up-icon' }, u.icon), h('span', { class: 'up-name' }, u.name), h('span', { class: 'up-lvl' }, lvl + '/' + u.max)),
-              h('div', { class: 'up-eff' }, u.desc),
-              maxed ? h('div', { class: 'up-eff' }, 'Maxed') : h('button', { class: 'btn sm primary', disabled: f.credits < c, onclick: () => { if (Factory.buy(f, key)) { this.app.sound.play('buy'); this.store.touch(); draw(); this.headSig = null; this.renderHead(); } } }, fmt(c) + '¢'));
-          })));
-      };
-      draw();
-      UI.openModal({ title: 'Workshop', width: 560, body });
+      this.top.replaceChildren();
+      const tile = (label, cls) => { const v = h('div', { class: 'v' }), l = h('div', { class: 'l' }, label); this.top.appendChild(h('div', { class: 'kpi ' + (cls || '') }, v, l)); return { v, l }; };
+      this.tCredits = tile('Credits', 'credits');
+      this.tRate = tile('Per second');
+      this.crateBar = h('i');
+      this.crateTxt = h('span');
+      this.crateBtn = h('button', { class: 'btn sm', onclick: () => this.openCrate() }, 'Open');
+      this.top.appendChild(h('div', { class: 'kpi crate' }, h('div', { class: 'crate-row' }, h('span', { class: 'v' }, '📦'), this.crateTxt, this.crateBtn), h('div', { class: 'bar' }, this.crateBar)));
+      const look = this.app.look();
+      this.rows = [];
+      const els = [h('div', { class: 'fac-h' }, 'Presses')];
+      for (let t = 1; t <= Factory.MAX_TIER; t++) {
+        const T = Factory.TIERS[t];
+        if (!Factory.unlocked(f, t)) {
+          els.push(h('div', { class: 'row-card locked' }, h('div', { class: 'fac-ico' }, '🔒'), h('div', { class: 'grow' }, h('div', { class: 't' }, T.name + ' press'), h('div', { class: 'd' }, 'Opens when you own a ' + Factory.TIERS[t - 1].name.toLowerCase() + ' press.'))));
+          break;
+        }
+        const shape = Factory.shapes(t)[Math.min(Factory.shapes(t).length - 1, t === 4 ? 5 : Math.floor(Factory.shapes(t).length / 2))];
+        const ico = UI.canvasFor(34, 34, (ctx) => {
+          let w = 0, hh = 0; for (const [x, y] of shape) { w = Math.max(w, x + 1); hh = Math.max(hh, y + 1); }
+          const cs = Math.floor(Math.min(30 / w, 30 / hh, 10));
+          for (const [x, y] of shape) Render.drawCell(ctx, look.skin, look.colors[1 + ((t - 1) % 7)], (34 - w * cs) / 2 + x * cs, (34 - hh * cs) / 2 + (hh - 1 - y) * cs, cs);
+        });
+        const r = { t, lvl: h('span', { class: 'lvl' }), d: h('div', { class: 'd' }), bar: h('i'), b1: h('button', { class: 'btn sm primary', onclick: () => this.buy(t, 1) }), bm: h('button', { class: 'btn sm', onclick: () => this.buy(t, Math.max(1, Factory.affordable(f, t))) }) };
+        els.push(h('div', { class: 'row-card', 'data-tier': t }, h('div', { class: 'fac-ico' }, ico),
+          h('div', { class: 'grow' }, h('div', { class: 't' }, T.name + ' press', r.lvl), r.d, h('div', { class: 'bar' }, r.bar)),
+          h('div', { class: 'fac-buy' }, r.b1, r.bm)));
+        this.rows.push(r);
+      }
+      els.push(h('div', { class: 'fac-h' }, 'Quality control'));
+      this.qc = { lvl: h('span', { class: 'lvl' }), d: h('div', { class: 'd' }), b: h('button', { class: 'btn sm primary', onclick: () => { if (Factory.buyInspector(f)) { this.app.sound.play('buy'); this.afterEvents(); this.update(); } } }) };
+      els.push(h('div', { class: 'row-card' }, h('div', { class: 'fac-ico big' }, '🔍'), h('div', { class: 'grow' }, h('div', { class: 't' }, 'Inspector', this.qc.lvl), this.qc.d), h('div', { class: 'fac-buy' }, this.qc.b)));
+      els.push(h('p', { class: 'fac-note' }, 'About one mino in ten comes off the line cracked. Click it off the belt before it ships — a shipped defect is refunded at a loss; a caught one pays, more on a streak. Presses double their output at ' + Factory.MILESTONES.slice(0, 4).join(', ') + ' … owned. The factory runs while Lull is closed, for up to ' + Factory.OFFLINE_HOURS + ' hours.'));
+      this.list.replaceChildren(...els);
+      this.update();
+    }
+
+    update() {
+      const f = this.f, r = Factory.rates(f);
+      this.tCredits.v.textContent = fmt(Math.floor(f.credits)) + '¢';
+      this.tRate.v.textContent = '+' + fmt(r.perSec) + '¢';
+      this.tRate.l.textContent = 'Per second' + (f.streak > 1 ? ' · streak ' + f.streak : '');
+      const size = Factory.crateSize(f), full = f.crate >= size;
+      this.crateBar.style.width = (100 * Math.min(1, f.crate / size)).toFixed(1) + '%';
+      this.crateTxt.textContent = full ? 'Crate full: ' + Factory.crateLines(f) + ' ◆' : fmt(Math.floor(f.crate)) + ' / ' + fmt(size) + '¢ → ' + Factory.crateLines(f) + ' ◆';
+      this.crateBtn.disabled = !full;
+      this.crateBtn.classList.toggle('primary', full);
+      for (const row of this.rows) {
+        const t = row.t, T = Factory.TIERS[t], n = f.owned[t] || 0, next = Factory.nextMilestone(f, t), prev = Factory.MILESTONES.filter((m) => m <= n).pop() || 0;
+        row.lvl.textContent = '×' + n;
+        row.d.replaceChildren('+' + fmt(T.rate * Factory.multiplier(f, t)) + '¢/s each', h('span', { class: 'opt' }, ' · ' + fmt(Factory.tierRate(f, t)) + '¢/s in all'), next ? ' · ×2 at ' + next : '');
+        row.bar.style.width = next ? (100 * (n - prev) / (next - prev)).toFixed(1) + '%' : '100%';
+        const c1 = Factory.cost(f, t, 1), k = Factory.affordable(f, t);
+        row.b1.textContent = 'Buy · ' + fmt(c1) + '¢';
+        row.b1.disabled = f.credits < c1;
+        row.bm.textContent = 'Max' + (k > 1 ? ' (' + k + ')' : '');
+        row.bm.disabled = k < 1;
+      }
+      const qc = Factory.inspectCost(f);
+      this.qc.lvl.textContent = 'lvl ' + f.inspect;
+      this.qc.d.textContent = 'Catches ' + Math.round(r.C * 100) + '% of the defects you miss.';
+      this.qc.b.textContent = isFinite(qc) ? 'Upgrade · ' + fmt(qc) + '¢' : 'Maxed';
+      this.qc.b.disabled = !(f.credits >= qc);
     }
   }
 

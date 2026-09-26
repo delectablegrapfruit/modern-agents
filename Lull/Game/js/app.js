@@ -173,7 +173,7 @@
       root.addEventListener('resize', () => { this.onResize(); });
       if (root.ResizeObserver) {
         const ro = new ResizeObserver(() => this.onResize());
-        for (const id of ['cv-play', 'cv-classic', 'cv-puzzle', 'cv-station']) ro.observe(document.getElementById(id).parentElement);
+        for (const id of ['cv-play', 'cv-classic', 'cv-puzzle', 'cv-belt']) ro.observe(document.getElementById(id).parentElement);
       }
       if (root.matchMedia) {
         const mq = root.matchMedia('(prefers-color-scheme: light)');
@@ -219,9 +219,9 @@
       else if (this.tab === 'classic') this.modes.classic.frame(t, dt);
       else if (this.tab === 'puzzle') this.modes.puzzle.frame(t, dt);
       else if (this.tab === 'factory') {
-        // Full speed in front; 12 fps behind other windows.
+        // The belt is ambient: 30 fps in front, 12 behind other windows.
         this.beltAcc = (this.beltAcc || 0) + dt;
-        const gap = document.hasFocus() ? 0 : 1 / 12;
+        const gap = document.hasFocus() ? 1 / 30 : 1 / 12;
         if (this.beltAcc >= gap) { this.modes.factory.frame(t, this.beltAcc); this.beltAcc = 0; }
       }
       requestAnimationFrame((tt) => this.frame(tt));
@@ -264,7 +264,7 @@
           h('p', null, 'Blocks here never fall on their own. Line them up, lower them, drop them when you are ready — or leave and come back. Nothing is timed and nothing is lost.'),
           h('p', null, h('b', null, 'Play'), ' — endless and relaxed. Every cleared line is banked as ◆ lines to spend in the ', h('b', null, 'Shop'), ' on one-shot items (bombs, drills, a piece you draw yourself) and cosmetics.'),
           h('p', null, h('b', null, 'Puzzles'), ' — short, seeded, infinite, with wildcards like Big Minos, Wraparound and Upside Down. Every seed has a solution.'),
-          h('p', null, h('b', null, 'Factory'), ' — a little workshop: take online orders, pour, fire and paint each mino, ship it and wait for the review. An assembly line earns on the side.'),
+          h('p', null, h('b', null, 'Factory'), ' — a little idler: buy presses that stamp minos, flick cracked ones off the belt, and trade full crates for lines. It runs while you work.'),
           h('div', { class: 'keys', style: { marginTop: '10px' } }, L.KEY_HELP.slice(0, 7).map(([k, d]) => [h('span', { class: 'k' }, h('kbd', null, k)), h('span', null, d)]))),
         buttons: [{ label: 'Start', kind: 'primary' }],
       });
@@ -282,7 +282,7 @@
       check('free play moves and drops', () => { const g = this.modes.play.game; const before = g.s.pieces; this.setTab('play'); this.modes.play.action('left'); this.modes.play.action('drop'); return g.s.pieces === before + 1 || g.over; });
       check('board canvas painted', () => { this.modes.play.view.render(performance.now()); const c = document.getElementById('cv-play'); return c.width > 0 && c.height > 0; });
       check('puzzle tab loads', () => { this.setTab('puzzle'); return !!this.modes.puzzle.puzzle; });
-      check('factory runs', () => { this.setTab('factory'); const f = this.state.factory; const before = f.stats.shipped; L.Factory.runExpected(f, 60); return f.stats.shipped > before; });
+      check('factory runs', () => { this.setTab('factory'); const f = this.state.factory; if (!f.owned[1]) { f.credits += 10; L.Factory.buy(f, 1); } const before = f.stats.shipped; L.Factory.runExpected(f, 60); return f.stats.shipped > before; });
       check('shop and stats render', () => { this.setTab('shop'); this.setTab('stats'); return document.getElementById('stats-body').children.length > 0; });
       check('save serialises', () => JSON.parse(this.store.serialize()).v === L.SAVE_VERSION);
       this.setTab('play');

@@ -58,7 +58,7 @@
     candy:    { name: 'Candy', price: 600, colors: ['#000', '#7ee8fa', '#fdfd96', '#ff9cee', '#b5ff9c', '#ff6b9d', '#9cb4ff', '#ffc09c', '#8a7f9c', '#ff85c0', '#c7ff85', '#85ffe0', '#c485ff', '#ffa585', '#d0c3e0', '#fff'] },
     handheld: { name: 'Handheld', price: 750, colors: ['#000', '#9bbc0f', '#8bac0f', '#306230', '#8bac0f', '#306230', '#0f380f', '#9bbc0f', '#0f380f', '#8bac0f', '#306230', '#9bbc0f', '#306230', '#8bac0f', '#0f380f', '#cadc9f'] },
     vapor:    { name: 'Vapor', price: 900, colors: ['#000', '#01cdfe', '#fffb96', '#b967ff', '#05ffa1', '#ff71ce', '#7b8cff', '#ffb3fd', '#50456b', '#ff9ff3', '#a3fff0', '#6effd6', '#c89bff', '#ffa3c7', '#9f95c9', '#fdf6ff'] },
-    assembly: { name: 'Assembly Line', price: 0, reward: 'Reach rank 3 in the factory', colors: ['#000', '#f2c14e', '#f78154', '#4d9078', '#b4436c', '#5fad56', '#2e86ab', '#f2a541', '#3d4451', '#e0a458', '#8bb174', '#5b8e7d', '#a1869e', '#d1495b', '#8d99ae', '#edf2f4'] },
+    assembly: { name: 'Assembly Line', price: 0, reward: 'Own a tetromino press in the factory', colors: ['#000', '#f2c14e', '#f78154', '#4d9078', '#b4436c', '#5fad56', '#2e86ab', '#f2a541', '#3d4451', '#e0a458', '#8bb174', '#5b8e7d', '#a1869e', '#d1495b', '#8d99ae', '#edf2f4'] },
     gold:     { name: 'Gold Leaf', price: 2500, colors: ['#000', '#f9e79f', '#f4d03f', '#d4ac0d', '#f7dc6f', '#b7950b', '#e9c46a', '#fcf3cf', '#5a4a1f', '#f5cba7', '#e59866', '#dc7633', '#f0b27a', '#ca6f1e', '#b9a37a', '#fffaf0'] },
     prism:    { name: 'Prism', price: 4000, animated: true, colors: null },
   };
@@ -75,7 +75,7 @@
     brick:   { name: 'Brick', price: 900 },
     gem:     { name: 'Gem', price: 1200 },
     jelly:   { name: 'Jelly', price: 1500 },
-    steel:   { name: 'Steel', price: 0, reward: 'Earn ten 5-star factory reviews' },
+    steel:   { name: 'Steel', price: 0, reward: 'Own 100 presses in the factory' },
   };
 
   const FRAMES = {
@@ -86,7 +86,7 @@
     glow:     { name: 'Glow', price: 500 },
     brass:    { name: 'Brass', price: 1000 },
     rainbow:  { name: 'Rainbow', price: 1500, animated: true },
-    hazard:   { name: 'Hazard Tape', price: 0, reward: 'Reach rank 6 in the factory' },
+    hazard:   { name: 'Hazard Tape', price: 0, reward: 'Own a hexomino press in the factory' },
   };
 
   const BACKDROPS = {
@@ -97,7 +97,7 @@
     blueprint: { name: 'Blueprint', price: 400 },
     dusk:      { name: 'Dusk', price: 600 },
     stars:     { name: 'Starfield', price: 800 },
-    belt:      { name: 'Conveyor', price: 0, reward: 'Pull 150 defects off the line by hand' },
+    belt:      { name: 'Conveyor', price: 0, reward: 'Pull 150 defects off the belt by hand' },
   };
 
   const EFFECTS = {
@@ -106,7 +106,7 @@
     ripple:   { name: 'Ripple', price: 700 },
     shatter:  { name: 'Shatter', price: 900 },
     confetti: { name: 'Confetti', price: 1200 },
-    sparks:   { name: 'Welding Sparks', price: 0, reward: 'Ship 25 factory orders' },
+    sparks:   { name: 'Welding Sparks', price: 0, reward: 'Open 25 factory crates' },
   };
 
   const GHOSTS = {

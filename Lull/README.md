@@ -48,26 +48,25 @@ nudged sideways off a wall), never SRS kicks that hop a piece through a gap. Wil
 | Hold | puzzles have no hold slot unless this is on — and then the queue arrives out of order, and a search proves the puzzle cannot be solved without holding |
 | Monochrome | as named |
 
-**Factory** — a little workshop in the spirit of the Papa's games, run station by station:
-- **Orders** — online orders land in the inbox (only while you're there; none pile up while you're away). Accept
-  one and the printer prints its ticket: the shape (as shown), its paint (or two), stickers, the firing and a
-  quantity. Tickets hang on the rail over every station; click one to pick it up.
-- **Mold** — pour the shape cell by cell, copying the ticket pinned beside the tray.
-- **Kiln** — the piece fires while you do other things; take it out while the needle is in the green band (a bell
-  rings when it gets there, and the ticket's badge turns green, then red when it's overdone).
-- **Paint** — hold the button and sweep the spray gun over the piece in the right colours; stick stars where the
-  ticket shows them; a rag wipes it back to clay. Ship it.
-- Then the wait: packing, the van, the customer looking it over — and the review: stars, a score per station, credits
-  and ◆ lines. Stars raise your rank, which brings more paints, stickers, two-tone jobs, pentominoes, hexominoes,
-  bigger orders and better pay.
-- **Line** — the idle part: an assembly line stamps stock minos for credits (up to 8 hours while Lull is closed).
-  Click the defective ones (cracked, chipped, scorched, lumpy) into the bin; a QC arm can help.
-Upgrades (faster line, QC arm, kiln slots, a wider nozzle) cost credits.
+**Factory** — a small idler built from the same parts as the rest of Lull. Buy presses that stamp minos, from
+monominoes to decominoes; each earns credits a second and doubles its output at 10, 25, 50, 100, 200 and 400
+owned, and each opens the next line. The belt (drawn like the board, in your skin and palette) now and then carries
+a cracked mino: click it off before it ships (a streak pays more), or buy an Inspector. Income fills crates; a full
+crate trades for ◆ lines. It runs while Lull is closed, for up to 8 hours.
 
-**Items** — single-use, bought and used straight from the bar under the board (hover one to see what it does): Reroll, Mirror, Pebble, Sand, Rewind, Order
-Slip, Drill, Bomb, Phase (passes through blocks into any gap), Settle (closes every hole), Chroma Purge, and Blueprint
-(draw your own piece). Each has its own animation. Changed your mind? Press an item that changed the piece again
-before you set it: the old piece and the item come back.
+**Items** — single-use, bought and used from the bar under the board, grouped into five types; a type's button
+(or keys 1–5) opens its tray, then click an item (or 1–9; Esc closes). Hover anything for what it does.
+
+| Type | Items |
+|---|---|
+| Shapers | Reroll, Mirror, Pebble, Noodle (a six-long rod), Giant (twice the size), Order Slip, Blueprint (draw your own) |
+| Physics | Sand, Magnet (pulls its columns down tight), Phase (passes through blocks), Anvil (falls to the floor, flattening its columns) |
+| Demolition | Drill, Bomb, Laser (vaporises every row it touches), Chroma Purge, Black Hole (swallows everything within three), Nuke |
+| Board | Mirror World (flips the board), Rewind, Settle, Tornado (packs every block into solid rows) |
+| Luck | Golden Piece (its lines pay triple), Jackpot (three reels, three random items) |
+
+Each has its own animation. An item that changed the piece can be pressed again before the piece is set: the old
+piece and the item come back; board items can be rewound.
 
 **Shop** — cosmetics: palettes (Prism animates), mino skins (Gem, Glass, Neon, Jelly, Pixel …), board
 frames, backdrops, line-clear effects, ghost styles and **sound packs** (Drift — the airy default, in a soft
@@ -87,12 +86,12 @@ and first-try rates by difficulty and wildcard, factory quality control, items b
 | Space | hard drop |
 | ↑ / X, Z, A | turn clockwise, counter-clockwise, 180° |
 | C / Shift | hold; again to swap back (Free Play and Puzzles: as often as you like) |
-| 1–0, −, = | use an item |
+| 1–5, then 1–9 | open an item tray, use an item |
 | ⌫ / U, R, N, H | undo, retry, next puzzle, hint |
 | ⌘1–⌘5, ⌘, | tabs, settings |
 | P | pause Classic |
-| mouse: point | slide the piece left and right (at its height; keys keep working while the pointer rests there) |
-| left click | drop it straight down — anywhere on the board side |
+| mouse: point | slide the piece left and right (at its height; sticky near column edges; keys keep working while the pointer rests there) |
+| left click | drop it straight down — anywhere on the board side (a slip in the last 0.1 s before the click is ignored) |
 | right click | turn clockwise |
 | wheel | lower one row (never sets the piece) |
 | click HOLD | hold, or swap back |
