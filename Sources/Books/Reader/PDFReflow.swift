@@ -416,35 +416,59 @@ enum PDFReflow {
         // The page's text, which the character indices of its lines count into: read once, and only for a page with a
         // line that may be letter-spaced.
         var pageText: NSString?
+        func knownText() -> NSString {
+            if let pageText { return pageText }
+            let known = (page.string ?? "") as NSString
+            pageText = known
+            return known
+        }
         var out: [Line] = []
+        // The last line's selection and its text as PDFKit read it, for a piece of the same line read apart.
+        var lastSelection: PDFSelection?
+        var lastRead = ""
         for selection in all.selectionsByLine() {
             guard let raw = selection.string else { continue }
-            var text = raw.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty else { continue }
+            let read = raw.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !read.isEmpty else { continue }
+            var text = read
             let rect = selection.bounds(for: page)
             guard rect.width > 0, rect.height > 0 else { continue }
             let size = dominantFontSize(selection.attributedString) ?? max(6, rect.height * 0.8)
             // The type size as the glyphs' gaps are measured against: no less than the line's height suggests, should a
             // PDF report its fonts at a nominal size and scale them in drawing.
             let typeSize = max(size, rect.height * 0.6)
-            var tracked = false
-            if mayBeLetterSpaced(text, width: rect.width, size: typeSize) {
-                let known: NSString
-                if let pageText {
-                    known = pageText
-                } else {
-                    known = (page.string ?? "") as NSString
-                    pageText = known
-                }
-                if let spaced = letterSpacedText(of: selection, on: page, pageText: known, size: typeSize, read: text) {
-                    text = spaced
-                    tracked = true
-                }
-            }
-            let edge = rect.midY < media.minY + media.height * 0.07 || rect.midY > media.maxY - media.height * 0.07
             let d = rect.applying(toDisplay)
             let shown = CGRect(x: d.minX, y: displayHeight - d.maxY, width: d.width, height: d.height)
+
+            // PDFKit may read one letter-spaced line as a line a word or two ("E S S AY", then "I I"). A piece on the
+            // baseline of the line before, close after it, is read with it when either looks letter-spaced; the pieces
+            // stay apart when their letters, read together, are not those of one tracked line.
+            if let previous = out.last, let before = lastSelection,
+               abs(previous.rect.minY - rect.minY) < typeSize * 0.3,
+               rect.minX >= previous.rect.maxX - 1, rect.minX - previous.rect.maxX < typeSize * 1.5,
+               previous.tracked || hasSpacedLetters(read) || hasSpacedLetters(lastRead),
+               let combined = before.copy() as? PDFSelection {
+                combined.add(selection)
+                let combinedRead = lastRead + " " + read
+                if let spaced = letterSpacedText(of: combined, on: page, pageText: knownText(), size: typeSize, read: combinedRead) {
+                    out[out.count - 1] = Line(text: spaced, rect: previous.rect.union(rect), size: previous.size, edge: previous.edge,
+                                              shown: previous.shown.union(shown), tracked: true)
+                    lastSelection = combined
+                    lastRead = combinedRead
+                    continue
+                }
+            }
+
+            var tracked = false
+            if mayBeLetterSpaced(text, width: rect.width, size: typeSize),
+               let spaced = letterSpacedText(of: selection, on: page, pageText: knownText(), size: typeSize, read: text) {
+                text = spaced
+                tracked = true
+            }
+            let edge = rect.midY < media.minY + media.height * 0.07 || rect.midY > media.maxY - media.height * 0.07
             out.append(Line(text: text, rect: rect, size: size, edge: edge, shown: shown, tracked: tracked))
+            lastSelection = selection
+            lastRead = read
         }
         return out
     }
