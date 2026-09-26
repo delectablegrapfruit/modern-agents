@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lull</title>
+<link rel="stylesheet" href="css/lull.css">
+</head>
+<body>
+<div id="app" class="bg-glass">
+  <header id="titlebar" data-drag>
+    <div class="brand" data-drag><span class="logo" aria-hidden="true"></span><span class="name">Lull</span></div>
+    <nav class="tabs" id="tabs" role="tablist"></nav>
+    <div class="spacer" data-drag></div>
+    <button class="wallet" id="wallet" title="Lines banked — spend them in the Shop"><span class="gem">◆</span><span id="wallet-n">0</span></button>
+    <button class="icon-btn" id="btn-settings" title="Settings"></button>
+    <div class="winbtns" id="winbtns">
+      <button class="icon-btn" id="btn-pin" title="Float on top"></button>
+      <button class="icon-btn" id="btn-hide" title="Hide (⌥⌘L brings it back)"></button>
+      <button class="icon-btn" id="btn-close" title="Quit"></button>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- Free play -->
+    <section class="view" id="view-play" data-tab="play">
+      <div class="boardwrap"><canvas id="cv-play"></canvas><div class="overlay hidden" id="play-overlay"></div></div>
+      <div class="statusbar" id="play-status"></div>
+      <div class="itembar" id="itembar"></div>
+    </section>
+
+    <!-- Puzzles -->
+    <section class="view" id="view-puzzle" data-tab="puzzle">
+      <div class="puz-head">
+        <div class="seg" id="puz-diff"></div>
+        <div class="puz-id" id="puz-id"></div>
+        <div class="puz-tools">
+          <button class="chip" id="puz-seed" title="Copy this puzzle's seed"></button>
+          <button class="btn sm" id="puz-seedbtn" title="Play a seed">Seed…</button>
+          <button class="btn sm" id="puz-daily" title="Today's puzzle">Daily</button>
+        </div>
+      </div>
+      <div class="puz-goal" id="puz-goal"></div>
+      <div class="boardwrap"><canvas id="cv-puzzle"></canvas><div class="overlay hidden" id="puz-overlay"></div></div>
+      <div class="puz-actions" id="puz-actions"></div>
+    </section>
+
+    <!-- Factory -->
+    <section class="view scroll" id="view-factory" data-tab="factory">
+      <div class="fac-head" id="fac-head"></div>
+      <div class="beltwrap"><canvas id="cv-belt"></canvas></div>
+      <div class="subtabs" id="fac-tabs"></div>
+      <div class="fac-panel" id="fac-panel"></div>
+    </section>
+
+    <!-- Shop -->
+    <section class="view" id="view-shop" data-tab="shop">
+      <div class="subtabs" id="shop-tabs"></div>
+      <div class="shop-grid scroll" id="shop-grid"></div>
+    </section>
+
+    <!-- Statistics -->
+    <section class="view" id="view-stats" data-tab="stats">
+      <div class="subtabs" id="stats-tabs"></div>
+      <div class="stats-body scroll" id="stats-body"></div>
+    </section>
+  </main>
+
+  <div id="toasts" aria-live="polite"></div>
+  <div id="modal-root"></div>
+  <div class="edge" data-edge="grip"></div>
+</div>
+
+<script src="js/util.js"></script>
+<script src="js/pieces.js"></script>
+<script src="js/board.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/puzzlegen.js"></script>
+<script src="js/factory.js"></script>
+<script src="js/store.js"></script>
+<script src="js/render.js"></script>
+<script src="js/factoryview.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/input.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/modes.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,93 @@
+name: Lull
+
+on:
+  push:
+    paths:
+      - "Lull/**"
+      - ".github/workflows/lull.yml"
+  pull_request:
+    paths:
+      - "Lull/**"
+      - ".github/workflows/lull.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lull-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  game:
+    name: Game logic and browser test (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Game logic (puzzles replayed through the engine, items, factory, save)
+        run: node Lull/scripts/test.cjs
+      - name: Browser test (the page played with keys and clicks in headless Chromium)
+        run: |
+          npm install --no-save --prefix "$RUNNER_TEMP/pw" playwright@1.56.1
+          "$RUNNER_TEMP/pw/node_modules/.bin/playwright" install --with-deps chromium
+          mkdir -p "$RUNNER_TEMP/shots"
+          NODE_PATH="$RUNNER_TEMP/pw/node_modules" node Lull/scripts/browser-test.cjs "$RUNNER_TEMP/shots"
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lull-screenshots
+          if-no-files-found: warn
+          path: ${{ runner.temp }}/shots/*.png
+
+  macos:
+    name: macOS app build and launch test
+    needs: game
+    permissions:
+      contents: write
+    # Hosted macOS minutes bill at ten times the Linux rate; LULL_MACOS_RUNNER (or BOOKS_MACOS_RUNNER) points the job
+    # at your own Mac instead.
+    runs-on: ${{ vars.LULL_MACOS_RUNNER || vars.BOOKS_MACOS_RUNNER || 'macos-26' }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: xcodebuild -version && swift --version
+      - name: Build Lull.app
+        run: Lull/scripts/make-app.sh release && test -f Lull/build/Lull.app/Contents/Resources/Game/index.html
+
+      - name: Package (zip + checksum)
+        run: |
+          mkdir -p dist
+          rm -f dist/Lull.app.zip
+          ditto -c -k --keepParent Lull/build/Lull.app dist/Lull.app.zip
+          (cd dist && shasum -a 256 Lull.app.zip | tee Lull-SHA256SUMS.txt)
+
+      - name: Launch test — the packaged app, unzipped elsewhere, loads the game, checks itself and saves a picture
+        timeout-minutes: 3
+        run: |
+          rm -rf "$RUNNER_TEMP/launch" && mkdir -p "$RUNNER_TEMP/launch"
+          ditto -x -k dist/Lull.app.zip "$RUNNER_TEMP/launch"
+          LULL_SELFTEST=1 LULL_SELFTEST_SHOT="$PWD/Lull/build/selftest.png" "$RUNNER_TEMP/launch/Lull.app/Contents/MacOS/Lull"
+
+      - name: Upload the app (and the self-test picture)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lull.app
+          if-no-files-found: warn
+          path: |
+            dist/Lull.app.zip
+            dist/Lull-SHA256SUMS.txt
+            Lull/build/*.png
+
+      - name: Commit the app to dist/
+        if: github.event_name == 'push'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f dist/Lull.app.zip dist/Lull-SHA256SUMS.txt
+          if git diff --cached --quiet; then echo "dist/ unchanged"; exit 0; fi
+          git commit -m "ci: package Lull.app into dist/ (${GITHUB_SHA::7}) [skip ci]"
+          git pull --rebase --autostash -X theirs origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
