@@ -1,0 +1,85 @@
+name: Warlord
+
+on:
+  push:
+    paths:
+      - "Warlord/**"
+      - ".github/workflows/warlord.yml"
+  pull_request:
+    paths:
+      - "Warlord/**"
+      - ".github/workflows/warlord.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: warlord-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: Warlord
+
+jobs:
+  macos:
+    name: macOS build, test, launch-test, bundle
+    permissions:
+      contents: write
+    # Same runner choice as Books: hosted macOS 26, or your own Mac through the BOOKS_MACOS_RUNNER variable.
+    runs-on: ${{ vars.BOOKS_MACOS_RUNNER || 'macos-26' }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: xcodebuild -version && swift --version
+      - run: swift test
+      - run: scripts/make-app.sh release && test -f build/Warlord.app/Contents/MacOS/Warlord && test -f build/Warlord.app/Contents/Resources/AppIcon.icns
+
+      - name: Package (zip + checksum)
+        run: |
+          mkdir -p dist
+          rm -f dist/Warlord.app.zip
+          ditto -c -k --keepParent build/Warlord.app dist/Warlord.app.zip
+          (cd dist && shasum -a 256 Warlord.app.zip | tee SHA256SUMS.txt)
+
+      - name: Launch test — the packaged app, unzipped elsewhere, plays a few orders through the panel
+        timeout-minutes: 3
+        run: |
+          rm -rf "$RUNNER_TEMP/launch" && mkdir -p "$RUNNER_TEMP/launch"
+          ditto -x -k dist/Warlord.app.zip "$RUNNER_TEMP/launch"
+          (sleep 3; screencapture -x build/launch-test.png || true) &
+          WARLORD_SELFTEST=1 WARLORD_SNAPSHOT="$PWD/dist/preview.png" "$RUNNER_TEMP/launch/Warlord.app/Contents/MacOS/Warlord"
+          wait
+          test -s dist/preview.png
+
+      - name: Upload the package and screenshots (also when a test failed)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Warlord.app
+          if-no-files-found: warn
+          path: |
+            Warlord/dist/Warlord.app.zip
+            Warlord/dist/SHA256SUMS.txt
+            Warlord/dist/preview.png
+            Warlord/build/*.png
+
+      - name: Commit the package to Warlord/dist/
+        if: github.event_name == 'push'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f dist/Warlord.app.zip dist/SHA256SUMS.txt dist/preview.png
+          if git diff --cached --quiet; then echo "dist/ unchanged"; exit 0; fi
+          git commit -m "ci: package Warlord.app into Warlord/dist/ (${GITHUB_SHA::7}) [skip ci]"
+          git pull --rebase --autostash -X theirs origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+
+  linux:
+    name: Linux core build, test, pacing
+    runs-on: ubuntu-latest
+    container: swift:6.0
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift build
+      - run: swift test
+      - run: swift run -c release warlord-sim --realms 6 --campaigns 20
