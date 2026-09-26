@@ -106,6 +106,53 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await page.waitForTimeout(200);
   await shot('11-items');
 
+  // ---- mouse only ---------------------------------------------------------------------------------------------------
+  console.log('mouse');
+  await ev(() => { const m = Lull.app.modes.play; m.newBoard(); m.game.replacePiece({ id: 'T' }); m.view.resize(); m.view.layout(); m.view.render(performance.now()); });
+  const cellPt = (x, y) => ev(([cx, cy]) => { const v = Lull.app.modes.play.view; const [sx, sy] = v.toScreen(cx, cy); const r = v.canvas.getBoundingClientRect(); return [r.left + sx + v.lay.s / 2, r.top + sy + v.lay.s / 2]; }, [x, y]);
+  const pieceCol = () => ev(() => { const g = Lull.app.modes.play.game, p = g.piece, b = p.type.rotBounds[p.rot]; return p.x + b.minX + Math.floor((b.w - 1) / 2); });
+  await page.waitForTimeout(350);
+  let pt = await cellPt(1, 12);
+  await page.mouse.move(pt[0], pt[1]);
+  check('hover: the piece follows the pointer', (await pieceCol()) === 1);
+  const rot0 = await ev(() => Lull.app.modes.play.game.piece.rot);
+  await page.mouse.wheel(0, 120);
+  check('wheel turns', (await ev(() => Lull.app.modes.play.game.piece.rot)) !== rot0);
+  await page.mouse.click(pt[0], pt[1], { button: 'right' });
+  check('right-click turns', (await ev(() => Lull.app.modes.play.game.piece.rot)) === (rot0 + 2) % 4);
+  // Drag: down, then under a ledge; let go on the floor to set it.
+  await ev(() => { const g = Lull.app.modes.play.game; g.board.cells.fill(0); for (let x = 0; x < 6; x++) g.board.set(x, 3, 8); g.replacePiece({ id: 'O' }); });
+  pt = await cellPt(8, 15);
+  await page.mouse.move(pt[0], pt[1]);
+  await page.mouse.down();
+  for (const [cx, cy] of [[8, 12], [8, 8], [8, 4], [8, 1], [6, 1], [4, 1], [2, 1], [1, 1]]) { const q = await cellPt(cx, cy); await page.mouse.move(q[0], q[1], { steps: 3 }); }
+  const dragged = await ev(() => { const g = Lull.app.modes.play.game; return { x: g.piece.x, y: g.piece.y, pieces: g.s.pieces }; });
+  await page.mouse.up();
+  const set = await ev(() => { const b = Lull.app.modes.play.game.board; return { under: !!(b.get(1, 0) && b.get(1, 1)), pieces: Lull.app.modes.play.game.s.pieces }; });
+  check('drag pulls the piece down and under a ledge', dragged.y === 0 && dragged.x <= 2, JSON.stringify(dragged));
+  check('letting go on the stack sets it', set.under && set.pieces === dragged.pieces + 1, JSON.stringify(set));
+  // Click the hold box.
+  const holdPt = await ev(() => { const v = Lull.app.modes.play.view; const b = v.lay.hold; const r = v.canvas.getBoundingClientRect(); return [r.left + b.x + b.w / 2, r.top + b.y + b.h / 2]; });
+  const cur = await ev(() => Lull.app.modes.play.game.piece.type.id);
+  await page.mouse.click(holdPt[0], holdPt[1]);
+  check('clicking HOLD holds the piece', (await ev(() => Lull.app.modes.play.game.hold && Lull.app.modes.play.game.hold.id)) === cur);
+  // A click on the board drops.
+  const before2 = await ev(() => Lull.app.modes.play.game.s.pieces);
+  pt = await cellPt(5, 10);
+  await page.mouse.click(pt[0], pt[1]);
+  check('click drops', (await ev(() => Lull.app.modes.play.game.s.pieces)) === before2 + 1);
+  await page.waitForTimeout(100);
+  await shot('12-mouse');
+  // Tooltip on an item.
+  const ib = await page.$('#itembar .item-btn');
+  await ib.hover();
+  await page.waitForTimeout(450);
+  check('hovering an item explains it', await page.isVisible('.tip:not(.hidden)') && /Swap the piece/.test(await page.textContent('.tip')));
+  await shot('13-tooltip');
+  await page.mouse.move(5, 300);
+  const barFits = await ev(() => { const bar = document.getElementById('itembar'); const r = bar.getBoundingClientRect(); return Array.from(bar.children).every((b) => { const q = b.getBoundingClientRect(); return q.right <= r.right + 0.5 && q.top - r.top < 12; }); });
+  check('all twelve items fit on one row', barFits);
+
   // ---- puzzles solved through the real keys --------------------------------------------------------------------------
   console.log('puzzles');
   await page.click('.tabs button[data-tab="puzzle"]');
@@ -169,6 +216,11 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   const linesAfter = await ev(() => Lull.app.store.state.lines);
   check('puzzle rewards banked', linesAfter > linesBefore, (linesAfter - linesBefore) + ' lines');
   await shot('21-solved');
+  await page.click('#puz-history');
+  const histRows = await page.$$eval('.hist-row', (r) => r.length);
+  check('puzzle history lists what was played', histRows >= 36, histRows + ' rows');
+  await shot('23-history');
+  await page.keyboard.press('Escape');
 
   // Retry, undo and failing.
   await ev(() => Lull.app.modes.puzzle.loadNumbered('H', 3));
@@ -185,10 +237,9 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await page.click('.tabs button[data-tab="factory"]');
   await ev(() => { const f = Lull.app.store.state.factory; f.credits = 5e6; });
   await page.waitForTimeout(300);
-  for (let i = 0; i < 3; i++) await page.click('#fac-panel .row-card.highlight button');
+  for (let i = 0; i < 3; i++) await page.click('#fac-panel .row-card.highlight .btn.primary[data-cost]');
   const tier = await ev(() => Lull.app.store.state.factory.tier);
   check('product lines unlock', tier === 4, 'tier ' + tier);
-  await ev(() => { Lull.app.store.state.factory.up.lens = 1; });
   // Click a defective item on the belt.
   await ev(() => { const b = Lull.app.modes.factory.belt; b.items = []; for (let k = 0; k < 5; k++) { const it = Lull.Factory.makeItem(b.f, b.rng, k % 2 === 0); it.id = 900 + k; it.x = 0.12 + k * 0.18; it.batch = 1; it.stamp = 1; b.items.push(it); } });
   const target = await ev(() => { const v = Lull.app.modes.factory.view; const g = v.geom(); const it = v.belt.items.find((i) => i.defect); const r = v.itemRect(it, g); const c = v.canvas.getBoundingClientRect(); return { x: c.left + r.x + r.w / 2, y: c.top + r.y + r.h / 2, caught: Lull.app.store.state.factory.stats.caughtManual }; });
@@ -197,21 +248,33 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   check('clicking a defect pulls it off the belt', caught === target.caught + 1, JSON.stringify({ target, caught, items: await ev(() => Lull.app.modes.factory.belt.items.map((i) => [i.id, i.defect, i.gone, i.x.toFixed(3)])) }));
   await page.waitForTimeout(700);
   await shot('30-factory');
-  await page.click('#fac-tabs button:nth-child(2)');
+  // Streak, golden and a rush order, by clicking.
+  await ev(() => { const b = Lull.app.modes.factory.belt; b.items = []; b.rushIn = 0; b.stepRush(0.1); const it = Lull.Factory.makeItem(b.f, b.rng, false, b.rush.idx); it.id = 990; it.x = 0.3; it.batch = 1; it.stamp = 1; it.golden = false; b.items.push(it); const gd = Lull.Factory.makeItem(b.f, b.rng, false); gd.id = 991; gd.x = 0.75; gd.batch = 1; gd.stamp = 1; gd.golden = true; b.items.push(gd); });
+  const clickItem = async (id) => { const p = await ev((i) => { const v = Lull.app.modes.factory.view; const g = v.geom(); const it = v.belt.items.find((x) => x.id === i); const r = v.itemRect(it, g); const c = v.canvas.getBoundingClientRect(); return { x: c.left + r.x + r.w / 2, y: c.top + r.y + r.h / 2 }; }, id); await page.mouse.click(p.x, p.y); };
+  const linesG = await ev(() => Lull.app.store.state.lines);
+  await clickItem(991);
+  await clickItem(990);
+  const fx = await ev(() => ({ lines: Lull.app.store.state.lines, streak: Lull.app.store.state.factory.streak, packed: Lull.app.modes.factory.belt.rush ? Lull.app.modes.factory.belt.rush.got : -1, golden: Lull.app.store.state.factory.stats.golden }));
+  check('golden mino pays lines; rush order takes its shape', fx.golden === 1 && fx.lines > linesG && fx.packed === 1, JSON.stringify(fx));
+  await page.waitForTimeout(400);
+  await shot('30b-factory-rush');
   await ev(() => { const c = Lull.app.store.state.factory.contracts[0]; c.progress = c.target; c.done = true; Lull.app.modes.factory.renderPanel(); });
   const before = await ev(() => ({ lines: Lull.app.store.state.lines, done: Lull.app.store.state.factory.stats.contractsDone }));
-  await page.click('#fac-panel .row-card.highlight button');
+  await page.click('#fac-panel .row-card.contract.highlight .btn.primary');
   const afterClaim = await ev(() => ({ lines: Lull.app.store.state.lines, done: Lull.app.store.state.factory.stats.contractsDone }));
   check('contract claimed', afterClaim.done === before.done + 1);
-  await page.click('#fac-tabs button:nth-child(3)');
+  await page.click('#fac-panel .fac-foot .btn');
   await page.waitForTimeout(100);
-  await shot('31-plant');
-  const offline = await ev(() => { const f = Lull.app.store.state.factory; const c0 = f.credits; f.lastTick = Date.now() - 3 * 3600e3; const r = Lull.Factory.catchUp(f, Date.now()); return { gained: f.credits - c0, capped: r.cappedSeconds, secs: r.seconds }; });
-  check('offline progress capped by the warehouse', offline.gained > 0 && offline.capped === 2 * 3600, JSON.stringify(offline));
+  await shot('31-spec-sheet');
+  await page.keyboard.press('Escape');
+  const offline = await ev(() => { const f = Lull.app.store.state.factory; const c0 = f.credits; f.lastTick = Date.now() - 12 * 3600e3; const r = Lull.Factory.catchUp(f, Date.now()); return { gained: f.credits - c0, capped: r.cappedSeconds, secs: r.seconds }; });
+  check('offline progress capped at eight hours', offline.gained > 0 && offline.capped === 8 * 3600, JSON.stringify(offline));
 
   // ---- shop and settings ---------------------------------------------------------------------------------------------
   console.log('shop');
   await page.click('.tabs button[data-tab="shop"]');
+  const tabsFit = await ev(() => { const t = document.getElementById('shop-tabs'); const r = t.getBoundingClientRect(); return Array.from(t.children).every((b) => b.getBoundingClientRect().right <= r.right + 0.5); });
+  check('every shop section is visible', tabsFit);
   await page.click('#shop-tabs button:nth-child(3)'); // skins
   await page.waitForTimeout(100);
   await shot('40-skins');
@@ -224,6 +287,13 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     await page.waitForTimeout(60);
     await shot('41-' + name);
   }
+  await page.click('#shop-tabs button:nth-child(8)'); // sounds
+  await page.waitForTimeout(60);
+  await shot('43-sounds');
+  await page.click('#shop-grid .card:nth-child(3) .sound-preview');
+  await page.click('#shop-grid .card:nth-child(3) .btn.primary');
+  await page.click('.modal footer .btn.primary');
+  check('sound pack bought and in use', await ev(() => Lull.app.store.state.equipped.sound === 'chip' && Lull.Sound.pack === 'chip'));
   await ev(() => { const s = Lull.app.store; s.state.lines += 20000; for (const k of Object.keys(Lull.COSMETICS)) for (const id of Object.keys(Lull.COSMETICS[k])) if (!Lull.COSMETICS[k][id].reward) s.buyCosmetic(k, id); });
   for (const [kind, id] of [['palette', 'prism'], ['skin', 'gem'], ['frame', 'rainbow'], ['backdrop', 'stars'], ['effect', 'confetti'], ['ghost', 'glow']]) await ev(([k, i]) => Lull.app.store.equip(k, i), [kind, id]);
   await ev(() => Lull.app.applyLook());

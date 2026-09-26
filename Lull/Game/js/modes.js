@@ -9,6 +9,17 @@
   const LOGICAL = { moveL: [-1, 0], moveR: [1, 0], lower: [0, -1], rotate: [0, 1] };
   const INVERT = { moveL: 'moveR', moveR: 'moveL', cw: 'ccw', ccw: 'cw', rotate: 'rotateInv' };
 
+  function playLockSound(snd, r) {
+    if (r.special === 'bomb') snd.play('boom');
+    else if (r.special === 'drill') snd.play('drill');
+    else if (r.perfect) snd.play('perfect');
+    else if (r.tspin) snd.play('tspin');
+    else if (r.lines >= 4) snd.play('quad');
+    else if (r.lines) snd.play('clear', r.lines);
+    else snd.play('lock');
+    if (r.combo >= 2) setTimeout(() => snd.play('combo', r.combo), 120);
+  }
+
   // ---- shared board controller ------------------------------------------------------------------------------------
 
   class BoardMode {
@@ -32,7 +43,11 @@
       this.view.setLook(this.app.look());
       this.view.resize();
       game.on('lock', (r) => this.onLock(r));
-      game.on('blocked', () => this.app.sound.play('blocked'));
+      game.on('blocked', () => { if (this.quiet) return; this.app.sound.play('blocked'); this.view.bump(this.reduced); });
+      game.on('spawn', () => {
+        // A new piece meets the pointer where it is.
+        if (this.pointer && this.settings.mouse) setTimeout(() => { if (this.pointer && !this.drag) this.follow(this.pointer[0], this.pointer[1], false); }, 0);
+      });
       game.on('topout', () => this.onTopout && this.onTopout());
       game.on('empty', () => this.onEmpty && this.onEmpty());
       game.on('purge', (gone) => this.view.onPurge(gone, this.reduced));
@@ -54,6 +69,7 @@
       if (this.inverted && INVERT[a]) a = INVERT[a];
       let ok = false;
       const snd = this.app.sound;
+      const prevPiece = g.piece, before = g.piece ? g.cellsOf() : null, beforeColor = g.piece ? this.view.colorOf(g.piece.type.color) : null;
       switch (a) {
         case 'moveL': ok = g.move(-1); if (ok) snd.play('move'); break;
         case 'moveR': ok = g.move(1); if (ok) snd.play('move'); break;
@@ -72,6 +88,10 @@
         case 'hold': ok = g.holdPiece(); if (ok) snd.play('hold'); this.afterHold && this.afterHold(); break;
         default: ok = this.modeAction ? this.modeAction(a, rep) : false;
       }
+      if (ok && before && /^(moveL|moveR|rotate|rotateInv|cw|ccw|r180|lower)$/.test(a) && g.piece === prevPiece) {
+        this.view.trail(before, beforeColor, this.reduced);
+        if (a === 'lower' && !rep) snd.play('lower');
+      }
       this.view.dirty = true;
       if (this.afterAction) this.afterAction(a);
       return ok;
@@ -79,33 +99,81 @@
 
     blocked() { return false; }
 
+    /**
+     * Mouse-only play (left and right buttons, wheel, pointer):
+     *  - hover: the piece follows the pointer's column
+     *  - click: hard drop
+     *  - drag: the piece follows the pointer down and sideways (slide it under ledges); let go on the stack to set it,
+     *    or in the air to leave it floating
+     *  - wheel: turn · right-click: turn clockwise · click the hold box: hold / swap back
+     */
     bindMouse() {
       const c = this.canvas;
       const pos = (e) => { const r = c.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+      this.drag = null;
+      this.pointer = null;
+      const enabled = () => this.settings.mouse && this.game && !this.blocked();
       c.addEventListener('mousemove', (e) => {
-        if (!this.settings.mouse || !this.game || !this.game.piece || this.blocked()) return;
-        const col = this.view.columnAt(...pos(e));
-        if (col == null) return;
-        for (let i = 0; i < this.game.w; i++) if (!this.game.moveToward(col)) break;
-        this.view.dirty = true;
+        const [px, py] = pos(e);
+        this.pointer = [px, py];
+        if (!enabled()) return;
+        const hold = this.view.onHold(px, py);
+        if (hold !== this.view.holdHover) { this.view.holdHover = hold; this.view.dirty = true; }
+        if (this.drag && Math.hypot(px - this.drag.x, py - this.drag.y) > 6) this.drag.moved = true;
+        this.follow(px, py, !!(this.drag && this.drag.moved));
+        c.style.cursor = hold ? 'pointer' : this.drag && this.drag.moved ? 'grabbing' : this.view.cellAt(px, py) ? 'grab' : 'default';
       });
+      c.addEventListener('mouseleave', () => { this.pointer = null; this.view.pointerCol = null; this.view.holdHover = false; this.view.dirty = true; });
       c.addEventListener('mousedown', (e) => {
-        if (!this.settings.mouse || !this.game || this.blocked()) return;
+        if (!enabled()) return;
         if (performance.now() - this.app.focusedAt < 300) return; // the click that brought the window forward
-        const inside = this.view.columnAt(...pos(e)) != null;
-        if (!inside) return;
-        if (e.button === 0) this.action('drop');
-        else if (e.button === 2) this.action('hold');
+        const [px, py] = pos(e);
+        if (this.view.onHold(px, py)) { if (e.button === 0 || e.button === 2) this.action('hold'); return; }
+        if (!this.view.cellAt(px, py)) return;
+        if (e.button === 0) this.drag = { x: px, y: py, t: performance.now(), moved: false };
+        else if (e.button === 2) this.action('cw');
+      });
+      root.addEventListener('mouseup', (e) => {
+        if (e.button !== 0 || !this.drag) return;
+        const d = this.drag;
+        this.drag = null;
+        if (!enabled() || !this.game.piece) return;
+        if (!d.moved) { if (performance.now() - d.t < 500) this.action('drop'); return; }
+        // Let go on the stack: set it there. Let go in the air: it stays put.
+        const g = this.game, p = g.piece;
+        if (!g.mods.heavy && !g.fitsAt(p, p.rot, p.x, p.y - 1)) this.action('down');
+        c.style.cursor = 'grab';
       });
       c.addEventListener('contextmenu', (e) => e.preventDefault());
       c.addEventListener('wheel', (e) => {
-        if (!this.settings.mouse || !this.game || this.blocked()) return;
+        if (!enabled()) return;
         e.preventDefault();
         const now = performance.now();
-        if (now - this.wheelAt < 90 || Math.abs(e.deltaY) < 2) return;
+        if (now - this.wheelAt < 110 || Math.abs(e.deltaY) < 2) return;
         this.wheelAt = now;
         this.action(e.deltaY > 0 ? 'cw' : 'ccw');
       }, { passive: false });
+    }
+
+    /** Steps the piece toward the pointer: sideways always, and down too while dragging. */
+    follow(px, py, lower) {
+      const g = this.game;
+      const cell = this.view.cellAt(px, py);
+      const col = cell ? cell.x : null;
+      if (col !== this.view.pointerCol) { this.view.pointerCol = col; this.view.dirty = true; }
+      if (!cell || !g || !g.piece || g.over) return;
+      this.quiet = true;
+      for (let i = 0; i < g.w + g.h; i++) {
+        let moved = g.moveToward(cell.x);
+        const p = g.piece;
+        if (lower && p && !g.mods.heavy) {
+          const b = p.type.rotBounds[p.rot];
+          if (p.y + b.minY + (b.h - 1) / 2 > cell.y + 0.01 && g.fitsAt(p, p.rot, p.x, p.y - 1)) { g.lower(); moved = true; }
+        }
+        if (!moved) break;
+      }
+      this.quiet = false;
+      this.view.dirty = true;
     }
 
     showCard(content) {
@@ -139,6 +207,7 @@
       if (!game) game = new Game({ w: 10, h: 20, previewCount: this.settings.preview });
       game.previewCount = this.settings.preview;
       this.attachGame(game, {});
+      this.view.showBank = true;
       this.snapshot();
       this.renderItems();
       this.renderStatus();
@@ -180,10 +249,7 @@
       F.bestScore = Math.max(F.bestScore, g.s.score);
       F.bestLines = Math.max(F.bestLines, g.s.lines);
       const snd = this.app.sound;
-      if (r.special === 'bomb') snd.play('boom');
-      else if (r.perfect) snd.play('perfect');
-      else if (r.lines) snd.play('clear', r.lines);
-      else snd.play('lock');
+      playLockSound(snd, r);
       this.view.onLock(r, this.reduced);
       this.renderStatus();
       st.touch();
@@ -235,7 +301,9 @@
         const it = ITEMS[id], n = inv[id] || 0;
         return h('button', {
           class: 'item-btn' + (n ? '' : ' empty'),
-          title: it.name + ' — ' + it.desc + (n ? '' : ' (' + it.price + ' lines)'),
+          'data-tip-title': it.icon + '  ' + it.name,
+          'data-tip': it.desc,
+          'data-tip-foot': (n ? 'You have ' + n + ' · ' : 'None left · buy for ◆' + it.price + ' · ') + 'key ' + keys[i],
           onclick: () => this.useItem(id),
         }, it.icon, h('span', { class: 'k' }, keys[i]), h('span', { class: 'n' }, n ? String(n) : ''));
       }));
@@ -336,6 +404,7 @@
       };
       document.getElementById('puz-seedbtn').addEventListener('click', () => this.askSeed());
       document.getElementById('puz-daily').addEventListener('click', () => this.loadDaily());
+      document.getElementById('puz-history').addEventListener('click', () => this.openHistory());
       this.el.seed.addEventListener('click', () => { if (this.puzzle) { UI.copyText(this.puzzle.seed); toast('Seed ' + this.puzzle.seed + ' copied', 'good'); } });
       this.renderDiff();
     }
@@ -383,6 +452,7 @@
       this.ps.diff = p.diff;
       const same = resume && this.ps.current && this.ps.current.seed === seed;
       this.ps.current = { seed, number: this.meta.number, daily: this.meta.daily, attempts: same ? this.ps.current.attempts || 0 : 0, ms: same ? this.ps.current.ms || 0 : 0, hint: same ? !!this.ps.current.hint : false };
+      if (!same) this.record({ seed, diff: p.diff, title: p.title, number: this.meta.number, daily: this.meta.daily, mods: p.mods.slice(), at: Date.now(), attempts: 0, solved: !!this.ps.solved[seed], ms: 0 });
       if (!same) {
         this.pstats[p.diff].played++;
         for (const m of p.mods) { const r = this.pstats.mods[m] || (this.pstats.mods[m] = { seen: 0, solved: 0 }); r.seen++; }
@@ -408,6 +478,8 @@
       this.failedShown = false;
       this.startedAt = performance.now();
       this.ps.current.attempts++;
+      const hEntry = this.historyEntry();
+      if (hEntry) { hEntry.attempts++; hEntry.at = Date.now(); }
       this.attachGame(game, { rot: has('side') ? 90 : has('flip') ? 180 : 0, fog: has('fog'), mono: has('mono'), blind: has('blind'), vanish: has('vanish'), wrap: p.wrap });
       this.hideCard();
       this.updateHint();
@@ -420,7 +492,7 @@
       this.lines += r.lines;
       this.view.onLock(r, this.reduced);
       const snd = this.app.sound;
-      if (r.perfect) snd.play('perfect'); else if (r.lines) snd.play('clear', r.lines); else snd.play('lock');
+      playLockSound(snd, r);
       if (Puzzles.goalMet(this.puzzle, this.game.board, this.lines)) this.solved();
       this.updateHint();
       this.renderActions();
@@ -444,6 +516,8 @@
         if (this.meta.daily) reward *= 2;
         if (cur.hint) reward = Math.ceil(reward / 2);
         this.ps.solved[p.seed] = { ms: Math.round(ms), attempts: cur.attempts, at: Date.now() };
+        const hEntry = this.historyEntry();
+        if (hEntry) { hEntry.solved = true; hEntry.ms = Math.round(ms); hEntry.solvedAt = Date.now(); }
         const keys = Object.keys(this.ps.solved);
         if (keys.length > 3000) delete this.ps.solved[keys[0]];
         S.solved++;
@@ -515,6 +589,46 @@
       if (this.puzzle && this.puzzle.diff === d && !this.done) return;
       this.ps.diff = d;
       this.loadNumbered(d);
+    }
+
+    // ---- history ----------------------------------------------------------------------------------------------------
+
+    record(entry) {
+      const hist = this.ps.history;
+      const i = hist.findIndex((e) => e.seed === entry.seed);
+      if (i >= 0) { const old = hist.splice(i, 1)[0]; entry.attempts = old.attempts; entry.solved = old.solved || entry.solved; entry.ms = old.ms; entry.solvedAt = old.solvedAt; }
+      hist.unshift(entry);
+      if (hist.length > 200) hist.length = 200;
+    }
+
+    historyEntry() { return this.puzzle ? this.ps.history.find((e) => e.seed === this.puzzle.seed) : null; }
+
+    openHistory() {
+      let filter = 'all', handle = null;
+      const list = h('div', { class: 'hist' });
+      const draw = () => {
+        const rows = this.ps.history.filter((e) => filter === 'all' || (filter === 'solved' ? e.solved : !e.solved));
+        list.replaceChildren(...(rows.length ? rows.map((e) => {
+          const d = Puzzles.DIFFS[e.diff];
+          const label = e.daily ? 'Daily ' + d.name + ' · ' + e.daily : e.number ? d.name + ' #' + e.number : d.name + ' · seed';
+          const when = new Date(e.at);
+          return h('div', { class: 'hist-row' + (e.solved ? ' solved' : '') },
+            h('span', { class: 'dot', style: { background: d.color } }),
+            h('div', { class: 'grow' },
+              h('div', { class: 't' }, label, h('span', { class: 'sub' }, ' · ' + e.title)),
+              h('div', { class: 'd' }, (e.solved ? '✓ solved' + (e.ms ? ' in ' + fmtClock(e.ms) : '') : '✗ unsolved') + ' · ' + e.attempts + (e.attempts === 1 ? ' try' : ' tries') + ' · ' + when.toLocaleDateString() + ' ' + when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                e.mods.length ? ' · ' + e.mods.map((m) => Puzzles.MODS[m].icon).join(' ') : '')),
+            h('button', { class: 'chip', title: 'Copy seed', onclick: () => { UI.copyText(e.seed); toast('Seed ' + e.seed + ' copied', 'good', 1400); } }, e.seed),
+            h('button', { class: 'btn sm' + (e.solved ? '' : ' primary'), onclick: () => { handle.close(); this.load(e.seed, { number: e.number, daily: e.daily }); } }, e.solved ? 'Replay' : 'Try again'));
+        }) : [h('p', null, filter === 'all' ? 'No puzzles yet — every one you open lands here.' : 'Nothing here yet.')]));
+      };
+      const seg = h('div', { class: 'seg' }, [['all', 'All'], ['unsolved', 'Unsolved'], ['solved', 'Solved']].map(([k, l]) => {
+        const b = h('button', { 'aria-pressed': String(k === filter), onclick: () => { filter = k; seg.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); draw(); } }, l);
+        return b;
+      }));
+      const total = this.ps.history.length, solved = this.ps.history.filter((e) => e.solved).length;
+      draw();
+      handle = UI.openModal({ title: 'Puzzle history', width: 520, body: h('div', null, h('div', { class: 'hist-head' }, seg, h('span', null, solved + ' of ' + total + ' solved')), list) });
     }
 
     buyHint() {
@@ -596,7 +710,7 @@
       this.el.goal.replaceChildren(
         h('span', { class: 'goal' }, Puzzles.goalText(p)),
         h('span', { style: { color: 'var(--muted)' } }, p.pieces.length + ' pieces'),
-        ...p.mods.map((m) => h('span', { class: 'mod', title: Puzzles.MODS[m].desc }, h('span', { class: 'i' }, Puzzles.MODS[m].icon), Puzzles.MODS[m].name)));
+        ...p.mods.map((m) => h('span', { class: 'mod', 'data-tip-title': Puzzles.MODS[m].icon + '  ' + Puzzles.MODS[m].name, 'data-tip': Puzzles.MODS[m].desc }, h('span', { class: 'i' }, Puzzles.MODS[m].icon), Puzzles.MODS[m].name)));
     }
 
     renderActions() {
@@ -624,15 +738,13 @@
   class FactoryMode {
     constructor(app) {
       this.app = app;
-      this.f = app.store.state.factory;
+      this.f = Factory.migrate(app.store.state.factory);
       Factory.fillContracts(this.f);
       this.belt = new Factory.Belt(this.f);
       this.canvas = document.getElementById('cv-belt');
       this.view = new L.BeltView(this.canvas, this.belt);
       this.head = document.getElementById('fac-head');
       this.panel = document.getElementById('fac-panel');
-      this.tabs = document.getElementById('fac-tabs');
-      this.sub = 'upgrades';
       this.visible = false;
       this.panelAt = 0;
       this.doneIds = new Set(this.f.contracts.filter((c) => c.done).map((c) => c.id));
@@ -643,9 +755,8 @@
         if (e.button !== 0) return;
         const it = this.view.itemAt(...pos(e));
         if (!it) return;
-        const how = this.belt.remove(it, 'manual');
-        this.app.sound.play(how === 'wasted' ? 'error' : 'catch');
-        this.afterEvents();
+        this.belt.remove(it, 'manual');
+        this.onBeltEvents(this.belt.drain());
       });
     }
 
@@ -655,7 +766,7 @@
     catchUp(announce) {
       const res = Factory.catchUp(this.f, Date.now());
       if (res && announce && res.seconds > 90) {
-        toast('While you were away (' + fmtDuration(res.seconds * 1000) + '): +' + fmt(res.credits) + '¢, ' + fmt(res.shipped) + ' minos shipped' + (res.cappedSeconds < res.seconds ? ' — the warehouse filled up' : ''), 'good', 6000);
+        toast('While you were away (' + fmtDuration(res.seconds * 1000) + '): +' + fmt(res.credits) + '¢, ' + fmt(res.shipped) + ' minos shipped' + (res.cappedSeconds < res.seconds ? ' (the plant stops after ' + Factory.OFFLINE_HOURS + ' h)' : ''), 'good', 6000);
       }
       if (res) this.afterEvents();
       return res;
@@ -666,7 +777,6 @@
       if (!this.belt.items.length) this.belt.prefill();
       this.visible = true;
       this.view.resize();
-      this.renderTabs();
       this.renderPanel();
       this.renderHead();
     }
@@ -688,23 +798,35 @@
       if (gap > 5) this.catchUp(false); // the window slept
       this.f.lastTick = nowMs;
       this.belt.step(dt);
-      const events = this.belt.drain();
-      if (events.length) {
-        this.view.handleEvents(events, (v) => fmt(v) + '¢');
-        for (const e of events) if (e.kind === 'escaped') this.app.sound.play('blocked');
-        this.afterEvents();
-      }
+      this.onBeltEvents(this.belt.drain());
       this.view.render(dt, this.app.look(), this.app.theme);
       if (now - this.panelAt > 400) { this.panelAt = now; this.renderHead(); this.refreshPanel(); }
     }
 
+    onBeltEvents(events) {
+      if (!events.length) return;
+      this.view.handleEvents(events, (v) => fmt(v) + '¢');
+      const snd = this.app.sound;
+      for (const e of events) {
+        if (e.kind === 'caught') snd.play('catch', Math.min(e.streak, 20));
+        else if (e.kind === 'wasted') snd.play('error');
+        else if (e.kind === 'escaped') snd.play('blocked');
+        else if (e.kind === 'streakLost' && e.from >= 5) toast('QC streak of ' + e.from + ' lost', 'bad', 1600);
+        else if (e.kind === 'golden') { snd.play('golden'); this.store.addLines(e.lines, 'contracts'); this.app.refreshWallet(true); }
+        else if (e.kind === 'rush') { snd.play('rush'); }
+        else if (e.kind === 'packed') snd.play('pack');
+        else if (e.kind === 'rushDone') { snd.play('solve'); this.store.addLines(e.reward.lines, 'contracts'); this.app.refreshWallet(true); toast('Rush order filled: +' + fmt(e.reward.credits) + '¢, ◆ ' + e.reward.lines + ' lines', 'good'); }
+        else if (e.kind === 'stamp') snd.play('stamp');
+      }
+      this.afterEvents();
+    }
+
     afterEvents() {
-      // Contracts that just finished, rewards unlocked.
       const fresh = this.f.contracts.filter((c) => c.done && !this.doneIds.has(c.id));
       for (const c of fresh) this.doneIds.add(c.id);
       if (fresh.length === 1) toast('Contract done: ' + fresh[0].client + ' — claim it in the Factory', 'good', 3500);
       else if (fresh.length > 1) toast(fresh.length + ' contracts done — claim them in the Factory', 'good', 3500);
-      if (fresh.length) { this.app.setBadge('factory', true); if (this.visible && this.sub === 'contracts') this.renderPanel(); }
+      if (fresh.length) { this.app.setBadge('factory', true); if (this.visible) this.renderPanel(); }
       this.f.bestTier = Math.max(this.f.bestTier || 1, this.f.tier);
       for (const u of REWARD_UNLOCKS) {
         if (!this.store.owns(u.kind, u.id) && u.test(this.f)) {
@@ -720,101 +842,74 @@
       const f = this.f, r = Factory.rates(f);
       this.head.replaceChildren(
         h('div', { class: 'plant' }, Factory.plantName(f.plantSeed) + (f.retools ? ' · Plant ' + (f.retools + 1) : ''),
-          h('span', { class: 'sub' }, Factory.TIERS[f.tier].name + ' line · ' + fmt(r.P) + ' minos/s · defects ' + (r.D * 100).toFixed(1) + '%' + (f.patents ? ' · ' + f.patents + ' patents' : ''))),
-        h('div', { class: 'credits' }, h('div', { class: 'v' }, fmt(f.credits) + '¢'), h('div', { class: 'r' }, '+' + fmt(r.perSec) + '¢/s · flawless run ' + fmt(Math.floor(f.flawless)))));
-    }
-
-    renderTabs() {
-      const done = this.f.contracts.filter((c) => c.done).length;
-      this.tabs.replaceChildren(...[['upgrades', 'Upgrades'], ['contracts', 'Contracts' + (done ? ' (' + done + ')' : '')], ['plant', 'Plant & catalog']].map(([k, l]) =>
-        h('button', { 'aria-selected': String(k === this.sub), onclick: () => { this.sub = k; this.renderTabs(); this.renderPanel(); } }, l)));
+          h('span', { class: 'sub' }, Factory.TIERS[f.tier].name + ' line · ' + fmt(r.P) + ' minos/s · ' + (r.D * 100).toFixed(1) + '% defective' + (f.patents ? ' · ' + f.patents + ' patents' : ''))),
+        h('div', { class: 'credits' }, h('div', { class: 'v' }, fmt(f.credits) + '¢'), h('div', { class: 'r' }, '+' + fmt(r.perSec) + '¢/s')));
     }
 
     refreshPanel() {
-      // Cheap refresh: enable/disable buttons and progress without rebuilding while the mouse is over them.
-      if (this.sub === 'upgrades') {
-        for (const b of this.panel.querySelectorAll('button[data-cost]')) b.disabled = !(this.f.credits >= Number(b.dataset.cost));
-      } else if (this.sub === 'contracts') {
-        const sig = this.f.contracts.map((c) => c.id + ':' + Math.floor(c.progress / Math.max(1, c.target) * 50) + (c.done ? 'd' : '')).join('|');
-        if (sig !== this.sig) this.renderPanel();
-      } else if (this.sub === 'plant') {
-        const b = this.panel.querySelector('button[data-retool]');
-        if (b) b.disabled = !Factory.retoolGain(this.f);
-      }
+      for (const b of this.panel.querySelectorAll('button[data-cost]')) b.disabled = !(this.f.credits >= Number(b.dataset.cost));
+      const sig = this.f.contracts.map((c) => c.id + ':' + Math.floor(c.progress / Math.max(1, c.target) * 40) + (c.done ? 'd' : '')).join('|') + '|' + Factory.retoolGain(this.f) + '|' + this.f.tier;
+      if (sig !== this.sig) this.renderPanel();
     }
 
     renderPanel() {
       const f = this.f;
-      const els = [];
-      if (this.sub === 'upgrades') {
-        const nt = Factory.nextTier(f);
-        if (nt) {
-          const cur = Factory.TIERS[f.tier];
-          els.push(h('div', { class: 'row-card highlight' },
-            h('div', { class: 'grow' }, h('div', { class: 't' }, 'New product line: ' + nt.name + 's'),
-              h('div', { class: 'd' }, nt.n + '-cell pieces · worth ×' + Math.round(nt.value / cur.value) + ' · more ways to go wrong')),
-            h('button', { class: 'btn primary', 'data-cost': nt.unlock, disabled: f.credits < nt.unlock, onclick: () => {
-              if (Factory.unlockTier(f)) { this.app.sound.play('buy'); toast(nt.name + ' line running', 'good'); this.belt.items = this.belt.items.filter((it) => it.gone); this.afterEvents(); this.renderPanel(); }
-            } }, fmt(nt.unlock) + '¢')));
-        } else els.push(h('div', { class: 'row-card' }, h('div', { class: 'grow' }, h('div', { class: 't' }, 'Every product line is running'), h('div', { class: 'd' }, 'Decominoes: the finest ten-cell pieces money can buy.'))));
-        const r0 = Factory.rates(f);
-        for (const [key, u] of Object.entries(Factory.UPGRADES)) {
-          const lvl = f.up[key];
-          const c = Factory.cost(f, key);
-          const maxed = !isFinite(c);
-          const nf = JSON.parse(JSON.stringify(f)); nf.up[key]++;
-          const r1 = Factory.rates(nf);
-          let effect = '';
-          if (key === 'press' || key === 'tempo') effect = fmt(r0.P) + ' → ' + fmt(r1.P) + ' minos/s';
-          else if (key === 'mold') effect = fmt(r0.V) + ' → ' + fmt(r1.V) + '¢ each';
-          else if (key === 'calib') effect = 'defects ' + (r0.D * 100).toFixed(1) + '% → ' + (r1.D * 100).toFixed(1) + '%';
-          else if (key === 'inspect') effect = 'catches ' + Math.round(r0.C * 100) + '% → ' + Math.round(r1.C * 100) + '%';
-          else if (key === 'warehouse') effect = r0.offlineHours + ' h → ' + r1.offlineHours + ' h away';
-          else effect = lvl ? 'installed' : 'defects glow on the belt';
-          const buyOne = () => { if (Factory.buy(f, key)) { this.app.sound.play('buy'); this.renderPanel(); this.renderHead(); } };
-          const buyMax = () => { let n = 0; while (n < 500 && Factory.buy(f, key)) n++; if (n) { this.app.sound.play('buy'); toast('+' + n + ' presses', 'good', 1400); this.renderPanel(); this.renderHead(); } };
-          els.push(h('div', { class: 'row-card' },
-            h('div', { class: 'grow' }, h('div', { class: 't' }, u.name, h('span', { class: 'lvl' }, key === 'press' ? '×' + (lvl + 1) : key === 'lens' ? '' : 'lvl ' + lvl)),
-              h('div', { class: 'd' }, u.desc + (maxed ? '' : ' · ' + effect))),
-            key === 'press' && !maxed ? h('button', { class: 'btn sm', 'data-cost': c, disabled: f.credits < c, onclick: buyMax, title: 'Buy as many as you can afford' }, 'Max') : null,
-            maxed ? h('span', { class: 'owned' }, 'Maxed') : h('button', { class: 'btn', 'data-cost': c, disabled: f.credits < c, onclick: buyOne }, fmt(c) + '¢')));
-        }
-      } else if (this.sub === 'contracts') {
-        this.sig = f.contracts.map((c) => c.id + ':' + Math.floor(c.progress / Math.max(1, c.target) * 50) + (c.done ? 'd' : '')).join('|');
-        els.push(h('div', { class: 'd', style: { color: 'var(--muted)', fontSize: '12px', padding: '0 2px 2px' } }, 'Orders from clients. They never expire; some pay in lines and items for the rest of the game.'));
-        for (const c of f.contracts) {
-          const what = c.kind === 'ship' ? 'Ship ' + fmt(c.target) + ' minos' : c.kind === 'catch' ? 'Pull ' + c.target + ' defects off the belt by hand' : c.kind === 'earn' ? 'Earn ' + fmt(c.target) + '¢' : 'Ship ' + fmt(c.target) + ' minos in a row without a defect getting out';
-          const rw = [];
-          if (c.reward.credits) rw.push(h('span', null, h('b', null, fmt(c.reward.credits) + '¢')));
-          if (c.reward.lines) rw.push(h('span', null, h('b', { style: { color: 'var(--gem)' } }, '◆ ' + c.reward.lines + ' lines')));
-          if (c.reward.item) rw.push(h('span', null, h('b', null, ITEMS[c.reward.item].icon + ' ' + ITEMS[c.reward.item].name)));
-          els.push(h('div', { class: 'row-card' + (c.done ? ' highlight' : '') },
-            h('div', { class: 'grow' }, h('div', { class: 't' }, c.client), h('div', { class: 'd' }, what),
-              h('div', { class: 'bar' + (c.done ? ' good' : '') }, h('i', { style: { width: Math.min(100, 100 * c.progress / c.target).toFixed(1) + '%' } })),
-              h('div', { class: 'reward' }, fmt(Math.floor(c.progress)) + ' / ' + fmt(c.target), ' · reward ', rw)),
-            c.done ? h('button', { class: 'btn primary', onclick: () => this.claim(c.id) }, 'Claim') : null));
-        }
-      } else {
-        const gain = Factory.retoolGain(f);
-        els.push(h('div', { class: 'row-card highlight' },
-          h('div', { class: 'grow' }, h('div', { class: 't' }, 'Retool the plant'),
-            h('div', { class: 'd' }, gain ? 'Start a new plant with +' + gain + ' patent' + (gain > 1 ? 's' : '') + ' (each: +25% value, for good). Presses, upgrades and product lines reset; patents, warehouse and lens stay.'
-              : 'Patents come from the best line a plant reaches: Pentominoes 1, Hexominoes 3, Heptominoes 8, Octominoes 20 …')),
-          h('button', { class: 'btn', 'data-retool': '1', disabled: !gain, onclick: () => UI.confirm('Retool?', 'Close ' + Factory.plantName(f.plantSeed) + ' and open a new plant with ' + (f.patents + gain) + ' patents.', 'Retool', () => {
-            Factory.retool(f); Factory.fillContracts(f); this.belt.items = []; this.doneIds.clear(); this.app.sound.play('solve'); toast('New plant: ' + Factory.plantName(f.plantSeed), 'good'); this.afterEvents(); this.renderPanel(); this.renderHead();
-          }) }, 'Retool')));
-        const cat = Factory.catalog(f.tier);
-        const look = this.app.look();
-        const shown = cat.slice(0, 120);
-        els.push(h('div', { class: 't', style: { fontWeight: 700, margin: '6px 2px 0' } }, 'Spec sheet: every legal ' + Factory.TIERS[f.tier].name.toLowerCase() + ' (' + cat.length + ')'),
-          h('div', { class: 'd', style: { color: 'var(--muted)', fontSize: '11.5px', margin: '0 2px 4px' } }, 'Exactly ' + f.tier + ' cell' + (f.tier > 1 ? 's' : '') + ', joined edge to edge. Anything else on the belt is a defect: too many or too few cells, a piece broken off or hanging by a corner, a crack, a scorch mark.'));
-        els.push(h('div', { class: 'catalog' }, shown.map((cells) => UI.canvasFor(44, 44, (ctx) => {
-          const b = Pieces.boundsOf(cells), s = Math.floor(Math.min(36 / b.w, 36 / b.h, 10));
-          for (const [x, y] of cells) Render.drawCell(ctx, look.skin, Render.hsl(200 + f.tier * 20, 55, 64), (44 - b.w * s) / 2 + (x - b.minX) * s, (44 - b.h * s) / 2 + (b.maxY - y) * s, s);
-        }))));
-        if (cat.length > shown.length) els.push(h('div', { class: 'd', style: { color: 'var(--muted)', fontSize: '11.5px' } }, '… and ' + (cat.length - shown.length) + ' more.'));
+      this.sig = f.contracts.map((c) => c.id + ':' + Math.floor(c.progress / Math.max(1, c.target) * 40) + (c.done ? 'd' : '')).join('|') + '|' + Factory.retoolGain(f) + '|' + f.tier;
+      const r0 = Factory.rates(f);
+      const cards = Object.entries(Factory.UPGRADES).map(([key, u]) => {
+        const c = Factory.cost(f, key), maxed = !isFinite(c);
+        const nf = JSON.parse(JSON.stringify(f)); nf.up[key]++;
+        const r1 = Factory.rates(nf);
+        const effect = key === 'press' ? fmt(r0.P) + ' → ' + fmt(r1.P) + ' /s' : key === 'quality' ? '×' + (r1.V / r0.V).toFixed(2) + ' value' : Math.round(r0.C * 100) + '% → ' + Math.round(r1.C * 100) + '%';
+        const buy = () => { if (Factory.buy(f, key)) { this.app.sound.play('buy'); this.renderPanel(); this.renderHead(); } };
+        return h('div', { class: 'up-card', 'data-tip-title': u.icon + '  ' + u.name, 'data-tip': u.desc },
+          h('div', { class: 'up-top' }, h('span', { class: 'up-icon' }, u.icon), h('span', { class: 'up-name' }, u.name), h('span', { class: 'up-lvl' }, String(f.up[key]))),
+          h('div', { class: 'up-eff' }, maxed ? 'Maxed' : effect),
+          maxed ? null : h('button', { class: 'btn sm', 'data-cost': c, disabled: f.credits < c, onclick: buy }, fmt(c) + '¢'));
+      });
+      const els = [h('div', { class: 'up-row' }, cards)];
+      const nt = Factory.nextTier(f), gain = Factory.retoolGain(f);
+      els.push(h('div', { class: 'row-card highlight' },
+        h('div', { class: 'grow' },
+          h('div', { class: 't' }, nt ? 'Next line: ' + nt.name + 's' : 'Every product line is running'),
+          h('div', { class: 'd' }, nt ? nt.n + '-cell pieces, worth ×' + Math.round(nt.value / Factory.TIERS[f.tier].value) + (gain ? '' : '') : 'Decominoes: the finest ten-cell pieces money can buy.')),
+        nt ? h('button', { class: 'btn primary', 'data-cost': nt.unlock, disabled: f.credits < nt.unlock, onclick: () => {
+          if (Factory.unlockTier(f)) { this.app.sound.play('solve'); toast(nt.name + ' line running', 'good'); this.belt.items = []; this.belt.rush = null; this.belt.prefill(); this.afterEvents(); this.renderPanel(); }
+        } }, fmt(nt.unlock) + '¢') : null,
+        h('button', { class: 'btn', disabled: !gain, title: gain ? 'Start over with +' + gain + ' patents (+25% value each, for good)' : 'Reach Pentominoes to earn patents', onclick: () => UI.confirm('Retool?', 'Close ' + Factory.plantName(f.plantSeed) + ' and open a new plant with ' + (f.patents + gain) + ' patents (+25% value each). Presses, upgrades and product lines start over.', 'Retool', () => {
+          Factory.retool(f); Factory.fillContracts(f); this.belt.items = []; this.belt.rush = null; this.doneIds.clear(); this.app.sound.play('solve'); toast('New plant: ' + Factory.plantName(f.plantSeed), 'good'); this.afterEvents(); this.renderPanel(); this.renderHead();
+        }) }, gain ? 'Retool +' + gain : 'Retool')));
+      for (const c of f.contracts) {
+        const what = c.kind === 'ship' ? 'Ship ' + fmt(c.target) + ' minos' : c.kind === 'catch' ? 'Pull ' + c.target + ' defects by hand' : c.kind === 'earn' ? 'Earn ' + fmt(c.target) + '¢' : c.kind === 'rush' ? 'Fill ' + c.target + ' rush orders' : 'Ship ' + fmt(c.target) + ' in a row with no defect escaping';
+        const rw = [];
+        if (c.reward.credits) rw.push(h('b', null, fmt(c.reward.credits) + '¢'));
+        if (c.reward.lines) rw.push(h('b', { style: { color: 'var(--gem)' } }, ' ◆' + c.reward.lines));
+        if (c.reward.item) rw.push(h('b', null, ' ' + ITEMS[c.reward.item].icon + ' ' + ITEMS[c.reward.item].name));
+        els.push(h('div', { class: 'row-card contract' + (c.done ? ' highlight' : '') },
+          h('div', { class: 'grow' }, h('div', { class: 't' }, what, h('span', { class: 'lvl' }, c.client)),
+            h('div', { class: 'bar' + (c.done ? ' good' : '') }, h('i', { style: { width: Math.min(100, 100 * c.progress / c.target).toFixed(1) + '%' } })),
+            h('div', { class: 'reward' }, fmt(Math.floor(c.progress)) + ' / ' + fmt(c.target), ' · ', rw)),
+          c.done ? h('button', { class: 'btn primary', onclick: () => this.claim(c.id) }, 'Claim') : null));
       }
+      els.push(h('div', { class: 'fac-foot' },
+        h('button', { class: 'btn sm', onclick: () => this.openSpecSheet() }, '▦ Spec sheet'),
+        h('span', null, 'Click defects off the belt to build a QC streak · golden minos pay lines · rush orders want one shape')));
       this.panel.replaceChildren(...els);
+    }
+
+    openSpecSheet() {
+      const f = this.f, cat = Factory.catalog(f.tier), look = this.app.look();
+      const shown = cat.slice(0, 160);
+      UI.openModal({
+        title: 'Spec sheet — ' + Factory.TIERS[f.tier].name + 's (' + cat.length + ')', width: 520,
+        body: h('div', null,
+          h('p', null, 'Exactly ' + f.tier + ' cell' + (f.tier > 1 ? 's' : '') + ', joined edge to edge. Anything else is a defect: a cell too many or too few, a piece broken off or hanging by a corner, a crack, a scorch mark.'),
+          h('div', { class: 'catalog' }, shown.map((cells) => UI.canvasFor(44, 44, (ctx) => {
+            const b = Pieces.boundsOf(cells), s = Math.floor(Math.min(36 / b.w, 36 / b.h, 10));
+            for (const [x, y] of cells) Render.drawCell(ctx, look.skin, Render.hsl(200 + f.tier * 20, 55, 64), (44 - b.w * s) / 2 + (x - b.minX) * s, (44 - b.h * s) / 2 + (b.maxY - y) * s, s);
+          }))),
+          cat.length > shown.length ? h('p', null, '… and ' + (cat.length - shown.length) + ' more.') : null),
+      });
     }
 
     claim(id) {
@@ -828,7 +923,6 @@
       toast('Claimed: ' + parts.join(' · '), 'good');
       if (!this.f.contracts.some((c) => c.done)) this.app.setBadge('factory', false);
       this.store.touch();
-      this.renderTabs();
       this.renderPanel();
     }
   }

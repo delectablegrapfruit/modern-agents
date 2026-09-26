@@ -26,7 +26,11 @@
     ['R', 'Retry puzzle'],
     ['N', 'Next puzzle'],
     ['⌘1 – ⌘5', 'Switch tabs'],
-    ['Mouse', 'Hover a column · click to drop · wheel turns · right-click holds'],
+    ['Mouse: hover', 'The piece follows the pointer'],
+    ['Mouse: click', 'Hard drop'],
+    ['Mouse: drag', 'Pull the piece down and sideways; let go on the stack to set it'],
+    ['Wheel / right-click', 'Turn'],
+    ['Click HOLD', 'Hold, or swap back'],
   ];
 
   class Keys {

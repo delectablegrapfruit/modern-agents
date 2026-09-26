@@ -225,9 +225,12 @@
       if (p.special === 'drill') return this.bore();
       const y = this.ghostY(p);
       if (y == null) { this.emit('blocked', 'drop'); return false; }
+      this.pendingDrop = { dist: p.y - y, cells: this.cellsOf(p) };
       p.y = y;
       this.s.drops++;
-      return this.lock();
+      const r = this.lock();
+      this.pendingDrop = null;
+      return r;
     }
 
     holdPiece() {
@@ -282,6 +285,7 @@
       this.pushHistory();
       const cells = this.cellsOf(p);
       const result = { type: p.type.id, color: p.type.color, special: p.special, cells, rows: [], removed: [], lines: 0, tspin: false, perfect: false, combo: 0, b2b: false, score: 0, blast: null };
+      if (this.pendingDrop) { result.dropDist = this.pendingDrop.dist; result.dropCells = this.pendingDrop.cells; }
       const v = p.type.color | (this.mods.vanish ? CELL.HIDDEN : 0);
 
       if (p.special === 'bomb') {

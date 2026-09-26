@@ -46,7 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var theme = "dark"
     private var background = "glass"
     private let selfTest = ProcessInfo.processInfo.environment["LULL_SELFTEST"] != nil
-    private static let frameName = "LullPanel"
+    private static let frameName = "LullPanel.v2"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         signal(SIGPIPE, SIG_IGN)
@@ -67,12 +67,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     // MARK: - Window
 
     private func buildPanel() {
-        let size = NSSize(width: 440, height: 680)
+        let size = AppDelegate.defaultSize()
         panel = FloatingPanel(contentRect: NSRect(origin: .zero, size: size))
         panel.delegate = self
-        if !panel.setFrameUsingName(AppDelegate.frameName) {
+        if !panel.setFrameUsingName(AppDelegate.frameName) || panel.frame.width < panel.minSize.width || panel.frame.height < panel.minSize.height {
             let visible = (NSScreen.main ?? NSScreen.screens[0]).visibleFrame
-            panel.setFrameOrigin(NSPoint(x: visible.maxX - size.width - 28, y: visible.maxY - size.height - 28))
+            panel.setFrame(NSRect(x: visible.maxX - size.width - 28, y: visible.maxY - size.height - 28, width: size.width, height: size.height), display: false)
         }
         _ = panel.setFrameAutosaveName(AppDelegate.frameName)
 
@@ -267,9 +267,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc private func openSettings(_ sender: Any?) { call("settings") }
     @objc private func toggleOnTop(_ sender: Any?) { call("toggleTop") }
     @objc private func toggleFromMenu(_ sender: Any?) { toggleShown() }
+    /// Big enough for the board, the side panels and the whole item bar, and never taller than the screen.
+    static func defaultSize() -> NSSize {
+        let visible = (NSScreen.main ?? NSScreen.screens[0]).visibleFrame
+        return NSSize(width: 500, height: min(820, max(620, visible.height - 80)))
+    }
+
     @objc private func resetPosition(_ sender: Any?) {
         let visible = (NSScreen.main ?? NSScreen.screens[0]).visibleFrame
-        let size = NSSize(width: 440, height: 680)
+        let size = AppDelegate.defaultSize()
         panel.setFrame(NSRect(x: visible.maxX - size.width - 28, y: visible.maxY - size.height - 28, width: size.width, height: size.height), display: true, animate: true)
     }
 

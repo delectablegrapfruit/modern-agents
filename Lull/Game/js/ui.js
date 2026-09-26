@@ -208,9 +208,13 @@
             });
           },
         }, h('span', { class: 'gem' }, '◆'), fmtInt(c.price));
+        const isSound = sub === 'sound';
         cards.push(h('div', { class: 'card' + (equipped ? ' equipped' : '') },
-          h('div', { class: 'preview' }, cosmeticPreview(app, sub, id, 150, 64)),
+          isSound
+            ? h('button', { class: 'preview sound-preview', title: 'Play a sample', onclick: () => app.sound.preview(id) }, h('span', { class: 'big-icon' }, '▶'), h('span', null, 'Listen'))
+            : h('div', { class: 'preview' }, cosmeticPreview(app, sub, id, 150, 64)),
           h('h3', null, c.name),
+          c.desc ? h('p', null, c.desc) : null,
           c.reward && !owned ? h('p', null, c.reward) : null,
           h('div', { class: 'foot' }, h('span', { class: 'owned' }, owned ? 'Owned' : c.animated ? 'Animated' : ''), action)));
       }
@@ -364,7 +368,7 @@
       range('arr', 'Repeat rate (ARR)', 0, 150, 5, ' ms', '0 slides straight to the wall'),
       range('lowerRepeat', 'Lower repeat', 0, 150, 5, ' ms', 'Held ↓ never sets a piece; tap again to set'),
       range('preview', 'Next pieces shown', 1, 6, 1, ''),
-      sw('mouse', 'Mouse control', 'Hover a column, click to drop, wheel to turn, right-click to hold'),
+      sw('mouse', 'Mouse control', 'Hover to aim, click to drop, drag to pull it down, wheel or right-click to turn, click HOLD to hold'),
       h('div', { class: 'set-group' }, 'Sound and motion'),
       sw('sound', 'Sound effects'),
       range('volume', 'Volume', 0, 100, 1, '%', null, 100),
@@ -456,5 +460,38 @@
     check();
   }
 
-  L.UI = { h, ICONS, toast, openModal, modalOpen, closeTopModal, submitTopModal, confirm, canvasFor, renderShop, renderStats, openSettings, openOrderSlip, openBlueprint, copyText, lookWith, drawMiniPiece };
+  // ---- tooltips: any element with data-tip (and optional data-tip-title / data-tip-foot) --------------------------
+
+  function initTooltips() {
+    const app = document.getElementById('app');
+    const tip = h('div', { class: 'tip hidden', role: 'tooltip' });
+    app.appendChild(tip);
+    let timer = null, cur = null;
+    const hide = () => { clearTimeout(timer); tip.classList.add('hidden'); };
+    const show = (el) => {
+      if (!el.isConnected) return;
+      tip.replaceChildren(
+        el.dataset.tipTitle ? h('div', { class: 'tip-title' }, el.dataset.tipTitle) : null,
+        h('div', { class: 'tip-body' }, el.dataset.tip),
+        el.dataset.tipFoot ? h('div', { class: 'tip-foot' }, el.dataset.tipFoot) : null);
+      tip.classList.remove('hidden');
+      const a = app.getBoundingClientRect(), r = el.getBoundingClientRect(), t = tip.getBoundingClientRect();
+      let x = r.left + r.width / 2 - t.width / 2 - a.left;
+      x = Math.max(6, Math.min(a.width - t.width - 6, x));
+      let y = r.top - t.height - 8 - a.top;
+      if (y < 44) y = r.bottom + 8 - a.top;
+      tip.style.left = x + 'px'; tip.style.top = y + 'px';
+    };
+    document.addEventListener('mouseover', (e) => {
+      const el = e.target && e.target.closest ? e.target.closest('[data-tip]') : null;
+      if (el === cur) return;
+      cur = el;
+      hide();
+      if (el) timer = setTimeout(() => show(el), 260);
+    });
+    document.addEventListener('mousedown', hide, true);
+    document.addEventListener('keydown', hide, true);
+  }
+
+  L.UI = { initTooltips, h, ICONS, toast, openModal, modalOpen, closeTopModal, submitTopModal, confirm, canvasFor, renderShop, renderStats, openSettings, openOrderSlip, openBlueprint, copyText, lookWith, drawMiniPiece };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

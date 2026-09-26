@@ -7,7 +7,7 @@
   const L = (root.Lull = root.Lull || {});
   const { Board, CELL, Pieces, RNG, hash32, codeFromInt, intFromCode, spawnPos } = L;
 
-  const GEN_VERSION = 1;
+  const GEN_VERSION = 2;
   const DIFFS = {
     E: { id: 'E', name: 'Easy', reward: 4, color: '#7bd88f' },
     M: { id: 'M', name: 'Medium', reward: 10, color: '#f6c177' },
@@ -79,6 +79,7 @@
     prev[sk] = -1;
     const qr = [startRot], qx = [sx], qy = [sy];
     const canRotate = !opts.noRotate && type.kicks !== 'none';
+    const maxKick = type.kicks === 'i' || type.big ? 2 : 1;
     const path = (k) => {
       const out = [];
       while (prev[k] >= 0) { out.push(MOVES[how[k]]); k = prev[k]; }
@@ -109,7 +110,13 @@
           const kicks = Pieces.kicksFor(type, r, nr);
           let ok = false;
           for (const [kx, ky] of kicks) {
-            if (board.fits(type.rots[nr], x + kx, y + ky)) { nx = x + kx; ny = y + ky; ok = true; break; }
+            if (board.fits(type.rots[nr], x + kx, y + ky)) {
+              // The engine takes the first kick that fits. Puzzles only count on turns a person would expect:
+              // in place, or nudged sideways off a wall — never the SRS kicks that hop a piece down or through
+              // a gap it visibly does not fit.
+              if (ky !== 0 || Math.abs(kx) > maxKick) break;
+              nx = x + kx; ny = y + ky; ok = true; break;
+            }
           }
           if (!ok) continue;
         }
@@ -228,9 +235,9 @@
     }
     // Every band row must be missing something, or it would already be clear.
     if (removedPerRow.some((c) => c === 0)) return null;
-    // The garbage should not be the empty board plus nothing to think about, except for clear-the-board puzzles.
+    // Something must be on the board to think about.
     const garbage = board.count() - countBase(board, base);
-    if (spec.goal !== 'clear' && garbage === 0) return null;
+    if (garbage < 2) return null;
     return { board, steps: steps.reverse(), W, H, K, base, opts, wrap };
   }
 

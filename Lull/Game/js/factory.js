@@ -24,15 +24,13 @@
   const PATENTS_FOR_TIER = { 5: 1, 6: 3, 7: 8, 8: 20, 9: 50, 10: 120 };
   const MAX_TIER = 10;
 
+  // Three things to invest in; the rest of the factory is played by hand.
   const UPGRADES = {
-    press:     { name: 'Press', desc: 'Another stamping press on the line.', base: 10, growth: 1.25, max: 1000 },
-    tempo:     { name: 'Tempo', desc: 'Every press runs 10% faster.', base: 60, growth: 2.4, max: 200 },
-    mold:      { name: 'Molds', desc: 'Finer molds: each mino is worth 12% more.', base: 100, growth: 2.5, max: 200 },
-    calib:     { name: 'Calibration', desc: 'Defects are 10% rarer.', base: 150, growth: 2.6, max: 30 },
-    inspect:   { name: 'Inspector', desc: 'A robot arm at the gate pulls more defects off the belt.', base: 400, growth: 2.8, max: 25 },
-    warehouse: { name: 'Warehouse', desc: 'The plant keeps running an hour longer while you are away.', base: 800, growth: 3, max: 22 },
-    lens:      { name: 'Inspection Lens', desc: 'Defects glow faintly on the belt.', base: 2500, growth: 1, max: 1 },
+    press:   { name: 'Presses', icon: '⚙', desc: 'More presses, more minos.', base: 10, growth: 1.28, max: 1000 },
+    quality: { name: 'Quality', icon: '✦', desc: 'Finer molds: minos worth more, and fewer defects.', base: 60, growth: 2.2, max: 200 },
+    inspect: { name: 'Inspector', icon: '⌖', desc: 'A robot arm at the gate that pulls defects you miss.', base: 250, growth: 2.7, max: 18 },
   };
+  const OFFLINE_HOURS = 8;
 
   const DEFECTS = {
     extra:    { name: 'Overweight', note: 'one cell too many' },
@@ -57,29 +55,42 @@
 
   function create() {
     return {
-      v: 1,
+      v: 2,
       credits: 0, runEarned: 0, lifetime: 0,
       tier: 1, maxTierRun: 1,
-      up: { press: 0, tempo: 0, mold: 0, calib: 0, inspect: 0, warehouse: 0, lens: 0 },
+      up: { press: 0, quality: 0, inspect: 0 },
+      streak: 0, bestStreak: 0,
       patents: 0, retools: 0, plantSeed: (Math.random() * 1e9) | 0,
       contracts: [], contractCounter: 0,
       flawless: 0,
-      stats: { shipped: 0, byTier: {}, caughtManual: 0, caughtAuto: 0, escaped: 0, falseRejects: 0, contractsDone: 0, bestRate: 0, offlineEarned: 0, watchedMs: 0, retooled: 0 },
+      stats: { shipped: 0, byTier: {}, caughtManual: 0, caughtAuto: 0, escaped: 0, falseRejects: 0, contractsDone: 0, bestRate: 0, offlineEarned: 0, watchedMs: 0, retooled: 0, golden: 0, rushDone: 0 },
       lastTick: Date.now(),
       unlocks: {},
     };
+  }
+
+  /** Saves from before the factory was simplified: seven upgrades fold into three. */
+  function migrate(f) {
+    if (f.v === 2) return f;
+    const up = f.up || {};
+    f.up = { press: up.press || 0, quality: Math.floor(((up.mold || 0) + (up.calib || 0)) / 2), inspect: Math.min(18, up.inspect || 0) };
+    f.streak = f.streak || 0; f.bestStreak = f.bestStreak || 0;
+    f.stats = Object.assign({ golden: 0, rushDone: 0 }, f.stats);
+    f.contracts = (f.contracts || []).slice(0, 2);
+    f.v = 2;
+    return f;
   }
 
   // ---- rates ---------------------------------------------------------------------------------------------------------
 
   function rates(f) {
     const presses = 1 + f.up.press;
-    const P = presses * 0.35 * Math.pow(1.1, f.up.tempo);
-    const V = TIERS[f.tier].value * Math.pow(1.12, f.up.mold) * (1 + 0.25 * f.patents);
-    const D = Math.min(0.5, Math.max(0.01, (0.08 + 0.02 * f.tier) * Math.pow(0.9, f.up.calib)));
-    const C = Math.min(0.98, 1 - Math.pow(0.82, f.up.inspect));
+    const P = 0.35 * (1 + 0.5 * f.up.press);
+    const V = TIERS[f.tier].value * Math.pow(1.18, f.up.quality) * (1 + 0.25 * f.patents);
+    const D = Math.min(0.5, Math.max(0.03, (0.08 + 0.02 * f.tier) * Math.pow(0.92, f.up.quality)));
+    const C = Math.min(0.95, 1 - Math.pow(0.85, f.up.inspect));
     const perMino = (1 - D) + D * (C * 0.2 - (1 - C) * 0.6);
-    const offlineHours = 2 + f.up.warehouse;
+    const offlineHours = OFFLINE_HOURS;
     return { presses, P, V, D, C, perMino, perSec: P * V * perMino, offlineHours };
   }
 
@@ -164,8 +175,7 @@
     f.runEarned = 0;
     f.tier = 1;
     f.maxTierRun = 1;
-    const keep = { warehouse: f.up.warehouse, lens: f.up.lens };
-    f.up = Object.assign({ press: 0, tempo: 0, mold: 0, calib: 0, inspect: 0 }, keep);
+    f.up = { press: 0, quality: 0, inspect: 0 };
     f.plantSeed = (f.plantSeed * 7919 + 13) | 0;
     f.flawless = 0;
     f.contracts = [];
@@ -186,7 +196,7 @@
     const r = new RNG(hash32('contract:' + f.plantSeed + ':' + f.contractCounter));
     f.contractCounter++;
     const rt = rates(f);
-    const kinds = ['ship', 'ship', 'catch', 'earn', 'flawless'];
+    const kinds = f.tier >= 3 ? ['ship', 'catch', 'earn', 'flawless', 'rush'] : ['ship', 'catch', 'earn', 'flawless'];
     const kind = r.pick(kinds);
     const c = { id: f.contractCounter, kind, client: clientName(r), progress: 0, reward: {} };
     const minutes = r.range(3, 10);
@@ -202,6 +212,10 @@
       c.target = niceRound(rt.perSec * minutes * 60 + 20);
       c.reward.item = r.pick(['reroll', 'mirror', 'pebble', 'rewind', 'sand', 'order', 'bomb']);
       c.reward.credits = Math.round(c.target * 0.25);
+    } else if (kind === 'rush') {
+      c.target = r.range(2, 4);
+      c.reward.lines = r.range(14, 24) + f.tier * 2;
+      c.reward.credits = Math.round(rt.perSec * 60 * r.range(3, 6));
     } else {
       c.target = niceRound(Math.min(rt.P * minutes * 60, 40 + rt.P * 120));
       c.reward.lines = r.range(16, 30) + f.tier * 2;
@@ -212,7 +226,7 @@
   }
 
   function fillContracts(f) {
-    while (f.contracts.length < 3) f.contracts.push(newContract(f));
+    while (f.contracts.length < 2) f.contracts.push(newContract(f));
   }
 
   function progress(f, kind, amount) {
@@ -250,10 +264,10 @@
   function neighbors(x, y) { return [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]; }
 
   /** A belt item: a random product of the plant's tier, sometimes defective. */
-  function makeItem(f, r, forceDefect) {
+  function makeItem(f, r, forceDefect, forceIdx) {
     const n = f.tier;
     const cat = catalog(n);
-    const idx = r.int(cat.length);
+    const idx = forceIdx != null ? forceIdx : r.int(cat.length);
     let cells = cat[idx].map((c) => c.slice());
     // Random orientation.
     const turns = r.int(4);
@@ -296,14 +310,18 @@
       }
       cells = Pieces.normalize(cells);
     }
-    return { cells, n, idx, name: productName(n, idx), defect, mark, hue: (idx * 47 + n * 31) % 360 };
+    return { cells, n, idx, name: productName(n, idx), defect, mark, hue: (idx * 47 + n * 31) % 360, golden: !defective && r.chance(1 / 70) };
   }
 
   // ---- the belt you can watch ---------------------------------------------------------------------------------------
 
   /**
-   * The visible line: items ride from the press (x = 0) past the inspector (x = INSPECT) to shipping (x = 1).
-   * Each item stands for a batch of minos so the belt stays readable however fast the plant runs.
+   * The line on screen, and what you do there. Items ride from the press (x = 0) past the inspector's gate to the
+   * shipping crate (x = 1); each stands for a batch of minos so the belt stays readable however fast the plant runs.
+   *  - Click a defect: pulled, and your QC streak grows (worth up to double on everything you ship while watching).
+   *    Pull a good one or let a defect ship and the streak starts over.
+   *  - Golden minos: rare, click them for lines.
+   *  - Rush orders: a client wants a handful of one shape; click good ones of that shape to pack them.
    */
   class Belt {
     constructor(f) {
@@ -314,33 +332,41 @@
       this.travel = 14; // seconds end to end
       this.events = [];
       this.nextId = 1;
+      this.rush = null;
+      this.rushIn = 25 + this.rng.next() * 30;
     }
     static get INSPECT() { return 0.64; }
     // Bigger products need more room on the belt, so they come in fewer, larger batches.
     batch() { return Math.max(1, Math.ceil(rates(this.f).P * (2.4 + 0.45 * this.f.tier))); }
     spawnInterval() { return this.batch() / rates(this.f).P; }
+    streakMult() { return 1 + Math.min(1, this.f.streak * 0.05); }
+
+    spawn(x) {
+      const f = this.f;
+      let forceIdx = null;
+      if (this.rush && this.rng.chance(0.4)) forceIdx = this.rush.idx;
+      const it = makeItem(f, this.rng, forceIdx != null ? this.rng.chance(rates(f).D * 0.6) : null, forceIdx);
+      it.id = this.nextId++;
+      it.x = x;
+      it.batch = this.batch();
+      it.stamp = 0;
+      return it;
+    }
 
     step(dt) {
       const f = this.f;
       const r = rates(f);
-      const batch = this.batch();
       this.acc += dt;
-      const interval = batch / r.P;
-      // Never flood the belt after a long frame.
+      const interval = this.batch() / r.P;
       if (this.acc > interval * 4) this.acc = interval * 4;
       while (this.acc >= interval) {
         this.acc -= interval;
-        const it = makeItem(f, this.rng);
-        it.id = this.nextId++;
-        it.x = 0;
-        it.batch = batch;
-        it.stamp = 0;
-        this.items.push(it);
+        this.items.push(this.spawn(0));
         this.events.push({ kind: 'stamp' });
       }
       const v = 1 / this.travel;
       for (const it of this.items) {
-        if (it.gone) { it.fade += dt * 2.5; continue; }
+        if (it.gone) { it.fade += dt * 2.2; continue; }
         const before = it.x;
         it.x += v * dt;
         it.stamp += dt;
@@ -351,15 +377,31 @@
         if (it.x >= 1 && !it.gone) this.ship(it);
       }
       this.items = this.items.filter((it) => !(it.gone && it.fade >= 1));
+      this.stepRush(dt);
+    }
+
+    stepRush(dt) {
+      const cat = catalog(this.f.tier);
+      if (this.rush) {
+        this.rush.time -= dt;
+        if (this.rush.time <= 0) { this.events.push({ kind: 'rushMissed', rush: this.rush }); this.rush = null; this.rushIn = 40 + this.rng.next() * 50; }
+        return;
+      }
+      if (cat.length < 2) return;
+      this.rushIn -= dt;
+      if (this.rushIn > 0) return;
+      const idx = this.rng.int(cat.length);
+      const need = this.rng.range(3, 5);
+      this.rush = { idx, key: Pieces.freeKey(cat[idx]), cells: cat[idx], need, got: 0, time: 30 + need * 6, total: 30 + need * 6 };
+      this.events.push({ kind: 'rush', rush: this.rush });
     }
 
     /** Items already on their way when you look (their output was counted while nobody watched). */
     prefill() {
-      const interval = this.batch() / rates(this.f).P;
-      const step = interval / this.travel;
+      const step = this.spawnInterval() / this.travel;
       for (let x = 0.9 - this.rng.next() * step; x > 0.02; x -= step) {
-        const it = makeItem(this.f, this.rng);
-        it.id = this.nextId++; it.x = x; it.batch = this.batch(); it.stamp = 1; it.pre = true;
+        const it = this.spawn(x);
+        it.stamp = 1; it.pre = true;
         if (x > Belt.INSPECT) it.checked = true;
         this.items.unshift(it);
       }
@@ -376,31 +418,63 @@
         earn(f, -0.6 * r.V * it.batch);
         f.stats.escaped += it.batch;
         f.flawless = 0;
+        if (f.streak) this.events.push({ kind: 'streakLost', from: f.streak });
+        f.streak = 0;
         progress(f, 'flawless', 0);
         this.events.push({ kind: 'escaped', item: it });
       } else {
-        earn(f, r.V * it.batch);
+        const v = r.V * it.batch * this.streakMult() * (it.golden ? 3 : 1);
+        earn(f, v);
         f.flawless += it.batch;
         progress(f, 'flawless', 0);
+        this.events.push({ kind: 'shipped', item: it, value: v });
       }
     }
 
+    /** A click on an item (how = 'manual'), or the inspector's arm (how = 'auto'). */
     remove(it, how) {
       const f = this.f, r = rates(f);
       if (it.gone) return null;
-      it.gone = how; it.fade = 0;
+      it.fade = 0;
       if (how === 'auto') {
+        it.gone = 'auto';
         earn(f, 0.2 * r.V * it.batch);
         f.stats.caughtAuto += it.batch;
         this.events.push({ kind: 'auto', item: it });
       } else if (it.defect) {
-        earn(f, 0.5 * r.V * it.batch);
+        it.gone = 'caught';
+        f.streak++;
+        f.bestStreak = Math.max(f.bestStreak, f.streak);
+        earn(f, 0.5 * r.V * it.batch * this.streakMult());
         f.stats.caughtManual += it.batch;
         progress(f, 'catch', 1);
-        this.events.push({ kind: 'caught', item: it });
+        this.events.push({ kind: 'caught', item: it, streak: f.streak });
+      } else if (it.golden) {
+        it.gone = 'golden';
+        const lines = 1 + this.rng.int(3);
+        earn(f, 5 * r.V * it.batch);
+        f.stats.golden++;
+        this.events.push({ kind: 'golden', item: it, lines });
+      } else if (this.rush && Pieces.freeKey(it.cells) === this.rush.key) {
+        it.gone = 'packed';
+        earn(f, r.V * it.batch * this.streakMult());
+        f.stats.shipped += it.batch;
+        this.rush.got++;
+        this.events.push({ kind: 'packed', item: it, rush: this.rush });
+        if (this.rush.got >= this.rush.need) {
+          const reward = { credits: Math.round(r.perSec * 45 + r.V * 10), lines: 2 + this.rng.int(4) };
+          earn(f, reward.credits);
+          f.stats.rushDone++;
+          progress(f, 'rush', 1);
+          this.events.push({ kind: 'rushDone', rush: this.rush, reward });
+          this.rush = null;
+          this.rushIn = 45 + this.rng.next() * 60;
+        }
       } else {
-        f.stats.falseRejects += it.batch;
         it.gone = 'wasted';
+        f.stats.falseRejects += it.batch;
+        if (f.streak) this.events.push({ kind: 'streakLost', from: f.streak });
+        f.streak = 0;
         this.events.push({ kind: 'wasted', item: it });
       }
       return it.gone;
@@ -411,7 +485,7 @@
 
   L.Factory = {
     TIERS, MAX_TIER, UPGRADES, DEFECTS, PATENTS_FOR_TIER,
-    create, rates, cost, buy, nextTier, unlockTier, earn, runExpected, catchUp,
+    create, migrate, rates, cost, buy, OFFLINE_HOURS, nextTier, unlockTier, earn, runExpected, catchUp,
     retoolGain, retool, newContract, fillContracts, progress, claim, catalog, makeItem, productName, plantName, Belt,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

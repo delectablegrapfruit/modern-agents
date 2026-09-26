@@ -150,7 +150,7 @@ main { flex: 1; position: relative; min-height: 0; }
 .seg button[aria-pressed="true"] { background: var(--panel-3); color: var(--fg); }
 .seg button .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; }
 
-.subtabs { flex: none; display: flex; gap: 2px; padding: 8px 10px 6px; overflow-x: auto; scrollbar-width: none; }
+.subtabs { flex: none; display: flex; flex-wrap: wrap; gap: 3px; padding: 8px 10px 6px; }
 .subtabs::-webkit-scrollbar { display: none; }
 .subtabs button {
   border: 0; background: transparent; color: var(--muted); padding: 4px 10px; border-radius: 7px;
@@ -167,11 +167,11 @@ main { flex: 1; position: relative; min-height: 0; }
 }
 .statusbar b { color: var(--fg); font-weight: 700; }
 .itembar {
-  flex: none; display: flex; gap: 3px; justify-content: center; flex-wrap: wrap;
+  flex: none; display: flex; gap: 3px; justify-content: center; flex-wrap: nowrap;
   padding: 5px 8px 8px; border-top: 1px solid var(--line);
 }
 .item-btn {
-  position: relative; width: 34px; height: 34px; border-radius: 8px;
+  position: relative; flex: 1 1 0; min-width: 22px; max-width: 40px; height: 36px; border-radius: 8px;
   border: 1px solid var(--line); background: var(--panel);
   display: grid; place-items: center; font-size: 16px; padding: 0; color: var(--fg);
 }
@@ -224,9 +224,19 @@ main { flex: 1; position: relative; min-height: 0; }
 .fac-head .credits { margin-left: auto; text-align: right; font-variant-numeric: tabular-nums; }
 .fac-head .credits .v { font-size: 20px; font-weight: 800; }
 .fac-head .credits .r { color: var(--muted); font-size: 11.5px; }
-.beltwrap { flex: none; position: relative; height: 150px; margin: 0 10px; }
+.beltwrap { flex: none; position: relative; height: clamp(210px, 44vh, 340px); margin: 0 10px 8px; }
 .beltwrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 .fac-panel { flex: none; padding: 0 10px; display: flex; flex-direction: column; gap: 6px; }
+.up-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.up-card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px; display: flex; flex-direction: column; gap: 4px; }
+.up-top { display: flex; align-items: center; gap: 5px; font-weight: 700; }
+.up-icon { color: var(--accent); }
+.up-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.up-lvl { font: 700 11px var(--mono-font); color: var(--muted); background: var(--panel-2); border-radius: 6px; padding: 0 5px; }
+.up-eff { color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.up-card .btn { width: 100%; }
+.row-card.contract .t .lvl { font-weight: 500; }
+.fac-foot { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: 11px; padding: 2px 2px 4px; }
 .row-card {
   display: flex; align-items: center; gap: 10px;
   background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px;
@@ -373,9 +383,35 @@ body.browser .edge { display: none; }
   .tabs button { padding: 6px 5px; }
   .puz-tools .btn { display: none; }
 }
-@media (max-height: 460px) {
-  .beltwrap { height: 110px; }
+@media (max-height: 520px) {
+  .beltwrap { height: 180px; }
 }
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }
+
+/* ---- tooltips ------------------------------------------------------------------------------------------------ */
+
+.tip {
+  position: absolute; z-index: 40; pointer-events: none; max-width: min(260px, calc(100% - 12px));
+  background: rgb(var(--bg)); border: 1px solid var(--line-2); border-radius: 10px; box-shadow: var(--shadow);
+  padding: 8px 10px; font-size: 12px; animation: fadein 0.12s ease;
+}
+.tip-title { font-weight: 700; margin-bottom: 2px; }
+.tip-body { color: var(--muted); }
+.tip-foot { margin-top: 5px; font: 600 11px var(--mono-font); color: var(--gem); }
+.sound-preview { border: 0; width: 100%; color: var(--fg); display: flex !important; flex-direction: row; gap: 8px; align-items: center; justify-content: center; font-weight: 600; }
+.sound-preview:hover { background: var(--panel-3); }
+.sound-preview .big-icon { font-size: 20px; color: var(--accent); }
+
+/* ---- puzzle history ------------------------------------------------------------------------------------------ */
+
+.hist-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; color: var(--muted); font-size: 12px; }
+.hist { display: flex; flex-direction: column; gap: 4px; max-height: 60vh; overflow-y: auto; }
+.hist-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 9px; background: var(--panel); border: 1px solid var(--line); }
+.hist-row .grow { flex: 1; min-width: 0; }
+.hist-row .t { font-weight: 700; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hist-row .t .sub { color: var(--muted); font-weight: 500; }
+.hist-row .d { color: var(--muted); font-size: 11px; }
+.hist-row.solved .d { color: color-mix(in srgb, var(--good) 75%, var(--muted)); }
+.hist-row .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }

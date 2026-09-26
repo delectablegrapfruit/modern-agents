@@ -18,7 +18,9 @@ same seed is the same puzzle for everyone, so it can be shared, replayed or retr
 free. Every puzzle is built backwards from a solution — rows are filled solid, pieces are lifted out only where they
 could have been flown in and set, and the result is played forward on the real rules before it is kept — so every seed
 is solvable, and Hard ones need tucks and spins. Goals: clear the board, clear N lines over bedrock, or clear the gems.
-Solving pays lines (more on the first try, double for the Daily). Wildcards:
+Solving pays lines (more on the first try, double for the Daily). History lists every puzzle you opened — solved or
+not, tries, time — with its seed and a Replay button. Solutions only ever need turns a person expects (in place, or
+nudged sideways off a wall), never SRS kicks that hop a piece through a gap. Wildcards:
 
 | Wildcard | |
 |---|---|
@@ -34,17 +36,21 @@ Solving pays lines (more on the first try, double for the Daily). Wildcards:
 | Blind Queue | no preview |
 | No Hold, Monochrome | as named |
 
-**Factory** — the idle part: a mino assembly line that runs while you work (and while Lull is closed, up to the
-warehouse's limit). Presses stamp polyominoes onto a belt; shipped minos earn credits. Some come out *defective* —
-a cell too many or too few, a piece broken off or held by a corner, cracked, scorched. Maintenance is clicking them
-off the belt before they ship (the Plant tab has a spec sheet of every legal shape); inspectors do it for you,
-imperfectly. Product lines climb from monominoes to decominoes (4,655 legal shapes); contracts pay credits, lines and
-items; retooling trades a plant for patents that make the next one richer. Progress is tuned in weeks, not minutes.
+**Factory** — the idle part: a mino assembly line that runs while you work (and up to 8 hours while Lull is
+closed). Three upgrades — Presses, Quality, Inspector — and the rest is played on the belt:
+- **Defects** — a cell too many or too few, a piece broken off or held by a corner, cracked, scorched. Click them
+  into the reject bin: each one grows your **QC streak**, worth up to ×2 on everything shipped while you watch.
+  Throw out a good piece or let a defect ship and the streak starts over. The spec sheet shows every legal shape.
+- **Golden minos** — rare; click them for lines.
+- **Rush orders** — a client wants a handful of one shape, on a timer; click matching pieces to pack them.
+Product lines climb from monominoes to decominoes (4,655 legal shapes); two contracts at a time pay credits, lines
+and items; retooling trades a plant for patents that make the next one richer. Progress is tuned in weeks.
 
 **Shop** — single-use items for Free Play, priced so they stay a treat: Reroll, Mirror, Pebble, Sand, Rewind, Order
 Slip, Drill, Bomb, Phase (passes through blocks into any gap), Settle (closes every hole), Chroma Purge, and Blueprint
 (draw your own piece). Cosmetics: palettes (Prism animates), mino skins (Gem, Glass, Neon, Jelly, Pixel …), board
-frames, backdrops, line-clear effects and ghost styles; a few are factory rewards.
+frames, backdrops, line-clear effects, ghost styles and **sound packs** (Soft, Typewriter, Chiptune, Bubbles,
+Marimba, Analog Synth, Glass, Wind Chimes — all synthesized, with a Listen button); a few are factory rewards.
 
 **Stats** — lines by source and day, clears, T-spins, combos, pieces per minute, inputs per piece, puzzle solves
 and first-try rates by difficulty and wildcard, factory quality control, items bought and used, time by mode.
@@ -61,9 +67,13 @@ and first-try rates by difficulty and wildcard, factory quality control, items b
 | 1–0, −, = | use an item |
 | ⌫ / U, R, N, H | undo, retry, next puzzle, hint |
 | ⌘1–⌘5, ⌘, | tabs, settings |
-| mouse | hover a column, click to drop, wheel to turn, right-click to hold (optional) |
+| mouse: hover | the piece follows the pointer |
+| mouse: click | hard drop |
+| mouse: drag | pull the piece down and sideways (under ledges); let go on the stack to set it, in the air to leave it |
+| wheel / right-click | turn |
+| click HOLD | hold, or swap back |
 
-Repeat delay and rate, preview length, sound, effects, background, theme and accent are in Settings.
+Every item on the bar explains itself on hover. Repeat delay (230 ms) and rate, preview length, sound, effects, background, theme and accent are in Settings.
 
 ## Build and run
 

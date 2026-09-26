@@ -5,7 +5,7 @@
   const L = (root.Lull = root.Lull || {});
   const { native, dateKey, Emitter, Factory } = L;
 
-  const SAVE_VERSION = 1;
+  const SAVE_VERSION = 2;
   const LS_KEY = 'lull.save.v1';
 
   // ---- the catalog --------------------------------------------------------------------------------------------------
@@ -98,8 +98,20 @@
     off:     { name: 'Off', price: 0 },
   };
 
-  const COSMETICS = { palette: PALETTES, skin: SKINS, frame: FRAMES, backdrop: BACKDROPS, effect: EFFECTS, ghost: GHOSTS };
-  const COSMETIC_LABELS = { palette: 'Palettes', skin: 'Mino skins', frame: 'Frames', backdrop: 'Backdrops', effect: 'Line clears', ghost: 'Ghosts' };
+  // Sound packs (the synth voices live in audio.js).
+  const SOUNDS = {
+    soft:       { name: 'Soft', price: 0, desc: 'Quiet ticks and a gentle thud.' },
+    typewriter: { name: 'Typewriter', price: 300, desc: 'Keys, carriage, a satisfying clack.' },
+    chip:       { name: 'Chiptune', price: 400, desc: 'Square waves from an old handheld.' },
+    bubbles:    { name: 'Bubbles', price: 450, desc: 'Everything goes bloop.' },
+    marimba:    { name: 'Marimba', price: 600, desc: 'Wooden, warm, a little tropical.' },
+    synth:      { name: 'Analog Synth', price: 750, desc: 'Filtered saws with some weight to them.' },
+    glass:      { name: 'Glass', price: 900, desc: 'Crystal pings that ring out.' },
+    chimes:     { name: 'Wind Chimes', price: 1200, desc: 'Every move a random note from one calm scale.' },
+  };
+
+  const COSMETICS = { palette: PALETTES, skin: SKINS, frame: FRAMES, backdrop: BACKDROPS, effect: EFFECTS, ghost: GHOSTS, sound: SOUNDS };
+  const COSMETIC_LABELS = { palette: 'Palettes', skin: 'Mino skins', frame: 'Frames', backdrop: 'Backdrops', effect: 'Line clears', ghost: 'Ghosts', sound: 'Sounds' };
 
   const ACCENTS = ['#8fb3ff', '#7bd88f', '#f6c177', '#eb6f92', '#c4a7e7', '#9ccfd8', '#f5f5f5', '#ff9e64'];
 
@@ -114,16 +126,16 @@
       created: now,
       lines: 0,
       inventory: Object.fromEntries(ITEM_ORDER.map((k) => [k, 0])),
-      owned: { palette: ['classic'], skin: ['flat'], frame: ['hairline'], backdrop: ['none', 'grid'], effect: ['fade'], ghost: ['outline', 'off'] },
-      equipped: { palette: 'classic', skin: 'flat', frame: 'hairline', backdrop: 'grid', effect: 'fade', ghost: 'outline' },
+      owned: { palette: ['classic'], skin: ['flat'], frame: ['hairline'], backdrop: ['none', 'grid'], effect: ['fade'], ghost: ['outline', 'off'], sound: ['soft'] },
+      equipped: { palette: 'classic', skin: 'flat', frame: 'hairline', backdrop: 'grid', effect: 'fade', ghost: 'outline', sound: 'soft' },
       settings: {
         bg: 'glass', tint: 0.78, accent: ACCENTS[0], theme: 'dark', onTop: true,
-        sound: false, volume: 0.35, das: 150, arr: 45, lowerRepeat: 60, mouse: true, preview: 5,
+        sound: true, volume: 0.35, das: 230, arr: 55, lowerRepeat: 70, mouse: true, preview: 5,
         motion: 'full', showKeys: true,
       },
       tab: 'play',
       free: null,
-      puzzle: { diff: 'E', next: { E: 1, M: 1, H: 1 }, current: null, solved: {} },
+      puzzle: { diff: 'E', next: { E: 1, M: 1, H: 1 }, current: null, solved: {}, history: [] },
       factory: Factory.create(),
       stats: {
         sessions: 0, timeMs: { play: 0, puzzle: 0, factory: 0, total: 0 },
@@ -149,6 +161,26 @@
     return out;
   }
 
+  /** Brings an older save up to date. */
+  function migrate(st) {
+    if ((st.v || 1) < 2) {
+      // v2: sound on by default, a longer key-repeat delay, and the old defaults moved with it.
+      st.settings.sound = true;
+      if (st.settings.das === 150) st.settings.das = 230;
+      if (st.settings.arr === 45) st.settings.arr = 55;
+      if (st.settings.lowerRepeat === 60) st.settings.lowerRepeat = 70;
+    }
+    for (const k of Object.keys(COSMETICS)) {
+      if (!Array.isArray(st.owned[k])) st.owned[k] = [];
+      const free = Object.keys(COSMETICS[k]).find((id) => COSMETICS[k][id].price === 0 && !COSMETICS[k][id].reward);
+      if (free && !st.owned[k].includes(free)) st.owned[k].push(free);
+      if (!COSMETICS[k][st.equipped[k]] || !st.owned[k].includes(st.equipped[k])) st.equipped[k] = free;
+    }
+    if (!Array.isArray(st.puzzle.history)) st.puzzle.history = [];
+    st.v = SAVE_VERSION;
+    return st;
+  }
+
   class Store extends Emitter {
     constructor() {
       super();
@@ -166,7 +198,7 @@
       if (raw) {
         try { this.state = merge(defaults(), JSON.parse(raw)); } catch (e) { this.state = defaults(); this.loadedFrom = 'corrupt'; }
       }
-      this.state.v = SAVE_VERSION;
+      migrate(this.state);
       this.state.stats.sessions++;
       return this.state;
     }
@@ -291,5 +323,5 @@
   }
 
   L.Store = Store;
-  Object.assign(L, { ITEMS, ITEM_ORDER, PALETTES, SKINS, FRAMES, BACKDROPS, EFFECTS, GHOSTS, COSMETICS, COSMETIC_LABELS, ACCENTS, SAVE_VERSION, defaultState: defaults, mergeState: merge });
+  Object.assign(L, { SOUNDS, migrateState: migrate, ITEMS, ITEM_ORDER, PALETTES, SKINS, FRAMES, BACKDROPS, EFFECTS, GHOSTS, COSMETICS, COSMETIC_LABELS, ACCENTS, SAVE_VERSION, defaultState: defaults, mergeState: merge });
 })(typeof globalThis !== 'undefined' ? globalThis : this);

@@ -203,6 +203,12 @@ function replay(p) {
     for (const m of t.path) {
       const ok = m === 'L' ? g.move(-1) : m === 'R' ? g.move(1) : m === 'D' ? g.lower() === 'moved' : m === 'CW' ? g.rotate(1) : m === 'CCW' ? g.rotate(-1) : m === '180' ? g.rotate(2) : (res = g.drop());
       assert(ok, 'move ' + m + ' in ' + p.seed);
+      if (m === 'CW' || m === 'CCW' || m === '180') {
+        // No hidden SRS hops: every turn the solution needs is in place or a sideways nudge.
+        const pc = g.piece, from = (pc.rot - (m === 'CW' ? 1 : m === 'CCW' ? -1 : 2) + 4) % 4;
+        const [kx, ky] = Pieces.kicksFor(pc.type, from, pc.rot)[pc.kick];
+        assert(ky === 0 && Math.abs(kx) <= 2, 'intuitive turn in ' + p.seed);
+      }
     }
     if (!res) res = g.lower();
     assert(res && res !== 'moved', 'sets at the target in ' + p.seed);
@@ -250,9 +256,17 @@ console.log('factory');
 test('upgrades raise output, value and quality', () => {
   const f = Factory.create();
   const r0 = Factory.rates(f);
-  f.up.press = 3; f.up.tempo = 2; f.up.mold = 2; f.up.calib = 2; f.up.inspect = 2;
+  f.up.press = 3; f.up.quality = 2; f.up.inspect = 2;
   const r1 = Factory.rates(f);
   assert(r1.P > r0.P && r1.V > r0.V && r1.D < r0.D && r1.C > r0.C && r1.perSec > r0.perSec);
+  assert.deepStrictEqual(Object.keys(Factory.UPGRADES), ['press', 'quality', 'inspect']);
+});
+test('old factories fold seven upgrades into three', () => {
+  const old = Factory.create();
+  old.v = 1; old.up = { press: 12, tempo: 4, mold: 6, calib: 2, inspect: 3, warehouse: 2, lens: 1 };
+  Factory.migrate(old);
+  assert.deepStrictEqual(old.up, { press: 12, quality: 4, inspect: 3 });
+  assert(Factory.rates(old).P > 0);
 });
 test('buying spends credits; costs grow', () => {
   const f = Factory.create();
@@ -264,11 +278,11 @@ test('buying spends credits; costs grow', () => {
   f.credits = 0;
   assert(!Factory.buy(f, 'press'));
 });
-test('time away is paid, up to the warehouse limit', () => {
+test('time away is paid, up to eight hours', () => {
   const f = Factory.create();
-  f.lastTick = Date.now() - 10 * 3600e3;
+  f.lastTick = Date.now() - 20 * 3600e3;
   const r = Factory.catchUp(f, Date.now());
-  assert.strictEqual(r.cappedSeconds, 2 * 3600);
+  assert.strictEqual(r.cappedSeconds, 8 * 3600);
   assert(f.credits > 0 && f.stats.shipped > 0);
   assert(Factory.catchUp(f, Date.now()) === null, 'nothing more to pay');
 });
@@ -286,14 +300,14 @@ test('retooling needs Pentominoes and grants patents', () => {
 test('contracts fill, progress, and pay out', () => {
   const f = Factory.create();
   Factory.fillContracts(f);
-  assert.strictEqual(f.contracts.length, 3);
+  assert.strictEqual(f.contracts.length, 2);
   const c = f.contracts[0];
   Factory.progress(f, c.kind === 'flawless' ? 'ship' : c.kind, c.target);
   if (c.kind === 'flawless') { f.flawless = c.target; Factory.progress(f, 'flawless', 0); }
   assert(c.done);
   const reward = Factory.claim(f, c.id);
   assert(reward);
-  assert.strictEqual(f.contracts.length, 3);
+  assert.strictEqual(f.contracts.length, 2);
   assert.strictEqual(f.stats.contractsDone, 1);
 });
 test('good products are legal polyominoes; defects are not (or visibly damaged)', () => {
@@ -316,16 +330,55 @@ test('the belt ships and pays while watched', () => {
   const b = new Factory.Belt(f);
   for (let i = 0; i < 400; i++) b.step(0.1);
   assert(f.stats.shipped > 0 && f.credits > 0);
-  const it = b.items.find((x) => !x.gone);
-  if (it) { it.defect = 'extra'; assert.strictEqual(b.remove(it, 'manual'), 'manual'); assert.strictEqual(f.stats.caughtManual, it.batch); }
+});
+test('QC streak: pulled defects build it, a pulled good piece breaks it', () => {
+  const f = Factory.create();
+  f.tier = 4;
+  const b = new Factory.Belt(f);
+  const r = new RNG(3);
+  for (let i = 0; i < 4; i++) { const it = Factory.makeItem(f, r, true); it.batch = 1; b.items.push(it); b.remove(it, 'manual'); }
+  assert.strictEqual(f.streak, 4);
+  assert(b.streakMult() > 1);
+  const good = Factory.makeItem(f, r, false); good.batch = 1; good.golden = false; b.items.push(good);
+  assert.strictEqual(b.remove(good, 'manual'), 'wasted');
+  assert.strictEqual(f.streak, 0);
+});
+test('rush orders: packing the asked-for shape fills them', () => {
+  const f = Factory.create();
+  f.tier = 4;
+  const b = new Factory.Belt(f);
+  b.rushIn = 0; b.stepRush(0.1);
+  assert(b.rush, 'a rush order arrives');
+  const need = b.rush.need, r = new RNG(4);
+  for (let i = 0; i < need; i++) { const it = Factory.makeItem(f, r, false, b.rush.idx); it.batch = 1; it.golden = false; b.items.push(it); assert.strictEqual(b.remove(it, 'manual'), 'packed'); }
+  assert.strictEqual(b.rush, null);
+  assert.strictEqual(f.stats.rushDone, 1);
+  assert(b.drain().some((e) => e.kind === 'rushDone' && e.reward.lines > 0));
+});
+test('golden minos pay lines', () => {
+  const f = Factory.create();
+  const b = new Factory.Belt(f);
+  const it = Factory.makeItem(f, new RNG(5), false); it.batch = 1; it.golden = true; b.items.push(it);
+  assert.strictEqual(b.remove(it, 'manual'), 'golden');
+  assert(b.drain().some((e) => e.kind === 'golden' && e.lines >= 1));
 });
 
 console.log('save');
+test('v1 saves move to v2: sound on, slower key repeat, puzzle history', () => {
+  const st = L.mergeState(L.defaultState(), { v: 1, settings: { sound: false, das: 150, arr: 45 }, puzzle: { solved: {} } });
+  delete st.puzzle.history;
+  L.migrateState(st);
+  assert.strictEqual(st.v, 2);
+  assert.strictEqual(st.settings.sound, true);
+  assert.strictEqual(st.settings.das, 230);
+  assert.deepStrictEqual(st.puzzle.history, []);
+  assert.strictEqual(st.equipped.sound, 'soft');
+});
 test('old saves gain new fields and keep their own', () => {
   const merged = L.mergeState(L.defaultState(), { lines: 55, settings: { sound: true }, owned: { skin: ['flat', 'gem'] } });
   assert.strictEqual(merged.lines, 55);
   assert.strictEqual(merged.settings.sound, true);
-  assert.strictEqual(merged.settings.das, 150);
+  assert.strictEqual(merged.settings.das, 230);
   assert.deepStrictEqual(merged.owned.skin, ['flat', 'gem']);
   assert(merged.factory && merged.factory.up);
 });

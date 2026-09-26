@@ -319,9 +319,14 @@
   // ---- effects --------------------------------------------------------------------------------------------------------
 
   class FX {
-    constructor() { this.parts = []; this.flashes = []; this.texts = []; this.fades = []; this.shake = 0; }
-    get active() { return this.parts.length || this.flashes.length || this.texts.length || this.fades.length || this.shake > 0.01; }
-    clear() { this.parts = []; this.flashes = []; this.texts = []; this.fades = []; this.shake = 0; }
+    constructor() { this.parts = []; this.flashes = []; this.texts = []; this.fades = []; this.streaks = []; this.shake = 0; }
+    get active() { return this.parts.length || this.flashes.length || this.texts.length || this.fades.length || this.streaks.length || this.shake > 0.01; }
+    clear() { this.parts = []; this.flashes = []; this.texts = []; this.fades = []; this.streaks = []; this.shake = 0; }
+    /** A hard drop's trail: one fading band per column, from where the piece was to where it landed. */
+    streak(x, y0, y1, w, color) { this.streaks.push({ x, y0, y1, w, color, t: 0, dur: 0.22 }); }
+    dust(x, y, s, color) {
+      for (let k = 0; k < 3; k++) this.parts.push({ kind: 'sq', x: x + Math.random() * s, y, vx: (Math.random() - 0.5) * 70, vy: -20 - Math.random() * 40, g: 160, life: 0, max: 0.35 + Math.random() * 0.2, size: Math.max(2, s * 0.14), color });
+    }
 
     flash(x, y, w, h, color, dur) { this.flashes.push({ x, y, w, h, color: color || '#ffffff', t: 0, dur: dur || 0.35 }); }
     text(str, x, y, color, size) { this.texts.push({ str, x, y, color: color || '#fff', size: size || 16, t: 0, dur: 1.3 }); }
@@ -371,13 +376,21 @@
       this.texts = this.texts.filter((f) => f.t < f.dur);
       for (const f of this.fades) f.t += dt;
       this.fades = this.fades.filter((f) => f.t < f.dur);
+      for (const f of this.streaks) f.t += dt;
+      this.streaks = this.streaks.filter((f) => f.t < f.dur);
       this.shake *= Math.exp(-dt * 14);
     }
 
     draw(ctx) {
+      for (const f of this.streaks) {
+        const a = 1 - f.t / f.dur;
+        const g = ctx.createLinearGradient(0, f.y0, 0, f.y1);
+        g.addColorStop(0, rgba(f.color, 0)); g.addColorStop(1, rgba(f.color, 0.45 * a));
+        ctx.fillStyle = g; ctx.fillRect(f.x + f.w * 0.15, Math.min(f.y0, f.y1), f.w * 0.7, Math.abs(f.y1 - f.y0));
+      }
       for (const f of this.fades) {
         const a = 1 - f.t / f.dur;
-        for (const c of f.cells) drawCell(ctx, f.skin, c.color, c.x, c.y, c.s, a * 0.9);
+        for (const c of f.cells) drawCell(ctx, f.skin, c.color, c.x, c.y, c.s, a * (f.alpha || 0.9));
       }
       for (const f of this.flashes) {
         ctx.fillStyle = rgba(f.color, 0.75 * (1 - f.t / f.dur));
@@ -525,6 +538,25 @@
     }
 
     /** Logical column under a screen point (CSS px), or null outside the board. */
+    /** Logical cell under a screen point (CSS px), or null outside the board. */
+    cellAt(px, py) {
+      if (!this.lay || !this.game) return null;
+      const { s, board } = this.lay, g = this.game, rot = this.view.rot;
+      if (px < board.x || py < board.y || px >= board.x + board.w || py >= board.y + board.h) return null;
+      const c = Math.floor((px - board.x) / s), r = Math.floor((py - board.y) / s);
+      if (rot === 0) return { x: c, y: g.h - 1 - r };
+      if (rot === 180) return { x: g.w - 1 - c, y: r };
+      if (rot === 90) return { x: r, y: c };
+      return { x: g.w - 1 - r, y: g.h - 1 - c };
+    }
+
+    /** Is a screen point on the hold box? */
+    onHold(px, py) {
+      if (!this.lay || !this.game || this.game.mods.noHold) return false;
+      const b = this.lay.hold;
+      return px >= b.x - 4 && px <= b.x + b.w + 4 && py >= b.y - 4 && py <= b.y + b.h + 4;
+    }
+
     columnAt(px, py) {
       if (!this.lay || !this.game) return null;
       const { s, board } = this.lay, g = this.game, rot = this.view.rot;
@@ -553,7 +585,7 @@
       return look.colors[v & CELL.COLOR] || look.colors[8];
     }
 
-    needsFrame() { return this.dirty || this.fx.active || (this.look && this.look.animated); }
+    needsFrame() { return this.dirty || this.fx.active || this.alive || (this.look && this.look.animated); }
 
     render(now) {
       if (!this.game || !this.look || !this.cssW) return;
@@ -608,6 +640,12 @@
         ctx.restore();
       }
 
+      // Mouse play: the column under the pointer.
+      if (this.pointerCol != null && p) {
+        ctx.fillStyle = rgba(look.theme.accent, 0.07);
+        for (let y = 0; y < g.h; y++) { const [sx, sy] = this.toScreen(this.pointerCol, y); ctx.fillRect(sx, sy, s, s); }
+      }
+
       // Hint (puzzle): where the known solution puts this piece.
       if (this.hint && p) {
         ctx.save();
@@ -639,6 +677,12 @@
       }
 
       drawFrame(ctx, look.frame, board, look.theme.accent, now);
+      // Close to the top: the frame breathes red.
+      if (!g.fixed && g.board.stackHeight() > g.h * 0.72) {
+        ctx.save(); ctx.strokeStyle = rgba('#eb6f92', 0.35 + 0.25 * Math.sin(now / 250)); ctx.lineWidth = 3;
+        ctx.strokeRect(board.x - 3, board.y - 3, board.w + 6, board.h + 6); ctx.restore();
+        this.alive = true;
+      } else this.alive = false;
       if (this.view.wrap) {
         ctx.save();
         ctx.strokeStyle = look.theme.accent; ctx.lineWidth = 3; ctx.setLineDash([4, 5]); ctx.lineDashOffset = -(now / 60) % 9;
@@ -667,8 +711,10 @@
       if (!g.mods.noHold) {
         ctx.fillText('HOLD', hold.x + 2, hold.y);
         const box = { x: hold.x, y: hold.y + s * 0.7, w: hold.w, h: hold.h - s * 0.7 };
-        ctx.strokeStyle = th.line; ctx.lineWidth = 1; rr(ctx, box.x + 0.5, box.y + 0.5, box.w - 1, box.h - 1, 6); ctx.stroke();
+        if (this.holdHover) { ctx.fillStyle = rgba(th.accent, 0.12); rr(ctx, box.x + 0.5, box.y + 0.5, box.w - 1, box.h - 1, 6); ctx.fill(); }
+        ctx.strokeStyle = this.holdHover ? th.accent : th.line; ctx.lineWidth = this.holdHover ? 1.5 : 1; rr(ctx, box.x + 0.5, box.y + 0.5, box.w - 1, box.h - 1, 6); ctx.stroke();
         if (g.hold) drawPieceIn(ctx, g.hold, box, s * 0.7, Object.assign({}, pl, { alpha: g.holdLocked ? 0.35 : 1 }));
+        else if (this.holdHover) { ctx.save(); ctx.fillStyle = th.muted; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('click to hold', box.x + box.w / 2, box.y + box.h / 2); ctx.restore(); }
       }
       // Next
       const n = Math.min(g.fixed ? g.queue.length : g.previewCount, g.queue.length);
@@ -724,6 +770,23 @@
       if (!this.lay) this.layout();
       const s = this.lay.s, look = this.look;
       const effect = look.effect;
+      const pieceColor = this.colorOf(result.color || 8);
+      if (!reduced && result.dropCells && result.dropDist > 0) {
+        // The drop's trail, and a little shake that grows with the fall.
+        const tops = new Map();
+        for (const [x, y] of result.dropCells) tops.set(x, Math.max(tops.has(x) ? tops.get(x) : -1, y));
+        for (const [x, top] of tops) {
+          const [sx, sy0] = this.toScreen(x, top), [, sy1] = this.toScreen(x, top - result.dropDist);
+          this.fx.streak(sx, sy0, sy1, s, pieceColor);
+        }
+        this.fx.shake = Math.max(this.fx.shake, Math.min(3, result.dropDist * 0.25));
+      }
+      if (!reduced && result.cells && result.cells.length && !result.lines) {
+        // Dust where it landed.
+        const low = new Map();
+        for (const [x, y] of result.cells) low.set(x, Math.min(low.has(x) ? low.get(x) : Infinity, y));
+        for (const [x, y] of low) { const [sx, sy] = this.toScreen(x, y); const down = this.screenDir(0, -1); this.fx.dust(sx, sy + (down[1] > 0 ? s : 0), s, look.theme.muted); }
+      }
       if (result.cells && result.cells.length && this.view.vanish) {
         this.fx.fadeCells(result.cells.map(([x, y]) => { const [sx, sy] = this.toScreen(x, y); return { x: sx, y: sy, s, color: this.colorOf(result.color || 8) }; }), look.skin, 1.4);
       } else if (result.cells && result.cells.length && !reduced) {
@@ -740,6 +803,7 @@
         }
         if (!reduced) this.fx.shake = Math.min(6, 1.5 * result.lines);
         const b = this.lay.board;
+        if (this.showBank) this.fx.text('+' + result.lines + ' ◆', b.x + b.w / 2, b.y + b.h * 0.55, '#8fe3ff', Math.max(12, Math.min(18, s * 0.75)));
         const label = labelFor(result);
         if (label) this.fx.text(label, b.x + b.w / 2, b.y + b.h * 0.42, result.perfect ? '#ffe28a' : '#ffffff', Math.max(13, Math.min(22, s * 0.9)));
       } else if (result.tspin) {
@@ -757,6 +821,16 @@
       if (result.drilled && result.drilled.length) this.fx.burst(reduced ? 'fade' : 'sparks', result.drilled.map(([x, y, v]) => { const [sx, sy] = this.toScreen(x, y); return { x: sx, y: sy, color: this.colorOf(v) }; }), s, reduced);
       this.dirty = true;
     }
+
+    /** A faint afterimage where the piece just was (moves and turns). */
+    trail(cells, color, reduced) {
+      if (reduced || !this.lay || !cells.length) return;
+      const s = this.lay.s;
+      this.fx.fades.push({ cells: cells.filter(([, y]) => y < this.game.h).map(([x, y]) => { const [sx, sy] = this.toScreen(x, y); return { x: sx, y: sy, s, color }; }), skin: this.look.skin, t: 0, dur: 0.12, alpha: 0.35 });
+    }
+
+    /** A blocked move: a nudge. */
+    bump(reduced) { if (!reduced) this.fx.shake = Math.max(this.fx.shake, 1.2); this.dirty = true; }
 
     onPurge(gone, reduced) {
       if (!this.lay) this.layout();

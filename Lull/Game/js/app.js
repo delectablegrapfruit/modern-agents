@@ -29,6 +29,7 @@
       this.store.load();
       this.applySettings(true);
       this.buildChrome();
+      UI.initTooltips();
       this.keys = new Keys(() => this.settings);
       this.modes.play = new Modes.PlayMode(this);
       this.modes.puzzle = new Modes.PuzzleMode(this);
@@ -60,6 +61,7 @@
       appEl.className = 'bg-' + s.bg;
       this.sound.enabled = !!s.sound;
       this.sound.volume = s.volume;
+      this.sound.pack = this.state.equipped.sound || 'soft';
       const css = getComputedStyle(rootEl);
       const v = (k) => css.getPropertyValue(k).trim();
       this.theme = { name: theme, well: v('--well'), grid: v('--grid'), line: v('--line-2'), muted: v('--muted'), fg: v('--fg'), accent: s.accent, fog: v('--fog'), mono: v('--mono') };
@@ -75,6 +77,7 @@
     look() { return Render.makeLook(this.state.equipped, this.theme, performance.now()); },
 
     applyLook() {
+      this.sound.pack = this.state.equipped.sound || 'soft';
       for (const k of ['play', 'puzzle']) if (this.modes[k]) { this.modes[k].view.setLook(this.look()); this.modes[k].view.dirty = true; }
       if (this.tab === 'shop') UI.renderShop(this, this.shopSub);
     },
@@ -230,7 +233,6 @@
         this.store.dirty = true;
       }
       this.secondCount = (this.secondCount || 0) + 1;
-      if (this.tab === 'factory' && this.secondCount % 3 === 0) this.modes.factory.renderTabs();
       if (this.store.dirty && performance.now() - this.lastSave > 5000) this.saveNow();
     },
 

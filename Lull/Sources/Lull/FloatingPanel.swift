@@ -13,7 +13,7 @@ final class FloatingPanel: NSPanel {
         becomesKeyOnlyIfNeeded = false
         isMovableByWindowBackground = false
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        minSize = NSSize(width: 340, height: 420)
+        minSize = NSSize(width: 400, height: 580)
         isReleasedWhenClosed = false
         title = "Lull"
     }
