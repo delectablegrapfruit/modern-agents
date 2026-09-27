@@ -70,13 +70,45 @@ public struct Shape: Sendable {
         case .ellipse(let r): return [CGPoint(x: r.minX, y: r.minY), CGPoint(x: r.maxX, y: r.maxY)]
         }
     }
+
+    /// The shape in one colour: its fill and its stroke both.
+    func inked(_ paint: Paint) -> Shape {
+        var out = self
+        if fill != nil { out.fill = paint }
+        if stroke != nil { out.stroke = paint }
+        return out
+    }
+
+    /// The shape moved by `f`, point by point (an ellipse by its centre).
+    func mapped(_ f: (CGPoint) -> CGPoint) -> Shape {
+        var out = self
+        switch kind {
+        case .ellipse(let r):
+            let c = f(CGPoint(x: r.midX, y: r.midY))
+            out.kind = .ellipse(CGRect(x: c.x - r.width / 2, y: c.y - r.height / 2, width: r.width, height: r.height))
+        case .path(let path):
+            var moved = Path()
+            moved.segments = path.segments.map { segment in
+                switch segment {
+                case .move(let p): return .move(f(p))
+                case .line(let p): return .line(f(p))
+                case .quad(let p, let c): return .quad(f(p), control: f(c))
+                case .close: return .close
+                }
+            }
+            out.kind = .path(moved)
+        }
+        return out
+    }
 }
 
-/// A picture as shapes: the figure itself (drawn as one, with a thin rim of light around it) and an overlay drawn
-/// on top without the rim (the trail of a swing). Rendered with Core Graphics in the app and as SVG for previews.
+/// A picture as shapes: the figure itself (drawn as one, with a thin rim of light around it), an underlay drawn first
+/// without the rim (a smear: the body's echoes and the limbs and blade repeated along a swing), and an overlay drawn on
+/// top without the rim (the bright trail of a swing). Rendered with Core Graphics in the app and as SVG for previews.
 public struct Sketch: Sendable {
     public var width: Int
     public var height: Int
+    public var underlay: [Shape] = []
     public var body: [Shape] = []
     public var overlay: [Shape] = []
     /// The rim of light: its colour and how far it spreads, in pixels.
@@ -92,29 +124,10 @@ public struct Sketch: Sendable {
 
     /// The sketch with every point moved by `f` (a turn, a shift). Ellipses move by their centres.
     public func mapped(_ f: (CGPoint) -> CGPoint) -> Sketch {
-        func map(_ shape: Shape) -> Shape {
-            var out = shape
-            switch shape.kind {
-            case .ellipse(let r):
-                let c = f(CGPoint(x: r.midX, y: r.midY))
-                out.kind = .ellipse(CGRect(x: c.x - r.width / 2, y: c.y - r.height / 2, width: r.width, height: r.height))
-            case .path(let path):
-                var moved = Path()
-                moved.segments = path.segments.map { segment in
-                    switch segment {
-                    case .move(let p): return .move(f(p))
-                    case .line(let p): return .line(f(p))
-                    case .quad(let p, let c): return .quad(f(p), control: f(c))
-                    case .close: return .close
-                    }
-                }
-                out.kind = .path(moved)
-            }
-            return out
-        }
         var out = self
-        out.body = body.map(map)
-        out.overlay = overlay.map(map)
+        out.underlay = underlay.map { $0.mapped(f) }
+        out.body = body.map { $0.mapped(f) }
+        out.overlay = overlay.map { $0.mapped(f) }
         return out
     }
 
@@ -122,7 +135,7 @@ public struct Sketch: Sendable {
     /// to the canvas, on whole pixels.
     public func bounds(margin: CGFloat) -> CGRect {
         var minX = CGFloat.infinity, minY = CGFloat.infinity, maxX = -CGFloat.infinity, maxY = -CGFloat.infinity
-        for shape in body + overlay {
+        for shape in underlay + body + overlay {
             let grow = shape.stroke == nil ? 0 : shape.width / 2
             for p in shape.points {
                 minX = min(minX, p.x - grow)
@@ -139,7 +152,7 @@ public struct Sketch: Sendable {
 
     /// Whether every shape keeps within the canvas (with a little room for the rim).
     public func fits(margin: CGFloat = 0) -> Bool {
-        let all = (body + overlay).flatMap(\.points)
+        let all = (underlay + body + overlay).flatMap(\.points)
         return all.allSatisfy { $0.x >= -margin && $0.y >= -margin && $0.x <= CGFloat(width) + margin && $0.y <= CGFloat(height) + margin }
     }
 }
@@ -183,6 +196,11 @@ public struct Pen {
         overlaying = true
         body(&self)
         overlaying = false
+    }
+
+    /// Shapes laid under everything, outside the rim of light.
+    public mutating func underlay(_ shapes: [Shape]) {
+        sketch.underlay += shapes
     }
 }
 
@@ -236,6 +254,7 @@ extension Sketch {
     /// The sketch as SVG elements (no document wrapper), offset by `x`, `y` and scaled by `scale`.
     public func svg(x: CGFloat = 0, y: CGFloat = 0, scale: CGFloat = 1) -> String {
         var out = "<g transform=\"translate(\(Sketch.number(x)) \(Sketch.number(y))) scale(\(String(format: "%.3f", Double(scale))))\">"
+        for shape in underlay { out += element(shape) }
         // The rim: every body shape outlined in the rim colour first, the shapes over it.
         for shape in body { out += element(shape, outline: rim, outlineWidth: rimRadius * 2) }
         for shape in body { out += element(shape) }

@@ -119,6 +119,11 @@ public struct Pose: Sendable {
     public var grounded = false
     /// Whether the weapon is in hand (a dead man has let go of his).
     public var armed = true
+    /// A smear frame: where the arms and weapon were earlier in this motion (oldest first), drawn behind the pose as
+    /// fading multiples with a solid sweep of ink between the blades; and how far the body was carried in it (figure
+    /// heights; forward is positive), drawn as echoes trailing behind it.
+    public var ghosts: [Pose] = []
+    public var drag: CGFloat = 0
     /// How much of the ronin's blade is in its scabbard, 0…1.
     public var sheathed: CGFloat = 0
     /// How far the scabbard is pulled back for the draw (saya-biki), 0…1.
@@ -163,7 +168,14 @@ public struct Pose: Sendable {
         p.stream = m(a.stream, b.stream)
         p.wave = m(a.wave, b.wave)
         p.smear = nil
+        p.ghosts = []
+        p.drag = 0
         return p
+    }
+
+    /// The in-betweens of a motion from `a` to `b`, oldest first: for a smear frame.
+    static func between(_ a: Pose, _ b: Pose, _ fractions: [CGFloat] = [0.2, 0.42, 0.62, 0.8]) -> [Pose] {
+        fractions.map { mix(a, b, $0) }
     }
 }
 
@@ -399,7 +411,13 @@ public enum Figure {
             p.front = leg(phase)
             p.back = leg(phase + .pi)
             p.lean += 0.03 * build.stride + 0.015 * cos(2 * phase)
-            p.lift = -0.012 * cos(2 * phase)
+            // Down on the contact, up through the pass; the heavy ones rock with it, the warlord hardly at all.
+            let heavy = cast == .foe(.brute)
+            p.lift = -(heavy ? 0.026 : cast == .foe(.warlord) ? 0.01 : 0.017) * cos(2 * phase - 0.5)
+            if heavy {
+                p.lean += 0.04 * sin(phase)
+                p.tilt = 0.06 * sin(phase)
+            }
             p.wave = CGFloat(k) / CGFloat(Frame.walkFrames)
             p.stream = 0.3 * build.stride
             // The hands ride the stride; a free arm swings against the legs; the weapon sways.
@@ -438,7 +456,16 @@ public enum Figure {
             }
         case .strike(let k):
             switch k {
-            case 0, 1: return key(cast, .strike(k))
+            case 0, 1:
+                // Smear frames: the blow drawn as one motion from the coil (or on into the follow-through).
+                var p = key(cast, .strike(k))
+                guard cast != .foe(.archer) else { return p }
+                var from = key(cast, k == 0 ? .windup(2) : .strike(0))
+                // The kanabō comes over the top, not up from under.
+                if cast == .foe(.brute), from.blade < 0, p.blade > 0 { from.blade += 2 * .pi }
+                p.ghosts = Pose.between(from, p, k == 0 ? [0.2, 0.42, 0.62, 0.8] : [0.35, 0.7])
+                p.drag = k == 0 ? 0.05 : 0.02
+                return p
             default:
                 var p = Pose.mix(key(cast, .strike(1)), base, 0.5)
                 p.stream = 0.4
@@ -453,6 +480,20 @@ public enum Figure {
             return swing(cut, phase)
         case .flourish(let k):
             return flourish(k)
+        case .stumble(0) where cast == .hero, .repelled(0) where cast == .hero:
+            // Carried past the mark, or flung back off a guard: smeared.
+            var p = key(cast, frame)
+            p.ghosts = Pose.between(stance(.hero), p, [0.35, 0.7])
+            p.drag = frame == .stumble(0) ? 0.04 : -0.04
+            return p
+        case .hurt(0) where cast == .hero:
+            var p = key(cast, frame)
+            p.drag = -0.04
+            return p
+        case .leap:
+            var p = key(cast, frame)
+            p.drag = 0.06
+            return p
         default:
             return key(cast, frame)
         }
@@ -856,6 +897,7 @@ public enum Figure {
             p.arm2 = (-1.9, -1.4)
             p.blade = 2.9
             p.stream = 0.9
+            p.drag = -0.05
         case 1:
             p.lean = 0.1
             p.tilt = 0.45
@@ -1010,13 +1052,22 @@ public enum Figure {
             p.smear = trail(keys.from + arc * s.tail, p.blade, s.strength)
             p.stream = 0.5 + 0.5 * s.t
             p.wave = 0.1 + 0.35 * s.t
+            // A smear frame: the arms and blade along the path since the last frame, the body dragged after them.
+            let before = phase == 1 ? (t: CGFloat(0), whip: CGFloat(0)) : (t: swing[phase - 2].t, whip: swing[phase - 2].whip)
+            p.ghosts = [0.18, 0.4, 0.62, 0.82].map { f in
+                moment(before.t + (s.t - before.t) * f, whip: before.whip + (s.whip - before.whip) * f)
+            }
+            p.drag = (s.t - before.t) * 0.16
             return p
         case 6, 7:
             // The follow-through: the blade carries past its mark and the body settles lower after it.
             var p = keys.end
             if !thrust { p.blade += (arc > 0 ? 1 : -1) * (phase == 6 ? 0.3 : 0.2) }
             p.lean += phase == 6 ? 0.05 : 0.035
-            if phase == 6 { p.smear = trail(keys.to - arc * 0.2, p.blade, 0.3) }
+            if phase == 6 {
+                p.smear = trail(keys.to - arc * 0.2, p.blade, 0.3)
+                p.ghosts = Pose.between(moment(1, whip: 1), p, [0.35, 0.7])
+            }
             p.stream = phase == 6 ? 0.9 : 0.75
             p.wave = phase == 6 ? 0.55 : 0.65
             return p
@@ -1104,6 +1155,11 @@ public enum Figure {
             p.stream = 0.4
             p.wave = 0.9
         }
+        // Out of the scabbard and through the cut: smear frames.
+        if (1...6).contains(phase) {
+            p.ghosts = Pose.between(draw(phase - 1), p)
+            p.drag = phase == 4 || phase == 5 ? 0.035 : 0.02
+        }
         return p
     }
 
@@ -1159,6 +1215,8 @@ public enum Figure {
             p.sheathed = 1
             p.wave = 0.9
         }
+        // The snap of the chiburi, smeared.
+        if k == 2 || k == 3 { p.ghosts = Pose.between(flourish(k - 1), p) }
         return p
     }
 }
@@ -1315,6 +1373,57 @@ private struct Drawer {
             let blade = bladeVector(pose.blade, flat: flat).d
             pen.overlay { pen in Drawer.smear(&pen, origin: origin, radius: radius, blade: blade, H: H, smear) }
         }
+        if !pose.ghosts.isEmpty || pose.drag != 0 { smearFrame() }
+    }
+
+    /// A smear frame, laid under the figure: the body's echoes trailing behind it, the arms and weapon repeated back
+    /// along the motion as fading multiples, and between the blades a solid sweep of ink, dense at the blade and
+    /// thinning to nothing at the start of the swing, split into strands like a dry brush.
+    mutating func smearFrame() {
+        let ink = Palette.silhouette
+        var under: [Shape] = []
+        // The body carried along: two echoes behind it, fainter as they go.
+        if pose.drag != 0 {
+            let body = pen.sketch.body
+            for (k, alpha) in [(CGFloat(2), CGFloat(0.12)), (1, 0.24)] {
+                let dx = -face.x * pose.drag * H * k
+                under += body.map { $0.mapped { CGPoint(x: $0.x + dx, y: $0.y) }.inked(Paint(ink, alpha)) }
+            }
+        }
+        // The arms and weapon along the swing, and where each blade was.
+        var blades: [(hand: CGPoint, tip: CGPoint)] = []
+        let count = CGFloat(pose.ghosts.count)
+        for (i, ghost) in pose.ghosts.enumerated() {
+            var g = ghost
+            g.ghosts = []
+            g.drag = 0
+            g.smear = nil
+            var d = Drawer(pose: g, build: build, H: H)
+            d.arm(d.other, d.shade)
+            d.arm(d.main, d.body)
+            if g.armed, build.weapon != .bow { d.weapon(d.main.hand, d.other.hand) }
+            if let tip = d.tip { blades.append((d.main.hand, tip)) }
+            let alpha = 0.1 + 0.28 * CGFloat(i + 1) / (count + 1)
+            under += d.pen.sketch.body.map { $0.inked(Paint(ink, alpha)) }
+        }
+        if let tip, !blades.isEmpty { blades.append((main.hand, tip)) }
+        // The sweep: each band between two blades, from a third of the way out to the point, darker toward the blade;
+        // each band split lengthways into strands with gaps.
+        if blades.count > 1 {
+            for i in 0..<(blades.count - 1) {
+                let a = blades[i], b = blades[i + 1]
+                let alpha = 0.22 + 0.62 * CGFloat(i + 1) / CGFloat(blades.count - 1)
+                for (from, to) in [(CGFloat(0.28), CGFloat(0.5)), (0.53, 0.76), (0.79, 1.0)] {
+                    func along(_ p: (hand: CGPoint, tip: CGPoint), _ t: CGFloat) -> CGPoint {
+                        CGPoint(x: p.hand.x + (p.tip.x - p.hand.x) * t, y: p.hand.y + (p.tip.y - p.hand.y) * t)
+                    }
+                    let ground = Figure.feet.y * H
+                    let quad = [along(a, from), along(a, to), along(b, to), along(b, from)].map { CGPoint(x: $0.x, y: max(ground, $0.y)) }
+                    under.append(Shape(kind: .path(Path(polygon: quad)), fill: Paint(ink, alpha * (from > 0.7 ? 1 : 0.8))))
+                }
+            }
+        }
+        pen.underlay(under)
     }
 
     mutating func leg(_ angles: (thigh: CGFloat, shin: CGFloat), _ paint: Paint) {

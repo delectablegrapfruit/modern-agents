@@ -219,6 +219,8 @@ extension Sketch {
         guard let ctx = Art.bitmap(Int(rect.width), Int(rect.height)) else { return nil }
         ctx.translateBy(x: -rect.minX, y: -rect.minY)
         ctx.setShouldAntialias(true)
+        // The smear first, under the figure and outside its rim.
+        for shape in underlay { Sketch.draw(shape, in: ctx) }
         ctx.setShadow(offset: .zero, blur: rimRadius * 1.6, color: rim.cg)
         ctx.beginTransparencyLayer(auxiliaryInfo: nil)
         for shape in body { Sketch.draw(shape, in: ctx) }

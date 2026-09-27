@@ -263,6 +263,7 @@ final class DuelScene: SKScene {
         fx.removeAllChildren()
         overlay.removeAllChildren()
         overlay.removeAllActions()
+        impacts.removeAll()
         carnage.reset(field: field, groundY: groundY, ronin: ronin, heroX: heroX)
         banner = nil
         world.speed = 1
@@ -660,6 +661,10 @@ final class DuelScene: SKScene {
             }
             storm(dt)
         }
+        while let next = impacts.first, clock >= next.at {
+            impacts.removeFirst()
+            next.run()
+        }
         if world.speed < 1 { world.speed = min(1, world.speed + CGFloat(dt) * 0.9) }
         if !isAwayPaused || session.fight.outcome != nil { carnage.update(hitStop > 0 ? 0 : dt * Double(world.speed)) }
         shakeWorld(dt)
@@ -923,26 +928,42 @@ final class DuelScene: SKScene {
             if style == .nukitsuke { drawFlash(side) }
             hero.cut(side, style, distance: distance)
             dash(to: sprite.position.x, side: side)
-            slash(at: target, side: side, style: style, strong: killed)
+            // The blow lands when the drawn blade gets there, a few frames on: the hit, the gore and the freeze wait
+            // for it.
+            let delay = HeroSprite.impact(style)
             if killed {
-                sever(sprite, side: side, style: style)
-                noteKill(side)
-            } else {
-                // A wound, not a kill: he reels, opened up along the cut, blood spraying out the far side.
-                sprite.flashHit()
-                sprite.showStagger()
-                sprite.gash(DuelScene.slope(of: style))
-                let spray: CGFloat = side == .right ? 0.35 : .pi - 0.35
-                fx.addChild(at(target, Art.burst(Palette.blood, count: 22, speed: ronin * 2.2, size: ronin * 0.07, life: 0.45,
-                                                  spread: 1.0, angle: spray, gravity: ronin * 5, additive: false)))
-                if sprite.kind == .brute || sprite.kind == .warlord {
-                    fx.addChild(at(target, Art.burst(Palette.steel, count: 12, speed: ronin * 2.4, size: ronin * 0.07, life: 0.22,
-                                                      spread: 1.3, angle: side == .right ? 0 : .pi)))
+                // Struck dead where he stands: the lane forgets him, his figure holds, frozen white, until the blade
+                // arrives and he comes apart.
+                foeSprites[id] = nil
+                if sprite.gourd != nil {
+                    gourdSpots[id] = CGPoint(x: sprite.position.x, y: sprite.position.y + sprite.height * 1.12)
+                    sprite.dropGourd(broken: false)
                 }
-                carnage.spatter(around: sprite.position.x, count: 4)
-                hitStop = max(hitStop, 0.05)
-                shake(1.8)
-                punch(0.018, at: target)
+                sprite.freezeStruck()
+                noteKill(side)
+                later(delay) { [self] in
+                    slash(at: target, side: side, style: style, strong: true)
+                    sever(sprite, side: side, style: style)
+                }
+            } else {
+                later(delay) { [self] in
+                    // A wound, not a kill: he reels, opened up along the cut, blood spraying out the far side.
+                    slash(at: target, side: side, style: style, strong: false)
+                    sprite.flashHit()
+                    sprite.showStagger()
+                    sprite.gash(DuelScene.slope(of: style))
+                    let spray: CGFloat = side == .right ? 0.35 : .pi - 0.35
+                    fx.addChild(at(target, Art.burst(Palette.blood, count: 22, speed: ronin * 2.2, size: ronin * 0.07, life: 0.45,
+                                                      spread: 1.0, angle: spray, gravity: ronin * 5, additive: false)))
+                    if sprite.kind == .brute || sprite.kind == .warlord {
+                        fx.addChild(at(target, Art.burst(Palette.steel, count: 12, speed: ronin * 2.4, size: ronin * 0.07, life: 0.22,
+                                                          spread: 1.3, angle: side == .right ? 0 : .pi)))
+                    }
+                    carnage.spatter(around: sprite.position.x, count: 4)
+                    hitStop = max(hitStop, 0.05)
+                    shake(1.8)
+                    punch(0.018, at: target)
+                }
             }
         case .whiff(let side):
             hero.whiff(side, for: fight.stumble)
@@ -1130,6 +1151,13 @@ final class DuelScene: SKScene {
 
     private var cuts = 0
     private var lastCut = Cut.kesa
+    /// Blows struck but not yet drawn landing, by the scene clock.
+    private var impacts: [(at: Double, run: @MainActor () -> Void)] = []
+
+    private func later(_ seconds: Double, _ run: @escaping @MainActor () -> Void) {
+        impacts.append((clock + seconds, run))
+        impacts.sort { $0.at < $1.at }
+    }
     /// Where a gourd-bearer's gourd was when he was cut down, for the gourd to fly from.
     private var gourdSpots: [Int: CGPoint] = [:]
 

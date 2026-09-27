@@ -346,6 +346,15 @@ final class FoeSprite: SKNode {
 
     func showStagger() { staggerHold = 0.3 }
 
+    /// The instant of a killing blow: thrown into his struck pose and lit white, held there until the blade arrives.
+    func freezeStruck() {
+        changePose(to: .stagger(0))
+        Art.setTint(body, .white, 0.9)
+        warning.isHidden = true
+        sight.alpha = 0
+        glint.alpha = 0
+    }
+
     func flashHit() {
         hitFlash = 0.14
         jolt = ronin * 0.08
@@ -404,6 +413,11 @@ final class HeroSprite: SKNode {
     private var gore: CGFloat = 0
     private var ronin: CGFloat = 60
     var home = CGPoint.zero
+
+    /// How long after the press the drawn blade reaches its mark: the chamber and the first four frames of the swing.
+    static func impact(_ style: Cut) -> Double {
+        (style == .nukitsuke ? drawTiming : cutTiming).prefix(4).reduce(0, +)
+    }
 
     /// Seconds each frame of a cut shows: chambered, five through the swing to the blow, two of follow-through,
     /// zanshin, and the return. The blow lands a tenth of a second after the press.

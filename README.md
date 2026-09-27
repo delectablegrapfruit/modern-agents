@@ -125,7 +125,12 @@ make run     # builds build/Ronin.app (macOS 14+) and opens it
   - **The ronin** is drawn at a higher resolution and has the most frames: a breathing chūdan guard and the iai
     stance, and seven cuts (nukitsuke, kesa-giri, gyaku-kesa, shōmen, dō-giri, morote-zuki, sune-giri) of seven
     frames each: chambered in the cut's kamae, the swing with the wrists still cocked, the blade whipping through,
-    full extension on a stamping lunge, the follow-through, zanshin, and back toward guard. A level cut is seen
+    full extension on a stamping lunge, the follow-through, zanshin, and back toward guard.
+  - **Smear frames:** every fast frame (the ronin's swings, the draw, the chiburi, a stumble or a parried cut, every
+    enemy's blow and leap) is drawn as a smear: the arms and weapon repeated back along the motion as fading
+    multiples, a solid sweep of ink between the blades split into dry-brush strands, the body dragging echoes behind
+    it, and the bright edge of the swing over the top. In the app a blow lands when the drawn blade gets there: the
+    struck foe freezes white in place for those few frames, then comes apart as the frame freezes on the impact. A level cut is seen
     side-on, the blade shortening as it comes round and its trail a flat ellipse; a thrust leaves speed lines. In
     the app he darts out along the lane into each cut and back, stretched into it.
   - **Textures** are cut down to what each frame draws, keeping its place on the canvas, so the feet stay put.

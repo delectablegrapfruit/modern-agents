@@ -97,6 +97,22 @@ final class RoninArtTests: XCTestCase {
         }
     }
 
+    func testFastFramesAreSmeared() {
+        // Through the swing, the arms and blade are repeated back along it under the pose, and the body drags echoes.
+        for cut in Cut.allCases {
+            for k in [2, 3, 4] {
+                let pose = Figure.pose(.hero, .cut(cut, k))
+                XCTAssertFalse(pose.ghosts.isEmpty, "\(cut) \(k)")
+                XCTAssertFalse(Figure.sketch(.hero, .cut(cut, k)).underlay.isEmpty, "\(cut) \(k)")
+            }
+            XCTAssertTrue(Figure.sketch(.hero, .cut(cut, 9)).underlay.isEmpty, "the return to guard is clean")
+        }
+        for kind in Kind.allCases where kind != .archer {
+            XCTAssertFalse(Figure.sketch(.foe(kind), .strike(0)).underlay.isEmpty, "\(kind)'s blow")
+        }
+        XCTAssertTrue(Figure.sketch(.hero, .idle(0)).underlay.isEmpty)
+    }
+
     func testTheSheetIsSVG() {
         let svg = Figure.sketch(.hero, .idle(0)).svg()
         XCTAssertTrue(svg.hasPrefix("<g"))
