@@ -44,7 +44,8 @@ public enum Frame: Hashable, Sendable {
     /// Rocked back by a cut (0) and finding his feet (1).
     case stagger(Int)
     case leap, aim, loose
-    /// Cut down: thrown back (0), the knees going (1), toppling (2), and lying dead on his back (3).
+    /// Cut down: thrown back off his feet, arms flung wide and the weapon leaving his hand (`Figure.thrown`, whatever
+    /// the number). Not a frame shown: a body felled whole starts from it and falls as a `Ragdoll`.
     case die(Int)
     /// The warlord behind his raised blade, waiting to turn a cut aside.
     case block
@@ -53,13 +54,21 @@ public enum Frame: Hashable, Sendable {
     case cut(Cut, Int)
     /// Back into guard after a cut a foot at a time, so that neither slides: the front foot lifted back (0) and set
     /// down as the back foot follows (1); or, from a short lunge, the back foot drawn up (2) and then the front foot
-    /// stepping back (3).
+    /// stepping back (3). Before the long way back, a push-off with both feet still where the lunge put them and the
+    /// hips going back between them (4); and for a middling lunge, in place of (0), the front foot lifted back from a
+    /// back foot that has less far to come (5).
     case recover(Cut, Int)
-    /// A step in guard, to find his place again: the front foot lifted to step back (0) or forward (1), and set down
-    /// as the back foot follows (2).
+    /// A cut swung again from the lunge of the one before: the chamber and the first four frames of the swing with
+    /// the feet held where the lunge put them (from frame 5 on it is the cut's own), so the planted front foot never
+    /// slides back. Not for the draw, which only ever opens a stage.
+    case chain(Cut, Int)
+    /// A step in guard, to find his place again. Back: the front foot lifted back (0) and set down as the back foot
+    /// follows (2). Forward, out of the wide stance a blow leaves him in: the back foot drawn up under him first (1),
+    /// then the front foot stepped out into guard (3). Each foot only ever moves the way he is going.
     case shuffle(Int)
     /// Hurt and short of breath: cycles of eight frames. Heaving over a sagging guard (0); a hand pressed to the
-    /// wound and the blade held low in the other (1); the knees giving and caught again (2).
+    /// bleeding wound in his side, hunched over it, the blade held low in the other (1); the knees giving and caught
+    /// again (2).
     case winded(Int, Int)
     /// Reeling from a blow, two more ways than `hurt` (four frames each): staggered back a step at a time (0);
     /// dropped to a knee and pushed back up (1).
@@ -72,7 +81,8 @@ public enum Frame: Hashable, Sendable {
     case hurt(Int)
     /// After a stage: ō-chiburi, the blood flung from the blade (4 frames), and nōtō, the blade slid home (3).
     case flourish(Int)
-    /// Falling: struck, the knees buckling, kneeling over the planted sword, toppling, face down in the dirt.
+    /// Falling: struck, the knees buckling, kneeling over the planted sword, pitching forward off the knee onto his
+    /// hands, and face down in the dirt.
     case fall(Int)
 
     public static let walkFrames = 12
@@ -80,8 +90,9 @@ public enum Frame: Hashable, Sendable {
     public static let heroIdleFrames = 8
     public static let iaiFrames = 6
     public static let cutFrames = 9
-    public static let recoverFrames = 4
-    public static let shuffleFrames = 3
+    public static let recoverFrames = 6
+    public static let chainFrames = 5
+    public static let shuffleFrames = 4
     public static let windedCycles = 3
     public static let windedFrames = 8
     public static let reels = 2
@@ -91,7 +102,6 @@ public enum Frame: Hashable, Sendable {
     public static let strikeFrames = 3
     public static let hurtFrames = 3
     public static let fallFrames = 5
-    public static let dieFrames = 4
 }
 
 /// A part of a man cut apart.
@@ -162,6 +172,12 @@ public struct Pose: Sendable {
     /// Where the hips are, from the spot the figure stands on (figure heights, x toward the way it faces, y up),
     /// in place of wherever the legs would put them: for a body thrown about as it will.
     public var hipAt: CGPoint?
+    /// For a body thrown about as it will (a `Ragdoll`'s): how far below its hips the ground is, in figure heights,
+    /// so that its cloth and gear hang toward the ground and lie on it instead of passing through. Nil for a figure
+    /// on its feet.
+    public var floor: CGFloat?
+    /// The free hand pressed to a wound in his side, drawn over the body with the blood coming through the fingers.
+    public var clutch = false
     /// What is left of a man cut apart: the part drawn.
     public var severed: Severed?
     /// Whether the weapon is in hand (a dead man has let go of his).
@@ -314,10 +330,11 @@ private func v(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: x, y: y) }
 /// The figures: their frames, their poses, and how each is drawn.
 ///
 /// The figures are cut rather than rounded: faceted muscle along each limb, sharp knees and elbows, a deep chest
-/// over a narrow waist, a small head on a long frame (about nine heads tall), slender curved blades, cloth that
-/// ends in points. Each kind keeps an outline of its own at 60 points tall. The ronin, who is the show, is drawn at
-/// a higher resolution and has the most frames: seven for every cut, a breathing guard, the iai stance with the
-/// blade sheathed, and the chiburi and nōtō at the end of a stage.
+/// over a narrow waist, a small head on a long frame (about eight and a half heads tall), slender curved blades,
+/// cloth that ends in points. Each kind keeps an outline of its own at 60 points tall. The ronin, who is the show, is
+/// drawn at a higher resolution and has the most frames: nine for every cut, five more to swing it again from the
+/// lunge and six to step back into guard, a breathing guard and three ways of fighting for breath, the iai stance
+/// with the blade sheathed, and the chiburi and nōtō at the end of a stage.
 ///
 /// The swordsmanship follows the classical schools: two hands on the hilt, the right at the guard and the left at
 /// the pommel; each cut from the kamae it is taught from (hassō, waki-gamae, jōdan, chūdan), the hands leading and
@@ -338,6 +355,7 @@ public enum Figure {
             frames += (0..<Frame.iaiFrames).map { .iai($0) }
             for cut in Cut.allCases {
                 frames += (0..<Frame.cutFrames).map { .cut(cut, $0) } + (0..<Frame.recoverFrames).map { .recover(cut, $0) }
+                if cut != .nukitsuke { frames += (0..<Frame.chainFrames).map { .chain(cut, $0) } }
             }
             frames += (0..<Frame.shuffleFrames).map { .shuffle($0) }
             frames += [.stumble(0), .stumble(1), .repelled(0), .repelled(1)]
@@ -346,10 +364,13 @@ public enum Figure {
             for v in 0..<Frame.reels { frames += (0..<Frame.reelFrames).map { .reel(v, $0) } }
             return frames + (0..<Frame.flourishFrames).map { .flourish($0) }
         case .foe(let kind):
+            // (The dead are not frames: they fall as a `Ragdoll`, from `struck` or `thrown`.)
             var frames: [Frame] = (0..<Frame.foeIdleFrames).map { .idle($0) }
             frames += (0..<Frame.walkFrames).map { .walk($0) }
-            frames += (0..<Frame.windupFrames).map { .windup($0) } + (0..<Frame.strikeFrames).map { .strike($0) }
-            frames += [.stagger(0), .stagger(1)] + (0..<Frame.dieFrames).map { .die($0) }
+            frames += (0..<Frame.windupFrames).map { .windup($0) }
+            // The archer's blow is the release (`loose`).
+            if kind != .archer { frames += (0..<Frame.strikeFrames).map { .strike($0) } }
+            frames += [.stagger(0), .stagger(1)]
             if kind == .dancer || kind == .warlord { frames.append(.leap) }
             if kind == .warlord { frames.append(.block) }
             if kind == .archer { frames += [.aim, .loose] }
@@ -409,6 +430,33 @@ public enum Figure {
         var sketch = drawer.pen.sketch
         sketch.rimRadius = max(1.1, H * 0.008)
         return sketch
+    }
+
+    /// A head struck off a figure in `pose`, on the figure's canvas where it was: the head and all it wears, on a
+    /// short length of neck cut off flat with the face of the cut on its end, and nothing else of him (the body left
+    /// standing is `Severed.headless` in the same pose, its stump overlapping the neck for the instant they part).
+    /// With the wound's place on the canvas (pixels, y up) and the way blood leaves it (radians from +x).
+    public static func severedHead(_ cast: Cast, pose: Pose) -> (sketch: Sketch, wound: CGPoint, angle: CGFloat) {
+        let build = Build.of(cast)
+        let H = pixelHeight(cast) * build.height
+        var drawer = Drawer(pose: pose, build: build, H: H)
+        drawer.head(severed: true)
+        var sketch = drawer.pen.sketch
+        var wound = at(drawer.neck, drawer.headUp, build.head * H * Drawer.headCut)
+        var angle = atan2(-drawer.headUp.y, -drawer.headUp.x)
+        if pose.roll != 0 {
+            // Turned about the hips with the rest of him.
+            let pivot = drawer.hip, r = pose.roll
+            let turn = { (p: CGPoint) -> CGPoint in
+                let x = p.x - pivot.x, y = p.y - pivot.y
+                return CGPoint(x: pivot.x + x * cos(r) + y * sin(r), y: pivot.y - x * sin(r) + y * cos(r))
+            }
+            sketch = sketch.mapped(turn)
+            wound = turn(wound)
+            angle -= r
+        }
+        sketch.rimRadius = max(1.1, H * 0.008)
+        return (sketch, wound, angle)
     }
 
     /// Where the point of a figure's weapon is in a frame, from its feet, in its own heights (x toward the way it
@@ -479,9 +527,15 @@ public enum Figure {
     static func footing(_ p: Pose) -> (front: CGPoint, back: CGPoint) {
         let df = thigh * cos(p.front.thigh) + shin * cos(p.front.shin)
         let db = thigh * cos(p.back.thigh) + shin * cos(p.back.shin)
-        let h = p.airborne ? 0.42 - 0.025 : max(df, db) + p.lift
+        let h = hipHeight(p)
         return (CGPoint(x: p.shift + thigh * sin(p.front.thigh) + shin * sin(p.front.shin), y: h - df),
                 CGPoint(x: p.shift + thigh * sin(p.back.thigh) + shin * sin(p.back.shin), y: h - db))
+    }
+
+    /// How high a figure on its feet carries its hips over the lower ankle, in its own heights.
+    static func hipHeight(_ p: Pose) -> CGFloat {
+        guard !p.airborne else { return 0.42 - 0.025 }
+        return max(thigh * cos(p.front.thigh) + shin * cos(p.front.shin), thigh * cos(p.back.thigh) + shin * cos(p.back.shin)) + p.lift
     }
 
     /// A leg reaching from the hip to a foot (in figure heights from the hip, y up), the knee bent forward.
@@ -559,10 +613,12 @@ public enum Figure {
         case .stagger(let k):
             let reel = key(cast, .stagger(0))
             return k == 0 ? reel : Pose.mix(reel, base, 0.5)
-        case .die(let k):
-            return die(cast, k)
+        case .die:
+            return thrown(cast)
         case .cut(let cut, let phase):
             return swing(cut, phase)
+        case .chain(let cut, let phase):
+            return swing(cut, phase, held: true)
         case .recover(let cut, let k):
             return recover(cut, k)
         case .shuffle(let k):
@@ -645,10 +701,23 @@ public enum Figure {
             let swinging = max(0, cos(phi)), loaded = max(0, -cos(phi)) * max(0, sin(phi))
             return (thigh, thigh - g.knee * pow(swinging, 1.3) - g.sink * loaded + 0.04)
         }
-        p.front = leg(phase)
-        p.back = leg(phase + .pi)
-        // Up as the legs pass, down as they spread; running, off the ground altogether for a moment.
-        p.lift = g.bob * cos(2 * phase) + g.flight * max(0, cos(2 * phase))
+        // Through the swing the foot clears the ground, coming down onto it only as the leg reaches out to land: where
+        // it would touch down early, the lower leg is carried as far forward (late in the swing) or folded as far back
+        // (early) as it must be to clear the foot on the ground.
+        func drop(_ l: (thigh: CGFloat, shin: CGFloat)) -> CGFloat { thigh * cos(l.thigh) + shin * cos(l.shin) }
+        func clear(_ l: (thigh: CGFloat, shin: CGFloat), _ phi: CGFloat, over stance: CGFloat) -> (thigh: CGFloat, shin: CGFloat) {
+            let swinging = cos(phi)
+            let limit = stance - 0.012 * min(1, swinging / 0.5)
+            guard swinging > 0.05, drop(l) > limit else { return l }
+            let bend = acos(max(-1, min(1, (limit - thigh * cos(l.thigh)) / shin)))
+            return (l.thigh, sin(phi) > 0 && bend < l.thigh + 0.12 ? bend : -bend)
+        }
+        let front = leg(phase), back = leg(phase + .pi)
+        p.front = clear(front, phase, over: drop(back))
+        p.back = clear(back, phase + .pi, over: drop(front))
+        // Up as the legs pass, down as they spread (never so far that the planted foot sinks into the ground); running,
+        // off the ground altogether for a moment.
+        p.lift = max(-0.01, g.bob * cos(2 * phase)) + g.flight * max(0, cos(2 * phase))
         p.lean += g.lean + g.sway * cos(2 * phase)
         p.tilt = g.rock * sin(phase)
         p.wave = CGFloat(k) / CGFloat(Frame.walkFrames)
@@ -750,13 +819,14 @@ public enum Figure {
                 p.arm2 = (0.1, 0.3)
                 p.blade = 1.45
             case .warlord:
-                // Hassō with the nodachi: the long blade upright beside the helmet.
+                // Katsugi with the nodachi: the long blade shouldered, laid back over the shoulder behind the
+                // helmet, the hands low before the chest (and under the top of the lane).
                 p.lean = 0.08
                 p.front = (0.45, 0.15)
                 p.back = (-0.45, -0.3)
                 p.grip = .two
-                p.hold = v(0.07, 0.0)
-                p.blade = 3.3
+                p.hold = v(0.07, -0.1)
+                p.blade = 4.15
             }
         }
         return p
@@ -870,19 +940,34 @@ public enum Figure {
                     p.blade = 0.12
                     p.tilt = 0.55
                     p.stream = 0.05
-                default:
-                    // The hands slip from the hilt and he goes over, face down beside his sword.
-                    p.lean = 0.55
-                    p.front = k == 3 ? (1.45, 0.2) : (0.2, 0.3)
-                    p.back = k == 3 ? (-0.5, -1.45) : (-0.05, 0.1)
-                    // The arms go out ahead of him (over his head, before the turn) and the sword lies beyond them.
+                case 3:
+                    // The hands slip from the hilt and he pitches forward off the knee, the back knee still on the
+                    // ground, the front foot sliding out ahead, the hands going down to break the fall; the sword
+                    // goes down with them, flat along the ground ahead of him.
+                    p.lean = 1.2
+                    p.tilt = 0.35
+                    p.front = (1.65, 0.75)
+                    p.back = (-0.55, -1.5)
                     p.grip = .one
                     p.hold = nil
-                    p.arm = k == 3 ? (2.3, 2.2) : (2.95, 3.05)
-                    p.arm2 = k == 3 ? (2.1, 2.0) : (2.75, 2.9)
-                    p.blade = k == 3 ? 2.5 : 3.25
+                    p.arm = (0.55, 0.35)
+                    p.arm2 = (0.75, 0.5)
+                    p.blade = 1.6
+                    p.stream = 0
+                    p.wave = 0.5
+                default:
+                    // Face down in the dirt, laid out flat beside his sword, the arms flung out ahead of him (over his
+                    // head, before the turn).
+                    p.lean = 0.12
                     p.tilt = 0.6
-                    p.roll = k == 3 ? 0.75 : 1.5
+                    p.front = (0.08, 0.12)
+                    p.back = (-0.02, 0.02)
+                    p.grip = .one
+                    p.hold = nil
+                    p.arm = (2.95, 3.05)
+                    p.arm2 = (2.75, 2.9)
+                    p.blade = 3.25
+                    p.roll = 1.45
                     p.grounded = true
                     p.stream = 0
                     p.wave = 0.5
@@ -933,17 +1018,18 @@ public enum Figure {
                 p.blade = k == 0 ? 0.95 : 0.5
                 p.arm2 = (-1.3, -0.9)
                 if k == 0 { p.smear = sweep(3.2, 0.95, 0.9) }
-            // The oni: the kanabō raised high behind the head, then brought down into the ground.
+            // The oni: the kanabō cocked back behind the head (kept under the top of the lane), then brought down
+            // into the ground.
             case (.brute, .windup(1)):
                 p.lean = -0.1
-                p.hold = v(0.02, 0.24)
-                p.blade = -2.33
+                p.hold = v(0.02, 0.16)
+                p.blade = -2.05
             case (.brute, .windup(2)):
                 p.lean = -0.2
                 p.lift = 0.02
                 p.front = (0.5, 0.25)
-                p.hold = v(-0.02, 0.27)
-                p.blade = -1.98
+                p.hold = v(-0.02, 0.18)
+                p.blade = -1.8
             case (.brute, .strike(let k)):
                 lunge(&p, k == 0 ? 0.48 : 0.58, deep: 1.05)
                 p.hold = k == 0 ? v(0.12, -0.2) : v(0.1, -0.28)
@@ -980,8 +1066,9 @@ public enum Figure {
                     p.blade = 2.8
                     p.blade2 = 3.48
                 } else {
-                    p.hold = v(0.04, 0.24)
-                    p.blade = 3.7
+                    // The nodachi carried back over the shoulder through the leap.
+                    p.hold = v(0.04, 0.12)
+                    p.blade = 4.3
                 }
                 p.wave = 0.75
                 p.stream = 1
@@ -1014,32 +1101,36 @@ public enum Figure {
                 p.hold = v(0.315, 0.07)
                 p.hold2 = v(-0.28, 0.1)
                 p.blade = 1.57
-            // The warlord: jōdan with the long blade and a huge stamping cut; a guard like a wall.
+            // The warlord: the long blade hauled back over the shoulder and a huge stamping cut; a guard like a wall.
+            // Everything he does on his feet stays under the top of the lane.
             case (.warlord, .windup(1)):
                 p.lean = -0.04
-                p.hold = v(0.03, 0.26)
-                p.blade = 4.0
+                p.hold = v(0.03, 0.14)
+                p.blade = 4.45
             case (.warlord, .windup(2)):
                 p.lean = -0.2
                 p.lift = 0.02
                 p.front = (0.62, 0.38)
                 p.back = (-0.36, -0.55)
-                p.hold = v(-0.04, 0.29)
-                p.blade = 4.45
+                p.hold = v(-0.04, 0.17)
+                p.blade = 4.65
             case (.warlord, .strike(let k)):
                 lunge(&p, k == 0 ? 0.42 : 0.5, deep: 1.1)
                 p.hold = k == 0 ? v(0.1, -0.12) : v(0.06, -0.24)
                 p.blade = k == 0 ? 0.62 : 0.4
                 if k == 0 { p.smear = sweep(4.1, 0.8, 0.9) }
             case (.warlord, .block):
+                // The blade angled up across the front of him.
                 p.lean = 0.02
                 p.front = (0.55, 0.3)
                 p.back = (-0.5, -0.55)
-                p.hold = v(0.19, -0.05)
-                p.blade = 2.9
+                p.hold = v(0.14, -0.2)
+                p.blade = 2.5
             case (.warlord, .stagger(0)):
-                p.hold = v(0.12, 0.02)
-                p.blade = 2.6
+                // The blade flung back over his shoulder (back, not up: finding his feet is half this and half his
+                // guard).
+                p.hold = v(0.11, -0.02)
+                p.blade = 4.5
             case (_, .stagger(0)):
                 if let hold = p.hold {
                     p.hold = v(hold.x - 0.02, hold.y + 0.06)
@@ -1054,11 +1145,9 @@ public enum Figure {
         return p
     }
 
-    private static func build(_ cast: Cast) -> Build { Build.of(cast) }
-
-    /// A foe cut down: thrown back with his arms flung wide and the weapon leaving his hand; the knees going; the
-    /// body toppling back; lying dead on his back, limbs loose, the weapon beside him.
-    static func die(_ cast: Cast, _ k: Int) -> Pose {
+    /// A foe cut down whole: thrown back off his feet, his arms flung wide and the weapon leaving his hand. A body
+    /// felled whole starts from this (or from `struck`) and falls as a `Ragdoll`.
+    public static func thrown(_ cast: Cast) -> Pose {
         var p = stance(cast)
         recoil(&p)
         p.grip = .one
@@ -1066,64 +1155,39 @@ public enum Figure {
         p.hold2 = nil
         p.draw = 0
         p.armed = false
-        p.blade2 = p.blade2 + 1.4
-        let long = build(cast).weapon == .spear || build(cast).weapon == .nodachi
-        switch k {
-        case 0:
-            p.lean = -0.46
-            p.tilt = -0.6
-            p.front = (0.55, 0.05)
-            p.back = (-0.25, -0.55)
-            p.arm = (2.3, 2.7)
-            p.arm2 = (-1.9, -1.4)
-            p.blade = 2.9
-            p.stream = 0.9
-            p.drag = -0.05
-        case 1:
-            p.lean = 0.1
-            p.tilt = 0.45
-            p.front = (1.1, -0.35)
-            p.back = (0.55, -0.95)
-            p.arm = (0.25, 0.1)
-            p.arm2 = (-0.2, -0.1)
-            p.blade = 0.3
-            p.stream = 0.4
-        case 2:
-            p.lean = -0.1
-            p.tilt = -0.4
-            p.front = (0.9, 0.2)
-            p.back = (0.3, -0.5)
-            p.arm = (2.1, 2.4)
-            p.arm2 = (1.6, 2.0)
-            p.blade = 2.6
-            p.roll = -0.9
-            p.grounded = true
-            p.stream = 0.6
-        default:
-            p.lean = -0.05
-            p.tilt = -0.25
-            p.front = (0.3, 0.2)
-            p.back = (0.05, -0.1)
-            p.arm = (2.6, 3.0)
-            p.arm2 = (1.3, 1.9)
-            p.blade = 3.3
-            p.roll = -1.55
-            p.grounded = true
-            p.stream = 0
-            p.wave = 0.5
-        }
-        // A long weapon falls along the body rather than off the edge of the picture.
-        if long { p.blade = [1.9, 1.25, 2.3, 1.9][min(k, 3)] }
+        p.lean = -0.46
+        p.tilt = -0.6
+        p.front = (0.55, 0.05)
+        // (The back hip swung back as far as it goes, no further.)
+        p.back = (-0.22, -0.52)
+        p.arm = (2.3, 2.7)
+        p.arm2 = (-1.9, -1.4)
+        p.blade2 += 1.4
+        // A long weapon goes along the body rather than off the edge of the picture.
+        let weapon = Build.of(cast).weapon
+        p.blade = weapon == .spear || weapon == .nodachi ? 1.9 : 2.9
+        p.stream = 0.9
+        p.drag = -0.05
         return p
     }
 
+    /// How many of the `struck` poses (variants 0 up to this) a foe's severed head is drawn ahead of time for.
+    public static let struckVariants = 4
+
     /// The pose a blow throws a foe into, a little different each time: variant 0 is the stagger itself, the others
-    /// thrown back harder or twisted, arms flung their own ways. Cutting him apart starts from one of these.
+    /// (any positive number) thrown back harder or twisted, arms flung their own ways, and no two kinds of foe thrown
+    /// the same way by the same number. Cutting him apart starts from one of these. Every joint is bent the way it
+    /// bends and no further than it goes, as a `Ragdoll` holds it, so a body falling from it takes it up smoothly.
     public static func struck(_ cast: Cast, variant: Int) -> Pose {
         var p = pose(cast, .stagger(0))
         p.armed = false
         guard variant > 0 else { return p }
-        var rng = SeededRNG(seed: UInt64(variant) &* 0x9E37 &+ 17)
+        let kin: UInt64
+        switch cast {
+        case .hero: kin = 0
+        case .foe(let kind): kin = UInt64((Kind.allCases.firstIndex(of: kind) ?? 0) + 1)
+        }
+        var rng = SeededRNG(seed: mixSeed(UInt64(variant), kin, 0x5EED))
         func r(_ a: Double, _ b: Double) -> CGFloat { CGFloat(rng.range(a, b)) }
         p.grip = .one
         p.hold = nil
@@ -1134,28 +1198,21 @@ public enum Figure {
         p.back = (r(-0.6, -0.1), r(-0.9, -0.3))
         p.arm = (r(0.2, 2.9), r(-0.3, 2.6))
         p.arm2 = (r(-2.2, 1.0), r(-2.0, 1.2))
+        // An elbow flexes forward, never back; a knee back, never forward; a hip swings back only so far (the shin
+        // carried with the thigh). Each variant keeps its own bend, flexed the right way.
+        func arm(_ a: (upper: CGFloat, fore: CGFloat)) -> (upper: CGFloat, fore: CGFloat) {
+            (a.upper, a.upper + min(2.4, abs(a.fore - a.upper)))
+        }
+        func leg(_ l: (thigh: CGFloat, shin: CGFloat), lean: CGFloat) -> (thigh: CGFloat, shin: CGFloat) {
+            let forward = max(0, -0.66 - (l.thigh + lean))
+            let thigh = l.thigh + forward
+            return (thigh, thigh + min(0.1, l.shin + forward - thigh))
+        }
+        p.arm = arm(p.arm)
+        p.arm2 = arm(p.arm2)
+        p.front = leg(p.front, lean: p.lean)
+        p.back = leg(p.back, lean: p.lean)
         return p
-    }
-
-    /// A body lying where it fell, cut down whole: on its back or face down, arms and legs thrown out as they landed,
-    /// no two alike.
-    public static func corpse(_ cast: Cast, seed: UInt64) -> Sketch {
-        var rng = SeededRNG(seed: seed &* 0x2545F491 &+ 3)
-        func r(_ a: Double, _ b: Double) -> CGFloat { CGFloat(rng.range(a, b)) }
-        var p = die(cast, 3)
-        let faceDown = rng.chance(0.4)
-        p.roll = faceDown ? r(1.35, 1.62) : -r(1.4, 1.68)
-        p.lean = r(-0.3, 0.3)
-        p.tilt = r(-0.7, 0.7)
-        p.front = (r(-0.2, 1.1), r(-0.4, 0.4))
-        p.back = (r(-0.5, 0.6), r(-1.2, 0.2))
-        // Arms: over the head, out to the side, or trapped under him.
-        p.arm = (r(0.4, 3.1), r(0.0, 3.2))
-        p.arm2 = (r(-1.5, 2.9), r(-1.5, 3.0))
-        p.wave = r(0, 1)
-        p.stream = 0
-        p.drag = 0
-        return sketch(cast, pose: p)
     }
 
     /// Where a cut starts (its kamae) and ends (full extension), and the arc its blade sweeps.
@@ -1240,16 +1297,28 @@ public enum Figure {
         return CutKeys(start: start, end: end, from: start.blade, to: end.blade)
     }
 
-    /// A cut's ten frames. The hands lead and the blade lags behind them, then whips through as the wrists
-    /// uncock, so the point travels fastest at the end; after the blow, the follow-through, zanshin, and back.
-    static func swing(_ cut: Cut, _ phase: Int) -> Pose {
+    /// A cut's nine frames. The hands lead and the blade lags behind them, then whips through as the wrists
+    /// uncock, so the point travels fastest at the end; after the blow, the follow-through and zanshin. `held`: a
+    /// cut swung again from the lunge of the one before, the feet (and the hips over them) kept where the lunge put
+    /// them through the chamber and the swing, so only the body, the arms and the blade come round again.
+    static func swing(_ cut: Cut, _ phase: Int, held: Bool = false) -> Pose {
         if cut == .nukitsuke { return draw(phase) }
         let keys = cutKeys(cut)
         let arc = keys.to - keys.from
         let flat = keys.start.flat
         let thrust = cut == .tsuki
+        func legs(_ q: Pose) -> Pose {
+            var q = q
+            q.shift = keys.end.shift
+            q.lift = keys.end.lift
+            q.front = keys.end.front
+            q.back = keys.end.back
+            q.airborne = keys.end.airborne
+            return q
+        }
         func moment(_ t: CGFloat, whip: CGFloat) -> Pose {
             var p = Pose.mix(keys.start, keys.end, t)
+            if held { p = legs(p) }
             p.blade = keys.from + arc * whip
             return p
         }
@@ -1262,8 +1331,9 @@ public enum Figure {
         ]
         switch phase {
         case 0:
-            // Chambered, the weight gathering over the back foot.
-            var p = keys.start
+            // Chambered, the weight gathering over the back foot (or, swung again, the blade brought back up over
+            // the planted lunge).
+            var p = held ? legs(keys.start) : keys.start
             p.lean -= 0.03
             p.stream = 0.35
             p.wave = 0.1
@@ -1274,12 +1344,13 @@ public enum Figure {
             p.smear = trail(keys.from + arc * s.tail, p.blade, s.strength)
             p.stream = 0.5 + 0.5 * s.t
             p.wave = 0.1 + 0.35 * s.t
-            // A smear frame: the arms and blade along the path since the last frame, the body dragged after them.
+            // A smear frame: the arms and blade along the path since the last frame, the body dragged after them
+            // (not when he is already planted in the lunge).
             let before = phase == 1 ? (t: CGFloat(0), whip: CGFloat(0)) : (t: swing[phase - 2].t, whip: swing[phase - 2].whip)
             p.ghosts = [0.18, 0.4, 0.62, 0.82].map { f in
                 moment(before.t + (s.t - before.t) * f, whip: before.whip + (s.whip - before.whip) * f)
             }
-            p.drag = (s.t - before.t) * 0.16
+            p.drag = held ? 0 : (s.t - before.t) * 0.16
             return p
         case 6, 7:
             // The follow-through: the blade carries past its mark and the body settles lower after it.
@@ -1296,11 +1367,7 @@ public enum Figure {
         default:
             // Zanshin: held, the point coming back up onto the line, eyes on the foe; the feet where the lunge put
             // them.
-            var p = Pose.mix(keys.end, stance(.hero), 0.2)
-            p.shift = keys.end.shift
-            p.lift = keys.end.lift
-            p.front = keys.end.front
-            p.back = keys.end.back
+            var p = legs(Pose.mix(keys.end, stance(.hero), 0.2))
             p.blade = keys.end.blade + (stance(.hero).blade - keys.end.blade) * 0.15
             p.stream = 0.55
             p.wave = 0.78
@@ -1313,7 +1380,7 @@ public enum Figure {
     static func recover(_ cut: Cut, _ k: Int) -> Pose {
         let end = swing(cut, Frame.cutFrames - 1)
         let guardPose = stance(.hero)
-        var p = Pose.mix(end, guardPose, k % 2 == 0 ? 0.5 : 0.82)
+        var p = Pose.mix(end, guardPose, k == 4 ? 0.25 : k % 2 == 0 ? 0.5 : 0.82)
         let home = footing(guardPose), from = footing(end)
         switch k {
         case 0:
@@ -1325,32 +1392,58 @@ public enum Figure {
             // The front foot set down in its place, the back foot drawn after it.
             plant(&p, hip: v(0.01, 0.515), front: v(home.front.x, 0), back: v(home.back.x + 0.05, 0.04))
         case 2:
-            // From a short lunge: the back foot drawn up under him first (hikitsuke), the front knee still bent.
-            plant(&p, hip: v(from.front.x - 0.3, 0.46), front: v(from.front.x - 0.02, 0), back: v(from.front.x - 0.5, 0.06))
-        default:
+            // From a short lunge: the back foot drawn up to its place in guard first (hikitsuke), allowing for the
+            // reach of a short lunge (about 0.05) and the front foot set back a touch; the hips between the feet,
+            // the front knee still bent.
+            let front = v(from.front.x - 0.02, 0), back = v(home.back.x - 0.07, 0.06)
+            plant(&p, hip: v((front.x + back.x) / 2 + 0.03, 0.45), front: front, back: back)
+        case 3:
             // Then the front foot lifted back into guard.
             plant(&p, hip: v(-0.01, 0.51), front: v(home.front.x + 0.04, 0.075), back: v(home.back.x, 0))
             p.lean -= 0.03
+        case 4:
+            // The push-off before the long way back: both feet where the lunge put them (the back one set down),
+            // the weight sinking back off the front knee as far as the front foot still reaches.
+            let y = hipHeight(end) - 0.03, reach = thigh + shin - 0.012
+            let x = min(end.shift, from.front.x - (reach * reach - y * y).squareRoot())
+            plant(&p, hip: v(x, y), front: v(from.front.x, 0), back: v(from.back.x, 0))
+            p.lean -= 0.06
+        default:
+            // From a middling lunge, in place of (0): the back foot has less far to come, so the front foot is lifted
+            // back not as far, to over its place in guard for a lunge of about 0.14 (kept on the back foot: the back
+            // foot at -0.27, as in (0)).
+            let x = home.front.x - (0.14 + from.back.x + 0.27)
+            plant(&p, hip: v((x - 0.27) / 2 + 0.03, 0.485), front: v(x, 0.08), back: v(-0.27, 0))
+            p.lean -= 0.04
         }
-        p.stream = k < 2 ? 0.45 - 0.15 * CGFloat(k) : 0.5 - 0.15 * CGFloat(k - 2)
+        p.stream = k == 4 ? 0.5 : k < 2 || k == 5 ? 0.45 - 0.15 * CGFloat(k % 2) : 0.5 - 0.15 * CGFloat(k - 2)
         p.wave = 0.82 + 0.06 * CGFloat(k % 2)
         return p
     }
 
-    /// A step in guard: back or forward, then the back foot following.
+    /// A step in guard: back, the front foot lifted and the back one following; or forward, the back foot drawn up
+    /// and the front one stepping out. Every foot's target is within the leg's reach.
     static func shuffle(_ k: Int) -> Pose {
         var p = stance(.hero)
         let home = footing(p)
         switch k {
         case 0:
+            // Back: the front foot lifted back over the planted back one.
             plant(&p, hip: v(-0.03, 0.51), front: v(home.front.x - 0.03, 0.07), back: v(home.back.x + 0.02, 0))
             p.lean -= 0.04
         case 1:
-            plant(&p, hip: v(0.03, 0.5), front: v(home.front.x - 0.06, 0.07), back: v(home.back.x - 0.12, 0))
+            // Forward, out of a wide stance: the back foot drawn up under him first (hikitsuke), the front one where
+            // it stands.
+            plant(&p, hip: v(0.0, 0.5), front: v(home.front.x, 0), back: v(home.back.x + 0.06, 0.07))
             p.lean += 0.05
-        default:
-            plant(&p, hip: v(0.02, 0.515), front: v(home.front.x, 0), back: v(home.back.x + 0.04, 0.04))
+        case 2:
+            // Back: the front foot set down in its place, the back one carried after it.
+            plant(&p, hip: v(0.02, 0.515), front: v(home.front.x, 0), back: v(home.back.x + 0.04, 0.06))
             p.lean += 0.02
+        default:
+            // Forward: the front foot stepped out into guard over the planted back one.
+            plant(&p, hip: v(0.0, 0.51), front: v(home.front.x, 0.07), back: v(home.back.x, 0))
+            p.lean += 0.03
         }
         p.stream = 0.3
         p.wave = 0.3 + 0.2 * CGFloat(k)
@@ -1376,15 +1469,16 @@ public enum Figure {
             p.hold = v(0.16 + 0.01 * s, -0.25 + 0.03 * s)
             p.blade = 1.7 + 0.12 * s
         case 1:
-            // A hand pressed to the wound in his side, hunched over it; the blade held low in the other, its point
-            // toward the ground ahead.
+            // A hand pressed to the wound in his side, the blood coming through the fingers, hunched over it; the
+            // blade held low in the other, its point toward the ground ahead.
             p.grip = .one
             p.lean = 0.32 - 0.05 * s
-            p.tilt = 0.24 - 0.1 * s
+            p.tilt = 0.28 - 0.1 * s
             plant(&p, hip: v(0.0, 0.47 + 0.01 * s), front: v(home.front.x, 0), back: v(home.back.x, 0))
-            p.hold = v(0.13, -0.29 + 0.012 * s)
+            p.hold = v(0.18, -0.3 + 0.012 * s)
             p.blade = 0.95 + 0.07 * s
-            p.hold2 = v(0.1, -0.15 + 0.008 * s)
+            p.hold2 = v(0.09, -0.19 + 0.008 * s)
+            p.clutch = true
         default:
             // The knees giving: sagging, dropping, the point dipping to the ground to catch him, and pushed back up.
             let depth: [CGFloat] = [0, 0.02, 0.06, 0.13, 0.15, 0.1, 0.05, 0.015]
@@ -1414,7 +1508,7 @@ public enum Figure {
             // The back foot thrown out behind to catch him, the blade flung up.
             p.lean = -0.44
             p.tilt = -0.4
-            plant(&p, hip: v(-0.13, 0.49), front: v(home.front.x - 0.06, 0), back: v(-0.5, 0.05))
+            plant(&p, hip: v(-0.13, 0.49), front: v(home.front.x - 0.06, 0), back: v(-0.48, 0.05))
             p.hold = v(0.05, -0.03)
             p.blade = 2.55
             p.stream = 0.7
@@ -1719,19 +1813,53 @@ private struct Drawer {
 
     mutating func fill(_ points: [CGPoint], _ paint: Paint) { pen.fill(points, paint) }
 
+    /// A straight band `width` wide from `a` to `b`, as a polygon.
+    func band(_ a: CGPoint, _ b: CGPoint, _ width: CGFloat) -> [CGPoint] {
+        let d = unit(a, b), n = CGPoint(x: -d.y * width / 2, y: d.x * width / 2)
+        return [CGPoint(x: a.x + n.x, y: a.y + n.y), CGPoint(x: b.x + n.x, y: b.y + n.y), CGPoint(x: b.x - n.x, y: b.y - n.y),
+                CGPoint(x: a.x - n.x, y: a.y - n.y)]
+    }
+
+    /// An ellipse about `c` turned to lie along `n` (its half-width `rx`) and `d` (its half-height `ry`), as a polygon.
+    func oval(_ c: CGPoint, _ n: CGPoint, _ d: CGPoint, _ rx: CGFloat, _ ry: CGFloat) -> [CGPoint] {
+        (0..<16).map { i in
+            let t = CGFloat(i) / 16 * 2 * .pi
+            return CGPoint(x: c.x + n.x * rx * cos(t) + d.x * ry * sin(t), y: c.y + n.y * rx * cos(t) + d.y * ry * sin(t))
+        }
+    }
+
+    // MARK: Gravity, for a body thrown about
+
+    /// Which way the world's down is in the figure's own frame (the drawing is turned by the roll afterwards).
+    var gravity: CGPoint { dir(pose.roll) }
+    /// How far a body thrown about has gone over: 0 upright, 1 down (always 0 for a figure on its feet).
+    var fallen: CGFloat { pose.floor == nil ? 0 : min(1, abs(pose.roll) / 1.2) }
+
+    /// A point of cloth or gear on a body thrown about, let down no further than the ground: whatever would pass
+    /// through it lies on it instead. A figure on its feet's are left where they are.
+    func grounded(_ p: CGPoint) -> CGPoint {
+        guard let floor = pose.floor else { return p }
+        let g = gravity
+        let below = (p.x - hip.x) * g.x + (p.y - hip.y) * g.y - floor * H
+        return below > 0 ? CGPoint(x: p.x - g.x * below, y: p.y - g.y * below) : p
+    }
+
     /// A limb segment cut like muscle: widest a little past its root, bulging more on one side, tapering to a sharp
-    /// joint. The ends run a touch past the joints so the next segment overlaps cleanly.
+    /// joint. The ends run a touch past the joints so the next segment overlaps cleanly. Given a `floor` (a figure on
+    /// its feet), nothing of it goes below that: a knee brought down onto the ground rests on it.
     mutating func segment(_ a: CGPoint, _ b: CGPoint, _ w0: CGFloat, _ w1: CGFloat, _ w2: CGFloat, _ paint: Paint,
-                          bulge: CGFloat = 0.2, at t: CGFloat = 0.38) {
+                          bulge: CGFloat = 0.2, at t: CGFloat = 0.38, floor: CGFloat? = nil) {
         let dx = b.x - a.x, dy = b.y - a.y
         let length = max(0.001, hypot(dx, dy))
         let d = CGPoint(x: dx / length, y: dy / length), n = CGPoint(x: -d.y, y: d.x)
         let a0 = RoninArt.at(a, d, -w0 * 0.3), b0 = RoninArt.at(b, d, w2 * 0.35)
         let m = RoninArt.at(a, d, length * t)
-        fill([
+        var points = [
             RoninArt.at(a0, n, w0 / 2), RoninArt.at(m, n, w1 / 2 * (1 + bulge)), RoninArt.at(b0, n, w2 / 2), RoninArt.at(b0, d, w2 * 0.25),
             RoninArt.at(b0, n, -w2 / 2), RoninArt.at(m, n, -w1 / 2 * (1 - bulge)), RoninArt.at(a0, n, -w0 / 2), RoninArt.at(a0, d, -w0 * 0.2),
-        ], paint)
+        ]
+        if let floor { points = points.map { CGPoint(x: $0.x, y: max(floor, $0.y)) } }
+        fill(points, paint)
     }
 
     mutating func draw() {
@@ -1742,11 +1870,19 @@ private struct Drawer {
         if legs { leg(pose.back, shade) }
         let drawingBow = pose.armed && build.weapon == .bow && (pose.draw > 0 || pose.hold2 != nil)
         if !drawingBow, arms { arm(other, shade) }
-        trunk()
+        // The face of a cut goes over everything on its own side that meets it: the trunk and its cloth (the sash,
+        // the collar, the hakama's seat, the skirt), and below the cut the near thigh as well.
+        let outline = trunk()
+        if !legs { cutFace(outline) }
         if pose.severed == .headless { stump() } else if arms { head() }
-        if legs { leg(pose.front, body) }
+        if legs {
+            leg(pose.front, body)
+            cutFace(outline)
+        }
         if build.scabbard { scabbard(behind: false) }
         if arms { arm(main, body) }
+        // A hand pressed to a wound is drawn over the body (and the near arm), or it is lost inside the silhouette.
+        if pose.clutch, arms, pose.severed == nil { clutchingHand() }
         if pose.armed { weapon(main.hand, other.hand) }
         if drawingBow, arms { arm(other, body) }
         if let smear = pose.smear {
@@ -1811,31 +1947,56 @@ private struct Drawer {
         let knee = at(hip, dir(angles.thigh), thigh * H)
         let ankle = at(knee, dir(angles.shin), shin * H)
         let k = build.bulk
+        // On its feet, nothing goes through the ground: a knee or a hem brought down onto it rests on it.
+        let standing = pose.roll == 0 && pose.hipAt == nil && !pose.airborne
+        let floor: CGFloat? = standing ? Figure.feet.y * H - 0.006 * H : nil
         switch build.legs {
         case .hakama:
             // Pleated trousers, flaring below the knee to a hem cut on the slant that trails behind the stride. The
             // ronin's are cut full: they billow at the thigh and knee and sweep out wide at the hem.
             let b = build.baggy
-            segment(hip, knee, (0.082 + 0.06 * b) * H, (0.09 + 0.075 * b) * H, (0.066 + 0.05 * b) * H, paint, bulge: 0.12 * b, at: 0.5)
+            segment(hip, knee, (0.082 + 0.06 * b) * H, (0.09 + 0.075 * b) * H, (0.066 + 0.05 * b) * H, paint, bulge: 0.12 * b, at: 0.5,
+                    floor: floor)
             let hem = at(ankle, dir(angles.shin), 0.012 * H)
             let d = dir(angles.shin), n = CGPoint(x: -d.y, y: d.x)
+            // Down on a knee, the shin laid back along the ground, the hem folds in narrow over the heel instead of
+            // standing up off it like a board (a lunge's back leg, the knee well up, keeps its full flare).
+            var narrow: CGFloat = 1
+            if standing {
+                let kneeling = max(0, min(1, (0.2 * H - (knee.y - Figure.feet.y * H)) / (0.15 * H)))
+                let lying = min(1, abs(sin(angles.shin)))
+                narrow = 1 - 0.55 * kneeling * max(0, (lying - 0.5) / 0.5)
+            }
             let trail = CGPoint(x: -face.x * pose.stream * (0.025 + 0.035 * b) * H, y: pose.stream * (0.01 + 0.012 * b) * H)
-            let front = at(at(hem, n, (0.054 + 0.045 * b) * H), d, -0.024 * H), back = at(at(hem, n, -(0.06 + 0.055 * b) * H), d, 0.01 * H)
+            let front = at(at(hem, n, (0.054 + 0.045 * b) * H * narrow), d, -0.024 * H)
+            let back = at(at(hem, n, -(0.06 + 0.055 * b) * H * narrow), d, 0.01 * H)
             let billow = at(at(knee, d, shin * H * 0.45), n, -(0.05 + 0.05 * b) * H)
-            fill([at(knee, n, (0.036 + 0.03 * b) * H), front, CGPoint(x: back.x + trail.x, y: back.y + trail.y),
-                  CGPoint(x: billow.x + trail.x * 0.5, y: billow.y), at(knee, n, -(0.036 + 0.034 * b) * H)], paint)
+            let cloth = [at(knee, n, (0.036 + 0.03 * b) * H), front, CGPoint(x: back.x + trail.x, y: back.y + trail.y),
+                         CGPoint(x: billow.x + trail.x * 0.5, y: billow.y), at(knee, n, -(0.036 + 0.034 * b) * H)]
+            fill(floor.map { f in cloth.map { CGPoint(x: $0.x, y: max(f, $0.y)) } } ?? cloth.map(grounded), paint)
         case .leggings:
             // A full thigh narrowing hard to the knee; a calf swelling behind the shin and down to a fine ankle.
-            segment(hip, knee, 0.074 * H * k, 0.088 * H * k, 0.036 * H * k, paint, bulge: 0.22, at: 0.34)
-            segment(knee, ankle, 0.038 * H * k, 0.058 * H * k, 0.02 * H * k, paint, bulge: -0.45, at: 0.3)
+            segment(hip, knee, 0.074 * H * k, 0.088 * H * k, 0.036 * H * k, paint, bulge: 0.22, at: 0.34, floor: floor)
+            segment(knee, ankle, 0.038 * H * k, 0.058 * H * k, 0.02 * H * k, paint, bulge: -0.45, at: 0.3, floor: floor)
         case .bare:
-            segment(hip, knee, 0.08 * H * k, 0.096 * H * k, 0.038 * H * k, paint, bulge: 0.25, at: 0.34)
-            segment(knee, ankle, 0.042 * H * k, 0.064 * H * k, 0.021 * H * k, paint, bulge: -0.5, at: 0.3)
+            segment(hip, knee, 0.08 * H * k, 0.096 * H * k, 0.038 * H * k, paint, bulge: 0.25, at: 0.34, floor: floor)
+            segment(knee, ankle, 0.042 * H * k, 0.064 * H * k, 0.021 * H * k, paint, bulge: -0.5, at: 0.3, floor: floor)
         }
-        // A foot: long and narrow, drawn to a point.
-        fill([at(ankle, CGPoint(x: -1, y: 0), 0.018 * H), at(ankle, CGPoint(x: 0, y: 1), 0.014 * H),
-              CGPoint(x: ankle.x + 0.09 * H, y: ankle.y - 0.022 * H), CGPoint(x: ankle.x + 0.075 * H, y: ankle.y - 0.027 * H),
-              CGPoint(x: ankle.x - 0.024 * H, y: ankle.y - 0.027 * H)], paint)
+        // A foot: long and narrow, drawn to a point, flat along the ground for a figure on its feet. On a body thrown
+        // about, turned with the shin only as far as an ankle must (no more than about 55° pointed or 50° flexed),
+        // and lying on the ground rather than through it.
+        var toe = CGFloat.pi / 2
+        if pose.hipAt != nil {
+            var square = -angles.shin
+            while square > .pi { square -= 2 * .pi }
+            while square < -.pi { square += 2 * .pi }
+            toe = angles.shin + .pi / 2 + max(-0.95, min(0.9, square))
+        }
+        let t = dir(toe), u = CGPoint(x: -t.y, y: t.x)
+        func f(_ a: CGFloat, _ b: CGFloat) -> CGPoint {
+            grounded(CGPoint(x: ankle.x + (t.x * a + u.x * b) * H, y: ankle.y + (t.y * a + u.y * b) * H))
+        }
+        fill([f(-0.018, 0), f(0, 0.014), f(0.09, -0.022), f(0.075, -0.027), f(-0.024, -0.027)], paint)
     }
 
     mutating func arm(_ ends: (elbow: CGPoint, hand: CGPoint), _ paint: Paint) {
@@ -1919,20 +2080,42 @@ private struct Drawer {
         pen.ellipse(CGRect(x: bone.x - 0.017 * H, y: bone.y - 0.013 * H, width: 0.034 * H, height: 0.026 * H), Paint(RGB(0.93, 0.88, 0.8)))
     }
 
-    /// The neck of a man whose head is gone: cut off short, red at the end.
-    mutating func stump() {
-        let r = build.head * H
-        let end = at(neck, headUp, r * 0.55)
-        segment(neck, end, 0.042 * H * build.bulk, 0.046 * H * build.bulk, 0.044 * H * build.bulk, body, bulge: 0, at: 0.5)
-        let w = 0.05 * H * build.bulk
+    /// How far up the neck (in head radii from its root) a headless body's stump stands: clear of the shoulders, so
+    /// its wound shows.
+    static let neckCut: CGFloat = 0.8
+    /// Where a struck-off head's own length of neck begins (in head radii): lower than the stump's end, so the two
+    /// overlap for the instant they part, and low enough that the wound shows under the jaw.
+    static let headCut: CGFloat = 0.15
+
+    /// The face of a neck cut through, seen a little end-on: a wet red rim, dark meat, and the white of the spine
+    /// toward the back of the neck.
+    mutating func neckWound(_ end: CGPoint, _ w: CGFloat) {
         let d = headUp, n = CGPoint(x: -headUp.y, y: headUp.x)
-        fill([at(end, n, w / 2), at(at(end, n, w / 2), d, 0.012 * H), at(at(end, n, -w / 2), d, 0.012 * H), at(end, n, -w / 2)],
-             Paint(RGB(0.62, 0.02, 0.06)))
-        pen.ellipse(CGRect(x: end.x - 0.012 * H, y: end.y - 0.01 * H, width: 0.024 * H, height: 0.02 * H), Paint(RGB(0.93, 0.88, 0.8)))
+        fill(oval(end, n, d, 0.56 * w, 0.24 * w), Paint(RGB(0.86, 0.1, 0.12)))
+        fill(oval(end, n, d, 0.46 * w, 0.17 * w), Paint(RGB(0.38, 0.0, 0.03)))
+        let spine: CGFloat = n.x * face.x + n.y * face.y > 0 ? -1 : 1
+        fill(oval(at(end, n, spine * 0.18 * w), n, d, 0.14 * w, 0.09 * w), Paint(RGB(0.93, 0.88, 0.8)))
+    }
+
+    /// The neck of a man whose head is gone: standing clear of the shoulders and cut off flat, the face of the cut on
+    /// its end and blood running down from it.
+    mutating func stump() {
+        let r = build.head * H, w = 0.044 * H * build.bulk
+        let d = headUp, n = CGPoint(x: -headUp.y, y: headUp.x)
+        let root = at(neck, d, -0.01 * H), end = at(neck, d, r * Drawer.neckCut)
+        fill([at(root, n, 0.021 * H * build.bulk), at(end, n, w / 2), at(end, n, -w / 2), at(root, n, -0.021 * H * build.bulk)], body)
+        for (s, length) in [(CGFloat(0.34), CGFloat(0.03)), (-0.12, 0.017), (-0.4, 0.024)] {
+            let top = at(end, n, s * w)
+            fill([at(top, n, 0.006 * H), at(top, d, -length * H), at(top, n, -0.006 * H)], Paint(RGB(0.62, 0.02, 0.06)))
+        }
+        neckWound(end, w)
     }
 
     /// The torso in profile: a deep chest and a flat back over a narrow waist; skirt or tassets; the sash; plates.
-    mutating func trunk() {
+    /// Everything on the trunk is cut down to what a cut leaves of it; it returns the trunk's outlines, for the face
+    /// of the cut (drawn by `draw` over whatever else meets it).
+    @discardableResult
+    mutating func trunk() -> [[CGPoint]] {
         let c = build.chest * H, wst = build.waist * H, b = build.baggy
         let legs = pose.severed?.hasLegs ?? true, arms = pose.severed?.hasArms ?? true
         var outline: [[CGPoint]] = []
@@ -1958,32 +2141,49 @@ private struct Drawer {
             trunkFill(kimono, body)
             outline.append(kimono)
         }
-        cutFace(outline)
         if legs, build.legs == .hakama {
             // The hakama's seat, joining the two legs under the sash.
             let b = build.baggy
             let front = at(hip, dir(pose.front.thigh), thigh * H * (0.3 + 0.2 * b)), back = at(hip, dir(pose.back.thigh), thigh * H * (0.3 + 0.2 * b))
-            fill([torsoPoint(0.08, -wst * (0.62 + 0.2 * b)), torsoPoint(0.08, wst * (0.6 + 0.2 * b)), at(front, across, (0.04 + 0.04 * b) * H),
-                  at(back, across, -(0.04 + 0.04 * b) * H)], body)
+            trunkFill([torsoPoint(0.08, -wst * (0.62 + 0.2 * b)), torsoPoint(0.08, wst * (0.6 + 0.2 * b)), at(front, across, (0.04 + 0.04 * b) * H),
+                       at(back, across, -(0.04 + 0.04 * b) * H)], body)
         }
         if legs, build.skirt > 0 {
-            let hem = at(hip, CGPoint(x: 0, y: -1), build.skirt * H)
+            // Hanging from the waist; on a body going down, coming to lie along the thighs, and on the ground rather
+            // than through it.
+            var down = CGPoint(x: 0, y: -1)
+            if pose.floor != nil {
+                let f = dir(pose.front.thigh), t = dir(pose.back.thigh)
+                let sum = CGPoint(x: f.x + t.x, y: f.y + t.y), l = hypot(sum.x, sum.y)
+                let thighs = l > 0.2 ? CGPoint(x: sum.x / l, y: sum.y / l) : gravity
+                let k = fallen
+                let way = CGPoint(x: thighs.x * k, y: -(1 - k) + thighs.y * k), m = max(0.0001, hypot(way.x, way.y))
+                down = CGPoint(x: way.x / m, y: way.y / m)
+            }
+            let hem = at(hip, down, build.skirt * H), side = CGPoint(x: -down.y, y: down.x)
+            let lying = pose.floor != nil
+            func edge(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+                lying ? grounded(at(at(hem, side, x), down, -y)) : CGPoint(x: hem.x + x, y: hem.y + y)
+            }
             let spread = wst * 1.25
             if build.plated {
                 for s in [CGFloat(-1), 0, 1] {
                     let top = torsoPoint(0.06, s * wst * 0.5)
-                    fill([at(top, across, -wst * 0.42), at(top, across, wst * 0.42),
-                          CGPoint(x: hem.x + s * spread * 0.8 + wst * 0.5, y: hem.y + abs(s) * 0.02 * H),
-                          CGPoint(x: hem.x + s * spread * 0.8 - wst * 0.5, y: hem.y + abs(s) * 0.02 * H)], body)
+                    trunkFill([at(top, across, -wst * 0.42), at(top, across, wst * 0.42), edge(s * spread * 0.8 + wst * 0.5, abs(s) * 0.02 * H),
+                               edge(s * spread * 0.8 - wst * 0.5, abs(s) * 0.02 * H)], body)
                 }
             } else {
-                fill([torsoPoint(0.1, -wst * 0.6), torsoPoint(0.1, wst * 0.6), CGPoint(x: hem.x + spread, y: hem.y + 0.01 * H),
-                      CGPoint(x: hem.x + spread * 0.2, y: hem.y - 0.015 * H), CGPoint(x: hem.x - spread, y: hem.y + 0.01 * H)], body)
+                trunkFill([torsoPoint(0.1, -wst * 0.6), torsoPoint(0.1, wst * 0.6), edge(spread, 0.01 * H), edge(spread * 0.2, -0.015 * H),
+                           edge(-spread, 0.01 * H)], body)
             }
         }
-        // The sash, and a fine collar line crossing the chest.
-        if legs { pen.line(torsoPoint(0.14, -wst * 0.62), torsoPoint(0.14, wst * 0.58), Paint(build.accent.scaled(0.75)), width: 0.026 * H) }
-        if arms { pen.line(torsoPoint(0.98, c * 0.12), torsoPoint(0.6, c * 0.5), Paint(Palette.shade.mix(.white, 0.14)), width: max(1, 0.007 * H)) }
+        // The sash, and a fine collar line crossing the chest: bands, so that a cut takes each where it runs.
+        if legs {
+            trunkFill(band(torsoPoint(0.14, -wst * 0.62), torsoPoint(0.14, wst * 0.58), 0.026 * H), Paint(build.accent.scaled(0.75)))
+        }
+        if arms {
+            trunkFill(band(torsoPoint(0.98, c * 0.12), torsoPoint(0.6, c * 0.5), max(1, 0.007 * H)), Paint(Palette.shade.mix(.white, 0.14)))
+        }
         if arms, build.plated {
             for s in [CGFloat(1), -1] {
                 let root = torsoPoint(0.92, s * c * 0.45)
@@ -1991,44 +2191,91 @@ private struct Drawer {
                 fill([at(root, across, -0.05 * H), at(root, across, 0.055 * H), at(down, across, 0.075 * H), at(down, across, -0.07 * H)], body)
             }
         }
+        return outline
     }
 
-    /// The head: a cranium, a hard jaw, a straight brow; headgear; eyes.
-    mutating func head() {
+    /// The free hand pressed to the wound in his side, over the body: the blood welling out round it and running
+    /// down over the sash, then the forearm and the fist on it, a shade lighter than the body so they read against it.
+    mutating func clutchingHand() {
+        let (elbow, hand) = other
+        let k = build.bulk, swell = 1 + 0.12 * sin(pose.wave * 2 * .pi)
+        let wound = at(hand, CGPoint(x: 0, y: -1), 0.01 * H)
+        let blood = Paint(Palette.blood, 0.95), dark = Paint(Palette.blood.mix(.black, 0.35), 0.95)
+        fill(oval(wound, CGPoint(x: 1, y: 0), CGPoint(x: 0, y: 1), 0.03 * H * swell, 0.036 * H * swell), dark)
+        fill(oval(at(wound, CGPoint(x: 0, y: 1), 0.004 * H), CGPoint(x: 1, y: 0), CGPoint(x: 0, y: 1), 0.022 * H * swell, 0.026 * H * swell), blood)
+        // Running down in two streams, the longer as he breathes out.
+        for (dx, length) in [(CGFloat(-0.012), 0.11 - 0.015 * swell), (0.01, 0.07 + 0.01 * swell)] {
+            let top = at(wound, face, dx * H)
+            fill([at(top, face, 0.006 * H), at(top, face, -0.006 * H), CGPoint(x: top.x - face.x * 0.004 * H, y: top.y - length * H)], blood)
+        }
+        let paint = Paint(RGB(0.2, 0.16, 0.18))
+        segment(elbow, hand, 0.034 * H * k, 0.048 * H * k, 0.02 * H * k, paint, bulge: 0.25, at: 0.24)
+        let d = unit(elbow, hand), n = CGPoint(x: -d.y, y: d.x)
+        fill([at(hand, n, 0.016 * H), at(hand, d, 0.03 * H), at(hand, n, -0.016 * H), at(hand, d, -0.008 * H)], paint)
+    }
+
+    /// The head: a cranium, a hard jaw, a straight brow; headgear; eyes. `severed`: struck off, on a short length of
+    /// neck cut off flat, the face of the cut on its end.
+    mutating func head(severed: Bool = false) {
         let r = build.head * H
-        // A strong neck carrying the head.
         let c = at(neck, headUp, r * 1.25)
-        segment(neck, c, 0.042 * H * build.bulk, 0.046 * H * build.bulk, 0.036 * H, body, bulge: 0, at: 0.5)
+        let root = at(neck, headUp, r * Drawer.headCut), w = 0.044 * H * build.bulk
+        if severed {
+            let n = CGPoint(x: -headUp.y, y: headUp.x)
+            fill([at(root, n, w / 2), at(c, n, 0.018 * H), at(c, n, -0.018 * H), at(root, n, -w / 2)], body)
+        } else {
+            // A strong neck carrying the head.
+            segment(neck, c, 0.042 * H * build.bulk, 0.046 * H * build.bulk, 0.036 * H, body, bulge: 0, at: 0.5)
+        }
         let skull = CGRect(x: c.x - r, y: c.y - r * 0.95, width: 2 * r, height: 2 * r)
         pen.ellipse(skull, body)
         func p(_ f: CGFloat, _ u: CGFloat) -> CGPoint { at(at(c, face, f * r), headUp, u * r) }
         fill([p(-0.5, -0.6), p(0.72, -1.02), p(1.08, -0.35), p(1.02, 0.2), p(0.8, 0.5)], body)
-        gear(c, r)
+        gear(c, r, severed: severed)
         if let eyes = build.eyes {
             let eye = p(0.62, 0.05)
             fill([at(eye, face, -r * 0.28), at(eye, headUp, r * 0.12), at(eye, face, r * 0.3), at(eye, headUp, -r * 0.1)], Paint(eyes))
         }
+        // Last, over the jaw, or it is lost under it.
+        if severed { neckWound(root, w) }
     }
 
-    /// A ribbon streaming back from `root`: thin, tapering to a point, lifting as the figure moves.
+    /// A ribbon streaming back from `root`: thin, tapering to a point, lifting as the figure moves. On a body thrown
+    /// about it trails level from the head and hangs toward the ground, whichever way the head lies, and lies on the
+    /// ground rather than through it.
     mutating func ribbon(_ root: CGPoint, length: CGFloat, width: CGFloat, droop: CGFloat, phase: CGFloat, _ paint: Paint) {
         let r = build.head * H
-        let back = CGPoint(x: -face.x, y: -face.y)
-        let lift = (pose.stream - 0.5) * r * 1.4
+        var back = CGPoint(x: -face.x, y: -face.y), rise = headUp
+        var lift = (pose.stream - 0.5) * r * 1.4
+        if pose.floor != nil {
+            let g = gravity, k = fallen
+            func level(_ q: CGPoint) -> CGPoint {
+                let along = q.x * g.x + q.y * g.y
+                return CGPoint(x: q.x - g.x * along, y: q.y - g.y * along)
+            }
+            var flat = level(back)
+            if hypot(flat.x, flat.y) < 0.2 { flat = level(CGPoint(x: -headUp.x, y: -headUp.y)) }
+            let l = max(0.0001, hypot(flat.x, flat.y))
+            back = unit(.zero, CGPoint(x: back.x + (flat.x / l - back.x) * k, y: back.y + (flat.y / l - back.y) * k))
+            rise = unit(.zero, CGPoint(x: headUp.x + (-g.x - headUp.x) * k, y: headUp.y + (-g.y - headUp.y) * k))
+            lift *= 1 - 0.85 * k
+        }
         let sway = r * 0.6 * sin((pose.wave + phase) * 2 * .pi)
         let reach = length * (0.8 + 0.3 * pose.stream)
-        let tip = at(at(root, back, reach), headUp, -droop * r * (1.2 - pose.stream) + lift + sway)
-        let m = at(at(root, back, reach * 0.5), headUp, -droop * r * 0.3 + lift * 0.5 - sway * 0.6)
+        let tip = at(at(root, back, reach), rise, -droop * r * (1.2 - pose.stream) + lift + sway)
+        let m = at(at(root, back, reach * 0.5), rise, -droop * r * 0.3 + lift * 0.5 - sway * 0.6)
         var path = Path()
-        path.move(at(root, headUp, width / 2))
-        path.quad(tip, control: at(m, headUp, width / 2))
-        path.quad(at(root, headUp, -width / 2), control: at(m, headUp, -width / 2))
+        path.move(grounded(at(root, rise, width / 2)))
+        path.quad(grounded(tip), control: grounded(at(m, rise, width / 2)))
+        path.quad(grounded(at(root, rise, -width / 2)), control: grounded(at(m, rise, -width / 2)))
         path.close()
         pen.fill(path, paint)
     }
 
-    mutating func gear(_ c: CGPoint, _ r: CGFloat) {
-        func p(_ f: CGFloat, _ u: CGFloat) -> CGPoint { at(at(c, face, f * r), headUp, u * r) }
+    /// What a figure wears on its head (on a body thrown about, lying on the ground rather than through it). A head
+    /// struck off keeps all of it, the dancer's tail tied on above the cut.
+    mutating func gear(_ c: CGPoint, _ r: CGFloat, severed: Bool = false) {
+        func p(_ f: CGFloat, _ u: CGFloat) -> CGPoint { grounded(at(at(c, face, f * r), headUp, u * r)) }
         let flutter = sin(pose.wave * 2 * .pi)
         switch build.gear {
         case .topknot:
@@ -2052,7 +2299,7 @@ private struct Drawer {
             }
         case .ponytail:
             fill([p(-0.4, 0.8), p(-2.6, -0.4 + 0.4 * flutter), p(-0.8, 0.2)], body)
-            let neckPoint = at(c, headUp, -r * 1.2)
+            let neckPoint = at(c, headUp, -r * (severed ? 0.95 : 1.2))
             ribbon(at(neckPoint, face, -r * 0.4), length: r * 5.2, width: r * 0.42, droop: 1.2, phase: 0.2, Paint(build.accent, 0.95))
         case .eboshi:
             fill([p(-0.9, 0.45), p(0.8, 0.55), p(0.1, 2.3), p(-0.5, 1.9)], body)
@@ -2060,13 +2307,14 @@ private struct Drawer {
             fill([p(-1.2, 0.2), p(-0.9, 1.05), p(0.2, 1.3), p(1.1, 0.75), p(1.15, 0.3)], body)
             fill([p(-0.9, 0.35), p(-2.2, -0.75), p(-1.6, -1.1), p(-0.5, -0.4)], body)
             fill([p(0.4, -0.2), p(1.15, -0.05), p(1.0, -0.9), p(0.3, -1.05)], body)
-            let root = p(0.55, 1.05)
+            let root = at(at(c, face, 0.55 * r), headUp, 1.05 * r)
+            func q(_ f: CGFloat, _ u: CGFloat) -> CGPoint { grounded(at(at(root, face, f * r), headUp, u * r)) }
             var crest = Path()
-            crest.move(root)
-            crest.quad(at(at(root, face, r * 1.5), headUp, r * 1.9), control: at(at(root, face, r * 1.3), headUp, r * 0.2))
-            crest.quad(at(root, headUp, r * 0.25), control: at(at(root, face, r * 0.7), headUp, r * 0.5))
-            crest.quad(at(at(root, face, -r * 1.3), headUp, r * 1.9), control: at(at(root, face, -r * 0.5), headUp, r * 0.5))
-            crest.quad(root, control: at(at(root, face, -r * 1.1), headUp, r * 0.2))
+            crest.move(grounded(root))
+            crest.quad(q(1.5, 1.9), control: q(1.3, 0.2))
+            crest.quad(q(0, 0.25), control: q(0.7, 0.5))
+            crest.quad(q(-1.3, 1.9), control: q(-0.5, 0.5))
+            crest.quad(grounded(root), control: q(-1.1, 0.2))
             crest.close()
             pen.fill(crest, Paint(build.accent))
         }
@@ -2201,6 +2449,10 @@ private struct Drawer {
         }
     }
 
+    /// How tall the warlord's sashimono stands from its socket on his back, in figure heights: its flag clears his
+    /// helmet but stays under the top of the lane.
+    static let pole: CGFloat = 0.44
+
     mutating func backGear() {
         let flutter = sin(pose.wave * 2 * .pi)
         switch build.back {
@@ -2235,7 +2487,11 @@ private struct Drawer {
             }
         case .banner:
             let base = at(at(shoulder, across, -0.08 * H), up, -0.1 * H)
-            let top = CGPoint(x: base.x - 0.03 * H, y: base.y + 0.62 * H)
+            if pose.floor != nil {
+                fallenBanner(base, flutter)
+                break
+            }
+            let top = CGPoint(x: base.x - 0.03 * H, y: base.y + Drawer.pole * H)
             fill([at(base, CGPoint(x: 1, y: 0), 0.008 * H), at(top, CGPoint(x: 1, y: 0), 0.006 * H),
                   at(top, CGPoint(x: -1, y: 0), 0.006 * H), at(base, CGPoint(x: -1, y: 0), 0.008 * H)], body)
             let f = flutter * 0.025 * H
@@ -2253,6 +2509,40 @@ private struct Drawer {
             fill([CGPoint(x: top.x - 0.2 * H, y: top.y - 0.008 * H), CGPoint(x: top.x + 0.01 * H, y: top.y - 0.008 * H),
                   CGPoint(x: top.x + 0.01 * H, y: top.y - 0.022 * H), CGPoint(x: top.x - 0.2 * H, y: top.y - 0.022 * H)], body)
         }
+    }
+
+    /// The sashimono on a body thrown about: the pole swinging from upright on his back to lying with its end on the
+    /// ground as he goes down, never driven into it, and the flag furling (seen edge-on) as it comes to lie on the
+    /// side away from the ground.
+    mutating func fallenBanner(_ base: CGPoint, _ flutter: CGFloat) {
+        let k = fallen, g = gravity, L = Drawer.pole * H
+        let upright = CGPoint(x: sin(-0.048), y: cos(-0.048))
+        var level = CGPoint(x: up.x - g.x * (up.x * g.x + up.y * g.y), y: up.y - g.y * (up.x * g.x + up.y * g.y))
+        let n = hypot(level.x, level.y)
+        level = n > 0.05 ? CGPoint(x: level.x / n, y: level.y / n) : CGPoint(x: -face.x, y: -face.y)
+        let height = max(0, min(L * 0.95, (pose.floor ?? 0) * H - ((base.x - hip.x) * g.x + (base.y - hip.y) * g.y)))
+        let run = (L * L - height * height).squareRoot()
+        let rest = CGPoint(x: (level.x * run + g.x * height) / L, y: (level.y * run + g.y * height) / L)
+        let along = unit(.zero, CGPoint(x: upright.x * (1 - k) + rest.x * k, y: upright.y * (1 - k) + rest.y * k))
+        var behind = CGPoint(x: -along.y, y: along.x)
+        if k >= 1, behind.x * g.x + behind.y * g.y > 0 { behind = CGPoint(x: -behind.x, y: -behind.y) }
+        let top = at(base, along, L)
+        let w = 1 - 0.8 * k
+        func p(_ back: CGFloat, _ rise: CGFloat) -> CGPoint { grounded(at(at(top, behind, back * w * H), along, rise * H)) }
+        fill([grounded(at(base, behind, -0.008 * H)), grounded(at(top, behind, -0.006 * H)), grounded(at(top, behind, 0.006 * H)),
+              grounded(at(base, behind, 0.008 * H))], body)
+        let f = flutter * 0.025 * (1 - k)
+        var flag = Path()
+        flag.move(p(0, -0.02))
+        flag.quad(p(0.18, -0.03 + f), control: p(0.09, -0.02 - f))
+        flag.line(p(0.17, -0.36 + f))
+        flag.line(p(0.085, -0.3))
+        flag.line(p(0, -0.34))
+        flag.close()
+        pen.fill(flag, Paint(RGB(0.55, 0.05, 0.06)))
+        let c = -0.16 + f * 0.5
+        fill([p(0.09, c + 0.045), p(0.055, c), p(0.09, c - 0.045), p(0.125, c)], Paint(build.accent))
+        fill([p(0.2, -0.008), p(-0.01, -0.008), p(-0.01, -0.022), p(0.2, -0.022)], body)
     }
 
     /// The trail of a swing: a thin crescent swept by the blade tip, faint where the swing began and brightest at
