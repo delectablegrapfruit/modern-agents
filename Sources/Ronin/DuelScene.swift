@@ -20,6 +20,15 @@ import RoninCore
 ///
 /// With Reduce Motion (the system's, or the menu's) the lane shakes and flashes far less, never punches in, and a
 /// storm's lightning is a slow glow; the blood and the dead are as they always are.
+///
+/// The blood builds with the stage and is at its heaviest in bloodlust (`Gore`): more of it, thrown harder, pumping
+/// longer, pooling wider, reaching the glass more often, and more men cut apart rather than felled whole. With Gore
+/// turned off in the menu there is none at all (no blood on the lane, the ronin or the glass, nobody cut apart), and a
+/// blow is felt in the freeze, the shake, the cut's mark and its sparks.
+///
+/// The figures stand in the setting's light (`Ambient`): drawn a little toward its darkest tone, flashed in its own
+/// light, and leaving dark, see-through ghosts. The heavy ones (the oni, the warlord) shake the ground a little with
+/// each step, a puff of dust where the foot comes down.
 @MainActor
 final class DuelScene: SKScene {
     enum HeaderHit { case none, drag, compact, close }
@@ -56,6 +65,13 @@ final class DuelScene: SKScene {
     private(set) var pointer: CGPoint?
     /// Calmer effects (`Settings.reduceMotion`), as of this frame.
     private var calm = false
+    /// Gore turned on (`Settings.gore`), as of this frame.
+    private var goreOn = true
+    /// Blood the scene itself has spilt since launch (sprays, blots on the glass): with the carnage's, what the
+    /// self-test counts to tell that with gore off there is none.
+    private var shed = 0
+    /// A heavy foot coming down: the lane bumped down this far (points at a 60-point ronin), springing back.
+    private var bump: CGFloat = 0
     /// When (by the scene's clock) the ronin's blade gets to the blow he last swung: his swing carries on through a
     /// freeze until then, with the blow it brings.
     private var swingUntil = 0.0
@@ -72,6 +88,8 @@ final class DuelScene: SKScene {
     /// everything else (the warlord's bar included).
     private var headroom: CGFloat { top - groundY }
     private var look = Look.of(.crimsonDusk)
+    /// How much blood there is now: the stage's, or bloodlust's, or none with gore turned off.
+    private var gore: Gore { Gore.of(stage: session.fight.stage, bloodlust: session.fight.inBloodlust, on: goreOn) }
     /// Text scale: 1 on the medium panel.
     private var fs: CGFloat { max(0.85, min(1.25, field.height / 126)) }
 
@@ -169,6 +187,7 @@ final class DuelScene: SKScene {
         // them in a fight costs nothing.
         HeroSprite.preload()
         calm = Settings.reduceMotion
+        goreOn = Settings.gore
         build()
         loadFight(intro: true)
     }
@@ -348,6 +367,9 @@ final class DuelScene: SKScene {
         if fight.setting != shownSetting {
             shownSetting = fight.setting
             look = Look.of(fight.setting)
+            // The ronin and the dead in its light (the foes take it up as they arrive).
+            hero.ambient = look.ambient
+            carnage.ambient = look.ambient
             layout()
         }
         Art.track(titleLabel, "STAGE \(fight.stage)", 1.6)
@@ -820,6 +842,10 @@ final class DuelScene: SKScene {
         clock += dt
         guard !isCompact else { return }
         calm = Settings.reduceMotion
+        // Gore taken up at once, by whatever happens next: the dead still bleeding, the blood on the ronin.
+        goreOn = Settings.gore
+        carnage.gore = gore
+        hero.gore = goreOn
         let fight = session.fight
         if let shown = shownFight, shown.stage != fight.stage || shown.seed != fight.seed || shown.mode != fight.mode {
             loadFight(intro: true)
@@ -894,6 +920,12 @@ final class DuelScene: SKScene {
         } else {
             shakeAmount = 0
         }
+        if bump > 0.02 {
+            offset.y -= bump * ronin / 60
+            bump *= CGFloat(pow(0.0002, dt))
+        } else {
+            bump = 0
+        }
         zoom = zoom > 1.0005 ? 1 + (zoom - 1) * CGFloat(pow(0.0006, dt)) : 1
         world.setScale(zoom)
         world.position = CGPoint(x: offset.x + (1 - zoom) * zoomFocus.x, y: offset.y + (1 - zoom) * zoomFocus.y)
@@ -902,10 +934,26 @@ final class DuelScene: SKScene {
     /// Shakes the lane (with Reduce Motion, barely).
     private func shake(_ amount: CGFloat) { shakeAmount = max(shakeAmount, calm ? amount * 0.15 : amount) }
 
-    /// A flash of the whole lane in blood (a wound, the warlord's arrival), fading over `fade` seconds; with Reduce
-    /// Motion, soft and slow.
-    private func flashLane(_ alpha: CGFloat, fade: TimeInterval) {
+    /// A heavy foot set down at `x`: a puff of dust off the ground there and, but for Reduce Motion, a thump through
+    /// the lane (the lane dipped and sprung back), far less than a blow's shake and less still the further off it is.
+    private func footfall(_ sprite: FoeSprite, at x: CGFloat) {
+        let boss = sprite.kind == .warlord
+        let size = ronin * (boss ? 0.09 : 0.08)
+        let dust = Art.burst(look.ground.mix(look.horizon, 0.3).mix(.white, 0.25), count: boss ? 10 : 8, speed: ronin * 0.42, size: size,
+                             life: 0.42, spread: 2.2, angle: .pi / 2, gravity: ronin * 0.6, additive: false)
+        dust.particleAlpha = 0.55
+        dust.particleAlphaSpeed = -0.55 / 0.42
+        fx.addChild(at(CGPoint(x: x, y: groundY + 1), dust))
+        guard !calm else { return }
+        let near = 1 - min(1, abs(x - heroX) / (field.width / 2))
+        bump = max(bump, (boss ? 0.9 : 0.7) * (0.35 + 0.65 * near))
+    }
+
+    /// A flash of the whole lane (a wound, the warlord's arrival) in `color` (blood, unless given), fading over `fade`
+    /// seconds; with Reduce Motion, soft and slow.
+    private func flashLane(_ alpha: CGFloat, fade: TimeInterval, color: RGB = Palette.blood) {
         wound.removeAllActions()
+        wound.color = color.color()
         wound.alpha = calm ? min(alpha, 0.22) : alpha
         wound.run(.fadeOut(withDuration: calm ? max(fade, 0.6) : fade))
     }
@@ -947,12 +995,16 @@ final class DuelScene: SKScene {
         zoomFocus = point
     }
 
-    /// Blood thrown against the glass: blots that run and fade. `side` keeps them to that half. Over the whole fight,
-    /// but under the combo and the warning markers: blood on the glass never hides a blow coming.
+    /// Blood thrown against the glass: blots that run and fade, `count` of them at full gore (more and bigger as it
+    /// builds, and running longer; none with it off). `side` keeps them to that half. Over the whole fight, but under
+    /// the combo and the warning markers: blood on the glass never hides a blow coming.
     private func splatter(_ count: Int, side: Side? = nil) {
+        let gore = self.gore
+        let count = gore.count(count)
+        shed += count
         for _ in 0..<count {
             let splat = SKSpriteNode(texture: Art.splats.randomElement())
-            let s = ronin * CGFloat.random(in: 0.45...1.0)
+            let s = ronin * CGFloat.random(in: 0.45...1.0) * gore.size
             splat.size = CGSize(width: s, height: s)
             let x: CGFloat
             switch side {
@@ -969,10 +1021,11 @@ final class DuelScene: SKScene {
             // (Overlay 60 - 12.5 = 47.5: over the impact lines, under the combo's haze at 48.)
             splat.zPosition = -12.5
             overlay.addChild(splat)
+            let run = 1.6 * Double(gore.span)
             splat.run(.sequence([
                 .scale(to: 1, duration: 0.05),
-                .wait(forDuration: 0.6),
-                .group([.moveBy(x: 0, y: -ronin * 0.3, duration: 1.6), .fadeOut(withDuration: 1.6)]),
+                .wait(forDuration: 0.6 * Double(gore.span)),
+                .group([.moveBy(x: 0, y: -ronin * 0.3 * gore.span, duration: run), .fadeOut(withDuration: run)]),
                 .removeFromParent(),
             ]))
         }
@@ -989,16 +1042,20 @@ final class DuelScene: SKScene {
             if let existing = foeSprites[foe.id] {
                 sprite = existing
             } else {
-                sprite = FoeSprite(foe: foe, ronin: ronin, headroom: headroom)
+                sprite = FoeSprite(foe: foe, ronin: ronin, headroom: headroom, ambient: look.ambient)
                 figures.addChild(sprite)
                 foeSprites[foe.id] = sprite
             }
             // The warlord over his men; a gourd-bearer waiting his moment a step behind the line, so the men who pass
             // him walk in front of him.
             sprite.zPosition = foe.kind == .warlord ? 4 : foe.bearer && foe.phase == .advancing && !foe.darting ? 2.5 : 3
-            // A leap's arc; the gourd-bearer's spring back out of reach is a low hop.
-            let air = foe.phase == .leaping ? CGFloat(sin(foe.progress * .pi)) * ronin * (foe.bearer ? 0.45 : 0.95) : 0
-            sprite.update(foe, at: CGPoint(x: laneX(foe.x), y: groundY), air: air, hero: heroX, dt: dt)
+            // A leap's arc; the gourd-bearer's spring back out of reach is a short hop off his heels.
+            let air = foe.phase == .leaping ? CGFloat(sin(foe.progress * .pi)) * ronin * (foe.bearer ? FoeSprite.hop : 0.95) : 0
+            // The heavy ones' steps are felt.
+            if let step = sprite.update(foe, at: CGPoint(x: laneX(foe.x), y: groundY), air: air, hero: heroX, dt: dt),
+               foe.kind == .brute || foe.kind == .warlord {
+                footfall(sprite, at: step)
+            }
         }
         for (id, sprite) in foeSprites where !live.contains(id) {
             sprite.removeFromParent()
@@ -1247,19 +1304,23 @@ final class DuelScene: SKScene {
                 sprite.hold(delay)
                 heldUntil[id] = clock + delay
                 later(delay) { [self] in
-                    // A wound, not a kill: he reels, opened up along the cut, blood spraying out the far side.
+                    // A wound, not a kill: he reels, opened up along the cut, blood spraying out the far side (with
+                    // gore off, sparks off the blade instead).
                     slash(at: target, side: side, style: style, strong: false)
                     sprite.flashHit()
                     sprite.showStagger()
-                    sprite.gash(DuelScene.slope(of: style), at: DuelScene.height(of: style))
-                    let spray: CGFloat = side == .right ? 0.35 : .pi - 0.35
-                    fx.addChild(at(target, Art.burst(Palette.blood, count: 22, speed: ronin * 2.2, size: ronin * 0.07, life: 0.45,
-                                                      spread: 1.0, angle: spray, gravity: ronin * 5, additive: false)))
-                    if sprite.kind == .brute || sprite.kind == .warlord {
+                    let gore = self.gore
+                    carnage.gore = gore
+                    let away: CGFloat = side == .right ? 0.35 : .pi - 0.35
+                    if gore.on {
+                        sprite.gash(DuelScene.slope(of: style), at: DuelScene.height(of: style), gore: gore)
+                        spray(Palette.blood, at: target, count: 22, speed: 2.2, size: 0.07, life: 0.45, spread: 1.0, angle: away, gravity: 5)
+                        carnage.spatter(around: sprite.position.x, count: 4)
+                    }
+                    if sprite.kind == .brute || sprite.kind == .warlord || !gore.on {
                         fx.addChild(at(target, Art.burst(Palette.steel, count: 12, speed: ronin * 2.4, size: ronin * 0.07, life: 0.22,
                                                           spread: 1.3, angle: side == .right ? 0 : .pi)))
                     }
-                    carnage.spatter(around: sprite.position.x, count: 4)
                     hitStop = max(hitStop, 0.05)
                     shake(1.8)
                     punch(0.018, at: target)
@@ -1417,14 +1478,22 @@ final class DuelScene: SKScene {
             hero.strain = HeroSprite.strain(hp: fight.hp, of: fight.maxHP)
             hero.hurt(from: attacker)
             if let foe { foeSprites[foe]?.showStrike() }
-            flashLane(damage > 1 ? 0.55 : 0.42, fade: 0.45)
-            // The blood sprays away from the blow.
+            let gore = self.gore
+            carnage.gore = gore
+            // The blood sprays away from the blow, and the lane flashes red with it; with gore off, sparks off the
+            // blade that struck him, and a pale flash.
             let from: CGFloat = attacker == .left ? 0.2 : .pi - 0.2
-            fx.addChild(at(p, Art.burst(Palette.blood, count: 30 + 12 * damage, speed: ronin * 2.2, size: ronin * 0.08, life: 0.55,
-                                        spread: 1.6, angle: from, gravity: ronin * 5, additive: false)))
-            carnage.spatter(around: p.x, count: 8)
-            splatter(damage > 1 ? 3 : 2)
-            focus(at: p, size: ronin * 3, color: Palette.blood.mix(.white, 0.2), alpha: 0.55)
+            if gore.on {
+                flashLane(damage > 1 ? 0.55 : 0.42, fade: 0.45)
+                spray(Palette.blood, at: p, count: 30 + 12 * damage, speed: 2.2, size: 0.08, life: 0.55, spread: 1.6, angle: from, gravity: 5)
+                carnage.spatter(around: p.x, count: 8)
+                splatter(damage > 1 ? 3 : 2)
+            } else {
+                flashLane(damage > 1 ? 0.26 : 0.2, fade: 0.35, color: Palette.ink)
+                fx.addChild(at(p, Art.burst(Palette.steel, count: 14 + 6 * damage, speed: ronin * 2.4, size: ronin * 0.07, life: 0.24,
+                                            spread: 1.4, angle: from)))
+            }
+            focus(at: p, size: ronin * 3, color: gore.on ? Palette.blood.mix(.white, 0.2) : .white, alpha: 0.55)
             shake(3.5 + CGFloat(damage) * 1.5)
             punch(0.05, at: p)
             hitStop = max(hitStop, 0.08)
@@ -1475,6 +1544,19 @@ final class DuelScene: SKScene {
     private func at<T: SKNode>(_ position: CGPoint, _ node: T) -> T {
         node.position = position
         return node
+    }
+
+    /// Blood thrown from `p`, as the gore makes it (none with it off): at full gore, `count` drops `size` across,
+    /// thrown `speed` and pulled down by `gravity` (both in ronin heights a second), gone in about `life` seconds; as the
+    /// gore builds, more of them, bigger, thrown harder and hanging longer.
+    private func spray(_ color: RGB, at p: CGPoint, count: Int, speed: CGFloat, size: CGFloat, life: CGFloat, spread: CGFloat = .pi * 2,
+                       angle: CGFloat = 0, gravity: CGFloat = 0, additive: Bool = false, texture: SKTexture? = nil) {
+        let gore = self.gore
+        guard gore.on else { return }
+        let n = gore.count(count)
+        shed += n
+        fx.addChild(at(p, Art.burst(color, count: n, speed: ronin * speed * gore.force, size: ronin * size * gore.size, life: life * gore.span,
+                                    spread: spread, angle: angle, gravity: ronin * gravity, additive: additive, texture: texture)))
     }
 
     /// The ronin's blade crossing the gap to a foe: a hot streak along the ground line.
@@ -1652,9 +1734,11 @@ final class DuelScene: SKScene {
 
     /// A foe cut down. What becomes of him depends on the cut: halved on the slant or through the waist, his legs cut
     /// from under him at the shins, his head taken (a warlord always loses his); run through or shot, he goes down
-    /// whole. He falls from the pose his figure froze in at the blow (`Figures.struck` with `variant`), or, shot, from
-    /// the one he was in. The pieces fly, land and stay, and the blood goes everywhere from where he parts, which is
-    /// returned (for the cut's mark).
+    /// whole. The gore decides how often a cut takes him apart like that (`Gore.severs`: now and then it only fells
+    /// him, early on; heavier, a thrust may tear him open through the waist too), and with gore off nobody comes
+    /// apart: every man is felled whole. He falls from the pose his figure froze in at the blow (`Figures.struck` with
+    /// `variant`), or, shot, from the one he was in. The pieces fly, land and stay, and the blood goes everywhere from
+    /// where he parts (with gore off, sparks), which is returned (for the cut's mark).
     @discardableResult
     private func sever(_ sprite: FoeSprite, side: Side, style: Cut?, variant: Int? = nil) -> CGPoint {
         foeSprites[sprite.id] = nil
@@ -1664,18 +1748,25 @@ final class DuelScene: SKScene {
         let away = side.sign.cg
         let feet = sprite.position
         let force: CGFloat = boss ? 1.5 : heavy ? 1.25 : 1
+        let gore = self.gore
+        carnage.gore = gore
         let severance: Figures.Severance?
-        if boss {
+        if !gore.on {
+            severance = nil
+        } else if boss {
             severance = .head
         } else {
+            let cut: Figures.Severance?
             switch style {
-            case .kesa?: severance = .falling
-            case .gyaku?, .nukitsuke?: severance = .rising
-            case .dou?: severance = .level
-            case .sune?: severance = .legs
-            case .shomen?: severance = .head
-            case .tsuki?, nil: severance = nil
+            case .kesa?: cut = .falling
+            case .gyaku?, .nukitsuke?: cut = .rising
+            case .dou?: cut = .level
+            case .sune?: cut = .legs
+            case .shomen?: cut = .head
+            case .tsuki?: cut = Double.random(in: 0..<1) < gore.tears ? .level : nil
+            case nil: cut = nil
             }
+            severance = Double.random(in: 0..<1) < gore.severs ? cut : nil
         }
         // Where he parts: the upper piece's cut, the neck, the shin; felled whole, his chest.
         let gash: CGPoint
@@ -1686,16 +1777,21 @@ final class DuelScene: SKScene {
             let pose = variant.map { Figure.struck(sprite.cast, variant: $0) } ?? Figure.pose(sprite.cast, sprite.shown)
             gash = carnage.fell(sprite.cast, feet: feet, facing: facing, force: force, pose: pose)
         }
-        let spray: CGFloat = side == .right ? 0.6 : .pi - 0.6
-        fx.addChild(at(gash, Art.burst(Palette.blood, count: boss ? 90 : heavy ? 56 : 36, speed: ronin * 2.4, size: ronin * 0.08, life: 0.7,
-                                       spread: 1.6, angle: spray, gravity: ronin * 6, additive: false)))
-        fx.addChild(at(gash, Art.burst(Palette.blood.mix(.white, 0.2), count: 12, speed: ronin * 3.2, size: ronin * 0.1, life: 0.2,
-                                       spread: 0.8, angle: spray)))
-        // Gobbets: dark, heavy, thrown up and dropping fast.
-        fx.addChild(at(gash, Art.burst(RGB(0.28, 0, 0.02), count: heavy ? 18 : 9, speed: ronin * 1.9, size: ronin * 0.11, life: 0.8,
-                                       spread: 1.3, angle: .pi / 2, gravity: ronin * 9, additive: false, texture: Art.dot)))
+        let thrown: CGFloat = side == .right ? 0.6 : .pi - 0.6
+        if gore.on {
+            spray(Palette.blood, at: gash, count: boss ? 90 : heavy ? 56 : 36, speed: 2.4, size: 0.08, life: 0.7, spread: 1.6, angle: thrown, gravity: 6)
+            spray(Palette.blood.mix(.white, 0.2), at: gash, count: 12, speed: 3.2, size: 0.1, life: 0.2, spread: 0.8, angle: thrown, additive: true)
+            // Gobbets: dark, heavy, thrown up and dropping fast.
+            spray(RGB(0.28, 0, 0.02), at: gash, count: heavy ? 18 : 9, speed: 1.9, size: 0.11, life: 0.8, spread: 1.3, angle: .pi / 2, gravity: 9,
+                  texture: Art.dot)
+            // The stage's blood on him, darker the heavier the gore.
+            hero.bloodied((heavy ? 0.06 : 0.025) * gore.level, upTo: 0.1 + 0.03 * gore.level)
+        } else {
+            // No blood: the blade's sparks where it went through, and the cut's mark does the rest.
+            fx.addChild(at(gash, Art.burst(Palette.steel, count: boss ? 30 : heavy ? 22 : 14, speed: ronin * 2.6, size: ronin * 0.07, life: 0.24,
+                                           spread: 1.2, angle: thrown)))
+        }
         sprite.removeFromParent()
-        hero.bloodied(heavy ? 0.06 : 0.025)
 
         // A big man's death gets an impact frame; the warlord's has its lines closing in from past every edge.
         if heavy { focus(at: gash, size: ronin * (boss ? 5.5 : 4.2), color: .white, alpha: boss ? 0.9 : 0.65, pastEdges: boss) }
@@ -1711,8 +1807,8 @@ final class DuelScene: SKScene {
             hitStop = max(hitStop, heavy ? 0.08 : 0.05)
             shake(heavy ? 2.8 : 1.6)
             punch(heavy ? 0.035 : 0.02, at: gash)
-            // Now and then, close in, it reaches the glass.
-            if heavy || abs(feet.x - heroX) < ronin * 0.6 && Double.random(in: 0...1) < 0.15 { splatter(heavy ? 2 : 1, side: side) }
+            // Now and then, close in, it reaches the glass (more often the heavier the gore).
+            if heavy || abs(feet.x - heroX) < ronin * 0.6 && Double.random(in: 0...1) < gore.chance(0.15) { splatter(heavy ? 2 : 1, side: side) }
         }
         return gash
     }
@@ -1798,7 +1894,9 @@ final class DuelScene: SKScene {
         let delay: TimeInterval = outcome == .victory ? 1.5 : (HeroSprite.fallTiming.last ?? 1.2) + 0.3
         if outcome == .defeat {
             // He is opened up where he stands: blood pumping from him as he goes down, pooling wide under him, on the
-            // glass; and once he is down on his face, running out of him along the ground.
+            // glass; and once he is down on his face, running out of him along the ground. (As much as the gore
+            // makes of it; with gore off, none: he only falls.)
+            carnage.gore = gore
             let x = hero.standing
             let chest = CGPoint(x: x + hero.facing.sign.cg * ronin * 0.06, y: groundY + ronin * 0.55)
             carnage.bleed(at: chest, angle: hero.facing == .right ? 0.7 : .pi - 0.7, seconds: 1.0)
@@ -1807,8 +1905,7 @@ final class DuelScene: SKScene {
                 carnage.bleed(at: CGPoint(x: x + hero.facing.sign.cg * ronin * 0.2, y: groundY + ronin * 0.12),
                               angle: hero.facing == .right ? 0.3 : .pi - 0.3, seconds: 0.8)
             }
-            fx.addChild(at(chest, Art.burst(Palette.blood, count: 70, speed: ronin * 2.4, size: ronin * 0.09, life: 0.8,
-                                            gravity: ronin * 6, additive: false)))
+            spray(Palette.blood, at: chest, count: 70, speed: 2.4, size: 0.09, life: 0.8, gravity: 6)
             carnage.pool(at: x, width: ronin * 2.4, grow: 3.5)
             carnage.spatter(around: x, count: 16)
             splatter(4)
@@ -1948,6 +2045,9 @@ final class DuelScene: SKScene {
     var isShowingBanner: Bool { banner != nil }
     /// Bodies and parts of bodies lying on the lane.
     var bodiesOnLane: Int { carnage.count }
+    /// Blood spilt since launch (drops thrown, wounds opened, pools, flecks, blots on the glass), and men taken apart.
+    var bloodShed: Int { shed + carnage.shed }
+    var severings: Int { carnage.severings }
     /// A blow's impact frame is holding the lane (and the dead) still.
     var isFrozen: Bool { hitStop > 0 }
     /// What plays over the lane (a stage's card, the words slammed onto it) is holding with the fight.

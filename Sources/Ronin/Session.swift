@@ -228,9 +228,17 @@ enum Settings {
         set { defaults.set(newValue, forKey: "hintShown") }
     }
 
+    /// Blood, and the dead cut apart (`Gore`). On unless turned off; off, nothing bleeds and nobody comes apart: the
+    /// dead fall whole, and a blow is felt in the freeze, the shake, the cut's mark and the sparks alone. Taken up at
+    /// once, by whatever happens next on the lane.
+    static var gore: Bool {
+        get { defaults.object(forKey: "gore") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "gore") }
+    }
+
     /// Calmer effects: less shake, no zoom punches, softer full-lane flashes, lightning a slow glow. The blood and the
-    /// dead are untouched. Follows the system's Reduce Motion until chosen in the menu (choosing what the system says
-    /// follows it again).
+    /// dead are untouched (`gore` is theirs). Follows the system's Reduce Motion until chosen in the menu (choosing
+    /// what the system says follows it again).
     @MainActor static var reduceMotion: Bool {
         get { defaults.object(forKey: "reduceMotion") as? Bool ?? NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
         set {

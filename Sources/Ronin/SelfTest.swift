@@ -5,18 +5,19 @@ import RoninArt
 import RoninCore
 
 /// `RONIN_SELFTEST=1 Ronin.app/Contents/MacOS/Ronin`: in a scratch save and a scratch defaults domain, checks the
-/// defaults (floor hints off, a Medium panel) and that what is drawn over a foe's head stays on the lane at every
-/// size, grows the panel from its default corner and folds it there and back without it leaving the screen, shows
-/// what a new player first sees, makes the first cut and a whiff with real left and right mouse-button events, lets
-/// the autopilot clear stage 1 and checks that its dead fall on under the card, folds into the pill and back and
-/// changes the size with the dead still lying there, advances from the banner, shows a new foe's card and checks it
-/// follows a resize, fights a warlord (his bar in the header, his blow coming), switches to Oni and rides a combo
-/// into bloodlust, falls and starts again from stage 1, switches back and finds Bushidō's stage and hearts kept, runs
-/// an endless stage straight into the next, checks that dragging the window holds the fight still and that a stage
-/// won with the pointer away does not start the next behind its back, folds into the pill and back, checks that
-/// leaving pauses and gives the keys back (so a key typed elsewhere does nothing) and that coming back takes the
-/// dwell, and checks the save. Exits 0, or 1 saying what failed. With `RONIN_SNAPSHOTS=<dir>` it also writes what
-/// the panel showed along the way as PNGs, and fails if one cannot be taken.
+/// defaults (floor hints off, a Medium panel, gore on) and that what is drawn over a foe's head stays on the lane at
+/// every size (a gourd-bearer's pips and marker clear of his gourd), grows the panel from its default corner and folds
+/// it there and back without it leaving the screen, shows what a new player first sees, makes the first cut and a whiff
+/// with real left and right mouse-button events, lets the autopilot clear stage 1 and checks that its dead fall on
+/// under the card, folds into the pill and back and changes the size with the dead still lying there, advances from the
+/// banner, shows a new foe's card and checks it follows a resize, fights a warlord (his bar in the header, his blow
+/// coming), switches to Oni and rides a combo into bloodlust, falls and starts again from stage 1, switches back and
+/// finds Bushidō's stage and hearts kept, runs an endless stage with gore off (nobody cut apart, not a drop of blood)
+/// straight into the next, checks that dragging the window holds the fight still and that a stage won with the pointer
+/// away does not start the next behind its back, folds into the pill and back, checks that leaving pauses and gives the
+/// keys back (so a key typed elsewhere does nothing) and that coming back takes the dwell, and checks the save. Exits
+/// 0, or 1 saying what failed. With `RONIN_SNAPSHOTS=<dir>` it also writes what the panel showed along the way as PNGs,
+/// and fails if one cannot be taken.
 enum SelfTest {
     static var enabled: Bool { ProcessInfo.processInfo.environment["RONIN_SELFTEST"] != nil }
 
@@ -50,11 +51,14 @@ enum SelfTest {
     private static func run(_ app: AppDelegate) async throws {
         let panel = app.panel!, scene = panel.scene, session = app.session
         Settings.pauseWhenAway = false
-        // Floor hints are off unless asked for, and the panel is Medium until a size is chosen.
+        // Floor hints are off unless asked for, the panel is Medium until a size is chosen, and gore is on until
+        // turned off.
         Settings.defaults.removeObject(forKey: "floorHints")
         Settings.defaults.removeObject(forKey: "size")
+        Settings.defaults.removeObject(forKey: "gore")
         guard !Settings.floorHints else { throw Failure("floor hints were on by default") }
         guard Settings.size == .medium else { throw Failure("the panel was not Medium by default") }
+        guard Settings.gore else { throw Failure("gore was off by default") }
         try checkOverhead()
         panel.setCompact(false)
         panel.setSize(.medium)
@@ -232,13 +236,20 @@ enum SelfTest {
         else { throw Failure("Bushidō's stage and hearts were not kept") }
         session.autopilot = true
 
-        // Endless from stage 2: a win runs straight on into stage 3, without a card to click through.
+        // Endless from stage 2: a win runs straight on into stage 3, without a card to click through. Stage 2 is fought
+        // with Gore off: its dead are all felled whole, and not a drop of blood is spilt.
+        let spilt = scene.bloodShed, severed = scene.severings, killed = session.career.kills
+        Settings.gore = false
         session.startEndless(at: 2)
         scene.loadFight(intro: true)
         guard session.career.isEndless, session.fight.stage == 2 else { throw Failure("endless did not start at stage 2") }
         scene.timeScale = 5
         try await until("the endless run went on", timeout: 60) { session.fight.stage == 3 || session.fight.outcome == .defeat }
         guard session.fight.stage == 3, session.career.endless?.cleared == 1 else { throw Failure("the endless run did not go on to stage 3") }
+        guard session.career.kills > killed else { throw Failure("stage 2 of the endless run was won without a kill") }
+        guard scene.severings == severed else { throw Failure("with gore off, \(scene.severings - severed) men were cut apart") }
+        guard scene.bloodShed == spilt else { throw Failure("with gore off, blood was spilt (\(scene.bloodShed - spilt) drops, pools and blots)") }
+        Settings.gore = true
         scene.timeScale = 1
         try await pause(0.6)
         try snapshot("12-endless", panel)
@@ -324,7 +335,9 @@ enum SelfTest {
     }
 
     /// Over every kind of foe (a gourd-bearer too), at every size: the warning marker of a blow coming stays on the
-    /// lane, under the header (which holds the warlord's bar), and still over his head, not down in his face.
+    /// lane, under the header (which holds the warlord's bar), and still over his head, not down in his face. Over a
+    /// gourd-bearer, his pips stay clear of the gourd (and of each other) however it swells and bobs, and so does the
+    /// marker's ring.
     @MainActor
     private static func checkOverhead() throws {
         for option in Settings.Size.allCases {
@@ -337,6 +350,17 @@ enum SelfTest {
                     let height = lane.ronin * Build.of(.foe(kind)).height
                     guard top <= room + 0.01, marker >= height * 1.05 else {
                         throw Failure("the marker over a \(kind.title) at \(option.title) is at \(marker) (his height \(height)), its top at \(top) of \(room)")
+                    }
+                    guard gourd else { continue }
+                    for hp in 2...3 {
+                        let marks = FoeSprite.bearerMarks(kind: kind, ronin: lane.ronin, headroom: room, hp: hp)
+                        for (k, pip) in marks.pips.enumerated() where pip.intersects(marks.gourd) || marks.pips[..<k].contains(where: { $0.intersects(pip) }) {
+                            throw Failure("a pip over a \(kind.title)'s gourd at \(option.title) overlaps it or another pip: \(pip), the gourd \(marks.gourd)")
+                        }
+                        let ring = marker - FoeSprite.markerRadius(ronin: lane.ronin) * 1.15
+                        guard ring >= marks.gourd.maxY else {
+                            throw Failure("the marker over a \(kind.title)'s gourd at \(option.title) comes down to \(ring), onto the gourd (its top at \(marks.gourd.maxY))")
+                        }
                     }
                 }
             }

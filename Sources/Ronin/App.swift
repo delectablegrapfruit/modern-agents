@@ -185,6 +185,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         add("Dim When Pointer Leaves", #selector(toggleDimWhenAway), on: Settings.dimWhenAway)
         add("Floor Hints", #selector(toggleFloorHints), on: Settings.floorHints)
         add("Reduce Motion", #selector(toggleReduceMotion), on: Settings.reduceMotion)
+        add("Gore", #selector(toggleGore), on: Settings.gore)
 
         let shortcuts = NSMenu()
         for (k, option) in Shortcut.all.enumerated() {
@@ -271,6 +272,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func toggleReduceMotion() {
         Settings.reduceMotion.toggle()
+    }
+
+    /// Gore on or off: the lane takes it up with whatever happens next (the blood already spilt stays where it is).
+    @objc private func toggleGore() {
+        Settings.gore.toggle()
     }
 
     @objc private func toggleDimWhenAway() {
