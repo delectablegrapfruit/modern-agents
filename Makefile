@@ -1,4 +1,4 @@
-.PHONY: build test sim app run clean
+.PHONY: build test sim sheet app run clean
 
 build:
 	swift build
@@ -8,6 +8,10 @@ test:
 
 sim:
 	swift run -c release ronin-sim
+
+sheet:
+	mkdir -p build
+	swift run ronin-sheet build/figures.svg all
 
 app:
 	scripts/make-app.sh release
