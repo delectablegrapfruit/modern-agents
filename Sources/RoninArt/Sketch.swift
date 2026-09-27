@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(CoreGraphics)
+import CoreGraphics
+#endif
 
 /// A colour with its opacity.
 public struct Paint: Equatable, Sendable {

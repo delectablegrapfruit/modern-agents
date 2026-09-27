@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(CoreGraphics)
+import CoreGraphics
+#endif
 
 /// A colour kept as its components, so it can be mixed and dimmed without a trip through colour spaces.
 public struct RGB: Equatable, Sendable {

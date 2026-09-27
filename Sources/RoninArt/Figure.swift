@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(CoreGraphics)
+import CoreGraphics
+#endif
 import RoninCore
 
 /// Who is drawn.
@@ -873,7 +876,8 @@ private struct Drawer {
         let r = build.head * H
         let c = at(neck, headUp, r * 1.25)
         segment(neck, c, 0.045 * H * build.bulk, 0.05 * H * build.bulk, 0.04 * H, body, bulge: 0, at: 0.5)
-        pen.ellipse(CGRect(x: c.x - r, y: c.y - r * 0.95, width: 2 * r, height: 2 * r), body)
+        let skull = CGRect(x: c.x - r, y: c.y - r * 0.95, width: 2 * r, height: 2 * r)
+        pen.ellipse(skull, body)
         func p(_ f: CGFloat, _ u: CGFloat) -> CGPoint { at(at(c, face, f * r), headUp, u * r) }
         fill([p(-0.5, -0.6), p(0.72, -1.02), p(1.08, -0.35), p(1.02, 0.2), p(0.8, 0.5)], body)
         gear(c, r)
