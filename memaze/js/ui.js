@@ -80,15 +80,11 @@
       this.hud = {
         label: $('#hud-label'), time: $('#hud-time'), goals: $('#hud-goals'), gems: $('#hud-gems'),
         lives: $('#hud-lives'), banner: $('#hud-banner'), fps: $('#fps'),
-        item: $('#hud-item'), effects: $('#hud-effects'), flash: $('#hurt-flash'),
+        item: $('#hud-item'), effects: $('#hud-effects'),
       };
       $('#btn-pause').addEventListener('click', () => { MZ.Audio.play('click'); Game().pause(); });
       this.hud.item.addEventListener('click', () => { MZ.Audio.unlock(); Game().useItem(); });
       const G = Game();
-      G.on('hit', () => {
-        const el = this.hud.flash;
-        el.classList.remove('hit'); void el.offsetWidth; el.classList.add('hit');
-      });
       G.on('state', (st) => this.onState(st));
       G.on('begin', () => this.onBegin());
       G.on('result', (r) => this.show('results', r));
@@ -243,8 +239,8 @@
         }
         if ((e.key === ' ' || e.code === 'KeyE') && st === 'play' && !e.repeat) { G.useItem(); e.preventDefault(); }
         if (e.key === 'f' || e.key === 'F') this.fullscreen();
-        if (e.key === '+' || e.key === '=') G.userZoom = clamp(G.userZoom * 1.15, 0.45, 2.2);
-        if (e.key === '-' || e.key === '_') G.userZoom = clamp(G.userZoom / 1.15, 0.45, 2.2);
+        if (e.key === '+' || e.key === '=') G.zoomBy(1.15);
+        if (e.key === '-' || e.key === '_') G.zoomBy(1 / 1.15);
       });
       let prev = new Set();
       const poll = () => {
@@ -622,7 +618,7 @@
           toggle('Timer', 'gameplay.timer'),
           toggle('Mystery boxes', 'gameplay.boxes'),
           segmented('Map', 'gameplay.minimap', [['explored', 'On'], ['off', 'Off']]),
-          range('Zoom', 'gameplay.zoom', 0.5, 2, 0.05, times)),
+          range('Zoom', 'gameplay.zoom', 1, 3, 0.05, times)),
         section('Audio',
           range('Master', 'audio.master', 0, 1, 0.01, pct),
           range('Effects', 'audio.sfx', 0, 1, 0.01, pct),
@@ -654,8 +650,8 @@
       return this.panel('How to play', [
         h('ul', { class: 'facts' },
           h('li', null, 'Drag the maze to move through it.'),
-          h('li', null, 'Touching the edge hurts: your picture glows red and the screen’s edges redden. Touch it again before that fades (5 s once you’re off the edge) and you’re out. Holding against the edge never counts twice. Your picture is the hitbox: transparent parts don’t count.'),
-          h('li', null, 'Mystery boxes give you an item. Use it with Space, E or the button in the corner.'),
+          h('li', null, 'Touching the edge knocks out your shield: your picture fades. Touch it again before the shield recharges (5 s once you’re off the edge) and you’re out. Holding against the edge never counts twice. Your picture is the hitbox: transparent parts don’t count.'),
+          h('li', null, 'Touch a mystery box to shatter it. With an empty slot you get an item; use it with Space, E or the button in the corner.'),
           h('ul', { class: 'items' },
             h('li', null, h('b', null, 'Invincible'), ': no damage for 8 s; the edges hold like walls.'),
             h('li', null, h('b', null, 'Extra hit'), ': a gold ring around you that takes the next hit (up to two).'),

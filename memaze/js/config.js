@@ -73,6 +73,7 @@
     if (!(st.player.size >= 0.6 && st.player.size <= 1.25)) st.player.size = 1;
     if (st.gameplay.rule !== 'casual') st.gameplay.rule = 'normal';
     if (st.gameplay.minimap !== 'off') st.gameplay.minimap = 'explored'; // the map is always fogged now
+    if (!(st.gameplay.zoom >= 1 && st.gameplay.zoom <= 3)) st.gameplay.zoom = 1; // the default view is the widest now
     return st;
   }
 

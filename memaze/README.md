@@ -23,18 +23,19 @@ No build step, no dependencies: plain HTML/CSS/JS, plus an optional Python serve
   maze follows your finger or mouse 1:1 and stops when you stop. WASD/arrows and a gamepad move at a steady speed.
   Settings can invert the drag and change its speed.
 - **The paths float over nothing.** Reach **GOAL** and your *win* media plays.
-- **Two hits.** Touching the edge hurts: you stop right at the edge, your picture glows red with a heartbeat and the
-  screen's edges redden. There is no health bar; that glow is it, fading as you heal. No rapid hits: for 0.75 s the
-  edges hold like walls, and a new hit needs a new touch (holding against the edge, or sliding along it, never counts
-  twice). Healing takes 5 s once you're off the edge. A second touch before that and your *lose* media plays, then you
-  go back to the last flag you reached, or the start. A bridge vanishing under you, or a magic carpet running out over
+- **Two hits, like the shields in Bungie's Halo.** Touching the edge knocks your shield out: you stop right at the
+  edge, the shield flares, and your picture blinks, then stays faded. There is no health bar; the faded picture is it.
+  No rapid hits: for 0.75 s the edges hold like walls, and a new hit needs a new touch (holding against the edge, or
+  sliding along it, never counts twice). 5 s after you're off the edge the shield is back: over the last second it
+  recharges with a rising sound and a gold shimmer, and the picture fills back in. A second touch before that and
+  your *lose* media plays, then you go back to the last flag you reached, or the start. A bridge vanishing under you, or a magic carpet running out over
   the void, counts as a touch and puts you on the nearest floor.
 - **The hitbox is your picture.** Every pixel that is at least half opaque counts; transparent parts don't. Animated GIFs,
   APNG/WebP animations and videos are checked frame by frame, and chroma-keyed pixels drop out too. A small buffer
   (3.5% of the picture's size) lets an edge graze the void without losing.
-- **Close-up camera.** Your picture fills about a quarter of the screen's shorter side, so you see only the corridor
-  around you. The map in the corner starts black and shows only what has been on screen: corridors, the goal, gems,
-  flags and boxes appear once you've seen them. Pinch, the wheel, +/- or the Zoom setting change the camera.
+- **Close camera.** Your picture fills about an eighth of the screen's shorter side, so you see only the corridors
+  around you. That default is the widest view: pinch, the wheel, +/- or the Zoom setting only zoom in from it. The map in the corner starts black and shows only what has been on screen: corridors, the goal, gems,
+  flags and boxes appear once you've seen them.
 - **Stars**: one for finishing, one for beating par, one for collecting every gem (gems hide in dead ends). Stars unlock
   background patterns.
 - **Vanishing bridges** appear from level 8: they blink, disappear for a moment, then come back. Island shapes are
@@ -48,7 +49,8 @@ No build step, no dependencies: plain HTML/CSS/JS, plus an optional Python serve
 ### Mystery boxes
 
 Colour-cycling **?** boxes sit on junctions and dead ends (about one per 1500 units of corridor; in Endless up to one
-per chunk). Touch one with an empty item slot and it spins for an item; the box is back 10 seconds later. Use the item
+per chunk). Touching one shatters it; with an empty item slot you also get an item (the slot spins first), with a full
+one you get nothing. A shattered box is back 25 seconds later. Use the item
 with **Space**, **E**, the slot button (bottom left) or gamepad **A**/**X**. Settings: *Mystery boxes* turns them off;
 Time Trial never has them.
 
@@ -123,7 +125,7 @@ media shows the RGB behind it). Maze floors: Flat, Neon (edges follow the RGB), 
 | R | restart |
 | M | map on / off |
 | F | full screen |
-| + / - (or wheel, pinch) | zoom |
+| + / - (or wheel, pinch) | zoom in, and back out to the default |
 | Enter | next level on the results screen |
 | Gamepad | left stick or d-pad moves, A or X uses the item, Start pauses, A continues, B backs out |
 

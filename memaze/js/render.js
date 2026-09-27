@@ -90,7 +90,7 @@
     // World point to CSS pixel, relative to the viewport.
     toScreen(cam, x, y) { return { x: this.w / 2 + (x - cam.x) * cam.zoom, y: this.h / 2 + (y - cam.y) * cam.zoom }; }
 
-    // s: { world, cam, t, clock, floor, hue, rgb, start, goal, flags, gems, beacons, boxes, boxAge, boxDim, under }.
+    // s: { world, cam, t, clock, floor, hue, rgb, start, goal, flags, gems, beacons, boxes, boxAge, shards, under }.
     draw(s) {
       const { ctx, dpr } = this;
       const cam = s.cam, z = cam.zoom, t = s.t;
@@ -167,7 +167,8 @@
       if (s.flags) for (const c of s.flags) this.drawFlag(c);
       if (s.beacons) for (const b of s.beacons) this.drawBeacon(b);
       if (s.gems) for (const g of s.gems) if (!g.taken) this.drawGem(g);
-      if (s.boxes) for (const b of s.boxes) this.drawBox(b, s.clock || 0, s.boxAge ? s.boxAge(b) : 9, s.boxDim);
+      if (s.boxes) for (const b of s.boxes) this.drawBox(b, s.clock || 0, s.boxAge ? s.boxAge(b) : 9);
+      if (s.shards) for (const b of s.shards) this.drawShards(b, s.clock || 0);
       if (s.landing) this.drawLanding(s.landing, s.clock || 0);
       if (s.under) this.drawUnder(s.under, s.clock || 0);
     }
@@ -204,16 +205,14 @@
       ctx.lineWidth = 2.5 * px; ctx.stroke();
       ctx.restore();
     }
-    // A mystery box: a rocking, colour-cycling "?" block. It pops back in when it returns, and is see-through while
-    // the item slot is taken (it can't be picked up then).
-    drawBox(b, t, age, dim) {
+    // A mystery box: a rocking, colour-cycling "?" block. It pops back in when it returns.
+    drawBox(b, t, age) {
       const ctx = this.ctx, px = this.px, pop = age < 0.35 ? Math.max(0, age / 0.35) : 1;
       const r = 14 * pop * (1 + 0.06 * Math.sin(t * 4 + b.x * 0.1)), hue = (t * 70 + b.x * 0.05 + b.y * 0.03) % 360;
       if (r <= 0.5) return;
       ctx.save();
       ctx.translate(b.x, b.y);
       ctx.rotate(Math.sin(t * 1.6 + b.y * 0.01) * 0.2);
-      ctx.globalAlpha = dim ? 0.38 : 1;
       const c = r * 0.32;
       ctx.beginPath();
       ctx.moveTo(-r + c, -r); ctx.lineTo(r - c, -r); ctx.quadraticCurveTo(r, -r, r, -r + c); ctx.lineTo(r, r - c); ctx.quadraticCurveTo(r, r, r - c, r);
@@ -230,6 +229,30 @@
       ctx.lineJoin = 'round';
       ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 4 * px; ctx.strokeText('?', 0, r * 0.08);
       ctx.fillStyle = '#fff'; ctx.fillText('?', 0, r * 0.08);
+      ctx.restore();
+    }
+    // A shattered box: its pieces fly apart, spinning, and fade (k: 0 to 1 over the shatter).
+    drawShards(b, t) {
+      const ctx = this.ctx, px = this.px, k = b.k, e = 1 - (1 - k) * (1 - k), hue = (t * 70 + b.x * 0.05 + b.y * 0.03) % 360;
+      ctx.save();
+      ctx.translate(b.x, b.y);
+      ctx.globalAlpha = Math.max(0, 1 - k);
+      ctx.lineJoin = 'round';
+      for (let i = 0; i < 9; i++) {
+        const a = i * 2.39996 + b.x * 0.01, d = 6 + e * (26 + (i % 3) * 9), s = 5.5 * (1 - 0.4 * k) * (1 + (i % 2) * 0.4);
+        ctx.save();
+        ctx.translate(Math.cos(a) * d, Math.sin(a) * d);
+        ctx.rotate(a + k * (i % 2 ? 7 : -6));
+        ctx.beginPath(); ctx.moveTo(-s, -s * 0.7); ctx.lineTo(s, -s * 0.4); ctx.lineTo(s * 0.2, s * 0.9); ctx.closePath();
+        ctx.fillStyle = 'hsl(' + ((hue + i * 25) % 360) + ',95%,62%)'; ctx.fill();
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2 * px; ctx.stroke();
+        ctx.restore();
+      }
+      if (k < 0.35) { // the burst
+        ctx.globalAlpha = 1 - k / 0.35;
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 3 * px;
+        ctx.beginPath(); ctx.arc(0, 0, 10 + 40 * k, 0, TAU); ctx.stroke();
+      }
       ctx.restore();
     }
     // Under the player's picture: a Launch's shadow, the magic carpet, the Bullet's shell and speed lines.

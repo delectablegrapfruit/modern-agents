@@ -58,17 +58,20 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     check('a touch costs one hit', G.hp === 1 && events.includes('hit:1'), G.hp);
     check('stopped at the edge, still on the floor', onFloor() && G.state === 'play');
     G.draw();
-    check('hurt shows: red glow on the player, reddened screen edges', MZ.$('#player').classList.contains('hurt') && parseFloat(MZ.$('#hurt-flash').style.opacity) > 0.5 && !MZ.$('#hud-health'));
+    const look = () => parseFloat(MZ.$('#player-media').style.opacity || 1);
+    check('hurt shows on the picture only: faded, no health HUD, no screen glow', look() < 0.5 && !MZ.$('#hud-health') && !MZ.$('#hurt-flash'), look());
     run(5, d);
     check('holding against the edge never hits twice', G.hp === 1 && G.state === 'play' && events.filter((e) => e.startsWith('hit')).length === 1, G.hp);
     check('no healing while still on the edge', G.hurtT === 0, G.hurtT.toFixed(2));
     away(d); // off the edge for about 1 s
     run(3.2);
     check('not healed 4 s after leaving the edge', G.hp === 1 && G.hurtLevel() > 0 && G.hurtLevel() < 0.3, G.hurtLevel().toFixed(2));
+    G.draw();
+    check('the last second: the shield recharges, the picture filling back in', MZ.$('#player').classList.contains('recharge') && look() > 0.45 && look() < 1, look());
     run(1.2);
     check('healed 5 s after leaving the edge', G.hp === 2 && G.hurtLevel() === 0, G.hp);
     G.draw();
-    check('healed: glow and red edges gone', !MZ.$('#player').classList.contains('hurt') && parseFloat(MZ.$('#hurt-flash').style.opacity || 0) === 0);
+    check('recharged: the picture is solid again', look() === 1 && !MZ.$('#player').classList.contains('recharge'), look());
     events.length = 0;
     touch(d); run(0.3, { x: -d.x, y: -d.y }); run(0.55); // back off, then straight back in once the 0.75 s guard is over
     events.length = 0;
@@ -95,10 +98,20 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     run(1.2);
     check('the spin lands on an item', !G.roll && (G.item || G.bonus === 1), G.item || 'bonus');
     const held = G.item;
-    G.item = 'star'; const other = G.boxes[1] || bx; bx.takenAt = null; G.ball.x = other.x; G.ball.y = other.y; run(0.05);
-    check('a full slot leaves boxes alone', G.item === 'star' && !G.roll && other.takenAt == null);
-    G.item = null; run(0.05);
-    check('an empty slot takes it', !!G.roll);
+    G.item = 'star'; const other = G.boxes[1]; G.ball.x = other.x; G.ball.y = other.y; run(0.05);
+    check('with a full slot a box still shatters, but gives nothing', G.item === 'star' && !G.roll && other.takenAt != null);
+    G.ball.x = G.maze.start.x; G.ball.y = G.maze.start.y; // step away from it
+    run(20);
+    check('a shattered box is still gone after 20 s', other.takenAt != null);
+    run(5.1);
+    check('...and back after 25 s', other.takenAt == null);
+    G.item = null; G.ball.x = other.x; G.ball.y = other.y; run(0.05);
+    check('then an empty slot gets an item from it', !!G.roll && other.takenAt != null);
+    // Zoom: never wider than the default view.
+    const z0 = G.zoomTarget();
+    G.zoomBy(0.4); check('zooming out stops at the default view', G.zoomTarget() === z0);
+    G.zoomBy(3); check('zooming in still works', G.zoomTarget() > z0 * 2.9);
+    G.zoomBy(1 / 3);
     G.quit();
 
     // ----- Invincible -----

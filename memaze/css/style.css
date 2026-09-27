@@ -92,19 +92,14 @@ body[data-state="play"] #stage:active { cursor: grabbing; }
 .fx-chip svg { position: relative; width: 100%; height: 100%; display: block; }
 .fx-chip.low { animation: blink 0.25s steps(2) infinite; }
 @keyframes blink { 50% { opacity: 0.35; } }
-/* health: the screen's edges redden while hurt (opacity set per frame), flashing on a hit */
-#hurt-flash { position: fixed; inset: 0; z-index: 9; pointer-events: none; opacity: 0; box-shadow: inset 0 0 90px 30px rgba(255, 30, 60, 0.85); }
-#hurt-flash.hit { animation: hurt 0.55s ease-out; }
-.reduce-flash #hurt-flash, .reduced-motion #hurt-flash { box-shadow: inset 0 0 60px 10px rgba(255, 30, 60, 0.6); }
-.reduce-flash #hurt-flash.hit, .reduced-motion #hurt-flash.hit { animation-duration: 0.9s; }
-@keyframes hurt { from { opacity: 1; } }
-/* ...and the player glows red with a heartbeat */
-#player.hurt { filter: drop-shadow(0 0 2px rgba(255, 40, 70, calc(0.4 + 0.6 * var(--hurt, 1)))) drop-shadow(0 0 calc(6px + 14px * var(--hurt, 1)) rgba(255, 40, 70, calc(0.3 + 0.7 * var(--hurt, 1)))); }
-#player.hurt #player-media > * { animation: beat 1s ease-in-out infinite; }
-@keyframes beat { 0%, 40%, 100% { transform: scale(1); } 10% { transform: scale(1.06); } 25% { transform: scale(1.03); } }
-.reduced-motion #player.hurt #player-media > * { animation: none; }
-/* the player: flickers while the edges hold after a hit, glows while invincible */
+/* health, Halo style: the shield flares on a hit, the picture blinks while the edges hold and stays faded (opacity set
+   per frame) until the shield recharges with a shimmer */
 #player.guard { animation: blink 0.14s steps(2) infinite; }
+#player.flare #player-media { filter: drop-shadow(0 0 2px #fff6c8) drop-shadow(0 0 9px rgba(255, 205, 80, 0.95)); }
+#player.recharge #player-media { animation: recharge 0.25s ease-in-out infinite alternate; }
+@keyframes recharge { from { filter: drop-shadow(0 0 1px rgba(255, 225, 140, 0.5)); } to { filter: drop-shadow(0 0 2px #fff6c8) drop-shadow(0 0 7px rgba(255, 205, 80, 0.85)); } }
+.reduced-motion #player.recharge #player-media { animation: none; filter: drop-shadow(0 0 2px #fff6c8); }
+/* ...and glows while invincible */
 #player.invincible #player-media { animation: rainbow 0.6s linear infinite; }
 #player.invincible.ending #player-media { animation: rainbow 0.6s linear infinite, blink 0.2s steps(2) infinite; }
 @keyframes rainbow {

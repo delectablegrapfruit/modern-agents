@@ -7,19 +7,23 @@
   const R = Gen.BALL_R;
 
   const KEY_SPEED = 140; // keys and gamepad, world units per second
-  const VIEW = 0.24;     // the player's box fills this much of the screen's shorter side
+  const VIEW = 0.12;     // the player's box fills this much of the screen's shorter side (the widest view: zoom only goes in)
+  const MAX_ZOOM = 4;    // how far pinch, wheel and +/- zoom in
   const BUFFER = 0.035;  // hitbox forgiveness: solid pixels may reach this far (share of the box) over the edge
   const boxWorld = () => 2 * R * clamp(S().player.size, 0.6, 1.25); // the player's square box, in world units
 
-  // Health: two hits. A touch of the edge costs one (Extra hits go first); a second touch before you've healed loses.
-  // No rapid hits: after one, the edges hold like walls for a moment, and until you've been clear of the edge for a
-  // beat, so holding against it never counts twice. Health shows only on the player and the screen's edges.
+  // Health, like the shields in Bungie's Halo: two hits. A touch of the edge costs one (Extra hits go first) and leaves
+  // your picture faded; a second touch before it has recharged loses. No rapid hits: after one, the edges hold like
+  // walls for a moment, and until you've been clear of the edge for a beat, so holding against it never counts twice.
+  // Once you've been off the edge long enough, the shield recharges: the picture fills back in with the rising sound.
   const HEARTS = 2, MAX_BONUS = 2;
   const REGEN = 5;    // seconds clear of the edge until you're healed
+  const RECHARGE = 1; // ...the last of which is the recharge
   const GUARD = 0.75; // seconds the edges hold after a hit (and after a Bullet or Launch lands)
   const CLEAR = 0.25; // after a hit, seconds off the edge before it can hurt again
   // Mystery boxes and items.
-  const BOX_R = 16, BOX_BACK = 10, ROLL = 1.1; // pickup radius; seconds until a taken box is back; roulette length
+  const BOX_R = 16, BOX_BACK = 25, ROLL = 1.1; // touch radius; seconds until a shattered box is back; roulette length
+  const SHATTER = 0.7;                         // seconds a shattered box's pieces fly
   const ITEMS = {
     star: { name: 'Invincible', w: 18, dur: 8 },
     heart: { name: 'Extra hit', w: 16 },
@@ -29,7 +33,7 @@
     shrink: { name: 'Shrink', w: 16, dur: 10 },
   };
   const BULLET_V = 520, BULLET_RUN = 1800; // Bullet: speed and how far it carries you (it finishes on a junction)
-  const APEX_VIEW = 1500;                  // Launch: world units across the screen's shorter side at the top
+  const APEX_VIEW = 2000;                  // Launch: world units across the screen's shorter side at the top
   const UP = 0.7, AIR = 4, DOWN = 0.8;     // Launch: seconds going up, steering in the air, coming down
   const SHRINK = 0.5;
   const smooth = (k) => k * k * (3 - 2 * k);
@@ -191,7 +195,7 @@
       this.minimap = new MZ.Minimap(MZ.$('#minimap'));
       this.input = new MZ.Input(MZ.$('#stage'));
       this.sprite = new MZ.Sprite(MZ.$('#player-canvas'));
-      this.input.onZoom = (k) => { this.userZoom = clamp(this.userZoom * k, 0.45, 2.2); };
+      this.input.onZoom = (k) => this.zoomBy(k);
       Backdrop.init();
       this.applySettings();
       window.addEventListener('resize', () => this.resize());
@@ -280,6 +284,7 @@
     },
     timed() { return this.mode === 'endless' || (S().gameplay.timer && this.mode !== 'trial'); }, // a clock counting down
     zoomTarget() { return this.baseZoom * S().gameplay.zoom * this.userZoom; },
+    zoomBy(k) { this.userZoom = clamp(this.userZoom * k, 1, MAX_ZOOM); }, // never wider than the default view
 
     // ----- starting things -----
     startJourney(level) {
@@ -525,11 +530,15 @@
     // ----- health -----
     // How hurt the player looks: 1 right after a hit, fading to 0 as they heal; 0 at full health.
     hurtLevel() { return this.hp < HEARTS ? 1 - clamp(this.hurtT / REGEN, 0, 1) : 0; },
+    recharging() { return this.hp < HEARTS && this.hurtT >= REGEN - RECHARGE; },
+    // How solid the picture looks: faded while the shield is down, filling back in as it recharges.
+    shieldLook() { return this.hp >= HEARTS ? 1 : this.recharging() ? 0.45 + 0.55 * clamp((this.hurtT - REGEN + RECHARGE) / RECHARGE, 0, 1) : 0.45; },
     boxesOn() { return S().gameplay.boxes && this.mode !== 'trial'; }, // Time Trial has no mystery boxes
     shielded() { const fx = this.fx; return this.guardT > 0 || this.stuck || fx.star > 0 || !!fx.bullet || !!fx.launch; },
     hurt() {
       if (this.bonus > 0) this.bonus--; else this.hp--;
       this.hurtT = 0;
+      this.hitAtT = this.t; // the shield flares
       this.guardT = GUARD;
       this.stuck = true; // this touch is spent: the next one has to be a new one
       this.clearT = 0;
@@ -544,8 +553,12 @@
     tickPower(dt) {
       const fx = this.fx;
       if (this.guardT > 0) this.guardT = Math.max(0, this.guardT - dt);
-      if (!this.stuck) this.hurtT += dt; // healing waits until you're off the edge
-      if (this.hp < HEARTS && this.hurtT >= REGEN) { this.hp = HEARTS; MZ.Audio.play('heal'); this.emit('power'); }
+      if (!this.stuck) { // healing waits until you're off the edge
+        const was = this.hurtT;
+        this.hurtT += dt;
+        if (this.hp < HEARTS && was < REGEN - RECHARGE && this.hurtT >= REGEN - RECHARGE) MZ.Audio.play('recharge');
+      }
+      if (this.hp < HEARTS && this.hurtT >= REGEN) { this.hp = HEARTS; this.emit('power'); }
       if (this.roll && (this.roll.t += dt) >= ROLL) this.endRoll();
       for (const k of ['star', 'carpet', 'shrink']) {
         if (!(fx[k] > 0)) continue;
@@ -870,16 +883,16 @@
           break;
         }
       }
-      // Boxes: an empty slot takes one and spins for an item; a taken box is back after a while.
+      // Boxes: touching one shatters it; an empty slot spins for an item (a full one gets nothing). It's back later.
       if (this.boxes && this.boxesOn()) {
         for (const bx of this.boxes) {
           if (bx.takenAt != null && this.runT - bx.takenAt < BOX_BACK) continue;
           bx.takenAt = null;
-          if (this.item || this.roll || !this.touches(bx.x, bx.y, BOX_R)) continue;
+          if (!this.touches(bx.x, bx.y, BOX_R)) continue;
           bx.takenAt = this.runT;
           if (bx.key) this.run.boxTaken.set(bx.key, this.runT);
-          this.roll = { t: 0, id: this.pickItem() };
-          MZ.Audio.play('box');
+          MZ.Audio.play('shatter');
+          if (!this.item && !this.roll) { this.roll = { t: 0, id: this.pickItem() }; MZ.Audio.play('box'); }
           this.emit('power');
         }
       }
@@ -1077,7 +1090,7 @@
         flags: !menu && maze ? this.checkpoints : null,
         boxes: boxesOn ? this.boxes.filter((x) => x.takenAt == null || this.runT - x.takenAt >= BOX_BACK) : null,
         boxAge: (x) => (x.takenAt == null ? 9 : this.runT - x.takenAt - BOX_BACK),
-        boxDim: !!(this.item || this.roll),
+        shards: boxesOn ? this.boxes.filter((x) => x.takenAt != null && this.runT - x.takenAt < SHATTER).map((x) => ({ x: x.x, y: x.y, k: (this.runT - x.takenAt) / SHATTER })) : null,
         // Under the player: a Launch's shadow on the ground, the magic carpet (flickering as it runs out), the Bullet.
         under: showPlayer && this.state !== 'menu' ? {
           x: b.x, y: b.y, W: this.box(), lift: this.lift(),
@@ -1097,15 +1110,15 @@
         pl.hidden = false;
         pl.style.width = pl.style.height = size;
         pl.style.transform = lift ? 'translate(-50%,calc(-50% - ' + (lift * Math.min(innerWidth, innerHeight) * 0.14).toFixed(1) + 'px))' : 'translate(-50%,-50%)';
-        // Health is shown on the player only: a red glow and a heartbeat while hurt, fading as you heal.
-        const hurt = this.hurtLevel(), hq = (Math.round(hurt * 50) / 50).toFixed(2);
-        const cls = (fx.star > 0 ? ' invincible' + (fx.star < 1.5 ? ' ending' : '') : '') + (this.guardT > 0 && this.state === 'play' ? ' guard' : '') + (fx.bullet ? ' bullet' : '') + (hurt > 0 ? ' hurt' : '');
+        // Health shows on the picture only: the shield flares on a hit, the picture blinks while the edges hold, stays
+        // faded while the shield is down, and fills back in with a shimmer as it recharges.
+        const flare = this.state === 'play' && this.t - (this.hitAtT == null ? -9 : this.hitAtT) < 0.3;
+        const cls = (fx.star > 0 ? ' invincible' + (fx.star < 1.5 ? ' ending' : '') : '') + (this.guardT > 0 && this.state === 'play' ? ' guard' : '') +
+          (fx.bullet ? ' bullet' : '') + (flare ? ' flare' : '') + (this.recharging() ? ' recharge' : '');
         if (pl.className !== cls.trim()) pl.className = cls.trim();
-        if (pl.style.getPropertyValue('--hurt') !== hq) pl.style.setProperty('--hurt', hq);
+        const pm = pl.firstElementChild, op = this.shieldLook() >= 1 ? '' : this.shieldLook().toFixed(2);
+        if (pm.style.opacity !== op) pm.style.opacity = op;
       } else pl.hidden = true;
-      // ...and at the screen's edges, which redden while hurt.
-      const edge = MZ.$('#hurt-flash'), eo = showPlayer ? (Math.round(this.hurtLevel() * 50) / 50 * 0.75).toFixed(2) : '0';
-      if (edge.style.opacity !== eo) edge.style.opacity = eo;
 
       // Goal media, positioned in world space.
       const gm = MZ.$('#goal-media');
