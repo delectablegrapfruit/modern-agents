@@ -4,7 +4,10 @@ on:
   push:
     paths-ignore:
       - "dist/**"
+      - "stim/**"
   pull_request:
+    paths-ignore:
+      - "stim/**"
   release:
     types: [published]
 

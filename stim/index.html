@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>stim</title>
+<meta name="description" content="No content. Only the hooks: infinite scroll, pull to refresh, likes, red badges, streaks, autoplay.">
+<meta name="theme-color" content="#fbfafc" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0c0b0e" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="stim">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DynaPuff:wght@500;700&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="stage">
+  <aside class="aside" aria-label="About stim">
+    <div class="a-logo" aria-hidden="true">st<span class="i">ı<b class="tittle">9</b></span>m</div>
+    <p class="a-lede">Nothing to see here. Only the hooks.</p>
+    <p class="a-body">Infinite scroll, pull to refresh, likes, red badges, unread dots, story rings, autoplay, streaks and a slot machine, wrapped around nothing at all.</p>
+    <dl class="keys">
+      <div><dt><kbd>1</kbd>–<kbd>5</kbd></dt><dd>Switch tabs</dd></div>
+      <div><dt><kbd>J</kbd> <kbd>K</kbd></dt><dd>Next, previous</dd></div>
+      <div><dt><kbd>L</kbd></dt><dd>Like</dd></div>
+      <div><dt><kbd>R</kbd></dt><dd>Refresh</dd></div>
+      <div><dt><kbd>N</kbd></dt><dd>Summon a notification</dd></div>
+      <div><dt><kbd>Space</kbd></dt><dd>Pull the lever</dd></div>
+    </dl>
+    <p class="a-note">Made for iPhone. Open this page in Safari, tap Share, then Add to Home Screen.</p>
+  </aside>
+
+  <div id="wrap">
+    <div id="device">
+      <div id="screen">
+        <div class="sbar" aria-hidden="true">
+          <span id="clock">9:41</span>
+          <span class="sb-r">
+            <svg viewBox="0 0 18 12" width="18" height="12"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg>
+            <svg viewBox="0 0 16 12" width="16" height="12"><path d="M8 11.5 5.6 9a3.4 3.4 0 0 1 4.8 0zM3.5 6.9a6.4 6.4 0 0 1 9 0l-1.4 1.4a4.4 4.4 0 0 0-6.2 0zM1.3 4.7a9.5 9.5 0 0 1 13.4 0l-1.4 1.4a7.5 7.5 0 0 0-10.6 0z"/></svg>
+            <span class="batt"><i id="batt"></i></span>
+          </span>
+        </div>
+        <div class="island" id="island" aria-hidden="true"><span class="ia"></span><span class="ib"></span></div>
+
+        <div id="app">
+          <main id="screens">
+            <section class="screen on" id="s-home" aria-label="Feed">
+              <header class="topbar">
+                <h1 class="logo">st<span class="i">ı<b class="tittle" id="tittle"></b></span>m</h1>
+                <button class="pts" id="pts" aria-label="Points"><i data-i="bolt"></i><span id="pts-n">0</span></button>
+                <button class="iconbtn" id="open-dm" aria-label="Messages"><i data-i="send"></i><span class="badge" id="b-dm"></span></button>
+              </header>
+              <div class="scroller" id="feed-sc">
+                <div class="ptr-ind"><div class="spinner"><i style="--i:0"></i><i style="--i:1"></i><i style="--i:2"></i><i style="--i:3"></i><i style="--i:4"></i><i style="--i:5"></i><i style="--i:6"></i><i style="--i:7"></i></div></div>
+                <div class="ptr-body">
+                  <div class="stories" id="stories"></div>
+                  <div id="feed"></div>
+                  <div class="loader" id="feed-loader" aria-label="Loading">
+                    <div class="post-head"><span class="ph-av sk"></span><span class="ph-lines"><i class="sk" style="width:40%"></i><i class="sk" style="width:24%"></i></span></div>
+                    <div class="media sk"></div>
+                  </div>
+                </div>
+              </div>
+              <button class="newpill" id="newpill"><i data-i="up"></i><span class="dots3"><i></i><i></i><i></i></span>New posts</button>
+            </section>
+
+            <section class="screen" id="s-reels" aria-label="Autoplay">
+              <div class="reels" id="reels"></div>
+            </section>
+
+            <section class="screen" id="s-drops" aria-label="Rewards">
+              <header class="topbar"><h2 class="ttl">Rewards</h2><span class="epill" id="epill"></span></header>
+              <div class="scroller" id="drops-sc"><div class="drops" id="drops"></div></div>
+            </section>
+
+            <section class="screen" id="s-activity" aria-label="Notifications">
+              <header class="topbar"><h2 class="ttl">Notifications</h2><button class="txtbtn" id="mark-all">Mark all read</button></header>
+              <div class="scroller" id="act-sc">
+                <div class="ptr-ind"><div class="spinner"><i style="--i:0"></i><i style="--i:1"></i><i style="--i:2"></i><i style="--i:3"></i><i style="--i:4"></i><i style="--i:5"></i><i style="--i:6"></i><i style="--i:7"></i></div></div>
+                <div class="ptr-body">
+                  <div id="nlist"></div>
+                  <div class="empty" id="nempty" hidden><span class="ck-ring"><i data-i="check"></i></span><b>You're all caught up</b><small>Pull down. There might be more.</small></div>
+                </div>
+              </div>
+            </section>
+
+            <section class="screen" id="s-me" aria-label="You">
+              <header class="topbar"><h2 class="ttl">You</h2><span class="streak-mini" id="streak-mini"></span></header>
+              <div class="scroller" id="me-sc"><div id="me"></div></div>
+            </section>
+          </main>
+
+          <nav class="tabbar" id="tabbar" aria-label="Tabs">
+            <button class="tab on" data-tab="home" aria-label="Feed"><i data-i="home"></i></button>
+            <button class="tab" data-tab="reels" aria-label="Autoplay"><i data-i="reels"></i></button>
+            <button class="tab" data-tab="drops" aria-label="Rewards"><i data-i="gift"></i><span class="badge dot" id="b-drops"></span></button>
+            <button class="tab" data-tab="activity" aria-label="Notifications"><i data-i="bell"></i><span class="badge" id="b-act"></span></button>
+            <button class="tab me" data-tab="me" aria-label="You">
+              <svg class="lvl-ring" viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="16.5" class="trk"/><circle cx="18" cy="18" r="16.5" class="prg" pathLength="100" id="lvl-prg"/></svg>
+              <span class="ph-av you"></span>
+            </button>
+          </nav>
+
+          <div class="page" id="pg-dm" aria-label="Messages">
+            <header class="topbar"><button class="iconbtn back" aria-label="Back"><i data-i="back"></i></button><h2 class="ttl">Messages</h2><span class="grow"></span><span class="req" id="dm-req"></span></header>
+            <div class="scroller" id="dm-list"></div>
+          </div>
+          <div class="page" id="pg-chat" aria-label="Conversation">
+            <header class="topbar chat-top"><button class="iconbtn back" aria-label="Back"><i data-i="back"></i></button><span class="ph-av"></span><span class="ct"><i class="sk-bar" style="width:92px"></i><small id="chat-status">Active now</small></span></header>
+            <div class="chat" id="chat"></div>
+            <div class="composer"><span class="cfield"></span><button class="sendbtn" id="send" aria-label="Send"><i data-i="send"></i></button></div>
+          </div>
+
+          <div id="banners"></div>
+          <canvas id="fx" aria-hidden="true"></canvas>
+          <div id="toast" role="status" aria-live="polite"></div>
+        </div>
+        <div class="homebar" aria-hidden="true"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
