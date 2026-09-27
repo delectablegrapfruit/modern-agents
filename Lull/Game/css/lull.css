@@ -1,8 +1,15 @@
 /* Lull — a floating window of low-stakes blocks. */
 
+/* The line glyph (the currency): one character in its own font, first in every font list, so text, prices, toasts and
+   the canvas all draw the same small black hole. Built by scripts/line-glyph.py; L.LINE in util.js is the character. */
+/* line-glyph:start (generated) */
+@font-face { font-family: "Lull Line"; font-display: block; unicode-range: U+29B5, U+25C6;
+  src: url(data:font/otf;base64,T1RUTwAJAIAAAwAQQ0ZGIM0tCgYAAAIsAAAAqk9TLzJlQG2YAAABAAAAAGBjbWFwJdkqPwAAAcgAAABEaGVhZDC6grAAAACcAAAANmhoZWEHBgM4AAAA1AAAACRobXR4BtYAEAAAAtgAAAAMbWF4cAADUAAAAAD4AAAABm5hbWWgX1KuAAABYAAAAGZwb3N0AAMAAAAAAgwAAAAgAAEAAAABAAB4VkqtXw889QADA+gAAAAA5t4fngAAAADm3h+eABIAcwPWAiEAAAADAAIAAAAAAAAAAQAAAyD/OAAAA+gAEAAUA9QAAQAAAAAAAAAAAAAAAAAAAAMAAFAAAAMAAAADAkcBkAAFAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAACBAAAAAAAAAAAA/Pz8/AAAAICm1AyD/OAAAAyAAyAAAAAAAAAAAAAAAAAAAACAAAAAAAAQANgABAAAAAAABAAkAAAABAAAAAAACAAcACQADAAEECQABABIAEAADAAEECQACAA4AIkx1bGwgTGluZVJlZ3VsYXIATAB1AGwAbAAgAEwAaQBuAGUAUgBlAGcAdQBsAGEAcgAAAAAAAgAAAAMAAAAUAAMAAQAAABQABAAwAAAACAAIAAIAAAAgJcYptf//AAAAICXGKbX////h2jzWTQABAAAAAAAAAAAAAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEABAEAAQEBCUx1bGxMaW5lAAEBART4HAKd9wf6avi1BckPi/c+Es4RAAIBAQUObGluZUx1bGwgTGluZQAAAAABAYcAAwEBBAdh+IgO944O+nz5X/feFfcLK+v7C/sLKyv7C/sL6yv3C/cL6+v3Cx77a/sqFThIzt7ezs7e3s5IODhISDgf/Gr3OBV8i2+aG/e0VwX3GAf4AfsYFfezvwWai6d8G/uzvwUOAAAB9AAAAPoAAAPoABA=) format("opentype"); }
+/* line-glyph:end */
+
 :root {
-  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
-  --mono-font: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --font: "Lull Line", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  --mono-font: "Lull Line", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --accent: #8fb3ff;
   --tint: 0.78;
   --radius: 14px;
@@ -67,6 +74,10 @@ body.browser #app.bg-glass { background: rgba(var(--bg), 0.62); -webkit-backdrop
 #app.bg-solid { background: rgb(var(--bg)); }
 #app.bg-clear header#titlebar, #app.bg-clear .statusbar, #app.bg-clear .puz-bar, #app.bg-clear .puz-card { text-shadow: 0 1px 2px rgba(0,0,0,0.6); }
 
+/* The title bar, left to right: the places to play (Play, Puzzles, Factory) in one recessed track; room to drag; the
+   places to look (Shop, Stats, Achievements) as quiet icons beside the wallet they spend and fill; then sound and
+   Settings, and in the app the window's own buttons. ⌘1–⌘6 run in that order. Labels give way as the window narrows:
+   all of them, then only the tab you are on, then icons alone; every one keeps a tooltip with its shortcut. */
 header#titlebar {
   flex: none; height: 40px;
   display: flex; align-items: center; gap: 6px;
@@ -74,7 +85,7 @@ header#titlebar {
   border-bottom: 1px solid var(--line);
   cursor: default;
 }
-.brand { display: flex; align-items: center; gap: 7px; font-weight: 700; letter-spacing: 0.02em; }
+.brand { display: flex; align-items: center; gap: 7px; font-weight: 700; letter-spacing: 0.02em; flex: none; }
 .brand .logo {
   width: 14px; height: 14px; position: relative;
   background:
@@ -83,21 +94,33 @@ header#titlebar {
     linear-gradient(color-mix(in srgb, var(--accent) 55%, transparent), color-mix(in srgb, var(--accent) 55%, transparent)) 8px 8px / 6px 6px no-repeat;
   border-radius: 2px;
 }
-.spacer { flex: 1; align-self: stretch; }
-.tabs { display: flex; gap: 2px; margin-left: 8px; }
+.spacer { flex: 1; align-self: stretch; min-width: 4px; }
+.tabs { display: flex; align-items: center; flex: none; }
 .tabs button {
-  display: flex; align-items: center; gap: 5px; position: relative;
-  border: 0; background: transparent; color: var(--muted);
-  padding: 5px 9px; border-radius: 8px; font-weight: 600; font-size: 12px;
+  display: flex; align-items: center; justify-content: center; gap: 6px; position: relative;
+  height: 26px; border: 0; background: transparent; color: var(--muted);
+  border-radius: 7px; font-weight: 600; font-size: 12px; white-space: nowrap;
 }
 .tabs button svg { width: 14px; height: 14px; flex: none; }
-.tabs button:hover { background: var(--panel-2); color: var(--fg); }
-.tabs button[aria-selected="true"] { background: var(--panel-3); color: var(--fg); }
+.tabs button:hover { color: var(--fg); background: var(--panel-2); }
+.tabs button[aria-selected="true"] {
+  color: var(--fg); background: var(--panel-3);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.18), inset 0 0 0 1px var(--line);
+}
+.tabs button[aria-selected="true"] svg { color: var(--accent); }
+.tabs.modes { gap: 2px; padding: 2px; margin-left: 8px; border-radius: 9px; background: var(--well); box-shadow: inset 0 0 0 1px var(--line); }
+.tabs.modes button { padding: 0 10px 0 9px; }
+/* An icon-only tab's side padding; the narrow tiers below shrink it. */
+header#titlebar { --icon-pad: 8px; }
+.tabs.meta { gap: 1px; }
+.tabs.meta button { min-width: 28px; padding: 0 7px; }
+.tabs.meta .lbl { display: none; }
 /* Out of the flow, so a tab gaining or losing its dot never shifts the others. */
-.tabs button .badge { position: absolute; top: 3px; right: 2px; width: 6px; height: 6px; border-radius: 3px; background: var(--good); box-shadow: 0 0 0 1.5px rgb(var(--bg)); }
+.tabs button .badge { position: absolute; top: 3px; right: 3px; width: 6px; height: 6px; border-radius: 3px; background: var(--good); box-shadow: 0 0 0 1.5px rgb(var(--bg)); }
+.tb-sep { flex: none; width: 1px; height: 16px; background: var(--line-2); margin: 0 1px; }
 .icon-btn {
   width: 26px; height: 26px; border: 0; border-radius: 7px; background: transparent; color: var(--muted);
-  display: grid; place-items: center; padding: 0;
+  display: grid; place-items: center; padding: 0; flex: none;
 }
 .icon-btn:hover { background: var(--panel-2); color: var(--fg); }
 .icon-btn svg { width: 15px; height: 15px; }
@@ -105,14 +128,16 @@ header#titlebar {
 /* Muted: the slashed speaker in a soft amber wash, so it reads at a glance from any tab. */
 .icon-btn.muted { color: color-mix(in srgb, var(--warn) 72%, var(--fg)); background: color-mix(in srgb, var(--warn) 14%, transparent); }
 .icon-btn.muted:hover { color: color-mix(in srgb, var(--warn) 72%, var(--fg)); background: color-mix(in srgb, var(--warn) 22%, transparent); }
-.winbtns { display: flex; gap: 1px; margin-left: 2px; }
-body.browser .winbtns { display: none; }
+.winbtns { display: flex; align-items: center; gap: 1px; flex: none; }
+body.browser .winbtns, body.browser .tb-sep.win { display: none; }
 .wallet {
-  display: flex; align-items: center; gap: 5px;
-  border: 1px solid var(--line); background: var(--panel); border-radius: 999px;
-  padding: 3px 10px 3px 8px; font-weight: 700; font-variant-numeric: tabular-nums;
+  display: flex; align-items: center; gap: 5px; flex: none; height: 26px;
+  border: 1px solid var(--line); background: var(--panel); border-radius: 999px; color: var(--fg);
+  padding: 0 10px 0 6px; font-weight: 700; font-variant-numeric: tabular-nums;
 }
-.wallet .gem { color: var(--gem); font-size: 11px; }
+.wallet:hover { border-color: color-mix(in srgb, var(--gem) 45%, transparent); background: color-mix(in srgb, var(--gem) 8%, var(--panel)); }
+.wallet .lg { display: grid; color: var(--gem); }
+.wallet .lg svg { width: 22px; height: 14px; overflow: visible; }
 .wallet.bump { animation: bump 0.35s ease; }
 @keyframes bump { 40% { transform: scale(1.12); } }
 
@@ -146,6 +171,8 @@ main { flex: 1; position: relative; min-height: 0; }
 .btn.danger { color: var(--bad); }
 .btn.sm { padding: 3px 9px; font-size: 11.5px; border-radius: 7px; }
 .btn .gem, .price .gem { color: var(--gem); }
+/* On a filled button the line glyph takes the label's colour: a pale glyph on the accent would all but vanish. */
+.btn.primary .gem { color: inherit; }
 .btn kbd, kbd {
   font: 600 10px var(--mono-font); padding: 1px 4px; border-radius: 4px;
   background: var(--panel-2); border: 1px solid var(--line); color: var(--muted);
@@ -190,8 +217,8 @@ main { flex: 1; position: relative; min-height: 0; }
 /* Item types: one button each; a button opens its tray. */
 .group-btn {
   position: relative; flex: 1 1 0; min-width: 0; max-width: 110px; height: 38px; border-radius: 9px;
-  border: 1px solid var(--line); background: var(--panel); color: var(--fg); padding: 0 6px;
-  display: flex; align-items: center; justify-content: center; gap: 5px; font-size: 12px; font-weight: 700;
+  border: 1px solid var(--line); background: var(--panel); color: var(--fg); padding: 0 4px;
+  display: flex; align-items: center; justify-content: center; gap: 4px; font-size: 11.5px; font-weight: 700;
 }
 .group-btn:hover { background: var(--panel-2); border-color: var(--line-2); }
 .group-btn.open { background: color-mix(in srgb, var(--accent) 18%, var(--panel)); border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
@@ -548,26 +575,62 @@ body.browser .edge { display: none; }
 
 /* ---- narrow windows -------------------------------------------------------------------------------------------- */
 
-@media (max-width: 560px) {
-  .tabs button .lbl { display: none; }
-  .tabs button { padding: 6px 7px; }
+/* Wide: the look-around tabs name themselves too. */
+@media (min-width: 1000px) {
+  .tabs.meta .lbl { display: inline; }
+  .tabs.meta button { padding: 0 9px 0 8px; }
+  .tabs.meta { gap: 2px; }
+}
+/* Narrower: only the tab you are on keeps its name, so the track always says where you are. */
+@media (max-width: 640px) {
+  .tabs.modes button:not([aria-selected="true"]) .lbl { display: none; }
+  .tabs.modes button:not([aria-selected="true"]) { padding: 0 var(--icon-pad); }
   .brand .name { display: none; }
 }
+@media (max-width: 560px) {
+  body.native .tabs.modes button .lbl { display: none; }
+  body.native .tabs.modes button { padding: 0 var(--icon-pad); }
+  body.native .brand { display: none; }
+  body.native .tabs.modes { margin-left: 0; }
+}
+@media (max-width: 500px) {
+  .tabs.modes button .lbl { display: none; }
+  .tabs.modes button { padding: 0 var(--icon-pad); }
+}
 @media (max-width: 460px) {
-  header#titlebar { padding-left: 8px; gap: 3px; }
+  header#titlebar { padding-left: 8px; gap: 4px; --icon-pad: 7px; }
   .brand { display: none; }
-  .tabs { margin-left: 0; gap: 0; }
-  .tabs button { padding: 6px 6px; }
-  .wallet { padding: 3px 8px 3px 7px; font-size: 12px; }
+  .tabs.modes { margin-left: 0; }
+  .tabs.meta button { min-width: 26px; padding: 0 6px; }
+  .wallet { padding: 0 8px 0 5px; font-size: 12px; gap: 4px; }
+  .wallet .lg svg { width: 19px; }
+}
+@media (max-width: 420px) {
+  header#titlebar { padding: 0 6px; gap: 2px; --icon-pad: 5px; }
+  .tabs.modes { margin-right: 2px; }
+  .tabs.meta button { min-width: 23px; padding: 0 4px; }
+  #titlebar .icon-btn { width: 24px; }
+  .wallet { padding: 0 7px 0 4px; }
+  .wallet .lg svg { width: 17px; }
+  .tb-sep { margin: 0 1px; }
 }
 @media (max-width: 380px) {
   #btn-pin { display: none; }
-  header#titlebar { gap: 2px; }
-  .tabs button { padding: 6px 4px; }
-  #titlebar .icon-btn { width: 24px; }
+  header#titlebar { gap: 2px; --icon-pad: 5px; }
+  .tabs.meta button { min-width: 22px; padding: 0 4px; }
+  .tb-sep { display: none; }
 }
 @media (max-width: 340px) {
-  .tabs button { padding: 6px 3px; }
+  header#titlebar { --icon-pad: 4px; }
+  .wallet { padding: 0 6px 0 4px; }
+  .wallet .lg svg { width: 16px; }
+}
+/* Only a browser window gets this narrow (the app stops at 400 px). */
+@media (max-width: 320px) {
+  header#titlebar { padding: 0 4px; --icon-pad: 3px; }
+  .tabs.modes { padding: 1px; }
+  .tabs.meta button { min-width: 20px; padding: 0 3px; }
+  .wallet .lg svg { width: 14px; }
 }
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
@@ -583,6 +646,9 @@ body.browser .edge { display: none; }
 .tip-title { font-weight: 700; margin-bottom: 2px; }
 .tip-body { color: var(--muted); }
 .tip-foot { margin-top: 5px; font: 600 11px var(--mono-font); color: var(--gem); }
+.tip.compact { display: flex; align-items: baseline; gap: 10px; padding: 5px 9px; white-space: nowrap; }
+.tip.compact .tip-body { color: var(--fg); }
+.tip.compact .tip-foot { margin-top: 0; }
 .sound-preview { border: 0; width: 100%; color: var(--fg); display: flex !important; flex-direction: row; gap: 8px; align-items: center; justify-content: center; font-weight: 600; }
 .sound-preview:hover { background: var(--panel-3); }
 .sound-preview .big-icon { font-size: 20px; color: var(--accent); }
@@ -696,6 +762,9 @@ kbd.big { font-size: 12px; padding: 3px 7px; }
 .ach.legend.got { border-color: #f2c14e; box-shadow: 0 0 14px rgba(242,193,78,0.25); }
 .ach.legend.got .ach-pay { color: #f2c14e; }
 .ach .tier { margin-left: 6px; font: 700 9px var(--mono-font); letter-spacing: 0.08em; text-transform: uppercase; color: #d9a93a; border: 1px solid color-mix(in srgb, #f2c14e 45%, transparent); border-radius: 5px; padding: 0 4px; vertical-align: 1px; }
+.retired-list { margin-top: 4px; }
+.ach.retired { opacity: 0.62; border-style: dashed; }
+.ach.retired .tier { color: var(--faint); border-color: var(--line); }
 #view-achievements .stats-body { padding-top: 10px; }
 /* Groups fold away; the header keeps the count, a bar and what the group has paid of what it pays. */
 .ach-tools { display: flex; justify-content: flex-end; margin: -2px 0 8px; }
@@ -715,3 +784,20 @@ kbd.big { font-size: 12px; padding: 3px 7px; }
 .ach-group[open] > summary { margin-bottom: 4px; }
 .ach-group > .ach-list { padding-left: 8px; }
 .ach-none { margin: 2px 0 8px 10px; color: var(--faint); font-size: 11.5px; }
+/* Free Play combos (Stats ▸ Free Play) and the Jackpot's pay table. */
+.combo-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+.combo { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.combo b { font-size: 12px; }
+.combo span { color: var(--muted); font-size: 10.5px; line-height: 1.3; }
+.combo i { font-style: normal; color: var(--accent); font-size: 10px; }
+.combo.unknown { opacity: 0.6; border-style: dashed; }
+.combo.unknown b { color: var(--muted); }
+@media (max-width: 420px) { .combo-list { grid-template-columns: minmax(0, 1fr); } }
+.jp-pays { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 14px; margin: 8px 4px 0; font-size: 11.5px; }
+.jp-row { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); }
+.jp-row .jp-sym { color: var(--fg); letter-spacing: 1px; }
+.jp-row.jp-foot { grid-column: 1 / -1; justify-content: center; font-size: 10.5px; margin-top: 4px; text-align: center; }
+.jp-note.won { color: #f2c14e; font-weight: 700; }
+.reel.stop:not(.win) { border-color: var(--line-2); }
+.statusbar .gold b { color: #f2c14e; }
+.statusbar .boost b { color: #8fe3ff; }

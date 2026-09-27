@@ -13,6 +13,7 @@ try { ({ chromium } = require('playwright')); } catch (e) {
   }
 }
 
+const { share, overBar, chordBars } = require('./pitch.cjs');
 const PAGE = 'file://' + path.join(__dirname, '..', 'Game', 'index.html');
 const OUT = process.argv[2] || null;
 let failures = 0;
@@ -40,6 +41,8 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   check('welcome shown on first run', await page.isVisible('.modal'));
   await page.keyboard.press('Enter');
   check('welcome dismissed with Enter', !(await page.isVisible('.modal')));
+  // Scripted play sets pieces faster than any hand: the grace after a set is off here and tested on its own below.
+  await ev(() => { for (const k of ['play', 'puzzle', 'classic']) Lull.app.modes[k].setGrace = 0; });
 
   // ---- free play: moves, a line clear, the wallet ------------------------------------------------------------------
   console.log('free play');
@@ -83,19 +86,29 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     return c.height === c2.height && c.width === c2.width;
   });
   check('a combo (or a long score) never resizes the board', steady);
-  // The chain: back-to-back quads and combos multiply what lines pay (a quad is worth 5).
+  // The chain: back-to-back quads (streak) plus the combo; only the streak multiplies, an eighth a link, ×2.5 at most.
   const chain = await ev(() => {
     const m = Lull.app.modes.play, g = m.game, out = [];
     g.resetBoard();
-    for (let k = 0; k < 2; k++) {
+    const quad = () => {
       for (let y = 0; y < 4; y++) for (let x = 1; x < 10; x++) g.board.set(x, y, 8);
       g.replacePiece({ id: 'I' }); g.rotate(1); while (g.move(-1));
-      const w0 = Lull.app.store.state.lines, r = g.drop();
-      out.push([r.banked, r.mult, Lull.app.store.state.lines - w0 - (Lull.app.store.state.stats.lines.achievements || 0) * 0]);
-    }
-    return { out, status: document.getElementById('play-status').textContent };
+      const r = g.drop();
+      return [r.banked, r.mult, r.chain];
+    };
+    out.push(quad(), quad());
+    const status2 = document.getElementById('play-status').textContent;
+    // Fourteen quads back to back: ×1.75 (streak 14), and the chain counts the combo too.
+    g.s.b2b = 12; out.push(quad());
+    const status14 = document.getElementById('play-status').textContent;
+    g.s.b2b = 30; out.push(quad());
+    return { out, status2, status14 };
   });
-  check('the chain multiplies quads: 5, then 15 (×3)', chain.out[0][0] === 5 && chain.out[1][0] === 15 && chain.out[1][1] === 3 && /Chain ×3/.test(chain.status), JSON.stringify(chain));
+  check('two quads pay 5 and 5 (a streak of 2 is under ×1), chain 3', chain.out[0][0] === 5 && chain.out[1][0] === 5 && chain.out[1][1] === 1 && chain.out[1][2] === 3 && /Chain 3 · ×1/.test(chain.status2), JSON.stringify(chain));
+  check('fourteen in a row pay ×1.75 (a quad: 9); the chain shows beside it', chain.out[2][0] === 9 && chain.out[2][1] === 1.75 && /Chain 16 · ×1\.75/.test(chain.status14), JSON.stringify(chain));
+  check('the multiplier stops at ×2.5', chain.out[3][1] === 2.5 && chain.out[3][0] === 13, JSON.stringify(chain));
+  await page.waitForTimeout(150);
+  await shot('10a-chain');
   // Retiring a board shows its whole life, and logs it.
   await ev(() => { const m = Lull.app.modes.play; m.game.s.items = { bomb: 2, laser: 1 }; m.game.s.startedAt = Date.now() - 3 * 86400e3; });
   await page.click('#play-status .btn');
@@ -131,21 +144,22 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     if (id === 'blueprint') { await page.click('.modal footer .btn.primary'); }
     if (id === 'jackpot') {
       await page.waitForTimeout(2600);
-      const won = await ev(() => document.querySelectorAll('.reel.win').length);
-      check('  jackpot: three reels stop', won === 3);
+      const jp = await ev(() => ({ stopped: document.querySelectorAll('.reel.stop').length, pays: document.querySelectorAll('.jp-pays .jp-row').length, note: document.querySelector('.jp-note').textContent, pulls: Lull.app.store.state.stats.items.jackpot.pulls }));
+      check('  jackpot: three reels stop, the pay table shows, the pull is counted', jp.stopped === 3 && jp.pays >= 7 && jp.pulls === 1 && !/Spinning/.test(jp.note), JSON.stringify(jp));
       await shot('11-jackpot');
       await page.click('.modal footer .btn.primary');
     }
     const inv = await ev((k) => Lull.app.store.state.inventory[k], id);
     const expect = id === 'jackpot' ? inv >= invBefore[id] - 1 : inv === invBefore[id] - 1;
     check('item ' + id + ' used', expect, 'have ' + inv);
-    if (['bomb', 'drill', 'phase', 'sand', 'anvil', 'magnet', 'laser', 'blackhole', 'golden'].includes(id)) {
+    if (id === 'golden') check('  golden: gold for the next five clears', await ev(() => Lull.app.modes.play.game.s.gold === 5));
+    if (['bomb', 'drill', 'phase', 'sand', 'anvil', 'magnet', 'laser', 'blackhole', 'water', 'steel', 'oil', 'frost', 'torch', 'bolt', 'tnt'].includes(id)) {
       const sp = await ev(() => Lull.app.modes.play.game.piece && Lull.app.modes.play.game.piece.special);
       check('  ' + id + ' piece in play', sp === id);
-      if (id === 'laser' || id === 'blackhole') await shot('11-' + id);
+      if (['laser', 'blackhole', 'frost', 'steel', 'water', 'tnt', 'torch', 'bolt', 'oil'].includes(id)) await shot('11-' + id);
       await page.keyboard.press('Space');
       await page.waitForTimeout(90);
-      if (id === 'blackhole' || id === 'anvil' || id === 'laser') await shot('11-' + id + '-hit');
+      if (['blackhole', 'anvil', 'laser', 'water', 'torch', 'bolt', 'frost'].includes(id)) await shot('11-' + id + '-hit');
     }
     if (id === 'nuke' || id === 'tornado') { await page.waitForTimeout(120); await shot('11-' + id); }
     check('  the tray closes after use', !(await page.isVisible('.item-tray:not(.hidden)')));
@@ -158,13 +172,23 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     g.board.cells.fill(0);
     g.replacePiece({ id: 'L' });
     const n0 = inv.bomb;
+    Object.assign(g.s, { hand: true, hb2b: 2, hcombo: 1 });
+    const used0 = (g.s.items || {}).bomb || 0;
     m.useItem('bomb');
     const armed = g.piece.special === 'bomb' && inv.bomb === n0 - 1 && !!document.querySelector('#itembar .group-btn.on');
+    const broke = !g.s.hand && g.s.hb2b === -1 && g.s.hcombo === -1;
     m.useItem('bomb');
-    return { armed, back: g.piece.type.id === 'L' && !g.piece.special && inv.bomb === n0 };
+    const hand = { broke, back: g.s.hand && g.s.hb2b === 2 && g.s.hcombo === 1 && ((g.s.items || {}).bomb || 0) === used0 };
+    // Luck items never touch the board: gold leaves play by hand alone.
+    inv.golden = (inv.golden || 0) + 1;
+    m.useItem('golden');
+    hand.luck = g.s.hand && g.s.hb2b === 2 && g.s.gold > 0;
+    m.useItem('golden');
+    return { armed, hand, back: g.piece.type.id === 'L' && !g.piece.special && inv.bomb === n0 };
   });
   check('an item in use shows as on', toggle.armed);
   check('pressing it again puts it back', toggle.back, JSON.stringify(toggle));
+  check('an item ends play by hand; taken back, it never happened; Luck items leave it alone', toggle.hand.broke && toggle.hand.back && toggle.hand.luck, JSON.stringify(toggle.hand));
   await page.waitForTimeout(200);
   await shot('11-items');
   // A Noodle bought over a fresh piece sits in the top row; it still turns, on every turn key and a right-click.
@@ -230,7 +254,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     st.settings.motion = motion0;
     return { peak, props, ms: Math.round(out), next };
   }, [id, motion]);
-  for (const id of ['drill', 'bomb', 'laser', 'purge', 'blackhole', 'nuke', 'sand', 'magnet', 'phase', 'anvil', 'settle']) {
+  for (const id of ['drill', 'bomb', 'laser', 'purge', 'blackhole', 'nuke', 'sand', 'magnet', 'phase', 'anvil', 'settle', 'frost', 'water', 'torch', 'bolt']) {
     const r = await fxRun(id, 'full');
     check('  ' + id + ' animates with physics, lets the next piece in, and ends', r.peak + r.props > 0 && r.ms <= 1500 && r.next, JSON.stringify(r));
   }
@@ -260,6 +284,94 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   const calm = await fxRun('nuke', 'reduced');
   check('  reduced motion: a nuke is a plain fade, no flying blocks', calm.peak === 0 && calm.ms <= 600, JSON.stringify(calm));
   await ev(() => { const m = Lull.app.modes.play; m.view.fx.clear(); m.game.board.cells.fill(0); m.view.dirty = true; });
+
+  // ---- the sandbox: a chain reaction, the combo it makes, its callout, the book ----------------------------------------
+  console.log('sandbox');
+  const boom = await ev(async () => {
+    const m = Lull.app.modes.play, g = m.game, st = Lull.app.store, C = Lull.CELL;
+    if (g.over) m.newBoard();
+    m.view.fx.clear();
+    g.board.cells.fill(0);
+    g.s.gold = 0; g.s.boost = null;
+    // A floor of colours, TNT and ice above it: one bomb sets the TNT off, which shatters the ice.
+    for (let x = 0; x < 10; x++) g.board.set(x, 0, 1 + (x % 7));
+    for (let x = 0; x < 10; x++) g.board.set(x, 1, x % 2 ? 5 | C.TNT : 3 | C.ICE);
+    g.board.set(9, 1, 0);
+    g.replacePiece({ id: 'O' });
+    st.state.inventory.bomb = (st.state.inventory.bomb || 0) + 1;
+    const w0 = g.s.banked || 0, book0 = Object.keys(st.state.combos || {}).length;
+    let r = null;
+    g.on('lock', (x) => { r = r || x; });
+    m.apply('bomb'); g.piece.x = 2; g.piece.y = 6; m.action('drop');
+    await new Promise((res) => setTimeout(res, 260));
+    return { explosions: r.explosions, shattered: r.shattered, steps: (r.react || []).length, board: g.board.count(), found: Object.keys(g.s.combos || {}), book: Object.keys(st.state.combos).length - book0, texts: m.view.fx.texts.map((t) => t.str), gained: (g.s.banked || 0) - w0, bodies: m.view.fx.world.nb };
+  });
+  await shot('16-chain-reaction');
+  check('a bomb sets off TNT down the row, which shatters the ice: one chain, played out with physics', boom.explosions >= 3 && boom.shattered > 0 && boom.board <= 12 && boom.bodies > 0, JSON.stringify(boom));
+  check('it is a combo: paid, called out on the board, written in the book', boom.found.includes('chain3') && boom.book >= 1 && boom.texts.includes('Daisy Chain') && boom.gained >= 6, JSON.stringify(boom));
+  await page.waitForTimeout(900);
+  await shot('16b-chain-after');
+  // The same combo again on this board pays half; the boost shows in the status bar.
+  const again = await ev(() => {
+    const m = Lull.app.modes.play, g = m.game, st = Lull.app.store, C = Lull.CELL;
+    g.board.cells.fill(0);
+    for (let x = 0; x < 10; x++) g.board.set(x, 0, x % 2 ? 5 | C.TNT : 2);
+    g.board.set(9, 6, 6 | C.STEEL); // steel stands, so the board is not emptied (that is another combo)
+    g.replacePiece({ id: 'O' });
+    st.state.inventory.bomb = (st.state.inventory.bomb || 0) + 1;
+    const w0 = g.s.banked || 0;
+    m.apply('bomb'); g.piece.x = 1; g.piece.y = 6; m.action('drop');
+    return { times: g.s.combos.chain3, gained: (g.s.banked || 0) - w0, status: document.getElementById('play-status').textContent, boost: g.s.boost };
+  });
+  check('the second time on one board pays half, and a boost waits for the next clears', again.times === 2 && again.gained === 3 && again.boost && /Boost ×1\.5/.test(again.status), JSON.stringify(again));
+  // A rewind takes the chain and its pay back.
+  const rew = await ev(() => {
+    const m = Lull.app.modes.play, g = m.game, st = Lull.app.store;
+    st.state.inventory.rewind = (st.state.inventory.rewind || 0) + 1;
+    const w0 = g.s.banked || 0;
+    m.apply('rewind');
+    return { back: (g.s.banked || 0) - w0, times: g.s.combos.chain3, tnt: g.board.count((v) => (v & Lull.CELL.MAT) === Lull.CELL.TNT) };
+  });
+  check('rewind puts the TNT back and takes back what the chain paid', rew.back === -3 && rew.times === 1 && rew.tnt === 5, JSON.stringify(rew));
+  // Gold: it waits on the board and gilds the piece in play, spent one clear at a time.
+  const gold = await ev(() => {
+    const m = Lull.app.modes.play, g = m.game, st = Lull.app.store;
+    g.board.cells.fill(0); g.s.boost = null; g.s.b2b = -1; g.s.gold = 0;
+    st.state.inventory.golden = (st.state.inventory.golden || 0) + 1;
+    m.apply('golden');
+    for (let x = 1; x < 10; x++) g.board.set(x, 0, 8);
+    g.replacePiece({ id: 'O' }); m.action('drop'); // clears nothing: the gold waits
+    const waited = g.s.gold;
+    g.board.cells.fill(0);
+    for (let y = 0; y < 4; y++) for (let x = 1; x < 10; x++) g.board.set(x, y, 8);
+    g.replacePiece({ id: 'I' }); g.rotate(1); while (g.move(-1));
+    let r = null; g.on('lock', (x) => { r = r || x; });
+    m.action('drop');
+    return { waited, left: g.s.gold, banked: r.banked, status: document.getElementById('play-status').textContent };
+  });
+  check('gold waits through a piece that clears nothing, then a quad pays ×3 (15) and leaves four', gold.waited === 5 && gold.left === 4 && gold.banked === 15 && /Gold 4/.test(gold.status), JSON.stringify(gold));
+  await page.waitForTimeout(100);
+  await shot('16c-gold');
+  // Each new item on its own: the piece shows what it is made of, and it leaves that in the stack.
+  const mats = await ev(() => {
+    const m = Lull.app.modes.play, g = m.game, st = Lull.app.store, C = Lull.CELL, out = {};
+    g.s.gold = 0;
+    for (const [id, want] of [['steel', C.STEEL], ['oil', C.OIL], ['frost', C.ICE], ['water', C.WATER], ['tnt', C.TNT]]) {
+      g.board.cells.fill(0);
+      for (let x = 0; x < 9; x++) g.board.set(x, 0, 2);
+      g.replacePiece({ id: 'T' });
+      st.state.inventory[id] = (st.state.inventory[id] || 0) + 1;
+      m.apply(id); g.piece.y = 5; m.action('drop');
+      out[id] = g.board.count((v) => (v & C.MAT) === want);
+    }
+    return out;
+  });
+  check('steel, oil, frost, water and TNT leave blocks made of themselves', mats.steel === 4 && mats.oil === 4 && mats.frost >= 4 && mats.water >= 3 && mats.tnt === 1, JSON.stringify(mats));
+  await page.waitForTimeout(200);
+  await ev(() => { const m = Lull.app.modes.play, g = m.game, C = Lull.CELL; g.board.cells.fill(0); for (let x = 0; x < 10; x++) { g.board.set(x, 0, 1 + (x % 7)); g.board.set(x, 1, [C.ICE, C.OIL, C.STEEL, C.TNT, C.WATER][x % 5] | (1 + x % 7)); } g.replacePiece({ id: 'T' }); g.setSpecial('frost'); m.view.dirty = true; });
+  await page.waitForTimeout(100);
+  await shot('16d-materials');
+  await ev(() => { const m = Lull.app.modes.play; m.view.fx.clear(); m.game.board.cells.fill(0); m.game.replacePiece({ id: 'T' }); m.view.dirty = true; });
 
   // ---- mouse only ---------------------------------------------------------------------------------------------------
   console.log('mouse');
@@ -310,6 +422,59 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await page.mouse.down(); await page.mouse.up();
   const landed = await ev(() => { const b = Lull.app.modes.play.game.board; const cols = []; for (let x = 0; x < 10; x++) if (b.get(x, 0)) cols.push(x); return cols; });
   check('click grace: a slip just before the click drops where it was', landed.includes(3) && (await ev(() => Lull.app.modes.play.game.s.pieces)) === pcsG + 1, JSON.stringify([col3, landed]));
+  // The stickiness is small now: a fifth of a cell past the edge already moves, and a click well after a slip
+  // (past the click grace) drops where the pointer is.
+  await ev(() => { const g = Lull.app.modes.play.game; g.board.cells.fill(0); g.replacePiece({ id: 'O' }); g.piece.y = 17; });
+  await page.mouse.move(c3[0] + 4, c3[1]); await page.mouse.move(c3[0], c3[1]);
+  await page.waitForTimeout(250);
+  const col3b = await pieceCol();
+  await page.mouse.move(c3[0] + s0 * 0.7, c3[1]);
+  check('sticky aim is slight: a fifth of a cell past the edge moves', (await pieceCol()) === col3b + 1, JSON.stringify([col3b, await pieceCol()]));
+  await page.waitForTimeout(Math.max(250, (await ev(() => Lull.Modes.CLICK_GRACE_MS)) + 60));
+  await page.mouse.down(); await page.mouse.up();
+  const landed2 = await ev(() => { const b = Lull.app.modes.play.game.board; const cols = []; for (let x = 0; x < 10; x++) if (b.get(x, 0)) cols.push(x); return cols; });
+  check('a click after the grace drops where the pointer went', landed2.includes(col3b + 1) && !landed2.includes(col3b - 1), JSON.stringify([col3b, landed2]));
+  // Grace after a set: a double click, a double Space or a second ↓ on the stack never sets the next piece at once;
+  // moving still works in the window, and after it everything drops again.
+  const grace = await ev(async () => {
+    const m = Lull.app.modes.play, g = m.game, wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    m.setGrace = Lull.Modes.SET_GRACE_MS;
+    await wait(Lull.Modes.SET_GRACE_MS + 40); // clear of the click just before
+    g.board.cells.fill(0); g.replacePiece({ id: 'O' });
+    const p0 = g.s.pieces;
+    m.action('drop');
+    const afterFirst = g.s.pieces;
+    const second = m.action('drop');
+    const x0 = g.piece.x, moved = m.action('moveL') && g.piece.x !== x0;
+    // ↓ on the stack within the window: the fresh press that would set it is ignored.
+    while (g.fitsAt(g.piece, g.piece.rot, g.piece.x, g.piece.y - 1)) g.piece.y--;
+    const down = m.action('down');
+    const within = g.s.pieces;
+    await wait(Lull.Modes.SET_GRACE_MS + 40);
+    const later = m.action('down') && g.s.pieces === within + 1;
+    const again = m.action('drop') === false && g.s.pieces === within + 1; // a set restarts the window
+    await wait(Lull.Modes.SET_GRACE_MS + 40);
+    const last = !!m.action('drop') && g.s.pieces === within + 2;
+    m.setGrace = 0;
+    return { first: afterFirst === p0 + 1, second, moved, down, within: within === p0 + 1, later, again, last };
+  });
+  check('grace after a set: a second drop, and ↓ on the stack, are ignored for a moment; moves still work', grace.first && !grace.second && grace.moved && !grace.down && grace.within, JSON.stringify(grace));
+  check('after the grace ↓ sets and Space drops again', grace.later && grace.again && grace.last, JSON.stringify(grace));
+  // A Giant with no room above the stack is refused gently: no Board full card, the item is kept.
+  const swap = await ev(() => {
+    const m = Lull.app.modes.play, g = m.game, inv = Lull.app.store.state.inventory, had = inv.giant || 0;
+    inv.giant = had + 1;
+    g.board.cells.fill(0); g.replacePiece({ id: 'O' }); while (g.move(-1));
+    for (let y = 0; y < 20; y++) for (let x = 3; x < 10; x++) g.board.set(x, y, 8);
+    m.useItem('giant');
+    const out = { card: m.cardOpen, over: g.over, kept: inv.giant === had + 1, id: g.piece.type.id, toast: document.body.textContent.includes('Too big to fit up there') };
+    inv.giant = had; g.board.cells.fill(0); m.view.dirty = true;
+    return out;
+  });
+  check('a swap with no room is refused gently: no Board full, the item kept', !swap.card && !swap.over && swap.kept && swap.id === 'O' && swap.toast, JSON.stringify(swap));
+  const dbl = await ev(async () => { const m = Lull.app.modes.play; m.setGrace = Lull.Modes.SET_GRACE_MS; await new Promise((r) => setTimeout(r, Lull.Modes.SET_GRACE_MS + 40)); m.game.board.cells.fill(0); m.game.replacePiece({ id: 'O' }); return m.game.s.pieces; });
+  await page.mouse.dblclick(c3[0], c3[1]);
+  check('a double click sets one piece, not two', (await ev(() => { const m = Lull.app.modes.play; m.setGrace = 0; return m.game.s.pieces; })) === dbl + 1);
   // Inverted Controls turn the mouse around too.
   await ev(() => { const m = Lull.app.modes.play; m.inverted = true; m.rawCol = null; const g = m.game; g.board.cells.fill(0); g.replacePiece({ id: 'O' }); g.piece.y = 17; });
   const inv = await cellPt(2, 10);
@@ -368,7 +533,34 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   check('pieces fall on their own', fell.y < y0 || fell.pieces > 0, JSON.stringify([y0, fell]));
   check('music plays during a game', fell.music);
   check('the music keeps its voices bounded', await ev(() => Lull.Music.live > 0 && Lull.Music.live < 400), String(await ev(() => Lull.Music.live)));
+  // While the music plays, sound effects are tuned to the chord sounding as they ring (played for real, voices caught).
+  const tuned = await ev(() => {
+    const S = Lull.Sound, H = Lull.Harmony, M = Lull.Music, keep = S.voice, got = [], out = [];
+    S.voice = function (v, when, pack) { got.push({ v, when }); return keep.call(this, v, when, pack); };
+    try {
+      for (const [n, a] of [['quad'], ['clear', 2], ['tspin'], ['perfect'], ['combo', 4], ['hold']]) {
+        S.lastAt[n] = 0; got.length = 0;
+        const now = S.ctx.currentTime;
+        S.play(n, a, 'soft');
+        for (const { v, when } of got) {
+          if (!H.tonal(v)) continue;
+          const b = M.barAt(now + when + (v.at || 0) + Math.min(0.15, v.d * 0.25)), m = Math.round(69 + 12 * Math.log2(v.f / 440)), pc = ((m % 12) + 12) % 12;
+          out.push({ n, chord: b.bar.name, pc, ok: H.tones(b.bar).chord[pc], when: +when.toFixed(3) });
+        }
+      }
+    } finally { S.voice = keep; }
+    return out;
+  });
+  check('while the music plays, every pitched voice of a sound effect is a tone of the chord it rings over', tuned.length > 20 && tuned.every((x) => x.ok), JSON.stringify(tuned.filter((x) => !x.ok).slice(0, 4)) + ' of ' + tuned.length);
+  check('only the big celebrations may wait for the beat, never more than 60 ms', tuned.every((x) => x.when <= 0.06 + 1e-6 && (x.when === 0 || ['quad', 'tspin', 'perfect'].includes(x.n))), JSON.stringify([...new Set(tuned.map((x) => x.n + ' ' + x.when))]));
+  await ev(() => { Lull.app.modes.classic.setGrace = Lull.Modes.SET_GRACE_MS; });
+  const cp0 = await ev(() => Lull.app.modes.classic.game.s.pieces);
   await page.keyboard.press('Space');
+  await page.keyboard.press('Space');
+  const cp1 = await ev(() => Lull.app.modes.classic.game.s.pieces), cy1 = await ev(() => Lull.app.modes.classic.game.piece.y);
+  await page.waitForTimeout(1200);
+  check('Classic: a double Space hard drops one piece; gravity carries on', cp1 === cp0 + 1 && (await ev((y) => { const g = Lull.app.modes.classic.game; return g.s.pieces > 0 && (!g.piece || g.piece.y < y || g.s.pieces > 1); }, cy1)), JSON.stringify([cp0, cp1]));
+  await ev(() => { Lull.app.modes.classic.setGrace = 0; });
   check('hard drop scores', await ev(() => Lull.app.modes.classic.score > 0));
   const clock = await ev(() => Lull.app.modes.classic.ms);
   check('Classic keeps its own clock (for the sprints)', clock > 1500 && clock < 6000, String(clock));
@@ -392,6 +584,21 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await ev(() => { const m = Lull.app.modes.classic; m.lines = 9; const g = m.game; for (let x = 1; x < 10; x++) g.board.set(x, 0, 8); g.replacePiece({ id: 'I' }); g.rotate(1); while (g.move(-1)); });
   await page.keyboard.press('Space');
   check('ten lines: level 2', await ev(() => Lull.app.modes.classic.level === 2));
+  // Back-to-back tetrises multiply the lines Classic banks (a half a link, ×10 at most), never its score.
+  const bank = await ev(() => {
+    const m = Lull.app.modes.classic, g = m.game;
+    g.s.b2b = 5; // six before: this makes seven, ×3.5
+    for (let y = 0; y < 4; y++) for (let x = 1; x < 10; x++) g.board.set(x, y, 8);
+    g.replacePiece({ id: 'I' }); g.rotate(1); while (g.move(-1));
+    const s0 = m.score, lvl = m.level;
+    let r = null; g.on('lock', (x) => { r = r || x; });
+    g.drop();
+    const out = { banked: r.banked, mult: m.mult, points: m.score - s0, want: r.score * lvl + r.dropDist * 2, status: document.getElementById('classic-status').textContent };
+    // Back as it was, so the checks further on see the game they expect.
+    m.score = s0; m.lines -= 4; m.level = lvl; g.s.b2b = -1; m.mult = 1; m.renderStatus();
+    return out;
+  });
+  check('Classic: seven tetrises in a row bank ×3.5 (14 lines), the score untouched', bank.banked === 14 && bank.mult === 3.5 && bank.points === bank.want && /Bank ×3\.5/.test(bank.status), JSON.stringify(bank));
   check('and ten lines make it a game played', await ev((g0) => Lull.app.store.state.stats.classic.games === g0 + 1, games0));
   // Pausing mid-bar comes back to that bar, not the one after it.
   await page.waitForTimeout(700);
@@ -443,6 +650,24 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   check('the default sounds render without clipping or silence', Object.entries(audio).every(([n, a]) => !a.bad && a.peak < -3 && a.peak > -60), JSON.stringify(audio));
   check('movement sounds stay faint', ['move', 'rotate', 'lower'].every((n) => audio[n].peak < -36), JSON.stringify([audio.move, audio.rotate, audio.lower]));
   check('the music has no holes', audio.music.quiet > -50, JSON.stringify(audio.music));
+  // Heard, not just planned: sound effects rendered over a bar of every chord, the notes found in them by FFT, and how
+  // much of their power is on the chord's tones — tuned, and as the pack made them (scripts/audio-render.cjs --harmony
+  // does every pack and sound at length).
+  {
+    const bars = await chordBars(page), rows = [];
+    for (const [pack, chords, events] of [['soft', Object.keys(bars), [['clear', 2], ['quad'], ['tspin'], ['perfect'], ['solve']]], ['chip', ['E9', 'Dm9'], [['quad'], ['perfect']]], ['marimba', ['E9', 'Esus'], [['clear', 2], ['tspin']]]]) {
+      for (const chord of chords) {
+        const res = await overBar(page, pack, bars[chord], events);
+        for (let i = 0; i < res.length; i += 2) {
+          if (res[i].glide || !res[i].found.length) continue;
+          rows.push({ pack, chord, sound: res[i].name, tuned: share(res[i].found, res[i].allowed).share, raw: share(res[i + 1].found, res[i + 1].allowed).share });
+        }
+      }
+    }
+    const mean = (k) => rows.reduce((a, r) => a + r[k], 0) / rows.length, worst = rows.reduce((w, r) => (r.tuned < w.tuned ? r : w), rows[0]);
+    check('rendered over every chord, the sound effects\' notes are the chord\'s tones', rows.length >= 40 && mean('tuned') > 0.95 && worst.tuned > 0.8 && mean('tuned') > mean('raw') + 0.1,
+      'tuned ' + (mean('tuned') * 100).toFixed(1) + '%, as made ' + (mean('raw') * 100).toFixed(1) + '%, worst ' + JSON.stringify(worst) + ', ' + rows.length + ' renders');
+  }
 
   // ---- puzzles solved through the real keys --------------------------------------------------------------------------
   console.log('puzzles');
@@ -810,7 +1035,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   const lines0 = await ev(() => { Lull.app.store.state.factory.bin = '1234'.repeat(12); return Lull.app.store.state.lines; });
   await page.waitForTimeout(350);
   const label = await ev(() => document.querySelector('#fac-collect .btn').textContent);
-  check('a full row of four is a line: 48 minos read Collect 12', /^Collect 12 ◆/.test(label), label);
+  check('a full row of four is a line: 48 minos read Collect 12', /^Collect 12 \u29B5/.test(label), label);
   await page.click('#fac-collect .btn');
   check('collecting banks the lines', (await ev(() => Lull.app.store.state.lines)) === lines0 + 12);
   // The bin itself, and the C key.
@@ -910,6 +1135,12 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     await page.waitForTimeout(50);
     await shot('50-stats-' + n);
   }
+  await page.click('#stats-tabs button:nth-child(2)');
+  await page.waitForTimeout(50);
+  const book = await ev(() => { const l = document.querySelector('.combo-list'); if (l) l.scrollIntoView(); return { all: document.querySelectorAll('.combo').length, unknown: document.querySelectorAll('.combo.unknown').length, known: [...document.querySelectorAll('.combo:not(.unknown) b')].map((b) => b.textContent), fits: [...document.querySelectorAll('.combo')].every((c) => c.scrollWidth <= c.clientWidth + 1) }; });
+  check('Stats ▸ Free Play lists the combos: found ones by name, the rest as ?', book.all === await ev(() => Lull.Combos.LIST.length) && book.unknown === book.all - book.known.length && book.known.includes('Daisy Chain') && book.fits, JSON.stringify(book));
+  await page.waitForTimeout(50);
+  await shot('50b-stats-combos');
   await page.click('.tabs button[data-tab="achievements"]');
   await page.waitForTimeout(80);
   await shot('51-achievements');
@@ -924,12 +1155,25 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await page.click('.ach-tools button:nth-child(3)');
   await page.waitForTimeout(40);
   const earnedOnly = await ev(() => ({ shown: document.querySelectorAll('.ach').length, got: document.querySelectorAll('.ach.got').length, open: !!document.querySelector('.ach-group[data-group="play"][open]') }));
-  check('the Earned filter shows only earned ones (and the open group stays open)', earnedOnly.shown === earnedOnly.got && earnedOnly.got === ach.got && earnedOnly.open, JSON.stringify(earnedOnly));
+  check('the Earned filter shows only earned ones (and the open group stays open)', earnedOnly.shown === earnedOnly.got && earnedOnly.open, JSON.stringify(earnedOnly));
   await shot('51c-achievements-earned');
   await page.click('.ach-tools button:nth-child(2)');
   await page.waitForTimeout(40);
   const todo = await ev(() => ({ got: document.querySelectorAll('.ach.got').length, shown: document.querySelectorAll('.ach').length, left: Lull.Achievements.LIST.filter((a) => !Lull.app.store.state.achievements[a.id]).length }));
   check('the To do filter hides the earned ones', todo.got === 0 && todo.shown === todo.left && todo.left <= ach.all - ach.got, JSON.stringify(todo));
+  // A retired one (earned before it was retired) stays with its owner, marked, and counted in nothing.
+  await page.click('.ach-tools button:nth-child(1)');
+  const retired = await ev(() => {
+    const S = Lull.app.store.state, count = () => document.querySelector('.ach-group[data-group="play"] .ach-count').textContent;
+    const before = count();
+    S.achievements.combo20 = Date.now();
+    Lull.UI.renderAchievements(Lull.app);
+    const out = { before, after: count(), rows: document.querySelectorAll('.ach.retired').length, tag: (document.querySelector('.ach.retired .tier') || {}).textContent, left: Lull.Achievements.LIST.some((a) => a.id === 'combo20') };
+    delete S.achievements.combo20;
+    Lull.UI.renderAchievements(Lull.app);
+    return out;
+  });
+  check('a retired achievement stays with whoever earned it, marked Retired, counted in nothing', retired.rows === 1 && retired.tag === 'Retired' && retired.before === retired.after && !retired.left, JSON.stringify(retired));
   await ev(() => { document.querySelectorAll('.ach-group').forEach((d) => { d.open = true; }); });
   await page.waitForTimeout(40);
   await ev(() => { document.getElementById('ach-body').scrollTop = 1e6; });
@@ -1007,7 +1251,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   const barShot = async (name) => { if (OUT) await page.screenshot({ path: path.join(OUT, name + '.png'), clip: { x: 0, y: 0, width: 520, height: 64 } }); };
   const levels = () => ev(() => { const s = Lull.app.settings; return JSON.stringify([s.sound, s.volume, s.music, s.musicVolume, s.announcer, s.announcerVolume, Lull.Sound.enabled, Lull.Sound.volume]); });
   // The context starts on a gesture (a key), as in play; the gain is read once its short ramp has run.
-  const muteState = async () => { await page.waitForTimeout(250); return ev(() => { const b = document.getElementById('btn-mute'); return { set: Lull.app.settings.muted, sound: Lull.Sound.muted, gain: Lull.Sound.muteGain ? Math.round(Lull.Sound.muteGain.gain.value * 1000) / 1000 : null, pressed: b.getAttribute('aria-pressed'), cls: b.classList.contains('muted'), title: b.title, ctx: Lull.Sound.ctx && Lull.Sound.ctx.state }; }); };
+  const muteState = async () => { await page.waitForTimeout(250); return ev(() => { const b = document.getElementById('btn-mute'); return { set: Lull.app.settings.muted, sound: Lull.Sound.muted, gain: Lull.Sound.muteGain ? Math.round(Lull.Sound.muteGain.gain.value * 1000) / 1000 : null, pressed: b.getAttribute('aria-pressed'), cls: b.classList.contains('muted'), title: b.getAttribute('aria-label') + ' (' + b.dataset.tipFoot + ')', tip: b.dataset.tip, ctx: Lull.Sound.ctx && Lull.Sound.ctx.state }; }); };
   await page.keyboard.press('ArrowLeft');
   await ev(() => { Lull.Sound.ensure(); Lull.Sound.play('lock'); });
   const levels0 = await levels();
@@ -1078,6 +1322,70 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   }
   await page.setViewportSize({ width: 520, height: 760 });
   check('the title bar holds the mute button without crowding (300 to 900 px; the app from its 400 px minimum)', crowd.length === 0, crowd.join('; '));
+  // Its order: the places to play in one track, room to drag, the places to look by the wallet, sound, Settings.
+  const bar = await ev(() => {
+    const ids = (sel) => Array.from(document.querySelectorAll(sel)).map((b) => b.dataset.tab).join();
+    const all = Array.from(document.querySelectorAll('#titlebar .tabs button'));
+    const xs = all.map((b) => b.getBoundingClientRect().left);
+    const kids = Array.from(document.getElementById('titlebar').children).map((e) => e.id || e.className);
+    return { modes: ids('#tabs button'), meta: ids('#tabs-meta button'), feet: all.map((b) => b.dataset.tipFoot).join(), ltr: xs.every((x, i) => !i || x > xs[i - 1]), tips: all.every((b) => b.dataset.tip && b.dataset.tipTitle && !b.title), kids: kids.join() };
+  });
+  check('title bar: Play, Puzzles, Factory together; Shop, Stats, Achievements by the wallet; ⌘1–⌘6 left to right, each in its tooltip',
+    bar.modes === 'play,puzzle,factory' && bar.meta === 'shop,stats,achievements' && bar.ltr && bar.tips && bar.feet === '⌘1,⌘2,⌘3,⌘4,⌘5,⌘6'
+    && /^brand,tabs,spacer,tabs-meta,wallet,tb-sep,btn-mute,btn-settings,tb-sep win,winbtns$/.test(bar.kids), JSON.stringify(bar));
+  const shortcut = [];
+  for (let n = 1; n <= 6; n++) { await page.keyboard.press('Control+Digit' + n); shortcut.push(await ev(() => Lull.app.tab + ':' + document.querySelector('#titlebar .tabs button[aria-selected="true"]').dataset.tab)); }
+  check('⌘1–⌘6 open the tabs in the order they sit, and light them', shortcut.join() === 'play:play,puzzle:puzzle,factory:factory,shop:shop,stats:stats,achievements:achievements', shortcut.join());
+  // Labels: every play tab named when wide; only the tab you are on when narrower; icons alone when narrow; the bar keeps room to drag.
+  const labels = [];
+  for (const [w, nat, want] of [[1100, false, 'Play,Puzzles,Factory|Shop,Stats,Achievements'], [900, false, 'Play,Puzzles,Factory|'], [900, true, 'Play,Puzzles,Factory|'], [560, false, 'Puzzles|'], [520, true, '|'], [460, false, '|'], [400, true, '|']]) {
+    await page.setViewportSize({ width: w, height: 760 });
+    await ev(() => Lull.app.setTab('puzzle'));
+    const got = await ev((nat) => {
+      document.body.classList.toggle('native', nat); document.body.classList.toggle('browser', !nat);
+      const shown = (sel) => Array.from(document.querySelectorAll(sel)).filter((l) => l.getBoundingClientRect().width > 0).map((l) => l.textContent).join();
+      const sp = document.querySelector('#titlebar .spacer').getBoundingClientRect(), bar = document.getElementById('titlebar');
+      const r = { labels: shown('#tabs .lbl') + '|' + shown('#tabs-meta .lbl'), drag: Math.round(sp.width), fits: bar.scrollWidth <= bar.clientWidth + 1 };
+      document.body.classList.remove('native'); document.body.classList.add('browser');
+      return r;
+    }, nat);
+    if (got.labels !== want || got.drag < 4 || !got.fits) labels.push(w + (nat ? ' app ' : ' browser ') + JSON.stringify(got));
+  }
+  await page.setViewportSize({ width: 520, height: 760 });
+  await ev(() => Lull.app.setTab('play'));
+  check('title bar labels give way as the window narrows (all, then the tab you are on, then icons), always leaving room to drag', labels.length === 0, labels.join('; '));
+  await page.hover('#tabs button[data-tab="factory"]');
+  await page.waitForTimeout(450);
+  const tip = await ev(() => { const t = document.querySelector('.tip'); return t.classList.contains('hidden') ? '' : t.textContent; });
+  check('hovering a tab names it, says what it is and gives its key (and nothing reads "null")', /^Factory.+⌘3$/.test(tip) && !/null/.test(tip), tip);
+  await page.hover('#btn-settings');
+  await page.waitForTimeout(450);
+  const tip2 = await ev(() => { const t = document.querySelector('.tip'); return (t.classList.contains('compact') ? 'compact ' : '') + t.textContent; });
+  check('the small buttons get a one-line tooltip with their key', tip2 === 'compact Settings⌘,', tip2);
+  if (OUT) await page.screenshot({ path: require('path').join(OUT, '83-topbar-tooltip.png'), clip: { x: 0, y: 0, width: 520, height: 110 } });
+  await page.mouse.move(260, 400);
+
+  // ---- the line glyph: one character, in its own font, in the page and on the canvases -------------------------------
+  console.log('line glyph');
+  const glyph = await ev(async () => {
+    await document.fonts.load('12px "Lull Line"', Lull.LINE);
+    const probe = (family) => { const s = document.createElement('span'); s.style.cssText = 'position:absolute;font:100px ' + family; s.textContent = Lull.LINE; document.body.appendChild(s); const w = s.getBoundingClientRect().width; s.remove(); return Math.round(w); };
+    const c = document.createElement('canvas').getContext('2d');
+    c.font = '100px "Lull Line", ui-monospace, monospace';
+    // Every tab's text, tooltips and labels: the line glyph, never the old diamond.
+    const texts = [];
+    for (const t of ['play', 'puzzle', 'factory', 'shop', 'stats', 'achievements']) {
+      Lull.app.setTab(t);
+      texts.push(document.getElementById('app').innerText);
+      for (const el of document.querySelectorAll('[title], [data-tip], [data-tip-title], [data-tip-foot], [aria-label]')) texts.push(el.title, el.dataset.tip, el.dataset.tipTitle, el.dataset.tipFoot, el.getAttribute('aria-label'));
+    }
+    Lull.app.setTab('play');
+    const all = texts.join(' ');
+    return { loaded: document.fonts.check('12px "Lull Line"', Lull.LINE), text: probe('var(--font)'), mono: probe('var(--mono-font)'), canvas: Math.round(c.measureText(Lull.LINE).width),
+      diamonds: (all.match(/\u25C6/g) || []).length, lines: (all.match(/\u29B5/g) || []).length, wallet: !!document.querySelector('#wallet .lg svg') };
+  });
+  check('the line glyph\'s font is loaded and draws it in text, monospace and on canvas (one em wide, not a fallback)', glyph.loaded && glyph.text === 100 && glyph.mono === 100 && glyph.canvas === 100, JSON.stringify(glyph));
+  check('no black diamond left anywhere on the page; lines amounts show the line glyph; the wallet draws it large', glyph.diamonds === 0 && glyph.lines > 5 && glyph.wallet, JSON.stringify(glyph));
   await ev(() => Lull.app.saveNow());
   await page.reload();
   await page.waitForTimeout(400);

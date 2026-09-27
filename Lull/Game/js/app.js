@@ -4,16 +4,18 @@
   const L = (root.Lull = root.Lull || {});
   const { Store, Keys, Sound, UI, Modes, Render, native, fmtInt } = L;
   const { h, toast } = UI;
+  const { LINE } = L;
 
   L.VERSION = '1.0';
 
+  // In ⌘1–⌘6 order. The places to play sit together on the left; the places to look sit by the wallet on the right.
   const TABS = [
-    { id: 'play', label: 'Play', icon: 'play' },
-    { id: 'puzzle', label: 'Puzzles', icon: 'puzzle' },
-    { id: 'factory', label: 'Factory', icon: 'factory' },
-    { id: 'shop', label: 'Shop', icon: 'shop' },
-    { id: 'stats', label: 'Stats', icon: 'stats' },
-    { id: 'achievements', label: 'Achievements', icon: 'trophy' },
+    { id: 'play', label: 'Play', icon: 'play', group: 'modes', tip: 'Endless and relaxed: nothing falls until you say so. Classic waits in the corner of the board.' },
+    { id: 'puzzle', label: 'Puzzles', icon: 'puzzle', group: 'modes', tip: 'Short seeded puzzles, every one solvable, and a Daily for each difficulty.' },
+    { id: 'factory', label: 'Factory', icon: 'factory', group: 'modes', tip: 'Presses fill a bin with lines while you work. Collect it now and then.' },
+    { id: 'shop', label: 'Shop', icon: 'shop', group: 'meta', tip: 'Spend lines on items and cosmetics.' },
+    { id: 'stats', label: 'Stats', icon: 'stats', group: 'meta', tip: 'Lines, clears, puzzles, the factory and your time, by mode and day.' },
+    { id: 'achievements', label: 'Achievements', icon: 'trophy', group: 'meta', tip: 'Quiet milestones that pay lines.' },
   ];
 
   const app = {
@@ -41,6 +43,8 @@
       this.refreshWallet();
       this.bindGlobal();
       this.lastTime = performance.now();
+      // The line glyph's font is only fetched once text needs it; the canvases draw it too, so fetch it now and redraw.
+      if (document.fonts && document.fonts.load) document.fonts.load('12px "Lull Line"', LINE).then(() => this.onResize(), () => {});
       requestAnimationFrame((t) => this.frame(t));
       setInterval(() => this.second(), 1000);
       if (this.store.loadedFrom === 'new') setTimeout(() => this.welcome(), 250);
@@ -88,7 +92,7 @@
         b.classList.toggle('muted', on);
         b.setAttribute('aria-pressed', String(on));
         b.setAttribute('aria-label', on ? 'Unmute' : 'Mute');
-        b.title = (on ? 'Unmute' : 'Mute') + ' (M)';
+        b.dataset.tip = on ? 'Unmute' : 'Mute';
       }
       for (const sw of document.querySelectorAll('.switch[data-setting="muted"]')) sw.setAttribute('aria-checked', String(on));
     },
@@ -110,9 +114,11 @@
     // ---- chrome -------------------------------------------------------------------------------------------------------
 
     buildChrome() {
-      const tabs = document.getElementById('tabs');
-      tabs.replaceChildren(...TABS.map((t, i) => h('button', { role: 'tab', 'data-tab': t.id, title: t.label + ' (⌘' + (i + 1) + ')', onclick: () => this.setTab(t.id) },
-        h('span', { html: UI.ICONS[t.icon], style: { display: 'contents' } }), h('span', { class: 'lbl' }, t.label))));
+      const tab = (t, i) => h('button', { role: 'tab', 'data-tab': t.id, 'aria-label': t.label, 'data-tip-title': t.label, 'data-tip': t.tip, 'data-tip-foot': '⌘' + (i + 1), onclick: () => this.setTab(t.id) },
+        h('span', { html: UI.ICONS[t.icon], style: { display: 'contents' } }), h('span', { class: 'lbl' }, t.label));
+      document.getElementById('tabs').replaceChildren(...TABS.map((t, i) => t.group === 'modes' && tab(t, i)).filter(Boolean));
+      document.getElementById('tabs-meta').replaceChildren(...TABS.map((t, i) => t.group === 'meta' && tab(t, i)).filter(Boolean));
+      document.getElementById('wallet-icon').innerHTML = UI.ICONS.line;
       document.getElementById('btn-settings').innerHTML = UI.ICONS.settings;
       document.getElementById('btn-pin').innerHTML = UI.ICONS.pin;
       document.getElementById('btn-hide').innerHTML = UI.ICONS.hide;
@@ -237,8 +243,8 @@
 
     announce(got, away) {
       const legend = got.some((a) => a.tier === 'legend');
-      if (away && got.length > 3) toast('★ ' + got.length + ' achievements while you were away · +' + fmtInt(got.reduce((n, a) => n + a.pay, 0)) + ' ◆', 'good', 6000);
-      else for (const a of got) toast((a.tier === 'legend' ? '◆ Legendary: ' : '★ ') + a.name + ' · +' + fmtInt(a.pay) + ' ◆', 'good', a.tier === 'legend' ? 6000 : 3200);
+      if (away && got.length > 3) toast('★ ' + got.length + ' achievements while you were away · +' + fmtInt(got.reduce((n, a) => n + a.pay, 0)) + ' ' + LINE, 'good', 6000);
+      else for (const a of got) toast((a.tier === 'legend' ? '✦ Legendary: ' : '★ ') + a.name + ' · +' + fmtInt(a.pay) + ' ' + LINE, 'good', a.tier === 'legend' ? 6000 : 3200);
       this.sound.play(legend ? 'perfect' : 'solve');
     },
 
@@ -319,7 +325,7 @@
         width: 440,
         body: h('div', null,
           h('p', null, 'Blocks here never fall on their own. Line them up, lower them, drop them when you are ready — or leave and come back. Nothing is timed and nothing is lost.'),
-          h('p', null, h('b', null, 'Play'), ' — endless and relaxed. Every cleared line is banked as ◆ lines to spend in the ', h('b', null, 'Shop'), ' on one-shot items (bombs, drills, a piece you draw yourself) and cosmetics.'),
+          h('p', null, h('b', null, 'Play'), ' — endless and relaxed. Every cleared line is banked as ' + LINE + ' lines to spend in the ', h('b', null, 'Shop'), ' on one-shot items (bombs, drills, a piece you draw yourself) and cosmetics.'),
           h('p', null, h('b', null, 'Puzzles'), ' — short, seeded, infinite, with wildcards like Big Minos, Wraparound and Upside Down. Every seed has a solution.'),
           h('p', null, h('b', null, 'Factory'), ' — presses fill a bin with lines; collect it now and then. It runs while you work.'),
           h('div', { class: 'keys', style: { marginTop: '10px' } }, L.KEY_HELP.slice(0, 7).map(([k, d]) => [h('span', { class: 'k' }, h('kbd', null, k)), h('span', null, d)]))),

@@ -357,7 +357,10 @@
       this.master.gain.value = this.volume;
       if (this.muted) return; // nobody would hear it: skip building it
       const { pack, list } = this.voices(name, arg, packId);
-      if (list) for (const v of list) this.voice(v, 0, pack);
+      if (!list) return;
+      // With Classic's music playing, tuned to the chord of the moment (and a big one perhaps nudged onto the beat).
+      const plan = Harmony.plan(name, list, ctx.currentTime);
+      for (const v of plan.list) this.voice(v, plan.delay, pack);
     },
 
     /** Silences everything at once — notes already ringing too — with a short ramp so it does not click. The levels
@@ -490,6 +493,7 @@
       if (!ctx || this.playing) return;
       if (ctx.state === 'suspended') ctx.resume();
       this.playing = true;
+      this.on = ctx;
       this.wire(ctx);
       Sound.master.gain.value = Sound.volume; // a Volume of 0 is a real 0
       this.pos = { bar: this.pos && this.pos.bar != null ? this.pos.bar : 0, at: ctx.currentTime + 0.1 };
@@ -548,15 +552,46 @@
       this.left = pan(-0.35, this.bus); this.right = pan(0.35, this.bus);
     },
 
-    /** Inside Sound.offline: the suite from a bar, for some seconds, onto the offline context. */
-    render(ctx, seconds, bar) {
+    /**
+     * Inside Sound.offline: the suite from a bar, for some seconds, onto the offline context. Its timeline stays behind
+     * (rendered) so sound effects played onto the same context fit its chords; silent keeps the time without the notes.
+     */
+    render(ctx, seconds, bar, silent) {
       const keep = ['gain', 'bus', 'lfos', 'sends', 'echo', 'padL', 'padR', 'left', 'right', 'pos', 'playing', 'fresh'].map((k) => [k, this[k]]);
       this.wire(ctx);
       this.playing = true;
-      this.pos = { bar: bar || 0, at: 0.05 };
+      this.pos = { bar: bar || 0, at: 0.05, keep: Infinity };
       this.fresh = true;
-      this.fill(seconds);
+      this.fill(seconds, silent);
+      this.rendered = { ctx, sched: this.pos.sched, e: 60 / (this.bpm * this.tempo) / 2 };
       for (const [k, v] of keep) this[k] = v;
+    },
+
+    /** The bars scheduled on the current context, with the eighth they will go on at: the live music's, or a render's. */
+    timeline() {
+      const ctx = Sound.ctx;
+      if (!ctx) return null;
+      if (this.rendered && this.rendered.ctx === ctx) return this.rendered;
+      const p = this.pos;
+      return this.playing && this.on === ctx && p && p.sched && p.sched.length ? { sched: p.sched, e: 60 / (this.bpm * this.tempo) / 2 } : null;
+    },
+
+    /**
+     * The bar sounding at context time t: { idx, bar, at, e }. Bars go at the tempo they were scheduled at; past the
+     * last one scheduled, the ones to come are counted on at the tempo now.
+     */
+    barAt(t, line) {
+      line = line || this.timeline();
+      if (!line || !line.sched || !line.sched.length) return null;
+      let cur = line.sched[0];
+      for (const b of line.sched) if (b.at <= t) cur = b;
+      let idx = cur.bar, at = cur.at, e = cur.e || line.e;
+      for (let k = 0; k < 64 && t >= at + 8 * e; k++) {
+        at += 8 * e;
+        idx = idx + 1 >= SONG.bars.length ? SONG.loopFrom : idx + 1;
+        e = line.e || e;
+      }
+      return { idx, bar: SONG.bars[idx], at, e };
     },
 
     stop() {
@@ -738,7 +773,8 @@
         if (this.echo) this.echo.delayTime.setTargetAtTime(e * 1.5, p.at, 0.5);
         if (silent) this.fresh = true;
         else this.playBar(SONG.bars[p.bar], p.at, e, p.bar);
-        p.sched = (p.sched || []).concat({ bar: p.bar, at: p.at }).slice(-3);
+        // What was scheduled when, and how fast: stop() comes back to it, and sound effects find their chord in it.
+        p.sched = (p.sched || []).concat({ bar: p.bar, at: p.at, e }).slice(-(p.keep || 3));
         p.at += e * 8;
         p.bar++;
         if (p.bar >= SONG.bars.length) p.bar = SONG.loopFrom;
@@ -779,6 +815,116 @@
         let at = t0;
         for (const [m, l] of bar.under) { if (m != null) this.breath(hz(m), at, l * e, 0.07); at += l * e; }
       }
+    },
+  };
+
+  // ---- sound effects in the music's harmony --------------------------------------------------------------------------
+  //
+  // While Classic's music plays, every pitched voice of a sound effect (any pack, any event, and any added later) is
+  // retuned to the chord sounding as it rings. The whole sound moves first — at most a tritone, so it keeps its register
+  // — until its first note is a chord tone, by whichever move disturbs its other notes least; then every other note
+  // goes to the nearest chord tone (a short blip of a note or two, the nearest note of the key), keeping the sound's shape: a rising run
+  // still rises, a chord keeps its order, twins a few cents apart stay twins, slides keep their span and partials, FM
+  // and detune ride along. Noise, clicks and low thuds or sweeps are left alone, and so is everything when the music is
+  // not playing (the packs are already at home in A minor). The three big celebrations may wait for the next eighth of
+  // the beat, but only when it is at most 60 ms off: audio that trails the picture by that little reads as together
+  // (it is well inside the ~125 ms lag at which people notice, ITU-R BT.1359), and nothing you steer by — a move, a
+  // turn, a lock — is ever held back.
+  const Harmony = {
+    QUANTIZE: 0.06, // longest wait for the beat, seconds
+    CELEBRATE: { quad: true, perfect: true, tspin: true },
+    PASSING: 0.16, // a blip (one or two notes) shorter than this may be any note of the key
+    cache: {},
+
+    /** A bar's chord tones (its bass, fifth and voicing) and the key's notes over it, as pitch-class flags. */
+    tones(bar) {
+      if (this.cache[bar.name]) return this.cache[bar.name];
+      const [root, voicing] = bar.harm, chord = new Array(12).fill(false), scale = new Array(12).fill(false);
+      for (const m of [root, root + 7].concat(voicing)) chord[m % 12] = true;
+      for (const pc of [9, 11, 0, 2, 4, 5, 7]) scale[pc] = true;
+      // Over the dominant the key borrows its sharps, as the tune does: G# for G, F# for F.
+      if (chord[8]) { scale[7] = false; scale[8] = true; }
+      if (chord[6]) { scale[5] = false; scale[6] = true; }
+      chord.forEach((on, pc) => { if (on) scale[pc] = true; });
+      return (this.cache[bar.name] = { chord, scale });
+    },
+
+    /** Whether a voice has a pitch to tune: not noise, a click, a low thud, or a low sweep (a thoom, a falling drop). */
+    tonal(v) {
+      if (!v || v.n || !(v.f > 20 && v.f < 12000)) return false;
+      const d = v.d || 0;
+      if (d < 0.03) return false;
+      if (v.f < 120 && d < 0.15) return false;
+      if (v.to > 0 && v.f < 250 && Math.abs(12 * Math.log2(v.to / v.f)) > 4) return false;
+      return true;
+    },
+
+    /**
+     * The note (MIDI) nearest m whose pitch class is in set, within a tritone (on a tie, the lower). With prev and
+     * rel (-1, 0, 1), only one that sits that way from prev — the sound's shape — unless none does.
+     */
+    snap(m, set, prev, rel) {
+      let any = null;
+      for (let d = 0; d <= 6; d++) {
+        for (const c of d ? [m - d, m + d] : [m]) {
+          if (!set[((c % 12) + 12) % 12]) continue;
+          if (any == null) any = c;
+          if (prev == null || Math.sign(c - prev) === rel) return c;
+        }
+      }
+      return any == null ? m : any;
+    },
+
+    /** A sound's voices retuned to a timeline's chords, played from context time t0. The list given is left as it was. */
+    fit(list, t0, line) {
+      if (!list || !line) return list;
+      const out = list.map((v) => (v && typeof v === 'object' ? Object.assign({}, v) : v)), notes = [];
+      const pitched = out.filter((v) => this.tonal(v)), blip = pitched.length <= 2;
+      for (const v of pitched) {
+        const m = 69 + 12 * Math.log2(v.f / 440), n = Math.round(m), at = v.at || 0, d = v.d || 0;
+        // The chord it will mostly be heard over: a long note struck just before a change belongs to the next one.
+        const b = Music.barAt(t0 + at + Math.min(0.15, d * 0.25), line);
+        if (!b || !b.bar) return list;
+        const t = this.tones(b.bar);
+        // A few cents off on purpose (a beating twin) stays that way; a pitch that is nowhere near a note is made one.
+        // A run or a chord outlines the chord, however quick its notes; only a blip may pass through the key.
+        notes.push({ v, n, frac: Math.abs(m - n) <= 0.08 ? m - n : 0, at, set: blip && d < this.PASSING ? t.scale : t.chord });
+      }
+      if (!notes.length) return out;
+      notes.sort((a, b) => a.at - b.at || a.n - b.n);
+      // The move for the whole sound: its first note onto a chord tone, the rest disturbed as little as can be.
+      let best = 0, bestCost = Infinity;
+      for (let T = -6; T <= 6; T++) {
+        if (!notes[0].set[(((notes[0].n + T) % 12) + 12) % 12]) continue;
+        let cost = Math.abs(T) * 0.001;
+        for (const x of notes) cost += Math.abs(this.snap(x.n + T, x.set) - x.n);
+        if (cost < bestCost) { bestCost = cost; best = T; }
+      }
+      let prev = null;
+      for (const x of notes) {
+        x.to = prev ? this.snap(x.n + best, x.set, prev.to, Math.sign(x.n - prev.n)) : this.snap(x.n + best, x.set);
+        const f = hz(x.to + x.frac), k = f / x.v.f;
+        x.v.f = f;
+        if (x.v.to > 0) x.v.to *= k;
+        prev = x;
+      }
+      return out;
+    },
+
+    /** How long a big sound waits for the next eighth of the music (0 unless it is within QUANTIZE). */
+    wait(now, line) {
+      const b = Music.barAt(now, line);
+      if (!b) return 0;
+      const next = b.at + Math.ceil((now - b.at) / b.e - 1e-9) * b.e, d = next - now;
+      return d >= 0 && d <= this.QUANTIZE ? d : 0;
+    },
+
+    /** What Sound.play plays: the voices (retuned while the music plays) and the delay they go on after. */
+    plan(name, list, now, line) {
+      line = line || Music.timeline();
+      if (!line || !list) return { list, delay: 0 };
+      const delay = this.CELEBRATE[name] ? this.wait(now, line) : 0;
+      return { list: this.fit(list, now + delay, line), delay };
     },
   };
 
@@ -880,5 +1026,6 @@
   L.Sound = Sound;
   L.Music = Music;
   L.SONG = SONG;
+  L.Harmony = Harmony;
   L.Announcer = Announcer;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

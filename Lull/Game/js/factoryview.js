@@ -1,19 +1,20 @@
 // Lull — the Factory floor, drawn like the board: the same well, grid, skin and palette. Four bays of presses along a
-// beam, each forming its piece in a small mold window; the belt below carries finished pieces right, up a tube and
-// into the bin, four minos wide, where every full row is one line. Laid out on a 42 × 25 cell grid.
+// beam, each forming its piece in a small mold window; the belt below carries finished pieces right, up a straight
+// lift and into the bin, four minos wide, where every full row is one line. Laid out on a 42 × 25 cell grid.
 (function (root) {
   'use strict';
   const L = (root.Lull = root.Lull || {});
   const { Render, Factory } = L;
-  const { rr, rgba, drawCell, ghostCell, drawBackdrop, FX, FONT } = Render;
+  const { LINE } = L;
+  const { rr, rgba, drawCell, ghostCell, FX, FONT } = Render;
 
   const COLS = 42, ROWS = 25, CAPTION = 16;
   const WIN = { y: 8.5, w: 7, h: 4 };      // each press's mold window, in cells
   const LANE = { top: 19.5, bottom: 23.5 }; // the belt
   const FLOOR = 24;
   const BIN_X = 37;                        // the bin's left wall; room to its right for the tick numbers
-  const TUBE_X = 35.9;                     // the tube rises just past the belt's end
-  const MONO = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
+  const LIFT = { x0: 35, x1: 36.75 };      // the lift's shaft: from the belt's end to just short of the bin
+  const MONO = '"Lull Line", ui-monospace, "SF Mono", Menlo, Consolas, monospace';
 
   const cssVar = (k, dflt) => { try { return getComputedStyle(document.documentElement).getPropertyValue(k).trim() || dflt; } catch (e) { return dflt; } };
   const ease = (k) => k * k;
@@ -34,7 +35,7 @@
       this.t = 0;
       this.slide = 0;              // the belt's slats, in cells
       this.drops = new WeakMap();  // belt item → when it left its press
-      this.flying = [];            // minos on their way up the tube: { c, t0 }
+      this.flying = [];            // minos on their way up the lift: { c, t0 }
       this.dips = [0, 0, 0, 0];    // each ram's dip, seconds left
       this.built = [-9, -9, -9, -9];
       this.later = [];             // timed effects: { at, fn }
@@ -77,7 +78,7 @@
       return null;
     }
 
-    /** Step events become motion: rams dip, pieces fall to the belt, minos ride up the tube. */
+    /** Step events become motion: rams dip, pieces fall to the belt, minos ride the lift. */
     events(evs, reduced) {
       for (const e of evs) {
         if (e.kind === 'mino') this.dips[e.k] = 0.18;
@@ -102,11 +103,11 @@
         for (let c = 0; c < 4; c++) cells.push({ x: this.X(BIN_X) + c * cs + (cs - s) / 2, y: this.Y(FLOOR) - (r + 1) * b.rowH, color: look.colors[parseInt(res.taken[r * 4 + c], 16)] || look.theme.accent });
         this.later.push({ at: this.t + r * gap, fn: () => this.fx.burst(look.effect, cells, s, reduced) });
       }
-      // One label, inside the bin just under its top (clear of the tube and the floor's edge); a quick second collect adds to it.
+      // One label, inside the bin just under its top (clear of the lift and the floor's edge); a quick second collect adds to it.
       const live = this.collectLabel && this.fx.texts.includes(this.collectLabel) ? this.collectLabel : null;
       const total = rows + (live ? live.rows : 0);
       if (live) this.fx.texts.splice(this.fx.texts.indexOf(live), 1);
-      this.fx.text('+' + total + ' ◆', this.X(BIN_X + 2), Math.max(this.Y(b.top), this.oy) + 34, gem || '#8fe3ff', 14);
+      this.fx.text('+' + total + ' ' + LINE, this.X(BIN_X + 2), Math.max(this.Y(b.top), this.oy) + 34, gem || '#8fe3ff', 14);
       this.collectLabel = this.fx.texts[this.fx.texts.length - 1];
       this.collectLabel.rows = total;
     }
@@ -128,19 +129,17 @@
       ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
       ctx.__dpr = this.dpr; // crisp cell sprites
       ctx.clearRect(0, 0, this.w, this.h);
-      // The well, as on the board, with the equipped backdrop faint behind everything.
+      // The well, as on the board, but plain: the equipped backdrop belongs to the play boards, not the floor.
       ctx.fillStyle = th.well; rr(ctx, 0.5, 0.5, this.w - 1, this.h - 1, 10); ctx.fill();
       ctx.save();
       ctx.beginPath(); rr(ctx, 0.5, 0.5, this.w - 1, this.h - 1, 10); ctx.clip();
-      ctx.globalAlpha = 0.5;
-      drawBackdrop(ctx, look.backdrop, { x: this.ox, y: this.oy, w: COLS * cs, h: ROWS * cs }, cs, COLS, ROWS, { well: 'rgba(0,0,0,0)', grid: th.grid }, this.t);
-      ctx.globalAlpha = 1;
 
       this.drawBeam(ctx, f, th);
       for (let k = 0; k < 4; k++) this.drawPress(ctx, f, look, k, warn, reduced, hover);
       this.drawBelt(ctx, f, look);
-      this.drawTube(ctx, f, look, reduced);
+      this.drawLift(ctx, f, look);
       this.drawBin(ctx, f, look, warn, waiting, hover);
+      this.drawFlying(ctx, f, look, reduced);
       // The floor everything stands on.
       ctx.fillStyle = th.line; ctx.fillRect(this.X(0), Math.round(this.Y(FLOOR)), COLS * cs, 1);
       this.fx.draw(ctx);
@@ -177,7 +176,7 @@
         ctx.font = '700 ' + Math.max(9, Math.round(cs * 1.2)) + 'px ' + MONO;
         ctx.fillText(String(n), wx + ww / 2, this.Y(5.6));
         ctx.font = '600 ' + Math.max(8, Math.round(cs * 0.8)) + 'px ' + MONO;
-        ctx.fillText(Factory.PRESS_COST[k].toLocaleString('en-US') + ' ◆', wx + ww / 2, this.Y(7.8));
+        ctx.fillText(Factory.PRESS_COST[k].toLocaleString('en-US') + ' ' + LINE, wx + ww / 2, this.Y(7.8));
         ctx.globalAlpha = 1;
         return;
       }
@@ -244,45 +243,41 @@
       }
     }
 
-    /** The tube from the end of the belt over into the bin; minos ride it one by one. */
-    tubePath(f) {
-      const top = Math.max(0.6, this.bin(f).top - 1.2);
-      return [[TUBE_X, LANE.bottom - 1], [TUBE_X, top], [BIN_X + 2, top], [BIN_X + 2, top + 1]];
+    /** The lift between the belt's end and the bin: a straight shaft, no bends. Each mino rises (or sinks) in it to the
+     *  row it will fill, then steps right into its slot, 0.6 s each, eased (drawFlying). */
+    drawLift(ctx, f, look) {
+      const th = look.theme, b = this.bin(f);
+      const x0 = this.X(LIFT.x0), x1 = this.X(LIFT.x1), top = this.Y(Math.min(b.top, LANE.top)), bot = this.Y(FLOOR);
+      ctx.fillStyle = th.well; ctx.fillRect(x0, top, x1 - x0, bot - top);
+      ctx.fillStyle = th.grid;
+      ctx.fillRect(Math.round(x0), top, 1, bot - top); ctx.fillRect(Math.round(x1) - 1, top, 1, bot - top);
     }
 
-    drawTube(ctx, f, look, reduced) {
-      const cs = this.cs, th = look.theme, pts = this.tubePath(f).map(([c, r]) => [this.X(c), this.Y(r)]);
-      ctx.save();
-      ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-      const path = () => { ctx.beginPath(); pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); };
-      // A translucent pipe: an outline, its bore, and a highlight down one side.
-      path(); ctx.strokeStyle = th.line; ctx.lineWidth = cs * 1.3 + 2; ctx.stroke();
-      path(); ctx.strokeStyle = th.well; ctx.lineWidth = cs * 1.3; ctx.stroke();
-      path(); ctx.strokeStyle = th.grid; ctx.stroke();
-      ctx.strokeStyle = 'rgba(255,255,255,0.1)'; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(pts[0][0] - cs * 0.35, pts[0][1]); ctx.lineTo(pts[1][0] - cs * 0.35, pts[1][1] + cs * 0.3); ctx.stroke();
-      ctx.restore();
-      // Minos in flight, 0.6 s each along the path.
+    /** Minos on the lift, drawn over the bin's wall as they step in. */
+    drawFlying(ctx, f, look, reduced) {
+      const cs = this.cs, th = look.theme, b = this.bin(f), bot = this.Y(FLOOR);
       if (reduced) { this.flying = []; return; }
-      const segs = [], total = pts.slice(1).reduce((a, p, i) => { const l = Math.hypot(p[0] - pts[i][0], p[1] - pts[i][1]); segs.push(l); return a + l; }, 0);
-      const s = Math.max(3, Math.round(cs * 0.8));
       this.flying = this.flying.filter((m) => this.t - m.t0 < 0.6);
-      for (const m of this.flying) {
+      const len = f.bin.length, n = this.flying.length, fly = Math.max(3, Math.round(cs * 0.8)), land = Math.min(cs, b.rowH);
+      const sx = this.X((LIFT.x0 + LIFT.x1) / 2), sy = this.Y(LANE.bottom - 0.5);
+      this.flying.forEach((m, j) => {
         const k = (this.t - m.t0) / 0.6;
-        if (k < 0) continue;
-        let d = k * total, i = 0;
-        while (i < segs.length - 1 && d > segs[i]) { d -= segs[i]; i++; }
-        const u = segs[i] ? Math.min(1, d / segs[i]) : 0;
-        const x = pts[i][0] + (pts[i + 1][0] - pts[i][0]) * u, y = pts[i][1] + (pts[i + 1][1] - pts[i][1]) * u;
-        drawCell(ctx, look.skin, look.colors[m.c] || th.accent, Math.round(x - s / 2), Math.round(y - s / 2), s);
-      }
+        if (k < 0) return;
+        const i = Math.max(0, len - n + j), r = Math.floor(i / 4), c = i % 4;
+        const tx = this.X(BIN_X + c + 0.5), ty = bot - (r + 0.5) * b.rowH;
+        // Up the shaft for the first part of the trip (by distance), then across; eased at both ends.
+        const up = Math.abs(ty - sy), across = tx - sx, d = (k < 0.5 ? 2 * k * k : 1 - 2 * (1 - k) * (1 - k)) * (up + across);
+        const x = d <= up ? sx : sx + (d - up), y = d <= up ? sy + (ty - sy) * (up ? d / up : 1) : ty;
+        const s = d <= up ? fly : fly + (land - fly) * ((d - up) / (across || 1));
+        drawCell(ctx, look.skin, look.colors[m.c] || th.accent, Math.round(x - s / 2), Math.round(y - s / 2), Math.max(2, Math.round(s)));
+      });
     }
 
     drawBin(ctx, f, look, warn, waiting, hover) {
       const cs = this.cs, th = look.theme, b = this.bin(f);
       const x = this.X(BIN_X), w = 4 * cs, bottom = this.Y(FLOOR), top = this.Y(b.top);
       ctx.fillStyle = th.well; ctx.fillRect(x, top, w, bottom - top);
-      // Minos still in the tube are not in the bin yet.
+      // Minos still on the lift are not in the bin yet.
       const shown = Math.max(0, f.bin.length - this.flying.filter((m) => m.t0 + 0.6 > this.t).length);
       const cell = b.rowH >= 8, s = Math.min(cs, b.rowH);
       for (let i = 0; i < shown; i++) {

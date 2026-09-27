@@ -3,15 +3,16 @@
   'use strict';
   const L = (root.Lull = root.Lull || {});
 
-  // A cell is one byte: bits 0–4 colour slot (0 = empty), bit 5 gem, bit 6 hidden (vanishing modifier).
-  const CELL = { COLOR: 31, GEM: 32, HIDDEN: 64 };
+  // A cell: bits 0–4 colour slot (0 = empty), bit 5 gem, bit 6 hidden (vanishing modifier), bits 8–10 what the block
+  // is made of (Free Play's sandbox items, js/sandbox.js): ice, oil, steel, TNT or water. It moves with its block.
+  const CELL = { COLOR: 31, GEM: 32, HIDDEN: 64, MAT: 0x700, ICE: 0x100, OIL: 0x200, STEEL: 0x300, TNT: 0x400, WATER: 0x500 };
 
   class Board {
     constructor(w, h, opts) {
       this.w = w;
       this.h = h;
       this.wrap = !!(opts && opts.wrap);
-      this.cells = new Uint8Array(w * h);
+      this.cells = new Uint16Array(w * h);
     }
 
     wx(x) { return this.wrap ? ((x % this.w) + this.w) % this.w : x; }

@@ -8,6 +8,12 @@
   const { Board, CELL, Pieces, RNG, hash32, codeFromInt, intFromCode, spawnPos } = L;
 
   const GEN_VERSION = 4;
+  const GEM_GLANCE = 300, GEM_SEARCH = 2000; // positions the needs-every-piece search tries on a layout: a first look, then a long one
+  // Gem puzzles must need every piece (needsEveryPiece). Once one is turned down, generate may go on to GEM_ATTEMPTS
+  // attempts; after GEM_BOARDS gem boards or GEM_BUDGET search positions in all, it settles for a lines puzzle.
+  const GEM_ATTEMPTS = 160, GEM_BOARDS = 30, GEM_BUDGET = 6000;
+  const GEM_TRIES = 3; // gem layouts tried per board
+  const GEM_SPARE = { E: 99, M: 4, H: 3 }; // most cells a gem layout may leave a shortcut to spare (see gemLayouts)
   const DIFFS = {
     E: { id: 'E', name: 'Easy', reward: 4, color: '#7bd88f' },
     M: { id: 'M', name: 'Medium', reward: 10, color: '#f6c177' },
@@ -112,6 +118,7 @@
     const qr = [startRot], qx = [sx], qy = [sy];
     const canRotate = !opts.noRotate && type.kicks !== 'none';
     const maxKick = type.kicks === 'i' || type.big ? 2 : 1;
+    const kickTable = [];
     const path = (k) => {
       const out = [];
       while (prev[k] >= 0) { out.push(MOVES[how[k]]); k = prev[k]; }
@@ -143,7 +150,7 @@
           // needs the other direction. That button turns clockwise, or counter-clockwise under Inverted Controls.
           if (!opts.both && m !== (opts.turn < 0 ? 4 : 3)) continue;
           nr = (r + (m === 3 ? 1 : m === 4 ? 3 : 2)) % 4;
-          const kicks = Pieces.kicksFor(type, r, nr);
+          const kicks = kickTable[r * 4 + nr] || (kickTable[r * 4 + nr] = Pieces.kicksFor(type, r, nr));
           let ok = false;
           for (const [kx, ky] of kicks) {
             if (board.fits(type.rots[nr], x + kx, y + ky)) {
@@ -190,7 +197,10 @@
 
   // ---- hold puzzles ----------------------------------------------------------------------------------------------------
 
-  /** Every spot a piece can come to rest from its spawn (same moves and kicks as reach), one per distinct shape. */
+  /**
+   * Every spot a piece can come to rest from its spawn (same moves and kicks as reach), one per distinct shape. With
+   * opts.engine, every move the engine allows instead: all three turns, each taking the first kick that fits.
+   */
   function restingStates(board, type, startRot, opts, accept) {
     opts = opts || {};
     const W = board.w, wrap = board.wrap;
@@ -198,43 +208,58 @@
     const start = spawnPos(W, board.h, type, startRot);
     const sx = norm(start.x), sy = start.y;
     if (!board.fits(type.rots[startRot], sx, sy)) return [];
-    const seen = new Set([startRot + ',' + sx + ',' + sy]);
-    const q = [[startRot, sx, sy]];
+    // Visited states in a flat array (as in reach), with a Set for any state outside its bounds.
+    const XO = type.n + 2, YO = type.n + 2, W2 = wrap ? W : W + 2 * XO, H2 = board.h + 2 * YO;
+    const flat = new Uint8Array(4 * W2 * H2), far = new Set();
+    const visit = (r, x, y) => {
+      const xi = wrap ? x : x + XO, yi = y + YO;
+      if (xi < 0 || xi >= W2 || yi < 0 || yi >= H2) { const k = r + ',' + x + ',' + y; if (far.has(k)) return false; far.add(k); return true; }
+      const k = (r * H2 + yi) * W2 + xi;
+      if (flat[k]) return false;
+      flat[k] = 1; return true;
+    };
+    // Whether a spot fits, worked out once each (1 = fits, 2 = does not).
+    const fitCache = new Uint8Array(4 * W2 * H2);
+    const fits = (r, x, y) => {
+      const xi = wrap ? ((x % W) + W) % W : x + XO, yi = y + YO;
+      if (xi < 0 || xi >= W2 || yi < 0 || yi >= H2) return board.fits(type.rots[r], x, y);
+      const k = (r * H2 + yi) * W2 + xi;
+      if (!fitCache[k]) fitCache[k] = board.fits(type.rots[r], x, y) ? 1 : 2;
+      return fitCache[k] === 1;
+    };
+    visit(startRot, sx, sy);
+    const qr = [startRot], qx = [sx], qy = [sy];
     const out = new Map();
     const canRotate = !opts.noRotate && type.kicks !== 'none';
     const maxKick = type.kicks === 'i' || type.big ? 2 : 1;
+    const kicks = [];
+    for (let r = 0; r < 4; r++) kicks.push([Pieces.kicksFor(type, r, (r + 1) % 4), Pieces.kicksFor(type, r, (r + 3) % 4), Pieces.kicksFor(type, r, (r + 2) % 4)]);
     const rest = (r, x, y) => {
       let yy = y;
-      while (board.fits(type.rots[r], x, yy - 1)) yy--;
-      if (!opts.heavy && yy !== y) return;
+      while (fits(r, x, yy - 1)) yy--;
       if (accept && !accept(r, x, yy)) return;
-      const cells = type.rots[r].map(([cx, cy]) => [board.wx(x + cx), yy + cy]).sort((a, b) => a[1] - b[1] || a[0] - b[0]);
-      const k = cells.join(';');
+      // One per distinct set of cells: the same shape with the same lowest-left corner.
+      const b = type.rotBounds[r];
+      const k = type.keys[r] + '@' + board.wx(x + b.minX) + ',' + (yy + b.minY);
       if (!out.has(k)) out.set(k, [r, x, yy]);
     };
-    for (let head = 0; head < q.length && head < 6000; head++) {
-      const [r, x, y] = q[head];
-      rest(r, x, y);
-      for (let m = 0; m < 6; m++) {
-        let nr = r, nx = x, ny = y;
-        if (m === 0) nx = x - 1;
-        else if (m === 1) nx = x + 1;
-        else if (m === 2) { if (opts.heavy) continue; ny = y - 1; }
-        else {
-          if (!canRotate) break;
-          if (!opts.both && m !== (opts.turn < 0 ? 4 : 3)) continue;
-          nr = (r + (m === 3 ? 1 : m === 4 ? 3 : 2)) % 4;
-          let ok = false;
-          for (const [kx, ky] of Pieces.kicksFor(type, r, nr)) {
-            if (board.fits(type.rots[nr], x + kx, y + ky)) { if (ky !== 0 || Math.abs(kx) > maxKick) break; nx = x + kx; ny = y + ky; ok = true; break; }
-          }
-          if (!ok) continue;
+    const push = (r, x, y) => { x = norm(x); if (visit(r, x, y)) { qr.push(r); qx.push(x); qy.push(y); } };
+    for (let head = 0; head < qr.length && head < 6000; head++) {
+      const r = qr[head], x = qx[head], y = qy[head];
+      const down = fits(r, x, y - 1);
+      if (opts.heavy || !down) rest(r, x, y);
+      if (fits(r, x - 1, y)) push(r, x - 1, y);
+      if (fits(r, x + 1, y)) push(r, x + 1, y);
+      if (!opts.heavy && down) push(r, x, y - 1);
+      if (!canRotate) continue;
+      for (let m = 3; m < 6; m++) {
+        if (!opts.both && !opts.engine && m !== (opts.turn < 0 ? 4 : 3)) continue;
+        const nr = (r + (m === 3 ? 1 : m === 4 ? 3 : 2)) % 4;
+        const ks = kicks[r][m - 3];
+        for (let j = 0; j < ks.length; j++) {
+          const kx = ks[j][0], ky = ks[j][1];
+          if (fits(nr, x + kx, y + ky)) { if (opts.engine || (ky === 0 && Math.abs(kx) <= maxKick)) push(nr, x + kx, y + ky); break; }
         }
-        if (m < 3 && !board.fits(type.rots[nr], nx, ny)) continue;
-        nx = norm(nx);
-        const k = nr + ',' + nx + ',' + ny;
-        if (seen.has(k)) continue;
-        seen.add(k); q.push([nr, nx, ny]);
       }
     }
     return Array.from(out.values());
@@ -283,8 +308,10 @@
       if (exact) {
         const holes = holeSpots(type, band);
         if (!holes.length) return false;
-        const want = new Set(holes.map(([r, x, y]) => type.rots[r].map(([cx, cy]) => board.wx(x + cx) + ',' + (y + cy)).sort().join(';')));
-        spots = restingStates(board, type, rot, opts, (r, x, y) => want.has(type.rots[r].map(([cx, cy]) => board.wx(x + cx) + ',' + (y + cy)).sort().join(';')));
+        // A placement's cells, as the shape and its lowest-left corner.
+        const at = (r, x, y) => type.keys[r] + '@' + board.wx(x + type.rotBounds[r].minX) + ',' + (y + type.rotBounds[r].minY);
+        const want = new Set(holes.map(([r, x, y]) => at(r, x, y)));
+        spots = restingStates(board, type, rot, opts, (r, x, y) => want.has(at(r, x, y)));
       } else spots = restingStates(board, type, rot, opts);
       for (const [r, x, y] of spots) {
         if (++nodes > limit) { gaveUp = true; return false; }
@@ -304,6 +331,87 @@
     const band = [];
     for (let y = puzzle.base; y < puzzle.base + puzzle.goal.lines; y++) band.push(y);
     const found = dfs(0, band, 0);
+    return found ? true : gaveUp ? null : false;
+  }
+
+  /**
+   * Can a gem puzzle be won with fewer pieces than it has? Play checks the goal after every piece, so this searches
+   * every spot each piece can come to rest, for up to pieces − 1 placements, and stops at the first one that leaves no
+   * gem. With the Hold wildcard the player may set the held piece instead of the next one (one slot, as in the
+   * engine; once the queue runs out the held piece comes into play), so every order a hold slot allows is searched —
+   * "fewer pieces" there means fewer placements, whichever piece is left over. Pruned by counting: every empty cell
+   * of a row holding a gem must be filled before that gem can go, and the pieces still to come have only so many
+   * cells. Returns true, false, or null when it gave up.
+   */
+  function winsEarly(puzzle, queue, limit, used) {
+    // Every move a player has, not only the turns the solution is built from: a shortcut may use any of them.
+    const opts = Object.assign(optsOf(puzzle.mods), { engine: true });
+    const board = Board.fromArray(puzzle.w, puzzle.h, puzzle.cells, { wrap: puzzle.wrap });
+    const hold = puzzle.mods.includes('hold');
+    const n = queue.length, W = board.w;
+    const types = queue.map((e) => Pieces.get(e.id));
+    const seen = new Set();
+    let nodes = 0, gaveUp = false;
+    const need = () => {
+      let sum = 0;
+      for (let y = 0; y < board.h; y++) {
+        let gem = false, empty = 0;
+        for (let x = 0; x < W; x++) { const v = board.cells[y * W + x]; if (!v) empty++; else if (v & CELL.GEM) gem = true; }
+        if (gem) sum += empty;
+      }
+      return sum;
+    };
+    // The most cells `m` more placements can bring, from the queue's pieces from i on plus the held one.
+    const capacity = (i, held, m) => {
+      const sizes = types.slice(i).map((t) => t.size);
+      if (held >= 0) sizes.push(types[held].size);
+      sizes.sort((a, b) => b - a);
+      let s = 0;
+      for (let k = 0; k < m && k < sizes.length; k++) s += sizes[k];
+      return s;
+    };
+    const dfs = (i, held) => {
+      const placed = i - (held >= 0 ? 1 : 0);
+      const left = n - 1 - placed;
+      if (left <= 0) return false;
+      const needed = need();
+      if (needed > capacity(i, held, left)) return false;
+      const k = i + '|' + (held >= 0 ? queue[held].id + (queue[held].rot || 0) : '') + '|' + board.cells.join('');
+      if (seen.has(k)) return false;
+      seen.add(k);
+      // [piece to set, next queue index, piece held after]
+      const moves = [];
+      if (i < n) moves.push([i, i + 1, held]);
+      if (hold) {
+        if (held >= 0) moves.push([held, Math.min(i + 1, n), i < n ? i : -1]);
+        else if (i + 1 < n) moves.push([i + 1, i + 2, i]);
+      }
+      const gemRow = [];
+      for (let y = 0; y < board.h; y++) { gemRow[y] = false; for (let x = 0; x < W; x++) if (board.cells[y * W + x] & CELL.GEM) gemRow[y] = true; }
+      for (const [pi, ni, nh] of moves) {
+        const type = types[pi];
+        // Spots that fill the most gem-row holes first: a shortcut, if there is one, turns up sooner.
+        const useful = (r, y) => type.rots[r].reduce((a, [, cy]) => a + (gemRow[y + cy] ? 1 : 0), 0);
+        // Only spots that leave the rest of the pieces enough cells for the gem rows' holes (the same count as above,
+        // made before the spot is tried).
+        const capAfter = capacity(ni, nh, left - 1);
+        const spots = restingStates(board, type, queue[pi].rot || 0, opts, (r, x, y) => { const rest = needed - useful(r, y); return rest <= 0 || (left > 1 && rest <= capAfter); })
+          .sort((p, q) => useful(q[0], q[2]) - useful(p[0], p[2]));
+        for (const [r, x, y] of spots) {
+          if (++nodes > limit) { gaveUp = true; return false; }
+          const snap = board.snapshot();
+          board.place(type.rots[r], x, y, type.color);
+          board.clearRows(board.fullRows());
+          const ok = board.count((v) => v & CELL.GEM) === 0 || dfs(ni, nh);
+          board.restore(snap);
+          if (ok) return true;
+          if (gaveUp) return false;
+        }
+      }
+      return false;
+    };
+    const found = dfs(0, -1);
+    if (used) used.nodes -= Math.min(nodes, limit);
     return found ? true : gaveUp ? null : false;
   }
 
@@ -551,21 +659,46 @@
     const rng = new RNG(hash32('lull-puzzle:v' + GEN_VERSION + ':' + seed));
     const title = rng.pick(ADJ) + ' ' + rng.pick(NOUN);
     let spec = makeSpec(rng, diff, pickMods(rng, diff, spin));
-    for (let attempt = 0; attempt < 80; attempt++) {
+    let gemsOnly = false;
+    const gemBudget = { nodes: GEM_BUDGET, boards: GEM_BOARDS };
+    for (let attempt = 0; attempt < (gemsOnly ? GEM_ATTEMPTS : 80); attempt++) {
       // After a run of failures, loosen: keep the wildcards but try a fresh size and queue.
-      if (attempt && attempt % 8 === 0) spec = makeSpec(rng, diff, attempt >= 48 ? pickMods(rng, diff, spin) : spec.mods);
+      // (A gem puzzle keeps its wildcards.)
+      if (attempt && attempt % 8 === 0) spec = makeSpec(rng, diff, attempt >= 48 && !gemsOnly ? pickMods(rng, diff, spin) : spec.mods);
       else if (attempt) spec = Object.assign(makeSpec(rng, diff, spec.mods), {});
+      // Once a gem puzzle was turned down for a shortcut, the next boards stay gem puzzles.
+      if (gemsOnly && spec.goal !== 'gems') Object.assign(spec, { goal: 'gems', base: spec.base || 1 });
       const built = build(spec, rng);
       if (!built) continue;
       const puzzle = finish(built, spec, seed, diff, title, rng);
+      // (Past the first gem puzzle turned down, a board with no promising gem layout is dropped straight away.)
+      if (gemsOnly && puzzle.goal.type === 'gems' && gemBudget.boards > 1 && !(built.layouts = layoutsFor(puzzle, built)).layouts.length) {
+        gemBudget.boards--;
+        continue;
+      }
       const targets = verify(puzzle);
       if (!targets) continue;
       // A both-ways puzzle has to need it: no way through with the single turn button alone (late tries let that go).
-      if (spin && attempt < 64 && verify(puzzle, true)) continue;
+      if (spin && attempt < (gemsOnly ? GEM_ATTEMPTS - 16 : 64) && verify(puzzle, true)) continue;
       if (spec.mods.includes('hold')) {
         const q = requireHold(puzzle, rng);
         if (!q) continue;
         puzzle.pieces = q;
+      }
+      // A gem puzzle has to need every piece; once one is turned down for a shortcut, the next boards stay gem puzzles.
+      if (puzzle.goal.type === 'gems' && !needsEveryPiece(puzzle, built, rng, gemBudget)) {
+        gemsOnly = true;
+        if (--gemBudget.boards > 0 && gemBudget.nodes > 0) continue;
+        // Out of time for gems: the board becomes a lines puzzle, which needs every piece by itself (its lines hold
+        // exactly the pieces' cells).
+        puzzle.cells = puzzle.cells.map((v) => v & ~CELL.GEM);
+        puzzle.goal = { type: 'lines', lines: puzzle.goal.lines };
+        puzzle.pieces = puzzle.solution.map((st) => ({ id: st.id, rot: st.rot }));
+        if (spec.mods.includes('hold')) {
+          const q = requireHold(puzzle, rng);
+          if (!q) continue;
+          puzzle.pieces = q;
+        }
       }
       puzzle.targets = targets; puzzle.attempts = attempt + 1;
       return puzzle;
@@ -581,17 +714,106 @@
     return null;
   }
 
+  /** The band's garbage cells: where gems can go. */
+  function gemSpots(board, base, K) {
+    const out = [];
+    for (let y = base; y < base + K; y++) for (let x = 0; x < board.w; x++) if (board.get(x, y)) out.push([x, y]);
+    return out;
+  }
+
+  /**
+   * Ways to set the gems, best first: at least n of them, at most `most`, each in its own row. One sits in a row the
+   * solution's last piece completes, so the known solution only takes every gem with its last piece. A gem's row cannot
+   * go until each of its holes is filled, so a shortcut (one piece fewer) has only the cells the gem rows leave over
+   * to spare; layouts that leave more than `spare` are dropped — there a shortcut is nearly always possible, and proving
+   * otherwise is slow. The fewest gems come first, then the least to spare.
+   */
+  function gemLayouts(board, spots, n, most, spare, steps) {
+    const last = steps[steps.length - 1];
+    const lastRows = Pieces.get(last.id).rots[last.r].map(([, cy]) => last.y + cy);
+    const sizes = steps.map((st) => Pieces.get(st.id).size);
+    const cap = sizes.reduce((a, b) => a + b, 0) - Math.min(...sizes); // the most cells one piece fewer can bring
+    const rows = [];
+    for (const [, y] of spots) if (!rows.includes(y)) rows.push(y);
+    const holes = {};
+    for (const y of rows) { holes[y] = 0; for (let x = 0; x < board.w; x++) if (!board.get(x, y)) holes[y]++; }
+    const found = [];
+    const pick = (from, k, acc) => {
+      if (!k) { found.push(acc); return; }
+      for (let i = 0; i < from.length; i++) pick(from.slice(i + 1), k - 1, acc.concat([from[i]]));
+    };
+    for (let g = Math.min(n, rows.length); g <= Math.min(most, rows.length); g++) {
+      for (const f of rows.filter((y) => lastRows.includes(y))) pick(rows.filter((y) => y !== f), g - 1, [f]);
+    }
+    return found
+      .map((set, i) => ({ set, i, left: cap - set.reduce((a, y) => a + holes[y], 0) }))
+      .filter((o) => o.left <= spare)
+      .sort((a, b) => a.set.length - b.set.length || a.left - b.left || a.i - b.i)
+      .map((o) => o.set.map((y) => spots.find(([, sy]) => sy === y)));
+  }
+
+  /** The gem layouts worth a search on this board (see gemLayouts), and the board without gems. */
+  function layoutsFor(puzzle, built) {
+    const clean = Board.fromArray(puzzle.w, puzzle.h, puzzle.cells.map((v) => v & ~CELL.GEM), { wrap: puzzle.wrap });
+    const { spots, n } = built.gems;
+    // Big Minos puzzles have only a few pieces: the search is quick whatever they spare.
+    const spare = puzzle.mods.includes('big') ? Infinity : GEM_SPARE[puzzle.diff];
+    return { clean, layouts: gemLayouts(clean, spots, n, puzzle.diff === 'E' ? 2 : 3, spare, built.steps) };
+  }
+
+  /**
+   * Gives a gem puzzle gems that need every piece: no way to the last gem with fewer (with Hold, in any order the hold
+   * slot allows). The best few layouts are tried; a search that gives up counts as a way through — only a proof keeps
+   * a layout. Returns false when none is proven.
+   */
+  function needsEveryPiece(puzzle, built, rng, budget) {
+    const { clean, layouts } = built.layouts || layoutsFor(puzzle, built);
+    const order = puzzle.solution.map((s) => ({ id: s.id, rot: s.rot }));
+    const use = (c) => { puzzle.cells = c.cells; puzzle.goal.gems = c.gems; puzzle.pieces = c.pieces; };
+    // A quick look at each layout first (most are settled in a few hundred positions either way), then a longer one
+    // at the first that was left open.
+    const open = [];
+    for (const layout of layouts.slice(0, GEM_TRIES)) {
+      const board = clean.clone();
+      setGems(board, layout);
+      const c = { cells: board.toArray(), gems: layout.length, pieces: order };
+      use(c);
+      if (puzzle.mods.includes('hold')) {
+        const q = requireHold(puzzle, rng);
+        if (!q) continue;
+        c.pieces = puzzle.pieces = q;
+      }
+      if (budget.nodes <= 0) return false;
+      const r = winsEarly(puzzle, puzzle.pieces, Math.min(GEM_GLANCE, budget.nodes), budget);
+      if (r === false) return true;
+      if (r === null) open.push(c);
+    }
+    if (open.length && budget.nodes > 0) {
+      use(open[0]);
+      if (winsEarly(puzzle, puzzle.pieces, Math.min(GEM_SEARCH, budget.nodes), budget) === false) return true;
+    }
+    return false;
+  }
+
+  function setGems(board, layout) {
+    for (let x = 0; x < board.w; x++) for (let y = 0; y < board.h; y++) if (board.get(x, y) & CELL.GEM) board.set(x, y, board.get(x, y) & ~CELL.GEM);
+    for (const [x, y] of layout) board.set(x, y, board.get(x, y) | CELL.GEM);
+  }
+
   function finish(built, spec, seed, diff, title, rng) {
     const { board, steps, W, H, K, base, wrap } = built;
     const goal = { type: spec.goal, lines: K };
     if (spec.goal === 'gems') {
-      const garbage = [];
-      for (let y = base; y < base + K; y++) for (let x = 0; x < W; x++) if (board.get(x, y)) garbage.push([x, y]);
+      const garbage = gemSpots(board, base, K);
       if (garbage.length) {
         rng.shuffle(garbage);
         const n = Math.min(garbage.length, rng.range(1, diff === 'E' ? 2 : 3));
+        // The gems' first spots, as generate has always drawn them: every step up to the gem check sees the same board
+        // it always did, so any seed that does not end as a gem puzzle stays exactly as it was. The check
+        // (needsEveryPiece) then moves them.
         for (let i = 0; i < n; i++) board.set(garbage[i][0], garbage[i][1], board.get(garbage[i][0], garbage[i][1]) | CELL.GEM);
         goal.gems = n;
+        built.gems = { spots: garbage, n };
       } else goal.type = 'lines';
     }
     return {
@@ -609,5 +831,5 @@
     return 'Clear ' + p.goal.lines + ' line' + (p.goal.lines === 1 ? '' : 's');
   }
 
-  L.Puzzles = { DIFFS, MODS, GOALS, generate, verify, reach, goalStates, goalMet, parseSeed, numberedSeed, dailySeed, dailyDateOf, randomSeed, goalText, GEN_VERSION, SEEDS_PER_DIFF, restingStates, solvableInOrder, primaryTurn };
+  L.Puzzles = { DIFFS, MODS, GOALS, generate, verify, reach, goalStates, goalMet, parseSeed, numberedSeed, dailySeed, dailyDateOf, randomSeed, goalText, GEN_VERSION, SEEDS_PER_DIFF, restingStates, solvableInOrder, winsEarly, primaryTurn };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

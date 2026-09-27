@@ -2,18 +2,33 @@
 (function (root) {
   'use strict';
   const L = (root.Lull = root.Lull || {});
-  const { Game, Board, CELL, Pieces, Puzzles, Factory, Render, UI, ITEMS, ITEM_ORDER, ITEM_GROUPS, fmt, fmtInt, fmtClock, fmtDuration } = L;
+  const { Game, Board, CELL, Pieces, Puzzles, Factory, Render, UI, ITEMS, ITEM_ORDER, ITEM_GROUPS, Chain, Combos, Luck, fmt, fmtInt, fmtClock, fmtDuration } = L;
   const { h, toast } = UI;
+  const { LINE } = L;
 
   const ARROWS = { left: [-1, 0], right: [1, 0], up: [0, -1], down: [0, 1] };
   const LOGICAL = { moveL: [-1, 0], moveR: [1, 0], lower: [0, -1], rotate: [0, 1] };
   const INVERT = { moveL: 'moveR', moveR: 'moveL', cw: 'ccw', ccw: 'cw', rotate: 'rotateInv' };
 
+  // Mouse aim (BoardMode.follow): the pointer must be this far (in cells) past a column's edge before the piece
+  // follows it there — enough to soak up hand jitter on the line, small enough that a deliberate nudge moves at once.
+  // A slip into the next column within CLICK_GRACE_MS before a click is taken as the click's own wobble (pressing a
+  // button drags the pointer for a few tens of milliseconds), not as aim.
+  const AIM_STICK = 0.15, CLICK_GRACE_MS = 60;
+  // After a piece is set, drop and set inputs (Space, a click, the ↓ press that sets on the stack) are ignored this
+  // long, so a double press or double click never drops the next piece unseen: a key or button bounce or a quick
+  // double-tap lands within ~150 ms, while aiming a new piece takes longer than this. Moving and turning still work,
+  // and Classic's gravity and lock delay are never held up by it.
+  const SET_GRACE_MS = 180;
+
   // Items that only change the piece in play, so they can be put back.
-  const UNDOABLE = new Set(['reroll', 'mirror', 'pebble', 'noodle', 'giant', 'sand', 'magnet', 'phase', 'anvil', 'drill', 'bomb', 'laser', 'blackhole', 'golden', 'order', 'blueprint']);
+  // Items that change the board at once (the rest change the piece in play): one that leaves it empty is a fresh start.
+  const ACTS_NOW = new Set(['nuke', 'tornado', 'settle', 'purge', 'flip', 'rewind']);
+  const UNDOABLE = new Set(['reroll', 'mirror', 'pebble', 'noodle', 'giant', 'sand', 'magnet', 'phase', 'anvil', 'drill', 'bomb', 'laser', 'blackhole', 'golden', 'order', 'blueprint', 'water', 'steel', 'oil', 'frost', 'torch', 'bolt', 'tnt']);
 
   function playLockSound(snd, r) {
-    if (r.special === 'bomb' || r.special === 'blackhole' || r.special === 'anvil') snd.play('boom');
+    if (r.explosions || r.special === 'bomb' || r.special === 'blackhole' || r.special === 'anvil') { snd.play('boom'); if (r.explosions > 1) setTimeout(() => snd.play('boom'), 160); }
+    else if (r.special === 'bolt' || r.special === 'torch' || r.burned || r.shattered) { snd.play('drill'); if (r.lines) setTimeout(() => snd.play('clear', r.lines), 150); }
     else if (r.special === 'drill' || r.special === 'laser') { snd.play('drill'); if (r.lines) setTimeout(() => snd.play('quad'), 150); }
     else if (r.special === 'tornado') { snd.play('drill'); setTimeout(() => snd.play(r.lines ? 'quad' : 'lock'), 380); }
     else if (r.perfect) snd.play('perfect');
@@ -35,6 +50,7 @@
       this.game = null;
       this.inverted = false;
       this.wheelAt = 0;
+      this.setGrace = SET_GRACE_MS;
       this.bindMouse();
     }
 
@@ -46,13 +62,15 @@
       this.view.attach(game, view);
       this.view.setLook(this.app.look());
       this.view.resize();
-      game.on('lock', (r) => this.onLock(r));
+      game.on('lock', (r) => { if (r.special !== 'settle' && r.special !== 'tornado') this.setAt = performance.now(); this.onLock(r); });
       game.on('blocked', () => { if (this.quiet) return; this.app.sound.play('blocked'); this.view.bump(this.reduced); });
       game.on('spawn', () => {
         // A new piece meets the pointer where it is.
         if (this.pointer && this.settings.mouse && this.lastInput === 'mouse') setTimeout(() => this.follow(), 0);
       });
       game.on('topout', () => this.onTopout && this.onTopout());
+      // A hold swap refused: the held piece has no room anywhere above the stack (nothing changed).
+      game.on('noroom', () => toast('No room up there for the held piece', 'bad'));
       game.on('empty', () => this.onEmpty && this.onEmpty());
       game.on('purge', (gone) => this.view.onPurge(gone, this.reduced));
       game.on('nuke', (gone) => { this.view.onNuke(gone, this.reduced); this.app.sound.play('boom'); setTimeout(() => this.app.sound.play('boom'), 180); });
@@ -76,6 +94,7 @@
       let ok = false;
       const snd = this.app.sound;
       const prevPiece = g.piece, before = g.piece ? g.cellsOf() : null, beforeColor = g.piece ? this.view.colorOf(g.piece.type.color) : null;
+      if (this.settling(a)) return false;
       switch (a) {
         case 'moveL': ok = g.move(-1); if (ok) snd.play('move'); break;
         case 'moveR': ok = g.move(1); if (ok) snd.play('move'); break;
@@ -107,6 +126,15 @@
     }
 
     blocked() { return false; }
+
+    /** True while a drop or set would come too soon after the last piece was set (see SET_GRACE_MS). */
+    settling(a) {
+      if (!this.setAt || performance.now() - this.setAt >= this.setGrace) return false;
+      if (a === 'drop') return true;
+      // ↓ only counts when it would set the piece (lowering through the air is movement); Classic's soft drop never.
+      const g = this.game, p = g.piece;
+      return a === 'lower' && !this.softDrop && !!p && (g.mods.heavy || !g.fitsAt(p, p.rot, p.x, p.y - 1));
+    }
 
     /**
      * Mouse-only play (left and right buttons, wheel, pointer):
@@ -144,9 +172,9 @@
         if (e.button !== 0) return;
         mouse(() => {
           this.follow();
-          // Click grace: a pointer that slipped into the next column just before the click (under ~0.1 s) does not
-          // count; the piece drops where it had settled.
-          if (this.prevCol != null && performance.now() - this.colAt < 110) this.aimAt(this.prevCol);
+          // Click grace: a pointer that slipped into the next column just before the click (within CLICK_GRACE_MS)
+          // does not count; the piece drops where it had settled.
+          if (this.prevCol != null && performance.now() - this.colAt < CLICK_GRACE_MS) this.aimAt(this.prevCol);
           this.action('drop');
         });
       });
@@ -170,9 +198,9 @@
       const cell = this.view.cellClamped(px, py);
       if (!cell) return;
       let col = cell.x;
-      // Sticky aim: stay in the current column until the pointer is well past its edge (a third of a cell).
+      // Sticky aim: stay in the current column until the pointer is past its edge by AIM_STICK of a cell.
       if (cur != null && col !== cur && this.view.lay) {
-        const d = this.view.lay.s * 0.33;
+        const d = this.view.lay.s * AIM_STICK;
         for (const [dx, dy] of [[d, 0], [-d, 0], [0, d], [0, -d]]) { const c = this.view.cellClamped(px + dx, py + dy); if (c && c.x === cur) { col = cur; break; } }
       }
       // Inverted Controls turn the mouse around too: the piece goes to the mirror of the pointer's column.
@@ -213,7 +241,7 @@
 
   /**
    * Plain Tetris: pieces fall, faster every ten lines, with a half-second lock delay (renewed up to 15 times by
-   * moving or turning), soft and hard drops, hold, and a game over. Lines still bank as ◆. Music optional.
+   * moving or turning), soft and hard drops, hold, and a game over. Lines still bank. Music optional.
    */
   class ClassicMode extends BoardMode {
     constructor(app) {
@@ -229,7 +257,7 @@
       const game = new Game({ w: 10, h: 20, previewCount: 3, maxHistory: 0, freeHold: false });
       this.attachGame(game, {});
       this.view.showBank = true;
-      Object.assign(this, { tetrises: 0, level: 1, lines: 0, score: 0, ms: 0, acc: 0, lockT: 0, resets: 0, over: false, paused: false, started: !!start, counted: false });
+      Object.assign(this, { tetrises: 0, level: 1, lines: 0, score: 0, ms: 0, acc: 0, lockT: 0, resets: 0, over: false, paused: false, started: !!start, counted: false, mult: 1 });
       if (start) { this.hideCard(); L.Music.rewind(); }
       else this.showStart();
       this.renderStatus();
@@ -239,7 +267,7 @@
     showStart() {
       this.showCard([
         h('h2', null, 'Classic'),
-        h('p', null, 'The one you know: pieces fall, and fall faster every ten lines. Lines you clear still bank as ◆.'),
+        h('p', null, 'The one you know: pieces fall, and fall faster every ten lines. Lines you clear still bank as ' + LINE + '.'),
         this.cs.best ? h('p', null, 'Best ', h('span', { class: 'big' }, fmtInt(this.cs.best))) : null,
         h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: () => this.newGame(true) }, 'Start ', h('kbd', null, 'Space'))),
       ]);
@@ -310,7 +338,8 @@
 
     action(act, rep) {
       if (!rep && act === 'drop' && !this.started && !this.over) { this.newGame(true); return true; }
-      if (!rep && act === 'drop' && this.over) { this.newGame(true); return true; }
+      // A second Space right after the drop that ended the game does not start the next one unseen.
+      if (!rep && act === 'drop' && this.over) { if (!this.settling('drop')) this.newGame(true); return true; }
       if (!rep && act === 'pause') { this.togglePause(); return true; }
       return super.action(act, rep);
     }
@@ -343,7 +372,12 @@
       this.level = 1 + Math.floor(this.lines / 10);
       this.score += (r.score || 0) * before + (r.dropDist ? r.dropDist * 2 : 0);
       this.resets = 0; this.lockT = 0; this.acc = 0;
-      if (r.lines) { st.addLines(r.lines, 'play'); this.app.refreshWallet(true); S.lines += r.lines; }
+      // The lines Classic banks (never its score) are multiplied by the back-to-back streak: ×0.5 a link, ×10 at twenty.
+      this.mult = Chain.mult(Chain.streak(this.game), 'classic');
+      if (r.lines) {
+        r.mult = this.mult; r.banked = Math.round(r.lines * this.mult);
+        st.addLines(r.banked, 'play'); this.app.refreshWallet(true); S.lines += r.lines;
+      }
       S.pieces++;
       st.day().pieces++;
       playLockSound(this.app.sound, r);
@@ -384,6 +418,7 @@
         h('span', null, 'Score ', h('b', null, fmtInt(this.score))),
         h('span', null, 'Level ', h('b', null, String(this.level))),
         h('span', null, 'Lines ', h('b', null, String(this.lines))),
+        h('span', { class: this.mult > 1 ? 'chain opt' : 'slot-off', title: 'Back-to-back tetrises and T-spins multiply the lines you bank (not the score): ×0.5 each, up to ×10' }, 'Bank ', h('b', null, Chain.fmt(this.mult || 1))),
         h('span', null, 'Best ', h('b', null, fmtInt(Math.max(this.cs.best, this.score)))));
     }
 
@@ -433,25 +468,38 @@
       const st = this.app.store, F = st.state.stats.free, g = this.game;
       this.syncCounters();
       if (this.armed) { this.armed = null; this.renderItems(); }
-      // What the lines pay: a back-to-back quad or T-spin (or 5+ lines) is worth one extra; the chain multiplier —
-      // one step for every back-to-back difficult clear in the streak plus one for every piece in the combo, ×20 at
-      // most — multiplies it; a golden piece triples that. So a quad on a ×20 chain pays 100.
+      // What the lines pay: a quad or T-spin (or 5+ lines) is worth one extra; the multiplier — the back-to-back
+      // streak alone, an eighth a link, ×2.5 at most (twenty in a row) — multiplies it; gold triples that, and a
+      // combo's boost adds its share. The chain (streak plus combo) is counted beside it, for the record.
+      const s = g.s;
+      s.chain = Chain.count(g); s.bestChain = Math.max(s.bestChain || 0, s.chain);
+      s.mult = Chain.mult(Chain.streak(g)); s.bestMult = Math.max(s.bestMult || 1, s.mult);
+      F.bestChain = Math.max(F.bestChain || 0, s.chain); F.bestMult = Math.max(F.bestMult || 1, s.mult);
+      r.chain = s.chain;
+      g.notePace(r, Date.now());
       if (r.lines) {
         const difficult = r.lines >= 4 || r.tspin || r.mini;
-        const streak = difficult ? g.s.b2b + 1 : 0;
-        const mult = Math.max(1, Math.min(20, streak + Math.max(0, g.s.combo)));
-        let pay = (r.lines + (difficult ? 1 : 0)) * mult;
-        if (r.golden) {
-          pay *= 3;
+        let pay = (r.lines + (difficult ? 1 : 0)) * s.mult;
+        if (r.golden || s.gold > 0) {
+          // Gold on the board is spent one clear at a time (a piece gilded in an older version pays once).
+          if (!r.golden) s.gold--;
+          r.golden = true;
+          pay *= Luck.GOLD_X;
           const b = this.view.lay.board;
-          this.view.fx.text('GOLDEN ×3', b.x + b.w / 2, b.y + b.h * 0.3, '#ffd35a', 20);
+          this.view.fx.text('GOLDEN ×' + Luck.GOLD_X + (s.gold > 0 ? ' · ' + s.gold + ' left' : ''), b.x + b.w / 2, b.y + b.h * 0.3, '#ffd35a', 18);
           this.app.sound.play('golden');
         }
-        r.banked = pay; r.mult = mult;
-        g.s.banked = (g.s.banked || 0) + pay;
-        g.s.chain = mult; g.s.bestChain = Math.max(g.s.bestChain || 0, mult);
-        F.bestChain = Math.max(F.bestChain || 0, mult);
-      } else g.s.chain = g.s.b2b >= 0 ? g.s.b2b + 1 : 0; // the combo broke; a back-to-back streak lives on
+        if (s.boost && s.boost.left > 0) {
+          pay *= s.boost.x;
+          r.boost = s.boost.x;
+          if (--s.boost.left <= 0) s.boost = null;
+        }
+        pay = Math.round(pay);
+        r.banked = pay; r.mult = s.mult;
+        // Gold spent on a chain of 20 or more, built by hand (Midas): counted clear by clear, reset by any other.
+        s.goldRun = r.golden && r.hand && (s.hchain || 0) >= 20 ? (s.goldRun || 0) + 1 : 0;
+        s.banked = (s.banked || 0) + pay;
+      }
       if (r.special !== 'settle' && r.special !== 'tornado') {
         F.pieces++;
         st.day().pieces++;
@@ -464,9 +512,10 @@
         st.addLines(r.banked, 'play');
         this.app.refreshWallet(true);
       }
+      const found = Combos.detect(r, g);
       if (r.tspin) { F.tspins++; F.tspinLines += r.lines; }
       if (r.perfect) F.perfect++;
-      if (r.lines >= 4) st.day().quad = 1;
+      if (r.lines >= 4 && (!r.special || r.special === 'golden')) st.day().quad = 1; // set by a piece (a laser or a Tornado is not a quad)
       F.maxCombo = Math.max(F.maxCombo, g.s.maxCombo);
       F.maxB2B = Math.max(F.maxB2B, g.s.maxB2B);
       F.bestScore = Math.max(F.bestScore, g.s.score);
@@ -474,9 +523,31 @@
       const snd = this.app.sound;
       playLockSound(snd, r);
       this.view.onLock(r, this.reduced);
+      found.forEach((id, i) => this.combo(id, i));
       this.renderStatus();
       st.touch();
       this.app.achieve({ mode: 'play', r, g });
+    }
+
+    /**
+     * A combo (js/sandbox.js): its reward — lines, a boost for the next few clears, points — shrinking each time it
+     * comes round on one board; a small callout on the board; and, the first time ever, a note that it was found.
+     */
+    combo(id, i) {
+      const st = this.app.store, g = this.game, s = g.s, c = Combos.get(id);
+      s.combos = s.combos || {};
+      const k = s.combos[id] || 0, rw = Combos.reward(c, k);
+      s.combos[id] = k + 1;
+      if (rw.lines) { st.addLines(rw.lines, 'combos'); s.banked = (s.banked || 0) + rw.lines; this.app.refreshWallet(true); }
+      if (rw.boost) s.boost = { x: Math.max(rw.boost.x, s.boost ? s.boost.x : 1), left: Math.max(rw.boost.clears, s.boost ? s.boost.left : 0) };
+      s.score += rw.score;
+      const book = st.state.combos = st.state.combos || {}, first = !book[id];
+      book[id] = book[id] || { n: 0, lines: 0, first: Date.now() };
+      book[id].n++; book[id].lines += rw.lines;
+      const bits = [rw.lines ? '+' + rw.lines + ' ' + LINE : null, rw.boost ? Chain.fmt(rw.boost.x) + ' for ' + rw.boost.clears + ' clears' : null, !rw.lines && !rw.boost ? '+' + fmtInt(rw.score) + ' points' : null].filter(Boolean);
+      this.view.callout(c.name, bits.join(' · '), i, this.reduced);
+      setTimeout(() => this.app.sound.play('combo', 3 + Math.min(4, i * 2)), 260 + i * 180);
+      if (first) toast('New combo: ' + c.name, 'good', 2200);
     }
 
     onTopout(silent) {
@@ -516,8 +587,8 @@
         tile(life ? fmtDuration(life) : '—', 'Lifetime'), tile(s.playMs ? fmtDuration(s.playMs) : '—', 'Played'), tile(fmtInt(s.pieces), 'Pieces'),
         tile(fmtInt(s.lines), 'Lines'), tile(fmtInt(s.score), 'Score'), tile(ppm, 'Pieces / min'),
         tile(fmtInt((s.clears && s.clears[4]) || 0), 'Quads'), tile(fmtInt(s.tspins || 0), 'T-spins'), tile(fmtInt(s.perfect || 0), 'Perfect clears'),
-        tile(fmtInt(Math.max(0, s.maxCombo || 0)), 'Best combo'), tile(fmtInt(Math.max(0, s.maxB2B || 0)), 'Best back-to-back'), tile('×' + (s.bestChain || 1), 'Best chain'),
-        tile(fmtInt(s.banked || 0) + ' ◆', 'Lines banked'), tile(fmtInt(s.holds || 0), 'Holds'), tile(fmtInt(s.drops || 0), 'Hard drops'),
+        tile(fmtInt(Math.max(0, s.maxCombo || 0)), 'Best combo'), tile(fmtInt(Math.max(0, s.maxB2B || 0)), 'Best back-to-back'), tile(fmtInt(s.bestChain || 0) + ' · ' + fmtInt(s.bestHChain || 0), 'Best chain · by hand'),
+        tile(fmtInt(s.banked || 0) + ' ' + LINE, 'Lines banked'), tile(Chain.fmt(s.bestMult || 1), 'Best multiplier'), tile(fmtInt(Object.values(s.combos || {}).reduce((a, b) => a + b, 0)), 'Combos'),
         h('div', { class: 'bs wide' }, h('div', { class: 'v' }, nItems ? fmtInt(nItems) + ' used' : 'none'), h('div', { class: 'l' }, 'Power-ups' + (items.length ? ': ' + items.slice(0, 6).map(([id, n]) => ITEMS[id].name + (n > 1 ? ' ×' + n : '')).join(', ') : ''))));
     }
 
@@ -526,7 +597,7 @@
       const s = this.game.s, F = this.app.store.state.stats.free;
       if (s.pieces) {
         F.boardLog = F.boardLog || [];
-        F.boardLog.unshift({ at: Date.now(), reason: reason || 'manual', life: s.startedAt ? Date.now() - s.startedAt : 0, playMs: s.playMs || 0, pieces: s.pieces, lines: s.lines, score: s.score, quads: (s.clears && s.clears[4]) || 0, tspins: s.tspins || 0, perfect: s.perfect || 0, maxCombo: Math.max(0, s.maxCombo || 0), items: Object.values(s.items || {}).reduce((a, b) => a + b, 0) });
+        F.boardLog.unshift({ at: Date.now(), reason: reason || 'manual', life: s.startedAt ? Date.now() - s.startedAt : 0, playMs: s.playMs || 0, pieces: s.pieces, lines: s.lines, score: s.score, quads: (s.clears && s.clears[4]) || 0, tspins: s.tspins || 0, perfect: s.perfect || 0, maxCombo: Math.max(0, s.maxCombo || 0), chain: s.bestChain || 0, items: Object.values(s.items || {}).reduce((a, b) => a + b, 0) });
         if (F.boardLog.length > 30) F.boardLog.length = 30;
       }
       this.game.resetBoard();
@@ -545,8 +616,10 @@
       this.status.replaceChildren(...[
         h('span', null, 'Lines ', h('b', null, fmtInt(s.lines))),
         h('span', null, 'Score ', h('b', null, fmtInt(s.score))),
-        h('span', { class: s.chain > 1 ? 'chain' : 'slot-off', title: 'Chain: back-to-back quads and T-spins plus combos multiply the lines you bank (up to ×20)' }, 'Chain ', h('b', null, '×' + Math.max(1, s.chain || 0))),
-        h('span', { class: 'opt' }, 'Pieces ', h('b', null, fmtInt(s.pieces))),
+        h('span', { class: s.chain > 1 ? 'chain' : 'slot-off', title: 'Chain: back-to-back quads and T-spins plus the combo. The multiplier comes from the back-to-back streak alone: an eighth a link, up to ×2.5 at twenty. By hand (for achievements): chain ' + (s.hchain || 0) + (s.hand === false ? ', stack not built by hand since it was last empty' : ', stack built by hand') }, 'Chain ', h('b', null, String(s.chain || 0)), ' · ', h('b', null, Chain.fmt(s.mult || 1))),
+        s.gold > 0 ? h('span', { class: 'opt gold', title: 'Gold: your next clears pay ×' + Luck.GOLD_X }, 'Gold ', h('b', null, String(s.gold))) :
+          s.boost ? h('span', { class: 'opt boost', title: 'A combo\'s boost: your next clears pay more' }, 'Boost ', h('b', null, Chain.fmt(s.boost.x) + ' · ' + s.boost.left)) :
+            h('span', { class: 'opt' }, 'Pieces ', h('b', null, fmtInt(s.pieces))),
         h('button', { class: 'btn sm', title: 'Retire this board and start fresh', onclick: () => this.askRetire() }, '↺', h('span', { class: 'lbl' }, ' New board'))].filter(Boolean));
     }
 
@@ -565,7 +638,7 @@
           class: 'group-btn' + (open ? ' open' : '') + (on ? ' on' : ''), 'data-group': g.id,
           'data-tip-title': g.icon + '  ' + g.name, 'data-tip': g.desc, 'data-tip-foot': ids.length + ' items · you have ' + have + ' · key ' + (gi + 1),
           onclick: () => this.openTray(open ? null : g.id),
-        }, h('span', { class: 'gi' }, g.icon), h('span', { class: 'gl' }, g.name), h('span', { class: 'k' }, String(gi + 1)), have ? h('span', { class: 'n' }, String(have)) : null);
+        }, h('span', { class: 'gi' }, g.icon), h('span', { class: 'gl' }, g.short || g.name), h('span', { class: 'k' }, String(gi + 1)), have ? h('span', { class: 'n' }, String(have)) : null);
       }));
       this.renderTray();
     }
@@ -593,9 +666,9 @@
           return h('button', {
             class: 'item-btn' + (n || on ? '' : ' empty') + (on ? ' on' : ''), 'data-item': id,
             'data-tip-title': it.icon + '  ' + it.name, 'data-tip': it.desc,
-            'data-tip-foot': on ? 'In use — press again to put it back' : (n ? 'You have ' + n + ' · ' : 'None left · buy for ◆' + it.price + ' · ') + 'key ' + (i + 1),
+            'data-tip-foot': on ? 'In use — press again to put it back' : (n ? 'You have ' + n + ' · ' : 'None left · buy for ' + LINE + it.price + ' · ') + 'key ' + (i + 1),
             onclick: () => this.useItem(id),
-          }, h('span', { class: 'ii' }, it.icon), h('span', { class: 'il' }, it.name), h('span', { class: 'k' }, String(i + 1)), h('span', { class: 'n' }, n ? String(n) : '◆' + it.price));
+          }, h('span', { class: 'ii' }, it.icon), h('span', { class: 'il' }, it.name), h('span', { class: 'k' }, String(i + 1)), h('span', { class: 'n' }, n ? String(n) : LINE + it.price));
         })));
     }
 
@@ -637,10 +710,14 @@
       const a = this.armed, g = this.game, st = this.app.store;
       this.armed = null;
       if (!a || g.piece !== a.piece) return;
-      if (!g.replacePiece(a.prev)) return;
+      if (a.gold) g.s.gold = Math.max(0, (g.s.gold || 0) - a.gold);
+      else if (!g.replacePiece(a.prev)) { toast('No room up there to put the old piece back', 'bad'); return; }
       st.state.inventory[a.id] = (st.state.inventory[a.id] || 0) + 1;
       const used = st.state.stats.items.used;
       used[a.id] = Math.max(0, (used[a.id] || 0) - 1);
+      // Taken back before it did anything: the board never used it, and play by hand goes on where it was.
+      if (g.s.items && g.s.items[a.id]) g.s.items[a.id]--;
+      g.restoreHand(a.hand);
       st.touch();
       this.app.sound.play('hold');
       this.view.itemFx('undo', g.piece, this.reduced);
@@ -651,10 +728,14 @@
     apply(id) {
       const g = this.game, st = this.app.store;
       const done = () => {
-        arm();
+        const hand = g.handState();
+        arm(hand);
         this.tray = null;
         g.s.items = g.s.items || {};
         g.s.items[id] = (g.s.items[id] || 0) + 1;
+        g.s.clean = 0; g.s.cleanLines = 0; // Bare Hands starts again
+        // Anything that touches the pieces or the board ends play by hand (achievements); Luck never touches either.
+        if (ITEMS[id].group !== 'luck') g.noteItem(ACTS_NOW.has(id));
         st.useItem(id);
         this.app.sound.play('item');
         this.renderItems();
@@ -664,15 +745,15 @@
       };
       const cur = g.piece;
       const prev = cur ? Object.assign({}, cur.entry, { special: cur.special || null }) : null;
-      const arm = () => { if (UNDOABLE.has(id) && g.piece) this.armed = { id, piece: g.piece, prev }; this.view.itemFx(id, g.piece, this.reduced); };
+      const arm = (hand) => { if (UNDOABLE.has(id) && g.piece) this.armed = { id, piece: g.piece, prev, hand, gold: id === 'golden' ? Luck.GOLD_CLEARS : 0 }; this.view.itemFx(id, g.piece, this.reduced); };
       switch (id) {
         case 'reroll': {
           const opts = Pieces.TETROMINOES.filter((t) => t !== (cur && cur.type.id));
-          if (g.replacePiece({ id: opts[Math.floor(Math.random() * opts.length)] })) done();
+          if (g.replacePiece({ id: opts[Math.floor(Math.random() * opts.length)] })) done(); else toast('No room up there for a new piece', 'bad');
           break;
         }
-        case 'mirror': if (g.replacePiece({ id: Pieces.mirrorOf(cur.type).id, special: cur.special })) done(); break;
-        case 'pebble': if (g.replacePiece({ id: 'M1' })) done(); break;
+        case 'mirror': if (g.replacePiece({ id: Pieces.mirrorOf(cur.type).id, special: cur.special })) done(); else toast('No room up there for its mirror', 'bad'); break;
+        case 'pebble': if (g.replacePiece({ id: 'M1' })) done(); else toast('No room up there for a pebble', 'bad'); break;
         case 'noodle': if (g.replacePiece({ id: Pieces.customType([[0, 0], [1, 0], [2, 0], [3, 0], [4, 0], [5, 0]]).id })) done(); else toast('No room for a noodle up there', 'bad'); break;
         case 'giant': {
           const base = Pieces.TYPES[cur.type.id] && Pieces.TYPES[cur.type.id].family === 'tetromino' ? cur.type.id : null;
@@ -683,8 +764,14 @@
         case 'nuke': if (g.nuke()) done(); else toast('The board is already empty', 'bad'); break;
         case 'tornado': if (g.tornado()) done(); else toast('The board is already empty', 'bad'); break;
         case 'flip': if (g.flipWorld()) done(); else toast(g.board.isEmpty() ? 'The board is empty' : 'The piece would not fit — move it first', 'bad'); break;
-        case 'jackpot': g.s.items = g.s.items || {}; g.s.items.jackpot = (g.s.items.jackpot || 0) + 1; st.useItem(id); this.tray = null; this.jackpot(); this.renderItems(); break;
-        case 'sand': case 'phase': case 'drill': case 'bomb': case 'anvil': case 'magnet': case 'laser': case 'blackhole': case 'golden':
+        case 'jackpot': g.s.items = g.s.items || {}; g.s.items.jackpot = (g.s.items.jackpot || 0) + 1; g.s.clean = 0; g.s.cleanLines = 0; st.useItem(id); this.tray = null; this.jackpot(); this.renderItems(); break;
+        case 'golden':
+          // Gold stays on the board for the next five clears, whatever piece makes them.
+          g.s.gold = (g.s.gold || 0) + Luck.GOLD_CLEARS;
+          done();
+          break;
+        case 'sand': case 'phase': case 'drill': case 'bomb': case 'anvil': case 'magnet': case 'laser': case 'blackhole':
+        case 'water': case 'steel': case 'oil': case 'frost': case 'torch': case 'bolt': case 'tnt':
           if (g.setSpecial(id)) done(); else toast('No room for that here', 'bad');
           break;
         case 'rewind': {
@@ -703,7 +790,7 @@
           break;
         }
         case 'order':
-          UI.openOrderSlip(this.app, (pick) => { if (pick && this.game.replacePiece({ id: pick })) done(); });
+          UI.openOrderSlip(this.app, (pick) => { if (!pick) return; if (this.game.replacePiece({ id: pick })) done(); else toast('No room up there for that piece', 'bad'); });
           break;
         case 'settle': {
           const r = g.settle();
@@ -727,42 +814,50 @@
       }
     }
 
-    /** Jackpot: three reels spin and stop on three items, which are yours. */
+    /**
+     * Jackpot: three reels, a real gamble (the pay table and its odds are in js/sandbox.js, and on the machine). What it
+     * pays — lines, or Demolition items — is decided before the reels spin and handed over when they stop (or when the
+     * window is closed early).
+     */
     jackpot() {
-      const st = this.app.store, pool = ITEM_ORDER.filter((id) => id !== 'jackpot');
-      const wins = [0, 1, 2].map(() => pool[Math.floor(Math.random() * pool.length)]);
-      const reels = wins.map(() => h('div', { class: 'reel' }, '?'));
+      const st = this.app.store, reels = [0, 1, 2].map(() => Luck.reel(Math.random())), pay = Luck.jackpotPay(reels);
+      const demo = ITEM_ORDER.filter((id) => ITEMS[id].group === 'boom');
+      const won = Array.from({ length: pay.items }, () => demo[Math.floor(Math.random() * demo.length)]);
+      const icon = (id) => Luck.REELS.find((r) => r.id === id).icon;
+      const boxes = reels.map(() => h('div', { class: 'reel' }, '?'));
       const note = h('p', { class: 'jp-note' }, 'Spinning…');
-      let handle = null;
-      handle = UI.openModal({ title: 'Jackpot', width: 340, cls: 'modal-jackpot', body: h('div', null, h('div', { class: 'reels' }, reels), note), buttons: [{ label: 'Collect', kind: 'primary' }], onClose: () => { clearInterval(timer); finish(); } });
+      const table = h('div', { class: 'jp-pays' }, Luck.PAYS.map((p) => h('div', { class: 'jp-row' }, h('span', { class: 'jp-sym' }, p.label), h('span', null, p.lines ? fmtInt(p.lines) + ' ' + LINE : p.items + ' Demolition item' + (p.items > 1 ? 's' : '')))),
+        h('div', { class: 'jp-row jp-foot' }, h('span', null, 'Anything else pays nothing. Over many pulls it pays back about nine tenths.')));
+      UI.openModal({ title: 'Jackpot', width: 360, cls: 'modal-jackpot', body: h('div', null, h('div', { class: 'reels' }, boxes), note, table), buttons: [{ label: 'Collect', kind: 'primary' }], onClose: () => { clearInterval(timer); finish(); } });
+      const S = st.state.stats.items;
       let t = 0, stopped = 0, done = false;
       const finish = () => {
         if (done) return;
         done = true;
-        for (const id of wins) st.grantItem(id, 1);
+        boxes.forEach((b, i) => { b.textContent = icon(reels[i]); b.classList.add('stop'); });
+        if (pay.lines) { st.addLines(pay.lines, 'luck'); this.app.refreshWallet(true); }
+        for (const id of won) st.grantItem(id, 1);
+        S.jackpot = S.jackpot || { pulls: 0, lines: 0, items: 0, best: 0 };
+        S.jackpot.pulls++; S.jackpot.lines += pay.lines; S.jackpot.items += won.length; S.jackpot.best = Math.max(S.jackpot.best, pay.lines);
+        note.textContent = !pay.label ? 'Nothing this time.' : pay.label + ' — ' + (pay.lines ? fmtInt(pay.lines) + ' lines' : won.map((w) => ITEMS[w].name).join(', ')) + '!';
+        note.classList.toggle('won', !!pay.label);
+        this.app.sound.play(pay.label ? 'golden' : 'lock');
+        st.touch();
         this.renderItems();
       };
       const timer = setInterval(() => {
         t++;
-        reels.forEach((r, i) => {
-          if (i < stopped) return;
-          r.textContent = ITEMS[pool[(t * 7 + i * 5) % pool.length]].icon;
-        });
+        boxes.forEach((b, i) => { if (i >= stopped) b.textContent = Luck.REELS[(t * 3 + i * 2) % Luck.REELS.length].icon; });
         if (t % 6 === 0) this.app.sound.play('move');
         if (t === 14 + stopped * 8) {
-          const r = reels[stopped];
-          r.textContent = ITEMS[wins[stopped]].icon; r.classList.add('win'); r.title = ITEMS[wins[stopped]].name;
+          const b = boxes[stopped];
+          b.textContent = icon(reels[stopped]); b.classList.add('stop');
+          if (pay.label && reels[stopped] !== 'blank') b.classList.add('win');
           this.app.sound.play('combo', 3 + stopped * 2);
           stopped++;
-          if (stopped === 3) {
-            clearInterval(timer);
-            note.textContent = 'You won ' + wins.map((w) => ITEMS[w].name).join(', ') + '!';
-            this.app.sound.play('golden');
-            finish();
-          }
+          if (stopped === 3) { clearInterval(timer); finish(); }
         }
       }, 60);
-      void handle;
     }
 
     save() { this.app.store.state.free = this.game.toJSON(); }
@@ -1021,7 +1116,7 @@
         h('div', { class: 'board-sum' },
           tile(fmtClock(ms), 'time'),
           tile(cur.attempts === 1 ? 'First' : String(cur.attempts), cur.attempts === 1 ? 'try' : 'tries'),
-          reward ? tile(h('span', null, '+' + reward, ' ', h('span', { class: 'gem' }, '◆')), cur.hint ? 'lines · hints halve it' : this.meta.daily ? 'lines · Daily ×2' : 'lines', 'pay')
+          reward ? tile(h('span', null, '+' + reward, ' ', h('span', { class: 'gem' }, LINE)), cur.hint ? 'lines · hints halve it' : this.meta.daily ? 'lines · Daily ×2' : 'lines', 'pay')
             : tile('—', 'solved before')),
         h('div', { class: 'row' },
           h('button', { class: 'btn', onclick: () => this.retry() }, 'Replay'),
@@ -1169,7 +1264,7 @@
     buyHint() {
       const cost = DIFF_COST[this.puzzle.diff];
       if (this.ps.current && this.ps.current.hint) { this.updateHint(true); return; }
-      UI.confirm('Buy a hint?', 'Shows where the known solution puts each piece for the rest of this puzzle. Costs ' + cost + ' lines and halves the reward.', 'Show me (' + cost + ' ◆)', () => {
+      UI.confirm('Buy a hint?', 'Shows where the known solution puts each piece for the rest of this puzzle. Costs ' + cost + ' lines and halves the reward.', 'Show me (' + cost + ' ' + LINE + ')', () => {
         if (!this.app.store.spend(cost)) { toast('Not enough lines', 'bad'); return; }
         this.ps.current.hint = true;
         this.pstats[this.puzzle.diff].hints++;
@@ -1224,7 +1319,7 @@
     action(act, rep) {
       if (this.cardOpen && !rep) {
         if (act === 'retry') { this.retry(); return true; }
-        if (act === 'next' || (act === 'drop' && this.done)) { this.next(); return true; }
+        if (act === 'next' || (act === 'drop' && this.done && !this.settling('drop'))) { this.next(); return true; }
         if (act === 'undo') return this.undo();
         return false;
       }
@@ -1363,7 +1458,7 @@
           h('button', { class: 'btn', id: 'puz-retry', title: 'Start this puzzle again', onclick: () => this.retry() }, '↺ ', h('span', { class: 'lbl' }, 'Retry'), h('kbd', null, 'R'))),
         h('div', { class: 'grp' },
           h('button', { class: 'btn' + (hinted ? ' on' : ''), id: 'puz-hint', disabled: this.done, onclick: () => this.buyHint(), title: hinted ? 'Hints are on: the solution shows where each piece goes' : 'See where the known solution puts each piece (' + cost + ' lines; halves the reward)' },
-            icon('hint'), h('span', { class: 'lbl' }, hinted ? 'Hints on' : 'Hint'), hinted ? null : h('span', { class: 'gem' }, '◆' + cost), h('kbd', null, 'H')),
+            icon('hint'), h('span', { class: 'lbl' }, hinted ? 'Hints on' : 'Hint'), hinted ? null : h('span', { class: 'gem' }, LINE + cost), h('kbd', null, 'H')),
           h('button', { class: 'btn' + (this.done ? ' primary' : ''), id: 'puz-next', title: this.done ? 'The next puzzle' : 'Skip to the next puzzle (this one stays in History)', onclick: () => this.next() }, h('span', { class: 'lbl' }, this.done ? 'Next' : 'Skip'), ' ▸', h('kbd', null, 'N'))));
     }
   }
@@ -1455,7 +1550,7 @@
         const a = this.away;
         this.away = null;
         if (a.seconds > 90 && a.minos >= 4) {
-          toast('While you were away the factory made ' + fmtInt(a.minos) + ' minos · ' + fmtInt(Math.floor(f.bin.length / 4)) + ' ◆ in the bin' + (Factory.isFull(f) ? ' · the bin is full' : ''), 'good', 5000);
+          toast('While you were away the factory made ' + fmtInt(a.minos) + ' minos · ' + fmtInt(Math.floor(f.bin.length / 4)) + ' ' + LINE + ' in the bin' + (Factory.isFull(f) ? ' · the bin is full' : ''), 'good', 5000);
         }
       }
       return res;
@@ -1611,7 +1706,7 @@
         return n ? 'Bin · ' + n + (n === 1 ? ' line' : ' lines') + (loose ? ' + ' + loose + ' loose' : '') + full + ' · click to collect' : 'Bin · ' + loose + ' loose · four in a row make a line';
       }
       const n = Factory.MOLDS[hit.k], name = Factory.NAMES[n] + ' press';
-      if (hit.kind === 'bay') return name + ' · ' + fmtInt(Factory.PRESS_COST[hit.k]) + ' ◆' + (hit.k === f.presses ? ' · click to build' : ' · after the ' + Factory.NAMES[n - 1].toLowerCase() + ' press');
+      if (hit.kind === 'bay') return name + ' · ' + fmtInt(Factory.PRESS_COST[hit.k]) + ' ' + LINE + (hit.k === f.presses ? ' · click to build' : ' · after the ' + Factory.NAMES[n - 1].toLowerCase() + ' press');
       const m = f.molds[hit.k], formed = Math.floor(m.p * n + 1e-9);
       const mold = ' · mold: ' + (m.pin < 0 ? 'Any' : moldLabel(n, m.pin));
       if (m.held) return name + ' · ' + n + '/' + n + ' · holding: the belt is full here' + mold;
@@ -1643,9 +1738,9 @@
       this.pressBtn = null;
       if (np) {
         const n = np.to, s = sampleShape(n);
-        this.pressBtn = h('button', { class: 'btn sm', onclick: () => this.upgrade('press') }, 'Build · ' + fmtInt(np.cost) + ' ◆');
+        this.pressBtn = h('button', { class: 'btn sm', onclick: () => this.upgrade('press') }, 'Build · ' + fmtInt(np.cost) + ' ' + LINE);
         els.push(card('press', L.FactoryArt.shapeCanvas(look, Factory.shapes(n)[s], 34, look.colors[1 + (s % 7)], true), Factory.NAMES[n] + ' press',
-          h('div', { class: 'd' }, 'Bay ' + (f.presses + 1) + ' · ' + n + ' minos every 10 min · +' + Factory.quarters((3600 / Factory.CYCLE) * n / 4) + '\u00a0◆/h'), this.pressBtn));
+          h('div', { class: 'd' }, 'Bay ' + (f.presses + 1) + ' · ' + n + ' minos every 10 min · +' + Factory.quarters((3600 / Factory.CYCLE) * n / 4) + '\u00a0' + LINE + '/h'), this.pressBtn));
       } else {
         els.push(card('press', L.FactoryArt.shapeCanvas(look, Factory.shapes(7)[sampleShape(7)], 34, look.colors[3], true), 'Four presses', h('div', { class: 'd' }, 'the line is complete · ' + Factory.perHour(f) + ' minos an hour'), null));
       }
@@ -1653,7 +1748,7 @@
       const nb = Factory.nextUpgrade(f, 'bin');
       this.binBtn = null; this.binDesc = null;
       if (nb) {
-        this.binBtn = h('button', { class: 'btn sm', onclick: () => this.upgrade('bin') }, 'Build · ' + fmtInt(nb.cost) + ' ◆');
+        this.binBtn = h('button', { class: 'btn sm', onclick: () => this.upgrade('bin') }, 'Build · ' + fmtInt(nb.cost) + ' ' + LINE);
         this.binDesc = h('div', { class: 'd' });
         els.push(card('bin', this.binIcon(look), 'Taller bin', this.binDesc, this.binBtn));
       } else els.push(card('bin', this.binIcon(look), 'The tallest bin', h('div', { class: 'd' }, Factory.BIN_ROWS[f.binLevel] + ' lines'), null));
@@ -1668,7 +1763,7 @@
 
     update() {
       const f = this.f, st = Factory.status(f), cap = Factory.BIN_ROWS[f.binLevel], wallet = this.store.state.lines;
-      this.tRate.v.textContent = Factory.quarters(st.perHour / 4) + '\u00a0◆/h';
+      this.tRate.v.textContent = Factory.quarters(st.perHour / 4) + '\u00a0' + LINE + '/h';
       this.tRate.l.textContent = st.perHour + ' minos an hour';
       this.tBin.v.textContent = Factory.quarters(st.len / 4) + ' / ' + cap;
       this.tBin.l.textContent = 'lines in the bin';
@@ -1686,7 +1781,7 @@
         this.cKey = key;
         this.cBtn.disabled = !st.lines;
         const sub = st.lines ? (st.loose ? ' · ' + st.loose + ' loose mino' + (st.loose > 1 ? 's stay' : ' stays') : '') : isFinite(this.etaV) ? ' · first line in ' + soon(this.etaV) : '';
-        this.cBtn.replaceChildren(st.lines ? 'Collect ' + fmtInt(st.lines) + ' ◆' : 'Nothing to collect yet', h('span', { class: 'sub' }, sub));
+        this.cBtn.replaceChildren(st.lines ? 'Collect ' + fmtInt(st.lines) + ' ' + LINE : 'Nothing to collect yet', h('span', { class: 'sub' }, sub));
       }
       const np = Factory.nextUpgrade(f, 'press'), nb = Factory.nextUpgrade(f, 'bin');
       if (this.pressBtn && np) { this.pressBtn.disabled = wallet < np.cost; this.pressBtn.classList.toggle('primary', wallet >= np.cost); }
@@ -1700,6 +1795,6 @@
     }
   }
 
-  L.Modes = { ClassicMode, BoardMode, PlayMode, PuzzleMode, FactoryMode };
+  L.Modes = { ClassicMode, BoardMode, PlayMode, PuzzleMode, FactoryMode, AIM_STICK, CLICK_GRACE_MS, SET_GRACE_MS };
   void CELL;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

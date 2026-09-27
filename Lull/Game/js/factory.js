@@ -1,6 +1,6 @@
 // Lull — the Factory: one slow line. Up to four presses each form a polyomino every ten minutes (a tetromino, a
 // pentomino, a hexomino, a heptomino); a belt carries every piece to a bin four minos wide, so each full row of the
-// bin is one ◆ line — a quarter line per mino, nothing more. The bin holds a fixed number of rows; when the next piece
+// bin is one line — a quarter line per mino, nothing more. The bin holds a fixed number of rows; when the next piece
 // will not fit, the line just waits until you collect. One step() runs it, on screen and for time away alike.
 (function (root) {
   'use strict';
@@ -264,10 +264,10 @@
 
   const seenCount = (f, n) => (f.stats.seen[n] || '').split('1').length - 1;
 
-  /** Whole lines and quarters: 13.5 → "13½", 0.75 → "¾", 1200 → "1,200". */
+  /** Lines to the nearest quarter, as a decimal with no trailing zeros: 13.5 → "13.5", 0.75 → "0.75", 1200 → "1,200". */
   function quarters(x) {
-    const q = Math.round(x * 4), w = Math.floor(q / 4), r = ['', '¼', '½', '¾'][q % 4];
-    return (w || !r ? String(w).replace(/\B(?=(\d{3})+(?!\d))/g, ',') : '') + r;
+    const q = Math.round(x * 4), w = Math.floor(q / 4), r = ['', '.25', '.5', '.75'][q % 4];
+    return String(w).replace(/\B(?=(\d{3})+(?!\d))/g, ',') + r;
   }
 
   // ---- saves ------------------------------------------------------------------------------------------------------

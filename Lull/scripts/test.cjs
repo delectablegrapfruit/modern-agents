@@ -5,7 +5,7 @@
 'use strict';
 const assert = require('assert');
 const load = require('./load.cjs');
-const L = load(['util.js', 'pieces.js', 'board.js', 'engine.js', 'puzzlegen.js', 'factory.js', 'store.js', 'achievements.js']);
+const L = load(['util.js', 'pieces.js', 'board.js', 'engine.js', 'sandbox.js', 'puzzlegen.js', 'factory.js', 'store.js', 'achievements.js']);
 const { Pieces, Board, Game, Puzzles, Factory, RNG } = L;
 
 let passed = 0, failed = 0;
@@ -405,6 +405,81 @@ test('a board saved full comes back full, and a new board fixes it', () => {
   assert(!h.over && h.piece && h.drop());
 });
 
+test('top out in Free Play: a piece never appears sealed inside the stack (Classic neither)', () => {
+  for (const freeHold of [true, false]) {
+    const g = new Game({ w: 10, h: 20, seed: 2, freeHold });
+    let tops = 0; g.on('topout', () => tops++);
+    // Full to the ceiling, with a sealed pocket three rows down right under the spawn spot.
+    for (let y = 0; y < 20; y++) for (let x = 0; x < 10; x++) g.board.set(x, y, 8);
+    for (let y = 15; y < 18; y++) for (let x = 2; x < 8; x++) g.board.set(x, y, 0);
+    assert(!g.spawn({ id: 'O' }), 'no spawn into the pocket');
+    assert(g.over && tops === 1, 'a real top-out');
+  }
+});
+test('Free Play fits a new piece beside a tower before topping out; Classic blocks out', () => {
+  const tower = (g) => { for (let y = 0; y < 20; y++) for (let x = 3; x < 7; x++) g.board.set(x, y, 8); };
+  const g = new Game({ w: 10, h: 20, seed: 3 });
+  tower(g);
+  let tops = 0; g.on('topout', () => tops++);
+  assert(g.spawn({ id: 'T' }) && !g.over && !tops);
+  assert(g.cellsOf().every(([x, y]) => (x < 3 || x > 6) && y >= 17), 'up top, beside the tower: ' + JSON.stringify(g.cellsOf()));
+  // Only what the piece could get to: a well two wide takes an O but a T needs a turn to fit a well one wide.
+  const w = new Game({ w: 10, h: 20, seed: 3 });
+  for (let y = 0; y < 20; y++) for (let x = 0; x < 10; x++) if (x !== 8) w.board.set(x, y, 8);
+  assert(w.spawn({ id: 'I' }) && w.piece.rot % 2 === 1 && w.cellsOf().every(([x]) => x === 8), 'an I stands up in the one open column');
+  assert(!w.spawn({ id: 'O' }) && w.over, 'an O has nowhere: board full');
+  const c = new Game({ w: 10, h: 20, seed: 3, freeHold: false });
+  tower(c);
+  assert(!c.spawn({ id: 'T' }) && c.over, 'Classic: blocked at the spawn spot is game over');
+});
+test('bug: swapping in a bigger shape never shows the board full — it fits where there is room, or is refused', () => {
+  const NOODLE = Pieces.customType([[0, 0], [1, 0], [2, 0], [3, 0], [4, 0], [5, 0]]).id;
+  const g = new Game({ w: 10, h: 20, seed: 1 });
+  g.replacePiece({ id: 'O' }); while (g.move(-1));
+  // Two columns to the ceiling in the middle: no row has six in a line, so the Noodle stands on end.
+  for (let y = 0; y < 20; y++) for (let x = 4; x < 6; x++) g.board.set(x, y, 8);
+  let tops = 0; g.on('topout', () => tops++);
+  assert(g.replacePiece({ id: NOODLE }), 'a Noodle fits on end');
+  assert(!tops && !g.over && g.piece.type.id === NOODLE && g.cellsOf().every(([x]) => x < 4), 'on the side it was on: ' + JSON.stringify(g.cellsOf()));
+  // A Giant O needs a 4×4 space; with only the left three columns open it is refused and nothing changes.
+  const h = new Game({ w: 10, h: 20, seed: 1 });
+  h.replacePiece({ id: 'O' }); while (h.move(-1));
+  for (let y = 0; y < 20; y++) for (let x = 3; x < 10; x++) h.board.set(x, y, 8);
+  h.on('topout', () => tops++);
+  const before = JSON.stringify(h.toJSON());
+  assert(!h.replacePiece({ id: Pieces.bigOf('O').id }), 'no room for a Giant');
+  assert(!tops && !h.over && JSON.stringify(h.toJSON()) === before, 'refused: nothing changed, not a full board');
+  // The spot found is never one the piece could not get to: a pocket under a roof stays empty.
+  const k = new Game({ w: 10, h: 20, seed: 1 });
+  k.replacePiece({ id: 'M1' }); while (k.move(1)); // a pebble in the top right corner
+  for (let y = 0; y < 20; y++) for (let x = 0; x < 10; x++) if (!(y === 19 && x === 9)) k.board.set(x, y, 8);
+  for (let y = 5; y < 9; y++) for (let x = 2; x < 6; x++) k.board.set(x, y, 0); // a sealed 4×4 pocket
+  assert(!k.replacePiece({ id: 'O' }), 'the sealed pocket is not room');
+  assert(k.piece.type.id === 'M1' && !k.over);
+});
+test('hold in Free Play: a swap to a piece with no room is refused and changes nothing; Classic still blocks out', () => {
+  const g = new Game({ w: 10, h: 20, seed: 4 });
+  g.replacePiece({ id: 'O' }); g.holdPiece(); // O held
+  g.replacePiece({ id: 'I' }); g.rotate(1); while (g.move(-1));
+  for (let y = 0; y < 20; y++) for (let x = 1; x < 10; x++) g.board.set(x, y, 8); // one open column, the I in it
+  let tops = 0, noroom = 0; g.on('topout', () => tops++); g.on('noroom', () => noroom++);
+  const before = JSON.stringify(g.toJSON()), holds = g.s.holds;
+  assert(!g.holdPiece(), 'the O cannot come out');
+  assert(!tops && noroom === 1 && !g.over && g.s.holds === holds && JSON.stringify(g.toJSON()) === before, 'refused, nothing changed');
+  // With room somewhere above the stack, the swap goes through (beside the tower, not over it).
+  const s = new Game({ w: 10, h: 20, seed: 4 });
+  s.replacePiece({ id: 'O' }); s.holdPiece();
+  for (let y = 0; y < 20; y++) for (let x = 3; x < 7; x++) s.board.set(x, y, 8);
+  s.on('topout', () => tops++);
+  assert(s.holdPiece() && s.piece.type.id === 'O' && !tops && !s.over);
+  // Classic: once per piece, and a held piece that cannot appear ends the game as before.
+  const c = new Game({ w: 10, h: 20, seed: 4, freeHold: false });
+  c.replacePiece({ id: 'O' }); while (c.move(-1));
+  for (let y = 0; y < 20; y++) for (let x = 3; x < 7; x++) c.board.set(x, y, 8);
+  c.hold = { id: 'T', rot: 0 };
+  assert(c.holdPiece() && c.over, 'Classic block out');
+});
+
 console.log('puzzles');
 function replay(p) {
   const g = new Game({ board: Board.fromArray(p.w, p.h, p.cells, { wrap: p.wrap }), queue: p.pieces, mods: { noRotate: p.mods.includes('rigid'), heavy: p.mods.includes('heavy'), noHold: !p.mods.includes('hold') } });
@@ -492,6 +567,66 @@ test('puzzles have no hold unless the Hold wildcard is on, and then it is needed
   }
   assert(n >= 5, 'Hold puzzles turn up (' + n + ')');
 });
+// Every order of placements a one-slot hold allows (as the engine plays it: set the next piece, or set the held one
+// and hold the next; once the queue runs out the held piece comes into play).
+function holdOrders(q) {
+  const out = new Map();
+  const rec = (i, held, seq) => {
+    if (seq.length) out.set(seq.map((e) => e.id + (e.rot || 0)).join(), seq);
+    if (i < q.length) rec(i + 1, held, seq.concat([q[i]]));
+    if (held) rec(Math.min(i + 1, q.length), i < q.length ? q[i] : null, seq.concat([held]));
+    else if (i + 1 < q.length) rec(i + 2, q[i], seq.concat([q[i + 1]]));
+  };
+  rec(0, null, []);
+  return [...out.values()];
+}
+test('gem puzzles need every piece: fewer never take every gem, in order or in any order a hold slot allows', () => {
+  const seen = { E: 0, M: 0, H: 0 };
+  let proved = 0;
+  const check = (p) => {
+    assert(p.goal.type === 'gems' && !p.fallback, 'a gem puzzle: ' + p.seed);
+    // The generator's proof (every move the engine allows, every hold order), again with room to spare …
+    assert.strictEqual(Puzzles.winsEarly(p, p.pieces, 1e6), false, 'no shortcut: ' + p.seed);
+    // … and the plain search agrees: no strict prefix of any order the pieces can be set in takes every gem.
+    const orders = p.mods.includes('hold') ? holdOrders(p.pieces) : [p.pieces];
+    for (const o of orders) for (let k = 1; k < p.pieces.length && k <= o.length; k++) {
+      const r = Puzzles.solvableInOrder(p, o.slice(0, k), 20000);
+      assert.notStrictEqual(r, true, k + ' of ' + p.pieces.length + ' pieces take every gem in ' + p.seed);
+      if (r === false) proved++;
+    }
+    // A gem sits in a row the solution's last piece completes …
+    const last = p.solution[p.solution.length - 1], rows = Pieces.get(last.id).rots[last.r].map(([, cy]) => last.y + cy);
+    assert(p.cells.some((v, i) => (v & L.CELL.GEM) && rows.includes(Math.floor(i / p.w))), 'a gem in the last piece\'s rows: ' + p.seed);
+    // … and the whole solution still plays out through the engine.
+    replay(p);
+    seen[p.diff]++;
+  };
+  for (let i = 1; i <= 40; i++) for (const d of ['E', 'M', 'H']) for (const spin of [false, true]) {
+    const p = Puzzles.generate(Puzzles.numberedSeed(d, i, spin));
+    if (p.goal.type === 'gems') check(p);
+  }
+  // Gem puzzles with Hold are rare; these are some.
+  for (const s of ['E-2A8MPRG', 'E-2PUJ5AL', 'M-3S87VMC', 'M-3EXY2TD', 'H-49QGN36', 'HS-2BRP46L']) {
+    const p = Puzzles.generate(s);
+    assert(p.mods.includes('hold'), 'Hold: ' + s);
+    check(p);
+  }
+  assert(seen.E >= 6 && seen.M >= 15 && seen.H >= 12 && proved > 100, 'gem puzzles turn up: ' + JSON.stringify(seen) + ', ' + proved);
+});
+test('making gem puzzles need every piece left every other puzzle exactly as it was', () => {
+  // A fingerprint of every puzzle among the first 40 seeds of each kind that was not a gem puzzle, taken before the
+  // change (these numbers were gem puzzles then; they may change, and a few now settle for lines).
+  const gems = { E: [14, 25, 38, 40], ES: [1, 11, 15], M: [3, 4, 10, 13, 14, 22, 23, 26, 27, 28, 30, 39], MS: [1, 2, 4, 17, 21, 23, 25, 26, 27, 30, 31, 34, 39], H: [9, 17, 20, 21, 22, 25, 26, 27, 32], HS: [10, 14, 16, 22, 23, 25, 38] };
+  const h = require('crypto').createHash('sha1');
+  let n = 0;
+  for (const d of ['E', 'M', 'H']) for (const spin of [false, true]) for (let i = 1; i <= 40; i++) {
+    if (gems[d + (spin ? 'S' : '')].includes(i)) continue;
+    const p = Puzzles.generate(Puzzles.numberedSeed(d, i, spin));
+    assert.notStrictEqual(p.goal.type, 'gems', p.seed);
+    n++; h.update(JSON.stringify(p));
+  }
+  assert.strictEqual(n + ' ' + h.digest('hex'), '192 c6040cf70e8847a36ebcf6c8cc8058f59ae84fac');
+});
 test('dailies: one seed per date, the same everywhere, and every seed knows its date', () => {
   const seen = new Set();
   for (let d = 0; d < 800; d++) {
@@ -572,7 +707,10 @@ test('rates: 24, 54, 90, 132 minos an hour — 6 to 33 lines', () => {
   const f = Factory.create(), got = [Factory.perHour(f)];
   for (let k = 1; k < 4; k++) { Factory.upgrade(f, 'press'); got.push(Factory.perHour(f)); }
   assert.deepStrictEqual(got, [24, 54, 90, 132]);
-  assert.strictEqual(Factory.quarters(54 / 4), '13½');
+  assert.strictEqual(Factory.quarters(54 / 4), '13.5');
+  assert.strictEqual(Factory.quarters(21 / 4), '5.25');
+  assert.strictEqual(Factory.quarters(3 / 4), '0.75');
+  assert.strictEqual(Factory.quarters(4800 / 4), '1,200');
   assert.strictEqual(Factory.quarters(132 / 4), '33');
 });
 test('ten minutes: the first tetromino lands in the bin, one line (a quarter per mino)', () => {
@@ -767,12 +905,16 @@ test('achievements: earned once, by the right events, none of them a gimme', () 
   const g = new Game({ w: 10, h: 20, seed: 1 });
   // An ordinary single clear earns nothing.
   assert.deepStrictEqual(A.check(st, { mode: 'play', r: { lines: 1, combo: 0 }, g }), []);
-  const quad = A.check(st, { mode: 'play', r: { lines: 4, combo: 0 }, g }).map((a) => a.id);
+  assert.deepStrictEqual(A.check(st, { mode: 'play', r: { lines: 4, combo: 0, special: 'laser' }, g }), [], 'a laser through four rows is not a quad');
+  const quad = A.check(st, { mode: 'play', r: { lines: 4, combo: 0, hand: true }, g }).map((a) => a.id);
   assert.deepStrictEqual(quad, ['quad']);
-  assert.deepStrictEqual(A.check(st, { mode: 'play', r: { lines: 4, combo: 0 }, g }), [], 'only once');
+  assert.deepStrictEqual(A.check(st, { mode: 'play', r: { lines: 4, combo: 0, hand: true }, g }), [], 'only once');
   g.s.b2b = 8; g.s.score = 300000;
-  const big = A.check(st, { mode: 'play', r: { lines: 2, tspin: true, combo: 10 }, g }).map((a) => a.id).sort();
-  assert.deepStrictEqual(big, ['b2b3', 'b2b8', 'combo10', 'combo5', 'score250k', 'score50k', 'tsd'].sort());
+  // The streaks and combos count only by hand: the board's own streak of 8 is not enough.
+  assert.deepStrictEqual(A.check(st, { mode: 'play', r: { lines: 2, tspin: true, combo: 10 }, g }).map((a) => a.id).sort(), ['score250k', 'score50k']);
+  g.s.hb2b = 8; g.s.hcombo = 10;
+  const big = A.check(st, { mode: 'play', r: { lines: 2, tspin: true, combo: 10, hand: true }, g }).map((a) => a.id).sort();
+  assert.deepStrictEqual(big, ['b2b3', 'b2b8', 'combo10', 'combo5', 'tsd'].sort());
   assert.deepStrictEqual(A.check(st, { mode: 'classic', score: 120000, level: 10, tetrises: 1 }).map((a) => a.id).sort(), ['cl_100k', 'cl_l10']);
   st.factory.presses = 4;
   assert.deepStrictEqual(A.check(st, { mode: 'factory' }).map((a) => a.id), ['fac_line']);
@@ -915,7 +1057,7 @@ test('achievements: a fresh save and a short ordinary game earn nothing', () => 
   // Nothing on a fresh save, whatever the event.
   for (const mode of ['tick', 'play', 'classic', 'puzzle']) assert.deepStrictEqual(A.check(st, { mode, r: { lines: 0, combo: 0 }, g: new Game({ w: 10, h: 20, seed: 2 }), score: 0, level: 1, lines: 0, tetrises: 0, ms: 0, diff: 'E', firstTry: false, mods: [] }), [], mode);
   // An ordinary player: each piece goes where it leaves the flattest stack (tried out, then taken back).
-  const bot = (g, n, onLock) => {
+  const bot = (g, n, onLock, before) => {
     const place = (rot, x) => { for (let k = 0; k < rot; k++) g.rotate(1); for (let k = 0; k < 10; k++) g.moveToward(x); return g.drop(); };
     const judge = (r) => {
       const b = g.board; let agg = 0, holes = 0, bump = 0, prev = null;
@@ -929,6 +1071,7 @@ test('achievements: a fresh save and a short ordinary game earn nothing', () => 
     let trying = false;
     g.on('lock', (r) => { if (!trying) onLock(r); });
     for (let i = 0; i < n && !g.over; i++) {
+      if (before) before(i);
       let best = null;
       trying = true;
       for (let rot = 0; rot < 4; rot++) for (let x = 0; x < 10; x++) {
@@ -941,10 +1084,22 @@ test('achievements: a fresh save and a short ordinary game earn nothing', () => 
     }
   };
   // 150 pieces of Free Play, fed through the real lock events.
+  // Its pace is a relaxed one, a piece every three seconds (Free Play notes each lock's time as it happens).
   const g = new Game({ w: 10, h: 20, seed: 11 }), earned = [];
-  bot(g, 150, (r) => earned.push(...A.check(st, { mode: 'play', r, g }).map((a) => a.id)));
+  let clock = 0;
+  bot(g, 150, (r) => { g.notePace(r, (clock += 3000)); earned.push(...A.check(st, { mode: 'play', r, g }).map((a) => a.id)); });
   assert(g.s.pieces === 150 && g.s.lines >= 40, 'the bot plays a real game: ' + g.s.lines + ' lines');
-  assert.deepStrictEqual(earned, [], 'an ordinary board earns nothing');
+  assert.deepStrictEqual(earned, [], 'an ordinary board earns nothing: ' + earned);
+  // It clears as tidily as the pace ones ask (36 lines in 100 pieces) — the clock is what it lacks.
+  assert(g.s.pace.length === 101 && L.paceOf(g.s, 100).ms === 300000, 'its last hundred pieces: ' + JSON.stringify(L.paceOf(g.s, 100)));
+  // The same player with a handful of items along the way (as Free Play uses them: the item, then noteItem).
+  const gi = new Game({ w: 10, h: 20, seed: 13 });
+  const use = { 15: () => gi.replacePiece({ id: 'I' }), 35: () => gi.replacePiece({ id: 'M1' }), 55: () => gi.setSpecial('sand'), 75: () => gi.settle(), 95: () => gi.setSpecial('frost'), 115: () => gi.setSpecial('oil'), 125: () => gi.setSpecial('torch') };
+  const acts = new Set([75]);
+  bot(gi, 150, (r) => { gi.notePace(r, (clock += 3000)); earned.push(...A.check(st, { mode: 'play', r, g: gi }).map((a) => a.id)); },
+    (i) => { if (!use[i]) return; const it = use[i](); if (it) { gi.s.items['item' + i] = 1; gi.noteItem(acts.has(i)); } });
+  assert(gi.s.pieces >= 140 && gi.s.lines >= 30, 'with items too: ' + gi.s.lines + ' lines');
+  assert.deepStrictEqual(earned, [], 'a short board with a few items earns nothing either: ' + earned);
   // The same player in Classic: a piece a second, levels every ten lines.
   const cg = new Game({ w: 10, h: 20, seed: 12, freeHold: false });
   let cl = 0, tet = 0, t = 0;
@@ -966,21 +1121,53 @@ test('achievements: every new one is earned by its own feat, once', () => {
   const puzzle = (o) => Object.assign({ mode: 'puzzle', diff: 'H', firstTry: false, hinted: false, undos: 0, ms: 60000, mods: [] }, o);
   const today = L.dateKey();
   const cases = [
-    ['toolbox', play({ lines: 1 }, { items: { reroll: 1, sand: 1, drill: 1, flip: 1, jackpot: 1 } })],
-    ['mini2', play({ lines: 2, mini: true })],
-    ['golden_ts', play({ lines: 2, tspin: true, golden: true })],
-    ['quads4', play({ lines: 1 }, { quadRun: 4 })],
+    ['toolbox', play({ lines: 1 }, { items: { reroll: 1, sand: 1, frost: 1, drill: 1, flip: 1, jackpot: 1 } })],
+    ['mini2', play({ lines: 2, mini: true }), null, true],
+    ['mini2', play({ lines: 2, mini: true, hand: true })],
+    ['golden_ts', play({ lines: 2, tspin: true, golden: true, hand: true }), null, true],
+    ['golden_ts', play({ lines: 3, tspin: true, golden: true, hand: true })],
+    ['quads4', play({ lines: 1 }, { quadRun: 4 }), null, true],
+    ['quads4', play({ lines: 1 }, { hquads: 4 })],
     ['lines500', play({ lines: 1 }, { lines: 500 })],
-    ['tst_b2b', play({ lines: 3, tspin: true, b2b: true })],
+    ['tst_b2b', play({ lines: 3, tspin: true, b2b: true, hand: true }, { hb2b: 0 }), null, true],
+    ['tst_b2b', play({ lines: 3, tspin: true, b2b: true, hand: true }, { hb2b: 1 })],
     ['old_growth', play({ lines: 0 }, { pieces: 2000, startedAt: Date.now() - 31 * 86400e3 })],
-    ['pc_b2b', play({ lines: 4, perfect: true, b2b: true })],
-    ['tspin100', play({ lines: 0 }, { tspins: 100 })],
+    ['pc_b2b', play({ lines: 4, perfect: true, b2b: true }, { hb2b: 1 }), null, true],
+    ['pc_b2b', play({ lines: 4, perfect: true, b2b: true, hand: true }, { hb2b: 1 })],
+    ['tspin100', play({ lines: 0 }, { tspins: 100 }), null, true],
+    ['tspin100', play({ lines: 0 }, { htspins: 100 })],
     ['all_items', play({ lines: 0 }), (st) => { for (const id of L.ITEM_ORDER) st.stats.items.used[id] = 1; }],
     ['pc_open', play({ lines: 4, perfect: true }, { pieces: 10, lines: 4 })],
-    ['pc_tspin', play({ lines: 2, tspin: true, perfect: true })],
-    ['quads10', play({ lines: 4 }, { quadRun: 10 })],
-    ['golden20', play({ lines: 1, golden: true, mult: 20 })],
+    ['pc_tspin', play({ lines: 2, tspin: true, perfect: true, hand: true })],
+    ['quads10', play({ lines: 4 }, { hquads: 10 })],
+    ['golden20', play({ lines: 1, golden: true, chain: 20 }), null, true],
+    ['golden20', play({ lines: 1, golden: true, hand: true }, { goldRun: 5 })],
     ['lines5000', play({ lines: 1 }, { lines: 5000 })],
+    ['pc', play({ lines: 4, perfect: true, special: 'tornado' }), null, true],
+    ['pc', play({ lines: 4, perfect: true, hand: true })],
+    ['pc3', play({ lines: 1 }, { perfect: 3 }), null, true],
+    ['pc3', play({ lines: 1 }, { hperfect: 3 })],
+    ['pc10', play({ lines: 1 }, { hperfect: 10 })],
+    ['tst10', play({ lines: 1 }, { tst: 10 }), null, true],
+    ['tst10', play({ lines: 1 }, { htst: 10 })],
+    ['chain20', play({ lines: 1 }, { chain: 25 }), null, true],
+    ['chain20', play({ lines: 1 }, { hchain: 20 })],
+    ['b2b20', play({ lines: 4 }, { b2b: 20 }), null, true],
+    ['b2b20', play({ lines: 4 }, { hb2b: 20 })],
+    ['pace33', play({ lines: 1 }, { pace: Array.from({ length: 101 }, (_, i) => [i * 1790, Math.floor(i * 0.355)]) }), null, true],
+    ['pace33', play({ lines: 1 }, { pace: Array.from({ length: 101 }, (_, i) => [i * 1810, Math.floor(i * 0.4)]) }), null, true],
+    ['pace33', play({ lines: 1 }, { pace: Array.from({ length: 101 }, (_, i) => [i * 1790, Math.floor(i * 0.4)]) })],
+    ['pace67', play({ lines: 1 }, { pace: Array.from({ length: 101 }, (_, i) => [i * 890, Math.floor(i * 0.4)]) })],
+    ['sb_goldberg', play({ lines: 0, explosions: 2, burned: 5, shattered: 3 }), null, true],
+    ['sb_goldberg', play({ lines: 0, explosions: 1, burned: 5, shattered: 3, net: 4 })],
+    ['sb_scorch', play({ lines: 0, react: [{ kind: 'fire', cells: new Array(59).fill([0, 0, 1]) }] }), null, true],
+    ['sb_scorch', play({ lines: 0, react: [{ kind: 'fire', cells: new Array(40).fill([0, 0, 1]) }, { kind: 'blast', cells: new Array(20).fill([0, 0, 1]) }] })],
+    ['sb_combos', play({ lines: 0 }), (st) => { for (const c of L.Combos.LIST) st.combos[c.id] = { n: 1 }; }],
+    ['clean40', play({ lines: 4, perfect: true }, { pieces: 100, lines: 40, items: { golden: 1 } }), null, true],
+    ['clean40', play({ lines: 4, perfect: true }, { pieces: 100, lines: 40 })],
+    ['cl_quads4', classic({}, { quadRun: 4 })],
+    ['cl_b2b8', classic({}, { b2b: 8 })],
+    ['cl_combo15', classic({ r: { lines: 1, combo: 15 } })],
     ['cl_games100', classic({}), (st) => { st.stats.classic.games = 100; }],
     ['cl_tetris10', classic({ tetrises: 10 })],
     ['cl_nohold', classic({ level: 10 })],
@@ -1008,6 +1195,7 @@ test('achievements: every new one is earned by its own feat, once', () => {
     ['lu_triathlon', { mode: 'tick' }, (st) => { st.history[today] = { quad: 1, tetris: 1, hard: 1 }; }],
     ['lu_hours10', { mode: 'tick' }, (st) => { st.stats.timeMs.total = 10 * 3600e3; }],
     ['lu_days30', { mode: 'tick' }, (st) => { st.stats.days = 30; }],
+    ['lu_100k', { mode: 'tick' }, (st) => { st.stats.lines.earned = 1e5 + 500; st.stats.lines.luck = 400; st.stats.lines.refunded = 200; }, true],
     ['lu_100k', { mode: 'tick' }, (st) => { st.stats.lines.earned = 1e5; }],
     ['lu_curator', { mode: 'tick' }, (st) => { for (const k of Object.keys(L.COSMETICS)) st.owned[k] = Object.keys(L.COSMETICS[k]); }],
     ['lu_hours100', { mode: 'tick' }, (st) => { st.stats.timeMs.total = 100 * 3600e3; }],
@@ -1059,6 +1247,70 @@ test('achievement stats: quads in a row, set by hand', () => {
   assert.strictEqual(g.s.quadRun, 0, 'a single ends the run');
   assert.strictEqual(new Game({ w: 10, h: 20, seed: 1 }).s.quadRun, 0);
 });
+test('achievement stats: by hand — items break the hand streaks, an empty board starts afresh', () => {
+  const A = L.Achievements;
+  const g = new Game({ w: 10, h: 20, seed: 3 });
+  // Four rows with the left column open, and an I stood up in it: a quad that empties the board.
+  const rows = () => { for (let y = 0; y < 4; y++) for (let x = 1; x < 10; x++) g.board.set(x, y, 8); };
+  const quad = (special, noted) => { rows(); g.replacePiece({ id: 'I', special }); if (noted) g.noteItem(false); g.rotate(1); while (g.move(-1)); return g.drop(); };
+  let r = quad(); quad();
+  assert.deepStrictEqual([g.s.hb2b, g.s.hquads, g.s.hperfect, g.s.hand], [1, 2, 2, true]);
+  // An I from an Order Slip: the board's streak goes on, the hand one does not; the quad is not by hand.
+  r = quad(null, true);
+  assert(!r.hand && r.perfect && g.s.b2b === 2 && g.s.hb2b === -1 && g.s.hquads === 0 && g.s.hperfect === 2);
+  assert(g.s.hand, 'the board it emptied is a fresh start');
+  assert(!A.check(L.defaultState(), { mode: 'play', r, g }).some((a) => a.id === 'pc' || a.id === 'quad'), 'neither a hand quad nor a hand perfect clear');
+  // Lasers stack the board's back-to-back, never the hand one.
+  for (let i = 0; i < 4; i++) { r = quad('laser'); assert(!r.hand); }
+  assert(g.s.b2b >= 5 && g.s.hb2b === -1 && g.s.hchain === 0);
+  assert(!A.check(L.defaultState(), { mode: 'play', r, g }).some((a) => /^(b2b|chain|quads|combo)/.test(a.id)));
+  quad(); quad();
+  assert.deepStrictEqual([g.s.hb2b, g.s.hquads, g.s.hchain], [1, 2, 2 + 1]);
+  // Rewind is an item too: taking a mistake back ends the streak (and the stack it leaves is not by hand).
+  rows(); for (let x = 1; x < 10; x++) g.board.set(x, 3, 0);
+  g.replacePiece({ id: 'I' }); g.rotate(1); while (g.move(-1)); g.drop();
+  g.undo(); g.noteItem(true);
+  assert(g.s.hb2b === -1 && !g.s.hand);
+  // A Tornado's perfect clear is not by hand, but the empty board it leaves is a fresh start.
+  g.board.cells.fill(0);
+  for (let i = 0; i < 20; i++) g.board.set(i % 10, 2 + Math.floor(i / 10) * 3, 8);
+  r = g.tornado(); g.noteItem(true);
+  assert(r.perfect && !r.hand && g.s.hand);
+  assert(!A.check(L.defaultState(), { mode: 'play', r, g }).some((a) => a.id === 'pc'));
+  // Luck items do not touch the board: Free Play never calls noteItem for them (js/modes.js). An item taken back
+  // before its piece is set puts the hand counts back.
+  quad(); const keep = g.handState();
+  g.noteItem(false);
+  assert(g.s.hb2b === -1);
+  g.restoreHand(keep);
+  assert(g.s.hb2b === 0 && g.s.hand);
+});
+test('achievement stats: boards saved before the hand counts carry over only if no item was ever used', () => {
+  const g = new Game({ w: 10, h: 20, seed: 4 });
+  const old = g.toJSON();
+  old.s = Object.assign({}, old.s, { b2b: 3, combo: 2, quadRun: 2, perfect: 1, tst: 1 });
+  for (const k of ['hand', 'hb2b', 'hcombo', 'hquads', 'hchain', 'bestHChain', 'htspins', 'htst', 'hperfect', 'goldRun', 'pace']) delete old.s[k];
+  const clean = new Game({ saved: JSON.parse(JSON.stringify(old)) });
+  assert.deepStrictEqual([clean.s.hand, clean.s.hb2b, clean.s.hcombo, clean.s.hquads, clean.s.hchain, clean.s.hperfect, clean.s.htspins], [true, 3, 2, 2, 6, 1, 0]);
+  old.s.items = { tornado: 1 };
+  const used = new Game({ saved: JSON.parse(JSON.stringify(old)) });
+  assert.deepStrictEqual([used.s.hand, used.s.hb2b, used.s.hcombo, used.s.hquads, used.s.hchain], [false, -1, -1, 0, 0]);
+  // And a board saved with them keeps them as they were.
+  used.s.hb2b = 4; used.s.hand = true;
+  const again = new Game({ saved: JSON.parse(JSON.stringify(used.toJSON())) });
+  assert.deepStrictEqual([again.s.hand, again.s.hb2b], [true, 4]);
+});
+test('achievement stats: the pace of hand play, and Lifetime lines without the Jackpot or rewinds', () => {
+  const g = new Game({ w: 10, h: 20, seed: 5 });
+  for (let i = 0; i <= 120; i++) g.notePace({ hand: true }, i * 1000);
+  assert.strictEqual(g.s.pace.length, 101);
+  assert.deepStrictEqual(L.paceOf(g.s, 100), { ms: 100000, lines: 0 });
+  g.notePace({ hand: false }, 200000);
+  assert.strictEqual(L.paceOf(g.s, 100), null, 'anything not by hand starts it over');
+  const st = L.defaultState();
+  Object.assign(st.stats.lines, { earned: 5000, luck: 2000, refunded: 300 });
+  assert.strictEqual(L.Achievements.earned(st), 2700);
+});
 test('achievement stats: first-try runs and Daily runs', () => {
   const P = L.defaultState().stats.puzzle, runs = L.Achievements.puzzleRuns;
   for (let i = 0; i < 5; i++) runs(P, true, null);
@@ -1095,6 +1347,346 @@ test('achievement stats: days played, counted and brought forward from old saves
   assert.strictEqual(old.stats.puzzle.bestFirstRun, 0);
 });
 
+console.log('sandbox');
+{
+  const { CELL, Chain, Combos, Luck } = L;
+  const mat = (g, x, y) => g.board.get(x, y) & CELL.MAT;
+  // An empty 10×20 board with the given rows (bottom first): . empty, digits colour slots, m the single block's
+  // colour, i ice, o oil (colour 2), s steel, t TNT, w water (colour 1), X garbage.
+  const board = (rows, piece) => {
+    const g = new Game({ w: 10, h: 20, seed: 3 });
+    rows.forEach((row, y) => { for (let x = 0; x < 10; x++) {
+      const c = row[x];
+      const v = c === '.' ? 0 : c === 'X' ? 8 : c === 'm' ? 13 : c === 'i' ? 3 | CELL.ICE : c === 'o' ? 2 | CELL.OIL : c === 's' ? 6 | CELL.STEEL : c === 't' ? 5 | CELL.TNT : c === 'w' ? 1 | CELL.WATER : Number(c);
+      g.board.set(x, y, v);
+    } });
+    g.replacePiece({ id: piece || 'O' });
+    return g;
+  };
+  // Puts the piece in play at a spot (its rotation box's origin) and drops it.
+  const dropAt = (g, x, y, special) => { if (special) assert(g.setSpecial(special), special); g.piece.x = x; if (y != null) g.piece.y = y; return g.drop(); };
+
+  test('materials ride on their blocks: clears, settling, undo and the save keep them', () => {
+    const g = board(['XXXXXXXXX.', '..i.s.....']);
+    g.replacePiece({ id: 'M1' }); g.piece.x = 9; g.piece.y = 5;
+    const r = g.drop();
+    assert.strictEqual(r.lines, 1);
+    assert.strictEqual(mat(g, 2, 0), CELL.ICE); assert.strictEqual(mat(g, 4, 0), CELL.STEEL);
+    const h = new Game({ saved: JSON.parse(JSON.stringify(g.toJSON())) });
+    assert.strictEqual(mat(h, 2, 0), CELL.ICE, 'saved and loaded');
+    g.undo();
+    assert.strictEqual(mat(g, 2, 1), CELL.ICE, 'undo puts them back where they were');
+    g.board.compact();
+    assert.strictEqual(mat(g, 4, 1), CELL.STEEL, 'settling carries them');
+  });
+
+  test('the multiplier: an eighth a link in Free Play (×2.5 at twenty), a half in Classic (×10 at twenty); the chain counts apart', () => {
+    assert.deepStrictEqual([0, 1, 8, 9, 12, 16, 19, 20, 30].map((n) => Chain.mult(n)), [1, 1, 1, 1.125, 1.5, 2, 2.375, 2.5, 2.5]);
+    assert.deepStrictEqual([0, 1, 2, 3, 10, 19, 20, 40].map((n) => Chain.mult(n, 'classic')), [1, 1, 1, 1.5, 5, 9.5, 10, 10]);
+    for (let n = 0; n <= 20; n++) assert.strictEqual(Chain.mult(n), Math.max(1, n / 8), 'the old value (n) divided by eight');
+    const g = new Game({ w: 10, h: 20, seed: 1 });
+    Object.assign(g.s, { b2b: 13, combo: 4 });
+    assert.strictEqual(Chain.streak(g), 14);
+    assert.strictEqual(Chain.count(g), 18, 'chain = streak + combo');
+    assert.strictEqual(Chain.mult(Chain.streak(g)), 1.75, 'the multiplier ignores the combo');
+    assert.strictEqual(Chain.fmt(1.75), '×1.75');
+    // Real back-to-back quads: the streak grows one a quad.
+    const q = new Game({ w: 10, h: 20, seed: 2 });
+    for (let k = 0; k < 3; k++) {
+      for (let y = 0; y < 4; y++) for (let x = 1; x < 10; x++) q.board.set(x, y, 8);
+      q.replacePiece({ id: 'I' }); q.rotate(1); while (q.move(-1));
+      q.drop();
+    }
+    assert.strictEqual(Chain.streak(q), 3);
+  });
+
+  test('frost freezes the piece and all it touches (water all through); steel and TNT stay as they are', () => {
+    const g = board(['1s1t....ww', '..........']);
+    const r = dropAt(g, 1, null, 'frost'); // an O over columns 1–2, resting on row 0
+    assert.strictEqual(r.froze.length, 5, 'the piece and the block under it');
+    assert.strictEqual(mat(g, 1, 1), CELL.ICE); assert.strictEqual(mat(g, 2, 0), CELL.ICE); assert.strictEqual(mat(g, 0, 0), 0, 'not touching');
+    assert.strictEqual(mat(g, 1, 0), CELL.STEEL, 'steel does not freeze');
+    const w = board(['..wwww....']);
+    dropAt(w, 1, null, 'frost');
+    for (let x = 2; x < 6; x++) assert.strictEqual(mat(w, x, 0), CELL.ICE, 'all the water froze');
+  });
+
+  test('a bomb shatters all the ice it touches; steel stands in the blast', () => {
+    const g = board(['iiiiiiiii.', 'iiiiiiiii.', '1111111s1.']);
+    const before = g.board.count();
+    g.replacePiece({ id: 'O' });
+    const r = dropAt(g, 6, 3, 'bomb'); // lands on row 3, over the steel
+    assert(r.shattered >= 10, 'the whole sheet of ice went: ' + r.shattered);
+    assert.strictEqual(mat(g, 7, 2), CELL.STEEL, 'steel stands');
+    assert.strictEqual(g.board.count(), before - r.blast.length - r.react.reduce((a, st) => a + st.cells.length, 0));
+    assert(!r.react.some((st) => st.cells.some(([x, y]) => x === 7 && y === 2)));
+  });
+
+  test('TNT: a bomb sets off TNT, which sets off more — a chain, played out in waves', () => {
+    const g = board(['1111111111', '1t1t1t1111']);
+    g.replacePiece({ id: 'O' });
+    const r = dropAt(g, 0, 2, 'bomb');
+    assert(r.explosions >= 3, 'explosions: ' + r.explosions);
+    const waves = r.react.filter((s) => s.kind === 'blast').map((s) => s.wave);
+    assert.deepStrictEqual(waves, waves.slice().sort((a, b) => a - b), 'in order');
+    assert(waves[waves.length - 1] >= 1);
+    assert(Combos.detect(r, g).includes('chain3'));
+    // Nothing sets TNT off by itself.
+    const q = board(['t.........']);
+    dropAt(q, 4);
+    assert.strictEqual(mat(q, 0, 0), CELL.TNT);
+  });
+
+  test('Fuse Line: TNT in a row that clears goes off where the row was', () => {
+    const g = board(['1111111t1.', '22222222..', '3333......']);
+    g.replacePiece({ id: 'M1' });
+    const r = dropAt(g, 9, 5);
+    assert.strictEqual(r.lines, 1);
+    assert(r.fused === 1 && r.post.length && r.post[0].kind === 'blast', JSON.stringify(r.post));
+    assert.deepStrictEqual(r.post[0].at, [7, 0], 'the rows above came down into its place');
+    assert(Combos.detect(r, g).includes('fuse'));
+    assert(!g.board.get(7, 0) && !g.board.get(7, 1), 'it blasted the rows that came down');
+  });
+
+  test('fire spreads through its colour and through oil, melts ice, sets off TNT, stops at steel and water', () => {
+    const g = board(['2222s222..', '2o33333t..', '33iw3.....']);
+    g.replacePiece({ id: 'M1' });
+    const r = dropAt(g, 0, 3, 'torch'); // lands on (0, 2), a 3 — the flame lights what it touches
+    assert.strictEqual(g.board.get(0, 3), 0, 'the torch is not a block');
+    assert(r.burned > 0);
+    assert.strictEqual(mat(g, 2, 2), CELL.WATER, 'ice melted to water');
+    assert.strictEqual(mat(g, 3, 2), CELL.WATER, 'water stayed');
+    assert(r.explosions >= 1, 'the TNT went off');
+    assert.strictEqual(mat(g, 4, 0), CELL.STEEL, 'steel does not burn');
+    assert(!g.board.get(1, 1), 'the oil burned');
+    // Oil carries fire across colours: 1, oil, 5 — a fire in the 1 reaches the 5.
+    const o = board(['1o5.......']);
+    o.replacePiece({ id: 'M1' });
+    dropAt(o, 0, 1, 'torch');
+    assert(o.board.isEmpty(), 'all three burned');
+    // A flame with nothing to light goes out.
+    const e = board([]);
+    e.replacePiece({ id: 'M1' });
+    const f = dropAt(e, 4, null, 'torch');
+    assert(f.fizzle && e.board.isEmpty());
+  });
+
+  test('lightning runs through steel and water and fries what they touch; a plain block just catches fire', () => {
+    const g = board(['11111111..', '1sssw1t...', '....i.....']);
+    g.replacePiece({ id: 'M1' });
+    const r = dropAt(g, 2, 3, 'bolt'); // lands on the steel at (2, 1)
+    assert.strictEqual(r.net, 4, 'three steel and one water');
+    assert(r.fried === 6 && r.shattered === 1, JSON.stringify([r.fried, r.shattered]));
+    for (let x = 1; x < 4; x++) assert.strictEqual(mat(g, x, 1), CELL.STEEL, 'the wire itself stays');
+    const p = board(['2222......']);
+    p.replacePiece({ id: 'M1' });
+    const q = dropAt(p, 0, 2, 'bolt');
+    assert(q.burned === 4 && p.board.isEmpty(), 'struck a 2: every 2 joined to it burned');
+    // Live Wire: six blocks of wire.
+    const lw = board(['1111111...', 'ssssss....']);
+    lw.replacePiece({ id: 'M1' });
+    const lr = dropAt(lw, 0, 3, 'bolt');
+    assert(Combos.detect(lr, lw).includes('livewire'));
+  });
+
+  test('a laser beam runs along steel into the rows it reaches; they count as lines', () => {
+    const g = board(['XXXsXXXXX.', 'XXXs......', 'XXXs......', '..........']);
+    g.replacePiece({ id: 'O' });
+    const r = dropAt(g, 7, 5, 'laser'); // an O settles on rows 1–2 (right side), the steel reaches row 0
+    assert.deepStrictEqual(r.conducted, [0]);
+    assert.strictEqual(r.lines, 3);
+    assert(Combos.detect(r, g).includes('conductor'));
+  });
+
+  test('water runs down and sideways into the lowest hole it can reach, under overhangs too', () => {
+    // A roofed pocket at the bottom left, open to the right.
+    const g = board(['....XXXXXX', 'XXX.......', '..........']);
+    g.replacePiece({ id: 'O' });
+    const r = dropAt(g, 3, 6, 'water');
+    assert(r.flow.length === 4);
+    const to = r.flow.map(([, , x, y]) => x + ',' + y).sort();
+    assert.deepStrictEqual(to, ['0,0', '1,0', '2,0', '3,0'], 'filled the channel under the roof, from the back');
+    assert(r.flow.every(([, , , , v]) => (v & CELL.MAT) === CELL.WATER));
+    assert(r.lines === 1 && r.flooded === 3, JSON.stringify(r.flow));
+    assert(Combos.detect(r, g).includes('undertow'));
+  });
+
+  test('steel stops the anvil, the drill and a purge', () => {
+    const g = board(['1111111111', '1111111111', '11s1111111', '1111111111']);
+    g.replacePiece({ id: 'O' });
+    const r = dropAt(g, 1, 12, 'anvil');
+    assert(r.cells.every(([, y]) => y >= 3), 'rests on the steel: ' + JSON.stringify(r.cells));
+    assert(r.smashed.every(([, y]) => y >= 3));
+    const d = board(['1111111111', '11s1111111', '1111111111']);
+    d.setSpecial('drill'); d.piece.x = 2; d.piece.y = 8;
+    const dr = d.drop();
+    assert.deepStrictEqual(dr.stopped, [2, 1]);
+    assert.strictEqual(d.board.get(2, 0) & CELL.COLOR, 1, 'nothing under the steel was drilled');
+    const p = board(['1s1s......']);
+    p.replacePiece({ id: 'L' }); // colour 7
+    p.board.set(0, 0, 7); p.board.set(1, 0, 7 | CELL.STEEL);
+    const gone = p.purge();
+    assert.strictEqual(gone.length, 1);
+    assert.strictEqual(mat(p, 1, 0), CELL.STEEL);
+  });
+
+  test('a T-spin into ice shatters it: Shatter Spin', () => {
+    const g = new Game({ w: 10, h: 20, seed: 4 });
+    const fill = (y, row) => { for (let x = 0; x < 10; x++) if (row[x] !== '.') g.board.set(x, y, row[x] === 'i' ? 8 | CELL.ICE : 8); };
+    fill(0, 'XXX.XXXXXX');
+    fill(1, 'XX...XXXXX');
+    fill(2, '....i.....');
+    fill(3, '....i.....');
+    g.replacePiece({ id: 'T' });
+    Object.assign(g.piece, { rot: 2, x: 2, y: 0, lastRot: true });
+    const r = g.lock();
+    assert(r.tspin && r.lines === 2);
+    assert.strictEqual(r.spinShatter, 2);
+    assert(Combos.detect(r, g).includes('shatterspin'));
+  });
+
+  test('combos by hand: a one-colour row, a quad from the pocket, a tuck, twin spins, and bare hands', () => {
+    // Painted row: every block the same colour.
+    const g = board(['mmmmmmmmm.']);
+    g.replacePiece({ id: 'M1' });
+    let r = dropAt(g, 9, 4);
+    assert(Combos.detect(r, g).includes('painted'));
+    const x = board(['mmmmmmmm8.']);
+    x.replacePiece({ id: 'M1' });
+    assert(!Combos.detect(dropAt(x, 9, 4), x).includes('painted'), 'a mixed row is not');
+    // From the Pocket: hold an I, swap back to it, quad.
+    const h = board(['XXXXXXXXX.', 'XXXXXXXXX.', 'XXXXXXXXX.', 'XXXXXXXXX.'], 'I');
+    h.holdPiece(); h.holdPiece();
+    assert(h.piece.type.id === 'I' && h.piece.fromHold);
+    h.rotate(1); while (h.move(1));
+    r = h.drop();
+    assert(r.lines === 4 && Combos.detect(r, h).includes('pocket'));
+    // Keyhole: tucked under an overhang.
+    const k = board(['XXXXXXXX..', '.........X']);
+    k.replacePiece({ id: 'O' });
+    k.piece.x = 8; k.piece.y = 0;
+    k.board.set(9, 1, 0); k.board.set(8, 2, 8);
+    r = k.lock();
+    assert(r.covered && r.lines && Combos.detect(r, k).includes('keyhole'));
+    // Twin Spin, from the flags a T-spin double leaves.
+    const t = new Game({ w: 10, h: 20, seed: 1 });
+    assert(!Combos.detect({ lines: 2, tspin: true, b2b: false }, t).includes('twinspin'));
+    assert(Combos.detect({ lines: 2, tspin: true, b2b: true }, t).includes('twinspin'));
+    // Bare Hands: fifty pieces and twelve lines without an item.
+    const b = new Game({ w: 10, h: 20, seed: 1 });
+    let got = 0;
+    for (let i = 0; i < 60; i++) if (Combos.detect({ lines: i % 4 === 0 ? 1 : 0 }, b).includes('bare')) got++;
+    assert.strictEqual(got, 1);
+  });
+
+  test('item combos: a Tornado perfect clear, and a board emptied by a chain', () => {
+    const g = board(['XXXXX.....', 'XXX..XX...']);
+    const r = g.tornado();
+    assert(r.perfect && Combos.detect(r, g).includes('eye'));
+    const e = board(['1t........']);
+    e.replacePiece({ id: 'O' });
+    const er = dropAt(e, 2, 1, 'bomb');
+    assert(e.board.isEmpty() && Combos.detect(er, e).includes('scorched'));
+  });
+
+  test('achievements in the sandbox: a chain through every element, and a board burnt empty', () => {
+    const A = L.Achievements, st = L.defaultState();
+    // Lightning into water: the current runs through it into oil (fire), TNT (a blast) and, in the blast, ice.
+    const g = board(['..owti....']);
+    const r = dropAt(g, 3, 3, 'bolt');
+    assert(r.net >= 1 && r.burned >= 1 && r.explosions >= 1 && r.shattered >= 1, JSON.stringify({ net: r.net, burned: r.burned, explosions: r.explosions, shattered: r.shattered }));
+    assert(A.check(st, { mode: 'play', r, g }).some((a) => a.id === 'sb_goldberg'));
+    // Without the wire (the bolt strikes a plain block) it is only a fire.
+    const g2 = board(['..o3ti....']);
+    const r2 = dropAt(g2, 3, 3, 'bolt');
+    assert(!r2.net && !A.check(L.defaultState(), { mode: 'play', r: r2, g: g2 }).some((a) => a.id === 'sb_goldberg'));
+    // Seven rows of one colour and a torch at the foot: 63 blocks up in one fire, nothing left.
+    const rows = Array.from({ length: 7 }, () => '333333333.');
+    const f = board(rows);
+    const rf = dropAt(f, 9, 0, 'torch');
+    assert(f.board.isEmpty() && rf.burned >= 60, 'burned ' + rf.burned);
+    assert(A.check(L.defaultState(), { mode: 'play', r: rf, g: f }).some((a) => a.id === 'sb_scorch'));
+    // Fewer blocks, or a Tornado, do not count.
+    const small = board(Array.from({ length: 5 }, () => '333333333.'));
+    const rs = dropAt(small, 9, 0, 'torch');
+    assert(small.board.isEmpty() && !A.check(L.defaultState(), { mode: 'play', r: rs, g: small }).some((a) => a.id === 'sb_scorch'));
+  });
+
+  test('combos are never for farming: full, half, a quarter, then nothing on one board; boosts only twice', () => {
+    for (const c of Combos.LIST) {
+      const pays = [0, 1, 2, 3, 4].map((k) => Combos.reward(c, k));
+      assert.strictEqual(pays[3].lines + pays[4].lines, 0, c.id);
+      assert(pays[1].lines <= Math.ceil(c.lines / 2) && pays[2].lines <= Math.ceil(c.lines / 4), c.id);
+      assert(!pays[2].boost, c.id + ' boosts twice at most');
+      assert(c.lines <= 12 && (!c.boost || (c.boost.x <= 1.5 && c.boost.clears <= 5)), c.id + ' is modest');
+      if (c.kind === 'item') assert(c.lines < 30, c.id + ' pays less than the cheapest set of items that makes it');
+    }
+    assert.strictEqual(new Set(Combos.LIST.map((c) => c.id)).size, Combos.LIST.length);
+    assert(Combos.LIST.length >= 12);
+  });
+
+  test('rewind takes a whole chain reaction back', () => {
+    const g = board(['1t1t1t1111', 'iiii......']);
+    const snap = g.board.snapshot();
+    g.replacePiece({ id: 'O' });
+    const r = dropAt(g, 1, 3, 'bomb');
+    assert(r.explosions >= 2);
+    g.undo();
+    assert.deepStrictEqual(Array.from(g.board.snapshot()), Array.from(snap));
+    assert.strictEqual(g.piece.special, 'bomb', 'the bomb is back in play');
+  });
+
+  test('Golden is worth its price played well, and not otherwise', () => {
+    // A board built for quads pays 5 a clear; ordinary clears about 2.
+    assert.strictEqual(Luck.goldValue(5), 50);
+    assert(Luck.goldValue(5) >= L.ITEMS.golden.price * 1.3, 'quads: well over its price');
+    assert(Luck.goldValue(2) < L.ITEMS.golden.price, 'ordinary clears: under it');
+  });
+
+  test('Jackpot is a real gamble: pays back about nine tenths, more than half the pulls pay nothing, rarely a lot', () => {
+    const demo = L.ITEM_ORDER.filter((id) => L.ITEMS[id].group === 'boom'), avg = demo.reduce((a, id) => a + L.ITEMS[id].price, 0) / demo.length;
+    const o = Luck.jackpotOdds(avg), price = L.ITEMS.jackpot.price;
+    assert(o.ev / price > 0.85 && o.ev / price < 0.95, 'EV ' + o.ev.toFixed(1) + ' for ' + price);
+    assert(o.bust > 0.5, 'bust ' + o.bust);
+    assert(o.big > 0.005 && o.big < 0.02, 'big ' + o.big);
+    assert(o.top >= 40 * price);
+    // The reels land as weighted, and a simulated run agrees with the exact figure.
+    const rng = new RNG(5);
+    let total = 0;
+    const N = 200000;
+    for (let i = 0; i < N; i++) { const p = Luck.jackpotPay([Luck.reel(rng.next()), Luck.reel(rng.next()), Luck.reel(rng.next())]); total += p.lines + p.items * avg; }
+    assert(Math.abs(total / N - o.ev) < 2.5, 'simulated ' + (total / N).toFixed(1) + ' vs ' + o.ev.toFixed(1));
+    assert.deepStrictEqual(Luck.jackpotPay(['star', 'star', 'star']), { lines: 2000, items: 0, label: '★★★' });
+    assert.deepStrictEqual(Luck.jackpotPay(['blank', 'gem', 'bomb']), { lines: 0, items: 0, label: null });
+    assert.strictEqual(Luck.jackpotPay(['gem', 'star', 'gem']).lines, 60, 'a star beats two gems');
+  });
+
+  test('every item has a type, a price and an icon that is not an emoji; specials the engine knows', () => {
+    for (const id of L.ITEM_ORDER) {
+      const it = L.ITEMS[id];
+      assert(L.ITEM_GROUPS.some((g) => g.id === it.group) && it.price > 0 && it.icon && it.desc, id);
+    }
+    assert.strictEqual(L.ITEM_GROUPS.length, 6);
+    for (const sp of ['water', 'steel', 'oil', 'frost', 'torch', 'bolt', 'tnt']) {
+      const g = new Game({ w: 10, h: 20, seed: 1 });
+      assert(g.setSpecial(sp), sp);
+      assert.strictEqual(g.piece.special, sp);
+    }
+  });
+
+  test('old saves: items no longer sold turn into their replacement or their price; new ones start at none', () => {
+    const st = L.mergeState(L.defaultState(), { v: 2, lines: 100, inventory: { bomb: 2, fizz: 3, gone: 2, junk: 5 } });
+    delete st.inventory.water;
+    L.migrateItems(st, { fizz: { to: 'torch' }, gone: { price: 25 } });
+    assert.strictEqual(st.inventory.torch, 3, 'mapped');
+    assert.strictEqual(st.lines, 150, 'refunded at its price');
+    assert.strictEqual(st.inventory.bomb, 2);
+    assert(!('junk' in st.inventory) && !('fizz' in st.inventory) && !('gone' in st.inventory));
+    assert.strictEqual(st.inventory.water, 0);
+    assert.deepStrictEqual(L.migrateState(L.mergeState(L.defaultState(), { v: 2 })).combos, {});
+  });
+}
+
 console.log('save');
 test('no emoji anywhere in the app', () => {
   const fs = require('fs'), path = require('path'), dir = path.join(__dirname, '..', 'Game');
@@ -1103,6 +1695,51 @@ test('no emoji anywhere in the app', () => {
   const found = [];
   for (const f of files) for (const ch of fs.readFileSync(f, 'utf8')) if (/\p{Extended_Pictographic}|\p{Emoji_Presentation}/u.test(ch)) found.push(path.basename(f) + ' ' + ch);
   assert.deepStrictEqual(found, []);
+});
+test('the line glyph: one character (L.LINE), its own font everywhere, no black diamond left for lines', () => {
+  const fs = require('fs'), path = require('path'), dir = path.join(__dirname, '..', 'Game');
+  assert.strictEqual(L.LINE, '⦵');
+  assert(!/\p{Extended_Pictographic}|\p{Emoji_Presentation}|\p{Emoji}/u.test(L.LINE), 'never an emoji, not even with a variation selector');
+  // Every lines amount is written with LINE; the old diamond (U+25C6) is gone from the page, its sources and the README.
+  // (The font still draws a stray one as the line glyph, but it should be LINE: this names where.)
+  const files = fs.readdirSync(path.join(dir, 'js')).filter((f) => f.endsWith('.js')).map((f) => path.join(dir, 'js', f))
+    .concat([path.join(dir, 'index.html'), path.join(dir, '..', 'README.md')], fs.readdirSync(path.join(dir, 'css')).map((f) => path.join(dir, 'css', f)));
+  const stray = [];
+  for (const f of files) fs.readFileSync(f, 'utf8').split('\n').forEach((line, i) => { if (line.includes('◆')) stray.push(path.basename(f) + ':' + (i + 1)); });
+  assert.deepStrictEqual(stray, [], 'write L.LINE (or &#x29B5; in HTML), not a black diamond');
+  // The font: first in both CSS font lists and both canvas fonts, holding just the glyph and the old diamond.
+  const css = fs.readFileSync(path.join(dir, 'css', 'lull.css'), 'utf8');
+  const face = css.match(/@font-face \{ font-family: "Lull Line";[^}]*unicode-range: ([^;]+);[^}]*base64,([A-Za-z0-9+/=]+)\)/);
+  assert(face, 'the @font-face is in lull.css');
+  assert.strictEqual(face[1].trim(), 'U+29B5, U+25C6');
+  assert(/--font: "Lull Line", /.test(css) && /--mono-font: "Lull Line", /.test(css));
+  assert(/const FONT = '"Lull Line", /.test(fs.readFileSync(path.join(dir, 'js', 'render.js'), 'utf8')));
+  assert(/const MONO = '"Lull Line", /.test(fs.readFileSync(path.join(dir, 'js', 'factoryview.js'), 'utf8')));
+  // Its cmap (format 4) maps both code points to the one glyph.
+  const font = Buffer.from(face[2], 'base64');
+  assert.strictEqual(font.toString('latin1', 0, 4), 'OTTO');
+  const nt = font.readUInt16BE(4);
+  let cmap = -1;
+  for (let i = 0; i < nt; i++) if (font.toString('latin1', 12 + i * 16, 16 + i * 16) === 'cmap') cmap = font.readUInt32BE(12 + i * 16 + 8);
+  assert(cmap > 0);
+  const glyphFor = (cp) => {
+    for (let i = 0, n = font.readUInt16BE(cmap + 2); i < n; i++) {
+      const sub = cmap + font.readUInt32BE(cmap + 4 + i * 8 + 4);
+      if (font.readUInt16BE(sub) !== 4) continue;
+      const segs = font.readUInt16BE(sub + 6) / 2, ends = sub + 14, starts = ends + segs * 2 + 2, deltas = starts + segs * 2, offs = deltas + segs * 2;
+      for (let k = 0; k < segs; k++) {
+        const end = font.readUInt16BE(ends + k * 2), start = font.readUInt16BE(starts + k * 2);
+        if (cp < start || cp > end) continue;
+        const ro = font.readUInt16BE(offs + k * 2), d = font.readInt16BE(deltas + k * 2);
+        if (!ro) return (cp + d) & 0xffff;
+        const g = font.readUInt16BE(offs + k * 2 + ro + (cp - start) * 2);
+        return g ? (g + d) & 0xffff : 0;
+      }
+    }
+    return 0;
+  };
+  assert(glyphFor(0x29B5) > 0, 'U+29B5 has a glyph');
+  assert.strictEqual(glyphFor(0x25C6), glyphFor(0x29B5), 'the old diamond draws the same glyph');
 });
 test('v1 saves move to v2: sound on, slower key repeat, puzzle history', () => {
   const st = L.mergeState(L.defaultState(), { v: 1, settings: { sound: false, das: 150, arr: 45 }, puzzle: { solved: {} } });
@@ -1251,6 +1888,145 @@ console.log('sound and music');
     }
     // Movement is barely there: quiet, short, and not bright.
     for (const n of ['move', 'rotate', 'lower']) for (const v of soft[n](Sound)) assert(v.g <= 0.05 && v.d <= 0.25 && v.f < 1000, n);
+  });
+
+  // Sound effects in the music's harmony (Lull.Harmony): the chord of the moment, the snapping, and the fit.
+  const { Harmony } = L;
+  const pcOf = (f) => ((Math.round(midiOf(f)) % 12) + 12) % 12;
+  const firstBar = (name) => SONG.bars.findIndex((b) => b.name === name);
+  const CHORDS = [...new Set(SONG.bars.map((b) => b.name))];
+  const lineAt = (name) => ({ sched: [{ bar: firstBar(name), at: 0, e: 0.375 }], e: 0.375 });
+  test('each chord\'s tones: its bass, fifth and voicing; the key over it borrows G# and F# only on the dominant', () => {
+    const set = (flags) => flags.map((on, pc) => (on ? NAMES[pc] : null)).filter(Boolean).join(' ');
+    const t = (n) => Harmony.tones(SONG.bars[firstBar(n)]);
+    assert.strictEqual(set(t('Am9').chord), 'C E G A B');
+    assert.strictEqual(set(t('Em11').chord), 'D E G A B', 'the voicing leaves out B; the fifth puts it back');
+    assert.strictEqual(set(t('E9').chord), 'D E F# G# B');
+    assert.strictEqual(set(t('E9').scale), 'C D E F# G# A B');
+    assert.strictEqual(set(t('Dm9').scale), 'C D E F G A B');
+    for (const n of CHORDS) t(n).chord.forEach((on, pc) => { if (on) assert(t(n).scale[pc], n); });
+  });
+  test('snapping: the nearest allowed note within a tritone, the lower on a tie, and the sound\'s shape kept', () => {
+    const am = Harmony.tones(SONG.bars[firstBar('Am9')]).chord; // C E G A B
+    assert.strictEqual(Harmony.snap(69, am), 69, 'a chord tone stays');
+    assert.strictEqual(Harmony.snap(74, am), 72, 'D5: C5 and E5 are both a tone away; the lower');
+    assert.strictEqual(Harmony.snap(65, am), 64);
+    assert.strictEqual(Harmony.snap(70, am), 69);
+    assert.strictEqual(Harmony.snap(74, am, 72, 1), 76, 'rising from C5, D5 has to go up');
+    assert.strictEqual(Harmony.snap(74, am, 76, 0), 76, 'a twin of E5 stays on E5');
+    const none = new Array(12).fill(false);
+    assert.strictEqual(Harmony.snap(61, none), 61, 'nothing allowed: left where it was');
+  });
+  test('the bar at a moment follows the tempo each bar was scheduled at, and counts on past the last', () => {
+    const play = Music.playBar, echo = Music.echo;
+    Music.playBar = () => {}; Music.echo = null;
+    try {
+      Music.tempo = 1; Music.pos = { bar: 0, at: 0, keep: Infinity }; Music.fill(5); // bars 0 and 1 at 3 s each
+      Music.tempo = 1.5; Music.fill(9); // then 2 s bars: 2 at 6 s, 3 at 8 s
+      const line = { sched: Music.pos.sched, e: 60 / (Music.bpm * 1.5) / 2 };
+      const at = (t) => { const b = Music.barAt(t, line); return [b.idx, +b.at.toFixed(6), +(b.e * 8).toFixed(6)]; };
+      assert.deepStrictEqual(at(0), [0, 0, 3]);
+      assert.deepStrictEqual(at(2.99), [0, 0, 3]);
+      assert.deepStrictEqual(at(3), [1, 3, 3]);
+      assert.deepStrictEqual(at(6.5), [2, 6, 2], 'the quicker tempo from here');
+      assert.deepStrictEqual(at(9.9), [3, 8, 2]);
+      assert.deepStrictEqual(at(10.5), [4, 10, 2], 'not yet scheduled: counted on at the tempo now');
+      assert.deepStrictEqual(at(-1), [0, 0, 3], 'before the first: the first');
+      assert.strictEqual(Music.barAt(1, { sched: [] }), null);
+      // Round the end of the suite it goes back to the theme, not the intro.
+      const last = SONG.bars.length - 1, wrap = Music.barAt(4, { sched: [{ bar: last, at: 0, e: 0.375 }], e: 0.375 });
+      assert.strictEqual(wrap.idx, SONG.loopFrom);
+      // The live timeline only while playing on the context it plays on; a render's on its own context.
+      const keepCtx = Sound.ctx, keepOn = Music.on, keepPlaying = Music.playing;
+      Sound.ctx = { id: 1 }; Music.on = Sound.ctx; Music.playing = true;
+      assert(Music.timeline() && Music.timeline().sched === Music.pos.sched);
+      Sound.ctx = { id: 2 };
+      assert.strictEqual(Music.timeline(), null, 'another context (an offline render) does not follow the live music');
+      Music.playing = false; Sound.ctx = Music.on;
+      assert.strictEqual(Music.timeline(), null, 'no music, no chords');
+      Sound.ctx = keepCtx; Music.on = keepOn; Music.playing = keepPlaying;
+    } finally { Music.playBar = play; Music.echo = echo; Music.tempo = 1; Music.pos = null; }
+  });
+  test('while the music plays, every pitched voice of every pack lands on the chord (a blip on the key), shape kept', () => {
+    const events = [['move'], ['rotate'], ['lower'], ['lock'], ['hold'], ['blocked'], ['clear', 1], ['clear', 2], ['clear', 3], ['quad'], ['tspin'],
+      ['perfect'], ['combo', 3], ['combo', 9], ['boom'], ['drill'], ['buy'], ['error'], ['solve'], ['fail'], ['golden'], ['item'], ['stamp'],
+      ['pack'], ['land'], ['bell'], ['sparkle-from-a-new-item']];
+    let checked = 0;
+    for (const chord of CHORDS) {
+      const line = lineAt(chord), tones = Harmony.tones(SONG.bars[firstBar(chord)]);
+      for (const pack of Object.keys(Sound.PACKS)) {
+        for (const [ev, arg] of events) {
+          const { list } = Sound.voices(ev, arg, pack);
+          if (!list) continue;
+          const before = JSON.stringify(list), out = Harmony.fit(list, 0.2, line);
+          assert.strictEqual(JSON.stringify(list), before, 'the pack\'s own voices are left as they were');
+          assert.strictEqual(out.length, list.length);
+          const pitched = list.map((v, i) => [v, out[i]]).filter(([v]) => Harmony.tonal(v));
+          const blip = pitched.length <= 2;
+          for (const [v, w] of list.map((x, i) => [x, out[i]])) {
+            if (Harmony.tonal(v)) continue;
+            assert.deepStrictEqual(w, v, pack + ' ' + ev + ': noise, clicks and thuds untouched');
+          }
+          for (const [v, w] of pitched) {
+            const m = midiOf(w.f), where = pack + ' ' + ev + ' over ' + chord + ': ' + w.f.toFixed(1) + ' Hz';
+            assert(Math.abs(m - Math.round(m)) <= 0.081, where + ' is off the note');
+            assert((blip && v.d < Harmony.PASSING ? tones.scale : tones.chord)[pcOf(w.f)], where + ' is not a ' + (blip ? 'key' : 'chord') + ' tone');
+            assert(Math.abs(midiOf(w.f) - midiOf(v.f)) <= 6.6, where + ' left its register');
+            if (v.to) assert(Math.abs(w.to / w.f - v.to / v.f) < 1e-9, where + ': the slide keeps its span');
+            for (const k of ['p', 'fm', 'dt', 'vib', 'g', 'd', 'at', 'w', 'q', 'fe']) assert.deepStrictEqual(w[k], v[k], where + ' ' + k);
+            checked++;
+          }
+          // Its shape: in time order (low to high within a moment), each step goes the same way it did.
+          const order = pitched.map(([v, w]) => [v.at || 0, Math.round(midiOf(v.f)), Math.round(midiOf(w.f))]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+          const bent = order.slice(1).filter((x, i) => Math.sign(x[1] - order[i][1]) !== Math.sign(x[2] - order[i][2])).length;
+          assert(bent <= Math.max(0, Math.floor(order.length / 8)), pack + ' ' + ev + ' over ' + chord + ' lost its shape: ' + JSON.stringify(order));
+        }
+      }
+    }
+    assert(checked > 1000, String(checked));
+  });
+  test('a sound that is already a chord tone stays put, and the default pack over its home chord moves nothing', () => {
+    const line = lineAt('Am9');
+    for (const ev of ['clear', 'quad', 'tspin', 'solve', 'buy', 'bell']) {
+      const { list } = Sound.voices(ev, 2, 'soft'), out = Harmony.fit(list, 0.2, line);
+      out.forEach((w, i) => { if (Harmony.tonal(list[i]) && Harmony.tones(SONG.bars[firstBar('Am9')]).chord[pcOf(list[i].f)]) assert(Math.abs(w.f - list[i].f) < 0.5, ev); });
+    }
+  });
+  test('without the music, sounds play as the pack made them; odd voices from new sounds are taken in their stride', () => {
+    const { list } = Sound.voices('quad', null, 'soft');
+    const plan = Harmony.plan('quad', list, 3, null);
+    const keepCtx = Sound.ctx; Sound.ctx = null;
+    try { assert.strictEqual(Harmony.plan('quad', list, 3).list, list); } finally { Sound.ctx = keepCtx; }
+    assert.strictEqual(plan.list, list); assert.strictEqual(plan.delay, 0);
+    const odd = [null, 7, {}, { f: NaN, d: 1 }, { f: Infinity, d: 1 }, { f: 1234.5, d: 0.6 }, { f: 300, to: NaN, d: 0.4 }, { n: 1, d: 0.2 }, { f: 440 }];
+    const out = Harmony.fit(odd, 0, lineAt('Em11'));
+    assert.strictEqual(out.length, odd.length);
+    assert(out.every((v) => v == null || typeof v !== 'object' || v.f === undefined || Number.isNaN(v.f) || v.f === Infinity || isFinite(v.f)));
+    assert(Harmony.tones(SONG.bars[firstBar('Em11')]).chord[pcOf(out[5].f)], 'an unknown sound\'s tone still finds the chord');
+    assert.strictEqual(out[8].f, 440, 'a voice with no length is a click: left alone');
+  });
+  test('the big celebrations wait for the next eighth only when it is at most 60 ms away; nothing else ever waits', () => {
+    const line = { sched: [{ bar: firstBar('Am9'), at: 10, e: 0.375 }], e: 0.375 };
+    const { list } = Sound.voices('quad', null, 'soft');
+    const d = (now, name) => Harmony.plan(name || 'quad', list, now, line).delay;
+    assert(Math.abs(d(10.375 - 0.05) - 0.05) < 1e-9, 'just before the beat: on it');
+    assert.strictEqual(d(10.375 - 0.1), 0, 'too far: straight away');
+    assert.strictEqual(d(10.375 + 0.01), 0, 'just after: straight away, never late by a whole eighth');
+    assert(Math.abs(d(10.375 - 0.05, 'perfect') - 0.05) < 1e-9 && Math.abs(d(10.375 - 0.05, 'tspin') - 0.05) < 1e-9);
+    for (const n of ['move', 'rotate', 'lower', 'lock', 'hold', 'clear', 'combo', 'boom', 'something-new']) assert.strictEqual(d(10.375 - 0.05, n), 0, n);
+    for (let now = 10; now < 13; now += 0.0137) {
+      const w = d(now);
+      assert(w >= 0 && w <= Harmony.QUANTIZE + 1e-9);
+      if (w) { const k = (now + w - 10) / 0.375; assert(Math.abs(k - Math.round(k)) < 1e-6, 'on the grid'); }
+    }
+    // Tuned for where it will sound, not where it was asked for: 20 ms before a change of chord, the next chord.
+    const em = SONG.bars.findIndex((x, i) => x.name === 'Em11' && SONG.bars[i + 1].name === 'Am9');
+    const change = { sched: [{ bar: em, at: 0, e: 0.375 }, { bar: em + 1, at: 3, e: 0.375 }], e: 0.375 };
+    const q = Harmony.plan('quad', list, 3 - 0.02, change);
+    assert(Math.abs(q.delay - 0.02) < 1e-9);
+    assert.strictEqual(q.list[0].f, list[0].f);
+    const am = Harmony.tones(SONG.bars[firstBar('Am9')]).chord;
+    for (const [i, v] of list.entries()) if (Harmony.tonal(v)) assert(am[pcOf(q.list[i].f)]);
   });
 }
 

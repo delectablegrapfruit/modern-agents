@@ -4,6 +4,7 @@
   'use strict';
   const L = (root.Lull = root.Lull || {});
   const { CELL, Pieces, PALETTES, clamp } = L;
+  const { LINE } = L;
 
   // ---- colour ---------------------------------------------------------------------------------------------------------
 
@@ -208,6 +209,31 @@
         ctx.beginPath(); ctx.arc(cx, cy, s * (0.3 + k * 0.08), t2 * (3 - k) + k * 2, t2 * (3 - k) + k * 2 + 1.6); ctx.stroke();
       }
       ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(cx, cy, s * 0.2, 0, Math.PI * 2); ctx.fill();
+    } else if (special === 'tnt') {
+      // A stick of dynamite: red, a paper band, a short fuse.
+      ctx.fillStyle = '#c4473c'; rr(ctx, x + s * 0.2, y + s * 0.22, s * 0.6, s * 0.7, s * 0.08); ctx.fill();
+      ctx.fillStyle = '#f1e0c5'; ctx.fillRect(x + s * 0.2, y + s * 0.48, s * 0.6, s * 0.16);
+      ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.fillRect(x + s * 0.26, y + s * 0.26, s * 0.08, s * 0.6);
+      ctx.strokeStyle = '#c9a36b'; ctx.lineWidth = Math.max(1, s * 0.06);
+      ctx.beginPath(); ctx.moveTo(x + s * 0.5, y + s * 0.22); ctx.quadraticCurveTo(x + s * 0.56, y + s * 0.06, x + s * 0.72, y + s * 0.1); ctx.stroke();
+      const f = (Math.sin((t || 0) / 110) + 1) / 2;
+      ctx.fillStyle = f > 0.5 ? '#ffd166' : '#ff7a3d'; ctx.beginPath(); ctx.arc(x + s * 0.73, y + s * 0.1, s * (0.04 + f * 0.04), 0, Math.PI * 2); ctx.fill();
+    } else if (special === 'torch') {
+      // A flame that flickers.
+      const cx = x + s / 2, k = Math.sin((t || 0) / 70) * 0.06, k2 = Math.sin((t || 0) / 45 + 1) * 0.05;
+      ctx.fillStyle = '#ff7a3d';
+      ctx.beginPath(); ctx.moveTo(cx, y + s * (0.06 + k)); ctx.quadraticCurveTo(x + s * (0.9 + k2), y + s * 0.55, cx, y + s * 0.94); ctx.quadraticCurveTo(x + s * (0.1 - k2), y + s * 0.55, cx, y + s * (0.06 + k)); ctx.fill();
+      ctx.fillStyle = '#ffd166';
+      ctx.beginPath(); ctx.moveTo(cx, y + s * (0.36 - k)); ctx.quadraticCurveTo(x + s * 0.72, y + s * 0.66, cx, y + s * 0.9); ctx.quadraticCurveTo(x + s * 0.28, y + s * 0.66, cx, y + s * (0.36 - k)); ctx.fill();
+      ctx.fillStyle = '#fff6d8'; ctx.beginPath(); ctx.arc(cx, y + s * 0.74, s * 0.08, 0, Math.PI * 2); ctx.fill();
+    } else if (special === 'bolt') {
+      // A bolt of lightning in a dark cloud.
+      ctx.fillStyle = '#2a2f3d'; rr(ctx, x + s * 0.06, y + s * 0.06, s * 0.88, s * 0.88, s * 0.18); ctx.fill();
+      const f = 0.75 + 0.25 * Math.sin((t || 0) / 60);
+      ctx.fillStyle = 'rgba(255,236,140,' + f + ')';
+      ctx.beginPath();
+      ctx.moveTo(x + s * 0.58, y + s * 0.12); ctx.lineTo(x + s * 0.3, y + s * 0.55); ctx.lineTo(x + s * 0.5, y + s * 0.55);
+      ctx.lineTo(x + s * 0.4, y + s * 0.9); ctx.lineTo(x + s * 0.72, y + s * 0.42); ctx.lineTo(x + s * 0.52, y + s * 0.42); ctx.closePath(); ctx.fill();
     } else if (special === 'drill') {
       ctx.fillStyle = '#c0c7d2';
       ctx.beginPath(); ctx.moveTo(x + s * 0.18, y + s * 0.12); ctx.lineTo(x + s * 0.82, y + s * 0.12); ctx.lineTo(x + s * 0.5, y + s * 0.92); ctx.closePath(); ctx.fill();
@@ -219,6 +245,40 @@
         ctx.beginPath(); ctx.moveTo(x + s / 2 - half, yy); ctx.lineTo(x + s / 2 + half, yy + s * 0.08); ctx.stroke();
       }
     }
+  }
+
+  // What a block is made of (js/sandbox.js), drawn over its cell: steel, TNT and water have their own colour too.
+  const MAT_TINT = { [CELL.STEEL]: '#8e99a8', [CELL.TNT]: '#c4473c', [CELL.WATER]: '#4fa3df' };
+  // A piece carrying a sandbox item looks like what it will be made of.
+  const SPECIAL_MAT = { frost: CELL.ICE, oil: CELL.OIL, steel: CELL.STEEL, water: CELL.WATER };
+  function drawMat(ctx, m, x, y, s, t) {
+    ctx.save();
+    if (m === CELL.ICE) {
+      ctx.fillStyle = 'rgba(214,242,255,0.38)'; ctx.fillRect(x, y, s, s);
+      ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = Math.max(1, s * 0.05); ctx.strokeRect(x + 1, y + 1, s - 2, s - 2);
+      ctx.strokeStyle = 'rgba(255,255,255,0.65)'; ctx.lineWidth = Math.max(1, s * 0.04);
+      ctx.beginPath(); ctx.moveTo(x + s * 0.2, y + s * 0.45); ctx.lineTo(x + s * 0.45, y + s * 0.2); ctx.moveTo(x + s * 0.55, y + s * 0.85); ctx.lineTo(x + s * 0.62, y + s * 0.62); ctx.lineTo(x + s * 0.82, y + s * 0.55); ctx.stroke();
+    } else if (m === CELL.OIL) {
+      const g = ctx.createLinearGradient(x, y, x, y + s);
+      g.addColorStop(0, 'rgba(20,14,8,0.15)'); g.addColorStop(1, 'rgba(20,14,8,0.55)');
+      ctx.fillStyle = g; ctx.fillRect(x, y, s, s);
+      ctx.fillStyle = 'rgba(160,120,255,0.22)'; ctx.fillRect(x + s * 0.15, y + s * 0.2, s * 0.5, s * 0.1);
+      ctx.fillStyle = 'rgba(255,190,90,0.2)'; ctx.fillRect(x + s * 0.3, y + s * 0.32, s * 0.45, s * 0.08);
+      ctx.fillStyle = 'rgba(20,14,8,0.7)'; ctx.beginPath(); ctx.arc(x + s * 0.7, y + s * 0.82, s * 0.07, 0, Math.PI * 2); ctx.fill();
+    } else if (m === CELL.STEEL) {
+      ctx.strokeStyle = 'rgba(255,255,255,0.45)'; ctx.lineWidth = Math.max(1, s * 0.05);
+      ctx.beginPath(); ctx.moveTo(x + s * 0.12, y + s * 0.88); ctx.lineTo(x + s * 0.12, y + s * 0.12); ctx.lineTo(x + s * 0.88, y + s * 0.12); ctx.stroke();
+      ctx.fillStyle = 'rgba(30,34,42,0.65)';
+      for (const [fx, fy] of [[0.25, 0.25], [0.75, 0.25], [0.25, 0.75], [0.75, 0.75]]) { ctx.beginPath(); ctx.arc(x + s * fx, y + s * fy, Math.max(0.8, s * 0.06), 0, Math.PI * 2); ctx.fill(); }
+    } else if (m === CELL.TNT) {
+      ctx.fillStyle = '#f1e0c5'; ctx.fillRect(x + s * 0.08, y + s * 0.4, s * 0.84, s * 0.2);
+      if (s >= 14) { ctx.fillStyle = '#7a1f18'; ctx.font = '800 ' + Math.floor(s * 0.2) + 'px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('TNT', x + s / 2, y + s * 0.51); }
+    } else if (m === CELL.WATER) {
+      const k = Math.sin((t || 0) / 400 + x * 0.1) * s * 0.04;
+      ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.fillRect(x + s * 0.12, y + s * (0.2 + 0.01) + k, s * 0.76, Math.max(1, s * 0.06));
+      ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.fillRect(x + s * 0.3, y + s * 0.42 - k, s * 0.5, Math.max(1, s * 0.05));
+    }
+    ctx.restore();
   }
 
   // ---- frames and backdrops -----------------------------------------------------------------------------------------
@@ -507,6 +567,7 @@
         }
       }
       for (const f of this.texts) {
+        if (f.t < 0) continue; // still waiting its turn
         const k = f.t / f.dur;
         ctx.save();
         ctx.globalAlpha = k < 0.8 ? 1 : (1 - k) / 0.2;
@@ -521,7 +582,7 @@
     }
   }
 
-  const FONT = '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif';
+  const FONT = '"Lull Line", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif';
 
   // ---- piece previews -------------------------------------------------------------------------------------------------
 
@@ -530,15 +591,17 @@
     const type = Pieces.get(entry.id);
     if (!type) return;
     const special = entry.special;
-    const cells = (special === 'bomb' || special === 'drill') ? [[0, 0]] : type.rots[entry.rot || 0];
+    const single = L.SINGLE_SPECIALS && L.SINGLE_SPECIALS.has(special);
+    const cells = single ? [[0, 0]] : type.rots[entry.rot || 0];
     const b = Pieces.boundsOf(cells);
     const s = Math.floor(Math.min(maxCell, (box.w - 4) / b.w, (box.h - 4) / b.h));
     const ox = box.x + (box.w - b.w * s) / 2, oy = box.y + (box.h - b.h * s) / 2;
-    const color = look.color(type.color);
+    const mat = SPECIAL_MAT[special] || 0;
+    const color = MAT_TINT[mat] || look.color(type.color);
     for (const [cx, cy] of cells) {
       const x = Math.round(ox + (cx - b.minX) * s), y = Math.round(oy + (b.maxY - cy) * s);
-      if (special === 'bomb' || special === 'drill') drawSpecial(ctx, special, x, y, s, look.t);
-      else drawCell(ctx, look.skin, color, x, y, s, look.alpha);
+      if (single) drawSpecial(ctx, special, x, y, s, look.t);
+      else { drawCell(ctx, look.skin, color, x, y, s, look.alpha); if (mat) drawMat(ctx, mat, x, y, s, look.t); }
       if (special === 'sand') { ctx.fillStyle = 'rgba(0,0,0,0.25)'; for (let k = 0; k < 4; k++) ctx.fillRect(x + s * (0.2 + 0.5 * (k % 2)), y + s * (0.25 + 0.4 * (k >> 1)), Math.max(1, s * 0.1), Math.max(1, s * 0.1)); }
     }
   }
@@ -678,11 +741,12 @@
 
     colorOf(v) {
       const look = this.look;
+      if (v & CELL.MAT && MAT_TINT[v & CELL.MAT]) return MAT_TINT[v & CELL.MAT];
       if (this.view.mono) return look.monoColor;
       return look.colors[v & CELL.COLOR] || look.colors[8];
     }
 
-    needsFrame() { return this.dirty || this.fx.active || this.alive || (this.game && this.game.piece && this.game.piece.special) || (this.look && this.look.animated); }
+    needsFrame() { const g = this.game; return this.dirty || this.fx.active || this.alive || (g && g.piece && (g.piece.special || (g.s && g.s.gold > 0))) || (this.look && this.look.animated); }
 
     render(now) {
       if (!this.game || !this.look || !this.cssW) return;
@@ -731,6 +795,7 @@
           if (near && !near.has(x + ',' + y)) continue;
           const [sx, sy] = this.toScreen(x, y);
           drawCell(ctx, look.skin, this.colorOf(v), sx, sy, s);
+          if (v & CELL.MAT) drawMat(ctx, v & CELL.MAT, sx, sy, s, now);
           if (v & CELL.GEM) drawGem(ctx, sx, sy, s, now);
         }
       }
@@ -786,14 +851,18 @@
           this.alive = true;
         }
         const overlapping = (p.special === 'phase' || p.special === 'anvil') && !g.board.fits(p.type.rots[p.rot], p.x, p.y);
+        // Gold on the board (Free Play) gilds whatever plain piece is in play.
+        const golden = p.special === 'golden' || (!p.special && g.s && g.s.gold > 0);
+        const mat = SPECIAL_MAT[p.special] || 0;
         for (const [cx, cy] of pieceCells) {
           const [sx, sy] = this.toScreen(cx, cy);
-          if (p.special === 'bomb' || p.special === 'drill' || p.special === 'blackhole') { drawSpecial(ctx, p.special, sx, sy, s, now); continue; }
-          const tint = p.special === 'anvil' ? '#5b6270' : p.special === 'golden' ? '#f2c14e' : color;
+          if (L.SINGLE_SPECIALS && L.SINGLE_SPECIALS.has(p.special)) { drawSpecial(ctx, p.special, sx, sy, s, now); continue; }
+          if (mat) { drawCell(ctx, look.skin, MAT_TINT[mat] || color, sx, sy, s, mat === CELL.WATER ? 0.85 : 1); drawMat(ctx, mat, sx, sy, s, now); continue; }
+          const tint = p.special === 'anvil' ? '#5b6270' : golden ? '#f2c14e' : color;
           // Phasing: translucent, and it shimmers (more faintly still while inside other blocks).
           const shimmer = p.special === 'phase' && !this.reducedMotion ? 0.12 * Math.sin(now / 170 + (cx + cy) * 0.9) : 0;
           drawCell(ctx, look.skin, tint, sx, sy, s, p.special === 'phase' ? (overlapping ? 0.4 : 0.72) + shimmer : p.special === 'anvil' && overlapping ? 0.7 : 1);
-          if (p.special === 'golden') {
+          if (golden) {
             const k = ((now / 900 + (cx + cy) * 0.12) % 1.4) - 0.2;
             ctx.save(); ctx.beginPath(); ctx.rect(sx, sy, s, s); ctx.clip();
             ctx.fillStyle = 'rgba(255,255,230,0.55)'; ctx.beginPath(); ctx.moveTo(sx + s * (k * 2 - 0.4), sy + s); ctx.lineTo(sx + s * (k * 2 - 0.1), sy + s); ctx.lineTo(sx + s * (k * 2 + 0.4), sy); ctx.lineTo(sx + s * (k * 2 + 0.1), sy); ctx.closePath(); ctx.fill();
@@ -822,7 +891,7 @@
         }
       }
 
-      if (p && p.special) this.ambient(p, pieceCells, now);
+      if (p && (p.special || (g.s && g.s.gold > 0))) this.ambient(p, pieceCells, now);
 
       drawFrame(ctx, look.frame, board, look.theme.accent, now);
       // Close to the top: the frame breathes red.
@@ -928,7 +997,7 @@
       const pieceColor = this.colorOf(result.color || 8);
       // Items the physics layer animates from the engine's own record of what moved and what went.
       const sp = result.special, phys = !reduced && !!this.fx.world;
-      const falls = phys && (sp === 'anvil' || sp === 'phase' || sp === 'sand');
+      const falls = phys && (sp === 'anvil' || sp === 'phase' || sp === 'sand' || sp === 'water');
       if (!reduced && !falls && result.dropCells && result.dropDist > 0) {
         // The drop's trail, and a little shake that grows with the fall.
         const tops = new Map();
@@ -976,7 +1045,7 @@
         }
         if (!reduced) this.fx.shake = Math.max(this.fx.shake, Math.min(2.5, 0.6 * result.lines));
         const b = this.lay.board;
-        if (this.showBank) this.fx.text('+' + (result.banked || result.lines) + ' ◆' + (result.mult > 1 ? '  ×' + result.mult : ''), b.x + b.w / 2, b.y + b.h * 0.55, '#8fe3ff', Math.max(12, Math.min(18, s * 0.75)));
+        if (this.showBank) this.fx.text('+' + (result.banked || result.lines) + ' ' + LINE + (result.mult > 1 ? '  ×' + Math.round(result.mult * 1000) / 1000 : ''), b.x + b.w / 2, b.y + b.h * 0.55, '#8fe3ff', Math.max(12, Math.min(18, s * 0.75)));
         const label = labelFor(result);
         if (label) this.fx.text(label, b.x + b.w / 2, b.y + b.h * 0.42, result.perfect ? '#ffe28a' : '#ffffff', Math.max(13, Math.min(22, s * 0.9)));
       } else if (result.tspin || result.mini) {
@@ -1080,6 +1149,175 @@
         }
       }
       if (result.drilled && result.drilled.length && !done) this.fx.burst(reduced ? 'fade' : 'sparks', result.drilled.map(([x, y, v]) => { const [sx, sy] = this.toScreen(x, y); return { x: sx, y: sy, color: this.colorOf(v) }; }), s, reduced);
+      this.sandboxFx(result, reduced);
+      this.dirty = true;
+    }
+
+    // ---- the sandbox's materials and chain reactions (js/sandbox.js), played back link by link ------------------------
+
+    sandboxFx(r, reduced) {
+      const phys = !reduced && !!this.fx.world;
+      if (r.froze && r.froze.length) this.frostFx(r, reduced);
+      if (r.flow && r.flow.length) { if (phys) this.waterFx(r); }
+      if (r.strike) this.strikeFx(r, reduced);
+      if (r.wires && r.wires.length && phys) this.wireFx(r.wires, 0.1);
+      // The piece's own blast (a bomb) goes first; each later link of the chain a beat after the one before.
+      const lead = r.special === 'bomb' ? 0.2 : r.strike ? 0.16 : 0.08;
+      if (r.react) this.chainFx(r.react, lead, r.rows, reduced);
+      if (r.post) this.chainFx(r.post, 0.3, null, reduced);
+    }
+
+    /** Frost: a cold flash over everything that froze, and a few glittering motes. */
+    frostFx(r, reduced) {
+      const fx = this.fx, s = this.lay.s;
+      const cells = r.froze.map(([x, y]) => { const fy = this.afterClear(r.rows, y); return fy == null ? null : [x, fy]; }).filter(Boolean);
+      const sc = this.screenCells(cells, '#d6f2ff');
+      fx.pop(sc, '#bfe9ff', reduced ? 0.3 : 0.6);
+      if (reduced) return;
+      const [cx, cy] = this.centerOf(cells.length ? cells : r.froze);
+      fx.ring(cx, cy, '#d6f2ff', s * 3, { max: 0.6, width: 2 });
+      // Frost creeping out: each block glitters a beat after the one before, nearest first.
+      const w = this.fx.world ? this.phys() : null;
+      sc.forEach((c, i) => {
+        const d = Math.hypot(c.x + s / 2 - cx, c.y + s / 2 - cy) / s;
+        if (w) for (let k = 0; k < 3; k++) { const p = w.part('pixel', c.x + Math.random() * s, c.y + Math.random() * s, (Math.random() - 0.5) * s, -w.gy * s * Math.random(), 0.5, Math.max(1.5, s * 0.08), k ? '#e6f7ff' : '#ffffff', -0.05, 2); p.delay = d * 0.06; p.max += p.delay; }
+        else fx.parts.push({ kind: 'star', x: c.x + s / 2, y: c.y + s / 2, vx: 0, vy: -10, g: 0, life: 0, max: 0.6, size: 2.5, color: '#e6f7ff' });
+        void i;
+      });
+    }
+
+    /** Water: each block runs to where it settles, trailing droplets, and lands with a splash. */
+    waterFx(r) {
+      const w = this.phys(), s = this.lay.s, fx = this.fx;
+      r.flow.forEach(([x0, y0, x1, y1, v], i) => {
+        const fy = this.afterClear(r.rows, y1), [sx, sy] = this.toScreen(x0, y0), [tx, ty] = this.toScreen(x1, fy == null ? y1 : fy);
+        const dist = Math.hypot(tx - sx, ty - sy) / s, dur = 0.12 + Math.sqrt(dist) * 0.08, delay = i * 0.03;
+        fx.mover({ x0: sx, y0: sy, x1: tx, y1: ty, s, color: this.colorOf(v), skin: this.look.skin, dur, delay, key: fy == null ? null : x1 + ',' + fy });
+        w.after(delay + dur, () => {
+          for (let k = 0; k < 5; k++) { const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.4, sp = s * (3 + Math.random() * 5); w.part('grain', tx + s / 2, ty + s / 2, Math.cos(a) * sp, Math.sin(a) * sp, 0.35, Math.max(1.5, s * 0.09), Math.random() < 0.5 ? '#9fd4ff' : '#4fa3df', 1); }
+        });
+        for (let k = 0; k < 3; k++) { const u = Math.random(); w.part('pixel', sx + (tx - sx) * u + s / 2, sy + (ty - sy) * u + s / 2, 0, 0, 0.3, Math.max(1.5, s * 0.1), '#9fd4ff', 0.3).delay = delay + dur * u; }
+      });
+    }
+
+    /** Lightning and the torch: a bolt from the sky down to where it struck, or a puff of flame. */
+    strikeFx(r, reduced) {
+      const fx = this.fx, s = this.lay.s, b = this.lay.board, [x, y] = r.strike, [cx, cy] = this.mid(x, y);
+      if (r.special === 'torch') {
+        if (!reduced) { fx.puff(cx, cy, '#ff9f43', 8, s * 0.5); fx.ring(cx, cy, '#ffb347', s * 1.6, { max: 0.4 }); }
+        if (r.fizzle) fx.puff(cx, cy, '#9aa3b2', 5, s * 0.4);
+        return;
+      }
+      fx.flash(b.x, b.y, b.w, b.h, '#fff6c8', reduced ? 0.12 : 0.2);
+      if (reduced) return;
+      // From the top of the board to the block it hit, jagged (a straight line in board terms, so rotated views work).
+      const [sx0, sy0] = this.mid(x, this.game.h - 1), [ex, ey] = this.mid(x, Math.max(0, y - 1)), pts = [], n = 9;
+      for (let i = 0; i <= n; i++) {
+        const k = i / n, j = i && i < n ? (Math.random() - 0.5) * s * 0.9 : 0, px = sx0 + (ex - sx0) * k, py = sy0 + (ey - sy0) * k;
+        pts.push(Math.abs(ex - sx0) > Math.abs(ey - sy0) ? [px, py + j] : [px + j, py]);
+      }
+      void cx; void cy;
+      fx.prop(0.32, (ctx, k) => {
+        ctx.globalAlpha = 1 - k; ctx.lineJoin = 'round';
+        ctx.strokeStyle = 'rgba(255,236,140,0.5)'; ctx.lineWidth = s * 0.35; ctx.beginPath(); pts.forEach(([px, py], i) => (i ? ctx.lineTo(px, py) : ctx.moveTo(px, py))); ctx.stroke();
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = Math.max(1.5, s * 0.1); ctx.stroke();
+      });
+      fx.ring(ex, ey, '#ffe98c', s * 2, { max: 0.4, width: 2 });
+      fx.shake = Math.max(fx.shake, 3);
+      if (r.fizzle) fx.puff(ex, ey, '#9aa3b2', 5, s * 0.4);
+    }
+
+    /** Current along steel: crackling arcs from block to block. */
+    wireFx(nets, delay) {
+      const fx = this.fx, s = this.lay.s;
+      for (const net of nets) {
+        const pts = net.map(([x, y]) => this.mid(x, y));
+        fx.prop(0.4, (ctx, k) => {
+          ctx.globalAlpha = (1 - k) * 0.9; ctx.strokeStyle = '#fff3a8'; ctx.lineWidth = Math.max(1, s * 0.07);
+          ctx.beginPath();
+          for (let i = 1; i < pts.length; i++) {
+            const [ax, ay] = pts[i - 1], [bx, by] = pts[i];
+            if (Math.abs(ax - bx) + Math.abs(ay - by) > s * 1.5) continue;
+            ctx.moveTo(ax, ay); ctx.lineTo((ax + bx) / 2 + (Math.random() - 0.5) * s * 0.4, (ay + by) / 2 + (Math.random() - 0.5) * s * 0.4); ctx.lineTo(bx, by);
+          }
+          ctx.stroke();
+        }, { delay });
+      }
+    }
+
+    /**
+     * A chain reaction, link by link: each blast throws its blocks, each fire glows and burns its blocks to embers,
+     * ice shatters into shards, lightning runs along its wire and fries what it touches, melting ice steams.
+     * rows: the rows that cleared after it (its cells are numbered before the clear), or null (numbered after).
+     */
+    chainFx(steps, lead, rows, reduced) {
+      const s = this.lay.s, fx = this.fx, look = this.look, phys = !reduced && !!fx.world;
+      const w = phys ? this.phys() : null;
+      const at = (st) => lead + st.wave * 0.16;
+      for (const st of steps) {
+        const t0 = at(st);
+        const cells = st.cells.map(([x, y, v]) => { const [cx, cy] = this.mid(x, y); return { x: cx, y: cy, v, color: this.colorOf(v) }; });
+        if (!phys) {
+          if (cells.length) fx.burst('fade', cells.map((c) => ({ x: c.x - s / 2, y: c.y - s / 2, color: c.color })), s, true);
+          continue;
+        }
+        if (st.kind === 'blast') {
+          const [cx, cy] = this.mid(st.at[0], st.at[1]), ux = -w.gx, uy = -w.gy;
+          for (const c of cells) {
+            let dx = c.x - cx, dy = c.y - cy;
+            const d = Math.hypot(dx, dy) / s;
+            if (d < 0.01) { dx = ux; dy = uy; } else { dx /= d * s; dy /= d * s; }
+            const sp = s * (14 - d * 3) * (0.85 + Math.random() * 0.3), lift = s * (5 + Math.random() * 4);
+            w.body({ mode: 'hold', wake: t0, next: 'free', x: c.x, y: c.y, vx: dx * sp + ux * lift, vy: dy * sp + uy * lift, va: (Math.random() - 0.5) * 18, size: s, color: c.color, skin: look.skin, rest: 0.35, fric: 0.7, solid: true, fadeAt: t0 + 0.45, max: t0 + 0.8 });
+          }
+          w.after(t0, () => {
+            fx.prop(0.22, (ctx, k) => {
+              const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, s * 2.6);
+              g.addColorStop(0, 'rgba(255,250,230,' + (0.9 * (1 - k)) + ')'); g.addColorStop(0.45, 'rgba(255,179,71,' + (0.55 * (1 - k)) + ')'); g.addColorStop(1, 'rgba(255,120,40,0)');
+              ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, s * 2.6 * (0.5 + k * 0.5), 0, Math.PI * 2); ctx.fill();
+            });
+            fx.ring(cx, cy, '#fff3d6', s * 3.2, { width: 3, max: 0.35 });
+            w.sparks(cx, cy, s, 12, ['#ffd166', '#fff3c4', '#ff8c42']);
+            w.dust(cx, cy, s, 6, '#8a8f99');
+            fx.shake = Math.max(fx.shake, 5);
+          });
+        } else if (st.kind === 'shatter') {
+          cells.forEach((c, i) => w.body({ mode: 'hold', x: c.x, y: c.y, size: s, color: c.color, skin: look.skin, wake: t0 + i * 0.012, act: 'shards', max: 5 }));
+          w.after(t0, () => { if (cells.length) { const c = cells[0]; fx.ring(c.x, c.y, '#e6f7ff', s * 2.2, { max: 0.35, width: 2 }); } fx.shake = Math.max(fx.shake, 2); });
+        } else if (st.kind === 'fire') {
+          // Each block glows as the flame reaches it, then goes up in embers.
+          const burnAt = cells.map((_, i) => t0 + 0.05 + i * 0.025);
+          cells.forEach((c, i) => w.body({ mode: 'hold', x: c.x, y: c.y, size: s, color: c.color, skin: look.skin, wake: burnAt[i], act: 'embers', max: 5 }));
+          const end = cells.length ? burnAt[burnAt.length - 1] + 0.05 : t0;
+          fx.prop(end + 0.1, (ctx, k, t) => {
+            cells.forEach((c, i) => {
+              const u = (t - (burnAt[i] - 0.14)) / 0.14;
+              if (u <= 0 || t > burnAt[i]) return;
+              ctx.globalAlpha = Math.min(1, u) * 0.75; ctx.fillStyle = Math.random() < 0.5 ? '#ff9f43' : '#ffd166';
+              ctx.fillRect(c.x - s / 2, c.y - s / 2, s, s);
+            });
+          });
+        } else if (st.kind === 'charge') {
+          this.wireFx([st.net], t0);
+          cells.forEach((c) => w.body({ mode: 'hold', x: c.x, y: c.y, size: s, color: c.color, skin: look.skin, wake: t0 + 0.12, act: 'pixels', max: 5 }));
+          w.after(t0, () => { for (const [x, y] of st.net.slice(0, 12)) { const [px, py] = this.mid(x, y); w.sparks(px, py, s, 2, ['#fff3a8', '#ffffff']); } });
+        }
+        if (st.melt && st.melt.length) {
+          const melted = st.melt.map(([x, y]) => { const fy = rows ? this.afterClear(rows, y) : y; return fy == null ? null : [x, fy]; }).filter(Boolean);
+          w.after(t0 + 0.05, () => {
+            fx.pop(this.screenCells(melted, '#4fa3df'), '#9fd4ff', 0.5);
+            for (const [x, y] of melted) { const [px, py] = this.mid(x, y); w.dust(px, py, s, 2, '#e8eef5'); }
+          });
+        }
+      }
+    }
+
+    /** A combo found: its name and what it paid, small and soft, high on the board (stacked when there are several). */
+    callout(name, detail, i, reduced) {
+      if (!this.lay) this.layout();
+      const b = this.lay.board, s = this.lay.s, y = b.y + b.h * 0.16 + (i || 0) * s * 1.7;
+      this.fx.texts.push({ str: name, x: b.x + b.w / 2, y, color: '#bfead3', size: Math.max(12, Math.min(16, s * 0.68)), t: -(i || 0) * 0.15, dur: reduced ? 1.6 : 2.2 });
+      if (detail) this.fx.texts.push({ str: detail, x: b.x + b.w / 2, y: y + Math.max(13, s * 0.62), color: '#8fe3ff', size: Math.max(10, Math.min(13, s * 0.52)), t: -(i || 0) * 0.15, dur: reduced ? 1.6 : 2.2 });
       this.dirty = true;
     }
 
@@ -1493,7 +1731,7 @@
       const g = this.game, s = this.lay.s, fx = this.fx, b = this.lay.board;
       this.dirty = true;
       // A rewind takes back what the last item did, its show included.
-      if (id === 'rewind' && fx.world) { fx.world.clear(); fx.props = []; }
+      if (id === 'rewind') { if (fx.world) fx.world.clear(); fx.props = []; fx.texts = []; }
       if (id === 'rewind') { fx.sweep(b, '#8fd3ff', 'y', 0.55); if (!reduced) fx.text('↶', b.x + b.w / 2, b.y + b.h * 0.4, '#8fd3ff', 30); return; }
       if (!piece || id === 'settle' || id === 'purge') return;
       const cells = g.cellsOf(piece), color = this.colorOf(piece.type.color);
@@ -1524,6 +1762,13 @@
         case 'laser': fx.pop(sc, '#ff3c50', 0.5); fx.stars(cx, cy, ['#ff6b7a', '#ffffff'], 10, 140); break;
         case 'blackhole': fx.ring(cx, cy, '#b48cff', s * 3, { inward: true, max: 0.6, width: 3 }); fx.pop(sc, '#b48cff', 0.5); break;
         case 'golden': fx.pop(sc, '#ffd35a', 0.6); fx.stars(cx, cy, ['#ffd35a', '#fff1b8'], 14, 130); break;
+        case 'frost': fx.pop(sc, '#bfe9ff', 0.6); fx.ring(cx, cy, '#e6f7ff', s * 2.4); fx.stars(cx, cy, ['#ffffff', '#bfe9ff'], 10, 80); break;
+        case 'water': fx.pop(sc, '#4fa3df', 0.5); for (const c of sc) for (let k = 0; k < 3; k++) fx.parts.push({ kind: 'grain', x: c.x + Math.random() * s, y: c.y + Math.random() * s, vx: (Math.random() - 0.5) * 50, vy: -30 - Math.random() * 50, g: 420, life: 0, max: 0.6, size: Math.max(1.5, s * 0.09), color: '#9fd4ff' }); break;
+        case 'oil': fx.pop(sc, '#6b4f2a', 0.5); fx.puff(cx, cy, '#3a2e22', 6, s * 0.35); break;
+        case 'steel': fx.pop(sc, '#c7ced9', 0.5); fx.sweep({ x: Math.min(...sc.map((c) => c.x)) - s * 0.2, y: Math.min(...sc.map((c) => c.y)) - s * 0.2, w: Math.max(...sc.map((c) => c.x)) + s * 1.4 - Math.min(...sc.map((c) => c.x)), h: Math.max(...sc.map((c) => c.y)) + s * 1.4 - Math.min(...sc.map((c) => c.y)) }, '#ffffff', 'x', 0.35); break;
+        case 'tnt': fx.pop(sc, '#ff7a3d', 0.5); fx.ring(cx, cy, '#ff7a3d', s * 1.8, { inward: true, max: 0.4, width: 3 }); break;
+        case 'torch': fx.pop(sc, '#ffb347', 0.5); fx.puff(cx, cy, '#ff9f43', 8, s * 0.4); break;
+        case 'bolt': fx.pop(sc, '#fff3a8', 0.5); fx.stars(cx, cy, ['#fff3a8', '#ffffff'], 10, 150); fx.shake = Math.max(fx.shake, 1.5); break;
         case 'nuke': case 'tornado': case 'flip': break;
         default: fx.pop(sc, color);
       }
@@ -1547,7 +1792,19 @@
       } else if (p.special === 'blackhole') {
         const cx = c.x + s / 2, cy = c.y + s / 2, a = Math.random() * 6.3, r = s * (1.5 + Math.random());
         fx.parts.push({ kind: 'spiral', cx, cy, ang: a, rad: r, w: 6, pull: 3, x: cx, y: cy, vx: 0, vy: 0, g: 0, life: 0, max: 0.7, size: 3, color: Math.random() < 0.5 ? '#b48cff' : '#ffb35c' });
-      } else if (p.special === 'golden') {
+      } else if (p.special === 'torch') {
+        fx.parts.push({ kind: 'puff', x: c.x + s * (0.3 + Math.random() * 0.4), y: c.y + s * 0.2, vx: (Math.random() - 0.5) * 10, vy: -30 - Math.random() * 30, g: -20, drag: 2, life: 0, max: 0.45, size: s * 0.18, color: Math.random() < 0.5 ? '#ff9f43' : '#ffd166' });
+      } else if (p.special === 'bolt') {
+        if (Math.random() < 0.5) fx.parts.push({ kind: 'spark', x: c.x + s / 2, y: c.y + s / 2, vx: (Math.random() - 0.5) * 160, vy: (Math.random() - 0.5) * 160, g: 0, life: 0, max: 0.18, size: 1.5, color: '#fff3a8' });
+      } else if (p.special === 'tnt') {
+        fx.parts.push({ kind: 'spark', x: c.x + s * 0.73, y: c.y + s * 0.1, vx: (Math.random() - 0.5) * 60, vy: -30 - Math.random() * 60, g: 300, life: 0, max: 0.25 + Math.random() * 0.2, size: 1.5, color: Math.random() < 0.5 ? '#ffd166' : '#ff8c42' });
+      } else if (p.special === 'frost') {
+        if (Math.random() < 0.6) fx.parts.push({ kind: 'star', x: c.x + Math.random() * s, y: c.y + Math.random() * s, vx: 0, vy: 8, g: 0, life: 0, max: 0.7, size: 1.5 + Math.random() * 1.5, color: '#e6f7ff' });
+      } else if (p.special === 'water') {
+        if (Math.random() < 0.5) fx.parts.push({ kind: 'grain', x: c.x + Math.random() * s, y: c.y + s, vx: 0, vy: 20, g: 300, life: 0, max: 0.4, size: Math.max(1.5, s * 0.08), color: '#9fd4ff' });
+      } else if (p.special === 'oil') {
+        if (Math.random() < 0.25) fx.parts.push({ kind: 'grain', x: c.x + Math.random() * s, y: c.y + s, vx: 0, vy: 6, g: 120, life: 0, max: 0.5, size: Math.max(1.5, s * 0.1), color: '#2a2118' });
+      } else if (p.special === 'golden' || (!p.special && this.game.s && this.game.s.gold > 0)) {
         fx.parts.push({ kind: 'star', x: c.x + Math.random() * s, y: c.y + Math.random() * s, vx: 0, vy: -10, g: 0, life: 0, max: 0.6, size: 2 + Math.random() * 2, color: '#fff1b8' });
       } else if (p.special === 'phase') {
         if (Math.random() < 0.5) fx.parts.push({ kind: 'star', x: c.x + Math.random() * s, y: c.y + Math.random() * s, vx: 0, vy: -12, g: 0, life: 0, max: 0.6, size: 2 + Math.random() * 2, color: '#e4dcff' });

@@ -12,13 +12,16 @@
 
   // Item types: the bar under the board shows one button per type; each opens a tray of its items.
   const ITEM_GROUPS = [
-    { id: 'shape', name: 'Shapers', icon: '◆', desc: 'Change the piece in play.' },
-    { id: 'physics', name: 'Physics', icon: '↡', desc: 'Change how the piece moves and lands.' },
-    { id: 'boom', name: 'Demolition', icon: '✹', desc: 'Blow things up.' },
+    { id: 'shape', name: 'Shapers', short: 'Shape', icon: '◇', desc: 'Change the piece in play.' },
+    { id: 'physics', name: 'Physics', icon: '↡', desc: 'Change how the piece moves, lands and what it is made of.' },
+    { id: 'element', name: 'Elements', short: 'Nature', icon: '◬', desc: 'Ice, fire, oil and lightning: they spread, melt, shatter and set each other off.' },
+    { id: 'boom', name: 'Demolition', short: 'Boom', icon: '✹', desc: 'Blow things up (and set off chains).' },
     { id: 'board', name: 'Board', icon: '⟲', desc: 'Rework the whole board at once.' },
     { id: 'luck', name: 'Luck', icon: '★', desc: 'Money, chance and shine.' },
   ];
-  // Single-use items: a few minutes of play buys most of them.
+  // Single-use items: a few minutes of play buys most of them. The sandbox ones (Water, Steel, Frost, Oil, Torch,
+  // Lightning, TNT) leave blocks made of something, and those interact with each other and with the older toys:
+  // js/sandbox.js has the rules.
   const ITEMS = {
     reroll:    { group: 'shape', name: 'Reroll', icon: '⟳', price: 15, desc: 'Swap the piece in play for a different one.' },
     mirror:    { group: 'shape', name: 'Mirror', icon: '⇋', price: 15, desc: 'Flip the piece in play: J/L and S/Z swap, any shape reflected.' },
@@ -28,12 +31,19 @@
     order:     { group: 'shape', name: 'Order Slip', icon: '✎', price: 35, desc: 'Choose exactly which piece you get next.' },
     blueprint: { group: 'shape', name: 'Blueprint', icon: '▦', price: 100, desc: 'Draw your own piece — up to six connected blocks.' },
     sand:      { group: 'physics', name: 'Sand', icon: '⁘', price: 25, desc: 'When this piece sets, each of its blocks falls on its own and fills the gaps below.' },
+    water:     { group: 'physics', name: 'Water', icon: '≈', price: 30, desc: 'The piece is water: it runs down and sideways into the lowest holes it can reach, even under overhangs. Stops fire, carries lightning, freezes solid.' },
+    steel:     { group: 'physics', name: 'Steel', icon: '▩', price: 30, desc: 'The piece is steel: blasts, fire, drills and purges leave it be, and an anvil stops on it. It carries a laser beam into every row it reaches.' },
     magnet:    { group: 'physics', name: 'Magnet', icon: '∪', price: 45, desc: 'When it sets, every block in its columns is yanked straight down, closing the holes.' },
     phase:     { group: 'physics', name: 'Phase', icon: '◇', price: 50, desc: 'The piece passes through blocks. Drop it into any gap it fits, even under overhangs.' },
-    anvil:     { group: 'physics', name: 'Anvil', icon: '▼', price: 55, desc: 'Drops straight to the floor, flattening every block in its columns on the way down.' },
-    drill:     { group: 'boom', name: 'Drill', icon: '⇣', price: 40, desc: 'Becomes a drill bit that bores out every block in its column.' },
-    bomb:      { group: 'boom', name: 'Bomb', icon: '✹', price: 45, desc: 'Becomes a bomb. Wherever it lands, it blasts a 13-block diamond.' },
-    laser:     { group: 'boom', name: 'Laser', icon: '↯', price: 65, desc: 'When it sets, a beam vaporises every row it touches — full or not. They count as lines.' },
+    anvil:     { group: 'physics', name: 'Anvil', icon: '▼', price: 55, desc: 'Drops straight to the floor (or onto steel), flattening every block in its columns on the way down. Shatters ice, sets off TNT.' },
+    oil:       { group: 'element', name: 'Oil', icon: '◓', price: 15, desc: 'The piece is soaked in oil. Oil burns whatever its colour, and lights everything it touches.' },
+    frost:     { group: 'element', name: 'Frost', icon: '❅', price: 30, desc: 'The piece freezes, and so does every block it touches. Ice is brittle: a blast, an anvil, a drill or a T-spin into it shatters all of it.' },
+    torch:     { group: 'element', name: 'Torch', icon: '▲', price: 40, desc: 'Becomes a flame. Whatever it lands against catches fire, and fire spreads through blocks of the same colour and through oil. Melts ice, sets off TNT.' },
+    bolt:      { group: 'element', name: 'Lightning', icon: 'ϟ', price: 50, desc: 'Becomes a bolt that strikes the block it lands on: through steel and water it runs on, frying everything they touch. Anything else catches fire.' },
+    drill:     { group: 'boom', name: 'Drill', icon: '⇣', price: 40, desc: 'Becomes a drill bit that bores out every block in its column (steel stops it).' },
+    tnt:       { group: 'boom', name: 'TNT', icon: '⊠', price: 30, desc: 'Becomes a stick of TNT that stays in the stack until something sets it off: a blast, fire, lightning, an anvil, a drill — or clearing its row.' },
+    bomb:      { group: 'boom', name: 'Bomb', icon: '✹', price: 45, desc: 'Becomes a bomb. Wherever it lands, it blasts a 13-block diamond (steel stands). Sets off TNT, shatters ice.' },
+    laser:     { group: 'boom', name: 'Laser', icon: '↯', price: 65, desc: 'When it sets, a beam vaporises every row it touches — full or not, and every row steel carries it to. They count as lines.' },
     purge:     { group: 'boom', name: 'Chroma Purge', icon: '◍', price: 75, desc: 'Removes every block the same colour as the piece in play.' },
     blackhole: { group: 'boom', name: 'Black Hole', icon: '◉', price: 90, desc: 'Becomes a black hole. Where it sets, it swallows everything within three blocks.' },
     nuke:      { group: 'boom', name: 'Nuke', icon: '✺', price: 120, desc: 'Erases the entire board. Pays no lines. Very bright.' },
@@ -41,9 +51,11 @@
     rewind:    { group: 'board', name: 'Rewind', icon: '↶', price: 25, desc: 'Take back your last placement (and the lines it cleared).' },
     settle:    { group: 'board', name: 'Settle', icon: '⤋', price: 70, desc: 'Every block falls straight down and closes every hole. Rows that fill up clear.' },
     tornado:   { group: 'board', name: 'Tornado', icon: '◎', price: 160, desc: 'Lifts every block and drops them back packed into solid rows from the floor up. Full rows clear.' },
-    golden:    { group: 'luck', name: 'Golden Piece', icon: '✦', price: 40, desc: 'The piece turns to gold: lines it clears pay triple.' },
-    jackpot:   { group: 'luck', name: 'Jackpot', icon: '❖', price: 60, desc: 'Pull the lever: three reels, three random items for you.' },
+    golden:    { group: 'luck', name: 'Golden Piece', icon: '✦', price: 35, desc: 'Gold for your next five clears: each pays triple. It waits for them — a piece that clears nothing keeps it for the next.' },
+    jackpot:   { group: 'luck', name: 'Jackpot', icon: '❖', price: 50, desc: 'A real gamble: three reels. Most pulls pay nothing; two gems pay 80, a star 60, three stars 2,000. Pays back about nine tenths on average.' },
   };
+  // Items that no longer exist: what an old save's leftovers become (another item, or their price back in lines).
+  const RETIRED_ITEMS = {};
   const ITEM_ORDER = ITEM_GROUPS.flatMap((g) => Object.keys(ITEMS).filter((id) => ITEMS[id].group === g.id));
 
   // Colour slots: 1 I, 2 O, 3 T, 4 S, 5 Z, 6 J, 7 L, 8 garbage, 9–14 other shapes, 15 custom.
@@ -156,12 +168,13 @@
       tab: 'play',
       free: null,
       achievements: {},
+      combos: {}, // Free Play combos found: id → { n: times, lines: paid, first: when }
       puzzle: { diff: 'E', next: { E: 1, M: 1, H: 1 }, current: null, solved: {}, history: [], saved: [] },
       factory: Factory.create(),
       stats: {
         sessions: 0, days: 0, timeMs: { play: 0, classic: 0, puzzle: 0, factory: 0, total: 0 },
         classic: { games: 0, best: 0, bestLevel: 0, bestLines: 0, lines: 0, pieces: 0 },
-        lines: { earned: 0, spent: 0, play: 0, puzzles: 0, contracts: 0, achievements: 0, refunded: 0 },
+        lines: { earned: 0, spent: 0, play: 0, puzzles: 0, contracts: 0, achievements: 0, refunded: 0, luck: 0, combos: 0 },
         free: { boardLog: [], boards: 1, pieces: 0, lines: 0, score: 0, bestScore: 0, bestLines: 0, clears: [0, 0, 0, 0, 0, 0], tspins: 0, tspinLines: 0, perfect: 0, maxCombo: 0, maxB2B: 0, holds: 0, rotations: 0, moves: 0, lowers: 0, drops: 0, byType: {}, topouts: 0 },
         // firstRun: first-try solves in a row; dailyRun: Dailies solved on consecutive dates (runDay is the last one).
         puzzle: { E: freshPuzzleDiff(), M: freshPuzzleDiff(), H: freshPuzzleDiff(), mods: {}, daily: 0, lastDaily: null, firstRun: 0, bestFirstRun: 0, dailyRun: 0, bestDailyRun: 0, runDay: null },
@@ -200,6 +213,7 @@
       if (!COSMETICS[k][st.equipped[k]] || !st.owned[k].includes(st.equipped[k])) st.equipped[k] = free;
     }
     st.settings.muted = st.settings.muted === true;
+    migrateItems(st);
     if (!Array.isArray(st.puzzle.history)) st.puzzle.history = [];
     if (!Array.isArray(st.puzzle.saved)) st.puzzle.saved = [];
     // Days played used to be counted from the day log alone (which keeps 120 days); older saves start from that, once.
@@ -212,6 +226,26 @@
     st.factory = Factory.migrate(st.factory);
     for (const d of Object.values(st.history || {})) if (d && typeof d === 'object') delete d.credits;
     st.v = SAVE_VERSION;
+    return st;
+  }
+
+  /**
+   * Items an old save still holds that are no longer sold: mapped to their replacement, or refunded at their price.
+   * Unknown ids (not ours at all) are dropped. Every item that exists has a count.
+   */
+  function migrateItems(st, retired) {
+    retired = retired || RETIRED_ITEMS;
+    const inv = st.inventory = st.inventory && typeof st.inventory === 'object' ? st.inventory : {};
+    for (const id of Object.keys(inv)) {
+      if (ITEMS[id]) continue;
+      const n = Math.max(0, Math.floor(Number(inv[id]) || 0)), r = retired[id];
+      delete inv[id];
+      if (!n || !r) continue;
+      if (r.to && ITEMS[r.to]) inv[r.to] = (inv[r.to] || 0) + n;
+      else if (r.price) st.lines += n * r.price;
+    }
+    for (const id of ITEM_ORDER) if (!(inv[id] >= 0)) inv[id] = 0;
+    if (!st.combos || typeof st.combos !== 'object') st.combos = {};
     return st;
   }
 
@@ -365,5 +399,5 @@
   }
 
   L.Store = Store;
-  Object.assign(L, { SOUNDS, migrateState: migrate, ITEMS, ITEM_ORDER, ITEM_GROUPS, PALETTES, SKINS, FRAMES, BACKDROPS, EFFECTS, GHOSTS, COSMETICS, COSMETIC_LABELS, ACCENTS, SAVE_VERSION, defaultState: defaults, mergeState: merge });
+  Object.assign(L, { SOUNDS, migrateState: migrate, migrateItems, RETIRED_ITEMS, ITEMS, ITEM_ORDER, ITEM_GROUPS, PALETTES, SKINS, FRAMES, BACKDROPS, EFFECTS, GHOSTS, COSMETICS, COSMETIC_LABELS, ACCENTS, SAVE_VERSION, defaultState: defaults, mergeState: merge });
 })(typeof globalThis !== 'undefined' ? globalThis : this);

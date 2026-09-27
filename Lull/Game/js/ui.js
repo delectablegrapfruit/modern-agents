@@ -3,6 +3,7 @@
   'use strict';
   const L = (root.Lull = root.Lull || {});
   const { fmt, fmtInt, fmtDuration, pct, Render, Pieces, ITEMS, ITEM_ORDER, COSMETICS, COSMETIC_LABELS, ACCENTS, Puzzles, Factory } = L;
+  const { LINE } = L;
 
   // ---- DOM helper ---------------------------------------------------------------------------------------------------
 
@@ -39,6 +40,8 @@
     hide: '<svg viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 8.5h8"/></svg>',
     sound: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6.2h2.2L8 3.5v9L4.7 9.8H2.5z"/><path d="M10.6 6a2.8 2.8 0 0 1 0 4M12.4 4.2a5.4 5.4 0 0 1 0 7.6"/></svg>',
     muted: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6.2h2.2L8 3.5v9L4.7 9.8H2.5z"/><path d="M10.6 6a2.8 2.8 0 0 1 .5 2.6M2.5 2.5l11 11"/></svg>',
+    // The currency, large: a line running into a dark disc with a thin glowing ring (text uses LINE, the same shape).
+    line: '<svg viewBox="0 0 22 14" aria-hidden="true"><circle cx="11" cy="7" r="6.4" fill="currentColor" opacity="0.10"/><circle cx="11" cy="7" r="4.9" fill="currentColor" opacity="0.16"/><path d="M0.6 7Q0.6 6.55 1.1 6.5L7.2 5.9 7.2 8.1 1.1 7.5Q0.6 7.45 0.6 7ZM21.4 7Q21.4 6.55 20.9 6.5L14.8 5.9 14.8 8.1 20.9 7.5Q21.4 7.45 21.4 7Z" fill="currentColor"/><circle cx="11" cy="7" r="3.55" fill="#05070c" stroke="currentColor" stroke-width="1.3"/></svg>',
     close: '<svg viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg>',
   };
 
@@ -201,7 +204,7 @@
               if (app.store.buyCosmetic(sub, id)) { app.sound.play('buy'); app.store.equip(sub, id); app.applyLook(); app.refreshWallet(); toast(c.name + ' — yours', 'good'); renderShop(app, sub); }
             });
           },
-        }, h('span', { class: 'gem' }, '◆'), fmtInt(c.price));
+        }, h('span', { class: 'gem' }, LINE), fmtInt(c.price));
         const isSound = sub === 'sound';
         cards.push(h('div', { class: 'card' + (equipped ? ' equipped' : '') },
           isSound
@@ -255,18 +258,18 @@
     const seg = h('div', { class: 'seg' }, [['all', 'All ' + A.LIST.length], ['left', 'To do ' + (A.LIST.length - n)], ['got', 'Earned ' + n]].map(([k, label]) =>
       h('button', { 'aria-pressed': String(filter === k), onclick: () => { app.achFilter = k; renderAchievements(app); } }, label)));
     const els = [
-      h('div', { class: 'kpis three' }, kpi(n + ' / ' + A.LIST.length, 'Earned'), kpi(fmtInt(S.lines.achievements || 0) + ' ◆', 'Lines from them'), kpi(fmtInt(A.total()) + ' ◆', 'All of them pay')),
+      h('div', { class: 'kpis three' }, kpi(n + ' / ' + A.LIST.length, 'Earned'), kpi(fmtInt(S.lines.achievements || 0) + ' ' + LINE, 'Lines from them'), kpi(fmtInt(A.total()) + ' ' + LINE, 'All of them pay')),
       h('div', { class: 'ach-tools' }, seg),
     ];
-    const row = (a) => {
+    const row = (a, retired) => {
       const when = got[a.id], pr = !when && a.progress ? a.progress(st) : null;
-      return h('div', { class: 'ach' + (when ? ' got' : '') + (a.tier === 'legend' ? ' legend' : '') },
-        h('span', { class: 'ach-i' }, when ? '★' : a.tier === 'legend' ? '◆' : '·'),
+      return h('div', { class: 'ach' + (when ? ' got' : '') + (a.tier === 'legend' ? ' legend' : '') + (retired ? ' retired' : '') },
+        h('span', { class: 'ach-i' }, when ? '★' : a.tier === 'legend' ? '✦' : '·'),
         h('div', { class: 'grow' },
-          h('div', { class: 't' }, a.name, a.tier === 'legend' ? h('span', { class: 'tier' }, 'Legendary') : null),
+          h('div', { class: 't' }, a.name, retired ? h('span', { class: 'tier' }, 'Retired') : a.tier === 'legend' ? h('span', { class: 'tier' }, 'Legendary') : null),
           h('div', { class: 'd' }, a.desc + (when ? ' · ' + new Date(when).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : '')),
           pr ? h('div', { class: 'ach-prog' }, h('div', { class: 'bar' }, h('i', { style: { width: (100 * Math.min(1, pr[0] / pr[1])).toFixed(1) + '%' } })), h('span', null, num(Math.min(pr[0], pr[1])) + ' / ' + num(pr[1]))) : null),
-        h('span', { class: 'ach-pay' }, '+' + fmtInt(a.pay) + ' ◆'));
+        h('span', { class: 'ach-pay' }, '+' + fmtInt(a.pay) + ' ' + LINE));
     };
     const shown = (a) => filter === 'all' || (filter === 'got') === !!got[a.id];
     for (const g of A.GROUPS) {
@@ -275,16 +278,19 @@
       if (!list.length) continue;
       const have = list.filter((a) => got[a.id]), paid = have.reduce((t, a) => t + a.pay, 0), all = list.reduce((t, a) => t + a.pay, 0);
       const plain = list.filter((a) => a.tier !== 'legend' && shown(a)), leg = list.filter((a) => a.tier === 'legend' && shown(a));
+      // Retired ones stay with whoever earned them (and stay paid); they are not counted and cannot be earned now.
+      const old = filter === 'left' ? [] : (A.RETIRED || []).filter((a) => a.group === g.id && got[a.id]);
       els.push(h('details', { class: 'ach-group', 'data-group': g.id, open: !!open[g.id], ontoggle: (e) => { open[g.id] = e.currentTarget.open; } },
         h('summary', null,
           h('span', { class: 'chev' }, '›'),
           h('b', null, g.name),
           h('span', { class: 'ach-count' }, have.length + ' / ' + list.length),
           h('div', { class: 'bar' }, h('i', { style: { width: (100 * have.length / list.length).toFixed(1) + '%' } })),
-          h('span', { class: 'ach-pay' }, num(paid) + ' / ' + num(all) + ' ◆')),
-        plain.length ? h('div', { class: 'ach-list' }, plain.map(row)) : null,
-        leg.length ? h('div', { class: 'ach-list legend-list' }, leg.map(row)) : null,
-        plain.length || leg.length ? null : h('p', { class: 'ach-none' }, filter === 'got' ? 'None earned here yet.' : 'Every one of these is yours.')));
+          h('span', { class: 'ach-pay' }, num(paid) + ' / ' + num(all) + ' ' + LINE)),
+        plain.length ? h('div', { class: 'ach-list' }, plain.map((a) => row(a))) : null,
+        leg.length ? h('div', { class: 'ach-list legend-list' }, leg.map((a) => row(a))) : null,
+        old.length ? h('div', { class: 'ach-list retired-list' }, old.map((a) => row(a, true))) : null,
+        plain.length || leg.length || old.length ? null : h('p', { class: 'ach-none' }, filter === 'got' ? 'None earned here yet.' : 'Every one of these is yours.')));
     }
     document.getElementById('ach-body').replaceChildren(...els);
   }
@@ -310,7 +316,7 @@
         kpi(fmtInt(S.sessions), 'Sessions'),
         kpi(fmtInt(S.days || 0), 'Days played')));
       els.push(h('h4', null, 'Lines earned, last 14 days'), historyChart(app, 'lines', 14));
-      els.push(h('h4', null, 'Where lines came from'), hbars([['Free Play', S.lines.play], ['Puzzles', S.lines.puzzles], ['Factory', S.lines.contracts], ['Achievements', S.lines.achievements || 0]]));
+      els.push(h('h4', null, 'Where lines came from'), hbars([['Free Play', S.lines.play], ['Combos', S.lines.combos || 0], ['Puzzles', S.lines.puzzles], ['Factory', S.lines.contracts], ['Achievements', S.lines.achievements || 0], ['Jackpot', S.lines.luck || 0]]));
       els.push(h('h4', null, 'Time by mode'), table([
         ['Free Play', fmtDuration(S.timeMs.play)], ['Classic', fmtDuration(S.timeMs.classic || 0)], ['Puzzles', fmtDuration(S.timeMs.puzzle)], ['Factory (watching)', fmtDuration(S.timeMs.factory)],
       ]));
@@ -330,10 +336,20 @@
       els.push(h('h4', null, 'Technique'), table([
         ['T-spins', fmtInt(F.tspins)], ['Lines from T-spins', fmtInt(F.tspinLines)], ['Perfect clears', fmtInt(F.perfect)],
         ['Longest combo', fmtInt(F.maxCombo)], ['Longest back-to-back', fmtInt(Math.max(0, F.maxB2B))],
+        ['Longest chain', fmtInt(F.bestChain || 0)], ['Best multiplier', L.Chain.fmt(F.bestMult || 1)],
         ['Holds', fmtInt(F.holds)], ['Turns', fmtInt(F.rotations)], ['Moves', fmtInt(F.moves)], ['Lowers', fmtInt(F.lowers)], ['Hard drops', fmtInt(F.drops)],
         ['Boards started', fmtInt(F.boards)], ['Boards filled to the top', fmtInt(F.topouts)],
         ['Inputs per piece', F.pieces ? ((F.moves + F.rotations + F.lowers + F.drops + F.holds) / F.pieces).toFixed(2) : '—'],
       ]));
+      // Combos: the ones found so far, with what they did; the rest are a question mark until then.
+      const book = st.combos || {}, list = L.Combos.LIST, found = list.filter((c) => book[c.id]).length;
+      els.push(h('h4', null, 'Combos · ' + found + ' / ' + list.length + ' found'), h('div', { class: 'combo-list' }, list.map((c) => {
+        const b = book[c.id];
+        if (!b) return h('div', { class: 'combo unknown' }, h('b', null, '?'), h('span', null, c.kind === 'skill' ? 'Something done well, by hand' : 'Something set off with items'));
+        const rw = L.Combos.reward(c, 0);
+        const pays = [rw.lines ? rw.lines + ' ' + LINE : null, rw.boost ? L.Chain.fmt(rw.boost.x) + ' for ' + rw.boost.clears + ' clears' : null, fmtInt(rw.score) + ' points'].filter(Boolean).join(' · ');
+        return h('div', { class: 'combo', title: 'Pays in full the first time on a board, then half, then a quarter' }, h('b', null, c.name), h('span', null, c.how), h('i', null, pays + ' · found ' + fmtInt(b.n) + '×'));
+      })));
       const log = F.boardLog || [];
       if (log.length) {
         els.push(h('h4', null, 'Past boards'), h('table', { class: 'st cols' },
@@ -358,7 +374,7 @@
     } else if (sub === 'factory') {
       const f = st.factory, fs = f.stats;
       els.push(h('div', { class: 'kpis three' },
-        kpi(Factory.quarters(Factory.perHour(f) / 4) + ' ◆', 'Lines per hour'), kpi(fmtInt(fs.lines), 'Lines collected'), kpi(count(fs.minos), 'Minos made'),
+        kpi(Factory.quarters(Factory.perHour(f) / 4) + ' ' + LINE, 'Lines per hour'), kpi(fmtInt(fs.lines), 'Lines collected'), kpi(count(fs.minos), 'Minos made'),
         kpi(fmtInt(fs.pieces), 'Pieces'), kpi(fmtInt(fs.collects), 'Collects'), kpi(fmtInt(fs.best), 'Best single collect')));
       els.push(h('h4', null, 'Minos by press'), hbars(Factory.MOLDS.map((n, k) => [String(n), (fs.byPress[k] || 0) * n]))); // byPress counts pieces
       // Every shape of each size: the ones pressed in colour, the rest faint.
@@ -380,6 +396,8 @@
       els.push(h('h4', null, 'Items'), h('table', { class: 'st cols' },
         h('tr', null, h('th', null, ''), h('th', null, 'Bought'), h('th', null, 'Used'), h('th', null, 'Have')),
         ITEM_ORDER.map((id) => h('tr', null, h('td', null, ITEMS[id].icon + ' ' + ITEMS[id].name), h('td', null, fmtInt(bought[id] || 0)), h('td', null, fmtInt(used[id] || 0)), h('td', null, fmtInt(st.inventory[id] || 0))))));
+      const jp = S.items.jackpot;
+      if (jp && jp.pulls) els.push(h('h4', null, 'Jackpot'), table([['Pulls', fmtInt(jp.pulls)], ['Lines won', fmtInt(jp.lines)], ['Items won', fmtInt(jp.items)], ['Biggest win', fmtInt(jp.best) + ' lines'], ['Paid back', Math.round(100 * jp.lines / Math.max(1, jp.pulls * ITEMS.jackpot.price)) + '% in lines']]));
       const ownedRows = Object.keys(COSMETICS).map((k) => [COSMETIC_LABELS[k], st.owned[k].length + ' / ' + Object.keys(COSMETICS[k]).length]);
       els.push(h('h4', null, 'Collection'), table(ownedRows));
     }
@@ -583,10 +601,13 @@
     const hide = () => { clearTimeout(timer); tip.classList.add('hidden'); };
     const show = (el) => {
       if (!el.isConnected) return;
-      tip.replaceChildren(
+      // (replaceChildren would print a null, so the missing parts are left out.)
+      tip.replaceChildren(...[
         el.dataset.tipTitle ? h('div', { class: 'tip-title' }, el.dataset.tipTitle) : null,
         h('div', { class: 'tip-body' }, el.dataset.tip),
-        el.dataset.tipFoot ? h('div', { class: 'tip-foot' }, el.dataset.tipFoot) : null);
+        el.dataset.tipFoot ? h('div', { class: 'tip-foot' }, el.dataset.tipFoot) : null].filter(Boolean));
+      // A name and a key (the title bar's small buttons) fit on one short line.
+      tip.classList.toggle('compact', !el.dataset.tipTitle && el.dataset.tip.length < 32);
       tip.classList.remove('hidden');
       const a = app.getBoundingClientRect(), r = el.getBoundingClientRect(), t = tip.getBoundingClientRect();
       let x = r.left + r.width / 2 - t.width / 2 - a.left;

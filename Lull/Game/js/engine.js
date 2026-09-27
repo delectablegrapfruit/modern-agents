@@ -22,8 +22,37 @@
     return { x, y };
   }
 
+  // Specials that turn the piece into a single block (a bomb, a drill bit, a black hole, a stick of TNT, a torch, a
+  // bolt of lightning), and those that keep its shape and change what it does or what it is made of.
+  const SINGLE = new Set(['bomb', 'drill', 'blackhole', 'tnt', 'torch', 'bolt']);
+  const SHAPED = new Set(['phase', 'sand', 'anvil', 'magnet', 'laser', 'golden', 'frost', 'water', 'oil', 'steel']);
+
+  /**
+   * A board's numbers. The h- ones count only what was done by hand (for achievements): hand is whether the stack was
+   * built without an item that touches the pieces or the board since it was last empty; hb2b, hcombo, hquads and
+   * hchain are the back-to-back streak, combo, quads in a row and chain, broken by any such item (Rewind too) and
+   * never fed by an item's clear; htspins counts T-spins that clear lines, htst T-spin triples and hperfect perfect
+   * clears, all by hand; pace keeps [time, lines] for the last 101 pieces set by hand in a row (Game.notePace).
+   */
   function freshStats() {
-    return { pieces: 0, lines: 0, score: 0, clears: [0, 0, 0, 0, 0, 0], tspins: 0, tspinLines: 0, perfect: 0, combo: -1, maxCombo: 0, b2b: -1, maxB2B: 0, holds: 0, rotations: 0, moves: 0, lowers: 0, drops: 0, byType: {}, startedAt: Date.now(), playMs: 0, items: {}, banked: 0, chain: 0, bestChain: 0, tst: 0, quadRun: 0 };
+    return { pieces: 0, lines: 0, score: 0, clears: [0, 0, 0, 0, 0, 0], tspins: 0, tspinLines: 0, perfect: 0, combo: -1, maxCombo: 0, b2b: -1, maxB2B: 0, holds: 0, rotations: 0, moves: 0, lowers: 0, drops: 0, byType: {}, startedAt: Date.now(), playMs: 0, items: {}, banked: 0, chain: 0, bestChain: 0, tst: 0, quadRun: 0,
+      hand: true, hb2b: -1, hcombo: -1, hquads: 0, hchain: 0, bestHChain: 0, htspins: 0, htst: 0, hperfect: 0, goldRun: 0, pace: [] };
+  }
+  const HAND_KEYS = ['hand', 'hb2b', 'hcombo', 'hquads', 'hchain', 'goldRun', 'pace', 'clean', 'cleanLines'];
+
+  /**
+   * A board saved before the hand counts existed: if no item was ever used on it, everything on it was by hand (its
+   * streaks carry over); otherwise it starts again from its next perfect clear. T-spins that cleared lines were not
+   * told apart, so that count starts at zero.
+   */
+  function migrateHand(s, saved) {
+    if (!saved || saved.hand !== undefined) return s;
+    const clean = !Object.values(saved.items || {}).some((n) => n > 0);
+    if (clean) Object.assign(s, { hand: true, hb2b: s.b2b, hcombo: s.combo, hquads: s.quadRun || 0, htst: s.tst || 0, hperfect: s.perfect || 0 });
+    else s.hand = false;
+    s.hchain = (s.hb2b >= 0 ? s.hb2b + 1 : 0) + Math.max(0, s.hcombo);
+    s.bestHChain = s.hchain;
+    return s;
   }
 
   class Game extends Emitter {
@@ -40,6 +69,10 @@
       this.previewCount = o.previewCount == null ? 5 : o.previewCount;
       this.maxHistory = o.maxHistory == null ? 30 : o.maxHistory;
       this.freeHold = o.freeHold !== false;
+      // Relaxed play: a piece (spawned, held or swapped in by an item) that does not fit where it would appear is
+      // fitted into the nearest open spot above the stack instead; only when there is none is the board full.
+      // Classic (block out at the spawn spot) and puzzles (a fixed queue) keep the plain spawn.
+      this.findRoom = o.findRoom != null ? !!o.findRoom : (this.freeHold && !o.queue && !(o.saved && o.saved.fixed));
       this.history = [];
       this.over = false;
       const sv = o.saved;
@@ -51,7 +84,7 @@
         this.rng = RNG.from(sv.rng);
         this.hold = sv.hold;
         this.holdLocked = sv.holdLocked;
-        this.s = Object.assign(freshStats(), sv.s);
+        this.s = migrateHand(Object.assign(freshStats(), sv.s), sv.s);
         this.piece = null;
         if (sv.piece) {
           const type = Pieces.get(sv.piece.entry.id);
@@ -89,7 +122,8 @@
       }
     }
 
-    spawnNext() {
+    /** o: { soft (a failed spawn changes nothing and is not a top-out: hold swaps), from (cells of the piece in play) } */
+    spawnNext(o) {
       let entry = this.queue.shift();
       this.fillQueue();
       // A fixed queue that has run out still has the held piece to give.
@@ -99,39 +133,115 @@
         this.emit('empty');
         return false;
       }
-      return this.spawn(entry);
+      return this.spawn(entry, o);
     }
 
     spawnPosition(type, rot) { return spawnPos(this.w, this.h, type, rot); }
 
-    spawn(entry) {
+    spawn(entry, o) {
+      o = o || {};
       const type = Pieces.get(entry.id);
       const rot = entry.rot || 0;
       const pos = this.spawnPosition(type, rot);
       const piece = { type, rot, x: pos.x, y: pos.y, special: entry.special || null, entry, lastRot: false };
-      const tries = [[0, 0], [0, -1], [-1, 0], [1, 0], [0, -2], [-1, -1], [1, -1], [-2, 0], [2, 0], [0, -3], [-2, -1], [2, -1], [0, -4]];
+      const place = (x, y, r) => {
+        piece.x = this.board.wx(x); piece.y = y; piece.rot = r;
+        this.piece = piece;
+        this.emit('spawn', piece);
+        return true;
+      };
+      // Near the spawn spot, but never down inside the stack: a spot below it counts only if the piece could get
+      // there (sliding and lowering through open cells from the ceiling or the spawn spot).
+      const seeds = this.fitsAt(piece, rot, pos.x, pos.y) ? [[pos.x, pos.y]] : [];
+      const open = this.findRoom ? null : new Set(this.reach(piece, rot, seeds, o.from).map(([x, y]) => x + ',' + y));
+      const tries = this.findRoom ? [[0, 0]] : [[0, 0], [0, -1], [-1, 0], [1, 0], [0, -2], [-1, -1], [1, -1], [-2, 0], [2, 0], [0, -3], [-2, -1], [2, -1], [0, -4]];
       for (const [dx, dy] of tries) {
-        if (this.fitsAt(piece, rot, pos.x + dx, pos.y + dy)) {
-          piece.x = this.board.wx(pos.x + dx);
-          piece.y = pos.y + dy;
-          this.piece = piece;
-          this.emit('spawn', piece);
-          return true;
-        }
+        const x = this.board.wx(pos.x + dx), y = pos.y + dy;
+        if (this.fitsAt(piece, rot, x, y) && (!open || open.has(x + ',' + y))) return place(x, y, rot);
       }
+      if (this.findRoom) {
+        const b = type.rotBounds[rot];
+        const at = this.room(piece, rot, pos.x + b.minX + b.w / 2, pos.y + b.minY + b.h / 2, o.from);
+        if (at) return place(at.x, at.y, at.rot);
+      }
+      if (o.soft) return false;
       this.piece = piece;
       this.over = true;
       this.emit('topout');
       return false;
     }
 
+    /**
+     * Every spot one turn of a piece could get to: from the ceiling (its top row in the board's top row), from the
+     * given seed spots, or from anywhere it would overlap the cells in `from` (where the piece in play is now),
+     * moving sideways and down through open cells — never up, so never into a pocket under blocks. Returns [[x, y]].
+     */
+    reach(p, rot, seeds, from) {
+      const b = this.board, bnd = p.type.rotBounds[rot], cells = p.type.rots[rot];
+      const x0 = b.wrap ? 0 : -bnd.minX, x1 = b.wrap ? this.w - 1 : this.w - 1 - bnd.maxX;
+      const y0 = -bnd.minY, y1 = this.h - 1 - bnd.maxY;
+      const seen = new Set(), out = [];
+      const visit = (x, y) => {
+        x = b.wx(x);
+        if (x < x0 || x > x1 || y < y0 || y > y1) return;
+        const k = x + ',' + y;
+        if (seen.has(k)) return;
+        seen.add(k);
+        if (this.fitsAt(p, rot, x, y)) out.push([x, y]);
+      };
+      for (let x = x0; x <= x1; x++) visit(x, y1);
+      for (const [x, y] of seeds || []) visit(x, y);
+      if (from && from.length) {
+        const was = new Set(from.map(([x, y]) => b.wx(x) + ',' + y));
+        for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+          if (cells.some(([cx, cy]) => was.has(b.wx(x + cx) + ',' + (y + cy)))) visit(x, y);
+        }
+      }
+      for (let i = 0; i < out.length; i++) {
+        const [x, y] = out[i];
+        visit(x - 1, y); visit(x + 1, y); visit(x, y - 1);
+      }
+      return out;
+    }
+
+    /**
+     * The open spot nearest a point (the box centre the piece should keep) that a piece could get to (see reach), in
+     * its own turn first, then the others. Ties go to the higher spot, then the nearer column. Returns
+     * { x, y, rot } or null: nowhere above the stack has room for it.
+     */
+    room(p, rot, cx, cy, from) {
+      const turns = this.mods.noRotate || p.type.kicks === 'none' ? [rot] : [rot, (rot + 1) % 4, (rot + 3) % 4, (rot + 2) % 4];
+      for (const r of turns) {
+        const bnd = p.type.rotBounds[r];
+        const tx = Math.round(cx - bnd.w / 2 - bnd.minX), ty = Math.round(cy - bnd.h / 2 - bnd.minY);
+        let best = null, bestCost = Infinity;
+        for (const [x, y] of this.reach(p, r, [], from)) {
+          let dx = Math.abs(x - tx);
+          if (this.board.wrap) dx = Math.min(dx % this.w, this.w - (dx % this.w));
+          const dy = y - ty;
+          // Distance first; then prefer up over down, then the nearer column.
+          const cost = (dx * dx + dy * dy) * 1000 + (dy < 0 ? 100 : 0) - dy + dx * 0.01;
+          if (cost < bestCost) { bestCost = cost; best = { x, y, rot: r }; }
+        }
+        if (best) return best;
+      }
+      return null;
+    }
+
     // ---- movement -----------------------------------------------------------------------------------------------------
 
     passes(p) { return p.special === 'phase' || p.special === 'drill' || p.special === 'anvil'; }
 
+    /** Steel (a sandbox material): blasts, fire, drills, anvils and purges leave it be. */
+    tough(v) { return (v & CELL.MAT) === CELL.STEEL; }
+
     fitsAt(p, rot, x, y) {
       const cells = p.type.rots[rot];
-      return this.passes(p) ? this.board.inBounds(cells, x, y) : this.board.fits(cells, x, y);
+      if (!this.passes(p)) return this.board.fits(cells, x, y);
+      if (!this.board.inBounds(cells, x, y)) return false;
+      // An anvil falls through everything but steel, and comes to rest on it.
+      if (p.special === 'anvil') for (const [cx, cy] of cells) if (this.tough(this.board.get(x + cx, y + cy))) return false;
+      return true;
     }
 
     cellsOf(p, rot, x, y) {
@@ -253,8 +363,9 @@
       if (!p) return null;
       if (p.special === 'drill') return null;
       if (p.special === 'phase') return this.phaseTarget(p);
-      if (p.special === 'anvil') return -p.type.rotBounds[p.rot].minY; // straight to the floor, through everything
       let y = p.y;
+      // An anvil goes straight to the floor, through everything but steel.
+      if (p.special === 'anvil') { while (this.fitsAt(p, p.rot, p.x, y - 1)) y--; return y; }
       while (this.board.fits(p.type.rots[p.rot], p.x, y - 1)) y--;
       return y;
     }
@@ -288,12 +399,22 @@
       const p = this.piece;
       if (!p || this.over || this.mods.noHold || (this.holdLocked && !this.freeHold)) { this.emit('blocked', 'hold'); return false; }
       const cur = Object.assign({}, p.entry, { special: p.special || null });
-      this.s.holds++;
+      const keep = { hold: this.hold, holdLocked: this.holdLocked, queue: this.queue.map((e) => Object.assign({}, e)), bag: this.bag.slice(), rng: this.rng.state() };
       const prev = this.hold;
       this.hold = cur;
       this.holdLocked = true;
-      if (prev) this.spawn(prev);
-      else this.spawnNext();
+      // Free hold (Relaxed, puzzles): a swap to a piece with no room anywhere above the stack is refused and changes
+      // nothing. Classic keeps the rule it has always had: a held piece that cannot appear is a block out.
+      const o = { soft: this.freeHold, from: this.cellsOf(p) };
+      const ok = prev ? this.spawn(prev, o) : this.spawnNext(o);
+      if (!ok && o.soft) {
+        Object.assign(this, { piece: p, hold: keep.hold, holdLocked: keep.holdLocked, queue: keep.queue, bag: keep.bag, rng: RNG.from(keep.rng) });
+        this.emit('blocked', 'hold');
+        this.emit('noroom', 'hold');
+        return false;
+      }
+      if (prev && this.piece) this.piece.fromHold = true;
+      this.s.holds++;
       this.emit('hold');
       return true;
     }
@@ -340,12 +461,13 @@
       const v = p.type.color | (this.mods.vanish ? CELL.HIDDEN : 0);
 
       if (p.special === 'anvil') {
-        // Smashes every block in its columns from where it was down to the floor.
+        // Smashes every block in its columns from where it was down to where it lands (the floor, or steel).
         const from = this.pendingDrop ? this.pendingDrop.cells : cells;
-        const top = new Map();
+        const top = new Map(), bottom = Math.min(...cells.map(([, y]) => y));
         for (const [x, y] of from) top.set(x, Math.max(top.has(x) ? top.get(x) : -1, y));
         result.smashed = [];
-        for (const [x, t] of top) for (let y = 0; y <= Math.min(t, this.h - 1); y++) { const old = this.board.get(x, y); if (old) { result.smashed.push([x, y, old]); this.board.set(x, y, 0); } }
+        for (const [x, t] of top) for (let y = Math.min(t, this.h - 1); y >= bottom; y--) { const old = this.board.get(x, y); if (this.tough(old)) break; if (old) { result.smashed.push([x, y, old]); this.board.set(x, y, 0); } }
+        result.smashed.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
         this.board.place(shape, p.x, p.y, v);
       } else if (p.special === 'blackhole') {
         const [cx, cy] = cells[0];
@@ -364,7 +486,7 @@
           const x = cx + dx, y = cy + dy;
           if (!this.board.inside(x, y)) continue;
           const old = this.board.get(x, y);
-          if (old) { result.blast.push([this.board.wx(x), y, old]); this.board.set(x, y, 0); }
+          if (old && !this.tough(old)) { result.blast.push([this.board.wx(x), y, old]); this.board.set(x, y, 0); }
         }
         result.blastCenter = [cx, cy];
       } else {
@@ -398,16 +520,21 @@
         }
       }
       if (p.special === 'golden') result.golden = true;
+      if (p.fromHold) result.fromHold = true;
+      // The sandbox (js/sandbox.js): what the new block is made of, and the chain reactions it sets off.
+      if (this.react) this.react(p, result);
 
       let rows = this.board.fullRows();
       if (p.special === 'laser') {
-        // Every row the piece touches is vaporised, full or not.
+        // Every row the piece touches is vaporised, full or not (and, through steel, the rows the steel reaches).
         result.laser = Array.from(new Set(cells.map(([, cy]) => cy))).filter((y) => y >= 0 && y < this.h).sort((a, b) => a - b);
+        if (this.conduct) this.conduct(result);
         rows = Array.from(new Set(rows.concat(result.laser))).sort((a, b) => a - b);
       }
       result.rows = rows;
       result.removed = this.board.clearRows(rows);
       result.lines = rows.length;
+      if (this.afterClear) this.afterClear(result);
       this.score(result);
       this.s.pieces++;
       this.s.byType[p.type.family === 'tetromino' ? p.type.id : p.type.family] = (this.s.byType[p.type.family === 'tetromino' ? p.type.id : p.type.family] || 0) + 1;
@@ -440,8 +567,10 @@
       const result = { type: p.type.id, special: 'drill', cells: [], rows: [], removed: [], lines: 0, score: 0, drilled: [], bit: [x, y] };
       for (let yy = y; yy >= 0; yy--) {
         const old = this.board.get(x, yy);
+        if (this.tough(old)) { result.stopped = [x, yy]; break; } // the bit blunts itself on steel
         if (old) { result.drilled.push([x, yy, old]); this.board.set(x, yy, 0); }
       }
+      if (this.react) this.react(p, result);
       this.s.pieces++;
       this.holdLocked = false;
       this.piece = null;
@@ -475,6 +604,22 @@
       } else {
         s.combo = -1;
       }
+      // By hand: a piece with no item on it, on a stack built without items (see freshStats). A board item's clear
+      // (Settle, Tornado) or an item piece's breaks every hand streak; so does any item used in between (noteItem).
+      const hand = s.hand !== false && !result.special;
+      result.hand = hand;
+      if (!hand) { s.hb2b = -1; s.hcombo = -1; s.hquads = 0; }
+      else if (n) {
+        s.hcombo++;
+        if (n >= 4 || result.tspin || result.mini) s.hb2b++; else s.hb2b = -1;
+        s.hquads = n >= 4 ? (s.hquads || 0) + 1 : 0;
+        if (result.tspin) { s.htspins = (s.htspins || 0) + 1; if (n >= 3) s.htst = (s.htst || 0) + 1; }
+        if (result.perfect) s.hperfect = (s.hperfect || 0) + 1;
+      } else s.hcombo = -1;
+      // An empty board is a fresh start: whatever came before, the next stack is built from nothing.
+      if (result.perfect && !result.special) s.hand = true;
+      s.hchain = (s.hb2b >= 0 ? s.hb2b + 1 : 0) + Math.max(0, s.hcombo);
+      s.bestHChain = Math.max(s.bestHChain || 0, s.hchain);
       s.maxCombo = Math.max(s.maxCombo, s.combo);
       s.maxB2B = Math.max(s.maxB2B, s.b2b);
       s.lines += n;
@@ -483,37 +628,60 @@
       result.score = pts;
     }
 
+    // ---- by hand ------------------------------------------------------------------------------------------------------
+
+    /**
+     * An item that touches the pieces or the board was used (Free Play calls this; Luck items do not count): every
+     * hand streak ends, and the stack is no longer built by hand — unless the item acted on the board at once
+     * (emptied: a Nuke, a Tornado, Rewind …) and left it empty, a fresh start.
+     */
+    noteItem(emptied) {
+      const s = this.s;
+      s.hand = !!emptied && this.board.isEmpty();
+      s.hb2b = -1; s.hcombo = -1; s.hquads = 0; s.hchain = 0; s.goldRun = 0; s.pace = [];
+    }
+
+    /** The hand counts, to put back if the item is taken back before the piece is set. */
+    handState() { const o = {}; for (const k of HAND_KEYS) o[k] = JSON.parse(JSON.stringify(this.s[k] === undefined ? null : this.s[k])); return o; }
+    restoreHand(o) { if (o) for (const k of HAND_KEYS) this.s[k] = o[k] === null ? undefined : o[k]; }
+
+    /**
+     * The pace of hand play: each piece set by hand notes when (wall clock) and the board's lines after it; the last
+     * 101 are kept, so the last 100 pieces' time and lines can be read (Game.paceOf). Anything not by hand starts over.
+     */
+    notePace(result, now) {
+      const s = this.s;
+      if (!result || !result.hand) { s.pace = []; return; }
+      s.pace = (s.pace || []).concat([[now, s.lines]]);
+      if (s.pace.length > 101) s.pace = s.pace.slice(-101);
+    }
+
     // ---- items --------------------------------------------------------------------------------------------------------
 
-    /** Swaps the current piece for another (reroll, order slip, pebble, mirror, blueprint, bomb …), keeping its place. */
+    /**
+     * Swaps the current piece for another (reroll, order slip, pebble, mirror, blueprint, bomb …), keeping its place:
+     * the same box centre if it fits there, else the nearest open spot it could get to (in its own turn, then the
+     * others). With no room anywhere above the stack the swap is refused (false) and nothing changes — it is never
+     * a full board: the piece in play still fits where it is.
+     */
     replacePiece(entry) {
       const p = this.piece;
       if (!p) return false;
       const type = Pieces.get(entry.id);
       const next = { type, rot: 0, x: p.x, y: p.y, special: entry.special || null, entry: Object.assign({ rot: 0 }, entry), lastRot: false };
-      // Keep it where it floats if it fits there (same box centre), else back to the spawn spot.
-      const b0 = p.type.rotBounds[p.rot], b1 = type.rotBounds[0];
-      const cx = p.x + b0.minX + b0.w / 2, cy = p.y + b0.minY + b0.h / 2;
-      const tx = Math.round(cx - b1.w / 2 - b1.minX), ty = Math.round(cy - b1.h / 2 - b1.minY);
-      for (const [dx, dy] of [[0, 0], [0, 1], [-1, 0], [1, 0], [0, -1], [0, 2], [-1, 1], [1, 1]]) {
-        if (this.fitsAt(next, 0, tx + dx, ty + dy)) {
-          next.x = this.board.wx(tx + dx); next.y = ty + dy;
-          this.piece = next;
-          this.emit('replace', next);
-          return true;
-        }
-      }
-      const saved = this.piece;
-      if (this.spawn(next.entry)) { this.emit('replace', this.piece); return true; }
-      this.piece = saved;
-      this.over = false;
-      return false;
+      const b0 = p.type.rotBounds[p.rot];
+      const at = this.room(next, 0, p.x + b0.minX + b0.w / 2, p.y + b0.minY + b0.h / 2, this.cellsOf(p));
+      if (!at) { this.emit('blocked', 'replace'); return false; }
+      next.x = this.board.wx(at.x); next.y = at.y; next.rot = at.rot;
+      this.piece = next;
+      this.emit('replace', next);
+      return true;
     }
 
     setSpecial(special) {
       if (!this.piece) return false;
-      if (special === 'bomb' || special === 'drill' || special === 'blackhole') return this.replacePiece({ id: 'M1', special });
-      if (['phase', 'sand', 'anvil', 'magnet', 'laser', 'golden'].includes(special)) {
+      if (SINGLE.has(special)) return this.replacePiece({ id: 'M1', special });
+      if (SHAPED.has(special)) {
         this.piece.special = special;
         this.piece.entry = Object.assign({}, this.piece.entry, { special });
         this.emit('replace', this.piece);
@@ -592,7 +760,7 @@
       const color = p.type.color, gone = [];
       for (let y = 0; y < this.h; y++) for (let x = 0; x < this.w; x++) {
         const v = this.board.get(x, y);
-        if (v && (v & CELL.COLOR) === color) { gone.push([x, y, v]); this.board.set(x, y, 0); }
+        if (v && (v & CELL.COLOR) === color && !this.tough(v)) { gone.push([x, y, v]); this.board.set(x, y, 0); }
       }
       this.emit('purge', gone);
       return gone;
@@ -623,5 +791,13 @@
     }
   }
 
-  Object.assign(L, { Game, freshStats, spawnPos, BOMB_PATTERN });
+  /** The last n hand pieces: { ms, lines } between the lock before them and the last one; null if there are not n. */
+  function paceOf(s, n) {
+    const p = (s && s.pace) || [];
+    if (p.length < n + 1) return null;
+    const a = p[p.length - 1 - n], b = p[p.length - 1];
+    return { ms: b[0] - a[0], lines: b[1] - a[1] };
+  }
+
+  Object.assign(L, { Game, freshStats, paceOf, migrateHand, spawnPos, BOMB_PATTERN, SINGLE_SPECIALS: SINGLE });
 })(typeof globalThis !== 'undefined' ? globalThis : this);
