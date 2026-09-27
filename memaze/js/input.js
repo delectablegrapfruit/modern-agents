@@ -7,7 +7,6 @@
   class Input {
     constructor(el) {
       this.el = el;
-      this.cfg = { invert: false, speed: 1 };
       this.enabled = false;
       this.pointers = new Map();
       this.drag = null; // {id, x, y}
@@ -30,6 +29,15 @@
       });
       window.addEventListener('keyup', (e) => this.keys.delete(e.code));
       window.addEventListener('blur', () => { this.keys.clear(); this.release(); });
+      const lifted = (e) => { // the untracked finger from before play is up: the waiting one drags on
+        const w = this.pinch && this.pinch.wait;
+        if (!w || e.pointerType !== w || this.pointers.has(e.pointerId) || this.pointers.size !== 1) return;
+        this.pinch = null;
+        const [id, p] = Array.from(this.pointers)[0];
+        if (this.enabled) this.drag = { id, x: p.x, y: p.y };
+      };
+      window.addEventListener('pointerup', lifted);
+      window.addEventListener('pointercancel', lifted);
     }
     keyDir(code) {
       return { ArrowLeft: [-1, 0], KeyA: [-1, 0], ArrowRight: [1, 0], KeyD: [1, 0], ArrowUp: [0, -1], KeyW: [0, -1], ArrowDown: [0, 1], KeyS: [0, 1] }[code];
@@ -41,13 +49,16 @@
       if (e.isPrimary) { this.pointers.clear(); this.pinch = null; this.drag = null; } // nothing else is down: drop stale fingers
       this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       try { this.el.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+      // A finger from before play is still down (skipping the lose media, say): this one never drags while it is;
+      // it waits for a finger to pinch with, or for that one to lift.
+      if (!e.isPrimary && this.pointers.size === 1) { this.pinch = { d: 0, wait: e.pointerType }; return; }
       if (this.pointers.size === 2) {
         const [a, b] = Array.from(this.pointers.values());
         this.pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) };
         this.release();
         return;
       }
-      if (this.drag) return;
+      if (this.drag || this.pinch) return; // a third finger during a pinch does nothing
       this.drag = { id: e.pointerId, x: e.clientX, y: e.clientY };
     }
     move(e) {
@@ -68,15 +79,22 @@
       g.x = e.clientX; g.y = e.clientY;
     }
     up(e) {
-      this.pointers.delete(e.pointerId);
-      if (this.pointers.size < 2) this.pinch = null;
+      if (!this.pointers.delete(e.pointerId)) return;
       if (this.drag && this.drag.id === e.pointerId) this.release();
+      if (!this.pinch) return;
+      // A pinch finger lifted: re-measure the pair still down, or let the last finger drag on from where it is.
+      const ps = Array.from(this.pointers);
+      if (ps.length >= 2) this.pinch.d = Math.hypot(ps[0][1].x - ps[1][1].x, ps[0][1].y - ps[1][1].y);
+      else {
+        this.pinch = null;
+        if (ps.length && this.enabled) this.drag = { id: ps[0][0], x: ps[0][1].x, y: ps[0][1].y };
+      }
     }
     release() { this.drag = null; }
 
     // Finger or mouse travel since the last call, in screen pixels.
     takeGrab() {
-      const d = { x: this.grabDX, y: this.grabDY, active: !!this.drag && !this.pinch };
+      const d = { x: this.grabDX, y: this.grabDY };
       this.grabDX = 0; this.grabDY = 0;
       return d;
     }

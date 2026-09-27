@@ -405,7 +405,7 @@
       e.len = e.arc ? Math.abs(angleDiff(A, B)) * e.arc : Math.hypot(A.x - B.x, A.y - B.y);
     }
 
-    // Carve: growing tree (newest-first ≈ long winding corridors, random ≈ many short branches).
+    // Carve: growing tree (newest-first ~ long winding corridors, random ~ many short branches).
     const adj = adjacency(n, edges);
     const inTree = new Uint8Array(edges.length), seen = new Uint8Array(n);
     const root = r.int(0, n - 1);
@@ -501,14 +501,13 @@
       minX = Math.min(minX, q.x - e.hw); maxX = Math.max(maxX, q.x + e.hw);
       minY = Math.min(minY, q.y - e.hw); maxY = Math.max(maxY, q.y + e.hw);
     }
-    const pathLen = fromStart.dist[b];
     let turns = 0;
     for (let i = 1; i + 1 < mainPath.length; i++) {
       const P = nodes[mainPath[i - 1]], Q = nodes[mainPath[i]], R = nodes[mainPath[i + 1]];
       const c = ((Q.x - P.x) * (R.x - Q.x) + (Q.y - P.y) * (R.y - Q.y)) / (Math.hypot(Q.x - P.x, Q.y - P.y) * Math.hypot(R.x - Q.x, R.y - Q.y) || 1);
       if (c < 0.8) turns++;
     }
-    // Par ≈ a steady drag by someone who knows the way: slower on narrow paths, a beat per real turn, the average wait
+    // Par ~ a steady drag by someone who knows the way: slower on narrow paths, a beat per real turn, the average wait
     // at each vanishing bridge (gone, or not up long enough to cross), and a couple of seconds.
     let dragT = 0, waitT = 0;
     for (let i = 0; i + 1 < mainPath.length; i++) {
@@ -520,11 +519,10 @@
         waitT += (block * block) / (2 * P);
       }
     }
-    const par = dragT - (goal.r * 0.5) / DRAG_WIDE + turns * 0.2 + waitT + 1.5; // the goal counts from half its radius
+    const par = dragT - (goal.r * 0.66 + BALL_R) / DRAG_WIDE + turns * 0.2 + waitT + 1.5; // the goal counts once the player touches it
     return {
       seed: p.seed >>> 0, params: p, S, lattice: lat, mask: mask.id,
-      name: p.name || nameFor(lat, mask, r),
-      nodes, edges: maze, start, goal, gems, mainPath, pathLen, turns,
+      nodes, edges: maze, start, goal, gems, mainPath, turns,
       bounds: { minX, minY, maxX, maxY },
       parTime: Math.ceil(par),
       timeLimit: Math.ceil((par * p.timeFactor + 15) / 5) * 5,
@@ -599,13 +597,6 @@
       }
     }
     return fixes;
-  }
-
-  const ADJ = ['Wobbly', 'Twisted', 'Sneaky', 'Dizzy', 'Lucky', 'Hollow', 'Tiny', 'Grand', 'Neon', 'Velvet', 'Crooked', 'Silent',
-    'Frantic', 'Lazy', 'Brave', 'Shiny', 'Haunted', 'Sunny', 'Salty', 'Fuzzy', 'Electric', 'Secret', 'Winding', 'Tangled'];
-  function nameFor(lat, mask, r) {
-    const noun = mask.id === 'rect' ? LATTICES[lat].name : mask.name;
-    return r.pick(ADJ) + ' ' + noun;
   }
 
   // ---------- difficulty curves ----------

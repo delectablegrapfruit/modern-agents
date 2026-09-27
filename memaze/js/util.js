@@ -90,8 +90,7 @@
     return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
   }
   function fmtClock(sec) { // 1:05.32 for results
-    sec = Math.max(0, sec);
-    const m = Math.floor(sec / 60), s = sec - m * 60;
+    const cs = Math.round(Math.max(0, sec) * 100), m = Math.floor(cs / 6000), s = (cs - m * 6000) / 100; // round once, then split
     return m + ':' + (s < 10 ? '0' : '') + s.toFixed(2);
   }
 

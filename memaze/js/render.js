@@ -79,7 +79,7 @@
       this.w = w; this.h = h; this.dpr = dpr;
       const W = Math.round(w * dpr), H = Math.round(h * dpr);
       if (this.canvas.width !== W || this.canvas.height !== H) { this.canvas.width = W; this.canvas.height = H; }
-      Object.assign(this.canvas.style, { width: w + 'px', height: h + 'px', left: '0px', top: '0px' });
+      Object.assign(this.canvas.style, { width: w + 'px', height: h + 'px' });
     }
     layer() {
       const c = this._layer || (this._layer = document.createElement('canvas'));
@@ -257,7 +257,7 @@
       f.arc(this.ox + x * this.sc, this.oy + y * this.sc, Math.max(6, 330 * this.sc), 0, TAU);
       f.fill();
     }
-    draw(mode, pos, goal, gems, t) {
+    draw(mode, pos, goal, gems) {
       if (!this.maze) return;
       const g = this.ctx, W = this.canvas.width, H = this.canvas.height;
       g.clearRect(0, 0, W, H);
@@ -272,7 +272,7 @@
       if (pos) { dot(pos.x, pos.y, 4.5 * u, '#000'); dot(pos.x, pos.y, 3.2 * u, '#ff3d7f'); }
     }
     // Endless: a radar of what's near the player.
-    drawRadar(world, pos, t, beacons) {
+    drawRadar(world, pos, beacons) {
       const g = this.ctx, W = this.canvas.width, H = this.canvas.height, R = 1500, sc = Math.min(W, H) / (2 * R);
       g.clearRect(0, 0, W, H);
       g.save();

@@ -20,8 +20,8 @@
     addPart(id, data) {
       const part = { id, segs: [], blinks: [], edges: data.edges || [], discs: data.discs || [], paths: null, data };
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-      const add = (ax, ay, bx, by, hw, type, blink, edge) => {
-        const s = { ax, ay, bx, by, hw, type, blink, edge };
+      const add = (ax, ay, bx, by, hw, blink) => {
+        const s = { ax, ay, bx, by, hw, blink };
         part.segs.push(s);
         minX = Math.min(minX, ax - hw, bx - hw); maxX = Math.max(maxX, ax + hw, bx + hw);
         minY = Math.min(minY, ay - hw, by - hw); maxY = Math.max(maxY, ay + hw, by + hw);
@@ -38,9 +38,9 @@
       for (const e of part.edges) {
         const blink = e.type === 'blink' ? e.blink : null;
         if (blink) part.blinks.push(e);
-        for (let i = 1; i < e.pts.length; i++) add(e.pts[i - 1].x, e.pts[i - 1].y, e.pts[i].x, e.pts[i].y, e.hw, e.type, blink, e);
+        for (let i = 1; i < e.pts.length; i++) add(e.pts[i - 1].x, e.pts[i - 1].y, e.pts[i].x, e.pts[i].y, e.hw, blink);
       }
-      for (const d of part.discs) add(d.x, d.y, d.x, d.y, d.r, d.type || 'normal', null, null);
+      for (const d of part.discs) add(d.x, d.y, d.x, d.y, d.r, null);
       part.bbox = { minX, minY, maxX, maxY };
       this.parts.set(id, part);
       return part;

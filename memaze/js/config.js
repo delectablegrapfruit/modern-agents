@@ -52,7 +52,7 @@
   };
   function reqText(req) {
     if (!req) return 'Unlocked';
-    if (req.stars) return req.stars + (req.stars === 1 ? ' star' : ' stars') + ' in Journey';
+    if (req.stars) return req.stars + (req.stars === 1 ? ' star' : ' stars') + ' in Levels';
     if (req.gauntlet) return 'Clear ' + req.gauntlet + ' mazes in one Gauntlet';
     if (req.endless) return 'Score ' + req.endless + ' in Endless';
     if (req.daily) return 'Finish a Daily maze';
@@ -72,11 +72,13 @@
     return st;
   }
 
+  const oldProgress = (p) => { delete p.hintsSeen; return p; }; // tutorial tips are gone
+
   const Save = {
     settings: null, progress: null,
     load() {
       this.settings = migrate(MZ.merge(DEFAULTS, MZ.store.load('settings', null)));
-      this.progress = MZ.merge(PROGRESS, MZ.store.load('progress', null));
+      this.progress = oldProgress(MZ.merge(PROGRESS, MZ.store.load('progress', null)));
     },
     saveSettings() { MZ.store.save('settings', this.settings); },
     saveProgress() { MZ.store.save('progress', this.progress); },
@@ -111,7 +113,7 @@
       const j = JSON.parse(text);
       if (!j || j.app !== 'memaze') throw new Error('Not a Memaze save file');
       this.settings = migrate(MZ.merge(DEFAULTS, j.settings));
-      this.progress = MZ.merge(PROGRESS, j.progress);
+      this.progress = oldProgress(MZ.merge(PROGRESS, j.progress));
       this.saveSettings();
       this.saveProgress();
     },

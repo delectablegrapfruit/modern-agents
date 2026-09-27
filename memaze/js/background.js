@@ -9,7 +9,7 @@
  * Per-pixel work (plasma) happens in a tiny offscreen buffer that is scaled up;
  * everything else is a handful of path fills / gradients per frame.
  *
- *   MZ.Background.PATTERNS            [{id, name, desc}]
+ *   MZ.Background.PATTERNS            [{id, name}]
  *   MZ.Background.DEFAULT_RGB         default RGB config
  *   MZ.Background.create(canvas)      -> renderer {setConfig, resize, render, colors}
  *   MZ.Background.thumb(id, canvas, rgbCfg, timeSec)
@@ -26,18 +26,18 @@
   const REF_DIAG = Math.hypot(1920, 1080); // feature sizes are tuned for this diagonal
 
   const PATTERNS = [
-    { id: 'rgb', name: 'RGB Flow', desc: 'Your RGB lighting, pure and simple.' },
-    { id: 'stripes', name: 'Candy Stripes', desc: 'Glossy diagonal candy bands sliding by.' },
-    { id: 'checker', name: 'Checkerboard', desc: 'A slowly turning checkerboard void.' },
-    { id: 'dots', name: 'Polka', desc: 'A grid of bobbing polka dots.' },
-    { id: 'waves', name: 'Waves', desc: 'Layered sine waves drifting past.' },
-    { id: 'stars', name: 'Warp', desc: 'A starfield rushing toward you.' },
-    { id: 'tunnel', name: 'Tunnel', desc: 'A twisting tunnel of rings pulling you in.' },
-    { id: 'synth', name: 'Synthwave', desc: 'Neon grid, striped sun, endless horizon.' },
-    { id: 'plasma', name: 'Plasma', desc: 'Old-school demoscene plasma.' },
-    { id: 'kaleido', name: 'Kaleido', desc: 'Mirrored shapes turning in a kaleidoscope.' },
-    { id: 'matrix', name: 'Code Rain', desc: 'Falling columns of glowing glyphs.' },
-    { id: 'hypno', name: 'Hypno', desc: 'A slowly turning hypnotic spiral.' },
+    { id: 'rgb', name: 'RGB Flow' },
+    { id: 'stripes', name: 'Candy Stripes' },
+    { id: 'checker', name: 'Checkerboard' },
+    { id: 'dots', name: 'Polka' },
+    { id: 'waves', name: 'Waves' },
+    { id: 'stars', name: 'Warp' },
+    { id: 'tunnel', name: 'Tunnel' },
+    { id: 'synth', name: 'Synthwave' },
+    { id: 'plasma', name: 'Plasma' },
+    { id: 'kaleido', name: 'Kaleido' },
+    { id: 'matrix', name: 'Code Rain' },
+    { id: 'hypno', name: 'Hypno' },
   ];
 
   const DEFAULT_RGB = {

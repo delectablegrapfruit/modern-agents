@@ -89,7 +89,6 @@
     },
 
     onState(st) {
-      document.body.classList.toggle('playing', st === 'play' || st === 'fx');
       $('#hud').hidden = !['play', 'fx', 'paused'].includes(st);
       if (st === 'paused') this.show('pause');
       if (st === 'play') this.closeAll();
@@ -154,7 +153,6 @@
       this.current = top || null;
       this.host.textContent = '';
       if (top) this.host.appendChild(top.el);
-      document.body.classList.toggle('menu-open', !!top);
     },
     back() {
       const top = this.stack[this.stack.length - 1];
@@ -193,7 +191,7 @@
         if ((e.key === 'r' || e.key === 'R') && ['play', 'paused', 'result'].includes(st) && !['gauntlet', 'endless'].includes(G.mode)) {
           G.restartLevel(); e.preventDefault(); return;
         }
-        if ((e.key === 'Enter' || e.key === ' ') && (st === 'result' || st === 'over') && this.current && (this.current.name === 'results' || this.current.name === 'over')) {
+        if ((e.key === 'Enter' || e.key === ' ') && (st === 'result' || st === 'over') && this.current && (this.current.name === 'results' || this.current.name === 'over') && !this.current.el.contains(document.activeElement)) { // a focused button there keeps its own key
           const b = $('.screen-' + this.current.name + ' .primary'); if (b) { b.click(); e.preventDefault(); }
         }
         if ((e.key === 'm' || e.key === 'M') && (st === 'play' || st === 'paused')) {
@@ -396,7 +394,7 @@
       const nav = h('div', { class: 'row' },
         btn('Prev', () => { this._lvPage = Math.max(0, page - 1); this.rebuild(); }, 'small' + (page ? '' : ' hide')),
         h('span', { class: 'muted' }, (page * 40 + 1) + '–' + (page * 40 + 40) + ' · ' + stars + (stars === 1 ? ' star' : ' stars')),
-        btn('Next', () => { this._lvPage = page + 1; this.rebuild(); }, 'small' + ((page + 1) * 40 < top + 1 ? '' : ' hide')));
+        btn('Next', () => { this._lvPage = page + 1; this.rebuild(); }, 'small' + (S().extras.unlockAll || (page + 1) * 40 < top ? '' : ' hide')));
       return this.panel('Levels', [grid, nav], { wide: true });
     },
 
@@ -465,9 +463,10 @@
       } else if (tab === 'background') {
         opts.push(btn('Background settings', () => this.show('background'), 'small'));
       } else if (tab === 'music') {
-        opts.push(range('Music volume', 'audio.music', 0, 1, 0.01, pct), btn(MZ.Audio.Music.playing ? 'Stop' : 'Play', () => {
+        const M = MZ.Audio.Music, on = !!(M.el || M.synth); // what is actually sounding, not just the wish to play
+        opts.push(range('Music volume', 'audio.music', 0, 1, 0.01, pct), S().music.media === 'none' ? null : btn(on ? 'Stop' : 'Play', () => {
           MZ.Audio.unlock();
-          if (MZ.Audio.Music.playing) MZ.Audio.Music.stop(); else MZ.Audio.Music.start();
+          if (on) M.stop(); else M.start();
           this.rebuild();
         }, 'small'));
       }
@@ -622,7 +621,7 @@
       };
       const rows = [['Time', MZ.fmtClock(r.time)], ['Par', par(r.par)]];
       if (r.best != null) rows.push(['Best', MZ.fmtClock(r.best) + (r.newBest ? ' (new)' : '')]);
-      rows.push(['Gems', r.gems + '/' + r.gemsTotal], ['Restarts', String(r.falls)]);
+      rows.push(['Gems', r.gems + '/' + r.gemsTotal], ['Restarts', String(r.restarts)]);
       const share = r.mode === 'daily' ? 'Memaze Daily ' + G.run.day + ': ' + MZ.fmtClock(r.time) + ', ' + r.stars + '/3 stars'
         : r.mode === 'custom' ? shareLink(G.run.opts) : null;
       const auto = r.mode === 'journey' && S().gameplay.autoNext;

@@ -86,19 +86,33 @@
   // ---------- music ----------
   const Music = {
     el: null, playlist: [], index: 0, sel: 'none', synth: null, ducked: false, playing: false,
+    // The files behind a choice ('random' is every music file); sig changes when one is deleted, added or replaced on disk.
+    pool(sel) {
+      if (!sel || sel === 'none' || sel === 'default:synth') return [];
+      const items = MZ.Media.list('music').filter((it) => it.kind !== 'builtin');
+      return sel === 'random' ? items : items.filter((it) => it.id === sel);
+    },
+    sig: '',
     set(sel) {
-      if (sel === this.sel && (this.el || this.synth || sel === 'none')) return;
+      const items = this.pool(sel), sig = items.map((it) => it.url).join('|');
+      if (sel === this.sel && sig === this.sig && (this.el || this.synth || sel === 'none')) return;
+      const cur = sel === this.sel && this.el && this.playlist[this.index % this.playlist.length];
       this.sel = sel;
+      this.sig = sig;
+      if (cur && items.some((it) => it.url === cur.url)) { // the track playing is still there: the others join after it
+        this.playlist = [cur].concat(items.filter((it) => it.url !== cur.url).sort(() => Math.random() - 0.5));
+        this.index = 0;
+        this.el.loop = this.playlist.length === 1;
+        return;
+      }
       if (this.playing) { this.stop(); this.start(); }
     },
     start() {
       this.playing = true;
       this.stop(true);
-      const sel = this.sel;
-      if (!sel || sel === 'none') return;
+      const sel = this.sel, items = this.pool(sel);
+      this.sig = items.map((it) => it.url).join('|');
       if (sel === 'default:synth') { A.unlock(); this.synth = Synth.start(); return; }
-      let items = MZ.Media.list('music').filter((it) => it.kind !== 'builtin');
-      if (sel !== 'random') items = items.filter((it) => it.id === sel);
       if (!items.length) return;
       this.playlist = sel === 'random' ? items.sort(() => Math.random() - 0.5) : items;
       this.index = 0;

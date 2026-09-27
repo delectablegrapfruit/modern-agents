@@ -44,14 +44,13 @@ if (!levels.length || levels.some((l) => !(l >= 1)) || !(speed > 0)) { console.e
     G.input.vector = () => ({ x: 0, y: 0 });
     G.input.takeGrab = () => {
       const b = G.ball, T = AP.target;
-      if (!T) return { x: 0, y: 0, active: false };
+      if (!T) return { x: 0, y: 0 };
       const k = G.cam.zoom / Math.min(2, Math.max(0.5, S.controls.speed || 1));
-      return { x: -(T.x - b.x) * k, y: -(T.y - b.y) * k, active: true };
+      return { x: -(T.x - b.x) * k, y: -(T.y - b.y) * k };
     };
     const HOLD = 24, MARGIN = 0.3; // wait this far before a vanishing bridge; cross only with this much time to spare
     AP.play = (L) => {
-      G.startJourney(L);
-      G.t = 0; // vanishing bridges run on the game clock: start it at 0 so every run is identical
+      G.startJourney(L); // vanishing bridges run on G.playT, which every level starts at 0: every run is identical
       AP.outcome = null;
       const m = G.maze, pts = [], cum = [], blinks = [];
       let acc = 0;
@@ -75,7 +74,7 @@ if (!levels.length || levels.some((l) => !(l >= 1)) || !(speed > 0)) { console.e
       const dt = 1 / 60, frames = Math.ceil((m.timeLimit + 10) / dt);
       let s = 0, wait = 0;
       for (let f = 0; f < frames && !AP.outcome && G.state === 'play'; f++) {
-        const t = G.t + dt; // the clock this step will see
+        const t = G.playT + dt; // the clock this step will see
         let next = Math.min(acc, s + speed * dt);
         const z = blinks.find((q) => q.b > s);
         if (z && s < z.a) { // not on it yet: go only if it is up and stays up until we are across

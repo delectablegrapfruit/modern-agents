@@ -119,7 +119,7 @@
       const id = keyOf(item, b.chroma);
       this.item = item;
       if (force && b.media === 'random') this.itemId = null;
-      host.dataset.fit = b.fit;
+      host.dataset.fit = b.fit === 'tile' && item && item.kind !== 'image' ? 'cover' : b.fit; // a video can't tile: fill instead
       host.style.setProperty('--dim', b.dim);
       host.style.setProperty('--blur', b.blur + 'px');
       if (id !== this.itemId) {
@@ -154,8 +154,8 @@
     maze: null, world: null, gems: [], beacons: [],
     ball: { x: 0, y: 0 },
     cam: { x: 0, y: 0, zoom: 1 }, userZoom: 1,
-    t: 0, clock: 0, elapsed: 0, falls: 0, gemsTaken: 0, stateT: 0, lastTick: -1, attract: 0,
-    FX, Player, Backdrop, GoalMedia, KEY_SPEED,
+    t: 0, playT: 0, clock: 0, elapsed: 0, restarts: 0, gemsTaken: 0, stateT: 0, lastTick: -1, attract: 0,
+    FX, Player, Backdrop, GoalMedia,
 
     init() {
       this.renderer = new MZ.Renderer(MZ.$('#maze'));
@@ -169,9 +169,9 @@
       document.addEventListener('visibilitychange', () => { if (document.hidden && this.state === 'play') this.pause(); });
       let last = performance.now(), fpsN = 0, fpsT = 0;
       const loop = (now) => {
-        const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
+        const raw = Math.max(0, (now - last) / 1000), dt = Math.min(0.25, raw); // real time: the clock keeps pace with a 1:1 drag at low fps
         last = now;
-        fpsN++; fpsT += dt;
+        fpsN++; fpsT += raw;
         if (fpsT > 0.5) { this.fps = Math.round(fpsN / fpsT); fpsN = 0; fpsT = 0; }
         try { this.frame(dt); } catch (e) { console.error(e); }
         requestAnimationFrame(loop);
@@ -181,7 +181,6 @@
 
     applySettings() {
       const s = S();
-      Object.assign(this.input.cfg, s.controls);
       MZ.Audio.setVolumes({ master: s.audio.master, sfx: s.audio.sfx, music: s.audio.music, media: s.audio.media });
       MZ.Audio.Music.set(s.music.media);
       document.documentElement.classList.toggle('reduced-motion', s.display.reducedMotion);
@@ -249,10 +248,9 @@
       const c0 = this.chunks.get('0,0').data;
       this.run.check = { x: c0.start.x, y: c0.start.y };
       this.run.origin = { x: c0.start.x, y: c0.start.y, r: c0.discs[0].r };
-      this.falls = 0;
       this.meta = { label: 'Endless' };
       this.minimap.maze = null;
-      this.beginLevel(c0.start, 75);
+      this.beginLevel(c0.start, 75, true);
     },
 
     loadMaze(params, meta) {
@@ -264,21 +262,20 @@
       this.meta = meta;
       this.minimap.setMaze(m);
       this.trail = [];
-      this.falls = 0;
-      this.beginLevel(m.start, m.timeLimit);
+      this.restarts = 0;
+      this.beginLevel(m.start, m.timeLimit, true);
       this.emit('level');
     },
 
-    // Straight into play: the player appears on the start marker and the clock runs.
-    beginLevel(start, timeLimit) {
-      Player.apply(S().player.media === 'random');
-      GoalMedia.apply(S().goal.media === 'random');
-      if (S().background.media === 'random' && S().background.kind === 'media') Backdrop.apply(true);
+    // Straight into play: the player appears on the start marker and the clock runs. 'random' media re-rolls only on a new maze.
+    beginLevel(start, timeLimit, fresh) {
+      Player.apply(fresh && S().player.media === 'random');
+      GoalMedia.apply(fresh && S().goal.media === 'random');
+      if (fresh && S().background.media === 'random' && S().background.kind === 'media') Backdrop.apply(true);
       this.ball.x = start.x; this.ball.y = start.y;
-      this.startPos = { x: start.x, y: start.y };
-      this.timeLimit = timeLimit;
       this.clock = timeLimit;
       this.elapsed = 0;
+      this.playT = 0; // vanishing bridges run on this clock: it only moves during play, from 0 on every (re)start
       this.gemsTaken = this.gems ? this.gems.filter((g) => g.taken).length : 0;
       this.lastTick = -1;
       this.cam.x = start.x; this.cam.y = start.y;
@@ -290,6 +287,7 @@
 
     restartLevel() {
       if (this.mode === 'endless') return;
+      this.restarts = this.state === 'result' ? 0 : this.restarts + 1; // Retry after a clear is a fresh attempt
       this.gems.forEach((g) => (g.taken = false));
       this.beginLevel(this.maze.start, this.maze.timeLimit);
     },
@@ -332,7 +330,7 @@
       this.t += dt;
       this.stateT += dt;
       if (st === 'play') {
-        this.cam.zoom = lerp(this.cam.zoom, this.zoomTarget(), 1 - Math.exp(-dt * 14));
+        this.cam.zoom = this.zoomTarget(); // zoom follows the pinch/wheel exactly, no easing
         this.step(dt);
       } else if (st === 'menu') this.stepAttract(dt);
       if (st !== 'menu' && st !== 'boot') { this.cam.x = this.ball.x; this.cam.y = this.ball.y; }
@@ -342,6 +340,7 @@
     // The maze follows the finger 1:1 (the player stays put on screen); keys and gamepad move at a steady speed.
     step(dt) {
       const b = this.ball, inp = this.input, cfg = S().controls;
+      this.playT += dt;
       if (S().gameplay.timer || this.mode === 'endless') {
         this.clock -= dt;
         const sec = Math.ceil(this.clock);
@@ -371,19 +370,25 @@
 
     // Is the player still on the floor? 'casual' (Walls) holds it on the path's edge instead.
     onFloor() {
-      const b = this.ball, rule = S().gameplay.rule;
-      const q = this.world.query(b.x, b.y, this.t);
-      const need = rule === 'strict' ? R * 0.55 : -2;
+      const b = this.ball, rule = S().gameplay.rule, t = this.playT;
+      const q = this.world.query(b.x, b.y, t);
+      if (rule === 'strict') { // lose once any point of the hitbox's rim is over the void (checked all round, so bends are fair)
+        if (q.depth >= R) return true;
+        if (q.depth < 0) return false;
+        for (let i = 0; i < 16; i++) if (this.world.query(b.x + Math.cos(i * Math.PI / 8) * R, b.y + Math.sin(i * Math.PI / 8) * R, t).depth < 0) return false;
+        return true;
+      }
+      const need = rule === 'casual' ? 0 : -2;
       if (q.depth >= need) return true;
-      if (rule === 'casual' && q.seg && q.depth > -R * 1.5) {
+      if (rule === 'casual' && q.seg && q.depth > -R * 1.5) { // back onto the edge itself, so a steady push holds still
         const s = q.seg, dx = s.bx - s.ax, dy = s.by - s.ay, l2 = dx * dx + dy * dy;
         const tt = l2 ? clamp(((b.x - s.ax) * dx + (b.y - s.ay) * dy) / l2, 0, 1) : 0;
         const cx = s.ax + dx * tt, cy = s.ay + dy * tt;
         let nx = b.x - cx, ny = b.y - cy;
         const d = Math.hypot(nx, ny) || 1;
         nx /= d; ny /= d;
-        b.x = cx + nx * (s.hw - 1.5);
-        b.y = cy + ny * (s.hw - 1.5);
+        b.x = cx + nx * s.hw;
+        b.y = cy + ny * s.hw;
         return true;
       }
       return false;
@@ -407,21 +412,21 @@
           bc.lit = true;
           this.run.lit.add(bc.key);
           this.run.beaconsLit++;
-          this.run.check = { x: bc.x, y: bc.y };
+          this.run.check = this.run.safe = { x: bc.x, y: bc.y }; // the next respawn point, until a later junction
           this.clock += 12;
           MZ.Audio.play('beacon');
           this.emit('bonus', '+12s');
         }
       }
       if (this.maze) {
-        const g = this.maze.goal;
-        if ((g.x - b.x) ** 2 + (g.y - b.y) ** 2 < (g.r * 0.5) ** 2) { this.win(); return true; }
+        const g = this.maze.goal, gr = g.r * (GoalMedia.active ? clamp(S().goal.size, 0.66, 1) : 0.66) + R; // the hitbox touches the GOAL circle (or goal media)
+        if ((g.x - b.x) ** 2 + (g.y - b.y) ** 2 < gr * gr) { this.win(); return true; }
       }
       return false;
     },
 
     async lose(reason) {
-      if (reason === 'fall') { this.falls++; MZ.Save.progress.stats.falls++; }
+      if (reason === 'fall') MZ.Save.progress.stats.falls++;
       this.setState('fx');
       this.emit('lose', reason);
       MZ.Audio.play('lose');
@@ -464,10 +469,10 @@
 
     // Stars: one for finishing, one for beating par, one for every gem.
     results() {
-      const m = this.maze, time = this.elapsed;
+      const m = this.maze, time = Math.round(this.elapsed * 100) / 100; // the time shown: par and best compare what the player sees
       const allGems = this.gems.length === 0 || this.gemsTaken >= this.gems.length;
       const stars = 1 + (time <= m.parTime ? 1 : 0) + (allGems ? 1 : 0);
-      const res = { mode: this.mode, time, par: m.parTime, gems: this.gemsTaken, gemsTotal: this.gems.length, stars, falls: this.falls, label: this.meta.label, best: null, newBest: false };
+      const res = { mode: this.mode, time, par: m.parTime, gems: this.gemsTaken, gemsTotal: this.gems.length, stars, restarts: this.restarts, best: null, newBest: false };
       const P = MZ.Save.progress;
       if (this.mode === 'journey') {
         const L = this.run.level, rec = P.journey.levels[L] || { stars: 0, best: null, gems: 0 };
@@ -513,9 +518,12 @@
     loadChunks(bx, by) {
       const E = Gen.endless, span = E.EC * E.ES;
       const cx = Math.floor(bx / span), cy = Math.floor(by / span);
-      if (this.chunkAt && cx === this.chunkAt.x && cy === this.chunkAt.y) return;
-      this.chunkAt = { x: cx, y: cy };
-      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+      // Enough chunks around the player to fill the screen at the current zoom (plus a lattice step), at least two.
+      const half = Math.max(innerWidth, innerHeight) / 2 / Math.min(this.cam.zoom, this.zoomTarget());
+      const ring = Math.max(2, Math.ceil((half + E.ES) / span));
+      if (this.chunkAt && cx === this.chunkAt.x && cy === this.chunkAt.y && ring === this.chunkAt.r) return;
+      this.chunkAt = { x: cx, y: cy, r: ring };
+      for (let dy = -ring; dy <= ring; dy++) for (let dx = -ring; dx <= ring; dx++) {
         const k = cx + dx + ',' + (cy + dy);
         if (this.chunks.has(k)) continue;
         const data = E.chunk(this.run.seed, cx + dx, cy + dy);
@@ -526,7 +534,7 @@
       }
       for (const k of Array.from(this.chunks.keys())) {
         const [x, y] = k.split(',').map(Number);
-        if (Math.abs(x - cx) > 3 || Math.abs(y - cy) > 3) { this.world.removePart(k); this.chunks.delete(k); }
+        if (Math.abs(x - cx) > ring + 1 || Math.abs(y - cy) > ring + 1) { this.world.removePart(k); this.chunks.delete(k); }
       }
       this.gems = []; this.beacons = [];
       for (const { data } of this.chunks.values()) { this.gems.push(...data.gems); this.beacons.push(...data.beacons); }
@@ -535,7 +543,7 @@
       const b = this.ball, r = this.run;
       this.loadChunks(b.x, b.y);
       r.best = Math.max(r.best, Math.hypot(b.x - r.origin.x, b.y - r.origin.y) / Gen.endless.ES);
-      const q = this.world.query(b.x, b.y, this.t);
+      const q = this.world.query(b.x, b.y, this.playT);
       if (q.seg && !q.seg.blink && q.depth > R) {
         // Remember the nearest safe junction for respawns.
         let best = null, bd = Infinity;
@@ -574,7 +582,7 @@
     // ----- drawing -----
     draw() {
       const b = this.ball, s = S(), t = this.t;
-      const menu = this.state === 'menu' || this.state === 'boot';
+      const menu = this.state === 'menu' || this.state === 'boot', pt = menu ? t : this.playT; // bridges stop while not playing
       const rgb = Backdrop.color(t);
       Backdrop.draw(t, this.cam);
       const maze = menu ? this.attractMaze : this.maze;
@@ -582,7 +590,7 @@
       const seed = maze ? maze.seed : this.run && this.run.seed ? this.run.seed : 7;
       const showPlayer = !menu;
       this.renderer.draw({
-        world, cam: this.cam, t, floor: s.display.floor, hue: seed % 360, rgb,
+        world, cam: this.cam, t: pt, floor: s.display.floor, hue: seed % 360, rgb,
         start: maze ? maze.start : this.mode === 'endless' && this.run ? this.run.origin : null,
         goal: maze ? Object.assign({ media: GoalMedia.active && !menu }, maze.goal) : null,
         gems: menu ? maze && maze.gems : this.gems,
@@ -617,8 +625,8 @@
           this.minimap.dirty = false;
           if (this.minimap.size() && this.maze) { this.minimap.setMaze(this.maze); this.revealAll(); }
         }
-        if (this.mode === 'endless') this.minimap.drawRadar(this.world, b, t, this.beacons);
-        else this.minimap.draw(mm, b, this.maze && this.maze.goal, this.gems, t);
+        if (this.mode === 'endless') this.minimap.drawRadar(this.world, b, this.beacons);
+        else this.minimap.draw(mm, b, this.maze && this.maze.goal, this.gems);
       } else mmEl.hidden = true;
       this.emit('frame');
     },
