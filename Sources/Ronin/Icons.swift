@@ -4,7 +4,7 @@ import RoninArt
 import RoninCore
 
 /// Small pictograms drawn in code. At 10–16 points they say what a line of tiny text would: kills, time, combo,
-/// the mode, which mouse button cuts which way, paused, on to the next stage.
+/// stages cleared, the mode, which mouse button cuts which way, a miss and a blocked cut, paused, on to the next stage.
 @MainActor
 enum Icons {
     private static func shape(_ path: CGPath, fill: SKColor? = nil, stroke: SKColor? = nil, width: CGFloat = 1.5) -> SKShapeNode {
@@ -57,6 +57,17 @@ enum Icons {
         return shape(path, stroke: color, width: max(1.5, s * 0.13))
     }
 
+    /// Three steps climbing to the right: stages cleared.
+    static func steps(_ s: CGFloat, _ color: SKColor) -> SKNode {
+        let path = CGMutablePath()
+        let w = s * 0.3
+        for k in 0..<3 {
+            let h = s * (0.3 + 0.3 * CGFloat(k))
+            path.addRect(CGRect(x: -s * 0.45 + CGFloat(k) * w, y: -s * 0.45, width: w * 0.8, height: h))
+        }
+        return shape(path, fill: color)
+    }
+
     /// The warlord's golden crescent.
     static func crest(_ s: CGFloat) -> SKNode {
         let path = CGMutablePath()
@@ -84,6 +95,23 @@ enum Icons {
         split.move(to: CGPoint(x: 0, y: h * 0.06))
         split.addLine(to: CGPoint(x: 0, y: h / 2))
         node.addChild(shape(split, stroke: color, width: max(1.2, s * 0.07)))
+        return node
+    }
+
+    /// Both buttons and the way each cuts: the mouse with its left button lit and an arrow pointing left, and the one
+    /// with its right button lit and an arrow pointing right.
+    static func buttons(_ s: CGFloat, _ color: SKColor, _ arrows: SKColor) -> SKNode {
+        let node = SKNode()
+        for side in Side.allCases {
+            let sign: CGFloat = side == .left ? -1 : 1
+            let pad = Icons.mouse(s, lit: side, color)
+            pad.position = CGPoint(x: sign * s * 0.55, y: 0)
+            node.addChild(pad)
+            let arrow = play(s * 0.55, arrows)
+            arrow.xScale = sign
+            arrow.position = CGPoint(x: sign * s * 1.25, y: 0)
+            node.addChild(arrow)
+        }
         return node
     }
 
@@ -119,7 +147,7 @@ enum Icons {
         return node
     }
 
-    /// ✕: a miss.
+    /// ✕: a miss (nothing there: wait for him to close).
     static func cross(_ s: CGFloat, _ color: SKColor) -> SKNode {
         let path = CGMutablePath()
         path.move(to: CGPoint(x: -s * 0.4, y: -s * 0.4))
@@ -127,6 +155,18 @@ enum Icons {
         path.move(to: CGPoint(x: s * 0.4, y: -s * 0.4))
         path.addLine(to: CGPoint(x: -s * 0.4, y: s * 0.4))
         return shape(path, stroke: color, width: max(2, s * 0.2))
+    }
+
+    /// ⊗: a cut turned aside by a guard (wait for it to drop), not a miss.
+    static func blocked(_ s: CGFloat, _ color: SKColor) -> SKNode {
+        let path = CGMutablePath()
+        let a = s * 0.25
+        path.move(to: CGPoint(x: -a, y: -a))
+        path.addLine(to: CGPoint(x: a, y: a))
+        path.move(to: CGPoint(x: a, y: -a))
+        path.addLine(to: CGPoint(x: -a, y: a))
+        path.addEllipse(in: CGRect(x: -s * 0.46, y: -s * 0.46, width: s * 0.92, height: s * 0.92))
+        return shape(path, stroke: color, width: max(1.8, s * 0.13))
     }
 
     /// A heart, as a slender lozenge (full, or an outline once lost).
@@ -205,6 +245,8 @@ enum Icons {
             rule.color = Palette.gold.color()
             rule.colorBlendFactor = 1
             rule.alpha = 0.55
+            // Over the plate's edge (the panel draws by depth alone).
+            rule.zPosition = 0.01
             node.addChild(rule)
         }
         return node
