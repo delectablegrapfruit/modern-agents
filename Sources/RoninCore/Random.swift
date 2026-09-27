@@ -23,7 +23,7 @@ public struct SeededRNG: RandomNumberGenerator, Codable, Equatable, Sendable {
     public mutating func chance(_ p: Double) -> Bool { unit() < p }
 }
 
-/// Mixes numbers into a seed: the career, the stage and the attempt at it name the fight.
+/// Mixes numbers into a seed: the career, the stage, the run and the try at it name the fight.
 public func mixSeed(_ a: UInt64, _ b: UInt64, _ c: UInt64 = 0) -> UInt64 {
     var rng = SeededRNG(seed: a &* 0x2545_F491_4F6C_DD1D ^ (b &+ 0x632B_E59B_D9B4_E019) ^ (c &* 0x9E37_79B9_7F4A_7C15))
     return rng.next()
