@@ -711,6 +711,23 @@ final class DuelScene: SKScene {
 
     private func shake(_ amount: CGFloat) { shakeAmount = max(shakeAmount, amount) }
 
+    /// An impact frame: focus lines snapping in around a point and gone, with a flash at its heart.
+    private func focus(at point: CGPoint, size: CGFloat, color: RGB, alpha: CGFloat) {
+        let lines = SKSpriteNode(texture: Art.focus)
+        lines.size = CGSize(width: size, height: size)
+        lines.position = point
+        lines.zRotation = CGFloat.random(in: 0...(2 * .pi))
+        lines.color = color.color()
+        lines.colorBlendFactor = 1
+        lines.alpha = alpha
+        lines.zPosition = 5
+        lines.setScale(1.25)
+        lines.run(.sequence([.scale(to: 1, duration: 0.05), .wait(forDuration: 0.06), .group([.fadeOut(withDuration: 0.12), .scale(to: 0.9, duration: 0.12)]),
+                             .removeFromParent()]))
+        overlay.addChild(lines)
+        fx.addChild(at(point, Art.flash(.white, size: size * 0.35, duration: 0.14, alpha: alpha * 0.8)))
+    }
+
     /// A punch in toward a blow.
     private func punch(_ amount: CGFloat, at point: CGPoint) {
         guard 1 + amount >= zoom else { return }
@@ -943,6 +960,8 @@ final class DuelScene: SKScene {
                 noteKill(side)
                 later(delay) { [self] in
                     slash(at: target, side: side, style: style, strong: true)
+                    // The draw that opens a stage gets its own impact frame.
+                    if style == .nukitsuke { focus(at: target, size: ronin * 2.8, color: .white, alpha: 0.5) }
                     sever(sprite, side: side, style: style)
                 }
             } else {
@@ -1086,6 +1105,7 @@ final class DuelScene: SKScene {
                                         spread: 1.6, angle: from, gravity: ronin * 5, additive: false)))
             carnage.spatter(around: heroX, count: 8)
             splatter(damage > 1 ? 3 : 2)
+            focus(at: p, size: ronin * 3, color: Palette.blood.mix(.white, 0.2), alpha: 0.55)
             shake(3.5 + CGFloat(damage) * 1.5)
             punch(0.05, at: p)
             hitStop = max(hitStop, 0.08)
@@ -1347,6 +1367,7 @@ final class DuelScene: SKScene {
         sprite.removeFromParent()
         hero.bloodied(heavy ? 0.06 : 0.025)
 
+        if heavy { focus(at: gash, size: ronin * (boss ? 4.5 : 3.2), color: .white, alpha: boss ? 0.9 : 0.6) }
         if boss {
             hitStop = max(hitStop, 0.25)
             world.speed = 0.25

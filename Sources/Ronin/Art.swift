@@ -91,6 +91,8 @@ enum Art {
     static let raindrop = makeRaindrop()
     /// Blood thrown against the glass: a blot, its droplets, and runs trickling down.
     static let splats: [SKTexture] = (0..<4).map { makeSplat(seed: UInt64($0)) }
+    /// Focus lines: thin wedges of light closing in on a point, clear in the middle. The impact frame of a big blow.
+    static let focus = makeFocus()
 
     /// Tints a sprite toward a colour, black pixels included (SpriteKit's own colour blend multiplies, which leaves a
     /// silhouette black). Each sprite carries its own tint in the `a_tint` attribute: rgb, and how far to go.
@@ -162,6 +164,24 @@ enum Art {
         context.addEllipse(in: CGRect(x: c - inner - r * 0.11, y: c - inner + r * 0.01, width: 2 * inner, height: 2 * inner))
         context.fillPath()
         context.endTransparencyLayer()
+        return texture(context)
+    }
+
+    private static func makeFocus() -> SKTexture {
+        let s = 256
+        guard let context = bitmap(s, s) else { return SKTexture() }
+        var rng = SeededRNG(seed: 0xF0C05)
+        let c = CGPoint(x: 128, y: 128)
+        context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+        for _ in 0..<64 {
+            let a = CGFloat(rng.range(0, 2 * .pi)), w = CGFloat(rng.range(0.004, 0.022))
+            let inner = CGFloat(rng.range(58, 100)), outer: CGFloat = 190
+            context.move(to: CGPoint(x: c.x + cos(a) * inner, y: c.y + sin(a) * inner))
+            context.addLine(to: CGPoint(x: c.x + cos(a - w) * outer, y: c.y + sin(a - w) * outer))
+            context.addLine(to: CGPoint(x: c.x + cos(a + w) * outer, y: c.y + sin(a + w) * outer))
+            context.closePath()
+        }
+        context.fillPath()
         return texture(context)
     }
 
