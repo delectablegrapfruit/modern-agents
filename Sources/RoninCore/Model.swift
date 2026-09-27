@@ -18,9 +18,11 @@ public enum Tuning {
     /// The ronin's height in lane units: the panel draws him this tall, and every weapon's reach is measured
     /// against it, so a blow drawn landing on him lands on him.
     public static let figure = 0.312
-    /// After a cut lands, the ronin can cut again this soon. Presses in between are held and cut on time.
+    /// After a cut lands, the ronin can cut again this soon (it runs out on the step after, about 0.08 s). A press in
+    /// between is held and cut on time, at whatever is in reach then; a second cut on the side just cut that finds
+    /// nothing there (the first knocked him back, sent him leaping or felled him) is let go, not a whiff.
     public static let cooldown = 0.075
-    /// A cut at nothing leaves him open this long, and presses in between are lost.
+    /// A cut at nothing leaves him open this long (times the mode's `stumble`), and presses in between are lost.
     public static let stumble = 0.34
     /// Where archers stop to shoot, if nothing in front stops them sooner.
     public static let archerRange = 0.64
@@ -29,11 +31,25 @@ public enum Tuning {
     /// How long a leap over the ronin's head takes, and where the leaper lands.
     public static let leap = 0.42
     public static let landing = 0.23
+    /// A stand-in until a fight sets the mode's own hearts (`Mode.hearts`), which it always does.
     public static let heroHP = 5
     /// The first foe waits for the stage's title card to clear.
     public static let firstSpawn = 1.5
-    /// A cut the warlord parries leaves the ronin open this long.
+    /// A cut the warlord parries leaves the ronin open this long (times the mode's `stumble`).
     public static let parried = 0.3
+    /// How long the warlord's guard takes to come up: longer than it takes to see it and stop. A cut that meets it
+    /// sooner glances off (nothing lost either side); once it is set, a cut is parried.
+    public static let guardRise = 0.24
+    /// The shortest wind-up of any warlord blow but his answer to a parried cut (a second blow straight on from the
+    /// first, one as he lands from a leap or drops his guard, one in his fury): long enough to meet on sight, however
+    /// quick the stage.
+    public static let quickBlow = 0.3
+    /// The shortest wind-up of the gourd-bearer's blow after he darts in: long enough to catch him on sight.
+    public static let dartWindup = 0.3
+    /// How long the gourd-bearer takes to spring back out of reach from a cut that doesn't fell him.
+    public static let spring = 0.3
+    /// The points a gourd is worth when no heart is missing, before the mode's score.
+    public static let gourdPoints = 500
 }
 
 public enum Side: Int, Codable, Sendable, CaseIterable {
@@ -52,11 +68,13 @@ public enum Kind: String, Codable, Sendable, CaseIterable {
     case runner
     /// Slow and armoured: three cuts, and each knocks him back. His blow costs two.
     case brute
-    /// Two cuts; the first sends him leaping over your head to your other side.
+    /// Two cuts (three from stage 12); each cut that doesn't fell him sends him leaping over your head to your other
+    /// side.
     case dancer
     /// Stops out of reach and shoots. Cut the arrow when it comes into reach and it flies back.
     case archer
-    /// The boss at the end of every fifth stage: many cuts, knocked back or leaping after each. His blow costs two.
+    /// The boss at the end of every fifth stage: many cuts, knocked back or leaping after each, a guard that turns a
+    /// cut aside once it is set, and men called in as he weakens. His blow costs two.
     case warlord
 
     public var title: String {
@@ -75,7 +93,7 @@ public enum Kind: String, Codable, Sendable, CaseIterable {
         case .grunt, .runner, .archer: return 1
         case .dancer: return 2
         case .brute: return 3
-        case .warlord: return 10
+        case .warlord: return 12
         }
     }
 
@@ -91,7 +109,8 @@ public enum Kind: String, Codable, Sendable, CaseIterable {
         }
     }
 
-    /// Seconds from raising the weapon to the blow (for an archer: from drawing to loosing), before the stage's pace.
+    /// Seconds from raising the weapon to the blow (for an archer: from drawing to loosing), before the stage's
+    /// wind-up factor (`Difficulty.windup`).
     public var windup: Double {
         switch self {
         case .grunt: return 0.72
@@ -160,7 +179,8 @@ public struct Foe: Codable, Equatable, Sendable {
         case aiming
         /// Cut down: gone at the end of the step.
         case dying
-        /// The warlord with his blade across his body: a cut now is parried, and he answers it.
+        /// The warlord bringing his blade across his body. For its first `Tuning.guardRise` it is still coming up and
+        /// a cut glances off; once it is set (`guardSet`), a cut is parried, and he answers it.
         case guarding
         /// The gourd-bearer making off with the gourd: gone at the lane's edge.
         case fleeing
@@ -181,17 +201,19 @@ public struct Foe: Codable, Equatable, Sendable {
     public var leapFrom = 0.0
     public var leapTo = 0.0
     public var hits = 0
-    /// Carries the stage's one gourd of medicine. He keeps just out of reach and darts in to strike, twice, then
-    /// makes off with it: cut him down while he is close and the ronin gets a heart back.
+    /// Carries the stage's one gourd of medicine. He keeps just out of reach and darts in to strike, and after his
+    /// second blow makes off with it. Cut him down and the ronin gets a heart back, but a cut that doesn't fell him
+    /// sends him springing back out of reach: each of his cuts has to catch him on a dart.
     public var bearer = false
-    /// The gourd-bearer: seconds before he darts in, whether he is darting now, how many times he has, and how long
-    /// he has been on the lane.
+    /// The gourd-bearer: seconds before he darts in (counting down only while he waits at his spot), whether he is
+    /// darting now, how many blows he has landed, and how long he has been on the lane.
     public var hover = 0.0
     public var darting = false
     public var darts = 0
     public var lingered = 0.0
-    /// The warlord: seconds before he may raise his guard again, whether his next blow follows straight on from
-    /// the last, and how many times he has called for help.
+    /// The warlord: seconds before he may raise his guard again; whether the blow he is winding up may not be followed
+    /// straight on by another (the second of a pair, or his answer to a parried cut); and how many times he has
+    /// called for help.
     public var guardRest = 0.0
     public var chained = false
     public var summons = 0
@@ -216,6 +238,10 @@ public struct Foe: Codable, Equatable, Sendable {
     public var progress: Double { span > 0 ? min(1, max(0, 1 - timer / span)) : 1 }
     /// Where the foe stands to strike: as far out as his weapon reaches.
     public var contact: Double { kind.range }
+    /// How long the warlord's guard has been coming up (0 when he is not guarding).
+    public var guardAge: Double { phase == .guarding ? span - timer : 0 }
+    /// The warlord's guard is up and set: a cut now is parried. Before this it is still rising, and a cut glances off.
+    public var guardSet: Bool { phase == .guarding && span - timer >= Tuning.guardRise - 1e-9 }
 
     mutating func enter(_ phase: Phase, for seconds: Double) {
         self.phase = phase
@@ -269,10 +295,13 @@ public enum Mode: String, Codable, Sendable, CaseIterable {
 
     public var level: Int { Mode.allCases.firstIndex(of: self) ?? 1 }
     public var hearts: Int { [7, 5, 4, 3][level] }
-    /// Multiplies foe speed, wind-ups, the time between arrivals, and the ronin's stumble.
+    /// Multiplies foe speed.
     public var pace: Double { [0.85, 1, 1.2, 1.45][level] }
+    /// Multiplies every wind-up (below 1 is quicker).
     public var windup: Double { [1.25, 1, 0.8, 0.62][level] }
+    /// Multiplies the time between arrivals.
     public var interval: Double { [1.2, 1, 0.82, 0.66][level] }
+    /// Multiplies how long a whiff or a parried cut leaves the ronin off balance.
     public var stumble: Double { [0.75, 1, 1.2, 1.4][level] }
     /// Added to the most foes on the lane at once.
     public var crowd: Int { [-1, 0, 1, 3][level] }
