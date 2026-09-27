@@ -1,5 +1,5 @@
-/* Memaze — ghost racing: every run is recorded; your fastest clear of a maze replays as a see-through copy of your
- * picture, on the same clock as you. Levels, Daily and Seed mazes keep one ghost each (Gauntlet and Endless don't). */
+/* Memaze — ghost racing, in Time Trial only: every run is recorded; your fastest clear of a level replays as a
+ * see-through copy of your picture, on the same clock as you. */
 (function () {
   'use strict';
   const MZ = window.MZ, G = MZ.Game, Gen = MZ.Gen;
@@ -8,7 +8,6 @@
   const MAX_N = 9000;      // 15 minutes of recording at most
   const KEEP = 80;         // ghosts kept; the least recently raced go first
   const SNAP = 150;        // a jump this far between samples is a checkpoint respawn: no sliding across the void
-  const on = () => S().gameplay.ghost !== false;
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const boxWorld = () => 2 * Gen.BALL_R * clamp(S().player.size, 0.6, 1.25);
 
@@ -24,9 +23,9 @@
       keys.slice(0, Math.ceil(keys.length / 2)).forEach((k) => delete d[k]);
     }
   }
-  // Same maze, same ghost, whichever mode it came from; any change to the maze makes a new key.
+  // One ghost per maze (any change to the maze makes a new key); only Time Trial records and shows them.
   function keyOf(g) {
-    if (!g.maze || g.mode === 'gauntlet' || g.mode === 'endless') return null;
+    if (!g.maze || g.mode !== 'trial') return null;
     const m = g.maze;
     return [m.seed, m.nodes.length, m.edges.length, Math.round(m.start.x), Math.round(m.start.y), Math.round(m.goal.x), Math.round(m.goal.y)].join('.');
   }
@@ -86,14 +85,14 @@
     persist();
     this.ghost = decode(d[r.key]);
     this.ghostKey = r.key;
-    if (on()) MZ.toast(prev ? 'Beat your ghost by ' + (prev.t - res.time).toFixed(2) + ' s' : 'Ghost saved: race it next time');
+    MZ.toast(prev ? 'Beat your ghost by ' + (prev.t - res.time).toFixed(2) + ' s' : 'Ghost saved: race it next time');
     return res;
   };
 
   // Where the ghost is at the player's time: {x, y, alpha}, or null.
   G.ghostAt = function (t) {
     const g = this.ghost;
-    if (!g || !on() || !this.maze || this.ghostKey !== keyOf(this) || g.n < 2) return null;
+    if (!g || !this.maze || this.ghostKey !== keyOf(this) || g.n < 2) return null;
     const fade = t > g.time ? 1 - (t - g.time) / 1.2 : 1; // at the goal it fades out
     if (fade <= 0) return null;
     const f = Math.min(t / DT, g.n - 1), i = Math.min(Math.floor(f), g.n - 2), k = Math.min(1, f - i);
@@ -162,7 +161,7 @@
   G.on('frame', () => {
     const el = hudGhost();
     if (!el) return;
-    const g = MZ.Game, show = on() && g.ghost && g.maze && g.ghostKey === keyOf(g) && g.state !== 'menu';
+    const g = MZ.Game, show = g.ghost && g.maze && g.ghostKey === keyOf(g) && g.state !== 'menu';
     const txt = show ? 'Ghost ' + MZ.fmtClock(g.ghost.time) : '';
     const late = !!(show && g.elapsed > g.ghost.time);
     const k = txt + late;

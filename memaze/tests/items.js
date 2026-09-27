@@ -46,28 +46,43 @@ try { ({ chromium } = require('playwright')); } catch (e) {
       return null;
     };
 
-    // ----- hearts -----
+    // Touch the edge (drag into it until a hit), step back off it, wait out the guard, touch it again.
+    const touch = (dir) => { for (let i = 0; i < 180 && !events.some((e) => e.startsWith('hit') || e.startsWith('lose')); i++) run(1 / 60, dir); };
+    const away = (dir) => { run(0.3, { x: -dir.x, y: -dir.y }); run(0.9); };
+
+    // ----- health -----
     G.startJourney(6);
     let d = voidDir();
-    check('hearts start full', G.hp === 2 && G.bonus === 0);
-    for (let i = 0; i < 180 && G.hp === 2; i++) run(1 / 60, d);
-    check('a touch costs one heart', G.hp === 1 && events.includes('hit:1'), G.hp);
+    check('health starts full', G.hp === 2 && G.bonus === 0 && G.hurtLevel() === 0);
+    touch(d);
+    check('a touch costs one hit', G.hp === 1 && events.includes('hit:1'), G.hp);
     check('stopped at the edge, still on the floor', onFloor() && G.state === 'play');
-    run(0.8, d);
-    check('the same touch never counts twice (edges hold for a second after a hit)', G.hp === 1 && G.state === 'play', G.hp);
+    G.draw();
+    check('hurt shows: red glow on the player, reddened screen edges', MZ.$('#player').classList.contains('hurt') && parseFloat(MZ.$('#hurt-flash').style.opacity) > 0.5 && !MZ.$('#hud-health'));
+    run(5, d);
+    check('holding against the edge never hits twice', G.hp === 1 && G.state === 'play' && events.filter((e) => e.startsWith('hit')).length === 1, G.hp);
+    check('no healing while still on the edge', G.hurtT === 0, G.hurtT.toFixed(2));
+    away(d); // off the edge for about 1 s
     run(3.2);
-    check('hearts grow back after 3 s', G.hp === 2, G.hp);
+    check('not healed 4 s after leaving the edge', G.hp === 1 && G.hurtLevel() > 0 && G.hurtLevel() < 0.3, G.hurtLevel().toFixed(2));
+    run(1.2);
+    check('healed 5 s after leaving the edge', G.hp === 2 && G.hurtLevel() === 0, G.hp);
+    G.draw();
+    check('healed: glow and red edges gone', !MZ.$('#player').classList.contains('hurt') && parseFloat(MZ.$('#hurt-flash').style.opacity || 0) === 0);
     events.length = 0;
-    run(1.2, d); run(1.5, d);
-    check('two touches in a row lose', events.includes('lose:fall') && G.state !== 'play', events.join());
+    touch(d); run(0.3, { x: -d.x, y: -d.y }); run(0.55); // back off, then straight back in once the 0.75 s guard is over
+    events.length = 0;
+    touch(d);
+    check('a second, separate touch before healing loses', events.includes('lose:fall') && G.state !== 'play', events.join());
     G.quit();
 
     // ----- Extra hit -----
     G.startJourney(6); d = voidDir();
     G.giveItem('heart');
-    check('Extra hit adds a bonus heart at once', G.bonus === 1 && !G.item);
-    run(1.2, d);
-    check('bonus heart goes first', G.bonus === 0 && G.hp === 2);
+    check('Extra hit adds a gold ring at once', G.bonus === 1 && !G.item);
+    events.length = 0;
+    touch(d);
+    check('the Extra hit goes first', G.bonus === 0 && G.hp === 2);
     G.quit();
 
     // ----- mystery box -----
@@ -165,10 +180,26 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     const c = G.checkpoints[0];
     G.ball.x = c.x; G.ball.y = c.y; run(0.05);
     check('touching a flag lights it', G.cpIdx === 0 && c.lit, 'level ' + L);
-    d = voidDir(); run(1.2, d); run(1.5, d);
+    d = voidDir(); events.length = 0; touch(d); away(d); events.length = 0; touch(d);
     return new Promise((resolve) => setTimeout(() => {
       check('a loss goes back to the lit flag, hearts full', G.state === 'play' && Math.hypot(G.ball.x - c.x, G.ball.y - c.y) < 1 && G.hp === 2, G.state);
       G.quit();
+      // ----- Time Trial: no boxes, no time limit, ghosts only here -----
+      G.startJourney(3);
+      check('no ghost outside Time Trial', !G.ghost && G.ghostAt(1) === null);
+      G.quit();
+      G.startTrial(3);
+      const tb = G.boxes[0]; G.ball.x = tb.x; G.ball.y = tb.y; run(0.1);
+      check('Time Trial: no mystery boxes, no item slot, no countdown', !G.boxesOn() && MZ.$('#hud-item').hidden && !G.timed());
+      check('Time Trial: boxes are not picked up', !G.roll && !G.item && tb.takenAt == null);
+      run(1);
+      G.ball.x = G.maze.goal.x; G.ball.y = G.maze.goal.y; run(0.05);
+      check('Time Trial clear saves a best time', MZ.Save.progress.trials[3] > 0, MZ.Save.progress.trials[3]);
+      return new Promise((r2) => setTimeout(r2, 50)).then(() => {
+        G.startTrial(3);
+        check('Time Trial: your best run comes back as a ghost', !!G.ghost && !!G.ghostAt(0.5));
+        G.quit();
+      }).then(() => {
       // ----- Endless -----
       G.startEndless('items-test');
       check('Endless has boxes', G.boxes.length > 0, G.boxes.length);
@@ -182,6 +213,7 @@ try { ({ chromium } = require('playwright')); } catch (e) {
       check('Endless Launch lands on the floor', onFloor() && G.state === 'play');
       G.quit();
       resolve(res);
+      });
     }, 50));
   });
   let bad = 0;

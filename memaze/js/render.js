@@ -242,6 +242,19 @@
         ctx.fillStyle = 'rgba(0,0,0,' + (0.2 + 0.25 * u.lift).toFixed(3) + ')';
         ctx.beginPath(); ctx.ellipse(0, 0, r, r * 0.55, 0, 0, TAU); ctx.fill();
       }
+      if (u.shield > 0) { // Extra hits: a slowly turning gold ring each
+        ctx.save();
+        for (let k = 0; k < u.shield; k++) {
+          const r = W * (0.64 + 0.1 * k);
+          ctx.rotate(t * (k ? -0.9 : 0.7));
+          ctx.setLineDash([r * 0.5, r * 0.22]);
+          ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 6 * px;
+          ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.stroke();
+          ctx.strokeStyle = '#ffc53d'; ctx.lineWidth = 3.5 * px;
+          ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.stroke();
+        }
+        ctx.restore();
+      }
       if (u.carpet > 0) {
         ctx.globalAlpha = u.carpet;
         const w = W * 0.66, h = W * 0.36, y0 = W * 0.3, n = 10;

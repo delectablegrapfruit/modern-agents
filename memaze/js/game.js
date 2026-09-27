@@ -11,11 +11,13 @@
   const BUFFER = 0.035;  // hitbox forgiveness: solid pixels may reach this far (share of the box) over the edge
   const boxWorld = () => 2 * R * clamp(S().player.size, 0.6, 1.25); // the player's square box, in world units
 
-  // Health: two hearts. A touch of the edge costs one (bonus hearts go first); a second touch before they grow back
-  // loses. Right after a hit the edges hold like walls for a moment, so one touch never counts twice.
+  // Health: two hits. A touch of the edge costs one (Extra hits go first); a second touch before you've healed loses.
+  // No rapid hits: after one, the edges hold like walls for a moment, and until you've been clear of the edge for a
+  // beat, so holding against it never counts twice. Health shows only on the player and the screen's edges.
   const HEARTS = 2, MAX_BONUS = 2;
-  const REGEN = 3;   // seconds without a hit until the hearts are full again
-  const GUARD = 1;   // seconds the edges hold after a hit (and after a Bullet or Launch lands)
+  const REGEN = 5;    // seconds clear of the edge until you're healed
+  const GUARD = 0.75; // seconds the edges hold after a hit (and after a Bullet or Launch lands)
+  const CLEAR = 0.25; // after a hit, seconds off the edge before it can hurt again
   // Mystery boxes and items.
   const BOX_R = 16, BOX_BACK = 10, ROLL = 1.1; // pickup radius; seconds until a taken box is back; roulette length
   const ITEMS = {
@@ -181,7 +183,7 @@
     cam: { x: 0, y: 0, zoom: 1 }, userZoom: 1,
     t: 0, playT: 0, clock: 0, elapsed: 0, restarts: 0, gemsTaken: 0, stateT: 0, lastTick: -1, attract: 0,
     checkpoints: [], cpIdx: -1, boxes: [],
-    hp: HEARTS, bonus: 0, hurtT: REGEN, guardT: 0, runT: 0, scale: 1, item: null, roll: null, fx: {}, lastSafe: null,
+    hp: HEARTS, bonus: 0, hurtT: REGEN, guardT: 0, stuck: false, clearT: 0, touched: false, runT: 0, scale: 1, item: null, roll: null, fx: {}, lastSafe: null,
     FX, Player, Backdrop, GoalMedia, ITEMS, HEARTS, MAX_BONUS, REGEN,
 
     init() {
@@ -276,6 +278,7 @@
       }
       return out;
     },
+    timed() { return this.mode === 'endless' || (S().gameplay.timer && this.mode !== 'trial'); }, // a clock counting down
     zoomTarget() { return this.baseZoom * S().gameplay.zoom * this.userZoom; },
 
     // ----- starting things -----
@@ -284,6 +287,12 @@
       this.run = { level };
       const p = Gen.levelParams(level);
       this.loadMaze(p, { label: 'Level ' + level, level });
+    },
+    // Time Trial: any level reached so far, no mystery boxes, no time limit; your best run races you as a ghost.
+    startTrial(level) {
+      this.mode = 'trial';
+      this.run = { level };
+      this.loadMaze(Gen.levelParams(level), { label: 'Time Trial · Level ' + level, level });
     },
     startGauntlet() {
       this.mode = 'gauntlet';
@@ -397,7 +406,7 @@
 
     // Full hearts, empty item slot, no effects running.
     resetPower() {
-      this.hp = HEARTS; this.bonus = 0; this.hurtT = REGEN; this.guardT = 0;
+      this.hp = HEARTS; this.bonus = 0; this.hurtT = REGEN; this.guardT = 0; this.stuck = false; this.clearT = 0;
       this.item = null; this.roll = null; this.fx = {}; this.scale = 1;
       this.lastSafe = { x: this.ball.x, y: this.ball.y };
       this.emit('power');
@@ -454,7 +463,7 @@
       const b = this.ball, inp = this.input, cfg = S().controls, fx = this.fx;
       this.playT += dt;
       this.runT += dt;
-      if (S().gameplay.timer || this.mode === 'endless') {
+      if (this.timed()) {
         this.clock -= dt;
         const sec = Math.ceil(this.clock);
         if (this.clock < 10 && sec !== this.lastTick && sec > 0) { this.lastTick = sec; MZ.Audio.play('tick'); this.emit('tick', sec); }
@@ -462,33 +471,46 @@
       }
       this.elapsed += dt;
       this.tickPower(dt);
-      if (fx.bullet || fx.launch) { this.fly(dt); if (this.state === 'play' && this.mode === 'endless') this.endlessTick(); return; }
+      if (fx.bullet || fx.launch) { this.touched = false; this.offEdge(dt); this.fly(dt); if (this.state === 'play' && this.mode === 'endless') this.endlessTick(); return; }
 
       const d = inp.takeGrab(), u = inp.vector();
       const sg = cfg.invert ? 1 : -1, k = clamp(cfg.speed || 1, 0.5, 2) / this.cam.zoom;
       const mx = d.x * sg * k + u.x * KEY_SPEED * dt, my = d.y * sg * k + u.y * KEY_SPEED * dt;
       const free = fx.carpet > 0; // the magic carpet floats over the void
       const soft = S().gameplay.rule === 'casual' || this.shielded(); // edges hold like walls
+      this.touched = false;
       // Standing still can still go wrong: a bridge vanishing underneath, an animation frame reaching over the edge, the
       // carpet running out over the void. That costs a heart (unless shielded), then you're put on the nearest floor.
-      if (!free && this.hitAt(b.x, b.y) && !(soft && this.unstick())) {
-        if (!this.shielded() && this.hurt()) return;
-        if (this.hitAt(b.x, b.y) && !this.unstick()) this.rescue();
+      if (!free && this.hitAt(b.x, b.y)) {
+        this.touched = true;
+        if (!(soft && this.unstick())) {
+          if (!this.shielded() && this.hurt()) return;
+          if (this.hitAt(b.x, b.y) && !this.unstick()) this.rescue();
+        }
       }
       // Move in slices far shorter than the hitbox buffer, so the first touch is found and no gap is ever skipped.
       const n = Math.max(1, Math.ceil(Math.hypot(mx, my) / (this.box() * BUFFER * 0.5)));
       const sx = mx / n, sy = my / n;
       for (let i = 0; i < n; i++) {
         if (free || !this.hitAt(b.x + sx, b.y + sy)) { b.x += sx; b.y += sy; }
-        else if (!soft || (sx && !this.hitAt(b.x + sx, b.y)) || (sy && !this.hitAt(b.x, b.y + sy))) {
+        else {
+          this.touched = true;
           if (!soft) { this.toEdge(sx, sy); if (this.hurt()) return; break; } // a hit: stop right at the edge
           if (sx && !this.hitAt(b.x + sx, b.y)) b.x += sx; // Walls: slide along the edge...
-          else b.y += sy;
-        } else { this.toEdge(sx, sy); break; } // ...or stop right at it
+          else if (sy && !this.hitAt(b.x, b.y + sy)) b.y += sy;
+          else { this.toEdge(sx, sy); break; } // ...or stop right at it
+        }
         if (this.pickups()) return;
       }
+      this.offEdge(dt);
       this.noteSafe();
       if (this.mode === 'endless') this.endlessTick();
+    },
+    // After a hit, the edge can hurt again only once you've been clear of it for a beat.
+    offEdge(dt) {
+      if (this.touched) { this.clearT = 0; return; }
+      this.clearT += dt;
+      if (this.stuck && this.clearT >= CLEAR) this.stuck = false;
     },
     toEdge(sx, sy) {
       const b = this.ball;
@@ -501,11 +523,16 @@
     goalR() { return this.maze.goal.r * (GoalMedia.active ? clamp(S().goal.size, 0.66, 1) : 0.66); }, // the drawn GOAL circle (or goal media)
 
     // ----- health -----
-    shielded() { const fx = this.fx; return this.guardT > 0 || fx.star > 0 || !!fx.bullet || !!fx.launch; },
+    // How hurt the player looks: 1 right after a hit, fading to 0 as they heal; 0 at full health.
+    hurtLevel() { return this.hp < HEARTS ? 1 - clamp(this.hurtT / REGEN, 0, 1) : 0; },
+    boxesOn() { return S().gameplay.boxes && this.mode !== 'trial'; }, // Time Trial has no mystery boxes
+    shielded() { const fx = this.fx; return this.guardT > 0 || this.stuck || fx.star > 0 || !!fx.bullet || !!fx.launch; },
     hurt() {
       if (this.bonus > 0) this.bonus--; else this.hp--;
       this.hurtT = 0;
       this.guardT = GUARD;
+      this.stuck = true; // this touch is spent: the next one has to be a new one
+      this.clearT = 0;
       MZ.Audio.play('hurt');
       this.emit('hit', this.hp + this.bonus);
       this.emit('power');
@@ -517,7 +544,7 @@
     tickPower(dt) {
       const fx = this.fx;
       if (this.guardT > 0) this.guardT = Math.max(0, this.guardT - dt);
-      this.hurtT += dt;
+      if (!this.stuck) this.hurtT += dt; // healing waits until you're off the edge
       if (this.hp < HEARTS && this.hurtT >= REGEN) { this.hp = HEARTS; MZ.Audio.play('heal'); this.emit('power'); }
       if (this.roll && (this.roll.t += dt) >= ROLL) this.endRoll();
       for (const k of ['star', 'carpet', 'shrink']) {
@@ -844,7 +871,7 @@
         }
       }
       // Boxes: an empty slot takes one and spins for an item; a taken box is back after a while.
-      if (this.boxes && S().gameplay.boxes) {
+      if (this.boxes && this.boxesOn()) {
         for (const bx of this.boxes) {
           if (bx.takenAt != null && this.runT - bx.takenAt < BOX_BACK) continue;
           bx.takenAt = null;
@@ -928,6 +955,13 @@
         P.journey.levels[L] = rec;
         P.journey.unlocked = Math.max(P.journey.unlocked, L + 1);
         res.best = rec.best;
+        res.level = L;
+      } else if (this.mode === 'trial') {
+        const L = this.run.level, prev = P.trials[L];
+        res.newBest = prev == null || time < prev;
+        P.trials[L] = prev == null ? time : Math.min(prev, time);
+        res.best = P.trials[L];
+        res.prev = prev;
         res.level = L;
       } else if (this.mode === 'daily') {
         const d = this.run.day, prev = P.daily[d];
@@ -1033,7 +1067,7 @@
       const maze = menu ? this.attractMaze : this.maze;
       const world = menu ? this.attractWorld : this.world;
       const seed = maze ? maze.seed : this.run && this.run.seed ? this.run.seed : 7;
-      const showPlayer = !menu, fx = this.fx, boxesOn = !menu && s.gameplay.boxes;
+      const showPlayer = !menu, fx = this.fx, boxesOn = !menu && this.boxesOn();
       this.renderer.draw({
         world, cam: this.cam, t: pt, floor: s.display.floor, hue: seed % 360, rgb, clock: t,
         start: maze ? maze.start : this.mode === 'endless' && this.run ? this.run.origin : null,
@@ -1048,6 +1082,7 @@
         under: showPlayer && this.state !== 'menu' ? {
           x: b.x, y: b.y, W: this.box(), lift: this.lift(),
           carpet: fx.carpet > 0 ? (fx.carpet > 1.5 || Math.floor(fx.carpet * 8) % 2 ? 1 : 0.35) : 0,
+          shield: this.bonus, // Extra hits: gold rings around the player
           bullet: fx.bullet ? fx.bullet.dir : null,
         } : null,
         landing: fx.launch ? fx.launch.spot : null,
@@ -1062,9 +1097,15 @@
         pl.hidden = false;
         pl.style.width = pl.style.height = size;
         pl.style.transform = lift ? 'translate(-50%,calc(-50% - ' + (lift * Math.min(innerWidth, innerHeight) * 0.14).toFixed(1) + 'px))' : 'translate(-50%,-50%)';
-        const cls = (fx.star > 0 ? ' invincible' + (fx.star < 1.5 ? ' ending' : '') : '') + (this.guardT > 0 && this.state === 'play' ? ' guard' : '') + (fx.bullet ? ' bullet' : '');
+        // Health is shown on the player only: a red glow and a heartbeat while hurt, fading as you heal.
+        const hurt = this.hurtLevel(), hq = (Math.round(hurt * 50) / 50).toFixed(2);
+        const cls = (fx.star > 0 ? ' invincible' + (fx.star < 1.5 ? ' ending' : '') : '') + (this.guardT > 0 && this.state === 'play' ? ' guard' : '') + (fx.bullet ? ' bullet' : '') + (hurt > 0 ? ' hurt' : '');
         if (pl.className !== cls.trim()) pl.className = cls.trim();
+        if (pl.style.getPropertyValue('--hurt') !== hq) pl.style.setProperty('--hurt', hq);
       } else pl.hidden = true;
+      // ...and at the screen's edges, which redden while hurt.
+      const edge = MZ.$('#hurt-flash'), eo = showPlayer ? (Math.round(this.hurtLevel() * 50) / 50 * 0.75).toFixed(2) : '0';
+      if (edge.style.opacity !== eo) edge.style.opacity = eo;
 
       // Goal media, positioned in world space.
       const gm = MZ.$('#goal-media');

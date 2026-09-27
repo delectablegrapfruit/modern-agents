@@ -23,10 +23,12 @@ No build step, no dependencies: plain HTML/CSS/JS, plus an optional Python serve
   maze follows your finger or mouse 1:1 and stops when you stop. WASD/arrows and a gamepad move at a steady speed.
   Settings can invert the drag and change its speed.
 - **The paths float over nothing.** Reach **GOAL** and your *win* media plays.
-- **Two hearts.** Touching the edge costs one: you stop right at the edge, and for a second the edges hold like walls
-  (the same touch never counts twice). Go 3 seconds without another touch and both hearts are back. Two touches in a
-  row and your *lose* media plays, then you go back to the last flag you reached, or the start. A bridge vanishing
-  under you, or a magic carpet running out over the void, costs a heart and puts you on the nearest floor.
+- **Two hits.** Touching the edge hurts: you stop right at the edge, your picture glows red with a heartbeat and the
+  screen's edges redden. There is no health bar; that glow is it, fading as you heal. No rapid hits: for 0.75 s the
+  edges hold like walls, and a new hit needs a new touch (holding against the edge, or sliding along it, never counts
+  twice). Healing takes 5 s once you're off the edge. A second touch before that and your *lose* media plays, then you
+  go back to the last flag you reached, or the start. A bridge vanishing under you, or a magic carpet running out over
+  the void, counts as a touch and puts you on the nearest floor.
 - **The hitbox is your picture.** Every pixel that is at least half opaque counts; transparent parts don't. Animated GIFs,
   APNG/WebP animations and videos are checked frame by frame, and chroma-keyed pixels drop out too. A small buffer
   (3.5% of the picture's size) lets an edge graze the void without losing.
@@ -39,24 +41,24 @@ No build step, no dependencies: plain HTML/CSS/JS, plus an optional Python serve
   joined by narrow bridges.
 - **Flags** stand on the main route of long mazes (up to 3). Touch one and a loss sends you back to it with the clock,
   gems and bridges carrying on. Running out of time, or Restart, starts the maze over.
-- **Ghost**: your fastest clear of each Journey, Daily or Seed maze replays as a see-through copy of your picture on
-  the same clock, with an arrow at the screen edge when it's off screen (Settings: *Ghost of best run*).
+- **Ghosts** are in Time Trial only (see Modes).
 - **Edges** setting: *Hurt* (default) or *Walls* (the edge stops you and you slide along it; only a bridge vanishing
-  under you costs a heart).
+  under you hurts).
 
 ### Mystery boxes
 
 Colour-cycling **?** boxes sit on junctions and dead ends (about one per 1500 units of corridor; in Endless up to one
 per chunk). Touch one with an empty item slot and it spins for an item; the box is back 10 seconds later. Use the item
-with **Space**, **E**, the slot button (bottom left) or gamepad **A**/**X**. Settings: *Mystery boxes* turns them off.
+with **Space**, **E**, the slot button (bottom left) or gamepad **A**/**X**. Settings: *Mystery boxes* turns them off;
+Time Trial never has them.
 
 | Item | What it does |
 |---|---|
 | **Invincible** | 8 s without damage; the edges hold like walls. Your picture glows. |
-| **Extra hit** | Used at once: a gold heart on top of your two (up to two of them). Gold hearts go first and don't grow back. |
+| **Extra hit** | Used at once: a gold ring turns around you and takes the next hit instead (up to two rings). Rings don't come back. |
 | **Bullet** | Carries you along the corridors toward GOAL (Endless: outward) for about 1800 units, over vanishing bridges and all, finishing on a junction short of GOAL. Invincible while flying. |
 | **Launch** | Up in the air for about 5 s: the camera pulls far out and you steer anywhere, over the void and everything, dragging (or keys) at the zoomed-out scale. A target marks where you'll come down: the middle of the nearest solid corridor. The map fills in with everything the screen showed. No damage from take-off to landing. |
-| **Magic carpet** | 6 s of floating over the void. It flickers when it's about to run out: be over floor by then, or it costs a heart. |
+| **Magic carpet** | 6 s of floating over the void. It flickers when it's about to run out: be over floor by then, or it hurts. |
 | **Shrink** | Half size (picture and hitbox) for 10 s; you grow back as soon as there's room. |
 
 ### Modes
@@ -64,6 +66,7 @@ with **Space**, **E**, the slot button (bottom left) or gamepad **A**/**X**. Set
 | Mode | What |
 |---|---|
 | **Journey** | Levels 1, 2, 3 and on forever. Each level is generated from its number, so level 12 is the same maze for everyone. Difficulty ramps up to about level 35. |
+| **Time Trial** | Any level you've reached, with no mystery boxes and no time limit. Your fastest run replays as a see-through ghost of your picture on the same clock (an arrow at the screen edge points to it when it's off screen); each level keeps its best time. |
 | **Daily** | One maze per day, the same for everyone; best time kept. |
 | **Gauntlet** | Back-to-back random mazes that get harder, 3 lives (one more every 5 clears). |
 | **Endless** | One unbounded maze streamed in chunks around you, narrower and meaner the farther you get. Gems add 3 seconds, beacons are checkpoints that add 12 seconds, 3 lives. |
@@ -139,9 +142,9 @@ js/sprite.js      the player picture: GIF decoding, frame-by-frame painting, the
 js/defaults-data.js  built-in player pictures as data URLs (generated by scripts/embed-defaults.mjs)
 js/audio.js       synthesized sound effects, music playlist, built-in synth loop
 js/input.js       drag, pinch and wheel zoom, keys, gamepad
-js/game.js        modes, movement, hearts, mystery boxes and items, checkpoints, level flow, win/lose media
-js/ghosts.js      records runs; replays the best clear of each maze as a ghost
-js/ui.js          menus, customisation screens, HUD (hearts, item slot, effect timers)
+js/game.js        modes, movement, hits and healing, mystery boxes and items, checkpoints, level flow, win/lose media
+js/ghosts.js      Time Trial ghosts: records runs, replays the best one
+js/ui.js          menus, customisation screens, HUD (item slot, effect timers)
 serve.py          local server + media API (Python 3.8+, stdlib only)
 assets/           logo, favicon, default player/win/lose/goal art
 scripts/make-pixel-gif.mjs   regenerates the default pixel GIF (own GIF encoder)
@@ -155,7 +158,7 @@ tests/            generator and sprite tests; autopilot; items
 node tests/gen.test.js       # 200 mazes: deterministic, connected, corridors never touch, sane timings; endless seams
 node tests/sprite.test.js    # GIF decoder, pixel hitbox mask, embedded defaults up to date
 node tests/autopilot.js 1-30 # drags through levels with the real game code, not one touch of the edge allowed (needs Playwright + Chromium)
-node tests/items.js          # hearts, boxes, every item, flags, Endless items (needs Playwright + Chromium)
+node tests/items.js          # hits and healing, boxes, every item, flags, Time Trial and ghosts, Endless items (needs Playwright + Chromium)
 ```
 
 Save data (settings, stars, best times) is in `localStorage`; the Save data section in Settings exports and imports it

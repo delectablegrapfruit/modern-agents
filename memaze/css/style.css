@@ -77,9 +77,6 @@ body[data-state="play"] #stage:active { cursor: grabbing; }
 #hud-ghost.late { color: #ff9a9a; }
 
 /* hearts, item slot, running effects */
-#hud-health { display: flex; gap: 4px; margin-top: 6px; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.5)); }
-#hud-health svg { width: 30px; height: 30px; display: block; }
-#hud-health.hit { animation: shake 0.4s ease-out; }
 #hud-power { position: absolute; left: calc(16px + env(safe-area-inset-left)); bottom: calc(16px + env(safe-area-inset-bottom)); display: flex; flex-direction: column-reverse; align-items: flex-start; gap: 10px; }
 #hud-item { pointer-events: auto; width: 76px; height: 76px; padding: 12px; border-radius: 22px; cursor: pointer; background: rgba(10, 8, 24, 0.55);
   border: 2px dashed rgba(255, 255, 255, 0.35); backdrop-filter: blur(8px); touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
@@ -95,10 +92,17 @@ body[data-state="play"] #stage:active { cursor: grabbing; }
 .fx-chip svg { position: relative; width: 100%; height: 100%; display: block; }
 .fx-chip.low { animation: blink 0.25s steps(2) infinite; }
 @keyframes blink { 50% { opacity: 0.35; } }
+/* health: the screen's edges redden while hurt (opacity set per frame), flashing on a hit */
 #hurt-flash { position: fixed; inset: 0; z-index: 9; pointer-events: none; opacity: 0; box-shadow: inset 0 0 90px 30px rgba(255, 30, 60, 0.85); }
 #hurt-flash.hit { animation: hurt 0.55s ease-out; }
-.reduce-flash #hurt-flash.hit, .reduced-motion #hurt-flash.hit { animation-duration: 0.9s; box-shadow: inset 0 0 60px 10px rgba(255, 30, 60, 0.5); }
-@keyframes hurt { from { opacity: 1; } to { opacity: 0; } }
+.reduce-flash #hurt-flash, .reduced-motion #hurt-flash { box-shadow: inset 0 0 60px 10px rgba(255, 30, 60, 0.6); }
+.reduce-flash #hurt-flash.hit, .reduced-motion #hurt-flash.hit { animation-duration: 0.9s; }
+@keyframes hurt { from { opacity: 1; } }
+/* ...and the player glows red with a heartbeat */
+#player.hurt { filter: drop-shadow(0 0 2px rgba(255, 40, 70, calc(0.4 + 0.6 * var(--hurt, 1)))) drop-shadow(0 0 calc(6px + 14px * var(--hurt, 1)) rgba(255, 40, 70, calc(0.3 + 0.7 * var(--hurt, 1)))); }
+#player.hurt #player-media > * { animation: beat 1s ease-in-out infinite; }
+@keyframes beat { 0%, 40%, 100% { transform: scale(1); } 10% { transform: scale(1.06); } 25% { transform: scale(1.03); } }
+.reduced-motion #player.hurt #player-media > * { animation: none; }
 /* the player: flickers while the edges hold after a hit, glows while invincible */
 #player.guard { animation: blink 0.14s steps(2) infinite; }
 #player.invincible #player-media { animation: rainbow 0.6s linear infinite; }
@@ -178,6 +182,9 @@ code { font: 12.5px ui-monospace, SFMono-Regular, Menlo, monospace; background: 
 .row.wrap { justify-content: flex-start; }
 .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
 .grid4 .btn { min-height: 52px; padding: 8px 4px; font-size: 14.5px; min-width: 0; }
+.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.grid3 .btn { min-height: 52px; padding: 8px 4px; font-size: 14.5px; min-width: 0; }
+.lvtime { font-size: 11px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
 
 /* title */
 .title .panel { text-align: center; background: rgba(16, 13, 32, 0.6); }
@@ -316,6 +323,8 @@ details.chroma-box[open] summary::before { transform: rotate(45deg); }
 @media (max-width: 560px) {
   .grid4 { grid-template-columns: repeat(2, 1fr); gap: 8px; }
   .grid4 .btn { min-height: 46px; font-size: 15px; }
+  .grid3 { gap: 8px; }
+  .grid3 .btn { min-height: 46px; font-size: 14px; }
   .ctl { grid-template-columns: 1fr; gap: 4px; }
   .ctl output { text-align: left; }
   .ctl > .seg, .palette { grid-column: 1; }
@@ -326,7 +335,6 @@ details.chroma-box[open] summary::before { transform: rotate(45deg); }
   #hud-label { font-size: 16px; }
   #minimap { width: 150px; height: 150px; }
   #hud-item { width: 64px; height: 64px; padding: 10px; border-radius: 18px; }
-  #hud-health svg { width: 24px; height: 24px; }
   .fx-chip { width: 38px; height: 38px; padding: 7px; }
   #hud-gems { font-size: 15px; }
   #hud-lives { font-size: 14px; }

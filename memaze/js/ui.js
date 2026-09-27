@@ -65,15 +65,6 @@
   };
   const ROLL_ORDER = ['star', 'bullet', 'carpet', 'heart', 'launch', 'shrink'];
   const svg = (inner) => '<svg viewBox="0 0 32 32" aria-hidden="true">' + inner + '</svg>';
-  // A heart: full, empty (refilling from the bottom while it grows back), or a gold bonus one.
-  function heartSvg(kind, fill, i) {
-    const col = kind === 'bonus' ? '#ffc53d' : '#ff3d6e';
-    if (kind !== 'empty') return svg('<path d="' + HEART + '" fill="' + col + '" stroke="#fff" stroke-width="2.2"/>');
-    const y = (28 - 24 * fill).toFixed(2);
-    return svg('<defs><clipPath id="hc' + i + '"><rect x="0" y="' + y + '" width="32" height="32"/></clipPath></defs>' +
-      '<path d="' + HEART + '" fill="rgba(0,0,0,.45)" stroke="rgba(255,255,255,.8)" stroke-width="2.2"/>' +
-      '<path d="' + HEART + '" fill="#ff3d6e" fill-opacity=".8" clip-path="url(#hc' + i + ')"/>');
-  }
   // Star rating drawn with CSS shapes.
   const starRow = (n, cls) => h('span', { class: cls, role: 'img', 'aria-label': n + (n === 1 ? ' star' : ' stars') },
     [0, 1, 2].map((i) => h('i', { class: 'star' + (i < n ? ' got' : ''), style: { animationDelay: 0.25 + i * 0.28 + 's' } })));
@@ -89,13 +80,14 @@
       this.hud = {
         label: $('#hud-label'), time: $('#hud-time'), goals: $('#hud-goals'), gems: $('#hud-gems'),
         lives: $('#hud-lives'), banner: $('#hud-banner'), fps: $('#fps'),
-        health: $('#hud-health'), item: $('#hud-item'), effects: $('#hud-effects'), flash: $('#hurt-flash'),
+        item: $('#hud-item'), effects: $('#hud-effects'), flash: $('#hurt-flash'),
       };
       $('#btn-pause').addEventListener('click', () => { MZ.Audio.play('click'); Game().pause(); });
       this.hud.item.addEventListener('click', () => { MZ.Audio.unlock(); Game().useItem(); });
       const G = Game();
       G.on('hit', () => {
-        for (const el of [this.hud.health, this.hud.flash]) { el.classList.remove('hit'); void el.offsetWidth; el.classList.add('hit'); }
+        const el = this.hud.flash;
+        el.classList.remove('hit'); void el.offsetWidth; el.classList.add('hit');
       });
       G.on('state', (st) => this.onState(st));
       G.on('begin', () => this.onBegin());
@@ -139,7 +131,7 @@
       const c = this._hudCache || (this._hudCache = {});
       const set = (k, el, v) => { if (c[k] !== v) { c[k] = v; el.textContent = v; } };
       set('label', this.hud.label, G.meta ? G.meta.label : '');
-      const timer = S().gameplay.timer || G.mode === 'endless';
+      const timer = G.timed();
       set('time', this.hud.time, timer ? MZ.fmtTime(G.clock) : MZ.fmtTime(G.elapsed));
       this.hud.time.classList.toggle('low', timer && G.clock < 10);
       if (G.mode === 'endless') {
@@ -155,20 +147,10 @@
       set('fps', this.hud.fps, S().display.fps ? G.fps + ' fps' : '');
       this.updatePower(c);
     },
-    // Hearts, the item slot and the running effects, redrawn only when what they show changes.
+    // The item slot and the running effects, redrawn only when what they show changes.
     updatePower(c) {
       const G = Game(), fx = G.fx, hud = this.hud;
-      const regen = G.hp < G.HEARTS ? Math.min(1, G.hurtT / G.REGEN) : 1, rq = Math.round(regen * 24);
-      const hk = G.hp + '/' + G.bonus + '/' + rq;
-      if (c.hearts !== hk) {
-        c.hearts = hk;
-        let html = '';
-        for (let i = 0; i < G.HEARTS; i++) html += heartSvg(i < G.hp ? 'full' : 'empty', rq / 24, i);
-        for (let i = 0; i < G.bonus; i++) html += heartSvg('bonus', 1, 9 + i);
-        hud.health.innerHTML = html;
-        hud.health.setAttribute('aria-label', G.hp + G.bonus + (G.hp + G.bonus === 1 ? ' heart' : ' hearts'));
-      }
-      const on = S().gameplay.boxes, rolling = G.roll ? ROLL_ORDER[Math.floor(G.roll.t / 0.07) % ROLL_ORDER.length] : null;
+      const on = G.boxesOn(), rolling = G.roll ? ROLL_ORDER[Math.floor(G.roll.t / 0.07) % ROLL_ORDER.length] : null;
       const ik = on ? (rolling ? 'r:' + rolling : G.item || '') : 'off';
       if (c.item !== ik) {
         c.item = ik;
@@ -425,12 +407,14 @@
       const body = [
         h('img', { class: 'logo', src: 'assets/logo.svg', alt: 'Memaze', onerror: (e) => { e.target.replaceWith(h('h1', { class: 'logo-text' }, 'MEMAZE')); } }),
         btn(lvl > 1 ? 'Continue: Level ' + lvl : 'Play', () => G.startJourney(lvl), 'primary big'),
-        h('div', { class: 'grid4' },
+        h('div', { class: 'grid3' },
           btn('Levels', () => this.show('levels')),
+          btn('Time Trial', () => this.show('trials')),
           btn('Daily', () => G.startDaily()),
           btn('Gauntlet', () => G.startGauntlet()),
           btn('Endless', () => this.show('endless')),
-          btn('Seed', () => this.show('custom')),
+          btn('Seed', () => this.show('custom'))),
+        h('div', { class: 'grid3' },
           btn('Media', () => this.show('media')),
           btn('Background', () => this.show('background')),
           btn('Settings', () => this.show('settings'))),
@@ -458,6 +442,25 @@
         h('span', { class: 'muted' }, (page * 40 + 1) + '–' + (page * 40 + 40) + ' · ' + stars + (stars === 1 ? ' star' : ' stars')),
         btn('Next', () => { this._lvPage = page + 1; this.rebuild(); }, 'small' + (S().extras.unlockAll || (page + 1) * 40 < top ? '' : ' hide')));
       return this.panel('Levels', [grid, nav], { wide: true });
+    },
+
+    // Time Trial: every level reached so far, with its best time.
+    trials() {
+      const pr = P(), top = Math.max(pr.journey.unlocked, 1);
+      const page = this._trPage != null ? this._trPage : Math.floor((top - 1) / 40);
+      const grid = h('div', { class: 'levels trials' });
+      for (let i = page * 40 + 1; i <= page * 40 + 40; i++) {
+        const best = pr.trials[i], locked = i > top && !S().extras.unlockAll;
+        grid.appendChild(h('button', {
+          class: 'lv' + (locked ? ' locked' : ''), disabled: locked, 'aria-label': 'Level ' + i + (locked ? ', locked' : best != null ? ', best ' + MZ.fmtClock(best) : ''),
+          onclick: () => { MZ.Audio.play('click'); Game().startTrial(i); },
+        }, h('b', null, String(i)), locked ? null : h('span', { class: 'lvtime' }, best != null ? MZ.fmtClock(best) : '–')));
+      }
+      const nav = h('div', { class: 'row' },
+        btn('Prev', () => { this._trPage = Math.max(0, page - 1); this.rebuild(); }, 'small' + (page ? '' : ' hide')),
+        h('span', { class: 'muted' }, (page * 40 + 1) + '–' + (page * 40 + 40)),
+        btn('Next', () => { this._trPage = page + 1; this.rebuild(); }, 'small' + (S().extras.unlockAll || (page + 1) * 40 < top ? '' : ' hide')));
+      return this.panel('Time Trial', [grid, nav], { wide: true });
     },
 
     custom() {
@@ -618,7 +621,6 @@
           segmented('Edges', 'gameplay.rule', [['casual', 'Walls'], ['normal', 'Hurt']]),
           toggle('Timer', 'gameplay.timer'),
           toggle('Mystery boxes', 'gameplay.boxes'),
-          toggle('Ghost of best run', 'gameplay.ghost'),
           segmented('Map', 'gameplay.minimap', [['explored', 'On'], ['off', 'Off']]),
           range('Zoom', 'gameplay.zoom', 0.5, 2, 0.05, times)),
         section('Audio',
@@ -652,11 +654,11 @@
       return this.panel('How to play', [
         h('ul', { class: 'facts' },
           h('li', null, 'Drag the maze to move through it.'),
-          h('li', null, 'Touching the edge costs a heart. Two touches in a row and you’re out; after one, your hearts grow back in 3 s. Your picture is the hitbox: transparent parts don’t count.'),
+          h('li', null, 'Touching the edge hurts: your picture glows red and the screen’s edges redden. Touch it again before that fades (5 s once you’re off the edge) and you’re out. Holding against the edge never counts twice. Your picture is the hitbox: transparent parts don’t count.'),
           h('li', null, 'Mystery boxes give you an item. Use it with Space, E or the button in the corner.'),
           h('ul', { class: 'items' },
             h('li', null, h('b', null, 'Invincible'), ': no damage for 8 s; the edges hold like walls.'),
-            h('li', null, h('b', null, 'Extra hit'), ': a gold heart on top of your two.'),
+            h('li', null, h('b', null, 'Extra hit'), ': a gold ring around you that takes the next hit (up to two).'),
             h('li', null, h('b', null, 'Bullet'), ': carries you along the corridors toward GOAL.'),
             h('li', null, h('b', null, 'Launch'), ': fly high and steer anywhere for a few seconds, over everything; you come down on the nearest floor, and the map keeps all you saw.'),
             h('li', null, h('b', null, 'Magic carpet'), ': float over the gaps for 6 s. Be over floor when it runs out.'),
@@ -666,7 +668,7 @@
           h('li', null, 'Long mazes have flags. Touch one and a loss sends you back to it, not the start. Restart or running out of time starts over.'),
           h('li', null, 'Stars: finish, beat par, collect every gem.'),
           h('li', null, 'Vanishing bridges blink, then disappear.'),
-          h('li', null, 'Your fastest clear of each maze comes back as a ghost to race. Turn it off in Settings.'),
+          h('li', null, 'Time Trial: any level you’ve reached, with no mystery boxes and no time limit. Your fastest run comes back as a ghost to race.'),
           h('li', null, 'Endless: gems add 3 s, beacons are checkpoints and add 12 s.'),
           h('li', null, 'Keys: WASD or arrows move, Space or E item, Esc or P pause, R restart, M map, F full screen, + and - zoom, Enter next level.')),
       ]);
@@ -688,6 +690,7 @@
 
     results(r) {
       const G = Game();
+      if (r.mode === 'trial') return this.screens.trialResults.call(this, r);
       setTimeout(() => { for (let i = 0; i < r.stars; i++) setTimeout(() => MZ.Audio.play('star'), 250 + i * 280); }, 0);
       const next = () => {
         if (r.mode === 'journey') G.startJourney(r.level + 1);
@@ -710,6 +713,23 @@
           btn('Retry', () => G.restartLevel()),
           r.mode !== 'daily' ? btn('Menu', () => G.quit(), 'ghost') : null),
         share ? btn('Copy ' + (r.mode === 'daily' ? 'result' : 'link'), () => copy(share, 'Copied'), 'small ghost') : null,
+      ], { noBack: true, cls: 'results' });
+    },
+
+    // Time Trial clear: the time against your best; Retry is the main button.
+    trialResults(r) {
+      const G = Game(), top = Math.max(P().journey.unlocked, 1), L = r.level;
+      const rows = [['Time', MZ.fmtClock(r.time)], ['Best', MZ.fmtClock(r.best)]];
+      if (r.prev != null) rows.push(['Ghost', MZ.fmtClock(r.prev) + ' (' + (r.time <= r.prev ? '-' : '+') + Math.abs(r.time - r.prev).toFixed(2) + ' s)']);
+      rows.push(['Restarts', String(r.restarts)]);
+      const canNext = L + 1 <= top || S().extras.unlockAll;
+      return this.panel(null, [
+        h('h1', { class: 'clear' }, r.newBest ? 'NEW RECORD!' : 'CLEAR!'),
+        h('table', { class: 'stats' }, rows.map(([k, v]) => h('tr', null, h('th', null, k), h('td', null, v)))),
+        h('div', { class: 'row' },
+          btn('Retry', () => G.restartLevel(), 'primary'),
+          canNext ? btn('Next level', () => G.startTrial(L + 1)) : null,
+          btn('Menu', () => G.quit(), 'ghost')),
       ], { noBack: true, cls: 'results' });
     },
 

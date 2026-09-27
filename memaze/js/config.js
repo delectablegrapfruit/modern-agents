@@ -13,7 +13,7 @@
   });
   const DEFAULTS = {
     controls: { invert: false, speed: 1 },
-    gameplay: { rule: 'normal', timer: true, minimap: 'explored', zoom: 1, autoNext: false, boxes: true, ghost: true },
+    gameplay: { rule: 'normal', timer: true, minimap: 'explored', zoom: 1, autoNext: false, boxes: true },
     player: { media: 'default:sticker', size: 1, chroma: { on: false, color: '#00ff00', tol: 0.35, soft: 0.25 } },
     win: fxDefaults('default:burst', 2.4, 'pop'),
     lose: fxDefaults('default:oops', 1.7, 'none'),
@@ -30,7 +30,7 @@
   };
   // Built-in media that no longer exist: saved choices move to their replacements. Settings that no longer exist are dropped.
   const RENAMED = { 'default:ball': 'default:sticker', 'default:splat': 'default:oops' };
-  const GONE = { controls: ['scheme', 'sensitivity', 'tilt3d', 'joystick', 'gyro'], player: ['spin', 'mirror'], gameplay: ['hints'], audio: ['roll'] };
+  const GONE = { controls: ['scheme', 'sensitivity', 'tilt3d', 'joystick', 'gyro'], player: ['spin', 'mirror'], gameplay: ['hints', 'ghost'], audio: ['roll'] };
 
   const RGB_PRESETS = [
     { name: 'Rainbow', rgb: { style: 'gradient', hueFrom: 0, hueTo: 360, sat: 85, light: 55, spread: 140, usePalette: false } },
@@ -62,7 +62,7 @@
   const PROGRESS = {
     journey: { unlocked: 1, levels: {} }, // levels[n] = {stars, best, gems}
     stats: { wins: 0, falls: 0, gems: 0, playTime: 0, runs: 0 },
-    gauntletBest: 0, endlessBest: 0, daily: {}, dailyDone: 0,
+    gauntletBest: 0, endlessBest: 0, daily: {}, dailyDone: 0, trials: {}, // trials[level] = best Time Trial time
     seenPatterns: ['rgb'],
   };
 
