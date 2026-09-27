@@ -6,7 +6,10 @@
   const Gen = MZ.Gen;
   const R = Gen.BALL_R;
 
-  const KEY_SPEED = 380; // keys and gamepad, world units per second
+  const KEY_SPEED = 140; // keys and gamepad, world units per second
+  const VIEW = 0.3;      // the player's box fills this much of the screen's shorter side
+  const BUFFER = 0.035;  // hitbox forgiveness: solid pixels may reach this far (share of the box) over the edge
+  const boxWorld = () => 2 * R * clamp(S().player.size, 0.6, 1.25); // the player's square box, in world units
 
   const S = () => MZ.Save.settings;
 
@@ -87,7 +90,7 @@
       if (!force && key === this.key) return;
       this.item = item;
       this.key = key;
-      MZ.Media.mount(MZ.$('#player-media'), item, { muted: true, loop: true, chroma: cfg.chroma });
+      if (Game.sprite) Game.sprite.load(item, { chroma: cfg.chroma });
     },
   };
   const GoalMedia = {
@@ -161,6 +164,7 @@
       this.renderer = new MZ.Renderer(MZ.$('#maze'));
       this.minimap = new MZ.Minimap(MZ.$('#minimap'));
       this.input = new MZ.Input(MZ.$('#stage'));
+      this.sprite = new MZ.Sprite(MZ.$('#player-canvas'));
       this.input.onZoom = (k) => { this.userZoom = clamp(this.userZoom * k, 0.45, 2.2); };
       Backdrop.init();
       this.applySettings();
@@ -197,9 +201,12 @@
       Backdrop.resize(w, h, dpr);
       this.minimap.size();
       if (this.maze) this.minimap.setMaze(this.maze), this.revealAll();
-      this.baseZoom = clamp(Math.min(w, h) / 820, 0.58, 1.25);
+      this.baseZoom = (VIEW * Math.min(w, h)) / boxWorld();
+      this.menuZoom = clamp(Math.min(w, h) / 820, 0.58, 1.25) * 0.55;
     },
-    revealAll() { if (this.trail) for (const p of this.trail) this.minimap.reveal(p.x, p.y); },
+    // How much of the maze the screen shows around the player: what the minimap uncovers as you go.
+    revealR() { return Math.hypot(innerWidth, innerHeight) / 2 / (this.cam.zoom || 1); },
+    revealAll() { if (this.trail) for (const p of this.trail) this.minimap.reveal(p.x, p.y, this.revealR()); },
     zoomTarget() { return this.baseZoom * S().gameplay.zoom * this.userZoom; },
 
     // ----- starting things -----
@@ -331,6 +338,7 @@
       this.stateT += dt;
       if (st === 'play') {
         this.cam.zoom = this.zoomTarget(); // zoom follows the pinch/wheel exactly, no easing
+        this.sprite.update(performance.now()); // this frame's picture is this frame's hitbox
         this.step(dt);
       } else if (st === 'menu') this.stepAttract(dt);
       if (st !== 'menu' && st !== 'boot') { this.cam.x = this.ball.x; this.cam.y = this.ball.y; }
@@ -352,53 +360,74 @@
       const d = inp.takeGrab(), u = inp.vector();
       const sg = cfg.invert ? 1 : -1, k = clamp(cfg.speed || 1, 0.5, 2) / this.cam.zoom;
       const mx = d.x * sg * k + u.x * KEY_SPEED * dt, my = d.y * sg * k + u.y * KEY_SPEED * dt;
-      // Move in slices no longer than a fraction of the player, so a fast drag never skips a gap.
-      const n = Math.max(1, Math.ceil(Math.hypot(mx, my) / (R * 0.4)));
+      const walls = S().gameplay.rule === 'casual';
+      // Standing still can still end badly: a bridge vanishing underneath, or an animation frame reaching over the edge.
+      if (this.hitAt(b.x, b.y) && !(walls && this.unstick())) { this.lose('fall'); return; }
+      // Move in slices far shorter than the hitbox buffer, so the first touch is found and no gap is ever skipped.
+      const n = Math.max(1, Math.ceil(Math.hypot(mx, my) / (boxWorld() * BUFFER * 0.5)));
+      const sx = mx / n, sy = my / n;
       for (let i = 0; i < n; i++) {
-        b.x += mx / n; b.y += my / n;
-        if (!this.onFloor()) { this.lose('fall'); return; }
+        if (!this.hitAt(b.x + sx, b.y + sy)) { b.x += sx; b.y += sy; }
+        else if (!walls) { b.x += sx; b.y += sy; this.lose('fall'); return; }
+        else if (sx && !this.hitAt(b.x + sx, b.y)) b.x += sx; // Walls: slide along the edge...
+        else if (sy && !this.hitAt(b.x, b.y + sy)) b.y += sy;
+        else { // ...or stop right at it
+          let lo = 0, hi = 1;
+          for (let j = 0; j < 6; j++) { const f = (lo + hi) / 2; if (this.hitAt(b.x + sx * f, b.y + sy * f)) hi = f; else lo = f; }
+          b.x += sx * lo; b.y += sy * lo;
+          break;
+        }
         if (this.pickups()) return;
       }
       if (this.maze && (this.trailT = (this.trailT || 0) + dt) > 0.15) {
         this.trailT = 0;
-        this.minimap.reveal(b.x, b.y);
+        this.minimap.reveal(b.x, b.y, this.revealR());
         this.trail.push({ x: b.x, y: b.y });
         if (this.trail.length > 4000) this.trail.splice(0, 2000);
       }
       if (this.mode === 'endless') this.endlessTick();
     },
 
-    // Is the player still on the floor? 'casual' (Walls) holds it on the path's edge instead.
-    onFloor() {
-      const b = this.ball, rule = S().gameplay.rule, t = this.playT;
-      const q = this.world.query(b.x, b.y, t);
-      if (rule === 'strict') { // lose once any point of the hitbox's rim is over the void (checked all round, so bends are fair)
-        if (q.depth >= R) return true;
-        if (q.depth < 0) return false;
-        for (let i = 0; i < 16; i++) if (this.world.query(b.x + Math.cos(i * Math.PI / 8) * R, b.y + Math.sin(i * Math.PI / 8) * R, t).depth < 0) return false;
-        return true;
+    // Does the player's picture, placed at (x, y), touch the void? Every solid pixel of the current frame is tested
+    // (outline, plus a grid inside), each allowed the small buffer over the edge. Before the picture has loaded, the
+    // box's inscribed circle stands in.
+    hitAt(x, y) {
+      const m = this.sprite.mask, W = boxWorld(), buf = W * BUFFER, t = this.playT, w = this.world;
+      const q = w.query(x, y, t);
+      if (!m) return q.depth < W * 0.45 - buf;
+      if (q.depth >= m.maxR * W) return false; // the whole box fits inside the corridor
+      if (!m.n) return false;
+      const p = m.pts;
+      for (let i = 0; i < p.length; i += 2) if (w.query(x + p[i] * W, y + p[i + 1] * W, t).depth < -buf) return true;
+      return false;
+    },
+    // Walls: something pushed the picture over the edge while standing still (a new animation frame): step clear if a
+    // free spot is close by.
+    unstick() {
+      const b = this.ball, W = boxWorld();
+      for (let r = W * 0.02; r <= W * 0.2; r += W * 0.02) {
+        for (let a = 0; a < 16; a++) {
+          const x = b.x + Math.cos(a * Math.PI / 8) * r, y = b.y + Math.sin(a * Math.PI / 8) * r;
+          if (!this.hitAt(x, y)) { b.x = x; b.y = y; return true; }
+        }
       }
-      const need = rule === 'casual' ? 0 : -2;
-      if (q.depth >= need) return true;
-      if (rule === 'casual' && q.seg && q.depth > -R * 1.5) { // back onto the edge itself, so a steady push holds still
-        const s = q.seg, dx = s.bx - s.ax, dy = s.by - s.ay, l2 = dx * dx + dy * dy;
-        const tt = l2 ? clamp(((b.x - s.ax) * dx + (b.y - s.ay) * dy) / l2, 0, 1) : 0;
-        const cx = s.ax + dx * tt, cy = s.ay + dy * tt;
-        let nx = b.x - cx, ny = b.y - cy;
-        const d = Math.hypot(nx, ny) || 1;
-        nx /= d; ny /= d;
-        b.x = cx + nx * s.hw;
-        b.y = cy + ny * s.hw;
-        return true;
-      }
+      return false;
+    },
+    // Does the picture overlap a circle (a gem, a beacon, the goal)?
+    touches(cx, cy, r) {
+      const b = this.ball, m = this.sprite.mask, W = boxWorld();
+      const d2 = (cx - b.x) ** 2 + (cy - b.y) ** 2;
+      if (!m) return d2 < (r + W * 0.45) ** 2;
+      if (d2 > (r + m.maxR * W) ** 2) return false;
+      const p = m.pts, r2 = r * r;
+      for (let i = 0; i < p.length; i += 2) if ((b.x + p[i] * W - cx) ** 2 + (b.y + p[i + 1] * W - cy) ** 2 <= r2) return true;
       return false;
     },
 
     pickups() {
-      const b = this.ball;
       if (this.gems) {
         for (const g of this.gems) {
-          if (g.taken || (g.x - b.x) ** 2 + (g.y - b.y) ** 2 > (R + 18) ** 2) continue;
+          if (g.taken || !this.touches(g.x, g.y, 15)) continue;
           g.taken = true;
           this.gemsTaken++;
           MZ.Audio.play('gem');
@@ -408,7 +437,7 @@
       }
       if (this.beacons) {
         for (const bc of this.beacons) {
-          if (bc.lit || (bc.x - b.x) ** 2 + (bc.y - b.y) ** 2 > bc.r * bc.r) continue;
+          if (bc.lit || !this.touches(bc.x, bc.y, bc.r * 0.8)) continue;
           bc.lit = true;
           this.run.lit.add(bc.key);
           this.run.beaconsLit++;
@@ -419,8 +448,8 @@
         }
       }
       if (this.maze) {
-        const g = this.maze.goal, gr = g.r * (GoalMedia.active ? clamp(S().goal.size, 0.66, 1) : 0.66) + R; // the hitbox touches the GOAL circle (or goal media)
-        if ((g.x - b.x) ** 2 + (g.y - b.y) ** 2 < gr * gr) { this.win(); return true; }
+        const g = this.maze.goal, gr = g.r * (GoalMedia.active ? clamp(S().goal.size, 0.66, 1) : 0.66); // the drawn GOAL circle (or goal media)
+        if (this.touches(g.x, g.y, gr)) { this.win(); return true; }
       }
       return false;
     },
@@ -544,7 +573,7 @@
       this.loadChunks(b.x, b.y);
       r.best = Math.max(r.best, Math.hypot(b.x - r.origin.x, b.y - r.origin.y) / Gen.endless.ES);
       const q = this.world.query(b.x, b.y, this.playT);
-      if (q.seg && !q.seg.blink && q.depth > R) {
+      if (q.seg && !q.seg.blink && !this.hitAt(b.x, b.y)) {
         // Remember the nearest safe junction for respawns.
         let best = null, bd = Infinity;
         const k = this.chunkKey(b.x, b.y), c = this.chunks.get(k);
@@ -576,7 +605,7 @@
       const A = pts[i], B = pts[Math.min(pts.length - 1, i + 1)], k = this.stateT < 0.1 ? 1 : 1 - Math.exp(-dt * 1.5);
       this.cam.x = lerp(this.cam.x, lerp(A.x, B.x, f), k);
       this.cam.y = lerp(this.cam.y, lerp(A.y, B.y, f), k);
-      this.cam.zoom = lerp(this.cam.zoom, this.baseZoom * 0.55, k);
+      this.cam.zoom = lerp(this.cam.zoom, this.menuZoom, k);
     },
 
     // ----- drawing -----
@@ -600,7 +629,8 @@
       // Player sprite: the user's media, upright and still at the centre of the screen.
       const pl = MZ.$('#player');
       if (showPlayer) {
-        const size = (2 * R * this.cam.zoom * s.player.size).toFixed(1) + 'px';
+        const css = boxWorld() * this.cam.zoom, size = css.toFixed(1) + 'px';
+        this.sprite.update(performance.now(), false, css, Math.min(window.devicePixelRatio || 1, s.display.quality));
         pl.hidden = false;
         pl.style.width = pl.style.height = size;
         pl.style.transform = 'translate(-50%,-50%)';
@@ -625,8 +655,9 @@
           this.minimap.dirty = false;
           if (this.minimap.size() && this.maze) { this.minimap.setMaze(this.maze); this.revealAll(); }
         }
-        if (this.mode === 'endless') this.minimap.drawRadar(this.world, b, this.beacons);
-        else this.minimap.draw(mm, b, this.maze && this.maze.goal, this.gems);
+        const view = { w: innerWidth / this.cam.zoom, h: innerHeight / this.cam.zoom };
+        if (this.mode === 'endless') this.minimap.drawRadar(this.world, b, this.beacons, view);
+        else this.minimap.draw(mm, b, this.maze && this.maze.goal, this.gems, view);
       } else mmEl.hidden = true;
       this.emit('frame');
     },

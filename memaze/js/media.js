@@ -32,9 +32,11 @@
     return null;
   }
 
+  // Built-in players come as data URLs (js/defaults-data.js) so their pixels can always be read for the hitbox.
+  const embedded = (name) => (MZ.DEFAULT_DATA && MZ.DEFAULT_DATA[name]) || 'assets/defaults/' + name;
   const DEFAULTS = [
-    { id: 'default:sticker', slot: 'player', name: 'Sticker', kind: 'image', url: 'assets/defaults/player-sticker.svg' },
-    { id: 'default:pixel', slot: 'player', name: 'Pixel Slime', kind: 'image', url: 'assets/defaults/player-pixel.gif', pixel: true },
+    { id: 'default:sticker', slot: 'player', name: 'Sticker', kind: 'image', url: embedded('player-sticker.svg') },
+    { id: 'default:pixel', slot: 'player', name: 'Pixel Slime', kind: 'image', url: embedded('player-pixel.gif'), pixel: true },
     { id: 'default:burst', slot: 'win', name: 'You Win', kind: 'image', url: 'assets/defaults/win-burst.svg' },
     { id: 'default:oops', slot: 'lose', name: 'Oops', kind: 'image', url: 'assets/defaults/lose-oops.svg' },
     { id: 'default:portal', slot: 'goal', name: 'Marker', kind: 'builtin' },

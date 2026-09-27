@@ -44,6 +44,9 @@ body[data-state="play"] #stage:active { cursor: grabbing; }
 #goal-media .media-el, #player-media .media-el { width: 100%; height: 100%; object-fit: contain; display: block; }
 #player { position: absolute; left: 50%; top: 50%; pointer-events: none; will-change: transform; }
 #player-media { width: 100%; height: 100%; }
+#player-canvas { width: 100%; height: 100%; display: block; }
+.sprite-hold { position: fixed; left: 0; top: 0; width: 2px; height: 2px; overflow: hidden; opacity: 0; pointer-events: none; }
+.sprite-hold video { width: 2px; height: 2px; }
 
 
 /* ---------- HUD ---------- */
@@ -66,7 +69,7 @@ body[data-state="play"] #stage:active { cursor: grabbing; }
 #btn-pause::after { right: 14px; }
 #hud-banner { position: absolute; left: 0; right: 0; top: 24%; text-align: center; font-weight: 900; font-size: clamp(26px, 5vw, 44px); color: #7dffb5; opacity: 0; transition: opacity 0.18s; }
 #hud-banner.on { opacity: 1; }
-#minimap { position: absolute; right: calc(16px + env(safe-area-inset-right)); bottom: calc(16px + env(safe-area-inset-bottom)); width: 150px; height: 150px; border-radius: 18px;
+#minimap { position: absolute; right: calc(16px + env(safe-area-inset-right)); bottom: calc(16px + env(safe-area-inset-bottom)); width: 210px; height: 210px; border-radius: 18px;
   background: rgba(8, 8, 20, 0.35); border: 1px solid var(--panel-line); backdrop-filter: blur(4px); }
 #fps { position: absolute; left: 16px; bottom: 12px; font: 12px ui-monospace, monospace; color: var(--muted); }
 
@@ -282,7 +285,7 @@ details.chroma-box[open] summary::before { transform: rotate(45deg); }
   .body { padding: 4px 14px 18px; }
   #hud-time { font-size: 34px; }
   #hud-label { font-size: 16px; }
-  #minimap { width: 108px; height: 108px; }
+  #minimap { width: 150px; height: 150px; }
   #hud-gems { font-size: 15px; }
   #hud-lives { font-size: 14px; }
   .hud-top { gap: 8px; }

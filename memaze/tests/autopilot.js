@@ -6,7 +6,7 @@
 //   node tests/autopilot.js 1-40       a range
 //   node tests/autopilot.js 7,12,30    a list
 //   --strict                           exit 1 unless every level is finished (CI)
-//   --speed=360                        drag speed, world units per second
+//   --speed=140                        drag speed, world units per second
 //
 // Needs Playwright with Chromium (npm i -D playwright && npx playwright install chromium). Opens the game from file://.
 const path = require('path');
@@ -17,10 +17,10 @@ try { ({ chromium } = require('playwright')); } catch (e) {
 const args = process.argv.slice(2);
 const strict = args.includes('--strict');
 const speedArg = args.find((a) => a.startsWith('--speed='));
-const speed = speedArg ? Number(speedArg.slice(8)) : 360;
+const speed = speedArg ? Number(speedArg.slice(8)) : 140;
 const arg = args.find((a) => !a.startsWith('--')) || '1-25';
 const levels = arg.includes('-') ? (([a, b]) => Array.from({ length: b - a + 1 }, (_, i) => a + i))(arg.split('-').map(Number)) : arg.split(',').map(Number);
-if (!levels.length || levels.some((l) => !(l >= 1)) || !(speed > 0)) { console.error('Usage: node tests/autopilot.js [1-25 | 3,7,12] [--strict] [--speed=360]'); process.exit(2); }
+if (!levels.length || levels.some((l) => !(l >= 1)) || !(speed > 0)) { console.error('Usage: node tests/autopilot.js [1-25 | 3,7,12] [--strict] [--speed=140]'); process.exit(2); }
 
 (async () => {
   const browser = await chromium.launch();

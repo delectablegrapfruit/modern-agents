@@ -67,8 +67,8 @@ for (const [label, p] of cases) {
   // to explore and is a multiple of 5.
   const len = routeLen(m);
   assert.ok(Number.isInteger(m.parTime) && m.parTime >= 3, label + ': par ' + m.parTime);
-  assert.ok(m.parTime >= len / 520, label + ': par ' + m.parTime + ' faster than dragging ' + Math.round(len) + ' at 520/s');
-  assert.ok(m.parTime <= len / 340 + m.turns * 0.2 + 1.5 + 3 * m.edges.filter((e) => e.type === 'blink').length + 1, label + ': par too slack');
+  assert.ok(m.parTime >= len / 180, label + ': par ' + m.parTime + ' faster than dragging ' + Math.round(len) + ' at 180/s');
+  assert.ok(m.parTime <= len / 110 + m.turns * 0.2 + 1.5 + 3 * m.edges.filter((e) => e.type === 'blink').length + 1, label + ': par too slack');
   assert.ok(m.timeLimit % 5 === 0 && m.timeLimit >= (m.parTime - 1) * 2.3 + 15, label + ': time limit ' + m.timeLimit + ' vs par ' + m.parTime);
   const g = gapViolations(m);
   total++;

@@ -14,7 +14,7 @@
 
   const BALL_R = 18;
   const HW_MIN = 24;
-  const DRAG_WIDE = 500, DRAG_NARROW = 340; // par drag speeds (world units/s) on the widest and the narrowest paths
+  const DRAG_WIDE = 160, DRAG_NARROW = 110; // par drag speeds (world units/s) on the widest and the narrowest paths
   const GAP = 30; // minimum void between corridors that are not joined
   const gapFor = (hw) => Math.max(GAP, hw * 1.2); // wide easy paths get wide gaps too, so the maze still reads
   const TAU = Math.PI * 2;
@@ -472,8 +472,9 @@
       if (e.bridge || nearEnds(e)) continue;
       if (r() < p.blink && !blinkAt[e.a] && !blinkAt[e.b]) {
         e.type = 'blink';
-        const period = r.range(2.8, 4.4);
-        e.blink = { period, phase: r(), on: Math.max(r.range(0.55, 0.7), (1.2 + e.len / 220) / period) };
+        // Up long enough to cross at a steady drag (the whole picture has to clear it), then gone for 1-1.8 s.
+        const up = 1.5 + (e.len + 2 * BALL_R) / 100, period = Math.max(r.range(2.8, 4.4), up + r.range(1, 1.8));
+        e.blink = { period, phase: r(), on: Math.max(r.range(0.55, 0.7), up / period) };
         blinkAt[e.a] = blinkAt[e.b] = 1;
       }
     }
@@ -625,7 +626,7 @@
       blink: level >= 8 ? lerp(0.05, 0.1, t) : 0,
       gems: Math.min(8, 2 + Math.floor(level / 4)),
       timeFactor: lerp(3, 2.3, t), // you don't know the way yet: room to explore dead ends
-      maxPath: lerp(3500, 12000, t),
+      maxPath: lerp(2500, 7000, t),
     };
   }
   function levelParams(level, salt) {
@@ -717,7 +718,12 @@
     const blink = d > 0.2 ? lerp(0.03, 0.09, d) : 0;
     for (const e of edges) {
       if (e.link || (origin && (e.a === id(3, 3) || e.b === id(3, 3)))) continue;
-      if (r() < blink) { e.type = 'blink'; const period = r.range(2.8, 4.2); e.blink = { period, phase: r(), on: Math.max(r.range(0.58, 0.7), 2 / period) }; }
+      if (r() < blink) {
+        e.type = 'blink';
+        const len = Math.hypot(e.pts[1].x - e.pts[0].x, e.pts[1].y - e.pts[0].y), up = 1.5 + (len + 2 * BALL_R) / 100;
+        const period = Math.max(r.range(2.8, 4.2), up + r.range(1, 1.8));
+        e.blink = { period, phase: r(), on: Math.max(r.range(0.58, 0.7), up / period) };
+      }
     }
     const safe = new Uint8Array(nodes.length);
     for (const e of edges) if (!e.link && e.type !== 'blink') { safe[e.a] = 1; safe[e.b] = 1; }

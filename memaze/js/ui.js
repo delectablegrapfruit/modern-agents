@@ -447,7 +447,7 @@
       }, MZ.Media.SLOT_INFO[s].label)));
       const opts = [];
       if (tab === 'player') {
-        opts.push(range('Size', 'player.size', 0.5, 3, 0.05, times), this.chromaControls('player.chroma'));
+        opts.push(range('Size', 'player.size', 0.6, 1.25, 0.05, times), this.chromaControls('player.chroma'));
       } else if (tab === 'win' || tab === 'lose') {
         opts.push(toggle('Show ' + tab + ' media', tab + '.on'),
           range('Picture time', tab + '.duration', 0.5, 8, 0.1, secs),
@@ -553,7 +553,7 @@
           toggle('Invert drag', 'controls.invert'),
           range('Drag speed', 'controls.speed', 0.5, 2, 0.05, times)),
         section('Gameplay',
-          segmented('Edges', 'gameplay.rule', [['casual', 'Walls'], ['normal', 'Normal'], ['strict', 'Strict']]),
+          segmented('Edges', 'gameplay.rule', [['casual', 'Walls'], ['normal', 'Touch loses']]),
           toggle('Timer', 'gameplay.timer'),
           segmented('Minimap', 'gameplay.minimap', [['explored', 'Explored'], ['full', 'Full'], ['off', 'Off']]),
           range('Zoom', 'gameplay.zoom', 0.5, 2, 0.05, times)),
@@ -588,7 +588,8 @@
       return this.panel('How to play', [
         h('ul', { class: 'facts' },
           h('li', null, 'Drag the maze to move through it.'),
-          h('li', null, 'Don’t touch the edge.'),
+          h('li', null, 'Don’t touch the edge. Your picture is the hitbox: transparent parts don’t count.'),
+          h('li', null, 'The map shows the whole maze and the part on screen.'),
           h('li', null, 'Reach GOAL before the time runs out.'),
           h('li', null, 'Stars: finish, beat par, collect every gem.'),
           h('li', null, 'Vanishing bridges blink, then disappear.'),

@@ -50,21 +50,22 @@
     if (ph > on - warn) return Math.floor((on - ph) * b.period * 10) % 2 ? 0.35 : 0.85;
     return 1;
   }
-  function bridgeRims(g, blinks, th) {
+  // Line widths are given in screen pixels; px is one screen pixel in world units at the current zoom.
+  function bridgeRims(g, blinks, th, px) {
     g.strokeStyle = th.rim;
-    for (const b of blinks) if (b.a > 0) { g.globalAlpha = b.a; g.lineWidth = 2 * (b.e.hw + th.rimW); g.stroke(b.line); }
+    for (const b of blinks) if (b.a > 0) { g.globalAlpha = b.a; g.lineWidth = 2 * (b.e.hw + th.rimW * px); g.stroke(b.line); }
     g.globalAlpha = 1;
   }
   // Bridges that are up get their fill; gone ones leave a faint dashed ghost of where they come back.
-  function bridgeFills(g, blinks, th) {
+  function bridgeFills(g, blinks, th, px) {
     for (const b of blinks) {
       if (b.a > 0) {
         g.globalAlpha = b.a; g.strokeStyle = th.blink; g.lineWidth = 2 * b.e.hw; g.stroke(b.line); g.globalAlpha = 1;
         continue;
       }
       g.strokeStyle = 'rgba(255,255,255,0.08)'; g.lineWidth = 2 * b.e.hw; g.stroke(b.line);
-      g.setLineDash([12, 14]);
-      g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 3; g.stroke(b.line);
+      g.setLineDash([12 * px, 14 * px]);
+      g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 3 * px; g.stroke(b.line);
       g.setLineDash([]);
     }
   }
@@ -100,7 +101,8 @@
       ctx.setTransform(k, 0, 0, k, dpr * this.w / 2 - cam.x * k, dpr * this.h / 2 - cam.y * k);
       const hw = this.w / 2 / z + 80, hh = this.h / 2 / z + 80;
       const parts = s.world.visibleParts(cam.x - hw, cam.y - hh, cam.x + hw, cam.y + hh);
-      const th = theme(s.floor, s.hue, s.rgb);
+      const th = theme(s.floor, s.hue, s.rgb), px = 1 / z;
+      this.px = px;
 
       // One union path per frame: every pass paints each pixel once, even where tiles overlap.
       const union = new Path2D(), blinks = [];
@@ -114,7 +116,7 @@
       if (th.glow) {
         ctx.strokeStyle = th.glow;
         ctx.globalAlpha = 0.25;
-        ctx.lineWidth = 24;
+        ctx.lineWidth = 24 * px;
         ctx.stroke(union);
         ctx.globalAlpha = 1;
       }
@@ -128,16 +130,16 @@
         g.lineJoin = 'round';
         g.lineCap = 'round';
         g.strokeStyle = th.rim;
-        g.lineWidth = th.rimW * 2;
+        g.lineWidth = th.rimW * 2 * px;
         g.stroke(union);
-        bridgeRims(g, blinks, th);
+        bridgeRims(g, blinks, th, px);
         g.globalCompositeOperation = 'destination-out';
         g.fillStyle = g.strokeStyle = '#000';
         g.fill(union);
         for (const b of blinks) if (b.a > 0) { g.globalAlpha = b.a; g.lineWidth = 2 * b.e.hw; g.stroke(b.line); }
         g.globalAlpha = 1;
         g.globalCompositeOperation = 'source-over';
-        bridgeFills(g, blinks, th);
+        bridgeFills(g, blinks, th, px);
         g.globalCompositeOperation = 'destination-out';
         g.fill(union);
         g.globalCompositeOperation = 'source-over';
@@ -149,11 +151,11 @@
         ctx.restore();
       } else {
         // Opaque floor, painted rims first and fills last, so a bridge that is up joins the floor without a seam.
-        bridgeRims(ctx, blinks, th);
+        bridgeRims(ctx, blinks, th, px);
         ctx.strokeStyle = th.rim;
-        ctx.lineWidth = th.rimW * 2;
+        ctx.lineWidth = th.rimW * 2 * px;
         ctx.stroke(union);
-        bridgeFills(ctx, blinks, th);
+        bridgeFills(ctx, blinks, th, px);
         ctx.fillStyle = th.floor;
         ctx.fill(union);
         ctx.fill(union); // twice: where capsule edges overlap inside the floor, one pass leaves a faint antialiasing hairline
@@ -169,7 +171,7 @@
     drawStart(st, th) {
       const ctx = this.ctx;
       ctx.strokeStyle = th.start;
-      ctx.lineWidth = 5;
+      ctx.lineWidth = 4 * this.px;
       ctx.beginPath(); ctx.arc(st.x, st.y, st.r * 0.66, 0, TAU); ctx.stroke();
     }
     drawGoal(g, th) {
@@ -178,7 +180,7 @@
       ctx.translate(g.x, g.y);
       ctx.fillStyle = th.goal;
       ctx.strokeStyle = th.rim;
-      ctx.lineWidth = 3;
+      ctx.lineWidth = 3 * this.px;
       ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.fill(); ctx.stroke();
       ctx.fillStyle = th.goalText;
       ctx.font = '800 ' + Math.round(r * 0.44) + 'px system-ui, sans-serif';
@@ -193,7 +195,7 @@
       ctx.fillStyle = 'rgba(' + col + ',0.3)';
       ctx.beginPath(); ctx.arc(b.x, b.y, b.r * 0.8, 0, TAU); ctx.fill();
       ctx.strokeStyle = 'rgba(' + col + ',0.95)';
-      ctx.lineWidth = 4;
+      ctx.lineWidth = 4 * this.px;
       ctx.beginPath(); ctx.arc(b.x, b.y, b.r * 0.55, 0, TAU); ctx.stroke();
       ctx.restore();
     }
@@ -201,7 +203,7 @@
       const ctx = this.ctx, r = 15, w = r * 0.72;
       ctx.fillStyle = '#3cf2ff';
       ctx.strokeStyle = '#0b4a73';
-      ctx.lineWidth = 3;
+      ctx.lineWidth = 3 * this.px;
       ctx.lineJoin = 'round';
       ctx.beginPath(); ctx.moveTo(g.x, g.y - r); ctx.lineTo(g.x + w, g.y - r * 0.2); ctx.lineTo(g.x, g.y + r); ctx.lineTo(g.x - w, g.y - r * 0.2); ctx.closePath();
       ctx.fill(); ctx.stroke();
@@ -250,14 +252,15 @@
       f.fillRect(0, 0, W, H);
       f.globalCompositeOperation = 'destination-out';
     }
-    reveal(x, y) {
+    reveal(x, y, r) {
       if (!this.maze) return;
       const f = this.fog.getContext('2d');
       f.beginPath();
-      f.arc(this.ox + x * this.sc, this.oy + y * this.sc, Math.max(6, 330 * this.sc), 0, TAU);
+      f.arc(this.ox + x * this.sc, this.oy + y * this.sc, Math.max(4, (r || 330) * this.sc), 0, TAU);
       f.fill();
     }
-    draw(mode, pos, goal, gems) {
+    // view: the world width/height on screen, outlined around the player so the map and the screen line up.
+    draw(mode, pos, goal, gems, view) {
       if (!this.maze) return;
       const g = this.ctx, W = this.canvas.width, H = this.canvas.height;
       g.clearRect(0, 0, W, H);
@@ -269,11 +272,16 @@
       const u = W / 150;
       if (gems) for (const gm of gems) if (!gm.taken) dot(gm.x, gm.y, 2.5 * u, '#3cf2ff');
       if (goal) dot(goal.x, goal.y, 4.5 * u, '#ffb300');
+      if (pos && view) {
+        g.strokeStyle = 'rgba(255,61,127,0.9)';
+        g.lineWidth = Math.max(1.5, u);
+        g.strokeRect(this.ox + (pos.x - view.w / 2) * this.sc, this.oy + (pos.y - view.h / 2) * this.sc, view.w * this.sc, view.h * this.sc);
+      }
       if (pos) { dot(pos.x, pos.y, 4.5 * u, '#000'); dot(pos.x, pos.y, 3.2 * u, '#ff3d7f'); }
     }
     // Endless: a radar of what's near the player.
-    drawRadar(world, pos, beacons) {
-      const g = this.ctx, W = this.canvas.width, H = this.canvas.height, R = 1500, sc = Math.min(W, H) / (2 * R);
+    drawRadar(world, pos, beacons, view) {
+      const g = this.ctx, W = this.canvas.width, H = this.canvas.height, R = 1000, sc = Math.min(W, H) / (2 * R);
       g.clearRect(0, 0, W, H);
       g.save();
       g.beginPath(); g.arc(W / 2, H / 2, Math.min(W, H) / 2 - 1, 0, TAU); g.clip();
@@ -292,6 +300,11 @@
       }
       if (beacons) for (const b of beacons) { g.fillStyle = b.lit ? '#50ffa0' : '#78c8ff'; g.beginPath(); g.arc(b.x * sc, b.y * sc, 4, 0, TAU); g.fill(); }
       g.restore();
+      if (view) {
+        g.strokeStyle = 'rgba(255,61,127,0.9)';
+        g.lineWidth = 1.5;
+        g.strokeRect(W / 2 - view.w * sc / 2, H / 2 - view.h * sc / 2, view.w * sc, view.h * sc);
+      }
       g.fillStyle = '#ff3d7f'; g.beginPath(); g.arc(W / 2, H / 2, 4, 0, TAU); g.fill();
     }
   }

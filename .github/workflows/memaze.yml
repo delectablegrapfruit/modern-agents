@@ -20,6 +20,8 @@ jobs:
           node-version: 22
       - name: Generator (200 mazes + endless chunks)
         run: node memaze/tests/gen.test.js
+      - name: Player picture (GIF decoder, pixel hitbox, embedded defaults)
+        run: node memaze/tests/sprite.test.js
       - name: serve.py answers and serves the game
         run: |
           python3 memaze/serve.py --no-open --port 8765 &

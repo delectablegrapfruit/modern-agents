@@ -4,7 +4,7 @@ const path = require('path');
 const vm = require('vm');
 
 module.exports = function load(files) {
-  const ctx = { console, Math, Date, JSON, Map, Set, Uint8Array, Int32Array, Float64Array, Float32Array, Object, Array, Number, String, Infinity, NaN, isFinite };
+  const ctx = { console, Math, Date, JSON, Map, Set, Uint8Array, Uint8ClampedArray, Int16Array, Int32Array, Float64Array, Float32Array, Object, Array, Number, String, Infinity, NaN, isFinite };
   ctx.window = ctx;
   vm.createContext(ctx);
   for (const f of files) vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'js', f), 'utf8'), ctx, { filename: f });
