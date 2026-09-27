@@ -551,7 +551,7 @@ final class HeroSprite: SKNode {
         show(sheathed ? .iai(0) : .hurt(0), blend: true)
     }
 
-    func bloodied(_ amount: CGFloat) { gore = min(0.2, gore + amount) }
+    func bloodied(_ amount: CGFloat) { gore = min(0.14, gore + amount) }
 
     func finish(victory: Bool) {
         act = victory ? .flourishing : .falling
