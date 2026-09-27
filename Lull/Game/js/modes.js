@@ -4,6 +4,7 @@
   const L = (root.Lull = root.Lull || {});
   const { Game, Board, CELL, Pieces, Puzzles, Factory, Render, UI, ITEMS, ITEM_ORDER, ITEM_GROUPS, Chain, Combos, Luck, Gifts, Earn, fmt, fmtInt, fmtClock, fmtDuration, dateKey } = L;
   const { h, toast } = UI;
+  const ico = UI.icon;
   const { LINE } = L;
 
   const ARROWS = { left: [-1, 0], right: [1, 0], up: [0, -1], down: [0, 1] };
@@ -28,7 +29,7 @@
   const SPECIALS = new Set(['patch', 'phase', 'drill', 'bomb', 'laser', 'blackhole']);
 
   // A small wrapped box, drawn (never an emoji).
-  const GIFT_ICON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><rect x="2.5" y="6.5" width="11" height="7" rx="1"/><path d="M1.8 4.2h12.4v2.3H1.8zM8 4.2v9.3"/><path d="M8 4.2C6.8 2 4.6 1.9 4.6 3.2 4.6 4.2 6.6 4.2 8 4.2c1.4 0 3.4 0 3.4-1 0-1.3-2.2-1.2-3.4 1z"/></svg>';
+  const GIFT_ICON = L.Icons.icon('gift');
 
   function playLockSound(snd, r) {
     const own = r.lines - (r.plain || 0);
@@ -318,7 +319,7 @@
       L.Music.tempo += (target - L.Music.tempo) * 0.05;
       if (Math.abs(target - L.Music.tempo) < 0.002) L.Music.tempo = target;
       L.Music.setVolume(st.musicVolume);
-      L.Announcer.setVolume(st.announcerVolume != null ? st.announcerVolume : 0.4);
+      L.Announcer.setVolume(st.announcerVolume != null ? st.announcerVolume : 0.35);
       if (want && !L.Music.playing) L.Music.start();
       else if (!want && L.Music.playing) L.Music.stop();
     }
@@ -433,9 +434,9 @@
     renderControls() {
       const st = this.app.settings;
       this.controlsEl.replaceChildren(
-        h('button', { class: 'btn sm' + (st.music ? ' on' : ''), 'aria-label': 'Music', 'aria-pressed': String(!!st.music), onclick: () => { st.music = !st.music; this.app.store.touch(); this.renderControls(); } }, st.music ? '♪ On' : '♪ Off'),
-        h('button', { class: 'btn sm', disabled: !this.started || this.over, 'data-tip': this.paused ? 'Resume' : 'Pause', 'data-tip-foot': 'P', onclick: () => this.togglePause() }, this.paused ? '► Resume' : '‖ Pause'),
-        h('button', { class: 'btn sm', 'data-tip': 'Restart', 'data-tip-foot': 'R', onclick: () => this.restart() }, '↺ Restart'));
+        h('button', { class: 'btn sm' + (st.music ? ' on' : ''), 'aria-label': 'Music', 'aria-pressed': String(!!st.music), onclick: () => { st.music = !st.music; this.app.store.touch(); this.renderControls(); } }, ico(st.music ? 'music' : 'musicOff'), st.music ? 'On' : 'Off'),
+        h('button', { class: 'btn sm', disabled: !this.started || this.over, 'data-tip': this.paused ? 'Resume' : 'Pause', 'data-tip-foot': 'P', onclick: () => this.togglePause() }, ico(this.paused ? 'playIcon' : 'pause'), this.paused ? 'Resume' : 'Pause'),
+        h('button', { class: 'btn sm', 'data-tip': 'Restart', 'data-tip-foot': 'R', onclick: () => this.restart() }, ico('retry'), 'Restart'));
     }
   }
 
@@ -585,7 +586,7 @@
       const id = Gifts.draw(Math.random, 1)[0];
       if (!id) return;
       this.app.store.grantItem(id, 1);
-      toast(ITEMS[id].icon + '  ' + ITEMS[id].name, 'good', 2200);
+      toast(ITEMS[id].name, 'good', 2200, 'item-' + id);
       this.renderItems();
     }
 
@@ -596,7 +597,7 @@
         h('h2', null, 'Board full'),
         this.boardSummary(g.s),
         h('div', { class: 'row' },
-          g.history.length && this.app.store.state.inventory.rewind ? h('button', { class: 'btn', onclick: () => { this.hideCard(); this.useItem('rewind'); } }, '↶ Rewind · ' + this.app.store.state.inventory.rewind) : null,
+          g.history.length && this.app.store.state.inventory.rewind ? h('button', { class: 'btn', onclick: () => { this.hideCard(); this.useItem('rewind'); } }, ico('item-rewind'), 'Rewind · ' + this.app.store.state.inventory.rewind) : null,
           h('button', { class: 'btn primary', onclick: () => this.newBoard('full') }, 'New board')),
       ]);
     }
@@ -655,12 +656,12 @@
         h('span', null, 'Score ', h('b', null, fmtInt(s.score))),
         h('span', { class: s.chain > 1 ? 'chain' : 'slot-off', title: 'Back-to-back plus combo · ' + (s.hand === false ? 'power-ups on the board' : 'no power-ups on the board: ' + (s.hchain || 0)) }, 'Chain ', h('b', null, String(s.chain || 0)), ' · ', h('b', null, Chain.fmt(s.mult || 1))),
         s.gold > 0 ? h('span', { class: 'opt gold', title: 'Next clears pay ×' + Luck.GOLD_X }, 'Gold ', h('b', null, String(s.gold))) :
-          s.double ? h('span', { class: 'opt gold', title: ITEMS.double.desc }, h('b', null, ITEMS.double.icon), ' Double') :
-          s.net > 0 ? h('span', { class: 'opt boost', title: ITEMS.net.desc }, h('b', null, ITEMS.net.icon), ' Net') :
+          s.double ? h('span', { class: 'opt gold', title: ITEMS.double.desc }, ico('item-double'), 'Double') :
+          s.net > 0 ? h('span', { class: 'opt boost', title: ITEMS.net.desc }, ico('item-net'), 'Net') :
           s.boost ? h('span', { class: 'opt boost', title: 'Next ' + s.boost.left + ' clears pay ' + Chain.fmt(s.boost.x) }, 'Boost ', h('b', null, Chain.fmt(s.boost.x) + ' · ' + s.boost.left)) :
             h('span', { class: 'opt' }, 'Pieces ', h('b', null, fmtInt(s.pieces))),
         this.giftBtn(),
-        h('button', { class: 'btn sm new-board', 'aria-label': 'New board', 'data-tip': 'New board', onclick: () => this.askRetire() }, '↺', h('span', { class: 'lbl' }, ' New board'))].filter(Boolean));
+        h('button', { class: 'btn sm new-board', 'aria-label': 'New board', 'data-tip': 'New board', onclick: () => this.askRetire() }, ico('newBoard'), h('span', { class: 'lbl' }, 'New board'))].filter(Boolean));
     }
 
     // ---- the daily gift ------------------------------------------------------------------------------------------------
@@ -692,10 +693,10 @@
       }
       const cards = ids.map((id, i) => {
         const it = ITEMS[id];
-        return h('div', { class: 'gift-card ' + it.rarity, style: { animationDelay: (0.25 + i * 0.35) + 's' }, 'data-tip-title': it.icon + '  ' + it.name, 'data-tip': it.desc },
-          h('div', { class: 'gift-face' }, h('span', { class: 'gi' }, it.icon), h('b', null, it.name)));
+        return h('div', { class: 'gift-card ' + it.rarity, style: { animationDelay: (0.25 + i * 0.35) + 's' }, 'data-tip-title': it.name, 'data-tip': it.desc },
+          h('div', { class: 'gift-face' }, h('span', { class: 'gi', html: L.Icons.icon('item-' + id) }), h('b', null, it.name), it.rarity !== 'common' ? h('small', null, it.rarity) : null));
       });
-      UI.openModal({ title: 'Daily gift', width: 340, cls: 'modal-gift' + (this.reduced ? ' still' : ''), body: h('div', { class: 'gift-cards' }, cards), buttons: [{ label: 'Keep', kind: 'primary' }] });
+      UI.openModal({ title: 'Daily gift', icon: 'gift', width: 340, cls: 'modal-gift' + (this.reduced ? ' still' : ''), body: h('div', { class: 'gift-cards' }, cards), buttons: [{ label: 'Keep', kind: 'primary' }] });
       ids.forEach((_, i) => setTimeout(() => this.app.sound.play('combo', 3 + i * 2), 350 + i * 350));
       this.renderItems();
       this.renderGift();
@@ -717,7 +718,7 @@
           class: 'group-btn' + (open ? ' open' : '') + (on ? ' on' : ''), 'data-group': g.id,
           'aria-label': g.name, 'data-tip': g.name,
           onclick: () => this.openTray(open ? null : g.id),
-        }, h('span', { class: 'gi' }, g.icon), h('span', { class: 'gl' }, g.short || g.name), have ? h('span', { class: 'n' }, String(have)) : null);
+        }, h('span', { class: 'gi', html: L.Icons.icon('group-' + g.id) }), h('span', { class: 'gl' }, g.short || g.name), have ? h('span', { class: 'n' }, String(have)) : null);
       }));
       this.renderTray();
     }
@@ -738,16 +739,17 @@
       const ids = ITEM_ORDER.filter((id) => ITEMS[id].group === g.id);
       el.style.setProperty('--tray-at', ITEM_GROUPS.indexOf(g) / (ITEM_GROUPS.length - 1));
       el.replaceChildren(
-        h('div', { class: 'tray-head' }, h('b', null, g.icon + ' ' + g.name), h('button', { class: 'icon-btn', title: 'Close', 'aria-label': 'Close', html: UI.ICONS.close, onclick: () => this.openTray(null) })),
+        h('div', { class: 'tray-head' }, h('b', null, ico('group-' + g.id), g.name), h('button', { class: 'icon-btn', title: 'Close', 'aria-label': 'Close', html: UI.ICONS.close, onclick: () => this.openTray(null) })),
         h('div', { class: 'tray-items' }, ids.map((id) => {
           const it = ITEMS[id], n = inv[id] || 0;
           const on = this.armed && this.armed.id === id && this.armed.piece === this.game.piece;
           return h('button', {
             class: 'item-btn' + (n || on ? '' : ' empty') + (!n && !on && wallet < it.price ? ' poor' : '') + (on ? ' on' : ''), 'data-item': id,
-            'data-tip-title': it.icon + '  ' + it.name, 'data-tip': it.desc,
+            'data-rarity': it.rarity === 'common' ? null : it.rarity,
+            'data-tip-title': it.name, 'data-tip-icon': 'item-' + id, 'data-tip': it.desc,
             'data-tip-foot': on ? 'Again to take it back' : null,
             onclick: () => this.useItem(id),
-          }, h('span', { class: 'ii' }, it.icon), h('span', { class: 'il' }, it.name), h('span', { class: 'n' }, n || on ? String(n) : LINE + it.price));
+          }, h('span', { class: 'ii', html: L.Icons.icon('item-' + id) }), h('span', { class: 'il' }, it.name), h('span', { class: 'n' }, n || on ? String(n) : LINE + it.price));
         })));
     }
 
@@ -763,9 +765,9 @@
       if (!this.game.piece && id !== 'rewind') { toast('No piece in play', 'bad'); return; }
       if (!st.state.inventory[id]) {
         if (st.state.lines < it.price) { toast(it.name + ' · ' + fmtInt(it.price) + ' ' + LINE, 'bad'); this.app.sound.play('error'); return; }
-        UI.confirm(it.icon + '  ' + it.name, null, 'Buy & use · ' + fmtInt(it.price) + ' ' + LINE, () => {
+        UI.confirm(it.name, h('p', null, it.desc), 'Buy & use · ' + fmtInt(it.price) + ' ' + LINE, () => {
           if (st.buyItem(id)) { this.app.refreshWallet(); this.apply(id); }
-        });
+        }, 'primary', 'item-' + id);
         return;
       }
       this.apply(id);
@@ -892,32 +894,8 @@
   // ---- puzzles ------------------------------------------------------------------------------------------------------
 
   // Small line icons for the Puzzles tab: every wildcard gets its own (Hold and Wraparound share a glyph otherwise).
-  const svg = (d, fill) => '<svg viewBox="0 0 16 16" fill="' + (fill ? 'currentColor' : 'none') + '" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">' + d + '</svg>';
-  const PZ_ICONS = {
-    big: svg('<rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/><path d="M8 2.5v11M2.5 8h11"/>'),
-    odd: svg('<path d="M6 2.5h4V6h3.5v4H10v3.5H6V10H2.5V6H6z"/>'),
-    wrap: svg('<path d="M2 3v10M14 3v10M4.5 8h7M9.5 6l2 2-2 2"/>'),
-    rigid: svg('<rect x="3.5" y="7" width="9" height="6.5" rx="1.2"/><path d="M5.5 7V5.2a2.5 2.5 0 0 1 5 0V7"/>'),
-    heavy: svg('<path d="M8 2.5v8M4.8 7.5L8 10.7l3.2-3.2M3 13.5h10"/>'),
-    invert: svg('<path d="M3 5.5h9.5M10 3l2.5 2.5L10 8M13 10.5H3.5M6 8l-2.5 2.5L6 13"/>'),
-    flip: svg('<path d="M5.5 13V3M3 5.5L5.5 3 8 5.5M10.5 3v10M8 10.5l2.5 2.5 2.5-2.5"/>'),
-    side: svg('<path d="M12.5 3v5a3 3 0 0 1-3 3H3.5M6.5 8l-3 3 3 3"/>'),
-    fog: svg('<path d="M2.5 5c1.4-1 2.6-1 4 0s2.6 1 4 0 2.1-.8 3 0M2.5 8.5c1.4-1 2.6-1 4 0s2.6 1 4 0 2.1-.8 3 0M2.5 12c1.4-1 2.6-1 4 0s2.6 1 4 0 2.1-.8 3 0"/>'),
-    vanish: svg('<rect x="3" y="3" width="10" height="10" rx="1.5" stroke-dasharray="2.2 2"/>'),
-    blind: svg('<path d="M1.8 8s2.3-4 6.2-4 6.2 4 6.2 4-2.3 4-6.2 4-6.2-4-6.2-4z"/><circle cx="8" cy="8" r="1.7"/><path d="M3 13L13 3"/>'),
-    hold: svg('<rect x="2.5" y="6.5" width="11" height="7" rx="1.5"/><path d="M8 1.5v6M5.6 5.4L8 7.8l2.4-2.4"/>'),
-    spin: svg('<path d="M3.5 8A4.5 4.5 0 1 0 8 3.5H6.3"/><path d="M8.3 1.5l-2 2 2 2"/>'),
-    mono: svg('<circle cx="8" cy="8" r="5.5"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor"/>'),
-    clear: svg('<circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="2" fill="currentColor"/>'),
-    lines: svg('<path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"/>'),
-    gems: svg('<path d="M8 2.2l4.8 5.8L8 13.8 3.2 8z" fill="currentColor" stroke="none"/>'),
-    daily: svg('<rect x="2.5" y="3.5" width="11" height="10" rx="1.5"/><path d="M2.5 6.8h11M5.5 2v3M10.5 2v3"/>'),
-    seed: svg('<path d="M6.3 2.5L5 13.5M11.3 2.5L10 13.5M3 6h10.5M2.5 10H13"/>'),
-    history: svg('<path d="M2.8 8a5.2 5.2 0 1 0 1.5-3.7"/><path d="M2.6 2.4v2.9h2.9M8 5.2V8l2 1.4"/>'),
-    copy: svg('<rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 3.5v-.2a.9.9 0 0 0-.9-.8H3.4a.9.9 0 0 0-.9.9v6.2a.9.9 0 0 0 .9.9h.1"/>'),
-    hint: svg('<path d="M6.2 12h3.6M6.7 14h2.6M8 2a4 4 0 0 0-2.4 7.2c.5.4.8.9.8 1.4v.4h3.2v-.4c0-.5.3-1 .8-1.4A4 4 0 0 0 8 2z"/>'),
-    check: svg('<circle cx="8" cy="8" r="6"/><path d="M5.3 8.2l1.9 1.9 3.6-3.8"/>'),
-  };
+  // The wildcards, goals and the tab's tools, from the one icon set (js/icons.js).
+  const PZ_ICONS = new Proxy({}, { get: (_, k) => L.Icons.icon({ clear: 'goal-clear', lines: 'goal-lines', gems: 'goal-gems', daily: 'daily', seed: 'seed', history: 'history', copy: 'copy', hint: 'hint', check: 'checkCircle', undo: 'undo', retry: 'retry', skip: 'skip', next: 'next' }[k] || 'mod-' + String(k)) });
   const icon = (k, cls) => h('span', { class: 'pz-i' + (cls ? ' ' + cls : ''), html: PZ_ICONS[k] || '' });
   // Short names for when a card is narrow; the full name is always in the tooltip.
   const MOD_SHORT = { big: 'Big', odd: 'Odd', wrap: 'Wrap', invert: 'Inverted', flip: 'Flipped', blind: 'Blind', vanish: 'Vanish', spin: 'Both Ways', mono: 'Mono' };
@@ -1141,7 +1119,7 @@
       // A quiet card: what it took and what it paid, then the way on. The board stays visible around it.
       const tile = (v, l, cls) => h('div', { class: 'bs' + (cls ? ' ' + cls : '') }, h('div', { class: 'v' }, v), h('div', { class: 'l' }, l));
       this.showCard(h('div', { class: 'puz-result solved' },
-        icon('check', 'ring'),
+        h('span', { class: 'pz-i ring', html: L.Icons.icon('check') }),
         h('h2', null, 'Solved'),
         h('div', { class: 'board-sum' },
           tile(fmtClock(ms), 'time'),
@@ -1179,8 +1157,8 @@
         h('h2', null, why),
         prog.text ? h('p', null, prog.text) : null,
         h('div', { class: 'row' },
-          h('button', { class: 'btn', onclick: () => this.undo() }, '↶ Undo'),
-          h('button', { class: 'btn primary', onclick: () => this.retry() }, '↺ Retry'))));
+          h('button', { class: 'btn', onclick: () => this.undo() }, icon('undo'), 'Undo'),
+          h('button', { class: 'btn primary', onclick: () => this.retry() }, icon('retry'), 'Retry'))));
     }
 
     retry() { if (this.app.hints && !this.done && this.game && this.game.s.pieces >= 2) this.app.hints.attemptEnded(this); this.hideCard(); this.start(); this.renderHead(); }
@@ -1243,7 +1221,7 @@
 
     renderSaveBtn() {
       const on = this.puzzle && this.isSaved(this.puzzle.seed);
-      this.el.save.textContent = on ? '★' : '☆';
+      this.el.save.innerHTML = L.Icons.icon(on ? 'starOn' : 'star');
       this.el.save.classList.toggle('on', !!on);
       this.el.save.title = on ? 'Saved' : 'Save seed';
       this.el.save.setAttribute('aria-label', on ? 'Saved' : 'Save seed');
@@ -1276,8 +1254,8 @@
               h('div', { class: 'd' }, h('span', { class: 'st' }, [status, tries, date].filter(Boolean).join(' · ')),
                 e.mods && e.mods.length ? h('span', { class: 'mods' }, e.mods.map((m) => h('span', { class: 'pz-i', title: (Puzzles.MODS[m] || { name: m }).name, html: PZ_ICONS[m] || '' }))) : null)),
             h('button', { class: 'seedchip', title: 'Copy', onclick: () => { UI.copyText(e.seed); toast('Copied', 'good', 1200); } }, e.seed),
-            h('button', { class: 'icon-btn star' + (saved ? ' on' : ''), title: saved ? 'Saved' : 'Save seed', 'aria-pressed': String(!!saved), onclick: () => { this.toggleSaved(e.seed, e); draw(); } }, saved ? '★' : '☆'),
-            h('button', { class: 'icon-btn play', title: current ? 'In play' : e.solved ? 'Replay' : 'Play', onclick: () => { handle.close(); if (!current) this.load(e.seed, { number: e.number, daily: e.daily }); } }, '►'));
+            h('button', { class: 'icon-btn star' + (saved ? ' on' : ''), title: saved ? 'Saved' : 'Save seed', 'aria-pressed': String(!!saved), onclick: () => { this.toggleSaved(e.seed, e); draw(); }, html: L.Icons.icon(saved ? 'starOn' : 'star') }),
+            h('button', { class: 'icon-btn play', title: current ? 'In play' : e.solved ? 'Replay' : 'Play', onclick: () => { handle.close(); if (!current) this.load(e.seed, { number: e.number, daily: e.daily }); }, html: L.Icons.icon('playIcon') }));
         }) : [h('p', { class: 'empty' }, filter === 'saved' ? 'No saved seeds' : 'None')]));
         // Counts on the tabs, so an empty list is no surprise.
         seg.querySelectorAll('button').forEach((b) => { b.querySelector('.c').textContent = rowsFor(b.dataset.k).length; });
@@ -1369,7 +1347,7 @@
       const diff = this.puzzle ? this.puzzle.diff : this.ps.diff, key = L.dateKey();
       const seed = Puzzles.dailySeed(diff, key, this.spin), done = !!this.ps.solved[seed];
       const on = !!(this.puzzle && this.meta.daily === key && this.puzzle.seed === seed);
-      this.el.daily.replaceChildren(...[icon('daily'), h('span', { class: 'lbl' }, 'Daily'), done ? h('span', { class: 'tick', title: 'Solved today' }, '✓') : null].filter(Boolean));
+      this.el.daily.replaceChildren(...[icon('daily'), h('span', { class: 'lbl' }, 'Daily'), done ? h('span', { class: 'tick', title: 'Solved today', html: L.Icons.icon('check') }) : null].filter(Boolean));
       this.el.daily.setAttribute('aria-pressed', String(on));
       this.el.daily.title = 'Daily';
       this.fitNav();
@@ -1386,7 +1364,7 @@
       const p = this.puzzle, d = Puzzles.DIFFS[p.diff];
       const solved = this.ps.solved[p.seed];
       this.el.dot.style.background = d.color;
-      this.el.title.replaceChildren(...[h('span', { class: 't' }, p.title), solved ? h('span', { class: 'done', title: 'Solved' + (solved.ms ? ' in ' + fmtClock(solved.ms) : ''), 'aria-label': 'Solved' }, '✓') : null].filter(Boolean));
+      this.el.title.replaceChildren(...[h('span', { class: 't' }, p.title), solved ? h('span', { class: 'done', title: 'Solved' + (solved.ms ? ' in ' + fmtClock(solved.ms) : ''), 'aria-label': 'Solved', html: L.Icons.icon('check') }) : null].filter(Boolean));
       const where = this.meta.daily ? ['Daily', dayLabel(this.meta.daily), d.name] : this.meta.number ? [d.name, '#' + this.meta.number] : [d.name, 'from a seed'];
       this.el.id.replaceChildren(where.join(' · ') + ' · ' + p.pieces.length + ' pieces');
       this.el.seed.replaceChildren(h('span', { class: 'code' }, p.seed), icon('copy'));
@@ -1478,12 +1456,12 @@
       const hinted = this.ps.current && this.ps.current.hint;
       this.el.actions.replaceChildren(
         h('div', { class: 'grp' },
-          h('button', { class: 'btn', id: 'puz-undo', disabled: !this.game || !this.game.history.length || this.done, 'aria-label': 'Undo', 'data-tip': 'Undo', 'data-tip-foot': '⌫', onclick: () => this.undo() }, '↶ ', h('span', { class: 'lbl' }, 'Undo')),
-          h('button', { class: 'btn', id: 'puz-retry', 'aria-label': 'Retry', 'data-tip': 'Retry', 'data-tip-foot': 'R', onclick: () => this.retry() }, '↺ ', h('span', { class: 'lbl' }, 'Retry'))),
+          h('button', { class: 'btn', id: 'puz-undo', disabled: !this.game || !this.game.history.length || this.done, 'aria-label': 'Undo', 'data-tip': 'Undo', 'data-tip-foot': '⌫', onclick: () => this.undo() }, icon('undo'), h('span', { class: 'lbl' }, 'Undo')),
+          h('button', { class: 'btn', id: 'puz-retry', 'aria-label': 'Retry', 'data-tip': 'Retry', 'data-tip-foot': 'R', onclick: () => this.retry() }, icon('retry'), h('span', { class: 'lbl' }, 'Retry'))),
         h('div', { class: 'grp' },
           h('button', { class: 'btn' + (hinted ? ' on' : ''), id: 'puz-hint', disabled: this.done, 'aria-label': hinted ? 'Hints on' : 'Hint', 'aria-pressed': String(!!hinted), 'data-tip': hinted ? 'Hints on' : 'Hint', 'data-tip-foot': 'H', onclick: () => this.buyHint() },
             icon('hint'), h('span', { class: 'lbl' }, hinted ? 'Hints on' : 'Hint'), hinted ? null : h('span', { class: 'gem' }, LINE + cost)),
-          h('button', { class: 'btn' + (this.done ? ' primary' : ''), id: 'puz-next', 'aria-label': this.done ? 'Next' : 'Skip', 'data-tip': this.done ? 'Next' : 'Skip', 'data-tip-foot': 'N', onclick: () => this.next() }, h('span', { class: 'lbl' }, this.done ? 'Next' : 'Skip'), ' ▸')));
+          h('button', { class: 'btn' + (this.done ? ' primary' : ''), id: 'puz-next', 'aria-label': this.done ? 'Next' : 'Skip', 'data-tip': this.done ? 'Next' : 'Skip', 'data-tip-foot': 'N', onclick: () => this.next() }, h('span', { class: 'lbl' }, this.done ? 'Next' : 'Skip'), icon(this.done ? 'next' : 'skip'))));
     }
   }
 

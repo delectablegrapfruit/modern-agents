@@ -54,10 +54,12 @@ scale, by whichever move disturbs the rest least; then each other note goes to t
 keeping the sound's shape: a rising run still rises, a chord keeps its order, twins a few cents apart still beat, and
 slides, partials, FM and detune ride along. Noise, clicks and low thuds or sweeps are left alone. The Tetris Worlds announcer (her lines cut from the game's recording by `scripts/splice-voice.py`, embedded)
 calls singles, doubles, triples, tetrises, T-spin singles/doubles/triples, back-to-backs, "amazing" for a perfect
-clear, "rank up" for a new level and "top out" at the end. Her raw takes are mixed in on the fly: thinned lows, eased
+clear, "rank up" for a new level and "top out" at the end. Every clip is levelled to the same loudness (BS.1770, leaning a little toward the loudest moment, then
+peak-limited), so no line is louder than another, and she sits well under the sound effects. Her takes are mixed in on the fly: thinned lows, eased
 low-mids and top, a gentle compressor, the same reverb as everything else and a soft stereo echo, with the music
 dipping under her; Settings ▸ Sound ▸ Announcer volume sets her level. Settings ▸ Sound ▸ Announcer in Relaxed (off by default) lets her call Free Play clears too. Both toggle under the board or in Settings ▸ Sound. P pauses; another tab or another window pauses
-too.
+too, and so does the pointer leaving the window (Settings ▸ Controls ▸ Pause when the pointer leaves); P or Resume
+carries on.
 
 **Puzzles** — procedurally generated, infinite, short, in Easy, Medium and Hard. Each has a seed (`M-3K7Q2XA`): the
 same seed is the same puzzle for everyone, so it can be shared, replayed or retried (R) as often as you like; Undo is
@@ -71,8 +73,8 @@ gives up counts as a shortcut. A gem seed that runs out of tries settles for a l
 Solving pays lines (more on the first try, double for the Daily). Dailies are the same in every copy of Lull: day
 numbers run through a fixed, keyed shuffle of all 2³² seeds per difficulty, so every date has one seed and every seed
 belongs to exactly one date (hover a seed to see which). That is 4,294,967,296 seeds per difficulty, 12,884,901,888 in all. History lists every puzzle you opened — solved or
-not, tries, time — with its seed and a ► button; ☆ saves a seed (from a row, or the ☆ beside History for the puzzle
-in play), and History ▸ Saved keeps them. Solutions only ever need turns a person expects (in place, or
+not, tries, time — with its seed and a play button; the star saves a seed (from a row, or the star on the puzzle's card
+for the puzzle in play; filled once saved), and History ▸ Saved keeps them. Solutions only ever need turns a person expects (in place, or
 nudged sideways off a wall), never SRS kicks that hop a piece through a gap — and only the one direction a single
 turn button gives, so that button (Up — on a turned board, the arrow pointing away from the floor — or a right-click)
 solves every puzzle: clockwise, or counter-clockwise under Inverted Controls, which turns both around (those puzzles
@@ -98,8 +100,8 @@ that single button alone cannot solve it. Wildcards:
 | Both Ways | only on `S` seeds: a spot needs Z (the other turn: counter-clockwise, clockwise under Inverted Controls) or A (half turn) |
 
 The tab reads top to bottom: a slim bar (difficulty; Daily, pressed while today's is in play and ticked once it is
-solved; Seed; History — icons alone in a narrow window), then the puzzle's card — its name (✓ once solved), where it
-comes from (number, Daily date or seed) and piece count, the seed (click to copy) and ☆; the goal with how far along
+solved; Seed; History — icons alone in a narrow window), then the puzzle's card — its name (a small tick once solved), where it
+comes from (number, Daily date or seed) and piece count, the seed (click to copy) and the star; the goal with how far along
 it is (lines, gems or blocks left, and a thin meter); a chip per wildcard, each with its own icon (hover, or click for a
 note that stays; Both Ways is tinted and names Z and A) — then the board, and a bar of Undo, Retry, Hint (with its price) and
 Skip, which turns into Next once solved. Every row has a fixed height and chips shorten (then drop to icons) rather
@@ -183,10 +185,11 @@ the board, so on Upside Down and Sideways boards things fall toward its floor; s
 It is all for show — the board is already final, so the next piece is never kept waiting — mostly over in about 0.7 s,
 with fixed pools of bodies and particles; Reduced motion turns it into plain fades. Shapes beyond the seven (a Noodle, a Giant, a Blueprint drawing, a mirrored odd shape) turn wherever there is room: when no kick fits, a turn that would poke past the ceiling, floor or a wall is nudged back in by exactly that much (if the way in is clear), and one that would dip into the stack is stood on it or slid off the block beside it, never out of a well or through blocks. The seven keep plain SRS, and puzzles keep exactly the turns they were built with.
 
-**Shop** — click the wallet (or ⌘7). Cosmetics only (power-ups are not sold), one kind at a time: a row of kinds with a
-chevron at each end (dimmed at the first and last; ←/→ step too while the row has focus) picks which, and only that
+**Shop** — click the wallet (or ⌘7). Cosmetics only (power-ups are not sold), one kind at a time: a row of kinds (←/→ step
+while it has focus) picks which — when it does not fit, a chevron at each end pages it a visible width at a time,
+snapped to whole kinds, dimmed at each end, never picking one — and only that
 kind's tiles are shown — the list scrolls within the kind, never on into the next; the Shop reopens on the kind you
-looked at last. Each tile has a live preview drawn in your current look: palettes (Prism animates) and mino skins (Gem, Glass, Neon, Jelly, Pixel …) on a small stack, board
+looked at last. Each tile has a live preview drawn in your current look: palettes (Prism animates; Mist and Aurora are the calmest) on a small stack, mino skins (Satin, Lantern, Gem, Glass, Neon, Jelly, Pixel …) large enough to see their surface, board
 frames, backdrops and ghost styles on a small board, line-clear effects mid-burst, and **sound packs** (Drift — the
 default: smooth synth tones in the music's room — a breath of a different note for each move, like a chime stirring,
 soft sine plucks that darken as they ring, round bell tones, slow wide detuned pads swelling under clears, a warm felt
@@ -197,6 +200,16 @@ Marimba, Analog Synth stabs, ringing Glass, Wind Chimes — all synthesized, eac
 Listen button); a few are factory rewards (a second, third and fourth press, the tallest bin, 500 lines collected),
 marked with a lock and what earns them on hover. A tile says In use, Use (click it, or the tile) or its price, dimmed when you cannot afford it. Buying
 is two clicks on the same spot — the price turns into Confirm for three seconds — and a new cosmetic goes straight on.
+
+**Look** — one small design system (`css/lull.css`, its tokens at the top): an ink-blue dark and a cool paper light
+theme, each with three translucent surface steps (so Glass and Tint show through), two line weights, a solid raised
+colour for popovers, tooltips, toasts and dialogs, and the accent you pick (with a deeper ink of it for text and icons
+on light); a seven-step type scale around 13 px, a 2/4 px spacing grid, radii from 4 to 18, three shadows and three
+durations. Buttons (primary, secondary, ghost, danger), segmented controls, chips, cards, rows, switches and sliders
+share them, with hover, pressed, disabled and a focus ring for the keyboard. Every icon is one inline SVG family
+(`js/icons.js`): a 16-unit grid, a 1.5 stroke, round caps and joins; the places to play are drawn in blocks, everything
+else in line, and each power-up, wildcard and Settings section has its own — never a font glyph, never an emoji. On the
+boards, hold and the queue sit in soft recessed trays under small spaced capitals.
 
 **Achievements** — 105 quiet milestones that pay ⦵ lines, in their own tab: a small toast when one is earned, nothing
 more (one earned in the background, by the factory or the once-a-minute check, is told when you come back, not chimed
@@ -278,7 +291,7 @@ the factory runs on. Collapsed, it resizes only sideways, and it opens back to t
 one switch, kept in sync everywhere and saved. It ramps a gain that sits after everything else to zero in 50 ms, so
 effects, Classic music (notes already ringing too), the announcer, factory sounds and Listen previews all fall silent
 at once without a click; the Sound effects, Classic music and Announcer toggles and every volume are left as they
-were, so unmuting brings back exactly what you had. Muted, the speaker shows a slash in a soft amber wash. M works
+were, so unmuting brings back exactly what you had. Muted, the speaker shows a small cross in a soft amber wash. M works
 over open windows too (never while typing in a text field), and Listen says it is muted rather than playing nothing.
 
 **Control hints** — when a control seems to be missing, one small pill low on the board shows its key and a word or
@@ -329,7 +342,7 @@ first time. The save lives in `~/Library/Application Support/Lull/save.json` (Se
 
 | Path | |
 |---|---|
-| `Game/` | the game: `index.html`, `css/`, and `js/` — `pieces` (SRS tetrominoes, pentominoes, big and custom shapes, polyomino enumeration), `board`, `engine` (the floating-piece rules and every item), `items` (the chain multiplier, combos, Luck, the daily gift, power-ups earned in play), `puzzlegen` (seeds, wildcards, reverse construction, reachability search, forward verification), `factory` (presses, the belt, the bin, one step for play and time away, save repair), `store` (save, catalog, stats), `achievements`, `fxphysics` (the item effects' blocks, debris and dust: gravity, bounces, spirals, fixed pools), `render` (canvas: skins, frames, effects, item animations, rotated views), `factoryview` (the factory floor, drawn like the board), `hints` (control hints: the struggle signals, their limits and retirement), `collapse` (the window rolled up into its title bar, and the pieces that march along it), `modes`, `ui`, `app` |
+| `Game/` | the game: `index.html`, `css/`, and `js/` — `icons` (the one SVG icon set), `pieces` (SRS tetrominoes, pentominoes, big and custom shapes, polyomino enumeration), `board`, `engine` (the floating-piece rules and every item), `items` (the chain multiplier, combos, Luck, the daily gift, power-ups earned in play), `puzzlegen` (seeds, wildcards, reverse construction, reachability search, forward verification), `factory` (presses, the belt, the bin, one step for play and time away, save repair), `store` (save, catalog, stats), `achievements`, `fxphysics` (the item effects' blocks, debris and dust: gravity, bounces, spirals, fixed pools), `render` (canvas: skins, frames, effects, item animations, rotated views), `factoryview` (the factory floor, drawn like the board), `hints` (control hints: the struggle signals, their limits and retirement), `collapse` (the window rolled up into its title bar, and the pieces that march along it), `modes`, `ui`, `app` |
 | `Sources/Lull/` | the macOS shell: a borderless `NSPanel` (floating, all Spaces, edge-resizable, draggable by the page's title bar) around a transparent `WKWebView`, a blur for the Glass background, the save file, the ⌥⌘L hot key, and a self-test CI runs |
 | `scripts/` | `make-app.sh`, `icon.swift`, `line-glyph.py` (builds the line glyph's font into `lull.css`), `test.cjs`, `browser-test.cjs`, `audio-render.cjs` (renders and measures the synthesized audio offline), `pitch.cjs` (finds the notes in a render, to check sound effects are in the music's key), `splice-voice.py` (cuts the announcer's lines from a recording) |
 

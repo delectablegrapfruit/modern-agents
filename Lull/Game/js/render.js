@@ -59,8 +59,9 @@
 
   const SKIN_PAINT = {
     flat(ctx, s, c) {
-      const g = s > 14 ? 1 : 0.5;
-      ctx.fillStyle = c; rr(ctx, g, g, s - 2 * g, s - 2 * g, s * 0.14); ctx.fill();
+      // A gap that grows with the cell (a hairline at small sizes), corners softened in proportion.
+      const g = Math.max(0.5, Math.round(s * 0.04 * 2) / 2);
+      ctx.fillStyle = c; rr(ctx, g, g, s - 2 * g, s - 2 * g, s * 0.16); ctx.fill();
     },
     bevel(ctx, s, c) {
       const b = Math.max(2, Math.round(s * 0.16));
@@ -82,7 +83,7 @@
       ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.beginPath(); ctx.ellipse(s * 0.36, s * 0.3, s * 0.11, s * 0.07, -0.6, 0, Math.PI * 2); ctx.fill();
     },
     pixel(ctx, s, c) {
-      const p = s / 4;
+      const p = Math.max(1, Math.round(s / 4));
       ctx.fillStyle = c; ctx.fillRect(0, 0, s, s);
       ctx.fillStyle = shade(c, 0.35); ctx.fillRect(0, 0, s, p); ctx.fillRect(0, 0, p, s);
       ctx.fillStyle = shade(c, -0.35); ctx.fillRect(0, s - p, s, p); ctx.fillRect(s - p, 0, p, s);
@@ -96,10 +97,12 @@
       ctx.strokeStyle = rgba(shade(c, 0.5), 0.95); ctx.lineWidth = 1; rr(ctx, 1.5, 1.5, s - 3, s - 3, s * 0.12); ctx.stroke();
     },
     wire(ctx, s, c) {
-      ctx.fillStyle = rgba(c, 0.08); ctx.fillRect(1, 1, s - 2, s - 2);
-      ctx.strokeStyle = c; ctx.lineWidth = 1;
-      ctx.strokeRect(1.5, 1.5, s - 3, s - 3);
-      ctx.beginPath(); ctx.moveTo(1.5, 1.5); ctx.lineTo(s - 1.5, s - 1.5); ctx.moveTo(s - 1.5, 1.5); ctx.lineTo(1.5, s - 1.5); ctx.globalAlpha = 0.45; ctx.stroke(); ctx.globalAlpha = 1;
+      // Drafting lines: a crisp outline, a faint inner square and a whisper of fill.
+      const lw = Math.max(1, Math.round(s * 0.05)), o = lw / 2 + Math.max(0.5, s * 0.03);
+      ctx.fillStyle = rgba(c, 0.1); ctx.fillRect(o, o, s - 2 * o, s - 2 * o);
+      ctx.strokeStyle = c; ctx.lineWidth = lw; ctx.strokeRect(o, o, s - 2 * o, s - 2 * o);
+      const q = s * 0.3;
+      ctx.globalAlpha = 0.45; ctx.lineWidth = Math.max(1, lw * 0.75); ctx.strokeRect(q, q, s - 2 * q, s - 2 * q); ctx.globalAlpha = 1;
     },
     neon(ctx, s, c) {
       const lw = Math.max(1.5, s * 0.09);
@@ -136,6 +139,26 @@
       ctx.fillStyle = g; rr(ctx, 1, 1, s - 2, s - 2, s * 0.32); ctx.fill();
       ctx.strokeStyle = rgba(shade(c, -0.35), 0.8); ctx.lineWidth = Math.max(1, s * 0.05); ctx.stroke();
       ctx.fillStyle = 'rgba(255,255,255,0.5)'; rr(ctx, s * 0.2, s * 0.14, s * 0.42, s * 0.16, s * 0.08); ctx.fill();
+    },
+    satin(ctx, s, c) {
+      // Soft and quiet: a gentle top-to-bottom sheen, a light rim on top and a deeper edge below.
+      const g0 = Math.max(0.5, s * 0.04), r = s * 0.22;
+      const g = ctx.createLinearGradient(0, 0, 0, s);
+      g.addColorStop(0, shade(c, 0.22)); g.addColorStop(0.55, c); g.addColorStop(1, shade(c, -0.14));
+      ctx.fillStyle = g; rr(ctx, g0, g0, s - 2 * g0, s - 2 * g0, r); ctx.fill();
+      ctx.save(); ctx.clip();
+      ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = Math.max(1, s * 0.06);
+      rr(ctx, g0 + s * 0.02, g0 + s * 0.03, s - 2 * g0 - s * 0.04, s - 2 * g0, r); ctx.stroke();
+      ctx.restore();
+      ctx.strokeStyle = rgba(shade(c, -0.4), 0.35); ctx.lineWidth = Math.max(1, s * 0.03); rr(ctx, g0, g0, s - 2 * g0, s - 2 * g0, r); ctx.stroke();
+    },
+    lantern(ctx, s, c) {
+      // A paper lantern: a warm lit core fading to a soft, darker rim.
+      const g0 = Math.max(0.5, s * 0.05), r = s * 0.26;
+      const g = ctx.createRadialGradient(s * 0.5, s * 0.45, s * 0.04, s * 0.5, s * 0.5, s * 0.62);
+      g.addColorStop(0, shade(c, 0.62)); g.addColorStop(0.45, shade(c, 0.15)); g.addColorStop(1, shade(c, -0.3));
+      ctx.fillStyle = g; rr(ctx, g0, g0, s - 2 * g0, s - 2 * g0, r); ctx.fill();
+      ctx.strokeStyle = rgba(shade(c, 0.5), 0.55); ctx.lineWidth = Math.max(1, s * 0.035); rr(ctx, g0 + 0.5, g0 + 0.5, s - 2 * g0 - 1, s - 2 * g0 - 1, r); ctx.stroke();
     },
     steel(ctx, s, c) {
       const base = mix(c, '#9aa4b1', 0.55);
@@ -239,7 +262,7 @@
     } else if (id === 'dashed') {
       ctx.strokeStyle = accent; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.strokeRect(x - 3, y - 3, w + 6, h + 6);
     } else if (id === 'rounded') {
-      ctx.strokeStyle = accent; ctx.lineWidth = 4; rr(ctx, x - 5, y - 5, w + 10, h + 10, 10); ctx.stroke();
+      ctx.strokeStyle = accent; ctx.lineWidth = 2.5; rr(ctx, x - 4.5, y - 4.5, w + 9, h + 9, 8); ctx.stroke();
     } else if (id === 'glow') {
       ctx.shadowColor = accent; ctx.shadowBlur = 14; ctx.strokeStyle = accent; ctx.lineWidth = 2; rr(ctx, x - 3, y - 3, w + 6, h + 6, 4); ctx.stroke();
       ctx.shadowBlur = 0; ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 0.75; ctx.stroke();
@@ -260,7 +283,7 @@
       ctx.strokeStyle = '#1d1d1f'; ctx.lineWidth = 5;
       for (let k = -h - 16; k < w + h + 16; k += 14) { ctx.beginPath(); ctx.moveTo(x - 8 + k, y - 8); ctx.lineTo(x - 8 + k + h + 16, y + h + 8); ctx.stroke(); }
     } else {
-      ctx.strokeStyle = accent; ctx.globalAlpha = 0.8; ctx.lineWidth = 1; ctx.strokeRect(x - 1.5, y - 1.5, w + 3, h + 3);
+      ctx.strokeStyle = accent; ctx.globalAlpha = 0.6; ctx.lineWidth = 1; ctx.strokeRect(x - 1.5, y - 1.5, w + 3, h + 3);
     }
     ctx.restore();
   }
@@ -292,8 +315,24 @@
       for (let py = y; py < y + h; py += 3) ctx.fillRect(x, py, w, 1);
     } else if (id === 'dusk') {
       const g = ctx.createLinearGradient(0, y, 0, y + h);
-      g.addColorStop(0, 'rgba(70,40,120,0.35)'); g.addColorStop(0.65, 'rgba(180,80,110,0.2)'); g.addColorStop(1, 'rgba(250,150,80,0.25)');
+      g.addColorStop(0, 'rgba(46,40,110,0.34)'); g.addColorStop(0.55, 'rgba(150,72,120,0.18)'); g.addColorStop(0.85, 'rgba(236,132,96,0.2)'); g.addColorStop(1, 'rgba(250,176,110,0.3)');
       ctx.fillStyle = g; ctx.fillRect(x, y, w, h);
+      // A low sun: a soft glow on the horizon.
+      const sun = ctx.createRadialGradient(x + w * 0.5, y + h, 0, x + w * 0.5, y + h, w * 0.7);
+      sun.addColorStop(0, 'rgba(255,190,130,0.22)'); sun.addColorStop(1, 'rgba(255,190,130,0)');
+      ctx.fillStyle = sun; ctx.fillRect(x, y, w, h);
+    } else if (id === 'aurora') {
+      // Two slow veils of light, teal and violet, over the faintest grid.
+      const a = ctx.createRadialGradient(x + w * 0.2, y + h * 0.18, 0, x + w * 0.2, y + h * 0.18, Math.max(w, h) * 0.6);
+      a.addColorStop(0, 'rgba(80,220,190,0.2)'); a.addColorStop(1, 'rgba(80,220,190,0)');
+      ctx.fillStyle = a; ctx.fillRect(x, y, w, h);
+      const b = ctx.createRadialGradient(x + w * 0.85, y + h * 0.5, 0, x + w * 0.85, y + h * 0.5, Math.max(w, h) * 0.55);
+      b.addColorStop(0, 'rgba(150,110,255,0.18)'); b.addColorStop(1, 'rgba(150,110,255,0)');
+      ctx.fillStyle = b; ctx.fillRect(x, y, w, h);
+      ctx.strokeStyle = theme.grid; ctx.globalAlpha = 0.5; ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let q = 1; q < rows; q++) { const py = Math.round(y + q * s) + 0.5; ctx.moveTo(x, py); ctx.lineTo(x + w, py); }
+      ctx.stroke(); ctx.globalAlpha = 1;
     } else if (id === 'stars') {
       const key = cols + 'x' + rows;
       let stars = starCache.get(key);
@@ -324,12 +363,16 @@
       ctx.fillStyle = rgba(color, 0.8);
       const d = Math.max(1.5, s * 0.1);
       for (const fx of [0.3, 0.7]) for (const fy of [0.3, 0.7]) { ctx.beginPath(); ctx.arc(x + s * fx, y + s * fy, d, 0, Math.PI * 2); ctx.fill(); }
+    } else if (style === 'soft') {
+      ctx.fillStyle = rgba(color, 0.14); rr(ctx, x + 1.5, y + 1.5, s - 3, s - 3, s * 0.18); ctx.fill();
+      ctx.strokeStyle = rgba(color, 0.45); ctx.lineWidth = 1; ctx.stroke();
     } else if (style === 'glow') {
       ctx.shadowColor = color; ctx.shadowBlur = s * 0.5;
       ctx.strokeStyle = rgba(color, 0.9); ctx.lineWidth = 1.5; ctx.strokeRect(x + 2, y + 2, s - 4, s - 4);
     } else {
-      ctx.strokeStyle = rgba(color, 0.75); ctx.lineWidth = Math.max(1, s * 0.07);
-      ctx.strokeRect(x + 1.5, y + 1.5, s - 3, s - 3);
+      const lw = Math.max(1, s * 0.07);
+      ctx.strokeStyle = rgba(color, 0.7); ctx.lineWidth = lw;
+      rr(ctx, x + 1 + lw / 2, y + 1 + lw / 2, s - 2 - lw, s - 2 - lw, s * 0.12); ctx.stroke();
     }
     ctx.restore();
   }
@@ -385,6 +428,10 @@
           for (let k = 0; k < 4; k++) this.parts.push({ kind: 'conf', x: cx, y: cy, vx: (Math.random() - 0.5) * 200, vy: -120 - Math.random() * 140, g: 380, drag: 1.8, life: 0, max: 1.4 + Math.random() * 0.6, size: s * 0.28, color: hsl(Math.random() * 360, 85, 65), rot: Math.random() * 6, vr: (Math.random() - 0.5) * 18 });
         } else if (kind === 'ripple') {
           this.parts.push({ kind: 'sq', x: cx, y: cy, vx: 0, vy: 0, g: 0, life: 0, max: 0.35, size: s, color: c.color, shrink: true });
+        } else if (kind === 'bloom') {
+          // Each block opens into soft light and lets a mote drift up.
+          this.parts.push({ kind: 'bloom', x: cx, y: cy, vx: 0, vy: 0, g: 0, life: 0, max: 0.6, size: s, color: c.color });
+          if (Math.random() < 0.6) this.parts.push({ kind: 'mote', x: cx + (Math.random() - 0.5) * s, y: cy, vx: (Math.random() - 0.5) * 12, vy: -18 - Math.random() * 26, g: 0, drag: 0.6, life: 0, max: 0.9 + Math.random() * 0.6, size: s * (0.08 + Math.random() * 0.08), color: shade(c.color, 0.55) });
         } else if (kind === 'sparks') {
           this.parts.push({ kind: 'sq', x: cx, y: cy, vx: 0, vy: 0, g: 0, life: 0, max: 0.2, size: s, color: '#ffe8b0', shrink: true });
           for (let k = 0; k < 3; k++) { const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.2, v = 150 + Math.random() * 220; this.parts.push({ kind: 'spark', x: cx, y: cy, vx: Math.cos(a) * v, vy: Math.sin(a) * v, g: 600, life: 0, max: 0.5 + Math.random() * 0.4, size: 2, color: Math.random() < 0.5 ? '#ffd166' : '#ff8c42' }); }
@@ -493,6 +540,13 @@
           if (p.kind === 'conf') ctx.fillRect(-p.size / 2, -p.size / 4, p.size, p.size / 2);
           else { ctx.beginPath(); ctx.moveTo(-p.size / 2, -p.size / 2); ctx.lineTo(p.size / 2, -p.size / 3); ctx.lineTo(0, p.size / 2); ctx.closePath(); ctx.fill(); }
           ctx.restore();
+        } else if (p.kind === 'bloom') {
+          const e = 1 - (1 - k) * (1 - k), sz = p.size * (1 + e * 0.7);
+          ctx.fillStyle = rgba(p.color, 0.32 * a * a); rr(ctx, p.x - sz / 2, p.y - sz / 2, sz, sz, sz * 0.3); ctx.fill();
+          const core = p.size * (1 - e * 0.6);
+          ctx.fillStyle = rgba(shade(p.color, 0.6), 0.85 * a); rr(ctx, p.x - core / 2, p.y - core / 2, core, core, core * 0.25); ctx.fill();
+        } else if (p.kind === 'mote') {
+          ctx.fillStyle = rgba(p.color, a * 0.9); ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill();
         } else if (p.kind === 'spark') {
           ctx.strokeStyle = rgba(p.color, a); ctx.lineWidth = 1.5;
           ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - p.vx * 0.02, p.y - p.vy * 0.02); ctx.stroke();
@@ -520,7 +574,7 @@
         ctx.globalAlpha = k < 0.8 ? 1 : (1 - k) / 0.2;
         ctx.font = '700 ' + f.size + 'px ' + FONT;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+        ctx.lineWidth = 3.5; ctx.lineJoin = 'round'; ctx.strokeStyle = 'rgba(8,11,18,0.55)';
         const yy = f.y - k * 18;
         ctx.strokeText(f.str, f.x, yy);
         ctx.fillStyle = f.color; ctx.fillText(f.str, f.x, yy);
@@ -862,37 +916,43 @@
       const g = this.game, look = this.look, { s, hold, next, nextDir } = this.lay;
       const th = look.theme;
       ctx.save();
-      ctx.font = '600 ' + Math.max(9, Math.min(12, s * 0.5)) + 'px ' + FONT;
-      ctx.fillStyle = th.muted;
+      // Labels: small spaced capitals, quieter than anything they label.
+      ctx.font = '700 ' + Math.round(Math.max(9, Math.min(11, s * 0.44))) + 'px ' + FONT;
+      if ('letterSpacing' in ctx) ctx.letterSpacing = '0.09em';
       ctx.textBaseline = 'top';
+      const label = (t, x, y) => { ctx.fillStyle = th.faint || th.muted; ctx.fillText(t, Math.round(x + 2), Math.round(y)); };
+      /** A soft recessed tray: the well's colour, a hairline, rounded like the rest of the window. */
+      const tray = (b, hot) => {
+        const r = Math.min(10, Math.max(5, s * 0.4));
+        ctx.fillStyle = hot ? rgba(th.accent, 0.12) : th.well; rr(ctx, b.x + 0.5, b.y + 0.5, b.w - 1, b.h - 1, r); ctx.fill();
+        ctx.strokeStyle = hot ? rgba(th.accent, 0.8) : th.line; ctx.lineWidth = 1; ctx.stroke();
+      };
       const pl = { skin: look.skin, color: (c) => (this.view.mono ? look.monoColor : look.colors[c]), t: now };
+      const top = s * 0.75;
       // Hold
       if (!g.mods.noHold) {
-        ctx.fillText('HOLD', hold.x + 2, hold.y);
-        const box = { x: hold.x, y: hold.y + s * 0.7, w: hold.w, h: hold.h - s * 0.7 };
-        if (this.holdHover) { ctx.fillStyle = rgba(th.accent, 0.12); rr(ctx, box.x + 0.5, box.y + 0.5, box.w - 1, box.h - 1, 6); ctx.fill(); }
-        ctx.strokeStyle = this.holdHover ? th.accent : th.line; ctx.lineWidth = this.holdHover ? 1.5 : 1; rr(ctx, box.x + 0.5, box.y + 0.5, box.w - 1, box.h - 1, 6); ctx.stroke();
+        label('HOLD', hold.x, hold.y);
+        const box = { x: hold.x, y: hold.y + top, w: hold.w, h: hold.h - top };
+        tray(box, this.holdHover);
         if (g.hold) drawPieceIn(ctx, g.hold, box, s * 0.7, Object.assign({}, pl, { alpha: g.holdLocked && !g.freeHold ? 0.35 : 1 }));
       }
-      // Next
+      // Next: the queue in one tray, the piece coming first and largest.
       const n = Math.min(g.fixed ? g.queue.length : g.previewCount, g.queue.length);
-      ctx.fillStyle = th.muted;
-      ctx.fillText(g.fixed ? 'NEXT · ' + g.queue.length + ' LEFT' : 'NEXT', next.x + 2, next.y);
+      label(g.fixed ? 'NEXT · ' + g.queue.length + ' LEFT' : 'NEXT', next.x, next.y);
       if (nextDir === 'v') {
-        const slot = Math.min(s * 2.9, (next.h - s * 0.7) / Math.max(1, Math.min(n, 5)));
-        for (let i = 0; i < n; i++) {
-          const box = { x: next.x, y: next.y + s * 0.7 + i * slot, w: next.w, h: slot };
-          if (box.y + box.h > next.y + next.h + 1) break;
-          this.drawQueueItem(ctx, g.queue[i], box, i, s, pl);
-        }
+        const slot = Math.min(s * 2.9, (next.h - top) / Math.max(1, Math.min(n, 5)));
+        let shown = 0;
+        for (let i = 0; i < n; i++) if (next.y + top + (i + 1) * slot <= next.y + next.h + 1) shown++;
+        if (shown) tray({ x: next.x, y: next.y + top, w: next.w, h: shown * slot + s * 0.2 });
+        for (let i = 0; i < shown; i++) this.drawQueueItem(ctx, g.queue[i], { x: next.x, y: next.y + top + s * 0.1 + i * slot, w: next.w, h: slot }, i, s, pl);
       } else {
         const slot = Math.min(s * 3.2, next.w / Math.max(1, Math.min(n, 5)));
-        for (let i = 0; i < n; i++) {
-          const box = { x: next.x + i * slot, y: next.y + s * 0.7, w: slot, h: next.h - s * 0.7 };
-          if (box.x + box.w > next.x + next.w + 1) break;
-          this.drawQueueItem(ctx, g.queue[i], box, i, s, pl);
-        }
+        let shown = 0;
+        for (let i = 0; i < n; i++) if (next.x + (i + 1) * slot <= next.x + next.w + 1) shown++;
+        if (shown) tray({ x: next.x, y: next.y + top, w: shown * slot, h: next.h - top });
+        for (let i = 0; i < shown; i++) this.drawQueueItem(ctx, g.queue[i], { x: next.x + i * slot, y: next.y + top, w: slot, h: next.h - top }, i, s, pl);
       }
+      if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
       ctx.restore();
     }
 

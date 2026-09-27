@@ -63,6 +63,8 @@
     handheld: { name: 'Handheld', price: 750, colors: ['#000', '#9bbc0f', '#8bac0f', '#306230', '#8bac0f', '#306230', '#0f380f', '#9bbc0f', '#0f380f', '#8bac0f', '#306230', '#9bbc0f', '#306230', '#8bac0f', '#0f380f', '#cadc9f'] },
     vapor:    { name: 'Vapor', price: 900, colors: ['#000', '#01cdfe', '#fffb96', '#b967ff', '#05ffa1', '#ff71ce', '#7b8cff', '#ffb3fd', '#50456b', '#ff9ff3', '#a3fff0', '#6effd6', '#c89bff', '#ffa3c7', '#9f95c9', '#fdf6ff'] },
     assembly: { name: 'Assembly Line', price: 0, reward: 'Build a second press in the factory', colors: ['#000', '#f2c14e', '#f78154', '#4d9078', '#b4436c', '#5fad56', '#2e86ab', '#f2a541', '#3d4451', '#e0a458', '#8bb174', '#5b8e7d', '#a1869e', '#d1495b', '#8d99ae', '#edf2f4'] },
+    mist:     { name: 'Mist', price: 550, colors: ['#000', '#9fd4dc', '#e6dcb4', '#b7a8d6', '#a9cfb4', '#dca7b0', '#9fb5da', '#e5c1a2', '#68707e', '#d6b3c9', '#c3d6ae', '#a6d1c9', '#b5aee0', '#e3b8a6', '#aab3bf', '#eef1f5'] },
+    aurora:   { name: 'Aurora', price: 700, colors: ['#000', '#5ee6c8', '#c8f07a', '#9f7cf5', '#4fd1a0', '#e46fb4', '#5b9df0', '#f0b86a', '#3c4660', '#c285f0', '#86e3b8', '#58c9e0', '#7d86f2', '#ef8fa0', '#8e9cc0', '#e9f6ff'] },
     gold:     { name: 'Gold Leaf', price: 2500, colors: ['#000', '#f9e79f', '#f4d03f', '#d4ac0d', '#f7dc6f', '#b7950b', '#e9c46a', '#fcf3cf', '#5a4a1f', '#f5cba7', '#e59866', '#dc7633', '#f0b27a', '#ca6f1e', '#b9a37a', '#fffaf0'] },
     prism:    { name: 'Prism', price: 4000, animated: true, colors: null },
   };
@@ -78,7 +80,9 @@
     neon:    { name: 'Neon Tube', price: 800 },
     brick:   { name: 'Brick', price: 900 },
     gem:     { name: 'Gem', price: 1200 },
+    satin:   { name: 'Satin', price: 650 },
     jelly:   { name: 'Jelly', price: 1500 },
+    lantern: { name: 'Lantern', price: 1800 },
     steel:   { name: 'Steel', price: 0, reward: 'Build all four factory presses' },
   };
 
@@ -101,6 +105,7 @@
     blueprint: { name: 'Blueprint', price: 400 },
     dusk:      { name: 'Dusk', price: 600 },
     stars:     { name: 'Starfield', price: 800 },
+    aurora:    { name: 'Aurora', price: 900 },
     belt:      { name: 'Conveyor', price: 0, reward: 'Collect 500 lines from the factory' },
   };
 
@@ -109,6 +114,7 @@
     sparkle:  { name: 'Sparkle', price: 500 },
     ripple:   { name: 'Ripple', price: 700 },
     shatter:  { name: 'Shatter', price: 900 },
+    bloom:    { name: 'Bloom', price: 800 },
     confetti: { name: 'Confetti', price: 1200 },
     sparks:   { name: 'Welding Sparks', price: 0, reward: 'Build the tallest factory bin' },
   };
@@ -116,6 +122,7 @@
   const GHOSTS = {
     outline: { name: 'Outline', price: 0 },
     faint:   { name: 'Faint', price: 100 },
+    soft:    { name: 'Soft', price: 120 },
     dotted:  { name: 'Dotted', price: 150 },
     glow:    { name: 'Glow', price: 250 },
     off:     { name: 'Off', price: 0 },
@@ -154,7 +161,7 @@
       settings: {
         bg: 'glass', tint: 0.78, accent: ACCENTS[0], theme: 'dark', onTop: true, fadeAway: true,
         sound: true, volume: 0.35, das: 230, arr: 55, lowerRepeat: 70, mouse: true, preview: 5,
-        motion: 'full', showKeys: true, music: true, musicVolume: 0.25, announcer: true, announcerRelaxed: false, announcerVolume: 0.4, ccwPuzzles: false,
+        motion: 'full', showKeys: true, music: true, musicVolume: 0.25, announcer: true, announcerRelaxed: false, announcerVolume: 0.35, ccwPuzzles: false, pauseAway: true,
         muted: false, // the top bar's mute (M): over everything, separate from the toggles and volumes above
         hints: true, // control hints (js/hints.js); they retire on their own either way
       },

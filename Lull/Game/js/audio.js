@@ -1042,7 +1042,9 @@
    */
   const Announcer = {
     enabled: true,
-    volume: 0.4,
+    volume: 0.35,
+    /** The bus's gain at full volume: her calls sit clearly under the sound effects (about 8 dB at the default). */
+    TRIM: 0.4,
     buffers: {},
     /**
      * The voice's mixing desk, built once: the raw clips are thinned below 170 Hz, the boxy low-mids and the bright,
@@ -1056,7 +1058,7 @@
       const hp = node('highpass', 170, 0.7), mud = node('peaking', 380, 1, -3.5), air = node('highshelf', 5200, null, -6), lp = node('lowpass', 8500, 0.5);
       const comp = ctx.createDynamicsCompressor();
       comp.threshold.value = -26; comp.knee.value = 12; comp.ratio.value = 3; comp.attack.value = 0.006; comp.release.value = 0.18;
-      const level = this.level = ctx.createGain(); level.gain.value = this.volume * 0.62;
+      const level = this.level = ctx.createGain(); level.gain.value = this.volume * this.TRIM;
       this.input = ctx.createGain();
       this.input.connect(hp).connect(mud).connect(air).connect(lp).connect(comp).connect(level);
       level.connect(Sound.master);
@@ -1073,7 +1075,7 @@
       merger.connect(Sound.master);
       return this.input;
     },
-    setVolume(v) { if (v === this.volume) return; this.volume = v; if (this.level) this.level.gain.value = v * 0.62; },
+    setVolume(v) { if (v === this.volume) return; this.volume = v; if (this.level) this.level.gain.value = v * this.TRIM; },
     decode(key) {
       const ctx = Sound.ensure();
       const b64 = (L.VOICE_CLIPS || {})[key];

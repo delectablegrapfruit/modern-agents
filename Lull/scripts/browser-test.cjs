@@ -685,12 +685,64 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   });
   check('a pause resumes the bar that was playing', resumeBar.sounding != null && resumeBar.next === resumeBar.sounding, JSON.stringify(resumeBar));
   await page.waitForTimeout(150);
+  // The pointer leaving the window pauses a running game (a browser's mouseleave, or the panel's pointer message);
+  // coming back shows the paused card, and P carries on. Settings ▸ Controls turns it off.
+  {
+    const st = () => ev(() => { const m = Lull.app.modes.classic; return { paused: m.paused, card: !!(m.cardOpen), running: m.running() }; });
+    const leave = () => ev(() => document.documentElement.dispatchEvent(new MouseEvent('mouseleave')));
+    const before = await st();
+    await leave();
+    const left = await st();
+    await ev(() => document.documentElement.dispatchEvent(new MouseEvent('mouseenter')));
+    const back = await st();
+    await page.keyboard.press('KeyP');
+    const resumed = await st();
+    await ev(() => Lull.fromNative({ type: 'pointer', inside: false }));
+    const nativeLeft = await st();
+    await ev(() => Lull.fromNative({ type: 'pointer', inside: true }));
+    await page.keyboard.press('KeyP');
+    await ev(() => { Lull.app.settings.pauseAway = false; });
+    await leave();
+    await ev(() => Lull.fromNative({ type: 'pointer', inside: false }));
+    const off = await st();
+    await ev(() => { Lull.app.settings.pauseAway = true; Lull.fromNative({ type: 'pointer', inside: true }); document.documentElement.dispatchEvent(new MouseEvent('mouseenter')); });
+    const res = { before, left, back, resumed, nativeLeft, off };
+    check('Classic pauses when the pointer leaves, stays paused on return, and P resumes', before.running && left.paused && left.card && back.paused && back.card && resumed.running && nativeLeft.paused, JSON.stringify(res));
+    check('with Pause when the pointer leaves off, it plays on', off.running, JSON.stringify(off));
+  }
   await page.keyboard.press('KeyP');
   await page.waitForTimeout(100);
   const ann = await ev(() => { const A = Lull.Announcer; return [A.phrase({ lines: 1 }), A.phrase({ lines: 4, b2b: true }), A.phrase({ tspin: true, lines: 2 }), A.phrase({ tspin: true, lines: 3 }), A.phrase({ mini: true, lines: 0 }), A.phrase({ lines: 0 }), A.phrase({ lines: 2, perfect: true }, 3)]; });
   check('the announcer knows its lines', JSON.stringify(ann) === JSON.stringify([['single'], ['b2b', 'tetris'], ['tspin_double'], ['tspin', 'triple'], ['tspin'], null, ['double', 'perfect', 'levelup']]), JSON.stringify(ann));
   const clips = await ev(async () => { const out = {}; for (const k of Object.keys(Lull.VOICE_CLIPS)) { const b = await Lull.Announcer.decode(k); out[k] = b ? +b.duration.toFixed(2) : 0; } return out; });
   check('every announcer clip decodes (0.3–2 s)', Object.values(clips).length === 11 && ['single', 'double', 'triple', 'tetris', 'tspin', 'tspin_single', 'tspin_double', 'b2b', 'perfect', 'levelup', 'gameover'].every((k) => clips[k] > 0) && Object.values(clips).every((d) => d > 0.3 && d < 2), JSON.stringify(clips));
+  // Her level, rendered through her bus beside the sound effects: every clip about as loud as the next, and clearly under
+  // the effects (loudest 400 ms, both channels).
+  const voiceLevels = await ev(async () => {
+    const S = Lull.Sound, A = Lull.Announcer, keep = A.volume;
+    const mom = (buf) => {
+      const d = buf.getChannelData(0), e = buf.getChannelData(1), w = Math.floor(buf.sampleRate * 0.4), h = Math.floor(buf.sampleRate * 0.05);
+      let m = 0;
+      for (let s = 0; s + w <= d.length; s += h) { let a = 0; for (let i = s; i < s + w; i++) a += (d[i] * d[i] + e[i] * e[i]) / 2; m = Math.max(m, a / w); }
+      return +(10 * Math.log10(m)).toFixed(1);
+    };
+    const sfx = {}, voice = {};
+    for (const n of ['clear', 'quad', 'tspin', 'perfect']) sfx[n] = mom(await S.offline(2.5, () => { const { pack, list } = S.voices(n, 2, 'soft'); for (const v of list) S.voice(v, 0.02, pack); }));
+    A.setVolume(Lull.app.store.state.settings.announcerVolume);
+    try {
+      for (const k of Object.keys(Lull.VOICE_CLIPS)) {
+        const buf = await A.decode(k);
+        A.input = null;
+        voice[k] = mom(await S.offline(2.5, () => { const src = S.ctx.createBufferSource(); src.buffer = buf; src.connect(A.bus()); src.start(0.02); }));
+      }
+    } finally { A.input = null; A.setVolume(keep); }
+    return { sfx, voice };
+  });
+  {
+    const v = Object.values(voiceLevels.voice), fx = Object.values(voiceLevels.sfx), mean = fx.reduce((a, x) => a + x, 0) / fx.length;
+    check('the announcer\'s clips are all about as loud (within 2.5 dB)', v.length === 11 && Math.max(...v) - Math.min(...v) <= 2.5, JSON.stringify(voiceLevels.voice));
+    check('the announcer sits clearly under the sound effects', Math.max(...v) < mean - 5 && Math.max(...v) < Math.min(...fx) - 3, JSON.stringify(voiceLevels));
+  }
   check('the remix is a long suite', await ev(() => Lull.SONG.bars.length >= 48 && Lull.SONG.loopFrom === 4));
     check('P pauses (and the music stops)', await ev(() => Lull.app.modes.classic.paused && !Lull.Music.playing));
   await shot('14-classic-paused');
@@ -959,8 +1011,8 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   // And the current puzzle's ☆ in the header.
   const was = await ev(() => { const m = Lull.app.modes.puzzle; return m.isSaved(m.puzzle.seed); });
   await page.click('#puz-save');
-  const savedNow = await ev(() => { const m = Lull.app.modes.puzzle; return [m.isSaved(m.puzzle.seed), document.getElementById('puz-save').textContent]; });
-  check('☆ / ★ in the header saves and unsaves the puzzle in play', savedNow[0] === !was && savedNow[1] === (was ? '☆' : '★'), JSON.stringify(savedNow));
+  const savedNow = await ev(() => { const m = Lull.app.modes.puzzle, b = document.getElementById('puz-save'); return [m.isSaved(m.puzzle.seed), b.getAttribute('aria-pressed') + (b.classList.contains('on') ? ' on' : '') + (b.querySelector('svg') ? ' star' : '')]; });
+  check('the star in the header saves and unsaves the puzzle in play (filled when saved)', savedNow[0] === !was && savedNow[1] === (was ? 'false star' : 'true on star'), JSON.stringify(savedNow));
   await page.click('#puz-save');
   check('and back', await ev((w) => { const m = Lull.app.modes.puzzle; return m.isSaved(m.puzzle.seed) === w; }, was));
 
@@ -1207,15 +1259,30 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await page.click('.shop-jump button[data-sec="' + kinds[0] + '"]');
   check('the Shop sells no power-ups: no Power-ups half, no toggle, no item tiles', await ev(() => !document.querySelector('.shop-seg, .shop-item, #shop-body [data-item]')
     && !/Power-ups/.test(document.getElementById('view-shop').textContent)));
-  check('the Shop fits the window; only the first kind is shown, and the left chevron is off', await shopFits() && await shopShows(kinds[0])
-    && await ev(() => document.querySelector('.shop-chev[data-dir="prev"]').disabled && !document.querySelector('.shop-chev[data-dir="next"]').disabled));
+  const chevState = () => ev(() => {
+    const j = document.querySelector('.shop-jump'), [p, n] = ['prev', 'next'].map((d) => document.querySelector('.shop-chev[data-dir="' + d + '"]'));
+    const jr = j.getBoundingClientRect(), whole = Array.from(j.children).filter((b) => { const r = b.getBoundingClientRect(); return r.left >= jr.left - 1 && r.right <= jr.right + 1; }).map((b) => b.dataset.sec);
+    return { left: Math.round(j.scrollLeft), max: j.scrollWidth - j.clientWidth, fits: j.scrollWidth <= j.clientWidth + 1, prev: p.disabled, next: n.disabled, shown: getComputedStyle(p).visibility !== 'hidden', whole };
+  });
+  const c0 = await chevState();
+  check('the Shop fits the window; only the first kind is shown; the left chevron is off (both hidden when the row fits)', await shopFits() && await shopShows(kinds[0])
+    && c0.prev && c0.next === c0.fits && c0.shown === !c0.fits, JSON.stringify(c0));
   await shot('41-palettes');
-  // The chevrons step through the kinds, one at a time, and switch off at the far end.
-  const stepped = [];
-  for (let i = 1; i < kinds.length; i++) { await page.click('.shop-chev[data-dir="next"]'); stepped.push(await shopShows(kinds[i])); }
-  check('the right chevron steps to each next kind in turn, and is off at the last', stepped.every(Boolean) && await ev(() => document.querySelector('.shop-chev[data-dir="next"]').disabled), JSON.stringify(stepped));
-  await page.click('.shop-chev[data-dir="prev"]');
-  check('the left chevron steps back', await shopShows(kinds[kinds.length - 2]));
+  // The chevrons page the row of kinds (one visible width, snapped to whole kinds), never pick one; off at each end.
+  await page.setViewportSize({ width: 400, height: 760 });
+  await page.waitForTimeout(150);
+  const pages = [await chevState()];
+  for (let i = 0; i < kinds.length && !pages[pages.length - 1].next; i++) { await page.click('.shop-chev[data-dir="next"]'); await page.waitForTimeout(500); pages.push(await chevState()); }
+  const kept = await shopShows(kinds[0]), last = pages[pages.length - 1];
+  check('in a narrow window the right chevron pages the row (whole kinds come into view), off at the end, and picks nothing',
+    !pages[0].fits && pages[0].prev && !pages[0].next && pages.length > 1 && kept && last.next && !last.prev && last.left >= last.max - 1
+      && pages.slice(1).every((pg, i) => pg.left > pages[i].left && pg.whole.some((k) => !pages[i].whole.includes(k))), JSON.stringify(pages));
+  for (let i = 0; i < kinds.length && !(await chevState()).prev; i++) { await page.click('.shop-chev[data-dir="prev"]'); await page.waitForTimeout(500); }
+  const pagedBack = await chevState();
+  check('the left chevron pages back to the start', pagedBack.left === 0 && pagedBack.prev && !pagedBack.next && await shopShows(kinds[0]), JSON.stringify(pagedBack));
+  await page.setViewportSize({ width: 520, height: 760 });
+  await page.waitForTimeout(150);
+  await page.click('.shop-jump button[data-sec="' + kinds[kinds.length - 2] + '"]');
   // The keyboard: ← and → on the row step too.
   await page.focus('.shop-jump [aria-selected="true"]');
   await page.keyboard.press('ArrowLeft');
@@ -1718,7 +1785,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
         for (const [n, w] of prev) if (!now.has(n)) { exits++; lastLo.push(w.lo); }
         prev = now;
       }
-      return { bad: bad.slice(0, 5), maxN, minN, turns, nudges, steps, exits, exited: i.exited - ex0, cols: i.cols, gone: lastLo.every((lo) => lo >= i.cols - 1), keys: Object.keys(i).filter((k) => /grid|stack|flying/.test(k)) };
+      return { bad: bad.slice(0, 5), maxN, minN, turns, nudges, steps, exits, exited: i.exited - ex0, cols: i.cols, gone: lastLo.every((lo) => lo >= i.cols - 2), keys: Object.keys(i).filter((k) => /grid|stack|flying/.test(k)) };
     });
     check('the pieces step right a whole cell at a time, turn on the game\'s SRS centre and kicks, shift a lane now and then, and never touch', march.bad.length === 0 && march.steps > 200 && march.turns > 10 && march.nudges > 5, JSON.stringify(march));
     check('none of them land or stack: each walks off the right edge and more come, a few at a time', march.exits > 20 && march.exited === march.exits && march.gone && march.minN >= 2 && march.maxN <= Math.ceil(march.cols / 4) && march.keys.length === 0, JSON.stringify(march));

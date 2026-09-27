@@ -27,23 +27,9 @@
     return el;
   }
 
-  const ICONS = {
-    play: '<svg viewBox="0 0 16 16" fill="currentColor"><rect x="1.5" y="8.5" width="4" height="4" rx="0.8"/><rect x="6" y="8.5" width="4" height="4" rx="0.8"/><rect x="10.5" y="8.5" width="4" height="4" rx="0.8"/><rect x="6" y="4" width="4" height="4" rx="0.8"/></svg>',
-    puzzle: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="5" height="5" rx="0.8" fill="currentColor" stroke="none"/><rect x="9" y="9" width="5" height="5" rx="0.8" fill="currentColor" stroke="none"/><rect x="9" y="2" width="5" height="5" rx="0.8" stroke-dasharray="1.6 1.4"/><rect x="2" y="9" width="5" height="5" rx="0.8" stroke-dasharray="1.6 1.4"/></svg>',
-    factory: '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 14.5V7.2l4 2.3V7.2l4 2.3V3h1.8v-1.5h1.6V3h1.6v11.5z"/></svg>',
-    shop: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M3 5.5h10l-.8 8.5H3.8z"/><path d="M5.8 5.5V4.3a2.2 2.2 0 0 1 4.4 0v1.2"/></svg>',
-    classic: '<svg viewBox="0 0 16 16" fill="currentColor"><rect x="6" y="1.5" width="4" height="4" rx="0.7"/><rect x="2" y="10.5" width="4" height="4" rx="0.7"/><rect x="6" y="10.5" width="4" height="4" rx="0.7"/><rect x="10" y="10.5" width="4" height="4" rx="0.7"/><path d="M8 6.5v2.5M6.6 7.8L8 9.2l1.4-1.4" stroke="currentColor" stroke-width="1.2" fill="none" stroke-linecap="round"/></svg>',
-    trophy: '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 2h8v1.2h2.2v1.3c0 1.8-1.2 3.1-2.9 3.3A4 4 0 0 1 8.7 10v1.6h2.1V14H5.2v-2.4h2.1V10a4 4 0 0 1-2.6-2.2C3 7.6 1.8 6.3 1.8 4.5V3.2H4zm0 2.4H3.1v.1c0 .9.4 1.6 1.1 1.9A5 5 0 0 1 4 5.3zm8 0v.9c0 .4 0 .7-.2 1.1.7-.3 1.1-1 1.1-1.9v-.1z"/></svg>',
-    stats: '<svg viewBox="0 0 16 16" fill="currentColor"><rect x="2" y="8" width="3" height="6" rx="0.7"/><rect x="6.5" y="3" width="3" height="11" rx="0.7"/><rect x="11" y="6" width="3" height="8" rx="0.7"/></svg>',
-    settings: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M2 4h7M12 4h2M2 8h2M7 8h7M2 12h8M13 12h1"/><circle cx="10.5" cy="4" r="1.5"/><circle cx="5.5" cy="8" r="1.5"/><circle cx="11.5" cy="12" r="1.5"/></svg>',
-    pin: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><rect x="3" y="2.5" width="10" height="7" rx="1.5"/><path d="M5.5 12.5h5M8 9.5v4"/></svg>',
-    hide: '<svg viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 8.5h8"/></svg>',
-    sound: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6.2h2.2L8 3.5v9L4.7 9.8H2.5z"/><path d="M10.6 6a2.8 2.8 0 0 1 0 4M12.4 4.2a5.4 5.4 0 0 1 0 7.6"/></svg>',
-    muted: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6.2h2.2L8 3.5v9L4.7 9.8H2.5z"/><path d="M10.6 6a2.8 2.8 0 0 1 .5 2.6M2.5 2.5l11 11"/></svg>',
-    // The currency, large: a line running into a dark disc with a thin glowing ring (text uses LINE, the same shape).
-    line: '<svg viewBox="0 0 22 14" aria-hidden="true"><circle cx="11" cy="7" r="6.4" fill="currentColor" opacity="0.10"/><circle cx="11" cy="7" r="4.9" fill="currentColor" opacity="0.16"/><path d="M0.6 7Q0.6 6.55 1.1 6.5L7.2 5.9 7.2 8.1 1.1 7.5Q0.6 7.45 0.6 7ZM21.4 7Q21.4 6.55 20.9 6.5L14.8 5.9 14.8 8.1 20.9 7.5Q21.4 7.45 21.4 7Z" fill="currentColor"/><circle cx="11" cy="7" r="3.55" fill="#05070c" stroke="currentColor" stroke-width="1.3"/></svg>',
-    close: '<svg viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg>',
-  };
+  // The icon set lives in js/icons.js: one family, one grid, one stroke.
+  const ICONS = L.Icons.I;
+  const icon = (name, cls) => h('span', { class: 'ico' + (cls ? ' ' + cls : ''), html: L.Icons.icon(name), 'aria-hidden': 'true' });
 
   // ---- toasts and modals ----------------------------------------------------------------------------------------------
 
@@ -53,12 +39,12 @@
     app.sound.preview(id);
   }
 
-  function toast(msg, kind, ms) {
+  function toast(msg, kind, ms, ico) {
     const box = document.getElementById('toasts');
     // Above a board tab's bars (status, items, controls, puzzle actions), never over them.
     const bar = document.querySelector('.view.active > .statusbar, .view.active > .puz-actions'), holder = box.offsetParent;
     box.style.bottom = bar && holder ? Math.max(14, Math.round(holder.getBoundingClientRect().bottom - bar.getBoundingClientRect().top + 8)) + 'px' : '';
-    const el = h('div', { class: 'toast ' + (kind || '') }, msg);
+    const el = h('div', { class: 'toast ' + (kind || '') }, ico ? icon(ico) : null, msg);
     box.appendChild(el);
     while (box.children.length > 3) box.removeChild(box.firstChild);
     setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 300); }, ms || 2600);
@@ -79,7 +65,7 @@
       onclick: () => { if (b.onClick && b.onClick() === false) return; close(); },
     }, b.label))) : null;
     const modal = h('div', { class: 'modal' + (opts.cls ? ' ' + opts.cls : ''), role: 'dialog', style: opts.width ? { width: 'min(' + opts.width + 'px, calc(100% - 24px))' } : null },
-      h('header', null, opts.title || '', h('button', { class: 'icon-btn x', html: ICONS.close, title: 'Close', onclick: close })),
+      h('header', null, opts.icon ? icon(opts.icon) : null, opts.title || '', h('button', { class: 'icon-btn x', html: ICONS.close, 'aria-label': 'Close', onclick: close })),
       h('div', { class: 'body' }, opts.body),
       footer);
     const scrim = h('div', { class: 'scrim', onmousedown: (e) => { if (e.target === scrim) close(); } }, modal);
@@ -101,8 +87,8 @@
     return false;
   }
 
-  function confirm(title, text, okLabel, onOk, kind) {
-    return openModal({ title, body: text ? h('p', null, text) : null, buttons: [{ label: 'Cancel' }, { label: okLabel || 'OK', kind: kind || 'primary', onClick: onOk }] });
+  function confirm(title, text, okLabel, onOk, kind, ico) {
+    return openModal({ title, icon: ico, body: !text ? null : typeof text === 'string' ? h('p', null, text) : text, buttons: [{ label: 'Cancel' }, { label: okLabel || 'OK', kind: kind || 'primary', onClick: onOk }] });
   }
 
   // ---- small canvases -------------------------------------------------------------------------------------------------
@@ -133,6 +119,8 @@
   }
 
   function cosmeticPreview(app, kind, id, w, hh) {
+    // At least this big, whatever the caller asks: a look should be seen, not squinted at.
+    w = Math.max(w, 164); hh = Math.max(hh, 84);
     const look = lookWith(app, kind, id);
     return canvasFor(w, hh, (ctx) => {
       if (kind === 'effect') {
@@ -151,10 +139,19 @@
         fx.draw(ctx);
       } else {
         // A small board: palettes and skins show a stack in every colour, the rest a grey stack with a piece coming down.
-        const cols = 8, rows = 4, colour = kind === 'palette' || kind === 'skin';
-        const s = Math.floor(Math.min((hh - 14) / rows, (w - 20) / cols));
+        // Skins get fewer, larger cells, so the surface itself can be seen.
+        const big = kind === 'skin';
+        const cols = big ? 6 : 8, rows = big ? 3 : 4, colour = kind === 'palette' || kind === 'skin';
+        const room = kind === 'frame' ? 28 : 16; // a frame needs room around the board to be seen
+        const s = Math.floor(Math.min((hh - room) / rows, (w - room - 8) / cols));
         const bw = s * cols, bh = s * rows, bx = Math.round((w - bw) / 2), by = Math.round((hh - bh) / 2);
         Render.drawBackdrop(ctx, look.backdrop, { x: bx, y: by, w: bw, h: bh }, s, cols, rows, app.theme, 0);
+        if (big) {
+          // An S, an L and an I lying down, a T above: four colours, every edge of the skin on show.
+          const cells = [[0, 2, 4], [1, 2, 4], [1, 1, 4], [2, 1, 4], [2, 2, 7], [3, 2, 7], [4, 2, 7], [4, 1, 7], [5, 2, 1], [5, 1, 1], [5, 0, 1], [0, 1, 3], [0, 0, 3], [3, 1, 2], [3, 0, 2], [2, 0, 2]];
+          for (const [cx, cy, c] of cells) Render.drawCell(ctx, look.skin, look.colors[c], bx + cx * s, by + cy * s, s);
+          return;
+        }
         const stack = [[0, 3, 6], [1, 3, 6], [2, 3, 6], [0, 2, 6], [5, 3, 4], [6, 3, 4], [5, 2, 5], [4, 2, 5], [7, 3, 1], [7, 2, 1], [7, 1, 1], [3, 3, 7], [4, 3, 7]];
         for (const [cx, cy, c] of stack) Render.drawCell(ctx, look.skin, look.colors[colour ? c : 8], bx + cx * s, by + cy * s, s);
         if (kind === 'ghost') {
@@ -172,8 +169,8 @@
 
   // ---- shop -----------------------------------------------------------------------------------------------------------
   //
-  // The wallet opens it. Cosmetics only, one kind at a time: a row of kinds with a chevron at each end picks which,
-  // and only that kind's tiles are shown (the list scrolls within it). A tile is a preview, a name and a price. Buying
+  // The wallet opens it. Cosmetics only, one kind at a time: a row of kinds (a chevron at each end pages it when it does
+  // not fit) picks which, and only that kind's tiles are shown (the list scrolls within it). A tile is a preview, a name and a price. Buying
   // is two calm clicks on the same spot — the price turns into Confirm for a few seconds — never a dialog.
 
   const SHOP_SHORT = { skin: 'Skins', effect: 'Clears' };
@@ -236,7 +233,7 @@
       const c = cat[id], own = app.store.owns(kind, id), on = st.equipped[kind] === id;
       const equip = () => { app.store.equip(kind, id); app.sound.play('move'); app.applyLook(); };
       let action;
-      if (on) action = h('span', { class: 'in-use' }, '✓ In use');
+      if (on) action = h('span', { class: 'in-use' }, 'In use');
       else if (own) action = h('button', { class: 'use-btn', onclick: (e) => { e.stopPropagation(); equip(); } }, 'Use');
       else if (c.reward) action = h('span', { class: 'reward-tag', html: LOCK + '<span>Factory</span>' });
       else action = priceButton(app, c.price, 'Buy ' + c.name, () => {
@@ -258,10 +255,11 @@
       }, preview, h('div', { class: 'foot' }, h('span', { class: 'nm' }, c.name), action));
     });
 
-    // The head: a chevron, the kinds (one lit), a chevron. Only the lit kind is shown below.
+    // The head: a chevron, the kinds (one lit), a chevron. Only the lit kind is shown below. The chevrons page the
+    // row of kinds (when it does not all fit), they never pick one.
     const chev = (d, label) => h('button', {
-      class: 'icon-btn shop-chev', 'data-dir': d < 0 ? 'prev' : 'next', 'aria-label': label, disabled: !kinds[at + d],
-      html: d < 0 ? CHEV_L : CHEV_R, onclick: () => step(d),
+      class: 'icon-btn shop-chev', 'data-dir': d < 0 ? 'prev' : 'next', 'aria-label': label,
+      html: d < 0 ? CHEV_L : CHEV_R, onclick: () => page(d),
     });
     const jump = h('nav', { class: 'shop-jump', role: 'tablist', 'aria-label': 'Cosmetics', tabindex: '-1' }, kinds.map((k) =>
       h('button', {
@@ -275,7 +273,26 @@
       step(d);
     });
     jump.addEventListener('wheel', (e) => { if (jump.scrollWidth > jump.clientWidth && Math.abs(e.deltaY) > Math.abs(e.deltaX)) { jump.scrollLeft += e.deltaY; e.preventDefault(); } }, { passive: false });
-    head.replaceChildren(chev(-1, 'Previous'), jump, chev(1, 'Next'));
+    const prevBtn = chev(-1, 'Scroll left'), nextBtn = chev(1, 'Scroll right');
+    head.replaceChildren(prevBtn, jump, nextBtn);
+    // One page of the row: its visible width, snapped so the first kind cut off (or hidden) on that side comes fully
+    // into view just inside the faded edge.
+    const page = (d) => {
+      const view = jump.clientWidth, max = jump.scrollWidth - view, pad = 28, x0 = jump.getBoundingClientRect().left - jump.scrollLeft;
+      const spans = Array.from(jump.children).map((b) => { const r = b.getBoundingClientRect(); return [r.left - x0, r.right - x0]; });
+      let to;
+      if (d > 0) {
+        const edge = jump.scrollLeft + view - pad, cut = spans.find(([, r]) => r > edge + 1);
+        to = cut ? Math.min(cut[0] - pad, jump.scrollLeft + view) : max;
+      } else {
+        const edge = jump.scrollLeft + pad, cut = spans.filter(([l]) => l < edge - 1).pop();
+        to = cut ? Math.max(cut[1] + pad - view, jump.scrollLeft - view) : 0;
+      }
+      to = Math.max(0, Math.min(max, Math.round(to)));
+      if (to === jump.scrollLeft) return;
+      app.sound.play('move');
+      jump.scrollTo({ left: to, behavior: app.settings.motion === 'reduced' ? 'auto' : 'smooth' });
+    };
 
     body.dataset.sub = kind;
     body.replaceChildren(h('section', { class: 'shop-sec looks', 'data-sec': kind },
@@ -297,17 +314,24 @@
       shopUI.jumpLeft = jump.scrollLeft;
       jump.classList.toggle('fade-l', jump.scrollLeft > 1);
       jump.classList.toggle('fade-r', jump.scrollLeft + jump.clientWidth < jump.scrollWidth - 1);
+      // The chevrons: off at the ends, gone (keeping their room) when the row fits.
+      const fits = jump.scrollWidth <= jump.clientWidth + 1;
+      prevBtn.disabled = fits || jump.scrollLeft <= 1;
+      nextBtn.disabled = fits || jump.scrollLeft + jump.clientWidth >= jump.scrollWidth - 1;
+      for (const b of [prevBtn, nextBtn]) b.style.visibility = fits ? 'hidden' : '';
     };
     edges();
     jump.addEventListener('scroll', edges, { passive: true });
+    if (shopUI.ro) shopUI.ro.disconnect();
+    if (root.ResizeObserver) { shopUI.ro = new ResizeObserver(edges); shopUI.ro.observe(jump); }
     if (refocus) lit.focus({ preventScroll: true });
   }
 
-  const INFO = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 7.2v4"/><circle cx="8" cy="4.9" r="0.4" fill="currentColor"/></svg>';
-  const PLAY = '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M5 3.2v9.6c0 .5.5.8.9.5l7.3-4.8a.6.6 0 0 0 0-1L5.9 2.7c-.4-.3-.9 0-.9.5z"/></svg>';
-  const LOCK = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3.5" y="7" width="9" height="6.5" rx="1.3"/><path d="M5.5 7V5.3a2.5 2.5 0 0 1 5 0V7"/></svg>';
-  const CHEV_L = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg>';
-  const CHEV_R = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5L10.5 8 6 12.5"/></svg>';
+  const INFO = ICONS.info;
+  const PLAY = ICONS.playIcon;
+  const LOCK = ICONS.lock;
+  const CHEV_L = ICONS.chevLeft;
+  const CHEV_R = ICONS.chevRight;
 
   // Anywhere else, a price asking for confirmation goes back to its price.
   if (root.document) document.addEventListener('mousedown', (e) => { if (shopUI.armed && !shopUI.armed.contains(e.target)) disarmShop(); }, true);
@@ -357,7 +381,7 @@
     const row = (a) => {
       const when = got[a.id], pr = !when && a.progress ? a.progress(st) : null;
       return h('div', { class: 'ach' + (when ? ' got' : '') + (a.tier === 'legend' ? ' legend' : '') },
-        h('span', { class: 'ach-i' }, when ? '★' : a.tier === 'legend' ? '✦' : '·'),
+        h('span', { class: 'ach-i', html: L.Icons.icon(a.tier === 'legend' ? 'legend' : when ? 'starOn' : 'star') }),
         h('div', { class: 'grow' },
           h('div', { class: 't' }, a.name, a.tier === 'legend' ? h('span', { class: 'tier' }, 'Legendary') : null),
           h('div', { class: 'd' }, a.desc + (when ? ' · ' + new Date(when).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : '')),
@@ -373,7 +397,7 @@
       const plain = list.filter((a) => a.tier !== 'legend' && shown(a)), leg = list.filter((a) => a.tier === 'legend' && shown(a));
       els.push(h('details', { class: 'ach-group', 'data-group': g.id, open: !!open[g.id], ontoggle: (e) => { open[g.id] = e.currentTarget.open; } },
         h('summary', null,
-          h('span', { class: 'chev' }, '›'),
+          h('span', { class: 'chev', html: ICONS.chevRight }),
           h('b', null, g.name),
           g.note ? h('span', { class: 'ach-info', tabindex: '0', 'aria-label': g.noteTitle + ': ' + g.note, 'data-tip-title': g.noteTitle, 'data-tip': g.note, html: INFO,
             onclick: (e) => { e.preventDefault(); e.stopPropagation(); } }) : null,
@@ -461,7 +485,7 @@
         kpi(fmtInt(pz.E.fails + pz.M.fails + pz.H.fails), 'Retries')));
       els.push(h('h4', null, 'By difficulty'), h('table', { class: 'st cols' }, rows.map((r, i) => h('tr', null, r.map((c) => h(i ? 'td' : 'th', null, c))))));
       if (app.modes.puzzle) els.push(h('p', { class: 'pz-volume' }, app.modes.puzzle.volume()));
-      const modRows = Object.keys(Puzzles.MODS).map((m) => { const r = pz.mods[m] || { seen: 0, solved: 0 }; return [Puzzles.MODS[m].icon + ' ' + Puzzles.MODS[m].name, r.solved + ' / ' + r.seen]; });
+      const modRows = Object.keys(Puzzles.MODS).map((m) => { const r = pz.mods[m] || { seen: 0, solved: 0 }; return [h('span', null, icon('mod-' + m), Puzzles.MODS[m].name), r.solved + ' / ' + r.seen]; });
       els.push(h('h4', null, 'Wildcards (solved / met)'), table(modRows));
       els.push(h('h4', null, 'Puzzles solved, last 14 days'), historyChart(app, 'puzzles', 14));
     } else if (sub === 'factory') {
@@ -487,7 +511,7 @@
         kpi(fmtInt(Object.values(used).reduce((a, b) => a + b, 0)), 'Power-ups used'), kpi(fmtInt(S.lines.rewound), 'Lines rewound')));
       els.push(h('h4', null, 'Power-ups'), h('table', { class: 'st cols' },
         h('tr', null, h('th', null, ''), h('th', null, 'Bought'), h('th', null, 'Given'), h('th', null, 'Used'), h('th', null, 'Have')),
-        ITEM_ORDER.map((id) => h('tr', null, h('td', null, ITEMS[id].icon + ' ' + ITEMS[id].name), h('td', null, fmtInt(bought[id] || 0)), h('td', null, fmtInt(got[id] || 0)), h('td', null, fmtInt(used[id] || 0)), h('td', null, fmtInt(st.inventory[id] || 0))))));
+        ITEM_ORDER.map((id) => h('tr', null, h('td', null, icon('item-' + id), ITEMS[id].name), h('td', null, fmtInt(bought[id] || 0)), h('td', null, fmtInt(got[id] || 0)), h('td', null, fmtInt(used[id] || 0)), h('td', null, fmtInt(st.inventory[id] || 0))))));
       const ownedRows = Object.keys(COSMETICS).map((k) => [COSMETIC_LABELS[k], st.owned[k].length + ' / ' + Object.keys(COSMETICS[k]).length]);
       els.push(h('h4', null, 'Collection'), table(ownedRows));
     }
@@ -509,7 +533,11 @@
     const range = (k, min, max, step, unit, scale) => {
       scale = scale || 1;
       const val = h('span', { class: 'val' }, Math.round(s[k] * scale) + unit);
-      return h('div', { class: 'range' }, h('input', { type: 'range', min, max, step, value: s[k] * scale, oninput: (e) => { set(k, Number(e.target.value) / scale); val.textContent = Math.round(s[k] * scale) + unit; } }), val);
+      // The track fills to the value (--p), so a slider reads at a glance.
+      const fill = (el) => el.style.setProperty('--p', (100 * (el.value - min) / (max - min)).toFixed(1) + '%');
+      const input = h('input', { type: 'range', min, max, step, value: s[k] * scale, oninput: (e) => { set(k, Number(e.target.value) / scale); val.textContent = Math.round(s[k] * scale) + unit; fill(e.target); } });
+      fill(input);
+      return h('div', { class: 'range' }, input, val);
     };
     const tiles = (k, options, cls, onChange) => {
       const wrap = h('div', { class: 'tiles ' + (cls || '') });
@@ -524,7 +552,7 @@
 
     const sections = {
       look: {
-        icon: '◐', label: 'Look',
+        icon: 'look', label: 'Look',
         body: () => {
           // Tint strength only means something on the Tint background: elsewhere it is there, but off.
           const tint = row('Tint strength', null, range('tint', 20, 98, 1, '%', 100));
@@ -548,14 +576,14 @@
         },
       },
       window: isNative ? {
-        icon: '▭', label: 'Window',
+        icon: 'window', label: 'Window',
         body: () => [card(null,
           row('Float above other windows', null, toggle('onTop')),
           row('Fade when the pointer leaves', null, toggle('fadeAway')),
           row('Show and hide', null, h('kbd', { class: 'big' }, '⌥⌘L')))],
       } : null,
       controls: {
-        icon: '⌘', label: 'Controls',
+        icon: 'controls', label: 'Controls',
         body: () => [
           card('Keyboard',
             row('Repeat delay', null, range('das', 60, 400, 5, ' ms')),
@@ -565,12 +593,14 @@
             row('Mouse control', null, toggle('mouse'))),
           card('Board', row('Next pieces shown', null, range('preview', 1, 6, 1, '')),
             row('Control hints', null, toggle('hints'))),
+          card('Classic',
+            row('Pause when the pointer leaves', null, toggle('pauseAway'))),
           card('Puzzles',
             row('Counter-clockwise puzzles', 'New puzzles need Z or A', toggle('ccwPuzzles', () => { const pm = app.modes.puzzle; if (pm && pm.puzzle && !pm.done) pm.loadNumbered(pm.ps.diff); else if (pm && pm.puzzle) pm.renderNav(); }))),
         ],
       },
       sound: {
-        icon: '♪', label: 'Sound',
+        icon: 'sound', label: 'Sound',
         body: () => [card(null,
           row('Mute', null, toggle('muted')),
           row('Sound effects', null, toggle('sound')),
@@ -580,14 +610,14 @@
           row('Announcer in Relaxed', null, toggle('announcerRelaxed')),
           row('Music volume', null, range('musicVolume', 0, 60, 1, '%', 100)),
           row('Announcer volume', null, range('announcerVolume', 0, 100, 1, '%', 100)),
-          row('Sound pack', (L.SOUNDS[app.state.equipped.sound] || L.SOUNDS.soft).name, h('button', { class: 'btn sm', onclick: () => listen(app, app.state.equipped.sound) }, '► Listen')))],
+          row('Sound pack', (L.SOUNDS[app.state.equipped.sound] || L.SOUNDS.soft).name, h('button', { class: 'btn sm', onclick: () => listen(app, app.state.equipped.sound) }, icon('playIcon'), 'Listen')))],
       },
       keys: {
-        icon: '⌘', label: 'Keys',
+        icon: 'keys', label: 'Keys',
         body: () => [card(null, h('div', { class: 'keys' }, L.KEY_HELP.map(([k, d]) => [h('span', { class: 'k' }, h('kbd', null, k)), h('span', null, d)])))],
       },
       data: {
-        icon: '⛁', label: 'Data',
+        icon: 'data', label: 'Data',
         body: () => [
           card('Save', row('Your progress', null,
             h('div', { class: 'btns' }, h('button', { class: 'btn sm', onclick: () => openExport(app) }, 'Export'), h('button', { class: 'btn sm', onclick: () => openImport(app) }, 'Import')))),
@@ -607,7 +637,7 @@
       pane.replaceChildren(...sections[id].body());
       pane.scrollTop = 0;
     };
-    ids.forEach((id) => nav.appendChild(h('button', { 'data-id': id, onclick: () => show(id) }, h('span', { class: 'ni' }, sections[id].icon), h('span', null, sections[id].label))));
+    ids.forEach((id) => nav.appendChild(h('button', { 'data-id': id, onclick: () => show(id) }, h('span', { class: 'ni', html: L.Icons.icon(sections[id].icon) }), h('span', null, sections[id].label))));
     const body = h('div', { class: 'settings' }, nav, pane);
     const handle = openModal({ title: 'Settings', body, width: 620 });
     handle.el.classList.add('modal-settings');
@@ -712,7 +742,7 @@
       if (!el.isConnected) return;
       // (replaceChildren would print a null, so the missing parts are left out.)
       tip.replaceChildren(...[
-        el.dataset.tipTitle ? h('div', { class: 'tip-title' }, el.dataset.tipTitle) : null,
+        el.dataset.tipTitle ? h('div', { class: 'tip-title' }, el.dataset.tipIcon ? icon(el.dataset.tipIcon) : null, el.dataset.tipTitle) : null,
         h('div', { class: 'tip-body' }, el.dataset.tip),
         el.dataset.tipFoot ? h('div', { class: 'tip-foot' }, el.dataset.tipFoot) : null].filter(Boolean));
       // A name and a key (the title bar's small buttons) fit on one short line.
@@ -736,5 +766,5 @@
     document.addEventListener('keydown', hide, true);
   }
 
-  L.UI = { initTooltips, h, ICONS, toast, openModal, modalOpen, closeTopModal, submitTopModal, confirm, canvasFor, renderShop, refreshShopPrices, renderStats, renderAchievements, openSettings, openOrderSlip, openPickOfThree, openBlueprint, copyText, lookWith, drawMiniPiece };
+  L.UI = { initTooltips, h, ICONS, icon, toast, openModal, modalOpen, closeTopModal, submitTopModal, confirm, canvasFor, renderShop, refreshShopPrices, renderStats, renderAchievements, openSettings, openOrderSlip, openPickOfThree, openBlueprint, copyText, lookWith, drawMiniPiece };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

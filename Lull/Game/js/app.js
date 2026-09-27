@@ -77,7 +77,7 @@
       this.applyMute();
       const css = getComputedStyle(rootEl);
       const v = (k) => css.getPropertyValue(k).trim();
-      this.theme = { name: theme, well: v('--well'), grid: v('--grid'), line: v('--line-2'), muted: v('--muted'), fg: v('--fg'), accent: s.accent, fog: v('--fog'), mono: v('--mono') };
+      this.theme = { name: theme, well: v('--well'), grid: v('--grid'), line: v('--line-2'), muted: v('--muted'), fg: v('--fg'), accent: s.accent, fog: v('--fog'), mono: v('--mono'), faint: v('--faint'), hair: v('--line'), gem: v('--gem'), gold: v('--gold') };
       native.post('window', { bg: s.bg, onTop: !!s.onTop, fade: s.fadeAway !== false, theme, radius: 14 });
       if (s.fadeAway === false) document.body.classList.remove('away');
       const pin = document.getElementById('btn-pin');
@@ -232,6 +232,8 @@
       }
       // Messages from the native panel.
       // The pointer away from Lull: it dims (and, in a browser, fades; the panel fades itself natively).
+      // Classic pauses too (Settings ▸ Controls ▸ Pause Classic when the pointer leaves); P or Resume carries on.
+      document.documentElement.addEventListener('mouseleave', () => this.pointerLeft());
       if (!native.available) {
         document.documentElement.addEventListener('mouseleave', () => { if (this.settings.fadeAway !== false) document.body.classList.add('away'); });
         document.documentElement.addEventListener('mouseenter', () => document.body.classList.remove('away'));
@@ -241,13 +243,19 @@
         if (msg.type === 'flush') { this.saveNow(); native.post('flushed'); }
         else if (msg.type === 'shown') { this.focusedAt = performance.now(); this.modes.factory.catchUp(true); setTimeout(() => this.announceUnheard(), 400); }
         else if (msg.type === 'toggleTop') { this.settings.onTop = !this.settings.onTop; this.applySettings(); }
-        else if (msg.type === 'pointer') document.body.classList.toggle('away', !msg.inside);
+        else if (msg.type === 'pointer') { document.body.classList.toggle('away', !msg.inside); if (!msg.inside) this.pointerLeft(); }
         else if (msg.type === 'settings') this.openSettings();
         else if (msg.type === 'toggleCollapse') L.Collapse.toggle();
       };
     },
 
     activity() { this.lastActivity = performance.now(); },
+
+    /** The pointer has left Lull's window: a running Classic game pauses, as P would. */
+    pointerLeft() {
+      const c = this.modes.classic;
+      if (this.settings.pauseAway !== false && c && c.running()) c.togglePause(true);
+    },
 
     openSettings() { L.Collapse.set(false); UI.openSettings(this); },
 
@@ -266,8 +274,8 @@
 
     announce(got, away) {
       const legend = got.some((a) => a.tier === 'legend');
-      if (away && got.length > 3) toast('★ ' + got.length + ' achievements while you were away · +' + fmtInt(got.reduce((n, a) => n + a.pay, 0)) + ' ' + LINE, 'good', 6000);
-      else for (const a of got) toast((a.tier === 'legend' ? '✦ Legendary: ' : '★ ') + a.name + ' · +' + fmtInt(a.pay) + ' ' + LINE, 'good', a.tier === 'legend' ? 6000 : 3200);
+      if (away && got.length > 3) toast(got.length + ' achievements while you were away · +' + fmtInt(got.reduce((n, a) => n + a.pay, 0)) + ' ' + LINE, 'good', 6000, 'starOn');
+      else for (const a of got) toast((a.tier === 'legend' ? 'Legendary: ' : '') + a.name + ' · +' + fmtInt(a.pay) + ' ' + LINE, 'good legend-' + (a.tier === 'legend'), a.tier === 'legend' ? 6000 : 3200, a.tier === 'legend' ? 'legend' : 'starOn');
       this.sound.play(legend ? 'perfect' : 'solve');
     },
 

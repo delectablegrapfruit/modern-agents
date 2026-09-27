@@ -3,8 +3,8 @@
   'use strict';
   const L = (root.Lull = root.Lull || {});
 
-  const CHEVRON_UP = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 9.8L8 6.3l3.5 3.5"/></svg>';
-  const CHEVRON_DOWN = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 6.3L8 9.8l3.5-3.5"/></svg>';
+  const CHEVRON_UP = L.Icons.icon('chevUp');
+  const CHEVRON_DOWN = L.Icons.icon('chevDown');
 
   // ---- the idle bar --------------------------------------------------------------------------------------------------
   //
