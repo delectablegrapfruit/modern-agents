@@ -1,18 +1,22 @@
 import AppKit
 import Metal
 import SpriteKit
+import RoninArt
 import RoninCore
 
 /// `RONIN_SELFTEST=1 Ronin.app/Contents/MacOS/Ronin`: in a scratch save and a scratch defaults domain, checks the
-/// defaults (floor hints off, a Medium panel), grows the panel from its default corner and folds it there and back
-/// without it leaving the screen, shows what a new player first sees, makes the first cut and a whiff with real left
-/// and right mouse-button events, lets the autopilot clear stage 1, folds into the pill and back with the dead still
-/// lying there, advances from the banner, shows a new foe's card, fights a warlord, switches to Oni and rides a combo
+/// defaults (floor hints off, a Medium panel) and that what is drawn over a foe's head stays on the lane at every
+/// size, grows the panel from its default corner and folds it there and back without it leaving the screen, shows
+/// what a new player first sees, makes the first cut and a whiff with real left and right mouse-button events, lets
+/// the autopilot clear stage 1 and checks that its dead fall on under the card, folds into the pill and back and
+/// changes the size with the dead still lying there, advances from the banner, shows a new foe's card and checks it
+/// follows a resize, fights a warlord (his bar in the header, his blow coming), switches to Oni and rides a combo
 /// into bloodlust, falls and starts again from stage 1, switches back and finds Bushidō's stage and hearts kept, runs
-/// an endless stage straight into the next and checks that dragging the window holds the fight still, folds into the
-/// pill and back, checks that leaving pauses and gives the keys back (so a key typed elsewhere does nothing) and that
-/// coming back takes the dwell, and checks the save. Exits 0, or 1 saying what failed. With `RONIN_SNAPSHOTS=<dir>`
-/// it also writes what the panel showed along the way as PNGs, and fails if one cannot be taken.
+/// an endless stage straight into the next, checks that dragging the window holds the fight still and that a stage
+/// won with the pointer away does not start the next behind its back, folds into the pill and back, checks that
+/// leaving pauses and gives the keys back (so a key typed elsewhere does nothing) and that coming back takes the
+/// dwell, and checks the save. Exits 0, or 1 saying what failed. With `RONIN_SNAPSHOTS=<dir>` it also writes what
+/// the panel showed along the way as PNGs, and fails if one cannot be taken.
 enum SelfTest {
     static var enabled: Bool { ProcessInfo.processInfo.environment["RONIN_SELFTEST"] != nil }
 
@@ -51,6 +55,7 @@ enum SelfTest {
         Settings.defaults.removeObject(forKey: "size")
         guard !Settings.floorHints else { throw Failure("floor hints were on by default") }
         guard Settings.size == .medium else { throw Failure("the panel was not Medium by default") }
+        try checkOverhead()
         panel.setCompact(false)
         panel.setSize(.medium)
 
@@ -114,9 +119,11 @@ enum SelfTest {
         try await until("stage 1 ended", timeout: 60) { session.fight.outcome != nil }
         guard session.fight.outcome == .victory else { throw Failure("the autopilot lost stage 1") }
         print("stage 1: \(session.fight.stats.kills) kills in \(Int(session.fight.time))s, best combo \(session.fight.stats.bestCombo)")
-        // The flourish: the blood flicked away, the blade going home, before the card comes up.
+        // The flourish: the blood flicked away, the blade going home, before the card comes up. The last blow's freeze
+        // is long over, so the last man cut down is falling or down, not hanging in the air.
         try await pause(0.95)
         try snapshot("4-flourish", panel)
+        guard !scene.isFrozen else { throw Failure("the last blow's freeze never ran out: the dead hung in the air") }
         try await until("the banner", timeout: 5) { scene.isShowingBanner }
         try await pause(0.7)
         try snapshot("5-cleared", panel)
@@ -137,6 +144,13 @@ enum SelfTest {
         panel.setFloorHints(false)
         try await pause(0.1)
         guard scene.bodiesOnLane > 0 else { throw Failure("turning floor hints off swept away the dead") }
+        // Another size keeps them too (scaled with the lane), and the card with them.
+        panel.setSize(.medium)
+        try await pause(0.3)
+        guard scene.bodiesOnLane > 0 else { throw Failure("changing the size swept away the dead") }
+        guard scene.isShowingBanner else { throw Failure("changing the size took the card down") }
+        panel.setSize(.large)
+        try await pause(0.3)
 
         // Clicking the banner starts stage 2.
         click(.right, panel)
@@ -148,6 +162,13 @@ enum SelfTest {
         scene.loadFight(intro: true)
         try await pause(0.45)
         try snapshot("6-newcomer", panel)
+        // The card follows the panel to another size and back.
+        for option in [Settings.Size.medium, .large] {
+            panel.setSize(option)
+            try await pause(0.25)
+            guard let centre = scene.introCardCentre, abs(centre.x - scene.size.width / 2) < 1
+            else { throw Failure("the stage's card was left where it was when the panel changed size") }
+        }
 
         // A warlord, at the end of stage 5.
         session.jump(to: 5)
@@ -159,10 +180,20 @@ enum SelfTest {
         try await until("the warlord closed in", timeout: 10) { (session.fight.boss?.distance ?? 0) < 0.55 }
         try await pause(0.2)
         try snapshot("7-warlord", panel)
+        // His bar is up in the header, never across the fighters.
+        guard let bar = scene.bossBar, bar.minY >= scene.laneTop - 0.5 else { throw Failure("the warlord's bar was drawn over the lane") }
+        // His blow coming, and the marker over him that times it (not taken if he does not wind up soon).
+        let watching = Date()
+        while Date().timeIntervalSince(watching) < 3, session.fight.outcome == nil,
+              !(session.fight.boss.map { $0.phase == .windup && $0.progress > 0.4 } ?? false) {
+            try await pause(0.02)
+        }
+        if session.fight.boss?.phase == .windup { try snapshot("7b-warlord-windup", panel) } else { print("no warlord wind-up to show") }
         scene.timeScale = 3
         try await until("stage 5 ended", timeout: 40) { session.fight.outcome != nil }
         guard session.fight.outcome == .victory else { throw Failure("the autopilot lost to the warlord") }
-        try await pause(0.35)
+        // The killing swing's follow-through as he comes apart, his impact lines closing in.
+        try await pause(0.2)
         try snapshot("8-warlord-slain", panel)
 
         // Oni: three hearts and its own stage count. Bloodlust in the thick of its stage 7.
@@ -221,11 +252,28 @@ enum SelfTest {
         try await pause(0.3)
         guard !scene.isAwayPaused, session.fight.time > held else { throw Failure("letting go of the window did not let the fight run") }
 
+        // A stage won just as the pointer leaves goes on to the next, but does not start it: it waits, its card held,
+        // until the pointer comes back.
+        scene.timeScale = 5
+        try await until("an endless stage ended", timeout: 60) { session.fight.outcome != nil }
+        if session.fight.outcome == .victory {
+            let next = session.fight.stage + 1
+            scene.setAway(true)
+            try await until("the next endless stage", timeout: 5) { session.fight.stage == next }
+            guard scene.isAwayPaused, !scene.isEngaging, session.fight.time == 0, scene.cardsHeld
+            else { throw Failure("an endless stage went on into the next with the pointer away") }
+            panel.updatePauseState()
+            guard !scene.isAwayPaused else { throw Failure("the next endless stage did not start with the pointer back") }
+        } else {
+            print("the endless run fell at stage \(session.fight.stage): going on unseen not checked")
+        }
+        scene.timeScale = 1
+
         // Leaving the run keeps it as the best from stage 2.
         session.leaveEndless()
         scene.loadFight(intro: false)
         guard !session.career.isEndless, session.fight.stage == 6 else { throw Failure("leaving endless did not go back to the campaign") }
-        guard session.career.bestRun(from: 2)?.cleared == 1 else { throw Failure("the endless run left was not kept as a best") }
+        guard (session.career.bestRun(from: 2)?.cleared ?? 0) >= 1 else { throw Failure("the endless run left was not kept as a best") }
 
         // The pill and back.
         panel.setCompact(true)
@@ -273,6 +321,26 @@ enum SelfTest {
 
     private static func near(_ a: NSRect, _ b: NSRect) -> Bool {
         abs(a.minX - b.minX) < 0.5 && abs(a.minY - b.minY) < 0.5 && abs(a.width - b.width) < 0.5 && abs(a.height - b.height) < 0.5
+    }
+
+    /// Over every kind of foe (a gourd-bearer too), at every size: the warning marker of a blow coming stays on the
+    /// lane, under the header (which holds the warlord's bar), and still over his head, not down in his face.
+    @MainActor
+    private static func checkOverhead() throws {
+        for option in Settings.Size.allCases {
+            let lane = DuelScene.lane(in: PanelController.contentSize(option))
+            let room = lane.field.maxY - lane.groundY
+            for kind in Kind.allCases {
+                for gourd in kind == .grunt || kind == .runner ? [false, true] : [false] {
+                    let top = FoeSprite.overheadTop(kind: kind, ronin: lane.ronin, headroom: room, gourd: gourd)
+                    let marker = FoeSprite.overhead(kind: kind, ronin: lane.ronin, headroom: room, gourd: gourd).marker
+                    let height = lane.ronin * Build.of(.foe(kind)).height
+                    guard top <= room + 0.01, marker >= height * 1.05 else {
+                        throw Failure("the marker over a \(kind.title) at \(option.title) is at \(marker) (his height \(height)), its top at \(top) of \(room)")
+                    }
+                }
+            }
+        }
     }
 
     /// A real mouse-button event on the lane: the left button, or the right.
