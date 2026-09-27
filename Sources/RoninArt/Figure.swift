@@ -1194,8 +1194,8 @@ public enum Figure {
                 break
             }
             if frame == .stagger(0) {
-                // Rocked back where he stands, on his own stance's footing (so a blow, or the freeze of a killing
-                // one, leaves his feet where they were), the hips thrown back over the back foot.
+                // Rocked back where he stands, on his own stance's footing (so a blow taken in his stance, or the
+                // freeze of a killing one, leaves his feet where they were), the hips thrown back over the back foot.
                 let feet = footing(stance(cast)), hip = v(p.shift, 0)
                 let reach = thigh + shin - 0.012
                 func highest(_ f: CGPoint) -> CGFloat { f.y + (reach * reach - (f.x - hip.x) * (f.x - hip.x)).squareRoot() }

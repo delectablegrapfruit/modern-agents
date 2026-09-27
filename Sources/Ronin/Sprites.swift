@@ -61,8 +61,9 @@ final class FoeSprite: SKNode {
     private var gather: CGFloat = 0
     private var wasLeaping = false
     /// Which way he is drawn facing (+1 right, -1 left): the ronin, but in the air where he is going and running off
-    /// with the gourd away; and the frame he is drawn in.
+    /// with the gourd away.
     private(set) var facing: CGFloat = 1
+    /// The frame he is drawn in.
     private(set) var shown = Frame.walk(0)
     private var age = 0.0
     /// A wounding blow on its way (`hold`): he is held as he is until it lands, or this long at most; then whether a
