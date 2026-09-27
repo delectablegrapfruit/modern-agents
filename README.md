@@ -65,8 +65,9 @@ where it is.
   cuts and keeps just out of reach, darts in to strike and backs off again, and after his second blow (or if he has
   been about too long) runs off the lane with it. Just before each dart he crouches over his weapon and the gourd
   flares, and his blow never comes so quick that a cut made on seeing him go can't meet it. Each cut has to catch him
-  close, on a dart of his own: one that doesn't fell him sends him springing back out of reach. Stage 1's card says
-  it: *catch him darting in, twice*. Cut him down and a heart comes back (points if you are full).
+  close, on a dart of his own: one that doesn't fell him sends him hopping back out of reach. Stage 1's card says
+  it: *catch him darting in, twice*. Cut him down and a heart comes back (points if you are full). The pips for the
+  cuts he has left sit either side of his gourd.
 - **The dead** come apart along the line of the cut: halved on the slant or through the waist, heads taken (a warlord
   always loses his); cut across the shins, a man drops onto his knees and pitches onto his face; run through or shot,
   they are thrown back off their feet or fold where they stand. Each falls from the very pose his figure froze in at
@@ -79,6 +80,12 @@ where it is.
   walk through (past more than a full stage leaves, the oldest fade, weapons first). Blood pools under the bodies,
   flecks the ground, and when you are hit, runs down the glass. You wear the stage's blood until the chiburi throws
   it off.
+- **Gore** builds with the stages: a light touch at stage 1 (now and then a cut only fells a man), full by stage 10,
+  heavier on to stage 20 and on through an endless run. In **bloodlust** it is at its heaviest: more and bigger
+  sprays, wounds pumping longer, more men cut apart (a thrust may tear one open), more blood on the glass, wider,
+  darker pools. Menu ▸ Gore turns it off (it is on until you do): then nothing bleeds and nobody comes apart, every
+  man falls whole, and a blow still lands with its freeze, shake, the cut's mark and sparks off the blade. It takes
+  effect with whatever happens next; the blood already spilt stays.
 - **Combo:** every kill and every deflected arrow adds one. The combo multiplies your score (×2 at 10, up to ×8).
   At **20** you go into **bloodlust**: the edges of the lane turn red and your reach gets longer. A wound, a whiff
   or a turned cut ends the combo (a glance does not), and each stage starts it afresh. On your last heart the edges
@@ -122,7 +129,8 @@ where it is.
 | Size | A strip 340, 420 or 520 pt wide and at most 180 pt tall (menu ▸ Size; Medium until you choose). It stays wholly on screen, and grows or shrinks toward the screen's middle, so a panel in a corner keeps to its corner. Press **C** or the header's – button to fold it into a 196×28 pill that shows the mode, the stage, your hearts and the run's score (123K, 1.2M once it is long). Click the pill to unfold it. |
 | At a glance | The panel is small, so it uses pictures more than words. The header shows the mode as a vermilion seal (初 Shoshin, 武 Bushidō, 修 Shura, 鬼 Oni), the stage (with ∞ in an endless run), your hearts, a warlord's bar and the run's score (every stage of it so far). A won stage's card shows a skull for kills, crossed swords for your best combo, a clock for time and the score, and ▶ to go on. After a fall it shows the run instead: steps for the stages it cleared (∞ in endless), kills, best combo and score, and ↻ with the stage you start again from. ▲ marks a rank earned, or a run that beat its record (BEST RUN). The pause screen is a pause sign. What text there is is set in Optima capitals with wide letter-spacing, on dark bands edged with fine gold rules. |
 | Presence | No Dock icon. It has a menu bar icon. **⌃⌥R** shows and hides the panel from anywhere, on the screen you are working on. Menu ▸ Shortcut offers ⌃⌥⌘R and ⌃⇧R instead, and if another app holds the one chosen, the next free one is used. **Esc** or **⌘W** hides it too. It floats on every Space and over full-screen apps. It dims to 60% while the pointer is elsewhere (menu ▸ Dim When Pointer Leaves). |
-| Motion | Menu ▸ Reduce Motion (following the system setting until you choose): far less shake, no zoom punches, soft and slow full-lane flashes, lightning as a slow glow, a steady bloodlust edge and heartbeat, small faint impact lines, and slams that drop in from nearer. The blood and the dead are as they always are. |
+| Motion | Menu ▸ Reduce Motion (following the system setting until you choose): far less shake, no zoom punches, soft and slow full-lane flashes, lightning as a slow glow, a steady bloodlust edge and heartbeat, small faint impact lines, slams that drop in from nearer, and no thump through the lane from the heavy ones' steps. The blood and the dead are as they always are (that is menu ▸ Gore). |
+| Gore | Menu ▸ Gore, on until you turn it off. It builds with the stages and is heaviest in bloodlust; off, there is no blood at all and nobody comes apart (see *Gore* above). It takes effect at once. |
 | Sound | None. |
 | Save | Continuous (`~/Library/Application Support/Ronin/save.json`). If you quit mid-fight, you resume on the same frame. An update may roll the stage in progress afresh (at the hearts you carried into it), but the career always carries over. A save that cannot be read is set aside as `save.unreadable-<date>.json`, never written over. Menu ▸ Reset Career… starts again from nothing. |
 
@@ -170,10 +178,13 @@ All but `make run` work on Linux too.
     own: the ashigaru's drilled march, the shinobi's low sprint with a moment off the ground, the oni's rolling stomp,
     the dancer's glide, the archer's bent-kneed stalk, the warlord's slow, upright step. Each leg swings on its own
     phase, the knee folding as it comes through and giving under the weight, and a walking foe advances a frame for
-    each twelfth of its stride so its feet keep to the ground. In the app they are drawn where the fight has them as
-    they walk (a knock-back glides), lean into their stride, lurch into their blows and squash as they land; each
-    change of pose blends out of the last, and they fade in as they arrive. The gourd-bearer crouches over his weapon
-    before he darts, darts in low, and springs back from a cut rocked on his heels.
+    each twelfth of its stride so its feet keep to the ground, backing off with the stride played backward. In the
+    app they are drawn where the fight has them as they walk (a knock-back glides), lean into their stride, lurch into
+    their blows and squash as they land; each change of pose blends out of the last behind a dark ghost of it, and
+    they fade in quickly as they arrive. The oni and the warlord are felt as they come: each foot they set down
+    raises a puff of dust and sends a small thump through the lane, and they sink into it. The gourd-bearer walks in
+    to his spot and backs off to it with the same stride, crouches over his weapon as he readies himself, darts in at
+    a run, low and leaning hard into it, and hops back from a cut rocked on his heels.
   - **The ronin** is drawn at a higher resolution and has the most frames: a breathing chūdan guard and the iai
     stance, and seven cuts (nukitsuke, kesa-giri, gyaku-kesa, shōmen, dō-giri, morote-zuki, sune-giri) of nine
     frames each: chambered in the cut's kamae, the swing with the wrists still cocked, the blade whipping through,
@@ -208,7 +219,9 @@ All but `make run` work on Linux too.
   screen shake, focus lines snapping in around a big foe's death (the warlord's drawn for the blow, crisp, running in
   from past every edge of the panel), and weather in two layers: in front of the fight, and further off, finer and
   fainter, behind the ground, where what falls sinks out of sight and embers rise from beyond the horizon. Nothing
-  blinks out in mid-air, and the wind never leaves one side of the lane bare.
+  blinks out in mid-air, and the wind never leaves one side of the lane bare. The figures, living and dead, stand in
+  each setting's light: drawn a little toward its darkest tone, flashed in its own light when struck, and leaving
+  dark, see-through ghosts (the pose just left, the ronin's afterimages) rather than pale grey ones.
 - `ronin-sim` plays stages headless with a human-like pilot (0.22 s reaction, 7 cuts a second, an occasional
   wrong-way cut; `--reaction`, `--rate` and `--slips` change them, and `--rash` makes it lose patience with a
   warlord's set guard now and then) or a perfect one (`--perfect`), in one mode or every mode (`--mode all`), over
@@ -243,8 +256,8 @@ reported, not held to a bar), and renders the `all`, `dead` and `ragdoll` sheets
 builds and tests, bundles and packages the app, and launches the packaged copy with `RONIN_SELFTEST=1`. The
 self-test does these things in order:
 
-1. Checks the defaults (floor hints off, a Medium panel) and that the marker over every kind of foe's head, a gourd
-   bearer's too, stays on the lane at every size.
+1. Checks the defaults (floor hints off, a Medium panel, gore on) and that the marker over every kind of foe's head,
+   a gourd bearer's too, stays on the lane at every size, and that a bearer's pips and marker stay clear of his gourd.
 2. Grows the panel out of its default corner and folds it there and back without it leaving the screen, and checks
    the header cannot go under the menu bar.
 3. Shows what a new player first sees, turns floor hints on, and makes the first cut and a whiff with real left-
@@ -259,8 +272,9 @@ self-test does these things in order:
 8. Switches to Oni and rides a combo into bloodlust.
 9. Falls, and starts over from stage 1 with full hearts, the stage reached left unlocked and the fallen run kept.
 10. Switches back and checks that Bushidō kept its stage and its hearts.
-11. Runs an endless stage straight on into the next, checks that dragging the window holds the fight still and that
-    a stage won with the pointer away does not start the next, and leaves the run, kept as the best from its stage.
+11. Runs an endless stage with gore off straight on into the next (its dead all felled whole, not a drop of blood
+    spilt), checks that dragging the window holds the fight still and that a stage won with the pointer away does
+    not start the next, and leaves the run, kept as the best from its stage.
 12. Folds into the pill and back.
 13. Checks that leaving pauses and gives the keys back (a key typed then does nothing), and that coming back takes
     the dwell.

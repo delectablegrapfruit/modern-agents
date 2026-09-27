@@ -63,6 +63,35 @@ struct Look {
                         landmark: .banners, accent: RGB(0.95, 0.82, 0.6))
         }
     }
+
+    /// How the setting lights the figures in it (`Ambient`): drawn a little toward its darkest tone, flashed in its
+    /// own light, and leaving ghosts in its shadow.
+    var ambient: Ambient {
+        let dark = ground.mix(near, 0.4)
+        return Ambient(shade: dark, amount: 0.16, light: sun.mix(.white, 0.55), ghost: ground.mix(near, 0.2).scaled(0.8))
+    }
+}
+
+/// How a setting lights the figures on its lane, living and dead, so they stand in it rather than over it: each is
+/// drawn a little toward the setting's darkest tone (`shade`, `amount` of the way: enough to take its colour, never so
+/// much that the rim of light round a figure is lost); a flash on one (a blow landing, a killing blow's freeze) is in
+/// the setting's own light; and the ghosts a figure leaves (the pose it has just left, the ronin's afterimages across
+/// a lunge) are dark, see-through silhouettes in its shadow (`ghost`), never a pale grey over the sky.
+struct Ambient: Equatable {
+    var shade: RGB
+    var amount: CGFloat
+    var light: RGB
+    var ghost: RGB
+
+    /// No setting's light at all: the figures as drawn, white flashes, black ghosts.
+    static let plain = Ambient(shade: Palette.silhouette, amount: 0, light: .white, ghost: Palette.silhouette)
+
+    /// A figure at rest in this light.
+    var rest: (color: RGB, amount: CGFloat) { (shade, amount) }
+
+    /// A figure in this light with `color` over it, `amount` of the way (a flush, a flash): the two as the one tint
+    /// the shader draws.
+    func with(_ color: RGB, _ amount: CGFloat) -> (color: RGB, amount: CGFloat) { Art.layered(rest, (color, amount)) }
 }
 
 /// Textures drawn once at launch: glows, sparks, the cut's crescent, arrows, the sky. No image files.
@@ -114,6 +143,15 @@ enum Art {
         if sprite.shader !== tint { sprite.shader = tint }
         let value = SIMD4<Float>(Float(color.r), Float(color.g), Float(color.b), Float(max(0, min(1, amount))))
         sprite.setValue(SKAttributeValue(vectorFloat4: value), forAttribute: "a_tint")
+    }
+
+    /// Two tints, `over` laid on `under`, as the one tint `setTint` gives that draws the same.
+    nonisolated static func layered(_ under: (color: RGB, amount: CGFloat), _ over: (color: RGB, amount: CGFloat)) -> (color: RGB, amount: CGFloat) {
+        let a = max(0, min(1, under.amount)), b = max(0, min(1, over.amount))
+        let both = 1 - (1 - a) * (1 - b)
+        guard both > 1e-4 else { return (over.color, 0) }
+        let u = a * (1 - b) / both, o = b / both
+        return (RGB(under.color.r * u + over.color.r * o, under.color.g * u + over.color.g * o, under.color.b * u + over.color.b * o), both)
     }
 
     static func bitmap(_ w: Int, _ h: Int) -> CGContext? {

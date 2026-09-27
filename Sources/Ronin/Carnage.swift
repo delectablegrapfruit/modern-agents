@@ -3,6 +3,62 @@ import SpriteKit
 import RoninArt
 import RoninCore
 
+/// How much blood a blow spills. None with Gore turned off (`Settings.gore`): nothing bleeds, and nobody comes apart.
+/// Otherwise it builds with the stage: a light touch on the first, full by stage 10, heavier past it to stage 20, and
+/// heavier still on through an endless run to a cap at stage 40; and in bloodlust, heaviest of all. It sets how the
+/// blood and the dead look (how many drops and how big, how hard they are thrown, how long a wound pumps, how wide and
+/// dark the pools spread, how often blood reaches the glass, how often a killing cut takes a man apart rather than
+/// felling him whole), never the fight.
+struct Gore: Equatable {
+    /// 0 with gore off; 0.4 at stage 1, 1 (full) at stage 10, 1.3 at stage 20, 1.5 from stage 40; `peak` in bloodlust.
+    let level: CGFloat
+
+    static let none = Gore(level: 0)
+    static let full = Gore(level: 1)
+    /// Bloodlust: past anything a stage reaches.
+    static let peak: CGFloat = 2
+
+    /// The gore on `stage`, in bloodlust or out of it, with gore turned on or off.
+    static func of(stage: Int, bloodlust: Bool, on: Bool = true) -> Gore {
+        guard on else { return .none }
+        if bloodlust { return Gore(level: peak) }
+        let s = CGFloat(max(1, stage))
+        if s <= 10 { return Gore(level: 0.4 + 0.6 * (s - 1) / 9) }
+        if s <= 20 { return Gore(level: 1 + 0.3 * (s - 10) / 10) }
+        return Gore(level: 1.3 + 0.2 * min(1, (s - 20) / 20))
+    }
+
+    var on: Bool { level > 0 }
+
+    /// `n` of something (drops in a spray, flecks on the ground, blots on the glass) at this level: at least one if
+    /// there is any gore and `n` is more than none.
+    func count(_ n: CGFloat) -> Int {
+        guard on, n > 0 else { return 0 }
+        return max(1, Int((n * level).rounded()))
+    }
+
+    func count(_ n: Int) -> Int { count(CGFloat(n)) }
+
+    /// How big each drop and blot is: 0.88 of full at stage 1, 1.2 in bloodlust.
+    var size: CGFloat { 0.8 + 0.2 * level }
+    /// How hard blood is thrown.
+    var force: CGFloat { 0.85 + 0.15 * level }
+    /// How fast a wound pumps.
+    var flow: CGFloat { 0.3 + 0.7 * level }
+    /// How long a wound pumps, a spray hangs and a blot runs down the glass.
+    var span: CGFloat { 0.6 + 0.4 * level }
+    /// How wide a pool spreads (and how dark it lies).
+    var pool: CGFloat { 0.65 + 0.35 * level }
+    /// A chance of blood (reaching the glass, say) made likelier, or rarer, by the level.
+    func chance(_ p: Double) -> Double { min(1, p * Double(level)) }
+    /// How likely a killing cut is to take him apart where it goes through him, rather than fell him whole: two times
+    /// in three at stage 1, every time from full on.
+    var severs: Double { on ? min(1, 0.45 + 0.55 * Double(level)) : 0 }
+    /// Past full, how likely a thrust is to tear him open through the waist as the blade comes out: a quarter of the
+    /// time at the cap, half the time in bloodlust.
+    var tears: Double { max(0, min(1, Double(level) - 1)) * 0.5 }
+}
+
 /// The dead, and what is left of them. A cut foe comes apart along the line of the cut: the top half is flung away
 /// tumbling, arms flying, trailing blood, while the legs stand a moment with blood pumping from the stump before the
 /// knees go; a head flies off and the body under it stands, then crumples; a man cut across the shins drops onto his
@@ -15,7 +71,8 @@ import RoninCore
 /// little nearer or further on the ground (the nearer drawn over the further, all of them under the living) and lying
 /// across whatever fell there before, so the lane fills with a low, overlapping carpet of bodies and parts of bodies
 /// that never rises into a heap. It is scenery: the living walk on the ground through it. Blood pools under the dead
-/// and flecks the ground; what jets from a wound falls to the ground, not through it.
+/// and flecks the ground; what jets from a wound falls to the ground, not through it. How much of it there is follows
+/// `gore`, and with gore off there is none: the dead are only ever felled whole (`fell`), and nothing bleeds.
 @MainActor
 final class Carnage {
     /// The dead, drawn behind the living (their drawing order kept in a band under the figures' own).
@@ -24,6 +81,16 @@ final class Carnage {
     let stains = SKNode()
     /// Where blood already spilled is left (so a trail stays where it fell as a body flies on).
     private let trails: SKNode
+    /// How much blood there is now (the scene keeps it current). Each death takes it up as it comes; and the dead
+    /// already falling follow it off: turned off, their wounds stop pumping and none of them pools where it comes to
+    /// rest. Blood already spilt stays where it is.
+    var gore = Gore.full
+    /// The setting's light on the dead, as on the living (`Ambient`).
+    var ambient = Ambient.plain
+    /// Blood spilt (jets opened, pools, flecks) and bodies taken apart since launch, for the self-test to tell that
+    /// with gore off there is none.
+    private(set) var shed = 0
+    private(set) var severings = 0
 
     private final class Body {
         /// A jointed body standing on its planted feet, or falling as it will; a rigid piece (a head, a weapon)
@@ -60,8 +127,10 @@ final class Carnage {
         /// Sliding to a stop: the angle it settles at and how deep it lies.
         var restAngle: CGFloat = 0
         var restY: CGFloat = 0
-        /// The blood pooled under it once it lies still (it goes with it, if it is ever cleared away).
+        /// The blood pooled under it once it lies still (it goes with it, if it is ever cleared away), and the gore it
+        /// died in, which sets how wide that spreads.
         var pool: SKNode?
+        var gore = Gore.full
 
         init(node: SKSpriteNode, cast: Cast, state: State) {
             self.node = node
@@ -190,6 +259,7 @@ final class Carnage {
         let pose = Figure.struck(cast, variant: variant)
         let stand = Double.random(in: 0.35...0.7)
         let parted: Body
+        severings += 1
         switch severance {
         case .head:
             // The head flies, turning over and over; the body stands a moment longer, pumping blood, and crumples.
@@ -201,8 +271,10 @@ final class Carnage {
             node.position = CGPoint(x: feet.x + facing * (part.rect.midX - Figure.anchor.x) * full.width,
                                     y: feet.y + (part.rect.midY - Figure.anchor.y) * full.height)
             corpses.addChild(node)
+            light(node)
             let head = Body(node: node, cast: cast, state: .flying)
             head.facing = facing
+            head.gore = gore
             place(head, near: near + CGFloat.random(in: -0.15...0.15))
             let wound = CGPoint(x: (part.wound.x - part.rect.midX) * full.width, y: (part.wound.y - part.rect.midY) * full.height)
             bleed(head, from: wound, angle: part.woundAngle, rate: 160 * force, speed: ronin * 0.5, seconds: 0.7)
@@ -242,7 +314,7 @@ final class Carnage {
             parted = upper
         }
         drop(cast, pose: pose, feet: feet, facing: facing, away: away, force: force, near: near)
-        spatter(around: feet.x, count: Int(10 * force))
+        spatter(around: feet.x, count: 10 * force)
         trim()
         return wound(of: parted)
     }
@@ -260,7 +332,7 @@ final class Carnage {
         let body = add(doll, cast, feet: feet, facing: facing, near: near, state: .limp)
         bleed(body, rate: 120 * force, speed: ronin * 1.2, seconds: 0.9)
         drop(cast, pose: from, feet: feet, facing: facing, away: -facing, force: force, near: near)
-        spatter(around: feet.x, count: Int(6 * force))
+        spatter(around: feet.x, count: 6 * force)
         trim()
         return wound(of: body)
     }
@@ -273,8 +345,10 @@ final class Carnage {
         let node = SKSpriteNode()
         node.xScale = facing
         corpses.addChild(node)
+        light(node)
         let body = Body(node: node, cast: cast, state: state)
         body.facing = facing
+        body.gore = gore
         place(body, near: near)
         body.scale = ronin * Build.of(cast).height
         body.origin = CGPoint(x: feet.x, y: body.floor)
@@ -303,15 +377,23 @@ final class Carnage {
         return (CGPoint(x: a.x + (b.x - a.x) * 0.68, y: a.y + (b.y - a.y) * 0.68), up - 0.7)
     }
 
-    /// Blood pumping from a body: from a doll's wound (or its chest), or from a point on a rigid piece.
+    /// A piece of the dead drawn in the setting's light.
+    private func light(_ node: SKSpriteNode) {
+        Art.setTint(node, ambient.shade, ambient.amount)
+    }
+
+    /// Blood pumping from a body: from a doll's wound (or its chest), or from a point on a rigid piece. `rate`, `speed`
+    /// and `seconds` are at full gore: the gore now makes them more or less (and with gore off, there is none).
     private func bleed(_ body: Body, from point: CGPoint = .zero, angle: CGFloat = 0, rate: CGFloat, speed: CGFloat, seconds: Double) {
-        let jet = Art.spurt(Palette.blood.mix(.black, 0.25), rate: rate, speed: speed, size: ronin * 0.045, angle: angle, spread: 0.35,
-                            gravity: gravity * 0.8, into: trails)
+        guard gore.on else { return }
+        let jet = Art.spurt(Palette.blood.mix(.black, 0.25), rate: rate * gore.flow, speed: speed * gore.force, size: ronin * 0.045 * gore.size,
+                            angle: angle, spread: 0.35, gravity: gravity * 0.8, into: trails)
         jet.position = point
         body.node.addChild(jet)
         body.jet = jet
-        body.jetRate = rate
-        body.jetFor = seconds
+        body.jetRate = rate * gore.flow
+        body.jetFor = seconds * Double(gore.span)
+        shed += 1
         if body.doll == nil { aimRigid(body) } else { aim(body) }
     }
 
@@ -378,6 +460,7 @@ final class Carnage {
         node.position = CGPoint(x: feet.x + facing * hand.x * unit + facing * ox * cos(turn) - oy * sin(turn),
                                 y: feet.y + hand.y * unit + facing * ox * sin(turn) + oy * cos(turn))
         corpses.addChild(node)
+        light(node)
         let body = Body(node: node, cast: cast, state: .flying)
         place(body, near: near + 0.1)
         body.velocity = CGVector(dx: away * ronin * CGFloat.random(in: 0.3...1.1) * force, dy: ronin * CGFloat.random(in: 1.2...2.2))
@@ -387,39 +470,54 @@ final class Carnage {
         bodies.append(body)
     }
 
-    /// Blood pumping from a point that isn't a body part (the ronin, dying): `seconds` of it, falling to the lane.
+    /// Blood pumping from a point that isn't a body part (the ronin, dying): `seconds` of it at full gore (more or
+    /// less as the gore is, none with it off), falling to the lane.
     func bleed(at point: CGPoint, angle: CGFloat, seconds: Double) {
-        let jet = Art.spurt(Palette.blood.mix(.black, 0.2), rate: 180, speed: ronin * 1.3, size: ronin * 0.045, angle: angle,
-                            spread: 0.4, gravity: gravity * 0.8, into: trails)
+        guard gore.on else { return }
+        let jet = Art.spurt(Palette.blood.mix(.black, 0.2), rate: 180 * gore.flow, speed: ronin * 1.3 * gore.force, size: ronin * 0.045 * gore.size,
+                            angle: angle, spread: 0.4, gravity: gravity * 0.8, into: trails)
         jet.position = point
         ground(jet, from: point.y - groundY, rising: sin(angle))
         trails.addChild(jet)
-        jet.run(.sequence([.wait(forDuration: seconds), .run { [weak jet] in MainActor.assumeIsolated { jet?.particleBirthRate = 0 } },
+        shed += 1
+        jet.run(.sequence([.wait(forDuration: seconds * Double(gore.span)),
+                           .run { [weak jet] in MainActor.assumeIsolated { jet?.particleBirthRate = 0 } },
                            .wait(forDuration: 1), .removeFromParent()]))
     }
 
-    /// A pool spreading on the ground at `x`, `width` across, on the line `floor` (the lane's, if not given).
+    /// A pool spreading on the ground at `x`, `width` across at full gore (wider and darker as the gore goes on; none
+    /// with it off), on the line `floor` (the lane's, if not given).
     @discardableResult
-    func pool(at x: CGFloat, width: CGFloat, grow: TimeInterval = 1.8, floor: CGFloat? = nil) -> SKNode {
+    func pool(at x: CGFloat, width: CGFloat, grow: TimeInterval = 1.8, floor: CGFloat? = nil) -> SKNode? {
+        pool(at: x, width: width, grow: grow, floor: floor, gore: gore)
+    }
+
+    private func pool(at x: CGFloat, width: CGFloat, grow: TimeInterval = 1.8, floor: CGFloat? = nil, gore: Gore) -> SKNode? {
+        guard gore.on else { return nil }
+        let wide = width * gore.pool
         let pool = SKSpriteNode(texture: Art.glow)
-        pool.size = CGSize(width: width, height: max(3, width * 0.16))
+        pool.size = CGSize(width: wide, height: max(3, wide * 0.16))
         pool.position = CGPoint(x: x, y: (floor ?? groundY) - ronin * 0.02)
         pool.color = RGB(0.26, 0.0, 0.02).color()
         pool.colorBlendFactor = 1
-        pool.alpha = 0.95
+        pool.alpha = min(0.97, 0.78 + 0.13 * gore.level)
         pool.setScale(0.2)
-        pool.run(SKAction.scale(to: 1, duration: grow).easedOut())
+        pool.run(SKAction.scale(to: 1, duration: grow * Double(0.8 + 0.2 * gore.level)).easedOut())
         stains.addChild(pool)
         pools.append(pool)
+        shed += 1
         if pools.count > Carnage.mostPools { Carnage.fade(pools.removeFirst()) }
         return pool
     }
 
-    /// Drops of blood flecked over the ground about `x` (about the line `floor`, if given).
-    func spatter(around x: CGFloat, count: Int, floor: CGFloat? = nil) {
+    /// Drops of blood flecked over the ground about `x` (about the line `floor`, if given): `count` of them at full
+    /// gore, as many as the gore makes of that.
+    func spatter(around x: CGFloat, count: CGFloat, floor: CGFloat? = nil) {
+        let count = gore.count(count)
+        shed += count
         for _ in 0..<count {
             let speck = SKSpriteNode(texture: Art.dot)
-            let r = ronin * CGFloat.random(in: 0.015...0.05)
+            let r = ronin * CGFloat.random(in: 0.015...0.05) * gore.size
             speck.size = CGSize(width: r * 2, height: r * 0.9)
             let line = floor ?? groundY - CGFloat.random(in: 0...1) * depth
             speck.position = CGPoint(x: x + CGFloat.random(in: -1...1) * ronin * 0.9, y: line - CGFloat.random(in: -0.02...0.03) * ronin)
@@ -474,7 +572,8 @@ final class Carnage {
             let node = body.node
             body.clock += dt
             if let jet = body.jet {
-                // The heart still pumping, weaker as it goes.
+                // The heart still pumping, weaker as it goes (stopped at once if gore is turned off).
+                if !gore.on { body.jetFor = min(body.jetFor, 0) }
                 body.jetFor -= dt
                 let beat = CGFloat(max(0, sin(body.clock * 15)))
                 jet.particleBirthRate = body.jetFor > 0 ? body.jetRate * (0.25 + 0.75 * beat) * CGFloat(min(1, body.jetFor)) : 0
@@ -611,6 +710,7 @@ final class Carnage {
             node.run(.moveBy(x: x - node.position.x, y: 0, duration: 0.1))
         }
         let width = extents(node, node.zRotation).0 * 2 * (body.doll == nil ? 1 : 0.8)
-        if !body.thin { body.pool = pool(at: x, width: width * 1.2, floor: body.floor) }
+        // As wide as the gore he died in spreads it, if gore is on now.
+        if !body.thin, gore.on { body.pool = pool(at: x, width: width * 1.2, floor: body.floor, gore: body.gore) }
     }
 }

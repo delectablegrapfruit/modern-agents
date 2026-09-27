@@ -3,16 +3,24 @@ import SpriteKit
 import RoninArt
 import RoninCore
 
-/// A foe on the lane: its silhouette and shadow; while its blow is coming, a red flush, a glint and a warning marker
-/// above its head whose ring runs down to the blow; for an archer drawing, a red sight line to the ronin; pips for
-/// the cuts a tough one has left; the gourd over a bearer's head, flaring as he gathers himself to dart in; the
-/// warlord's guard as a pale ward before him, faint while it comes up and flashing as it sets, and his fury as a red
-/// haze that deepens as he is cut down.
+/// A foe on the lane: its silhouette and shadow, in the setting's light (`Ambient`); while its blow is coming, a red
+/// flush, a glint and a warning marker above its head whose ring runs down to the blow; for an archer drawing, a red
+/// sight line to the ronin; pips for the cuts a tough one has left; the gourd over a bearer's head (his pips either
+/// side of it), flaring as he gathers himself to dart in; the warlord's guard as a pale ward before him, faint while
+/// it comes up and flashing as it sets, and his fury as a red haze that deepens as he is cut down.
 ///
 /// It moves smoothly: it is drawn where the fight has him as he walks or darts, while a jump the fight makes (a
 /// knock-back, a shove) glides; a blow that wounds him holds him as he is until the blade gets there, and the
-/// knock-back, leap or spring it sends him into starts then. Each change of pose blends out of the one before, it
-/// leans into its stride and lurches into its blows, squashes as it lands, and it fades in as it arrives.
+/// knock-back, leap or spring it sends him into starts then. Walking, his feet keep to the ground, forward or backing
+/// off (the stride played backward, still facing the ronin), and he goes from standing to walking and back only once
+/// he is really on the move or really stopped, so a man shuffling in a queue never flickers between the two. Each
+/// change of pose blends out of the one before behind a dark ghost of it, he leans into his stride and lurches into his
+/// blows, squashes as he lands (the heavy ones a little at every step, `update` saying where each foot came down),
+/// and fades in quickly as he arrives.
+///
+/// The gourd-bearer moves as a man keeping his distance: he walks in to his spot and backs off to it with the same
+/// stride, crouches over his weapon as he readies himself (the gourd flaring), darts in at a committed run, low and
+/// leaning hard into it, and springs back from a cut in a short hop off his heels, rocked back, landing on his feet.
 @MainActor
 final class FoeSprite: SKNode {
     let id: Int
@@ -35,7 +43,12 @@ final class FoeSprite: SKNode {
     private var pips: [SKShapeNode] = []
     private(set) var gourd: SKNode?
     private var gourdHalo: SKSpriteNode?
+    /// How far through his stride he is (in frames, forward positive), how fast he is going the way he faces (points
+    /// a second, smoothed), and whether he is stepping: begun once he is plainly moving, ended once he has plainly
+    /// stopped.
     private var walk: CGFloat = 0
+    private var pace: CGFloat = 0
+    private var stepping = false
     private var shownX: CGFloat?
     private var shownAir: CGFloat = 0
     /// Where the fight had him on the last update (in points), how many points a lane unit is, and what is left of a
@@ -79,13 +92,25 @@ final class FoeSprite: SKNode {
     private var ringStep = -1
     private var tinted: (color: RGB, amount: CGFloat)?
     private var pipsShown = -1
+    /// The setting's light on him (`Ambient`).
+    var ambient = Ambient.plain {
+        didSet {
+            guard ambient != oldValue else { return }
+            light()
+        }
+    }
 
-    init(foe: Foe, ronin: CGFloat, headroom: CGFloat? = nil) {
+    /// How high (in ronin heights) the gourd-bearer's spring back out of reach takes him: a short hop.
+    static let hop: CGFloat = 0.2
+    /// How long before his dart the gourd-bearer crouches to ready himself (seconds of his wait left).
+    static let readying = 0.25
+
+    init(foe: Foe, ronin: CGFloat, headroom: CGFloat? = nil, ambient: Ambient = .plain) {
         id = foe.id
         kind = foe.kind
         cast = .foe(foe.kind)
+        self.ambient = ambient
         super.init()
-        shadow.color = .black
         shadow.colorBlendFactor = 1
         shadow.alpha = 0.6
         shadow.zPosition = -1
@@ -101,11 +126,13 @@ final class FoeSprite: SKNode {
         pivot.addChild(body)
         echo.alpha = 0
         echo.zPosition = -0.1
-        tint(Palette.blood, 0)
+        light()
         glint.color = (Build.of(cast).eyes ?? Palette.blood).color()
         glint.colorBlendFactor = 1
         glint.blendMode = .add
         glint.alpha = 0
+        // Over his head, at his eyes.
+        glint.zPosition = 0.1
         pivot.addChild(glint)
         ward.color = Palette.steel.mix(.white, 0.4).color()
         ward.colorBlendFactor = 1
@@ -134,8 +161,10 @@ final class FoeSprite: SKNode {
         addChild(warning)
         if foe.maxHP > 1, foe.kind != .warlord {
             for _ in 0..<foe.maxHP {
-                let pip = Icons.heart(6)
+                let pip = Icons.heart(FoeSprite.pip)
                 pip.strokeColor = SKColor(white: 0, alpha: 0.7)
+                // Over a gourd's glow, beside it.
+                pip.zPosition = 1.5
                 addChild(pip)
                 pips.append(pip)
             }
@@ -172,12 +201,17 @@ final class FoeSprite: SKNode {
         mark.closeSubpath()
         warningMark.path = mark
         ringStep = -1
-        for pip in pips { pip.setScale(max(1, ronin / 60)) }
-        // A new size draws the lane afresh: he is put straight where the fight has him.
+        for pip in pips { pip.setScale(FoeSprite.pipScale(ronin: ronin)) }
+        // A new size draws the lane afresh: he is put straight where the fight has him (and his gourd drawn anew at
+        // the new size).
         shownX = nil
         core = nil
         lanePoints = nil
         glide = 0
+        if gourd != nil {
+            dropGourd()
+            showGourd()
+        }
         placeOverhead()
     }
 
@@ -188,17 +222,49 @@ final class FoeSprite: SKNode {
     nonisolated static func markerRadius(ronin: CGFloat) -> CGFloat { max(6, ronin * 0.12) }
     nonisolated static func markerClearance(ronin: CGFloat) -> CGFloat { markerRadius(ronin: ronin) * 1.15 + 1.5 }
 
+    /// A pip's height (points, at a 60-point ronin: they grow with a larger lane by `pipScale`), and the gourd's; how
+    /// much the gourd swells as its bearer gathers himself to dart, and how far it bobs up.
+    nonisolated static let pip: CGFloat = 6
+    nonisolated static func pipScale(ronin: CGFloat) -> CGFloat { max(1, ronin / 60) }
+    nonisolated static func gourdSize(ronin: CGFloat) -> CGFloat { max(9, ronin * 0.17) }
+    nonisolated static let gourdSwell: CGFloat = 1.2
+    nonisolated static let gourdBob: CGFloat = 2
+
     /// Where the marks over a foe go, in points above his feet: the pips for the cuts he has left, the gourd, and the
-    /// warning marker. Over his head, the same height for every kind, the gourd above a bearer's pips and the marker
-    /// above the gourd; the marker comes down as far as it must to stay under a lane that ends `headroom` above his
-    /// feet (onto the warlord's crest, if what tops the lane leaves no more room than that).
+    /// warning marker. Over his head, the same height for every kind. A bearer carries his gourd there, his pips either
+    /// side of it (`pipOffsets`), and the marker goes above the gourd, clear of it however it swells and bobs; the
+    /// marker comes down as far as it must to stay under a lane that ends `headroom` above his feet (onto the warlord's
+    /// crest, if what tops the lane leaves no more room than that).
     nonisolated static func overhead(kind: Kind, ronin: CGFloat, headroom: CGFloat = .greatestFiniteMagnitude,
                                      gourd: Bool = false) -> (pips: CGFloat, gourd: CGFloat, marker: CGFloat) {
         let height = ronin * Build.of(.foe(kind)).height
         let head = height * 1.12
-        let above = gourd ? head + ronin * 0.08 : head
-        let marker = min(gourd ? above + ronin * 0.2 : head, headroom - markerClearance(ronin: ronin))
-        return (gourd ? height * 1.02 : height * 1.1, above, marker)
+        guard gourd else { return (height * 1.1, head, min(head, headroom - markerClearance(ronin: ronin))) }
+        let carried = head + ronin * 0.05
+        let top = carried + gourdSize(ronin: ronin) * 0.48 * gourdSwell + gourdBob
+        let marker = min(top + markerRadius(ronin: ronin) * 1.15 + 1, headroom - markerClearance(ronin: ronin))
+        return (carried, carried, marker)
+    }
+
+    /// How far across from his middle each of `count` pips goes (points): in a row over a man's head, or either side
+    /// of a bearer's gourd (the first to the left, the next to the right, and so on outward), clear of its widest.
+    nonisolated static func pipOffsets(count: Int, ronin: CGFloat, gourd: Bool) -> [CGFloat] {
+        let spacing = max(7, ronin * 0.11)
+        guard gourd else { return (0..<count).map { (CGFloat($0) - CGFloat(count - 1) / 2) * spacing } }
+        let inner = gourdSize(ronin: ronin) * 0.3 * gourdSwell + max(2.5, ronin * 0.035) + pip * 0.26 * pipScale(ronin: ronin)
+        return (0..<count).map { k in (k % 2 == 0 ? -1 : 1) * (inner + CGFloat(k / 2) * spacing) }
+    }
+
+    /// What is drawn over a gourd-bearer of `hp` cuts at its largest, in points from his feet: the gourd swollen
+    /// anywhere in its bob, and each pip with its stroke. None of them may overlap (the self-test checks it).
+    nonisolated static func bearerMarks(kind: Kind, ronin: CGFloat, headroom: CGFloat, hp: Int) -> (gourd: CGRect, pips: [CGRect]) {
+        let marks = overhead(kind: kind, ronin: ronin, headroom: headroom, gourd: true)
+        let s = gourdSize(ronin: ronin) * gourdSwell
+        let gourd = CGRect(x: -0.3 * s, y: marks.gourd - 0.5 * s, width: 0.6 * s, height: 0.98 * s + gourdBob)
+        let scale = pipScale(ronin: ronin)
+        let w = pip * 0.26 * scale + 0.5, h = pip * 0.5 * scale + 0.5
+        let pips = pipOffsets(count: hp, ronin: ronin, gourd: true).map { CGRect(x: $0 - w, y: marks.pips - h, width: 2 * w, height: 2 * h) }
+        return (gourd, pips)
     }
 
     /// The top of a foe's warning marker at the height of its pulse, in points above his feet: what must stay under
@@ -212,9 +278,8 @@ final class FoeSprite: SKNode {
         let marks = FoeSprite.overhead(kind: kind, ronin: ronin, headroom: headroom, gourd: gourd != nil)
         gourd?.position = CGPoint(x: 0, y: marks.gourd)
         warning.position = CGPoint(x: 0, y: marks.marker)
-        let spacing = max(7, ronin * 0.11)
-        for (k, pip) in pips.enumerated() {
-            pip.position = CGPoint(x: (CGFloat(k) - CGFloat(pips.count - 1) / 2) * spacing, y: marks.pips)
+        for (x, pip) in zip(FoeSprite.pipOffsets(count: pips.count, ronin: ronin, gourd: gourd != nil), pips) {
+            pip.position = CGPoint(x: x, y: marks.pips)
         }
     }
 
@@ -228,9 +293,10 @@ final class FoeSprite: SKNode {
         halo.alpha = 0.5
         halo.run(.repeatForever(.sequence([.fadeAlpha(to: 0.2, duration: 0.5), .fadeAlpha(to: 0.6, duration: 0.5)])))
         node.addChild(halo)
-        node.addChild(Icons.gourd(max(9, ronin * 0.17), Palette.jade.mix(.white, 0.25).color()))
-        node.run(.repeatForever(.sequence([.moveBy(x: 0, y: 2, duration: 0.6), .moveBy(x: 0, y: -2, duration: 0.6)])))
-        // Over his pips, whatever order they were added in.
+        node.addChild(Icons.gourd(FoeSprite.gourdSize(ronin: ronin), Palette.jade.mix(.white, 0.25).color()))
+        let bob = FoeSprite.gourdBob
+        node.run(.repeatForever(.sequence([.moveBy(x: 0, y: bob, duration: 0.6), .moveBy(x: 0, y: -bob, duration: 0.6)])))
+        // Under his pips (either side of it, over its glow).
         node.zPosition = 1
         addChild(node)
         gourd = node
@@ -254,7 +320,9 @@ final class FoeSprite: SKNode {
 
     /// Puts the foe where the fight has him and picks his frame. `position` is where the fight has him on the lane,
     /// and `hero` the ronin's x, the middle of the lane: for the archer's sight line, and to measure the lane by.
-    func update(_ foe: Foe, at position: CGPoint, air: CGFloat, hero: CGFloat, dt: Double) {
+    /// Returns where a foot of his came down on the ground this time, if one did (its x, in the parent's space).
+    @discardableResult
+    func update(_ foe: Foe, at position: CGPoint, air: CGFloat, hero: CGFloat, dt: Double) -> CGFloat? {
         age += dt
         heroX = hero
         strikeClock += dt
@@ -264,7 +332,11 @@ final class FoeSprite: SKNode {
         jolt *= CGFloat(pow(0.0005, dt))
         lurch *= CGFloat(pow(0.0002, dt))
         squash *= CGFloat(pow(0.0004, dt))
-        if alpha < 1 { alpha = min(1, CGFloat(age / 0.35)) }
+        // Quickly in, and most of the way at once: a half-there figure reads as a pale ghost against the sky.
+        if alpha < 1 {
+            let t = min(1, CGFloat(age / 0.25))
+            alpha = 1 - (1 - t) * (1 - t)
+        }
         if foe.bearer, gourd == nil { showGourd() } else if !foe.bearer, gourd != nil { dropGourd() }
         if holding {
             holdLeft -= dt
@@ -318,7 +390,7 @@ final class FoeSprite: SKNode {
             }
         }
         core = position.x
-        let moved = shownX.map { abs(x - $0) } ?? 0
+        let shift = shownX.map { x - $0 } ?? 0
         shownX = x
         shownAir = lift
         self.position = CGPoint(x: x - facing * jolt + facing * lurch, y: position.y + lift)
@@ -326,32 +398,54 @@ final class FoeSprite: SKNode {
         shadow.alpha = 0.6 * max(0.25, 1 - lift / (ronin * 1.2))
         glint.position.x = facing * height * 0.07
 
+        // On his feet, how fast he is going the way he faces (smoothed), and whether that is walking: begun once he
+        // is plainly on the move, ended once he has plainly stopped, so a man creeping up in a queue or holding his
+        // place never flickers between walking and standing, or between stepping in and backing off.
+        let onFoot = !holding && (foe.phase == .advancing || foe.phase == .fleeing)
+        var planted: CGFloat?
+        if !onFoot {
+            pace = 0
+            stepping = false
+        } else if dt > 0 {
+            pace += (shift * facing / CGFloat(dt) - pace) * min(1, CGFloat(dt) * 12)
+            stepping = stepping ? abs(pace) > ronin * 0.08 : abs(pace) > ronin * 0.2
+            if stepping {
+                // A frame for each twelfth of a stride travelled, forward or back, so the feet keep to the ground (a
+                // dart's run takes a longer stride); and where a foot comes down.
+                let running = foe.bearer && foe.darting
+                let unit = max(1, height * Figure.stride(cast) * (running ? 1.3 : 1) / CGFloat(Frame.walkFrames))
+                let before = Int(floor(walk))
+                walk += shift * facing / unit
+                planted = landing(from: before, to: Int(floor(walk))).map { x + facing * $0 * height }
+            }
+        }
+        let stride = Frame.walk(FoeSprite.wrap(Int(floor(walk))))
+
         var frame = shown
         var leanTarget: CGFloat = holding ? lean : 0
         var gathering: CGFloat = 0
         if !holding {
             switch foe.phase {
             case .advancing, .fleeing:
-                let walking = dt > 0 && moved > 0.04
-                if foe.bearer, foe.phase == .advancing, foe.darting {
-                    // The dart: in at a rush, low over his weapon, gathered to strike.
-                    frame = .windup(0)
-                    leanTarget = 0.16
+                let bearer = foe.bearer && foe.phase == .advancing
+                if bearer, foe.darting {
+                    // The dart, committed: in at a run, low and leaning hard into it, the gourd flaring.
+                    frame = stride
+                    leanTarget = 0.2
                     gathering = 1
-                } else if foe.bearer, foe.phase == .advancing, !walking, foe.hover < 0.12 {
-                    // About to go (or poised, waiting for his way in to clear): he crouches over his weapon and
-                    // leans in, and the gourd flares.
+                } else if bearer, !stepping, foe.hover < FoeSprite.readying {
+                    // Readying himself to go (or poised, waiting for his way in to clear): he crouches over his weapon
+                    // and leans in, and the gourd flares.
                     frame = .windup(0)
                     leanTarget = 0.07
                     gathering = 1
                 } else if dt == 0 {
                     frame = shown
-                } else if walking {
-                    // A frame for each twelfth of a stride travelled, so the feet keep to the ground.
-                    walk += moved / max(1, height * Figure.stride(cast) / CGFloat(Frame.walkFrames))
-                    frame = .walk(Int(walk) % Frame.walkFrames)
-                    // Leaning into the stride, harder the faster it comes.
-                    leanTarget = min(0.1, CGFloat(Double(moved) / dt) / ronin * 0.045)
+                } else if stepping {
+                    // Leaning into the stride, harder the faster it comes; backing off (the stride played backward,
+                    // still facing the ronin), a little back on his heels.
+                    frame = stride
+                    leanTarget = pace > 0 ? min(0.1, pace / ronin * 0.045) : max(-0.05, pace / ronin * 0.02)
                 } else {
                     frame = staggerHold > 0 ? .stagger(staggerHold > 0.15 ? 0 : 1) : .idle(Int(idleClock * 5) % Frame.foeIdleFrames)
                 }
@@ -382,8 +476,15 @@ final class FoeSprite: SKNode {
                     frame = kind == .archer ? .loose : .idle(Int(idleClock * 5) % Frame.foeIdleFrames)
                 }
             case .leaping:
-                // The gourd-bearer springs back out of reach, rocked back by the cut; the rest somersault over.
-                frame = foe.bearer ? .stagger(flight < 0.55 ? 0 : 1) : .leap
+                if foe.bearer {
+                    // The gourd-bearer springs back out of reach: a short hop off his heels, rocked back by the cut,
+                    // still facing the ronin, finding his feet as he comes down.
+                    frame = .stagger(flight < 0.5 ? 0 : 1)
+                    leanTarget = -0.1
+                } else {
+                    // The rest somersault over.
+                    frame = .leap
+                }
             case .dying:
                 // (Never drawn: the scene lets the dead go before they get here.)
                 frame = .stagger(0)
@@ -392,8 +493,12 @@ final class FoeSprite: SKNode {
         if !has(frame) { frame = .idle(0) }
         if frame != shown { changePose(to: frame) }
         if echo.alpha > 0 { echo.alpha = max(0, echo.alpha - CGFloat(dt) / 0.1 * 0.5) }
-        if wasLeaping, !leaping, !holding { squash = 0.16 }
+        // Crouched to spring, and landing: the gourd-bearer's hop lightly, a leap harder.
+        if leaping, !wasLeaping, foe.bearer { squash = max(squash, 0.1) }
+        if wasLeaping, !leaping, !holding { squash = foe.bearer ? 0.12 : 0.16 }
         if !holding { wasLeaping = leaping }
+        // The heavy ones sink into each step as the foot comes down.
+        if planted != nil, kind == .brute || kind == .warlord { squash = max(squash, kind == .brute ? 0.045 : 0.035) }
 
         gather += (gathering - gather) * min(1, CGFloat(dt) * 18)
         // Crouched as he gathers himself (not as he darts: then he is lunging).
@@ -411,12 +516,8 @@ final class FoeSprite: SKNode {
             gourdHalo?.setScale(1 + 0.9 * gather)
         }
 
-        if leaping {
-            if foe.bearer {
-                pivot.zRotation = facing * 0.4 * CGFloat(sin(flight * .pi))
-            } else {
-                pivot.zRotation = -CGFloat(flight) * 2 * .pi * (foe.leapTo > 0 ? 1 : -1)
-            }
+        if leaping, !foe.bearer {
+            pivot.zRotation = -CGFloat(flight) * 2 * .pi * (foe.leapTo > 0 ? 1 : -1)
         } else if !holding, pivot.zRotation != 0 {
             // Down from a somersault: the rest of the turn eased out, on round the way it was going (never unwound back
             // through a half turn, which drew him upside down for a frame as he landed).
@@ -428,7 +529,7 @@ final class FoeSprite: SKNode {
         let charging = foe.phase == .windup || foe.phase == .aiming
         let t = charging ? CGFloat(foe.progress) : 0
         if hitFlash > 0 {
-            tint(.white, CGFloat(hitFlash / 0.14) * 0.85)
+            tint(ambient.light, CGFloat(hitFlash / 0.14) * 0.8)
         } else if charging {
             tint(Palette.blood, (0.12 + 0.5 * t * t) * (kind == .archer ? 0.6 : 1))
         } else {
@@ -486,7 +587,7 @@ final class FoeSprite: SKNode {
         }
 
         // The cuts he has left (not taken off until the blade lands), out of the way of his marker while he winds up
-        // (a gourd-bearer's sit under his gourd, clear of it, and show just when he has to be caught).
+        // (a gourd-bearer's either side of his gourd, clear of it, and shown just when he has to be caught).
         if !holding {
             if foe.hp != pipsShown {
                 pipsShown = foe.hp
@@ -496,6 +597,7 @@ final class FoeSprite: SKNode {
             let hidden = leaping || foe.phase == .windup && gourd == nil
             for pip in pips { pip.isHidden = hidden }
         }
+        return planted
     }
 
     /// The fastest the fight moves him along the lane by walking, in lane units a second: the gourd-bearer's dart, a
@@ -504,17 +606,70 @@ final class FoeSprite: SKNode {
         CGFloat(foe.bearer ? foe.speed * 5 : max(foe.speed * 1.5, 0.6))
     }
 
-    /// Tints him, unless he already is (every tint sets the shader's attribute afresh).
+    private static func wrap(_ k: Int) -> Int { (k % Frame.walkFrames + Frame.walkFrames) % Frame.walkFrames }
+
+    private static var landingCache: [Cast: [Bool: [Int: CGFloat]]] = [:]
+
+    /// The walking frames on which a foot comes down, forward or backing off (the stride played backward), and where
+    /// that foot is (figure heights ahead of the point he stands on): the frame it is on the ground again after being
+    /// lifted, from the frames' own footing, so they keep in step with however the walk is posed.
+    static func landings(_ cast: Cast, forward: Bool) -> [Int: CGFloat] {
+        if let known = landingCache[cast]?[forward] { return known }
+        let n = Frame.walkFrames
+        let feet = (0..<n).map { Figure.footing(cast, .walk($0)) }
+        func lifted(_ k: Int, front: Bool) -> Bool {
+            let f = feet[wrap(k)]
+            return (front ? f.front.y : f.back.y) - min(f.front.y, f.back.y) > 0.0015
+        }
+        var found: [Int: CGFloat] = [:]
+        for k in 0..<n {
+            for front in [true, false] where !lifted(k, front: front) && lifted(forward ? k - 1 : k + 1, front: front) {
+                found[k] = front ? feet[k].front.x : feet[k].back.x
+            }
+        }
+        landingCache[cast, default: [:]][forward] = found
+        return found
+    }
+
+    /// Whether a foot came down as his stride went from frame `before` to `after` (counted on, not wrapped: forward
+    /// up, backing off down), and where: the last one set down, if more than one was.
+    private func landing(from before: Int, to after: Int) -> CGFloat? {
+        guard after != before else { return nil }
+        let step = after > before ? 1 : -1
+        let marks = FoeSprite.landings(cast, forward: step > 0)
+        var found: CGFloat?
+        var k = before
+        while k != after {
+            k += step
+            if let at = marks[FoeSprite.wrap(k)] { found = at }
+        }
+        return found
+    }
+
+    /// Puts him in the setting's light: his shadow in its darkest tone, the ghost of a pose just left a dark,
+    /// see-through silhouette in it, and at rest drawn a little toward it (a flush or a flash goes on top).
+    private func light() {
+        shadow.color = ambient.ghost.scaled(0.5).color()
+        Art.setTint(echo, ambient.ghost, 1)
+        let last = tinted ?? (Palette.blood, 0)
+        tinted = nil
+        tint(last.color, last.amount)
+    }
+
+    /// Tints him `amount` of the way to `color` over the setting's light, unless he already is (every tint sets the
+    /// shader's attribute afresh).
     private func tint(_ color: RGB, _ amount: CGFloat) {
         if let tinted, tinted.color == color, tinted.amount == amount { return }
         tinted = (color, amount)
-        Art.setTint(body, color, amount)
+        let drawn = ambient.with(color, amount)
+        Art.setTint(body, drawn.color, drawn.amount)
     }
 
     private func has(_ frame: Frame) -> Bool { Figures.has(cast, frame) }
 
-    /// Swaps in a new pose. A jump to a different kind of pose keeps the old one a moment behind it, so the change
-    /// reads as movement, not a cut; the frames of one motion (a stride, a breath, a wind-up) follow on cleanly.
+    /// Swaps in a new pose. A jump to a different kind of pose keeps the old one a moment behind it (a dark ghost of
+    /// it, in the setting's shadow), so the change reads as movement, not a cut; the frames of one motion (a stride
+    /// either way, a breath, a wind-up) follow on cleanly.
     private func changePose(to frame: Frame) {
         func family(_ f: Frame) -> Int {
             switch f {
@@ -529,7 +684,7 @@ final class FoeSprite: SKNode {
         if family(frame) != family(shown) {
             echoFrame = shown
             Figures.apply(echo, cast, echoFrame, ronin: ronin)
-            echo.alpha = 0.45
+            echo.alpha = 0.4
         }
         shown = frame
         Figures.apply(body, cast, frame, ronin: ronin)
@@ -556,11 +711,11 @@ final class FoeSprite: SKNode {
     }
 
     /// The instant of a killing blow: thrown into the pose the blow throws him into (`Figures.struck`, variant 0 his
-    /// stagger) and lit white, held there until the blade arrives: upright, unsquashed, whole (not fading in), turned
-    /// to the ronin who struck him (even in the air, or running off), with nothing of the pose before it behind him.
-    /// The carnage lets him fall from the very same pose (`Carnage.sever` with the same variant, or `fell` from
-    /// `Figure.struck(cast, variant:)`), where he stands and facing the ronin, so his body, his head and his weapon
-    /// leave the frozen figure without a jump.
+    /// stagger) and lit white in the setting's light, held there until the blade arrives: upright, unsquashed, whole
+    /// (not fading in), turned to the ronin who struck him (even in the air, or running off), with nothing of the pose
+    /// before it behind him. The carnage lets him fall from the very same pose (`Carnage.sever` with the same variant,
+    /// or `fell` from `Figure.struck(cast, variant:)`), where he stands and facing the ronin, so his body, his head and
+    /// his weapon leave the frozen figure without a jump.
     func freezeStruck(variant: Int = 0) {
         freeze(Figures.struck(cast, variant: variant))
     }
@@ -585,14 +740,15 @@ final class FoeSprite: SKNode {
         body.zRotation = 0
         body.xScale = facing
         body.yScale = 1
-        tint(.white, 0.9)
+        tint(ambient.light, 0.88)
         warning.isHidden = true
         sight.alpha = 0
         glint.alpha = 0
         ward.alpha = 0
     }
 
-    /// The blade lands on him: a white flash and a jolt back (and whatever a held blow was keeping from him starts).
+    /// The blade lands on him: a flash in the setting's light and a jolt back (and whatever a held blow was keeping
+    /// from him starts).
     func flashHit() {
         holding = false
         hitFlash = 0.14
@@ -601,10 +757,11 @@ final class FoeSprite: SKNode {
     }
 
     /// The wound a cut leaves across him, laid along the cut at the height it went in (a share of his height: a
-    /// shin cut low, a head cut high), shorter across the legs: raw red, fading.
-    func gash(_ tilt: CGFloat, at level: CGFloat = 0.56) {
+    /// shin cut low, a head cut high), shorter across the legs: raw red, fading; wider and slower to fade the heavier
+    /// the `gore` (the scene leaves it off with gore turned off).
+    func gash(_ tilt: CGFloat, at level: CGFloat = 0.56, gore: Gore = .full) {
         let cut = SKSpriteNode(texture: Art.streak)
-        cut.size = CGSize(width: height * (level < 0.4 ? 0.36 : 0.6), height: max(2, height * 0.04))
+        cut.size = CGSize(width: height * (level < 0.4 ? 0.36 : 0.6), height: max(2, height * 0.04 * gore.size))
         // On the pivot, which is at his middle, so a leap carries it with him.
         cut.position = CGPoint(x: 0, y: height * (level - 0.5))
         cut.xScale = facing
@@ -613,7 +770,7 @@ final class FoeSprite: SKNode {
         cut.colorBlendFactor = 1
         cut.zPosition = 1
         pivot.addChild(cut)
-        cut.run(.sequence([.wait(forDuration: 0.3), .fadeOut(withDuration: 0.45), .removeFromParent()]))
+        cut.run(.sequence([.wait(forDuration: 0.3 * Double(gore.span)), .fadeOut(withDuration: 0.45), .removeFromParent()]))
     }
 
     /// A cut met his guard. Set, the blade rings off it and the warlord rocks but holds; still coming up, it
@@ -700,8 +857,18 @@ final class HeroSprite: SKNode {
     private var breath = 0.0
     private var flush: CGFloat = 0
     /// How much of the stage's blood is on him; the chiburi throws it off.
-    private var gore: CGFloat = 0
-    /// The tint on him, as last set.
+    private var stain: CGFloat = 0
+    /// Whether blood shows on him (`Settings.gore`): the stage's blood, a wound's red flush (pale without it), the
+    /// chiburi's spray, and a hand pressed to a bleeding wound as he fights for breath.
+    var gore = true
+    /// The setting's light on him (`Ambient`).
+    var ambient = Ambient.plain {
+        didSet {
+            guard ambient != oldValue else { return }
+            light()
+        }
+    }
+    /// The tint on him, as last asked for (over the setting's light).
     private var tinted: (color: RGB, amount: CGFloat)?
     private var ronin: CGFloat = 60
     var home = CGPoint.zero
@@ -746,7 +913,7 @@ final class HeroSprite: SKNode {
         addChild(body)
         echo.alpha = 0
         echo.zPosition = -0.5
-        tint(Palette.blood, 0)
+        light()
     }
 
     required init?(coder aDecoder: NSCoder) { nil }
@@ -775,7 +942,7 @@ final class HeroSprite: SKNode {
         offset = 0
         dart.clock = dart.span
         flush = 0
-        gore = 0
+        stain = 0
         snap = 0
         shaken = 0
         bled = false
@@ -791,7 +958,7 @@ final class HeroSprite: SKNode {
         echoSheathed = poseSheathed
         draw(echo, echoPose, sheathed: echoSheathed)
         echo.xScale = body.xScale
-        echo.alpha = 0.45
+        echo.alpha = 0.4
         facing = side
     }
 
@@ -873,9 +1040,13 @@ final class HeroSprite: SKNode {
             offset = to
         }
         show(b.frame, blend: b.blend, sheathed: b.sheathed)
-        // The flourish's moments: the blood flung off the blade as the chiburi snaps down, the blade home at the end.
+        // The flourish's moments: the blood flung off the blade as the chiburi snaps down (if there is any, and gore
+        // is on), the blade home at the end.
         if act == .flourishing {
-            if b.frame == .flourish(3), gore > 0 { chiburi() }
+            if b.frame == .flourish(3), stain > 0 {
+                if gore { chiburi() }
+                stain = 0
+            }
             if b.frame == .flourish(Frame.flourishFrames - 1) { sheathed = true }
         }
     }
@@ -950,7 +1121,7 @@ final class HeroSprite: SKNode {
     }
 
     /// Faint copies of the ronin in the cut's own pose, strung out toward the foe across the gap he closed, gone
-    /// in a blink.
+    /// in a blink: dark, see-through silhouettes in the setting's shadow, like ink left behind by the brush.
     private func afterimages(_ side: Side, _ style: Cut, _ distance: CGFloat) {
         guard let parent else { return }
         let span = distance - ronin * 0.35
@@ -960,8 +1131,8 @@ final class HeroSprite: SKNode {
             ghost.xScale = side == .right ? 1 : -1
             ghost.position = CGPoint(x: home.x + side.sign.cg * span * CGFloat(k) / 3, y: home.y)
             ghost.zPosition = zPosition - 0.5
-            Art.setTint(ghost, Palette.steel.mix(Palette.silhouette, 0.4), 0.35)
-            ghost.alpha = 0.26 - 0.08 * CGFloat(k)
+            Art.setTint(ghost, ambient.ghost, 1)
+            ghost.alpha = 0.36 - 0.12 * CGFloat(k)
             ghost.run(.sequence([.fadeOut(withDuration: 0.14), .removeFromParent()]))
             parent.addChild(ghost)
         }
@@ -1037,7 +1208,8 @@ final class HeroSprite: SKNode {
         play(run)
     }
 
-    func bloodied(_ amount: CGFloat) { gore = min(0.14, gore + amount) }
+    /// Blood thrown on him by a kill: darker by `amount`, up to `most` (the heavier the gore, the more of it).
+    func bloodied(_ amount: CGFloat, upTo most: CGFloat = 0.14) { stain = max(stain, min(most, stain + amount)) }
 
     /// The end of the stage. Won on a cut, the cut plays out first (the swing, zanshin and the steps home), and the
     /// flourish follows; otherwise the flourish or the fall begins now, from where he stands.
@@ -1095,11 +1267,10 @@ final class HeroSprite: SKNode {
     private func chiburi() {
         guard let parent else { return }
         let sign: CGFloat = facing == .right ? 1 : -1
-        let spray = Art.burst(Palette.blood.mix(.black, 0.2), count: Int(20 + gore * 60), speed: ronin * 2.2, size: ronin * 0.05, life: 0.45,
+        let spray = Art.burst(Palette.blood.mix(.black, 0.2), count: Int(20 + stain * 60), speed: ronin * 2.2, size: ronin * 0.05, life: 0.45,
                               spread: 0.5, angle: sign > 0 ? -0.35 : .pi + 0.35, gravity: ronin * 7, additive: false)
         spray.position = CGPoint(x: home.x + offset + sign * ronin * 0.45, y: home.y + ronin * 0.42)
         parent.addChild(spray)
-        gore = 0
     }
 
     private func settle() {
@@ -1120,16 +1291,19 @@ final class HeroSprite: SKNode {
 
     /// His guard: the iai stance before the first cut, chūdan, or, badly hurt or just shaken, one of the winded
     /// cycles (heaving over the iai stance, with the blade still sheathed), another chosen each time one runs out:
-    /// the knees giving more often on the last heart, and a hand pressed to his side only when he is bleeding.
+    /// the knees giving more often on the last heart, and a hand pressed to his side only when he is bleeding (and
+    /// never with gore off).
     private var stance: (frame: Frame, sheathed: Bool) {
         guard strain > 0 || shaken > 0 else {
             return sheathed ? (.iai(Int(breath * 5) % Frame.iaiFrames), false) : (.idle(Int(breath * 8) % Frame.heroIdleFrames), false)
         }
         let round = Int(gasp) / Frame.windedFrames
-        if round != gasps || (strain == 0 && (cycle == 2 || (!bled && cycle != 0))) {
+        if round != gasps || (strain == 0 && (cycle == 2 || (!bled && cycle != 0))) || (!gore && cycle == 1) {
             gasps = round
-            let weights: [Double] = strain > 1 ? [0.3, 0.35, cycle == 2 ? 0.1 : 0.35]
+            var weights: [Double] = strain > 1 ? [0.3, 0.35, cycle == 2 ? 0.1 : 0.35]
                 : strain == 1 ? [0.45, 0.4, cycle == 2 ? 0.05 : 0.15] : bled ? [0.6, 0.4, 0] : [1, 0, 0]
+            // (The hand pressed to the wound shows the blood coming through it: only with gore on.)
+            if !gore { weights[1] = 0 }
             var next = 0, roll = Double.random(in: 0..<weights.reduce(0, +))
             while next < weights.count - 1, roll >= weights[next] {
                 roll -= weights[next]
@@ -1147,11 +1321,23 @@ final class HeroSprite: SKNode {
 
     // MARK: Drawing
 
-    /// Tints him, unless he already is (every tint sets the shader's attribute afresh).
+    /// Tints him `amount` of the way to `color` over the setting's light, unless he already is (every tint sets the
+    /// shader's attribute afresh).
     private func tint(_ color: RGB, _ amount: CGFloat) {
         if let tinted, tinted.color == color, tinted.amount == amount { return }
         tinted = (color, amount)
-        Art.setTint(body, color, amount)
+        let drawn = ambient.with(color, amount)
+        Art.setTint(body, drawn.color, drawn.amount)
+    }
+
+    /// Puts him in the setting's light: drawn a little toward its darkest tone (a flush or the stage's blood on top),
+    /// his shadow in it, and the ghost of the pose he has just left a dark, see-through silhouette in it.
+    private func light() {
+        shadow.color = ambient.ghost.scaled(0.5).color()
+        Art.setTint(echo, ambient.ghost, 1)
+        let last = tinted ?? (Palette.blood, 0)
+        tinted = nil
+        tint(last.color, last.amount)
     }
 
     private func show(_ frame: Frame, blend: Bool, sheathed look: Bool = false) {
@@ -1259,8 +1445,14 @@ final class HeroSprite: SKNode {
         body.xScale = sign * (1 + 0.05 * snap)
         body.yScale = 1 - 0.035 * snap
         if flush > 0 { flush = max(0, flush - CGFloat(dt) * 4) }
-        // A wound flushes him red; the blood of the stage darkens him, a deep wet red rather than a bright one.
-        if flush > gore { tint(Palette.blood, flush) } else { tint(Palette.blood.mix(.black, 0.55), gore) }
+        // A wound flushes him red (with gore off, a pale flash: no blood); the blood of the stage darkens him, a deep
+        // wet red rather than a bright one.
+        let blood = gore ? stain : 0
+        if flush > blood {
+            if gore { tint(Palette.blood, flush) } else { tint(ambient.light, flush * 0.6) }
+        } else {
+            tint(Palette.blood.mix(.black, 0.55), blood)
+        }
         let target: CGFloat = bloodlust && !ended ? 0.55 + 0.2 * CGFloat(sin(breath * 9)) : 0
         aura.alpha += (target - aura.alpha) * min(1, CGFloat(dt) * 8)
     }
