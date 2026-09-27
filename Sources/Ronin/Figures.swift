@@ -71,10 +71,10 @@ enum Figures {
 
     private static var struckPieces: [Cast: [Int: Piece]] = [:]
 
-    /// A foe thrown into the pose a blow throws him into (`Figure.struck(cast, variant:)`; variant 0 is his stagger),
-    /// his weapon still in his hand and his cloth at rest: what his figure freezes in at a killing blow, exactly as
-    /// the carnage lets him fall from it (`Carnage.sever` or `fell` with the same variant), less the weapon, which
-    /// leaves his hand as he falls.
+    /// A foe in the pose a blow throws him into (`Figure.struck(cast, variant:)`; variant 0 is his stagger), his
+    /// weapon still in his hand and his cloth at rest: what his figure freezes in at a killing blow, exactly as the
+    /// carnage lets him fall from it (`Carnage.sever` with the same variant, or `fell` from the same pose), less the
+    /// weapon, which leaves his hand as he falls.
     static func struck(_ cast: Cast, variant: Int) -> Piece {
         if let piece = struckPieces[cast]?[variant] { return piece }
         var pose = Figure.struck(cast, variant: variant)
