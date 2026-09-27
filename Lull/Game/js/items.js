@@ -54,7 +54,7 @@
   const BY_ID = Object.fromEntries(COMBOS.map((c) => [c.id, c]));
   const SHARE = [1, 0.5, 0.25];
 
-  /** What a combo pays the (k+1)th time on one board. */
+  /** What a combo pays the (k+1)th time it comes round in the board library (Library.taper). */
   function reward(c, k) {
     const f = SHARE[k] || 0;
     return { lines: Math.floor((c.lines || 0) * f), boost: c.boost && k < 2 ? c.boost : null, score: c.score || 0 };

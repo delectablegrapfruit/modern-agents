@@ -24,9 +24,39 @@ line more, and the back-to-back streak multiplies it: an eighth for each quad or
 pay past eight in a row and stops at ×2.5 (twenty in a row) — a quad on a full streak pays 13. The *chain* — the streak
 plus the combo, the number to be proud of — is counted apart and shown beside the multiplier (`Chain 16 · ×1.75`).
 A piece that has no room where it appears (a new one, one swapped in from hold, or one an item makes) is fitted into the nearest open spot above the stack it could get to — beside a tall column, stood on end, in another turn — never down inside the stack. Only when it fits nowhere is the board full; a hold swap or an item with no room is just refused (a short note says so, nothing is used up).
-A full board just ends that board; the lines stay yours. The ⦵ glyph is a cleared line running into a small black hole; in the wallet it is drawn large, a dark disc in a thin glowing ring. Everywhere else it is one character, `L.LINE` (U+29B5, never an emoji), drawn by a one-glyph font of the page's own (`scripts/line-glyph.py`) that is first in every font list and in the canvas fonts, so text, prices, toasts and the boards all show the same shape. Retiring a board (New board, or when it fills up) shows its whole life: how long it
+A full board just ends that board; the lines stay yours. The ⦵ glyph is a cleared line running into a small black hole; in the wallet it is drawn large, a dark disc in a thin glowing ring. Everywhere else it is one character, `L.LINE` (U+29B5, never an emoji), drawn by a one-glyph font of the page's own (`scripts/line-glyph.py`) that is first in every font list and in the canvas fonts, so text, prices, toasts and the boards all show the same shape. Retiring a board (Boards ▸ Retire, or Retire when it fills up) shows its whole life: how long it
 lived and was played, pieces, lines, score, quads, T-spins, perfect clears, best combo and back-to-back, holds and
 every power-up used on it; Stats ▸ Free Play keeps the last boards.
+
+*Boards* — the library, from the Boards button in the Relaxed status bar (`js/library.js` keeps it; the window is in
+`js/modes.js`). Two tabs, Saved (count of 12) and Retired, and New board. Saved lists the board in play first (marked
+Playing), then the rest by when they were last played; each row is a thumbnail of its stack (in the current palette, plain squares
+on whole screen pixels so it stays crisp; cached and redrawn only when the stack or the look changed), its name, lines, score and when it was last played
+(Full on one that filled up). Click a row (or ↑/↓ and Enter) to resume it exactly as it was left: cells, the piece in
+play and where it was (a T turned into its slot still spins, an I brought out of hold is still one), hold, the queue, the bag and the random stream (it goes on with the same pieces it would have
+dealt), score, lines, chain and multiplier, gold, boosts and Luck, per-board stats and play time; the one in play is
+shelved as it stands. A power-up still waiting to be taken back is kept as used when you switch (the take-back ends
+there, as when the piece sets), and the Rewind history stays behind, as it does across a reload. New board shelves the
+one in play and starts an empty board with its own seed (never the old board's queue); it is off for a board nothing has
+been done on, and when the library holds 12 (it says Library full; retire or delete one). Each row has Rename (inline:
+Enter keeps it, Esc leaves it, a click elsewhere keeps it and still lands; up to 24 characters, never empty or
+invisible; a name another board has gets a number, "Rainy Sunday 2"), Retire (only a board that was played: its summary, then
+it moves to Retired; the one in play is replaced by a new board) and Delete (asks first; nothing is kept). New boards
+get a calm two-word name no other board has (Mossy Harbor, Quiet Orchard), then Board N. Retired keeps up to 50 read-only
+records, newest first — name, started and retired dates, the final stack and the whole summary — and past 50 the oldest
+goes (the Retire card says so). A record opens with a click and can be deleted. Retiring or deleting the board in play
+always starts a new game in its place, and a full board is recorded as Full however it was retired. The windows are
+kept for the keyboard: the library opens with focus on the board in play, a question over it takes focus (Enter on a
+Delete question is Cancel) and nothing under it can be reached, and afterwards focus is back on the nearest row. A
+library in a save that has been edited by hand is made safe when it loads: broken records are dropped.
+
+The combos' shrinking pay is the library's, not a board's: a new board beside the others is no fresh start, and it
+starts over only when a board begins with no other left. Everything else about a board belongs to it: its stats, its hand-play record for the
+achievements ("no power-ups on the board", "on one board", Old Growth's age) and its share of the power-ups paid every
+hundred lines (the save's per-board Earn record is parked with the board, so leaving and coming back never pays a
+milestone twice). Lifetime totals count play once, whichever board it was on, and switching adds nothing. There is no
+duplicate: a copy would be a way to replay a board's future. The daily gift, the factory and the control hints do not
+look at boards at all.
 
 **Classic** — its own tab, the last of the places to play. Plain Tetris: pieces fall, faster every ten
 lines (guideline speed curve), half-second lock delay, soft and hard drop, hold (once per piece), game over, best
@@ -162,7 +192,7 @@ a Patch dropped into a covered hole (Patch Job); clear a line with a Ghost piece
 Wall); clear four lines at once with a Noodle or a Giant (Tall Order); three at once with a Blueprint piece
 (Architect); four with a Best Fit piece (Tailor-Made); win a Double or Nothing (All In); let a Safety Net keep a
 back-to-back streak of five or more (Caught); take out ten blocks or more with one Bomb (Full Blast); swallow twenty
-or more with one Black Hole (Event Horizon). With no clock in Free Play, none is for repeating: on one board each pays
+or more with one Black Hole (Event Horizon). With no clock in Free Play, none is for repeating: across the board library each pays
 in full, then half, then a quarter, then nothing; boosts come with the first two; and a power-up combo pays less than
 the power-up it takes. Stats ▸ Free Play lists them: found ones by name, the rest as a question mark.
 
@@ -234,11 +264,19 @@ the item bar is one recessed track with a segment per power-up type. Text everyw
 and its number, no prose.
 
 **Achievements** — 105 quiet milestones that pay ⦵ lines, in their own tab: a small toast when one is earned, nothing
-more (one earned in the background, by the factory or the once-a-minute check, is told when you come back, not chimed
-from a hidden window). The tab opens on three figures (Earned 12 / 105, Lines earned, Lines available) and folds them into Free Play,
+more (one earned in the background, by the factory or the once-a-minute check, or while rolled up, is told when you
+come back, not chimed from a hidden window). The toast is a button: a click (or Enter once it has focus) opens the tab on
+that achievement — the filter set to show it, its group open, the row scrolled into the middle of the list and lit for
+a moment (held still under reduced motion); "N achievements while you were away" opens the tab at Recent. Pointed at, a
+toast waits (up to twice its time); focused, it waits. With mouse control on a live board a click is a drop, so there a
+toast takes the pointer only once it has rested on it a moment; with a dialog open it lets clicks through. Other toasts
+are only notes. The tab opens on three figures (Earned 12 / 105, Lines earned, Lines available) and folds them into Free Play,
 Classic, Puzzles, Lifetime and Factory (each header keeps its count, a bar and lines earned / available; each row its
 name, a plain description such as "Clear 4 lines with one piece. No power-ups on the board.", its pay and the date
-earned), easiest first, with a filter for all, to do or earned; the slow ones show their progress. None is a
+earned), easiest first, with a filter for all, to do or earned; the slow ones show their progress. Left of the filter,
+Recent: the latest earned (its icon and name; *Latest*, then the star alone, as the window narrows) goes to it, and its chevron lists the
+last six, newest first, with how long ago (`now`, `12 min`, `5 h`, `3 d`, then the date); it is not there until one is
+earned. The toast, Recent and its list all go through one function (`UI.showAchievement`). None is a
 gimme — the easiest is a quad with no power-ups on the board (15 ⦵) — and 150 pieces of ordinary play earn nothing new, nor do 150 with a
 few items used along the way (a test plays both, at a relaxed piece every three seconds).
 
@@ -353,7 +391,7 @@ cd Lull && swift run          # the same, straight from the package
 
 open Lull/Game/index.html     # any browser, any OS (saves to localStorage)
 
-node Lull/scripts/test.cjs            # game logic: 750 puzzles replayed through the engine, turns, items, factory, save
+node Lull/scripts/test.cjs            # game logic: 750 puzzles replayed through the engine, turns, items, factory, board library, save
 node Lull/scripts/browser-test.cjs    # the page played in headless Chromium (needs Playwright)
 node Lull/scripts/audio-render.cjs out/   # every sound and a minute of music rendered offline: WAVs, peak, loudness, brightness
 node Lull/scripts/audio-render.cjs out/ --harmony   # every pack's pitched sounds in every section: notes found, share in its key, A/B mixes
@@ -366,7 +404,7 @@ first time. The save lives in `~/Library/Application Support/Lull/save.json` (Se
 
 | Path | |
 |---|---|
-| `Game/` | the game: `index.html`, `css/`, and `js/` — `icons` (the one SVG icon set), `pieces` (SRS tetrominoes, pentominoes, big and custom shapes, polyomino enumeration), `board`, `engine` (the floating-piece rules and every item), `items` (the chain multiplier, combos, Luck, the daily gift, power-ups earned in play), `puzzlegen` (seeds, wildcards, reverse construction, reachability search, forward verification), `factory` (presses, the belt, the bin, one step for play and time away, save repair), `store` (save, catalog, stats), `achievements`, `fxphysics` (the item effects' blocks, debris and dust: gravity, bounces, spirals, fixed pools), `render` (canvas: skins, frames, effects, item animations, rotated views), `factoryview` (the factory floor, drawn like the board), `hints` (control hints: the struggle signals, their limits and retirement), `collapse` (the window rolled up into its title bar, and the pieces that march along it), `modes`, `ui`, `app` |
+| `Game/` | the game: `index.html`, `css/`, and `js/` — `icons` (the one SVG icon set), `pieces` (SRS tetrominoes, pentominoes, big and custom shapes, polyomino enumeration), `board`, `engine` (the floating-piece rules and every item), `items` (the chain multiplier, combos, Luck, the daily gift, power-ups earned in play), `library` (the Relaxed board library: shelved and retired boards, names, caps), `puzzlegen` (seeds, wildcards, reverse construction, reachability search, forward verification), `factory` (presses, the belt, the bin, one step for play and time away, save repair), `store` (save, catalog, stats), `achievements`, `fxphysics` (the item effects' blocks, debris and dust: gravity, bounces, spirals, fixed pools), `render` (canvas: skins, frames, effects, item animations, rotated views), `factoryview` (the factory floor, drawn like the board), `hints` (control hints: the struggle signals, their limits and retirement), `collapse` (the window rolled up into its title bar, and the pieces that march along it), `modes`, `ui`, `app` |
 | `Sources/Lull/` | the macOS shell: a borderless `NSPanel` (floating, all Spaces, edge-resizable, draggable by the page's title bar) around a transparent `WKWebView`, a blur for the Glass background, the save file, the ⌥⌘L hot key, and a self-test CI runs |
 | `scripts/` | `make-app.sh`, `icon.swift`, `line-glyph.py` (builds the line glyph's font into `lull.css`), `test.cjs`, `browser-test.cjs`, `audio-render.cjs` (renders and measures the synthesized audio offline), `pitch.cjs` (finds the notes in a render, to check sound effects are in the music's key), `splice-voice.py` (cuts the announcer's lines from a recording) |
 

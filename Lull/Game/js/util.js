@@ -131,6 +131,18 @@
     return Math.floor(h / 24) + 'd ' + (h % 24) + 'h';
   }
 
+  /** How long ago, short: now, 12 min, 5 h, 3 d, then the date (Sep 12; with the year once it is not this one). */
+  function fmtAgo(when, now) {
+    now = now == null ? Date.now() : now;
+    const m = Math.floor(Math.max(0, now - when) / 60000);
+    if (m < 1) return 'now';
+    if (m < 60) return m + ' min';
+    if (m < 24 * 60) return Math.floor(m / 60) + ' h';
+    if (m < 7 * 24 * 60) return Math.floor(m / 1440) + ' d';
+    const d = new Date(when);
+    return d.toLocaleDateString([], d.getFullYear() === new Date(now).getFullYear() ? { month: 'short', day: 'numeric' } : { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+
   function fmtClock(ms) {
     const s = Math.floor(ms / 1000);
     return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
@@ -188,7 +200,7 @@
 
   Object.assign(L, {
     hash32, RNG, codeFromInt, intFromCode, CODE_ALPHABET,
-    fmt, fmtInt, fmtDuration, fmtClock, pct, dateKey, clamp, lerp,
+    fmt, fmtInt, fmtDuration, fmtAgo, fmtClock, pct, dateKey, clamp, lerp,
     Emitter, native, decodeBase64Utf8, LINE,
     bus: new Emitter(),
   });

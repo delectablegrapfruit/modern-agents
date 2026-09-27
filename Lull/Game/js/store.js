@@ -149,7 +149,8 @@
         hints: true, // control hints (js/hints.js); they retire on their own either way
       },
       tab: 'play',
-      free: null,
+      free: null, // the Relaxed board in play (Game.toJSON)
+      boards: { seq: 0, cur: null, list: [], retired: [] }, // the board library (js/library.js): shelved and retired boards
       achievements: {},
       // Control hints (js/hints.js): pieces and board time toward retiring them all, times each was shown, good uses
       // of each control, the ones retired for good.

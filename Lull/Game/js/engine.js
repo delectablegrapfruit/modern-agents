@@ -73,7 +73,12 @@
         this.piece = null;
         if (sv.piece) {
           const type = Pieces.get(sv.piece.entry.id), entry = sv.piece.entry;
-          if (type) this.piece = { type, rot: sv.piece.rot, x: sv.piece.x, y: sv.piece.y, special: entry.special || null, entry, lastRot: false };
+          if (type) {
+            // The piece's own flags come back too: a T twisted into its slot still spins, an I from hold is still one.
+            this.piece = { type, rot: sv.piece.rot, x: sv.piece.x, y: sv.piece.y, special: entry.special || null, entry, lastRot: !!sv.piece.lastRot };
+            if (sv.piece.kick != null) this.piece.kick = sv.piece.kick;
+            if (sv.piece.fromHold) this.piece.fromHold = true;
+          }
         }
         this.fillQueue();
         if (!this.piece) this.spawnNext();
@@ -801,7 +806,8 @@
       return {
         w: this.w, h: this.h, wrap: this.board.wrap, cells: this.board.toArray(), fixed: this.fixed,
         queue: this.queue, bag: this.bag, rng: this.rng.state(), hold: this.hold, holdLocked: this.holdLocked, s: this.s,
-        piece: p ? { entry: Object.assign({}, p.entry, { special: p.special || null }), rot: p.rot, x: p.x, y: p.y } : null,
+        piece: p ? Object.assign({ entry: Object.assign({}, p.entry, { special: p.special || null }), rot: p.rot, x: p.x, y: p.y },
+          p.lastRot ? { lastRot: true } : null, p.kick != null ? { kick: p.kick } : null, p.fromHold ? { fromHold: true } : null) : null,
       };
     }
   }

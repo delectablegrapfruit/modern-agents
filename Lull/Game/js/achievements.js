@@ -216,7 +216,17 @@
     P.bestDailyRun = Math.max(P.bestDailyRun || 0, P.dailyRun);
   }
 
+  /**
+   * The most recently earned, newest first: [{ a, when }]. Ones earned at the same moment (one event can earn several)
+   * keep the order they were told in, reversed, so the last toast is the first here.
+   */
+  function recent(state, n) {
+    const got = state.achievements || {};
+    return LIST.map((a, i) => ({ a, i, when: got[a.id] })).filter((x) => x.when)
+      .sort((x, y) => y.when - x.when || y.i - x.i).slice(0, n == null ? 5 : n).map(({ a, when }) => ({ a, when }));
+  }
+
   function total() { return LIST.reduce((n, a) => n + a.pay, 0); }
 
-  L.Achievements = { LIST, GROUPS, check, total, puzzleRuns, earned };
+  L.Achievements = { LIST, GROUPS, check, total, puzzleRuns, earned, recent };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

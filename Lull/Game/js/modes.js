@@ -2,7 +2,7 @@
 (function (root) {
   'use strict';
   const L = (root.Lull = root.Lull || {});
-  const { Game, Board, CELL, Pieces, Puzzles, Factory, Render, UI, ITEMS, ITEM_ORDER, ITEM_GROUPS, Chain, Combos, Luck, Gifts, Earn, fmt, fmtInt, fmtClock, fmtDuration, dateKey } = L;
+  const { Game, Board, CELL, Pieces, Puzzles, Factory, Render, UI, ITEMS, ITEM_ORDER, ITEM_GROUPS, Chain, Combos, Luck, Gifts, Earn, Library, fmt, fmtInt, fmtClock, fmtDuration, dateKey } = L;
   const { h, toast } = UI;
   const ico = UI.icon;
   const { LINE } = L;
@@ -461,6 +461,9 @@
       if (saved) { try { game = new Game({ saved, previewCount: this.settings.preview }); } catch (e) { game = null; } }
       if (!game) game = new Game({ w: 10, h: 20, previewCount: this.settings.preview });
       game.previewCount = this.settings.preview;
+      // The board library (js/library.js): a record for the board in play, shelved ones, retired ones.
+      Library.ensure(app.store.state, Date.now());
+      this.thumbs = new Map(); // thumbnail images (data URLs) by board, stack and look
       this.attachGame(game, {});
       this.view.showBank = true;
       // The daily gift's button says when the next one comes; it is kept current as the time passes.
@@ -570,13 +573,13 @@
 
     /**
      * A combo (js/items.js): its reward — lines, a boost for the next few clears, points — shrinking each time it
-     * comes round on one board; a small callout on the board; and, the first time it is ever found, a power-up.
+     * comes round in the board library (Library.taper: a new board is not a fresh start); a small callout on the board; and, the first time it is ever found, a power-up.
      */
     combo(id, i) {
       const st = this.app.store, g = this.game, s = g.s, c = Combos.get(id);
       s.combos = s.combos || {};
-      const k = s.combos[id] || 0, rw = Combos.reward(c, k);
-      s.combos[id] = k + 1;
+      const k = Library.taper(st.state.boards || Library.ensure(st.state, Date.now()), id, s.combos[id]), rw = Combos.reward(c, k);
+      s.combos[id] = (s.combos[id] || 0) + 1;
       if (rw.lines) { st.addLines(rw.lines, 'combos'); s.banked = (s.banked || 0) + rw.lines; this.app.refreshWallet(true); }
       if (rw.boost) s.boost = { x: Math.max(rw.boost.x, s.boost ? s.boost.x : 1), left: Math.max(rw.boost.clears, s.boost ? s.boost.left : 0) };
       s.score += rw.score;
@@ -604,56 +607,349 @@
       if (!silent) { F.topouts++; this.app.store.touch(); }
       this.showCard([
         h('h2', null, 'Board full'),
-        this.boardSummary(g.s),
+        this.boardSummary(Library.summarize(g.s, Date.now())),
         h('div', { class: 'row' },
           g.history.length && this.app.store.state.inventory.rewind ? h('button', { class: 'btn', onclick: () => { this.hideCard(); this.useItem('rewind'); } }, ico('item-rewind'), 'Rewind · ' + this.app.store.state.inventory.rewind) : null,
-          h('button', { class: 'btn primary', onclick: () => this.newBoard('full') }, 'New board')),
+          h('button', { class: 'btn', onclick: () => this.openLibrary() }, ico('boards'), 'Boards'),
+          h('button', { class: 'btn primary', onclick: () => this.newBoard('full') }, ico('retire'), 'Retire')),
       ]);
     }
 
-    /** Asks before retiring a board, showing its whole life so far. */
-    askRetire() {
-      if (this.game.board.isEmpty() && !this.game.s.pieces) return this.newBoard('manual');
-      this.showCard([
-        h('h2', null, 'Retire this board?'),
-        this.boardSummary(this.game.s),
-        h('div', { class: 'row' },
-          h('button', { class: 'btn', onclick: () => this.hideCard() }, 'Keep playing'),
-          h('button', { class: 'btn primary', onclick: () => this.newBoard('manual') }, 'New board')),
-      ]);
-    }
-
-    /** A board's lifelong numbers, as a grid of small tiles. */
-    boardSummary(s) {
-      const life = s.startedAt ? Date.now() - s.startedAt : 0;
-      const items = Object.entries(s.items || {}).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
+    /** A board's lifelong numbers (Library.summarize), as a grid of small tiles. */
+    boardSummary(m) {
+      const items = Object.entries(m.items || {}).filter(([id, n]) => n > 0 && ITEMS[id]).sort((a, b) => b[1] - a[1]);
       const nItems = items.reduce((a, [, n]) => a + n, 0);
-      const ppm = s.playMs > 30000 ? (s.pieces / (s.playMs / 60000)).toFixed(1) : '—';
+      const ppm = m.playMs > 30000 ? (m.pieces / (m.playMs / 60000)).toFixed(1) : '—';
       const tile = (v, l) => h('div', { class: 'bs' }, h('div', { class: 'v' }, v), h('div', { class: 'l' }, l));
       return h('div', { class: 'board-sum' },
-        tile(life ? fmtDuration(life) : '—', 'Lifetime'), tile(s.playMs ? fmtDuration(s.playMs) : '—', 'Played'), tile(fmtInt(s.pieces), 'Pieces'),
-        tile(fmtInt(s.lines), 'Lines'), tile(fmtInt(s.score), 'Score'), tile(ppm, 'Pieces / min'),
-        tile(fmtInt((s.clears && s.clears[4]) || 0), 'Quads'), tile(fmtInt(s.tspins || 0), 'T-spins'), tile(fmtInt(s.perfect || 0), 'Perfect clears'),
-        tile(fmtInt(Math.max(0, s.maxCombo || 0)), 'Best combo'), tile(fmtInt(Math.max(0, s.maxB2B || 0)), 'Best back-to-back'), tile(fmtInt(s.bestChain || 0), 'Best chain'),
-        tile(fmtInt(s.bestHChain || 0), 'Best chain, no power-ups'), tile(fmtInt(s.banked || 0) + ' ' + LINE, 'Lines banked'), tile(fmtInt(Object.values(s.combos || {}).reduce((a, b) => a + b, 0)), 'Combos'),
+        tile(m.life ? fmtDuration(m.life) : '—', 'Lifetime'), tile(m.playMs ? fmtDuration(m.playMs) : '—', 'Played'), tile(fmtInt(m.pieces), 'Pieces'),
+        tile(fmtInt(m.lines), 'Lines'), tile(fmtInt(m.score), 'Score'), tile(ppm, 'Pieces / min'),
+        tile(fmtInt(m.quads), 'Quads'), tile(fmtInt(m.tspins), 'T-spins'), tile(fmtInt(m.perfect), 'Perfect clears'),
+        tile(fmtInt(m.maxCombo), 'Best combo'), tile(fmtInt(m.maxB2B), 'Best back-to-back'), tile(fmtInt(m.chain), 'Best chain'),
+        tile(fmtInt(m.hchain), 'Best chain, no power-ups'), tile(fmtInt(m.banked) + ' ' + LINE, 'Lines banked'), tile(fmtInt(m.combos), 'Combos'),
         h('div', { class: 'bs wide' }, h('div', { class: 'v' }, nItems ? fmtInt(nItems) + ' used' : 'none'), h('div', { class: 'l' }, 'Power-ups' + (items.length ? ': ' + items.slice(0, 6).map(([id, n]) => ITEMS[id].name + (n > 1 ? ' ×' + n : '')).join(', ') : ''))));
     }
 
+    /** Stats ▸ Free Play's log of past boards (kept apart from the library's records; deleting a record keeps it). */
+    logBoard(s, reason) {
+      if (!s || !s.pieces) return;
+      const F = this.app.store.state.stats.free, now = Date.now(), m = Library.summarize(s, now);
+      F.boardLog = F.boardLog || [];
+      F.boardLog.unshift({ at: now, reason: reason || 'manual', life: m.life, playMs: m.playMs, pieces: m.pieces, lines: m.lines, score: m.score, quads: m.quads, tspins: m.tspins, perfect: m.perfect, maxCombo: m.maxCombo, chain: m.chain, items: Object.values(m.items).reduce((a, b) => a + b, 0) });
+      if (F.boardLog.length > 30) F.boardLog.length = 30;
+    }
+
+    /**
+     * Retires the board in play (to the library's retired records) and starts a new one in its place: a new game with
+     * its own seed, nothing of the old one's piece, queue or random stream. Saved at once.
+     */
     newBoard(reason) {
-      this.hideCard();
-      const s = this.game.s, F = this.app.store.state.stats.free;
+      const st = this.app.store, now = Date.now();
+      Library.ensure(st.state, now);
+      this.syncCounters();
+      const s = this.game.s;
       if (s.pieces) {
-        F.boardLog = F.boardLog || [];
-        F.boardLog.unshift({ at: Date.now(), reason: reason || 'manual', life: s.startedAt ? Date.now() - s.startedAt : 0, playMs: s.playMs || 0, pieces: s.pieces, lines: s.lines, score: s.score, quads: (s.clears && s.clears[4]) || 0, tspins: s.tspins || 0, perfect: s.perfect || 0, maxCombo: Math.max(0, s.maxCombo || 0), chain: s.bestChain || 0, items: Object.values(s.items || {}).reduce((a, b) => a + b, 0) });
-        if (F.boardLog.length > 30) F.boardLog.length = 30;
+        this.logBoard(s, reason);
+        Library.retire(st.state, st.state.boards.cur, this.game.toJSON(), now, reason);
+        Library.newCurrent(st.state, now);
       }
-      this.game.resetBoard();
+      this.freshGame();
+      this.persist();
+    }
+
+    /** A new, empty game for the board in play (after Retire, Delete or New board). */
+    freshGame() {
       this.app.store.state.stats.free.boards++;
+      this.setGame(new Game({ w: 10, h: 20, previewCount: this.settings.preview }));
+    }
+
+    // ---- the board library -------------------------------------------------------------------------------------------
+
+    /** True for a board nothing has been done on yet (a new board from it would be the same board). */
+    untouched() { return !this.game.s.pieces && this.game.board.isEmpty(); }
+
+    /** The board in play as saved, marked when it is full (for the library's list). */
+    boardJSON() { const j = this.game.toJSON(); if (this.game.over) j.over = true; return j; }
+
+    /** A different board comes into play: a new game object, everything about the old one's piece in hand let go. */
+    setGame(game) {
+      this.armed = null;
+      this.tray = null;
+      this.hideCard();
+      game.previewCount = this.settings.preview;
+      this.attachGame(game, {});
+      this.view.showBank = true;
       this.snapshot();
-      this.view.fx.clear();
-      this.view.dirty = true;
+      this.renderItems();
       this.renderStatus();
-      this.app.store.touch();
+      if (game.over) this.onTopout(true);
+    }
+
+    /** Saves the board in play and the save at once (a library change is never left to the next autosave). */
+    persist() { this.save(); this.app.store.save(); }
+
+    /** Shelves the board in play and starts a new one (its own seed). False when the library is full. */
+    shelveAndNew() {
+      const st = this.app.store, now = Date.now();
+      if (Library.full(st.state.boards)) { toast('Library full', 'bad'); this.app.sound.play('error'); return false; }
+      if (this.untouched()) return false;
+      this.syncCounters();
+      Library.startNew(st.state, this.boardJSON(), now);
+      this.freshGame();
+      this.app.sound.play('hold');
+      this.persist();
+      return true;
+    }
+
+    /** Resumes a shelved board exactly as it was left; the one in play is shelved as it stands. */
+    switchTo(id) {
+      const st = this.app.store;
+      const json = Library.open(st.state, id, this.boardJSON(), Date.now());
+      if (!json) return false;
+      this.syncCounters();
+      let game;
+      try { game = new Game({ saved: json, previewCount: this.settings.preview }); } catch (e) { game = new Game({ w: 10, h: 20, previewCount: this.settings.preview }); }
+      this.setGame(game);
+      this.app.sound.play('hold');
+      this.persist();
+      return true;
+    }
+
+    /** Retires a board after showing its life: the one in play (a new one takes its place) or a shelved one. */
+    confirmRetire(id, after) {
+      const st = this.app.store, B = st.state.boards, rec = Library.find(B, id);
+      if (!rec) return;
+      const cur = id === B.cur, s = cur ? this.game.s : rec.game && rec.game.s;
+      if (!s || !s.pieces) return;
+      UI.openModal({
+        title: 'Retire ' + rec.name + '?', icon: 'retire', width: 420, cls: 'modal-retire',
+        body: [this.boardSummary(Library.summarize(s, Date.now())), B.retired.length >= Library.MAX_RETIRED ? h('p', { class: 'lib-note' }, 'Oldest retired board is removed') : null],
+        buttons: [{ label: 'Cancel' }, { label: 'Retire', kind: 'primary', onClick: () => { this.retire(id); if (after) after(); } }],
+      });
+    }
+
+    retire(id) {
+      const st = this.app.store, B = st.state.boards;
+      if (id === B.cur) { this.newBoard(this.game.over ? 'full' : 'manual'); return; }
+      const rec = Library.find(B, id);
+      if (!rec || !rec.game) return;
+      this.logBoard(rec.game.s, rec.game.over ? 'full' : 'manual');
+      Library.retire(st.state, id, rec.game, Date.now(), rec.game.over ? 'full' : 'manual');
+      this.persist();
+    }
+
+    /** Deletes a board for good, after asking; the one in play is replaced by a new board. */
+    confirmDelete(id, after) {
+      const B = this.app.store.state.boards, rec = Library.find(B, id) || Library.findRetired(B, id);
+      if (!rec) return;
+      UI.confirm('Delete ' + rec.name + '?', null, 'Delete', () => { this.deleteBoard(id); if (after) after(); }, 'danger', 'trash');
+    }
+
+    deleteBoard(id) {
+      const st = this.app.store, B = st.state.boards, now = Date.now();
+      if (Library.findRetired(B, id)) { Library.removeRetired(B, id); this.persist(); return; }
+      if (id === B.cur) {
+        this.syncCounters();
+        Library.remove(st.state, id);
+        Library.newCurrent(st.state, now);
+        this.freshGame();
+      } else Library.remove(st.state, id);
+      this.persist();
+    }
+
+    rename(id, raw) {
+      const name = Library.rename(this.app.store.state.boards, id, raw);
+      if (name) this.persist();
+      return name;
+    }
+
+    /**
+     * A board's stack in miniature, in the current palette (still: Prism at rest), as an image. Drawn on whole device
+     * pixels, as plain squares (a skin's detail does not survive at three pixels a cell), so it stays crisp at any
+     * scale. Cached by board, stack, look and scale, so it is redrawn only when one of those changed.
+     */
+    thumb(id, cells, w, hh) {
+      const eq = this.app.store.state.equipped, theme = this.app.theme;
+      const dpr = Math.min(3, root.devicePixelRatio || 1);
+      const str = typeof cells === 'string' ? cells : Library.encodeCells(cells);
+      const key = [id, eq.palette, theme.name, theme.wellTop, dpr, w, hh, str].join('|');
+      let url = this.thumbs.get(id);
+      if (!url || url.key !== key) {
+        const vals = (typeof cells === 'string' ? Library.decodeCells(cells) : cells) || [];
+        const c = Math.max(3, Math.round(3 * dpr)), gap = c >= 5 ? 1 : 0, pad = Math.max(2, Math.round(2 * dpr));
+        const W = w * c + pad * 2, H = hh * c + pad * 2;
+        const look = Render.makeLook(eq, theme, 0, true);
+        const cv = document.createElement('canvas');
+        cv.width = W; cv.height = H;
+        const ctx = cv.getContext('2d');
+        const gr = ctx.createLinearGradient(0, 0, 0, H);
+        gr.addColorStop(0, theme.wellTop || theme.well); gr.addColorStop(1, theme.wellBottom || theme.well);
+        ctx.fillStyle = gr; Render.rr(ctx, 0, 0, W, H, 4 * dpr); ctx.fill();
+        for (let y = 0; y < hh; y++) for (let x = 0; x < w; x++) {
+          const v = vals[y * w + x];
+          if (!v) continue;
+          ctx.fillStyle = look.colors[v & CELL.COLOR] || look.colors[8];
+          ctx.fillRect(pad + x * c, pad + (hh - 1 - y) * c, c - gap, c - gap);
+        }
+        const lw = Math.max(1, Math.round(dpr));
+        ctx.strokeStyle = theme.rim || theme.line; ctx.lineWidth = lw;
+        Render.rr(ctx, lw / 2, lw / 2, W - lw, H - lw, 4 * dpr); ctx.stroke();
+        url = { key, src: cv.toDataURL(), W: W / dpr, H: H / dpr };
+        this.thumbs.set(id, url);
+        if (this.thumbs.size > 80) this.thumbs.delete(this.thumbs.keys().next().value);
+      }
+      return h('img', { class: 'lib-thumb', src: url.src, alt: '', style: { width: url.W + 'px', height: url.H + 'px' } });
+    }
+
+    /**
+     * The Boards window: Saved (the board in play first, then the rest by when they were last played) and Retired.
+     * A saved board resumes with a click (or Enter); each has Rename, Retire and Delete. A retired one opens its
+     * summary, and can be deleted. New board shelves the one in play. One at a time: asked again, the open one stays.
+     */
+    openLibrary() {
+      if (this.libHandle && this.libHandle.el.isConnected) return this.libHandle;
+      const st = this.app.store;
+      Library.ensure(st.state, Date.now());
+      this.hideCard();
+      let tab = 'saved', handle = null, editing = null;
+      const list = h('div', { class: 'lib-list' });
+      const when = (t) => {
+        if (!t) return '';
+        const d = new Date(t), now = new Date();
+        return d.toDateString() === now.toDateString() ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          : d.toLocaleDateString([], { month: 'short', day: 'numeric', year: d.getFullYear() === now.getFullYear() ? undefined : 'numeric' });
+      };
+      const act = (icon, label, fn, cls) => h('button', { class: 'icon-btn' + (cls ? ' ' + cls : ''), 'aria-label': label, 'data-tip': label, html: L.Icons.icon(icon), onclick: (e) => { e.stopPropagation(); fn(); } });
+      // An empty slot where a row has no Retire, so the actions stay in their columns down the list.
+      const gap = () => h('span', { class: 'icon-btn ph', 'aria-hidden': 'true' });
+      const close = () => handle && handle.close();
+      // The row at position i of the tab as it is now (after a board left it: the one that took its place, or the last).
+      const focusAt = (i) => {
+        const opens = [...list.querySelectorAll('.lib-open')];
+        const f = opens[Math.max(0, Math.min(opens.length - 1, i))];
+        if (f && f.focus) f.focus();
+      };
+      const indexOf = (id) => [...list.querySelectorAll('.lib-row')].findIndex((r) => r.dataset.id === id);
+      // After a board was retired or deleted: redrawn, and, once the dialog asking has gone, focus on the nearest row.
+      const afterGone = (id) => { const i = Math.max(0, indexOf(id)); return () => { draw(); setTimeout(() => { if (handle && handle.el.isConnected) focusAt(i); }, 0); }; };
+      const nameEl = (rec, B) => {
+        if (editing !== rec.id) return h('div', { class: 't' }, rec.name);
+        const input = h('input', { type: 'text', class: 'lib-name', value: rec.name, maxlength: String(Library.NAME_MAX), 'aria-label': 'Name', spellcheck: 'false' });
+        let done = false;
+        // Enter or Esc: redrawn at once, focus back on the row. Focus gone elsewhere (a click, Tab): the name is kept
+        // and only the field turns back into the name, so whatever was clicked or tabbed to is still there and gets
+        // it; the row is rebuilt once that click is over.
+        const finish = (keep, away) => {
+          if (done) return;
+          done = true;
+          if (keep) this.rename(rec.id, input.value);
+          if (editing === rec.id) editing = null;
+          if (!away) { draw(rec.id); return; }
+          const row = input.closest('.lib-row');
+          input.replaceWith(h('div', { class: 't' }, rec.name));
+          const rebuild = () => setTimeout(() => {
+            if (!row.isConnected || editing || !(handle && handle.el.isConnected)) return;
+            const a = document.activeElement, inRow = row.contains(a), label = inRow && a.getAttribute('aria-label');
+            const fresh = savedRow(rec, st.state.boards);
+            row.replaceWith(fresh);
+            if (inRow) { const f = label && fresh.querySelector('.lib-acts [aria-label="' + label + '"]'); (f || fresh.querySelector('.lib-open')).focus(); }
+          }, 0);
+          if (pointerDown) window.addEventListener('pointerup', rebuild, { once: true }); else rebuild();
+        };
+        input.addEventListener('keydown', (e) => {
+          e.stopPropagation();
+          if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+          else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+        });
+        // A field taken out by a redraw (not by the player) says nothing.
+        input.addEventListener('blur', () => { if (input.isConnected) finish(true, true); });
+        input.addEventListener('click', (e) => e.stopPropagation());
+        return input;
+      };
+      let pointerDown = false;
+      const down = () => { pointerDown = true; }, up = () => { pointerDown = false; };
+      window.addEventListener('pointerdown', down, true);
+      window.addEventListener('pointerup', up, true);
+      const savedRow = (rec, B) => {
+        const cur = rec.id === B.cur, g = cur ? null : rec.game;
+        const s = cur ? this.game.s : (g && g.s) || {};
+        const full = cur ? this.game.over : !!(g && g.over);
+        const cells = cur ? this.game.board.cells : g ? g.cells : [];
+        const w = cur ? this.game.w : (g && g.w) || 10, hh = cur ? this.game.h : (g && g.h) || 20;
+        const open = h(editing === rec.id ? 'div' : 'button', {
+          class: 'lib-open', 'data-id': rec.id, 'aria-label': editing === rec.id ? null : (cur ? rec.name + ', in play' : 'Play ' + rec.name),
+          onclick: editing === rec.id ? null : () => { if (!cur) this.switchTo(rec.id); close(); },
+        }, this.thumb(rec.id, cells, w, hh), h('div', { class: 'grow' }, nameEl(rec, B),
+          h('div', { class: 'd' }, cur ? h('span', { class: 'tag on' }, 'Playing') : null, full ? h('span', { class: 'tag full' }, 'Full') : null,
+            h('span', { class: 'st' }, ['Lines ' + fmtInt(s.lines || 0), 'Score ' + fmtInt(s.score || 0), cur ? null : when(rec.touched)].filter(Boolean).join(' · ')))));
+        return h('div', { class: 'lib-row' + (cur ? ' current' : ''), 'data-id': rec.id }, open,
+          h('div', { class: 'lib-acts' },
+            act('rename', 'Rename', () => { editing = rec.id; draw(); }),
+            s.pieces ? act('retire', 'Retire', () => this.confirmRetire(rec.id, afterGone(rec.id))) : gap(),
+            act('trash', 'Delete', () => this.confirmDelete(rec.id, afterGone(rec.id)), 'del')));
+      };
+      const retiredRow = (e) => h('div', { class: 'lib-row retired', 'data-id': e.id },
+        h('button', { class: 'lib-open', 'data-id': e.id, 'aria-label': e.name, onclick: () => this.openRetired(e.id, afterGone(e.id)) },
+          this.thumb(e.id, e.cells, e.w || 10, e.h || 20),
+          h('div', { class: 'grow' }, h('div', { class: 't' }, e.name),
+            h('div', { class: 'd' }, e.reason === 'full' ? h('span', { class: 'tag full' }, 'Full') : null,
+              h('span', { class: 'st' }, [when(e.at), 'Lines ' + fmtInt(e.sum.lines || 0), 'Score ' + fmtInt(e.sum.score || 0)].join(' · '))))),
+        h('div', { class: 'lib-acts' }, act('trash', 'Delete', () => this.confirmDelete(e.id, afterGone(e.id)), 'del')));
+      const newBtn = h('button', { class: 'btn sm primary lib-new', 'aria-label': 'New board', onclick: () => { if (this.shelveAndNew()) { tab = 'saved'; draw(st.state.boards.cur); } } }, ico('newBoard'), h('span', { class: 'lbl' }, 'New board'));
+      const seg = h('div', { class: 'seg lib-tabs' }, [['saved', 'Saved'], ['retired', 'Retired']].map(([k, l]) =>
+        h('button', { 'data-k': k, 'aria-pressed': String(k === tab), onclick: () => { tab = k; editing = null; draw(); } }, l, h('span', { class: 'c' }))));
+      const draw = (focusId) => {
+        const B = st.state.boards;
+        seg.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.k === tab)));
+        seg.querySelector('[data-k="saved"] .c').textContent = B.list.length + '/' + Library.MAX_ACTIVE;
+        seg.querySelector('[data-k="retired"] .c').textContent = String(B.retired.length);
+        const isFull = Library.full(B), fresh = this.untouched();
+        newBtn.disabled = isFull || fresh;
+        newBtn.dataset.tip = isFull ? 'Library full' : fresh ? 'This board is new' : 'New board';
+        const rows = tab === 'saved' ? Library.ordered(B).map((r) => savedRow(r, B)) : B.retired.map(retiredRow);
+        list.replaceChildren(...(rows.length ? rows : [h('p', { class: 'empty' }, 'None')]));
+        const field = list.querySelector('input.lib-name');
+        if (field) { field.focus(); field.select(); }
+        else if (focusId) { const f = list.querySelector('.lib-open[data-id="' + focusId + '"]'); if (f && f.focus) f.focus(); }
+      };
+      // ↑ ↓ step between boards.
+      list.addEventListener('keydown', (e) => {
+        if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+        const opens = [...list.querySelectorAll('button.lib-open')], i = opens.indexOf(document.activeElement);
+        if (i < 0) return;
+        e.preventDefault(); e.stopPropagation();
+        const n = opens[Math.max(0, Math.min(opens.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))];
+        if (n) n.focus();
+      });
+      draw();
+      handle = UI.openModal({
+        title: 'Boards', icon: 'boards', width: 460, cls: 'modal-lib', body: h('div', { class: 'lib-wrap' }, h('div', { class: 'lib-head' }, seg, newBtn), list),
+        // Closed on a full board (from its card's Boards button): the card comes back.
+        onClose: () => {
+          this.libHandle = null;
+          window.removeEventListener('pointerdown', down, true);
+          window.removeEventListener('pointerup', up, true);
+          if (this.game.over && !this.cardOpen) this.onTopout(true);
+        },
+      });
+      this.libHandle = handle;
+      // Focus on the board in play, so ↑ ↓ and Enter work straight away (however the window was opened).
+      const first = list.querySelector('button.lib-open');
+      if (first) first.focus();
+      return handle;
+    }
+
+    /** A retired board's record: its name, when it lived, its summary. Read-only; it can be deleted. */
+    openRetired(id, after) {
+      const B = this.app.store.state.boards, e = Library.findRetired(B, id);
+      if (!e) return;
+      const day = (t) => new Date(t).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+      // Delete asks first; only once it is done does the record close (Cancel leaves it open, where it was).
+      const rec = UI.openModal({
+        title: e.name, icon: 'retire', width: 420, cls: 'modal-retire',
+        body: [h('div', { class: 'lib-dates' }, this.thumb(e.id, e.cells, e.w || 10, e.h || 20), h('div', null, h('div', null, h('i', null, 'Started '), day(e.sum.startedAt || e.created)), h('div', null, h('i', null, 'Retired '), day(e.at)))), this.boardSummary(e.sum)],
+        buttons: [{ label: 'Delete', kind: 'danger', onClick: () => { this.confirmDelete(id, () => { rec.close(); if (after) after(); }); return false; } }, { label: 'Close', kind: 'primary' }],
+      });
     }
 
     blocked() { return this.cardOpen; }
@@ -674,7 +970,7 @@
           side),
         h('div', { class: 'acts' },
           this.giftBtn(),
-          h('button', { class: 'btn sm new-board', 'aria-label': 'New board', 'data-tip': 'New board', onclick: () => this.askRetire() }, ico('newBoard'), h('span', { class: 'lbl' }, 'New board'))));
+          h('button', { class: 'btn sm boards-btn', 'aria-label': 'Boards', 'data-tip': 'Boards', onclick: () => this.openLibrary() }, ico('boards'), h('span', { class: 'lbl' }, 'Boards'))));
     }
 
     // ---- the daily gift ------------------------------------------------------------------------------------------------

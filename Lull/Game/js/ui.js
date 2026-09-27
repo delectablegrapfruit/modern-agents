@@ -39,42 +39,132 @@
     app.sound.preview(id);
   }
 
-  function toast(msg, kind, ms, ico) {
+  /**
+   * A small note above the bars that goes away by itself. With opts.onClick it is a button (the achievement ones: it
+   * opens the thing it tells of): the whole pill takes a click or Enter, then goes; it stays while pointed at (for a
+   * while) or focused (see syncToasts for when it lets the pointer through; the keyboard can always reach it).
+   */
+  function toast(msg, kind, ms, ico, opts) {
     const box = document.getElementById('toasts');
     // Above a board tab's bars (status, items, controls, puzzle actions), never over them.
     const bar = document.querySelector('.view.active > .statusbar, .view.active > .puz-actions'), holder = box.offsetParent;
     box.style.bottom = bar && holder ? Math.max(14, Math.round(holder.getBoundingClientRect().bottom - bar.getBoundingClientRect().top + 8)) + 'px' : '';
-    const el = h('div', { class: 'toast ' + (kind || '') }, ico ? icon(ico) : null, msg);
+    const go = opts && opts.onClick;
+    const el = h('div', { class: 'toast ' + (kind || '') + (go ? ' link' : '') }, ico ? icon(ico) : null, h('span', { class: 'toast-t' }, msg), go ? icon('chevRight', 'toast-go') : null);
+    let timer = 0;
+    const gone = () => { if (el.classList.contains('out')) return; clearTimeout(timer); el.classList.add('out'); setTimeout(() => el.remove(), 300); };
+    const later = (t) => { clearTimeout(timer); timer = setTimeout(gone, t); };
+    if (go) {
+      el.setAttribute('role', 'button');
+      el.setAttribute('tabindex', '0');
+      el.setAttribute('aria-label', opts.label || el.textContent);
+      const fire = () => { if (el.classList.contains('out') || modalOpen()) return; el.remove(); clearTimeout(timer); go(); };
+      el.addEventListener('click', (e) => { e.stopPropagation(); fire(); });
+      // Enter or Space on the focused toast opens it, and never reaches the game (Space would drop a piece).
+      el.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); if (!e.repeat) fire(); }
+        else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); gone(); }
+      });
+      // Focused, it waits; pointed at, it waits up to twice its time (a pointer left resting where it appeared does not
+      // keep it for good); let go, it leaves a little later.
+      const cap = Date.now() + 2 * (ms || 2600), left = () => Math.max(0, cap - Date.now());
+      const hold = () => { if (document.activeElement === el) clearTimeout(timer); else later(left()); };
+      const release = () => { if (document.activeElement !== el) later(el.matches(':hover') ? left() : Math.min(1600, left()) || 1600); };
+      el.addEventListener('mouseenter', hold);
+      el.addEventListener('focus', hold);
+      el.addEventListener('mouseleave', release);
+      el.addEventListener('blur', release);
+    }
     box.appendChild(el);
     while (box.children.length > 3) box.removeChild(box.firstChild);
-    setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 300); }, ms || 2600);
+    syncToasts();
+    later(ms || 2600);
+    return el;
+  }
+  /**
+   * A dialog open, the toasts let the pointer through (and never jump behind it). Over a live board with mouse control
+   * a click sets a piece, so there a toast takes the pointer only once it has rested on it a moment (ARM_MS) without
+   * playing; a click made on the way is the board's.
+   */
+  const ARM_MS = 350;
+  let ptr = null, armTimer = 0;
+  function liveBoard() {
+    const app = L.app, m = app && app.modes && app.modes[app.tab];
+    return !!(m && m.canvas && m.game && app.settings.mouse && !m.blocked());
+  }
+  function syncToasts(e) {
+    if (e && e.clientX != null) ptr = [e.clientX, e.clientY];
+    const box = root.document && document.getElementById('toasts'), links = box ? box.querySelectorAll('.toast.link') : [];
+    if (!links.length) return;
+    const modal = modalOpen(), board = !modal && liveBoard();
+    box.classList.toggle('through', modal || board);
+    const now = performance.now();
+    for (const t of links) {
+      const r = t.getBoundingClientRect(), on = board && ptr && ptr[0] >= r.left && ptr[0] <= r.right && ptr[1] >= r.top && ptr[1] <= r.bottom;
+      if (!on || (e && e.type === 'mousedown' && !t.classList.contains('armed'))) { t.armAt = on ? now : 0; t.classList.remove('armed'); continue; }
+      if (t.classList.contains('armed')) continue;
+      if (!t.armAt) t.armAt = now;
+      if (now - t.armAt >= ARM_MS) t.classList.add('armed');
+      else { clearTimeout(armTimer); armTimer = setTimeout(syncToasts, ARM_MS - (now - t.armAt) + 5); }
+    }
+  }
+  if (root.document) {
+    document.addEventListener('mousemove', syncToasts, { capture: true, passive: true });
+    document.addEventListener('mousedown', syncToasts, { capture: true, passive: true });
   }
 
   const modals = [];
+  // Only the top window takes focus, clicks and Tab: everything under it (the app, lower windows) is inert.
+  function settleInert() {
+    for (const id of ['titlebar', 'main']) { const el = document.getElementById(id); if (el) el.inert = modals.length > 0; }
+    // Toasts stay in sight over a window but out of its Tab order (and let its clicks through: syncToasts).
+    const tb = document.getElementById('toasts'); if (tb) tb.inert = modals.length > 0;
+    modals.forEach((m, i) => { m.scrim.inert = i < modals.length - 1; });
+  }
+  /** Focus into a window: its first field; else its first footer button that is not a danger one; else the window. */
+  function focusInto(modal) {
+    if (modal.contains(document.activeElement)) return;
+    const f = modal.querySelector('input, textarea') || [...modal.querySelectorAll('footer .btn:not(:disabled)')].find((b) => !b.classList.contains('danger')) || modal;
+    f.focus({ preventScroll: true });
+  }
   function openModal(opts) {
     const rootEl = document.getElementById('modal-root');
+    const before = document.activeElement;
     const close = () => {
       const i = modals.indexOf(handle);
-      if (i >= 0) modals.splice(i, 1);
+      if (i < 0) return;
+      modals.splice(i, 1);
       scrim.remove();
+      settleInert();
+      // Back to the window underneath, where focus was when this one opened (or into it, if that is gone).
+      const top = modals[modals.length - 1];
+      if (top && !top.el.contains(document.activeElement)) {
+        if (before && before.isConnected && top.el.contains(before)) before.focus({ preventScroll: true }); else focusInto(top.el);
+      }
       if (L.app) L.app.postDragRegions();
+      syncToasts();
       if (opts.onClose) opts.onClose();
     };
     const footer = opts.buttons && opts.buttons.length ? h('footer', null, opts.buttons.map((b) => h('button', {
       class: 'btn ' + (b.kind || ''), disabled: b.disabled,
       onclick: () => { if (b.onClick && b.onClick() === false) return; close(); },
     }, b.label))) : null;
-    const modal = h('div', { class: 'modal' + (opts.cls ? ' ' + opts.cls : ''), role: 'dialog', style: opts.width ? { width: 'min(' + opts.width + 'px, calc(100% - 24px))' } : null },
-      h('header', null, opts.icon ? icon(opts.icon) : null, opts.title || '', h('button', { class: 'icon-btn x', html: ICONS.close, 'aria-label': 'Close', onclick: close })),
+    const modal = h('div', { class: 'modal' + (opts.cls ? ' ' + opts.cls : ''), role: 'dialog', 'aria-modal': 'true', tabindex: '-1', 'aria-label': typeof opts.title === 'string' ? opts.title : null, style: opts.width ? { width: 'min(' + opts.width + 'px, calc(100% - 24px))' } : null },
+      h('header', null, opts.icon ? icon(opts.icon) : null, h('span', { class: 'ttl' }, opts.title || ''), h('button', { class: 'icon-btn x', html: ICONS.close, 'aria-label': 'Close', onclick: close })),
       h('div', { class: 'body' }, opts.body),
       footer);
     const scrim = h('div', { class: 'scrim', onmousedown: (e) => { if (e.target === scrim) close(); } }, modal);
     rootEl.appendChild(scrim);
-    const handle = { close, el: modal, opts };
+    const handle = { close, el: modal, scrim, opts };
     modals.push(handle);
+    settleInert();
     if (L.app) L.app.postDragRegions(); // a tall dialog covers the title bar: it must take its clicks
+    // Focus goes into the new window at once (a key meant for it never lands on what is underneath); a field again a
+    // moment later, once the window has settled, unless the caller has put focus somewhere in it already.
+    focusInto(modal);
+    syncToasts();
     const first = modal.querySelector('input, textarea');
-    if (first) setTimeout(() => first.focus(), 30);
+    if (first) setTimeout(() => { if (modals[modals.length - 1] === handle && (document.activeElement === modal || !modal.contains(document.activeElement))) first.focus(); }, 30);
     return handle;
   }
   function modalOpen() { return modals.length > 0; }
@@ -400,11 +490,11 @@
         kpi(n + ' / ' + A.LIST.length, 'Earned'),
         kpi(h('span', null, fmtInt(S.lines.achievements || 0), ' ', h('span', { class: 'gem' }, LINE)), 'Lines earned'),
         kpi(h('span', null, fmtInt(A.total()), ' ', h('span', { class: 'gem' }, LINE)), 'Lines available')),
-      h('div', { class: 'ach-tools' }, seg),
+      h('div', { class: 'ach-tools' }, recentControl(app), seg),
     ];
     const row = (a) => {
       const when = got[a.id], pr = !when && a.progress ? a.progress(st) : null;
-      return h('div', { class: 'ach' + (when ? ' got' : '') + (a.tier === 'legend' ? ' legend' : '') },
+      return h('div', { class: 'ach' + (when ? ' got' : '') + (a.tier === 'legend' ? ' legend' : ''), 'data-id': a.id },
         h('span', { class: 'ach-i', html: L.Icons.icon(a.tier === 'legend' ? 'legend' : when ? 'starOn' : 'star') }),
         h('div', { class: 'grow' },
           h('div', { class: 't' }, a.name, a.tier === 'legend' ? h('span', { class: 'tier' }, 'Legendary') : null),
@@ -434,7 +524,104 @@
         leg.length ? h('div', { class: 'ach-list legend-list' }, leg.map((a) => row(a))) : null,
         plain.length || leg.length ? null : h('p', { class: 'ach-none' }, filter === 'got' ? 'None earned' : 'All earned')));
     }
-    document.getElementById('ach-body').replaceChildren(...els);
+    // Drawn again under the Recent list (one earned meanwhile): focus stays where it was in it.
+    const was = document.activeElement, inRecent = was && was.closest && was.closest('.ach-recent');
+    const sel = !inRecent ? null : was.dataset.id ? '.ach-menu [data-id="' + was.dataset.id + '"]' : was.classList.contains('ach-recent-more') ? '.ach-recent-more' : '.ach-recent-go';
+    const body = document.getElementById('ach-body');
+    body.replaceChildren(...els);
+    if (sel) { const t = body.querySelector('.ach-recent ' + sel) || body.querySelector('.ach-menu [role="menuitem"]') || body.querySelector('.ach-recent-more'); if (t) t.focus({ preventScroll: true }); }
+  }
+
+  /**
+   * Recent, left of the filter: the latest earned (its icon and name; a click goes to it) and a chevron that lists the
+   * last few, newest first, with how long ago. Nothing earned yet: nothing shown.
+   */
+  const RECENT_N = 6;
+  function recentControl(app) {
+    const list = L.Achievements.recent(app.state, RECENT_N);
+    if (!list.length) { app.achMenu = false; return null; }
+    const latest = list[0].a, star = (a) => icon(a.tier === 'legend' ? 'legend' : 'starOn');
+    const open = !!app.achMenu;
+    const toggle = (on) => {
+      app.achMenu = on;
+      const next = recentControl(app);
+      ctl.replaceWith(next);
+      if (on) { const first = next.querySelector('.ach-menu [role="menuitem"]'); if (first) first.focus(); }
+      else next.querySelector('.ach-recent-more').focus({ preventScroll: true });
+    };
+    const menu = open ? h('div', { class: 'ach-menu', role: 'menu', 'aria-label': 'Recent' },
+      list.map(({ a, when }) => h('button', { role: 'menuitem', class: a.tier === 'legend' ? 'legend' : null, 'data-id': a.id, onclick: () => showAchievement(app, a.id) },
+        star(a), h('span', { class: 'nm' }, a.name), h('span', { class: 'ago' }, L.fmtAgo(when))))) : null;
+    const ctl = h('div', { class: 'ach-recent' + (latest.tier === 'legend' ? ' legend' : '') + (open ? ' open' : '') },
+      h('button', { class: 'ach-recent-go', 'aria-label': 'Latest: ' + latest.name, 'data-tip': open ? null : 'Latest', onclick: () => showAchievement(app, latest.id) },
+        star(latest), h('span', { class: 'nm' }, latest.name), h('span', { class: 'short' }, 'Latest')),
+      h('button', { class: 'ach-recent-more', 'aria-label': 'Recent', 'aria-haspopup': 'menu', 'aria-expanded': String(open), 'data-tip': open ? null : 'Recent', html: ICONS.chevDown,
+        onclick: () => toggle(!app.achMenu) }),
+      menu);
+    // The menu's keys: arrows move, Esc or Tab closes; none of them reach the game or the window.
+    if (menu) menu.addEventListener('keydown', (e) => {
+      const items = Array.from(menu.querySelectorAll('[role="menuitem"]')), i = items.indexOf(document.activeElement);
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { items[(i + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length].focus(); }
+      else if (e.key === 'Home' || e.key === 'End') items[e.key === 'Home' ? 0 : items.length - 1].focus();
+      else if (e.key === 'Escape' || e.key === 'Tab') toggle(false);
+      else return;
+      e.preventDefault(); e.stopPropagation();
+    });
+    return ctl;
+  }
+  // A click anywhere else, or Esc wherever focus is, closes the Recent menu.
+  function closeRecent(app) {
+    if (!app || !app.achMenu) return false;
+    app.achMenu = false;
+    const ctl = document.querySelector('.ach-recent');
+    if (!ctl) return true;
+    const had = ctl.contains(document.activeElement), next = recentControl(app) || h('span');
+    ctl.replaceWith(next);
+    const more = had && next.querySelector && next.querySelector('.ach-recent-more');
+    if (more) more.focus({ preventScroll: true });
+    return true;
+  }
+  if (root.document) {
+    document.addEventListener('mousedown', (e) => { if (L.app && L.app.achMenu && !(e.target.closest && e.target.closest('.ach-recent'))) closeRecent(L.app); }, true);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && L.app && L.app.achMenu && !modalOpen() && closeRecent(L.app)) { e.preventDefault(); e.stopPropagation(); } }, true);
+  }
+
+  /**
+   * Goes to an achievement: the Achievements tab, a filter that shows it, its group open, the row scrolled into the
+   * middle of the list (the list scrolls, never the window) and lit for a moment. With no id, the tab opens at Recent.
+   * The one way in for a toast, the Recent button and its menu.
+   */
+  function showAchievement(app, id) {
+    const A = L.Achievements, a = id ? A.LIST.find((x) => x.id === id) : null;
+    const got = app.state.achievements || {};
+    app.achMenu = !a && A.recent(app.state, 1).length > 0;
+    if (a) {
+      const f = app.achFilter || 'all';
+      if (!(f === 'all' || (f === 'got') === !!got[a.id])) app.achFilter = 'all';
+      (app.achOpen || (app.achOpen = {}))[a.group] = true;
+    }
+    if (app.tab !== 'achievements') app.setTab('achievements');
+    else renderAchievements(app);
+    const body = document.getElementById('ach-body'), still = app.reducedMotion();
+    if (!a) {
+      body.scrollTo({ top: 0, behavior: still ? 'auto' : 'smooth' });
+      const first = body.querySelector('.ach-menu [role="menuitem"]');
+      if (first) first.focus({ preventScroll: true });
+      return null;
+    }
+    const row = body.querySelector('.ach[data-id="' + a.id + '"]');
+    if (!row) return null;
+    const b = body.getBoundingClientRect(), r = row.getBoundingClientRect();
+    const top = Math.max(0, Math.min(body.scrollHeight - body.clientHeight, body.scrollTop + r.top - b.top - Math.max(12, (b.height - r.height) / 2)));
+    body.scrollTo({ top, behavior: still ? 'auto' : 'smooth' });
+    for (const o of body.querySelectorAll('.ach.flash')) o.classList.remove('flash', 'still');
+    row.classList.add('flash');
+    if (still) row.classList.add('still');
+    row.setAttribute('tabindex', '-1');
+    row.focus({ preventScroll: true });
+    clearTimeout(showAchievement.timer);
+    showAchievement.timer = setTimeout(() => row.classList.remove('flash', 'still'), 2800);
+    return row;
   }
 
   function renderStats(app, sub) {
@@ -792,5 +979,5 @@
     document.addEventListener('keydown', hide, true);
   }
 
-  L.UI = { initTooltips, h, ICONS, icon, toast, openModal, modalOpen, closeTopModal, submitTopModal, confirm, canvasFor, renderShop, refreshShopPrices, renderStats, renderAchievements, openSettings, openOrderSlip, openPickOfThree, openBlueprint, copyText, lookWith, drawMiniPiece };
+  L.UI = { initTooltips, h, ICONS, icon, toast, openModal, modalOpen, closeTopModal, submitTopModal, confirm, canvasFor, renderShop, refreshShopPrices, renderStats, renderAchievements, showAchievement, openSettings, openOrderSlip, openPickOfThree, openBlueprint, copyText, lookWith, drawMiniPiece };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

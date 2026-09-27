@@ -259,6 +259,8 @@
         this.idle.stop();
         if (app.tab === 'factory' && !first) app.modes.factory.show();
         app.onResize();
+        // Achievements earned while rolled up are told now, when their toasts can be seen (and clicked).
+        if (!first) setTimeout(() => app.announceUnheard(), 300);
       }
       L.native.post('collapse', { on, height: Math.round(document.getElementById('app').getBoundingClientRect().height), animate: !first });
       app.postDragRegions();

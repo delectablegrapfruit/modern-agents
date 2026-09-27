@@ -114,13 +114,18 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await shot('10a-chain');
   // Retiring a board shows its whole life, and logs it.
   await ev(() => { const m = Lull.app.modes.play; m.game.s.items = { bomb: 2, laser: 1 }; m.game.s.startedAt = Date.now() - 3 * 86400e3; });
-  await page.click('#play-status .new-board');
-  const sum = await ev(() => { const c = document.querySelector('#play-overlay .board-sum'); return c ? c.textContent : ''; });
+  await page.click('#play-status .boards-btn');
+  check('the Boards button opens the library', await page.isVisible('.modal-lib .lib-row.current'));
+  await page.click('.modal-lib .lib-row.current [aria-label="Retire"]');
+  const sum = await ev(() => { const c = document.querySelector('.modal-retire .board-sum'); return c ? c.textContent : ''; });
   check('retiring asks, showing the board\'s life', /Lifetime/.test(sum) && /3 used/.test(sum) && /Bomb ×2/.test(sum), sum.slice(0, 200));
   await shot('10b-retire');
   const logN = await ev(() => (Lull.app.store.state.stats.free.boardLog || []).length);
-  await page.click('#play-overlay .btn.primary');
+  await page.click('.modal-retire footer .btn.primary');
   check('a retired board is logged', (await ev(() => Lull.app.store.state.stats.free.boardLog.length)) === logN + 1 && (await ev(() => Lull.app.modes.play.game.s.pieces)) === 0);
+  check('and kept in the library\'s retired records', await ev(() => Lull.app.store.state.boards.retired.length === 1 && Lull.app.store.state.boards.retired[0].sum.items.bomb === 2));
+  await page.keyboard.press('Escape');
+  check('Esc closes the library', !(await page.isVisible('.modal')));
   // ---- items ---------------------------------------------------------------------------------------------------------
   console.log('items');
   await ev(() => { const s = Lull.app.store; s.state.lines = 20000; Lull.app.refreshWallet(); for (const id of Lull.ITEM_ORDER) s.buyItem(id, 2); Lull.app.modes.play.renderItems(); });
@@ -1386,21 +1391,21 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   const wasOpen = await ev(() => document.querySelector('.ach-group[data-group="play"]').open);
   await page.click('.ach-group[data-group="play"] > summary .ach-info');
   check('clicking the header\'s definition leaves the group as it was', (await ev(() => document.querySelector('.ach-group[data-group="play"]').open)) === wasOpen);
-  await page.click('.ach-tools button:nth-child(3)');
+  await page.click('.ach-tools .seg button:nth-child(3)');
   await page.waitForTimeout(40);
   const earnedOnly = await ev(() => ({ shown: document.querySelectorAll('.ach').length, got: document.querySelectorAll('.ach.got').length, open: !!document.querySelector('.ach-group[data-group="play"][open]') }));
   check('the Earned filter shows only earned ones (and the open group stays open)', earnedOnly.shown === earnedOnly.got && earnedOnly.open, JSON.stringify(earnedOnly));
   await shot('51c-achievements-earned');
-  await page.click('.ach-tools button:nth-child(2)');
+  await page.click('.ach-tools .seg button:nth-child(2)');
   await page.waitForTimeout(40);
   const todo = await ev(() => ({ got: document.querySelectorAll('.ach.got').length, shown: document.querySelectorAll('.ach').length, left: Lull.Achievements.LIST.filter((a) => !Lull.app.store.state.achievements[a.id]).length }));
   check('the To do filter hides the earned ones', todo.got === 0 && todo.shown === todo.left && todo.left <= ach.all - ach.got, JSON.stringify(todo));
-  await page.click('.ach-tools button:nth-child(1)');
+  await page.click('.ach-tools .seg button:nth-child(1)');
   await ev(() => { document.querySelectorAll('.ach-group').forEach((d) => { d.open = true; }); });
   await page.waitForTimeout(40);
   await ev(() => { document.getElementById('ach-body').scrollTop = 1e6; });
   await shot('51d-achievements-bottom');
-  await page.click('.ach-tools button:nth-child(1)');
+  await page.click('.ach-tools .seg button:nth-child(1)');
   await page.click('#btn-settings');
   await page.waitForTimeout(100);
   await shot('60-settings');
@@ -1427,6 +1432,329 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
       if (tab === 'puzzle') check(w + '×' + hgt + ' puzzle card and wildcards fit', await ev(() => ['view-puzzle', 'puz-card', 'puz-mods', 'puz-actions'].every((id) => { const el = document.getElementById(id); return el.scrollWidth <= el.clientWidth + 1 && el.scrollHeight <= el.clientHeight + 1; })));
       await shot('70-' + w + 'x' + hgt + '-' + tab);
     }
+  }
+
+
+  // ---- the board library: shelve, switch back exactly, rename, retire, delete, caps, top-out, fit, reload ------------
+  console.log('board library');
+  {
+  await page.setViewportSize({ width: 520, height: 760 });
+  const noMs = (j) => { const o = JSON.parse(j); delete o.s.playMs; return JSON.stringify(o); };
+  const libA = await ev(() => {
+    Lull.app.setTab('play');
+    const m = Lull.app.modes.play;
+    while (Lull.UI.modalOpen()) Lull.UI.closeTopModal();
+    if (m.game.over) m.newBoard();
+    m.hideCard();
+    const g = m.game;
+    for (let i = 0; i < 6; i++) { g.move((i % 3) - 1); g.drop(); }
+    g.holdPiece(); g.rotate(1);
+    g.s.gold = 2;
+    m.renderStatus();
+    return { id: Lull.app.store.state.boards.cur, json: JSON.stringify(g.toJSON()), n: Lull.app.store.state.boards.list.length, pieces: g.s.pieces };
+  });
+  await page.click('#play-status .boards-btn');
+  await page.waitForTimeout(250);
+  const lib0 = await ev(() => ({ rows: document.querySelectorAll('.modal-lib .lib-row').length, cur: !!document.querySelector('.modal-lib .lib-row.current .tag.on'), thumb: (() => { const i = document.querySelector('.modal-lib .lib-thumb'); return i && i.complete && i.naturalWidth > 0; })(), counts: document.querySelector('.lib-tabs').textContent }));
+  check('the library lists the board in play, with a thumbnail and the counts', lib0.rows === libA.n && lib0.cur && lib0.thumb && /Saved/.test(lib0.counts) && /Retired/.test(lib0.counts), JSON.stringify(lib0));
+  await shot('75-library');
+  await page.click('.modal-lib .lib-new');
+  await page.waitForTimeout(150);
+  const libB = await ev(() => { const g = Lull.app.modes.play.game, B = Lull.app.store.state.boards; return { id: B.cur, n: B.list.length, pieces: g.s.pieces, empty: g.board.isEmpty(), rng: g.rng.state(), rows: document.querySelectorAll('.modal-lib .lib-row').length, first: document.querySelector('.modal-lib .lib-row').dataset.id }; });
+  check('New board shelves the one in play and starts an empty one (its own seed)', libB.id !== libA.id && libB.n === libA.n + 1 && libB.pieces === 0 && libB.empty && JSON.stringify(libB.rng) !== JSON.stringify(JSON.parse(libA.json).rng) && libB.rows === libA.n + 1 && libB.first === libB.id, JSON.stringify(libB));
+  check('an untouched board cannot start another', await ev(() => document.querySelector('.modal-lib .lib-new').disabled));
+  await shot('75a-library-new');
+  // Keyboard: ↓ to the shelved board, Enter resumes it exactly.
+  await page.focus('.modal-lib button.lib-open');
+  await page.keyboard.press('ArrowDown');
+  const focused = await ev(() => document.activeElement && document.activeElement.dataset.id);
+  check('↓ steps to the next board', focused === libA.id, focused + ' vs ' + libA.id);
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(150);
+  const libA2 = await ev(() => ({ id: Lull.app.store.state.boards.cur, json: JSON.stringify(Lull.app.modes.play.game.toJSON()), modal: !!document.querySelector('.modal'), status: document.getElementById('play-status').textContent }));
+  check('Enter resumes it: cells, piece, hold, queue, bag, RNG and stats exactly as left', libA2.id === libA.id && noMs(libA2.json) === noMs(libA.json) && !libA2.modal, libA2.id);
+  check('its gold and figures come back to the status bar', /Gold/.test(libA2.status));
+  // Rename: inline, Enter keeps it, Esc leaves it, at most 24 characters, never empty.
+  await page.click('#play-status .boards-btn');
+  await page.click('.modal-lib .lib-row.current [aria-label="Rename"]');
+  check('Rename turns the name into a field, focused', await ev(() => document.activeElement && document.activeElement.classList.contains('lib-name')));
+  await page.keyboard.press('Control+A');
+  await page.keyboard.type('Rainy Sunday');
+  await page.keyboard.press('Enter');
+  const nm = await ev(() => ({ name: Lull.app.store.state.boards.list.find((r) => r.id === Lull.app.store.state.boards.cur).name, shown: document.querySelector('.modal-lib .lib-row.current .t').textContent, modal: !!document.querySelector('.modal-lib') }));
+  check('Enter keeps the new name (and the library stays open)', nm.name === 'Rainy Sunday' && nm.shown === 'Rainy Sunday' && nm.modal, JSON.stringify(nm));
+  await page.click('.modal-lib .lib-row.current [aria-label="Rename"]');
+  await page.keyboard.press('Control+A');
+  await page.keyboard.type('x'.repeat(40));
+  const typed = await ev(() => document.activeElement.value.length);
+  await page.keyboard.press('Escape');
+  const nm2 = await ev(() => ({ name: Lull.app.store.state.boards.list.find((r) => r.id === Lull.app.store.state.boards.cur).name, modal: !!document.querySelector('.modal-lib') }));
+  check('a name is capped at 24; Esc leaves the old one and the library open', typed === 24 && nm2.name === 'Rainy Sunday' && nm2.modal, typed + ' ' + JSON.stringify(nm2));
+  await page.click('.modal-lib .lib-row.current [aria-label="Rename"]');
+  await page.keyboard.press('Control+A');
+  await page.keyboard.press('Backspace');
+  await page.keyboard.press('Enter');
+  check('an empty name is refused', await ev(() => Lull.app.store.state.boards.list.find((r) => r.id === Lull.app.store.state.boards.cur).name === 'Rainy Sunday'));
+  await shot('75b-library-renamed');
+  // The untouched shelved board has no Retire (nothing to record); Delete asks, then it is gone.
+  check('an untouched board offers no Retire', await ev((id) => !document.querySelector('.modal-lib .lib-row[data-id="' + id + '"] [aria-label="Retire"]'), libB.id));
+  const retired0 = await ev(() => Lull.app.store.state.boards.retired.length);
+  await page.click('.modal-lib .lib-row[data-id="' + libB.id + '"] [aria-label="Delete"]');
+  check('Delete asks first', await page.isVisible('.modal footer .btn.danger'));
+  await shot('75c-delete');
+  await page.click('.modal footer .btn.danger');
+  const del = await ev((id) => ({ gone: !Lull.app.store.state.boards.list.some((r) => r.id === id), rows: document.querySelectorAll('.modal-lib .lib-row').length, n: Lull.app.store.state.boards.list.length, retired: Lull.app.store.state.boards.retired.length }), libB.id);
+  check('deleted for good (no record kept)', del.gone && del.rows === del.n && del.retired === retired0, JSON.stringify(del));
+  // Retire the board in play from the library: its summary, then a new board takes its place.
+  await page.click('.modal-lib .lib-row.current [aria-label="Retire"]');
+  check('Retire shows the board\'s life', await page.isVisible('.modal-retire .board-sum'));
+  await page.click('.modal-retire footer .btn.primary');
+  const ret = await ev((id) => { const B = Lull.app.store.state.boards; return { cur: B.cur, retired: B.retired[0] && B.retired[0].id, name: B.retired[0] && B.retired[0].name, pieces: Lull.app.modes.play.game.s.pieces, rows: document.querySelectorAll('.modal-lib .lib-row').length }; }, libA.id);
+  check('retired: into the records, a new board in play', ret.retired === libA.id && ret.name === 'Rainy Sunday' && ret.cur !== libA.id && ret.pieces === 0, JSON.stringify(ret));
+  await page.click('.modal-lib .lib-tabs [data-k="retired"]');
+  await page.waitForTimeout(100);
+  const rrows = await ev(() => Array.from(document.querySelectorAll('.modal-lib .lib-row.retired')).map((r) => r.textContent));
+  check('the Retired tab lists it first', rrows.length === retired0 + 1 && /Rainy Sunday/.test(rrows[0]), JSON.stringify(rrows));
+  await shot('75d-retired');
+  await page.click('.modal-lib .lib-row.retired .lib-open');
+  const rec = await ev(() => { const m = document.querySelectorAll('.modal'); const top = m[m.length - 1]; return { title: top.querySelector('header').textContent, sum: !!top.querySelector('.board-sum'), dates: !!top.querySelector('.lib-dates') }; });
+  check('a retired board opens its record, read-only', /Rainy Sunday/.test(rec.title) && rec.sum && rec.dates, JSON.stringify(rec));
+  await shot('75e-record');
+  await page.keyboard.press('Escape');
+  await page.click('.modal-lib .lib-row.retired [aria-label="Delete"]');
+  await page.click('.modal footer .btn.danger');
+  check('a retired record can be deleted', await ev((n) => Lull.app.store.state.boards.retired.length === n && document.querySelectorAll('.modal-lib .lib-row.retired').length === n && !Lull.app.store.state.boards.retired.some((r) => r.name === 'Rainy Sunday'), retired0));
+  await page.keyboard.press('Escape');
+  // Fill the library: twelve boards, then New board is refused (disabled, and the call too).
+  const cap = await ev(() => {
+    const m = Lull.app.modes.play;
+    let made = 0;
+    for (let i = 0; i < 20; i++) { m.game.drop(); if (m.shelveAndNew()) made++; }
+    const B = Lull.app.store.state.boards;
+    m.game.drop();
+    const out = { n: B.list.length, made, again: m.shelveAndNew(), names: new Set(B.list.map((r) => r.name)).size };
+    document.getElementById('toasts').replaceChildren();
+    return out;
+  });
+  check('twelve boards at most; the thirteenth is refused', cap.n === 12 && cap.again === false && cap.names === 12, JSON.stringify(cap));
+  await page.click('#play-status .boards-btn');
+  await page.waitForTimeout(250);
+  check('a full library disables New board', await ev(() => { const b = document.querySelector('.modal-lib .lib-new'); return b.disabled && b.dataset.tip === 'Library full' && /12\/12/.test(document.querySelector('.lib-tabs').textContent); }));
+  for (const [w, hgt] of [[520, 760], [400, 700]]) {
+    await page.setViewportSize({ width: w, height: hgt });
+    await page.waitForTimeout(200);
+    const fit = await ev(() => {
+      const m = document.querySelector('.modal-lib'), r = m.getBoundingClientRect(), head = document.querySelector('.lib-head'), list = document.querySelector('.lib-list');
+      const rows = Array.from(document.querySelectorAll('.modal-lib .lib-row'));
+      return { inside: r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight, head: head.scrollWidth <= head.clientWidth + 1, rows: rows.every((x) => x.scrollWidth <= x.clientWidth + 1), scrolls: list.scrollHeight > list.clientHeight, page: document.documentElement.scrollWidth <= innerWidth + 1, acts: rows.every((x) => { const a = x.querySelector('.lib-acts').getBoundingClientRect(), q = x.getBoundingClientRect(); return a.right <= q.right + 0.5; }) };
+    });
+    check(w + '×' + hgt + ' the library fits (rows, head, actions; the list scrolls)', fit.inside && fit.head && fit.rows && fit.scrolls && fit.page && fit.acts, JSON.stringify(fit));
+    await shot('76-library-' + w + 'x' + hgt);
+    await page.click('.modal-lib .lib-row.current [aria-label="Retire"]');
+    await page.waitForTimeout(150);
+    const rfit = await ev(() => { const ms = document.querySelectorAll('.modal'), r = ms[ms.length - 1].getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight && r.right <= innerWidth; });
+    check(w + '×' + hgt + ' the retire card fits', rfit);
+    await shot('76a-retire-' + w + 'x' + hgt);
+    await page.keyboard.press('Escape');
+  }
+  await page.keyboard.press('Escape');
+  await page.setViewportSize({ width: 520, height: 760 });
+  // Top-out: the card offers Boards and Retire; Retire goes through the library.
+  const top = await ev(() => {
+    const m = Lull.app.modes.play, g = m.game;
+    g.board.cells.fill(0); g.replacePiece({ id: 'O' });
+    for (let y = 0; y < 18; y++) for (let x = 0; x < 9; x++) g.board.set(x, y, 8);
+    let guard = 0;
+    while (!g.over && guard++ < 50) g.drop();
+    const card = document.querySelector('#play-overlay .card');
+    return { over: g.over, text: card ? card.textContent : '', btns: card ? Array.from(card.querySelectorAll('button')).map((b) => b.textContent) : [] };
+  });
+  check('a full board offers Boards and Retire', top.over && /Board full/.test(top.text) && top.btns.includes('Boards') && top.btns.includes('Retire'), JSON.stringify(top.btns));
+  await shot('77-topout');
+  const topN0 = await ev(() => ({ r: Lull.app.store.state.boards.retired.length, cur: Lull.app.store.state.boards.cur }));
+  await page.click('#play-overlay .btn.primary');
+  const topRet = await ev(() => { const B = Lull.app.store.state.boards; return { r: B.retired.length, reason: B.retired[0].reason, cur: B.cur, n: B.list.length, over: Lull.app.modes.play.game.over, card: !document.getElementById('play-overlay').classList.contains('hidden') }; });
+  check('Retire on a full board records it (full) and starts a new one', topRet.r === topN0.r + 1 && topRet.reason === 'full' && topRet.cur !== topN0.cur && topRet.n === 12 && !topRet.over && !topRet.card, JSON.stringify(topRet));
+  // Across a reload: every board, name and the one in play, exactly.
+  const libSnap = await ev(() => { const m = Lull.app.modes.play; m.game.drop(); m.game.drop(); Lull.app.saveNow(); const B = Lull.app.store.state.boards; return { ids: B.list.map((r) => r.id + ':' + r.name).join(), cur: B.cur, retired: B.retired.map((r) => r.id).join(), json: JSON.stringify(m.game.toJSON()), shelved: JSON.stringify(B.list.filter((r) => r.id !== B.cur).map((r) => r.game)) }; });
+  await page.reload();
+  await page.waitForTimeout(400);
+  const libBack = await ev(() => { const m = Lull.app.modes.play, B = Lull.app.store.state.boards; return { ids: B.list.map((r) => r.id + ':' + r.name).join(), cur: B.cur, retired: B.retired.map((r) => r.id).join(), json: JSON.stringify(m.game.toJSON()), shelved: JSON.stringify(B.list.filter((r) => r.id !== B.cur).map((r) => r.game)) }; });
+  check('the library survives a reload: boards, names, records, the board in play', libBack.ids === libSnap.ids && libBack.cur === libSnap.cur && libBack.retired === libSnap.retired && noMs(libBack.json) === noMs(libSnap.json) && libBack.shelved === libSnap.shelved);
+  // ---- review fixes: a fresh game on Retire, exact resume of the piece, keyboard focus, clicks while renaming … ----
+  await ev(() => {
+    const m = Lull.app.modes.play, B = Lull.app.store.state.boards;
+    while (Lull.UI.modalOpen()) Lull.UI.closeTopModal();
+    for (const r of B.list.slice()) if (r.id !== B.cur && B.list.length > 4) m.deleteBoard(r.id);
+    if (m.game.over) m.newBoard();
+    m.hideCard();
+    for (let i = 0; i < 3; i++) m.game.drop();
+  });
+  // Retire (the board in play) with a power-up in hand: the new board is a new game — its own piece, queue and stream.
+  const carry = await ev(() => {
+    const m = Lull.app.modes.play, g = m.game, inv = Lull.app.store.state.inventory, B = Lull.app.store.state.boards;
+    inv.bomb = (inv.bomb || 0) + 1;
+    m.useItem('bomb');
+    const before = { special: g.piece.special, rng: JSON.stringify(g.rng.state()), queue: g.queue.map((e) => e.id).join(''), id: B.cur };
+    m.retire(B.cur);
+    const n = m.game;
+    return { before, same: n === g, special: n.piece.special, tag: n.piece.entry.tag || null, rng: JSON.stringify(n.rng.state()), queue: n.queue.map((e) => e.id).join(''), items: JSON.stringify(n.s.items || {}), hand: n.s.hand, cur: B.cur, stored: JSON.parse(localStorage.getItem('lull.save.v1')).boards.retired[0].id };
+  });
+  check('Retire with a power-up in hand: a new game, no power-up carried over, its own queue and random stream', !carry.same && carry.before.special === 'bomb' && !carry.special && !carry.tag && carry.rng !== carry.before.rng && carry.items === '{}' && carry.cur !== carry.before.id && carry.stored === carry.before.id, JSON.stringify(carry));
+  // A full board in play retired from the library keeps its Full tag; the card's Retire is saved at once.
+  const fullRet = await ev(() => {
+    const m = Lull.app.modes.play, g = m.game, B = Lull.app.store.state.boards;
+    g.board.cells.fill(0); g.replacePiece({ id: 'O' });
+    for (let y = 0; y < 18; y++) for (let x = 0; x < 9; x++) g.board.set(x, y, 8);
+    let guard = 0;
+    while (!g.over && guard++ < 50) g.drop();
+    const id = B.cur;
+    m.retire(id);
+    return { over: g.over, reason: B.retired[0].reason, log: Lull.app.store.state.stats.free.boardLog[0].reason, id: B.retired[0].id === id };
+  });
+  check('a full board retired from the library is recorded as full', fullRet.over && fullRet.id && fullRet.reason === 'full' && fullRet.log === 'full', JSON.stringify(fullRet));
+  const cardSaved = await ev(() => {
+    const m = Lull.app.modes.play, g = m.game, B = Lull.app.store.state.boards;
+    g.board.cells.fill(0); g.replacePiece({ id: 'O' });
+    for (let y = 0; y < 18; y++) for (let x = 0; x < 9; x++) g.board.set(x, y, 8);
+    let guard = 0;
+    while (!g.over && guard++ < 50) g.drop();
+    const id = B.cur;
+    document.querySelector('#play-overlay .btn.primary').click();
+    return { id, stored: JSON.parse(localStorage.getItem('lull.save.v1')).boards.retired[0].id, dirty: Lull.app.store.dirty };
+  });
+  check('Retire on the Board full card is saved at once', cardSaved.stored === cardSaved.id, JSON.stringify(cardSaved));
+  // Delete the board in play: every turn and move on it still counts in the lifetime totals.
+  const delCount = await ev(() => {
+    const m = Lull.app.modes.play, F = Lull.app.store.state.stats.free, g = m.game;
+    g.drop();
+    const r0 = F.rotations, h0 = F.holds;
+    g.holdPiece(); m.afterHold();
+    let turned = 0;
+    for (let i = 0; i < 3; i++) if (g.rotate(1)) turned++;
+    m.deleteBoard(Lull.app.store.state.boards.cur);
+    return { rot: F.rotations - r0, turned, holds: F.holds - h0 };
+  });
+  check('deleting the board in play keeps its unsaved counts (turns after the last hold)', delCount.rot === delCount.turned && delCount.turned > 0 && delCount.holds === 1, JSON.stringify(delCount));
+  // A T turned into its slot and then shelved still spins when it comes back.
+  const spin = await ev(() => {
+    const m = Lull.app.modes.play, g = m.game, B = Lull.app.store.state.boards;
+    g.drop();
+    const fill = (y, row) => { for (let x = 0; x < 10; x++) g.board.set(x, y, row[x] === 'X' ? 8 : 0); };
+    g.board.cells.fill(0);
+    fill(0, 'XXX.XXXXXX'); fill(1, 'XX...XXXXX');
+    g.board.set(4, 2, 8);
+    g.replacePiece({ id: 'T' });
+    Object.assign(g.piece, { rot: 2, x: 2, y: 0, lastRot: true, kick: 1 });
+    const id = B.cur;
+    m.shelveAndNew();
+    m.game.drop();
+    m.switchTo(id);
+    const p = m.game.piece, r = m.game.lock();
+    return { lastRot: p.lastRot, tspin: r.tspin, lines: r.lines };
+  });
+  check('a T twisted into its slot, shelved and resumed, still spins', spin.lastRot && spin.tspin && spin.lines === 2, JSON.stringify(spin));
+  // Keyboard: Boards opened with Enter takes focus; once only; a Delete asked for by key takes focus into the question,
+  // with the library under it out of reach.
+  await page.focus('#play-status .boards-btn');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(120);
+  const kb1 = await ev(() => ({ inLib: !!(document.activeElement && document.activeElement.closest('.modal-lib')), cls: document.activeElement && document.activeElement.className, main: document.getElementById('main').inert }));
+  await page.keyboard.press('Enter'); // resumes the board in play: the library closes, it does not open twice
+  await page.waitForTimeout(80);
+  const kb1b = await ev(() => document.querySelectorAll('.modal-lib').length);
+  check('Boards by keyboard: focus goes to the board in play; the app underneath is inert; never two libraries', kb1.inLib && /lib-open/.test(kb1.cls) && kb1.main && kb1b === 0, JSON.stringify([kb1, kb1b]));
+  const twice = await ev(() => { const m = Lull.app.modes.play; m.openLibrary(); m.openLibrary(); return document.querySelectorAll('.modal-lib').length; });
+  check('asked twice, the library opens once', twice === 1);
+  await ev(() => document.querySelectorAll('.modal-lib .lib-row')[1].querySelector('[aria-label="Delete"]').focus());
+  const delName = await ev(() => document.querySelectorAll('.modal-lib .lib-row')[1].dataset.id);
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(80);
+  await page.keyboard.press('Enter'); // on Cancel now, not a second Delete
+  await page.waitForTimeout(80);
+  const kb2 = await ev((id) => ({ modals: Array.from(document.querySelectorAll('.modal header .ttl')).map((t) => t.textContent), kept: Lull.app.store.state.boards.list.some((r) => r.id === id), focus: document.activeElement && document.activeElement.getAttribute('aria-label') }), delName);
+  check('a Delete by key: the question takes focus (Enter there is Cancel), never two of it', kb2.modals.length === 1 && kb2.modals[0] === 'Boards' && kb2.kept && kb2.focus === 'Delete', JSON.stringify(kb2));
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(80);
+  const kb3 = await ev(() => { const ms = document.querySelectorAll('.modal'); const top = ms[ms.length - 1]; return { n: ms.length, inTop: top.contains(document.activeElement), libInert: document.querySelector('.modal-lib').closest('.scrim').inert, label: document.activeElement.textContent }; });
+  check('under a question the library is inert and focus is in the question', kb3.n === 2 && kb3.inTop && kb3.libInert && kb3.label === 'Cancel', JSON.stringify(kb3));
+  await page.keyboard.press('Tab'); await page.keyboard.press('Tab'); await page.keyboard.press('Tab');
+  check('Tab stays in the question', await ev(() => { const ms = document.querySelectorAll('.modal'); return ms[ms.length - 1].contains(document.activeElement) || document.activeElement === document.body; }));
+  await ev(() => { const ms = document.querySelectorAll('.modal'); ms[ms.length - 1].querySelector('footer .btn.danger').focus(); });
+  const nBefore = await ev(() => Lull.app.store.state.boards.list.length);
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(120);
+  const kb4 = await ev((id) => ({ gone: !Lull.app.store.state.boards.list.some((r) => r.id === id), n: Lull.app.store.state.boards.list.length, focus: document.activeElement && document.activeElement.classList.contains('lib-open'), inert: document.querySelector('.modal-lib').closest('.scrim').inert }), delName);
+  check('after a Delete, focus is on the nearest row and the library works again', kb4.gone && kb4.n === nBefore - 1 && kb4.focus && !kb4.inert, JSON.stringify(kb4));
+  // Renaming, then a real click (held a moment) on another row's Delete or on another board: the click lands.
+  const rowsNow = await ev(() => Array.from(document.querySelectorAll('.modal-lib .lib-row')).map((r) => r.dataset.id));
+  const clickHeld = async (sel) => {
+    const b = await page.$(sel), r = await b.boundingBox();
+    await page.mouse.move(r.x + r.width / 2, r.y + r.height / 2);
+    await page.mouse.down(); await page.waitForTimeout(90); await page.mouse.up();
+    await page.waitForTimeout(80);
+  };
+  await page.click('.modal-lib .lib-row[data-id="' + rowsNow[0] + '"] [aria-label="Rename"]');
+  await page.keyboard.press('End');
+  await page.keyboard.type(' Two');
+  await clickHeld('.modal-lib .lib-row[data-id="' + rowsNow[1] + '"] [aria-label="Delete"]');
+  const rc1 = await ev((id) => ({ modals: Array.from(document.querySelectorAll('.modal header .ttl')).map((t) => t.textContent), name: Lull.app.store.state.boards.list.find((r) => r.id === id).name }), rowsNow[0]);
+  check('renaming, a click on another row\'s Delete lands (and the name is kept)', rc1.modals.length === 2 && /^Delete /.test(rc1.modals[1]) && / Two$/.test(rc1.name), JSON.stringify(rc1));
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(80);
+  await page.click('.modal-lib .lib-row[data-id="' + rowsNow[0] + '"] [aria-label="Rename"]');
+  await clickHeld('.modal-lib .lib-row[data-id="' + rowsNow[1] + '"] [aria-label="Rename"]');
+  const rc2 = await ev((id) => { const a = document.activeElement; return { field: !!(a && a.classList.contains('lib-name')), row: a && a.closest('.lib-row') && a.closest('.lib-row').dataset.id === id }; }, rowsNow[1]);
+  check('renaming, a click on another row\'s Rename moves the field there', rc2.field && rc2.row, JSON.stringify(rc2));
+  await clickHeld('.modal-lib .lib-row[data-id="' + rowsNow[2] + '"] .lib-open');
+  const rc3 = await ev((id) => ({ cur: Lull.app.store.state.boards.cur === id, lib: !!document.querySelector('.modal-lib') }), rowsNow[2]);
+  check('renaming, a click on another board resumes it', rc3.cur && !rc3.lib, JSON.stringify(rc3));
+  // A retired record: Delete, then Cancel, leaves the record open.
+  await ev(() => { const m = Lull.app.modes.play; m.game.drop(); m.retire(Lull.app.store.state.boards.cur); m.openLibrary(); });
+  await page.click('.modal-lib .lib-tabs [data-k="retired"]');
+  await page.click('.modal-lib .lib-row.retired .lib-open');
+  await page.click('.modal-retire footer .btn.danger');
+  await ev(() => { const ms = document.querySelectorAll('.modal'); const b = [...ms[ms.length - 1].querySelectorAll('footer .btn')].find((x) => x.textContent === 'Cancel'); if (b) b.click(); });
+  check('a retired record: Delete then Cancel keeps the record open', await ev(() => !!document.querySelector('.modal-retire') && document.querySelectorAll('.modal').length === 2));
+  await page.keyboard.press('Escape');
+  await page.click('.modal-lib .lib-tabs [data-k="saved"]');
+  // The thumbnails are drawn on whole device pixels, in plain squares.
+  const th = await ev(() => { const i = document.querySelector('.modal-lib .lib-thumb'); return { nw: i.naturalWidth, cw: parseFloat(i.style.width), dpr: devicePixelRatio }; });
+  check('a thumbnail is on whole device pixels (its image is its size times the scale, exactly)', Math.abs(th.nw - th.cw * th.dpr) < 0.01 && th.nw % 1 === 0, JSON.stringify(th));
+  // The actions stay in their columns, with or without Retire.
+  const cols = await ev(() => { const xs = (l) => [...document.querySelectorAll('.modal-lib .lib-row [aria-label="' + l + '"]')].map((b) => Math.round(b.getBoundingClientRect().left)); return { rename: [...new Set(xs('Rename'))], del: [...new Set(xs('Delete'))], noRetire: document.querySelectorAll('.modal-lib .lib-acts .ph').length }; });
+  check('Rename and Delete line up down the list, a row with no Retire keeping its place', cols.rename.length === 1 && cols.del.length === 1 && cols.noRetire >= 1, JSON.stringify(cols));
+  // Small windows: New board still has a name; a long one-word name keeps the close button in the question; rows fit.
+  for (const [w, hgt] of [[400, 700], [300, 440]]) {
+    await page.setViewportSize({ width: w, height: hgt });
+    await page.waitForTimeout(150);
+    check(w + '×' + hgt + ' New board has an accessible name', (await page.getByRole('button', { name: 'New board' }).count()) === 1);
+    const row = await ev(() => { const rows = [...document.querySelectorAll('.modal-lib .lib-row')]; return { d: rows.every((r) => { const d = r.querySelector('.d'); return d.scrollWidth <= d.clientWidth + 1; }), t: Math.min(...rows.map((r) => r.querySelector('.t').getBoundingClientRect().width)), over: rows.every((r) => r.scrollWidth <= r.clientWidth + 1) }; });
+    check(w + '×' + hgt + ' rows fit: tags and numbers inside, the name has room', row.d && row.over && row.t >= 110, JSON.stringify(row));
+    await shot('78-library-review-' + w + 'x' + hgt);
+    await ev(() => { const B = Lull.app.store.state.boards; Lull.Library.rename(B, Lull.Library.ordered(B)[1].id, 'WWWWWWWWWWWWWWWWWWWWWWWW'); });
+    await ev(() => { const B = Lull.app.store.state.boards; Lull.app.modes.play.confirmDelete(Lull.Library.ordered(B)[1].id); });
+    await page.waitForTimeout(120);
+    const hd = await ev(() => { const ms = document.querySelectorAll('.modal'), top = ms[ms.length - 1], hdr = top.querySelector('header'), x = hdr.querySelector('.x').getBoundingClientRect(), r = top.getBoundingClientRect(); return { fits: hdr.scrollWidth <= hdr.clientWidth + 1, x: x.right <= r.right + 0.5 && x.left >= r.left }; });
+    check(w + '×' + hgt + ' a long name in a question wraps; the close button stays in it', hd.fits && hd.x, JSON.stringify(hd));
+    await shot('78a-long-name-' + w + 'x' + hgt);
+    await page.keyboard.press('Escape');
+  }
+  await page.keyboard.press('Escape');
+  await page.setViewportSize({ width: 520, height: 760 });
+  // A broken library in the save does not stop the app: bad records are dropped when it is opened.
+  const broken = await ev(() => {
+    const m = Lull.app.modes.play, B = Lull.app.store.state.boards;
+    B.list.push(null, { id: 'bx', game: { w: 10, h: 20 } }); B.retired.push(null, { id: 'by', name: 'Odd' });
+    const h = m.openLibrary();
+    const out = { saved: document.querySelectorAll('.modal-lib .lib-row').length === B.list.length, list: B.list.every((r) => r && r.id !== 'bx') };
+    document.querySelector('.modal-lib .lib-tabs [data-k="retired"]').click();
+    out.retired = document.querySelectorAll('.modal-lib .lib-row.retired').length === B.retired.length && B.retired.some((e) => e.id === 'by');
+    h.close();
+    return out;
+  });
+  check('a broken library in the save is cleaned when opened; both tabs still list', broken.saved && broken.list && broken.retired, JSON.stringify(broken));
+  await ev(() => { for (const k of ['play', 'puzzle', 'classic']) Lull.app.modes[k].setGrace = 0; Lull.app.store.state.settings.hints = false; Lull.app.hints.sync(); });
   }
 
   // ---- save and reload ----------------------------------------------------------------------------------------------
@@ -1751,6 +2079,8 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     // Walk the march on by hand for two minutes of bar time and watch every step.
     const march = await ev(() => {
       const i = Lull.Collapse.idle, P = Lull.Pieces, bad = [];
+      // A fixed seed: the march is random, and a rare one ends with a piece turning at the edge (not a landing).
+      i.seed = 7919; i.reset(i.cols);
       const snap = () => new Map(i.pieces.map((p) => [p.n, { id: p.id, rot: p.rot, x: p.x, y: p.y, lo: i.span(p).lo }]));
       let prev = snap(), maxN = 0, minN = 99, turns = 0, nudges = 0, steps = 0, exits = 0, lastLo = [];
       const ex0 = i.exited;
@@ -1862,6 +2192,230 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     await page.waitForTimeout(400);
     const re2 = await col();
     check('and so does expanded', !re2.on && re2.h > 700 && re2.tab === 'puzzle', JSON.stringify(re2));
+  }
+
+  // ---- achievements: a toast opens its achievement; Recent goes to the latest -----------------------------------------
+  console.log('achievement toasts and Recent');
+  {
+    await page.setViewportSize({ width: 520, height: 760 });
+    const theme0 = await ev(() => Lull.app.settings.theme), mouse0 = await ev(() => Lull.app.settings.mouse);
+    // Mouse control off at first (with it on, a toast over a live board waits for the pointer to rest: tried below).
+    await ev(() => { Lull.app.settings.mouse = false; Lull.app.settings.theme = 'dark'; Lull.app.applySettings(); if (Lull.Collapse.on) Lull.Collapse.set(false); });
+    // Earn one on the Play tab, with the list set against it: the To do filter, every group folded, scrolled to the top.
+    const earn = (id, stay) => ev(([id, stay]) => {
+      const app = Lull.app, S = app.store.state;
+      if (!stay) app.setTab('play');
+      document.getElementById('toasts').replaceChildren();
+      app.achFilter = 'left'; app.achOpen = {};
+      S.stats.days = Math.max(S.stats.days || 0, 30);
+      delete S.achievements[id];
+      app.achieve({ mode: 'tick' });
+      const t = document.querySelector('.toast');
+      return { earned: !!S.achievements[id], n: document.querySelectorAll('.toast').length, text: t && t.textContent, role: t && t.getAttribute('role'), tab: t && t.getAttribute('tabindex'), label: t && t.getAttribute('aria-label'),
+        cursor: t && getComputedStyle(t).cursor, events: t && getComputedStyle(t).pointerEvents };
+    }, [id, !!stay]);
+    const t1 = await earn('lu_days30');
+    check('an achievement\'s toast is a button: role, focusable, labelled, pointer cursor, takes the pointer', t1.earned && t1.n === 1 && /Familiar Face/.test(t1.text) && t1.role === 'button' && t1.tab === '0' && /Familiar Face/.test(t1.label) && t1.cursor === 'pointer' && t1.events === 'auto', JSON.stringify(t1));
+    const bg0 = await ev(() => getComputedStyle(document.querySelector('.toast.link')).backgroundColor);
+    const tb = await page.locator('.toast.link').boundingBox();
+    await page.mouse.move(tb.x + tb.width / 2, tb.y + tb.height / 2);
+    await page.waitForTimeout(220);
+    const hov = await ev(() => { const t = document.querySelector('.toast.link'); return { bg: getComputedStyle(t).backgroundColor, lift: getComputedStyle(t).transform }; });
+    check('pointed at, the toast lifts and lightens', hov.bg !== bg0 && hov.lift !== 'none', JSON.stringify({ bg0, hov }));
+    await shot('52-ach-toast-hover');
+    await page.waitForTimeout(3400);
+    check('pointed at, it stays past its time', await ev(() => !!document.querySelector('.toast.link:not(.out)')));
+    await page.mouse.click(tb.x + tb.width / 2, tb.y + tb.height / 2);
+    await page.waitForTimeout(700);
+    const seen = () => ev(() => {
+      const app = Lull.app, body = document.getElementById('ach-body'), row = document.querySelector('.ach.flash');
+      const b = body.getBoundingClientRect(), r = row ? row.getBoundingClientRect() : null;
+      return { tab: app.tab, active: document.getElementById('view-achievements').classList.contains('active'), filter: app.achFilter, id: row && row.dataset.id,
+        open: row ? row.closest('.ach-group').open : false, inView: !!r && r.top >= b.top - 0.5 && r.bottom <= b.bottom + 0.5, scrolled: body.scrollTop > 0,
+        page: document.scrollingElement.scrollTop === 0 && document.getElementById('app').scrollTop === 0 && document.getElementById('main').scrollTop === 0,
+        toasts: document.querySelectorAll('.toast').length, glow: row ? getComputedStyle(row, '::after').content !== 'none' : false, menu: !!document.querySelector('.ach-menu') };
+    });
+    const j1 = await seen();
+    check('clicking it opens the Achievements tab on that one: filter shows it, its group open, scrolled into the list (not the window), lit', j1.tab === 'achievements' && j1.active && j1.filter === 'all' && j1.id === 'lu_days30' && j1.open && j1.inView && j1.scrolled && j1.page && j1.glow, JSON.stringify(j1));
+    check('and the toast is gone', j1.toasts === 0, JSON.stringify(j1));
+    await shot('53-ach-jumped');
+    await page.waitForTimeout(3000);
+    check('the light fades after a moment', await ev(() => !document.querySelector('.ach.flash')));
+    // The Earned filter already shows an earned one: it is kept.
+    await ev(() => { Lull.app.achFilter = 'got'; Lull.UI.showAchievement(Lull.app, 'lu_days30'); });
+    check('a filter that already shows it is kept', await ev(() => Lull.app.achFilter === 'got' && !!document.querySelector('.ach.flash[data-id="lu_days30"]')));
+    // Keyboard: focus the toast, Enter opens it; the key never reaches the board.
+    const t2 = await earn('lu_days30');
+    const pieces = await ev(() => { document.querySelector('.toast.link').focus(); return Lull.app.modes.play.game.s.pieces; });
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(700);
+    const j2 = await seen();
+    check('Enter on a focused toast opens it the same way (and sets no piece)', t2.earned && j2.tab === 'achievements' && j2.id === 'lu_days30' && j2.inView && j2.open && (await ev(() => Lull.app.modes.play.game.s.pieces)) === pieces, JSON.stringify(j2));
+    // Reduced motion: a still light, and no smooth scroll.
+    await ev(() => { Lull.app.settings.motion = 'reduced'; Lull.UI.showAchievement(Lull.app, 'quad'); });
+    const still = await ev(() => { const r = document.querySelector('.ach.flash'); return { id: r && r.dataset.id, still: r && r.classList.contains('still'), anim: r && getComputedStyle(r, '::after').animationName, op: r && getComputedStyle(r, '::after').opacity }; });
+    check('reduced motion: the row is lit, still', still.id === 'quad' && still.still && still.op === '1', JSON.stringify(still));
+    await ev(() => { Lull.app.settings.motion = 'full'; });
+    // Other toasts stay plain notes.
+    const plain = await ev(() => { document.getElementById('toasts').replaceChildren(); Lull.UI.toast('Copied', 'good', 1200); const t = document.querySelector('.toast'); return { role: t.getAttribute('role'), tab: t.getAttribute('tabindex'), link: t.classList.contains('link'), events: getComputedStyle(t).pointerEvents }; });
+    check('other toasts are not clickable', !plain.role && !plain.tab && !plain.link && plain.events === 'none', JSON.stringify(plain));
+    // Many from away: one toast, to Recent.
+    const many = await ev(() => {
+      const app = Lull.app, S = app.store.state, ids = ['quad', 'tsd', 'combo5', 'lines150'], now = Date.now();
+      ids.forEach((id, i) => { S.achievements[id] = now - 60000 * (ids.length - i); });
+      app.setTab('play');
+      document.getElementById('toasts').replaceChildren();
+      app.announce(ids.map((id) => Lull.Achievements.LIST.find((a) => a.id === id)), true);
+      const t = document.querySelectorAll('.toast');
+      return { n: t.length, text: t[0] && t[0].textContent, link: t[0] && t[0].getAttribute('role') === 'button' };
+    });
+    check('many from away: one toast, clickable', many.n === 1 && /4 achievements while you were away/.test(many.text) && many.link, JSON.stringify(many));
+    await page.click('.toast.link');
+    await page.waitForTimeout(500);
+    const rc = await ev(() => ({ tab: Lull.app.tab, menu: !!document.querySelector('.ach-menu'), top: document.getElementById('ach-body').scrollTop, focus: document.activeElement && document.activeElement.getAttribute('role'), toasts: document.querySelectorAll('.toast').length }));
+    check('clicking it opens the tab at Recent, the list open', rc.tab === 'achievements' && rc.menu && rc.top === 0 && rc.focus === 'menuitem' && rc.toasts === 0, JSON.stringify(rc));
+    await page.keyboard.press('Escape');
+    check('Esc closes the Recent list (and nothing else)', await ev(() => !document.querySelector('.ach-menu') && Lull.app.tab === 'achievements' && document.activeElement.classList.contains('ach-recent-more')));
+    // Recent: the latest earned, and the last few newest first.
+    const want = await ev(() => {
+      const S = Lull.app.store.state, now = Date.now(), ids = ['pc', 'quad', 'tsd', 'combo5', 'lines150', 'lu_days30', 'mini2'];
+      for (const id of Object.keys(S.achievements)) S.achievements[id] = now - 400 * 86400e3;
+      ids.forEach((id, i) => { S.achievements[id] = now - 3600e3 * (ids.length - i); });
+      Lull.app.achMenu = false; Lull.app.achFilter = 'all'; Lull.app.achOpen = {};
+      Lull.UI.renderAchievements(Lull.app);
+      document.getElementById('ach-body').scrollTop = 0;
+      return ids.slice().reverse().map((id) => Lull.Achievements.LIST.find((a) => a.id === id).name);
+    });
+    const ctl = await ev(() => { const c = document.querySelector('.ach-recent'), s = document.querySelector('.ach-tools .seg'); return { name: c.querySelector('.ach-recent-go').textContent, left: c.getBoundingClientRect().right <= s.getBoundingClientRect().left, first: c.parentElement.firstElementChild === c }; });
+    check('Recent sits left of the filter, showing the latest earned', ctl.left && ctl.first && ctl.name.startsWith(want[0]), JSON.stringify(ctl));
+    await page.click('.ach-recent-go');
+    await page.waitForTimeout(700);
+    const j3 = await seen();
+    check('it goes to the latest', j3.id === 'mini2' && j3.inView && j3.open, JSON.stringify(j3));
+    await ev(() => { document.getElementById('ach-body').scrollTop = 0; });
+    await page.waitForTimeout(100);
+    await page.click('.ach-recent-more');
+    await page.waitForTimeout(200);
+    const list = await ev(() => ({ names: Array.from(document.querySelectorAll('.ach-menu [role="menuitem"] .nm')).map((n) => n.textContent), ago: Array.from(document.querySelectorAll('.ach-menu .ago')).map((n) => n.textContent), expanded: document.querySelector('.ach-recent-more').getAttribute('aria-expanded') }));
+    check('its list: the last six, newest first, with how long ago', list.names.join() === want.slice(0, 6).join() && list.ago.join() === '1 h,2 h,3 h,4 h,5 h,6 h' && list.expanded === 'true', JSON.stringify({ list, want }));
+    await shot('54-ach-recent-520-dark');
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(700);
+    const j4 = await seen();
+    check('arrows and Enter in the list go to that one', j4.id === 'lines150' && j4.inView && !j4.menu, JSON.stringify(j4));
+    await page.click('.ach-recent-more');
+    await page.mouse.click(400, 700);
+    check('a click elsewhere closes the list', await ev(() => !document.querySelector('.ach-menu')));
+    // It fits: 520×760 (dark and light), 400×700, where the name gives way to "Latest", and a 300 px browser, where the
+    // star alone is left.
+    for (const [w, hgt, theme] of [[520, 760, 'dark'], [520, 760, 'light'], [400, 700, 'dark'], [400, 700, 'light'], [300, 440, 'dark'], [300, 440, 'light']]) {
+      await page.setViewportSize({ width: w, height: hgt });
+      await ev((t) => { Lull.app.settings.theme = t; Lull.app.applySettings(); Lull.app.achMenu = false; Lull.UI.renderAchievements(Lull.app); document.getElementById('ach-body').scrollTop = 0; }, theme);
+      await page.waitForTimeout(80);
+      await shot('55-ach-tools-' + w + 'x' + hgt + '-' + theme);
+      await page.click('.ach-recent-more');
+      await page.waitForTimeout(200);
+      const fit = await ev(() => {
+        const tools = document.querySelector('.ach-tools'), c = document.querySelector('.ach-recent'), s = document.querySelector('.ach-tools .seg'), m = document.querySelector('.ach-menu'), body = document.getElementById('ach-body');
+        const cr = c.getBoundingClientRect(), sr = s.getBoundingClientRect(), mr = m.getBoundingClientRect(), br = body.getBoundingClientRect();
+        const nm = c.querySelector('.ach-recent-go .nm'), sh = c.querySelector('.ach-recent-go .short');
+        const inside = Array.from(c.querySelectorAll(':scope > button')).every((b) => b.scrollWidth <= b.clientWidth + 1 && b.getBoundingClientRect().right <= cr.right + 0.5);
+        return { tools: tools.scrollWidth <= tools.clientWidth + 1, apart: cr.right <= sr.left, inside, oneLine: Math.abs(cr.height - sr.height) < 1, menuIn: mr.left >= br.left && mr.right <= br.right,
+          page: document.documentElement.scrollWidth <= innerWidth + 1, label: getComputedStyle(nm).display !== 'none' ? nm.textContent : getComputedStyle(sh).display !== 'none' ? sh.textContent : '', rows: Array.from(m.querySelectorAll('[role="menuitem"]')).every((b) => b.scrollWidth <= b.clientWidth + 1) };
+      });
+      check(w + '×' + hgt + ' ' + theme + ': Recent and the filter share one row; its list fits', fit.tools && fit.apart && fit.inside && fit.oneLine && fit.menuIn && fit.page && fit.rows && (w < 380 ? fit.label === '' : w < 480 ? fit.label === 'Latest' : fit.label === want[0]), JSON.stringify(fit));
+      await shot('55-ach-recent-' + w + 'x' + hgt + '-' + theme);
+      await page.keyboard.press('Escape');
+    }
+    await page.setViewportSize({ width: 520, height: 760 });
+    await ev(() => { Lull.app.settings.theme = 'light'; Lull.app.applySettings(); Lull.UI.showAchievement(Lull.app, 'mini2'); });
+    await page.waitForTimeout(700);
+    await shot('56-ach-jumped-light');
+    // Nothing earned: no Recent.
+    const none = await ev(() => { const S = Lull.app.store.state, keep = S.achievements; S.achievements = {}; Lull.UI.renderAchievements(Lull.app); const r = !document.querySelector('.ach-recent') && !!document.querySelector('.ach-tools .seg'); S.achievements = keep; Lull.UI.renderAchievements(Lull.app); return r; });
+    check('with nothing earned, Recent is not shown', none);
+    // Earned while the Recent list is open (the minute check): the list is drawn again, and focus stays in it.
+    await ev(() => { Lull.app.achMenu = false; Lull.UI.renderAchievements(Lull.app); });
+    await page.click('.ach-recent-more');
+    await page.waitForTimeout(150);
+    const kept = await ev(() => {
+      const app = Lull.app, S = app.store.state;
+      document.getElementById('toasts').replaceChildren();
+      S.stats.days = Math.max(S.stats.days || 0, 30);
+      delete S.achievements.lu_days30;
+      app.achieve({ mode: 'tick' });
+      const f = document.activeElement;
+      return { earned: !!S.achievements.lu_days30, menu: !!document.querySelector('.ach-menu'), role: f && f.getAttribute('role'), first: f && f.dataset.id };
+    });
+    await page.keyboard.press('ArrowDown');
+    const moved = await ev(() => document.activeElement && document.activeElement.getAttribute('role') === 'menuitem' && document.activeElement !== document.querySelector('.ach-menu [role="menuitem"]'));
+    check('one earned while the Recent list is open: focus stays in the list, arrows still move', kept.earned && kept.menu && kept.role === 'menuitem' && moved, JSON.stringify({ kept, moved }));
+    await page.keyboard.press('Escape');
+    // With mouse control, a click on the board where a toast sits sets a piece (the toast lets it through), and the tab stays.
+    await ev(() => { const app = Lull.app; app.settings.mouse = true; document.getElementById('toasts').replaceChildren(); app.setTab('play'); app.focusedAt = -1e9; app.modes.play.setGrace = 0; });
+    await page.waitForTimeout(200);
+    const cv = await page.locator('#view-play canvas').first().boundingBox();
+    await page.mouse.move(cv.x + cv.width / 2, cv.y + cv.height / 2);
+    await ev(() => { const app = Lull.app; app.store.state.achievements.quad = Date.now(); app.announce([Lull.Achievements.LIST.find((a) => a.id === 'quad')]); });
+    const mt = await page.locator('.toast.link').boundingBox();
+    const p0 = await ev(() => Lull.app.modes.play.game.s.pieces);
+    await page.mouse.move(mt.x + mt.width / 2, mt.y + mt.height / 2, { steps: 4 });
+    const under = await ev(([x, y]) => { const e = document.elementFromPoint(x, y); return e && e.tagName; }, [mt.x + mt.width / 2, mt.y + mt.height / 2]);
+    await page.mouse.click(mt.x + mt.width / 2, mt.y + mt.height / 2);
+    await page.waitForTimeout(250);
+    const mc = await ev(() => ({ pieces: Lull.app.modes.play.game.s.pieces, tab: Lull.app.tab }));
+    check('mouse control: a click on the board under a toast (on the way) sets a piece, and the tab stays', under === 'CANVAS' && mc.pieces === p0 + 1 && mc.tab === 'play', JSON.stringify({ under, p0, mc }));
+    // Rested on a moment, it is the toast's: it lifts, and a click opens it.
+    await page.mouse.move(mt.x + mt.width / 2 + 3, mt.y + mt.height / 2);
+    await page.waitForTimeout(450);
+    await page.mouse.move(mt.x + mt.width / 2 + 4, mt.y + mt.height / 2);
+    const armed = await ev(([x, y]) => { const e = document.elementFromPoint(x, y), t = document.querySelector('.toast.link'); return { under: e && e.closest('.toast') ? 'TOAST' : e && e.tagName, hover: !!t && t.matches(':hover') }; }, [mt.x + mt.width / 2 + 4, mt.y + mt.height / 2]);
+    await page.mouse.click(mt.x + mt.width / 2 + 4, mt.y + mt.height / 2);
+    await page.waitForTimeout(300);
+    const mo = await ev(() => ({ tab: Lull.app.tab, pieces: Lull.app.modes.play.game.s.pieces, id: (document.querySelector('.ach.flash') || {}).dataset?.id }));
+    check('rested on a moment, the toast takes the click: opens it, no piece set', armed.under === 'TOAST' && armed.hover && mo.tab === 'achievements' && mo.id === 'quad' && mo.pieces === mc.pieces, JSON.stringify({ armed, mo }));
+    // Keys can always open it.
+    await ev(() => { const app = Lull.app; app.setTab('play'); app.store.state.achievements.quad = Date.now(); app.announce([Lull.Achievements.LIST.find((a) => a.id === 'quad')]); document.querySelector('.toast.link').focus(); });
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(300);
+    check('and Enter on it opens it', await ev(() => Lull.app.tab === 'achievements' && !!document.querySelector('.ach.flash[data-id="quad"]')));
+    await ev(() => { Lull.app.settings.mouse = false; document.getElementById('toasts').replaceChildren(); Lull.app.setTab('play'); });
+    // A dialog open: the toast lets clicks through to it, and never jumps behind it.
+    await ev(() => { Lull.app.openSettings(); const app = Lull.app; app.store.state.achievements.quad = Date.now(); app.announce([Lull.Achievements.LIST.find((a) => a.id === 'quad')]); });
+    await page.waitForTimeout(100);
+    const dt = await page.locator('.toast.link').boundingBox();
+    await page.mouse.move(dt.x + dt.width / 2, dt.y + dt.height / 2, { steps: 3 });
+    const dlg = await ev(([x, y]) => { const e = document.elementFromPoint(x, y); return { events: getComputedStyle(document.querySelector('.toast.link')).pointerEvents, inModal: !!(e && e.closest('.scrim')) }; }, [dt.x + dt.width / 2, dt.y + dt.height / 2]);
+    await page.mouse.click(dt.x + dt.width / 2, dt.y + dt.height / 2);
+    await page.waitForTimeout(200);
+    const dl2 = await ev(() => ({ tab: Lull.app.tab, modal: Lull.UI.modalOpen() }));
+    check('a dialog open: the toast lets the click through to it; no jump behind it', dlg.events === 'none' && dlg.inModal && dl2.tab === 'play', JSON.stringify({ dlg, dl2 }));
+    await ev(() => { while (Lull.UI.modalOpen()) Lull.UI.closeTopModal(); document.getElementById('toasts').replaceChildren(); });
+    // A pointer resting where a toast appears holds it at most twice its time; one fading out lets clicks through.
+    await ev(() => { Lull.UI.toast('Probe', 'good', 600, 'starOn', { onClick: () => {} }); });
+    const pt = await page.locator('.toast.link').boundingBox();
+    await ev(() => document.getElementById('toasts').replaceChildren());
+    await page.mouse.move(pt.x + pt.width / 2, pt.y + pt.height / 2);
+    await ev(() => { Lull.UI.toast('Probe', 'good', 600, 'starOn', { onClick: () => {} }); });
+    await page.waitForTimeout(300);
+    const held = await ev(() => !!document.querySelector('.toast.link:not(.out)') && document.querySelector('.toast.link').matches(':hover'));
+    await page.waitForTimeout(1500);
+    const capped = await ev(() => !document.querySelector('.toast.link:not(.out)'));
+    check('a pointer resting on a toast holds it, but only up to twice its time', held && capped, JSON.stringify({ held, capped }));
+    const fade = await ev(() => { const t = Lull.UI.toast('Probe', 'good', 5000, 'starOn', { onClick: () => {} }); t.classList.add('out'); return getComputedStyle(t).pointerEvents; });
+    check('a toast fading out lets clicks through', fade === 'none', fade);
+    await ev(() => document.getElementById('toasts').replaceChildren());
+    // Rolled up, toasts have nowhere to show: one earned then is told on expanding, and still opens it.
+    await ev(() => { Lull.app.setTab('play'); Lull.Collapse.set(true); });
+    const col = await earn('lu_days30', true);
+    const hidden = await ev(() => ({ toasts: document.querySelectorAll('.toast').length, unheard: (Lull.app.unheard || []).map((a) => a.id).join() }));
+    await ev(() => Lull.Collapse.set(false));
+    await page.waitForTimeout(500);
+    const told = await ev(() => Array.from(document.querySelectorAll('.toast.link')).map((t) => t.textContent).join());
+    check('earned while rolled up: told on expanding, as a clickable toast', col.earned && hidden.toasts === 0 && hidden.unheard === 'lu_days30' && /Familiar Face/.test(told), JSON.stringify({ hidden, told }));
+    await ev(([t, m]) => { Lull.app.settings.theme = t; Lull.app.settings.mouse = m; Lull.app.applySettings(); document.getElementById('toasts').replaceChildren(); Lull.app.setTab('play'); }, [theme0, mouse0]);
   }
 
   check('no page errors', errors.length === 0, errors.slice(0, 5).join('\n'));

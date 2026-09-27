@@ -162,6 +162,7 @@
       const prev = this.tab;
       if (prev === 'factory' && id !== 'factory') this.modes.factory.hide();
       if (prev === 'classic' && id !== 'classic') { this.modes.classic.togglePause(true); L.Music.stop(); }
+      if (prev === 'achievements' && id !== 'achievements') this.achMenu = false;
       this.tab = id;
       this.state.tab = id;
       for (const b of document.querySelectorAll('.tabs button')) b.setAttribute('aria-selected', String(b.dataset.tab === id));
@@ -273,24 +274,31 @@
       const got = L.Achievements.check(this.state, event);
       if (!got.length) return;
       for (const a of got) this.store.addLines(a.pay, 'achievements');
-      // Earned in the background (the factory, the minute check): no chime from a hidden window; said on return.
-      if (document.hidden || !document.hasFocus()) this.unheard = (this.unheard || []).concat(got);
+      // Earned in the background (the factory, the minute check) or rolled up (toasts have nowhere to show): no chime
+      // from a hidden window; said on return.
+      if (document.hidden || !document.hasFocus() || L.Collapse.on) this.unheard = (this.unheard || []).concat(got);
       else this.announce(got);
       if (this.tab === 'achievements') UI.renderAchievements(this);
       this.refreshWallet(true);
       this.store.touch();
     },
 
+    /** One toast per achievement (a click or Enter on it goes to it in the tab); many at once from away: one, to Recent. */
     announce(got, away) {
       const legend = got.some((a) => a.tier === 'legend');
-      if (away && got.length > 3) toast(got.length + ' achievements while you were away · +' + fmtInt(got.reduce((n, a) => n + a.pay, 0)) + ' ' + LINE, 'good', 6000, 'starOn');
-      else for (const a of got) toast((a.tier === 'legend' ? 'Legendary: ' : '') + a.name + ' · +' + fmtInt(a.pay) + ' ' + LINE, 'good legend-' + (a.tier === 'legend'), a.tier === 'legend' ? 6000 : 3200, a.tier === 'legend' ? 'legend' : 'starOn');
+      if (away && got.length > 3) {
+        toast(got.length + ' achievements while you were away · +' + fmtInt(got.reduce((n, a) => n + a.pay, 0)) + ' ' + LINE, 'good ach-toast', 6000, 'starOn',
+          { onClick: () => UI.showAchievement(this, null), label: got.length + ' achievements while you were away. Show recent' });
+      } else for (const a of got) {
+        toast((a.tier === 'legend' ? 'Legendary: ' : '') + a.name + ' · +' + fmtInt(a.pay) + ' ' + LINE, 'good ach-toast legend-' + (a.tier === 'legend'), a.tier === 'legend' ? 6000 : 3200, a.tier === 'legend' ? 'legend' : 'starOn',
+          { onClick: () => UI.showAchievement(this, a.id), label: (a.tier === 'legend' ? 'Legendary: ' : '') + a.name + '. Show in Achievements' });
+      }
       this.sound.play(legend ? 'perfect' : 'solve');
     },
 
-    /** Back in front: the achievements earned meanwhile, once. */
+    /** Back in front (or rolled back down): the achievements earned meanwhile, once. */
     announceUnheard() {
-      if (!this.unheard || !this.unheard.length || document.hidden || !document.hasFocus()) return;
+      if (!this.unheard || !this.unheard.length || document.hidden || !document.hasFocus() || L.Collapse.on) return;
       const got = this.unheard;
       this.unheard = null;
       this.announce(got, true);
