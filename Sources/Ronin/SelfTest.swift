@@ -23,6 +23,8 @@ enum SelfTest {
 
     @MainActor
     static func start(_ app: AppDelegate) {
+        // A line at a time, so a run that dies (a crash, not a failure) still shows how far it got.
+        setvbuf(stdout, nil, _IOLBF, 0)
         Task { @MainActor in
             do {
                 try await run(app)
