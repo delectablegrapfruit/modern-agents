@@ -76,7 +76,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(item)
         }
 
-        note("\(career.mode.title) · stage \(session.fight.stage) · \(session.fight.setting.name)")
+        if let run = career.endless {
+            note("\(career.mode.title) · endless from \(run.start) · stage \(session.fight.stage)")
+        } else {
+            note("\(career.mode.title) · stage \(session.fight.stage) · \(session.fight.setting.name)")
+        }
         var record = "\(career.rank) · \(career.kills) kills"
         if career.streak > 1 { record += " · \(career.streak) in a row" }
         note(record)
@@ -99,6 +103,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let modeItem = NSMenuItem(title: "Difficulty", action: nil, keyEquivalent: "")
         modeItem.submenu = modes
         menu.addItem(modeItem)
+        // Endless: stage after stage from any stage reached, hearts carried, until the ronin falls.
+        let endless = NSMenu()
+        let campaign = NSMenuItem(title: "Campaign · stage \(career.stage)", action: #selector(leaveEndless), keyEquivalent: "")
+        campaign.target = self
+        campaign.state = career.isEndless ? .off : .on
+        endless.addItem(campaign)
+        endless.addItem(.separator())
+        let unlocked = career.unlocked
+        var stages = Array(unlocked)
+        if stages.count > 30 { stages = stages.filter { $0 == 1 || $0 % 5 == 0 || $0 == unlocked.upperBound } }
+        for stage in stages {
+            let item = NSMenuItem(title: "From Stage \(stage)" + (stage % 5 == 0 ? " · warlord" : ""), action: #selector(startEndless(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = stage
+            item.state = career.endless?.start == stage ? .on : .off
+            endless.addItem(item)
+        }
+        if let best = career.bestEndless[career.mode.rawValue], best > 0 {
+            endless.addItem(.separator())
+            let note = NSMenuItem(title: "Best run: \(best) stage\(best == 1 ? "" : "s")", action: nil, keyEquivalent: "")
+            note.isEnabled = false
+            endless.addItem(note)
+        }
+        let endlessItem = NSMenuItem(title: "Endless", action: nil, keyEquivalent: "")
+        endlessItem.submenu = endless
+        menu.addItem(endlessItem)
         let sizes = NSMenu()
         for size in Settings.Size.allCases {
             let item = NSMenuItem(title: size.title, action: #selector(chooseSize(_:)), keyEquivalent: "")
@@ -130,6 +160,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func chooseMode(_ sender: NSMenuItem) {
         guard Mode.allCases.indices.contains(sender.tag) else { return }
         session.choose(Mode.allCases[sender.tag])
+        panel.scene.loadFight(intro: true)
+        panel.show()
+    }
+
+    @objc private func startEndless(_ sender: NSMenuItem) {
+        session.startEndless(at: sender.tag)
+        panel.scene.loadFight(intro: true)
+        panel.show()
+    }
+
+    @objc private func leaveEndless() {
+        session.leaveEndless()
         panel.scene.loadFight(intro: true)
         panel.show()
     }

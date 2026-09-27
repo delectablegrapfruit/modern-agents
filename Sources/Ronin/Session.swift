@@ -45,7 +45,7 @@ final class GameSession {
         save()
     }
 
-    /// The next fight: the next stage after a win, the same one on a fresh roll after a fall.
+    /// The next fight: the next stage after a win, stage 1 after a fall (in an endless run, the run's first stage).
     func next() {
         promotion = nil
         let autopilot = fight.autopilot
@@ -54,7 +54,7 @@ final class GameSession {
         save()
     }
 
-    /// Walks away from this fight for a fresh roll of the same stage.
+    /// Walks away from this fight for a fresh roll of the same stage, with the hearts it was entered with.
     func restart() {
         if fight.outcome == nil { career.attempt += 1 }
         next()
@@ -71,6 +71,19 @@ final class GameSession {
         let mode = career.mode
         career = Career(seed: UInt64.random(in: 1...UInt64.max))
         career.choose(mode)
+        next()
+    }
+
+    /// Starts an endless run from an unlocked stage.
+    func startEndless(at stage: Int) {
+        career.startEndless(at: stage)
+        next()
+    }
+
+    /// Back to the campaign, where it was left.
+    func leaveEndless() {
+        guard career.isEndless else { return }
+        career.leaveEndless()
         next()
     }
 

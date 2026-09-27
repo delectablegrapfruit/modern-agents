@@ -90,6 +90,25 @@ public struct Sketch: Sendable {
 
     public var isEmpty: Bool { body.isEmpty && overlay.isEmpty }
 
+    /// The box around everything drawn (control points included, so a little generous), grown by `margin` and kept
+    /// to the canvas, on whole pixels.
+    public func bounds(margin: CGFloat) -> CGRect {
+        var minX = CGFloat.infinity, minY = CGFloat.infinity, maxX = -CGFloat.infinity, maxY = -CGFloat.infinity
+        for shape in body + overlay {
+            let grow = shape.stroke == nil ? 0 : shape.width / 2
+            for p in shape.points {
+                minX = min(minX, p.x - grow)
+                minY = min(minY, p.y - grow)
+                maxX = max(maxX, p.x + grow)
+                maxY = max(maxY, p.y + grow)
+            }
+        }
+        guard minX <= maxX else { return CGRect(x: 0, y: 0, width: 1, height: 1) }
+        let x0 = max(0, (minX - margin).rounded(.down)), y0 = max(0, (minY - margin).rounded(.down))
+        let x1 = min(CGFloat(width), (maxX + margin).rounded(.up)), y1 = min(CGFloat(height), (maxY + margin).rounded(.up))
+        return CGRect(x: x0, y: y0, width: max(1, x1 - x0), height: max(1, y1 - y0))
+    }
+
     /// Whether every shape keeps within the canvas (with a little room for the rim).
     public func fits(margin: CGFloat = 0) -> Bool {
         let all = (body + overlay).flatMap(\.points)

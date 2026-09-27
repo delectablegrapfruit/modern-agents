@@ -29,6 +29,8 @@ public enum Palette {
     public static let gold = RGB(0.93, 0.76, 0.42)
     public static let blood = RGB(0.86, 0.08, 0.1)
     public static let steel = RGB(0.9, 0.94, 1.0)
+    /// The gourd of medicine, and the heart it gives back.
+    public static let jade = RGB(0.35, 0.95, 0.62)
     public static let silhouette = RGB(0.025, 0.02, 0.03)
     public static let shade = RGB(0.13, 0.11, 0.13)
 }

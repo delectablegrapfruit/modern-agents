@@ -143,6 +143,34 @@ enum Icons {
         return node
     }
 
+    /// A hyōtan, the gourd of medicine a foe carries: two bulbs, a stopper, a cord. Cut him down without being
+    /// hurt while he is about, and a heart comes back.
+    static func gourd(_ s: CGFloat, _ color: SKColor) -> SKNode {
+        let node = SKNode()
+        node.addChild(shape(CGPath(ellipseIn: CGRect(x: -s * 0.3, y: -s * 0.5, width: s * 0.6, height: s * 0.56), transform: nil), fill: color))
+        node.addChild(shape(CGPath(ellipseIn: CGRect(x: -s * 0.19, y: s * 0.0, width: s * 0.38, height: s * 0.36), transform: nil), fill: color))
+        node.addChild(shape(CGPath(rect: CGRect(x: -s * 0.07, y: s * 0.32, width: s * 0.14, height: s * 0.16), transform: nil), fill: color))
+        let cord = CGMutablePath()
+        cord.move(to: CGPoint(x: -s * 0.2, y: s * 0.03))
+        cord.addQuadCurve(to: CGPoint(x: s * 0.2, y: s * 0.03), control: CGPoint(x: 0, y: -s * 0.08))
+        node.addChild(shape(cord, stroke: RGB(0.9, 0.2, 0.15).color(), width: max(1, s * 0.09)))
+        return node
+    }
+
+    /// ∞: an endless run.
+    static func infinity(_ s: CGFloat, _ color: SKColor) -> SKNode {
+        let path = CGMutablePath()
+        let a = s * 0.5
+        for i in 0...48 {
+            let t = CGFloat(i) / 48 * 2 * .pi
+            let d = 1 + sin(t) * sin(t)
+            let p = CGPoint(x: a * cos(t) / d, y: a * sin(t) * cos(t) / d * 1.25)
+            if i == 0 { path.move(to: p) } else { path.addLine(to: p) }
+        }
+        path.closeSubpath()
+        return shape(path, stroke: color, width: max(1.3, s * 0.12))
+    }
+
     /// The mode as a hanko, a vermilion seal with one character: 初 beginner's mind, 武 the way of the sword, 修 the
     /// realm of carnage, 鬼 the demon.
     static func seal(_ mode: Mode, _ s: CGFloat) -> SKNode {

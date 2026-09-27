@@ -5,9 +5,9 @@ import RoninCore
 
 /// `RONIN_SELFTEST=1 Ronin.app/Contents/MacOS/Ronin`: in a scratch save, makes the first cut and a whiff with real
 /// left and right mouse-button events, lets the autopilot clear stage 1, advances from the banner, shows a new foe's
-/// card, fights a warlord, switches to Oni and rides a combo into bloodlust, falls and rises again, switches back and
-/// finds Bushidō's stage kept, folds into the pill and back, checks that leaving pauses and that coming back takes the
-/// dwell, and checks the save. Exits 0, or 1 saying what failed. With `RONIN_SNAPSHOTS=<dir>` it also writes
+/// card, fights a warlord, switches to Oni and rides a combo into bloodlust, falls and starts again from stage 1,
+/// switches back and finds Bushidō's stage and hearts kept, runs an endless stage straight into the next, folds into
+/// the pill and back, checks that leaving pauses and that coming back takes the dwell, and checks the save. Exits 0, or 1 saying what failed. With `RONIN_SNAPSHOTS=<dir>` it also writes
 /// what the panel showed along the way as PNGs.
 enum SelfTest {
     static var enabled: Bool { ProcessInfo.processInfo.environment["RONIN_SELFTEST"] != nil }
@@ -138,7 +138,7 @@ enum SelfTest {
             scene.loadFight(intro: false)
         }
 
-        // Hands off: the ronin falls, and rises again into the same stage.
+        // Hands off: the ronin falls, and the campaign starts over from stage 1.
         let stage = session.fight.stage
         session.autopilot = false
         scene.timeScale = 6
@@ -147,14 +147,31 @@ enum SelfTest {
         try await until("the banner", timeout: 5) { scene.isShowingBanner }
         try await pause(0.7)
         try snapshot("10-fallen", panel)
-        guard session.career.falls == 1, session.career.stage == stage, session.career.attempt == 2 else { throw Failure("the fall was not booked") }
+        guard session.career.falls == 1, session.career.stage == 1, session.career.attempt == 2 else { throw Failure("the fall was not booked") }
+        guard session.career.unlocked.upperBound >= stage else { throw Failure("stage \(stage) was not left unlocked") }
         click(.left, panel)
-        guard session.fight.stage == stage, session.fight.outcome == nil else { throw Failure("rising again did not restart the stage") }
+        guard session.fight.stage == 1, session.fight.outcome == nil, session.fight.hp == Mode.oni.hearts
+        else { throw Failure("rising again did not start over at stage 1 with full hearts") }
 
-        // Back to Bushidō: its stage is where it was left (stage 5 won, so 6), and it has five hearts again.
+        // Back to Bushidō: its stage is where it was left (stage 5 won, so 6), with the hearts it came out of 5 with.
         session.choose(.bushido)
-        guard session.fight.mode == .bushido, session.fight.stage == 6, session.fight.hp == 5 else { throw Failure("Bushidō's stage was not kept") }
+        guard session.fight.mode == .bushido, session.fight.stage == 6, session.fight.hp == session.career.carried
+        else { throw Failure("Bushidō's stage and hearts were not kept") }
         session.autopilot = true
+
+        // Endless from stage 2: a win runs straight on into stage 3, without a card to click through.
+        session.startEndless(at: 2)
+        scene.loadFight(intro: true)
+        guard session.career.isEndless, session.fight.stage == 2 else { throw Failure("endless did not start at stage 2") }
+        scene.timeScale = 5
+        try await until("the endless run went on", timeout: 60) { session.fight.stage == 3 || session.fight.outcome == .defeat }
+        guard session.fight.stage == 3, session.career.endless?.cleared == 1 else { throw Failure("the endless run did not go on to stage 3") }
+        scene.timeScale = 1
+        try await pause(0.6)
+        try snapshot("12-endless", panel)
+        session.leaveEndless()
+        scene.loadFight(intro: false)
+        guard !session.career.isEndless, session.fight.stage == 6 else { throw Failure("leaving endless did not go back to the campaign") }
 
         // The pill and back.
         panel.setCompact(true)
