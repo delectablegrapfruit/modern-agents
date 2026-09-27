@@ -1127,8 +1127,8 @@ public enum Figure {
                 p.hold = v(0.14, -0.2)
                 p.blade = 2.5
             case (.warlord, .stagger(0)):
-                // The blade flung back over his shoulder (back, not up: finding his feet is half this and half his
-                // guard).
+                // The blade flung back over his shoulder: back, not up, so that finding his feet (half way from
+                // this to his guard) never brings it upright.
                 p.hold = v(0.11, -0.02)
                 p.blade = 4.5
             case (_, .stagger(0)):
@@ -1416,8 +1416,9 @@ public enum Figure {
             plant(&p, hip: v((x - 0.27) / 2 + 0.03, 0.485), front: v(x, 0.08), back: v(-0.27, 0))
             p.lean -= 0.04
         }
-        p.stream = k == 4 ? 0.5 : k < 2 || k == 5 ? 0.45 - 0.15 * CGFloat(k % 2) : 0.5 - 0.15 * CGFloat(k - 2)
-        p.wave = 0.82 + 0.06 * CGFloat(k % 2)
+        let step = min(max(k, 0), 5)
+        p.stream = [0.45, 0.3, 0.5, 0.35, 0.5, 0.45][step]
+        p.wave = [0.82, 0.88, 0.82, 0.88, 0.8, 0.82][step]
         return p
     }
 

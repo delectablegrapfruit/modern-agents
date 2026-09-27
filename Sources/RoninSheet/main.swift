@@ -117,8 +117,9 @@ func combined(_ pieces: [(Sketch, CGPoint)]) -> Sketch {
 
 // MARK: How the dead fall
 
-/// The ways the game kills a foe, and how it cuts him (as Carnage.sever and Carnage.fell do: the severance table,
-/// how long a cut body stands, how hard the big ones are thrown). A warlord always loses his head.
+/// The ways the game kills a foe, and how it cuts him, as Carnage.sever and Carnage.fell do (keep the two in step):
+/// the severance table, the poses the dead start from, how long a cut body stands, how hard the big ones are thrown,
+/// how far toward the eye each lies. A warlord always loses his head.
 enum Death: String, CaseIterable {
     case felled, kesa, gyaku, dou, sune, shomen
 
