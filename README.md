@@ -49,7 +49,8 @@ where it is.
 - **The dead** come apart along the line of the cut: halved on the slant or through the waist, legs taken, heads
   taken (a warlord always loses his); run through or shot, they are thrown back and go down whole. The top half is
   flung away tumbling and trailing blood while the legs stand a moment, pumping, before they go over. Everything
-  lands and stays for the rest of the stage, heaped on what fell before, and the living climb over the heap. Blood
+  lands and stays for the rest of the stage at ground level, overlapping what fell before in a low carpet of the
+  dead that the living walk through. Blood
   pools under the bodies, flecks the ground, and when you are hit, runs down the glass. You wear the stage's blood
   until the chiburi throws it off.
 - **Combo:** every kill and every deflected arrow adds one. The combo multiplies your score (×2 at 10, up to ×8).
@@ -100,10 +101,11 @@ make run     # builds build/Ronin.app (macOS 14+) and opens it
 - `RoninArt` holds the figures, and uses Foundation only. Each frame is posed from a small skeleton and drawn as a
   list of shapes. The app renders those shapes with Core Graphics, and `ronin-sheet` renders the same shapes as
   SVG, so the art can be looked at and tested anywhere.
-  - **Style:** the figures are cut rather than rounded:
-    - faceted, tapered limbs with sharp knees and elbows,
-    - a deep chest over a narrow waist,
-    - a small head on a long frame, about nine heads tall,
+  - **Style:** the figures are cut rather than rounded, and lean to the point of exaggeration:
+    - long, thin, faceted limbs tapering to sharp knees and elbows, the legs longest of all,
+    - a narrow chest over a narrower waist, slim trousers flaring below the knee,
+    - a small head on a long neck, about ten heads tall,
+    - the ronin's coat as two long, narrow tails that stream out behind him when he moves,
     - slender curved blades with a bright edge,
     - cloth that ends in points,
     - a thin rim of light so the black shapes read against dark ground.

@@ -757,9 +757,7 @@ final class DuelScene: SKScene {
                 foeSprites[foe.id] = sprite
             }
             let air = foe.phase == .leaping ? CGFloat(sin(foe.progress * .pi)) * ronin * 0.95 : 0
-            // Standing on the dead where they are heaped.
-            let heap = foe.phase == .leaping ? 0 : carnage.footing(at: laneX(foe.x), width: ronin * 0.3)
-            sprite.update(foe, at: CGPoint(x: laneX(foe.x), y: groundY + heap), air: air, hero: heroX, dt: dt)
+            sprite.update(foe, at: CGPoint(x: laneX(foe.x), y: groundY), air: air, hero: heroX, dt: dt)
         }
         for (id, sprite) in foeSprites where !live.contains(id) {
             sprite.removeFromParent()

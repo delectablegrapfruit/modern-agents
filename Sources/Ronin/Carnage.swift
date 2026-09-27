@@ -5,15 +5,18 @@ import RoninCore
 
 /// The dead, and what is left of them. A cut foe comes apart along the line of the cut: the top half is flung away
 /// tumbling, trailing blood, while the legs stand a moment with blood pumping from the stump before they go over; a
-/// head flies off and the body under it kneels and falls; a foe run through is thrown back and goes down whole.
-/// Everything lands, bounces once, and stays where it falls for the rest of the stage, heaped on what fell before:
-/// the ground keeps a height at every point, raised by each body that settles there, so the dead pile up and the
-/// living climb over them. Blood pools under the bodies and spatters the ground around them.
+/// head flies off and the body under it goes down after it; a foe run through is thrown back and goes down whole. His
+/// weapon leaves his hand and clatters down on its own.
+///
+/// Everything lands, bounces once, and stays where it falls for the rest of the stage, at ground level: scattered a
+/// little nearer or further on the ground (the nearer drawn over the further) and lying across whatever fell there
+/// before, so the lane fills with a low, overlapping carpet of bodies and parts of bodies that never rises into a
+/// heap. It is scenery: the living walk on the ground through it. Blood pools under the dead and flecks the ground.
 @MainActor
 final class Carnage {
-    /// Bodies, living foes' feet stand on them. Drawn behind the living.
+    /// The dead, drawn behind the living.
     let corpses = SKNode()
-    /// Pools and spatter on the ground, under the bodies.
+    /// Pools and spatter on the ground, under the dead.
     let stains = SKNode()
     /// Where blood already spilled is left (so a trail stays where it fell as a body flies on).
     private let trails: SKNode
@@ -32,10 +35,12 @@ final class Carnage {
         var frames: [Frame] = []
         var facing: CGFloat = 1
         var jet: SKEmitterNode?
-        /// A weapon: it lies flat and hardly adds to the heap.
-        var thin = false
         var jetRate: CGFloat = 0
         var jetFor = 0.0
+        /// A weapon: it lies flat and bleeds no pool.
+        var thin = false
+        /// The line on the ground it comes to rest on: at the lane, or a little nearer the eye.
+        var floor: CGFloat = 0
 
         init(node: SKSpriteNode, cast: Cast, state: State) {
             self.node = node
@@ -45,8 +50,6 @@ final class Carnage {
     }
 
     private var bodies: [Body] = []
-    private var heights: [CGFloat] = []
-    private let column: CGFloat = 2
     private var field = CGRect.zero
     private var groundY: CGFloat = 0
     private var ronin: CGFloat = 60
@@ -54,7 +57,6 @@ final class Carnage {
     private var layer: CGFloat = 0
     private var pools: [SKNode] = []
     private var specks: [SKNode] = []
-    private var clock = 0.0
 
     init(trails: SKNode) {
         self.trails = trails
@@ -71,23 +73,24 @@ final class Carnage {
         stains.removeAllChildren()
         pools.removeAll()
         specks.removeAll()
-        heights = Array(repeating: 0, count: max(1, Int((field.width / column).rounded(.up)) + 1))
         layer = 0
     }
 
     var count: Int { bodies.count }
-    var heaped: CGFloat { heights.max() ?? 0 }
 
-    /// How high the dead are piled under a stretch of the lane `width` wide about `x`.
-    func footing(at x: CGFloat, width: CGFloat) -> CGFloat {
-        guard !heights.isEmpty else { return 0 }
-        let a = max(0, Int((x - width / 2 - field.minX) / column)), b = min(heights.count - 1, Int((x + width / 2 - field.minX) / column))
-        guard a <= b else { return 0 }
-        return heights[a...b].max() ?? 0
-    }
-
-    private var cap: CGFloat { ronin * 0.3 }
     private var gravity: CGFloat { ronin * 9 }
+
+    /// How much nearer the eye than the lane itself the dead may lie.
+    private var depth: CGFloat { ronin * 0.12 }
+
+    /// Places a body in the carpet of the dead, `near` (0…1) toward the eye: its resting line, and its place in the
+    /// drawing order (nearer over further; among equals, later over earlier).
+    private func place(_ body: Body, near: CGFloat) {
+        let near = min(1, max(0, near))
+        body.floor = groundY - depth * near
+        layer += 0.0005
+        body.node.zPosition = near * 10 + layer
+    }
 
     // MARK: The dying
 
@@ -95,17 +98,17 @@ final class Carnage {
     /// ronin (`away`, ±1). `force` scales everything for the big ones.
     func sever(_ cast: Cast, _ severance: Figures.Severance, feet: CGPoint, facing: CGFloat, away: CGFloat, force: CGFloat = 1) {
         let full = Figures.size(cast, ronin: ronin)
+        let near = CGFloat.random(in: 0...1)
         for part in Figures.parts(cast, severance) {
             let node = SKSpriteNode(texture: part.texture)
             node.size = CGSize(width: full.width * part.rect.width, height: full.height * part.rect.height)
             node.xScale = facing
             node.position = CGPoint(x: feet.x + facing * (part.rect.midX - Figure.anchor.x) * full.width,
                                     y: feet.y + (part.rect.midY - Figure.anchor.y) * full.height)
-            layer += 0.01
-            node.zPosition = layer
             corpses.addChild(node)
             let body = Body(node: node, cast: cast, state: .flying)
             body.facing = facing
+            place(body, near: near + CGFloat.random(in: -0.15...0.15))
             // Blood from the wound: a jet on what stays standing, a trail on what flies.
             let wound = CGPoint(x: (part.wound.x - part.rect.midX) * full.width, y: (part.wound.y - part.rect.midY) * full.height)
             let jet = Art.spurt(Palette.blood.mix(.black, 0.25), rate: 160 * force, speed: ronin * (part.upper ? 0.5 : 1.6),
@@ -128,13 +131,13 @@ final class Carnage {
             }
             bodies.append(body)
         }
-        drop(cast, feet: feet, facing: facing, away: away, force: force)
+        drop(cast, feet: feet, facing: facing, away: away, force: force, near: near)
         spatter(around: feet.x, count: Int(10 * force))
         trim()
     }
 
-    /// His weapon, out of his hand: flung up turning end over end, to clatter down flat on the heap.
-    private func drop(_ cast: Cast, feet: CGPoint, facing: CGFloat, away: CGFloat, force: CGFloat) {
+    /// His weapon, out of his hand: flung up turning end over end, to clatter down flat among the dead.
+    private func drop(_ cast: Cast, feet: CGPoint, facing: CGFloat, away: CGFloat, force: CGFloat, near: CGFloat) {
         let piece = Figures.weapon(cast)
         let full = Figures.size(cast, ronin: ronin)
         let node = SKSpriteNode(texture: piece.texture)
@@ -142,10 +145,9 @@ final class Carnage {
         node.xScale = facing
         node.zRotation = CGFloat.random(in: -0.8...0.8)
         node.position = CGPoint(x: feet.x, y: feet.y + full.height * 0.35)
-        layer += 0.01
-        node.zPosition = layer
         corpses.addChild(node)
         let body = Body(node: node, cast: cast, state: .flying)
+        place(body, near: near + 0.1)
         body.velocity = CGVector(dx: away * ronin * CGFloat.random(in: 0.3...1.1) * force, dy: ronin * CGFloat.random(in: 1.2...2.2))
         body.spin = CGFloat.random(in: -9...9)
         body.facing = facing
@@ -159,12 +161,12 @@ final class Carnage {
         Figures.apply(node, cast, .die(0), ronin: ronin)
         node.xScale = facing
         node.position = feet
-        layer += 0.01
-        node.zPosition = layer
         corpses.addChild(node)
         let body = Body(node: node, cast: cast, state: .falling)
         body.facing = facing
         body.frames = (0..<Frame.dieFrames).map { .die($0) }
+        let near = CGFloat.random(in: 0...1)
+        place(body, near: near)
         let anatomy = Figure.anatomy(cast, .die(0))
         let canvas = Figures.size(cast, ronin: ronin)
         let jet = Art.spurt(Palette.blood.mix(.black, 0.25), rate: 120 * force, speed: ronin * 1.2, size: ronin * 0.04,
@@ -176,7 +178,7 @@ final class Carnage {
         body.jetRate = 120 * force
         body.jetFor = 0.9
         bodies.append(body)
-        drop(cast, feet: feet, facing: facing, away: -facing, force: force)
+        drop(cast, feet: feet, facing: facing, away: -facing, force: force, near: near)
         spatter(around: feet.x, count: Int(6 * force))
         trim()
     }
@@ -191,11 +193,11 @@ final class Carnage {
                            .wait(forDuration: 1), .removeFromParent()]))
     }
 
-    /// A pool spreading on the ground at `x`, `width` across.
-    func pool(at x: CGFloat, width: CGFloat, grow: TimeInterval = 1.8) {
+    /// A pool spreading on the ground at `x`, `width` across, on the line `floor` (the lane's, if not given).
+    func pool(at x: CGFloat, width: CGFloat, grow: TimeInterval = 1.8, floor: CGFloat? = nil) {
         let pool = SKSpriteNode(texture: Art.glow)
         pool.size = CGSize(width: width, height: max(3, width * 0.16))
-        pool.position = CGPoint(x: x, y: groundY - ronin * 0.02)
+        pool.position = CGPoint(x: x, y: (floor ?? groundY) - ronin * 0.02)
         pool.color = RGB(0.26, 0.0, 0.02).color()
         pool.colorBlendFactor = 1
         pool.alpha = 0.95
@@ -206,13 +208,14 @@ final class Carnage {
         if pools.count > 70 { pools.removeFirst().removeFromParent() }
     }
 
-    /// Drops of blood flecked over the ground about `x`.
-    func spatter(around x: CGFloat, count: Int) {
+    /// Drops of blood flecked over the ground about `x` (about the line `floor`, if given).
+    func spatter(around x: CGFloat, count: Int, floor: CGFloat? = nil) {
         for _ in 0..<count {
             let speck = SKSpriteNode(texture: Art.dot)
             let r = ronin * CGFloat.random(in: 0.015...0.05)
             speck.size = CGSize(width: r * 2, height: r * 0.9)
-            speck.position = CGPoint(x: x + CGFloat.random(in: -1...1) * ronin * 0.9, y: groundY - CGFloat.random(in: 0...0.16) * ronin)
+            let line = floor ?? groundY - CGFloat.random(in: 0...1) * depth
+            speck.position = CGPoint(x: x + CGFloat.random(in: -1...1) * ronin * 0.9, y: line - CGFloat.random(in: -0.02...0.03) * ronin)
             speck.color = RGB(0.34, 0.0, 0.03).color()
             speck.colorBlendFactor = 1
             speck.alpha = CGFloat.random(in: 0.6...0.95)
@@ -222,7 +225,7 @@ final class Carnage {
         while specks.count > 220 { specks.removeFirst().removeFromParent() }
     }
 
-    /// Too many dead to keep drawing: the oldest ones under the heap fade (the heap keeps its height).
+    /// Too many dead to keep drawing: the oldest fade away.
     private func trim() {
         while bodies.count > 70, let old = bodies.firstIndex(where: { $0.state == .resting }) {
             let body = bodies.remove(at: old)
@@ -234,7 +237,6 @@ final class Carnage {
 
     func update(_ dt: Double) {
         guard dt > 0 else { return }
-        clock += dt
         let h = CGFloat(dt)
         var gone: [Int] = []
         for (i, body) in bodies.enumerated() {
@@ -254,13 +256,14 @@ final class Carnage {
             case .resting:
                 continue
             case .falling:
-                // Dying frames: thrown back, the knees going, toppling; then down, on the heap.
+                // Dying frames: thrown back a step, the knees going, toppling; then down.
                 let k = min(body.frames.count - 1, Int(body.clock / 0.13))
                 Figures.apply(node, body.cast, body.frames[k], ronin: ronin)
-                node.position.y = groundY + footing(at: node.position.x, width: node.size.width * 0.5)
+                let t = CGFloat(min(1, body.clock / 0.4))
+                node.position.y = groundY + (body.floor - groundY) * t
+                node.position.x -= body.facing * ronin * 0.5 * h * (1 - t)
                 if k == body.frames.count - 1 { rest(body, lying: true) }
             case .standing:
-                node.position.y = max(node.position.y, groundY + footing(at: node.position.x, width: node.size.width * 0.4) + node.size.height / 2)
                 body.standFor -= dt
                 if body.standFor <= 0 {
                     body.state = .flying
@@ -277,16 +280,16 @@ final class Carnage {
                     gone.append(i)
                     continue
                 }
-                let floor = groundY + footing(at: node.position.x, width: ex * 1.4)
-                if node.position.y - ey <= floor, body.velocity.dy < 0 {
+                // The ground is the ground: bodies land on it, not on each other.
+                if node.position.y - ey * 0.6 <= body.floor, body.velocity.dy < 0 {
                     if !body.bounced, body.velocity.dy < -ronin * 2 {
                         // One hard bounce, a splash where it struck.
                         body.bounced = true
-                        node.position.y = floor + ey
+                        node.position.y = body.floor + ey * 0.6
                         body.velocity.dy *= -0.28
                         body.velocity.dx *= 0.5
                         body.spin *= 0.45
-                        spatter(around: node.position.x, count: 4)
+                        spatter(around: node.position.x, count: 4, floor: body.floor)
                     } else {
                         rest(body, lying: false)
                     }
@@ -305,8 +308,8 @@ final class Carnage {
         return (abs(w * cos(angle)) + abs(h * sin(angle)), abs(w * sin(angle)) + abs(h * cos(angle)))
     }
 
-    /// Lays a body to rest on the heap: turned to lie flat (a long piece on its side), settled into what is under it,
-    /// and adding to the heap's height. Blood pools under it.
+    /// Lays a body to rest where it fell: turned to lie flat (a long piece on its side, a weapon level) and sunk
+    /// until it lies on the ground, across whatever lies there already. Blood pools under it.
     private func rest(_ body: Body, lying: Bool) {
         let node = body.node
         body.state = .resting
@@ -315,16 +318,12 @@ final class Carnage {
             node.position.x = heroX + (node.position.x < heroX ? -1 : 1) * ronin * 0.34
         }
         let size = node.size
-        let top: CGFloat
         let ex: CGFloat
         if lying {
             // A whole body already on its back, anchored at the feet.
-            let base = footing(at: node.position.x, width: size.width * 0.5)
-            node.position.y = groundY + base
-            top = groundY + base + size.height * 0.4
+            node.position.y = body.floor
             ex = size.width * 0.42
         } else {
-            // Whatever is long lies along the ground: a tall piece on its side, a wide one (a weapon) flat.
             let tall = size.height > size.width * 1.25, wide = size.width > size.height * 1.25
             let quarter = CGFloat.pi / 2
             var k = (node.zRotation / quarter).rounded()
@@ -333,19 +332,10 @@ final class Carnage {
             let angle = k * quarter
             let (x, y) = extents(node, angle)
             ex = x
-            let base = footing(at: node.position.x, width: x * 1.4)
-            // Settle into the bodies beneath rather than balance on their highest point (a silhouette fills little
-            // of its box).
-            let y0 = groundY + base + y * (body.thin ? 0.5 : 0.62)
+            // A silhouette fills little of its box: sink it until the body, not the box, is on the ground.
+            let y0 = body.floor + y * (body.thin ? 0.3 : 0.45)
             node.run(.group([.rotate(toAngle: angle, duration: 0.12, shortestUnitArc: true), .moveTo(y: y0, duration: 0.12)]))
-            top = body.thin ? groundY + base : y0 + y * 0.35
         }
-        // Raise the heap under it.
-        let a = max(0, Int((node.position.x - ex * 0.85 - field.minX) / column))
-        let b = min(heights.count - 1, Int((node.position.x + ex * 0.85 - field.minX) / column))
-        if a <= b {
-            for c in a...b { heights[c] = min(cap, max(heights[c], top - groundY)) }
-        }
-        if !body.thin { pool(at: node.position.x, width: ex * 2.4) }
+        if !body.thin { pool(at: node.position.x, width: ex * 2.4, floor: body.floor) }
     }
 }

@@ -34,7 +34,6 @@ final class FoeSprite: SKNode {
     private(set) var gourd: SKNode?
     private var walk: CGFloat = 0
     private var shownX: CGFloat?
-    private var shownY: CGFloat?
     private var ronin: CGFloat = 60
     private var idleClock = Double.random(in: 0...2)
     /// Seconds since the blow landed (or the bow loosed), and left in a stagger.
@@ -205,11 +204,7 @@ final class FoeSprite: SKNode {
         }
         let moved = shownX.map { abs(x - $0) } ?? 0
         shownX = x
-        // Up onto the heap of the dead and down again, a step at a time.
-        var y = position.y
-        if let last = shownY, foe.phase != .leaping { y = last + (y - last) * min(1, CGFloat(dt) * 10) }
-        shownY = y
-        self.position = CGPoint(x: x - facing * jolt + facing * lurch, y: y + air)
+        self.position = CGPoint(x: x - facing * jolt + facing * lurch, y: position.y + air)
         shadow.position = CGPoint(x: 0, y: -air)
         shadow.alpha = 0.6 * max(0.25, 1 - air / (ronin * 1.2))
         glint.position.x = facing * height * 0.07
