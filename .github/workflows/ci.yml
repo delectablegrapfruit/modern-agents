@@ -4,6 +4,9 @@ on:
   push:
     paths-ignore:
       - "dist/**"
+      # The maze game has its own workflow (memaze.yml); it doesn't touch the Books app.
+      - "memaze/**"
+      - ".github/workflows/memaze.yml"
   pull_request:
   release:
     types: [published]
