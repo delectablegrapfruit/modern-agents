@@ -610,9 +610,10 @@ final class Carnage {
         if (tall && !odd) || (wide && odd) { k += node.zRotation - k * quarter >= 0 ? 1 : -1 }
         body.restAngle = k * quarter + CGFloat.random(in: -0.3...0.3) * (body.thin ? 0.4 : 1)
         let (_, y) = extents(node, body.restAngle)
-        // A silhouette fills little of its box: sunk until the body, not the box, is on the ground; sometimes a little
-        // proud of it, lying across what fell before.
-        body.restY = body.floor + y * CGFloat.random(in: 0.34...0.56) * (body.thin ? 0.7 : 1)
+        // A silhouette fills little of its box: sunk until the piece, not the box, is on the ground (a weapon fills
+        // less of its box than a head, whose lowest point is some 0.6 of the way down from its middle); sometimes a
+        // little proud of it, lying across what fell before.
+        body.restY = body.floor + y * (body.thin ? CGFloat.random(in: 0.24...0.39) : CGFloat.random(in: 0.5...0.72))
         body.velocity.dx *= 0.55
         body.state = .sliding
     }
