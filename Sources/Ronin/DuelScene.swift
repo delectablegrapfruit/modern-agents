@@ -598,6 +598,8 @@ final class DuelScene: SKScene {
         vignette.position = CGPoint(x: field.midX, y: field.midY)
         rage.size = vignette.size
         rage.position = vignette.position
+        // (Sized at rest: a sprite's size is its scaled one, and the heartbeat scales this one.)
+        dread.setScale(1)
         dread.size = vignette.size
         dread.position = vignette.position
         wound.size = field.size
