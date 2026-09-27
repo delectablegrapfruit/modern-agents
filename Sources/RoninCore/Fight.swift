@@ -365,8 +365,8 @@ public struct Fight: Codable, Equatable, Sendable {
                     let pace = f.speed * (1 + 0.5 * fury)
                     if f.distance > stop { f.x = side.sign * max(stop, f.distance - pace * h) }
                     // Close to the ronin, the warlord raises his guard and walks in behind it.
-                    if boss, f.guardRest <= 0, f.gap < reach + 0.16, rng.chance(1.6 * h) {
-                        f.enter(.guarding, for: rng.range(0.55, 0.95))
+                    if boss, f.guardRest <= 0, f.gap < reach + 0.18, rng.chance(2.4 * h) {
+                        f.enter(.guarding, for: rng.range(0.6, 1.05))
                         events.append(.guarded(foe: f.id))
                         break
                     }
@@ -416,7 +416,7 @@ public struct Fight: Codable, Equatable, Sendable {
                 case .recoil:
                     f.timer -= h
                     if f.timer <= 0 {
-                        if boss, f.guardRest <= 0, rng.chance(0.35) {
+                        if boss, f.guardRest <= 0, rng.chance(0.5) {
                             f.enter(.guarding, for: rng.range(0.5, 0.85))
                             events.append(.guarded(foe: f.id))
                         } else {
@@ -524,7 +524,7 @@ public struct Fight: Codable, Equatable, Sendable {
             events.append(.leapt(foe: foes[i].id))
         } else {
             let sign = Side.of(foes[i].x).sign
-            foes[i].x = sign * min(Tuning.edge, foes[i].distance + (foes[i].kind == .warlord ? 0.09 : 0.07))
+            foes[i].x = sign * min(Tuning.edge, foes[i].distance + (foes[i].kind == .warlord ? 0.06 : 0.07))
             foes[i].enter(.recoil, for: 0.3)
         }
         return false

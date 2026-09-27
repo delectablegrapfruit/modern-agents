@@ -96,7 +96,7 @@ public enum Kind: String, Codable, Sendable, CaseIterable {
         case .brute: return 0.86
         case .dancer: return 0.52
         case .archer: return 0.95
-        case .warlord: return 0.72
+        case .warlord: return 0.6
         }
     }
 
