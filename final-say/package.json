@@ -1,0 +1,19 @@
+{
+  "name": "final-say",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A talent-show judging game in 3D: you sit on the panel and have the final say. Also runs bracket tournaments and swipe-style dataset filtering.",
+  "type": "module",
+  "scripts": {
+    "dev": "node build.mjs --serve",
+    "build": "node build.mjs",
+    "test": "node test/smoke.mjs"
+  },
+  "dependencies": {
+    "three": "0.186.1"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.10",
+    "playwright": "1.56.1"
+  }
+}

@@ -1,0 +1,501 @@
+// Words for the show: contestants' names and stories, what they say, what the judges say, the jokes, the songs.
+
+export const FIRST_F = ['Doris', 'Aisha', 'Mei', 'Gladys', 'Siobhan', 'Rosa', 'Ingrid', 'Bex', 'Nadia', 'Imani', 'Marisol', 'Ffion', 'Hana', 'Marguerite', 'Zainab', 'Maeve', 'Agnes', 'Sunita', 'Keisha', 'Ethel', 'Lottie', 'Priti', 'Yolanda', 'Brenda', 'Tiana', 'Olwen', 'Esperanza', 'Kasia', 'Noor', 'Delphine'];
+export const FIRST_M = ['Kevin', 'Tomasz', 'Seun', 'Bernard', 'Kofi', 'Dev', 'Hamish', 'Yusuf', 'Terrence', 'Callum', 'Luca', 'Arjun', 'Declan', 'Barry', 'Jaden', 'Wilfred', 'Ravi', 'Tyrone', 'Ollie', 'Rhys', 'Mateo', 'Kwame', 'Graham', 'Nigel', 'Hiroshi', 'Bogdan', 'Clive', 'Emeka', 'Finn', 'Santiago'];
+export const LAST = ['Hawthorne', 'Okafor', 'Nowak', 'Singh', 'MacLeod', 'Pereira', 'Chen', 'Adeyemi', 'Fitzgerald', 'Kowalski', 'Brennan', 'Mensah', 'Patel', 'Harrington', 'Jones', 'Lindqvist', 'Morales', "O'Hara", 'Tanaka', 'Baptiste', 'Whitlock', 'Evans', 'Kaur', 'Duffy', 'Ferreira', 'Price', 'Lowe', 'Rossi', 'Bellweather', 'Pickering', 'Achebe', 'Moreau', 'Szabo', 'Quigley'];
+export const PLACES = ['Leeds', 'Glasgow', 'Cardiff', 'Belfast', 'Bristol', 'Leicester', 'Hull', 'Swansea', 'Aberdeen', 'Brighton', 'Norwich', 'Dundee', 'Plymouth', 'Blackpool', 'Lagos', 'Manila', 'Toronto', 'Dublin', 'Auckland', 'Kraków', 'Lisbon', 'Mumbai', 'Kingston', 'Accra', 'Seoul', 'Wigan', 'Margate', 'Inverness', 'Stoke', 'Llandudno'];
+export const EPISODE_CITIES = ['Blackpool', 'Glasgow', 'Cardiff', 'Birmingham', 'Manchester', 'London', 'Belfast', 'Newcastle'];
+
+export const JOBS = ['a dinner lady', 'a tax inspector', 'a dentist', 'a bin collector', 'a lollipop lady', 'a nurse', 'a forklift driver', 'a wedding DJ', 'a student', 'a vet', 'a barista', 'a lighthouse keeper', 'an accountant', 'a window cleaner', 'a sheep farmer', 'an ice-cream van driver', 'a zookeeper', 'a software developer', 'a librarian', 'a plumber', 'a hairdresser', 'a baker', 'a taxi driver', 'a postie', 'a scaffolder', 'a primary school teacher', 'a funeral director', 'a driving instructor', 'a hospital porter', 'a traffic warden', 'a fishmonger', 'a pharmacist'];
+export const JOB_BANTER = {
+  'a dentist': 'A dentist! So you know all about getting through a hard time.',
+  'a tax inspector': 'A tax inspector. The audience is already booing, I think.',
+  'a traffic warden': 'A traffic warden. Brave of you to come here.',
+  'a funeral director': 'A funeral director. Let’s hope nobody dies up there.',
+  'a driving instructor': 'A driving instructor. Nerves of steel, then.',
+  'a lighthouse keeper': 'A lighthouse keeper! Is that still a job?',
+  'a wedding DJ': 'A wedding DJ. You’ve seen people at their worst.',
+  'an ice-cream van driver': 'An ice-cream van driver! The most popular person on any street.',
+  'a zookeeper': 'A zookeeper. So a TV studio is nothing to you.',
+  'a sheep farmer': 'A sheep farmer! How are the sheep?',
+  'a fishmonger': 'A fishmonger. I can almost smell it from here. Kidding!',
+};
+
+export const WHY = [
+  'My nan always said I should. She’s watching at home.',
+  'I lost a bet with my brother.',
+  'I want to prove my PE teacher wrong.',
+  'My kids dared me.',
+  'My neighbours said if I’m going to practise that loud, I should at least get paid.',
+  'I’ve done it in my kitchen for years. Time to do it somewhere bigger.',
+  'I promised my grandad I would, before he passed.',
+  'I want to show my daughter you can be brave.',
+  'I’ve been told no my whole life. I want one yes.',
+  'My therapist said it would be good for me.',
+  'I’ve got nothing to lose. Except my dignity, and I’m ready to lose that.',
+  'Honestly? I thought this was the queue for the toilets.',
+  'Everyone at work said I’d never do it. So here I am.',
+];
+
+export const SUPPORTERS = [
+  ['my mum', 'your mum'],
+  ['my husband, Terry', 'Terry'],
+  ['my wife, Janice', 'Janice'],
+  ['my whole five-a-side team', 'the lads'],
+  ['my grandad', 'Grandad'],
+  ['my twin sister', 'your sister'],
+  ['my three kids', 'the kids'],
+  ['my best mate Gaz', 'Gaz'],
+  ['my nan — she’s ninety-one', 'your nan'],
+  ['my dance teacher, Miss Pauline', 'Miss Pauline'],
+  ['my boyfriend', 'your boyfriend'],
+  ['my girlfriend', 'your girlfriend'],
+  ['nobody. They think I’m at work.', null],
+];
+
+export const DREAMS = [
+  'Headline in Las Vegas.',
+  'Buy my mum a house.',
+  'Open a dance school in my town.',
+  'Just get through this without fainting.',
+  'Perform for the King.',
+  'Pay off my student loan.',
+  'Get a record deal.',
+  'Be on a mug. Just one mug.',
+  'Prove I’m more than my day job.',
+  'Take my nan on a cruise.',
+  'Quit my job and do this full time.',
+  'Be the reason someone at home turns the telly up.',
+];
+
+export const SONGS = ['Lighthouse Heart', 'Paper Aeroplanes', 'The Last Bus Home', 'Golden Hour', 'Kitchen Disco', 'Falling for Tuesdays', 'Midnight in Morecambe', 'Umbrella for Two', 'Wildfire Lullaby', 'Postcards from Nowhere', 'Brave Little Engine', 'Neon Rain', 'Stars Over the Car Park'];
+export const DOG_NAMES = ['Biscuit', 'Pickle', 'Duchess', 'Rocket', 'Mabel', 'Sausage', 'Pudding', 'Bruno', 'Wellington', 'Nugget'];
+export const PUPPET_NAMES = ['Mr Mortimer', 'Cheeky Colin', 'Lady Pennyworth', 'Nibbles', 'Uncle Reg'];
+export const GROUP_ADJ = ['Midnight', 'Flying', 'Electric', 'Velvet', 'Tartan', 'Cosmic', 'Unbreakable', 'Northern', 'Sequinned', 'Rusty', 'Golden', 'Thunder'];
+export const GROUP_NOUN = { crew: ['Movers', 'Stompers', 'Collective', 'Crew', 'Squad', 'Shufflers'], band: ['Pancakes', 'Radiators', 'Seagulls', 'Parking Tickets', 'Wolves', 'Lawnmowers'], choir: ['Choir', 'Harmonies', 'Voices', 'Chorale', 'Singers'], acro: ['Tumblers', 'Flyers', 'Acrobats', 'Pyramids'] };
+
+// Act types. `solo` acts have one person; others have a range of members.
+export const ACTS = {
+  singer: { label: 'Singer', members: [1, 1], music: ['ballad', 'pop'], lead: 'voice', desc: ['singing a song I wrote, called ‘{song}’', 'singing ‘{song}’. It was my mum’s favourite.', 'a big ballad. ‘{song}’.'] },
+  opera: { label: 'Opera singer', members: [1, 1], music: ['ballad'], lead: 'opera', desc: ['opera. In Italian. Well, sort of Italian.', 'an aria. I taught myself from videos.'], novelty: 0.2 },
+  kazoo: { label: 'Kazoo virtuoso', members: [1, 1], music: ['swing', 'circus'], lead: 'kazoo', desc: ['classical kazoo.', 'a kazoo medley. It’s very moving.'], novelty: 0.5 },
+  whistler: { label: 'Whistler', members: [1, 1], music: ['swing', 'ballad'], lead: 'whistle', desc: ['whistling. Professionally.', 'a whistled version of ‘{song}’.'], novelty: 0.4 },
+  dancer: { label: 'Dancer', members: [1, 1], music: ['dance', 'pop'], desc: ['a dance routine I choreographed myself.', 'street dance. With a twist.', 'a bit of everything. Disco, robot, the lot.'] },
+  crew: { label: 'Dance crew', members: [3, 6], music: ['dance', 'pop'], desc: ['our routine. It tells a story.', 'a routine we’ve been rehearsing in a car park for a year.'] },
+  band: { label: 'Band', members: [3, 4], music: ['rock', 'pop'], lead: 'guitar', desc: ['one of our own songs. ‘{song}’.', 'our single. It’s not out yet. It’s not in anything yet.'] },
+  choir: { label: 'Choir', members: [4, 7], music: ['ballad'], lead: 'choir', desc: ['a song in three-part harmony.', '‘{song}’, arranged by our choirmaster.'] },
+  magician: { label: 'Magician', members: [1, 2], music: ['magic'], desc: ['some magic. Prepare to be amazed.', 'illusions. Things will vanish. Hopefully the right things.'] },
+  comedian: { label: 'Comedian', members: [1, 1], desc: ['five minutes of stand-up.', 'comedy. Observational. I’ve been observing.'] },
+  juggler: { label: 'Juggler', members: [1, 1], music: ['circus'], desc: ['juggling. Up to seven balls, if it goes well.', 'juggling. I started with oranges.'] },
+  dog: { label: 'Dog act', members: [1, 1], music: ['swing', 'circus'], desc: ['a routine with {dog}. She’s the talent, I’m the snacks.', 'tricks with {dog}. He’s very professional.'] },
+  acro: { label: 'Acrobats', members: [2, 4], music: ['epic'], desc: ['acrobatics. We finish with a pyramid.', 'tumbling. There will be flips.'] },
+  vent: { label: 'Ventriloquist', members: [1, 1], desc: ['ventriloquism, with my friend {puppet}.', 'a double act. Me and {puppet}.'], novelty: 0.3 },
+  strongman: { label: 'Strongman', members: [1, 1], music: ['epic'], desc: ['lifting heavy things.', 'feats of strength. That barbell is real.'], novelty: 0.2 },
+};
+
+export const EXPERIENCE = [
+  // [phrase, typical talent]
+  ['since Tuesday', 0.1],
+  ['about three weeks', 0.2],
+  ['six months', 0.35],
+  ['a couple of years', 0.5],
+  ['five years', 0.6],
+  ['since I was four', 0.75],
+  ['twenty years', 0.7],
+  ['my whole life', 0.8],
+];
+
+// How each kind of person answers each question. {first}, {name}, {age}… are filled in.
+export const PERSONAS = ['shy', 'sweet', 'confident', 'cocky', 'quirky', 'deadpan'];
+export const REPLIES = {
+  greet: {
+    shy: ['H-hello.', 'Hi… sorry. Hi.', 'Um. Hello, everyone.'],
+    sweet: ['Hiya! Oh my gosh, it’s really you!', 'Hello! I’m shaking!', 'Hi! This is mad!'],
+    confident: ['Good evening!', 'Hello, everybody!', 'Hi there. Great to be here.'],
+    cocky: ['Evening. You can relax now, I’m here.', 'Hello, hello. Don’t all stand up at once.', 'Right then. Let’s make some history.'],
+    quirky: ['Greetings, earthlings!', 'Hello! I brought snacks. I ate them. Sorry.', 'Hi! Is this the audition or the dentist?'],
+    deadpan: ['Hello.', 'Evening.', 'Hi. It’s bright up here.'],
+  },
+  name: {
+    shy: ['Um… I’m {first}. {name}.', 'I’m {first}. Sorry, {name}.', '{first}… {name}.'],
+    sweet: ['I’m {first}! {name}!', 'My name’s {first}, but everyone calls me {nick}!'],
+    confident: ['I’m {name}.', '{name}. Pleasure.'],
+    cocky: ['{name}. Remember it — you’ll be hearing it a lot.', 'I’m {name}. You’re welcome.'],
+    quirky: ['They call me {nick}. Only my cat calls me {first}.', '{first}! Like the weather, but louder.'],
+    deadpan: ['{name}. That’s the whole name.', '{first}. {name}.'],
+  },
+  age: {
+    shy: ['I’m {age}. Is that… okay?', '{age}.'],
+    sweet: ['I’m {age}!', '{age} — {agejoke}'],
+    confident: ['{age}.', 'I’m {age}, and I’ve never felt better.'],
+    cocky: ['{age}. But I move like I’m twenty-one.', '{age}, and still the best-looking person in {from}.'],
+    quirky: ['{age} in human years.', '{age}. My knees say ninety.'],
+    deadpan: ['{age}.', '{age}. It happened gradually.'],
+  },
+  from: {
+    shy: ['{from}… it’s quite small. The bit I’m from.', 'I’m from {from}.'],
+    sweet: ['I’m from {from}! Hi, {from}!', '{from}! Best place in the world!'],
+    confident: ['{from}, born and raised.', 'I’m from {from}.'],
+    cocky: ['{from}. They’re building me a statue. Probably.', '{from}. They’ll be naming a street after me.'],
+    quirky: ['{from}. Big fan of the roundabout there.', 'Near {from}. Near-ish. Left at the big cow.'],
+    deadpan: ['{from}.', '{from}. Not the nice bit.'],
+  },
+  job: {
+    shy: ['I’m {job}. It’s… it’s fine.', 'I work as {job}.'],
+    sweet: ['I’m {job}! But this is my real passion!', 'I’m {job}. I sing to the customers!'],
+    confident: ['I’m {job} by day.', '{job}. For now.'],
+    cocky: ['I’m {job}. Temporarily. Until tonight.', 'I was {job}. I handed my notice in this morning.'],
+    quirky: ['I’m {job}. And a part-time pirate, at weekends.', '{job}. Don’t ask.'],
+    deadpan: ['I’m {job}. It’s exactly as exciting as it sounds.', '{job}.'],
+  },
+  act: {
+    shy: ['I’m going to be doing… {act}', 'Um, {act}'],
+    sweet: ['I’m doing {act} I’ve practised so much!', '{act} I hope you like it!'],
+    confident: ['I’m doing {act}', 'Tonight? {act}'],
+    cocky: ['{act} You’ve never seen anything like it.', 'Only the best thing you’ll see all night: {act}'],
+    quirky: ['{act} Plus a surprise. Maybe.', '{act} It’s a lot.'],
+    deadpan: ['{act}', '{act} Brace yourselves.'],
+  },
+  experience: {
+    shy: ['{exp}. But only in my bedroom.', 'Um, {exp}.'],
+    sweet: ['{exp}! Every single day!', 'Oh, {exp}!'],
+    confident: ['{exp}.', '{exp}, properly.'],
+    cocky: ['{exp}. Some people are just naturals.', '{exp}. I didn’t need longer.'],
+    quirky: ['{exp}. Before that, I was a mime, so you wouldn’t have heard.', 'Technically {exp}.'],
+    deadpan: ['{exp}.', '{exp}. Give or take.'],
+  },
+  why: {
+    shy: ['{why}', 'Um… {why}'],
+    sweet: ['{why}', 'Honestly? {why}'],
+    confident: ['{why}', 'Simple. {why}'],
+    cocky: ['Because this show needs me. Also, {whylow}', 'Destiny. And {whylow}'],
+    quirky: ['{why}', 'Long story. Short version: {whylow}'],
+    deadpan: ['{why}', '{why}'],
+  },
+  supporter: {
+    shy: ['{supporter}.', 'Just {supporter}.'],
+    sweet: ['{supporter}! Hiya!', 'Yes! {supporter}!'],
+    confident: ['{supporter}. Up there somewhere.', 'Yeah — {supporter}.'],
+    cocky: ['{supporter}. And about four million fans at home.', '{supporter}. They’ll be the ones cheering loudest.'],
+    quirky: ['{supporter}. And a man I met in the car park.', '{supporter}. Hi! Stop waving, you’re embarrassing me.'],
+    deadpan: ['{supporter}.', '{supporter}. Allegedly.'],
+  },
+  dream: {
+    shy: ['I’d like to… {dreamlow}', 'Maybe {dreamlow}'],
+    sweet: ['Oh gosh — {dreamlow}', 'It would mean everything. {dream}'],
+    confident: ['{dream}', 'Winning means I can {dreamverb}'],
+    cocky: ['Winning’s the plan. After that? {dream}', '{dream} Obviously.'],
+    quirky: ['{dream} And a hot tub.', '{dream} In that order.'],
+    deadpan: ['{dream}', '{dream} Or a nice sit down.'],
+  },
+  origin: {
+    any: ['We met at a {place}. The rest is history.', 'We all worked at the same {place}. We got told off for dancing on shift.', 'School. We’ve been together since Year 7.', 'Online. It was a forum for people who love {thing}.'],
+  },
+  thanks: {
+    shy: ['Thank you.', 'Thanks…'],
+    sweet: ['Aww, thank you!', 'Oh stop it! Thank you!'],
+    confident: ['Thank you.', 'Appreciate that.'],
+    cocky: ['I know.', 'Obviously. But thanks.'],
+    quirky: ['Thank you! I’m telling my mum.', 'Can I get that in writing?'],
+    deadpan: ['Thanks.', 'Noted.'],
+  },
+  hurt: {
+    shy: ['Oh… okay.', 'Sorry…'],
+    sweet: ['Oh… right.', 'That’s… that’s fine.'],
+    confident: ['Fair enough.', 'Okay. Noted.'],
+    cocky: ['Harsh. You’ll regret that.', 'Tough crowd. Well, tough judge.'],
+    quirky: ['Ouch. Right in the feelings.', 'I’ll add that to my list.'],
+    deadpan: ['Right.', 'Okay.'],
+  },
+  rushed: {
+    shy: ['Oh — okay. Um. Okay.', 'Right now? Okay…'],
+    sweet: ['Oh! Okay! Right!', 'Oh — sure! Sorry!'],
+    confident: ['Sure thing.', 'Let’s do it.'],
+    cocky: ['Can’t wait to see me, eh?', 'Fine by me.'],
+    quirky: ['Straight in! I like it!', 'No foreplay then. Right.'],
+    deadpan: ['Fine.', 'Okay then.'],
+  },
+  ready: {
+    shy: ['Okay. Here goes.', 'Wish me luck.'],
+    sweet: ['Okay! Here we go!', 'Thank you so much! Okay!'],
+    confident: ['Let’s go.', 'Hit it!'],
+    cocky: ['Watch and learn.', 'Buckle up.'],
+    quirky: ['Deep breath! Actually, shallow breath. Go!', 'For {from}!'],
+    deadpan: ['Right.', 'Here it comes.'],
+  },
+  filler: {
+    shy: ['…', 'Should I… say something?', 'Sorry, I’m a bit nervous.'],
+    sweet: ['I can’t believe I’m standing here!', 'The lights are so bright!', 'Is my mum crying? She’s crying.'],
+    confident: ['Great crowd tonight.', 'What a room.'],
+    cocky: ['Take your time. I’m worth it.', 'You lot ready for this?'],
+    quirky: ['I had a dream about this stage once. There were more penguins.', 'Does anyone else smell toast?'],
+    deadpan: ['…', 'Nice desk.'],
+  },
+  askStart: {
+    shy: ['Should I… just start?', 'Is it okay if I start?'],
+    sweet: ['Shall I start?', 'Can I go now? I’m so excited!'],
+    confident: ['Shall I get going?', 'Ready when you are.'],
+    cocky: ['Are we doing this, or…?', 'I’m not getting any younger. Shall I?'],
+    quirky: ['Do you want the act now, or should I keep talking? I can keep talking.', 'Shall I?'],
+    deadpan: ['Shall I start.', 'I could start.'],
+  },
+  after: {
+    shy: ['Thank you… thank you so much.', 'That’s… that’s it.'],
+    sweet: ['Thank you! Oh my gosh!', 'Thank you so much!'],
+    confident: ['Thank you!', 'Thank you very much.'],
+    cocky: ['You’re welcome.', 'And that’s how it’s done.'],
+    quirky: ['Ta-da! That was the end.', 'Thank you! I need a lie down.'],
+    deadpan: ['That’s it.', 'The end.'],
+  },
+  gotYes: {
+    any: ['YES! Oh my god!', 'Thank you! Thank you!', 'I’m through! Mum, I’m through!', 'You won’t regret this!'],
+  },
+  gotNo: {
+    any: ['Okay. Thank you for the chance.', 'That’s okay. I tried.', 'Fair enough. Thank you.', 'I’ll be back next year.'],
+    cocky: ['Your loss.', 'You’ll see me on the telly anyway.', 'This show’s rigged.'],
+  },
+};
+
+export const NICKS = ['Dazzler', 'Twinkletoes', 'Big Tone', 'The Voice of Wigan', 'Sparky', 'Duchess', 'Captain', 'Bubbles', 'The Human Metronome', 'Legs'];
+export const ORIGIN_PLACES = ['call centre', 'chip shop', 'bingo hall', 'bus depot', 'leisure centre', 'Sunday school'];
+export const ORIGIN_THINGS = ['lighthouses', 'competitive baking', 'bin lorries', 'eighties power ballads', 'garden gnomes'];
+
+// Player lines. `tone` drives the reaction; each option can be said at any time while it is on screen.
+export const PLAYER = {
+  askName: ['Hello! What’s your name?', 'Hi there. Who are you?', 'Welcome! Tell us your name.'],
+  askGroupName: ['Hello! Who are you lot?', 'Welcome! What are you called?'],
+  askAge: ['And how old are you?', 'How old are you, if you don’t mind me asking?'],
+  askFrom: ['Where are you from?', 'Where have you come from today?'],
+  askJob: ['What do you do for a living?', 'What’s the day job?'],
+  askAct: ['So what are you going to do for us?', 'What’s the act?', 'What have you got for us today?'],
+  askExp: ['How long have you been doing this?', 'Have you done this for long?'],
+  askWhy: ['Why did you enter the show?', 'Why now?'],
+  askSupporter: ['Is anyone here with you today?', 'Who’s come along to support you?'],
+  askDream: ['What would winning mean to you?', 'What’s the dream?'],
+  askOrigin: ['How did you all meet?', 'How did this group start?'],
+  wave: ['Give {sup} a wave!', 'Where’s {sup}? Wave to {sup}!'],
+  noSupporter: ['Well, you’ve got all of us now.', 'We’ll be your family tonight.'],
+  reassure: ['Deep breath. You’re going to be fine.', 'Take your time. We’re on your side.', 'Just enjoy it. Honestly.'],
+  compliment: ['I love the outfit.', 'You’ve got great energy.', 'You look like a star already.'],
+  tease: ['Bold outfit choice.', 'You look like you’ve been dragged here.', 'Did you get dressed in the dark?'],
+  skeptic: ['Another {actlabel}? Go on then.', 'I hope you’re better than the last one.', 'I’ve seen a lot of these today.'],
+  joke: ['Are you nervous? Because I am.', 'Is that your real hair?', 'Don’t worry, I’m the nice one.'],
+  jobBanter: ['{jobbanter}'],
+  fromBanter: ['{from}! I love it there.', '{from}! Any {from} people in tonight?'],
+  ageBanterOld: ['{age}! You look fantastic.', '{age}? Never.'],
+  ageBanterYoung: ['{age}! Shouldn’t you be in bed?', '{age}? That’s younger than my shoes.'],
+  expBanterShort: ['{exp}? That’s brave.', 'Only {exp}? Wow.'],
+  expBanterLong: ['{exp}! Why come now?', '{exp}. So you should be good, then.'],
+  crowdBait: ['What do you reckon, everyone?', 'Audience — do we like them already?'],
+  impatient: ['Can we speed this up?', 'We haven’t got all night.'],
+  start: ['Whenever you’re ready.', 'Good luck. The stage is yours.', 'Off you go — show us.'],
+  rush: ['Just start.'],
+  // During the act
+  cheer: ['Woo!', 'Come on!', 'Yes!!', 'Go on!'],
+  hmm: ['Hmm.', 'Oh dear.', 'Ooh…'],
+  clapAlong: ['Clap along, everyone!'],
+  stop: ['Stop — stop the music.'],
+  // After the act
+  praise: ['That was sensational.', 'You were born for that stage.', 'Honestly? I got goosebumps.'],
+  warm: ['Not perfect, but I liked it.', 'You’ve got something. I can feel it.'],
+  constructive: ['There’s talent there, but it’s not ready.', 'Good instincts, wrong choice of material.'],
+  harsh: ['That was painful.', 'I’ve heard better from a car alarm.', 'I want those three minutes back.'],
+  quip: ['Well… that happened.', 'I have no idea what I just watched.'],
+  empathy: ['I can see how much this means to you.', 'Whatever happens, be proud of that.'],
+  crowdAsk: ['Let’s hear it from the audience!', 'Audience, what did you think?'],
+  askJudge: ['{judge}, what did you think?', 'Over to you, {judge}.'],
+};
+
+// The other two judges come from this panel.
+export const JUDGES = [
+  {
+    id: 'priya',
+    name: 'Priya Castellane',
+    short: 'Priya',
+    role: 'West End star',
+    look: { skin: 0xc68a62, hair: 0x1c1410, hairStyle: 'long', top: 0xff4fb6, bottom: 0x222233, bottomStyle: 'dress', shoes: 0x111111, height: 0.98, build: 0.95, glasses: false },
+    voice: { pitch: 250, rate: 1.05 },
+    harsh: 0.1,
+    heart: 0.9,
+    humour: 0.3,
+    taste: { singer: 0.08, opera: 0.12, choir: 0.12, dancer: 0.05, crew: 0.05, comedian: -0.04, magician: 0, kazoo: -0.05 },
+    lines: {
+      ask: ['Hello, darling! What’s your name?', 'And what’s the dream, sweetheart?', 'Who’s here with you tonight?', 'What are you going to do for us?'],
+      rush: ['Oh, let them talk!', 'Give them a second!', 'Manners!'],
+      rude: ['Be nice!', 'That’s not fair.', 'Oh, stop it.'],
+      laugh: ['Ha! Stop it.', 'You’re terrible.'],
+      goodPerf: ['Ooh, I love this.', 'Goosebumps!'],
+      badPerf: ['Oh no…', 'Oh, bless them.'],
+      buzz: ['I’m so sorry…', 'It hurts me to do this.'],
+      good: ['That was beautiful. You made me cry, and I’ve just done my make-up.', 'You have a gift, {first}. Don’t ever let anyone tell you otherwise.', 'I felt every second of that.'],
+      mid: ['There’s something lovely in you. It just needs polishing.', 'I liked it. I didn’t love it, but I liked it.'],
+      bad: ['Oh, sweetheart. It wasn’t your night.', 'I admire your courage. I really do. But it wasn’t for me.'],
+      yes: ['It’s a yes from me!', 'A big fat yes!'],
+      no: ['It’s a no from me. I’m sorry.', 'I’m going to say no, darling.'],
+      agree: ['Good call.', 'Yes! I agree.'],
+      disagree: ['Really? I don’t agree at all.', 'Oh, you’re cold.'],
+      golden: ['I’m in bits!', 'Yes! YES!'],
+      waiting: ['They’re waiting, darling.', 'Put them out of their misery!'],
+      startNudge: ['Off you go then, sweetheart!', 'In your own time, darling!'],
+    },
+  },
+  {
+    id: 'rex',
+    name: 'Rex Hollander',
+    short: 'Rex',
+    role: 'record label boss',
+    look: { skin: 0xf1c3a1, hair: 0x9b9b9b, hairStyle: 'short', top: 0x1d1d24, bottom: 0x1d1d24, bottomStyle: 'trousers', shoes: 0x111111, height: 1.04, build: 1.05, glasses: true },
+    voice: { pitch: 110, rate: 0.92 },
+    harsh: 0.85,
+    heart: 0.15,
+    humour: 0.35,
+    taste: { singer: 0.05, band: 0.1, opera: -0.05, kazoo: -0.15, whistler: -0.1, vent: -0.1, dog: -0.05, comedian: -0.05 },
+    lines: {
+      ask: ['Name?', 'What are you going to do?', 'How long have you been doing this?', 'Why should we care?'],
+      rush: ['Finally.', 'Thank you.', 'Good. Get on with it.'],
+      rude: ['Ha. Fair.', 'Someone had to say it.'],
+      laugh: ['Heh.', 'Very good.'],
+      goodPerf: ['Hm. Interesting.', 'Okay… okay.'],
+      badPerf: ['Oh, dear God.', 'Make it stop.'],
+      buzz: ['No.', 'I’ve heard enough.'],
+      good: ['I’m not going to lie — that was very, very good.', '{first}, that was the best thing I’ve seen today. Don’t let it go to your head.', 'I could sell that. That’s the highest compliment I give.'],
+      mid: ['It was fine. And fine doesn’t win anything.', 'Forgettable. Sorry, but it was.'],
+      bad: ['That was, without doubt, dreadful.', 'I think you’ve been lied to by people who love you.', 'If that was a record, I’d snap it.'],
+      yes: ['It’s a yes.', 'Yes. Against my better judgement.'],
+      no: ['It’s a no.', 'No. Absolutely not.'],
+      agree: ['Correct.', 'For once, we agree.'],
+      disagree: ['That’s a mistake.', 'Unbelievable.'],
+      golden: ['Well, I didn’t see that coming.', 'Hm. Bold.'],
+      waiting: ['Today, please.', 'Come on, decide.'],
+      startNudge: ['Just start.', 'Go on then.'],
+    },
+  },
+  {
+    id: 'mickey',
+    name: 'Mickey Blaze',
+    short: 'Mickey',
+    role: 'comedian',
+    look: { skin: 0x8a5536, hair: 0x1c1410, hairStyle: 'spiky', top: 0xffc53d, bottom: 0x2b3a67, bottomStyle: 'trousers', shoes: 0xffffff, height: 1.0, build: 1.15, glasses: false, beard: 'mustache' },
+    voice: { pitch: 150, rate: 1.12 },
+    harsh: 0.45,
+    heart: 0.55,
+    humour: 0.95,
+    taste: { comedian: 0.12, vent: 0.1, dog: 0.1, kazoo: 0.12, magician: 0.05, whistler: 0.06, opera: -0.03, choir: -0.05 },
+    lines: {
+      ask: ['Go on, what’s your name?', 'What’s the day job, then?', 'Where are you from?', 'Who’s come with you?'],
+      rush: ['Somebody’s got a train to catch!', 'Ooh, straight in!', 'He’s got a dinner reservation, folks.'],
+      rude: ['Ooooh!', 'Savage!', 'Somebody call a doctor!'],
+      laugh: ['Hahaha!', 'Stop — I’ll wet myself!'],
+      goodPerf: ['Oh, this is great!', 'Get in!'],
+      badPerf: ['Oh no, oh no, oh no.', 'Someone call a vet.'],
+      buzz: ['Sorry! My hand slipped. Twice.', 'I had to.'],
+      good: ['That was brilliant. I laughed, I cried, I spilled my drink.', '{first}, you’re a superstar. I’m annoyed I didn’t think of it.'],
+      mid: ['Some bits worked. Some bits… were also there.', 'I was entertained. Mostly by the bit that went wrong.'],
+      bad: ['I don’t know what that was, but I’ll be telling people about it for years.', 'That was like watching a sat nav have a breakdown.'],
+      yes: ['I’m saying yes!', 'Yes! Why not!'],
+      no: ['It’s a no from me, pal.', 'I’m going to say no. Sorry, mate.'],
+      agree: ['Spot on.', 'Good shout.'],
+      disagree: ['Whoa, whoa, whoa.', 'Are you watching the same show as me?'],
+      golden: ['Get in! Confetti!', 'I love it!'],
+      waiting: ['Tick tock!', 'The suspense is killing me. And them.'],
+      startNudge: ['Come on then, let’s see it!', 'Chop chop!'],
+    },
+  },
+  {
+    id: 'dee',
+    name: 'Dee Vance',
+    short: 'Dee',
+    role: 'pop diva',
+    look: { skin: 0x6b3f27, hair: 0xd6b370, hairStyle: 'afro', top: 0x7c5cff, bottom: 0x7c5cff, bottomStyle: 'dress', shoes: 0xffc53d, height: 1.0, build: 0.95, glasses: false },
+    voice: { pitch: 230, rate: 1.0 },
+    harsh: 0.5,
+    heart: 0.5,
+    humour: 0.5,
+    taste: { dancer: 0.12, crew: 0.12, singer: 0.08, acro: 0.08, comedian: -0.06, strongman: -0.05, dog: 0.03 },
+    lines: {
+      ask: ['Hi, babe. Who are you?', 'What have you got for us?', 'Why are you here tonight?', 'What’s the dream, babe?'],
+      rush: ['Rude!', 'Wow. Okay.', 'Let them breathe!'],
+      rude: ['Oof.', 'Shady!'],
+      laugh: ['Ha! I love that.', 'Stop!'],
+      goodPerf: ['Yes, babe!', 'Work it!'],
+      badPerf: ['Oh honey, no.', 'Somebody help them.'],
+      buzz: ['Sorry, babe.', 'It’s a no for me, dawg.'],
+      good: ['That was STAR quality. I’m obsessed.', '{first}, you just served. Everybody saw it.'],
+      mid: ['Cute, but I need more.', 'The potential is there. The polish isn’t.'],
+      bad: ['Babe… no.', 'I wanted to love it. I really did.'],
+      yes: ['That’s a yes from me!', 'Yes, babe!'],
+      no: ['It’s a no from me.', 'I’m going to have to say no.'],
+      agree: ['Yes! Good call.', 'Mm-hm.'],
+      disagree: ['Excuse me?!', 'I’m shook. And not in a good way.'],
+      golden: ['I’m SCREAMING!', 'Gold! Gold! Gold!'],
+      waiting: ['The suspense, babe!', 'Decide already!'],
+      startNudge: ['Let’s go, babe!', 'Show us what you’ve got!'],
+    },
+  },
+];
+
+export const JOKES_GOOD = [
+  'My sat nav has a posh voice. Yesterday it told me to turn left, if I must.',
+  'I joined a gym in January. Best twenty minutes of my life.',
+  'My nan’s got a smart speaker now. It’s the only thing in the house she can’t win an argument with, and she’s still trying.',
+  'I asked my dad to give me a hand with my maths homework. He gave me a round of applause.',
+  'I’ve started running. Mostly late, but it counts.',
+  'The self-checkout said “unexpected item in the bagging area”. Mate, that’s my confidence.',
+  'I’m so bad at relaxing, my yoga teacher gave me homework.',
+  'My dating profile says I love long walks. I was describing my commute.',
+  'My mum rings every day to ask if I’ve eaten. I’m forty-two. Yes, Mum. Twice, while you were talking.',
+  'I went to a silent disco. Nobody told me you get headphones. I’ve never danced so bravely.',
+  'My flat is so small, my smoke alarm is also my alarm clock and my oven timer.',
+  'I have a joke about procrastination. I’ll tell you later.',
+  'I bought a plant to have something to look after. Now it sends me reminders to drink water.',
+  'I told my kids we can’t afford a dog. So now I’m the dog. I fetch everything.',
+];
+export const JOKES_BAD = [
+  'Why did the chicken cross the road? … I’ve forgotten. Sorry. It was a good one.',
+  'What’s brown and sticky? A stick. … Sorry.',
+  'Knock knock. … No, you’re meant to say “who’s there”. Never mind.',
+  'I went to the shop. They had eggs. … That’s it. That’s the joke.',
+  'What do you call a fish with no eyes? A fsh. Because the “i”. Anyway.',
+  'Airline food, eh? What’s that about? … Anyone?',
+  'Why was six afraid of seven? Because seven is… a bigger number.',
+  'My wife says I’m terrible at jokes. I said, no I’m not. That’s the joke.',
+  'I’m on a seafood diet. I see food, and I… you’ve heard it.',
+];
+export const PUPPET_LINES_GOOD = [
+  'I can see his lips moving from here! Oh wait — no you can’t. He’s good.',
+  'He takes me everywhere. The dentist. The bank. Couples therapy.',
+  'Ladies and gentlemen, I’d like to thank my hand. Literally.',
+  'I’ve got a wooden head and I still passed my driving test first time. Unlike him.',
+];
+export const PUPPET_LINES_BAD = [
+  'Hello, everyone. (His lips are moving. His lips are definitely moving.)',
+  'Gottle o’ geer. Gottle o’ geer.',
+  'I’m… a puppet. Hello.',
+];
+
+export const SWIPE_QUIPS = {
+  yes: ['Keeper.', 'Lovely.', 'Frame that one.', 'Oh, yes.', 'That’s a yes from me.', 'I’d have kept it too.'],
+  no: ['Next!', 'Ruthless.', 'Bin it.', 'Not for me.', 'Gone.', 'Cold. I like it.'],
+  star: ['Gold!', 'That’s the one!', 'Star quality.'],
+};
+
+export const PITCH_LINES = [
+  'Pick me! I’m clearly the best choice.',
+  'I’ve got more going for me than that lot.',
+  'You know you want me.',
+  'Think about it. Really think about it.',
+  'I’d choose me, if I were you.',
+  'Nobody ever regretted picking me.',
+  'Let’s be honest, it was always going to be me.',
+];
+
+export const HEADLINES = {
+  great: ['PANEL PERFECTION: JUDGE HAS THE NATION CHEERING', 'THE PEOPLE’S JUDGE STRIKES GOLD AGAIN', 'STAR-MAKER: NEW JUDGE WINS OVER THE STUDIO'],
+  goldenGood: ['GOLDEN BUZZER GAMBLE PAYS OFF', 'GOLD RUSH: JUDGE’S HUNCH SPARKS STANDING OVATION'],
+  goldenBad: ['GOLDEN BLUNDER LEAVES VIEWERS BAFFLED', 'FOOL’S GOLD: WHAT WAS THE JUDGE THINKING?'],
+  harsh: ['STONE COLD: VIEWERS SLAM ‘HEARTLESS’ JUDGE', 'MEAN MACHINE: COMPLAINTS FLOOD IN AFTER AUDITIONS'],
+  soft: ['JUDGE SAYS YES TO EVERYTHING — EVEN THE KAZOO', 'NO STANDARDS? CRITICS ROUND ON SOFT-TOUCH PANEL'],
+  boring: ['NATION NODS OFF AS AUDITIONS DRAG ON', 'SNOOZE FEST: VIEWERS SWITCH OVER IN DROVES'],
+  rowdy: ['CROWD FURY AS JUDGE DEFIES THE AUDIENCE', 'BOO! STUDIO TURNS ON THE PANEL'],
+  fine: ['A SOLID NIGHT OF TELLY', 'MIXED BAG, BUT VIEWERS STAY TUNED'],
+};

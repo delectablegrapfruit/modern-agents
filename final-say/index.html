@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Final Say</title>
+<meta name="description" content="A talent show in 3D where you sit on the panel and have the final say. Also a bracket tournament and a swipe-to-sort tool for your own lists and photos.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Big+Shoulders+Display:wght@700;800;900&family=DM+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="src/style.css">
+</head>
+<body>
+<div id="scene" class="scene" aria-hidden="true"></div>
+
+<div id="hud" class="hud" hidden>
+  <header class="bug">
+    <div class="brand"><span class="live">Live</span><span class="wordmark">Final Say</span></div>
+    <div id="mode-info" class="mode-info"></div>
+  </header>
+  <div class="top-right">
+    <div id="ticker" class="ticker" title="Viewers watching at home">
+      <span class="label">Viewers</span><b id="viewers">5.0M</b><i id="trend" class="trend"></i>
+    </div>
+    <button id="btn-sound" class="icon-btn" type="button" aria-label="Mute sound" title="Sound (M)">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path class="waves" d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path class="mute" d="M16 9l5 6M21 9l-5 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+    <button id="btn-pause" class="icon-btn" type="button" aria-label="Pause" title="Pause (Esc)">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor"/><rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor"/></svg>
+    </button>
+  </div>
+
+  <div id="crowd-read" class="crowd-read" hidden><span>Crowd</span><b></b></div>
+  <div id="feedback" class="feedback" aria-live="polite"></div>
+  <div id="hint" class="hint" hidden></div>
+  <div id="prompt" class="prompt" hidden></div>
+  <div id="stamp" class="stamp" hidden></div>
+
+  <aside id="lower-third" class="lower-third" hidden>
+    <div class="lt-act"></div>
+    <div class="lt-name"></div>
+    <dl class="lt-facts"></dl>
+  </aside>
+  <div id="votes" class="votes"></div>
+
+  <div class="dock">
+    <div id="subtitle" class="subtitle" aria-live="polite"><span class="who"></span><span class="line"></span></div>
+    <div id="options" class="options">
+      <button type="button" class="opt" data-i="0"><kbd>1</kbd><span class="text"></span><i class="life"></i></button>
+      <button type="button" class="opt" data-i="1"><kbd>2</kbd><span class="text"></span><i class="life"></i></button>
+      <button type="button" class="opt" data-i="2"><kbd>3</kbd><span class="text"></span><i class="life"></i></button>
+      <button type="button" class="opt fixed" data-i="3"><kbd>4</kbd><span class="text"></span></button>
+    </div>
+  </div>
+
+  <div id="actions" class="actions">
+    <button type="button" class="act-btn look" data-act="look" title="Look at the audience (hold Space)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg><span>Crowd</span><kbd>Space</kbd></button>
+    <button type="button" class="act-btn buzz" data-act="buzz" title="Buzz (X)"><b>X</b><span>Buzz</span><kbd>X</kbd></button>
+    <button type="button" class="act-btn golden" data-act="golden" title="Golden buzzer (G)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7L12 17.3 5.8 20.9l1.6-7L2 9.2l7.1-.6z" fill="currentColor"/></svg><span>Golden</span><kbd>G</kbd></button>
+  </div>
+  <div id="verdict" class="verdict" hidden>
+    <button type="button" class="vbtn no" data-act="no"><b>No</b><kbd>N</kbd></button>
+    <button type="button" class="vbtn yes" data-act="yes"><b>Yes</b><kbd>Y</kbd></button>
+  </div>
+
+  <div id="pick" class="pick" hidden>
+    <button type="button" class="pick-btn left" data-act="left"><kbd>←</kbd><span class="name"></span></button>
+    <button type="button" class="pick-btn bracket-btn" data-act="bracket" title="Show the bracket (B)">Bracket</button>
+    <button type="button" class="pick-btn right" data-act="right"><span class="name"></span><kbd>→</kbd></button>
+  </div>
+
+  <div id="swipe-ui" class="swipe-ui" hidden>
+    <div class="swipe-caption"><b id="swipe-label"></b><span id="swipe-sub"></span></div>
+    <div class="swipe-progress"><i id="swipe-bar"></i></div>
+    <div class="swipe-buttons">
+      <button type="button" class="sw undo" data-act="undo" title="Undo (Z)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7L4 12l5 5M4 12h10a6 6 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" transform="translate(0 -3)"/></svg><kbd>Z</kbd></button>
+      <button type="button" class="sw nope" data-act="nope" title="Nope (←)"><b>✕</b><span>Nope</span><kbd>←</kbd></button>
+      <button type="button" class="sw star" data-act="star" title="Star (↑)"><b>★</b><kbd>↑</kbd></button>
+      <button type="button" class="sw keep" data-act="keep" title="Keep (→)"><b>✓</b><span>Keep</span><kbd>→</kbd></button>
+      <button type="button" class="sw done" data-act="finish" title="Finish and see results">Results</button>
+    </div>
+    <div class="swipe-counts"><span>Kept <b id="count-keep">0</b></span><span>Nope <b id="count-nope">0</b></span><span>Starred <b id="count-star">0</b></span><span id="count-left"></span></div>
+  </div>
+  <div id="swipe-stamp" class="swipe-stamp" hidden></div>
+</div>
+
+<div id="bracket" class="bracket" hidden>
+  <div class="bracket-head"><h2>Bracket</h2><button type="button" class="ghost" data-act="close-bracket">Close</button></div>
+  <div class="bracket-scroll"><div id="bracket-grid" class="bracket-grid"></div></div>
+</div>
+
+<!-- Title -->
+<section id="screen-title" class="screen title-screen">
+  <div class="title-wrap">
+    <p class="eyebrow">Saturday night · live from the studio</p>
+    <h1 class="logo">Final <span>Say</span></h1>
+    <p class="tagline">You sit on the panel. Two other judges sit beside you. The acts come on, the room decides how it feels about them, and you decide what happens.</p>
+    <div class="modes">
+      <button type="button" class="mode-card primary" data-act="play">
+        <span class="mode-kicker">The show</span>
+        <b>Audition Night</b>
+        <span class="mode-desc">Six acts. Talk to them, watch them, buzz them, and give the final yes or no.</span>
+      </button>
+      <button type="button" class="mode-card" data-act="tournament">
+        <span class="mode-kicker">Bracket</span>
+        <b>Tournament</b>
+        <span class="mode-desc">Put in anything you need to choose between — names, ideas, photos — and judge it down to one winner.</span>
+      </button>
+      <button type="button" class="mode-card" data-act="swipe">
+        <span class="mode-kicker">Sort a pile</span>
+        <b>Swipe</b>
+        <span class="mode-desc">Keep or bin every item in a list or a folder of photos, one at a time, and take away what you kept.</span>
+      </button>
+    </div>
+    <details class="settings" id="settings">
+      <summary>Settings and controls</summary>
+      <div class="settings-grid">
+        <label for="set-voices">Voices
+          <select id="set-voices"><option value="babble">Babble</option><option value="speech">Speech (your system’s voices)</option><option value="off">Off</option></select>
+        </label>
+        <label for="set-volume">Volume
+          <input id="set-volume" type="range" min="0" max="1" step="0.05">
+        </label>
+        <label for="set-timer">Dialogue timer
+          <select id="set-timer"><option value="normal">Normal</option><option value="relaxed">Relaxed</option><option value="off">No timer</option></select>
+        </label>
+        <label for="set-acts">Acts per episode
+          <select id="set-acts"><option value="4">4</option><option value="6">6</option><option value="8">8</option></select>
+        </label>
+        <label for="set-quality">Graphics
+          <select id="set-quality"><option value="high">High</option><option value="low">Low (faster)</option></select>
+        </label>
+        <label for="set-hints" class="check"><input id="set-hints" type="checkbox"> Show reaction hints</label>
+      </div>
+      <table class="keys">
+        <tr><th>1 2 3 4</th><td>Say a line (they expire, new ones roll in)</td></tr>
+        <tr><th>Space</th><td>Hold to look over your shoulder at the audience</td></tr>
+        <tr><th>Q / E</th><td>Hold to look at the judge on your left or right</td></tr>
+        <tr><th>X · G</th><td>Buzz · golden buzzer (once per show)</td></tr>
+        <tr><th>Y · N</th><td>Your final say</td></tr>
+        <tr><th>← → ↑ Z</th><td>Tournament picks; swipe keep, nope, star, undo</td></tr>
+        <tr><th>Drag</th><td>Look around (or swipe, in Swipe)</td></tr>
+      </table>
+    </details>
+  </div>
+</section>
+
+<!-- Tournament setup -->
+<section id="screen-tournament" class="screen setup-screen" hidden>
+  <div class="setup">
+    <button type="button" class="ghost back" data-act="menu">← Back</button>
+    <h2>Tournament</h2>
+    <p class="lede">Every entry gets a contestant and a spot in the bracket. Each match puts two on stage; you pick who goes through until one is left.</p>
+    <label for="t-entries" class="field-label">Entries, one per line</label>
+    <textarea id="t-entries" rows="8" spellcheck="false"></textarea>
+    <div class="row">
+      <label class="file-btn" for="t-images">Add photos…<input id="t-images" type="file" accept="image/*" multiple hidden></label>
+      <button type="button" class="ghost" data-act="t-random">Use 8 random acts instead</button>
+      <button type="button" class="ghost" data-act="t-clear">Clear</button>
+    </div>
+    <p id="t-images-note" class="note"></p>
+    <div class="row checks">
+      <label for="t-shuffle" class="check"><input id="t-shuffle" type="checkbox" checked> Shuffle the draw</label>
+      <label for="t-quick" class="check"><input id="t-quick" type="checkbox" checked> Quick matches</label>
+    </div>
+    <p id="t-count" class="note"></p>
+    <button type="button" class="go" data-act="t-start">Start the tournament</button>
+  </div>
+</section>
+
+<!-- Swipe setup -->
+<section id="screen-swipe" class="screen setup-screen" hidden>
+  <div class="setup">
+    <button type="button" class="ghost back" data-act="menu">← Back</button>
+    <h2>Swipe</h2>
+    <p class="lede">Each item goes up on stage. Swipe or press → to keep it, ← to bin it, ↑ to star it. Your picks are saved in this browser as you go, so you can stop and come back.</p>
+    <div class="source-grid">
+      <label class="source" for="s-photos"><b>Photos</b><span>Pick image files</span><input id="s-photos" type="file" accept="image/*" multiple hidden></label>
+      <label class="source" for="s-folder"><b>A folder</b><span>Every image inside it</span><input id="s-folder" type="file" webkitdirectory multiple hidden></label>
+      <label class="source" for="s-file"><b>A list file</b><span>.txt, .csv or .json</span><input id="s-file" type="file" accept=".txt,.csv,.json,.tsv,text/plain,text/csv,application/json" hidden></label>
+      <button type="button" class="source" data-act="s-sample"><b>Sample photos</b><span>Twelve made-up holiday snaps</span></button>
+    </div>
+    <label for="s-text" class="field-label">Or paste a list, one item per line</label>
+    <textarea id="s-text" rows="6" spellcheck="false" placeholder="Paste names, ideas, links…"></textarea>
+    <button type="button" class="go" data-act="s-start-text">Start with this list</button>
+    <div id="s-resume" class="resume" hidden></div>
+  </div>
+</section>
+
+<!-- Results / summary (filled in by script) -->
+<section id="screen-results" class="screen results-screen" hidden>
+  <div id="results" class="results"></div>
+</section>
+
+<!-- Pause -->
+<section id="screen-pause" class="screen pause-screen" hidden>
+  <div class="pause-card">
+    <h2>Paused</h2>
+    <button type="button" class="go" data-act="resume">Resume</button>
+    <button type="button" class="ghost" data-act="quit">Leave to the menu</button>
+  </div>
+</section>
+
+<noscript><p class="noscript">Final Say needs JavaScript and WebGL to run.</p></noscript>
+<script type="module" src=".dev/main.js"></script>
+</body>
+</html>

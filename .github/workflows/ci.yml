@@ -4,6 +4,8 @@ on:
   push:
     paths-ignore:
       - "dist/**"
+      # The talent-show game builds on its own; it doesn't need the Books app rebuilt.
+      - "final-say/**"
   pull_request:
   release:
     types: [published]
