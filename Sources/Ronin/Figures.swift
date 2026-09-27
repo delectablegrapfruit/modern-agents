@@ -71,8 +71,9 @@ enum Figures {
     /// cut across it and the white of the bone.
     static func parts(_ cast: Cast, _ severance: Severance) -> [Part] {
         if let parts = partCache[cast]?[severance] { return parts }
-        let frame: Frame = severance == .head ? .stagger(0) : .die(0)
-        let sketch = Figure.sketch(cast, frame)
+        // Cut from the pose a blow throws him into, his weapon already leaving his hand (it falls on its own).
+        let frame = Frame.stagger(0)
+        let sketch = Figure.sketch(cast, frame, armed: false)
         let body = Figure.anatomy(cast, frame)
         let w = CGFloat(sketch.width), h = CGFloat(sketch.height), far = (w + h) * 2
         func mid(_ a: CGPoint, _ b: CGPoint) -> CGPoint { CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2) }
@@ -173,6 +174,20 @@ enum Figures {
         return (SKTexture(cgImage: cropped), rect)
     }
 
+    private static var weapons: [Cast: Piece] = [:]
+
+    /// A foe's weapon on its own, lying level: what falls from his hand when he dies.
+    static func weapon(_ cast: Cast) -> Piece {
+        if let piece = weapons[cast] { return piece }
+        let sketch = Figure.weapon(cast)
+        let bounds = sketch.bounds(margin: sketch.rimRadius * 3 + 2)
+        let w = CGFloat(sketch.width), h = CGFloat(sketch.height)
+        let piece = Piece(texture: sketch.image(in: bounds).map { SKTexture(cgImage: $0) } ?? SKTexture(),
+                          rect: CGRect(x: bounds.minX / w, y: bounds.minY / h, width: bounds.width / w, height: bounds.height / h))
+        weapons[cast] = piece
+        return piece
+    }
+
     /// Draws every frame now, so the first fight doesn't stutter.
     static func preload() {
         let casts: [Cast] = [.hero] + Kind.allCases.map { .foe($0) }
@@ -180,6 +195,7 @@ enum Figures {
             for frame in Figure.frames(for: cast) { _ = piece(cast, frame) }
             guard cast != .hero else { continue }
             for severance in [Severance.falling, .rising, .level, .legs, .head] { _ = parts(cast, severance) }
+            _ = weapon(cast)
         }
     }
 

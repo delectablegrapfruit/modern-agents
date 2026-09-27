@@ -551,7 +551,7 @@ final class HeroSprite: SKNode {
         show(sheathed ? .iai(0) : .hurt(0), blend: true)
     }
 
-    func bloodied(_ amount: CGFloat) { gore = min(0.45, gore + amount) }
+    func bloodied(_ amount: CGFloat) { gore = min(0.2, gore + amount) }
 
     func finish(victory: Bool) {
         act = victory ? .flourishing : .falling
@@ -644,7 +644,8 @@ final class HeroSprite: SKNode {
         body.xScale = sign * (1 + 0.05 * snap)
         body.yScale = 1 - 0.035 * snap
         if flush > 0 { flush = max(0, flush - CGFloat(dt) * 4) }
-        Art.setTint(body, Palette.blood, max(flush, gore))
+        // A wound flushes him red; the blood of the stage darkens him, a deep wet red rather than a bright one.
+        if flush > gore { Art.setTint(body, Palette.blood, flush) } else { Art.setTint(body, Palette.blood.mix(.black, 0.55), gore) }
         let target: CGFloat = bloodlust && !ended ? 0.55 + 0.2 * CGFloat(sin(breath * 9)) : 0
         aura.alpha += (target - aura.alpha) * min(1, CGFloat(dt) * 8)
     }

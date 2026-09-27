@@ -32,6 +32,8 @@ final class Carnage {
         var frames: [Frame] = []
         var facing: CGFloat = 1
         var jet: SKEmitterNode?
+        /// A weapon: it lies flat and hardly adds to the heap.
+        var thin = false
         var jetRate: CGFloat = 0
         var jetFor = 0.0
 
@@ -84,7 +86,7 @@ final class Carnage {
         return heights[a...b].max() ?? 0
     }
 
-    private var cap: CGFloat { ronin * 0.42 }
+    private var cap: CGFloat { ronin * 0.3 }
     private var gravity: CGFloat { ronin * 9 }
 
     // MARK: The dying
@@ -126,8 +128,29 @@ final class Carnage {
             }
             bodies.append(body)
         }
+        drop(cast, feet: feet, facing: facing, away: away, force: force)
         spatter(around: feet.x, count: Int(10 * force))
         trim()
+    }
+
+    /// His weapon, out of his hand: flung up turning end over end, to clatter down flat on the heap.
+    private func drop(_ cast: Cast, feet: CGPoint, facing: CGFloat, away: CGFloat, force: CGFloat) {
+        let piece = Figures.weapon(cast)
+        let full = Figures.size(cast, ronin: ronin)
+        let node = SKSpriteNode(texture: piece.texture)
+        node.size = CGSize(width: full.width * piece.rect.width, height: full.height * piece.rect.height)
+        node.xScale = facing
+        node.zRotation = CGFloat.random(in: -0.8...0.8)
+        node.position = CGPoint(x: feet.x, y: feet.y + full.height * 0.35)
+        layer += 0.01
+        node.zPosition = layer
+        corpses.addChild(node)
+        let body = Body(node: node, cast: cast, state: .flying)
+        body.velocity = CGVector(dx: away * ronin * CGFloat.random(in: 0.3...1.1) * force, dy: ronin * CGFloat.random(in: 1.2...2.2))
+        body.spin = CGFloat.random(in: -9...9)
+        body.facing = facing
+        body.thin = true
+        bodies.append(body)
     }
 
     /// A foe run through or shot: thrown back, the knees going, down on his back.
@@ -153,6 +176,7 @@ final class Carnage {
         body.jetRate = 120 * force
         body.jetFor = 0.9
         bodies.append(body)
+        drop(cast, feet: feet, facing: facing, away: -facing, force: force)
         spatter(around: feet.x, count: Int(6 * force))
         trim()
     }
@@ -297,21 +321,24 @@ final class Carnage {
             // A whole body already on its back, anchored at the feet.
             let base = footing(at: node.position.x, width: size.width * 0.5)
             node.position.y = groundY + base
-            top = groundY + base + size.height * 0.45
+            top = groundY + base + size.height * 0.4
             ex = size.width * 0.42
         } else {
-            let long = size.height > size.width * 1.25
+            // Whatever is long lies along the ground: a tall piece on its side, a wide one (a weapon) flat.
+            let tall = size.height > size.width * 1.25, wide = size.width > size.height * 1.25
             let quarter = CGFloat.pi / 2
             var k = (node.zRotation / quarter).rounded()
-            if long, Int(k) % 2 == 0 { k += node.zRotation - k * quarter >= 0 ? 1 : -1 }
+            let odd = abs(Int(k)) % 2 == 1
+            if (tall && !odd) || (wide && odd) { k += node.zRotation - k * quarter >= 0 ? 1 : -1 }
             let angle = k * quarter
             let (x, y) = extents(node, angle)
             ex = x
             let base = footing(at: node.position.x, width: x * 1.4)
-            // Settle into the bodies beneath rather than balance on their highest point.
-            let y0 = groundY + base + y * 0.82
+            // Settle into the bodies beneath rather than balance on their highest point (a silhouette fills little
+            // of its box).
+            let y0 = groundY + base + y * (body.thin ? 0.5 : 0.62)
             node.run(.group([.rotate(toAngle: angle, duration: 0.12, shortestUnitArc: true), .moveTo(y: y0, duration: 0.12)]))
-            top = y0 + y * 0.6
+            top = body.thin ? groundY + base : y0 + y * 0.35
         }
         // Raise the heap under it.
         let a = max(0, Int((node.position.x - ex * 0.85 - field.minX) / column))
@@ -319,6 +346,6 @@ final class Carnage {
         if a <= b {
             for c in a...b { heights[c] = min(cap, max(heights[c], top - groundY)) }
         }
-        pool(at: node.position.x, width: ex * 2.4)
+        if !body.thin { pool(at: node.position.x, width: ex * 2.4) }
     }
 }

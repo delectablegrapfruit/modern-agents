@@ -86,6 +86,17 @@ final class RoninArtTests: XCTestCase {
         }
     }
 
+    func testTheDeadLetGoOfTheirWeaponsWhichLieOnTheirOwn() {
+        for kind in Kind.allCases {
+            XCTAssertFalse(Figure.pose(.foe(kind), .die(1)).armed)
+            let weapon = Figure.weapon(.foe(kind))
+            XCTAssertFalse(weapon.isEmpty, "\(kind)")
+            XCTAssertTrue(weapon.fits(margin: 1), "\(kind)'s weapon spills off its canvas")
+            let box = weapon.bounds(margin: 0)
+            XCTAssertGreaterThan(box.width, box.height, "\(kind)'s weapon lies level")
+        }
+    }
+
     func testTheSheetIsSVG() {
         let svg = Figure.sketch(.hero, .idle(0)).svg()
         XCTAssertTrue(svg.hasPrefix("<g"))

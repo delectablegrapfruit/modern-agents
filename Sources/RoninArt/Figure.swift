@@ -117,6 +117,8 @@ public struct Pose: Sendable {
     /// whether it is then let down to lie on the ground.
     public var roll: CGFloat = 0
     public var grounded = false
+    /// Whether the weapon is in hand (a dead man has let go of his).
+    public var armed = true
     /// How much of the ronin's blade is in its scabbard, 0…1.
     public var sheathed: CGFloat = 0
     /// How far the scabbard is pulled back for the draw (saya-biki), 0…1.
@@ -289,11 +291,12 @@ public enum Figure {
         }
     }
 
-    /// Draws one frame.
-    public static func sketch(_ cast: Cast, _ frame: Frame) -> Sketch {
+    /// Draws one frame (`armed: false` leaves the weapon out).
+    public static func sketch(_ cast: Cast, _ frame: Frame, armed: Bool = true) -> Sketch {
         let build = Build.of(cast)
         let H = pixelHeight(cast) * build.height
-        let pose = pose(cast, frame)
+        var pose = pose(cast, frame)
+        pose.armed = pose.armed && armed
         var drawer = Drawer(pose: pose, build: build, H: H)
         drawer.draw()
         var sketch = drawer.pen.sketch
@@ -310,6 +313,29 @@ public enum Figure {
                 sketch = sketch.mapped { CGPoint(x: $0.x, y: $0.y + drop) }
             }
         }
+        sketch.rimRadius = max(1.1, H * 0.008)
+        return sketch
+    }
+
+    /// A figure's weapon on its own, lying level (the point toward +x), on the figure's canvas: what it drops.
+    public static func weapon(_ cast: Cast) -> Sketch {
+        let build = Build.of(cast)
+        let H = pixelHeight(cast) * build.height
+        var pose = stance(cast)
+        pose.blade = .pi / 2
+        pose.blade2 = .pi / 2
+        pose.draw = 0
+        pose.sheathed = 0
+        var drawer = Drawer(pose: pose, build: build, H: H)
+        let centre = CGPoint(x: Figure.canvas.width * H / 2, y: Figure.canvas.height * H / 2)
+        if build.weapon == .bow {
+            // A bow lies on its back, the string up.
+            pose.blade = .pi
+            drawer = Drawer(pose: pose, build: build, H: H)
+        }
+        drawer.pen = Pen(width: drawer.pen.sketch.width, height: drawer.pen.sketch.height)
+        drawer.weapon(centre, CGPoint(x: centre.x - 0.05 * H, y: centre.y - 0.03 * H))
+        var sketch = drawer.pen.sketch
         sketch.rimRadius = max(1.1, H * 0.008)
         return sketch
     }
@@ -810,6 +836,7 @@ public enum Figure {
         p.hold = nil
         p.hold2 = nil
         p.draw = 0
+        p.armed = false
         p.blade2 = p.blade2 + 1.4
         let long = build(cast).weapon == .spear || build(cast).weapon == .nodachi
         switch k {
@@ -1265,14 +1292,14 @@ private struct Drawer {
         if build.scabbard { scabbard(behind: true) }
         // The far side first, in a lighter shade, so the figure reads in depth.
         leg(pose.back, shade)
-        let drawingBow = build.weapon == .bow && (pose.draw > 0 || pose.hold2 != nil)
+        let drawingBow = pose.armed && build.weapon == .bow && (pose.draw > 0 || pose.hold2 != nil)
         if !drawingBow { arm(other, shade) }
         trunk()
         head()
         leg(pose.front, body)
         if build.scabbard { scabbard(behind: false) }
         arm(main, body)
-        weapon(main.hand, other.hand)
+        if pose.armed { weapon(main.hand, other.hand) }
         if drawingBow { arm(other, body) }
         if let smear = pose.smear {
             let (origin, radius, flat) = (main.hand, build.reach * H, pose.flat)
