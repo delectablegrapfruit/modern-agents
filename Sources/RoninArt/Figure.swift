@@ -2278,7 +2278,7 @@ private struct Drawer {
         pen.ellipse(skull, body)
         func p(_ f: CGFloat, _ u: CGFloat) -> CGPoint { at(at(c, face, f * r), headUp, u * r) }
         fill([p(-0.5, -0.6), p(0.72, -1.02), p(1.08, -0.35), p(1.02, 0.2), p(0.8, 0.5)], body)
-        gear(c, r, severed: severed)
+        gear(c, r)
         if let eyes = build.eyes {
             let eye = p(0.62, 0.05)
             fill([at(eye, face, -r * 0.28), at(eye, headUp, r * 0.12), at(eye, face, r * 0.3), at(eye, headUp, -r * 0.1)], Paint(eyes))
@@ -2328,8 +2328,8 @@ private struct Drawer {
     }
 
     /// What a figure wears on its head (on a body thrown about, lying on the ground rather than through it). A head
-    /// struck off keeps all of it, the dancer's tail tied on above the cut.
-    mutating func gear(_ c: CGPoint, _ r: CGFloat, severed: Bool = false) {
+    /// struck off keeps all of it, just as it was.
+    mutating func gear(_ c: CGPoint, _ r: CGFloat) {
         func p(_ f: CGFloat, _ u: CGFloat) -> CGPoint { grounded(at(at(c, face, f * r), headUp, u * r)) }
         let flutter = sin(pose.wave * 2 * .pi)
         switch build.gear {
@@ -2362,7 +2362,8 @@ private struct Drawer {
             let (back, rise, hang) = trailing
             let tuft = at(at(c, back, 2.6 * r), rise, (-0.4 + 0.4 * flutter * (1 - hang)) * r)
             fill([p(-0.4, 0.8), grounded(tuft), p(-0.8, 0.2)], body)
-            let neckPoint = at(c, headUp, -r * (severed ? 0.95 : 1.2))
+            // Tied on at the nape, above where a blade through the neck goes, so a head struck off keeps it as it was.
+            let neckPoint = at(c, headUp, -r * 0.95)
             ribbon(at(neckPoint, face, -r * 0.4), length: r * 5.2, width: r * 0.42, droop: 1.2, phase: 0.2, Paint(build.accent, 0.95))
         case .eboshi:
             fill([p(-0.9, 0.45), p(0.8, 0.55), p(0.1, 2.3), p(-0.5, 1.9)], body)
@@ -2579,10 +2580,12 @@ private struct Drawer {
 
     /// The sashimono on a body thrown about: the pole swinging from upright on his back to lying with its end on the
     /// ground as he goes down, never driven into it, and the flag furling (seen edge-on) as it comes to lie on the
-    /// side away from the ground.
+    /// side away from the ground. Upright (as he stands the instant he is cut down), it is the banner he stood with.
     mutating func fallenBanner(_ base: CGPoint, _ flutter: CGFloat) {
-        let k = fallen, g = gravity, L = Drawer.pole * H
-        let upright = CGPoint(x: sin(-0.048), y: cos(-0.048))
+        let k = fallen, g = gravity
+        // As `backGear` stands it: the top a little behind the socket, the flag hanging plumb from it.
+        let stood = CGPoint(x: -0.03, y: Drawer.pole), L = hypot(stood.x, stood.y) * H
+        let upright = unit(.zero, stood)
         var level = CGPoint(x: up.x - g.x * (up.x * g.x + up.y * g.y), y: up.y - g.y * (up.x * g.x + up.y * g.y))
         let n = hypot(level.x, level.y)
         level = n > 0.05 ? CGPoint(x: level.x / n, y: level.y / n) : CGPoint(x: -face.x, y: -face.y)
@@ -2590,11 +2593,13 @@ private struct Drawer {
         let run = (L * L - height * height).squareRoot()
         let rest = CGPoint(x: (level.x * run + g.x * height) / L, y: (level.y * run + g.y * height) / L)
         let along = unit(.zero, CGPoint(x: upright.x * (1 - k) + rest.x * k, y: upright.y * (1 - k) + rest.y * k))
-        var behind = CGPoint(x: -along.y, y: along.x)
-        if k >= 1, behind.x * g.x + behind.y * g.y > 0 { behind = CGPoint(x: -behind.x, y: -behind.y) }
         let top = at(base, along, L)
+        // The flag hangs plumb from the top of the pole while he stands, and comes to lie along the pole as he goes.
+        let hang = unit(.zero, CGPoint(x: along.x * k, y: (1 - k) + along.y * k))
+        var behind = CGPoint(x: -hang.y, y: hang.x)
+        if k >= 1, behind.x * g.x + behind.y * g.y > 0 { behind = CGPoint(x: -behind.x, y: -behind.y) }
         let w = 1 - 0.8 * k
-        func p(_ back: CGFloat, _ rise: CGFloat) -> CGPoint { grounded(at(at(top, behind, back * w * H), along, rise * H)) }
+        func p(_ back: CGFloat, _ rise: CGFloat) -> CGPoint { grounded(at(at(top, behind, back * w * H), hang, rise * H)) }
         fill([grounded(at(base, behind, -0.008 * H)), grounded(at(top, behind, -0.006 * H)), grounded(at(top, behind, 0.006 * H)),
               grounded(at(base, behind, 0.008 * H))], body)
         let f = flutter * 0.025 * (1 - k)

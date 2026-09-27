@@ -77,13 +77,19 @@ enum Figures {
     /// weapon, which leaves his hand as he falls.
     static func struck(_ cast: Cast, variant: Int) -> Piece {
         if let piece = struckPieces[cast]?[variant] { return piece }
-        var pose = Figure.struck(cast, variant: variant)
+        var pose = frozen(cast, variant: variant)
         pose.armed = true
-        // A falling body's cloth is drawn at rest, so the first frame of the fall is this one.
-        pose.stream = 0
         let piece = render(Figure.sketch(cast, pose: pose))
         struckPieces[cast, default: [:]][variant] = piece
         return piece
+    }
+
+    /// The pose a foe's figure freezes in at a killing blow, and the dead start from: `Figure.struck`, with his cloth
+    /// at rest, as a falling body's is drawn (so the first frame of the fall, and the head struck off, are this one).
+    private static func frozen(_ cast: Cast, variant: Int) -> Pose {
+        var pose = Figure.struck(cast, variant: variant)
+        pose.stream = 0
+        return pose
     }
 
     /// A head struck off: its texture, the part of the whole canvas it covers, and its wound: where on the canvas
@@ -98,10 +104,11 @@ enum Figures {
     private static var heads: [Cast: [Int: Part]] = [:]
 
     /// A foe's head struck off as a blow throws him (`Figure.struck(cast, variant:)`), where it was on his canvas:
-    /// the head and all it wears (crest, brim, ribbons) on a short length of cut neck, and nothing else of him.
+    /// the head and all it wears (crest, brim, ribbons) on a short length of cut neck, and nothing else of him; just
+    /// as it was on the figure frozen at the blow (`struck`), so it leaves him without a jump.
     static func head(_ cast: Cast, variant: Int) -> Part {
         if let part = heads[cast]?[variant] { return part }
-        let (sketch, wound, angle) = Figure.severedHead(cast, pose: Figure.struck(cast, variant: variant))
+        let (sketch, wound, angle) = Figure.severedHead(cast, pose: frozen(cast, variant: variant))
         let piece = render(sketch)
         let part = Part(texture: piece.texture, rect: piece.rect,
                         wound: CGPoint(x: wound.x / CGFloat(sketch.width), y: wound.y / CGFloat(sketch.height)), woundAngle: angle)

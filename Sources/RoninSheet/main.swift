@@ -11,11 +11,12 @@ import RoninCore
 //
 // A cast (or all of them): every frame, each on a strip of dusk sky with the ground line through its feet, labelled
 // with its name. FRAMES="idle 0,kesa 3,kesa chain 2" draws only the frames named.
-// cuts: each kind as a blow leaves it and as a cut leaves it: the poses it is cut apart from, its head struck off,
-// the body left without it, and the two halves of each cut, drawn apart (`dead` is the same sheet).
+// cuts: each kind as a blow leaves it and as a cut leaves it: the poses its figure freezes in at a killing blow (and
+// it is cut apart from), its head struck off, the body left without it, and the two halves of each cut through the
+// trunk, drawn apart (`dead` is the same sheet).
 // ragdoll: each kind's dead falling as the game lets them fall (a frame every tenth of a second, then at rest), a row
-// for each way a man is cut down (the shin cut both as two halves and as a man hamstrung onto his knees), and a row
-// of them at rest. KINDS="grunt,brute" draws only those kinds (cuts too).
+// for each way a man is cut down (the shin cut drops him onto his knees, whole), and a row of them at rest.
+// KINDS="grunt,brute" draws only those kinds (cuts too).
 // It exits 2 for arguments it cannot use, and 1 if the sheet cannot be written.
 
 func fail(_ message: String) -> Never {
@@ -120,11 +121,11 @@ func combined(_ pieces: [(Sketch, CGPoint)]) -> Sketch {
 // MARK: How the dead fall
 
 /// The ways the game kills a foe, and how it cuts him, as Carnage.sever and Carnage.fell do (keep the two in step):
-/// the severance table, the poses the dead start from, how long a cut body stands, how hard the big ones are thrown,
-/// how far toward the eye each lies. A warlord always loses his head. `hamstrung` is the shin cut as a whole body
-/// whose legs are cut from under him (`Ragdoll.hamstrung`), beside `sune`, the same cut as two halves.
+/// the severance table, the pose the dead start from and the poses each piece reaches for, how long a cut body stands,
+/// how hard the big ones are thrown, how far toward the eye each lies. A warlord always loses his head. `sune`, the
+/// shin cut, leaves the man whole, his legs cut from under him (`Ragdoll.hamstrung`).
 enum Death: String, CaseIterable {
-    case felled, kesa, gyaku, dou, sune, hamstrung, shomen
+    case felled, kesa, gyaku, dou, sune, shomen
 
     static func of(_ kind: Kind) -> [Death] { kind == .warlord ? [.shomen] : allCases }
 
@@ -134,46 +135,72 @@ enum Death: String, CaseIterable {
         case .kesa: return (0.5, 0.6, 1.3)
         case .gyaku: return (0.5, -0.6, 1.3)
         case .dou: return (0.3, 0.05, 1.3)
-        case .sune: return (0.12, 0.08, 0.6)
-        case .felled, .hamstrung, .shomen: return nil
+        case .felled, .sune, .shomen: return nil
         }
     }
 }
 
-/// A foe's dead as the game makes them: the pieces (each with how long it stands before its knees go, if it stands),
-/// a severed head's variant, and how far the pieces stand above the line they will fall to (figure heights).
-func remains(_ cast: Cast, _ death: Death, rng: inout SeededRNG) -> (pieces: [(doll: Ragdoll, stand: Double?)], head: Int?, raise: CGFloat) {
+/// A piece of a dead man: the doll, how long it stands before its knees go (nil: it falls at once), and the pose it
+/// reaches for once they do.
+struct Piece {
+    var doll: Ragdoll
+    var stand: Double?
+    var reach: Pose?
+
+    /// Its knees go: it collapses, reaching for its own pose as it goes.
+    mutating func collapse(rng: inout SeededRNG) {
+        doll.collapse(rng: &rng)
+        if let reach { doll.reach(for: reach, rng: &rng) }
+        stand = nil
+        reach = nil
+    }
+}
+
+/// A pose a blow may throw a man into, any of a million: what a falling piece reaches for.
+func wild(_ cast: Cast, rng: inout SeededRNG) -> Pose { Figure.struck(cast, variant: rng.int(1...1_000_000)) }
+
+/// A foe's dead as the game makes them: the pieces, the variant of the pose his figure froze in (the pose they all
+/// start from, and his head is struck off from), and how far the pieces stand above the line they will fall to
+/// (figure heights).
+func remains(_ cast: Cast, _ death: Death, rng: inout SeededRNG) -> (pieces: [Piece], variant: Int, raise: CGFloat) {
     let kind: Kind
     if case .foe(let k) = cast { kind = k } else { kind = .grunt }
     let force: CGFloat = kind == .warlord ? 1.5 : kind == .brute ? 1.25 : 1
     let near = CGFloat(rng.unit())
     let stand = rng.range(0.35, 0.7)
-    var pieces: [(doll: Ragdoll, stand: Double?)] = []
-    var head: Int?
+    // Frozen at the blow in one of the struck poses drawn ahead of time; every piece falls from it.
+    let variant = rng.int(0...(Figure.struckVariants - 1))
+    let pose = Figure.struck(cast, variant: variant)
+    var pieces: [Piece] = []
     switch death {
     case .felled:
-        // Thrown back off his feet, or any way a blow throws a man.
-        let pose = rng.int(0...2) == 0 ? Figure.thrown(cast) : Figure.struck(cast, variant: rng.int(1...1_000_000))
-        pieces = [(Ragdoll.felled(cast, pose: pose, back: -1, force: force, rng: &rng), nil)]
-    case .hamstrung:
-        // His feet knocked back from under him, pitching forward onto his face.
-        let pose = Figure.struck(cast, variant: rng.int(1...1_000_000))
-        pieces = [(Ragdoll.hamstrung(cast, pose: pose, back: -1, force: force, rng: &rng), nil)]
+        // Thrown back off his feet, or any way a blow throws a man, his head and arms flung that way.
+        var doll = Ragdoll.felled(cast, pose: pose, back: -1, force: force, rng: &rng)
+        let toward = rng.int(0...2) == 0 ? Figure.thrown(cast) : wild(cast, rng: &rng)
+        doll.reach(for: toward, fling: true, rng: &rng)
+        pieces = [Piece(doll: doll)]
+    case .sune:
+        // His feet knocked back from under him, down onto his knees, pitching forward onto his face.
+        var doll = Ragdoll.hamstrung(cast, pose: pose, back: -1, force: force, rng: &rng)
+        let toward = wild(cast, rng: &rng)
+        doll.reach(for: toward, rng: &rng)
+        pieces = [Piece(doll: doll)]
     case .shomen:
-        // The head from one of the poses drawn ahead of time, flying on its own; the body stands a moment longer.
-        let variant = rng.int(0...(Figure.struckVariants - 1))
-        head = variant
-        pieces = [(Ragdoll.cut(cast, pose: Figure.struck(cast, variant: variant), .headless, back: -1, force: force, rng: &rng), stand * 1.4)]
+        // The head flying on its own; the body stands a moment longer.
+        let body = Ragdoll.cut(cast, pose: pose, .headless, back: -1, force: force, rng: &rng)
+        pieces = [Piece(doll: body, stand: stand * 1.4, reach: wild(cast, rng: &rng))]
     default:
         let (at, slant, lift) = death.cut!
-        let pose = Figure.struck(cast, variant: rng.int(1...1_000_000))
-        pieces = [(Ragdoll.cut(cast, pose: pose, .above(at: at, slant: slant), back: -1, force: force, lift: lift, rng: &rng), nil),
-                  (Ragdoll.cut(cast, pose: pose, .below(at: at, slant: slant), back: -1, force: force, rng: &rng), stand)]
+        var upper = Ragdoll.cut(cast, pose: pose, .above(at: at, slant: slant), back: -1, force: force, lift: lift, rng: &rng)
+        let toward = wild(cast, rng: &rng)
+        upper.reach(for: toward, rng: &rng)
+        let lower = Ragdoll.cut(cast, pose: pose, .below(at: at, slant: slant), back: -1, force: force, rng: &rng)
+        pieces = [Piece(doll: upper), Piece(doll: lower, stand: stand, reach: wild(cast, rng: &rng))]
     }
     // Standing on the lane, over the line on the ground it will fall to.
     let raise = 0.12 * near / Build.of(cast).height
     for k in pieces.indices { pieces[k].doll.raise(raise) }
-    return (pieces, head, raise)
+    return (pieces, variant, raise)
 }
 
 /// A doll drawn on its figure's canvas where it lies, as Carnage draws it, the canvas's ground at the doll's own.
@@ -197,25 +224,23 @@ if sheet == "ragdoll" {
             var t = 0.0
             for shot in 0..<10 {
                 var sketches = pieces.map { drawn($0.doll, cast) }
-                if shot == 0, let head = made.head {
+                if shot == 0, death == .shomen {
                     // The head as it leaves the stump (in the game it flies on its own, turning over and over).
-                    let lone = Figure.severedHead(cast, pose: Figure.struck(cast, variant: head)).sketch
-                    sketches.append((lone, CGPoint(x: 0, y: made.raise * H)))
+                    var frozen = Figure.struck(cast, variant: made.variant)
+                    frozen.stream = 0
+                    sketches.append((Figure.severedHead(cast, pose: frozen).sketch, CGPoint(x: 0, y: made.raise * H)))
                 }
                 row.cell(combined(sketches), y: y, label: shot == 0 ? "\(kind) \(death.rawValue)" : "", check: false)
                 for _ in 0..<12 {
                     t += 1.0 / 120
                     for k in pieces.indices {
-                        if let stand = pieces[k].stand, t >= stand {
-                            pieces[k].doll.collapse(rng: &rng)
-                            pieces[k].stand = nil
-                        }
+                        if let stand = pieces[k].stand, t >= stand { pieces[k].collapse(rng: &rng) }
                         pieces[k].doll.advance(1.0 / 120)
                     }
                 }
             }
             for k in pieces.indices {
-                if pieces[k].stand != nil { pieces[k].doll.collapse(rng: &rng) }
+                if pieces[k].stand != nil { pieces[k].collapse(rng: &rng) }
                 var n = 0
                 while !pieces[k].doll.settled, n < 600 {
                     pieces[k].doll.advance(1.0 / 60)
@@ -240,7 +265,7 @@ if sheet == "ragdoll" {
                         pieces[p].doll.advance(1.0 / 60)
                         t += 1.0 / 60
                     }
-                    pieces[p].doll.collapse(rng: &rng)
+                    pieces[p].collapse(rng: &rng)
                 }
                 var n = 0
                 while !pieces[p].doll.settled, n < 600 {
@@ -265,11 +290,19 @@ if sheet == "cuts" || sheet == "dead" {
         let cast = Cast.foe(kind)
         let H = Figure.pixelHeight(cast) * Build.of(cast).height
         var row = Row()
-        for v in 0..<Figure.struckVariants {
-            row.cell(Figure.sketch(cast, pose: Figure.struck(cast, variant: v)), y: y, crop: 0.6, label: v == 0 ? "\(kind) struck" : "")
+        // Frozen at the blow as the game draws him (his cloth at rest, the weapon still in his hand).
+        func frozen(_ v: Int) -> Pose {
+            var pose = Figure.struck(cast, variant: v)
+            pose.stream = 0
+            return pose
         }
         for v in 0..<Figure.struckVariants {
-            let pose = Figure.struck(cast, variant: v)
+            var armed = frozen(v)
+            armed.armed = true
+            row.cell(Figure.sketch(cast, pose: armed), y: y, crop: 0.6, label: v == 0 ? "\(kind) struck" : "")
+        }
+        for v in 0..<Figure.struckVariants {
+            let pose = frozen(v)
             var headless = pose
             headless.severed = .headless
             // The head lifted off the stump a little, as it goes.
@@ -277,9 +310,9 @@ if sheet == "cuts" || sheet == "dead" {
             row.cell(combined([(Figure.sketch(cast, pose: headless), .zero), (head, CGPoint(x: 0.03 * H, y: 0.08 * H))]), y: y, crop: 0.6,
                      label: v == 0 ? "head" : "")
         }
-        for death in [Death.kesa, .gyaku, .dou, .sune] {
+        for death in [Death.kesa, .gyaku, .dou] {
             let (at, slant, _) = death.cut!
-            var above = Figure.struck(cast, variant: 2), below = above
+            var above = frozen(2), below = above
             above.severed = .above(at: at, slant: slant)
             below.severed = .below(at: at, slant: slant)
             // The upper part lifted clear of the lower, so both faces of the cut show.

@@ -503,15 +503,7 @@ final class FoeSprite: SKNode {
         Art.setTint(body, color, amount)
     }
 
-    /// The frames each kind of foe has, looked up rather than listed again every frame.
-    private static var frameSets: [Cast: Set<Frame>] = [:]
-
-    private func has(_ frame: Frame) -> Bool {
-        if let frames = FoeSprite.frameSets[cast] { return frames.contains(frame) }
-        let frames = Set(Figure.frames(for: cast))
-        FoeSprite.frameSets[cast] = frames
-        return frames.contains(frame)
-    }
+    private func has(_ frame: Frame) -> Bool { Figures.has(cast, frame) }
 
     /// Swaps in a new pose. A jump to a different kind of pose keeps the old one a moment behind it, so the change
     /// reads as movement, not a cut; the frames of one motion (a stride, a breath, a wind-up) follow on cleanly.
@@ -555,17 +547,25 @@ final class FoeSprite: SKNode {
         lagged = true
     }
 
-    /// The instant of a killing blow: thrown into his struck pose (or `piece`, a struck pose drawn for the purpose)
-    /// and lit white, held there until the blade arrives: upright, unsquashed, with nothing of the pose before it
-    /// behind him, so the body that falls from it starts where he stands.
-    func freezeStruck(_ piece: Figures.Piece? = nil) {
+    /// The instant of a killing blow: thrown into the pose the blow throws him into (`Figures.struck`, variant 0 his
+    /// stagger) and lit white, held there until the blade arrives: upright, unsquashed, whole (not fading in), with
+    /// nothing of the pose before it behind him. The carnage lets him fall from the very same pose (`Carnage.sever`
+    /// with the same variant, or `fell` from `Figure.struck(cast, variant:)`), where he stands, so his body, his head
+    /// and his weapon leave the frozen figure without a jump.
+    func freezeStruck(variant: Int = 0) {
+        freeze(Figures.struck(cast, variant: variant))
+    }
+
+    /// The same, in a struck pose drawn for the purpose (`Figures.struck`; nil is variant 0).
+    func freezeStruck(_ piece: Figures.Piece?) {
+        freeze(piece ?? Figures.struck(cast, variant: 0))
+    }
+
+    private func freeze(_ piece: Figures.Piece) {
         holding = false
         shown = .stagger(0)
-        if let piece {
-            Figures.apply(body, piece, cast, ronin: ronin)
-        } else {
-            Figures.apply(body, cast, shown, ronin: ronin)
-        }
+        Figures.apply(body, piece, cast, ronin: ronin)
+        alpha = 1
         echo.alpha = 0
         lean = 0
         squash = 0

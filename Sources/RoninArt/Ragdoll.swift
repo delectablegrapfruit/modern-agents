@@ -328,6 +328,23 @@ public struct Ragdoll: Sendable {
         }
     }
 
+    /// Has it reach for `pose` as it goes, rather than for the pose it was struck in (`aim(at:)`), unsettled by a
+    /// little or a good deal (`stir`), so bodies struck down alike, from the very pose a figure froze in, still come
+    /// down and lie their own ways; `fling`ing its head and arms toward it as well, as a blow that throws a man off his
+    /// feet flings them (to where they are in it, from the hips, in about an eighth of a second). It moves nothing yet:
+    /// the first frame is still the pose it started from.
+    public mutating func reach(for pose: Pose, fling: Bool = false, rng: inout SeededRNG) {
+        aim(at: pose)
+        stir(&rng, by: CGFloat(rng.range(0.3, 1)))
+        guard fling else { return }
+        let target = Ragdoll(cast: cast, pose: pose)
+        let to = target.points, there = target.hip, from = points, here = hip
+        for j in [Ragdoll.head, Ragdoll.frontElbow, Ragdoll.frontHand, Ragdoll.backElbow, Ragdoll.backHand] where present[j] {
+            let dx = (to[j].x - there.x) - (from[j].x - here.x), dy = (to[j].y - there.y) - (from[j].y - here.y)
+            push(j, CGPoint(x: dx / 0.12, y: dy / 0.12))
+        }
+    }
+
     /// Makes the body its own: how far off the near ones its far leg and arm lie, and how it drags on the ground.
     private mutating func vary(_ rng: inout SeededRNG) {
         func r(_ a: Double, _ b: Double) -> CGFloat { CGFloat(rng.range(a, b)) }
