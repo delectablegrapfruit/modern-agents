@@ -312,7 +312,10 @@ final class DuelScene: SKScene {
             if kind == .warlord {
                 icon = Icons.crest(16 * fs)
             } else {
+                // On the dark plate the silhouette is drawn light, in the gold of the tip.
                 let figure = SKSpriteNode(texture: Figures.texture(.foe(kind), .idle(0)))
+                figure.color = Palette.gold.color()
+                figure.colorBlendFactor = 1
                 figure.anchorPoint = Figures.anchor
                 figure.size = Figures.size(.foe(kind), ronin: 20 * fs)
                 figure.position = CGPoint(x: 0, y: -9 * fs)
@@ -362,12 +365,16 @@ final class DuelScene: SKScene {
         let node = SKNode()
         node.zPosition = 55
         for side in Side.allCases {
-            let mouse = Icons.mouse(16 * fs, lit: side, Palette.ink.color(0.9))
+            let mouse = SKNode()
             mouse.name = side == .left ? "left" : "right"
-            mouse.position = CGPoint(x: laneX(side.sign * 0.62), y: groundY * 0.5)
-            let arrow = Icons.play(8 * fs, Palette.ink.color(0.7))
+            mouse.position = CGPoint(x: laneX(side.sign * 0.62), y: groundY + ronin * 0.2)
+            mouse.addChild(Icons.plate(CGSize(width: 44 * fs, height: 30 * fs), alpha: 0.7))
+            let icon = Icons.mouse(20 * fs, lit: side, Palette.ink.color())
+            icon.position = CGPoint(x: -side.sign.cg * 7 * fs, y: 0)
+            mouse.addChild(icon)
+            let arrow = Icons.play(10 * fs, Palette.gold.color())
             arrow.xScale = side == .left ? -1 : 1
-            arrow.position = CGPoint(x: side.sign.cg * 14 * fs, y: 0)
+            arrow.position = CGPoint(x: side.sign.cg * 11 * fs, y: 0)
             mouse.addChild(arrow)
             mouse.run(.repeatForever(.sequence([.fadeAlpha(to: 0.45, duration: 0.8), .fadeAlpha(to: 1, duration: 0.8)])))
             node.addChild(mouse)
