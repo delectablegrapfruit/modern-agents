@@ -3,9 +3,8 @@
   'use strict';
   const L = (root.Lull = root.Lull || {});
 
-  // A cell: bits 0–4 colour slot (0 = empty), bit 5 gem, bit 6 hidden (vanishing modifier). OLD marks the bits an
-  // older save used for what a block was made of (the retired sandbox); js/engine.js strips them when a board loads.
-  const CELL = { COLOR: 31, GEM: 32, HIDDEN: 64, OLD: 0xff00 };
+  // A cell: bits 0–4 colour slot (0 = empty), bit 5 gem, bit 6 hidden (vanishing modifier).
+  const CELL = { COLOR: 31, GEM: 32, HIDDEN: 64 };
 
   class Board {
     constructor(w, h, opts) {

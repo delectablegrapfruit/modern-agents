@@ -354,12 +354,12 @@
       h('div', { class: 'kpis three' }, kpi(n + ' / ' + A.LIST.length, 'Earned'), kpi(fmtInt(S.lines.achievements || 0) + ' ' + LINE, 'Lines from them'), kpi(fmtInt(A.total()) + ' ' + LINE, 'All of them pay')),
       h('div', { class: 'ach-tools' }, seg),
     ];
-    const row = (a, retired) => {
+    const row = (a) => {
       const when = got[a.id], pr = !when && a.progress ? a.progress(st) : null;
-      return h('div', { class: 'ach' + (when ? ' got' : '') + (a.tier === 'legend' ? ' legend' : '') + (retired ? ' retired' : '') },
+      return h('div', { class: 'ach' + (when ? ' got' : '') + (a.tier === 'legend' ? ' legend' : '') },
         h('span', { class: 'ach-i' }, when ? '★' : a.tier === 'legend' ? '✦' : '·'),
         h('div', { class: 'grow' },
-          h('div', { class: 't' }, a.name, retired ? h('span', { class: 'tier' }, 'Retired') : a.tier === 'legend' ? h('span', { class: 'tier' }, 'Legendary') : null),
+          h('div', { class: 't' }, a.name, a.tier === 'legend' ? h('span', { class: 'tier' }, 'Legendary') : null),
           h('div', { class: 'd' }, a.desc + (when ? ' · ' + new Date(when).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : '')),
           pr ? h('div', { class: 'ach-prog' }, h('div', { class: 'bar' }, h('i', { style: { width: (100 * Math.min(1, pr[0] / pr[1])).toFixed(1) + '%' } })), h('span', null, num(Math.min(pr[0], pr[1])) + ' / ' + num(pr[1]))) : null),
         h('span', { class: 'ach-pay' }, '+' + fmtInt(a.pay) + ' ' + LINE));
@@ -371,8 +371,6 @@
       if (!list.length) continue;
       const have = list.filter((a) => got[a.id]), paid = have.reduce((t, a) => t + a.pay, 0), all = list.reduce((t, a) => t + a.pay, 0);
       const plain = list.filter((a) => a.tier !== 'legend' && shown(a)), leg = list.filter((a) => a.tier === 'legend' && shown(a));
-      // Retired ones stay with whoever earned them (and stay paid); they are not counted and cannot be earned now.
-      const old = filter === 'left' ? [] : (A.RETIRED || []).filter((a) => a.group === g.id && got[a.id]);
       els.push(h('details', { class: 'ach-group', 'data-group': g.id, open: !!open[g.id], ontoggle: (e) => { open[g.id] = e.currentTarget.open; } },
         h('summary', null,
           h('span', { class: 'chev' }, '›'),
@@ -384,8 +382,7 @@
           h('span', { class: 'ach-pay' }, num(paid) + ' / ' + num(all) + ' ' + LINE)),
         plain.length ? h('div', { class: 'ach-list' }, plain.map((a) => row(a))) : null,
         leg.length ? h('div', { class: 'ach-list legend-list' }, leg.map((a) => row(a))) : null,
-        old.length ? h('div', { class: 'ach-list retired-list' }, old.map((a) => row(a, true))) : null,
-        plain.length || leg.length || old.length ? null : h('p', { class: 'ach-none' }, filter === 'got' ? 'None earned here yet.' : 'Every one of these is yours.')));
+        plain.length || leg.length ? null : h('p', { class: 'ach-none' }, filter === 'got' ? 'None earned here yet.' : 'Every one of these is yours.')));
     }
     document.getElementById('ach-body').replaceChildren(...els);
   }
@@ -411,7 +408,7 @@
         kpi(fmtInt(S.sessions), 'Sessions'),
         kpi(fmtInt(S.days || 0), 'Days played')));
       els.push(h('h4', null, 'Lines earned, last 14 days'), historyChart(app, 'lines', 14));
-      els.push(h('h4', null, 'Where lines came from'), hbars([['Free Play', S.lines.play], ['Combos', S.lines.combos || 0], ['Puzzles', S.lines.puzzles], ['Factory', S.lines.contracts], ['Achievements', S.lines.achievements || 0]].concat(S.lines.luck ? [['Jackpot', S.lines.luck]] : [])));
+      els.push(h('h4', null, 'Where lines came from'), hbars([['Free Play', S.lines.play], ['Combos', S.lines.combos || 0], ['Puzzles', S.lines.puzzles], ['Factory', S.lines.factory], ['Achievements', S.lines.achievements || 0]].concat(S.lines.luck ? [['Jackpot', S.lines.luck]] : [])));
       els.push(h('h4', null, 'Time by mode'), table([
         ['Free Play', fmtDuration(S.timeMs.play)], ['Classic', fmtDuration(S.timeMs.classic || 0)], ['Puzzles', fmtDuration(S.timeMs.puzzle)], ['Factory (watching)', fmtDuration(S.timeMs.factory)],
       ]));
@@ -483,12 +480,11 @@
         ['Days collected', fmtInt(fs.days)], ['Minos made while away', count(fs.away)], ['Time the line waited on a full bin', fmtDuration(fs.fullMs)],
         ['Lines spent on the line', fmtInt(fs.spent)], ['Time watching', fmtDuration(S.timeMs.factory)],
       ];
-      if (f.legacy) rows.push(['Before the rebuild', count(f.legacy.shipped) + ' minos shipped']);
       els.push(h('h4', null, 'The line'), table(rows));
     } else {
-      const got = S.items.got || {}, bought = S.items.bought, used = S.items.used;
+      const got = S.items.got, bought = S.items.bought, used = S.items.used;
       els.push(h('div', { class: 'kpis' }, kpi(fmtInt(S.lines.spent), 'Lines spent'), kpi(fmtInt(S.cosmetics.bought), 'Cosmetics bought'),
-        kpi(fmtInt(Object.values(used).reduce((a, b) => a + b, 0)), 'Power-ups used'), kpi(fmtInt(S.lines.refunded), 'Lines rewound')));
+        kpi(fmtInt(Object.values(used).reduce((a, b) => a + b, 0)), 'Power-ups used'), kpi(fmtInt(S.lines.rewound), 'Lines rewound')));
       els.push(h('h4', null, 'Power-ups'), h('table', { class: 'st cols' },
         h('tr', null, h('th', null, ''), h('th', null, 'Bought'), h('th', null, 'Given'), h('th', null, 'Used'), h('th', null, 'Have')),
         ITEM_ORDER.map((id) => h('tr', null, h('td', null, ITEMS[id].icon + ' ' + ITEMS[id].name), h('td', null, fmtInt(bought[id] || 0)), h('td', null, fmtInt(got[id] || 0)), h('td', null, fmtInt(used[id] || 0)), h('td', null, fmtInt(st.inventory[id] || 0))))));

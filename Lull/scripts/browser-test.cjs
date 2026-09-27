@@ -1328,19 +1328,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await page.waitForTimeout(40);
   const todo = await ev(() => ({ got: document.querySelectorAll('.ach.got').length, shown: document.querySelectorAll('.ach').length, left: Lull.Achievements.LIST.filter((a) => !Lull.app.store.state.achievements[a.id]).length }));
   check('the To do filter hides the earned ones', todo.got === 0 && todo.shown === todo.left && todo.left <= ach.all - ach.got, JSON.stringify(todo));
-  // A retired one (earned before it was retired) stays with its owner, marked, and counted in nothing.
   await page.click('.ach-tools button:nth-child(1)');
-  const retired = await ev(() => {
-    const S = Lull.app.store.state, count = () => document.querySelector('.ach-group[data-group="play"] .ach-count').textContent;
-    const before = count();
-    S.achievements.combo20 = Date.now();
-    Lull.UI.renderAchievements(Lull.app);
-    const out = { before, after: count(), rows: document.querySelectorAll('.ach.retired').length, tag: (document.querySelector('.ach.retired .tier') || {}).textContent, left: Lull.Achievements.LIST.some((a) => a.id === 'combo20') };
-    delete S.achievements.combo20;
-    Lull.UI.renderAchievements(Lull.app);
-    return out;
-  });
-  check('a retired achievement stays with whoever earned it, marked Retired, counted in nothing', retired.rows === 1 && retired.tag === 'Retired' && retired.before === retired.after && !retired.left, JSON.stringify(retired));
   await ev(() => { document.querySelectorAll('.ach-group').forEach((d) => { d.open = true; }); });
   await page.waitForTimeout(40);
   await ev(() => { document.getElementById('ach-body').scrollTop = 1e6; });
@@ -1571,7 +1559,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     const probe = (family) => { const s = document.createElement('span'); s.style.cssText = 'position:absolute;font:100px ' + family; s.textContent = Lull.LINE; document.body.appendChild(s); const w = s.getBoundingClientRect().width; s.remove(); return Math.round(w); };
     const c = document.createElement('canvas').getContext('2d');
     c.font = '100px "Lull Line", ui-monospace, monospace';
-    // Every tab's text, tooltips and labels: the line glyph, never the old diamond.
+    // Every tab's text, tooltips and labels: the line glyph.
     const texts = [];
     for (const t of ['play', 'puzzle', 'factory', 'shop', 'stats', 'achievements']) {
       Lull.app.setTab(t);
@@ -1581,10 +1569,10 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     Lull.app.setTab('play');
     const all = texts.join(' ');
     return { loaded: document.fonts.check('12px "Lull Line"', Lull.LINE), text: probe('var(--font)'), mono: probe('var(--mono-font)'), canvas: Math.round(c.measureText(Lull.LINE).width),
-      diamonds: (all.match(/\u25C6/g) || []).length, lines: (all.match(/\u29B5/g) || []).length, wallet: !!document.querySelector('#wallet .lg svg') };
+      lines: (all.match(/\u29B5/g) || []).length, wallet: !!document.querySelector('#wallet .lg svg') };
   });
   check('the line glyph\'s font is loaded and draws it in text, monospace and on canvas (one em wide, not a fallback)', glyph.loaded && glyph.text === 100 && glyph.mono === 100 && glyph.canvas === 100, JSON.stringify(glyph));
-  check('no black diamond left anywhere on the page; lines amounts show the line glyph; the wallet draws it large', glyph.diamonds === 0 && glyph.lines > 5 && glyph.wallet, JSON.stringify(glyph));
+  check('lines amounts show the line glyph; the wallet draws it large', glyph.lines > 5 && glyph.wallet, JSON.stringify(glyph));
   await ev(() => Lull.app.saveNow());
   await page.reload();
   await page.waitForTimeout(400);
@@ -1603,7 +1591,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   check('with Control hints off, the scripted run above never raised one', Object.keys(hintsSoFar).length === 0, JSON.stringify(hintsSoFar));
   // The run so far has set hundreds of pieces (past the 300 that retire every hint): start this player afresh.
   const hintState = () => ev(() => { const c = Lull.app.hints, el = document.querySelector('.lhint'); return { over: c.d.over, pending: c.d.pending && c.d.pending.id, shown: !!(el && el.classList.contains('show')), id: el && el.dataset.hint, text: el ? el.textContent : '', keys: el ? Array.from(el.querySelectorAll('kbd')).map((k) => k.textContent) : [], hs: JSON.parse(JSON.stringify(Lull.app.store.state.hints)) }; });
-  const hintReset = (keep) => ev((k) => { const st = Lull.app.store.state; if (!k) st.hints = Object.assign(Lull.Hints.fresh(), { seeded: 1 }); st.settings.hints = true; const c = Lull.app.hints; c.hide(); c.sync(); c.d.lastAt = -Infinity; c.d.lastBy = {}; c.d.pending = null; }, keep);
+  const hintReset = (keep) => ev((k) => { const st = Lull.app.store.state; if (!k) st.hints = Lull.Hints.fresh(); st.settings.hints = true; const c = Lull.app.hints; c.hide(); c.sync(); c.d.lastAt = -Infinity; c.d.lastBy = {}; c.d.pending = null; }, keep);
   await hintReset();
   await page.click('.tabs button[data-tab="puzzle"]');
   const flipSeed = await ev(() => { for (let n = 1; n < 400; n++) for (const d of ['E', 'M', 'H']) { const s = Lull.Puzzles.numberedSeed(d, n), p = Lull.Puzzles.generate(s); if (p.mods.includes('flip') && !p.mods.some((m) => m === 'invert' || m === 'rigid' || m === 'side')) return s; } return null; });

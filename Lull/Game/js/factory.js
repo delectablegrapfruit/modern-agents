@@ -89,7 +89,7 @@
     const f = {
       v: VERSION, seed: (Math.random() * 4294967296) >>> 0, serial: 0,
       presses: 1, binLevel: 0, bin: '', molds: [], belt: [],
-      lastTick: Date.now(), stats: freshStats(), legacy: null, rebuilt: false,
+      lastTick: Date.now(), stats: freshStats(),
     };
     const m = startPiece(f, 0, { pin: -1 });
     m.p = START_P;
@@ -272,8 +272,9 @@
 
   // ---- saves ------------------------------------------------------------------------------------------------------
 
-  /** A v6 factory put right: counts in range, molds and belt valid, the bin within capacity, every stat present. */
+  /** A saved factory put right: counts in range, molds and belt valid, the bin within capacity, every stat present. */
   function repair(f) {
+    if (!f || typeof f !== 'object' || Array.isArray(f)) return create();
     const int = (v, lo, hi, dflt) => (Number.isFinite(v) ? Math.min(hi, Math.max(lo, Math.round(v))) : dflt);
     f.seed = Number.isFinite(f.seed) ? f.seed >>> 0 : (Math.random() * 4294967296) >>> 0;
     f.serial = int(f.serial, 0, 1e12, 0);
@@ -317,41 +318,13 @@
     }
     f.stats = st;
     f.lastTick = Number.isFinite(f.lastTick) ? f.lastTick : Date.now();
-    f.legacy = f.legacy && typeof f.legacy === 'object' ? f.legacy : null;
-    f.rebuilt = !!f.rebuilt;
     f.v = VERSION;
-    return f;
-  }
-
-  /**
-   * Brings any saved factory up to v6. A v5 idler (presses by tier, credits, crates) becomes a line with one press for
-   * each tier it had opened past the tetromino, a taller bin for many crates, and its crate in progress poured into
-   * the bin as minos; credits are not carried over. Anything older starts fresh. What it did before stays as `legacy`.
-   */
-  function migrate(old) {
-    if (old && old.v === VERSION && !old.owned) return repair(old);
-    const f = create();
-    if (!old || typeof old !== 'object') return f;
-    const os = old.stats && typeof old.stats === 'object' ? old.stats : null;
-    const crates = Number.isFinite(old.crates) ? old.crates : 0;
-    if (os) f.legacy = { shipped: Math.round(os.shipped || 0), crates, lines: os.lines || 0, caught: os.caught || os.caughtManual || 0 };
-    if (old.owned && typeof old.owned === 'object') {
-      f.presses = 1 + [5, 6, 7].filter((t) => (old.owned[t] || 0) > 0).length;
-      for (let k = 1; k < f.presses; k++) f.molds.push(startPiece(f, k, { pin: -1 }));
-      f.binLevel = crates >= 25 ? 2 : crates >= 10 ? 1 : 0;
-      const size = 50 * Math.pow(2.2, crates), lines = 3 + Math.floor(crates / 2);
-      const minos = Math.min(capacity(f), Math.round(Math.min(1, Math.max(0, old.crate || 0) / size) * lines * 4));
-      const rng = new RNG(f.seed + ':pour');
-      for (let i = 0; i < minos; i++) f.bin += (1 + rng.int(7)).toString(16);
-      if (!f.legacy) f.legacy = { shipped: 0, crates, lines: 0, caught: 0 };
-      f.rebuilt = true;
-    } else if (f.legacy) f.rebuilt = true;
     return f;
   }
 
   L.Factory = {
     VERSION, CYCLE, MOLDS, PRESS_COST, BIN_ROWS, BIN_COST, BELT, BAY, SUB, START_P, PAY, NAMES, HOLE,
-    create, migrate, repair, shapes, flat, hasHole, capacity, perHour, timeToFull, isFull, status, collect, upgrade, nextUpgrade,
+    create, repair, shapes, flat, hasHole, capacity, perHour, timeToFull, isFull, status, collect, upgrade, nextUpgrade,
     setPin, step, catchUp, eta, shapeName, seenCount, quarters, widthOf,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

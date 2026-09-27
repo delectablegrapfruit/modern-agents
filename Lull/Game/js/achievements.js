@@ -154,26 +154,18 @@
     { id: 'fac_mountain', group: 'factory', name: 'Mino Mountain', desc: 'Make 100,000 minos in the factory.', pay: 2500, tier: 'legend', on: 'factory', test: (s) => s.factory.stats.minos >= 100000, progress: (s) => [s.factory.stats.minos, 100000] },
   ];
 
-  // Achievements that were retired: kept only so one already earned still shows (and stays paid). Never earned anew.
-  const RETIRED = [
-    { id: 'combo20', group: 'play', name: 'Endless Chain', desc: 'A 20-combo in Free Play.', pay: 1200, tier: 'legend' },
-    { id: 'sb_goldberg', group: 'play', name: 'Rube Goldberg', desc: 'One settle with current through a wire, fire, steam and an explosion.', pay: 300 },
-    { id: 'sb_scorch', group: 'play', name: 'Burnt Offering', desc: 'Burn, dissolve or blast away 60 blocks or more in one settle, leaving the board empty.', pay: 400 },
-  ];
-
   /** The board's numbers after this lock (its hand counts: see freshStats in js/engine.js). */
   const hs = (e) => e.g.s;
   /** The last hundred pieces by hand: within ms, clearing 36 lines or more. */
   const pace = (g, ms) => { const p = L.paceOf ? L.paceOf(g.s, 100) : null; return !!p && p.ms <= ms && p.lines >= 36; };
-  /** One power-up (a Tool piece or a Board item, never Golden) took a board of 60 blocks or more to empty. */
-  const swept = (e) => !!e.r.special && e.r.special !== 'golden' && (e.r.had || 0) >= 60 && e.g.board.isEmpty();
+  /** One power-up (a Tool piece or a Board item) took a board of 60 blocks or more to empty. */
+  const swept = (e) => !!e.r.special && (e.r.had || 0) >= 60 && e.g.board.isEmpty();
   /** Different power-up combos found on this board. */
   const itemCombos = (g) => (L.Combos ? L.Combos.LIST.filter((c) => c.kind === 'item' && (g.s.combos || {})[c.id]).length : 0);
   const combosAll = () => (L.Combos ? L.Combos.LIST.length : 1);
   const combosFound = (s) => (L.Combos ? L.Combos.LIST.filter((c) => (s.combos || {})[c.id]).length : 0);
-  /** Lines earned for the Lifetime ones: an old save's Jackpot winnings aside (churning it would have counted its
-   *  gross), and less what Rewind took back (replaying a clear would count it twice). */
-  const earned = (s) => Math.max(0, s.stats.lines.earned - (s.stats.lines.luck || 0) - (s.stats.lines.refunded || 0));
+  /** Lines earned for the Lifetime ones, less what Rewind took back (replaying a clear would count it twice). */
+  const earned = (s) => Math.max(0, s.stats.lines.earned - s.stats.lines.rewound);
 
   function fseen(s, n) { return L.Factory ? L.Factory.seenCount(s.factory, n) : 0; }
   function wildIds() { return L.Puzzles ? Object.keys(L.Puzzles.MODS) : []; }
@@ -226,5 +218,5 @@
 
   function total() { return LIST.reduce((n, a) => n + a.pay, 0); }
 
-  L.Achievements = { LIST, GROUPS, RETIRED, check, total, puzzleRuns, earned };
+  L.Achievements = { LIST, GROUPS, check, total, puzzleRuns, earned };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

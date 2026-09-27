@@ -345,7 +345,7 @@
      * dur, after an optional delay; update(k, t, dt) runs each step.
      */
     prop(dur, draw, o) { this.props.push(Object.assign({ t: 0, delay: 0, dur, draw, update: null }, o || {})); }
-    /** A block sliding from one spot to another, falling with gravity (sand, settle). */
+    /** A block sliding from one spot to another, falling with gravity (settle). */
     mover(m) { this.movers.push(Object.assign({ t: 0, delay: 0, dur: 0.3 }, m)); }
     /** A glow that swells out of each cell: a piece has just changed. */
     pop(cells, color, dur) { this.pops.push({ cells, color: color || '#ffffff', t: 0, dur: dur || 0.45 }); }
@@ -799,7 +799,7 @@
         }
         const overlapping = p.special === 'phase' && !g.board.fits(p.type.rots[p.rot], p.x, p.y);
         // Gold on the board (Free Play) gilds whatever plain piece is in play.
-        const golden = p.special === 'golden' || (!p.special && g.s && g.s.gold > 0);
+        const golden = !p.special && g.s && g.s.gold > 0;
         for (const [cx, cy] of pieceCells) {
           const [sx, sy] = this.toScreen(cx, cy);
           if (L.SINGLE_SPECIALS && L.SINGLE_SPECIALS.has(p.special)) { drawSpecial(ctx, p.special, sx, sy, s, now); continue; }
@@ -1360,7 +1360,7 @@
       } else if (p.special === 'blackhole') {
         const cx = c.x + s / 2, cy = c.y + s / 2, a = Math.random() * 6.3, r = s * (1.5 + Math.random());
         fx.parts.push({ kind: 'spiral', cx, cy, ang: a, rad: r, w: 6, pull: 3, x: cx, y: cy, vx: 0, vy: 0, g: 0, life: 0, max: 0.7, size: 3, color: Math.random() < 0.5 ? '#b48cff' : '#ffb35c' });
-      } else if (p.special === 'golden' || (!p.special && this.game.s && this.game.s.gold > 0)) {
+      } else if (!p.special && this.game.s && this.game.s.gold > 0) {
         fx.parts.push({ kind: 'star', x: c.x + Math.random() * s, y: c.y + Math.random() * s, vx: 0, vy: -10, g: 0, life: 0, max: 0.6, size: 2 + Math.random() * 2, color: '#fff1b8' });
       } else if (p.special === 'phase') {
         if (Math.random() < 0.5) fx.parts.push({ kind: 'star', x: c.x + Math.random() * s, y: c.y + Math.random() * s, vx: 0, vy: -12, g: 0, life: 0, max: 0.6, size: 2 + Math.random() * 2, color: '#e4dcff' });

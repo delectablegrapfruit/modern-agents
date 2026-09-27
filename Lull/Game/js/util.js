@@ -176,7 +176,7 @@
   /** The currency's character: a cleared line swallowed by a small black hole. U+29B5 (circle with horizontal bar, never
    *  an emoji), drawn by the page's own one-glyph font ("Lull Line", first in every font list and in the canvas fonts;
    *  scripts/line-glyph.py) so it looks the same in text, toasts, prices and on the boards. Write it as LINE, never as
-   *  a literal; the font also draws the old black diamond U+25C6 this way, so a stray one still shows the right thing. */
+   *  a literal. */
   const LINE = '\u29B5';
 
   function decodeBase64Utf8(b64) {

@@ -242,7 +242,6 @@
         else if (msg.type === 'shown') { this.focusedAt = performance.now(); this.modes.factory.catchUp(true); setTimeout(() => this.announceUnheard(), 400); }
         else if (msg.type === 'toggleTop') { this.settings.onTop = !this.settings.onTop; this.applySettings(); }
         else if (msg.type === 'pointer') document.body.classList.toggle('away', !msg.inside);
-        else if (msg.type === 'tab') this.setTab(msg.tab);
         else if (msg.type === 'settings') this.openSettings();
         else if (msg.type === 'toggleCollapse') L.Collapse.toggle();
       };

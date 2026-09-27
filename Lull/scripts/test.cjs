@@ -283,7 +283,7 @@ test('the seven keep plain SRS, and puzzles (a fixed queue) keep exactly the tur
   put(f, NOODLE, 0, 2, 17);
   assert(f.rotate(1));
 });
-test('items on the board: laser, black hole, golden, tornado, trapdoor, mirror world', () => {
+test('items on the board: laser, black hole, tornado, trapdoor, mirror world', () => {
   const mk = () => { const g = new Game({ w: 10, h: 20, seed: 9 }); for (let y = 0; y < 4; y++) for (let x = 0; x < 10; x++) if ((x + y) % 3) g.board.set(x, y, 8); g.replacePiece({ id: 'O' }); return g; };
   let g = mk(); const before = g.board.count();
   g.setSpecial('laser'); let r = g.drop();
@@ -291,7 +291,6 @@ test('items on the board: laser, black hole, golden, tornado, trapdoor, mirror w
   assert(!r.b2b && g.s.b2b === -1, 'a laser never feeds the back-to-back streak');
   g = mk(); assert(g.setSpecial('blackhole')); g.piece.y = 6; r = g.drop();
   assert(r.swallowed.length > 5 && r.cells.length === 0, 'the black hole swallows its surroundings, and is gone');
-  g = mk(); g.setSpecial('golden'); r = g.drop(); assert(r.golden);
   // Tornado: columns shuffled, holes and all; every row keeps its count, so nothing clears.
   g = mk();
   const rowCounts = (b) => [...Array(20)].map((_, y) => [...Array(10)].filter((_, x) => b.get(x, y)).length);
@@ -915,21 +914,8 @@ test('time: a clock set back makes nothing; a long gap is capped by the bin', ()
   Factory.catchUp(one, now);
   assert(one.bin.length > 425 && Date.now() - t1 < 2000, 'the slowest case (one press, the tallest bin) is quick too');
 });
-test('older factories: a v5 idler is rebuilt as a line; junk is repaired', () => {
-  const size = 50 * Math.pow(2.2, 12);
-  const v5 = { v: 5, credits: 12345, lifetime: 1e9, owned: { 1: 40, 2: 30, 3: 10, 4: 3, 5: 1 }, inspect: 2, crates: 12, crate: size / 2, streak: 0, bestStreak: 30, lastTick: Date.now(), stats: { shipped: 5000.4, caught: 70, lines: 60 } };
-  const f = Factory.migrate(L.mergeState(Factory.create(), v5));
-  assert.strictEqual(f.v, 6);
-  assert.strictEqual(f.presses, 2);
-  assert.strictEqual(f.molds.length, 2);
-  assert.strictEqual(f.binLevel, 1);
-  assert.strictEqual(f.bin.length, Math.round(0.5 * 9 * 4), 'the half-full crate is poured into the bin');
-  assert(!('credits' in f) && !('owned' in f) && !('crates' in f));
-  assert.deepStrictEqual(f.legacy, { shipped: 5000, crates: 12, lines: 60, caught: 70 });
-  assert.strictEqual(f.rebuilt, true);
-  const fresh = Factory.migrate({ v: 3, lifetime: 5 });
-  assert.strictEqual(fresh.presses, 1); assert.strictEqual(fresh.legacy, null);
-  const junk = Factory.migrate({ v: 6, presses: 9, binLevel: -3, bin: 'zz12!!' + '3'.repeat(100), molds: [{ s: 999, pin: 'x' }, null], belt: [{ n: 4, s: 1, x: 50 }, { n: 9, s: 0, x: 3 }, { n: 5, s: 1, x: 34 }], stats: { minos: 'lots', seen: { 5: '1' } } });
+test('a broken factory is repaired', () => {
+  const junk = Factory.repair({ v: 6, presses: 9, binLevel: -3, bin: 'zz12!!' + '3'.repeat(100), molds: [{ s: 999, pin: 'x' }, null], belt: [{ n: 4, s: 1, x: 50 }, { n: 9, s: 0, x: 3 }, { n: 5, s: 1, x: 34 }], stats: { minos: 'lots', seen: { 5: '1' } } });
   assert.strictEqual(junk.presses, 4); assert.strictEqual(junk.binLevel, 0);
   assert.strictEqual(junk.molds.length, 4);
   assert(junk.molds.every((m, k) => m.s >= 0 && m.s < Factory.shapes(Factory.MOLDS[k]).length && m.pin === -1));
@@ -939,16 +925,12 @@ test('older factories: a v5 idler is rebuilt as a line; junk is repaired', () =>
   assert.strictEqual(junk.stats.seen[5], '1' + '0'.repeat(11));
   assert.strictEqual(junk.stats.seen[7].length, 108);
   // A press marked as holding an unfinished piece would never move again; broken numbers start over.
-  const stuck = Factory.migrate({ v: 6, presses: 1, molds: [{ p: 0.3, s: 1, held: true, pin: -1 }], stats: { minos: NaN, lines: -5, fullMs: Infinity } });
+  const stuck = Factory.repair({ v: 6, presses: 1, molds: [{ p: 0.3, s: 1, held: true, pin: -1 }], stats: { minos: NaN, lines: -5, fullMs: Infinity } });
   assert.strictEqual(stuck.molds[0].held, false);
   assert.strictEqual(stuck.stats.minos, 0); assert.strictEqual(stuck.stats.lines, 0); assert.strictEqual(stuck.stats.fullMs, 0);
   Factory.step(stuck, 1200);
   assert(stuck.stats.minos >= 4, 'the repaired press runs');
-  // The save moves over too: the factory, and credits gone from the day log.
-  const st = L.mergeState(L.defaultState(), { v: 2, factory: v5, history: { '2026-09-01': { lines: 3, credits: 99, ms: 0 } } });
-  L.migrateState(st);
-  assert.strictEqual(st.factory.presses, 2);
-  assert(!('credits' in st.history['2026-09-01']));
+  assert.strictEqual(L.loadState({ factory: null }).factory.presses, 1, 'a save without one gets a new factory');
 });
 
 console.log('achievements');
@@ -975,11 +957,9 @@ test('achievements: earned once, by the right events, none of them a gimme', () 
   assert.deepStrictEqual(A.check(st, { mode: 'factory' }).map((a) => a.id), ['fac_line']);
   assert.deepStrictEqual(A.check(st, { mode: 'puzzle', diff: 'H', firstTry: true, hinted: true, mods: [] }), [], 'a hinted solve is not a Hard Nut');
 });
-test('factory achievements: collects measured exactly; the old idler ones are gone', () => {
+test('factory achievements: collects measured exactly', () => {
   const A = L.Achievements, st = L.defaultState();
-  st.achievements = { fa_hexo: 1, fa_deco: 1 };
-  assert(!A.LIST.some((a) => /^fa_/.test(a.id)) && A.LIST.filter((a) => a.group === 'factory').every((a) => /^fac_/.test(a.id)));
-  assert.deepStrictEqual(A.check(st, { mode: 'factory' }), [], 'nothing for old ids or a fresh line');
+  assert.deepStrictEqual(A.check(st, { mode: 'factory' }), [], 'nothing for a fresh line');
   assert.deepStrictEqual(A.check(st, { mode: 'factory', collected: 99, loose: 1 }), []);
   assert.deepStrictEqual(A.check(st, { mode: 'factory', collected: 60, loose: 2 }), [], 'a sweep leaves nothing behind');
   assert.deepStrictEqual(A.check(st, { mode: 'factory', collected: 60, loose: 0 }).map((a) => a.id), ['fac_sweep']);
@@ -1217,7 +1197,6 @@ test('achievements: every new one is earned by its own feat, once', () => {
     ['it_showman', play({ lines: 0 }, { combos: { painted: 1, pocket: 1, keyhole: 1, patchjob: 1, allin: 1 } }), null, true],
     ['it_showman', play({ lines: 0 }, { combos: { patchjob: 1, allin: 1, horizon: 1 } })],
     ['it_sweep', play({ lines: 6, special: 'settle', had: 59 }), null, true],
-    ['it_sweep', play({ lines: 6, special: 'golden', had: 80 }), null, true],
     ['it_sweep', play({ lines: 6, special: 'settle', had: 60 })],
     ['sb_combos', play({ lines: 0 }), (st) => { for (const c of L.Combos.LIST) st.combos[c.id] = { n: 1 }; }],
     ['clean40', play({ lines: 4, perfect: true }, { pieces: 100, lines: 40, items: { golden: 1 } }), null, true],
@@ -1252,7 +1231,7 @@ test('achievements: every new one is earned by its own feat, once', () => {
     ['lu_triathlon', { mode: 'tick' }, (st) => { st.history[today] = { quad: 1, tetris: 1, hard: 1 }; }],
     ['lu_hours10', { mode: 'tick' }, (st) => { st.stats.timeMs.total = 10 * 3600e3; }],
     ['lu_days30', { mode: 'tick' }, (st) => { st.stats.days = 30; }],
-    ['lu_100k', { mode: 'tick' }, (st) => { st.stats.lines.earned = 1e5 + 500; st.stats.lines.luck = 400; st.stats.lines.refunded = 200; }, true],
+    ['lu_100k', { mode: 'tick' }, (st) => { st.stats.lines.earned = 1e5 + 100; st.stats.lines.rewound = 200; }, true],
     ['lu_100k', { mode: 'tick' }, (st) => { st.stats.lines.earned = 1e5; }],
     ['lu_curator', { mode: 'tick' }, (st) => { for (const k of Object.keys(L.COSMETICS)) st.owned[k] = Object.keys(L.COSMETICS[k]); }],
     ['lu_hours100', { mode: 'tick' }, (st) => { st.stats.timeMs.total = 100 * 3600e3; }],
@@ -1293,8 +1272,8 @@ test('achievement stats: quads in a row, set by hand', () => {
     g.rotate(1); while (g.move(-1));
     return g.drop();
   };
-  quad(); quad(); quad('golden');
-  assert.strictEqual(g.s.quadRun, 3, 'golden quads count');
+  quad(); quad(); quad();
+  assert.strictEqual(g.s.quadRun, 3, 'quads in a row count');
   quad('laser');
   assert.strictEqual(g.s.quadRun, 0, 'a laser\'s four rows are not a quad set by hand');
   quad();
@@ -1342,22 +1321,13 @@ test('achievement stats: by hand — items break the hand streaks, an empty boar
   g.restoreHand(keep);
   assert(g.s.hb2b === 0 && g.s.hand);
 });
-test('achievement stats: boards saved before the hand counts carry over only if no item was ever used', () => {
-  const g = new Game({ w: 10, h: 20, seed: 4 });
-  const old = g.toJSON();
-  old.s = Object.assign({}, old.s, { b2b: 3, combo: 2, quadRun: 2, perfect: 1, tst: 1 });
-  for (const k of ['hand', 'hb2b', 'hcombo', 'hquads', 'hchain', 'bestHChain', 'htspins', 'htst', 'hperfect', 'goldRun', 'pace']) delete old.s[k];
-  const clean = new Game({ saved: JSON.parse(JSON.stringify(old)) });
-  assert.deepStrictEqual([clean.s.hand, clean.s.hb2b, clean.s.hcombo, clean.s.hquads, clean.s.hchain, clean.s.hperfect, clean.s.htspins], [true, 3, 2, 2, 6, 1, 0]);
-  old.s.items = { tornado: 1 };
-  const used = new Game({ saved: JSON.parse(JSON.stringify(old)) });
-  assert.deepStrictEqual([used.s.hand, used.s.hb2b, used.s.hcombo, used.s.hquads, used.s.hchain], [false, -1, -1, 0, 0]);
-  // And a board saved with them keeps them as they were.
+test('achievement stats: a saved board keeps its hand counts', () => {
+  const used = new Game({ w: 10, h: 20, seed: 4 });
   used.s.hb2b = 4; used.s.hand = true;
   const again = new Game({ saved: JSON.parse(JSON.stringify(used.toJSON())) });
   assert.deepStrictEqual([again.s.hand, again.s.hb2b], [true, 4]);
 });
-test('achievement stats: the pace of hand play, and Lifetime lines without the Jackpot or rewinds', () => {
+test('achievement stats: the pace of hand play, and Lifetime lines without rewinds', () => {
   const g = new Game({ w: 10, h: 20, seed: 5 });
   for (let i = 0; i <= 120; i++) g.notePace({ hand: true }, i * 1000);
   assert.strictEqual(g.s.pace.length, 101);
@@ -1365,8 +1335,8 @@ test('achievement stats: the pace of hand play, and Lifetime lines without the J
   g.notePace({ hand: false }, 200000);
   assert.strictEqual(L.paceOf(g.s, 100), null, 'anything not by hand starts it over');
   const st = L.defaultState();
-  Object.assign(st.stats.lines, { earned: 5000, luck: 2000, refunded: 300 });
-  assert.strictEqual(L.Achievements.earned(st), 2700);
+  Object.assign(st.stats.lines, { earned: 5000, rewound: 300 });
+  assert.strictEqual(L.Achievements.earned(st), 4700);
 });
 test('achievement stats: first-try runs and Daily runs', () => {
   const P = L.defaultState().stats.puzzle, runs = L.Achievements.puzzleRuns;
@@ -1385,23 +1355,14 @@ test('achievement stats: first-try runs and Daily runs', () => {
   for (const d of ['2026-04-01', '2026-04-02', '2026-04-03', '2026-04-04']) runs(Q, true, d, '2026-04-10');
   assert.deepStrictEqual([Q.dailyRun, Q.bestDailyRun, Q.firstRun], [0, 0, 4], 'old Dailies solved late: no run of days (first tries still count)');
 });
-test('achievement stats: days played, counted and brought forward from old saves', () => {
+test('achievement stats: days played', () => {
   const s = new L.Store();
   assert.strictEqual(s.state.stats.days, 0);
   s.day(); s.day();
   assert.strictEqual(s.state.stats.days, 0, 'a day log entry alone (the factory running) is not a day played');
   s.played(); s.played();
   assert.strictEqual(s.state.stats.days, 1, 'a day played counts once');
-  L.migrateState(s.state);
-  assert.strictEqual(s.state.stats.days, 1, 'and a later load does not recount it from the log');
-  const old = L.mergeState(L.defaultState(), { v: 2, history: { '2026-01-01': { lines: 1 }, '2026-01-02': { lines: 2 }, '2026-01-05': { lines: 3 } }, stats: { sessions: 4 } });
-  delete old.stats.days;
-  L.migrateState(old);
-  assert.strictEqual(old.stats.days, 3);
-  old.history['2026-01-06'] = { lines: 0, minos: 9 };
-  L.migrateState(old);
-  assert.strictEqual(old.stats.days, 3, 'a factory-only day later is not brought forward');
-  assert.strictEqual(old.stats.puzzle.bestFirstRun, 0);
+  assert.strictEqual(L.loadState(JSON.parse(s.serialize())).stats.days, 1, 'and a later load keeps it');
 });
 
 console.log('power-ups');
@@ -1419,17 +1380,6 @@ console.log('power-ups');
   // Puts the piece in play at a spot (its rotation box's origin) and drops it.
   const dropAt = (g, x, y, special, id) => { if (id) g.replacePiece({ id }); if (special) assert(g.setSpecial(special), special); g.piece.x = x; if (y != null) g.piece.y = y; return g.drop(); };
   const inv = (st) => Object.values(st.inventory).reduce((a, b) => a + b, 0);
-
-  test('old boards: what the sandbox made blocks of is gone; the blocks stay, flames and steam go, retired items are plain pieces', () => {
-    const cells = new Array(200).fill(0);
-    cells[0] = 5 | 0x400; cells[1] = 3 | 0x100 | 0x2000; cells[2] = 7 | 0x800 | 0x5000; cells[3] = 1 | 0x700; cells[4] = 8 | 32; cells[5] = 6 | 0x300;
-    const sv = { w: 10, h: 20, wrap: false, cells, fixed: false, queue: [{ id: 'T', rot: 0, special: 'sand' }, { id: 'O', rot: 0 }], bag: [], rng: new RNG(1).state(), hold: { id: 'I', rot: 0, special: 'torch' }, holdLocked: false, s: {}, piece: { entry: { id: 'O', rot: 0, special: 'anvil' }, rot: 0, x: 3, y: 12 } };
-    const g = new Game({ saved: sv });
-    assert.deepStrictEqual([0, 1, 2, 3, 4, 5].map((x) => g.board.get(x, 0)), [5, 3, 0, 0, 8 | 32, 6]);
-    assert(g.board.cells.every((v) => !(v & CELL.OLD)));
-    assert(g.piece.special === null && g.hold.special === null && g.queue[0].special === null, 'retired specials dropped');
-    assert(g.drop(), 'and the piece plays on');
-  });
 
   test('the multiplier: an eighth a link in Free Play (×2.5 at twenty), a half in Classic (×10 at twenty); the chain counts apart', () => {
     assert.deepStrictEqual([0, 1, 8, 9, 12, 16, 19, 20, 30].map((n) => Chain.mult(n)), [1, 1, 1, 1.125, 1.5, 2, 2.375, 2.5, 2.5]);
@@ -1559,20 +1509,6 @@ console.log('power-ups');
     assert(Math.max(...common.map((id) => L.ITEMS[id].price)) <= Math.min(...rare.map((id) => L.ITEMS[id].price)), 'common ones cost no more than rare ones');
   });
 
-  test('old saves: a retired power-up becomes a comparable one, or its old price back in lines', () => {
-    const st = L.mergeState(L.defaultState(), { v: 2, lines: 100, inventory: { bomb: 2, magnet: 3, sand: 2, tnt: 1, oil: 4, jackpot: 1, nuke: 1, junk: 5 } });
-    L.migrateItems(st);
-    assert.strictEqual(st.lines, 100 + 3 * 45 + 4 * 15 + 50, 'magnets, oil and a jackpot refunded at their old prices');
-    assert(['magnet', 'sand', 'tnt', 'oil', 'jackpot', 'nuke', 'junk'].every((id) => !(id in st.inventory)));
-    assert.deepStrictEqual([st.inventory.bomb, st.inventory.patch, st.inventory.blackhole], [3, 2, 1]);
-    for (const id of Object.keys(L.RETIRED_ITEMS)) { const r = L.RETIRED_ITEMS[id]; assert(!L.ITEMS[id] && (r.price > 0 || L.ITEMS[r.to]), id); }
-    const st2 = L.mergeState(L.defaultState(), { v: 2, lines: 100, inventory: { fizz: 3, gone: 2 } });
-    L.migrateItems(st2, { fizz: { to: 'drill' }, gone: { price: 25 } });
-    assert(st2.inventory.drill === 3 && st2.lines === 150);
-    assert.deepStrictEqual(L.migrateState(L.mergeState(L.defaultState(), { v: 2 })).combos, {});
-    assert.deepStrictEqual(L.migrateState(L.mergeState(L.defaultState(), { v: 2 })).gift, { at: null, n: 0, log: [] });
-  });
-
   test('the daily gift: three different power-ups, common ones far more often', () => {
     for (const id of L.ITEM_ORDER) assert(Gifts.weight(id) > 0, id);
     const rng = new RNG(9), N = 60000;
@@ -1596,7 +1532,7 @@ console.log('power-ups');
 
   test('the daily gift opens 24 hours after the last one (not by the date), and not again by reloading or turning the clock back', () => {
     const H = 3600e3, s = new L.Store();
-    s.state = L.migrateState(L.defaultState());
+    s.state = L.defaultState();
     const t0 = new Date(2026, 8, 27, 23, 30).getTime();
     assert(Gifts.ready(s.state, t0) && Gifts.left(s.state, t0) === 0, 'the first one is waiting');
     const inv0 = inv(s.state);
@@ -1607,12 +1543,12 @@ console.log('power-ups');
     assert.strictEqual(Gifts.left(s.state, t0 + 20 * H), 4 * H, 'the tooltip counts down from the claim');
     // Reloaded (saved and loaded): the same claim time, no new draw.
     const again = new L.Store();
-    again.state = L.migrateState(L.mergeState(L.defaultState(), JSON.parse(s.serialize())));
+    again.state = L.loadState(JSON.parse(s.serialize()));
     assert.strictEqual(again.openGift(t0 + 2 * H), null);
     assert.strictEqual(again.state.gift.at, t0);
     // The same draw however long it waited: a copy of the save before opening gets the same three.
     const twin = new L.Store();
-    twin.state = L.migrateState(L.mergeState(L.defaultState(), { created: s.state.created }));
+    twin.state = L.loadState({ created: s.state.created });
     assert.deepStrictEqual(twin.openGift(t0 + 5 * H), got);
     // 24 hours on: a new one. The clock turned back, even to long before: none, until 24 hours after the claim.
     const t1 = t0 + 24 * H;
@@ -1623,14 +1559,9 @@ console.log('power-ups');
     assert.strictEqual(again.state.gift.n, 2);
     // A clock pushed forward to claim early leaves the claim booked in the future: the next one waits for it.
     const fwd = new L.Store();
-    fwd.state = L.migrateState(L.defaultState());
+    fwd.state = L.defaultState();
     assert(fwd.openGift(t0 + 1000 * H));
     assert.strictEqual(fwd.openGift(t0 + 1 * H), null);
-    // A save from the calendar days: opened on the 27th, it comes again at midnight, then 24 hours after each claim.
-    const old = L.migrateState(L.mergeState(L.defaultState(), { v: 2, gift: { last: '2026-09-27', n: 5, log: [] } }));
-    assert.strictEqual(old.gift.at, new Date(2026, 8, 27).getTime());
-    assert(!('last' in old.gift) && old.gift.n === 5);
-    assert(!Gifts.ready(old, new Date(2026, 8, 27, 22).getTime()) && Gifts.ready(old, new Date(2026, 8, 28, 0, 1).getTime()));
   });
 
   test('power-ups earned in play: one per hundred lines on a board, never twice for a rewound clear, never backwards', () => {
@@ -1667,26 +1598,19 @@ test('no emoji anywhere in the app', () => {
   for (const f of files) for (const ch of fs.readFileSync(f, 'utf8')) if (/\p{Extended_Pictographic}|\p{Emoji_Presentation}/u.test(ch)) found.push(path.basename(f) + ' ' + ch);
   assert.deepStrictEqual(found, []);
 });
-test('the line glyph: one character (L.LINE), its own font everywhere, no black diamond left for lines', () => {
+test('the line glyph: one character (L.LINE), its own font everywhere', () => {
   const fs = require('fs'), path = require('path'), dir = path.join(__dirname, '..', 'Game');
   assert.strictEqual(L.LINE, '⦵');
   assert(!/\p{Extended_Pictographic}|\p{Emoji_Presentation}|\p{Emoji}/u.test(L.LINE), 'never an emoji, not even with a variation selector');
-  // Every lines amount is written with LINE; the old diamond (U+25C6) is gone from the page, its sources and the README.
-  // (The font still draws a stray one as the line glyph, but it should be LINE: this names where.)
-  const files = fs.readdirSync(path.join(dir, 'js')).filter((f) => f.endsWith('.js')).map((f) => path.join(dir, 'js', f))
-    .concat([path.join(dir, 'index.html'), path.join(dir, '..', 'README.md')], fs.readdirSync(path.join(dir, 'css')).map((f) => path.join(dir, 'css', f)));
-  const stray = [];
-  for (const f of files) fs.readFileSync(f, 'utf8').split('\n').forEach((line, i) => { if (line.includes('◆')) stray.push(path.basename(f) + ':' + (i + 1)); });
-  assert.deepStrictEqual(stray, [], 'write L.LINE (or &#x29B5; in HTML), not a black diamond');
-  // The font: first in both CSS font lists and both canvas fonts, holding just the glyph and the old diamond.
+  // The font: first in both CSS font lists and both canvas fonts, holding just the glyph.
   const css = fs.readFileSync(path.join(dir, 'css', 'lull.css'), 'utf8');
   const face = css.match(/@font-face \{ font-family: "Lull Line";[^}]*unicode-range: ([^;]+);[^}]*base64,([A-Za-z0-9+/=]+)\)/);
   assert(face, 'the @font-face is in lull.css');
-  assert.strictEqual(face[1].trim(), 'U+29B5, U+25C6');
+  assert.strictEqual(face[1].trim(), 'U+29B5');
   assert(/--font: "Lull Line", /.test(css) && /--mono-font: "Lull Line", /.test(css));
   assert(/const FONT = '"Lull Line", /.test(fs.readFileSync(path.join(dir, 'js', 'render.js'), 'utf8')));
   assert(/const MONO = '"Lull Line", /.test(fs.readFileSync(path.join(dir, 'js', 'factoryview.js'), 'utf8')));
-  // Its cmap (format 4) maps both code points to the one glyph.
+  // Its cmap (format 4) maps the code point to the glyph.
   const font = Buffer.from(face[2], 'base64');
   assert.strictEqual(font.toString('latin1', 0, 4), 'OTTO');
   const nt = font.readUInt16BE(4);
@@ -1710,33 +1634,21 @@ test('the line glyph: one character (L.LINE), its own font everywhere, no black 
     return 0;
   };
   assert(glyphFor(0x29B5) > 0, 'U+29B5 has a glyph');
-  assert.strictEqual(glyphFor(0x25C6), glyphFor(0x29B5), 'the old diamond draws the same glyph');
 });
-test('v1 saves move to v2: sound on, slower key repeat, puzzle history', () => {
-  const st = L.mergeState(L.defaultState(), { v: 1, settings: { sound: false, das: 150, arr: 45 }, puzzle: { solved: {} } });
-  delete st.puzzle.history;
-  L.migrateState(st);
-  assert.strictEqual(st.v, 2);
-  assert.strictEqual(st.settings.sound, true);
-  assert.strictEqual(st.settings.das, 230);
-  assert.deepStrictEqual(st.puzzle.history, []);
-  assert.strictEqual(st.equipped.sound, 'soft');
-});
-test('old saves gain new fields and keep their own', () => {
-  const merged = L.mergeState(L.defaultState(), { lines: 55, settings: { sound: true }, owned: { skin: ['flat', 'gem'] } });
+test('a loaded save gains missing fields and keeps its own', () => {
+  const merged = L.loadState({ lines: 55, settings: { sound: true }, owned: { skin: ['flat', 'gem'] } });
   assert.strictEqual(merged.lines, 55);
   assert.strictEqual(merged.settings.sound, true);
   assert.strictEqual(merged.settings.das, 230);
   assert.deepStrictEqual(merged.owned.skin, ['flat', 'gem']);
   assert(merged.factory && merged.factory.v === 6 && merged.factory.molds.length === 1);
 });
-test('mute: off by default, kept by a save, anything odd reads as off', () => {
+test('mute: off by default, kept by a save', () => {
   assert.strictEqual(L.defaultState().settings.muted, false);
-  const old = L.migrateState(L.mergeState(L.defaultState(), { v: 2, settings: { sound: true, volume: 0.5 } }));
-  assert.strictEqual(old.settings.muted, false);
-  assert.strictEqual(old.settings.volume, 0.5);
-  assert.strictEqual(L.migrateState(L.mergeState(L.defaultState(), { v: 2, settings: { muted: true } })).settings.muted, true);
-  assert.strictEqual(L.migrateState(L.mergeState(L.defaultState(), { v: 2, settings: { muted: 'yes' } })).settings.muted, false);
+  const st = L.loadState({ settings: { sound: true, volume: 0.5 } });
+  assert.strictEqual(st.settings.muted, false);
+  assert.strictEqual(st.settings.volume, 0.5);
+  assert.strictEqual(L.loadState({ settings: { muted: true } }).settings.muted, true);
 });
 test('mute ramps a gain after everything and leaves the levels alone', () => {
   const S = L.Sound || load(['audio.js']).Sound, saved = { ctx: S.ctx, muteGain: S.muteGain, muted: S.muted, enabled: S.enabled, volume: S.volume };
@@ -2187,23 +2099,13 @@ console.log('control hints');
     e.time(RETIRE_MS / 2); assert(!e.over); e.time(RETIRE_MS / 2);
     assert(e.over && e.take(10, true) === null, 'and a waiting one is dropped');
   });
-  test('the save: a new one starts with hints on and nothing counted; an old one counts the play it already has', () => {
-    const fresh = L.migrateState(L.mergeState(L.defaultState(), {}));
+  test('the save: a new one starts with hints on and nothing counted; a loaded one keeps what it had', () => {
+    const fresh = L.loadState({});
     assert.strictEqual(fresh.settings.hints, true);
-    assert.deepStrictEqual([fresh.hints.pieces, fresh.hints.ms, fresh.hints.over, fresh.hints.seeded], [0, 0, false, 1]);
-    const old = L.defaultState();
-    delete old.hints; delete old.settings.hints;
-    old.stats.free.pieces = 250; old.stats.classic.pieces = 40; old.stats.puzzle.E.played = 3; old.stats.timeMs.play = 1000;
-    const m = L.migrateState(L.mergeState(L.defaultState(), JSON.parse(JSON.stringify(old))));
-    assert.strictEqual(m.hints.pieces, 305);
-    assert.strictEqual(m.hints.ms, 1000);
-    assert.strictEqual(m.settings.hints, true);
-    assert(new Detector(m.hints).over, 'a seasoned player is past them already');
-    const again = L.migrateState(JSON.parse(JSON.stringify(m)));
-    assert.strictEqual(again.hints.pieces, 305, 'counted once');
-    const off = L.migrateState(L.mergeState(L.defaultState(), { settings: { hints: false }, hints: { seeded: 1, pieces: 12, shown: { keys: 1 }, retired: { hold: true } } }));
+    assert.deepStrictEqual([fresh.hints.pieces, fresh.hints.ms, fresh.hints.over], [0, 0, false]);
+    const off = L.loadState({ settings: { hints: false }, hints: { pieces: 12, shown: { keys: 1 }, retired: { hold: true } } });
     assert.strictEqual(off.settings.hints, false);
-    assert.deepStrictEqual([off.hints.pieces, off.hints.shown.keys, off.hints.retired.hold], [12, 1, true]);
+    assert.deepStrictEqual([off.hints.pieces, off.hints.shown.keys, off.hints.retired.hold, off.hints.skill], [12, 1, true, {}]);
   });
 }
 

@@ -490,9 +490,9 @@
       if (r.lines) {
         const own = r.lines - (r.plain || 0), difficult = own >= 4 || r.tspin || r.mini;
         let pay = (r.lines + (difficult ? 1 : 0)) * s.mult;
-        if (r.golden || s.gold > 0) {
-          // Gold on the board is spent one clear at a time (a piece gilded in an older version pays once).
-          if (!r.golden) s.gold--;
+        if (s.gold > 0) {
+          // Gold on the board is spent one clear at a time.
+          s.gold--;
           r.golden = true;
           pay *= Luck.GOLD_X;
           const b = this.view.lay.board;
@@ -1596,12 +1596,6 @@
       this.away = null; // the floor shows what happened
       this.view.resize();
       this.build();
-      const f = this.f;
-      if (f.rebuilt) {
-        f.rebuilt = false;
-        this.store.touch();
-        toast('The factory was rebuilt: presses now fill a bin with lines. Your old line carried over as ' + (f.presses === 1 ? 'one press.' : f.presses + ' presses.'), null, 7000);
-      }
     }
 
     hide() { this.visible = false; this.setHover(null); }
@@ -1664,7 +1658,7 @@
     collect() {
       const f = this.f, res = Factory.collect(f);
       if (!res) { this.app.sound.play('blocked'); return false; }
-      this.store.addLines(res.collected, 'contracts');
+      this.store.addLines(res.collected, 'factory');
       this.app.refreshWallet(true);
       this.app.sound.play('golden');
       if (this.visible) this.view.collected(res, f, this.app.look(), this.reduced, getComputedStyle(document.documentElement).getPropertyValue('--gem').trim());

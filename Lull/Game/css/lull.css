@@ -3,8 +3,8 @@
 /* The line glyph (the currency): one character in its own font, first in every font list, so text, prices, toasts and
    the canvas all draw the same small black hole. Built by scripts/line-glyph.py; L.LINE in util.js is the character. */
 /* line-glyph:start (generated) */
-@font-face { font-family: "Lull Line"; font-display: block; unicode-range: U+29B5, U+25C6;
-  src: url(data:font/otf;base64,T1RUTwAJAIAAAwAQQ0ZGIM0tCgYAAAIsAAAAqk9TLzJlQG2YAAABAAAAAGBjbWFwJdkqPwAAAcgAAABEaGVhZDC6grAAAACcAAAANmhoZWEHBgM4AAAA1AAAACRobXR4BtYAEAAAAtgAAAAMbWF4cAADUAAAAAD4AAAABm5hbWWgX1KuAAABYAAAAGZwb3N0AAMAAAAAAgwAAAAgAAEAAAABAAB4VkqtXw889QADA+gAAAAA5t4fngAAAADm3h+eABIAcwPWAiEAAAADAAIAAAAAAAAAAQAAAyD/OAAAA+gAEAAUA9QAAQAAAAAAAAAAAAAAAAAAAAMAAFAAAAMAAAADAkcBkAAFAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAACBAAAAAAAAAAAA/Pz8/AAAAICm1AyD/OAAAAyAAyAAAAAAAAAAAAAAAAAAAACAAAAAAAAQANgABAAAAAAABAAkAAAABAAAAAAACAAcACQADAAEECQABABIAEAADAAEECQACAA4AIkx1bGwgTGluZVJlZ3VsYXIATAB1AGwAbAAgAEwAaQBuAGUAUgBlAGcAdQBsAGEAcgAAAAAAAgAAAAMAAAAUAAMAAQAAABQABAAwAAAACAAIAAIAAAAgJcYptf//AAAAICXGKbX////h2jzWTQABAAAAAAAAAAAAAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEABAEAAQEBCUx1bGxMaW5lAAEBART4HAKd9wf6avi1BckPi/c+Es4RAAIBAQUObGluZUx1bGwgTGluZQAAAAABAYcAAwEBBAdh+IgO944O+nz5X/feFfcLK+v7C/sLKyv7C/sL6yv3C/cL6+v3Cx77a/sqFThIzt7ezs7e3s5IODhISDgf/Gr3OBV8i2+aG/e0VwX3GAf4AfsYFfezvwWai6d8G/uzvwUOAAAB9AAAAPoAAAPoABA=) format("opentype"); }
+@font-face { font-family: "Lull Line"; font-display: block; unicode-range: U+29B5;
+  src: url(data:font/otf;base64,T1RUTwAJAIAAAwAQQ0ZGIM0tCgYAAAIkAAAAqk9TLzJFQG2YAAABAAAAAGBjbWFwU1vW6AAAAcgAAAA8aGVhZDC7SUwAAACcAAAANmhoZWEHBgM4AAAA1AAAACRobXR4BtYAEAAAAtAAAAAMbWF4cAADUAAAAAD4AAAABm5hbWWgX1KuAAABYAAAAGZwb3N0AAMAAAAAAgQAAAAgAAEAAAABAABdT2RDXw889QADA+gAAAAA5t6C7AAAAADm3oLsABIAcwPWAiEAAAADAAIAAAAAAAAAAQAAAyD/OAAAA+gAEAAUA9QAAQAAAAAAAAAAAAAAAAAAAAMAAFAAAAMAAAADAkcBkAAFAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAABAAAAAAAAAAAA/Pz8/AAAAICm1AyD/OAAAAyAAyAAAAAAAAAAAAAAAAAAAACAAAAAAAAQANgABAAAAAAABAAkAAAABAAAAAAACAAcACQADAAEECQABABIAEAADAAEECQACAA4AIkx1bGwgTGluZVJlZ3VsYXIATAB1AGwAbAAgAEwAaQBuAGUAUgBlAGcAdQBsAGEAcgAAAAAAAgAAAAMAAAAUAAMAAQAAABQABAAoAAAABgAEAAEAAgAgKbX//wAAACAptf///+HWTQABAAAAAAAAAAMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAQBAAEBAQlMdWxsTGluZQABAQEU+BwCnfcH+mr4tQXJD4v3PhLOEQACAQEFDmxpbmVMdWxsIExpbmUAAAAAAQGHAAMBAQQHYfiIDveODvp8+V/33hX3Cyvr+wv7Cysr+wv7C+sr9wv3C+vr9wse+2v7KhU4SM7e3s7O3t7OSDg4SEg4H/xq9zgVfItvmhv3tFcF9xgH+AH7GBX3s78FmounfBv7s78FDgAAAfQAAAD6AAAD6AAQ) format("opentype"); }
 /* line-glyph:end */
 
 :root {
@@ -484,7 +484,6 @@ main { flex: 1; position: relative; min-height: 0; }
 .row-card .grow { flex: 1; min-width: 0; }
 .row-card .t { font-weight: 700; }
 .row-card .d { color: var(--muted); font-size: 11.5px; }
-.row-card.highlight { border-color: color-mix(in srgb, var(--accent) 60%, transparent); background: color-mix(in srgb, var(--accent) 8%, var(--panel)); }
 .bar { height: 6px; background: var(--panel-2); border-radius: 3px; overflow: hidden; margin-top: 5px; }
 .bar > i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
 .bar.good > i { background: var(--good); }
@@ -645,7 +644,6 @@ table.st th { text-align: right; color: var(--muted); font-weight: 600; font-siz
 }
 .modal textarea { min-height: 120px; resize: vertical; font-size: 11px; }
 .modal input:focus, .modal textarea:focus { border-color: var(--accent); }
-.set-group { margin: 10px 0 4px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
 .set-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); min-height: 34px; }
 .set-row > label, .set-row > .lbl { flex: 1; }
 .set-row .hint { display: block; color: var(--muted); font-size: 11px; }
@@ -782,9 +780,6 @@ body.browser .edge { display: none; }
 .tip.compact { display: flex; align-items: baseline; gap: 10px; padding: 5px 9px; white-space: nowrap; }
 .tip.compact .tip-body { color: var(--fg); }
 .tip.compact .tip-foot { margin-top: 0; }
-.sound-preview { border: 0; width: 100%; color: var(--fg); display: flex !important; flex-direction: row; gap: 8px; align-items: center; justify-content: center; font-weight: 600; }
-.sound-preview:hover { background: var(--panel-3); }
-.sound-preview .big-icon { font-size: 20px; color: var(--accent); }
 
 /* ---- puzzle history, play a seed --------------------------------------------------------------------------------- */
 
@@ -895,9 +890,6 @@ kbd.big { font-size: 12px; padding: 3px 7px; }
 .ach.legend.got { border-color: #f2c14e; box-shadow: 0 0 14px rgba(242,193,78,0.25); }
 .ach.legend.got .ach-pay { color: #f2c14e; }
 .ach .tier { margin-left: 6px; font: 700 9px var(--mono-font); letter-spacing: 0.08em; text-transform: uppercase; color: #d9a93a; border: 1px solid color-mix(in srgb, #f2c14e 45%, transparent); border-radius: 5px; padding: 0 4px; vertical-align: 1px; }
-.retired-list { margin-top: 4px; }
-.ach.retired { opacity: 0.62; border-style: dashed; }
-.ach.retired .tier { color: var(--faint); border-color: var(--line); }
 #view-achievements .stats-body { padding-top: 10px; }
 /* Groups fold away; the header keeps the count, a bar and what the group has paid of what it pays. */
 .ach-tools { display: flex; justify-content: flex-end; margin: -2px 0 8px; }
@@ -920,7 +912,7 @@ kbd.big { font-size: 12px; padding: 3px 7px; }
 .ach-group[open] > summary { margin-bottom: 4px; }
 .ach-group > .ach-list { padding-left: 8px; }
 .ach-none { margin: 2px 0 8px 10px; color: var(--faint); font-size: 11.5px; }
-/* Free Play combos (Stats ▸ Free Play) and the Jackpot's pay table. */
+/* Free Play combos (Stats ▸ Free Play). */
 .combo-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
 .combo { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .combo b { font-size: 12px; }
@@ -929,12 +921,6 @@ kbd.big { font-size: 12px; padding: 3px 7px; }
 .combo.unknown { opacity: 0.6; border-style: dashed; }
 .combo.unknown b { color: var(--muted); }
 @media (max-width: 420px) { .combo-list { grid-template-columns: minmax(0, 1fr); } }
-.jp-pays { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 14px; margin: 8px 4px 0; font-size: 11.5px; }
-.jp-row { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); }
-.jp-row .jp-sym { color: var(--fg); letter-spacing: 1px; }
-.jp-row.jp-foot { grid-column: 1 / -1; justify-content: center; font-size: 10.5px; margin-top: 4px; text-align: center; }
-.jp-note.won { color: #f2c14e; font-weight: 700; }
-.reel.stop:not(.win) { border-color: var(--line-2); }
 .statusbar .gold b { color: #f2c14e; }
 .statusbar .boost b { color: #8fe3ff; }
 

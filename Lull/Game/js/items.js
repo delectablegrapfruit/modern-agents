@@ -66,7 +66,7 @@
     const own = (r.lines || 0) - (r.plain || 0);
     if (r.lines && (r.removed || []).some((row) => { const c = row[0] & CELL.COLOR; return c && c !== 8 && row.every((v) => (v & CELL.COLOR) === c); })) out.push('painted');
     if (own >= 4 && r.type === 'I' && r.fromHold && !r.special) out.push('pocket');
-    if (own && r.covered && (!r.special || r.special === 'golden')) out.push('keyhole');
+    if (own && r.covered && !r.special) out.push('keyhole');
     const tsd = !!(r.tspin && own === 2);
     if (tsd && r.b2b && s.lastTsd) out.push('twinspin');
     if (r.lines) s.lastTsd = tsd;
@@ -144,8 +144,7 @@
   //
   // Beside the gift, play brings a few: one power-up for every hundred lines cleared on a board, and one the first time
   // each combo is ever found. The board's count is kept in the save, outside the board (so a Rewind and a replayed
-  // clear never pay twice), and starts from the lines a board already has when it is first seen (an old board is not
-  // paid backwards).
+  // clear never pay twice), and starts from the lines a board already has when it is first seen.
 
   const Earn = {
     EVERY: 100,

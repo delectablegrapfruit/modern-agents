@@ -48,14 +48,6 @@
     double:    { group: 'luck', name: 'Double or Nothing', icon: '◐', price: 30, rarity: 'uncommon', desc: 'Your next clear pays double if it is a quad or a T-spin, and nothing if it is less.' },
     net:       { group: 'luck', name: 'Safety Net', icon: '⊔', price: 60, rarity: 'rare', desc: 'Keeps your back-to-back streak through one ordinary clear.' },
   };
-  // Items that no longer exist: what an old save's leftovers become (a comparable item, or their old price back in
-  // lines). The sandbox's matter and energy went with the sandbox; Nuke, Chroma Purge, Anvil and Jackpot with it.
-  const RETIRED_ITEMS = {
-    magnet: { price: 45 },
-    sand: { to: 'patch' }, water: { to: 'patch' }, lava: { to: 'patch' }, seed: { price: 20 }, oil: { price: 15 },
-    acid: { to: 'drill' }, frost: { price: 25 }, steel: { price: 30 }, tnt: { to: 'bomb' }, torch: { price: 25 }, bolt: { price: 40 },
-    anvil: { to: 'drill' }, nuke: { to: 'blackhole' }, purge: { price: 75 }, jackpot: { price: 50 },
-  };
   const ITEM_ORDER = ITEM_GROUPS.flatMap((g) => Object.keys(ITEMS).filter((id) => ITEMS[id].group === g.id));
 
   // Colour slots: 1 I, 2 O, 3 T, 4 S, 5 Z, 6 J, 7 L, 8 garbage, 9–14 other shapes, 15 custom.
@@ -170,8 +162,8 @@
       free: null,
       achievements: {},
       // Control hints (js/hints.js): pieces and board time toward retiring them all, times each was shown, good uses
-      // of each control, the ones retired for good. seeded: an older save has had its history counted in, once.
-      hints: { seeded: 0, pieces: 0, ms: 0, over: false, shown: {}, skill: {}, retired: {} },
+      // of each control, the ones retired for good.
+      hints: { pieces: 0, ms: 0, over: false, shown: {}, skill: {}, retired: {} },
       combos: {}, // Free Play combos found: id → { n: times, lines: paid, first: when }
       gift: { at: null, n: 0, log: [] }, // the daily gift: when it was last opened (ms), how many, the last few
       earn: { board: null, paid: 0 }, // power-ups earned by lines on one board (js/items.js, Earn): which board, how many paid
@@ -180,7 +172,7 @@
       stats: {
         sessions: 0, days: 0, timeMs: { play: 0, classic: 0, puzzle: 0, factory: 0, total: 0 },
         classic: { games: 0, best: 0, bestLevel: 0, bestLines: 0, lines: 0, pieces: 0 },
-        lines: { earned: 0, spent: 0, play: 0, puzzles: 0, contracts: 0, achievements: 0, refunded: 0, luck: 0, combos: 0 },
+        lines: { earned: 0, spent: 0, play: 0, puzzles: 0, factory: 0, achievements: 0, rewound: 0, combos: 0 },
         free: { boardLog: [], boards: 1, pieces: 0, lines: 0, score: 0, bestScore: 0, bestLines: 0, clears: [0, 0, 0, 0, 0, 0], tspins: 0, tspinLines: 0, perfect: 0, maxCombo: 0, maxB2B: 0, holds: 0, rotations: 0, moves: 0, lowers: 0, drops: 0, byType: {}, topouts: 0 },
         // firstRun: first-try solves in a row; dailyRun: Dailies solved on consecutive dates (runDay is the last one).
         puzzle: { E: freshPuzzleDiff(), M: freshPuzzleDiff(), H: freshPuzzleDiff(), mods: {}, daily: 0, lastDaily: null, firstRun: 0, bestFirstRun: 0, dailyRun: 0, bestDailyRun: 0, runDay: null },
@@ -191,7 +183,7 @@
     };
   }
 
-  /** Fills in anything a newer version added, keeping everything the save already has. */
+  /** A save as loaded: every key the defaults have, filled in where the save lacks it, keeping everything it has. */
   function merge(base, saved) {
     if (saved == null || typeof saved !== 'object' || Array.isArray(saved)) return saved === undefined ? base : saved;
     const out = Array.isArray(base) ? base.slice() : Object.assign({}, base);
@@ -203,88 +195,11 @@
     return out;
   }
 
-  /** Brings an older save up to date. */
-  function migrate(st) {
-    if ((st.v || 1) < 2) {
-      // v2: sound on by default, a longer key-repeat delay, and the old defaults moved with it.
-      st.settings.sound = true;
-      if (st.settings.das === 150) st.settings.das = 230;
-      if (st.settings.arr === 45) st.settings.arr = 55;
-      if (st.settings.lowerRepeat === 60) st.settings.lowerRepeat = 70;
-    }
-    for (const k of Object.keys(COSMETICS)) {
-      if (!Array.isArray(st.owned[k])) st.owned[k] = [];
-      const free = Object.keys(COSMETICS[k]).find((id) => COSMETICS[k][id].price === 0 && !COSMETICS[k][id].reward);
-      if (free && !st.owned[k].includes(free)) st.owned[k].push(free);
-      if (!COSMETICS[k][st.equipped[k]] || !st.owned[k].includes(st.equipped[k])) st.equipped[k] = free;
-    }
-    st.settings.muted = st.settings.muted === true;
-    migrateHints(st);
-    migrateItems(st);
-    if (!Array.isArray(st.puzzle.history)) st.puzzle.history = [];
-    if (!Array.isArray(st.puzzle.saved)) st.puzzle.saved = [];
-    // Days played used to be counted from the day log alone (which keeps 120 days); older saves start from that, once.
-    if (!st.stats.daysCounted) {
-      st.stats.days = Math.max(st.stats.days || 0, Object.keys(st.history || {}).length);
-      for (const d of Object.values(st.history || {})) if (d && typeof d === 'object') d.played = 1;
-      st.stats.daysCounted = 1;
-    }
-    // The factory's own save (v6: presses fill a bin with lines); credits are gone from the day log too.
-    st.factory = Factory.migrate(st.factory);
-    for (const d of Object.values(st.history || {})) if (d && typeof d === 'object') delete d.credits;
+  /** A parsed save made whole: the defaults filled in, and the factory checked (js/factory.js, repair). */
+  function loadState(saved) {
+    const st = merge(defaults(), saved);
+    st.factory = Factory.repair(st.factory);
     st.v = SAVE_VERSION;
-    return st;
-  }
-
-  /**
-   * Items an old save still holds that no longer exist: mapped to their replacement, or refunded at their old price.
-   * Unknown ids (not ours at all) are dropped. Every item that exists has a count.
-   */
-  function migrateItems(st, retired) {
-    retired = retired || RETIRED_ITEMS;
-    const inv = st.inventory = st.inventory && typeof st.inventory === 'object' ? st.inventory : {};
-    for (const id of Object.keys(inv)) {
-      if (ITEMS[id]) continue;
-      const n = Math.max(0, Math.floor(Number(inv[id]) || 0)), r = retired[id];
-      delete inv[id];
-      if (!n || !r) continue;
-      if (r.to && ITEMS[r.to]) inv[r.to] = (inv[r.to] || 0) + n;
-      else if (r.price) st.lines += n * r.price;
-    }
-    for (const id of ITEM_ORDER) if (!(inv[id] >= 0)) inv[id] = 0;
-    if (!st.combos || typeof st.combos !== 'object') st.combos = {};
-    // The gift used to come once a calendar day: the last date it was opened becomes that date's midnight, so the
-    // next one still comes at the next midnight, and from then on 24 hours after each claim.
-    const g = st.gift = st.gift && typeof st.gift === 'object' ? st.gift : {};
-    if (typeof g.last === 'string' && g.at == null) { const m = /^(\d{4})-(\d\d)-(\d\d)$/.exec(g.last); if (m) g.at = new Date(+m[1], +m[2] - 1, +m[3]).getTime(); }
-    delete g.last;
-    g.at = Number.isFinite(g.at) ? g.at : null;
-    g.n = Math.max(0, Math.floor(Number(g.n) || 0));
-    if (!Array.isArray(g.log)) g.log = [];
-    if (!st.earn || typeof st.earn !== 'object') st.earn = { board: null, paid: 0 };
-    if (st.stats && st.stats.items && !st.stats.items.got) st.stats.items.got = {};
-    return st;
-  }
-
-  /**
-   * Control hints: a save from before them counts the play it already has toward retiring them (pieces set in Free
-   * Play and Classic, about five per puzzle opened, and time on the boards), so a seasoned player is not taught.
-   */
-  function migrateHints(st) {
-    let hs = st.hints;
-    if (!hs || typeof hs !== 'object' || Array.isArray(hs)) hs = st.hints = { seeded: 0 };
-    for (const k of ['shown', 'skill', 'retired']) if (!hs[k] || typeof hs[k] !== 'object' || Array.isArray(hs[k])) hs[k] = {};
-    hs.pieces = Math.max(0, Number(hs.pieces) || 0);
-    hs.ms = Math.max(0, Number(hs.ms) || 0);
-    hs.over = hs.over === true;
-    if (!hs.seeded) {
-      const S = st.stats || {}, t = S.timeMs || {}, pz = S.puzzle || {};
-      const opened = ['E', 'M', 'H'].reduce((n, d) => n + ((pz[d] && pz[d].played) || 0), 0);
-      hs.pieces += ((S.free && S.free.pieces) || 0) + ((S.classic && S.classic.pieces) || 0) + 5 * opened;
-      hs.ms += (t.play || 0) + (t.classic || 0) + (t.puzzle || 0);
-      hs.seeded = 1;
-    }
-    if (st.settings) st.settings.hints = st.settings.hints !== false;
     return st;
   }
 
@@ -303,9 +218,8 @@
         else if (root.localStorage) { raw = root.localStorage.getItem(LS_KEY); if (raw) this.loadedFrom = 'browser'; }
       } catch (e) { raw = null; }
       if (raw) {
-        try { this.state = merge(defaults(), JSON.parse(raw)); } catch (e) { this.state = defaults(); this.loadedFrom = 'corrupt'; }
+        try { this.state = loadState(JSON.parse(raw)); } catch (e) { this.state = defaults(); this.loadedFrom = 'corrupt'; }
       }
-      migrate(this.state);
       this.state.stats.sessions++;
       return this.state;
     }
@@ -334,7 +248,7 @@
     importJSON(text) {
       const parsed = JSON.parse(text);
       if (!parsed || typeof parsed !== 'object' || parsed.v == null) throw new Error('Not a Lull save');
-      this.state = merge(defaults(), parsed);
+      this.state = loadState(parsed);
       this.save();
     }
 
@@ -368,7 +282,7 @@
         if (source && s.stats.lines[source] != null) s.stats.lines[source] += n;
         this.day().lines += n;
       } else {
-        s.stats.lines.refunded += -n;
+        s.stats.lines.rewound += -n;
       }
       this.touch();
       this.emit('lines', n, source);
@@ -416,7 +330,7 @@
       if (!ITEMS[id]) return;
       qty = qty || 1;
       this.state.inventory[id] = (this.state.inventory[id] || 0) + qty;
-      const got = this.state.stats.items.got = this.state.stats.items.got || {};
+      const got = this.state.stats.items.got;
       got[id] = (got[id] || 0) + qty;
       this.touch();
     }
@@ -460,5 +374,5 @@
   }
 
   L.Store = Store;
-  Object.assign(L, { SOUNDS, migrateState: migrate, migrateItems, migrateHints, RETIRED_ITEMS, ITEMS, ITEM_ORDER, ITEM_GROUPS, PALETTES, SKINS, FRAMES, BACKDROPS, EFFECTS, GHOSTS, COSMETICS, COSMETIC_LABELS, ACCENTS, SAVE_VERSION, defaultState: defaults, mergeState: merge });
+  Object.assign(L, { SOUNDS, loadState, ITEMS, ITEM_ORDER, ITEM_GROUPS, PALETTES, SKINS, FRAMES, BACKDROPS, EFFECTS, GHOSTS, COSMETICS, COSMETIC_LABELS, ACCENTS, SAVE_VERSION, defaultState: defaults, mergeState: merge });
 })(typeof globalThis !== 'undefined' ? globalThis : this);

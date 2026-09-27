@@ -23,19 +23,9 @@
   }
 
   // Specials that turn the piece into a single block (a bomb, a drill bit, a black hole, a patch), and those that keep
-  // its shape and change what it does. Anything else (an older save's retired items) is dropped when a game loads.
+  // its shape and change what it does.
   const SINGLE = new Set(['bomb', 'drill', 'blackhole', 'patch']);
-  const SHAPED = new Set(['phase', 'laser', 'golden']);
-  const known = (sp) => SINGLE.has(sp) || SHAPED.has(sp);
-  /** A queue entry from a save: a retired special is dropped (the piece stays as it was). */
-  const cleanEntry = (e) => (e && e.special && !known(e.special) ? Object.assign({}, e, { special: null }) : e);
-  /**
-   * A saved board's cells: blocks keep their colour, gem and hidden bits; what an older save said they were made of
-   * (the retired sandbox's matter, bits 8–15) is dropped, and a flame or a wisp of steam (never a block) is gone.
-   */
-  function cleanCells(arr) {
-    return (arr || []).map((v) => { const m = v & 0xf00; return m === 0x700 || m === 0x800 ? 0 : v & ~CELL.OLD; });
-  }
+  const SHAPED = new Set(['phase', 'laser']);
 
   /**
    * A board's numbers. The h- ones count only what was done by hand (for achievements): hand is whether the stack was
@@ -49,21 +39,6 @@
       hand: true, hb2b: -1, hcombo: -1, hquads: 0, hchain: 0, bestHChain: 0, htspins: 0, htst: 0, hperfect: 0, goldRun: 0, pace: [] };
   }
   const HAND_KEYS = ['hand', 'hb2b', 'hcombo', 'hquads', 'hchain', 'goldRun', 'pace'];
-
-  /**
-   * A board saved before the hand counts existed: if no item was ever used on it, everything on it was by hand (its
-   * streaks carry over); otherwise it starts again from its next perfect clear. T-spins that cleared lines were not
-   * told apart, so that count starts at zero.
-   */
-  function migrateHand(s, saved) {
-    if (!saved || saved.hand !== undefined) return s;
-    const clean = !Object.values(saved.items || {}).some((n) => n > 0);
-    if (clean) Object.assign(s, { hand: true, hb2b: s.b2b, hcombo: s.combo, hquads: s.quadRun || 0, htst: s.tst || 0, hperfect: s.perfect || 0 });
-    else s.hand = false;
-    s.hchain = (s.hb2b >= 0 ? s.hb2b + 1 : 0) + Math.max(0, s.hcombo);
-    s.bestHChain = s.hchain;
-    return s;
-  }
 
   class Game extends Emitter {
     /**
@@ -87,17 +62,17 @@
       this.over = false;
       const sv = o.saved;
       if (sv) {
-        this.board = Board.fromArray(sv.w, sv.h, cleanCells(sv.cells), { wrap: sv.wrap });
+        this.board = Board.fromArray(sv.w, sv.h, sv.cells, { wrap: sv.wrap });
         this.fixed = !!sv.fixed;
-        this.queue = sv.queue.map((e) => Object.assign({}, cleanEntry(e)));
+        this.queue = sv.queue.map((e) => Object.assign({}, e));
         this.bag = sv.bag.slice();
         this.rng = RNG.from(sv.rng);
-        this.hold = cleanEntry(sv.hold);
+        this.hold = sv.hold;
         this.holdLocked = sv.holdLocked;
-        this.s = migrateHand(Object.assign(freshStats(), sv.s), sv.s);
+        this.s = Object.assign(freshStats(), sv.s);
         this.piece = null;
         if (sv.piece) {
-          const type = Pieces.get(sv.piece.entry.id), entry = cleanEntry(sv.piece.entry);
+          const type = Pieces.get(sv.piece.entry.id), entry = sv.piece.entry;
           if (type) this.piece = { type, rot: sv.piece.rot, x: sv.piece.x, y: sv.piece.y, special: entry.special || null, entry, lastRot: false };
         }
         this.fillQueue();
@@ -511,7 +486,7 @@
         // T-spin (guideline): the last move was a turn and three of the box's four corners are blocked. With both
         // corners the T points at blocked it is a full T-spin; with only one it is a Mini, unless the turn needed
         // the last, far kick (the T-spin triple shape), which counts as full. An item piece is never one.
-        if (p.type.id === 'T' && p.lastRot && (!p.special || p.special === 'golden')) {
+        if (p.type.id === 'T' && p.lastRot && !p.special) {
           const blocked = (dx, dy) => this.board.get(p.x + dx, p.y + dy) !== 0;
           let corners = 0;
           for (const [dx, dy] of [[0, 0], [2, 0], [0, 2], [2, 2]]) if (blocked(dx, dy)) corners++;
@@ -527,7 +502,6 @@
         this.board.place(shape, p.x, p.y, v);
         if (p.special === 'patch') result.patched = true;
       }
-      if (p.special === 'golden') result.golden = true;
       if (p.fromHold) result.fromHold = true;
 
       let rows = this.fullRows();
@@ -577,7 +551,7 @@
      */
     score(result) {
       const s = this.s;
-      if (result.special && result.special !== 'golden' && result.lines) { result.plain = (result.plain || 0) + result.lines; result.lines = 0; result.tspin = false; result.mini = false; }
+      if (result.special && result.lines) { result.plain = (result.plain || 0) + result.lines; result.lines = 0; result.tspin = false; result.mini = false; }
       const n = result.lines, c = result.plain || 0, all = n + c;
       let pts = 0;
       if (result.tspin) {
@@ -598,7 +572,7 @@
         if (s.combo > 0) pts += 50 * s.combo;
         s.clears[Math.min(all, 5)]++;
         if (this.board.isEmpty()) { result.perfect = true; s.perfect++; pts += 3000; }
-        // Quads in a row: set by a piece (a golden piece counts; an item's lines are plain); any other clear ends it.
+        // Quads in a row: set by a piece (an item's lines are plain); any other clear ends it.
         if (n >= 4) s.quadRun = (s.quadRun || 0) + 1;
         else s.quadRun = 0;
       } else {
@@ -840,5 +814,5 @@
     return { ms: b[0] - a[0], lines: b[1] - a[1] };
   }
 
-  Object.assign(L, { Game, freshStats, paceOf, migrateHand, spawnPos, cleanCells, BOMB_PATTERN, SINGLE_SPECIALS: SINGLE });
+  Object.assign(L, { Game, freshStats, paceOf, spawnPos, BOMB_PATTERN, SINGLE_SPECIALS: SINGLE });
 })(typeof globalThis !== 'undefined' ? globalThis : this);

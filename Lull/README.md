@@ -141,12 +141,8 @@ Tornado only rearranges — every row keeps its count, so it never clears). Ever
 power-ups on the board for the achievements.
 
 *Getting them.* Bought with lines in the tray; free from the daily gift; and, modestly, from play: one for every hundred
-lines cleared on a board (counted in the save, outside the board, so a Rewind and a replayed clear never pay twice, and
-an old board is not paid backwards) and one the first time each combo is ever found. Free ones are drawn by rarity
-(common 8, uncommon 3, rare 1). Old saves: the sandbox's leftovers become a comparable power-up — sand, water and lava a
-Patch, acid and an Anvil a Drill, powder a Bomb, a Nuke a Black Hole — or their old price back in lines (seed, oil,
-ice, steel, flame, spark, Chroma Purge, Jackpot, Magnet); boards lose what their blocks were made of (the blocks stay;
-flames and steam go).
+lines cleared on a board (counted in the save, outside the board, so a Rewind and a replayed clear never pay twice) and one the first time each combo is ever found. Free ones are drawn by rarity
+(common 8, uncommon 3, rare 1).
 
 **Daily gift** — the small wrapped box in the Relaxed tab's status bar glows while a gift is waiting: three different
 power-ups, drawn by rarity, so about two thirds of what it gives is common and one in fourteen rare. It comes again 24
@@ -154,8 +150,7 @@ hours after it was last opened — the time since, not the date; its tooltip cou
 save as it opens, and the draw is fixed by the save and how many gifts it has opened, so reopening Lull or switching
 tabs never re-rolls it or opens it twice. A clock turned back never opens it early: the next one is still 24 hours
 after the booked claim, however far back the clock went (and a clock pushed forward to claim early books that claim in
-the future, so the next one waits for it). A save from the calendar-day gift counts its last one from that date's
-midnight.
+the future, so the next one waits for it).
 
 *Combos* — things that pay a little extra: lines, a short boost (the next few clears pay ×1.25–×1.5) and points, each
 told once in a small callout on the board. Four are pure skill: a row all one colour (Painted Row), four lines with an I
@@ -219,12 +214,11 @@ exact rule is said once, in the (i) beside the Free Play header. (The code calls
 need a board that never used a power-up at all; two ask for pace — the last hundred pieces set with no power-ups on
 the board, on the wall clock, clearing 36 lines (Allegro,
 within three minutes; Presto, ninety seconds); and the streaks that are really about keeping up have Classic versions under
-gravity (eight back-to-back, four tetrises in a row), where the 20-combo moved too, as a 15-combo. Hover the Chain in the status bar to see whether
+gravity (eight back-to-back, four tetrises in a row, a 15-combo). Hover the Chain in the status bar to see whether
 there are power-ups on the board (and the chain without them); a board's summary shows its best chain and its best
 with no power-ups on the board. Three are for playing with power-ups on purpose: three different power-up combos on
 one board (Showman), a board of 60 blocks or more emptied by one power-up (Clean Sweep), and every combo found
-(Tinkerer). The sandbox's two (Rube Goldberg, Burnt Offering) are retired: kept, paid and marked Retired for whoever
-earned them.
+(Tinkerer).
 
 Medium ones (100–300 ⦵): a perfect clear with no power-ups on the board, a T-spin Mini double, a 10-combo, a T-spin triple on gold, four quads in a row, Allegro,
 the perfect-clear opener (within a fresh board's first ten pieces, no items), Showman; a Hard puzzle first try
@@ -239,13 +233,11 @@ quads in a row, five gold clears on a chain of 20, ten perfect clears or 5,000 l
 without items; Classic level 25, a 15-combo, 40 lines in 50 s, level 20 without hold, a Classic million; every
 wildcard on Hard, a Daily thirty days in a row, a hundred first-try solves in a row; a hundred hours or a hundred days
 with Lull, everything the shop sells, a million lines earned (rewound lines aside, since a rewound clear replayed would count
-twice, and an old save's Jackpot winnings); all 108 heptominoes or 100,000 minos
-pressed — and *Lull*, every other one. A retired one (Free Play's 20-combo, now Classic's 15; the sandbox's two) stays with whoever
-earned it, paid, marked Retired and counted in nothing. They read the stats below plus a few kept for them: the
+twice); all 108 heptominoes or 100,000 minos
+pressed — and *Lull*, every other one. They read the stats below plus a few kept for them: the
 board's hand counts (`freshStats` in `js/engine.js`: whether there are power-ups on the board, and the back-to-back,
 combo, quads in a row, chain, line-clearing T-spins, T-spin triples and perfect clears without them, gold clears on a
-chain of 20, and the last 101 such pieces' times; a board saved before them carries its streaks over only if no item was ever used on
-it), Classic's own clock (running time only), undos per puzzle, runs of first-try solves (a retry, hint,
+chain of 20, and the last 101 such pieces' times), Classic's own clock (running time only), undos per puzzle, runs of first-try solves (a retry, hint,
 fail, skipped or abandoned puzzle ends one) and of Dailies on consecutive dates (each solved on its day), Hard solves per wildcard, days played (a day counts once you
 play in front, not when the factory runs alone), Classic games (one counts once it has run a minute or cleared ten
 lines, so a quick restart is not a game), and the
@@ -310,8 +302,7 @@ the same one again, and each is shown at most twice. They retire for good: each 
 successfully a few times (4 turns on a turned board, 3 turns with Z or A, 3 pieces set, 4 pieces lowered, 3 holds, 8
 moves under Inverted Controls, 12 arrow moves or turns, 3 right-click turns), and all of them after 300 pieces or two
 hours on the boards, whichever comes first — about an hour of relaxed play, by when every basic control has come up
-dozens of times; the two hours catch the player who mostly thinks rather than places. A save from before them counts
-its play toward that (pieces, five per puzzle opened, board time), so a seasoned player never sees one. Settings ▸
+dozens of times; the two hours catch the player who mostly thinks rather than places. Settings ▸
 Controls ▸ Control hints turns them off sooner.
 
 Every item on the bar explains itself on hover. Repeat delay (230 ms) and rate, preview length, sound, effects, background, theme and accent are in Settings.
@@ -338,14 +329,13 @@ first time. The save lives in `~/Library/Application Support/Lull/save.json` (Se
 
 | Path | |
 |---|---|
-| `Game/` | the game: `index.html`, `css/`, and `js/` — `pieces` (SRS tetrominoes, pentominoes, big and custom shapes, polyomino enumeration), `board`, `engine` (the floating-piece rules and every item), `items` (the chain multiplier, combos, Luck, the daily gift, power-ups earned in play), `puzzlegen` (seeds, wildcards, reverse construction, reachability search, forward verification), `factory` (presses, the belt, the bin, one step for play and time away, save migration), `store` (save, catalog, stats), `achievements`, `fxphysics` (the item effects' blocks, debris and dust: gravity, bounces, spirals, fixed pools), `render` (canvas: skins, frames, effects, item animations, rotated views), `factoryview` (the factory floor, drawn like the board), `hints` (control hints: the struggle signals, their limits and retirement), `collapse` (the window rolled up into its title bar, and the pieces that march along it), `modes`, `ui`, `app` |
+| `Game/` | the game: `index.html`, `css/`, and `js/` — `pieces` (SRS tetrominoes, pentominoes, big and custom shapes, polyomino enumeration), `board`, `engine` (the floating-piece rules and every item), `items` (the chain multiplier, combos, Luck, the daily gift, power-ups earned in play), `puzzlegen` (seeds, wildcards, reverse construction, reachability search, forward verification), `factory` (presses, the belt, the bin, one step for play and time away, save repair), `store` (save, catalog, stats), `achievements`, `fxphysics` (the item effects' blocks, debris and dust: gravity, bounces, spirals, fixed pools), `render` (canvas: skins, frames, effects, item animations, rotated views), `factoryview` (the factory floor, drawn like the board), `hints` (control hints: the struggle signals, their limits and retirement), `collapse` (the window rolled up into its title bar, and the pieces that march along it), `modes`, `ui`, `app` |
 | `Sources/Lull/` | the macOS shell: a borderless `NSPanel` (floating, all Spaces, edge-resizable, draggable by the page's title bar) around a transparent `WKWebView`, a blur for the Glass background, the save file, the ⌥⌘L hot key, and a self-test CI runs |
-| `scripts/` | `make-app.sh`, `icon.swift`, `line-glyph.py` (builds the line glyph's font into `lull.css`), `test.cjs`, `browser-test.cjs`, `audio-render.cjs` (renders and measures the synthesized audio offline), `pitch.cjs` (finds the notes in a render, to check sound effects are in the music's key), `splice-voice.py` (cuts the announcer's lines from a recording), `make-voice.py` (the older synthesized whisper) |
+| `scripts/` | `make-app.sh`, `icon.swift`, `line-glyph.py` (builds the line glyph's font into `lull.css`), `test.cjs`, `browser-test.cjs`, `audio-render.cjs` (renders and measures the synthesized audio offline), `pitch.cjs` (finds the notes in a render, to check sound effects are in the music's key), `splice-voice.py` (cuts the announcer's lines from a recording) |
 
 ## Credits
 
 The Classic announcer's lines are cut from the announcer of *Tetris Worlds* (2001); that recording belongs to its
-rights holders (The Tetris Company / THQ) and is not covered by this project's terms. `scripts/make-voice.py` can
-render a freely licensed stand-in (Piper's LibriTTS voice, CC BY 4.0: H. Zen et al., 2019, http://www.openslr.org/60/).
+rights holders (The Tetris Company / THQ) and is not covered by this project's terms.
 Korobeiniki is a 19th-century folk song in the public
 domain.

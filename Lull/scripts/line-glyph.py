@@ -5,8 +5,8 @@
 
 The glyph is a thin ring (the hole's edge) with a horizontal line running into it from both sides, tapering as it
 goes out, and nothing in the middle. It is drawn at U+29B5 (CIRCLE WITH HORIZONTAL BAR, the closest Unicode has, and
-never an emoji) and at U+25C6, the black diamond the currency used to be, so a stray old diamond still shows the new
-glyph. The font's unicode-range holds only those two, so every other character keeps the system font. Needs fontTools.
+never an emoji). The font's unicode-range holds only that one, so every other character keeps the system font. Needs
+fontTools.
 """
 import base64, io, math, os, re
 from fontTools.fontBuilder import FontBuilder
@@ -66,7 +66,7 @@ def build():
     fb = FontBuilder(UPM, isTTF=False)
     names = ['.notdef', 'space', 'line']
     fb.setupGlyphOrder(names)
-    fb.setupCharacterMap({0x20: 'space', 0x29B5: 'line', 0x25C6: 'line'})
+    fb.setupCharacterMap({0x20: 'space', 0x29B5: 'line'})
     empty = T2CharStringPen(500, None).getCharString()
     space = T2CharStringPen(250, None).getCharString()
     fb.setupCFF('LullLine', {'FullName': 'Lull Line'}, {'.notdef': empty, 'space': space, 'line': glyph()}, {})
@@ -82,7 +82,7 @@ def build():
 
 def main():
     data = base64.b64encode(build()).decode('ascii')
-    face = ('@font-face { font-family: "Lull Line"; font-display: block; unicode-range: U+29B5, U+25C6;\n'
+    face = ('@font-face { font-family: "Lull Line"; font-display: block; unicode-range: U+29B5;\n'
             '  src: url(data:font/otf;base64,' + data + ') format("opentype"); }')
     css_path = os.path.join(os.path.dirname(__file__), '..', 'Game', 'css', 'lull.css')
     css = open(css_path, encoding='utf-8').read()

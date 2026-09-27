@@ -42,7 +42,7 @@
     misdropMs: 5000, misdrops: 2,
   };
 
-  function fresh() { return { seeded: 0, pieces: 0, ms: 0, over: false, shown: {}, skill: {}, retired: {} }; }
+  function fresh() { return { pieces: 0, ms: 0, over: false, shown: {}, skill: {}, retired: {} }; }
 
   /** The rules, free of the page: fed facts about inputs, it says which hint (if any) is due. */
   class Detector {
@@ -234,7 +234,7 @@
       if (root.addEventListener) root.addEventListener('keydown', (e) => this.onKey(e));
     }
 
-    /** The save's part (the store fills and migrates it); a reset or an import brings a new object. */
+    /** The save's part (the store fills it in); a reset or an import brings a new object. */
     state() {
       const st = this.app.store.state;
       if (!st.hints || typeof st.hints !== 'object') st.hints = fresh();
