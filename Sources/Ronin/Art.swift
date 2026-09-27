@@ -70,7 +70,6 @@ struct Look {
 enum Art {
     /// Optima throughout: a humanist face with a chiselled, calligraphic stroke that stays legible small.
     static let headingFont = "Optima-Bold"
-    static let numberFont = "Optima-Bold"
     static let textFont = "Optima-Regular"
     static let italicFont = "Optima-BoldItalic"
     /// For the seal's single character.
@@ -91,8 +90,12 @@ enum Art {
     static let raindrop = makeRaindrop()
     /// Blood thrown against the glass: a blot, its droplets, and runs trickling down.
     static let splats: [SKTexture] = (0..<4).map { makeSplat(seed: UInt64($0)) }
-    /// Focus lines: thin wedges of light closing in on a point, clear in the middle. The impact frame of a big blow.
-    static let focus = makeFocus()
+    /// Focus lines: thin wedges of light closing in on a point, clear in the middle. The impact frame of a big blow:
+    /// one of a few, each its own scatter of lines, a different one each time it is asked for.
+    static var focus: SKTexture { foci.randomElement() ?? SKTexture() }
+    static let foci: [SKTexture] = (0..<3).map { makeFocus(seed: 0xF0C05 &+ UInt64($0)) }
+    /// One focus line: a thin wedge of light along +x, its point at the left.
+    static let ray = makeRay()
 
     /// Tints a sprite toward a colour, black pixels included (SpriteKit's own colour blend multiplies, which leaves a
     /// silhouette black). Each sprite carries its own tint in the `a_tint` attribute: rgb, and how far to go.
@@ -168,15 +171,16 @@ enum Art {
     }
 
     /// Lines of every length, thin at the heart and thickening outward, all inside a circle, so however large it is
-    /// drawn there is no edge to it, only the ragged ends of the lines.
-    private static func makeFocus() -> SKTexture {
+    /// drawn there is no edge to it, only the ragged ends of the lines (each line's far end picked first, anywhere
+    /// from a little past halfway out to the edge, and its near end somewhere inside that, so the ends make no ring).
+    private static func makeFocus(seed: UInt64) -> SKTexture {
         let s = 512
         guard let context = bitmap(s, s) else { return SKTexture() }
-        var rng = SeededRNG(seed: 0xF0C05)
+        var rng = SeededRNG(seed: seed)
         let c = CGPoint(x: 256, y: 256)
         for _ in 0..<110 {
             let a = CGFloat(rng.range(0, 2 * .pi)), w = CGFloat(rng.range(0.003, 0.016))
-            let inner = CGFloat(rng.range(70, 200)), outer = min(254, inner + CGFloat(rng.range(40, 170)))
+            let outer = CGFloat(rng.range(150, 254)), inner = CGFloat(rng.range(70, Double(outer) - 40))
             context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: CGFloat(rng.range(0.45, 1))))
             context.move(to: CGPoint(x: c.x + cos(a) * inner, y: c.y + sin(a) * inner))
             context.addLine(to: CGPoint(x: c.x + cos(a - w) * outer, y: c.y + sin(a - w) * outer))
@@ -184,6 +188,25 @@ enum Art {
             context.closePath()
             context.fillPath()
         }
+        return texture(context)
+    }
+
+    /// A wedge of light along the texture, from a point at its left edge (fading in from it) to its full width at the
+    /// right: one focus line, to be stretched to length.
+    private static func makeRay() -> SKTexture {
+        let w = 128, h = 16
+        guard let context = bitmap(w, h) else { return SKTexture() }
+        let wedge = CGMutablePath()
+        wedge.move(to: CGPoint(x: 0, y: CGFloat(h) / 2))
+        wedge.addLine(to: CGPoint(x: CGFloat(w), y: 1))
+        wedge.addLine(to: CGPoint(x: CGFloat(w), y: CGFloat(h) - 1))
+        wedge.closeSubpath()
+        context.addPath(wedge)
+        context.clip()
+        let colors = [CGColor(red: 1, green: 1, blue: 1, alpha: 0), CGColor(red: 1, green: 1, blue: 1, alpha: 1)] as CFArray
+        guard let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 0.35])
+        else { return SKTexture() }
+        context.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: w, y: 0), options: [.drawsAfterEndLocation])
         return texture(context)
     }
 
@@ -289,16 +312,6 @@ enum Art {
 
     static func circle(_ r: CGFloat) -> CGPath { CGPath(ellipseIn: CGRect(x: -r, y: -r, width: 2 * r, height: 2 * r), transform: nil) }
 
-    static func diamond(_ r: CGFloat) -> CGPath {
-        let path = CGMutablePath()
-        path.move(to: CGPoint(x: 0, y: r))
-        path.addLine(to: CGPoint(x: r * 0.8, y: 0))
-        path.addLine(to: CGPoint(x: 0, y: -r))
-        path.addLine(to: CGPoint(x: -r * 0.8, y: 0))
-        path.closeSubpath()
-        return path
-    }
-
     // MARK: Effects
 
     /// A one-shot spray of particles that removes itself. `gravity` pulls them down (points a second squared).
@@ -382,6 +395,31 @@ enum Art {
         return sprite
     }
 
+    /// Focus lines made for one blow, crisp however far they reach: `count` wedges of light closing in on the node's
+    /// origin, each from a little outside the clear heart (`hole` points out, up to half as far again) out to about
+    /// `reach` points, some stopping short of it and most running on past it (so, reaching past the window's edges,
+    /// they run off them), at most `width` points across at their far ends. No two bursts are alike. Turn, scale and
+    /// fade the node as one; its lines share one texture, so they are drawn together.
+    static func focusLines(hole: CGFloat, reach: CGFloat, width: CGFloat = 2.5, count: Int = 100, color: RGB = .white) -> SKNode {
+        let node = SKNode()
+        let tint = color.color()
+        for _ in 0..<count {
+            let angle = CGFloat.random(in: 0..<(2 * .pi))
+            let inner = hole * CGFloat.random(in: 1...1.5)
+            let outer = max(inner + hole * 0.5, reach * CGFloat.random(in: 0.6...1.2))
+            let line = SKSpriteNode(texture: ray)
+            line.anchorPoint = CGPoint(x: 0, y: 0.5)
+            line.size = CGSize(width: outer - inner, height: width * CGFloat.random(in: 0.3...1))
+            line.position = CGPoint(x: cos(angle) * inner, y: sin(angle) * inner)
+            line.zRotation = angle
+            line.color = tint
+            line.colorBlendFactor = 1
+            line.alpha = CGFloat.random(in: 0.45...1)
+            node.addChild(line)
+        }
+        return node
+    }
+
     static func label(_ font: String, size: CGFloat, color: SKColor, align: SKLabelHorizontalAlignmentMode = .center) -> SKLabelNode {
         let label = SKLabelNode(fontNamed: font)
         label.fontSize = size
@@ -394,8 +432,13 @@ enum Art {
     // MARK: Weather
 
     /// Falling snow, petals, leaves or ash, rising embers, or driving rain, across a field `size` wide and tall.
-    /// `far` is the same weather further off, behind the fighters: smaller, slower, fainter and thicker.
-    static func weather(_ kind: Look.Weather, size: CGSize, tint: RGB, far: Bool = false) -> SKEmitterNode {
+    /// `far` is the same weather further off, behind the fighters: smaller, slower, fainter and thicker. Given the
+    /// `horizon` (the height of the lane's ground line), the far layer is drawn behind the ground: its embers rise from
+    /// behind that line, and what falls lives until it is down behind it.
+    ///
+    /// Nothing goes out in mid-air: what falls lives until the slowest of it is out of sight. And the wind that carries
+    /// it sideways does not leave one side of the lane bare: the weather starts that much further upwind.
+    static func weather(_ kind: Look.Weather, size: CGSize, tint: RGB, far: Bool = false, horizon: CGFloat = 0) -> SKEmitterNode {
         let e = SKEmitterNode()
         e.particleColorBlendFactor = 1
         e.particlePositionRange = CGVector(dx: size.width * 1.2, dy: 0)
@@ -499,8 +542,29 @@ enum Art {
             e.xAcceleration *= 0.5
             e.particleLifetime *= kind == .rain ? 1.3 : 1.6
             e.alpha = 0.5
+            // Far embers rise from behind the ground line, not from under the viewer's feet.
+            if kind == .embers { e.position.y = horizon }
         }
-        e.advanceSimulationTime(TimeInterval(e.particleLifetime))
+        // How far each particle goes while it can be seen: rising, from where it rises to past the top; falling, from
+        // the top to past the bottom (or, far off, to behind the ground line).
+        let way = kind == .embers ? size.height + 6 - e.position.y : e.position.y + 6 - (far ? horizon : 0)
+        if kind != .embers && kind != .rain {
+            // Whatever falls outlives its way down (the slowest of it, on the steepest slant), rather than going out.
+            let slowest = (e.particleSpeed - e.particleSpeedRange / 2) * cos(e.emissionAngleRange / 2)
+            e.particleLifetime = max(e.particleLifetime, way / max(1, slowest))
+        }
+        // The wind carries each particle `drift` points sideways on its way across: the weather starts that much
+        // further upwind, with more of it to fill the width, so it is as thick on the one side as on the other.
+        let crossing = min(e.particleLifetime, way / max(1, e.particleSpeed * cos(e.emissionAngleRange / 4)))
+        let drift = 0.5 * e.xAcceleration * crossing * crossing
+        if drift != 0 {
+            let span = e.particlePositionRange.dx
+            e.position.x -= drift / 2
+            e.particlePositionRange.dx = span + abs(drift)
+            e.particleBirthRate *= (span + abs(drift)) / span
+        }
+        // Already falling when the stage opens (the sky filled for the time it takes to cross it).
+        e.advanceSimulationTime(TimeInterval(min(e.particleLifetime, crossing)))
         return e
     }
 

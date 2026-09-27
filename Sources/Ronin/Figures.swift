@@ -49,175 +49,102 @@ enum Figures {
         sprite.anchorPoint = CGPoint(x: (anchor.x - piece.rect.minX) / piece.rect.width, y: (anchor.y - piece.rect.minY) / piece.rect.height)
     }
 
-    // MARK: Cut apart
+    // MARK: Struck down
 
-    /// Where a cut goes through a foe.
+    /// Where a killing cut goes through a foe. The carnage makes each into a way his body comes apart (a `Ragdoll`
+    /// cut, or his legs taken from under him).
     enum Severance: Hashable {
         /// On a slant, falling from the shoulder he leads with (kesa-giri), or rising to it (gyaku-kesa).
         case falling, rising
         /// Level through the waist (dō).
         case level
-        /// Through the thighs: the legs taken from under him.
+        /// Across the shins (sune-giri): the legs cut from under him, he drops onto his knees and pitches onto his
+        /// face.
         case legs
         /// Through the neck.
         case head
     }
 
-    /// A severed part: its texture, the part of the whole canvas it covers (fractions), and the wound: where on
-    /// the canvas it is and which way it faces (radians), so blood can pour from it.
+    /// How many of the poses a blow throws a foe into (`Figure.struck`, variants 0 up to this) are drawn ahead of
+    /// time: his figure frozen in one at a killing blow, and his head struck off from it.
+    static let variants = Figure.struckVariants
+
+    private static var struckPieces: [Cast: [Int: Piece]] = [:]
+
+    /// A foe in the pose a blow throws him into (`Figure.struck(cast, variant:)`; variant 0 is his stagger), his
+    /// weapon still in his hand and his cloth at rest: what his figure freezes in at a killing blow, exactly as the
+    /// carnage lets him fall from it (`Carnage.sever` with the same variant, or `fell` from the same pose), less the
+    /// weapon, which leaves his hand as he falls.
+    static func struck(_ cast: Cast, variant: Int) -> Piece {
+        if let piece = struckPieces[cast]?[variant] { return piece }
+        var pose = Figure.struck(cast, variant: variant)
+        pose.armed = true
+        // A falling body's cloth is drawn at rest, so the first frame of the fall is this one.
+        pose.stream = 0
+        let piece = render(Figure.sketch(cast, pose: pose))
+        struckPieces[cast, default: [:]][variant] = piece
+        return piece
+    }
+
+    /// A head struck off: its texture, the part of the whole canvas it covers, and its wound: where on the canvas
+    /// the neck was cut (both as fractions of the canvas) and which way blood leaves it (radians).
     struct Part {
         let texture: SKTexture
         let rect: CGRect
         let wound: CGPoint
         let woundAngle: CGFloat
-        let upper: Bool
     }
 
-    private struct PartKey: Hashable {
-        let cast: Cast
-        let severance: Severance
-        let variant: Int
-    }
+    private static var heads: [Cast: [Int: Part]] = [:]
 
-    private static var partCache: [PartKey: [Part]] = [:]
-    /// How many ways a foe may be standing when he is cut apart.
-    static let variants = 4
-
-    /// A foe cut in two along a severance, from one of the poses a blow throws him into, each part with the raw red
-    /// face of the cut across it and the white of the bone.
-    static func parts(_ cast: Cast, _ severance: Severance, variant: Int = 0) -> [Part] {
-        let key = PartKey(cast: cast, severance: severance, variant: variant)
-        if let parts = partCache[key] { return parts }
-        // Cut from the pose a blow throws him into, his weapon already leaving his hand (it falls on its own).
-        let pose = Figure.struck(cast, variant: variant)
-        let sketch = Figure.sketch(cast, pose: pose)
-        let body = Figure.anatomy(cast, pose: pose)
-        let w = CGFloat(sketch.width), h = CGFloat(sketch.height), far = (w + h) * 2
-        func mid(_ a: CGPoint, _ b: CGPoint) -> CGPoint { CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2) }
-        let through: CGPoint, angle: CGFloat
-        switch severance {
-        case .falling: (through, angle) = (mid(body.chest, body.waist), 0.55)
-        case .rising: (through, angle) = (mid(body.chest, body.waist), -0.55)
-        case .level: (through, angle) = (body.waist, 0.04)
-        case .legs: (through, angle) = (mid(body.hip, body.knee), 0.1)
-        case .head: (through, angle) = (CGPoint(x: body.neck.x, y: body.neck.y + body.headRadius * 0.15), -0.1)
-        }
-        let d = CGPoint(x: cos(angle), y: sin(angle)), n = CGPoint(x: -sin(angle), y: cos(angle))
-        func point(_ a: CGFloat, _ b: CGFloat) -> CGPoint { CGPoint(x: through.x + d.x * a + n.x * b, y: through.y + d.y * a + n.y * b) }
-        let seam = (point(-far, 0), point(far, 0))
-        var regions: [(path: CGPath, evenOdd: Bool, upper: Bool)] = []
-        if severance == .head {
-            // The head and whatever it wears: a disc about it, above the neck.
-            let r = body.headRadius * 2.6
-            var ring: [CGPoint] = []
-            for i in 0..<32 {
-                let t = CGFloat(i) / 32 * 2 * .pi
-                var p = CGPoint(x: body.head.x + cos(t) * r, y: body.head.y + sin(t) * r)
-                let side = (p.x - through.x) * n.x + (p.y - through.y) * n.y
-                if side < 0 { p = CGPoint(x: p.x - n.x * side, y: p.y - n.y * side) }
-                ring.append(p)
-            }
-            let head = CGMutablePath()
-            head.addLines(between: ring)
-            head.closeSubpath()
-            let rest = CGMutablePath()
-            rest.addRect(CGRect(x: 0, y: 0, width: w, height: h))
-            rest.addPath(head)
-            regions = [(head, false, true), (rest, true, false)]
-        } else {
-            for upper in [true, false] {
-                let side: CGFloat = upper ? far : -far
-                let half = CGMutablePath()
-                half.addLines(between: [point(-far, 0), point(far, 0), point(far, side), point(-far, side)])
-                half.closeSubpath()
-                regions.append((half, false, upper))
-            }
-        }
-        let parts = regions.compactMap { region -> Part? in
-            guard let drawn = render(sketch, clip: region.path, evenOdd: region.evenOdd, seam: seam, bone: through, H: body.height)
-            else { return nil }
-            let out = region.upper ? CGPoint(x: -n.x, y: -n.y) : n
-            return Part(texture: drawn.texture, rect: drawn.rect, wound: CGPoint(x: through.x / w, y: through.y / h),
-                        woundAngle: atan2(out.y, out.x), upper: region.upper)
-        }
-        partCache[key] = parts
-        return parts
-    }
-
-    private static func render(_ sketch: Sketch, clip: CGPath, evenOdd: Bool, seam: (CGPoint, CGPoint), bone: CGPoint,
-                               H: CGFloat) -> (texture: SKTexture, rect: CGRect)? {
-        let w = sketch.width, h = sketch.height
-        guard let ctx = Art.bitmap(w, h) else { return nil }
-        ctx.addPath(clip)
-        ctx.clip(using: evenOdd ? .evenOdd : .winding)
-        ctx.setShouldAntialias(true)
-        ctx.setShadow(offset: .zero, blur: sketch.rimRadius * 1.6, color: sketch.rim.cg)
-        ctx.beginTransparencyLayer(auxiliaryInfo: nil)
-        for shape in sketch.body { Sketch.draw(shape, in: ctx) }
-        // The face of the cut, painted only where there is body: dark meat, a wet red edge, a white knot of bone.
-        ctx.setShadow(offset: .zero, blur: 0, color: nil)
-        ctx.setBlendMode(.sourceAtop)
-        ctx.setLineCap(.butt)
-        for (width, red) in [(0.075 * H, CGColor(red: 0.38, green: 0.0, blue: 0.03, alpha: 1)),
-                             (0.03 * H, CGColor(red: 0.86, green: 0.1, blue: 0.12, alpha: 1))] {
-            ctx.setStrokeColor(red)
-            ctx.setLineWidth(width)
-            ctx.move(to: seam.0)
-            ctx.addLine(to: seam.1)
-            ctx.strokePath()
-        }
-        ctx.setFillColor(CGColor(red: 0.93, green: 0.88, blue: 0.8, alpha: 1))
-        ctx.fillEllipse(in: CGRect(x: bone.x - 0.016 * H, y: bone.y - 0.012 * H, width: 0.032 * H, height: 0.024 * H))
-        ctx.setBlendMode(.normal)
-        ctx.endTransparencyLayer()
-        // Cut down to what was drawn.
-        guard let image = ctx.makeImage(), let data = ctx.data else { return nil }
-        let bytes = data.bindMemory(to: UInt8.self, capacity: ctx.bytesPerRow * h)
-        var minX = w, maxX = -1, minRow = h, maxRow = -1
-        for row in 0..<h {
-            let base = row * ctx.bytesPerRow
-            for x in 0..<w where bytes[base + x * 4 + 3] > 12 {
-                minX = min(minX, x)
-                maxX = max(maxX, x)
-                minRow = min(minRow, row)
-                maxRow = max(maxRow, row)
-            }
-        }
-        guard maxX >= minX, maxRow >= minRow,
-              let cropped = image.cropping(to: CGRect(x: minX, y: minRow, width: maxX - minX + 1, height: maxRow - minRow + 1))
-        else { return nil }
-        let rect = CGRect(x: CGFloat(minX) / CGFloat(w), y: CGFloat(h - 1 - maxRow) / CGFloat(h),
-                          width: CGFloat(maxX - minX + 1) / CGFloat(w), height: CGFloat(maxRow - minRow + 1) / CGFloat(h))
-        return (SKTexture(cgImage: cropped), rect)
+    /// A foe's head struck off as a blow throws him (`Figure.struck(cast, variant:)`), where it was on his canvas:
+    /// the head and all it wears (crest, brim, ribbons) on a short length of cut neck, and nothing else of him.
+    static func head(_ cast: Cast, variant: Int) -> Part {
+        if let part = heads[cast]?[variant] { return part }
+        let (sketch, wound, angle) = Figure.severedHead(cast, pose: Figure.struck(cast, variant: variant))
+        let piece = render(sketch)
+        let part = Part(texture: piece.texture, rect: piece.rect,
+                        wound: CGPoint(x: wound.x / CGFloat(sketch.width), y: wound.y / CGFloat(sketch.height)), woundAngle: angle)
+        heads[cast, default: [:]][variant] = part
+        return part
     }
 
     private static var weapons: [Cast: Piece] = [:]
 
-    /// A foe's weapon on its own, lying level: what falls from his hand when he dies.
+    /// A foe's weapon on its own, lying level (the grip at the middle of the canvas): what falls from his hand when
+    /// he dies.
     static func weapon(_ cast: Cast) -> Piece {
         if let piece = weapons[cast] { return piece }
-        let sketch = Figure.weapon(cast)
-        let bounds = sketch.bounds(margin: sketch.rimRadius * 3 + 2)
-        let w = CGFloat(sketch.width), h = CGFloat(sketch.height)
-        let piece = Piece(texture: sketch.image(in: bounds).map { SKTexture(cgImage: $0) } ?? SKTexture(),
-                          rect: CGRect(x: bounds.minX / w, y: bounds.minY / h, width: bounds.width / w, height: bounds.height / h))
+        let piece = render(Figure.weapon(cast))
         weapons[cast] = piece
         return piece
     }
 
-    /// Draws every frame now, so the first fight doesn't stutter.
+    /// Draws every frame now, so the first fight doesn't stutter: every frame of every figure, and for each foe the
+    /// poses he may freeze in at a killing blow, the heads struck off from them, and his weapon. (A body falls as a
+    /// jointed thing, drawn as it goes.)
     static func preload() {
         let casts: [Cast] = [.hero] + Kind.allCases.map { .foe($0) }
         for cast in casts {
             for frame in Figure.frames(for: cast) { _ = piece(cast, frame) }
             guard cast != .hero else { continue }
-            // A head struck off flies as one piece; everything else falls as a jointed body, drawn as it goes.
-            _ = parts(cast, .head, variant: 0)
+            for variant in 0..<variants {
+                _ = struck(cast, variant: variant)
+                _ = head(cast, variant: variant)
+            }
             _ = weapon(cast)
         }
     }
 
-    static func has(_ cast: Cast, _ frame: Frame) -> Bool { Figure.frames(for: cast).contains(frame) }
+    private static var frameSets: [Cast: Set<Frame>] = [:]
+
+    /// Whether a figure has a frame drawn for it (asked for every figure every frame, so the list is kept).
+    static func has(_ cast: Cast, _ frame: Frame) -> Bool {
+        if let frames = frameSets[cast] { return frames.contains(frame) }
+        let frames = Set(Figure.frames(for: cast))
+        frameSets[cast] = frames
+        return frames.contains(frame)
+    }
 
     /// A figure's whole canvas on screen for a ronin `height` points tall.
     static func size(_ cast: Cast, ronin height: CGFloat) -> CGSize {
