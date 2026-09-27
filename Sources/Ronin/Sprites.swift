@@ -46,6 +46,8 @@ final class FoeSprite: SKNode {
     private var ronin: CGFloat = 60
     /// How far above his feet the lane ends (the header, or whatever the scene puts along its top).
     private var headroom = CGFloat.greatestFiniteMagnitude
+    /// Where the ronin was on the last update.
+    private var heroX: CGFloat?
     private var idleClock = Double.random(in: 0...2)
     /// Seconds since the blow landed (or the bow loosed), and left in a stagger.
     private var strikeClock = 1.0
@@ -58,7 +60,9 @@ final class FoeSprite: SKNode {
     /// The gourd-bearer gathering himself to dart in (0 to 1): crouched, and his gourd flaring.
     private var gather: CGFloat = 0
     private var wasLeaping = false
-    private var facing: CGFloat = 1
+    /// Which way he is drawn facing (+1 right, -1 left): the ronin, but in the air where he is going and running off
+    /// with the gourd away; and the frame he is drawn in.
+    private(set) var facing: CGFloat = 1
     private(set) var shown = Frame.walk(0)
     private var age = 0.0
     /// A wounding blow on its way (`hold`): he is held as he is until it lands, or this long at most; then whether a
@@ -251,6 +255,7 @@ final class FoeSprite: SKNode {
     /// and `hero` the ronin's x, the middle of the lane: for the archer's sight line, and to measure the lane by.
     func update(_ foe: Foe, at position: CGPoint, air: CGFloat, hero: CGFloat, dt: Double) {
         age += dt
+        heroX = hero
         strikeClock += dt
         staggerHold = max(0, staggerHold - dt)
         hitFlash = max(0, hitFlash - dt)
@@ -550,10 +555,11 @@ final class FoeSprite: SKNode {
     }
 
     /// The instant of a killing blow: thrown into the pose the blow throws him into (`Figures.struck`, variant 0 his
-    /// stagger) and lit white, held there until the blade arrives: upright, unsquashed, whole (not fading in), with
-    /// nothing of the pose before it behind him. The carnage lets him fall from the very same pose (`Carnage.sever`
-    /// with the same variant, or `fell` from `Figure.struck(cast, variant:)`), where he stands, so his body, his head
-    /// and his weapon leave the frozen figure without a jump.
+    /// stagger) and lit white, held there until the blade arrives: upright, unsquashed, whole (not fading in), turned
+    /// to the ronin who struck him (even in the air, or running off), with nothing of the pose before it behind him.
+    /// The carnage lets him fall from the very same pose (`Carnage.sever` with the same variant, or `fell` from
+    /// `Figure.struck(cast, variant:)`), where he stands and facing the ronin, so his body, his head and his weapon
+    /// leave the frozen figure without a jump.
     func freezeStruck(variant: Int = 0) {
         freeze(Figures.struck(cast, variant: variant))
     }
@@ -573,6 +579,8 @@ final class FoeSprite: SKNode {
         squash = 0
         gather = 0
         pivot.zRotation = 0
+        // (Facing the ronin as the scene lays the dead out: toward him from wherever he is now drawn.)
+        if let heroX { facing = position.x < heroX ? 1 : -1 }
         body.zRotation = 0
         body.xScale = facing
         body.yScale = 1
