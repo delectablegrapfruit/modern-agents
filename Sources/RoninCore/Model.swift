@@ -8,13 +8,16 @@ public enum Tuning {
     /// Where foes appear, just off the panel's edge.
     public static let edge = 1.08
     /// How far a cut reaches, from the ronin's centre to a foe's near edge.
-    public static let reach = 0.30
+    public static let reach = 0.35
     /// Reach while the combo is at or past `bloodlust`.
-    public static let bloodlustReach = 0.37
+    public static let bloodlustReach = 0.42
     /// The combo that brings on bloodlust.
     public static let bloodlust = 20
-    /// Half the ronin's width: where a foe's reach meets him.
+    /// Half the ronin's width: where an arrow meets him.
     public static let body = 0.05
+    /// The ronin's height in lane units: the panel draws him this tall, and every weapon's reach is measured
+    /// against it, so a blow drawn landing on him lands on him.
+    public static let figure = 0.312
     /// After a cut lands, the ronin can cut again this soon. Presses in between are held and cut on time.
     public static let cooldown = 0.075
     /// A cut at nothing leaves him open this long, and presses in between are lost.
@@ -91,12 +94,12 @@ public enum Kind: String, Codable, Sendable, CaseIterable {
     /// Seconds from raising the weapon to the blow (for an archer: from drawing to loosing), before the stage's pace.
     public var windup: Double {
         switch self {
-        case .grunt: return 0.62
+        case .grunt: return 0.72
         case .runner: return 0.46
         case .brute: return 0.86
         case .dancer: return 0.52
         case .archer: return 0.95
-        case .warlord: return 0.6
+        case .warlord: return 0.72
         }
     }
 
@@ -104,6 +107,19 @@ public enum Kind: String, Codable, Sendable, CaseIterable {
         switch self {
         case .brute, .warlord: return 2
         default: return 1
+        }
+    }
+
+    /// Where he stands to strike, from the ronin's centre: as far as his weapon reaches. A spearman strikes from
+    /// the length of his spear, at the edge of the ronin's own reach; a knife has to come close.
+    public var range: Double {
+        switch self {
+        case .grunt: return 0.28
+        case .runner: return 0.13
+        case .brute: return 0.2
+        case .dancer: return 0.14
+        case .archer: return 0.12
+        case .warlord: return 0.2
         }
     }
 
@@ -146,6 +162,8 @@ public struct Foe: Codable, Equatable, Sendable {
         case dying
         /// The warlord with his blade across his body: a cut now is parried, and he answers it.
         case guarding
+        /// The gourd-bearer making off with the gourd: gone at the lane's edge.
+        case fleeing
     }
 
     public var id: Int
@@ -163,8 +181,15 @@ public struct Foe: Codable, Equatable, Sendable {
     public var leapFrom = 0.0
     public var leapTo = 0.0
     public var hits = 0
-    /// Carries the stage's one gourd of medicine: cut him down and the ronin gets a heart back.
+    /// Carries the stage's one gourd of medicine. He keeps just out of reach and darts in to strike, twice, then
+    /// makes off with it: cut him down while he is close and the ronin gets a heart back.
     public var bearer = false
+    /// The gourd-bearer: seconds before he darts in, whether he is darting now, how many times he has, and how long
+    /// he has been on the lane.
+    public var hover = 0.0
+    public var darting = false
+    public var darts = 0
+    public var lingered = 0.0
     /// The warlord: seconds before he may raise his guard again, whether his next blow follows straight on from
     /// the last, and how many times he has called for help.
     public var guardRest = 0.0
@@ -189,8 +214,8 @@ public struct Foe: Codable, Equatable, Sendable {
     public var targetable: Bool { phase != .dying && phase != .leaping }
     /// 0 at the phase's start, 1 at its end.
     public var progress: Double { span > 0 ? min(1, max(0, 1 - timer / span)) : 1 }
-    /// Where the foe stands to strike: his near edge against the ronin.
-    public var contact: Double { Tuning.body + kind.width / 2 + 0.015 }
+    /// Where the foe stands to strike: as far out as his weapon reaches.
+    public var contact: Double { kind.range }
 
     mutating func enter(_ phase: Phase, for seconds: Double) {
         self.phase = phase

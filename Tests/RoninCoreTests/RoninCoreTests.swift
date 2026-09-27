@@ -94,9 +94,10 @@ final class RoninCoreTests: XCTestCase {
         var fight = lane()
         let a = fight.place(.grunt, at: 0.5)
         let b = fight.place(.grunt, at: 0.6)
-        _ = run(&fight, 1.8)
+        _ = run(&fight, 1.0)
         let front = fight.foe(a)!, back = fight.foe(b)!
         XCTAssertEqual(front.phase, .windup)
+        XCTAssertEqual(front.distance, Kind.grunt.range, accuracy: 0.001, "a spearman strikes from the length of his spear")
         XCTAssertGreaterThanOrEqual(back.distance - front.distance, Kind.grunt.width)
     }
 
@@ -278,14 +279,26 @@ final class RoninCoreTests: XCTestCase {
         _ = fight.strike(.right)
         XCTAssertEqual(fight.hp, 3, "one gourd a stage")
 
-        var spill = lane()
-        spill.roster = [.grunt, .grunt]
-        let carrier = spill.place(.grunt, at: -0.9)
-        spill.foes[0].bearer = true
-        spill.place(.grunt, at: 0.1)
-        spill.foes[1].enter(.windup, for: 0.01)
-        XCTAssertTrue(run(&spill, 0.3).contains(.spilled(foe: carrier)), "a wound with the bearer about spills the gourd")
-        XCTAssertTrue(spill.healed)
+        // Left alone, he keeps out of reach, darts in twice, and makes off with the gourd.
+        var chase = lane()
+        chase.roster = [.runner]
+        let carrier = chase.place(.runner, at: -0.9, hp: 2)
+        chase.foes[0].bearer = true
+        var closest = 1.0, hovered = false, fled = false
+        for _ in 0..<(120 * 14) where !fled {
+            let events = chase.step(Tuning.step)
+            if events.contains(.fled(foe: carrier)) { fled = true }
+            if let f = chase.foe(carrier) {
+                closest = min(closest, f.distance)
+                if f.phase == .advancing, !f.darting, f.gap > chase.reach, f.distance < 0.6 { hovered = true }
+            }
+        }
+        XCTAssertTrue(hovered, "he waits out of reach")
+        XCTAssertLessThanOrEqual(closest, Kind.runner.range + 0.001, "he darts in to strike")
+        XCTAssertTrue(fled)
+        XCTAssertTrue(chase.healed, "the chance is gone")
+        XCTAssertEqual(chase.hp, Tuning.heroHP - 2, "he struck twice")
+        XCTAssertEqual(chase.defeated, 1)
 
         var stage = Fight(stage: 4, seed: 3)
         XCTAssertNotNil(stage.bearerIndex)

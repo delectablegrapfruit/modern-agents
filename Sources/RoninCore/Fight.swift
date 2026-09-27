@@ -44,8 +44,8 @@ public enum FightEvent: Equatable, Sendable {
     case milestone(Int)
     /// The gourd-bearer fell: a heart back (`restored`), or points if none was missing.
     case healed(foe: Int, restored: Bool)
-    /// The ronin was wounded with the gourd-bearer on the lane: the gourd is spilled, the chance gone.
-    case spilled(foe: Int)
+    /// The gourd-bearer got away with the gourd.
+    case fled(foe: Int)
     /// The warlord raised his guard, turned a cut aside, or called for help.
     case guarded(foe: Int)
     case parried(Side, foe: Int)
@@ -95,7 +95,7 @@ public struct Fight: Codable, Equatable, Sendable {
     public var stats = FightStats()
     public var outcome: Outcome?
     public var bossID: Int?
-    /// Which of the roster carries the gourd, and whether its chance is spent (drunk or spilled).
+    /// Which of the roster carries the gourd, and whether its chance is spent (drunk, or carried off).
     public var bearerIndex: Int?
     public var healed = false
     /// Plays the fight when set (the self-test and the balance runs).
@@ -315,7 +315,12 @@ public struct Fight: Codable, Equatable, Sendable {
         }
         var foe = Foe(id: nextID, kind: kind, x: side.sign * Tuning.edge, hp: hp,
                       speed: kind.speed * difficulty.pace * rng.range(0.92, 1.08), windup: kind.windup * difficulty.windup)
-        foe.bearer = arrived == bearerIndex
+        if arrived == bearerIndex {
+            foe.bearer = true
+            foe.hp = max(foe.hp, 2)
+            foe.maxHP = foe.hp
+            foe.hover = rng.range(0.5, 1.0)
+        }
         nextID += 1
         foes.append(foe)
         arrived += 1
@@ -349,6 +354,12 @@ public struct Fight: Codable, Equatable, Sendable {
             var front: Foe?
             for i in order {
                 var f = foes[i]
+                if f.bearer, f.kind != .warlord {
+                    // The gourd-bearer keeps his own distance, and nobody queues behind him.
+                    bear(&f, side: side, &events)
+                    foes[i] = f
+                    continue
+                }
                 var stop = f.contact
                 if let front { stop = max(stop, front.distance + (front.kind.width + f.kind.width) / 2 + 0.01) }
                 if f.kind == .archer { stop = max(stop, Tuning.archerRange) }
@@ -365,7 +376,7 @@ public struct Fight: Codable, Equatable, Sendable {
                     let pace = f.speed * (1 + 0.5 * fury)
                     if f.distance > stop { f.x = side.sign * max(stop, f.distance - pace * h) }
                     // Close to the ronin, the warlord raises his guard and walks in behind it.
-                    if boss, f.guardRest <= 0, f.gap < reach + 0.18, rng.chance(2.4 * h) {
+                    if boss, f.guardRest <= 0, f.gap < reach + 0.12, rng.chance(2.0 * h) {
                         f.enter(.guarding, for: rng.range(0.6, 1.05))
                         events.append(.guarded(foe: f.id))
                         break
@@ -425,12 +436,67 @@ public struct Fight: Codable, Equatable, Sendable {
                             f.span = 0
                         }
                     }
-                case .leaping, .dying:
+                case .leaping, .dying, .fleeing:
                     break
                 }
                 foes[i] = f
                 front = f
             }
+        }
+    }
+
+    /// The gourd-bearer: he waits just out of reach, darts in and strikes, backs off, and after his second blow (or
+    /// once he has been about too long) makes off with the gourd. He can only be cut while he is close.
+    private mutating func bear(_ f: inout Foe, side: Side, _ events: inout [FightEvent]) {
+        let h = Tuning.step
+        if f.distance < 1 { f.lingered += h }
+        let hover = reach + f.kind.width / 2 + 0.09
+        switch f.phase {
+        case .advancing:
+            if !f.darting, f.darts >= 2 || f.lingered > 9 {
+                f.enter(.fleeing, for: 0)
+                break
+            }
+            let target = f.darting ? f.contact : hover
+            if f.distance > target + 0.0005 {
+                f.x = side.sign * max(target, f.distance - f.speed * (f.darting ? 5 : 1) * h)
+            } else if f.distance < target - 0.0005 {
+                f.x = side.sign * min(target, f.distance + f.speed * 2.5 * h)
+            }
+            if f.darting, f.distance <= f.contact + 0.0005 {
+                f.enter(.windup, for: f.windup * 0.32)
+                events.append(.raised(foe: f.id))
+            } else if !f.darting, abs(f.distance - hover) < 0.01 {
+                f.hover -= h
+                if f.hover <= 0 {
+                    f.darting = true
+                    f.darts += 1
+                    f.hover = rng.range(0.6, 1.3)
+                }
+            }
+        case .windup:
+            f.timer -= h
+            if f.timer <= 0 {
+                hurt(f.kind.damage, by: f.id, &events)
+                f.darting = false
+                f.enter(.recoil, for: 0.3)
+            }
+        case .recoil:
+            f.timer -= h
+            if f.timer <= 0 {
+                f.phase = .advancing
+                f.span = 0
+            }
+        case .fleeing:
+            f.x = side.sign * min(Tuning.edge + 0.1, f.distance + f.speed * 1.8 * h)
+            if f.distance >= Tuning.edge + 0.1 {
+                f.phase = .dying
+                healed = true
+                defeated += 1
+                events.append(.fled(foe: f.id))
+            }
+        case .aiming, .leaping, .guarding, .dying:
+            break
         }
     }
 
@@ -510,6 +576,7 @@ public struct Fight: Codable, Equatable, Sendable {
                 events.append(.summoned(foe: foes[i].id, allies: allies))
             }
         }
+        foes[i].darting = false
         let leaps: Bool
         switch foes[i].kind {
         case .dancer: leaps = !byArrow
@@ -540,11 +607,6 @@ public struct Fight: Codable, Equatable, Sendable {
         stats.damage += damage
         breakCombo(&events)
         events.append(.wounded(foe: foe, damage: damage))
-        if !healed, let i = foes.firstIndex(where: { $0.bearer && $0.alive }) {
-            healed = true
-            foes[i].bearer = false
-            events.append(.spilled(foe: foes[i].id))
-        }
     }
 
     private mutating func raiseCombo(_ events: inout [FightEvent]) {
