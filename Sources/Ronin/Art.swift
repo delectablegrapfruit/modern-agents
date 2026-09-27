@@ -563,8 +563,8 @@ enum Art {
             e.particlePositionRange.dx = span + abs(drift)
             e.particleBirthRate *= (span + abs(drift)) / span
         }
-        // Already falling when the stage opens (the sky filled for about the time it takes to cross it).
-        e.advanceSimulationTime(TimeInterval(min(e.particleLifetime, crossing * 1.25)))
+        // Already falling when the stage opens (the sky filled for the time it takes to cross it).
+        e.advanceSimulationTime(TimeInterval(min(e.particleLifetime, crossing)))
         return e
     }
 

@@ -516,6 +516,7 @@ final class Carnage {
                             body.doll?.aim(at: reach)
                             let amount = CGFloat(rng.range(0.3, 1))
                             body.doll?.stir(&rng, by: amount)
+                            body.reach = nil
                         }
                         body.state = .limp
                     }
