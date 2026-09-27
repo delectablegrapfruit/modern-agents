@@ -127,12 +127,20 @@
       const reduced = !!this.reduced;
 
       ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-      ctx.__dpr = this.dpr; // crisp cell sprites
+      ctx.__dpr = this.dpr; ctx.__light = th.name === 'light'; // crisp cell sprites, in the theme's variant
       ctx.clearRect(0, 0, this.w, this.h);
       // The well, as on the board, but plain: the equipped backdrop belongs to the play boards, not the floor.
-      ctx.fillStyle = th.well; rr(ctx, 0.5, 0.5, this.w - 1, this.h - 1, 10); ctx.fill();
+      if (!this.wash || this.washKey !== th.wellTop + this.h) {
+        this.washKey = th.wellTop + this.h;
+        this.wash = ctx.createLinearGradient(0, 0, 0, this.h);
+        this.wash.addColorStop(0, th.wellTop || th.well); this.wash.addColorStop(1, th.wellBottom || th.well);
+        this.shadeTop = ctx.createLinearGradient(0, 0, 0, 22);
+        this.shadeTop.addColorStop(0, th.innerShade || 'rgba(0,0,0,0.3)'); this.shadeTop.addColorStop(1, 'rgba(0,0,0,0)');
+      }
       ctx.save();
-      ctx.beginPath(); rr(ctx, 0.5, 0.5, this.w - 1, this.h - 1, 10); ctx.clip();
+      ctx.beginPath(); rr(ctx, 0.5, 0.5, this.w - 1, this.h - 1, 14); ctx.clip();
+      ctx.fillStyle = this.wash; ctx.fillRect(0, 0, this.w, this.h);
+      ctx.fillStyle = this.shadeTop; ctx.fillRect(0, 0, this.w, 22);
 
       this.drawBeam(ctx, f, th);
       for (let k = 0; k < 4; k++) this.drawPress(ctx, f, look, k, warn, reduced, hover);
@@ -145,7 +153,7 @@
       this.fx.draw(ctx);
       if (this.caption) this.drawCaption(ctx, th);
       ctx.restore();
-      ctx.strokeStyle = th.line; ctx.lineWidth = 1; rr(ctx, 0.5, 0.5, this.w - 1, this.h - 1, 10); ctx.stroke();
+      ctx.strokeStyle = th.rim || th.line; ctx.lineWidth = 1; rr(ctx, 0.5, 0.5, this.w - 1, this.h - 1, 14); ctx.stroke();
     }
 
     drawBeam(ctx, f, th) {

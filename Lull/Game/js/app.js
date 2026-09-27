@@ -49,11 +49,11 @@
       L.Collapse.init(this);
       this.lastTime = performance.now();
       // The line glyph's font is only fetched once text needs it; the canvases draw it too, so fetch it now and redraw.
-      if (document.fonts && document.fonts.load) document.fonts.load('12px "Lull Line"', LINE).then(() => this.onResize(), () => {});
+      if (document.fonts && document.fonts.load) Promise.all([document.fonts.load('12px "Lull Line"', LINE), document.fonts.load('600 12px "Lull Sans"', 'HOLD')]).then(() => this.onResize(), () => {});
       requestAnimationFrame((t) => this.frame(t));
       setInterval(() => this.second(), 1000);
       if (this.store.loadedFrom === 'new') setTimeout(() => this.welcome(), 250);
-      if (this.store.loadedFrom === 'corrupt') toast('The save could not be read, so Lull started fresh', 'bad', 6000);
+      if (this.store.loadedFrom === 'corrupt') toast('Save unreadable. Started fresh', 'bad', 6000);
       native.post('ready', { version: L.VERSION });
       this.postDragRegions();
       if (native.info && native.info.selftest) setTimeout(() => this.runSelfTest(), 800);
@@ -77,7 +77,12 @@
       this.applyMute();
       const css = getComputedStyle(rootEl);
       const v = (k) => css.getPropertyValue(k).trim();
-      this.theme = { name: theme, well: v('--well'), grid: v('--grid'), line: v('--line-2'), muted: v('--muted'), fg: v('--fg'), accent: s.accent, fog: v('--fog'), mono: v('--mono'), faint: v('--faint'), hair: v('--line'), gem: v('--gem'), gold: v('--gold') };
+      this.theme = {
+        name: theme, well: v('--well'), grid: v('--grid'), line: v('--line-2'), muted: v('--muted'), fg: v('--fg'), accent: s.accent, fog: v('--fog'), mono: v('--mono'), faint: v('--faint'), hair: v('--line'), gem: v('--gem'), gold: v('--gold'),
+        // The board's materials (css/lull.css, "board"): the well's wash, its rim and shadows, the plate under it.
+        wellTop: v('--well-top'), wellBottom: v('--well-bottom'), rim: v('--rim'), rimHi: v('--rim-hi'), innerShade: v('--inner-shade'), drop: v('--well-drop'),
+        plate: v('--plate'), plate2: v('--plate-2'), plateBase: v('--plate-base'), plateLine: v('--plate-line'), plateHi: v('--plate-hi'), plateShadow: v('--plate-shadow'),
+      };
       native.post('window', { bg: s.bg, onTop: !!s.onTop, fade: s.fadeAway !== false, theme, radius: 14 });
       if (s.fadeAway === false) document.body.classList.remove('away');
       const pin = document.getElementById('btn-pin');
@@ -109,7 +114,11 @@
       this.applyMute();
     },
 
-    look() { return Render.makeLook(this.state.equipped, this.theme, performance.now()); },
+    /** Reduced motion: Settings ▸ Look ▸ Effects, or the system's own setting. */
+    reducedMotion() { return this.settings.motion === 'reduced' || !!(root.matchMedia && root.matchMedia('(prefers-reduced-motion: reduce)').matches); },
+
+    /** The look, still (no moving palette, frame or backdrop) under reduced motion. */
+    look() { return Render.makeLook(this.state.equipped, this.theme, performance.now(), this.reducedMotion()); },
 
     applyLook() {
       this.sound.pack = this.state.equipped.sound || 'soft';
@@ -356,7 +365,7 @@
         title: 'Welcome to Lull',
         width: 440,
         body: h('div', null,
-          h('p', null, 'Nothing falls until you drop it.'),
+          h('p', null, 'Pieces fall only when you drop them.'),
           h('div', { class: 'keys', style: { marginTop: '10px' } }, L.KEY_HELP.slice(0, 7).map(([k, d]) => [h('span', { class: 'k' }, h('kbd', null, k)), h('span', null, d)]))),
         buttons: [{ label: 'Start', kind: 'primary' }],
       });

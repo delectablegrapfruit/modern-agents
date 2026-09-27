@@ -23,20 +23,20 @@
   // Wildcards. w = weight per difficulty (0 = never), x = incompatible with.
   const MODS = {
     big:    { name: 'Big Minos', icon: '▣', desc: 'Every piece is twice the size.', w: { E: 1, M: 2, H: 2 }, x: ['odd'] },
-    odd:    { name: 'Odd Shapes', icon: '✲', desc: 'Trominoes and pentominoes join the queue.', w: { E: 0.6, M: 2, H: 2 }, x: ['big'] },
+    odd:    { name: 'Odd Shapes', icon: '✲', desc: 'Trominoes and pentominoes in the queue.', w: { E: 0.6, M: 2, H: 2 }, x: ['big'] },
     wrap:   { name: 'Wraparound', icon: '⇆', desc: 'The side walls are portals.', w: { E: 0.6, M: 2, H: 2 } },
     rigid:  { name: 'Rigid', icon: '⊘', desc: 'Pieces cannot turn.', w: { E: 1, M: 1.5, H: 1.5 } },
     heavy:  { name: 'Heavy', icon: '⤓', desc: 'Hard drops only.', w: { E: 1.5, M: 1, H: 0.6 } },
-    invert: { name: 'Inverted Controls', icon: '⇄', desc: 'Left is right, and turns go the other way.', w: { E: 0.7, M: 1.5, H: 1.5 } },
-    flip:   { name: 'Upside Down', icon: '⇅', desc: 'The board hangs from the ceiling; pieces fall up.', w: { E: 1, M: 1.2, H: 1.2 }, x: ['side'] },
+    invert: { name: 'Inverted Controls', icon: '⇄', desc: 'Left and right swap. Turns reverse.', w: { E: 0.7, M: 1.5, H: 1.5 } },
+    flip:   { name: 'Upside Down', icon: '⇅', desc: 'The board is upside down. Pieces fall up.', w: { E: 1, M: 1.2, H: 1.2 }, x: ['side'] },
     side:   { name: 'Sideways', icon: '↰', desc: 'Gravity pulls to the left.', w: { E: 1, M: 1.2, H: 1.2 }, x: ['flip'] },
     fog:    { name: 'Fog', icon: '≋', desc: 'Blocks are only visible near your piece.', w: { E: 0, M: 1.2, H: 1.5 } },
     vanish: { name: 'Vanishing', icon: '◌', desc: 'Pieces turn invisible once set.', w: { E: 0, M: 0.6, H: 1.5 } },
     blind:  { name: 'Blind Queue', icon: '?', desc: 'No preview.', w: { E: 0, M: 1, H: 1.5 } },
     // Puzzles have no hold slot, except with this wildcard — and then the queue comes out of order, so it is needed.
-    hold:   { name: 'Hold', icon: '⇆', desc: 'The queue arrives out of order: you will need to hold.', w: { E: 0.8, M: 1.3, H: 1.6 } },
+    hold:   { name: 'Hold', icon: '⇆', desc: 'Pieces arrive out of order. Hold is needed.', w: { E: 0.8, M: 1.3, H: 1.6 } },
     // Only on "S" seeds (Settings ▸ Controls ▸ Counter-clockwise puzzles): turns go both ways, and the puzzle needs it.
-    spin:   { name: 'Both Ways', icon: '↺', desc: 'A spot here needs the other turn or a half turn.', w: { E: 0, M: 0, H: 0 }, x: ['rigid'] },
+    spin:   { name: 'Both Ways', icon: '↺', desc: 'Needs the other turn or a half turn.', w: { E: 0, M: 0, H: 0 }, x: ['rigid'] },
     mono:   { name: 'Monochrome', icon: '◐', desc: 'One colour for everything.', w: { E: 1, M: 1, H: 1 } },
   };
 

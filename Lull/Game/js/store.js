@@ -50,79 +50,64 @@
   };
   const ITEM_ORDER = ITEM_GROUPS.flatMap((g) => Object.keys(ITEMS).filter((id) => ITEMS[id].group === g.id));
 
-  // Colour slots: 1 I, 2 O, 3 T, 4 S, 5 Z, 6 J, 7 L, 8 garbage, 9–14 other shapes, 15 custom.
+  // Colour slots: 1 I, 2 O, 3 T, 4 S, 5 Z, 6 J, 7 L, 8 garbage, 9–14 other shapes, 15 custom. Every palette keeps the
+  // seven pieces apart by hue (or, for the one-hue palettes, by clear steps of value), and reads on both wells: the light
+  // theme deepens any colour too pale for its paper well (render.js, forWell).
   const PALETTES = {
-    classic:  { name: 'Classic', price: 0, colors: ['#000', '#4dd0e1', '#ffd54f', '#ba68c8', '#81c784', '#e57373', '#64b5f6', '#ffb74d', '#6b7280', '#f06292', '#aed581', '#4db6ac', '#9575cd', '#ff8a65', '#90a4ae', '#b8c4d6'] },
-    pastel:   { name: 'Pastel', price: 250, colors: ['#000', '#a8e6f0', '#fff1a8', '#d9b8f0', '#b8e6c1', '#f5b8b8', '#b8d4f5', '#fcd5b0', '#9ca3af', '#f7c6d9', '#d4ecb3', '#b3e0db', '#cdbff0', '#f9c9b5', '#c4ced4', '#fafafa'] },
-    ink:      { name: 'Ink', price: 300, colors: ['#000', '#e8e8e8', '#cfcfcf', '#b5b5b5', '#9d9d9d', '#858585', '#6e6e6e', '#dcdcdc', '#4b4b4b', '#c2c2c2', '#a9a9a9', '#909090', '#777', '#5f5f5f', '#b0b0b0', '#ffffff'] },
-    neon:     { name: 'Neon', price: 400, colors: ['#000', '#00f0ff', '#faff00', '#d400ff', '#39ff14', '#ff2079', '#2d6bff', '#ff8c00', '#3a3f55', '#ff4ecd', '#b4ff39', '#00ffc3', '#8a5cff', '#ff5e3a', '#7a8cff', '#ffffff'] },
-    sunset:   { name: 'Sunset', price: 500, colors: ['#000', '#ffb88c', '#ffd56b', '#de6fa1', '#f7a072', '#e8505b', '#a06cd5', '#f9844a', '#5c4a6e', '#ff9aa2', '#ffcf99', '#c86b98', '#8f5fa8', '#ff7b54', '#b38fa8', '#fff2e0'] },
-    forest:   { name: 'Forest', price: 500, colors: ['#000', '#8fbc8f', '#d4c16a', '#7a9e7e', '#5f8d4e', '#b5651d', '#3e6b48', '#c8a165', '#4a4436', '#a3b18a', '#dad7cd', '#588157', '#6b705c', '#bc6c25', '#8a817c', '#f1efe2'] },
-    ocean:    { name: 'Ocean', price: 500, colors: ['#000', '#48cae4', '#ade8f4', '#0077b6', '#90e0ef', '#023e8a', '#00b4d8', '#caf0f8', '#34506b', '#5fa8d3', '#62b6cb', '#1b98e0', '#4895ef', '#80ffdb', '#7d9fb6', '#f0fbff'] },
-    candy:    { name: 'Candy', price: 600, colors: ['#000', '#7ee8fa', '#fdfd96', '#ff9cee', '#b5ff9c', '#ff6b9d', '#9cb4ff', '#ffc09c', '#8a7f9c', '#ff85c0', '#c7ff85', '#85ffe0', '#c485ff', '#ffa585', '#d0c3e0', '#fff'] },
-    handheld: { name: 'Handheld', price: 750, colors: ['#000', '#9bbc0f', '#8bac0f', '#306230', '#8bac0f', '#306230', '#0f380f', '#9bbc0f', '#0f380f', '#8bac0f', '#306230', '#9bbc0f', '#306230', '#8bac0f', '#0f380f', '#cadc9f'] },
-    vapor:    { name: 'Vapor', price: 900, colors: ['#000', '#01cdfe', '#fffb96', '#b967ff', '#05ffa1', '#ff71ce', '#7b8cff', '#ffb3fd', '#50456b', '#ff9ff3', '#a3fff0', '#6effd6', '#c89bff', '#ffa3c7', '#9f95c9', '#fdf6ff'] },
+    classic:  { name: 'Classic', price: 0, colors: ['#000', '#4fd1e3', '#f7d154', '#b57ee6', '#6fd08c', '#f07178', '#5c9df2', '#f9a14e', '#6b7280', '#f06292', '#aed581', '#4db6ac', '#9575cd', '#ff8a65', '#90a4ae', '#b8c4d6'] },
+    mist:     { name: 'Mist', price: 300, colors: ['#000', '#98d1dc', '#e9dcaa', '#b9a6dc', '#a3d0b0', '#e0a2ad', '#98b0de', '#e8bd98', '#68707e', '#d6b3c9', '#c3d6ae', '#a6d1c9', '#b5aee0', '#e3b8a6', '#aab3bf', '#eef1f5'] },
+    sunset:   { name: 'Sunset', price: 450, colors: ['#000', '#ffb385', '#ffd66e', '#d9679d', '#f5946b', '#e8505b', '#9b6ad6', '#f7c087', '#5c4a6e', '#ff9aa2', '#ffcf99', '#c86b98', '#8f5fa8', '#ff7b54', '#b38fa8', '#fff2e0'] },
+    aurora:   { name: 'Aurora', price: 600, colors: ['#000', '#56e0c6', '#c9ee78', '#9d7cf4', '#44c98f', '#e66fb2', '#5a96f0', '#f2b766', '#3c4660', '#c285f0', '#86e3b8', '#58c9e0', '#7d86f2', '#ef8fa0', '#8e9cc0', '#e9f6ff'] },
+    ink:      { name: 'Ink', price: 750, colors: ['#000', '#f2f2f0', '#c9c9c6', '#8e8e8b', '#adadaa', '#6f6f6c', '#dcdcd9', '#b9b9b6', '#4b4b4b', '#c2c2c2', '#a9a9a9', '#909090', '#777777', '#5f5f5f', '#b0b0b0', '#ffffff'] },
+    handheld: { name: 'Handheld', price: 900, colors: ['#000', '#9bbc0f', '#c4d66a', '#306230', '#8bac0f', '#4d7a2a', '#1e4a1e', '#b0c94a', '#0f380f', '#8bac0f', '#306230', '#9bbc0f', '#306230', '#8bac0f', '#0f380f', '#cadc9f'] },
     assembly: { name: 'Assembly Line', price: 0, reward: 'Build a second press in the factory', colors: ['#000', '#f2c14e', '#f78154', '#4d9078', '#b4436c', '#5fad56', '#2e86ab', '#f2a541', '#3d4451', '#e0a458', '#8bb174', '#5b8e7d', '#a1869e', '#d1495b', '#8d99ae', '#edf2f4'] },
-    mist:     { name: 'Mist', price: 550, colors: ['#000', '#9fd4dc', '#e6dcb4', '#b7a8d6', '#a9cfb4', '#dca7b0', '#9fb5da', '#e5c1a2', '#68707e', '#d6b3c9', '#c3d6ae', '#a6d1c9', '#b5aee0', '#e3b8a6', '#aab3bf', '#eef1f5'] },
-    aurora:   { name: 'Aurora', price: 700, colors: ['#000', '#5ee6c8', '#c8f07a', '#9f7cf5', '#4fd1a0', '#e46fb4', '#5b9df0', '#f0b86a', '#3c4660', '#c285f0', '#86e3b8', '#58c9e0', '#7d86f2', '#ef8fa0', '#8e9cc0', '#e9f6ff'] },
-    gold:     { name: 'Gold Leaf', price: 2500, colors: ['#000', '#f9e79f', '#f4d03f', '#d4ac0d', '#f7dc6f', '#b7950b', '#e9c46a', '#fcf3cf', '#5a4a1f', '#f5cba7', '#e59866', '#dc7633', '#f0b27a', '#ca6f1e', '#b9a37a', '#fffaf0'] },
-    prism:    { name: 'Prism', price: 4000, animated: true, colors: null },
+    gold:     { name: 'Gold Leaf', price: 2000, colors: ['#000', '#f9e79f', '#f4d03f', '#c99a2e', '#efd27a', '#a8801c', '#e2b650', '#fcecc0', '#5a4a1f', '#f5cba7', '#e59866', '#dc7633', '#f0b27a', '#ca6f1e', '#b9a37a', '#fffaf0'] },
+    prism:    { name: 'Prism', price: 3500, animated: true, colors: null },
   };
 
   const SKINS = {
     flat:    { name: 'Flat', price: 0 },
     bevel:   { name: 'Bevel', price: 300 },
-    outline: { name: 'Outline', price: 350 },
-    bubble:  { name: 'Bubble', price: 450 },
-    pixel:   { name: 'Pixel', price: 500 },
-    glass:   { name: 'Glass', price: 600 },
-    wire:    { name: 'Wireframe', price: 700 },
-    neon:    { name: 'Neon Tube', price: 800 },
-    brick:   { name: 'Brick', price: 900 },
-    gem:     { name: 'Gem', price: 1200 },
-    satin:   { name: 'Satin', price: 650 },
-    jelly:   { name: 'Jelly', price: 1500 },
+    pixel:   { name: 'Pixel', price: 450 },
+    bubble:  { name: 'Bubble', price: 600 },
+    glass:   { name: 'Glass', price: 750 },
+    jelly:   { name: 'Jelly', price: 900 },
+    neon:    { name: 'Neon Tube', price: 1100 },
+    gem:     { name: 'Gem', price: 1400 },
     lantern: { name: 'Lantern', price: 1800 },
     steel:   { name: 'Steel', price: 0, reward: 'Build all four factory presses' },
   };
 
   const FRAMES = {
     hairline: { name: 'Hairline', price: 0 },
-    double:   { name: 'Double', price: 200 },
-    dashed:   { name: 'Dashed', price: 300 },
-    rounded:  { name: 'Rounded', price: 400 },
+    double:   { name: 'Inlay', price: 250 },
     glow:     { name: 'Glow', price: 500 },
-    brass:    { name: 'Brass', price: 1000 },
-    rainbow:  { name: 'Rainbow', price: 1500, animated: true },
+    brass:    { name: 'Brass', price: 900 },
+    rainbow:  { name: 'Rainbow', price: 1400, animated: true },
     hazard:   { name: 'Hazard Tape', price: 0, reward: 'Build a third press in the factory' },
   };
 
   const BACKDROPS = {
     none:      { name: 'Plain', price: 0 },
     grid:      { name: 'Grid', price: 0 },
-    dots:      { name: 'Dots', price: 150 },
-    scan:      { name: 'Scanlines', price: 300 },
-    blueprint: { name: 'Blueprint', price: 400 },
-    dusk:      { name: 'Dusk', price: 600 },
-    stars:     { name: 'Starfield', price: 800 },
-    aurora:    { name: 'Aurora', price: 900 },
+    blueprint: { name: 'Blueprint', price: 300 },
+    dusk:      { name: 'Dusk', price: 500 },
+    aurora:    { name: 'Aurora', price: 700 },
+    stars:     { name: 'Starfield', price: 900 },
     belt:      { name: 'Conveyor', price: 0, reward: 'Collect 500 lines from the factory' },
   };
 
   const EFFECTS = {
     fade:     { name: 'Fade', price: 0 },
-    sparkle:  { name: 'Sparkle', price: 500 },
-    ripple:   { name: 'Ripple', price: 700 },
-    shatter:  { name: 'Shatter', price: 900 },
+    sparkle:  { name: 'Sparkle', price: 400 },
+    ripple:   { name: 'Ripple', price: 600 },
     bloom:    { name: 'Bloom', price: 800 },
-    confetti: { name: 'Confetti', price: 1200 },
     sparks:   { name: 'Welding Sparks', price: 0, reward: 'Build the tallest factory bin' },
   };
 
   const GHOSTS = {
     outline: { name: 'Outline', price: 0 },
-    faint:   { name: 'Faint', price: 100 },
-    soft:    { name: 'Soft', price: 120 },
+    soft:    { name: 'Soft', price: 100 },
     dotted:  { name: 'Dotted', price: 150 },
     glow:    { name: 'Glow', price: 250 },
     off:     { name: 'Off', price: 0 },
@@ -130,14 +115,12 @@
 
   // Sound packs (the synth voices live in audio.js).
   const SOUNDS = {
-    soft:       { name: 'Drift', price: 0 },
-    typewriter: { name: 'Typewriter', price: 300 },
-    chip:       { name: 'Chiptune', price: 400 },
-    bubbles:    { name: 'Bubbles', price: 450 },
-    marimba:    { name: 'Marimba', price: 600 },
-    synth:      { name: 'Analog Synth', price: 750 },
-    glass:      { name: 'Glass', price: 900 },
-    chimes:     { name: 'Wind Chimes', price: 1200 },
+    soft:    { name: 'Drift', price: 0 },
+    chip:    { name: 'Chiptune', price: 350 },
+    marimba: { name: 'Marimba', price: 500 },
+    synth:   { name: 'Analog Synth', price: 650 },
+    glass:   { name: 'Glass', price: 800 },
+    chimes:  { name: 'Wind Chimes', price: 1000 },
   };
 
   const COSMETICS = { palette: PALETTES, skin: SKINS, frame: FRAMES, backdrop: BACKDROPS, effect: EFFECTS, ghost: GHOSTS, sound: SOUNDS };

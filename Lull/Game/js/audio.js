@@ -84,26 +84,6 @@
       any() { return [this.tone(76, 0, 0.03, 0.6)]; },
     },
 
-    // A desk-bound machine: clicks, clacks, the carriage return's zip and its bell.
-    typewriter: {
-      base: 300, wave: 'triangle', decay: 0.15,
-      move: () => [{ n: 1, d: 0.018, g: 0.12, bp: 3600 }, { f: 190, d: 0.02, g: 0.05 }],
-      rotate: () => [{ n: 1, d: 0.02, g: 0.12, bp: 2800 }, { n: 1, d: 0.015, g: 0.08, bp: 4200, at: 0.03 }],
-      lower: () => [{ n: 1, d: 0.04, g: 0.1, q: 900 }],
-      lock: () => [{ n: 1, d: 0.07, g: 0.28, q: 1300 }, { f: 88, d: 0.08, g: 0.16 }, { f: 2400, d: 0.012, w: 'square', g: 0.015, at: 0.01 }],
-      hold: () => [{ n: 1, d: 0.06, g: 0.14, q: 600 }, { n: 1, d: 0.02, g: 0.1, bp: 3000, at: 0.05 }],
-      blocked: () => [{ n: 1, d: 0.06, g: 0.2, q: 500 }],
-      clear: (s, n) => {
-        const out = [{ n: 1, d: 0.26, g: 0.1, fe: [700, 5000], bp: 0 }];
-        for (let i = 0; i < Math.min(n || 1, 4); i++) out.push({ f: 2093, d: 0.9, g: 0.06, at: 0.26 + i * 0.12, p: [[2.76, 0.4, 0.4], [5.4, 0.15, 0.2]] });
-        return out;
-      },
-      quad: () => [{ n: 1, d: 0.3, g: 0.12, fe: [600, 6000] }, { f: 2093, d: 1, g: 0.07, at: 0.3, p: [[2.76, 0.4, 0.4]] }, { f: 2637, d: 1, g: 0.06, at: 0.42, p: [[2.76, 0.4, 0.4]] }, { f: 3136, d: 1.2, g: 0.06, at: 0.54, p: [[2.76, 0.4, 0.4]] }],
-      tspin: () => [0, 1, 2, 3, 4, 5].map((i) => ({ n: 1, d: 0.02, g: 0.12, bp: 2500 + i * 300, at: i * (0.07 - i * 0.008) })),
-      combo: (s, n) => Array.from({ length: Math.min(8, (n || 1) + 1) }, (_, i) => ({ n: 1, d: 0.018, g: 0.1, bp: 3000, at: i * 0.035 })),
-      perfect: () => [{ n: 1, d: 0.4, g: 0.12, fe: [500, 7000] }].concat([0, 1, 2].map((i) => ({ f: 2093, d: 1.2, g: 0.07, at: 0.4 + i * 0.18, p: [[2.76, 0.4, 0.4]] }))),
-    },
-
     // An old handheld: square waves, a coin for a line, a power-up for four.
     chip: {
       base: 440, wave: 'square', decay: 0.12,
@@ -121,20 +101,6 @@
       tspin: () => [{ f: 1568, to: 392, d: 0.18, w: 'square', g: 0.05 }, { f: 392, to: 1568, d: 0.18, w: 'square', g: 0.05, at: 0.18 }],
       combo: (s, n) => [{ f: note(880, Math.min(10, n || 1)), d: 0.06, w: 'square', g: 0.05 }, { f: note(880, Math.min(12, (n || 1) + 2)), d: 0.08, w: 'square', g: 0.05, at: 0.06 }],
       perfect: () => [523, 659, 784, 1047, 784, 1047, 1319, 1568].map((f, i) => ({ f, d: 0.12, w: 'square', g: 0.05, at: i * 0.09 })),
-    },
-
-    // Everything goes bloop.
-    bubbles: {
-      base: 520, wave: 'sine', decay: 0.18, slide: true,
-      move: () => [{ f: rand(460, 560), d: 0.05, g: 0.06, to: 900 }],
-      rotate: () => [{ f: 700, d: 0.07, g: 0.07, to: 1400 }],
-      lower: () => [{ f: 380, d: 0.05, g: 0.05, to: 620 }],
-      lock: () => [{ f: 150, d: 0.14, g: 0.24, to: 460 }, { f: 900, d: 0.04, g: 0.03, to: 1600, at: 0.1 }],
-      hold: () => [{ f: 600, d: 0.12, g: 0.1, to: 1600 }, { f: 1600, d: 0.1, g: 0.06, to: 600, at: 0.12 }],
-      clear: (s, n) => Array.from({ length: 4 * Math.min(n || 1, 4) }, (_, i) => ({ f: rand(300, 700), to: rand(1200, 2400), d: 0.07 + Math.random() * 0.05, g: 0.05, at: i * 0.045 + Math.random() * 0.02 })),
-      quad: () => Array.from({ length: 18 }, (_, i) => ({ f: rand(300, 900), to: rand(1400, 3000), d: 0.08, g: 0.05, at: i * 0.035 })).concat([{ n: 1, d: 0.05, g: 0.1, bp: 2000, at: 0.66 }]),
-      tspin: () => [{ f: 500, to: 1800, d: 0.2, g: 0.07 }, { f: 1800, to: 400, d: 0.2, g: 0.07, at: 0.2 }, { f: 400, to: 2200, d: 0.25, g: 0.07, at: 0.4 }],
-      combo: (s, n) => [{ f: 400 + (n || 1) * 90, to: 1400 + (n || 1) * 180, d: 0.09, g: 0.07 }],
     },
 
     // Wooden bars, a soft mallet: a roll for every clear.

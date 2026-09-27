@@ -531,7 +531,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     g.board.cells.fill(0); g.replacePiece({ id: 'O' }); while (g.move(-1));
     for (let y = 0; y < 20; y++) for (let x = 3; x < 10; x++) g.board.set(x, y, 8);
     m.useItem('giant');
-    const out = { card: m.cardOpen, over: g.over, kept: inv.giant === had + 1, id: g.piece.type.id, toast: document.body.textContent.includes('No room up there') };
+    const out = { card: m.cardOpen, over: g.over, kept: inv.giant === had + 1, id: g.piece.type.id, toast: document.body.textContent.includes('No room') };
     inv.giant = had; g.board.cells.fill(0); m.view.dirty = true;
     return out;
   });
@@ -1380,7 +1380,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   const rule = await ev(() => {
     const play = [...document.querySelectorAll('.ach-group[data-group="play"] .ach .d')].map((d) => d.textContent);
     const info = document.querySelector('.ach-group[data-group="play"] > summary .ach-info'), others = document.querySelectorAll('.ach-group:not([data-group="play"]) .ach-info').length;
-    return { said: play.filter((t) => /no (other )?power-ups on the board/.test(t)).length, byHand: document.getElementById('ach-body').textContent.includes('by hand'), info: info && info.dataset.tip, others };
+    return { said: play.filter((t) => /no (other )?power-ups on the board/i.test(t)).length, byHand: document.getElementById('ach-body').textContent.includes('by hand'), info: info && info.dataset.tip, others };
   });
   check('Free Play skill ones say "no power-ups on the board", defined once on the header (never "by hand")', rule.said >= 20 && !rule.byHand && /last empty/.test(rule.info || '') && rule.others === 0, JSON.stringify(rule));
   const wasOpen = await ev(() => document.querySelector('.ach-group[data-group="play"]').open);

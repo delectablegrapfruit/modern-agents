@@ -189,32 +189,56 @@ with fixed pools of bodies and particles; Reduced motion turns it into plain fad
 while it has focus) picks which — when it does not fit, a chevron at each end pages it a visible width at a time,
 snapped to whole kinds, dimmed at each end, never picking one — and only that
 kind's tiles are shown — the list scrolls within the kind, never on into the next; the Shop reopens on the kind you
-looked at last. Each tile has a live preview drawn in your current look: palettes (Prism animates; Mist and Aurora are the calmest) on a small stack, mino skins (Satin, Lantern, Gem, Glass, Neon, Jelly, Pixel …) large enough to see their surface, board
-frames, backdrops and ghost styles on a small board, line-clear effects mid-burst, and **sound packs** (Drift — the
-default: smooth synth tones in the music's room — a breath of a different note for each move, like a chime stirring,
-soft sine plucks that darken as they ring, round bell tones, slow wide detuned pads swelling under clears, a warm felt
-note and soft sub when a piece sets and a low thoom for booms; no clicks on the way in, never brighter than the music,
-all in its A minor (and anything played that has no sound of its own yet gets a quiet pluck) —
-Typewriter with carriage-return zips and bells, Chiptune coins and power-ups, fizzing Bubbles, rolling
-Marimba, Analog Synth stabs, ringing Glass, Wind Chimes — all synthesized, each with its own clears; its preview is a
-Listen button); a few are factory rewards (a second, third and fourth press, the tallest bin, 500 lines collected),
-marked with a lock and what earns them on hover. A tile says In use, Use (click it, or the tile) or its price, dimmed when you cannot afford it. Buying
+looked at last. Each tile has a large live preview drawn in your current look: a small real well with a stack in it.
+The catalogue is short on purpose, every item distinct:
+
+| Kind | Items (price ⦵) |
+|---|---|
+| Palettes | Classic (free), Mist 300, Sunset 450, Aurora 600, Ink 750, Handheld 900, Gold Leaf 2,000, Prism 3,500 (its hues glide round the wheel, a turn in 45 s), Assembly Line (factory) |
+| Mino skins | Flat (free), Bevel 300, Pixel 450, Bubble 600, Glass 750, Jelly 900, Neon Tube 1,100, Gem 1,400, Lantern 1,800, Steel (factory) |
+| Frames | Hairline (free: the well's own rim), Inlay 250, Glow 500, Brass 900, Rainbow 1,400 (a slow ring of spectrum, a turn in 12 s), Hazard Tape (factory) |
+| Backdrops | Plain and Grid (free), Blueprint 300, Dusk 500, Aurora 700 (three veils of light drifting on long periods), Starfield 900 (the bright stars twinkle), Conveyor (factory; its treads slide) |
+| Line clears | Fade (free), Sparkle 400, Ripple 600, Bloom 800, Welding Sparks (factory) |
+| Ghosts | Outline (free), Soft 100, Dotted 150, Glow 250, Off |
+| Sounds | Drift (free), Chiptune 350, Marimba 500, Analog Synth 650, Glass 800, Wind Chimes 1,000 |
+
+Moving previews (Prism, Rainbow, the moving backdrops, every line clear on a loop) share one animation loop that
+runs only while they are on screen, and stand still under reduced motion, as the boards do. A light-theme well deepens
+any palette colour too pale for it (hue kept), and Glass and Neon Tube paint a deeper variant there. **Sound packs**
+(Drift — the default: smooth synth tones in the music's room — a breath of a different note for each move, like a
+chime stirring, soft sine plucks that darken as they ring, round bell tones, slow wide detuned pads swelling under
+clears, a warm felt note and soft sub when a piece sets and a low thoom for booms; no clicks on the way in, never
+brighter than the music, all in its A minor (and anything played that has no sound of its own yet gets a quiet pluck)
+— Chiptune coins and power-ups, rolling Marimba, Analog Synth stabs, ringing Glass, Wind Chimes — all synthesized,
+each with its own clears; its preview is a Listen button); a few are factory rewards (a second, third and fourth
+press, the tallest bin, 500 lines collected), marked with a lock and what earns them on hover. A tile says In use, Use (click it, or the tile) or its price, dimmed when you cannot afford it. Buying
 is two clicks on the same spot — the price turns into Confirm for three seconds — and a new cosmetic goes straight on.
 
-**Look** — one small design system (`css/lull.css`, its tokens at the top): an ink-blue dark and a cool paper light
+**Look** — one small design system (`css/lull.css`, its tokens at the top): a midnight-ink dark and a porcelain light
 theme, each with three translucent surface steps (so Glass and Tint show through), two line weights, a solid raised
 colour for popovers, tooltips, toasts and dialogs, and the accent you pick (with a deeper ink of it for text and icons
-on light); a seven-step type scale around 13 px, a 2/4 px spacing grid, radii from 4 to 18, three shadows and three
-durations. Buttons (primary, secondary, ghost, danger), segmented controls, chips, cards, rows, switches and sliders
-share them, with hover, pressed, disabled and a focus ring for the keyboard. Every icon is one inline SVG family
-(`js/icons.js`): a 16-unit grid, a 1.5 stroke, round caps and joins; the places to play are drawn in blocks, everything
-else in line, and each power-up, wildcard and Settings section has its own — never a font glyph, never an emoji. On the
-boards, hold and the queue sit in soft recessed trays under small spaced capitals.
+on light), which also lights the window faintly from the top. Type is Inter (embedded, SIL Open Font License, so every
+system reads alike): a seven-step scale around 13 px, with small spaced capitals for labels. A 2/4 px spacing grid,
+radii from 6 to 20, three shadows and three durations. Buttons (primary, secondary, ghost, danger), segmented
+controls, chips, cards, rows, switches and sliders share them, with hover, pressed, disabled and a focus ring for the
+keyboard. Every icon is one inline SVG family (`js/icons.js`): a 16-unit grid, a 1.5 stroke, round caps and joins; the
+places to play are drawn in blocks, everything else in line, and each power-up, wildcard and Settings section has its
+own — never a font glyph, never an emoji.
+
+The board is one composed unit: a raised plate holding the well — a recessed tray a little larger than the grid, light
+falling in from above, a shadow under its top edge and a fine rim — with Hold and Next in trays of the same material
+beside it (above it, when the window is tall and narrow; puzzles without a hold slot give the room to the grid). The
+still parts of the well are painted once into offscreen layers, so a frame is a couple of images plus the pieces.
+Under the plate, and as wide as it, the status bar shows the board's figures as small labels over their values, and
+the item bar is one recessed track with a segment per power-up type. Text everywhere is plain labels: what a thing is
+and its number, no prose.
 
 **Achievements** — 105 quiet milestones that pay ⦵ lines, in their own tab: a small toast when one is earned, nothing
 more (one earned in the background, by the factory or the once-a-minute check, is told when you come back, not chimed
-from a hidden window). The tab folds them into Free Play, Classic, Puzzles, Lifetime and Factory (each header keeps its count, a bar and
-what it has paid), easiest first, with a filter for all, to do or earned; the slow ones show their progress. None is a
+from a hidden window). The tab opens on three figures (Earned 12 / 105, Lines earned, Lines available) and folds them into Free Play,
+Classic, Puzzles, Lifetime and Factory (each header keeps its count, a bar and lines earned / available; each row its
+name, a plain description such as "Clear 4 lines with one piece. No power-ups on the board.", its pay and the date
+earned), easiest first, with a filter for all, to do or earned; the slow ones show their progress. None is a
 gimme — the easiest is a quad with no power-ups on the board (15 ⦵) — and 150 pieces of ordinary play earn nothing new, nor do 150 with a
 few items used along the way (a test plays both, at a relaxed piece every three seconds).
 
@@ -351,4 +375,4 @@ first time. The save lives in `~/Library/Application Support/Lull/save.json` (Se
 The Classic announcer's lines are cut from the announcer of *Tetris Worlds* (2001); that recording belongs to its
 rights holders (The Tetris Company / THQ) and is not covered by this project's terms.
 Korobeiniki is a 19th-century folk song in the public
-domain.
+domain. The interface face is Inter by Rasmus Andersson (SIL Open Font License 1.1), embedded in `css/lull.css`.

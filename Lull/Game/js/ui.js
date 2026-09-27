@@ -118,53 +118,73 @@
     for (const [cx, cy] of cells) Render.drawCell(ctx, look.skin, look.colors[t.color], x + (cx - b.minX) * s, y + (b.maxY - cy) * s, s);
   }
 
-  function cosmeticPreview(app, kind, id, w, hh) {
-    // At least this big, whatever the caller asks: a look should be seen, not squinted at.
-    w = Math.max(w, 164); hh = Math.max(hh, 84);
-    const look = lookWith(app, kind, id);
-    return canvasFor(w, hh, (ctx) => {
+  // Shop previews that move (Prism, Rainbow, a moving backdrop, every line clear) share one animation loop, which runs
+  // only while such a preview is on screen and never under reduced motion.
+  const live = new Set();
+  let liveRaf = 0;
+  function tickLive(t) {
+    liveRaf = 0;
+    for (const p of live) { if (!p.canvas.isConnected) { live.delete(p); continue; } p.paint(t); }
+    if (live.size) liveRaf = requestAnimationFrame(tickLive);
+  }
+  function addLive(p) { live.add(p); if (!liveRaf) liveRaf = requestAnimationFrame(tickLive); }
+
+  const PREVIEW_STACK = [[0, 3, 6], [1, 3, 6], [2, 3, 6], [0, 2, 6], [5, 3, 4], [6, 3, 4], [5, 2, 5], [4, 2, 5], [7, 3, 1], [7, 2, 1], [7, 1, 1], [3, 3, 7], [4, 3, 7], [6, 2, 3], [6, 1, 3], [5, 1, 3]];
+
+  /** A live preview of one cosmetic, drawn in your current look: a small real well with a stack in it. */
+  function cosmeticPreview(app, kind, id) {
+    const w = 220, hh = 112;
+    const still = app.reducedMotion();
+    const look = Render.makeLook(Object.assign({}, app.store.state.equipped, { [kind]: id }), app.theme, 0, still);
+    const theme = app.theme;
+    const moving = !still && (look.animated || kind === 'effect');
+    const cols = kind === 'skin' ? 7 : 9, rows = 4;
+    const s = kind === 'skin' ? 22 : 20;
+    const bw = s * cols, bh = s * rows, bx = Math.round((w - bw) / 2), by = Math.round((hh - bh) / 2) + 1;
+    const board = { x: bx, y: by, w: bw, h: bh };
+    const colour = kind === 'palette' || kind === 'skin' || kind === 'effect';
+    let fx = null, fxAt = -1e9;
+    const paint = (ctx, t) => {
+      ctx.clearRect(0, 0, w, hh);
+      ctx.__light = theme.name === 'light';
+      if (look.prism && !still) look.colors = Render.forWell(Render.paletteColors(id, t), theme.name);
+      const wr = Render.drawWell(ctx, look.backdrop, board, s, cols, rows, theme, still ? 0 : t);
+      const col = (c) => look.colors[colour ? c : 8];
       if (kind === 'effect') {
-        const s = Math.floor(Math.min(hh / 3.2, w / 11));
-        const fx = new Render.FX();
-        const cells = [];
-        const ox = (w - s * 10) / 2, oy = hh / 2 - s / 2;
-        for (let i = 0; i < 10; i++) cells.push({ x: ox + i * s, y: oy, color: look.colors[(i % 7) + 1] });
-        const r = new L.RNG(id);
-        const saved = Math.random;
-        Math.random = () => r.next();
-        fx.burst(id, cells, s, false);
-        if (id === 'ripple') fx.ring(w / 2, hh / 2, app.theme.accent, s * 7);
-        Math.random = saved;
-        fx.update(id === 'fade' ? 0.08 : 0.16);
-        fx.draw(ctx);
+        // A row that clears every two seconds (held for a beat first), over the rest of the stack.
+        for (const [cx, cy, c] of PREVIEW_STACK) if (cy === 3) Render.drawCell(ctx, look.skin, col(c), bx + cx * s, by + cy * s, s);
+        const period = 1700, hold = 650, cycle = still ? 0 : Math.floor(t / period), phase = still ? hold + 160 : t % period;
+        if (phase < hold) for (let i = 0; i < cols; i++) Render.drawCell(ctx, look.skin, look.colors[(i % 7) + 1], bx + i * s, by + 2 * s, s);
+        else {
+          if (!fx || fx.cycle !== cycle) {
+            fx = new Render.FX(); fx.cycle = cycle; fx.clock = 0; fx.light = theme.name === 'light';
+            const cells = [];
+            for (let i = 0; i < cols; i++) cells.push({ x: bx + i * s, y: by + 2 * s, color: look.colors[(i % 7) + 1] });
+            fx.burst(id, cells, s, false);
+            if (id === 'ripple') fx.ring(bx + bw / 2, by + 2.5 * s, theme.accent, s * cols * 0.7);
+          }
+          const target = (phase - hold) / 1000;
+          while (fx.clock < target) { const dt = Math.min(1 / 60, target - fx.clock + 1e-6); fx.update(dt); fx.clock += dt; }
+          ctx.save(); Render.rr(ctx, wr.x, wr.y, wr.w, wr.h, wr.r); ctx.clip(); fx.draw(ctx); ctx.restore();
+        }
       } else {
-        // A small board: palettes and skins show a stack in every colour, the rest a grey stack with a piece coming down.
-        // Skins get fewer, larger cells, so the surface itself can be seen.
-        const big = kind === 'skin';
-        const cols = big ? 6 : 8, rows = big ? 3 : 4, colour = kind === 'palette' || kind === 'skin';
-        const room = kind === 'frame' ? 28 : 16; // a frame needs room around the board to be seen
-        const s = Math.floor(Math.min((hh - room) / rows, (w - room - 8) / cols));
-        const bw = s * cols, bh = s * rows, bx = Math.round((w - bw) / 2), by = Math.round((hh - bh) / 2);
-        Render.drawBackdrop(ctx, look.backdrop, { x: bx, y: by, w: bw, h: bh }, s, cols, rows, app.theme, 0);
-        if (big) {
-          // An S, an L and an I lying down, a T above: four colours, every edge of the skin on show.
-          const cells = [[0, 2, 4], [1, 2, 4], [1, 1, 4], [2, 1, 4], [2, 2, 7], [3, 2, 7], [4, 2, 7], [4, 1, 7], [5, 2, 1], [5, 1, 1], [5, 0, 1], [0, 1, 3], [0, 0, 3], [3, 1, 2], [3, 0, 2], [2, 0, 2]];
-          for (const [cx, cy, c] of cells) Render.drawCell(ctx, look.skin, look.colors[c], bx + cx * s, by + cy * s, s);
-          return;
-        }
-        const stack = [[0, 3, 6], [1, 3, 6], [2, 3, 6], [0, 2, 6], [5, 3, 4], [6, 3, 4], [5, 2, 5], [4, 2, 5], [7, 3, 1], [7, 2, 1], [7, 1, 1], [3, 3, 7], [4, 3, 7]];
-        for (const [cx, cy, c] of stack) Render.drawCell(ctx, look.skin, look.colors[colour ? c : 8], bx + cx * s, by + cy * s, s);
+        for (const [cx, cy, c] of PREVIEW_STACK) if (cx < cols) Render.drawCell(ctx, look.skin, col(c), bx + cx * s, by + cy * s, s);
         if (kind === 'ghost') {
-          const col = look.colors[2];
-          for (const [cx, cy] of [[3, 3], [4, 3], [4, 2], [3, 2]]) Render.ghostCell(ctx, id, col, bx + cx * s, by + cy * s, s);
-          for (const [cx, cy] of [[3, 0], [4, 0], [3, 1], [4, 1]]) Render.drawCell(ctx, look.skin, col, bx + cx * s, by + cy * s, s);
-        } else {
-          drawMiniPiece(ctx, look, 'T', bx + 1 * s, by + (colour ? 1 : 0.2) * s, s, 2);
-          if (colour) drawMiniPiece(ctx, look, 'O', bx + 4 * s, by, s, 0);
-        }
-        if (!colour) Render.drawFrame(ctx, look.frame, { x: bx, y: by, w: bw, h: bh }, app.theme.accent, performance.now());
+          const g = look.colors[2];
+          for (const [cx, cy] of [[3, 2], [4, 2], [3, 1], [4, 1]]) Render.ghostCell(ctx, id, g, bx + cx * s, by + cy * s, s);
+        } else if (colour) {
+          drawMiniPiece(ctx, look, 'O', bx + 3 * s, by, s, 0);
+        } else drawMiniPiece(ctx, look, 'T', bx + 2 * s, by, s, 2);
       }
-    });
+      Render.drawRim(ctx, wr, theme);
+      Render.drawFrame(ctx, look.frame, wr, theme.accent, still ? 0 : t, theme);
+    };
+    // First drawn mid-clear, so a clear's preview says what it does before the loop starts.
+    const t0 = performance.now(), mid = t0 - (t0 % 1700) + 650 + 150;
+    const c = canvasFor(w, hh, (ctx) => paint(ctx, kind === 'effect' ? mid : t0));
+    c.classList.add('look-prev');
+    if (moving) { const ctx = c.getContext('2d'); addLive({ canvas: c, paint: (t) => { ctx.setTransform(ctx.__dpr, 0, 0, ctx.__dpr, 0, 0); paint(ctx, t); } }); }
+    return c;
   }
 
   // ---- shop -----------------------------------------------------------------------------------------------------------
@@ -246,7 +266,7 @@
           e.stopPropagation(); listen(app, id);
           const p = e.currentTarget; p.classList.remove('playing'); void p.offsetWidth; p.classList.add('playing');
         } }, h('span', { class: 'play', html: PLAY }), h('span', { class: 'eq' }, [0, 1, 2, 3, 4].map(() => h('i'))))
-        : h('div', { class: 'preview' }, cosmeticPreview(app, kind, id, 148, 60));
+        : h('div', { class: 'preview' }, cosmeticPreview(app, kind, id));
       const tip = c.reward && !own ? c.reward : null;
       return h('div', {
         class: 'shop-look' + (on ? ' on' : '') + (own ? ' own' : '') + (c.reward && !own ? ' locked' : ''), 'data-look': kind + ':' + id,
@@ -372,10 +392,14 @@
     const filter = app.achFilter || 'all', open = app.achOpen || (app.achOpen = {});
     const n = A.LIST.filter((a) => got[a.id]).length;
     const num = (v) => (v >= 10000 ? fmt(v).replace(/\.0+(?=\D)/, '') : fmtInt(v));
+    const date = (when) => new Date(when).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
     const seg = h('div', { class: 'seg' }, [['all', 'All ' + A.LIST.length], ['left', 'To do ' + (A.LIST.length - n)], ['got', 'Earned ' + n]].map(([k, label]) =>
       h('button', { 'aria-pressed': String(filter === k), onclick: () => { app.achFilter = k; renderAchievements(app); } }, label)));
     const els = [
-      h('div', { class: 'kpis three' }, kpi(n + ' / ' + A.LIST.length, 'Earned'), kpi(fmtInt(S.lines.achievements || 0) + ' ' + LINE, 'Lines from them'), kpi(fmtInt(A.total()) + ' ' + LINE, 'All of them pay')),
+      h('div', { class: 'kpis three' },
+        kpi(n + ' / ' + A.LIST.length, 'Earned'),
+        kpi(h('span', null, fmtInt(S.lines.achievements || 0), ' ', h('span', { class: 'gem' }, LINE)), 'Lines earned'),
+        kpi(h('span', null, fmtInt(A.total()), ' ', h('span', { class: 'gem' }, LINE)), 'Lines available')),
       h('div', { class: 'ach-tools' }, seg),
     ];
     const row = (a) => {
@@ -384,9 +408,11 @@
         h('span', { class: 'ach-i', html: L.Icons.icon(a.tier === 'legend' ? 'legend' : when ? 'starOn' : 'star') }),
         h('div', { class: 'grow' },
           h('div', { class: 't' }, a.name, a.tier === 'legend' ? h('span', { class: 'tier' }, 'Legendary') : null),
-          h('div', { class: 'd' }, a.desc + (when ? ' · ' + new Date(when).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : '')),
+          h('div', { class: 'd' }, a.desc),
           pr ? h('div', { class: 'ach-prog' }, h('div', { class: 'bar' }, h('i', { style: { width: (100 * Math.min(1, pr[0] / pr[1])).toFixed(1) + '%' } })), h('span', null, num(Math.min(pr[0], pr[1])) + ' / ' + num(pr[1]))) : null),
-        h('span', { class: 'ach-pay' }, '+' + fmtInt(a.pay) + ' ' + LINE));
+        h('div', { class: 'ach-side' },
+          h('span', { class: 'ach-pay' }, '+' + fmtInt(a.pay) + ' ', h('span', { class: 'gem' }, LINE)),
+          when ? h('span', { class: 'ach-when' }, date(when)) : null));
     };
     const shown = (a) => filter === 'all' || (filter === 'got') === !!got[a.id];
     for (const g of A.GROUPS) {
@@ -401,12 +427,12 @@
           h('b', null, g.name),
           g.note ? h('span', { class: 'ach-info', tabindex: '0', 'aria-label': g.noteTitle + ': ' + g.note, 'data-tip-title': g.noteTitle, 'data-tip': g.note, html: INFO,
             onclick: (e) => { e.preventDefault(); e.stopPropagation(); } }) : null,
-          h('span', { class: 'ach-count' }, have.length + ' / ' + list.length),
+          h('span', { class: 'ach-count', 'data-tip': 'Earned ' + have.length + ' of ' + list.length }, have.length + ' / ' + list.length),
           h('div', { class: 'bar' }, h('i', { style: { width: (100 * have.length / list.length).toFixed(1) + '%' } })),
-          h('span', { class: 'ach-pay' }, num(paid) + ' / ' + num(all) + ' ' + LINE)),
+          h('span', { class: 'ach-pay', 'data-tip': 'Lines earned ' + fmtInt(paid) + ' / Lines available ' + fmtInt(all) }, num(paid) + ' / ' + num(all) + ' ', h('span', { class: 'gem' }, LINE))),
         plain.length ? h('div', { class: 'ach-list' }, plain.map((a) => row(a))) : null,
         leg.length ? h('div', { class: 'ach-list legend-list' }, leg.map((a) => row(a))) : null,
-        plain.length || leg.length ? null : h('p', { class: 'ach-none' }, filter === 'got' ? 'None earned here yet.' : 'Every one of these is yours.')));
+        plain.length || leg.length ? null : h('p', { class: 'ach-none' }, filter === 'got' ? 'None earned' : 'All earned')));
     }
     document.getElementById('ach-body').replaceChildren(...els);
   }
@@ -422,30 +448,30 @@
     const pz = S.puzzle;
     const solvedAll = pz.E.solved + pz.M.solved + pz.H.solved;
     if (sub === 'overview') {
-      els.push(h('div', { class: 'kpis' },
-        kpi(fmtInt(st.lines), 'Lines banked'),
-        kpi(fmtInt(S.lines.earned), 'Lines earned, all time'),
-        kpi(fmtInt(S.free.lines), 'Lines cleared in Free Play'),
+      els.push(h('div', { class: 'kpis four' },
+        kpi(fmtInt(st.lines), 'Wallet'),
+        kpi(fmtInt(S.lines.earned), 'Lines earned'),
+        kpi(fmtInt(S.free.lines), 'Lines cleared'),
         kpi(fmtInt(solvedAll), 'Puzzles solved'),
-        kpi(count(st.factory.stats.minos), 'Factory minos made'),
-        kpi(fmtDuration(S.timeMs.total), 'Time with Lull'),
+        kpi(count(st.factory.stats.minos), 'Minos made'),
+        kpi(fmtDuration(S.timeMs.total), 'Time played'),
         kpi(fmtInt(S.sessions), 'Sessions'),
         kpi(fmtInt(S.days || 0), 'Days played')));
-      els.push(h('h4', null, 'Lines earned, last 14 days'), historyChart(app, 'lines', 14));
-      els.push(h('h4', null, 'Where lines came from'), hbars([['Free Play', S.lines.play], ['Combos', S.lines.combos || 0], ['Puzzles', S.lines.puzzles], ['Factory', S.lines.factory], ['Achievements', S.lines.achievements || 0]].concat(S.lines.luck ? [['Jackpot', S.lines.luck]] : [])));
+      els.push(h('h4', null, 'Lines earned · 14 days'), historyChart(app, 'lines', 14));
+      els.push(h('h4', null, 'Lines by source'), hbars([['Free Play', S.lines.play], ['Combos', S.lines.combos || 0], ['Puzzles', S.lines.puzzles], ['Factory', S.lines.factory], ['Achievements', S.lines.achievements || 0]].concat(S.lines.luck ? [['Jackpot', S.lines.luck]] : [])));
       els.push(h('h4', null, 'Time by mode'), table([
-        ['Free Play', fmtDuration(S.timeMs.play)], ['Classic', fmtDuration(S.timeMs.classic || 0)], ['Puzzles', fmtDuration(S.timeMs.puzzle)], ['Factory (watching)', fmtDuration(S.timeMs.factory)],
+        ['Free Play', fmtDuration(S.timeMs.play)], ['Classic', fmtDuration(S.timeMs.classic || 0)], ['Puzzles', fmtDuration(S.timeMs.puzzle)], ['Factory', fmtDuration(S.timeMs.factory)],
       ]));
     } else if (sub === 'classic') {
       const C = S.classic;
-      els.push(h('div', { class: 'kpis' }, kpi(fmtInt(C.best), 'Best score'), kpi(String(C.bestLevel || '—'), 'Highest level'), kpi(fmtInt(C.bestLines), 'Most lines, one game'),
-        kpi(fmtInt(C.games), 'Games'), kpi(fmtInt(C.lines), 'Lines, all games'), kpi(fmtInt(C.pieces), 'Pieces'), kpi(fmtDuration(S.timeMs.classic || 0), 'Time played')));
+      els.push(h('div', { class: 'kpis' }, kpi(fmtInt(C.best), 'Best score'), kpi(String(C.bestLevel || '—'), 'Best level'), kpi(fmtInt(C.bestLines), 'Best lines'),
+        kpi(fmtInt(C.games), 'Games'), kpi(fmtInt(C.lines), 'Lines'), kpi(fmtInt(C.pieces), 'Pieces'), kpi(fmtDuration(S.timeMs.classic || 0), 'Time played')));
     } else if (sub === 'free') {
       const F = S.free;
       const ppm = S.timeMs.play > 60000 ? F.pieces / (S.timeMs.play / 60000) : 0;
       els.push(h('div', { class: 'kpis' },
-        kpi(fmtInt(F.pieces), 'Pieces placed'), kpi(fmtInt(F.lines), 'Lines cleared'), kpi(fmtInt(F.bestScore), 'Best board score'),
-        kpi(fmtInt(F.bestLines), 'Most lines, one board'), kpi(ppm ? ppm.toFixed(1) : '—', 'Pieces / minute'), kpi(F.pieces ? (F.lines / F.pieces * 2.5).toFixed(2) : '—', h('span', { title: '1.00 = all quads' }, 'Efficiency'))));
+        kpi(fmtInt(F.pieces), 'Pieces'), kpi(fmtInt(F.lines), 'Lines'), kpi(fmtInt(F.bestScore), 'Best score'),
+        kpi(fmtInt(F.bestLines), 'Best lines'), kpi(ppm ? ppm.toFixed(1) : '—', 'Pieces / min'), kpi(F.pieces ? (F.lines / F.pieces * 2.5).toFixed(2) : '—', h('span', { title: '1.00 = all quads' }, 'Efficiency'))));
       els.push(h('h4', null, 'Clears'), hbars([['Single', F.clears[1]], ['Double', F.clears[2]], ['Triple', F.clears[3]], ['Quad', F.clears[4]], ['5+', F.clears[5]]]));
       els.push(h('h4', null, 'Pieces placed'), hbars(Pieces.TETROMINOES.map((id) => [id, F.byType[id] || 0]).concat(Object.keys(F.byType).filter((k) => !Pieces.TETROMINOES.includes(k)).map((k) => [k, F.byType[k]])),
         (i, label) => look.colors[(Pieces.TYPES[label] && Pieces.TYPES[label].color) || 15]));
@@ -454,17 +480,17 @@
         ['Longest combo', fmtInt(F.maxCombo)], ['Longest back-to-back', fmtInt(Math.max(0, F.maxB2B))],
         ['Longest chain', fmtInt(F.bestChain || 0)], ['Best multiplier', L.Chain.fmt(F.bestMult || 1)],
         ['Holds', fmtInt(F.holds)], ['Turns', fmtInt(F.rotations)], ['Moves', fmtInt(F.moves)], ['Lowers', fmtInt(F.lowers)], ['Hard drops', fmtInt(F.drops)],
-        ['Boards started', fmtInt(F.boards)], ['Boards filled to the top', fmtInt(F.topouts)],
+        ['Boards started', fmtInt(F.boards)], ['Boards filled', fmtInt(F.topouts)],
         ['Inputs per piece', F.pieces ? ((F.moves + F.rotations + F.lowers + F.drops + F.holds) / F.pieces).toFixed(2) : '—'],
       ]));
       // Combos: the ones found so far, with what to do and what they paid; the rest are a question mark until then.
       const book = st.combos || {}, list = L.Combos.LIST, found = list.filter((c) => book[c.id]).length;
-      els.push(h('h4', null, 'Combos · ' + found + ' / ' + list.length + ' found'), h('div', { class: 'combo-list' }, list.map((c) => {
+      els.push(h('h4', null, 'Combos found · ' + found + ' / ' + list.length), h('div', { class: 'combo-list' }, list.map((c) => {
         const b = book[c.id];
-        if (!b) return h('div', { class: 'combo unknown' }, h('b', null, '?'), h('span', null, c.kind === 'skill' ? 'Combo' : 'Power-up combo'));
+        if (!b) return h('div', { class: 'combo unknown' }, h('b', null, '?'), h('span', null, c.kind === 'skill' ? 'Not found' : 'Not found · power-up'));
         const rw = L.Combos.reward(c, 0);
         const pays = [rw.lines ? rw.lines + ' ' + LINE : null, rw.boost ? L.Chain.fmt(rw.boost.x) + ' for ' + rw.boost.clears + ' clears' : null, fmtInt(rw.score) + ' points'].filter(Boolean).join(' · ');
-        return h('div', { class: 'combo' }, h('b', null, c.name), h('span', null, c.how), h('i', null, pays + ' · found ' + fmtInt(b.n) + '×'));
+        return h('div', { class: 'combo' }, h('b', null, c.name), h('span', null, c.how), h('i', null, pays + ' · ×' + fmtInt(b.n)));
       })));
       const log = F.boardLog || [];
       if (log.length) {
@@ -481,18 +507,18 @@
         rows.push([Puzzles.DIFFS[d].name, fmtInt(p.solved), p.solved ? pct(p.firstTry / p.solved) : '—', p.solved ? (p.attempts / p.solved).toFixed(1) : '—', p.bestMs ? L.fmtClock(p.bestMs) : '—', p.bestStreak + '']);
       }
       els.push(h('div', { class: 'kpis' }, kpi(fmtInt(solvedAll), 'Solved'), kpi(fmtInt(pz.E.played + pz.M.played + pz.H.played), 'Played'),
-        kpi(fmtInt(pz.daily), 'Dailies solved'), kpi(fmtInt(pz.E.hints + pz.M.hints + pz.H.hints), 'Hints bought'),
+        kpi(fmtInt(pz.daily), 'Dailies'), kpi(fmtInt(pz.E.hints + pz.M.hints + pz.H.hints), 'Hints'),
         kpi(fmtInt(pz.E.fails + pz.M.fails + pz.H.fails), 'Retries')));
       els.push(h('h4', null, 'By difficulty'), h('table', { class: 'st cols' }, rows.map((r, i) => h('tr', null, r.map((c) => h(i ? 'td' : 'th', null, c))))));
       if (app.modes.puzzle) els.push(h('p', { class: 'pz-volume' }, app.modes.puzzle.volume()));
       const modRows = Object.keys(Puzzles.MODS).map((m) => { const r = pz.mods[m] || { seen: 0, solved: 0 }; return [h('span', null, icon('mod-' + m), Puzzles.MODS[m].name), r.solved + ' / ' + r.seen]; });
-      els.push(h('h4', null, 'Wildcards (solved / met)'), table(modRows));
-      els.push(h('h4', null, 'Puzzles solved, last 14 days'), historyChart(app, 'puzzles', 14));
+      els.push(h('h4', null, 'Wildcards · solved / seen'), table(modRows));
+      els.push(h('h4', null, 'Puzzles solved · 14 days'), historyChart(app, 'puzzles', 14));
     } else if (sub === 'factory') {
       const f = st.factory, fs = f.stats;
       els.push(h('div', { class: 'kpis three' },
-        kpi(Factory.quarters(Factory.perHour(f) / 4) + ' ' + LINE, 'Lines per hour'), kpi(fmtInt(fs.lines), 'Lines collected'), kpi(count(fs.minos), 'Minos made'),
-        kpi(fmtInt(fs.pieces), 'Pieces'), kpi(fmtInt(fs.collects), 'Collects'), kpi(fmtInt(fs.best), 'Best single collect')));
+        kpi(Factory.quarters(Factory.perHour(f) / 4) + ' ' + LINE, 'Lines / hour'), kpi(fmtInt(fs.lines), 'Lines collected'), kpi(count(fs.minos), 'Minos made'),
+        kpi(fmtInt(fs.pieces), 'Pieces'), kpi(fmtInt(fs.collects), 'Collects'), kpi(fmtInt(fs.best), 'Best collect')));
       els.push(h('h4', null, 'Minos by press'), hbars(Factory.MOLDS.map((n, k) => [String(n), (fs.byPress[k] || 0) * n]))); // byPress counts pieces
       // Every shape of each size: the ones pressed in colour, the rest faint.
       for (const n of [5, 6, 7]) {
@@ -501,13 +527,13 @@
           h('div', { class: 'catalog sm' }, list.map((c, s) => { const cv = L.FactoryArt.shapeCanvas(look, c, 30, look.colors[1 + (s % 7)], seen[s] === '1'); cv.title = Factory.shapeName(n, s); return cv; })));
       }
       const rows = [
-        ['Days collected', fmtInt(fs.days)], ['Minos made while away', count(fs.away)], ['Time the line waited on a full bin', fmtDuration(fs.fullMs)],
-        ['Lines spent on the line', fmtInt(fs.spent)], ['Time watching', fmtDuration(S.timeMs.factory)],
+        ['Days collected', fmtInt(fs.days)], ['Minos made away', count(fs.away)], ['Time full', fmtDuration(fs.fullMs)],
+        ['Lines spent', fmtInt(fs.spent)], ['Time watched', fmtDuration(S.timeMs.factory)],
       ];
-      els.push(h('h4', null, 'The line'), table(rows));
+      els.push(h('h4', null, 'Totals'), table(rows));
     } else {
       const got = S.items.got, bought = S.items.bought, used = S.items.used;
-      els.push(h('div', { class: 'kpis' }, kpi(fmtInt(S.lines.spent), 'Lines spent'), kpi(fmtInt(S.cosmetics.bought), 'Cosmetics bought'),
+      els.push(h('div', { class: 'kpis' }, kpi(fmtInt(S.lines.spent), 'Lines spent'), kpi(fmtInt(S.cosmetics.bought), 'Cosmetics'),
         kpi(fmtInt(Object.values(used).reduce((a, b) => a + b, 0)), 'Power-ups used'), kpi(fmtInt(S.lines.rewound), 'Lines rewound')));
       els.push(h('h4', null, 'Power-ups'), h('table', { class: 'st cols' },
         h('tr', null, h('th', null, ''), h('th', null, 'Bought'), h('th', null, 'Given'), h('th', null, 'Used'), h('th', null, 'Have')),
@@ -563,7 +589,7 @@
             tiles('bg', [['clear', 'Clear', bgPreview('clear')], ['glass', 'Glass', bgPreview('glass')], ['tint', 'Tint', bgPreview('tint')], ['solid', 'Solid', bgPreview('solid')]], '', tintOn),
             tint),
           card('Theme', tiles('theme', [['dark', 'Dark', themePreview('dark')], ['light', 'Light', themePreview('light')], ['auto', 'Auto', themePreview('auto')]])),
-          card('Border and accent', (() => {
+          card('Accent', (() => {
             const sw = h('div', { class: 'swatches big' });
             ACCENTS.forEach((c) => {
               const b = h('button', { class: 'swatch', style: { background: c }, 'aria-pressed': String(s.accent === c), title: c, onclick: () => { set('accent', c); sw.querySelectorAll('.swatch').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); } });
@@ -596,7 +622,7 @@
           card('Classic',
             row('Pause when the pointer leaves', null, toggle('pauseAway'))),
           card('Puzzles',
-            row('Counter-clockwise puzzles', 'New puzzles need Z or A', toggle('ccwPuzzles', () => { const pm = app.modes.puzzle; if (pm && pm.puzzle && !pm.done) pm.loadNumbered(pm.ps.diff); else if (pm && pm.puzzle) pm.renderNav(); }))),
+            row('Counter-clockwise puzzles', 'New puzzles use Z and A', toggle('ccwPuzzles', () => { const pm = app.modes.puzzle; if (pm && pm.puzzle && !pm.done) pm.loadNumbered(pm.ps.diff); else if (pm && pm.puzzle) pm.renderNav(); }))),
         ],
       },
       sound: {
@@ -619,10 +645,10 @@
       data: {
         icon: 'data', label: 'Data',
         body: () => [
-          card('Save', row('Your progress', null,
+          card('Save', row('Progress', null,
             h('div', { class: 'btns' }, h('button', { class: 'btn sm', onclick: () => openExport(app) }, 'Export'), h('button', { class: 'btn sm', onclick: () => openImport(app) }, 'Import')))),
-          card('Start over', row('Reset everything', null,
-            h('button', { class: 'btn sm danger', onclick: () => confirm('Start over?', 'Everything but your settings is wiped, for good.', 'Wipe', () => { app.store.reset(); location.reload(); }, 'danger') }, 'Reset…'))),
+          card('Reset', row('Reset everything', null,
+            h('button', { class: 'btn sm danger', onclick: () => confirm('Reset everything?', 'Deletes all progress. Settings are kept.', 'Reset', () => { app.store.reset(); location.reload(); }, 'danger') }, 'Reset…'))),
           h('p', { class: 'set-about' }, 'Lull ' + (L.VERSION || '') + ' · puzzle generator v' + Puzzles.GEN_VERSION),
         ],
       },
@@ -656,9 +682,9 @@
   function openImport(app) {
     const ta = h('textarea', { placeholder: 'Paste a Lull save here' });
     openModal({
-      title: 'Import save', body: h('div', null, h('p', null, 'Replaces your current progress.'), ta),
+      title: 'Import save', body: h('div', null, h('p', null, 'Replaces current progress.'), ta),
       buttons: [{ label: 'Cancel' }, { label: 'Import', kind: 'primary', onClick: () => {
-        try { app.store.importJSON(ta.value); location.reload(); } catch (e) { toast('That is not a Lull save', 'bad'); return false; }
+        try { app.store.importJSON(ta.value); location.reload(); } catch (e) { toast('Not a Lull save', 'bad'); return false; }
       } }],
     });
   }
@@ -709,7 +735,7 @@
       let msg = '', ok = false;
       if (!c.length) msg = 'Draw a piece';
       else if (c.length > 6) msg = 'Six blocks at most';
-      else if (!Pieces.isConnected(c)) msg = 'Blocks must touch edge to edge';
+      else if (!Pieces.isConnected(c)) msg = 'Blocks must touch';
       else { ok = true; msg = c.length + ' block' + (c.length > 1 ? 's' : ''); }
       status.textContent = msg; status.className = 'bp-status ' + (ok ? 'ok' : 'bad');
       if (handle) handle.el.querySelector('footer .btn.primary').disabled = !ok;

@@ -36,16 +36,63 @@
   function luminance(hex) { const [r, g, b] = rgb(hex); return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255; }
 
   const PRISM_HUES = [0, 185, 50, 285, 125, 355, 220, 30, 0, 320, 95, 165, 255, 15, 200, 0];
-  /** The 16 colour slots of a palette at time t (only Prism changes with time). */
+  /**
+   * The 16 colour slots of a palette at time t (only Prism changes with time). Prism turns every hue slowly round the
+   * wheel (8° a second, a full turn in 45 s) in 2° steps: small enough to read as a glide, few enough (180 steps) that
+   * each step's cells come from the sprite cache instead of being painted again.
+   */
+  const prismCache = new Map();
   function paletteColors(id, t) {
     const p = PALETTES[id] || PALETTES.classic;
     if (!p.animated) return p.colors;
-    const off = Math.floor(((t || 0) / 1000) * 24 / 10) * 10; // 24°/s in 10° steps (keeps sprites cacheable)
-    return PRISM_HUES.map((h, i) => (i === 8 ? '#5b6170' : i === 15 ? '#c3c8d2' : hsl(h + off, 78, 62)));
+    const step = Math.floor(((t || 0) / 1000) * 8 / 2) % 180;
+    let cols = prismCache.get(step);
+    if (!cols) {
+      cols = PRISM_HUES.map((h, i) => (i === 8 ? '#5b6170' : i === 15 ? '#c3c8d2' : hsl(h + step * 2, 72, 64)));
+      prismCache.set(step, cols);
+    }
+    return cols;
+  }
+
+  /**
+   * On the light theme's paper well a pale colour washes out: each colour is deepened (hue kept) until it stands off
+   * the paper, and nothing else is touched. Cached per palette list.
+   */
+  const wellCache = new Map();
+  function forWell(colors, themeName) {
+    if (themeName !== 'light' || !colors) return colors;
+    let out = wellCache.get(colors);
+    if (out) return out;
+    out = colors.map((c, i) => {
+      if (!i || luminance(c) <= 0.7) return c;
+      // Lower the lightness in HSL (hue kept, saturation lifted a little) so a yellow deepens to amber, not olive.
+      const [r, g, b] = rgb(c).map((v) => v / 255), mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+      let h = 0, sat = 0, l = (mx + mn) / 2;
+      if (mx !== mn) {
+        const d = mx - mn; sat = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
+        h = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; h *= 60;
+      }
+      if (sat > 0.15) sat = Math.min(1, sat * 1.08 + 0.04);
+      let out2 = c;
+      for (let k = 0; k < 40 && luminance(out2) > 0.7; k++) { l -= 0.012; out2 = hsl(h, sat * 100, l * 100); }
+      return out2;
+    });
+    wellCache.set(colors, out);
+    return out;
   }
 
   // ---- skins ----------------------------------------------------------------------------------------------------------
 
+  /** A rounded rectangle added to the current path (no new path: two of them make a ring with evenodd). */
+  function rrPath(ctx, x, y, w, h, r) {
+    r = Math.max(0, Math.min(r, w / 2, h / 2));
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
   function rr(ctx, x, y, w, h, r) {
     r = Math.max(0, Math.min(r, w / 2, h / 2));
     ctx.beginPath();
@@ -57,120 +104,141 @@
     ctx.closePath();
   }
 
+  // Every skin paints one cell into a sprite of s device pixels (cached per skin, colour and size), so a skin is drawn
+  // once per colour and size, never per frame. Edges land on whole pixels at 1x and 2x.
+  const px = (s, f, min) => Math.max(min == null ? 1 : min, Math.round(s * f));
   const SKIN_PAINT = {
     flat(ctx, s, c) {
-      // A gap that grows with the cell (a hairline at small sizes), corners softened in proportion.
-      const g = Math.max(0.5, Math.round(s * 0.04 * 2) / 2);
-      ctx.fillStyle = c; rr(ctx, g, g, s - 2 * g, s - 2 * g, s * 0.16); ctx.fill();
+      // Quiet depth: a soft top-to-bottom light, a hairline of light along the top edge and a deeper one along the
+      // bottom, corners softened in proportion. A gap that grows with the cell keeps neighbours apart.
+      const g = px(s, 0.045), r = s * 0.17, w = s - 2 * g;
+      const gr = ctx.createLinearGradient(0, g, 0, s - g);
+      gr.addColorStop(0, shade(c, 0.1)); gr.addColorStop(1, shade(c, -0.08));
+      ctx.fillStyle = gr; rr(ctx, g, g, w, w, r); ctx.fill();
+      ctx.save(); ctx.clip();
+      const hl = px(s, 0.05);
+      ctx.fillStyle = 'rgba(255,255,255,0.26)'; ctx.fillRect(g, g, w, hl);
+      ctx.fillStyle = 'rgba(0,0,0,0.14)'; ctx.fillRect(g, s - g - hl, w, hl);
+      ctx.restore();
     },
     bevel(ctx, s, c) {
-      const b = Math.max(2, Math.round(s * 0.16));
-      ctx.fillStyle = c; ctx.fillRect(0, 0, s, s);
-      ctx.fillStyle = shade(c, 0.4);
-      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(s, 0); ctx.lineTo(s - b, b); ctx.lineTo(b, b); ctx.lineTo(b, s - b); ctx.lineTo(0, s); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = shade(c, -0.35);
-      ctx.beginPath(); ctx.moveTo(s, s); ctx.lineTo(0, s); ctx.lineTo(b, s - b); ctx.lineTo(s - b, s - b); ctx.lineTo(s - b, b); ctx.lineTo(s, 0); ctx.closePath(); ctx.fill();
-    },
-    outline(ctx, s, c) {
-      const lw = Math.max(1.5, s * 0.1);
-      ctx.fillStyle = rgba(c, 0.16); rr(ctx, lw / 2 + 1, lw / 2 + 1, s - lw - 2, s - lw - 2, s * 0.12); ctx.fill();
-      ctx.strokeStyle = c; ctx.lineWidth = lw; ctx.stroke();
-    },
-    bubble(ctx, s, c) {
-      const g = ctx.createRadialGradient(s * 0.36, s * 0.32, s * 0.05, s * 0.5, s * 0.5, s * 0.5);
-      g.addColorStop(0, shade(c, 0.55)); g.addColorStop(0.55, c); g.addColorStop(1, shade(c, -0.3));
-      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(s / 2, s / 2, s * 0.46, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.beginPath(); ctx.ellipse(s * 0.36, s * 0.3, s * 0.11, s * 0.07, -0.6, 0, Math.PI * 2); ctx.fill();
+      // The classic block: a lit top and left, a shaded bottom and right, a flat face — cut on whole pixels.
+      const g = px(s, 0.03, 0), b = px(s, 0.15, 2), x0 = g, x1 = s - g;
+      ctx.fillStyle = c; ctx.fillRect(x0, x0, x1 - x0, x1 - x0);
+      const poly = (pts, col) => { ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(pts[0], pts[1]); for (let k = 2; k < pts.length; k += 2) ctx.lineTo(pts[k], pts[k + 1]); ctx.closePath(); ctx.fill(); };
+      poly([x0, x0, x1, x0, x1 - b, x0 + b, x0 + b, x0 + b], shade(c, 0.42));
+      poly([x0, x0, x0 + b, x0 + b, x0 + b, x1 - b, x0, x1], shade(c, 0.2));
+      poly([x1, x0, x1, x1, x1 - b, x1 - b, x1 - b, x0 + b], shade(c, -0.22));
+      poly([x0, x1, x0 + b, x1 - b, x1 - b, x1 - b, x1, x1], shade(c, -0.4));
+      const f = ctx.createLinearGradient(0, x0 + b, 0, x1 - b);
+      f.addColorStop(0, shade(c, 0.06)); f.addColorStop(1, shade(c, -0.06));
+      ctx.fillStyle = f; ctx.fillRect(x0 + b, x0 + b, x1 - x0 - 2 * b, x1 - x0 - 2 * b);
     },
     pixel(ctx, s, c) {
-      const p = Math.max(1, Math.round(s / 4));
-      ctx.fillStyle = c; ctx.fillRect(0, 0, s, s);
-      ctx.fillStyle = shade(c, 0.35); ctx.fillRect(0, 0, s, p); ctx.fillRect(0, 0, p, s);
-      ctx.fillStyle = shade(c, -0.35); ctx.fillRect(0, s - p, s, p); ctx.fillRect(s - p, 0, p, s);
-      ctx.fillStyle = shade(c, 0.7); ctx.fillRect(p, p, p, p);
+      // Eight by eight pixel art, snapped to whole device pixels: a dark outline, a lit corner, one bright glint.
+      const n = 8, p = Math.max(1, Math.floor(s / n)), o = Math.floor((s - p * n) / 2);
+      const at = (x, y, w, h, col) => { ctx.fillStyle = col; ctx.fillRect(o + x * p, o + y * p, w * p, h * p); };
+      at(0, 0, 8, 8, shade(c, -0.45));
+      at(1, 1, 6, 6, c);
+      at(1, 1, 6, 1, shade(c, 0.35)); at(1, 1, 1, 6, shade(c, 0.35));
+      at(1, 6, 6, 1, shade(c, -0.2)); at(6, 1, 1, 6, shade(c, -0.2));
+      at(2, 2, 1, 1, shade(c, 0.75));
     },
-    glass(ctx, s, c) {
-      ctx.fillStyle = rgba(c, 0.42); rr(ctx, 1, 1, s - 2, s - 2, s * 0.12); ctx.fill();
-      const g = ctx.createLinearGradient(0, 0, 0, s);
-      g.addColorStop(0, 'rgba(255,255,255,0.45)'); g.addColorStop(0.5, 'rgba(255,255,255,0.05)'); g.addColorStop(1, 'rgba(255,255,255,0)');
-      ctx.fillStyle = g; rr(ctx, 1, 1, s - 2, s * 0.55, s * 0.12); ctx.fill();
-      ctx.strokeStyle = rgba(shade(c, 0.5), 0.95); ctx.lineWidth = 1; rr(ctx, 1.5, 1.5, s - 3, s - 3, s * 0.12); ctx.stroke();
+    bubble(ctx, s, c) {
+      // A glossy sphere: lit from the top left, a soft bounce of light along the bottom, one crisp highlight.
+      const cx = s / 2, cy = s / 2, R = s * 0.45;
+      const g = ctx.createRadialGradient(s * 0.38, s * 0.32, s * 0.04, cx, cy, R);
+      g.addColorStop(0, shade(c, 0.6)); g.addColorStop(0.45, c); g.addColorStop(1, shade(c, -0.38));
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fill();
+      const b = ctx.createRadialGradient(cx, s * 0.95, 0, cx, s * 0.95, R * 0.9);
+      b.addColorStop(0, rgba(shade(c, 0.5), 0.45)); b.addColorStop(1, rgba(shade(c, 0.5), 0));
+      ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.clip(); ctx.fillStyle = b; ctx.fillRect(0, 0, s, s); ctx.restore();
+      ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.beginPath(); ctx.ellipse(s * 0.37, s * 0.29, s * 0.1, s * 0.06, -0.6, 0, Math.PI * 2); ctx.fill();
     },
-    wire(ctx, s, c) {
-      // Drafting lines: a crisp outline, a faint inner square and a whisper of fill.
-      const lw = Math.max(1, Math.round(s * 0.05)), o = lw / 2 + Math.max(0.5, s * 0.03);
-      ctx.fillStyle = rgba(c, 0.1); ctx.fillRect(o, o, s - 2 * o, s - 2 * o);
-      ctx.strokeStyle = c; ctx.lineWidth = lw; ctx.strokeRect(o, o, s - 2 * o, s - 2 * o);
-      const q = s * 0.3;
-      ctx.globalAlpha = 0.45; ctx.lineWidth = Math.max(1, lw * 0.75); ctx.strokeRect(q, q, s - 2 * q, s - 2 * q); ctx.globalAlpha = 1;
-    },
-    neon(ctx, s, c) {
-      const lw = Math.max(1.5, s * 0.09);
-      ctx.fillStyle = rgba(c, 0.12); rr(ctx, s * 0.14, s * 0.14, s * 0.72, s * 0.72, s * 0.14); ctx.fill();
-      ctx.shadowColor = c; ctx.shadowBlur = s * 0.35;
-      ctx.strokeStyle = c; ctx.lineWidth = lw; ctx.stroke();
-      ctx.shadowBlur = 0;
-      ctx.strokeStyle = 'rgba(255,255,255,0.65)'; ctx.lineWidth = Math.max(0.75, lw * 0.35); ctx.stroke();
-    },
-    brick(ctx, s, c) {
-      ctx.fillStyle = c; ctx.fillRect(0, 0, s, s);
-      ctx.fillStyle = shade(c, 0.18); ctx.fillRect(0, 0, s, Math.max(1, s * 0.08));
-      ctx.strokeStyle = shade(c, -0.4); ctx.lineWidth = Math.max(1, s * 0.06);
-      ctx.beginPath();
-      ctx.moveTo(0, s / 2); ctx.lineTo(s, s / 2);
-      ctx.moveTo(s / 2, 0); ctx.lineTo(s / 2, s / 2);
-      ctx.moveTo(s * 0.2, s / 2); ctx.lineTo(s * 0.2, s); ctx.moveTo(s * 0.8, s / 2); ctx.lineTo(s * 0.8, s);
-      ctx.stroke();
-      ctx.strokeRect(0.5, 0.5, s - 1, s - 1);
-    },
-    gem(ctx, s, c) {
-      const i = s * 0.26;
-      const tri = (pts, col) => { ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(pts[0], pts[1]); for (let k = 2; k < pts.length; k += 2) ctx.lineTo(pts[k], pts[k + 1]); ctx.closePath(); ctx.fill(); };
-      tri([0, 0, s, 0, s - i, i, i, i], shade(c, 0.45));
-      tri([0, 0, i, i, i, s - i, 0, s], shade(c, 0.2));
-      tri([s, 0, s, s, s - i, s - i, s - i, i], shade(c, -0.25));
-      tri([0, s, i, s - i, s - i, s - i, s, s], shade(c, -0.45));
-      ctx.fillStyle = c; ctx.fillRect(i, i, s - 2 * i, s - 2 * i);
-      ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(i, i, (s - 2 * i) * 0.45, (s - 2 * i) * 0.25);
+    glass(ctx, s, c, light) {
+      // Tinted glass: the colour held in a clear pane, a bright rim, and a diagonal glare across the top half.
+      const g = px(s, 0.05), w = s - 2 * g, r = s * 0.14;
+      const f = ctx.createLinearGradient(0, g, 0, s - g);
+      f.addColorStop(0, rgba(shade(c, light ? -0.05 : 0.15), light ? 0.8 : 0.72)); f.addColorStop(1, rgba(shade(c, light ? -0.2 : -0.1), light ? 0.62 : 0.5));
+      ctx.fillStyle = f; rr(ctx, g, g, w, w, r); ctx.fill();
+      ctx.save(); ctx.clip();
+      ctx.fillStyle = 'rgba(255,255,255,0.22)';
+      ctx.beginPath(); ctx.moveTo(g, g); ctx.lineTo(g + w * 0.72, g); ctx.lineTo(g, g + w * 0.72); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.1)';
+      ctx.beginPath(); ctx.moveTo(g + w * 0.86, g); ctx.lineTo(g + w, g); ctx.lineTo(g + w, g + w * 0.1); ctx.lineTo(g + w * 0.1, g + w); ctx.lineTo(g, g + w); ctx.lineTo(g, g + w * 0.86); ctx.closePath(); ctx.fill();
+      ctx.restore();
+      const lw = px(s, 0.045);
+      ctx.strokeStyle = light ? rgba(shade(c, -0.3), 0.9) : rgba(shade(c, 0.55), 0.95); ctx.lineWidth = lw; rr(ctx, g + lw / 2, g + lw / 2, w - lw, w - lw, r); ctx.stroke();
     },
     jelly(ctx, s, c) {
-      const g = ctx.createLinearGradient(0, 0, 0, s);
-      g.addColorStop(0, shade(c, 0.3)); g.addColorStop(1, shade(c, -0.12));
-      ctx.fillStyle = g; rr(ctx, 1, 1, s - 2, s - 2, s * 0.32); ctx.fill();
-      ctx.strokeStyle = rgba(shade(c, -0.35), 0.8); ctx.lineWidth = Math.max(1, s * 0.05); ctx.stroke();
-      ctx.fillStyle = 'rgba(255,255,255,0.5)'; rr(ctx, s * 0.2, s * 0.14, s * 0.42, s * 0.16, s * 0.08); ctx.fill();
-    },
-    satin(ctx, s, c) {
-      // Soft and quiet: a gentle top-to-bottom sheen, a light rim on top and a deeper edge below.
-      const g0 = Math.max(0.5, s * 0.04), r = s * 0.22;
-      const g = ctx.createLinearGradient(0, 0, 0, s);
-      g.addColorStop(0, shade(c, 0.22)); g.addColorStop(0.55, c); g.addColorStop(1, shade(c, -0.14));
-      ctx.fillStyle = g; rr(ctx, g0, g0, s - 2 * g0, s - 2 * g0, r); ctx.fill();
+      // A soft gum: rounder, lit from inside at the bottom, a glossy pill of light on top, a darker translucent rim.
+      const g = px(s, 0.05), w = s - 2 * g, r = s * 0.3;
+      const f = ctx.createLinearGradient(0, g, 0, s - g);
+      f.addColorStop(0, shade(c, 0.28)); f.addColorStop(0.6, c); f.addColorStop(1, shade(c, 0.12));
+      ctx.fillStyle = f; rr(ctx, g, g, w, w, r); ctx.fill();
       ctx.save(); ctx.clip();
-      ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = Math.max(1, s * 0.06);
-      rr(ctx, g0 + s * 0.02, g0 + s * 0.03, s - 2 * g0 - s * 0.04, s - 2 * g0, r); ctx.stroke();
+      const inner = ctx.createRadialGradient(s / 2, s * 0.85, 0, s / 2, s * 0.85, s * 0.5);
+      inner.addColorStop(0, rgba(shade(c, 0.55), 0.55)); inner.addColorStop(1, rgba(shade(c, 0.55), 0));
+      ctx.fillStyle = inner; ctx.fillRect(0, 0, s, s);
       ctx.restore();
-      ctx.strokeStyle = rgba(shade(c, -0.4), 0.35); ctx.lineWidth = Math.max(1, s * 0.03); rr(ctx, g0, g0, s - 2 * g0, s - 2 * g0, r); ctx.stroke();
+      ctx.strokeStyle = rgba(shade(c, -0.35), 0.7); ctx.lineWidth = px(s, 0.05); rr(ctx, g, g, w, w, r); ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,0.6)'; rr(ctx, s * 0.22, s * 0.15, s * 0.4, s * 0.14, s * 0.07); ctx.fill();
+    },
+    neon(ctx, s, c, light) {
+      // A lit tube bent into a square: a glow, the coloured glass, and a white-hot core line (on the paper well, a
+      // deeper tube with a bright core reads better than a pale one).
+      const lw = Math.max(1.5, s * 0.09), i = s * 0.16, w = s - 2 * i, r = s * 0.16, tube = light ? shade(c, -0.18) : c;
+      ctx.fillStyle = rgba(c, light ? 0.22 : 0.13); rr(ctx, i, i, w, w, r); ctx.fill();
+      ctx.shadowColor = c; ctx.shadowBlur = s * (light ? 0.2 : 0.28);
+      ctx.strokeStyle = tube; ctx.lineWidth = lw * (light ? 1.15 : 1); rr(ctx, i, i, w, w, r); ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = rgba(shade(c, light ? 0.55 : 0.75), 0.95); ctx.lineWidth = Math.max(0.75, lw * 0.34); ctx.stroke();
+    },
+    gem(ctx, s, c) {
+      // A cut stone: four facets round a table that catches the light, and a small star of glint.
+      const g = px(s, 0.03, 0), i = s * 0.25, a = g, z = s - g;
+      const tri = (pts, col) => { ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(pts[0], pts[1]); for (let k = 2; k < pts.length; k += 2) ctx.lineTo(pts[k], pts[k + 1]); ctx.closePath(); ctx.fill(); };
+      tri([a, a, z, a, z - i, a + i, a + i, a + i], shade(c, 0.5));
+      tri([a, a, a + i, a + i, a + i, z - i, a, z], shade(c, 0.22));
+      tri([z, a, z, z, z - i, z - i, z - i, a + i], shade(c, -0.2));
+      tri([a, z, a + i, z - i, z - i, z - i, z, z], shade(c, -0.42));
+      const t = ctx.createLinearGradient(a + i, a + i, z - i, z - i);
+      t.addColorStop(0, shade(c, 0.32)); t.addColorStop(0.5, c); t.addColorStop(1, shade(c, -0.12));
+      ctx.fillStyle = t; ctx.fillRect(a + i, a + i, z - a - 2 * i, z - a - 2 * i);
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      const sx = a + i + (z - a - 2 * i) * 0.28, sy = a + i + (z - a - 2 * i) * 0.28, k = s * 0.07;
+      ctx.beginPath(); ctx.moveTo(sx, sy - k); ctx.lineTo(sx + k * 0.3, sy - k * 0.3); ctx.lineTo(sx + k, sy); ctx.lineTo(sx + k * 0.3, sy + k * 0.3); ctx.lineTo(sx, sy + k); ctx.lineTo(sx - k * 0.3, sy + k * 0.3); ctx.lineTo(sx - k, sy); ctx.lineTo(sx - k * 0.3, sy - k * 0.3); ctx.closePath(); ctx.fill();
     },
     lantern(ctx, s, c) {
-      // A paper lantern: a warm lit core fading to a soft, darker rim.
-      const g0 = Math.max(0.5, s * 0.05), r = s * 0.26;
-      const g = ctx.createRadialGradient(s * 0.5, s * 0.45, s * 0.04, s * 0.5, s * 0.5, s * 0.62);
-      g.addColorStop(0, shade(c, 0.62)); g.addColorStop(0.45, shade(c, 0.15)); g.addColorStop(1, shade(c, -0.3));
-      ctx.fillStyle = g; rr(ctx, g0, g0, s - 2 * g0, s - 2 * g0, r); ctx.fill();
-      ctx.strokeStyle = rgba(shade(c, 0.5), 0.55); ctx.lineWidth = Math.max(1, s * 0.035); rr(ctx, g0 + 0.5, g0 + 0.5, s - 2 * g0 - 1, s - 2 * g0 - 1, r); ctx.stroke();
+      // A paper lantern: a warm lit core, fine ribs across the paper, darker caps top and bottom.
+      const g = px(s, 0.05), w = s - 2 * g, r = s * 0.24;
+      const f = ctx.createRadialGradient(s * 0.5, s * 0.5, s * 0.02, s * 0.5, s * 0.5, s * 0.6);
+      f.addColorStop(0, shade(mix(c, '#fff4d6', 0.35), 0.5)); f.addColorStop(0.5, shade(c, 0.12)); f.addColorStop(1, shade(c, -0.28));
+      ctx.fillStyle = f; rr(ctx, g, g, w, w, r); ctx.fill();
+      ctx.save(); ctx.clip();
+      ctx.fillStyle = rgba(shade(c, -0.45), 0.22);
+      const rib = Math.max(1, Math.round(s * 0.03));
+      for (const k of [0.34, 0.5, 0.66]) ctx.fillRect(g, Math.round(s * k), w, rib);
+      ctx.fillStyle = rgba(shade(c, -0.5), 0.5);
+      ctx.fillRect(g, g, w, px(s, 0.09)); ctx.fillRect(g, s - g - px(s, 0.09), w, px(s, 0.09));
+      ctx.restore();
     },
     steel(ctx, s, c) {
-      const base = mix(c, '#9aa4b1', 0.55);
-      const g = ctx.createLinearGradient(0, 0, s, s);
-      g.addColorStop(0, shade(base, 0.35)); g.addColorStop(0.5, base); g.addColorStop(1, shade(base, -0.3));
-      ctx.fillStyle = g; ctx.fillRect(0, 0, s, s);
-      ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.lineWidth = 1;
-      for (let k = 3; k < s; k += 3) { ctx.beginPath(); ctx.moveTo(0, k); ctx.lineTo(s, k - 1); ctx.stroke(); }
-      ctx.strokeStyle = shade(base, -0.45); ctx.strokeRect(0.5, 0.5, s - 1, s - 1);
-      const rv = Math.max(1, s * 0.07);
-      ctx.fillStyle = shade(base, -0.4);
-      for (const [x, y] of [[0.2, 0.2], [0.8, 0.2], [0.2, 0.8], [0.8, 0.8]]) { ctx.beginPath(); ctx.arc(s * x, s * y, rv, 0, Math.PI * 2); ctx.fill(); }
+      // Brushed plate with a tint of the piece's colour, a bevelled edge and four rivets.
+      const base = mix(c, '#a3acb8', 0.55), g = px(s, 0.03, 0), w = s - 2 * g;
+      const f = ctx.createLinearGradient(0, 0, s, s);
+      f.addColorStop(0, shade(base, 0.35)); f.addColorStop(0.5, base); f.addColorStop(1, shade(base, -0.28));
+      ctx.fillStyle = f; ctx.fillRect(g, g, w, w);
+      ctx.fillStyle = 'rgba(255,255,255,0.07)';
+      for (let k = g + 2; k < s - g; k += 3) ctx.fillRect(g, k, w, 1);
+      const e = px(s, 0.06);
+      ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.fillRect(g, g, w, e); ctx.fillRect(g, g, e, w);
+      ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(g, s - g - e, w, e); ctx.fillRect(s - g - e, g, e, w);
+      const rv = Math.max(1, s * 0.055);
+      for (const [x, y] of [[0.22, 0.22], [0.78, 0.22], [0.22, 0.78], [0.78, 0.78]]) {
+        ctx.fillStyle = shade(base, -0.45); ctx.beginPath(); ctx.arc(s * x, s * y, rv, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.beginPath(); ctx.arc(s * x - rv * 0.3, s * y - rv * 0.3, rv * 0.4, 0, Math.PI * 2); ctx.fill();
+      }
     },
   };
 
@@ -180,22 +248,23 @@
     const c = document.createElement('canvas'); c.width = w; c.height = h; return c;
   }
   /** A cached image of one cell. `s` is in device pixels. */
-  function cellSprite(skin, color, s) {
+  function cellSprite(skin, color, s, light) {
     s = Math.max(2, Math.round(s));
-    const key = skin + '|' + color + '|' + s;
+    light = !!light && (skin === 'glass' || skin === 'neon'); // only these two paint differently on the light well
+    const key = skin + '|' + color + '|' + s + (light ? '|l' : '');
     let c = spriteCache.get(key);
     if (c) return c;
-    if (spriteCache.size > 1500) spriteCache.clear();
+    if (spriteCache.size > 4000) spriteCache.clear();
     c = makeCanvas(s, s);
     const ctx = c.getContext('2d');
-    (SKIN_PAINT[skin] || SKIN_PAINT.flat)(ctx, s, color);
+    (SKIN_PAINT[skin] || SKIN_PAINT.flat)(ctx, s, color, light);
     spriteCache.set(key, c);
     return c;
   }
 
   function drawCell(ctx, skin, color, x, y, s, alpha) {
     const dpr = ctx.__dpr || 1;
-    const img = cellSprite(skin, color, s * dpr);
+    const img = cellSprite(skin, color, s * dpr, ctx.__light);
     if (alpha != null && alpha < 1) { ctx.globalAlpha = alpha; ctx.drawImage(img, x, y, s, s); ctx.globalAlpha = 1; }
     else ctx.drawImage(img, x, y, s, s);
   }
@@ -251,128 +320,276 @@
     }
   }
 
-  // ---- frames and backdrops -----------------------------------------------------------------------------------------
+  // ---- the well, backdrops and frames ---------------------------------------------------------------------------------
+  //
+  // The board sits in a well: a recessed tray a little larger than the grid, with rounded corners, light falling in from
+  // the top, a soft shadow under its top edge and a fine rim. What does not move (the tray, a still backdrop, the light)
+  // is painted once into an offscreen layer per size, theme and look, so a frame costs two images, not dozens of
+  // gradients. An animated backdrop (Aurora, Starfield, Conveyor) draws only its moving part live, from cached sprites.
 
-  function drawFrame(ctx, id, r, accent, t) {
-    ctx.save();
-    const { x, y, w, h } = r;
-    if (id === 'double') {
-      ctx.strokeStyle = accent; ctx.lineWidth = 1.5; ctx.strokeRect(x - 2.5, y - 2.5, w + 5, h + 5);
-      ctx.globalAlpha = 0.55; ctx.lineWidth = 1; ctx.strokeRect(x - 6.5, y - 6.5, w + 13, h + 13);
-    } else if (id === 'dashed') {
-      ctx.strokeStyle = accent; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.strokeRect(x - 3, y - 3, w + 6, h + 6);
-    } else if (id === 'rounded') {
-      ctx.strokeStyle = accent; ctx.lineWidth = 2.5; rr(ctx, x - 4.5, y - 4.5, w + 9, h + 9, 8); ctx.stroke();
-    } else if (id === 'glow') {
-      ctx.shadowColor = accent; ctx.shadowBlur = 14; ctx.strokeStyle = accent; ctx.lineWidth = 2; rr(ctx, x - 3, y - 3, w + 6, h + 6, 4); ctx.stroke();
-      ctx.shadowBlur = 0; ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 0.75; ctx.stroke();
-    } else if (id === 'brass') {
-      const g = ctx.createLinearGradient(x, y, x + w, y + h);
-      g.addColorStop(0, '#f3d98b'); g.addColorStop(0.35, '#b8862d'); g.addColorStop(0.65, '#f7e3a1'); g.addColorStop(1, '#8a6420');
-      ctx.strokeStyle = g; ctx.lineWidth = 6; rr(ctx, x - 5, y - 5, w + 10, h + 10, 3); ctx.stroke();
-      ctx.fillStyle = '#6d4f18';
-      for (const [px, py] of [[x - 5, y - 5], [x + w + 5, y - 5], [x - 5, y + h + 5], [x + w + 5, y + h + 5]]) { ctx.beginPath(); ctx.arc(px, py, 3, 0, Math.PI * 2); ctx.fill(); }
-    } else if (id === 'rainbow') {
-      const off = ((t || 0) / 20) % 360;
-      const g = ctx.createLinearGradient(x, y, x + w, y + h);
-      for (let k = 0; k <= 6; k++) g.addColorStop(k / 6, hsl(off + k * 60, 85, 62));
-      ctx.strokeStyle = g; ctx.lineWidth = 3.5; rr(ctx, x - 4, y - 4, w + 8, h + 8, 6); ctx.stroke();
-    } else if (id === 'hazard') {
-      ctx.beginPath(); ctx.rect(x - 8, y - 8, w + 16, h + 16); ctx.rect(x - 1, y - 1, w + 2, h + 2); ctx.clip('evenodd');
-      ctx.fillStyle = '#f2c14e'; ctx.fillRect(x - 8, y - 8, w + 16, h + 16);
-      ctx.strokeStyle = '#1d1d1f'; ctx.lineWidth = 5;
-      for (let k = -h - 16; k < w + h + 16; k += 14) { ctx.beginPath(); ctx.moveTo(x - 8 + k, y - 8); ctx.lineTo(x - 8 + k + h + 16, y + h + 8); ctx.stroke(); }
-    } else {
-      ctx.strokeStyle = accent; ctx.globalAlpha = 0.6; ctx.lineWidth = 1; ctx.strokeRect(x - 1.5, y - 1.5, w + 3, h + 3);
-    }
+  /** The well's rectangle around the grid (CSS px), and its corner radius. */
+  function wellRect(board, s) {
+    const p = Math.max(3, Math.round(s * 0.16));
+    return { x: board.x - p, y: board.y - p, w: board.w + 2 * p, h: board.h + 2 * p, r: Math.round(Math.min(14, p + s * 0.22)), p };
+  }
+
+  const layerCache = new Map();
+  /** An offscreen layer of the well (CSS px w×h at dpr), painted once for its key. */
+  function layer(key, w, h, dpr, paint) {
+    let c = layerCache.get(key);
+    if (c) return c;
+    if (layerCache.size > 48) layerCache.clear();
+    c = makeCanvas(Math.max(1, Math.round(w * dpr)), Math.max(1, Math.round(h * dpr)));
+    const ctx = c.getContext('2d');
+    ctx.scale(dpr, dpr); ctx.__dpr = dpr;
+    paint(ctx);
+    layerCache.set(key, c);
+    return c;
+  }
+
+  const ANIMATED_BACKDROPS = new Set(['aurora', 'stars', 'belt']);
+
+  /** Grid lines on whole device pixels. */
+  function gridLines(ctx, board, s, cols, rows, color, dpr, rowsOnly) {
+    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = color;
+    const X = (v) => Math.round(v * dpr), lw = Math.max(1, Math.round(dpr * 0.75));
+    if (!rowsOnly) for (let c = 1; c < cols; c++) ctx.fillRect(X(board.x + c * s), X(board.y), lw, X(board.y + board.h) - X(board.y));
+    for (let q = 1; q < rows; q++) ctx.fillRect(X(board.x), X(board.y + q * s), X(board.x + board.w) - X(board.x), lw);
     ctx.restore();
+  }
+
+  /** A still backdrop (or the still part of a moving one), in the grid's coordinates. */
+  function paintBackdrop(ctx, id, board, s, cols, rows, theme, dpr) {
+    const { x, y, w, h } = board, light = theme.name === 'light';
+    if (id === 'grid') gridLines(ctx, board, s, cols, rows, theme.grid, dpr);
+    else if (id === 'blueprint') {
+      ctx.fillStyle = light ? 'rgba(40,110,200,0.09)' : 'rgba(40,100,190,0.24)'; ctx.fillRect(x, y, w, h);
+      ctx.save(); ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+      const minor = light ? 'rgba(40,110,200,0.08)' : 'rgba(160,200,255,0.07)';
+      gridLines(ctx, { x: x - s / 2, y: y - s / 2, w: w + s, h: h + s }, s, cols + 1, rows + 1, minor, dpr);
+      ctx.restore();
+      gridLines(ctx, board, s, cols, rows, light ? 'rgba(40,110,200,0.2)' : 'rgba(160,200,255,0.2)', dpr);
+    } else if (id === 'dusk') {
+      const g = ctx.createLinearGradient(0, y, 0, y + h);
+      if (light) { g.addColorStop(0, 'rgba(120,110,210,0.1)'); g.addColorStop(0.6, 'rgba(230,140,170,0.12)'); g.addColorStop(1, 'rgba(250,170,110,0.22)'); }
+      else { g.addColorStop(0, 'rgba(46,40,110,0.34)'); g.addColorStop(0.55, 'rgba(150,72,120,0.16)'); g.addColorStop(0.85, 'rgba(236,132,96,0.18)'); g.addColorStop(1, 'rgba(250,176,110,0.3)'); }
+      ctx.fillStyle = g; ctx.fillRect(x, y, w, h);
+      const sun = ctx.createRadialGradient(x + w * 0.5, y + h, 0, x + w * 0.5, y + h, w * 0.75);
+      sun.addColorStop(0, light ? 'rgba(255,170,110,0.22)' : 'rgba(255,190,130,0.24)'); sun.addColorStop(1, 'rgba(255,190,130,0)');
+      ctx.fillStyle = sun; ctx.fillRect(x, y, w, h);
+    } else if (id === 'aurora') {
+      gridLines(ctx, board, s, cols, rows, theme.grid, dpr, true);
+    } else if (id === 'stars') {
+      // The faint, still stars; the few bright ones twinkle live.
+      for (const [sx, sy, sz] of starsFor(cols, rows)) {
+        if (sz > 0.7) continue;
+        ctx.fillStyle = light ? 'rgba(70,84,120,' + (0.12 + sz * 0.25) + ')' : 'rgba(255,255,255,' + (0.12 + sz * 0.3) + ')';
+        const d = 1 / dpr * Math.max(1, Math.round(dpr));
+        ctx.fillRect(Math.round((x + sx * w) * dpr) / dpr, Math.round((y + sy * h) * dpr) / dpr, d, d);
+      }
+    }
   }
 
   const starCache = new Map();
-  function drawBackdrop(ctx, id, r, s, cols, rows, theme, t) {
-    const { x, y, w, h } = r;
-    ctx.save();
-    ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
-    ctx.fillStyle = theme.well; ctx.fillRect(x, y, w, h);
-    if (id === 'grid' || id === 'blueprint') {
-      if (id === 'blueprint') { ctx.fillStyle = 'rgba(40,90,170,0.28)'; ctx.fillRect(x, y, w, h); }
-      ctx.strokeStyle = id === 'blueprint' ? 'rgba(160,200,255,0.22)' : theme.grid; ctx.lineWidth = 1;
-      ctx.beginPath();
-      for (let c = 1; c < cols; c++) { const px = Math.round(x + c * s) + 0.5; ctx.moveTo(px, y); ctx.lineTo(px, y + h); }
-      for (let q = 1; q < rows; q++) { const py = Math.round(y + q * s) + 0.5; ctx.moveTo(x, py); ctx.lineTo(x + w, py); }
-      ctx.stroke();
-      if (id === 'blueprint') {
-        ctx.strokeStyle = 'rgba(160,200,255,0.08)';
-        ctx.beginPath();
-        for (let c = 0; c < cols; c++) { const px = Math.round(x + c * s + s / 2) + 0.5; ctx.moveTo(px, y); ctx.lineTo(px, y + h); }
-        ctx.stroke();
+  function starsFor(cols, rows) {
+    const key = cols + 'x' + rows;
+    let stars = starCache.get(key);
+    if (!stars) {
+      const r2 = new L.RNG('stars' + key);
+      stars = [];
+      for (let k = 0; k < cols * rows * 0.7; k++) stars.push([r2.next(), r2.next(), r2.next(), r2.next() * Math.PI * 2]);
+      starCache.set(key, stars);
+    }
+    return stars;
+  }
+
+  const veilCache = new Map();
+  /** A soft coloured veil (an ellipse of light), drawn once per colour. */
+  function veil(color) {
+    let c = veilCache.get(color);
+    if (c) return c;
+    c = makeCanvas(128, 128);
+    const ctx = c.getContext('2d'), g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+    g.addColorStop(0, color); g.addColorStop(0.55, color.replace(/[\d.]+\)$/, (m) => (parseFloat(m) * 0.4) + ')')); g.addColorStop(1, color.replace(/[\d.]+\)$/, '0)'));
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 128, 128);
+    veilCache.set(color, c);
+    return c;
+  }
+
+  const beltCache = new Map();
+
+  /** The moving part of an animated backdrop, at time t (ms); t is held still under reduced motion. */
+  function paintBackdropLive(ctx, id, board, s, cols, rows, theme, t) {
+    const { x, y, w, h } = board, light = theme.name === 'light', sec = (t || 0) / 1000;
+    if (id === 'aurora') {
+      // Three veils of light drifting slowly on long, unrelated periods, so the sky never visibly repeats.
+      const V = light
+        ? [['rgba(40,190,160,0.16)', 0.22, 0.2, 0.9, 0.5, 23], ['rgba(130,90,240,0.13)', 0.8, 0.45, 0.8, 0.45, 31], ['rgba(70,150,240,0.11)', 0.4, 0.75, 1, 0.4, 37]]
+        : [['rgba(70,225,185,0.2)', 0.22, 0.2, 0.9, 0.5, 23], ['rgba(150,110,255,0.18)', 0.8, 0.45, 0.8, 0.45, 31], ['rgba(80,160,255,0.13)', 0.4, 0.75, 1, 0.4, 37]];
+      for (const [col, fx, fy, sw, sh, per] of V) {
+        const k = (sec / per) * Math.PI * 2;
+        const cx = x + w * (fx + 0.16 * Math.sin(k)), cy = y + h * (fy + 0.08 * Math.sin(k * 0.7 + 1));
+        const ww = w * sw * 1.6, hh = h * sh * (1 + 0.1 * Math.sin(k * 1.3));
+        ctx.drawImage(veil(col), cx - ww / 2, cy - hh / 2, ww, hh);
       }
-    } else if (id === 'dots') {
-      ctx.fillStyle = theme.grid;
-      for (let c = 0; c <= cols; c++) for (let q = 0; q <= rows; q++) ctx.fillRect(Math.round(x + c * s) - 1, Math.round(y + q * s) - 1, 2, 2);
-    } else if (id === 'scan') {
-      ctx.fillStyle = 'rgba(255,255,255,0.035)';
-      for (let py = y; py < y + h; py += 3) ctx.fillRect(x, py, w, 1);
-    } else if (id === 'dusk') {
-      const g = ctx.createLinearGradient(0, y, 0, y + h);
-      g.addColorStop(0, 'rgba(46,40,110,0.34)'); g.addColorStop(0.55, 'rgba(150,72,120,0.18)'); g.addColorStop(0.85, 'rgba(236,132,96,0.2)'); g.addColorStop(1, 'rgba(250,176,110,0.3)');
-      ctx.fillStyle = g; ctx.fillRect(x, y, w, h);
-      // A low sun: a soft glow on the horizon.
-      const sun = ctx.createRadialGradient(x + w * 0.5, y + h, 0, x + w * 0.5, y + h, w * 0.7);
-      sun.addColorStop(0, 'rgba(255,190,130,0.22)'); sun.addColorStop(1, 'rgba(255,190,130,0)');
-      ctx.fillStyle = sun; ctx.fillRect(x, y, w, h);
-    } else if (id === 'aurora') {
-      // Two slow veils of light, teal and violet, over the faintest grid.
-      const a = ctx.createRadialGradient(x + w * 0.2, y + h * 0.18, 0, x + w * 0.2, y + h * 0.18, Math.max(w, h) * 0.6);
-      a.addColorStop(0, 'rgba(80,220,190,0.2)'); a.addColorStop(1, 'rgba(80,220,190,0)');
-      ctx.fillStyle = a; ctx.fillRect(x, y, w, h);
-      const b = ctx.createRadialGradient(x + w * 0.85, y + h * 0.5, 0, x + w * 0.85, y + h * 0.5, Math.max(w, h) * 0.55);
-      b.addColorStop(0, 'rgba(150,110,255,0.18)'); b.addColorStop(1, 'rgba(150,110,255,0)');
-      ctx.fillStyle = b; ctx.fillRect(x, y, w, h);
-      ctx.strokeStyle = theme.grid; ctx.globalAlpha = 0.5; ctx.lineWidth = 1;
-      ctx.beginPath();
-      for (let q = 1; q < rows; q++) { const py = Math.round(y + q * s) + 0.5; ctx.moveTo(x, py); ctx.lineTo(x + w, py); }
-      ctx.stroke(); ctx.globalAlpha = 1;
     } else if (id === 'stars') {
-      const key = cols + 'x' + rows;
-      let stars = starCache.get(key);
-      if (!stars) {
-        const r2 = new L.RNG(key);
-        stars = [];
-        for (let k = 0; k < cols * rows * 0.6; k++) stars.push([r2.next(), r2.next(), r2.next()]);
-        starCache.set(key, stars);
+      // The bright few twinkle, each on its own slow phase (grouped, so no colour strings are made per frame).
+      ctx.fillStyle = light ? '#46547a' : '#ffffff';
+      const d = s > 22 ? 2 : 1.5;
+      for (let grp = 0; grp < 4; grp++) {
+        ctx.globalAlpha = 0.35 + 0.35 * (0.5 + 0.5 * Math.sin(sec * (0.5 + grp * 0.17) + grp * 1.7));
+        const stars = starsFor(cols, rows);
+        for (let i = grp; i < stars.length; i += 4) { const st = stars[i]; if (st[2] > 0.7) ctx.fillRect(x + st[0] * w - d / 2, y + st[1] * h - d / 2, d, d); }
       }
-      for (const [sx, sy, sz] of stars) {
-        ctx.fillStyle = 'rgba(255,255,255,' + (0.15 + sz * 0.45) + ')';
-        const d = sz > 0.85 ? 2 : 1;
-        ctx.fillRect(Math.round(x + sx * w), Math.round(y + sy * h), d, d);
-      }
+      ctx.globalAlpha = 1;
     } else if (id === 'belt') {
-      ctx.strokeStyle = 'rgba(242,193,78,0.06)'; ctx.lineWidth = s * 0.5;
-      for (let k = -h; k < w + h; k += s * 1.4) { ctx.beginPath(); ctx.moveTo(x + k, y); ctx.lineTo(x + k - h, y + h); ctx.stroke(); }
+      // The conveyor: faint diagonal treads sliding slowly toward the bottom.
+      const key = Math.round(s * 10) + (light ? 'l' : 'd');
+      let tile = beltCache.get(key);
+      const step = Math.max(8, s * 1.4);
+      if (!tile) {
+        tile = makeCanvas(Math.ceil(step * 2), Math.ceil(step * 2));
+        const c2 = tile.getContext('2d');
+        c2.strokeStyle = light ? 'rgba(190,140,30,0.12)' : 'rgba(242,193,78,0.07)'; c2.lineWidth = step * 0.36;
+        for (let k = -2; k <= 4; k++) { c2.beginPath(); c2.moveTo(k * step, 0); c2.lineTo(k * step - step * 2, step * 2); c2.stroke(); }
+        beltCache.set(key, tile);
+      }
+      const off = (sec * s * 0.6) % step;
+      ctx.save(); ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+      const tw = tile.width;
+      for (let yy = y - tw + off; yy < y + h; yy += tw) for (let xx = x - off; xx < x + w + tw; xx += tw) ctx.drawImage(tile, xx, yy);
+      ctx.restore();
+    }
+  }
+
+  /**
+   * Draws the well with its backdrop: the tray (cached), a moving backdrop if the look has one, then the cached light
+   * and shadow over it. Returns the well's rectangle.
+   */
+  function drawWell(ctx, id, board, s, cols, rows, theme, t) {
+    const wr = wellRect(board, s), dpr = ctx.__dpr || 1, light = theme.name === 'light';
+    const live = ANIMATED_BACKDROPS.has(id);
+    const pad = 28, lw = wr.w + pad * 2, lh = wr.h + pad * 2, ox = wr.x - pad, oy = wr.y - pad;
+    const local = { x: board.x - ox, y: board.y - oy, w: board.w, h: board.h }, lwr = { x: pad, y: pad, w: wr.w, h: wr.h, r: wr.r };
+    const tkey = [theme.name, theme.accent, theme.wellTop, lw, lh, s, cols, rows, dpr].join('|');
+    const base = layer('base|' + id + '|' + tkey, lw, lh, dpr, (c) => {
+      // The tray: a drop shadow under it, a vertical wash of the well's colour.
+      c.save();
+      c.shadowColor = theme.drop || 'rgba(0,0,0,0.35)'; c.shadowBlur = light ? 18 : 22; c.shadowOffsetY = light ? 6 : 8;
+      c.fillStyle = theme.wellBottom || theme.well; rr(c, lwr.x, lwr.y, lwr.w, lwr.h, lwr.r); c.fill();
+      c.restore();
+      c.save(); rr(c, lwr.x, lwr.y, lwr.w, lwr.h, lwr.r); c.clip();
+      const g = c.createLinearGradient(0, lwr.y, 0, lwr.y + lwr.h);
+      g.addColorStop(0, theme.wellTop || theme.well); g.addColorStop(1, theme.wellBottom || theme.well);
+      c.fillStyle = g; c.fillRect(lwr.x, lwr.y, lwr.w, lwr.h);
+      paintBackdrop(c, id, local, s, cols, rows, theme, dpr);
+      c.restore();
+    });
+    const over = layer('over|' + tkey, lw, lh, dpr, (c) => {
+      c.save(); rr(c, lwr.x, lwr.y, lwr.w, lwr.h, lwr.r); c.clip();
+      // Light falling in from above, faintly in the accent.
+      const li = c.createRadialGradient(lwr.x + lwr.w / 2, lwr.y - lwr.h * 0.05, 0, lwr.x + lwr.w / 2, lwr.y - lwr.h * 0.05, lwr.h * 0.62);
+      li.addColorStop(0, rgba(theme.accent, light ? 0.07 : 0.085)); li.addColorStop(1, rgba(theme.accent, 0));
+      c.fillStyle = li; c.fillRect(lwr.x, lwr.y, lwr.w, lwr.h);
+      // The shadow under the top edge, and a whisper of one down each side: the well is deep.
+      const sh = c.createLinearGradient(0, lwr.y, 0, lwr.y + s * 1.1);
+      sh.addColorStop(0, theme.innerShade || 'rgba(0,0,0,0.3)'); sh.addColorStop(1, 'rgba(0,0,0,0)');
+      c.fillStyle = sh; c.fillRect(lwr.x, lwr.y, lwr.w, s * 1.1);
+      for (const [x0, x1] of [[lwr.x, lwr.x + s * 0.5], [lwr.x + lwr.w, lwr.x + lwr.w - s * 0.5]]) {
+        const sd = c.createLinearGradient(x0, 0, x1, 0);
+        sd.addColorStop(0, light ? 'rgba(20,30,60,0.05)' : 'rgba(0,0,0,0.16)'); sd.addColorStop(1, 'rgba(0,0,0,0)');
+        c.fillStyle = sd; c.fillRect(Math.min(x0, x1), lwr.y, s * 0.5, lwr.h);
+      }
+      c.restore();
+    });
+    ctx.drawImage(base, ox, oy, lw, lh);
+    if (live) {
+      ctx.save(); rr(ctx, wr.x, wr.y, wr.w, wr.h, wr.r); ctx.clip();
+      paintBackdropLive(ctx, id, board, s, cols, rows, theme, t);
+      ctx.restore();
+    }
+    ctx.drawImage(over, ox, oy, lw, lh);
+    return wr;
+  }
+
+  /** The well's rim: a fine line, and a thread of light just inside its top edge. */
+  function drawRim(ctx, wr, theme) {
+    ctx.save();
+    ctx.strokeStyle = theme.rim || theme.line; ctx.lineWidth = 1;
+    rr(ctx, wr.x + 0.5, wr.y + 0.5, wr.w - 1, wr.h - 1, wr.r); ctx.stroke();
+    ctx.strokeStyle = theme.rimHi || 'rgba(255,255,255,0.05)';
+    ctx.beginPath(); ctx.moveTo(wr.x + wr.r, wr.y + wr.h - 1.5); ctx.lineTo(wr.x + wr.w - wr.r, wr.y + wr.h - 1.5); ctx.stroke();
+    ctx.restore();
+  }
+
+  /** A frame around the well (the rim is always there; Hairline is the rim alone). `r` is the well's rectangle. */
+  function drawFrame(ctx, id, r, accent, t, theme) {
+    if (!id || id === 'hairline') return;
+    ctx.save();
+    const { x, y, w, h } = r, R = r.r || 8;
+    if (id === 'double') {
+      // Inlay: a fine line of the accent set a little way out, like a mount around a picture.
+      ctx.strokeStyle = rgba(accent, 0.75); ctx.lineWidth = 1;
+      rr(ctx, x - 3.5, y - 3.5, w + 7, h + 7, R + 3.5); ctx.stroke();
+      ctx.strokeStyle = rgba(accent, 0.28);
+      rr(ctx, x - 6.5, y - 6.5, w + 13, h + 13, R + 6.5); ctx.stroke();
+    } else if (id === 'glow') {
+      ctx.shadowColor = accent; ctx.shadowBlur = 12; ctx.strokeStyle = rgba(accent, 0.9); ctx.lineWidth = 1.5;
+      rr(ctx, x - 1.5, y - 1.5, w + 3, h + 3, R + 1.5); ctx.stroke();
+      ctx.shadowBlur = 0; ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 0.75; ctx.stroke();
+    } else if (id === 'brass') {
+      const g = ctx.createLinearGradient(x, y, x + w * 0.6, y + h);
+      g.addColorStop(0, '#f6e0a0'); g.addColorStop(0.3, '#b8862d'); g.addColorStop(0.55, '#f2d98f'); g.addColorStop(0.8, '#9a7024'); g.addColorStop(1, '#d9b867');
+      ctx.strokeStyle = g; ctx.lineWidth = 5; rr(ctx, x - 3, y - 3, w + 6, h + 6, R + 3); ctx.stroke();
+      ctx.strokeStyle = 'rgba(60,40,10,0.55)'; ctx.lineWidth = 1; rr(ctx, x - 0.5, y - 0.5, w + 1, h + 1, R); ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,245,210,0.55)'; rr(ctx, x - 5.5, y - 5.5, w + 11, h + 11, R + 5.5); ctx.stroke();
+    } else if (id === 'rainbow') {
+      // A slow ring of spectrum turning round the well (one turn in twelve seconds); soft, never neon.
+      const cx = x + w / 2, cy = y + h / 2, ang = ((t || 0) / 12000) * Math.PI * 2;
+      let g;
+      if (ctx.createConicGradient) {
+        g = ctx.createConicGradient(ang, cx, cy);
+        for (let k = 0; k <= 6; k++) g.addColorStop(k / 6, RAINBOW[k % 6]);
+      } else {
+        g = ctx.createLinearGradient(cx + Math.cos(ang) * w, cy + Math.sin(ang) * h, cx - Math.cos(ang) * w, cy - Math.sin(ang) * h);
+        for (let k = 0; k <= 6; k++) g.addColorStop(k / 6, RAINBOW[k % 6]);
+      }
+      ctx.strokeStyle = g; ctx.lineWidth = 3; rr(ctx, x - 2.5, y - 2.5, w + 5, h + 5, R + 2.5); ctx.stroke();
+      ctx.globalAlpha = 0.3; ctx.lineWidth = 7; rr(ctx, x - 4, y - 4, w + 8, h + 8, R + 4); ctx.stroke();
+    } else if (id === 'hazard') {
+      ctx.beginPath(); rrPath(ctx, x - 7, y - 7, w + 14, h + 14, R + 7); rrPath(ctx, x - 0.5, y - 0.5, w + 1, h + 1, R); ctx.clip('evenodd');
+      ctx.fillStyle = '#f2c14e'; ctx.fillRect(x - 8, y - 8, w + 16, h + 16);
+      ctx.strokeStyle = '#1d1d1f'; ctx.lineWidth = 5;
+      ctx.beginPath();
+      for (let k = -h - 16; k < w + h + 16; k += 14) { ctx.moveTo(x - 8 + k, y - 8); ctx.lineTo(x - 8 + k + h + 16, y + h + 8); }
+      ctx.stroke();
     }
     ctx.restore();
   }
+  const RAINBOW = ['#f28b8b', '#f5c26b', '#b9e27a', '#6fd6c8', '#7fa7f5', '#c49af2'];
+
+  /** Kept for the shop's and factory's small boards: the well and its backdrop in one call (no moving parts). */
+  function drawBackdrop(ctx, id, r, s, cols, rows, theme, t) { return drawWell(ctx, id, r, s, cols, rows, theme, t); }
 
   function ghostCell(ctx, style, color, x, y, s) {
     if (style === 'off') return;
     ctx.save();
-    if (style === 'faint') {
-      ctx.fillStyle = rgba(color, 0.22); ctx.fillRect(x + 1, y + 1, s - 2, s - 2);
-    } else if (style === 'dotted') {
-      ctx.fillStyle = rgba(color, 0.8);
-      const d = Math.max(1.5, s * 0.1);
-      for (const fx of [0.3, 0.7]) for (const fy of [0.3, 0.7]) { ctx.beginPath(); ctx.arc(x + s * fx, y + s * fy, d, 0, Math.PI * 2); ctx.fill(); }
+    const lw = Math.max(1, s * 0.07), g = Math.max(1, s * 0.06), r = s * 0.16;
+    if (style === 'dotted') {
+      ctx.strokeStyle = rgba(color, 0.85); ctx.lineWidth = Math.max(1.5, s * 0.08); ctx.lineCap = 'round';
+      const d = ctx.lineWidth; ctx.setLineDash([0.01, d * 2.4]);
+      rr(ctx, x + g + d / 2, y + g + d / 2, s - 2 * g - d, s - 2 * g - d, r); ctx.stroke();
     } else if (style === 'soft') {
-      ctx.fillStyle = rgba(color, 0.14); rr(ctx, x + 1.5, y + 1.5, s - 3, s - 3, s * 0.18); ctx.fill();
-      ctx.strokeStyle = rgba(color, 0.45); ctx.lineWidth = 1; ctx.stroke();
+      ctx.fillStyle = rgba(color, 0.24); rr(ctx, x + g, y + g, s - 2 * g, s - 2 * g, r); ctx.fill();
     } else if (style === 'glow') {
-      ctx.shadowColor = color; ctx.shadowBlur = s * 0.5;
-      ctx.strokeStyle = rgba(color, 0.9); ctx.lineWidth = 1.5; ctx.strokeRect(x + 2, y + 2, s - 4, s - 4);
+      ctx.shadowColor = color; ctx.shadowBlur = s * 0.45;
+      ctx.strokeStyle = rgba(color, 0.95); ctx.lineWidth = Math.max(1.25, s * 0.06);
+      rr(ctx, x + g + 1, y + g + 1, s - 2 * g - 2, s - 2 * g - 2, r); ctx.stroke();
     } else {
-      const lw = Math.max(1, s * 0.07);
-      ctx.strokeStyle = rgba(color, 0.7); ctx.lineWidth = lw;
-      rr(ctx, x + 1 + lw / 2, y + 1 + lw / 2, s - 2 - lw, s - 2 - lw, s * 0.12); ctx.stroke();
+      ctx.fillStyle = rgba(color, 0.05); rr(ctx, x + g, y + g, s - 2 * g, s - 2 * g, r); ctx.fill();
+      ctx.strokeStyle = rgba(color, 0.62); ctx.lineWidth = lw;
+      rr(ctx, x + g + lw / 2, y + g + lw / 2, s - 2 * g - lw, s - 2 * g - lw, r); ctx.stroke();
     }
     ctx.restore();
   }
@@ -417,15 +634,12 @@
         if (reduced) { this.parts.push({ kind: 'sq', x: cx, y: cy, vx: 0, vy: 0, g: 0, life: 0, max: 0.25, size: s, color: c.color, shrink: true }); continue; }
         if (kind === 'sparkle') {
           this.parts.push({ kind: 'sq', x: cx, y: cy, vx: 0, vy: 0, g: 0, life: 0, max: 0.3, size: s, color: c.color, shrink: true });
-          for (let k = 0; k < 3; k++) this.parts.push({ kind: 'star', x: cx + (Math.random() - 0.5) * s, y: cy + (Math.random() - 0.5) * s, vx: (Math.random() - 0.5) * 20, vy: -20 - Math.random() * 40, g: 0, life: 0, max: 0.7 + Math.random() * 0.5, size: s * (0.18 + Math.random() * 0.15), color: '#fffbe6' });
+          for (let k = 0; k < 3; k++) this.parts.push({ kind: 'star', x: cx + (Math.random() - 0.5) * s, y: cy + (Math.random() - 0.5) * s, vx: (Math.random() - 0.5) * 20, vy: -20 - Math.random() * 40, g: 0, life: 0, max: 0.7 + Math.random() * 0.5, size: s * (0.18 + Math.random() * 0.15), color: this.light ? shade(c.color, -0.25) : '#fffbe6' });
         } else if (kind === 'shatter') {
           for (let k = 0; k < 4; k++) {
             const ox = (k % 2) - 0.5, oy = Math.floor(k / 2) - 0.5;
             this.parts.push({ kind: 'shard', x: cx + ox * s / 2, y: cy + oy * s / 2, vx: ox * (60 + Math.random() * 90), vy: -60 - Math.random() * 120 + oy * 40, g: 700, life: 0, max: 0.9, size: s / 2, color: c.color, rot: 0, vr: (Math.random() - 0.5) * 12 });
           }
-        } else if (kind === 'confetti') {
-          this.parts.push({ kind: 'sq', x: cx, y: cy, vx: 0, vy: 0, g: 0, life: 0, max: 0.25, size: s, color: c.color, shrink: true });
-          for (let k = 0; k < 4; k++) this.parts.push({ kind: 'conf', x: cx, y: cy, vx: (Math.random() - 0.5) * 200, vy: -120 - Math.random() * 140, g: 380, drag: 1.8, life: 0, max: 1.4 + Math.random() * 0.6, size: s * 0.28, color: hsl(Math.random() * 360, 85, 65), rot: Math.random() * 6, vr: (Math.random() - 0.5) * 18 });
         } else if (kind === 'ripple') {
           this.parts.push({ kind: 'sq', x: cx, y: cy, vx: 0, vy: 0, g: 0, life: 0, max: 0.35, size: s, color: c.color, shrink: true });
         } else if (kind === 'bloom') {
@@ -574,16 +788,17 @@
         ctx.globalAlpha = k < 0.8 ? 1 : (1 - k) / 0.2;
         ctx.font = '700 ' + f.size + 'px ' + FONT;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.lineWidth = 3.5; ctx.lineJoin = 'round'; ctx.strokeStyle = 'rgba(8,11,18,0.55)';
+        // On the light well a pale callout is deepened and haloed in white; on the dark one it keeps a dark halo.
+        ctx.lineWidth = 3.5; ctx.lineJoin = 'round'; ctx.strokeStyle = this.light ? 'rgba(255,255,255,0.9)' : 'rgba(8,11,18,0.55)';
         const yy = f.y - k * 18;
         ctx.strokeText(f.str, f.x, yy);
-        ctx.fillStyle = f.color; ctx.fillText(f.str, f.x, yy);
+        ctx.fillStyle = this.light && luminance(f.color) > 0.55 ? shade(f.color, -0.5) : f.color; ctx.fillText(f.str, f.x, yy);
         ctx.restore();
       }
     }
   }
 
-  const FONT = '"Lull Line", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif';
+  const FONT = '"Lull Line", "Lull Sans", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif';
 
   // ---- piece previews -------------------------------------------------------------------------------------------------
 
@@ -644,35 +859,47 @@
       }
     }
 
+    /**
+     * The board as one composed unit: a plate holding the well, with Hold and Next in recessed trays beside it (or,
+     * when the window is tall and narrow, above it). The side columns are slim so the grid gets the room.
+     */
     layout() {
       const g = this.game;
       const rot = this.view.rot;
       const cols = rot % 180 === 0 ? g.w : g.h, rows = rot % 180 === 0 ? g.h : g.w;
-      const W = this.cssW, H = this.cssH;
-      const side = 4.4, pad = 10;
-      const sA = Math.min((W - pad * 2) / (cols + side * 2 + 1.2), (H - pad * 2) / (rows + 0.4));
-      const sB = Math.min((W - pad * 2) / (cols + 0.4), (H - pad * 2) / (rows + 3.6));
-      const wide = sA >= sB * 0.97;
+      const W = this.cssW, H = this.cssH, m = 8;
+      const side = 2.7, gap = 0.4, pad = 0.42, wp = 0.2, top = 2.9;
+      const hs = g.mods.noHold ? 0 : 1; // no hold slot (most puzzles): no column for it
+      const sA = Math.min((W - 2 * m) / (cols + (1 + hs) * (side + gap) + 2 * pad + 2 * wp), (H - 2 * m) / (rows + 2 * pad + 2 * wp));
+      const sB = Math.min((W - 2 * m) / (cols + 2 * pad + 2 * wp), (H - 2 * m) / (rows + top + gap + 2 * pad + 2 * wp));
+      const wide = sA >= sB * 0.9;
       const s = Math.max(4, Math.floor(wide ? sA : sB));
-      const bw = cols * s, bh = rows * s;
-      let bx, by, hold, next, nextDir;
+      const bw = cols * s, bh = rows * s, P = Math.round(pad * s), G = Math.round(gap * s), WP = Math.max(3, Math.round(s * 0.16));
+      const lab = Math.round(Math.max(16, s * 0.72)); // the label row over each tray
+      let plate, bx, by, hold, next, nextDir;
       if (wide) {
-        const total = bw + 2 * (side * s + s * 0.6);
-        bx = Math.round((W - total) / 2 + side * s + s * 0.6);
-        by = Math.round((H - bh) / 2);
-        hold = { x: bx - s * 0.6 - side * s, y: by, w: side * s, h: 3.6 * s };
-        next = { x: bx + bw + s * 0.6, y: by, w: side * s, h: bh };
+        const sw = Math.round(side * s);
+        const pw = P * 2 + (sw + G) * (1 + hs) + bw + WP * 2, ph = P * 2 + bh + WP * 2;
+        plate = { x: Math.round((W - pw) / 2), y: Math.round((H - ph) / 2), w: pw, h: ph };
+        bx = plate.x + P + (sw + G) * hs + WP; by = plate.y + P + WP;
+        const ty = plate.y + P + lab;
+        hold = { x: plate.x + P, y: ty, w: sw, h: Math.round(sw * 0.82) };
+        next = { x: bx + bw + WP + G, y: ty, w: sw, h: bh + WP * 2 - lab };
         nextDir = 'v';
       } else {
-        bx = Math.round((W - bw) / 2);
-        by = Math.round((H - bh - 3.2 * s) / 2 + 3.2 * s);
-        hold = { x: bx, y: by - 3.2 * s, w: 3.4 * s, h: 2.9 * s };
-        // No hold slot (most puzzles): the queue takes the whole width over the board.
-        const nx = g.mods.noHold ? 0 : 3.8 * s;
-        next = { x: bx + nx, y: by - 3.2 * s, w: bw - nx, h: 2.9 * s };
+        const th = Math.round(top * s) - lab;
+        const pw = P * 2 + bw + WP * 2, ph = P * 2 + lab + th + G + bh + WP * 2;
+        plate = { x: Math.round((W - pw) / 2), y: Math.round((H - ph) / 2), w: pw, h: ph };
+        bx = plate.x + P + WP; by = plate.y + P + lab + th + G + WP;
+        const ty = plate.y + P + lab, iw = bw + WP * 2;
+        hold = { x: plate.x + P, y: ty, w: Math.round(iw * 0.3), h: th };
+        // No hold slot (most puzzles): the queue takes the whole width.
+        const nx = g.mods.noHold ? 0 : hold.w + G;
+        next = { x: plate.x + P + nx, y: ty, w: iw - nx, h: th };
         nextDir = 'h';
       }
-      this.lay = { s, cols, rows, board: { x: bx, y: by, w: bw, h: bh }, hold, next, nextDir, wide };
+      this.lay = { s, cols, rows, board: { x: bx, y: by, w: bw, h: bh }, hold, next, nextDir, wide, plate, lab };
+      this.lay.well = wellRect(this.lay.board, s);
       return this.lay;
     }
 
@@ -752,14 +979,18 @@
       if (!this.lay) this.layout();
       const { s, board, cols, rows } = this.lay;
       ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-      ctx.__dpr = this.dpr;
+      ctx.__dpr = this.dpr; ctx.__light = look.theme.name === 'light';
       ctx.clearRect(0, 0, this.cssW, this.cssH);
       // Shake moves only the board and its effects (never the hold and queue beside it), and stays small.
       const shake = Math.min(8, this.fx.shake), shx = shake > 0.2 ? (Math.random() - 0.5) * shake : 0, shy = shake > 0.2 ? (Math.random() - 0.5) * shake : 0;
+      this.drawPlate(ctx);
       ctx.save();
       if (shx || shy) ctx.translate(shx, shy);
 
-      drawBackdrop(ctx, look.backdrop, board, s, cols, rows, look.theme, now);
+      const tl = look.still ? 0 : now;
+      this.fx.light = look.theme.name === 'light';
+      if (look.prism && !look.still) look.colors = forWell(paletteColors(look.palette, now), look.theme.name);
+      const wr = drawWell(ctx, look.backdrop, board, s, cols, rows, look.theme, tl);
       const p = g.piece;
       const pieceCells = p ? g.cellsOf(p) : [];
       const gy = p ? g.ghostY(p) : null;
@@ -883,12 +1114,13 @@
 
       if (p && (p.special || (g.s && g.s.gold > 0))) this.ambient(p, pieceCells, now);
 
-      drawFrame(ctx, look.frame, board, look.theme.accent, now);
-      // Close to the top: the frame breathes red.
+      drawRim(ctx, wr, look.theme);
+      drawFrame(ctx, look.frame, wr, look.theme.accent, tl, look.theme);
+      // Close to the top: the rim breathes red.
       if (!g.fixed && g.board.stackHeight() > g.h * 0.72) {
-        ctx.save(); ctx.strokeStyle = rgba('#eb6f92', 0.35 + 0.25 * Math.sin(now / 250)); ctx.lineWidth = 3;
-        ctx.strokeRect(board.x - 3, board.y - 3, board.w + 6, board.h + 6); ctx.restore();
-        this.alive = true;
+        ctx.save(); ctx.strokeStyle = rgba('#eb6f92', 0.35 + 0.25 * Math.sin((look.still ? 0 : now) / 250)); ctx.lineWidth = 2.5;
+        rr(ctx, wr.x - 1, wr.y - 1, wr.w + 2, wr.h + 2, wr.r + 1); ctx.stroke(); ctx.restore();
+        this.alive = !look.still;
       } else this.alive = false;
       if (this.view.wrap) {
         // Wraparound: the two side walls are portals — a still glow on each, with ⇆ at mid-height.
@@ -912,45 +1144,100 @@
       this.dirty = false;
     }
 
+    /** The plate the board unit sits on: a soft raised panel, a hairline, a shadow. Cached with the well's layers. */
+    drawPlate(ctx) {
+      const { plate } = this.lay, th = this.look.theme, dpr = ctx.__dpr || 1, pad = 60, light = th.name === 'light';
+      const R = Math.round(Math.min(20, Math.max(10, this.lay.s * 0.62)));
+      const key = ['plate', th.name, th.plate, th.accent, plate.w, plate.h, dpr, R].join('|');
+      const img = layer(key, plate.w + pad * 2, plate.h + pad * 2, dpr, (c) => {
+        // A soft pool of the accent's light under the whole unit.
+        const cx = pad + plate.w / 2, cy = pad + plate.h * 0.42, rad = Math.max(plate.w, plate.h) * 0.62;
+        const halo = c.createRadialGradient(cx, cy, 0, cx, cy, rad);
+        halo.addColorStop(0, rgba(th.accent, light ? 0.1 : 0.11)); halo.addColorStop(1, rgba(th.accent, 0));
+        c.fillStyle = halo; c.fillRect(0, 0, plate.w + pad * 2, plate.h + pad * 2);
+        c.save();
+        c.shadowColor = th.plateShadow || 'rgba(0,0,0,0.3)'; c.shadowBlur = 30; c.shadowOffsetY = 12;
+        c.fillStyle = th.plateBase || th.plate || 'rgba(255,255,255,0.04)';
+        rr(c, pad, pad, plate.w, plate.h, R); c.fill();
+        c.restore();
+        const g = c.createLinearGradient(0, pad, 0, pad + plate.h);
+        g.addColorStop(0, th.plate || 'rgba(255,255,255,0.05)'); g.addColorStop(1, th.plate2 || th.plate || 'rgba(255,255,255,0.02)');
+        c.fillStyle = g; rr(c, pad, pad, plate.w, plate.h, R); c.fill();
+        // The accent, faintly, in the plate's upper edge.
+        const tint = c.createLinearGradient(0, pad, 0, pad + plate.h * 0.5);
+        tint.addColorStop(0, rgba(th.accent, light ? 0.05 : 0.07)); tint.addColorStop(1, rgba(th.accent, 0));
+        c.fillStyle = tint; rr(c, pad, pad, plate.w, plate.h, R); c.fill();
+        c.strokeStyle = th.plateLine || th.hair || 'rgba(255,255,255,0.08)'; c.lineWidth = 1;
+        rr(c, pad + 0.5, pad + 0.5, plate.w - 1, plate.h - 1, R - 0.5); c.stroke();
+        const hi = c.createLinearGradient(pad, 0, pad + plate.w, 0);
+        hi.addColorStop(0, 'rgba(255,255,255,0)'); hi.addColorStop(0.5, th.plateHi || 'rgba(255,255,255,0.1)'); hi.addColorStop(1, 'rgba(255,255,255,0)');
+        c.strokeStyle = hi; c.beginPath(); c.moveTo(pad + R, pad + 1.5); c.lineTo(pad + plate.w - R, pad + 1.5); c.stroke();
+      });
+      ctx.drawImage(img, plate.x - pad, plate.y - pad, plate.w + pad * 2, plate.h + pad * 2);
+    }
+
     drawSide(ctx, now) {
-      const g = this.game, look = this.look, { s, hold, next, nextDir } = this.lay;
+      const g = this.game, look = this.look, { s, hold, next, nextDir, lab } = this.lay;
       const th = look.theme;
       ctx.save();
-      // Labels: small spaced capitals, quieter than anything they label.
-      ctx.font = '700 ' + Math.round(Math.max(9, Math.min(11, s * 0.44))) + 'px ' + FONT;
-      if ('letterSpacing' in ctx) ctx.letterSpacing = '0.09em';
-      ctx.textBaseline = 'top';
-      const label = (t, x, y) => { ctx.fillStyle = th.faint || th.muted; ctx.fillText(t, Math.round(x + 2), Math.round(y)); };
-      /** A soft recessed tray: the well's colour, a hairline, rounded like the rest of the window. */
+      // Labels: small spaced capitals over each tray, quieter than anything they label.
+      const fs = Math.round(Math.max(9, Math.min(11, s * 0.4)));
+      ctx.font = '650 ' + fs + 'px ' + FONT;
+      if ('letterSpacing' in ctx) ctx.letterSpacing = '0.12em';
+      ctx.textBaseline = 'middle';
+      const label = (t, x, y, w, right) => {
+        // A narrow column keeps only the count ("4 LEFT") when the name and the count would touch.
+        if (right && ctx.measureText(t).width + ctx.measureText(right).width + 14 > w) t = '';
+        ctx.fillStyle = th.faint || th.muted; ctx.textAlign = 'left'; ctx.fillText(t, Math.round(x + 3), Math.round(y - lab / 2));
+        if (right) { ctx.textAlign = 'right'; ctx.fillStyle = th.muted; ctx.fillText(right, Math.round(x + w - 3), Math.round(y - lab / 2)); ctx.textAlign = 'left'; }
+      };
+      /** A recessed tray in the well's material: its wash, a shadow under the top edge, a hairline rim. */
       const tray = (b, hot) => {
-        const r = Math.min(10, Math.max(5, s * 0.4));
-        ctx.fillStyle = hot ? rgba(th.accent, 0.12) : th.well; rr(ctx, b.x + 0.5, b.y + 0.5, b.w - 1, b.h - 1, r); ctx.fill();
-        ctx.strokeStyle = hot ? rgba(th.accent, 0.8) : th.line; ctx.lineWidth = 1; ctx.stroke();
+        const r = Math.round(Math.min(12, Math.max(6, s * 0.36)));
+        ctx.save();
+        rr(ctx, b.x, b.y, b.w, b.h, r); ctx.clip();
+        const gr = ctx.createLinearGradient(0, b.y, 0, b.y + b.h);
+        gr.addColorStop(0, th.wellTop || th.well); gr.addColorStop(1, th.wellBottom || th.well);
+        ctx.fillStyle = gr; ctx.fillRect(b.x, b.y, b.w, b.h);
+        if (hot) { ctx.fillStyle = rgba(th.accent, 0.12); ctx.fillRect(b.x, b.y, b.w, b.h); }
+        const sh = ctx.createLinearGradient(0, b.y, 0, b.y + s * 0.6);
+        sh.addColorStop(0, th.innerShade || 'rgba(0,0,0,0.25)'); sh.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = sh; ctx.fillRect(b.x, b.y, b.w, s * 0.6);
+        ctx.restore();
+        ctx.strokeStyle = hot ? rgba(th.accent, 0.8) : (th.rim || th.line); ctx.lineWidth = 1;
+        rr(ctx, b.x + 0.5, b.y + 0.5, b.w - 1, b.h - 1, r); ctx.stroke();
       };
       const pl = { skin: look.skin, color: (c) => (this.view.mono ? look.monoColor : look.colors[c]), t: now };
-      const top = s * 0.75;
       // Hold
       if (!g.mods.noHold) {
-        label('HOLD', hold.x, hold.y);
-        const box = { x: hold.x, y: hold.y + top, w: hold.w, h: hold.h - top };
-        tray(box, this.holdHover);
-        if (g.hold) drawPieceIn(ctx, g.hold, box, s * 0.7, Object.assign({}, pl, { alpha: g.holdLocked && !g.freeHold ? 0.35 : 1 }));
+        label('HOLD', hold.x, hold.y, hold.w);
+        tray(hold, this.holdHover);
+        if (g.hold) drawPieceIn(ctx, g.hold, hold, s * 0.72, Object.assign({}, pl, { alpha: g.holdLocked && !g.freeHold ? 0.35 : 1 }));
       }
-      // Next: the queue in one tray, the piece coming first and largest.
+      // Next: the queue in one tray, the piece coming first and largest, the rest after a hairline.
       const n = Math.min(g.fixed ? g.queue.length : g.previewCount, g.queue.length);
-      label(g.fixed ? 'NEXT · ' + g.queue.length + ' LEFT' : 'NEXT', next.x, next.y);
+      label('NEXT', next.x, next.y, next.w, g.fixed ? g.queue.length + ' LEFT' : null);
       if (nextDir === 'v') {
-        const slot = Math.min(s * 2.9, (next.h - top) / Math.max(1, Math.min(n, 5)));
+        const first = Math.round(s * 2.5), slot = Math.round(s * 1.95);
         let shown = 0;
-        for (let i = 0; i < n; i++) if (next.y + top + (i + 1) * slot <= next.y + next.h + 1) shown++;
-        if (shown) tray({ x: next.x, y: next.y + top, w: next.w, h: shown * slot + s * 0.2 });
-        for (let i = 0; i < shown; i++) this.drawQueueItem(ctx, g.queue[i], { x: next.x, y: next.y + top + s * 0.1 + i * slot, w: next.w, h: slot }, i, s, pl);
+        for (let i = 0; i < n; i++) if (first + i * slot <= next.h + 1 || i === 0) shown = i + 1;
+        const hh = shown ? Math.min(next.h, first + (shown - 1) * slot + Math.round(s * 0.2)) : Math.round(s * 2.5);
+        tray({ x: next.x, y: next.y, w: next.w, h: hh });
+        for (let i = 0; i < shown; i++) {
+          const y0 = next.y + (i ? first + (i - 1) * slot : 0), h0 = i ? slot : first;
+          if (i === 1) { ctx.fillStyle = th.hair || th.line; ctx.fillRect(next.x + s * 0.4, Math.round(y0) + 0.5, next.w - s * 0.8, 1); }
+          this.drawQueueItem(ctx, g.queue[i], { x: next.x, y: y0 + (i ? s * 0.1 : s * 0.05), w: next.w, h: h0 }, i, s, pl);
+        }
       } else {
-        const slot = Math.min(s * 3.2, next.w / Math.max(1, Math.min(n, 5)));
+        const first = Math.min(Math.round(s * 3.4), next.w), slot = Math.round(s * 2.8);
         let shown = 0;
-        for (let i = 0; i < n; i++) if (next.x + (i + 1) * slot <= next.x + next.w + 1) shown++;
-        if (shown) tray({ x: next.x, y: next.y + top, w: shown * slot, h: next.h - top });
-        for (let i = 0; i < shown; i++) this.drawQueueItem(ctx, g.queue[i], { x: next.x + i * slot, y: next.y + top, w: slot, h: next.h - top }, i, s, pl);
+        for (let i = 0; i < n; i++) if (first + i * slot <= next.w + 1 || i === 0) shown = i + 1;
+        tray({ x: next.x, y: next.y, w: shown ? Math.min(next.w, first + (shown - 1) * slot + Math.round(s * 0.2)) : next.w, h: next.h });
+        for (let i = 0; i < shown; i++) {
+          const x0 = next.x + (i ? first + (i - 1) * slot : 0), w0 = i ? slot : first;
+          if (i === 1) { ctx.fillStyle = th.hair || th.line; ctx.fillRect(Math.round(x0) + 0.5, next.y + s * 0.4, 1, next.h - s * 0.8); }
+          this.drawQueueItem(ctx, g.queue[i], { x: x0, y: next.y, w: w0, h: next.h }, i, s, pl);
+        }
       }
       if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
       ctx.restore();
@@ -965,7 +1252,7 @@
         ctx.fillText('?', box.x + box.w / 2, box.y + box.h / 2); ctx.textAlign = 'start'; ctx.textBaseline = 'top';
         return;
       }
-      drawPieceIn(ctx, entry, { x: box.x + 2, y: box.y + 2, w: box.w - 4, h: box.h - 4 }, i === 0 ? s * 0.7 : s * 0.55, Object.assign({}, pl, { alpha: i === 0 ? 1 : 0.85 }));
+      drawPieceIn(ctx, entry, { x: box.x + 4, y: box.y + 4, w: box.w - 8, h: box.h - 8 }, i === 0 ? s * 0.62 : s * 0.46, Object.assign({}, pl, { alpha: i === 0 ? 1 : 0.8 }));
     }
 
     // ---- effects hooks ---------------------------------------------------------------------------------------------
@@ -1033,7 +1320,7 @@
         if (effect === 'ripple' && !reduced) {
           for (const y of rowsN) {
             const [ax, ay] = this.toScreen(0, y), [bx, by] = this.toScreen(this.game.w - 1, y);
-            this.fx.ring((ax + bx) / 2 + s / 2, (ay + by) / 2 + s / 2, look.theme.accent, s * this.game.w * 0.7);
+            this.fx.ring((ax + bx) / 2 + s / 2, (ay + by) / 2 + s / 2, look.theme.accent, s * this.game.w * 0.7, { clip: this.lay.well });
           }
         }
         if (!reduced) this.fx.shake = Math.max(this.fx.shake, Math.min(2.5, 0.6 * result.lines));
@@ -1493,15 +1780,16 @@
   }
 
   /** The look (palette, skin, …) from the save's equipped cosmetics and the theme. */
-  function makeLook(equipped, theme, t) {
+  const ANIMATED_FRAMES = new Set(['rainbow']);
+  function makeLook(equipped, theme, t, still) {
     const pal = PALETTES[equipped.palette] || PALETTES.classic;
-    const colors = paletteColors(equipped.palette, t);
+    const colors = forWell(paletteColors(equipped.palette, still ? 0 : t), theme.name);
     return {
-      colors, skin: equipped.skin, frame: equipped.frame, backdrop: equipped.backdrop, effect: equipped.effect, ghost: equipped.ghost,
-      theme, monoColor: theme.mono,
-      animated: !!pal.animated || equipped.frame === 'rainbow',
+      colors, palette: equipped.palette, prism: !!pal.animated, skin: equipped.skin, frame: equipped.frame, backdrop: equipped.backdrop, effect: equipped.effect, ghost: equipped.ghost,
+      theme, monoColor: theme.mono, still: !!still,
+      animated: !still && (!!pal.animated || ANIMATED_FRAMES.has(equipped.frame) || ANIMATED_BACKDROPS.has(equipped.backdrop)),
     };
   }
 
-  L.Render = { rgb, rgba, shade, mix, hsl, luminance, paletteColors, drawCell, cellSprite, drawFrame, drawBackdrop, ghostCell, drawPieceIn, drawSpecial, drawGem, FX, BoardView, makeLook, rr, FONT, SKIN_PAINT, labelFor };
+  L.Render = { rgb, rgba, shade, mix, hsl, luminance, paletteColors, forWell, drawWell, drawRim, wellRect, ANIMATED_BACKDROPS, drawCell, cellSprite, drawFrame, drawBackdrop, ghostCell, drawPieceIn, drawSpecial, drawGem, FX, BoardView, makeLook, rr, FONT, SKIN_PAINT, labelFor };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

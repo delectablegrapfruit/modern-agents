@@ -47,6 +47,11 @@
 
   // ---- shared board controller ------------------------------------------------------------------------------------
 
+  /** One figure in a board's status bar: a small spaced label over the value. */
+  function stat(label, value, cls, tip) {
+    return h('span', { class: 'stat' + (cls ? ' ' + cls : ''), 'data-tip': tip || null }, h('i', null, label + ' '), h('b', null, value));
+  }
+
   class BoardMode {
     constructor(app, canvasId, overlayId) {
       this.app = app;
@@ -62,7 +67,7 @@
     }
 
     get settings() { return this.app.store.state.settings; }
-    get reduced() { return this.settings.motion === 'reduced'; }
+    get reduced() { return this.app.reducedMotion(); }
 
     attachGame(game, view) {
       this.game = game;
@@ -77,7 +82,7 @@
       });
       game.on('topout', () => this.onTopout && this.onTopout());
       // A hold swap refused: the held piece has no room anywhere above the stack (nothing changed).
-      game.on('noroom', () => toast('No room up there', 'bad'));
+      game.on('noroom', () => toast('No room', 'bad'));
       game.on('empty', () => this.onEmpty && this.onEmpty());
       game.on('flip', (moves) => this.view.onMoves(moves, 'x', this.reduced));
       game.on('tornado', (moves) => { this.view.onTornado(moves, this.reduced); this.app.sound.play('drill'); });
@@ -239,10 +244,13 @@
       this.view.reducedMotion = this.reduced;
       this.view.fx.update(dt);
       if (this.view.needsFrame()) {
-        if (this.view.look && this.view.look.animated && this.reduced && !this.view.dirty && !this.view.fx.active && now - (this.lastAnim || 0) < 250) return;
-        this.lastAnim = now;
-        if (this.view.look.animated) this.view.setLook(this.app.look());
+        // An animated look (Prism, Rainbow, a moving backdrop) draws every frame from cached sprites and layers; under
+        // reduced motion the look is still, so only real changes draw.
+        if (this.view.look && this.view.look.still !== this.reduced) this.view.setLook(this.app.look());
         this.view.render(now);
+        // The bars under the board line up with its plate.
+        const lay = this.view.lay;
+        if (lay && lay.plate.w !== this.plateW) { this.plateW = lay.plate.w; this.canvas.closest('.view').style.setProperty('--plate-w', lay.plate.w + 'px'); }
       }
     }
   }
@@ -424,11 +432,12 @@
 
     renderStatus() {
       this.statusEl.replaceChildren(
-        h('span', null, 'Score ', h('b', null, fmtInt(this.score))),
-        h('span', null, 'Level ', h('b', null, String(this.level))),
-        h('span', null, 'Lines ', h('b', null, String(this.lines))),
-        h('span', { class: this.mult > 1 ? 'chain opt' : 'slot-off', title: 'Back-to-back multiplies the lines you bank, up to ×10' }, 'Bank ', h('b', null, Chain.fmt(this.mult || 1))),
-        h('span', null, 'Best ', h('b', null, fmtInt(Math.max(this.cs.best, this.score)))));
+        h('div', { class: 'stats' },
+          stat('Score', fmtInt(this.score)),
+          stat('Level', String(this.level)),
+          stat('Lines', String(this.lines)),
+          stat('Bank', Chain.fmt(this.mult || 1), this.mult > 1 ? 'chain opt' : 'slot-off', 'Back-to-back multiplies banked lines, up to ×10'),
+          stat('Best', fmtInt(Math.max(this.cs.best, this.score)), 'opt')));
     }
 
     renderControls() {
@@ -651,17 +660,21 @@
 
     renderStatus() {
       const s = this.game.s;
-      this.status.replaceChildren(...[
-        h('span', null, 'Lines ', h('b', null, fmtInt(s.lines))),
-        h('span', null, 'Score ', h('b', null, fmtInt(s.score))),
-        h('span', { class: s.chain > 1 ? 'chain' : 'slot-off', title: 'Back-to-back plus combo · ' + (s.hand === false ? 'power-ups on the board' : 'no power-ups on the board: ' + (s.hchain || 0)) }, 'Chain ', h('b', null, String(s.chain || 0)), ' · ', h('b', null, Chain.fmt(s.mult || 1))),
-        s.gold > 0 ? h('span', { class: 'opt gold', title: 'Next clears pay ×' + Luck.GOLD_X }, 'Gold ', h('b', null, String(s.gold))) :
-          s.double ? h('span', { class: 'opt gold', title: ITEMS.double.desc }, ico('item-double'), 'Double') :
-          s.net > 0 ? h('span', { class: 'opt boost', title: ITEMS.net.desc }, ico('item-net'), 'Net') :
-          s.boost ? h('span', { class: 'opt boost', title: 'Next ' + s.boost.left + ' clears pay ' + Chain.fmt(s.boost.x) }, 'Boost ', h('b', null, Chain.fmt(s.boost.x) + ' · ' + s.boost.left)) :
-            h('span', { class: 'opt' }, 'Pieces ', h('b', null, fmtInt(s.pieces))),
-        this.giftBtn(),
-        h('button', { class: 'btn sm new-board', 'aria-label': 'New board', 'data-tip': 'New board', onclick: () => this.askRetire() }, ico('newBoard'), h('span', { class: 'lbl' }, 'New board'))].filter(Boolean));
+      const side = s.gold > 0 ? stat('Gold', String(s.gold), 'opt gold', 'Next clears pay ×' + Luck.GOLD_X)
+        : s.double ? stat('Luck', 'Double', 'opt gold', ITEMS.double.desc)
+        : s.net > 0 ? stat('Luck', 'Net', 'opt boost', ITEMS.net.desc)
+        : s.boost ? stat('Boost', Chain.fmt(s.boost.x) + ' · ' + s.boost.left, 'opt boost', 'Next ' + s.boost.left + ' clears pay ' + Chain.fmt(s.boost.x))
+        : stat('Pieces', fmtInt(s.pieces), 'opt');
+      this.status.replaceChildren(
+        h('div', { class: 'stats' },
+          stat('Lines', fmtInt(s.lines)),
+          stat('Score', fmtInt(s.score)),
+          h('span', { class: 'stat ' + (s.chain > 1 ? 'chain' : 'slot-off'), 'data-tip-title': 'Chain', 'data-tip': 'Back-to-back plus combo. ' + (s.hand === false ? 'Power-ups on the board.' : 'No power-ups on the board: ' + (s.hchain || 0) + '.') },
+            h('i', null, 'Chain '), h('b', null, String(s.chain || 0), h('span', { class: 'mult' }, ' · ' + Chain.fmt(s.mult || 1)))),
+          side),
+        h('div', { class: 'acts' },
+          this.giftBtn(),
+          h('button', { class: 'btn sm new-board', 'aria-label': 'New board', 'data-tip': 'New board', onclick: () => this.askRetire() }, ico('newBoard'), h('span', { class: 'lbl' }, 'New board'))));
     }
 
     // ---- the daily gift ------------------------------------------------------------------------------------------------
@@ -784,7 +797,7 @@
       if (a.id === 'golden') g.s.gold = Math.max(0, (g.s.gold || 0) - Luck.GOLD_CLEARS);
       else if (a.id === 'double') g.s.double = false;
       else if (a.id === 'net') g.s.net = Math.max(0, (g.s.net || 0) - 1);
-      else if (!g.replacePiece(a.prev)) { toast('No room up there to put the old piece back', 'bad'); return; }
+      else if (!g.replacePiece(a.prev)) { toast('No room to take it back', 'bad'); return; }
       if (a.queue) g.queue = a.queue;
       st.state.inventory[a.id] = (st.state.inventory[a.id] || 0) + 1;
       const used = st.state.stats.items.used;
@@ -820,7 +833,7 @@
         this.renderStatus();
         this.view.dirty = true;
       };
-      const noRoom = () => toast('No room up there', 'bad');
+      const noRoom = () => toast('No room', 'bad');
       /** The piece in play becomes another, tagged with the item that made it (for its combos). */
       const become = (entry) => { if (g.replacePiece(Object.assign({ tag: id }, entry))) done(); else noRoom(); };
       if (SPECIALS.has(id)) { if (g.setSpecial(id)) done(); else noRoom(); return; }
@@ -835,7 +848,7 @@
         case 'noodle': become({ id: Pieces.customType([[0, 0], [1, 0], [2, 0], [3, 0], [4, 0], [5, 0]]).id }); break;
         case 'giant': {
           const base = Pieces.TYPES[cur.type.id] && Pieces.TYPES[cur.type.id].family === 'tetromino' ? cur.type.id : null;
-          if (!base) { toast('Giant works on the seven standard pieces', 'bad'); return; }
+          if (!base) { toast('Giant: standard pieces only', 'bad'); return; }
           become({ id: Pieces.bigOf(base).id, special: cur.special });
           break;
         }
@@ -849,10 +862,10 @@
           UI.openPickOfThree(this.app, g.queue.slice(0, 3), (i) => { if (i == null) return; if (g.pickFromQueue(i)) done(); else noRoom(); });
           break;
         case 'fit': if (g.bestFit()) done(); else noRoom(); break;
-        case 'settle': if (g.settle()) done(); else toast('The board is empty', 'bad'); break;
-        case 'tornado': if (g.tornado()) done(); else toast(g.board.isEmpty() ? 'The board is empty' : 'No room for the piece — move it first', 'bad'); break;
-        case 'trapdoor': if (g.trapdoor()) done(); else toast('The bottom row is empty', 'bad'); break;
-        case 'flip': if (g.flipWorld()) done(); else toast(g.board.isEmpty() ? 'The board is empty' : 'No room for the piece — move it first', 'bad'); break;
+        case 'settle': if (g.settle()) done(); else toast('Board is empty', 'bad'); break;
+        case 'tornado': if (g.tornado()) done(); else toast(g.board.isEmpty() ? 'Board is empty' : 'No room. Move the piece first', 'bad'); break;
+        case 'trapdoor': if (g.trapdoor()) done(); else toast('Bottom row is empty', 'bad'); break;
+        case 'flip': if (g.flipWorld()) done(); else toast(g.board.isEmpty() ? 'Board is empty' : 'No room. Move the piece first', 'bad'); break;
         case 'golden':
           // Gold stays on the board for the next five clears, whatever piece makes them.
           g.s.gold = (g.s.gold || 0) + Luck.GOLD_CLEARS;
@@ -1122,10 +1135,10 @@
         h('span', { class: 'pz-i ring', html: L.Icons.icon('check') }),
         h('h2', null, 'Solved'),
         h('div', { class: 'board-sum' },
-          tile(fmtClock(ms), 'time'),
-          tile(cur.attempts === 1 ? 'First' : String(cur.attempts), cur.attempts === 1 ? 'try' : 'tries'),
-          reward ? tile(h('span', null, '+' + reward, ' ', h('span', { class: 'gem' }, LINE)), cur.hint ? 'lines · ½ for hints' : this.meta.daily ? 'lines · Daily ×2' : 'lines', 'pay')
-            : tile('—', 'solved before')),
+          tile(fmtClock(ms), 'Time'),
+          tile(String(cur.attempts), cur.attempts === 1 ? 'Try' : 'Tries'),
+          reward ? tile(h('span', null, '+' + reward, ' ', h('span', { class: 'gem' }, LINE)), cur.hint ? 'Lines · hints ½' : this.meta.daily ? 'Lines · Daily ×2' : 'Lines', 'pay')
+            : tile('—', 'Solved before')),
         h('div', { class: 'row' },
           h('button', { class: 'btn', onclick: () => this.retry() }, 'Replay'),
           h('button', { class: 'btn primary', onclick: () => this.next() }, 'Next puzzle'))));
@@ -1308,8 +1321,8 @@
       const hint = this.computeHint();
       if (!hint) return;
       if (hint.cells) this.view.hint = hint.cells;
-      else if (announce && hint.swap) toast('The solution plays ' + (Pieces.TYPES[hint.swap] ? Pieces.TYPES[hint.swap].name : 'another piece') + ' next — try Hold', null, 2600);
-      else if (announce && hint.off) toast('Off the solution — undo to get hints back', null, 3000);
+      else if (announce && hint.swap) toast('The solution plays ' + (Pieces.TYPES[hint.swap] ? Pieces.TYPES[hint.swap].name : 'another piece') + ' next. Try Hold', null, 2600);
+      else if (announce && hint.off) toast('Off the solution. Undo for hints', null, 3000);
       this.view.dirty = true;
     }
 
@@ -1531,7 +1544,7 @@
 
     get f() { return this.app.store.state.factory; }
     get store() { return this.app.store; }
-    get reduced() { return this.app.settings.motion === 'reduced'; }
+    get reduced() { return this.app.reducedMotion(); }
 
     // ---- time ---------------------------------------------------------------------------------------------------------
 
@@ -1552,7 +1565,7 @@
         const a = this.away;
         this.away = null;
         if (a.seconds > 90 && a.minos >= 4) {
-          toast('While you were away: ' + fmtInt(a.minos) + ' minos · ' + fmtInt(Math.floor(f.bin.length / 4)) + ' ' + LINE + ' in the bin' + (Factory.isFull(f) ? ' · full' : ''), 'good', 5000);
+          toast('While you were away: ' + fmtInt(a.minos) + ' minos · ' + fmtInt(Math.floor(f.bin.length / 4)) + ' ' + LINE + ' in bin' + (Factory.isFull(f) ? ' · Full' : ''), 'good', 5000);
         }
       }
       return res;
@@ -1728,7 +1741,7 @@
       this.cKey = null;
       this.collectEl.replaceChildren(this.cBtn);
       const card = (up, ico, title, desc, btn) => h('div', { class: 'row-card', 'data-up': up }, h('div', { class: 'fac-ico' }, ico), h('div', { class: 'grow' }, h('div', { class: 't' }, title), desc), btn);
-      const els = [h('div', { class: 'fac-h' }, 'The line')];
+      const els = [h('div', { class: 'fac-h' }, 'Upgrades')];
       // The next press.
       const np = Factory.nextUpgrade(f, 'press');
       this.pressBtn = null;
@@ -1738,7 +1751,7 @@
         els.push(card('press', L.FactoryArt.shapeCanvas(look, Factory.shapes(n)[s], 34, look.colors[1 + (s % 7)], true), Factory.NAMES[n] + ' press',
           h('div', { class: 'd' }, '+' + Factory.quarters((3600 / Factory.CYCLE) * n / 4) + '\u00a0' + LINE + '/h'), this.pressBtn));
       } else {
-        els.push(card('press', L.FactoryArt.shapeCanvas(look, Factory.shapes(7)[sampleShape(7)], 34, look.colors[3], true), 'Four presses', null, null));
+        els.push(card('press', L.FactoryArt.shapeCanvas(look, Factory.shapes(7)[sampleShape(7)], 34, look.colors[3], true), 'All presses built', null, null));
       }
       // A taller bin.
       const nb = Factory.nextUpgrade(f, 'bin');
@@ -1747,7 +1760,7 @@
         this.binBtn = h('button', { class: 'btn sm', onclick: () => this.upgrade('bin') }, 'Build · ' + fmtInt(nb.cost) + ' ' + LINE);
         this.binDesc = h('div', { class: 'd' });
         els.push(card('bin', this.binIcon(look), 'Taller bin', this.binDesc, this.binBtn));
-      } else els.push(card('bin', this.binIcon(look), 'The tallest bin', h('div', { class: 'd' }, Factory.BIN_ROWS[f.binLevel] + ' lines'), null));
+      } else els.push(card('bin', this.binIcon(look), 'Tallest bin', h('div', { class: 'd' }, Factory.BIN_ROWS[f.binLevel] + ' lines'), null));
       // Molds: one chip per press.
       els.push(h('div', { class: 'row-card fac-molds' }, h('span', { class: 'lbl' }, 'Molds'),
         h('div', { class: 'chips' }, f.molds.map((m, k) => h('button', { class: 'chip' + (m.pin >= 0 ? ' on' : ''), 'data-k': k, onclick: () => this.openMold(k) },
@@ -1758,12 +1771,13 @@
 
     update() {
       const f = this.f, st = Factory.status(f), cap = Factory.BIN_ROWS[f.binLevel], wallet = this.store.state.lines;
-      this.tRate.v.textContent = Factory.quarters(st.perHour / 4) + '\u00a0' + LINE + '/h';
-      this.tRate.l.textContent = st.perHour + ' minos / h';
+      this.tRate.v.textContent = Factory.quarters(st.perHour / 4) + '\u00a0' + LINE;
+      this.tRate.l.textContent = 'Lines / hour';
+      this.tRate.el.dataset.tip = st.perHour + ' minos / hour';
       this.tBin.v.textContent = Factory.quarters(st.len / 4) + ' / ' + cap;
-      this.tBin.l.textContent = 'lines in the bin';
+      this.tBin.l.textContent = 'Lines in bin';
       this.tStatus.v.textContent = st.full ? 'Full' : soon(st.toFull);
-      this.tStatus.l.textContent = st.full ? 'waiting' : 'until full';
+      this.tStatus.l.textContent = st.full ? 'Bin' : 'Full in';
       this.tStatus.el.classList.toggle('warn', st.full);
       // Collect: what it pays now, or when the first line lands.
       let key;
