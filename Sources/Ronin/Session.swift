@@ -24,6 +24,20 @@ final class GameSession {
         set { fight.autopilot = newValue }
     }
 
+    /// The run's score so far: every stage of it, this one included. After a fall, the run that just ended.
+    var runScore: Int {
+        switch fight.outcome {
+        case nil:
+            return career.run.score + fight.score
+        case .victory?:
+            // Booked already: the run holds this stage's score (a save from before runs were kept may not).
+            return max(career.run.score, fight.score)
+        case .defeat?:
+            guard let run = career.lastRun, run.stage == fight.stage, run.score >= fight.score else { return fight.score }
+            return run.score
+        }
+    }
+
     /// Runs the fight forward. A fight that ends is booked and saved on the spot.
     func advance(_ dt: Double) -> [FightEvent] {
         let events = fight.step(dt)
@@ -54,15 +68,21 @@ final class GameSession {
         save()
     }
 
-    /// Walks away from this fight for a fresh roll of the same stage, with the hearts it was entered with.
+    /// Walks away from this fight for a fresh roll of the same stage. The hearts it cost stay lost and its kills
+    /// count, so walking away is never better than playing on. A finished fight goes on, as its card does.
     func restart() {
-        if fight.outcome == nil { career.attempt += 1 }
+        if fight.outcome == nil {
+            career.abandon(fight)
+            career.attempt += 1
+        }
         next()
     }
 
-    /// Switches the difficulty. The fight in progress is dropped (it counts as nothing) for the mode's own stage.
+    /// Switches the difficulty, to the mode's own campaign. The fight in progress is left as a restart leaves it (its
+    /// wounds kept for when you come back, its kills counted), and an endless run is left with its record kept.
     func choose(_ mode: Mode) {
         guard mode != career.mode else { return }
+        career.abandon(fight)
         career.choose(mode)
         next()
     }
@@ -74,22 +94,26 @@ final class GameSession {
         next()
     }
 
-    /// Starts an endless run from an unlocked stage.
+    /// Starts an endless run from an unlocked stage. The fight in progress is left as a restart leaves it.
     func startEndless(at stage: Int) {
+        career.abandon(fight)
         career.startEndless(at: stage)
         next()
     }
 
-    /// Back to the campaign, where it was left.
+    /// Back to the campaign, where it was left. The run's fight is left as a restart leaves it, and the run is kept
+    /// if it was a record.
     func leaveEndless() {
         guard career.isEndless else { return }
+        career.abandon(fight)
         career.leaveEndless()
         next()
     }
 
-    /// Jumps the career to a stage (the self-test uses it to reach a warlord).
+    /// Jumps the career to a stage (the self-test uses it to reach a warlord). The campaign's run starts there.
     func jump(to stage: Int) {
         career.stage = max(1, stage)
+        career.runs[career.mode.rawValue] = nil
         career.attempt = 1
         next()
     }
@@ -100,7 +124,7 @@ final class GameSession {
     }
 }
 
-/// The save file: JSON in Application Support.
+/// The save file: JSON in Application Support. A save this build cannot read is never written over.
 struct Store {
     let url: URL
 
@@ -119,17 +143,35 @@ struct Store {
         Store(directory: FileManager.default.temporaryDirectory.appendingPathComponent("Ronin Self-Test \(UUID().uuidString)", isDirectory: true))
     }
 
+    /// The saved career and fight (see `SaveGame.load`: an older save keeps its career). Nil when there is no save,
+    /// or when not even its career can be read: then the file is set aside, beside it, before a new career can be
+    /// saved over it.
     func load() -> SaveGame? {
-        guard let data = try? Data(contentsOf: url),
-              let save = try? JSONDecoder().decode(SaveGame.self, from: data),
-              save.version == SaveGame.currentVersion
-        else { return nil }
-        return save
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        do {
+            let data = try Data(contentsOf: url)
+            if let save = SaveGame.load(data) { return save }
+            NSLog("Ronin: the save at %@ cannot be read", url.path)
+        } catch {
+            NSLog("Ronin: the save at %@ cannot be read: %@", url.path, String(describing: error))
+        }
+        let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
+        let aside = url.deletingLastPathComponent().appendingPathComponent("save.unreadable-\(stamp).json")
+        do {
+            try FileManager.default.moveItem(at: url, to: aside)
+            NSLog("Ronin: set it aside as %@ and started a new career", aside.lastPathComponent)
+        } catch {
+            NSLog("Ronin: could not set the save aside: %@", String(describing: error))
+        }
+        return nil
     }
 
     func save(_ game: SaveGame) {
-        guard let data = try? JSONEncoder().encode(game) else { return }
-        try? data.write(to: url, options: .atomic)
+        do {
+            try JSONEncoder().encode(game).write(to: url, options: .atomic)
+        } catch {
+            NSLog("Ronin: could not save: %@", String(describing: error))
+        }
     }
 }
 
@@ -146,8 +188,9 @@ enum Settings {
         var title: String { ["Small", "Medium", "Large"][rawValue] }
     }
 
+    /// Medium until you choose.
     static var size: Size {
-        get { Size(rawValue: defaults.integer(forKey: "size")) ?? .medium }
+        get { (defaults.object(forKey: "size") as? Int).flatMap(Size.init(rawValue:)) ?? .medium }
         set { defaults.set(newValue.rawValue, forKey: "size") }
     }
 
@@ -177,9 +220,31 @@ enum Settings {
         set { defaults.set(newValue, forKey: "floorHints") }
     }
 
+    /// The mouse buttons are learnt: a foe cut down on each side. Until then the lane may show which button cuts which
+    /// way (the floor mice, if Floor Hints is on). Turning Floor Hints on teaches them again.
     static var hintShown: Bool {
         get { defaults.bool(forKey: "hintShown") }
         set { defaults.set(newValue, forKey: "hintShown") }
+    }
+
+    /// Calmer effects: less shake, no zoom punches, softer full-lane flashes, lightning a slow glow. The blood and the
+    /// dead are untouched. Follows the system's Reduce Motion until chosen in the menu (choosing what the system says
+    /// follows it again).
+    @MainActor static var reduceMotion: Bool {
+        get { defaults.object(forKey: "reduceMotion") as? Bool ?? NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+        set {
+            if newValue == NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+                defaults.removeObject(forKey: "reduceMotion")
+            } else {
+                defaults.set(newValue, forKey: "reduceMotion")
+            }
+        }
+    }
+
+    /// Which of `Shortcut.all` shows and hides the panel (the first that registers, from this one on).
+    static var shortcut: Int {
+        get { defaults.integer(forKey: "shortcut") }
+        set { defaults.set(newValue, forKey: "shortcut") }
     }
 
     /// The window's top-left corner on screen.

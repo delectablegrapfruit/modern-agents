@@ -3,12 +3,16 @@ import Metal
 import SpriteKit
 import RoninCore
 
-/// `RONIN_SELFTEST=1 Ronin.app/Contents/MacOS/Ronin`: in a scratch save, makes the first cut and a whiff with real
-/// left and right mouse-button events, lets the autopilot clear stage 1, advances from the banner, shows a new foe's
-/// card, fights a warlord, switches to Oni and rides a combo into bloodlust, falls and starts again from stage 1,
-/// switches back and finds Bushidō's stage and hearts kept, runs an endless stage straight into the next, folds into
-/// the pill and back, checks that leaving pauses and that coming back takes the dwell, and checks the save. Exits 0, or 1 saying what failed. With `RONIN_SNAPSHOTS=<dir>` it also writes
-/// what the panel showed along the way as PNGs.
+/// `RONIN_SELFTEST=1 Ronin.app/Contents/MacOS/Ronin`: in a scratch save and a scratch defaults domain, checks the
+/// defaults (floor hints off, a Medium panel), grows the panel from its default corner and folds it there and back
+/// without it leaving the screen, shows what a new player first sees, makes the first cut and a whiff with real left
+/// and right mouse-button events, lets the autopilot clear stage 1, folds into the pill and back with the dead still
+/// lying there, advances from the banner, shows a new foe's card, fights a warlord, switches to Oni and rides a combo
+/// into bloodlust, falls and starts again from stage 1, switches back and finds Bushidō's stage and hearts kept, runs
+/// an endless stage straight into the next and checks that dragging the window holds the fight still, folds into the
+/// pill and back, checks that leaving pauses and gives the keys back (so a key typed elsewhere does nothing) and that
+/// coming back takes the dwell, and checks the save. Exits 0, or 1 saying what failed. With `RONIN_SNAPSHOTS=<dir>`
+/// it also writes what the panel showed along the way as PNGs, and fails if one cannot be taken.
 enum SelfTest {
     static var enabled: Bool { ProcessInfo.processInfo.environment["RONIN_SELFTEST"] != nil }
 
@@ -40,21 +44,48 @@ enum SelfTest {
     private static func run(_ app: AppDelegate) async throws {
         let panel = app.panel!, scene = panel.scene, session = app.session
         Settings.pauseWhenAway = false
-        // Floor hints are off unless asked for; this run turns them on to check them, then off again.
+        // Floor hints are off unless asked for, and the panel is Medium until a size is chosen.
         Settings.defaults.removeObject(forKey: "floorHints")
+        Settings.defaults.removeObject(forKey: "size")
         guard !Settings.floorHints else { throw Failure("floor hints were on by default") }
-        Settings.floorHints = true
-        Settings.hintShown = false
-        scene.loadFight(intro: true)
+        guard Settings.size == .medium else { throw Failure("the panel was not Medium by default") }
         panel.setCompact(false)
+        panel.setSize(.medium)
+
+        // From the default corner, Large grows out of the corner, and folding into the pill and back comes back to
+        // the same place: the whole panel stays on screen. The header cannot be put under the menu bar.
+        if let visible = panel.panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame {
+            let corner = PanelController.defaultFrame(size: panel.panel.frame.size, in: visible)
+            panel.move(topLeft: NSPoint(x: corner.minX, y: corner.maxY))
+            panel.setSize(.large)
+            let large = panel.panel.frame
+            guard within(large, visible) else { throw Failure("Large from the default corner went off screen: \(large) in \(visible)") }
+            guard abs(large.maxX - corner.maxX) < 1, abs(large.minY - corner.minY) < 1 else { throw Failure("Large did not grow out of the corner: \(large)") }
+            panel.setCompact(true)
+            guard within(panel.panel.frame, visible) else { throw Failure("the pill went off screen: \(panel.panel.frame)") }
+            panel.setCompact(false)
+            guard near(panel.panel.frame, large) else { throw Failure("folding and unfolding moved the panel: \(panel.panel.frame), was \(large)") }
+            panel.move(topLeft: NSPoint(x: visible.minX + 100, y: visible.maxY + 20))
+            guard panel.panel.frame.maxY <= visible.maxY + 0.5 else { throw Failure("the header went under the menu bar") }
+        } else {
+            print("no screen: the panel's place not checked")
+        }
         panel.setSize(.large)
         if let screen = NSScreen.main?.visibleFrame { panel.move(topLeft: NSPoint(x: screen.minX + 60, y: screen.maxY - 60)) }
         panel.show()
+
+        // What a new player first sees: the defaults, a fresh career, the first stage's card.
+        scene.loadFight(intro: true)
         try await pause(0.7)
         guard panel.panel.isVisible, panel.gameView.scene === scene else { throw Failure("panel not on screen") }
         guard !scene.isAwayPaused else { throw Failure("the fight did not start with pausing turned off") }
         print("metal device: \(MTLCreateSystemDefaultDevice()?.name ?? "none")")
-        
+        try snapshot("0-first-look", panel)
+
+        // Floor hints on, from the menu's own path, to check them; off again after stage 1.
+        panel.setFloorHints(true)
+        scene.loadFight(intro: true)
+        try await pause(0.5)
         try snapshot("1-hint", panel)
 
         // The first cut, with the mouse button for the side a spearman has walked into reach on.
@@ -88,10 +119,22 @@ enum SelfTest {
         try await pause(0.7)
         try snapshot("5-cleared", panel)
         guard session.career.stage == 2, session.career.kills == session.fight.stats.kills else { throw Failure("the win was not booked") }
+        guard session.career.run.cleared == 1, session.runScore == session.fight.score else { throw Failure("the run was not tallied") }
         guard scene.bodiesOnLane > 0 else { throw Failure("the dead did not stay where they fell") }
         guard let saved = session.store.load(), saved.career == session.career else { throw Failure("the win was not saved") }
         guard Settings.hintShown else { throw Failure("the button hint stayed up after kills on both sides") }
-        Settings.floorHints = false
+
+        // Folding into the pill and back leaves the dead where they fell and the card up; so does turning floor
+        // hints off.
+        panel.setCompact(true)
+        try await pause(0.3)
+        panel.setCompact(false)
+        try await pause(0.4)
+        guard scene.bodiesOnLane > 0 else { throw Failure("folding into the pill swept away the dead") }
+        guard scene.isShowingBanner else { throw Failure("folding into the pill took the card down") }
+        panel.setFloorHints(false)
+        try await pause(0.1)
+        guard scene.bodiesOnLane > 0 else { throw Failure("turning floor hints off swept away the dead") }
 
         // Clicking the banner starts stage 2.
         click(.right, panel)
@@ -129,15 +172,10 @@ enum SelfTest {
         try await until("bloodlust with a crowd", timeout: 60) {
             (session.fight.inBloodlust && session.fight.foes.count >= 3) || session.fight.outcome != nil
         }
-        if session.fight.outcome == nil {
-            scene.timeScale = 1
-            try await pause(0.5)
-            try snapshot("9-oni-bloodlust", panel)
-        } else {
-            print("stage 7 ended before a crowd met bloodlust; no snapshot")
-            session.next()
-            scene.loadFight(intro: false)
-        }
+        guard session.fight.outcome == nil else { throw Failure("stage 7 ended (\(session.fight.outcome!.rawValue)) before a crowd met bloodlust") }
+        scene.timeScale = 1
+        try await pause(0.5)
+        try snapshot("9-oni-bloodlust", panel)
 
         // Hands off: the ronin falls, and the campaign starts over from stage 1.
         let stage = session.fight.stage
@@ -150,6 +188,7 @@ enum SelfTest {
         try snapshot("10-fallen", panel)
         guard session.career.falls == 1, session.career.stage == 1, session.career.attempt == 2 else { throw Failure("the fall was not booked") }
         guard session.career.unlocked.upperBound >= stage else { throw Failure("stage \(stage) was not left unlocked") }
+        guard session.career.lastRun?.stage == stage, session.runScore >= session.fight.score else { throw Failure("the fallen run was not kept") }
         click(.left, panel)
         guard session.fight.stage == 1, session.fight.outcome == nil, session.fight.hp == Mode.oni.hearts
         else { throw Failure("rising again did not start over at stage 1 with full hearts") }
@@ -170,9 +209,21 @@ enum SelfTest {
         scene.timeScale = 1
         try await pause(0.6)
         try snapshot("12-endless", panel)
+
+        // Dragging the window by its header holds the fight still, and letting go lets it run on.
+        let held = session.fight.time
+        panel.setDragging(true)
+        try await pause(0.3)
+        guard scene.isAwayPaused, session.fight.time == held else { throw Failure("the fight ran on while the window was dragged") }
+        panel.setDragging(false)
+        try await pause(0.3)
+        guard !scene.isAwayPaused, session.fight.time > held else { throw Failure("letting go of the window did not let the fight run") }
+
+        // Leaving the run keeps it as the best from stage 2.
         session.leaveEndless()
         scene.loadFight(intro: false)
         guard !session.career.isEndless, session.fight.stage == 6 else { throw Failure("leaving endless did not go back to the campaign") }
+        guard session.career.bestRun(from: 2)?.cleared == 1 else { throw Failure("the endless run left was not kept as a best") }
 
         // The pill and back.
         panel.setCompact(true)
@@ -183,13 +234,24 @@ enum SelfTest {
         try await pause(0.4)
         guard panel.panel.frame.width == Settings.size.width else { throw Failure("the panel did not unfold") }
 
-        // Leaving pauses at once; coming back takes the dwell.
+        // Leaving pauses at once and gives the keys back to the app you work in; a key typed then does nothing; coming
+        // back takes the dwell.
         Settings.pauseWhenAway = true
         scene.timeScale = 1
+        panel.panel.makeKey()
         panel.setHovering(false)
+        guard !panel.panel.isKeyWindow, panel.panel.isVisible else { throw Failure("leaving kept the keys") }
         let clock = session.fight.time
         try await pause(1.6)
         guard scene.isAwayPaused, panel.gameView.isPaused, session.fight.time == clock else { throw Failure("leaving did not pause") }
+        let whiffs = session.fight.stats.whiffs, cuts = session.fight.stats.cuts
+        if let typed = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                        windowNumber: panel.panel.windowNumber, context: nil, characters: "d",
+                                        charactersIgnoringModifiers: "d", isARepeat: false, keyCode: 2) {
+            panel.gameView.keyDown(with: typed)
+        }
+        guard scene.isAwayPaused, session.fight.time == clock, session.fight.stats.whiffs == whiffs, session.fight.stats.cuts == cuts
+        else { throw Failure("a key typed with the pointer away reached the fight") }
         panel.setHovering(true)
         try await pause(0.1)
         guard scene.isAwayPaused, scene.isEngaging, session.fight.time == clock else { throw Failure("coming back resumed without the dwell") }
@@ -200,6 +262,15 @@ enum SelfTest {
         session.save()
         guard let reloaded = session.store.load(), reloaded.fight == session.fight, reloaded.career == session.career
         else { throw Failure("the save did not round-trip") }
+    }
+
+    /// Wholly inside `visible`, give or take half a point.
+    private static func within(_ frame: NSRect, _ visible: NSRect) -> Bool {
+        visible.insetBy(dx: -0.5, dy: -0.5).contains(frame)
+    }
+
+    private static func near(_ a: NSRect, _ b: NSRect) -> Bool {
+        abs(a.minX - b.minX) < 0.5 && abs(a.minY - b.minY) < 0.5 && abs(a.width - b.width) < 0.5 && abs(a.height - b.height) < 0.5
     }
 
     /// A real mouse-button event on the lane: the left button, or the right.
@@ -228,7 +299,8 @@ enum SelfTest {
         }
     }
 
-    /// Writes what the scene shows. Where SpriteKit cannot render offscreen (no GPU), it says so and carries on.
+    /// Writes what the scene shows. A shot that cannot be taken fails the run, so a passing run never leaves the
+    /// screenshots short of one.
     @MainActor
     private static func snapshot(_ name: String, _ panel: PanelController) throws {
         guard let path = ProcessInfo.processInfo.environment["RONIN_SNAPSHOTS"] else { return }
@@ -236,8 +308,7 @@ enum SelfTest {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let scene = panel.scene
         guard let texture = panel.gameView.texture(from: scene, crop: CGRect(origin: .zero, size: scene.size)) else {
-            print("snapshot \(name): no texture")
-            return
+            throw Failure("snapshot \(name): no texture")
         }
         let image = texture.cgImage()
         guard let data = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else {

@@ -1,8 +1,8 @@
 import AppKit
-import Carbon.HIToolbox
 import RoninCore
 
-/// Ronin lives in the menu bar (no Dock icon) and in one small floating strip. ⌃⌥R shows and hides it from anywhere.
+/// Ronin lives in the menu bar (no Dock icon) and in one small floating strip. ⌃⌥R (or another shortcut from the menu,
+/// if another app holds that one) shows and hides it from anywhere, on the screen you are working on.
 @main
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
@@ -21,6 +21,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private(set) var panel: PanelController!
     private var statusItem: NSStatusItem!
     private var hotKey: HotKey?
+    /// Which of `Shortcut.all` is registered; nil when every one is held by another app.
+    private(set) var shortcut: Int?
 
     override init() {
         session = GameSession(store: SelfTest.enabled ? Store.scratch() : Store.standard)
@@ -42,9 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let menu = NSMenu()
         menu.delegate = self
         statusItem.menu = menu
-        hotKey = HotKey(keyCode: kVK_ANSI_R, modifiers: controlKey | optionKey) { [weak self] in
-            MainActor.assumeIsolated { self?.panel.toggle() }
-        }
+        registerShortcut()
         if Settings.visible || SelfTest.enabled { panel.show() }
         if SelfTest.enabled { SelfTest.start(self) }
     }
@@ -58,15 +58,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return true
     }
 
+    /// Registers the shortcut chosen in the menu, or if another app holds it, the next one free.
+    private func registerShortcut() {
+        hotKey = nil
+        shortcut = nil
+        let all = Shortcut.all
+        let chosen = all.indices.contains(Settings.shortcut) ? Settings.shortcut : 0
+        for k in [chosen] + all.indices.filter({ $0 != chosen }) {
+            let key = HotKey(keyCode: all[k].keyCode, modifiers: all[k].carbonModifiers, action: { [weak self] in
+                MainActor.assumeIsolated { self?.panel.summon() }
+            })
+            if let key {
+                hotKey = key
+                shortcut = k
+                return
+            }
+        }
+    }
+
     // MARK: The menu
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
         let career = session.career
-        func note(_ text: String) {
+        let fight = session.fight
+        func note(_ text: String, to target: NSMenu) {
             let item = NSMenuItem(title: text, action: nil, keyEquivalent: "")
             item.isEnabled = false
-            menu.addItem(item)
+            target.addItem(item)
         }
         func add(_ title: String, _ action: Selector, key: String = "", modifiers: NSEvent.ModifierFlags = [], on: Bool? = nil) {
             let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
@@ -75,37 +94,62 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if let on { item.state = on ? .on : .off }
             menu.addItem(item)
         }
-
-        if let run = career.endless {
-            note("\(career.mode.title) · endless from \(run.start) · stage \(session.fight.stage)")
-        } else {
-            note("\(career.mode.title) · stage \(session.fight.stage) · \(session.fight.setting.name)")
+        func submenu(_ title: String, _ items: NSMenu) {
+            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            item.submenu = items
+            menu.addItem(item)
         }
-        var record = "\(career.rank) · \(career.kills) kills"
+        func count(_ n: Int, _ word: String) -> String { "\(n) \(word)\(n == 1 ? "" : "s")" }
+
+        // Where you are, and the career.
+        if let run = career.endless {
+            note("\(career.mode.title) · endless from \(run.start) · stage \(fight.stage)", to: menu)
+        } else {
+            note("\(career.mode.title) · stage \(fight.stage) · \(fight.setting.name)", to: menu)
+        }
+        var record = "\(career.rank) · \(count(career.kills, "kill"))"
         if career.streak > 1 { record += " · \(career.streak) in a row" }
-        note(record)
-        if let next = career.nextRank { note("\(next.kills - career.kills) more to \(next.title)") }
-        if career.bestCombo > 0 { note("Best combo \(career.bestCombo) · \(career.flawless) flawless · \(career.falls) falls") }
+        note(record, to: menu)
+        if let next = career.nextRank {
+            note("\(count(Rank.kills(from: career.merit, to: next.kills, on: career.mode), "more kill")) to \(next.title)", to: menu)
+        }
+        if career.bestCombo > 0 {
+            note("Best combo \(career.bestCombo) · \(career.flawless) flawless · \(count(career.falls, "fall"))", to: menu)
+        }
+        let best: Run?
+        if let run = career.endless { best = career.bestRun(from: run.start) } else { best = career.bestCampaignRun }
+        if let best { note("Best run \(count(best.cleared, "stage")) · \(DuelScene.grouped(best.score))", to: menu) }
+        if career.score > 0 {
+            note("\(DuelScene.grouped(career.score)) points in all · best stage \(DuelScene.grouped(career.bestScore))", to: menu)
+        }
         menu.addItem(.separator())
-        add(panel.panel.isVisible ? "Hide Ronin" : "Show Ronin", #selector(toggleWindow), key: "r", modifiers: [.control, .option])
+
+        let live = shortcut.map { Shortcut.all[$0] }
+        add(panel.panel.isVisible ? "Hide Ronin" : "Show Ronin", #selector(toggleWindow), key: live?.key ?? "", modifiers: live?.modifiers ?? [])
+        if live == nil { note("No shortcut: other apps hold them all", to: menu) }
         add("Compact", #selector(toggleCompact), on: panel.scene.isCompact)
+
+        // Each mode's campaign: its stage, and the hearts it carries of the most it can hold.
         let modes = NSMenu()
         for mode in Mode.allCases {
             var probe = career
             probe.choose(mode)
-            let item = NSMenuItem(title: "\(mode.title) — \(mode.gist), \(mode.hearts) hearts · stage \(probe.stage)",
+            let hearts = mode == career.mode && !career.isEndless && fight.outcome == nil ? fight.hp : probe.carried
+            let item = NSMenuItem(title: "\(mode.title) — \(mode.gist) · ♥ \(hearts)/\(mode.hearts) · stage \(probe.stage)",
                                   action: #selector(chooseMode(_:)), keyEquivalent: "")
             item.target = self
             item.tag = mode.level
             item.state = mode == career.mode ? .on : .off
             modes.addItem(item)
         }
-        let modeItem = NSMenuItem(title: "Difficulty", action: nil, keyEquivalent: "")
-        modeItem.submenu = modes
-        menu.addItem(modeItem)
-        // Endless: stage after stage from any stage reached, hearts carried, until the ronin falls.
+        submenu("Difficulty", modes)
+
+        // Endless: stage after stage from any stage reached, hearts carried, until the ronin falls. Each starting
+        // stage keeps its own best run.
         let endless = NSMenu()
-        let campaign = NSMenuItem(title: "Campaign · stage \(career.stage)", action: #selector(leaveEndless), keyEquivalent: "")
+        var campaignTitle = "Campaign · stage \(career.stage)"
+        if let best = career.bestCampaignRun { campaignTitle += " · best \(count(best.cleared, "stage"))" }
+        let campaign = NSMenuItem(title: campaignTitle, action: #selector(leaveEndless), keyEquivalent: "")
         campaign.target = self
         campaign.state = career.isEndless ? .off : .on
         endless.addItem(campaign)
@@ -114,21 +158,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         var stages = Array(unlocked)
         if stages.count > 30 { stages = stages.filter { $0 == 1 || $0 % 5 == 0 || $0 == unlocked.upperBound } }
         for stage in stages {
-            let item = NSMenuItem(title: "From Stage \(stage)" + (stage % 5 == 0 ? " · warlord" : ""), action: #selector(startEndless(_:)), keyEquivalent: "")
+            var title = "From Stage \(stage)" + (stage % 5 == 0 ? " · warlord" : "")
+            if let best = career.bestRun(from: stage) { title += " · best \(best.cleared)" }
+            let item = NSMenuItem(title: title, action: #selector(startEndless(_:)), keyEquivalent: "")
             item.target = self
             item.tag = stage
             item.state = career.endless?.start == stage ? .on : .off
             endless.addItem(item)
         }
-        if let best = career.bestEndless[career.mode.rawValue], best > 0 {
+        if let most = career.bestEndless[career.mode.rawValue], most > 0 {
             endless.addItem(.separator())
-            let note = NSMenuItem(title: "Best run: \(best) stage\(best == 1 ? "" : "s")", action: nil, keyEquivalent: "")
-            note.isEnabled = false
-            endless.addItem(note)
+            note("Most stages in a run: \(most)", to: endless)
         }
-        let endlessItem = NSMenuItem(title: "Endless", action: nil, keyEquivalent: "")
-        endlessItem.submenu = endless
-        menu.addItem(endlessItem)
+        submenu("Endless", endless)
+
         let sizes = NSMenu()
         for size in Settings.Size.allCases {
             let item = NSMenuItem(title: size.title, action: #selector(chooseSize(_:)), keyEquivalent: "")
@@ -137,20 +180,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             item.state = size == Settings.size ? .on : .off
             sizes.addItem(item)
         }
-        let sizeItem = NSMenuItem(title: "Size", action: nil, keyEquivalent: "")
-        sizeItem.submenu = sizes
-        menu.addItem(sizeItem)
+        submenu("Size", sizes)
         add("Pause When Pointer Leaves", #selector(togglePauseWhenAway), on: Settings.pauseWhenAway)
         add("Dim When Pointer Leaves", #selector(toggleDimWhenAway), on: Settings.dimWhenAway)
         add("Floor Hints", #selector(toggleFloorHints), on: Settings.floorHints)
+        add("Reduce Motion", #selector(toggleReduceMotion), on: Settings.reduceMotion)
+
+        let shortcuts = NSMenu()
+        for (k, option) in Shortcut.all.enumerated() {
+            let taken = k == Settings.shortcut && shortcut != k
+            let item = NSMenuItem(title: option.title + (taken ? " — held by another app" : ""), action: #selector(chooseShortcut(_:)),
+                                  keyEquivalent: "")
+            item.target = self
+            item.tag = k
+            item.state = shortcut == k ? .on : .off
+            shortcuts.addItem(item)
+        }
+        submenu("Shortcut", shortcuts)
+
+        let controls = NSMenu()
+        for line in [
+            "Cut left: left button, ←, A or F",
+            "Cut right: right button (two-finger or ⌃-click), →, D or J",
+            "Go on, or resume: a click, Space or Return",
+            "Leave the panel to pause; come back to resume",
+            "Fold into the pill: C or – · Hide: Esc or ⌘W",
+            "Show or hide from anywhere: " + (live?.title ?? "the menu"),
+        ] { note(line, to: controls) }
+        submenu("Controls", controls)
         menu.addItem(.separator())
-        add("Restart Stage", #selector(restart))
+
+        // Walking away from a fight keeps the hearts it cost; past a stage's card, this goes on as the card does.
+        switch fight.outcome {
+        case nil: add("Restart Stage · ♥ \(fight.hp)", #selector(restart))
+        case .victory?: add("Next Stage", #selector(restart))
+        case .defeat?: add("Start Over · Stage \(career.current)", #selector(restart))
+        }
         add("Reset Career…", #selector(resetCareer))
         menu.addItem(.separator())
         add("Quit Ronin", #selector(quit), key: "q", modifiers: [.command])
     }
 
-    @objc private func toggleWindow() { panel.toggle() }
+    /// Hides the panel, or shows it on the screen you are working on.
+    @objc private func toggleWindow() {
+        if panel.panel.isVisible { panel.hide() } else { panel.summon() }
+    }
 
     @objc private func toggleCompact() {
         if !panel.panel.isVisible { panel.show() }
@@ -159,8 +233,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func chooseMode(_ sender: NSMenuItem) {
         guard Mode.allCases.indices.contains(sender.tag) else { return }
-        session.choose(Mode.allCases[sender.tag])
-        panel.scene.loadFight(intro: true)
+        let mode = Mode.allCases[sender.tag]
+        // The mode already being played is left as it is (its lane, its dead).
+        if mode != session.career.mode {
+            session.choose(mode)
+            panel.scene.loadFight(intro: true)
+        }
         panel.show()
     }
 
@@ -171,8 +249,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func leaveEndless() {
-        session.leaveEndless()
-        panel.scene.loadFight(intro: true)
+        if session.career.isEndless {
+            session.leaveEndless()
+            panel.scene.loadFight(intro: true)
+        }
         panel.show()
     }
 
@@ -186,9 +266,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func toggleFloorHints() {
-        Settings.floorHints.toggle()
-        if Settings.floorHints { Settings.hintShown = false }
-        panel.scene.loadFight(intro: false)
+        panel.setFloorHints(!Settings.floorHints)
+    }
+
+    @objc private func toggleReduceMotion() {
+        Settings.reduceMotion.toggle()
     }
 
     @objc private func toggleDimWhenAway() {
@@ -196,6 +278,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panel.updatePauseState()
     }
 
+    @objc private func chooseShortcut(_ sender: NSMenuItem) {
+        guard Shortcut.all.indices.contains(sender.tag) else { return }
+        Settings.shortcut = sender.tag
+        registerShortcut()
+    }
+
+    /// Restart Stage: a fresh roll of the stage at the hearts left. Past a card: on, as the card goes.
     @objc private func restart() {
         session.restart()
         panel.scene.loadFight(intro: true)
@@ -203,16 +292,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func resetCareer() {
+        // The alert has to come up in front; afterwards, the app you were working in is given back the keys.
+        let previous = NSWorkspace.shared.frontmostApplication
+        defer {
+            if let previous, previous != NSRunningApplication.current {
+                previous.activate(from: NSRunningApplication.current, options: [])
+            }
+        }
         NSApp.activate()
         let alert = NSAlert()
         alert.messageText = "Reset your career?"
-        alert.informativeText = "Your rank, kills and stage go back to the start."
+        alert.informativeText = "Your rank, kills, stages and best runs go back to the start."
         alert.addButton(withTitle: "Reset")
         alert.addButton(withTitle: "Cancel")
         alert.alertStyle = .warning
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         session.reset()
         panel.scene.loadFight(intro: true)
+        panel.show()
     }
 
     @objc private func quit() { NSApp.terminate(nil) }

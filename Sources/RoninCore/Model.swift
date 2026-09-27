@@ -330,14 +330,35 @@ public enum Setting: Int, Codable, Sendable, CaseIterable {
     }
 }
 
-/// Ranks count foes cut down over every stage, won or lost, so no break is wasted.
+/// Ranks count foes cut down over every stage, won, lost or walked away from, so no break is wasted. A kill on a
+/// harder mode counts for more (see `weight`); the tally is the career's merit, and the rungs below are in it (on
+/// Shoshin and Bushidō, one kill is one). The first ranks come within minutes; Legend takes many hours.
 public enum Rank {
     public static let ladder: [(kills: Int, title: String)] = [
         (0, "Wanderer"), (40, "Swordsman"), (120, "Ronin"), (300, "Duelist"), (600, "Blademaster"),
-        (1000, "Kensei"), (1600, "Sword Saint"), (2500, "Demon Blade"), (4000, "Legend"),
+        (1500, "Kensei"), (4000, "Sword Saint"), (10_000, "Demon Blade"), (25_000, "Legend"),
     ]
 
+    /// What one kill counts toward rank on each mode: a quarter more on Shura, half as much again on Oni.
+    public static func weight(_ mode: Mode) -> Double { [1, 1, 1.25, 1.5][mode.level] }
+
+    /// Merit: every kill, with those made on the harder modes weighed up. `kills` is the total; `byMode` holds the
+    /// kills counted by mode, and any not in it count once.
+    public static func merit(kills: Int, byMode: [String: Int]) -> Int {
+        let extra = byMode.reduce(0.0) { sum, entry in
+            sum + Double(max(0, entry.value)) * ((Mode(rawValue: entry.key).map(weight) ?? 1) - 1)
+        }
+        return kills + Int(extra)
+    }
+
+    /// The title for a merit (on Shoshin and Bushidō, the kills).
     public static func title(kills: Int) -> String { ladder.last { $0.kills <= kills }?.title ?? ladder[0].title }
 
+    /// The next rung above a merit, if there is one.
     public static func next(kills: Int) -> (kills: Int, title: String)? { ladder.first { $0.kills > kills } }
+
+    /// Kills on `mode` still needed to climb from `merit` to `target`.
+    public static func kills(from merit: Int, to target: Int, on mode: Mode) -> Int {
+        Int((Double(max(0, target - merit)) / weight(mode)).rounded(.up))
+    }
 }
