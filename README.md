@@ -101,11 +101,11 @@ make run     # builds build/Ronin.app (macOS 14+) and opens it
 - `RoninArt` holds the figures, and uses Foundation only. Each frame is posed from a small skeleton and drawn as a
   list of shapes. The app renders those shapes with Core Graphics, and `ronin-sheet` renders the same shapes as
   SVG, so the art can be looked at and tested anywhere.
-  - **Style:** the figures are cut rather than rounded, and lean to the point of exaggeration:
-    - long, thin, faceted limbs tapering to sharp knees and elbows, the legs longest of all,
-    - a narrow chest over a narrower waist, slim trousers flaring below the knee,
-    - a small head on a long neck, about ten heads tall,
-    - the ronin's coat as two long, narrow tails that stream out behind him when he moves,
+  - **Style:** the figures are cut rather than rounded, lean in the limb but never stick figures:
+    - long, faceted limbs tapering to sharp knees and elbows, the legs longest of all,
+    - a real chest and shoulders over a narrow waist, a head in proportion on a strong neck, about nine heads tall,
+    - the ronin dressed loose: a kimono bloused over the sash, great hanging sleeves, a full hakama that billows at
+      the knee and sweeps out at the hem, and his coat as two long tails that stream out behind him when he moves,
     - slender curved blades with a bright edge,
     - cloth that ends in points,
     - a thin rim of light so the black shapes read against dark ground.

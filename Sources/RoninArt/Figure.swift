@@ -179,9 +179,11 @@ public struct Build: Sendable {
     /// How heavy the limbs are (1 is the ronin).
     public var bulk: CGFloat = 1
     /// Chest depth and waist, as shares of the height.
-    public var chest: CGFloat = 0.12
-    public var waist: CGFloat = 0.058
-    public var head: CGFloat = 0.045
+    public var chest: CGFloat = 0.155
+    public var waist: CGFloat = 0.078
+    public var head: CGFloat = 0.053
+    /// How loose the clothes hang: 0 fitted, 1 the ronin's baggy hakama, great sleeves and full coat.
+    public var baggy: CGFloat = 0
     public var legs = Legs.hakama
     public var sleeves = false
     /// A kimono skirt (or armoured tassets) hanging from the waist, as a share of the height.
@@ -198,26 +200,27 @@ public struct Build: Sendable {
     public static func of(_ cast: Cast) -> Build {
         switch cast {
         case .hero:
-            return Build(height: 1, sleeves: true, scabbard: true, weapon: .katana, gear: .topknot, back: .coat, eyes: nil, accent: Palette.blood)
+            return Build(height: 1, baggy: 1, sleeves: true, scabbard: true, weapon: .katana, gear: .topknot, back: .coat, eyes: nil,
+                         accent: Palette.blood)
         case .foe(let kind):
             switch kind {
             case .grunt:
                 return Build(height: 0.95, bulk: 0.9, legs: .leggings, skirt: 0.14, weapon: .spear, gear: .jingasa,
                              eyes: RGB(1, 0.22, 0.12), accent: RGB(0.75, 0.12, 0.1))
             case .runner:
-                return Build(height: 0.9, bulk: 0.82, chest: 0.105, waist: 0.052, legs: .leggings, weapon: .knife, gear: .hood,
+                return Build(height: 0.9, bulk: 0.82, chest: 0.135, waist: 0.068, legs: .leggings, weapon: .knife, gear: .hood,
                              eyes: RGB(1, 0.6, 0.12), accent: RGB(1, 0.5, 0.1), stride: 1.25)
             case .brute:
-                return Build(height: 1.22, bulk: 1.3, chest: 0.18, waist: 0.09, head: 0.04, legs: .bare, skirt: 0.1,
+                return Build(height: 1.22, bulk: 1.3, chest: 0.23, waist: 0.115, head: 0.048, legs: .bare, skirt: 0.1,
                              weapon: .club, gear: .horns, eyes: RGB(1, 0.2, 0.1), accent: RGB(0.72, 0.32, 1.0), stride: 0.8)
             case .dancer:
-                return Build(height: 0.97, bulk: 0.8, chest: 0.105, waist: 0.05, weapon: .twin, gear: .ponytail,
+                return Build(height: 0.97, bulk: 0.8, chest: 0.135, waist: 0.066, weapon: .twin, gear: .ponytail,
                              eyes: RGB(0.3, 0.95, 1.0), accent: RGB(0.25, 0.9, 1.0), stride: 1.1)
             case .archer:
                 return Build(height: 0.96, bulk: 0.85, sleeves: true, weapon: .bow, gear: .eboshi, back: .quiver,
                              eyes: RGB(0.6, 1.0, 0.3), accent: RGB(0.5, 0.9, 0.3))
             case .warlord:
-                return Build(height: 1.3, bulk: 1.08, chest: 0.155, waist: 0.075, head: 0.042, sleeves: true, skirt: 0.18, plated: true,
+                return Build(height: 1.3, bulk: 1.1, chest: 0.19, waist: 0.095, head: 0.049, sleeves: true, skirt: 0.18, plated: true,
                              weapon: .nodachi, gear: .kabuto, back: .banner, eyes: RGB(1, 0.78, 0.2), accent: Palette.gold, stride: 0.85)
             }
         }
@@ -370,7 +373,7 @@ public enum Figure {
         let drawer = Drawer(pose: pose, build: build, H: H)
         let r = build.head * H
         return Anatomy(hip: drawer.hip, waist: drawer.torsoPoint(0.3, 0), chest: drawer.torsoPoint(0.68, 0), neck: drawer.neck,
-                       head: CGPoint(x: drawer.neck.x + drawer.headUp.x * r * 1.55, y: drawer.neck.y + drawer.headUp.y * r * 1.55),
+                       head: CGPoint(x: drawer.neck.x + drawer.headUp.x * r * 1.25, y: drawer.neck.y + drawer.headUp.y * r * 1.25),
                        headRadius: r, knee: CGPoint(x: drawer.hip.x + sin(pose.front.thigh) * 0.27 * H, y: drawer.hip.y - cos(pose.front.thigh) * 0.27 * H),
                        height: H)
     }
@@ -1175,8 +1178,9 @@ private func unit(_ a: CGPoint, _ b: CGPoint) -> CGPoint {
     return CGPoint(x: (b.x - a.x) / length, y: (b.y - a.y) / length)
 }
 
-// Long in the leg and the arm, short in the body: a figure about ten heads tall, all of it lean.
-private let thigh: CGFloat = 0.29, shin: CGFloat = 0.295, torso: CGFloat = 0.28
+// Long in the leg and the arm, lean in the limb, with a real chest and shoulders and a head in proportion: a figure
+// about nine heads tall.
+private let thigh: CGFloat = 0.285, shin: CGFloat = 0.29, torso: CGFloat = 0.29
 private let upperArm: CGFloat = 0.178, forearm: CGFloat = 0.168
 
 /// Two-bone reach from `root`: the hand lands on `target` (or as near as the arm allows), the elbow bent below the
@@ -1319,17 +1323,20 @@ private struct Drawer {
         let k = build.bulk
         switch build.legs {
         case .hakama:
-            // Slim pleated trousers, close at the thigh, flaring below the knee to a hem cut on the slant that trails
-            // behind the stride.
-            segment(hip, knee, 0.078 * H, 0.084 * H, 0.062 * H, paint, bulge: 0.05, at: 0.45)
+            // Pleated trousers, flaring below the knee to a hem cut on the slant that trails behind the stride. The
+            // ronin's are cut full: they billow at the thigh and knee and sweep out wide at the hem.
+            let b = build.baggy
+            segment(hip, knee, (0.082 + 0.06 * b) * H, (0.09 + 0.075 * b) * H, (0.066 + 0.05 * b) * H, paint, bulge: 0.12 * b, at: 0.5)
             let hem = at(ankle, dir(angles.shin), 0.012 * H)
             let d = dir(angles.shin), n = CGPoint(x: -d.y, y: d.x)
-            let trail = CGPoint(x: -face.x * pose.stream * 0.025 * H, y: pose.stream * 0.01 * H)
-            let front = at(at(hem, n, 0.052 * H), d, -0.024 * H), back = at(at(hem, n, -0.058 * H), d, 0.01 * H)
-            fill([at(knee, n, 0.034 * H), front, CGPoint(x: back.x + trail.x, y: back.y + trail.y), at(knee, n, -0.034 * H)], paint)
+            let trail = CGPoint(x: -face.x * pose.stream * (0.025 + 0.035 * b) * H, y: pose.stream * (0.01 + 0.012 * b) * H)
+            let front = at(at(hem, n, (0.054 + 0.045 * b) * H), d, -0.024 * H), back = at(at(hem, n, -(0.06 + 0.055 * b) * H), d, 0.01 * H)
+            let billow = at(at(knee, d, shin * H * 0.45), n, -(0.05 + 0.05 * b) * H)
+            fill([at(knee, n, (0.036 + 0.03 * b) * H), front, CGPoint(x: back.x + trail.x, y: back.y + trail.y),
+                  CGPoint(x: billow.x + trail.x * 0.5, y: billow.y), at(knee, n, -(0.036 + 0.034 * b) * H)], paint)
         case .leggings:
-            segment(hip, knee, 0.056 * H * k, 0.062 * H * k, 0.034 * H * k, paint)
-            segment(knee, ankle, 0.036 * H * k, 0.044 * H * k, 0.022 * H * k, paint, bulge: -0.35, at: 0.3)
+            segment(hip, knee, 0.064 * H * k, 0.07 * H * k, 0.038 * H * k, paint)
+            segment(knee, ankle, 0.04 * H * k, 0.048 * H * k, 0.024 * H * k, paint, bulge: -0.35, at: 0.3)
         case .bare:
             segment(hip, knee, 0.06 * H * k, 0.07 * H * k, 0.036 * H * k, paint)
             segment(knee, ankle, 0.04 * H * k, 0.05 * H * k, 0.024 * H * k, paint, bulge: -0.4, at: 0.3)
@@ -1343,8 +1350,11 @@ private struct Drawer {
     mutating func arm(_ ends: (elbow: CGPoint, hand: CGPoint), _ paint: Paint) {
         let (elbow, hand) = ends
         let k = build.bulk
-        segment(shoulder, elbow, 0.046 * H * k, 0.05 * H * k, 0.029 * H * k, paint, bulge: 0.3, at: 0.3)
-        segment(elbow, hand, 0.032 * H * k, 0.036 * H * k, 0.02 * H * k, paint, bulge: 0.25, at: 0.3)
+        segment(shoulder, elbow, 0.056 * H * k, 0.058 * H * k, 0.032 * H * k, paint, bulge: 0.3, at: 0.3)
+        segment(elbow, hand, 0.036 * H * k, 0.04 * H * k, 0.022 * H * k, paint, bulge: 0.25, at: 0.3)
+        // The cap of the shoulder.
+        let r = 0.034 * H * k
+        pen.ellipse(CGRect(x: shoulder.x - r, y: shoulder.y - r * 0.9, width: r * 2, height: r * 1.9), paint)
         // The fist.
         let d = unit(elbow, hand), n = CGPoint(x: -d.y, y: d.x)
         fill([at(hand, n, 0.016 * H), at(hand, d, 0.03 * H), at(hand, n, -0.016 * H), at(hand, d, -0.008 * H)], paint)
@@ -1354,23 +1364,37 @@ private struct Drawer {
             let hang = CGPoint(x: -face.x * (0.25 + pose.stream * 0.55), y: -1 + pose.stream * 0.3)
             let length = hypot(hang.x, hang.y)
             let down = CGPoint(x: hang.x / length, y: hang.y / length)
-            fill([at(shoulder, du, 0.0), at(elbow, du, -0.012 * H), at(at(elbow, du, -0.024 * H), down, 0.075 * H),
-                  at(at(shoulder, du, 0.06 * H), down, 0.08 * H)], paint)
+            let b = build.baggy
+            fill([at(shoulder, du, -0.01 * H * b), at(elbow, du, (-0.012 + 0.02 * b) * H), at(at(elbow, du, -0.024 * H), down, (0.075 + 0.08 * b) * H),
+                  at(at(shoulder, du, 0.06 * H), down, (0.08 + 0.1 * b) * H)], paint)
         }
     }
 
     /// The torso in profile: a deep chest and a flat back over a narrow waist; skirt or tassets; the sash; plates.
     mutating func trunk() {
-        let c = build.chest * H, wst = build.waist * H
+        let c = build.chest * H, wst = build.waist * H, b = build.baggy
         fill([
             torsoPoint(0, -wst * 0.55), torsoPoint(0, wst * 0.5), torsoPoint(0.32, wst * 0.42), torsoPoint(0.62, c * 0.62),
             torsoPoint(0.84, c * 0.52), torsoPoint(0.97, c * 0.2), torsoPoint(1.02, -c * 0.12), torsoPoint(0.86, -c * 0.42),
             torsoPoint(0.55, -c * 0.34), torsoPoint(0.3, -wst * 0.5),
         ], body)
+        if b > 0 {
+            // A loose kimono over it: bloused out over the sash front and back, the collar standing off the neck, the
+            // cloth hanging slack from the shoulder blades.
+            let sag = pose.stream * 0.02 * H
+            fill([
+                torsoPoint(0.12, -wst * 0.75 * (1 + b * 0.35)), torsoPoint(0.12, wst * 0.72 * (1 + b * 0.35)),
+                torsoPoint(0.3, wst * (0.75 + 0.45 * b)), torsoPoint(0.55, c * (0.66 + 0.1 * b)), torsoPoint(0.8, c * 0.6),
+                torsoPoint(0.99, c * 0.28), torsoPoint(1.04, -c * 0.2), torsoPoint(0.84, -c * (0.5 + 0.1 * b)),
+                at(torsoPoint(0.5, -c * (0.46 + 0.12 * b)), across, -sag), at(torsoPoint(0.26, -wst * (0.78 + 0.45 * b)), across, -sag),
+            ], body)
+        }
         if build.legs == .hakama {
             // The hakama's seat, joining the two legs under the sash.
-            let front = at(hip, dir(pose.front.thigh), thigh * H * 0.3), back = at(hip, dir(pose.back.thigh), thigh * H * 0.3)
-            fill([torsoPoint(0.08, -wst * 0.62), torsoPoint(0.08, wst * 0.6), at(front, across, 0.036 * H), at(back, across, -0.036 * H)], body)
+            let b = build.baggy
+            let front = at(hip, dir(pose.front.thigh), thigh * H * (0.3 + 0.2 * b)), back = at(hip, dir(pose.back.thigh), thigh * H * (0.3 + 0.2 * b))
+            fill([torsoPoint(0.08, -wst * (0.62 + 0.2 * b)), torsoPoint(0.08, wst * (0.6 + 0.2 * b)), at(front, across, (0.04 + 0.04 * b) * H),
+                  at(back, across, -(0.04 + 0.04 * b) * H)], body)
         }
         if build.skirt > 0 {
             let hem = at(hip, CGPoint(x: 0, y: -1), build.skirt * H)
@@ -1402,9 +1426,9 @@ private struct Drawer {
     /// The head: a cranium, a hard jaw, a straight brow; headgear; eyes.
     mutating func head() {
         let r = build.head * H
-        // A long neck carrying a small head.
-        let c = at(neck, headUp, r * 1.55)
-        segment(neck, c, 0.032 * H * build.bulk, 0.034 * H * build.bulk, 0.028 * H, body, bulge: 0, at: 0.5)
+        // A strong neck carrying the head.
+        let c = at(neck, headUp, r * 1.25)
+        segment(neck, c, 0.042 * H * build.bulk, 0.046 * H * build.bulk, 0.036 * H, body, bulge: 0, at: 0.5)
         let skull = CGRect(x: c.x - r, y: c.y - r * 0.95, width: 2 * r, height: 2 * r)
         pen.ellipse(skull, body)
         func p(_ f: CGFloat, _ u: CGFloat) -> CGPoint { at(at(c, face, f * r), headUp, u * r) }
@@ -1616,9 +1640,9 @@ private struct Drawer {
             // The haori's split tails: two long, narrow blades of cloth from the small of the back to the calf, close
             // at rest, streaming out behind him in a hard move, the near one ahead of the far.
             let back = CGPoint(x: -face.x, y: 0)
-            let root = torsoPoint(0.5, -build.chest * H * 0.35), waistBack = torsoPoint(0.1, -build.waist * H * 0.55)
+            let root = torsoPoint(0.62, -build.chest * H * 0.45), waistBack = torsoPoint(0.02, -build.waist * H * 0.7)
             for (i, lag) in [(0, CGFloat(0.3)), (1, 0.0)] {
-                let reach = (0.34 + 0.08 * pose.stream) * H
+                let reach = (0.38 + 0.08 * pose.stream) * H
                 let lift = (-0.62 + 0.52 * pose.stream + 0.04 * flutter * (1 + lag)) * reach
                 let out = (0.18 + 0.72 * pose.stream) * reach + flutter * 0.02 * H * (1 + lag)
                 let tip = CGPoint(x: waistBack.x + back.x * (out + CGFloat(i) * 0.015 * H), y: waistBack.y + lift - CGFloat(i) * 0.02 * H)
