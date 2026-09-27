@@ -3,12 +3,8 @@
     <linearGradient id="f-bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#7b5cff"/><stop offset="1" stop-color="#ff4fa0"/>
     </linearGradient>
-    <radialGradient id="f-ball" cx=".38" cy=".32" r=".75">
-      <stop offset="0" stop-color="#fff"/><stop offset=".45" stop-color="#9fe8ff"/><stop offset="1" stop-color="#2f7cff"/>
-    </radialGradient>
   </defs>
   <rect x="1" y="1" width="62" height="62" rx="14" fill="url(#f-bg)"/>
   <path d="M9,22V9H55V55H9V42M45,27V20H20V44H45V37" fill="none" stroke="#fff" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="32" cy="32" r="9" fill="url(#f-ball)" stroke="#1d1a3a" stroke-width="2.5"/>
-  <ellipse cx="29" cy="28.5" rx="3.2" ry="1.9" transform="rotate(-35 29 28.5)" fill="#fff"/>
+  <path d="M30.3,24Q32,21.7 33.7,24L34.3,24.8Q36.2,27.4 39.2,28.4L40.3,28.7Q42.9,29.6 41.3,32L40.7,32.8Q38.8,35.4 38.8,38.6L38.8,39.7Q38.8,42.5 36.1,41.7L35,41.3Q32,40.4 29,41.3L27.9,41.7Q25.2,42.5 25.2,39.7L25.2,38.6Q25.2,35.4 23.3,32.8L22.7,32Q21.1,29.6 23.7,28.7L24.8,28.4Q27.8,27.4 29.7,24.8Z" fill="#ffc93d" stroke="#1d1a3a" stroke-width="2.5" stroke-linejoin="round"/>
 </svg>

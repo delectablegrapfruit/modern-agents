@@ -1,5 +1,4 @@
-/* Memaze — sound: synthesized effects (WebAudio, no files), a rolling hum, and music (the player's files or a built-in
- * synth loop). */
+/* Memaze — sound: synthesized effects (WebAudio, no files) and music (the player's files or a built-in synth loop). */
 (function () {
   'use strict';
   const MZ = window.MZ;
@@ -74,39 +73,13 @@
       switch (name) {
         case 'click': this.tone(880, 0.06, { type: 'triangle', vol: 0.12 }); break;
         case 'gem': [1320, 1760, 2637].forEach((f, i) => this.tone(f, 0.16, { type: 'triangle', vol: 0.16, at: i * 0.05 })); break;
-        case 'boost': this.tone(220, 0.35, { type: 'sawtooth', to: 880, vol: 0.1 }); this.noise(0.3, { freq: 600, to: 3000, vol: 0.12 }); break;
-        case 'fall': this.tone(600, 0.8, { type: 'triangle', to: 70, vol: 0.22 }); this.noise(0.7, { freq: 2000, to: 200, vol: 0.08 }); break;
-        case 'bump': this.tone(140, 0.09, { type: 'sine', vol: 0.18 }); break;
         case 'tick': this.tone(1000, 0.05, { type: 'square', vol: 0.06 }); break;
-        case 'ready': this.tone(440, 0.18, { type: 'triangle', vol: 0.15 }); break;
-        case 'go': this.tone(880, 0.35, { type: 'triangle', vol: 0.2 }); this.tone(1320, 0.35, { type: 'triangle', vol: 0.1 }); break;
         case 'win': [523, 659, 784, 1047].forEach((f, i) => this.tone(f, 0.4, { type: 'triangle', vol: 0.18, at: i * 0.09 })); break;
         case 'lose': this.tone(196, 0.5, { type: 'sawtooth', to: 98, vol: 0.12 }); break;
         case 'star': this.tone(1568, 0.25, { type: 'triangle', vol: 0.15 }); this.tone(2093, 0.3, { type: 'sine', vol: 0.08, at: 0.05 }); break;
         case 'beacon': [660, 990, 1320].forEach((f, i) => this.tone(f, 0.3, { type: 'sine', vol: 0.15, at: i * 0.07 })); break;
         case 'unlock': [784, 988, 1175, 1568].forEach((f, i) => this.tone(f, 0.3, { type: 'square', vol: 0.07, at: i * 0.08 })); break;
       }
-    },
-    // A soft rumble that follows the ball's speed while it's on the floor.
-    roll(speed, on) {
-      if (!this.ctx || this.ctx.state !== 'running') return;
-      if (!this._roll) {
-        const c = this.ctx, src = c.createBufferSource();
-        src.buffer = this.noiseBuf();
-        src.loop = true;
-        const f = c.createBiquadFilter();
-        f.type = 'lowpass';
-        f.frequency.value = 300;
-        const g = c.createGain();
-        g.gain.value = 0;
-        src.connect(f); f.connect(g); g.connect(this.sfx);
-        src.start();
-        this._roll = { f, g };
-      }
-      const k = on ? Math.min(1, speed / 700) : 0;
-      const t = this.ctx.currentTime;
-      this._roll.g.gain.setTargetAtTime(k * 0.09, t, 0.05);
-      this._roll.f.frequency.setTargetAtTime(160 + k * 500, t, 0.05);
     },
   };
 

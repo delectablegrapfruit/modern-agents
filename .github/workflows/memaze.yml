@@ -27,7 +27,7 @@ jobs:
           curl -fsS localhost:8765/api/media
           curl -fsS -o /dev/null localhost:8765/
           curl -fsS -o /dev/null localhost:8765/js/game.js
-      - name: Autopilot plays levels 1–16 with the real physics
+      - name: Autopilot drags through levels 1-30 with no losses
         run: |
           cd memaze && npm init -y >/dev/null && npm i --no-save playwright@1 && npx playwright install --with-deps chromium
-          node tests/autopilot.js 1-16 --strict
+          node tests/autopilot.js 1-30 --strict

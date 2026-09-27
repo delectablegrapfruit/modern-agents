@@ -5,7 +5,7 @@
   const MZ = window.MZ;
   const { segDist2 } = MZ;
   const CELL = 180;
-  const QUERY_MARGIN = 48; // segments are indexed a bit wider than they are, so near-misses can be pushed back (walls assist)
+  const QUERY_MARGIN = 48; // segments are indexed a bit wider than they are, so a point just off the floor still finds it
 
   const key = (i, j) => (i & 0xffff) * 65536 + (j & 0xffff);
   const blinkPhase = (b, t) => (((t / b.period + b.phase) % 1) + 1) % 1;
@@ -66,8 +66,8 @@
 
     clear() { this.grid.clear(); this.parts.clear(); }
 
-    // The deepest floor under (x, y): depth > 0 means inside a corridor by that much. Also returns the segment and
-    // the closest point on its centre line (used to push the ball back when the walls assist is on).
+    // The deepest floor under (x, y): depth > 0 means inside a corridor by that much, < 0 means that far out in the void.
+    // Also returns the segment, so the Walls rule can put the player back on it.
     query(x, y, t) {
       const list = this.grid.get(key(Math.floor(x / CELL), Math.floor(y / CELL)));
       const out = { depth: -Infinity, seg: null };

@@ -13,12 +13,12 @@
 
   const SLOTS = ['player', 'background', 'win', 'lose', 'goal', 'music'];
   const SLOT_INFO = {
-    player: { label: 'Player', kinds: ['image', 'video'], hint: 'The thing you roll around. Transparent PNG/GIF/WebP/WebM keep their see-through bits.' },
-    background: { label: 'Background', kinds: ['image', 'video'], hint: 'Shown behind the maze instead of (or on top of) the RGB pattern.' },
-    win: { label: 'Win', kinds: ['image', 'video'], hint: 'Plays full screen when you reach the goal.' },
-    lose: { label: 'Lose', kinds: ['image', 'video'], hint: 'Plays full screen when you fall off or run out of time.' },
-    goal: { label: 'Goal', kinds: ['image', 'video'], hint: 'What sits on the goal pad.' },
-    music: { label: 'Music', kinds: ['audio', 'video'], hint: 'Loops while you play. Several files play as a shuffled playlist.' },
+    player: { label: 'Player', kinds: ['image', 'video'] },
+    background: { label: 'Background', kinds: ['image', 'video'] },
+    win: { label: 'Win', kinds: ['image', 'video'] },
+    lose: { label: 'Lose', kinds: ['image', 'video'] },
+    goal: { label: 'Goal', kinds: ['image', 'video'] },
+    music: { label: 'Music', kinds: ['audio', 'video'] },
   };
   const EXT = {
     image: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'apng', 'svg', 'bmp', 'ico'],
@@ -33,12 +33,12 @@
   }
 
   const DEFAULTS = [
-    { id: 'default:ball', slot: 'player', name: 'Bubble Ball', kind: 'image', url: 'assets/defaults/player-ball.svg' },
-    { id: 'default:pixel', slot: 'player', name: 'Pixel Slime (GIF)', kind: 'image', url: 'assets/defaults/player-pixel.gif', pixel: true },
-    { id: 'default:burst', slot: 'win', name: 'You Win!', kind: 'image', url: 'assets/defaults/win-burst.svg' },
-    { id: 'default:splat', slot: 'lose', name: 'Oops!', kind: 'image', url: 'assets/defaults/lose-splat.svg' },
-    { id: 'default:portal', slot: 'goal', name: 'Portal', kind: 'builtin' },
-    { id: 'default:flag', slot: 'goal', name: 'Finish Flag', kind: 'image', url: 'assets/defaults/goal-flag.svg' },
+    { id: 'default:sticker', slot: 'player', name: 'Sticker', kind: 'image', url: 'assets/defaults/player-sticker.svg' },
+    { id: 'default:pixel', slot: 'player', name: 'Pixel Slime', kind: 'image', url: 'assets/defaults/player-pixel.gif', pixel: true },
+    { id: 'default:burst', slot: 'win', name: 'You Win', kind: 'image', url: 'assets/defaults/win-burst.svg' },
+    { id: 'default:oops', slot: 'lose', name: 'Oops', kind: 'image', url: 'assets/defaults/lose-oops.svg' },
+    { id: 'default:portal', slot: 'goal', name: 'Marker', kind: 'builtin' },
+    { id: 'default:flag', slot: 'goal', name: 'Flag', kind: 'image', url: 'assets/defaults/goal-flag.svg' },
     { id: 'none', slot: 'music', name: 'No music', kind: 'builtin' },
     { id: 'default:synth', slot: 'music', name: 'Synth Loop', kind: 'builtin' },
   ].map((d) => Object.assign({ source: 'default' }, d));

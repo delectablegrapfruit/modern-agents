@@ -1,14 +1,14 @@
 MEMAZE - YOUR MEDIA
 ===================
 
-This folder is where Memaze gets everything that makes it *yours*.
+This folder is where Memaze gets everything that makes it yours.
 Drop your own files into the sub-folders:
 
-  player/       the thing you roll through the maze
+  player/       you: shown in the middle of the screen
   background/   what is shown behind the maze
   win/          plays when you reach the goal
-  lose/         plays when you fall off
-  goal/         the thing you are rolling towards
+  lose/         plays when you touch the edge or run out of time
+  goal/         sits on the goal
   music/        background music
 
 Any kind of file works in any folder - a video as the player is fine.
@@ -21,7 +21,7 @@ SUPPORTED FORMATS
 Images   PNG, JPG/JPEG, GIF, APNG, WebP, AVIF, SVG, BMP, ICO
          Animated GIF / APNG / WebP play as animations.
          Transparency is kept (PNG, GIF, APNG, WebP, AVIF, SVG), so a cut-out
-         picture of your cat really looks like a rolling cat.
+         picture of your cat shows just the cat.
 
 Videos   MP4, M4V, WebM, MOV, OGV
          Ordinary videos show as a rectangle. To keep a transparent

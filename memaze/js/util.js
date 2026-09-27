@@ -60,9 +60,6 @@
   // ---------- maths ----------
   const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
   const lerp = (a, b, t) => a + (b - a) * t;
-  const smooth = (t) => t * t * (3 - 2 * t);
-  const easeOutBack = (t) => { const c = 1.70158; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
-  const easeInOut = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
 
   // Squared distance from point to segment, plus the closest point's t.
   function segDist2(px, py, ax, ay, bx, by) {
@@ -176,7 +173,7 @@
   }
 
   Object.assign(MZ, {
-    hashStr, hashInts, h01, rng, clamp, lerp, smooth, easeOutBack, easeInOut,
+    hashStr, hashInts, h01, rng, clamp, lerp,
     segDist2, segsCross, segSegDist2, fmtTime, fmtClock, store, merge, clone, emitter, $, $$, h, toast, download, today,
   });
 })();

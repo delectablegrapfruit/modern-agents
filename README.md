@@ -1,7 +1,7 @@
 # Books
 
-> This repository also holds **[Memaze](memaze/)**, a browser maze game where the player, the win/lose animations and the
-> background are your own pictures, GIFs and videos — see [`memaze/README.md`](memaze/README.md).
+> This repository also holds **[Memaze](memaze/)**, a browser maze game where the player, the win and lose screens and the
+> background are your own pictures, GIFs and videos. See [`memaze/README.md`](memaze/README.md).
 
 An offline reader for the Mac, made the way Apple makes its own apps: a native AppKit/SwiftUI application with the
 system's sidebar, toolbar, menus, popovers and sheets — Liquid Glass on macOS 26 — that keeps every book on this

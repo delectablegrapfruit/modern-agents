@@ -30,7 +30,7 @@
     { id: 'stripes', name: 'Candy Stripes', desc: 'Glossy diagonal candy bands sliding by.' },
     { id: 'checker', name: 'Checkerboard', desc: 'A slowly turning checkerboard void.' },
     { id: 'dots', name: 'Polka', desc: 'A grid of bobbing polka dots.' },
-    { id: 'waves', name: 'Waves', desc: 'Layered sine waves rolling past.' },
+    { id: 'waves', name: 'Waves', desc: 'Layered sine waves drifting past.' },
     { id: 'stars', name: 'Warp', desc: 'A starfield rushing toward you.' },
     { id: 'tunnel', name: 'Tunnel', desc: 'A twisting tunnel of rings pulling you in.' },
     { id: 'synth', name: 'Synthwave', desc: 'Neon grid, striped sun, endless horizon.' },

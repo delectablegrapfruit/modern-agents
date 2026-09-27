@@ -2,8 +2,8 @@
  *
  * A level is a graph laid out on a lattice (square, triangulated, hex, polar or organic Poisson points), cut to a shape
  * mask (heart, donut, spiral, islands…), carved into a spanning tree (growing-tree algorithm), optionally braided, then
- * turned into geometry: every maze edge is a polyline corridor of some half-width floating over the void. Walk off a
- * corridor and you fall. The same seed always gives the same maze.
+ * turned into geometry: every maze edge is a polyline corridor of some half-width surrounded by void. Touch the void and
+ * you lose. The same seed always gives the same maze.
  *
  * Endless mode uses chunks of a jittered square lattice keyed by chunk coordinates, so the world is unbounded.
  */
@@ -14,6 +14,7 @@
 
   const BALL_R = 18;
   const HW_MIN = 24;
+  const DRAG_WIDE = 500, DRAG_NARROW = 340; // par drag speeds (world units/s) on the widest and the narrowest paths
   const GAP = 30; // minimum void between corridors that are not joined
   const gapFor = (hw) => Math.max(GAP, hw * 1.2); // wide easy paths get wide gaps too, so the maze still reads
   const TAU = Math.PI * 2;
@@ -463,45 +464,17 @@
     }
     const fixes = enforceGaps(maze, nodes, S);
 
-    // Surfaces and hazards (never next to the start or the goal, never on bridges).
+    // Vanishing bridges (never next to the start or the goal, never on island links).
     const nearEnds = (e) => e.a === a || e.b === a || e.a === b || e.b === b;
     const blinkAt = new Uint8Array(n); // no two vanishing bridges touch, so there's always solid ground to wait on
     for (const e of maze) {
       e.type = e.bridge ? 'bridge' : 'normal';
       if (e.bridge || nearEnds(e)) continue;
-      const x = r();
-      if (x < p.ice) e.type = 'ice';
-      else if (x < p.ice + p.sticky) e.type = 'sticky';
-      else if (x < p.ice + p.sticky + p.blink && !blinkAt[e.a] && !blinkAt[e.b]) {
+      if (r() < p.blink && !blinkAt[e.a] && !blinkAt[e.b]) {
         e.type = 'blink';
         const period = r.range(2.8, 4.4);
         e.blink = { period, phase: r(), on: Math.max(r.range(0.55, 0.7), (1.2 + e.len / 220) / period) };
         blinkAt[e.a] = blinkAt[e.b] = 1;
-      }
-    }
-    // Boost pads only where the route then runs straight for a good while, so a boost never flings you off a corner.
-    const pads = [];
-    if (p.boost > 0) {
-      const dir = (u, v) => Math.atan2(nodes[v].y - nodes[u].y, nodes[v].x - nodes[u].x);
-      const edgeOf = (u, v) => maze.find((e) => (e.a === u && e.b === v) || (e.a === v && e.b === u));
-      for (let i = 0; i + 3 < mainPath.length; i++) {
-        const e = edgeOf(mainPath[i], mainPath[i + 1]);
-        if (e.type !== 'normal' || e.len < 0.9 * S || !r.chance(p.boost)) continue;
-        const a0 = dir(mainPath[i], mainPath[i + 1]);
-        let straight = true;
-        for (let k = i + 1; k <= i + 2; k++) {
-          const e2 = edgeOf(mainPath[k], mainPath[k + 1]);
-          let da = Math.abs(dir(mainPath[k], mainPath[k + 1]) - a0) % TAU;
-          if (da > Math.PI) da = TAU - da;
-          if (da > 0.35 || e2.type === 'blink' || e2.type === 'ice' || e2.arc) straight = false;
-        }
-        if (!straight) continue;
-        const pts = e.a === mainPath[i] ? e.pts : e.pts.slice().reverse();
-        const mid = Math.floor((pts.length - 1) / 2);
-        const P = pts[mid], Q = pts[Math.min(pts.length - 1, mid + 1)];
-        const l = Math.hypot(Q.x - P.x, Q.y - P.y) || 1;
-        pads.push({ x: (P.x + Q.x) / 2, y: (P.y + Q.y) / 2, dx: (Q.x - P.x) / l, dy: (Q.y - P.y) / l, r: e.hw * 0.85 });
-        i += 2;
       }
     }
 
@@ -521,8 +494,8 @@
       }
     }
 
-    const pad = (i) => ({ x: nodes[i].x, y: nodes[i].y, r: Math.max(BALL_R * 2.6, p.hw * 1.45) });
-    const start = pad(a), goal = pad(b);
+    const disc = (i) => ({ x: nodes[i].x, y: nodes[i].y, r: Math.max(BALL_R * 2.6, p.hw * 1.45) });
+    const start = disc(a), goal = disc(b);
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const e of maze) for (const q of e.pts) {
       minX = Math.min(minX, q.x - e.hw); maxX = Math.max(maxX, q.x + e.hw);
@@ -535,20 +508,23 @@
       const c = ((Q.x - P.x) * (R.x - Q.x) + (Q.y - P.y) * (R.y - Q.y)) / (Math.hypot(Q.x - P.x, Q.y - P.y) * Math.hypot(R.x - Q.x, R.y - Q.y) || 1);
       if (c < 0.8) turns++;
     }
-    const narrow = clamp((46 - p.hw) / 20, 0, 1);
-    // Par ≈ a good run that knows the way: speed by path width, time lost in turns, waiting for bridges, mud.
-    let hazardT = 0;
+    // Par ≈ a steady drag by someone who knows the way: slower on narrow paths, a beat per real turn, the average wait
+    // at each vanishing bridge (gone, or not up long enough to cross), and a couple of seconds.
+    let dragT = 0, waitT = 0;
     for (let i = 0; i + 1 < mainPath.length; i++) {
       const e = maze.find((x) => (x.a === mainPath[i] && x.b === mainPath[i + 1]) || (x.b === mainPath[i] && x.a === mainPath[i + 1]));
-      if (e.type === 'blink') hazardT += 1.6;
-      else if (e.type === 'sticky') hazardT += e.len / 140;
-      else if (e.type === 'ice') hazardT += e.len / 400;
+      const len = polyLen(e.pts), v = lerp(DRAG_WIDE, DRAG_NARROW, clamp((46 - e.hw) / 20, 0, 1));
+      dragT += len / v;
+      if (e.type === 'blink') {
+        const P = e.blink.period, block = Math.min(P, P * (1 - e.blink.on) + len / v + 0.3);
+        waitT += (block * block) / (2 * P);
+      }
     }
-    const par = pathLen / lerp(360, 210, narrow) + turns * 0.55 + hazardT + 2;
+    const par = dragT - (goal.r * 0.5) / DRAG_WIDE + turns * 0.2 + waitT + 1.5; // the goal counts from half its radius
     return {
       seed: p.seed >>> 0, params: p, S, lattice: lat, mask: mask.id,
       name: p.name || nameFor(lat, mask, r),
-      nodes, edges: maze, start, goal, gems, pads, mainPath, pathLen, turns,
+      nodes, edges: maze, start, goal, gems, mainPath, pathLen, turns,
       bounds: { minX, minY, maxX, maxY },
       parTime: Math.ceil(par),
       timeLimit: Math.ceil((par * p.timeFactor + 15) / 5) * 5,
@@ -626,7 +602,7 @@
   }
 
   const ADJ = ['Wobbly', 'Twisted', 'Sneaky', 'Dizzy', 'Lucky', 'Hollow', 'Tiny', 'Grand', 'Neon', 'Velvet', 'Crooked', 'Silent',
-    'Frantic', 'Lazy', 'Brave', 'Shiny', 'Haunted', 'Sunny', 'Salty', 'Fuzzy', 'Electric', 'Secret', 'Rolling', 'Tangled'];
+    'Frantic', 'Lazy', 'Brave', 'Shiny', 'Haunted', 'Sunny', 'Salty', 'Fuzzy', 'Electric', 'Secret', 'Winding', 'Tangled'];
   function nameFor(lat, mask, r) {
     const noun = mask.id === 'rect' ? LATTICES[lat].name : mask.name;
     return r.pick(ADJ) + ' ' + noun;
@@ -655,10 +631,7 @@
       algo: r.range(0.35, 1),
       braid: lerp(0.16, 0.03, t),
       holes: level >= 6 && r.chance(0.3) ? 0.05 : 0,
-      ice: level >= 4 ? lerp(0.08, 0.12, t) : 0,
-      boost: level >= 6 ? 0.35 : 0,
       blink: level >= 8 ? lerp(0.05, 0.1, t) : 0,
-      sticky: level >= 10 ? 0.07 : 0,
       gems: Math.min(8, 2 + Math.floor(level / 4)),
       timeFactor: lerp(3, 2.3, t), // you don't know the way yet: room to explore dead ends
       maxPath: lerp(3500, 12000, t),
@@ -671,7 +644,7 @@
     p.level = level;
     return p;
   }
-  // Custom: every choice can be 'auto'; size 0..1, width 0..1 (0 = narrow), hazards flags.
+  // Custom: every choice can be 'auto'; size 0..1, width 0..1 (0 = narrow), hazards { blink }.
   function customParams(o) {
     const seed = hashStr('memaze/custom/' + o.seed);
     const r = rng(seed);
@@ -683,10 +656,7 @@
     if (o.size != null) p.nodes = Math.round(lerp(20, 400, o.size));
     if (o.width != null) p.hw = lerp(26, 52, o.width);
     const hz = o.hazards || {};
-    if (hz.ice === false) p.ice = 0; else if (hz.ice) p.ice = p.ice || 0.1;
-    if (hz.boost === false) p.boost = 0; else if (hz.boost) p.boost = p.boost || 0.35;
     if (hz.blink === false) p.blink = 0; else if (hz.blink) p.blink = p.blink || 0.07;
-    if (hz.sticky === false) p.sticky = 0; else if (hz.sticky) p.sticky = p.sticky || 0.07;
     p.seed = seed;
     p.level = level;
     return p;
@@ -753,13 +723,10 @@
     const origin = cx === 0 && cy === 0;
     const deg = new Int32Array(nodes.length);
     for (const e of edges) if (!e.link) { deg[e.a]++; deg[e.b]++; }
+    const blink = d > 0.2 ? lerp(0.03, 0.09, d) : 0;
     for (const e of edges) {
       if (e.link || (origin && (e.a === id(3, 3) || e.b === id(3, 3)))) continue;
-      const x = r();
-      const ice = d > 0.05 ? 0.1 : 0, sticky = d > 0.3 ? 0.06 : 0, blink = d > 0.2 ? lerp(0.03, 0.09, d) : 0;
-      if (x < ice) e.type = 'ice';
-      else if (x < ice + sticky) e.type = 'sticky';
-      else if (x < ice + sticky + blink) { e.type = 'blink'; const period = r.range(2.8, 4.2); e.blink = { period, phase: r(), on: Math.max(r.range(0.58, 0.7), 2 / period) }; }
+      if (r() < blink) { e.type = 'blink'; const period = r.range(2.8, 4.2); e.blink = { period, phase: r(), on: Math.max(r.range(0.58, 0.7), 2 / period) }; }
     }
     const safe = new Uint8Array(nodes.length);
     for (const e of edges) if (!e.link && e.type !== 'blink') { safe[e.a] = 1; safe[e.b] = 1; }
@@ -773,20 +740,10 @@
       for (let i = 0; i < nodes.length; i++) if (safe[i] && deg[i] >= 2) cands.push(i);
       if (cands.length) { const i = r.pick(cands); beacons.push({ x: nodes[i].x, y: nodes[i].y, r: hw * 1.3 }); }
     }
-    const pads = [];
-    if (d > 0.1) {
-      for (const e of edges) {
-        if (e.type !== 'normal' || e.link || !r.chance(0.08)) continue;
-        const A = e.pts[0], B = e.pts[1];
-        const out = A.x * A.x + A.y * A.y < B.x * B.x + B.y * B.y;
-        const P = out ? A : B, Q = out ? B : A, l = Math.hypot(Q.x - P.x, Q.y - P.y);
-        pads.push({ x: (P.x + Q.x) / 2, y: (P.y + Q.y) / 2, dx: (Q.x - P.x) / l, dy: (Q.y - P.y) / l, r: e.hw * 0.85 });
-      }
-    }
     const safeNodes = [];
     for (let i = 0; i < nodes.length; i++) if (safe[i]) safeNodes.push(nodes[i]);
     return {
-      cx, cy, edges, gems, beacons, pads, safeNodes,
+      cx, cy, edges, gems, beacons, safeNodes,
       discs: origin ? [{ x: nodes[id(3, 3)].x, y: nodes[id(3, 3)].y, r: Math.max(BALL_R * 2.6, hw * 1.45) }] : [],
       start: origin ? nodes[id(3, 3)] : null,
     };

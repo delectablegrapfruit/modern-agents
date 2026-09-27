@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600">
+  <!-- Memaze default lose animation: the sticker star pops in and gets squashed flat (0-0.6s) while "OOPS!"
+       pops in (0.1-0.6s); from 0.6s it wobbles with spinning eyes and sparkles circling its head. Transparent background. -->
+  <defs>
+    <path id="l-body" d="M-16.5,-89.9Q0,-112 16.5,-89.9L22.6,-81.5Q41.1,-56.6 70.6,-46.7L80.4,-43.4Q106.5,-34.6 90.5,-12.1L84.5,-3.7Q66.6,21.6 66.2,52.7L66.1,63Q65.8,90.6 39.5,82.4L29.6,79.3Q0,70 -29.6,79.3L-39.5,82.4Q-65.8,90.6 -66.1,63L-66.2,52.7Q-66.6,21.6 -84.5,-3.7L-90.5,-12.1Q-106.5,-34.6 -80.4,-43.4L-70.6,-46.7Q-41.1,-56.6 -22.6,-81.5Z"/>
+    <clipPath id="l-clip"><use href="#l-body"/></clipPath>
+    <path id="l-spiral" d="M0,0L0.3,0.1L0.5,0.4L0.6,0.8L0.4,1.3L-0.1,1.7L-0.7,1.9L-1.5,1.9L-2.3,1.5L-3,0.8L-3.4,-0.2L-3.5,-1.4L-3.1,-2.7L-2.3,-3.8L-1,-4.7L0.5,-5.1L2.3,-5L3.9,-4.2L5.4,-2.9L6.4,-1.2L6.7,1L6.4,3.2L5.3,5.3L3.5,7L1.2,8.1L-1.5,8.4L-4.2,7.8L-6.7,6.3L-8.7,4L-9.8,1.1L-10,-2.2L-9.1,-5.4L-7.1,-8.2L-4.3,-10.4L-0.8,-11.6L3,-11.6L6.6,-10.3L9.8,-7.9L12.1,-4.5L13.3,-0.5L13.1,3.8L11.5,8L8.6,11.5L4.6,13.9L0,15"/>
+    <path id="l-hit" d="M-226,-34L-276,-58M-222,-92L-262,-138M-232,16L-284,14M226,-34L276,-58M222,-92L262,-138M232,16L284,14"/>
+  </defs>
+  <g transform="translate(400 368)">
+    <g fill="none" stroke-linecap="round" opacity="0">
+      <animate attributeName="opacity" values="0;1" dur=".01s" begin=".3s" fill="freeze"/>
+      <use href="#l-hit" stroke="#1d1a3a" stroke-width="20"/>
+      <use href="#l-hit" stroke="#fff" stroke-width="8"/>
+    </g>
+    <g transform="scale(0)">
+      <animateTransform attributeName="transform" type="scale" values="0 0;1.6 1.6;2.1 .9;1.7 1.3;1.85 1.2" keyTimes="0;.4;.6;.82;1" dur=".6s" fill="freeze"/>
+      <g>
+        <animateTransform attributeName="transform" type="rotate" values="0;-4;0;4;0" keyTimes="0;.25;.5;.75;1" calcMode="spline" keySplines=".4 0 .6 1;.4 0 .6 1;.4 0 .6 1;.4 0 .6 1" dur="1.8s" begin=".6s" repeatCount="indefinite"/>
+        <g transform="translate(0 -86)" stroke-linejoin="round" stroke-linecap="round">
+          <use href="#l-body" fill="#fff" stroke="#fff" stroke-width="44"/>
+          <use href="#l-body" fill="#1d1a3a" stroke="#1d1a3a" stroke-width="20"/>
+          <use href="#l-body" fill="#f59a1b"/>
+          <path d="M-23,-96.2Q-7,-117.6 9,-96.2L15,-88.1Q32.9,-63.9 61.4,-54.3L71,-51.1Q96.3,-42.6 80.8,-20.8L75,-12.6Q57.6,12 57.3,42.1L57.1,52.1Q56.9,78.9 31.3,70.9L21.7,67.9Q-7,58.9 -35.7,67.9L-45.3,70.9Q-70.9,78.9 -71.1,52.1L-71.3,42.1Q-71.6,12 -89,-12.6L-94.8,-20.8Q-110.3,-42.6 -85,-51.1L-75.4,-54.3Q-46.9,-63.9 -29,-88.1Z" fill="#ffc93d" clip-path="url(#l-clip)"/>
+          <path d="M-10,-86Q0,-96 8,-88" fill="none" stroke="#fff3b0" stroke-width="9"/>
+          <path d="M-78,-30L-56,-37" fill="none" stroke="#fff3b0" stroke-width="9"/>
+          <g fill="#ff7fae"><ellipse cx="-45" cy="22" rx="12" ry="7.5"/><ellipse cx="45" cy="22" rx="12" ry="7.5"/></g>
+          <g fill="none" stroke="#1d1a3a" stroke-width="6">
+            <use href="#l-spiral" stroke-width="3.2" transform="translate(-26 -2) scale(1.45)"><animateTransform attributeName="transform" type="rotate" from="0" to="360" dur=".9s" repeatCount="indefinite" additive="sum"/></use>
+            <use href="#l-spiral" stroke-width="3.2" transform="translate(26 -2) scale(-1.45 1.45)"><animateTransform attributeName="transform" type="rotate" from="0" to="360" dur=".9s" repeatCount="indefinite" additive="sum"/></use>
+            <path d="M-20,30q5,-8 10,0t10,0t10,0t10,0"/>
+          </g>
+          <path d="M84,-58c-8,12 -13,21 -13,27a13,13 0 0 0 26,0c0,-6 -5,-15 -13,-27z" fill="#9fe6ff" stroke="#1d1a3a" stroke-width="5"/>
+        </g>
+      </g>
+    </g>
+  </g>
+  <g transform="translate(400 90)" opacity="0">
+    <animate attributeName="opacity" values="0;1" dur=".25s" begin=".45s" fill="freeze"/>
+      <g>
+        <animateMotion path="M-150,0a150,30 0 1,1 300,0a150,30 0 1,1 -300,0z" dur="1.6s" begin="0s" repeatCount="indefinite"/>
+        <animateTransform attributeName="transform" type="scale" values=".75;.55;.75;1;.75" keyTimes="0;.25;.5;.75;1" dur="1.6s" begin="0s" repeatCount="indefinite"/>
+        <path d="M0,-38Q6.08,-6.08 38,0Q6.08,6.08 0,38Q-6.08,6.08 -38,0Q-6.08,-6.08 0,-38Z" fill="#fff3a0" stroke="#1d1a3a" stroke-width="6" stroke-linejoin="round"/>
+      </g>
+      <g>
+        <animateMotion path="M-150,0a150,30 0 1,1 300,0a150,30 0 1,1 -300,0z" dur="1.6s" begin="-0.533s" repeatCount="indefinite"/>
+        <animateTransform attributeName="transform" type="scale" values=".75;.55;.75;1;.75" keyTimes="0;.25;.5;.75;1" dur="1.6s" begin="-0.533s" repeatCount="indefinite"/>
+        <path d="M0,-34Q5.44,-5.44 34,0Q5.44,5.44 0,34Q-5.44,5.44 -34,0Q-5.44,-5.44 0,-34Z" fill="#ff7fae" stroke="#1d1a3a" stroke-width="6" stroke-linejoin="round"/>
+      </g>
+      <g>
+        <animateMotion path="M-150,0a150,30 0 1,1 300,0a150,30 0 1,1 -300,0z" dur="1.6s" begin="-1.067s" repeatCount="indefinite"/>
+        <animateTransform attributeName="transform" type="scale" values=".75;.55;.75;1;.75" keyTimes="0;.25;.5;.75;1" dur="1.6s" begin="-1.067s" repeatCount="indefinite"/>
+        <path d="M0,-34Q5.44,-5.44 34,0Q5.44,5.44 0,34Q-5.44,5.44 -34,0Q-5.44,-5.44 0,-34Z" fill="#7fe3ff" stroke="#1d1a3a" stroke-width="6" stroke-linejoin="round"/>
+      </g>
+  </g>
+  <g transform="translate(400 488)">
+    <g transform="scale(0)">
+      <animateTransform attributeName="transform" type="scale" values="0;1.22;.9;1.04;1" keyTimes="0;.45;.68;.85;1" dur=".5s" begin=".1s" fill="freeze"/>
+      <g>
+        <animateTransform attributeName="transform" type="rotate" values="0;-4;0;4;0" keyTimes="0;.25;.5;.75;1" calcMode="spline" keySplines=".4 0 .6 1;.4 0 .6 1;.4 0 .6 1;.4 0 .6 1" dur="1.4s" begin=".6s" repeatCount="indefinite"/>
+        <g font-family="'Arial Black', 'Arial Rounded MT Bold', system-ui, sans-serif" font-weight="900" font-size="148" text-anchor="middle" stroke-linejoin="round">
+          <text y="53" textLength="500" lengthAdjust="spacingAndGlyphs" transform="translate(0 11)" fill="#1d1a3a" stroke="#1d1a3a" stroke-width="30">OOPS!</text>
+          <text y="53" textLength="500" lengthAdjust="spacingAndGlyphs" fill="#1d1a3a" stroke="#1d1a3a" stroke-width="30">OOPS!</text>
+          <text y="53" textLength="500" lengthAdjust="spacingAndGlyphs" fill="#fff" stroke="#fff" stroke-width="13">OOPS!</text>
+          <text y="53" textLength="500" lengthAdjust="spacingAndGlyphs" fill="#ff4f8e" stroke="#1d1a3a" stroke-width="2.5" paint-order="stroke">OOPS!</text>
+        </g>
+      </g>
+    </g>
+  </g>
+</svg>

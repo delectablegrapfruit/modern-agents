@@ -14,7 +14,6 @@
     const first = () => {
       MZ.Audio.unlock();
       MZ.Audio.Music.ensure();
-      if (MZ.Save.settings.controls.gyro) MZ.Game.input.enableGyro().catch(() => {});
       window.removeEventListener('pointerdown', first, true);
       window.removeEventListener('keydown', first, true);
     };

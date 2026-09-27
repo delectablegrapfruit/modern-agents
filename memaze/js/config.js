@@ -12,11 +12,11 @@
     chroma: { on: false, color: '#00ff00', tol: 0.35, soft: 0.25 },
   });
   const DEFAULTS = {
-    controls: { scheme: 'tilt', sensitivity: 1, invert: false, tilt3d: true, joystick: true, gyro: false },
-    gameplay: { rule: 'normal', timer: true, minimap: 'explored', zoom: 1, autoNext: false, hints: true },
-    player: { media: 'default:ball', size: 1.15, spin: 'roll', mirror: false, chroma: { on: false, color: '#00ff00', tol: 0.35, soft: 0.25 } },
+    controls: { invert: false, speed: 1 },
+    gameplay: { rule: 'normal', timer: true, minimap: 'explored', zoom: 1, autoNext: false },
+    player: { media: 'default:sticker', size: 1.6, chroma: { on: false, color: '#00ff00', tol: 0.35, soft: 0.25 } },
     win: fxDefaults('default:burst', 2.4, 'pop'),
-    lose: fxDefaults('default:splat', 1.7, 'shake'),
+    lose: fxDefaults('default:oops', 1.7, 'none'),
     goal: { media: 'default:portal', size: 1, chroma: { on: false, color: '#00ff00', tol: 0.35, soft: 0.25 } },
     background: {
       kind: 'pattern', pattern: 'rgb', media: null, fit: 'cover', dim: 0, blur: 0, rgbUnder: true, parallax: true,
@@ -24,10 +24,13 @@
     },
     rgb: RGB,
     music: { media: 'none' },
-    audio: { master: 0.8, sfx: 0.8, music: 0.5, media: 0.8, roll: true },
+    audio: { master: 0.8, sfx: 0.8, music: 0.5, media: 0.8 },
     display: { floor: 'classic', quality: 2, reducedMotion: false, reduceFlash: false, fps: false },
     extras: { unlockAll: false },
   };
+  // Built-in media that no longer exist: saved choices move to their replacements. Settings that no longer exist are dropped.
+  const RENAMED = { 'default:ball': 'default:sticker', 'default:splat': 'default:oops' };
+  const GONE = { controls: ['scheme', 'sensitivity', 'tilt3d', 'joystick', 'gyro'], player: ['spin', 'mirror'], gameplay: ['hints'], audio: ['roll'] };
 
   const RGB_PRESETS = [
     { name: 'Rainbow', rgb: { style: 'gradient', hueFrom: 0, hueTo: 360, sat: 85, light: 55, spread: 140, usePalette: false } },
@@ -49,7 +52,7 @@
   };
   function reqText(req) {
     if (!req) return 'Unlocked';
-    if (req.stars) return req.stars + ' ★ in Journey';
+    if (req.stars) return req.stars + (req.stars === 1 ? ' star' : ' stars') + ' in Journey';
     if (req.gauntlet) return 'Clear ' + req.gauntlet + ' mazes in one Gauntlet';
     if (req.endless) return 'Score ' + req.endless + ' in Endless';
     if (req.daily) return 'Finish a Daily maze';
@@ -60,23 +63,19 @@
     journey: { unlocked: 1, levels: {} }, // levels[n] = {stars, best, gems}
     stats: { wins: 0, falls: 0, gems: 0, playTime: 0, runs: 0 },
     gauntletBest: 0, endlessBest: 0, daily: {}, dailyDone: 0,
-    seenPatterns: ['rgb'], hintsSeen: {},
+    seenPatterns: ['rgb'],
   };
 
-  const HINTS = {
-    1: 'Drag anywhere to tilt the world — roll into the GOAL. Keys, gamepads and phone tilt work too.',
-    2: "Don't fall off! Gems ◆ in dead ends count toward ★★★.",
-    3: 'Beat the par time for the second star. Pinch or scroll to zoom.',
-    4: 'Pale blue floor is ICE — slippery, and hard to steer.',
-    6: 'Orange pads BOOST you forward. Hold on!',
-    8: 'Flickering bridges vanish for a moment. Wait for them.',
-    10: 'Striped brown floor is MUD — it slows you down.',
-  };
+  function migrate(st) {
+    for (const slot of ['player', 'lose']) if (RENAMED[st[slot].media]) st[slot].media = RENAMED[st[slot].media];
+    for (const g in GONE) for (const k of GONE[g]) delete st[g][k];
+    return st;
+  }
 
   const Save = {
     settings: null, progress: null,
     load() {
-      this.settings = MZ.merge(DEFAULTS, MZ.store.load('settings', null));
+      this.settings = migrate(MZ.merge(DEFAULTS, MZ.store.load('settings', null)));
       this.progress = MZ.merge(PROGRESS, MZ.store.load('progress', null));
     },
     saveSettings() { MZ.store.save('settings', this.settings); },
@@ -111,13 +110,13 @@
     importJSON(text) {
       const j = JSON.parse(text);
       if (!j || j.app !== 'memaze') throw new Error('Not a Memaze save file');
-      this.settings = MZ.merge(DEFAULTS, j.settings);
+      this.settings = migrate(MZ.merge(DEFAULTS, j.settings));
       this.progress = MZ.merge(PROGRESS, j.progress);
       this.saveSettings();
       this.saveProgress();
     },
   };
 
-  MZ.Config = { DEFAULTS, RGB_PRESETS, UNLOCKS, reqText, HINTS };
+  MZ.Config = { DEFAULTS, RGB_PRESETS, UNLOCKS, reqText };
   MZ.Save = Save;
 })();

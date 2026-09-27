@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Memaze default player: a flat sticker star with a face. Static (no animation). Transparent background. -->
+  <defs>
+    <path id="p-body" d="M-16.5,-89.9Q0,-112 16.5,-89.9L22.6,-81.5Q41.1,-56.6 70.6,-46.7L80.4,-43.4Q106.5,-34.6 90.5,-12.1L84.5,-3.7Q66.6,21.6 66.2,52.7L66.1,63Q65.8,90.6 39.5,82.4L29.6,79.3Q0,70 -29.6,79.3L-39.5,82.4Q-65.8,90.6 -66.1,63L-66.2,52.7Q-66.6,21.6 -84.5,-3.7L-90.5,-12.1Q-106.5,-34.6 -80.4,-43.4L-70.6,-46.7Q-41.1,-56.6 -22.6,-81.5Z"/>
+    <clipPath id="p-clip"><use href="#p-body"/></clipPath>
+  </defs>
+  <g transform="translate(128 139)" stroke-linejoin="round" stroke-linecap="round">
+    <use href="#p-body" fill="#fff" stroke="#fff" stroke-width="44"/>
+    <use href="#p-body" fill="#1d1a3a" stroke="#1d1a3a" stroke-width="20"/>
+    <use href="#p-body" fill="#f59a1b"/>
+    <path d="M-23,-96.2Q-7,-117.6 9,-96.2L15,-88.1Q32.9,-63.9 61.4,-54.3L71,-51.1Q96.3,-42.6 80.8,-20.8L75,-12.6Q57.6,12 57.3,42.1L57.1,52.1Q56.9,78.9 31.3,70.9L21.7,67.9Q-7,58.9 -35.7,67.9L-45.3,70.9Q-70.9,78.9 -71.1,52.1L-71.3,42.1Q-71.6,12 -89,-12.6L-94.8,-20.8Q-110.3,-42.6 -85,-51.1L-75.4,-54.3Q-46.9,-63.9 -29,-88.1Z" fill="#ffc93d" clip-path="url(#p-clip)"/>
+    <path d="M-10,-86Q0,-96 8,-88" fill="none" stroke="#fff3b0" stroke-width="9"/>
+    <path d="M-78,-30L-56,-37" fill="none" stroke="#fff3b0" stroke-width="9"/>
+    <g fill="#ff7fae"><ellipse cx="-43" cy="20" rx="12" ry="7.5"/><ellipse cx="43" cy="20" rx="12" ry="7.5"/></g>
+    <g fill="#1d1a3a"><ellipse cx="-24" cy="-4" rx="12" ry="17"/><ellipse cx="24" cy="-4" rx="12" ry="17"/></g>
+    <g fill="#fff"><circle cx="-28" cy="-11" r="5"/><circle cx="20" cy="-11" r="5"/></g>
+    <path d="M-17,17Q0,45 17,17Z" fill="#1d1a3a" stroke="#1d1a3a" stroke-width="5"/>
+    <path d="M-9,32Q0,26 9,32Q0,40 -9,32Z" fill="#ff7fae"/>
+  </g>
+</svg>
