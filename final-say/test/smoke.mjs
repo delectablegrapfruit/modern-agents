@@ -28,37 +28,37 @@ const step = (name) => console.log(`· ${name}`);
 await page.goto(url);
 await until(() => !!window.__finalSay, 20, 'the game to boot');
 
-step('Audition Night: one act from walk-on to verdict');
-await page.click('[data-act="play"]');
+step('Audition Night: one act from walk-on to ruling');
+await page.click('[data-cmd="play"]');
 await until(() => window.__finalSay.show.phase === 'intro', 90, 'the first intro');
 await page.keyboard.press('1');
 await page.waitForTimeout(800);
 await page.evaluate(() => window.__finalSay.show.slots.choose(3)); // "Just start."
 await until(() => window.__finalSay.show.phase === 'perform', 60, 'the performance');
 await page.keyboard.press('x');
-await until(() => window.__finalSay.show.phase === 'verdict', 120, 'the verdict');
+await until(() => window.__finalSay.show.phase === 'ruling', 120, 'the ruling');
 await page.keyboard.press('y');
 await until(() => ['walkoff', 'walkon', 'intro'].includes(window.__finalSay.show.phase), 60, 'the next act');
 await page.keyboard.press('Escape');
-await page.click('[data-act="quit"]');
+await page.click('[data-cmd="quit"]');
 
 step('Swipe: sample photos, keys, undo, results');
-await page.click('[data-act="swipe"]');
-await page.click('[data-act="s-sample"]');
+await page.click('[data-cmd="swipe"]');
+await page.click('[data-cmd="s-sample"]');
 for (const k of ['ArrowRight', 'ArrowLeft', 'ArrowUp', 'z', 'ArrowRight']) {
   await page.keyboard.press(k);
   await page.waitForTimeout(250);
 }
 const counts = await page.evaluate(() => window.__finalSay.swipe.counts());
 if (counts.keep !== 2 || counts.nope !== 1 || counts.star !== 0) throw new Error(`Unexpected swipe counts ${JSON.stringify(counts)}`);
-await page.click('[data-act="finish"]');
+await page.click('[data-cmd="finish"]');
 await until(() => !document.getElementById('screen-results').hidden, 10, 'swipe results');
 await page.click('#s-menu');
 
 step('Tournament: five entries down to a champion');
-await page.click('[data-act="tournament"]');
+await page.click('[data-cmd="tournament"]');
 await page.fill('#t-entries', 'Alpha\nBravo\nCharlie\nDelta\nEcho');
-await page.click('[data-act="t-start"]');
+await page.click('[data-cmd="t-start"]');
 for (let i = 0; i < 60; i++) {
   if (await page.evaluate(() => !document.getElementById('screen-results').hidden)) break;
   if (await page.evaluate(() => document.getElementById('pick').getAttribute('aria-disabled') === 'false')) await page.keyboard.press(i % 2 ? 'ArrowLeft' : 'ArrowRight');

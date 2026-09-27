@@ -140,7 +140,7 @@ export class Show {
       await this.intro(c);
       await this.perform(c);
       if (this.goldenFor(c)) await this.w.clock.waitFor(() => this.goldenDone, this.actToken, 20);
-      else await this.verdict(c);
+      else await this.ruling(c);
       this.goldenDone = false;
       await this.walkOff(c);
     } catch (e) {
@@ -848,7 +848,7 @@ export class Show {
 
   golden() {
     const w = this.w;
-    if (this.stats.goldenUsed || (this.phase !== 'perform' && this.phase !== 'verdict')) return;
+    if (this.stats.goldenUsed || (this.phase !== 'perform' && this.phase !== 'ruling')) return;
     const c = this.c;
     this.stats.goldenUsed = true;
     this.stats.golden = { name: c.name, talent: c.talent, mood: w.audience.mood };
@@ -908,18 +908,18 @@ export class Show {
     void avg;
   }
 
-  // --- Verdict ----------------------------------------------------------------------------------------------------
+  // --- Ruling ----------------------------------------------------------------------------------------------------
 
-  async verdict(c) {
+  async ruling(c) {
     const w = this.w;
-    this.phase = 'verdict';
+    this.phase = 'ruling';
     const p = this.perf;
     const A = w.audience;
-    this.verdictToken = null;
+    this.rulingToken = null;
     this.decision = null;
     this.state.judgesDone = false;
-    w.hud.setActions('verdict', { golden: !this.stats.goldenUsed });
-    this.slots.open(() => this.verdictOptions(), () => null, (o) => this.onVerdictOption(o));
+    w.hud.setActions('ruling', { golden: !this.stats.goldenUsed });
+    this.slots.open(() => this.rulingOptions(), () => null, (o) => this.onRulingOption(o));
     if (this.firstAct) w.hud.hint('Your call. Press Y for YES, N for NO. The panel votes, but you have the final say.', 7);
     // Contestant catches their breath.
     await this.contestantSay(reply(c, p.stopped ? 'hurt' : 'after'), this.actToken).catch(() => {});
@@ -931,7 +931,7 @@ export class Show {
       await this.wait(0.2, this.actToken);
       if (w.speech.busy || this.ex) continue;
       const tok = new Token(this.actToken);
-      this.verdictToken = tok;
+      this.rulingToken = tok;
       try {
         await this.judgeComment(pending[0], tok);
       } catch (e) {
@@ -990,7 +990,7 @@ export class Show {
     else if (w.audience.mood > 0.2) w.audience.react('boo', 0.4);
   }
 
-  verdictOptions() {
+  rulingOptions() {
     const w = this.w;
     const opts = [
       { id: 'praise', text: rng.pick(PLAYER.praise), tone: 'praise', s: 1, weight: 1.5 },
@@ -1009,7 +1009,7 @@ export class Show {
     return opts.filter((o) => !this.state.used.has(`v:${o.id}`));
   }
 
-  onVerdictOption(o) {
+  onRulingOption(o) {
     const w = this.w;
     const c = this.c;
     const A = w.audience;
@@ -1017,16 +1017,16 @@ export class Show {
     const judgeTalking = w.speech.busy && w.judges.some((j) => j.speaker === w.speech.current.speaker);
     if (judgeTalking) this.respect(-0.03);
     if (o.tone === 'askJudge') {
-      if (this.verdictToken) this.verdictToken.cancel();
+      if (this.rulingToken) this.rulingToken.cancel();
       this.exchange(async (ex) => {
         await w.playerSay(o.text, ex);
         await this.judgeComment(o.judge, ex);
       });
       return;
     }
-    if (judgeTalking && this.verdictToken) {
+    if (judgeTalking && this.rulingToken) {
       // You spoke over a judge: they wait and try again.
-      this.verdictToken.cancel();
+      this.rulingToken.cancel();
     }
     this.exchange(async (ex) => {
       await w.playerSay(o.text, ex);
@@ -1057,7 +1057,7 @@ export class Show {
   }
 
   decide(yes) {
-    if (this.phase !== 'verdict' || this.decision) return;
+    if (this.phase !== 'ruling' || this.decision) return;
     const w = this.w;
     if (!this.state.judgesDone) {
       // Deciding before the panel has spoken.
@@ -1065,7 +1065,7 @@ export class Show {
       this.respect(-0.05 * silent);
     }
     this.decision = yes ? 'yes' : 'no';
-    if (this.verdictToken) this.verdictToken.cancel();
+    if (this.rulingToken) this.rulingToken.cancel();
     if (this.ex) this.ex.cancel();
     w.speech.interrupt();
   }
@@ -1127,7 +1127,7 @@ export class Show {
 
   // --- Exhibitions (tournament) ----------------------------------------------------------------------------------
 
-  // An act performs a shortened routine with no intro and no verdict. Resolves to how well it went (0..1).
+  // An act performs a shortened routine with no intro and no ruling. Resolves to how well it went (0..1).
   async exhibition(c, token) {
     this.exhibitionMode = true;
     this.short = true;
@@ -1213,12 +1213,12 @@ export class Show {
     else if (s.approval > 72 && eye >= 66) key = 'great';
     const score = s.approval * 0.35 + s.respect * 0.25 + eye * 0.25 + clamp((s.viewers - 3) * 8, 0, 60) * 0.25;
     const stars = clamp(Math.round(score / 20), 1, 5);
-    const verdicts = ['You’ve been replaced by a hologram.', 'The network wants a quiet word.', 'You’ll do. For now.', 'Renewed for another series!', 'The nation’s favourite judge.'];
+    const rulings = ['You’ve been replaced by a hologram.', 'The network wants a quiet word.', 'You’ll do. For now.', 'Renewed for another series!', 'The nation’s favourite judge.'];
     return {
       city: this.city,
       headline: rng.pick(HEADLINES[key]),
       stars,
-      verdict: verdicts[stars - 1],
+      ruling: rulings[stars - 1],
       approval: Math.round(s.approval),
       respect: Math.round(s.respect),
       eye,

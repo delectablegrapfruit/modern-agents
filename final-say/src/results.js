@@ -89,7 +89,7 @@ export function renderSummary(hud, s, { again, menu }) {
   const date = new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
   el.innerHTML = `
     <div class="paper"><div class="mast"><span>The Daily Spotlight</span><span>${escapeHtml(date)}</span></div><h3>${escapeHtml(s.headline)}</h3></div>
-    <div><div class="stars" aria-label="${s.stars} out of 5 stars">${stars}</div><p class="verdict-line">${escapeHtml(s.verdict)}</p></div>
+    <div><div class="stars" aria-label="${s.stars} out of 5 stars">${stars}</div><p class="rating-line">${escapeHtml(s.ruling)}</p></div>
     <div class="tiles">
       <div class="tile"><span>Viewers</span><b>${s.viewers.toFixed(1)}M</b><small>Peak ${s.peak.toFixed(1)}M</small></div>
       <div class="tile"><span>Crowd approval</span><b>${s.approval}%</b><small>How the room felt about you</small></div>

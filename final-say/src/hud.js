@@ -18,11 +18,11 @@ export class Hud {
     this.hintTimer = null;
     this.showHints = true;
 
-    // Anything with data-act anywhere on the page is a command.
+    // Anything with data-cmd anywhere on the page is a command.
     document.addEventListener('click', (e) => {
-      const el = e.target.closest('[data-act]');
-      if (!el || el.dataset.act === 'look') return;
-      this.emit(el.dataset.act, el);
+      const el = e.target.closest('[data-cmd]');
+      if (!el || el.dataset.cmd === 'look') return;
+      this.emit(el.dataset.cmd, el);
     });
     for (const b of this.optButtons) b.addEventListener('click', () => this.emit('option', Number(b.dataset.i)));
     // The look button works by holding it.
@@ -70,7 +70,7 @@ export class Hud {
     $('#swipe-ui').hidden = mode !== 'swipe';
     $('#pick').hidden = mode !== 'tournament';
     $('#actions').hidden = mode === 'swipe';
-    $('#verdict').hidden = true;
+    $('#final-call').hidden = true;
     $('#votes').innerHTML = '';
     this.renderOptions([null, null, null, null]);
     this.lowerThird(null);
@@ -181,9 +181,9 @@ export class Hud {
     const buzz = $('.act-btn.buzz');
     const golden = $('.act-btn.golden');
     buzz.hidden = kind !== 'perform';
-    golden.hidden = !(kind === 'perform' || kind === 'verdict') || !opts.golden;
+    golden.hidden = !(kind === 'perform' || kind === 'ruling') || !opts.golden;
     actions.classList.toggle('quiet', !kind);
-    $('#verdict').hidden = kind !== 'verdict';
+    $('#final-call').hidden = kind !== 'ruling';
   }
   setVotes(judges) {
     $('#votes').innerHTML = judges

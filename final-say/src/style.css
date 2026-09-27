@@ -363,7 +363,7 @@ kbd {
 .act-btn.held, .act-btn:active { background: var(--panel-hi); }
 .act-btn[disabled] { opacity: 0.3; cursor: default; }
 
-.verdict {
+.final-call {
   position: absolute;
   left: 50%;
   bottom: calc(150px + var(--safe-b));
@@ -620,7 +620,7 @@ textarea { width: 100%; resize: vertical; font: 15px/1.5 var(--body); }
 .paper h3 { margin: 10px 0 0; font: 900 clamp(28px, 5vw, 46px)/0.95 var(--display); text-transform: uppercase; text-wrap: balance; }
 .stars { font-size: 26px; letter-spacing: 4px; color: var(--gold); }
 .stars .off { color: rgba(255, 255, 255, 0.18); }
-.verdict-line { margin: 0; font: 800 26px/1.1 var(--display); text-transform: uppercase; }
+.rating-line { margin: 0; font: 800 26px/1.1 var(--display); text-transform: uppercase; }
 .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
 .tile { padding: 12px 14px; border-radius: 12px; background: var(--panel-solid); border: 1px solid var(--line); }
 .tile span { display: block; font: 700 11px/1.2 var(--body); text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
@@ -671,7 +671,7 @@ textarea { width: 100%; resize: vertical; font: 15px/1.5 var(--body); }
   .actions { top: auto; bottom: calc(262px + var(--safe-b)); transform: none; flex-direction: row; }
   .act-btn { width: 60px; padding: 8px 4px 6px; }
   .act-btn kbd { display: none; }
-  .verdict { bottom: calc(200px + var(--safe-b)); }
+  .final-call { bottom: calc(200px + var(--safe-b)); }
   .vbtn { min-width: 120px; }
   .prompt { bottom: calc(300px + var(--safe-b)); font-size: 20px; }
   .modes, .settings-grid, .source-grid, .tiles { grid-template-columns: 1fr 1fr; }
@@ -704,7 +704,7 @@ textarea { width: 100%; resize: vertical; font: 15px/1.5 var(--body); }
   .act-btn b { font-size: 22px; }
   .act-btn kbd { display: none; }
   .votes { top: calc(118px + var(--safe-t)); bottom: auto; }
-  .verdict { bottom: calc(104px + var(--safe-b)); }
+  .final-call { bottom: calc(104px + var(--safe-b)); }
   .vbtn { min-width: 110px; padding: 6px 14px; }
   .vbtn b { font-size: 26px; }
   .prompt { bottom: calc(160px + var(--safe-b)); font-size: 18px; }

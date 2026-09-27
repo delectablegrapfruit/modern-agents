@@ -54,30 +54,30 @@
   </div>
 
   <div id="actions" class="actions">
-    <button type="button" class="act-btn look" data-act="look" title="Look at the audience (hold Space)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg><span>Crowd</span><kbd>Space</kbd></button>
-    <button type="button" class="act-btn buzz" data-act="buzz" title="Buzz (X)"><b>X</b><span>Buzz</span><kbd>X</kbd></button>
-    <button type="button" class="act-btn golden" data-act="golden" title="Golden buzzer (G)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7L12 17.3 5.8 20.9l1.6-7L2 9.2l7.1-.6z" fill="currentColor"/></svg><span>Golden</span><kbd>G</kbd></button>
+    <button type="button" class="act-btn look" data-cmd="look" title="Look at the audience (hold Space)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg><span>Crowd</span><kbd>Space</kbd></button>
+    <button type="button" class="act-btn buzz" data-cmd="buzz" title="Buzz (X)"><b>X</b><span>Buzz</span><kbd>X</kbd></button>
+    <button type="button" class="act-btn golden" data-cmd="golden" title="Golden buzzer (G)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7L12 17.3 5.8 20.9l1.6-7L2 9.2l7.1-.6z" fill="currentColor"/></svg><span>Golden</span><kbd>G</kbd></button>
   </div>
-  <div id="verdict" class="verdict" hidden>
-    <button type="button" class="vbtn no" data-act="no"><b>No</b><kbd>N</kbd></button>
-    <button type="button" class="vbtn yes" data-act="yes"><b>Yes</b><kbd>Y</kbd></button>
+  <div id="final-call" class="final-call" hidden>
+    <button type="button" class="vbtn no" data-cmd="no"><b>No</b><kbd>N</kbd></button>
+    <button type="button" class="vbtn yes" data-cmd="yes"><b>Yes</b><kbd>Y</kbd></button>
   </div>
 
   <div id="pick" class="pick" hidden>
-    <button type="button" class="pick-btn left" data-act="left"><kbd>←</kbd><span class="name"></span></button>
-    <button type="button" class="pick-btn bracket-btn" data-act="bracket" title="Show the bracket (B)">Bracket</button>
-    <button type="button" class="pick-btn right" data-act="right"><span class="name"></span><kbd>→</kbd></button>
+    <button type="button" class="pick-btn left" data-cmd="left"><kbd>←</kbd><span class="name"></span></button>
+    <button type="button" class="pick-btn bracket-btn" data-cmd="bracket" title="Show the bracket (B)">Bracket</button>
+    <button type="button" class="pick-btn right" data-cmd="right"><span class="name"></span><kbd>→</kbd></button>
   </div>
 
   <div id="swipe-ui" class="swipe-ui" hidden>
     <div class="swipe-caption"><b id="swipe-label"></b><span id="swipe-sub"></span></div>
     <div class="swipe-progress"><i id="swipe-bar"></i></div>
     <div class="swipe-buttons">
-      <button type="button" class="sw undo" data-act="undo" title="Undo (Z)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7L4 12l5 5M4 12h10a6 6 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" transform="translate(0 -3)"/></svg><kbd>Z</kbd></button>
-      <button type="button" class="sw nope" data-act="nope" title="Nope (←)"><b>✕</b><span>Nope</span><kbd>←</kbd></button>
-      <button type="button" class="sw star" data-act="star" title="Star (↑)"><b>★</b><kbd>↑</kbd></button>
-      <button type="button" class="sw keep" data-act="keep" title="Keep (→)"><b>✓</b><span>Keep</span><kbd>→</kbd></button>
-      <button type="button" class="sw done" data-act="finish" title="Finish and see results">Results</button>
+      <button type="button" class="sw undo" data-cmd="undo" title="Undo (Z)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7L4 12l5 5M4 12h10a6 6 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" transform="translate(0 -3)"/></svg><kbd>Z</kbd></button>
+      <button type="button" class="sw nope" data-cmd="nope" title="Nope (←)"><b>✕</b><span>Nope</span><kbd>←</kbd></button>
+      <button type="button" class="sw star" data-cmd="star" title="Star (↑)"><b>★</b><kbd>↑</kbd></button>
+      <button type="button" class="sw keep" data-cmd="keep" title="Keep (→)"><b>✓</b><span>Keep</span><kbd>→</kbd></button>
+      <button type="button" class="sw done" data-cmd="finish" title="Finish and see results">Results</button>
     </div>
     <div class="swipe-counts"><span>Kept <b id="count-keep">0</b></span><span>Nope <b id="count-nope">0</b></span><span>Starred <b id="count-star">0</b></span><span id="count-left"></span></div>
   </div>
@@ -85,7 +85,7 @@
 </div>
 
 <div id="bracket" class="bracket" hidden>
-  <div class="bracket-head"><h2>Bracket</h2><button type="button" class="ghost" data-act="close-bracket">Close</button></div>
+  <div class="bracket-head"><h2>Bracket</h2><button type="button" class="ghost" data-cmd="close-bracket">Close</button></div>
   <div class="bracket-scroll"><div id="bracket-grid" class="bracket-grid"></div></div>
 </div>
 
@@ -96,17 +96,17 @@
     <h1 class="logo">Final <span>Say</span></h1>
     <p class="tagline">You sit on the panel. Two other judges sit beside you. The acts come on, the room decides how it feels about them, and you decide what happens.</p>
     <div class="modes">
-      <button type="button" class="mode-card primary" data-act="play">
+      <button type="button" class="mode-card primary" data-cmd="play">
         <span class="mode-kicker">The show</span>
         <b>Audition Night</b>
         <span class="mode-desc">Six acts. Talk to them, watch them, buzz them, and give the final yes or no.</span>
       </button>
-      <button type="button" class="mode-card" data-act="tournament">
+      <button type="button" class="mode-card" data-cmd="tournament">
         <span class="mode-kicker">Bracket</span>
         <b>Tournament</b>
         <span class="mode-desc">Put in anything you need to choose between — names, ideas, photos — and judge it down to one winner.</span>
       </button>
-      <button type="button" class="mode-card" data-act="swipe">
+      <button type="button" class="mode-card" data-cmd="swipe">
         <span class="mode-kicker">Sort a pile</span>
         <b>Swipe</b>
         <span class="mode-desc">Keep or bin every item in a list or a folder of photos, one at a time, and take away what you kept.</span>
@@ -148,15 +148,15 @@
 <!-- Tournament setup -->
 <section id="screen-tournament" class="screen setup-screen" hidden>
   <div class="setup">
-    <button type="button" class="ghost back" data-act="menu">← Back</button>
+    <button type="button" class="ghost back" data-cmd="menu">← Back</button>
     <h2>Tournament</h2>
     <p class="lede">Every entry gets a contestant and a spot in the bracket. Each match puts two on stage; you pick who goes through until one is left.</p>
     <label for="t-entries" class="field-label">Entries, one per line</label>
     <textarea id="t-entries" rows="8" spellcheck="false"></textarea>
     <div class="row">
       <label class="file-btn" for="t-images">Add photos…<input id="t-images" type="file" accept="image/*" multiple hidden></label>
-      <button type="button" class="ghost" data-act="t-random">Use 8 random acts instead</button>
-      <button type="button" class="ghost" data-act="t-clear">Clear</button>
+      <button type="button" class="ghost" data-cmd="t-random">Use 8 random acts instead</button>
+      <button type="button" class="ghost" data-cmd="t-clear">Clear</button>
     </div>
     <p id="t-images-note" class="note"></p>
     <div class="row checks">
@@ -164,25 +164,25 @@
       <label for="t-quick" class="check"><input id="t-quick" type="checkbox" checked> Quick matches</label>
     </div>
     <p id="t-count" class="note"></p>
-    <button type="button" class="go" data-act="t-start">Start the tournament</button>
+    <button type="button" class="go" data-cmd="t-start">Start the tournament</button>
   </div>
 </section>
 
 <!-- Swipe setup -->
 <section id="screen-swipe" class="screen setup-screen" hidden>
   <div class="setup">
-    <button type="button" class="ghost back" data-act="menu">← Back</button>
+    <button type="button" class="ghost back" data-cmd="menu">← Back</button>
     <h2>Swipe</h2>
     <p class="lede">Each item goes up on stage. Swipe or press → to keep it, ← to bin it, ↑ to star it. Your picks are saved in this browser as you go, so you can stop and come back.</p>
     <div class="source-grid">
       <label class="source" for="s-photos"><b>Photos</b><span>Pick image files</span><input id="s-photos" type="file" accept="image/*" multiple hidden></label>
       <label class="source" for="s-folder"><b>A folder</b><span>Every image inside it</span><input id="s-folder" type="file" webkitdirectory multiple hidden></label>
       <label class="source" for="s-file"><b>A list file</b><span>.txt, .csv or .json</span><input id="s-file" type="file" accept=".txt,.csv,.json,.tsv,text/plain,text/csv,application/json" hidden></label>
-      <button type="button" class="source" data-act="s-sample"><b>Sample photos</b><span>Twelve made-up holiday snaps</span></button>
+      <button type="button" class="source" data-cmd="s-sample"><b>Sample photos</b><span>Twelve made-up holiday snaps</span></button>
     </div>
     <label for="s-text" class="field-label">Or paste a list, one item per line</label>
     <textarea id="s-text" rows="6" spellcheck="false" placeholder="Paste names, ideas, links…"></textarea>
-    <button type="button" class="go" data-act="s-start-text">Start with this list</button>
+    <button type="button" class="go" data-cmd="s-start-text">Start with this list</button>
     <div id="s-resume" class="resume" hidden></div>
   </div>
 </section>
@@ -196,8 +196,8 @@
 <section id="screen-pause" class="screen pause-screen" hidden>
   <div class="pause-card">
     <h2>Paused</h2>
-    <button type="button" class="go" data-act="resume">Resume</button>
-    <button type="button" class="ghost" data-act="quit">Leave to the menu</button>
+    <button type="button" class="go" data-cmd="resume">Resume</button>
+    <button type="button" class="ghost" data-cmd="quit">Leave to the menu</button>
   </div>
 </section>
 
