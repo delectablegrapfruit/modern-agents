@@ -28,6 +28,7 @@
   };
   const BULLET_V = 520, BULLET_RUN = 1800; // Bullet: speed and how far it carries you (it finishes on a junction)
   const APEX_VIEW = 1500;                  // Launch: world units across the screen's shorter side at the top
+  const UP = 0.7, AIR = 4, DOWN = 0.8;     // Launch: seconds going up, steering in the air, coming down
   const SHRINK = 0.5;
   const smooth = (k) => k * k * (3 - 2 * k);
   const polyLen = (p) => { let l = 0; for (let i = 1; i < p.length; i++) l += Math.hypot(p[i].x - p[i - 1].x, p[i].y - p[i - 1].y); return l; };
@@ -589,9 +590,7 @@
         if (!route) { MZ.toast('Nowhere to fly', 1200); return false; }
         fx.bullet = route;
       } else if (id === 'launch') {
-        const plan = this.launchPlan();
-        if (!plan) { MZ.toast('Nowhere to land', 1200); return false; }
-        fx.launch = plan;
+        fx.launch = { t: 0, T: UP + AIR + DOWN, apex: clamp(Math.min(innerWidth, innerHeight) / APEX_VIEW / this.zoomTarget(), 0.02, 1), spot: null, spotAt: -1, from: null };
       } else fx[id] = ITEMS[id].dur;
       this.item = null;
       MZ.Audio.play(id === 'launch' ? 'launch' : id === 'bullet' ? 'bullet' : 'use');
@@ -702,37 +701,32 @@
       const f = clamp((s - cum[i - 1]) / (cum[i] - cum[i - 1] || 1), 0, 1);
       return { x: pts[i - 1].x + (pts[i].x - pts[i - 1].x) * f, y: pts[i - 1].y + (pts[i].y - pts[i - 1].y) * f };
     },
-    // Launch: anywhere with solid floor (not on GOAL, not right here), flying high enough to map what passes below.
-    launchPlan() {
-      const b = this.ball, cands = [];
-      if (this.maze) {
-        const g = this.graph(), G = this.maze.goal;
-        g.pos.forEach((p, i) => {
-          if (g.solid[i] && Math.hypot(p.x - G.x, p.y - G.y) > G.r + 120 && Math.hypot(p.x - b.x, p.y - b.y) > 350) cands.push(p);
-        });
-      } else {
-        for (const { data } of this.chunks.values()) for (const p of data.safeNodes) {
-          const d = Math.hypot(p.x - b.x, p.y - b.y);
-          if (d > 500 && d < 1800) cands.push(p);
+    // Launch: where you'd come down from (x, y): the middle of the nearest solid corridor (not a vanishing bridge).
+    landingSpot(x, y) {
+      const w = this.world, t = this.playT;
+      for (let r = 0; r <= 900; r += 8) {
+        const n = r ? Math.max(8, Math.round(r / 6)) : 1;
+        for (let i = 0; i < n; i++) {
+          const a = (i / n) * Math.PI * 2, px = x + Math.cos(a) * r, py = y + Math.sin(a) * r, q = w.query(px, py, t);
+          if (!q.seg || q.seg.blink || q.depth <= 0) continue;
+          const g = q.seg, dx = g.bx - g.ax, dy = g.by - g.ay, L2 = dx * dx + dy * dy;
+          const f = L2 ? clamp(((px - g.ax) * dx + (py - g.ay) * dy) / L2, 0, 1) : 0;
+          return { x: g.ax + dx * f, y: g.ay + dy * f };
         }
       }
-      if (!cands.length) return null;
-      const P = cands[Math.floor(Math.random() * cands.length)], d = Math.hypot(P.x - b.x, P.y - b.y);
-      const apex = clamp(Math.min(innerWidth, innerHeight) / APEX_VIEW / this.zoomTarget(), 0.02, 1);
-      return { a: { x: b.x, y: b.y }, b: { x: P.x, y: P.y }, t: 0, T: clamp(2 + d / 3000, 2.2, 3.6), apex };
+      return null;
     },
     // How high a Launch is right now, 0 on the ground to 1 at the top.
     lift() {
       const L = this.fx.launch;
       if (!L) return 0;
-      const k = L.t / L.T;
-      return smooth(clamp(Math.min(k, 1 - k) / 0.3, 0, 1));
+      return L.t < UP ? smooth(L.t / UP) : L.t < UP + AIR ? 1 : smooth(clamp((L.T - L.t) / DOWN, 0, 1));
     },
     liftZoom() { const L = this.fx.launch; return L ? Math.exp(Math.log(L.apex) * this.lift()) : 1; },
-    // Bullet and Launch steer for you: finger travel meanwhile is dropped.
+    // The Bullet steers for you (finger travel meanwhile is dropped). A Launch goes wherever you steer it, over anything,
+    // at the zoomed-out camera's scale, then glides down onto the nearest solid floor.
     fly(dt) {
-      const fx = this.fx, b = this.ball;
-      this.input.takeGrab();
+      const fx = this.fx, b = this.ball, grab = this.input.takeGrab();
       if (fx.bullet) {
         const B = fx.bullet;
         B.t += dt;
@@ -751,9 +745,19 @@
       }
       const L = fx.launch;
       L.t = Math.min(L.T, L.t + dt);
-      const e = smooth(L.t / L.T);
-      b.x = L.a.x + (L.b.x - L.a.x) * e;
-      b.y = L.a.y + (L.b.y - L.a.y) * e;
+      if (L.t < UP + AIR) {
+        const cfg = S().controls, u = this.input.vector(), sg = cfg.invert ? 1 : -1, k = clamp(cfg.speed || 1, 0.5, 2) / this.cam.zoom;
+        const kz = KEY_SPEED / this.liftZoom(); // keys keep their speed on screen
+        b.x += grab.x * sg * k + u.x * kz * dt;
+        b.y += grab.y * sg * k + u.y * kz * dt;
+        if (this.maze) { const B = this.maze.bounds; b.x = clamp(b.x, B.minX - 150, B.maxX + 150); b.y = clamp(b.y, B.minY - 150, B.maxY + 150); }
+        if (!L.spot || L.t - L.spotAt > 0.1) { L.spot = this.landingSpot(b.x, b.y); L.spotAt = L.t; }
+      } else {
+        if (!L.from) { L.from = { x: b.x, y: b.y }; L.spot = this.landingSpot(b.x, b.y) || this.lastSafe || L.from; }
+        const e = smooth(clamp((L.t - UP - AIR) / DOWN, 0, 1));
+        b.x = L.from.x + (L.spot.x - L.from.x) * e;
+        b.y = L.from.y + (L.spot.y - L.from.y) * e;
+      }
       if (L.t >= L.T) { fx.launch = null; this.land(); this.pickups(); }
     },
     land() {
@@ -1046,7 +1050,7 @@
           carpet: fx.carpet > 0 ? (fx.carpet > 1.5 || Math.floor(fx.carpet * 8) % 2 ? 1 : 0.35) : 0,
           bullet: fx.bullet ? fx.bullet.dir : null,
         } : null,
-        landing: fx.launch ? fx.launch.b : null,
+        landing: fx.launch ? fx.launch.spot : null,
       });
 
       // Player sprite: the user's media, upright and still at the centre of the screen (up in the air on a Launch).

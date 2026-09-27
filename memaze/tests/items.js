@@ -133,17 +133,29 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     check('Bullet near GOAL stops short of it', G.state === 'play' && onFloor(), G.state);
     G.quit();
 
-    // ----- Launch -----
+    // ----- Launch: steer anywhere in the air, come down on the nearest floor -----
     G.startJourney(14);
     const before = G.trail.length ? Math.max(...G.trail.map((r) => r.x1 - r.x0)) : 0;
-    const a = { x: G.ball.x, y: G.ball.y };
+    const a = { x: G.ball.x, y: G.ball.y }, gl = G.maze.goal, len0 = Math.hypot(gl.x - a.x, gl.y - a.y);
+    const toward = { x: (gl.x - a.x) / len0, y: (gl.y - a.y) / len0 };
     G.giveItem('launch'); G.useItem();
     const T = G.fx.launch.T;
-    for (let i = 0; i < 60 * 5 && G.fx.launch; i++) { frame(1 / 60); minZ = Math.min(minZ, G.cam.zoom); G.draw(); }
-    const wide = Math.max(...G.trail.map((r) => r.x1 - r.x0));
+    let overVoid = false, from = null, spot = null, near = null;
+    for (let i = 0; i < 60 * 8 && G.fx.launch; i++) {
+      grab = { x: -toward.x * 6, y: -toward.y * 6 }; // a steady 360 px/s drag toward GOAL, on the zoomed-out screen
+      frame(1 / 60);
+      minZ = Math.min(minZ, G.cam.zoom);
+      if (G.world.query(G.ball.x, G.ball.y, G.playT).depth < -40) overVoid = true;
+      if (G.fx.launch && G.fx.launch.from && !from) { from = G.fx.launch.from; spot = G.fx.launch.spot; near = G.landingSpot(from.x, from.y); }
+      G.draw();
+    }
+    const wide = Math.max(...G.trail.map((r) => r.x1 - r.x0)), moved = Math.hypot(G.ball.x - a.x, G.ball.y - a.y);
     check('Launch flies high: the camera pulls far out', minZ < G.zoomTarget() * 0.25, (minZ / G.zoomTarget()).toFixed(3));
+    check('Launch steers freely, over the void too', moved > 800 && overVoid, Math.round(moved) + ' units in ' + T.toFixed(1) + 's');
+    check('Launch goes where you steer (toward GOAL here)', Math.hypot(gl.x - G.ball.x, gl.y - G.ball.y) < len0 - 600, Math.round(len0) + ' -> ' + Math.round(Math.hypot(gl.x - G.ball.x, gl.y - G.ball.y)));
+    check('Launch comes down on the nearest floor (the target), unhurt', onFloor() && G.hp === 2 && spot && near && Math.hypot(spot.x - near.x, spot.y - near.y) < 1 && Math.hypot(G.ball.x - spot.x, G.ball.y - spot.y) < 40,
+      from && Math.round(Math.hypot(spot.x - from.x, spot.y - from.y)) + ' from where it came down');
     check('Launch maps what it flies over', wide > 1000 && wide > before * 4, Math.round(before) + ' -> ' + Math.round(wide));
-    check('Launch lands somewhere else, on the floor', Math.hypot(G.ball.x - a.x, G.ball.y - a.y) > 300 && onFloor() && G.hp === 2, T.toFixed(1) + 's');
     check('camera back down after landing', Math.abs(G.cam.zoom - G.zoomTarget()) < 1e-6);
     G.quit();
 

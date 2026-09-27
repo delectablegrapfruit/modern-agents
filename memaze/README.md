@@ -55,7 +55,7 @@ with **Space**, **E**, the slot button (bottom left) or gamepad **A**/**X**. Set
 | **Invincible** | 8 s without damage; the edges hold like walls. Your picture glows. |
 | **Extra hit** | Used at once: a gold heart on top of your two (up to two of them). Gold hearts go first and don't grow back. |
 | **Bullet** | Carries you along the corridors toward GOAL (Endless: outward) for about 1800 units, over vanishing bridges and all, finishing on a junction short of GOAL. Invincible while flying. |
-| **Launch** | Flies you high up and lands you on a random spot with solid floor, anywhere in the maze. The camera pulls far out on the way, so the map fills in with everything you fly over. |
+| **Launch** | Up in the air for about 5 s: the camera pulls far out and you steer anywhere, over the void and everything, dragging (or keys) at the zoomed-out scale. A target marks where you'll come down: the middle of the nearest solid corridor. The map fills in with everything the screen showed. No damage from take-off to landing. |
 | **Magic carpet** | 6 s of floating over the void. It flickers when it's about to run out: be over floor by then, or it costs a heart. |
 | **Shrink** | Half size (picture and hitbox) for 10 s; you grow back as soon as there's room. |
 

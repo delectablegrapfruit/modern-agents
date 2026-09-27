@@ -658,7 +658,7 @@
             h('li', null, h('b', null, 'Invincible'), ': no damage for 8 s; the edges hold like walls.'),
             h('li', null, h('b', null, 'Extra hit'), ': a gold heart on top of your two.'),
             h('li', null, h('b', null, 'Bullet'), ': carries you along the corridors toward GOAL.'),
-            h('li', null, h('b', null, 'Launch'), ': lands you somewhere else, and maps everything you fly over.'),
+            h('li', null, h('b', null, 'Launch'), ': fly high and steer anywhere for a few seconds, over everything; you come down on the nearest floor, and the map keeps all you saw.'),
             h('li', null, h('b', null, 'Magic carpet'), ': float over the gaps for 6 s. Be over floor when it runs out.'),
             h('li', null, h('b', null, 'Shrink'), ': half size for 10 s, for the tight spots.')),
           h('li', null, 'The map fills in as you go: only what has been on screen shows up.'),
