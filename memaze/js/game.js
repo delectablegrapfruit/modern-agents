@@ -34,7 +34,8 @@
   };
   const BULLET_V = 520, BULLET_RUN = 1800; // Bullet: speed and how far it carries you (it finishes on a junction)
   const APEX_VIEW = 2000;                  // Launch: world units across the screen's shorter side at the top
-  const UP = 0.7, AIR = 4, DOWN = 0.8;     // Launch: seconds going up, steering in the air, coming down
+  const UP = 0.45, AIR = 1.4, DOWN = 0.55; // Launch: seconds going up, at the top, coming down (you steer throughout)
+  const HITSTOP = 0.07, SHAKE = 0.32;      // a hit: the game freezes this long, then the view shakes this long
   const SHRINK = 0.5;
   const smooth = (k) => k * k * (3 - 2 * k);
   const polyLen = (p) => { let l = 0; for (let i = 1; i < p.length; i++) l += Math.hypot(p[i].x - p[i - 1].x, p[i].y - p[i - 1].y); return l; };
@@ -412,6 +413,7 @@
     // Full hearts, empty item slot, no effects running.
     resetPower() {
       this.hp = HEARTS; this.bonus = 0; this.hurtT = REGEN; this.guardT = 0; this.stuck = false; this.clearT = 0;
+      this.stopT = 0; this.shakeT = 0; this.hitAtT = null; this.beepT = 0;
       this.item = null; this.roll = null; this.fx = {}; this.scale = 1;
       this.lastSafe = { x: this.ball.x, y: this.ball.y };
       this.emit('power');
@@ -457,9 +459,21 @@
       if (st === 'play') {
         this.cam.zoom = this.zoomTarget() * this.liftZoom(); // zoom follows the pinch/wheel exactly, no easing
         this.sprite.update(performance.now()); // this frame's picture is this frame's hitbox
-        this.step(dt);
+        if (this.stopT > 0) { this.stopT -= dt; this.input.takeGrab(); } // the hit-stop: finger travel meanwhile is dropped
+        else this.step(dt);
       } else if (st === 'menu') this.stepAttract(dt);
-      if (st !== 'menu' && st !== 'boot') { this.cam.x = this.ball.x; this.cam.y = this.ball.y; }
+      if (st !== 'menu' && st !== 'boot') {
+        // The view shakes after a hit (the picture stays put at the centre; the maze jolts around it).
+        let sx = 0, sy = 0;
+        if (this.shakeT > 0) {
+          this.shakeT -= dt;
+          if (!S().display.reducedMotion && st === 'play') {
+            const a = (8 * (Math.max(0, this.shakeT) / SHAKE) ** 2) / this.cam.zoom;
+            sx = Math.sin(this.t * 97) * a; sy = Math.cos(this.t * 71) * a;
+          }
+        }
+        this.cam.x = this.ball.x + sx; this.cam.y = this.ball.y + sy;
+      }
       this.draw();
     },
 
@@ -538,7 +552,12 @@
     hurt() {
       if (this.bonus > 0) this.bonus--; else this.hp--;
       this.hurtT = 0;
-      this.hitAtT = this.t; // the shield flares
+      // Felt as well as seen: a moment's freeze, the view shaking, the shield bursting into sparks, a buzz on phones.
+      this.hitAtT = this.t;
+      this.stopT = HITSTOP;
+      this.shakeT = SHAKE;
+      this.beepT = 0.6;
+      try { if (navigator.vibrate) navigator.vibrate(this.hp > 1 || this.bonus ? 50 : [60, 40, 90]); } catch (e) { /* not allowed here */ }
       this.guardT = GUARD;
       this.stuck = true; // this touch is spent: the next one has to be a new one
       this.clearT = 0;
@@ -559,6 +578,7 @@
         if (this.hp < HEARTS && was < REGEN - RECHARGE && this.hurtT >= REGEN - RECHARGE) MZ.Audio.play('recharge');
       }
       if (this.hp < HEARTS && this.hurtT >= REGEN) { this.hp = HEARTS; this.emit('power'); }
+      if (this.hp < HEARTS && !this.recharging() && (this.beepT -= dt) <= 0) { this.beepT = 0.8; MZ.Audio.play('low'); } // shield's down
       if (this.roll && (this.roll.t += dt) >= ROLL) this.endRoll();
       for (const k of ['star', 'carpet', 'shrink']) {
         if (!(fx[k] > 0)) continue;
@@ -630,7 +650,7 @@
         if (!route) { MZ.toast('Nowhere to fly', 1200); return false; }
         fx.bullet = route;
       } else if (id === 'launch') {
-        fx.launch = { t: 0, T: UP + AIR + DOWN, apex: clamp(Math.min(innerWidth, innerHeight) / APEX_VIEW / this.zoomTarget(), 0.02, 1), spot: null, spotAt: -1, from: null };
+        fx.launch = { t: 0, T: UP + AIR + DOWN, apex: clamp(Math.min(innerWidth, innerHeight) / APEX_VIEW / this.zoomTarget(), 0.02, 1) };
       } else fx[id] = ITEMS[id].dur;
       this.item = null;
       MZ.Audio.play(id === 'launch' ? 'launch' : id === 'bullet' ? 'bullet' : 'use');
@@ -741,21 +761,6 @@
       const f = clamp((s - cum[i - 1]) / (cum[i] - cum[i - 1] || 1), 0, 1);
       return { x: pts[i - 1].x + (pts[i].x - pts[i - 1].x) * f, y: pts[i - 1].y + (pts[i].y - pts[i - 1].y) * f };
     },
-    // Launch: where you'd come down from (x, y): the middle of the nearest solid corridor (not a vanishing bridge).
-    landingSpot(x, y) {
-      const w = this.world, t = this.playT;
-      for (let r = 0; r <= 900; r += 8) {
-        const n = r ? Math.max(8, Math.round(r / 6)) : 1;
-        for (let i = 0; i < n; i++) {
-          const a = (i / n) * Math.PI * 2, px = x + Math.cos(a) * r, py = y + Math.sin(a) * r, q = w.query(px, py, t);
-          if (!q.seg || q.seg.blink || q.depth <= 0) continue;
-          const g = q.seg, dx = g.bx - g.ax, dy = g.by - g.ay, L2 = dx * dx + dy * dy;
-          const f = L2 ? clamp(((px - g.ax) * dx + (py - g.ay) * dy) / L2, 0, 1) : 0;
-          return { x: g.ax + dx * f, y: g.ay + dy * f };
-        }
-      }
-      return null;
-    },
     // How high a Launch is right now, 0 on the ground to 1 at the top.
     lift() {
       const L = this.fx.launch;
@@ -764,7 +769,7 @@
     },
     liftZoom() { const L = this.fx.launch; return L ? Math.exp(Math.log(L.apex) * this.lift()) : 1; },
     // The Bullet steers for you (finger travel meanwhile is dropped). A Launch goes wherever you steer it, over anything,
-    // at the zoomed-out camera's scale, then glides down onto the nearest solid floor.
+    // at the zoomed-out camera's scale, and comes down right where it is: on the board, or in the void.
     fly(dt) {
       const fx = this.fx, b = this.ball, grab = this.input.takeGrab();
       if (fx.bullet) {
@@ -785,20 +790,25 @@
       }
       const L = fx.launch;
       L.t = Math.min(L.T, L.t + dt);
-      if (L.t < UP + AIR) {
-        const cfg = S().controls, u = this.input.vector(), sg = cfg.invert ? 1 : -1, k = clamp(cfg.speed || 1, 0.5, 2) / this.cam.zoom;
-        const kz = KEY_SPEED / this.liftZoom(); // keys keep their speed on screen
-        b.x += grab.x * sg * k + u.x * kz * dt;
-        b.y += grab.y * sg * k + u.y * kz * dt;
-        if (this.maze) { const B = this.maze.bounds; b.x = clamp(b.x, B.minX - 150, B.maxX + 150); b.y = clamp(b.y, B.minY - 150, B.maxY + 150); }
-        if (!L.spot || L.t - L.spotAt > 0.1) { L.spot = this.landingSpot(b.x, b.y); L.spotAt = L.t; }
-      } else {
-        if (!L.from) { L.from = { x: b.x, y: b.y }; L.spot = this.landingSpot(b.x, b.y) || this.lastSafe || L.from; }
-        const e = smooth(clamp((L.t - UP - AIR) / DOWN, 0, 1));
-        b.x = L.from.x + (L.spot.x - L.from.x) * e;
-        b.y = L.from.y + (L.spot.y - L.from.y) * e;
+      const cfg = S().controls, u = this.input.vector(), sg = cfg.invert ? 1 : -1, k = clamp(cfg.speed || 1, 0.5, 2) / this.cam.zoom;
+      const kz = KEY_SPEED / this.liftZoom(); // keys keep their speed on screen
+      b.x += grab.x * sg * k + u.x * kz * dt;
+      b.y += grab.y * sg * k + u.y * kz * dt;
+      if (this.maze) { const B = this.maze.bounds; b.x = clamp(b.x, B.minX - 150, B.maxX + 150); b.y = clamp(b.y, B.minY - 150, B.maxY + 150); }
+      if (L.t < L.T) return;
+      // Down where you are. On the board, fine (a small nudge clears an edge); in the void, it's a fall: a hit, then the
+      // nearest floor.
+      fx.launch = null;
+      this.cam.zoom = this.zoomTarget();
+      this.input.takeGrab();
+      MZ.Audio.play('land');
+      this.emit('power');
+      if (this.hitAt(b.x, b.y) && !this.unstick()) {
+        if (!this.shielded() && this.hurt()) return;
+        this.rescue();
       }
-      if (L.t >= L.T) { fx.launch = null; this.land(); this.pickups(); }
+      this.noteSafe();
+      this.pickups();
     },
     land() {
       const b = this.ball;
@@ -1096,9 +1106,10 @@
           x: b.x, y: b.y, W: this.box(), lift: this.lift(),
           carpet: fx.carpet > 0 ? (fx.carpet > 1.5 || Math.floor(fx.carpet * 8) % 2 ? 1 : 0.35) : 0,
           shield: this.bonus, // Extra hits: gold rings around the player
+          burst: this.hitAtT != null && this.t - this.hitAtT < 0.45 ? (this.t - this.hitAtT) / 0.45 : null, // the shield breaking
+          crackle: this.hp < HEARTS && !this.recharging() && this.state === 'play' ? this.t : null, // ...and fizzing while it's down
           bullet: fx.bullet ? fx.bullet.dir : null,
         } : null,
-        landing: fx.launch ? fx.launch.spot : null,
       });
 
       // Player sprite: the user's media, upright and still at the centre of the screen (up in the air on a Launch).
@@ -1110,14 +1121,16 @@
         pl.hidden = false;
         pl.style.width = pl.style.height = size;
         pl.style.transform = lift ? 'translate(-50%,calc(-50% - ' + (lift * Math.min(innerWidth, innerHeight) * 0.14).toFixed(1) + 'px))' : 'translate(-50%,-50%)';
-        // Health shows on the picture only: the shield flares on a hit, the picture blinks while the edges hold, stays
-        // faded while the shield is down, and fills back in with a shimmer as it recharges.
-        const flare = this.state === 'play' && this.t - (this.hitAtT == null ? -9 : this.hitAtT) < 0.3;
+        // Health shows on the picture only: on a hit the shield flares and the picture jolts; it blinks while the edges
+        // hold, stays faded and drained of colour while the shield is down, and fills back in with a shimmer as it
+        // recharges.
+        const flare = this.state === 'play' && this.hitAtT != null && this.t - this.hitAtT < 0.3, look = this.shieldLook();
         const cls = (fx.star > 0 ? ' invincible' + (fx.star < 1.5 ? ' ending' : '') : '') + (this.guardT > 0 && this.state === 'play' ? ' guard' : '') +
-          (fx.bullet ? ' bullet' : '') + (flare ? ' flare' : '') + (this.recharging() ? ' recharge' : '');
+          (fx.bullet ? ' bullet' : '') + (flare ? ' flare' : '') + (this.recharging() ? ' recharge' : '') + (look < 1 ? ' down' : '');
         if (pl.className !== cls.trim()) pl.className = cls.trim();
-        const pm = pl.firstElementChild, op = this.shieldLook() >= 1 ? '' : this.shieldLook().toFixed(2);
+        const pm = pl.firstElementChild, op = look >= 1 ? '' : look.toFixed(2), gray = look >= 1 ? '' : ((1 - look) / 0.55 * 0.9).toFixed(2);
         if (pm.style.opacity !== op) pm.style.opacity = op;
+        if (pm.style.getPropertyValue('--gray') !== gray) pm.style.setProperty('--gray', gray);
       } else pl.hidden = true;
 
       // Goal media, positioned in world space.

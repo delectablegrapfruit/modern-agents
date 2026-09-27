@@ -95,10 +95,16 @@ body[data-state="play"] #stage:active { cursor: grabbing; }
 /* health, Halo style: the shield flares on a hit, the picture blinks while the edges hold and stays faded (opacity set
    per frame) until the shield recharges with a shimmer */
 #player.guard { animation: blink 0.14s steps(2) infinite; }
-#player.flare #player-media { filter: drop-shadow(0 0 2px #fff6c8) drop-shadow(0 0 9px rgba(255, 205, 80, 0.95)); }
+#player.down #player-media { filter: grayscale(var(--gray, 0.9)); }
 #player.recharge #player-media { animation: recharge 0.25s ease-in-out infinite alternate; }
-@keyframes recharge { from { filter: drop-shadow(0 0 1px rgba(255, 225, 140, 0.5)); } to { filter: drop-shadow(0 0 2px #fff6c8) drop-shadow(0 0 7px rgba(255, 205, 80, 0.85)); } }
-.reduced-motion #player.recharge #player-media { animation: none; filter: drop-shadow(0 0 2px #fff6c8); }
+@keyframes recharge {
+  from { filter: grayscale(var(--gray, 0)) drop-shadow(0 0 1px rgba(255, 225, 140, 0.5)); }
+  to { filter: grayscale(var(--gray, 0)) drop-shadow(0 0 2px #fff6c8) drop-shadow(0 0 7px rgba(255, 205, 80, 0.85)); } }
+.reduced-motion #player.recharge #player-media { animation: none; filter: grayscale(var(--gray, 0)) drop-shadow(0 0 2px #fff6c8); }
+#player.flare #player-media { filter: grayscale(var(--gray, 0)) drop-shadow(0 0 2px #fff) drop-shadow(0 0 10px rgba(150, 220, 255, 0.95)); }
+#player.flare #player-media > * { animation: jolt 0.3s ease-out; }
+@keyframes jolt { 0% { transform: scale(0.8) rotate(-7deg); } 45% { transform: scale(1.08) rotate(4deg); } 100% { transform: none; } }
+.reduced-motion #player.flare #player-media > * { animation: none; }
 /* ...and glows while invincible */
 #player.invincible #player-media { animation: rainbow 0.6s linear infinite; }
 #player.invincible.ending #player-media { animation: rainbow 0.6s linear infinite, blink 0.2s steps(2) infinite; }

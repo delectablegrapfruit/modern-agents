@@ -169,23 +169,8 @@
       if (s.gems) for (const g of s.gems) if (!g.taken) this.drawGem(g);
       if (s.boxes) for (const b of s.boxes) this.drawBox(b, s.clock || 0, s.boxAge ? s.boxAge(b) : 9);
       if (s.shards) for (const b of s.shards) this.drawShards(b, s.clock || 0);
-      if (s.landing) this.drawLanding(s.landing, s.clock || 0);
       if (s.under) this.drawUnder(s.under, s.clock || 0);
     }
-    // A Launch's landing spot: a pulsing target.
-    drawLanding(p, t) {
-      const ctx = this.ctx, px = this.px, r = 26 * px * (1 + 0.15 * Math.sin(t * 10));
-      ctx.save();
-      ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.lineWidth = 7 * px;
-      ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, TAU); ctx.stroke();
-      ctx.strokeStyle = '#7cf0ff'; ctx.lineWidth = 3.5 * px;
-      ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, TAU); ctx.stroke();
-      ctx.beginPath();
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { ctx.moveTo(p.x + dx * r * 0.45, p.y + dy * r * 0.45); ctx.lineTo(p.x + dx * r * 1.35, p.y + dy * r * 1.35); }
-      ctx.stroke();
-      ctx.restore();
-    }
-
     // A checkpoint: a flag on a round platform, dashed gold until reached, solid green after.
     drawFlag(c) {
       const ctx = this.ctx, px = this.px, r = c.r * 0.62, col = c.lit ? '#3ddc97' : '#ffc53d';
@@ -255,6 +240,43 @@
       }
       ctx.restore();
     }
+    // The shield breaking: electric arcs bursting out from the picture's edge, white-hot with a cold blue glow; while
+    // it's down, a small fizz now and then.
+    drawSparks(u, W, t) {
+      const ctx = this.ctx, px = this.px;
+      const hash = (n) => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+      const arc = (a, r0, r1, seed) => {
+        ctx.beginPath();
+        for (let i = 0; i <= 4; i++) {
+          const f = i / 4, r = r0 + (r1 - r0) * f, j = i && i < 4 ? (hash(seed + i) - 0.5) * 0.5 : 0;
+          (i ? ctx.lineTo : ctx.moveTo).call(ctx, Math.cos(a + j) * r, Math.sin(a + j) * r);
+        }
+        ctx.strokeStyle = 'rgba(120,210,255,0.55)'; ctx.lineWidth = 5 * px; ctx.stroke();
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2 * px; ctx.stroke();
+      };
+      ctx.save();
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      if (u.burst != null) {
+        const k = u.burst, e = 1 - (1 - k) ** 3, seed = Math.floor(u.x * 7 + u.y * 3);
+        ctx.globalAlpha = 1 - k;
+        for (let i = 0; i < 11; i++) {
+          const a = (i / 11) * Math.PI * 2 + hash(seed + i * 9) * 0.5;
+          arc(a, W * (0.4 + 0.2 * e), W * (0.62 + (0.35 + 0.25 * hash(seed + i)) * e), seed + i * 13 + Math.floor(k * 6));
+        }
+        if (k < 0.4) { // the flash ring
+          ctx.globalAlpha = 1 - k / 0.4;
+          ctx.strokeStyle = '#e8f7ff'; ctx.lineWidth = 3 * px;
+          ctx.beginPath(); ctx.arc(0, 0, W * (0.5 + 0.6 * k), 0, TAU); ctx.stroke();
+        }
+      } else {
+        const n = Math.floor(u.crackle / 0.55), k = (u.crackle % 0.55) / 0.55;
+        if (k < 0.22) {
+          ctx.globalAlpha = 0.85;
+          for (let i = 0; i < 3; i++) { const a = hash(n * 3 + i) * TAU; arc(a, W * 0.42, W * (0.58 + 0.12 * hash(n + i * 5)), n * 17 + i); }
+        }
+      }
+      ctx.restore();
+    }
     // Under the player's picture: a Launch's shadow, the magic carpet, the Bullet's shell and speed lines.
     drawUnder(u, t) {
       const ctx = this.ctx, px = this.px, W = u.W;
@@ -278,6 +300,7 @@
         }
         ctx.restore();
       }
+      if (u.burst != null || u.crackle != null) this.drawSparks(u, W, t);
       if (u.carpet > 0) {
         ctx.globalAlpha = u.carpet;
         const w = W * 0.66, h = W * 0.36, y0 = W * 0.3, n = 10;

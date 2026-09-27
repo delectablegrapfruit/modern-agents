@@ -23,8 +23,10 @@ No build step, no dependencies: plain HTML/CSS/JS, plus an optional Python serve
   maze follows your finger or mouse 1:1 and stops when you stop. WASD/arrows and a gamepad move at a steady speed.
   Settings can invert the drag and change its speed.
 - **The paths float over nothing.** Reach **GOAL** and your *win* media plays.
-- **Two hits, like the shields in Bungie's Halo.** Touching the edge knocks your shield out: you stop right at the
-  edge, the shield flares, and your picture blinks, then stays faded. There is no health bar; the faded picture is it.
+- **Two hits, like the shields in Bungie's Halo.** Touching the edge breaks your shield: you stop right at the edge,
+  the game freezes for a split second, the view shakes, electric sparks burst from your picture as it jolts, and phones
+  buzz. Then the picture blinks, and stays grey and faded while the shield is down, fizzing now and then, with a soft
+  warning beep. There is no health bar and no red; the grey picture is it.
   No rapid hits: for 0.75 s the edges hold like walls, and a new hit needs a new touch (holding against the edge, or
   sliding along it, never counts twice). 5 s after you're off the edge the shield is back: over the last second it
   recharges with a rising sound and a gold shimmer, and the picture fills back in. A second touch before that and
@@ -59,7 +61,7 @@ Time Trial never has them.
 | **Invincible** | 8 s without damage; the edges hold like walls. Your picture glows. |
 | **Extra hit** | Used at once: a gold ring turns around you and takes the next hit instead (up to two rings). Rings don't come back. |
 | **Bullet** | Carries you along the corridors toward GOAL (Endless: outward) for about 1800 units, over vanishing bridges and all, finishing on a junction short of GOAL. Invincible while flying. |
-| **Launch** | Up in the air for about 5 s: the camera pulls far out and you steer anywhere, over the void and everything, dragging (or keys) at the zoomed-out scale. A target marks where you'll come down: the middle of the nearest solid corridor. The map fills in with everything the screen showed. No damage from take-off to landing. |
+| **Launch** | A 2.4 s hop: the camera pulls far out while you're up, and you steer (drag or keys, at the zoomed-out scale), over the void and everything; a shadow marks the spot below you. You come down right where you are: on the board, you're fine; in the void, it's a fall (a hit, then the nearest floor). The map fills in with everything the screen showed. |
 | **Magic carpet** | 6 s of floating over the void. It flickers when it's about to run out: be over floor by then, or it hurts. |
 | **Shrink** | Half size (picture and hitbox) for 10 s; you grow back as soon as there's room. |
 

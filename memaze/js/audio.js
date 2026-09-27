@@ -79,7 +79,13 @@
         case 'star': this.tone(1568, 0.25, { type: 'triangle', vol: 0.15 }); this.tone(2093, 0.3, { type: 'sine', vol: 0.08, at: 0.05 }); break;
         case 'beacon': [660, 990, 1320].forEach((f, i) => this.tone(f, 0.3, { type: 'sine', vol: 0.15, at: i * 0.07 })); break;
         case 'unlock': [784, 988, 1175, 1568].forEach((f, i) => this.tone(f, 0.3, { type: 'square', vol: 0.07, at: i * 0.08 })); break;
-        case 'hurt': this.noise(0.18, { filter: 'lowpass', freq: 900, vol: 0.35 }); this.tone(220, 0.22, { type: 'square', to: 110, vol: 0.1 }); break;
+        case 'hurt': // the shield breaking: a crack, an electric zap falling away, a thump
+          this.noise(0.12, { filter: 'highpass', freq: 3000, vol: 0.3 });
+          this.tone(1400, 0.3, { type: 'sawtooth', to: 90, vol: 0.09 });
+          this.noise(0.25, { filter: 'bandpass', freq: 900, to: 200, q: 2, vol: 0.25, at: 0.02 });
+          this.tone(90, 0.2, { type: 'sine', vol: 0.22 });
+          break;
+        case 'low': [1050, 1050].forEach((f, i) => this.tone(f, 0.05, { type: 'square', vol: 0.03, at: i * 0.12 })); break;
         case 'heal': [660, 880].forEach((f, i) => this.tone(f, 0.18, { type: 'sine', vol: 0.12, at: i * 0.08 })); break;
         case 'recharge': this.tone(260, 0.95, { type: 'sine', to: 1250, vol: 0.13, attack: 0.08 }); this.tone(520, 0.95, { type: 'triangle', to: 2500, vol: 0.05, attack: 0.08 }); break;
         case 'shatter': this.noise(0.22, { filter: 'highpass', freq: 2500, vol: 0.28 }); [2093, 2637, 3136].forEach((f, i) => this.tone(f, 0.12, { type: 'triangle', vol: 0.06, at: i * 0.03 })); break;
