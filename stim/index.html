@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <title>stim</title>
-<meta name="description" content="No content. Only the hooks: infinite scroll, pull to refresh, likes, red badges, streaks, autoplay.">
-<meta name="theme-color" content="#fbfafc" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0c0b0e" media="(prefers-color-scheme: dark)">
+<meta name="description" content="Every hook a phone has, with nothing inside: badges, banners, streaks, slots, swipes, autoplay.">
+<meta name="theme-color" content="#fff3f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#120a1a" media="(prefers-color-scheme: dark)">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -22,16 +22,17 @@
 <body>
 <div id="stage">
   <aside class="aside" aria-label="About stim">
-    <div class="a-logo" aria-hidden="true">st<span class="i">ı<b class="tittle">9</b></span>m</div>
-    <p class="a-lede">Nothing to see here. Only the hooks.</p>
-    <p class="a-body">Infinite scroll, pull to refresh, likes, red badges, unread dots, story rings, autoplay, streaks and a slot machine, wrapped around nothing at all.</p>
+    <div class="a-logo" aria-hidden="true">st<span class="i">ı<b class="tittle">99+</b></span>m</div>
+    <p class="a-lede">Every hook a phone has, with nothing inside.</p>
+    <p class="a-body">Twenty apps, one hook each: badges, banners, pull to refresh, infinite scroll, autoplay, streaks, slots, loot boxes, leagues, a pet that needs you, and a casino, a prediction market and a crypto exchange where you always win. A combo multiplier ties them together, so faster pays more.</p>
     <dl class="keys">
-      <div><dt><kbd>1</kbd>–<kbd>5</kbd></dt><dd>Switch tabs</dd></div>
-      <div><dt><kbd>J</kbd> <kbd>K</kbd></dt><dd>Next, previous</dd></div>
-      <div><dt><kbd>L</kbd></dt><dd>Like</dd></div>
-      <div><dt><kbd>R</kbd></dt><dd>Refresh</dd></div>
+      <div><dt><kbd>Space</kbd></dt><dd>Tap, pull, scratch, hold</dd></div>
+      <div><dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Swipe</dd></div>
+      <div><dt><kbd>↑</kbd> <kbd>↓</kbd></dt><dd>Scroll and skip</dd></div>
+      <div><dt><kbd>Enter</kbd></dt><dd>Cash out, sell</dd></div>
       <div><dt><kbd>N</kbd></dt><dd>Summon a notification</dd></div>
-      <div><dt><kbd>Space</kbd></dt><dd>Pull the lever</dd></div>
+      <div><dt><kbd>H</kbd></dt><dd>Home</dd></div>
+      <div><dt><kbd>⇧</kbd> <kbd>L</kbd></dt><dd>Lock the phone</dd></div>
     </dl>
     <p class="a-note">Made for iPhone. Open this page in Safari, tap Share, then Add to Home Screen.</p>
   </aside>
@@ -49,80 +50,50 @@
         </div>
         <div class="island" id="island" aria-hidden="true"><span class="ia"></span><span class="ib"></span></div>
 
-        <div id="app">
-          <main id="screens">
-            <section class="screen on" id="s-home" aria-label="Feed">
-              <header class="topbar">
-                <h1 class="logo">st<span class="i">ı<b class="tittle" id="tittle"></b></span>m</h1>
-                <button class="pts" id="pts" aria-label="Points"><i data-i="bolt"></i><span id="pts-n">0</span></button>
-                <button class="iconbtn" id="open-dm" aria-label="Messages"><i data-i="send"></i><span class="badge" id="b-dm"></span></button>
-              </header>
-              <div class="scroller" id="feed-sc">
-                <div class="ptr-ind"><div class="spinner"><i style="--i:0"></i><i style="--i:1"></i><i style="--i:2"></i><i style="--i:3"></i><i style="--i:4"></i><i style="--i:5"></i><i style="--i:6"></i><i style="--i:7"></i></div></div>
-                <div class="ptr-body">
-                  <div class="stories" id="stories"></div>
-                  <div id="feed"></div>
-                  <div class="loader" id="feed-loader" aria-label="Loading">
-                    <div class="post-head"><span class="ph-av sk"></span><span class="ph-lines"><i class="sk" style="width:40%"></i><i class="sk" style="width:24%"></i></span></div>
-                    <div class="media sk"></div>
-                  </div>
-                </div>
-              </div>
-              <button class="newpill" id="newpill"><i data-i="up"></i><span class="dots3"><i></i><i></i><i></i></span>New posts</button>
-            </section>
+        <div id="phone">
+          <div id="wall"></div>
 
-            <section class="screen" id="s-reels" aria-label="Autoplay">
-              <div class="reels" id="reels"></div>
-            </section>
+          <header id="hud">
+            <button class="hud-lvl" id="hud-lvl" aria-label="Level"><svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="16" class="trk" pathLength="100"/><circle cx="18" cy="18" r="16" class="prg" id="lvl-prg" pathLength="100"/></svg><b id="lvl-n">1</b></button>
+            <button class="hud-hits" id="hud-hits" aria-label="Hits"><i data-i="bolt"></i><span id="hits">0</span></button>
+            <div class="combo" id="combo" aria-label="Combo multiplier"><b id="combo-x">×1</b><i></i></div>
+            <span class="boostpill" id="boost" hidden></span>
+            <button class="hud-bell" id="hud-bell" aria-label="Notifications"><i data-i="bell"></i><span class="badge" id="b-nc"></span></button>
+          </header>
 
-            <section class="screen" id="s-drops" aria-label="Rewards">
-              <header class="topbar"><h2 class="ttl">Rewards</h2><span class="epill" id="epill"></span></header>
-              <div class="scroller" id="drops-sc"><div class="drops" id="drops"></div></div>
-            </section>
-
-            <section class="screen" id="s-activity" aria-label="Notifications">
-              <header class="topbar"><h2 class="ttl">Notifications</h2><button class="txtbtn" id="mark-all">Mark all read</button></header>
-              <div class="scroller" id="act-sc">
-                <div class="ptr-ind"><div class="spinner"><i style="--i:0"></i><i style="--i:1"></i><i style="--i:2"></i><i style="--i:3"></i><i style="--i:4"></i><i style="--i:5"></i><i style="--i:6"></i><i style="--i:7"></i></div></div>
-                <div class="ptr-body">
-                  <div id="nlist"></div>
-                  <div class="empty" id="nempty" hidden><span class="ck-ring"><i data-i="check"></i></span><b>You're all caught up</b><small>Pull down. There might be more.</small></div>
-                </div>
-              </div>
-            </section>
-
-            <section class="screen" id="s-me" aria-label="You">
-              <header class="topbar"><h2 class="ttl">You</h2><span class="streak-mini" id="streak-mini"></span></header>
-              <div class="scroller" id="me-sc"><div id="me"></div></div>
-            </section>
+          <main id="home">
+            <div class="home-logo"><span class="logo" aria-label="stim">st<span class="i">ı<b class="tittle" id="tittle"></b></span>m</span></div>
+            <div class="widgets">
+              <button class="wg wg-streak" data-open="streak"><span class="wfl"><i data-i="flame"></i></span><div class="big"><span id="w-streak">1</span>d</div><small>streak</small><div class="wg-pulse"><svg class="mini-ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="14" class="trk" pathLength="100"/><circle cx="18" cy="18" r="14" class="prg" id="w-pr" pathLength="100"/></svg><span id="w-pulse"></span></div></button>
+              <button class="wg" data-open="you"><small>Today</small><div class="big" id="w-today">0</div><small>hits</small><div class="wg-bar" style="margin-top:auto"><i id="w-lvl"></i></div><small id="w-lvl-t" style="margin-top:6px"></small></button>
+              <button class="wg wide" data-open="quests"><div class="wg-q"><b id="w-q"></b><small id="w-qt"></small></div><div class="wg-bar"><i id="w-qb"></i></div></button>
+            </div>
+            <div class="grid" id="grid"></div>
+            <nav class="dock" id="dock" aria-label="Dock"></nav>
           </main>
 
-          <nav class="tabbar" id="tabbar" aria-label="Tabs">
-            <button class="tab on" data-tab="home" aria-label="Feed"><i data-i="home"></i></button>
-            <button class="tab" data-tab="reels" aria-label="Autoplay"><i data-i="reels"></i></button>
-            <button class="tab" data-tab="drops" aria-label="Rewards"><i data-i="gift"></i><span class="badge dot" id="b-drops"></span></button>
-            <button class="tab" data-tab="activity" aria-label="Notifications"><i data-i="bell"></i><span class="badge" id="b-act"></span></button>
-            <button class="tab me" data-tab="me" aria-label="You">
-              <svg class="lvl-ring" viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="16.5" class="trk"/><circle cx="18" cy="18" r="16.5" class="prg" pathLength="100" id="lvl-prg"/></svg>
-              <span class="ph-av you"></span>
-            </button>
-          </nav>
+          <div id="apps"></div>
 
-          <div class="page" id="pg-dm" aria-label="Messages">
-            <header class="topbar"><button class="iconbtn back" aria-label="Back"><i data-i="back"></i></button><h2 class="ttl">Messages</h2><span class="grow"></span><span class="req" id="dm-req"></span></header>
-            <div class="scroller" id="dm-list"></div>
-          </div>
-          <div class="page" id="pg-chat" aria-label="Conversation">
-            <header class="topbar chat-top"><button class="iconbtn back" aria-label="Back"><i data-i="back"></i></button><span class="ph-av"></span><span class="ct"><i class="sk-bar" style="width:92px"></i><small id="chat-status">Active now</small></span></header>
-            <div class="chat" id="chat"></div>
-            <div class="composer"><span class="cfield"></span><button class="sendbtn" id="send" aria-label="Send"><i data-i="send"></i></button></div>
+          <div id="nc" aria-label="Notification center">
+            <div class="nc-h"><b>Notifications</b><button id="nc-clear">Clear all</button></div>
+            <div class="nc-list" id="nc-list"></div>
+            <div class="nc-grab" id="nc-grab" role="button" aria-label="Close notifications"></div>
           </div>
 
           <div id="banners"></div>
+
+          <div id="lock" hidden>
+            <div class="lwall"></div>
+            <span class="lk-lock" data-i="lock"></span>
+            <div class="lk-date" id="lk-date"></div>
+            <div class="lk-time" id="lk-time"></div>
+            <div class="lk-stack" id="lk-stack"></div>
+            <div class="lk-hi"><span data-i="up"></span><span id="lk-hint">Swipe up to unlock</span><div class="lk-bar"></div></div>
+          </div>
+
           <canvas id="fx" aria-hidden="true"></canvas>
           <div id="toast" role="status" aria-live="polite"></div>
         </div>
-        <div class="homebar" aria-hidden="true"></div>
       </div>
     </div>
   </div>

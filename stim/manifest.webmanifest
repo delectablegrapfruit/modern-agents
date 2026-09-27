@@ -1,13 +1,13 @@
 {
   "name": "stim",
   "short_name": "stim",
-  "description": "No content. Only the hooks.",
+  "description": "Every hook a phone has, with nothing inside.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#fbfafc",
-  "theme_color": "#ff2d55",
+  "background_color": "#fff3f7",
+  "theme_color": "#ff2e4d",
   "icons": [
     { "src": "icon-180.png", "sizes": "180x180", "type": "image/png" },
     { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
