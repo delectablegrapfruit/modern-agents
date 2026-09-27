@@ -45,8 +45,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var terminating = false
     private var theme = "dark"
     private var background = "glass"
+    private var fadeAway = true
+    private var pointerInside = true
     private let selfTest = ProcessInfo.processInfo.environment["LULL_SELFTEST"] != nil
     private static let frameName = "LullPanel.v2"
+    /// Collapsed into its title bar, the panel saves its frame under another name, so the expanded one is never
+    /// overwritten by the bar; the height it had open, and whether it was collapsed, are kept beside it.
+    private static let barFrameName = "LullPanel.bar"
+    private static let collapsedKey = "LullCollapsed"
+    private static let expandedHeightKey = "LullExpandedHeight"
+    private static let barHeightKey = "LullBarHeight"
+    private static let defaultBarHeight: CGFloat = 43
+    private var collapsed = false
+    private var expandedHeight: CGFloat = 0
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         signal(SIGPIPE, SIG_IGN)
@@ -74,11 +85,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             let visible = (NSScreen.main ?? NSScreen.screens[0]).visibleFrame
             panel.setFrame(NSRect(x: visible.maxX - size.width - 28, y: visible.maxY - size.height - 28, width: size.width, height: size.height), display: false)
         }
-        _ = panel.setFrameAutosaveName(AppDelegate.frameName)
+        // Collapsed when it last quit: back as the bar straight away (the page confirms, or expands it, once loaded).
+        let defaults = UserDefaults.standard
+        if defaults.bool(forKey: AppDelegate.collapsedKey) {
+            let bar = AppDelegate.clampBar(CGFloat(defaults.double(forKey: AppDelegate.barHeightKey)))
+            let saved = CGFloat(defaults.double(forKey: AppDelegate.expandedHeightKey))
+            expandedHeight = saved >= FloatingPanel.expandedMinSize.height ? saved : panel.frame.height
+            collapsed = true
+            panel.minSize = NSSize(width: FloatingPanel.expandedMinSize.width, height: bar)
+            var f = panel.frame
+            if panel.setFrameUsingName(AppDelegate.barFrameName) { f = panel.frame }
+            panel.setFrame(NSRect(x: f.minX, y: f.maxY - bar, width: max(f.width, FloatingPanel.expandedMinSize.width), height: bar), display: false)
+            _ = panel.setFrameAutosaveName(AppDelegate.barFrameName)
+        } else {
+            _ = panel.setFrameAutosaveName(AppDelegate.frameName)
+        }
 
         chrome = ChromeView(frame: NSRect(origin: .zero, size: panel.frame.size))
         chrome.autoresizingMask = [.width, .height]
+        chrome.verticalResize = !collapsed
         panel.contentView = chrome
+        chrome.onPointer = { [weak self] inside in MainActor.assumeIsolated { self?.pointer(inside) } }
+        chrome.onDoubleClick = { [weak self] in MainActor.assumeIsolated { self?.call("toggleCollapse") } }
 
         let configuration = WKWebViewConfiguration()
         configuration.userContentController.add(bridge, name: "lull")
@@ -150,16 +178,75 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func toggleShown() {
-        if NSApp.isActive && panel.isVisible && panel.isKeyWindow {
+        if panel.isVisible && panel.isKeyWindow {
             call("flush")
-            NSApp.hide(nil)
+            panel.orderOut(nil)
         } else {
+            // No NSApp.activate: the panel takes the keyboard where it is, over a full-screen app too.
             NSApp.unhide(nil)
             panel.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
             panel.makeFirstResponder(webView)
             call("shown")
         }
+    }
+
+    private static func clampBar(_ height: CGFloat) -> CGFloat {
+        height >= 24 && height <= 120 ? height : defaultBarHeight
+    }
+
+    /// Rolls the panel up into its title bar (the page has already hidden everything below it) or back down to the
+    /// height it had, keeping the top edge where it is. Collapsed, it resizes only sideways.
+    private func setCollapsed(_ on: Bool, bar requested: CGFloat, animate: Bool) {
+        let bar = AppDelegate.clampBar(requested)
+        let defaults = UserDefaults.standard
+        defaults.set(Double(bar), forKey: AppDelegate.barHeightKey)
+        let f = panel.frame
+        if on == collapsed {
+            // Already so (the launch restored it): only follow the page's bar height.
+            if on && abs(f.height - bar) > 0.5 {
+                panel.minSize = NSSize(width: FloatingPanel.expandedMinSize.width, height: bar)
+                panel.setFrame(NSRect(x: f.minX, y: f.maxY - bar, width: f.width, height: bar), display: true)
+            }
+            return
+        }
+        collapsed = on
+        defaults.set(on, forKey: AppDelegate.collapsedKey)
+        if on {
+            expandedHeight = f.height
+            defaults.set(Double(f.height), forKey: AppDelegate.expandedHeightKey)
+            // The open frame stays saved as it is now; the bar saves its own from here on.
+            panel.saveFrame(usingName: AppDelegate.frameName)
+            _ = panel.setFrameAutosaveName(AppDelegate.barFrameName)
+            panel.minSize = NSSize(width: FloatingPanel.expandedMinSize.width, height: bar)
+            chrome.verticalResize = false
+            panel.setFrame(NSRect(x: f.minX, y: f.maxY - bar, width: f.width, height: bar), display: true, animate: animate)
+        } else {
+            let minHeight = FloatingPanel.expandedMinSize.height
+            let height = max(minHeight, expandedHeight >= minHeight ? expandedHeight : AppDelegate.defaultSize().height)
+            var target = NSRect(x: f.minX, y: f.maxY - height, width: f.width, height: height)
+            // Opening downwards off the bottom of the screen: it opens upwards as far as it must instead.
+            if let visible = (panel.screen ?? NSScreen.main)?.visibleFrame, target.minY < visible.minY {
+                target.origin.y = min(visible.minY, visible.maxY - height)
+            }
+            _ = panel.setFrameAutosaveName("")
+            panel.minSize = FloatingPanel.expandedMinSize
+            chrome.verticalResize = true
+            panel.setFrame(target, display: true, animate: animate)
+            _ = panel.setFrameAutosaveName(AppDelegate.frameName)
+            panel.saveFrame(usingName: AppDelegate.frameName)
+        }
+        panel.invalidateShadow()
+    }
+
+    /// Fades the whole panel (and tells the page, which dims its contents) while the pointer is elsewhere.
+    private func pointer(_ inside: Bool) {
+        pointerInside = inside
+        let alpha: CGFloat = inside || !fadeAway ? 1 : 0.6
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = inside ? 0.15 : 0.45
+            panel.animator().alphaValue = alpha
+        }
+        call("pointer", ", inside: \(inside || !fadeAway)")
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -189,11 +276,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if let bg = body["bg"] as? String { background = bg }
             if let t = body["theme"] as? String { theme = t }
             applyWindow(onTop: (body["onTop"] as? Bool) ?? true)
+            if let f = body["fade"] as? Bool, f != fadeAway { fadeAway = f; pointer(pointerInside) }
+        case "collapse":
+            let height = (body["height"] as? NSNumber)?.doubleValue ?? Double(AppDelegate.defaultBarHeight)
+            setCollapsed((body["on"] as? Bool) ?? false, bar: CGFloat(height), animate: (body["animate"] as? Bool) ?? true)
         case "dragRegions":
             chrome.dragRects = rects(body["drag"])
             chrome.noDragRects = rects(body["noDrag"])
         case "hide":
-            NSApp.hide(nil)
+            call("flush")
+            panel.orderOut(nil)
         case "quit":
             NSApp.terminate(nil)
         case "flushed":
@@ -256,6 +348,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let windowMenu = NSMenu(title: "Window")
         let show = windowMenu.addItem(withTitle: "Show or Hide Lull (⌥⌘L anywhere)", action: #selector(toggleFromMenu(_:)), keyEquivalent: "")
         show.target = self
+        let collapse = windowMenu.addItem(withTitle: "Collapse or Expand", action: #selector(toggleCollapse(_:)), keyEquivalent: "j")
+        collapse.target = self
         let reset = windowMenu.addItem(withTitle: "Reset Window Position", action: #selector(resetPosition(_:)), keyEquivalent: "")
         reset.target = self
         windowItem.submenu = windowMenu
@@ -267,6 +361,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc private func openSettings(_ sender: Any?) { call("settings") }
     @objc private func toggleOnTop(_ sender: Any?) { call("toggleTop") }
     @objc private func toggleFromMenu(_ sender: Any?) { toggleShown() }
+    @objc private func toggleCollapse(_ sender: Any?) { call("toggleCollapse") }
     /// Big enough for the board, the side panels and the whole item bar, and never taller than the screen.
     static func defaultSize() -> NSSize {
         let visible = (NSScreen.main ?? NSScreen.screens[0]).visibleFrame
@@ -276,7 +371,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc private func resetPosition(_ sender: Any?) {
         let visible = (NSScreen.main ?? NSScreen.screens[0]).visibleFrame
         let size = AppDelegate.defaultSize()
-        panel.setFrame(NSRect(x: visible.maxX - size.width - 28, y: visible.maxY - size.height - 28, width: size.width, height: size.height), display: true, animate: true)
+        let height = collapsed ? panel.frame.height : size.height
+        panel.setFrame(NSRect(x: visible.maxX - size.width - 28, y: visible.maxY - height - 28, width: size.width, height: height), display: true, animate: true)
     }
 
     // MARK: - Self-test (CI): the page checks itself, the app saves a picture of the window and exits

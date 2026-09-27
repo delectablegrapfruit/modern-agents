@@ -1,4 +1,4 @@
-// Finds the notes in a rendered sound, for checking that sound effects sit in the music's chords
+// Finds the notes in a rendered sound, for checking that sound effects sit in the music's key
 // (scripts/audio-render.cjs --harmony and browser-test.cjs): renders in the page, an FFT, the spectrum's peaks, and of those the
 // fundamentals — peaks that are not a side lobe of a stronger one, a harmonic of a lower one, or off the
 // equal-tempered grid (an inharmonic partial of a bell or a glass, or an FM sideband, is timbre, not a note).
@@ -75,26 +75,27 @@ function share(found, allowed) {
 // ---- in the page (Playwright) ----------------------------------------------------------------------------------------
 
 /**
- * Each sound of events ([name, arg]) of a pack, alone, played 0.4 s into a bar of the music, tuned to it and as the
- * pack made it (rendered side by side), with the notes found in its first 1.2 s. Only its pitched voices are played;
- * a sound that glides (a slide of more than a semitone) smears its pitch across the spectrum, so it is marked.
+ * Each sound of events ([name, arg]) of a pack, alone, played 0.4 s into a bar of the music, put in that bar's key and
+ * as the pack made it (rendered side by side), with the notes found in its first 1.2 s and the key's notes (allowed).
+ * Only its pitched voices are played; a sound that glides (a slide of more than a semitone) smears its pitch across
+ * the spectrum, so it is marked.
  */
 async function overBar(page, pack, bar, events) {
   const T = 0.45;
   const outs = await page.evaluate(async ([pack, bar, T, events]) => {
-    const S = Lull.Sound, H = Lull.Harmony, t = H.tones(Lull.SONG.bars[bar]);
+    const S = Lull.Sound, K = Lull.Key;
     const one = async (name, arg, tuned) => {
-      let blip = false, glide = false, count = 0;
+      let glide = false, count = 0, key = null;
       const buf = await S.offline(2.2, (ctx) => {
         Lull.Music.render(ctx, 4, bar, true); // the timeline only: this is the sound alone
+        key = K.at(T);
         const { pack: pk, list } = S.voices(name, arg, pack);
         if (!list) return;
-        const pitched = list.filter((v) => H.tonal(v));
-        blip = pitched.length <= 2; count = pitched.length;
-        glide = pitched.some((v) => v.to > 0 && Math.abs(12 * Math.log2(v.to / v.f)) > 1);
-        const plan = tuned ? H.plan(name, list, T) : { list, delay: 0 };
+        count = list.filter((v) => K.tonal(v)).length;
+        glide = list.some((v) => K.tonal(v) && v.to > 0 && Math.abs(12 * Math.log2(v.to / v.f)) > 1);
+        const out = tuned ? K.tune(list, T) : list;
         // Only its pitched voices: noise (a band-passed click rings at its band) and thuds are not notes.
-        plan.list.forEach((v, i) => { if (H.tonal(list[i])) S.voice(v, T + plan.delay, pk); });
+        out.forEach((v, i) => { if (K.tonal(list[i])) S.voice(v, T, pk); });
       });
       // Just the stretch to look at, as 32-bit floats in base64 (a plain array is slow to hand over).
       const l = buf.getChannelData(0), r = buf.getChannelData(1), a = Math.floor(T * buf.sampleRate), n = Math.floor(1.2 * buf.sampleRate);
@@ -103,7 +104,7 @@ async function overBar(page, pack, bar, events) {
       const u8 = new Uint8Array(mono.buffer);
       let s = '';
       for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
-      return { name, arg, tuned, rate: buf.sampleRate, mono: btoa(s), allowed: blip ? t.scale : t.chord, glide, pitched: count };
+      return { name, arg, tuned, key, rate: buf.sampleRate, mono: btoa(s), allowed: K.scale(key), glide, pitched: count };
     };
     return Promise.all([].concat(...events.map(([n, a]) => [one(n, a, true), one(n, a, false)])));
   }, [pack, bar, T, events]);
@@ -113,13 +114,13 @@ async function overBar(page, pack, bar, events) {
   });
 }
 
-/** A bar of every chord in the suite (its first after the intro). */
-async function chordBars(page) {
+/** The first bar of every section of the suite, by section: { section: [bar, key] }. */
+async function sectionBars(page) {
   return page.evaluate(() => {
-    const S = Lull.SONG, seen = {};
-    S.bars.forEach((b, i) => { if (i >= S.loopFrom && b.chord && !(b.name in seen)) seen[b.name] = i; });
+    const seen = {};
+    Lull.SONG.bars.forEach((b, i) => { if (!(b.section in seen)) seen[b.section] = [i, b.key]; });
     return seen;
   });
 }
 
-module.exports = { fft, notes, share, overBar, chordBars };
+module.exports = { fft, notes, share, overBar, sectionBars };

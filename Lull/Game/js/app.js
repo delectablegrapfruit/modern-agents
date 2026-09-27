@@ -8,19 +8,23 @@
 
   L.VERSION = '1.0';
 
-  // In ⌘1–⌘6 order. The places to play sit together on the left; the places to look sit by the wallet on the right.
+  // The title bar's tabs, left to right: the places to play in one track, then the places to look by the wallet. The
+  // Shop has no tab of its own: it is the wallet. ⌘1–⌘7 run in that order (the wallet last). A tab's tooltip is its
+  // name and key, nothing more: what each place is, you find by going there.
   const TABS = [
-    { id: 'play', label: 'Play', icon: 'play', group: 'modes', tip: 'Endless and relaxed: nothing falls until you say so. Classic waits in the corner of the board.' },
-    { id: 'puzzle', label: 'Puzzles', icon: 'puzzle', group: 'modes', tip: 'Short seeded puzzles, every one solvable, and a Daily for each difficulty.' },
-    { id: 'factory', label: 'Factory', icon: 'factory', group: 'modes', tip: 'Presses fill a bin with lines while you work. Collect it now and then.' },
-    { id: 'shop', label: 'Shop', icon: 'shop', group: 'meta', tip: 'Spend lines on items and cosmetics.' },
-    { id: 'stats', label: 'Stats', icon: 'stats', group: 'meta', tip: 'Lines, clears, puzzles, the factory and your time, by mode and day.' },
-    { id: 'achievements', label: 'Achievements', icon: 'trophy', group: 'meta', tip: 'Quiet milestones that pay lines.' },
+    { id: 'play', label: 'Play', icon: 'play', group: 'modes' },
+    { id: 'puzzle', label: 'Puzzles', icon: 'puzzle', group: 'modes' },
+    { id: 'factory', label: 'Factory', icon: 'factory', group: 'modes' },
+    { id: 'classic', label: 'Classic', icon: 'classic', group: 'modes' },
+    { id: 'stats', label: 'Stats', icon: 'stats', group: 'meta' },
+    { id: 'achievements', label: 'Achievements', icon: 'trophy', group: 'meta' },
   ];
+  // Every view, in shortcut order: the tabs, then the Shop (the wallet).
+  const VIEWS = TABS.map((t) => t.id).concat('shop');
 
   const app = {
     store: null, keys: null, sound: Sound, modes: {}, tab: null, theme: null,
-    shopSub: 'palette', statsSub: 'overview', focusedAt: 0, lastTime: 0, lastSave: 0, activeMs: 0,
+    shopSub: 'items', statsSub: 'overview', focusedAt: 0, lastTime: 0, lastSave: 0, activeMs: 0,
 
     get state() { return this.store.state; },
     get settings() { return this.store.state.settings; },
@@ -42,6 +46,7 @@
       this.setTab(this.state.tab || 'play');
       this.refreshWallet();
       this.bindGlobal();
+      L.Collapse.init(this);
       this.lastTime = performance.now();
       // The line glyph's font is only fetched once text needs it; the canvases draw it too, so fetch it now and redraw.
       if (document.fonts && document.fonts.load) document.fonts.load('12px "Lull Line"', LINE).then(() => this.onResize(), () => {});
@@ -73,9 +78,10 @@
       const css = getComputedStyle(rootEl);
       const v = (k) => css.getPropertyValue(k).trim();
       this.theme = { name: theme, well: v('--well'), grid: v('--grid'), line: v('--line-2'), muted: v('--muted'), fg: v('--fg'), accent: s.accent, fog: v('--fog'), mono: v('--mono') };
-      native.post('window', { bg: s.bg, onTop: !!s.onTop, theme, radius: 14 });
+      native.post('window', { bg: s.bg, onTop: !!s.onTop, fade: s.fadeAway !== false, theme, radius: 14 });
+      if (s.fadeAway === false) document.body.classList.remove('away');
       const pin = document.getElementById('btn-pin');
-      if (pin) pin.classList.toggle('on', !!s.onTop);
+      if (pin) { pin.classList.toggle('on', !!s.onTop); pin.setAttribute('aria-pressed', String(!!s.onTop)); }
       if (!first) {
         this.applyLook();
         if (this.modes.play) this.modes.play.game.previewCount = s.preview;
@@ -114,7 +120,7 @@
     // ---- chrome -------------------------------------------------------------------------------------------------------
 
     buildChrome() {
-      const tab = (t, i) => h('button', { role: 'tab', 'data-tab': t.id, 'aria-label': t.label, 'data-tip-title': t.label, 'data-tip': t.tip, 'data-tip-foot': '⌘' + (i + 1), onclick: () => this.setTab(t.id) },
+      const tab = (t, i) => h('button', { role: 'tab', 'data-tab': t.id, 'aria-label': t.label, 'data-tip': t.label, 'data-tip-foot': '⌘' + (i + 1), onclick: () => this.setTab(t.id) },
         h('span', { html: UI.ICONS[t.icon], style: { display: 'contents' } }), h('span', { class: 'lbl' }, t.label));
       document.getElementById('tabs').replaceChildren(...TABS.map((t, i) => t.group === 'modes' && tab(t, i)).filter(Boolean));
       document.getElementById('tabs-meta').replaceChildren(...TABS.map((t, i) => t.group === 'meta' && tab(t, i)).filter(Boolean));
@@ -125,12 +131,12 @@
       document.getElementById('btn-close').innerHTML = UI.ICONS.close;
       document.getElementById('btn-settings').addEventListener('click', () => UI.openSettings(this));
       document.getElementById('btn-mute').addEventListener('click', () => this.toggleMute());
-      document.getElementById('btn-pin').addEventListener('click', () => { this.settings.onTop = !this.settings.onTop; this.store.touch(); this.applySettings(); toast(this.settings.onTop ? 'Floating above other windows' : 'Behaves like a normal window', null, 1600); });
+      document.getElementById('btn-pin').addEventListener('click', () => { this.settings.onTop = !this.settings.onTop; this.store.touch(); this.applySettings(); });
       document.getElementById('btn-hide').addEventListener('click', () => { this.saveNow(); native.post('hide'); });
       document.getElementById('btn-close').addEventListener('click', () => { this.saveNow(); native.post('quit'); });
-      document.getElementById('wallet').addEventListener('click', () => this.setTab('shop'));
-      document.getElementById('to-classic').addEventListener('click', () => { this.sound.play('move'); this.setTab('classic'); });
-      document.getElementById('to-free').addEventListener('click', () => { this.sound.play('move'); this.setTab('play'); });
+      const wallet = document.getElementById('wallet');
+      wallet.dataset.tipFoot = '⌘' + VIEWS.length;
+      wallet.addEventListener('click', () => this.setTab('shop'));
     },
 
     setBadge(tab, on) {
@@ -142,15 +148,18 @@
     },
 
     setTab(id) {
-      if (!TABS.some((t) => t.id === id) && id !== 'classic') id = 'play';
+      if (!VIEWS.includes(id)) id = 'play';
+      if (L.Collapse.on) L.Collapse.set(false);
       const prev = this.tab;
       if (prev === 'factory' && id !== 'factory') this.modes.factory.hide();
       if (prev === 'classic' && id !== 'classic') { this.modes.classic.togglePause(true); L.Music.stop(); }
       this.tab = id;
       this.state.tab = id;
-      // Classic lives inside Play: its tab stays lit.
-      const lit = id === 'classic' ? 'play' : id;
-      for (const b of document.querySelectorAll('.tabs button')) b.setAttribute('aria-selected', String(b.dataset.tab === lit));
+      for (const b of document.querySelectorAll('.tabs button')) b.setAttribute('aria-selected', String(b.dataset.tab === id));
+      // The wallet is the Shop's way in: lit (and announced as the current page) while the Shop is open.
+      const wallet = document.getElementById('wallet');
+      wallet.classList.toggle('active', id === 'shop');
+      if (id === 'shop') wallet.setAttribute('aria-current', 'page'); else wallet.removeAttribute('aria-current');
       for (const v of document.querySelectorAll('.view')) v.classList.toggle('active', v.dataset.tab === id);
       this.keys && this.keys.setTarget(id === 'play' ? this.modes.play : id === 'classic' ? this.modes.classic : id === 'puzzle' ? this.modes.puzzle : null);
       if (id === 'puzzle') this.modes.puzzle.show();
@@ -164,7 +173,10 @@
     },
 
     refreshWallet(bump) {
-      document.getElementById('wallet-n').textContent = fmtInt(this.state.lines);
+      const n = fmtInt(this.state.lines);
+      document.getElementById('wallet-n').textContent = n;
+      document.getElementById('wallet').setAttribute('aria-label', 'Shop — ' + n + ' lines');
+      if (this.tab === 'shop') UI.refreshShopPrices(this);
       if (bump) {
         const w = document.getElementById('wallet');
         w.classList.remove('bump'); void w.offsetWidth; w.classList.add('bump');
@@ -185,8 +197,11 @@
           return;
         }
         if (typing) return;
-        if ((e.metaKey || e.ctrlKey) && /^Digit[1-6]$/.test(e.code)) { this.setTab(TABS[Number(e.code.slice(5)) - 1].id); e.preventDefault(); return; }
-        if ((e.metaKey || e.ctrlKey) && e.code === 'Comma') { UI.openSettings(this); e.preventDefault(); return; }
+        if ((e.metaKey || e.ctrlKey) && e.code === 'KeyJ') { if (!e.repeat) L.Collapse.toggle(); e.preventDefault(); return; }
+        // Rolled up: no game keys; a tab's or Settings' shortcut rolls the window back down first.
+        if (L.Collapse.on && !((e.metaKey || e.ctrlKey) && (/^Digit[1-9]$/.test(e.code) || e.code === 'Comma')) && !(e.key === 'Escape' && native.available)) return;
+        if ((e.metaKey || e.ctrlKey) && /^Digit[1-9]$/.test(e.code) && VIEWS[Number(e.code.slice(5)) - 1]) { this.setTab(VIEWS[Number(e.code.slice(5)) - 1]); e.preventDefault(); return; }
+        if ((e.metaKey || e.ctrlKey) && e.code === 'Comma') { this.openSettings(); e.preventDefault(); return; }
         if ((e.metaKey || e.ctrlKey) && e.code === 'KeyZ' && this.tab === 'puzzle') { this.modes.puzzle.undo(); e.preventDefault(); return; }
         if (e.key === 'Escape' && this.tab === 'play' && this.modes.play.closeTray()) { e.preventDefault(); return; }
         if (e.key === 'Escape' && native.available) { this.saveNow(); native.post('hide'); return; }
@@ -216,17 +231,26 @@
         if (mq.addEventListener) mq.addEventListener('change', fn);
       }
       // Messages from the native panel.
+      // The pointer away from Lull: it dims (and, in a browser, fades; the panel fades itself natively).
+      if (!native.available) {
+        document.documentElement.addEventListener('mouseleave', () => { if (this.settings.fadeAway !== false) document.body.classList.add('away'); });
+        document.documentElement.addEventListener('mouseenter', () => document.body.classList.remove('away'));
+      }
       L.fromNative = (msg) => {
         if (!msg) return;
         if (msg.type === 'flush') { this.saveNow(); native.post('flushed'); }
         else if (msg.type === 'shown') { this.focusedAt = performance.now(); this.modes.factory.catchUp(true); setTimeout(() => this.announceUnheard(), 400); }
         else if (msg.type === 'toggleTop') { this.settings.onTop = !this.settings.onTop; this.applySettings(); }
+        else if (msg.type === 'pointer') document.body.classList.toggle('away', !msg.inside);
         else if (msg.type === 'tab') this.setTab(msg.tab);
-        else if (msg.type === 'settings') UI.openSettings(this);
+        else if (msg.type === 'settings') this.openSettings();
+        else if (msg.type === 'toggleCollapse') L.Collapse.toggle();
       };
     },
 
     activity() { this.lastActivity = performance.now(); },
+
+    openSettings() { L.Collapse.set(false); UI.openSettings(this); },
 
     /** Checks achievements after something happened; a new one pays lines and says so, once, quietly. */
     achieve(event) {
@@ -278,7 +302,8 @@
       const dt = Math.min(0.1, Math.max(0, (t - this.lastTime) / 1000));
       this.lastTime = t;
       this.keys.update(t);
-      if (this.tab === 'play') this.modes.play.frame(t, dt);
+      if (L.Collapse.on) { /* rolled up: the boards and the floor rest (the factory runs on in second()) */ }
+      else if (this.tab === 'play') this.modes.play.frame(t, dt);
       else if (this.tab === 'classic') this.modes.classic.frame(t, dt);
       else if (this.tab === 'puzzle') this.modes.puzzle.frame(t, dt);
       else if (this.tab === 'factory') {
@@ -294,7 +319,7 @@
       this.modes.factory.tick();
       // Time with Lull: counted while the window is in front and was used in the last two minutes.
       const focused = !document.hidden && document.hasFocus();
-      if (focused && performance.now() - (this.lastActivity || 0) < 120000) {
+      if (focused && !L.Collapse.on && performance.now() - (this.lastActivity || 0) < 120000) {
         const S = this.state.stats.timeMs;
         S.total += 1000;
         if (this.tab === 'play') { S.play += 1000; const bs = this.modes.play.game.s; bs.playMs = (bs.playMs || 0) + 1000; }
@@ -324,10 +349,7 @@
         title: 'Welcome to Lull',
         width: 440,
         body: h('div', null,
-          h('p', null, 'Blocks here never fall on their own. Line them up, lower them, drop them when you are ready — or leave and come back. Nothing is timed and nothing is lost.'),
-          h('p', null, h('b', null, 'Play'), ' — endless and relaxed. Every cleared line is banked as ' + LINE + ' lines to spend in the ', h('b', null, 'Shop'), ' on one-shot items (bombs, drills, a piece you draw yourself) and cosmetics.'),
-          h('p', null, h('b', null, 'Puzzles'), ' — short, seeded, infinite, with wildcards like Big Minos, Wraparound and Upside Down. Every seed has a solution.'),
-          h('p', null, h('b', null, 'Factory'), ' — presses fill a bin with lines; collect it now and then. It runs while you work.'),
+          h('p', null, 'Nothing falls until you drop it.'),
           h('div', { class: 'keys', style: { marginTop: '10px' } }, L.KEY_HELP.slice(0, 7).map(([k, d]) => [h('span', { class: 'k' }, h('kbd', null, k)), h('span', null, d)]))),
         buttons: [{ label: 'Start', kind: 'primary' }],
       });

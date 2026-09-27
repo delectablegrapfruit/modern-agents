@@ -10,17 +10,19 @@
 <div id="app" class="bg-glass">
   <header id="titlebar" data-drag>
     <div class="brand" data-drag><span class="logo" aria-hidden="true"></span><span class="name">Lull</span></div>
-    <!-- Places to play, room to drag, places to look (Shop, Stats, Achievements) by the wallet, sound and Settings, the window. -->
+    <canvas class="bar-idle" id="bar-idle" data-drag aria-hidden="true"></canvas>
+    <!-- Places to play, room to drag, places to look (Stats, Achievements) by the wallet (the Shop), sound and Settings, the window. -->
     <nav class="tabs modes" id="tabs" role="tablist" aria-label="Play"></nav>
     <div class="spacer" data-drag></div>
-    <nav class="tabs meta" id="tabs-meta" role="tablist" aria-label="Shop and progress"></nav>
-    <button class="wallet" id="wallet" aria-label="Lines banked" data-tip-title="Lines" data-tip="Every line you clear is banked here, wherever you play. Click to spend them in the Shop."><span class="lg" id="wallet-icon"></span><span id="wallet-n">0</span></button>
+    <nav class="tabs meta" id="tabs-meta" role="tablist" aria-label="Progress"></nav>
+    <button class="wallet" id="wallet" aria-label="Shop" data-tip="Shop"><span class="lg" id="wallet-icon"></span><span id="wallet-n">0</span></button>
     <span class="tb-sep" aria-hidden="true"></span>
     <button class="icon-btn" id="btn-mute" aria-label="Mute" aria-pressed="false" data-tip="Mute" data-tip-foot="M"></button>
     <button class="icon-btn" id="btn-settings" aria-label="Settings" data-tip="Settings" data-tip-foot="⌘,"></button>
     <span class="tb-sep win" aria-hidden="true"></span>
     <div class="winbtns" id="winbtns">
-      <button class="icon-btn" id="btn-pin" aria-label="Float on top" data-tip="Float on top of other windows"></button>
+      <button class="icon-btn" id="btn-pin" aria-label="Float on top" aria-pressed="false" data-tip="Float on top"></button>
+      <button class="icon-btn" id="btn-collapse" aria-label="Collapse" aria-expanded="true" data-tip="Collapse" data-tip-foot="⌘J"></button>
       <button class="icon-btn" id="btn-hide" aria-label="Hide" data-tip="Hide" data-tip-foot="⌥⌘L brings it back"></button>
       <button class="icon-btn" id="btn-close" aria-label="Quit" data-tip="Quit"></button>
     </div>
@@ -29,14 +31,14 @@
   <main id="main">
     <!-- Free play -->
     <section class="view" id="view-play" data-tab="play">
-      <div class="boardwrap"><canvas id="cv-play"></canvas><button class="corner-btn" id="to-classic" data-tip-title="Classic" data-tip="Plain Tetris: pieces fall, faster every ten lines, with music. Lines still bank as &#x29B5;.">► Classic</button><div class="overlay hidden" id="play-overlay"></div></div>
+      <div class="boardwrap"><canvas id="cv-play"></canvas><div class="overlay hidden" id="play-overlay"></div></div>
       <div class="statusbar" id="play-status"></div>
       <div class="itembar" id="itembar"></div>
     </section>
 
     <!-- Classic -->
     <section class="view" id="view-classic" data-tab="classic">
-      <div class="boardwrap"><canvas id="cv-classic"></canvas><button class="corner-btn" id="to-free" data-tip="Back to the relaxed board (Classic pauses)">‹ Relaxed</button><div class="overlay hidden" id="classic-overlay"></div></div>
+      <div class="boardwrap"><canvas id="cv-classic"></canvas><div class="overlay hidden" id="classic-overlay"></div></div>
       <div class="statusbar" id="classic-status"></div>
       <div class="classic-controls" id="classic-controls"></div>
     </section>
@@ -46,17 +48,17 @@
       <div class="puz-bar">
         <div class="seg" id="puz-diff"></div>
         <div class="puz-nav">
-          <button class="btn sm" id="puz-daily" title="Today's puzzle"></button>
-          <button class="btn sm" id="puz-seedbtn" title="Play a seed, or a random one"></button>
-          <button class="btn sm" id="puz-history" title="Puzzles you have played, and seeds you saved"></button>
+          <button class="btn sm" id="puz-daily" title="Daily"></button>
+          <button class="btn sm" id="puz-seedbtn" title="Seed"></button>
+          <button class="btn sm" id="puz-history" title="History"></button>
         </div>
       </div>
       <div class="puz-card" id="puz-card">
         <div class="puz-top">
           <span class="puz-dot" id="puz-dot"></span>
           <div class="puz-name"><div class="puz-title" id="puz-title"></div><div class="puz-id" id="puz-id"></div></div>
-          <button class="puz-seed" id="puz-seed" title="Copy this puzzle's seed"></button>
-          <button class="icon-btn star" id="puz-save" title="Save this seed (find it under History ▸ Saved)"></button>
+          <button class="puz-seed" id="puz-seed" title="Copy seed"></button>
+          <button class="icon-btn star" id="puz-save" title="Save seed" aria-label="Save seed"></button>
         </div>
         <div class="puz-goal" id="puz-goal"></div>
         <div class="puz-mods" id="puz-mods"></div>
@@ -73,10 +75,10 @@
       <div class="fac-list scroll" id="fac-list"></div>
     </section>
 
-    <!-- Shop -->
+    <!-- Shop (the wallet opens it): Items or Cosmetics, a jump to each section, then every section in one scroll -->
     <section class="view" id="view-shop" data-tab="shop">
-      <div class="subtabs" id="shop-tabs"></div>
-      <div class="shop-grid scroll" id="shop-grid"></div>
+      <div class="shop-head" id="shop-head"></div>
+      <div class="shop-body scroll" id="shop-body"></div>
     </section>
 
     <!-- Achievements -->
@@ -111,8 +113,10 @@
 <script src="js/voice-data.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/input.js"></script>
+<script src="js/hints.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/modes.js"></script>
+<script src="js/collapse.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

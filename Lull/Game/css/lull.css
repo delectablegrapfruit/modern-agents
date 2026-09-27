@@ -75,8 +75,8 @@ body.browser #app.bg-glass { background: rgba(var(--bg), 0.62); -webkit-backdrop
 #app.bg-clear header#titlebar, #app.bg-clear .statusbar, #app.bg-clear .puz-bar, #app.bg-clear .puz-card { text-shadow: 0 1px 2px rgba(0,0,0,0.6); }
 
 /* The title bar, left to right: the places to play (Play, Puzzles, Factory) in one recessed track; room to drag; the
-   places to look (Shop, Stats, Achievements) as quiet icons beside the wallet they spend and fill; then sound and
-   Settings, and in the app the window's own buttons. ⌘1–⌘6 run in that order. Labels give way as the window narrows:
+   places to look (Stats, Achievements) as quiet icons beside the wallet, which is the Shop's way in; then sound and
+   Settings, and in the app the window's own buttons. ⌘1–⌘7 run in that order (the wallet last). Labels give way as the window narrows:
    all of them, then only the tab you are on, then icons alone; every one keeps a tooltip with its shortcut. */
 header#titlebar {
   flex: none; height: 40px;
@@ -129,13 +129,29 @@ header#titlebar { --icon-pad: 8px; }
 .icon-btn.muted { color: color-mix(in srgb, var(--warn) 72%, var(--fg)); background: color-mix(in srgb, var(--warn) 14%, transparent); }
 .icon-btn.muted:hover { color: color-mix(in srgb, var(--warn) 72%, var(--fg)); background: color-mix(in srgb, var(--warn) 22%, transparent); }
 .winbtns { display: flex; align-items: center; gap: 1px; flex: none; }
-body.browser .winbtns, body.browser .tb-sep.win { display: none; }
+body.browser #btn-pin, body.browser #btn-hide, body.browser #btn-close { display: none; }
+/* Collapsed (⌘J, the chevron, or a double-click on the bar): the window rolls up into its title bar, idle pieces drift
+   along it, and only the expand button stays. */
+.bar-idle { display: none; }
+body.collapsed #app { bottom: auto; }
+body.collapsed #main, body.collapsed #toasts, body.collapsed #modal-root, body.collapsed .edge, body.collapsed #app > .tip { display: none !important; }
+body.collapsed header#titlebar { border-bottom: 0; padding: 0 7px 0 0; gap: 4px; }
+body.collapsed #titlebar > :not(.bar-idle):not(#winbtns), body.collapsed #winbtns > :not(#btn-collapse) { display: none; }
+body.collapsed .bar-idle { display: block; flex: 1; min-width: 0; align-self: stretch; }
 .wallet {
   display: flex; align-items: center; gap: 5px; flex: none; height: 26px;
   border: 1px solid var(--line); background: var(--panel); border-radius: 999px; color: var(--fg);
   padding: 0 10px 0 6px; font-weight: 700; font-variant-numeric: tabular-nums;
 }
+.wallet { cursor: pointer; transition: border-color 0.15s, background 0.15s, box-shadow 0.15s; }
 .wallet:hover { border-color: color-mix(in srgb, var(--gem) 45%, transparent); background: color-mix(in srgb, var(--gem) 8%, var(--panel)); }
+.wallet:active { background: color-mix(in srgb, var(--gem) 14%, var(--panel)); }
+.wallet:focus-visible { outline: 2px solid color-mix(in srgb, var(--gem) 70%, transparent); outline-offset: 1px; }
+/* The Shop is open: the wallet is its tab, raised like one, the glyph lit. */
+.wallet.active {
+  border-color: color-mix(in srgb, var(--gem) 55%, transparent); background: color-mix(in srgb, var(--gem) 16%, var(--panel));
+  box-shadow: 0 1px 2px rgba(0,0,0,0.18), inset 0 0 0 1px color-mix(in srgb, var(--gem) 22%, transparent);
+}
 .wallet .lg { display: grid; color: var(--gem); }
 .wallet .lg svg { width: 22px; height: 14px; overflow: visible; }
 .wallet.bump { animation: bump 0.35s ease; }
@@ -150,12 +166,6 @@ main { flex: 1; position: relative; min-height: 0; }
 
 .boardwrap { flex: 1; position: relative; min-height: 120px; }
 .boardwrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-.corner-btn {
-  position: absolute; left: 10px; bottom: 6px; z-index: 2;
-  border: 1px solid var(--line); background: var(--panel); color: var(--muted);
-  border-radius: 999px; padding: 3px 10px; font: 700 11px var(--font); letter-spacing: 0.02em;
-}
-.corner-btn:hover { color: var(--fg); border-color: color-mix(in srgb, var(--accent) 60%, transparent); background: color-mix(in srgb, var(--accent) 14%, var(--panel)); }
 
 /* ---- buttons and chips ---------------------------------------------------------------------------------------- */
 
@@ -210,6 +220,22 @@ main { flex: 1; position: relative; min-height: 0; }
 @media (max-width: 400px) { .statusbar { gap: 10px; } .statusbar .opt, .statusbar .slot-off, .statusbar .lbl { display: none; } }
 .statusbar .btn.sm { padding-top: 2px; padding-bottom: 2px; }
 .statusbar b { color: var(--fg); font-weight: 700; }
+/* The daily gift: a small wrapped box beside New board; it glows softly while today's gift is waiting. */
+@media (max-width: 460px) { .statusbar .new-board .lbl { display: none; } }
+.statusbar .gift-btn { display: inline-flex; align-items: center; gap: 2px; color: var(--muted); }
+.statusbar .gift-btn .gift-i { width: 14px; height: 14px; display: inline-block; }
+.statusbar .gift-btn .gift-i svg { width: 14px; height: 14px; display: block; }
+.statusbar .gift-btn.ready { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 55%, transparent); animation: gift-glow 2.4s ease-in-out infinite; }
+@keyframes gift-glow { 50% { box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 45%, transparent); } }
+.modal-gift .gift-cards { display: flex; gap: 10px; justify-content: center; margin: 6px 0 2px; perspective: 600px; }
+.modal-gift .gift-card { width: 88px; height: 104px; opacity: 0; transform: rotateY(90deg) translateY(6px); animation: gift-turn 0.5s cubic-bezier(.2,.8,.3,1.2) forwards; }
+.modal-gift .gift-face { height: 100%; border-radius: 10px; background: var(--panel); border: 1px solid var(--line-2); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; text-align: center; padding: 6px; }
+.modal-gift .gift-face .gi { font-size: 26px; line-height: 1; color: var(--accent); }
+.modal-gift .gift-face b { font-size: 12px; color: var(--fg); }
+.modal-gift .gift-face .gp { font-size: 11px; color: var(--muted); }
+@keyframes gift-turn { to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .modal-gift .gift-card { animation-duration: 0.01s; } .statusbar .gift-btn.ready { animation: none; } }
+.modal-gift.still .gift-card { animation-duration: 0.01s; animation-delay: 0s !important; } .statusbar .gift-btn.ready.still { animation: none; }
 .itembar {
   flex: none; display: flex; gap: 3px; justify-content: center; flex-wrap: nowrap;
   padding: 5px 8px 8px; border-top: 1px solid var(--line);
@@ -235,7 +261,7 @@ main { flex: 1; position: relative; min-height: 0; }
 }
 .item-tray.hidden { display: none; }
 .tray-head { display: flex; align-items: center; gap: 8px; margin: 0 2px 6px; font-size: 12px; }
-.tray-head span { color: var(--muted); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tray-head b { flex: 1; min-width: 0; }
 .tray-items { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 5px; }
 .item-btn {
   position: relative; height: 56px; border-radius: 9px; border: 1px solid var(--line); background: var(--panel);
@@ -271,11 +297,24 @@ main { flex: 1; position: relative; min-height: 0; }
 .overlay .card p { margin: 4px 0; color: var(--muted); }
 .overlay .card .row { display: flex; gap: 8px; justify-content: center; margin-top: 12px; flex-wrap: wrap; }
 .overlay .card .big { font-size: 22px; font-weight: 800; color: var(--fg); }
+/* Control hints (js/hints.js): one quiet pill low on the board, a key cap and a word or two; it fades in and out. */
+.lhint {
+  position: absolute; z-index: 3; pointer-events: none; transform: translate(-50%, -100%) translateY(4px);
+  display: flex; align-items: center; gap: 5px; white-space: nowrap; max-width: calc(100% - 16px);
+  padding: 4px 10px; border-radius: 999px; font-size: 12px; color: var(--fg);
+  background: rgba(var(--bg), 0.86); border: 1px solid var(--line-2); box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+  opacity: 0; transition: opacity 0.6s ease, transform 0.6s ease;
+}
+.lhint.show { opacity: 1; transform: translate(-50%, -100%); transition-duration: 0.35s; }
+.lhint kbd { font-size: 12px; color: var(--fg); min-width: 18px; text-align: center; }
+.lhint span { color: var(--muted); }
+.lhint kbd + span, .lhint span + kbd { margin-left: 1px; }
+.lhint span + kbd { margin-left: 6px; }
 .board-sum { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; margin: 10px 0 2px; text-align: left; }
 .board-sum .bs { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 4px 7px; min-width: 0; }
 .board-sum .bs.wide { grid-column: 1 / -1; }
 .board-sum .v { font-weight: 800; font-size: 13px; color: var(--fg); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.board-sum .l { color: var(--muted); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.board-sum .l { color: var(--muted); font-size: 10px; line-height: 1.25; overflow-wrap: anywhere; }
 .board-sum .wide .l { white-space: normal; }
 @keyframes rise { from { transform: translateY(8px); opacity: 0; } }
 
@@ -417,7 +456,6 @@ main { flex: 1; position: relative; min-height: 0; }
 .fac-h { margin: 6px 2px 0; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
 .fac-ico { flex: none; width: 34px; height: 34px; border-radius: 8px; background: var(--well); display: grid; place-items: center; overflow: hidden; }
 .fac-ico canvas { width: 34px; height: 34px; }
-.fac-note { color: var(--muted); font-size: 11px; margin: 6px 2px 0; }
 #fac-list .row-card { flex: none; }
 #fac-list .row-card .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #fac-list .row-card > .btn { flex: none; }
@@ -463,22 +501,117 @@ main { flex: 1; position: relative; min-height: 0; }
 
 /* ---- shop ---------------------------------------------------------------------------------------------------- */
 
-.shop-grid { flex: 1; min-height: 0; padding: 4px 10px 12px; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; align-content: start; }
+/* The wallet opens it: Items or Cosmetics, a jump bar that follows the scroll, then every section in one column. */
+.shop-head { flex: none; display: flex; align-items: center; gap: 8px 10px; flex-wrap: wrap; padding: 8px 10px 6px; }
+.shop-seg { flex: none; }
+.shop-jump { display: flex; flex-wrap: wrap; gap: 2px; min-width: 0; }
+.shop-jump button {
+  border: 0; background: transparent; color: var(--muted); height: 24px; padding: 0 8px; border-radius: 7px;
+  font-weight: 600; font-size: 11.5px; white-space: nowrap; display: inline-flex; align-items: center; gap: 5px;
+}
+.shop-jump button .gi { font-size: 12px; opacity: 0.8; }
+.shop-jump button:hover { color: var(--fg); background: var(--panel); }
+.shop-jump button[aria-current="true"] { color: var(--fg); background: var(--panel-2); }
+.shop-jump button[aria-current="true"] .gi { color: var(--accent); opacity: 1; }
+/* Narrow: the jump bar is one row that slides sideways (the wheel slides it too), fading out at its edge. */
+@media (max-width: 560px) {
+  .shop-head { padding-bottom: 4px; }
+  .shop-jump { flex: 1 1 100%; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; -webkit-mask-image: linear-gradient(90deg, #000 88%, transparent); mask-image: linear-gradient(90deg, #000 88%, transparent); padding-right: 24px; }
+  .shop-jump::-webkit-scrollbar { display: none; }
+  .shop-jump button { padding: 0 7px; flex: none; }
+}
+
+.shop-body { flex: 1; min-height: 0; padding: 0 10px 14px; position: relative; }
+.shop-sec + .shop-sec { margin-top: 4px; }
+.shop-h { margin: 0; padding: 10px 2px 7px; display: flex; align-items: baseline; gap: 7px; font-size: 12px; font-weight: 700; letter-spacing: 0.02em; }
+.shop-h .gi { color: var(--accent); width: 14px; text-align: center; }
+.shop-h .n { margin-left: auto; font: 600 11px var(--mono-font); color: var(--faint); }
+
+/* A price: the line glyph and the number. First click asks (Confirm), the second buys. */
+.price-btn {
+  flex: none; min-width: 58px; height: 26px; padding: 0 9px; border-radius: 8px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  border: 1px solid color-mix(in srgb, var(--gem) 30%, var(--line)); background: color-mix(in srgb, var(--gem) 7%, var(--panel));
+  color: var(--fg); font-weight: 700; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.price-btn .gem { color: var(--gem); }
+.price-btn:hover { border-color: color-mix(in srgb, var(--gem) 60%, transparent); background: color-mix(in srgb, var(--gem) 14%, var(--panel)); }
+.price-btn.poor { color: var(--faint); border-color: var(--line); background: transparent; cursor: default; }
+.price-btn.poor .gem { color: var(--faint); }
+.price-btn.armed { background: var(--accent); border-color: transparent; color: #0d1016; }
+.price-btn.nope { animation: nope 0.3s ease; }
+@keyframes nope { 25% { transform: translateX(-3px); } 75% { transform: translateX(3px); } }
+
+/* Items: one slim row each, the glyph in a well with how many you hold. */
+.shop-items { display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 6px; }
+.shop-item {
+  display: flex; align-items: center; gap: 9px; min-width: 0; padding: 6px 6px 6px 6px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+}
+.shop-item .ii {
+  position: relative; flex: none; width: 30px; height: 30px; border-radius: 8px; background: var(--well);
+  display: grid; place-items: center; font-size: 16px; color: var(--fg);
+}
+.shop-item .ii .n {
+  position: absolute; right: -5px; top: -5px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px;
+  background: var(--accent); color: #0d1016; font: 700 10px/16px var(--mono-font); text-align: center;
+}
+.shop-item .nm {
+  flex: 1; min-width: 0; font-weight: 600; font-size: 12.5px; line-height: 1.2; overflow: hidden;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+}
+
+/* Cosmetics: the preview, then the name and what you can do with it. */
+.shop-looks { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; }
+.shop-look {
+  display: flex; flex-direction: column; gap: 7px; padding: 6px 6px 7px; min-width: 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+  transition: border-color 0.2s, background 0.2s;
+}
+.shop-look.own:not(.on) { cursor: pointer; }
+.shop-look.own:not(.on):hover { border-color: var(--line-2); background: var(--panel-2); }
+.shop-look.on { border-color: color-mix(in srgb, var(--accent) 70%, transparent); background: color-mix(in srgb, var(--accent) 7%, var(--panel)); }
+.shop-look .preview { height: 60px; border-radius: 8px; background: var(--well); display: grid; place-items: center; overflow: hidden; }
+.shop-look.locked .preview { opacity: 0.55; }
+.shop-look .foot { display: flex; align-items: center; gap: 6px; min-height: 26px; padding-left: 3px; }
+.shop-look .nm {
+  flex: 1; min-width: 0; font-weight: 600; font-size: 12.5px; line-height: 1.2; overflow: hidden;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+}
+.shop-look .in-use { flex: none; font-size: 11px; font-weight: 700; color: var(--accent); padding-right: 4px; }
+.shop-look .use-btn {
+  flex: none; min-width: 58px; height: 26px; border-radius: 8px; border: 1px solid var(--line-2); background: var(--panel-2);
+  color: var(--fg); font-weight: 600; font-size: 12px;
+}
+.shop-look .use-btn:hover { background: var(--panel-3); }
+.shop-look .reward-tag { flex: none; display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; color: var(--warn); padding-right: 4px; }
+.shop-look .reward-tag svg { width: 12px; height: 12px; }
+.shop-item.fresh, .shop-look.fresh { animation: fresh 0.9s ease; }
+@keyframes fresh { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--gem) 60%, transparent); } 100% { box-shadow: 0 0 0 10px transparent; } }
+
+/* A sound pack's preview is its Listen button: a play mark and a few bars that dance while it plays. */
+.shop-look .preview.listen { height: 46px; width: 100%; border: 0; color: var(--muted); display: flex; align-items: center; justify-content: center; gap: 12px; }
+.shop-look .preview.listen:hover { color: var(--fg); background: color-mix(in srgb, var(--accent) 10%, var(--well)); }
+.preview.listen .play { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--panel-2); color: var(--fg); }
+.preview.listen:hover .play { background: var(--accent); color: #0d1016; }
+.preview.listen .play svg { width: 13px; height: 13px; margin-left: 2px; }
+.preview.listen .eq { display: flex; align-items: center; gap: 3px; height: 26px; }
+.preview.listen .eq i { width: 3px; height: 8px; border-radius: 2px; background: currentColor; opacity: 0.55; }
+.preview.listen .eq i:nth-child(2) { height: 16px; } .preview.listen .eq i:nth-child(3) { height: 22px; } .preview.listen .eq i:nth-child(4) { height: 12px; } .preview.listen .eq i:nth-child(5) { height: 18px; }
+.preview.listen.playing .eq i { animation: eq 0.45s ease-in-out 3 alternate; color: var(--accent); background: var(--accent); opacity: 0.9; }
+.preview.listen.playing .eq i:nth-child(2n) { animation-delay: 0.12s; }
+.preview.listen.playing .eq i:nth-child(3n) { animation-delay: 0.22s; }
+@keyframes eq { 50% { transform: scaleY(0.35); } }
+
+/* Cards (the boards' overlays build on these). */
 .card {
   background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px;
   display: flex; flex-direction: column; gap: 6px; position: relative;
 }
-.card.equipped { border-color: color-mix(in srgb, var(--accent) 70%, transparent); }
-.card .preview { height: 56px; border-radius: 8px; background: var(--well); display: grid; place-items: center; overflow: hidden; }
-.card .preview canvas { width: 100%; height: 100%; }
-.card .preview .big-icon { font-size: 28px; }
 .card h3 { margin: 0; font-size: 13px; }
 .card p { margin: 0; color: var(--muted); font-size: 11.5px; flex: 1; }
-.card .foot { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
-.card .owned { font: 600 11px var(--mono-font); color: var(--muted); }
-.card .lock { font-size: 11px; color: var(--warn); }
 .price { font-weight: 700; font-variant-numeric: tabular-nums; }
-.shop-note { grid-column: 1 / -1; color: var(--muted); font-size: 12px; padding: 2px 2px 0; }
 
 /* ---- stats --------------------------------------------------------------------------------------------------- */
 
@@ -534,6 +667,7 @@ table.st th { text-align: right; color: var(--muted); font-weight: 600; font-siz
 .set-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); min-height: 34px; }
 .set-row > label, .set-row > .lbl { flex: 1; }
 .set-row .hint { display: block; color: var(--muted); font-size: 11px; }
+.set-row.off > .lbl, .set-row.off .range { opacity: 0.4; }
 .set-row input[type="range"] { width: 130px; accent-color: var(--accent); }
 .set-row .val { width: 48px; text-align: right; font: 600 11px var(--mono-font); color: var(--muted); }
 .switch { position: relative; width: 34px; height: 20px; border-radius: 10px; background: var(--panel-3); border: 0; padding: 0; flex: none; }
@@ -592,6 +726,21 @@ body.browser .edge { display: none; }
   body.native .tabs.modes button { padding: 0 var(--icon-pad); }
   body.native .brand { display: none; }
   body.native .tabs.modes { margin-left: 0; }
+}
+/* Room for the collapse chevron: a browser drops the last label a little sooner, the app its pin (Float on top stays in
+   Settings and on ⌘T). */
+@media (max-width: 540px) {
+  body.browser .tabs.modes button .lbl { display: none; }
+  body.browser .tabs.modes button { padding: 0 var(--icon-pad); }
+}
+@media (max-width: 500px) {
+  body.native #btn-pin { display: none; }
+}
+@media (max-width: 340px) {
+  body.browser .tb-sep.win { display: none; }
+}
+@media (max-width: 320px) {
+  body.browser:not(.collapsed) #winbtns { display: none; }
 }
 @media (max-width: 500px) {
   .tabs.modes button .lbl { display: none; }
@@ -663,9 +812,9 @@ body.browser .edge { display: none; }
 .hist-head .seg button { padding: 3px 8px; font-size: 11.5px; white-space: nowrap; }
 .hist-head .seg .c { margin-left: 5px; font: 600 10px var(--mono-font); color: var(--faint); }
 .hist-head .seg button[aria-pressed="true"] .c { color: var(--muted); }
-.hist-sum { white-space: nowrap; }
 .hist { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 3px; overflow-y: auto; padding-right: 2px; scrollbar-width: thin; }
 .hist .empty { text-align: center; padding: 24px 8px; }
+.hist-foot, .pz-volume { flex: none; margin: 8px 0 0; text-align: center; color: var(--faint); font-size: 11.5px; font-variant-numeric: tabular-nums; }
 .hist-row { flex: none; display: flex; align-items: center; gap: 6px; height: 42px; padding: 0 4px 0 9px; border-radius: 9px; background: var(--panel); border: 1px solid var(--line); }
 .hist-row.current { border-color: color-mix(in srgb, var(--accent) 55%, transparent); }
 .hist-row .grow { flex: 1; min-width: 0; }
@@ -683,7 +832,7 @@ body.browser .edge { display: none; }
 .hist-row .icon-btn { flex: none; width: 26px; height: 26px; font-size: 14px; }
 .hist-row .icon-btn.play { color: var(--accent); font-size: 12px; }
 .star.on, .hist-row .star.on { color: #f2c14e; }
-@media (max-width: 460px) { .hist-sum, .hist-head .seg .c { display: none; } .hist-head .seg { flex: 1; } .hist-head .seg button { flex: 1; padding: 3px 4px; } }
+@media (max-width: 460px) { .hist-head .seg .c { display: none; } .hist-head .seg { flex: 1; } .hist-head .seg button { flex: 1; padding: 3px 4px; } }
 @media (max-width: 380px) { .hist-row .seedchip { display: none; } }
 
 .seed-modal p { margin-top: 0; }
@@ -780,6 +929,9 @@ kbd.big { font-size: 12px; padding: 3px 7px; }
 .ach-group > summary .bar { flex: 1; min-width: 30px; margin: 0; height: 4px; }
 .ach-group > summary .bar > i { background: var(--gem); }
 .ach-count { flex: none; font: 600 11px var(--mono-font); color: var(--muted); }
+.ach-info { flex: none; display: inline-flex; width: 14px; height: 14px; color: var(--faint); cursor: help; margin-left: -3px; }
+.ach-info svg { width: 14px; height: 14px; display: block; }
+.ach-info:hover, .ach-info:focus-visible { color: var(--accent); outline: none; }
 @media (max-width: 380px) { .ach-group > summary .bar { display: none; } }
 .ach-group[open] > summary { margin-bottom: 4px; }
 .ach-group > .ach-list { padding-left: 8px; }
@@ -801,3 +953,8 @@ kbd.big { font-size: 12px; padding: 3px 7px; }
 .reel.stop:not(.win) { border-color: var(--line-2); }
 .statusbar .gold b { color: #f2c14e; }
 .statusbar .boost b { color: #8fe3ff; }
+
+/* The pointer away from Lull: dimmer, and (in a browser) see-through; the native panel fades its own window. */
+#app { transition: filter 0.45s ease, opacity 0.45s ease; }
+body.away #app { filter: brightness(0.6) saturate(0.8); }
+body.browser.away #app { opacity: 0.6; }

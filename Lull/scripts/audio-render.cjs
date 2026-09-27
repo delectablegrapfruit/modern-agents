@@ -2,9 +2,10 @@
 // Renders Lull's synthesized audio offline in headless Chromium (no speakers needed) and measures it: every sound of
 // a pack, and a stretch of Classic's music, each as a WAV plus peak, loudness, brightness (spectral centroid) and gaps.
 //   node Lull/scripts/audio-render.cjs [out-dir] [pack=soft] [music-seconds=60] [music-from-bar=0]
-// With --harmony it checks instead that sound effects sit in the music's chords: each pack's pitched sounds rendered
-// on their own over one bar of every chord of the suite (tuned to it, and as the pack made them), the notes found in
-// them, and how much of their power is on the chord's tones; plus, into out-dir, A/B mixes of the music with them.
+// With --harmony it checks instead that sound effects sit in the music's key: each pack's pitched sounds rendered on
+// their own over the first bar of every section of the suite (put in its key, and as the pack made them), the notes
+// found in them, and how much of their power is on the notes of the section's scale; plus, into out-dir, A/B mixes
+// of the music with them (played straight away, never waiting for the beat).
 //   node Lull/scripts/audio-render.cjs [out-dir] --harmony [pack=all]
 // Needs Playwright, like browser-test.cjs.
 'use strict';
@@ -31,7 +32,7 @@ const EVENTS = [['move'], ['rotate'], ['lower'], ['lock'], ['hold'], ['blocked']
   ['stamp'], ['pack'], ['land'], ['bell']];
 
 // ---- measuring ------------------------------------------------------------------------------------------------------
-const { fft, share, overBar, chordBars } = require('./pitch.cjs');
+const { fft, share, overBar, sectionBars } = require('./pitch.cjs');
 const db = (x) => (x > 0 ? 20 * Math.log10(x) : -200);
 function measure(L, R, rate) {
   const n = L.length, mono = new Float32Array(n);
@@ -96,20 +97,21 @@ async function render(page, kind, a, b, seconds) {
   return { rate: out.rate, L: dec(out.l), R: dec(out.r) };
 }
 
-// ---- harmony: the sound effects against the music's chords -----------------------------------------------------------
-// Pitched sounds worth hearing against a chord (the rest are noise, clicks and thuds, which are left alone).
+// ---- harmony: the sound effects against the music's key -------------------------------------------------------------
+// Pitched sounds worth hearing in a key (the rest are noise, clicks and thuds, which are left alone).
 const TONAL = [['rotate'], ['hold'], ['lock'], ['clear', 2], ['clear', 3], ['quad'], ['tspin'], ['perfect'], ['combo', 3], ['solve'], ['golden'], ['buy'], ['item'], ['bell']];
 
 async function harmonyReport(page) {
   const packs = PACK ? [PACK] : await page.evaluate(() => Object.keys(Lull.Sound.PACKS));
-  const bars = await chordBars(page);
+  const bars = await sectionBars(page);
   const NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
   const report = {};
-  console.log('share of the pitched sounds\' power on the chord\'s tones (a blip: on the key\'s), tuned / as made');
-  console.log('pack        ' + Object.keys(bars).map((c) => c.padStart(13)).join(''));
+  console.log('share of the pitched sounds\' power on the notes of the section\'s key, in key / as made');
+  for (const [section, [, key]] of Object.entries(bars)) console.log('  ' + section.padEnd(10) + key);
+  console.log('pack        ' + Object.keys(bars).map((c) => c.padStart(12)).join(''));
   for (const pack of packs) {
     const row = {};
-    for (const [chord, bar] of Object.entries(bars)) {
+    for (const [section, [bar, key]] of Object.entries(bars)) {
       let tunedOn = 0, rawOn = 0, n = 0, worst = 1;
       const offs = [], res = await overBar(page, pack, bar, TONAL);
       for (let i = 0; i < res.length; i += 2) {
@@ -119,34 +121,34 @@ async function harmonyReport(page) {
         tunedOn += sa.share; rawOn += sb.share; n++; worst = Math.min(worst, sa.share);
         if (sa.share < 0.9) offs.push(a.name + (a.arg || '') + ' ' + (sa.share * 100).toFixed(0) + '% (' + sa.off.slice(0, 3).map((x) => NAMES[x.pc]).join('/') + ')');
       }
-      row[chord] = { tuned: n ? tunedOn / n : 1, raw: n ? rawOn / n : 1, worst, sounds: n, off: offs };
+      row[section] = { key, tuned: n ? tunedOn / n : 1, raw: n ? rawOn / n : 1, worst, sounds: n, off: offs };
     }
     report[pack] = row;
-    console.log(pack.padEnd(12) + Object.values(row).map((r) => ((r.tuned * 100).toFixed(0) + '% / ' + (r.raw * 100).toFixed(0) + '%').padStart(13)).join(''));
-    for (const [chord, r] of Object.entries(row)) if (r.off.length) console.log('    ' + chord + ' below 90%: ' + r.off.join(' '));
+    console.log(pack.padEnd(12) + Object.values(row).map((r) => ((r.tuned * 100).toFixed(0) + '% / ' + (r.raw * 100).toFixed(0) + '%').padStart(12)).join(''));
+    for (const [section, r] of Object.entries(row)) if (r.off.length) console.log('    ' + section + ' below 90%: ' + r.off.join(' '));
   }
   return report;
 }
 
-/** Twenty seconds of the theme with big sounds landing off the beat, tuned and not, for listening side by side. */
+/** Twenty seconds from the float (A minor into A melodic minor) with big sounds landing off the beat, in key and as
+ * made, for listening side by side. */
 async function harmonyMixes(page, pack) {
   for (const tuned of [true, false]) {
     const out = await page.evaluate(async ([pack, tuned]) => {
-      const S = Lull.Sound, H = Lull.Harmony, SONG = Lull.SONG;
+      const S = Lull.Sound, K = Lull.Key, SONG = Lull.SONG;
       const buf = await S.offline(20, (ctx) => {
-        Lull.Music.render(ctx, 20, SONG.loopFrom);
+        Lull.Music.render(ctx, 20, SONG.bars.findIndex((b) => b.section === 'float') - 2);
         const seq = [['clear', 2, 1.3], ['quad', null, 3.9], ['tspin', null, 6.7], ['clear', 3, 9.2], ['perfect', null, 11.6], ['quad', null, 14.4], ['solve', null, 16.9]];
         for (const [n, arg, at] of seq) {
           const { pack: pk, list } = S.voices(n, arg, pack);
-          const plan = tuned ? H.plan(n, list, at) : { list, delay: 0 };
-          for (const v of plan.list) S.voice(v, at + plan.delay, pk);
+          for (const v of tuned ? K.tune(list, at) : list) S.voice(v, at, pk);
         }
       });
       const enc = (d) => { const i16 = new Int16Array(d.length); for (let i = 0; i < d.length; i++) i16[i] = Math.max(-32768, Math.min(32767, Math.round(d[i] * 32767))); let s = ''; const u8 = new Uint8Array(i16.buffer); for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
       return { rate: buf.sampleRate, l: enc(buf.getChannelData(0)), r: enc(buf.getChannelData(1)) };
     }, [pack, tuned]);
     const dec = (s) => { const u8 = Buffer.from(s, 'base64'); const i16 = new Int16Array(u8.buffer, u8.byteOffset, u8.length / 2); return Float32Array.from(i16, (x) => x / 32767); };
-    fs.writeFileSync(path.join(OUT, 'harmony-' + pack + '-' + (tuned ? 'tuned' : 'as-made') + '.wav'), wav(dec(out.l), dec(out.r), out.rate));
+    fs.writeFileSync(path.join(OUT, 'harmony-' + pack + '-' + (tuned ? 'in-key' : 'as-made') + '.wav'), wav(dec(out.l), dec(out.r), out.rate));
   }
 }
 

@@ -1,9 +1,14 @@
 import AppKit
 
-/// A borderless panel that floats over other apps, joins every Space, and can still take the keyboard.
+/// A borderless panel that floats over other apps, joins every Space (full-screen apps' too), and can still take the
+/// keyboard. It never activates Lull: activating a regular app pulls the screen back to its own Space, which is what
+/// kept the panel off full-screen apps.
 final class FloatingPanel: NSPanel {
+    /// The smallest the whole window gets (collapsed into its title bar, only the width counts).
+    static let expandedMinSize = NSSize(width: 400, height: 580)
+
     init(contentRect: NSRect) {
-        super.init(contentRect: contentRect, styleMask: [.borderless, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
+        super.init(contentRect: contentRect, styleMask: [.borderless, .resizable, .fullSizeContentView, .nonactivatingPanel], backing: .buffered, defer: false)
         isOpaque = false
         backgroundColor = .clear
         hasShadow = true
@@ -12,8 +17,8 @@ final class FloatingPanel: NSPanel {
         hidesOnDeactivate = false
         becomesKeyOnlyIfNeeded = false
         isMovableByWindowBackground = false
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        minSize = NSSize(width: 400, height: 580)
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+        minSize = FloatingPanel.expandedMinSize
         isReleasedWhenClosed = false
         title = "Lull"
     }
@@ -31,6 +36,12 @@ final class ChromeView: NSView {
     /// Rectangles in page coordinates (points from the top left) where a press drags the window.
     var dragRects: [NSRect] = []
     var noDragRects: [NSRect] = []
+    /// Off while the window is collapsed into its title bar: then it resizes only sideways.
+    var verticalResize = true {
+        didSet { window?.invalidateCursorRects(for: self) }
+    }
+    /// A double-click on the title bar (the window shade: collapse or expand).
+    var onDoubleClick: (() -> Void)?
 
     private struct Edges: OptionSet {
         let rawValue: Int
@@ -75,6 +86,8 @@ final class ChromeView: NSView {
         if p.x > bounds.width - band { e.insert(.right) }
         if p.y < 3 { e.insert(.top) }
         if p.y > bounds.height - band { e.insert(.bottom) }
+        // Collapsed into its title bar: only the side edges, clear of the expand button.
+        if !verticalResize { return e.subtracting([.top, .bottom]) }
         // The grip in the bottom-right corner, and generous corners generally.
         if p.x > bounds.width - corner && p.y > bounds.height - corner { e = [.right, .bottom] }
         if p.x < corner && p.y > bounds.height - corner && (p.x < band || p.y > bounds.height - band) { e = [.left, .bottom] }
@@ -102,6 +115,10 @@ final class ChromeView: NSView {
         let e = edges(at: p)
         if !e.isEmpty {
             resizing = (e, window.frame, NSEvent.mouseLocation)
+            return
+        }
+        if event.clickCount == 2 && inDragRegion(p) {
+            onDoubleClick?()
             return
         }
         window.performDrag(with: event)
@@ -134,11 +151,28 @@ final class ChromeView: NSView {
         let band: CGFloat = 5
         addCursorRect(NSRect(x: 0, y: 0, width: band, height: bounds.height), cursor: .resizeLeftRight)
         addCursorRect(NSRect(x: bounds.width - band, y: 0, width: band, height: bounds.height), cursor: .resizeLeftRight)
-        addCursorRect(NSRect(x: 0, y: bounds.height - band, width: bounds.width, height: band), cursor: .resizeUpDown)
+        if verticalResize {
+            addCursorRect(NSRect(x: 0, y: bounds.height - band, width: bounds.width, height: band), cursor: .resizeUpDown)
+        }
     }
 
     override func layout() {
         super.layout()
         window?.invalidateCursorRects(for: self)
     }
+
+    /// Called when the pointer comes in or goes out (the panel fades while it is away).
+    var onPointer: ((Bool) -> Void)?
+    private var tracking: NSTrackingArea?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let tracking { removeTrackingArea(tracking) }
+        let area = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self, userInfo: nil)
+        addTrackingArea(area)
+        tracking = area
+    }
+
+    override func mouseEntered(with event: NSEvent) { onPointer?(true) }
+    override func mouseExited(with event: NSEvent) { if resizing == nil { onPointer?(false) } }
 }

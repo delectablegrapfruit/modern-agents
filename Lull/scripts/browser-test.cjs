@@ -13,7 +13,7 @@ try { ({ chromium } = require('playwright')); } catch (e) {
   }
 }
 
-const { share, overBar, chordBars } = require('./pitch.cjs');
+const { share, overBar, sectionBars } = require('./pitch.cjs');
 const PAGE = 'file://' + path.join(__dirname, '..', 'Game', 'index.html');
 const OUT = process.argv[2] || null;
 let failures = 0;
@@ -43,6 +43,9 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   check('welcome dismissed with Enter', !(await page.isVisible('.modal')));
   // Scripted play sets pieces faster than any hand: the grace after a set is off here and tested on its own below.
   await ev(() => { for (const k of ['play', 'puzzle', 'classic']) Lull.app.modes[k].setGrace = 0; });
+  // Scripted play also turns at machine speed (the puzzle solver's three quick turns look like the long way round), so
+  // control hints are off until their own section below, which turns them back on; the switch must keep every one away.
+  await ev(() => { Lull.app.store.state.settings.hints = false; Lull.app.hints.sync(); });
 
   // ---- free play: moves, a line clear, the wallet ------------------------------------------------------------------
   console.log('free play');
@@ -111,7 +114,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await shot('10a-chain');
   // Retiring a board shows its whole life, and logs it.
   await ev(() => { const m = Lull.app.modes.play; m.game.s.items = { bomb: 2, laser: 1 }; m.game.s.startedAt = Date.now() - 3 * 86400e3; });
-  await page.click('#play-status .btn');
+  await page.click('#play-status .new-board');
   const sum = await ev(() => { const c = document.querySelector('#play-overlay .board-sum'); return c ? c.textContent : ''; });
   check('retiring asks, showing the board\'s life', /Lifetime/.test(sum) && /3 used/.test(sum) && /Bomb ×2/.test(sum), sum.slice(0, 200));
   await shot('10b-retire');
@@ -153,13 +156,13 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     const expect = id === 'jackpot' ? inv >= invBefore[id] - 1 : inv === invBefore[id] - 1;
     check('item ' + id + ' used', expect, 'have ' + inv);
     if (id === 'golden') check('  golden: gold for the next five clears', await ev(() => Lull.app.modes.play.game.s.gold === 5));
-    if (['bomb', 'drill', 'phase', 'sand', 'anvil', 'magnet', 'laser', 'blackhole', 'water', 'steel', 'oil', 'frost', 'torch', 'bolt', 'tnt'].includes(id)) {
+    if (['bomb', 'drill', 'phase', 'anvil', 'laser', 'blackhole', 'sand', 'seed', 'tnt', 'water', 'oil', 'acid', 'lava', 'frost', 'steel', 'torch', 'bolt'].includes(id)) {
       const sp = await ev(() => Lull.app.modes.play.game.piece && Lull.app.modes.play.game.piece.special);
       check('  ' + id + ' piece in play', sp === id);
-      if (['laser', 'blackhole', 'frost', 'steel', 'water', 'tnt', 'torch', 'bolt', 'oil'].includes(id)) await shot('11-' + id);
+      if (['laser', 'blackhole', 'sand', 'seed', 'tnt', 'water', 'oil', 'acid', 'lava', 'frost', 'steel', 'torch', 'bolt'].includes(id)) await shot('11-' + id);
       await page.keyboard.press('Space');
       await page.waitForTimeout(90);
-      if (['blackhole', 'anvil', 'laser', 'water', 'torch', 'bolt', 'frost'].includes(id)) await shot('11-' + id + '-hit');
+      if (['blackhole', 'anvil', 'laser', 'water', 'acid', 'lava', 'torch', 'bolt', 'frost'].includes(id)) await shot('11-' + id + '-hit');
     }
     if (id === 'nuke' || id === 'tornado') { await page.waitForTimeout(120); await shot('11-' + id); }
     check('  the tray closes after use', !(await page.isVisible('.item-tray:not(.hidden)')));
@@ -188,7 +191,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   });
   check('an item in use shows as on', toggle.armed);
   check('pressing it again puts it back', toggle.back, JSON.stringify(toggle));
-  check('an item ends play by hand; taken back, it never happened; Luck items leave it alone', toggle.hand.broke && toggle.hand.back && toggle.hand.luck, JSON.stringify(toggle.hand));
+  check('an item puts power-ups on the board (achievements); taken back, it never happened; Luck items leave it alone', toggle.hand.broke && toggle.hand.back && toggle.hand.luck, JSON.stringify(toggle.hand));
   await page.waitForTimeout(200);
   await shot('11-items');
   // A Noodle bought over a fresh piece sits in the top row; it still turns, on every turn key and a right-click.
@@ -242,37 +245,45 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     if (!['nuke', 'purge', 'settle'].includes(id)) { g.piece.y = Math.min(g.piece.y, 15); m.action('drop'); }
     const next = !!g.piece && !g.piece.special;
     const t0 = performance.now();
-    let peak = 0, props = 0;
+    let peak = 0, props = 0, sim = 0;
     const out = await new Promise((res) => {
       const f = () => {
-        peak = Math.max(peak, w.nb + w.np); props = Math.max(props, m.view.fx.props.length);
+        peak = Math.max(peak, w.nb + w.np); props = Math.max(props, m.view.fx.props.length); if (m.view.sim) sim++;
         const t = performance.now() - t0;
-        if ((t > 50 && !w.active && !m.view.fx.props.length) || t > 3000) res(t); else requestAnimationFrame(f);
+        if ((t > 50 && !w.active && !m.view.fx.props.length && !m.view.sim) || t > 5000) res(t); else requestAnimationFrame(f);
       };
       requestAnimationFrame(f);
     });
     st.settings.motion = motion0;
-    return { peak, props, ms: Math.round(out), next };
+    return { peak, props, sim, ms: Math.round(out), next };
   }, [id, motion]);
-  for (const id of ['drill', 'bomb', 'laser', 'purge', 'blackhole', 'nuke', 'sand', 'magnet', 'phase', 'anvil', 'settle', 'frost', 'water', 'torch', 'bolt']) {
+  for (const id of ['drill', 'bomb', 'laser', 'purge', 'blackhole', 'nuke', 'phase', 'anvil', 'settle', 'frost', 'sand', 'water', 'acid', 'lava', 'torch', 'bolt']) {
     const r = await fxRun(id, 'full');
-    check('  ' + id + ' animates with physics, lets the next piece in, and ends', r.peak + r.props > 0 && r.ms <= 1500 && r.next, JSON.stringify(r));
+    // The sandbox's items play their settle back (at most about three seconds); the rest are over in a second and a half.
+    const settles = ['bomb', 'sand', 'water', 'acid', 'lava', 'torch'].includes(id);
+    check('  ' + id + ' animates' + (settles ? ' (its settle plays back)' : ' with physics') + ', lets the next piece in, and ends', r.peak + r.props + r.sim > 0 && (!settles || r.sim > 3) && r.ms <= (settles ? 3600 : 1500) && r.next, JSON.stringify(r));
   }
-  // The next piece set while sand is still falling: nothing stays hidden on the changed board.
+  // The next piece set while an anvil's blocks are still falling, or while a settle still plays: both end at once.
   const quick = await ev(() => {
     const m = Lull.app.modes.play, g = m.game, st = Lull.app.store.state, w = m.view.fx.world;
     if (g.over) m.newBoard();
     m.view.fx.clear();
     g.board.cells.fill(0);
-    g.replacePiece({ id: 'S' }); // its overhanging block falls on its own
-    st.inventory.sand = (st.inventory.sand || 0) + 1;
-    m.apply('sand');
+    for (let x = 0; x < 9; x++) g.board.set(x, 0, 3);
+    g.replacePiece({ id: 'S' });
+    st.inventory.anvil = (st.inventory.anvil || 0) + 1;
+    m.apply('anvil');
     m.action('drop');
     const falling = w.hiding;
+    g.replacePiece({ id: 'O' });
+    st.inventory.sand = (st.inventory.sand || 0) + 1;
+    m.apply('sand'); g.piece.y = 14;
     m.action('drop');
-    return { falling, after: w.hiding };
+    const playing = !!m.view.sim, hiding = w.hiding;
+    m.action('drop');
+    return { falling, hiding, playing, after: !!m.view.sim };
   });
-  check('  a piece set mid-fall ends the fall (no cell left hidden)', quick.falling > 0 && quick.after === 0, JSON.stringify(quick));
+  check('  a piece set mid-fall or mid-settle ends it (no cell left hidden, the board drawn as it is)', quick.falling > 0 && quick.hiding === 0 && quick.playing && !quick.after, JSON.stringify(quick));
   // Gravity follows the board on screen: Upside Down pulls up, Sideways pulls left.
   const grav = await ev(() => {
     const v = Lull.app.modes.play.view, rot0 = v.view.rot, out = {};
@@ -285,38 +296,49 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   check('  reduced motion: a nuke is a plain fade, no flying blocks', calm.peak === 0 && calm.ms <= 600, JSON.stringify(calm));
   await ev(() => { const m = Lull.app.modes.play; m.view.fx.clear(); m.game.board.cells.fill(0); m.view.dirty = true; });
 
-  // ---- the sandbox: a chain reaction, the combo it makes, its callout, the book ----------------------------------------
+  // ---- the sandbox: a settle played back step by step, the discoveries it makes, their callouts, the book ------------
   console.log('sandbox');
-  const boom = await ev(async () => {
-    const m = Lull.app.modes.play, g = m.game, st = Lull.app.store, C = Lull.CELL;
+  // Sets a scene (rows bottom first: . empty, digits colours, X grey, and matter: i ice, o oil, s steel, p powder,
+  // w water, a sand, e seed, v vine, g glass, c acid, l lava), turns the piece in play into an item and drops it at x.
+  const scene = (rows, piece, item, x, y) => ev(([rows, piece, item, x, y]) => {
+    const m = Lull.app.modes.play, g = m.game, C = Lull.CELL, st = Lull.app.store;
     if (g.over) m.newBoard();
-    m.view.fx.clear();
-    g.board.cells.fill(0);
-    g.s.gold = 0; g.s.boost = null;
-    // A floor of colours, TNT and ice above it: one bomb sets the TNT off, which shatters the ice.
-    for (let x = 0; x < 10; x++) g.board.set(x, 0, 1 + (x % 7));
-    for (let x = 0; x < 10; x++) g.board.set(x, 1, x % 2 ? 5 | C.TNT : 3 | C.ICE);
-    g.board.set(9, 1, 0);
-    g.replacePiece({ id: 'O' });
-    st.state.inventory.bomb = (st.state.inventory.bomb || 0) + 1;
-    const w0 = g.s.banked || 0, book0 = Object.keys(st.state.combos || {}).length;
+    m.view.fx.clear(); m.view.endSim();
+    document.getElementById('toasts').replaceChildren(); // the frames are for the board
+    g.board.cells.fill(0); g.s.gold = 0; g.s.boost = null;
+    const code = { X: 8, i: 3 | C.ICE, o: 2 | C.OIL, s: 6 | C.STEEL, p: 5 | C.POWDER, w: 1 | C.WATER, a: 7 | C.SAND, e: 4 | C.SEED, v: 4 | C.VINE, g: 1 | C.GLASS, c: 4 | C.ACID | (3 << 12), l: 7 | C.LAVA | (12 << 12) };
+    rows.forEach((row, yy) => { for (let xx = 0; xx < 10; xx++) { const c = row[xx] || '.'; if (c !== '.') g.board.set(xx, yy, code[c] != null ? code[c] : Number(c)); } });
+    g.replacePiece({ id: piece });
     let r = null;
-    g.on('lock', (x) => { r = r || x; });
-    m.apply('bomb'); g.piece.x = 2; g.piece.y = 6; m.action('drop');
-    await new Promise((res) => setTimeout(res, 260));
-    return { explosions: r.explosions, shattered: r.shattered, steps: (r.react || []).length, board: g.board.count(), found: Object.keys(g.s.combos || {}), book: Object.keys(st.state.combos).length - book0, texts: m.view.fx.texts.map((t) => t.str), gained: (g.s.banked || 0) - w0, bodies: m.view.fx.world.nb };
-  });
-  await shot('16-chain-reaction');
-  check('a bomb sets off TNT down the row, which shatters the ice: one chain, played out with physics', boom.explosions >= 3 && boom.shattered > 0 && boom.board <= 12 && boom.bodies > 0, JSON.stringify(boom));
-  check('it is a combo: paid, called out on the board, written in the book', boom.found.includes('chain3') && boom.book >= 1 && boom.texts.includes('Daisy Chain') && boom.gained >= 6, JSON.stringify(boom));
-  await page.waitForTimeout(900);
+    const off = g.on('lock', (x2) => { r = r || x2; });
+    const w0 = g.s.banked || 0;
+    if (item) { st.state.inventory[item] = (st.state.inventory[item] || 0) + 1; m.apply(item); }
+    g.piece.x = x; if (y != null) g.piece.y = y;
+    m.action('drop');
+    off();
+    window.__r = r;
+    return { frames: r && r.sim ? r.sim.frames.length : 0, playing: !!m.view.sim, lines: r ? r.lines : 0, cascade: r ? r.cascade || 0 : 0, gained: (g.s.banked || 0) - w0 };
+  }, [rows, piece, item, x, y]);
+  const waitSim = () => ev(() => new Promise((res) => { const t0 = performance.now(); const f = () => (!Lull.app.modes.play.view.sim || performance.now() - t0 > 5000 ? res(Math.round(performance.now() - t0)) : requestAnimationFrame(f)); f(); }));
+  const film = async (name, times) => { let t = 0; for (const at of times) { await page.waitForTimeout(at - t); t = at; await shot(name + '-' + String(at).padStart(4, '0')); } };
+
+  // A bomb in a row of powder and ice: one blast sets off the next, step by step, each throwing its blocks.
+  const boom = await scene(['123456712.', 'ipipipipi.'], 'O', 'bomb', 2, 6);
+  const midBoom = await ev(() => { const v = Lull.app.modes.play.view; return { playing: !!v.sim, board: Lull.app.modes.play.game.board.count() }; });
+  await film('16-chain', [120, 300, 520]);
+  await waitSim();
+  const boomAfter = await ev(() => { const m = Lull.app.modes.play, g = m.game, r = window.__r; return { explosions: r.explosions, shattered: r.shattered, found: Object.keys(g.s.combos || {}), book: Object.keys(Lull.app.store.state.combos || {}), bodies: m.view.fx.world.nb + m.view.fx.world.np, board: g.board.count() }; });
+  await page.waitForTimeout(150);
+  const texts = await ev(() => Lull.app.modes.play.view.fx.texts.map((t) => t.str));
+  check('a bomb sets off the powder down the row in waves, played back step by step (the board is final at once)', boom.frames >= 3 && midBoom.playing && boomAfter.explosions >= 4 && boomAfter.shattered > 0, JSON.stringify({ boom, midBoom, boomAfter }));
+  check('it is a discovery: paid at once, called out once the settle has played, written in the book', boomAfter.found.includes('chain3') && boomAfter.book.includes('chain3') && texts.includes('Daisy Chain') && boom.gained >= 6, JSON.stringify({ texts, gained: boom.gained }));
   await shot('16b-chain-after');
-  // The same combo again on this board pays half; the boost shows in the status bar.
+  // The same again on this board pays half; the boost shows in the status bar.
   const again = await ev(() => {
     const m = Lull.app.modes.play, g = m.game, st = Lull.app.store, C = Lull.CELL;
-    g.board.cells.fill(0);
-    for (let x = 0; x < 10; x++) g.board.set(x, 0, x % 2 ? 5 | C.TNT : 2);
-    g.board.set(9, 6, 6 | C.STEEL); // steel stands, so the board is not emptied (that is another combo)
+    m.view.endSim(); g.board.cells.fill(0);
+    for (let x = 0; x < 9; x++) g.board.set(x, 0, x % 2 ? 5 | C.POWDER : 2);
+    g.board.set(9, 6, 6 | C.STEEL); g.board.set(9, 5, 6 | C.STEEL); // steel stands, so the board is not emptied (that is another discovery)
     g.replacePiece({ id: 'O' });
     st.state.inventory.bomb = (st.state.inventory.bomb || 0) + 1;
     const w0 = g.s.banked || 0;
@@ -324,19 +346,53 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     return { times: g.s.combos.chain3, gained: (g.s.banked || 0) - w0, status: document.getElementById('play-status').textContent, boost: g.s.boost };
   });
   check('the second time on one board pays half, and a boost waits for the next clears', again.times === 2 && again.gained === 3 && again.boost && /Boost ×1\.5/.test(again.status), JSON.stringify(again));
-  // A rewind takes the chain and its pay back.
   const rew = await ev(() => {
     const m = Lull.app.modes.play, g = m.game, st = Lull.app.store;
     st.state.inventory.rewind = (st.state.inventory.rewind || 0) + 1;
     const w0 = g.s.banked || 0;
     m.apply('rewind');
-    return { back: (g.s.banked || 0) - w0, times: g.s.combos.chain3, tnt: g.board.count((v) => (v & Lull.CELL.MAT) === Lull.CELL.TNT) };
+    return { back: (g.s.banked || 0) - w0, times: g.s.combos.chain3, powder: g.board.count((v) => (v & Lull.CELL.MAT) === Lull.CELL.POWDER), playing: !!m.view.sim };
   });
-  check('rewind puts the TNT back and takes back what the chain paid', rew.back === -3 && rew.times === 1 && rew.tnt === 5, JSON.stringify(rew));
+  check('rewind puts the powder back, takes back what the settle paid, and stops its playback', rew.back === -3 && rew.times === 1 && rew.powder === 4 && !rew.playing, JSON.stringify(rew));
+
+  // The world at work, filmed: fire running through oil, water filling a channel under a roof, steam rising to ice
+  // and raining back, a seed growing a vine across a gap, acid eating down, lava setting, current along steel.
+  const films = [
+    ['17-fire', ['XXXXXXXXX.', 'oooooooo..', 'oooooooo..'], 'O', 'torch', 8, 9, [80, 280, 520, 800]],
+    ['17-water', ['XXXX..XXX.', 'XX......X.', 'XX.XXXX.X.'], 'O', 'water', 3, 9, [60, 180, 320]],
+    ['17-steam', ['XXXXXXXXX.', 'XwwwwwwwX.', '..........', '..........', 'iiiiiiii..'], 'M1', 'torch', 3, 3, [60, 160, 260, 380]],
+    ['17-vine', ['XXX....XXX', 'XXe......X'], 'M1', 'water', 2, 8, [120, 280, 430]],
+    ['17-acid', ['XXXXXXXXX.', 'XXXXXXXXX.', 'XXXXXXXXX.'], 'O', 'acid', 3, 8, [100, 220, 400]],
+    ['17-lava', ['XX..wwXXX.', 'X....XXXX.'], 'O', 'lava', 1, 8, [100, 300, 600]],
+    ['17-current', ['XXXXXXXXX.', 'sssssspo..'], 'O', 'bolt', 0, 6, [60, 160, 300, 500]],
+  ];
+  const seen = {};
+  for (const [name, rows, piece, item, x, y, times] of films) {
+    const r = await scene(rows, piece, item, x, y);
+    await film(name, times);
+    await waitSim();
+    seen[name] = await ev(() => { const r2 = window.__r; return { frames: r2.sim ? r2.sim.frames.length : 0, kinds: r2.kinds || [], cascade: r2.cascade || 0 }; });
+    check('  ' + name.slice(3) + ': a settle of ' + seen[name].frames + ' steps played back', r.frames >= 3 && r.playing, JSON.stringify(seen[name]));
+  }
+  check('  the settles did what they show: fire, steam and rain, growth across the gap (a line), acid, current', seen['17-fire'].kinds.includes('fire') && seen['17-steam'].kinds.includes('steam') && seen['17-steam'].kinds.includes('cold') && seen['17-vine'].cascade >= 1 && seen['17-acid'].kinds.includes('acid') && seen['17-current'].kinds.includes('current'), JSON.stringify(seen));
+  // Sideways and upside down, the settle plays on the turned board (and its effects fall to its own floor).
+  const turned = await ev(() => { const v = Lull.app.modes.play.view; v.view.rot = 90; v.lay = null; v.resize(); return true; });
+  await scene(['XXXXXXXXX.', 'oooooooo..'], 'O', 'torch', 8, 9);
+  await page.waitForTimeout(250);
+  await shot('17-fire-sideways');
+  await waitSim();
+  await ev(() => { const v = Lull.app.modes.play.view; v.view.rot = 0; v.lay = null; v.dirty = true; });
+  check('  a turned board plays the settle too', turned);
+  // Reduced motion: no playback; the board is simply final, and what changed glows once.
+  const calmSim = await ev(async () => { const st = Lull.app.store.state, m0 = st.settings.motion; st.settings.motion = 'reduced'; return m0; });
+  const cr = await scene(['XXXXXXXXX.', 'oooooooo..'], 'O', 'torch', 8, 9);
+  await ev((m0) => { Lull.app.store.state.settings.motion = m0; }, calmSim);
+  check('  reduced motion: no playback, the board final at once', cr.frames >= 3 && !cr.playing, JSON.stringify(cr));
+
   // Gold: it waits on the board and gilds the piece in play, spent one clear at a time.
   const gold = await ev(() => {
     const m = Lull.app.modes.play, g = m.game, st = Lull.app.store;
-    g.board.cells.fill(0); g.s.boost = null; g.s.b2b = -1; g.s.gold = 0;
+    m.view.endSim(); g.board.cells.fill(0); g.s.boost = null; g.s.b2b = -1; g.s.gold = 0;
     st.state.inventory.golden = (st.state.inventory.golden || 0) + 1;
     m.apply('golden');
     for (let x = 1; x < 10; x++) g.board.set(x, 0, 8);
@@ -352,26 +408,54 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   check('gold waits through a piece that clears nothing, then a quad pays ×3 (15) and leaves four', gold.waited === 5 && gold.left === 4 && gold.banked === 15 && /Gold 4/.test(gold.status), JSON.stringify(gold));
   await page.waitForTimeout(100);
   await shot('16c-gold');
-  // Each new item on its own: the piece shows what it is made of, and it leaves that in the stack.
+  // Each kind of matter on its own, set in a basin: the piece shows what it is made of, and it leaves that behind.
   const mats = await ev(() => {
     const m = Lull.app.modes.play, g = m.game, st = Lull.app.store, C = Lull.CELL, out = {};
     g.s.gold = 0;
-    for (const [id, want] of [['steel', C.STEEL], ['oil', C.OIL], ['frost', C.ICE], ['water', C.WATER], ['tnt', C.TNT]]) {
-      g.board.cells.fill(0);
+    for (const [id, want] of [['steel', C.STEEL], ['oil', C.OIL], ['frost', C.ICE], ['water', C.WATER], ['tnt', C.POWDER], ['sand', C.SAND], ['seed', C.SEED]]) {
+      m.view.endSim(); g.board.cells.fill(0);
       for (let x = 0; x < 9; x++) g.board.set(x, 0, 2);
+      g.board.set(0, 1, 2); g.board.set(8, 1, 2);
       g.replacePiece({ id: 'T' });
       st.state.inventory[id] = (st.state.inventory[id] || 0) + 1;
-      m.apply(id); g.piece.y = 5; m.action('drop');
+      m.apply(id); g.piece.x = 3; g.piece.y = 5; m.action('drop');
       out[id] = g.board.count((v) => (v & C.MAT) === want);
     }
     return out;
   });
-  check('steel, oil, frost, water and TNT leave blocks made of themselves', mats.steel === 4 && mats.oil === 4 && mats.frost >= 4 && mats.water >= 3 && mats.tnt === 1, JSON.stringify(mats));
+  check('steel, oil, ice, water, powder, sand and seed leave blocks made of themselves', Object.values(mats).every((n) => n === 4), JSON.stringify(mats));
   await page.waitForTimeout(200);
-  await ev(() => { const m = Lull.app.modes.play, g = m.game, C = Lull.CELL; g.board.cells.fill(0); for (let x = 0; x < 10; x++) { g.board.set(x, 0, 1 + (x % 7)); g.board.set(x, 1, [C.ICE, C.OIL, C.STEEL, C.TNT, C.WATER][x % 5] | (1 + x % 7)); } g.replacePiece({ id: 'T' }); g.setSpecial('frost'); m.view.dirty = true; });
+  await ev(() => { const m = Lull.app.modes.play, g = m.game, C = Lull.CELL; m.view.endSim(); g.board.cells.fill(0); const all = [C.ICE, C.OIL, C.STEEL, C.POWDER, C.WATER, C.SAND, C.GLASS, C.SEED, C.VINE, C.ACID | (3 << 12), C.LAVA | (10 << 12), C.STEEL | (2 << 12), C.LAVA | (3 << 12)]; for (let x = 0; x < 10; x++) { g.board.set(x, 0, 1 + (x % 7)); g.board.set(x, 1, all[x] | (1 + x % 7)); g.board.set(x, 2, all[(x + 10) % all.length] | 3); } g.board.set(2, 3, C.FIRE | (5 << 12) | 7); g.board.set(6, 4, C.STEAM | (6 << 12) | 1); g.replacePiece({ id: 'T' }); g.setSpecial('lava'); m.view.dirty = true; });
   await page.waitForTimeout(100);
   await shot('16d-materials');
   await ev(() => { const m = Lull.app.modes.play; m.view.fx.clear(); m.game.board.cells.fill(0); m.game.replacePiece({ id: 'T' }); m.view.dirty = true; });
+
+  // ---- the daily gift ----------------------------------------------------------------------------------------------
+  console.log('daily gift');
+  await ev(() => { const st = Lull.app.store.state; st.gift = { last: null, n: 0, log: [] }; Lull.app.modes.play.renderStatus(); });
+  const inv0 = await ev(() => Object.values(Lull.app.store.state.inventory).reduce((a, b) => a + b, 0));
+  check('the Relaxed tab shows today\'s gift, waiting', await page.isVisible('#gift-btn.ready'));
+  await page.click('#gift-btn');
+  await page.waitForTimeout(450);
+  await shot('18-gift-opening');
+  await page.waitForTimeout(900);
+  await shot('18-gift');
+  const gift = await ev(() => ({ cards: [...document.querySelectorAll('.modal-gift .gift-card b')].map((b) => b.textContent), inv: Object.values(Lull.app.store.state.inventory).reduce((a, b) => a + b, 0), last: Lull.app.store.state.gift.last, today: Lull.dateKey(), ready: !!document.querySelector('#gift-btn.ready'), tip: document.getElementById('gift-btn').dataset.tip }));
+  check('it turns over three power-ups, already in the bag', gift.cards.length === 3 && new Set(gift.cards).size === 3 && gift.inv === inv0 + 3 && gift.last === gift.today, JSON.stringify(gift));
+  check('once opened, the button says when the next one comes', !gift.ready && /^Next gift in \d+h \d+m$/.test(gift.tip), gift.tip);
+  await page.click('.modal-gift footer .btn.primary');
+  await page.click('#gift-btn');
+  const twice = await ev(() => ({ modal: !!document.querySelector('.modal-gift'), inv: Object.values(Lull.app.store.state.inventory).reduce((a, b) => a + b, 0), toast: [...document.querySelectorAll('.toast')].map((t) => t.textContent).join() }));
+  check('not twice in a day: a quiet note of when, nothing more', !twice.modal && twice.inv === inv0 + 3 && /Next gift in/.test(twice.toast), JSON.stringify(twice));
+  await ev(() => Lull.app.saveNow());
+  await page.reload();
+  await page.waitForTimeout(400);
+  await ev(() => { for (const k of ['play', 'puzzle', 'classic']) Lull.app.modes[k].setGrace = 0; });
+  const reloaded = await ev(() => ({ ready: !!document.querySelector('#gift-btn.ready'), inv: Object.values(Lull.app.store.state.inventory).reduce((a, b) => a + b, 0), again: Lull.app.store.openGift(Date.now()) }));
+  check('nor by reopening Lull', !reloaded.ready && reloaded.inv === inv0 + 3 && reloaded.again === null, JSON.stringify(reloaded));
+  await page.click('#wallet');
+  await page.click('.tabs button[data-tab="play"]');
+  check('nor by switching tabs', !(await page.isVisible('#gift-btn.ready')));
 
   // ---- mouse only ---------------------------------------------------------------------------------------------------
   console.log('mouse');
@@ -467,7 +551,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     g.board.cells.fill(0); g.replacePiece({ id: 'O' }); while (g.move(-1));
     for (let y = 0; y < 20; y++) for (let x = 3; x < 10; x++) g.board.set(x, y, 8);
     m.useItem('giant');
-    const out = { card: m.cardOpen, over: g.over, kept: inv.giant === had + 1, id: g.piece.type.id, toast: document.body.textContent.includes('Too big to fit up there') };
+    const out = { card: m.cardOpen, over: g.over, kept: inv.giant === had + 1, id: g.piece.type.id, toast: document.body.textContent.includes('No room up there') };
     inv.giant = had; g.board.cells.fill(0); m.view.dirty = true;
     return out;
   });
@@ -505,7 +589,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   const ib = await page.$('#itembar .group-btn');
   await ib.hover();
   await page.waitForTimeout(450);
-  check('hovering an item type explains it', await page.isVisible('.tip:not(.hidden)') && /Change the piece/.test(await page.textContent('.tip')));
+  check('hovering an item type names it', await page.isVisible('.tip:not(.hidden)') && /Shapers/.test(await page.textContent('.tip')));
   await ib.click();
   const it0 = await page.$('.item-tray .item-btn');
   await it0.hover();
@@ -522,8 +606,9 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   // ---- classic ------------------------------------------------------------------------------------------------------
   console.log('classic');
   await page.mouse.move(5, 300);
-  await page.click('#to-classic');
-  check('Classic opens from the corner of Play (Play stays lit)', await ev(() => Lull.app.tab === 'classic' && document.querySelector('.tabs button[aria-selected="true"]').dataset.tab === 'play' && !document.querySelector('.tabs button[data-tab="classic"]')));
+  await page.click('.tabs button[data-tab="classic"]');
+  check('Classic is its own tab, the last of the places to play, and lit while open', await ev(() => Lull.app.tab === 'classic' && document.querySelector('.tabs button[aria-selected="true"]').dataset.tab === 'classic'
+    && Array.from(document.querySelectorAll('#tabs button')).pop().dataset.tab === 'classic' && !document.querySelector('.corner-btn')));
   await page.waitForTimeout(150);
   check('classic waits for a start', await ev(() => !Lull.app.modes.classic.started && Lull.app.modes.classic.cardOpen));
   await page.keyboard.press('Space');
@@ -533,26 +618,35 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   check('pieces fall on their own', fell.y < y0 || fell.pieces > 0, JSON.stringify([y0, fell]));
   check('music plays during a game', fell.music);
   check('the music keeps its voices bounded', await ev(() => Lull.Music.live > 0 && Lull.Music.live < 400), String(await ev(() => Lull.Music.live)));
-  // While the music plays, sound effects are tuned to the chord sounding as they ring (played for real, voices caught).
-  const tuned = await ev(() => {
-    const S = Lull.Sound, H = Lull.Harmony, M = Lull.Music, keep = S.voice, got = [], out = [];
+  // While the music plays, sound effects are in the key of the section sounding, and played at once (voices caught as
+  // they are played for real): here in the theme, then with the music moved on to the bridge (A melodic minor).
+  const inKey = () => ev(() => {
+    const S = Lull.Sound, K = Lull.Key, M = Lull.Music, keep = S.voice, got = [], out = [];
     S.voice = function (v, when, pack) { got.push({ v, when }); return keep.call(this, v, when, pack); };
     try {
-      for (const [n, a] of [['quad'], ['clear', 2], ['tspin'], ['perfect'], ['combo', 4], ['hold']]) {
+      for (const [n, a] of [['quad'], ['clear', 2], ['tspin'], ['perfect'], ['combo', 4], ['hold'], ['solve'], ['golden']]) {
         S.lastAt[n] = 0; got.length = 0;
-        const now = S.ctx.currentTime;
+        const now = S.ctx.currentTime, b = M.barAt(now);
         S.play(n, a, 'soft');
         for (const { v, when } of got) {
-          if (!H.tonal(v)) continue;
-          const b = M.barAt(now + when + (v.at || 0) + Math.min(0.15, v.d * 0.25)), m = Math.round(69 + 12 * Math.log2(v.f / 440)), pc = ((m % 12) + 12) % 12;
-          out.push({ n, chord: b.bar.name, pc, ok: H.tones(b.bar).chord[pc], when: +when.toFixed(3) });
+          if (!K.tonal(v)) { out.push({ n, when }); continue; }
+          const m = Math.round(69 + 12 * Math.log2(v.f / 440)), pc = ((m % 12) + 12) % 12;
+          out.push({ n, section: b.bar.section, key: b.bar.key, pc, ok: K.scale(b.bar.key)[pc] && K.at(now) === b.bar.key, when });
         }
       }
     } finally { S.voice = keep; }
     return out;
   });
-  check('while the music plays, every pitched voice of a sound effect is a tone of the chord it rings over', tuned.length > 20 && tuned.every((x) => x.ok), JSON.stringify(tuned.filter((x) => !x.ok).slice(0, 4)) + ' of ' + tuned.length);
-  check('only the big celebrations may wait for the beat, never more than 60 ms', tuned.every((x) => x.when <= 0.06 + 1e-6 && (x.when === 0 || ['quad', 'tspin', 'perfect'].includes(x.n))), JSON.stringify([...new Set(tuned.map((x) => x.n + ' ' + x.when))]));
+  const keyed = await inKey();
+  await ev(() => { const M = Lull.Music; M.stop(); M.pos = { bar: Lull.SONG.bars.findIndex((b) => b.section === 'bridge') + 1 }; M.start(); });
+  await page.waitForTimeout(400);
+  const keyedB = await inKey();
+  const pitchedA = keyed.filter((x) => x.pc != null), pitchedB = keyedB.filter((x) => x.pc != null);
+  check('while the music plays, every pitched voice of a sound effect is in the key of the section sounding', pitchedA.length > 20 && pitchedA.every((x) => x.ok && x.key === 'A minor'),
+    JSON.stringify(pitchedA.filter((x) => !x.ok).slice(0, 4)) + ' of ' + pitchedA.length + ' in ' + [...new Set(pitchedA.map((x) => x.section))]);
+  check('in the bridge, A melodic minor (G# and F#, no F)', pitchedB.length > 20 && pitchedB.every((x) => x.ok && x.key === 'A melodic minor' && x.pc !== 5) && pitchedB.some((x) => x.pc === 8 || x.pc === 6),
+    JSON.stringify(pitchedB.filter((x) => !x.ok).slice(0, 4)) + ' of ' + pitchedB.length + ' in ' + [...new Set(pitchedB.map((x) => x.section))]);
+  check('no sound effect waits for the beat: every voice is played at once', keyed.concat(keyedB).every((x) => x.when === 0), JSON.stringify([...new Set(keyed.concat(keyedB).map((x) => x.n + ' ' + x.when))]));
   await ev(() => { Lull.app.modes.classic.setGrace = Lull.Modes.SET_GRACE_MS; });
   const cp0 = await ev(() => Lull.app.modes.classic.game.s.pieces);
   await page.keyboard.press('Space');
@@ -650,23 +744,24 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   check('the default sounds render without clipping or silence', Object.entries(audio).every(([n, a]) => !a.bad && a.peak < -3 && a.peak > -60), JSON.stringify(audio));
   check('movement sounds stay faint', ['move', 'rotate', 'lower'].every((n) => audio[n].peak < -36), JSON.stringify([audio.move, audio.rotate, audio.lower]));
   check('the music has no holes', audio.music.quiet > -50, JSON.stringify(audio.music));
-  // Heard, not just planned: sound effects rendered over a bar of every chord, the notes found in them by FFT, and how
-  // much of their power is on the chord's tones — tuned, and as the pack made them (scripts/audio-render.cjs --harmony
-  // does every pack and sound at length).
+  // Heard, not just planned: sound effects rendered over the first bar of every section, the notes found in them by
+  // FFT, and how much of their power is on the section's key — put in it, and as the pack made them
+  // (scripts/audio-render.cjs --harmony does every pack and sound at length).
   {
-    const bars = await chordBars(page), rows = [];
-    for (const [pack, chords, events] of [['soft', Object.keys(bars), [['clear', 2], ['quad'], ['tspin'], ['perfect'], ['solve']]], ['chip', ['E9', 'Dm9'], [['quad'], ['perfect']]], ['marimba', ['E9', 'Esus'], [['clear', 2], ['tspin']]]]) {
-      for (const chord of chords) {
-        const res = await overBar(page, pack, bars[chord], events);
+    const bars = await sectionBars(page), rows = [];
+    for (const [pack, sections, events] of [['soft', Object.keys(bars), [['clear', 2], ['quad'], ['tspin'], ['perfect'], ['solve']]], ['chip', ['bridge', 'theme'], [['quad'], ['perfect']]], ['marimba', ['float', 'interlude'], [['clear', 2], ['tspin']]]]) {
+      for (const section of sections) {
+        const res = await overBar(page, pack, bars[section][0], events);
         for (let i = 0; i < res.length; i += 2) {
           if (res[i].glide || !res[i].found.length) continue;
-          rows.push({ pack, chord, sound: res[i].name, tuned: share(res[i].found, res[i].allowed).share, raw: share(res[i + 1].found, res[i + 1].allowed).share });
+          rows.push({ pack, section, key: res[i].key, sound: res[i].name, tuned: share(res[i].found, res[i].allowed).share, raw: share(res[i + 1].found, res[i + 1].allowed).share });
         }
       }
     }
-    const mean = (k) => rows.reduce((a, r) => a + r[k], 0) / rows.length, worst = rows.reduce((w, r) => (r.tuned < w.tuned ? r : w), rows[0]);
-    check('rendered over every chord, the sound effects\' notes are the chord\'s tones', rows.length >= 40 && mean('tuned') > 0.95 && worst.tuned > 0.8 && mean('tuned') > mean('raw') + 0.1,
-      'tuned ' + (mean('tuned') * 100).toFixed(1) + '%, as made ' + (mean('raw') * 100).toFixed(1) + '%, worst ' + JSON.stringify(worst) + ', ' + rows.length + ' renders');
+    const mean = (k, f) => { const r = rows.filter(f || (() => true)); return r.reduce((a, x) => a + x[k], 0) / r.length; };
+    const worst = rows.reduce((w, r) => (r.tuned < w.tuned ? r : w), rows[0]), mel = (r) => r.key === 'A melodic minor';
+    check('rendered in every section, the sound effects\' notes are the notes of its key', rows.length >= 40 && rows.every((r) => r.key === bars[r.section][1]) && mean('tuned') > 0.95 && worst.tuned > 0.8 && mean('tuned', mel) > mean('raw', mel) + 0.1,
+      'in key ' + (mean('tuned') * 100).toFixed(1) + '%, as made ' + (mean('raw') * 100).toFixed(1) + '% (bridge ' + (mean('tuned', mel) * 100).toFixed(1) + '% / ' + (mean('raw', mel) * 100).toFixed(1) + '%), worst ' + JSON.stringify(worst) + ', ' + rows.length + ' renders');
   }
 
   // ---- puzzles solved through the real keys --------------------------------------------------------------------------
@@ -867,6 +962,13 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   });
   check('history fits the window: compact rows, a scrolling list', fits.inWindow && fits.oneLine && fits.scrolls, JSON.stringify(fits));
   await shot('23-history');
+  const vol = await ev(() => {
+    const pz = Lull.app.store.state.stats.puzzle, n = pz.E.solved + pz.M.solved + pz.H.solved, f = document.querySelector('.hist-foot');
+    const d = Lull.app.modes.puzzle.puzzle.diff, tip = document.querySelector('#puz-diff button[aria-pressed="true"]').title;
+    return { n, text: f && f.textContent, fits: f && f.scrollWidth <= f.clientWidth + 1, tip, dn: pz[d].solved, dname: Lull.Puzzles.DIFFS[d].name };
+  });
+  check('History ends with the solved count against every seed', vol.n > 0 && vol.text === vol.n.toLocaleString('en-US') + ' of 12,884,901,888 puzzles solved' && vol.fits, JSON.stringify(vol));
+  check('a difficulty button says how many of its seeds are solved', vol.tip === vol.dn.toLocaleString('en-US') + ' of 4,294,967,296 ' + vol.dname + ' puzzles solved', vol.tip);
   // Save a seed from a row, then find it under Saved.
   const rowSeed = await page.textContent('.hist-row .seedchip');
   await page.click('.hist-row .star');
@@ -1079,7 +1181,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     Lull.fromNative({ type: 'shown' });
     return { len: f.bin.length, cap: Lull.Factory.capacity(f), toast: document.getElementById('toasts').textContent };
   });
-  check('time away fills the bin up to its capacity, and says so', away.len <= away.cap && away.len > away.cap - 8 && /While you were away the factory made \d+ minos/.test(away.toast), JSON.stringify(away));
+  check('time away fills the bin up to its capacity, and says so', away.len <= away.cap && away.len > away.cap - 8 && /While you were away: \d+ minos/.test(away.toast), JSON.stringify(away));
   await ev(() => Lull.Factory.collect(Lull.app.store.state.factory));
   // Timers crawl while Lull is hidden: the quiet catch-ups they run are still announced on return.
   await page.click('.tabs button[data-tab="play"]');
@@ -1098,28 +1200,82 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
 
   // ---- shop and settings ---------------------------------------------------------------------------------------------
   console.log('shop');
-  await page.click('.tabs button[data-tab="shop"]');
-  const tabsFit = await ev(() => { const t = document.getElementById('shop-tabs'); const r = t.getBoundingClientRect(); return Array.from(t.children).every((b) => b.getBoundingClientRect().right <= r.right + 0.5); });
-  check('every shop section is visible', tabsFit);
-  await page.click('#shop-tabs button:nth-child(2)'); // skins
+  // The Shop has no tab: the wallet opens it, and is lit (the current page) while it is open.
+  check('no Shop tab in the title bar', !(await page.$('.tabs button[data-tab="shop"]')));
+  await page.click('#wallet');
+  const walletOn = await ev(() => { const w = document.getElementById('wallet'); return Lull.app.tab === 'shop' && w.classList.contains('active') && w.getAttribute('aria-current') === 'page' && /^Shop — [\d,]+ lines$/.test(w.getAttribute('aria-label')) && !document.querySelector('.tabs button[aria-selected="true"]'); });
+  check('clicking the wallet opens the Shop, and the wallet shows it is open', walletOn);
+  const shopFits = async () => ev(() => {
+    const v = document.getElementById('view-shop'), b = document.getElementById('shop-body'), j = document.querySelector('.shop-jump');
+    const r = v.getBoundingClientRect();
+    // Nothing spills out of the window: the sections scroll inside the view, and the jump bar reaches every section.
+    return document.documentElement.scrollWidth <= innerWidth && b.getBoundingClientRect().bottom <= r.bottom + 0.5 && b.scrollWidth <= b.clientWidth + 1
+      && j.children.length === b.children.length && Array.from(j.children).every((c, i) => c.dataset.sec === b.children[i].dataset.sec);
+  });
+  check('the Shop fits the window: items by type, one scroll, a jump to every type', await shopFits()
+    && await ev(() => Array.from(document.querySelectorAll('#shop-body .shop-sec')).map((s) => s.dataset.sec).join() === Lull.ITEM_GROUPS.map((g) => g.id).join()
+      && document.querySelectorAll('#shop-body .shop-item').length === Lull.ITEM_ORDER.length));
+  await shot('40-shop-items');
+  // Items: the price asks first (Confirm), the second click buys one; clicking elsewhere puts the price back.
+  const item0 = await ev(() => ({ n: Lull.app.store.state.inventory.bomb || 0, lines: Lull.app.store.state.lines }));
+  await ev(() => { Lull.app.store.state.lines = Math.max(Lull.app.store.state.lines, 500); Lull.app.refreshWallet(); });
+  await page.click('.shop-item[data-item="bomb"] .price-btn');
+  const asked = await ev(() => { const b = document.querySelector('.shop-item[data-item="bomb"] .price-btn'); return b.classList.contains('armed') && b.textContent === 'Confirm' && !document.querySelector('.modal'); });
+  await page.mouse.click(5, 300);
+  const backToPrice = await ev(() => !document.querySelector('.price-btn.armed'));
+  await page.click('.shop-item[data-item="bomb"] .price-btn');
+  await page.click('.shop-item[data-item="bomb"] .price-btn');
+  const item1 = await ev(() => ({ n: Lull.app.store.state.inventory.bomb, badge: document.querySelector('.shop-item[data-item="bomb"] .ii .n').textContent, lines: Lull.app.store.state.lines, wallet: document.getElementById('wallet-n').textContent }));
+  check('an item costs two calm clicks (Confirm, no dialog), and lands in your bag', asked && backToPrice && item1.n === item0.n + 1 && item1.badge === String(item1.n) && item1.wallet === item1.lines.toLocaleString('en-US'), JSON.stringify([item0, item1]));
+  // Whatever the catalogue holds: enough for the cheapest item, not for the dearest.
+  const [cheap, dear] = await ev(() => { const ids = Lull.ITEM_ORDER.slice().sort((a, b) => Lull.ITEMS[a].price - Lull.ITEMS[b].price); Lull.app.store.state.lines = Lull.ITEMS[ids[0]].price; Lull.app.refreshWallet(); return [ids[0], ids[ids.length - 1]]; });
+  const poor = await ev(([c, d]) => ({ dim: document.querySelector('.shop-item[data-item="' + d + '"] .price-btn').classList.contains('poor'), ok: !document.querySelector('.shop-item[data-item="' + c + '"] .price-btn').classList.contains('poor') }), [cheap, dear]);
+  await page.click('.shop-item[data-item="' + dear + '"] .price-btn');
+  check('a price you cannot pay is dimmed as the wallet changes, and never asks', poor.ok && poor.dim && await ev(() => !document.querySelector('.price-btn.armed')), JSON.stringify(poor));
+  await ev((n) => { Lull.app.store.state.lines = n; Lull.app.refreshWallet(); }, item1.lines);
+  // Cosmetics: every kind, in one scroll; the jump bar lands on a section and follows the scroll.
+  await page.click('.shop-seg button:nth-child(2)');
   await page.waitForTimeout(100);
+  check('Cosmetics: every kind a section, every cosmetic a tile, fitting the window', await shopFits()
+    && await ev(() => Array.from(document.querySelectorAll('#shop-body .shop-sec')).map((s) => s.dataset.sec).join() === Object.keys(Lull.COSMETICS).join()
+      && document.querySelectorAll('#shop-body .shop-look').length === Object.values(Lull.COSMETICS).reduce((n, c) => n + Object.keys(c).length, 0)));
+  await shot('41-palettes');
+  await page.click('.shop-jump button[data-sec="skin"]');
+  await page.waitForTimeout(700);
+  check('the jump bar scrolls to a section and lights it', await ev(() => { const b = document.getElementById('shop-body'), s = b.querySelector('.shop-sec[data-sec="skin"]'); return Math.abs(s.getBoundingClientRect().top - b.getBoundingClientRect().top) < 4 && document.querySelector('.shop-jump button[aria-current="true"]').dataset.sec === 'skin'; }));
   await shot('40-skins');
-  await page.click('#shop-grid .card:nth-child(2) .btn.primary');
-  await page.click('.modal footer .btn.primary');
+  await page.click('.shop-look[data-look="skin:bevel"] .price-btn');
+  await page.click('.shop-look[data-look="skin:bevel"] .price-btn');
   const skin = await ev(() => Lull.app.store.state.equipped.skin);
   check('skin bought and equipped', skin === 'bevel', skin);
-  for (const [n, name] of [[1, 'palettes'], [3, 'frames'], [4, 'backdrops'], [5, 'effects'], [6, 'ghosts']]) {
-    await page.click('#shop-tabs button:nth-child(' + n + ')');
-    await page.waitForTimeout(60);
+  check('it says In use, and the one before offers Use', await ev(() => /In use/.test(document.querySelector('.shop-look[data-look="skin:bevel"]').textContent) && !!document.querySelector('.shop-look[data-look="skin:flat"] .use-btn')));
+  await page.click('.shop-look[data-look="skin:flat"]');
+  check('clicking an owned tile puts it on', await ev(() => Lull.app.store.state.equipped.skin === 'flat'));
+  await page.click('.shop-look[data-look="skin:bevel"] .use-btn');
+  for (const name of ['frame', 'backdrop', 'effect', 'ghost']) {
+    await page.click('.shop-jump button[data-sec="' + name + '"]');
+    await page.waitForTimeout(650);
     await shot('41-' + name);
   }
-  await page.click('#shop-tabs button:nth-child(7)'); // sounds
-  await page.waitForTimeout(60);
+  await page.click('.shop-jump button[data-sec="sound"]');
+  await page.waitForTimeout(650);
+  check('scrolled to the end, the last section is the one lit', await ev(() => document.querySelector('.shop-jump button[aria-current="true"]').dataset.sec === 'sound'));
   await shot('43-sounds');
-  await page.click('#shop-grid .card:nth-child(3) .sound-preview');
-  await page.click('#shop-grid .card:nth-child(3) .btn.primary');
-  await page.click('.modal footer .btn.primary');
+  await page.click('.shop-look[data-look="sound:chip"] .preview.listen');
+  check('a sound pack\'s preview plays it', await ev(() => document.querySelector('.shop-look[data-look="sound:chip"] .preview').classList.contains('playing')));
+  await page.click('.shop-look[data-look="sound:chip"] .price-btn');
+  await page.click('.shop-look[data-look="sound:chip"] .price-btn');
   check('sound pack bought and in use', await ev(() => Lull.app.store.state.equipped.sound === 'chip' && Lull.Sound.pack === 'chip'));
+  check('a factory reward shows its lock, not a price', await ev(() => { const t = document.querySelector('.shop-look[data-look="skin:steel"]'); return t && !t.querySelector('.price-btn') && !!t.querySelector('.reward-tag') && t.dataset.tip === Lull.COSMETICS.skin.steel.reward; }));
+  for (const [w, hgt, theme] of [[400, 700, 'dark'], [900, 900, 'dark'], [520, 760, 'light']]) {
+    await page.setViewportSize({ width: w, height: hgt });
+    await ev((t) => { Lull.app.settings.theme = t; Lull.app.applySettings(); }, theme);
+    await page.waitForTimeout(120);
+    check('the Shop fits at ' + w + '×' + hgt + ' (' + theme + ')', await shopFits());
+    await shot('44-shop-' + w + '-' + theme);
+  }
+  await ev(() => { Lull.app.settings.theme = 'dark'; Lull.app.applySettings(); });
+  await page.setViewportSize({ width: 520, height: 760 });
   await ev(() => { const s = Lull.app.store; s.state.lines += 20000; for (const k of Object.keys(Lull.COSMETICS)) for (const id of Object.keys(Lull.COSMETICS[k])) if (!Lull.COSMETICS[k][id].reward) s.buyCosmetic(k, id); });
   for (const [kind, id] of [['palette', 'prism'], ['skin', 'gem'], ['frame', 'rainbow'], ['backdrop', 'stars'], ['effect', 'confetti'], ['ghost', 'glow']]) await ev(([k, i]) => Lull.app.store.equip(k, i), [kind, id]);
   await ev(() => Lull.app.applyLook());
@@ -1138,7 +1294,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await page.click('#stats-tabs button:nth-child(2)');
   await page.waitForTimeout(50);
   const book = await ev(() => { const l = document.querySelector('.combo-list'); if (l) l.scrollIntoView(); return { all: document.querySelectorAll('.combo').length, unknown: document.querySelectorAll('.combo.unknown').length, known: [...document.querySelectorAll('.combo:not(.unknown) b')].map((b) => b.textContent), fits: [...document.querySelectorAll('.combo')].every((c) => c.scrollWidth <= c.clientWidth + 1) }; });
-  check('Stats ▸ Free Play lists the combos: found ones by name, the rest as ?', book.all === await ev(() => Lull.Combos.LIST.length) && book.unknown === book.all - book.known.length && book.known.includes('Daisy Chain') && book.fits, JSON.stringify(book));
+  check('Stats ▸ Free Play lists the combos and discoveries: found ones by name, the rest as ?', book.all === await ev(() => Lull.Combos.LIST.length) && book.unknown === book.all - book.known.length && book.known.includes('Daisy Chain') && book.fits, JSON.stringify(book));
   await page.waitForTimeout(50);
   await shot('50b-stats-combos');
   await page.click('.tabs button[data-tab="achievements"]');
@@ -1152,6 +1308,16 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await shot('51b-achievements-open');
   const fitA = await ev(() => { const b = document.getElementById('ach-body'); return { scrolls: b.scrollHeight > b.clientHeight + 10, page: document.documentElement.scrollHeight <= window.innerHeight + 1 && document.documentElement.scrollWidth <= window.innerWidth + 1, rowsFit: [...document.querySelectorAll('.ach-group[open] .ach')].every((r) => r.scrollWidth <= r.clientWidth + 1) }; });
   check('an open group scrolls inside the view, never the window, and every row fits', fitA.scrolls && fitA.page && fitA.rowsFit, JSON.stringify(fitA));
+  // "No power-ups on the board" is in each Free Play description; what it means exactly is said once, on the header.
+  const rule = await ev(() => {
+    const play = [...document.querySelectorAll('.ach-group[data-group="play"] .ach .d')].map((d) => d.textContent);
+    const info = document.querySelector('.ach-group[data-group="play"] > summary .ach-info'), others = document.querySelectorAll('.ach-group:not([data-group="play"]) .ach-info').length;
+    return { said: play.filter((t) => /no (other )?power-ups on the board/.test(t)).length, byHand: document.getElementById('ach-body').textContent.includes('by hand'), info: info && info.dataset.tip, others };
+  });
+  check('Free Play skill ones say "no power-ups on the board", defined once on the header (never "by hand")', rule.said >= 20 && !rule.byHand && /last empty/.test(rule.info || '') && rule.others === 0, JSON.stringify(rule));
+  const wasOpen = await ev(() => document.querySelector('.ach-group[data-group="play"]').open);
+  await page.click('.ach-group[data-group="play"] > summary .ach-info');
+  check('clicking the header\'s definition leaves the group as it was', (await ev(() => document.querySelector('.ach-group[data-group="play"]').open)) === wasOpen);
   await page.click('.ach-tools button:nth-child(3)');
   await page.waitForTimeout(40);
   const earnedOnly = await ev(() => ({ shown: document.querySelectorAll('.ach').length, got: document.querySelectorAll('.ach.got').length, open: !!document.querySelector('.ach-group[data-group="play"][open]') }));
@@ -1193,12 +1359,13 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
 
   // ---- window sizes -------------------------------------------------------------------------------------------------
   console.log('sizes');
-  for (const [w, hgt] of [[300, 440], [900, 560], [420, 900]]) {
+  for (const [w, hgt] of [[300, 440], [900, 560], [420, 900], [400, 700], [520, 760]]) {
     await page.setViewportSize({ width: w, height: hgt });
     for (const tab of ['play', 'classic', 'puzzle', 'factory']) {
       await ev((t) => Lull.app.setTab(t), tab);
       await page.waitForTimeout(150);
       const overflow = await ev(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+      if (tab === 'play') check(w + '×' + hgt + ' the daily gift sits inside the status bar', await ev(() => { const g = document.getElementById('gift-btn'), b = document.getElementById('play-status'); if (!g) return false; const r = g.getBoundingClientRect(), q = b.getBoundingClientRect(); return r.width > 0 && r.left >= q.left - 0.5 && r.right <= q.right + 0.5 && r.top >= q.top - 0.5 && r.bottom <= q.bottom + 0.5; }));
       if (tab === 'play' || tab === 'classic') check(w + '×' + hgt + ' ' + tab + ' status bar shows everything', await ev((t) => { const b = document.getElementById(t === 'play' ? 'play-status' : 'classic-status'); return b.scrollWidth <= b.clientWidth + 1; }, tab));
       check(w + '×' + hgt + ' ' + tab + ' fits', !overflow);
       if (tab === 'puzzle') check(w + '×' + hgt + ' puzzle card and wildcards fit', await ev(() => ['view-puzzle', 'puz-card', 'puz-mods', 'puz-actions'].every((id) => { const el = document.getElementById(id); return el.scrollWidth <= el.clientWidth + 1 && el.scrollHeight <= el.clientHeight + 1; })));
@@ -1245,6 +1412,20 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   check('an achievement earned in the background is told on return, not chimed while away', bg.away.earned && bg.away.toasts === 0 && bg.away.played === 0 && /Familiar Face/.test(bg.back.toasts) && bg.back.played.length === 1, JSON.stringify(bg));
 
   // ---- mute: the top-bar speaker and M, over everything, persisted, leaving the toggles alone -------------------------
+  console.log('pointer away');
+  {
+    const fade = async (type) => { await ev((t) => document.documentElement.dispatchEvent(new MouseEvent(t)), type); await page.waitForTimeout(600); return ev(() => ({ away: document.body.classList.contains('away'), op: getComputedStyle(document.getElementById('app')).opacity, filter: getComputedStyle(document.getElementById('app')).filter })); };
+    const out = await fade('mouseleave');
+    check('the pointer leaving dims and fades Lull', out.away && +out.op < 0.7 && /brightness/.test(out.filter), JSON.stringify(out));
+    const back = await fade('mouseenter');
+    check('and it comes back when the pointer does', !back.away && +back.op === 1, JSON.stringify(back));
+    await ev(() => { Lull.app.settings.fadeAway = false; Lull.app.applySettings(); });
+    check('the fade can be switched off', !(await fade('mouseleave')).away);
+    await ev(() => { Lull.app.settings.fadeAway = true; Lull.app.applySettings(); document.body.classList.remove('away'); });
+    await ev(() => Lull.fromNative({ type: 'pointer', inside: false }));
+    check('the native panel says when the pointer left', await ev(() => document.body.classList.contains('away')));
+    await ev(() => Lull.fromNative({ type: 'pointer', inside: true }));
+  }
   console.log('mute');
   await page.setViewportSize({ width: 520, height: 760 });
   await ev(() => Lull.app.setTab('play'));
@@ -1328,17 +1509,17 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     const all = Array.from(document.querySelectorAll('#titlebar .tabs button'));
     const xs = all.map((b) => b.getBoundingClientRect().left);
     const kids = Array.from(document.getElementById('titlebar').children).map((e) => e.id || e.className);
-    return { modes: ids('#tabs button'), meta: ids('#tabs-meta button'), feet: all.map((b) => b.dataset.tipFoot).join(), ltr: xs.every((x, i) => !i || x > xs[i - 1]), tips: all.every((b) => b.dataset.tip && b.dataset.tipTitle && !b.title), kids: kids.join() };
+    return { wallet: document.getElementById('wallet').dataset.tipFoot, modes: ids('#tabs button'), meta: ids('#tabs-meta button'), feet: all.map((b) => b.dataset.tipFoot).join(), ltr: xs.every((x, i) => !i || x > xs[i - 1]), tips: all.every((b) => b.dataset.tip === b.getAttribute('aria-label') && !b.dataset.tipTitle && !b.title), kids: kids.join() };
   });
-  check('title bar: Play, Puzzles, Factory together; Shop, Stats, Achievements by the wallet; ⌘1–⌘6 left to right, each in its tooltip',
-    bar.modes === 'play,puzzle,factory' && bar.meta === 'shop,stats,achievements' && bar.ltr && bar.tips && bar.feet === '⌘1,⌘2,⌘3,⌘4,⌘5,⌘6'
-    && /^brand,tabs,spacer,tabs-meta,wallet,tb-sep,btn-mute,btn-settings,tb-sep win,winbtns$/.test(bar.kids), JSON.stringify(bar));
+  check('title bar: Play, Puzzles, Factory, Classic together; Stats, Achievements by the wallet (the Shop); ⌘1–⌘7 left to right, each in its tooltip',
+    bar.modes === 'play,puzzle,factory,classic' && bar.meta === 'stats,achievements' && bar.ltr && bar.tips && bar.feet === '⌘1,⌘2,⌘3,⌘4,⌘5,⌘6' && bar.wallet === '⌘7'
+    && /^brand,bar-idle,tabs,spacer,tabs-meta,wallet,tb-sep,btn-mute,btn-settings,tb-sep win,winbtns$/.test(bar.kids), JSON.stringify(bar));
   const shortcut = [];
-  for (let n = 1; n <= 6; n++) { await page.keyboard.press('Control+Digit' + n); shortcut.push(await ev(() => Lull.app.tab + ':' + document.querySelector('#titlebar .tabs button[aria-selected="true"]').dataset.tab)); }
-  check('⌘1–⌘6 open the tabs in the order they sit, and light them', shortcut.join() === 'play:play,puzzle:puzzle,factory:factory,shop:shop,stats:stats,achievements:achievements', shortcut.join());
+  for (let n = 1; n <= 7; n++) { await page.keyboard.press('Control+Digit' + n); shortcut.push(await ev(() => { const on = document.querySelector('#titlebar .tabs button[aria-selected="true"], #wallet.active'); return Lull.app.tab + ':' + (on && (on.dataset.tab || on.id)); })); }
+  check('⌘1–⌘7 open the tabs (and the Shop, by the wallet) in the order they sit, and light them', shortcut.join() === 'play:play,puzzle:puzzle,factory:factory,classic:classic,stats:stats,achievements:achievements,shop:wallet', shortcut.join());
   // Labels: every play tab named when wide; only the tab you are on when narrower; icons alone when narrow; the bar keeps room to drag.
   const labels = [];
-  for (const [w, nat, want] of [[1100, false, 'Play,Puzzles,Factory|Shop,Stats,Achievements'], [900, false, 'Play,Puzzles,Factory|'], [900, true, 'Play,Puzzles,Factory|'], [560, false, 'Puzzles|'], [520, true, '|'], [460, false, '|'], [400, true, '|']]) {
+  for (const [w, nat, want] of [[1100, false, 'Play,Puzzles,Factory,Classic|Stats,Achievements'], [900, false, 'Play,Puzzles,Factory,Classic|'], [900, true, 'Play,Puzzles,Factory,Classic|'], [560, false, 'Puzzles|'], [520, true, '|'], [460, false, '|'], [400, true, '|']]) {
     await page.setViewportSize({ width: w, height: 760 });
     await ev(() => Lull.app.setTab('puzzle'));
     const got = await ev((nat) => {
@@ -1357,7 +1538,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await page.hover('#tabs button[data-tab="factory"]');
   await page.waitForTimeout(450);
   const tip = await ev(() => { const t = document.querySelector('.tip'); return t.classList.contains('hidden') ? '' : t.textContent; });
-  check('hovering a tab names it, says what it is and gives its key (and nothing reads "null")', /^Factory.+⌘3$/.test(tip) && !/null/.test(tip), tip);
+  check('hovering a tab names it and gives its key, nothing more (and nothing reads "null")', /^Factory⌘3$/.test(tip) && !/null/.test(tip), tip);
   await page.hover('#btn-settings');
   await page.waitForTimeout(450);
   const tip2 = await ev(() => { const t = document.querySelector('.tip'); return (t.classList.contains('compact') ? 'compact ' : '') + t.textContent; });
@@ -1397,6 +1578,177 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await page.keyboard.press('KeyM');
   const m7 = await muteState();
   check('M after a reload unmutes', !m7.set && m7.gain === 1, JSON.stringify(m7));
+
+  // ---- control hints: a struggling player gets one terse hint, and hints retire ---------------------------------------
+  console.log('control hints');
+  const hintsSoFar = await ev(() => JSON.parse(JSON.stringify(Lull.app.store.state.hints.shown || {})));
+  check('with Control hints off, the scripted run above never raised one', Object.keys(hintsSoFar).length === 0, JSON.stringify(hintsSoFar));
+  // The run so far has set hundreds of pieces (past the 300 that retire every hint): start this player afresh.
+  const hintState = () => ev(() => { const c = Lull.app.hints, el = document.querySelector('.lhint'); return { over: c.d.over, pending: c.d.pending && c.d.pending.id, shown: !!(el && el.classList.contains('show')), id: el && el.dataset.hint, text: el ? el.textContent : '', keys: el ? Array.from(el.querySelectorAll('kbd')).map((k) => k.textContent) : [], hs: JSON.parse(JSON.stringify(Lull.app.store.state.hints)) }; });
+  const hintReset = (keep) => ev((k) => { const st = Lull.app.store.state; if (!k) st.hints = Object.assign(Lull.Hints.fresh(), { seeded: 1 }); st.settings.hints = true; const c = Lull.app.hints; c.hide(); c.sync(); c.d.lastAt = -Infinity; c.d.lastBy = {}; c.d.pending = null; }, keep);
+  await hintReset();
+  await page.click('.tabs button[data-tab="puzzle"]');
+  const flipSeed = await ev(() => { for (let n = 1; n < 400; n++) for (const d of ['E', 'M', 'H']) { const s = Lull.Puzzles.numberedSeed(d, n), p = Lull.Puzzles.generate(s); if (p.mods.includes('flip') && !p.mods.some((m) => m === 'invert' || m === 'rigid' || m === 'side')) return s; } return null; });
+  await ev((s) => Lull.app.modes.puzzle.load(s, {}), flipSeed);
+  await page.mouse.move(5, 5);
+  await page.waitForTimeout(100);
+  // On an Upside Down board Up lowers (toward the floor, at the top of the screen): a player pressing it to turn.
+  for (let i = 0; i < 2; i++) { await page.keyboard.press('ArrowUp'); await page.waitForTimeout(120); }
+  let hs1 = await hintState();
+  check('two presses of Up are not yet struggling', !hs1.shown && !hs1.pending, JSON.stringify(hs1));
+  await page.keyboard.press('ArrowUp');
+  await page.waitForTimeout(250);
+  hs1 = await hintState();
+  check('a third Up on an Upside Down puzzle shows the arrow that turns there: ↓ turns', hs1.shown && hs1.id === 'turnArrow' && hs1.keys.join() === '↓' && hs1.text === '↓turns' && hs1.hs.shown.turnArrow === 1, JSON.stringify(hs1));
+  const pill = await ev(() => { const r = document.querySelector('.lhint').getBoundingClientRect(), c = Lull.app.modes.puzzle.canvas.getBoundingClientRect(); return { inside: r.left >= c.left && r.right <= c.right && r.top >= c.top && r.bottom <= c.bottom, h: r.height, n: document.querySelectorAll('.lhint').length }; });
+  check('one small pill, on the board', pill.inside && pill.h < 30 && pill.n === 1, JSON.stringify(pill));
+  await page.waitForTimeout(400);
+  await shot('70-hint');
+  await page.waitForTimeout(Math.max(0, (await ev(() => Lull.Hints.SHOW_MS))) + 200);
+  check('it fades after a few seconds', !(await hintState()).shown);
+  // More of the same right away: rate-limited, nothing new.
+  for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowUp');
+  await page.waitForTimeout(200);
+  check('never again straight away', !(await hintState()).shown);
+  // Keys that do nothing (WASD) on the board: the arrows.
+  await hintReset(true);
+  for (const k of ['KeyW', 'KeyW', 'KeyD', 'KeyS']) await page.keyboard.press(k); // WASD, where A turns and W, S, D do nothing
+  await page.waitForTimeout(200);
+  const hk = await hintState();
+  check('four keys that do nothing: the arrows that move and turn, in this board\'s directions', hk.shown && hk.id === 'keys' && hk.keys.join() === '→,←,↓' && /move/.test(hk.text) && /turns/.test(hk.text), JSON.stringify(hk));
+  // Turning with the arrow that turns, a few times: that hint is retired for good.
+  await hintReset(true);
+  for (let i = 0; i < 4; i++) { await page.keyboard.press('ArrowDown'); await page.waitForTimeout(40); }
+  const skill = await hintState();
+  check('four turns on a turned board retire its hint', skill.hs.retired.turnArrow === true && skill.hs.skill.turnArrow >= 4, JSON.stringify(skill.hs));
+  await ev(() => Lull.app.modes.puzzle.retry());
+  for (let i = 0; i < 4; i++) { await page.keyboard.press('ArrowUp'); await page.waitForTimeout(60); }
+  await page.waitForTimeout(150);
+  const gone = await hintState();
+  check('and it never comes back', !gone.shown && !gone.pending, JSON.stringify(gone));
+  // A mouse player: the same kind of hint in the mouse's own words.
+  await hintReset(true);
+  const mouseHint = await ev(() => { const m = Lull.app.modes.puzzle, c = Lull.app.hints; m.lastInput = 'mouse'; c.d.raise('lower', null, performance.now()); return new Promise((r) => setTimeout(() => { const el = document.querySelector('.lhint'); r(el.classList.contains('show') ? el.textContent : ''); m.lastInput = 'key'; }, 150)); });
+  check('with the mouse, words for the mouse (no key caps)', mouseHint === 'Wheel lowers', mouseHint);
+  // 300 pieces set: every hint stops for good, and stays stopped after a reload.
+  await hintReset(true);
+  await ev(() => { Lull.app.store.state.hints.pieces = Lull.Hints.RETIRE_PIECES - 1; Lull.app.hints.sync(); });
+  await ev(() => Lull.app.modes.puzzle.retry());
+  await page.keyboard.press('Space');
+  await page.waitForTimeout(100);
+  for (const k of ['KeyW', 'KeyD', 'KeyS', 'KeyW']) await page.keyboard.press(k);
+  await page.waitForTimeout(150);
+  const done = await hintState();
+  check('after 300 pieces every hint is retired: keys that do nothing get no hint', done.over && done.hs.over && !done.shown && !done.pending, JSON.stringify(done));
+  await ev(() => Lull.app.saveNow());
+  await page.reload();
+  await page.waitForTimeout(400);
+  check('retired hints stay retired after a reload', await ev(() => Lull.app.store.state.hints.over === true && Lull.app.hints.d.over));
+  // Settings ▸ Controls has one quiet switch for them.
+  await ev(() => Lull.UI.openSettings(Lull.app, 'controls'));
+  await page.waitForTimeout(150);
+  check('Settings ▸ Controls: a Control hints switch, on', await ev(() => { const sw = document.querySelector('.switch[data-setting="hints"]'); return !!sw && sw.getAttribute('aria-checked') === 'true' && /Control hints/.test(sw.closest('.set-row').textContent); }));
+  await ev(() => Lull.UI.closeTopModal());
+
+  // ---- collapsed into the title bar ---------------------------------------------------------------------------------
+  console.log('collapse');
+  {
+    await page.setViewportSize({ width: 520, height: 760 });
+    await ev(() => { Lull.app.settings.motion = 'full'; Lull.app.setTab('play'); });
+    await page.mouse.move(260, 400);
+    const col = () => ev(() => {
+      const app = document.getElementById('app').getBoundingClientRect(), bar = document.getElementById('titlebar');
+      const cv = document.getElementById('bar-idle').getBoundingClientRect(), btn = document.getElementById('btn-collapse').getBoundingClientRect();
+      const shown = Array.from(bar.querySelectorAll('*')).filter((e) => e.getClientRects().length && getComputedStyle(e).display !== 'none' && !e.closest('svg') && e.id !== 'winbtns').map((e) => e.id || e.className);
+      const b = document.getElementById('btn-collapse');
+      return { on: document.body.classList.contains('collapsed') && Lull.Collapse.on, saved: Lull.app.state.collapsed, h: app.height, main: document.getElementById('main').getClientRects().length, shown: shown.join(), label: b.getAttribute('aria-label'), expanded: b.getAttribute('aria-expanded'), cvLeft: cv.left - app.left, cvGap: btn.left - cv.right, btnRight: app.right - btn.right, tab: Lull.app.tab };
+    });
+    await page.click('#btn-collapse');
+    await page.waitForTimeout(100);
+    const c1 = await col();
+    check('the chevron rolls the window up into its title bar: nothing below it, only the pieces and the expand button', c1.on && c1.saved === true && c1.h >= 40 && c1.h <= 44 && c1.main === 0 && c1.shown === 'bar-idle,btn-collapse' && c1.label === 'Expand' && c1.expanded === 'false', JSON.stringify(c1));
+    check('the idle canvas spans the bar up to the expand button, which stays at the right', c1.cvLeft < 3 && c1.cvGap >= 0 && c1.cvGap < 8 && c1.btnRight < 12, JSON.stringify(c1));
+    const pix = () => ev(() => document.getElementById('bar-idle').toDataURL());
+    const f0 = await ev(() => Lull.Collapse.idle.frames), p0 = await pix();
+    await page.waitForTimeout(400);
+    const f1 = await ev(() => Lull.Collapse.idle.frames), p1 = await pix();
+    check('pieces drift along the bar (about 30 fps, not faster)', p0 !== p1 && f1 - f0 >= 6 && f1 - f0 <= 16, (f1 - f0) + ' frames');
+    const cells = await ev(() => { const i = Lull.Collapse.idle; return i.flying.length + i.grid.flat().filter(Boolean).length; });
+    check('in the equipped look, a few pieces in flight and a small stack', cells >= 3, String(cells));
+    for (const theme of ['dark', 'light']) {
+      await ev((t) => { Lull.app.settings.theme = t; Lull.app.applySettings(); }, theme);
+      for (const w of [520, 900]) {
+        await page.setViewportSize({ width: w, height: 760 });
+        await page.waitForTimeout(250);
+        if (OUT) await page.screenshot({ path: path.join(OUT, '95-collapsed-' + theme + '-' + w + '.png'), clip: { x: 0, y: 0, width: w, height: 70 } });
+      }
+    }
+    await ev(() => { Lull.app.settings.theme = 'dark'; Lull.app.applySettings(); });
+    await page.setViewportSize({ width: 520, height: 760 });
+    // Keys for the game do nothing while rolled up.
+    const g0 = await ev(() => { const g = Lull.app.modes.play.game; return JSON.stringify([g.piece && g.piece.x, g.piece && g.piece.y, g.piece && g.piece.rot, g.s.pieces, g.board.count()]); });
+    for (const k of ['ArrowLeft', 'ArrowUp', 'ArrowDown', 'Space', 'KeyC']) await page.keyboard.press(k);
+    const g1 = await ev(() => { const g = Lull.app.modes.play.game; return JSON.stringify([g.piece && g.piece.x, g.piece && g.piece.y, g.piece && g.piece.rot, g.s.pieces, g.board.count()]); });
+    check('game keys are ignored while collapsed', g0 === g1, g0 + ' → ' + g1);
+    await page.click('#bar-idle');
+    check('a click on the bar does not expand it (it drags the window in the app)', (await col()).on);
+    await page.dblclick('#bar-idle');
+    const c2 = await col();
+    check('a double-click on the bar expands it, back to the same tab', !c2.on && c2.saved === false && c2.h > 700 && c2.main === 1 && c2.tab === 'play' && c2.label === 'Collapse' && c2.expanded === 'true', JSON.stringify(c2));
+    await page.dblclick('#titlebar .spacer');
+    check('a double-click on the empty bar collapses it', (await col()).on);
+    await page.dblclick('#bar-idle');
+    await page.dblclick('#tabs button[data-tab="play"]');
+    check('a double-click on a button is only clicks', !(await col()).on);
+    await page.keyboard.press('Control+KeyJ');
+    const k1 = (await col()).on;
+    await page.keyboard.press('Control+KeyJ');
+    check('⌘J collapses and expands, and says so in its tooltip', k1 && !(await col()).on && await ev(() => document.getElementById('btn-collapse').dataset.tipFoot === '⌘J'));
+    // Classic pauses (like leaving its tab) and its music stops; expanding leaves it paused where it was.
+    await ev(() => Lull.app.setTab('classic'));
+    await page.keyboard.press('Space');
+    await page.waitForTimeout(400);
+    const cl0 = await ev(() => ({ run: Lull.app.modes.classic.running(), music: Lull.Music.playing }));
+    await page.keyboard.press('Control+KeyJ');
+    await page.waitForTimeout(300);
+    const cl1 = await ev(() => ({ paused: Lull.app.modes.classic.paused, music: Lull.Music.playing, y: Lull.app.modes.classic.game.piece.y }));
+    await page.waitForTimeout(600);
+    const y2 = await ev(() => Lull.app.modes.classic.game.piece.y);
+    await page.keyboard.press('Control+KeyJ');
+    await page.waitForTimeout(100);
+    const cl2 = await ev(() => ({ tab: Lull.app.tab, paused: Lull.app.modes.classic.paused, view: document.getElementById('view-classic').classList.contains('active') }));
+    check('collapsing pauses Classic and stops its music; expanding returns to it, still paused', cl0.run && cl1.paused && !cl1.music && y2 === cl1.y && cl2.tab === 'classic' && cl2.paused && cl2.view, JSON.stringify([cl0, cl1, y2, cl2]));
+    // The factory runs on unseen, and its floor comes back.
+    await ev(() => Lull.app.setTab('factory'));
+    await page.keyboard.press('Control+KeyJ');
+    const fa1 = await ev(() => Lull.app.modes.factory.visible);
+    await page.keyboard.press('Control+KeyJ');
+    check('the factory runs on unseen while collapsed, and its floor comes back', fa1 === false && await ev(() => Lull.app.modes.factory.visible && Lull.app.tab === 'factory'));
+    // A tab's shortcut rolls the window down first.
+    await page.keyboard.press('Control+KeyJ');
+    await page.keyboard.press('Control+Digit2');
+    check('⌘2 while collapsed expands onto Puzzles', await ev(() => !Lull.Collapse.on && Lull.app.tab === 'puzzle'));
+    // Reduced motion: the bar holds still.
+    await ev(() => { Lull.app.settings.motion = 'reduced'; });
+    await page.keyboard.press('Control+KeyJ');
+    await page.waitForTimeout(100);
+    const r0 = await pix();
+    await page.waitForTimeout(300);
+    check('with reduced motion the pieces hold still', r0 === await pix());
+    await ev(() => { Lull.app.settings.motion = 'full'; });
+    // Collapsed is saved, and so is the tab under it.
+    await ev(() => Lull.app.saveNow());
+    await page.reload();
+    await page.waitForTimeout(400);
+    const re = await col();
+    check('collapsed survives a reload', re.on && re.h <= 44 && re.tab === 'puzzle', JSON.stringify(re));
+    await page.click('#btn-collapse');
+    await ev(() => Lull.app.saveNow());
+    await page.reload();
+    await page.waitForTimeout(400);
+    const re2 = await col();
+    check('and so does expanded', !re2.on && re2.h > 700 && re2.tab === 'puzzle', JSON.stringify(re2));
+  }
 
   check('no page errors', errors.length === 0, errors.slice(0, 5).join('\n'));
   await browser.close();

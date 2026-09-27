@@ -49,7 +49,7 @@
 
   /** Plays a sound pack's sample; muted, it says why nothing is heard instead of leaving you wondering. */
   function listen(app, id) {
-    if (app.settings.muted) toast('Muted — M or the speaker up top brings the sound back', null, 2400);
+    if (app.settings.muted) toast('Muted', null, 1600);
     app.sound.preview(id);
   }
 
@@ -102,7 +102,7 @@
   }
 
   function confirm(title, text, okLabel, onOk, kind) {
-    return openModal({ title, body: h('p', null, text), buttons: [{ label: 'Cancel' }, { label: okLabel || 'OK', kind: kind || 'primary', onClick: onOk }] });
+    return openModal({ title, body: text ? h('p', null, text) : null, buttons: [{ label: 'Cancel' }, { label: okLabel || 'OK', kind: kind || 'primary', onClick: onOk }] });
   }
 
   // ---- small canvases -------------------------------------------------------------------------------------------------
@@ -135,32 +135,7 @@
   function cosmeticPreview(app, kind, id, w, hh) {
     const look = lookWith(app, kind, id);
     return canvasFor(w, hh, (ctx) => {
-      if (kind === 'palette') {
-        const s = Math.floor(Math.min(hh / 3.2, w / 13));
-        const ids = ['I', 'O', 'T', 'S', 'Z', 'J', 'L'];
-        const pos = [[0.4, 1.6, 1], [4.6, 0.3, 0], [7.3, 0.3, 0], [2.4, 0.3, 0], [9.7, 1.2, 1], [10.4, 0.2, 2], [5, 1.9, 0]];
-        const ox = (w - s * 12.2) / 2, oy = (hh - s * 3) / 2;
-        ids.forEach((id2, i) => drawMiniPiece(ctx, look, id2, ox + pos[i][0] * s, oy + pos[i][1] * s, s, pos[i][2]));
-      } else if (kind === 'skin') {
-        const s = Math.floor(Math.min(hh / 2.6, w / 7));
-        const ox = (w - s * 6.4) / 2, oy = (hh - s * 2) / 2;
-        drawMiniPiece(ctx, look, 'T', ox, oy, s, 2);
-        drawMiniPiece(ctx, look, 'L', ox + s * 3.4, oy, s, 0);
-      } else if (kind === 'frame' || kind === 'backdrop' || kind === 'ghost') {
-        const s = Math.floor(Math.min((hh - 16) / 4, (w - 24) / 8));
-        const bw = s * 8, bh = s * 4, bx = Math.round((w - bw) / 2), by = Math.round((hh - bh) / 2);
-        Render.drawBackdrop(ctx, look.backdrop, { x: bx, y: by, w: bw, h: bh }, s, 8, 4, app.theme, 0);
-        const g = look.colors[8];
-        for (const [cx, cy] of [[0, 3], [1, 3], [2, 3], [5, 3], [6, 3], [7, 3], [0, 2], [7, 2], [6, 2]]) Render.drawCell(ctx, look.skin, g, bx + cx * s, by + cy * s, s);
-        if (kind === 'ghost') {
-          const col = look.colors[3];
-          for (const [cx, cy] of [[3, 3], [4, 3], [4, 2], [3, 2]]) Render.ghostCell(ctx, id, col, bx + cx * s, by + cy * s, s);
-          for (const [cx, cy] of [[3, 0], [4, 0], [3, 1], [4, 1]]) Render.drawCell(ctx, look.skin, col, bx + cx * s, by + cy * s, s);
-        } else {
-          drawMiniPiece(ctx, look, 'T', bx + 2.5 * s, by + 0.2 * s, s, 2);
-        }
-        Render.drawFrame(ctx, look.frame, { x: bx, y: by, w: bw, h: bh }, app.theme.accent, performance.now());
-      } else if (kind === 'effect') {
+      if (kind === 'effect') {
         const s = Math.floor(Math.min(hh / 3.2, w / 11));
         const fx = new Render.FX();
         const cells = [];
@@ -174,50 +149,194 @@
         Math.random = saved;
         fx.update(id === 'fade' ? 0.08 : 0.16);
         fx.draw(ctx);
+      } else {
+        // A small board: palettes and skins show a stack in every colour, the rest a grey stack with a piece coming down.
+        const cols = 8, rows = 4, colour = kind === 'palette' || kind === 'skin';
+        const s = Math.floor(Math.min((hh - 14) / rows, (w - 20) / cols));
+        const bw = s * cols, bh = s * rows, bx = Math.round((w - bw) / 2), by = Math.round((hh - bh) / 2);
+        Render.drawBackdrop(ctx, look.backdrop, { x: bx, y: by, w: bw, h: bh }, s, cols, rows, app.theme, 0);
+        const stack = [[0, 3, 6], [1, 3, 6], [2, 3, 6], [0, 2, 6], [5, 3, 4], [6, 3, 4], [5, 2, 5], [4, 2, 5], [7, 3, 1], [7, 2, 1], [7, 1, 1], [3, 3, 7], [4, 3, 7]];
+        for (const [cx, cy, c] of stack) Render.drawCell(ctx, look.skin, look.colors[colour ? c : 8], bx + cx * s, by + cy * s, s);
+        if (kind === 'ghost') {
+          const col = look.colors[2];
+          for (const [cx, cy] of [[3, 3], [4, 3], [4, 2], [3, 2]]) Render.ghostCell(ctx, id, col, bx + cx * s, by + cy * s, s);
+          for (const [cx, cy] of [[3, 0], [4, 0], [3, 1], [4, 1]]) Render.drawCell(ctx, look.skin, col, bx + cx * s, by + cy * s, s);
+        } else {
+          drawMiniPiece(ctx, look, 'T', bx + 1 * s, by + (colour ? 1 : 0.2) * s, s, 2);
+          if (colour) drawMiniPiece(ctx, look, 'O', bx + 4 * s, by, s, 0);
+        }
+        if (!colour) Render.drawFrame(ctx, look.frame, { x: bx, y: by, w: bw, h: bh }, app.theme.accent, performance.now());
       }
     });
   }
 
   // ---- shop -----------------------------------------------------------------------------------------------------------
+  //
+  // The wallet opens it. Two halves, Items and Cosmetics; each is one scroll of sections (item types; cosmetic kinds)
+  // with a jump bar that follows along. A tile is a name, a preview and a price: what an item does is on hover. Buying
+  // is two calm clicks on the same spot — the price turns into Confirm for a few seconds — never a dialog.
+
+  const SHOP_SHORT = { skin: 'Skins', effect: 'Clears' };
+  const shopUI = { armed: null, timer: 0, spy: null };
+
+  function disarmShop() {
+    clearTimeout(shopUI.timer);
+    const b = shopUI.armed;
+    shopUI.armed = null;
+    if (b && b.isConnected) { b.classList.remove('armed'); b.replaceChildren(...b._price); b.setAttribute('aria-label', b._label); }
+  }
+
+  /** A price button: the first click asks (the button says Confirm), the second buys. */
+  function priceButton(app, price, label, buy) {
+    const kids = () => [h('span', { class: 'gem' }, LINE), fmtInt(price)];
+    const b = h('button', { class: 'price-btn', 'data-price': price, 'aria-label': label + ' for ' + fmtInt(price) + ' lines' }, kids());
+    b._price = kids(); b._label = b.getAttribute('aria-label');
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (app.store.state.lines < price) { app.sound.play('error'); b.classList.remove('nope'); void b.offsetWidth; b.classList.add('nope'); return; }
+      if (shopUI.armed === b) { disarmShop(); buy(); return; }
+      disarmShop();
+      shopUI.armed = b;
+      b.classList.add('armed');
+      b.replaceChildren('Confirm');
+      b.setAttribute('aria-label', 'Confirm: ' + b._label);
+      app.sound.play('rotate');
+      shopUI.timer = setTimeout(disarmShop, 3200);
+    });
+    return b;
+  }
+
+  /** Keeps every price in step with the wallet without redrawing the previews. */
+  function refreshShopPrices(app) {
+    const n = app.store.state.lines;
+    for (const b of document.querySelectorAll('#shop-body .price-btn')) b.classList.toggle('poor', n < Number(b.dataset.price));
+  }
 
   function renderShop(app, sub) {
-    const tabs = document.getElementById('shop-tabs');
-    const grid = document.getElementById('shop-grid');
-    if (!COSMETICS[sub]) sub = 'palette';
-    const subs = Object.keys(COSMETICS).map((k) => [k, COSMETIC_LABELS[k]]);
-    tabs.replaceChildren(...subs.map(([k, label]) => h('button', { 'aria-selected': String(k === sub), onclick: () => { app.shopSub = k; renderShop(app, k); } }, label)));
+    const head = document.getElementById('shop-head'), body = document.getElementById('shop-body');
+    const { ITEMS, ITEM_GROUPS, ITEM_ORDER, COSMETICS, COSMETIC_LABELS } = L;
+    // An old bookmark (a cosmetic kind) opens Cosmetics at that section.
+    let jumpTo = null;
+    if (COSMETICS[sub]) { jumpTo = sub; sub = 'looks'; }
+    if (sub !== 'looks') sub = 'items';
+    const same = app.shopSub === sub && body.dataset.sub === sub;
+    const keep = same ? body.scrollTop : 0;
+    app.shopSub = sub;
+    disarmShop();
     const st = app.store.state;
-    const cards = [];
-    {
-      const cat = COSMETICS[sub];
-      for (const [id, c] of Object.entries(cat)) {
-        const owned = app.store.owns(sub, id);
-        const equipped = st.equipped[sub] === id;
-        let action;
-        if (equipped) action = h('button', { class: 'btn sm', disabled: true }, 'Equipped');
-        else if (owned) action = h('button', { class: 'btn sm primary', onclick: () => { app.store.equip(sub, id); app.applyLook(); renderShop(app, sub); } }, 'Equip');
-        else if (c.reward) action = h('span', { class: 'lock' }, 'Factory reward');
-        else action = h('button', {
-          class: 'btn sm primary', disabled: st.lines < c.price,
-          onclick: () => {
-            confirm('Buy ' + c.name + '?', 'Spend ' + fmtInt(c.price) + ' lines on the ' + c.name + ' ' + COSMETIC_LABELS[sub].toLowerCase().replace(/s$/, '') + '.', 'Buy', () => {
-              if (app.store.buyCosmetic(sub, id)) { app.sound.play('buy'); app.store.equip(sub, id); app.applyLook(); app.refreshWallet(); toast(c.name + ' — yours', 'good'); renderShop(app, sub); }
+    const rerender = () => renderShop(app, sub);
+    const bought = (sel) => { const t = body.querySelector(sel); if (t) { t.classList.add('fresh'); setTimeout(() => t.classList.remove('fresh'), 900); } };
+
+    const sections = [];
+    if (sub === 'items') {
+      for (const g of ITEM_GROUPS) {
+        const ids = ITEM_ORDER.filter((id) => ITEMS[id] && ITEMS[id].group === g.id && !ITEMS[id].hidden);
+        if (!ids.length) continue;
+        const held = ids.reduce((n, id) => n + (st.inventory[id] || 0), 0);
+        sections.push({
+          id: g.id, label: g.name, icon: g.icon, title: g.name, count: held ? held + ' held' : '',
+          tiles: ids.map((id) => {
+            const it = ITEMS[id], n = st.inventory[id] || 0;
+            return h('div', { class: 'shop-item', 'data-item': id, 'data-tip-title': it.icon + '  ' + it.name, 'data-tip': it.desc },
+              h('span', { class: 'ii' }, it.icon, n ? h('span', { class: 'n' }, String(n)) : null),
+              h('span', { class: 'nm' }, it.name),
+              priceButton(app, it.price, 'Buy ' + it.name, () => {
+                if (!app.store.buyItem(id)) return;
+                app.sound.play('buy'); app.refreshWallet(true);
+                if (app.modes.play) app.modes.play.renderItems();
+                rerender(); bought('[data-item="' + id + '"]');
+              }));
+          }),
+        });
+      }
+    } else {
+      for (const kind of Object.keys(COSMETICS)) {
+        const cat = COSMETICS[kind], ids = Object.keys(cat);
+        const owned = ids.filter((id) => app.store.owns(kind, id)).length;
+        sections.push({
+          id: kind, label: SHOP_SHORT[kind] || COSMETIC_LABELS[kind], title: COSMETIC_LABELS[kind], count: owned + ' / ' + ids.length, looks: true,
+          tiles: ids.map((id) => {
+            const c = cat[id], own = app.store.owns(kind, id), on = st.equipped[kind] === id;
+            const equip = () => { app.store.equip(kind, id); app.sound.play('move'); app.applyLook(); };
+            let action;
+            if (on) action = h('span', { class: 'in-use' }, '✓ In use');
+            else if (own) action = h('button', { class: 'use-btn', onclick: (e) => { e.stopPropagation(); equip(); } }, 'Use');
+            else if (c.reward) action = h('span', { class: 'reward-tag', html: LOCK + '<span>Factory</span>' });
+            else action = priceButton(app, c.price, 'Buy ' + c.name, () => {
+              if (!app.store.buyCosmetic(kind, id)) return;
+              app.sound.play('buy'); app.store.equip(kind, id); app.refreshWallet(true); app.applyLook();
+              bought('[data-look="' + kind + ':' + id + '"]');
             });
-          },
-        }, h('span', { class: 'gem' }, LINE), fmtInt(c.price));
-        const isSound = sub === 'sound';
-        cards.push(h('div', { class: 'card' + (equipped ? ' equipped' : '') },
-          isSound
-            ? h('button', { class: 'preview sound-preview', title: 'Play a sample', onclick: () => listen(app, id) }, h('span', { class: 'big-icon' }, '►'), h('span', null, 'Listen'))
-            : h('div', { class: 'preview' }, cosmeticPreview(app, sub, id, 150, 64)),
-          h('h3', null, c.name),
-          c.desc ? h('p', null, c.desc) : null,
-          c.reward && !owned ? h('p', null, c.reward) : null,
-          h('div', { class: 'foot' }, h('span', { class: 'owned' }, owned ? 'Owned' : c.animated ? 'Animated' : ''), action)));
+            const preview = kind === 'sound'
+              ? h('button', { class: 'preview listen', 'aria-label': 'Listen to ' + c.name, onclick: (e) => {
+                e.stopPropagation(); listen(app, id);
+                const p = e.currentTarget; p.classList.remove('playing'); void p.offsetWidth; p.classList.add('playing');
+              } }, h('span', { class: 'play', html: PLAY }), h('span', { class: 'eq' }, [0, 1, 2, 3, 4].map(() => h('i'))))
+              : h('div', { class: 'preview' }, cosmeticPreview(app, kind, id, 148, 60));
+            const tip = c.reward && !own ? c.reward : null;
+            return h('div', {
+              class: 'shop-look' + (on ? ' on' : '') + (own ? ' own' : '') + (c.reward && !own ? ' locked' : ''), 'data-look': kind + ':' + id,
+              'data-tip-title': tip ? c.name : null, 'data-tip': tip,
+              onclick: own && !on ? equip : null,
+            }, preview, h('div', { class: 'foot' }, h('span', { class: 'nm' }, c.name), action));
+          }),
+        });
       }
     }
-    grid.replaceChildren(...cards);
+
+    // The head: Items or Cosmetics, then a jump to each section (it follows the scroll).
+    const seg = h('div', { class: 'seg shop-seg', role: 'tablist' }, [['items', 'Power-ups'], ['looks', 'Cosmetics']].map(([k, label]) =>
+      h('button', { role: 'tab', 'aria-selected': String(k === sub), 'aria-pressed': String(k === sub), onclick: () => { if (k !== sub) { body.scrollTop = 0; renderShop(app, k); } } }, label)));
+    const jump = h('nav', { class: 'shop-jump', 'aria-label': 'Sections' }, sections.map((sec) =>
+      h('button', { 'data-sec': sec.id, onclick: () => scrollToSection(sec.id) }, sec.icon ? h('span', { class: 'gi' }, sec.icon) : null, sec.label)));
+    head.replaceChildren(seg, jump);
+
+    body.dataset.sub = sub;
+    body.replaceChildren(...sections.map((sec) => h('section', { class: 'shop-sec' + (sec.looks ? ' looks' : ''), 'data-sec': sec.id },
+      h('h3', { class: 'shop-h' }, sec.icon ? h('span', { class: 'gi' }, sec.icon) : null, h('span', null, sec.title), sec.count ? h('span', { class: 'n' }, sec.count) : null),
+      h('div', { class: sec.looks ? 'shop-looks' : 'shop-items' }, sec.tiles))));
+    refreshShopPrices(app);
+
+    function scrollToSection(id, now) {
+      const el = body.querySelector('.shop-sec[data-sec="' + id + '"]');
+      if (!el) return;
+      const reduce = now || (root.matchMedia && root.matchMedia('(prefers-reduced-motion: reduce)').matches);
+      body.scrollTo({ top: el.offsetTop, behavior: reduce ? 'auto' : 'smooth' });
+      spyOn(id);
+    }
+    function spyOn(id) {
+      for (const b of jump.children) {
+        const on = b.dataset.sec === id;
+        b.setAttribute('aria-current', String(on));
+        // A jump bar that slides (a narrow window) keeps the lit one in view.
+        if (on && jump.scrollWidth > jump.clientWidth) {
+          const l = b.offsetLeft - jump.offsetLeft, r = l + b.offsetWidth;
+          if (l < jump.scrollLeft) jump.scrollLeft = l - 8;
+          else if (r > jump.scrollLeft + jump.clientWidth - 24) jump.scrollLeft = r - jump.clientWidth + 32;
+        }
+      }
+    }
+    jump.addEventListener('wheel', (e) => { if (jump.scrollWidth > jump.clientWidth && Math.abs(e.deltaY) > Math.abs(e.deltaX)) { jump.scrollLeft += e.deltaY; e.preventDefault(); } }, { passive: false });
+    const spy = () => {
+      const top = body.getBoundingClientRect().top + 24;
+      let cur = sections[0] && sections[0].id;
+      for (const el of body.children) if (el.getBoundingClientRect().top <= top) cur = el.dataset.sec;
+      // At the very bottom the last section is the one being read, however short it is.
+      if (body.scrollHeight > body.clientHeight + 2 && body.scrollTop + body.clientHeight >= body.scrollHeight - 2 && body.lastElementChild) cur = body.lastElementChild.dataset.sec;
+      spyOn(cur);
+    };
+    if (shopUI.spy) body.removeEventListener('scroll', shopUI.spy);
+    shopUI.spy = spy;
+    body.addEventListener('scroll', spy, { passive: true });
+    if (jumpTo) scrollToSection(jumpTo, true); else { body.scrollTop = keep; spy(); }
   }
+
+  const INFO = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 7.2v4"/><circle cx="8" cy="4.9" r="0.4" fill="currentColor"/></svg>';
+  const PLAY = '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M5 3.2v9.6c0 .5.5.8.9.5l7.3-4.8a.6.6 0 0 0 0-1L5.9 2.7c-.4-.3-.9 0-.9.5z"/></svg>';
+  const LOCK = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3.5" y="7" width="9" height="6.5" rx="1.3"/><path d="M5.5 7V5.3a2.5 2.5 0 0 1 5 0V7"/></svg>';
+
+  // Anywhere else, a price asking for confirmation goes back to its price.
+  if (root.document) document.addEventListener('mousedown', (e) => { if (shopUI.armed && !shopUI.armed.contains(e.target)) disarmShop(); }, true);
 
   // ---- statistics -----------------------------------------------------------------------------------------------------
 
@@ -284,6 +403,8 @@
         h('summary', null,
           h('span', { class: 'chev' }, '›'),
           h('b', null, g.name),
+          g.note ? h('span', { class: 'ach-info', tabindex: '0', 'aria-label': g.noteTitle + ': ' + g.note, 'data-tip-title': g.noteTitle, 'data-tip': g.note, html: INFO,
+            onclick: (e) => { e.preventDefault(); e.stopPropagation(); } }) : null,
           h('span', { class: 'ach-count' }, have.length + ' / ' + list.length),
           h('div', { class: 'bar' }, h('i', { style: { width: (100 * have.length / list.length).toFixed(1) + '%' } })),
           h('span', { class: 'ach-pay' }, num(paid) + ' / ' + num(all) + ' ' + LINE)),
@@ -298,7 +419,7 @@
   function renderStats(app, sub) {
     const tabs = document.getElementById('stats-tabs');
     const body = document.getElementById('stats-body');
-    const subs = [['overview', 'Overview'], ['free', 'Free Play'], ['classic', 'Classic'], ['puzzle', 'Puzzles'], ['factory', 'Factory'], ['items', 'Items & Shop']];
+    const subs = [['overview', 'Overview'], ['free', 'Free Play'], ['classic', 'Classic'], ['puzzle', 'Puzzles'], ['factory', 'Factory'], ['items', 'Shop']];
     tabs.replaceChildren(...subs.map(([k, label]) => h('button', { 'aria-selected': String(k === sub), onclick: () => { app.statsSub = k; renderStats(app, k); } }, label)));
     const st = app.store.state, S = st.stats;
     const look = lookWith(app);
@@ -316,7 +437,7 @@
         kpi(fmtInt(S.sessions), 'Sessions'),
         kpi(fmtInt(S.days || 0), 'Days played')));
       els.push(h('h4', null, 'Lines earned, last 14 days'), historyChart(app, 'lines', 14));
-      els.push(h('h4', null, 'Where lines came from'), hbars([['Free Play', S.lines.play], ['Combos', S.lines.combos || 0], ['Puzzles', S.lines.puzzles], ['Factory', S.lines.contracts], ['Achievements', S.lines.achievements || 0], ['Jackpot', S.lines.luck || 0]]));
+      els.push(h('h4', null, 'Where lines came from'), hbars([['Free Play', S.lines.play], ['Combos and discoveries', S.lines.combos || 0], ['Puzzles', S.lines.puzzles], ['Factory', S.lines.contracts], ['Achievements', S.lines.achievements || 0], ['Jackpot', S.lines.luck || 0]]));
       els.push(h('h4', null, 'Time by mode'), table([
         ['Free Play', fmtDuration(S.timeMs.play)], ['Classic', fmtDuration(S.timeMs.classic || 0)], ['Puzzles', fmtDuration(S.timeMs.puzzle)], ['Factory (watching)', fmtDuration(S.timeMs.factory)],
       ]));
@@ -329,8 +450,8 @@
       const ppm = S.timeMs.play > 60000 ? F.pieces / (S.timeMs.play / 60000) : 0;
       els.push(h('div', { class: 'kpis' },
         kpi(fmtInt(F.pieces), 'Pieces placed'), kpi(fmtInt(F.lines), 'Lines cleared'), kpi(fmtInt(F.bestScore), 'Best board score'),
-        kpi(fmtInt(F.bestLines), 'Most lines, one board'), kpi(ppm ? ppm.toFixed(1) : '—', 'Pieces / minute'), kpi(F.pieces ? (F.lines / F.pieces * 2.5).toFixed(2) : '—', 'Efficiency (1.00 = all quads)')));
-      els.push(h('h4', null, 'Clears'), hbars([['Single', F.clears[1]], ['Double', F.clears[2]], ['Triple', F.clears[3]], ['Quad', F.clears[4]], ['5+ (items)', F.clears[5]]]));
+        kpi(fmtInt(F.bestLines), 'Most lines, one board'), kpi(ppm ? ppm.toFixed(1) : '—', 'Pieces / minute'), kpi(F.pieces ? (F.lines / F.pieces * 2.5).toFixed(2) : '—', h('span', { title: '1.00 = all quads' }, 'Efficiency'))));
+      els.push(h('h4', null, 'Clears'), hbars([['Single', F.clears[1]], ['Double', F.clears[2]], ['Triple', F.clears[3]], ['Quad', F.clears[4]], ['5+', F.clears[5]]]));
       els.push(h('h4', null, 'Pieces placed'), hbars(Pieces.TETROMINOES.map((id) => [id, F.byType[id] || 0]).concat(Object.keys(F.byType).filter((k) => !Pieces.TETROMINOES.includes(k)).map((k) => [k, F.byType[k]])),
         (i, label) => look.colors[(Pieces.TYPES[label] && Pieces.TYPES[label].color) || 15]));
       els.push(h('h4', null, 'Technique'), table([
@@ -341,19 +462,20 @@
         ['Boards started', fmtInt(F.boards)], ['Boards filled to the top', fmtInt(F.topouts)],
         ['Inputs per piece', F.pieces ? ((F.moves + F.rotations + F.lowers + F.drops + F.holds) / F.pieces).toFixed(2) : '—'],
       ]));
-      // Combos: the ones found so far, with what they did; the rest are a question mark until then.
+      // Combos (skill, no power-ups) and discoveries (the sandbox): the ones found so far, with what they did; the rest
+      // are a question mark until then.
       const book = st.combos || {}, list = L.Combos.LIST, found = list.filter((c) => book[c.id]).length;
-      els.push(h('h4', null, 'Combos · ' + found + ' / ' + list.length + ' found'), h('div', { class: 'combo-list' }, list.map((c) => {
+      els.push(h('h4', null, 'Combos and discoveries · ' + found + ' / ' + list.length + ' found'), h('div', { class: 'combo-list' }, list.map((c) => {
         const b = book[c.id];
-        if (!b) return h('div', { class: 'combo unknown' }, h('b', null, '?'), h('span', null, c.kind === 'skill' ? 'Something done well, by hand' : 'Something set off with items'));
+        if (!b) return h('div', { class: 'combo unknown' }, h('b', null, '?'), h('span', null, c.kind === 'skill' ? 'Combo' : 'Discovery'));
         const rw = L.Combos.reward(c, 0);
         const pays = [rw.lines ? rw.lines + ' ' + LINE : null, rw.boost ? L.Chain.fmt(rw.boost.x) + ' for ' + rw.boost.clears + ' clears' : null, fmtInt(rw.score) + ' points'].filter(Boolean).join(' · ');
-        return h('div', { class: 'combo', title: 'Pays in full the first time on a board, then half, then a quarter' }, h('b', null, c.name), h('span', null, c.how), h('i', null, pays + ' · found ' + fmtInt(b.n) + '×'));
+        return h('div', { class: 'combo' }, h('b', null, c.name), h('span', null, c.how), h('i', null, pays + ' · found ' + fmtInt(b.n) + '×'));
       })));
       const log = F.boardLog || [];
       if (log.length) {
         els.push(h('h4', null, 'Past boards'), h('table', { class: 'st cols' },
-          h('tr', null, ['Retired', 'Lived', 'Lines', 'Score', 'Pieces', 'Items'].map((c) => h('th', null, c))),
+          h('tr', null, ['Retired', 'Lived', 'Lines', 'Score', 'Pieces', 'Power-ups'].map((c) => h('th', null, c))),
           log.slice(0, 15).map((b) => h('tr', null,
             h('td', null, new Date(b.at).toLocaleDateString([], { month: 'short', day: 'numeric' }) + (b.reason === 'full' ? ' · full' : '')),
             h('td', null, b.life ? fmtDuration(b.life) : '—'), h('td', null, fmtInt(b.lines)), h('td', null, fmtInt(b.score)), h('td', null, fmtInt(b.pieces)), h('td', null, fmtInt(b.items))))));
@@ -368,6 +490,7 @@
         kpi(fmtInt(pz.daily), 'Dailies solved'), kpi(fmtInt(pz.E.hints + pz.M.hints + pz.H.hints), 'Hints bought'),
         kpi(fmtInt(pz.E.fails + pz.M.fails + pz.H.fails), 'Retries')));
       els.push(h('h4', null, 'By difficulty'), h('table', { class: 'st cols' }, rows.map((r, i) => h('tr', null, r.map((c) => h(i ? 'td' : 'th', null, c))))));
+      if (app.modes.puzzle) els.push(h('p', { class: 'pz-volume' }, app.modes.puzzle.volume()));
       const modRows = Object.keys(Puzzles.MODS).map((m) => { const r = pz.mods[m] || { seen: 0, solved: 0 }; return [Puzzles.MODS[m].icon + ' ' + Puzzles.MODS[m].name, r.solved + ' / ' + r.seen]; });
       els.push(h('h4', null, 'Wildcards (solved / met)'), table(modRows));
       els.push(h('h4', null, 'Puzzles solved, last 14 days'), historyChart(app, 'puzzles', 14));
@@ -392,12 +515,12 @@
     } else {
       const bought = S.items.bought, used = S.items.used;
       els.push(h('div', { class: 'kpis' }, kpi(fmtInt(S.lines.spent), 'Lines spent'), kpi(fmtInt(S.cosmetics.bought), 'Cosmetics bought'),
-        kpi(fmtInt(Object.values(used).reduce((a, b) => a + b, 0)), 'Items used'), kpi(fmtInt(S.lines.refunded), 'Lines rewound')));
-      els.push(h('h4', null, 'Items'), h('table', { class: 'st cols' },
+        kpi(fmtInt(Object.values(used).reduce((a, b) => a + b, 0)), 'Power-ups used'), kpi(fmtInt(S.lines.refunded), 'Lines rewound')));
+      els.push(h('h4', null, 'Power-ups'), h('table', { class: 'st cols' },
         h('tr', null, h('th', null, ''), h('th', null, 'Bought'), h('th', null, 'Used'), h('th', null, 'Have')),
         ITEM_ORDER.map((id) => h('tr', null, h('td', null, ITEMS[id].icon + ' ' + ITEMS[id].name), h('td', null, fmtInt(bought[id] || 0)), h('td', null, fmtInt(used[id] || 0)), h('td', null, fmtInt(st.inventory[id] || 0))))));
       const jp = S.items.jackpot;
-      if (jp && jp.pulls) els.push(h('h4', null, 'Jackpot'), table([['Pulls', fmtInt(jp.pulls)], ['Lines won', fmtInt(jp.lines)], ['Items won', fmtInt(jp.items)], ['Biggest win', fmtInt(jp.best) + ' lines'], ['Paid back', Math.round(100 * jp.lines / Math.max(1, jp.pulls * ITEMS.jackpot.price)) + '% in lines']]));
+      if (jp && jp.pulls) els.push(h('h4', null, 'Jackpot'), table([['Pulls', fmtInt(jp.pulls)], ['Lines won', fmtInt(jp.lines)], ['Power-ups won', fmtInt(jp.items)], ['Biggest win', fmtInt(jp.best) + ' lines'], ['Paid back', Math.round(100 * jp.lines / Math.max(1, jp.pulls * ITEMS.jackpot.price)) + '% in lines']]));
       const ownedRows = Object.keys(COSMETICS).map((k) => [COSMETIC_LABELS[k], st.owned[k].length + ' / ' + Object.keys(COSMETICS[k]).length]);
       els.push(h('h4', null, 'Collection'), table(ownedRows));
     }
@@ -421,10 +544,10 @@
       const val = h('span', { class: 'val' }, Math.round(s[k] * scale) + unit);
       return h('div', { class: 'range' }, h('input', { type: 'range', min, max, step, value: s[k] * scale, oninput: (e) => { set(k, Number(e.target.value) / scale); val.textContent = Math.round(s[k] * scale) + unit; } }), val);
     };
-    const tiles = (k, options, cls) => {
+    const tiles = (k, options, cls, onChange) => {
       const wrap = h('div', { class: 'tiles ' + (cls || '') });
       options.forEach(([v, label, preview]) => {
-        const b = h('button', { class: 'tile', 'aria-pressed': String(s[k] === v), onclick: () => { set(k, v); wrap.querySelectorAll('.tile').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); } }, preview, h('span', null, label));
+        const b = h('button', { class: 'tile', 'aria-pressed': String(s[k] === v), onclick: () => { set(k, v); wrap.querySelectorAll('.tile').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); if (onChange) onChange(); } }, preview, h('span', null, label));
         wrap.appendChild(b);
       });
       return wrap;
@@ -435,10 +558,15 @@
     const sections = {
       look: {
         icon: '◐', label: 'Look',
-        body: () => [
+        body: () => {
+          // Tint strength only means something on the Tint background: elsewhere it is there, but off.
+          const tint = row('Tint strength', null, range('tint', 20, 98, 1, '%', 100));
+          const tintOn = () => { const on = s.bg === 'tint'; tint.classList.toggle('off', !on); tint.querySelector('input').disabled = !on; };
+          tintOn();
+          return [
           card('Window background',
-            tiles('bg', [['clear', 'Clear', bgPreview('clear')], ['glass', 'Glass', bgPreview('glass')], ['tint', 'Tint', bgPreview('tint')], ['solid', 'Solid', bgPreview('solid')]]),
-            row('Tint strength', 'For the Tint background', range('tint', 20, 98, 1, '%', 100))),
+            tiles('bg', [['clear', 'Clear', bgPreview('clear')], ['glass', 'Glass', bgPreview('glass')], ['tint', 'Tint', bgPreview('tint')], ['solid', 'Solid', bgPreview('solid')]], '', tintOn),
+            tint),
           card('Theme', tiles('theme', [['dark', 'Dark', themePreview('dark')], ['light', 'Light', themePreview('light')], ['auto', 'Auto', themePreview('auto')]])),
           card('Border and accent', (() => {
             const sw = h('div', { class: 'swatches big' });
@@ -448,40 +576,43 @@
             });
             return sw;
           })()),
-          card('Motion', row('Effects', 'Reduced keeps line clears to a quick fade and redraws less', tiles('motion', [['full', 'Full', null], ['reduced', 'Reduced', null]], 'small'))),
-        ],
+          card('Motion', row('Effects', null, tiles('motion', [['full', 'Full', null], ['reduced', 'Reduced', null]], 'small'))),
+          ];
+        },
       },
       window: isNative ? {
         icon: '▭', label: 'Window',
         body: () => [card(null,
-          row('Float above other windows', 'Keeps Lull in view while you work', toggle('onTop')),
-          row('Show and hide from anywhere', 'Press ⌥⌘L in any app. Esc tucks Lull away.', h('kbd', { class: 'big' }, '⌥⌘L')))],
+          row('Float above other windows', null, toggle('onTop')),
+          row('Fade when the pointer leaves', null, toggle('fadeAway')),
+          row('Show and hide', null, h('kbd', { class: 'big' }, '⌥⌘L')))],
       } : null,
       controls: {
         icon: '⌘', label: 'Controls',
         body: () => [
           card('Keyboard',
-            row('Repeat delay', 'How long an arrow is held before it repeats', range('das', 60, 400, 5, ' ms')),
-            row('Repeat rate', 'Time between repeats; 0 slides straight to the wall', range('arr', 0, 150, 5, ' ms')),
-            row('Lower repeat', 'Held ↓ never sets a piece — tap again to set', range('lowerRepeat', 0, 150, 5, ' ms'))),
+            row('Repeat delay', null, range('das', 60, 400, 5, ' ms')),
+            row('Repeat rate', null, range('arr', 0, 150, 5, ' ms')),
+            row('Lower repeat', null, range('lowerRepeat', 0, 150, 5, ' ms'))),
           card('Mouse',
-            row('Mouse control', 'Point to aim · click to place · right-click to turn clockwise · wheel to lower', toggle('mouse'))),
-          card('Board', row('Next pieces shown', null, range('preview', 1, 6, 1, ''))),
+            row('Mouse control', null, toggle('mouse'))),
+          card('Board', row('Next pieces shown', null, range('preview', 1, 6, 1, '')),
+            row('Control hints', null, toggle('hints'))),
           card('Puzzles',
-            row('Counter-clockwise puzzles', 'Off: every puzzle solves with one turn button, Up or right-click (clockwise; counter-clockwise under Inverted Controls). On: new puzzles need the other turn (Z) or a half turn (A) somewhere', toggle('ccwPuzzles', () => { const pm = app.modes.puzzle; if (pm && pm.puzzle && !pm.done) pm.loadNumbered(pm.ps.diff); else if (pm && pm.puzzle) pm.renderNav(); }))),
+            row('Counter-clockwise puzzles', 'New puzzles need Z or A', toggle('ccwPuzzles', () => { const pm = app.modes.puzzle; if (pm && pm.puzzle && !pm.done) pm.loadNumbered(pm.ps.diff); else if (pm && pm.puzzle) pm.renderNav(); }))),
         ],
       },
       sound: {
         icon: '♪', label: 'Sound',
         body: () => [card(null,
-          row('Mute', 'Silences everything at once and leaves the settings below as they are. Also M, or the speaker up top', toggle('muted')),
+          row('Mute', null, toggle('muted')),
           row('Sound effects', null, toggle('sound')),
           row('Volume', null, range('volume', 0, 100, 1, '%', 100)),
-          row('Classic music', 'Korobeiniki, slowed and dreamy, while a Classic game runs', toggle('music', () => app.modes.classic && app.modes.classic.renderControls())),
-          row('Classic announcer', 'The Tetris Worlds announcer calls singles, doubles, triples, tetrises and T-spins', toggle('announcer')),
+          row('Classic music', null, toggle('music', () => app.modes.classic && app.modes.classic.renderControls())),
+          row('Classic announcer', null, toggle('announcer')),
           row('Music volume', null, range('musicVolume', 0, 60, 1, '%', 100)),
           row('Announcer volume', null, range('announcerVolume', 0, 100, 1, '%', 100)),
-          row('Sound pack', (L.SOUNDS[app.state.equipped.sound] || L.SOUNDS.soft).name + ' — more in the Shop', h('button', { class: 'btn sm', onclick: () => listen(app, app.state.equipped.sound) }, '► Listen')))],
+          row('Sound pack', (L.SOUNDS[app.state.equipped.sound] || L.SOUNDS.soft).name, h('button', { class: 'btn sm', onclick: () => listen(app, app.state.equipped.sound) }, '► Listen')))],
       },
       keys: {
         icon: '⌘', label: 'Keys',
@@ -490,10 +621,10 @@
       data: {
         icon: '⛁', label: 'Data',
         body: () => [
-          card('Save', row('Your progress', isNative ? 'Kept in ~/Library/Application Support/Lull' : 'Kept in this browser',
+          card('Save', row('Your progress', null,
             h('div', { class: 'btns' }, h('button', { class: 'btn sm', onclick: () => openExport(app) }, 'Export'), h('button', { class: 'btn sm', onclick: () => openImport(app) }, 'Import')))),
-          card('Start over', row('Reset everything', 'Lines, items, cosmetics, puzzles, factory and stats. Settings stay.',
-            h('button', { class: 'btn sm danger', onclick: () => confirm('Start over?', 'Everything except your settings is wiped. This cannot be undone.', 'Wipe', () => { app.store.reset(); location.reload(); }, 'danger') }, 'Reset…'))),
+          card('Start over', row('Reset everything', null,
+            h('button', { class: 'btn sm danger', onclick: () => confirm('Start over?', 'Everything but your settings is wiped, for good.', 'Wipe', () => { app.store.reset(); location.reload(); }, 'danger') }, 'Reset…'))),
           h('p', { class: 'set-about' }, 'Lull ' + (L.VERSION || '') + ' · puzzle generator v' + Puzzles.GEN_VERSION),
         ],
       },
@@ -519,7 +650,7 @@
     app.store.save();
     const ta = h('textarea', { readonly: true }, app.store.serialize());
     openModal({
-      title: 'Export save', body: h('div', null, h('p', null, 'Copy this text somewhere safe. Import it on any machine to carry on.'), ta),
+      title: 'Export save', body: h('div', null, ta),
       buttons: [{ label: 'Close' }, { label: 'Copy', kind: 'primary', onClick: () => { ta.select(); copyText(ta.value); toast('Save copied', 'good'); return false; } }],
     });
   }
@@ -527,7 +658,7 @@
   function openImport(app) {
     const ta = h('textarea', { placeholder: 'Paste a Lull save here' });
     openModal({
-      title: 'Import save', body: h('div', null, h('p', null, 'This replaces your current progress.'), ta),
+      title: 'Import save', body: h('div', null, h('p', null, 'Replaces your current progress.'), ta),
       buttons: [{ label: 'Cancel' }, { label: 'Import', kind: 'primary', onClick: () => {
         try { app.store.importJSON(ta.value); location.reload(); } catch (e) { toast('That is not a Lull save', 'bad'); return false; }
       } }],
@@ -556,7 +687,7 @@
     const choose = (id) => { picked = true; handle.close(); onPick(id); };
     const grid = h('div', { class: 'picker' }, ids.map((id) => h('button', { title: Pieces.TYPES[id].name, onclick: () => choose(id) },
       canvasFor(56, 54, (ctx) => { const t = Pieces.TYPES[id]; const b = Pieces.boundsOf(t.rots[0]); const s = Math.floor(Math.min(46 / b.w, 40 / b.h, 13)); drawMiniPiece(ctx, look, id, (56 - b.w * s) / 2, (54 - b.h * s) / 2, s, 0); }))));
-    handle = openModal({ title: 'Order Slip — pick your piece', body: grid, onClose: () => { if (!picked) onPick(null); } });
+    handle = openModal({ title: 'Order Slip', body: grid, onClose: () => { if (!picked) onPick(null); } });
   }
 
   function openBlueprint(app, onDone) {
@@ -568,10 +699,10 @@
     const check = () => {
       const c = cells();
       let msg = '', ok = false;
-      if (!c.length) msg = 'Tap cells to draw a piece';
+      if (!c.length) msg = 'Draw a piece';
       else if (c.length > 6) msg = 'Six blocks at most';
       else if (!Pieces.isConnected(c)) msg = 'Blocks must touch edge to edge';
-      else { ok = true; msg = c.length + ' block' + (c.length > 1 ? 's' : '') + ' — looks buildable'; }
+      else { ok = true; msg = c.length + ' block' + (c.length > 1 ? 's' : ''); }
       status.textContent = msg; status.className = 'bp-status ' + (ok ? 'ok' : 'bad');
       if (handle) handle.el.querySelector('footer .btn.primary').disabled = !ok;
       return ok;
@@ -584,7 +715,7 @@
     }
     let done = false;
     handle = openModal({
-      title: 'Blueprint — draw a piece', body: h('div', null, h('p', null, 'Up to six blocks, joined edge to edge. It replaces the piece in play.'), grid, status),
+      title: 'Blueprint', body: h('div', null, grid, status),
       buttons: [{ label: 'Cancel' }, { label: 'Build it', kind: 'primary', onClick: () => { if (!check()) return false; done = true; onDone(cells()); } }],
       onClose: () => { if (!done) onDone(null); },
     });
@@ -627,5 +758,5 @@
     document.addEventListener('keydown', hide, true);
   }
 
-  L.UI = { initTooltips, h, ICONS, toast, openModal, modalOpen, closeTopModal, submitTopModal, confirm, canvasFor, renderShop, renderStats, renderAchievements, openSettings, openOrderSlip, openBlueprint, copyText, lookWith, drawMiniPiece };
+  L.UI = { initTooltips, h, ICONS, toast, openModal, modalOpen, closeTopModal, submitTopModal, confirm, canvasFor, renderShop, refreshShopPrices, renderStats, renderAchievements, openSettings, openOrderSlip, openBlueprint, copyText, lookWith, drawMiniPiece };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

@@ -22,10 +22,11 @@
     return { x, y };
   }
 
-  // Specials that turn the piece into a single block (a bomb, a drill bit, a black hole, a stick of TNT, a torch, a
-  // bolt of lightning), and those that keep its shape and change what it does or what it is made of.
-  const SINGLE = new Set(['bomb', 'drill', 'blackhole', 'tnt', 'torch', 'bolt']);
-  const SHAPED = new Set(['phase', 'sand', 'anvil', 'magnet', 'laser', 'golden', 'frost', 'water', 'oil', 'steel']);
+  // Specials that turn the piece into a single block (a bomb, a drill bit, a black hole, a bolt of lightning), and
+  // those that keep its shape and change what it does or what it is made of (the sandbox's matter: js/sandbox.js).
+  // Magnet is retired from the shop; an old save's magnet piece still works.
+  const SINGLE = new Set(['bomb', 'drill', 'blackhole', 'bolt']);
+  const SHAPED = new Set(['phase', 'anvil', 'magnet', 'laser', 'golden', 'sand', 'seed', 'tnt', 'water', 'oil', 'acid', 'lava', 'frost', 'steel', 'torch']);
 
   /**
    * A board's numbers. The h- ones count only what was done by hand (for achievements): hand is whether the stack was
@@ -480,15 +481,9 @@
         }
         result.center = [cx, cy];
       } else if (p.special === 'bomb') {
-        const [cx, cy] = cells[0];
-        result.blast = [];
-        for (const [dx, dy] of BOMB_PATTERN) {
-          const x = cx + dx, y = cy + dy;
-          if (!this.board.inside(x, y)) continue;
-          const old = this.board.get(x, y);
-          if (old && !this.tough(old)) { result.blast.push([this.board.wx(x), y, old]); this.board.set(x, y, 0); }
-        }
-        result.blastCenter = [cx, cy];
+        // Nothing is set: the bomb goes off where it lands, as the first link of the sandbox's settle (js/sandbox.js).
+        result.blastCenter = cells[0];
+        result.cells = [];
       } else {
         // T-spin (guideline): the last move was a turn and three of the box's four corners are blocked. With both
         // corners the T points at blocked it is a full T-spin; with only one it is a Mini, unless the turn needed
@@ -504,7 +499,6 @@
           }
         }
         this.board.place(shape, p.x, p.y, v);
-        if (p.special === 'sand') this.settleCells(cells, v, result);
         if (p.special === 'magnet') {
           // Pulls every block in the piece's columns down tight.
           result.moves = [];
@@ -524,7 +518,7 @@
       // The sandbox (js/sandbox.js): what the new block is made of, and the chain reactions it sets off.
       if (this.react) this.react(p, result);
 
-      let rows = this.board.fullRows();
+      let rows = this.fullRows();
       if (p.special === 'laser') {
         // Every row the piece touches is vaporised, full or not (and, through steel, the rows the steel reaches).
         result.laser = Array.from(new Set(cells.map(([, cy]) => cy))).filter((y) => y >= 0 && y < this.h).sort((a, b) => a - b);
@@ -534,7 +528,9 @@
       result.rows = rows;
       result.removed = this.board.clearRows(rows);
       result.lines = rows.length;
-      if (this.afterClear) this.afterClear(result);
+      // The sandbox's settle: loose matter falls and flows, heat, cold, acid and current do their work, and any row
+      // that fills on the way clears too (result.cascade), paid like any other.
+      if (this.simulate) this.simulate(result);
       this.score(result);
       this.s.pieces++;
       this.s.byType[p.type.family === 'tetromino' ? p.type.id : p.type.family] = (this.s.byType[p.type.family === 'tetromino' ? p.type.id : p.type.family] || 0) + 1;
@@ -545,19 +541,8 @@
       return result;
     }
 
-    /** Sand: every cell of the piece falls on its own until it lands. */
-    settleCells(cells, v, result) {
-      const sorted = cells.slice().sort((a, b) => a[1] - b[1]);
-      result.sand = [];
-      for (const [x, y] of sorted) {
-        this.board.set(x, y, 0);
-        let ny = y;
-        while (ny > 0 && !this.board.filled(x, ny - 1)) ny--;
-        this.board.set(x, ny, v);
-        result.sand.push([x, y, ny]);
-      }
-      result.cells = result.sand.map(([x, , ny]) => [x, ny]);
-    }
+    /** Full rows. (The sandbox leaves out rows that are full only because of flames or steam in them.) */
+    fullRows() { return this.board.fullRows(); }
 
     /** Drill: bores the column under the bit down to the floor. */
     bore() {
@@ -571,6 +556,9 @@
         if (old) { result.drilled.push([x, yy, old]); this.board.set(x, yy, 0); }
       }
       if (this.react) this.react(p, result);
+      // What the bore loosened settles; a row that fills on the way clears.
+      if (this.simulate) this.simulate(result);
+      if (result.cascade) this.score(result);
       this.s.pieces++;
       this.holdLocked = false;
       this.piece = null;
@@ -579,8 +567,13 @@
       return result;
     }
 
+    /**
+     * Points and streaks for a lock. result.lines is what the piece cleared as it set; result.cascade what the
+     * sandbox's settle cleared after it (plain lines: it adds a clear's points and keeps the combo going, but it is
+     * never a quad or a T-spin). Afterwards result.lines holds both.
+     */
     score(result) {
-      const s = this.s, n = result.lines;
+      const s = this.s, n = result.lines, c = result.cascade || 0, all = n + c;
       let pts = 0;
       if (result.tspin) {
         pts = TSPIN_SCORE[Math.min(n, 3)];
@@ -590,13 +583,14 @@
       } else if (result.mini) {
         pts = MINI_SCORE[Math.min(n, 2)];
       } else if (n) pts = CLEAR_SCORE[Math.min(n, CLEAR_SCORE.length - 1)];
-      if (n) {
+      if (c) pts += CLEAR_SCORE[Math.min(c, CLEAR_SCORE.length - 1)];
+      if (all) {
         s.combo++;
         const difficult = n >= 4 || result.tspin || result.mini;
         if (difficult) { s.b2b++; if (s.b2b > 0) { pts = Math.round(pts * 1.5); result.b2b = true; } }
         else s.b2b = -1;
         if (s.combo > 0) pts += 50 * s.combo;
-        s.clears[Math.min(n, 5)]++;
+        s.clears[Math.min(all, 5)]++;
         if (this.board.isEmpty()) { result.perfect = true; s.perfect++; pts += 3000; }
         // Quads in a row: set by hand (a golden piece counts; lasers and board items do not); any other clear ends it.
         if (n >= 4 && (!result.special || result.special === 'golden')) s.quadRun = (s.quadRun || 0) + 1;
@@ -609,7 +603,7 @@
       const hand = s.hand !== false && !result.special;
       result.hand = hand;
       if (!hand) { s.hb2b = -1; s.hcombo = -1; s.hquads = 0; }
-      else if (n) {
+      else if (all) {
         s.hcombo++;
         if (n >= 4 || result.tspin || result.mini) s.hb2b++; else s.hb2b = -1;
         s.hquads = n >= 4 ? (s.hquads || 0) + 1 : 0;
@@ -622,8 +616,9 @@
       s.bestHChain = Math.max(s.bestHChain || 0, s.hchain);
       s.maxCombo = Math.max(s.maxCombo, s.combo);
       s.maxB2B = Math.max(s.maxB2B, s.b2b);
-      s.lines += n;
+      s.lines += all;
       s.score += pts;
+      result.lines = all;
       result.combo = Math.max(0, s.combo);
       result.score = pts;
     }
@@ -698,6 +693,7 @@
       this.board.compact();
       const rows = this.board.fullRows();
       const result = { type: 'settle', special: 'settle', cells: [], rows, removed: this.board.clearRows(rows), lines: rows.length, score: 0, before };
+      if (this.simulate) this.simulate(result);
       this.score(result);
       this.emit('lock', result);
       return result;
@@ -730,6 +726,7 @@
       });
       const rows = this.board.fullRows();
       const result = { type: 'tornado', special: 'tornado', cells: [], rows, removed: this.board.clearRows(rows), lines: rows.length, score: 0, moves };
+      if (this.simulate) this.simulate(result);
       this.score(result);
       this.emit('lock', result);
       return result;

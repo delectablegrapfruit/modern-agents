@@ -2,7 +2,7 @@
 (function (root) {
   'use strict';
   const L = (root.Lull = root.Lull || {});
-  const { Game, Board, CELL, Pieces, Puzzles, Factory, Render, UI, ITEMS, ITEM_ORDER, ITEM_GROUPS, Chain, Combos, Luck, fmt, fmtInt, fmtClock, fmtDuration } = L;
+  const { Game, Board, CELL, Pieces, Puzzles, Factory, Render, UI, ITEMS, ITEM_ORDER, ITEM_GROUPS, Chain, Combos, Luck, Gifts, fmt, fmtInt, fmtClock, fmtDuration, dateKey } = L;
   const { h, toast } = UI;
   const { LINE } = L;
 
@@ -24,17 +24,25 @@
   // Items that only change the piece in play, so they can be put back.
   // Items that change the board at once (the rest change the piece in play): one that leaves it empty is a fresh start.
   const ACTS_NOW = new Set(['nuke', 'tornado', 'settle', 'purge', 'flip', 'rewind']);
-  const UNDOABLE = new Set(['reroll', 'mirror', 'pebble', 'noodle', 'giant', 'sand', 'magnet', 'phase', 'anvil', 'drill', 'bomb', 'laser', 'blackhole', 'golden', 'order', 'blueprint', 'water', 'steel', 'oil', 'frost', 'torch', 'bolt', 'tnt']);
+  const UNDOABLE = new Set(['reroll', 'mirror', 'pebble', 'noodle', 'giant', 'phase', 'anvil', 'drill', 'bomb', 'laser', 'blackhole', 'golden', 'order', 'blueprint', 'sand', 'seed', 'tnt', 'water', 'oil', 'acid', 'lava', 'frost', 'steel', 'torch', 'bolt']);
+  // Items that turn the piece in play into something (the sandbox's matter and energy, and the tools).
+  const SPECIALS = new Set(['phase', 'anvil', 'drill', 'bomb', 'laser', 'blackhole', 'sand', 'seed', 'tnt', 'water', 'oil', 'acid', 'lava', 'frost', 'steel', 'torch', 'bolt']);
+
+  // A small wrapped box, drawn (never an emoji).
+  const GIFT_ICON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><rect x="2.5" y="6.5" width="11" height="7" rx="1"/><path d="M1.8 4.2h12.4v2.3H1.8zM8 4.2v9.3"/><path d="M8 4.2C6.8 2 4.6 1.9 4.6 3.2 4.6 4.2 6.6 4.2 8 4.2c1.4 0 3.4 0 3.4-1 0-1.3-2.2-1.2-3.4 1z"/></svg>';
 
   function playLockSound(snd, r) {
-    if (r.explosions || r.special === 'bomb' || r.special === 'blackhole' || r.special === 'anvil') { snd.play('boom'); if (r.explosions > 1) setTimeout(() => snd.play('boom'), 160); }
-    else if (r.special === 'bolt' || r.special === 'torch' || r.burned || r.shattered) { snd.play('drill'); if (r.lines) setTimeout(() => snd.play('clear', r.lines), 150); }
+    // The settle's own moments (blasts, flames, steam, cascade clears) sound as its playback reaches them.
+    const own = r.lines - (r.cascade || 0);
+    if (r.special === 'blackhole' || r.special === 'anvil') snd.play('boom');
+    else if (r.special === 'bolt' || r.spinShatter) { snd.play('drill'); if (own) setTimeout(() => snd.play('clear', own), 150); }
+    else if (r.sim && !own) snd.play('lock');
     else if (r.special === 'drill' || r.special === 'laser') { snd.play('drill'); if (r.lines) setTimeout(() => snd.play('quad'), 150); }
     else if (r.special === 'tornado') { snd.play('drill'); setTimeout(() => snd.play(r.lines ? 'quad' : 'lock'), 380); }
     else if (r.perfect) snd.play('perfect');
     else if (r.tspin) snd.play('tspin');
-    else if (r.lines >= 4) snd.play('quad');
-    else if (r.lines) snd.play('clear', r.lines);
+    else if (own >= 4) snd.play('quad');
+    else if (own) snd.play('clear', own);
     else snd.play('lock');
     if (r.combo >= 2) setTimeout(() => snd.play('combo', r.combo), 120);
   }
@@ -52,6 +60,7 @@
       this.wheelAt = 0;
       this.setGrace = SET_GRACE_MS;
       this.bindMouse();
+      if (!app.hints && L.Hints) app.hints = new L.Hints.Coach(app); // control hints (js/hints.js)
     }
 
     get settings() { return this.app.store.state.settings; }
@@ -62,7 +71,7 @@
       this.view.attach(game, view);
       this.view.setLook(this.app.look());
       this.view.resize();
-      game.on('lock', (r) => { if (r.special !== 'settle' && r.special !== 'tornado') this.setAt = performance.now(); this.onLock(r); });
+      game.on('lock', (r) => { if (r.special !== 'settle' && r.special !== 'tornado') { this.setAt = performance.now(); if (this.app.hints) this.app.hints.lock(); } this.onLock(r); });
       game.on('blocked', () => { if (this.quiet) return; this.app.sound.play('blocked'); this.view.bump(this.reduced); });
       game.on('spawn', () => {
         // A new piece meets the pointer where it is.
@@ -70,7 +79,7 @@
       });
       game.on('topout', () => this.onTopout && this.onTopout());
       // A hold swap refused: the held piece has no room anywhere above the stack (nothing changed).
-      game.on('noroom', () => toast('No room up there for the held piece', 'bad'));
+      game.on('noroom', () => toast('No room up there', 'bad'));
       game.on('empty', () => this.onEmpty && this.onEmpty());
       game.on('purge', (gone) => this.view.onPurge(gone, this.reduced));
       game.on('nuke', (gone) => { this.view.onNuke(gone, this.reduced); this.app.sound.play('boom'); setTimeout(() => this.app.sound.play('boom'), 180); });
@@ -90,6 +99,7 @@
       const g = this.game;
       if (!g || this.blocked()) return false;
       let a = ARROWS[act] ? this.mapArrow(act) : act;
+      const asked = a; // what the key does on this board, before Inverted Controls (for the control hints)
       if (this.inverted && INVERT[a]) a = INVERT[a];
       let ok = false;
       const snd = this.app.sound;
@@ -121,6 +131,7 @@
       this.view.dirty = true;
       // Keys are in charge until the mouse moves again (so arrows work with the pointer resting on the board).
       if (!this.mouseActing) { this.lastInput = 'key'; this.view.pointerCol = null; this.rawCol = null; }
+      if (this.app.hints && prevPiece) this.app.hints.action(this, { act, a: asked, ok, rep: !!rep, mouse: !!this.mouseActing, piece: prevPiece, set: (a === 'drop' || a === 'lower') && g.piece !== prevPiece });
       if (this.afterAction) this.afterAction(a);
       return ok;
     }
@@ -226,6 +237,7 @@
     get cardOpen() { return !this.overlay.classList.contains('hidden'); }
 
     frame(now, dt) {
+      if (this.app.hints) this.app.hints.frame(this, now, dt);
       this.view.reducedMotion = this.reduced;
       this.view.fx.update(dt);
       if (this.view.needsFrame()) {
@@ -267,7 +279,6 @@
     showStart() {
       this.showCard([
         h('h2', null, 'Classic'),
-        h('p', null, 'The one you know: pieces fall, and fall faster every ten lines. Lines you clear still bank as ' + LINE + '.'),
         this.cs.best ? h('p', null, 'Best ', h('span', { class: 'big' }, fmtInt(this.cs.best))) : null,
         h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: () => this.newGame(true) }, 'Start ', h('kbd', null, 'Space'))),
       ]);
@@ -347,7 +358,7 @@
     togglePause(force) {
       if (!this.started || this.over) return;
       this.paused = force != null ? force : !this.paused;
-      if (this.paused) this.showCard([h('h2', null, 'Paused'), h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: () => this.togglePause(false) }, 'Resume ', h('kbd', null, 'P')))]);
+      if (this.paused) this.showCard([h('h2', null, 'Paused'), h('div', { class: 'row' }, h('button', { class: 'btn primary', onclick: () => this.togglePause(false) }, 'Resume'))]);
       else this.hideCard();
       this.renderControls();
     }
@@ -418,16 +429,16 @@
         h('span', null, 'Score ', h('b', null, fmtInt(this.score))),
         h('span', null, 'Level ', h('b', null, String(this.level))),
         h('span', null, 'Lines ', h('b', null, String(this.lines))),
-        h('span', { class: this.mult > 1 ? 'chain opt' : 'slot-off', title: 'Back-to-back tetrises and T-spins multiply the lines you bank (not the score): ×0.5 each, up to ×10' }, 'Bank ', h('b', null, Chain.fmt(this.mult || 1))),
+        h('span', { class: this.mult > 1 ? 'chain opt' : 'slot-off', title: 'Back-to-back multiplies the lines you bank, up to ×10' }, 'Bank ', h('b', null, Chain.fmt(this.mult || 1))),
         h('span', null, 'Best ', h('b', null, fmtInt(Math.max(this.cs.best, this.score)))));
     }
 
     renderControls() {
       const st = this.app.settings;
       this.controlsEl.replaceChildren(
-        h('button', { class: 'btn sm' + (st.music ? ' on' : ''), 'data-tip': 'Music for Classic (Korobeiniki, the old folk tune)', onclick: () => { st.music = !st.music; this.app.store.touch(); this.renderControls(); } }, st.music ? '♪ On' : '♪ Off'),
-        h('button', { class: 'btn sm', disabled: !this.started || this.over, onclick: () => this.togglePause() }, this.paused ? '► Resume' : '‖ Pause', ' ', h('kbd', null, 'P')),
-        h('button', { class: 'btn sm', onclick: () => this.restart() }, '↺ Restart ', h('kbd', null, 'R')));
+        h('button', { class: 'btn sm' + (st.music ? ' on' : ''), 'aria-label': 'Music', 'aria-pressed': String(!!st.music), onclick: () => { st.music = !st.music; this.app.store.touch(); this.renderControls(); } }, st.music ? '♪ On' : '♪ Off'),
+        h('button', { class: 'btn sm', disabled: !this.started || this.over, 'data-tip': this.paused ? 'Resume' : 'Pause', 'data-tip-foot': 'P', onclick: () => this.togglePause() }, this.paused ? '► Resume' : '‖ Pause'),
+        h('button', { class: 'btn sm', 'data-tip': 'Restart', 'data-tip-foot': 'R', onclick: () => this.restart() }, '↺ Restart'));
     }
   }
 
@@ -445,6 +456,17 @@
       game.previewCount = this.settings.preview;
       this.attachGame(game, {});
       this.view.showBank = true;
+      // The settle's playback calls out its moments as it reaches them (a few quiet sounds, never a flurry).
+      this.view.onSimEvent = (kind, n) => {
+        const snd = this.app.sound, now = performance.now();
+        if (kind === 'clear') { snd.play('clear', n); return; }
+        if (kind === 'blast') { snd.play('boom'); return; }
+        if (now - (this.simSoundAt || 0) < 180) return;
+        this.simSoundAt = now;
+        snd.play(kind === 'zap' ? 'rotate' : 'move');
+      };
+      // The daily gift's button shows when the next one comes; it is kept current as the clock passes midnight.
+      this.giftTimer = setInterval(() => this.renderGift(), 60000);
       this.snapshot();
       this.renderItems();
       this.renderStatus();
@@ -541,13 +563,17 @@
       if (rw.lines) { st.addLines(rw.lines, 'combos'); s.banked = (s.banked || 0) + rw.lines; this.app.refreshWallet(true); }
       if (rw.boost) s.boost = { x: Math.max(rw.boost.x, s.boost ? s.boost.x : 1), left: Math.max(rw.boost.clears, s.boost ? s.boost.left : 0) };
       s.score += rw.score;
-      const book = st.state.combos = st.state.combos || {}, first = !book[id];
+      const book = st.state.combos = st.state.combos || {};
       book[id] = book[id] || { n: 0, lines: 0, first: Date.now() };
       book[id].n++; book[id].lines += rw.lines;
       const bits = [rw.lines ? '+' + rw.lines + ' ' + LINE : null, rw.boost ? Chain.fmt(rw.boost.x) + ' for ' + rw.boost.clears + ' clears' : null, !rw.lines && !rw.boost ? '+' + fmtInt(rw.score) + ' points' : null].filter(Boolean);
-      this.view.callout(c.name, bits.join(' · '), i, this.reduced);
-      setTimeout(() => this.app.sound.play('combo', 3 + Math.min(4, i * 2)), 260 + i * 180);
-      if (first) toast('New combo: ' + c.name, 'good', 2200);
+      // Paid at once; told once the settle has played out, so the callout never gives away what is about to happen.
+      const show = () => {
+        this.view.callout(c.name, bits.join(' · '), i, this.reduced);
+        setTimeout(() => this.app.sound.play('combo', 3 + Math.min(4, i * 2)), 260 + i * 180);
+      };
+      const wait = this.view.simLeft();
+      if (wait > 0) setTimeout(show, wait + 120); else show();
     }
 
     onTopout(silent) {
@@ -555,10 +581,9 @@
       if (!silent) { F.topouts++; this.app.store.touch(); }
       this.showCard([
         h('h2', null, 'Board full'),
-        h('p', null, 'No room for the next piece. Nothing is lost — the lines you cleared are banked.'),
         this.boardSummary(g.s),
         h('div', { class: 'row' },
-          g.history.length && this.app.store.state.inventory.rewind ? h('button', { class: 'btn', onclick: () => { this.hideCard(); this.useItem('rewind'); } }, '↶ Rewind (have ' + this.app.store.state.inventory.rewind + ')') : null,
+          g.history.length && this.app.store.state.inventory.rewind ? h('button', { class: 'btn', onclick: () => { this.hideCard(); this.useItem('rewind'); } }, '↶ Rewind · ' + this.app.store.state.inventory.rewind) : null,
           h('button', { class: 'btn primary', onclick: () => this.newBoard('full') }, 'New board')),
       ]);
     }
@@ -568,11 +593,10 @@
       if (this.game.board.isEmpty() && !this.game.s.pieces) return this.newBoard('manual');
       this.showCard([
         h('h2', null, 'Retire this board?'),
-        h('p', null, 'Its lines stay banked. Here is how it went:'),
         this.boardSummary(this.game.s),
         h('div', { class: 'row' },
           h('button', { class: 'btn', onclick: () => this.hideCard() }, 'Keep playing'),
-          h('button', { class: 'btn primary', onclick: () => this.newBoard('manual') }, 'Retire and start fresh')),
+          h('button', { class: 'btn primary', onclick: () => this.newBoard('manual') }, 'New board')),
       ]);
     }
 
@@ -587,8 +611,8 @@
         tile(life ? fmtDuration(life) : '—', 'Lifetime'), tile(s.playMs ? fmtDuration(s.playMs) : '—', 'Played'), tile(fmtInt(s.pieces), 'Pieces'),
         tile(fmtInt(s.lines), 'Lines'), tile(fmtInt(s.score), 'Score'), tile(ppm, 'Pieces / min'),
         tile(fmtInt((s.clears && s.clears[4]) || 0), 'Quads'), tile(fmtInt(s.tspins || 0), 'T-spins'), tile(fmtInt(s.perfect || 0), 'Perfect clears'),
-        tile(fmtInt(Math.max(0, s.maxCombo || 0)), 'Best combo'), tile(fmtInt(Math.max(0, s.maxB2B || 0)), 'Best back-to-back'), tile(fmtInt(s.bestChain || 0) + ' · ' + fmtInt(s.bestHChain || 0), 'Best chain · by hand'),
-        tile(fmtInt(s.banked || 0) + ' ' + LINE, 'Lines banked'), tile(Chain.fmt(s.bestMult || 1), 'Best multiplier'), tile(fmtInt(Object.values(s.combos || {}).reduce((a, b) => a + b, 0)), 'Combos'),
+        tile(fmtInt(Math.max(0, s.maxCombo || 0)), 'Best combo'), tile(fmtInt(Math.max(0, s.maxB2B || 0)), 'Best back-to-back'), tile(fmtInt(s.bestChain || 0), 'Best chain'),
+        tile(fmtInt(s.bestHChain || 0), 'Best chain, no power-ups'), tile(fmtInt(s.banked || 0) + ' ' + LINE, 'Lines banked'), tile(fmtInt(Object.values(s.combos || {}).reduce((a, b) => a + b, 0)), 'Combos'),
         h('div', { class: 'bs wide' }, h('div', { class: 'v' }, nItems ? fmtInt(nItems) + ' used' : 'none'), h('div', { class: 'l' }, 'Power-ups' + (items.length ? ': ' + items.slice(0, 6).map(([id, n]) => ITEMS[id].name + (n > 1 ? ' ×' + n : '')).join(', ') : ''))));
     }
 
@@ -604,6 +628,7 @@
       this.app.store.state.stats.free.boards++;
       this.snapshot();
       this.view.fx.clear();
+      this.view.endSim();
       this.view.dirty = true;
       this.renderStatus();
       this.app.store.touch();
@@ -616,11 +641,50 @@
       this.status.replaceChildren(...[
         h('span', null, 'Lines ', h('b', null, fmtInt(s.lines))),
         h('span', null, 'Score ', h('b', null, fmtInt(s.score))),
-        h('span', { class: s.chain > 1 ? 'chain' : 'slot-off', title: 'Chain: back-to-back quads and T-spins plus the combo. The multiplier comes from the back-to-back streak alone: an eighth a link, up to ×2.5 at twenty. By hand (for achievements): chain ' + (s.hchain || 0) + (s.hand === false ? ', stack not built by hand since it was last empty' : ', stack built by hand') }, 'Chain ', h('b', null, String(s.chain || 0)), ' · ', h('b', null, Chain.fmt(s.mult || 1))),
-        s.gold > 0 ? h('span', { class: 'opt gold', title: 'Gold: your next clears pay ×' + Luck.GOLD_X }, 'Gold ', h('b', null, String(s.gold))) :
-          s.boost ? h('span', { class: 'opt boost', title: 'A combo\'s boost: your next clears pay more' }, 'Boost ', h('b', null, Chain.fmt(s.boost.x) + ' · ' + s.boost.left)) :
+        h('span', { class: s.chain > 1 ? 'chain' : 'slot-off', title: 'Back-to-back plus combo · ' + (s.hand === false ? 'power-ups on the board' : 'no power-ups on the board: ' + (s.hchain || 0)) }, 'Chain ', h('b', null, String(s.chain || 0)), ' · ', h('b', null, Chain.fmt(s.mult || 1))),
+        s.gold > 0 ? h('span', { class: 'opt gold', title: 'Next clears pay ×' + Luck.GOLD_X }, 'Gold ', h('b', null, String(s.gold))) :
+          s.boost ? h('span', { class: 'opt boost', title: 'Next ' + s.boost.left + ' clears pay ' + Chain.fmt(s.boost.x) }, 'Boost ', h('b', null, Chain.fmt(s.boost.x) + ' · ' + s.boost.left)) :
             h('span', { class: 'opt' }, 'Pieces ', h('b', null, fmtInt(s.pieces))),
-        h('button', { class: 'btn sm', title: 'Retire this board and start fresh', onclick: () => this.askRetire() }, '↺', h('span', { class: 'lbl' }, ' New board'))].filter(Boolean));
+        this.giftBtn(),
+        h('button', { class: 'btn sm new-board', 'aria-label': 'New board', 'data-tip': 'New board', onclick: () => this.askRetire() }, '↺', h('span', { class: 'lbl' }, ' New board'))].filter(Boolean));
+    }
+
+    // ---- the daily gift ------------------------------------------------------------------------------------------------
+
+    /** The gift's button: bright when today's gift is waiting, quiet (with when the next one comes) once opened. */
+    giftBtn() {
+      const st = this.app.store.state, ready = Gifts.ready(st, dateKey());
+      const tip = ready ? 'Daily gift' : 'Next gift in ' + fmtDuration(Math.max(60000, Gifts.nextAt(Date.now()) - Date.now()));
+      const el = h('button', { class: 'btn sm gift-btn' + (ready ? ' ready' : '') + (this.reduced ? ' still' : ''), id: 'gift-btn', 'aria-label': 'Daily gift', 'data-tip-title': ready ? null : 'Daily gift', 'data-tip': tip, onclick: () => this.openGift() },
+        h('span', { class: 'gift-i', html: GIFT_ICON }));
+      return el;
+    }
+
+    renderGift() {
+      const old = document.getElementById('gift-btn');
+      if (old) old.replaceWith(this.giftBtn());
+    }
+
+    /**
+     * Opens today's gift: the three items are booked and saved first (so closing early loses nothing), then turned
+     * over one after another. Already opened today: a quiet note of when the next one comes.
+     */
+    openGift() {
+      const st = this.app.store;
+      const ids = st.openGift(Date.now());
+      if (!ids) {
+        toast('Next gift in ' + fmtDuration(Math.max(60000, Gifts.nextAt(Date.now()) - Date.now())), '', 1800);
+        return;
+      }
+      const cards = ids.map((id, i) => {
+        const it = ITEMS[id];
+        return h('div', { class: 'gift-card', style: { animationDelay: (0.25 + i * 0.35) + 's' }, 'data-tip-title': it.icon + '  ' + it.name, 'data-tip': it.desc },
+          h('div', { class: 'gift-face' }, h('span', { class: 'gi' }, it.icon), h('b', null, it.name), h('span', { class: 'gp' }, LINE + it.price)));
+      });
+      UI.openModal({ title: 'Daily gift', width: 340, cls: 'modal-gift' + (this.reduced ? ' still' : ''), body: h('div', { class: 'gift-cards' }, cards), buttons: [{ label: 'Keep', kind: 'primary' }] });
+      ids.forEach((_, i) => setTimeout(() => this.app.sound.play('combo', 3 + i * 2), 350 + i * 350));
+      this.renderItems();
+      this.renderGift();
     }
 
     /**
@@ -636,7 +700,7 @@
         const open = this.tray === g.id, on = armedId && ids.includes(armedId);
         return h('button', {
           class: 'group-btn' + (open ? ' open' : '') + (on ? ' on' : ''), 'data-group': g.id,
-          'data-tip-title': g.icon + '  ' + g.name, 'data-tip': g.desc, 'data-tip-foot': ids.length + ' items · you have ' + have + ' · key ' + (gi + 1),
+          'aria-label': g.name, 'data-tip': g.name,
           onclick: () => this.openTray(open ? null : g.id),
         }, h('span', { class: 'gi' }, g.icon), h('span', { class: 'gl' }, g.short || g.name), h('span', { class: 'k' }, String(gi + 1)), have ? h('span', { class: 'n' }, String(have)) : null);
       }));
@@ -659,14 +723,14 @@
       const ids = ITEM_ORDER.filter((id) => ITEMS[id].group === g.id);
       el.style.setProperty('--tray-at', ITEM_GROUPS.indexOf(g) / (ITEM_GROUPS.length - 1));
       el.replaceChildren(
-        h('div', { class: 'tray-head' }, h('b', null, g.icon + ' ' + g.name), h('span', null, g.desc), h('button', { class: 'icon-btn', title: 'Close (Esc)', html: UI.ICONS.close, onclick: () => this.openTray(null) })),
+        h('div', { class: 'tray-head' }, h('b', null, g.icon + ' ' + g.name), h('button', { class: 'icon-btn', title: 'Close', 'aria-label': 'Close', html: UI.ICONS.close, onclick: () => this.openTray(null) })),
         h('div', { class: 'tray-items' }, ids.map((id, i) => {
           const it = ITEMS[id], n = inv[id] || 0;
           const on = this.armed && this.armed.id === id && this.armed.piece === this.game.piece;
           return h('button', {
             class: 'item-btn' + (n || on ? '' : ' empty') + (on ? ' on' : ''), 'data-item': id,
             'data-tip-title': it.icon + '  ' + it.name, 'data-tip': it.desc,
-            'data-tip-foot': on ? 'In use — press again to put it back' : (n ? 'You have ' + n + ' · ' : 'None left · buy for ' + LINE + it.price + ' · ') + 'key ' + (i + 1),
+            'data-tip-foot': on ? 'Again to take it back' : null,
             onclick: () => this.useItem(id),
           }, h('span', { class: 'ii' }, it.icon), h('span', { class: 'il' }, it.name), h('span', { class: 'k' }, String(i + 1)), h('span', { class: 'n' }, n ? String(n) : LINE + it.price));
         })));
@@ -693,8 +757,8 @@
       if (!this.game.piece && id !== 'rewind') { toast('No piece in play', 'bad'); return; }
       if (this.armed && this.armed.id === id && this.armed.piece === this.game.piece) { this.disarm(); return; }
       if (!st.state.inventory[id]) {
-        if (st.state.lines < it.price) { toast(it.name + ' costs ' + fmtInt(it.price) + ' lines — you have ' + fmtInt(st.state.lines), 'bad'); this.app.sound.play('error'); return; }
-        UI.confirm('Buy and use ' + it.name + '?', it.desc + ' Costs ' + fmtInt(it.price) + ' lines.', 'Buy & use', () => {
+        if (st.state.lines < it.price) { toast(it.name + ' · ' + fmtInt(it.price) + ' ' + LINE, 'bad'); this.app.sound.play('error'); return; }
+        UI.confirm(it.icon + '  ' + it.name, null, 'Buy & use · ' + fmtInt(it.price) + ' ' + LINE, () => {
           if (st.buyItem(id)) { this.app.refreshWallet(); this.apply(id); }
         });
         return;
@@ -741,43 +805,40 @@
         this.renderItems();
         this.renderStatus();
         this.view.dirty = true;
-        toast(ITEMS[id].icon + ' ' + ITEMS[id].name, 'good', 1400);
       };
       const cur = g.piece;
       const prev = cur ? Object.assign({}, cur.entry, { special: cur.special || null }) : null;
       const arm = (hand) => { if (UNDOABLE.has(id) && g.piece) this.armed = { id, piece: g.piece, prev, hand, gold: id === 'golden' ? Luck.GOLD_CLEARS : 0 }; this.view.itemFx(id, g.piece, this.reduced); };
+      if (SPECIALS.has(id)) { if (g.setSpecial(id)) done(); else toast('No room for that here', 'bad'); return; }
       switch (id) {
         case 'reroll': {
           const opts = Pieces.TETROMINOES.filter((t) => t !== (cur && cur.type.id));
-          if (g.replacePiece({ id: opts[Math.floor(Math.random() * opts.length)] })) done(); else toast('No room up there for a new piece', 'bad');
+          if (g.replacePiece({ id: opts[Math.floor(Math.random() * opts.length)] })) done(); else toast('No room up there', 'bad');
           break;
         }
-        case 'mirror': if (g.replacePiece({ id: Pieces.mirrorOf(cur.type).id, special: cur.special })) done(); else toast('No room up there for its mirror', 'bad'); break;
-        case 'pebble': if (g.replacePiece({ id: 'M1' })) done(); else toast('No room up there for a pebble', 'bad'); break;
-        case 'noodle': if (g.replacePiece({ id: Pieces.customType([[0, 0], [1, 0], [2, 0], [3, 0], [4, 0], [5, 0]]).id })) done(); else toast('No room for a noodle up there', 'bad'); break;
+        case 'mirror': if (g.replacePiece({ id: Pieces.mirrorOf(cur.type).id, special: cur.special })) done(); else toast('No room up there', 'bad'); break;
+        case 'pebble': if (g.replacePiece({ id: 'M1' })) done(); else toast('No room up there', 'bad'); break;
+        case 'noodle': if (g.replacePiece({ id: Pieces.customType([[0, 0], [1, 0], [2, 0], [3, 0], [4, 0], [5, 0]]).id })) done(); else toast('No room up there', 'bad'); break;
         case 'giant': {
           const base = Pieces.TYPES[cur.type.id] && Pieces.TYPES[cur.type.id].family === 'tetromino' ? cur.type.id : null;
           if (!base) { toast('Giant works on the seven standard pieces', 'bad'); return; }
-          if (g.replacePiece({ id: Pieces.bigOf(base).id, special: cur.special })) done(); else toast('Too big to fit up there', 'bad');
+          if (g.replacePiece({ id: Pieces.bigOf(base).id, special: cur.special })) done(); else toast('No room up there', 'bad');
           break;
         }
         case 'nuke': if (g.nuke()) done(); else toast('The board is already empty', 'bad'); break;
         case 'tornado': if (g.tornado()) done(); else toast('The board is already empty', 'bad'); break;
-        case 'flip': if (g.flipWorld()) done(); else toast(g.board.isEmpty() ? 'The board is empty' : 'The piece would not fit — move it first', 'bad'); break;
+        case 'flip': if (g.flipWorld()) done(); else toast(g.board.isEmpty() ? 'The board is empty' : 'No room for the piece — move it first', 'bad'); break;
         case 'jackpot': g.s.items = g.s.items || {}; g.s.items.jackpot = (g.s.items.jackpot || 0) + 1; g.s.clean = 0; g.s.cleanLines = 0; st.useItem(id); this.tray = null; this.jackpot(); this.renderItems(); break;
         case 'golden':
           // Gold stays on the board for the next five clears, whatever piece makes them.
           g.s.gold = (g.s.gold || 0) + Luck.GOLD_CLEARS;
           done();
           break;
-        case 'sand': case 'phase': case 'drill': case 'bomb': case 'anvil': case 'magnet': case 'laser': case 'blackhole':
-        case 'water': case 'steel': case 'oil': case 'frost': case 'torch': case 'bolt': case 'tnt':
-          if (g.setSpecial(id)) done(); else toast('No room for that here', 'bad');
-          break;
         case 'rewind': {
           const banked0 = g.s.banked || 0;
           const res = g.undo();
           if (!res) { toast('Nothing to rewind', 'bad'); return; }
+          if (this.app.hints) this.app.hints.undo();
           const refund = Math.max(0, banked0 - (g.s.banked || 0));
           if (refund) st.addLines(-refund, 'rewind');
           if (res.lines) {
@@ -790,7 +851,7 @@
           break;
         }
         case 'order':
-          UI.openOrderSlip(this.app, (pick) => { if (!pick) return; if (this.game.replacePiece({ id: pick })) done(); else toast('No room up there for that piece', 'bad'); });
+          UI.openOrderSlip(this.app, (pick) => { if (!pick) return; if (this.game.replacePiece({ id: pick })) done(); else toast('No room up there', 'bad'); });
           break;
         case 'settle': {
           const r = g.settle();
@@ -807,7 +868,7 @@
           UI.openBlueprint(this.app, (cells) => {
             if (!cells) return;
             const t = Pieces.customType(cells);
-            if (this.game.replacePiece({ id: t.id })) done(); else toast('It does not fit up there', 'bad');
+            if (this.game.replacePiece({ id: t.id })) done(); else toast('No room up there', 'bad');
           });
           break;
         default: break;
@@ -821,13 +882,13 @@
      */
     jackpot() {
       const st = this.app.store, reels = [0, 1, 2].map(() => Luck.reel(Math.random())), pay = Luck.jackpotPay(reels);
-      const demo = ITEM_ORDER.filter((id) => ITEMS[id].group === 'boom');
+      const demo = ITEM_ORDER.filter((id) => ITEMS[id].group === Luck.PRIZE_GROUP);
       const won = Array.from({ length: pay.items }, () => demo[Math.floor(Math.random() * demo.length)]);
       const icon = (id) => Luck.REELS.find((r) => r.id === id).icon;
       const boxes = reels.map(() => h('div', { class: 'reel' }, '?'));
       const note = h('p', { class: 'jp-note' }, 'Spinning…');
-      const table = h('div', { class: 'jp-pays' }, Luck.PAYS.map((p) => h('div', { class: 'jp-row' }, h('span', { class: 'jp-sym' }, p.label), h('span', null, p.lines ? fmtInt(p.lines) + ' ' + LINE : p.items + ' Demolition item' + (p.items > 1 ? 's' : '')))),
-        h('div', { class: 'jp-row jp-foot' }, h('span', null, 'Anything else pays nothing. Over many pulls it pays back about nine tenths.')));
+      const table = h('div', { class: 'jp-pays' }, Luck.PAYS.map((p) => h('div', { class: 'jp-row' }, h('span', { class: 'jp-sym' }, p.label), h('span', null, p.lines ? fmtInt(p.lines) + ' ' + LINE : p.items + ' Energy power-up' + (p.items > 1 ? 's' : '')))),
+        h('div', { class: 'jp-row jp-foot' }, h('span', null, 'Anything else: nothing · pays back about 90%')));
       UI.openModal({ title: 'Jackpot', width: 360, cls: 'modal-jackpot', body: h('div', null, h('div', { class: 'reels' }, boxes), note, table), buttons: [{ label: 'Collect', kind: 'primary' }], onClose: () => { clearInterval(timer); finish(); } });
       const S = st.state.stats.items;
       let t = 0, stopped = 0, done = false;
@@ -896,7 +957,7 @@
   // Short names for when a card is narrow; the full name is always in the tooltip.
   const MOD_SHORT = { big: 'Big', odd: 'Odd', wrap: 'Wrap', invert: 'Inverted', flip: 'Flipped', blind: 'Blind', vanish: 'Vanish', spin: 'Both Ways', mono: 'Mono' };
   // The keys a wildcard is about, shown under its description.
-  const MOD_KEYS = { spin: 'Z turns counter-clockwise · A turns 180°', hold: 'C or Shift holds · click HOLD', heavy: 'Space drops', invert: 'Arrows and turns are mirrored', side: 'Arrows follow the screen', flip: 'Arrows follow the screen' };
+  const MOD_KEYS = { spin: 'Z turns counter-clockwise · A turns 180°', hold: 'C holds', side: 'Arrows follow the screen', flip: 'Arrows follow the screen' };
   /** The keys line for a wildcard in a puzzle: Inverted Controls swap the turns, so Z turns clockwise there. */
   const modKeys = (m, mods) => (m === 'spin' && mods.includes('invert') ? 'Z turns clockwise here (controls are inverted) · A turns 180°' : MOD_KEYS[m] || null);
   const DIFF_COST = { E: 10, M: 20, H: 35 };
@@ -923,7 +984,7 @@
       this.el.daily.addEventListener('click', () => this.loadDaily());
       this.el.history.addEventListener('click', () => this.openHistory());
       this.el.save.addEventListener('click', () => { const p = this.puzzle; if (p) this.toggleSaved(p.seed, { diff: p.diff, title: p.title, mods: p.mods, number: this.meta.number, daily: this.meta.daily }); });
-      this.el.seed.addEventListener('click', () => { if (this.puzzle) { UI.copyText(this.puzzle.seed); toast('Seed ' + this.puzzle.seed + ' copied', 'good'); } });
+      this.el.seed.addEventListener('click', () => { if (this.puzzle) { UI.copyText(this.puzzle.seed); toast('Copied', 'good', 1200); } });
       // Wildcard chips explain themselves on hover (the tooltip) and on a click or tap (a small card that stays).
       this.el.mods.addEventListener('click', (e) => { const b = e.target.closest('.mod'); if (b) this.togglePop(b); });
       document.addEventListener('mousedown', (e) => { if (this.pop && !e.target.closest('.mod, .puz-pop')) this.closePop(); }, true);
@@ -942,6 +1003,12 @@
     get pstats() { return this.app.store.state.stats.puzzle; }
     /** Counter-clockwise puzzles (off by default): new puzzles come from the both-ways seeds. */
     get spin() { return !!this.app.settings.ccwPuzzles; }
+    /** Puzzles solved against how many there are: every seed of a difficulty (or all three), doubled when both-ways seeds are in play. */
+    volume(diff) {
+      const ds = diff ? [diff] : ['E', 'M', 'H'];
+      const solved = ds.reduce((n, d) => n + ((this.pstats[d] || {}).solved || 0), 0);
+      return fmtInt(solved) + ' of ' + fmtInt(ds.length * Puzzles.SEEDS_PER_DIFF * (this.spin ? 2 : 1)) + (diff ? ' ' + Puzzles.DIFFS[diff].name : '') + ' puzzles solved';
+    }
 
     show() { if (!this.puzzle) this.loadCurrent(); else this.renderNav(); }
 
@@ -968,8 +1035,8 @@
       const read = () => {
         const v = input.value.trim(), p = Puzzles.parseSeed(v);
         status.className = 'seed-status' + (p ? ' ok' : v ? ' bad' : '');
-        if (!v) { status.replaceChildren('E-, M- or H-, then seven letters or digits'); return; }
-        if (!p) { status.replaceChildren('Seeds look like E-, M- or H- (or ES-, MS-, HS-) and seven letters or digits'); return; }
+        if (!v) { status.replaceChildren(); return; }
+        if (!p) { status.replaceChildren('Not a seed'); return; }
         const d = Puzzles.DIFFS[p.diff], dd = Puzzles.dailyDateOf(p.seed);
         status.replaceChildren(h('span', { class: 'dot', style: { background: d.color } }), d.name + (p.spin ? ' · both ways' : '') + (this.ps.solved[p.seed] ? ' · solved' : '') + (dd && dd.key ? ' · the Daily for ' + dayLabel(dd.key) : ''));
       };
@@ -977,7 +1044,6 @@
       read();
       const diffName = Puzzles.DIFFS[this.ps.diff].name;
       const body = h('div', { class: 'seed-modal' },
-        h('p', null, 'The same seed is the same puzzle for everyone — share one, or come back to it.'),
         input, status);
       UI.openModal({
         title: 'Play a seed', body, cls: 'modal-seed',
@@ -1112,16 +1178,16 @@
       this.showCard(h('div', { class: 'puz-result solved' },
         icon('check', 'ring'),
         h('h2', null, 'Solved'),
-        h('p', null, p.title + ' · ' + this.label()),
         h('div', { class: 'board-sum' },
           tile(fmtClock(ms), 'time'),
           tile(cur.attempts === 1 ? 'First' : String(cur.attempts), cur.attempts === 1 ? 'try' : 'tries'),
-          reward ? tile(h('span', null, '+' + reward, ' ', h('span', { class: 'gem' }, LINE)), cur.hint ? 'lines · hints halve it' : this.meta.daily ? 'lines · Daily ×2' : 'lines', 'pay')
+          reward ? tile(h('span', null, '+' + reward, ' ', h('span', { class: 'gem' }, LINE)), cur.hint ? 'lines · ½ for hints' : this.meta.daily ? 'lines · Daily ×2' : 'lines', 'pay')
             : tile('—', 'solved before')),
         h('div', { class: 'row' },
           h('button', { class: 'btn', onclick: () => this.retry() }, 'Replay'),
-          h('button', { class: 'btn primary', onclick: () => this.next() }, 'Next puzzle ', h('kbd', null, 'N')))));
+          h('button', { class: 'btn primary', onclick: () => this.next() }, 'Next puzzle'))));
       this.renderHead();
+      this.renderDiff();
       this.renderNav();
       this.renderActions();
     }
@@ -1136,6 +1202,7 @@
     failed(why) {
       if (this.failedShown) return;
       this.failedShown = true;
+      if (this.app.hints) this.app.hints.attemptEnded(this);
       if (!this.ps.solved[this.puzzle.seed]) this.pstats.firstRun = 0;
       this.pstats[this.puzzle.diff].fails++;
       this.app.store.touch();
@@ -1145,18 +1212,19 @@
       this.showCard(h('div', { class: 'puz-result failed' },
         this.ring(prog.frac),
         h('h2', null, why),
-        h('p', null, Puzzles.goalText(this.puzzle) + (prog.text ? ' — ' + prog.text : ' — not yet') + '.'),
+        prog.text ? h('p', null, prog.text) : null,
         h('div', { class: 'row' },
-          h('button', { class: 'btn', onclick: () => this.undo() }, '↶ Undo ', h('kbd', null, '⌫')),
-          h('button', { class: 'btn primary', onclick: () => this.retry() }, '↺ Retry ', h('kbd', null, 'R')))));
+          h('button', { class: 'btn', onclick: () => this.undo() }, '↶ Undo'),
+          h('button', { class: 'btn primary', onclick: () => this.retry() }, '↺ Retry'))));
     }
 
-    retry() { this.hideCard(); this.start(); this.renderHead(); }
+    retry() { if (this.app.hints && !this.done && this.game && this.game.s.pieces >= 2) this.app.hints.attemptEnded(this); this.hideCard(); this.start(); this.renderHead(); }
 
     undo() {
       if (this.done) return false;
       const res = this.game.undo();
       if (!res) return false;
+      if (this.app.hints) this.app.hints.undo();
       if (this.ps.current) this.ps.current.undos = (this.ps.current.undos || 0) + 1;
       this.lines -= res.lines;
       this.failedShown = false;
@@ -1200,11 +1268,9 @@
     /** Saves (or unsaves) a seed, with enough to list it without generating the puzzle. */
     toggleSaved(seed, info) {
       const i = this.ps.saved.findIndex((e) => e.seed === seed);
-      if (i >= 0) { this.ps.saved.splice(i, 1); toast('Seed ' + seed + ' removed from Saved', null, 1400); }
-      else {
-        this.ps.saved.unshift({ seed, diff: info.diff, title: info.title, mods: info.mods || [], number: info.number || null, daily: info.daily || null, at: Date.now() });
-        toast('Seed ' + seed + ' saved', 'good', 1400);
-      }
+      // The star fills or empties, with a sound: no note needed.
+      if (i >= 0) this.ps.saved.splice(i, 1);
+      else this.ps.saved.unshift({ seed, diff: info.diff, title: info.title, mods: info.mods || [], number: info.number || null, daily: info.daily || null, at: Date.now() });
       this.app.store.touch();
       this.app.sound.play('hold');
       this.renderSaveBtn();
@@ -1214,13 +1280,14 @@
       const on = this.puzzle && this.isSaved(this.puzzle.seed);
       this.el.save.textContent = on ? '★' : '☆';
       this.el.save.classList.toggle('on', !!on);
-      this.el.save.title = on ? 'Saved — click to remove' : 'Save this seed (find it under History ▸ Saved)';
+      this.el.save.title = on ? 'Saved' : 'Save seed';
+      this.el.save.setAttribute('aria-label', on ? 'Saved' : 'Save seed');
+      this.el.save.setAttribute('aria-pressed', String(!!on));
     }
 
     openHistory(start) {
       let filter = start || 'all', handle = null;
       const list = h('div', { class: 'hist' });
-      const counts = h('span', { class: 'hist-sum' });
       const rowsFor = (k) => {
         const hist = this.ps.history, byseed = new Map(hist.map((e) => [e.seed, e]));
         return k === 'saved'
@@ -1243,14 +1310,12 @@
               h('div', { class: 't', title: label + ' · ' + e.title }, e.title, h('span', { class: 'sub' }, ' · ' + label)),
               h('div', { class: 'd' }, h('span', { class: 'st' }, [status, tries, date].filter(Boolean).join(' · ')),
                 e.mods && e.mods.length ? h('span', { class: 'mods' }, e.mods.map((m) => h('span', { class: 'pz-i', title: (Puzzles.MODS[m] || { name: m }).name, html: PZ_ICONS[m] || '' }))) : null)),
-            h('button', { class: 'seedchip', title: 'Copy seed', onclick: () => { UI.copyText(e.seed); toast('Seed ' + e.seed + ' copied', 'good', 1400); } }, e.seed),
-            h('button', { class: 'icon-btn star' + (saved ? ' on' : ''), title: saved ? 'Unsave' : 'Save this seed', onclick: () => { this.toggleSaved(e.seed, e); draw(); } }, saved ? '★' : '☆'),
+            h('button', { class: 'seedchip', title: 'Copy', onclick: () => { UI.copyText(e.seed); toast('Copied', 'good', 1200); } }, e.seed),
+            h('button', { class: 'icon-btn star' + (saved ? ' on' : ''), title: saved ? 'Saved' : 'Save seed', 'aria-pressed': String(!!saved), onclick: () => { this.toggleSaved(e.seed, e); draw(); } }, saved ? '★' : '☆'),
             h('button', { class: 'icon-btn play', title: current ? 'In play' : e.solved ? 'Replay' : 'Play', onclick: () => { handle.close(); if (!current) this.load(e.seed, { number: e.number, daily: e.daily }); } }, '►'));
-        }) : [h('p', { class: 'empty' }, filter === 'saved' ? 'No saved seeds yet — press ☆ on a puzzle or a row to keep it here.' : filter === 'all' ? 'No puzzles yet — every one you open lands here.' : filter === 'solved' ? 'Nothing solved yet.' : 'Nothing left unsolved.')]));
+        }) : [h('p', { class: 'empty' }, filter === 'saved' ? 'No saved seeds' : 'None')]));
         // Counts on the tabs, so an empty list is no surprise.
         seg.querySelectorAll('button').forEach((b) => { b.querySelector('.c').textContent = rowsFor(b.dataset.k).length; });
-        const total = this.ps.history.length, solved = this.ps.history.filter((e) => e.solved).length;
-        counts.textContent = total ? solved + ' of ' + total + ' solved' : '';
       };
       const tabs = [['all', 'All'], ['unsolved', 'Unsolved'], ['solved', 'Solved'], ['saved', '★ Saved']];
       const seg = h('div', { class: 'seg' }, tabs.map(([k, l]) => {
@@ -1258,13 +1323,13 @@
         return b;
       }));
       draw();
-      handle = UI.openModal({ title: 'Puzzle history', width: 520, cls: 'modal-hist', body: h('div', { class: 'hist-wrap' }, h('div', { class: 'hist-head' }, seg, counts), list), onClose: () => this.renderSaveBtn() });
+      handle = UI.openModal({ title: 'Puzzle history', width: 520, cls: 'modal-hist', body: h('div', { class: 'hist-wrap' }, h('div', { class: 'hist-head' }, seg), list, h('p', { class: 'hist-foot' }, this.volume())), onClose: () => this.renderSaveBtn() });
     }
 
     buyHint() {
       const cost = DIFF_COST[this.puzzle.diff];
       if (this.ps.current && this.ps.current.hint) { this.updateHint(true); return; }
-      UI.confirm('Buy a hint?', 'Shows where the known solution puts each piece for the rest of this puzzle. Costs ' + cost + ' lines and halves the reward.', 'Show me (' + cost + ' ' + LINE + ')', () => {
+      UI.confirm('Hint?', 'Halves the reward.', 'Show · ' + cost + ' ' + LINE, () => {
         if (!this.app.store.spend(cost)) { toast('Not enough lines', 'bad'); return; }
         this.ps.current.hint = true;
         this.pstats[this.puzzle.diff].hints++;
@@ -1301,7 +1366,7 @@
       if (!hint) return;
       if (hint.cells) this.view.hint = hint.cells;
       else if (announce && hint.swap) toast('The solution plays ' + (Pieces.TYPES[hint.swap] ? Pieces.TYPES[hint.swap].name : 'another piece') + ' next — try Hold', null, 2600);
-      else if (announce && hint.off) toast('You have left the known solution — undo to get hints back', null, 3000);
+      else if (announce && hint.off) toast('Off the solution — undo to get hints back', null, 3000);
       this.view.dirty = true;
     }
 
@@ -1328,15 +1393,9 @@
 
     // ---- the tab's own parts ------------------------------------------------------------------------------------------
 
-    /** "Hard #3", "Daily · Sat, Sep 26", or "Hard · from a seed". */
-    label() {
-      const d = Puzzles.DIFFS[this.puzzle.diff];
-      return this.meta.daily ? 'Daily ' + d.name : this.meta.number ? d.name + ' #' + this.meta.number : d.name + ' · from a seed';
-    }
-
     renderDiff() {
       const d = this.puzzle ? this.puzzle.diff : this.ps.diff;
-      this.el.diff.replaceChildren(...['E', 'M', 'H'].map((k) => h('button', { 'aria-pressed': String(k === d), title: Puzzles.DIFFS[k].name + ' puzzles', onclick: () => this.setDiff(k) },
+      this.el.diff.replaceChildren(...['E', 'M', 'H'].map((k) => h('button', { 'aria-pressed': String(k === d), title: this.volume(k), onclick: () => this.setDiff(k) },
         h('span', { class: 'dot', style: { background: Puzzles.DIFFS[k].color } }), h('span', { class: 'full' }, Puzzles.DIFFS[k].name), h('span', { class: 'short' }, k))));
     }
 
@@ -1347,7 +1406,7 @@
       const on = !!(this.puzzle && this.meta.daily === key && this.puzzle.seed === seed);
       this.el.daily.replaceChildren(...[icon('daily'), h('span', { class: 'lbl' }, 'Daily'), done ? h('span', { class: 'tick', title: 'Solved today' }, '✓') : null].filter(Boolean));
       this.el.daily.setAttribute('aria-pressed', String(on));
-      this.el.daily.title = "Today's " + Puzzles.DIFFS[diff].name + ' puzzle — pays double' + (done ? ' (solved)' : '');
+      this.el.daily.title = 'Daily';
       this.fitNav();
     }
 
@@ -1362,14 +1421,14 @@
       const p = this.puzzle, d = Puzzles.DIFFS[p.diff];
       const solved = this.ps.solved[p.seed];
       this.el.dot.style.background = d.color;
-      this.el.title.replaceChildren(...[h('span', { class: 't' }, p.title), solved ? h('span', { class: 'done', title: 'Solved' + (solved.ms ? ' in ' + fmtClock(solved.ms) : '') }, '✓ solved') : null].filter(Boolean));
+      this.el.title.replaceChildren(...[h('span', { class: 't' }, p.title), solved ? h('span', { class: 'done', title: 'Solved' + (solved.ms ? ' in ' + fmtClock(solved.ms) : ''), 'aria-label': 'Solved' }, '✓') : null].filter(Boolean));
       const where = this.meta.daily ? ['Daily', dayLabel(this.meta.daily), d.name] : this.meta.number ? [d.name, '#' + this.meta.number] : [d.name, 'from a seed'];
       this.el.id.replaceChildren(where.join(' · ') + ' · ' + p.pieces.length + ' pieces');
       this.el.seed.replaceChildren(h('span', { class: 'code' }, p.seed), icon('copy'));
       this.renderSaveBtn();
       // Every seed is some date's Daily.
       const dd = Puzzles.dailyDateOf(p.seed);
-      this.el.seed.title = 'Copy this seed' + (dd && dd.key ? ' · the Daily for ' + dd.key : dd ? ' · the Daily in ' + dd.years.toLocaleString() + ' years' : '');
+      this.el.seed.title = 'Copy seed' + (dd && dd.key ? ' · the Daily for ' + dayLabel(dd.key) : dd ? ' · the Daily in ' + dd.years.toLocaleString() + ' years' : '');
       this.renderGoal();
       this.renderMods();
     }
@@ -1392,14 +1451,14 @@
       this.el.goal.replaceChildren(
         icon(p.goal.type === 'gems' ? 'gems' : p.goal.type === 'lines' ? 'lines' : 'clear', 'goal-i ' + p.goal.type),
         h('span', { class: 'goal' }, Puzzles.goalText(p)),
-        h('span', { class: 'prog' }, prog.text),
+        h('span', { class: 'prog' }, p.goal.type === 'lines' ? Math.min(this.lines, p.goal.lines) + ' / ' + p.goal.lines : prog.text),
         h('span', { class: 'meter' }, h('i', { style: { width: Math.round(Math.max(0, Math.min(1, prog.frac)) * 100) + '%' } })));
     }
 
     renderMods() {
       const p = this.puzzle;
       this.closePop();
-      if (!p.mods.length) { this.el.mods.replaceChildren(h('span', { class: 'mod-none' }, 'No wildcards — just the rules')); return; }
+      if (!p.mods.length) { this.el.mods.replaceChildren(h('span', { class: 'mod-none' }, 'No wildcards')); return; }
       this.el.mods.replaceChildren(...p.mods.map((m) => {
         const M = Puzzles.MODS[m];
         return h('button', { class: 'mod mod-' + m, 'data-mod': m, 'data-tip-title': M.name, 'data-tip': M.desc, 'data-tip-foot': modKeys(m, p.mods) },
@@ -1454,12 +1513,12 @@
       const hinted = this.ps.current && this.ps.current.hint;
       this.el.actions.replaceChildren(
         h('div', { class: 'grp' },
-          h('button', { class: 'btn', id: 'puz-undo', disabled: !this.game || !this.game.history.length || this.done, title: 'Take back the last piece (free)', onclick: () => this.undo() }, '↶ ', h('span', { class: 'lbl' }, 'Undo'), h('kbd', null, '⌫')),
-          h('button', { class: 'btn', id: 'puz-retry', title: 'Start this puzzle again', onclick: () => this.retry() }, '↺ ', h('span', { class: 'lbl' }, 'Retry'), h('kbd', null, 'R'))),
+          h('button', { class: 'btn', id: 'puz-undo', disabled: !this.game || !this.game.history.length || this.done, 'aria-label': 'Undo', 'data-tip': 'Undo', 'data-tip-foot': '⌫', onclick: () => this.undo() }, '↶ ', h('span', { class: 'lbl' }, 'Undo')),
+          h('button', { class: 'btn', id: 'puz-retry', 'aria-label': 'Retry', 'data-tip': 'Retry', 'data-tip-foot': 'R', onclick: () => this.retry() }, '↺ ', h('span', { class: 'lbl' }, 'Retry'))),
         h('div', { class: 'grp' },
-          h('button', { class: 'btn' + (hinted ? ' on' : ''), id: 'puz-hint', disabled: this.done, onclick: () => this.buyHint(), title: hinted ? 'Hints are on: the solution shows where each piece goes' : 'See where the known solution puts each piece (' + cost + ' lines; halves the reward)' },
-            icon('hint'), h('span', { class: 'lbl' }, hinted ? 'Hints on' : 'Hint'), hinted ? null : h('span', { class: 'gem' }, LINE + cost), h('kbd', null, 'H')),
-          h('button', { class: 'btn' + (this.done ? ' primary' : ''), id: 'puz-next', title: this.done ? 'The next puzzle' : 'Skip to the next puzzle (this one stays in History)', onclick: () => this.next() }, h('span', { class: 'lbl' }, this.done ? 'Next' : 'Skip'), ' ▸', h('kbd', null, 'N'))));
+          h('button', { class: 'btn' + (hinted ? ' on' : ''), id: 'puz-hint', disabled: this.done, 'aria-label': hinted ? 'Hints on' : 'Hint', 'aria-pressed': String(!!hinted), 'data-tip': hinted ? 'Hints on' : 'Hint', 'data-tip-foot': 'H', onclick: () => this.buyHint() },
+            icon('hint'), h('span', { class: 'lbl' }, hinted ? 'Hints on' : 'Hint'), hinted ? null : h('span', { class: 'gem' }, LINE + cost)),
+          h('button', { class: 'btn' + (this.done ? ' primary' : ''), id: 'puz-next', 'aria-label': this.done ? 'Next' : 'Skip', 'data-tip': this.done ? 'Next' : 'Skip', 'data-tip-foot': 'N', onclick: () => this.next() }, h('span', { class: 'lbl' }, this.done ? 'Next' : 'Skip'), ' ▸')));
     }
   }
 
@@ -1550,7 +1609,7 @@
         const a = this.away;
         this.away = null;
         if (a.seconds > 90 && a.minos >= 4) {
-          toast('While you were away the factory made ' + fmtInt(a.minos) + ' minos · ' + fmtInt(Math.floor(f.bin.length / 4)) + ' ' + LINE + ' in the bin' + (Factory.isFull(f) ? ' · the bin is full' : ''), 'good', 5000);
+          toast('While you were away: ' + fmtInt(a.minos) + ' minos · ' + fmtInt(Math.floor(f.bin.length / 4)) + ' ' + LINE + ' in the bin' + (Factory.isFull(f) ? ' · full' : ''), 'good', 5000);
         }
       }
       return res;
@@ -1627,7 +1686,7 @@
       for (const u of REWARD_UNLOCKS) {
         if (!this.store.owns(u.kind, u.id) && u.test(this.f)) {
           this.store.grantCosmetic(u.kind, u.id);
-          toast('Unlocked: ' + L.COSMETICS[u.kind][u.id].name + ' (' + L.COSMETIC_LABELS[u.kind].toLowerCase() + ') — equip it in the Shop', 'good', 5000);
+          toast('Unlocked: ' + L.COSMETICS[u.kind][u.id].name, 'good', 4000);
         }
       }
       this.app.achieve({ mode: 'factory' });
@@ -1672,12 +1731,12 @@
       const n = Factory.MOLDS[k], look = this.app.look(), list = Factory.shapes(n), seen = f.stats.seen[n];
       let modal = null;
       const pick = (s) => { Factory.setPin(f, k, s); this.app.sound.play('land'); this.store.touch(); if (modal) modal.close(); this.build(); };
-      const tile = (s) => h('button', { class: 'mold' + (m.pin === s ? ' on' : ''), title: Factory.shapeName(n, s) + (seen && seen[s] !== '1' ? ' · not pressed yet' : ''), 'data-s': s, onclick: () => pick(s) },
+      const tile = (s) => h('button', { class: 'mold' + (m.pin === s ? ' on' : ''), title: Factory.shapeName(n, s), 'data-s': s, onclick: () => pick(s) },
         L.FactoryArt.shapeCanvas(look, list[s], 28, look.colors[1 + (s % 7)], !seen || seen[s] === '1'));
       const body = h('div', { class: 'mold-pick' },
-        h('button', { class: 'mold-any' + (m.pin < 0 ? ' on' : ''), onclick: () => pick(-1) }, h('b', null, 'Any'), ': a new shape each time'),
+        h('button', { class: 'mold-any' + (m.pin < 0 ? ' on' : ''), onclick: () => pick(-1) }, h('b', null, 'Any')),
         h('div', { class: 'catalog molds scroll' }, list.map((_, s) => tile(s))),
-        h('p', { class: 'mold-cap' }, (seen ? 'Pressed ' + Factory.seenCount(f, n) + ' / ' + list.length + ' · ' : '') + 'the next piece uses this mold'));
+        seen ? h('p', { class: 'mold-cap' }, 'Pressed ' + Factory.seenCount(f, n) + ' / ' + list.length) : null);
       modal = UI.openModal({ title: Factory.NAMES[n] + ' press · mold', width: 380, body });
     }
 
@@ -1702,14 +1761,14 @@
       if (!hit) return '';
       if (hit.kind === 'bin') {
         const n = Math.floor(f.bin.length / 4), loose = f.bin.length % 4;
-        const full = Factory.status(f).full ? ' · full: the next piece won’t fit' : '';
-        return n ? 'Bin · ' + n + (n === 1 ? ' line' : ' lines') + (loose ? ' + ' + loose + ' loose' : '') + full + ' · click to collect' : 'Bin · ' + loose + ' loose · four in a row make a line';
+        const full = Factory.status(f).full ? ' · full' : '';
+        return n ? 'Bin · ' + n + (n === 1 ? ' line' : ' lines') + (loose ? ' + ' + loose + ' loose' : '') + full : 'Bin · ' + loose + ' loose';
       }
       const n = Factory.MOLDS[hit.k], name = Factory.NAMES[n] + ' press';
-      if (hit.kind === 'bay') return name + ' · ' + fmtInt(Factory.PRESS_COST[hit.k]) + ' ' + LINE + (hit.k === f.presses ? ' · click to build' : ' · after the ' + Factory.NAMES[n - 1].toLowerCase() + ' press');
+      if (hit.kind === 'bay') return name + ' · ' + fmtInt(Factory.PRESS_COST[hit.k]) + ' ' + LINE + (hit.k === f.presses ? '' : ' · after the ' + Factory.NAMES[n - 1].toLowerCase() + ' press');
       const m = f.molds[hit.k], formed = Math.floor(m.p * n + 1e-9);
       const mold = ' · mold: ' + (m.pin < 0 ? 'Any' : moldLabel(n, m.pin));
-      if (m.held) return name + ' · ' + n + '/' + n + ' · holding: the belt is full here' + mold;
+      if (m.held) return name + ' · ' + n + '/' + n + ' · waiting' + mold;
       return name + ' · ' + formed + '/' + n + ' · next mino ' + fmtClock(((formed + 1) / n - m.p) * Factory.CYCLE * 1000 + 999) + mold;
     }
 
@@ -1740,9 +1799,9 @@
         const n = np.to, s = sampleShape(n);
         this.pressBtn = h('button', { class: 'btn sm', onclick: () => this.upgrade('press') }, 'Build · ' + fmtInt(np.cost) + ' ' + LINE);
         els.push(card('press', L.FactoryArt.shapeCanvas(look, Factory.shapes(n)[s], 34, look.colors[1 + (s % 7)], true), Factory.NAMES[n] + ' press',
-          h('div', { class: 'd' }, 'Bay ' + (f.presses + 1) + ' · ' + n + ' minos every 10 min · +' + Factory.quarters((3600 / Factory.CYCLE) * n / 4) + '\u00a0' + LINE + '/h'), this.pressBtn));
+          h('div', { class: 'd' }, '+' + Factory.quarters((3600 / Factory.CYCLE) * n / 4) + '\u00a0' + LINE + '/h'), this.pressBtn));
       } else {
-        els.push(card('press', L.FactoryArt.shapeCanvas(look, Factory.shapes(7)[sampleShape(7)], 34, look.colors[3], true), 'Four presses', h('div', { class: 'd' }, 'the line is complete · ' + Factory.perHour(f) + ' minos an hour'), null));
+        els.push(card('press', L.FactoryArt.shapeCanvas(look, Factory.shapes(7)[sampleShape(7)], 34, look.colors[3], true), 'Four presses', null, null));
       }
       // A taller bin.
       const nb = Factory.nextUpgrade(f, 'bin');
@@ -1754,9 +1813,8 @@
       } else els.push(card('bin', this.binIcon(look), 'The tallest bin', h('div', { class: 'd' }, Factory.BIN_ROWS[f.binLevel] + ' lines'), null));
       // Molds: one chip per press.
       els.push(h('div', { class: 'row-card fac-molds' }, h('span', { class: 'lbl' }, 'Molds'),
-        h('div', { class: 'chips' }, f.molds.map((m, k) => h('button', { class: 'chip' + (m.pin >= 0 ? ' on' : ''), 'data-k': k, title: 'Choose what this press makes', onclick: () => this.openMold(k) },
+        h('div', { class: 'chips' }, f.molds.map((m, k) => h('button', { class: 'chip' + (m.pin >= 0 ? ' on' : ''), 'data-k': k, onclick: () => this.openMold(k) },
           Factory.MOLDS[k] + ' · ' + (m.pin < 0 ? 'Any' : '◇ ' + moldLabel(Factory.MOLDS[k], m.pin)))))));
-      els.push(h('p', { class: 'fac-note' }, 'Each mino is a quarter of a line; four in a row make one. The line runs while Lull is closed. When the bin is full it just waits: nothing is lost.'));
       this.list.replaceChildren(...els);
       this.update();
     }
@@ -1764,11 +1822,11 @@
     update() {
       const f = this.f, st = Factory.status(f), cap = Factory.BIN_ROWS[f.binLevel], wallet = this.store.state.lines;
       this.tRate.v.textContent = Factory.quarters(st.perHour / 4) + '\u00a0' + LINE + '/h';
-      this.tRate.l.textContent = st.perHour + ' minos an hour';
+      this.tRate.l.textContent = st.perHour + ' minos / h';
       this.tBin.v.textContent = Factory.quarters(st.len / 4) + ' / ' + cap;
       this.tBin.l.textContent = 'lines in the bin';
       this.tStatus.v.textContent = st.full ? 'Full' : soon(st.toFull);
-      this.tStatus.l.textContent = st.full ? 'the line is waiting' : 'until the bin is full';
+      this.tStatus.l.textContent = st.full ? 'waiting' : 'until full';
       this.tStatus.el.classList.toggle('warn', st.full);
       // Collect: what it pays now, or when the first line lands.
       let key;
@@ -1780,15 +1838,14 @@
       if (key !== this.cKey) {
         this.cKey = key;
         this.cBtn.disabled = !st.lines;
-        const sub = st.lines ? (st.loose ? ' · ' + st.loose + ' loose mino' + (st.loose > 1 ? 's stay' : ' stays') : '') : isFinite(this.etaV) ? ' · first line in ' + soon(this.etaV) : '';
-        this.cBtn.replaceChildren(st.lines ? 'Collect ' + fmtInt(st.lines) + ' ' + LINE : 'Nothing to collect yet', h('span', { class: 'sub' }, sub));
+        const sub = !st.lines && isFinite(this.etaV) ? ' · ' + soon(this.etaV) : '';
+        this.cBtn.replaceChildren('Collect' + (st.lines ? ' ' + fmtInt(st.lines) + ' ' + LINE : ''), h('span', { class: 'sub' }, sub));
       }
       const np = Factory.nextUpgrade(f, 'press'), nb = Factory.nextUpgrade(f, 'bin');
       if (this.pressBtn && np) { this.pressBtn.disabled = wallet < np.cost; this.pressBtn.classList.toggle('primary', wallet >= np.cost); }
       if (this.binBtn && nb) {
         this.binBtn.disabled = wallet < nb.cost; this.binBtn.classList.toggle('primary', wallet >= nb.cost);
-        const fill = st.perHour ? Math.max(0, nb.to * 4 - st.len) / st.perHour * 3600 : Infinity;
-        this.binDesc.textContent = 'Holds ' + nb.to + ' lines (now ' + cap + ') · full in ' + soon(fill);
+        this.binDesc.textContent = cap + ' → ' + nb.to + ' lines';
       }
       if (this.hover) this.view.caption = this.captionFor(this.hover);
       this.app.setBadge('factory', Factory.isFull(f));
