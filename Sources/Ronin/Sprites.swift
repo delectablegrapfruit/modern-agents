@@ -68,9 +68,12 @@ final class FoeSprite: SKNode {
     private var holdLeft = 0.0
     private var lagged = false
     private var leapStart: Double?
-    /// Whether the warlord's guard was set on the last update; how far round the warning ring was drawn.
+    /// Whether the warlord's guard was set on the last update; how far round the warning ring was drawn; the tint
+    /// on him and the cuts his pips show, as last set.
     private var wardSet = false
     private var ringStep = -1
+    private var tinted: (color: RGB, amount: CGFloat)?
+    private var pipsShown = -1
 
     init(foe: Foe, ronin: CGFloat, headroom: CGFloat? = nil) {
         id = foe.id
@@ -93,7 +96,7 @@ final class FoeSprite: SKNode {
         pivot.addChild(body)
         echo.alpha = 0
         echo.zPosition = -0.1
-        Art.setTint(body, Palette.blood, 0)
+        tint(Palette.blood, 0)
         glint.color = (Build.of(cast).eyes ?? Palette.blood).color()
         glint.colorBlendFactor = 1
         glint.blendMode = .add
@@ -417,11 +420,11 @@ final class FoeSprite: SKNode {
         let charging = foe.phase == .windup || foe.phase == .aiming
         let t = charging ? CGFloat(foe.progress) : 0
         if hitFlash > 0 {
-            Art.setTint(body, .white, CGFloat(hitFlash / 0.14) * 0.85)
+            tint(.white, CGFloat(hitFlash / 0.14) * 0.85)
         } else if charging {
-            Art.setTint(body, Palette.blood, (0.12 + 0.5 * t * t) * (kind == .archer ? 0.6 : 1))
+            tint(Palette.blood, (0.12 + 0.5 * t * t) * (kind == .archer ? 0.6 : 1))
         } else {
-            Art.setTint(body, Palette.blood, 0)
+            tint(Palette.blood, 0)
         }
         glint.alpha = charging ? 0.25 + 0.75 * t : 0
         glint.setScale(charging ? 0.6 + 0.5 * t + 0.12 * CGFloat(sin(foe.timer * 40)) : 1)
@@ -477,11 +480,13 @@ final class FoeSprite: SKNode {
         // The cuts he has left (not taken off until the blade lands), out of the way of his marker while he winds up
         // (a gourd-bearer's sit under his gourd, clear of it, and show just when he has to be caught).
         if !holding {
-            let hidden = leaping || foe.phase == .windup && gourd == nil
-            for (k, pip) in pips.enumerated() {
-                pip.fillColor = k < foe.hp ? Build.of(cast).accent.mix(.white, 0.35).color() : SKColor(white: 1, alpha: 0.15)
-                pip.isHidden = hidden
+            if foe.hp != pipsShown {
+                pipsShown = foe.hp
+                let left = Build.of(cast).accent.mix(.white, 0.35).color(), spent = SKColor(white: 1, alpha: 0.15)
+                for (k, pip) in pips.enumerated() { pip.fillColor = k < foe.hp ? left : spent }
             }
+            let hidden = leaping || foe.phase == .windup && gourd == nil
+            for pip in pips { pip.isHidden = hidden }
         }
     }
 
@@ -489,6 +494,13 @@ final class FoeSprite: SKNode {
     /// warlord's fury, a man backing off from one who landed in front of him.
     private static func fastest(_ foe: Foe) -> CGFloat {
         CGFloat(foe.bearer ? foe.speed * 5 : max(foe.speed * 1.5, 0.6))
+    }
+
+    /// Tints him, unless he already is (every tint sets the shader's attribute afresh).
+    private func tint(_ color: RGB, _ amount: CGFloat) {
+        if let tinted, tinted.color == color, tinted.amount == amount { return }
+        tinted = (color, amount)
+        Art.setTint(body, color, amount)
     }
 
     /// The frames each kind of foe has, looked up rather than listed again every frame.
@@ -562,7 +574,7 @@ final class FoeSprite: SKNode {
         body.zRotation = 0
         body.xScale = facing
         body.yScale = 1
-        Art.setTint(body, .white, 0.9)
+        tint(.white, 0.9)
         warning.isHidden = true
         sight.alpha = 0
         glint.alpha = 0
@@ -678,6 +690,8 @@ final class HeroSprite: SKNode {
     private var flush: CGFloat = 0
     /// How much of the stage's blood is on him; the chiburi throws it off.
     private var gore: CGFloat = 0
+    /// The tint on him, as last set.
+    private var tinted: (color: RGB, amount: CGFloat)?
     private var ronin: CGFloat = 60
     var home = CGPoint.zero
 
@@ -688,8 +702,8 @@ final class HeroSprite: SKNode {
     }
 
     /// Seconds each frame of a cut shows: chambered, five through the swing (the blade at its mark as the fourth
-    /// comes up: `impact`), two of follow-through, zanshin, and the two steps back into guard (from a long lunge a
-    /// push-off takes a little of the first).
+    /// comes up: `impact`), two of follow-through, zanshin, and the two steps back into guard (from a long lunge, a
+    /// push-off before them and the first shortened to make room for it).
     static let cutTiming: [Double] = [0.016, 0.017, 0.018, 0.02, 0.024, 0.04, 0.045, 0.05, 0.08, 0.065, 0.065]
     /// The draw-cut is a hair slower out of the scabbard.
     static let drawTiming: [Double] = [0.028, 0.024, 0.024, 0.022, 0.022, 0.04, 0.045, 0.05, 0.085, 0.07, 0.07]
@@ -721,7 +735,7 @@ final class HeroSprite: SKNode {
         addChild(body)
         echo.alpha = 0
         echo.zPosition = -0.5
-        Art.setTint(body, Palette.blood, 0)
+        tint(Palette.blood, 0)
     }
 
     required init?(coder aDecoder: NSCoder) { nil }
@@ -756,7 +770,7 @@ final class HeroSprite: SKNode {
         bled = false
         lastReel = -1
         show(sheathed ? .iai(0) : .idle(0), blend: false)
-        Art.setTint(body, Palette.blood, 0)
+        tint(Palette.blood, 0)
     }
 
     func face(_ side: Side) {
@@ -1122,6 +1136,13 @@ final class HeroSprite: SKNode {
 
     // MARK: Drawing
 
+    /// Tints him, unless he already is (every tint sets the shader's attribute afresh).
+    private func tint(_ color: RGB, _ amount: CGFloat) {
+        if let tinted, tinted.color == color, tinted.amount == amount { return }
+        tinted = (color, amount)
+        Art.setTint(body, color, amount)
+    }
+
     private func show(_ frame: Frame, blend: Bool, sheathed look: Bool = false) {
         guard frame != pose || look != poseSheathed else { return }
         if blend {
@@ -1226,7 +1247,7 @@ final class HeroSprite: SKNode {
         body.yScale = 1 - 0.035 * snap
         if flush > 0 { flush = max(0, flush - CGFloat(dt) * 4) }
         // A wound flushes him red; the blood of the stage darkens him, a deep wet red rather than a bright one.
-        if flush > gore { Art.setTint(body, Palette.blood, flush) } else { Art.setTint(body, Palette.blood.mix(.black, 0.55), gore) }
+        if flush > gore { tint(Palette.blood, flush) } else { tint(Palette.blood.mix(.black, 0.55), gore) }
         let target: CGFloat = bloodlust && !ended ? 0.55 + 0.2 * CGFloat(sin(breath * 9)) : 0
         aura.alpha += (target - aura.alpha) * min(1, CGFloat(dt) * 8)
     }
