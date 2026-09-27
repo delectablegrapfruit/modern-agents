@@ -858,7 +858,16 @@ public enum Figure {
                 p.blade = 4.15
             }
         }
+        p.back = braced(p.back)
         return p
+    }
+
+    /// A back leg braced straight behind him, the foot where it was, if it is drawn bowed back at the knee (a knee
+    /// only ever bends forward).
+    static func braced(_ leg: (thigh: CGFloat, shin: CGFloat)) -> (thigh: CGFloat, shin: CGFloat) {
+        guard leg.thigh < leg.shin else { return leg }
+        let a = asin((thigh * sin(leg.thigh) + shin * sin(leg.shin)) / (thigh + shin))
+        return (a, a)
     }
 
     /// The ronin's iai stance: blade sheathed, the sword hand resting on the hilt, the other at the scabbard's mouth,
@@ -918,11 +927,16 @@ public enum Figure {
                 p.tilt = 0.35
                 p.stream = 0.7
             case .repelled(let k):
-                // The blade knocked back over the shoulder, the ronin rocked back on his heels.
+                // The blade knocked back over the shoulder, the ronin rocked back on his heels; then down off them,
+                // the feet where they were.
                 p.lean = k == 0 ? -0.3 : -0.12
                 p.shift = -0.04
-                p.front = k == 0 ? (0.62, 0.05) : (0.55, 0.12)
-                p.back = k == 0 ? (-0.18, -0.5) : (-0.35, -0.45)
+                p.front = (0.62, 0.05)
+                p.back = (-0.2, -0.53)
+                if k > 0 {
+                    let rocked = footing(p)
+                    plant(&p, hip: v(-0.04, 0.52), front: v(rocked.front.x, 0), back: v(rocked.back.x, 0))
+                }
                 p.hold = k == 0 ? v(0.1, 0.16) : v(0.16, 0.0)
                 p.blade = k == 0 ? 3.55 : 2.7
                 p.tilt = k == 0 ? -0.3 : -0.1
@@ -950,6 +964,9 @@ public enum Figure {
             case .fall(let k):
                 switch k {
                 case 0:
+                    // Struck where he stands, rocked back over his guard's footing.
+                    let home = footing(stance(.hero))
+                    plant(&p, hip: v(-0.03, 0.515), front: home.front, back: home.back)
                     p.hold = v(0.1, -0.16)
                     p.blade = 1.2
                 case 1:
@@ -1016,11 +1033,14 @@ public enum Figure {
                 p.hold = v(-0.03, -0.12)
                 p.blade = 1.54
             case (.grunt, .windup(2)):
-                // Coiled: the weight sunk on the back leg, the front foot light, the shaft drawn right back.
+                // Coiled: the weight sunk on the back leg, the front foot lifted light for the step in, the shaft
+                // drawn right back.
                 p.lean = -0.17
-                p.shift = -0.035
                 p.front = (0.62, 0.42)
                 p.back = (-0.22, -0.72)
+                p.shift = -0.035
+                let feet = footing(p)
+                plant(&p, hip: v(-0.035, hipHeight(p)), front: v(feet.front.x, 0.035), back: v(feet.back.x, 0))
                 p.hold = v(-0.09, -0.1)
                 p.blade = 1.62
             case (.grunt, .strike(let k)):
@@ -1037,9 +1057,12 @@ public enum Figure {
                 p.blade = 3.3
                 p.arm2 = (0.9, 1.4)
             case (.runner, .windup(2)):
+                // Sunk deeper into the crouch, the feet where they were.
                 p.lean = 0.36
                 p.front = (0.95, 0.65)
                 p.back = (-0.45, -1.15)
+                let crouch = footing(key(cast, .windup(1)))
+                plant(&p, hip: v(0, hipHeight(p)), front: v(crouch.front.x, 0), back: crouch.back)
                 p.hold = v(-0.02, 0.14)
                 p.blade = 3.55
                 p.arm2 = (1.0, 1.5)
@@ -1056,9 +1079,9 @@ public enum Figure {
                 p.hold = v(0.02, 0.16)
                 p.blade = -2.05
             case (.brute, .windup(2)):
+                // Rising to it, the front foot lifted light (the back one stays down).
                 p.lean = -0.2
-                p.lift = 0.02
-                p.front = (0.5, 0.25)
+                p.front = (0.55, 0.3)
                 p.hold = v(-0.02, 0.18)
                 p.blade = -1.8
             case (.brute, .strike(let k)):
@@ -1073,8 +1096,13 @@ public enum Figure {
             case (.dancer, .windup(1)), (.dancer, .windup(2)):
                 let coil: CGFloat = frame == .windup(2) ? 1 : 0
                 p.lean = 0.1 - 0.06 * coil
-                p.front = (0.55, 0.3 + 0.15 * coil)
-                p.back = (-0.5, -0.6 - 0.2 * coil)
+                p.front = (0.55, 0.3)
+                p.back = (-0.5, -0.6)
+                if coil > 0 {
+                    // Coiled lower over the same footing.
+                    let feet = footing(p)
+                    plant(&p, hip: v(0, hipHeight(p) - 0.03), front: v(feet.front.x, 0), back: feet.back)
+                }
                 p.arm = (2.6 + 0.1 * coil, 2.95)
                 p.arm2 = (2.3 + 0.1 * coil, 2.65)
                 p.blade = 2.45 - 0.1 * coil
@@ -1120,7 +1148,7 @@ public enum Figure {
             case (.archer, .aim):
                 p.lean = 0.0
                 p.front = (0.4, 0.1)
-                p.back = (-0.44, -0.3)
+                p.back = braced((-0.44, -0.3))
                 p.hold = v(0.315, 0.07)
                 p.hold2 = v(-0.09, 0.07)
                 p.blade = 1.57
@@ -1128,7 +1156,7 @@ public enum Figure {
             case (.archer, .loose), (.archer, .strike(_)):
                 p.lean = 0.0
                 p.front = (0.4, 0.1)
-                p.back = (-0.44, -0.3)
+                p.back = braced((-0.44, -0.3))
                 p.hold = v(0.315, 0.07)
                 p.hold2 = v(-0.28, 0.1)
                 p.blade = 1.57
@@ -1139,10 +1167,12 @@ public enum Figure {
                 p.hold = v(0.03, 0.14)
                 p.blade = 4.45
             case (.warlord, .windup(2)):
+                // The front foot lifted light for the stamp, the back one where it stood.
                 p.lean = -0.2
-                p.lift = 0.02
                 p.front = (0.62, 0.38)
                 p.back = (-0.36, -0.55)
+                let feet = footing(p), home = footing(stance(cast))
+                plant(&p, hip: v(0, hipHeight(p)), front: v(feet.front.x, 0.03), back: v(home.back.x, 0))
                 p.hold = v(-0.04, 0.17)
                 p.blade = 4.65
             case (.warlord, .strike(let k)):
@@ -1171,6 +1201,14 @@ public enum Figure {
                 p.blade += 0.6
             default:
                 break
+            }
+            if frame == .stagger(0) {
+                // Rocked back where he stands, on his own stance's footing (so a blow taken in his stance, or the
+                // freeze of a killing one, leaves his feet where they were), the hips thrown back over the back foot.
+                let feet = footing(stance(cast)), hip = v(p.shift, 0)
+                let reach = thigh + shin - 0.012
+                func highest(_ f: CGPoint) -> CGFloat { f.y + (reach * reach - (f.x - hip.x) * (f.x - hip.x)).squareRoot() }
+                plant(&p, hip: v(hip.x, min(hipHeight(p), highest(feet.front), highest(feet.back))), front: v(feet.front.x, 0), back: feet.back)
             }
         }
         return p
@@ -1328,6 +1366,7 @@ public enum Figure {
             let from = draw(3), to = draw(5)
             return CutKeys(start: from, end: to, from: -0.95, to: to.blade)
         }
+        start.back = braced(start.back)
         return CutKeys(start: start, end: end, from: start.blade, to: end.blade)
     }
 
@@ -1668,12 +1707,17 @@ public enum Figure {
         return p
     }
 
-    /// The end of a stage: ō-chiburi, the blade swung up beside the head and snapped down to throw the blood off;
-    /// then nōtō, the back of the blade laid in the scabbard's mouth and slid home, the hand resting on the hilt.
+    /// The end of a stage: ō-chiburi, the blade swung up beside the head and snapped down to throw the blood off, the
+    /// body sinking into the snap; then nōtō, the back of the blade laid in the scabbard's mouth and slid home as he
+    /// rises, the hand resting on the hilt. His feet stay where they stood in guard throughout.
     static func flourish(_ k: Int) -> Pose {
         var p = stance(.hero)
-        p.front = (0.34, 0.06)
-        p.back = (-0.34, -0.14)
+        let home = footing(p), standing = hipHeight(p)
+        // How far the hips are below his height in guard: level as the blade goes up, dropping into the snap, and
+        // rising again as the blade goes home.
+        let sink: [CGFloat] = [0.004, 0, 0.026, 0.045, 0.024, 0.012, 0.004]
+        let hip = v(k == 2 || k == 3 ? 0.01 : 0, standing - sink[min(max(k, 0), sink.count - 1)])
+        plant(&p, hip: hip, front: home.front, back: home.back)
         p.lean = 0.04
         p.grip = .saya
         switch k {
@@ -1687,16 +1731,12 @@ public enum Figure {
             p.blade = 3.75
             p.stream = 0.5
         case 2:
-            p.front = (0.42, 0.15)
-            p.back = (-0.4, -0.32)
             p.hold = v(0.2, 0.08)
             p.blade = 2.3
             p.smear = Pose.Smear(from: 3.6, to: 2.3, strength: 0.7)
             p.stream = 0.8
             p.wave = 0.2
         case 3:
-            p.front = (0.5, 0.25)
-            p.back = (-0.45, -0.5)
             p.hold = v(0.27, -0.12)
             p.blade = 0.9
             p.smear = Pose.Smear(from: 2.4, to: 0.9, strength: 0.55)
@@ -2278,7 +2318,7 @@ private struct Drawer {
         pen.ellipse(skull, body)
         func p(_ f: CGFloat, _ u: CGFloat) -> CGPoint { at(at(c, face, f * r), headUp, u * r) }
         fill([p(-0.5, -0.6), p(0.72, -1.02), p(1.08, -0.35), p(1.02, 0.2), p(0.8, 0.5)], body)
-        gear(c, r, severed: severed)
+        gear(c, r)
         if let eyes = build.eyes {
             let eye = p(0.62, 0.05)
             fill([at(eye, face, -r * 0.28), at(eye, headUp, r * 0.12), at(eye, face, r * 0.3), at(eye, headUp, -r * 0.1)], Paint(eyes))
@@ -2328,8 +2368,8 @@ private struct Drawer {
     }
 
     /// What a figure wears on its head (on a body thrown about, lying on the ground rather than through it). A head
-    /// struck off keeps all of it, the dancer's tail tied on above the cut.
-    mutating func gear(_ c: CGPoint, _ r: CGFloat, severed: Bool = false) {
+    /// struck off keeps all of it, just as it was.
+    mutating func gear(_ c: CGPoint, _ r: CGFloat) {
         func p(_ f: CGFloat, _ u: CGFloat) -> CGPoint { grounded(at(at(c, face, f * r), headUp, u * r)) }
         let flutter = sin(pose.wave * 2 * .pi)
         switch build.gear {
@@ -2362,7 +2402,8 @@ private struct Drawer {
             let (back, rise, hang) = trailing
             let tuft = at(at(c, back, 2.6 * r), rise, (-0.4 + 0.4 * flutter * (1 - hang)) * r)
             fill([p(-0.4, 0.8), grounded(tuft), p(-0.8, 0.2)], body)
-            let neckPoint = at(c, headUp, -r * (severed ? 0.95 : 1.2))
+            // Tied on at the nape, above where a blade through the neck goes, so a head struck off keeps it as it was.
+            let neckPoint = at(c, headUp, -r * 0.95)
             ribbon(at(neckPoint, face, -r * 0.4), length: r * 5.2, width: r * 0.42, droop: 1.2, phase: 0.2, Paint(build.accent, 0.95))
         case .eboshi:
             fill([p(-0.9, 0.45), p(0.8, 0.55), p(0.1, 2.3), p(-0.5, 1.9)], body)
@@ -2579,10 +2620,12 @@ private struct Drawer {
 
     /// The sashimono on a body thrown about: the pole swinging from upright on his back to lying with its end on the
     /// ground as he goes down, never driven into it, and the flag furling (seen edge-on) as it comes to lie on the
-    /// side away from the ground.
+    /// side away from the ground. Upright (as he stands the instant he is cut down), it is the banner he stood with.
     mutating func fallenBanner(_ base: CGPoint, _ flutter: CGFloat) {
-        let k = fallen, g = gravity, L = Drawer.pole * H
-        let upright = CGPoint(x: sin(-0.048), y: cos(-0.048))
+        let k = fallen, g = gravity
+        // As `backGear` stands it: the top a little behind the socket, the flag hanging plumb from it.
+        let stood = CGPoint(x: -0.03, y: Drawer.pole), L = hypot(stood.x, stood.y) * H
+        let upright = unit(.zero, stood)
         var level = CGPoint(x: up.x - g.x * (up.x * g.x + up.y * g.y), y: up.y - g.y * (up.x * g.x + up.y * g.y))
         let n = hypot(level.x, level.y)
         level = n > 0.05 ? CGPoint(x: level.x / n, y: level.y / n) : CGPoint(x: -face.x, y: -face.y)
@@ -2590,11 +2633,13 @@ private struct Drawer {
         let run = (L * L - height * height).squareRoot()
         let rest = CGPoint(x: (level.x * run + g.x * height) / L, y: (level.y * run + g.y * height) / L)
         let along = unit(.zero, CGPoint(x: upright.x * (1 - k) + rest.x * k, y: upright.y * (1 - k) + rest.y * k))
-        var behind = CGPoint(x: -along.y, y: along.x)
-        if k >= 1, behind.x * g.x + behind.y * g.y > 0 { behind = CGPoint(x: -behind.x, y: -behind.y) }
         let top = at(base, along, L)
+        // The flag hangs plumb from the top of the pole while he stands, and comes to lie along the pole as he goes.
+        let hang = unit(.zero, CGPoint(x: along.x * k, y: (1 - k) + along.y * k))
+        var behind = CGPoint(x: -hang.y, y: hang.x)
+        if k >= 1, behind.x * g.x + behind.y * g.y > 0 { behind = CGPoint(x: -behind.x, y: -behind.y) }
         let w = 1 - 0.8 * k
-        func p(_ back: CGFloat, _ rise: CGFloat) -> CGPoint { grounded(at(at(top, behind, back * w * H), along, rise * H)) }
+        func p(_ back: CGFloat, _ rise: CGFloat) -> CGPoint { grounded(at(at(top, behind, back * w * H), hang, rise * H)) }
         fill([grounded(at(base, behind, -0.008 * H)), grounded(at(top, behind, -0.006 * H)), grounded(at(top, behind, 0.006 * H)),
               grounded(at(base, behind, 0.008 * H))], body)
         let f = flutter * 0.025 * (1 - k)

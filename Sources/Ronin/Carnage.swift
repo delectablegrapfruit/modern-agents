@@ -219,7 +219,7 @@ final class Carnage {
             // The legs cut from under him: the feet knocked back, down onto his knees, over onto his face, the
             // blood pumping from his shin.
             var doll = Ragdoll.hamstrung(cast, pose: pose, back: back, force: force, rng: &rng)
-            steer(&doll, to: Carnage.wild(cast))
+            doll.reach(for: Carnage.wild(cast), rng: &rng)
             let body = add(doll, cast, feet: feet, facing: facing, near: near, state: .limp)
             bleed(body, rate: 160 * force, speed: ronin * 1.3, seconds: 1.2)
             parted = body
@@ -231,7 +231,7 @@ final class Carnage {
             default: (at, slant) = (0.3, 0.05)
             }
             var cut = Ragdoll.cut(cast, pose: pose, .above(at: at, slant: slant), back: back, force: force, lift: 1.3, rng: &rng)
-            steer(&cut, to: Carnage.wild(cast))
+            cut.reach(for: Carnage.wild(cast), rng: &rng)
             let upper = add(cut, cast, feet: feet, facing: facing, near: near + CGFloat.random(in: -0.15...0.15), state: .limp)
             bleed(upper, rate: 160 * force, speed: ronin * 0.5, seconds: 0.7)
             let lower = add(Ragdoll.cut(cast, pose: pose, .below(at: at, slant: slant), back: back, force: force, rng: &rng),
@@ -256,7 +256,7 @@ final class Carnage {
         let near = CGFloat.random(in: 0...1)
         let from = pose ?? Figure.struck(cast, variant: 0)
         var doll = Ragdoll.felled(cast, pose: from, back: -1, force: force, rng: &rng)
-        steer(&doll, to: Int.random(in: 0...2) == 0 ? Figure.thrown(cast) : Carnage.wild(cast), fling: true)
+        doll.reach(for: Int.random(in: 0...2) == 0 ? Figure.thrown(cast) : Carnage.wild(cast), fling: true, rng: &rng)
         let body = add(doll, cast, feet: feet, facing: facing, near: near, state: .limp)
         bleed(body, rate: 120 * force, speed: ronin * 1.2, seconds: 0.9)
         drop(cast, pose: from, feet: feet, facing: facing, away: -facing, force: force, near: near)
@@ -265,23 +265,8 @@ final class Carnage {
         return wound(of: body)
     }
 
-    /// A pose a blow may throw a man into, any of a million: what a falling piece reaches for.
+    /// A pose a blow may throw a man into, any of a million: what a falling piece reaches for (`Ragdoll.reach`).
     private static func wild(_ cast: Cast) -> Pose { Figure.struck(cast, variant: Int.random(in: 1...1_000_000)) }
-
-    /// Has a piece reach for another pose than the one it was struck in as it goes (its last tone pulling that way),
-    /// unsettled a little, so bodies struck alike still come down their own ways; `fling`ing its head and arms toward
-    /// it too.
-    private func steer(_ doll: inout Ragdoll, to pose: Pose, fling: Bool = false) {
-        let from = doll.points
-        doll.aim(at: pose)
-        let amount = CGFloat(rng.range(0.3, 1))
-        doll.stir(&rng, by: amount)
-        guard fling else { return }
-        let to = Ragdoll(cast: doll.cast, pose: pose).points
-        for j in [Ragdoll.head, Ragdoll.frontElbow, Ragdoll.frontHand, Ragdoll.backElbow, Ragdoll.backHand] where doll.has(j) {
-            doll.push(j, CGPoint(x: (to[j].x - from[j].x) / 0.12, y: (to[j].y - from[j].y) / 0.12))
-        }
-    }
 
     /// A jointed body (or part of one) standing where the foe stood, drawn as it is now.
     private func add(_ doll: Ragdoll, _ cast: Cast, feet: CGPoint, facing: CGFloat, near: CGFloat, state: Body.State) -> Body {
@@ -364,12 +349,10 @@ final class Carnage {
     /// Draws a doll as it now lies, the sprite moved with its hips.
     private func draw(_ body: Body) {
         guard let doll = body.doll else { return }
+        // (The pose carries the doll's ground, so cloth and gear hang toward it and lie on it rather than through it
+        // as the body goes down; upright, it is drawn just as the figure stood.)
         let framed = doll.framed()
-        var pose = framed.pose
-        // Going down, cloth and gear hang toward the ground and lie on it rather than through it (on its feet, a
-        // body is drawn as it stood).
-        if body.state != .standing { pose.floor = doll.hip.y }
-        Figures.apply(body.node, Figures.render(Figure.sketch(body.cast, pose: pose)), body.cast, ronin: ronin)
+        Figures.apply(body.node, Figures.render(Figure.sketch(body.cast, pose: framed.pose)), body.cast, ronin: ronin)
         body.anchor = framed.anchor
         body.node.position = CGPoint(x: body.origin.x + body.facing * framed.anchor.x * body.scale, y: body.origin.y + framed.anchor.y * body.scale)
         body.drawn = doll.points
@@ -513,9 +496,7 @@ final class Carnage {
                     if body.standFor <= 0 {
                         body.doll?.collapse(rng: &rng)
                         if let reach = body.reach {
-                            body.doll?.aim(at: reach)
-                            let amount = CGFloat(rng.range(0.3, 1))
-                            body.doll?.stir(&rng, by: amount)
+                            body.doll?.reach(for: reach, rng: &rng)
                             body.reach = nil
                         }
                         body.state = .limp

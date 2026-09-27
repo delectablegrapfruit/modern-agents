@@ -8,56 +8,64 @@ import RoninCore
 /// no seed has to be lucky.
 final class RagdollTests: XCTestCase {
     /// How a man is cut down, as Carnage does it: felled whole, cut through the trunk (at, slant, lift) on the slant
-    /// down or up, level or low, his head taken, or his legs cut from under him.
+    /// down or up, or level, his head taken, or his legs cut from under him.
     private enum Way: String, CaseIterable {
-        case felled, falling, rising, level, legs, head, hamstrung
+        case felled, falling, rising, level, head, hamstrung
 
         var cut: (at: CGFloat, slant: CGFloat, lift: CGFloat)? {
             switch self {
             case .falling: return (0.5, 0.6, 1.3)
             case .rising: return (0.5, -0.6, 1.3)
             case .level: return (0.3, 0.05, 1.3)
-            case .legs: return (0.12, 0.08, 0.6)
             default: return nil
             }
         }
     }
 
-    /// A piece of a dead man: the doll, how long it stands (nil: it falls at once), and what it is.
+    /// A piece of a dead man: the doll, how long it stands (nil: it falls at once) and the pose it reaches for once
+    /// its knees go, and what it is.
     private struct Piece: Sendable {
         var doll: Ragdoll
         var stand: Double?
+        var reach: Pose?
         var name: String
     }
 
     private static let step = 1.0 / 60
 
-    /// The pieces one death leaves, made the way Carnage makes them: cut from one of the struck poses drawn ahead of
-    /// time (a head always is, its own flying piece being drawn from it), or, as ronin-sheet does, from any struck
-    /// pose; felled from the pose a blow throws him into, or thrown back off his feet.
+    /// The pieces one death leaves, made the way Carnage makes them: all from the struck pose his figure froze in at
+    /// the blow (one of those drawn ahead of time), each reaching for any pose a blow throws a man into as it goes (a
+    /// standing piece once its knees go); felled, thrown back off his feet a third of the time instead, his head and
+    /// arms flung that way.
     private static func pieces(_ kind: Kind, _ way: Way, rng: inout SeededRNG) -> [Piece] {
         let cast = Cast.foe(kind)
         let force: CGFloat = kind == .warlord ? 1.5 : kind == .brute ? 1.25 : 1
-        let drawn = rng.int(0...(Figure.struckVariants - 1)), any = rng.int(1...1_000_000)
-        let pose = Figure.struck(cast, variant: way == .head || rng.chance(0.5) ? drawn : any)
+        let pose = Figure.struck(cast, variant: rng.int(0...(Figure.struckVariants - 1)))
+        let wild = [rng.int(1...1_000_000), rng.int(1...1_000_000)].map { Figure.struck(cast, variant: $0) }
         let stand = rng.range(0.35, 0.7)
         let raise = 0.12 * CGFloat(rng.range(0, 1)) / Build.of(cast).height
         var made: [Piece]
         switch way {
         case .felled:
-            let from = [Figure.thrown(cast), Figure.pose(cast, .stagger(0)), Figure.struck(cast, variant: any)][rng.int(0...2)]
-            made = [Piece(doll: Ragdoll.felled(cast, pose: from, back: -1, force: force, rng: &rng), stand: nil, name: "felled")]
+            var doll = Ragdoll.felled(cast, pose: pose, back: -1, force: force, rng: &rng)
+            let toward = rng.int(0...2) == 0 ? Figure.thrown(cast) : wild[0]
+            doll.reach(for: toward, fling: true, rng: &rng)
+            made = [Piece(doll: doll, name: "felled")]
         case .hamstrung:
-            made = [Piece(doll: Ragdoll.hamstrung(cast, pose: pose, back: -1, force: force, rng: &rng), stand: nil, name: "hamstrung")]
+            var doll = Ragdoll.hamstrung(cast, pose: pose, back: -1, force: force, rng: &rng)
+            doll.reach(for: wild[0], rng: &rng)
+            made = [Piece(doll: doll, name: "hamstrung")]
         case .head:
-            made = [Piece(doll: Ragdoll.cut(cast, pose: pose, .headless, back: -1, force: force, rng: &rng), stand: stand * 1.4, name: "headless")]
+            made = [Piece(doll: Ragdoll.cut(cast, pose: pose, .headless, back: -1, force: force, rng: &rng), stand: stand * 1.4, reach: wild[0],
+                          name: "headless")]
         default:
             let c = way.cut!
+            var upper = Ragdoll.cut(cast, pose: pose, .above(at: c.at, slant: c.slant), back: -1, force: force, lift: c.lift, rng: &rng)
+            upper.reach(for: wild[0], rng: &rng)
             made = [
-                Piece(doll: Ragdoll.cut(cast, pose: pose, .above(at: c.at, slant: c.slant), back: -1, force: force, lift: c.lift, rng: &rng),
-                      stand: nil, name: "above \(way)"),
+                Piece(doll: upper, name: "above \(way)"),
                 Piece(doll: Ragdoll.cut(cast, pose: pose, .below(at: c.at, slant: c.slant), back: -1, force: force, rng: &rng),
-                      stand: stand, name: "below \(way)"),
+                      stand: stand, reach: wild[1], name: "below \(way)"),
             ]
         }
         for i in made.indices { made[i].doll.raise(raise) }
@@ -102,6 +110,7 @@ final class RagdollTests: XCTestCase {
         while t < 8 {
             if letGo == nil, let stand = piece.stand, t + RagdollTests.step >= stand {
                 doll.collapse(rng: &rng)
+                if let reach = piece.reach { doll.reach(for: reach, rng: &rng) }
                 letGo = t
             }
             doll.advance(RagdollTests.step)
@@ -482,6 +491,53 @@ final class RagdollTests: XCTestCase {
             for bend in doll.bends {
                 XCTAssertGreaterThanOrEqual(bend.angle, bend.lo - 0.05)
                 XCTAssertLessThanOrEqual(bend.angle, bend.hi + 0.05)
+            }
+        }
+    }
+
+    func testTheDeadFallFromTheFigureFrozenAtTheBlowWithoutAJump() {
+        // A killing blow freezes a foe's figure in a struck pose, his cloth at rest; the body that falls from it draws,
+        // on its first frame, just that figure (less the weapon, which leaves his hand), wherever on the lane it was
+        // raised to, and whatever pose it is sent reaching for. His head, struck off, is the one he had.
+        for kind in Kind.allCases {
+            let cast = Cast.foe(kind)
+            let H = Figure.pixelHeight(cast) * Build.of(cast).height
+            for v in 0..<Figure.struckVariants {
+                var frozen = Figure.struck(cast, variant: v)
+                frozen.stream = 0
+                var rng = SeededRNG(seed: UInt64(v * 10 + 1))
+                var felled = Ragdoll.felled(cast, pose: frozen, back: -1, rng: &rng)
+                felled.reach(for: Figure.thrown(cast), fling: true, rng: &rng)
+                var hamstrung = Ragdoll.hamstrung(cast, pose: frozen, back: -1, rng: &rng)
+                hamstrung.reach(for: Figure.struck(cast, variant: 7919 + v), rng: &rng)
+                let headless = Ragdoll.cut(cast, pose: frozen, .headless, back: -1, rng: &rng)
+                for (name, doll, figure) in [("felled", felled, Figure.sketch(cast, pose: frozen)),
+                                             ("hamstrung", hamstrung, Figure.sketch(cast, pose: frozen)),
+                                             ("headless", headless, { () -> Sketch in
+                                                 var body = frozen
+                                                 body.severed = .headless
+                                                 return Figure.sketch(cast, pose: body)
+                                             }())] {
+                    var raised = doll
+                    let raise = CGFloat(v) * 0.03
+                    raised.raise(raise)
+                    let framed = raised.framed()
+                    let first = Figure.sketch(cast, pose: framed.pose).mapped {
+                        CGPoint(x: $0.x + framed.anchor.x * H, y: $0.y + (framed.anchor.y - raise) * H)
+                    }
+                    let a = (figure.body + figure.overlay).flatMap(\.points), b = (first.body + first.overlay).flatMap(\.points)
+                    XCTAssertEqual(a.count, b.count, "\(kind) \(v) \(name): drawn otherwise")
+                    let off = zip(a, b).map { hypot($0.x - $1.x, $0.y - $1.y) }.max() ?? .infinity
+                    XCTAssertLessThan(off / H, 0.01, "\(kind) \(v) \(name): jumps as it falls")
+                }
+                // The head struck off, on its own, is the head on the frozen figure (all but its cut neck and the face
+                // of the cut: the first shape and the three last).
+                let whole = Figure.sketch(cast, pose: frozen), head = Figure.severedHead(cast, pose: frozen).sketch
+                let drawn = (whole.body + whole.overlay).flatMap(\.points)
+                for p in (head.body + head.overlay).dropFirst().dropLast(3).flatMap(\.points) {
+                    let near = drawn.map { hypot($0.x - p.x, $0.y - p.y) }.min() ?? .infinity
+                    XCTAssertLessThan(near / H, 0.001, "\(kind) \(v): the head struck off is drawn otherwise")
+                }
             }
         }
     }

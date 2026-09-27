@@ -46,6 +46,8 @@ final class FoeSprite: SKNode {
     private var ronin: CGFloat = 60
     /// How far above his feet the lane ends (the header, or whatever the scene puts along its top).
     private var headroom = CGFloat.greatestFiniteMagnitude
+    /// Where the ronin was on the last update.
+    private var heroX: CGFloat?
     private var idleClock = Double.random(in: 0...2)
     /// Seconds since the blow landed (or the bow loosed), and left in a stagger.
     private var strikeClock = 1.0
@@ -58,7 +60,10 @@ final class FoeSprite: SKNode {
     /// The gourd-bearer gathering himself to dart in (0 to 1): crouched, and his gourd flaring.
     private var gather: CGFloat = 0
     private var wasLeaping = false
-    private var facing: CGFloat = 1
+    /// Which way he is drawn facing (+1 right, -1 left): the ronin, but in the air where he is going and running off
+    /// with the gourd away.
+    private(set) var facing: CGFloat = 1
+    /// The frame he is drawn in.
     private(set) var shown = Frame.walk(0)
     private var age = 0.0
     /// A wounding blow on its way (`hold`): he is held as he is until it lands, or this long at most; then whether a
@@ -251,6 +256,7 @@ final class FoeSprite: SKNode {
     /// and `hero` the ronin's x, the middle of the lane: for the archer's sight line, and to measure the lane by.
     func update(_ foe: Foe, at position: CGPoint, air: CGFloat, hero: CGFloat, dt: Double) {
         age += dt
+        heroX = hero
         strikeClock += dt
         staggerHold = max(0, staggerHold - dt)
         hitFlash = max(0, hitFlash - dt)
@@ -412,7 +418,9 @@ final class FoeSprite: SKNode {
                 pivot.zRotation = -CGFloat(flight) * 2 * .pi * (foe.leapTo > 0 ? 1 : -1)
             }
         } else if !holding, pivot.zRotation != 0 {
-            pivot.zRotation *= 0.5
+            // Down from a somersault: the rest of the turn eased out, on round the way it was going (never unwound back
+            // through a half turn, which drew him upside down for a frame as he landed).
+            pivot.zRotation = pivot.zRotation.remainder(dividingBy: 2 * .pi) * 0.5
             if abs(pivot.zRotation) < 0.01 { pivot.zRotation = 0 }
         }
 
@@ -503,15 +511,7 @@ final class FoeSprite: SKNode {
         Art.setTint(body, color, amount)
     }
 
-    /// The frames each kind of foe has, looked up rather than listed again every frame.
-    private static var frameSets: [Cast: Set<Frame>] = [:]
-
-    private func has(_ frame: Frame) -> Bool {
-        if let frames = FoeSprite.frameSets[cast] { return frames.contains(frame) }
-        let frames = Set(Figure.frames(for: cast))
-        FoeSprite.frameSets[cast] = frames
-        return frames.contains(frame)
-    }
+    private func has(_ frame: Frame) -> Bool { Figures.has(cast, frame) }
 
     /// Swaps in a new pose. A jump to a different kind of pose keeps the old one a moment behind it, so the change
     /// reads as movement, not a cut; the frames of one motion (a stride, a breath, a wind-up) follow on cleanly.
@@ -555,22 +555,33 @@ final class FoeSprite: SKNode {
         lagged = true
     }
 
-    /// The instant of a killing blow: thrown into his struck pose (or `piece`, a struck pose drawn for the purpose)
-    /// and lit white, held there until the blade arrives: upright, unsquashed, with nothing of the pose before it
-    /// behind him, so the body that falls from it starts where he stands.
-    func freezeStruck(_ piece: Figures.Piece? = nil) {
+    /// The instant of a killing blow: thrown into the pose the blow throws him into (`Figures.struck`, variant 0 his
+    /// stagger) and lit white, held there until the blade arrives: upright, unsquashed, whole (not fading in), turned
+    /// to the ronin who struck him (even in the air, or running off), with nothing of the pose before it behind him.
+    /// The carnage lets him fall from the very same pose (`Carnage.sever` with the same variant, or `fell` from
+    /// `Figure.struck(cast, variant:)`), where he stands and facing the ronin, so his body, his head and his weapon
+    /// leave the frozen figure without a jump.
+    func freezeStruck(variant: Int = 0) {
+        freeze(Figures.struck(cast, variant: variant))
+    }
+
+    /// The same, in a struck pose drawn for the purpose (`Figures.struck`; nil is variant 0).
+    func freezeStruck(_ piece: Figures.Piece?) {
+        freeze(piece ?? Figures.struck(cast, variant: 0))
+    }
+
+    private func freeze(_ piece: Figures.Piece) {
         holding = false
         shown = .stagger(0)
-        if let piece {
-            Figures.apply(body, piece, cast, ronin: ronin)
-        } else {
-            Figures.apply(body, cast, shown, ronin: ronin)
-        }
+        Figures.apply(body, piece, cast, ronin: ronin)
+        alpha = 1
         echo.alpha = 0
         lean = 0
         squash = 0
         gather = 0
         pivot.zRotation = 0
+        // (Facing the ronin as the scene lays the dead out: toward him from wherever he is now drawn.)
+        if let heroX { facing = position.x < heroX ? 1 : -1 }
         body.zRotation = 0
         body.xScale = facing
         body.yScale = 1
@@ -1052,9 +1063,9 @@ final class HeroSprite: SKNode {
         flush = 0
         let feet = HeroSprite.footing(pose, sheathed: poseSheathed)
         if victory {
-            // A beat of stillness after the last kill, then the blade raised, the chiburi (the back foot sinking back
-            // behind it), and the blade slid home, the front foot where it stands throughout (or, if it is off the
-            // ground, the back one to begin with).
+            // A beat of stillness after the last kill, then the blade raised, the chiburi (the body sinking into its
+            // snap) and the blade slid home, all on his guard's footing: the front foot where it stands throughout
+            // (or, if it is off the ground, the back one to begin with), the other set down in its place once.
             act = .flourishing
             let planted: Foot = feet.front.y <= feet.back.y ? .front : .back
             let timing = HeroSprite.flourishTiming
@@ -1167,27 +1178,27 @@ final class HeroSprite: SKNode {
 
     /// Where his feet are in a frame (`Figure.footing`). Drawn sheathed, on his feet he stands as the iai does.
     private static func footing(_ frame: Frame, sheathed look: Bool) -> (front: CGPoint, back: CGPoint) {
-        if look, !falling(frame) { return Figure.footing(.hero, .iai(0)) }
+        if look, afoot(frame) { return Figure.footing(.hero, .iai(0)) }
         return Figure.footing(.hero, frame)
     }
 
-    private static func falling(_ f: Frame) -> Bool {
-        if case .fall = f { return true }
-        return false
+    /// Whether a frame has him on his feet: all but the fall once his knees go (its first frame, the blow that fells
+    /// him, is taken where he stands).
+    private static func afoot(_ f: Frame) -> Bool {
+        if case .fall(let k) = f { return k == 0 }
+        return true
     }
 
     private static var sheathedPieces: [Frame: Figures.Piece] = [:]
 
     /// One of his frames drawn with the blade kept in its scabbard, for what befalls him before the draw (a blow, a
     /// winded breath, the fall): the sword hand on the hilt and the other at the scabbard's mouth (or pressed to his
-    /// wound, or, going over, thrown out to break his fall). On his feet he stands as the iai does, the feet planted,
-    /// and only his body reels or heaves as the frame's does.
+    /// wound, or, going over, thrown out to break his fall). On his feet (the blow that fells him included) he stands
+    /// as the iai does, the feet planted, and only his body reels or heaves as the frame's does.
     private static func sheathedPiece(_ frame: Frame) -> Figures.Piece {
         if let piece = sheathedPieces[frame] { return piece }
         var p = Figure.pose(.hero, frame)
-        if case .fall(let k) = frame {
-            if k < 3 { p.grip = .saya }
-        } else {
+        if afoot(frame) {
             let iai = Figure.pose(.hero, .iai(0))
             p.front = iai.front
             p.back = iai.back
@@ -1195,6 +1206,8 @@ final class HeroSprite: SKNode {
             p.lift = iai.lift
             p.airborne = false
             if !p.clutch { p.grip = .saya }
+        } else if case .fall(let k) = frame, k < 3 {
+            p.grip = .saya
         }
         p.sheathed = 1
         p.saya = 0
