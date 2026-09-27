@@ -7,19 +7,21 @@ import RoninCore
 
 // ronin-sheet: draws figures as an SVG contact sheet, for looking at the art without the app.
 //
-//   ronin-sheet <out.svg> [hero|grunt|runner|brute|dancer|archer|warlord|all|cuts|ragdoll] [--scale 1]
+//   ronin-sheet <out.svg> [hero|grunt|runner|brute|dancer|archer|warlord|all|cuts|dead|ragdoll] [--scale 1]
 //
 // A cast (or all of them): every frame, each on a strip of dusk sky with the ground line through its feet, labelled
 // with its name. FRAMES="idle 0,kesa 3,kesa chain 2" draws only the frames named.
 // cuts: each kind as a blow leaves it and as a cut leaves it: the poses it is cut apart from, its head struck off,
 // the body left without it, and the two halves of each cut, drawn apart (`dead` is the same sheet).
-// ragdoll: each kind's dead falling as the game lets them fall (a frame every tenth of a second, then at rest), and
-// a row of them at rest. KINDS="grunt,brute" draws only those kinds.
+// ragdoll: each kind's dead falling as the game lets them fall (a frame every tenth of a second, then at rest), a row
+// for each way a man is cut down (the shin cut both as two halves and as a man hamstrung onto his knees), and a row
+// of them at rest. KINDS="grunt,brute" draws only those kinds (cuts too).
+// It exits 2 for arguments it cannot use, and 1 if the sheet cannot be written.
 
 func fail(_ message: String) -> Never {
     print(message)
-    print("usage: ronin-sheet <out.svg> [hero|grunt|runner|brute|dancer|archer|warlord|all|cuts|ragdoll] [--scale 1]")
-    print("       FRAMES=\"idle 0,kesa 3\" (a cast's frames by name)   KINDS=\"grunt,brute\" (cuts, ragdoll)")
+    print("usage: ronin-sheet <out.svg> [hero|grunt|runner|brute|dancer|archer|warlord|all|cuts|dead|ragdoll] [--scale 1]")
+    print("       FRAMES=\"idle 0,kesa 3\" (a cast's frames by name)   KINDS=\"grunt,brute\" (cuts, dead, ragdoll)")
     exit(2)
 }
 
@@ -119,9 +121,10 @@ func combined(_ pieces: [(Sketch, CGPoint)]) -> Sketch {
 
 /// The ways the game kills a foe, and how it cuts him, as Carnage.sever and Carnage.fell do (keep the two in step):
 /// the severance table, the poses the dead start from, how long a cut body stands, how hard the big ones are thrown,
-/// how far toward the eye each lies. A warlord always loses his head.
+/// how far toward the eye each lies. A warlord always loses his head. `hamstrung` is the shin cut as a whole body
+/// whose legs are cut from under him (`Ragdoll.hamstrung`), beside `sune`, the same cut as two halves.
 enum Death: String, CaseIterable {
-    case felled, kesa, gyaku, dou, sune, shomen
+    case felled, kesa, gyaku, dou, sune, hamstrung, shomen
 
     static func of(_ kind: Kind) -> [Death] { kind == .warlord ? [.shomen] : allCases }
 
@@ -132,7 +135,7 @@ enum Death: String, CaseIterable {
         case .gyaku: return (0.5, -0.6, 1.3)
         case .dou: return (0.3, 0.05, 1.3)
         case .sune: return (0.12, 0.08, 0.6)
-        case .felled, .shomen: return nil
+        case .felled, .hamstrung, .shomen: return nil
         }
     }
 }
@@ -152,6 +155,10 @@ func remains(_ cast: Cast, _ death: Death, rng: inout SeededRNG) -> (pieces: [(d
         // Thrown back off his feet, or any way a blow throws a man.
         let pose = rng.int(0...2) == 0 ? Figure.thrown(cast) : Figure.struck(cast, variant: rng.int(1...1_000_000))
         pieces = [(Ragdoll.felled(cast, pose: pose, back: -1, force: force, rng: &rng), nil)]
+    case .hamstrung:
+        // His feet knocked back from under him, pitching forward onto his face.
+        let pose = Figure.struck(cast, variant: rng.int(1...1_000_000))
+        pieces = [(Ragdoll.hamstrung(cast, pose: pose, back: -1, force: force, rng: &rng), nil)]
     case .shomen:
         // The head from one of the poses drawn ahead of time, flying on its own; the body stands a moment longer.
         let variant = rng.int(0...(Figure.struckVariants - 1))
@@ -169,13 +176,11 @@ func remains(_ cast: Cast, _ death: Death, rng: inout SeededRNG) -> (pieces: [(d
     return (pieces, head, raise)
 }
 
-/// A doll drawn on its figure's canvas where it lies, the canvas's ground at the doll's own.
+/// A doll drawn on its figure's canvas where it lies, as Carnage draws it, the canvas's ground at the doll's own.
 func drawn(_ doll: Ragdoll, _ cast: Cast) -> (Sketch, CGPoint) {
     let framed = doll.framed()
-    var pose = framed.pose
-    pose.floor = doll.hip.y
     let H = Figure.pixelHeight(cast) * Build.of(cast).height
-    return (Figure.sketch(cast, pose: pose), CGPoint(x: framed.anchor.x * H, y: framed.anchor.y * H))
+    return (Figure.sketch(cast, pose: framed.pose), CGPoint(x: framed.anchor.x * H, y: framed.anchor.y * H))
 }
 
 if sheet == "ragdoll" {
@@ -229,7 +234,12 @@ if sheet == "ragdoll" {
             var pieces = remains(cast, deaths[k % deaths.count], rng: &rng).pieces
             for p in pieces.indices {
                 if let stand = pieces[p].stand {
-                    pieces[p].doll.advance(stand)
+                    // (A doll lets itself fall a quarter of a second at most in one go.)
+                    var t = 0.0
+                    while t < stand {
+                        pieces[p].doll.advance(1.0 / 60)
+                        t += 1.0 / 60
+                    }
                     pieces[p].doll.collapse(rng: &rng)
                 }
                 var n = 0

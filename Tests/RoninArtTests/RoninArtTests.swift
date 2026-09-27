@@ -231,6 +231,8 @@ final class RoninArtTests: XCTestCase {
                                                                  (.idle(0), .home(front: false))])
                 assertPlanted(short, "\(cut) short \(reach)")
                 XCTAssertEqual(short[1].back.x, home.back.x, accuracy: 0.06, "\(cut) short \(reach): the back foot comes down near its place")
+                XCTAssertEqual(short.last!.front.x, home.front.x, accuracy: 0.01, "\(cut) short \(reach): not home")
+                XCTAssertEqual(short.last!.back.x, home.back.x, accuracy: 0.01, "\(cut) short \(reach): not home")
             }
             // A cut swung again from the lunge of the one before: the feet held where they are.
             guard cut != .nukitsuke else { continue }
@@ -253,6 +255,8 @@ final class RoninArtTests: XCTestCase {
         let back = replay(from: .stumble(1), offset: 0.12, [(.shuffle(0), .keep(front: false)), (.shuffle(2), .home(front: true)),
                                                             (.idle(0), .home(front: true))])
         assertPlanted(back, "back home")
+        XCTAssertEqual(back.last!.front.x, home.front.x, accuracy: 0.01)
+        XCTAssertEqual(back.last!.back.x, home.back.x, accuracy: 0.01)
     }
 
     func testTheFlourishEndsWithTheBladeHomeAndTheDrawBringsItOut() {
@@ -322,20 +326,20 @@ final class RoninArtTests: XCTestCase {
     func testTheRoninGoesDownAndStaysDown() {
         // To one knee, then pitching forward off it, then face down: the hips only ever go down, the kneeling knee
         // stays on the ground until he goes over, and the front foot goes out ahead of him rather than back.
-        let H = Figure.pixelHeight(.hero)
-        func hips(_ k: Int) -> CGFloat {
-            let pose = Figure.pose(.hero, .fall(k))
-            let joints = Figure.skeleton(.hero, pose)
-            guard pose.grounded else { return joints[0].y }
-            var loose = pose
-            loose.grounded = false
-            let low = extent(Figure.sketch(.hero, pose: loose)).minY / H - Figure.feet.y
-            return joints[0].y - low - 0.006
-        }
+        func hips(_ k: Int) -> CGFloat { Figure.skeleton(.hero, Figure.pose(.hero, .fall(k)))[0].y }
         XCTAssertGreaterThan(hips(2), hips(3))
         XCTAssertGreaterThan(hips(3), hips(4))
         XCTAssertLessThan(Figure.skeleton(.hero, Figure.pose(.hero, .fall(3)))[5].y, 0.08, "the knee comes off the ground")
         XCTAssertGreaterThan(Figure.footing(.hero, .fall(3)).front.x, Figure.footing(.hero, .fall(2)).front.x, "the front foot jumps back")
+        // Face down, he lies flat on the ground: on it, not over it or in it, and nothing of him (his scabbard, his
+        // ribbons, the hems of his hakama) standing up off it.
+        let H = Figure.pixelHeight(.hero)
+        let last = Figure.pose(.hero, .fall(Frame.fallFrames - 1))
+        XCTAssertEqual(last.floor ?? -1, hips(Frame.fallFrames - 1), accuracy: 0.0001, "he does not know where the ground is")
+        let e = extent(Figure.sketch(.hero, pose: last))
+        XCTAssertEqual((e.minY - Figure.feet.y * H) / H, 0, accuracy: 0.015, "he does not lie on the ground")
+        XCTAssertLessThan((e.maxY - Figure.feet.y * H) / H, 0.3, "something of him stands up off the ground")
+        for joint in Figure.skeleton(.hero, last) { XCTAssertLessThan(joint.y, 0.22, "he is not lying flat") }
     }
 
     func testTheDeadLetGoOfTheirWeaponsWhichLieOnTheirOwn() {
@@ -378,16 +382,19 @@ final class RoninArtTests: XCTestCase {
     }
 
     func testTheWarlordsBannerAndTheDancersRibbonLieOnTheGroundNotThroughIt() {
-        // Cloth and gear on a body lying where it fell hang toward the ground and lie on it: nothing of it goes further
-        // below the ground than the body itself does.
+        // Cloth and gear on a body lying where it fell hang toward the ground and lie on it: the banner, the plates, the
+        // ribbons, the quiver, the hat. Nothing of any of them, nor of the body itself (which lies on its outline as it
+        // is drawn), goes more than a sliver into the ground. The pose a doll is drawn by knows where its ground is.
         var rng = SeededRNG(seed: 41)
         for (kind, piece) in [(Kind.warlord, Severed.headless), (.dancer, .above(at: 0.5, slant: 0.6)), (.dancer, .headless),
-                              (.runner, .above(at: 0.3, slant: 0.05))] {
+                              (.runner, .above(at: 0.3, slant: 0.05)), (.archer, .headless), (.archer, .above(at: 0.3, slant: 0.05)),
+                              (.grunt, .above(at: 0.5, slant: -0.6)), (.brute, .below(at: 0.5, slant: -0.6))] {
             let cast = Cast.foe(kind)
             for v in 0..<Figure.struckVariants {
                 var doll = Ragdoll.cut(cast, pose: Figure.struck(cast, variant: v), piece, back: -1, force: kind == .warlord ? 1.5 : 1, rng: &rng)
-                if piece == .headless {
-                    doll.advance(0.7)
+                if piece.hasLegs {
+                    // Standing a moment (a doll lets itself fall a quarter of a second at most in one go).
+                    for _ in 0..<42 { doll.advance(1.0 / 60) }
                     doll.collapse(rng: &rng)
                 }
                 var n = 0
@@ -396,11 +403,10 @@ final class RoninArtTests: XCTestCase {
                     n += 1
                 }
                 let framed = doll.framed()
-                var pose = framed.pose
-                pose.floor = doll.hip.y
+                XCTAssertEqual(framed.pose.floor ?? -1, doll.hip.y, accuracy: 0.0001, "\(kind) \(piece) \(v) does not know its ground")
                 let H = Figure.pixelHeight(cast) * Build.of(cast).height
-                let lowest = extent(Figure.sketch(cast, pose: pose)).minY / H - Figure.feet.y + framed.anchor.y
-                XCTAssertGreaterThan(lowest, -0.13, "\(kind) \(piece) \(v) goes through the ground")
+                let lowest = extent(Figure.sketch(cast, pose: framed.pose)).minY / H - Figure.feet.y + framed.anchor.y
+                XCTAssertGreaterThan(lowest, -0.04, "\(kind) \(piece) \(v) goes through the ground")
             }
         }
     }
@@ -483,6 +489,28 @@ final class RoninArtTests: XCTestCase {
                 let a = Figure.footing(cast, .walk(k)), b = Figure.footing(cast, .walk((k + 1) % Frame.walkFrames))
                 for (p, q, foot) in [(a.front, b.front, "front"), (a.back, b.back, "back")] where p.y < 0.01 && q.y < 0.01 {
                     XCTAssertLessThan(q.x - p.x, 0.045, "\(kind) walk \(k): the \(foot) foot skids forward on the ground")
+                }
+            }
+        }
+    }
+
+    func testElbowsAndKneesBendOnlyTheWayTheyBend() {
+        // In every frame an elbow folds forward, never back past straight, and a knee back (a back leg locked straight
+        // under the weight may give a little the other way); measured as a doll measures its joints.
+        func bend(_ a: CGPoint, _ p: CGPoint, _ c: CGPoint) -> CGFloat {
+            let wx = p.x - a.x, wy = p.y - a.y, vx = c.x - p.x, vy = c.y - p.y
+            return atan2(wx * vy - wy * vx, wx * vx + wy * vy)
+        }
+        let down = Figure.limbs.shoulder / Figure.limbs.torso
+        for cast in casts {
+            for frame in Figure.frames(for: cast) {
+                let s = Figure.skeleton(cast, Figure.pose(cast, frame))
+                let shoulder = CGPoint(x: s[1].x + (s[0].x - s[1].x) * down, y: s[1].y + (s[0].y - s[1].y) * down)
+                for (elbow, hand) in [(7, 8), (9, 10)] {
+                    XCTAssertGreaterThan(bend(shoulder, s[elbow], s[hand]), -0.12, "\(cast) \(frame): an elbow bends backward")
+                }
+                for (knee, foot) in [(3, 4), (5, 6)] {
+                    XCTAssertLessThan(bend(s[0], s[knee], s[foot]), 0.22, "\(cast) \(frame): a knee bends forward")
                 }
             }
         }

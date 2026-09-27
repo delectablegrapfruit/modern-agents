@@ -16,7 +16,8 @@ import RoninCore
 /// For a moment the body keeps some of the tone of its last pose (standing, its legs lock and hold it up), then goes
 /// limp: the knees buckle first, then the hips, and the trunk folds or topples; the arms fly out and flop down. Dead
 /// flesh drags at its joints and on the ground, so it lands, skids a little and lies still, low and flat, the far
-/// limbs beside the near ones, each its own way.
+/// limbs beside the near ones, each its own way. It lies on the body as it is drawn (the trunk on its outline, face
+/// up or face down, a heavy man's limbs thicker), neither sunk into the ground nor held off it.
 public struct Ragdoll: Sendable {
     /// The joints, as `Figure.skeleton` gives them (the trunk's two ends in place of the hips and the neck).
     public static let low = 0, high = 1, head = 2, frontKnee = 3, frontFoot = 4, backKnee = 5, backFoot = 6
@@ -58,6 +59,11 @@ public struct Ragdoll: Sendable {
     ]
     /// The hips and the knees among them.
     private static let hips = [1, 3], knees = [2, 4]
+    /// How far inside its range a joint of a pose is brought before the body starts, and held.
+    private static let margin: CGFloat = 0.02
+    /// The furthest forward a knee may be drawn in a pose a body starts from (radians past straight, as `hinges`
+    /// measure it): the range's end, less the margin. For `Figure`, which draws the poses the dead start from.
+    static var kneeLimit: CGFloat { hinges[2].hi - margin }
 
     /// How the body moves and lies (tuned by eye and by the numbers the tests hold it to).
     private enum Tuning {
@@ -87,6 +93,9 @@ public struct Ragdoll: Sendable {
         static let fold = 0.35
         /// How often what stood goes down in a heap (the rest topple stiff or go onto one knee, half and half).
         static let buckle = 0.5
+        /// How hard what stood is sent the way it is to go over against the way it leans (figure heights a second, for
+        /// each unit of the sine of its lean).
+        static let against: CGFloat = 2.5
     }
 
     public let cast: Cast
@@ -96,8 +105,15 @@ public struct Ragdoll: Sendable {
     private let present: [Bool]
     /// One over what each joint weighs: the trunk's ends heavy, a hand light.
     private let lightness: [CGFloat]
-    /// How thick the body is at each joint: how far off the ground the joint is when that part of it lies there.
+    /// How thick the body is at each joint: how far off the ground the joint is when that part of it lies there (for
+    /// the trunk's ends, the least: see `outline`).
     private let radius: [CGFloat]
+    /// The trunk as it is drawn, split between its two ends (each point from the end it is nearer, x along the
+    /// trunk's line toward the high end, y out toward the chest): whichever side of it is down, it lies on that, not
+    /// sunk into the ground, the chest as deep as it is drawn and a cut's slant as far as it runs.
+    private let outline: (low: [CGPoint], high: [CGPoint])
+    /// How far off the ground each joint must be as the body now lies: its thickness there, or the trunk's.
+    private var floors: [CGFloat]
     /// How much further up each joint lies once the body is down, as if a little further from the eye, so the far
     /// leg and arm lie beside the near ones rather than on them.
     private var depth: [CGFloat]
@@ -176,11 +192,15 @@ public struct Ragdoll: Sendable {
         let mass: [CGFloat] = [(span.low == 0 ? 1 : 0) + max(0.1, flesh / 2), max(0.2, flesh / 2 + (arms ? 0.4 : 0)),
                                1.1, 1.3, 0.8, 1.3, 0.8, 0.6, 0.45, 0.6, 0.45]
         lightness = mass.map { 1 / $0 }
-        // The trunk's thickness: a whole chest's, for what runs up to the neck; a waist's, for legs cut from it.
+        // How thick the limbs are (a heavy man's are thicker); the trunk lies on its outline as drawn, split at its
+        // middle between its two ends.
         let build = Build.of(cast)
-        let toNeck = span.high >= 0.999
-        radius = [toNeck ? max(0.07, build.waist * 0.9) : 0.07, toNeck ? max(0.06, build.chest * 0.5) : 0.06,
-                  0.055, 0.035, 0.026, 0.035, 0.026, 0.03, 0.025, 0.03, 0.025]
+        let k = build.bulk
+        radius = [0.04 * k, 0.04 * k, 0.055, 0.035 * k, 0.026 * k, 0.035 * k, 0.026 * k, 0.03 * k, 0.025 * k, 0.03 * k, 0.025 * k]
+        let from = span.low * limbs.torso
+        let rim = Figure.trunkOutline(cast, severed: severed).map { CGPoint(x: $0.x - from, y: $0.y) }
+        outline = (rim.filter { $0.x < trunk / 2 }, rim.filter { $0.x >= trunk / 2 }.map { CGPoint(x: $0.x - trunk, y: $0.y) })
+        floors = radius
         depth = [CGFloat](repeating: 0, count: Ragdoll.count)
         var bones = [Bone(a: 0, b: 1, length: trunk)]
         if head { bones.append(Bone(a: 1, b: 2, length: Ragdoll.distance(p[1], p[2]))) }
@@ -206,7 +226,7 @@ public struct Ragdoll: Sendable {
         for k in Ragdoll.hinges.indices where live(k) && Ragdoll.hinges[k].part != .shoulder {
             let hinge = Ragdoll.hinges[k]
             let now = angle(k)
-            let to = min(hinge.hi - 0.02, max(hinge.lo + 0.02, now))
+            let to = min(hinge.hi - Ragdoll.margin, max(hinge.lo + Ragdoll.margin, now))
             if to != now { swing(k, by: to - now) }
         }
         old = points
@@ -304,7 +324,7 @@ public struct Ragdoll: Sendable {
         for k in Ragdoll.hinges.indices where live(k) {
             let hinge = Ragdoll.hinges[k]
             let a = Ragdoll.angle(at(hinge.parent), at(hinge.pivot), at(hinge.child))
-            rest[k] = min(hinge.hi - 0.02, max(hinge.lo + 0.02, a))
+            rest[k] = min(hinge.hi - Ragdoll.margin, max(hinge.lo + Ragdoll.margin, a))
         }
     }
 
@@ -407,8 +427,9 @@ public struct Ragdoll: Sendable {
             if standing {
                 for k in 0..<5 where live(k) { bend(k, by: Ragdoll.wrap(angle(k) - rest[k]), 1) }
             }
+            gauge(ease)
             for j in 0..<Ragdoll.count where present[j] {
-                let floor = radius[j] + depth[j] * ease
+                let floor = floors[j]
                 if points[j].y < floor {
                     pressed[j] += floor - points[j].y
                     points[j].y = floor
@@ -422,7 +443,7 @@ public struct Ragdoll: Sendable {
         // it pushed back drags on it, as hard as it was pushed.
         for j in 0..<Ragdoll.count where present[j] && pressed[j] > 0 && pinned & (1 << j) == 0 {
             var vx = points[j].x - old[j].x, vy = points[j].y - old[j].y
-            if points[j].y <= radius[j] + depth[j] * ease + 0.0001 {
+            if points[j].y <= floors[j] + 0.0001 {
                 vy = falling[j] < -Tuning.bounceFrom * h ? -falling[j] * Tuning.bounce : 0
             }
             let drag = Tuning.grip * grip * pressed[j]
@@ -461,6 +482,28 @@ public struct Ragdoll: Sendable {
         return tone * CGFloat(max(0, 1 - since / max(0.01, slackening * share)))
     }
 
+    /// How far off the ground each joint must be as the body now lies (`floors`): a limb's thickness, the far ones a
+    /// little further off (`ease` of the way there); and for each end of the trunk, as far as the half of its outline
+    /// nearer that end reaches below it, whichever side of it is down and however it slopes.
+    private mutating func gauge(_ ease: CGFloat) {
+        for j in 2..<Ragdoll.count { floors[j] = radius[j] + depth[j] * ease }
+        let a = points[0], b = points[1]
+        let length = Ragdoll.distance(a, b)
+        guard length > 1e-6 else {
+            floors[0] = radius[0]
+            floors[1] = radius[1]
+            return
+        }
+        // Along the trunk (u), and out toward the chest (u turned a quarter back): a point x along it and y out from
+        // it lies y u.x - x u.y below the end it is measured from.
+        let ux = (b.x - a.x) / length, uy = (b.y - a.y) / length
+        var low = radius[0], high = radius[1]
+        for p in outline.low { low = max(low, p.y * ux - p.x * uy) }
+        for p in outline.high { high = max(high, p.y * ux - p.x * uy) }
+        floors[0] = low
+        floors[1] = high
+    }
+
     /// The knees over their feet, the trunk's two ends, and the joints that can be left standing up over the one
     /// they hang from.
     private static let shins = [(3, 4), (5, 6)], ends = [0, 1]
@@ -485,7 +528,7 @@ public struct Ragdoll: Sendable {
             }
             any = true
         }
-        for j in Ragdoll.ends where points[j].y > radius[j] + 0.1 && slow(j) {
+        for j in Ragdoll.ends where points[j].y > floors[j] + 0.1 && slow(j) {
             // The trunk goes down the way it leans, over what holds it up: a man left kneeling tips forward off his
             // knees onto his face, one left sitting goes over backward.
             let way: CGFloat = points[1].x >= points[0].x ? 1 : -1
@@ -498,7 +541,7 @@ public struct Ragdoll: Sendable {
             }
             any = true
         }
-        for (j, parent) in Ragdoll.upright where present[j] && points[j].y > radius[j] + 0.15 && slow(j) {
+        for (j, parent) in Ragdoll.upright where present[j] && points[j].y > (j < 2 ? floors[j] : radius[j]) + 0.15 && slow(j) {
             let lean = points[j].x - points[parent].x
             let way: CGFloat = abs(lean) > 0.005 ? (lean > 0 ? 1 : -1) : (j % 2 == 0 ? 1 : -1)
             points[j].y -= k * 0.5
@@ -652,7 +695,8 @@ public struct Ragdoll: Sendable {
     // MARK: Drawing it
 
     /// The pose that draws the body as it now lies: the trunk's lean turned into a roll about the hips, and every
-    /// limb and the head at its angle, the hips wherever they have got to.
+    /// limb and the head at its angle, the hips wherever they have got to, and the ground as far below them as it is
+    /// (so its cloth and gear hang toward the ground and lie on it).
     public func pose() -> Pose {
         var p = base
         let a = points[0], b = points[1]
@@ -663,7 +707,9 @@ public struct Ragdoll: Sendable {
         p.roll = r
         p.grounded = false
         p.airborne = false
+        let hip = self.hip
         p.hipAt = hip
+        p.floor = hip.y
         func angle(_ from: CGPoint, _ to: CGPoint) -> CGFloat { atan2(to.x - from.x, -(to.y - from.y)) + r }
         if present[Ragdoll.frontKnee] {
             p.front = (angle(a, points[3]), angle(points[3], points[4]))
@@ -685,6 +731,7 @@ public struct Ragdoll: Sendable {
 
     /// The pose to draw it by on a figure's canvas, the hips in the middle of it and a little up (so that nothing
     /// lying on the ground runs off the bottom), and where the canvas's ground point then is, in the doll's terms.
+    /// (The pose keeps `pose()`'s floor: the doll's ground, wherever the canvas puts the hips.)
     public func framed() -> (pose: Pose, anchor: CGPoint) {
         var p = pose()
         let hip = self.hip
@@ -727,8 +774,10 @@ public struct Ragdoll: Sendable {
         case .above: return (a, atan2(a.y - b.y, a.x - b.x))
         case .below: return (b, atan2(b.y - a.y, b.x - a.x))
         case .headless:
-            let up = atan2(b.y - a.y, b.x - a.x)
-            return (CGPoint(x: b.x + cos(up) * 0.03, y: b.y + sin(up) * 0.03), up)
+            // From the face of the stump, which stands clear of the shoulders the way the neck was carried.
+            let neck = atan2(b.x - a.x, b.y - a.y) + base.tilt
+            let reach = Figure.neckCut * Build.of(cast).head
+            return (CGPoint(x: b.x + sin(neck) * reach, y: b.y + cos(neck) * reach), atan2(cos(neck), sin(neck)))
         }
     }
 
@@ -847,10 +896,10 @@ extension Ragdoll {
         return doll
     }
 
-    /// Legs, or a body without its head, that have stood a moment: the knees go, and it folds or topples its own way.
-    /// Mostly they buckle at once and it drops in a heap before it goes over; now and then it topples stiff, like a
-    /// felled tree, the knees going only as it comes down; or one knee goes before the other and it twists down
-    /// onto it.
+    /// Legs, or a body without its head, that have stood a moment: the knees go, and it folds or topples its own way,
+    /// forward or back whichever way it leans. Mostly they buckle at once and it drops in a heap before it goes over;
+    /// now and then it topples stiff, like a felled tree, the knees going only as it comes down; or one knee goes
+    /// before the other and it twists down onto it.
     public mutating func collapse(rng: inout SeededRNG) {
         func r(_ a: Double, _ b: Double) -> CGFloat { CGFloat(rng.range(a, b)) }
         planted(false)
@@ -877,6 +926,12 @@ extension Ragdoll {
             push(Ragdoll.low, CGPoint(x: over * r(0.1, 0.5), y: -r(0.2, 0.6)))
             push(Ragdoll.high, CGPoint(x: over * r(0.3, 1.0) * reach, y: -r(0, 0.3) * reach))
         }
+        // It goes over the way it is sent, whichever way it leans as it stands (a blow leaves most men leaning back):
+        // one sent forward first sags forward over its knees, so the dead lie as often on their faces as on their
+        // backs.
+        let lean = atan2(points[1].x - points[0].x, points[1].y - points[0].y)
+        let against = max(0, -over * sin(lean))
+        if against > 0 { push(Ragdoll.high, CGPoint(x: over * against * Tuning.against * reach, y: 0)) }
         stir(&rng, by: r(0.3, 1))
     }
 }

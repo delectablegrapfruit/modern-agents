@@ -32,17 +32,20 @@ final class RagdollTests: XCTestCase {
 
     private static let step = 1.0 / 60
 
-    /// The pieces one death leaves, made the way Carnage makes them.
+    /// The pieces one death leaves, made the way Carnage makes them: cut from one of the struck poses drawn ahead of
+    /// time (a head always is, its own flying piece being drawn from it), or, as ronin-sheet does, from any struck
+    /// pose; felled from the pose a blow throws him into, or thrown back off his feet.
     private static func pieces(_ kind: Kind, _ way: Way, rng: inout SeededRNG) -> [Piece] {
         let cast = Cast.foe(kind)
         let force: CGFloat = kind == .warlord ? 1.5 : kind == .brute ? 1.25 : 1
-        let pose = Figure.struck(cast, variant: rng.int(0...3))
+        let drawn = rng.int(0...(Figure.struckVariants - 1)), any = rng.int(1...1_000_000)
+        let pose = Figure.struck(cast, variant: way == .head || rng.chance(0.5) ? drawn : any)
         let stand = rng.range(0.35, 0.7)
         let raise = 0.12 * CGFloat(rng.range(0, 1)) / Build.of(cast).height
         var made: [Piece]
         switch way {
         case .felled:
-            let from = Figure.pose(cast, rng.chance(0.5) ? .die(0) : .stagger(0))
+            let from = [Figure.thrown(cast), Figure.pose(cast, .stagger(0)), Figure.struck(cast, variant: any)][rng.int(0...2)]
             made = [Piece(doll: Ragdoll.felled(cast, pose: from, back: -1, force: force, rng: &rng), stand: nil, name: "felled")]
         case .hamstrung:
             made = [Piece(doll: Ragdoll.hamstrung(cast, pose: pose, back: -1, force: force, rng: &rng), stand: nil, name: "hamstrung")]
@@ -339,6 +342,24 @@ final class RagdollTests: XCTestCase {
         }
     }
 
+    func testTheDeadStartFromPosesTheirJointsHoldAsDrawn() {
+        // Figure draws the poses a blow throws a man into within the ranges a doll's joints bend, so a doll made from
+        // one starts exactly where the drawing was: not a joint of it is moved to fit.
+        for kind in Kind.allCases {
+            let cast = Cast.foe(kind)
+            let poses = (0..<8).map { Figure.struck(cast, variant: $0) } + [101, 9973, 123_457, 999_999].map { Figure.struck(cast, variant: $0) }
+                + [Figure.thrown(cast), Figure.pose(cast, .stagger(0))]
+            for (i, pose) in poses.enumerated() {
+                let doll = Ragdoll(cast: cast, pose: pose)
+                let drawn = Figure.skeleton(cast, pose)
+                for j in 0..<11 {
+                    XCTAssertEqual(doll.points[j].x, drawn[j].x, accuracy: 0.0005, "\(kind) \(i) joint \(j)")
+                    XCTAssertEqual(doll.points[j].y, drawn[j].y, accuracy: 0.0005, "\(kind) \(i) joint \(j)")
+                }
+            }
+        }
+    }
+
     func testRaggedFramesAndLongStallsDoNoHarm() {
         var rng = SeededRNG(seed: 99)
         for kind in Kind.allCases {
@@ -394,20 +415,49 @@ final class RagdollTests: XCTestCase {
         }
     }
 
-    func testHeavyBodiesLieOnTheirBacksNotSunkIntoTheGround() {
-        // The trunk lies as thick as it is drawn: a brute's chest keeps his spine further off the ground.
-        for kind in [Kind.brute, .warlord] {
-            let build = Build.of(.foe(kind))
-            var rng = SeededRNG(seed: 41)
-            for _ in 0..<4 {
-                var doll = Ragdoll.felled(.foe(kind), pose: Figure.pose(.foe(kind), .die(0)), back: -1, rng: &rng)
-                var t = 0.0
-                while !doll.settled, t < 6 {
-                    doll.advance(1.0 / 60)
-                    t += 1.0 / 60
+    func testTheDeadLieOnTheGroundNotInItOrOverIt() {
+        // The trunk lies on its outline as it is drawn (a brute's deep chest, a cut's slant, face up or face down) and
+        // the limbs as thick as they are: what is drawn of a body at rest reaches the ground and goes no more than a
+        // sliver into it (a heavy man's calf a little more), and its gear lies on it too.
+        var deepest: CGFloat = 0, floating = 0
+        for outcome in RagdollTests.fallen {
+            let doll = outcome.doll
+            let framed = doll.framed()
+            let cast = doll.cast
+            let H = Figure.pixelHeight(cast) * Build.of(cast).height
+            var low = CGFloat.infinity
+            for shape in Figure.sketch(cast, pose: framed.pose).body {
+                switch shape.kind {
+                case .ellipse(let r): low = min(low, r.minY)
+                case .path(let path): low = min(low, path.points.map(\.y).min() ?? .infinity)
                 }
-                XCTAssertGreaterThan(doll.points[Ragdoll.low].y, build.waist * 0.9 - 0.005, "\(kind)")
-                XCTAssertGreaterThan(doll.points[Ragdoll.high].y, build.chest * 0.5 - 0.005, "\(kind)")
+            }
+            let lowest = low / H - Figure.feet.y + framed.anchor.y
+            deepest = min(deepest, lowest)
+            XCTAssertGreaterThan(lowest, -0.04, "\(outcome.label) lies sunk into the ground")
+            if lowest > 0.02 { floating += 1 }
+        }
+        XCTAssertLessThan(Double(floating) / Double(RagdollTests.fallen.count), 0.02, "the dead lie over the ground")
+        XCTAssertGreaterThan(deepest, -0.04)
+    }
+
+    func testAHeadlessBodyBleedsFromTheEndOfItsStump() {
+        // The blood leaves from the face of the cut, which stands clear of the shoulders up the neck, the way the neck
+        // was carried.
+        for kind in Kind.allCases {
+            let cast = Cast.foe(kind)
+            for v in 0..<Figure.struckVariants {
+                let pose = Figure.struck(cast, variant: v)
+                let doll = Ragdoll(cast: cast, pose: pose, severed: .headless)
+                guard let wound = doll.wound else { return XCTFail("\(kind) \(v): no wound") }
+                let neck = doll.points[Ragdoll.high]
+                XCTAssertEqual(hypot(wound.at.x - neck.x, wound.at.y - neck.y), Figure.neckCut * Build.of(cast).head, accuracy: 0.001, "\(kind) \(v)")
+                // Where the drawn stump's end is: the neck carried at the pose's tilt.
+                let up = pose.lean + pose.tilt
+                XCTAssertEqual(wound.at.x, neck.x + sin(up) * Figure.neckCut * Build.of(cast).head, accuracy: 0.002, "\(kind) \(v)")
+                XCTAssertEqual(wound.at.y, neck.y + cos(up) * Figure.neckCut * Build.of(cast).head, accuracy: 0.002, "\(kind) \(v)")
+                XCTAssertEqual(cos(wound.angle), sin(up), accuracy: 0.002, "\(kind) \(v): the blood leaves up the neck")
+                XCTAssertEqual(sin(wound.angle), cos(up), accuracy: 0.002, "\(kind) \(v): the blood leaves up the neck")
             }
         }
     }
