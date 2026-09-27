@@ -13,7 +13,7 @@
   });
   const DEFAULTS = {
     controls: { invert: false, speed: 1 },
-    gameplay: { rule: 'normal', timer: true, minimap: 'full', zoom: 1, autoNext: false },
+    gameplay: { rule: 'normal', timer: true, minimap: 'explored', zoom: 1, autoNext: false },
     player: { media: 'default:sticker', size: 1, chroma: { on: false, color: '#00ff00', tol: 0.35, soft: 0.25 } },
     win: fxDefaults('default:burst', 2.4, 'pop'),
     lose: fxDefaults('default:oops', 1.7, 'none'),
@@ -72,6 +72,7 @@
     // The hitbox is now the picture itself, sized against the maze (0.6-1.25); Strict is what every rule does now.
     if (!(st.player.size >= 0.6 && st.player.size <= 1.25)) st.player.size = 1;
     if (st.gameplay.rule !== 'casual') st.gameplay.rule = 'normal';
+    if (st.gameplay.minimap !== 'off') st.gameplay.minimap = 'explored'; // the map is always fogged now
     return st;
   }
 

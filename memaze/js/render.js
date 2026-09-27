@@ -211,12 +211,16 @@
   }
 
   // ---------- minimap ----------
+  // Fog of war: the map starts black and shows only what has been on screen - corridors, gems, the goal and beacons
+  // appear once the screen has shown them.
+  const FOG = '#0d0b1a';
   class Minimap {
     constructor(canvas) {
       this.canvas = canvas;
       this.ctx = canvas.getContext('2d');
       this.base = document.createElement('canvas');
       this.fog = document.createElement('canvas');
+      this.layer = document.createElement('canvas');
       this.maze = null;
       this.dirty = true;
       if (window.ResizeObserver) new ResizeObserver(() => (this.dirty = true)).observe(canvas);
@@ -248,62 +252,75 @@
       }
       const f = this.fog.getContext('2d');
       f.globalCompositeOperation = 'source-over';
-      f.fillStyle = 'rgba(8,8,20,0.92)';
+      f.fillStyle = FOG;
       f.fillRect(0, 0, W, H);
       f.globalCompositeOperation = 'destination-out';
     }
-    reveal(x, y, r) {
+    // Uncover a world rectangle (what the screen showed).
+    reveal(r) {
       if (!this.maze) return;
-      const f = this.fog.getContext('2d');
-      f.beginPath();
-      f.arc(this.ox + x * this.sc, this.oy + y * this.sc, Math.max(4, (r || 330) * this.sc), 0, TAU);
-      f.fill();
+      const x0 = Math.floor(this.ox + r.x0 * this.sc), y0 = Math.floor(this.oy + r.y0 * this.sc);
+      const x1 = Math.ceil(this.ox + r.x1 * this.sc), y1 = Math.ceil(this.oy + r.y1 * this.sc);
+      this.fog.getContext('2d').fillRect(x0, y0, x1 - x0, y1 - y0);
     }
-    // view: the world width/height on screen, outlined around the player so the map and the screen line up.
-    draw(mode, pos, goal, gems, view) {
+    // view: the world rectangle on screen, outlined so the map and the screen line up. Markers show once seen.
+    draw(pos, goal, gems, view) {
       if (!this.maze) return;
       const g = this.ctx, W = this.canvas.width, H = this.canvas.height;
       g.clearRect(0, 0, W, H);
-      g.globalAlpha = 0.9;
       g.drawImage(this.base, 0, 0);
-      g.globalAlpha = 1;
-      if (mode === 'explored') g.drawImage(this.fog, 0, 0);
+      g.drawImage(this.fog, 0, 0);
       const dot = (x, y, r, c) => { g.fillStyle = c; g.beginPath(); g.arc(this.ox + x * this.sc, this.oy + y * this.sc, r, 0, TAU); g.fill(); };
       const u = W / 150;
-      if (gems) for (const gm of gems) if (!gm.taken) dot(gm.x, gm.y, 2.5 * u, '#3cf2ff');
-      if (goal) dot(goal.x, goal.y, 4.5 * u, '#ffb300');
+      if (gems) for (const gm of gems) if (!gm.taken && gm.seen) dot(gm.x, gm.y, 2.5 * u, '#3cf2ff');
+      if (goal && goal.seen) dot(goal.x, goal.y, 4.5 * u, '#ffb300');
       if (pos && view) {
         g.strokeStyle = 'rgba(255,61,127,0.9)';
         g.lineWidth = Math.max(1.5, u);
-        g.strokeRect(this.ox + (pos.x - view.w / 2) * this.sc, this.oy + (pos.y - view.h / 2) * this.sc, view.w * this.sc, view.h * this.sc);
+        g.strokeRect(this.ox + view.x0 * this.sc, this.oy + view.y0 * this.sc, (view.x1 - view.x0) * this.sc, (view.y1 - view.y0) * this.sc);
       }
       if (pos) { dot(pos.x, pos.y, 4.5 * u, '#000'); dot(pos.x, pos.y, 3.2 * u, '#ff3d7f'); }
     }
-    // Endless: a radar of what's near the player.
-    drawRadar(world, pos, beacons, view) {
+    // Endless: a radar of what's near the player, fogged except where the screen has been (seen: rectangles).
+    drawRadar(world, pos, beacons, view, seen) {
       const g = this.ctx, W = this.canvas.width, H = this.canvas.height, R = 1000, sc = Math.min(W, H) / (2 * R);
+      const L = this.layer;
+      if (L.width !== W || L.height !== H) { L.width = W; L.height = H; }
+      const l = L.getContext('2d');
+      l.setTransform(1, 0, 0, 1, 0, 0);
+      l.globalCompositeOperation = 'source-over';
+      l.clearRect(0, 0, W, H);
+      l.translate(W / 2 - pos.x * sc, H / 2 - pos.y * sc);
+      l.lineCap = 'round';
+      const near = world.visibleParts(pos.x - R, pos.y - R, pos.x + R, pos.y + R);
+      for (const p of near) {
+        for (const e of p.edges) {
+          l.strokeStyle = e.type === 'blink' ? 'rgba(255,255,255,0.4)' : '#fff';
+          l.lineWidth = Math.max(1.5, e.hw * 2 * sc);
+          l.beginPath(); l.moveTo(e.pts[0].x * sc, e.pts[0].y * sc);
+          for (let i = 1; i < e.pts.length; i++) l.lineTo(e.pts[i].x * sc, e.pts[i].y * sc);
+          l.stroke();
+        }
+      }
+      // Keep only what has been on screen.
+      l.globalCompositeOperation = 'destination-in';
+      l.fillStyle = '#000';
+      l.beginPath();
+      for (const r of seen) l.rect(r.x0 * sc, r.y0 * sc, (r.x1 - r.x0) * sc, (r.y1 - r.y0) * sc);
+      if (seen.length) l.fill(); else { l.setTransform(1, 0, 0, 1, 0, 0); l.clearRect(0, 0, W, H); l.translate(W / 2 - pos.x * sc, H / 2 - pos.y * sc); }
+      l.globalCompositeOperation = 'source-over';
+      for (const p of near) if (p.data.gems) for (const gm of p.data.gems) if (!gm.taken && gm.seen) { l.fillStyle = '#3cf2ff'; l.beginPath(); l.arc(gm.x * sc, gm.y * sc, 3, 0, TAU); l.fill(); }
+      if (beacons) for (const b of beacons) if (b.seen) { l.fillStyle = b.lit ? '#50ffa0' : '#78c8ff'; l.beginPath(); l.arc(b.x * sc, b.y * sc, 4, 0, TAU); l.fill(); }
       g.clearRect(0, 0, W, H);
       g.save();
       g.beginPath(); g.arc(W / 2, H / 2, Math.min(W, H) / 2 - 1, 0, TAU); g.clip();
-      g.fillStyle = 'rgba(8,8,20,0.55)'; g.fillRect(0, 0, W, H);
-      g.translate(W / 2 - pos.x * sc, H / 2 - pos.y * sc);
-      g.lineCap = 'round';
-      for (const p of world.visibleParts(pos.x - R, pos.y - R, pos.x + R, pos.y + R)) {
-        for (const e of p.edges) {
-          g.strokeStyle = e.type === 'blink' ? 'rgba(255,255,255,0.4)' : '#fff';
-          g.lineWidth = Math.max(1.5, e.hw * 2 * sc);
-          g.beginPath(); g.moveTo(e.pts[0].x * sc, e.pts[0].y * sc);
-          for (let i = 1; i < e.pts.length; i++) g.lineTo(e.pts[i].x * sc, e.pts[i].y * sc);
-          g.stroke();
-        }
-        if (p.data.gems) for (const gm of p.data.gems) if (!gm.taken) { g.fillStyle = '#3cf2ff'; g.beginPath(); g.arc(gm.x * sc, gm.y * sc, 3, 0, TAU); g.fill(); }
-      }
-      if (beacons) for (const b of beacons) { g.fillStyle = b.lit ? '#50ffa0' : '#78c8ff'; g.beginPath(); g.arc(b.x * sc, b.y * sc, 4, 0, TAU); g.fill(); }
+      g.fillStyle = FOG; g.fillRect(0, 0, W, H);
+      g.drawImage(L, 0, 0);
       g.restore();
       if (view) {
         g.strokeStyle = 'rgba(255,61,127,0.9)';
         g.lineWidth = 1.5;
-        g.strokeRect(W / 2 - view.w * sc / 2, H / 2 - view.h * sc / 2, view.w * sc, view.h * sc);
+        g.strokeRect(W / 2 + (view.x0 - pos.x) * sc, H / 2 + (view.y0 - pos.y) * sc, (view.x1 - view.x0) * sc, (view.y1 - view.y0) * sc);
       }
       g.fillStyle = '#ff3d7f'; g.beginPath(); g.arc(W / 2, H / 2, 4, 0, TAU); g.fill();
     }

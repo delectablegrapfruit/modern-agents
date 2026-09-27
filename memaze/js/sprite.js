@@ -199,6 +199,23 @@
     return { pts: new Float32Array(pts), n: pts.length / 2, maxR: maxR + 0.75 / N, cells: count };
   }
 
+  // The file's bytes without fetch where possible: fetch can be refused (file:// pages, embedded pages with strict
+  // security rules), and the frames of an animated picture can only be decoded from its bytes.
+  async function bytesOf(item) {
+    if (item.blob) return item.blob;
+    const u = item.url || '';
+    if (u.startsWith('data:')) {
+      const comma = u.indexOf(','), head = u.slice(5, comma), body = u.slice(comma + 1);
+      const bin = /;base64/.test(head) ? atob(body) : decodeURIComponent(body);
+      const arr = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i) & 255;
+      return new Blob([arr], { type: head.split(';')[0] || 'application/octet-stream' });
+    }
+    if (location.protocol === 'file:' && !u.startsWith('blob:')) return null;
+    try { const r = await fetch(u); if (r.ok) return await r.blob(); } catch (e) { /* refused */ }
+    return null;
+  }
+
   class Sprite {
     constructor(canvas) {
       this.canvas = canvas;
@@ -224,18 +241,24 @@
       let src = null;
       try {
         if (item.kind === 'video') src = await this.loadVideo(item.url);
-        else src = await this.loadImage(item.url);
+        else src = await this.loadImage(item);
       } catch (e) {
         console.warn('Memaze: could not load player media', e);
       }
       if (token !== this.token) { if (src && src.video) src.video.remove(); return; }
       this.src = src;
+      if (src && src.live) { // shown by the browser itself, which keeps it animating
+        src.img.className = 'media-el' + (this.pixel ? ' pixelated' : '');
+        this.canvas.hidden = true;
+        this.canvas.parentNode.appendChild(src.img);
+      }
       this.start = performance.now();
       this.last = -1;
       this.lastSig = null;
       this.update(performance.now(), true);
     }
     unload() {
+      if (this.src && this.src.live) { this.src.img.remove(); this.canvas.hidden = false; }
       if (this.src && this.src.video) { this.src.video.pause(); this.src.video.removeAttribute('src'); this.src.video.load(); this.src.video.remove(); }
       if (this.src && this.src.objectUrl) URL.revokeObjectURL(this.src.objectUrl);
       this.src = null;
@@ -255,30 +278,35 @@
       return { kind: 'video', video: v, w: v.videoWidth, h: v.videoHeight };
     }
 
-    async loadImage(url) {
-      let blob = null;
-      if (!(location.protocol === 'file:' && !/^(data|blob):/.test(url))) {
-        try { const r = await fetch(url); if (r.ok) blob = await r.blob(); } catch (e) { blob = null; }
-      }
+    async loadImage(item) {
+      const url = item.url, blob = await bytesOf(item);
+      let animated = /\.(gif|png|apng|webp|avif)(\?|$)/i.test(item.name || url) || /^data:image\/(gif|png|webp|avif)/.test(url);
       if (blob) {
         const head = new Uint8Array(await blob.slice(0, 16).arrayBuffer());
         const isGif = head[0] === 0x47 && head[1] === 0x49 && head[2] === 0x46;
+        animated = false;
         if (isGif) {
-          const g = decodeGif(await blob.arrayBuffer());
-          if (g.frames.length > 1) return this.framesSource(g.width, g.height, framesToCanvases(g.width, g.height, g.frames), g.frames.map((f) => f.delay));
+          try {
+            const g = decodeGif(await blob.arrayBuffer());
+            if (g.frames.length > 1) return this.framesSource(g.width, g.height, framesToCanvases(g.width, g.height, g.frames), g.frames.map((f) => f.delay));
+          } catch (e) { animated = true; } // a GIF this decoder can't read: let the browser play it
         } else if (typeof ImageDecoder === 'function' && /image\/(png|apng|webp|avif)/.test(blob.type)) {
           try {
             const anim = await this.decodeAnimated(blob);
             if (anim) return anim;
-          } catch (e) { /* fall through to a still image */ }
-        }
+          } catch (e) { /* a still image */ }
+        } else if (/image\/(png|webp|avif)/.test(blob.type)) animated = true; // maybe animated, and no frame decoder here
       }
       const img = new Image();
       img.decoding = 'async';
       const objectUrl = blob ? URL.createObjectURL(blob) : null;
       img.src = objectUrl || url;
       await img.decode();
-      return { kind: 'image', img, w: img.naturalWidth || 256, h: img.naturalHeight || 256, objectUrl, svg: /svg/.test((blob && blob.type) || url) };
+      const src = { kind: 'image', img, w: img.naturalWidth || 256, h: img.naturalHeight || 256, objectUrl, svg: /svg/.test((blob && blob.type) || url) };
+      // Last resort: the picture might be animated but its frames can't be read here. Let the browser play it (so it
+      // still moves) and take the hitbox from whatever frame the browser hands a canvas.
+      if (animated) { src.live = true; src.svg = true; }
+      return src;
     }
 
     async decodeAnimated(blob) {
@@ -340,7 +368,7 @@
       if (!f) return false;
       if (!force && f.sig === this.lastSig) return false;
       this.lastSig = f.sig;
-      this.paint(this.ctx, this.canvas.width, f, true);
+      if (!this.src.live) this.paint(this.ctx, this.canvas.width, f, true);
       this.paint(this.mctx, MASK, f, false);
       let data;
       try { data = this.mctx.getImageData(0, 0, MASK, MASK).data; } catch (e) { this.mask = null; return true; }

@@ -195,9 +195,8 @@
           const b = $('.screen-' + this.current.name + ' .primary'); if (b) { b.click(); e.preventDefault(); }
         }
         if ((e.key === 'm' || e.key === 'M') && (st === 'play' || st === 'paused')) {
-          const order = ['explored', 'full', 'off'], cur = S().gameplay.minimap;
-          setPath('gameplay.minimap', order[(order.indexOf(cur) + 1) % 3]);
-          MZ.toast('Minimap: ' + S().gameplay.minimap, 1200);
+          setPath('gameplay.minimap', S().gameplay.minimap === 'off' ? 'explored' : 'off');
+          MZ.toast(S().gameplay.minimap === 'off' ? 'Map off' : 'Map on', 1200);
         }
         if (e.key === 'f' || e.key === 'F') this.fullscreen();
         if (e.key === '+' || e.key === '=') G.userZoom = clamp(G.userZoom * 1.15, 0.45, 2.2);
@@ -555,7 +554,7 @@
         section('Gameplay',
           segmented('Edges', 'gameplay.rule', [['casual', 'Walls'], ['normal', 'Touch loses']]),
           toggle('Timer', 'gameplay.timer'),
-          segmented('Minimap', 'gameplay.minimap', [['explored', 'Explored'], ['full', 'Full'], ['off', 'Off']]),
+          segmented('Map', 'gameplay.minimap', [['explored', 'On'], ['off', 'Off']]),
           range('Zoom', 'gameplay.zoom', 0.5, 2, 0.05, times)),
         section('Audio',
           range('Master', 'audio.master', 0, 1, 0.01, pct),
@@ -589,12 +588,12 @@
         h('ul', { class: 'facts' },
           h('li', null, 'Drag the maze to move through it.'),
           h('li', null, 'Don’t touch the edge. Your picture is the hitbox: transparent parts don’t count.'),
-          h('li', null, 'The map shows the whole maze and the part on screen.'),
+          h('li', null, 'The map fills in as you go: only what has been on screen shows up.'),
           h('li', null, 'Reach GOAL before the time runs out.'),
           h('li', null, 'Stars: finish, beat par, collect every gem.'),
           h('li', null, 'Vanishing bridges blink, then disappear.'),
           h('li', null, 'Endless: gems add 3 s, beacons are checkpoints and add 12 s.'),
-          h('li', null, 'Keys: WASD or arrows move, Esc or P pause, R restart, M minimap, F full screen, + and - zoom, Enter next level.')),
+          h('li', null, 'Keys: WASD or arrows move, Esc or P pause, R restart, M map, F full screen, + and - zoom, Enter next level.')),
       ]);
     },
 

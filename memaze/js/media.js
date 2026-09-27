@@ -196,7 +196,7 @@
               url = { sig, url: URL.createObjectURL(file) };
               this._urlCache.set(id, url);
             }
-            found.set(id, { id, slot, name: entry.name, kind, url: url.url, source: 'linked', size: file.size, mtime: file.lastModified / 1000, sig });
+            found.set(id, { id, slot, name: entry.name, kind, url: url.url, blob: file, source: 'linked', size: file.size, mtime: file.lastModified / 1000, sig });
           }
         } catch (e) { L.granted = false; return false; }
       }
@@ -235,7 +235,7 @@
 
     _addImported(rec) {
       const url = URL.createObjectURL(rec.blob);
-      this.items.set(rec.id, { id: rec.id, slot: rec.slot, name: rec.name, kind: rec.kind, url, source: 'imported', size: rec.blob.size, mtime: rec.added / 1000 });
+      this.items.set(rec.id, { id: rec.id, slot: rec.slot, name: rec.name, kind: rec.kind, url, blob: rec.blob, source: 'imported', size: rec.blob.size, mtime: rec.added / 1000 });
     },
 
     // Where imported files end up, in order of preference.

@@ -7,7 +7,7 @@
   const R = Gen.BALL_R;
 
   const KEY_SPEED = 140; // keys and gamepad, world units per second
-  const VIEW = 0.3;      // the player's box fills this much of the screen's shorter side
+  const VIEW = 0.24;     // the player's box fills this much of the screen's shorter side
   const BUFFER = 0.035;  // hitbox forgiveness: solid pixels may reach this far (share of the box) over the edge
   const boxWorld = () => 2 * R * clamp(S().player.size, 0.6, 1.25); // the player's square box, in world units
 
@@ -204,9 +204,44 @@
       this.baseZoom = (VIEW * Math.min(w, h)) / boxWorld();
       this.menuZoom = clamp(Math.min(w, h) / 820, 0.58, 1.25) * 0.55;
     },
-    // How much of the maze the screen shows around the player: what the minimap uncovers as you go.
-    revealR() { return Math.hypot(innerWidth, innerHeight) / 2 / (this.cam.zoom || 1); },
-    revealAll() { if (this.trail) for (const p of this.trail) this.minimap.reveal(p.x, p.y, this.revealR()); },
+    // The world rectangle the screen shows right now: the map uncovers exactly what has been in it.
+    viewRect() {
+      const z = this.cam.zoom || 1, hw = innerWidth / 2 / z, hh = innerHeight / 2 / z;
+      return { x0: this.cam.x - hw, y0: this.cam.y - hh, x1: this.cam.x + hw, y1: this.cam.y + hh };
+    },
+    revealAll() { if (this.trail) for (const r of this.trail) this.minimap.reveal(r); },
+    // Remember what the screen shows (for the map), and mark gems, beacons and the goal once they have been on it.
+    look() {
+      const v = this.viewRect(), inside = (o, r) => o.x + r > v.x0 && o.x - r < v.x1 && o.y + r > v.y0 && o.y - r < v.y1;
+      if (this.gems) for (const g of this.gems) if (!g.seen && inside(g, 15)) { g.seen = true; if (g.key && this.run.seenKeys) this.run.seenKeys.add(g.key); }
+      if (this.beacons) for (const bc of this.beacons) if (!bc.seen && inside(bc, bc.r)) { bc.seen = true; this.run.seenKeys.add(bc.key); }
+      if (this.maze && !this.maze.goal.seen && inside(this.maze.goal, this.maze.goal.r)) this.maze.goal.seen = true;
+      const last = this.trail[this.trail.length - 1];
+      const moved = !last || Math.abs(v.x0 - last.x0) + Math.abs(v.y0 - last.y0) + Math.abs(v.x1 - last.x1) + Math.abs(v.y1 - last.y1) > 12;
+      if (this.maze) this.minimap.reveal(v);
+      if (moved) {
+        this.trail.push(v);
+        if (this.mode === 'endless') {
+          const k = this.seenKey(v.x0 + (v.x1 - v.x0) / 2, v.y0 + (v.y1 - v.y0) / 2);
+          if (!this.seenBuckets.has(k)) this.seenBuckets.set(k, []);
+          this.seenBuckets.get(k).push(v);
+          if (this.trail.length > 400) this.trail.shift(); // endless keeps its history in the buckets
+        } else if (this.trail.length > 20000) this.trail.splice(0, 5000);
+      }
+      return v;
+    },
+    seenKey(x, y) { return Math.floor(x / 600) + ',' + Math.floor(y / 600); },
+    // Endless: the remembered screen rectangles near a point.
+    seenNear(x, y, R) {
+      const out = [];
+      for (let i = Math.floor((x - R - 300) / 600); i <= Math.floor((x + R + 300) / 600); i++) {
+        for (let j = Math.floor((y - R - 300) / 600); j <= Math.floor((y + R + 300) / 600); j++) {
+          const list = this.seenBuckets.get(i + ',' + j);
+          if (list) out.push(...list);
+        }
+      }
+      return out;
+    },
     zoomTarget() { return this.baseZoom * S().gameplay.zoom * this.userZoom; },
 
     // ----- starting things -----
@@ -246,7 +281,9 @@
     startEndless(seedText) {
       this.mode = 'endless';
       const seed = hashStr('memaze/endless/' + (seedText || String(Math.random())));
-      this.run = { seed, seedText, lives: 3, taken: new Set(), lit: new Set(), best: 0, gems: 0, beaconsLit: 0, check: null };
+      this.run = { seed, seedText, lives: 3, taken: new Set(), lit: new Set(), seenKeys: new Set(), best: 0, gems: 0, beaconsLit: 0, check: null };
+      this.trail = [];
+      this.seenBuckets = new Map();
       this.maze = null;
       this.world = new MZ.World();
       this.chunks = new Map();
@@ -378,12 +415,6 @@
           break;
         }
         if (this.pickups()) return;
-      }
-      if (this.maze && (this.trailT = (this.trailT || 0) + dt) > 0.15) {
-        this.trailT = 0;
-        this.minimap.reveal(b.x, b.y, this.revealR());
-        this.trail.push({ x: b.x, y: b.y });
-        if (this.trail.length > 4000) this.trail.splice(0, 2000);
       }
       if (this.mode === 'endless') this.endlessTick();
     },
@@ -556,8 +587,8 @@
         const k = cx + dx + ',' + (cy + dy);
         if (this.chunks.has(k)) continue;
         const data = E.chunk(this.run.seed, cx + dx, cy + dy);
-        data.gems.forEach((g, i) => { g.key = k + ':' + i; g.taken = this.run.taken.has(g.key); });
-        data.beacons.forEach((b, i) => { b.key = k + ':' + i; b.lit = this.run.lit.has(b.key); });
+        data.gems.forEach((g, i) => { g.key = k + ':g' + i; g.taken = this.run.taken.has(g.key); g.seen = this.run.seenKeys.has(g.key); });
+        data.beacons.forEach((b, i) => { b.key = k + ':b' + i; b.lit = this.run.lit.has(b.key); b.seen = this.run.seenKeys.has(b.key); });
         this.world.addPart(k, data);
         this.chunks.set(k, { data });
       }
@@ -645,19 +676,19 @@
         gm.hidden = false;
       } else gm.hidden = true;
 
-      // Minimap.
+      // Minimap: fogged, uncovered by what the screen shows (tracked even while the map is hidden).
+      const view = menu || !this.world ? null : this.look();
       const mm = s.gameplay.minimap;
       const mmEl = MZ.$('#minimap');
-      if (!menu && mm !== 'off') {
+      if (!menu && view && mm !== 'off') {
         mmEl.hidden = false;
         if (this.minimap.dirty) {
           // Sized once it's actually on screen (it's hidden while a level is built).
           this.minimap.dirty = false;
           if (this.minimap.size() && this.maze) { this.minimap.setMaze(this.maze); this.revealAll(); }
         }
-        const view = { w: innerWidth / this.cam.zoom, h: innerHeight / this.cam.zoom };
-        if (this.mode === 'endless') this.minimap.drawRadar(this.world, b, this.beacons, view);
-        else this.minimap.draw(mm, b, this.maze && this.maze.goal, this.gems, view);
+        if (this.mode === 'endless') this.minimap.drawRadar(this.world, b, this.beacons, view, this.seenNear(b.x, b.y, 1000).concat([view]));
+        else this.minimap.draw(b, this.maze && this.maze.goal, this.gems, view);
       } else mmEl.hidden = true;
       this.emit('frame');
     },
