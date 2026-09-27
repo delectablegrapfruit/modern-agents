@@ -33,7 +33,7 @@ Five rings a round.
   snaps it into three pieces that fly off, and the dog springs back.
 - The balloon is translucent, slick (μ 0.1) and springy (restitution 0.55). It squashes and dents where rings press
   and rocks on its pivot, so most rings bounce off it.
-- Assist: because the rings are so tight, a ring coming down near the tip (within 10 cm) or the knot (within 6 cm)
+- Assist: because the rings are so tight, a ring coming down near the tip (within 10 cm) or the knot (within 8 cm)
   gets steered onto it and squared up.
 
 ## Physics
