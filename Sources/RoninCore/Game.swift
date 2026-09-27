@@ -1,47 +1,79 @@
 import Foundation
 
-/// A run of endless mode: stages one after another from a chosen start, hearts carried, until the ronin falls.
-public struct Endless: Codable, Equatable, Sendable {
+/// A run: stages one after another, hearts carried, until the ronin falls. Endless mode plays one from a chosen
+/// start; the campaign keeps its own the same way, from the first stage after its last fall.
+public struct Run: Codable, Equatable, Sendable {
     public var start: Int
+    /// The stage the run is on; once it has ended, the stage it fell at.
     public var stage: Int
+    /// The hearts carried into `stage` (nil: full).
     public var hearts: Int?
     public var cleared = 0
     public var score = 0
     public var kills = 0
+    public var bestCombo = 0
 
     public init(start: Int) {
         self.start = max(1, start)
         stage = self.start
     }
+
+    /// Better than `other`: more stages cleared, or as many for more points. A run that cleared nothing sets no
+    /// record.
+    public func beats(_ other: Run?) -> Bool {
+        guard cleared > 0 else { return false }
+        guard let other else { return true }
+        return cleared != other.cleared ? cleared > other.cleared : score > other.score
+    }
 }
+
+/// An endless run is a run; the name it had before the campaign kept runs too.
+public typealias Endless = Run
 
 /// Everything that outlasts a stage.
 ///
-/// The campaign goes stage by stage and the ronin's hearts carry from one to the next; one stage in each holds a
-/// gourd of medicine for a single heart. Fall, and the campaign starts again from stage 1. Stages reached stay
-/// unlocked, and endless mode can start from any of them. Kills count toward your rank either way. Each mode keeps
-/// its own campaign.
+/// The campaign goes stage by stage and the ronin's hearts carry from one to the next; every stage holds one gourd
+/// of medicine for a single heart. Fall, and the campaign starts again from stage 1: that run is over, and kept if
+/// it was the mode's best. Walking away from a fight (Restart Stage, another difficulty, into or out of endless)
+/// keeps the hearts it cost and counts its kills, so it is never better than playing on. Stages reached stay
+/// unlocked, and endless mode can start from any of them. Every foe cut down counts toward your rank. Each mode
+/// keeps its own campaign.
+///
+/// A save must never lose the career: it reads field by field (see `init(from:)`), so a new field needs only a
+/// default.
 public struct Career: Codable, Equatable, Sendable {
     public var seed: UInt64
     public var mode = Mode.bushido
-    /// By mode: the campaign's stage, the hearts carried into it (nil: full), and the furthest stage reached.
+    /// By mode: the campaign's stage, the hearts carried into it (nil: full), the furthest stage reached, and the
+    /// highest stage cleared.
     public var stages: [String: Int] = [:]
     public var hearts: [String: Int] = [:]
     public var reached: [String: Int] = [:]
     public var highest: [String: Int] = [:]
-    /// The endless run in progress, if that is what is being played, and the best run in each mode.
-    public var endless: Endless?
+    /// The endless run in progress, if that is what is being played, and the most stages a run has cleared in each
+    /// mode.
+    public var endless: Run?
     public var bestEndless: [String: Int] = [:]
-    /// Tries at this stage, counting this one.
+    /// By mode, the campaign's run since its last fall.
+    public var runs: [String: Run] = [:]
+    /// The best runs: the campaign's by mode ("bushido"), endless ones by mode and starting stage ("bushido/10").
+    public var bestRuns: [String: Run] = [:]
+    /// Tries at this stage in this run, counting this one.
     public var attempt = 1
+    /// Foes cut down in all, and by the mode they fell in (a save from before modes were told apart has more in all).
     public var kills = 0
+    public var killsByMode: [String: Int] = [:]
     public var falls = 0
     public var flawless = 0
     public var bestCombo = 0
+    /// The best score of a single stage, and every finished stage's added up.
     public var bestScore = 0
     public var score = 0
     /// Stages won in a row without a fall.
     public var streak = 0
+    /// The run that just ended, for its summary, and whether it set its record (strictly: a tie does not).
+    public var lastRun: Run?
+    public var lastRunIsBest = false
 
     public init(seed: UInt64) { self.seed = seed }
 
@@ -74,35 +106,52 @@ public struct Career: Codable, Equatable, Sendable {
     /// The stage the next fight is: the endless run's, or the campaign's.
     public var current: Int { endless?.stage ?? stage }
 
-    /// Switches modes. Each keeps its own campaign; an endless run is left.
+    /// The run in progress: the endless run, or the campaign's since its last fall (from where it stands, for a
+    /// campaign older than runs).
+    public var run: Run { endless ?? runs[mode.rawValue] ?? Run(start: stage) }
+
+    /// The campaign's best run in this mode.
+    public var bestCampaignRun: Run? { bestRuns[mode.rawValue] }
+
+    /// The best endless run from a starting stage, in this mode.
+    public func bestRun(from start: Int) -> Run? { bestRuns[mode.rawValue + "/\(start)"] }
+
+    /// Switches modes. Each keeps its own campaign; an endless run is left, and kept if it was a record.
     public mutating func choose(_ mode: Mode) {
         guard mode != self.mode else { return }
+        leaveRun()
         self.mode = mode
-        endless = nil
         attempt = 1
     }
 
-    /// Starts an endless run from an unlocked stage.
+    /// Starts an endless run from an unlocked stage. A run already going is left, and kept if it was a record.
     public mutating func startEndless(at stage: Int) {
-        endless = Endless(start: min(max(1, stage), unlocked.upperBound))
+        leaveRun()
+        endless = Run(start: min(max(1, stage), unlocked.upperBound))
         attempt = 1
     }
 
-    /// Back to the campaign, where it was left.
+    /// Back to the campaign, where it was left. The endless run is kept if it was a record.
     public mutating func leaveEndless() {
-        endless = nil
+        leaveRun()
         attempt = 1
     }
 
-    public var rank: String { Rank.title(kills: kills) }
-    public var nextRank: (kills: Int, title: String)? { Rank.next(kills: kills) }
+    /// Kills, weighed by the mode they were made in: what the rank counts.
+    public var merit: Int { Rank.merit(kills: kills, byMode: killsByMode) }
+    public var rank: String { Rank.title(kills: merit) }
+    public var nextRank: (kills: Int, title: String)? { Rank.next(kills: merit) }
 
+    /// The fight at the next stage. The career, the stage, the try at it, the mode, the kind of run and how many
+    /// runs have ended in a fall name the roll, with the kills so far mixed in: a new run meets every stage afresh.
     public func makeFight() -> Fight {
-        let salt = UInt64(attempt) | UInt64(mode.level) << 32 | (isEndless ? 1 << 40 : 0)
+        let fallen = UInt64(truncatingIfNeeded: falls) << 41
+        let salt = UInt64(truncatingIfNeeded: attempt) & 0xFFFF_FFFF | UInt64(mode.level) << 32 | (isEndless ? 1 << 40 : 0) | fallen
+        let base = mixSeed(seed, UInt64(truncatingIfNeeded: kills))
         if let endless {
-            return Fight(stage: endless.stage, seed: mixSeed(seed, UInt64(endless.stage), salt), mode: mode, hearts: endless.hearts)
+            return Fight(stage: endless.stage, seed: mixSeed(base, UInt64(endless.stage), salt), mode: mode, hearts: endless.hearts)
         }
-        return Fight(stage: stage, seed: mixSeed(seed, UInt64(stage), salt), mode: mode, hearts: hearts[mode.rawValue])
+        return Fight(stage: stage, seed: mixSeed(base, UInt64(stage), salt), mode: mode, hearts: hearts[mode.rawValue])
     }
 
     /// Books a finished fight. Returns the rank it earned, if it earned one.
@@ -110,60 +159,104 @@ public struct Career: Codable, Equatable, Sendable {
     public mutating func record(_ fight: Fight) -> String? {
         guard let outcome = fight.outcome else { return nil }
         let before = rank
-        kills += fight.stats.kills
-        bestCombo = max(bestCombo, fight.stats.bestCombo)
+        tally(fight)
         bestScore = max(bestScore, fight.score)
         score += fight.score
         if outcome == .victory, fight.stats.damage == 0 { flawless += 1 }
         let key = mode.rawValue
         highest[key] = max(highest[key] ?? 0, outcome == .victory ? fight.stage : 0)
         reached[key] = max(reached[key] ?? 1, outcome == .victory ? fight.stage + 1 : fight.stage)
+        lastRunIsBest = false
 
-        if var run = endless {
-            run.kills += fight.stats.kills
-            run.score += fight.score
-            switch outcome {
-            case .victory:
-                run.cleared += 1
-                run.stage = fight.stage + 1
-                run.hearts = fight.hp
-                streak += 1
-                attempt = 1
-                endless = run
-            case .defeat:
-                // The run is over; the next begins where this one did.
-                bestEndless[key] = max(bestEndless[key] ?? 0, run.cleared)
-                falls += 1
-                streak = 0
-                attempt += 1
-                endless = Endless(start: run.start)
-                lastRun = run
-            }
-            return rank != before ? rank : nil
-        }
-
+        let inEndless = endless != nil
+        var run = endless ?? runs[key] ?? Run(start: fight.stage)
+        run.kills += fight.stats.kills
+        run.score += fight.score
+        run.bestCombo = max(run.bestCombo, fight.stats.bestCombo)
         switch outcome {
         case .victory:
             streak += 1
-            stage = fight.stage + 1
-            hearts[key] = fight.hp
             attempt = 1
+            run.cleared += 1
+            run.stage = fight.stage + 1
+            run.hearts = fight.hp
+            if inEndless {
+                endless = run
+            } else {
+                stage = fight.stage + 1
+                hearts[key] = fight.hp
+                runs[key] = run
+            }
         case .defeat:
-            // Fall, and the campaign begins again from the first stage, hearts whole.
             falls += 1
             streak = 0
             attempt += 1
-            stages[key] = 1
-            hearts[key] = nil
+            run.stage = fight.stage
+            if inEndless {
+                // The run is over; the next begins where this one did.
+                endless = Run(start: run.start)
+            } else {
+                // Fall, and the campaign begins again from the first stage, hearts whole.
+                stages[key] = 1
+                hearts[key] = nil
+                runs[key] = nil
+            }
+            lastRunIsBest = close(run, endless: inEndless)
+            lastRun = run
         }
         return rank != before ? rank : nil
     }
 
-    /// The endless run that just ended, for its summary.
-    public var lastRun: Endless?
+    /// Books a fight walked away from before it ended (Restart Stage, another difficulty, an endless run started or
+    /// left). Its kills count toward rank, and the hearts it cost stay lost: the campaign, or the endless run, goes on
+    /// with no more than the fight had left (a gourd drunk in it is lost too). A fight that has ended was booked by
+    /// `record(_:)`, so this leaves it alone. Returns the rank it earned, if it earned one.
+    @discardableResult
+    public mutating func abandon(_ fight: Fight) -> String? {
+        guard fight.outcome == nil, fight.mode == mode, fight.stage == current else { return nil }
+        let before = rank
+        tally(fight)
+        if var run = endless {
+            run.hearts = min(run.hearts ?? fight.maxHP, fight.hp)
+            endless = run
+        } else if fight.hp < carried {
+            hearts[mode.rawValue] = fight.hp
+        }
+        return rank != before ? rank : nil
+    }
+
+    /// What any fight adds to the career however it ends: its kills and its best combo.
+    private mutating func tally(_ fight: Fight) {
+        kills += fight.stats.kills
+        killsByMode[fight.mode.rawValue, default: 0] += fight.stats.kills
+        bestCombo = max(bestCombo, fight.stats.bestCombo)
+    }
+
+    /// Leaves the endless run in progress, if there is one, keeping its record.
+    private mutating func leaveRun() {
+        if let run = endless { close(run, endless: true) }
+        endless = nil
+    }
+
+    /// Books a run that has ended or been left: the most stages a run has cleared in the mode, and the record for its
+    /// kind of run. Returns whether it set that record.
+    @discardableResult
+    private mutating func close(_ run: Run, endless: Bool) -> Bool {
+        let key = mode.rawValue
+        if endless, run.cleared > 0 { bestEndless[key] = max(bestEndless[key] ?? 0, run.cleared) }
+        let slot = endless ? key + "/\(run.start)" : key
+        guard run.beats(bestRuns[slot]) else { return false }
+        bestRuns[slot] = run
+        return true
+    }
 }
 
 /// The save file: the career and the fight in progress, down to the step.
+///
+/// The career outlasts every update: it reads field by field, and a field it lacks (an older save) or cannot read
+/// takes its default, so a new career field needs only a default, never a new version. Bump `currentVersion` when
+/// what a saved fight means changes: a save of another version keeps its career and rolls its stage afresh, as does
+/// one whose fight no longer reads.
 public struct SaveGame: Codable, Equatable, Sendable {
     public static let currentVersion = 3
 
@@ -174,5 +267,75 @@ public struct SaveGame: Codable, Equatable, Sendable {
     public init(career: Career, fight: Fight) {
         self.career = career
         self.fight = fight
+    }
+
+    /// Reads a save file: the fight in progress if it still reads, else a fresh roll of the career's stage at the
+    /// hearts carried. Nil only when not even the career can be read.
+    public static func load(_ data: Data) -> SaveGame? {
+        struct Header: Decodable {
+            var version: Int?
+            var career: Career
+        }
+        struct Saved: Decodable { var fight: Fight }
+        let decoder = JSONDecoder()
+        guard let header = try? decoder.decode(Header.self, from: data) else { return nil }
+        if header.version == currentVersion, let saved = try? decoder.decode(Saved.self, from: data) {
+            return SaveGame(career: header.career, fight: saved.fight)
+        }
+        return SaveGame(career: header.career, fight: header.career.makeFight())
+    }
+}
+
+extension KeyedDecodingContainer {
+    /// A saved value, or the fallback when the save has none (it is older) or one this build cannot read.
+    func saved<T: Decodable>(_ key: Key, or fallback: T) -> T {
+        (try? decodeIfPresent(T.self, forKey: key)) ?? fallback
+    }
+}
+
+extension Run {
+    /// Only the start is required.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(start: try c.decode(Int.self, forKey: .start))
+        stage = max(1, c.saved(.stage, or: start))
+        hearts = c.saved(.hearts, or: nil)
+        cleared = c.saved(.cleared, or: 0)
+        score = c.saved(.score, or: 0)
+        kills = c.saved(.kills, or: 0)
+        bestCombo = c.saved(.bestCombo, or: 0)
+    }
+}
+
+extension Career {
+    /// Only the seed is required: every other field an older save lacks, or this build cannot read, takes its
+    /// default, so no update ever costs the career. Every stored field must be read here (a test checks it).
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(seed: try c.decode(UInt64.self, forKey: .seed))
+        mode = c.saved(.mode, or: .bushido)
+        stages = c.saved(.stages, or: [:])
+        hearts = c.saved(.hearts, or: [:])
+        reached = c.saved(.reached, or: [:])
+        highest = c.saved(.highest, or: [:])
+        endless = c.saved(.endless, or: nil)
+        bestEndless = c.saved(.bestEndless, or: [:])
+        runs = c.saved(.runs, or: [:])
+        bestRuns = c.saved(.bestRuns, or: [:])
+        attempt = c.saved(.attempt, or: 1)
+        kills = c.saved(.kills, or: 0)
+        killsByMode = c.saved(.killsByMode, or: [:])
+        falls = c.saved(.falls, or: 0)
+        flawless = c.saved(.flawless, or: 0)
+        bestCombo = c.saved(.bestCombo, or: 0)
+        bestScore = c.saved(.bestScore, or: 0)
+        score = c.saved(.score, or: 0)
+        streak = c.saved(.streak, or: 0)
+        lastRun = c.saved(.lastRun, or: nil)
+        lastRunIsBest = c.saved(.lastRunIsBest, or: false)
+        // A campaign from before the frontier was kept has reached at least its stage and the stage after its best.
+        for key in Set(stages.keys).union(highest.keys) where reached[key] == nil {
+            reached[key] = max(stages[key] ?? 1, (highest[key] ?? 0) + 1)
+        }
     }
 }
