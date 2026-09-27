@@ -220,8 +220,9 @@ enum Settings {
         set { defaults.set(newValue, forKey: "floorHints") }
     }
 
-    /// The mouse buttons are learnt: a foe cut down on each side. Until then the lane may show which button cuts which
-    /// way (the floor mice, if Floor Hints is on). Turning Floor Hints on teaches them again.
+    /// The mouse buttons are learnt: a foe cut down on each side. Until then the lane shows which button cuts which
+    /// way: on a new career's first card, after a cut the wrong way with a foe in reach the other way, and (if Floor
+    /// Hints is on) on the floor. Turning Floor Hints on teaches them again.
     static var hintShown: Bool {
         get { defaults.bool(forKey: "hintShown") }
         set { defaults.set(newValue, forKey: "hintShown") }

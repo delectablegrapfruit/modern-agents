@@ -9,10 +9,17 @@ import RoninCore
 /// Leaving the panel pauses at once; coming back takes a short, visible dwell before the fight resumes, so a pointer
 /// crossing the panel on its way somewhere else costs nothing. A click resumes at once, without cutting.
 ///
-/// The panel is small, so it says as much as it can without words: hearts (carried from stage to stage), pictograms
-/// for kills, time and combo, a warning marker over a foe about to strike, a sight line from a drawing archer, a
-/// gourd over the foe whose medicine gives back a heart, a pale ward before a warlord on guard, mouse buttons under
-/// the lane (if asked for) until you have cut both ways. What text there is is large, heavy, and on a dark plate.
+/// The panel is small, so it says as much as it can without words: hearts (carried from stage to stage), the run's
+/// score, pictograms for kills, time and combo, a warning marker over a foe about to strike, a sight line from a
+/// drawing archer, a gourd over the foe whose medicine gives back a heart, a pale ward before a warlord on guard, his
+/// bar in the header, and which mouse button cuts which way (on a new career's first card, after a cut the wrong way,
+/// and under the lane if asked for) until you have cut both ways. What text there is is large, heavy, and on a dark
+/// plate. A blow coming is never covered: the words slammed onto the lane and the combo go under the warning markers.
+///
+/// The dead stay where they fell for the whole stage, whatever is done to the panel (folded, resized, its menu used).
+///
+/// With Reduce Motion (the system's, or the menu's) the lane shakes and flashes far less, never punches in, and a
+/// storm's lightning is a slow glow; the blood and the dead are as they always are.
 @MainActor
 final class DuelScene: SKScene {
     enum HeaderHit { case none, drag, compact, close }
@@ -38,12 +45,22 @@ final class DuelScene: SKScene {
     private var built = false
     private var shownFight: (stage: Int, seed: UInt64, mode: Mode)?
     private var shownSetting: Setting?
+    /// The size and setting the lane was last laid out for: the scenery, the ronin and the dead are laid out afresh
+    /// only when one of them changes (folding into the pill and back changes neither).
+    private var laidOut: (size: CGSize, setting: Setting?)?
     private var shownCombo = 0
     private var shownHP = Tuning.heroHP
     private var lightning = 0.0
-    /// Sides the player has cut down a foe on, while the button hint is up.
+    /// Sides the player has cut down a foe on, until the buttons are learnt.
     private var hintSides = Set<Side>()
     private(set) var pointer: CGPoint?
+    /// Calmer effects (`Settings.reduceMotion`), as of this frame.
+    private var calm = false
+    /// When (by the scene's clock) the ronin's blade gets to the blow he last swung: his swing carries on through a
+    /// freeze until then, with the blow it brings.
+    private var swingUntil = 0.0
+    /// Foes held for a wounding blade still on its way, until when: whatever the blow sends them into starts then.
+    private var heldUntil: [Int: Double] = [:]
 
     private var field = CGRect(x: 0, y: 0, width: 420, height: 126)
     private var groundY: CGFloat = 20
@@ -51,6 +68,9 @@ final class DuelScene: SKScene {
     private var ronin: CGFloat = 60
     private var top: CGFloat { size.height - DuelScene.headerHeight }
     private var heroX: CGFloat { field.midX }
+    /// How far above the ground the lane is clear for what is drawn over a foe's head: up to the header, which holds
+    /// everything else (the warlord's bar included).
+    private var headroom: CGFloat { top - groundY }
     private var look = Look.of(.crimsonDusk)
     /// Text scale: 1 on the medium panel.
     private var fs: CGFloat { max(0.85, min(1.25, field.height / 126)) }
@@ -73,7 +93,13 @@ final class DuelScene: SKScene {
     private var farWeather: SKEmitterNode?
     private let rage = SKSpriteNode(texture: Art.edge)
     private let wound = SKSpriteNode(color: .white, size: .zero)
+    /// On the last heart, the dark closing in on each beat of it.
+    private let dread = SKSpriteNode(texture: Art.edge)
     private let vignette = SKSpriteNode(texture: Art.vignette)
+    /// The words slammed onto the lane (BLOODLUST, 25 HITS, WARLORD, CLEARED): over the fight, under the combo and
+    /// every warning marker. One at a time.
+    private let slams = SKNode()
+    private weak var slamNode: SKNode?
     private let hud = SKNode()
     private let comboBack = SKSpriteNode(texture: Art.glow)
     private let comboLabel = Art.label(Art.headingFont, size: 28, color: .white)
@@ -82,10 +108,27 @@ final class DuelScene: SKScene {
     private let bossNode = SKNode()
     private let bossTrack = SKShapeNode()
     private let bossFill = SKSpriteNode(color: Palette.gold.color(), size: .zero)
+    /// The warlord's bar as last laid out (its length and whether it sits between the hearts and the score), and
+    /// whether this fight's has room there: once it has, it keeps it unless the score grows right into it.
+    private var bossShape: (width: CGFloat, roomy: Bool)?
+    private var bossRoomy: Bool?
+    /// Where in the header the warlord's bar may begin: past the last heart, with room for his crest.
+    private var bossLeft: CGFloat = 0
+    /// Room kept for the score beside the warlord's bar, so it does not jump about as the score grows.
+    private lazy var scoreRoom: CGFloat = {
+        let probe = Art.label(Art.headingFont, size: 13, color: .white)
+        probe.text = "888,888"
+        return probe.frame.width
+    }()
     private let overlay = SKNode()
     private var banner: SKNode?
     private var bannerShownAt = 0.0
+    /// The stage's title card while it is up, and the text scale it was built at (it follows the panel's size).
+    private weak var introCard: SKNode?
+    private var introFs: CGFloat = 1
     private var hint: SKNode?
+    /// The last heart beating in the header.
+    private var heartBeating = false
     private let curtain = SKSpriteNode(color: .black, size: .zero)
     private let curtainIcon = Icons.pause(22, SKColor(white: 1, alpha: 0.85))
     private let engageRing = SKShapeNode()
@@ -122,6 +165,10 @@ final class DuelScene: SKScene {
         guard !built else { return }
         built = true
         Figures.preload()
+        // What the ronin may show before his first draw (a blow taken, a winded breath, the fall), so the first of
+        // them in a fight costs nothing.
+        HeroSprite.preload()
+        calm = Settings.reduceMotion
         build()
         loadFight(intro: true)
     }
@@ -151,7 +198,9 @@ final class DuelScene: SKScene {
             mark.lineWidth = 2
             mark.lineCap = .round
             mark.lineJoin = .round
-            mark.zPosition = 2
+            // Over the carpet of the dead (and the blood), which would otherwise bury them late in a stage; under the
+            // ronin himself.
+            mark.zPosition = 14.9
             world.addChild(mark)
             reachMarks.append(mark)
         }
@@ -166,9 +215,17 @@ final class DuelScene: SKScene {
         wound.alpha = 0
         wound.zPosition = 41
         addChild(wound)
+        // A dark, all but black red: danger, not the bright red of bloodlust.
+        dread.color = Palette.blood.mix(.black, 0.8).color()
+        dread.colorBlendFactor = 1
+        dread.alpha = 0
+        dread.zPosition = 44
+        addChild(dread)
         vignette.zPosition = 45
         vignette.alpha = 0.8
         addChild(vignette)
+        slams.zPosition = 46
+        addChild(slams)
 
         hud.zPosition = 50
         addChild(hud)
@@ -178,23 +235,24 @@ final class DuelScene: SKScene {
         comboBack.zPosition = -2
         comboShadow.zPosition = -1
         for node in [comboBack, comboShadow, comboLabel, comboTimes] as [SKNode] { hud.addChild(node) }
-        bossTrack.fillColor = SKColor(white: 0, alpha: 0.6)
+        bossTrack.fillColor = SKColor(white: 1, alpha: 0.08)
         bossTrack.strokeColor = Palette.gold.color(0.5)
         bossTrack.lineWidth = 1
         bossFill.anchorPoint = CGPoint(x: 0, y: 0.5)
+        bossFill.zPosition = 0.1
         bossNode.addChild(bossTrack)
         bossNode.addChild(bossFill)
         let crest = Icons.crest(14)
         crest.name = "crest"
         bossNode.addChild(crest)
-        // Where on his bar he calls for help: at two thirds and one third.
-        for k in 1...2 {
+        // Where on his bar he calls for help: at three quarters, a half and a quarter.
+        for k in 1...3 {
             let tick = SKSpriteNode(color: SKColor(white: 1, alpha: 0.55), size: CGSize(width: 1, height: 9))
             tick.name = "tick\(k)"
+            tick.zPosition = 0.2
             bossNode.addChild(tick)
         }
         bossNode.isHidden = true
-        hud.addChild(bossNode)
 
         overlay.zPosition = 60
         addChild(overlay)
@@ -238,7 +296,10 @@ final class DuelScene: SKScene {
             button.addChild(mark)
             header.addChild(button)
         }
-        for _ in 0..<Mode.shoshin.hearts {
+        // The warlord's bar lives in the header, out of the fighters' way: over the header's own plate.
+        bossNode.zPosition = 1
+        header.addChild(bossNode)
+        for _ in 0..<(Mode.allCases.map(\.hearts).max() ?? Mode.shoshin.hearts) {
             let heart = Icons.heart(11)
             header.addChild(heart)
             hearts.append(heart)
@@ -257,19 +318,28 @@ final class DuelScene: SKScene {
     func loadFight(intro: Bool) {
         let fight = session.fight
         shownFight = (fight.stage, fight.seed, fight.mode)
-        for sprite in foeSprites.values { sprite.removeFromParent() }
+        // Every foe on the lane, the one struck dead a moment ago and still frozen white for a blade that will now
+        // never land included.
+        for case let sprite as FoeSprite in figures.children { sprite.removeFromParent() }
         for sprite in arrowSprites.values { sprite.removeFromParent() }
         foeSprites = [:]
         arrowSprites = [:]
+        gourdSpots = [:]
+        heldUntil = [:]
         fx.removeAllChildren()
         overlay.removeAllChildren()
         overlay.removeAllActions()
+        slams.removeAllChildren()
+        slams.removeAllActions()
         impacts.removeAll()
+        // A new stage: the only thing that sweeps the lane of the dead.
         carnage.reset(field: field, groundY: groundY, ronin: ronin, heroX: heroX)
         banner = nil
         world.speed = 1
         slowmo = 1
         hitStop = 0
+        swingUntil = 0
+        bossRoomy = nil
         shownCombo = fight.combo
         shownHP = fight.hp
         let untouched = fight.stats.cuts + fight.stats.whiffs + fight.stats.deflects + fight.stats.parried == 0
@@ -302,13 +372,41 @@ final class DuelScene: SKScene {
         showHintIfNeeded()
     }
 
-    /// The stage's title card: its number, the mode and the setting, and any new kind of foe with a word on beating it.
+    /// The stage's title card: its number, the mode and the setting, and a line on each thing to learn here: which
+    /// mouse button cuts which way (the very first time), any new kind of foe with a word on beating it (the warlord's
+    /// guard too), and on the first stage the gourd-bearer. It follows the panel if it is resized while it is up.
     private func introduce(_ fight: Fight) {
         let card = SKNode()
-        card.position = CGPoint(x: field.midX, y: field.minY + field.height * 0.6)
+        var lines: [(icon: SKNode, text: String?)] = []
+        if session.career.kills == 0, !Settings.hintShown, !Settings.floorHints {
+            lines.append((Icons.buttons(15 * fs, Palette.ink.color(), Palette.gold.color()), nil))
+        }
         let newcomer = Difficulty.introduces(fight.stage)
-        let tall: CGFloat = (newcomer != nil ? 68 : 50) * fs
-        card.addChild(Icons.band(CGSize(width: min(field.width, 340 * fs), height: tall)))
+        if let kind = newcomer {
+            let icon: SKNode
+            if kind == .warlord {
+                icon = Icons.crest(16 * fs)
+            } else {
+                // On the dark plate the silhouette is drawn light, in the gold of the tip.
+                let figure = SKSpriteNode()
+                Figures.apply(figure, .foe(kind), .idle(0), ronin: 20 * fs)
+                Art.setTint(figure, Palette.gold, 1)
+                figure.position = CGPoint(x: 0, y: -9 * fs)
+                let lit = SKNode()
+                lit.addChild(figure)
+                icon = lit
+            }
+            lines.append((icon, DuelScene.tip(kind)))
+        } else if fight.stage == 1, fight.bearerIndex != nil {
+            // Every stage holds a gourd, and this is where it is first met: he keeps out of reach, and each cut must
+            // catch him darting in.
+            lines.append((Icons.gourd(15 * fs, Palette.jade.mix(.white, 0.25).color()), "CATCH HIM DARTING IN, TWICE — A HEART"))
+        }
+        let tall: CGFloat = (50 + 18 * CGFloat(lines.count)) * fs
+        // (Under everything on it: the panel draws by depth alone.)
+        let plate = Icons.band(CGSize(width: min(field.width, 340 * fs), height: tall))
+        plate.zPosition = -0.1
+        card.addChild(plate)
         let top = tall / 2
         let title = Art.label(Art.headingFont, size: 23 * fs, color: .white)
         Art.track(title, "STAGE \(fight.stage)", 5 * fs)
@@ -326,45 +424,42 @@ final class DuelScene: SKScene {
         let glyph = Icons.seal(fight.mode, 13 * fs)
         glyph.position = CGPoint(x: sub.position.x - sub.frame.width / 2 - 12 * fs, y: sub.position.y)
         card.addChild(glyph)
-        if let kind = newcomer {
-            let line = SKNode()
-            line.position = CGPoint(x: 0, y: top - 54 * fs)
-            let tip = Art.label(Art.italicFont, size: 11 * fs, color: Palette.gold.color())
-            Art.track(tip, kind == .warlord ? "A WARLORD AWAITS" : DuelScene.tip(kind), 1.2 * fs)
-            tip.horizontalAlignmentMode = .left
-            let icon: SKNode
-            if kind == .warlord {
-                icon = Icons.crest(16 * fs)
-            } else {
-                // On the dark plate the silhouette is drawn light, in the gold of the tip.
-                let figure = SKSpriteNode()
-                Figures.apply(figure, .foe(kind), .idle(0), ronin: 20 * fs)
-                Art.setTint(figure, Palette.gold, 1)
-                figure.position = CGPoint(x: 0, y: -9 * fs)
-                let lit = SKNode()
-                lit.addChild(figure)
-                icon = lit
+        for (k, line) in lines.enumerated() {
+            let row = SKNode()
+            row.position = CGPoint(x: 0, y: top - (54 + 18 * CGFloat(k)) * fs)
+            if let text = line.text {
+                let tip = Art.label(Art.italicFont, size: 11 * fs, color: Palette.gold.color())
+                Art.track(tip, text, 1.2 * fs)
+                tip.horizontalAlignmentMode = .left
+                let width = tip.frame.width + 26 * fs
+                line.icon.position = CGPoint(x: -width / 2 + 8 * fs, y: 0)
+                tip.position = CGPoint(x: -width / 2 + 22 * fs, y: 0)
+                row.addChild(tip)
             }
-            let width = tip.frame.width + 26 * fs
-            icon.position = CGPoint(x: -width / 2 + 8 * fs, y: 0)
-            tip.position = CGPoint(x: -width / 2 + 22 * fs, y: 0)
-            line.addChild(icon)
-            line.addChild(tip)
-            card.addChild(line)
-        } else if fight.difficulty.boss {
+            row.addChild(line.icon)
+            card.addChild(row)
+        }
+        if newcomer == nil, fight.difficulty.boss {
             let crest = Icons.crest(14 * fs)
             crest.position = CGPoint(x: 0, y: -top - 4 * fs)
             card.addChild(crest)
         }
+        // The card animates inside a holder that the layout can move and scale to a new panel size.
+        let holder = SKNode()
+        holder.position = CGPoint(x: field.midX, y: field.minY + field.height * 0.6)
+        holder.addChild(card)
+        overlay.addChild(holder)
+        introCard = holder
+        introFs = fs
         card.alpha = 0
         card.setScale(1.12)
-        overlay.addChild(card)
+        let hold = 1.1 + 0.8 * Double(lines.count)
         card.run(.sequence([
             .group([.fadeIn(withDuration: 0.18), .scale(to: 1, duration: 0.22)]).easedOut(),
-            .wait(forDuration: newcomer != nil ? 1.9 : 1.1),
+            .wait(forDuration: hold),
             .group([.fadeOut(withDuration: 0.3), .scale(to: 0.96, duration: 0.3)]),
-            .removeFromParent(),
         ]))
+        holder.run(.sequence([.wait(forDuration: 0.22 + hold + 0.3), .removeFromParent()]))
     }
 
     static func tip(_ kind: Kind) -> String {
@@ -374,11 +469,27 @@ final class DuelScene: SKScene {
         case .brute: return "THREE CUTS"
         case .archer: return "CUT THE ARROW BACK"
         case .dancer: return "LEAPS OVER YOU"
-        case .warlord: return "MANY CUTS"
+        case .warlord: return "A WARLORD — WAIT OUT HIS GUARD"
         }
     }
 
-    /// Until you have cut down a foe on each side: a mouse on each side of the lane, the button for that side lit.
+    /// A mouse with the button for `side` lit and an arrow pointing that way, on a dark plate: that button cuts that
+    /// way.
+    private func mouseHint(_ side: Side) -> SKNode {
+        let node = SKNode()
+        node.addChild(Icons.band(CGSize(width: 56 * fs, height: 28 * fs), alpha: 0.75))
+        let icon = Icons.mouse(20 * fs, lit: side, Palette.ink.color())
+        icon.position = CGPoint(x: -side.sign.cg * 7 * fs, y: 0)
+        node.addChild(icon)
+        let arrow = Icons.play(10 * fs, Palette.gold.color())
+        arrow.xScale = side == .left ? -1 : 1
+        arrow.position = CGPoint(x: side.sign.cg * 11 * fs, y: 0)
+        node.addChild(arrow)
+        return node
+    }
+
+    /// With Floor Hints on, until you have cut down a foe on each side: a mouse on each side of the lane, the button
+    /// for that side lit.
     private func showHintIfNeeded() {
         hint?.removeFromParent()
         hint = nil
@@ -387,17 +498,9 @@ final class DuelScene: SKScene {
         let node = SKNode()
         node.zPosition = 55
         for side in Side.allCases {
-            let mouse = SKNode()
+            let mouse = mouseHint(side)
             mouse.name = side == .left ? "left" : "right"
             mouse.position = CGPoint(x: laneX(side.sign * 0.62), y: groundY + ronin * 0.2)
-            mouse.addChild(Icons.band(CGSize(width: 56 * fs, height: 28 * fs), alpha: 0.75))
-            let icon = Icons.mouse(20 * fs, lit: side, Palette.ink.color())
-            icon.position = CGPoint(x: -side.sign.cg * 7 * fs, y: 0)
-            mouse.addChild(icon)
-            let arrow = Icons.play(10 * fs, Palette.gold.color())
-            arrow.xScale = side == .left ? -1 : 1
-            arrow.position = CGPoint(x: side.sign.cg * 11 * fs, y: 0)
-            mouse.addChild(arrow)
             mouse.run(.repeatForever(.sequence([.fadeAlpha(to: 0.45, duration: 0.8), .fadeAlpha(to: 1, duration: 0.8)])))
             node.addChild(mouse)
         }
@@ -405,15 +508,36 @@ final class DuelScene: SKScene {
         hint = node
     }
 
+    /// Floor Hints turned on or off: the mice under the lane come or go at once (the reach marks follow on the next
+    /// frame), and the fight and its dead are left as they are.
+    func refreshHints() {
+        guard built else { return }
+        showHintIfNeeded()
+        hint?.isHidden = isCompact
+        refreshHUD()
+    }
+
+    /// A cut the wrong way, with a foe in reach on the other side, before the buttons are learnt (and with no mice on
+    /// the floor to show them): the mouse for the other side flashed up under the lane there.
+    private func teach(_ side: Side) {
+        overlay.childNode(withName: "teach")?.removeFromParent()
+        let mouse = mouseHint(side)
+        mouse.name = "teach"
+        mouse.position = CGPoint(x: laneX(side.sign * 0.62), y: groundY + ronin * 0.2)
+        mouse.alpha = 0
+        overlay.addChild(mouse)
+        mouse.run(.sequence([.fadeIn(withDuration: 0.12), .wait(forDuration: 1.3), .fadeOut(withDuration: 0.3), .removeFromParent()]))
+    }
+
+    /// A foe cut down on `side`. Once there has been one each way the buttons are learnt, and the mice (if up) go.
     private func noteKill(_ side: Side) {
-        guard let hint else { return }
+        guard !Settings.hintShown else { return }
         hintSides.insert(side)
-        hint.childNode(withName: side == .left ? "left" : "right")?.run(.sequence([.fadeOut(withDuration: 0.3), .removeFromParent()]))
-        if hintSides.count == 2 {
-            Settings.hintShown = true
-            hint.run(.sequence([.wait(forDuration: 0.3), .removeFromParent()]))
-            self.hint = nil
-        }
+        hint?.childNode(withName: side == .left ? "left" : "right")?.run(.sequence([.fadeOut(withDuration: 0.3), .removeFromParent()]))
+        guard hintSides.count == 2 else { return }
+        Settings.hintShown = true
+        hint?.run(.sequence([.wait(forDuration: 0.3), .removeFromParent()]))
+        hint = nil
     }
 
     // MARK: Layout
@@ -428,11 +552,26 @@ final class DuelScene: SKScene {
     /// Where the scene draws a lane position, at the height of a figure's middle.
     func point(lane x: Double) -> CGPoint { CGPoint(x: laneX(x), y: groundY + ronin * 0.5) }
 
+    /// The lane in a scene `size` big: the field under the header, the ground line, and the ronin's height. He is
+    /// drawn `Tuning.figure` lane units tall (a lane unit is half the lane's width), the height every weapon's reach
+    /// is measured against; the panel's shape makes that 0.52 of the field's height.
+    static func lane(in size: CGSize) -> (field: CGRect, groundY: CGFloat, ronin: CGFloat) {
+        let field = CGRect(x: 0, y: 0, width: size.width, height: max(40, size.height - headerHeight))
+        return (field, field.minY + field.height * 0.16, CGFloat(Tuning.figure) * field.width / 2)
+    }
+
+    /// Lays the lane out for the scene's size, or the pill. Only a new size (or setting) paints the scenery afresh
+    /// and moves the ronin; the dead, their blood and the fight are kept through any layout, scaled with the lane
+    /// when its size changes, so folding into the pill and back, or choosing another size, leaves them lying there.
     private func layout() {
-        guard built else { return }
+        // A pass at the pill's size while unfolded is the window caught mid-fold: the next, at the real size, lays
+        // the lane out.
+        guard built, isCompact || size.height > DuelScene.pillSize.height else { return }
         let w = size.width
         pill.isHidden = !isCompact
-        for node in [scenery, world, hud, overlay, header, vignette, rage, wound, flashSky] as [SKNode] { node.isHidden = isCompact }
+        for node in [scenery, world, hud, slams, overlay, header, dread, vignette, rage, wound, flashSky] as [SKNode] {
+            node.isHidden = isCompact
+        }
         weather?.isHidden = isCompact
         farWeather?.isHidden = isCompact
         hint?.isHidden = isCompact
@@ -441,21 +580,38 @@ final class DuelScene: SKScene {
             refreshCurtain()
             return
         }
-        field = CGRect(x: 0, y: 0, width: w, height: max(40, top))
-        groundY = field.minY + field.height * 0.16
-        ronin = field.height * 0.52
-        buildScenery()
-        carnage.reset(field: field, groundY: groundY, ronin: ronin, heroX: heroX)
-        hero.layout(ronin: ronin, home: CGPoint(x: heroX, y: groundY))
-        for sprite in foeSprites.values { sprite.layout(ronin: ronin) }
+        let lane = DuelScene.lane(in: size)
+        field = lane.field
+        groundY = lane.groundY
+        ronin = lane.ronin
+        let resized = laidOut?.size != size
+        if resized || laidOut?.setting != shownSetting { buildScenery() }
+        // (Nothing, unless the lane's size changed: then the dead and their blood are scaled with it.)
+        carnage.relayout(field: field, groundY: groundY, ronin: ronin, heroX: heroX)
+        if resized {
+            hero.layout(ronin: ronin, home: CGPoint(x: heroX, y: groundY))
+            for sprite in foeSprites.values { sprite.layout(ronin: ronin, headroom: headroom) }
+            // The floor mice (if up) follow the lane.
+            for side in Side.allCases {
+                hint?.childNode(withName: side == .left ? "left" : "right")?.position = CGPoint(x: laneX(side.sign * 0.62), y: groundY + ronin * 0.2)
+            }
+        }
+        laidOut = (size, shownSetting)
         vignette.size = CGSize(width: w * 1.25, height: field.height * 1.6)
         vignette.position = CGPoint(x: field.midX, y: field.midY)
         rage.size = vignette.size
         rage.position = vignette.position
+        // (Sized at rest: a sprite's size is its scaled one, and the heartbeat scales this one.)
+        dread.setScale(1)
+        dread.size = vignette.size
+        dread.position = vignette.position
         wound.size = field.size
         flashSky.size = field.size
         banner?.position = CGPoint(x: field.midX, y: field.midY)
-        if hint != nil { showHintIfNeeded() }
+        if let card = introCard, card.parent != nil {
+            card.position = CGPoint(x: field.midX, y: field.minY + field.height * 0.6)
+            card.setScale(fs / introFs)
+        }
 
         // Reach marks: a tick on the ground with a chevron pointing out along the lane.
         for (k, mark) in reachMarks.enumerated() {
@@ -494,6 +650,11 @@ final class DuelScene: SKScene {
         }
         for (k, heart) in hearts.enumerated() { heart.position = CGPoint(x: heartsX + CGFloat(k) * 9, y: mid) }
         scoreLabel.position = CGPoint(x: size.width - 48, y: mid)
+        // The warlord's bar begins past the last heart there is, with room for his crest before it.
+        let shown = max(1, min(session.fight.maxHP, hearts.count))
+        bossLeft = heartsX + CGFloat(shown - 1) * 9 + 6 + 22
+        bossShape = nil
+        bossRoomy = nil
     }
 
     private func layoutPill() {
@@ -592,9 +753,11 @@ final class DuelScene: SKScene {
         sky2.zPosition = 30
         addChild(sky2)
         weather = sky2
-        // The same weather further off, drifting behind the fighters.
-        let distant = Art.weather(look.weather, size: field.size, tint: look.horizon, far: true)
-        distant.zPosition = 9.5
+        // The same weather further off, behind the fighters, and behind the ground and its horizon line too (over the
+        // landmarks and the village fires): what falls far off comes down behind the horizon, and far embers rise from
+        // behind it, never across the ground at the fighters' feet.
+        let distant = Art.weather(look.weather, size: field.size, tint: look.horizon, far: true, horizon: groundY)
+        distant.zPosition = 7.5
         distant.isHidden = isCompact
         scenery.addChild(distant)
         farWeather = distant
@@ -634,6 +797,12 @@ final class DuelScene: SKScene {
     }
 
     private func refreshCurtain() {
+        // What plays over the lane (a stage's card, the words slammed onto it, a blow's marks) holds with the fight:
+        // a card that comes up while the pointer is away (from the menu, or at launch) is read in full on coming back.
+        // A finished stage's own card and what leads to it run on.
+        let still = isAwayPaused && session.fight.outcome == nil
+        overlay.speed = still ? 0 : 1
+        slams.speed = overlay.speed
         let show = isAwayPaused && !isCompact && session.fight.outcome == nil
         curtain.isHidden = !show
         curtainIcon.isHidden = !show || isEngaging
@@ -650,6 +819,7 @@ final class DuelScene: SKScene {
         lastUpdate = currentTime
         clock += dt
         guard !isCompact else { return }
+        calm = Settings.reduceMotion
         let fight = session.fight
         if let shown = shownFight, shown.stage != fight.stage || shown.seed != fight.seed || shown.mode != fight.mode {
             loadFight(intro: true)
@@ -661,23 +831,30 @@ final class DuelScene: SKScene {
         var advanced = false
         if !isAwayPaused, session.fight.outcome == nil {
             if hitStop > 0 {
-                hitStop -= dt
+                hitStop = max(0, hitStop - dt)
             } else {
                 slowmo = min(1, slowmo + dt * 1.8)
                 for event in session.advance(dt * timeScale * slowmo) { handle(event) }
                 advanced = true
             }
             storm(dt)
+        } else if session.fight.outcome != nil, hitStop > 0 {
+            // The fight is over, but the freeze on its last blow (or on the ronin's last wound) still runs out, so the
+            // dead fall, the heads and weapons land and the stumps stop pumping under the card. (Before the blows
+            // still on their way land, so one landing now keeps its whole freeze.)
+            hitStop = max(0, hitStop - dt)
         }
         while let next = impacts.first, clock >= next.at {
             impacts.removeFirst()
             next.run()
         }
         if world.speed < 1 { world.speed = min(1, world.speed + CGFloat(dt) * 0.9) }
-        if !isAwayPaused || session.fight.outcome != nil { carnage.update(hitStop > 0 ? 0 : dt * Double(world.speed)) }
+        if !isAwayPaused || session.fight.outcome != nil { carnage.update(hitStop > 0 ? 0 : dt * Double(world.speed), real: dt) }
         shakeWorld(dt)
-        // Between steps (hit-stop, a pause) every figure holds its frame.
-        sync(advanced || session.fight.outcome != nil ? dt : 0)
+        // Between steps (hit-stop, a pause) every figure holds its frame; but the ronin's swing carries on until its
+        // blade gets to the blow (which lands then, by the scene's clock), and only then holds with everything else.
+        let step = advanced || session.fight.outcome != nil ? dt : 0
+        sync(step, hero: step > 0 ? dt : max(0, min(dt, swingUntil - (clock - dt))))
     }
 
     private func drawEngageRing() {
@@ -696,10 +873,15 @@ final class DuelScene: SKScene {
         if lightning <= 0 {
             lightning = Double.random(in: 4...9)
             flashSky.removeAllActions()
-            flashSky.run(.sequence([
-                .fadeAlpha(to: 0.35, duration: 0.03), .fadeAlpha(to: 0.05, duration: 0.08),
-                .fadeAlpha(to: 0.25, duration: 0.03), .fadeOut(withDuration: 0.4),
-            ]))
+            if calm {
+                // A slow glow over the sky, not a double strike.
+                flashSky.run(.sequence([.fadeAlpha(to: 0.12, duration: 0.25), .fadeOut(withDuration: 0.9)]))
+            } else {
+                flashSky.run(.sequence([
+                    .fadeAlpha(to: 0.35, duration: 0.03), .fadeAlpha(to: 0.05, duration: 0.08),
+                    .fadeAlpha(to: 0.25, duration: 0.03), .fadeOut(withDuration: 0.4),
+                ]))
+            }
         }
     }
 
@@ -717,33 +899,56 @@ final class DuelScene: SKScene {
         world.position = CGPoint(x: offset.x + (1 - zoom) * zoomFocus.x, y: offset.y + (1 - zoom) * zoomFocus.y)
     }
 
-    private func shake(_ amount: CGFloat) { shakeAmount = max(shakeAmount, amount) }
+    /// Shakes the lane (with Reduce Motion, barely).
+    private func shake(_ amount: CGFloat) { shakeAmount = max(shakeAmount, calm ? amount * 0.15 : amount) }
 
-    /// An impact frame: focus lines snapping in around a point and gone, with a flash at its heart.
-    private func focus(at point: CGPoint, size: CGFloat, color: RGB, alpha: CGFloat) {
-        let lines = SKSpriteNode(texture: Art.focus)
-        lines.size = CGSize(width: size, height: size)
+    /// A flash of the whole lane in blood (a wound, the warlord's arrival), fading over `fade` seconds; with Reduce
+    /// Motion, soft and slow.
+    private func flashLane(_ alpha: CGFloat, fade: TimeInterval) {
+        wound.removeAllActions()
+        wound.alpha = calm ? min(alpha, 0.22) : alpha
+        wound.run(.fadeOut(withDuration: calm ? max(fade, 0.6) : fade))
+    }
+
+    /// An impact frame: focus lines snapping in around a point and gone, with a flash at its heart. The lines reach
+    /// about `size` across; `pastEdges` draws them for this one blow instead, crisp, closing in from past every edge
+    /// of the lane (the warlord's death). With Reduce Motion they are small and faint.
+    private func focus(at point: CGPoint, size: CGFloat, color: RGB, alpha: CGFloat, pastEdges: Bool = false) {
+        let across = calm ? min(size, ronin * 4) : size
+        let lines: SKNode
+        if pastEdges, !calm {
+            let corners = [CGPoint(x: field.minX, y: field.minY), CGPoint(x: field.maxX, y: field.minY),
+                           CGPoint(x: field.minX, y: field.maxY), CGPoint(x: field.maxX, y: field.maxY)]
+            let reach = (corners.map { hypot($0.x - point.x, $0.y - point.y) }.max() ?? field.width) + ronin * 0.4
+            lines = Art.focusLines(hole: ronin * 0.5, reach: reach, width: 3, color: color)
+        } else {
+            let texture = SKSpriteNode(texture: Art.focus)
+            texture.size = CGSize(width: across, height: across)
+            texture.color = color.color()
+            texture.colorBlendFactor = 1
+            lines = texture
+        }
         lines.position = point
         lines.zRotation = CGFloat.random(in: 0...(2 * .pi))
-        lines.color = color.color()
-        lines.colorBlendFactor = 1
-        lines.alpha = alpha
-        lines.zPosition = 5
+        lines.alpha = calm ? min(alpha, 0.3) : alpha
+        // Over the fight, the vignette and the words slammed onto the lane, under the combo (overlay 60 - 13 = 47).
+        lines.zPosition = -13
         lines.setScale(1.25)
         lines.run(.sequence([.scale(to: 1, duration: 0.05), .wait(forDuration: 0.06), .group([.fadeOut(withDuration: 0.12), .scale(to: 0.9, duration: 0.12)]),
                              .removeFromParent()]))
         overlay.addChild(lines)
-        fx.addChild(at(point, Art.flash(.white, size: size * 0.35, duration: 0.14, alpha: alpha * 0.8)))
+        fx.addChild(at(point, Art.flash(.white, size: min(across, ronin * 5.5) * 0.35, duration: 0.14, alpha: lines.alpha * 0.8)))
     }
 
-    /// A punch in toward a blow.
+    /// A punch in toward a blow (none with Reduce Motion).
     private func punch(_ amount: CGFloat, at point: CGPoint) {
-        guard 1 + amount >= zoom else { return }
+        guard !calm, 1 + amount >= zoom else { return }
         zoom = 1 + amount
         zoomFocus = point
     }
 
-    /// Blood thrown against the glass: blots that run and fade. `side` keeps them to that half.
+    /// Blood thrown against the glass: blots that run and fade. `side` keeps them to that half. Over the whole fight,
+    /// but under the combo and the warning markers: blood on the glass never hides a blow coming.
     private func splatter(_ count: Int, side: Side? = nil) {
         for _ in 0..<count {
             let splat = SKSpriteNode(texture: Art.splats.randomElement())
@@ -761,6 +966,8 @@ final class DuelScene: SKScene {
             splat.colorBlendFactor = 1
             splat.alpha = 0.88
             splat.setScale(0.55)
+            // (Overlay 60 - 12.5 = 47.5: over the impact lines, under the combo's haze at 48.)
+            splat.zPosition = -12.5
             overlay.addChild(splat)
             splat.run(.sequence([
                 .scale(to: 1, duration: 0.05),
@@ -771,8 +978,9 @@ final class DuelScene: SKScene {
         }
     }
 
-    /// Makes the sprites match the fight.
-    private func sync(_ dt: Double) {
+    /// Makes the sprites match the fight, `dt` on: the foes and arrows by it, the ronin by `heroDT` (the same, unless
+    /// his swing is running on through a freeze).
+    private func sync(_ dt: Double, hero heroDT: Double? = nil) {
         let fight = session.fight
         var live = Set<Int>()
         for foe in fight.foes where foe.alive {
@@ -781,12 +989,15 @@ final class DuelScene: SKScene {
             if let existing = foeSprites[foe.id] {
                 sprite = existing
             } else {
-                sprite = FoeSprite(foe: foe, ronin: ronin)
-                sprite.zPosition = foe.kind == .warlord ? 4 : 3
+                sprite = FoeSprite(foe: foe, ronin: ronin, headroom: headroom)
                 figures.addChild(sprite)
                 foeSprites[foe.id] = sprite
             }
-            let air = foe.phase == .leaping ? CGFloat(sin(foe.progress * .pi)) * ronin * 0.95 : 0
+            // The warlord over his men; a gourd-bearer waiting his moment a step behind the line, so the men who pass
+            // him walk in front of him.
+            sprite.zPosition = foe.kind == .warlord ? 4 : foe.bearer && foe.phase == .advancing && !foe.darting ? 2.5 : 3
+            // A leap's arc; the gourd-bearer's spring back out of reach is a low hop.
+            let air = foe.phase == .leaping ? CGFloat(sin(foe.progress * .pi)) * ronin * (foe.bearer ? 0.45 : 0.95) : 0
             sprite.update(foe, at: CGPoint(x: laneX(foe.x), y: groundY), air: air, hero: heroX, dt: dt)
         }
         for (id, sprite) in foeSprites where !live.contains(id) {
@@ -812,8 +1023,8 @@ final class DuelScene: SKScene {
             arrowSprites[id] = nil
         }
         // Down to his last hearts, the ronin's guard sags and heaves; on the last, worse.
-        hero.strain = fight.hp <= 1 ? 2 : fight.hp * 3 <= fight.maxHP + 1 ? 1 : 0
-        hero.update(dt: dt, bloodlust: fight.inBloodlust)
+        hero.strain = HeroSprite.strain(hp: fight.hp, of: fight.maxHP)
+        hero.update(dt: heroDT ?? dt, bloodlust: fight.inBloodlust)
         refreshHUD()
     }
 
@@ -849,8 +1060,14 @@ final class DuelScene: SKScene {
             comboTimes.fontColor = fight.inBloodlust ? Palette.blood.mix(.white, 0.3).color() : Palette.gold.color()
         }
         let showCombo = fight.combo >= 3 && fight.outcome == nil
-        for node in [comboBack, comboLabel, comboShadow, comboTimes] as [SKNode] { node.isHidden = !showCombo }
+        for node in [comboLabel, comboShadow] as [SKNode] { node.isHidden = !showCombo }
+        // Over a word slammed onto the lane the number needs no haze of its own (the word's plate is dark), and the
+        // haze would darken the word.
+        comboBack.isHidden = !showCombo || slamNode != nil
+        // The multiplier only once it multiplies.
+        comboTimes.isHidden = !showCombo || fight.multiplier < 2
         let boss = fight.boss
+        // Lower while the warlord is on the lane, clear of the warning marker over his head.
         let comboY = top - (boss != nil ? 34 : 24) * fs
         comboLabel.position = CGPoint(x: field.midX, y: comboY)
         comboShadow.position = CGPoint(x: field.midX + 1.5, y: comboY - 1.5)
@@ -858,24 +1075,28 @@ final class DuelScene: SKScene {
         comboBack.size = CGSize(width: 130 * fs, height: 56 * fs)
         comboBack.position = CGPoint(x: field.midX, y: comboY)
 
-        // The warlord's bar, under his crest.
         bossNode.isHidden = boss == nil
-        if let boss {
-            let width = min(field.width * 0.5, 240)
-            bossNode.position = CGPoint(x: field.midX, y: top - 10)
-            bossTrack.path = CGPath(roundedRect: CGRect(x: -width / 2, y: -3.5, width: width, height: 7), cornerWidth: 3.5, cornerHeight: 3.5, transform: nil)
-            bossFill.size = CGSize(width: max(0, (width - 2) * CGFloat(boss.hp) / CGFloat(max(1, boss.maxHP))), height: 5)
-            bossFill.position = CGPoint(x: -width / 2 + 1, y: 0)
-            bossNode.childNode(withName: "crest")?.position = CGPoint(x: -width / 2 - 12, y: 1)
-            for k in 1...2 {
-                let tick = bossNode.childNode(withName: "tick\(k)")
-                tick?.position = CGPoint(x: -width / 2 + width * CGFloat(k) / 3, y: 0)
-                tick?.isHidden = boss.summons >= 3 - k
-            }
-        }
-        let heartbeat: CGFloat = fight.hp == 1 && fight.outcome == nil ? 0.35 + 0.35 * CGFloat(max(0, sin(clock * 7))) : 0
-        let rageTarget: CGFloat = fight.inBloodlust ? 0.5 + 0.15 * CGFloat(sin(clock * 6)) : heartbeat
+        if let boss { layoutBossBar(boss) }
+
+        // Bloodlust turns the lane's edge red. The last heart has a sign of its own, and a darker one: the dark closing
+        // in on each beat of it, and the heart itself beating in the header (held steady with Reduce Motion).
+        let rageTarget: CGFloat = fight.inBloodlust && fight.outcome == nil ? (calm ? 0.5 : 0.5 + 0.15 * CGFloat(sin(clock * 6))) : 0
         rage.alpha += (rageTarget - rage.alpha) * 0.2
+        let lastHeart = fight.hp == 1 && fight.outcome == nil
+        var beat: CGFloat = 0
+        if lastHeart {
+            // Lub-dub.
+            let lub = CGFloat(max(0, sin(clock * 7))), dub = CGFloat(max(0, sin(clock * 7 - 0.9)))
+            beat = calm ? 0.5 : pow(lub, 6) + 0.6 * pow(dub, 6)
+        }
+        dread.alpha += ((lastHeart ? 0.25 + 0.5 * beat : 0) - dread.alpha) * 0.3
+        dread.setScale(1 - 0.08 * beat)
+        if lastHeart, let heart = hearts.first {
+            heart.setScale(1 + 0.3 * beat)
+        } else if heartBeating {
+            hearts.first?.setScale(1)
+        }
+        heartBeating = lastHeart
 
         if fight.hp != shownHP || force {
             if fight.hp < shownHP {
@@ -895,7 +1116,42 @@ final class DuelScene: SKScene {
             heart.fillColor = full ? Palette.blood.color() : .clear
             heart.strokeColor = full ? Palette.blood.mix(.white, 0.35).color() : SKColor(white: 1, alpha: 0.3)
         }
-        scoreLabel.text = DuelScene.grouped(fight.score)
+        // The run's score: every stage of it so far, this one included.
+        let score = DuelScene.grouped(session.runScore)
+        if scoreLabel.text != score { scoreLabel.text = score }
+    }
+
+    /// The warlord's bar, in the header, never over the fighters: between the hearts and the score behind his crest,
+    /// or where that leaves too little room (a small panel, many hearts, a long score) a fine rule along the header's
+    /// foot. Each of his three calls for help is marked on it until he makes it.
+    private func layoutBossBar(_ boss: Foe) {
+        let right = scoreLabel.position.x - max(scoreLabel.frame.width, scoreRoom) - 10
+        let room = right - bossLeft
+        let roomy = bossRoomy.map { $0 && room >= 30 } ?? (room >= 60)
+        bossRoomy = roomy
+        let width = roomy ? min(200, room) : size.width - 24
+        let tall: CGFloat = roomy ? 7 : 4
+        if bossShape?.width != width || bossShape?.roomy != roomy {
+            bossShape = (width, roomy)
+            bossNode.position = roomy ? CGPoint(x: bossLeft + room / 2, y: top + DuelScene.headerHeight / 2 + 1.5)
+                : CGPoint(x: size.width / 2, y: top + 3)
+            bossTrack.path = CGPath(roundedRect: CGRect(x: -width / 2, y: -tall / 2, width: width, height: tall),
+                                    cornerWidth: tall / 2, cornerHeight: tall / 2, transform: nil)
+            let crest = bossNode.childNode(withName: "crest")
+            crest?.isHidden = !roomy
+            crest?.position = CGPoint(x: -width / 2 - 12, y: 1)
+        }
+        let whole = CGFloat(max(1, boss.maxHP))
+        bossFill.size = CGSize(width: max(0, (width - 2) * CGFloat(boss.hp) / whole), height: tall - 2)
+        bossFill.position = CGPoint(x: -width / 2 + 1, y: 0)
+        // (The same thresholds the fight calls them at: three quarters, a half and a quarter of his cuts.)
+        let calls = [boss.maxHP * 3 / 4, boss.maxHP / 2, boss.maxHP / 4]
+        for (k, call) in calls.enumerated() {
+            guard let tick = bossNode.childNode(withName: "tick\(k + 1)") as? SKSpriteNode else { continue }
+            tick.size = CGSize(width: 1, height: roomy ? 9 : 6)
+            tick.position = CGPoint(x: -width / 2 + 1 + (width - 2) * CGFloat(call) / whole, y: 0)
+            tick.isHidden = boss.summons > k
+        }
     }
 
     private func shatterCombo() {
@@ -928,7 +1184,7 @@ final class DuelScene: SKScene {
         switch fight.outcome {
         case .victory?: pillValue.text = "WON"
         case .defeat?: pillValue.text = "FELL"
-        case nil: pillValue.text = DuelScene.grouped(fight.score)
+        case nil: pillValue.text = DuelScene.brief(session.runScore)
         }
     }
 
@@ -940,6 +1196,13 @@ final class DuelScene: SKScene {
             out.append(c)
         }
         return out
+    }
+
+    /// A score short enough for the pill beside seven hearts: 12,345, then 123K, then 1.2M.
+    static func brief(_ n: Int) -> String {
+        if n < 100_000 { return grouped(n) }
+        if n < 10_000_000 { return "\(n / 1000)K" }
+        return String(format: "%.1fM", Double(n) / 1_000_000)
     }
 
     // MARK: Events
@@ -956,31 +1219,39 @@ final class DuelScene: SKScene {
             hero.cut(side, style, distance: distance)
             dash(to: sprite.position.x, side: side)
             // The blow lands when the drawn blade gets there, a few frames on: the hit, the gore and the freeze wait
-            // for it.
+            // for it, and so does he.
             let delay = HeroSprite.impact(style)
+            swingUntil = clock + delay
             if killed {
-                // Struck dead where he stands: the lane forgets him, his figure holds, frozen white, until the blade
-                // arrives and he comes apart.
+                // Struck dead where he stands: the lane forgets him, his figure holds, frozen white in one of the poses
+                // a blow throws a man into (the very pose his body falls from), until the blade arrives and he comes
+                // apart.
                 foeSprites[id] = nil
                 if sprite.gourd != nil {
                     gourdSpots[id] = CGPoint(x: sprite.position.x, y: sprite.position.y + sprite.height * 1.12)
-                    sprite.dropGourd(broken: false)
+                    sprite.dropGourd()
                 }
-                sprite.freezeStruck()
+                let variant = Int.random(in: 0..<Figures.variants)
+                sprite.freezeStruck(Figures.struck(sprite.cast, variant: variant))
                 noteKill(side)
                 later(delay) { [self] in
-                    slash(at: target, side: side, style: style, strong: true)
+                    // He parts where the cut goes through him, and the cut's mark is drawn across him there.
+                    let gash = sever(sprite, side: side, style: style, variant: variant)
+                    slash(at: CGPoint(x: target.x, y: gash.y), side: side, style: style, strong: true)
                     // The draw that opens a stage gets its own impact frame.
-                    if style == .nukitsuke { focus(at: target, size: ronin * 2.8, color: .white, alpha: 0.5) }
-                    sever(sprite, side: side, style: style)
+                    if style == .nukitsuke { focus(at: gash, size: ronin * 2.8, color: .white, alpha: 0.5) }
                 }
             } else {
+                // A wound: he is held as he stands until the blade gets there, and only then sent reeling (or leaping,
+                // or springing back out of reach) as the fight already has him.
+                sprite.hold(delay)
+                heldUntil[id] = clock + delay
                 later(delay) { [self] in
                     // A wound, not a kill: he reels, opened up along the cut, blood spraying out the far side.
                     slash(at: target, side: side, style: style, strong: false)
                     sprite.flashHit()
                     sprite.showStagger()
-                    sprite.gash(DuelScene.slope(of: style))
+                    sprite.gash(DuelScene.slope(of: style), at: DuelScene.height(of: style))
                     let spray: CGFloat = side == .right ? 0.35 : .pi - 0.35
                     fx.addChild(at(target, Art.burst(Palette.blood, count: 22, speed: ronin * 2.2, size: ronin * 0.07, life: 0.45,
                                                       spread: 1.0, angle: spray, gravity: ronin * 5, additive: false)))
@@ -1008,18 +1279,23 @@ final class DuelScene: SKScene {
             fx.addChild(at(CGPoint(x: heroX + side.sign.cg * ronin * 0.2, y: groundY + 2),
                            Art.burst(look.ground.mix(.white, 0.4), count: 10, speed: ronin * 0.5, size: ronin * 0.1, life: 0.4,
                                      spread: 0.8, angle: .pi / 2, additive: false)))
-            // A grey ✕ over his head: nothing was there.
+            // A grey ✕ over his head: nothing was there (wait for him to close).
             let miss = Icons.cross(ronin * 0.2, SKColor(white: 0.85, alpha: 1))
             miss.position = CGPoint(x: heroX, y: groundY + ronin * 1.2)
             miss.setScale(0.4)
             overlay.addChild(miss)
             miss.run(.sequence([.scale(to: 1, duration: 0.08), .wait(forDuration: 0.25),
                                 .group([.fadeOut(withDuration: 0.25), .moveBy(x: 0, y: 6, duration: 0.25)]), .removeFromParent()]))
+            // The wrong way, with a foe in reach the other way: which button cuts that way.
+            if !Settings.floorHints, !Settings.hintShown, fight.target(side.opposite) != nil { teach(side.opposite) }
         case .deflected(let side, let id):
             let p = arrowSprites[id]?.position ?? CGPoint(x: heroX + side.sign.cg * ronin * 0.5, y: groundY + ronin * 0.6)
             let style = chooseCut(nil, distance: abs(p.x - heroX))
             if style == .nukitsuke { drawFlash(side) }
-            hero.cut(side, style, distance: abs(p.x - heroX))
+            // The arrow is met the instant it is cut: the swing starts with the blade at its mark, where the arrow
+            // bursts gold.
+            hero.cut(side, style, distance: abs(p.x - heroX), from: 4)
+            swingUntil = clock
             slash(at: p, side: side, style: style, strong: false)
             fx.addChild(at(p, Art.burst(Palette.gold, count: 24, speed: ronin * 2.6, size: ronin * 0.09, life: 0.35)))
             fx.addChild(at(p, Art.shockwave(Palette.gold, radius: ronin * 0.12, grow: 3, width: 2, duration: 0.3)))
@@ -1047,27 +1323,45 @@ final class DuelScene: SKScene {
             }
         case .raised:
             break
-        case .guarded(let id):
-            // The warlord sets his guard: a ring of steel off his blade.
-            if let sprite = foeSprites[id] {
-                fx.addChild(at(CGPoint(x: sprite.position.x, y: groundY + sprite.height * 0.7),
-                               Art.shockwave(Palette.steel, radius: ronin * 0.08, grow: 3, width: 1.5, duration: 0.25)))
-            }
+        case .guarded:
+            // The warlord starts to raise his guard: his figure shows it coming up, faint (a cut now only glances off),
+            // and rings as it sets.
+            break
         case .parried(let side, let id):
-            // Steel on steel: sparks where the blades met, the ronin thrown back, the warlord unmoved.
+            if !fight.isStumbling {
+                // A glance: the cut met his guard still coming up and slid off it. Nothing is lost on either side: the
+                // ronin's swing plays out, sparks fly where it meets the rising blade, and the guard goes on up.
+                guard let sprite = foeSprites[id] else { return }
+                let distance = abs(sprite.position.x - heroX)
+                let style = chooseCut(sprite.kind, distance: distance)
+                if style == .nukitsuke { drawFlash(side) }
+                hero.cut(side, style, distance: distance)
+                let delay = HeroSprite.impact(style)
+                swingUntil = clock + delay
+                later(delay) { [self] in
+                    sprite.showParry(glanced: true)
+                    let p = CGPoint(x: sprite.position.x - side.sign.cg * ronin * 0.28, y: groundY + ronin * 0.62)
+                    fx.addChild(at(p, Art.burst(Palette.gold, count: 12, speed: ronin * 2, size: ronin * 0.05, life: 0.22,
+                                                spread: 1.1, angle: side == .right ? .pi : 0)))
+                    hitStop = max(hitStop, 0.03)
+                }
+                return
+            }
+            // Parried: steel on steel, sparks where the blades met, the ronin thrown back, the warlord unmoved.
             hero.repel(side, for: fight.stumble)
             guard let sprite = foeSprites[id] else { return }
-            sprite.showParry()
+            sprite.showParry(glanced: false)
             let p = CGPoint(x: sprite.position.x - side.sign.cg * ronin * 0.28, y: groundY + ronin * 0.62)
             fx.addChild(at(p, Art.burst(Palette.gold, count: 26, speed: ronin * 2.4, size: ronin * 0.06, life: 0.3,
                                         spread: 1.1, angle: side == .right ? .pi : 0)))
             fx.addChild(at(p, Art.burst(.white, count: 10, speed: ronin * 3.2, size: ronin * 0.08, life: 0.16)))
             fx.addChild(at(p, Art.shockwave(Palette.steel, radius: ronin * 0.1, grow: 4, width: 2, duration: 0.25)))
-            let blocked = Icons.cross(ronin * 0.2, Palette.steel.color())
+            // Over his head, a gold ⊗, not the grey ✕ of a miss: the guard turned it (wait for it to drop).
+            let blocked = Icons.blocked(ronin * 0.24, Palette.gold.mix(.white, 0.2).color())
             blocked.position = CGPoint(x: heroX, y: groundY + ronin * 1.2)
             blocked.setScale(0.4)
             overlay.addChild(blocked)
-            blocked.run(.sequence([.scale(to: 1, duration: 0.08), .wait(forDuration: 0.25),
+            blocked.run(.sequence([.scale(to: 1, duration: 0.08), .wait(forDuration: 0.3),
                                    .group([.fadeOut(withDuration: 0.25), .moveBy(x: 0, y: 6, duration: 0.25)]), .removeFromParent()]))
             hitStop = max(hitStop, 0.06)
             shake(2)
@@ -1085,7 +1379,8 @@ final class DuelScene: SKScene {
                 edge.colorBlendFactor = 1
                 edge.blendMode = .add
                 edge.alpha = 0
-                edge.run(.sequence([.fadeAlpha(to: 0.6, duration: 0.08), .fadeOut(withDuration: 0.7), .removeFromParent()]))
+                edge.run(.sequence([.fadeAlpha(to: calm ? 0.22 : 0.6, duration: calm ? 0.25 : 0.08), .fadeOut(withDuration: 0.7),
+                                    .removeFromParent()]))
                 fx.addChild(edge)
             }
             shake(3)
@@ -1104,16 +1399,30 @@ final class DuelScene: SKScene {
                                     .removeFromParent()]))
             }
         case .wounded(let foe, let damage):
-            hero.hurt()
+            // Who dealt it: the foe, or the arrow that has just left the lane (its sprite not yet swept away, and used
+            // up here, so a second arrow in the same moment finds its own).
+            var fromX = foe.flatMap { foeSprites[$0]?.position.x }
+            if fromX == nil, let hit = arrowSprites.values.first(where: { sprite in
+                !sprite.deflected && !fight.arrows.contains { $0.id == sprite.id }
+            }) {
+                fromX = hit.position.x
+                hit.removeFromParent()
+                arrowSprites[hit.id] = nil
+            }
+            let attacker: Side? = fromX.map { $0 < heroX ? .left : .right }
+            // Where he was struck, before the blow drives him back from it.
+            let p = CGPoint(x: hero.standing, y: groundY + ronin * 0.55)
+            // How hurt he is now, so the reel is chosen for the hearts he has left; turned to face the blow, so it
+            // drives him away from whoever dealt it.
+            hero.strain = HeroSprite.strain(hp: fight.hp, of: fight.maxHP)
+            hero.hurt(from: attacker)
             if let foe { foeSprites[foe]?.showStrike() }
-            wound.removeAllActions()
-            wound.alpha = damage > 1 ? 0.55 : 0.42
-            wound.run(.fadeOut(withDuration: 0.45))
-            let p = CGPoint(x: heroX, y: groundY + ronin * 0.55)
-            let from: CGFloat = (foe.flatMap { foeSprites[$0] }.map { $0.position.x < heroX } ?? false) ? 0.2 : .pi - 0.2
+            flashLane(damage > 1 ? 0.55 : 0.42, fade: 0.45)
+            // The blood sprays away from the blow.
+            let from: CGFloat = attacker == .left ? 0.2 : .pi - 0.2
             fx.addChild(at(p, Art.burst(Palette.blood, count: 30 + 12 * damage, speed: ronin * 2.2, size: ronin * 0.08, life: 0.55,
                                         spread: 1.6, angle: from, gravity: ronin * 5, additive: false)))
-            carnage.spatter(around: heroX, count: 8)
+            carnage.spatter(around: p.x, count: 8)
             splatter(damage > 1 ? 3 : 2)
             focus(at: p, size: ronin * 3, color: Palette.blood.mix(.white, 0.2), alpha: 0.55)
             shake(3.5 + CGFloat(damage) * 1.5)
@@ -1121,11 +1430,16 @@ final class DuelScene: SKScene {
             hitStop = max(hitStop, 0.08)
             slowmo = min(slowmo, 0.4)
         case .leapt(let id):
-            if let sprite = foeSprites[id] {
+            // Off the ground in a cloud of dust; sent leaping by a wound, not until the blade lands (he is held till
+            // then).
+            let dust: @MainActor () -> Void = { [self] in
+                guard let sprite = foeSprites[id] else { return }
                 fx.addChild(at(CGPoint(x: sprite.position.x, y: groundY + 2),
                                Art.burst(look.ground.mix(.white, 0.35), count: 12, speed: ronin * 0.8, size: ronin * 0.1, life: 0.35,
                                          spread: 1.2, angle: .pi / 2, additive: false)))
             }
+            let wait = (heldUntil[id] ?? 0) - clock
+            if wait > 0 { later(wait, dust) } else { dust() }
         case .landed(let id):
             if let sprite = foeSprites[id] {
                 fx.addChild(at(CGPoint(x: sprite.position.x, y: groundY + 2),
@@ -1135,21 +1449,22 @@ final class DuelScene: SKScene {
             }
         case .bloodlust(let on):
             if on {
-                slam("BLOODLUST", color: Palette.blood.mix(.white, 0.2))
-                fx.addChild(at(CGPoint(x: heroX, y: groundY + ronin * 0.5), Art.shockwave(Palette.blood, radius: ronin * 0.3, grow: 5, width: 3, duration: 0.5)))
+                // (A red light enough to read on its dark plate.)
+                slam("BLOODLUST", color: Palette.blood.mix(.white, 0.45), hold: 0.5)
+                fx.addChild(at(CGPoint(x: hero.standing, y: groundY + ronin * 0.5),
+                               Art.shockwave(Palette.blood, radius: ronin * 0.3, grow: 5, width: 3, duration: 0.5)))
                 shake(2.5)
             }
         case .milestone(let n):
-            slam("\(n) HITS", color: Palette.gold, icon: Icons.swords(18 * fs, Palette.gold.color()))
+            slam("\(n) HITS", color: Palette.gold, icon: Icons.swords(18 * fs, Palette.gold.color()), hold: 0.5)
             slowmo = 0.3
             world.speed = 0.4
-            fx.addChild(at(CGPoint(x: heroX, y: groundY + ronin * 0.5), Art.shockwave(Palette.gold, radius: ronin * 0.3, grow: 6, width: 2.5, duration: 0.6)))
+            fx.addChild(at(CGPoint(x: hero.standing, y: groundY + ronin * 0.5),
+                           Art.shockwave(Palette.gold, radius: ronin * 0.3, grow: 6, width: 2.5, duration: 0.6)))
         case .warlord:
             slam("WARLORD", color: Palette.gold, icon: Icons.crest(20 * fs))
             shake(4)
-            wound.removeAllActions()
-            wound.alpha = 0.25
-            wound.run(.fadeOut(withDuration: 0.8))
+            flashLane(0.25, fade: 0.8)
         case .arrived:
             break
         case .ended(let outcome):
@@ -1243,11 +1558,11 @@ final class DuelScene: SKScene {
         let sprite = foeSprites[id]
         let start = gourdSpots.removeValue(forKey: id)
             ?? sprite.map { CGPoint(x: $0.position.x, y: groundY + $0.height * 1.12) } ?? CGPoint(x: heroX, y: groundY + ronin)
-        sprite?.dropGourd(broken: false)
+        sprite?.dropGourd()
         let gourd = Icons.gourd(max(10, ronin * 0.2), Palette.jade.mix(.white, 0.25).color())
         gourd.position = start
         overlay.addChild(gourd)
-        let chest = CGPoint(x: heroX, y: groundY + ronin * 0.6)
+        let chest = CGPoint(x: hero.standing, y: groundY + ronin * 0.6)
         let fly = SKAction.move(to: chest, duration: 0.3)
         fly.timingMode = .easeIn
         gourd.run(.sequence([.group([fly, .rotate(byAngle: 3, duration: 0.3)]), .removeFromParent()]))
@@ -1258,7 +1573,7 @@ final class DuelScene: SKScene {
                 self.fx.addChild(self.at(chest, Art.shockwave(Palette.jade, radius: self.ronin * 0.2, grow: 4, width: 2.5, duration: 0.45)))
                 if !restored {
                     let bonus = Art.label(Art.headingFont, size: 13 * self.fs, color: Palette.gold.color())
-                    bonus.text = "+" + DuelScene.grouped(Int((500 * self.session.fight.mode.score).rounded()))
+                    bonus.text = "+" + DuelScene.grouped(self.session.fight.gourdBonus)
                     bonus.position = CGPoint(x: self.heroX, y: self.groundY + self.ronin * 1.15)
                     self.overlay.addChild(bonus)
                     bonus.run(.sequence([.group([.moveBy(x: 0, y: 10, duration: 0.7), .fadeOut(withDuration: 0.7)]), .removeFromParent()]))
@@ -1335,10 +1650,13 @@ final class DuelScene: SKScene {
         }
     }
 
-    /// A foe cut down. What becomes of him depends on the cut: halved on the slant or through the waist, his legs
-    /// taken from under him, his head taken (a warlord always loses his); run through or shot, he goes down whole.
-    /// The pieces fly, land and stay, and the blood goes everywhere.
-    private func sever(_ sprite: FoeSprite, side: Side, style: Cut?) {
+    /// A foe cut down. What becomes of him depends on the cut: halved on the slant or through the waist, his legs cut
+    /// from under him at the shins, his head taken (a warlord always loses his); run through or shot, he goes down
+    /// whole. He falls from the pose his figure froze in at the blow (`Figures.struck` with `variant`), or, shot, from
+    /// the one he was in. The pieces fly, land and stay, and the blood goes everywhere from where he parts, which is
+    /// returned (for the cut's mark).
+    @discardableResult
+    private func sever(_ sprite: FoeSprite, side: Side, style: Cut?, variant: Int? = nil) -> CGPoint {
         foeSprites[sprite.id] = nil
         if sprite.gourd != nil { gourdSpots[sprite.id] = CGPoint(x: sprite.position.x, y: sprite.position.y + sprite.height * 1.12) }
         let boss = sprite.kind == .warlord, heavy = boss || sprite.kind == .brute
@@ -1359,13 +1677,15 @@ final class DuelScene: SKScene {
             case .tsuki?, nil: severance = nil
             }
         }
+        // Where he parts: the upper piece's cut, the neck, the shin; felled whole, his chest.
+        let gash: CGPoint
         if let severance {
-            carnage.sever(sprite.cast, severance, feet: feet, facing: facing, away: away, force: force)
+            gash = carnage.sever(sprite.cast, severance, feet: feet, facing: facing, away: away, force: force,
+                                 variant: variant ?? Int.random(in: 0..<Figures.variants))
         } else {
-            carnage.fell(sprite.cast, feet: feet, facing: facing, force: force)
+            let pose = variant.map { Figure.struck(sprite.cast, variant: $0) } ?? Figure.pose(sprite.cast, sprite.shown)
+            gash = carnage.fell(sprite.cast, feet: feet, facing: facing, force: force, pose: pose)
         }
-        let height: CGFloat = severance == .head ? 0.8 : severance == .legs ? 0.28 : 0.5
-        let gash = CGPoint(x: feet.x, y: feet.y + sprite.height * height)
         let spray: CGFloat = side == .right ? 0.6 : .pi - 0.6
         fx.addChild(at(gash, Art.burst(Palette.blood, count: boss ? 90 : heavy ? 56 : 36, speed: ronin * 2.4, size: ronin * 0.08, life: 0.7,
                                        spread: 1.6, angle: spray, gravity: ronin * 6, additive: false)))
@@ -1377,7 +1697,8 @@ final class DuelScene: SKScene {
         sprite.removeFromParent()
         hero.bloodied(heavy ? 0.06 : 0.025)
 
-        if heavy { focus(at: gash, size: boss ? max(field.width, field.height) * 2.4 : ronin * 4.2, color: .white, alpha: boss ? 0.9 : 0.65) }
+        // A big man's death gets an impact frame; the warlord's has its lines closing in from past every edge.
+        if heavy { focus(at: gash, size: ronin * (boss ? 5.5 : 4.2), color: .white, alpha: boss ? 0.9 : 0.65, pastEdges: boss) }
         if boss {
             hitStop = max(hitStop, 0.25)
             world.speed = 0.25
@@ -1393,35 +1714,48 @@ final class DuelScene: SKScene {
             // Now and then, close in, it reaches the glass.
             if heavy || abs(feet.x - heroX) < ronin * 0.6 && Double.random(in: 0...1) < 0.15 { splatter(heavy ? 2 : 1, side: side) }
         }
+        return gash
     }
 
-    /// Big text slammed onto the lane, on a dark plate, with an optional pictogram before it.
-    private func slam(_ text: String, color: RGB, icon: SKNode? = nil) {
+    /// Big text slammed onto the lane, on a dark plate, with an optional pictogram before it, held `hold` seconds.
+    /// It goes under the combo and every warning marker (a blow coming is never covered), its glow behind its plate;
+    /// a new one takes the place of the last. With Reduce Motion it drops in from nearer.
+    private func slam(_ text: String, color: RGB, icon: SKNode? = nil, hold: TimeInterval = 0.65) {
+        if let old = slamNode {
+            old.removeAllActions()
+            old.run(.sequence([.fadeOut(withDuration: 0.08), .removeFromParent()]))
+        }
         let node = SKNode()
         node.position = CGPoint(x: field.midX, y: field.minY + field.height * 0.64)
         let label = Art.label(Art.headingFont, size: 20 * fs, color: color.color())
         Art.track(label, text, 4 * fs)
         let iconWidth: CGFloat = icon == nil ? 0 : 24 * fs
-        node.addChild(Icons.band(CGSize(width: label.frame.width + iconWidth + 90 * fs, height: 32 * fs)))
+        let plate = Icons.band(CGSize(width: label.frame.width + iconWidth + 90 * fs, height: 32 * fs))
+        plate.zPosition = -0.2
+        node.addChild(plate)
         let glow = SKSpriteNode(texture: Art.glow)
         glow.size = CGSize(width: label.frame.width * 2, height: 60 * fs)
         glow.color = color.color()
         glow.colorBlendFactor = 1
         glow.blendMode = .add
         glow.alpha = 0.3
+        glow.zPosition = -0.4
         node.addChild(glow)
         label.position = CGPoint(x: iconWidth / 2, y: 0)
+        label.zPosition = 0.2
         node.addChild(label)
         if let icon {
             icon.position = CGPoint(x: -label.frame.width / 2 - 2 * fs, y: 0)
+            icon.zPosition = 0.2
             node.addChild(icon)
         }
-        node.setScale(2.2)
+        node.setScale(calm ? 1.15 : 2.2)
         node.alpha = 0
-        overlay.addChild(node)
+        slams.addChild(node)
+        slamNode = node
         node.run(.sequence([
             .group([.scale(to: 1, duration: 0.12), .fadeIn(withDuration: 0.08)]).easedIn(),
-            .wait(forDuration: 0.65),
+            .wait(forDuration: hold),
             .group([.fadeOut(withDuration: 0.3), .scale(to: 1.08, duration: 0.3)]),
             .removeFromParent(),
         ]))
@@ -1430,34 +1764,53 @@ final class DuelScene: SKScene {
     // MARK: The end of a stage
 
     private func finish(_ outcome: Outcome) {
+        // Won on a cut, the cut plays out before the flourish; fallen, he goes down now.
         hero.finish(victory: outcome == .victory)
         world.speed = min(world.speed, 0.3)
         if outcome == .victory, session.career.isEndless {
-            // An endless run goes straight on: a word, the blade home, and the next stage's card.
+            // An endless run goes straight on: a word, the blade home, a rank if the stage earned one, and the next
+            // stage's card.
             let fight = session.fight
             slam(fight.stats.damage == 0 ? "FLAWLESS" : "CLEARED", color: fight.stats.damage == 0 ? Palette.gold : look.accent.mix(.white, 0.3),
                  icon: Icons.infinity(18 * fs, Palette.gold.color()))
-            fx.addChild(at(CGPoint(x: heroX, y: groundY + ronin * 0.8), Art.burst(look.accent, count: 40, speed: ronin * 1.5,
-                                                                                  size: ronin * 0.08, life: 1.1, spread: 1.4, angle: .pi / 2)))
-            overlay.run(.sequence([.wait(forDuration: 1.7), .run { [weak self] in
+            fx.addChild(at(CGPoint(x: hero.standing, y: groundY + ronin * 0.8), Art.burst(look.accent, count: 40, speed: ronin * 1.5,
+                                                                                         size: ronin * 0.08, life: 1.1, spread: 1.4, angle: .pi / 2)))
+            let rank = session.promotion
+            if let rank {
+                slams.run(.sequence([.wait(forDuration: 1.0), .run { [weak self] in
+                    MainActor.assumeIsolated { self?.slam("▲ " + rank.uppercased(), color: Palette.gold) }
+                }]))
+            }
+            overlay.run(.sequence([.wait(forDuration: rank == nil ? 1.7 : 2.6), .run { [weak self] in
                 MainActor.assumeIsolated {
                     guard let self, self.session.fight.outcome == .victory, self.session.career.isEndless else { return }
-                    self.advanceFromBanner()
+                    // On to the next stage, but not into it behind the player's back: if the pointer left meanwhile,
+                    // it waits under the curtain, and coming back takes the dwell, as it does for any fight.
+                    self.session.next()
+                    self.loadFight(intro: true)
+                    self.refreshCurtain()
                 }
             }]))
             refreshCurtain()
             return
         }
-        // Long enough for the blade to go home (or for him to reach his knee) before the card.
-        let delay: TimeInterval = outcome == .victory ? 1.5 : 1.2
+        // Long enough for the blade to go home, or for him to go down on his face, before the card.
+        let delay: TimeInterval = outcome == .victory ? 1.5 : (HeroSprite.fallTiming.last ?? 1.2) + 0.3
         if outcome == .defeat {
-            // He is opened up: blood pumping from him as he goes down, pooling wide under him, on the glass.
-            let chest = CGPoint(x: heroX + hero.facing.sign.cg * ronin * 0.06, y: groundY + ronin * 0.55)
-            carnage.bleed(at: chest, angle: hero.facing == .right ? 0.7 : .pi - 0.7, seconds: 1.6)
+            // He is opened up where he stands: blood pumping from him as he goes down, pooling wide under him, on the
+            // glass; and once he is down on his face, running out of him along the ground.
+            let x = hero.standing
+            let chest = CGPoint(x: x + hero.facing.sign.cg * ronin * 0.06, y: groundY + ronin * 0.55)
+            carnage.bleed(at: chest, angle: hero.facing == .right ? 0.7 : .pi - 0.7, seconds: 1.0)
+            later(HeroSprite.fallTiming.last ?? 1.2) { [self] in
+                let x = hero.standing
+                carnage.bleed(at: CGPoint(x: x + hero.facing.sign.cg * ronin * 0.2, y: groundY + ronin * 0.12),
+                              angle: hero.facing == .right ? 0.3 : .pi - 0.3, seconds: 0.8)
+            }
             fx.addChild(at(chest, Art.burst(Palette.blood, count: 70, speed: ronin * 2.4, size: ronin * 0.09, life: 0.8,
                                             gravity: ronin * 6, additive: false)))
-            carnage.pool(at: heroX, width: ronin * 2.4, grow: 3.5)
-            carnage.spatter(around: heroX, count: 16)
+            carnage.pool(at: x, width: ronin * 2.4, grow: 3.5)
+            carnage.spatter(around: x, count: 16)
             splatter(4)
             punch(0.07, at: chest)
             shake(5)
@@ -1468,8 +1821,8 @@ final class DuelScene: SKScene {
             overlay.addChild(fall)
             fall.run(.fadeAlpha(to: 0.35, duration: 0.8))
         } else {
-            fx.addChild(at(CGPoint(x: heroX, y: groundY + ronin * 0.8), Art.burst(look.accent, count: 50, speed: ronin * 1.5,
-                                                                                  size: ronin * 0.08, life: 1.1, spread: 1.4, angle: .pi / 2)))
+            fx.addChild(at(CGPoint(x: hero.standing, y: groundY + ronin * 0.8), Art.burst(look.accent, count: 50, speed: ronin * 1.5,
+                                                                                         size: ronin * 0.08, life: 1.1, spread: 1.4, angle: .pi / 2)))
         }
         overlay.run(.sequence([.wait(forDuration: delay), .run { [weak self] in
             MainActor.assumeIsolated {
@@ -1480,8 +1833,9 @@ final class DuelScene: SKScene {
         refreshCurtain()
     }
 
-    /// The end card: a big word, then kills, best combo and time as pictograms with numbers, the score, a rank-up if
-    /// there was one, and a ▶ (or ↻ after a fall) to go on.
+    /// The end card: a big word, then the stage's kills, best combo and time as pictograms with numbers and its score;
+    /// after a fall, the run's instead (stages cleared, kills, best combo, score); a rank earned, and a record run, if
+    /// either; and a ▶ to go on, or ↻ and the stage a fall sends him back to.
     private func showBanner(_ outcome: Outcome) {
         banner?.removeFromParent()
         let fight = session.fight
@@ -1489,7 +1843,10 @@ final class DuelScene: SKScene {
         let color = won ? (fight.stats.damage == 0 ? Palette.gold : look.accent.mix(.white, 0.3)) : Palette.blood.mix(.white, 0.25)
         let node = SKNode()
         node.position = CGPoint(x: field.midX, y: field.midY)
+        // The shade over the lane, and the glow behind the word, under everything else on the card (the panel draws by
+        // depth alone).
         let dim = SKSpriteNode(color: SKColor(white: 0, alpha: 0.62), size: CGSize(width: size.width * 2, height: size.height * 2))
+        dim.zPosition = -0.2
         node.addChild(dim)
         let glow = SKSpriteNode(texture: Art.glow)
         glow.size = CGSize(width: field.width * 1.1, height: 80 * fs)
@@ -1498,6 +1855,7 @@ final class DuelScene: SKScene {
         glow.blendMode = .add
         glow.alpha = 0.35
         glow.position = CGPoint(x: 0, y: 26 * fs)
+        glow.zPosition = -0.1
         node.addChild(glow)
         let title = Art.label(Art.headingFont, size: 24 * fs, color: color.color())
         Art.track(title, won ? (fight.stats.damage == 0 ? "FLAWLESS" : "CLEARED") : "FALLEN", 7 * fs)
@@ -1507,29 +1865,32 @@ final class DuelScene: SKScene {
         rule.position = CGPoint(x: 0, y: 21 * fs)
         node.addChild(rule)
 
-        // The numbers, each behind its pictogram: the stage's, or after a fall in endless mode, the whole run's.
+        // The numbers, each behind its pictogram: the stage's, or after a fall the whole run's (every stage of it since
+        // the last fall, or since the endless run's start), the stages it cleared first.
         let career = session.career
+        let ink = Palette.ink.color()
         let seconds = Int(fight.time)
         var stats: [(SKNode, String)] = [
-            (Icons.skull(13 * fs, Palette.ink.color()), "\(fight.stats.kills)"),
-            (Icons.swords(13 * fs, Palette.ink.color()), "\(fight.stats.bestCombo)"),
-            (Icons.clock(13 * fs, Palette.ink.color()), "\(seconds / 60):\(String(format: "%02d", seconds % 60))"),
+            (Icons.skull(13 * fs, ink), "\(fight.stats.kills)"),
+            (Icons.swords(13 * fs, ink), "\(fight.stats.bestCombo)"),
+            (Icons.clock(13 * fs, ink), "\(seconds / 60):\(String(format: "%02d", seconds % 60))"),
         ]
         var total = fight.score
         var caption: String?
         var best = false
-        if !won, career.isEndless, let run = career.lastRun {
-            stats = [
-                (Icons.infinity(13 * fs, Palette.ink.color()), "\(run.cleared)"),
-                (Icons.skull(13 * fs, Palette.ink.color()), "\(run.kills)"),
-                (Icons.swords(13 * fs, Palette.ink.color()), "\(fight.stats.bestCombo)"),
-            ]
-            total = run.score
-            caption = "STAGE \(run.start)"
-            best = run.cleared > 0 && run.cleared >= (career.bestEndless[career.mode.rawValue] ?? 0)
-        } else if !won {
-            // A fall sends the campaign back to the first stage.
-            caption = "STAGE 1"
+        if !won {
+            // (Only the run this fight ended: a save from before runs were kept has none.)
+            if let run = career.lastRun, run.stage == fight.stage {
+                stats = [
+                    (career.isEndless ? Icons.infinity(13 * fs, ink) : Icons.steps(13 * fs, ink), "\(run.cleared)"),
+                    (Icons.skull(13 * fs, ink), "\(run.kills)"),
+                    (Icons.swords(13 * fs, ink), "\(run.bestCombo)"),
+                ]
+                total = run.score
+                best = career.lastRunIsBest
+            }
+            // Where a fall sends him: the campaign's first stage, or the endless run's.
+            caption = "STAGE \(career.current)"
         }
         let row = SKNode()
         row.position = CGPoint(x: 0, y: 6 * fs)
@@ -1550,9 +1911,11 @@ final class DuelScene: SKScene {
         score.position = CGPoint(x: 0, y: -12 * fs)
         node.addChild(score)
         var y = -30 * fs
-        if let rank = session.promotion ?? (best ? "Best run" : nil) {
+        // A rank earned and a record run (a better one, not a tie) share the one line.
+        let marks = [session.promotion?.uppercased(), best ? "BEST RUN" : nil].compactMap { $0 }
+        if !marks.isEmpty {
             let promo = Art.label(Art.italicFont, size: 12 * fs, color: Palette.gold.color())
-            Art.track(promo, "▲ " + rank.uppercased(), 2 * fs)
+            Art.track(promo, "▲ " + marks.joined(separator: " · "), 2 * fs)
             promo.position = CGPoint(x: 0, y: y)
             promo.run(.repeatForever(.sequence([.scale(to: 1.08, duration: 0.5), .scale(to: 1, duration: 0.5)])))
             node.addChild(promo)
@@ -1585,6 +1948,16 @@ final class DuelScene: SKScene {
     var isShowingBanner: Bool { banner != nil }
     /// Bodies and parts of bodies lying on the lane.
     var bodiesOnLane: Int { carnage.count }
+    /// A blow's impact frame is holding the lane (and the dead) still.
+    var isFrozen: Bool { hitStop > 0 }
+    /// What plays over the lane (a stage's card, the words slammed onto it) is holding with the fight.
+    var cardsHeld: Bool { overlay.speed == 0 }
+    /// Where the stage's title card is centred, while it is up.
+    var introCardCentre: CGPoint? { introCard?.parent == nil ? nil : introCard?.position }
+    /// Where the warlord's bar is drawn, while he is on the lane (in the scene's coordinates).
+    var bossBar: CGRect? { bossNode.isHidden ? nil : bossTrack.frame.offsetBy(dx: bossNode.position.x, dy: bossNode.position.y) }
+    /// The top of the lane: the header starts there.
+    var laneTop: CGFloat { top }
 
     /// Past the banner: the next stage; after a fall, the first stage again (or the endless run's first).
     func advanceFromBanner() {
@@ -1630,8 +2003,9 @@ final class DuelScene: SKScene {
         sync(0)
     }
 
-    /// Returns false for keys the scene does not use.
+    /// Returns false for keys the scene does not use, a key held with ⌘, ⌃ or ⌥ among them (meant for another app).
     func key(_ event: NSEvent) -> Bool {
+        guard event.modifierFlags.intersection([.command, .control, .option]).isEmpty else { return false }
         var side: Side?
         switch event.keyCode {
         case 123: side = .left

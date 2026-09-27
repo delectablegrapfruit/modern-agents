@@ -215,13 +215,16 @@ final class PanelController: NSObject {
         }
     }
 
-    /// A wide, short strip: the lane is three and a third times as wide as it is tall. The scene draws the ronin at
-    /// 0.52 of the lane's height, which this makes `Tuning.figure` (0.312) lane units tall: the height every weapon's
-    /// reach is measured against. Change one and the other must follow.
+    /// A wide, short strip: the lane is three and a third times as wide as it is tall. The scene draws the ronin
+    /// `Tuning.figure` (0.312) lane units tall, the height every weapon's reach is measured against; this shape makes
+    /// that 0.52 of the lane's height, which is the headroom the figures are drawn for.
     static func contentSize(compact: Bool) -> NSSize {
-        if compact { return DuelScene.pillSize }
-        let w = Settings.size.width
-        return NSSize(width: w, height: (w * 0.3).rounded() + DuelScene.headerHeight)
+        compact ? DuelScene.pillSize : contentSize(Settings.size)
+    }
+
+    /// The panel unfolded at a size.
+    static func contentSize(_ size: Settings.Size) -> NSSize {
+        NSSize(width: size.width, height: (size.width * 0.3).rounded() + DuelScene.headerHeight)
     }
 
     // MARK: Where it sits
@@ -430,11 +433,12 @@ final class PanelController: NSObject {
         if !scene.isCompact { resize(to: PanelController.contentSize(compact: false)) }
     }
 
-    /// Floor Hints on or off. The lane is left as it is (the dead stay): the reach marks follow on the next frame, and
-    /// the mouse-button hint comes up with the next stage's lane.
+    /// Floor Hints on or off. The lane is left as it is (the dead stay): the mouse-button hint comes up or goes at
+    /// once, and the reach marks follow on the next frame. Turning them on teaches the buttons again.
     func setFloorHints(_ on: Bool) {
         Settings.floorHints = on
         if on { Settings.hintShown = false }
+        scene.refreshHints()
     }
 
     // MARK: Pausing
