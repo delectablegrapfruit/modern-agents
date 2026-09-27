@@ -11,6 +11,10 @@ final class RoninArtTests: XCTestCase {
                 let sketch = Figure.sketch(cast, frame)
                 XCTAssertFalse(sketch.isEmpty, "\(cast) \(frame)")
                 XCTAssertTrue(sketch.fits(margin: 1), "\(cast) \(frame) spills off its canvas")
+                if !sketch.fits(margin: 1) {
+                    let pts = (sketch.body + sketch.overlay).flatMap(\.points)
+                    print("SPILL", cast, frame, pts.map(\.x).min()!, pts.map(\.x).max()!, pts.map(\.y).min()!, pts.map(\.y).max()!, sketch.width, sketch.height)
+                }
             }
         }
     }
@@ -22,10 +26,10 @@ final class RoninArtTests: XCTestCase {
         for cut in Cut.allCases {
             XCTAssertEqual(hero.filter { if case .cut(cut, _) = $0 { return true } else { return false } }.count, Frame.cutFrames)
             // The swing leaves a trail; zanshin and the return to guard do not.
-            XCTAssertNotNil(Figure.pose(.hero, .cut(cut, 2)).smear)
             XCTAssertNotNil(Figure.pose(.hero, .cut(cut, 3)).smear)
-            XCTAssertNil(Figure.pose(.hero, .cut(cut, 5)).smear)
-            XCTAssertNil(Figure.pose(.hero, .cut(cut, 6)).smear)
+            XCTAssertNotNil(Figure.pose(.hero, .cut(cut, 4)).smear)
+            XCTAssertNil(Figure.pose(.hero, .cut(cut, 8)).smear)
+            XCTAssertNil(Figure.pose(.hero, .cut(cut, 9)).smear)
         }
     }
 
@@ -34,7 +38,7 @@ final class RoninArtTests: XCTestCase {
         XCTAssertEqual(Figure.pose(.hero, .flourish(Frame.flourishFrames - 1)).sheathed, 1)
         XCTAssertEqual(Figure.pose(.hero, .iai(0)).sheathed, 1)
         XCTAssertGreaterThan(Figure.pose(.hero, .cut(.nukitsuke, 0)).sheathed, 0)
-        XCTAssertEqual(Figure.pose(.hero, .cut(.nukitsuke, 2)).sheathed, 0)
+        XCTAssertEqual(Figure.pose(.hero, .cut(.nukitsuke, 3)).sheathed, 0)
     }
 
     func testTheSwordIsHeldInBothHandsExceptToDrawAndSheathe() {
@@ -42,7 +46,7 @@ final class RoninArtTests: XCTestCase {
         for cut in Cut.allCases where cut != .nukitsuke {
             for k in 0..<Frame.cutFrames { XCTAssertEqual(Figure.pose(.hero, .cut(cut, k)).grip, .two, "\(cut) \(k)") }
         }
-        XCTAssertEqual(Figure.pose(.hero, .cut(.nukitsuke, 3)).grip, .saya)
+        XCTAssertEqual(Figure.pose(.hero, .cut(.nukitsuke, 5)).grip, .saya)
         XCTAssertEqual(Figure.pose(.hero, .cut(.nukitsuke, Frame.cutFrames - 1)).grip, .two)
         XCTAssertEqual(Figure.pose(.foe(.warlord), .block).grip, .two)
     }
@@ -51,12 +55,12 @@ final class RoninArtTests: XCTestCase {
         // Partway through the swing the hands are further along than the blade; by the end it has caught up.
         for cut in [Cut.kesa, .gyaku, .shomen, .sune] {
             let keys = Figure.cutKeys(cut)
-            let early = Figure.pose(.hero, .cut(cut, 1))
+            let early = Figure.pose(.hero, .cut(cut, 2))
             let bladeShare = (early.blade - keys.from) / (keys.to - keys.from)
             let hand = { (p: Pose) in p.hold ?? .zero }
             let handShare = (hand(early).y - hand(keys.start).y) / (hand(keys.end).y - hand(keys.start).y)
             XCTAssertLessThan(bladeShare, handShare, "\(cut)")
-            XCTAssertEqual(Figure.pose(.hero, .cut(cut, 3)).blade, keys.to, accuracy: 0.001)
+            XCTAssertEqual(Figure.pose(.hero, .cut(cut, 5)).blade, keys.to, accuracy: 0.001)
         }
     }
 
@@ -65,8 +69,21 @@ final class RoninArtTests: XCTestCase {
         for (i, a) in arcs.enumerated() {
             for b in arcs[(i + 1)...] { XCTAssertFalse(a.from == b.from && a.to == b.to) }
         }
-        XCTAssertLessThan(Figure.pose(.hero, .cut(.dou, 2)).flat, 1, "the level cut is seen side-on")
-        XCTAssertTrue(Figure.pose(.hero, .cut(.tsuki, 3)).smear?.thrust ?? false)
+        XCTAssertLessThan(Figure.pose(.hero, .cut(.dou, 3)).flat, 1, "the level cut is seen side-on")
+        XCTAssertTrue(Figure.pose(.hero, .cut(.tsuki, 4)).smear?.thrust ?? false)
+    }
+
+    func testEveryBlowLandsOnTheRoninAndNotThroughHim() {
+        // A foe strikes from his weapon's reach, so the point of it has to arrive at the ronin: a thrust stops at his
+        // body, a cut may carry across it but not far beyond.
+        for kind in Kind.allCases where kind != .archer {
+            guard let tip = Figure.tip(.foe(kind), .strike(0)) else { XCTFail("\(kind) has no weapon"); continue }
+            let reach = Double(tip.x * Build.of(.foe(kind)).height) * Tuning.figure
+            let beyond = kind == .grunt ? 0.02 : 0.08
+            print("TIP", kind, reach, kind.range)
+            XCTAssertGreaterThan(reach, kind.range - 0.04, "\(kind) falls short")
+            XCTAssertLessThan(reach, kind.range + beyond, "\(kind) goes through him")
+        }
     }
 
     func testTheSheetIsSVG() {

@@ -90,6 +90,34 @@ public struct Sketch: Sendable {
 
     public var isEmpty: Bool { body.isEmpty && overlay.isEmpty }
 
+    /// The sketch with every point moved by `f` (a turn, a shift). Ellipses move by their centres.
+    public func mapped(_ f: (CGPoint) -> CGPoint) -> Sketch {
+        func map(_ shape: Shape) -> Shape {
+            var out = shape
+            switch shape.kind {
+            case .ellipse(let r):
+                let c = f(CGPoint(x: r.midX, y: r.midY))
+                out.kind = .ellipse(CGRect(x: c.x - r.width / 2, y: c.y - r.height / 2, width: r.width, height: r.height))
+            case .path(let path):
+                var moved = Path()
+                moved.segments = path.segments.map { segment in
+                    switch segment {
+                    case .move(let p): return .move(f(p))
+                    case .line(let p): return .line(f(p))
+                    case .quad(let p, let c): return .quad(f(p), control: f(c))
+                    case .close: return .close
+                    }
+                }
+                out.kind = .path(moved)
+            }
+            return out
+        }
+        var out = self
+        out.body = body.map(map)
+        out.overlay = overlay.map(map)
+        return out
+    }
+
     /// The box around everything drawn (control points included, so a little generous), grown by `margin` and kept
     /// to the canvas, on whole pixels.
     public func bounds(margin: CGFloat) -> CGRect {
