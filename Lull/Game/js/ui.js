@@ -172,12 +172,12 @@
 
   // ---- shop -----------------------------------------------------------------------------------------------------------
   //
-  // The wallet opens it. Two halves, Items and Cosmetics; each is one scroll of sections (item types; cosmetic kinds)
-  // with a jump bar that follows along. A tile is a name, a preview and a price: what an item does is on hover. Buying
+  // The wallet opens it. Cosmetics only, one kind at a time: a row of kinds with a chevron at each end picks which,
+  // and only that kind's tiles are shown (the list scrolls within it). A tile is a preview, a name and a price. Buying
   // is two calm clicks on the same spot — the price turns into Confirm for a few seconds — never a dialog.
 
   const SHOP_SHORT = { skin: 'Skins', effect: 'Clears' };
-  const shopUI = { armed: null, timer: 0, spy: null };
+  const shopUI = { armed: null, timer: 0, jumpLeft: 0 };
 
   function disarmShop() {
     clearTimeout(shopUI.timer);
@@ -212,128 +212,102 @@
     for (const b of document.querySelectorAll('#shop-body .price-btn')) b.classList.toggle('poor', n < Number(b.dataset.price));
   }
 
-  function renderShop(app, sub) {
+  function renderShop(app, kind) {
     const head = document.getElementById('shop-head'), body = document.getElementById('shop-body');
-    const { ITEMS, ITEM_GROUPS, ITEM_ORDER, COSMETICS, COSMETIC_LABELS } = L;
-    // An old bookmark (a cosmetic kind) opens Cosmetics at that section.
-    let jumpTo = null;
-    if (COSMETICS[sub]) { jumpTo = sub; sub = 'looks'; }
-    if (sub !== 'looks') sub = 'items';
-    const same = app.shopSub === sub && body.dataset.sub === sub;
+    const { COSMETICS, COSMETIC_LABELS } = L;
+    const kinds = Object.keys(COSMETICS);
+    // One kind at a time: the one asked for, else the one last looked at, else the first.
+    if (!COSMETICS[kind]) kind = COSMETICS[app.settings.shopKind] ? app.settings.shopKind : kinds[0];
+    const same = app.shopSub === kind && body.dataset.sub === kind;
     const keep = same ? body.scrollTop : 0;
-    app.shopSub = sub;
+    const refocus = head.contains(document.activeElement);
+    app.shopSub = kind;
+    if (app.settings.shopKind !== kind) { app.settings.shopKind = kind; app.store.touch(); }
     disarmShop();
     const st = app.store.state;
-    const rerender = () => renderShop(app, sub);
     const bought = (sel) => { const t = body.querySelector(sel); if (t) { t.classList.add('fresh'); setTimeout(() => t.classList.remove('fresh'), 900); } };
+    const at = kinds.indexOf(kind);
+    const go = (k) => { if (COSMETICS[k] && k !== kind) { app.sound.play('move'); renderShop(app, k); } };
+    const step = (d) => go(kinds[at + d]);
 
-    const sections = [];
-    if (sub === 'items') {
-      for (const g of ITEM_GROUPS) {
-        const ids = ITEM_ORDER.filter((id) => ITEMS[id] && ITEMS[id].group === g.id && !ITEMS[id].hidden);
-        if (!ids.length) continue;
-        const held = ids.reduce((n, id) => n + (st.inventory[id] || 0), 0);
-        sections.push({
-          id: g.id, label: g.name, icon: g.icon, title: g.name, count: held ? held + ' held' : '',
-          tiles: ids.map((id) => {
-            const it = ITEMS[id], n = st.inventory[id] || 0;
-            return h('div', { class: 'shop-item', 'data-item': id, 'data-tip-title': it.icon + '  ' + it.name, 'data-tip': it.desc },
-              h('span', { class: 'ii' }, it.icon, n ? h('span', { class: 'n' }, String(n)) : null),
-              h('span', { class: 'nm' }, it.name),
-              priceButton(app, it.price, 'Buy ' + it.name, () => {
-                if (!app.store.buyItem(id)) return;
-                app.sound.play('buy'); app.refreshWallet(true);
-                if (app.modes.play) app.modes.play.renderItems();
-                rerender(); bought('[data-item="' + id + '"]');
-              }));
-          }),
-        });
-      }
-    } else {
-      for (const kind of Object.keys(COSMETICS)) {
-        const cat = COSMETICS[kind], ids = Object.keys(cat);
-        const owned = ids.filter((id) => app.store.owns(kind, id)).length;
-        sections.push({
-          id: kind, label: SHOP_SHORT[kind] || COSMETIC_LABELS[kind], title: COSMETIC_LABELS[kind], count: owned + ' / ' + ids.length, looks: true,
-          tiles: ids.map((id) => {
-            const c = cat[id], own = app.store.owns(kind, id), on = st.equipped[kind] === id;
-            const equip = () => { app.store.equip(kind, id); app.sound.play('move'); app.applyLook(); };
-            let action;
-            if (on) action = h('span', { class: 'in-use' }, '✓ In use');
-            else if (own) action = h('button', { class: 'use-btn', onclick: (e) => { e.stopPropagation(); equip(); } }, 'Use');
-            else if (c.reward) action = h('span', { class: 'reward-tag', html: LOCK + '<span>Factory</span>' });
-            else action = priceButton(app, c.price, 'Buy ' + c.name, () => {
-              if (!app.store.buyCosmetic(kind, id)) return;
-              app.sound.play('buy'); app.store.equip(kind, id); app.refreshWallet(true); app.applyLook();
-              bought('[data-look="' + kind + ':' + id + '"]');
-            });
-            const preview = kind === 'sound'
-              ? h('button', { class: 'preview listen', 'aria-label': 'Listen to ' + c.name, onclick: (e) => {
-                e.stopPropagation(); listen(app, id);
-                const p = e.currentTarget; p.classList.remove('playing'); void p.offsetWidth; p.classList.add('playing');
-              } }, h('span', { class: 'play', html: PLAY }), h('span', { class: 'eq' }, [0, 1, 2, 3, 4].map(() => h('i'))))
-              : h('div', { class: 'preview' }, cosmeticPreview(app, kind, id, 148, 60));
-            const tip = c.reward && !own ? c.reward : null;
-            return h('div', {
-              class: 'shop-look' + (on ? ' on' : '') + (own ? ' own' : '') + (c.reward && !own ? ' locked' : ''), 'data-look': kind + ':' + id,
-              'data-tip-title': tip ? c.name : null, 'data-tip': tip,
-              onclick: own && !on ? equip : null,
-            }, preview, h('div', { class: 'foot' }, h('span', { class: 'nm' }, c.name), action));
-          }),
-        });
-      }
-    }
+    const cat = COSMETICS[kind], ids = Object.keys(cat);
+    const owned = ids.filter((id) => app.store.owns(kind, id)).length;
+    const tiles = ids.map((id) => {
+      const c = cat[id], own = app.store.owns(kind, id), on = st.equipped[kind] === id;
+      const equip = () => { app.store.equip(kind, id); app.sound.play('move'); app.applyLook(); };
+      let action;
+      if (on) action = h('span', { class: 'in-use' }, '✓ In use');
+      else if (own) action = h('button', { class: 'use-btn', onclick: (e) => { e.stopPropagation(); equip(); } }, 'Use');
+      else if (c.reward) action = h('span', { class: 'reward-tag', html: LOCK + '<span>Factory</span>' });
+      else action = priceButton(app, c.price, 'Buy ' + c.name, () => {
+        if (!app.store.buyCosmetic(kind, id)) return;
+        app.sound.play('buy'); app.store.equip(kind, id); app.refreshWallet(true); app.applyLook();
+        bought('[data-look="' + kind + ':' + id + '"]');
+      });
+      const preview = kind === 'sound'
+        ? h('button', { class: 'preview listen', 'aria-label': 'Listen to ' + c.name, onclick: (e) => {
+          e.stopPropagation(); listen(app, id);
+          const p = e.currentTarget; p.classList.remove('playing'); void p.offsetWidth; p.classList.add('playing');
+        } }, h('span', { class: 'play', html: PLAY }), h('span', { class: 'eq' }, [0, 1, 2, 3, 4].map(() => h('i'))))
+        : h('div', { class: 'preview' }, cosmeticPreview(app, kind, id, 148, 60));
+      const tip = c.reward && !own ? c.reward : null;
+      return h('div', {
+        class: 'shop-look' + (on ? ' on' : '') + (own ? ' own' : '') + (c.reward && !own ? ' locked' : ''), 'data-look': kind + ':' + id,
+        'data-tip-title': tip ? c.name : null, 'data-tip': tip,
+        onclick: own && !on ? equip : null,
+      }, preview, h('div', { class: 'foot' }, h('span', { class: 'nm' }, c.name), action));
+    });
 
-    // The head: Items or Cosmetics, then a jump to each section (it follows the scroll).
-    const seg = h('div', { class: 'seg shop-seg', role: 'tablist' }, [['items', 'Power-ups'], ['looks', 'Cosmetics']].map(([k, label]) =>
-      h('button', { role: 'tab', 'aria-selected': String(k === sub), 'aria-pressed': String(k === sub), onclick: () => { if (k !== sub) { body.scrollTop = 0; renderShop(app, k); } } }, label)));
-    const jump = h('nav', { class: 'shop-jump', 'aria-label': 'Sections' }, sections.map((sec) =>
-      h('button', { 'data-sec': sec.id, onclick: () => scrollToSection(sec.id) }, sec.icon ? h('span', { class: 'gi' }, sec.icon) : null, sec.label)));
-    head.replaceChildren(seg, jump);
-
-    body.dataset.sub = sub;
-    body.replaceChildren(...sections.map((sec) => h('section', { class: 'shop-sec' + (sec.looks ? ' looks' : ''), 'data-sec': sec.id },
-      h('h3', { class: 'shop-h' }, sec.icon ? h('span', { class: 'gi' }, sec.icon) : null, h('span', null, sec.title), sec.count ? h('span', { class: 'n' }, sec.count) : null),
-      h('div', { class: sec.looks ? 'shop-looks' : 'shop-items' }, sec.tiles))));
-    refreshShopPrices(app);
-
-    function scrollToSection(id, now) {
-      const el = body.querySelector('.shop-sec[data-sec="' + id + '"]');
-      if (!el) return;
-      const reduce = now || (root.matchMedia && root.matchMedia('(prefers-reduced-motion: reduce)').matches);
-      body.scrollTo({ top: el.offsetTop, behavior: reduce ? 'auto' : 'smooth' });
-      spyOn(id);
-    }
-    function spyOn(id) {
-      for (const b of jump.children) {
-        const on = b.dataset.sec === id;
-        b.setAttribute('aria-current', String(on));
-        // A jump bar that slides (a narrow window) keeps the lit one in view.
-        if (on && jump.scrollWidth > jump.clientWidth) {
-          const l = b.offsetLeft - jump.offsetLeft, r = l + b.offsetWidth;
-          if (l < jump.scrollLeft) jump.scrollLeft = l - 8;
-          else if (r > jump.scrollLeft + jump.clientWidth - 24) jump.scrollLeft = r - jump.clientWidth + 32;
-        }
-      }
-    }
+    // The head: a chevron, the kinds (one lit), a chevron. Only the lit kind is shown below.
+    const chev = (d, label) => h('button', {
+      class: 'icon-btn shop-chev', 'data-dir': d < 0 ? 'prev' : 'next', 'aria-label': label, disabled: !kinds[at + d],
+      html: d < 0 ? CHEV_L : CHEV_R, onclick: () => step(d),
+    });
+    const jump = h('nav', { class: 'shop-jump', role: 'tablist', 'aria-label': 'Cosmetics', tabindex: '-1' }, kinds.map((k) =>
+      h('button', {
+        role: 'tab', 'data-sec': k, 'aria-selected': String(k === kind), 'aria-current': String(k === kind), tabindex: k === kind ? '0' : '-1',
+        onclick: () => go(k),
+      }, SHOP_SHORT[k] || COSMETIC_LABELS[k])));
+    jump.addEventListener('keydown', (e) => {
+      const d = e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : 0;
+      if (!d) return;
+      e.preventDefault(); e.stopPropagation();
+      step(d);
+    });
     jump.addEventListener('wheel', (e) => { if (jump.scrollWidth > jump.clientWidth && Math.abs(e.deltaY) > Math.abs(e.deltaX)) { jump.scrollLeft += e.deltaY; e.preventDefault(); } }, { passive: false });
-    const spy = () => {
-      const top = body.getBoundingClientRect().top + 24;
-      let cur = sections[0] && sections[0].id;
-      for (const el of body.children) if (el.getBoundingClientRect().top <= top) cur = el.dataset.sec;
-      // At the very bottom the last section is the one being read, however short it is.
-      if (body.scrollHeight > body.clientHeight + 2 && body.scrollTop + body.clientHeight >= body.scrollHeight - 2 && body.lastElementChild) cur = body.lastElementChild.dataset.sec;
-      spyOn(cur);
+    head.replaceChildren(chev(-1, 'Previous'), jump, chev(1, 'Next'));
+
+    body.dataset.sub = kind;
+    body.replaceChildren(h('section', { class: 'shop-sec looks', 'data-sec': kind },
+      h('h3', { class: 'shop-h' }, h('span', null, COSMETIC_LABELS[kind]), h('span', { class: 'n' }, owned + ' / ' + ids.length)),
+      h('div', { class: 'shop-looks' }, tiles)));
+    refreshShopPrices(app);
+    body.scrollTop = keep;
+
+    // A row that slides (a narrow window) keeps the lit kind in view, with a little of its neighbours.
+    const lit = jump.querySelector('[aria-selected="true"]');
+    if (jump.scrollWidth > jump.clientWidth) {
+      const l = lit.offsetLeft - jump.offsetLeft, r = l + lit.offsetWidth, pad = 28;
+      const prev = shopUI.jumpLeft || 0;
+      jump.scrollLeft = prev;
+      if (l - pad < jump.scrollLeft) jump.scrollLeft = l - pad;
+      else if (r + pad > jump.scrollLeft + jump.clientWidth) jump.scrollLeft = r + pad - jump.clientWidth;
+    }
+    const edges = () => {
+      shopUI.jumpLeft = jump.scrollLeft;
+      jump.classList.toggle('fade-l', jump.scrollLeft > 1);
+      jump.classList.toggle('fade-r', jump.scrollLeft + jump.clientWidth < jump.scrollWidth - 1);
     };
-    if (shopUI.spy) body.removeEventListener('scroll', shopUI.spy);
-    shopUI.spy = spy;
-    body.addEventListener('scroll', spy, { passive: true });
-    if (jumpTo) scrollToSection(jumpTo, true); else { body.scrollTop = keep; spy(); }
+    edges();
+    jump.addEventListener('scroll', edges, { passive: true });
+    if (refocus) lit.focus({ preventScroll: true });
   }
 
   const INFO = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 7.2v4"/><circle cx="8" cy="4.9" r="0.4" fill="currentColor"/></svg>';
   const PLAY = '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M5 3.2v9.6c0 .5.5.8.9.5l7.3-4.8a.6.6 0 0 0 0-1L5.9 2.7c-.4-.3-.9 0-.9.5z"/></svg>';
   const LOCK = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3.5" y="7" width="9" height="6.5" rx="1.3"/><path d="M5.5 7V5.3a2.5 2.5 0 0 1 5 0V7"/></svg>';
+  const CHEV_L = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg>';
+  const CHEV_R = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5L10.5 8 6 12.5"/></svg>';
 
   // Anywhere else, a price asking for confirmation goes back to its price.
   if (root.document) document.addEventListener('mousedown', (e) => { if (shopUI.armed && !shopUI.armed.contains(e.target)) disarmShop(); }, true);
@@ -437,7 +411,7 @@
         kpi(fmtInt(S.sessions), 'Sessions'),
         kpi(fmtInt(S.days || 0), 'Days played')));
       els.push(h('h4', null, 'Lines earned, last 14 days'), historyChart(app, 'lines', 14));
-      els.push(h('h4', null, 'Where lines came from'), hbars([['Free Play', S.lines.play], ['Combos and discoveries', S.lines.combos || 0], ['Puzzles', S.lines.puzzles], ['Factory', S.lines.contracts], ['Achievements', S.lines.achievements || 0], ['Jackpot', S.lines.luck || 0]]));
+      els.push(h('h4', null, 'Where lines came from'), hbars([['Free Play', S.lines.play], ['Combos', S.lines.combos || 0], ['Puzzles', S.lines.puzzles], ['Factory', S.lines.contracts], ['Achievements', S.lines.achievements || 0]].concat(S.lines.luck ? [['Jackpot', S.lines.luck]] : [])));
       els.push(h('h4', null, 'Time by mode'), table([
         ['Free Play', fmtDuration(S.timeMs.play)], ['Classic', fmtDuration(S.timeMs.classic || 0)], ['Puzzles', fmtDuration(S.timeMs.puzzle)], ['Factory (watching)', fmtDuration(S.timeMs.factory)],
       ]));
@@ -462,12 +436,11 @@
         ['Boards started', fmtInt(F.boards)], ['Boards filled to the top', fmtInt(F.topouts)],
         ['Inputs per piece', F.pieces ? ((F.moves + F.rotations + F.lowers + F.drops + F.holds) / F.pieces).toFixed(2) : '—'],
       ]));
-      // Combos (skill, no power-ups) and discoveries (the sandbox): the ones found so far, with what they did; the rest
-      // are a question mark until then.
+      // Combos: the ones found so far, with what to do and what they paid; the rest are a question mark until then.
       const book = st.combos || {}, list = L.Combos.LIST, found = list.filter((c) => book[c.id]).length;
-      els.push(h('h4', null, 'Combos and discoveries · ' + found + ' / ' + list.length + ' found'), h('div', { class: 'combo-list' }, list.map((c) => {
+      els.push(h('h4', null, 'Combos · ' + found + ' / ' + list.length + ' found'), h('div', { class: 'combo-list' }, list.map((c) => {
         const b = book[c.id];
-        if (!b) return h('div', { class: 'combo unknown' }, h('b', null, '?'), h('span', null, c.kind === 'skill' ? 'Combo' : 'Discovery'));
+        if (!b) return h('div', { class: 'combo unknown' }, h('b', null, '?'), h('span', null, c.kind === 'skill' ? 'Combo' : 'Power-up combo'));
         const rw = L.Combos.reward(c, 0);
         const pays = [rw.lines ? rw.lines + ' ' + LINE : null, rw.boost ? L.Chain.fmt(rw.boost.x) + ' for ' + rw.boost.clears + ' clears' : null, fmtInt(rw.score) + ' points'].filter(Boolean).join(' · ');
         return h('div', { class: 'combo' }, h('b', null, c.name), h('span', null, c.how), h('i', null, pays + ' · found ' + fmtInt(b.n) + '×'));
@@ -513,14 +486,12 @@
       if (f.legacy) rows.push(['Before the rebuild', count(f.legacy.shipped) + ' minos shipped']);
       els.push(h('h4', null, 'The line'), table(rows));
     } else {
-      const bought = S.items.bought, used = S.items.used;
+      const got = S.items.got || {}, bought = S.items.bought, used = S.items.used;
       els.push(h('div', { class: 'kpis' }, kpi(fmtInt(S.lines.spent), 'Lines spent'), kpi(fmtInt(S.cosmetics.bought), 'Cosmetics bought'),
         kpi(fmtInt(Object.values(used).reduce((a, b) => a + b, 0)), 'Power-ups used'), kpi(fmtInt(S.lines.refunded), 'Lines rewound')));
       els.push(h('h4', null, 'Power-ups'), h('table', { class: 'st cols' },
-        h('tr', null, h('th', null, ''), h('th', null, 'Bought'), h('th', null, 'Used'), h('th', null, 'Have')),
-        ITEM_ORDER.map((id) => h('tr', null, h('td', null, ITEMS[id].icon + ' ' + ITEMS[id].name), h('td', null, fmtInt(bought[id] || 0)), h('td', null, fmtInt(used[id] || 0)), h('td', null, fmtInt(st.inventory[id] || 0))))));
-      const jp = S.items.jackpot;
-      if (jp && jp.pulls) els.push(h('h4', null, 'Jackpot'), table([['Pulls', fmtInt(jp.pulls)], ['Lines won', fmtInt(jp.lines)], ['Power-ups won', fmtInt(jp.items)], ['Biggest win', fmtInt(jp.best) + ' lines'], ['Paid back', Math.round(100 * jp.lines / Math.max(1, jp.pulls * ITEMS.jackpot.price)) + '% in lines']]));
+        h('tr', null, h('th', null, ''), h('th', null, 'Bought'), h('th', null, 'Given'), h('th', null, 'Used'), h('th', null, 'Have')),
+        ITEM_ORDER.map((id) => h('tr', null, h('td', null, ITEMS[id].icon + ' ' + ITEMS[id].name), h('td', null, fmtInt(bought[id] || 0)), h('td', null, fmtInt(got[id] || 0)), h('td', null, fmtInt(used[id] || 0)), h('td', null, fmtInt(st.inventory[id] || 0))))));
       const ownedRows = Object.keys(COSMETICS).map((k) => [COSMETIC_LABELS[k], st.owned[k].length + ' / ' + Object.keys(COSMETICS[k]).length]);
       els.push(h('h4', null, 'Collection'), table(ownedRows));
     }
@@ -609,7 +580,8 @@
           row('Sound effects', null, toggle('sound')),
           row('Volume', null, range('volume', 0, 100, 1, '%', 100)),
           row('Classic music', null, toggle('music', () => app.modes.classic && app.modes.classic.renderControls())),
-          row('Classic announcer', null, toggle('announcer')),
+          row('Announcer', null, toggle('announcer')),
+          row('Announcer in Relaxed', null, toggle('announcerRelaxed')),
           row('Music volume', null, range('musicVolume', 0, 60, 1, '%', 100)),
           row('Announcer volume', null, range('announcerVolume', 0, 100, 1, '%', 100)),
           row('Sound pack', (L.SOUNDS[app.state.equipped.sound] || L.SOUNDS.soft).name, h('button', { class: 'btn sm', onclick: () => listen(app, app.state.equipped.sound) }, '► Listen')))],
@@ -690,6 +662,16 @@
     handle = openModal({ title: 'Order Slip', body: grid, onClose: () => { if (!picked) onPick(null); } });
   }
 
+  /** Pick of Three: the next three pieces in line; onPick gets the index of the one chosen (or null). */
+  function openPickOfThree(app, entries, onPick) {
+    const look = lookWith(app);
+    let picked = false, handle = null;
+    const choose = (i) => { picked = true; handle.close(); onPick(i); };
+    const grid = h('div', { class: 'picker three' }, entries.map((e, i) => h('button', { title: (Pieces.TYPES[e.id] || { name: e.id }).name, 'data-pick': i, onclick: () => choose(i) },
+      canvasFor(64, 58, (ctx) => { const t = Pieces.get(e.id); const b = Pieces.boundsOf(t.rots[0]); const s = Math.floor(Math.min(54 / b.w, 46 / b.h, 14)); drawMiniPiece(ctx, look, e.id, (64 - b.w * s) / 2, (58 - b.h * s) / 2, s, 0); }))));
+    handle = openModal({ title: 'Pick of Three', body: grid, onClose: () => { if (!picked) onPick(null); } });
+  }
+
   function openBlueprint(app, onDone) {
     const N = 5;
     const on = new Set(['1,2', '2,2', '3,2', '2,1']);
@@ -758,5 +740,5 @@
     document.addEventListener('keydown', hide, true);
   }
 
-  L.UI = { initTooltips, h, ICONS, toast, openModal, modalOpen, closeTopModal, submitTopModal, confirm, canvasFor, renderShop, refreshShopPrices, renderStats, renderAchievements, openSettings, openOrderSlip, openBlueprint, copyText, lookWith, drawMiniPiece };
+  L.UI = { initTooltips, h, ICONS, toast, openModal, modalOpen, closeTopModal, submitTopModal, confirm, canvasFor, renderShop, refreshShopPrices, renderStats, renderAchievements, openSettings, openOrderSlip, openPickOfThree, openBlueprint, copyText, lookWith, drawMiniPiece };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

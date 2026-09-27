@@ -11,7 +11,7 @@
   const GROUPS = [
     // "No power-ups on the board" (the skill ones) is said in each description; what it means exactly, once, here.
     { id: 'play', name: 'Free Play', noteTitle: 'No power-ups on the board',
-      note: 'None used since the board was last empty. Golden Piece and Jackpot are fine; one taken back before its piece sets was never used.' },
+      note: 'None used since the board was last empty. Luck power-ups are fine; one taken back before its piece sets was never used.' },
     { id: 'classic', name: 'Classic' },
     { id: 'puzzle', name: 'Puzzles' },
     { id: 'lull', name: 'Lifetime' },
@@ -19,8 +19,8 @@
   ];
 
   const LIST = [
-    // Free Play — per board, per piece. Relaxed play has no clock and a sandbox of items, so almost anything could be
-    // bought or waited out: the skill ones count only what was done by hand — "no power-ups on the board" (no item that touches the pieces or the
+    // Free Play — per board, per piece. Relaxed play has no clock and a bag of power-ups, so almost anything could be
+    // waited out: the skill ones count only what was done by hand — "no power-ups on the board" (no item that touches the pieces or the
     // board — Rewind included — during the feat, or since the board was last empty; Luck items never count against
     // it: see freshStats in js/engine.js), the score ones only boards without a single item, and a few ask for pace.
     { id: 'quad', group: 'play', name: 'Four at Once', desc: 'Clear four lines with one piece, no power-ups on the board.', pay: 15, on: 'play', test: (s, e) => e.r.lines >= 4 && e.r.hand },
@@ -45,14 +45,14 @@
     { id: 'old_growth', group: 'play', name: 'Old Growth', desc: 'Keep one board going for thirty days and 2,000 pieces.', pay: 300, on: 'play', test: (s, e) => e.g.s.pieces >= 2000 && Date.now() - (e.g.s.startedAt || Date.now()) >= 30 * 86400e3 },
     // The perfect-clear opener: ten pieces from an empty board, four lines, nothing left, no items.
     { id: 'pc_open', group: 'play', name: 'Opening Act', desc: 'A perfect clear within a fresh board\'s first ten pieces, never using a power-up.', pay: 300, on: 'play', test: (s, e) => e.r.perfect && e.g.s.pieces <= 10 && e.g.s.pieces * 4 === e.g.s.lines * 10 && !usedItems(e.g) },
-    // The sandbox, played with on purpose: one settle that goes through current, fire, steam and an explosion.
-    { id: 'sb_goldberg', group: 'play', name: 'Rube Goldberg', desc: 'One settle with current through a wire, fire, steam and an explosion.', pay: 300, on: 'play', test: (s, e) => (e.r.current || 0) >= 1 && (e.r.ignited || 0) >= 1 && (e.r.steam || 0) >= 1 && (e.r.explosions || 0) >= 1 },
+    // Power-ups played well: three different power-up combos on one board.
+    { id: 'it_showman', group: 'play', name: 'Showman', desc: 'Find three different power-up combos on one board.', pay: 300, on: 'play', test: (s, e) => itemCombos(e.g) >= 3 },
     { id: 'pc3', group: 'play', name: 'Spotless', desc: 'Three perfect clears on one board, no power-ups on the board.', pay: 400, on: 'play', test: (s, e) => (e.g.s.hperfect || 0) >= 3 },
     { id: 'pc_b2b', group: 'play', name: 'Grand Finale', desc: 'A back-to-back quad that is also a perfect clear, no power-ups on the board.', pay: 400, on: 'play', test: (s, e) => e.r.perfect && e.r.lines >= 4 && e.r.b2b && e.r.hand && hs(e).hb2b >= 1 },
     { id: 'all_items', group: 'play', name: 'Tried Everything', desc: 'Use every power-up at least once.', pay: 400, on: 'play', test: (s) => itemsTried(s) >= L.ITEM_ORDER.length, progress: (s) => [itemsTried(s), L.ITEM_ORDER.length] },
-    { id: 'sb_scorch', group: 'play', name: 'Burnt Offering', desc: 'Burn, dissolve or blast away 60 blocks or more in one settle, leaving the board empty (not with a Nuke or a Tornado).', pay: 400, on: 'play', test: (s, e) => scorched(e) >= 60 },
+    { id: 'it_sweep', group: 'play', name: 'Clean Sweep', desc: 'Empty a board of 60 blocks or more with one power-up.', pay: 400, on: 'play', test: (s, e) => swept(e) },
     { id: 'score250k', group: 'play', name: 'Quarter Million', desc: 'Score 250,000 points on one board, never using a power-up.', pay: 500, on: 'play', test: (s, e) => e.g.s.score >= 250000 && !usedItems(e.g) },
-    { id: 'sb_combos', group: 'play', name: 'Tinkerer', desc: 'Find every Free Play combo and discovery.', pay: 500, on: 'play', test: (s) => combosFound(s) >= combosAll(), progress: (s) => [combosFound(s), combosAll()] },
+    { id: 'sb_combos', group: 'play', name: 'Tinkerer', desc: 'Find every Free Play combo.', pay: 500, on: 'play', test: (s) => combosFound(s) >= combosAll(), progress: (s) => [combosFound(s), combosAll()] },
     { id: 'tspin100', group: 'play', name: 'Spin Cycle', desc: 'One hundred line-clearing T-spins on one board, no power-ups on the board.', pay: 600, on: 'play', test: (s, e) => (e.g.s.htspins || 0) >= 100 },
     // Forty lines in a hundred pieces is every block cleared: a perfect clear on the hundredth piece.
     { id: 'clean40', group: 'play', name: 'Nothing Left Over', desc: 'Clear 40 lines within a fresh board\'s first 100 pieces and leave it empty, never using a power-up.', pay: 700, on: 'play', test: (s, e) => e.r.perfect && e.g.s.lines >= 40 && e.g.s.pieces <= 100 && e.g.s.pieces * 4 === e.g.s.lines * 10 && !usedItems(e.g) },
@@ -157,23 +157,22 @@
   // Achievements that were retired: kept only so one already earned still shows (and stays paid). Never earned anew.
   const RETIRED = [
     { id: 'combo20', group: 'play', name: 'Endless Chain', desc: 'A 20-combo in Free Play.', pay: 1200, tier: 'legend' },
+    { id: 'sb_goldberg', group: 'play', name: 'Rube Goldberg', desc: 'One settle with current through a wire, fire, steam and an explosion.', pay: 300 },
+    { id: 'sb_scorch', group: 'play', name: 'Burnt Offering', desc: 'Burn, dissolve or blast away 60 blocks or more in one settle, leaving the board empty.', pay: 400 },
   ];
 
-  const BOARD_ITEMS = new Set(['settle', 'tornado']);
   /** The board's numbers after this lock (its hand counts: see freshStats in js/engine.js). */
   const hs = (e) => e.g.s;
   /** The last hundred pieces by hand: within ms, clearing 36 lines or more. */
   const pace = (g, ms) => { const p = L.paceOf ? L.paceOf(g.s, 100) : null; return !!p && p.ms <= ms && p.lines >= 36; };
-  /** Blocks one settle burned, dissolved or blasted off a board it left empty (0 if it did not, or for a Tornado). */
-  function scorched(e) {
-    const r = e.r;
-    if (!r.sim || BOARD_ITEMS.has(r.special) || !e.g.board.isEmpty()) return 0;
-    return r.consumed || 0;
-  }
+  /** One power-up (a Tool piece or a Board item, never Golden) took a board of 60 blocks or more to empty. */
+  const swept = (e) => !!e.r.special && e.r.special !== 'golden' && (e.r.had || 0) >= 60 && e.g.board.isEmpty();
+  /** Different power-up combos found on this board. */
+  const itemCombos = (g) => (L.Combos ? L.Combos.LIST.filter((c) => c.kind === 'item' && (g.s.combos || {})[c.id]).length : 0);
   const combosAll = () => (L.Combos ? L.Combos.LIST.length : 1);
   const combosFound = (s) => (L.Combos ? L.Combos.LIST.filter((c) => (s.combos || {})[c.id]).length : 0);
-  /** Lines earned for the Lifetime ones: Jackpot winnings aside (a pull pays back less than it costs, but churning
-   *  them would count its gross), and less what Rewind took back (replaying a clear would count it twice). */
+  /** Lines earned for the Lifetime ones: an old save's Jackpot winnings aside (churning it would have counted its
+   *  gross), and less what Rewind took back (replaying a clear would count it twice). */
   const earned = (s) => Math.max(0, s.stats.lines.earned - (s.stats.lines.luck || 0) - (s.stats.lines.refunded || 0));
 
   function fseen(s, n) { return L.Factory ? L.Factory.seenCount(s.factory, n) : 0; }

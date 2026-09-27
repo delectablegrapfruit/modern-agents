@@ -2,7 +2,7 @@
 (function (root) {
   'use strict';
   const L = (root.Lull = root.Lull || {});
-  const { Game, Board, CELL, Pieces, Puzzles, Factory, Render, UI, ITEMS, ITEM_ORDER, ITEM_GROUPS, Chain, Combos, Luck, Gifts, fmt, fmtInt, fmtClock, fmtDuration, dateKey } = L;
+  const { Game, Board, CELL, Pieces, Puzzles, Factory, Render, UI, ITEMS, ITEM_ORDER, ITEM_GROUPS, Chain, Combos, Luck, Gifts, Earn, fmt, fmtInt, fmtClock, fmtDuration, dateKey } = L;
   const { h, toast } = UI;
   const { LINE } = L;
 
@@ -21,24 +21,21 @@
   // and Classic's gravity and lock delay are never held up by it.
   const SET_GRACE_MS = 180;
 
-  // Items that only change the piece in play, so they can be put back.
-  // Items that change the board at once (the rest change the piece in play): one that leaves it empty is a fresh start.
-  const ACTS_NOW = new Set(['nuke', 'tornado', 'settle', 'purge', 'flip', 'rewind']);
-  const UNDOABLE = new Set(['reroll', 'mirror', 'pebble', 'noodle', 'giant', 'phase', 'anvil', 'drill', 'bomb', 'laser', 'blackhole', 'golden', 'order', 'blueprint', 'sand', 'seed', 'tnt', 'water', 'oil', 'acid', 'lava', 'frost', 'steel', 'torch', 'bolt']);
-  // Items that turn the piece in play into something (the sandbox's matter and energy, and the tools).
-  const SPECIALS = new Set(['phase', 'anvil', 'drill', 'bomb', 'laser', 'blackhole', 'sand', 'seed', 'tnt', 'water', 'oil', 'acid', 'lava', 'frost', 'steel', 'torch', 'bolt']);
+  // Items that change the board at once (Board): one that leaves it empty is a fresh start. The rest change the piece
+  // in play (Shapers, Choice, Tools) or what the next clears pay (Luck); those can be taken back until the piece sets.
+  const ACTS_NOW = new Set(['settle', 'flip', 'trapdoor', 'tornado', 'rewind']);
+  // Tools: the piece in play turns into one.
+  const SPECIALS = new Set(['patch', 'phase', 'drill', 'bomb', 'laser', 'blackhole']);
 
   // A small wrapped box, drawn (never an emoji).
   const GIFT_ICON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><rect x="2.5" y="6.5" width="11" height="7" rx="1"/><path d="M1.8 4.2h12.4v2.3H1.8zM8 4.2v9.3"/><path d="M8 4.2C6.8 2 4.6 1.9 4.6 3.2 4.6 4.2 6.6 4.2 8 4.2c1.4 0 3.4 0 3.4-1 0-1.3-2.2-1.2-3.4 1z"/></svg>';
 
   function playLockSound(snd, r) {
-    // The settle's own moments (blasts, flames, steam, cascade clears) sound as its playback reaches them.
-    const own = r.lines - (r.cascade || 0);
-    if (r.special === 'blackhole' || r.special === 'anvil') snd.play('boom');
-    else if (r.special === 'bolt' || r.spinShatter) { snd.play('drill'); if (own) setTimeout(() => snd.play('clear', own), 150); }
-    else if (r.sim && !own) snd.play('lock');
+    const own = r.lines - (r.plain || 0);
+    if (r.special === 'blackhole' || r.special === 'bomb') { snd.play('boom'); if (r.lines) setTimeout(() => snd.play('clear', r.lines), 150); }
     else if (r.special === 'drill' || r.special === 'laser') { snd.play('drill'); if (r.lines) setTimeout(() => snd.play('quad'), 150); }
-    else if (r.special === 'tornado') { snd.play('drill'); setTimeout(() => snd.play(r.lines ? 'quad' : 'lock'), 380); }
+    else if (r.special === 'settle' && r.lines) snd.play('quad');
+    else if (r.lines && !own) snd.play('clear', r.lines);
     else if (r.perfect) snd.play('perfect');
     else if (r.tspin) snd.play('tspin');
     else if (own >= 4) snd.play('quad');
@@ -71,7 +68,7 @@
       this.view.attach(game, view);
       this.view.setLook(this.app.look());
       this.view.resize();
-      game.on('lock', (r) => { if (r.special !== 'settle' && r.special !== 'tornado') { this.setAt = performance.now(); if (this.app.hints) this.app.hints.lock(); } this.onLock(r); });
+      game.on('lock', (r) => { if (r.special !== 'settle') { this.setAt = performance.now(); if (this.app.hints) this.app.hints.lock(); } this.onLock(r); });
       game.on('blocked', () => { if (this.quiet) return; this.app.sound.play('blocked'); this.view.bump(this.reduced); });
       game.on('spawn', () => {
         // A new piece meets the pointer where it is.
@@ -81,9 +78,9 @@
       // A hold swap refused: the held piece has no room anywhere above the stack (nothing changed).
       game.on('noroom', () => toast('No room up there', 'bad'));
       game.on('empty', () => this.onEmpty && this.onEmpty());
-      game.on('purge', (gone) => this.view.onPurge(gone, this.reduced));
-      game.on('nuke', (gone) => { this.view.onNuke(gone, this.reduced); this.app.sound.play('boom'); setTimeout(() => this.app.sound.play('boom'), 180); });
       game.on('flip', (moves) => this.view.onMoves(moves, 'x', this.reduced));
+      game.on('tornado', (moves) => { this.view.onTornado(moves, this.reduced); this.app.sound.play('drill'); });
+      game.on('trapdoor', (row) => { this.view.onTrapdoor(row, this.reduced); this.app.sound.play('boom'); });
     }
 
     mapArrow(act) {
@@ -456,16 +453,7 @@
       game.previewCount = this.settings.preview;
       this.attachGame(game, {});
       this.view.showBank = true;
-      // The settle's playback calls out its moments as it reaches them (a few quiet sounds, never a flurry).
-      this.view.onSimEvent = (kind, n) => {
-        const snd = this.app.sound, now = performance.now();
-        if (kind === 'clear') { snd.play('clear', n); return; }
-        if (kind === 'blast') { snd.play('boom'); return; }
-        if (now - (this.simSoundAt || 0) < 180) return;
-        this.simSoundAt = now;
-        snd.play(kind === 'zap' ? 'rotate' : 'move');
-      };
-      // The daily gift's button shows when the next one comes; it is kept current as the clock passes midnight.
+      // The daily gift's button says when the next one comes; it is kept current as the time passes.
       this.giftTimer = setInterval(() => this.renderGift(), 60000);
       this.snapshot();
       this.renderItems();
@@ -500,7 +488,7 @@
       r.chain = s.chain;
       g.notePace(r, Date.now());
       if (r.lines) {
-        const difficult = r.lines >= 4 || r.tspin || r.mini;
+        const own = r.lines - (r.plain || 0), difficult = own >= 4 || r.tspin || r.mini;
         let pay = (r.lines + (difficult ? 1 : 0)) * s.mult;
         if (r.golden || s.gold > 0) {
           // Gold on the board is spent one clear at a time (a piece gilded in an older version pays once).
@@ -516,13 +504,23 @@
           r.boost = s.boost.x;
           if (--s.boost.left <= 0) s.boost = null;
         }
+        if (s.double) {
+          // Double or Nothing: this clear decides it.
+          s.double = false;
+          const won = Luck.doubleWins(r), b = this.view.lay.board;
+          r.double = won ? 'won' : 'lost';
+          pay = won ? pay * Luck.DOUBLE_X : 0;
+          this.view.fx.text(won ? 'DOUBLE' : 'NOTHING', b.x + b.w / 2, b.y + b.h * 0.3, won ? '#ffd35a' : '#9aa3b2', 18);
+          if (won) this.app.sound.play('golden');
+        }
         pay = Math.round(pay);
         r.banked = pay; r.mult = s.mult;
         // Gold spent on a chain of 20 or more, built by hand (Midas): counted clear by clear, reset by any other.
         s.goldRun = r.golden && r.hand && (s.hchain || 0) >= 20 ? (s.goldRun || 0) + 1 : 0;
         s.banked = (s.banked || 0) + pay;
       }
-      if (r.special !== 'settle' && r.special !== 'tornado') {
+      if (r.netSaved) { const b = this.view.lay.board; this.view.fx.text('SAFETY NET', b.x + b.w / 2, b.y + b.h * 0.3, '#8fe3ff', 16); }
+      if (r.special !== 'settle') {
         F.pieces++;
         st.day().pieces++;
         const key = Pieces.TYPES[r.type] && Pieces.TYPES[r.type].family === 'tetromino' ? r.type : (Pieces.get(r.type) || { family: 'other' }).family;
@@ -531,13 +529,16 @@
       if (r.lines) {
         F.lines += r.lines;
         F.clears[Math.min(5, r.lines)]++;
-        st.addLines(r.banked, 'play');
+        if (r.banked) st.addLines(r.banked, 'play');
         this.app.refreshWallet(true);
+        // A power-up for every hundred lines on a board (counted in the save, so a rewound clear never pays twice).
+        const due = Earn.lines(st.state.earn, s.startedAt, s.lines, s.lines - r.lines);
+        for (let k = 0; k < due; k++) this.earnItem();
       }
       const found = Combos.detect(r, g);
       if (r.tspin) { F.tspins++; F.tspinLines += r.lines; }
       if (r.perfect) F.perfect++;
-      if (r.lines >= 4 && (!r.special || r.special === 'golden')) st.day().quad = 1; // set by a piece (a laser or a Tornado is not a quad)
+      if (r.lines - (r.plain || 0) >= 4) st.day().quad = 1; // set by a piece (an item's lines are plain: never a quad)
       F.maxCombo = Math.max(F.maxCombo, g.s.maxCombo);
       F.maxB2B = Math.max(F.maxB2B, g.s.maxB2B);
       F.bestScore = Math.max(F.bestScore, g.s.score);
@@ -545,6 +546,12 @@
       const snd = this.app.sound;
       playLockSound(snd, r);
       this.view.onLock(r, this.reduced);
+      // The announcer, if asked for here too (Settings ▸ Sound).
+      const st2 = this.app.settings;
+      if (st2.announcerRelaxed && st2.announcer !== false && st2.sound) {
+        const say = L.Announcer.phrase(r, false);
+        if (say) L.Announcer.say(say);
+      }
       found.forEach((id, i) => this.combo(id, i));
       this.renderStatus();
       st.touch();
@@ -552,8 +559,8 @@
     }
 
     /**
-     * A combo (js/sandbox.js): its reward — lines, a boost for the next few clears, points — shrinking each time it
-     * comes round on one board; a small callout on the board; and, the first time ever, a note that it was found.
+     * A combo (js/items.js): its reward — lines, a boost for the next few clears, points — shrinking each time it
+     * comes round on one board; a small callout on the board; and, the first time it is ever found, a power-up.
      */
     combo(id, i) {
       const st = this.app.store, g = this.game, s = g.s, c = Combos.get(id);
@@ -564,16 +571,22 @@
       if (rw.boost) s.boost = { x: Math.max(rw.boost.x, s.boost ? s.boost.x : 1), left: Math.max(rw.boost.clears, s.boost ? s.boost.left : 0) };
       s.score += rw.score;
       const book = st.state.combos = st.state.combos || {};
+      const first = !book[id];
       book[id] = book[id] || { n: 0, lines: 0, first: Date.now() };
       book[id].n++; book[id].lines += rw.lines;
       const bits = [rw.lines ? '+' + rw.lines + ' ' + LINE : null, rw.boost ? Chain.fmt(rw.boost.x) + ' for ' + rw.boost.clears + ' clears' : null, !rw.lines && !rw.boost ? '+' + fmtInt(rw.score) + ' points' : null].filter(Boolean);
-      // Paid at once; told once the settle has played out, so the callout never gives away what is about to happen.
-      const show = () => {
-        this.view.callout(c.name, bits.join(' · '), i, this.reduced);
-        setTimeout(() => this.app.sound.play('combo', 3 + Math.min(4, i * 2)), 260 + i * 180);
-      };
-      const wait = this.view.simLeft();
-      if (wait > 0) setTimeout(show, wait + 120); else show();
+      this.view.callout(c.name, bits.join(' · '), i, this.reduced);
+      setTimeout(() => this.app.sound.play('combo', 3 + Math.min(4, i * 2)), 260 + i * 180);
+      if (first) setTimeout(() => this.earnItem(), 900 + i * 300);
+    }
+
+    /** A power-up earned in play (js/items.js, Earn): drawn by rarity, into the bag, with a quiet toast. */
+    earnItem() {
+      const id = Gifts.draw(Math.random, 1)[0];
+      if (!id) return;
+      this.app.store.grantItem(id, 1);
+      toast(ITEMS[id].icon + '  ' + ITEMS[id].name, 'good', 2200);
+      this.renderItems();
     }
 
     onTopout(silent) {
@@ -628,7 +641,6 @@
       this.app.store.state.stats.free.boards++;
       this.snapshot();
       this.view.fx.clear();
-      this.view.endSim();
       this.view.dirty = true;
       this.renderStatus();
       this.app.store.touch();
@@ -643,6 +655,8 @@
         h('span', null, 'Score ', h('b', null, fmtInt(s.score))),
         h('span', { class: s.chain > 1 ? 'chain' : 'slot-off', title: 'Back-to-back plus combo · ' + (s.hand === false ? 'power-ups on the board' : 'no power-ups on the board: ' + (s.hchain || 0)) }, 'Chain ', h('b', null, String(s.chain || 0)), ' · ', h('b', null, Chain.fmt(s.mult || 1))),
         s.gold > 0 ? h('span', { class: 'opt gold', title: 'Next clears pay ×' + Luck.GOLD_X }, 'Gold ', h('b', null, String(s.gold))) :
+          s.double ? h('span', { class: 'opt gold', title: ITEMS.double.desc }, h('b', null, ITEMS.double.icon), ' Double') :
+          s.net > 0 ? h('span', { class: 'opt boost', title: ITEMS.net.desc }, h('b', null, ITEMS.net.icon), ' Net') :
           s.boost ? h('span', { class: 'opt boost', title: 'Next ' + s.boost.left + ' clears pay ' + Chain.fmt(s.boost.x) }, 'Boost ', h('b', null, Chain.fmt(s.boost.x) + ' · ' + s.boost.left)) :
             h('span', { class: 'opt' }, 'Pieces ', h('b', null, fmtInt(s.pieces))),
         this.giftBtn(),
@@ -651,10 +665,10 @@
 
     // ---- the daily gift ------------------------------------------------------------------------------------------------
 
-    /** The gift's button: bright when today's gift is waiting, quiet (with when the next one comes) once opened. */
+    /** The gift's button: bright when a gift is waiting, quiet (with how long until the next one) once opened. */
     giftBtn() {
-      const st = this.app.store.state, ready = Gifts.ready(st, dateKey());
-      const tip = ready ? 'Daily gift' : 'Next gift in ' + fmtDuration(Math.max(60000, Gifts.nextAt(Date.now()) - Date.now()));
+      const st = this.app.store.state, now = Date.now(), ready = Gifts.ready(st, now);
+      const tip = ready ? 'Daily gift' : 'Next gift in ' + fmtDuration(Math.max(60000, Gifts.left(st, now)));
       const el = h('button', { class: 'btn sm gift-btn' + (ready ? ' ready' : '') + (this.reduced ? ' still' : ''), id: 'gift-btn', 'aria-label': 'Daily gift', 'data-tip-title': ready ? null : 'Daily gift', 'data-tip': tip, onclick: () => this.openGift() },
         h('span', { class: 'gift-i', html: GIFT_ICON }));
       return el;
@@ -666,20 +680,20 @@
     }
 
     /**
-     * Opens today's gift: the three items are booked and saved first (so closing early loses nothing), then turned
-     * over one after another. Already opened today: a quiet note of when the next one comes.
+     * Opens the gift: the three items are booked and saved first (so closing early loses nothing), then turned over
+     * one after another. Not ready yet: a quiet note of how long until it is.
      */
     openGift() {
       const st = this.app.store;
       const ids = st.openGift(Date.now());
       if (!ids) {
-        toast('Next gift in ' + fmtDuration(Math.max(60000, Gifts.nextAt(Date.now()) - Date.now())), '', 1800);
+        toast('Next gift in ' + fmtDuration(Math.max(60000, Gifts.left(st.state, Date.now()))), '', 1800);
         return;
       }
       const cards = ids.map((id, i) => {
         const it = ITEMS[id];
-        return h('div', { class: 'gift-card', style: { animationDelay: (0.25 + i * 0.35) + 's' }, 'data-tip-title': it.icon + '  ' + it.name, 'data-tip': it.desc },
-          h('div', { class: 'gift-face' }, h('span', { class: 'gi' }, it.icon), h('b', null, it.name), h('span', { class: 'gp' }, LINE + it.price)));
+        return h('div', { class: 'gift-card ' + it.rarity, style: { animationDelay: (0.25 + i * 0.35) + 's' }, 'data-tip-title': it.icon + '  ' + it.name, 'data-tip': it.desc },
+          h('div', { class: 'gift-face' }, h('span', { class: 'gi' }, it.icon), h('b', null, it.name)));
       });
       UI.openModal({ title: 'Daily gift', width: 340, cls: 'modal-gift' + (this.reduced ? ' still' : ''), body: h('div', { class: 'gift-cards' }, cards), buttons: [{ label: 'Keep', kind: 'primary' }] });
       ids.forEach((_, i) => setTimeout(() => this.app.sound.play('combo', 3 + i * 2), 350 + i * 350));
@@ -688,13 +702,14 @@
     }
 
     /**
-     * The item bar: one button per type. A button opens its tray above the bar; the tray holds the type's items
-     * (hover one for what it does). Keys: 1–5 open a tray, then 1–9 use an item in it; Esc closes it.
+     * The item bar: one button per type, with how many you hold. A button opens its tray above the bar; the tray shows
+     * the type's items (hover one for what it does): one you hold says how many, one you have none of says its price
+     * (dimmed when the wallet is short). Click to use; one you have none of is bought and used. Esc closes it.
      */
     renderItems() {
       const inv = this.app.store.state.inventory;
       const armedId = this.armed && this.armed.piece === this.game.piece ? this.armed.id : null;
-      this.itembar.replaceChildren(...ITEM_GROUPS.map((g, gi) => {
+      this.itembar.replaceChildren(...ITEM_GROUPS.map((g) => {
         const ids = ITEM_ORDER.filter((id) => ITEMS[id].group === g.id);
         const have = ids.reduce((a, id) => a + (inv[id] || 0), 0);
         const open = this.tray === g.id, on = armedId && ids.includes(armedId);
@@ -702,7 +717,7 @@
           class: 'group-btn' + (open ? ' open' : '') + (on ? ' on' : ''), 'data-group': g.id,
           'aria-label': g.name, 'data-tip': g.name,
           onclick: () => this.openTray(open ? null : g.id),
-        }, h('span', { class: 'gi' }, g.icon), h('span', { class: 'gl' }, g.short || g.name), h('span', { class: 'k' }, String(gi + 1)), have ? h('span', { class: 'n' }, String(have)) : null);
+        }, h('span', { class: 'gi' }, g.icon), h('span', { class: 'gl' }, g.short || g.name), have ? h('span', { class: 'n' }, String(have)) : null);
       }));
       this.renderTray();
     }
@@ -719,43 +734,33 @@
       const g = ITEM_GROUPS.find((x) => x.id === this.tray);
       el.classList.toggle('hidden', !g);
       if (!g) { el.replaceChildren(); return; }
-      const inv = this.app.store.state.inventory;
+      const inv = this.app.store.state.inventory, wallet = this.app.store.state.lines;
       const ids = ITEM_ORDER.filter((id) => ITEMS[id].group === g.id);
       el.style.setProperty('--tray-at', ITEM_GROUPS.indexOf(g) / (ITEM_GROUPS.length - 1));
       el.replaceChildren(
         h('div', { class: 'tray-head' }, h('b', null, g.icon + ' ' + g.name), h('button', { class: 'icon-btn', title: 'Close', 'aria-label': 'Close', html: UI.ICONS.close, onclick: () => this.openTray(null) })),
-        h('div', { class: 'tray-items' }, ids.map((id, i) => {
+        h('div', { class: 'tray-items' }, ids.map((id) => {
           const it = ITEMS[id], n = inv[id] || 0;
           const on = this.armed && this.armed.id === id && this.armed.piece === this.game.piece;
           return h('button', {
-            class: 'item-btn' + (n || on ? '' : ' empty') + (on ? ' on' : ''), 'data-item': id,
+            class: 'item-btn' + (n || on ? '' : ' empty') + (!n && !on && wallet < it.price ? ' poor' : '') + (on ? ' on' : ''), 'data-item': id,
             'data-tip-title': it.icon + '  ' + it.name, 'data-tip': it.desc,
             'data-tip-foot': on ? 'Again to take it back' : null,
             onclick: () => this.useItem(id),
-          }, h('span', { class: 'ii' }, it.icon), h('span', { class: 'il' }, it.name), h('span', { class: 'k' }, String(i + 1)), h('span', { class: 'n' }, n ? String(n) : LINE + it.price));
+          }, h('span', { class: 'ii' }, it.icon), h('span', { class: 'il' }, it.name), h('span', { class: 'n' }, n || on ? String(n) : LINE + it.price));
         })));
-    }
-
-    modeAction(a) {
-      const m = /^item(\d+)$/.exec(a);
-      if (m) {
-        const k = Number(m[1]);
-        if (!this.tray) { const g = ITEM_GROUPS[k - 1]; if (g) this.openTray(g.id); return true; }
-        const ids = ITEM_ORDER.filter((id) => ITEMS[id].group === this.tray);
-        if (ids[k - 1]) this.useItem(ids[k - 1]);
-        return true;
-      }
-      return false;
     }
 
     /** Esc closes an open tray first (the app's own Esc handling comes after). */
     closeTray() { if (!this.tray) return false; this.openTray(null); return true; }
 
+    /** Uses one you hold; with none, asks once (its name and a Buy & use button with the price), then buys and uses it. */
     useItem(id) {
       const st = this.app.store, it = ITEMS[id];
+      if (!it) return;
       if (this.cardOpen && id !== 'rewind') return;
-      if (!this.game.piece && id !== 'rewind') { toast('No piece in play', 'bad'); return; }
       if (this.armed && this.armed.id === id && this.armed.piece === this.game.piece) { this.disarm(); return; }
+      if (!this.game.piece && id !== 'rewind') { toast('No piece in play', 'bad'); return; }
       if (!st.state.inventory[id]) {
         if (st.state.lines < it.price) { toast(it.name + ' · ' + fmtInt(it.price) + ' ' + LINE, 'bad'); this.app.sound.play('error'); return; }
         UI.confirm(it.icon + '  ' + it.name, null, 'Buy & use · ' + fmtInt(it.price) + ' ' + LINE, () => {
@@ -767,15 +772,18 @@
     }
 
     /**
-     * Items that change the piece in play can be taken back: press the item again (before the piece is set) and the
-     * old piece returns and the item goes back in the bag.
+     * Items that change the piece in play, or what the next clears pay, can be taken back: press the item again
+     * (before the piece is set) and the old piece (and the queue) returns and the item goes back in the bag.
      */
     disarm() {
       const a = this.armed, g = this.game, st = this.app.store;
       this.armed = null;
       if (!a || g.piece !== a.piece) return;
-      if (a.gold) g.s.gold = Math.max(0, (g.s.gold || 0) - a.gold);
+      if (a.id === 'golden') g.s.gold = Math.max(0, (g.s.gold || 0) - Luck.GOLD_CLEARS);
+      else if (a.id === 'double') g.s.double = false;
+      else if (a.id === 'net') g.s.net = Math.max(0, (g.s.net || 0) - 1);
       else if (!g.replacePiece(a.prev)) { toast('No room up there to put the old piece back', 'bad'); return; }
+      if (a.queue) g.queue = a.queue;
       st.state.inventory[a.id] = (st.state.inventory[a.id] || 0) + 1;
       const used = st.state.stats.items.used;
       used[a.id] = Math.max(0, (used[a.id] || 0) - 1);
@@ -786,18 +794,22 @@
       this.app.sound.play('hold');
       this.view.itemFx('undo', g.piece, this.reduced);
       this.renderItems();
+      this.renderStatus();
       this.view.dirty = true;
     }
 
     apply(id) {
       const g = this.game, st = this.app.store;
+      const cur = g.piece;
+      const prev = cur ? Object.assign({}, cur.entry, { special: cur.special || null }) : null;
+      const queue = g.queue.map((e) => Object.assign({}, e));
       const done = () => {
         const hand = g.handState();
-        arm(hand);
+        if (!ACTS_NOW.has(id) && g.piece) this.armed = { id, piece: g.piece, prev, hand, queue: id === 'pick' ? queue : null };
+        this.view.itemFx(id, g.piece, this.reduced);
         this.tray = null;
         g.s.items = g.s.items || {};
         g.s.items[id] = (g.s.items[id] || 0) + 1;
-        g.s.clean = 0; g.s.cleanLines = 0; // Bare Hands starts again
         // Anything that touches the pieces or the board ends play by hand (achievements); Luck never touches either.
         if (ITEMS[id].group !== 'luck') g.noteItem(ACTS_NOW.has(id));
         st.useItem(id);
@@ -806,32 +818,52 @@
         this.renderStatus();
         this.view.dirty = true;
       };
-      const cur = g.piece;
-      const prev = cur ? Object.assign({}, cur.entry, { special: cur.special || null }) : null;
-      const arm = (hand) => { if (UNDOABLE.has(id) && g.piece) this.armed = { id, piece: g.piece, prev, hand, gold: id === 'golden' ? Luck.GOLD_CLEARS : 0 }; this.view.itemFx(id, g.piece, this.reduced); };
-      if (SPECIALS.has(id)) { if (g.setSpecial(id)) done(); else toast('No room for that here', 'bad'); return; }
+      const noRoom = () => toast('No room up there', 'bad');
+      /** The piece in play becomes another, tagged with the item that made it (for its combos). */
+      const become = (entry) => { if (g.replacePiece(Object.assign({ tag: id }, entry))) done(); else noRoom(); };
+      if (SPECIALS.has(id)) { if (g.setSpecial(id)) done(); else noRoom(); return; }
       switch (id) {
         case 'reroll': {
           const opts = Pieces.TETROMINOES.filter((t) => t !== (cur && cur.type.id));
-          if (g.replacePiece({ id: opts[Math.floor(Math.random() * opts.length)] })) done(); else toast('No room up there', 'bad');
+          become({ id: opts[Math.floor(Math.random() * opts.length)] });
           break;
         }
-        case 'mirror': if (g.replacePiece({ id: Pieces.mirrorOf(cur.type).id, special: cur.special })) done(); else toast('No room up there', 'bad'); break;
-        case 'pebble': if (g.replacePiece({ id: 'M1' })) done(); else toast('No room up there', 'bad'); break;
-        case 'noodle': if (g.replacePiece({ id: Pieces.customType([[0, 0], [1, 0], [2, 0], [3, 0], [4, 0], [5, 0]]).id })) done(); else toast('No room up there', 'bad'); break;
+        case 'mirror': become({ id: Pieces.mirrorOf(cur.type).id, special: cur.special, tag: cur.entry.tag || null }); break;
+        case 'pebble': become({ id: 'M1' }); break;
+        case 'noodle': become({ id: Pieces.customType([[0, 0], [1, 0], [2, 0], [3, 0], [4, 0], [5, 0]]).id }); break;
         case 'giant': {
           const base = Pieces.TYPES[cur.type.id] && Pieces.TYPES[cur.type.id].family === 'tetromino' ? cur.type.id : null;
           if (!base) { toast('Giant works on the seven standard pieces', 'bad'); return; }
-          if (g.replacePiece({ id: Pieces.bigOf(base).id, special: cur.special })) done(); else toast('No room up there', 'bad');
+          become({ id: Pieces.bigOf(base).id, special: cur.special });
           break;
         }
-        case 'nuke': if (g.nuke()) done(); else toast('The board is already empty', 'bad'); break;
-        case 'tornado': if (g.tornado()) done(); else toast('The board is already empty', 'bad'); break;
+        case 'blueprint':
+          UI.openBlueprint(this.app, (cells) => { if (cells) become({ id: Pieces.customType(cells).id }); });
+          break;
+        case 'order':
+          UI.openOrderSlip(this.app, (pick) => { if (pick) become({ id: pick }); });
+          break;
+        case 'pick':
+          UI.openPickOfThree(this.app, g.queue.slice(0, 3), (i) => { if (i == null) return; if (g.pickFromQueue(i)) done(); else noRoom(); });
+          break;
+        case 'fit': if (g.bestFit()) done(); else noRoom(); break;
+        case 'settle': if (g.settle()) done(); else toast('The board is empty', 'bad'); break;
+        case 'tornado': if (g.tornado()) done(); else toast(g.board.isEmpty() ? 'The board is empty' : 'No room for the piece — move it first', 'bad'); break;
+        case 'trapdoor': if (g.trapdoor()) done(); else toast('The bottom row is empty', 'bad'); break;
         case 'flip': if (g.flipWorld()) done(); else toast(g.board.isEmpty() ? 'The board is empty' : 'No room for the piece — move it first', 'bad'); break;
-        case 'jackpot': g.s.items = g.s.items || {}; g.s.items.jackpot = (g.s.items.jackpot || 0) + 1; g.s.clean = 0; g.s.cleanLines = 0; st.useItem(id); this.tray = null; this.jackpot(); this.renderItems(); break;
         case 'golden':
           // Gold stays on the board for the next five clears, whatever piece makes them.
           g.s.gold = (g.s.gold || 0) + Luck.GOLD_CLEARS;
+          done();
+          break;
+        case 'double':
+          if (g.s.double) { toast('Already on', 'bad'); return; }
+          g.s.double = true;
+          done();
+          break;
+        case 'net':
+          if (g.s.net > 0) { toast('Already on', 'bad'); return; }
+          g.s.net = 1;
           done();
           break;
         case 'rewind': {
@@ -850,75 +882,8 @@
           done();
           break;
         }
-        case 'order':
-          UI.openOrderSlip(this.app, (pick) => { if (!pick) return; if (this.game.replacePiece({ id: pick })) done(); else toast('No room up there', 'bad'); });
-          break;
-        case 'settle': {
-          const r = g.settle();
-          if (r) done();
-          break;
-        }
-        case 'purge': {
-          const gone = g.purge();
-          if (!gone || !gone.length) { toast('No blocks in that colour', 'bad'); return; }
-          done();
-          break;
-        }
-        case 'blueprint':
-          UI.openBlueprint(this.app, (cells) => {
-            if (!cells) return;
-            const t = Pieces.customType(cells);
-            if (this.game.replacePiece({ id: t.id })) done(); else toast('No room up there', 'bad');
-          });
-          break;
         default: break;
       }
-    }
-
-    /**
-     * Jackpot: three reels, a real gamble (the pay table and its odds are in js/sandbox.js, and on the machine). What it
-     * pays — lines, or Demolition items — is decided before the reels spin and handed over when they stop (or when the
-     * window is closed early).
-     */
-    jackpot() {
-      const st = this.app.store, reels = [0, 1, 2].map(() => Luck.reel(Math.random())), pay = Luck.jackpotPay(reels);
-      const demo = ITEM_ORDER.filter((id) => ITEMS[id].group === Luck.PRIZE_GROUP);
-      const won = Array.from({ length: pay.items }, () => demo[Math.floor(Math.random() * demo.length)]);
-      const icon = (id) => Luck.REELS.find((r) => r.id === id).icon;
-      const boxes = reels.map(() => h('div', { class: 'reel' }, '?'));
-      const note = h('p', { class: 'jp-note' }, 'Spinning…');
-      const table = h('div', { class: 'jp-pays' }, Luck.PAYS.map((p) => h('div', { class: 'jp-row' }, h('span', { class: 'jp-sym' }, p.label), h('span', null, p.lines ? fmtInt(p.lines) + ' ' + LINE : p.items + ' Energy power-up' + (p.items > 1 ? 's' : '')))),
-        h('div', { class: 'jp-row jp-foot' }, h('span', null, 'Anything else: nothing · pays back about 90%')));
-      UI.openModal({ title: 'Jackpot', width: 360, cls: 'modal-jackpot', body: h('div', null, h('div', { class: 'reels' }, boxes), note, table), buttons: [{ label: 'Collect', kind: 'primary' }], onClose: () => { clearInterval(timer); finish(); } });
-      const S = st.state.stats.items;
-      let t = 0, stopped = 0, done = false;
-      const finish = () => {
-        if (done) return;
-        done = true;
-        boxes.forEach((b, i) => { b.textContent = icon(reels[i]); b.classList.add('stop'); });
-        if (pay.lines) { st.addLines(pay.lines, 'luck'); this.app.refreshWallet(true); }
-        for (const id of won) st.grantItem(id, 1);
-        S.jackpot = S.jackpot || { pulls: 0, lines: 0, items: 0, best: 0 };
-        S.jackpot.pulls++; S.jackpot.lines += pay.lines; S.jackpot.items += won.length; S.jackpot.best = Math.max(S.jackpot.best, pay.lines);
-        note.textContent = !pay.label ? 'Nothing this time.' : pay.label + ' — ' + (pay.lines ? fmtInt(pay.lines) + ' lines' : won.map((w) => ITEMS[w].name).join(', ')) + '!';
-        note.classList.toggle('won', !!pay.label);
-        this.app.sound.play(pay.label ? 'golden' : 'lock');
-        st.touch();
-        this.renderItems();
-      };
-      const timer = setInterval(() => {
-        t++;
-        boxes.forEach((b, i) => { if (i >= stopped) b.textContent = Luck.REELS[(t * 3 + i * 2) % Luck.REELS.length].icon; });
-        if (t % 6 === 0) this.app.sound.play('move');
-        if (t === 14 + stopped * 8) {
-          const b = boxes[stopped];
-          b.textContent = icon(reels[stopped]); b.classList.add('stop');
-          if (pay.label && reels[stopped] !== 'blank') b.classList.add('win');
-          this.app.sound.play('combo', 3 + stopped * 2);
-          stopped++;
-          if (stopped === 3) { clearInterval(timer); finish(); }
-        }
-      }, 60);
     }
 
     save() { this.app.store.state.free = this.game.toJSON(); }

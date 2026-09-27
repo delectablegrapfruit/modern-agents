@@ -32,10 +32,15 @@ every power-up used on it; Stats ▸ Free Play keeps the last boards.
 lines (guideline speed curve), half-second lock delay, soft and hard drop, hold (once per piece), game over, best
 score. Lines you clear still bank as ⦵, multiplied by the back-to-back streak — ×0.5 for each tetris or T-spin in a
 row, up to ×10 at twenty (the status bar's *Bank*); the score is never multiplied. Music: Korobeiniki (the public-domain folk tune), note for note in its own
-key, A minor, slowed to 80 and dressed like a late-night console menu — a glassy FM electric piano over wide, slowly
-filtered pads of min9, min11 and maj9 chords and a warm sub, a quiet arpeggio, the odd glass bell or water droplet, a
-felt kick and brush in places, all on a faint tape wobble with chorus, a dark echo and the shared room. A three-minute
-suite: pads, the theme, the theme with a harmony, the bridge floating at half time, an interlude with a
+key, A minor, slowed to 80 and dressed as calm ambient electronica with a little IDM in its detail — a soft, round
+lead (a sine with a breath of FM and a triangle under it, gliding between notes that touch, a late vibrato on long
+ones) over warm, detuned analog-style saw pads of min9, min11 and maj9 chords, breathing through a slightly resonant
+filter on two slow LFOs and dipping gently each time the kick lands (a sidechain-like pump), a warm sub, a soft digital
+arpeggio, the odd glass bell, granular shimmer of the chord or water droplet; in some sections a sparse, lightly swung
+beat (a warm, round kick, a brush, faint hat ticks nudged off the grid) and, kept low, IDM micro-edits: a note now and
+then stuttered into quick fading repeats, a soft click. All of it through a tape wobble, a soft saturation and a dark
+top, with chorus, a dark echo and the shared room. A three-minute
+suite: pads, the theme, the theme with a harmony and the beat, the bridge floating at half time, an interlude with a
 counter-melody, the theme over a low counter-line, the bridge in time, a short coda. It keeps its tempo and only
 quickens as the stack nears the top. It never changes key by modulating or
 transposing, but each section says which scale it is in: A minor (natural) everywhere except the bridge, both the
@@ -51,7 +56,7 @@ slides, partials, FM and detune ride along. Noise, clicks and low thuds or sweep
 calls singles, doubles, triples, tetrises, T-spin singles/doubles/triples, back-to-backs, "amazing" for a perfect
 clear, "rank up" for a new level and "top out" at the end. Her raw takes are mixed in on the fly: thinned lows, eased
 low-mids and top, a gentle compressor, the same reverb as everything else and a soft stereo echo, with the music
-dipping under her; Settings ▸ Sound ▸ Announcer volume sets her level. Both toggle under the board or in Settings ▸ Sound. P pauses; another tab or another window pauses
+dipping under her; Settings ▸ Sound ▸ Announcer volume sets her level. Settings ▸ Sound ▸ Announcer in Relaxed (off by default) lets her call Free Play clears too. Both toggle under the board or in Settings ▸ Sound. P pauses; another tab or another window pauses
 too.
 
 **Puzzles** — procedurally generated, infinite, short, in Easy, Medium and Hard. Each has a seed (`M-3K7Q2XA`): the
@@ -114,108 +119,88 @@ Lull is closed, replayed on return with the same step as on screen, so time away
 shape (free; pay never changes) and fill in Stats ▸ Factory's shape sets. Drawn like the board, in your skin and
 palette, on a plain well (the equipped backdrop stays on the play boards); hover anything for a line about it.
 
-**Power-ups** (items, in the code) — single-use, bought and used from the bar under the board, grouped into six types; a
-type's button (or keys 1–6) opens its tray, then click one (or 1–9; Esc closes). Hover one for what it does. One you
-have none of shows its price; clicking it asks once (its name and a Buy & use button with the price), nothing more.
+**Power-ups** (items, in the code) — single-use, in five types on the bar under the Relaxed board. A type's button
+(with how many you hold) opens its tray; click one to use it (Esc closes the tray). There are no number keys for them.
+Hover one for what it does. They are bought right there, never in the Shop: one you have none of shows its price, and
+clicking it asks once (its name and a Buy & use button with the price) — dimmed when the wallet is short.
 
-| Type | Items |
+| Type | Power-ups (price ⦵, rarity) |
 |---|---|
-| Shapers | Reroll, Mirror, Pebble, Noodle (a six-long rod), Giant (twice the size), Order Slip, Blueprint (draw your own) |
-| Matter | Sand, Seed, Powder, Water, Oil, Acid, Lava, Ice, Steel — the piece becomes it |
-| Energy | Flame, Spark, Bomb, Laser (vaporises every row it touches) |
-| Tools | Drill, Phase (passes through blocks), Anvil (falls to the floor or onto steel, flattening its columns) |
-| Board | Mirror World (flips the board), Rewind, Settle, Chroma Purge, Black Hole (swallows everything within three), Nuke, Tornado (packs every block into solid rows) |
-| Luck | Golden Piece (gold for the next five clears, ×3 each), Jackpot (a real gamble) |
+| Shapers | Reroll (15, common: a different piece), Mirror (15, common: J and L, S and Z swap), Pebble (20, common: a single block), Noodle (25, uncommon: a six-long rod), Giant (30, uncommon: twice the size), Blueprint (100, rare: draw your own, up to six blocks) |
+| Choice | Pick of Three (20, common: play one of the next three now; this piece takes its place in line), Best Fit (45, uncommon: the piece becomes whichever of the seven fits the stack best, right over its spot), Order Slip (35, rare: choose the piece in play) |
+| Tools | Patch (20, common: one block that drops into the highest covered hole in its column), Ghost (50, uncommon: passes through blocks into the first gap below where it fits), Drill (40, uncommon: bores out its column), Bomb (45, uncommon: clears a 13-block diamond where it lands), Laser (65, rare: clears every row it touches, full or not), Black Hole (90, rare: swallows everything within three blocks) |
+| Board | Mirror World (20, common: flips the board left to right), Rewind (25, common: takes back the last placement and its lines), Trapdoor (40, uncommon: the bottom row falls away, whatever it holds), Tornado (60, rare: shuffles the columns, holes and all), Settle (70, rare: every block falls straight down; full rows clear) |
+| Luck | Golden Piece (35, uncommon: the next five clears pay ×3), Double or Nothing (30, uncommon: the next clear pays double if it is a quad or a T-spin, nothing if it is less), Safety Net (60, rare: keeps the back-to-back streak through one ordinary clear) |
 
-**Daily gift** — the small wrapped box in the Relaxed tab's status bar glows while today's gift is waiting: once a
-calendar day (local date) it turns over three different power-ups, drawn by weight — 8 for items of 20 ⦵ or less, 5 up
-to 30, 3 up to 45, 1.5 up to 70, 0.5 above, Luck never — so about half of what it gives is the cheap, common matter and
-shapers and only a few in a hundred the dear board items. The draw is fixed by the save and the date and booked in the
-save as it opens, so reopening Lull or switching tabs never re-rolls it or opens it twice (nor does turning the clock
-back); afterwards the box says how long until the next one.
+Nothing here is about a clock — Free Play has none — so they are about choice and shape: which piece, what it
+becomes, what the stack looks like after, what the next clear is worth. Tools and Shapers change the piece in play
+(the ghost shows where a Patch, Ghost or Bomb will act); press the same one again before the piece is set and the old
+piece, the queue and the item come back. Board items act at once and can be rewound. Lines a power-up clears are plain
+lines: they pay and keep the combo going, but are never a quad or a T-spin and never add a back-to-back link (a
+Tornado only rearranges — every row keeps its count, so it never clears). Every one of them, Luck aside, puts
+power-ups on the board for the achievements.
 
-*The sandbox* (`js/sandbox.js`). What makes The Powder Toy, Noita or People Playground fun is a small set of rules that
-never change, where every material meets every other, and you can watch what you set up play out, cell by cell. Lull
-takes that and keeps it calm: the world is the board itself, and it only moves for a moment after a piece sets.
+*Getting them.* Bought with lines in the tray; free from the daily gift; and, modestly, from play: one for every hundred
+lines cleared on a board (counted in the save, outside the board, so a Rewind and a replayed clear never pay twice, and
+an old board is not paid backwards) and one the first time each combo is ever found. Free ones are drawn by rarity
+(common 8, uncommon 3, rare 1). Old saves: the sandbox's leftovers become a comparable power-up — sand, water and lava a
+Patch, acid and an Anvil a Drill, powder a Bomb, a Nuke a Black Hole — or their old price back in lines (seed, oil,
+ice, steel, flame, spark, Chroma Purge, Jackpot, Magnet); boards lose what their blocks were made of (the blocks stay;
+flames and steam go).
 
-Matter and Energy turn the piece in play into something (it keeps its shape and lands like any piece; a bolt or a bomb
-is one block). Then comes the *settle*: the board is stepped, cell by cell, until nothing moves or changes. **Grains**
-(sand, seed, powder) fall and slide off edges into piles, sinking through liquids. **Liquids** (water, oil, acid, lava)
-fall and run toward the lowest hole they can reach — under overhangs too — sinking under lighter ones (oil floats on
-water) and levelling out in pools, a channel filling from the back; lava is slow. **Steam** rises, drifts and fades.
-Ice, steel, glass, vines and plain blocks stay put. What they do to each other is one table:
+**Daily gift** — the small wrapped box in the Relaxed tab's status bar glows while a gift is waiting: three different
+power-ups, drawn by rarity, so about two thirds of what it gives is common and one in fourteen rare. It comes again 24
+hours after it was last opened — the time since, not the date; its tooltip counts down. The claim time is booked in the
+save as it opens, and the draw is fixed by the save and how many gifts it has opened, so reopening Lull or switching
+tabs never re-rolls it or opens it twice. A clock turned back never opens it early: the next one is still 24 hours
+after the booked claim, however far back the clock went (and a clock pushed forward to claim early books that claim in
+the future, so the next one waits for it). A save from the calendar-day gift counts its last one from that date's
+midnight.
 
-| | does this |
-|---|---|
-| heat (a flame, lava, current) | lights oil (it burns long), vines and seeds; sets powder off; melts ice; turns sand to glass; boils water and acid to steam |
-| cold (ice) | freezes the water it touches, spreading through it; turns steam back into water (rain); sets lava into stone |
-| acid | eats the block below it, or beside it, three in all — any block, sand, glass, ice, seed, vine, powder (defused); never steel; water dilutes it |
-| current (a spark) | runs one cell a step through steel and water, never back, heating everything else they touch |
-| blast (a bomb, powder) | clears a 13-block diamond (steel stands); sets off powder in it the next step; lights oil and vines; shatters ice and glass; throws loose grains and liquids up and out, just beyond |
-| water | sprouts a seed into a vine, which grows along its row (then up), drinking water to grow further; puts out a flame; sets lava into stone |
+*Combos* — things that pay a little extra: lines, a short boost (the next few clears pay ×1.25–×1.5) and points, each
+told once in a small callout on the board. Four are pure skill: a row all one colour (Painted Row), four lines with an I
+brought back out of hold (From the Pocket), a line cleared by a piece tucked in under an overhang (Keyhole), two T-spin
+doubles back to back (Twin Spin). The rest are a power-up used well, each saying exactly what to do: complete a row with
+a Patch dropped into a covered hole (Patch Job); clear a line with a Ghost piece set under an overhang (Through the
+Wall); clear four lines at once with a Noodle or a Giant (Tall Order); three at once with a Blueprint piece
+(Architect); four with a Best Fit piece (Tailor-Made); win a Double or Nothing (All In); let a Safety Net keep a
+back-to-back streak of five or more (Caught); take out ten blocks or more with one Bomb (Full Blast); swallow twenty
+or more with one Black Hole (Event Horizon). With no clock in Free Play, none is for repeating: on one board each pays
+in full, then half, then a quarter, then nothing; boosts come with the first two; and a power-up combo pays less than
+the power-up it takes. Stats ▸ Free Play lists them: found ones by name, the rest as a question mark.
 
-Every material meets at least three others. Any row that fills during the settle clears and pays like any other
-(plain lines: it keeps the combo going, but never makes a quad or a T-spin), and what was above it settles again — up
-to six rounds, each capped at 110 steps (a liquid rocking on a ledge, a long burn), after which everything finishes at
-once: flames and steam go, lava sets, every grain and drop comes to rest. The settle is worked out to the end as the
-piece sets, so the board is final at once and the next piece is never kept waiting; each step is recorded and played
-back on the board at about 55 ms a step (quicker for long ones, so none runs much over three seconds), with a touch for
-each change as it comes — a flame flares and goes up in embers, water boils off in a wisp, ice glitters as it forms,
-acid fizzes, a vine puts out a leaf, current sparks along steel, a blast throws its blocks — and the equipped line
-effect for rows it clears. Setting the next piece, or anything else that changes the board, ends the playback at
-once; Reduced motion skips it (what changed glows once). A T-spin into ice shatters all the ice it touches. Steel also
-stops the drill and the anvil and carries a laser beam into every row it reaches. Rewind takes a whole settle back,
-pay included. Old saves keep their materials: TNT is powder now (it settles on the next piece), and a Magnet still in
-the bag comes back as its 45 ⦵.
+*Luck.* Golden Piece puts gold on the board for your next five clears, each ×3 on top of everything else; it waits
+through pieces that clear nothing, so it is never wasted. It adds five clears' pay twice over: built for quads (5 a
+clear) that is 50 for its 35, on ordinary clears about 20 — worth it played well, not otherwise. Double or Nothing waits
+for the next clear, too: a quad or a T-spin pays double, anything less pays nothing (the lines still count on the
+board). Safety Net is a one-time pass for the back-to-back streak: the next clear that would end it does not, and the
+multiplier stays.
 
-*Combos and discoveries* — things that pay a little extra: lines, a short boost (the next few clears pay ×1.25–×1.5)
-and points. Combos, of skill: a row all one colour (Painted Row), a quad with an I brought out of hold (From the Pocket),
-a line cleared by a piece tucked under an overhang (Keyhole), two T-spin doubles back to back (Twin Spin), fifty
-pieces and twelve lines without a power-up (Bare Hands). Discoveries, from the settle: heat meets water (First Mist),
-steam meets ice (Rain), sand turns to glass (Glassblower), lava meets water (Quench), a seed finds water (Sprout), oil
-rises through water (Oil Slick), a vine grows over a gap and a line clears through it (Hanging Garden), six water
-frozen at once (Cold Snap), six blocks eaten by acid (Etching), twelve things alight (Wildfire), current through six
-cells (Live Wire), one explosion setting off another (Chain Reaction) or three (Daisy Chain), liquid filling two covered
-holes and a line clearing (Undertow), a line clearing and then another from what settled (Cascade), three different
-reactions in one settle ending in a line (Domino), a T-spin into ice (Shatter Spin), a laser carried by steel
-(Conductor), a perfect clear from a Tornado (Eye of the Storm) and a board emptied by fire, acid or blasts (Scorched
-Earth). Each is paid at once and told once the settle has played out, in a small callout on the board. With no clock
-in Free Play, none is for repeating: on one board each pays in full, then half, then a quarter, then nothing; boosts
-come with the first two; a discovery pays less than the items it takes. Stats ▸ Free Play lists them: found ones by
-name, the rest as a question mark.
+Each has its own animation, mostly on a small physics layer fed with what the engine actually removed or moved: the
+drill's bit spins down its column and each block it meets bursts into chips; a laser charges a line, then a beam
+spreads across each row and the blocks come apart into drifting pixels; a bomb flashes and throws its diamond's blocks
+out, tumbling; a black hole pulls its blocks in on tightening spirals, stretched and shrinking, then collapses with a
+flash; a Ghost shimmers, sinks through as a ghost and materialises with a ripple; a Patch drops through the stack like a
+plug and seats itself with a small ring; a Trapdoor lets the bottom row fall out of the board and the rest settles down
+one; a Tornado whirls while every column slides to its new place; Settle's blocks fall and bounce (a block falling into
+a row that cleared comes apart as it gets there, and setting the next piece mid-fall ends the fall). Gravity follows
+the board, so on Upside Down and Sideways boards things fall toward its floor; shake is small and moves only the board.
+It is all for show — the board is already final, so the next piece is never kept waiting — mostly over in about 0.7 s,
+with fixed pools of bodies and particles; Reduced motion turns it into plain fades. Shapes beyond the seven (a Noodle, a Giant, a Blueprint drawing, a mirrored odd shape) turn wherever there is room: when no kick fits, a turn that would poke past the ceiling, floor or a wall is nudged back in by exactly that much (if the way in is clear), and one that would dip into the stack is stood on it or slid off the block beside it, never out of a well or through blocks. The seven keep plain SRS, and puzzles keep exactly the turns they were built with.
 
-*Luck.* Golden Piece (35 ⦵) puts gold on the board for your next five clears, each ×3 on top of everything else; it
-waits through pieces that clear nothing, so it is never wasted. It adds five clears' pay twice over: built for quads
-(5 a clear) that is 50 for its 35, on ordinary clears about 20 — worth it played well, not otherwise. Jackpot (50 ⦵)
-is three reels (blank 7, gem 5, bolt 3, star 1 in 16): ★★★ 2,000 lines, ⦵⦵⦵ 300, ϟϟϟ four Energy items, two ★ 400,
-one ★ 60, two ⦵ 80, two ϟ an Energy item, anything else nothing. On average it pays back about 43 (under nine tenths),
-more than half the pulls pay nothing, one in ninety pays 400 or more; the machine shows its pay table.
-
-Each has its own animation. The tools and board items play out on a small physics layer, from what the engine
-actually removed or moved: the drill's bit spins down its column and each block it meets bursts into chips; a laser charges a line,
-then a beam spreads across each row and the blocks come apart into drifting pixels; Chroma Purge sends a pulse of
-the piece's colour outward and each block it reaches dissolves into grains; a black hole pulls its blocks in on
-tightening spirals, stretched and shrinking, then collapses with a flash; a nuke flashes white and blows every block
-out, tumbling; a phasing piece shimmers, sinks through as a ghost and
-materialises with a ripple; an anvil falls, speeding up, flattening each block it meets, and lands with a thud (Settle
-uses the same falls; a block falling into a row that cleared comes apart as it gets there, and setting the next piece
-mid-fall ends the fall). Gravity follows the board, so on Upside Down and Sideways boards things fall toward its floor;
-shake is small and moves only the board. It is all for show — the board is already settled, so the next piece is
-never kept waiting — mostly over in about 0.7 s (a nuke or black hole about 1.2 s), with fixed pools of bodies and
-particles; Reduced motion turns it into plain fades. An item that changed the piece can be pressed again before the piece is set: the old
-piece and the item come back; board items can be rewound. Shapes beyond the seven (a Noodle, a Giant, a Blueprint drawing, a mirrored odd shape) turn wherever there is room: when no kick fits, a turn that would poke past the ceiling, floor or a wall is nudged back in by exactly that much (if the way in is clear), and one that would dip into the stack is stood on it or slid off the block beside it, never out of a well or through blocks. The seven keep plain SRS, and puzzles keep exactly the turns they were built with.
-
-**Shop** — click the wallet (or ⌘7). Two halves: *Power-ups*, by type, each a glyph, a name, how many you hold and a price
-(what it does is on hover), bought ahead for the item bar; and *Cosmetics*, by kind, each with a live preview drawn in
-your current look: palettes (Prism animates) and mino skins (Gem, Glass, Neon, Jelly, Pixel …) on a small stack, board
+**Shop** — click the wallet (or ⌘7). Cosmetics only (power-ups are not sold), one kind at a time: a row of kinds with a
+chevron at each end (dimmed at the first and last; ←/→ step too while the row has focus) picks which, and only that
+kind's tiles are shown — the list scrolls within the kind, never on into the next; the Shop reopens on the kind you
+looked at last. Each tile has a live preview drawn in your current look: palettes (Prism animates) and mino skins (Gem, Glass, Neon, Jelly, Pixel …) on a small stack, board
 frames, backdrops and ghost styles on a small board, line-clear effects mid-burst, and **sound packs** (Drift — the
-default: glassy FM blips,
-droplets for movement, airy chord swells for clears and a soft low thoom for booms, all in the music's A minor —
+default: smooth synth tones in the music's room — a breath of a different note for each move, like a chime stirring,
+soft sine plucks that darken as they ring, round bell tones, slow wide detuned pads swelling under clears, a warm felt
+note and soft sub when a piece sets and a low thoom for booms; no clicks on the way in, never brighter than the music,
+all in its A minor (and anything played that has no sound of its own yet gets a quiet pluck) —
 Typewriter with carriage-return zips and bells, Chiptune coins and power-ups, fizzing Bubbles, rolling
 Marimba, Analog Synth stabs, ringing Glass, Wind Chimes — all synthesized, each with its own clears; its preview is a
 Listen button); a few are factory rewards (a second, third and fourth press, the tallest bin, 500 lines collected),
-marked with a lock and what earns them on hover. Each half is one scroll, with a bar that jumps to a section and
-follows along. A tile says In use, Use (click it, or the tile) or its price, dimmed when you cannot afford it. Buying
+marked with a lock and what earns them on hover. A tile says In use, Use (click it, or the tile) or its price, dimmed when you cannot afford it. Buying
 is two clicks on the same spot — the price turns into Confirm for three seconds — and a new cosmetic goes straight on.
 
 **Achievements** — 105 quiet milestones that pay ⦵ lines, in their own tab: a small toast when one is earned, nothing
@@ -225,8 +210,8 @@ what it has paid), easiest first, with a filter for all, to do or earned; the sl
 gimme — the easiest is a quad with no power-ups on the board (15 ⦵) — and 150 pieces of ordinary play earn nothing new, nor do 150 with a
 few items used along the way (a test plays both, at a relaxed piece every three seconds).
 
-*Free Play has no clock and a whole sandbox of items*, so nearly anything there could be bought or waited out (an Order
-Slip for every I, a laser for every quad, a Tornado for every perfect clear, Rewind for every slip). So its skill ones
+*Free Play has no clock and a bag of power-ups*, so nearly anything there could be bought or waited out (an Order
+Slip for every I, a laser for every row, a Settle for every perfect clear, Rewind for every slip). So its skill ones
 say **no power-ups on the board**: no power-up that touches the pieces or the board — Rewind included — during the
 feat, nor since the board was last empty (an empty board, however it got that way, is a fresh start; Luck never counts
 against it, and one taken back before its piece is set never happened). Each description says it in those words; the
@@ -236,16 +221,16 @@ the board, on the wall clock, clearing 36 lines (Allegro,
 within three minutes; Presto, ninety seconds); and the streaks that are really about keeping up have Classic versions under
 gravity (eight back-to-back, four tetrises in a row), where the 20-combo moved too, as a 15-combo. Hover the Chain in the status bar to see whether
 there are power-ups on the board (and the chain without them); a board's summary shows its best chain and its best
-with no power-ups on the board. Three are for playing with the
-sandbox on purpose: one settle with current through a wire, fire, steam and an explosion (Rube Goldberg), 60 blocks or
-more burnt, dissolved or blasted away in one settle, leaving the board empty (Burnt Offering), and every combo and
-discovery found (Tinkerer).
+with no power-ups on the board. Three are for playing with power-ups on purpose: three different power-up combos on
+one board (Showman), a board of 60 blocks or more emptied by one power-up (Clean Sweep), and every combo found
+(Tinkerer). The sandbox's two (Rube Goldberg, Burnt Offering) are retired: kept, paid and marked Retired for whoever
+earned them.
 
 Medium ones (100–300 ⦵): a perfect clear with no power-ups on the board, a T-spin Mini double, a 10-combo, a T-spin triple on gold, four quads in a row, Allegro,
-the perfect-clear opener (within a fresh board's first ten pieces, no items), Rube Goldberg; a Hard puzzle first try
+the perfect-clear opener (within a fresh board's first ten pieces, no items), Showman; a Hard puzzle first try
 without hints or undo, all three Dailies on their day, or a quad, a tetris and a Hard puzzle in one day; every
 hexomino or 1,000 lines off the factory line. Hard ones (300–800 ⦵): eight back-to-back, three perfect clears,
-100 line-clearing T-spins (all with no power-ups on the board), 250,000 points never using a power-up, Burnt Offering, Tinkerer, forty lines in a
+100 line-clearing T-spins (all with no power-ups on the board), 250,000 points never using a power-up, Clean Sweep, Tinkerer, forty lines in a
 fresh board's first hundred pieces with nothing left over, every item used; in Classic a perfect clear, a T-spin
 triple, a 10-combo, eight back-to-back, level 10 without hold, 40 lines in 90 s or 40 lines of tetrises alone; a Hard
 puzzle first try in under 20 s, twenty first-try solves in a row, 100 Hard puzzles; 100,000 lines in all, 30 days
@@ -253,9 +238,9 @@ played. Thirty-two are legendary (800–5,000 ⦵): a chain of 20 with no power-
 quads in a row, five gold clears on a chain of 20, ten perfect clears or 5,000 lines on one board, a million
 without items; Classic level 25, a 15-combo, 40 lines in 50 s, level 20 without hold, a Classic million; every
 wildcard on Hard, a Daily thirty days in a row, a hundred first-try solves in a row; a hundred hours or a hundred days
-with Lull, everything the shop sells, a million lines earned (Jackpot winnings and rewound lines aside: churning the
-Jackpot would count its gross, and a rewound clear replayed would count twice); all 108 heptominoes or 100,000 minos
-pressed — and *Lull*, every other one. A retired one (Free Play's 20-combo, now Classic's 15) stays with whoever
+with Lull, everything the shop sells, a million lines earned (rewound lines aside, since a rewound clear replayed would count
+twice, and an old save's Jackpot winnings); all 108 heptominoes or 100,000 minos
+pressed — and *Lull*, every other one. A retired one (Free Play's 20-combo, now Classic's 15; the sandbox's two) stays with whoever
 earned it, paid, marked Retired and counted in nothing. They read the stats below plus a few kept for them: the
 board's hand counts (`freshStats` in `js/engine.js`: whether there are power-ups on the board, and the back-to-back,
 combo, quads in a row, chain, line-clearing T-spins, T-spin triples and perfect clears without them, gold clears on a
@@ -266,8 +251,8 @@ play in front, not when the factory runs alone), Classic games (one counts once 
 lines, so a quick restart is not a game), and the
 day log's quad (set by a piece: a laser or a Tornado is not one) / tetris / Hard puzzle / Dailies. Lifetime ones are also checked once a minute.
 
-**Stats** — lines by source and day (play, combos and discoveries, jackpot …), combos and discoveries found, clears, T-spins, combos, pieces per minute, inputs per piece, puzzle solves
-and first-try rates by difficulty and wildcard, factory output and shapes pressed, power-ups bought and used, time by mode.
+**Stats** — lines by source and day (play, combos, puzzles …), combos found, clears, T-spins, combos, pieces per minute, inputs per piece, puzzle solves
+and first-try rates by difficulty and wildcard, factory output and shapes pressed, power-ups bought, given and used, time by mode.
 
 ## Keys
 
@@ -278,7 +263,6 @@ and first-try rates by difficulty and wildcard, factory output and shapes presse
 | Space | hard drop (for 0.18 s after a piece is set, Space, a click and the ↓ that sets are ignored, so a double press never drops the next piece unseen; moving and turning still work, and Classic's gravity never waits) |
 | ↑ / X, Z, A | turn clockwise, counter-clockwise, 180° |
 | C / Shift | hold; again to swap back (Free Play and Puzzles: as often as you like). On the Factory tab, C collects the bin |
-| 1–6, then 1–9 | open an item tray, use an item |
 | ⌫ / U, R, N, H | undo, retry, next puzzle, hint |
 | ⌘1–⌘7, ⌘, | tabs (⌘7 the Shop), settings |
 | ⌘J | collapse into the title bar, or expand (so does a double-click on the empty bar) |
@@ -292,8 +276,9 @@ and first-try rates by difficulty and wildcard, factory output and shapes presse
 
 **Window** — the panel floats over every Space, full-screen apps included: it never activates Lull (activating a regular app pulls the screen back to its own Space), so ⌥⌘L shows it right over whatever is in front and hands it the keyboard. When the pointer leaves, Lull dims and fades to 60% (Settings ▸ Window ▸ Fade when the pointer leaves); it comes back as soon as the pointer does.
 
-**Collapse** — the chevron, ⌘J or a double-click on the empty bar rolls Lull up into its title bar, where pieces drift
-along and stack themselves (in your palette and skin; still under reduced motion) until you expand it. Classic pauses,
+**Collapse** — the chevron, ⌘J or a double-click on the empty bar rolls Lull up into its title bar, where pieces march
+in from the left a cell at a time, turning (true SRS turns) and shifting lanes now and then, and walk off under the expand
+button, never landing (in your palette and skin; still under reduced motion) until you expand it. Classic pauses,
 the factory runs on. Collapsed, it resizes only sideways, and it opens back to the height it had, across launches too
 (`js/collapse.js`).
 
@@ -353,7 +338,7 @@ first time. The save lives in `~/Library/Application Support/Lull/save.json` (Se
 
 | Path | |
 |---|---|
-| `Game/` | the game: `index.html`, `css/`, and `js/` — `pieces` (SRS tetrominoes, pentominoes, big and custom shapes, polyomino enumeration), `board`, `engine` (the floating-piece rules and every item), `sandbox` (matter and energy, the settle and its interaction table, discoveries, the chain multiplier, the Luck odds, the daily gift), `puzzlegen` (seeds, wildcards, reverse construction, reachability search, forward verification), `factory` (presses, the belt, the bin, one step for play and time away, save migration), `store` (save, catalog, stats), `achievements`, `fxphysics` (the item effects' blocks, debris and dust: gravity, bounces, spirals, fixed pools), `render` (canvas: skins, frames, effects, item animations, rotated views), `factoryview` (the factory floor, drawn like the board), `hints` (control hints: the struggle signals, their limits and retirement), `collapse` (the window rolled up into its title bar, and the pieces that play along it), `modes`, `ui`, `app` |
+| `Game/` | the game: `index.html`, `css/`, and `js/` — `pieces` (SRS tetrominoes, pentominoes, big and custom shapes, polyomino enumeration), `board`, `engine` (the floating-piece rules and every item), `items` (the chain multiplier, combos, Luck, the daily gift, power-ups earned in play), `puzzlegen` (seeds, wildcards, reverse construction, reachability search, forward verification), `factory` (presses, the belt, the bin, one step for play and time away, save migration), `store` (save, catalog, stats), `achievements`, `fxphysics` (the item effects' blocks, debris and dust: gravity, bounces, spirals, fixed pools), `render` (canvas: skins, frames, effects, item animations, rotated views), `factoryview` (the factory floor, drawn like the board), `hints` (control hints: the struggle signals, their limits and retirement), `collapse` (the window rolled up into its title bar, and the pieces that march along it), `modes`, `ui`, `app` |
 | `Sources/Lull/` | the macOS shell: a borderless `NSPanel` (floating, all Spaces, edge-resizable, draggable by the page's title bar) around a transparent `WKWebView`, a blur for the Glass background, the save file, the ⌥⌘L hot key, and a self-test CI runs |
 | `scripts/` | `make-app.sh`, `icon.swift`, `line-glyph.py` (builds the line glyph's font into `lull.css`), `test.cjs`, `browser-test.cjs`, `audio-render.cjs` (renders and measures the synthesized audio offline), `pitch.cjs` (finds the notes in a render, to check sound effects are in the music's key), `splice-voice.py` (cuts the announcer's lines from a recording), `make-voice.py` (the older synthesized whisper) |
 

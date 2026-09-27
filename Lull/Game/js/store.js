@@ -13,52 +13,49 @@
   // Item types: the bar under the board shows one button per type; each opens a tray of its items.
   const ITEM_GROUPS = [
     { id: 'shape', name: 'Shapers', short: 'Shape', icon: '◇' },
-    { id: 'matter', name: 'Matter', icon: '⁘' },
-    { id: 'energy', name: 'Energy', icon: 'ϟ' },
+    { id: 'choice', name: 'Choice', icon: '☰' },
     { id: 'tool', name: 'Tools', icon: '↡' },
     { id: 'board', name: 'Board', icon: '⟲' },
     { id: 'luck', name: 'Luck', icon: '★' },
   ];
-  // Single-use items: a few minutes of play buys most of them. Matter and Energy are the sandbox (js/sandbox.js): the
-  // piece becomes a material, or a flame, a spark or a bomb, and the settle after it sets plays out what they do to
-  // each other.
+  // Single-use power-ups, bought with lines right where they are used — the item bar under the Relaxed board (never
+  // the Shop) — and given free by the daily gift and, now and then, by play (js/items.js: Gifts, Earn; rarity weights
+  // those draws: common 8, uncommon 3, rare 1). Shapers change the piece in play; Choice picks which piece it is;
+  // Tools turn it into something that acts where it lands; Board items act on the board at once; Luck changes what
+  // the next clears pay, and nothing else.
   const ITEMS = {
-    reroll:    { group: 'shape', name: 'Reroll', icon: '⟳', price: 15, desc: 'Swap the piece in play for a different one.' },
-    mirror:    { group: 'shape', name: 'Mirror', icon: '⇋', price: 15, desc: 'Flip the piece in play: J and L, S and Z swap.' },
-    pebble:    { group: 'shape', name: 'Pebble', icon: '●', price: 20, desc: 'The piece in play becomes a single block.' },
-    noodle:    { group: 'shape', name: 'Noodle', icon: '∿', price: 25, desc: 'The piece becomes a six-long rod.' },
-    giant:     { group: 'shape', name: 'Giant', icon: '▣', price: 30, desc: 'The piece grows to twice its size.' },
-    order:     { group: 'shape', name: 'Order Slip', icon: '✎', price: 35, desc: 'Choose exactly which piece you get next.' },
-    blueprint: { group: 'shape', name: 'Blueprint', icon: '▦', price: 100, desc: 'Draw your own piece, up to six connected blocks.' },
-    sand:      { group: 'matter', name: 'Sand', icon: '⁘', price: 15, desc: 'Falls and piles, filling the gaps below. Heat turns it to glass.' },
-    seed:      { group: 'matter', name: 'Seed', icon: '⸙', price: 20, desc: 'Falls like sand. Given water, it grows into a vine along its row.' },
-    water:     { group: 'matter', name: 'Water', icon: '≈', price: 20, desc: 'Runs into the lowest holes it can reach. Freezes, boils and carries current.' },
-    oil:       { group: 'matter', name: 'Oil', icon: '◓', price: 15, desc: 'A liquid that floats on water and burns long.' },
-    acid:      { group: 'matter', name: 'Acid', icon: '◒', price: 35, desc: 'A liquid that eats the blocks below and beside it, three each. Steel stands; water dilutes it.' },
-    lava:      { group: 'matter', name: 'Lava', icon: '◉', price: 40, desc: 'A slow, hot liquid: it fills holes, then sets into stone. Water sets it at once.' },
-    frost:     { group: 'matter', name: 'Ice', icon: '❅', price: 25, desc: 'Freezes the water it touches and turns steam to rain. Brittle: blasts and T-spins shatter it.' },
-    steel:     { group: 'matter', name: 'Steel', icon: '▩', price: 30, desc: 'Stands through fire, acid and blasts. Carries current and laser beams.' },
-    tnt:       { group: 'matter', name: 'Powder', icon: '⁂', price: 30, desc: 'Black powder: falls and piles. Heat, current or a blast sets it off.' },
-    torch:     { group: 'energy', name: 'Flame', icon: '▲', price: 25, desc: 'The piece becomes fire: it lights, melts, boils and glazes.' },
-    bolt:      { group: 'energy', name: 'Spark', icon: 'ϟ', price: 40, desc: 'A bolt that strikes where it lands. Steel and water carry it on.' },
-    bomb:      { group: 'energy', name: 'Bomb', icon: '✹', price: 45, desc: 'Blasts a 13-block diamond where it lands (steel stands) and throws what is loose.' },
-    laser:     { group: 'energy', name: 'Laser', icon: '↯', price: 65, desc: 'Vaporises every row it touches, full or not, and every row steel carries it to.' },
-    drill:     { group: 'tool', name: 'Drill', icon: '⇣', price: 40, desc: 'A bit that bores out its whole column (steel stops it).' },
-    phase:     { group: 'tool', name: 'Phase', icon: '◇', price: 50, desc: 'The piece passes through blocks, into any gap it fits.' },
-    anvil:     { group: 'tool', name: 'Anvil', icon: '▼', price: 55, desc: 'Drops to the floor (or onto steel), flattening its columns on the way.' },
-    flip:      { group: 'board', name: 'Mirror World', icon: '⇄', price: 20, desc: 'Flips the whole board left to right.' },
-    rewind:    { group: 'board', name: 'Rewind', icon: '↶', price: 25, desc: 'Take back your last placement, and the lines it cleared.' },
-    settle:    { group: 'board', name: 'Settle', icon: '⤋', price: 70, desc: 'Every block falls straight down, closing every hole. Full rows clear.' },
-    purge:     { group: 'board', name: 'Chroma Purge', icon: '◍', price: 75, desc: 'Removes every block the colour of the piece in play.' },
-    blackhole: { group: 'board', name: 'Black Hole', icon: '◎', price: 90, desc: 'Swallows everything within three blocks of where it sets.' },
-    nuke:      { group: 'board', name: 'Nuke', icon: '✺', price: 120, desc: 'Erases the entire board. Pays no lines.' },
-    tornado:   { group: 'board', name: 'Tornado', icon: '◌', price: 160, desc: 'Packs every block into solid rows from the floor up. Full rows clear.' },
-    golden:    { group: 'luck', name: 'Golden Piece', icon: '✦', price: 35, desc: 'Your next five clears pay triple.' },
-    jackpot:   { group: 'luck', name: 'Jackpot', icon: '❖', price: 50, desc: 'Three reels. Most pulls pay nothing; three stars pay 2,000.' },
+    reroll:    { group: 'shape', name: 'Reroll', icon: '⟳', price: 15, rarity: 'common', desc: 'Swap the piece in play for a different one.' },
+    mirror:    { group: 'shape', name: 'Mirror', icon: '⇋', price: 15, rarity: 'common', desc: 'Flip the piece in play: J and L, S and Z swap.' },
+    pebble:    { group: 'shape', name: 'Pebble', icon: '●', price: 20, rarity: 'common', desc: 'The piece in play becomes a single block.' },
+    noodle:    { group: 'shape', name: 'Noodle', icon: '∿', price: 25, rarity: 'uncommon', desc: 'The piece becomes a six-long rod.' },
+    giant:     { group: 'shape', name: 'Giant', icon: '▣', price: 30, rarity: 'uncommon', desc: 'The piece grows to twice its size.' },
+    blueprint: { group: 'shape', name: 'Blueprint', icon: '▦', price: 100, rarity: 'rare', desc: 'Draw your own piece, up to six connected blocks.' },
+    pick:      { group: 'choice', name: 'Pick of Three', icon: '⁝', price: 20, rarity: 'common', desc: 'Play one of the next three pieces now; this one takes its place in line.' },
+    fit:       { group: 'choice', name: 'Best Fit', icon: '✧', price: 45, rarity: 'uncommon', desc: 'The piece becomes the one that fits the stack best, right over its spot.' },
+    order:     { group: 'choice', name: 'Order Slip', icon: '✎', price: 35, rarity: 'rare', desc: 'Choose the piece in play.' },
+    patch:     { group: 'tool', name: 'Patch', icon: '⊡', price: 20, rarity: 'common', desc: 'One block that drops into the highest covered hole in its column.' },
+    phase:     { group: 'tool', name: 'Ghost', icon: '⬚', price: 50, rarity: 'uncommon', desc: 'The piece passes through blocks into the first gap below where it fits.' },
+    drill:     { group: 'tool', name: 'Drill', icon: '⇣', price: 40, rarity: 'uncommon', desc: 'A bit that bores out its whole column.' },
+    bomb:      { group: 'tool', name: 'Bomb', icon: '✹', price: 45, rarity: 'uncommon', desc: 'Clears a 13-block diamond where it lands.' },
+    laser:     { group: 'tool', name: 'Laser', icon: '↯', price: 65, rarity: 'rare', desc: 'Clears every row the piece touches, full or not.' },
+    blackhole: { group: 'tool', name: 'Black Hole', icon: '◎', price: 90, rarity: 'rare', desc: 'Swallows everything within three blocks of where it sets.' },
+    flip:      { group: 'board', name: 'Mirror World', icon: '⇄', price: 20, rarity: 'common', desc: 'Flips the whole board left to right.' },
+    rewind:    { group: 'board', name: 'Rewind', icon: '↶', price: 25, rarity: 'common', desc: 'Take back your last placement, and the lines it cleared.' },
+    trapdoor:  { group: 'board', name: 'Trapdoor', icon: '⤓', price: 40, rarity: 'uncommon', desc: 'The bottom row falls away, whatever it holds.' },
+    tornado:   { group: 'board', name: 'Tornado', icon: '◌', price: 60, rarity: 'rare', desc: 'Shuffles the columns, holes and all.' },
+    settle:    { group: 'board', name: 'Settle', icon: '⤋', price: 70, rarity: 'rare', desc: 'Every block falls straight down, closing every hole. Full rows clear.' },
+    golden:    { group: 'luck', name: 'Golden Piece', icon: '✦', price: 35, rarity: 'uncommon', desc: 'Your next five clears pay triple.' },
+    double:    { group: 'luck', name: 'Double or Nothing', icon: '◐', price: 30, rarity: 'uncommon', desc: 'Your next clear pays double if it is a quad or a T-spin, and nothing if it is less.' },
+    net:       { group: 'luck', name: 'Safety Net', icon: '⊔', price: 60, rarity: 'rare', desc: 'Keeps your back-to-back streak through one ordinary clear.' },
   };
-  // Items that no longer exist: what an old save's leftovers become (another item, or their price back in lines).
-  // Magnet (pulled its columns down) is folded into Sand and Settle.
-  const RETIRED_ITEMS = { magnet: { price: 45 } };
+  // Items that no longer exist: what an old save's leftovers become (a comparable item, or their old price back in
+  // lines). The sandbox's matter and energy went with the sandbox; Nuke, Chroma Purge, Anvil and Jackpot with it.
+  const RETIRED_ITEMS = {
+    magnet: { price: 45 },
+    sand: { to: 'patch' }, water: { to: 'patch' }, lava: { to: 'patch' }, seed: { price: 20 }, oil: { price: 15 },
+    acid: { to: 'drill' }, frost: { price: 25 }, steel: { price: 30 }, tnt: { to: 'bomb' }, torch: { price: 25 }, bolt: { price: 40 },
+    anvil: { to: 'drill' }, nuke: { to: 'blackhole' }, purge: { price: 75 }, jackpot: { price: 50 },
+  };
   const ITEM_ORDER = ITEM_GROUPS.flatMap((g) => Object.keys(ITEMS).filter((id) => ITEMS[id].group === g.id));
 
   // Colour slots: 1 I, 2 O, 3 T, 4 S, 5 Z, 6 J, 7 L, 8 garbage, 9–14 other shapes, 15 custom.
@@ -165,7 +162,7 @@
       settings: {
         bg: 'glass', tint: 0.78, accent: ACCENTS[0], theme: 'dark', onTop: true, fadeAway: true,
         sound: true, volume: 0.35, das: 230, arr: 55, lowerRepeat: 70, mouse: true, preview: 5,
-        motion: 'full', showKeys: true, music: true, musicVolume: 0.25, announcer: true, announcerVolume: 0.4, ccwPuzzles: false,
+        motion: 'full', showKeys: true, music: true, musicVolume: 0.25, announcer: true, announcerRelaxed: false, announcerVolume: 0.4, ccwPuzzles: false,
         muted: false, // the top bar's mute (M): over everything, separate from the toggles and volumes above
         hints: true, // control hints (js/hints.js); they retire on their own either way
       },
@@ -175,8 +172,9 @@
       // Control hints (js/hints.js): pieces and board time toward retiring them all, times each was shown, good uses
       // of each control, the ones retired for good. seeded: an older save has had its history counted in, once.
       hints: { seeded: 0, pieces: 0, ms: 0, over: false, shown: {}, skill: {}, retired: {} },
-      combos: {}, // Free Play combos and discoveries found: id → { n: times, lines: paid, first: when }
-      gift: { last: null, n: 0, log: [] }, // the daily gift: the last date it was opened, how many, the last few
+      combos: {}, // Free Play combos found: id → { n: times, lines: paid, first: when }
+      gift: { at: null, n: 0, log: [] }, // the daily gift: when it was last opened (ms), how many, the last few
+      earn: { board: null, paid: 0 }, // power-ups earned by lines on one board (js/items.js, Earn): which board, how many paid
       puzzle: { diff: 'E', next: { E: 1, M: 1, H: 1 }, current: null, solved: {}, history: [], saved: [] },
       factory: Factory.create(),
       stats: {
@@ -186,7 +184,7 @@
         free: { boardLog: [], boards: 1, pieces: 0, lines: 0, score: 0, bestScore: 0, bestLines: 0, clears: [0, 0, 0, 0, 0, 0], tspins: 0, tspinLines: 0, perfect: 0, maxCombo: 0, maxB2B: 0, holds: 0, rotations: 0, moves: 0, lowers: 0, drops: 0, byType: {}, topouts: 0 },
         // firstRun: first-try solves in a row; dailyRun: Dailies solved on consecutive dates (runDay is the last one).
         puzzle: { E: freshPuzzleDiff(), M: freshPuzzleDiff(), H: freshPuzzleDiff(), mods: {}, daily: 0, lastDaily: null, firstRun: 0, bestFirstRun: 0, dailyRun: 0, bestDailyRun: 0, runDay: null },
-        items: { bought: {}, used: {} },
+        items: { bought: {}, used: {}, got: {} },
         cosmetics: { bought: 0, spent: 0 },
       },
       history: {},
@@ -239,7 +237,7 @@
   }
 
   /**
-   * Items an old save still holds that are no longer sold: mapped to their replacement, or refunded at their price.
+   * Items an old save still holds that no longer exist: mapped to their replacement, or refunded at their old price.
    * Unknown ids (not ours at all) are dropped. Every item that exists has a count.
    */
   function migrateItems(st, retired) {
@@ -255,8 +253,16 @@
     }
     for (const id of ITEM_ORDER) if (!(inv[id] >= 0)) inv[id] = 0;
     if (!st.combos || typeof st.combos !== 'object') st.combos = {};
-    if (!st.gift || typeof st.gift !== 'object') st.gift = { last: null, n: 0, log: [] };
-    if (!Array.isArray(st.gift.log)) st.gift.log = [];
+    // The gift used to come once a calendar day: the last date it was opened becomes that date's midnight, so the
+    // next one still comes at the next midnight, and from then on 24 hours after each claim.
+    const g = st.gift = st.gift && typeof st.gift === 'object' ? st.gift : {};
+    if (typeof g.last === 'string' && g.at == null) { const m = /^(\d{4})-(\d\d)-(\d\d)$/.exec(g.last); if (m) g.at = new Date(+m[1], +m[2] - 1, +m[3]).getTime(); }
+    delete g.last;
+    g.at = Number.isFinite(g.at) ? g.at : null;
+    g.n = Math.max(0, Math.floor(Number(g.n) || 0));
+    if (!Array.isArray(g.log)) g.log = [];
+    if (!st.earn || typeof st.earn !== 'object') st.earn = { board: null, paid: 0 };
+    if (st.stats && st.stats.items && !st.stats.items.got) st.stats.items.got = {};
     return st;
   }
 
@@ -377,6 +383,25 @@
       return true;
     }
 
+    /**
+     * The daily gift (Relaxed tab): three power-ups, 24 hours after the last one was opened (js/items.js, Gifts).
+     * The draw is fixed by the save and how many gifts it has opened; the claim is booked and saved at once.
+     * Returns the ids, or null (not ready yet).
+     */
+    openGift(now) {
+      const st = this.state;
+      now = now == null ? Date.now() : now;
+      if (!L.Gifts || !L.Gifts.ready(st, now)) return null;
+      const ids = L.Gifts.forClaim(st.created, st.gift.n || 0);
+      for (const id of ids) this.grantItem(id, 1);
+      st.gift.at = now; st.gift.n = (st.gift.n || 0) + 1;
+      st.gift.log.unshift({ at: now, ids });
+      if (st.gift.log.length > 14) st.gift.log.length = 14;
+      this.save();
+      return ids;
+    }
+
+    /** Buys a power-up with lines (the Relaxed tab's item bar). */
     buyItem(id, qty) {
       qty = qty || 1;
       const it = ITEMS[id];
@@ -387,25 +412,12 @@
       return true;
     }
 
-    /**
-     * The daily gift (Relaxed tab): three power-ups once a calendar day, drawn by L.Gifts from the save and the date
-     * (so it is the same draw however often Lull is reopened). Booked and saved at once. Returns the ids, or null.
-     */
-    openGift(now) {
-      const st = this.state, day = dateKey(new Date(now || Date.now()));
-      if (!L.Gifts || !L.Gifts.ready(st, day)) return null;
-      const ids = L.Gifts.forDay(st.created, day);
-      for (const id of ids) this.grantItem(id, 1);
-      st.gift.last = day; st.gift.n = (st.gift.n || 0) + 1;
-      st.gift.log.unshift({ day, ids });
-      if (st.gift.log.length > 14) st.gift.log.length = 14;
-      this.save();
-      return ids;
-    }
-
     grantItem(id, qty) {
       if (!ITEMS[id]) return;
-      this.state.inventory[id] = (this.state.inventory[id] || 0) + (qty || 1);
+      qty = qty || 1;
+      this.state.inventory[id] = (this.state.inventory[id] || 0) + qty;
+      const got = this.state.stats.items.got = this.state.stats.items.got || {};
+      got[id] = (got[id] || 0) + qty;
       this.touch();
     }
 

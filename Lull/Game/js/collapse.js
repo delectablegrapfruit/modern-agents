@@ -8,24 +8,15 @@
 
   // ---- the idle bar --------------------------------------------------------------------------------------------------
   //
-  // Tetris lying on its side: four rows along the bar, "down" is to the right. Pieces drift in from the left, a few
-  // in flight at once, pick their lane and turn as they near the stack by the expand button, and settle; a full column
-  // glows softly and goes, and the stack slides over. It plays itself forever and never tops out (if it ever grew past
-  // half the bar it would fade out and start again).
+  // Pieces on a march: four lanes along the bar, and tetrominoes come in from the left and step right one cell at a
+  // time, the way a player taps them across the board. Now and then one turns (the game's own SRS rotations, about the
+  // same centre and with the same kicks) or shifts a lane up or down. They never touch, never land and never stack:
+  // each walks on off the right edge, behind the expand button, and more keep coming.
 
   const ROWS = 4;
-  const SPEED = 4.5; // cells per second
-  const GAP = 12; // columns between pieces in flight
-  const COMMIT = 7; // columns from the stack where a piece chooses its spot
-  const GLOW = 0.7; // seconds a clearing column glows
+  const TICK = 0.14; // seconds between a piece's moves: a step right every other tick, maybe a turn or a nudge between
+  const SLIDE = 0.07; // seconds a step takes to draw, a short ease from cell to cell
   const IDS = ['I', 'O', 'T', 'S', 'Z', 'J', 'L'];
-
-  /** A piece's rotation as [col, row] cells from its top-left, and its size. */
-  function shape(id, rot) {
-    const t = L.Pieces.get(id), b = L.Pieces.boundsOf(t.rots[rot]);
-    const cells = t.rots[rot].map(([x, y]) => [x - b.minX, b.maxY - y]);
-    return { cells, w: b.maxX - b.minX + 1, h: b.maxY - b.minY + 1, color: t.color };
-  }
 
   class BarIdle {
     constructor(canvas, getLook, isReduced) {
@@ -37,6 +28,8 @@
       this.last = 0;
       this.frames = 0;
       this.cols = 0;
+      this.serial = 0;
+      this.exited = 0;
       this.seed = 1 + Math.floor(Math.random() * 1e6);
       if (root.ResizeObserver) new ResizeObserver(() => { if (this.running) { this.resize(); this.draw(); } }).observe(canvas);
     }
@@ -51,7 +44,7 @@
       return this.bag.pop();
     }
 
-    /** Sizes the canvas to its box; a new column count starts a fresh well, played ahead so it is never empty. */
+    /** Sizes the canvas to its box; a new column count starts the march afresh, walked ahead so it is never empty. */
     resize() {
       const r = this.cv.getBoundingClientRect();
       const dpr = Math.min(3, root.devicePixelRatio || 1);
@@ -67,145 +60,99 @@
 
     reset(cols) {
       this.cols = cols;
-      this.grid = Array.from({ length: cols }, () => new Array(ROWS).fill(null));
-      this.flying = [];
-      this.clearing = null;
-      this.fade = 0;
-      this.nextAt = 0;
+      this.pieces = [];
       this.t = 0;
-      // Play a while unseen: pieces spread along the bar and a small stack already there.
-      for (let i = 0; i < 40 * 30; i++) this.step(1 / 30);
+      this.gap = 0;
+      // Walk a while unseen, so the bar is already full of pieces on their way.
+      const warm = (cols * 2 * TICK + 4) * 30;
+      for (let i = 0; i < warm; i++) this.step(1 / 30);
     }
 
-    fits(cells, x, y) {
-      for (const [cx, cy] of cells) {
-        const gx = x + cx, gy = y + cy;
-        if (gy < 0 || gy >= ROWS || gx >= this.cols) return false;
-        if (gx >= 0 && this.grid[gx][gy]) return false;
+    /** A piece's cells on the bar, [col, lane] with lane 0 at the bottom (y up, like the board). */
+    cellsOf(p, rot, x, y) {
+      const r = rot == null ? p.rot : rot, px = x == null ? p.x : x, py = y == null ? p.y : y;
+      return L.Pieces.get(p.id).rots[r].map(([cx, cy]) => [px + cx, py + cy]);
+    }
+
+    /** Whether a piece fits there: inside the four lanes and clear of every other piece. */
+    fits(p, rot, x, y) {
+      const cells = this.cellsOf(p, rot, x, y);
+      for (const [, cy] of cells) if (cy < 0 || cy >= ROWS) return false;
+      for (const q of this.pieces) {
+        if (q === p) continue;
+        for (const [ax, ay] of this.cellsOf(q)) for (const [bx, by] of cells) if (ax === bx && ay === by) return false;
       }
       return true;
     }
 
-    /** How far right a shape slides in a lane before it rests. */
-    landing(sh, y) {
-      let x = -sh.w;
-      while (this.fits(sh.cells, x + 1, y)) x++;
-      return x;
+    /** The span of columns a piece covers. */
+    span(p) {
+      let lo = Infinity, hi = -Infinity;
+      for (const [cx] of this.cellsOf(p)) { if (cx < lo) lo = cx; if (cx > hi) hi = cx; }
+      return { lo, hi };
     }
 
-    /** The leftmost filled column (the stack's surface), or the wall. */
-    surface() {
-      for (let x = 0; x < this.cols; x++) if (this.grid[x].some(Boolean)) return x;
-      return this.cols;
+    /** Moves a piece by whole cells, remembering where it was drawn so the step can ease across. */
+    move(p, dx, dy) {
+      p.x += dx; p.y += dy;
+      p.sx = this.slideOf(p, 'x') - dx; p.sy = this.slideOf(p, 'y') - dy; p.st = 0;
     }
 
-    /** The best spot for a piece: full columns first, then few holes, a short and even stack; a little chance. */
-    choose(id) {
-      let best = null;
-      for (let rot = 0; rot < (id === 'O' ? 1 : 4); rot++) {
-        const sh = shape(id, rot);
-        for (let y = 0; y + sh.h <= ROWS; y++) {
-          const x = this.landing(sh, y);
-          if (x < 0) continue;
-          const g = this.grid.map((c) => c.slice());
-          for (const [cx, cy] of sh.cells) g[x + cx][y + cy] = 1;
-          let full = 0;
-          for (let c = 0; c < this.cols; c++) if (g[c].every(Boolean)) full++;
-          const rest = g.filter((c) => !c.every(Boolean));
-          const depth = [];
-          let holes = 0;
-          for (let r = 0; r < ROWS; r++) {
-            let seen = false, d = 0;
-            for (let c = 0; c < rest.length; c++) {
-              if (rest[c][r]) seen = true;
-              else if (seen) holes++;
-              if (!seen) d++;
-            }
-            depth.push(rest.length - d);
-          }
-          let bump = 0;
-          for (let r = 1; r < ROWS; r++) bump += Math.abs(depth[r] - depth[r - 1]);
-          const score = full * 6 - holes * 5 - Math.max(...depth) * 1.2 - bump * 0.7 + this.rand() * 0.6;
-          if (!best || score > best.score) best = { score, rot, y, sh };
-        }
+    slideOf(p, axis) {
+      const k = Math.min(1, p.st / SLIDE), e = 1 - k * k * (3 - 2 * k);
+      return (axis === 'x' ? p.sx : p.sy) * e;
+    }
+
+    /** A turn as the game makes it: the next SRS rotation about the box centre, trying its kicks in order. */
+    turn(p, dir) {
+      const type = L.Pieces.get(p.id), to = (p.rot + dir + 4) % 4;
+      for (const [kx, ky] of L.Pieces.kicksFor(type, p.rot, to)) {
+        if (this.fits(p, to, p.x + kx, p.y + ky)) { p.rot = to; p.x += kx; p.y += ky; return true; }
       }
-      return best;
+      return false;
     }
 
     spawn() {
-      const id = this.nextId(), rot = Math.floor(this.rand() * 4);
-      const sh = shape(id, rot);
-      const y = Math.floor(this.rand() * (ROWS - sh.h + 1));
-      this.flying.push({ id, sh, x: -sh.w - 1, y, dy: y, target: null });
+      const p = { n: ++this.serial, id: this.nextId(), rot: 0, x: 0, y: 0, sx: 0, sy: 0, st: 1, phase: 0 };
+      p.rot = Math.floor(this.rand() * 4);
+      const type = L.Pieces.get(p.id), b = type.rotBounds[p.rot];
+      // Any lane it fits in, and just out of sight past the left edge.
+      const lanes = [];
+      for (let y = -b.minY; y + b.maxY < ROWS; y++) lanes.push(y);
+      p.y = lanes[Math.floor(this.rand() * lanes.length)];
+      p.x = -1 - b.maxX;
+      if (!this.fits(p)) return;
+      p.due = this.t + TICK;
+      this.pieces.push(p);
+      this.gap = 3 + Math.floor(this.rand() * 6);
     }
 
     step(dt) {
       this.t += dt;
-      if (this.fade > 0) {
-        this.fade += dt;
-        if (this.fade > 1.2) { this.grid = this.grid.map(() => new Array(ROWS).fill(null)); this.fade = 0; }
-        return;
-      }
-      if (this.clearing) {
-        this.clearing.t += dt;
-        if (this.clearing.t >= GLOW) this.collapseColumns();
-      }
-      for (const col of this.grid) for (const c of col) if (c && c.off > 0) c.off = Math.max(0, c.off - dt * 10);
-      // Spawn when the last piece has come far enough in.
-      const lastP = this.flying[this.flying.length - 1];
-      if (!lastP || lastP.x >= -lastP.sh.w - 1 + GAP) this.spawn();
-      const surf = this.surface();
-      for (const p of this.flying.slice()) {
-        p.x += SPEED * dt;
-        if (!p.target && p.x + p.sh.w >= surf - COMMIT) {
-          const c = this.choose(p.id);
-          if (!c) { this.fade = 0.001; this.flying = []; return; }
-          p.target = c;
-          p.sh = c.sh;
-          p.x = Math.min(p.x, this.landing(c.sh, c.y));
-          p.from = p.dy; p.tween = 0;
-        }
-        if (p.target) {
-          p.tween = Math.min(1, p.tween + dt * 1.6);
-          const e = p.tween * p.tween * (3 - 2 * p.tween);
-          p.dy = p.from + (p.target.y - p.from) * e;
-          const land = this.landing(p.sh, p.target.y);
-          if (p.x >= land) this.lock(p, land);
+      for (const p of this.pieces) p.st += dt;
+      // The front of the line goes first, so nobody waits on a piece that is about to move.
+      const order = this.pieces.slice().sort((a, b) => this.span(b).hi - this.span(a).hi);
+      for (const p of order) {
+        while (p.due <= this.t) {
+          p.due += TICK;
+          p.phase ^= 1;
+          if (p.phase) {
+            if (this.fits(p, p.rot, p.x + 1, p.y)) this.move(p, 1, 0);
+          } else {
+            const r = this.rand();
+            if (r < 0.1) this.turn(p, this.rand() < 0.7 ? 1 : -1);
+            else if (r < 0.16) { const dy = this.rand() < 0.5 ? 1 : -1; if (this.fits(p, p.rot, p.x, p.y + dy)) this.move(p, 0, dy); }
+          }
         }
       }
-      if (this.surface() < this.cols / 2) { this.fade = 0.001; this.flying = []; }
-    }
-
-    lock(p, x) {
-      this.flying.splice(this.flying.indexOf(p), 1);
-      const color = p.sh.color;
-      for (const [cx, cy] of p.sh.cells) this.grid[x + cx][p.target.y + cy] = { color, off: 0 };
-      if (!this.clearing) {
-        const cols = [];
-        for (let c = 0; c < this.cols; c++) if (this.grid[c].every(Boolean)) cols.push(c);
-        if (cols.length) this.clearing = { cols, t: 0 };
+      // Off the right edge and gone.
+      for (let i = this.pieces.length - 1; i >= 0; i--) {
+        if (this.span(this.pieces[i]).lo >= this.cols) { this.pieces.splice(i, 1); this.exited++; }
       }
-    }
-
-    /** The glowing columns go; everything to their left slides right into the gap. */
-    collapseColumns() {
-      const gone = new Set(this.clearing.cols);
-      this.clearing = null;
-      const kept = [];
-      for (let c = 0; c < this.cols; c++) if (!gone.has(c)) kept.push(this.grid[c]);
-      const empty = this.cols - kept.length;
-      const next = Array.from({ length: empty }, () => new Array(ROWS).fill(null)).concat(kept);
-      // Each kept column slides right by the cleared columns to its right.
-      let shift = 0;
-      for (let c = this.cols - 1; c >= 0; c--) {
-        if (gone.has(c)) { shift++; continue; }
-        for (const cell of this.grid[c]) if (cell) cell.off += shift;
-      }
-      this.grid = next;
-      // Anything else now full clears next.
-      const cols = [];
-      for (let c = 0; c < this.cols; c++) if (this.grid[c].every(Boolean)) cols.push(c);
-      if (cols.length) this.clearing = { cols, t: 0 };
+      // A new one once the last has come far enough in.
+      let lo = Infinity;
+      for (const p of this.pieces) lo = Math.min(lo, this.span(p).lo);
+      if (lo >= this.gap) this.spawn();
     }
 
     draw() {
@@ -216,43 +163,24 @@
       const look = this.getLook();
       const th = look.theme || {};
       const s = this.s, top = this.top, left = this.left;
-      // The well: a recessed lane the length of the bar, like the tabs' track.
+      // The lanes: a recessed track the length of the bar, like the tabs' track.
       L.Render.rr(ctx, left - 3.5, top - 2.5, this.cols * s + 6, ROWS * s + 5, 6);
       ctx.fillStyle = th.well || 'rgba(0,0,0,0.3)'; ctx.fill();
       ctx.strokeStyle = th.grid || 'rgba(255,255,255,0.06)'; ctx.lineWidth = 1; ctx.stroke();
       ctx.save();
-      ctx.beginPath(); ctx.rect(left, top - 2, this.cols * s + 2, ROWS * s + 4); ctx.clip();
-      const fadeA = this.fade > 0 ? Math.max(0, 1 - this.fade / 1.2) : 1;
-      const glowing = this.clearing ? new Set(this.clearing.cols) : null;
-      const gt = this.clearing ? this.clearing.t / GLOW : 0;
-      for (let c = 0; c < this.cols; c++) {
-        for (let r = 0; r < ROWS; r++) {
-          const cell = this.grid[c][r];
-          if (!cell) continue;
-          const a = glowing && glowing.has(c) ? Math.max(0, 1 - gt * 1.3) : 1;
-          if (a > 0) L.Render.drawCell(ctx, look.skin, look.colors[cell.color], left + (c - cell.off) * s, top + r * s, s, a * fadeA);
-        }
-      }
-      for (const p of this.flying) {
-        // Pieces come in out of nothing over the first few columns.
-        for (const [cx, cy] of p.sh.cells) {
-          const a = Math.max(0, Math.min(1, (p.x + cx) / 3)) * fadeA;
-          if (a > 0) L.Render.drawCell(ctx, look.skin, look.colors[p.sh.color], left + (p.x + cx) * s, top + (p.dy + cy) * s, s, a);
+      // Clipped to the track: pieces come out of its left end and pass under its right, by the expand button.
+      ctx.beginPath(); ctx.rect(left, top - 2, this.cols * s, ROWS * s + 4); ctx.clip();
+      for (const p of this.pieces) {
+        const color = look.colors[L.Pieces.get(p.id).color];
+        const ox = this.slideOf(p, 'x'), oy = this.slideOf(p, 'y');
+        for (const [cx, cy] of this.cellsOf(p)) {
+          const gx = cx + ox;
+          // Out of nothing over the first couple of columns.
+          const a = Math.max(0, Math.min(1, (gx + 1) / 3));
+          if (a > 0) L.Render.drawCell(ctx, look.skin, color, left + gx * s, top + (ROWS - 1 - cy - oy) * s, s, a);
         }
       }
       ctx.restore();
-      if (glowing) {
-        // A soft light where the column was: up and gone in the time the cells fade.
-        const a = Math.sin(Math.min(1, gt) * Math.PI) * 0.75;
-        for (const c of glowing) {
-          const x = left + c * s + s / 2;
-          const g = ctx.createRadialGradient(x, top + ROWS * s / 2, 0, x, top + ROWS * s / 2, s * 2.6);
-          g.addColorStop(0, L.Render.rgba(th.accent || '#9ad', a));
-          g.addColorStop(1, L.Render.rgba(th.accent || '#9ad', 0));
-          ctx.fillStyle = g;
-          ctx.fillRect(x - s * 3, 0, s * 6, this.h);
-        }
-      }
     }
 
     start() {

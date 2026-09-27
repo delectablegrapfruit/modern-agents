@@ -8,8 +8,6 @@
     Space: 'drop', KeyX: 'cw', KeyZ: 'ccw', KeyA: 'r180',
     KeyC: 'hold', ShiftLeft: 'hold', ShiftRight: 'hold', KeyP: 'pause',
     Backspace: 'undo', KeyU: 'undo', KeyR: 'retry', KeyN: 'next', KeyH: 'hint',
-    Digit1: 'item1', Digit2: 'item2', Digit3: 'item3', Digit4: 'item4', Digit5: 'item5', Digit6: 'item6',
-    Digit7: 'item7', Digit8: 'item8', Digit9: 'item9', Digit0: 'item10', Minus: 'item11', Equal: 'item12',
   };
   const REPEATS = new Set(['left', 'right', 'down', 'up']);
 
@@ -21,7 +19,6 @@
     ['Z', 'Turn counter-clockwise'],
     ['A', 'Turn 180°'],
     ['C / Shift', 'Hold (again: swap back)'],
-    ['1 – 6, 1 – 9', 'Power-ups (Free Play): a tray, then one in it'],
     ['Backspace / U', 'Undo (Puzzles)'],
     ['R', 'Retry puzzle · restart Classic'],
     ['P', 'Pause Classic'],

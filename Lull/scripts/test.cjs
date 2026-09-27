@@ -5,7 +5,7 @@
 'use strict';
 const assert = require('assert');
 const load = require('./load.cjs');
-const L = load(['util.js', 'pieces.js', 'board.js', 'engine.js', 'sandbox.js', 'puzzlegen.js', 'factory.js', 'store.js', 'achievements.js']);
+const L = load(['util.js', 'pieces.js', 'board.js', 'engine.js', 'items.js', 'puzzlegen.js', 'factory.js', 'store.js', 'achievements.js']);
 const { Pieces, Board, Game, Puzzles, Factory, RNG } = L;
 
 let passed = 0, failed = 0;
@@ -283,21 +283,32 @@ test('the seven keep plain SRS, and puzzles (a fixed queue) keep exactly the tur
   put(f, NOODLE, 0, 2, 17);
   assert(f.rotate(1));
 });
-test('new items: anvil, magnet, laser, black hole, golden, nuke, tornado, mirror world', () => {
+test('items on the board: laser, black hole, golden, tornado, trapdoor, mirror world', () => {
   const mk = () => { const g = new Game({ w: 10, h: 20, seed: 9 }); for (let y = 0; y < 4; y++) for (let x = 0; x < 10; x++) if ((x + y) % 3) g.board.set(x, y, 8); g.replacePiece({ id: 'O' }); return g; };
   let g = mk(); const before = g.board.count();
-  assert(g.setSpecial('anvil')); g.piece.y = 12;
-  let r = g.drop();
-  assert(r.smashed.length > 0 && r.cells.every(([, y]) => y <= 1), 'the anvil lands on the floor, smashing its columns');
-  g = mk(); g.setSpecial('magnet'); r = g.drop();
-  assert(r.moves && r.moves.length > 0, 'the magnet pulls its columns down');
-  g = mk(); g.setSpecial('laser'); r = g.drop();
-  assert(r.laser.length === 2 && r.lines >= 2, 'the laser vaporises both rows it touches');
+  g.setSpecial('laser'); let r = g.drop();
+  assert(r.laser.length === 2 && r.lines === 2 && r.plain === 2, 'the laser vaporises both rows it touches, as plain lines');
+  assert(!r.b2b && g.s.b2b === -1, 'a laser never feeds the back-to-back streak');
   g = mk(); assert(g.setSpecial('blackhole')); g.piece.y = 6; r = g.drop();
-  assert(r.swallowed.length > 5, 'the black hole swallows its surroundings');
+  assert(r.swallowed.length > 5 && r.cells.length === 0, 'the black hole swallows its surroundings, and is gone');
   g = mk(); g.setSpecial('golden'); r = g.drop(); assert(r.golden);
-  g = mk(); assert(g.nuke().length === before && g.board.isEmpty());
-  g = mk(); r = g.tornado(); assert.strictEqual(r.lines, Math.floor(before / 10)); assert.strictEqual(g.board.count(), before % 10);
+  // Tornado: columns shuffled, holes and all; every row keeps its count, so nothing clears.
+  g = mk();
+  const rowCounts = (b) => [...Array(20)].map((_, y) => [...Array(10)].filter((_, x) => b.get(x, y)).length);
+  const colSets = (b) => [...Array(10)].map((_, x) => [...Array(20)].map((_, y) => b.get(x, y)).join()).sort().join('|');
+  const counts0 = rowCounts(g.board), cols0 = colSets(g.board);
+  const moves = g.tornado();
+  assert(moves && moves.length === before);
+  assert.deepStrictEqual(rowCounts(g.board), counts0);
+  assert.strictEqual(colSets(g.board), cols0, 'the same columns, in another order');
+  assert(g.undo(), 'rewind undoes a tornado');
+  // Trapdoor: the bottom row falls away, everything above comes down one, no lines are paid.
+  g = mk(); const row1 = [...Array(10)].map((_, x) => g.board.get(x, 1));
+  const lost = g.trapdoor();
+  assert(lost && lost.filter(Boolean).length === [...Array(10)].filter((_, x) => (x) % 3).length);
+  assert.deepStrictEqual([...Array(10)].map((_, x) => g.board.get(x, 0)), row1);
+  assert.strictEqual(g.s.lines, 0);
+  g = new Game({ w: 10, h: 20, seed: 1 }); assert.strictEqual(g.trapdoor(), null, 'nothing to drop on an empty floor');
   g = mk(); const row0 = [...Array(10)].map((_, x) => g.board.get(x, 0)); assert(g.flipWorld()); assert.deepStrictEqual([...Array(10)].map((_, x) => g.board.get(x, 0)), row0.reverse());
   assert(g.undo(), 'rewind undoes a board item');
   assert.deepStrictEqual([...Array(10)].map((_, x) => g.board.get(x, 0)), row0.reverse());
@@ -348,25 +359,39 @@ test('undo restores the board and gives back the lines it cleared', () => {
   assert.strictEqual(g.board.count(), 3);
   assert.strictEqual(g.s.lines, 0);
 });
-test('items: bomb, drill, sand, phase, settle, purge', () => {
+test('items: bomb, drill, patch, ghost, settle', () => {
   const setup = () => { const g = new Game({ w: 10, h: 20, seed: 6 }); for (let y = 0; y < 6; y++) for (let x = 0; x < 10; x++) if ((x * 7 + y * 3) % 5) g.board.set(x, y, 1 + ((x + y) % 7)); return g; };
   let g = setup();
   g.setSpecial('bomb');
   let before = g.board.count();
   let r = g.drop();
-  assert(r.blasted > 0 && g.board.count() === before - r.blasted && r.blasted <= 13, 'a blast in the settle: ' + r.blasted);
+  assert(r.blast.length > 0 && r.blast.length <= 13 && g.board.count() === before - r.blast.length, 'a 13-block diamond at most: ' + r.blast.length);
+  assert(r.blast.every(([x, y]) => Math.abs(x - r.center[0]) + Math.abs(y - r.center[1]) <= 2 || (Math.abs(x - r.center[0]) <= 1 && Math.abs(y - r.center[1]) <= 1)));
   g = setup(); g.setSpecial('drill'); before = g.board.count();
   const col = g.cellsOf()[0][0];
   const colCount = [0, 1, 2, 3, 4, 5].filter((y) => g.board.get(col, y)).length;
   r = g.drop();
   assert.strictEqual(r.drilled.length, colCount);
   assert.strictEqual(g.board.count(), before - colCount);
-  g = setup(); g.board.cells.fill(0); g.board.set(0, 0, 8); g.board.set(1, 3, 8); g.replacePiece({ id: 'O' }); g.setSpecial('sand');
-  while (g.move(-1));
+  // Patch: into the highest covered hole of its column; with none, it lands like a block.
+  g = new Game({ w: 10, h: 20, seed: 6 });
+  g.board.set(3, 0, 8); g.board.set(3, 2, 8); g.board.set(3, 4, 8); // holes at (3,1) and (3,3)
+  assert(g.setSpecial('patch'));
+  g.piece.x = 3;
+  assert.strictEqual(g.ghostY(g.piece), 3, 'the ghost shows the hole it will fill');
   r = g.drop();
-  const grains = []; for (let y = 0; y < 20; y++) for (let x = 0; x < 10; x++) if ((g.board.get(x, y) & L.CELL.MAT) === L.CELL.SAND) grains.push([x, y]);
-  assert(grains.length === 4 && grains.every(([x, y]) => y === 0 || g.board.get(x, y - 1)), 'each grain fell on its own: ' + JSON.stringify(grains));
-  assert(grains.some(([x, y]) => y < 3), 'some slid off the ledge and down');
+  assert(r.patched && g.board.get(3, 3) && !g.board.get(3, 1) && !g.board.get(3, 5), 'the highest covered hole');
+  g.setSpecial('patch'); g.piece.x = 3;
+  while (g.lower() === 'moved');
+  assert(g.board.get(3, 1), 'lowered onto the stack, it still drops into the hole below');
+  g.setSpecial('patch'); g.piece.x = 6; r = g.drop();
+  assert(g.board.get(6, 0) && r.cells[0][1] === 0, 'no hole: it lands like a block');
+  // A patch that completes a row clears it (plain lines).
+  g = new Game({ w: 10, h: 20, seed: 6 });
+  for (let x = 0; x < 10; x++) { if (x !== 9) g.board.set(x, 1, 8); if (x !== 4) g.board.set(x, 0, 8); }
+  g.setSpecial('patch'); g.piece.x = 4; r = g.drop();
+  assert(r.lines === 1 && r.plain === 1 && g.board.count() === 9);
+  // Ghost: through the shelf, down to the floor.
   g = setup(); g.board.cells.fill(0);
   for (let x = 0; x < 10; x++) g.board.set(x, 3, 8);
   g.board.set(4, 3, 0); g.board.set(5, 3, 0);
@@ -377,12 +402,41 @@ test('items: bomb, drill, sand, phase, settle, purge', () => {
   assert(g.board.get(4, 0) && g.board.get(5, 1), 'phased under the shelf, down to the floor');
   g = setup(); before = g.board.count();
   r = g.settle();
-  assert(r.lines >= 0 && g.board.count() === before - 10 * r.lines);
+  assert(r.lines >= 0 && g.board.count() === before - 10 * r.lines && r.plain === r.lines);
   for (let x = 0; x < 10; x++) { let seenEmpty = false; for (let y = 0; y < 20; y++) { if (!g.board.get(x, y)) seenEmpty = true; else assert(!seenEmpty, 'no holes after settling'); } }
-  g = setup(); const color = g.piece.type.color;
-  const same = g.board.count((v) => (v & 31) === color);
-  const gone = g.purge();
-  assert.strictEqual(gone.length, same);
+});
+test('choice: Pick of Three swaps with the queue; Best Fit finds the well; both can be put back', () => {
+  const g = new Game({ w: 10, h: 20, seed: 11 });
+  const cur = g.piece.type.id, q = g.queue.map((e) => e.id);
+  assert(g.pickFromQueue(1));
+  assert.strictEqual(g.piece.type.id, q[1]);
+  assert.strictEqual(g.queue[1].id, cur, 'the piece in play takes its place in line');
+  assert.deepStrictEqual([g.queue[0].id, g.queue[2].id], [q[0], q[2]]);
+  assert(!g.pickFromQueue(3), 'only the next three');
+  // A four-deep well at the right: Best Fit is an I standing in it, over its spot.
+  const f = new Game({ w: 10, h: 20, seed: 12 });
+  for (let y = 0; y < 4; y++) for (let x = 0; x < 9; x++) f.board.set(x, y, 8);
+  const spot = f.bestFit();
+  assert(spot && f.piece.type.id === 'I' && f.piece.entry.tag === 'fit');
+  const r = f.drop();
+  assert.strictEqual(r.lines, 4, 'it drops straight into the well');
+  assert.strictEqual(r.tag, 'fit');
+  // A flat floor: whatever it picks leaves no hole.
+  const e = new Game({ w: 10, h: 20, seed: 13 });
+  e.bestFit(); e.drop();
+  let holes = 0; for (let x = 0; x < 10; x++) { let roof = false; for (let y = 19; y >= 0; y--) { if (e.board.get(x, y)) roof = true; else if (roof) holes++; } }
+  assert.strictEqual(holes, 0);
+});
+test('Safety Net keeps a back-to-back streak through one ordinary clear, once', () => {
+  const g = new Game({ w: 10, h: 20, seed: 3 });
+  g.s.b2b = 4;
+  const single = () => { g.board.cells.fill(0); for (let x = 1; x < 10; x++) g.board.set(x, 0, 8); g.replacePiece({ id: 'M1' }); g.piece.x = 0; return g.drop(); };
+  g.s.net = 1;
+  let r = single();
+  assert.strictEqual(r.netSaved, 5);
+  assert(g.s.b2b === 4 && g.s.net === 0);
+  r = single();
+  assert(!r.netSaved && g.s.b2b === -1, 'the next ordinary clear ends it');
 });
 test('the saved game comes back exactly', () => {
   const g = new Game({ w: 10, h: 20, seed: 8 });
@@ -1095,7 +1149,7 @@ test('achievements: a fresh save and a short ordinary game earn nothing', () => 
   assert(g.s.pace.length === 101 && L.paceOf(g.s, 100).ms === 300000, 'its last hundred pieces: ' + JSON.stringify(L.paceOf(g.s, 100)));
   // The same player with a handful of items along the way (as Free Play uses them: the item, then noteItem).
   const gi = new Game({ w: 10, h: 20, seed: 13 });
-  const use = { 15: () => gi.replacePiece({ id: 'I' }), 35: () => gi.replacePiece({ id: 'M1' }), 55: () => gi.setSpecial('sand'), 75: () => gi.settle(), 95: () => gi.setSpecial('frost'), 115: () => gi.setSpecial('oil'), 125: () => gi.setSpecial('torch') };
+  const use = { 15: () => gi.replacePiece({ id: 'I' }), 35: () => gi.replacePiece({ id: 'M1' }), 55: () => gi.setSpecial('patch'), 75: () => gi.settle(), 95: () => gi.setSpecial('phase'), 115: () => gi.setSpecial('bomb'), 125: () => gi.setSpecial('laser') };
   const acts = new Set([75]);
   bot(gi, 150, (r) => { gi.notePace(r, (clock += 3000)); earned.push(...A.check(st, { mode: 'play', r, g: gi }).map((a) => a.id)); },
     (i) => { if (!use[i]) return; const it = use[i](); if (it) { gi.s.items['item' + i] = 1; gi.noteItem(acts.has(i)); } });
@@ -1122,7 +1176,8 @@ test('achievements: every new one is earned by its own feat, once', () => {
   const puzzle = (o) => Object.assign({ mode: 'puzzle', diff: 'H', firstTry: false, hinted: false, undos: 0, ms: 60000, mods: [] }, o);
   const today = L.dateKey();
   const cases = [
-    ['toolbox', play({ lines: 1 }, { items: { reroll: 1, sand: 1, torch: 1, drill: 1, flip: 1, jackpot: 1 } })],
+    ['toolbox', play({ lines: 1 }, { items: { reroll: 1, pick: 1, drill: 1, flip: 1 } }), null, true],
+    ['toolbox', play({ lines: 1 }, { items: { reroll: 1, pick: 1, drill: 1, flip: 1, double: 1 } })],
     ['mini2', play({ lines: 2, mini: true }), null, true],
     ['mini2', play({ lines: 2, mini: true, hand: true })],
     ['golden_ts', play({ lines: 2, tspin: true, golden: true, hand: true }), null, true],
@@ -1159,10 +1214,11 @@ test('achievements: every new one is earned by its own feat, once', () => {
     ['pace33', play({ lines: 1 }, { pace: Array.from({ length: 101 }, (_, i) => [i * 1810, Math.floor(i * 0.4)]) }), null, true],
     ['pace33', play({ lines: 1 }, { pace: Array.from({ length: 101 }, (_, i) => [i * 1790, Math.floor(i * 0.4)]) })],
     ['pace67', play({ lines: 1 }, { pace: Array.from({ length: 101 }, (_, i) => [i * 890, Math.floor(i * 0.4)]) })],
-    ['sb_goldberg', play({ lines: 0, explosions: 2, ignited: 5, steam: 3 }), null, true],
-    ['sb_goldberg', play({ lines: 0, explosions: 1, ignited: 5, steam: 3, current: 4 })],
-    ['sb_scorch', play({ lines: 0, sim: {}, consumed: 59 }), null, true],
-    ['sb_scorch', play({ lines: 0, sim: {}, consumed: 60 })],
+    ['it_showman', play({ lines: 0 }, { combos: { painted: 1, pocket: 1, keyhole: 1, patchjob: 1, allin: 1 } }), null, true],
+    ['it_showman', play({ lines: 0 }, { combos: { patchjob: 1, allin: 1, horizon: 1 } })],
+    ['it_sweep', play({ lines: 6, special: 'settle', had: 59 }), null, true],
+    ['it_sweep', play({ lines: 6, special: 'golden', had: 80 }), null, true],
+    ['it_sweep', play({ lines: 6, special: 'settle', had: 60 })],
     ['sb_combos', play({ lines: 0 }), (st) => { for (const c of L.Combos.LIST) st.combos[c.id] = { n: 1 }; }],
     ['clean40', play({ lines: 4, perfect: true }, { pieces: 100, lines: 40, items: { golden: 1 } }), null, true],
     ['clean40', play({ lines: 4, perfect: true }, { pieces: 100, lines: 40 })],
@@ -1261,9 +1317,9 @@ test('achievement stats: by hand — items break the hand streaks, an empty boar
   assert(!r.hand && r.perfect && g.s.b2b === 2 && g.s.hb2b === -1 && g.s.hquads === 0 && g.s.hperfect === 2);
   assert(g.s.hand, 'the board it emptied is a fresh start');
   assert(!A.check(L.defaultState(), { mode: 'play', r, g }).some((a) => a.id === 'pc' || a.id === 'quad'), 'neither a hand quad nor a hand perfect clear');
-  // Lasers stack the board's back-to-back, never the hand one.
-  for (let i = 0; i < 4; i++) { r = quad('laser'); assert(!r.hand); }
-  assert(g.s.b2b >= 5 && g.s.hb2b === -1 && g.s.hchain === 0);
+  // Lasers clear plain lines: they feed neither back-to-back streak.
+  for (let i = 0; i < 4; i++) { r = quad('laser'); assert(!r.hand && r.plain === 4); }
+  assert(g.s.b2b === -1 && g.s.hb2b === -1 && g.s.hchain === 0);
   assert(!A.check(L.defaultState(), { mode: 'play', r, g }).some((a) => /^(b2b|chain|quads|combo)/.test(a.id)));
   quad(); quad();
   assert.deepStrictEqual([g.s.hb2b, g.s.hquads, g.s.hchain], [1, 2, 2 + 1]);
@@ -1272,10 +1328,10 @@ test('achievement stats: by hand — items break the hand streaks, an empty boar
   g.replacePiece({ id: 'I' }); g.rotate(1); while (g.move(-1)); g.drop();
   g.undo(); g.noteItem(true);
   assert(g.s.hb2b === -1 && !g.s.hand);
-  // A Tornado's perfect clear is not by hand, but the empty board it leaves is a fresh start.
+  // A Settle's perfect clear is not by hand, but the empty board it leaves is a fresh start.
   g.board.cells.fill(0);
   for (let i = 0; i < 20; i++) g.board.set(i % 10, 2 + Math.floor(i / 10) * 3, 8);
-  r = g.tornado(); g.noteItem(true);
+  r = g.settle(); g.noteItem(true);
   assert(r.perfect && !r.hand && g.s.hand);
   assert(!A.check(L.defaultState(), { mode: 'play', r, g }).some((a) => a.id === 'pc'));
   // Luck items do not touch the board: Free Play never calls noteItem for them (js/modes.js). An item taken back
@@ -1348,15 +1404,12 @@ test('achievement stats: days played, counted and brought forward from old saves
   assert.strictEqual(old.stats.puzzle.bestFirstRun, 0);
 });
 
-console.log('sandbox');
+console.log('power-ups');
 {
-  const { CELL, Chain, Combos, Luck, Sandbox, Gifts } = L;
-  const mat = (g, x, y) => g.board.get(x, y) & CELL.MAT;
-  const st = (v, s) => v | (s << 12);
+  const { CELL, Chain, Combos, Luck, Gifts, Earn } = L;
   // An empty 10×20 board with the given rows (bottom first): . empty, digits colour slots, X garbage, m the single
-  // block's colour, and matter: i ice, o oil, s steel, p powder, w water, a sand, g glass, e seed, v vine (no growth
-  // left), c acid, l lava, ^ a flame, ~ steam.
-  const CODE = { X: 8, m: 13, i: 3 | CELL.ICE, o: 2 | CELL.OIL, s: 6 | CELL.STEEL, p: 5 | CELL.POWDER, w: 1 | CELL.WATER, a: 7 | CELL.SAND, g: 1 | CELL.GLASS, e: 4 | CELL.SEED, v: 4 | CELL.VINE, c: st(4 | CELL.ACID, 3), l: st(7 | CELL.LAVA, 12), '^': st(7 | CELL.FIRE, 5), '~': st(1 | CELL.STEAM, 7) };
+  // block's colour.
+  const CODE = { X: 8, m: 13 };
   const board = (rows, piece) => {
     const g = new Game({ w: 10, h: 20, seed: 3 });
     rows.forEach((row, y) => { for (let x = 0; x < 10; x++) { const c = row[x] || '.'; g.board.set(x, y, c === '.' ? 0 : CODE[c] != null ? CODE[c] : Number(c)); } });
@@ -1365,31 +1418,17 @@ console.log('sandbox');
   };
   // Puts the piece in play at a spot (its rotation box's origin) and drops it.
   const dropAt = (g, x, y, special, id) => { if (id) g.replacePiece({ id }); if (special) assert(g.setSpecial(special), special); g.piece.x = x; if (y != null) g.piece.y = y; return g.drop(); };
-  // A plain block set far off at the right (x = 9 on an empty column): just a lock, to let the board settle.
-  const nudge = (g) => dropAt(g, 9, 12, null, 'M1');
-  // Plays a settle's frames back from its start, the way the renderer does.
-  const replay = (r) => {
-    const d = r.sim.start.slice();
-    for (const f of r.sim.frames) {
-      if (f.clear) { const b = Board.fromArray(10, 20, d); b.clearRows(f.clear); d.set(b.cells); }
-      else for (let k = 0; k < f.d.length; k += 2) d[f.d[k]] = f.d[k + 1];
-    }
-    return d;
-  };
-  const noneLeft = (g) => g.board.count((v) => [CELL.FIRE, CELL.STEAM, CELL.LAVA].includes(v & CELL.MAT)) === 0 && g.board.count((v) => ((v & CELL.MAT) === CELL.STEEL || (v & CELL.MAT) === CELL.WATER) && (v >>> 12)) === 0;
+  const inv = (st) => Object.values(st.inventory).reduce((a, b) => a + b, 0);
 
-  test('materials ride on their blocks: clears, settling, undo and the save keep them', () => {
-    const g = board(['XXXXXXXXX.', '..i.s.....']);
-    g.replacePiece({ id: 'M1' }); g.piece.x = 9; g.piece.y = 5;
-    const r = g.drop();
-    assert.strictEqual(r.lines, 1);
-    assert.strictEqual(mat(g, 2, 0), CELL.ICE); assert.strictEqual(mat(g, 4, 0), CELL.STEEL);
-    const h = new Game({ saved: JSON.parse(JSON.stringify(g.toJSON())) });
-    assert.strictEqual(mat(h, 2, 0), CELL.ICE, 'saved and loaded');
-    g.undo();
-    assert.strictEqual(mat(g, 2, 1), CELL.ICE, 'undo puts them back where they were');
-    g.board.compact();
-    assert.strictEqual(mat(g, 4, 1), CELL.STEEL, 'settling carries them');
+  test('old boards: what the sandbox made blocks of is gone; the blocks stay, flames and steam go, retired items are plain pieces', () => {
+    const cells = new Array(200).fill(0);
+    cells[0] = 5 | 0x400; cells[1] = 3 | 0x100 | 0x2000; cells[2] = 7 | 0x800 | 0x5000; cells[3] = 1 | 0x700; cells[4] = 8 | 32; cells[5] = 6 | 0x300;
+    const sv = { w: 10, h: 20, wrap: false, cells, fixed: false, queue: [{ id: 'T', rot: 0, special: 'sand' }, { id: 'O', rot: 0 }], bag: [], rng: new RNG(1).state(), hold: { id: 'I', rot: 0, special: 'torch' }, holdLocked: false, s: {}, piece: { entry: { id: 'O', rot: 0, special: 'anvil' }, rot: 0, x: 3, y: 12 } };
+    const g = new Game({ saved: sv });
+    assert.deepStrictEqual([0, 1, 2, 3, 4, 5].map((x) => g.board.get(x, 0)), [5, 3, 0, 0, 8 | 32, 6]);
+    assert(g.board.cells.every((v) => !(v & CELL.OLD)));
+    assert(g.piece.special === null && g.hold.special === null && g.queue[0].special === null, 'retired specials dropped');
+    assert(g.drop(), 'and the piece plays on');
   });
 
   test('the multiplier: an eighth a link in Free Play (×2.5 at twenty), a half in Classic (×10 at twenty); the chain counts apart', () => {
@@ -1411,250 +1450,7 @@ console.log('sandbox');
     assert.strictEqual(Chain.streak(q), 3);
   });
 
-  test('every material meets at least three others (the table, its agents and what meetings make)', () => {
-    const count = {};
-    const add = (m, why) => { (count[m] = count[m] || new Set()).add(why); };
-    for (const [energy, row] of Object.entries(Sandbox.TABLE)) {
-      for (const m of Object.keys(row)) add(m, energy);
-      for (const a of Sandbox.AGENTS[energy] || []) add(a, 'brings ' + energy);
-    }
-    for (const [m, from] of Object.entries(Sandbox.MAKES)) add(m, 'made from ' + from.join(' and '));
-    const names = Object.values(Sandbox.NAMES).filter((n) => n !== 'block');
-    for (const n of names) assert((count[n] || new Set()).size >= 3, n + ': ' + Array.from(count[n] || []).join(', '));
-    assert.strictEqual(names.length, 13);
-  });
-
-  // One small board per rule of the table: [energy, material] → [rows, what to do, what must be true after].
-  const flameOn = (rows) => { const g = board(rows); const r = dropAt(g, 0, 6, 'torch', 'M1'); return { g, r }; };
-  const boltOn = (rows) => { const g = board(rows); const r = dropAt(g, 0, 6, 'bolt', 'O'); return { g, r }; };
-  const bombAt4 = (rows) => { const g = board(rows); const r = dropAt(g, 4, 6, 'bomb', 'O'); return { g, r }; };
-  const settle = (rows) => { const g = board(rows); const r = nudge(g); return { g, r }; };
-  const RULES = {
-    'heat.oil': [() => flameOn(['o']), ({ g, r }) => r.ignited >= 1 && !g.board.get(0, 0)],
-    'heat.vine': [() => flameOn(['v']), ({ g, r }) => r.ignited >= 1 && !g.board.get(0, 0)],
-    'heat.seed': [() => flameOn(['e']), ({ g, r }) => r.ignited >= 1 && !g.board.get(0, 0)],
-    'heat.powder': [() => flameOn(['pX']), ({ g, r }) => r.explosions >= 1 && !g.board.get(1, 0)],
-    'heat.ice': [() => flameOn(['i']), ({ r }) => r.melted >= 1],
-    'heat.sand': [() => flameOn(['a']), ({ g }) => mat(g, 0, 0) === CELL.GLASS],
-    'heat.water': [() => flameOn(['w']), ({ g, r }) => r.steam >= 1 && !g.board.get(0, 0)],
-    'heat.acid': [() => flameOn(['s', 'c']), ({ r }) => r.steam >= 1],
-    'cold.water': [() => settle(['iw']), ({ g, r }) => r.froze === 1 && mat(g, 1, 0) === CELL.ICE],
-    'cold.steam': [() => settle(['X', '~', 'i']), ({ r }) => r.condensed >= 1],
-    'cold.lava': [() => settle(['il']), ({ g, r }) => r.quenched === 1 && (g.board.get(1, 0) & 31) === 8 && !mat(g, 1, 0)],
-    'acid.block': [() => settle(['X', 'c']), ({ g, r }) => r.dissolved >= 1 && mat(g, 0, 0) === CELL.ACID],
-    'acid.sand': [() => settle(['a', 'c']), ({ r }) => r.dissolved >= 1],
-    'acid.glass': [() => settle(['g', 'c']), ({ r }) => r.dissolved >= 1],
-    'acid.ice': [() => settle(['i', 'c']), ({ r }) => r.dissolved >= 1],
-    'acid.seed': [() => settle(['e', 'c']), ({ r }) => r.dissolved >= 1],
-    'acid.vine': [() => settle(['v', 'c']), ({ r }) => r.dissolved >= 1],
-    'acid.powder': [() => settle(['p', 'c']), ({ r }) => r.dissolved >= 1 && !r.explosions],
-    'acid.water': [() => settle(['cw']), ({ g, r }) => r.diluted === 1 && mat(g, 0, 0) === CELL.WATER],
-    'current.steel': [() => boltOn(['sssp']), ({ g, r }) => r.current >= 3 && mat(g, 1, 0) === CELL.STEEL && r.explosions >= 1],
-    'current.water': [() => boltOn(['wwwp']), ({ r }) => r.current >= 3 && r.explosions >= 1],
-    'current.oil': [() => boltOn(['sso']), ({ r }) => r.ignited >= 1],
-    'current.vine': [() => boltOn(['ssv']), ({ r }) => r.ignited >= 1],
-    'current.seed': [() => boltOn(['sse']), ({ r }) => r.ignited >= 1],
-    'current.powder': [() => boltOn(['ssp']), ({ r }) => r.explosions >= 1],
-    'current.ice': [() => boltOn(['ssi']), ({ r }) => r.melted >= 1],
-    'current.sand': [() => boltOn(['ssa']), ({ g }) => mat(g, 2, 0) === CELL.GLASS],
-    'blast.steel': [() => bombAt4(['...sss....']), ({ g }) => [3, 4, 5].every((x) => mat(g, x, 0) === CELL.STEEL)],
-    'blast.powder': [() => bombAt4(['...p..p...']), ({ r }) => r.explosions >= 3],
-    'blast.oil': [() => bombAt4(['XXXoXXXXX.']), ({ r }) => r.ignited >= 1],
-    'blast.vine': [() => bombAt4(['XXXvXXXXX.']), ({ r }) => r.ignited >= 1],
-    'blast.ice': [() => bombAt4(['XXXiXXXXX.']), ({ r }) => r.shattered >= 1],
-    'blast.glass': [() => bombAt4(['XXXgXXXXX.']), ({ r }) => r.shattered >= 1],
-    'blast.block': [() => bombAt4(['XXXXXXXXX.']), ({ g, r }) => r.blasted >= 3 && !g.board.get(4, 0)],
-    'blast.grains': [() => bombAt4(['.a........']), ({ r }) => r.thrown >= 1],
-    'blast.liquids': [() => bombAt4(['XXXXXXXw..']), ({ r }) => r.thrown >= 1],
-    'water.seed': [() => settle(['ew']), ({ r }) => r.sprouted === 1 && r.grew >= 1],
-    'water.vine': [() => settle(['vw']), ({ r }) => r.drank >= 1 && r.grew >= 1],
-    'water.lava': [() => settle(['lw']), ({ r }) => r.quenched === 1 && r.steam >= 1],
-    'water.fire': [() => settle(['^w']), ({ g, r }) => r.steam >= 1 && !g.board.get(0, 0)],
-    'water.acid': [() => settle(['cw']), ({ r }) => r.diluted === 1],
-    'weight.sand': [() => settle(['XwX', '.a.']), ({ g }) => mat(g, 1, 0) === CELL.SAND && g.board.count((v) => (v & CELL.MAT) === CELL.WATER) === 1],
-    'weight.seed': [() => settle(['XoX', '.e.']), ({ g }) => mat(g, 1, 0) === CELL.SEED],
-    'weight.powder': [() => settle(['XwX', '.p.']), ({ g }) => mat(g, 1, 0) === CELL.POWDER],
-    'weight.water': [() => settle(['XoX', 'XwX']), ({ g, r }) => mat(g, 1, 0) === CELL.WATER && mat(g, 1, 1) === CELL.OIL && r.floated === 1],
-    'weight.steam': [() => settle(['X~X', 'XoX']), ({ g }) => mat(g, 1, 0) === CELL.OIL],
-  };
-  test('the table holds on a real board: every rule, in a small settle of its own', () => {
-    const want = [];
-    for (const [energy, row] of Object.entries(Sandbox.TABLE)) for (const m of Object.keys(row)) want.push(energy + '.' + m);
-    assert.deepStrictEqual(want.filter((k) => !RULES[k]), [], 'a rule without its test');
-    for (const k of want) {
-      const [make, ok] = RULES[k], o = make();
-      assert(ok(o), k + ': ' + JSON.stringify({ r: Object.fromEntries(Object.entries(o.r).filter(([key]) => !['sim', 'removed', 'cells', 'rows'].includes(key))), row0: Array.from(o.g.board.cells.slice(0, 10)).map((v) => v.toString(16)) }));
-      assert(noneLeft(o.g), k + ': the settle leaves no flame, steam, lava or charge behind');
-    }
-  });
-
-  test('the settle is recorded step by step: its frames played back from the start give the final board', () => {
-    const cases = [
-      () => { const g = board(['XXXXXXXXX.', 'oooooooo..', 'oooooooo..']); return [g, dropAt(g, 8, 8, 'torch', 'M1')]; },
-      () => { const g = board(['XXXXXXXXX.', 'XpXpXpXaa.', 'aaaaaaaa..']); return [g, dropAt(g, 0, 7, 'bomb', 'O')]; },
-      () => { const g = board(['XXXX.XXXXX', 'XXXXXXXXX.', '....a.....'], 'I'); g.rotate(1); return [g, dropAt(g, 7, 6)]; },
-      () => { const g = board(['XXXX..XXX.', 'XX......X.', 'XX.XXXX.X.']); return [g, dropAt(g, 3, 8, 'water', 'O')]; },
-    ];
-    for (const mk of cases) {
-      const [g, r] = mk();
-      assert(r.sim && r.sim.frames.length > 1, 'it took steps');
-      assert.deepStrictEqual(Array.from(replay(r)), Array.from(g.board.cells));
-      assert(r.sim.frames.length <= Sandbox.ROUNDS * (Sandbox.CAP + 2));
-    }
-    // Plain play never settles: no matter, no frames.
-    const p = board(['XXXXXXXXX.']);
-    const pr = dropAt(p, 9, 5, null, 'M1');
-    assert(!pr.sim && pr.lines === 1);
-  });
-
-  test('water runs down and sideways into the lowest hole it can reach, under overhangs too', () => {
-    const g = board(['....XXXXXX', 'XXX.......', '..........']);
-    const r = dropAt(g, 3, 6, 'water', 'O');
-    // Replayed: the channel under the roof fills from the back, then the row is full and clears.
-    const d = r.sim.start.slice(), rows = [];
-    for (const f of r.sim.frames) { if (f.clear) break; for (let k = 0; k < f.d.length; k += 2) d[f.d[k]] = f.d[k + 1]; rows.push(Array.from(d.slice(0, 4)).map((v) => ((v & CELL.MAT) === CELL.WATER ? 'w' : '.')).join('')); }
-    assert(rows.length <= 4 && rows[rows.length - 1] === 'wwww', rows.join(' '));
-    assert(r.lines === 1 && r.cascade === 1 && r.flooded === 3, JSON.stringify({ lines: r.lines, flooded: r.flooded }));
-    assert(!g.board.count((v) => (v & CELL.MAT) === CELL.WATER), 'it went with the row');
-    assert(Combos.detect(r, g).includes('undertow'));
-  });
-
-  test('sand falls and slides off edges into the holes beside it; heat turns it to glass', () => {
-    const g = board(['X.X.X.X...', 'X.X.X.X...']);
-    dropAt(g, 3, 8, 'sand', 'O');
-    for (let y = 1; y < 20; y++) for (let x = 0; x < 10; x++) if (mat(g, x, y) === CELL.SAND) assert(g.board.get(x, y - 1), 'every grain rests on something');
-    assert(mat(g, 3, 0) === CELL.SAND && mat(g, 5, 0) === CELL.SAND, 'two grains slid off into the holes');
-  });
-
-  test('fire spreads one step at a time through oil (a wildfire), and burns out', () => {
-    const g = board(['XXXXXXXXX.', 'oooooooo..', 'oooooooo..']);
-    const r = dropAt(g, 8, 8, 'torch', 'M1');
-    const d = r.sim.start.slice(), fires = [];
-    for (const f of r.sim.frames) { if (f.d) for (let k = 0; k < f.d.length; k += 2) d[f.d[k]] = f.d[k + 1]; fires.push(Array.from(d).filter((v) => (v & CELL.MAT) === CELL.FIRE).length); }
-    assert(fires.slice(0, 6).every((n, i) => i === 0 || n >= fires[i - 1]) && Math.max(...fires) >= 8, 'it grows: ' + fires.join(' '));
-    assert(r.ignited >= 16 && g.board.count((v) => (v & CELL.MAT) === CELL.OIL) === 0 && noneLeft(g));
-    assert(Combos.detect(r, g).includes('wildfire'));
-  });
-
-  test('a seed given water grows into a vine along its row; over a gap it bridges it, and the row clears', () => {
-    const g = board(['XXX....XXX', 'XXe......X']);
-    const r = dropAt(g, 2, 8, 'water', 'M1');
-    assert(r.sprouted === 1 && r.grew === 6, JSON.stringify({ s: r.sprouted, g: r.grew }));
-    assert(r.cascade === 1 && r.bridged >= 4, JSON.stringify({ c: r.cascade, b: r.bridged }));
-    const found = Combos.detect(r, g);
-    assert(found.includes('sprout') && found.includes('bridge'), found.join());
-  });
-
-  test('acid eats three blocks a cell, straight down; steel stands; water dilutes it', () => {
-    const g = board(['XXXXXXXXX.', 'XXXXXXXXX.', 'XXXXXXXXX.']);
-    const r = dropAt(g, 3, 8, 'acid', 'O');
-    assert.strictEqual(r.dissolved, 12);
-    assert(!g.board.get(3, 0) && !g.board.get(4, 0) && g.board.get(0, 0), 'it ate its way down through three rows');
-    assert(Combos.detect(r, g).includes('etch'));
-    const s = board(['.ssssssss.', '.s......s.']);
-    const sr = dropAt(s, 3, 8, 'acid', 'O');
-    assert(!sr.dissolved && s.board.count((v) => (v & CELL.MAT) === CELL.STEEL) === 10);
-    assert(s.board.count((v) => (v & CELL.MAT) === CELL.ACID) === 4, 'acid waits on steel for something to eat');
-  });
-
-  test('lava fills a hole and sets into stone; meeting water it sets at once, in a puff of steam', () => {
-    const g = board(['XXX..XXXXX']);
-    const r = dropAt(g, 3, 8, 'lava', 'O');
-    assert(r.cooled >= 1 && (g.board.get(3, 0) & 31) === 8 && !mat(g, 3, 0) && r.lines === 1, 'set, and the row cleared');
-    const q = board(['XX..wwXXXX', 'X....XXXXX'].reverse());
-    const qr = dropAt(q, 1, 8, 'lava', 'O');
-    assert(qr.quenched >= 1 && qr.steam >= 1 && noneLeft(q));
-    assert(Combos.detect(qr, q).includes('quench') && Combos.detect(qr, q).includes('steam'));
-  });
-
-  test('current runs along steel one cell a step, never back; at the end it sets powder off and lights oil', () => {
-    const g = board(['XXXXXXXXX.', 'sssssspo..']);
-    const r = dropAt(g, 0, 6, 'bolt', 'O');
-    const d = r.sim.start.slice(), heads = [];
-    for (const f of r.sim.frames) { if (!f.d) continue; for (let k = 0; k < f.d.length; k += 2) d[f.d[k]] = f.d[k + 1]; const hs = []; for (let x = 0; x < 10; x++) if ((d[10 + x] & CELL.MAT) === CELL.STEEL && ((d[10 + x] >>> 12) & 3) === 2) hs.push(x); heads.push(hs.join()); }
-    assert.deepStrictEqual(heads.slice(0, 5), ['1', '2', '3', '4', '5'], 'one cell a step: ' + heads.join(' | '));
-    assert(r.current === 6 && r.explosions >= 1 && r.ignited >= 1, JSON.stringify({ c: r.current, e: r.explosions, i: r.ignited }));
-    assert(Combos.detect(r, g).includes('livewire'));
-    // A plain block struck by the bolt is scorched away; the struck flat of a powder heap goes up.
-    const p = board(['2222......']);
-    const pr = dropAt(p, 0, 3, 'bolt', 'M1');
-    assert(pr.scorched && !p.board.get(0, 0) && p.board.get(1, 0));
-  });
-
-  test('a bomb sets off powder in waves; steel stands; loose sand is thrown and falls back', () => {
-    const g = board(['XXXXXXXXX.', 'XpXpXpXaa.', 'aaaaaaaa..']);
-    const r = dropAt(g, 0, 7, 'bomb', 'O');
-    assert(r.explosions >= 4 && r.thrown >= 1, JSON.stringify({ e: r.explosions, t: r.thrown }));
-    const waves = r.sim.frames.map((f, i) => (f.ev || []).filter((e) => e.k === 'blast').map(() => i)).flat();
-    assert(new Set(waves).size >= 2, 'in more than one step: ' + waves);
-    for (let y = 1; y < 20; y++) for (let x = 0; x < 10; x++) if (mat(g, x, y) === CELL.SAND) assert(g.board.get(x, y - 1), 'the sand came back down');
-    assert(Combos.detect(r, g).includes('chain3'));
-    const s = board(['XXXsXXXXX.']);
-    dropAt(s, 3, 5, 'bomb', 'O');
-    assert.strictEqual(mat(s, 3, 0), CELL.STEEL);
-  });
-
-  test('steam rises to ice and rains back down', () => {
-    const g = board(['XXXXXXXXX.', 'XwwwwwwwX.', '..........', '..........', 'iiiiiiii..']);
-    const r = dropAt(g, 3, 3, 'torch', 'M1');
-    assert(r.steam >= 1 && r.condensed >= 1, JSON.stringify({ s: r.steam, c: r.condensed }));
-    assert(Combos.detect(r, g).includes('rain'));
-  });
-
-  test('rows the settle fills clear and pay like any other; what was above settles and can clear again', () => {
-    const g = board(['XXXX.XXXXX', 'XXXXXXXXX.', '....a.....'], 'I');
-    g.rotate(1);
-    const r = dropAt(g, 7, 6);
-    assert(r.lines === 2 && r.cascade === 1 && r.rows.length === 1, JSON.stringify({ lines: r.lines, cascade: r.cascade }));
-    assert.strictEqual(g.s.lines, 2);
-    assert(r.score >= 200, 'two singles and a combo');
-    assert(Combos.detect(r, g).includes('cascade'));
-    assert(!r.tspin && L.Render === undefined, 'a cascade is only ever plain lines');
-  });
-
-  test('the settle always ends, quickly: a sloshing board is capped and finished at once', () => {
-    const rows = [];
-    for (let y = 0; y < 8; y++) rows.push(y % 2 ? 'w.o.w.a.c.' : '.l.w.o.e.p');
-    const g = board(rows);
-    const t0 = Date.now();
-    const r = dropAt(g, 3, 14, 'torch', 'I');
-    const ms = Date.now() - t0;
-    assert(ms < 400, ms + ' ms');
-    assert(noneLeft(g));
-    assert(r.sim.frames.length <= Sandbox.ROUNDS * (Sandbox.CAP + 2));
-    assert.deepStrictEqual(Array.from(replay(r)), Array.from(g.board.cells));
-    // A board of nothing but water on a flat floor: every grain of it comes to rest.
-    const w = board(['XXXXXXXXXX', 'w.w.w.w.w.', '.w.w.w.w.w']);
-    nudge(w);
-    for (let y = 1; y < 20; y++) for (let x = 0; x < 10; x++) if (mat(w, x, y) === CELL.WATER) assert(w.board.get(x, y - 1));
-  });
-
-  test('rewind takes a whole settle back', () => {
-    const g = board(['1p1p1p111.', 'iiii......']);
-    const snap = g.board.snapshot();
-    const r = dropAt(g, 1, 3, 'bomb', 'O');
-    assert(r.explosions >= 2);
-    g.undo();
-    assert.deepStrictEqual(Array.from(g.board.snapshot()), Array.from(snap));
-    assert.strictEqual(g.piece.special, 'bomb', 'the bomb is back in play');
-  });
-
-  test('a T-spin into ice shatters it: Shatter Spin', () => {
-    const g = new Game({ w: 10, h: 20, seed: 4 });
-    const fill = (y, row) => { for (let x = 0; x < 10; x++) if (row[x] !== '.') g.board.set(x, y, row[x] === 'i' ? 8 | CELL.ICE : 8); };
-    fill(0, 'XXX.XXXXXX');
-    fill(1, 'XX...XXXXX');
-    fill(2, '....i.....');
-    fill(3, '....i.....');
-    g.replacePiece({ id: 'T' });
-    Object.assign(g.piece, { rot: 2, x: 2, y: 0, lastRot: true });
-    const r = g.lock();
-    assert(r.tspin && r.lines === 2);
-    assert.strictEqual(r.spinShatter, 2);
-    assert(Combos.detect(r, g).includes('shatterspin'));
-  });
-
-  test('combos by hand: a one-colour row, a quad from the pocket, a tuck, twin spins, and bare hands', () => {
+  test('combos by hand: a one-colour row, a quad from the pocket, a tuck, twin spins', () => {
     const g = board(['mmmmmmmmm.']);
     let r = dropAt(g, 9, 4, null, 'M1');
     assert(Combos.detect(r, g).includes('painted'));
@@ -1675,80 +1471,58 @@ console.log('sandbox');
     const t = new Game({ w: 10, h: 20, seed: 1 });
     assert(!Combos.detect({ lines: 2, tspin: true, b2b: false }, t).includes('twinspin'));
     assert(Combos.detect({ lines: 2, tspin: true, b2b: true }, t).includes('twinspin'));
-    const b = new Game({ w: 10, h: 20, seed: 1 });
-    let got = 0;
-    for (let i = 0; i < 60; i++) if (Combos.detect({ lines: i % 4 === 0 ? 1 : 0 }, b).includes('bare')) got++;
-    assert.strictEqual(got, 1);
+    assert(!Combos.get('bare'), 'every combo says exactly what to do');
   });
 
-  // Every discovery, found on a board by doing what it says.
+  // Every power-up combo, made on a board by doing exactly what it says.
+  const quadWell = () => board(['XXXXXXXXX.', 'XXXXXXXXX.', 'XXXXXXXXX.', 'XXXXXXXXX.'], 'I');
+  const standUp = (g) => { g.rotate(1); while (g.move(1)); return g.drop(); };
   const FINDS = {
-    steam: () => { const g = board(['w']); return [g, dropAt(g, 0, 6, 'torch', 'M1')]; },
-    rain: () => { const g = board(['XXXXXXXXX.', 'XwwwwwwwX.', '..........', '..........', 'iiiiiiii..']); return [g, dropAt(g, 3, 3, 'torch', 'M1')]; },
-    glass: () => { const g = board(['a']); return [g, dropAt(g, 0, 6, 'torch', 'M1')]; },
-    quench: () => { const g = board(['X....XXXXX', 'XX..wwXXXX']); return [g, dropAt(g, 1, 8, 'lava', 'O')]; },
-    sprout: () => { const g = board(['XXw.......']); return [g, dropAt(g, 2, 8, 'seed', 'M1')]; },
-    slick: () => { const g = board(['X.......XX', 'Xoooo...XX']); return [g, dropAt(g, 1, 6, 'water', 'I')]; },
-    bridge: () => { const g = board(['XXX....XXX', 'XXe......X']); return [g, dropAt(g, 2, 8, 'water', 'M1')]; },
-    coldsnap: () => { const g = board(['wwwwwwwww.']); return [g, dropAt(g, 0, 6, 'frost', 'I')]; },
-    etch: () => { const g = board(['XXXXXXXXX.', 'XXXXXXXXX.', 'XXXXXXXXX.']); return [g, dropAt(g, 3, 8, 'acid', 'O')]; },
-    wildfire: () => { const g = board(['XXXXXXXXX.', 'oooooooo..', 'oooooooo..']); return [g, dropAt(g, 8, 8, 'torch', 'M1')]; },
-    livewire: () => { const g = board(['XXXXXXXXX.', 'sssssspo..']); return [g, dropAt(g, 0, 6, 'bolt', 'O')]; },
-    chain2: () => { const g = board(['sp.p......']); return [g, dropAt(g, 0, 6, 'bolt', 'O')]; },
-    chain3: () => { const g = board(['XXXXXXXXX.', 'XpXpXpXaa.']); return [g, dropAt(g, 0, 7, 'bomb', 'O')]; },
-    undertow: () => { const g = board(['....XXXXXX', 'XXX.......']); return [g, dropAt(g, 3, 6, 'water', 'O')]; },
-    cascade: () => { const g = board(['XXXX.XXXXX', 'XXXXXXXXX.', '....a.....'], 'I'); g.rotate(1); return [g, dropAt(g, 7, 6)]; },
-    // A flame lights a vine and melts the ice under it; the water runs down to a seed, which grows across the gap.
-    domino: () => { const g = board(['XXX....XXX', 'XXe......X', '.XiX......', '.v........']); return [g, dropAt(g, 2, 8, 'torch', 'M1')]; },
-    shatterspin: () => { const g = new Game({ w: 10, h: 20, seed: 4 }); ['XXX.XXXXXX', 'XX...XXXXX', '....i.....', '....i.....'].forEach((row, y) => { for (let x = 0; x < 10; x++) if (row[x] !== '.') g.board.set(x, y, row[x] === 'i' ? 8 | CELL.ICE : 8); }); g.replacePiece({ id: 'T' }); Object.assign(g.piece, { rot: 2, x: 2, y: 0, lastRot: true }); return [g, g.lock()]; },
-    conductor: () => { const g = board(['XXXsXXXXX.', 'XXXs......', 'XXXs......']); return [g, dropAt(g, 7, 5, 'laser', 'O')]; },
-    eye: () => { const g = board(['XXXXX.....', 'XXX..XX...']); return [g, g.tornado()]; },
-    scorched: () => { const g = board(['1p........']); return [g, dropAt(g, 3, 1, 'bomb', 'O')]; },
+    patchjob: () => { const g = board(['XXXX.XXXXX', 'XXXXXXXXX.']); return [g, dropAt(g, 4, 10, 'patch')]; },
+    ghostline: () => {
+      const g = board(['XXXXXXXX..', 'XXXXXXXX..', '........XX']);
+      g.setSpecial('phase'); g.piece.x = 8 - g.piece.type.rotBounds[0].minX; g.piece.y = 2 - g.piece.type.rotBounds[0].minY;
+      return [g, g.drop()];
+    },
+    tower: () => { const g = quadWell(); g.replacePiece({ id: Pieces.customType([[0, 0], [1, 0], [2, 0], [3, 0], [4, 0], [5, 0]]).id, tag: 'noodle' }); return [g, standUp(g)]; },
+    architect: () => { const g = board(['XXXXXXXXX.', 'XXXXXXXXX.', 'XXXXXXXXX.']); g.replacePiece({ id: Pieces.customType([[0, 0], [0, 1], [0, 2]]).id, tag: 'blueprint' }); while (g.move(1)); return [g, g.drop()]; },
+    tailor: () => { const g = quadWell(); g.bestFit(); return [g, g.drop()]; },
+    allin: () => { const g = quadWell(); const r = standUp(g); r.double = Luck.doubleWins(r) ? 'won' : 'lost'; return [g, r]; },
+    caught: () => { const g = board(['XXXXXXXXX.']); Object.assign(g.s, { b2b: 4, net: 1 }); return [g, dropAt(g, 9, 5, null, 'M1')]; },
+    fullblast: () => { const g = board(['XXXXXXXXX.', 'XXXXXXXXX.', 'XXXX.XXXX.', 'XXXX.XXXX.', 'XXXX.XXXX.']); return [g, dropAt(g, 4, 10, 'bomb')]; },
+    horizon: () => { const g = board(['XXXXXXXXX.', 'XXXXXXXXX.', 'XXXXXXXXX.', 'XXXXXXXXX.', 'XXXX.XXXX.', 'XXXX.XXXX.', 'XXXX.XXXX.', 'XXXX.XXXX.']); return [g, dropAt(g, 4, 12, 'blackhole')]; },
   };
-  test('every discovery is found by doing what it says', () => {
+  test('every power-up combo is found by doing exactly what it says', () => {
     const items = Combos.LIST.filter((c) => c.kind === 'item');
-    assert.deepStrictEqual(items.filter((c) => !FINDS[c.id]).map((c) => c.id), [], 'a discovery without its test');
+    assert.deepStrictEqual(items.filter((c) => !FINDS[c.id]).map((c) => c.id), [], 'a combo without its test');
     for (const c of items) {
       const [g, r] = FINDS[c.id]();
       const found = Combos.detect(r, g);
-      assert(found.includes(c.id), c.id + ' not found: ' + found.join() + ' ' + JSON.stringify(Object.fromEntries(Object.entries(r).filter(([k]) => !['sim', 'removed', 'cells'].includes(k)))));
+      assert(found.includes(c.id), c.id + ' not found: ' + found.join() + ' ' + JSON.stringify(Object.fromEntries(Object.entries(r).filter(([k]) => !['removed', 'cells', 'before'].includes(k)))));
     }
-    // Plain play finds none of them.
+    // Plain play finds none of them; a quad lost on a Double or Nothing is no win.
     const p = board(['XXXXXXXXX.']);
     const found = Combos.detect(dropAt(p, 9, 5, null, 'M1'), p);
     assert(!found.some((id) => Combos.get(id).kind === 'item'), found.join());
+    const one = board(['XXXXXXXXX.']), r1 = dropAt(one, 9, 5, null, 'M1');
+    assert(!Luck.doubleWins(r1), 'a single loses a Double or Nothing');
+    const las = quadWell(); las.setSpecial('laser'); const rl = standUp(las);
+    assert(rl.lines === 4 && !Luck.doubleWins(rl), 'a laser\'s four rows are plain: no win');
   });
 
-  test('achievements in the sandbox: one settle through current, fire, steam and a blast; a board burnt empty', () => {
-    const A = L.Achievements;
-    const g = board(['wwwop.....']);
-    const r = dropAt(g, 0, 6, 'bolt', 'O');
-    assert(r.current >= 1 && r.ignited >= 1 && r.steam >= 1 && r.explosions >= 1, JSON.stringify({ c: r.current, i: r.ignited, s: r.steam, e: r.explosions }));
-    assert(A.check(L.defaultState(), { mode: 'play', r, g }).some((a) => a.id === 'sb_goldberg'));
-    const g2 = board(['sssop.....']);
-    const r2 = dropAt(g2, 0, 6, 'bolt', 'O');
-    assert(!r2.steam && !A.check(L.defaultState(), { mode: 'play', r: r2, g: g2 }).some((a) => a.id === 'sb_goldberg'), 'no steam, no Rube Goldberg');
-    // Seven rows of vines and a flame at the foot: 63 blocks burn, nothing left.
-    const f = board(Array.from({ length: 7 }, () => 'vvvvvvvvv.'));
-    const rf = dropAt(f, 9, 0, 'torch', 'M1');
-    assert(f.board.isEmpty() && rf.consumed >= 60, 'burned ' + rf.consumed);
-    assert(A.check(L.defaultState(), { mode: 'play', r: rf, g: f }).some((a) => a.id === 'sb_scorch'));
-    const small = board(Array.from({ length: 5 }, () => 'vvvvvvvvv.'));
-    const rs = dropAt(small, 9, 0, 'torch', 'M1');
-    assert(small.board.isEmpty() && !A.check(L.defaultState(), { mode: 'play', r: rs, g: small }).some((a) => a.id === 'sb_scorch'));
-  });
-
-  test('combos and discoveries are never for farming: full, half, a quarter, then nothing on one board; boosts only twice', () => {
+  test('combos are never for farming: full, half, a quarter, then nothing on one board; boosts only twice; less than the item', () => {
+    const cheapest = Math.min(...L.ITEM_ORDER.map((id) => L.ITEMS[id].price));
     for (const c of Combos.LIST) {
       const pays = [0, 1, 2, 3, 4].map((k) => Combos.reward(c, k));
       assert.strictEqual(pays[3].lines + pays[4].lines, 0, c.id);
       assert(pays[1].lines <= Math.ceil(c.lines / 2) && pays[2].lines <= Math.ceil(c.lines / 4), c.id);
       assert(!pays[2].boost, c.id + ' boosts twice at most');
-      assert(c.lines <= 12 && (!c.boost || (c.boost.x <= 1.5 && c.boost.clears <= 5)), c.id + ' is modest');
-      if (c.kind === 'item') assert(c.lines < 30, c.id + ' pays less than the cheapest set of items that makes it');
+      assert(c.lines <= 6 && (!c.boost || (c.boost.x <= 1.5 && c.boost.clears <= 5)), c.id + ' is modest');
+      if (c.kind === 'item') assert(c.lines < cheapest, c.id + ' pays less than the item it takes');
+      assert(c.how.length > 12 && !/discover/i.test(c.how), c.id + ' says what to do');
     }
     assert.strictEqual(new Set(Combos.LIST.map((c) => c.id)).size, Combos.LIST.length);
-    assert(Combos.LIST.filter((c) => c.kind === 'item').length >= 16);
+    assert(Combos.LIST.filter((c) => c.kind === 'item').length >= 8);
   });
 
   test('Golden is worth its price played well, and not otherwise', () => {
@@ -1757,112 +1531,130 @@ console.log('sandbox');
     assert(Luck.goldValue(2) < L.ITEMS.golden.price, 'ordinary clears: under it');
   });
 
-  test('Jackpot is a real gamble: pays back under nine tenths, more than half the pulls pay nothing, rarely a lot', () => {
-    const prize = L.ITEM_ORDER.filter((id) => L.ITEMS[id].group === Luck.PRIZE_GROUP), avg = prize.reduce((a, id) => a + L.ITEMS[id].price, 0) / prize.length;
-    assert(prize.length >= 3);
-    const o = Luck.jackpotOdds(avg), price = L.ITEMS.jackpot.price;
-    assert(o.ev / price > 0.8 && o.ev / price < 0.95, 'EV ' + o.ev.toFixed(1) + ' for ' + price);
-    assert(o.bust > 0.5, 'bust ' + o.bust);
-    assert(o.big > 0.005 && o.big < 0.02, 'big ' + o.big);
-    assert(o.top >= 40 * price);
-    const rng = new RNG(5);
-    let total = 0;
-    const N = 200000;
-    for (let i = 0; i < N; i++) { const p = Luck.jackpotPay([Luck.reel(rng.next()), Luck.reel(rng.next()), Luck.reel(rng.next())]); total += p.lines + p.items * avg; }
-    assert(Math.abs(total / N - o.ev) < 2.5, 'simulated ' + (total / N).toFixed(1) + ' vs ' + o.ev.toFixed(1));
-    assert.deepStrictEqual(Luck.jackpotPay(['star', 'star', 'star']), { lines: 2000, items: 0, label: '★★★' });
-    assert.deepStrictEqual(Luck.jackpotPay(['blank', 'gem', 'bomb']), { lines: 0, items: 0, label: null });
-    assert.strictEqual(Luck.jackpotPay(['gem', 'star', 'gem']).lines, 60, 'a star beats two gems');
+  test('Double or Nothing: a quad or a T-spin wins double; anything less pays nothing', () => {
+    assert(Luck.doubleWins({ lines: 4 }) && Luck.doubleWins({ lines: 2, tspin: true }) && Luck.doubleWins({ lines: 1, tspin: true }));
+    assert(!Luck.doubleWins({ lines: 3 }) && !Luck.doubleWins({ lines: 4, plain: 4 }) && !Luck.doubleWins({ lines: 2, mini: true }));
+    assert.strictEqual(Luck.DOUBLE_X, 2);
   });
 
-  test('every item has a type, a price and an icon that is not an emoji; matter and energy the engine knows', () => {
+  test('every power-up has a type, a price, a rarity and an icon that is not an emoji; the engine knows every Tool', () => {
+    const emoji = /\p{Extended_Pictographic}|\p{Emoji_Presentation}/u;
     for (const id of L.ITEM_ORDER) {
       const it = L.ITEMS[id];
-      assert(L.ITEM_GROUPS.some((g) => g.id === it.group) && it.price > 0 && it.icon && it.desc && it.name, id);
-      assert(L.ITEM_ORDER.filter((k) => L.ITEMS[k].group === it.group).length <= 9, it.group + ' fits keys 1–9');
+      assert(L.ITEM_GROUPS.some((g) => g.id === it.group) && it.price > 0 && Gifts.RARITY[it.rarity] && it.icon && it.desc && it.name, id);
+      assert(![...it.icon].some((ch) => emoji.test(ch)), id + ' icon');
+      assert(it.desc.length <= 90, id + ': a short tooltip');
     }
-    assert.strictEqual(L.ITEM_GROUPS.length, 6);
-    for (const sp of Object.keys(Sandbox.MATTER).concat(['bolt', 'bomb'])) {
-      assert(L.ITEMS[sp], sp + ' is sold');
+    assert(L.ITEM_ORDER.length >= 16 && L.ITEM_ORDER.length <= 24, L.ITEM_ORDER.length + ' power-ups');
+    assert.strictEqual(new Set(L.ITEM_ORDER.map((id) => L.ITEMS[id].icon)).size, L.ITEM_ORDER.length, 'every icon its own');
+    assert(L.ITEM_GROUPS.length >= 4 && L.ITEM_GROUPS.length <= 6);
+    for (const sp of ['patch', 'phase', 'drill', 'bomb', 'laser', 'blackhole']) {
+      assert(L.ITEMS[sp] && L.ITEMS[sp].group === 'tool', sp);
       const g = new Game({ w: 10, h: 20, seed: 1 });
       assert(g.setSpecial(sp), sp);
       assert.strictEqual(g.piece.special, sp);
     }
+    const rare = L.ITEM_ORDER.filter((id) => L.ITEMS[id].rarity === 'rare'), common = L.ITEM_ORDER.filter((id) => L.ITEMS[id].rarity === 'common');
+    assert(rare.length >= 4 && common.length >= 5);
+    assert(Math.max(...common.map((id) => L.ITEMS[id].price)) <= Math.min(...rare.map((id) => L.ITEMS[id].price)), 'common ones cost no more than rare ones');
   });
 
-  test('old saves: a retired item comes back as its price; old TNT is powder now and settles', () => {
-    const st = L.mergeState(L.defaultState(), { v: 2, lines: 100, inventory: { bomb: 2, magnet: 3, junk: 5 } });
+  test('old saves: a retired power-up becomes a comparable one, or its old price back in lines', () => {
+    const st = L.mergeState(L.defaultState(), { v: 2, lines: 100, inventory: { bomb: 2, magnet: 3, sand: 2, tnt: 1, oil: 4, jackpot: 1, nuke: 1, junk: 5 } });
     L.migrateItems(st);
-    assert.strictEqual(st.lines, 100 + 3 * 45, 'magnets refunded at their price');
-    assert(!('magnet' in st.inventory) && !('junk' in st.inventory));
-    assert.strictEqual(st.inventory.bomb, 2);
-    assert.strictEqual(st.inventory.seed, 0);
+    assert.strictEqual(st.lines, 100 + 3 * 45 + 4 * 15 + 50, 'magnets, oil and a jackpot refunded at their old prices');
+    assert(['magnet', 'sand', 'tnt', 'oil', 'jackpot', 'nuke', 'junk'].every((id) => !(id in st.inventory)));
+    assert.deepStrictEqual([st.inventory.bomb, st.inventory.patch, st.inventory.blackhole], [3, 2, 1]);
+    for (const id of Object.keys(L.RETIRED_ITEMS)) { const r = L.RETIRED_ITEMS[id]; assert(!L.ITEMS[id] && (r.price > 0 || L.ITEMS[r.to]), id); }
     const st2 = L.mergeState(L.defaultState(), { v: 2, lines: 100, inventory: { fizz: 3, gone: 2 } });
-    L.migrateItems(st2, { fizz: { to: 'torch' }, gone: { price: 25 } });
-    assert(st2.inventory.torch === 3 && st2.lines === 150);
+    L.migrateItems(st2, { fizz: { to: 'drill' }, gone: { price: 25 } });
+    assert(st2.inventory.drill === 3 && st2.lines === 150);
     assert.deepStrictEqual(L.migrateState(L.mergeState(L.defaultState(), { v: 2 })).combos, {});
-    assert.deepStrictEqual(L.migrateState(L.mergeState(L.defaultState(), { v: 2 })).gift, { last: null, n: 0, log: [] });
-    // A stick of TNT saved hanging over a hole is powder now: it drops in on the next settle.
-    const g = new Game({ saved: { w: 10, h: 20, wrap: false, cells: (() => { const c = new Array(200).fill(0); c[10] = 5 | 0x400; return c; })(), fixed: false, queue: [{ id: 'T', rot: 0 }], bag: [], rng: new RNG(1).state(), hold: null, holdLocked: false, s: {}, piece: null } });
-    nudge(g);
-    assert.strictEqual(mat(g, 0, 0), CELL.POWDER);
-    // An old saved Magnet piece still works.
-    const m = board(['X.X.X.....']);
-    const mr = dropAt(m, 0, 8, 'magnet', 'O');
-    assert(mr.moves);
+    assert.deepStrictEqual(L.migrateState(L.mergeState(L.defaultState(), { v: 2 })).gift, { at: null, n: 0, log: [] });
   });
 
-  test('the daily gift: three different power-ups, cheap ones far more often, never Luck', () => {
-    for (const id of L.ITEM_ORDER) {
-      const w = Gifts.weight(id), it = L.ITEMS[id];
-      if (it.group === 'luck') assert.strictEqual(w, 0, id);
-      else assert(w > 0, id);
-    }
-    for (const a of L.ITEM_ORDER) for (const b of L.ITEM_ORDER) if (Gifts.weight(a) && Gifts.weight(b) && L.ITEMS[a].price < L.ITEMS[b].price) assert(Gifts.weight(a) >= Gifts.weight(b), a + ' vs ' + b);
-    // A simulated year of gifts, many times over: how often each item comes matches its weight.
-    const rng = new RNG(9), seen = {}, N = 60000;
-    let cheap = 0, dear = 0;
+  test('the daily gift: three different power-ups, common ones far more often', () => {
+    for (const id of L.ITEM_ORDER) assert(Gifts.weight(id) > 0, id);
+    const rng = new RNG(9), N = 60000;
+    let common = 0, rare = 0;
     for (let i = 0; i < N; i++) {
       const g = Gifts.draw(() => rng.next());
       assert(g.length === 3 && new Set(g).size === 3);
-      for (const id of g) { seen[id] = (seen[id] || 0) + 1; if (L.ITEMS[id].price <= 20) cheap++; if (L.ITEMS[id].price > 70) dear++; }
+      for (const id of g) { if (L.ITEMS[id].rarity === 'common') common++; if (L.ITEMS[id].rarity === 'rare') rare++; }
     }
-    assert(!L.ITEM_ORDER.some((id) => L.ITEMS[id].group === 'luck' && seen[id]), 'Luck never');
-    assert(cheap / (3 * N) > 0.4 && dear / (3 * N) < 0.05, 'cheap ' + (cheap / (3 * N)).toFixed(3) + ', dear ' + (dear / (3 * N)).toFixed(3));
+    assert(common / (3 * N) > 0.5 && rare / (3 * N) < 0.12, 'common ' + (common / (3 * N)).toFixed(3) + ', rare ' + (rare / (3 * N)).toFixed(3));
     // The first pick of a draw is exactly weighted: its frequency matches weight / total.
     const tot = L.ITEM_ORDER.reduce((a, id) => a + Gifts.weight(id), 0), first = {};
     const r2 = new RNG(10);
     for (let i = 0; i < N; i++) { const id = Gifts.draw(() => r2.next())[0]; first[id] = (first[id] || 0) + 1; }
     for (const id of L.ITEM_ORDER) { const p = Gifts.weight(id) / tot, got = (first[id] || 0) / N; assert(Math.abs(got - p) < 4 * Math.sqrt(p * (1 - p) / N) + 1e-9, id + ' ' + got.toFixed(4) + ' vs ' + p.toFixed(4)); }
-    // One save's gift for a date is always the same; another date (or save) is another draw.
-    assert.deepStrictEqual(Gifts.forDay(123, '2026-09-27'), Gifts.forDay(123, '2026-09-27'));
-    const days = new Set(); for (let d = 1; d <= 20; d++) days.add(Gifts.forDay(123, '2026-10-' + String(d).padStart(2, '0')).join());
-    assert(days.size >= 15);
+    // One save's nth gift is always the same; the next one (or another save) is another draw.
+    assert.deepStrictEqual(Gifts.forClaim(123, 4), Gifts.forClaim(123, 4));
+    const draws = new Set(); for (let n = 0; n < 20; n++) draws.add(Gifts.forClaim(123, n).join());
+    assert(draws.size >= 15);
   });
 
-  test('the daily gift opens once a calendar day, and not again by reopening, nor by turning the clock back', () => {
-    const s = new L.Store();
+  test('the daily gift opens 24 hours after the last one (not by the date), and not again by reloading or turning the clock back', () => {
+    const H = 3600e3, s = new L.Store();
     s.state = L.migrateState(L.defaultState());
-    const day1 = new Date(2026, 8, 27, 9, 30).getTime(), later = new Date(2026, 8, 27, 23, 59).getTime(), day2 = new Date(2026, 8, 28, 0, 1).getTime();
-    const inv0 = Object.values(s.state.inventory).reduce((a, b) => a + b, 0);
-    const got = s.openGift(day1);
-    assert(got && got.length === 3);
-    assert.strictEqual(Object.values(s.state.inventory).reduce((a, b) => a + b, 0), inv0 + 3);
-    assert.strictEqual(s.openGift(later), null, 'not twice on one date');
-    // Reopened (saved and loaded): still opened today.
+    const t0 = new Date(2026, 8, 27, 23, 30).getTime();
+    assert(Gifts.ready(s.state, t0) && Gifts.left(s.state, t0) === 0, 'the first one is waiting');
+    const inv0 = inv(s.state);
+    const got = s.openGift(t0);
+    assert(got && got.length === 3 && inv(s.state) === inv0 + 3);
+    assert.strictEqual(s.openGift(t0 + 1 * H), null, 'past midnight is not enough');
+    assert.strictEqual(s.openGift(t0 + 24 * H - 60e3), null, 'a minute short');
+    assert.strictEqual(Gifts.left(s.state, t0 + 20 * H), 4 * H, 'the tooltip counts down from the claim');
+    // Reloaded (saved and loaded): the same claim time, no new draw.
     const again = new L.Store();
     again.state = L.migrateState(L.mergeState(L.defaultState(), JSON.parse(s.serialize())));
-    assert.strictEqual(again.openGift(later), null);
-    assert.strictEqual(again.state.gift.last, '2026-09-27');
-    // The same draw however the day went: a copy of the save before opening gets the same three.
+    assert.strictEqual(again.openGift(t0 + 2 * H), null);
+    assert.strictEqual(again.state.gift.at, t0);
+    // The same draw however long it waited: a copy of the save before opening gets the same three.
     const twin = new L.Store();
     twin.state = L.migrateState(L.mergeState(L.defaultState(), { created: s.state.created }));
-    assert.deepStrictEqual(twin.openGift(day1 + 3600e3), got);
-    // Tomorrow: a new one. A clock turned back to yesterday: none.
-    assert(again.openGift(day2));
-    assert.strictEqual(again.openGift(day1), null);
+    assert.deepStrictEqual(twin.openGift(t0 + 5 * H), got);
+    // 24 hours on: a new one. The clock turned back, even to long before: none, until 24 hours after the claim.
+    const t1 = t0 + 24 * H;
+    assert(again.openGift(t1));
+    assert.strictEqual(again.openGift(t0 - 72 * H), null, 'clock turned back');
+    assert.strictEqual(again.openGift(t1 + 23 * H), null);
+    assert(Gifts.left(again.state, t0 - 72 * H) > 24 * H, 'back in time, the wait is longer, never shorter');
     assert.strictEqual(again.state.gift.n, 2);
-    assert(Gifts.nextAt(day1) === new Date(2026, 8, 28).getTime());
+    // A clock pushed forward to claim early leaves the claim booked in the future: the next one waits for it.
+    const fwd = new L.Store();
+    fwd.state = L.migrateState(L.defaultState());
+    assert(fwd.openGift(t0 + 1000 * H));
+    assert.strictEqual(fwd.openGift(t0 + 1 * H), null);
+    // A save from the calendar days: opened on the 27th, it comes again at midnight, then 24 hours after each claim.
+    const old = L.migrateState(L.mergeState(L.defaultState(), { v: 2, gift: { last: '2026-09-27', n: 5, log: [] } }));
+    assert.strictEqual(old.gift.at, new Date(2026, 8, 27).getTime());
+    assert(!('last' in old.gift) && old.gift.n === 5);
+    assert(!Gifts.ready(old, new Date(2026, 8, 27, 22).getTime()) && Gifts.ready(old, new Date(2026, 8, 28, 0, 1).getTime()));
+  });
+
+  test('power-ups earned in play: one per hundred lines on a board, never twice for a rewound clear, never backwards', () => {
+    const e = { board: null, paid: 0 };
+    assert.strictEqual(Earn.lines(e, 'A', 60, 58), 0);
+    assert.strictEqual(Earn.lines(e, 'A', 101, 97), 1, 'the hundredth line');
+    assert.strictEqual(Earn.lines(e, 'A', 97, 99), 0, 'rewound');
+    assert.strictEqual(Earn.lines(e, 'A', 101, 99), 0, 'and cleared again: already paid');
+    assert.strictEqual(Earn.lines(e, 'A', 200, 199), 1);
+    assert.strictEqual(Earn.lines(e, 'B', 1450, 1449), 0, 'an old board is not paid backwards');
+    assert.strictEqual(Earn.lines(e, 'B', 1500, 1498), 1);
+    assert.strictEqual(Earn.lines(e, 'C', 4, 0), 0, 'a new board starts from nothing');
+  });
+
+  test('the shop never sells power-ups; the item bar does, for lines', () => {
+    const s = new L.Store();
+    s.state.lines = 50;
+    assert(s.buyItem('reroll'));
+    assert.strictEqual(s.state.lines, 35);
+    assert.strictEqual(s.state.stats.items.bought.reroll, 1);
+    assert(!s.buyItem('blueprint'), 'not enough lines');
+    s.grantItem('bomb', 2);
+    assert(s.state.inventory.bomb === 2 && s.state.stats.items.got.bomb === 2 && s.state.lines === 35, 'a gift costs nothing');
+    assert(s.useItem('reroll') && !s.useItem('reroll'));
   });
 }
 
@@ -1968,14 +1760,8 @@ test('mute ramps a gain after everything and leaves the levels alone', () => {
     assert.strictEqual(S.volume, saved.volume);
   } finally { Object.assign(S, saved); }
 });
-test('the shop takes lines and hands over items', () => {
+test('the shop sells cosmetics', () => {
   const s = new L.Store();
-  s.state.lines = 50;
-  assert(s.buyItem('reroll'));
-  assert.strictEqual(s.state.lines, 35);
-  assert(!s.buyItem('blueprint'));
-  assert(s.useItem('reroll'));
-  assert(!s.useItem('reroll'));
   s.state.lines = 1000;
   assert(s.buyCosmetic('skin', 'bevel'));
   assert(!s.buyCosmetic('skin', 'steel'), 'rewards cannot be bought');
@@ -2045,7 +1831,7 @@ console.log('sound and music');
   test('coming back mid-chord (after a pause) still sounds the chord and bass, for the rest of it', () => {
     const mid = SONG.bars.findIndex((b) => !b.chord), keep = {}, pads = [], basses = [];
     assert(mid > 0 && SONG.bars[mid].left === 1, 'the floating bridge holds chords over two bars');
-    for (const k of ['pad', 'bass', 'pluck', 'bell', 'drop', 'kick', 'brush', 'lead', 'keys', 'breath', 'echo']) { keep[k] = Music[k]; Music[k] = () => {}; }
+    for (const k of ['pad', 'bass', 'pluck', 'bell', 'shimmer', 'stutter', 'drop', 'kick', 'brush', 'tick', 'click', 'lead', 'keys', 'round', 'breath', 'echo']) { keep[k] = Music[k]; Music[k] = () => {}; }
     Music.pad = (m, at, len) => pads.push(len);
     Music.bass = (m, at, dur) => basses.push(dur);
     Music.echo = null;
@@ -2056,6 +1842,29 @@ console.log('sound and music');
       pads.length = 0; Music.pos = { bar: mid, at: 0 }; Music.fill(0.1);
       assert.strictEqual(pads.length, 0, 'in the flow of the song, a held chord is not struck again');
     } finally { Object.assign(Music, keep); Music.pos = null; }
+  });
+  test('the music\'s dress: the round lead sings the theme; a beat and glitches only in places, and sparse', () => {
+    const by = {};
+    for (const b of SONG.bars) (by[b.section] = by[b.section] || []).push(b);
+    for (const b of SONG.bars) if (b.lead === SONG.tunes.A[0]) assert.strictEqual(b.voice, 'round', b.section);
+    const beat = Object.keys(by).filter((k) => by[k][0].groove), calm = Object.keys(by).filter((k) => !by[k][0].groove);
+    assert(beat.length >= 3 && calm.length >= 3, 'some sections with a beat, some without: ' + beat);
+    for (const k of Object.keys(by)) if (by[k][0].glitch) assert(by[k][0].groove, k + ': glitches ride on a beat');
+    // Counted over the whole suite, with every instrument stubbed: few stutters, few clicks, ticks never on every offbeat.
+    const keep = {}, n = { stutter: 0, click: 0, tick: 0, kick: 0, bars: 0 }, pumps = [];
+    for (const k of ['pad', 'bass', 'pluck', 'bell', 'shimmer', 'drop', 'brush', 'keys', 'round', 'breath', 'lead', 'stutter', 'click', 'tick']) { keep[k] = Music[k]; Music[k] = n[k] != null ? () => n[k]++ : () => {}; }
+    const osc = Music.osc, env = Music.env, pump = Music.pump, nop = () => {};
+    Music.osc = () => ({ frequency: { setValueAtTime: nop, exponentialRampToValueAtTime: nop } }); Music.env = nop; // the kick's own note
+    Music.pump = { gain: { setTargetAtTime: (v, at) => pumps.push([v, at]) } };
+    try {
+      SONG.bars.forEach((b, i) => { Music.playBar(b, i * 3, 0.375, i); n.bars++; });
+      n.kick = pumps.filter(([v]) => v < 1).length;
+      const grooveBars = SONG.bars.filter((b) => b.groove).length, glitchBars = SONG.bars.filter((b) => b.glitch).length;
+      assert(n.stutter > 0 && n.stutter <= glitchBars * 0.6, 'stutters ' + n.stutter + ' in ' + glitchBars);
+      assert(n.click > 0 && n.click <= glitchBars * 1.2, 'clicks ' + n.click);
+      assert(n.tick > 0 && n.tick < grooveBars * 4 * 0.8, 'ticks ' + n.tick + ' in ' + grooveBars);
+      assert(n.kick > 0 && pumps.every(([v]) => v >= 0.6 && v <= 1), 'every kick dips the pads, gently: ' + JSON.stringify(pumps.slice(0, 4)));
+    } finally { Object.assign(Music, keep); Music.osc = osc; Music.env = env; Music.pump = pump; Music.prevLead = null; }
   });
   test('the default pack voices every sound the game plays, softly and in the music\'s key', () => {
     const fs = require('fs'), path = require('path'), dir = path.join(__dirname, '..', 'Game', 'js');
@@ -2068,20 +1877,26 @@ console.log('sound and music');
     for (const n of ['stamp', 'pack', 'land', 'bell']) assert(played.has(n), n);
     const soft = Sound.PACKS.soft;
     assert.strictEqual(L.defaultState().equipped.sound, 'soft');
-    for (const n of played) {
+    for (const n of played.add('a-sound-nobody-has-voiced-yet')) {
       for (const arg of [1, 2, 3, 9]) {
-        const own = typeof soft[n] === 'function';
-        const voices = own ? soft[n](Sound, arg) : Sound.common(soft, n, arg);
+        // Its own sound, a shared one, or (for a name added since) the pack's quiet fallback: never silence.
+        const voices = Sound.voices(n, arg, 'soft').list;
         assert(voices && voices.length, n + ' makes a sound');
-        if (!own) continue;
         for (const v of voices) {
           assert(v.g > 0 && v.g <= 0.2, n + ' gain ' + v.g);
-          if (v.f) { const m = midiOf(v.f); assert(Math.abs(m - Math.round(m)) < 0.02 && A_MINOR.includes(Math.round(m) % 12), n + ' plays ' + v.f.toFixed(1) + ' Hz, not in A minor'); }
+          if (v.n) { assert(v.q && v.q <= 600 && v.a >= 0.01, n + ': noise only as a dark, soft breath'); continue; }
+          const m = midiOf(v.f);
+          assert(Math.abs(m - Math.round(m)) < 0.02 && A_MINOR.includes(Math.round(m) % 12), n + ' plays ' + v.f.toFixed(1) + ' Hz, not in A minor');
+          // Smooth: no click on the way in, pure waves (sine or triangle), no harsh FM, and never brighter than the music.
+          assert(v.a >= 0.01, n + ': attack ' + v.a);
+          assert(!v.w || v.w === 'sine' || v.w === 'triangle', n + ' wave ' + v.w);
+          assert(!v.fm && !v.fe && !v.bp && !v.hp, n + ': a plain, soft tone');
+          assert(v.f < 1400 && Math.min(v.q || Infinity, v.sw ? Math.max(...v.sw) : Infinity, soft.lp) <= 2400, n + ' is too bright');
         }
       }
     }
     // Movement is barely there: quiet, short, and not bright.
-    for (const n of ['move', 'rotate', 'lower']) for (const v of soft[n](Sound)) assert(v.g <= 0.05 && v.d <= 0.25 && v.f < 1000, n);
+    for (const n of ['move', 'rotate', 'lower']) for (let i = 0; i < 12; i++) for (const v of soft[n](Sound)) assert(v.g <= 0.03 && v.d <= 0.25 && v.f < 1000, n);
   });
 
   // Sound effects in the music's key (Lull.Key): the key of the moment, the snapping, and the fit. Never its chords,

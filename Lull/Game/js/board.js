@@ -3,15 +3,9 @@
   'use strict';
   const L = (root.Lull = root.Lull || {});
 
-  // A cell: bits 0–4 colour slot (0 = empty), bit 5 gem, bit 6 hidden (vanishing modifier), bits 8–11 what the block
-  // is made of (Free Play's sandbox, js/sandbox.js) and bits 12–15 its state there (a flame's life, a spark's charge,
-  // a vine's growth …). Both move with the block. 0 is a plain block; the old saves' ice, oil, steel, TNT (now powder)
-  // and water keep their numbers.
-  const CELL = {
-    COLOR: 31, GEM: 32, HIDDEN: 64, MAT: 0xf00, STATE: 0xf000,
-    ICE: 0x100, OIL: 0x200, STEEL: 0x300, POWDER: 0x400, TNT: 0x400, WATER: 0x500, SAND: 0x600, STEAM: 0x700,
-    FIRE: 0x800, GLASS: 0x900, SEED: 0xa00, VINE: 0xb00, ACID: 0xc00, LAVA: 0xd00,
-  };
+  // A cell: bits 0–4 colour slot (0 = empty), bit 5 gem, bit 6 hidden (vanishing modifier). OLD marks the bits an
+  // older save used for what a block was made of (the retired sandbox); js/engine.js strips them when a board loads.
+  const CELL = { COLOR: 31, GEM: 32, HIDDEN: 64, OLD: 0xff00 };
 
   class Board {
     constructor(w, h, opts) {

@@ -232,7 +232,8 @@ main { flex: 1; position: relative; min-height: 0; }
 .modal-gift .gift-face { height: 100%; border-radius: 10px; background: var(--panel); border: 1px solid var(--line-2); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; text-align: center; padding: 6px; }
 .modal-gift .gift-face .gi { font-size: 26px; line-height: 1; color: var(--accent); }
 .modal-gift .gift-face b { font-size: 12px; color: var(--fg); }
-.modal-gift .gift-face .gp { font-size: 11px; color: var(--muted); }
+.modal-gift .gift-card.rare .gift-face { border-color: color-mix(in srgb, #f2c14e 60%, transparent); }
+.modal-gift .gift-card.uncommon .gift-face { border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
 @keyframes gift-turn { to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .modal-gift .gift-card { animation-duration: 0.01s; } .statusbar .gift-btn.ready { animation: none; } }
 .modal-gift.still .gift-card { animation-duration: 0.01s; animation-delay: 0s !important; } .statusbar .gift-btn.ready.still { animation: none; }
@@ -251,7 +252,6 @@ main { flex: 1; position: relative; min-height: 0; }
 .group-btn.on { outline: 2px solid var(--accent); animation: armed 1.4s ease-in-out infinite; }
 .group-btn .gi { font-size: 15px; }
 .group-btn .gl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.group-btn .k { position: absolute; left: 4px; top: 1px; font: 600 8.5px var(--mono-font); color: var(--faint); }
 .group-btn .n { position: absolute; right: 3px; top: -6px; min-width: 15px; height: 15px; border-radius: 8px; padding: 0 3px; background: var(--accent); color: #fff; font: 800 9.5px var(--mono-font); display: grid; place-items: center; }
 @media (max-width: 460px) { .group-btn .gl { display: none; } .group-btn .gi { font-size: 17px; } }
 .item-tray {
@@ -273,16 +273,10 @@ main { flex: 1; position: relative; min-height: 0; }
 .item-btn.empty .ii, .item-btn.empty .il { opacity: 0.55; }
 .item-btn .n { position: absolute; right: 4px; top: 2px; font: 700 9.5px var(--mono-font); color: var(--fg); }
 .item-btn.empty .n { color: var(--muted); }
-.item-btn .k { position: absolute; left: 4px; top: 2px; font: 600 8.5px var(--mono-font); color: var(--faint); }
+.item-btn.poor .n { opacity: 0.55; }
 .item-btn.armed, .item-btn.on { outline: 2px solid var(--accent); }
 .item-btn.on { background: color-mix(in srgb, var(--accent) 22%, var(--panel)); animation: armed 1.4s ease-in-out infinite; }
 @keyframes armed { 50% { box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 60%, transparent); } }
-/* Jackpot */
-.reels { display: flex; gap: 8px; justify-content: center; margin: 8px 0 4px; }
-.reel { width: 64px; height: 72px; border-radius: 10px; background: var(--panel); border: 2px solid var(--line-2); display: grid; place-items: center; font-size: 30px; }
-.reel.win { border-color: #f2c14e; box-shadow: 0 0 16px rgba(242,193,78,0.55); animation: pop 0.3s ease; }
-@keyframes pop { 50% { transform: scale(1.15); } }
-.jp-note { text-align: center; }
 
 .overlay {
   position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none;
@@ -501,24 +495,31 @@ main { flex: 1; position: relative; min-height: 0; }
 
 /* ---- shop ---------------------------------------------------------------------------------------------------- */
 
-/* The wallet opens it: Items or Cosmetics, a jump bar that follows the scroll, then every section in one column. */
-.shop-head { flex: none; display: flex; align-items: center; gap: 8px 10px; flex-wrap: wrap; padding: 8px 10px 6px; }
-.shop-seg { flex: none; }
-.shop-jump { display: flex; flex-wrap: wrap; gap: 2px; min-width: 0; }
-.shop-jump button {
-  border: 0; background: transparent; color: var(--muted); height: 24px; padding: 0 8px; border-radius: 7px;
-  font-weight: 600; font-size: 11.5px; white-space: nowrap; display: inline-flex; align-items: center; gap: 5px;
+/* The wallet opens it: cosmetics only. A chevron, the row of kinds (one lit), a chevron; below, only the lit kind. */
+.shop-head { flex: none; display: flex; align-items: center; justify-content: center; gap: 4px; padding: 8px 6px 4px; }
+.shop-chev { width: 28px; height: 28px; }
+.shop-chev:disabled { opacity: 0.3; cursor: default; background: transparent; color: var(--muted); }
+.shop-jump {
+  flex: 0 1 auto; min-width: 0; display: flex; flex-wrap: nowrap; gap: 2px; padding: 2px; border-radius: 9px;
+  background: var(--panel); overflow-x: auto; scrollbar-width: none; outline: none;
 }
-.shop-jump button .gi { font-size: 12px; opacity: 0.8; }
-.shop-jump button:hover { color: var(--fg); background: var(--panel); }
-.shop-jump button[aria-current="true"] { color: var(--fg); background: var(--panel-2); }
-.shop-jump button[aria-current="true"] .gi { color: var(--accent); opacity: 1; }
-/* Narrow: the jump bar is one row that slides sideways (the wheel slides it too), fading out at its edge. */
+.shop-jump::-webkit-scrollbar { display: none; }
+/* Slid over (a narrow window), the cut-off side fades rather than clipping a word. */
+.shop-jump.fade-r { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent); }
+.shop-jump.fade-l { -webkit-mask-image: linear-gradient(90deg, transparent, #000 28px); mask-image: linear-gradient(90deg, transparent, #000 28px); }
+.shop-jump.fade-l.fade-r { -webkit-mask-image: linear-gradient(90deg, transparent, #000 28px, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(90deg, transparent, #000 28px, #000 calc(100% - 28px), transparent); }
+/* Centred when it all fits, and still reachable from the first one when it does not. */
+.shop-jump > :first-child { margin-left: auto; }
+.shop-jump > :last-child { margin-right: auto; }
+.shop-jump button {
+  flex: none; border: 0; background: transparent; color: var(--muted); height: 26px; padding: 0 10px; border-radius: 7px;
+  font-weight: 600; font-size: 11.5px; white-space: nowrap;
+}
+.shop-jump button:hover { color: var(--fg); }
+.shop-jump button[aria-selected="true"] { color: var(--fg); background: var(--panel-3); box-shadow: 0 1px 2px rgb(0 0 0 / 0.12); }
+.shop-jump button:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 70%, transparent); outline-offset: -2px; }
 @media (max-width: 560px) {
-  .shop-head { padding-bottom: 4px; }
-  .shop-jump { flex: 1 1 100%; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; -webkit-mask-image: linear-gradient(90deg, #000 88%, transparent); mask-image: linear-gradient(90deg, #000 88%, transparent); padding-right: 24px; }
-  .shop-jump::-webkit-scrollbar { display: none; }
-  .shop-jump button { padding: 0 7px; flex: none; }
+  .shop-jump button { padding: 0 8px; }
 }
 
 .shop-body { flex: 1; min-height: 0; padding: 0 10px 14px; position: relative; }
@@ -542,25 +543,6 @@ main { flex: 1; position: relative; min-height: 0; }
 .price-btn.armed { background: var(--accent); border-color: transparent; color: #0d1016; }
 .price-btn.nope { animation: nope 0.3s ease; }
 @keyframes nope { 25% { transform: translateX(-3px); } 75% { transform: translateX(3px); } }
-
-/* Items: one slim row each, the glyph in a well with how many you hold. */
-.shop-items { display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 6px; }
-.shop-item {
-  display: flex; align-items: center; gap: 9px; min-width: 0; padding: 6px 6px 6px 6px;
-  background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
-}
-.shop-item .ii {
-  position: relative; flex: none; width: 30px; height: 30px; border-radius: 8px; background: var(--well);
-  display: grid; place-items: center; font-size: 16px; color: var(--fg);
-}
-.shop-item .ii .n {
-  position: absolute; right: -5px; top: -5px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px;
-  background: var(--accent); color: #0d1016; font: 700 10px/16px var(--mono-font); text-align: center;
-}
-.shop-item .nm {
-  flex: 1; min-width: 0; font-weight: 600; font-size: 12.5px; line-height: 1.2; overflow: hidden;
-  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
-}
 
 /* Cosmetics: the preview, then the name and what you can do with it. */
 .shop-looks { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; }
@@ -587,7 +569,7 @@ main { flex: 1; position: relative; min-height: 0; }
 .shop-look .use-btn:hover { background: var(--panel-3); }
 .shop-look .reward-tag { flex: none; display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; color: var(--warn); padding-right: 4px; }
 .shop-look .reward-tag svg { width: 12px; height: 12px; }
-.shop-item.fresh, .shop-look.fresh { animation: fresh 0.9s ease; }
+.shop-look.fresh { animation: fresh 0.9s ease; }
 @keyframes fresh { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--gem) 60%, transparent); } 100% { box-shadow: 0 0 0 10px transparent; } }
 
 /* A sound pack's preview is its Listen button: a play mark and a few bars that dance while it plays. */
@@ -683,6 +665,8 @@ table.st th { text-align: right; color: var(--muted); font-weight: 600; font-siz
 .picker button { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 4px; height: 64px; }
 .picker button:hover { border-color: var(--accent); }
 .picker canvas { width: 100%; height: 100%; }
+.picker.three { grid-template-columns: repeat(3, 1fr); }
+.picker.three button { height: 76px; }
 .bp-grid { display: grid; grid-template-columns: repeat(5, 36px); gap: 3px; justify-content: center; margin: 8px 0; }
 .bp-grid button { width: 36px; height: 36px; border-radius: 6px; border: 1px solid var(--line-2); background: var(--panel); padding: 0; }
 .bp-grid button.on { background: var(--accent); border-color: transparent; }

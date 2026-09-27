@@ -279,8 +279,7 @@
     // ---- breaking up ------------------------------------------------------------------------------------------------
 
     /**
-     * What a block becomes when it breaks: chips (drill), flattened debris (anvil), pixels (laser), grains (purge),
-     * shards (shattered ice), embers (fire).
+     * What a block becomes when it breaks: chips (drill), flattened debris, pixels (laser), grains.
      */
     burst(kind, b) {
       const s = b.size, x = b.x, y = b.y, c = b.color, gx = this.gx, gy = this.gy, S = this.s;
@@ -314,22 +313,6 @@
           const p = this.part('pixel', x - s / 2 + (i + 0.5) * q, y - s / 2 + (j + 0.5) * q, (Math.random() - 0.5) * S * 1.2 + ux * S * (0.6 + Math.random()), (Math.random() - 0.5) * S * 1.2 + uy * S * (0.6 + Math.random()), 0.25 + Math.random() * 0.15, q * 0.9, c, -0.04, 1.5);
           p.delay = Math.random() * 0.12; p.max += p.delay;
         }
-      } else if (kind === 'shards') {
-        // Ice: a quick crack of bright splinters in every direction, then they fall.
-        for (let k = 0; k < 7; k++) {
-          const a = (k / 7) * TAU + Math.random() * 0.6, sp = S * (6 + Math.random() * 9);
-          const p = this.part('chip', x + (Math.random() - 0.5) * s * 0.4, y + (Math.random() - 0.5) * s * 0.4, Math.cos(a) * sp + ux * S * 3, Math.sin(a) * sp + uy * S * 3, 0.4 + Math.random() * 0.25, s * (0.14 + Math.random() * 0.14), k % 3 ? '#e6f7ff' : c, 1);
-          p.va = (Math.random() - 0.5) * 30;
-        }
-        for (let k = 0; k < 2; k++) this.part('spark', x, y, (Math.random() - 0.5) * S * 16, (Math.random() - 0.5) * S * 16, 0.2, 1.5, '#ffffff', 0.3);
-      } else if (kind === 'embers') {
-        // Fire: the block flares and is gone; embers drift up against gravity and a little ash falls.
-        this.part('fade', x, y, 0, 0, 0.22, s, '#ffb347', 0);
-        for (let k = 0; k < 5; k++) {
-          const p = this.part('ember', x + (Math.random() - 0.5) * s * 0.8, y + (Math.random() - 0.5) * s * 0.8, px * (Math.random() - 0.5) * S * 3 + ux * S * (2 + Math.random() * 3), py * (Math.random() - 0.5) * S * 3 + uy * S * (2 + Math.random() * 3), 0.5 + Math.random() * 0.4, Math.max(1.2, s * (0.06 + Math.random() * 0.06)), Math.random() < 0.5 ? '#ffb347' : '#ff6a3d', -0.12, 1.8);
-          p.delay = Math.random() * 0.08; p.max += p.delay;
-        }
-        this.part('grain', x, y, (Math.random() - 0.5) * S * 2, 0, 0.5, Math.max(1.5, s * 0.1), '#4a4540', 0.6);
       } else {
         this.part('fade', x, y, 0, 0, 0.25, s, c, 0);
       }
@@ -413,11 +396,6 @@
           ctx.transform(c, sn, -sn, c, p.x, p.y);
           ctx.fillRect(-w / 2, -h / 2, w, h);
           if (m) ctx.setTransform(m); else ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        } else if (p.kind === 'ember') {
-          if (p.life < p.delay) continue;
-          const u = (p.life - p.delay) / Math.max(0.01, p.max - p.delay);
-          ctx.globalAlpha = Math.max(0, 1 - u); ctx.fillStyle = u < 0.6 ? p.color : '#6b5a4a';
-          ctx.beginPath(); ctx.arc(p.x, p.y, p.size * (1 - u * 0.5), 0, TAU); ctx.fill();
         } else if (p.kind === 'fade') {
           const z = p.size * (1 - k * 0.7);
           ctx.globalAlpha = 1 - k; ctx.fillStyle = p.color; ctx.fillRect(p.x - z / 2, p.y - z / 2, z, z);

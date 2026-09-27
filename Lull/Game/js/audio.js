@@ -16,63 +16,72 @@
    *   n noise burst · q low-pass · hp high-pass · bp band-pass · fe [from, to] low-pass sweep over the note
    *   p partials [[multiple, level, decay share]] · dt detuned twin (cents) · vib vibrato (cents) · rv reverb send
    *   fm [ratio, index, decay share] a sine modulating the tone's pitch, its depth fading · pan stereo position
-   * Packs may voice any event themselves; the rest fall back to Sound.common in the pack's wave, scale and room.
+   *   sw [from, to] a gentle (unresonant) low-pass sweep over the note · wide: the detuned twin and the tone spread that
+   *   far either side
+   * A pack's lp low-passes every voice with no filter of its own (so none is brighter than the pack means).
+   * Packs may voice any event themselves; the rest fall back to Sound.common in the pack's wave, scale and room, and
+   * then to the pack's any(), if it has one (the default does), so an event nobody has voiced yet still sounds.
    */
   const PACKS = {
-    // The default, in the music's world: glassy FM tones, water droplets and airy chord swells, all in A minor (and
-    // its relative, C major) so they sit with Classic's music. Movement is barely there; clears bloom and fade.
+    // The default, in the music's world and its room: smooth synth tones — soft sine plucks that close as they ring,
+    // round bell tones with a few harmonic partials, and slow, wide, detuned pads that swell — all in A minor (mostly its
+    // pentatonic) so they sit in Classic's music, through the same reverb and never brighter than it. Nothing starts
+    // with a click; movement is a breath of a note, a different one each time, like a chime stirring.
     soft: {
       // Shared sounds (Sound.common) fall on the C major pentatonic from here: A minor's notes too.
-      base: 523, wave: 'sine', decay: 0.9, reverb: 0.1, attack: 0.01,
-      // A glass tone: a sine with a brief inharmonic FM shimmer on its attack.
-      glass: (m, at, g, d, o) => Object.assign({ f: hz(m), at, g, d, a: 0.005, fm: [3.5, 0.45, 0.12], rv: 0.14 }, o),
-      // A soft electric-piano tone: FM at a ratio of one, warm and round, fading bright to plain.
-      keys: (m, at, g, d, o) => Object.assign({ f: hz(m), at, g, d, a: 0.01, fm: [1, 0.9, 0.25], dt: 5, rv: 0.16 }, o),
-      // A droplet: a short sine that slides up as it fades.
-      drop: (m, at, g, d, o) => Object.assign({ f: hz(m), to: hz(m) * 1.33, at, g, d, a: 0.003, rv: 0.08 }, o),
-      // Air: a slow-swelling detuned pair, for pads under chords.
-      air: (m, at, g, d, o) => Object.assign({ f: hz(m), at, g, d, a: 0.14, dt: 7, rv: 0.2 }, o),
-      move() { return [this.drop(72, 0, 0.028, 0.07)]; },
-      rotate() { return [this.glass(76, 0, 0.045, 0.2, { fm: [2, 0.35, 0.1], rv: 0.12 })]; },
-      lower() { return [this.drop(64, 0, 0.036, 0.08, { to: hz(67) })]; },
-      lock() { return [{ f: 110, to: 98, d: 0.38, g: 0.17, a: 0.008 }, this.keys(57, 0, 0.06, 0.4, { dt: 0, rv: 0.1 }), { n: 1, d: 0.08, g: 0.018, q: 700 }]; },
-      hold() { return [this.air(69, 0, 0.032, 0.45, { to: hz(72), a: 0.06 }), this.glass(76, 0.05, 0.016, 0.4, { pan: 0.3 })]; },
-      blocked() { return [{ f: hz(50), d: 0.12, g: 0.03, a: 0.006, q: 500 }]; },
-      // A line: an Am chord (A C E, then G, then B for Am9) blooming up, over a breath of air.
+      base: 523, wave: 'sine', decay: 0.9, reverb: 0.4, attack: 0.02, lp: 2000,
+      // A soft synth pluck: a sine and its twin a few cents apart, spread a little, darkening slowly as it rings.
+      tone: (m, at, g, d, o) => Object.assign({ f: hz(m), at, g, d, a: 0.02, dt: 4, wide: 0.22, sw: [1800, 600], rv: 0.42 }, o),
+      // A round bell tone: a sine with its octave and twelfth fading first, ringing long.
+      ring: (m, at, g, d, o) => Object.assign({ f: hz(m), at, g, d, a: 0.012, p: [[2, 0.1, 0.4], [3, 0.03, 0.2]], q: 2400, rv: 0.5 }, o),
+      // A pad: a detuned triangle pair, wide, swelling in slowly, its filter opening as it goes.
+      pad: (m, at, g, d, o) => Object.assign({ f: hz(m), at, g, d, a: 0.35, w: 'triangle', dt: 8, wide: 0.5, sw: [450, 1300], rv: 0.5 }, o),
+      // A mote: the smallest note, for movement — round, short, low-passed, in the room.
+      mote: (m, at, g, d, o) => Object.assign({ f: hz(m), at, g, d, a: 0.014, q: 1400, rv: 0.3 }, o),
+      pick: (list) => list[Math.floor(Math.random() * list.length)],
+      move() { return [this.mote(this.pick([69, 72, 76]), 0, 0.012, 0.2)]; },
+      rotate() { return [this.mote(this.pick([74, 76, 79]), 0, 0.024, 0.24, { dt: 3, wide: 0.2 })]; },
+      lower() { return [this.mote(this.pick([60, 64]), 0, 0.017, 0.16, { q: 1000 })]; },
+      // Set: a warm, low felt note with a soft sub under it and a fifth above, drifting off.
+      lock() { return [this.tone(57, 0, 0.054, 0.9, { sw: [1300, 350], dt: 3, rv: 0.3 }), { f: hz(45), d: 0.4, g: 0.1, a: 0.018, q: 300 }, this.tone(64, 0.025, 0.028, 0.8, { rv: 0.4 })]; },
+      hold() { return [this.pad(69, 0, 0.05, 0.6, { to: hz(72), a: 0.08, sw: [700, 1500] }), this.ring(76, 0.08, 0.02, 0.9, { pan: 0.3 })]; },
+      blocked() { return [{ f: hz(52), d: 0.18, g: 0.019, a: 0.02, q: 500, rv: 0.2 }]; },
+      // A line: a pad under an A minor chord (E A C, then E, then G for Am7) blooming up.
       clear(s, n) {
         n = Math.min(n || 1, 3);
-        const tones = [69, 72, 76, 79, 83].slice(0, 2 + n);
-        return [this.air(57, 0, 0.045, 1.4)].concat(tones.map((m, i) => this.keys(m, i * 0.045, 0.046, 1.2, { pan: (i % 2 ? 0.35 : -0.35) * (i / tones.length) })));
+        const tones = [64, 69, 72, 76, 79].slice(0, 2 + n);
+        return [this.pad(57, 0, 0.06, 1.5)].concat(tones.map((m, i) => this.tone(m, i * 0.06, 0.046, 1.5, { sw: [1400, 500],  pan: (i % 2 ? 0.35 : -0.35) * (i / tones.length) })));
       },
-      // Four: an Am7 pad swells while glass tones rise through A minor.
+      // Four: an Am7 pad swells while bell tones rise through A minor.
       quad() {
-        const pad = [57, 64, 67, 72].map((m) => this.air(m, 0, 0.045, 2.2, { a: 0.3, rv: 0.22 }));
-        const run = [69, 72, 76, 79, 81, 83, 84, 88].map((m, i) => this.glass(m, i * 0.06, 0.06, 1.3, { pan: i % 2 ? 0.4 : -0.4 }));
-        return pad.concat(run);
+        const pad = [57, 64, 67, 72].map((m) => this.pad(m, 0, 0.05, 2.4, { a: 0.4 }));
+        return pad.concat([64, 69, 72, 76, 79, 81, 84, 88].map((m, i) => this.ring(m, i * 0.07, 0.052, 1.8, { pan: i % 2 ? 0.4 : -0.4 })));
       },
-      // A T-spin: a quicker, wavering shimmer up an A minor chord.
-      tspin() { return [this.air(64, 0, 0.04, 1.2)].concat([76, 81, 83, 88].map((m, i) => this.glass(m, i * 0.07, 0.062, 1.0, { vib: 10, pan: i % 2 ? 0.3 : -0.3 }))); },
+      // A T-spin: a slower, wavering shimmer up an A minor chord.
+      tspin() { return [this.pad(64, 0, 0.045, 1.4)].concat([69, 76, 81, 83].map((m, i) => this.ring(m, i * 0.08, 0.06, 1.4, { vib: 8, pan: i % 2 ? 0.3 : -0.3 }))); },
       // A perfect clear: C major 9, the relative major, opening under a long bloom.
       perfect() {
-        const pad = [60, 64, 67, 71, 74].map((m) => this.air(m, 0, 0.026, 2.8, { a: 0.4, rv: 0.24 }));
-        return pad.concat([69, 72, 76, 79, 83, 84, 88].map((m, i) => this.keys(m, i * 0.08, 0.042, 1.6, { pan: i % 2 ? 0.35 : -0.35 })));
+        const pad = [60, 64, 67, 71, 74].map((m) => this.pad(m, 0, 0.03, 3, { a: 0.5 }));
+        return pad.concat([64, 67, 69, 72, 76, 79, 83].map((m, i) => this.tone(m, i * 0.09, 0.04, 1.8, { pan: i % 2 ? 0.35 : -0.35 })));
       },
-      combo(s, n) { return [this.glass(69 + AM[Math.min(9, n || 1)], 0, 0.045, 0.6)]; },
-      // A soft, low thoom: a falling sine and a dark puff of air.
-      boom() { return [{ f: 98, to: 41, d: 0.8, g: 0.12, a: 0.01 }, { n: 1, d: 0.6, g: 0.09, q: 320 }, this.air(45, 0, 0.05, 1.2, { rv: 0.12 })]; },
-      drill() { return [{ n: 1, d: 0.4, g: 0.04, fe: [1400, 300] }, { f: 110, to: 82, d: 0.4, g: 0.025 }]; },
-      buy() { return [this.glass(76, 0, 0.11, 0.5, { fm: [2, 0.6, 0.2] }), this.glass(81, 0.08, 0.11, 0.7, { fm: [2, 0.6, 0.2] })]; },
-      error() { return [{ f: hz(52), to: hz(50), d: 0.25, g: 0.045, q: 700 }]; },
-      solve() { return [this.air(57, 0, 0.075, 1.8)].concat([69, 72, 76, 79, 83, 84].map((m, i) => this.keys(m, i * 0.07, 0.085, 1.5, { pan: i % 2 ? 0.35 : -0.35 }))); },
-      fail() { return [this.air(76, 0, 0.034, 0.6, { to: hz(69), a: 0.03, q: 1500 })]; },
-      golden() { return [81, 84, 88, 84, 88].map((m, i) => this.glass(m, i * 0.06, 0.075, 0.7)); },
-      item() { return [this.drop(64, 0, 0.05, 0.25, { to: hz(69) }), this.glass(81, 0.08, 0.02, 0.4)]; },
-      // The factory line, heard only while you watch it: a muffled press, a droplet onto the belt, a soft key as a piece
-      // settles in the bin, and two quiet glass tones when the bin is full.
-      stamp() { return [{ f: hz(45), d: 0.12, g: 0.05, a: 0.004, q: 400 }, { n: 1, d: 0.04, g: 0.012, q: 500 }]; },
-      pack() { return [this.drop(69, 0, 0.03, 0.12), { n: 1, d: 0.03, g: 0.01, q: 900 }]; },
-      land() { return [this.keys(64, 0, 0.03, 0.35, { dt: 0, rv: 0.12 }), { n: 1, d: 0.05, g: 0.015, q: 600 }]; },
-      bell() { return [this.glass(81, 0, 0.04, 1.2), this.glass(88, 0.14, 0.03, 1.4)]; },
+      combo(s, n) { n = Math.min(9, n || 1); return [this.ring(57 + AM[Math.min(9, n + 2)], 0, 0.034 - n * 0.001, 1)]; },
+      // A soft, low thoom: a falling sine, a dark breath and a low pad.
+      boom() { return [{ f: 98, to: 41, d: 0.9, g: 0.12, a: 0.02 }, { n: 1, d: 0.7, g: 0.06, a: 0.04, q: 260 }, this.pad(45, 0, 0.06, 1.4, { a: 0.1, sw: [300, 700] })]; },
+      drill() { return [{ n: 1, d: 0.5, g: 0.018, a: 0.06, q: 500 }, { f: 110, to: 82, d: 0.5, g: 0.021, a: 0.04, w: 'triangle', q: 400 }]; },
+      buy() { return [this.ring(69, 0, 0.075, 0.9), this.ring(76, 0.09, 0.075, 1.1)]; },
+      error() { return [{ f: hz(52), to: hz(50), d: 0.3, g: 0.04, a: 0.02, q: 600, rv: 0.2 }]; },
+      solve() { return [this.pad(57, 0, 0.08, 2)].concat([64, 69, 72, 76, 79, 83].map((m, i) => this.tone(m, i * 0.08, 0.075, 1.8, { pan: i % 2 ? 0.35 : -0.35 }))); },
+      fail() { return [this.pad(76, 0, 0.055, 0.7, { to: hz(69), a: 0.06, sw: [1200, 500] })]; },
+      golden() { return [76, 79, 81, 79, 84].map((m, i) => this.ring(m, i * 0.07, 0.058, 1)); },
+      item() { return [this.mote(64, 0, 0.038, 0.3, { to: hz(69), q: 1600 }), this.ring(76, 0.08, 0.015, 0.6)]; },
+      // The factory line, heard only while you watch it: a muffled press, a note onto the belt, a soft pluck as a piece
+      // settles in the bin, and two quiet bell tones when the bin is full.
+      stamp() { return [{ f: hz(45), d: 0.16, g: 0.038, a: 0.012, q: 380, rv: 0.2 }]; },
+      pack() { return [this.mote(69, 0, 0.02, 0.16)]; },
+      land() { return [this.tone(64, 0, 0.02, 0.5, { rv: 0.3 })]; },
+      bell() { return [this.ring(76, 0, 0.031, 1.4), this.ring(81, 0.14, 0.024, 1.6)]; },
+      // Anything the game plays that has no sound of its own yet: a quiet pluck.
+      any() { return [this.tone(76, 0, 0.03, 0.6)]; },
     },
 
     // A desk-bound machine: clicks, clacks, the carriage return's zip and its bell.
@@ -254,6 +263,8 @@
       let out = g;
       const filt = (type, freq) => { const f = ctx.createBiquadFilter(); f.type = type; f.frequency.value = freq; out.connect(f); out = f; return f; };
       if (v.q) filt('lowpass', v.q);
+      else if (pack.lp && !v.fe && !v.sw) filt('lowpass', pack.lp);
+      if (v.sw) { const f = filt('lowpass', v.sw[0]); f.Q.value = 0.5; f.frequency.setValueAtTime(v.sw[0], t); f.frequency.exponentialRampToValueAtTime(v.sw[1], t + v.d); }
       if (v.hp) filt('highpass', v.hp);
       if (v.bp) { const f = filt('bandpass', v.bp); f.Q.value = 3; }
       if (v.fe) { const f = filt('lowpass', v.fe[0]); f.frequency.setValueAtTime(v.fe[0], t); f.frequency.exponentialRampToValueAtTime(v.fe[1], t + v.d); f.Q.value = 4; }
@@ -283,8 +294,11 @@
         o.start(t); o.stop(t + v.d + 0.05);
         return o;
       };
+      // Spread: the tone a little one side, its twin the other (a stereo pair feeds the rest of the chain).
+      const wide = v.wide && v.dt && ctx.createStereoPanner ? v.wide : 0;
+      const side = (node, p) => { if (!wide) return node.connect(g); const s = ctx.createStereoPanner(); s.pan.value = p; return node.connect(s).connect(g); };
       const main = osc(v.f, 0);
-      main.connect(g);
+      side(main, -wide);
       if (v.fm) {
         const [ratio, index, share] = v.fm, m = ctx.createOscillator(), mg = ctx.createGain();
         m.frequency.value = v.f * ratio;
@@ -293,7 +307,7 @@
         m.connect(mg).connect(main.frequency); m.start(t); m.stop(t + v.d + 0.05);
       }
       const dt = v.dt != null ? v.dt : 0;
-      if (dt) { const g2 = ctx.createGain(); g2.gain.value = 0.6; osc(v.f, dt).connect(g2).connect(g); }
+      if (dt) { const g2 = ctx.createGain(); g2.gain.value = 0.6; side(osc(v.f, dt).connect(g2), wide); }
       const partials = v.p || (v.h ? [[v.h, 0.25, 0.4]] : null);
       if (partials) {
         for (const [mul, lvl, share] of partials) {
@@ -342,7 +356,9 @@
     /** The voices a pack makes for an event (its own, or the shared ones). */
     voices(name, arg, packId) {
       const pack = PACKS[packId || this.pack] || PACKS.soft;
-      return { pack, list: typeof pack[name] === 'function' ? pack[name](this, arg) : this.common(pack, name, arg) };
+      let list = typeof pack[name] === 'function' ? pack[name](this, arg) : this.common(pack, name, arg);
+      if (!list && typeof pack.any === 'function') list = pack.any(this, arg, name);
+      return { pack, list };
     },
 
     play(name, arg, packId) {
@@ -385,12 +401,16 @@
 
   // ---- Classic's music: Korobeiniki (a 19th-century Russian folk song, public domain), slowed and dreamed -----------
   //
-  // The tune as written, in its own key (A minor), taken down to 80 and dressed like a late-night console menu: a
-  // glassy FM electric piano over wide, slowly filtered pads of extended chords (min9, min11, maj9 on the relative
-  // major), a warm sub, a quiet arpeggio in places, all on a faint tape wobble with chorus, a dark echo and the shared
-  // room. A three-minute suite, so it rarely repeats: pads and arpeggio; the theme; the theme with a harmony and a soft
-  // beat; the bridge floating at half time; an interlude with its counter-melody on glass; the theme over a low
-  // counter-line; the bridge in time; and a short coda that breathes before it goes round again (from the theme).
+  // The tune as written, in its own key (A minor), taken down to 80 and dressed as calm ambient electronica with a
+  // little IDM in its detail: a soft, round lead (a sine with a breath of FM, gliding between notes, its vibrato
+  // arriving late) over warm, detuned analog-style pads of extended chords (min9, min11, maj9 on the relative major)
+  // that breathe through a slowly swaying filter and dip gently each time the kick lands, a warm sub, a soft digital
+  // arpeggio in places, and small glitches kept low: a note now and then stuttered into quick repeats, soft clicks,
+  // granular shimmers of the chord high up, faint hat ticks swung and nudged off the grid. All of it through a tape
+  // wobble, a soft saturation and a dark top, with chorus, a dark echo and the shared room. A three-minute suite, so it
+  // rarely repeats: pads and arpeggio; the theme; the theme with a harmony and a sparse beat; the bridge floating at
+  // half time; an interlude with its counter-melody on glass; the theme over a low counter-line; the bridge in time;
+  // and a short coda that breathes before it goes round again (from the theme).
   //
   // Korobeiniki's A part in A minor, in eighths, as everyone knows it (scripts/test.cjs checks TUNE_A against this):
   //   E5 2  B4 1  C5 1  D5 2  C5 1  B4 1 | A4 2  A4 1  C5 1  E5 2  D5 1  C5 1 | B4 3  C5 1  D5 2  E5 2 | C5 2  A4 2  A4 4
@@ -450,16 +470,17 @@
   };
   const HOME_KEY = 'A minor';
 
-  // hold: bars per chord (2 = half time) · arp and arpUp (semitones) · groove: 0 none, 1 a soft kick, 2 kick and brush ·
-  // key: the scale it is in (KEYS; A minor unless said)
+  // hold: bars per chord (2 = half time) · arp and arpUp (semitones) · groove: 0 none, 1 a soft kick and faint ticks,
+  // 2 a sparse, lightly swung beat (kick, brush, ticks) · glitch: the odd stutter and soft click · key: the scale it
+  // is in (KEYS; A minor unless said). Bells are a glass bell or a granular shimmer, bar by bar.
   const SECTIONS = [
     { name: 'intro', prog: DRIFT, arp: 'rise', arpUp: 12, bells: true, once: true },
-    { name: 'theme', prog: PROG_A, lead: TUNE_A, voice: 'keys', bells: true },
-    { name: 'theme2', prog: PROG_A, lead: TUNE_A, voice: 'keys', harmony: true, arp: 'wave', groove: 2 },
+    { name: 'theme', prog: PROG_A, lead: TUNE_A, voice: 'round', bells: true },
+    { name: 'theme2', prog: PROG_A, lead: TUNE_A, voice: 'round', harmony: true, arp: 'wave', groove: 2, glitch: true },
     { name: 'float', key: 'A melodic minor', prog: PROG_B, hold: 2, lead: TUNE_B_SLOW, voice: 'breath', drops: true, bells: true, groove: 1 },
-    { name: 'interlude', prog: PROG_I, lead: COUNTER, voice: 'glass', arp: 'rise', groove: 1 },
-    { name: 'variation', prog: PROG_V, lead: TUNE_A, voice: 'keys', under: UNDER, groove: 2 },
-    { name: 'bridge', key: 'A melodic minor', prog: PROG_B, lead: TUNE_B, voice: 'keys', harmony: true, arp: 'wave', groove: 2, bells: true },
+    { name: 'interlude', prog: PROG_I, lead: COUNTER, voice: 'glass', arp: 'rise', groove: 1, glitch: true },
+    { name: 'variation', prog: PROG_V, lead: TUNE_A, voice: 'round', under: UNDER, groove: 2 },
+    { name: 'bridge', key: 'A melodic minor', prog: PROG_B, lead: TUNE_B, voice: 'round', harmony: true, arp: 'wave', groove: 2, bells: true, glitch: true },
     { name: 'coda', prog: DRIFT, arp: 'fall', arpUp: 12, drops: true, bells: true },
   ];
   const SONG = (() => {
@@ -472,7 +493,7 @@
           list.push({
             section: s.name, si, key: s.key || HOME_KEY, name: c, harm: CH[c], chord: k === 0 ? CH[c] : null, hold, left: hold - k, lead: s.lead ? s.lead[b] : null,
             under: s.under ? s.under[b] : null, voice: s.voice, harmony: !!s.harmony, arp: s.arp || null, arpUp: s.arpUp || 0,
-            groove: s.groove || 0, bells: !!s.bells, drops: !!s.drops, once: !!s.once,
+            groove: s.groove || 0, glitch: !!s.glitch, bells: !!s.bells, drops: !!s.drops, once: !!s.once,
           });
         }
       });
@@ -486,6 +507,15 @@
     for (let d = 3; d <= 9; d++) if (pcs.includes((m - d) % 12)) return m - d;
     return m - 5;
   }
+
+  // The desk's saturation curve: tanh, scaled to keep unity gain at low levels, so only peaks are rounded off.
+  let satCurve = null;
+  const SAT = () => {
+    if (satCurve) return satCurve;
+    satCurve = new Float32Array(1025);
+    for (let i = 0; i < 1025; i++) { const x = i / 512 - 1; satCurve[i] = Math.tanh(1.8 * x) / 1.8; }
+    return satCurve;
+  };
 
   /**
    * Classic's music. The tempo stays put; only a stack near the top quickens it (tempo, set by Classic).
@@ -514,9 +544,10 @@
     },
 
     /**
-     * The mixing desk, built per start: instruments → tape wobble → a slowly moving low-pass → the volume (which the
-     * announcer ducks) → the speakers, a chorus either side, a dark dotted-eighth echo, and the shared room (with the
-     * bass kept out of it so the tail stays clear). Pads have their own wide, breathing filter.
+     * The mixing desk, built per start: instruments → tape wobble → a soft saturation → a slowly moving low-pass and an
+     * eased top (tape's warmth) → the volume (which the announcer ducks) → the speakers, a chorus either side, a dark
+     * dotted-eighth echo, and the shared room (with the bass kept out of it so the tail stays clear). Pads have their
+     * own wide filter, swaying on two slow LFOs, and a pump the kick dips (a gentle sidechain).
      */
     wire(ctx) {
       const lfos = this.lfos = [], sends = this.sends = [];
@@ -527,12 +558,17 @@
       const tape = ctx.createDelay(0.1);
       tape.delayTime.value = 0.012;
       lfo(0.29, 0.0016, tape.delayTime); lfo(4.7, 0.00005, tape.delayTime);
+      // Saturation: a soft curve that leans on peaks only (unity at the level things play at), for a little glue.
+      const sat = ctx.createWaveShaper();
+      sat.curve = SAT();
       const tone = ctx.createBiquadFilter();
-      tone.type = 'lowpass'; tone.frequency.value = 3600; tone.Q.value = 0.4;
-      lfo(0.023, 700, tone.frequency);
+      tone.type = 'lowpass'; tone.frequency.value = 3400; tone.Q.value = 0.4;
+      lfo(0.023, 600, tone.frequency);
+      const top = ctx.createBiquadFilter();
+      top.type = 'highshelf'; top.frequency.value = 4500; top.gain.value = -4;
       this.gain = ctx.createGain();
       this.gain.gain.value = this.volume;
-      this.bus.connect(tape).connect(tone).connect(this.gain);
+      this.bus.connect(tape).connect(sat).connect(tone).connect(top).connect(this.gain);
       this.gain.connect(Sound.master);
       // Chorus: two slowly swaying copies, one each side.
       for (const [t, f, side] of [[0.021, 0.19, -0.7], [0.027, 0.13, 0.7]]) {
@@ -552,12 +588,14 @@
         this.gain.connect(hp).connect(rs).connect(Sound.reverb);
         sends.push(rs);
       }
-      // Pads: left and right through a filter that opens and closes over about twenty seconds.
+      // Pads: left and right through a slightly resonant filter that opens and closes over about twenty seconds (and,
+      // slower still, over more than a minute), then the pump.
       const padF = ctx.createBiquadFilter(), padF2 = ctx.createBiquadFilter();
-      padF.type = 'lowpass'; padF.frequency.value = 1100; padF.Q.value = 0.6;
+      padF.type = 'lowpass'; padF.frequency.value = 1000; padF.Q.value = 1.1;
       padF2.type = 'lowpass'; padF2.frequency.value = 2400; padF2.Q.value = 0.3;
-      lfo(0.05, 450, padF.frequency);
-      padF.connect(padF2).connect(this.bus);
+      lfo(0.05, 400, padF.frequency); lfo(0.013, 250, padF.frequency);
+      this.pump = ctx.createGain();
+      padF.connect(padF2).connect(this.pump).connect(this.bus);
       this.padL = pan(-0.55, padF); this.padR = pan(0.55, padF);
       // Either side of centre, for the arpeggio and the bells.
       this.left = pan(-0.35, this.bus); this.right = pan(0.35, this.bus);
@@ -568,7 +606,7 @@
      * (rendered) so sound effects played onto the same context find its key; silent keeps the time without the notes.
      */
     render(ctx, seconds, bar, silent) {
-      const keep = ['gain', 'bus', 'lfos', 'sends', 'echo', 'padL', 'padR', 'left', 'right', 'pos', 'playing', 'fresh'].map((k) => [k, this[k]]);
+      const keep = ['gain', 'bus', 'lfos', 'sends', 'echo', 'pump', 'padL', 'padR', 'left', 'right', 'pos', 'playing', 'fresh', 'prevLead'].map((k) => [k, this[k]]);
       this.wire(ctx);
       this.playing = true;
       this.pos = { bar: bar || 0, at: 0.05, keep: Infinity };
@@ -674,14 +712,34 @@
       (m.tail = m.tail || []).push(g);
     },
 
-    /** Electric piano, glass-edged: FM at one (the round body, bright then plain) and a brief high glint. */
+    /** Electric piano: FM at one (the round body, bright then plain) and the faintest glint (the harmony's voice). */
     keys(f, at, dur, gain, dest) {
       const end = at + dur + 1.6, o = this.osc('sine', f, at, end);
-      this.fm(o, 1, f * 1.1, f * 0.06, at, 0.8, end);
-      this.fm(o, 7, f * 0.2, f * 0.003, at, 0.12, at + 0.3);
-      const g = this.env(o, at, dur, gain, 0.012, dest, 0.28);
-      g.gain.setTargetAtTime(gain * 0.45, at + 0.012, 0.2);
+      this.fm(o, 1, f * 0.9, f * 0.05, at, 0.8, end);
+      this.fm(o, 7, f * 0.07, f * 0.002, at, 0.12, at + 0.3);
+      const g = this.env(o, at, dur, gain, 0.014, dest, 0.28);
+      g.gain.setTargetAtTime(gain * 0.45, at + 0.014, 0.2);
       g.gain.setTargetAtTime(0.0001, at + dur, 0.28);
+    },
+
+    /**
+     * The lead: a round sine with a breath of FM at one (warm, never bright) and a triangle a few cents up under it,
+     * gliding in from the note before when they touch, and on longer notes a vibrato that arrives late.
+     */
+    round(f, at, dur, gain, from, dest) {
+      const ctx = Sound.ctx, end = at + dur + 1.4;
+      const o = this.osc('sine', f, at, end), t = this.osc('triangle', f, at, end);
+      t.detune.value = 5;
+      this.fm(o, 1, f * 0.45, f * 0.04, at, 0.5, end);
+      if (from && Math.abs(from - f) > 0.5) for (const x of [o, t]) { x.frequency.setValueAtTime(from, at); x.frequency.exponentialRampToValueAtTime(f, at + 0.055); }
+      if (dur > 0.5) {
+        const v = this.osc('sine', 4.8, at, end), vg = ctx.createGain();
+        vg.gain.setValueAtTime(0, at + 0.3); vg.gain.linearRampToValueAtTime(8, at + 0.3 + Math.min(0.9, dur));
+        v.connect(vg); vg.connect(o.detune); vg.connect(t.detune);
+        v.tail = [vg];
+      }
+      this.env(o, at, dur, gain * 0.62, 0.028, dest, 0.34);
+      this.env(t, at, dur, gain * 0.2, 0.04, dest, 0.3);
     },
 
     /** A breathy lead: triangle and sine a hair apart, a slow swell and a vibrato that arrives late. */
@@ -696,18 +754,31 @@
       this.env(b, at, dur, gain * 0.5, 0.2, dest, 0.3);
     },
 
-    /** A glass bell: inharmonic FM that shimmers and fades over a few seconds. */
+    /** A glass bell: gently inharmonic FM that shimmers and fades over a few seconds. */
     bell(f, at, gain, dest) {
       const end = at + 4, o = this.osc('sine', f, at, end);
-      this.fm(o, 3.5, f * 1.1, f * 0.02, at, 1.2, end);
-      this.env(o, at, 0.01, gain, 0.004, dest, 0.9);
+      this.fm(o, 3.5, f * 0.8, f * 0.02, at, 1.2, end);
+      this.env(o, at, 0.01, gain, 0.008, dest, 0.9);
+    },
+
+    /** A granular shimmer: a handful of tiny, soft grains of the chord two octaves up, scattered over a span. */
+    shimmer(notes, at, span, gain, rnd) {
+      for (let i = 0; i < 7; i++) {
+        const t = at + span * rnd(20 + i), f = hz(notes[Math.floor(rnd(30 + i) * notes.length)] + 24);
+        this.env(this.osc('sine', f, t, t + 0.45), t, 0.03, gain, 0.03, i % 2 ? this.left : this.right, 0.05);
+      }
     },
 
     /** The arpeggio's soft digital pluck. */
     pluck(f, at, gain, dest) {
-      const end = at + 1.2, o = this.osc('sine', f, at, end);
-      this.fm(o, 2, f * 0.5, f * 0.02, at, 0.15, end);
-      this.env(o, at, 0.01, gain, 0.004, dest, 0.2);
+      const end = at + 1.3, o = this.osc('sine', f, at, end);
+      this.fm(o, 2, f * 0.35, f * 0.02, at, 0.15, end);
+      this.env(o, at, 0.01, gain, 0.006, dest, 0.24);
+    },
+
+    /** A micro-edit: one pluck caught and retriggered in quick, fading repeats, side to side. */
+    stutter(f, at, step, gain) {
+      for (let k = 0; k < 4; k++) this.pluck(f, at + k * step, gain * Math.pow(0.62, k), k % 2 ? this.right : this.left);
     },
 
     /** A water droplet: a sine that leaps up as it vanishes. */
@@ -721,10 +792,10 @@
      * overlaps the last one's fade, so there is never a hole between them). */
     pad(m, at, len) {
       const end = at + len + 3;
-      for (const [cents, side] of [[-7, this.padL], [7, this.padR]]) {
+      for (const [cents, side] of [[-9, this.padL], [9, this.padR]]) {
         const o = this.osc('sawtooth', hz(m), at, end), g = Sound.ctx.createGain();
         o.detune.value = cents;
-        g.gain.setValueAtTime(0, at); g.gain.linearRampToValueAtTime(0.011, at + 0.9);
+        g.gain.setValueAtTime(0, at); g.gain.linearRampToValueAtTime(0.011, at + 1.2);
         g.gain.setTargetAtTime(0, at + len - 0.3, 0.6);
         o.connect(g).connect(side);
         o.tail = [g];
@@ -735,36 +806,53 @@
     bass(m, at, dur, gain) {
       const end = at + dur + 1.5;
       this.env(this.osc('sine', hz(m), at, end), at, dur, gain, 0.04, null, 0.3);
-      this.env(this.osc('sine', hz(m - 12), at, end), at, dur, gain * 0.5, 0.06, null, 0.3);
+      this.env(this.osc('sine', hz(m - 12), at, end), at, dur, gain * 0.4, 0.06, null, 0.3);
     },
 
-    /** A felt kick: low and short, no click. */
+    /** A warm, soft kick: low and round, no click; the pads lean away as it lands and come back over a beat. */
     kick(at, gain) {
-      const o = this.osc('sine', 78, at, at + 0.6);
-      o.frequency.setValueAtTime(78, at); o.frequency.exponentialRampToValueAtTime(46, at + 0.14);
-      this.env(o, at, 0.02, gain, 0.005, null, 0.1);
+      const o = this.osc('sine', 72, at, at + 0.7);
+      o.frequency.setValueAtTime(72, at); o.frequency.exponentialRampToValueAtTime(44, at + 0.16);
+      this.env(o, at, 0.03, gain, 0.006, null, 0.13);
+      const p = this.pump && this.pump.gain;
+      if (p) { p.setTargetAtTime(1 - 0.35 * Math.min(1, gain / 0.12), at, 0.015); p.setTargetAtTime(1, at + 0.06, 0.18); }
     },
 
-    /** A brush: a puff of mid-band noise, no top. */
-    brush(at, gain) {
+    /** A second of white noise, made once per context, for the brush and the ticks. */
+    noise() {
       const ctx = Sound.ctx;
       if (!this.noiseBuf || this.noiseBuf.sampleRate !== ctx.sampleRate) {
-        const len = Math.floor(ctx.sampleRate * 0.4);
+        const len = Math.floor(ctx.sampleRate * 1);
         this.noiseBuf = ctx.createBuffer(1, len, ctx.sampleRate);
         const d = this.noiseBuf.getChannelData(0);
         for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
       }
-      const src = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
-      src.buffer = this.noiseBuf; f.type = 'bandpass'; f.frequency.value = 1100; f.Q.value = 1.4;
-      g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(gain, at + 0.015); g.gain.setTargetAtTime(0.0001, at + 0.02, 0.06);
-      src.connect(f).connect(g).connect(this.right);
-      src.start(at); src.stop(at + 0.4);
+      return this.noiseBuf;
+    },
+
+    /** A burst of band-passed noise: in fast, away with a time-constant of len (a brush, a hat tick, a soft click). */
+    hiss(at, gain, dest, band, q, attack, len) {
+      const ctx = Sound.ctx, src = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+      src.buffer = this.noise(); f.type = 'bandpass'; f.frequency.value = band; f.Q.value = q;
+      g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(gain, at + attack); g.gain.setTargetAtTime(0.0001, at + attack + 0.001, len);
+      src.connect(f).connect(g).connect(dest || this.bus);
+      src.start(at, (at * 7.13) % 0.5); src.stop(at + attack + len * 7);
       src.onended = () => { src.disconnect(); f.disconnect(); g.disconnect(); };
     },
 
-    lead(voice, f, at, dur, gain) {
+    /** A brush: a puff of mid-band noise, no top. */
+    brush(at, gain) { this.hiss(at, gain, this.right, 1100, 1.4, 0.015, 0.06); },
+
+    /** A hat tick: a faint, short breath of high noise (the desk's dark top softens it further). */
+    tick(at, gain, dest) { this.hiss(at, gain, dest, 5200, 0.9, 0.002, 0.016); },
+
+    /** A soft click: tiny, mid-band, the kind a glitch leaves. */
+    click(at, gain, dest) { this.hiss(at, gain, dest, 1800, 1.2, 0.001, 0.004); },
+
+    lead(voice, f, at, dur, gain, from) {
       if (voice === 'breath') this.breath(f, at, dur, gain * 0.8);
       else if (voice === 'glass') { this.bell(f, at, gain * 0.75, this.bus); this.breath(f, at, dur, gain * 0.3); }
+      else if (voice === 'round') this.round(f, at, dur, gain, from);
       else this.keys(f, at, dur, gain);
     },
 
@@ -808,15 +896,38 @@
       if (bar.arp) {
         ARPS[bar.arp].forEach((k, i) => this.pluck(hz(voicing[k] + bar.arpUp), t0 + i * e, 0.02, i % 2 ? this.right : this.left));
       }
-      if (bar.bells && rnd(1) < 0.75) this.bell(hz(voicing[Math.floor(rnd(2) * 4)] + 12), t0 + e * 2 * Math.floor(rnd(3) * 4), 0.016, rnd(4) < 0.5 ? this.left : this.right);
+      // Bells: a glass bell, or now and then a granular shimmer of the chord.
+      if (bar.bells && rnd(1) < 0.75) {
+        if (rnd(9) < 0.4) this.shimmer(voicing, t0 + e * 2 * Math.floor(rnd(3) * 3), e * 2, 0.006, rnd);
+        else this.bell(hz(voicing[Math.floor(rnd(2) * 4)] + 12), t0 + e * 2 * Math.floor(rnd(3) * 4), 0.016, rnd(4) < 0.5 ? this.left : this.right);
+      }
       if (bar.drops) for (let i = 0; i < 2; i++) this.drop(hz(81 + AM[Math.floor(rnd(5 + i) * 5)]), t0 + e * Math.floor(rnd(7 + i) * 8), 0.012, i ? this.left : this.right);
-      if (bar.groove >= 1 && (bar.chord || fresh)) this.kick(t0, 0.12);
-      if (bar.groove >= 2) { this.kick(t0 + e * 5, 0.06); this.brush(t0 + e * 2, 0.018); this.brush(t0 + e * 6, 0.018); }
+      // The beat: sparse, lightly swung (offbeats lean late), the ticks nudged off the grid and never all there.
+      const swing = e * 0.14;
+      if (bar.groove >= 1) {
+        for (let i = 1; i < 8; i += 2) {
+          if (rnd(40 + i) < (bar.groove >= 2 ? 0.7 : 0.35)) this.tick(t0 + i * e + swing + (rnd(50 + i) - 0.5) * 0.024, 0.008 * (0.6 + 0.4 * rnd(60 + i)), i % 4 === 1 ? this.left : this.right);
+        }
+        if (bar.chord || fresh) this.kick(t0, 0.12);
+      }
+      if (bar.groove >= 2) {
+        this.kick(t0 + e * 5, 0.06);
+        if (rnd(72) < 0.25) this.kick(t0 + e * 7 + swing, 0.03);
+        this.brush(t0 + e * 2, 0.016); this.brush(t0 + e * 6, 0.016);
+      }
+      // Micro-edits: now and then a chord note caught and stuttered in quick repeats late in the bar, and a soft click.
+      if (bar.glitch) {
+        if (rnd(80) < 0.35) this.stutter(hz(voicing[Math.floor(rnd(81) * 4)] + 12), t0 + e * (6 + Math.floor(rnd(82) * 2)), e / 4, 0.014);
+        for (let i = 0; i < 2; i++) if (rnd(85 + i) < 0.4) this.click(t0 + e * 8 * rnd(87 + i), 0.012, rnd(89 + i) < 0.5 ? this.left : this.right);
+      }
       if (bar.lead) {
         let at = t0;
         for (const [m, l] of bar.lead) {
           if (m != null) {
-            this.lead(bar.voice, hz(m), at, l * e, 0.12);
+            // The lead glides in from the note before when the two touch.
+            const prev = this.prevLead && Math.abs(this.prevLead.end - at) < 1e-3 ? this.prevLead.f : null;
+            this.lead(bar.voice, hz(m), at, l * e, 0.12, prev);
+            this.prevLead = { f: hz(m), end: at + l * e };
             if (bar.harmony) this.keys(hz(harmonyBelow(m, bar.harm)), at, l * e, 0.04);
           }
           at += l * e;

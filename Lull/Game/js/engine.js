@@ -22,11 +22,20 @@
     return { x, y };
   }
 
-  // Specials that turn the piece into a single block (a bomb, a drill bit, a black hole, a bolt of lightning), and
-  // those that keep its shape and change what it does or what it is made of (the sandbox's matter: js/sandbox.js).
-  // Magnet is retired from the shop; an old save's magnet piece still works.
-  const SINGLE = new Set(['bomb', 'drill', 'blackhole', 'bolt']);
-  const SHAPED = new Set(['phase', 'anvil', 'magnet', 'laser', 'golden', 'sand', 'seed', 'tnt', 'water', 'oil', 'acid', 'lava', 'frost', 'steel', 'torch']);
+  // Specials that turn the piece into a single block (a bomb, a drill bit, a black hole, a patch), and those that keep
+  // its shape and change what it does. Anything else (an older save's retired items) is dropped when a game loads.
+  const SINGLE = new Set(['bomb', 'drill', 'blackhole', 'patch']);
+  const SHAPED = new Set(['phase', 'laser', 'golden']);
+  const known = (sp) => SINGLE.has(sp) || SHAPED.has(sp);
+  /** A queue entry from a save: a retired special is dropped (the piece stays as it was). */
+  const cleanEntry = (e) => (e && e.special && !known(e.special) ? Object.assign({}, e, { special: null }) : e);
+  /**
+   * A saved board's cells: blocks keep their colour, gem and hidden bits; what an older save said they were made of
+   * (the retired sandbox's matter, bits 8–15) is dropped, and a flame or a wisp of steam (never a block) is gone.
+   */
+  function cleanCells(arr) {
+    return (arr || []).map((v) => { const m = v & 0xf00; return m === 0x700 || m === 0x800 ? 0 : v & ~CELL.OLD; });
+  }
 
   /**
    * A board's numbers. The h- ones count only what was done by hand (for achievements): hand is whether the stack was
@@ -39,7 +48,7 @@
     return { pieces: 0, lines: 0, score: 0, clears: [0, 0, 0, 0, 0, 0], tspins: 0, tspinLines: 0, perfect: 0, combo: -1, maxCombo: 0, b2b: -1, maxB2B: 0, holds: 0, rotations: 0, moves: 0, lowers: 0, drops: 0, byType: {}, startedAt: Date.now(), playMs: 0, items: {}, banked: 0, chain: 0, bestChain: 0, tst: 0, quadRun: 0,
       hand: true, hb2b: -1, hcombo: -1, hquads: 0, hchain: 0, bestHChain: 0, htspins: 0, htst: 0, hperfect: 0, goldRun: 0, pace: [] };
   }
-  const HAND_KEYS = ['hand', 'hb2b', 'hcombo', 'hquads', 'hchain', 'goldRun', 'pace', 'clean', 'cleanLines'];
+  const HAND_KEYS = ['hand', 'hb2b', 'hcombo', 'hquads', 'hchain', 'goldRun', 'pace'];
 
   /**
    * A board saved before the hand counts existed: if no item was ever used on it, everything on it was by hand (its
@@ -78,18 +87,18 @@
       this.over = false;
       const sv = o.saved;
       if (sv) {
-        this.board = Board.fromArray(sv.w, sv.h, sv.cells, { wrap: sv.wrap });
+        this.board = Board.fromArray(sv.w, sv.h, cleanCells(sv.cells), { wrap: sv.wrap });
         this.fixed = !!sv.fixed;
-        this.queue = sv.queue.map((e) => Object.assign({}, e));
+        this.queue = sv.queue.map((e) => Object.assign({}, cleanEntry(e)));
         this.bag = sv.bag.slice();
         this.rng = RNG.from(sv.rng);
-        this.hold = sv.hold;
+        this.hold = cleanEntry(sv.hold);
         this.holdLocked = sv.holdLocked;
         this.s = migrateHand(Object.assign(freshStats(), sv.s), sv.s);
         this.piece = null;
         if (sv.piece) {
-          const type = Pieces.get(sv.piece.entry.id);
-          if (type) this.piece = { type, rot: sv.piece.rot, x: sv.piece.x, y: sv.piece.y, special: sv.piece.entry.special || null, entry: sv.piece.entry, lastRot: false };
+          const type = Pieces.get(sv.piece.entry.id), entry = cleanEntry(sv.piece.entry);
+          if (type) this.piece = { type, rot: sv.piece.rot, x: sv.piece.x, y: sv.piece.y, special: entry.special || null, entry, lastRot: false };
         }
         this.fillQueue();
         if (!this.piece) this.spawnNext();
@@ -231,18 +240,12 @@
 
     // ---- movement -----------------------------------------------------------------------------------------------------
 
-    passes(p) { return p.special === 'phase' || p.special === 'drill' || p.special === 'anvil'; }
-
-    /** Steel (a sandbox material): blasts, fire, drills, anvils and purges leave it be. */
-    tough(v) { return (v & CELL.MAT) === CELL.STEEL; }
+    passes(p) { return p.special === 'phase' || p.special === 'drill'; }
 
     fitsAt(p, rot, x, y) {
       const cells = p.type.rots[rot];
       if (!this.passes(p)) return this.board.fits(cells, x, y);
-      if (!this.board.inBounds(cells, x, y)) return false;
-      // An anvil falls through everything but steel, and comes to rest on it.
-      if (p.special === 'anvil') for (const [cx, cy] of cells) if (this.tough(this.board.get(x + cx, y + cy))) return false;
-      return true;
+      return this.board.inBounds(cells, x, y);
     }
 
     cellsOf(p, rot, x, y) {
@@ -364,9 +367,8 @@
       if (!p) return null;
       if (p.special === 'drill') return null;
       if (p.special === 'phase') return this.phaseTarget(p);
+      if (p.special === 'patch') { const t = this.patchTarget(p); if (t != null) return t; }
       let y = p.y;
-      // An anvil goes straight to the floor, through everything but steel.
-      if (p.special === 'anvil') { while (this.fitsAt(p, p.rot, p.x, y - 1)) y--; return y; }
       while (this.board.fits(p.type.rots[p.rot], p.x, y - 1)) y--;
       return y;
     }
@@ -376,6 +378,21 @@
       const cells = p.type.rots[p.rot];
       for (let y = p.y; y + p.type.rotBounds[p.rot].minY >= 0; y--) {
         if (this.board.fits(cells, p.x, y) && !this.board.fits(cells, p.x, y - 1)) return y;
+      }
+      return null;
+    }
+
+    /**
+     * A patch drops into the highest covered hole in its column below it (an empty cell with a block somewhere above
+     * it); with none, it lands like any block. Returns that row, or null.
+     */
+    patchTarget(p) {
+      const [x, y0] = this.cellsOf(p)[0];
+      let roof = false;
+      for (let y = this.h - 1; y >= 0; y--) {
+        const v = this.board.get(x, y);
+        if (v) { roof = true; continue; }
+        if (roof && y <= y0) return y;
       }
       return null;
     }
@@ -453,24 +470,21 @@
     lock() {
       const p = this.piece;
       if (!p) return false;
+      let fell = this.pendingDrop;
+      if (p.special === 'patch') {
+        // Into the covered hole below, if there is one.
+        const t = this.patchTarget(p);
+        if (t != null && t !== p.y) { fell = { dist: (fell ? fell.dist : 0) + p.y - t, cells: fell ? fell.cells : this.cellsOf(p) }; p.y = t; }
+      }
       const shape = p.type.rots[p.rot];
-      if (p.special !== 'anvil' && !this.board.fits(shape, p.x, p.y)) { this.emit('blocked', 'lock'); return false; }
+      if (!this.board.fits(shape, p.x, p.y)) { this.emit('blocked', 'lock'); return false; }
       this.pushHistory();
       const cells = this.cellsOf(p);
-      const result = { type: p.type.id, color: p.type.color, special: p.special, cells, rows: [], removed: [], lines: 0, tspin: false, perfect: false, combo: 0, b2b: false, score: 0, blast: null };
-      if (this.pendingDrop) { result.dropDist = this.pendingDrop.dist; result.dropCells = this.pendingDrop.cells; }
+      const result = { type: p.type.id, color: p.type.color, special: p.special, tag: (p.entry && p.entry.tag) || null, cells, rows: [], removed: [], lines: 0, tspin: false, perfect: false, combo: 0, b2b: false, score: 0, blast: null, had: this.board.count() };
+      if (fell) { result.dropDist = fell.dist; result.dropCells = fell.cells; }
       const v = p.type.color | (this.mods.vanish ? CELL.HIDDEN : 0);
 
-      if (p.special === 'anvil') {
-        // Smashes every block in its columns from where it was down to where it lands (the floor, or steel).
-        const from = this.pendingDrop ? this.pendingDrop.cells : cells;
-        const top = new Map(), bottom = Math.min(...cells.map(([, y]) => y));
-        for (const [x, y] of from) top.set(x, Math.max(top.has(x) ? top.get(x) : -1, y));
-        result.smashed = [];
-        for (const [x, t] of top) for (let y = Math.min(t, this.h - 1); y >= bottom; y--) { const old = this.board.get(x, y); if (this.tough(old)) break; if (old) { result.smashed.push([x, y, old]); this.board.set(x, y, 0); } }
-        result.smashed.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-        this.board.place(shape, p.x, p.y, v);
-      } else if (p.special === 'blackhole') {
+      if (p.special === 'blackhole') {
         const [cx, cy] = cells[0];
         result.swallowed = [];
         for (let y = 0; y < this.h; y++) for (let x = 0; x < this.w; x++) {
@@ -480,15 +494,24 @@
           if (old) { result.swallowed.push([x, y, old]); this.board.set(x, y, 0); }
         }
         result.center = [cx, cy];
+        result.cells = [];
       } else if (p.special === 'bomb') {
-        // Nothing is set: the bomb goes off where it lands, as the first link of the sandbox's settle (js/sandbox.js).
-        result.blastCenter = cells[0];
+        // Nothing is set: the bomb goes off where it lands, clearing a 13-block diamond. What was above stays put.
+        const [cx, cy] = cells[0];
+        result.blast = [];
+        for (const [dx, dy] of BOMB_PATTERN) {
+          const x = this.board.wx(cx + dx), y = cy + dy;
+          if (!this.board.inside(x, y)) continue;
+          const old = this.board.get(x, y);
+          if (old) { result.blast.push([x, y, old]); this.board.set(x, y, 0); }
+        }
+        result.center = [cx, cy];
         result.cells = [];
       } else {
         // T-spin (guideline): the last move was a turn and three of the box's four corners are blocked. With both
         // corners the T points at blocked it is a full T-spin; with only one it is a Mini, unless the turn needed
-        // the last, far kick (the T-spin triple shape), which counts as full.
-        if (p.type.id === 'T' && p.lastRot) {
+        // the last, far kick (the T-spin triple shape), which counts as full. An item piece is never one.
+        if (p.type.id === 'T' && p.lastRot && (!p.special || p.special === 'golden')) {
           const blocked = (dx, dy) => this.board.get(p.x + dx, p.y + dy) !== 0;
           let corners = 0;
           for (const [dx, dy] of [[0, 0], [2, 0], [0, 2], [2, 2]]) if (blocked(dx, dy)) corners++;
@@ -498,39 +521,24 @@
             else result.mini = true;
           }
         }
+        // Tucked under an overhang: a block right above one of its cells that is not its own.
+        const mine = new Set(cells.map(([x, y]) => x + ',' + y));
+        result.covered = cells.some(([x, y]) => !mine.has(x + ',' + (y + 1)) && y + 1 < this.h && this.board.get(x, y + 1) !== 0);
         this.board.place(shape, p.x, p.y, v);
-        if (p.special === 'magnet') {
-          // Pulls every block in the piece's columns down tight.
-          result.moves = [];
-          for (const x of new Set(cells.map(([cx]) => cx))) {
-            let dst = 0;
-            for (let y = 0; y < this.h; y++) {
-              const val = this.board.get(x, y);
-              if (!val) continue;
-              if (dst !== y) { this.board.set(x, dst, val); this.board.set(x, y, 0); result.moves.push([x, y, x, dst, val]); }
-              dst++;
-            }
-          }
-        }
+        if (p.special === 'patch') result.patched = true;
       }
       if (p.special === 'golden') result.golden = true;
       if (p.fromHold) result.fromHold = true;
-      // The sandbox (js/sandbox.js): what the new block is made of, and the chain reactions it sets off.
-      if (this.react) this.react(p, result);
 
       let rows = this.fullRows();
       if (p.special === 'laser') {
-        // Every row the piece touches is vaporised, full or not (and, through steel, the rows the steel reaches).
+        // Every row the piece touches is vaporised, full or not.
         result.laser = Array.from(new Set(cells.map(([, cy]) => cy))).filter((y) => y >= 0 && y < this.h).sort((a, b) => a - b);
-        if (this.conduct) this.conduct(result);
         rows = Array.from(new Set(rows.concat(result.laser))).sort((a, b) => a - b);
       }
       result.rows = rows;
       result.removed = this.board.clearRows(rows);
       result.lines = rows.length;
-      // The sandbox's settle: loose matter falls and flows, heat, cold, acid and current do their work, and any row
-      // that fills on the way clears too (result.cascade), paid like any other.
-      if (this.simulate) this.simulate(result);
       this.score(result);
       this.s.pieces++;
       this.s.byType[p.type.family === 'tetromino' ? p.type.id : p.type.family] = (this.s.byType[p.type.family === 'tetromino' ? p.type.id : p.type.family] || 0) + 1;
@@ -541,7 +549,6 @@
       return result;
     }
 
-    /** Full rows. (The sandbox leaves out rows that are full only because of flames or steam in them.) */
     fullRows() { return this.board.fullRows(); }
 
     /** Drill: bores the column under the bit down to the floor. */
@@ -552,13 +559,8 @@
       const result = { type: p.type.id, special: 'drill', cells: [], rows: [], removed: [], lines: 0, score: 0, drilled: [], bit: [x, y] };
       for (let yy = y; yy >= 0; yy--) {
         const old = this.board.get(x, yy);
-        if (this.tough(old)) { result.stopped = [x, yy]; break; } // the bit blunts itself on steel
         if (old) { result.drilled.push([x, yy, old]); this.board.set(x, yy, 0); }
       }
-      if (this.react) this.react(p, result);
-      // What the bore loosened settles; a row that fills on the way clears.
-      if (this.simulate) this.simulate(result);
-      if (result.cascade) this.score(result);
       this.s.pieces++;
       this.holdLocked = false;
       this.piece = null;
@@ -568,12 +570,15 @@
     }
 
     /**
-     * Points and streaks for a lock. result.lines is what the piece cleared as it set; result.cascade what the
-     * sandbox's settle cleared after it (plain lines: it adds a clear's points and keeps the combo going, but it is
-     * never a quad or a T-spin). Afterwards result.lines holds both.
+     * Points and streaks for a lock. Lines cleared by an item (a board item, or a piece carrying one — Golden aside)
+     * are plain lines (result.plain): they add a clear's points and keep the combo going, but are never a quad or a
+     * T-spin, so they never feed the back-to-back streak. Afterwards result.lines holds every line cleared.
+     * A Safety Net (s.net) keeps the back-to-back streak through one clear that would have ended it.
      */
     score(result) {
-      const s = this.s, n = result.lines, c = result.cascade || 0, all = n + c;
+      const s = this.s;
+      if (result.special && result.special !== 'golden' && result.lines) { result.plain = (result.plain || 0) + result.lines; result.lines = 0; result.tspin = false; result.mini = false; }
+      const n = result.lines, c = result.plain || 0, all = n + c;
       let pts = 0;
       if (result.tspin) {
         pts = TSPIN_SCORE[Math.min(n, 3)];
@@ -588,18 +593,19 @@
         s.combo++;
         const difficult = n >= 4 || result.tspin || result.mini;
         if (difficult) { s.b2b++; if (s.b2b > 0) { pts = Math.round(pts * 1.5); result.b2b = true; } }
+        else if (s.b2b >= 0 && s.net > 0) { s.net--; result.netSaved = s.b2b + 1; }
         else s.b2b = -1;
         if (s.combo > 0) pts += 50 * s.combo;
         s.clears[Math.min(all, 5)]++;
         if (this.board.isEmpty()) { result.perfect = true; s.perfect++; pts += 3000; }
-        // Quads in a row: set by hand (a golden piece counts; lasers and board items do not); any other clear ends it.
-        if (n >= 4 && (!result.special || result.special === 'golden')) s.quadRun = (s.quadRun || 0) + 1;
+        // Quads in a row: set by a piece (a golden piece counts; an item's lines are plain); any other clear ends it.
+        if (n >= 4) s.quadRun = (s.quadRun || 0) + 1;
         else s.quadRun = 0;
       } else {
         s.combo = -1;
       }
       // By hand: a piece with no item on it, on a stack built without items (see freshStats). A board item's clear
-      // (Settle, Tornado) or an item piece's breaks every hand streak; so does any item used in between (noteItem).
+      // (Settle) or an item piece's breaks every hand streak; so does any item used in between (noteItem).
       const hand = s.hand !== false && !result.special;
       result.hand = hand;
       if (!hand) { s.hb2b = -1; s.hcombo = -1; s.hquads = 0; }
@@ -628,7 +634,7 @@
     /**
      * An item that touches the pieces or the board was used (Free Play calls this; Luck items do not count): every
      * hand streak ends, and the stack is no longer built by hand — unless the item acted on the board at once
-     * (emptied: a Nuke, a Tornado, Rewind …) and left it empty, a fresh start.
+     * (emptied: a Board item — Settle, Trapdoor, Rewind …) and left it empty, a fresh start.
      */
     noteItem(emptied) {
       const s = this.s;
@@ -685,51 +691,103 @@
       return false;
     }
 
-    /** Settle: every column's blocks fall, then full rows clear. */
+    /**
+     * Best Fit: of the seven pieces, in every turn and column, the one that fits the stack best if dropped straight
+     * down — the most lines, then the fewest new holes, then the lowest, then the flattest. The piece in play becomes
+     * it, over that spot (the ghost shows where it lands; it can still be moved). Returns the spot, or null.
+     */
+    bestFit() {
+      const p = this.piece;
+      if (!p) return null;
+      const b = this.board, W = this.w, H = this.h;
+      const heights = (cells) => { const hs = []; for (let x = 0; x < W; x++) { let t = 0; for (let y = H - 1; y >= 0; y--) if (cells[y * W + x]) { t = y + 1; break; } hs.push(t); } return hs; };
+      const holes = (cells) => { let n = 0; for (let x = 0; x < W; x++) { let roof = false; for (let y = H - 1; y >= 0; y--) { if (cells[y * W + x]) roof = true; else if (roof) n++; } } return n; };
+      const holes0 = holes(b.cells);
+      let best = null;
+      for (const id of Pieces.TETROMINOES) {
+        const type = Pieces.get(id), seen = new Set();
+        for (let rot = 0; rot < 4; rot++) {
+          const cells = type.rots[rot], key = Pieces.keyOf(cells);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          const bnd = type.rotBounds[rot];
+          const top = H - 1 - bnd.maxY;
+          for (let x = -bnd.minX; x <= W - 1 - bnd.maxX; x++) {
+            if (!b.fits(cells, x, top)) continue;
+            let y = top;
+            while (b.fits(cells, x, y - 1)) y--;
+            const t = b.clone();
+            t.place(cells, x, y, type.color);
+            const lines = t.fullRows().length;
+            t.clearRows(t.fullRows());
+            const hs = heights(t.cells), bump = hs.slice(1).reduce((a, h, i) => a + Math.abs(h - hs[i]), 0);
+            const cost = -lines * 1000 + (holes(t.cells) - holes0) * 60 + Math.max(...hs) * 4 + hs.reduce((a, h) => a + h, 0) * 0.5 + bump;
+            if (!best || cost < best.cost) best = { cost, id, rot, x, y, top };
+          }
+        }
+      }
+      if (!best) return null;
+      const next = { type: Pieces.get(best.id), rot: best.rot, x: best.x, y: best.top, special: null, entry: { id: best.id, rot: 0, tag: 'fit' }, lastRot: false };
+      this.piece = next;
+      this.emit('replace', next);
+      return best;
+    }
+
+    /** Pick of Three: one of the next three pieces comes into play now; the piece in play takes its place in line. */
+    pickFromQueue(i) {
+      const p = this.piece, e = this.queue[i];
+      if (!p || !e || i > 2) return false;
+      const was = Object.assign({}, p.entry, { special: p.special || null });
+      if (!this.replacePiece(Object.assign({}, e, { tag: 'pick' }))) return false;
+      this.queue[i] = was;
+      return true;
+    }
+
+    /** Settle: every column's blocks fall, then full rows clear (plain lines: see score). */
     settle() {
-      if (!this.piece) return null;
+      if (!this.piece || this.board.isEmpty()) return null;
       this.pushHistory();
-      const before = this.board.snapshot();
+      const before = this.board.snapshot(), had = this.board.count();
       this.board.compact();
       const rows = this.board.fullRows();
-      const result = { type: 'settle', special: 'settle', cells: [], rows, removed: this.board.clearRows(rows), lines: rows.length, score: 0, before };
-      if (this.simulate) this.simulate(result);
+      const result = { type: 'settle', special: 'settle', cells: [], rows, removed: this.board.clearRows(rows), lines: rows.length, score: 0, before, had };
       this.score(result);
       this.emit('lock', result);
       return result;
     }
 
-    /** Nuke: the whole board, gone. (No lines for it — it is not tidy, it is a nuke.) */
-    nuke() {
-      if (!this.piece || this.board.isEmpty()) return null;
-      this.pushHistory();
-      const gone = [];
-      for (let y = 0; y < this.h; y++) for (let x = 0; x < this.w; x++) { const v = this.board.get(x, y); if (v) gone.push([x, y, v]); }
-      this.board.cells.fill(0);
-      this.emit('nuke', gone);
-      return gone;
-    }
-
-    /** Tornado: lifts every block and drops them back packed into solid rows from the floor up; full rows clear. */
+    /**
+     * Tornado: the columns are shuffled — each column, holes and all, lands somewhere else. Every row keeps as many
+     * blocks as it had, so no row fills: it rearranges, it never clears. Refused on an empty board, or when the piece
+     * in play would have no room.
+     */
     tornado() {
-      if (!this.piece || this.board.isEmpty()) return null;
+      const p = this.piece;
+      if (!p || this.board.isEmpty()) return null;
+      const before = this.board.snapshot(), W = this.w;
+      const order = this.rng.shuffle([...Array(W).keys()]);
+      if (order.every((c, i) => c === i)) order.push(order.shift());
       this.pushHistory();
-      const blocks = [];
-      for (let y = 0; y < this.h; y++) for (let x = 0; x < this.w; x++) { const v = this.board.get(x, y); if (v) blocks.push([x, y, v]); }
-      this.board.cells.fill(0);
       const moves = [];
-      const order = this.rng.shuffle(blocks.slice());
-      order.forEach(([x, y, v], i) => {
-        const nx = i % this.w, ny = Math.floor(i / this.w);
-        this.board.set(nx, ny, v);
-        moves.push([x, y, nx, ny, v]);
-      });
-      const rows = this.board.fullRows();
-      const result = { type: 'tornado', special: 'tornado', cells: [], rows, removed: this.board.clearRows(rows), lines: rows.length, score: 0, moves };
-      if (this.simulate) this.simulate(result);
-      this.score(result);
-      this.emit('lock', result);
-      return result;
+      for (let x = 0; x < W; x++) {
+        const from = order[x];
+        for (let y = 0; y < this.h; y++) { const v = before[y * W + from]; this.board.cells[y * W + x] = v; if (v) moves.push([from, y, x, y, v]); }
+      }
+      if (!this.fitsAt(p, p.rot, p.x, p.y)) { this.board.restore(before); this.history.pop(); return null; }
+      this.emit('tornado', moves);
+      return moves;
+    }
+
+    /** Trapdoor: the bottom row falls away, whatever it holds; everything above comes down one. Pays nothing. */
+    trapdoor() {
+      if (!this.piece) return null;
+      let any = false;
+      for (let x = 0; x < this.w; x++) if (this.board.get(x, 0)) any = true;
+      if (!any) return null;
+      this.pushHistory();
+      const row = this.board.clearRows([0])[0];
+      this.emit('trapdoor', row);
+      return row;
     }
 
     /** Mirror World: the whole board flips left to right. */
@@ -747,20 +805,6 @@
       if (!this.fitsAt(p, p.rot, p.x, p.y)) { this.board.restore(before); this.history.pop(); return null; }
       this.emit('flip', moves);
       return moves;
-    }
-
-    /** Purge: removes every block the colour of the current piece. */
-    purge() {
-      const p = this.piece;
-      if (!p) return null;
-      this.pushHistory();
-      const color = p.type.color, gone = [];
-      for (let y = 0; y < this.h; y++) for (let x = 0; x < this.w; x++) {
-        const v = this.board.get(x, y);
-        if (v && (v & CELL.COLOR) === color && !this.tough(v)) { gone.push([x, y, v]); this.board.set(x, y, 0); }
-      }
-      this.emit('purge', gone);
-      return gone;
     }
 
     resetBoard() {
@@ -796,5 +840,5 @@
     return { ms: b[0] - a[0], lines: b[1] - a[1] };
   }
 
-  Object.assign(L, { Game, freshStats, paceOf, migrateHand, spawnPos, BOMB_PATTERN, SINGLE_SPECIALS: SINGLE });
+  Object.assign(L, { Game, freshStats, paceOf, migrateHand, spawnPos, cleanCells, BOMB_PATTERN, SINGLE_SPECIALS: SINGLE });
 })(typeof globalThis !== 'undefined' ? globalThis : this);

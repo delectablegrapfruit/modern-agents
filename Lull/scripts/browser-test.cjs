@@ -125,9 +125,13 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   console.log('items');
   await ev(() => { const s = Lull.app.store; s.state.lines = 20000; Lull.app.refreshWallet(); for (const id of Lull.ITEM_ORDER) s.buyItem(id, 2); Lull.app.modes.play.renderItems(); });
   const invBefore = await ev(() => Object.assign({}, Lull.app.store.state.inventory));
-  const itemPlan = await ev(() => Lull.ITEM_ORDER.map((id) => { const g = Lull.ITEMS[id].group; const gi = Lull.ITEM_GROUPS.findIndex((x) => x.id === g); return { id, gi, ii: Lull.ITEM_ORDER.filter((k) => Lull.ITEMS[k].group === g).indexOf(id) }; }));
-  check('every item belongs to a type', itemPlan.every((x) => x.gi >= 0 && x.ii >= 0) && itemPlan.length >= 20, itemPlan.length + ' items');
-  for (const { id, gi, ii } of itemPlan) {
+  const itemPlan = await ev(() => Lull.ITEM_ORDER.map((id) => ({ id, group: Lull.ITEMS[id].group })));
+  check('every item belongs to a type', itemPlan.every((x) => x.group) && itemPlan.length >= 16, itemPlan.length + ' items');
+  // No number keys: 1–9 open nothing.
+  for (const k of ['Digit1', 'Digit2', 'Digit3']) await page.keyboard.press(k);
+  check('number keys do nothing to the item bar', !(await page.isVisible('.item-tray:not(.hidden)')) && !(await ev(() => document.querySelector('#itembar .k'))));
+  const TOOLS = ['patch', 'phase', 'drill', 'bomb', 'laser', 'blackhole'];
+  for (const { id, group } of itemPlan) {
     // Give every item something to work on.
     await ev(() => {
       const g = Lull.app.modes.play.game;
@@ -139,34 +143,32 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
       g.replacePiece({ id: 'T' });
     });
     if (id === 'rewind') { await page.keyboard.press('Space'); }
-    await page.keyboard.press('Digit' + (gi + 1));
-    check('  tray ' + (gi + 1) + ' opens for ' + id, await page.isVisible('.item-tray:not(.hidden) [data-item="' + id + '"]'));
-    await page.keyboard.press('Digit' + (ii + 1));
+    await page.click('#itembar .group-btn[data-group="' + group + '"]');
+    check('  the ' + group + ' tray opens for ' + id, await page.isVisible('.item-tray:not(.hidden) [data-item="' + id + '"]'));
+    if (id === 'trapdoor' || id === 'tornado') await shot('11-before-' + id);
+    await page.click('.item-tray [data-item="' + id + '"]');
     await page.waitForTimeout(60);
     if (id === 'order') { await page.click('.picker button'); }
+    if (id === 'pick') { await shot('11-pick'); await page.click('.picker [data-pick="1"]'); }
     if (id === 'blueprint') { await page.click('.modal footer .btn.primary'); }
-    if (id === 'jackpot') {
-      await page.waitForTimeout(2600);
-      const jp = await ev(() => ({ stopped: document.querySelectorAll('.reel.stop').length, pays: document.querySelectorAll('.jp-pays .jp-row').length, note: document.querySelector('.jp-note').textContent, pulls: Lull.app.store.state.stats.items.jackpot.pulls }));
-      check('  jackpot: three reels stop, the pay table shows, the pull is counted', jp.stopped === 3 && jp.pays >= 7 && jp.pulls === 1 && !/Spinning/.test(jp.note), JSON.stringify(jp));
-      await shot('11-jackpot');
-      await page.click('.modal footer .btn.primary');
-    }
     const inv = await ev((k) => Lull.app.store.state.inventory[k], id);
-    const expect = id === 'jackpot' ? inv >= invBefore[id] - 1 : inv === invBefore[id] - 1;
-    check('item ' + id + ' used', expect, 'have ' + inv);
+    check('item ' + id + ' used', inv === invBefore[id] - 1, 'have ' + inv);
     if (id === 'golden') check('  golden: gold for the next five clears', await ev(() => Lull.app.modes.play.game.s.gold === 5));
-    if (['bomb', 'drill', 'phase', 'anvil', 'laser', 'blackhole', 'sand', 'seed', 'tnt', 'water', 'oil', 'acid', 'lava', 'frost', 'steel', 'torch', 'bolt'].includes(id)) {
+    if (id === 'double') check('  double or nothing waits for the next clear, and says so', await ev(() => Lull.app.modes.play.game.s.double === true && /Double/.test(document.getElementById('play-status').textContent)));
+    if (id === 'net') check('  safety net: one', await ev(() => Lull.app.modes.play.game.s.net === 1));
+    if (id === 'fit') { const f = await ev(() => { const p = Lull.app.modes.play.game.piece; return { id: p.type.id, tag: p.entry.tag }; }); check('  best fit: one of the seven, over its spot', f.tag === 'fit' && 'IJLOSTZ'.includes(f.id), JSON.stringify(f)); await shot('11-fit'); }
+    if (TOOLS.includes(id)) {
       const sp = await ev(() => Lull.app.modes.play.game.piece && Lull.app.modes.play.game.piece.special);
       check('  ' + id + ' piece in play', sp === id);
-      if (['laser', 'blackhole', 'sand', 'seed', 'tnt', 'water', 'oil', 'acid', 'lava', 'frost', 'steel', 'torch', 'bolt'].includes(id)) await shot('11-' + id);
+      await shot('11-' + id);
       await page.keyboard.press('Space');
       await page.waitForTimeout(90);
-      if (['blackhole', 'anvil', 'laser', 'water', 'acid', 'lava', 'torch', 'bolt', 'frost'].includes(id)) await shot('11-' + id + '-hit');
+      await shot('11-' + id + '-hit');
     }
-    if (id === 'nuke' || id === 'tornado') { await page.waitForTimeout(120); await shot('11-' + id); }
+    if (id === 'tornado' || id === 'trapdoor' || id === 'settle') { await page.waitForTimeout(150); await shot('11-' + id); }
     check('  the tray closes after use', !(await page.isVisible('.item-tray:not(.hidden)')));
     await page.waitForTimeout(40);
+    await ev(() => { const m = Lull.app.modes.play; m.armed = null; m.game.s.double = false; m.game.s.net = 0; m.game.s.gold = 0; });
   }
   // Pressing an item again takes it back: the old piece returns, and so does the item.
   const toggle = await ev(async () => {
@@ -187,14 +189,22 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     m.useItem('golden');
     hand.luck = g.s.hand && g.s.hb2b === 2 && g.s.gold > 0;
     m.useItem('golden');
+    // Pick of Three taken back: the old piece and the queue as they were.
+    const q0 = g.queue.map((e) => e.id).join();
+    inv.pick = (inv.pick || 0) + 1;
+    m.useItem('pick');
+    document.querySelector('.picker [data-pick="2"]').click();
+    const picked = !!m.armed && m.armed.id === 'pick' && g.piece.entry.tag === 'pick';
+    m.useItem('pick');
+    hand.pick = picked && g.piece.type.id === 'L' && g.queue.map((e) => e.id).join() === q0;
     return { armed, hand, back: g.piece.type.id === 'L' && !g.piece.special && inv.bomb === n0 };
   });
   check('an item in use shows as on', toggle.armed);
-  check('pressing it again puts it back', toggle.back, JSON.stringify(toggle));
+  check('pressing it again puts it back (Pick of Three puts the queue back too)', toggle.back && toggle.hand.pick, JSON.stringify(toggle));
   check('an item puts power-ups on the board (achievements); taken back, it never happened; Luck items leave it alone', toggle.hand.broke && toggle.hand.back && toggle.hand.luck, JSON.stringify(toggle.hand));
   await page.waitForTimeout(200);
   await shot('11-items');
-  // A Noodle bought over a fresh piece sits in the top row; it still turns, on every turn key and a right-click.
+  // An item you have none of shows its price in the tray, and is bought and used after one calm confirm.
   const noodleGroup = await ev(() => {
     const m = Lull.app.modes.play, g = m.game, st = Lull.app.store;
     if (g.over) m.newBoard();
@@ -203,12 +213,18 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     st.state.lines = Math.max(st.state.lines, 1000);
     st.state.inventory.noodle = 0;
     m.renderItems();
-    return Lull.ITEM_GROUPS.findIndex((x) => x.id === Lull.ITEMS.noodle.group);
+    return Lull.ITEMS.noodle.group;
   });
-  await page.keyboard.press('Digit' + (noodleGroup + 1));
+  await page.click('#itembar .group-btn[data-group="' + noodleGroup + '"]');
+  const priced = await ev(() => { const b = document.querySelector('.item-tray [data-item="noodle"]'); return { n: b.querySelector('.n').textContent, empty: b.classList.contains('empty') }; });
+  check('one you have none of shows its price', priced.empty && priced.n === '⦵' + '25', JSON.stringify(priced));
+  await shot('11-tray-price');
+  const wallet0 = await ev(() => Lull.app.store.state.lines);
   await page.click('.item-tray [data-item="noodle"]');
+  check('  it asks once: Buy & use, with the price', /Buy & use · 25/.test(await page.textContent('.modal footer')));
   await page.click('.modal footer .btn.primary');
   await page.waitForTimeout(60);
+  check('  bought for its price and put straight to use', (await ev(() => Lull.app.store.state.lines)) === wallet0 - 25 && (await ev(() => Lull.app.store.state.inventory.noodle)) === 0);
   const rod = () => ev(() => { const g = Lull.app.modes.play.game, p = g.piece; return { size: p.type.size, rot: p.rot, top: Math.max(...g.cellsOf().map((c) => c[1])), fits: g.fitsAt(p, p.rot, p.x, p.y) }; });
   const n0 = await rod();
   check('Noodle: bought and in play, a six-long rod in the top row', n0.size === 6 && n0.rot === 0 && n0.top === 19, JSON.stringify(n0));
@@ -229,41 +245,40 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   check('Noodle: a right-click turns it', n4.rot === 2 && n4.fits, JSON.stringify(n4));
   await page.mouse.move(5, 300);
 
-  // Item animations: each demolition and physics item starts its physics (bodies, particles or a drawn moment),
-  // runs on its own without holding up the next piece, and is gone again within a second and a half.
-  const fxRun = (id, motion) => ev(async ([id, motion]) => {
-    const m = Lull.app.modes.play, g = m.game, st = Lull.app.store.state, w = m.view.fx.world;
+  // Item animations: each Tool and Board item starts its animation (physics bodies, particles, sliding blocks or a
+  // drawn moment), runs on its own without holding up the next piece, and is gone again within a second and a half.
+  const BOARD = ['settle', 'tornado', 'trapdoor', 'flip'];
+  const fxRun = (id, motion) => ev(async ([id, motion, BOARD]) => {
+    const m = Lull.app.modes.play, g = m.game, st = Lull.app.store.state, w = m.view.fx.world, fx = m.view.fx;
     const motion0 = st.settings.motion;
     st.settings.motion = motion;
     if (g.over) m.newBoard();
-    m.view.fx.clear();
+    fx.clear();
     g.board.cells.fill(0);
     for (let y = 0; y < 12; y++) for (let x = 0; x < 10; x++) if (x !== (y * 3) % 10 && (x + y) % 5) g.board.set(x, y, 1 + ((x * 7 + y * 3) % 7));
     g.replacePiece({ id: 'T' });
     st.inventory[id] = (st.inventory[id] || 0) + 1;
     m.apply(id);
-    if (!['nuke', 'purge', 'settle'].includes(id)) { g.piece.y = Math.min(g.piece.y, 15); m.action('drop'); }
+    if (!BOARD.includes(id)) { g.piece.y = Math.min(g.piece.y, 15); m.action('drop'); }
     const next = !!g.piece && !g.piece.special;
     const t0 = performance.now();
-    let peak = 0, props = 0, sim = 0;
+    let peak = 0, props = 0;
     const out = await new Promise((res) => {
       const f = () => {
-        peak = Math.max(peak, w.nb + w.np); props = Math.max(props, m.view.fx.props.length); if (m.view.sim) sim++;
+        peak = Math.max(peak, w.nb + w.np); props = Math.max(props, fx.props.length + fx.movers.length);
         const t = performance.now() - t0;
-        if ((t > 50 && !w.active && !m.view.fx.props.length && !m.view.sim) || t > 5000) res(t); else requestAnimationFrame(f);
+        if ((t > 50 && !w.active && !fx.props.length && !fx.movers.length) || t > 5000) res(t); else requestAnimationFrame(f);
       };
       requestAnimationFrame(f);
     });
     st.settings.motion = motion0;
-    return { peak, props, sim, ms: Math.round(out), next };
-  }, [id, motion]);
-  for (const id of ['drill', 'bomb', 'laser', 'purge', 'blackhole', 'nuke', 'phase', 'anvil', 'settle', 'frost', 'sand', 'water', 'acid', 'lava', 'torch', 'bolt']) {
+    return { peak, props, ms: Math.round(out), next };
+  }, [id, motion, BOARD]);
+  for (const id of ['drill', 'bomb', 'laser', 'blackhole', 'phase', 'patch', 'settle', 'tornado', 'trapdoor', 'flip']) {
     const r = await fxRun(id, 'full');
-    // The sandbox's items play their settle back (at most about three seconds); the rest are over in a second and a half.
-    const settles = ['bomb', 'sand', 'water', 'acid', 'lava', 'torch'].includes(id);
-    check('  ' + id + ' animates' + (settles ? ' (its settle plays back)' : ' with physics') + ', lets the next piece in, and ends', r.peak + r.props + r.sim > 0 && (!settles || r.sim > 3) && r.ms <= (settles ? 3600 : 1500) && r.next, JSON.stringify(r));
+    check('  ' + id + ' animates, lets the next piece in, and ends', r.peak + r.props > 0 && r.ms <= 1500 && r.next, JSON.stringify(r));
   }
-  // The next piece set while an anvil's blocks are still falling, or while a settle still plays: both end at once.
+  // The next piece set while a Ghost's blocks are still falling: the fall ends at once.
   const quick = await ev(() => {
     const m = Lull.app.modes.play, g = m.game, st = Lull.app.store.state, w = m.view.fx.world;
     if (g.over) m.newBoard();
@@ -271,19 +286,15 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     g.board.cells.fill(0);
     for (let x = 0; x < 9; x++) g.board.set(x, 0, 3);
     g.replacePiece({ id: 'S' });
-    st.inventory.anvil = (st.inventory.anvil || 0) + 1;
-    m.apply('anvil');
+    st.inventory.phase = (st.inventory.phase || 0) + 1;
+    m.apply('phase');
     m.action('drop');
     const falling = w.hiding;
     g.replacePiece({ id: 'O' });
-    st.inventory.sand = (st.inventory.sand || 0) + 1;
-    m.apply('sand'); g.piece.y = 14;
     m.action('drop');
-    const playing = !!m.view.sim, hiding = w.hiding;
-    m.action('drop');
-    return { falling, hiding, playing, after: !!m.view.sim };
+    return { falling, hiding: w.hiding };
   });
-  check('  a piece set mid-fall or mid-settle ends it (no cell left hidden, the board drawn as it is)', quick.falling > 0 && quick.hiding === 0 && quick.playing && !quick.after, JSON.stringify(quick));
+  check('  a piece set mid-fall ends it (no cell left hidden)', quick.falling > 0 && quick.hiding === 0, JSON.stringify(quick));
   // Gravity follows the board on screen: Upside Down pulls up, Sideways pulls left.
   const grav = await ev(() => {
     const v = Lull.app.modes.play.view, rot0 = v.view.rot, out = {};
@@ -292,22 +303,20 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     return out;
   });
   check('  effects fall toward the board\'s own floor in rotated views', JSON.stringify(grav) === JSON.stringify({ 0: [0, 1], 90: [-1, 0], 180: [0, -1] }), JSON.stringify(grav));
-  const calm = await fxRun('nuke', 'reduced');
-  check('  reduced motion: a nuke is a plain fade, no flying blocks', calm.peak === 0 && calm.ms <= 600, JSON.stringify(calm));
+  const calm = await fxRun('bomb', 'reduced');
+  check('  reduced motion: a bomb is a plain fade, no flying blocks', calm.peak === 0 && calm.ms <= 600, JSON.stringify(calm));
   await ev(() => { const m = Lull.app.modes.play; m.view.fx.clear(); m.game.board.cells.fill(0); m.view.dirty = true; });
 
-  // ---- the sandbox: a settle played back step by step, the discoveries it makes, their callouts, the book ------------
-  console.log('sandbox');
-  // Sets a scene (rows bottom first: . empty, digits colours, X grey, and matter: i ice, o oil, s steel, p powder,
-  // w water, a sand, e seed, v vine, g glass, c acid, l lava), turns the piece in play into an item and drops it at x.
+  // ---- combos, and what Luck pays ------------------------------------------------------------------------------------
+  console.log('combos');
+  // Sets a scene (rows bottom first: . empty, digits colours, X grey), turns the piece in play into an item, drops it.
   const scene = (rows, piece, item, x, y) => ev(([rows, piece, item, x, y]) => {
-    const m = Lull.app.modes.play, g = m.game, C = Lull.CELL, st = Lull.app.store;
+    const m = Lull.app.modes.play, g = m.game, st = Lull.app.store;
     if (g.over) m.newBoard();
-    m.view.fx.clear(); m.view.endSim();
-    document.getElementById('toasts').replaceChildren(); // the frames are for the board
-    g.board.cells.fill(0); g.s.gold = 0; g.s.boost = null;
-    const code = { X: 8, i: 3 | C.ICE, o: 2 | C.OIL, s: 6 | C.STEEL, p: 5 | C.POWDER, w: 1 | C.WATER, a: 7 | C.SAND, e: 4 | C.SEED, v: 4 | C.VINE, g: 1 | C.GLASS, c: 4 | C.ACID | (3 << 12), l: 7 | C.LAVA | (12 << 12) };
-    rows.forEach((row, yy) => { for (let xx = 0; xx < 10; xx++) { const c = row[xx] || '.'; if (c !== '.') g.board.set(xx, yy, code[c] != null ? code[c] : Number(c)); } });
+    m.view.fx.clear();
+    document.getElementById('toasts').replaceChildren();
+    g.board.cells.fill(0); g.s.gold = 0; g.s.boost = null; g.s.double = false; g.s.net = 0;
+    rows.forEach((row, yy) => { for (let xx = 0; xx < 10; xx++) { const c = row[xx] || '.'; if (c !== '.') g.board.set(xx, yy, c === 'X' ? 8 : Number(c)); } });
     g.replacePiece({ id: piece });
     let r = null;
     const off = g.on('lock', (x2) => { r = r || x2; });
@@ -317,82 +326,33 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     m.action('drop');
     off();
     window.__r = r;
-    return { frames: r && r.sim ? r.sim.frames.length : 0, playing: !!m.view.sim, lines: r ? r.lines : 0, cascade: r ? r.cascade || 0 : 0, gained: (g.s.banked || 0) - w0 };
+    return { lines: r ? r.lines : 0, gained: (g.s.banked || 0) - w0 };
   }, [rows, piece, item, x, y]);
-  const waitSim = () => ev(() => new Promise((res) => { const t0 = performance.now(); const f = () => (!Lull.app.modes.play.view.sim || performance.now() - t0 > 5000 ? res(Math.round(performance.now() - t0)) : requestAnimationFrame(f)); f(); }));
-  const film = async (name, times) => { let t = 0; for (const at of times) { await page.waitForTimeout(at - t); t = at; await shot(name + '-' + String(at).padStart(4, '0')); } };
-
-  // A bomb in a row of powder and ice: one blast sets off the next, step by step, each throwing its blocks.
-  const boom = await scene(['123456712.', 'ipipipipi.'], 'O', 'bomb', 2, 6);
-  const midBoom = await ev(() => { const v = Lull.app.modes.play.view; return { playing: !!v.sim, board: Lull.app.modes.play.game.board.count() }; });
-  await film('16-chain', [120, 300, 520]);
-  await waitSim();
-  const boomAfter = await ev(() => { const m = Lull.app.modes.play, g = m.game, r = window.__r; return { explosions: r.explosions, shattered: r.shattered, found: Object.keys(g.s.combos || {}), book: Object.keys(Lull.app.store.state.combos || {}), bodies: m.view.fx.world.nb + m.view.fx.world.np, board: g.board.count() }; });
-  await page.waitForTimeout(150);
-  const texts = await ev(() => Lull.app.modes.play.view.fx.texts.map((t) => t.str));
-  check('a bomb sets off the powder down the row in waves, played back step by step (the board is final at once)', boom.frames >= 3 && midBoom.playing && boomAfter.explosions >= 4 && boomAfter.shattered > 0, JSON.stringify({ boom, midBoom, boomAfter }));
-  check('it is a discovery: paid at once, called out once the settle has played, written in the book', boomAfter.found.includes('chain3') && boomAfter.book.includes('chain3') && texts.includes('Daisy Chain') && boom.gained >= 6, JSON.stringify({ texts, gained: boom.gained }));
-  await shot('16b-chain-after');
-  // The same again on this board pays half; the boost shows in the status bar.
-  const again = await ev(() => {
-    const m = Lull.app.modes.play, g = m.game, st = Lull.app.store, C = Lull.CELL;
-    m.view.endSim(); g.board.cells.fill(0);
-    for (let x = 0; x < 9; x++) g.board.set(x, 0, x % 2 ? 5 | C.POWDER : 2);
-    g.board.set(9, 6, 6 | C.STEEL); g.board.set(9, 5, 6 | C.STEEL); // steel stands, so the board is not emptied (that is another discovery)
-    g.replacePiece({ id: 'O' });
-    st.state.inventory.bomb = (st.state.inventory.bomb || 0) + 1;
-    const w0 = g.s.banked || 0;
-    m.apply('bomb'); g.piece.x = 1; g.piece.y = 6; m.action('drop');
-    return { times: g.s.combos.chain3, gained: (g.s.banked || 0) - w0, status: document.getElementById('play-status').textContent, boost: g.s.boost };
-  });
-  check('the second time on one board pays half, and a boost waits for the next clears', again.times === 2 && again.gained === 3 && again.boost && /Boost ×1\.5/.test(again.status), JSON.stringify(again));
+  // A Patch dropped into a covered hole completes the row: Patch Job, paid at once, called out on the board, written
+  // in the book — and, found for the first time ever, a power-up comes with it.
+  await ev(() => { delete Lull.app.store.state.combos.patchjob; });
+  const bag0 = await ev(() => Object.values(Lull.app.store.state.inventory).reduce((a, b) => a + b, 0));
+  const pj = await scene(['XXXX.XXXXX', 'XXXXXXXXX.'], 'O', 'patch', 4, 12);
+  await page.waitForTimeout(250);
+  await shot('16-patch-job');
+  await page.waitForTimeout(1100);
+  const pjAfter = await ev(() => { const m = Lull.app.modes.play, g = m.game; return { found: Object.keys(g.s.combos || {}), book: Object.keys(Lull.app.store.state.combos || {}), texts: m.view.fx.texts.map((t) => t.str), bag: Object.values(Lull.app.store.state.inventory).reduce((a, b) => a + b, 0), toast: [...document.querySelectorAll('.toast')].map((t) => t.textContent).join() }; });
+  check('a Patch into a covered hole that completes the row is Patch Job: paid, called out, in the book', pj.lines === 1 && pj.gained === 3 && pjAfter.found.includes('patchjob') && pjAfter.book.includes('patchjob') && pjAfter.texts.includes('Patch Job'), JSON.stringify({ pj, pjAfter }));
+  check('  found for the first time: a power-up comes with it', pjAfter.bag === bag0 + 1 && pjAfter.toast.length > 0, JSON.stringify({ bag0, pjAfter }));
+  const pj2 = await scene(['XXXX.XXXXX', 'XXXXXXXXX.'], 'O', 'patch', 4, 12);
+  check('the second time on one board pays half', pj2.gained === 2 && (await ev(() => Lull.app.modes.play.game.s.combos.patchjob)) === 2, JSON.stringify(pj2));
   const rew = await ev(() => {
     const m = Lull.app.modes.play, g = m.game, st = Lull.app.store;
     st.state.inventory.rewind = (st.state.inventory.rewind || 0) + 1;
     const w0 = g.s.banked || 0;
     m.apply('rewind');
-    return { back: (g.s.banked || 0) - w0, times: g.s.combos.chain3, powder: g.board.count((v) => (v & Lull.CELL.MAT) === Lull.CELL.POWDER), playing: !!m.view.sim };
+    return { back: (g.s.banked || 0) - w0, times: g.s.combos.patchjob, hole: !g.board.get(4, 0) };
   });
-  check('rewind puts the powder back, takes back what the settle paid, and stops its playback', rew.back === -3 && rew.times === 1 && rew.powder === 4 && !rew.playing, JSON.stringify(rew));
-
-  // The world at work, filmed: fire running through oil, water filling a channel under a roof, steam rising to ice
-  // and raining back, a seed growing a vine across a gap, acid eating down, lava setting, current along steel.
-  const films = [
-    ['17-fire', ['XXXXXXXXX.', 'oooooooo..', 'oooooooo..'], 'O', 'torch', 8, 9, [80, 280, 520, 800]],
-    ['17-water', ['XXXX..XXX.', 'XX......X.', 'XX.XXXX.X.'], 'O', 'water', 3, 9, [60, 180, 320]],
-    ['17-steam', ['XXXXXXXXX.', 'XwwwwwwwX.', '..........', '..........', 'iiiiiiii..'], 'M1', 'torch', 3, 3, [60, 160, 260, 380]],
-    ['17-vine', ['XXX....XXX', 'XXe......X'], 'M1', 'water', 2, 8, [120, 280, 430]],
-    ['17-acid', ['XXXXXXXXX.', 'XXXXXXXXX.', 'XXXXXXXXX.'], 'O', 'acid', 3, 8, [100, 220, 400]],
-    ['17-lava', ['XX..wwXXX.', 'X....XXXX.'], 'O', 'lava', 1, 8, [100, 300, 600]],
-    ['17-current', ['XXXXXXXXX.', 'sssssspo..'], 'O', 'bolt', 0, 6, [60, 160, 300, 500]],
-  ];
-  const seen = {};
-  for (const [name, rows, piece, item, x, y, times] of films) {
-    const r = await scene(rows, piece, item, x, y);
-    await film(name, times);
-    await waitSim();
-    seen[name] = await ev(() => { const r2 = window.__r; return { frames: r2.sim ? r2.sim.frames.length : 0, kinds: r2.kinds || [], cascade: r2.cascade || 0 }; });
-    check('  ' + name.slice(3) + ': a settle of ' + seen[name].frames + ' steps played back', r.frames >= 3 && r.playing, JSON.stringify(seen[name]));
-  }
-  check('  the settles did what they show: fire, steam and rain, growth across the gap (a line), acid, current', seen['17-fire'].kinds.includes('fire') && seen['17-steam'].kinds.includes('steam') && seen['17-steam'].kinds.includes('cold') && seen['17-vine'].cascade >= 1 && seen['17-acid'].kinds.includes('acid') && seen['17-current'].kinds.includes('current'), JSON.stringify(seen));
-  // Sideways and upside down, the settle plays on the turned board (and its effects fall to its own floor).
-  const turned = await ev(() => { const v = Lull.app.modes.play.view; v.view.rot = 90; v.lay = null; v.resize(); return true; });
-  await scene(['XXXXXXXXX.', 'oooooooo..'], 'O', 'torch', 8, 9);
-  await page.waitForTimeout(250);
-  await shot('17-fire-sideways');
-  await waitSim();
-  await ev(() => { const v = Lull.app.modes.play.view; v.view.rot = 0; v.lay = null; v.dirty = true; });
-  check('  a turned board plays the settle too', turned);
-  // Reduced motion: no playback; the board is simply final, and what changed glows once.
-  const calmSim = await ev(async () => { const st = Lull.app.store.state, m0 = st.settings.motion; st.settings.motion = 'reduced'; return m0; });
-  const cr = await scene(['XXXXXXXXX.', 'oooooooo..'], 'O', 'torch', 8, 9);
-  await ev((m0) => { Lull.app.store.state.settings.motion = m0; }, calmSim);
-  check('  reduced motion: no playback, the board final at once', cr.frames >= 3 && !cr.playing, JSON.stringify(cr));
-
+  check('rewind takes the patch back and what it paid', rew.back === -2 && rew.times === 1 && rew.hole, JSON.stringify(rew));
   // Gold: it waits on the board and gilds the piece in play, spent one clear at a time.
   const gold = await ev(() => {
     const m = Lull.app.modes.play, g = m.game, st = Lull.app.store;
-    m.view.endSim(); g.board.cells.fill(0); g.s.boost = null; g.s.b2b = -1; g.s.gold = 0;
+    g.board.cells.fill(0); g.s.boost = null; g.s.b2b = -1; g.s.gold = 0;
     st.state.inventory.golden = (st.state.inventory.golden || 0) + 1;
     m.apply('golden');
     for (let x = 1; x < 10; x++) g.board.set(x, 0, 8);
@@ -408,45 +368,62 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   check('gold waits through a piece that clears nothing, then a quad pays ×3 (15) and leaves four', gold.waited === 5 && gold.left === 4 && gold.banked === 15 && /Gold 4/.test(gold.status), JSON.stringify(gold));
   await page.waitForTimeout(100);
   await shot('16c-gold');
-  // Each kind of matter on its own, set in a basin: the piece shows what it is made of, and it leaves that behind.
-  const mats = await ev(() => {
-    const m = Lull.app.modes.play, g = m.game, st = Lull.app.store, C = Lull.CELL, out = {};
-    g.s.gold = 0;
-    for (const [id, want] of [['steel', C.STEEL], ['oil', C.OIL], ['frost', C.ICE], ['water', C.WATER], ['tnt', C.POWDER], ['sand', C.SAND], ['seed', C.SEED]]) {
-      m.view.endSim(); g.board.cells.fill(0);
-      for (let x = 0; x < 9; x++) g.board.set(x, 0, 2);
-      g.board.set(0, 1, 2); g.board.set(8, 1, 2);
-      g.replacePiece({ id: 'T' });
-      st.state.inventory[id] = (st.state.inventory[id] || 0) + 1;
-      m.apply(id); g.piece.x = 3; g.piece.y = 5; m.action('drop');
-      out[id] = g.board.count((v) => (v & C.MAT) === want);
-    }
+  // Double or Nothing: a single loses (pays nothing); a quad wins (pays double) and is All In.
+  const dor = await ev(() => {
+    const m = Lull.app.modes.play, g = m.game, st = Lull.app.store, out = {};
+    g.s.gold = 0; g.s.boost = null; g.s.b2b = -1;
+    const play = (rows, id, vertical) => {
+      g.board.cells.fill(0);
+      for (let y = 0; y < rows; y++) for (let x = 1; x < 10; x++) g.board.set(x, y, 8);
+      g.replacePiece({ id }); if (vertical) g.rotate(1); while (g.move(-1));
+      let r = null; const off = g.on('lock', (x) => { r = r || x; }); m.action('drop'); off();
+      return r;
+    };
+    st.state.inventory.double = (st.state.inventory.double || 0) + 2;
+    m.apply('double');
+    const lost = play(1, 'M1');
+    out.lost = [lost.double, lost.banked, g.s.double];
+    m.apply('double');
+    const won = play(4, 'I', true);
+    out.won = [won.double, won.banked, Object.keys(g.s.combos).includes('allin')];
     return out;
   });
-  check('steel, oil, ice, water, powder, sand and seed leave blocks made of themselves', Object.values(mats).every((n) => n === 4), JSON.stringify(mats));
-  await page.waitForTimeout(200);
-  await ev(() => { const m = Lull.app.modes.play, g = m.game, C = Lull.CELL; m.view.endSim(); g.board.cells.fill(0); const all = [C.ICE, C.OIL, C.STEEL, C.POWDER, C.WATER, C.SAND, C.GLASS, C.SEED, C.VINE, C.ACID | (3 << 12), C.LAVA | (10 << 12), C.STEEL | (2 << 12), C.LAVA | (3 << 12)]; for (let x = 0; x < 10; x++) { g.board.set(x, 0, 1 + (x % 7)); g.board.set(x, 1, all[x] | (1 + x % 7)); g.board.set(x, 2, all[(x + 10) % all.length] | 3); } g.board.set(2, 3, C.FIRE | (5 << 12) | 7); g.board.set(6, 4, C.STEAM | (6 << 12) | 1); g.replacePiece({ id: 'T' }); g.setSpecial('lava'); m.view.dirty = true; });
+  check('Double or Nothing: a single pays nothing; a quad pays double (10), and is All In', dor.lost[0] === 'lost' && dor.lost[1] === 0 && dor.lost[2] === false && dor.won[0] === 'won' && dor.won[1] === 10 && dor.won[2], JSON.stringify(dor));
   await page.waitForTimeout(100);
-  await shot('16d-materials');
-  await ev(() => { const m = Lull.app.modes.play; m.view.fx.clear(); m.game.board.cells.fill(0); m.game.replacePiece({ id: 'T' }); m.view.dirty = true; });
+  await shot('16d-double');
+  // Safety Net: a single after a quad streak keeps it going.
+  const net = await ev(() => {
+    const m = Lull.app.modes.play, g = m.game, st = Lull.app.store;
+    g.board.cells.fill(0); g.s.b2b = 6;
+    st.state.inventory.net = (st.state.inventory.net || 0) + 1;
+    m.apply('net');
+    const shown = /Net/.test(document.getElementById('play-status').textContent);
+    for (let x = 1; x < 10; x++) g.board.set(x, 0, 8);
+    g.replacePiece({ id: 'M1' }); while (g.move(-1));
+    let r = null; const off = g.on('lock', (x) => { r = r || x; }); m.action('drop'); off();
+    return { shown, saved: r.netSaved, b2b: g.s.b2b, net: g.s.net, caught: Object.keys(g.s.combos).includes('caught') };
+  });
+  check('Safety Net: shown while waiting; a single keeps a streak of seven going (Caught)', net.shown && net.saved === 7 && net.b2b === 6 && net.net === 0 && net.caught, JSON.stringify(net));
+  await ev(() => { const m = Lull.app.modes.play; m.view.fx.clear(); m.game.board.cells.fill(0); m.game.s.b2b = -1; m.game.replacePiece({ id: 'T' }); m.view.dirty = true; });
 
   // ---- the daily gift ----------------------------------------------------------------------------------------------
   console.log('daily gift');
-  await ev(() => { const st = Lull.app.store.state; st.gift = { last: null, n: 0, log: [] }; Lull.app.modes.play.renderStatus(); });
+  await page.waitForTimeout(1500); // power-ups the combos above brought land first
+  await ev(() => { const st = Lull.app.store.state; st.gift = { at: null, n: 0, log: [] }; Lull.app.modes.play.renderStatus(); });
   const inv0 = await ev(() => Object.values(Lull.app.store.state.inventory).reduce((a, b) => a + b, 0));
-  check('the Relaxed tab shows today\'s gift, waiting', await page.isVisible('#gift-btn.ready'));
+  check('the Relaxed tab shows the gift, waiting', await page.isVisible('#gift-btn.ready'));
   await page.click('#gift-btn');
   await page.waitForTimeout(450);
   await shot('18-gift-opening');
   await page.waitForTimeout(900);
   await shot('18-gift');
-  const gift = await ev(() => ({ cards: [...document.querySelectorAll('.modal-gift .gift-card b')].map((b) => b.textContent), inv: Object.values(Lull.app.store.state.inventory).reduce((a, b) => a + b, 0), last: Lull.app.store.state.gift.last, today: Lull.dateKey(), ready: !!document.querySelector('#gift-btn.ready'), tip: document.getElementById('gift-btn').dataset.tip }));
-  check('it turns over three power-ups, already in the bag', gift.cards.length === 3 && new Set(gift.cards).size === 3 && gift.inv === inv0 + 3 && gift.last === gift.today, JSON.stringify(gift));
-  check('once opened, the button says when the next one comes', !gift.ready && /^Next gift in \d+h \d+m$/.test(gift.tip), gift.tip);
+  const gift = await ev(() => ({ cards: [...document.querySelectorAll('.modal-gift .gift-card b')].map((b) => b.textContent), inv: Object.values(Lull.app.store.state.inventory).reduce((a, b) => a + b, 0), at: Lull.app.store.state.gift.at, now: Date.now(), ready: !!document.querySelector('#gift-btn.ready'), tip: document.getElementById('gift-btn').dataset.tip }));
+  check('it turns over three power-ups, already in the bag, the claim booked', gift.cards.length === 3 && new Set(gift.cards).size === 3 && gift.inv === inv0 + 3 && Math.abs(gift.now - gift.at) < 5000, JSON.stringify(gift));
+  check('once opened, the button says how long until the next one (24 hours on)', !gift.ready && /^Next gift in (23h 59m|24h 0m|1d 0h)$/.test(gift.tip), gift.tip);
   await page.click('.modal-gift footer .btn.primary');
   await page.click('#gift-btn');
   const twice = await ev(() => ({ modal: !!document.querySelector('.modal-gift'), inv: Object.values(Lull.app.store.state.inventory).reduce((a, b) => a + b, 0), toast: [...document.querySelectorAll('.toast')].map((t) => t.textContent).join() }));
-  check('not twice in a day: a quiet note of when, nothing more', !twice.modal && twice.inv === inv0 + 3 && /Next gift in/.test(twice.toast), JSON.stringify(twice));
+  check('not again within 24 hours: a quiet note of when, nothing more', !twice.modal && twice.inv === inv0 + 3 && /Next gift in/.test(twice.toast), JSON.stringify(twice));
   await ev(() => Lull.app.saveNow());
   await page.reload();
   await page.waitForTimeout(400);
@@ -456,6 +433,9 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await page.click('#wallet');
   await page.click('.tabs button[data-tab="play"]');
   check('nor by switching tabs', !(await page.isVisible('#gift-btn.ready')));
+  const later = await ev(() => { const st = Lull.app.store.state; st.gift.at -= 24 * 3600e3; Lull.app.modes.play.renderGift(); return !!document.querySelector('#gift-btn.ready'); });
+  check('24 hours after the claim, it is waiting again', later);
+  await ev(() => { const st = Lull.app.store.state; st.gift.at = Date.now(); Lull.app.modes.play.renderGift(); });
 
   // ---- mouse only ---------------------------------------------------------------------------------------------------
   console.log('mouse');
@@ -1207,66 +1187,87 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   check('clicking the wallet opens the Shop, and the wallet shows it is open', walletOn);
   const shopFits = async () => ev(() => {
     const v = document.getElementById('view-shop'), b = document.getElementById('shop-body'), j = document.querySelector('.shop-jump');
-    const r = v.getBoundingClientRect();
-    // Nothing spills out of the window: the sections scroll inside the view, and the jump bar reaches every section.
+    const r = v.getBoundingClientRect(), jr = j.getBoundingClientRect(), lit = j.querySelector('[aria-selected="true"]').getBoundingClientRect();
+    const chev = Array.from(document.querySelectorAll('.shop-chev')).map((c) => c.getBoundingClientRect());
+    // Nothing spills out of the window: the tiles scroll inside the view, the row holds every kind, the lit one is in
+    // sight, and the chevrons sit at the row's two ends, inside the window.
     return document.documentElement.scrollWidth <= innerWidth && b.getBoundingClientRect().bottom <= r.bottom + 0.5 && b.scrollWidth <= b.clientWidth + 1
-      && j.children.length === b.children.length && Array.from(j.children).every((c, i) => c.dataset.sec === b.children[i].dataset.sec);
+      && Array.from(j.children).map((c) => c.dataset.sec).join() === Object.keys(Lull.COSMETICS).join()
+      && lit.left >= jr.left - 1 && lit.right <= jr.right + 1
+      && chev.length === 2 && chev[0].right <= jr.left + 1 && chev[1].left >= jr.right - 1 && chev[0].left >= r.left && chev[1].right <= r.right + 0.5;
   });
-  check('the Shop fits the window: items by type, one scroll, a jump to every type', await shopFits()
-    && await ev(() => Array.from(document.querySelectorAll('#shop-body .shop-sec')).map((s) => s.dataset.sec).join() === Lull.ITEM_GROUPS.map((g) => g.id).join()
-      && document.querySelectorAll('#shop-body .shop-item').length === Lull.ITEM_ORDER.length));
-  await shot('40-shop-items');
-  // Items: the price asks first (Confirm), the second click buys one; clicking elsewhere puts the price back.
-  const item0 = await ev(() => ({ n: Lull.app.store.state.inventory.bomb || 0, lines: Lull.app.store.state.lines }));
-  await ev(() => { Lull.app.store.state.lines = Math.max(Lull.app.store.state.lines, 500); Lull.app.refreshWallet(); });
-  await page.click('.shop-item[data-item="bomb"] .price-btn');
-  const asked = await ev(() => { const b = document.querySelector('.shop-item[data-item="bomb"] .price-btn'); return b.classList.contains('armed') && b.textContent === 'Confirm' && !document.querySelector('.modal'); });
+  // One kind at a time: only its tiles, one section, and its button lit.
+  const shopShows = (kind) => ev((k) => {
+    const secs = document.querySelectorAll('#shop-body .shop-sec'), tiles = Array.from(document.querySelectorAll('#shop-body .shop-look'));
+    const lit = document.querySelectorAll('.shop-jump [aria-selected="true"]');
+    return secs.length === 1 && secs[0].dataset.sec === k && tiles.length === Object.keys(Lull.COSMETICS[k]).length
+      && tiles.every((t) => t.dataset.look.startsWith(k + ':')) && lit.length === 1 && lit[0].dataset.sec === k && Lull.app.settings.shopKind === k;
+  }, kind);
+  const kinds = await ev(() => Object.keys(Lull.COSMETICS));
+  await page.click('.shop-jump button[data-sec="' + kinds[0] + '"]');
+  check('the Shop sells no power-ups: no Power-ups half, no toggle, no item tiles', await ev(() => !document.querySelector('.shop-seg, .shop-item, #shop-body [data-item]')
+    && !/Power-ups/.test(document.getElementById('view-shop').textContent)));
+  check('the Shop fits the window; only the first kind is shown, and the left chevron is off', await shopFits() && await shopShows(kinds[0])
+    && await ev(() => document.querySelector('.shop-chev[data-dir="prev"]').disabled && !document.querySelector('.shop-chev[data-dir="next"]').disabled));
+  await shot('41-palettes');
+  // The chevrons step through the kinds, one at a time, and switch off at the far end.
+  const stepped = [];
+  for (let i = 1; i < kinds.length; i++) { await page.click('.shop-chev[data-dir="next"]'); stepped.push(await shopShows(kinds[i])); }
+  check('the right chevron steps to each next kind in turn, and is off at the last', stepped.every(Boolean) && await ev(() => document.querySelector('.shop-chev[data-dir="next"]').disabled), JSON.stringify(stepped));
+  await page.click('.shop-chev[data-dir="prev"]');
+  check('the left chevron steps back', await shopShows(kinds[kinds.length - 2]));
+  // The keyboard: ← and → on the row step too.
+  await page.focus('.shop-jump [aria-selected="true"]');
+  await page.keyboard.press('ArrowLeft');
+  const keyL = await shopShows(kinds[kinds.length - 3]);
+  await page.keyboard.press('ArrowRight');
+  check('← and → on the row step the kinds, and keep the focus on it', keyL && await shopShows(kinds[kinds.length - 2]) && await ev(() => document.activeElement && document.activeElement.getAttribute('aria-selected') === 'true'));
+  // Scrolling the list never runs into the next kind.
+  await ev(() => { const b = document.getElementById('shop-body'); b.scrollTop = b.scrollHeight; });
+  await page.waitForTimeout(100);
+  check('scrolled to the bottom, it is still the same kind', await shopShows(kinds[kinds.length - 2]));
+  await page.click('.shop-jump button[data-sec="skin"]');
+  check('clicking a kind shows it, and only it', await shopShows('skin'));
+  await shot('40-skins');
+  // Two calm clicks buy: the price asks first (Confirm), clicking elsewhere puts it back; the second click buys.
+  await ev(() => { Lull.app.store.state.lines = Math.max(Lull.app.store.state.lines, 5000); Lull.app.refreshWallet(); });
+  await page.click('.shop-look[data-look="skin:bevel"] .price-btn');
+  const asked = await ev(() => { const b = document.querySelector('.shop-look[data-look="skin:bevel"] .price-btn'); return b.classList.contains('armed') && b.textContent === 'Confirm' && !document.querySelector('.modal'); });
   await page.mouse.click(5, 300);
   const backToPrice = await ev(() => !document.querySelector('.price-btn.armed'));
-  await page.click('.shop-item[data-item="bomb"] .price-btn');
-  await page.click('.shop-item[data-item="bomb"] .price-btn');
-  const item1 = await ev(() => ({ n: Lull.app.store.state.inventory.bomb, badge: document.querySelector('.shop-item[data-item="bomb"] .ii .n').textContent, lines: Lull.app.store.state.lines, wallet: document.getElementById('wallet-n').textContent }));
-  check('an item costs two calm clicks (Confirm, no dialog), and lands in your bag', asked && backToPrice && item1.n === item0.n + 1 && item1.badge === String(item1.n) && item1.wallet === item1.lines.toLocaleString('en-US'), JSON.stringify([item0, item1]));
-  // Whatever the catalogue holds: enough for the cheapest item, not for the dearest.
-  const [cheap, dear] = await ev(() => { const ids = Lull.ITEM_ORDER.slice().sort((a, b) => Lull.ITEMS[a].price - Lull.ITEMS[b].price); Lull.app.store.state.lines = Lull.ITEMS[ids[0]].price; Lull.app.refreshWallet(); return [ids[0], ids[ids.length - 1]]; });
-  const poor = await ev(([c, d]) => ({ dim: document.querySelector('.shop-item[data-item="' + d + '"] .price-btn').classList.contains('poor'), ok: !document.querySelector('.shop-item[data-item="' + c + '"] .price-btn').classList.contains('poor') }), [cheap, dear]);
-  await page.click('.shop-item[data-item="' + dear + '"] .price-btn');
-  check('a price you cannot pay is dimmed as the wallet changes, and never asks', poor.ok && poor.dim && await ev(() => !document.querySelector('.price-btn.armed')), JSON.stringify(poor));
-  await ev((n) => { Lull.app.store.state.lines = n; Lull.app.refreshWallet(); }, item1.lines);
-  // Cosmetics: every kind, in one scroll; the jump bar lands on a section and follows the scroll.
-  await page.click('.shop-seg button:nth-child(2)');
-  await page.waitForTimeout(100);
-  check('Cosmetics: every kind a section, every cosmetic a tile, fitting the window', await shopFits()
-    && await ev(() => Array.from(document.querySelectorAll('#shop-body .shop-sec')).map((s) => s.dataset.sec).join() === Object.keys(Lull.COSMETICS).join()
-      && document.querySelectorAll('#shop-body .shop-look').length === Object.values(Lull.COSMETICS).reduce((n, c) => n + Object.keys(c).length, 0)));
-  await shot('41-palettes');
-  await page.click('.shop-jump button[data-sec="skin"]');
-  await page.waitForTimeout(700);
-  check('the jump bar scrolls to a section and lights it', await ev(() => { const b = document.getElementById('shop-body'), s = b.querySelector('.shop-sec[data-sec="skin"]'); return Math.abs(s.getBoundingClientRect().top - b.getBoundingClientRect().top) < 4 && document.querySelector('.shop-jump button[aria-current="true"]').dataset.sec === 'skin'; }));
-  await shot('40-skins');
+  check('a price asks first (Confirm, no dialog); clicking elsewhere puts it back', asked && backToPrice);
   await page.click('.shop-look[data-look="skin:bevel"] .price-btn');
   await page.click('.shop-look[data-look="skin:bevel"] .price-btn');
-  const skin = await ev(() => Lull.app.store.state.equipped.skin);
-  check('skin bought and equipped', skin === 'bevel', skin);
-  check('it says In use, and the one before offers Use', await ev(() => /In use/.test(document.querySelector('.shop-look[data-look="skin:bevel"]').textContent) && !!document.querySelector('.shop-look[data-look="skin:flat"] .use-btn')));
+  const skin = await ev(() => ({ on: Lull.app.store.state.equipped.skin, lines: Lull.app.store.state.lines, wallet: document.getElementById('wallet-n').textContent }));
+  check('skin bought and equipped, the wallet in step', skin.on === 'bevel' && skin.wallet === skin.lines.toLocaleString('en-US'), JSON.stringify(skin));
+  check('it says In use, and the one before offers Use; still on Skins', await ev(() => /In use/.test(document.querySelector('.shop-look[data-look="skin:bevel"]').textContent) && !!document.querySelector('.shop-look[data-look="skin:flat"] .use-btn')) && await shopShows('skin'));
   await page.click('.shop-look[data-look="skin:flat"]');
   check('clicking an owned tile puts it on', await ev(() => Lull.app.store.state.equipped.skin === 'flat'));
   await page.click('.shop-look[data-look="skin:bevel"] .use-btn');
+  check('a factory reward shows its lock, not a price', await ev(() => { const t = document.querySelector('.shop-look[data-look="skin:steel"]'); return t && !t.querySelector('.price-btn') && !!t.querySelector('.reward-tag') && t.dataset.tip === Lull.COSMETICS.skin.steel.reward; }));
+  // A price you cannot pay is dimmed as the wallet changes, and never asks.
+  const dear = await ev(() => { const t = Array.from(document.querySelectorAll('#shop-body .price-btn')).sort((a, b) => b.dataset.price - a.dataset.price)[0]; Lull.app.store.state.lines = Number(t.dataset.price) - 1; Lull.app.refreshWallet(); return t.closest('.shop-look').dataset.look; });
+  const dim = await ev((d) => document.querySelector('.shop-look[data-look="' + d + '"] .price-btn').classList.contains('poor'), dear);
+  await page.click('.shop-look[data-look="' + dear + '"] .price-btn');
+  check('a price you cannot pay is dimmed, and never asks', dim && await ev(() => !document.querySelector('.price-btn.armed')), dear);
+  await ev((n) => { Lull.app.store.state.lines = n; Lull.app.refreshWallet(); }, skin.lines);
   for (const name of ['frame', 'backdrop', 'effect', 'ghost']) {
     await page.click('.shop-jump button[data-sec="' + name + '"]');
-    await page.waitForTimeout(650);
+    await page.waitForTimeout(150);
     await shot('41-' + name);
   }
   await page.click('.shop-jump button[data-sec="sound"]');
-  await page.waitForTimeout(650);
-  check('scrolled to the end, the last section is the one lit', await ev(() => document.querySelector('.shop-jump button[aria-current="true"]').dataset.sec === 'sound'));
   await shot('43-sounds');
   await page.click('.shop-look[data-look="sound:chip"] .preview.listen');
   check('a sound pack\'s preview plays it', await ev(() => document.querySelector('.shop-look[data-look="sound:chip"] .preview').classList.contains('playing')));
   await page.click('.shop-look[data-look="sound:chip"] .price-btn');
   await page.click('.shop-look[data-look="sound:chip"] .price-btn');
   check('sound pack bought and in use', await ev(() => Lull.app.store.state.equipped.sound === 'chip' && Lull.Sound.pack === 'chip'));
-  check('a factory reward shows its lock, not a price', await ev(() => { const t = document.querySelector('.shop-look[data-look="skin:steel"]'); return t && !t.querySelector('.price-btn') && !!t.querySelector('.reward-tag') && t.dataset.tip === Lull.COSMETICS.skin.steel.reward; }));
+  // It remembers the kind: away and back, the Shop opens on Sounds.
+  await page.click('.tabs button[data-tab="play"]');
+  await page.click('#wallet');
+  check('the Shop remembers the last kind looked at', await shopShows('sound'));
+  await page.click('.shop-jump button[data-sec="backdrop"]');
   for (const [w, hgt, theme] of [[400, 700, 'dark'], [900, 900, 'dark'], [520, 760, 'light']]) {
     await page.setViewportSize({ width: w, height: hgt });
     await ev((t) => { Lull.app.settings.theme = t; Lull.app.applySettings(); }, theme);
@@ -1294,7 +1295,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await page.click('#stats-tabs button:nth-child(2)');
   await page.waitForTimeout(50);
   const book = await ev(() => { const l = document.querySelector('.combo-list'); if (l) l.scrollIntoView(); return { all: document.querySelectorAll('.combo').length, unknown: document.querySelectorAll('.combo.unknown').length, known: [...document.querySelectorAll('.combo:not(.unknown) b')].map((b) => b.textContent), fits: [...document.querySelectorAll('.combo')].every((c) => c.scrollWidth <= c.clientWidth + 1) }; });
-  check('Stats ▸ Free Play lists the combos and discoveries: found ones by name, the rest as ?', book.all === await ev(() => Lull.Combos.LIST.length) && book.unknown === book.all - book.known.length && book.known.includes('Daisy Chain') && book.fits, JSON.stringify(book));
+  check('Stats ▸ Free Play lists the combos: found ones by name, the rest as ?', book.all === await ev(() => Lull.Combos.LIST.length) && book.unknown === book.all - book.known.length && book.known.includes('Patch Job') && book.fits, JSON.stringify(book));
   await page.waitForTimeout(50);
   await shot('50b-stats-combos');
   await page.click('.tabs button[data-tab="achievements"]');
@@ -1412,6 +1413,23 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   check('an achievement earned in the background is told on return, not chimed while away', bg.away.earned && bg.away.toasts === 0 && bg.away.played === 0 && /Familiar Face/.test(bg.back.toasts) && bg.back.played.length === 1, JSON.stringify(bg));
 
   // ---- mute: the top-bar speaker and M, over everything, persisted, leaving the toggles alone -------------------------
+  console.log('relaxed announcer');
+  {
+    await page.click('.tabs button[data-tab="play"]');
+    await page.waitForTimeout(100);
+    const said = await ev(() => {
+      const m = Lull.app.modes.play, A = Lull.Announcer, st = Lull.app.settings, keep = A.say, got = [];
+      A.say = (k) => { got.push(k.join(' ')); return true; };
+      const clearOne = () => { const g = m.game; g.board.clearRows(g.board.fullRows()); for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) g.board.set(x, y, 0); for (let x = 0; x < g.w - 2; x++) g.board.set(x, 0, 8); g.replacePiece({ id: 'O' }); while (g.move(1)); g.drop(); };
+      try {
+        st.announcerRelaxed = false; clearOne();
+        const off = got.length;
+        st.announcerRelaxed = true; clearOne();
+        return { off, on: got.slice(off) };
+      } finally { A.say = keep; st.announcerRelaxed = false; }
+    });
+    check('the announcer calls Relaxed clears only when asked to', said.off === 0 && said.on.length > 0, JSON.stringify(said));
+  }
   console.log('pointer away');
   {
     const fade = async (type) => { await ev((t) => document.documentElement.dispatchEvent(new MouseEvent(t)), type); await page.waitForTimeout(600); return ev(() => ({ away: document.body.classList.contains('away'), op: getComputedStyle(document.getElementById('app')).opacity, filter: getComputedStyle(document.getElementById('app')).filter })); };
@@ -1673,8 +1691,49 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     await page.waitForTimeout(400);
     const f1 = await ev(() => Lull.Collapse.idle.frames), p1 = await pix();
     check('pieces drift along the bar (about 30 fps, not faster)', p0 !== p1 && f1 - f0 >= 6 && f1 - f0 <= 16, (f1 - f0) + ' frames');
-    const cells = await ev(() => { const i = Lull.Collapse.idle; return i.flying.length + i.grid.flat().filter(Boolean).length; });
-    check('in the equipped look, a few pieces in flight and a small stack', cells >= 3, String(cells));
+    const cells = await ev(() => Lull.Collapse.idle.pieces.length);
+    check('in the equipped look, a few pieces along the bar', cells >= 3, String(cells));
+    // Walk the march on by hand for two minutes of bar time and watch every step.
+    const march = await ev(() => {
+      const i = Lull.Collapse.idle, P = Lull.Pieces, bad = [];
+      const snap = () => new Map(i.pieces.map((p) => [p.n, { id: p.id, rot: p.rot, x: p.x, y: p.y, lo: i.span(p).lo }]));
+      let prev = snap(), maxN = 0, minN = 99, turns = 0, nudges = 0, steps = 0, exits = 0, lastLo = [];
+      const ex0 = i.exited;
+      for (let f = 0; f < 120 * 30; f++) {
+        i.step(1 / 30);
+        const now = snap();
+        maxN = Math.max(maxN, now.size); minN = Math.min(minN, now.size);
+        const seen = new Set();
+        for (const p of i.pieces) {
+          const cells = i.cellsOf(p);
+          if (!Number.isInteger(p.x) || !Number.isInteger(p.y)) bad.push('not on the grid ' + p.id);
+          if (!P.get(p.id).rots[p.rot]) bad.push('no such rotation');
+          for (const [x, y] of cells) {
+            if (y < 0 || y >= 4) bad.push('out of the lanes ' + p.id + ' ' + y);
+            const k = x + ',' + y;
+            if (seen.has(k)) bad.push('overlap at ' + k);
+            seen.add(k);
+          }
+          const was = prev.get(p.n);
+          if (!was) continue;
+          const dx = p.x - was.x, dy = p.y - was.y;
+          if (p.rot !== was.rot) {
+            turns++;
+            const d = (p.rot - was.rot + 4) % 4;
+            const kicks = P.kicksFor(P.get(p.id), was.rot, p.rot);
+            if (d === 2 || !kicks.some(([kx, ky]) => kx === dx && ky === dy)) bad.push('turn off its SRS centre ' + p.id + ' ' + was.rot + '>' + p.rot + ' ' + dx + ',' + dy);
+          } else if (dx || dy) {
+            if (!((dx === 1 && dy === 0) || (dx === 0 && Math.abs(dy) === 1))) bad.push('not one cell ' + dx + ',' + dy);
+            if (dx) steps++; else nudges++;
+          }
+        }
+        for (const [n, w] of prev) if (!now.has(n)) { exits++; lastLo.push(w.lo); }
+        prev = now;
+      }
+      return { bad: bad.slice(0, 5), maxN, minN, turns, nudges, steps, exits, exited: i.exited - ex0, cols: i.cols, gone: lastLo.every((lo) => lo >= i.cols - 1), keys: Object.keys(i).filter((k) => /grid|stack|flying/.test(k)) };
+    });
+    check('the pieces step right a whole cell at a time, turn on the game\'s SRS centre and kicks, shift a lane now and then, and never touch', march.bad.length === 0 && march.steps > 200 && march.turns > 10 && march.nudges > 5, JSON.stringify(march));
+    check('none of them land or stack: each walks off the right edge and more come, a few at a time', march.exits > 20 && march.exited === march.exits && march.gone && march.minN >= 2 && march.maxN <= Math.ceil(march.cols / 4) && march.keys.length === 0, JSON.stringify(march));
     for (const theme of ['dark', 'light']) {
       await ev((t) => { Lull.app.settings.theme = t; Lull.app.applySettings(); }, theme);
       for (const w of [520, 900]) {
