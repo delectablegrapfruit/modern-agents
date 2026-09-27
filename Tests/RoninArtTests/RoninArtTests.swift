@@ -494,6 +494,28 @@ final class RoninArtTests: XCTestCase {
         }
     }
 
+    func testElbowsAndKneesBendOnlyTheWayTheyBend() {
+        // In every frame an elbow folds forward, never back past straight, and a knee back (a back leg locked straight
+        // under the weight may give a little the other way); measured as a doll measures its joints.
+        func bend(_ a: CGPoint, _ p: CGPoint, _ c: CGPoint) -> CGFloat {
+            let wx = p.x - a.x, wy = p.y - a.y, vx = c.x - p.x, vy = c.y - p.y
+            return atan2(wx * vy - wy * vx, wx * vx + wy * vy)
+        }
+        let down = Figure.limbs.shoulder / Figure.limbs.torso
+        for cast in casts {
+            for frame in Figure.frames(for: cast) {
+                let s = Figure.skeleton(cast, Figure.pose(cast, frame))
+                let shoulder = CGPoint(x: s[1].x + (s[0].x - s[1].x) * down, y: s[1].y + (s[0].y - s[1].y) * down)
+                for (elbow, hand) in [(7, 8), (9, 10)] {
+                    XCTAssertGreaterThan(bend(shoulder, s[elbow], s[hand]), -0.12, "\(cast) \(frame): an elbow bends backward")
+                }
+                for (knee, foot) in [(3, 4), (5, 6)] {
+                    XCTAssertLessThan(bend(s[0], s[knee], s[foot]), 0.22, "\(cast) \(frame): a knee bends forward")
+                }
+            }
+        }
+    }
+
     func testTheSheetIsSVG() {
         let svg = Figure.sketch(.hero, .idle(0)).svg()
         XCTAssertTrue(svg.hasPrefix("<g"))

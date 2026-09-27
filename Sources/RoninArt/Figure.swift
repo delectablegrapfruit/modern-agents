@@ -979,8 +979,8 @@ public enum Figure {
                     p.back = (-0.55, -1.5)
                     p.grip = .one
                     p.hold = nil
-                    p.arm = (0.55, 0.35)
-                    p.arm2 = (0.75, 0.5)
+                    p.arm = (0.35, 0.55)
+                    p.arm2 = (0.5, 0.75)
                     p.blade = 1.6
                     p.stream = 0
                     p.wave = 0.5
@@ -1081,8 +1081,8 @@ public enum Figure {
                 p.blade2 = 3.75 + 0.1 * coil
             case (.dancer, .strike(let k)):
                 lunge(&p, k == 0 ? 0.42 : 0.36)
-                p.arm = k == 0 ? (1.3, 1.1) : (1.05, 0.8)
-                p.arm2 = k == 0 ? (0.4, -0.2) : (-0.6, -0.5)
+                p.arm = k == 0 ? (1.1, 1.3) : (0.8, 1.05)
+                p.arm2 = k == 0 ? (-0.2, 0.4) : (-0.6, -0.5)
                 p.blade = k == 0 ? 0.68 : 0.5
                 p.blade2 = k == 0 ? -0.9 : -1.4
                 if k == 0 { p.smear = sweep(2.5, 0.68, 0.8) }
@@ -1093,7 +1093,7 @@ public enum Figure {
                 p.back = (1.3, -0.2)
                 if kind == .dancer {
                     p.arm = (1.8, 2.2)
-                    p.arm2 = (-1.8, -2.2)
+                    p.arm2 = (-2.2, -1.8)
                     p.blade = 2.8
                     p.blade2 = 3.48
                 } else {
