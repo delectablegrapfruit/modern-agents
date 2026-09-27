@@ -2,6 +2,8 @@ name: CI
 
 on:
   push:
+    # Branches only: a tag push is not a build (and must not try to commit dist/ to a tag).
+    branches: ["**"]
     paths-ignore:
       - "dist/**"
   pull_request:
@@ -17,21 +19,53 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  linux:
+    name: Linux core build, test, balance
+    runs-on: ubuntu-latest
+    container: swift:6.0
+    # Normally a few minutes.
+    timeout-minutes: 20
+    # (The swift image has no make: these are the Makefile's commands, spelled out.)
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift build
+      - run: swift test
+      - name: Sheets — every frame, the cut and the falling dead render as SVG
+        run: |
+          sheets=$(mktemp -d)
+          for sheet in all dead ragdoll; do
+            swift run ronin-sheet "$sheets/$sheet.svg" "$sheet"
+            test -s "$sheets/$sheet.svg"
+          done
+          ls -l "$sheets"
+      - name: Balance — a human-like pilot and a perfect one play every stage, in every mode
+        run: |
+          swift run -c release ronin-sim --mode all --stages 1-20 --seeds 10 --check
+          swift run -c release ronin-sim --mode all --stages 1-25 --seeds 4 --perfect --check
+      - name: Balance — campaign runs from stage 1, hearts carried, in every mode
+        run: swift run -c release ronin-sim --campaign --mode all --check
+      - name: Balance — the perfect pilot through the endless stages
+        run: swift run -c release ronin-sim --mode all --stages 26-60 --seeds 2 --perfect --check
+      - name: Slower hands (closer to a first-time player; a report, not held to a bar)
+        run: swift run -c release ronin-sim --mode shoshin --stages 1-12 --seeds 10 --reaction 0.3 --rate 5 --slips 0.05
+      - name: A warlord stage, second by second (a report)
+        run: swift run -c release ronin-sim --trace 5 | tail -25
+
   macos:
     name: macOS build, test, self-test, bundle
+    # The balance runs are the Linux job's; waiting for it keeps a build that fails them out of dist/.
+    needs: linux
     permissions:
       contents: write
     # Hosted macOS minutes bill at ten times the Linux rate; a repository variable RONIN_MACOS_RUNNER (for example
     # "self-hosted") points the job at your own Mac.
     runs-on: ${{ vars.RONIN_MACOS_RUNNER || 'macos-26' }}
+    # Normally under ten minutes; a crashed self-test's report and backtrace can add eight more.
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
       - run: xcodebuild -version && swift --version
       - run: swift test
-      - name: Balance — a human-like pilot and a perfect one play every stage
-        run: |
-          swift run -c release ronin-sim --mode all --stages 1-20 --seeds 10 --check
-          swift run -c release ronin-sim --mode all --stages 1-20 --seeds 4 --perfect --check
       - name: Bundle
         run: |
           scripts/make-app.sh release
@@ -48,13 +82,20 @@ jobs:
       - name: Self-test — the packaged app, unzipped elsewhere, fights and writes what it showed
         timeout-minutes: 6
         run: |
-          rm -rf "$RUNNER_TEMP/launch" && mkdir -p "$RUNNER_TEMP/launch"
+          rm -rf "$RUNNER_TEMP/launch" build/screenshots && mkdir -p "$RUNNER_TEMP/launch"
           ditto -x -k dist/Ronin.app.zip "$RUNNER_TEMP/launch"
-          rm -rf dist/screenshots
           (sleep 20; screencapture -x build/desktop.png || true) &
-          RONIN_SELFTEST=1 RONIN_SNAPSHOTS="$PWD/dist/screenshots" "$RUNNER_TEMP/launch/Ronin.app/Contents/MacOS/Ronin"
+          # The shots go to build/ first: dist/screenshots, the committed ones the README shows, is only replaced
+          # after a passing run (a shot that cannot be taken fails it), so a failed run never deletes them.
+          RONIN_SELFTEST=1 RONIN_SNAPSHOTS="$PWD/build/screenshots" "$RUNNER_TEMP/launch/Ronin.app/Contents/MacOS/Ronin"
           wait
-          ls -la dist/screenshots || true
+          ls -la build/screenshots
+          # A shot this run did not take (one taken only if its moment comes) is dropped, and said so.
+          for old in dist/screenshots/*.png; do
+            if [ -e "$old" ] && [ ! -e "build/screenshots/${old##*/}" ]; then echo "::notice::${old##*/} was not taken this run"; fi
+          done
+          rm -rf dist/screenshots
+          mv build/screenshots dist/screenshots
 
       - name: Crash report (when the self-test crashed)
         if: failure()
@@ -86,12 +127,14 @@ jobs:
         with:
           name: Ronin.app
           if-no-files-found: warn
+          # (After a failed self-test, what it did show is in build/screenshots; dist/ still holds the committed ones.)
           path: |
             dist/
             build/*.png
+            build/screenshots/
 
       - name: Commit packages to dist/
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && github.ref_type == 'branch'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -101,17 +144,3 @@ jobs:
           git commit -m "ci: package Ronin.app into dist/ (${GITHUB_SHA::7}) [skip ci]"
           git pull --rebase --autostash -X theirs origin "${GITHUB_REF_NAME}"
           git push origin "HEAD:${GITHUB_REF_NAME}"
-
-  linux:
-    name: Linux core build, test, balance
-    runs-on: ubuntu-latest
-    container: swift:6.0
-    steps:
-      - uses: actions/checkout@v4
-      - run: swift build
-      - run: swift test
-      - run: swift run -c release ronin-sim --mode all --stages 1-20 --seeds 10 --check
-      - run: swift run -c release ronin-sim --mode all --stages 1-25 --seeds 4 --perfect --check
-      - name: Slower hands (closer to a first-time player)
-        run: swift run -c release ronin-sim --mode shoshin --stages 1-12 --seeds 10 --reaction 0.3 --rate 5 --slips 0.05
-      - run: swift run -c release ronin-sim --trace 5 | tail -25
