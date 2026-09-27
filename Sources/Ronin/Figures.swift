@@ -22,19 +22,30 @@ enum Figures {
 
     static func piece(_ cast: Cast, _ frame: Frame) -> Piece {
         if let piece = cache[cast]?[frame] { return piece }
-        let sketch = Figure.sketch(cast, frame)
-        let bounds = sketch.bounds(margin: sketch.rimRadius * 3 + 2)
-        let w = CGFloat(sketch.width), h = CGFloat(sketch.height)
-        let piece = Piece(texture: sketch.image(in: bounds).map { SKTexture(cgImage: $0) } ?? SKTexture(),
-                          rect: CGRect(x: bounds.minX / w, y: bounds.minY / h, width: bounds.width / w, height: bounds.height / h))
+        let piece = render(Figure.sketch(cast, frame))
         cache[cast, default: [:]][frame] = piece
         return piece
     }
 
+    /// A sketch as a texture cut down to what it draws.
+    static func render(_ sketch: Sketch) -> Piece {
+        let bounds = sketch.bounds(margin: sketch.rimRadius * 3 + 2)
+        let w = CGFloat(sketch.width), h = CGFloat(sketch.height)
+        return Piece(texture: sketch.image(in: bounds).map { SKTexture(cgImage: $0) } ?? SKTexture(),
+                     rect: CGRect(x: bounds.minX / w, y: bounds.minY / h, width: bounds.width / w, height: bounds.height / h))
+    }
+
+    /// A body lying as it fell, its own way (drawn fresh for each death).
+    static func corpse(_ cast: Cast) -> Piece { render(Figure.corpse(cast, seed: UInt64.random(in: 0...UInt64.max))) }
+
     /// Puts a frame on a sprite for a ronin `ronin` points tall: its texture, and the size and anchor that keep the
     /// feet where the whole canvas would have them.
     static func apply(_ sprite: SKSpriteNode, _ cast: Cast, _ frame: Frame, ronin: CGFloat) {
-        let piece = piece(cast, frame)
+        apply(sprite, piece(cast, frame), cast, ronin: ronin)
+    }
+
+    /// Puts any drawn piece of a figure's canvas on a sprite, anchored at the feet.
+    static func apply(_ sprite: SKSpriteNode, _ piece: Piece, _ cast: Cast, ronin: CGFloat) {
         let full = size(cast, ronin: ronin)
         sprite.texture = piece.texture
         sprite.size = CGSize(width: full.width * piece.rect.width, height: full.height * piece.rect.height)
@@ -65,16 +76,25 @@ enum Figures {
         let upper: Bool
     }
 
-    private static var partCache: [Cast: [Severance: [Part]]] = [:]
+    private struct PartKey: Hashable {
+        let cast: Cast
+        let severance: Severance
+        let variant: Int
+    }
 
-    /// A foe cut in two along a severance, from the pose he is struck in, each part with the raw red face of the
-    /// cut across it and the white of the bone.
-    static func parts(_ cast: Cast, _ severance: Severance) -> [Part] {
-        if let parts = partCache[cast]?[severance] { return parts }
+    private static var partCache: [PartKey: [Part]] = [:]
+    /// How many ways a foe may be standing when he is cut apart.
+    static let variants = 4
+
+    /// A foe cut in two along a severance, from one of the poses a blow throws him into, each part with the raw red
+    /// face of the cut across it and the white of the bone.
+    static func parts(_ cast: Cast, _ severance: Severance, variant: Int = 0) -> [Part] {
+        let key = PartKey(cast: cast, severance: severance, variant: variant)
+        if let parts = partCache[key] { return parts }
         // Cut from the pose a blow throws him into, his weapon already leaving his hand (it falls on its own).
-        let frame = Frame.stagger(0)
-        let sketch = Figure.sketch(cast, frame, armed: false)
-        let body = Figure.anatomy(cast, frame)
+        let pose = Figure.struck(cast, variant: variant)
+        let sketch = Figure.sketch(cast, pose: pose)
+        let body = Figure.anatomy(cast, pose: pose)
         let w = CGFloat(sketch.width), h = CGFloat(sketch.height), far = (w + h) * 2
         func mid(_ a: CGPoint, _ b: CGPoint) -> CGPoint { CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2) }
         let through: CGPoint, angle: CGFloat
@@ -123,7 +143,7 @@ enum Figures {
             return Part(texture: drawn.texture, rect: drawn.rect, wound: CGPoint(x: through.x / w, y: through.y / h),
                         woundAngle: atan2(out.y, out.x), upper: region.upper)
         }
-        partCache[cast, default: [:]][severance] = parts
+        partCache[key] = parts
         return parts
     }
 
@@ -194,7 +214,7 @@ enum Figures {
         for cast in casts {
             for frame in Figure.frames(for: cast) { _ = piece(cast, frame) }
             guard cast != .hero else { continue }
-            for severance in [Severance.falling, .rising, .level, .legs, .head] { _ = parts(cast, severance) }
+            for severance in [Severance.falling, .rising, .level, .legs, .head] { _ = parts(cast, severance, variant: 0) }
             _ = weapon(cast)
         }
     }

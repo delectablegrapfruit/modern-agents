@@ -31,6 +31,27 @@ while index < arguments.count {
     index += 1
 }
 
+// `ronin-sheet out.svg dead` draws each kind's bodies as they fall (six apiece) and the poses they are cut apart from.
+if which == "dead" {
+    var body = "", y: CGFloat = 0, width: CGFloat = 0
+    for kind in Kind.allCases {
+        var x: CGFloat = 0, rowHeight: CGFloat = 0
+        let sketches = (0..<6).map { Figure.corpse(.foe(kind), seed: UInt64($0)) }
+            + (1..<4).map { Figure.sketch(.foe(kind), pose: Figure.struck(.foe(kind), variant: $0)) }
+        for sketch in sketches {
+            let w = CGFloat(sketch.width) * scale, h = CGFloat(sketch.height) * scale
+            body += "<rect x=\"\(x)\" y=\"\(y)\" width=\"\(w)\" height=\"\(h)\" fill=\"url(#sky)\"/>" + sketch.svg(x: x, y: y, scale: scale)
+            x += w + 6
+            width = max(width, x)
+            rowHeight = max(rowHeight, h)
+        }
+        y += rowHeight + 10
+    }
+    let svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"\(width)\" height=\"\(y)\"><defs><linearGradient id=\"sky\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#3a0a14\"/><stop offset=\"1\" stop-color=\"#f07030\"/></linearGradient></defs>\(body)</svg>"
+    try? svg.write(toFile: out, atomically: true, encoding: .utf8)
+    exit(0)
+}
+
 let casts: [Cast]
 switch which {
 case "all": casts = [.hero] + Kind.allCases.map { .foe($0) }

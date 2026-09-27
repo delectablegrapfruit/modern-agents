@@ -216,7 +216,8 @@ final class FoeSprite: SKNode {
             if dt == 0 {
                 frame = shown
             } else if moved > 0.04 {
-                walk += moved / max(3, height * 0.085 * Build.of(cast).stride)
+                // A frame for each twelfth of a stride travelled, so the feet keep to the ground.
+                walk += moved / max(1, height * Figure.stride(cast) / CGFloat(Frame.walkFrames))
                 frame = .walk(Int(walk) % Frame.walkFrames)
                 // Leaning into the stride, harder the faster it comes.
                 leanTarget = min(0.1, CGFloat(Double(moved) / dt) / ronin * 0.045)

@@ -113,6 +113,32 @@ final class RoninArtTests: XCTestCase {
         XCTAssertTrue(Figure.sketch(.hero, .idle(0)).underlay.isEmpty)
     }
 
+    func testTheDeadLieEachTheirOwnWay() {
+        for kind in Kind.allCases {
+            var outlines = Set<String>()
+            for seed in 0..<6 {
+                let body = Figure.corpse(.foe(kind), seed: UInt64(seed))
+                XCTAssertFalse(body.isEmpty)
+                XCTAssertTrue(body.fits(margin: 1), "\(kind) corpse \(seed) spills off its canvas")
+                // Lying down: wider than tall.
+                let box = body.bounds(margin: 0)
+                XCTAssertGreaterThan(box.width, box.height * 0.9, "\(kind) corpse \(seed) is not lying down")
+                outlines.insert(body.svg())
+            }
+            XCTAssertEqual(outlines.count, 6, "\(kind): every body falls its own way")
+            for variant in 1..<4 { XCTAssertTrue(Figure.sketch(.foe(kind), pose: Figure.struck(.foe(kind), variant: variant)).fits(margin: 1)) }
+        }
+    }
+
+    func testFeetKeepToTheGround() {
+        // A foe's walk advances a frame for each twelfth of its stride, which must be about what its legs cover.
+        for kind in Kind.allCases {
+            let stride = Figure.stride(.foe(kind))
+            XCTAssertGreaterThan(stride, 0.5, "\(kind)")
+            XCTAssertLessThan(stride, 1.6, "\(kind)")
+        }
+    }
+
     func testTheSheetIsSVG() {
         let svg = Figure.sketch(.hero, .idle(0)).svg()
         XCTAssertTrue(svg.hasPrefix("<g"))

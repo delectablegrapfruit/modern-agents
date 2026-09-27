@@ -49,8 +49,9 @@ where it is.
 - **The dead** come apart along the line of the cut: halved on the slant or through the waist, legs taken, heads
   taken (a warlord always loses his); run through or shot, they are thrown back and go down whole. The top half is
   flung away tumbling and trailing blood while the legs stand a moment, pumping, before they go over. Everything
-  lands and stays for the rest of the stage at ground level, overlapping what fell before in a low carpet of the
-  dead that the living walk through. Blood
+  lands, skids and turns over to lie however it will (the dead are cut apart from one of several struck poses, and
+  those who go down whole are drawn lying their own way, no two alike), and stays for the rest of the stage at ground
+  level, overlapping what fell before in a low carpet of the dead that the living walk through. Blood
   pools under the bodies, flecks the ground, and when you are hit, runs down the glass. You wear the stage's blood
   until the chiburi throws it off.
 - **Combo:** every kill and every deflected arrow adds one. The combo multiplies your score (×2 at 10, up to ×8).
@@ -101,9 +102,10 @@ make run     # builds build/Ronin.app (macOS 14+) and opens it
 - `RoninArt` holds the figures, and uses Foundation only. Each frame is posed from a small skeleton and drawn as a
   list of shapes. The app renders those shapes with Core Graphics, and `ronin-sheet` renders the same shapes as
   SVG, so the art can be looked at and tested anywhere.
-  - **Style:** the figures are cut rather than rounded, lean in the limb but never stick figures:
-    - long, faceted limbs tapering to sharp knees and elbows, the legs longest of all,
-    - a real chest and shoulders over a narrow waist, a head in proportion on a strong neck, about nine heads tall,
+  - **Style:** the figures are cut rather than rounded, with a fighting man's build about eight and a half heads tall:
+    - broad in the shoulders, chest, back and thighs, fine at the waist, knees, ankles and wrists, the muscle of each
+      limb swelling between its joints (a V from the shoulders to the waist; a calf behind the shin),
+    - a head in proportion on a strong neck,
     - the ronin dressed loose: a kimono bloused over the sash, great hanging sleeves, a full hakama that billows at
       the knee and sweeps out at the hem, and his coat as two long tails that stream out behind him when he moves,
     - slender curved blades with a bright edge,
@@ -119,8 +121,10 @@ make run     # builds build/Ronin.app (macOS 14+) and opens it
     brings it down into the ground; the blade dancer crosses both blades high and scissors them down; the archer
     shoots after kyūdō (bow raised over the head, drawn open as it comes down, held at full draw, released with the
     string hand flung back); the warlord stands in hassō with his nodachi, raises it to jōdan for a stamping cut,
-    and holds it upright before him to guard. Walks have eight frames, idles four, raised weapons three stages,
-    and blows a follow-through. In the app they lean into their stride, lurch into their blows and squash as they
+    and holds it upright before him to guard. Walks have twelve frames and a gait of their own: the ashigaru's drilled march, the shinobi's
+    low sprint with a moment off the ground, the oni's rolling stomp, the dancer's glide, the archer's bent-kneed stalk,
+    the warlord's slow, upright step. Each leg swings on its own phase, the knee folding as it comes through and giving
+    under the weight, and a walking foe advances a frame for each twelfth of its stride so its feet keep to the ground. In the app they lean into their stride, lurch into their blows and squash as they
     land; their positions ease, each change of pose blends out of the last, and they fade in as they arrive.
   - **The ronin** is drawn at a higher resolution and has the most frames: a breathing chūdan guard and the iai
     stance, and seven cuts (nukitsuke, kesa-giri, gyaku-kesa, shōmen, dō-giri, morote-zuki, sune-giri) of seven

@@ -22,7 +22,7 @@ final class Carnage {
     private let trails: SKNode
 
     private final class Body {
-        enum State { case falling, standing, flying, resting }
+        enum State { case falling, standing, flying, sliding, resting }
         let node: SKSpriteNode
         let cast: Cast
         var state: State
@@ -41,6 +41,9 @@ final class Carnage {
         var thin = false
         /// The line on the ground it comes to rest on: at the lane, or a little nearer the eye.
         var floor: CGFloat = 0
+        /// Sliding to a stop: the angle it settles at and how deep it lies.
+        var restAngle: CGFloat = 0
+        var restY: CGFloat = 0
 
         init(node: SKSpriteNode, cast: Cast, state: State) {
             self.node = node
@@ -99,7 +102,9 @@ final class Carnage {
     func sever(_ cast: Cast, _ severance: Figures.Severance, feet: CGPoint, facing: CGFloat, away: CGFloat, force: CGFloat = 1) {
         let full = Figures.size(cast, ronin: ronin)
         let near = CGFloat.random(in: 0...1)
-        for part in Figures.parts(cast, severance) {
+        // Cut from one of the several ways a blow throws a man, so no two come apart alike.
+        let variant = Int.random(in: 0..<Figures.variants)
+        for part in Figures.parts(cast, severance, variant: variant) {
             let node = SKSpriteNode(texture: part.texture)
             node.size = CGSize(width: full.width * part.rect.width, height: full.height * part.rect.height)
             node.xScale = facing
@@ -258,11 +263,16 @@ final class Carnage {
             case .falling:
                 // Dying frames: thrown back a step, the knees going, toppling; then down.
                 let k = min(body.frames.count - 1, Int(body.clock / 0.13))
-                Figures.apply(node, body.cast, body.frames[k], ronin: ronin)
                 let t = CGFloat(min(1, body.clock / 0.4))
                 node.position.y = groundY + (body.floor - groundY) * t
                 node.position.x -= body.facing * ronin * 0.5 * h * (1 - t)
-                if k == body.frames.count - 1 { rest(body, lying: true) }
+                if k == body.frames.count - 1 {
+                    // Down: lying however he happened to land.
+                    Figures.apply(node, Figures.corpse(body.cast), body.cast, ronin: ronin)
+                    rest(body, lying: true)
+                } else {
+                    Figures.apply(node, body.cast, body.frames[k], ronin: ronin)
+                }
             case .standing:
                 body.standFor -= dt
                 if body.standFor <= 0 {
@@ -291,8 +301,18 @@ final class Carnage {
                         body.spin *= 0.45
                         spatter(around: node.position.x, count: 4, floor: body.floor)
                     } else {
-                        rest(body, lying: false)
+                        land(body)
                     }
+                }
+            case .sliding:
+                // Skidding to a stop across the ground, turning over to lie as it will.
+                node.position.x += body.velocity.dx * h
+                body.velocity.dx *= CGFloat(pow(0.003, dt))
+                let ease = min(1, h * 12)
+                node.zRotation += (body.restAngle - node.zRotation) * ease
+                node.position.y += (body.restY - node.position.y) * ease
+                if abs(body.velocity.dx) < ronin * 0.06, abs(body.restAngle - node.zRotation) < 0.02 {
+                    rest(body, lying: false)
                 }
             }
         }
@@ -308,34 +328,42 @@ final class Carnage {
         return (abs(w * cos(angle)) + abs(h * sin(angle)), abs(w * sin(angle)) + abs(h * cos(angle)))
     }
 
-    /// Lays a body to rest where it fell: turned to lie flat (a long piece on its side, a weapon level) and sunk
-    /// until it lies on the ground, across whatever lies there already. Blood pools under it.
+    /// Where a flying body meets the ground: it keeps some of its way and skids, turning over toward however it will
+    /// lie: a long piece on its side, a weapon flat, never quite square, a few degrees one way or the other.
+    private func land(_ body: Body) {
+        let node = body.node
+        let size = node.size
+        let tall = size.height > size.width * 1.25, wide = size.width > size.height * 1.25
+        let quarter = CGFloat.pi / 2
+        var k = (node.zRotation / quarter).rounded()
+        let odd = abs(Int(k)) % 2 == 1
+        if (tall && !odd) || (wide && odd) { k += node.zRotation - k * quarter >= 0 ? 1 : -1 }
+        body.restAngle = k * quarter + CGFloat.random(in: -0.3...0.3) * (body.thin ? 0.4 : 1)
+        let (_, y) = extents(node, body.restAngle)
+        // A silhouette fills little of its box: sunk until the body, not the box, is on the ground; sometimes a little
+        // proud of it, lying across what fell before.
+        body.restY = body.floor + y * CGFloat.random(in: 0.34...0.56) * (body.thin ? 0.7 : 1)
+        body.velocity.dx *= 0.55
+        body.state = .sliding
+    }
+
+    /// Leaves a body where it came to rest, clear of the ronin's own ground, with blood pooling under it.
     private func rest(_ body: Body, lying: Bool) {
         let node = body.node
         body.state = .resting
         // Nothing comes to rest on the ronin's own ground: it slides off to one side.
         if abs(node.position.x - heroX) < ronin * 0.34 {
-            node.position.x = heroX + (node.position.x < heroX ? -1 : 1) * ronin * 0.34
+            let x = heroX + (node.position.x < heroX ? -1 : 1) * ronin * 0.34
+            node.run(.moveTo(x: x, duration: 0.1))
         }
-        let size = node.size
-        let ex: CGFloat
+        let width: CGFloat
         if lying {
-            // A whole body already on its back, anchored at the feet.
+            // A whole body, anchored at the feet, lying at the line it fell to.
             node.position.y = body.floor
-            ex = size.width * 0.42
+            width = node.size.width * 0.84
         } else {
-            let tall = size.height > size.width * 1.25, wide = size.width > size.height * 1.25
-            let quarter = CGFloat.pi / 2
-            var k = (node.zRotation / quarter).rounded()
-            let odd = abs(Int(k)) % 2 == 1
-            if (tall && !odd) || (wide && odd) { k += node.zRotation - k * quarter >= 0 ? 1 : -1 }
-            let angle = k * quarter
-            let (x, y) = extents(node, angle)
-            ex = x
-            // A silhouette fills little of its box: sink it until the body, not the box, is on the ground.
-            let y0 = body.floor + y * (body.thin ? 0.3 : 0.45)
-            node.run(.group([.rotate(toAngle: angle, duration: 0.12, shortestUnitArc: true), .moveTo(y: y0, duration: 0.12)]))
+            width = extents(node, node.zRotation).0 * 2
         }
-        if !body.thin { pool(at: node.position.x, width: ex * 2.4, floor: body.floor) }
+        if !body.thin { pool(at: node.position.x, width: width * 1.2, floor: body.floor) }
     }
 }

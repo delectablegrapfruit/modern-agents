@@ -35,7 +35,7 @@ public enum Frame: Hashable, Sendable {
     case idle(Int)
     /// The ronin before the first cut of a stage: blade sheathed, hand on the hilt, hips low (iai-goshi). 6 frames.
     case iai(Int)
-    /// 10 frames a stride.
+    /// 12 frames a stride.
     case walk(Int)
     /// Gathering (0, 1), raised (2), coiled to strike (3). The archer: raising the bow, and drawing it open.
     case windup(Int)
@@ -62,7 +62,7 @@ public enum Frame: Hashable, Sendable {
     /// Falling: struck, the knees buckling, kneeling over the planted sword, toppling, face down in the dirt.
     case fall(Int)
 
-    public static let walkFrames = 10
+    public static let walkFrames = 12
     public static let foeIdleFrames = 6
     public static let heroIdleFrames = 8
     public static let iaiFrames = 6
@@ -191,8 +191,8 @@ public struct Build: Sendable {
     /// How heavy the limbs are (1 is the ronin).
     public var bulk: CGFloat = 1
     /// Chest depth and waist, as shares of the height.
-    public var chest: CGFloat = 0.155
-    public var waist: CGFloat = 0.078
+    public var chest: CGFloat = 0.17
+    public var waist: CGFloat = 0.074
     public var head: CGFloat = 0.053
     /// How loose the clothes hang: 0 fitted, 1 the ronin's baggy hakama, great sleeves and full coat.
     public var baggy: CGFloat = 0
@@ -207,7 +207,6 @@ public struct Build: Sendable {
     public var back = Back.none
     public var eyes: RGB?
     public var accent: RGB
-    public var stride: CGFloat = 1
 
     public static func of(_ cast: Cast) -> Build {
         switch cast {
@@ -217,23 +216,23 @@ public struct Build: Sendable {
         case .foe(let kind):
             switch kind {
             case .grunt:
-                return Build(height: 0.95, bulk: 0.9, legs: .leggings, skirt: 0.14, weapon: .spear, gear: .jingasa,
+                return Build(height: 0.95, bulk: 1.0, legs: .leggings, skirt: 0.14, weapon: .spear, gear: .jingasa,
                              eyes: RGB(1, 0.22, 0.12), accent: RGB(0.75, 0.12, 0.1))
             case .runner:
-                return Build(height: 0.9, bulk: 0.82, chest: 0.135, waist: 0.068, legs: .leggings, weapon: .knife, gear: .hood,
-                             eyes: RGB(1, 0.6, 0.12), accent: RGB(1, 0.5, 0.1), stride: 1.25)
+                return Build(height: 0.9, bulk: 0.94, chest: 0.16, waist: 0.066, legs: .leggings, weapon: .knife, gear: .hood,
+                             eyes: RGB(1, 0.6, 0.12), accent: RGB(1, 0.5, 0.1))
             case .brute:
-                return Build(height: 1.22, bulk: 1.3, chest: 0.23, waist: 0.115, head: 0.048, legs: .bare, skirt: 0.1,
-                             weapon: .club, gear: .horns, eyes: RGB(1, 0.2, 0.1), accent: RGB(0.72, 0.32, 1.0), stride: 0.8)
+                return Build(height: 1.22, bulk: 1.38, chest: 0.26, waist: 0.12, head: 0.047, legs: .bare, skirt: 0.1,
+                             weapon: .club, gear: .horns, eyes: RGB(1, 0.2, 0.1), accent: RGB(0.72, 0.32, 1.0))
             case .dancer:
-                return Build(height: 0.97, bulk: 0.8, chest: 0.135, waist: 0.066, weapon: .twin, gear: .ponytail,
-                             eyes: RGB(0.3, 0.95, 1.0), accent: RGB(0.25, 0.9, 1.0), stride: 1.1)
+                return Build(height: 0.97, bulk: 0.92, chest: 0.155, waist: 0.064, weapon: .twin, gear: .ponytail,
+                             eyes: RGB(0.3, 0.95, 1.0), accent: RGB(0.25, 0.9, 1.0))
             case .archer:
-                return Build(height: 0.96, bulk: 0.85, sleeves: true, weapon: .bow, gear: .eboshi, back: .quiver,
+                return Build(height: 0.96, bulk: 0.96, chest: 0.165, waist: 0.07, sleeves: true, weapon: .bow, gear: .eboshi, back: .quiver,
                              eyes: RGB(0.6, 1.0, 0.3), accent: RGB(0.5, 0.9, 0.3))
             case .warlord:
-                return Build(height: 1.3, bulk: 1.1, chest: 0.19, waist: 0.095, head: 0.049, sleeves: true, skirt: 0.18, plated: true,
-                             weapon: .nodachi, gear: .kabuto, back: .banner, eyes: RGB(1, 0.78, 0.2), accent: Palette.gold, stride: 0.85)
+                return Build(height: 1.3, bulk: 1.15, chest: 0.21, waist: 0.092, head: 0.05, sleeves: true, skirt: 0.18, plated: true,
+                             weapon: .nodachi, gear: .kabuto, back: .banner, eyes: RGB(1, 0.78, 0.2), accent: Palette.gold)
             }
         }
     }
@@ -308,10 +307,15 @@ public enum Figure {
 
     /// Draws one frame (`armed: false` leaves the weapon out).
     public static func sketch(_ cast: Cast, _ frame: Frame, armed: Bool = true) -> Sketch {
-        let build = Build.of(cast)
-        let H = pixelHeight(cast) * build.height
         var pose = pose(cast, frame)
         pose.armed = pose.armed && armed
+        return sketch(cast, pose: pose)
+    }
+
+    /// Draws a figure in any pose.
+    public static func sketch(_ cast: Cast, pose: Pose) -> Sketch {
+        let build = Build.of(cast)
+        let H = pixelHeight(cast) * build.height
         var drawer = Drawer(pose: pose, build: build, H: H)
         drawer.draw()
         var sketch = drawer.pen.sketch
@@ -378,15 +382,16 @@ public enum Figure {
         public var height: CGFloat
     }
 
-    public static func anatomy(_ cast: Cast, _ frame: Frame) -> Anatomy {
+    public static func anatomy(_ cast: Cast, _ frame: Frame) -> Anatomy { anatomy(cast, pose: pose(cast, frame)) }
+
+    public static func anatomy(_ cast: Cast, pose: Pose) -> Anatomy {
         let build = Build.of(cast)
         let H = pixelHeight(cast) * build.height
-        let pose = pose(cast, frame)
         let drawer = Drawer(pose: pose, build: build, H: H)
         let r = build.head * H
         return Anatomy(hip: drawer.hip, waist: drawer.torsoPoint(0.3, 0), chest: drawer.torsoPoint(0.68, 0), neck: drawer.neck,
                        head: CGPoint(x: drawer.neck.x + drawer.headUp.x * r * 1.25, y: drawer.neck.y + drawer.headUp.y * r * 1.25),
-                       headRadius: r, knee: CGPoint(x: drawer.hip.x + sin(pose.front.thigh) * 0.27 * H, y: drawer.hip.y - cos(pose.front.thigh) * 0.27 * H),
+                       headRadius: r, knee: CGPoint(x: drawer.hip.x + sin(pose.front.thigh) * thigh * H, y: drawer.hip.y - cos(pose.front.thigh) * thigh * H),
                        height: H)
     }
 
@@ -402,38 +407,7 @@ public enum Figure {
         case .iai(let k):
             return breathe(iai(), k, of: Frame.iaiFrames)
         case .walk(let k):
-            var p = base
-            let phase = CGFloat(k) / CGFloat(Frame.walkFrames) * 2 * .pi
-            func leg(_ phi: CGFloat) -> (thigh: CGFloat, shin: CGFloat) {
-                let thigh = 0.42 * build.stride * sin(phi)
-                return (thigh, thigh - 0.7 * build.stride * max(0, -cos(phi)) + 0.06)
-            }
-            p.front = leg(phase)
-            p.back = leg(phase + .pi)
-            p.lean += 0.03 * build.stride + 0.015 * cos(2 * phase)
-            // Down on the contact, up through the pass; the heavy ones rock with it, the warlord hardly at all.
-            let heavy = cast == .foe(.brute)
-            p.lift = -(heavy ? 0.026 : cast == .foe(.warlord) ? 0.01 : 0.017) * cos(2 * phase - 0.5)
-            if heavy {
-                p.lean += 0.04 * sin(phase)
-                p.tilt = 0.06 * sin(phase)
-            }
-            p.wave = CGFloat(k) / CGFloat(Frame.walkFrames)
-            p.stream = 0.3 * build.stride
-            // The hands ride the stride; a free arm swings against the legs; the weapon sways.
-            if let hold = p.hold { p.hold = v(hold.x + 0.01 * sin(phase), hold.y + 0.012 * sin(2 * phase)) }
-            p.arm2.upper += 0.3 * sin(phase)
-            p.arm2.fore += 0.2 * sin(phase)
-            p.blade += 0.05 * sin(phase)
-            if cast == .foe(.runner) {
-                // The shinobi run: bent low, both arms swept back.
-                p.lean = 0.62 + 0.02 * cos(2 * phase)
-                p.hold = nil
-                p.arm = (-1.25 + 0.12 * sin(phase), -0.95)
-                p.arm2 = (-1.05 - 0.12 * sin(phase), -0.7)
-                p.blade = -1.75
-            }
-            return p
+            return walk(cast, k)
         case .windup(let k) where cast == .foe(.archer):
             // Kyūdō: the bow raised (uchiokoshi), then drawn open as it comes down (hikiwake).
             let raised = key(cast, .windup(0)), drawing = key(cast, .windup(1)), full = key(cast, .aim)
@@ -497,6 +471,94 @@ public enum Figure {
         default:
             return key(cast, frame)
         }
+    }
+
+    /// How a figure walks: how far each thigh swings, how high the knee folds as the leg comes through, how far it
+    /// gives under the weight, how much the hips rise and fall (and leave the ground, running), how far the body
+    /// leans and rocks, how the free arm swings and the weapon rides.
+    struct Gait {
+        var swing: CGFloat
+        var knee: CGFloat
+        var sink: CGFloat
+        var bob: CGFloat
+        var lean: CGFloat
+        var sway: CGFloat
+        var rock: CGFloat
+        var arms: CGFloat
+        var carry: CGFloat
+        var flight: CGFloat = 0
+    }
+
+    static func gait(_ cast: Cast) -> Gait {
+        switch cast {
+        case .hero: return Gait(swing: 0.36, knee: 0.9, sink: 0.12, bob: 0.008, lean: 0.03, sway: 0.02, rock: 0.02, arms: 0.3, carry: 0.01)
+        case .foe(let kind):
+            switch kind {
+            // The ashigaru: a drilled march, spear level, knees coming well up.
+            case .grunt: return Gait(swing: 0.4, knee: 1.0, sink: 0.14, bob: 0.01, lean: 0.05, sway: 0.02, rock: 0.025, arms: 0.3, carry: 0.014)
+            // The shinobi: a low sprint, heels kicking high, both feet off the ground as the legs pass.
+            case .runner:
+                return Gait(swing: 0.64, knee: 1.6, sink: 0.22, bob: 0.012, lean: 0, sway: 0.03, rock: 0.04, arms: 0.35, carry: 0, flight: 0.03)
+            // The oni: a heavy, rolling stomp, sinking deep into each step, the head rocking, the club bouncing.
+            case .brute: return Gait(swing: 0.3, knee: 0.75, sink: 0.26, bob: 0.024, lean: 0.05, sway: 0.06, rock: 0.09, arms: 0.2, carry: 0.022)
+            // The dancer: long, gliding steps, level hips, the blades trailing and turning with the stride.
+            case .dancer: return Gait(swing: 0.52, knee: 1.05, sink: 0.08, bob: 0.004, lean: 0.03, sway: 0.015, rock: 0.02, arms: 0.16, carry: 0)
+            // The archer: a wary, bent-kneed stalk, the bow held ready.
+            case .archer: return Gait(swing: 0.34, knee: 0.85, sink: 0.2, bob: 0.006, lean: 0.07, sway: 0.015, rock: 0.015, arms: 0.28, carry: 0.01)
+            // The warlord: a slow, upright march that hardly moves the blade.
+            case .warlord: return Gait(swing: 0.33, knee: 0.66, sink: 0.1, bob: 0.004, lean: 0, sway: 0.01, rock: 0.012, arms: 0, carry: 0.005)
+            }
+        }
+    }
+
+    /// How far a figure travels in one full stride (two steps), in its own heights: so its feet keep to the ground.
+    public static func stride(_ cast: Cast) -> CGFloat { 4 * (thigh + shin) * 0.97 * sin(gait(cast).swing) }
+
+    /// A walking frame. Each leg swings on its own phase: through the stance the foot holds the ground as the body
+    /// passes over it, the knee giving a little under the weight; through the swing the knee folds and the foot comes
+    /// forward clear of the ground, reaching out straight for the next step.
+    static func walk(_ cast: Cast, _ k: Int) -> Pose {
+        var p = stance(cast)
+        let g = gait(cast)
+        let phase = CGFloat(k) / CGFloat(Frame.walkFrames) * 2 * .pi
+        func leg(_ phi: CGFloat) -> (thigh: CGFloat, shin: CGFloat) {
+            let thigh = g.swing * sin(phi)
+            let swinging = max(0, cos(phi)), loaded = max(0, -cos(phi)) * max(0, sin(phi))
+            return (thigh, thigh - g.knee * pow(swinging, 1.3) - g.sink * loaded + 0.04)
+        }
+        p.front = leg(phase)
+        p.back = leg(phase + .pi)
+        // Up as the legs pass, down as they spread; running, off the ground altogether for a moment.
+        p.lift = g.bob * cos(2 * phase) + g.flight * max(0, cos(2 * phase))
+        p.lean += g.lean + g.sway * cos(2 * phase)
+        p.tilt = g.rock * sin(phase)
+        p.wave = CGFloat(k) / CGFloat(Frame.walkFrames)
+        p.stream = 0.25 + 3 * g.swing * g.swing
+        // The free arm swings against the near leg; a weapon held rides the stride.
+        p.arm2.upper -= g.arms * sin(phase)
+        p.arm2.fore -= g.arms * 0.6 * sin(phase)
+        if let hold = p.hold { p.hold = v(hold.x + g.carry * 0.5 * sin(phase), hold.y + g.carry * cos(2 * phase)) }
+        p.blade += g.carry * 3 * sin(phase)
+        switch cast {
+        case .foe(.runner):
+            // Bent low, both arms swept back, pumping.
+            p.lean = 0.6 + 0.03 * cos(2 * phase)
+            p.hold = nil
+            p.arm = (-1.25 + 0.3 * sin(phase), -0.95 + 0.2 * sin(phase))
+            p.arm2 = (-1.05 - 0.3 * sin(phase), -0.7 - 0.2 * sin(phase))
+            p.blade = -1.75
+        case .foe(.brute):
+            p.blade += 0.08 * cos(2 * phase)
+        case .foe(.dancer):
+            // The arms flow with the stride, the blades trailing behind them.
+            p.arm.upper += 0.12 * sin(phase)
+            p.arm2.upper -= 0.12 * sin(phase)
+            p.blade += 0.12 * sin(phase + 0.6)
+            p.blade2 -= 0.12 * sin(phase + 0.6)
+        default:
+            break
+        }
+        return p
     }
 
     /// Breathing: the chest rises and settles, the point of the blade drifts, the cloth stirs.
@@ -936,6 +998,47 @@ public enum Figure {
         return p
     }
 
+    /// The pose a blow throws a foe into, a little different each time: variant 0 is the stagger itself, the others
+    /// thrown back harder or twisted, arms flung their own ways. Cutting him apart starts from one of these.
+    public static func struck(_ cast: Cast, variant: Int) -> Pose {
+        var p = pose(cast, .stagger(0))
+        p.armed = false
+        guard variant > 0 else { return p }
+        var rng = SeededRNG(seed: UInt64(variant) &* 0x9E37 &+ 17)
+        func r(_ a: Double, _ b: Double) -> CGFloat { CGFloat(rng.range(a, b)) }
+        p.grip = .one
+        p.hold = nil
+        p.hold2 = nil
+        p.lean = r(-0.55, -0.1)
+        p.tilt = r(-0.7, 0.3)
+        p.front = (r(0.2, 0.75), r(-0.1, 0.35))
+        p.back = (r(-0.6, -0.1), r(-0.9, -0.3))
+        p.arm = (r(0.2, 2.9), r(-0.3, 2.6))
+        p.arm2 = (r(-2.2, 1.0), r(-2.0, 1.2))
+        return p
+    }
+
+    /// A body lying where it fell, cut down whole: on its back or face down, arms and legs thrown out as they landed,
+    /// no two alike.
+    public static func corpse(_ cast: Cast, seed: UInt64) -> Sketch {
+        var rng = SeededRNG(seed: seed &* 0x2545F491 &+ 3)
+        func r(_ a: Double, _ b: Double) -> CGFloat { CGFloat(rng.range(a, b)) }
+        var p = die(cast, 3)
+        let faceDown = rng.chance(0.4)
+        p.roll = faceDown ? r(1.35, 1.62) : -r(1.4, 1.68)
+        p.lean = r(-0.3, 0.3)
+        p.tilt = r(-0.7, 0.7)
+        p.front = (r(-0.2, 1.1), r(-0.4, 0.4))
+        p.back = (r(-0.5, 0.6), r(-1.2, 0.2))
+        // Arms: over the head, out to the side, or trapped under him.
+        p.arm = (r(0.4, 3.1), r(0.0, 3.2))
+        p.arm2 = (r(-1.5, 2.9), r(-1.5, 3.0))
+        p.wave = r(0, 1)
+        p.stream = 0
+        p.drag = 0
+        return sketch(cast, pose: p)
+    }
+
     /// Where a cut starts (its kamae) and ends (full extension), and the arc its blade sweeps.
     struct CutKeys {
         var start: Pose
@@ -1236,9 +1339,9 @@ private func unit(_ a: CGPoint, _ b: CGPoint) -> CGPoint {
     return CGPoint(x: (b.x - a.x) / length, y: (b.y - a.y) / length)
 }
 
-// Long in the leg and the arm, lean in the limb, with a real chest and shoulders and a head in proportion: a figure
-// about nine heads tall.
-private let thigh: CGFloat = 0.285, shin: CGFloat = 0.29, torso: CGFloat = 0.29
+// A fighting man's build, about eight and a half heads tall: broad in the shoulders, chest and thighs, fine at the
+// waist, the wrists, the knees and the ankles, the muscle of each limb swelling between its joints.
+private let thigh: CGFloat = 0.28, shin: CGFloat = 0.285, torso: CGFloat = 0.295
 private let upperArm: CGFloat = 0.178, forearm: CGFloat = 0.168
 
 /// Two-bone reach from `root`: the hand lands on `target` (or as near as the arm allows), the elbow bent below the
@@ -1444,11 +1547,12 @@ private struct Drawer {
             fill([at(knee, n, (0.036 + 0.03 * b) * H), front, CGPoint(x: back.x + trail.x, y: back.y + trail.y),
                   CGPoint(x: billow.x + trail.x * 0.5, y: billow.y), at(knee, n, -(0.036 + 0.034 * b) * H)], paint)
         case .leggings:
-            segment(hip, knee, 0.064 * H * k, 0.07 * H * k, 0.038 * H * k, paint)
-            segment(knee, ankle, 0.04 * H * k, 0.048 * H * k, 0.024 * H * k, paint, bulge: -0.35, at: 0.3)
+            // A full thigh narrowing hard to the knee; a calf swelling behind the shin and down to a fine ankle.
+            segment(hip, knee, 0.074 * H * k, 0.088 * H * k, 0.036 * H * k, paint, bulge: 0.22, at: 0.34)
+            segment(knee, ankle, 0.038 * H * k, 0.058 * H * k, 0.02 * H * k, paint, bulge: -0.45, at: 0.3)
         case .bare:
-            segment(hip, knee, 0.06 * H * k, 0.07 * H * k, 0.036 * H * k, paint)
-            segment(knee, ankle, 0.04 * H * k, 0.05 * H * k, 0.024 * H * k, paint, bulge: -0.4, at: 0.3)
+            segment(hip, knee, 0.08 * H * k, 0.096 * H * k, 0.038 * H * k, paint, bulge: 0.25, at: 0.34)
+            segment(knee, ankle, 0.042 * H * k, 0.064 * H * k, 0.021 * H * k, paint, bulge: -0.5, at: 0.3)
         }
         // A foot: long and narrow, drawn to a point.
         fill([at(ankle, CGPoint(x: -1, y: 0), 0.018 * H), at(ankle, CGPoint(x: 0, y: 1), 0.014 * H),
@@ -1459,10 +1563,11 @@ private struct Drawer {
     mutating func arm(_ ends: (elbow: CGPoint, hand: CGPoint), _ paint: Paint) {
         let (elbow, hand) = ends
         let k = build.bulk
-        segment(shoulder, elbow, 0.056 * H * k, 0.058 * H * k, 0.032 * H * k, paint, bulge: 0.3, at: 0.3)
-        segment(elbow, hand, 0.036 * H * k, 0.04 * H * k, 0.022 * H * k, paint, bulge: 0.25, at: 0.3)
-        // The cap of the shoulder.
-        let r = 0.034 * H * k
+        // A round shoulder, a full upper arm pinching in to the elbow, a forearm thick below the elbow and fine at the
+        // wrist.
+        segment(shoulder, elbow, 0.058 * H * k, 0.068 * H * k, 0.03 * H * k, paint, bulge: 0.3, at: 0.36)
+        segment(elbow, hand, 0.034 * H * k, 0.048 * H * k, 0.02 * H * k, paint, bulge: 0.25, at: 0.24)
+        let r = 0.04 * H * k
         pen.ellipse(CGRect(x: shoulder.x - r, y: shoulder.y - r * 0.9, width: r * 2, height: r * 1.9), paint)
         // The fist.
         let d = unit(elbow, hand), n = CGPoint(x: -d.y, y: d.x)
@@ -1482,10 +1587,12 @@ private struct Drawer {
     /// The torso in profile: a deep chest and a flat back over a narrow waist; skirt or tassets; the sash; plates.
     mutating func trunk() {
         let c = build.chest * H, wst = build.waist * H, b = build.baggy
+        // A V: a deep chest and a broad back over a narrow waist, the trapezius sloping up to the neck.
         fill([
-            torsoPoint(0, -wst * 0.55), torsoPoint(0, wst * 0.5), torsoPoint(0.32, wst * 0.42), torsoPoint(0.62, c * 0.62),
-            torsoPoint(0.84, c * 0.52), torsoPoint(0.97, c * 0.2), torsoPoint(1.02, -c * 0.12), torsoPoint(0.86, -c * 0.42),
-            torsoPoint(0.55, -c * 0.34), torsoPoint(0.3, -wst * 0.5),
+            torsoPoint(0, -wst * 0.6), torsoPoint(0, wst * 0.5), torsoPoint(0.28, wst * 0.46), torsoPoint(0.52, c * 0.5),
+            torsoPoint(0.7, c * 0.64), torsoPoint(0.86, c * 0.56), torsoPoint(0.98, c * 0.24), torsoPoint(1.06, c * 0.02),
+            torsoPoint(1.07, -c * 0.16), torsoPoint(0.94, -c * 0.52), torsoPoint(0.7, -c * 0.55), torsoPoint(0.46, -c * 0.38),
+            torsoPoint(0.26, -wst * 0.56),
         ], body)
         if b > 0 {
             // A loose kimono over it: bloused out over the sash front and back, the collar standing off the neck, the
