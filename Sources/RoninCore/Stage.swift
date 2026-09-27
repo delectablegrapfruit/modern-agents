@@ -1,7 +1,8 @@
 import Foundation
 
 /// How hard a stage is. Stage 1 is spearmen alone; each stage after brings more foes, faster, from a wider cast.
-/// Every fifth stage ends with a warlord.
+/// Every fifth stage ends with a warlord. By stage 25 every setting is at full strength; past it the foes only keep
+/// quickening, up to stage 50, and the warlords keep hardening, so an endless run always ends somewhere.
 public struct Difficulty: Codable, Equatable, Sendable {
     public var stage: Int
     /// Multiplies every foe's speed.
@@ -21,7 +22,10 @@ public struct Difficulty: Codable, Equatable, Sendable {
         let s = Double(max(1, stage) - 1)
         self.stage = max(1, stage)
         self.mode = mode
-        pace = min(1.75, 1 + 0.04 * s) * mode.pace
+        // Past stage 25 foes come a little faster each stage, up to a seventh faster by stage 50. Wind-ups stay as
+        // they are, so every blow can still be met.
+        let beyond = Double(max(0, self.stage - 25))
+        pace = (min(1.75, 1 + 0.04 * s) + min(0.25, 0.01 * beyond)) * mode.pace
         windup = max(0.55, 1 - 0.028 * s) * mode.windup
         interval = max(0.34, 1.3 - 0.07 * s) * mode.interval
         crowd = max(2, min(10, 3 + (self.stage + 1) / 2) + mode.crowd)
@@ -29,8 +33,8 @@ public struct Difficulty: Codable, Equatable, Sendable {
         boss = self.stage % 5 == 0
     }
 
-    /// The warlord's cuts: 10 at stage 5, three more every boss after, at most 22.
-    public var warlordHP: Int { min(22, Kind.warlord.baseHP + 3 * max(0, stage / 5 - 1)) }
+    /// The warlord's cuts: 12 at stage 5, four more every warlord after, at most 40 (from stage 40).
+    public var warlordHP: Int { min(40, Kind.warlord.baseHP + 4 * max(0, stage / 5 - 1)) }
 
     /// Which of the roster carries the stage's gourd: a spearman or a runner, never one of the first few.
     public func bearer(in roster: [Kind], rng: inout SeededRNG) -> Int? {
@@ -46,7 +50,8 @@ public struct Difficulty: Codable, Equatable, Sendable {
     public func roster(rng: inout SeededRNG) -> [Kind] {
         let count = min(72, 12 + 4 * stage)
         var weights: [(Kind, Double)] = [(.grunt, 1)]
-        if stage >= 2 { weights.append((.runner, 0.30 + 0.02 * Double(stage))) }
+        // Runners stop growing more common at stage 25, so long runs don't turn into nothing but runners.
+        if stage >= 2 { weights.append((.runner, min(0.80, 0.30 + 0.02 * Double(stage)))) }
         if stage >= 3 { weights.append((.brute, min(0.40, 0.16 + 0.012 * Double(stage)))) }
         if stage >= 4 { weights.append((.archer, min(0.30, 0.12 + 0.01 * Double(stage)))) }
         if stage >= 6 { weights.append((.dancer, min(0.45, 0.14 + 0.015 * Double(stage)))) }

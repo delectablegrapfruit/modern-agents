@@ -16,10 +16,28 @@ public struct FightStats: Codable, Equatable, Sendable {
     public var wounds = 0
     public var damage = 0
     public var bestCombo = 0
-    /// Cuts the warlord turned aside.
+    /// Cuts the warlord turned aside with his guard set, and cuts that glanced off it while it was still coming up.
     public var parried = 0
+    public var glanced = 0
 
     public init() {}
+}
+
+extension FightStats {
+    /// Reads a saved fight's stats, filling in counts that saves from before them lack.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        kills = try c.decode(Int.self, forKey: .kills)
+        cuts = try c.decode(Int.self, forKey: .cuts)
+        whiffs = try c.decode(Int.self, forKey: .whiffs)
+        deflects = try c.decode(Int.self, forKey: .deflects)
+        arrowKills = try c.decode(Int.self, forKey: .arrowKills)
+        wounds = try c.decode(Int.self, forKey: .wounds)
+        damage = try c.decode(Int.self, forKey: .damage)
+        bestCombo = try c.decode(Int.self, forKey: .bestCombo)
+        parried = try c.decode(Int.self, forKey: .parried)
+        glanced = try c.decodeIfPresent(Int.self, forKey: .glanced) ?? 0
+    }
 }
 
 public enum FightEvent: Equatable, Sendable {
@@ -42,13 +60,17 @@ public enum FightEvent: Equatable, Sendable {
     case bloodlust(Bool)
     /// Every 25th link of a combo.
     case milestone(Int)
-    /// The gourd-bearer fell: a heart back (`restored`), or points if none was missing.
+    /// The gourd-bearer fell: a heart back (`restored`), or `Fight.gourdBonus` points if none was missing.
     case healed(foe: Int, restored: Bool)
     /// The gourd-bearer got away with the gourd.
     case fled(foe: Int)
-    /// The warlord raised his guard, turned a cut aside, or called for help.
+    /// The warlord began to raise his guard. It is set `Tuning.guardRise` later (`Foe.guardSet`).
     case guarded(foe: Int)
+    /// A cut met the warlord's guard. Set, it turned the cut aside: the ronin is thrown off balance (`isStumbling`),
+    /// the combo is gone, and the warlord answers. Still coming up, it glanced the cut off: the ronin is not off
+    /// balance, and nothing is lost either side.
     case parried(Side, foe: Int)
+    /// The warlord called men in from both ends of the lane.
     case summoned(foe: Int, allies: [Int])
     case ended(Outcome)
 }
@@ -57,8 +79,8 @@ public enum FightEvent: Equatable, Sendable {
 ///
 /// Cut left or right. A cut hits the nearest foe (or incoming arrow) on that side whose near edge is within reach;
 /// with nothing in reach it is a whiff, and the ronin stumbles and can't cut for a moment. Every kill and deflection
-/// adds to the combo, which multiplies the score and at 20 brings on bloodlust (longer reach). Any wound or whiff
-/// breaks it. Clear the roster to win; lose five hit points and you fall.
+/// adds to the combo, which multiplies the score and at 20 brings on bloodlust (longer reach). Any wound, whiff or
+/// parried cut breaks it. Clear the roster to win; lose all your hearts (the mode's `hearts`) and you fall.
 public struct Fight: Codable, Equatable, Sendable {
     public enum Target: Codable, Equatable, Sendable {
         case foe(Int)
@@ -83,9 +105,10 @@ public struct Fight: Codable, Equatable, Sendable {
     public var spawnTimer = Tuning.firstSpawn
     /// Seconds until the ronin can cut again after a cut that landed.
     public var cooldown = 0.0
-    /// A cut pressed during the cooldown, made the moment it ends.
+    /// A cut pressed during the cooldown, made the moment it ends at whatever is in reach then. If that is nothing on
+    /// the side just cut, or a guard there, it is let go.
     public var held: Side?
-    /// Seconds left off balance after a whiff.
+    /// Seconds left off balance after a whiff or a parried cut.
     public var stumble = 0.0
     public var facing = Side.right
     public var combo = 0
@@ -95,7 +118,8 @@ public struct Fight: Codable, Equatable, Sendable {
     public var stats = FightStats()
     public var outcome: Outcome?
     public var bossID: Int?
-    /// Which of the roster carries the gourd, and whether its chance is spent (drunk, or carried off).
+    /// Which of the roster carries the gourd, and whether its chance is spent: drunk for a heart, caught with no heart
+    /// missing (for points), or carried off. It does not mean a heart came back (`FightEvent.healed` says that).
     public var bearerIndex: Int?
     public var healed = false
     /// Plays the fight when set (the self-test and the balance runs).
@@ -145,6 +169,8 @@ public struct Fight: Codable, Equatable, Sendable {
     public var isStumbling: Bool { stumble > 0 }
     public var boss: Foe? { bossID.flatMap { foe($0) } }
     public var setting: Setting { Setting.of(stage: stage) }
+    /// What catching the gourd-bearer scores when no heart is missing.
+    public var gourdBonus: Int { points(Tuning.gourdPoints) }
 
     public func foe(_ id: Int) -> Foe? { foes.first { $0.id == id } }
 
@@ -203,14 +229,24 @@ public struct Fight: Codable, Equatable, Sendable {
             events.append(.deflected(side, arrow: id))
             raiseCombo(&events)
         case .foe(let id)? where foes.first(where: { $0.id == id })?.phase == .guarding:
-            // Turned aside: the ronin is thrown off balance and the warlord answers.
             guard let i = foes.firstIndex(where: { $0.id == id }) else { return }
+            guard foes[i].guardSet else {
+                // The guard is still coming up, and the cut was on its way before it could be seen: it glances off.
+                // Nothing is lost either side, and the guard goes on up.
+                cooldown = Tuning.cooldown
+                stats.glanced += 1
+                events.append(.parried(side, foe: id))
+                return
+            }
+            // Turned aside: the ronin is thrown off balance and the warlord answers, a single blow (never the first
+            // of a pair), stepping in to land it.
             stumble = Tuning.parried * mode.stumble
             stats.parried += 1
             breakCombo(&events)
             events.append(.parried(side, foe: id))
             let riposte = foes[i].distance <= foes[i].contact + 0.06
             foes[i].enter(riposte ? .windup : .advancing, for: riposte ? foes[i].windup * 0.45 : 0)
+            foes[i].chained = riposte
             foes[i].guardRest = rng.range(0.9, 1.6)
             if riposte { events.append(.raised(foe: id)) }
         case .foe(let id)?:
@@ -255,7 +291,7 @@ public struct Fight: Codable, Equatable, Sendable {
             cooldown = max(0, cooldown - h)
             if cooldown == 0, let side = held {
                 held = nil
-                strike(side, into: &events)
+                if heldCutLands(side) { strike(side, into: &events) }
             }
         }
         arrive(&events)
@@ -263,6 +299,19 @@ public struct Fight: Codable, Equatable, Sendable {
         fly(&events)
         foes.removeAll { $0.phase == .dying }
         settle(&events)
+    }
+
+    /// Whether a press held through the cooldown is made. One on the side just cut is a second cut at the man just
+    /// struck, pressed before the first could be seen to land: if he is no longer there to cut (knocked back, in the
+    /// air, felled) or has his guard coming up, it is let go rather than whiffed or thrown against the guard. A press
+    /// to the other side is made whatever it finds, so pressing both ways at once still whiffs.
+    private func heldCutLands(_ side: Side) -> Bool {
+        guard side == facing else { return true }
+        switch target(side) {
+        case .foe(let id)?: return foe(id)?.phase != .guarding
+        case .arrow?: return true
+        case nil: return false
+        }
     }
 
     private mutating func settle(_ events: inout [FightEvent]) {
@@ -343,8 +392,19 @@ public struct Fight: Codable, Equatable, Sendable {
             foes[i].x = foes[i].leapFrom + (foes[i].leapTo - foes[i].leapFrom) * t
             if foes[i].timer <= 0 {
                 foes[i].x = foes[i].leapTo
-                foes[i].enter(.recoil, for: 0.12)
                 events.append(.landed(foe: foes[i].id))
+                let lander = foes[i]
+                let ahead = foes.contains {
+                    $0.id != lander.id && $0.targetable && Side.of($0.x) == Side.of(lander.x) && $0.distance < lander.distance
+                }
+                if lander.kind == .warlord, !ahead, rng.chance(0.5) {
+                    // Half the time the warlord comes down cutting, if nobody stands between: his blade is up as he
+                    // lands, and he steps in to bring it down.
+                    foes[i].enter(.windup, for: max(Tuning.quickBlow, foes[i].windup * 0.8))
+                    events.append(.raised(foe: foes[i].id))
+                } else {
+                    foes[i].enter(.recoil, for: 0.12)
+                }
             }
         }
         for side in Side.allCases {
@@ -355,8 +415,9 @@ public struct Fight: Codable, Equatable, Sendable {
             for i in order {
                 var f = foes[i]
                 if f.bearer, f.kind != .warlord {
-                    // The gourd-bearer keeps his own distance, and nobody queues behind him.
-                    bear(&f, side: side, &events)
+                    // The gourd-bearer keeps his own distance and nobody queues behind him, but he never walks
+                    // through the man in front.
+                    bear(&f, side: side, front: front, &events)
                     foes[i] = f
                     continue
                 }
@@ -377,7 +438,7 @@ public struct Fight: Codable, Equatable, Sendable {
                     if f.distance > stop { f.x = side.sign * max(stop, f.distance - pace * h) }
                     // Close to the ronin, the warlord raises his guard and walks in behind it.
                     if boss, f.guardRest <= 0, f.gap < reach + 0.12, rng.chance(2.0 * h) {
-                        f.enter(.guarding, for: rng.range(0.6, 1.05))
+                        f.enter(.guarding, for: Tuning.guardRise + rng.range(0.6, 1.05))
                         events.append(.guarded(foe: f.id))
                         break
                     }
@@ -387,8 +448,11 @@ public struct Fight: Codable, Equatable, Sendable {
                                 f.enter(.aiming, for: f.windup)
                                 events.append(.raised(foe: f.id))
                             }
-                        } else if f.distance <= f.contact + 0.0005 {
-                            f.enter(.windup, for: f.windup * (1 - 0.45 * fury))
+                        } else if f.distance <= f.contact + 0.0005, front == nil, !landing(on: side, before: f) {
+                            // Only the man in front strikes; the rest wait their turn, and nobody raises his weapon
+                            // with a comrade about to come down in front of him.
+                            let quick = f.windup * (1 - 0.45 * fury)
+                            f.enter(.windup, for: boss ? max(Tuning.quickBlow, quick) : quick)
                             events.append(.raised(foe: f.id))
                         }
                     }
@@ -399,15 +463,25 @@ public struct Fight: Codable, Equatable, Sendable {
                         f.phase = .advancing
                         f.span = 0
                         f.guardRest = rng.range(0.8, 1.6) * (1 - 0.4 * fury)
+                        // Brought in close behind it, he strikes the moment it drops.
+                        if f.distance <= f.contact + 0.01, front == nil {
+                            f.enter(.windup, for: max(Tuning.quickBlow, f.windup * 0.75 * (1 - 0.45 * fury)))
+                            events.append(.raised(foe: f.id))
+                        }
                     }
                 case .windup:
+                    // Winding up from a little way out (answering a parried cut, or down from a leap), the warlord
+                    // steps in to land it.
+                    if boss, f.distance > f.contact {
+                        f.x = side.sign * (f.distance - (f.distance - f.contact) * min(1, h / max(h, f.timer)))
+                    }
                     f.timer -= h
                     if f.timer <= 0 {
                         hurt(f.kind.damage, by: f.id, &events)
-                        if boss, !f.chained, rng.chance(0.5) {
-                            // Renzoku-waza: a second blow straight on from the first.
+                        if boss, !f.chained, hp > 0, rng.chance(0.35 + 0.5 * fury) {
+                            // Renzoku-waza: a second blow straight on from the first, the likelier the more he is hurt.
                             f.chained = true
-                            f.enter(.windup, for: f.windup * 0.5)
+                            f.enter(.windup, for: max(Tuning.quickBlow, f.windup * 0.5))
                             events.append(.raised(foe: f.id))
                         } else {
                             f.chained = false
@@ -428,7 +502,7 @@ public struct Fight: Codable, Equatable, Sendable {
                     f.timer -= h
                     if f.timer <= 0 {
                         if boss, f.guardRest <= 0, rng.chance(0.5) {
-                            f.enter(.guarding, for: rng.range(0.5, 0.85))
+                            f.enter(.guarding, for: Tuning.guardRise + rng.range(0.5, 0.85))
                             events.append(.guarded(foe: f.id))
                         } else {
                             f.phase = .advancing
@@ -445,32 +519,43 @@ public struct Fight: Codable, Equatable, Sendable {
         }
     }
 
-    /// The gourd-bearer: he waits just out of reach, darts in and strikes, backs off, and after his second blow (or
-    /// once he has been about too long) makes off with the gourd. He can only be cut while he is close.
-    private mutating func bear(_ f: inout Foe, side: Side, _ events: inout [FightEvent]) {
+    /// Whether a foe in the air over the ronin will come down on `side` nearer to him than `foe` stands.
+    private func landing(on side: Side, before foe: Foe) -> Bool {
+        foes.contains { $0.phase == .leaping && $0.side == side && abs($0.leapTo) < foe.distance }
+    }
+
+    /// The gourd-bearer: he waits just out of reach (and behind the man in front, if anyone stands nearer), darts in
+    /// and strikes, backs off, and after his second blow (or once he has been about too long) makes off with the
+    /// gourd. He can only be cut while he is close, and a cut that doesn't fell him sends him springing back out of
+    /// reach (see `wound`), so each of his two cuts has to catch him on a dart of his own. `hover` counts down only
+    /// while he waits at his spot, so it says how soon he will go.
+    private mutating func bear(_ f: inout Foe, side: Side, front: Foe?, _ events: inout [FightEvent]) {
         let h = Tuning.step
         if f.distance < 1 { f.lingered += h }
-        let hover = reach + f.kind.width / 2 + 0.09
+        // Where the man in front leaves him room to stand, as anyone queueing would.
+        let behind = front.map { $0.distance + ($0.kind.width + f.kind.width) / 2 + 0.01 } ?? 0
+        let hover = max(reach + f.kind.width / 2 + 0.09, behind)
         switch f.phase {
         case .advancing:
             if !f.darting, f.darts >= 2 || f.lingered > 9 {
                 f.enter(.fleeing, for: 0)
                 break
             }
-            let target = f.darting ? f.contact : hover
+            let target = f.darting ? max(f.contact, behind) : hover
             if f.distance > target + 0.0005 {
                 f.x = side.sign * max(target, f.distance - f.speed * (f.darting ? 5 : 1) * h)
             } else if f.distance < target - 0.0005 {
                 f.x = side.sign * min(target, f.distance + f.speed * 2.5 * h)
             }
             if f.darting, f.distance <= f.contact + 0.0005 {
-                f.enter(.windup, for: f.windup * 0.32)
+                // However quick the stage, his blow comes late enough to be met by a cut made on seeing him go.
+                f.enter(.windup, for: max(Tuning.dartWindup, f.windup * 0.32))
                 events.append(.raised(foe: f.id))
             } else if !f.darting, abs(f.distance - hover) < 0.01 {
-                f.hover -= h
-                if f.hover <= 0 {
+                f.hover = max(0, f.hover - h)
+                // He goes only when his striking spot is clear.
+                if f.hover <= 0, behind <= f.contact + 0.0005 {
                     f.darting = true
-                    f.darts += 1
                     f.hover = rng.range(0.6, 1.3)
                 }
             }
@@ -478,6 +563,7 @@ public struct Fight: Codable, Equatable, Sendable {
             f.timer -= h
             if f.timer <= 0 {
                 hurt(f.kind.damage, by: f.id, &events)
+                f.darts += 1
                 f.darting = false
                 f.enter(.recoil, for: 0.3)
             }
@@ -539,7 +625,8 @@ public struct Fight: Codable, Equatable, Sendable {
     // MARK: Blows
 
     /// Takes a point off a foe. A foe who survives staggers back, or (a dancer, sometimes the warlord) leaps over the
-    /// ronin to his other side. Returns whether the foe fell.
+    /// ronin to his other side, or (the gourd-bearer, cut by the ronin) springs back out of reach. Returns whether
+    /// the foe fell.
     private mutating func wound(_ i: Int, byArrow: Bool, _ events: inout [FightEvent]) -> Bool {
         foes[i].hp -= 1
         foes[i].hits += 1
@@ -552,41 +639,47 @@ public struct Fight: Codable, Equatable, Sendable {
             if foes[i].bearer, !healed {
                 healed = true
                 let restored = hp < maxHP
-                if restored { hp += 1 } else { score += points(500) }
+                if restored { hp += 1 } else { score += gourdBonus }
                 events.append(.healed(foe: foes[i].id, restored: restored))
             }
             return true
         }
         if foes[i].kind == .warlord {
-            // At two thirds and at one third, he calls for help: a man on each side.
-            let thresholds = [foes[i].maxHP * 2 / 3, foes[i].maxHP / 3]
+            // At three quarters, a half and a quarter of his cuts, he calls for help.
+            let thresholds = [foes[i].maxHP * 3 / 4, foes[i].maxHP / 2, foes[i].maxHP / 4]
             if foes[i].summons < thresholds.count, foes[i].hp <= thresholds[foes[i].summons] {
                 foes[i].summons += 1
-                var allies: [Int] = []
-                for (k, side) in Side.allCases.enumerated() {
-                    let kind: Kind = stage >= 10 && k == 1 ? .runner : .grunt
-                    roster.append(kind)
-                    arrived += 1
-                    let ally = Foe(id: nextID, kind: kind, x: side.sign * Tuning.edge, hp: kind.baseHP,
-                                   speed: kind.speed * difficulty.pace, windup: kind.windup * difficulty.windup)
-                    nextID += 1
-                    foes.append(ally)
-                    allies.append(ally.id)
-                }
-                events.append(.summoned(foe: foes[i].id, allies: allies))
+                summon(by: i, &events)
             }
         }
+        // A cut breaks whatever he was about: a dart, or a pair of blows.
         foes[i].darting = false
+        foes[i].chained = false
         let leaps: Bool
         switch foes[i].kind {
         case .dancer: leaps = !byArrow
-        case .warlord: leaps = !byArrow && rng.chance(0.45)
+        case .warlord: leaps = !byArrow && rng.chance(0.55)
         default: leaps = false
         }
-        if leaps {
+        if foes[i].bearer, !byArrow {
+            // The gourd-bearer, cut and not felled, springs back out of reach to where he waits, and will have to be
+            // caught on another dart.
+            let side = Side.of(foes[i].x)
+            foes[i].leapFrom = foes[i].x
+            foes[i].leapTo = side.sign * max(foes[i].distance, reach + foes[i].kind.width / 2 + 0.09)
+            foes[i].enter(.leaping, for: Tuning.spring)
+            events.append(.leapt(foe: foes[i].id))
+        } else if leaps {
             let from = foes[i].x
+            let far = Side.of(from).opposite
+            // He comes down at his striking distance, or behind a man already bringing his blow down there.
+            var land = max(Tuning.landing, foes[i].contact)
+            for j in foes.indices where j != i && foes[j].phase == .windup && Side.of(foes[j].x) == far {
+                let room = (foes[i].kind.width + foes[j].kind.width) / 2 + 0.01
+                if abs(foes[j].distance - land) < room { land = max(land, foes[j].distance + room) }
+            }
             foes[i].leapFrom = from
-            foes[i].leapTo = Side.of(from).opposite.sign * max(Tuning.landing, foes[i].contact)
+            foes[i].leapTo = far.sign * land
             foes[i].enter(.leaping, for: Tuning.leap)
             events.append(.leapt(foe: foes[i].id))
         } else {
@@ -595,6 +688,33 @@ public struct Fight: Codable, Equatable, Sendable {
             foes[i].enter(.recoil, for: 0.3)
         }
         return false
+    }
+
+    /// The warlord's call for help: a man from each end of the lane (from stage 10 a runner at the right), and from
+    /// stage 10 more behind them, a brute or a blade dancer, one more for each warlord after, up to two.
+    private mutating func summon(by i: Int, _ events: inout [FightEvent]) {
+        let call = foes[i].summons
+        var men: [(kind: Kind, side: Side)] = [(.grunt, .left), (stage >= 10 ? .runner : .grunt, .right)]
+        for k in 0..<min(2, max(0, stage / 5 - 1)) {
+            let odd = (call + k) % 2 == 1
+            men.append((odd ? .brute : .dancer, odd ? .right : .left))
+        }
+        var allies: [Int] = []
+        var queued: [Side: Double] = [:]
+        for man in men {
+            // Those behind the first come on a step further back.
+            let back = queued[man.side, default: 0]
+            queued[man.side] = back + 0.15
+            roster.append(man.kind)
+            arrived += 1
+            let ally = Foe(id: nextID, kind: man.kind, x: man.side.sign * (Tuning.edge + back),
+                           hp: man.kind == .dancer ? difficulty.dancerHP : man.kind.baseHP,
+                           speed: man.kind.speed * difficulty.pace, windup: man.kind.windup * difficulty.windup)
+            nextID += 1
+            foes.append(ally)
+            allies.append(ally.id)
+        }
+        events.append(.summoned(foe: foes[i].id, allies: allies))
     }
 
     /// Points, scaled by the mode.
