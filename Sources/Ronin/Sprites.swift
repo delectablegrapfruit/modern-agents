@@ -1052,9 +1052,9 @@ final class HeroSprite: SKNode {
         flush = 0
         let feet = HeroSprite.footing(pose, sheathed: poseSheathed)
         if victory {
-            // A beat of stillness after the last kill, then the blade raised, the chiburi (the back foot sinking back
-            // behind it), and the blade slid home, the front foot where it stands throughout (or, if it is off the
-            // ground, the back one to begin with).
+            // A beat of stillness after the last kill, then the blade raised, the chiburi (the body sinking into its
+            // snap) and the blade slid home, all on his guard's footing: the front foot where it stands throughout
+            // (or, if it is off the ground, the back one to begin with), the other set down in its place once.
             act = .flourishing
             let planted: Foot = feet.front.y <= feet.back.y ? .front : .back
             let timing = HeroSprite.flourishTiming
@@ -1167,27 +1167,27 @@ final class HeroSprite: SKNode {
 
     /// Where his feet are in a frame (`Figure.footing`). Drawn sheathed, on his feet he stands as the iai does.
     private static func footing(_ frame: Frame, sheathed look: Bool) -> (front: CGPoint, back: CGPoint) {
-        if look, !falling(frame) { return Figure.footing(.hero, .iai(0)) }
+        if look, afoot(frame) { return Figure.footing(.hero, .iai(0)) }
         return Figure.footing(.hero, frame)
     }
 
-    private static func falling(_ f: Frame) -> Bool {
-        if case .fall = f { return true }
-        return false
+    /// Whether a frame has him on his feet: all but the fall once his knees go (its first frame, the blow that fells
+    /// him, is taken where he stands).
+    private static func afoot(_ f: Frame) -> Bool {
+        if case .fall(let k) = f { return k == 0 }
+        return true
     }
 
     private static var sheathedPieces: [Frame: Figures.Piece] = [:]
 
     /// One of his frames drawn with the blade kept in its scabbard, for what befalls him before the draw (a blow, a
     /// winded breath, the fall): the sword hand on the hilt and the other at the scabbard's mouth (or pressed to his
-    /// wound, or, going over, thrown out to break his fall). On his feet he stands as the iai does, the feet planted,
-    /// and only his body reels or heaves as the frame's does.
+    /// wound, or, going over, thrown out to break his fall). On his feet (the blow that fells him included) he stands
+    /// as the iai does, the feet planted, and only his body reels or heaves as the frame's does.
     private static func sheathedPiece(_ frame: Frame) -> Figures.Piece {
         if let piece = sheathedPieces[frame] { return piece }
         var p = Figure.pose(.hero, frame)
-        if case .fall(let k) = frame {
-            if k < 3 { p.grip = .saya }
-        } else {
+        if afoot(frame) {
             let iai = Figure.pose(.hero, .iai(0))
             p.front = iai.front
             p.back = iai.back
@@ -1195,6 +1195,8 @@ final class HeroSprite: SKNode {
             p.lift = iai.lift
             p.airborne = false
             if !p.clutch { p.grip = .saya }
+        } else if case .fall(let k) = frame, k < 3 {
+            p.grip = .saya
         }
         p.sheathed = 1
         p.saya = 0

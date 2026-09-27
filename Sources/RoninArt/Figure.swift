@@ -918,11 +918,16 @@ public enum Figure {
                 p.tilt = 0.35
                 p.stream = 0.7
             case .repelled(let k):
-                // The blade knocked back over the shoulder, the ronin rocked back on his heels.
+                // The blade knocked back over the shoulder, the ronin rocked back on his heels; then down off them,
+                // the feet where they were.
                 p.lean = k == 0 ? -0.3 : -0.12
                 p.shift = -0.04
-                p.front = k == 0 ? (0.62, 0.05) : (0.55, 0.12)
-                p.back = k == 0 ? (-0.18, -0.5) : (-0.35, -0.45)
+                p.front = (0.62, 0.05)
+                p.back = (-0.2, -0.53)
+                if k > 0 {
+                    let rocked = footing(p)
+                    plant(&p, hip: v(-0.04, 0.52), front: v(rocked.front.x, 0), back: v(rocked.back.x, 0))
+                }
                 p.hold = k == 0 ? v(0.1, 0.16) : v(0.16, 0.0)
                 p.blade = k == 0 ? 3.55 : 2.7
                 p.tilt = k == 0 ? -0.3 : -0.1
@@ -950,6 +955,9 @@ public enum Figure {
             case .fall(let k):
                 switch k {
                 case 0:
+                    // Struck where he stands, rocked back over his guard's footing.
+                    let home = footing(stance(.hero))
+                    plant(&p, hip: v(-0.03, 0.515), front: home.front, back: home.back)
                     p.hold = v(0.1, -0.16)
                     p.blade = 1.2
                 case 1:
@@ -1668,12 +1676,17 @@ public enum Figure {
         return p
     }
 
-    /// The end of a stage: ō-chiburi, the blade swung up beside the head and snapped down to throw the blood off;
-    /// then nōtō, the back of the blade laid in the scabbard's mouth and slid home, the hand resting on the hilt.
+    /// The end of a stage: ō-chiburi, the blade swung up beside the head and snapped down to throw the blood off, the
+    /// body sinking into the snap; then nōtō, the back of the blade laid in the scabbard's mouth and slid home as he
+    /// rises, the hand resting on the hilt. His feet stay where they stood in guard throughout.
     static func flourish(_ k: Int) -> Pose {
         var p = stance(.hero)
-        p.front = (0.34, 0.06)
-        p.back = (-0.34, -0.14)
+        let home = footing(p), standing = hipHeight(p)
+        // How far the hips are below his height in guard: level as the blade goes up, dropping into the snap, and
+        // rising again as the blade goes home.
+        let sink: [CGFloat] = [0.004, 0, 0.026, 0.045, 0.024, 0.012, 0.004]
+        let hip = v(k == 2 || k == 3 ? 0.01 : 0, standing - sink[min(max(k, 0), sink.count - 1)])
+        plant(&p, hip: hip, front: home.front, back: home.back)
         p.lean = 0.04
         p.grip = .saya
         switch k {
@@ -1687,16 +1700,12 @@ public enum Figure {
             p.blade = 3.75
             p.stream = 0.5
         case 2:
-            p.front = (0.42, 0.15)
-            p.back = (-0.4, -0.32)
             p.hold = v(0.2, 0.08)
             p.blade = 2.3
             p.smear = Pose.Smear(from: 3.6, to: 2.3, strength: 0.7)
             p.stream = 0.8
             p.wave = 0.2
         case 3:
-            p.front = (0.5, 0.25)
-            p.back = (-0.45, -0.5)
             p.hold = v(0.27, -0.12)
             p.blade = 0.9
             p.smear = Pose.Smear(from: 2.4, to: 0.9, strength: 0.55)

@@ -155,6 +155,28 @@ final class RoninArtTests: XCTestCase {
         }
     }
 
+    func testTheFlourishTheBlowThatFellsHimAndAParryLeaveHisFeetWhereTheyStand() {
+        // The chiburi and the nōtō are done over his guard's footing, the body sinking and rising; the blow that fells
+        // him takes him where he stands in guard; thrown back off a guard, he comes down off his heels where he landed.
+        let home = Figure.footing(.hero, .idle(0))
+        for k in 0..<Frame.flourishFrames {
+            let feet = Figure.footing(.hero, .flourish(k))
+            XCTAssertEqual(feet.front.x, home.front.x, accuracy: 0.002, "flourish \(k)")
+            XCTAssertEqual(feet.back.x, home.back.x, accuracy: 0.002, "flourish \(k)")
+            XCTAssertEqual(feet.back.y, home.back.y, accuracy: 0.002, "flourish \(k)")
+        }
+        let hips = (0..<Frame.flourishFrames).map { Figure.skeleton(.hero, Figure.pose(.hero, .flourish($0)))[0].y }
+        XCTAssertLessThan(hips[3], hips[1] - 0.03, "the snap of the chiburi sinks him")
+        XCTAssertGreaterThan(hips[Frame.flourishFrames - 1], hips[3] + 0.03, "the blade home, he rises")
+        let struck = Figure.footing(.hero, .fall(0))
+        XCTAssertEqual(struck.front.x, home.front.x, accuracy: 0.002)
+        XCTAssertEqual(struck.back.x, home.back.x, accuracy: 0.002)
+        let rocked = Figure.footing(.hero, .repelled(0)), down = Figure.footing(.hero, .repelled(1))
+        XCTAssertEqual(down.front.x, rocked.front.x, accuracy: 0.002)
+        XCTAssertEqual(down.back.x, rocked.back.x, accuracy: 0.002)
+        XCTAssertLessThan(max(down.front.y, down.back.y), 0.004)
+    }
+
     func testAChainedCutSwingsFromTheLungeItStandsIn() {
         // Swung again from the lunge, the feet stay where it put them; only the body, the arms and the blade come
         // round, smeared as ever, with no drag of the body.
