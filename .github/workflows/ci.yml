@@ -56,6 +56,30 @@ jobs:
           wait
           ls -la dist/screenshots || true
 
+      - name: Crash report (when the self-test crashed)
+        if: failure()
+        timeout-minutes: 8
+        run: |
+          # The newest crash report's crashed thread, symbolicated as far as the report goes.
+          report=$(ls -t ~/Library/Logs/DiagnosticReports/Ronin* 2>/dev/null | head -1 || true)
+          if [ -n "$report" ]; then
+            python3 - "$report" <<'PY'
+          import json, sys
+          text = open(sys.argv[1]).read()
+          body = json.loads(text[text.index('\n') + 1:])
+          print(body.get('exception'), body.get('termination', {}).get('indicator'))
+          images = body.get('usedImages', [])
+          for thread in body.get('threads', []):
+              if not thread.get('triggered'): continue
+              for frame in thread.get('frames', [])[:60]:
+                  image = images[frame['imageIndex']].get('name', '?') if frame.get('imageIndex', -1) < len(images) else '?'
+                  print(image, frame.get('symbol', hex(frame.get('imageOffset', 0))), frame.get('sourceFile', ''), frame.get('sourceLine', ''))
+          PY
+          fi
+          # And the crash again under the debugger, for a backtrace with line numbers where it has them.
+          rm -rf "$RUNNER_TEMP/debug-snaps"
+          RONIN_SELFTEST=1 RONIN_SNAPSHOTS="$RUNNER_TEMP/debug-snaps" lldb --batch -o run -k "thread backtrace -c 60" -k "quit 1" -- "$RUNNER_TEMP/launch/Ronin.app/Contents/MacOS/Ronin" 2>&1 | tail -120 || true
+
       - name: Upload packages and screenshots (also when a test failed)
         if: always()
         uses: actions/upload-artifact@v4
