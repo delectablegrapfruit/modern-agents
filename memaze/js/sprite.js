@@ -51,8 +51,9 @@
     return out;
   }
 
-  // Returns {width, height, frames: [{rgba, delay}]} with every frame fully composited (disposal handled).
-  function decodeGif(buf) {
+  // Returns {width, height, frames: [{rgba, delay}]} with every frame fully composited (disposal handled). With onFrame,
+  // each composited frame is handed over as it is made (the buffer is reused) and not kept: big GIFs stay small.
+  function decodeGif(buf, onFrame) {
     const b = new Uint8Array(buf);
     if (b.length < 13 || b[0] !== 0x47 || b[1] !== 0x49 || b[2] !== 0x46) throw new Error('not a GIF');
     const u16 = (i) => b[i] | (b[i + 1] << 8);
@@ -124,7 +125,8 @@
           }
         }
       }
-      frames.push({ rgba: canvas.slice(), delay: (gce.delay <= 1 ? 10 : gce.delay) * 10 });
+      const delay = (gce.delay <= 1 ? 10 : gce.delay) * 10;
+      if (onFrame) { onFrame(canvas, W, H, delay); frames.push({ delay }); } else frames.push({ rgba: canvas.slice(), delay });
       if (gce.disposal === 2 || gce.disposal === 3) pending = { mode: gce.disposal, x, y, w, h, snapshot };
       gce = { disposal: 0, delay: 10, trans: -1 };
     }
@@ -132,24 +134,24 @@
     return { width: W, height: H, frames };
   }
 
-  // Frames as small canvases (the sprite is never drawn larger than a few hundred pixels).
-  function framesToCanvases(width, height, list) {
-    const k = Math.min(1, FRAME_MAX / Math.max(width, height));
-    const W = Math.max(1, Math.round(width * k)), H = Math.max(1, Math.round(height * k));
-    const full = document.createElement('canvas');
-    full.width = width; full.height = height;
-    const fg = full.getContext('2d');
-    return list.map((f) => {
+  // Decode a GIF straight into small canvases (the sprite is never drawn larger than a few hundred pixels).
+  function gifToCanvases(buf) {
+    const out = [];
+    let full = null, fg = null;
+    const g = decodeGif(buf, (rgba, width, height) => {
+      const k = Math.min(1, FRAME_MAX / Math.max(width, height));
       const c = document.createElement('canvas');
-      c.width = W; c.height = H;
-      const g = c.getContext('2d');
-      if (k === 1) g.putImageData(new ImageData(f.rgba, width, height), 0, 0);
+      c.width = Math.max(1, Math.round(width * k)); c.height = Math.max(1, Math.round(height * k));
+      const cg = c.getContext('2d');
+      if (k === 1) cg.putImageData(new ImageData(rgba, width, height), 0, 0);
       else {
-        fg.putImageData(new ImageData(f.rgba, width, height), 0, 0);
-        g.drawImage(full, 0, 0, W, H);
+        if (!full) { full = document.createElement('canvas'); full.width = width; full.height = height; fg = full.getContext('2d'); }
+        fg.putImageData(new ImageData(rgba, width, height), 0, 0);
+        cg.drawImage(full, 0, 0, c.width, c.height);
       }
-      return c;
+      out.push(c);
     });
+    return { width: g.width, height: g.height, canvases: out, delays: g.frames.map((f) => f.delay) };
   }
 
   // ---------- chroma key, the same maths as the WebGL key used for other media ----------
@@ -287,8 +289,8 @@
         animated = false;
         if (isGif) {
           try {
-            const g = decodeGif(await blob.arrayBuffer());
-            if (g.frames.length > 1) return this.framesSource(g.width, g.height, framesToCanvases(g.width, g.height, g.frames), g.frames.map((f) => f.delay));
+            const g = gifToCanvases(await blob.arrayBuffer());
+            if (g.canvases.length > 1) return this.framesSource(g.width, g.height, g.canvases, g.delays);
           } catch (e) { animated = true; } // a GIF this decoder can't read: let the browser play it
         } else if (typeof ImageDecoder === 'function' && /image\/(png|apng|webp|avif)/.test(blob.type)) {
           try {
