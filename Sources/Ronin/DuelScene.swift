@@ -70,6 +70,7 @@ final class DuelScene: SKScene {
     private var arrowSprites: [Int: ArrowSprite] = [:]
     private var reachMarks: [SKShapeNode] = []
     private var weather: SKEmitterNode?
+    private var farWeather: SKEmitterNode?
     private let rage = SKSpriteNode(texture: Art.edge)
     private let wound = SKSpriteNode(color: .white, size: .zero)
     private let vignette = SKSpriteNode(texture: Art.vignette)
@@ -433,6 +434,7 @@ final class DuelScene: SKScene {
         pill.isHidden = !isCompact
         for node in [scenery, world, hud, overlay, header, vignette, rage, wound, flashSky] as [SKNode] { node.isHidden = isCompact }
         weather?.isHidden = isCompact
+        farWeather?.isHidden = isCompact
         hint?.isHidden = isCompact
         if isCompact {
             layoutPill()
@@ -590,6 +592,12 @@ final class DuelScene: SKScene {
         sky2.zPosition = 30
         addChild(sky2)
         weather = sky2
+        // The same weather further off, drifting behind the fighters.
+        let distant = Art.weather(look.weather, size: field.size, tint: look.horizon, far: true)
+        distant.zPosition = 9.5
+        distant.isHidden = isCompact
+        scenery.addChild(distant)
+        farWeather = distant
     }
 
     // MARK: Modes
@@ -803,6 +811,8 @@ final class DuelScene: SKScene {
             sprite.removeFromParent()
             arrowSprites[id] = nil
         }
+        // Down to his last hearts, the ronin's guard sags and heaves; on the last, worse.
+        hero.strain = fight.hp <= 1 ? 2 : fight.hp * 3 <= fight.maxHP + 1 ? 1 : 0
         hero.update(dt: dt, bloodlust: fight.inBloodlust)
         refreshHUD()
     }
@@ -1367,7 +1377,7 @@ final class DuelScene: SKScene {
         sprite.removeFromParent()
         hero.bloodied(heavy ? 0.06 : 0.025)
 
-        if heavy { focus(at: gash, size: ronin * (boss ? 4.5 : 3.2), color: .white, alpha: boss ? 0.9 : 0.6) }
+        if heavy { focus(at: gash, size: boss ? max(field.width, field.height) * 2.4 : ronin * 4.2, color: .white, alpha: boss ? 0.9 : 0.65) }
         if boss {
             hitStop = max(hitStop, 0.25)
             world.speed = 0.25

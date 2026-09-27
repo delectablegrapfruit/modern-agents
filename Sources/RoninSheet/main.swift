@@ -52,6 +52,95 @@ if which == "dead" {
     exit(0)
 }
 
+// `ronin-sheet out.svg ragdoll` lets each kind's dead fall: a row of how they come down (a body felled whole, the
+// halves of one cut apart, one without its head), and a row of where each comes to rest.
+if which == "ragdoll" {
+    var body = "", y: CGFloat = 0, width: CGFloat = 0
+    func cell(_ sketch: Sketch, _ x: inout CGFloat, _ rowHeight: inout CGFloat, label: String = "") {
+        let w = CGFloat(sketch.width) * scale * 0.7, h = CGFloat(sketch.height) * scale
+        let ground = y + h - Figure.feet.y / Figure.canvas.height * h
+        body += "<svg x=\"\(x)\" y=\"\(y)\" width=\"\(w)\" height=\"\(h)\" viewBox=\"\(CGFloat(sketch.width) * 0.15) 0 \(CGFloat(sketch.width) * 0.7) \(sketch.height)\">"
+        body += "<rect x=\"0\" y=\"0\" width=\"\(sketch.width)\" height=\"\(sketch.height)\" fill=\"url(#sky)\"/></svg>"
+        body += "<rect x=\"\(x)\" y=\"\(ground)\" width=\"\(w)\" height=\"\(y + h - ground)\" fill=\"#1a0c0c\"/>"
+        body += "<svg x=\"\(x)\" y=\"\(y)\" width=\"\(w)\" height=\"\(h)\" viewBox=\"\(CGFloat(sketch.width) * 0.15) 0 \(CGFloat(sketch.width) * 0.7) \(sketch.height)\">" + sketch.svg() + "</svg>"
+        if !label.isEmpty { body += "<text x=\"\(x + 4)\" y=\"\(y + 12)\" font-family=\"Helvetica\" font-size=\"10\" fill=\"#fff\">\(label)</text>" }
+        x += w + 4
+        width = max(width, x)
+        rowHeight = max(rowHeight, h)
+    }
+    func drawn(_ doll: Ragdoll, _ cast: Cast) -> Sketch {
+        // The ground drawn at the doll's own ground, not the canvas's.
+        let (pose, anchor) = doll.framed()
+        let sketch = Figure.sketch(cast, pose: pose)
+        let dy = anchor.y * Figure.pixelHeight(cast) * Build.of(cast).height
+        return sketch.mapped { CGPoint(x: $0.x, y: $0.y + dy) }
+    }
+    let kinds = ProcessInfo.processInfo.environment["KINDS"].map { $0.split(separator: ",").compactMap { Kind(rawValue: String($0)) } } ?? Kind.allCases
+    for kind in kinds {
+        let cast = Cast.foe(kind)
+        var rng = SeededRNG(seed: 0xDEAD &+ UInt64(kind.rawValue.count))
+        // How they come down.
+        let stances = (0..<3).map { Figure.struck(cast, variant: $0 + 1) }
+        var sequences: [(String, Ragdoll, Double)] = [
+            ("felled", Ragdoll.felled(cast, pose: stances[0], back: -1, rng: &rng), 0),
+            ("above", Ragdoll.cut(cast, pose: stances[1], .above(at: 0.5, slant: 0.6), back: -1, rng: &rng), 0),
+            ("below", Ragdoll.cut(cast, pose: stances[1], .below(at: 0.5, slant: 0.6), back: -1, rng: &rng), 0.3),
+            ("headless", Ragdoll.cut(cast, pose: stances[2], .headless, back: -1, rng: &rng), 0.4),
+        ]
+        for k in sequences.indices {
+            var x: CGFloat = 0, rowHeight: CGFloat = 0
+            var doll = sequences[k].1
+            var t = 0.0
+            // A frame every tenth of a second; standing pieces stand a moment, then go.
+            for shot in 0..<9 {
+                cell(drawn(doll, cast), &x, &rowHeight, label: shot == 0 ? "\(kind) \(sequences[k].0)" : "")
+                for _ in 0..<12 {
+                    t += 1.0 / 120
+                    if sequences[k].2 > 0, abs(t - sequences[k].2) < 0.5 / 120 { doll.collapse(rng: &rng) }
+                    doll.advance(1.0 / 120)
+                }
+            }
+            var n = 0
+            while !doll.settled, n < 600 {
+                doll.advance(1.0 / 60)
+                n += 1
+            }
+            cell(drawn(doll, cast), &x, &rowHeight, label: "rest")
+            sequences[k].1 = doll
+            y += rowHeight + 6
+        }
+        // Where they come to rest.
+        var x: CGFloat = 0, rowHeight: CGFloat = 0
+        for k in 0..<10 {
+            let pose = Figure.struck(cast, variant: k % 6 + 1)
+            let slant = CGFloat(rng.range(-0.6, 0.6))
+            var doll: Ragdoll
+            switch k % 4 {
+            case 0: doll = Ragdoll.felled(cast, pose: pose, back: -1, rng: &rng)
+            case 1: doll = Ragdoll.cut(cast, pose: pose, .above(at: 0.45, slant: slant), back: -1, rng: &rng)
+            case 2:
+                doll = Ragdoll.cut(cast, pose: pose, .below(at: 0.45, slant: slant), back: -1, rng: &rng)
+                doll.advance(0.4)
+                doll.collapse(rng: &rng)
+            default:
+                doll = Ragdoll.cut(cast, pose: pose, .headless, back: -1, rng: &rng)
+                doll.advance(0.5)
+                doll.collapse(rng: &rng)
+            }
+            var n = 0
+            while !doll.settled, n < 600 {
+                doll.advance(1.0 / 60)
+                n += 1
+            }
+            cell(drawn(doll, cast), &x, &rowHeight)
+        }
+        y += rowHeight + 14
+    }
+    let svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"\(width)\" height=\"\(y)\"><defs><linearGradient id=\"sky\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\"><stop offset=\"0\" stop-color=\"#3a0a14\"/><stop offset=\"1\" stop-color=\"#f07030\"/></linearGradient></defs><rect width=\"100%\" height=\"100%\" fill=\"#111\"/>\(body)</svg>"
+    try? svg.write(toFile: out, atomically: true, encoding: .utf8)
+    exit(0)
+}
+
 let casts: [Cast]
 switch which {
 case "all": casts = [.hero] + Kind.allCases.map { .foe($0) }
@@ -79,6 +168,10 @@ func name(_ frame: Frame) -> String {
     case .aim: return "aim"
     case .loose: return "loose"
     case .cut(let cut, let k): return "\(cut) \(k)"
+    case .recover(let cut, let k): return "\(cut) recover \(k)"
+    case .shuffle(let k): return "shuffle \(k)"
+    case .winded(let v, let k): return "winded \(v) \(k)"
+    case .reel(let v, let k): return "reel \(v) \(k)"
     case .stumble(let k): return "stumble \(k)"
     case .hurt(let k): return "hurt \(k)"
     case .flourish(let k): return "flourish \(k)"

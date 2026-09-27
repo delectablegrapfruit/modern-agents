@@ -167,21 +167,23 @@ enum Art {
         return texture(context)
     }
 
+    /// Lines of every length, thin at the heart and thickening outward, all inside a circle, so however large it is
+    /// drawn there is no edge to it, only the ragged ends of the lines.
     private static func makeFocus() -> SKTexture {
-        let s = 256
+        let s = 512
         guard let context = bitmap(s, s) else { return SKTexture() }
         var rng = SeededRNG(seed: 0xF0C05)
-        let c = CGPoint(x: 128, y: 128)
-        context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
-        for _ in 0..<64 {
-            let a = CGFloat(rng.range(0, 2 * .pi)), w = CGFloat(rng.range(0.004, 0.022))
-            let inner = CGFloat(rng.range(58, 100)), outer: CGFloat = 190
+        let c = CGPoint(x: 256, y: 256)
+        for _ in 0..<110 {
+            let a = CGFloat(rng.range(0, 2 * .pi)), w = CGFloat(rng.range(0.003, 0.016))
+            let inner = CGFloat(rng.range(70, 200)), outer = min(254, inner + CGFloat(rng.range(40, 170)))
+            context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: CGFloat(rng.range(0.45, 1))))
             context.move(to: CGPoint(x: c.x + cos(a) * inner, y: c.y + sin(a) * inner))
             context.addLine(to: CGPoint(x: c.x + cos(a - w) * outer, y: c.y + sin(a - w) * outer))
             context.addLine(to: CGPoint(x: c.x + cos(a + w) * outer, y: c.y + sin(a + w) * outer))
             context.closePath()
+            context.fillPath()
         }
-        context.fillPath()
         return texture(context)
     }
 
@@ -392,7 +394,8 @@ enum Art {
     // MARK: Weather
 
     /// Falling snow, petals, leaves or ash, rising embers, or driving rain, across a field `size` wide and tall.
-    static func weather(_ kind: Look.Weather, size: CGSize, tint: RGB) -> SKEmitterNode {
+    /// `far` is the same weather further off, behind the fighters: smaller, slower, fainter and thicker.
+    static func weather(_ kind: Look.Weather, size: CGSize, tint: RGB, far: Bool = false) -> SKEmitterNode {
         let e = SKEmitterNode()
         e.particleColorBlendFactor = 1
         e.particlePositionRange = CGVector(dx: size.width * 1.2, dy: 0)
@@ -486,6 +489,16 @@ enum Art {
             e.particleColor = RGB(1.0, 0.78, 0.86).color()
             e.particleAlpha = 0.9
             e.xAcceleration = 6
+        }
+        if far {
+            e.particleScale *= 0.5
+            e.particleScaleRange *= 0.5
+            e.particleSpeed *= 0.55
+            e.particleSpeedRange *= 0.55
+            e.particleBirthRate *= 1.4
+            e.xAcceleration *= 0.5
+            e.particleLifetime *= kind == .rain ? 1.3 : 1.6
+            e.alpha = 0.5
         }
         e.advanceSimulationTime(TimeInterval(e.particleLifetime))
         return e

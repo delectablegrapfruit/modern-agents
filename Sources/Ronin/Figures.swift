@@ -35,9 +35,6 @@ enum Figures {
                      rect: CGRect(x: bounds.minX / w, y: bounds.minY / h, width: bounds.width / w, height: bounds.height / h))
     }
 
-    /// A body lying as it fell, its own way (drawn fresh for each death).
-    static func corpse(_ cast: Cast) -> Piece { render(Figure.corpse(cast, seed: UInt64.random(in: 0...UInt64.max))) }
-
     /// Puts a frame on a sprite for a ronin `ronin` points tall: its texture, and the size and anchor that keep the
     /// feet where the whole canvas would have them.
     static func apply(_ sprite: SKSpriteNode, _ cast: Cast, _ frame: Frame, ronin: CGFloat) {
@@ -214,7 +211,8 @@ enum Figures {
         for cast in casts {
             for frame in Figure.frames(for: cast) { _ = piece(cast, frame) }
             guard cast != .hero else { continue }
-            for severance in [Severance.falling, .rising, .level, .legs, .head] { _ = parts(cast, severance, variant: 0) }
+            // A head struck off flies as one piece; everything else falls as a jointed body, drawn as it goes.
+            _ = parts(cast, .head, variant: 0)
             _ = weapon(cast)
         }
     }

@@ -4,9 +4,10 @@ import RoninArt
 import RoninCore
 
 /// The dead, and what is left of them. A cut foe comes apart along the line of the cut: the top half is flung away
-/// tumbling, trailing blood, while the legs stand a moment with blood pumping from the stump before they go over; a
-/// head flies off and the body under it goes down after it; a foe run through is thrown back and goes down whole. His
-/// weapon leaves his hand and clatters down on its own.
+/// tumbling, arms flying, trailing blood, while the legs stand a moment with blood pumping from the stump before the
+/// knees go; a head flies off and the body under it stands, then crumples; a foe run through is thrown back off his
+/// feet, or folds where he stands. Every body is a jointed thing let fall under its own weight (a `Ragdoll`), so each
+/// collapses and comes to rest its own way. His weapon leaves his hand and clatters down on its own.
 ///
 /// Everything lands, bounces once, and stays where it falls for the rest of the stage, at ground level: scattered a
 /// little nearer or further on the ground (the nearer drawn over the further) and lying across whatever fell there
@@ -22,17 +23,26 @@ final class Carnage {
     private let trails: SKNode
 
     private final class Body {
-        enum State { case falling, standing, flying, sliding, resting }
+        /// A jointed body standing on its planted feet, or falling as it will; a rigid piece (a head, a weapon)
+        /// flying, or skidding to a stop; or at rest.
+        enum State { case standing, limp, flying, sliding, resting }
         let node: SKSpriteNode
         let cast: Cast
         var state: State
+        var doll: Ragdoll?
+        /// Where the doll's ground point is in the world (the spot he stood on, at his line on the ground), how many
+        /// points a figure height is, and where the sprite's own ground point was, in the doll's terms, when it was
+        /// last drawn.
+        var origin = CGPoint.zero
+        var scale: CGFloat = 1
+        var anchor = CGPoint.zero
+        var drawn: [CGPoint] = []
+        var sinceDrawn = 0.0
         var velocity = CGVector.zero
         var spin: CGFloat = 0
         var clock = 0.0
         var standFor = 0.0
         var bounced = false
-        /// A body that goes down whole plays its dying frames first.
-        var frames: [Frame] = []
         var facing: CGFloat = 1
         var jet: SKEmitterNode?
         var jetRate: CGFloat = 0
@@ -60,6 +70,9 @@ final class Carnage {
     private var layer: CGFloat = 0
     private var pools: [SKNode] = []
     private var specks: [SKNode] = []
+    private var rng = SeededRNG(seed: UInt64.random(in: 0...UInt64.max))
+    /// How many bodies may be redrawn in one step (each is drawn afresh as it falls).
+    private var budget = 0
 
     init(trails: SKNode) {
         self.trails = trails
@@ -100,45 +113,114 @@ final class Carnage {
     /// Cuts a foe apart where he stood (`feet`, facing +1 right or −1 left), throwing the upper part away from the
     /// ronin (`away`, ±1). `force` scales everything for the big ones.
     func sever(_ cast: Cast, _ severance: Figures.Severance, feet: CGPoint, facing: CGFloat, away: CGFloat, force: CGFloat = 1) {
-        let full = Figures.size(cast, ronin: ronin)
         let near = CGFloat.random(in: 0...1)
+        let back = away * facing
         // Cut from one of the several ways a blow throws a man, so no two come apart alike.
         let variant = Int.random(in: 0..<Figures.variants)
-        for part in Figures.parts(cast, severance, variant: variant) {
-            let node = SKSpriteNode(texture: part.texture)
-            node.size = CGSize(width: full.width * part.rect.width, height: full.height * part.rect.height)
-            node.xScale = facing
-            node.position = CGPoint(x: feet.x + facing * (part.rect.midX - Figure.anchor.x) * full.width,
-                                    y: feet.y + (part.rect.midY - Figure.anchor.y) * full.height)
-            corpses.addChild(node)
-            let body = Body(node: node, cast: cast, state: .flying)
-            body.facing = facing
-            place(body, near: near + CGFloat.random(in: -0.15...0.15))
-            // Blood from the wound: a jet on what stays standing, a trail on what flies.
-            let wound = CGPoint(x: (part.wound.x - part.rect.midX) * full.width, y: (part.wound.y - part.rect.midY) * full.height)
-            let jet = Art.spurt(Palette.blood.mix(.black, 0.25), rate: 160 * force, speed: ronin * (part.upper ? 0.5 : 1.6),
-                                size: ronin * 0.045, angle: part.woundAngle, spread: 0.35, gravity: gravity * 0.8, into: trails)
-            jet.position = wound
-            node.addChild(jet)
-            body.jet = jet
-            body.jetRate = 160 * force
-            body.jetFor = part.upper ? 0.7 : 1.5
-            if part.upper {
-                // Flung: up and away, turning over.
-                let lift: CGFloat = severance == .head ? 2.6 : severance == .legs ? 0.6 : 1.3
-                body.velocity = CGVector(dx: away * ronin * CGFloat.random(in: 1.0...2.0) * force,
-                                         dy: ronin * CGFloat.random(in: 0.8...1.3) * lift * force)
-                body.spin = -away * CGFloat.random(in: 3...8) * (severance == .head ? 2 : 1)
-            } else {
-                // Left standing, pumping blood, until the knees go.
-                body.state = .standing
-                body.standFor = Double.random(in: 0.35...0.7) * (severance == .head ? 1.4 : 1)
+        let pose = Figure.struck(cast, variant: variant)
+        let stand = Double.random(in: 0.35...0.7)
+        switch severance {
+        case .head:
+            // The head flies, turning over and over; the body stands a moment longer, pumping blood, and crumples.
+            if let part = Figures.parts(cast, .head, variant: variant).first(where: \.upper) {
+                let full = Figures.size(cast, ronin: ronin)
+                let node = SKSpriteNode(texture: part.texture)
+                node.size = CGSize(width: full.width * part.rect.width, height: full.height * part.rect.height)
+                node.xScale = facing
+                node.position = CGPoint(x: feet.x + facing * (part.rect.midX - Figure.anchor.x) * full.width,
+                                        y: feet.y + (part.rect.midY - Figure.anchor.y) * full.height)
+                corpses.addChild(node)
+                let head = Body(node: node, cast: cast, state: .flying)
+                head.facing = facing
+                place(head, near: near + CGFloat.random(in: -0.15...0.15))
+                let wound = CGPoint(x: (part.wound.x - part.rect.midX) * full.width, y: (part.wound.y - part.rect.midY) * full.height)
+                bleed(head, from: wound, angle: part.woundAngle, rate: 160 * force, speed: ronin * 0.5, seconds: 0.7)
+                head.velocity = CGVector(dx: away * ronin * CGFloat.random(in: 1.0...2.0) * force, dy: ronin * CGFloat.random(in: 0.8...1.3) * 2.6 * force)
+                head.spin = -away * CGFloat.random(in: 6...16)
+                bodies.append(head)
             }
-            bodies.append(body)
+            let body = add(Ragdoll.cut(cast, pose: pose, .headless, back: back, force: force, rng: &rng), cast, feet: feet, facing: facing,
+                           near: near + CGFloat.random(in: -0.1...0.1), state: .standing)
+            body.standFor = stand * 1.4
+            bleed(body, rate: 160 * force, speed: ronin * 1.6, seconds: 1.8)
+        default:
+            let at: CGFloat, slant: CGFloat, lift: CGFloat
+            switch severance {
+            case .falling: (at, slant, lift) = (0.5, 0.6, 1.3)
+            case .rising: (at, slant, lift) = (0.5, -0.6, 1.3)
+            case .level: (at, slant, lift) = (0.3, 0.05, 1.3)
+            default: (at, slant, lift) = (0.12, 0.08, 0.6)
+            }
+            let upper = add(Ragdoll.cut(cast, pose: pose, .above(at: at, slant: slant), back: back, force: force, lift: lift, rng: &rng),
+                            cast, feet: feet, facing: facing, near: near + CGFloat.random(in: -0.15...0.15), state: .limp)
+            bleed(upper, rate: 160 * force, speed: ronin * 0.5, seconds: 0.7)
+            let lower = add(Ragdoll.cut(cast, pose: pose, .below(at: at, slant: slant), back: back, force: force, rng: &rng),
+                            cast, feet: feet, facing: facing, near: near + CGFloat.random(in: -0.15...0.15), state: .standing)
+            lower.standFor = stand
+            bleed(lower, rate: 160 * force, speed: ronin * 1.6, seconds: 1.5)
         }
         drop(cast, feet: feet, facing: facing, away: away, force: force, near: near)
         spatter(around: feet.x, count: Int(10 * force))
         trim()
+    }
+
+    /// A jointed body (or part of one) standing where the foe stood, drawn as it is now.
+    private func add(_ doll: Ragdoll, _ cast: Cast, feet: CGPoint, facing: CGFloat, near: CGFloat, state: Body.State) -> Body {
+        let node = SKSpriteNode()
+        node.xScale = facing
+        corpses.addChild(node)
+        let body = Body(node: node, cast: cast, state: state)
+        body.facing = facing
+        place(body, near: near)
+        body.scale = ronin * Build.of(cast).height
+        body.origin = CGPoint(x: feet.x, y: body.floor)
+        var doll = doll
+        // Standing on the lane, over the line on the ground he will fall to.
+        doll.raise((feet.y - body.floor) / body.scale)
+        body.doll = doll
+        draw(body)
+        bodies.append(body)
+        return body
+    }
+
+    /// Blood pumping from a body: from a doll's wound (or its chest), or from a point on a rigid piece.
+    private func bleed(_ body: Body, from point: CGPoint = .zero, angle: CGFloat = 0, rate: CGFloat, speed: CGFloat, seconds: Double) {
+        let jet = Art.spurt(Palette.blood.mix(.black, 0.25), rate: rate, speed: speed, size: ronin * 0.045, angle: angle, spread: 0.35,
+                            gravity: gravity * 0.8, into: trails)
+        jet.position = point
+        body.node.addChild(jet)
+        body.jet = jet
+        body.jetRate = rate
+        body.jetFor = seconds
+        aim(body)
+    }
+
+    /// Keeps a doll's jet of blood on its wound, pointing out of it.
+    private func aim(_ body: Body) {
+        guard let doll = body.doll, let jet = body.jet else { return }
+        let at: CGPoint, angle: CGFloat
+        if let wound = doll.wound {
+            (at, angle) = (wound.at, wound.angle)
+        } else {
+            // Run through: from the chest, out of the front of it and up.
+            let a = doll.points[Ragdoll.low], b = doll.points[Ragdoll.high]
+            let up = atan2(b.y - a.y, b.x - a.x)
+            (at, angle) = (CGPoint(x: a.x + (b.x - a.x) * 0.68, y: a.y + (b.y - a.y) * 0.68), up - 0.7)
+        }
+        jet.position = CGPoint(x: (at.x - body.anchor.x) * body.scale, y: (at.y - body.anchor.y) * body.scale)
+        jet.emissionAngle = angle
+    }
+
+    /// Draws a doll as it now lies, the sprite moved with its hips.
+    private func draw(_ body: Body) {
+        guard let doll = body.doll else { return }
+        let (pose, anchor) = doll.framed()
+        Figures.apply(body.node, Figures.render(Figure.sketch(body.cast, pose: pose)), body.cast, ronin: ronin)
+        body.anchor = anchor
+        body.node.position = CGPoint(x: body.origin.x + body.facing * anchor.x * body.scale, y: body.origin.y + anchor.y * body.scale)
+        body.drawn = doll.points
+        body.sinceDrawn = 0
+        aim(body)
     }
 
     /// His weapon, out of his hand: flung up turning end over end, to clatter down flat among the dead.
@@ -160,29 +242,12 @@ final class Carnage {
         bodies.append(body)
     }
 
-    /// A foe run through or shot: thrown back, the knees going, down on his back.
+    /// A foe run through or shot: thrown back off his feet, or folding where he stands.
     func fell(_ cast: Cast, feet: CGPoint, facing: CGFloat, force: CGFloat = 1) {
-        let node = SKSpriteNode()
-        Figures.apply(node, cast, .die(0), ronin: ronin)
-        node.xScale = facing
-        node.position = feet
-        corpses.addChild(node)
-        let body = Body(node: node, cast: cast, state: .falling)
-        body.facing = facing
-        body.frames = (0..<Frame.dieFrames).map { .die($0) }
         let near = CGFloat.random(in: 0...1)
-        place(body, near: near)
-        let anatomy = Figure.anatomy(cast, .die(0))
-        let canvas = Figures.size(cast, ronin: ronin)
-        let jet = Art.spurt(Palette.blood.mix(.black, 0.25), rate: 120 * force, speed: ronin * 1.2, size: ronin * 0.04,
-                            angle: 0.6, spread: 0.3, gravity: gravity * 0.8, into: trails)
-        jet.position = CGPoint(x: (anatomy.chest.x / anatomy.height - Figure.feet.x) * canvas.height / Figure.canvas.height,
-                               y: (anatomy.chest.y / anatomy.height - Figure.feet.y) * canvas.height / Figure.canvas.height)
-        node.addChild(jet)
-        body.jet = jet
-        body.jetRate = 120 * force
-        body.jetFor = 0.9
-        bodies.append(body)
+        let pose = Figure.pose(cast, [Frame.die(0), .stagger(0)][Int.random(in: 0...1)])
+        let body = add(Ragdoll.felled(cast, pose: pose, back: -1, force: force, rng: &rng), cast, feet: feet, facing: facing, near: near, state: .limp)
+        bleed(body, rate: 120 * force, speed: ronin * 1.2, seconds: 0.9)
         drop(cast, feet: feet, facing: facing, away: -facing, force: force, near: near)
         spatter(around: feet.x, count: Int(6 * force))
         trim()
@@ -243,6 +308,7 @@ final class Carnage {
     func update(_ dt: Double) {
         guard dt > 0 else { return }
         let h = CGFloat(dt)
+        budget = 4
         var gone: [Int] = []
         for (i, body) in bodies.enumerated() {
             let node = body.node
@@ -260,25 +326,32 @@ final class Carnage {
             switch body.state {
             case .resting:
                 continue
-            case .falling:
-                // Dying frames: thrown back a step, the knees going, toppling; then down.
-                let k = min(body.frames.count - 1, Int(body.clock / 0.13))
-                let t = CGFloat(min(1, body.clock / 0.4))
-                node.position.y = groundY + (body.floor - groundY) * t
-                node.position.x -= body.facing * ronin * 0.5 * h * (1 - t)
-                if k == body.frames.count - 1 {
-                    // Down: lying however he happened to land.
-                    Figures.apply(node, Figures.corpse(body.cast), body.cast, ronin: ronin)
-                    rest(body, lying: true)
-                } else {
-                    Figures.apply(node, body.cast, body.frames[k], ronin: ronin)
+            case .standing, .limp:
+                // On its feet a moment longer, holding its last pose, until the knees go; then falling as it will.
+                body.doll?.advance(dt)
+                body.sinceDrawn += dt
+                if body.state == .standing {
+                    body.standFor -= dt
+                    if body.standFor <= 0 {
+                        body.doll?.collapse(rng: &rng)
+                        body.state = .limp
+                    }
                 }
-            case .standing:
-                body.standFor -= dt
-                if body.standFor <= 0 {
-                    body.state = .flying
-                    body.velocity = CGVector(dx: -body.facing * ronin * CGFloat.random(in: 0.1...0.35), dy: ronin * 0.2)
-                    body.spin = body.facing * CGFloat.random(in: 2.2...3.4)
+                guard let doll = body.doll else { continue }
+                let x = body.origin.x + body.facing * doll.hip.x * body.scale
+                if x < field.minX - ronin * 1.5 || x > field.maxX + ronin * 1.5 {
+                    gone.append(i)
+                    continue
+                }
+                if body.state == .limp, doll.settled {
+                    draw(body)
+                    rest(body)
+                } else if body.sinceDrawn >= 1.0 / 40, budget > 0, doll.moved(since: body.drawn) > 0.004 {
+                    // Drawn afresh as it falls, a few bodies a step.
+                    budget -= 1
+                    draw(body)
+                } else {
+                    aim(body)
                 }
             case .flying:
                 body.velocity.dy -= gravity * h
@@ -312,7 +385,7 @@ final class Carnage {
                 node.zRotation += (body.restAngle - node.zRotation) * ease
                 node.position.y += (body.restY - node.position.y) * ease
                 if abs(body.velocity.dx) < ronin * 0.06, abs(body.restAngle - node.zRotation) < 0.02 {
-                    rest(body, lying: false)
+                    rest(body)
                 }
             }
         }
@@ -348,7 +421,7 @@ final class Carnage {
     }
 
     /// Leaves a body where it came to rest, clear of the ronin's own ground, with blood pooling under it.
-    private func rest(_ body: Body, lying: Bool) {
+    private func rest(_ body: Body) {
         let node = body.node
         body.state = .resting
         // Nothing comes to rest on the ronin's own ground: it slides off to one side.
@@ -356,14 +429,7 @@ final class Carnage {
             let x = heroX + (node.position.x < heroX ? -1 : 1) * ronin * 0.34
             node.run(.moveTo(x: x, duration: 0.1))
         }
-        let width: CGFloat
-        if lying {
-            // A whole body, anchored at the feet, lying at the line it fell to.
-            node.position.y = body.floor
-            width = node.size.width * 0.84
-        } else {
-            width = extents(node, node.zRotation).0 * 2
-        }
+        let width = extents(node, node.zRotation).0 * 2 * (body.doll == nil ? 1 : 0.8)
         if !body.thin { pool(at: node.position.x, width: width * 1.2, floor: body.floor) }
     }
 }

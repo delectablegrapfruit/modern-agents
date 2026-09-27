@@ -29,7 +29,36 @@ final class RoninArtTests: XCTestCase {
             XCTAssertNotNil(Figure.pose(.hero, .cut(cut, 3)).smear)
             XCTAssertNotNil(Figure.pose(.hero, .cut(cut, 4)).smear)
             XCTAssertNil(Figure.pose(.hero, .cut(cut, 8)).smear)
-            XCTAssertNil(Figure.pose(.hero, .cut(cut, 9)).smear)
+            for k in 0..<Frame.recoverFrames { XCTAssertNil(Figure.pose(.hero, .recover(cut, k)).smear) }
+        }
+    }
+
+    func testTheRoninStepsBackIntoGuardAFootAtATime() {
+        // Each step back lifts the foot that moves; the other stays on the ground. Zanshin keeps the lunge's footing.
+        let ground: CGFloat = 0.004
+        for cut in Cut.allCases {
+            let end = Figure.footing(.hero, .cut(cut, 5)), zanshin = Figure.footing(.hero, .cut(cut, Frame.cutFrames - 1))
+            XCTAssertEqual(end.front.x, zanshin.front.x, accuracy: 0.001, "\(cut)")
+            XCTAssertEqual(end.back.x, zanshin.back.x, accuracy: 0.001, "\(cut)")
+            let steps = (0..<Frame.recoverFrames).map { Figure.footing(.hero, .recover(cut, $0)) }
+            XCTAssertLessThan(steps[0].back.y, ground, "\(cut)")
+            XCTAssertGreaterThan(steps[0].front.y, 0.03, "\(cut)")
+            XCTAssertLessThan(steps[1].front.y, ground, "\(cut)")
+            XCTAssertGreaterThan(steps[1].back.y, 0.02, "\(cut)")
+            XCTAssertLessThan(steps[2].front.y, ground, "\(cut)")
+            XCTAssertGreaterThan(steps[2].back.y, 0.03, "\(cut)")
+            XCTAssertLessThan(steps[3].back.y, ground, "\(cut)")
+            XCTAssertGreaterThan(steps[3].front.y, 0.03, "\(cut)")
+        }
+        // Worn out, he stands on the same footing as his guard, so nothing slides as he sags and heaves.
+        let home = Figure.footing(.hero, .idle(0))
+        for v in 0..<Frame.windedCycles {
+            for k in 0..<Frame.windedFrames {
+                let feet = Figure.footing(.hero, .winded(v, k))
+                XCTAssertEqual(feet.front.x, home.front.x, accuracy: 0.002, "winded \(v) \(k)")
+                XCTAssertEqual(feet.back.x, home.back.x, accuracy: 0.002, "winded \(v) \(k)")
+                XCTAssertLessThan(max(feet.front.y, feet.back.y), ground, "winded \(v) \(k)")
+            }
         }
     }
 
@@ -47,7 +76,7 @@ final class RoninArtTests: XCTestCase {
             for k in 0..<Frame.cutFrames { XCTAssertEqual(Figure.pose(.hero, .cut(cut, k)).grip, .two, "\(cut) \(k)") }
         }
         XCTAssertEqual(Figure.pose(.hero, .cut(.nukitsuke, 5)).grip, .saya)
-        XCTAssertEqual(Figure.pose(.hero, .cut(.nukitsuke, Frame.cutFrames - 1)).grip, .two)
+        XCTAssertEqual(Figure.pose(.hero, .recover(.nukitsuke, 1)).grip, .two)
         XCTAssertEqual(Figure.pose(.foe(.warlord), .block).grip, .two)
     }
 
@@ -105,7 +134,7 @@ final class RoninArtTests: XCTestCase {
                 XCTAssertFalse(pose.ghosts.isEmpty, "\(cut) \(k)")
                 XCTAssertFalse(Figure.sketch(.hero, .cut(cut, k)).underlay.isEmpty, "\(cut) \(k)")
             }
-            XCTAssertTrue(Figure.sketch(.hero, .cut(cut, 9)).underlay.isEmpty, "the return to guard is clean")
+            XCTAssertTrue(Figure.sketch(.hero, .recover(cut, 1)).underlay.isEmpty, "the return to guard is clean")
         }
         for kind in Kind.allCases where kind != .archer {
             XCTAssertFalse(Figure.sketch(.foe(kind), .strike(0)).underlay.isEmpty, "\(kind)'s blow")
@@ -127,6 +156,55 @@ final class RoninArtTests: XCTestCase {
             }
             XCTAssertEqual(outlines.count, 6, "\(kind): every body falls its own way")
             for variant in 1..<4 { XCTAssertTrue(Figure.sketch(.foe(kind), pose: Figure.struck(.foe(kind), variant: variant)).fits(margin: 1)) }
+        }
+    }
+
+    func testTheDeadCollapseUnderTheirOwnWeightAndComeToRestOnTheGround() {
+        for kind in Kind.allCases {
+            let cast = Cast.foe(kind)
+            var rng = SeededRNG(seed: 7 &+ UInt64(kind.rawValue.count))
+            var rests: [[CGPoint]] = []
+            for k in 0..<8 {
+                let pose = Figure.struck(cast, variant: k % 5)
+                var doll: Ragdoll
+                switch k % 4 {
+                case 0: doll = Ragdoll.felled(cast, pose: pose, back: -1, rng: &rng)
+                case 1: doll = Ragdoll.cut(cast, pose: pose, .above(at: 0.5, slant: 0.6), back: -1, rng: &rng)
+                case 2: doll = Ragdoll.cut(cast, pose: pose, .below(at: 0.3, slant: 0.05), back: -1, rng: &rng)
+                default: doll = Ragdoll.cut(cast, pose: pose, .headless, back: -1, rng: &rng)
+                }
+                if k % 4 >= 2 {
+                    // Standing on its planted feet until let go.
+                    doll.advance(0.5)
+                    XCTAssertFalse(doll.settled, "\(kind) \(k) stands")
+                    doll.collapse(rng: &rng)
+                }
+                var t = 0.0
+                while !doll.settled, t < 6 {
+                    doll.advance(1.0 / 60)
+                    t += 1.0 / 60
+                    for j in 0..<11 where doll.has(j) { XCTAssertGreaterThan(doll.points[j].y, -0.01, "\(kind) \(k) through the ground") }
+                }
+                XCTAssertTrue(doll.settled, "\(kind) \(k) never came to rest")
+                XCTAssertLessThan(doll.hip.y, 0.35, "\(kind) \(k) is not down")
+                // Drawn from its pose, the body is where the skeleton is.
+                let drawn = Figure.skeleton(cast, doll.pose())
+                for j in 0..<11 where doll.has(j) && j != Ragdoll.low && j != Ragdoll.high {
+                    XCTAssertEqual(drawn[j].x, doll.points[j].x, accuracy: 0.02, "\(kind) \(k) joint \(j)")
+                    XCTAssertEqual(drawn[j].y, doll.points[j].y, accuracy: 0.02, "\(kind) \(k) joint \(j)")
+                }
+                let sketch = Figure.sketch(cast, pose: doll.framed().pose)
+                XCTAssertFalse(sketch.isEmpty)
+                XCTAssertTrue(sketch.fits(margin: 1), "\(kind) \(k) spills off its canvas \(sketch.bounds(margin: 0)) \(doll.hip)")
+                rests.append(doll.points)
+            }
+            // No two come to rest alike.
+            for a in 0..<rests.count {
+                for b in (a + 1)..<rests.count where a % 4 == b % 4 {
+                    let apart = zip(rests[a], rests[b]).map { hypot($0.x - $1.x, $0.y - $1.y) }.max() ?? 0
+                    XCTAssertGreaterThan(apart, 0.05, "\(kind): \(a) and \(b) lie alike")
+                }
+            }
         }
     }
 

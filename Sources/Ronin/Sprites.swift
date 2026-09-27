@@ -383,11 +383,14 @@ final class FoeSprite: SKNode {
 }
 
 /// The ronin, who is the show: the iai stance at the start of a stage with his blade sheathed, and the draw-cut out
-/// of it; a breathing chūdan guard with his ribbons and coat stirring; seven-frame cuts (chambered, the swing with the
-/// wrists cocked, the whip through, full extension, follow-through, zanshin, back to guard) on a darting lunge that
-/// stretches him into the cut; afterimages when he closes a long gap; a ghost of his old stance when he turns; a
-/// stumble, a parried cut and a wound in two beats each; and at the end of a stage either the chiburi and the slow
-/// slide of the blade home, or the fall to one knee.
+/// of it; a breathing chūdan guard with his ribbons and coat stirring, and when he is down to his last hearts, a
+/// guard that heaves, clutches at its wound and sags at the knees; cuts on a darting lunge that stretches him into
+/// the blow, and a step back into guard a foot at a time; afterimages when he closes a long gap; a ghost of his old
+/// stance when he turns; a stumble, a parried cut, and a wound taken three ways; and at the end of a stage either
+/// the chiburi and the slow slide of the blade home, or the fall to one knee.
+///
+/// His feet keep to the ground: he moves along the lane only in the blur of a lunge or a blow, or as a foot is
+/// lifted and carried, the other kept where it stands.
 @MainActor
 final class HeroSprite: SKNode {
     let body = SKSpriteNode()
@@ -397,15 +400,38 @@ final class HeroSprite: SKNode {
     private(set) var facing = Side.right
     private var pose = Frame.iai(0)
     private var echoPose = Frame.iai(0)
-    /// What he is doing, and for how long he has been doing it.
-    private enum Act { case guarding, cutting(Cut), stumbling, repelled, hurting, flourishing, falling }
+    /// What he is doing, and for how long he has been doing it: standing his ground, playing out a run of frames (a
+    /// cut, a stumble, a wound), or the end of the stage.
+    private enum Act { case guarding, playing, flourishing, falling }
     private var act = Act.guarding
     /// Whether the blade is in its scabbard: from the end of one stage to the first cut of the next.
     private(set) var sheathed = true
     private var clock = 0.0
-    private var hold = 0.0
-    private var lungeTo: CGFloat = 0
-    private var lungeClock = 1.0
+    /// How each frame moves him as it comes up: not at all; one foot kept where it was on the ground (the other
+    /// lifted and carried); a foot set down in its place in guard; or thrown along the lane to a spot (a lunge, a
+    /// blow), in the blur of a smear frame.
+    private enum Foot { case front, back }
+    private enum Footwork { case hold, keep(Foot), home(Foot), thrown(CGFloat) }
+    private struct Beat {
+        var frame: Frame
+        var time: Double
+        var footwork = Footwork.hold
+        var blend = false
+    }
+    private var beats: [Beat] = []
+    private var beat = 0
+    /// Where he stands, from home along the lane (in the world), and where a lunge or a blow started him from.
+    private var offset: CGFloat = 0
+    private var dart: (from: CGFloat, clock: Double) = (0, 1)
+    private static let dartTime = 0.04
+    /// How hurt he is (0 whole; 1 down to his last hearts; 2 his last); how long he is still shaken by a blow or a
+    /// parry; and the cycle his winded guard is in.
+    var strain = 0
+    private var shaken = 0.0
+    private var gasp = 0.0
+    private var gasps = 0
+    private var cycle = 0
+    private var lastReel = -1
     /// Stretched into a cut (above 0), squashed by a blow (below).
     private var snap: CGFloat = 0
     private var breath = 0.0
@@ -421,10 +447,10 @@ final class HeroSprite: SKNode {
     }
 
     /// Seconds each frame of a cut shows: chambered, five through the swing to the blow, two of follow-through,
-    /// zanshin, and the return. The blow lands a tenth of a second after the press.
-    static let cutTiming: [Double] = [0.016, 0.017, 0.018, 0.02, 0.024, 0.04, 0.045, 0.05, 0.08, 0.06]
+    /// zanshin, and the two steps back into guard. The blow lands a tenth of a second after the press.
+    static let cutTiming: [Double] = [0.016, 0.017, 0.018, 0.02, 0.024, 0.04, 0.045, 0.05, 0.08, 0.065, 0.065]
     /// The draw-cut is a hair slower out of the scabbard.
-    static let drawTiming: [Double] = [0.028, 0.024, 0.024, 0.022, 0.022, 0.04, 0.045, 0.05, 0.085, 0.07]
+    static let drawTiming: [Double] = [0.028, 0.024, 0.024, 0.022, 0.022, 0.04, 0.045, 0.05, 0.085, 0.07, 0.07]
     static let flourishTiming: [Double] = [0.12, 0.16, 0.05, 0.12, 0.26, 0.26]
     /// When each frame of the fall begins: struck, the knees going, kneeling on the sword, going over, face down.
     static let fallTiming: [Double] = [0, 0.14, 0.34, 1.05, 1.22]
@@ -458,6 +484,8 @@ final class HeroSprite: SKNode {
         shadow.size = CGSize(width: ronin * 0.9, height: ronin * 0.13)
         aura.size = CGSize(width: ronin * 1.7, height: ronin * 1.7)
         aura.position = CGPoint(x: 0, y: ronin * 0.5)
+        offset = 0
+        dart.clock = HeroSprite.dartTime
         position = home
     }
 
@@ -466,7 +494,9 @@ final class HeroSprite: SKNode {
         act = .guarding
         self.sheathed = sheathed
         clock = 0
-        lungeTo = 0
+        beats = []
+        offset = 0
+        dart.clock = HeroSprite.dartTime
         flush = 0
         gore = 0
         snap = 0
@@ -491,18 +521,81 @@ final class HeroSprite: SKNode {
         }
     }
 
-    /// A cut that landed (or was aimed) `distance` points away: he darts out along the lane into it and back. A
-    /// long reach leaves afterimages along the lunge.
+    /// Plays out a run of frames, then back into guard (stepping home first if they left him off his place).
+    private func play(_ run: [Beat]) {
+        act = .playing
+        beats = run
+        beat = -1
+        clock = 0
+        advance()
+    }
+
+    /// Brings up every beat the clock has reached, in order, so the footwork adds up even over a slow tick.
+    private func advance() {
+        var t = clock, k = 0
+        while k < beats.count, t >= beats[k].time {
+            t -= beats[k].time
+            k += 1
+        }
+        while beat < min(k, beats.count - 1) {
+            beat += 1
+            enter(beats[beat])
+        }
+        guard k >= beats.count else { return }
+        // Off his place: a step home, the front foot lifted back (or forward) and set down as the back one follows.
+        let away = offset * facing.sign.cg
+        if abs(away) > ronin * 0.01 {
+            let time = 0.06 + Double(min(abs(away) / ronin, 0.4)) * 0.2
+            play([Beat(frame: .shuffle(away > 0 ? 0 : 1), time: time, footwork: .keep(.back)),
+                  Beat(frame: .shuffle(2), time: time, footwork: .home(.front))])
+        } else {
+            settle()
+        }
+    }
+
+    private func enter(_ b: Beat) {
+        let sign = facing.sign.cg
+        switch b.footwork {
+        case .hold:
+            break
+        case .keep(let foot):
+            let before = Figure.footing(.hero, pose), after = Figure.footing(.hero, b.frame)
+            offset += sign * ronin * (foot == .front ? before.front.x - after.front.x : before.back.x - after.back.x)
+            dart.clock = HeroSprite.dartTime
+        case .home(let foot):
+            let home = Figure.footing(.hero, .idle(0)), after = Figure.footing(.hero, b.frame)
+            offset = sign * ronin * (foot == .front ? home.front.x - after.front.x : home.back.x - after.back.x)
+            dart.clock = HeroSprite.dartTime
+        case .thrown(let to):
+            dart = (shown, 0)
+            offset = to
+        }
+        show(b.frame, blend: b.blend)
+    }
+
+    /// Where he is drawn along the lane from home: the offset, or on his way there in a lunge.
+    private var shown: CGFloat {
+        guard dart.clock < HeroSprite.dartTime else { return offset }
+        let t = CGFloat(dart.clock / HeroSprite.dartTime)
+        return dart.from + (offset - dart.from) * (1 - (1 - t) * (1 - t))
+    }
+
+    /// A cut that landed (or was aimed) `distance` points away: he darts out along the lane into it, and steps back
+    /// into guard: from a long lunge the front foot first, from a short one the back foot drawn up first. A long
+    /// reach leaves afterimages along the lunge.
     func cut(_ side: Side, _ style: Cut, distance: CGFloat) {
         guard !ended else { return }
         face(side)
-        act = .cutting(style)
         sheathed = false
-        clock = 0
-        lungeTo = side.sign.cg * min(ronin * 0.22, max(0, distance - ronin * 0.3) * 0.34)
-        lungeClock = 0
         snap = 1
-        show(.cut(style, 0), blend: false)
+        let reach = min(ronin * 0.22, max(0, distance - ronin * 0.3) * 0.34)
+        let timing = style == .nukitsuke ? HeroSprite.drawTiming : HeroSprite.cutTiming
+        var run = (0..<Frame.cutFrames).map { Beat(frame: .cut(style, $0), time: timing[$0]) }
+        run[0].footwork = .thrown(side.sign.cg * reach)
+        let long = reach > ronin * 0.1
+        run.append(Beat(frame: .recover(style, long ? 0 : 2), time: timing[Frame.cutFrames], footwork: .keep(long ? .back : .front)))
+        run.append(Beat(frame: .recover(style, long ? 1 : 3), time: timing[Frame.cutFrames + 1], footwork: .home(long ? .front : .back)))
+        play(run)
         if distance > ronin * 0.95 { afterimages(side, style, distance) }
     }
 
@@ -527,38 +620,62 @@ final class HeroSprite: SKNode {
     func whiff(_ side: Side, for seconds: Double) {
         guard !ended else { return }
         face(side)
-        act = .stumbling
         sheathed = false
-        clock = 0
-        hold = max(0.3, seconds)
-        lungeTo = side.sign.cg * ronin * 0.12
-        lungeClock = 0
-        show(.stumble(0), blend: true)
+        play([Beat(frame: .stumble(0), time: 0.15, footwork: .thrown(side.sign.cg * ronin * 0.12), blend: true),
+              Beat(frame: .stumble(1), time: max(0.15, seconds - 0.15), footwork: .keep(.front), blend: true)])
     }
 
     /// A cut turned aside by the warlord's guard: the blade flung back, a step back on his heels.
     func repel(_ side: Side, for seconds: Double) {
         guard !ended else { return }
         face(side)
-        act = .repelled
         sheathed = false
-        clock = 0
-        hold = max(0.3, seconds)
-        lungeTo = -side.sign.cg * ronin * 0.1
-        lungeClock = 0.04
         snap = -0.8
-        show(.repelled(0), blend: true)
+        shaken = max(shaken, 1.2)
+        play([Beat(frame: .repelled(0), time: 0.14, footwork: .thrown(offset - side.sign.cg * ronin * 0.1), blend: true),
+              Beat(frame: .repelled(1), time: max(0.16, seconds - 0.14), footwork: .keep(.front), blend: true)])
     }
 
+    /// Struck: rocked back and bracing, staggered back a step at a time, or dropped to a knee and pushed back up;
+    /// more often the last, and slower, the worse he is hurt.
     func hurt() {
         guard !ended else { return }
-        act = .hurting
-        clock = 0
-        lungeTo = -facing.sign.cg * ronin * 0.07
-        lungeClock = 0.04
         flush = 0.85
         snap = -1
-        show(sheathed ? .iai(0) : .hurt(0), blend: true)
+        shaken = 2.2
+        guard !sheathed else {
+            play([Beat(frame: .iai(0), time: 0.32, blend: true)])
+            return
+        }
+        let knock = offset - facing.sign.cg * ronin * 0.07
+        let weights: [Double] = strain == 0 ? [0.45, 0.4, 0.15] : strain == 1 ? [0.3, 0.35, 0.35] : [0.2, 0.3, 0.5]
+        var way = 0, roll = Double.random(in: 0..<weights.reduce(0, +))
+        while way < weights.count - 1, roll >= weights[way] {
+            roll -= weights[way]
+            way += 1
+        }
+        if way == lastReel, Double.random(in: 0..<1) < 0.6 { way = (way + 1 + Int.random(in: 0...1)) % 3 }
+        lastReel = way
+        let slow = strain == 0 ? 1.0 : strain == 1 ? 1.15 : 1.3
+        var run: [Beat]
+        switch way {
+        case 0:
+            run = [Beat(frame: .hurt(0), time: 0.07, footwork: .thrown(knock), blend: true),
+                   Beat(frame: .hurt(1), time: 0.1, footwork: .keep(.front)),
+                   Beat(frame: .hurt(2), time: 0.15, footwork: .keep(.front), blend: true)]
+        case 1:
+            run = [Beat(frame: .reel(0, 0), time: 0.07, footwork: .thrown(knock), blend: true),
+                   Beat(frame: .reel(0, 1), time: 0.1, footwork: .keep(.front)),
+                   Beat(frame: .reel(0, 2), time: 0.11, footwork: .keep(.back)),
+                   Beat(frame: .reel(0, 3), time: 0.16, footwork: .keep(.back), blend: true)]
+        default:
+            run = [Beat(frame: .reel(1, 0), time: 0.07, footwork: .thrown(offset - facing.sign.cg * ronin * 0.04), blend: true),
+                   Beat(frame: .reel(1, 1), time: 0.1, footwork: .keep(.front)),
+                   Beat(frame: .reel(1, 2), time: 0.24, footwork: .keep(.front)),
+                   Beat(frame: .reel(1, 3), time: 0.12, footwork: .keep(.front), blend: true)]
+        }
+        for k in run.indices.dropFirst() { run[k].time *= slow }
+        play(run)
     }
 
     func bloodied(_ amount: CGFloat) { gore = min(0.14, gore + amount) }
@@ -566,7 +683,7 @@ final class HeroSprite: SKNode {
     func finish(victory: Bool) {
         act = victory ? .flourishing : .falling
         clock = 0
-        lungeTo = 0
+        beats = []
         flush = 0
         show(victory ? .flourish(0) : .fall(0), blend: true)
     }
@@ -596,39 +713,51 @@ final class HeroSprite: SKNode {
 
     private func settle() {
         act = .guarding
-        show(sheathed ? .iai(0) : .idle(Int(breath * 7) % Frame.heroIdleFrames), blend: true)
+        beats = []
+        offset = 0
+        dart.clock = HeroSprite.dartTime
+        show(stance, blend: true)
+    }
+
+    /// His guard: the iai stance before the first cut, chūdan, or, badly hurt or just shaken, one of the winded
+    /// cycles, another chosen each time one runs out (the knees giving more often on the last heart).
+    private var stance: Frame {
+        if sheathed { return .iai(Int(breath * 5) % Frame.iaiFrames) }
+        guard strain > 0 || shaken > 0 else { return .idle(Int(breath * 8) % Frame.heroIdleFrames) }
+        let round = Int(gasp) / Frame.windedFrames
+        if round != gasps || (strain == 0 && cycle == 2) {
+            gasps = round
+            let weights: [Double] = strain > 1 ? [0.3, 0.35, cycle == 2 ? 0.1 : 0.35]
+                : strain == 1 ? [0.45, 0.4, cycle == 2 ? 0.05 : 0.15] : [0.6, 0.4, 0]
+            var next = 0, roll = Double.random(in: 0..<weights.reduce(0, +))
+            while next < weights.count - 1, roll >= weights[next] {
+                roll -= weights[next]
+                next += 1
+            }
+            cycle = next
+        }
+        return .winded(cycle, Int(gasp) % Frame.windedFrames)
     }
 
     func update(dt: Double, bloodlust: Bool) {
         breath += dt
         clock += dt
-        lungeClock += dt
+        dart.clock += dt
+        gasp += dt * (strain > 1 ? 10.5 : 8.5)
+        if shaken > 0, act == .guarding { shaken -= dt }
         switch act {
         case .guarding:
-            show(sheathed ? .iai(Int(breath * 5) % Frame.iaiFrames) : .idle(Int(breath * 8) % Frame.heroIdleFrames), blend: false)
-        case .cutting(let style):
-            let timing = style == .nukitsuke ? HeroSprite.drawTiming : HeroSprite.cutTiming
-            var t = clock, phase = 0
-            while phase < timing.count, t >= timing[phase] {
-                t -= timing[phase]
-                phase += 1
+            let frame = stance
+            // Into or out of a winded cycle, or from one to another: blended.
+            var blend = false
+            switch (pose, frame) {
+            case (.winded(let a, _), .winded(let b, _)): blend = a != b
+            case (.winded, _), (_, .winded): blend = true
+            default: break
             }
-            if phase < Frame.cutFrames { show(.cut(style, phase), blend: false) } else { settle() }
-        case .stumbling:
-            if clock < 0.15 { show(.stumble(0), blend: false) }
-            else if clock < hold { show(.stumble(1), blend: true) }
-            else { settle() }
-        case .repelled:
-            if clock < 0.14 { show(.repelled(0), blend: false) }
-            else if clock < hold { show(.repelled(1), blend: true) }
-            else { settle() }
-        case .hurting:
-            if sheathed {
-                if clock >= 0.32 { settle() }
-            } else if clock < 0.07 { show(.hurt(0), blend: false) }
-            else if clock < 0.17 { show(.hurt(1), blend: false) }
-            else if clock < 0.32 { show(.hurt(2), blend: true) }
-            else { settle() }
+            show(frame, blend: blend)
+        case .playing:
+            advance()
         case .flourishing:
             // A beat of stillness after the last kill, then the chiburi, then the blade slid home.
             var t = clock - 0.25, k = 0
@@ -645,10 +774,7 @@ final class HeroSprite: SKNode {
             show(.fall(k), blend: true)
         }
         if echo.alpha > 0 { echo.alpha = max(0, echo.alpha - CGFloat(dt) / 0.12 * 0.45) }
-        // The lunge: out fast (eased) and home again more slowly.
-        let dart = 0.04
-        let out = lungeClock < dart ? 1 - pow(1 - CGFloat(lungeClock / dart), 2) : CGFloat(exp(-(lungeClock - dart) * 11))
-        position = CGPoint(x: home.x + lungeTo * out, y: home.y)
+        position = CGPoint(x: home.x + shown, y: home.y)
         snap *= CGFloat(exp(-dt * 16))
         let sign: CGFloat = facing == .right ? 1 : -1
         body.xScale = sign * (1 + 0.05 * snap)

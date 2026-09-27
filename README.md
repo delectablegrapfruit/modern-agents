@@ -47,10 +47,11 @@ where it is.
   been about too long) runs off the lane with it. Catch him as he darts in, or as he backs away, and a heart comes
   back (points if you are full).
 - **The dead** come apart along the line of the cut: halved on the slant or through the waist, legs taken, heads
-  taken (a warlord always loses his); run through or shot, they are thrown back and go down whole. The top half is
-  flung away tumbling and trailing blood while the legs stand a moment, pumping, before they go over. Everything
-  lands, skids and turns over to lie however it will (the dead are cut apart from one of several struck poses, and
-  those who go down whole are drawn lying their own way, no two alike), and stays for the rest of the stage at ground
+  taken (a warlord always loses his); run through or shot, they are thrown back off their feet or fold where they
+  stand. The top half is flung away tumbling, arms flying, trailing blood, while the legs stand a moment, pumping,
+  before the knees go. Every body is a jointed ragdoll (knees and elbows bending only the way they bend) that holds
+  its last pose for a moment, then goes slack and collapses under its own weight, drawn afresh as it falls, so each
+  comes down and lies its own way. The dead stay for the rest of the stage at ground
   level, overlapping what fell before in a low carpet of the dead that the living walk through. Blood
   pools under the bodies, flecks the ground, and when you are hit, runs down the glass. You wear the stage's blood
   until the chiburi throws it off.
@@ -101,7 +102,9 @@ make run     # builds build/Ronin.app (macOS 14+) and opens it
   seed always make the same fight, and a saved fight resumes exactly.
 - `RoninArt` holds the figures, and uses Foundation only. Each frame is posed from a small skeleton and drawn as a
   list of shapes. The app renders those shapes with Core Graphics, and `ronin-sheet` renders the same shapes as
-  SVG, so the art can be looked at and tested anywhere.
+  SVG, so the art can be looked at and tested anywhere (`ronin-sheet out.svg ragdoll` shows the dead falling). Its
+  `Ragdoll` is a small Verlet solver: the skeleton of the pose a foe died in, let fall, and turned back into a pose
+  to draw each time it moves (a severed half drawn with the raw face of the cut).
   - **Style:** the figures are cut rather than rounded, with a fighting man's build about eight and a half heads tall:
     - broad in the shoulders, chest, back and thighs, fine at the waist, knees, ankles and wrists, the muscle of each
       limb swelling between its joints (a V from the shoulders to the waist; a calf behind the shin),
@@ -127,9 +130,14 @@ make run     # builds build/Ronin.app (macOS 14+) and opens it
     under the weight, and a walking foe advances a frame for each twelfth of its stride so its feet keep to the ground. In the app they lean into their stride, lurch into their blows and squash as they
     land; their positions ease, each change of pose blends out of the last, and they fade in as they arrive.
   - **The ronin** is drawn at a higher resolution and has the most frames: a breathing chūdan guard and the iai
-    stance, and seven cuts (nukitsuke, kesa-giri, gyaku-kesa, shōmen, dō-giri, morote-zuki, sune-giri) of seven
-    frames each: chambered in the cut's kamae, the swing with the wrists still cocked, the blade whipping through,
-    full extension on a stamping lunge, the follow-through, zanshin, and back toward guard.
+    stance, and seven cuts (nukitsuke, kesa-giri, gyaku-kesa, shōmen, dō-giri, morote-zuki, sune-giri): chambered
+    in the cut's kamae, the swing with the wrists still cocked, the blade whipping through, full extension on a
+    stamping lunge, the follow-through, zanshin, and two steps back into guard. His feet keep to the ground: he
+    moves along the lane only in the blur of a lunge or a blow, or as a lifted foot is carried and set down (from a
+    long lunge the front foot first, from a short one the back foot drawn up first). Struck, he reels one of three
+    ways (rocked back and bracing, staggered back a step at a time, or dropped to a knee and pushed back up), and
+    for a while after, or whenever he is down to his last hearts, his guard is winded: heaving, a hand clutched to
+    the wound, or the knees giving and caught again, a new cycle chosen as each runs out.
   - **Smear frames:** every fast frame (the ronin's swings, the draw, the chiburi, a stumble or a parried cut, every
     enemy's blow and leap) is drawn as a smear: the arms and weapon repeated back along the motion as fading
     multiples, a solid sweep of ink between the blades split into dry-brush strands, the body dragging echoes behind
@@ -140,7 +148,8 @@ make run     # builds build/Ronin.app (macOS 14+) and opens it
   - **Textures** are cut down to what each frame draws, keeping its place on the canvas, so the feet stay put.
 - `Ronin` is the app. It uses AppKit (the panel, the menu bar, a Carbon hot key) and SpriteKit (the lane). The
   effects include slash crescents laid along each cut, enemies cut in half, ink sprays, hit-stop, slow motion,
-  screen shake and weather.
+  screen shake, speed lines of ragged lengths bursting past the edges of the panel when a big foe dies, and weather
+  both in front of the fight and, finer and fainter, behind it.
 - `ronin-sim` plays stages in every mode (`--mode all`) with a human-like pilot (0.22 s reaction, 7 cuts a second,
   an occasional wrong-way cut) and with a perfect one. CI fails in any of these cases:
   - a mode's early stages stop being winnable by the human-like pilot (Shoshin through stage 10, Oni its first two),
