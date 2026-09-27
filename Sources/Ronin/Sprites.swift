@@ -44,6 +44,7 @@ final class FoeSprite: SKNode {
         addChild(pivot)
         body.anchorPoint = Figures.anchor
         body.texture = Figures.texture(cast, .walk(0))
+        Art.setTint(body, Palette.blood, 0)
         pivot.addChild(body)
         glint.color = (Build.of(cast).eyes ?? Palette.blood).color()
         glint.colorBlendFactor = 1
@@ -158,13 +159,11 @@ final class FoeSprite: SKNode {
         let charging = foe.phase == .windup || foe.phase == .aiming
         let t = charging ? CGFloat(foe.progress) : 0
         if hitFlash > 0 {
-            body.color = .white
-            body.colorBlendFactor = CGFloat(hitFlash / 0.14) * 0.85
+            Art.setTint(body, .white, CGFloat(hitFlash / 0.14) * 0.85)
         } else if charging {
-            body.color = Palette.blood.color()
-            body.colorBlendFactor = (0.1 + 0.4 * t * t) * (kind == .archer ? 0.6 : 1)
+            Art.setTint(body, Palette.blood, (0.12 + 0.5 * t * t) * (kind == .archer ? 0.6 : 1))
         } else {
-            body.colorBlendFactor = 0
+            Art.setTint(body, Palette.blood, 0)
         }
         glint.alpha = charging ? 0.25 + 0.75 * t : 0
         glint.setScale(charging ? 0.6 + 0.5 * t + 0.12 * CGFloat(sin(foe.timer * 40)) : 1)
@@ -220,6 +219,8 @@ final class HeroSprite: SKNode {
     private var lunge: CGFloat = 0
     private var ended = false
     private var breath = 0.0
+    /// How red the ronin is from a wound, fading.
+    private var flush: CGFloat = 0
     private var ronin: CGFloat = 60
     var home = CGPoint.zero
 
@@ -238,6 +239,7 @@ final class HeroSprite: SKNode {
         addChild(aura)
         body.anchorPoint = Figures.anchor
         body.texture = Figures.texture(.hero, .idle(0))
+        Art.setTint(body, Palette.blood, 0)
         addChild(body)
     }
 
@@ -260,7 +262,8 @@ final class HeroSprite: SKNode {
         lunge = 0
         pose = .idle(0)
         body.texture = Figures.texture(.hero, pose)
-        body.colorBlendFactor = 0
+        flush = 0
+        Art.setTint(body, Palette.blood, 0)
     }
 
     func face(_ side: Side) {
@@ -293,8 +296,7 @@ final class HeroSprite: SKNode {
         pose = .hurt
         hold = 0.24
         lunge = -facing.sign.cg * ronin * 0.07
-        body.color = Palette.blood.color()
-        body.colorBlendFactor = 0.8
+        flush = 0.85
     }
 
     func finish(victory: Bool) {
@@ -303,7 +305,7 @@ final class HeroSprite: SKNode {
         pose = victory ? .victory : .fallen
         hold = 0
         lunge = 0
-        body.colorBlendFactor = 0
+        flush = 0
     }
 
     func update(dt: Double, bloodlust: Bool) {
@@ -329,7 +331,8 @@ final class HeroSprite: SKNode {
         position = CGPoint(x: home.x + lunge, y: home.y)
         let texture = Figures.texture(.hero, pose)
         if body.texture !== texture { body.texture = texture }
-        if body.colorBlendFactor > 0 { body.colorBlendFactor = max(0, body.colorBlendFactor - CGFloat(dt) * 4) }
+        if flush > 0 { flush = max(0, flush - CGFloat(dt) * 4) }
+        Art.setTint(body, Palette.blood, flush)
         let target: CGFloat = bloodlust && !ended ? 0.55 + 0.2 * CGFloat(sin(breath * 9)) : 0
         aura.alpha += (target - aura.alpha) * min(1, CGFloat(dt) * 8)
     }

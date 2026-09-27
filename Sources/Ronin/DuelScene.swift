@@ -64,7 +64,7 @@ final class DuelScene: SKScene {
     private var arrowSprites: [Int: ArrowSprite] = [:]
     private var reachMarks: [SKShapeNode] = []
     private var weather: SKEmitterNode?
-    private let rage = SKSpriteNode(texture: Art.vignette)
+    private let rage = SKSpriteNode(texture: Art.edge)
     private let wound = SKSpriteNode(color: .white, size: .zero)
     private let vignette = SKSpriteNode(texture: Art.vignette)
     private let hud = SKNode()
@@ -314,8 +314,7 @@ final class DuelScene: SKScene {
             } else {
                 // On the dark plate the silhouette is drawn light, in the gold of the tip.
                 let figure = SKSpriteNode(texture: Figures.texture(.foe(kind), .idle(0)))
-                figure.color = Palette.gold.color()
-                figure.colorBlendFactor = 1
+                Art.setTint(figure, Palette.gold, 1)
                 figure.anchorPoint = Figures.anchor
                 figure.size = Figures.size(.foe(kind), ronin: 20 * fs)
                 figure.position = CGPoint(x: 0, y: -9 * fs)

@@ -1,5 +1,6 @@
 import AppKit
 import SpriteKit
+import simd
 import RoninCore
 
 /// A colour kept as its components, so it can be mixed and dimmed without a trip through colour spaces.
@@ -101,11 +102,32 @@ enum Art {
     static let spark = radial(32, [(0, 1), (0.3, 0.85), (1, 0)])
     static let dot = radial(24, [(0, 1), (0.7, 1), (1, 0)])
     static let vignette = radial(256, [(0, 0), (0.58, 0), (1, 0.8)], white: 0)
+    /// The same edge darkening in white, for tinting (the red of bloodlust and of a last heart).
+    static let edge = radial(256, [(0, 0), (0.55, 0), (1, 0.9)])
     static let crescent = makeCrescent()
     static let streak = makeStreak()
     static let arrow = makeArrow()
     static let petal = makePetal()
     static let raindrop = makeRaindrop()
+
+    /// Tints a sprite toward a colour, black pixels included (SpriteKit's own colour blend multiplies, which leaves a
+    /// silhouette black). Each sprite carries its own tint in the `a_tint` attribute: rgb, and how far to go.
+    static let tint: SKShader = {
+        let shader = SKShader(source: """
+        void main() {
+            vec4 c = texture2D(u_texture, v_tex_coord);
+            gl_FragColor = vec4(mix(c.rgb, a_tint.rgb * c.a, a_tint.a), c.a);
+        }
+        """)
+        shader.attributes = [SKAttribute(name: "a_tint", type: .vectorFloat4)]
+        return shader
+    }()
+
+    static func setTint(_ sprite: SKSpriteNode, _ color: RGB, _ amount: CGFloat) {
+        if sprite.shader !== tint { sprite.shader = tint }
+        let value = SIMD4<Float>(Float(color.r), Float(color.g), Float(color.b), Float(max(0, min(1, amount))))
+        sprite.setValue(SKAttributeValue(vectorFloat4: value), forAttribute: "a_tint")
+    }
 
     static func bitmap(_ w: Int, _ h: Int) -> CGContext? {
         CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
