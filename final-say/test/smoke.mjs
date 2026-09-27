@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const url = `file://${path.join(root, 'dist/final-say.html')}?speed=10`;
+const url = `file://${path.join(root, 'dist/final-say.html')}?speed=10&quality=low`;
 const browser = await chromium.launch({
   executablePath: process.env.PLAYWRIGHT_CHROMIUM || undefined,
   args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],

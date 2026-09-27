@@ -160,7 +160,7 @@ export class Hud {
     if (!c.group) facts.push(['Age', k.has('age') ? v.age : null]);
     facts.push(['From', k.has('from') ? v.from : null]);
     if (!c.group) facts.push(['Job', k.has('job') ? v.job.replace(/^(a|an) /, '') : null]);
-    if (c.group) facts.push(['Met', k.has('origin') ? 'Ask them' : null]);
+    if (c.group) facts.push(['Members', k.has('name') ? String(c.size) : null]);
     facts.push(['Act', k.has('act') ? c.label : null]);
     if (k.has('experience')) facts.push(['Doing it', v.exp]);
     if (k.has('dream')) facts.push(['Dream', v.dream.replace(/\.$/, '')]);
