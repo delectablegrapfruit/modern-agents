@@ -337,22 +337,24 @@ final class HeroSprite: SKNode {
         let reach = min(ronin * 0.2, max(0, distance - ronin * 0.3) * 0.32)
         lunge = side.sign.cg * reach
         show(.cut(style, 0), blend: false)
-        if distance > ronin * 0.7 { afterimages(side, distance) }
+        if distance > ronin * 0.95 { afterimages(side, style, distance) }
     }
 
-    /// Pale copies of the ronin strung along the gap he just crossed, gone in a blink.
-    private func afterimages(_ side: Side, _ distance: CGFloat) {
+    /// Faint copies of the ronin in the cut's own pose, strung out toward the foe across the gap he closed, gone
+    /// in a blink.
+    private func afterimages(_ side: Side, _ style: Cut, _ distance: CGFloat) {
         guard let parent else { return }
-        for k in 1...3 {
-            let ghost = SKSpriteNode(texture: Figures.texture(.hero, k == 3 ? .cut(.thrust, 1) : .cut(.level, 1)))
+        let span = distance - ronin * 0.35
+        for k in 1...2 {
+            let ghost = SKSpriteNode(texture: Figures.texture(.hero, .cut(style, 2)))
             ghost.anchorPoint = Figures.anchor
             ghost.size = body.size
             ghost.xScale = body.xScale
-            ghost.position = CGPoint(x: home.x + side.sign.cg * distance * CGFloat(k) * 0.2, y: home.y)
+            ghost.position = CGPoint(x: home.x + side.sign.cg * span * CGFloat(k) / 3, y: home.y)
             ghost.zPosition = zPosition - 0.5
-            Art.setTint(ghost, Palette.steel, 0.8)
-            ghost.alpha = 0.32 - 0.07 * CGFloat(k)
-            ghost.run(.sequence([.fadeOut(withDuration: 0.16), .removeFromParent()]))
+            Art.setTint(ghost, Palette.steel.mix(Palette.silhouette, 0.4), 0.35)
+            ghost.alpha = 0.26 - 0.08 * CGFloat(k)
+            ghost.run(.sequence([.fadeOut(withDuration: 0.14), .removeFromParent()]))
             parent.addChild(ghost)
         }
     }
