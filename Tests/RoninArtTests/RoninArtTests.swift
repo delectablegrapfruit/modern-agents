@@ -155,6 +155,18 @@ final class RoninArtTests: XCTestCase {
         }
     }
 
+    func testKneesBendOnlyForward() {
+        // Outside the stride (whose swinging leg reaches out straight to land), no knee is drawn bowed backward.
+        for cast in [Cast.hero] + Kind.allCases.map({ Cast.foe($0) }) {
+            for frame in Figure.frames(for: cast) {
+                if case .walk = frame { continue }
+                let p = Figure.pose(cast, frame)
+                XCTAssertGreaterThan(p.front.thigh - p.front.shin, -0.05, "\(cast) \(frame): front knee")
+                XCTAssertGreaterThan(p.back.thigh - p.back.shin, -0.05, "\(cast) \(frame): back knee")
+            }
+        }
+    }
+
     func testAFoeStandsOnTheGroundAndIsRockedBackWhereHeStands() {
         for kind in Kind.allCases {
             let cast = Cast.foe(kind)

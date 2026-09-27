@@ -858,7 +858,16 @@ public enum Figure {
                 p.blade = 4.15
             }
         }
+        p.back = braced(p.back)
         return p
+    }
+
+    /// A back leg braced straight behind him, the foot where it was, if it is drawn bowed back at the knee (a knee
+    /// only ever bends forward).
+    static func braced(_ leg: (thigh: CGFloat, shin: CGFloat)) -> (thigh: CGFloat, shin: CGFloat) {
+        guard leg.thigh < leg.shin else { return leg }
+        let a = asin((thigh * sin(leg.thigh) + shin * sin(leg.shin)) / (thigh + shin))
+        return (a, a)
     }
 
     /// The ronin's iai stance: blade sheathed, the sword hand resting on the hilt, the other at the scabbard's mouth,
@@ -1139,7 +1148,7 @@ public enum Figure {
             case (.archer, .aim):
                 p.lean = 0.0
                 p.front = (0.4, 0.1)
-                p.back = (-0.44, -0.3)
+                p.back = braced((-0.44, -0.3))
                 p.hold = v(0.315, 0.07)
                 p.hold2 = v(-0.09, 0.07)
                 p.blade = 1.57
@@ -1147,7 +1156,7 @@ public enum Figure {
             case (.archer, .loose), (.archer, .strike(_)):
                 p.lean = 0.0
                 p.front = (0.4, 0.1)
-                p.back = (-0.44, -0.3)
+                p.back = braced((-0.44, -0.3))
                 p.hold = v(0.315, 0.07)
                 p.hold2 = v(-0.28, 0.1)
                 p.blade = 1.57
@@ -1357,6 +1366,7 @@ public enum Figure {
             let from = draw(3), to = draw(5)
             return CutKeys(start: from, end: to, from: -0.95, to: to.blade)
         }
+        start.back = braced(start.back)
         return CutKeys(start: start, end: end, from: start.blade, to: end.blade)
     }
 
