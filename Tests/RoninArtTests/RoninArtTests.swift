@@ -548,6 +548,63 @@ final class RoninArtTests: XCTestCase {
         }
     }
 
+    func testAFootOnTheGroundHoldsItsPlaceAsTheBodyGoesOverIt() {
+        // Played a frame for each twelfth of the stride travelled, a foot down in two frames running is at the same
+        // spot on the ground in both (the body having gone on a twelfth of the stride between them): no sliding.
+        for kind in Kind.allCases {
+            let cast = Cast.foe(kind)
+            let beat = Figure.stride(cast) / CGFloat(Frame.walkFrames)
+            var planted = 0
+            for k in 0..<Frame.walkFrames {
+                let a = Figure.footing(cast, .walk(k)), b = Figure.footing(cast, .walk((k + 1) % Frame.walkFrames))
+                for (p, q, foot) in [(a.front, b.front, "near"), (a.back, b.back, "far")] where p.y < 0.001 && q.y < 0.001 {
+                    XCTAssertEqual(q.x + beat, p.x, accuracy: 0.002, "\(kind) walk \(k): the \(foot) foot slides")
+                    planted += 1
+                }
+            }
+            // Walking, each foot is down for more than half the stride (both at once as a foot lands); running, less.
+            if kind == .runner { XCTAssertLessThan(planted, Frame.walkFrames) } else { XCTAssertGreaterThanOrEqual(planted, Frame.walkFrames) }
+        }
+    }
+
+    func testAFoeWalksOnBentKneesThatNeverLock() {
+        // Every foe comes on in a crouch: a knee on the ground keeps a real bend through the whole stride (as the
+        // foot lands, as the body passes over it, as it pushes off), and a leg in the air folds further.
+        for kind in Kind.allCases {
+            let cast = Cast.foe(kind)
+            for k in 0..<Frame.walkFrames {
+                let p = Figure.pose(cast, .walk(k)), feet = Figure.footing(cast, .walk(k))
+                for (leg, foot, name) in [(p.front, feet.front, "near"), (p.back, feet.back, "far")] {
+                    let bend = leg.thigh - leg.shin
+                    XCTAssertGreaterThan(bend, Figure.walkingKnee - 0.01, "\(kind) walk \(k): the \(name) knee locks")
+                    if foot.y > 0.03 { XCTAssertGreaterThan(bend, 0.5, "\(kind) walk \(k): the \(name) leg swings through stiff") }
+                }
+                // The body pitched forward over the stride, the head held up out of it.
+                XCTAssertGreaterThan(p.lean, 0.1, "\(kind) walk \(k) walks upright")
+                XCTAssertLessThan(p.lean + p.tilt, p.lean, "\(kind) walk \(k) hangs his head")
+            }
+        }
+    }
+
+    func testTheHeavyTreadSinksIntoEachFootfall() {
+        // The oni and the warlord: slow, long, heavy steps; the hips at their lowest just after a foot comes down (the
+        // knee giving under the weight) and pushed up again over it; the foot lifted high and stamped down.
+        func hips(_ cast: Cast, _ k: Int) -> CGFloat { Figure.skeleton(cast, Figure.pose(cast, .walk(k)))[0].y }
+        let grunt = Cast.foe(.grunt)
+        func cadence(_ kind: Kind) -> Double { kind.speed / Double(Figure.stride(.foe(kind)) * Build.of(.foe(kind)).height) }
+        for kind in [Kind.brute, .warlord] {
+            let cast = Cast.foe(kind)
+            let half = Frame.walkFrames / 2
+            let step = (0..<half).map { hips(cast, $0) }
+            XCTAssertEqual(step.firstIndex(of: step.min()!), 1, "\(kind) sinks after the foot lands")
+            XCTAssertGreaterThan(step.max()! - step.min()!, 0.03, "\(kind) treads lightly")
+            XCTAssertGreaterThan(step.max()! - step.min()!, (0..<half).map { hips(grunt, $0) }.max()! - (0..<half).map { hips(grunt, $0) }.min()!)
+            let lifted = (0..<Frame.walkFrames).map { Figure.footing(cast, .walk($0)).front.y }.max()!
+            XCTAssertGreaterThan(lifted, 0.075, "\(kind) shuffles")
+            XCTAssertLessThan(cadence(kind), cadence(.grunt) * 0.7, "\(kind) hurries")
+        }
+    }
+
     func testElbowsAndKneesBendOnlyTheWayTheyBend() {
         // In every frame an elbow folds forward, never back past straight, and a knee back (a back leg locked straight
         // under the weight may give a little the other way); measured as a doll measures its joints.

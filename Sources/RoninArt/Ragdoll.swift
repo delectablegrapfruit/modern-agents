@@ -192,11 +192,12 @@ public struct Ragdoll: Sendable {
         let mass: [CGFloat] = [(span.low == 0 ? 1 : 0) + max(0.1, flesh / 2), max(0.2, flesh / 2 + (arms ? 0.4 : 0)),
                                1.1, 1.3, 0.8, 1.3, 0.8, 0.6, 0.45, 0.6, 0.45]
         lightness = mass.map { 1 / $0 }
-        // How thick the limbs are (a heavy man's are thicker); the trunk lies on its outline as drawn, split at its
-        // middle between its two ends.
+        // How thick the limbs are (a heavy man's are thicker, and a brawny man's hips and thighs thicker still, so that
+        // they lie on the ground and not in it); the trunk lies on its outline as drawn, split at its middle between
+        // its two ends.
         let build = Build.of(cast)
-        let k = build.bulk
-        radius = [0.04 * k, 0.04 * k, 0.055, 0.035 * k, 0.026 * k, 0.035 * k, 0.026 * k, 0.03 * k, 0.025 * k, 0.03 * k, 0.025 * k]
+        let k = build.bulk, m = build.bulk * build.brawn
+        radius = [0.04 * m, 0.04 * k, 0.055, 0.035 * m, 0.026 * k, 0.035 * m, 0.026 * k, 0.03 * k, 0.025 * k, 0.03 * k, 0.025 * k]
         let from = span.low * limbs.torso
         let rim = Figure.trunkOutline(cast, severed: severed).map { CGPoint(x: $0.x - from, y: $0.y) }
         outline = (rim.filter { $0.x < trunk / 2 }, rim.filter { $0.x >= trunk / 2 }.map { CGPoint(x: $0.x - trunk, y: $0.y) })

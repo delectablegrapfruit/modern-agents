@@ -10,7 +10,8 @@ import RoninCore
 //   ronin-sheet <out.svg> [hero|grunt|runner|brute|dancer|archer|warlord|all|cuts|dead|ragdoll] [--scale 1]
 //
 // A cast (or all of them): every frame, each on a strip of dusk sky with the ground line through its feet, labelled
-// with its name. FRAMES="idle 0,kesa 3,kesa chain 2" draws only the frames named.
+// with its name. FRAMES="idle 0,kesa 3,kesa chain 2" draws only the frames named; CROP=0.5 only the middle half of
+// each canvas (a closer look), COLUMNS=12 that many to a row.
 // cuts: each kind as a blow leaves it and as a cut leaves it: the poses its figure freezes in at a killing blow (and
 // it is cut apart from), its head struck off, the body left without it, and the two halves of each cut through the
 // trunk, drawn apart (`dead` is the same sheet).
@@ -364,11 +365,15 @@ func name(_ frame: Frame) -> String {
     }
 }
 
-let columns = scale > 1.2 ? 3 : 6
+// CROP=0.5 draws only the middle half of each canvas's width (a closer look at the figure); COLUMNS=12 sets how many
+// frames go in a row.
+let environment = ProcessInfo.processInfo.environment
+let crop = environment["CROP"].flatMap { Double($0) }.map { CGFloat(max(0.1, min(1, $0))) } ?? 1
+let columns = environment["COLUMNS"].flatMap { Int($0) }.map { max(1, $0) } ?? (scale * crop > 1.2 ? 3 : 6)
 var body = ""
 var y: CGFloat = 0
 var width: CGFloat = 0
-let wanted = ProcessInfo.processInfo.environment["FRAMES"].map {
+let wanted = environment["FRAMES"].map {
     Set($0.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) })
 }
 var drawnAny = false
@@ -381,16 +386,17 @@ for cast in casts {
     var rowHeight: CGFloat = 0
     for (i, frame) in frames.enumerated() {
         let sketch = Figure.sketch(cast, frame)
-        let w = CGFloat(sketch.width) * scale, h = CGFloat(sketch.height) * scale
+        let w = CGFloat(sketch.width) * scale * crop, h = CGFloat(sketch.height) * scale
         if i > 0, i % columns == 0 {
             y += rowHeight + 18
             x = 0
             rowHeight = 0
         }
         let ground = y + h - Figure.feet.y / Figure.canvas.height * h
+        let view = "viewBox=\"\(CGFloat(sketch.width) * (1 - crop) / 2) 0 \(CGFloat(sketch.width) * crop) \(sketch.height)\""
         body += "<rect x=\"\(x)\" y=\"\(y)\" width=\"\(w)\" height=\"\(h)\" fill=\"url(#sky)\"/>"
         body += "<rect x=\"\(x)\" y=\"\(ground)\" width=\"\(w)\" height=\"\(y + h - ground)\" fill=\"#1a0c0c\"/>"
-        body += sketch.svg(x: x, y: y, scale: scale)
+        body += "<svg x=\"\(x)\" y=\"\(y)\" width=\"\(w)\" height=\"\(h)\" \(view)>" + sketch.svg() + "</svg>"
         body += "<text x=\"\(x + 6)\" y=\"\(y + 14)\" font-family=\"Helvetica\" font-size=\"12\" fill=\"#fff\">\(name(frame))</text>"
         if !sketch.fits(margin: 1) {
             body += "<rect x=\"\(x)\" y=\"\(y)\" width=\"\(w)\" height=\"\(h)\" fill=\"none\" stroke=\"red\" stroke-width=\"3\"/>"
