@@ -3,7 +3,9 @@ import PackageDescription
 
 var products: [Product] = [
     .library(name: "RoninCore", targets: ["RoninCore"]),
+    .library(name: "RoninArt", targets: ["RoninArt"]),
     .executable(name: "ronin-sim", targets: ["RoninSim"]),
+    .executable(name: "ronin-sheet", targets: ["RoninSheet"]),
 ]
 
 var targets: [Target] = [
@@ -13,6 +15,11 @@ var targets: [Target] = [
     // Headless stages flown by the autopilot, for balancing.
     .executableTarget(name: "RoninSim", dependencies: ["RoninCore"], path: "Sources/RoninSim"),
     .testTarget(name: "RoninCoreTests", dependencies: ["RoninCore"], path: "Tests/RoninCoreTests"),
+    // The figures: poses, frames, and how each is drawn, as shapes. Foundation only, so the art can be checked and
+    // previewed (as SVG contact sheets) anywhere; the app renders the same shapes with Core Graphics.
+    .target(name: "RoninArt", dependencies: ["RoninCore"], path: "Sources/RoninArt"),
+    .executableTarget(name: "RoninSheet", dependencies: ["RoninArt", "RoninCore"], path: "Sources/RoninSheet"),
+    .testTarget(name: "RoninArtTests", dependencies: ["RoninArt", "RoninCore"], path: "Tests/RoninArtTests"),
 ]
 
 #if os(macOS)
@@ -20,7 +27,7 @@ products.append(.executable(name: "Ronin", targets: ["Ronin"]))
 targets.append(
     .executableTarget(
         name: "Ronin",
-        dependencies: ["RoninCore"],
+        dependencies: ["RoninCore", "RoninArt"],
         path: "Sources/Ronin",
         linkerSettings: [
             .linkedFramework("AppKit"),

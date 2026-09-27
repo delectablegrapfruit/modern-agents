@@ -1,38 +1,12 @@
 import AppKit
 import SpriteKit
 import simd
+import RoninArt
 import RoninCore
 
-/// A colour kept as its components, so it can be mixed and dimmed without a trip through colour spaces.
-struct RGB: Equatable {
-    var r: CGFloat
-    var g: CGFloat
-    var b: CGFloat
-
-    init(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat) {
-        self.r = r
-        self.g = g
-        self.b = b
-    }
-
+extension RGB {
     func color(_ alpha: CGFloat = 1) -> SKColor { SKColor(red: r, green: g, blue: b, alpha: alpha) }
     func cg(_ alpha: CGFloat = 1) -> CGColor { CGColor(red: r, green: g, blue: b, alpha: alpha) }
-    func mix(_ other: RGB, _ t: CGFloat) -> RGB { RGB(r + (other.r - r) * t, g + (other.g - g) * t, b + (other.b - b) * t) }
-    func scaled(_ k: CGFloat) -> RGB { RGB(r * k, g * k, b * k) }
-
-    static let white = RGB(1, 1, 1)
-    static let black = RGB(0, 0, 0)
-}
-
-enum Palette {
-    static let background = RGB(0.035, 0.025, 0.03)
-    static let header = RGB(0.07, 0.05, 0.055)
-    static let ink = RGB(0.95, 0.92, 0.88)
-    static let gold = RGB(1.0, 0.80, 0.30)
-    static let blood = RGB(0.92, 0.07, 0.10)
-    static let steel = RGB(0.90, 0.94, 1.0)
-    static let silhouette = RGB(0.025, 0.02, 0.03)
-    static let shade = RGB(0.13, 0.11, 0.13)
 }
 
 /// How a setting is painted: its sky, its sun or moon, its hills and landmarks, and its weather.
@@ -94,9 +68,13 @@ struct Look {
 /// Textures drawn once at launch: glows, sparks, the cut's crescent, arrows, the sky. No image files.
 @MainActor
 enum Art {
-    static let headingFont = "AvenirNextCondensed-Heavy"
-    static let numberFont = "AvenirNextCondensed-Bold"
-    static let textFont = "AvenirNext-DemiBold"
+    /// Optima throughout: a humanist face with a chiselled, calligraphic stroke that stays legible small.
+    static let headingFont = "Optima-Bold"
+    static let numberFont = "Optima-Bold"
+    static let textFont = "Optima-Regular"
+    static let italicFont = "Optima-BoldItalic"
+    /// For the seal's single character.
+    static let sealFont = "HiraMinProN-W6"
 
     static let glow = radial(128, [(0, 1), (0.22, 0.55), (0.55, 0.14), (1, 0)])
     static let spark = radial(32, [(0, 1), (0.3, 0.85), (1, 0)])
@@ -105,6 +83,8 @@ enum Art {
     /// The same edge darkening in white, for tinting (the red of bloodlust and of a last heart).
     static let edge = radial(256, [(0, 0), (0.55, 0), (1, 0.9)])
     static let crescent = makeCrescent()
+    /// A horizontal band that fades out at both ends: what text sits on.
+    static let band = makeBand()
     static let streak = makeStreak()
     static let arrow = makeArrow()
     static let petal = makePetal()
@@ -176,11 +156,29 @@ enum Art {
         context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
         context.fillPath()
         context.setBlendMode(.clear)
-        let inner = r * 0.96
-        context.addEllipse(in: CGRect(x: c - inner - r * 0.2, y: c - inner + r * 0.02, width: 2 * inner, height: 2 * inner))
+        let inner = r * 0.985
+        context.addEllipse(in: CGRect(x: c - inner - r * 0.11, y: c - inner + r * 0.01, width: 2 * inner, height: 2 * inner))
         context.fillPath()
         context.endTransparencyLayer()
         return texture(context)
+    }
+
+    private static func makeBand() -> SKTexture {
+        let w = 256, h = 4
+        guard let context = bitmap(w, h) else { return SKTexture() }
+        let colors = [CGColor(red: 1, green: 1, blue: 1, alpha: 0), CGColor(red: 1, green: 1, blue: 1, alpha: 1),
+                      CGColor(red: 1, green: 1, blue: 1, alpha: 1), CGColor(red: 1, green: 1, blue: 1, alpha: 0)] as CFArray
+        guard let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 0.22, 0.78, 1])
+        else { return SKTexture() }
+        context.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: w, y: 0), options: [])
+        return texture(context)
+    }
+
+    /// Sets a label's text with letter-spacing: small capitals, tracked out, read as engraved rather than shouted.
+    static func track(_ label: SKLabelNode, _ text: String, _ spacing: CGFloat, color: SKColor? = nil) {
+        let font = NSFont(name: label.fontName ?? headingFont, size: label.fontSize) ?? NSFont.systemFont(ofSize: label.fontSize)
+        let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color ?? label.fontColor ?? .white, .kern: spacing]
+        label.attributedText = NSAttributedString(string: text, attributes: attributes)
     }
 
     /// A soft horizontal bar, bright in the middle: dashes and trails.

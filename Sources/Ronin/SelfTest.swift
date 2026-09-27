@@ -40,7 +40,12 @@ enum SelfTest {
     private static func run(_ app: AppDelegate) async throws {
         let panel = app.panel!, scene = panel.scene, session = app.session
         Settings.pauseWhenAway = false
+        // Floor hints are off unless asked for; this run turns them on to check them, then off again.
+        Settings.defaults.removeObject(forKey: "floorHints")
+        guard !Settings.floorHints else { throw Failure("floor hints were on by default") }
+        Settings.floorHints = true
         Settings.hintShown = false
+        scene.loadFight(intro: true)
         panel.setCompact(false)
         panel.setSize(.large)
         if let screen = NSScreen.main?.visibleFrame { panel.move(topLeft: NSPoint(x: screen.minX + 60, y: screen.maxY - 60)) }
@@ -76,12 +81,16 @@ enum SelfTest {
         try await until("stage 1 ended", timeout: 60) { session.fight.outcome != nil }
         guard session.fight.outcome == .victory else { throw Failure("the autopilot lost stage 1") }
         print("stage 1: \(session.fight.stats.kills) kills in \(Int(session.fight.time))s, best combo \(session.fight.stats.bestCombo)")
+        // The flourish: the blood flicked away, the blade going home, before the card comes up.
+        try await pause(0.95)
+        try snapshot("4-flourish", panel)
         try await until("the banner", timeout: 5) { scene.isShowingBanner }
         try await pause(0.7)
-        try snapshot("4-cleared", panel)
+        try snapshot("5-cleared", panel)
         guard session.career.stage == 2, session.career.kills == session.fight.stats.kills else { throw Failure("the win was not booked") }
         guard let saved = session.store.load(), saved.career == session.career else { throw Failure("the win was not saved") }
         guard Settings.hintShown else { throw Failure("the button hint stayed up after kills on both sides") }
+        Settings.floorHints = false
 
         // Clicking the banner starts stage 2.
         click(.right, panel)
@@ -92,7 +101,7 @@ enum SelfTest {
         session.jump(to: 4)
         scene.loadFight(intro: true)
         try await pause(0.45)
-        try snapshot("5-newcomer", panel)
+        try snapshot("6-newcomer", panel)
 
         // A warlord, at the end of stage 5.
         session.jump(to: 5)
@@ -103,12 +112,12 @@ enum SelfTest {
         scene.timeScale = 1
         try await until("the warlord closed in", timeout: 10) { (session.fight.boss?.distance ?? 0) < 0.55 }
         try await pause(0.2)
-        try snapshot("6-warlord", panel)
+        try snapshot("7-warlord", panel)
         scene.timeScale = 3
         try await until("stage 5 ended", timeout: 40) { session.fight.outcome != nil }
         guard session.fight.outcome == .victory else { throw Failure("the autopilot lost to the warlord") }
         try await pause(0.35)
-        try snapshot("7-warlord-slain", panel)
+        try snapshot("8-warlord-slain", panel)
 
         // Oni: three hearts and its own stage count. Bloodlust in the thick of its stage 7.
         session.choose(.oni)
@@ -122,7 +131,7 @@ enum SelfTest {
         if session.fight.outcome == nil {
             scene.timeScale = 1
             try await pause(0.5)
-            try snapshot("8-oni-bloodlust", panel)
+            try snapshot("9-oni-bloodlust", panel)
         } else {
             print("stage 7 ended before a crowd met bloodlust; no snapshot")
             session.next()
@@ -137,7 +146,7 @@ enum SelfTest {
         guard session.fight.outcome == .defeat else { throw Failure("stage \(stage) was won with nobody cutting") }
         try await until("the banner", timeout: 5) { scene.isShowingBanner }
         try await pause(0.7)
-        try snapshot("9-fallen", panel)
+        try snapshot("10-fallen", panel)
         guard session.career.falls == 1, session.career.stage == stage, session.career.attempt == 2 else { throw Failure("the fall was not booked") }
         click(.left, panel)
         guard session.fight.stage == stage, session.fight.outcome == nil else { throw Failure("rising again did not restart the stage") }
@@ -151,7 +160,7 @@ enum SelfTest {
         panel.setCompact(true)
         try await pause(0.4)
         guard panel.panel.frame.size == DuelScene.pillSize, scene.isCompact else { throw Failure("compact did not fold to the pill") }
-        try snapshot("10-compact", panel)
+        try snapshot("11-compact", panel)
         panel.setCompact(false)
         try await pause(0.4)
         guard panel.panel.frame.width == Settings.size.width else { throw Failure("the panel did not unfold") }

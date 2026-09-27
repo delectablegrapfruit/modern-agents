@@ -158,6 +158,12 @@ enum Settings {
         set { defaults.set(newValue, forKey: "visible") }
     }
 
+    /// The reach marks and the mouse-button hints on the lane's floor. Off unless you turn them on.
+    static var floorHints: Bool {
+        get { defaults.object(forKey: "floorHints") as? Bool ?? false }
+        set { defaults.set(newValue, forKey: "floorHints") }
+    }
+
     static var hintShown: Bool {
         get { defaults.bool(forKey: "hintShown") }
         set { defaults.set(newValue, forKey: "hintShown") }

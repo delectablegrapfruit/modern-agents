@@ -1,5 +1,6 @@
 import AppKit
 import SpriteKit
+import RoninArt
 import RoninCore
 
 /// A small borderless panel that floats over every app and every Space, and takes clicks without bringing Ronin

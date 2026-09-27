@@ -1,5 +1,6 @@
 import AppKit
 import SpriteKit
+import RoninArt
 import RoninCore
 
 /// Small pictograms drawn in code. At 10–16 points they say what a line of tiny text would: kills, time, combo,
@@ -54,27 +55,6 @@ enum Icons {
         path.move(to: CGPoint(x: s * 0.42, y: -s * 0.14))
         path.addLine(to: CGPoint(x: s * 0.14, y: -s * 0.42))
         return shape(path, stroke: color, width: max(1.5, s * 0.13))
-    }
-
-    /// The mode: one to four slanted blade strokes.
-    static func mode(_ mode: Mode, _ s: CGFloat) -> SKNode {
-        let path = CGMutablePath()
-        let n = mode.level + 1
-        for k in 0..<n {
-            let x = (CGFloat(k) - CGFloat(n - 1) / 2) * s * 0.34
-            path.move(to: CGPoint(x: x - s * 0.14, y: -s * 0.45))
-            path.addLine(to: CGPoint(x: x + s * 0.14, y: s * 0.45))
-        }
-        return shape(path, stroke: Icons.color(of: mode).color(), width: max(1.6, s * 0.16))
-    }
-
-    static func color(of mode: Mode) -> RGB {
-        switch mode {
-        case .shoshin: return RGB(0.55, 0.9, 0.55)
-        case .bushido: return RGB(0.95, 0.92, 0.85)
-        case .shura: return RGB(1.0, 0.6, 0.2)
-        case .oni: return RGB(1.0, 0.2, 0.2)
-        }
     }
 
     /// The warlord's golden crescent.
@@ -149,21 +129,72 @@ enum Icons {
         return shape(path, stroke: color, width: max(2, s * 0.2))
     }
 
-    /// A heart, as a diamond (full, or an outline once lost).
+    /// A heart, as a slender lozenge (full, or an outline once lost).
     static func heart(_ s: CGFloat) -> SKShapeNode {
-        let node = SKShapeNode(path: Art.diamond(s / 2))
-        node.lineWidth = max(1, s * 0.14)
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: 0, y: s / 2))
+        path.addLine(to: CGPoint(x: s * 0.26, y: 0))
+        path.addLine(to: CGPoint(x: 0, y: -s / 2))
+        path.addLine(to: CGPoint(x: -s * 0.26, y: 0))
+        path.closeSubpath()
+        let node = SKShapeNode(path: path)
+        node.lineWidth = max(0.8, s * 0.09)
         node.isAntialiased = true
         return node
     }
 
-    /// A rounded dark plate for text to sit on.
-    static func plate(_ size: CGSize, alpha: CGFloat = 0.62) -> SKShapeNode {
-        let node = SKShapeNode(rect: CGRect(x: -size.width / 2, y: -size.height / 2, width: size.width, height: size.height),
-                               cornerRadius: min(size.height / 2, 8))
-        node.fillColor = SKColor(white: 0, alpha: alpha)
-        node.strokeColor = SKColor(white: 1, alpha: 0.08)
-        node.lineWidth = 1
+    /// The mode as a hanko, a vermilion seal with one character: 初 beginner's mind, 武 the way of the sword, 修 the
+    /// realm of carnage, 鬼 the demon.
+    static func seal(_ mode: Mode, _ s: CGFloat) -> SKNode {
+        let node = SKShapeNode(rect: CGRect(x: -s / 2, y: -s / 2, width: s, height: s), cornerRadius: s * 0.12)
+        node.fillColor = RGB(0.72, 0.1, 0.08).color()
+        node.strokeColor = RGB(0.95, 0.4, 0.3).color(0.6)
+        node.lineWidth = max(0.8, s * 0.05)
+        let glyph = SKLabelNode(fontNamed: Art.sealFont)
+        glyph.fontSize = s * 0.74
+        glyph.fontColor = RGB(0.98, 0.93, 0.85).color()
+        glyph.verticalAlignmentMode = .center
+        glyph.horizontalAlignmentMode = .center
+        glyph.text = ["初", "武", "修", "鬼"][mode.level]
+        glyph.position = CGPoint(x: 0, y: -s * 0.02)
+        node.addChild(glyph)
+        return node
+    }
+
+    /// A band for text to sit on: dark, fading out at both ends, with a fine gold rule above and below.
+    static func band(_ size: CGSize, alpha: CGFloat = 0.7) -> SKNode {
+        let node = SKNode()
+        let fill = SKSpriteNode(texture: Art.band)
+        fill.size = size
+        fill.color = .black
+        fill.colorBlendFactor = 1
+        fill.alpha = alpha
+        node.addChild(fill)
+        for y in [size.height / 2, -size.height / 2] {
+            let rule = SKSpriteNode(texture: Art.band)
+            rule.size = CGSize(width: size.width * 0.9, height: 1)
+            rule.position = CGPoint(x: 0, y: y)
+            rule.color = Palette.gold.color()
+            rule.colorBlendFactor = 1
+            rule.alpha = 0.55
+            node.addChild(rule)
+        }
+        return node
+    }
+
+    /// A fine rule with a lozenge at its centre, to set off a title.
+    static func rule(_ width: CGFloat, _ color: SKColor) -> SKNode {
+        let node = SKNode()
+        let line = SKSpriteNode(texture: Art.band)
+        line.size = CGSize(width: width, height: 1)
+        line.color = color
+        line.colorBlendFactor = 1
+        node.addChild(line)
+        let mark = heart(7)
+        mark.fillColor = color
+        mark.strokeColor = .clear
+        mark.zRotation = .pi / 2
+        node.addChild(mark)
         return node
     }
 }

@@ -1,5 +1,6 @@
 import AppKit
 import SpriteKit
+import RoninArt
 import RoninCore
 
 /// The lane, its header, the cards between stages, and the pill it folds into.
@@ -69,9 +70,9 @@ final class DuelScene: SKScene {
     private let vignette = SKSpriteNode(texture: Art.vignette)
     private let hud = SKNode()
     private let comboBack = SKSpriteNode(texture: Art.glow)
-    private let comboLabel = Art.label(Art.headingFont, size: 26, color: .white)
-    private let comboShadow = Art.label(Art.headingFont, size: 26, color: SKColor(white: 0, alpha: 0.7))
-    private let comboTimes = Art.label(Art.headingFont, size: 13, color: Palette.gold.color(), align: .left)
+    private let comboLabel = Art.label(Art.headingFont, size: 28, color: .white)
+    private let comboShadow = Art.label(Art.headingFont, size: 28, color: SKColor(white: 0, alpha: 0.7))
+    private let comboTimes = Art.label(Art.italicFont, size: 13, color: Palette.gold.color(), align: .left)
     private let bossNode = SKNode()
     private let bossTrack = SKShapeNode()
     private let bossFill = SKSpriteNode(color: Palette.gold.color(), size: .zero)
@@ -86,8 +87,8 @@ final class DuelScene: SKScene {
     private let header = SKNode()
     private let headerBar = SKSpriteNode(color: Palette.header.color(), size: .zero)
     private var modeGlyph = SKNode()
-    private let titleLabel = Art.label(Art.headingFont, size: 13.5, color: Palette.ink.color(), align: .left)
-    private let scoreLabel = Art.label(Art.headingFont, size: 13, color: Palette.ink.color(0.9), align: .right)
+    private let titleLabel = Art.label(Art.headingFont, size: 12.5, color: Palette.ink.color(), align: .left)
+    private let scoreLabel = Art.label(Art.headingFont, size: 13, color: Palette.gold.mix(.white, 0.35).color(), align: .right)
     private let compactButton = SKShapeNode()
     private let closeButton = SKShapeNode()
     private var hearts: [SKShapeNode] = []
@@ -96,9 +97,9 @@ final class DuelScene: SKScene {
 
     private let pill = SKNode()
     private var pillGlyph = SKNode()
-    private let pillLabel = Art.label(Art.headingFont, size: 12.5, color: Palette.ink.color(), align: .left)
+    private let pillLabel = Art.label(Art.headingFont, size: 12, color: Palette.ink.color(), align: .left)
     private var pillHearts: [SKShapeNode] = []
-    private let pillValue = Art.label(Art.headingFont, size: 12, color: Palette.ink.color(0.85), align: .right)
+    private let pillValue = Art.label(Art.textFont, size: 11.5, color: Palette.ink.color(0.85), align: .right)
 
     init(session: GameSession, size: CGSize) {
         self.session = session
@@ -225,10 +226,10 @@ final class DuelScene: SKScene {
             header.addChild(button)
         }
         for _ in 0..<Mode.shoshin.hearts {
-            let heart = Icons.heart(10)
+            let heart = Icons.heart(11)
             header.addChild(heart)
             hearts.append(heart)
-            let small = Icons.heart(8)
+            let small = Icons.heart(9)
             pill.addChild(small)
             pillHearts.append(small)
         }
@@ -263,12 +264,12 @@ final class DuelScene: SKScene {
             look = Look.of(fight.setting)
             layout()
         }
-        titleLabel.text = "STAGE \(fight.stage)"
+        Art.track(titleLabel, "STAGE \(fight.stage)", 1.6)
         modeGlyph.removeFromParent()
-        modeGlyph = Icons.mode(fight.mode, 13)
+        modeGlyph = Icons.seal(fight.mode, 15)
         header.addChild(modeGlyph)
         pillGlyph.removeFromParent()
-        pillGlyph = Icons.mode(fight.mode, 11)
+        pillGlyph = Icons.seal(fight.mode, 14)
         pill.addChild(pillGlyph)
         layoutHeader()
         layoutPill()
@@ -289,24 +290,24 @@ final class DuelScene: SKScene {
         card.position = CGPoint(x: field.midX, y: field.minY + field.height * 0.6)
         let newcomer = Difficulty.introduces(fight.stage)
         let tall: CGFloat = (newcomer != nil ? 68 : 50) * fs
-        card.addChild(Icons.plate(CGSize(width: min(field.width - 16, 300 * fs), height: tall)))
+        card.addChild(Icons.band(CGSize(width: min(field.width, 340 * fs), height: tall)))
         let top = tall / 2
-        let title = Art.label(Art.headingFont, size: 24 * fs, color: .white)
-        title.text = "STAGE \(fight.stage)"
+        let title = Art.label(Art.headingFont, size: 23 * fs, color: .white)
+        Art.track(title, "STAGE \(fight.stage)", 5 * fs)
         title.position = CGPoint(x: 0, y: top - 16 * fs)
         card.addChild(title)
-        let sub = Art.label(Art.headingFont, size: 11 * fs, color: Icons.color(of: fight.mode).color())
-        sub.text = fight.mode.title.uppercased() + "  ·  " + fight.setting.name.uppercased()
-        sub.position = CGPoint(x: 6 * fs, y: top - 34 * fs)
+        let sub = Art.label(Art.textFont, size: 10.5 * fs, color: Palette.ink.color(0.85))
+        Art.track(sub, fight.mode.title.uppercased() + "   ·   " + fight.setting.name.uppercased(), 2 * fs)
+        sub.position = CGPoint(x: 9 * fs, y: top - 34 * fs)
         card.addChild(sub)
-        let glyph = Icons.mode(fight.mode, 11 * fs)
-        glyph.position = CGPoint(x: sub.position.x - sub.frame.width / 2 - 10 * fs, y: sub.position.y)
+        let glyph = Icons.seal(fight.mode, 13 * fs)
+        glyph.position = CGPoint(x: sub.position.x - sub.frame.width / 2 - 12 * fs, y: sub.position.y)
         card.addChild(glyph)
         if let kind = newcomer {
             let line = SKNode()
             line.position = CGPoint(x: 0, y: top - 54 * fs)
-            let tip = Art.label(Art.headingFont, size: 11 * fs, color: Palette.gold.color())
-            tip.text = kind == .warlord ? "A WARLORD AWAITS" : DuelScene.tip(kind)
+            let tip = Art.label(Art.italicFont, size: 11 * fs, color: Palette.gold.color())
+            Art.track(tip, kind == .warlord ? "A WARLORD AWAITS" : DuelScene.tip(kind), 1.2 * fs)
             tip.horizontalAlignmentMode = .left
             let icon: SKNode
             if kind == .warlord {
@@ -359,7 +360,7 @@ final class DuelScene: SKScene {
     private func showHintIfNeeded() {
         hint?.removeFromParent()
         hint = nil
-        guard !Settings.hintShown, session.fight.outcome == nil else { return }
+        guard Settings.floorHints, !Settings.hintShown, session.fight.outcome == nil else { return }
         hintSides = []
         let node = SKNode()
         node.zPosition = 55
@@ -367,7 +368,7 @@ final class DuelScene: SKScene {
             let mouse = SKNode()
             mouse.name = side == .left ? "left" : "right"
             mouse.position = CGPoint(x: laneX(side.sign * 0.62), y: groundY + ronin * 0.2)
-            mouse.addChild(Icons.plate(CGSize(width: 44 * fs, height: 30 * fs), alpha: 0.7))
+            mouse.addChild(Icons.band(CGSize(width: 56 * fs, height: 28 * fs), alpha: 0.75))
             let icon = Icons.mouse(20 * fs, lit: side, Palette.ink.color())
             icon.position = CGPoint(x: -side.sign.cg * 7 * fs, y: 0)
             mouse.addChild(icon)
@@ -463,18 +464,18 @@ final class DuelScene: SKScene {
 
     private func layoutHeader() {
         let mid = top + DuelScene.headerHeight / 2 + 1.5
-        modeGlyph.position = CGPoint(x: 13, y: mid)
-        titleLabel.position = CGPoint(x: 24, y: mid)
-        let heartsX = 24 + max(titleLabel.frame.width, 58) + 12
-        for (k, heart) in hearts.enumerated() { heart.position = CGPoint(x: heartsX + CGFloat(k) * 12, y: mid) }
+        modeGlyph.position = CGPoint(x: 15, y: mid)
+        titleLabel.position = CGPoint(x: 29, y: mid - 0.5)
+        let heartsX = 29 + max(titleLabel.frame.width, 62) + 12
+        for (k, heart) in hearts.enumerated() { heart.position = CGPoint(x: heartsX + CGFloat(k) * 9, y: mid) }
         scoreLabel.position = CGPoint(x: size.width - 48, y: mid)
     }
 
     private func layoutPill() {
         let h = size.height
-        pillGlyph.position = CGPoint(x: 13, y: h / 2)
-        pillLabel.position = CGPoint(x: 24, y: h / 2)
-        for (k, heart) in pillHearts.enumerated() { heart.position = CGPoint(x: 96 + CGFloat(k) * 9, y: h / 2) }
+        pillGlyph.position = CGPoint(x: 15, y: h / 2)
+        pillLabel.position = CGPoint(x: 28, y: h / 2)
+        for (k, heart) in pillHearts.enumerated() { heart.position = CGPoint(x: 100 + CGFloat(k) * 7.5, y: h / 2) }
         pillValue.position = CGPoint(x: size.width - 12, y: h / 2)
         refreshPill()
     }
@@ -729,8 +730,9 @@ final class DuelScene: SKScene {
             refreshPill()
             return
         }
-        // The reach marks light up when a cut to that side would land.
+        // The reach marks (a floor hint) light up when a cut to that side would land.
         for (k, mark) in reachMarks.enumerated() {
+            mark.isHidden = !Settings.floorHints
             let side: Side = k == 0 ? .left : .right
             mark.position.x = laneX(side.sign * fight.reach)
             let live = fight.outcome == nil && fight.target(side) != nil
@@ -815,7 +817,7 @@ final class DuelScene: SKScene {
 
     private func refreshPill() {
         let fight = session.fight
-        pillLabel.text = "STAGE \(fight.stage)"
+        Art.track(pillLabel, "STAGE \(fight.stage)", 1.2)
         for (k, heart) in pillHearts.enumerated() {
             heart.isHidden = k >= fight.maxHP
             let full = k < fight.hp
@@ -846,10 +848,12 @@ final class DuelScene: SKScene {
         switch event {
         case .cut(let side, let id, let killed):
             guard let sprite = foeSprites[id] else { return }
-            let target = CGPoint(x: sprite.position.x, y: groundY + sprite.height * 0.55)
-            hero.cut(side, distance: abs(sprite.position.x - heroX))
+            let distance = abs(sprite.position.x - heroX)
+            let style = chooseCut(sprite.kind, distance: distance)
+            let target = CGPoint(x: sprite.position.x, y: groundY + sprite.height * (style == .sweep ? 0.35 : 0.55))
+            hero.cut(side, style, distance: distance)
             dash(to: sprite.position.x, side: side)
-            slash(at: target, side: side, strong: killed)
+            slash(at: target, side: side, style: style, strong: killed)
             if killed {
                 sever(sprite, side: side)
                 noteKill(side)
@@ -884,8 +888,9 @@ final class DuelScene: SKScene {
                                 .group([.fadeOut(withDuration: 0.25), .moveBy(x: 0, y: 6, duration: 0.25)]), .removeFromParent()]))
         case .deflected(let side, let id):
             let p = arrowSprites[id]?.position ?? CGPoint(x: heroX + side.sign.cg * ronin * 0.5, y: groundY + ronin * 0.6)
-            hero.cut(side, distance: abs(p.x - heroX))
-            slash(at: p, side: side, strong: false)
+            let style = chooseCut(nil, distance: abs(p.x - heroX))
+            hero.cut(side, style, distance: abs(p.x - heroX))
+            slash(at: p, side: side, style: style, strong: false)
             fx.addChild(at(p, Art.burst(Palette.gold, count: 24, speed: ronin * 2.6, size: ronin * 0.09, life: 0.35)))
             fx.addChild(at(p, Art.shockwave(Palette.gold, radius: ronin * 0.12, grow: 3, width: 2, duration: 0.3)))
             hitStop = max(hitStop, 0.05)
@@ -982,26 +987,74 @@ final class DuelScene: SKScene {
         fx.addChild(streak)
     }
 
-    private func slash(at p: CGPoint, side: Side, strong: Bool) {
+    private var cuts = 0
+    private var lastCut = Cut.level
+
+    /// A cut to suit what is in front of him, never the same one twice running: a thrust to close a long gap, heavy
+    /// overhead and diagonal cuts for the big ones, low sweeps and rising cuts for the quick, level or rising cuts to
+    /// meet an arrow.
+    private func chooseCut(_ kind: Kind?, distance: CGFloat) -> Cut {
+        let options: [Cut]
+        if kind == nil { options = [.level, .rising] }
+        else if distance > ronin * 0.9 { options = [.thrust, .level] }
+        else if kind == .brute || kind == .warlord { options = [.overhead, .falling, .level] }
+        else if kind == .runner || kind == .dancer { options = [.sweep, .rising, .level] }
+        else { options = [.falling, .rising, .level, .sweep, .overhead] }
+        cuts += 1
+        let fresh = options.filter { $0 != lastCut }
+        let pick = fresh.isEmpty ? options[0] : fresh[cuts % fresh.count]
+        lastCut = pick
+        return pick
+    }
+
+    /// The cut's mark in the air: a fine crescent laid along the line of the cut (level, rising, falling, straight
+    /// down, low), or for a thrust a single bright line.
+    private func slash(at p: CGPoint, side: Side, style: Cut, strong: Bool) {
         let bloodlust = session.fight.inBloodlust
-        let s = ronin * (strong ? 1.3 : 1.0)
+        let s = ronin * (strong ? 1.25 : 1.0)
+        let tilt: CGFloat
+        switch style {
+        case .level: tilt = -0.1
+        case .rising: tilt = 0.75
+        case .falling: tilt = -0.8
+        case .overhead: tilt = -1.3
+        case .sweep: tilt = 0.2
+        case .thrust: tilt = 0
+        }
+        if style == .thrust {
+            for (k, color) in [(0, bloodlust ? Palette.blood : look.accent), (1, RGB.white)] {
+                let line = SKSpriteNode(texture: Art.streak)
+                line.anchorPoint = CGPoint(x: 1, y: 0.5)
+                line.size = CGSize(width: s * 1.5, height: s * (k == 0 ? 0.16 : 0.07))
+                line.position = CGPoint(x: p.x + side.sign.cg * s * 0.35, y: p.y + s * 0.08)
+                line.xScale = side == .right ? 1 : -1
+                line.color = color.color()
+                line.colorBlendFactor = 1
+                line.blendMode = .add
+                line.run(.sequence([.group([.fadeOut(withDuration: 0.16), .scaleX(to: 1.3 * line.xScale, duration: 0.16)]), .removeFromParent()]))
+                fx.addChild(line)
+            }
+            fx.addChild(at(CGPoint(x: p.x + side.sign.cg * s * 0.35, y: p.y + s * 0.08),
+                           Art.shockwave(.white, radius: s * 0.05, grow: 4, width: 1.2, duration: 0.2)))
+            return
+        }
         for (k, color) in [(0, bloodlust ? Palette.blood : look.accent), (1, RGB.white)] {
             let arc = SKSpriteNode(texture: Art.crescent)
-            arc.size = CGSize(width: s * (k == 0 ? 1.12 : 1), height: s * (k == 0 ? 1.12 : 1))
+            arc.size = CGSize(width: s * (k == 0 ? 1.1 : 1), height: s * (k == 0 ? 1.1 : 1))
             arc.position = p
             arc.xScale = side == .right ? 1 : -1
-            arc.zRotation = CGFloat.random(in: -0.7...0.5)
+            arc.zRotation = (side == .right ? tilt : -tilt) + CGFloat.random(in: -0.12...0.12)
             arc.color = color.color()
             arc.colorBlendFactor = 1
             arc.blendMode = .add
-            arc.alpha = k == 0 ? 0.8 : 1
-            arc.run(.sequence([.group([.fadeOut(withDuration: 0.2), .scale(by: 1.15, duration: 0.2)]).easedOut(), .removeFromParent()]))
+            arc.alpha = k == 0 ? 0.65 : 1
+            arc.run(.sequence([.group([.fadeOut(withDuration: 0.22), .scale(by: 1.12, duration: 0.22)]).easedOut(), .removeFromParent()]))
             fx.addChild(arc)
         }
         let line = SKSpriteNode(texture: Art.streak)
-        line.size = CGSize(width: s * 1.6, height: s * 0.1)
+        line.size = CGSize(width: s * 1.5, height: s * 0.06)
         line.position = p
-        line.zRotation = CGFloat.random(in: -0.5...0.5)
+        line.zRotation = side == .right ? tilt + .pi / 2 * 0.6 : -(tilt + .pi / 2 * 0.6)
         line.color = .white
         line.colorBlendFactor = 1
         line.blendMode = .add
@@ -1082,10 +1135,10 @@ final class DuelScene: SKScene {
     private func slam(_ text: String, color: RGB, icon: SKNode? = nil) {
         let node = SKNode()
         node.position = CGPoint(x: field.midX, y: field.minY + field.height * 0.64)
-        let label = Art.label(Art.headingFont, size: 21 * fs, color: color.color())
-        label.text = text
+        let label = Art.label(Art.headingFont, size: 20 * fs, color: color.color())
+        Art.track(label, text, 4 * fs)
         let iconWidth: CGFloat = icon == nil ? 0 : 24 * fs
-        node.addChild(Icons.plate(CGSize(width: label.frame.width + iconWidth + 24 * fs, height: 32 * fs)))
+        node.addChild(Icons.band(CGSize(width: label.frame.width + iconWidth + 90 * fs, height: 32 * fs)))
         let glow = SKSpriteNode(texture: Art.glow)
         glow.size = CGSize(width: label.frame.width * 2, height: 60 * fs)
         glow.color = color.color()
@@ -1115,7 +1168,8 @@ final class DuelScene: SKScene {
     private func finish(_ outcome: Outcome) {
         hero.finish(victory: outcome == .victory)
         world.speed = min(world.speed, 0.3)
-        let delay: TimeInterval = outcome == .victory ? 0.9 : 1.1
+        // Long enough for the blade to go home (or for him to reach his knee) before the card.
+        let delay: TimeInterval = outcome == .victory ? 1.5 : 1.2
         if outcome == .defeat {
             shake(5)
             let fall = SKSpriteNode(color: .black, size: field.size)
@@ -1156,10 +1210,13 @@ final class DuelScene: SKScene {
         glow.alpha = 0.35
         glow.position = CGPoint(x: 0, y: 26 * fs)
         node.addChild(glow)
-        let title = Art.label(Art.headingFont, size: 26 * fs, color: color.color())
-        title.text = won ? (fight.stats.damage == 0 ? "FLAWLESS" : "CLEARED") : "FALLEN"
-        title.position = CGPoint(x: 0, y: 32 * fs)
+        let title = Art.label(Art.headingFont, size: 24 * fs, color: color.color())
+        Art.track(title, won ? (fight.stats.damage == 0 ? "FLAWLESS" : "CLEARED") : "FALLEN", 7 * fs)
+        title.position = CGPoint(x: 3.5 * fs, y: 34 * fs)
         node.addChild(title)
+        let rule = Icons.rule(min(field.width * 0.5, 220 * fs), color.color(0.8))
+        rule.position = CGPoint(x: 0, y: 21 * fs)
+        node.addChild(rule)
 
         // The numbers, each behind its pictogram.
         let seconds = Int(fight.time)
@@ -1169,10 +1226,10 @@ final class DuelScene: SKScene {
             (Icons.clock(13 * fs, Palette.ink.color()), "\(seconds / 60):\(String(format: "%02d", seconds % 60))"),
         ]
         let row = SKNode()
-        row.position = CGPoint(x: 0, y: 8 * fs)
+        row.position = CGPoint(x: 0, y: 6 * fs)
         var x: CGFloat = 0
         for (icon, value) in stats {
-            let label = Art.label(Art.headingFont, size: 15 * fs, color: Palette.ink.color(), align: .left)
+            let label = Art.label(Art.headingFont, size: 14 * fs, color: Palette.ink.color(), align: .left)
             label.text = value
             icon.position = CGPoint(x: x + 7 * fs, y: 0)
             label.position = CGPoint(x: x + 17 * fs, y: 0)
@@ -1188,8 +1245,8 @@ final class DuelScene: SKScene {
         node.addChild(score)
         var y = -30 * fs
         if let rank = session.promotion {
-            let promo = Art.label(Art.headingFont, size: 12 * fs, color: Palette.gold.color())
-            promo.text = "▲ " + rank.uppercased()
+            let promo = Art.label(Art.italicFont, size: 12 * fs, color: Palette.gold.color())
+            Art.track(promo, "▲ " + rank.uppercased(), 2 * fs)
             promo.position = CGPoint(x: 0, y: y)
             promo.run(.repeatForever(.sequence([.scale(to: 1.08, duration: 0.5), .scale(to: 1, duration: 0.5)])))
             node.addChild(promo)

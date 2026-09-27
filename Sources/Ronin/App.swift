@@ -112,6 +112,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(sizeItem)
         add("Pause When Pointer Leaves", #selector(togglePauseWhenAway), on: Settings.pauseWhenAway)
         add("Dim When Pointer Leaves", #selector(toggleDimWhenAway), on: Settings.dimWhenAway)
+        add("Floor Hints", #selector(toggleFloorHints), on: Settings.floorHints)
         menu.addItem(.separator())
         add("Restart Stage", #selector(restart))
         add("Reset Career…", #selector(resetCareer))
@@ -140,6 +141,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func togglePauseWhenAway() {
         Settings.pauseWhenAway.toggle()
         panel.updatePauseState()
+    }
+
+    @objc private func toggleFloorHints() {
+        Settings.floorHints.toggle()
+        if Settings.floorHints { Settings.hintShown = false }
+        panel.scene.loadFight(intro: false)
     }
 
     @objc private func toggleDimWhenAway() {
