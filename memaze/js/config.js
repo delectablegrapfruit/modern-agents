@@ -86,8 +86,8 @@
       for (const k in this.progress.journey.levels) n += this.progress.journey.levels[k].stars || 0;
       return n;
     },
-    isUnlocked(pattern) {
-      if (this.settings.extras.unlockAll) return true;
+    isUnlocked(pattern, earnedOnly) {
+      if (this.settings.extras.unlockAll && !earnedOnly) return true;
       const req = UNLOCKS[pattern];
       if (!req) return true;
       const p = this.progress;
@@ -101,7 +101,7 @@
     newlyUnlocked() {
       const out = [];
       for (const id in UNLOCKS) {
-        if (this.isUnlocked(id) && !this.progress.seenPatterns.includes(id)) { out.push(id); this.progress.seenPatterns.push(id); }
+        if (this.isUnlocked(id, true) && !this.progress.seenPatterns.includes(id)) { out.push(id); this.progress.seenPatterns.push(id); }
       }
       if (out.length) this.saveProgress();
       return out;

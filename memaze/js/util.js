@@ -111,6 +111,7 @@
 
   // Fill missing keys of `saved` from `defs`, recursively; keeps saved values of matching type.
   function merge(defs, saved) {
+    if (defs === null) return saved === undefined ? null : saved; // a null default takes any saved value
     if (saved == null || typeof saved !== typeof defs || Array.isArray(defs) !== Array.isArray(saved)) return clone(defs);
     if (typeof defs !== 'object' || Array.isArray(defs) || defs === null) return saved;
     const out = {};

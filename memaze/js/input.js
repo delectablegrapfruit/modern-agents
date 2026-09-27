@@ -43,7 +43,8 @@
     radius() { return 70 / clamp(this.cfg.sensitivity, 0.3, 3); }
 
     down(e) {
-      if (!this.enabled) return;
+      // A finger already down during READY steers as soon as GO.
+      if (!this.enabled && document.body.dataset.state !== 'intro') return;
       MZ.Audio.unlock();
       this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       try { this.el.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
@@ -139,7 +140,7 @@
       if (this.cfg.gyro && this.gyro && this.gyroZero) {
         const gx = (this.gyro.gamma - this.gyroZero.gamma) / 22, gy = (this.gyro.beta - this.gyroZero.beta) / 22;
         const o = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
-        if (o === 90) { x += gy; y -= gx; } else if (o === -90 || o === 270) { x -= gy; y += gx; } else { x += gx; y += gy; }
+        if (o === 90) { x += gy; y -= gx; } else if (o === -90 || o === 270) { x -= gy; y += gx; } else if (o === 180) { x -= gx; y -= gy; } else { x += gx; y += gy; }
       }
       const m = Math.hypot(x, y);
       if (m > 1) { x /= m; y /= m; }
@@ -149,6 +150,7 @@
     async enableGyro() {
       const DOE = window.DeviceOrientationEvent;
       if (!DOE) throw new Error('No tilt sensor on this device.');
+      if (!window.isSecureContext) throw new Error('Phone tilt needs a secure page (https or localhost). Over Wi-Fi from serve.py, drag instead.');
       if (typeof DOE.requestPermission === 'function') {
         const r = await DOE.requestPermission();
         if (r !== 'granted') throw new Error('Tilt permission was not granted.');

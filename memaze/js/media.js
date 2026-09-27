@@ -167,6 +167,7 @@
     },
     async unlinkFolder() {
       this.linked = null;
+      for (const [id, u] of this._urlCache) if (id.startsWith('linked:')) { URL.revokeObjectURL(u.url); this._urlCache.delete(id); }
       for (const [id, it] of this.items) if (it.source === 'linked') this.items.delete(id);
       try { await idb.del('kv', 'linked'); } catch (e) { /* ignore */ }
       this.emit('change');
@@ -349,7 +350,8 @@
         const pool = own.length ? own : all.filter((it) => it.id !== 'none');
         return pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
       }
-      return this.items.get(sel) || all[0] || null;
+      // A choice that no longer exists falls back to the slot's built-in default (none for the background).
+      return this.items.get(sel) || DEFAULTS.find((d) => d.slot === slot) || null;
     },
 
     // A live element for an item: <img> (animated GIF/APNG/WebP/SVG animate natively), <video> or <audio>.
@@ -395,7 +397,10 @@
           const res = await fetch(item.url);
           if (!res.ok) throw new Error(res.status);
           blob = await res.blob();
-          if (blob.size < 64 * 1024 * 1024) this._blobs.set(item.url, blob);
+          if (blob.size < 64 * 1024 * 1024) {
+            this._blobs.set(item.url, blob);
+            if (this._blobs.size > 8) this._blobs.delete(this._blobs.keys().next().value);
+          }
         }
         const url = URL.createObjectURL(blob);
         return { url, revoke: () => setTimeout(() => URL.revokeObjectURL(url), 1000) };
@@ -456,7 +461,11 @@
       const k = Math.min(1, 1280 / Math.max(w, h));
       const W = Math.round(w * k), H = Math.round(h * k);
       if (this.canvas.width !== W || this.canvas.height !== H) { this.canvas.width = W; this.canvas.height = H; gl.viewport(0, 0, W, H); }
-      try { gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, s); } catch (e) { return; }
+      try { gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, s); } catch (e) {
+        // file:// pages can't read their own files into WebGL: show the file un-keyed instead of nothing.
+        if (e.name === 'SecurityError') { this.destroy(); if (this.onfail) this.onfail(); }
+        return;
+      }
       gl.uniform3fv(this.u.key, hexRgb(this.opts.color));
       gl.uniform1f(this.u.tol, this.opts.tol * 0.5);
       gl.uniform1f(this.u.soft, Math.max(0.005, this.opts.soft * 0.3));
@@ -485,6 +494,11 @@
         el.classList.add('chroma-src');
         host.appendChild(el);
         shown = chroma.canvas;
+        chroma.onfail = () => {
+          el.classList.remove('chroma-src');
+          chroma.canvas.remove();
+          if (!Media._chromaWarned) { Media._chromaWarned = true; MZ.toast('Green screen needs the game served over http (run serve.py).', 4000); }
+        };
       } else chroma = null;
     }
     host.appendChild(shown);

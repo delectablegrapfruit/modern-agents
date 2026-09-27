@@ -336,6 +336,8 @@
       this.base = document.createElement('canvas');
       this.fog = document.createElement('canvas');
       this.maze = null;
+      this.dirty = true;
+      if (window.ResizeObserver) new ResizeObserver(() => (this.dirty = true)).observe(canvas);
     }
     size() {
       const r = this.canvas.getBoundingClientRect(), dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -391,7 +393,6 @@
     }
     // Endless: a radar of what's near the ball.
     drawRadar(world, ball, t, beacons) {
-      this.size();
       const g = this.ctx, W = this.canvas.width, H = this.canvas.height, R = 1500, sc = Math.min(W, H) / (2 * R);
       g.clearRect(0, 0, W, H);
       g.save();

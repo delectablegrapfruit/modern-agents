@@ -136,16 +136,25 @@
       if (!it) return;
       const el = (this.el = new Audio(it.url));
       el.loop = this.playlist.length === 1;
-      el.onended = () => { this.index++; this.playCurrent(); };
+      el.onended = () => { this.fails = 0; this.index++; this.playCurrent(); };
+      // A broken or deleted track skips to the next one; give up once every track has failed in a row.
+      el.onerror = () => {
+        if (this.el !== el) return;
+        this.fails = (this.fails || 0) + 1;
+        if (this.fails >= this.playlist.length) return;
+        this.index++;
+        setTimeout(() => { if (this.el === el) this.playCurrent(); }, 300);
+      };
       this.applyVolume();
-      el.play().catch(() => {});
+      el.play().then(() => (this.fails = 0), (e) => { if (e && e.name === 'NotAllowedError') this.blocked = true; });
     },
     stop(keepFlag) {
       if (!keepFlag) this.playing = false;
       if (this.el) { this.el.onended = null; this.el.pause(); this.el = null; }
       if (this.synth) { this.synth.stop(); this.synth = null; }
     },
-    ensure() { if (!this.playing) this.start(); },
+    // Start if not playing — or retry if the browser blocked autoplay before the first tap.
+    ensure() { if (!this.playing || this.blocked) { this.blocked = false; this.start(); } },
     duck(on) { this.ducked = on; A.applyVolumes(); this.applyVolume(); },
     applyVolume() { if (this.el) this.el.volume = Math.min(1, A.vol.master * A.vol.music * (this.ducked ? 0.25 : 1)); },
   };

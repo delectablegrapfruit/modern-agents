@@ -20,6 +20,7 @@
   const FX = {
     playing: null,
     async play(kind) {
+      if (this.playing) this.playing.finish();
       const cfg = S()[kind];
       const el = MZ.$('#fx'), host = MZ.$('#fx-media');
       const item = cfg.on ? MZ.Media.resolve(kind, cfg.media) : null;
@@ -39,12 +40,22 @@
           MZ.Audio.Music.duck(false);
           Confetti.stop();
           el.classList.add('out');
-          setTimeout(() => { MZ.Media.unmount(host); if (fresh) fresh.revoke(); el.hidden = true; el.classList.remove('out'); resolve(); }, 180);
-          this.playing = null;
+          setTimeout(() => {
+            if (this.token === token) { MZ.Media.unmount(host); el.hidden = true; el.classList.remove('out'); }
+            if (fresh) fresh.revoke();
+            resolve();
+          }, 180);
+          if (this.playing === handle) this.playing = null;
         };
         const started = performance.now();
-        const skip = (e) => { if (performance.now() - started > 250) { if (e && e.preventDefault) e.preventDefault(); finish(); } };
-        this.playing = { finish };
+        const skip = (e) => {
+          // Held movement keys (auto-repeat) and the keys you steer with don't skip the animation.
+          if (e && e.type === 'keydown' && (e.repeat || MZ.Game.input.keyDir(e.code) || /Shift|Control|Alt|Meta/.test(e.key))) return;
+          if (performance.now() - started > 250) { if (e && e.preventDefault) e.preventDefault(); finish(); }
+        };
+        const token = (this.token = {});
+        const handle = (this.playing = { finish });
+        el.classList.remove('out');
         el.addEventListener('pointerdown', skip);
         window.addEventListener('keydown', skip);
         if (kind === 'win' && !S().display.reduceFlash) Confetti.start();
@@ -100,26 +111,35 @@
   };
 
   // ---------- the player sprite (a DOM element pinned to the screen centre) ----------
+  // What a slot shows. 'random' re-rolls only when forced (a new level), or when the file it rolled is gone.
+  function choose(holder, slot, sel, force) {
+    if (sel === 'random' && !force && holder.item && MZ.Media.get(holder.item.id)) return MZ.Media.get(holder.item.id);
+    return MZ.Media.resolve(slot, sel);
+  }
+  // Same file, same URL (a file replaced on disk gets a new one), same keying → nothing to remount.
+  const keyOf = (item, chroma) => (item && item.kind !== 'builtin' ? item.id + '|' + item.url + '|' + JSON.stringify(chroma) : null);
+
   const Player = {
-    itemId: null, chromaKey: '',
+    item: null, key: null,
     apply(force) {
       const cfg = S().player;
-      const item = MZ.Media.resolve('player', cfg.media);
-      const ck = JSON.stringify(cfg.chroma);
-      if (!force && item && item.id === this.itemId && ck === this.chromaKey && cfg.media !== 'random') return;
-      this.itemId = item ? item.id : null;
-      this.chromaKey = ck;
+      const item = choose(this, 'player', cfg.media, force);
+      const key = keyOf(item, cfg.chroma);
+      if (!force && key === this.key) return;
+      this.item = item;
+      this.key = key;
       MZ.Media.mount(MZ.$('#player-media'), item, { muted: true, loop: true, chroma: cfg.chroma });
     },
   };
   const GoalMedia = {
-    itemId: null,
-    apply() {
+    item: null, itemId: null,
+    apply(force) {
       const cfg = S().goal;
       const host = MZ.$('#goal-media');
-      const item = cfg.media === 'default:portal' ? null : MZ.Media.resolve('goal', cfg.media);
-      const id = item && item.kind !== 'builtin' ? item.id + JSON.stringify(cfg.chroma) : null;
-      if (id === this.itemId) return;
+      const item = cfg.media === 'default:portal' ? null : choose(this, 'goal', cfg.media, force);
+      const id = keyOf(item, cfg.chroma);
+      if (id === this.itemId && !(force && cfg.media === 'random')) return;
+      this.item = item;
       this.itemId = id;
       if (!id) { MZ.Media.unmount(host); host.hidden = true; return; }
       host.hidden = false;
@@ -128,16 +148,18 @@
     get active() { return !!this.itemId; },
   };
   const Backdrop = {
-    renderer: null, itemId: null,
+    renderer: null, item: null, itemId: null,
     init() { if (MZ.Background) this.renderer = MZ.Background.create(MZ.$('#bg')); },
-    apply() {
+    apply(force) {
       const b = S().background;
       let pattern = b.pattern;
       if (!MZ.Save.isUnlocked(pattern)) pattern = 'rgb';
       if (this.renderer) this.renderer.setConfig(S().rgb, pattern, { motion: S().display.reducedMotion ? 0.25 : 1, parallax: b.parallax });
       const host = MZ.$('#bg-media');
-      const item = b.kind === 'media' ? MZ.Media.resolve('background', b.media) : null;
-      const id = item && item.kind !== 'builtin' ? item.id + JSON.stringify(b.chroma) : null;
+      const item = b.kind === 'media' ? choose(this, 'background', b.media, force) : null;
+      const id = keyOf(item, b.chroma);
+      this.item = item;
+      if (force && b.media === 'random') this.itemId = null;
       host.dataset.fit = b.fit;
       host.style.setProperty('--dim', b.dim);
       host.style.setProperty('--blur', b.blur + 'px');
@@ -232,7 +254,7 @@
     },
     startGauntlet() {
       this.mode = 'gauntlet';
-      this.run = { seed: (Math.random() * 1e9) | 0, cleared: 0, lives: 3 };
+      this.run = { seed: (Math.random() * 1e9) | 0, cleared: 0, lives: 3, prevBest: MZ.Save.progress.gauntletBest };
       this.nextGauntlet();
     },
     nextGauntlet() {
@@ -294,8 +316,8 @@
 
     beginLevel(start, timeLimit) {
       Player.apply(S().player.media === 'random');
-      GoalMedia.apply();
-      if (S().background.media === 'random' && S().background.kind === 'media') { Backdrop.itemId = null; Backdrop.apply(); }
+      GoalMedia.apply(S().goal.media === 'random');
+      if (S().background.media === 'random' && S().background.kind === 'media') Backdrop.apply(true);
       const b = this.ball;
       Object.assign(b, { x: start.x, y: start.y, vx: 0, vy: 0, spin: 0, scale: 1, alpha: 1, boostCap: PHYS.maxV });
       this.startPos = { x: start.x, y: start.y };
@@ -326,6 +348,7 @@
       this.stateT = 0;
       this.input.enabled = st === 'play';
       if (st !== 'play') this.input.release();
+      else this.input.takeGrab(); // drop finger travel from before GO (grab mode would jump)
       document.body.dataset.state = st;
       this.emit('state', st);
     },
@@ -333,15 +356,24 @@
     pause() {
       if (this.state !== 'play' && this.state !== 'intro') return;
       this.pausedFrom = this.state;
+      this.pausedT = this.stateT;
       this.setState('paused');
       MZ.Audio.roll(0, false);
     },
     resume() {
       if (this.state !== 'paused') return;
+      this.resuming = true;
       this.setState(this.pausedFrom || 'play');
+      this.resuming = false;
+      if (this.pausedFrom === 'intro') this.stateT = this.pausedT;
     },
     quit() {
       FX.skip();
+      if (this.mode === 'endless' && this.run) {
+        const P = MZ.Save.progress;
+        P.endlessBest = Math.max(P.endlessBest, this.endlessScore());
+        MZ.Save.saveProgress();
+      }
       this.mode = null;
       this.maze = null;
       this.world = null;
@@ -570,6 +602,7 @@
     },
 
     async lose(reason) {
+      MZ.Audio.roll(0, false);
       this.setState('fx');
       this.emit('lose', reason);
       MZ.Audio.play('lose');
@@ -594,10 +627,9 @@
       const st = MZ.Save.progress.stats;
       st.wins++;
       st.gems += this.gemsTaken;
-      MZ.Save.saveProgress();
+      const res = this.results(); // saved before the celebration, so closing the tab during it keeps the clear
       await FX.play('win');
       if (this.state !== 'fx') return;
-      const res = this.results();
       if (this.mode === 'gauntlet') {
         this.run.cleared++;
         if (this.run.cleared > MZ.Save.progress.gauntletBest) { MZ.Save.progress.gauntletBest = this.run.cleared; MZ.Save.saveProgress(); }
@@ -643,7 +675,7 @@
       const P = MZ.Save.progress;
       let res;
       if (this.mode === 'gauntlet') {
-        res = { mode: 'gauntlet', score: this.run.cleared, best: P.gauntletBest, newBest: this.run.cleared >= P.gauntletBest && this.run.cleared > 0 };
+        res = { mode: 'gauntlet', score: this.run.cleared, best: P.gauntletBest, newBest: this.run.cleared > this.run.prevBest };
       } else {
         const sc = this.endlessScore();
         res = { mode: 'endless', score: sc, best: Math.max(P.endlessBest, sc), newBest: sc > P.endlessBest, gems: this.run.gems || 0, dist: Math.round(this.run.best), beacons: this.run.beaconsLit };
@@ -786,6 +818,11 @@
       const mmEl = MZ.$('#minimap');
       if (!menu && mm !== 'off') {
         mmEl.hidden = false;
+        if (this.minimap.dirty) {
+          // Sized once it's actually on screen (it's hidden while a level is built).
+          this.minimap.dirty = false;
+          if (this.minimap.size() && this.maze) { this.minimap.setMaze(this.maze); this.revealAll(); }
+        }
         if (this.mode === 'endless') this.minimap.drawRadar(this.world, b, t, this.beacons);
         else this.minimap.draw(mm, b, this.maze && this.maze.goal, this.gems, t);
       } else mmEl.hidden = true;

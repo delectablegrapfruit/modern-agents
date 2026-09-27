@@ -88,7 +88,7 @@
       $('#hud').hidden = !['intro', 'play', 'fall', 'goal', 'fx', 'paused'].includes(st);
       if (st === 'paused') this.show('pause');
       if (st === 'intro' || st === 'play') this.closeAll();
-      if (st === 'intro' && Game().firstTry !== false) this.banner('READY?', Game().introLen * 1000 - 100);
+      if (st === 'intro' && Game().firstTry !== false && !Game().resuming) this.banner('READY?', Game().introLen * 1000 - 100);
       if (st === 'menu') this.show('title', null, true);
     },
     onBegin() {
@@ -189,6 +189,7 @@
       window.addEventListener('keydown', (e) => {
         if (e.target && /INPUT|TEXTAREA|SELECT/.test(e.target.tagName) && e.key !== 'Escape') return;
         const G = Game(), st = G.state;
+        if (G.FX.playing) return; // the win/lose overlay owns the keyboard while it plays
         if (e.key === 'Escape' || e.key === 'p' || e.key === 'P') {
           if (st === 'play' || st === 'intro') { G.pause(); e.preventDefault(); return; }
           if (e.key === 'Escape' && this.stack.length && !(this.current && this.current.name === 'title')) { this.back(); e.preventDefault(); return; }
@@ -610,7 +611,7 @@
               });
               f.click();
             }, 'small'),
-            btn('Reset progress', async () => { if (await UI.ask('Erase all stars, best times and unlocks?', 'Erase')) { MZ.Save.reset(); MZ.toast('Progress reset'); this.rebuild(); } }, 'small danger')),
+            btn('Reset progress', async () => { if (await UI.ask('Erase all stars, best times and unlocks?', 'Erase')) { MZ.Save.reset(); Game().applySettings(); MZ.toast('Progress reset'); this.rebuild(); } }, 'small danger')),
           toggle('Sandbox: unlock everything', 'extras.unlockAll', null, 'all levels and background patterns')),
       ], { wide: true });
     },
@@ -706,7 +707,9 @@
   UI.showText = function (label, text) {
     const m = $('#modal');
     const inp = h('input', { type: 'text', value: text, readonly: true, id: 'copy-text' });
-    const close = () => { m.hidden = true; m.textContent = ''; };
+    const key = (e) => { if (e.key === 'Escape' || e.key === 'Enter') { e.stopPropagation(); e.preventDefault(); close(); } };
+    const close = () => { m.hidden = true; m.textContent = ''; document.removeEventListener('keydown', key, true); };
+    document.addEventListener('keydown', key, true);
     m.textContent = '';
     m.appendChild(h('div', { class: 'panel dialog' }, h('p', null, label), inp, h('div', { class: 'row' }, btn('Done', close, 'primary'))));
     m.hidden = false;
@@ -742,7 +745,8 @@
     const q = new URLSearchParams(hs);
     if (!q.get('seed')) return false;
     const num = (k, d) => { const v = parseFloat(q.get(k)); return isFinite(v) ? clamp(v, 0, 1) : d; };
-    const hz = (q.get('hz') || 'ice.boost.blink.sticky').split('.');
+    const rawHz = q.get('hz');
+    const hz = (rawHz === null ? 'ice.boost.blink.sticky' : rawHz).split('.');
     const o = {
       seed: q.get('seed').slice(0, 40), lattice: MZ.Gen.LATTICES[q.get('lat')] ? q.get('lat') : 'auto', mask: MZ.Gen.MASKS[q.get('shape')] ? q.get('shape') : 'auto',
       size: num('size', 0.4), width: num('width', 0.5), difficulty: num('diff', 0.5),
