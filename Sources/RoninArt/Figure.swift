@@ -10,39 +10,49 @@ public enum Cast: Hashable, Sendable {
     case foe(Kind)
 }
 
-/// The ronin's cuts, so that no two in a row look alike.
+/// The ronin's cuts, taken from the classical sword schools, so that no two in a row look alike.
 public enum Cut: Int, CaseIterable, Hashable, Sendable {
-    /// Level, from high to straight ahead.
-    case level
-    /// Rising, from low to high.
-    case rising
-    /// Falling, across the body from over the shoulder.
-    case falling
-    /// Overhead, straight down from behind the head.
-    case overhead
-    /// A straight thrust at the end of a lunge.
-    case thrust
-    /// Low and wide, from a crouch.
-    case sweep
+    /// Kesa-giri: from hassō, the blade upright beside the head, diagonally down through the collarbone.
+    case kesa
+    /// Gyaku-kesa (kiri-age): from waki-gamae, the blade low behind the hip, rising up across the body.
+    case gyaku
+    /// Shōmen-uchi: from jōdan, straight down the centre on a stamping lunge (fumikomi), the arms driven out level.
+    case shomen
+    /// Dō-giri: a level cut through the waist; seen side-on, the blade comes round from behind and shortens as it
+    /// passes toward the eye.
+    case dou
+    /// Morote-zuki: a two-handed thrust at the end of a long lunge.
+    case tsuki
+    /// Sune-giri: dropping into a deep lunge to cut at the shins.
+    case sune
+    /// Nukitsuke: the draw and the cut in one motion, one-handed, as the other hand pulls the scabbard back
+    /// (saya-biki). It opens every stage.
+    case nukitsuke
 }
 
 public enum Frame: Hashable, Sendable {
-    /// Standing, breathing (the ronin: 6 frames; foes: 4).
+    /// Standing, breathing (the ronin: 6 frames, in chūdan; foes: 4).
     case idle(Int)
+    /// The ronin before the first cut of a stage: blade sheathed, hand on the hilt, hips low (iai-goshi). 4 frames.
+    case iai(Int)
     /// 8 frames a stride.
     case walk(Int)
-    /// Gathering (0), raised (1), coiled to strike (2).
+    /// Gathering (0), raised (1), coiled to strike (2). The archer: raising the bow (0), drawing (1).
     case windup(Int)
     /// The blow (0) and its follow-through (1).
     case strike(Int)
     case stagger, leap, aim, loose
-    /// A cut, in six frames: the blade drawn back, the swing, full extension, the follow-through, and two frames
-    /// settling back into guard.
+    /// The warlord behind his raised blade, waiting to turn a cut aside.
+    case block
+    /// A cut, in seven frames: chambered (furikaburi), the swing with the wrists still cocked, the blade whipping
+    /// through, full extension on the lunge, the follow-through, zanshin, and back toward guard.
     case cut(Cut, Int)
     /// Off balance after a cut at nothing (2 frames), and taking a blow (2).
     case stumble(Int)
+    /// A cut turned aside by the warlord's guard: the blade thrown back, the ronin rocked onto his heels (2 frames).
+    case repelled(Int)
     case hurt(Int)
-    /// After a stage: the blood flicked from the blade (2 frames), and the blade slid home into its scabbard (3).
+    /// After a stage: ō-chiburi, the blood flung from the blade (2 frames), and nōtō, the blade slid home (3).
     case flourish(Int)
     /// Falling: staggered, dropping to a knee, kneeling over the planted sword.
     case fall(Int)
@@ -50,13 +60,34 @@ public enum Frame: Hashable, Sendable {
     public static let walkFrames = 8
     public static let foeIdleFrames = 4
     public static let heroIdleFrames = 6
-    public static let cutFrames = 6
+    public static let iaiFrames = 4
+    public static let cutFrames = 7
     public static let flourishFrames = 5
 }
 
-/// A pose, as angles. Limb angles are measured from straight down: +π/2 points forward (the way the figure faces),
-/// π straight up, −π/2 back.
+/// A pose, as angles and holds. Limb and blade angles are measured from straight down: +π/2 points forward (the
+/// way the figure faces), π straight up, −π/2 back. A hold is where a hand is, from the shoulder, in figure heights
+/// (x forward, y up); the arm reaches there with a bent elbow.
 public struct Pose: Sendable {
+    public enum Grip: Sendable {
+        /// Both hands on the hilt (or the shaft): the sword hand at the guard, the other at the pommel.
+        case two
+        /// One hand; the other free (`arm2`, or `hold2`).
+        case one
+        /// The sword hand alone, the other at the scabbard's mouth: drawing and sheathing.
+        case saya
+    }
+
+    /// A blade's sweep drawn as a trailing arc from one angle to another, squashed toward a level plane when `flat`
+    /// is below 1; or for a thrust, speed lines along the blade.
+    public struct Smear: Sendable {
+        public var from: CGFloat
+        public var to: CGFloat
+        public var strength: CGFloat
+        public var flat: CGFloat = 1
+        public var thrust = false
+    }
+
     public var lean: CGFloat = 0.08
     public var lift: CGFloat = 0
     public var shift: CGFloat = 0
@@ -64,10 +95,18 @@ public struct Pose: Sendable {
     public var back: (thigh: CGFloat, shin: CGFloat) = (-0.38, -0.28)
     public var arm: (upper: CGFloat, fore: CGFloat) = (0.6, 1.3)
     public var arm2: (upper: CGFloat, fore: CGFloat) = (0.4, 1.2)
+    public var hold: CGPoint?
+    public var hold2: CGPoint?
+    public var grip = Grip.one
     public var blade: CGFloat = 2.0
     public var blade2: CGFloat = -2.2
+    /// Below 1, the blade swings in a level plane seen side-on: its rise and fall are squashed, so it shortens as it
+    /// comes round toward the eye.
+    public var flat: CGFloat = 1
     /// How much of the ronin's blade is in its scabbard, 0…1.
     public var sheathed: CGFloat = 0
+    /// How far the scabbard is pulled back for the draw (saya-biki), 0…1.
+    public var saya: CGFloat = 0
     /// How far a bow is drawn, 0…1.
     public var draw: CGFloat = 0
     public var tilt: CGFloat = 0
@@ -77,13 +116,16 @@ public struct Pose: Sendable {
     public var wave: CGFloat = 0
     /// How hard cloth streams back (0 at rest, 1 in a hard swing).
     public var stream: CGFloat = 0
-    /// A blade's sweep drawn as a trailing arc, from one angle to another.
-    public var smear: (from: CGFloat, to: CGFloat, strength: CGFloat)?
+    public var smear: Smear?
 
     public init() {}
 
     static func mix(_ a: Pose, _ b: Pose, _ t: CGFloat) -> Pose {
         func m(_ x: CGFloat, _ y: CGFloat) -> CGFloat { x + (y - x) * t }
+        func mp(_ x: CGPoint?, _ y: CGPoint?) -> CGPoint? {
+            guard let x, let y else { return y }
+            return CGPoint(x: m(x.x, y.x), y: m(x.y, y.y))
+        }
         var p = b
         p.lean = m(a.lean, b.lean)
         p.lift = m(a.lift, b.lift)
@@ -92,9 +134,13 @@ public struct Pose: Sendable {
         p.back = (m(a.back.thigh, b.back.thigh), m(a.back.shin, b.back.shin))
         p.arm = (m(a.arm.upper, b.arm.upper), m(a.arm.fore, b.arm.fore))
         p.arm2 = (m(a.arm2.upper, b.arm2.upper), m(a.arm2.fore, b.arm2.fore))
+        p.hold = mp(a.hold, b.hold)
+        p.hold2 = mp(a.hold2, b.hold2)
         p.blade = m(a.blade, b.blade)
         p.blade2 = m(a.blade2, b.blade2)
+        p.flat = m(a.flat, b.flat)
         p.sheathed = m(a.sheathed, b.sheathed)
+        p.saya = m(a.saya, b.saya)
         p.draw = m(a.draw, b.draw)
         p.tilt = m(a.tilt, b.tilt)
         p.stream = m(a.stream, b.stream)
@@ -159,15 +205,45 @@ public struct Build: Sendable {
             }
         }
     }
+
+    /// For a weapon held in both hands, how far behind the sword hand the other one grips, in figure heights.
+    var span: CGFloat? {
+        switch weapon {
+        case .katana: return 0.085
+        case .nodachi: return 0.11
+        case .spear: return 0.2
+        case .club: return 0.09
+        case .knife, .twin, .bow: return nil
+        }
+    }
+
+    /// How far a weapon reaches from the hand, in figure heights: the radius of the trail its swing leaves.
+    var reach: CGFloat {
+        switch weapon {
+        case .katana: return 0.6
+        case .nodachi: return 0.78
+        case .spear: return 0.8
+        case .club: return 0.62
+        case .knife: return 0.26
+        case .twin: return 0.42
+        case .bow: return 0.5
+        }
+    }
 }
+
+private func v(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: x, y: y) }
 
 /// The figures: their frames, their poses, and how each is drawn.
 ///
 /// The figures are cut rather than rounded: faceted muscle along each limb, sharp knees and elbows, a deep chest
 /// over a narrow waist, a small head on a long frame (about nine heads tall), slender curved blades, cloth that
 /// ends in points. Each kind keeps an outline of its own at 60 points tall. The ronin, who is the show, is drawn at
-/// a higher resolution and has the most frames: six for every cut, a breathing guard, a scabbard at his hip, and a
-/// flourish at the end of a stage.
+/// a higher resolution and has the most frames: seven for every cut, a breathing guard, the iai stance with the
+/// blade sheathed, and the chiburi and nōtō at the end of a stage.
+///
+/// The swordsmanship follows the classical schools: two hands on the hilt, the right at the guard and the left at
+/// the pommel; each cut from the kamae it is taught from (hassō, waki-gamae, jōdan, chūdan), the hands leading and
+/// the blade whipping through after them as the wrists uncock; a stamping lunge under the big cuts; zanshin after.
 public enum Figure {
     /// The canvas around a figure, in figure heights, and where its feet stand on it.
     public static let canvas = CGSize(width: 2.5, height: 1.74)
@@ -181,14 +257,16 @@ public enum Figure {
         switch cast {
         case .hero:
             var frames: [Frame] = (0..<Frame.heroIdleFrames).map { .idle($0) }
+            frames += (0..<Frame.iaiFrames).map { .iai($0) }
             for cut in Cut.allCases { frames += (0..<Frame.cutFrames).map { .cut(cut, $0) } }
-            frames += [.stumble(0), .stumble(1), .hurt(0), .hurt(1), .fall(0), .fall(1), .fall(2)]
+            frames += [.stumble(0), .stumble(1), .repelled(0), .repelled(1), .hurt(0), .hurt(1), .fall(0), .fall(1), .fall(2)]
             return frames + (0..<Frame.flourishFrames).map { .flourish($0) }
         case .foe(let kind):
             var frames: [Frame] = (0..<Frame.foeIdleFrames).map { .idle($0) }
             frames += (0..<Frame.walkFrames).map { .walk($0) }
             frames += [.windup(0), .windup(1), .windup(2), .strike(0), .strike(1), .stagger]
             if kind == .dancer || kind == .warlord { frames.append(.leap) }
+            if kind == .warlord { frames.append(.block) }
             if kind == .archer { frames += [.aim, .loose] }
             return frames
         }
@@ -212,20 +290,10 @@ public enum Figure {
         let base = stance(cast)
         switch frame {
         case .idle(let k):
-            // Breathing: the chest rises and settles, the guard drifts, the cloth stirs.
-            var p = base
             let n = cast == .hero ? Frame.heroIdleFrames : Frame.foeIdleFrames
-            let t = CGFloat(k) / CGFloat(n) * 2 * .pi
-            p.lean += 0.014 * sin(t)
-            p.lift = 0.004 * sin(t)
-            p.front.shin += 0.025 * sin(t)
-            p.back.shin -= 0.025 * sin(t)
-            p.arm.upper += 0.025 * cos(t)
-            p.arm2.upper += 0.02 * cos(t)
-            p.blade += 0.03 * cos(t)
-            p.wave = CGFloat(k) / CGFloat(n)
-            p.stream = 0.12
-            return p
+            return breathe(base, k, of: n)
+        case .iai(let k):
+            return breathe(iai(), k, of: Frame.iaiFrames)
         case .walk(let k):
             var p = base
             let phase = CGFloat(k) / CGFloat(Frame.walkFrames) * 2 * .pi
@@ -236,38 +304,36 @@ public enum Figure {
             p.front = leg(phase)
             p.back = leg(phase + .pi)
             p.lean += 0.03 * build.stride + 0.015 * cos(2 * phase)
+            p.lift = -0.012 * cos(2 * phase)
             p.wave = CGFloat(k) / CGFloat(Frame.walkFrames)
             p.stream = 0.3 * build.stride
-            // The free arm swings against the legs; weapons sway with the stride.
+            // The hands ride the stride; a free arm swings against the legs; the weapon sways.
+            if let hold = p.hold { p.hold = v(hold.x + 0.01 * sin(phase), hold.y + 0.012 * sin(2 * phase)) }
             p.arm2.upper += 0.3 * sin(phase)
             p.arm2.fore += 0.2 * sin(phase)
             p.blade += 0.05 * sin(phase)
-            if cast == .foe(.archer) { p.arm.upper = 0.2 - 0.3 * sin(phase) }
+            if cast == .foe(.runner) {
+                // The shinobi run: bent low, both arms swept back.
+                p.lean = 0.62 + 0.02 * cos(2 * phase)
+                p.hold = nil
+                p.arm = (-1.25 + 0.12 * sin(phase), -0.95)
+                p.arm2 = (-1.05 - 0.12 * sin(phase), -0.7)
+                p.blade = -1.75
+            }
             return p
         case .windup(let k):
-            let raised = key(cast, .windup(1))
             switch k {
+            case 0 where cast == .foe(.archer):
+                return key(cast, .windup(0))
             case 0:
-                var p = Pose.mix(base, raised, 0.35)
-                p.lean -= 0.05
+                var p = Pose.mix(base, key(cast, .windup(1)), 0.4)
+                p.lean -= 0.04
                 return p
             case 1:
-                return raised
+                return key(cast, .windup(1))
             default:
-                var p = raised
-                p.lean -= 0.04
-                p.blade += 0.14
-                p.arm.upper += 0.08
-                p.front.shin += 0.08
-                return p
+                return key(cast, .windup(2))
             }
-        case .strike(let k):
-            let blow = key(cast, .strike(0))
-            guard k > 0 else { return blow }
-            var p = Pose.mix(blow, base, 0.35)
-            p.blade = blow.blade - 0.35
-            p.arm.upper = blow.arm.upper - 0.2
-            return p
         case .cut(let cut, let phase):
             return swing(cut, phase)
         case .flourish(let k):
@@ -277,38 +343,62 @@ public enum Figure {
         }
     }
 
+    /// Breathing: the chest rises and settles, the point of the blade drifts, the cloth stirs.
+    private static func breathe(_ base: Pose, _ k: Int, of n: Int) -> Pose {
+        var p = base
+        let t = CGFloat(k) / CGFloat(n) * 2 * .pi
+        p.lean += 0.014 * sin(t)
+        p.lift = 0.004 * sin(t)
+        p.front.shin += 0.025 * sin(t)
+        p.back.shin -= 0.025 * sin(t)
+        p.arm.upper += 0.025 * cos(t)
+        p.arm2.upper += 0.02 * cos(t)
+        if let hold = p.hold { p.hold = v(hold.x + 0.004 * cos(t), hold.y + 0.007 * sin(t)) }
+        p.blade += 0.03 * cos(t)
+        p.wave = CGFloat(k) / CGFloat(n)
+        p.stream = 0.12
+        return p
+    }
+
     /// The pose each figure stands in.
     static func stance(_ cast: Cast) -> Pose {
         var p = Pose()
         switch cast {
         case .hero:
-            // Chūdan: feet wide, knees soft, the blade held forward at the throat of whoever comes.
-            p.lean = 0.12
-            p.front = (0.5, 0.18)
-            p.back = (-0.52, -0.38)
-            p.arm = (0.78, 1.5)
-            p.arm2 = (0.58, 1.42)
-            p.blade = 2.05
+            // Chūdan-no-kamae: feet a stride apart, knees soft, both hands low on the hilt, the point at the throat
+            // of whoever comes.
+            p.lean = 0.1
+            p.front = (0.48, 0.16)
+            p.back = (-0.5, -0.36)
+            p.grip = .two
+            p.hold = v(0.19, -0.19)
+            p.blade = 2.02
         case .foe(let kind):
             switch kind {
             case .grunt:
-                p.arm = (0.95, 1.35)
-                p.arm2 = (0.5, 1.25)
-                p.blade = 1.5
+                // An ashigaru's yari, held low at the hip, the point raised at the ronin's chest.
+                p.lean = 0.1
+                p.front = (0.42, 0.12)
+                p.back = (-0.42, -0.3)
+                p.grip = .two
+                p.hold = v(0.17, -0.16)
+                p.blade = 1.45
             case .runner:
+                // Crouched, the knife reversed along the forearm (sakate), the free hand out for balance.
                 p.lean = 0.42
-                p.front = (0.6, 0.22)
-                p.back = (-0.55, -0.6)
-                p.arm = (0.9, 1.75)
-                p.arm2 = (-0.6, -0.2)
-                p.blade = 0.9
+                p.front = (0.62, 0.24)
+                p.back = (-0.55, -0.62)
+                p.hold = v(0.15, -0.12)
+                p.arm2 = (-0.7, -0.25)
+                p.blade = -0.35
             case .brute:
+                // The kanabō over the shoulder.
                 p.lean = 0.16
                 p.front = (0.38, 0.12)
                 p.back = (-0.38, -0.25)
-                p.arm = (0.25, 2.3)
-                p.arm2 = (0.55, 1.2)
-                p.blade = -2.6
+                p.grip = .two
+                p.hold = v(0.07, -0.1)
+                p.blade = -2.45
             case .dancer:
                 p.lean = 0.18
                 p.front = (0.5, 0.18)
@@ -316,19 +406,36 @@ public enum Figure {
                 p.arm = (1.05, 1.65)
                 p.arm2 = (-0.75, -0.35)
                 p.blade = 2.3
-                p.blade2 = -2.3
+                p.blade2 = 3.98
             case .archer:
-                p.arm = (0.25, 0.35)
+                // The bow carried upright at the side, the arrow hand hanging.
+                p.hold = v(0.1, -0.3)
                 p.arm2 = (0.1, 0.3)
+                p.blade = 1.45
             case .warlord:
-                p.lean = 0.1
+                // Hassō with the nodachi: the long blade upright beside the helmet.
+                p.lean = 0.08
                 p.front = (0.45, 0.15)
                 p.back = (-0.45, -0.3)
-                p.arm = (0.85, 1.7)
-                p.arm2 = (0.65, 1.6)
-                p.blade = 2.35
+                p.grip = .two
+                p.hold = v(0.07, 0.0)
+                p.blade = 3.3
             }
         }
+        return p
+    }
+
+    /// The ronin's iai stance: blade sheathed, the sword hand resting on the hilt, the other at the scabbard's mouth,
+    /// hips low and ready to draw.
+    static func iai() -> Pose {
+        var p = stance(.hero)
+        p.lean = 0.16
+        p.front = (0.58, 0.3)
+        p.back = (-0.52, -0.6)
+        p.grip = .saya
+        p.hold = nil
+        p.sheathed = 1
+        p.blade = -0.95
         return p
     }
 
@@ -350,7 +457,12 @@ public enum Figure {
         p.stream = 0.5
     }
 
-    /// Key poses: the raised weapon, the blow, the stagger, the leap, the bow; the ronin's stumbles, wounds and fall.
+    private static func sweep(_ from: CGFloat, _ to: CGFloat, _ strength: CGFloat, thrust: Bool = false) -> Pose.Smear {
+        Pose.Smear(from: from, to: to, strength: strength, thrust: thrust)
+    }
+
+    /// Key poses: the raised weapon, the blow, the stagger, the leap, the bow, the guard; the ronin's stumbles,
+    /// wounds and fall.
     private static func key(_ cast: Cast, _ frame: Frame) -> Pose {
         var p = stance(cast)
         if frame == .stagger || frame == .hurt(0) || frame == .fall(0) { recoil(&p) }
@@ -359,46 +471,54 @@ public enum Figure {
             switch frame {
             case .stumble(let k):
                 // Overreached: the blade carried down past its mark, the body pitched after it.
-                p.lean = k == 0 ? 0.62 : 0.4
+                p.lean = k == 0 ? 0.62 : 0.42
                 p.shift = 0.05
                 p.front = k == 0 ? (1.05, 0.85) : (0.85, 0.55)
                 p.back = k == 0 ? (-0.1, -0.95) : (-0.3, -0.8)
-                p.arm = k == 0 ? (1.1, 0.7) : (0.95, 0.95)
-                p.arm2 = k == 0 ? (-1.7, -1.1) : (-0.9, -0.4)
-                p.blade = k == 0 ? 0.45 : 0.9
+                p.hold = k == 0 ? v(0.26, -0.3) : v(0.24, -0.24)
+                p.blade = k == 0 ? 0.42 : 0.85
                 p.tilt = 0.35
                 p.stream = 0.7
+            case .repelled(let k):
+                // The blade knocked back over the shoulder, the ronin rocked back on his heels.
+                p.lean = k == 0 ? -0.3 : -0.12
+                p.shift = -0.04
+                p.front = k == 0 ? (0.62, 0.05) : (0.55, 0.12)
+                p.back = k == 0 ? (-0.18, -0.5) : (-0.35, -0.45)
+                p.hold = k == 0 ? v(0.1, 0.16) : v(0.16, 0.0)
+                p.blade = k == 0 ? 3.55 : 2.7
+                p.tilt = k == 0 ? -0.3 : -0.1
+                p.stream = 0.6
             case .hurt(let k):
                 if k == 0 {
-                    p.arm = (0.4, 1.0)
-                    p.blade = 1.3
+                    p.hold = v(0.12, -0.14)
+                    p.blade = 1.45
                 } else {
                     // Bracing back into guard.
                     p = Pose.mix(p, stance(.hero), 0.25)
                     p.lean = -0.05
                     p.front = (0.65, 0.3)
-                    p.arm = (0.7, 1.35)
-                    p.blade = 1.85
+                    p.hold = v(0.17, -0.17)
+                    p.blade = 1.9
                 }
             case .fall(let k):
                 if k == 0 {
-                    p.arm = (0.3, 0.9)
-                    p.blade = 1.1
+                    p.hold = v(0.1, -0.16)
+                    p.blade = 1.2
                 } else if k == 1 {
                     p.lean = 0.3
                     p.front = (1.3, 0.3)
                     p.back = (-0.4, -1.3)
-                    p.arm = (0.7, 0.5)
-                    p.arm2 = (0.3, 0.6)
-                    p.blade = 0.4
+                    p.hold = v(0.18, -0.26)
+                    p.blade = 0.45
                     p.tilt = 0.3
                 } else {
-                    p.lean = 0.55
+                    // On one knee, both hands on the hilt of the sword planted before him.
+                    p.lean = 0.5
                     p.front = (1.5, 0.1)
                     p.back = (-0.5, -1.55)
-                    p.arm = (0.5, 0.25)
-                    p.arm2 = (0.2, 0.35)
-                    p.blade = 0.1
+                    p.hold = v(0.2, -0.22)
+                    p.blade = 0.12
                     p.tilt = 0.55
                     p.stream = 0.05
                 }
@@ -407,89 +527,158 @@ public enum Figure {
             }
         case .foe(let kind):
             switch (kind, frame) {
-            case (.grunt, .windup(_)):
-                p.lean = -0.06
+            // The spearman: draws the shaft back to his hip, then drives it out on a long step.
+            case (.grunt, .windup(1)):
+                p.lean = -0.04
+                p.shift = -0.02
+                p.back = (-0.3, -0.5)
+                p.hold = v(0.03, -0.14)
+                p.blade = 1.52
+            case (.grunt, .windup(2)):
+                p.lean = -0.08
                 p.shift = -0.03
-                p.arm = (0.2, 1.0)
-                p.arm2 = (-0.45, 0.8)
-                p.blade = 1.64
-            case (.grunt, .strike(_)):
-                lunge(&p, 0.3)
-                p.arm = (1.45, 1.55)
-                p.arm2 = (1.1, 1.5)
-                p.blade = 1.57
-            case (.runner, .windup(_)):
-                p.lean = 0.22
-                p.arm = (2.5, 2.9)
-                p.blade = 3.0
-            case (.runner, .strike(_)):
-                lunge(&p, 0.5)
-                p.arm = (1.3, 1.2)
-                p.blade = 1.0
-            case (.brute, .windup(_)):
-                p.lean = -0.12
-                p.arm = (2.6, 2.8)
-                p.arm2 = (2.45, 2.7)
-                p.blade = 3.95
-            case (.brute, .strike(_)):
-                lunge(&p, 0.4)
-                p.arm = (1.4, 1.6)
-                p.arm2 = (1.2, 1.5)
-                p.blade = 1.75
+                p.front = (0.5, 0.3)
+                p.back = (-0.25, -0.62)
+                p.hold = v(-0.01, -0.12)
+                p.blade = 1.6
+            case (.grunt, .strike(let k)):
+                lunge(&p, k == 0 ? 0.34 : 0.26, deep: k == 0 ? 1.1 : 0.9)
+                p.hold = k == 0 ? v(0.27, -0.07) : v(0.22, -0.1)
+                p.blade = k == 0 ? 1.57 : 1.5
+                if k == 0 { p.smear = sweep(1.57, 1.57, 0.9, thrust: true) }
+            // The shinobi: springs from a crouch and slashes across on the way through.
+            case (.runner, .windup(1)):
+                p.lean = 0.3
+                p.front = (0.8, 0.5)
+                p.back = (-0.5, -1.0)
+                p.hold = v(0.02, 0.1)
+                p.blade = 3.3
+                p.arm2 = (0.9, 1.4)
+            case (.runner, .windup(2)):
+                p.lean = 0.36
+                p.front = (0.95, 0.65)
+                p.back = (-0.45, -1.15)
+                p.hold = v(-0.02, 0.14)
+                p.blade = 3.55
+                p.arm2 = (1.0, 1.5)
+            case (.runner, .strike(let k)):
+                lunge(&p, k == 0 ? 0.55 : 0.45, deep: 1.15)
+                p.hold = k == 0 ? v(0.28, -0.14) : v(0.2, -0.24)
+                p.blade = k == 0 ? 0.95 : 0.5
+                p.arm2 = (-1.3, -0.9)
+                if k == 0 { p.smear = sweep(3.2, 0.95, 0.9) }
+            // The oni: the kanabō raised high behind the head, then brought down into the ground.
+            case (.brute, .windup(1)):
+                p.lean = -0.1
+                p.hold = v(0.02, 0.24)
+                p.blade = -2.33
+            case (.brute, .windup(2)):
+                p.lean = -0.2
+                p.lift = 0.02
+                p.front = (0.5, 0.25)
+                p.hold = v(-0.02, 0.27)
+                p.blade = -1.98
+            case (.brute, .strike(let k)):
+                lunge(&p, k == 0 ? 0.48 : 0.58, deep: 1.05)
+                p.hold = k == 0 ? v(0.26, -0.26) : v(0.22, -0.32)
+                p.blade = k == 0 ? 1.0 : 1.15
+                if k == 0 { p.smear = sweep(3.8, 1.0, 0.8) }
             case (.brute, .stagger):
-                p.arm = (0.3, 2.0)
+                p.hold = v(0.08, -0.12)
                 p.blade = -2.2
-            case (.dancer, .windup(_)):
-                p.arm = (2.6, 2.9)
-                p.arm2 = (2.2, 2.7)
-                p.blade = 2.6
-                p.blade2 = 2.9
-            case (.dancer, .strike(_)):
-                lunge(&p, 0.38)
-                p.arm = (1.5, 1.6)
-                p.arm2 = (1.1, 1.3)
-                p.blade = 1.5
-                p.blade2 = 1.2
+            // The blade dancer: both blades crossed high, then scissored down and out.
+            case (.dancer, .windup(1)), (.dancer, .windup(2)):
+                let coil: CGFloat = frame == .windup(2) ? 1 : 0
+                p.lean = 0.1 - 0.06 * coil
+                p.front = (0.55, 0.3 + 0.15 * coil)
+                p.back = (-0.5, -0.6 - 0.2 * coil)
+                p.arm = (2.6 + 0.1 * coil, 2.95)
+                p.arm2 = (2.3 + 0.1 * coil, 2.65)
+                p.blade = 2.45 - 0.1 * coil
+                p.blade2 = 3.75 + 0.1 * coil
+            case (.dancer, .strike(let k)):
+                lunge(&p, k == 0 ? 0.42 : 0.36)
+                p.arm = k == 0 ? (1.45, 1.3) : (1.15, 0.9)
+                p.arm2 = k == 0 ? (0.4, -0.2) : (-0.6, -0.5)
+                p.blade = k == 0 ? 1.05 : 0.7
+                p.blade2 = k == 0 ? -0.9 : -1.4
+                if k == 0 { p.smear = sweep(2.5, 1.05, 0.8) }
             case (.dancer, .leap), (.warlord, .leap):
                 p.airborne = true
                 p.lean = 0.3
                 p.front = (1.8, 0.3)
                 p.back = (1.3, -0.2)
-                p.arm = kind == .dancer ? (1.8, 2.2) : (2.4, 2.8)
-                p.arm2 = kind == .dancer ? (-1.8, -2.2) : (2.2, 2.7)
-                p.blade = kind == .dancer ? 2.8 : 3.6
-                p.blade2 = -2.8
+                if kind == .dancer {
+                    p.arm = (1.8, 2.2)
+                    p.arm2 = (-1.8, -2.2)
+                    p.blade = 2.8
+                    p.blade2 = 3.48
+                } else {
+                    p.hold = v(0.04, 0.24)
+                    p.blade = 3.7
+                }
                 p.wave = 0.75
                 p.stream = 1
-            case (.archer, .aim), (.archer, .windup(_)):
+            // The archer, after kyūdō: the bow raised over the head (uchiokoshi), drawn open as it comes down
+            // (hikiwake), held at full draw (kai), and the release (hanare), the string hand flung back.
+            case (.archer, .windup(0)):
+                p.lean = 0.02
+                p.hold = v(0.1, 0.17)
+                p.hold2 = v(0.02, 0.15)
+                p.blade = 1.57
+                p.draw = 0.05
+            case (.archer, .windup(_)):
+                p.lean = 0.02
+                p.hold = v(0.24, 0.18)
+                p.hold2 = v(-0.02, 0.13)
+                p.blade = 1.57
+                p.draw = 0.5
+            case (.archer, .aim):
+                p.lean = 0.0
                 p.front = (0.4, 0.1)
                 p.back = (-0.44, -0.3)
-                p.lean = 0.02
-                p.arm = (1.55, 1.55)
-                p.arm2 = (-1.45, 1.6)
+                p.hold = v(0.315, 0.07)
+                p.hold2 = v(-0.09, 0.07)
+                p.blade = 1.57
                 p.draw = 1
             case (.archer, .loose), (.archer, .strike(_)):
+                p.lean = 0.0
                 p.front = (0.4, 0.1)
                 p.back = (-0.44, -0.3)
+                p.hold = v(0.315, 0.07)
+                p.hold2 = v(-0.28, 0.1)
+                p.blade = 1.57
+            // The warlord: jōdan with the long blade and a huge stamping cut; a guard like a wall.
+            case (.warlord, .windup(1)):
+                p.lean = -0.04
+                p.hold = v(0.03, 0.26)
+                p.blade = 4.0
+            case (.warlord, .windup(2)):
+                p.lean = -0.12
+                p.lift = 0.015
+                p.front = (0.5, 0.25)
+                p.hold = v(0.0, 0.28)
+                p.blade = 4.35
+            case (.warlord, .strike(let k)):
+                lunge(&p, k == 0 ? 0.42 : 0.5, deep: 1.1)
+                p.hold = k == 0 ? v(0.3, -0.06) : v(0.2, -0.24)
+                p.blade = k == 0 ? 1.4 : 0.7
+                if k == 0 { p.smear = sweep(4.1, 1.4, 0.9) }
+            case (.warlord, .block):
                 p.lean = 0.02
-                p.arm = (1.55, 1.55)
-                p.arm2 = (-1.3, -1.0)
-            case (.warlord, .windup(_)):
-                p.lean = -0.08
-                p.arm = (2.7, 3.0)
-                p.arm2 = (2.55, 2.95)
-                p.blade = 4.25
-            case (.warlord, .strike(_)):
-                lunge(&p, 0.38)
-                p.arm = (1.5, 1.7)
-                p.arm2 = (1.3, 1.6)
-                p.blade = 1.55
+                p.front = (0.55, 0.3)
+                p.back = (-0.5, -0.55)
+                p.hold = v(0.19, -0.05)
+                p.blade = 2.9
             case (.warlord, .stagger):
-                p.arm = (0.6, 1.2)
-                p.arm2 = (0.4, 1.1)
-                p.blade = 1.9
+                p.hold = v(0.12, 0.02)
+                p.blade = 2.6
             case (_, .stagger):
-                p.arm = (0.3, 0.7)
+                if let hold = p.hold {
+                    p.hold = v(hold.x - 0.02, hold.y + 0.06)
+                } else {
+                    p.arm = (0.3, 0.7)
+                }
                 p.blade += 0.6
             default:
                 break
@@ -498,166 +687,257 @@ public enum Figure {
         return p
     }
 
-    /// Where a cut starts and ends, and the arc its blade sweeps.
-    static func cutKeys(_ cut: Cut) -> (start: Pose, end: Pose, from: CGFloat, to: CGFloat) {
-        var start = stance(.hero), end = stance(.hero)
-        switch cut {
-        case .level:
-            start.arm = (2.2, 2.5)
-            start.arm2 = (2.0, 2.4)
-            start.blade = 2.9
-            start.lean = 0.05
-            lunge(&end, 0.3)
-            end.arm = (1.55, 1.62)
-            end.arm2 = (1.35, 1.55)
-            end.blade = 1.45
-            return (start, end, 2.95, 1.42)
-        case .rising:
-            start.lean = 0.32
-            start.arm = (0.7, 0.6)
-            start.arm2 = (0.6, 0.6)
-            start.blade = 0.55
-            start.front = (0.8, 0.5)
-            lunge(&end, 0.14)
-            end.arm = (2.35, 2.7)
-            end.arm2 = (2.15, 2.6)
-            end.blade = 2.75
-            return (start, end, 0.5, 2.8)
-        case .falling:
-            start.lean = 0
-            start.arm = (2.6, 3.0)
-            start.arm2 = (2.45, 2.95)
-            start.blade = 3.7
-            lunge(&end, 0.42)
-            end.arm = (1.15, 1.05)
-            end.arm2 = (0.95, 0.95)
-            end.blade = 0.85
-            return (start, end, 3.5, 0.85)
-        case .overhead:
-            start.lean = -0.08
-            start.lift = 0.025
-            start.arm = (3.0, 3.5)
-            start.arm2 = (2.9, 3.4)
-            start.blade = 4.2
-            lunge(&end, 0.5, deep: 1.1)
-            end.arm = (1.35, 1.2)
-            end.arm2 = (1.2, 1.15)
-            end.blade = 1.15
-            return (start, end, 4.1, 1.15)
-        case .thrust:
-            start.arm = (0.35, 1.35)
-            start.arm2 = (0.2, 1.3)
-            start.blade = 1.62
-            start.lean = 0.05
-            lunge(&end, 0.36, deep: 1.2)
-            end.arm = (1.58, 1.57)
-            end.arm2 = (1.45, 1.55)
-            end.blade = 1.57
-            return (start, end, 1.5, 1.62)
-        case .sweep:
-            start.lean = 0.25
-            start.front = (1.2, 0.2)
-            start.back = (-0.9, -1.3)
-            start.arm = (1.9, 2.2)
-            start.arm2 = (1.7, 2.1)
-            start.blade = 2.4
-            end.lean = 0.45
-            end.shift = 0.03
-            end.front = (1.35, 0.25)
-            end.back = (-1.0, -1.45)
-            end.arm = (1.15, 1.1)
-            end.arm2 = (1.0, 1.0)
-            end.blade = 1.0
-            end.stream = 1
-            return (start, end, 2.4, 1.0)
-        }
+    /// Where a cut starts (its kamae) and ends (full extension), and the arc its blade sweeps.
+    struct CutKeys {
+        var start: Pose
+        var end: Pose
+        var from: CGFloat
+        var to: CGFloat
     }
 
-    /// A cut's six frames.
+    static func cutKeys(_ cut: Cut) -> CutKeys {
+        var start = stance(.hero), end = stance(.hero)
+        switch cut {
+        case .kesa:
+            // From hassō: hands by the right shoulder, the blade upright and tipped back.
+            start.lean = 0.02
+            start.front = (0.4, 0.12)
+            start.back = (-0.45, -0.3)
+            start.hold = v(0.02, 0.06)
+            start.blade = 3.4
+            lunge(&end, 0.34)
+            end.hold = v(0.24, -0.26)
+            end.blade = 0.78
+        case .gyaku:
+            // From waki-gamae: the hands at the hip, the blade trailing low behind, hidden by the body.
+            start.lean = 0.26
+            start.front = (0.72, 0.4)
+            start.back = (-0.6, -0.75)
+            start.hold = v(-0.05, -0.2)
+            start.blade = -0.75
+            lunge(&end, 0.1, deep: 0.9)
+            end.hold = v(0.2, 0.11)
+            end.blade = 2.6
+        case .shomen:
+            // From jōdan: both hands over the head; then the stamp, and the arms thrown out level.
+            start.lean = -0.08
+            start.lift = 0.02
+            start.front = (0.35, 0.1)
+            start.back = (-0.4, -0.25)
+            start.hold = v(0.02, 0.27)
+            start.blade = 4.0
+            lunge(&end, 0.4, deep: 1.18)
+            end.hold = v(0.305, 0.0)
+            end.blade = 1.62
+        case .dou:
+            // The blade laid back at the hip, then brought round level through the waist.
+            start.lean = 0.06
+            start.front = (0.45, 0.15)
+            start.back = (-0.5, -0.4)
+            start.hold = v(-0.02, -0.12)
+            start.blade = -1.75
+            start.flat = 0.3
+            lunge(&end, 0.32, deep: 1.05)
+            end.hold = v(0.25, -0.15)
+            end.blade = 1.5
+            end.flat = 0.3
+        case .tsuki:
+            start.lean = 0.08
+            start.front = (0.45, 0.2)
+            start.back = (-0.55, -0.5)
+            start.hold = v(0.1, -0.2)
+            start.blade = 1.74
+            lunge(&end, 0.38, deep: 1.3)
+            end.hold = v(0.315, -0.08)
+            end.blade = 1.6
+        case .sune:
+            // The blade shouldered behind the head (katsugi), then the drop into a deep lunge and a cut at the shins.
+            start.lean = -0.02
+            start.hold = v(0.03, 0.2)
+            start.blade = 3.8
+            end.lean = 0.5
+            end.shift = 0.05
+            end.front = (1.2, 0.3)
+            end.back = (-0.75, -1.45)
+            end.hold = v(0.25, -0.28)
+            end.blade = 1.28
+            end.stream = 1
+        case .nukitsuke:
+            let from = draw(2), to = draw(3)
+            return CutKeys(start: from, end: to, from: -0.95, to: to.blade)
+        }
+        return CutKeys(start: start, end: end, from: start.blade, to: end.blade)
+    }
+
+    /// A cut's seven frames. The hands lead and the blade lags behind them, then whips through as the wrists
+    /// uncock, so the point travels fastest at the end.
     static func swing(_ cut: Cut, _ phase: Int) -> Pose {
-        let (start, end, from, to) = cutKeys(cut)
-        let arc = to - from
+        if cut == .nukitsuke { return draw(phase) }
+        let keys = cutKeys(cut)
+        let arc = keys.to - keys.from
+        let flat = keys.start.flat
+        let thrust = cut == .tsuki
+        func moment(_ t: CGFloat, whip: CGFloat) -> Pose {
+            var p = Pose.mix(keys.start, keys.end, t)
+            p.blade = keys.from + arc * whip
+            return p
+        }
+        func trail(_ from: CGFloat, _ to: CGFloat, _ strength: CGFloat) -> Pose.Smear {
+            Pose.Smear(from: from, to: to, strength: strength, flat: flat, thrust: thrust)
+        }
         switch phase {
         case 0:
-            var p = start
+            // Chambered, the weight gathering over the back foot.
+            var p = keys.start
+            p.lean -= 0.03
             p.stream = 0.35
             p.wave = 0.1
             return p
         case 1:
-            var p = Pose.mix(start, end, 0.55)
-            p.smear = (p.blade - arc * 0.55, p.blade, 1)
-            p.stream = 0.85
-            p.wave = 0.25
+            var p = moment(0.4, whip: 0.22)
+            p.smear = trail(keys.from, p.blade, 0.55)
+            p.stream = 0.7
+            p.wave = 0.2
             return p
         case 2:
-            var p = Pose.mix(start, end, 0.93)
-            p.smear = (p.blade - arc * 0.6, p.blade, 0.85)
+            var p = moment(0.82, whip: 0.72)
+            p.smear = trail(keys.from + arc * 0.1, p.blade, 1)
             p.stream = 1
-            p.wave = 0.4
+            p.wave = 0.35
             return p
         case 3:
-            // The follow-through: the blade carries on past its mark and the body leans after it.
-            var p = end
-            p.blade += arc > 0 ? 0.22 : -0.22
-            p.arm.upper += arc > 0 ? 0.1 : -0.1
-            p.lean += 0.04
-            p.smear = (p.blade - arc * 0.3, p.blade, 0.4)
+            var p = moment(1, whip: 1)
+            p.smear = trail(keys.from + arc * 0.45, p.blade, 0.8)
             p.stream = 1
-            p.wave = 0.55
+            p.wave = 0.45
             return p
         case 4:
-            var p = Pose.mix(end, stance(.hero), 0.4)
-            p.stream = 0.7
-            p.wave = 0.7
+            // The follow-through: the blade carries past its mark and the body settles lower after it.
+            var p = keys.end
+            if !thrust { p.blade += arc > 0 ? 0.22 : -0.22 }
+            p.lean += 0.04
+            p.smear = trail(keys.to - arc * 0.2, p.blade, 0.3)
+            p.stream = 0.9
+            p.wave = 0.6
+            return p
+        case 5:
+            // Zanshin: held, the point coming back up onto the line, eyes on the foe.
+            var p = Pose.mix(keys.end, stance(.hero), 0.2)
+            p.blade = keys.end.blade + (stance(.hero).blade - keys.end.blade) * 0.15
+            p.stream = 0.6
+            p.wave = 0.75
             return p
         default:
-            var p = Pose.mix(end, stance(.hero), 0.78)
+            var p = Pose.mix(keys.end, stance(.hero), 0.65)
             p.stream = 0.4
-            p.wave = 0.85
+            p.wave = 0.9
             return p
         }
     }
 
-    /// The end of a stage: chiburi, a sharp flick that throws the blood from the blade; then nōtō, the blade drawn
-    /// back along the scabbard and slid home, the hand resting on the hilt.
+    /// Nukitsuke, from the iai stance: the hilt pushed forward as the scabbard is pulled back; the blade clearing
+    /// the mouth; one hand whipping it up and out at the foe's chest, the other still drawing the scabbard back;
+    /// the follow-through, zanshin, and the second hand joining the hilt.
+    static func draw(_ phase: Int) -> Pose {
+        var p = iai()
+        switch phase {
+        case 0:
+            p.lean = 0.24
+            p.front = (0.7, 0.32)
+            p.back = (-0.55, -0.7)
+            p.sheathed = 0.55
+            p.saya = 0.5
+            p.stream = 0.4
+        case 1:
+            p.lean = 0.3
+            p.shift = 0.02
+            p.front = (0.85, 0.32)
+            p.back = (-0.68, -0.88)
+            p.sheathed = 0.14
+            p.saya = 1
+            p.stream = 0.8
+        case 2:
+            lunge(&p, 0.34)
+            p.sheathed = 0
+            p.saya = 1
+            p.hold = v(0.25, -0.15)
+            p.blade = 0.9
+            p.smear = sweep(-0.95, 0.9, 1)
+            p.stream = 1
+        case 3:
+            lunge(&p, 0.38, deep: 1.12)
+            p.sheathed = 0
+            p.saya = 1
+            p.hold = v(0.315, 0.03)
+            p.blade = 1.8
+            p.smear = sweep(0.55, 1.8, 0.85)
+            p.stream = 1
+        case 4:
+            lunge(&p, 0.4, deep: 1.1)
+            p.sheathed = 0
+            p.saya = 0.8
+            p.hold = v(0.3, 0.09)
+            p.blade = 2.12
+            p.smear = sweep(1.55, 2.12, 0.3)
+            p.stream = 0.9
+        case 5:
+            lunge(&p, 0.34, deep: 1.0)
+            p.sheathed = 0
+            p.saya = 0.5
+            p.hold = v(0.29, 0.05)
+            p.blade = 1.9
+            p.stream = 0.6
+            p.wave = 0.7
+        default:
+            var end = p
+            lunge(&end, 0.3)
+            end.sheathed = 0
+            end.saya = 0
+            end.hold = v(0.26, -0.05)
+            end.blade = 1.95
+            end.grip = .two
+            p = Pose.mix(end, stance(.hero), 0.6)
+            p.stream = 0.4
+            p.wave = 0.9
+        }
+        return p
+    }
+
+    /// The end of a stage: ō-chiburi, the blade swung up beside the head and snapped down to throw the blood off;
+    /// then nōtō, the back of the blade laid in the scabbard's mouth and slid home, the hand resting on the hilt.
     static func flourish(_ k: Int) -> Pose {
         var p = stance(.hero)
-        p.front = (0.3, 0.05)
-        p.back = (-0.3, -0.12)
+        p.front = (0.34, 0.06)
+        p.back = (-0.34, -0.14)
         p.lean = 0.04
+        p.grip = .saya
         switch k {
         case 0:
-            // The blade raised out to the side...
-            p.arm = (1.9, 2.3)
-            p.arm2 = (-0.3, 0.1)
-            p.blade = 2.6
+            p.hold = v(0.08, 0.22)
+            p.blade = 3.75
             p.stream = 0.5
         case 1:
-            // ...and snapped down and out.
-            p.arm = (1.25, 1.1)
-            p.arm2 = (-0.3, 0.1)
-            p.blade = 0.95
-            p.smear = (2.3, 0.95, 0.55)
+            p.front = (0.5, 0.25)
+            p.back = (-0.45, -0.5)
+            p.hold = v(0.27, -0.12)
+            p.blade = 0.9
+            p.smear = sweep(3.3, 0.9, 0.6)
             p.stream = 0.8
             p.wave = 0.3
         case 2:
-            // The back of the blade laid along the scabbard's mouth.
-            p.arm = (0.9, 1.9)
-            p.arm2 = (0.4, 1.4)
+            p.hold = nil
             p.blade = -0.95
-            p.sheathed = 0.5
+            p.sheathed = 0.28
             p.wave = 0.5
         case 3:
-            p.arm = (0.45, 1.7)
-            p.arm2 = (0.4, 1.5)
+            p.hold = nil
             p.blade = -0.95
-            p.sheathed = 0.82
+            p.sheathed = 0.72
             p.wave = 0.7
         default:
             // Home: upright, the hand on the hilt.
+            p.hold = nil
             p.lean = 0.02
-            p.arm = (0.3, 1.55)
-            p.arm2 = (0.35, 1.45)
             p.blade = -0.95
             p.sheathed = 1
             p.wave = 0.9
@@ -676,8 +956,31 @@ private func at(_ p: CGPoint, _ d: CGPoint, _ length: CGFloat) -> CGPoint {
 
 private func mid(_ a: CGPoint, _ b: CGPoint) -> CGPoint { CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2) }
 
+private func unit(_ a: CGPoint, _ b: CGPoint) -> CGPoint {
+    let length = max(0.0001, hypot(b.x - a.x, b.y - a.y))
+    return CGPoint(x: (b.x - a.x) / length, y: (b.y - a.y) / length)
+}
+
 private let thigh: CGFloat = 0.27, shin: CGFloat = 0.27, torso: CGFloat = 0.3
 private let upperArm: CGFloat = 0.17, forearm: CGFloat = 0.155
+
+/// Two-bone reach from `root`: the hand lands on `target` (or as near as the arm allows), the elbow bent below the
+/// line to it (for a figure facing right).
+private func twoBone(_ root: CGPoint, _ target: CGPoint, _ a: CGFloat, _ b: CGFloat) -> (elbow: CGPoint, hand: CGPoint) {
+    let dx = target.x - root.x, dy = target.y - root.y
+    let distance = min(a + b - 0.001, max(abs(a - b) + 0.001, hypot(dx, dy)))
+    let toward = atan2(dy, dx)
+    let bend = acos(max(-1, min(1, (a * a + distance * distance - b * b) / (2 * a * distance))))
+    let elbow = CGPoint(x: root.x + cos(toward - bend) * a, y: root.y + sin(toward - bend) * a)
+    return (elbow, CGPoint(x: root.x + cos(toward) * distance, y: root.y + sin(toward) * distance))
+}
+
+/// Which way a blade at `angle` points, and how long it looks, when its swing is squashed toward a level plane.
+private func bladeVector(_ angle: CGFloat, flat: CGFloat) -> (d: CGPoint, scale: CGFloat) {
+    let x = sin(angle), y = -cos(angle) * flat
+    let m = max(0.0001, hypot(x, y))
+    return (CGPoint(x: x / m, y: y / m), m)
+}
 
 /// Draws one pose of one figure into a pen.
 private struct Drawer {
@@ -688,6 +991,9 @@ private struct Drawer {
     // The skeleton.
     let hip: CGPoint, neck: CGPoint, shoulder: CGPoint
     let up: CGPoint, across: CGPoint, face: CGPoint, headUp: CGPoint
+    /// The sword arm and the other arm.
+    var main: (elbow: CGPoint, hand: CGPoint) = (.zero, .zero)
+    var other: (elbow: CGPoint, hand: CGPoint) = (.zero, .zero)
 
     let body = Paint(Palette.silhouette)
     let shade = Paint(Palette.shade)
@@ -708,43 +1014,48 @@ private struct Drawer {
         shoulder = at(neck, up, -0.045 * H)
         headUp = CGPoint(x: sin(pose.lean + pose.tilt), y: cos(pose.lean + pose.tilt))
         face = CGPoint(x: cos(pose.lean + pose.tilt), y: -sin(pose.lean + pose.tilt))
+
+        // The sword hand: on the hilt as it rides the scabbard, at its hold, or where the arm's angles put it.
+        let a = upperArm * H, b = forearm * H
+        if let grip = sheathGrip {
+            main = twoBone(shoulder, grip, a, b)
+        } else if let hold = pose.hold {
+            main = twoBone(shoulder, CGPoint(x: shoulder.x + hold.x * H, y: shoulder.y + hold.y * H), a, b)
+        } else {
+            main = forward(pose.arm)
+        }
+        // The other hand: on the hilt behind the first, at the scabbard's mouth, at its hold, or free.
+        if pose.grip == .two, let span = build.span, pose.sheathed == 0 {
+            let d = bladeVector(pose.blade, flat: pose.flat).d
+            other = twoBone(shoulder, at(main.hand, d, -span * H), a, b)
+        } else if pose.grip == .saya, build.scabbard {
+            other = twoBone(shoulder, at(scabbardMouth, dir(scabbardAngle), 0.012 * H), a, b)
+        } else if let hold = pose.hold2 {
+            other = twoBone(shoulder, CGPoint(x: shoulder.x + hold.x * H, y: shoulder.y + hold.y * H), a, b)
+        } else {
+            other = forward(pose.arm2)
+        }
+    }
+
+    /// An arm set by its angles.
+    func forward(_ angles: (upper: CGFloat, fore: CGFloat)) -> (elbow: CGPoint, hand: CGPoint) {
+        let elbow = at(shoulder, dir(angles.upper), upperArm * H)
+        return (elbow, at(elbow, dir(angles.fore), forearm * H))
     }
 
     /// A point on the torso: `along` its length from the hip, `out` toward the chest (negative: the back).
     func torsoPoint(_ along: CGFloat, _ out: CGFloat) -> CGPoint { at(at(hip, up, along * torso * H), across, out) }
 
-    func armEnds(_ angles: (upper: CGFloat, fore: CGFloat)) -> (elbow: CGPoint, hand: CGPoint) {
-        if let target = sheathGrip {
-            return reach(target)
-        }
-        let elbow = at(shoulder, dir(angles.upper), upperArm * H)
-        return (elbow, at(elbow, dir(angles.fore), forearm * H))
-    }
+    /// The scabbard's mouth, and the way it points (back and down from the front of the sash). For the draw it is
+    /// pulled back along its line and turned flatter.
+    var scabbardMouth: CGPoint { at(torsoPoint(0.12, build.waist * H * 0.55), dir(scabbardAngle), 0.1 * H * pose.saya) }
+    var scabbardAngle: CGFloat { -0.95 - 0.3 * pose.saya }
 
-    /// The scabbard's mouth, and the way it points (back and down from the front of the sash).
-    var scabbardMouth: CGPoint { torsoPoint(0.12, build.waist * H * 0.55) }
-    static let scabbardAngle: CGFloat = -0.95
-
-    /// While the blade goes home, the sword hand rides the hilt along the scabbard's line: as far out from the mouth
-    /// as the blade still shows.
+    /// While the blade goes in or out, the sword hand rides the hilt along the scabbard's line: as far out from the
+    /// mouth as the blade shows.
     var sheathGrip: CGPoint? {
         guard build.scabbard, pose.sheathed > 0 else { return nil }
-        let d = dir(Drawer.scabbardAngle)
-        return at(scabbardMouth, d, -(0.6 * H * (1 - pose.sheathed) + 0.035 * H))
-    }
-
-    /// Two-bone reach: the elbow bends down and back, the hand lands on `target` (or as near as the arm allows).
-    func reach(_ target: CGPoint) -> (elbow: CGPoint, hand: CGPoint) {
-        let a = upperArm * H, b = forearm * H
-        let dx = target.x - shoulder.x, dy = target.y - shoulder.y
-        let distance = min(a + b - 0.001, max(abs(a - b) + 0.001, hypot(dx, dy)))
-        let toward = atan2(dy, dx)
-        let bend = acos(max(-1, min(1, (a * a + distance * distance - b * b) / (2 * a * distance))))
-        // Elbow below the line to the hand.
-        let angle = toward - bend * (face.x >= 0 ? 1 : -1)
-        let elbow = CGPoint(x: shoulder.x + cos(angle) * a, y: shoulder.y + sin(angle) * a)
-        let hand = CGPoint(x: shoulder.x + cos(toward) * distance, y: shoulder.y + sin(toward) * distance)
-        return (elbow, hand)
+        return at(scabbardMouth, dir(scabbardAngle), -(0.6 * H * (1 - pose.sheathed) + 0.035 * H))
     }
 
     mutating func fill(_ points: [CGPoint], _ paint: Paint) { pen.fill(points, paint) }
@@ -769,20 +1080,19 @@ private struct Drawer {
         if build.scabbard { scabbard(behind: true) }
         // The far side first, in a lighter shade, so the figure reads in depth.
         leg(pose.back, shade)
-        var backHand = CGPoint.zero
-        let drawingBow = build.weapon == .bow && pose.draw > 0
-        if !drawingBow { backHand = arm(pose.arm2, shade) }
+        let drawingBow = build.weapon == .bow && (pose.draw > 0 || pose.hold2 != nil)
+        if !drawingBow { arm(other, shade) }
         trunk()
         head()
         leg(pose.front, body)
         if build.scabbard { scabbard(behind: false) }
-        if drawingBow { backHand = armEnds(pose.arm2).hand }
-        let hand = arm(pose.arm, body)
-        weapon(hand, backHand)
-        if drawingBow { _ = arm(pose.arm2, body) }
+        arm(main, body)
+        weapon(main.hand, other.hand)
+        if drawingBow { arm(other, body) }
         if let smear = pose.smear {
-            let origin = armEnds(pose.arm).hand
-            pen.overlay { pen in Drawer.smear(&pen, origin: origin, H: H, smear) }
+            let (origin, radius, flat) = (main.hand, build.reach * H, pose.flat)
+            let blade = bladeVector(pose.blade, flat: flat).d
+            pen.overlay { pen in Drawer.smear(&pen, origin: origin, radius: radius, blade: blade, H: H, smear) }
         }
     }
 
@@ -811,24 +1121,23 @@ private struct Drawer {
               CGPoint(x: ankle.x - 0.03 * H, y: ankle.y - 0.028 * H)], paint)
     }
 
-    mutating func arm(_ angles: (upper: CGFloat, fore: CGFloat), _ paint: Paint) -> CGPoint {
-        let (elbow, hand) = armEnds(angles)
+    mutating func arm(_ ends: (elbow: CGPoint, hand: CGPoint), _ paint: Paint) {
+        let (elbow, hand) = ends
         let k = build.bulk
         segment(shoulder, elbow, 0.066 * H * k, 0.07 * H * k, 0.042 * H * k, paint, bulge: 0.3, at: 0.3)
         segment(elbow, hand, 0.046 * H * k, 0.052 * H * k, 0.03 * H * k, paint, bulge: 0.25, at: 0.3)
         // The fist.
-        let d = dir(angles.fore), n = CGPoint(x: -d.y, y: d.x)
+        let d = unit(elbow, hand), n = CGPoint(x: -d.y, y: d.x)
         fill([at(hand, n, 0.02 * H), at(hand, d, 0.035 * H), at(hand, n, -0.02 * H), at(hand, d, -0.01 * H)], paint)
         if build.sleeves {
             // A kimono sleeve: a deep, square-cut panel hanging from the upper arm, swinging back as the arm moves.
-            let du = dir(angles.upper)
+            let du = unit(shoulder, elbow)
             let hang = CGPoint(x: -face.x * (0.25 + pose.stream * 0.55), y: -1 + pose.stream * 0.3)
             let length = hypot(hang.x, hang.y)
             let down = CGPoint(x: hang.x / length, y: hang.y / length)
             fill([at(shoulder, du, 0.0), at(elbow, du, -0.01 * H), at(at(elbow, du, -0.02 * H), down, 0.1 * H),
                   at(at(shoulder, du, 0.07 * H), down, 0.105 * H)], paint)
         }
-        return hand
     }
 
     /// The torso in profile: a deep chest and a flat back over a narrow waist; skirt or tassets; the sash; plates.
@@ -953,7 +1262,7 @@ private struct Drawer {
     /// drawn behind the body, the mouth (and a sheathed hilt) in front.
     mutating func scabbard(behind: Bool) {
         let mouth = scabbardMouth
-        let d = dir(Drawer.scabbardAngle)
+        let d = dir(scabbardAngle)
         let n = CGPoint(x: -d.y, y: d.x)
         let length = 0.46 * H
         if behind {
@@ -973,13 +1282,15 @@ private struct Drawer {
 
     /// A slender, slightly curved blade: black spine, a bright cutting edge, a small guard and a wrapped grip.
     /// `visible` shortens it from the tip (a blade going into its scabbard).
-    mutating func blade(from hand: CGPoint, angle: CGFloat, length: CGFloat, width: CGFloat, gleam: CGFloat, visible: CGFloat = 1) {
-        let d = dir(angle), n = CGPoint(x: -d.y, y: d.x)
+    mutating func blade(from hand: CGPoint, angle: CGFloat, length: CGFloat, width: CGFloat, gleam: CGFloat, visible: CGFloat = 1,
+                        flat: CGFloat = 1) {
+        let (d, scale) = bladeVector(angle, flat: flat)
+        let n = CGPoint(x: -d.y, y: d.x)
         // Grip and guard.
         fill([at(hand, n, width * 0.55), at(at(hand, d, -0.11 * H), n, width * 0.45), at(at(hand, d, -0.11 * H), n, -width * 0.45),
               at(hand, n, -width * 0.55)], body)
         fill([at(hand, n, 0.03 * H), at(hand, d, 0.012 * H), at(hand, n, -0.03 * H), at(hand, d, -0.012 * H)], body)
-        var shown = length * max(0, min(1, visible))
+        var shown = length * scale * max(0, min(1, visible))
         let ground = Figure.feet.y * H + 0.004 * H
         if d.y < 0, hand.y + d.y * shown < ground { shown = max(0, (ground - hand.y) / d.y) }
         guard shown > 0.02 * H else { return }
@@ -1009,10 +1320,10 @@ private struct Drawer {
                 // Going home: from the hand the blade runs back along the scabbard's line and into its mouth.
                 let mouth = scabbardMouth
                 let showing = hypot(mouth.x - hand.x, mouth.y - hand.y)
-                blade(from: hand, angle: Drawer.scabbardAngle, length: 0.6 * H, width: 0.024 * H, gleam: 0.8,
+                blade(from: hand, angle: scabbardAngle, length: 0.6 * H, width: 0.024 * H, gleam: 0.8,
                       visible: min(0.999, showing / (0.6 * H)))
             } else {
-                blade(from: hand, angle: pose.blade, length: 0.6 * H, width: 0.024 * H, gleam: 1)
+                blade(from: hand, angle: pose.blade, length: 0.6 * H, width: 0.024 * H, gleam: 1, flat: pose.flat)
             }
         case .nodachi:
             blade(from: hand, angle: pose.blade, length: 0.78 * H, width: 0.03 * H, gleam: 0.85)
@@ -1033,11 +1344,15 @@ private struct Drawer {
             fill([at(t, n, 0.012 * H), at(t, n, -0.012 * H), CGPoint(x: t.x - 0.01 * H, y: t.y - 0.07 * H)], Paint(build.accent))
         case .club:
             let d = dir(pose.blade), n = CGPoint(x: -d.y, y: d.x)
-            let end = at(hand, d, 0.6 * H)
+            // Brought down into the ground, it stops there.
+            var length = 0.6 * H
+            let ground = Figure.feet.y * H + 0.03 * H
+            if d.y < 0, hand.y + d.y * length < ground { length = max(0.2 * H, (ground - hand.y) / d.y) }
+            let end = at(hand, d, length)
             fill([at(at(hand, d, -0.1 * H), n, 0.018 * H), at(at(hand, d, 0.12 * H), n, 0.03 * H), at(end, n, 0.052 * H),
                   at(at(end, d, 0.04 * H), n, 0.02 * H), at(at(end, d, 0.04 * H), n, -0.02 * H), at(end, n, -0.052 * H),
                   at(at(hand, d, 0.12 * H), n, -0.03 * H), at(at(hand, d, -0.1 * H), n, -0.018 * H)], body)
-            for i in 0..<5 {
+            for i in 0..<5 where (0.22 + 0.08 * CGFloat(i)) * H < length {
                 let p = at(hand, d, (0.22 + 0.08 * CGFloat(i)) * H)
                 let w = (0.034 + 0.004 * CGFloat(i)) * H
                 for s in [CGFloat(1), -1] {
@@ -1046,7 +1361,7 @@ private struct Drawer {
                 }
             }
         case .bow:
-            let d = dir(pose.draw > 0 || pose.arm.fore > 1 ? pose.arm.fore : 1.45)
+            let d = dir(pose.blade)
             let n = CGPoint(x: -d.y, y: d.x)
             let top = at(at(hand, n, 0.66 * H), d, -0.06 * H), bottom = at(at(hand, n, -0.34 * H), d, -0.04 * H)
             var limb = Path()
@@ -1125,21 +1440,38 @@ private struct Drawer {
     }
 
     /// The trail of a swing: a thin crescent swept by the blade tip, faint where the swing began and brightest at
-    /// the blade, with a hairline edge.
-    static func smear(_ pen: inout Pen, origin: CGPoint, H: CGFloat, _ smear: (from: CGFloat, to: CGFloat, strength: CGFloat)) {
-        let outer = 0.6 * H
+    /// the blade, with a hairline edge; squashed into a shallow ellipse for a level cut. A thrust leaves speed lines
+    /// streaming back along the blade instead.
+    static func smear(_ pen: inout Pen, origin: CGPoint, radius outer: CGFloat, blade: CGPoint, H: CGFloat, _ smear: Pose.Smear) {
+        if smear.thrust {
+            let n = CGPoint(x: -blade.y, y: blade.x)
+            let tip = at(origin, blade, outer)
+            // A spark of light at the point, and lines streaming back past the blade above and below it.
+            for (offset, back, length, alpha) in [(CGFloat(0.045), CGFloat(0.02), CGFloat(0.5), CGFloat(0.75)), (-0.05, 0.08, 0.42, 0.6),
+                                                  (0.1, 0.12, 0.3, 0.4), (-0.1, 0.18, 0.24, 0.3)] {
+                let head = at(at(tip, n, offset * H), blade, -back * H), tail = at(head, blade, -length * H)
+                let w = 0.012 * H
+                pen.fill([at(head, n, w / 2), at(head, blade, w * 1.5), at(head, n, -w / 2), tail], Paint(.white, alpha * smear.strength))
+            }
+            let r = 0.035 * H
+            pen.fill([at(tip, blade, r * 1.6), at(tip, n, r * 0.45), at(tip, blade, -r * 0.8), at(tip, n, -r * 0.45)], Paint(.white, 0.9 * smear.strength))
+            return
+        }
+        let scale = outer / (0.6 * H)
+        func point(_ a: CGFloat, _ r: CGFloat) -> CGPoint {
+            CGPoint(x: origin.x + sin(a) * r, y: origin.y - cos(a) * r * smear.flat)
+        }
         let steps = 18
         for i in 0..<steps {
             let t0 = CGFloat(i) / CGFloat(steps), t1 = CGFloat(i + 1) / CGFloat(steps)
             let a0 = smear.from + (smear.to - smear.from) * t0, a1 = smear.from + (smear.to - smear.from) * t1
-            let w0 = 0.02 * H + 0.2 * H * t0 * t0, w1 = 0.02 * H + 0.2 * H * t1 * t1
-            pen.fill([at(origin, dir(a0), outer), at(origin, dir(a1), outer), at(origin, dir(a1), outer - w1), at(origin, dir(a0), outer - w0)],
+            let w0 = (0.02 * H + 0.2 * H * t0 * t0) * scale, w1 = (0.02 * H + 0.2 * H * t1 * t1) * scale
+            pen.fill([point(a0, outer), point(a1, outer), point(a1, outer - w1), point(a0, outer - w0)],
                      Paint(.white, (0.05 + 0.35 * t1) * smear.strength))
         }
         var edge = Path()
         for i in 0...steps {
-            let a = smear.from + (smear.to - smear.from) * CGFloat(i) / CGFloat(steps)
-            let p = at(origin, dir(a), outer)
+            let p = point(smear.from + (smear.to - smear.from) * CGFloat(i) / CGFloat(steps), outer)
             if i == 0 { edge.move(p) } else { edge.line(p) }
         }
         pen.stroke(edge, Paint(.white, 0.9 * smear.strength), width: max(1, 0.012 * H), round: true)

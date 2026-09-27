@@ -46,6 +46,9 @@ default:
 func name(_ frame: Frame) -> String {
     switch frame {
     case .idle(let k): return "idle \(k)"
+    case .iai(let k): return "iai \(k)"
+    case .block: return "block"
+    case .repelled(let k): return "repelled \(k)"
     case .walk(let k): return "walk \(k)"
     case .windup(let k): return "windup \(k)"
     case .strike(let k): return "strike \(k)"

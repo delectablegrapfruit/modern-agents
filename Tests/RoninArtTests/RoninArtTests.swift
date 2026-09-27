@@ -21,15 +21,43 @@ final class RoninArtTests: XCTestCase {
         XCTAssertGreaterThan(Figure.pixelHeight(.hero), Figure.pixelHeight(.foe(.grunt)))
         for cut in Cut.allCases {
             XCTAssertEqual(hero.filter { if case .cut(cut, _) = $0 { return true } else { return false } }.count, Frame.cutFrames)
-            // The swing leaves a trail; the settle does not.
-            XCTAssertNotNil(Figure.pose(.hero, .cut(cut, 1)).smear)
+            // The swing leaves a trail; zanshin and the return to guard do not.
+            XCTAssertNotNil(Figure.pose(.hero, .cut(cut, 2)).smear)
+            XCTAssertNotNil(Figure.pose(.hero, .cut(cut, 3)).smear)
             XCTAssertNil(Figure.pose(.hero, .cut(cut, 5)).smear)
+            XCTAssertNil(Figure.pose(.hero, .cut(cut, 6)).smear)
         }
     }
 
-    func testTheFlourishEndsWithTheBladeHome() {
+    func testTheFlourishEndsWithTheBladeHomeAndTheDrawBringsItOut() {
         XCTAssertEqual(Figure.pose(.hero, .flourish(0)).sheathed, 0)
         XCTAssertEqual(Figure.pose(.hero, .flourish(Frame.flourishFrames - 1)).sheathed, 1)
+        XCTAssertEqual(Figure.pose(.hero, .iai(0)).sheathed, 1)
+        XCTAssertGreaterThan(Figure.pose(.hero, .cut(.nukitsuke, 0)).sheathed, 0)
+        XCTAssertEqual(Figure.pose(.hero, .cut(.nukitsuke, 2)).sheathed, 0)
+    }
+
+    func testTheSwordIsHeldInBothHandsExceptToDrawAndSheathe() {
+        XCTAssertEqual(Figure.pose(.hero, .idle(0)).grip, .two)
+        for cut in Cut.allCases where cut != .nukitsuke {
+            for k in 0..<Frame.cutFrames { XCTAssertEqual(Figure.pose(.hero, .cut(cut, k)).grip, .two, "\(cut) \(k)") }
+        }
+        XCTAssertEqual(Figure.pose(.hero, .cut(.nukitsuke, 3)).grip, .saya)
+        XCTAssertEqual(Figure.pose(.hero, .cut(.nukitsuke, Frame.cutFrames - 1)).grip, .two)
+        XCTAssertEqual(Figure.pose(.foe(.warlord), .block).grip, .two)
+    }
+
+    func testTheBladeLeadsWithTheHandsAndWhipsThrough() {
+        // Partway through the swing the hands are further along than the blade; by the end it has caught up.
+        for cut in [Cut.kesa, .gyaku, .shomen, .sune] {
+            let keys = Figure.cutKeys(cut)
+            let early = Figure.pose(.hero, .cut(cut, 1))
+            let bladeShare = (early.blade - keys.from) / (keys.to - keys.from)
+            let hand = { (p: Pose) in p.hold ?? .zero }
+            let handShare = (hand(early).y - hand(keys.start).y) / (hand(keys.end).y - hand(keys.start).y)
+            XCTAssertLessThan(bladeShare, handShare, "\(cut)")
+            XCTAssertEqual(Figure.pose(.hero, .cut(cut, 3)).blade, keys.to, accuracy: 0.001)
+        }
     }
 
     func testEachCutSweepsItsOwnWay() {
@@ -37,6 +65,8 @@ final class RoninArtTests: XCTestCase {
         for (i, a) in arcs.enumerated() {
             for b in arcs[(i + 1)...] { XCTAssertFalse(a.from == b.from && a.to == b.to) }
         }
+        XCTAssertLessThan(Figure.pose(.hero, .cut(.dou, 2)).flat, 1, "the level cut is seen side-on")
+        XCTAssertTrue(Figure.pose(.hero, .cut(.tsuki, 3)).smear?.thrust ?? false)
     }
 
     func testTheSheetIsSVG() {
