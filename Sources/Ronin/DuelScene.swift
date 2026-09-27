@@ -62,6 +62,10 @@ final class DuelScene: SKScene {
     private let figures = SKNode()
     private let fx = SKNode()
     private let hero = HeroSprite()
+    private lazy var carnage = Carnage(trails: fx)
+    /// A punch in toward a blow: the lane scaled up about a point, easing back.
+    private var zoom: CGFloat = 1
+    private var zoomFocus = CGPoint.zero
     private var foeSprites: [Int: FoeSprite] = [:]
     private var arrowSprites: [Int: ArrowSprite] = [:]
     private var reachMarks: [SKShapeNode] = []
@@ -135,6 +139,10 @@ final class DuelScene: SKScene {
         fx.zPosition = 20
         world.addChild(figures)
         world.addChild(fx)
+        carnage.stains.zPosition = 3
+        carnage.corpses.zPosition = 4
+        world.addChild(carnage.stains)
+        world.addChild(carnage.corpses)
         hero.zPosition = 5
         figures.addChild(hero)
         for _ in 0..<2 {
@@ -255,6 +263,7 @@ final class DuelScene: SKScene {
         fx.removeAllChildren()
         overlay.removeAllChildren()
         overlay.removeAllActions()
+        carnage.reset(field: field, groundY: groundY, ronin: ronin, heroX: heroX)
         banner = nil
         world.speed = 1
         slowmo = 1
@@ -433,6 +442,7 @@ final class DuelScene: SKScene {
         groundY = field.minY + field.height * 0.16
         ronin = field.height * 0.52
         buildScenery()
+        carnage.reset(field: field, groundY: groundY, ronin: ronin, heroX: heroX)
         hero.layout(ronin: ronin, home: CGPoint(x: heroX, y: groundY))
         for sprite in foeSprites.values { sprite.layout(ronin: ronin) }
         vignette.size = CGSize(width: w * 1.25, height: field.height * 1.6)
@@ -651,6 +661,7 @@ final class DuelScene: SKScene {
             storm(dt)
         }
         if world.speed < 1 { world.speed = min(1, world.speed + CGFloat(dt) * 0.9) }
+        if !isAwayPaused || session.fight.outcome != nil { carnage.update(hitStop > 0 ? 0 : dt * Double(world.speed)) }
         shakeWorld(dt)
         // Between steps (hit-stop, a pause) every figure holds its frame.
         sync(advanced || session.fight.outcome != nil ? dt : 0)
@@ -680,17 +691,55 @@ final class DuelScene: SKScene {
     }
 
     private func shakeWorld(_ dt: Double) {
-        guard shakeAmount > 0.05 else {
-            if world.position != .zero { world.position = .zero }
+        var offset = CGPoint.zero
+        if shakeAmount > 0.05 {
+            let a = shakeAmount * ronin / 60
+            offset = CGPoint(x: .random(in: -a...a), y: .random(in: -a...a))
+            shakeAmount *= CGFloat(pow(0.002, dt))
+        } else {
             shakeAmount = 0
-            return
         }
-        let a = shakeAmount * ronin / 60
-        world.position = CGPoint(x: .random(in: -a...a), y: .random(in: -a...a))
-        shakeAmount *= CGFloat(pow(0.002, dt))
+        zoom = zoom > 1.0005 ? 1 + (zoom - 1) * CGFloat(pow(0.0006, dt)) : 1
+        world.setScale(zoom)
+        world.position = CGPoint(x: offset.x + (1 - zoom) * zoomFocus.x, y: offset.y + (1 - zoom) * zoomFocus.y)
     }
 
     private func shake(_ amount: CGFloat) { shakeAmount = max(shakeAmount, amount) }
+
+    /// A punch in toward a blow.
+    private func punch(_ amount: CGFloat, at point: CGPoint) {
+        guard 1 + amount >= zoom else { return }
+        zoom = 1 + amount
+        zoomFocus = point
+    }
+
+    /// Blood thrown against the glass: blots that run and fade. `side` keeps them to that half.
+    private func splatter(_ count: Int, side: Side? = nil) {
+        for _ in 0..<count {
+            let splat = SKSpriteNode(texture: Art.splats.randomElement())
+            let s = ronin * CGFloat.random(in: 0.45...1.0)
+            splat.size = CGSize(width: s, height: s)
+            let x: CGFloat
+            switch side {
+            case .left?: x = CGFloat.random(in: 0.03...0.42)
+            case .right?: x = CGFloat.random(in: 0.58...0.97)
+            case nil: x = CGFloat.random(in: 0.04...0.96)
+            }
+            splat.position = CGPoint(x: x * size.width, y: CGFloat.random(in: 0.3...0.92) * top)
+            splat.zRotation = CGFloat.random(in: -0.35...0.35)
+            splat.color = Palette.blood.mix(.black, 0.4).color()
+            splat.colorBlendFactor = 1
+            splat.alpha = 0.88
+            splat.setScale(0.55)
+            overlay.addChild(splat)
+            splat.run(.sequence([
+                .scale(to: 1, duration: 0.05),
+                .wait(forDuration: 0.6),
+                .group([.moveBy(x: 0, y: -ronin * 0.3, duration: 1.6), .fadeOut(withDuration: 1.6)]),
+                .removeFromParent(),
+            ]))
+        }
+    }
 
     /// Makes the sprites match the fight.
     private func sync(_ dt: Double) {
@@ -708,7 +757,9 @@ final class DuelScene: SKScene {
                 foeSprites[foe.id] = sprite
             }
             let air = foe.phase == .leaping ? CGFloat(sin(foe.progress * .pi)) * ronin * 0.95 : 0
-            sprite.update(foe, at: CGPoint(x: laneX(foe.x), y: groundY), air: air, hero: heroX, dt: dt)
+            // Standing on the dead where they are heaped.
+            let heap = foe.phase == .leaping ? 0 : carnage.footing(at: laneX(foe.x), width: ronin * 0.3)
+            sprite.update(foe, at: CGPoint(x: laneX(foe.x), y: groundY + heap), air: air, hero: heroX, dt: dt)
         }
         for (id, sprite) in foeSprites where !live.contains(id) {
             sprite.removeFromParent()
@@ -876,15 +927,24 @@ final class DuelScene: SKScene {
             dash(to: sprite.position.x, side: side)
             slash(at: target, side: side, style: style, strong: killed)
             if killed {
-                sever(sprite, side: side)
+                sever(sprite, side: side, style: style)
                 noteKill(side)
             } else {
+                // A wound, not a kill: he reels, opened up along the cut, blood spraying out the far side.
                 sprite.flashHit()
                 sprite.showStagger()
-                fx.addChild(at(target, Art.burst(Palette.steel, count: 16, speed: ronin * 2.2, size: ronin * 0.08, life: 0.25,
-                                                  spread: 1.3, angle: side == .right ? 0 : .pi)))
-                hitStop = max(hitStop, 0.035)
-                shake(1.2)
+                sprite.gash(DuelScene.slope(of: style))
+                let spray: CGFloat = side == .right ? 0.35 : .pi - 0.35
+                fx.addChild(at(target, Art.burst(Palette.blood, count: 22, speed: ronin * 2.2, size: ronin * 0.07, life: 0.45,
+                                                  spread: 1.0, angle: spray, gravity: ronin * 5, additive: false)))
+                if sprite.kind == .brute || sprite.kind == .warlord {
+                    fx.addChild(at(target, Art.burst(Palette.steel, count: 12, speed: ronin * 2.4, size: ronin * 0.07, life: 0.22,
+                                                      spread: 1.3, angle: side == .right ? 0 : .pi)))
+                }
+                carnage.spatter(around: sprite.position.x, count: 4)
+                hitStop = max(hitStop, 0.05)
+                shake(1.8)
+                punch(0.018, at: target)
             }
         case .whiff(let side):
             hero.whiff(side, for: fight.stumble)
@@ -931,7 +991,7 @@ final class DuelScene: SKScene {
                 fx.addChild(at(p, Art.shockwave(Palette.gold, radius: ronin * 0.1, grow: 3.5, width: 2, duration: 0.3)))
             }
             if killed {
-                sever(sprite, side: side)
+                sever(sprite, side: side, style: nil)
                 noteKill(side)
             } else {
                 sprite.flashHit()
@@ -983,8 +1043,18 @@ final class DuelScene: SKScene {
             shake(3)
         case .healed(let id, let restored):
             heal(id, restored: restored)
-        case .spilled(let id):
-            foeSprites[id]?.dropGourd(broken: true)
+        case .fled(let id):
+            // He got away with it: the gourd, crossed out, where he left the lane.
+            if let sprite = foeSprites[id] {
+                let x = min(max(sprite.position.x, field.minX + ronin * 0.3), field.maxX - ronin * 0.3)
+                let lost = SKNode()
+                lost.addChild(Icons.gourd(max(10, ronin * 0.2), Palette.jade.mix(.black, 0.3).color()))
+                lost.addChild(Icons.cross(max(12, ronin * 0.26), Palette.blood.mix(.white, 0.2).color()))
+                lost.position = CGPoint(x: x, y: groundY + ronin * 1.05)
+                overlay.addChild(lost)
+                lost.run(.sequence([.wait(forDuration: 0.6), .group([.fadeOut(withDuration: 0.5), .moveBy(x: 0, y: 8, duration: 0.5)]),
+                                    .removeFromParent()]))
+            }
         case .wounded(let foe, let damage):
             hero.hurt()
             if let foe { foeSprites[foe]?.showStrike() }
@@ -992,10 +1062,15 @@ final class DuelScene: SKScene {
             wound.alpha = damage > 1 ? 0.55 : 0.42
             wound.run(.fadeOut(withDuration: 0.45))
             let p = CGPoint(x: heroX, y: groundY + ronin * 0.55)
-            fx.addChild(at(p, Art.burst(Palette.blood, count: 22, speed: ronin * 1.8, size: ronin * 0.07, life: 0.5,
-                                        gravity: ronin * 5, additive: false)))
-            shake(3 + CGFloat(damage) * 1.5)
-            hitStop = max(hitStop, 0.07)
+            let from: CGFloat = (foe.flatMap { foeSprites[$0] }.map { $0.position.x < heroX } ?? false) ? 0.2 : .pi - 0.2
+            fx.addChild(at(p, Art.burst(Palette.blood, count: 30 + 12 * damage, speed: ronin * 2.2, size: ronin * 0.08, life: 0.55,
+                                        spread: 1.6, angle: from, gravity: ronin * 5, additive: false)))
+            carnage.spatter(around: heroX, count: 8)
+            splatter(damage > 1 ? 3 : 2)
+            shake(3.5 + CGFloat(damage) * 1.5)
+            punch(0.05, at: p)
+            hitStop = max(hitStop, 0.08)
+            slowmo = min(slowmo, 0.4)
         case .leapt(let id):
             if let sprite = foeSprites[id] {
                 fx.addChild(at(CGPoint(x: sprite.position.x, y: groundY + 2),
@@ -1192,64 +1267,59 @@ final class DuelScene: SKScene {
         fx.addChild(line)
     }
 
-    /// A foe cut down: sliced at the waist, the top half thrown back, the legs folding, ink everywhere.
-    private func sever(_ sprite: FoeSprite, side: Side) {
+    /// Which way a cut's wound runs across a foe (radians from level, rising toward the ronin).
+    static func slope(of cut: Cut) -> CGFloat {
+        switch cut {
+        case .kesa: return -0.7
+        case .gyaku, .nukitsuke: return 0.7
+        case .dou: return 0
+        case .sune: return 0.1
+        case .shomen: return -1.35
+        case .tsuki: return 0
+        }
+    }
+
+    /// A foe cut down. What becomes of him depends on the cut: halved on the slant or through the waist, his legs
+    /// taken from under him, his head taken (a warlord always loses his); run through or shot, he goes down whole.
+    /// The pieces fly, land and stay, and the blood goes everywhere.
+    private func sever(_ sprite: FoeSprite, side: Side, style: Cut?) {
         foeSprites[sprite.id] = nil
-        if sprite.gourd != nil { gourdSpots[sprite.id] = CGPoint(x: sprite.position.x, y: groundY + sprite.height * 1.12) }
-        let boss = sprite.kind == .warlord
-        guard let texture = sprite.body.texture else { sprite.removeFromParent(); return }
-        let size = sprite.body.size, flip: CGFloat = sprite.body.xScale < 0 ? -1 : 1, anchor = sprite.body.anchorPoint
-        let feet = sprite.position
-        // At the waist: 41% of the way up the figure's whole canvas, wherever that falls on this frame's texture.
-        let seam = feet.y + (0.41 - Figures.anchor.y) * Figures.size(sprite.cast, ronin: ronin).height
-        let cut = max(0.08, min(0.92, (seam - (feet.y - anchor.y * size.height)) / size.height))
+        if sprite.gourd != nil { gourdSpots[sprite.id] = CGPoint(x: sprite.position.x, y: sprite.position.y + sprite.height * 1.12) }
+        let boss = sprite.kind == .warlord, heavy = boss || sprite.kind == .brute
+        let facing: CGFloat = sprite.position.x < heroX ? 1 : -1
         let away = side.sign.cg
-
-        let upper = SKSpriteNode(texture: SKTexture(rect: CGRect(x: 0, y: cut, width: 1, height: 1 - cut), in: texture))
-        upper.size = CGSize(width: size.width, height: size.height * (1 - cut))
-        upper.anchorPoint = CGPoint(x: anchor.x, y: 0.05)
-        upper.xScale = flip
-        upper.position = CGPoint(x: feet.x, y: seam + upper.size.height * 0.05)
-        upper.zPosition = 4
-        let throwX = away * ronin * CGFloat.random(in: 0.5...0.9), throwY = ronin * CGFloat.random(in: 0.25...0.45)
-        let fly = SKAction.moveBy(x: throwX, y: throwY, duration: 0.3)
-        fly.timingMode = .easeOut
-        let drop = SKAction.moveBy(x: throwX * 0.4, y: -throwY - ronin * 0.35, duration: 0.35)
-        drop.timingMode = .easeIn
-        upper.run(.sequence([
-            .group([.sequence([fly, drop]), .rotate(byAngle: -away * CGFloat.random(in: 1.2...2.4), duration: 0.65)]),
-            .fadeOut(withDuration: 0.25), .removeFromParent(),
-        ]))
-        let lower = SKSpriteNode(texture: SKTexture(rect: CGRect(x: 0, y: 0, width: 1, height: cut), in: texture))
-        lower.size = CGSize(width: size.width, height: size.height * cut)
-        lower.anchorPoint = CGPoint(x: anchor.x, y: min(1, anchor.y / cut))
-        lower.xScale = flip
-        lower.position = feet
-        lower.zPosition = 3
-        lower.run(.sequence([
-            .wait(forDuration: 0.12),
-            .group([.scaleY(to: 0.35, duration: 0.3), .moveBy(x: away * ronin * 0.06, y: 0, duration: 0.3), .fadeOut(withDuration: 0.5)]),
-            .removeFromParent(),
-        ]))
-        fx.addChild(lower)
-        fx.addChild(upper)
-
-        let gash = CGPoint(x: feet.x, y: seam)
+        let feet = sprite.position
+        let force: CGFloat = boss ? 1.5 : heavy ? 1.25 : 1
+        let severance: Figures.Severance?
+        if boss {
+            severance = .head
+        } else {
+            switch style {
+            case .kesa?: severance = .falling
+            case .gyaku?, .nukitsuke?: severance = .rising
+            case .dou?: severance = .level
+            case .sune?: severance = .legs
+            case .shomen?: severance = .head
+            case .tsuki?, nil: severance = nil
+            }
+        }
+        if let severance {
+            carnage.sever(sprite.cast, severance, feet: feet, facing: facing, away: away, force: force)
+        } else {
+            carnage.fell(sprite.cast, feet: feet, facing: facing, force: force)
+        }
+        let height: CGFloat = severance == .head ? 0.8 : severance == .legs ? 0.28 : 0.5
+        let gash = CGPoint(x: feet.x, y: feet.y + sprite.height * height)
         let spray: CGFloat = side == .right ? 0.6 : .pi - 0.6
-        fx.addChild(at(gash, Art.burst(Palette.blood, count: boss ? 60 : 30, speed: ronin * 2.2, size: ronin * 0.075, life: 0.6,
-                                       spread: 1.5, angle: spray, gravity: ronin * 6, additive: false)))
-        fx.addChild(at(gash, Art.burst(Palette.blood.mix(.white, 0.2), count: 10, speed: ronin * 3, size: ronin * 0.1, life: 0.2,
+        fx.addChild(at(gash, Art.burst(Palette.blood, count: boss ? 90 : heavy ? 56 : 36, speed: ronin * 2.4, size: ronin * 0.08, life: 0.7,
+                                       spread: 1.6, angle: spray, gravity: ronin * 6, additive: false)))
+        fx.addChild(at(gash, Art.burst(Palette.blood.mix(.white, 0.2), count: 12, speed: ronin * 3.2, size: ronin * 0.1, life: 0.2,
                                        spread: 0.8, angle: spray)))
-        let stain = SKSpriteNode(texture: Art.glow)
-        stain.size = CGSize(width: ronin * 0.9, height: ronin * 0.12)
-        stain.position = CGPoint(x: feet.x + away * ronin * 0.2, y: groundY)
-        stain.color = RGB(0.35, 0, 0.03).color()
-        stain.colorBlendFactor = 1
-        stain.alpha = 0.8
-        stain.zPosition = -1
-        stain.run(.sequence([.wait(forDuration: 1.2), .fadeOut(withDuration: 1.2), .removeFromParent()]))
-        fx.addChild(stain)
+        // Gobbets: dark, heavy, thrown up and dropping fast.
+        fx.addChild(at(gash, Art.burst(RGB(0.28, 0, 0.02), count: heavy ? 18 : 9, speed: ronin * 1.9, size: ronin * 0.11, life: 0.8,
+                                       spread: 1.3, angle: .pi / 2, gravity: ronin * 9, additive: false, texture: Art.dot)))
         sprite.removeFromParent()
+        hero.bloodied(heavy ? 0.06 : 0.025)
 
         if boss {
             hitStop = max(hitStop, 0.25)
@@ -1257,9 +1327,14 @@ final class DuelScene: SKScene {
             fx.addChild(at(gash, Art.shockwave(Palette.gold, radius: ronin * 0.3, grow: 7, width: 3, duration: 0.8)))
             fx.addChild(at(gash, Art.burst(Palette.gold, count: 70, speed: ronin * 3, size: ronin * 0.1, life: 0.9)))
             shake(6)
+            punch(0.07, at: gash)
+            splatter(4)
         } else {
-            hitStop = max(hitStop, sprite.kind == .brute ? 0.07 : 0.04)
-            shake(sprite.kind == .brute ? 2.4 : 1.4)
+            hitStop = max(hitStop, heavy ? 0.08 : 0.05)
+            shake(heavy ? 2.8 : 1.6)
+            punch(heavy ? 0.035 : 0.02, at: gash)
+            // Now and then, close in, it reaches the glass.
+            if heavy || abs(feet.x - heroX) < ronin * 0.6 && Double.random(in: 0...1) < 0.15 { splatter(heavy ? 2 : 1, side: side) }
         }
     }
 
@@ -1319,6 +1394,15 @@ final class DuelScene: SKScene {
         // Long enough for the blade to go home (or for him to reach his knee) before the card.
         let delay: TimeInterval = outcome == .victory ? 1.5 : 1.2
         if outcome == .defeat {
+            // He is opened up: blood pumping from him as he goes down, pooling wide under him, on the glass.
+            let chest = CGPoint(x: heroX + hero.facing.sign.cg * ronin * 0.06, y: groundY + ronin * 0.55)
+            carnage.bleed(at: chest, angle: hero.facing == .right ? 0.7 : .pi - 0.7, seconds: 1.6)
+            fx.addChild(at(chest, Art.burst(Palette.blood, count: 70, speed: ronin * 2.4, size: ronin * 0.09, life: 0.8,
+                                            gravity: ronin * 6, additive: false)))
+            carnage.pool(at: heroX, width: ronin * 2.4, grow: 3.5)
+            carnage.spatter(around: heroX, count: 16)
+            splatter(4)
+            punch(0.07, at: chest)
             shake(5)
             let fall = SKSpriteNode(color: .black, size: field.size)
             fall.anchorPoint = .zero
@@ -1442,6 +1526,8 @@ final class DuelScene: SKScene {
     }
 
     var isShowingBanner: Bool { banner != nil }
+    /// Bodies and parts of bodies lying on the lane.
+    var bodiesOnLane: Int { carnage.count }
 
     /// Past the banner: the next stage; after a fall, the first stage again (or the endless run's first).
     func advanceFromBanner() {

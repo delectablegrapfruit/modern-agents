@@ -89,6 +89,8 @@ enum Art {
     static let arrow = makeArrow()
     static let petal = makePetal()
     static let raindrop = makeRaindrop()
+    /// Blood thrown against the glass: a blot, its droplets, and runs trickling down.
+    static let splats: [SKTexture] = (0..<4).map { makeSplat(seed: UInt64($0)) }
 
     /// Tints a sprite toward a colour, black pixels included (SpriteKit's own colour blend multiplies, which leaves a
     /// silhouette black). Each sprite carries its own tint in the `a_tint` attribute: rgb, and how far to go.
@@ -160,6 +162,32 @@ enum Art {
         context.addEllipse(in: CGRect(x: c - inner - r * 0.11, y: c - inner + r * 0.01, width: 2 * inner, height: 2 * inner))
         context.fillPath()
         context.endTransparencyLayer()
+        return texture(context)
+    }
+
+    private static func makeSplat(seed: UInt64) -> SKTexture {
+        let s = 128
+        guard let context = bitmap(s, s) else { return SKTexture() }
+        var rng = SeededRNG(seed: seed &* 7919 &+ 31)
+        context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+        let c = CGPoint(x: 64, y: 72)
+        let r = CGFloat(rng.range(17, 24))
+        context.fillEllipse(in: CGRect(x: c.x - r, y: c.y - r * 0.9, width: r * 2, height: r * 1.8))
+        // Lobes around the blot, droplets thrown further out.
+        for _ in 0..<7 {
+            let a = CGFloat(rng.range(0, 2 * .pi)), d = r * CGFloat(rng.range(0.55, 0.95)), q = r * CGFloat(rng.range(0.35, 0.6))
+            context.fillEllipse(in: CGRect(x: c.x + cos(a) * d - q, y: c.y + sin(a) * d - q, width: q * 2, height: q * 2))
+        }
+        for _ in 0..<14 {
+            let a = CGFloat(rng.range(0, 2 * .pi)), d = r * CGFloat(rng.range(1.2, 2.3)), q = CGFloat(rng.range(1.2, 4.2))
+            context.fillEllipse(in: CGRect(x: c.x + cos(a) * d - q, y: c.y + sin(a) * d - q, width: q * 2, height: q * 2))
+        }
+        // Runs: thin trails down from the blot, each ending in a bead.
+        for _ in 0..<3 {
+            let x = c.x + CGFloat(rng.range(-0.7, 0.7)) * r, w = CGFloat(rng.range(2.5, 5)), length = CGFloat(rng.range(22, 52))
+            context.fill(CGRect(x: x - w / 2, y: c.y - length, width: w, height: length))
+            context.fillEllipse(in: CGRect(x: x - w * 0.9, y: c.y - length - w * 0.9, width: w * 1.8, height: w * 2))
+        }
         return texture(context)
     }
 
@@ -274,6 +302,32 @@ enum Art {
         e.particleColorBlendFactor = 1
         e.particleBlendMode = additive ? .add : .alpha
         e.run(.sequence([.wait(forDuration: TimeInterval(life * 2.2)), .removeFromParent()]))
+        return e
+    }
+
+    /// A jet of blood from a wound. It runs until its birth rate is turned down (the carnage pulses it with the
+    /// heartbeat); its drops are left behind in `world`, so a jet on a flying body leaves a trail.
+    static func spurt(_ color: RGB, rate: CGFloat, speed: CGFloat, size: CGFloat, angle: CGFloat, spread: CGFloat,
+                      gravity: CGFloat, into world: SKNode?) -> SKEmitterNode {
+        let e = SKEmitterNode()
+        e.particleTexture = dot
+        e.particleBirthRate = rate
+        e.particleLifetime = 0.5
+        e.particleLifetimeRange = 0.3
+        e.emissionAngle = angle
+        e.emissionAngleRange = spread
+        e.particleSpeed = speed
+        e.particleSpeedRange = speed * 0.5
+        e.yAcceleration = -gravity
+        e.particleAlpha = 0.95
+        e.particleAlphaSpeed = -1.4
+        e.particleScale = size / 24
+        e.particleScaleRange = size / 48
+        e.particleScaleSpeed = -size / 24
+        e.particleColor = color.color()
+        e.particleColorBlendFactor = 1
+        e.particleBlendMode = .alpha
+        e.targetNode = world
         return e
     }
 

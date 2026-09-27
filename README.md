@@ -31,7 +31,8 @@ where it is.
   falls, he goes down to one knee over his sword.
 - **Don't whiff:** a cut with nothing in reach makes him stumble. For a third of a second he can't cut, and your
   combo is gone.
-- **Enemies:** *Ashigaru* spearmen (one cut). *Runners* (fast). *Brutes* (three cuts, each one knocks him back,
+- **Enemies** each strike from their own weapon's reach, so a blow drawn landing on you lands on you: *Ashigaru*
+  spearmen thrust from the length of the spear, at the very edge of your reach (one cut). *Runners* (fast). *Brutes* (three cuts, each one knocks him back,
   and his blow costs two hearts). *Archers* stop out of reach and shoot: cut the arrow once it is in reach and it
   flies back into them. *Blade dancers* take two cuts, and the first one sends them flipping over your head to
   your other side. When an enemy raises his weapon he flushes red and a red marker appears over his head. The ring
@@ -41,9 +42,16 @@ where it is.
   turned aside, throws you off balance and invites his answer, so wait for it to drop. At two thirds and one third
   of his strength (ticks on his bar) he calls men in from both ends of the lane. As he weakens he grows faster and
   angrier, red haze and all, and may follow one blow straight with a second. His blow costs two hearts.
-- **The gourd:** once a stage, one spearman or runner comes in with a gourd of medicine over his head. Cut him down
-  without taking a wound while he is on the lane and a heart comes back (points if you are full). Get hurt while
-  he is about and the gourd breaks.
+- **The gourd:** once a stage, one spearman or runner comes in with a gourd of medicine over his head. He takes two
+  cuts and keeps just out of reach, darts in to strike and backs off again, and after his second blow (or if he has
+  been about too long) runs off the lane with it. Catch him as he darts in, or as he backs away, and a heart comes
+  back (points if you are full).
+- **The dead** come apart along the line of the cut: halved on the slant or through the waist, legs taken, heads
+  taken (a warlord always loses his); run through or shot, they are thrown back and go down whole. The top half is
+  flung away tumbling and trailing blood while the legs stand a moment, pumping, before they go over. Everything
+  lands and stays for the rest of the stage, heaped on what fell before, and the living climb over the heap. Blood
+  pools under the bodies, flecks the ground, and when you are hit, runs down the glass. You wear the stage's blood
+  until the chiburi throws it off.
 - **Combo:** every kill and every deflected arrow adds one. The combo multiplies your score (×2 at 10, up to ×8).
   At **20** you go into **bloodlust**: the screen turns red and your reach gets longer. A wound or a whiff ends the combo.
 - **Difficulty** (menu ▸ Difficulty): each mode keeps its own stage.

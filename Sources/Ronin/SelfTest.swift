@@ -88,6 +88,7 @@ enum SelfTest {
         try await pause(0.7)
         try snapshot("5-cleared", panel)
         guard session.career.stage == 2, session.career.kills == session.fight.stats.kills else { throw Failure("the win was not booked") }
+        guard scene.bodiesOnLane > 0 else { throw Failure("the dead did not stay where they fell") }
         guard let saved = session.store.load(), saved.career == session.career else { throw Failure("the win was not saved") }
         guard Settings.hintShown else { throw Failure("the button hint stayed up after kills on both sides") }
         Settings.floorHints = false
