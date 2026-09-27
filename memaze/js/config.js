@@ -13,7 +13,7 @@
   });
   const DEFAULTS = {
     controls: { invert: false, speed: 1 },
-    gameplay: { rule: 'normal', timer: true, minimap: 'explored', zoom: 1, autoNext: false },
+    gameplay: { rule: 'normal', timer: true, minimap: 'explored', zoom: 1, autoNext: false, boxes: true, ghost: true },
     player: { media: 'default:sticker', size: 1, chroma: { on: false, color: '#00ff00', tol: 0.35, soft: 0.25 } },
     win: fxDefaults('default:burst', 2.4, 'pop'),
     lose: fxDefaults('default:oops', 1.7, 'none'),

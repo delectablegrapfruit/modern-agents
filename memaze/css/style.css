@@ -71,7 +71,46 @@ body[data-state="play"] #stage:active { cursor: grabbing; }
 #hud-banner.on { opacity: 1; }
 #minimap { position: absolute; right: calc(16px + env(safe-area-inset-right)); bottom: calc(16px + env(safe-area-inset-bottom)); width: 210px; height: 210px; border-radius: 18px;
   background: rgba(8, 8, 20, 0.35); border: 1px solid var(--panel-line); backdrop-filter: blur(4px); }
-#fps { position: absolute; left: 16px; bottom: 12px; font: 12px ui-monospace, monospace; color: var(--muted); }
+#fps { position: absolute; left: 50%; bottom: 6px; transform: translateX(-50%); font: 12px ui-monospace, monospace; color: var(--muted); }
+#hud-ghost { font-size: 13px; font-weight: 700; color: rgba(255, 255, 255, 0.82); margin-top: 2px; font-variant-numeric: tabular-nums; }
+#hud-ghost:empty { display: none; }
+#hud-ghost.late { color: #ff9a9a; }
+
+/* hearts, item slot, running effects */
+#hud-health { display: flex; gap: 4px; margin-top: 6px; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.5)); }
+#hud-health svg { width: 30px; height: 30px; display: block; }
+#hud-health.hit { animation: shake 0.4s ease-out; }
+#hud-power { position: absolute; left: calc(16px + env(safe-area-inset-left)); bottom: calc(16px + env(safe-area-inset-bottom)); display: flex; flex-direction: column-reverse; align-items: flex-start; gap: 10px; }
+#hud-item { pointer-events: auto; width: 76px; height: 76px; padding: 12px; border-radius: 22px; cursor: pointer; background: rgba(10, 8, 24, 0.55);
+  border: 2px dashed rgba(255, 255, 255, 0.35); backdrop-filter: blur(8px); touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+#hud-item svg { width: 100%; height: 100%; display: block; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.5)); }
+#hud-item.rolling { border-style: solid; border-color: rgba(255, 255, 255, 0.7); }
+#hud-item.ready { border: 2px solid var(--gold); box-shadow: 0 0 0 4px rgba(255, 197, 61, 0.25), 0 6px 18px rgba(0, 0, 0, 0.35); animation: ready 1.2s ease-in-out infinite; }
+#hud-item:active { transform: scale(0.94); }
+@keyframes ready { 50% { box-shadow: 0 0 0 8px rgba(255, 197, 61, 0.12), 0 6px 18px rgba(0, 0, 0, 0.35); } }
+#hud-effects { display: flex; gap: 8px; }
+.fx-chip { position: relative; width: 44px; height: 44px; border-radius: 50%; padding: 8px; box-sizing: border-box;
+  background: conic-gradient(rgba(255, 255, 255, 0.9) calc(var(--f) * 360deg), rgba(255, 255, 255, 0.15) 0); }
+.fx-chip::before { content: ""; position: absolute; inset: 3px; border-radius: 50%; background: rgba(10, 8, 24, 0.85); }
+.fx-chip svg { position: relative; width: 100%; height: 100%; display: block; }
+.fx-chip.low { animation: blink 0.25s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0.35; } }
+#hurt-flash { position: fixed; inset: 0; z-index: 9; pointer-events: none; opacity: 0; box-shadow: inset 0 0 90px 30px rgba(255, 30, 60, 0.85); }
+#hurt-flash.hit { animation: hurt 0.55s ease-out; }
+.reduce-flash #hurt-flash.hit, .reduced-motion #hurt-flash.hit { animation-duration: 0.9s; box-shadow: inset 0 0 60px 10px rgba(255, 30, 60, 0.5); }
+@keyframes hurt { from { opacity: 1; } to { opacity: 0; } }
+/* the player: flickers while the edges hold after a hit, glows while invincible */
+#player.guard { animation: blink 0.14s steps(2) infinite; }
+#player.invincible #player-media { animation: rainbow 0.6s linear infinite; }
+#player.invincible.ending #player-media { animation: rainbow 0.6s linear infinite, blink 0.2s steps(2) infinite; }
+@keyframes rainbow {
+  0% { filter: drop-shadow(0 0 3px #fff) drop-shadow(0 0 10px #ff3d6e) drop-shadow(0 0 16px #ff3d6e); }
+  33% { filter: drop-shadow(0 0 3px #fff) drop-shadow(0 0 10px #ffd84a) drop-shadow(0 0 16px #ffd84a); }
+  66% { filter: drop-shadow(0 0 3px #fff) drop-shadow(0 0 10px #3cf2ff) drop-shadow(0 0 16px #3cf2ff); }
+  100% { filter: drop-shadow(0 0 3px #fff) drop-shadow(0 0 10px #ff3d6e) drop-shadow(0 0 16px #ff3d6e); } }
+.reduced-motion #player.invincible #player-media { animation: none; filter: drop-shadow(0 0 3px #fff) drop-shadow(0 0 10px #ffd84a) drop-shadow(0 0 16px #ffd84a); }
+.screen-help ul.items { margin: 6px 0 4px; padding-left: 18px; }
+.screen-help ul.items li { margin: 3px 0; }
 
 /* ---------- win / lose ---------- */
 #fx { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: opacity 0.18s; }
@@ -286,6 +325,9 @@ details.chroma-box[open] summary::before { transform: rotate(45deg); }
   #hud-time { font-size: 34px; }
   #hud-label { font-size: 16px; }
   #minimap { width: 150px; height: 150px; }
+  #hud-item { width: 64px; height: 64px; padding: 10px; border-radius: 18px; }
+  #hud-health svg { width: 24px; height: 24px; }
+  .fx-chip { width: 38px; height: 38px; padding: 7px; }
   #hud-gems { font-size: 15px; }
   #hud-lives { font-size: 14px; }
   .hud-top { gap: 8px; }

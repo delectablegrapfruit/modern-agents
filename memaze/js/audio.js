@@ -79,6 +79,15 @@
         case 'star': this.tone(1568, 0.25, { type: 'triangle', vol: 0.15 }); this.tone(2093, 0.3, { type: 'sine', vol: 0.08, at: 0.05 }); break;
         case 'beacon': [660, 990, 1320].forEach((f, i) => this.tone(f, 0.3, { type: 'sine', vol: 0.15, at: i * 0.07 })); break;
         case 'unlock': [784, 988, 1175, 1568].forEach((f, i) => this.tone(f, 0.3, { type: 'square', vol: 0.07, at: i * 0.08 })); break;
+        case 'hurt': this.noise(0.18, { filter: 'lowpass', freq: 900, vol: 0.35 }); this.tone(220, 0.22, { type: 'square', to: 110, vol: 0.1 }); break;
+        case 'heal': [660, 880].forEach((f, i) => this.tone(f, 0.18, { type: 'sine', vol: 0.12, at: i * 0.08 })); break;
+        case 'box': [988, 1319, 1568, 1976].forEach((f, i) => this.tone(f, 0.1, { type: 'triangle', vol: 0.1, at: i * 0.035 })); break;
+        case 'item': this.tone(1175, 0.2, { type: 'triangle', vol: 0.14 }); this.tone(1760, 0.25, { type: 'sine', vol: 0.08, at: 0.06 }); break;
+        case 'use': this.tone(440, 0.25, { type: 'triangle', to: 1320, vol: 0.12 }); break;
+        case 'bullet': this.noise(0.6, { filter: 'bandpass', freq: 300, to: 1800, q: 0.8, vol: 0.25 }); this.tone(110, 0.5, { type: 'sawtooth', to: 220, vol: 0.08 }); break;
+        case 'launch': this.tone(200, 0.7, { type: 'sine', to: 900, vol: 0.16 }); this.noise(0.5, { filter: 'highpass', freq: 800, to: 3000, vol: 0.12 }); break;
+        case 'land': this.noise(0.15, { filter: 'lowpass', freq: 400, vol: 0.35 }); this.tone(90, 0.18, { type: 'sine', vol: 0.18 }); break;
+        case 'expire': this.tone(880, 0.25, { type: 'triangle', to: 330, vol: 0.1 }); break;
       }
     },
   };

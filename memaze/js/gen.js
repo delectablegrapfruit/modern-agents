@@ -746,9 +746,92 @@
     };
   }
 
+  // ---------- checkpoints and mystery boxes (placed on a finished maze; neither changes its layout or uses its rng) ----------
+  const CLEAR = 16;
+  // Flags go evenly along the main route (none on short mazes), each on a junction that no vanishing bridge touches,
+  // with a round platform that stays clear of every corridor it doesn't join.
+  function placeCheckpoints(m) {
+    const mp = m.mainPath, nodes = m.nodes, edges = m.edges;
+    if (!mp || mp.length < 6) return [];
+    const inc = new Map();
+    for (const e of edges) for (const v of [e.a, e.b]) { if (!inc.has(v)) inc.set(v, []); inc.get(v).push(e); }
+    const cum = [0];
+    for (let i = 0; i + 1 < mp.length; i++) {
+      const e = (inc.get(mp[i]) || []).find((x) => x.a === mp[i + 1] || x.b === mp[i + 1]);
+      cum.push(cum[i] + (e ? polyLen(e.pts) : Math.hypot(nodes[mp[i + 1]].x - nodes[mp[i]].x, nodes[mp[i + 1]].y - nodes[mp[i]].y)));
+    }
+    const L = cum[cum.length - 1];
+    const count = Math.max(0, Math.min(3, Math.floor((L - 1000) / 2000)));
+    if (!count) return [];
+    const hw = (m.params && m.params.hw) || 36, R = Math.max(BALL_R * 2.3, hw * 1.3);
+    const ends = [m.start, m.goal];
+    const ok = (idx) => {
+      const v = mp[idx], P = nodes[v], mine = inc.get(v) || [];
+      if (mine.some((e) => e.type === 'blink')) return false;
+      for (const d of ends) if (Math.hypot(d.x - P.x, d.y - P.y) < d.r + R + CLEAR) return false;
+      for (const e of edges) {
+        if (e.a === v || e.b === v) continue;
+        for (let i = 1; i < e.pts.length; i++) {
+          const a = e.pts[i - 1], b = e.pts[i];
+          if (Math.sqrt(segDist2(P.x, P.y, a.x, a.y, b.x, b.y)) - e.hw < R + CLEAR) return false;
+        }
+      }
+      return true;
+    };
+    const out = [], step = L / (count + 1);
+    for (let k = 1; k <= count; k++) {
+      const want = step * k;
+      let best = -1, bd = Infinity;
+      for (let i = 2; i < mp.length - 2; i++) {
+        const d = Math.abs(cum[i] - want);
+        if (d > step * 0.45 || d >= bd) continue;
+        if (out.some((c) => Math.abs(cum[c.idx] - cum[i]) < step * 0.5)) continue;
+        if (ok(i)) { best = i; bd = d; }
+      }
+      if (best >= 0) out.push({ idx: best, x: nodes[mp[best]].x, y: nodes[mp[best]].y, r: R, lit: false, seen: false });
+    }
+    return out;
+  }
+
+  // Mystery boxes: on junctions and dead ends touched by solid floor, one per ~1500 units of corridor, spread out
+  // (each as far as possible from the others and the start), never on or next to the start, the goal, a flag or a gem.
+  function placeBoxes(m, flags) {
+    const r = rng(hashInts(m.seed, 0xb0c5));
+    const solid = new Uint8Array(m.nodes.length);
+    let total = 0;
+    for (const e of m.edges) { total += polyLen(e.pts); if (e.type !== 'blink') solid[e.a] = solid[e.b] = 1; }
+    const want = clamp(Math.round(total / 1500), 1, 10);
+    const away = [{ x: m.start.x, y: m.start.y, r: m.start.r + 70 }, { x: m.goal.x, y: m.goal.y, r: m.goal.r + 90 }];
+    for (const c of flags || []) away.push({ x: c.x, y: c.y, r: c.r + 50 });
+    for (const g of m.gems) away.push({ x: g.x, y: g.y, r: 60 });
+    const cands = [];
+    m.nodes.forEach((P, i) => { if (solid[i] && away.every((a) => Math.hypot(a.x - P.x, a.y - P.y) > a.r)) cands.push({ x: P.x, y: P.y }); });
+    r.shuffle(cands);
+    const out = [], MIN = 320;
+    while (out.length < want && cands.length) {
+      let best = -1, bd = -1;
+      for (let i = 0; i < cands.length; i++) {
+        let d = Math.hypot(cands[i].x - m.start.x, cands[i].y - m.start.y);
+        for (const b of out) d = Math.min(d, Math.hypot(cands[i].x - b.x, cands[i].y - b.y));
+        if (d > bd) { bd = d; best = i; }
+      }
+      if (bd < MIN) break;
+      out.push(cands.splice(best, 1)[0]);
+    }
+    return out;
+  }
+  // Endless: up to one box per chunk, on its own rng so the chunk's layout is untouched.
+  function chunkBoxes(seed, c) {
+    const r = rng(hashInts(seed, c.cx, c.cy, 17));
+    if (!r.chance(0.45)) return [];
+    const taken = c.gems.concat(c.beacons, c.start ? [c.start] : []);
+    const cands = c.safeNodes.filter((n) => taken.every((t) => Math.hypot(t.x - n.x, t.y - n.y) > 60));
+    return cands.length ? [Object.assign({}, r.pick(cands))] : [];
+  }
+
   MZ.Gen = {
     BALL_R, HW_MIN, GAP, MASKS, LATTICES, MASK_UNLOCK, LAT_UNLOCK,
-    generate, levelParams, customParams, tierParams,
-    endless: { EC, ES, chunk: endlessChunk, difficulty: endlessDifficulty },
+    generate, levelParams, customParams, tierParams, checkpoints: placeCheckpoints, boxes: placeBoxes,
+    endless: { EC, ES, chunk: (seed, cx, cy) => { const c = endlessChunk(seed, cx, cy); c.boxes = chunkBoxes(seed, c); return c; }, difficulty: endlessDifficulty },
   };
 })();

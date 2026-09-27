@@ -90,7 +90,7 @@
     // World point to CSS pixel, relative to the viewport.
     toScreen(cam, x, y) { return { x: this.w / 2 + (x - cam.x) * cam.zoom, y: this.h / 2 + (y - cam.y) * cam.zoom }; }
 
-    // s: { world, cam, t, floor, hue, rgb, start, goal, gems, beacons } (other fields are ignored).
+    // s: { world, cam, t, clock, floor, hue, rgb, start, goal, flags, gems, beacons, boxes, boxAge, boxDim, under }.
     draw(s) {
       const { ctx, dpr } = this;
       const cam = s.cam, z = cam.zoom, t = s.t;
@@ -164,8 +164,128 @@
 
       if (s.start) this.drawStart(s.start, th);
       if (s.goal && !s.goal.media) this.drawGoal(s.goal, th);
+      if (s.flags) for (const c of s.flags) this.drawFlag(c);
       if (s.beacons) for (const b of s.beacons) this.drawBeacon(b);
       if (s.gems) for (const g of s.gems) if (!g.taken) this.drawGem(g);
+      if (s.boxes) for (const b of s.boxes) this.drawBox(b, s.clock || 0, s.boxAge ? s.boxAge(b) : 9, s.boxDim);
+      if (s.landing) this.drawLanding(s.landing, s.clock || 0);
+      if (s.under) this.drawUnder(s.under, s.clock || 0);
+    }
+    // A Launch's landing spot: a pulsing target.
+    drawLanding(p, t) {
+      const ctx = this.ctx, px = this.px, r = 26 * px * (1 + 0.15 * Math.sin(t * 10));
+      ctx.save();
+      ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.lineWidth = 7 * px;
+      ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, TAU); ctx.stroke();
+      ctx.strokeStyle = '#7cf0ff'; ctx.lineWidth = 3.5 * px;
+      ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, TAU); ctx.stroke();
+      ctx.beginPath();
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { ctx.moveTo(p.x + dx * r * 0.45, p.y + dy * r * 0.45); ctx.lineTo(p.x + dx * r * 1.35, p.y + dy * r * 1.35); }
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // A checkpoint: a flag on a round platform, dashed gold until reached, solid green after.
+    drawFlag(c) {
+      const ctx = this.ctx, px = this.px, r = c.r * 0.62, col = c.lit ? '#3ddc97' : '#ffc53d';
+      ctx.save();
+      ctx.fillStyle = c.lit ? 'rgba(61,220,151,0.28)' : 'rgba(255,197,61,0.16)';
+      ctx.beginPath(); ctx.arc(c.x, c.y, r, 0, TAU); ctx.fill();
+      if (!c.lit) ctx.setLineDash([r * 0.34, r * 0.22]);
+      ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 7 * px; ctx.stroke();
+      ctx.strokeStyle = col; ctx.lineWidth = 4 * px; ctx.stroke();
+      ctx.setLineDash([]);
+      const x = c.x - r * 0.18, top = c.y - r * 0.5, bot = c.y + r * 0.45;
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      ctx.strokeStyle = '#1b1530'; ctx.lineWidth = 3.5 * px;
+      ctx.beginPath(); ctx.moveTo(x, bot); ctx.lineTo(x, top); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x + r * 0.62, top + r * 0.2); ctx.lineTo(x, top + r * 0.42); ctx.closePath();
+      ctx.fillStyle = col; ctx.fill();
+      ctx.lineWidth = 2.5 * px; ctx.stroke();
+      ctx.restore();
+    }
+    // A mystery box: a rocking, colour-cycling "?" block. It pops back in when it returns, and is see-through while
+    // the item slot is taken (it can't be picked up then).
+    drawBox(b, t, age, dim) {
+      const ctx = this.ctx, px = this.px, pop = age < 0.35 ? Math.max(0, age / 0.35) : 1;
+      const r = 14 * pop * (1 + 0.06 * Math.sin(t * 4 + b.x * 0.1)), hue = (t * 70 + b.x * 0.05 + b.y * 0.03) % 360;
+      if (r <= 0.5) return;
+      ctx.save();
+      ctx.translate(b.x, b.y);
+      ctx.rotate(Math.sin(t * 1.6 + b.y * 0.01) * 0.2);
+      ctx.globalAlpha = dim ? 0.38 : 1;
+      const c = r * 0.32;
+      ctx.beginPath();
+      ctx.moveTo(-r + c, -r); ctx.lineTo(r - c, -r); ctx.quadraticCurveTo(r, -r, r, -r + c); ctx.lineTo(r, r - c); ctx.quadraticCurveTo(r, r, r - c, r);
+      ctx.lineTo(-r + c, r); ctx.quadraticCurveTo(-r, r, -r, r - c); ctx.lineTo(-r, -r + c); ctx.quadraticCurveTo(-r, -r, -r + c, -r); ctx.closePath();
+      const g = ctx.createLinearGradient(-r, -r, r, r);
+      g.addColorStop(0, 'hsl(' + hue + ',95%,64%)');
+      g.addColorStop(1, 'hsl(' + ((hue + 110) % 360) + ',90%,52%)');
+      ctx.fillStyle = g;
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 6 * px; ctx.stroke();
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 3 * px; ctx.stroke();
+      ctx.font = '900 ' + (r * 1.45).toFixed(1) + 'px system-ui, sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 4 * px; ctx.strokeText('?', 0, r * 0.08);
+      ctx.fillStyle = '#fff'; ctx.fillText('?', 0, r * 0.08);
+      ctx.restore();
+    }
+    // Under the player's picture: a Launch's shadow, the magic carpet, the Bullet's shell and speed lines.
+    drawUnder(u, t) {
+      const ctx = this.ctx, px = this.px, W = u.W;
+      ctx.save();
+      ctx.translate(u.x, u.y);
+      if (u.lift > 0) { // where you'll come down: a shadow, never smaller than a thumbnail on screen
+        const r = Math.max(W * 0.42, 16 * px);
+        ctx.fillStyle = 'rgba(0,0,0,' + (0.2 + 0.25 * u.lift).toFixed(3) + ')';
+        ctx.beginPath(); ctx.ellipse(0, 0, r, r * 0.55, 0, 0, TAU); ctx.fill();
+      }
+      if (u.carpet > 0) {
+        ctx.globalAlpha = u.carpet;
+        const w = W * 0.66, h = W * 0.36, y0 = W * 0.3, n = 10;
+        const wave = (i) => Math.sin(t * 7 + i * 0.9) * W * 0.035;
+        ctx.beginPath();
+        for (let i = 0; i <= n; i++) { const x = -w + (2 * w * i) / n; (i ? ctx.lineTo : ctx.moveTo).call(ctx, x, y0 - h + wave(i)); }
+        for (let i = n; i >= 0; i--) { const x = -w + (2 * w * i) / n; ctx.lineTo(x, y0 + h + wave(i)); }
+        ctx.closePath();
+        ctx.fillStyle = '#8e1b4d'; ctx.fill();
+        ctx.strokeStyle = '#ffc53d'; ctx.lineWidth = 3 * px; ctx.stroke();
+        ctx.strokeStyle = 'rgba(255,197,61,0.7)'; ctx.lineWidth = 2 * px;
+        for (let i = 1; i < n; i += 2) { // a band of diamonds along the middle
+          const x = -w + (2 * w * i) / n, d = (w / n) * 0.8, yy = y0 + wave(i);
+          ctx.beginPath(); ctx.moveTo(x - d, yy); ctx.lineTo(x, yy - d); ctx.lineTo(x + d, yy); ctx.lineTo(x, yy + d); ctx.closePath(); ctx.stroke();
+        }
+        ctx.strokeStyle = '#ffc53d'; ctx.lineWidth = 2 * px;
+        for (const side of [-1, 1]) for (let k = 0; k < 4; k++) { // tassels
+          const yy = y0 - h * 0.75 + (h * 1.5 * k) / 3 + wave(side < 0 ? 0 : n);
+          ctx.beginPath(); ctx.moveTo(side * w, yy); ctx.lineTo(side * (w + W * 0.1), yy + Math.sin(t * 9 + k) * W * 0.02); ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+      }
+      if (u.bullet != null) {
+        ctx.rotate(u.bullet);
+        ctx.strokeStyle = 'rgba(255,255,255,0.75)'; ctx.lineCap = 'round';
+        for (let i = 0; i < 6; i++) { // speed lines
+          const yy = (i - 2.5) * W * 0.17, run = ((t * 9 + i * 0.37) % 1) * W * 0.6, x0 = -W * 0.8 - run;
+          ctx.lineWidth = 2.5 * px;
+          ctx.beginPath(); ctx.moveTo(x0, yy); ctx.lineTo(x0 - W * (0.5 + 0.25 * (i % 3)), yy); ctx.stroke();
+        }
+        const h = W * 0.42;
+        ctx.lineJoin = 'round';
+        ctx.fillStyle = '#1c1b26'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.5 * px;
+        ctx.beginPath(); // swept-back fins
+        ctx.moveTo(-W * 0.45, -h); ctx.lineTo(-W * 0.95, -h * 1.35); ctx.lineTo(-W * 0.8, -h * 0.6); ctx.closePath();
+        ctx.moveTo(-W * 0.45, h); ctx.lineTo(-W * 0.95, h * 1.35); ctx.lineTo(-W * 0.8, h * 0.6); ctx.closePath();
+        ctx.fill(); ctx.stroke();
+        ctx.beginPath(); // shell: flat back, round nose
+        ctx.moveTo(-W * 0.85, -h); ctx.lineTo(W * 0.1, -h); ctx.arc(W * 0.1, 0, h, -Math.PI / 2, Math.PI / 2); ctx.lineTo(-W * 0.85, h); ctx.closePath();
+        ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#ff3d5a';
+        ctx.fillRect(-W * 0.74, -h + 1.25 * px, W * 0.1, 2 * h - 2.5 * px);
+      }
+      ctx.restore();
     }
 
     drawStart(st, th) {
@@ -264,7 +384,7 @@
       this.fog.getContext('2d').fillRect(x0, y0, x1 - x0, y1 - y0);
     }
     // view: the world rectangle on screen, outlined so the map and the screen line up. Markers show once seen.
-    draw(pos, goal, gems, view) {
+    draw(pos, goal, gems, view, flags, boxes) {
       if (!this.maze) return;
       const g = this.ctx, W = this.canvas.width, H = this.canvas.height;
       g.clearRect(0, 0, W, H);
@@ -272,6 +392,8 @@
       g.drawImage(this.fog, 0, 0);
       const dot = (x, y, r, c) => { g.fillStyle = c; g.beginPath(); g.arc(this.ox + x * this.sc, this.oy + y * this.sc, r, 0, TAU); g.fill(); };
       const u = W / 150;
+      if (flags) for (const c of flags) if (c.seen) { dot(c.x, c.y, 3.4 * u, '#000'); dot(c.x, c.y, 2.4 * u, c.lit ? '#3ddc97' : '#ffc53d'); }
+      if (boxes) for (const b of boxes) if (b.seen) { dot(b.x, b.y, 2.9 * u, '#000'); dot(b.x, b.y, 2 * u, '#d38bff'); }
       if (gems) for (const gm of gems) if (!gm.taken && gm.seen) dot(gm.x, gm.y, 2.5 * u, '#3cf2ff');
       if (goal && goal.seen) dot(goal.x, goal.y, 4.5 * u, '#ffb300');
       if (pos && view) {
@@ -282,7 +404,7 @@
       if (pos) { dot(pos.x, pos.y, 4.5 * u, '#000'); dot(pos.x, pos.y, 3.2 * u, '#ff3d7f'); }
     }
     // Endless: a radar of what's near the player, fogged except where the screen has been (seen: rectangles).
-    drawRadar(world, pos, beacons, view, seen) {
+    drawRadar(world, pos, beacons, view, seen, boxes) {
       const g = this.ctx, W = this.canvas.width, H = this.canvas.height, R = 1000, sc = Math.min(W, H) / (2 * R);
       const L = this.layer;
       if (L.width !== W || L.height !== H) { L.width = W; L.height = H; }
@@ -311,6 +433,7 @@
       l.globalCompositeOperation = 'source-over';
       for (const p of near) if (p.data.gems) for (const gm of p.data.gems) if (!gm.taken && gm.seen) { l.fillStyle = '#3cf2ff'; l.beginPath(); l.arc(gm.x * sc, gm.y * sc, 3, 0, TAU); l.fill(); }
       if (beacons) for (const b of beacons) if (b.seen) { l.fillStyle = b.lit ? '#50ffa0' : '#78c8ff'; l.beginPath(); l.arc(b.x * sc, b.y * sc, 4, 0, TAU); l.fill(); }
+      if (boxes) for (const b of boxes) if (b.seen) { l.fillStyle = '#d38bff'; l.beginPath(); l.arc(b.x * sc, b.y * sc, 3, 0, TAU); l.fill(); }
       g.clearRect(0, 0, W, H);
       g.save();
       g.beginPath(); g.arc(W / 2, H / 2, Math.min(W, H) / 2 - 1, 0, TAU); g.clip();

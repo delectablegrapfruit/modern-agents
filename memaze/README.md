@@ -22,20 +22,42 @@ No build step, no dependencies: plain HTML/CSS/JS, plus an optional Python serve
 - **Your media sits still in the middle of the screen, upright and unchanged. You move the maze.** Drag anywhere: the
   maze follows your finger or mouse 1:1 and stops when you stop. WASD/arrows and a gamepad move at a steady speed.
   Settings can invert the drag and change its speed.
-- **The paths float over nothing.** Touch the space around them and your *lose* media plays, then the level starts over.
-  Reach **GOAL** and your *win* media plays.
+- **The paths float over nothing.** Reach **GOAL** and your *win* media plays.
+- **Two hearts.** Touching the edge costs one: you stop right at the edge, and for a second the edges hold like walls
+  (the same touch never counts twice). Go 3 seconds without another touch and both hearts are back. Two touches in a
+  row and your *lose* media plays, then you go back to the last flag you reached, or the start. A bridge vanishing
+  under you, or a magic carpet running out over the void, costs a heart and puts you on the nearest floor.
 - **The hitbox is your picture.** Every pixel that is at least half opaque counts; transparent parts don't. Animated GIFs,
   APNG/WebP animations and videos are checked frame by frame, and chroma-keyed pixels drop out too. A small buffer
   (3.5% of the picture's size) lets an edge graze the void without losing.
-- **Close-up camera.** Your picture fills about 30% of the screen's shorter side, so you see only the corridor around
-  you; the map in the corner shows the whole maze, the goal, the gems and the part of it on screen. Pinch, the wheel,
-  +/- or the Zoom setting change it.
+- **Close-up camera.** Your picture fills about a quarter of the screen's shorter side, so you see only the corridor
+  around you. The map in the corner starts black and shows only what has been on screen: corridors, the goal, gems,
+  flags and boxes appear once you've seen them. Pinch, the wheel, +/- or the Zoom setting change the camera.
 - **Stars**: one for finishing, one for beating par, one for collecting every gem (gems hide in dead ends). Stars unlock
   background patterns.
 - **Vanishing bridges** appear from level 8: they blink, disappear for a moment, then come back. Island shapes are
   joined by narrow bridges.
-- **Edges** setting: *Touch loses* (default) or *Walls* (the edge stops you and you slide along it; only a bridge
-  vanishing under you loses).
+- **Flags** stand on the main route of long mazes (up to 3). Touch one and a loss sends you back to it with the clock,
+  gems and bridges carrying on. Running out of time, or Restart, starts the maze over.
+- **Ghost**: your fastest clear of each Journey, Daily or Seed maze replays as a see-through copy of your picture on
+  the same clock, with an arrow at the screen edge when it's off screen (Settings: *Ghost of best run*).
+- **Edges** setting: *Hurt* (default) or *Walls* (the edge stops you and you slide along it; only a bridge vanishing
+  under you costs a heart).
+
+### Mystery boxes
+
+Colour-cycling **?** boxes sit on junctions and dead ends (about one per 1500 units of corridor; in Endless up to one
+per chunk). Touch one with an empty item slot and it spins for an item; the box is back 10 seconds later. Use the item
+with **Space**, **E**, the slot button (bottom left) or gamepad **A**/**X**. Settings: *Mystery boxes* turns them off.
+
+| Item | What it does |
+|---|---|
+| **Invincible** | 8 s without damage; the edges hold like walls. Your picture glows. |
+| **Extra hit** | Used at once: a gold heart on top of your two (up to two of them). Gold hearts go first and don't grow back. |
+| **Bullet** | Carries you along the corridors toward GOAL (Endless: outward) for about 1800 units, over vanishing bridges and all, finishing on a junction short of GOAL. Invincible while flying. |
+| **Launch** | Flies you high up and lands you on a random spot with solid floor, anywhere in the maze. The camera pulls far out on the way, so the map fills in with everything you fly over. |
+| **Magic carpet** | 6 s of floating over the void. It flickers when it's about to run out: be over floor by then, or it costs a heart. |
+| **Shrink** | Half size (picture and hitbox) for 10 s; you grow back as soon as there's room. |
 
 ### Modes
 
@@ -93,13 +115,14 @@ media shows the RGB behind it). Maze floors: Flat, Neon (edges follow the RGB), 
 | | |
 |---|---|
 | WASD / arrows | move |
+| Space / E | use item |
 | Esc / P | pause, back |
 | R | restart |
-| M | map: full / explored / off |
+| M | map on / off |
 | F | full screen |
 | + / - (or wheel, pinch) | zoom |
 | Enter | next level on the results screen |
-| Gamepad | left stick or d-pad moves, Start pauses, A continues, B backs out |
+| Gamepad | left stick or d-pad moves, A or X uses the item, Start pauses, A continues, B backs out |
 
 ## Files
 
@@ -107,22 +130,23 @@ media shows the RGB behind it). Maze floors: Flat, Neon (edges follow the RGB), 
 index.html  css/style.css
 js/util.js        seeded RNG, maths, storage, DOM helpers
 js/config.js      defaults, unlocks, save data
-js/gen.js         maze generation (lattices, shapes, carving, vanishing bridges, endless chunks)
+js/gen.js         maze generation (lattices, shapes, carving, vanishing bridges, endless chunks), flags, box spots
 js/world.js       corridor geometry in a spatial hash; "how deep inside the floor is this point"
-js/render.js      maze floor, start and goal markers, gems, beacons, minimap
+js/render.js      maze floor, start and goal markers, flags, gems, beacons, mystery boxes, item effects, minimap
 js/background.js  RGB engine and patterns
 js/media.js       media library: defaults, server folders, linked folders, imports; chroma key
 js/sprite.js      the player picture: GIF decoding, frame-by-frame painting, the pixel hitbox
 js/defaults-data.js  built-in player pictures as data URLs (generated by scripts/embed-defaults.mjs)
 js/audio.js       synthesized sound effects, music playlist, built-in synth loop
 js/input.js       drag, pinch and wheel zoom, keys, gamepad
-js/game.js        modes, movement, level flow, win/lose media
-js/ui.js          menus, customisation screens, HUD
+js/game.js        modes, movement, hearts, mystery boxes and items, checkpoints, level flow, win/lose media
+js/ghosts.js      records runs; replays the best clear of each maze as a ghost
+js/ui.js          menus, customisation screens, HUD (hearts, item slot, effect timers)
 serve.py          local server + media API (Python 3.8+, stdlib only)
 assets/           logo, favicon, default player/win/lose/goal art
 scripts/make-pixel-gif.mjs   regenerates the default pixel GIF (own GIF encoder)
 scripts/embed-defaults.mjs   regenerates js/defaults-data.js after changing a built-in player picture
-tests/            generator tests; autopilot
+tests/            generator and sprite tests; autopilot; items
 ```
 
 ## Tests
@@ -130,7 +154,8 @@ tests/            generator tests; autopilot
 ```sh
 node tests/gen.test.js       # 200 mazes: deterministic, connected, corridors never touch, sane timings; endless seams
 node tests/sprite.test.js    # GIF decoder, pixel hitbox mask, embedded defaults up to date
-node tests/autopilot.js 1-30 # drags through levels with the real game code, no losses allowed (needs Playwright + Chromium)
+node tests/autopilot.js 1-30 # drags through levels with the real game code, not one touch of the edge allowed (needs Playwright + Chromium)
+node tests/items.js          # hearts, boxes, every item, flags, Endless items (needs Playwright + Chromium)
 ```
 
 Save data (settings, stars, best times) is in `localStorage`; the Save data section in Settings exports and imports it

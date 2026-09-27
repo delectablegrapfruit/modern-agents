@@ -1,6 +1,6 @@
 // Autopilot: plays journey levels with the real game code, moving only by dragging the maze (the input's takeGrab),
 // along the centre of each level's route at a steady drag speed. Proves every level can be finished inside its time
-// limit without a single loss, and shows how par compares with a steady run that knows the way.
+// limit without a single touch of the edge, and shows how par compares with a steady run that knows the way.
 //
 //   node tests/autopilot.js            levels 1-25
 //   node tests/autopilot.js 1-40       a range
@@ -40,6 +40,7 @@ if (!levels.length || levels.some((l) => !(l >= 1)) || !(speed > 0)) { console.e
     const win = G.win;
     G.win = function () { if (!AP.outcome) AP.outcome = 'win'; return win.apply(this, arguments); };
     G.on('lose', (reason) => { if (!AP.outcome) AP.outcome = reason === 'fall' ? 'edge' : reason; });
+    G.on('hit', () => { if (!AP.outcome) AP.outcome = 'edge'; }); // a single touch of the edge counts: the route must be clean
     // The only input: finger travel in screen pixels. The world follows the finger, so the player moves the other way.
     G.input.vector = () => ({ x: 0, y: 0 });
     G.input.takeGrab = () => {

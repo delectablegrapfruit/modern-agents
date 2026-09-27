@@ -52,6 +52,28 @@
   const section = (title, ...kids) => h('div', { class: 'section' }, title ? h('h3', null, title) : null, ...kids);
   const btn = (label, onclick, cls) => h('button', { class: 'btn ' + (cls || ''), onclick: (e) => { MZ.Audio.unlock(); MZ.Audio.play('click'); onclick(e); } }, label);
   const par = (sec) => MZ.fmtClock(sec).replace(/\.00$/, '');
+
+  // ---------- HUD icons (inline SVG, 32 x 32) ----------
+  const HEART = 'M16 28C16 28 3 20 3 11.5C3 7.4 6.2 4.5 9.8 4.5C12.6 4.5 14.8 6.2 16 8.4C17.2 6.2 19.4 4.5 22.2 4.5C25.8 4.5 29 7.4 29 11.5C29 20 16 28 16 28Z';
+  const ICONS = {
+    star: '<path d="M16 2.5l4 8.6 9.4 1.1-6.9 6.4 1.9 9.3L16 23.2l-8.4 4.7 1.9-9.3-6.9-6.4 9.4-1.1z" fill="#ffd84a" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>',
+    heart: '<path d="' + HEART + '" fill="#ffc53d" stroke="#fff" stroke-width="2"/><path d="M16 11v10M11 16h10" stroke="#5a3a00" stroke-width="3.2" stroke-linecap="round"/>',
+    bullet: '<path d="M4 16h3M3 11h5M3 21h5" stroke="#fff" stroke-width="2" stroke-linecap="round" opacity=".8"/><path d="M10 9h9a7 7 0 0 1 0 14h-9z" fill="#1c1b26" stroke="#fff" stroke-width="2" stroke-linejoin="round"/><path d="M12 9v14" stroke="#ff3d5a" stroke-width="3"/><circle cx="21" cy="14" r="1.8" fill="#fff"/>',
+    launch: '<path d="M16 3l8 10h-5v8h-6v-8H8z" fill="#7cf0ff" stroke="#fff" stroke-width="2" stroke-linejoin="round"/><ellipse cx="16" cy="27" rx="8" ry="2.6" fill="rgba(0,0,0,.45)" stroke="#fff" stroke-width="1.5"/>',
+    carpet: '<path d="M5 10c4-2 8 2 11 0s7-2 11 0v12c-4-2-8 2-11 0s-7-2-11 0z" fill="#8e1b4d" stroke="#ffc53d" stroke-width="2" stroke-linejoin="round"/><path d="M5 12l-3 1M5 16l-3 0M5 20l-3-1M27 12l3 1M27 16l3 0M27 20l3-1" stroke="#ffc53d" stroke-width="1.6" stroke-linecap="round"/><path d="M16 12.5l3 3.5-3 3.5-3-3.5z" fill="none" stroke="#ffc53d" stroke-width="1.6"/>',
+    shrink: '<rect x="11" y="11" width="10" height="10" rx="2.5" fill="#b8ff6a" stroke="#fff" stroke-width="2"/><path d="M3 3l6 6M29 3l-6 6M3 29l6-6M29 29l-6-6" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><path d="M9 5v4H5M23 5v4h4M9 27v-4H5M23 27v-4h4" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>',
+  };
+  const ROLL_ORDER = ['star', 'bullet', 'carpet', 'heart', 'launch', 'shrink'];
+  const svg = (inner) => '<svg viewBox="0 0 32 32" aria-hidden="true">' + inner + '</svg>';
+  // A heart: full, empty (refilling from the bottom while it grows back), or a gold bonus one.
+  function heartSvg(kind, fill, i) {
+    const col = kind === 'bonus' ? '#ffc53d' : '#ff3d6e';
+    if (kind !== 'empty') return svg('<path d="' + HEART + '" fill="' + col + '" stroke="#fff" stroke-width="2.2"/>');
+    const y = (28 - 24 * fill).toFixed(2);
+    return svg('<defs><clipPath id="hc' + i + '"><rect x="0" y="' + y + '" width="32" height="32"/></clipPath></defs>' +
+      '<path d="' + HEART + '" fill="rgba(0,0,0,.45)" stroke="rgba(255,255,255,.8)" stroke-width="2.2"/>' +
+      '<path d="' + HEART + '" fill="#ff3d6e" fill-opacity=".8" clip-path="url(#hc' + i + ')"/>');
+  }
   // Star rating drawn with CSS shapes.
   const starRow = (n, cls) => h('span', { class: cls, role: 'img', 'aria-label': n + (n === 1 ? ' star' : ' stars') },
     [0, 1, 2].map((i) => h('i', { class: 'star' + (i < n ? ' got' : ''), style: { animationDelay: 0.25 + i * 0.28 + 's' } })));
@@ -67,9 +89,14 @@
       this.hud = {
         label: $('#hud-label'), time: $('#hud-time'), goals: $('#hud-goals'), gems: $('#hud-gems'),
         lives: $('#hud-lives'), banner: $('#hud-banner'), fps: $('#fps'),
+        health: $('#hud-health'), item: $('#hud-item'), effects: $('#hud-effects'), flash: $('#hurt-flash'),
       };
       $('#btn-pause').addEventListener('click', () => { MZ.Audio.play('click'); Game().pause(); });
+      this.hud.item.addEventListener('click', () => { MZ.Audio.unlock(); Game().useItem(); });
       const G = Game();
+      G.on('hit', () => {
+        for (const el of [this.hud.health, this.hud.flash]) { el.classList.remove('hit'); void el.offsetWidth; el.classList.add('hit'); }
+      });
       G.on('state', (st) => this.onState(st));
       G.on('begin', () => this.onBegin());
       G.on('result', (r) => this.show('results', r));
@@ -126,6 +153,40 @@
       }
       set('lives', this.hud.lives, G.mode === 'gauntlet' || G.mode === 'endless' ? 'Lives ' + Math.max(0, G.run.lives) : '');
       set('fps', this.hud.fps, S().display.fps ? G.fps + ' fps' : '');
+      this.updatePower(c);
+    },
+    // Hearts, the item slot and the running effects, redrawn only when what they show changes.
+    updatePower(c) {
+      const G = Game(), fx = G.fx, hud = this.hud;
+      const regen = G.hp < G.HEARTS ? Math.min(1, G.hurtT / G.REGEN) : 1, rq = Math.round(regen * 24);
+      const hk = G.hp + '/' + G.bonus + '/' + rq;
+      if (c.hearts !== hk) {
+        c.hearts = hk;
+        let html = '';
+        for (let i = 0; i < G.HEARTS; i++) html += heartSvg(i < G.hp ? 'full' : 'empty', rq / 24, i);
+        for (let i = 0; i < G.bonus; i++) html += heartSvg('bonus', 1, 9 + i);
+        hud.health.innerHTML = html;
+        hud.health.setAttribute('aria-label', G.hp + G.bonus + (G.hp + G.bonus === 1 ? ' heart' : ' hearts'));
+      }
+      const on = S().gameplay.boxes, rolling = G.roll ? ROLL_ORDER[Math.floor(G.roll.t / 0.07) % ROLL_ORDER.length] : null;
+      const ik = on ? (rolling ? 'r:' + rolling : G.item || '') : 'off';
+      if (c.item !== ik) {
+        c.item = ik;
+        hud.item.hidden = !on;
+        hud.item.innerHTML = rolling ? svg(ICONS[rolling]) : G.item ? svg(ICONS[G.item]) : '';
+        hud.item.className = rolling ? 'rolling' : G.item ? 'ready' : '';
+        hud.item.setAttribute('aria-label', G.item ? 'Use ' + G.ITEMS[G.item].name : 'No item');
+        hud.item.title = G.item ? G.ITEMS[G.item].name : '';
+      }
+      const act = [];
+      for (const k of ['star', 'carpet', 'shrink']) if (fx[k] > 0) act.push([k, fx[k] / G.ITEMS[k].dur]);
+      if (fx.bullet) act.push(['bullet', 1 - fx.bullet.s / fx.bullet.len]);
+      if (fx.launch) act.push(['launch', 1 - fx.launch.t / fx.launch.T]);
+      const ek = act.map((a) => a[0] + Math.round(a[1] * 40)).join();
+      if (c.effects !== ek) {
+        c.effects = ek;
+        hud.effects.innerHTML = act.map(([k, f]) => '<div class="fx-chip' + (f < 0.2 ? ' low' : '') + '" style="--f:' + f.toFixed(3) + '">' + svg(ICONS[k]) + '</div>').join('');
+      }
     },
 
     // Screen management.
@@ -198,6 +259,7 @@
           setPath('gameplay.minimap', S().gameplay.minimap === 'off' ? 'explored' : 'off');
           MZ.toast(S().gameplay.minimap === 'off' ? 'Map off' : 'Map on', 1200);
         }
+        if ((e.key === ' ' || e.code === 'KeyE') && st === 'play' && !e.repeat) { G.useItem(); e.preventDefault(); }
         if (e.key === 'f' || e.key === 'F') this.fullscreen();
         if (e.key === '+' || e.key === '=') G.userZoom = clamp(G.userZoom * 1.15, 0.45, 2.2);
         if (e.key === '-' || e.key === '_') G.userZoom = clamp(G.userZoom / 1.15, 0.45, 2.2);
@@ -207,7 +269,8 @@
         const G = Game(), now = G.input.gamepadButtons();
         const pressed = (i) => now.has(i) && !prev.has(i);
         if (pressed(9)) { if (G.state === 'play') G.pause(); else if (G.state === 'paused') this.back(); }
-        if (pressed(0)) {
+        if ((pressed(0) || pressed(2)) && G.state === 'play') G.useItem();
+        else if (pressed(0)) {
           if (G.state === 'result') { const b = $('.screen-results .primary'); if (b) b.click(); }
           else if (G.state === 'over') { const b = $('.screen-over .primary'); if (b) b.click(); }
           else if (G.state === 'fx') G.FX.skip();
@@ -552,8 +615,10 @@
           toggle('Invert drag', 'controls.invert'),
           range('Drag speed', 'controls.speed', 0.5, 2, 0.05, times)),
         section('Gameplay',
-          segmented('Edges', 'gameplay.rule', [['casual', 'Walls'], ['normal', 'Touch loses']]),
+          segmented('Edges', 'gameplay.rule', [['casual', 'Walls'], ['normal', 'Hurt']]),
           toggle('Timer', 'gameplay.timer'),
+          toggle('Mystery boxes', 'gameplay.boxes'),
+          toggle('Ghost of best run', 'gameplay.ghost'),
           segmented('Map', 'gameplay.minimap', [['explored', 'On'], ['off', 'Off']]),
           range('Zoom', 'gameplay.zoom', 0.5, 2, 0.05, times)),
         section('Audio',
@@ -587,13 +652,23 @@
       return this.panel('How to play', [
         h('ul', { class: 'facts' },
           h('li', null, 'Drag the maze to move through it.'),
-          h('li', null, 'Don’t touch the edge. Your picture is the hitbox: transparent parts don’t count.'),
+          h('li', null, 'Touching the edge costs a heart. Two touches in a row and you’re out; after one, your hearts grow back in 3 s. Your picture is the hitbox: transparent parts don’t count.'),
+          h('li', null, 'Mystery boxes give you an item. Use it with Space, E or the button in the corner.'),
+          h('ul', { class: 'items' },
+            h('li', null, h('b', null, 'Invincible'), ': no damage for 8 s; the edges hold like walls.'),
+            h('li', null, h('b', null, 'Extra hit'), ': a gold heart on top of your two.'),
+            h('li', null, h('b', null, 'Bullet'), ': carries you along the corridors toward GOAL.'),
+            h('li', null, h('b', null, 'Launch'), ': lands you somewhere else, and maps everything you fly over.'),
+            h('li', null, h('b', null, 'Magic carpet'), ': float over the gaps for 6 s. Be over floor when it runs out.'),
+            h('li', null, h('b', null, 'Shrink'), ': half size for 10 s, for the tight spots.')),
           h('li', null, 'The map fills in as you go: only what has been on screen shows up.'),
           h('li', null, 'Reach GOAL before the time runs out.'),
+          h('li', null, 'Long mazes have flags. Touch one and a loss sends you back to it, not the start. Restart or running out of time starts over.'),
           h('li', null, 'Stars: finish, beat par, collect every gem.'),
           h('li', null, 'Vanishing bridges blink, then disappear.'),
+          h('li', null, 'Your fastest clear of each maze comes back as a ghost to race. Turn it off in Settings.'),
           h('li', null, 'Endless: gems add 3 s, beacons are checkpoints and add 12 s.'),
-          h('li', null, 'Keys: WASD or arrows move, Esc or P pause, R restart, M map, F full screen, + and - zoom, Enter next level.')),
+          h('li', null, 'Keys: WASD or arrows move, Space or E item, Esc or P pause, R restart, M map, F full screen, + and - zoom, Enter next level.')),
       ]);
     },
 

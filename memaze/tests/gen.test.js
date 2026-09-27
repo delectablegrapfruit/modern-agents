@@ -1,7 +1,7 @@
 // Headless checks for the maze generator: determinism, connectivity, corridor gaps, surface types, sane timing.
 // Run: node tests/gen.test.js
 const assert = require('assert');
-const MZ = require('./load.js')(['util.js', 'gen.js']);
+const MZ = require('./load.js')(['util.js', 'gen.js', 'world.js']);
 const G = MZ.Gen;
 const TYPES = new Set(['normal', 'bridge', 'blink']);
 
@@ -40,7 +40,7 @@ const routeLen = (m) => {
   return l;
 };
 
-let total = 0, badMazes = 0, blinks = 0, bridges = 0;
+let total = 0, badMazes = 0, blinks = 0, bridges = 0, boxTotal = 0, flagTotal = 0;
 const cases = [];
 for (let L = 1; L <= 80; L++) cases.push(['journey ' + L, G.levelParams(L)]);
 for (let i = 0; i < 120; i++) {
@@ -70,6 +70,19 @@ for (const [label, p] of cases) {
   assert.ok(m.parTime >= len / 180, label + ': par ' + m.parTime + ' faster than dragging ' + Math.round(len) + ' at 180/s');
   assert.ok(m.parTime <= len / 110 + m.turns * 0.2 + 1.5 + 3 * m.edges.filter((e) => e.type === 'blink').length + 1, label + ': par too slack');
   assert.ok(m.timeLimit % 5 === 0 && m.timeLimit >= (m.parTime - 1) * 2.3 + 15, label + ': time limit ' + m.timeLimit + ' vs par ' + m.parTime);
+  // Flags and mystery boxes: deterministic, on solid floor (never a vanishing bridge), clear of the start and the goal.
+  const flags = G.checkpoints(m), boxes = G.boxes(m, flags);
+  assert.strictEqual(JSON.stringify(boxes), JSON.stringify(G.boxes(m2, G.checkpoints(m2))), label + ': boxes not deterministic');
+  assert.ok(boxes.length >= 1, label + ': no mystery boxes');
+  const w = MZ.World.fromMaze(m), solid = new MZ.World();
+  solid.addPart('solid', { edges: m.edges.filter((e) => e.type !== 'blink') });
+  for (const b of boxes) {
+    assert.ok(solid.query(b.x, b.y, 0).depth > 0, label + ': box off solid floor');
+    assert.ok(Math.hypot(b.x - m.start.x, b.y - m.start.y) > m.start.r && Math.hypot(b.x - m.goal.x, b.y - m.goal.y) > m.goal.r, label + ': box on the start or the goal');
+    for (const c of boxes) if (c !== b) assert.ok(Math.hypot(b.x - c.x, b.y - c.y) >= 320, label + ': boxes too close');
+  }
+  for (const c of flags) assert.ok(w.query(c.x, c.y, 0).depth > 0, label + ': flag off the floor');
+  boxTotal += boxes.length; flagTotal += flags.length;
   const g = gapViolations(m);
   total++;
   if (g.bad) { badMazes++; console.log('gap violations', label, g.bad, 'worst slack', g.worst.toFixed(1)); }
@@ -85,13 +98,15 @@ for (const on of [false, true]) {
   if (!on) assert.ok(m.edges.every((e) => e.type !== 'blink'), 'custom blink off still has vanishing bridges');
 }
 // Endless chunks: deterministic, only known surfaces, no pads, and seamless links (the link's far end is the neighbour's node).
-let chunkBlinks = 0;
+let chunkBlinks = 0, chunkBoxes = 0;
 for (let cx = -12; cx <= 12; cx += (Math.abs(cx) < 3 ? 1 : 3)) for (let cy = -3; cy <= 3; cy++) {
   const c = G.endless.chunk(1234, cx, cy), c2 = G.endless.chunk(1234, cx, cy);
   assert.strictEqual(JSON.stringify(c), JSON.stringify(c2), 'endless chunk not deterministic at ' + cx + ',' + cy);
   assert.ok(c.edges.every((e) => TYPES.has(e.type)), 'endless: unknown surface at ' + cx + ',' + cy);
   assert.ok(noPads(c), 'endless: pads at ' + cx + ',' + cy);
   chunkBlinks += c.edges.filter((e) => e.type === 'blink').length;
+  for (const b of c.boxes) assert.ok(c.safeNodes.some((n) => n.x === b.x && n.y === b.y), 'endless: box off a safe junction at ' + cx + ',' + cy);
+  chunkBoxes += c.boxes.length;
   const right = G.endless.chunk(1234, cx + 1, cy);
   for (const e of c.edges.filter((e) => e.link)) {
     const B = e.pts[1];
@@ -100,5 +115,6 @@ for (let cx = -12; cx <= 12; cx += (Math.abs(cx) < 3 ? 1 : 3)) for (let cy = -3;
   }
 }
 assert.ok(chunkBlinks > 0, 'endless: no vanishing bridges far out');
-console.log(total + ' mazes (' + blinks + ' vanishing bridges, ' + bridges + ' island links), ' + badMazes + ' with gap violations; endless chunks ok');
+assert.ok(chunkBoxes > 0, 'endless: no mystery boxes');
+console.log(total + ' mazes (' + blinks + ' vanishing bridges, ' + bridges + ' island links, ' + flagTotal + ' flags, ' + boxTotal + ' mystery boxes), ' + badMazes + ' with gap violations; endless chunks ok (' + chunkBoxes + ' boxes)');
 assert.strictEqual(badMazes, 0);

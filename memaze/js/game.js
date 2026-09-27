@@ -11,6 +11,27 @@
   const BUFFER = 0.035;  // hitbox forgiveness: solid pixels may reach this far (share of the box) over the edge
   const boxWorld = () => 2 * R * clamp(S().player.size, 0.6, 1.25); // the player's square box, in world units
 
+  // Health: two hearts. A touch of the edge costs one (bonus hearts go first); a second touch before they grow back
+  // loses. Right after a hit the edges hold like walls for a moment, so one touch never counts twice.
+  const HEARTS = 2, MAX_BONUS = 2;
+  const REGEN = 3;   // seconds without a hit until the hearts are full again
+  const GUARD = 1;   // seconds the edges hold after a hit (and after a Bullet or Launch lands)
+  // Mystery boxes and items.
+  const BOX_R = 16, BOX_BACK = 10, ROLL = 1.1; // pickup radius; seconds until a taken box is back; roulette length
+  const ITEMS = {
+    star: { name: 'Invincible', w: 18, dur: 8 },
+    heart: { name: 'Extra hit', w: 16 },
+    bullet: { name: 'Bullet', w: 12 },
+    launch: { name: 'Launch', w: 12 },
+    carpet: { name: 'Magic carpet', w: 18, dur: 6 },
+    shrink: { name: 'Shrink', w: 16, dur: 10 },
+  };
+  const BULLET_V = 520, BULLET_RUN = 1800; // Bullet: speed and how far it carries you (it finishes on a junction)
+  const APEX_VIEW = 1500;                  // Launch: world units across the screen's shorter side at the top
+  const SHRINK = 0.5;
+  const smooth = (k) => k * k * (3 - 2 * k);
+  const polyLen = (p) => { let l = 0; for (let i = 1; i < p.length; i++) l += Math.hypot(p[i].x - p[i - 1].x, p[i].y - p[i - 1].y); return l; };
+
   const S = () => MZ.Save.settings;
 
   // ---------- full-screen win / lose media ----------
@@ -158,7 +179,9 @@
     ball: { x: 0, y: 0 },
     cam: { x: 0, y: 0, zoom: 1 }, userZoom: 1,
     t: 0, playT: 0, clock: 0, elapsed: 0, restarts: 0, gemsTaken: 0, stateT: 0, lastTick: -1, attract: 0,
-    FX, Player, Backdrop, GoalMedia,
+    checkpoints: [], cpIdx: -1, boxes: [],
+    hp: HEARTS, bonus: 0, hurtT: REGEN, guardT: 0, runT: 0, scale: 1, item: null, roll: null, fx: {}, lastSafe: null,
+    FX, Player, Backdrop, GoalMedia, ITEMS, HEARTS, MAX_BONUS, REGEN,
 
     init() {
       this.renderer = new MZ.Renderer(MZ.$('#maze'));
@@ -188,6 +211,7 @@
       MZ.Audio.setVolumes({ master: s.audio.master, sfx: s.audio.sfx, music: s.audio.music, media: s.audio.media });
       MZ.Audio.Music.set(s.music.media);
       document.documentElement.classList.toggle('reduced-motion', s.display.reducedMotion);
+      document.documentElement.classList.toggle('reduce-flash', s.display.reduceFlash);
       Player.apply();
       GoalMedia.apply();
       Backdrop.apply();
@@ -213,8 +237,11 @@
     // Remember what the screen shows (for the map), and mark gems, beacons and the goal once they have been on it.
     look() {
       const v = this.viewRect(), inside = (o, r) => o.x + r > v.x0 && o.x - r < v.x1 && o.y + r > v.y0 && o.y - r < v.y1;
-      if (this.gems) for (const g of this.gems) if (!g.seen && inside(g, 15)) { g.seen = true; if (g.key && this.run.seenKeys) this.run.seenKeys.add(g.key); }
-      if (this.beacons) for (const bc of this.beacons) if (!bc.seen && inside(bc, bc.r)) { bc.seen = true; this.run.seenKeys.add(bc.key); }
+      const keep = (o) => { if (o.key && this.run && this.run.seenKeys) this.run.seenKeys.add(o.key); };
+      if (this.gems) for (const g of this.gems) if (!g.seen && inside(g, 15)) { g.seen = true; keep(g); }
+      if (this.beacons) for (const bc of this.beacons) if (!bc.seen && inside(bc, bc.r)) { bc.seen = true; keep(bc); }
+      if (this.boxes) for (const bx of this.boxes) if (!bx.seen && inside(bx, BOX_R)) { bx.seen = true; keep(bx); }
+      if (this.maze) for (const c of this.checkpoints) if (!c.seen && inside(c, c.r)) c.seen = true;
       if (this.maze && !this.maze.goal.seen && inside(this.maze.goal, this.maze.goal.r)) this.maze.goal.seen = true;
       const last = this.trail[this.trail.length - 1];
       const moved = !last || Math.abs(v.x0 - last.x0) + Math.abs(v.y0 - last.y0) + Math.abs(v.x1 - last.x1) + Math.abs(v.y1 - last.y1) > 12;
@@ -222,9 +249,15 @@
       if (moved) {
         this.trail.push(v);
         if (this.mode === 'endless') {
-          const k = this.seenKey(v.x0 + (v.x1 - v.x0) / 2, v.y0 + (v.y1 - v.y0) / 2);
-          if (!this.seenBuckets.has(k)) this.seenBuckets.set(k, []);
-          this.seenBuckets.get(k).push(v);
+          // Filed under every bucket it covers (a Launch sees far more than one), so the radar finds it from anywhere inside.
+          const i0 = Math.floor(v.x0 / 600), i1 = Math.floor(v.x1 / 600), j0 = Math.floor(v.y0 / 600), j1 = Math.floor(v.y1 / 600);
+          const one = (i1 - i0 + 1) * (j1 - j0 + 1) <= 4;
+          for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+            if (one && (i !== Math.floor((v.x0 + v.x1) / 1200) || j !== Math.floor((v.y0 + v.y1) / 1200))) continue;
+            const k = i + ',' + j;
+            if (!this.seenBuckets.has(k)) this.seenBuckets.set(k, []);
+            this.seenBuckets.get(k).push(v);
+          }
           if (this.trail.length > 400) this.trail.shift(); // endless keeps its history in the buckets
         } else if (this.trail.length > 20000) this.trail.splice(0, 5000);
       }
@@ -281,7 +314,8 @@
     startEndless(seedText) {
       this.mode = 'endless';
       const seed = hashStr('memaze/endless/' + (seedText || String(Math.random())));
-      this.run = { seed, seedText, lives: 3, taken: new Set(), lit: new Set(), seenKeys: new Set(), best: 0, gems: 0, beaconsLit: 0, check: null };
+      this.run = { seed, seedText, lives: 3, taken: new Set(), lit: new Set(), seenKeys: new Set(), boxTaken: new Map(), best: 0, gems: 0, beaconsLit: 0, check: null };
+      this.checkpoints = [];
       this.trail = [];
       this.seenBuckets = new Map();
       this.maze = null;
@@ -303,6 +337,11 @@
       this.world = MZ.World.fromMaze(m);
       this.gems = m.gems.map((g) => Object.assign({ taken: false }, g));
       this.beacons = null;
+      // Flags stand on their own round platforms; boxes sit on junctions and dead ends.
+      this.checkpoints = Gen.checkpoints(m);
+      this.cpIdx = -1;
+      if (this.checkpoints.length) this.world.addPart('checkpoints', { discs: this.checkpoints.map((c) => ({ x: c.x, y: c.y, r: c.r })) });
+      this.boxes = Gen.boxes(m, this.checkpoints).map((b) => ({ x: b.x, y: b.y, takenAt: null, seen: false }));
       this.meta = meta;
       this.minimap.setMaze(m);
       this.trail = [];
@@ -323,6 +362,7 @@
       this.gemsTaken = this.gems ? this.gems.filter((g) => g.taken).length : 0;
       this.lastTick = -1;
       this.cam.x = start.x; this.cam.y = start.y;
+      this.resetPower();
       this.cam.zoom = this.zoomTarget();
       this.setState('play');
       MZ.Audio.Music.ensure();
@@ -333,7 +373,33 @@
       if (this.mode === 'endless') return;
       this.restarts = this.state === 'result' ? 0 : this.restarts + 1; // Retry after a clear is a fresh attempt
       this.gems.forEach((g) => (g.taken = false));
+      this.cpIdx = -1;
+      for (const c of this.checkpoints) c.lit = false;
+      for (const b of this.boxes) b.takenAt = null;
       this.beginLevel(this.maze.start, this.maze.timeLimit);
+    },
+
+    // Back on the last flag: the clock, the time taken, collected gems and the bridges all carry on.
+    respawnAtCheckpoint() {
+      const c = this.checkpoints[this.cpIdx];
+      this.restarts++;
+      this.ball.x = c.x; this.ball.y = c.y;
+      this.cam.x = c.x; this.cam.y = c.y;
+      this.resetPower();
+      this.cam.zoom = this.zoomTarget();
+      this.lastTick = -1;
+      this.setState('play');
+      MZ.Audio.Music.ensure();
+      this.emit('begin');
+      this.emit('bonus', 'Back to checkpoint');
+    },
+
+    // Full hearts, empty item slot, no effects running.
+    resetPower() {
+      this.hp = HEARTS; this.bonus = 0; this.hurtT = REGEN; this.guardT = 0;
+      this.item = null; this.roll = null; this.fx = {}; this.scale = 1;
+      this.lastSafe = { x: this.ball.x, y: this.ball.y };
+      this.emit('power');
     },
 
     setState(st) {
@@ -374,7 +440,7 @@
       this.t += dt;
       this.stateT += dt;
       if (st === 'play') {
-        this.cam.zoom = this.zoomTarget(); // zoom follows the pinch/wheel exactly, no easing
+        this.cam.zoom = this.zoomTarget() * this.liftZoom(); // zoom follows the pinch/wheel exactly, no easing
         this.sprite.update(performance.now()); // this frame's picture is this frame's hitbox
         this.step(dt);
       } else if (st === 'menu') this.stepAttract(dt);
@@ -384,8 +450,9 @@
 
     // The maze follows the finger 1:1 (the player stays put on screen); keys and gamepad move at a steady speed.
     step(dt) {
-      const b = this.ball, inp = this.input, cfg = S().controls;
+      const b = this.ball, inp = this.input, cfg = S().controls, fx = this.fx;
       this.playT += dt;
+      this.runT += dt;
       if (S().gameplay.timer || this.mode === 'endless') {
         this.clock -= dt;
         const sec = Math.ceil(this.clock);
@@ -393,37 +460,318 @@
         if (this.clock <= 0) { this.clock = 0; this.lose('time'); return; }
       }
       this.elapsed += dt;
+      this.tickPower(dt);
+      if (fx.bullet || fx.launch) { this.fly(dt); if (this.state === 'play' && this.mode === 'endless') this.endlessTick(); return; }
 
       const d = inp.takeGrab(), u = inp.vector();
       const sg = cfg.invert ? 1 : -1, k = clamp(cfg.speed || 1, 0.5, 2) / this.cam.zoom;
       const mx = d.x * sg * k + u.x * KEY_SPEED * dt, my = d.y * sg * k + u.y * KEY_SPEED * dt;
-      const walls = S().gameplay.rule === 'casual';
-      // Standing still can still end badly: a bridge vanishing underneath, or an animation frame reaching over the edge.
-      if (this.hitAt(b.x, b.y) && !(walls && this.unstick())) { this.lose('fall'); return; }
+      const free = fx.carpet > 0; // the magic carpet floats over the void
+      const soft = S().gameplay.rule === 'casual' || this.shielded(); // edges hold like walls
+      // Standing still can still go wrong: a bridge vanishing underneath, an animation frame reaching over the edge, the
+      // carpet running out over the void. That costs a heart (unless shielded), then you're put on the nearest floor.
+      if (!free && this.hitAt(b.x, b.y) && !(soft && this.unstick())) {
+        if (!this.shielded() && this.hurt()) return;
+        if (this.hitAt(b.x, b.y) && !this.unstick()) this.rescue();
+      }
       // Move in slices far shorter than the hitbox buffer, so the first touch is found and no gap is ever skipped.
-      const n = Math.max(1, Math.ceil(Math.hypot(mx, my) / (boxWorld() * BUFFER * 0.5)));
+      const n = Math.max(1, Math.ceil(Math.hypot(mx, my) / (this.box() * BUFFER * 0.5)));
       const sx = mx / n, sy = my / n;
       for (let i = 0; i < n; i++) {
-        if (!this.hitAt(b.x + sx, b.y + sy)) { b.x += sx; b.y += sy; }
-        else if (!walls) { b.x += sx; b.y += sy; this.lose('fall'); return; }
-        else if (sx && !this.hitAt(b.x + sx, b.y)) b.x += sx; // Walls: slide along the edge...
-        else if (sy && !this.hitAt(b.x, b.y + sy)) b.y += sy;
-        else { // ...or stop right at it
-          let lo = 0, hi = 1;
-          for (let j = 0; j < 6; j++) { const f = (lo + hi) / 2; if (this.hitAt(b.x + sx * f, b.y + sy * f)) hi = f; else lo = f; }
-          b.x += sx * lo; b.y += sy * lo;
-          break;
-        }
+        if (free || !this.hitAt(b.x + sx, b.y + sy)) { b.x += sx; b.y += sy; }
+        else if (!soft || (sx && !this.hitAt(b.x + sx, b.y)) || (sy && !this.hitAt(b.x, b.y + sy))) {
+          if (!soft) { this.toEdge(sx, sy); if (this.hurt()) return; break; } // a hit: stop right at the edge
+          if (sx && !this.hitAt(b.x + sx, b.y)) b.x += sx; // Walls: slide along the edge...
+          else b.y += sy;
+        } else { this.toEdge(sx, sy); break; } // ...or stop right at it
         if (this.pickups()) return;
       }
+      this.noteSafe();
       if (this.mode === 'endless') this.endlessTick();
+    },
+    toEdge(sx, sy) {
+      const b = this.ball;
+      let lo = 0, hi = 1;
+      for (let j = 0; j < 6; j++) { const f = (lo + hi) / 2; if (this.hitAt(b.x + sx * f, b.y + sy * f)) hi = f; else lo = f; }
+      b.x += sx * lo; b.y += sy * lo;
+    },
+    box() { return boxWorld() * this.scale; }, // the player's box right now (Shrink makes it smaller)
+
+    goalR() { return this.maze.goal.r * (GoalMedia.active ? clamp(S().goal.size, 0.66, 1) : 0.66); }, // the drawn GOAL circle (or goal media)
+
+    // ----- health -----
+    shielded() { const fx = this.fx; return this.guardT > 0 || fx.star > 0 || !!fx.bullet || !!fx.launch; },
+    hurt() {
+      if (this.bonus > 0) this.bonus--; else this.hp--;
+      this.hurtT = 0;
+      this.guardT = GUARD;
+      MZ.Audio.play('hurt');
+      this.emit('hit', this.hp + this.bonus);
+      this.emit('power');
+      if (this.hp > 0) return false;
+      this.lose('fall');
+      return true;
+    },
+    // Hearts grow back, effects run down, the roulette lands, and a shrunk picture grows back once there is room for it.
+    tickPower(dt) {
+      const fx = this.fx;
+      if (this.guardT > 0) this.guardT = Math.max(0, this.guardT - dt);
+      this.hurtT += dt;
+      if (this.hp < HEARTS && this.hurtT >= REGEN) { this.hp = HEARTS; MZ.Audio.play('heal'); this.emit('power'); }
+      if (this.roll && (this.roll.t += dt) >= ROLL) this.endRoll();
+      for (const k of ['star', 'carpet', 'shrink']) {
+        if (!(fx[k] > 0)) continue;
+        fx[k] -= dt;
+        if (fx[k] <= 0) { fx[k] = 0; MZ.Audio.play('expire'); this.emit('power'); }
+      }
+      const want = fx.shrink > 0 ? SHRINK : 1;
+      if (this.scale > want) this.scale = Math.max(want, this.scale - dt * 2.5);
+      else if (this.scale < want) {
+        const was = this.scale, b = this.ball;
+        this.scale = Math.min(want, this.scale + dt * 1.5);
+        if (!fx.carpet && !fx.bullet && !fx.launch && this.hitAt(b.x, b.y) && !this.unstick()) this.scale = was; // no room yet
+      }
+    },
+    // Remember the last spot on solid floor (not a vanishing bridge): where a fall with nowhere closer ends up.
+    noteSafe() {
+      const b = this.ball;
+      if (this.fx.carpet > 0) return;
+      const q = this.world.query(b.x, b.y, this.playT);
+      if (q.seg && !q.seg.blink && q.depth > 0) this.lastSafe = { x: b.x, y: b.y };
+    },
+    // Put the player on the nearest solid floor where the whole picture fits.
+    rescue() {
+      const b = this.ball, w = this.world, t = this.playT;
+      const ok = (x, y) => { const q = w.query(x, y, t); return q.seg && !q.seg.blink && q.depth > 0 && !this.hitAt(x, y); };
+      for (let r = 6; r <= 600; r += 6) {
+        const n = Math.max(12, Math.round(r / 4));
+        for (let i = 0; i < n; i++) {
+          const a = (i / n) * Math.PI * 2, x = b.x + Math.cos(a) * r, y = b.y + Math.sin(a) * r;
+          if (ok(x, y)) { b.x = x; b.y = y; this.input.takeGrab(); return true; }
+        }
+      }
+      const p = this.lastSafe || (this.maze ? this.maze.start : this.run.check);
+      b.x = p.x; b.y = p.y;
+      this.input.takeGrab();
+      return false;
+    },
+
+    // ----- mystery boxes and items -----
+    pickItem() {
+      const w = {};
+      let sum = 0;
+      for (const id in ITEMS) {
+        let v = ITEMS[id].w;
+        if (id === 'heart') v = this.bonus >= MAX_BONUS ? 0 : v + (this.hp < HEARTS ? 10 : 0);
+        sum += w[id] = v;
+      }
+      let x = Math.random() * sum;
+      for (const id in w) if ((x -= w[id]) < 0) return id;
+      return 'star';
+    },
+    endRoll() {
+      const id = this.roll.id;
+      this.roll = null;
+      if (id === 'heart') {
+        this.bonus = Math.min(MAX_BONUS, this.bonus + 1);
+        MZ.Audio.play('heal');
+      } else this.item = id;
+      MZ.Audio.play('item');
+      this.emit('bonus', ITEMS[id].name);
+      this.emit('power');
+    },
+    giveItem(id) { if (ITEMS[id]) { this.roll = { t: ROLL, id }; this.endRoll(); } },
+    useItem() {
+      const id = this.item, fx = this.fx;
+      if (!id || this.state !== 'play' || fx.bullet || fx.launch) return false;
+      if (id === 'bullet') {
+        const route = this.bulletRoute();
+        if (!route) { MZ.toast('Nowhere to fly', 1200); return false; }
+        fx.bullet = route;
+      } else if (id === 'launch') {
+        const plan = this.launchPlan();
+        if (!plan) { MZ.toast('Nowhere to land', 1200); return false; }
+        fx.launch = plan;
+      } else fx[id] = ITEMS[id].dur;
+      this.item = null;
+      MZ.Audio.play(id === 'launch' ? 'launch' : id === 'bullet' ? 'bullet' : 'use');
+      this.emit('use', id);
+      this.emit('power');
+      return true;
+    },
+
+    // The corridors as a graph: junctions by position (a finished maze's, or every loaded endless chunk's).
+    graph() {
+      const edges = this.maze ? this.maze.edges : [].concat(...Array.from(this.chunks.values(), (c) => c.data.edges));
+      const ids = new Map(), pos = [], adj = [], solid = [];
+      const id = (p) => {
+        const k = Math.round(p.x * 4) + ',' + Math.round(p.y * 4);
+        let i = ids.get(k);
+        if (i == null) { i = pos.length; ids.set(k, i); pos.push(p); adj.push([]); solid.push(false); }
+        return i;
+      };
+      const E = edges.map((e) => {
+        const r = { e, a: id(e.pts[0]), b: id(e.pts[e.pts.length - 1]), len: polyLen(e.pts) };
+        adj[r.a].push(r); adj[r.b].push(r);
+        if (e.type !== 'blink') solid[r.a] = solid[r.b] = true;
+        return r;
+      });
+      return { E, pos, adj, solid, id: (p) => ids.get(Math.round(p.x * 4) + ',' + Math.round(p.y * 4)) };
+    },
+    // Bullet: the route from here along the corridors, toward GOAL (stopping short of it), or in Endless outward, as far
+    // as the run allows, finishing on a junction with solid floor.
+    bulletRoute() {
+      const b = this.ball, g = this.graph();
+      let at = null, bd = Infinity; // the nearest point on any corridor
+      for (const r of g.E) {
+        const p = r.e.pts;
+        let acc = 0;
+        for (let i = 1; i < p.length; i++) {
+          const ax = p[i - 1].x, ay = p[i - 1].y, dx = p[i].x - ax, dy = p[i].y - ay, L2 = dx * dx + dy * dy, sl = Math.sqrt(L2);
+          const f = L2 ? clamp(((b.x - ax) * dx + (b.y - ay) * dy) / L2, 0, 1) : 0;
+          const d = Math.hypot(ax + dx * f - b.x, ay + dy * f - b.y);
+          if (d < bd) { bd = d; at = { r, s: acc + f * sl }; }
+          acc += sl;
+        }
+      }
+      if (!at || bd > 300) return null;
+      // Shortest distances from here, leaving by either end of this corridor.
+      const n = g.pos.length, dist = new Float64Array(n).fill(Infinity), prev = new Array(n).fill(null), done = new Uint8Array(n);
+      dist[at.r.a] = at.s; dist[at.r.b] = Math.min(dist[at.r.b], at.r.len - at.s);
+      if (at.r.a === at.r.b) dist[at.r.a] = Math.min(at.s, at.r.len - at.s);
+      for (;;) {
+        let u = -1;
+        for (let i = 0; i < n; i++) if (!done[i] && dist[i] < Infinity && (u < 0 || dist[i] < dist[u])) u = i;
+        if (u < 0) break;
+        done[u] = 1;
+        for (const r of g.adj[u]) {
+          const v = r.a === u ? r.b : r.a;
+          if (dist[u] + r.len < dist[v]) { dist[v] = dist[u] + r.len; prev[v] = r; }
+        }
+      }
+      let target = -1;
+      if (this.maze) target = g.id(this.maze.goal);
+      else {
+        const o = this.run.origin;
+        let far = -1;
+        for (let i = 0; i < n; i++) {
+          if (!g.solid[i] || dist[i] > BULLET_RUN * 1.4) continue;
+          const d = Math.hypot(g.pos[i].x - o.x, g.pos[i].y - o.y);
+          if (d > far) { far = d; target = i; }
+        }
+      }
+      if (target == null || target < 0 || dist[target] === Infinity) return null;
+      // Walk back from the target, then lay the corridors out from here.
+      const chain = [];
+      let v = target;
+      while (prev[v]) { const r = prev[v], u = r.a === v ? r.b : r.a; chain.push({ r, from: u, to: v }); v = u; }
+      chain.reverse();
+      const pts = [{ x: b.x, y: b.y }], nodeAt = [];
+      const push = (q) => { const l = pts[pts.length - 1]; if (Math.hypot(q.x - l.x, q.y - l.y) > 0.01) pts.push({ x: q.x, y: q.y }); };
+      // From here to the junction the route leaves by.
+      const P = at.r.e.pts, cP = [0];
+      for (let i = 1; i < P.length; i++) cP.push(cP[i - 1] + Math.hypot(P[i].x - P[i - 1].x, P[i].y - P[i - 1].y));
+      if (v === at.r.b && v !== at.r.a) { for (let i = 0; i < P.length; i++) if (cP[i] >= at.s) push(P[i]); }
+      else for (let i = P.length - 1; i >= 0; i--) if (cP[i] <= at.s) push(P[i]);
+      for (const c of chain) {
+        const Q = c.r.a === c.from ? c.r.e.pts : c.r.e.pts.slice().reverse();
+        for (const q of Q) push(q);
+        nodeAt.push({ i: pts.length - 1, solid: g.solid[c.to] });
+      }
+      const cum = [0];
+      for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y));
+      let len = cum[cum.length - 1];
+      if (this.maze) { // stop short of GOAL: the finish is yours
+        const G = this.maze.goal, stop = this.goalR() + this.box() * 0.75 + 12;
+        for (let i = 1; i < pts.length; i++) {
+          if (Math.hypot(pts[i].x - G.x, pts[i].y - G.y) >= stop) continue;
+          let lo = cum[i - 1], hi = cum[i];
+          for (let j = 0; j < 20; j++) { const m = (lo + hi) / 2, q = this.along(pts, cum, m); if (Math.hypot(q.x - G.x, q.y - G.y) < stop) hi = m; else lo = m; }
+          len = lo;
+          break;
+        }
+      }
+      // Run out at the first solid junction past the Bullet's reach.
+      if (len > BULLET_RUN) for (const nd of nodeAt) if (nd.solid && cum[nd.i] >= BULLET_RUN && cum[nd.i] < len) { len = cum[nd.i]; break; }
+      if (len < 40) return null;
+      return { pts, cum, len, s: 0, t: 0, dir: 0 };
+    },
+    along(pts, cum, s) {
+      let i = 1;
+      while (i < cum.length - 1 && cum[i] < s) i++;
+      const f = clamp((s - cum[i - 1]) / (cum[i] - cum[i - 1] || 1), 0, 1);
+      return { x: pts[i - 1].x + (pts[i].x - pts[i - 1].x) * f, y: pts[i - 1].y + (pts[i].y - pts[i - 1].y) * f };
+    },
+    // Launch: anywhere with solid floor (not on GOAL, not right here), flying high enough to map what passes below.
+    launchPlan() {
+      const b = this.ball, cands = [];
+      if (this.maze) {
+        const g = this.graph(), G = this.maze.goal;
+        g.pos.forEach((p, i) => {
+          if (g.solid[i] && Math.hypot(p.x - G.x, p.y - G.y) > G.r + 120 && Math.hypot(p.x - b.x, p.y - b.y) > 350) cands.push(p);
+        });
+      } else {
+        for (const { data } of this.chunks.values()) for (const p of data.safeNodes) {
+          const d = Math.hypot(p.x - b.x, p.y - b.y);
+          if (d > 500 && d < 1800) cands.push(p);
+        }
+      }
+      if (!cands.length) return null;
+      const P = cands[Math.floor(Math.random() * cands.length)], d = Math.hypot(P.x - b.x, P.y - b.y);
+      const apex = clamp(Math.min(innerWidth, innerHeight) / APEX_VIEW / this.zoomTarget(), 0.02, 1);
+      return { a: { x: b.x, y: b.y }, b: { x: P.x, y: P.y }, t: 0, T: clamp(2 + d / 3000, 2.2, 3.6), apex };
+    },
+    // How high a Launch is right now, 0 on the ground to 1 at the top.
+    lift() {
+      const L = this.fx.launch;
+      if (!L) return 0;
+      const k = L.t / L.T;
+      return smooth(clamp(Math.min(k, 1 - k) / 0.3, 0, 1));
+    },
+    liftZoom() { const L = this.fx.launch; return L ? Math.exp(Math.log(L.apex) * this.lift()) : 1; },
+    // Bullet and Launch steer for you: finger travel meanwhile is dropped.
+    fly(dt) {
+      const fx = this.fx, b = this.ball;
+      this.input.takeGrab();
+      if (fx.bullet) {
+        const B = fx.bullet;
+        B.t += dt;
+        const to = Math.min(B.len, B.s + BULLET_V * Math.min(1, 0.3 + B.t * 2.5) * dt);
+        const n = Math.max(1, Math.ceil((to - B.s) / (this.box() * 0.25)));
+        const from = B.s;
+        for (let i = 1; i <= n; i++) {
+          const q = this.along(B.pts, B.cum, from + ((to - from) * i) / n);
+          if (q.x !== b.x || q.y !== b.y) B.dir = Math.atan2(q.y - b.y, q.x - b.x);
+          b.x = q.x; b.y = q.y;
+          B.s = from + ((to - from) * i) / n;
+          if (this.pickups()) return;
+        }
+        if (B.s >= B.len) { fx.bullet = null; this.land(); }
+        return;
+      }
+      const L = fx.launch;
+      L.t = Math.min(L.T, L.t + dt);
+      const e = smooth(L.t / L.T);
+      b.x = L.a.x + (L.b.x - L.a.x) * e;
+      b.y = L.a.y + (L.b.y - L.a.y) * e;
+      if (L.t >= L.T) { fx.launch = null; this.land(); this.pickups(); }
+    },
+    land() {
+      const b = this.ball;
+      this.cam.zoom = this.zoomTarget();
+      this.guardT = Math.max(this.guardT, GUARD);
+      if (this.hitAt(b.x, b.y) && !this.unstick()) this.rescue();
+      this.noteSafe();
+      this.input.takeGrab();
+      MZ.Audio.play('land');
+      this.emit('power');
     },
 
     // Does the player's picture, placed at (x, y), touch the void? Every solid pixel of the current frame is tested
     // (outline, plus a grid inside), each allowed the small buffer over the edge. Before the picture has loaded, the
     // box's inscribed circle stands in.
     hitAt(x, y) {
-      const m = this.sprite.mask, W = boxWorld(), buf = W * BUFFER, t = this.playT, w = this.world;
+      const m = this.sprite.mask, W = this.box(), buf = W * BUFFER, t = this.playT, w = this.world;
       const q = w.query(x, y, t);
       if (!m) return q.depth < W * 0.45 - buf;
       if (q.depth >= m.maxR * W) return false; // the whole box fits inside the corridor
@@ -435,7 +783,7 @@
     // Walls: something pushed the picture over the edge while standing still (a new animation frame): step clear if a
     // free spot is close by.
     unstick() {
-      const b = this.ball, W = boxWorld();
+      const b = this.ball, W = this.box();
       for (let r = W * 0.02; r <= W * 0.2; r += W * 0.02) {
         for (let a = 0; a < 16; a++) {
           const x = b.x + Math.cos(a * Math.PI / 8) * r, y = b.y + Math.sin(a * Math.PI / 8) * r;
@@ -446,7 +794,7 @@
     },
     // Does the picture overlap a circle (a gem, a beacon, the goal)?
     touches(cx, cy, r) {
-      const b = this.ball, m = this.sprite.mask, W = boxWorld();
+      const b = this.ball, m = this.sprite.mask, W = this.box();
       const d2 = (cx - b.x) ** 2 + (cy - b.y) ** 2;
       if (!m) return d2 < (r + W * 0.45) ** 2;
       if (d2 > (r + m.maxR * W) ** 2) return false;
@@ -478,32 +826,64 @@
           this.emit('bonus', '+12s');
         }
       }
+      // Flags: touching one lights it (and any before it); a loss then comes back here.
+      const cps = this.checkpoints;
+      if (this.maze && cps.length) {
+        for (let i = cps.length - 1; i > this.cpIdx; i--) {
+          const c = cps[i];
+          if (!this.touches(c.x, c.y, c.r * 0.5)) continue;
+          this.cpIdx = i;
+          for (let j = 0; j <= i; j++) cps[j].lit = true;
+          MZ.Audio.play('beacon');
+          this.emit('bonus', cps.length > 1 ? 'Checkpoint ' + (i + 1) + '/' + cps.length : 'Checkpoint');
+          break;
+        }
+      }
+      // Boxes: an empty slot takes one and spins for an item; a taken box is back after a while.
+      if (this.boxes && S().gameplay.boxes) {
+        for (const bx of this.boxes) {
+          if (bx.takenAt != null && this.runT - bx.takenAt < BOX_BACK) continue;
+          bx.takenAt = null;
+          if (this.item || this.roll || !this.touches(bx.x, bx.y, BOX_R)) continue;
+          bx.takenAt = this.runT;
+          if (bx.key) this.run.boxTaken.set(bx.key, this.runT);
+          this.roll = { t: 0, id: this.pickItem() };
+          MZ.Audio.play('box');
+          this.emit('power');
+        }
+      }
       if (this.maze) {
-        const g = this.maze.goal, gr = g.r * (GoalMedia.active ? clamp(S().goal.size, 0.66, 1) : 0.66); // the drawn GOAL circle (or goal media)
-        if (this.touches(g.x, g.y, gr)) { this.win(); return true; }
+        const g = this.maze.goal;
+        if (this.touches(g.x, g.y, this.goalR())) { this.win(); return true; }
       }
       return false;
     },
 
+    // Out of hearts, or out of time. A lit flag takes you back to it (not after time runs out); otherwise the maze
+    // starts over. Gauntlet and Endless also cost a life.
     async lose(reason) {
       if (reason === 'fall') MZ.Save.progress.stats.falls++;
+      this.fx = {};
+      this.roll = null;
       this.setState('fx');
       this.emit('lose', reason);
+      this.emit('power');
       MZ.Audio.play('lose');
       MZ.Save.saveProgress();
       await FX.play('lose');
       if (this.state !== 'fx') return; // quit meanwhile
+      const cp = reason !== 'time' && this.maze && this.cpIdx >= 0 && this.checkpoints[this.cpIdx];
       if (this.mode === 'gauntlet') {
         this.run.lives--;
         if (this.run.lives <= 0) return this.gameOver();
-        return this.restartLevel();
+        return cp ? this.respawnAtCheckpoint() : this.restartLevel();
       }
       if (this.mode === 'endless') {
         this.run.lives--;
         if (this.run.lives <= 0 || reason === 'time') return this.gameOver();
         return this.respawn();
       }
-      this.restartLevel();
+      return cp ? this.respawnAtCheckpoint() : this.restartLevel();
     },
 
     async win() {
@@ -589,6 +969,7 @@
         const data = E.chunk(this.run.seed, cx + dx, cy + dy);
         data.gems.forEach((g, i) => { g.key = k + ':g' + i; g.taken = this.run.taken.has(g.key); g.seen = this.run.seenKeys.has(g.key); });
         data.beacons.forEach((b, i) => { b.key = k + ':b' + i; b.lit = this.run.lit.has(b.key); b.seen = this.run.seenKeys.has(b.key); });
+        data.boxes.forEach((b, i) => { b.key = k + ':x' + i; b.takenAt = this.run.boxTaken.has(b.key) ? this.run.boxTaken.get(b.key) : null; b.seen = this.run.seenKeys.has(b.key); });
         this.world.addPart(k, data);
         this.chunks.set(k, { data });
       }
@@ -596,8 +977,8 @@
         const [x, y] = k.split(',').map(Number);
         if (Math.abs(x - cx) > ring + 1 || Math.abs(y - cy) > ring + 1) { this.world.removePart(k); this.chunks.delete(k); }
       }
-      this.gems = []; this.beacons = [];
-      for (const { data } of this.chunks.values()) { this.gems.push(...data.gems); this.beacons.push(...data.beacons); }
+      this.gems = []; this.beacons = []; this.boxes = [];
+      for (const { data } of this.chunks.values()) { this.gems.push(...data.gems); this.beacons.push(...data.beacons); this.boxes.push(...data.boxes); }
     },
     endlessTick() {
       const b = this.ball, r = this.run;
@@ -648,23 +1029,37 @@
       const maze = menu ? this.attractMaze : this.maze;
       const world = menu ? this.attractWorld : this.world;
       const seed = maze ? maze.seed : this.run && this.run.seed ? this.run.seed : 7;
-      const showPlayer = !menu;
+      const showPlayer = !menu, fx = this.fx, boxesOn = !menu && s.gameplay.boxes;
       this.renderer.draw({
-        world, cam: this.cam, t: pt, floor: s.display.floor, hue: seed % 360, rgb,
+        world, cam: this.cam, t: pt, floor: s.display.floor, hue: seed % 360, rgb, clock: t,
         start: maze ? maze.start : this.mode === 'endless' && this.run ? this.run.origin : null,
         goal: maze ? Object.assign({ media: GoalMedia.active && !menu }, maze.goal) : null,
         gems: menu ? maze && maze.gems : this.gems,
         beacons: this.mode === 'endless' && !menu ? this.beacons : null,
+        flags: !menu && maze ? this.checkpoints : null,
+        boxes: boxesOn ? this.boxes.filter((x) => x.takenAt == null || this.runT - x.takenAt >= BOX_BACK) : null,
+        boxAge: (x) => (x.takenAt == null ? 9 : this.runT - x.takenAt - BOX_BACK),
+        boxDim: !!(this.item || this.roll),
+        // Under the player: a Launch's shadow on the ground, the magic carpet (flickering as it runs out), the Bullet.
+        under: showPlayer && this.state !== 'menu' ? {
+          x: b.x, y: b.y, W: this.box(), lift: this.lift(),
+          carpet: fx.carpet > 0 ? (fx.carpet > 1.5 || Math.floor(fx.carpet * 8) % 2 ? 1 : 0.35) : 0,
+          bullet: fx.bullet ? fx.bullet.dir : null,
+        } : null,
+        landing: fx.launch ? fx.launch.b : null,
       });
 
-      // Player sprite: the user's media, upright and still at the centre of the screen.
+      // Player sprite: the user's media, upright and still at the centre of the screen (up in the air on a Launch).
       const pl = MZ.$('#player');
       if (showPlayer) {
-        const css = boxWorld() * this.cam.zoom, size = css.toFixed(1) + 'px';
+        const lift = this.lift(), z = lift ? this.zoomTarget() * (1 + 0.3 * lift) : this.cam.zoom;
+        const css = this.box() * z, size = css.toFixed(1) + 'px';
         this.sprite.update(performance.now(), false, css, Math.min(window.devicePixelRatio || 1, s.display.quality));
         pl.hidden = false;
         pl.style.width = pl.style.height = size;
-        pl.style.transform = 'translate(-50%,-50%)';
+        pl.style.transform = lift ? 'translate(-50%,calc(-50% - ' + (lift * Math.min(innerWidth, innerHeight) * 0.14).toFixed(1) + 'px))' : 'translate(-50%,-50%)';
+        const cls = (fx.star > 0 ? ' invincible' + (fx.star < 1.5 ? ' ending' : '') : '') + (this.guardT > 0 && this.state === 'play' ? ' guard' : '') + (fx.bullet ? ' bullet' : '');
+        if (pl.className !== cls.trim()) pl.className = cls.trim();
       } else pl.hidden = true;
 
       // Goal media, positioned in world space.
@@ -687,8 +1082,8 @@
           this.minimap.dirty = false;
           if (this.minimap.size() && this.maze) { this.minimap.setMaze(this.maze); this.revealAll(); }
         }
-        if (this.mode === 'endless') this.minimap.drawRadar(this.world, b, this.beacons, view, this.seenNear(b.x, b.y, 1000).concat([view]));
-        else this.minimap.draw(b, this.maze && this.maze.goal, this.gems, view);
+        if (this.mode === 'endless') this.minimap.drawRadar(this.world, b, this.beacons, view, this.seenNear(b.x, b.y, 1000).concat([view]), boxesOn ? this.boxes : null);
+        else this.minimap.draw(b, this.maze && this.maze.goal, this.gems, view, this.checkpoints, boxesOn ? this.boxes : null);
       } else mmEl.hidden = true;
       this.emit('frame');
     },
