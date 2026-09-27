@@ -412,7 +412,9 @@ final class FoeSprite: SKNode {
                 pivot.zRotation = -CGFloat(flight) * 2 * .pi * (foe.leapTo > 0 ? 1 : -1)
             }
         } else if !holding, pivot.zRotation != 0 {
-            pivot.zRotation *= 0.5
+            // Down from a somersault: the rest of the turn eased out, on round the way it was going (never unwound back
+            // through a half turn, which drew him upside down for a frame as he landed).
+            pivot.zRotation = pivot.zRotation.remainder(dividingBy: 2 * .pi) * 0.5
             if abs(pivot.zRotation) < 0.01 { pivot.zRotation = 0 }
         }
 

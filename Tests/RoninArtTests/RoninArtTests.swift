@@ -155,6 +155,26 @@ final class RoninArtTests: XCTestCase {
         }
     }
 
+    func testAFoeStandsOnTheGroundAndIsRockedBackWhereHeStands() {
+        for kind in Kind.allCases {
+            let cast = Cast.foe(kind)
+            // On his feet (not striding or in the air), always a foot on the ground: never floating over it.
+            for frame in Figure.frames(for: cast) {
+                if case .walk = frame { continue }
+                if frame == .leap { continue }
+                let feet = Figure.footing(cast, frame)
+                XCTAssertLessThan(min(feet.front.y, feet.back.y), 0.004, "\(kind) \(frame) floats")
+            }
+            // A blow (or the freeze of a killing one) rocks him back over his own stance's footing: his feet stay.
+            let home = Figure.footing(cast, .idle(0)), struck = Figure.footing(cast, .stagger(0))
+            XCTAssertEqual(struck.front.x, home.front.x, accuracy: 0.002, "\(kind)")
+            XCTAssertEqual(struck.back.x, home.back.x, accuracy: 0.002, "\(kind)")
+            // Coiling to strike, the feet stay where they were, but for a foot lifted to step in.
+            let coiled = Figure.footing(cast, .windup(Frame.windupFrames - 1)), before = Figure.footing(cast, .windup(Frame.windupFrames - 2))
+            if coiled.front.y < 0.01, before.front.y < 0.01 { XCTAssertEqual(coiled.front.x, before.front.x, accuracy: 0.01, "\(kind)") }
+        }
+    }
+
     func testTheFlourishTheBlowThatFellsHimAndAParryLeaveHisFeetWhereTheyStand() {
         // The chiburi and the nōtō are done over his guard's footing, the body sinking and rising; the blow that fells
         // him takes him where he stands in guard; thrown back off a guard, he comes down off his heels where he landed.

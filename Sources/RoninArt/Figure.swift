@@ -1024,11 +1024,14 @@ public enum Figure {
                 p.hold = v(-0.03, -0.12)
                 p.blade = 1.54
             case (.grunt, .windup(2)):
-                // Coiled: the weight sunk on the back leg, the front foot light, the shaft drawn right back.
+                // Coiled: the weight sunk on the back leg, the front foot lifted light for the step in, the shaft
+                // drawn right back.
                 p.lean = -0.17
-                p.shift = -0.035
                 p.front = (0.62, 0.42)
                 p.back = (-0.22, -0.72)
+                p.shift = -0.035
+                let feet = footing(p)
+                plant(&p, hip: v(-0.035, hipHeight(p)), front: v(feet.front.x, 0.035), back: v(feet.back.x, 0))
                 p.hold = v(-0.09, -0.1)
                 p.blade = 1.62
             case (.grunt, .strike(let k)):
@@ -1045,9 +1048,12 @@ public enum Figure {
                 p.blade = 3.3
                 p.arm2 = (0.9, 1.4)
             case (.runner, .windup(2)):
+                // Sunk deeper into the crouch, the feet where they were.
                 p.lean = 0.36
                 p.front = (0.95, 0.65)
                 p.back = (-0.45, -1.15)
+                let crouch = footing(key(cast, .windup(1)))
+                plant(&p, hip: v(0, hipHeight(p)), front: v(crouch.front.x, 0), back: crouch.back)
                 p.hold = v(-0.02, 0.14)
                 p.blade = 3.55
                 p.arm2 = (1.0, 1.5)
@@ -1064,9 +1070,9 @@ public enum Figure {
                 p.hold = v(0.02, 0.16)
                 p.blade = -2.05
             case (.brute, .windup(2)):
+                // Rising to it, the front foot lifted light (the back one stays down).
                 p.lean = -0.2
-                p.lift = 0.02
-                p.front = (0.5, 0.25)
+                p.front = (0.55, 0.3)
                 p.hold = v(-0.02, 0.18)
                 p.blade = -1.8
             case (.brute, .strike(let k)):
@@ -1081,8 +1087,13 @@ public enum Figure {
             case (.dancer, .windup(1)), (.dancer, .windup(2)):
                 let coil: CGFloat = frame == .windup(2) ? 1 : 0
                 p.lean = 0.1 - 0.06 * coil
-                p.front = (0.55, 0.3 + 0.15 * coil)
-                p.back = (-0.5, -0.6 - 0.2 * coil)
+                p.front = (0.55, 0.3)
+                p.back = (-0.5, -0.6)
+                if coil > 0 {
+                    // Coiled lower over the same footing.
+                    let feet = footing(p)
+                    plant(&p, hip: v(0, hipHeight(p) - 0.03), front: v(feet.front.x, 0), back: feet.back)
+                }
                 p.arm = (2.6 + 0.1 * coil, 2.95)
                 p.arm2 = (2.3 + 0.1 * coil, 2.65)
                 p.blade = 2.45 - 0.1 * coil
@@ -1147,10 +1158,12 @@ public enum Figure {
                 p.hold = v(0.03, 0.14)
                 p.blade = 4.45
             case (.warlord, .windup(2)):
+                // The front foot lifted light for the stamp, the back one where it stood.
                 p.lean = -0.2
-                p.lift = 0.02
                 p.front = (0.62, 0.38)
                 p.back = (-0.36, -0.55)
+                let feet = footing(p), home = footing(stance(cast))
+                plant(&p, hip: v(0, hipHeight(p)), front: v(feet.front.x, 0.03), back: v(home.back.x, 0))
                 p.hold = v(-0.04, 0.17)
                 p.blade = 4.65
             case (.warlord, .strike(let k)):
@@ -1179,6 +1192,14 @@ public enum Figure {
                 p.blade += 0.6
             default:
                 break
+            }
+            if frame == .stagger(0) {
+                // Rocked back where he stands, on his own stance's footing (so a blow, or the freeze of a killing
+                // one, leaves his feet where they were), the hips thrown back over the back foot.
+                let feet = footing(stance(cast)), hip = v(p.shift, 0)
+                let reach = thigh + shin - 0.012
+                func highest(_ f: CGPoint) -> CGFloat { f.y + (reach * reach - (f.x - hip.x) * (f.x - hip.x)).squareRoot() }
+                plant(&p, hip: v(hip.x, min(hipHeight(p), highest(feet.front), highest(feet.back))), front: v(feet.front.x, 0), back: feet.back)
             }
         }
         return p
