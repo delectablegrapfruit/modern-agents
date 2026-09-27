@@ -235,28 +235,125 @@ final class RoninCoreTests: XCTestCase {
 
     // MARK: The career
 
-    func testAWinMovesOnAndAFallRetriesTheStage() {
+    func testHeartsCarryFromStageToStageAndAFallStartsOver() {
         var career = Career(seed: 1)
         var fight = career.makeFight()
         fight.pilot = .perfect
+        fight.hp = 2
         while fight.outcome == nil { _ = fight.step(0.1) }
+        XCTAssertEqual(fight.outcome, .victory)
         career.record(fight)
         XCTAssertEqual(career.stage, 2)
         XCTAssertEqual(career.attempt, 1)
         XCTAssertEqual(career.cleared, 1)
-        XCTAssertEqual(career.flawless, 1)
         XCTAssertEqual(career.kills, fight.roster.count)
+        XCTAssertEqual(career.carried, fight.hp)
+        XCTAssertEqual(career.makeFight().hp, fight.hp, "the hearts left are the hearts brought")
 
         var lost = career.makeFight()
         while lost.outcome == nil { _ = lost.step(0.1) }
         let before = career.kills
         career.record(lost)
-        XCTAssertEqual(career.stage, 2)
-        XCTAssertEqual(career.attempt, 2)
+        XCTAssertEqual(career.stage, 1, "a fall starts the campaign over")
+        XCTAssertEqual(career.carried, Mode.bushido.hearts)
+        XCTAssertEqual(career.makeFight().hp, Mode.bushido.hearts)
+        XCTAssertEqual(career.unlocked, 1...2, "stages reached stay open")
         XCTAssertEqual(career.falls, 1)
         XCTAssertEqual(career.streak, 0)
         XCTAssertEqual(career.kills, before + lost.stats.kills)
         XCTAssertNotEqual(career.makeFight().seed, lost.seed, "a retry is a fresh roll")
+    }
+
+    func testTheGourdBearerGivesBackOneHeartOnce() {
+        var fight = lane()
+        fight.roster = [.grunt, .grunt, .grunt]
+        fight.hp = 2
+        let bearer = fight.place(.grunt, at: -0.2)
+        fight.foes[fight.foes.count - 1].bearer = true
+        XCTAssertTrue(fight.strike(.left).contains(.healed(foe: bearer, restored: true)))
+        XCTAssertEqual(fight.hp, 3)
+        _ = run(&fight, 0.2)
+        fight.place(.grunt, at: 0.2)
+        fight.foes[fight.foes.count - 1].bearer = true
+        _ = fight.strike(.right)
+        XCTAssertEqual(fight.hp, 3, "one gourd a stage")
+
+        var spill = lane()
+        spill.roster = [.grunt, .grunt]
+        let carrier = spill.place(.grunt, at: -0.9)
+        spill.foes[0].bearer = true
+        spill.place(.grunt, at: 0.1)
+        spill.foes[1].enter(.windup, for: 0.01)
+        XCTAssertTrue(run(&spill, 0.3).contains(.spilled(foe: carrier)), "a wound with the bearer about spills the gourd")
+        XCTAssertTrue(spill.healed)
+
+        var stage = Fight(stage: 4, seed: 3)
+        XCTAssertNotNil(stage.bearerIndex)
+        stage.pilot = .perfect
+        var heals = 0
+        while stage.outcome == nil { heals += stage.step(0.1).filter { if case .healed = $0 { return true } else { return false } }.count }
+        XCTAssertEqual(heals, 1)
+    }
+
+    func testTheWarlordTurnsAsideACutOnGuard() {
+        var fight = lane(stage: 5)
+        fight.roster = [.warlord]
+        let id = fight.place(.warlord, at: -0.24)
+        fight.foes[0].enter(.guarding, for: 1)
+        let events = fight.strike(.left)
+        XCTAssertTrue(events.contains(.parried(.left, foe: id)))
+        XCTAssertEqual(fight.foe(id)?.hp, Kind.warlord.baseHP)
+        XCTAssertTrue(fight.isStumbling)
+        XCTAssertEqual(fight.stats.parried, 1)
+    }
+
+    func testTheWarlordIsTougherAndCallsForHelp() {
+        XCTAssertEqual(Difficulty(stage: 5).warlordHP, 10)
+        XCTAssertGreaterThan(Difficulty(stage: 10).warlordHP, 10)
+        var fight = lane(stage: 5)
+        fight.roster = [.warlord]
+        let id = fight.place(.warlord, at: -0.2)
+        var summoned = 0
+        for _ in 0..<7 {
+            guard let i = fight.foes.firstIndex(where: { $0.id == id }) else { break }
+            fight.foes[i].x = -0.2
+            fight.foes[i].enter(.advancing, for: 0)
+            fight.cooldown = 0
+            summoned += fight.strike(.left).filter { if case .summoned = $0 { return true } else { return false } }.count
+        }
+        XCTAssertEqual(fight.foe(id)?.hp, 3)
+        XCTAssertEqual(summoned, 2, "at two thirds and at one third")
+        XCTAssertEqual(fight.foes.count, 5)
+        XCTAssertEqual(fight.remaining, 5)
+    }
+
+    func testEndlessStartsFromAnUnlockedStageAndRunsOn() {
+        var career = Career(seed: 5)
+        func play(_ win: Bool) -> Fight {
+            var fight = career.makeFight()
+            if win { fight.pilot = .perfect }
+            while fight.outcome == nil { _ = fight.step(0.1) }
+            career.record(fight)
+            return fight
+        }
+        _ = play(true)
+        _ = play(true)
+        XCTAssertEqual(career.unlocked, 1...3)
+        career.startEndless(at: 9)
+        XCTAssertEqual(career.endless?.start, 3, "only unlocked stages")
+        XCTAssertEqual(career.makeFight().stage, 3)
+        let won = play(true)
+        XCTAssertEqual(career.endless?.stage, 4)
+        XCTAssertEqual(career.endless?.cleared, 1)
+        XCTAssertEqual(career.endless?.hearts, won.hp)
+        XCTAssertEqual(career.unlocked, 1...4)
+        XCTAssertEqual(career.stage, 3, "the campaign waits where it was")
+        _ = play(false)
+        XCTAssertEqual(career.lastRun?.cleared, 1)
+        XCTAssertEqual(career.bestEndless[Mode.bushido.rawValue], 1)
+        XCTAssertEqual(career.endless, Endless(start: 3), "the next run begins where this one did")
+        career.leaveEndless()
+        XCTAssertEqual(career.makeFight().stage, 3)
     }
 
     // MARK: Modes

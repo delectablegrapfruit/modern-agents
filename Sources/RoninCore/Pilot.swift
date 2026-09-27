@@ -60,7 +60,14 @@ public struct Pilot: Codable, Equatable, Sendable {
         func consider(_ side: Side, _ target: Fight.Target, _ urgency: Double) {
             if urgency < best?.urgency ?? .infinity { best = (side, target, urgency) }
         }
+        // A side whose nearest foe stands on guard is closed: a cut there would be turned aside.
+        var guarded: [Side: Double] = [:]
+        for side in Side.allCases {
+            let nearest = fight.foes.filter { $0.targetable && Side.of($0.x) == side }.min { $0.gap < $1.gap }
+            if let nearest, nearest.phase == .guarding { guarded[side] = nearest.gap }
+        }
         for foe in fight.foes where foe.targetable {
+            if guarded[Side.of(foe.x)] != nil { continue }
             // One cut at a time on a foe: one that survives it is knocked back or leaps, so the next is a new read.
             guard !queue.contains(where: { $0.target == .foe(foe.id) }) else { continue }
             let contactGap = foe.contact - foe.kind.width / 2
@@ -75,6 +82,7 @@ public struct Pilot: Codable, Equatable, Sendable {
             consider(Side.of(foe.x), .foe(foe.id), urgency)
         }
         for arrow in fight.arrows where !arrow.deflected {
+            if let guardGap = guarded[arrow.side], abs(arrow.x) >= guardGap { continue }
             guard !queue.contains(where: { $0.target == .arrow(arrow.id) }) else { continue }
             let speed = abs(arrow.velocity)
             let at = abs(arrow.x) - speed * reaction

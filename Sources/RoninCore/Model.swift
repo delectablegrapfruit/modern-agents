@@ -29,6 +29,8 @@ public enum Tuning {
     public static let heroHP = 5
     /// The first foe waits for the stage's title card to clear.
     public static let firstSpawn = 1.5
+    /// A cut the warlord parries leaves the ronin open this long.
+    public static let parried = 0.3
 }
 
 public enum Side: Int, Codable, Sendable, CaseIterable {
@@ -70,7 +72,7 @@ public enum Kind: String, Codable, Sendable, CaseIterable {
         case .grunt, .runner, .archer: return 1
         case .dancer: return 2
         case .brute: return 3
-        case .warlord: return 7
+        case .warlord: return 10
         }
     }
 
@@ -142,6 +144,8 @@ public struct Foe: Codable, Equatable, Sendable {
         case aiming
         /// Cut down: gone at the end of the step.
         case dying
+        /// The warlord with his blade across his body: a cut now is parried, and he answers it.
+        case guarding
     }
 
     public var id: Int
@@ -159,6 +163,13 @@ public struct Foe: Codable, Equatable, Sendable {
     public var leapFrom = 0.0
     public var leapTo = 0.0
     public var hits = 0
+    /// Carries the stage's one gourd of medicine: cut him down and the ronin gets a heart back.
+    public var bearer = false
+    /// The warlord: seconds before he may raise his guard again, whether his next blow follows straight on from
+    /// the last, and how many times he has called for help.
+    public var guardRest = 0.0
+    public var chained = false
+    public var summons = 0
 
     public init(id: Int, kind: Kind, x: Double, hp: Int, speed: Double, windup: Double) {
         self.id = id

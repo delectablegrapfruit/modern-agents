@@ -29,8 +29,15 @@ public struct Difficulty: Codable, Equatable, Sendable {
         boss = self.stage % 5 == 0
     }
 
-    /// The warlord's cuts: 7 at stage 5, two more every boss after, at most 15.
-    public var warlordHP: Int { min(15, Kind.warlord.baseHP + 2 * (stage / 5 - 1)) }
+    /// The warlord's cuts: 10 at stage 5, three more every boss after, at most 22.
+    public var warlordHP: Int { min(22, Kind.warlord.baseHP + 3 * max(0, stage / 5 - 1)) }
+
+    /// Which of the roster carries the stage's gourd: a spearman or a runner, never one of the first few.
+    public func bearer(in roster: [Kind], rng: inout SeededRNG) -> Int? {
+        let candidates = roster.indices.filter { $0 >= 4 && (roster[$0] == .grunt || roster[$0] == .runner) }
+        guard !candidates.isEmpty else { return nil }
+        return candidates[rng.int(0...(candidates.count - 1))]
+    }
 
     /// Blade dancers take a third cut from stage 12.
     public var dancerHP: Int { stage >= 12 ? 3 : 2 }

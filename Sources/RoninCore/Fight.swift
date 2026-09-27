@@ -16,6 +16,8 @@ public struct FightStats: Codable, Equatable, Sendable {
     public var wounds = 0
     public var damage = 0
     public var bestCombo = 0
+    /// Cuts the warlord turned aside.
+    public var parried = 0
 
     public init() {}
 }
@@ -40,6 +42,14 @@ public enum FightEvent: Equatable, Sendable {
     case bloodlust(Bool)
     /// Every 25th link of a combo.
     case milestone(Int)
+    /// The gourd-bearer fell: a heart back (`restored`), or points if none was missing.
+    case healed(foe: Int, restored: Bool)
+    /// The ronin was wounded with the gourd-bearer on the lane: the gourd is spilled, the chance gone.
+    case spilled(foe: Int)
+    /// The warlord raised his guard, turned a cut aside, or called for help.
+    case guarded(foe: Int)
+    case parried(Side, foe: Int)
+    case summoned(foe: Int, allies: [Int])
     case ended(Outcome)
 }
 
@@ -85,15 +95,22 @@ public struct Fight: Codable, Equatable, Sendable {
     public var stats = FightStats()
     public var outcome: Outcome?
     public var bossID: Int?
+    /// Which of the roster carries the gourd, and whether its chance is spent (drunk or spilled).
+    public var bearerIndex: Int?
+    public var healed = false
     /// Plays the fight when set (the self-test and the balance runs).
     public var pilot: Pilot?
     var accumulator = 0.0
 
-    public init(stage: Int, seed: UInt64, mode: Mode = .bushido) {
+    /// A stage, entered with `hearts` (full when nil: hearts carry from stage to stage).
+    public init(stage: Int, seed: UInt64, mode: Mode = .bushido, hearts: Int? = nil) {
         let difficulty = Difficulty(stage: stage, mode: mode)
         var rng = SeededRNG(seed: seed)
         let roster = difficulty.roster(rng: &rng)
+        let bearer = difficulty.bearer(in: roster, rng: &rng)
         self.init(stage: stage, seed: seed, mode: mode, roster: roster, rng: rng)
+        bearerIndex = bearer
+        if let hearts { hp = max(1, min(maxHP, hearts)) }
     }
 
     /// A fight with a given roster (tests use it to stage a situation).
@@ -185,6 +202,17 @@ public struct Fight: Codable, Equatable, Sendable {
             score += points(50 * multiplier)
             events.append(.deflected(side, arrow: id))
             raiseCombo(&events)
+        case .foe(let id)? where foes.first(where: { $0.id == id })?.phase == .guarding:
+            // Turned aside: the ronin is thrown off balance and the warlord answers.
+            guard let i = foes.firstIndex(where: { $0.id == id }) else { return }
+            stumble = Tuning.parried * mode.stumble
+            stats.parried += 1
+            breakCombo(&events)
+            events.append(.parried(side, foe: id))
+            let riposte = foes[i].distance <= foes[i].contact + 0.06
+            foes[i].enter(riposte ? .windup : .advancing, for: riposte ? foes[i].windup * 0.45 : 0)
+            foes[i].guardRest = rng.range(0.9, 1.6)
+            if riposte { events.append(.raised(foe: id)) }
         case .foe(let id)?:
             guard let i = foes.firstIndex(where: { $0.id == id }) else { return }
             cooldown = Tuning.cooldown
@@ -285,8 +313,9 @@ public struct Fight: Codable, Equatable, Sendable {
         case .dancer: hp = difficulty.dancerHP
         default: hp = kind.baseHP
         }
-        let foe = Foe(id: nextID, kind: kind, x: side.sign * Tuning.edge, hp: hp,
+        var foe = Foe(id: nextID, kind: kind, x: side.sign * Tuning.edge, hp: hp,
                       speed: kind.speed * difficulty.pace * rng.range(0.92, 1.08), windup: kind.windup * difficulty.windup)
+        foe.bearer = arrived == bearerIndex
         nextID += 1
         foes.append(foe)
         arrived += 1
@@ -327,9 +356,20 @@ public struct Fight: Codable, Equatable, Sendable {
                 if f.distance < stop - 0.002, f.phase != .windup {
                     f.x = side.sign * min(stop, f.distance + 0.6 * h)
                 }
+                let boss = f.kind == .warlord
+                // A wounded warlord comes faster and strikes sooner.
+                let fury = boss ? 1 - Double(f.hp) / Double(max(1, f.maxHP)) : 0
+                if boss, f.guardRest > 0 { f.guardRest -= h }
                 switch f.phase {
                 case .advancing:
-                    if f.distance > stop { f.x = side.sign * max(stop, f.distance - f.speed * h) }
+                    let pace = f.speed * (1 + 0.5 * fury)
+                    if f.distance > stop { f.x = side.sign * max(stop, f.distance - pace * h) }
+                    // Close to the ronin, the warlord raises his guard and walks in behind it.
+                    if boss, f.guardRest <= 0, f.gap < reach + 0.16, rng.chance(1.6 * h) {
+                        f.enter(.guarding, for: rng.range(0.55, 0.95))
+                        events.append(.guarded(foe: f.id))
+                        break
+                    }
                     if f.distance <= stop + 0.0005 {
                         if f.kind == .archer {
                             if f.distance < 0.97 {
@@ -337,16 +377,32 @@ public struct Fight: Codable, Equatable, Sendable {
                                 events.append(.raised(foe: f.id))
                             }
                         } else if f.distance <= f.contact + 0.0005 {
-                            f.enter(.windup, for: f.windup)
+                            f.enter(.windup, for: f.windup * (1 - 0.45 * fury))
                             events.append(.raised(foe: f.id))
                         }
+                    }
+                case .guarding:
+                    f.timer -= h
+                    if f.distance > stop { f.x = side.sign * max(stop, f.distance - f.speed * 0.35 * h) }
+                    if f.timer <= 0 {
+                        f.phase = .advancing
+                        f.span = 0
+                        f.guardRest = rng.range(0.8, 1.6) * (1 - 0.4 * fury)
                     }
                 case .windup:
                     f.timer -= h
                     if f.timer <= 0 {
                         hurt(f.kind.damage, by: f.id, &events)
-                        f.x = side.sign * (f.distance + 0.05)
-                        f.enter(.recoil, for: 0.45)
+                        if boss, !f.chained, rng.chance(0.5) {
+                            // Renzoku-waza: a second blow straight on from the first.
+                            f.chained = true
+                            f.enter(.windup, for: f.windup * 0.5)
+                            events.append(.raised(foe: f.id))
+                        } else {
+                            f.chained = false
+                            f.x = side.sign * (f.distance + 0.05)
+                            f.enter(.recoil, for: 0.45)
+                        }
                     }
                 case .aiming:
                     f.timer -= h
@@ -360,9 +416,14 @@ public struct Fight: Codable, Equatable, Sendable {
                 case .recoil:
                     f.timer -= h
                     if f.timer <= 0 {
-                        f.phase = .advancing
-                        f.timer = 0
-                        f.span = 0
+                        if boss, f.guardRest <= 0, rng.chance(0.35) {
+                            f.enter(.guarding, for: rng.range(0.5, 0.85))
+                            events.append(.guarded(foe: f.id))
+                        } else {
+                            f.phase = .advancing
+                            f.timer = 0
+                            f.span = 0
+                        }
                     }
                 case .leaping, .dying:
                     break
@@ -422,7 +483,32 @@ public struct Fight: Codable, Equatable, Sendable {
             defeated += 1
             stats.kills += 1
             raiseCombo(&events)
+            if foes[i].bearer, !healed {
+                healed = true
+                let restored = hp < maxHP
+                if restored { hp += 1 } else { score += points(500) }
+                events.append(.healed(foe: foes[i].id, restored: restored))
+            }
             return true
+        }
+        if foes[i].kind == .warlord {
+            // At two thirds and at one third, he calls for help: a man on each side.
+            let thresholds = [foes[i].maxHP * 2 / 3, foes[i].maxHP / 3]
+            if foes[i].summons < thresholds.count, foes[i].hp <= thresholds[foes[i].summons] {
+                foes[i].summons += 1
+                var allies: [Int] = []
+                for (k, side) in Side.allCases.enumerated() {
+                    let kind: Kind = stage >= 10 && k == 1 ? .runner : .grunt
+                    roster.append(kind)
+                    arrived += 1
+                    let ally = Foe(id: nextID, kind: kind, x: side.sign * Tuning.edge, hp: kind.baseHP,
+                                   speed: kind.speed * difficulty.pace, windup: kind.windup * difficulty.windup)
+                    nextID += 1
+                    foes.append(ally)
+                    allies.append(ally.id)
+                }
+                events.append(.summoned(foe: foes[i].id, allies: allies))
+            }
         }
         let leaps: Bool
         switch foes[i].kind {
@@ -454,6 +540,11 @@ public struct Fight: Codable, Equatable, Sendable {
         stats.damage += damage
         breakCombo(&events)
         events.append(.wounded(foe: foe, damage: damage))
+        if !healed, let i = foes.firstIndex(where: { $0.bearer && $0.alive }) {
+            healed = true
+            foes[i].bearer = false
+            events.append(.spilled(foe: foes[i].id))
+        }
     }
 
     private mutating func raiseCombo(_ events: inout [FightEvent]) {

@@ -5,6 +5,7 @@ import RoninCore
 //
 //   ronin-sim [--stages 1-20] [--seeds 12] [--mode bushido|shoshin|shura|oni|all] [--reaction 0.22] [--rate 7]
 //             [--slips 0.02] [--perfect] [--check]
+//   ronin-sim --campaign [--seeds 12] [--mode all]     runs from stage 1, hearts carried, until the ronin falls
 //   ronin-sim --trace <stage>     one fight, second by second
 //
 // The default pilot is human-like: it sees, decides, and its cut lands `reaction` seconds later, at most `rate` a
@@ -20,6 +21,7 @@ var slips = 0.02
 var perfect = false
 var check = false
 var trace: Int?
+var campaign = false
 var modes: [Mode] = [.bushido]
 
 var arguments = CommandLine.arguments.dropFirst().makeIterator()
@@ -41,6 +43,7 @@ while let argument = arguments.next() {
     case "--perfect": perfect = true
     case "--check": check = true
     case "--trace": trace = Int(arguments.next() ?? "")
+    case "--campaign": campaign = true
     default:
         print("unknown argument \(argument)")
         exit(2)
@@ -53,8 +56,8 @@ func pilot(_ seed: Int) -> Pilot {
 
 func clock(_ t: Double) -> String { String(format: "%6.2f", t) }
 
-func play(stage: Int, seed: Int, mode: Mode, log: Bool = false) -> Fight {
-    var fight = Fight(stage: stage, seed: mixSeed(0xC0FFEE, UInt64(stage), UInt64(seed)), mode: mode)
+func play(stage: Int, seed: Int, mode: Mode, hearts: Int? = nil, log: Bool = false) -> Fight {
+    var fight = Fight(stage: stage, seed: mixSeed(0xC0FFEE, UInt64(stage), UInt64(seed)), mode: mode, hearts: hearts)
     fight.pilot = pilot(seed)
     var next = 1.0
     while fight.outcome == nil, fight.time < 600 {
@@ -89,6 +92,31 @@ if let stage = trace {
 }
 
 print(perfect ? "perfect pilot" : "pilot: reaction \(reaction)s, \(rate) cuts/s, slips \(slips)")
+
+if campaign {
+    // How far a run gets from stage 1 with hearts carried and one gourd a stage.
+    print("mode       hearts  reached (median, mean, best)   minutes  heals")
+    for mode in Mode.allCases where modes.contains(mode) {
+        var reached: [Int] = [], minutes = 0.0, heals = 0
+        for seed in 0..<seeds {
+            var stage = 1, hearts: Int? = nil
+            while stage <= 40 {
+                let fight = play(stage: stage, seed: seed * 101 + stage, mode: mode, hearts: hearts)
+                minutes += fight.time / 60
+                if fight.healed { heals += 1 }
+                guard fight.outcome == .victory else { break }
+                hearts = fight.hp
+                stage += 1
+            }
+            reached.append(stage)
+        }
+        reached.sort()
+        let n = Double(seeds)
+        let mean = Double(reached.reduce(0, +)) / n
+        print(mode.title.padding(toLength: 10, withPad: " ", startingAt: 0) + String(format: " %6d  %7d %6.1f %6d            %7.1f  %5.1f", mode.hearts, reached[reached.count / 2], mean, reached.last ?? 0, minutes / n, Double(heals) / n))
+    }
+    exit(0)
+}
 var failures: [String] = []
 for mode in modes {
     print("\n\(mode.title) (\(mode.gist)): \(mode.hearts) hearts")
