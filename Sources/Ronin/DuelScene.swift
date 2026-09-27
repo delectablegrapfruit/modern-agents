@@ -944,7 +944,8 @@ final class DuelScene: SKScene {
         zoomFocus = point
     }
 
-    /// Blood thrown against the glass: blots that run and fade. `side` keeps them to that half.
+    /// Blood thrown against the glass: blots that run and fade. `side` keeps them to that half. Over the whole fight,
+    /// but under the combo and the warning markers: blood on the glass never hides a blow coming.
     private func splatter(_ count: Int, side: Side? = nil) {
         for _ in 0..<count {
             let splat = SKSpriteNode(texture: Art.splats.randomElement())
@@ -962,6 +963,8 @@ final class DuelScene: SKScene {
             splat.colorBlendFactor = 1
             splat.alpha = 0.88
             splat.setScale(0.55)
+            // (Overlay 60 - 12.5 = 47.5: over the impact lines, under the combo's haze at 48.)
+            splat.zPosition = -12.5
             overlay.addChild(splat)
             splat.run(.sequence([
                 .scale(to: 1, duration: 0.05),
