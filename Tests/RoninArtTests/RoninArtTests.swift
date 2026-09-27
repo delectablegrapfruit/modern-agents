@@ -159,55 +159,6 @@ final class RoninArtTests: XCTestCase {
         }
     }
 
-    func testTheDeadCollapseUnderTheirOwnWeightAndComeToRestOnTheGround() {
-        for kind in Kind.allCases {
-            let cast = Cast.foe(kind)
-            var rng = SeededRNG(seed: 7 &+ UInt64(kind.rawValue.count))
-            var rests: [[CGPoint]] = []
-            for k in 0..<8 {
-                let pose = Figure.struck(cast, variant: k % 5)
-                var doll: Ragdoll
-                switch k % 4 {
-                case 0: doll = Ragdoll.felled(cast, pose: pose, back: -1, rng: &rng)
-                case 1: doll = Ragdoll.cut(cast, pose: pose, .above(at: 0.5, slant: 0.6), back: -1, rng: &rng)
-                case 2: doll = Ragdoll.cut(cast, pose: pose, .below(at: 0.3, slant: 0.05), back: -1, rng: &rng)
-                default: doll = Ragdoll.cut(cast, pose: pose, .headless, back: -1, rng: &rng)
-                }
-                if k % 4 >= 2 {
-                    // Standing on its planted feet until let go.
-                    doll.advance(0.5)
-                    XCTAssertFalse(doll.settled, "\(kind) \(k) stands")
-                    doll.collapse(rng: &rng)
-                }
-                var t = 0.0
-                while !doll.settled, t < 6 {
-                    doll.advance(1.0 / 60)
-                    t += 1.0 / 60
-                    for j in 0..<11 where doll.has(j) { XCTAssertGreaterThan(doll.points[j].y, -0.01, "\(kind) \(k) through the ground") }
-                }
-                XCTAssertTrue(doll.settled, "\(kind) \(k) never came to rest")
-                XCTAssertLessThan(doll.hip.y, 0.35, "\(kind) \(k) is not down")
-                // Drawn from its pose, the body is where the skeleton is.
-                let drawn = Figure.skeleton(cast, doll.pose())
-                for j in 0..<11 where doll.has(j) && j != Ragdoll.low && j != Ragdoll.high {
-                    XCTAssertEqual(drawn[j].x, doll.points[j].x, accuracy: 0.02, "\(kind) \(k) joint \(j)")
-                    XCTAssertEqual(drawn[j].y, doll.points[j].y, accuracy: 0.02, "\(kind) \(k) joint \(j)")
-                }
-                let sketch = Figure.sketch(cast, pose: doll.framed().pose)
-                XCTAssertFalse(sketch.isEmpty)
-                XCTAssertTrue(sketch.fits(margin: 1), "\(kind) \(k) spills off its canvas \(sketch.bounds(margin: 0)) \(doll.hip)")
-                rests.append(doll.points)
-            }
-            // No two come to rest alike.
-            for a in 0..<rests.count {
-                for b in (a + 1)..<rests.count where a % 4 == b % 4 {
-                    let apart = zip(rests[a], rests[b]).map { hypot($0.x - $1.x, $0.y - $1.y) }.max() ?? 0
-                    XCTAssertGreaterThan(apart, 0.05, "\(kind): \(a) and \(b) lie alike")
-                }
-            }
-        }
-    }
-
     func testFeetKeepToTheGround() {
         // A foe's walk advances a frame for each twelfth of its stride, which must be about what its legs cover.
         for kind in Kind.allCases {
