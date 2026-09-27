@@ -403,7 +403,10 @@ final class DuelScene: SKScene {
             lines.append((Icons.gourd(15 * fs, Palette.jade.mix(.white, 0.25).color()), "CATCH HIM DARTING IN, TWICE — A HEART"))
         }
         let tall: CGFloat = (50 + 18 * CGFloat(lines.count)) * fs
-        card.addChild(Icons.band(CGSize(width: min(field.width, 340 * fs), height: tall)))
+        // (Under everything on it: the panel draws by depth alone.)
+        let plate = Icons.band(CGSize(width: min(field.width, 340 * fs), height: tall))
+        plate.zPosition = -0.1
+        card.addChild(plate)
         let top = tall / 2
         let title = Art.label(Art.headingFont, size: 23 * fs, color: .white)
         Art.track(title, "STAGE \(fight.stage)", 5 * fs)
@@ -1840,7 +1843,10 @@ final class DuelScene: SKScene {
         let color = won ? (fight.stats.damage == 0 ? Palette.gold : look.accent.mix(.white, 0.3)) : Palette.blood.mix(.white, 0.25)
         let node = SKNode()
         node.position = CGPoint(x: field.midX, y: field.midY)
+        // The shade over the lane, and the glow behind the word, under everything else on the card (the panel draws by
+        // depth alone).
         let dim = SKSpriteNode(color: SKColor(white: 0, alpha: 0.62), size: CGSize(width: size.width * 2, height: size.height * 2))
+        dim.zPosition = -0.2
         node.addChild(dim)
         let glow = SKSpriteNode(texture: Art.glow)
         glow.size = CGSize(width: field.width * 1.1, height: 80 * fs)
@@ -1849,6 +1855,7 @@ final class DuelScene: SKScene {
         glow.blendMode = .add
         glow.alpha = 0.35
         glow.position = CGPoint(x: 0, y: 26 * fs)
+        glow.zPosition = -0.1
         node.addChild(glow)
         let title = Art.label(Art.headingFont, size: 24 * fs, color: color.color())
         Art.track(title, won ? (fight.stats.damage == 0 ? "FLAWLESS" : "CLEARED") : "FALLEN", 7 * fs)
