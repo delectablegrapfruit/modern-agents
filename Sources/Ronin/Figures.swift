@@ -40,6 +40,7 @@ extension Paint {
 
 extension Sketch {
     /// Renders the sketch: the figure as one layer with its rim of light, then the overlay.
+    @MainActor
     func image() -> CGImage? {
         guard let ctx = Art.bitmap(width, height) else { return nil }
         ctx.setShouldAntialias(true)
