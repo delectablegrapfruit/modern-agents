@@ -1,0 +1,33 @@
+name: Memaze
+
+on:
+  push:
+    paths: ["memaze/**", ".github/workflows/memaze.yml"]
+  pull_request:
+    paths: ["memaze/**", ".github/workflows/memaze.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Maze generator, server and autopilot
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Generator (200 mazes + endless chunks)
+        run: node memaze/tests/gen.test.js
+      - name: serve.py answers and serves the game
+        run: |
+          python3 memaze/serve.py --no-open --port 8765 &
+          for i in $(seq 1 20); do curl -fsS localhost:8765/api/ping && break; sleep 0.5; done
+          curl -fsS localhost:8765/api/media
+          curl -fsS -o /dev/null localhost:8765/
+          curl -fsS -o /dev/null localhost:8765/js/game.js
+      - name: Autopilot plays levels 1–16 with the real physics
+        run: |
+          cd memaze && npm init -y >/dev/null && npm i --no-save playwright@1 && npx playwright install --with-deps chromium
+          node tests/autopilot.js 1-16 --strict

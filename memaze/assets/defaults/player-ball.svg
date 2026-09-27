@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Memaze default player: glossy capsule ball with a critter inside.
+       Ball fills ~92% of the box (r=118 incl. outline). Idle: blink every 3.5s, shine shimmer. -->
+  <defs>
+    <radialGradient id="b-glass" cx=".4" cy=".34" r=".72">
+      <stop offset="0" stop-color="#effdff" stop-opacity=".92"/>
+      <stop offset=".45" stop-color="#8fe0ff" stop-opacity=".72"/>
+      <stop offset=".85" stop-color="#3a8dff" stop-opacity=".8"/>
+      <stop offset="1" stop-color="#2757d6" stop-opacity=".92"/>
+    </radialGradient>
+    <radialGradient id="b-rim" cx=".5" cy=".5" r=".5">
+      <stop offset=".72" stop-color="#1b4fd0" stop-opacity="0"/>
+      <stop offset=".93" stop-color="#1b4fd0" stop-opacity=".3"/>
+      <stop offset="1" stop-color="#142f86" stop-opacity=".55"/>
+    </radialGradient>
+    <radialGradient id="b-fur" cx=".38" cy=".3" r=".8">
+      <stop offset="0" stop-color="#fff0a8"/>
+      <stop offset=".55" stop-color="#ffc93d"/>
+      <stop offset="1" stop-color="#f59a1b"/>
+    </radialGradient>
+    <linearGradient id="b-hl" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity=".95"/>
+      <stop offset="1" stop-color="#fff" stop-opacity=".15"/>
+    </linearGradient>
+    <clipPath id="b-clip"><circle r="108"/></clipPath>
+  </defs>
+  <g transform="translate(128 128)">
+    <circle r="113" fill="url(#b-glass)"/>
+    <path d="M-111,14Q0,78 111,14" fill="none" stroke="#fff" stroke-opacity=".45" stroke-width="7"/>
+    <g><animateTransform attributeName="transform" type="translate" values="0 0;0 -3;0 0" dur="2.4s" calcMode="spline" keySplines=".45 0 .55 1;.45 0 .55 1" repeatCount="indefinite"/>
+      <g stroke="#1d1a3a" stroke-width="6">
+        <circle cx="-60" cy="-46" r="22" fill="#ffb938"/><circle cx="60" cy="-46" r="22" fill="#ffb938"/>
+      </g>
+      <circle cx="-60" cy="-46" r="11" fill="#ff9cc0"/><circle cx="60" cy="-46" r="11" fill="#ff9cc0"/>
+      <path d="M-6,-58C-12,-78 4,-90 16,-80C8,-80 4,-74 8,-64" fill="#ffb938" stroke="#1d1a3a" stroke-width="5" stroke-linejoin="round"/>
+      <circle cy="10" r="70" fill="url(#b-fur)" stroke="#1d1a3a" stroke-width="6"/>
+      <ellipse cy="40" rx="41" ry="27" fill="#fff3d1"/>
+      <g fill="#ff7fae" opacity=".8"><ellipse cx="-47" cy="28" rx="11" ry="7"/><ellipse cx="47" cy="28" rx="11" ry="7"/></g>
+      <g fill="#1d1a3a">
+        <ellipse cx="-25" cy="2" rx="11.5" ry="16"><animate attributeName="ry" values="16;16;1.8;16;16" keyTimes="0;.9;.93;.96;1" dur="3.5s" repeatCount="indefinite"/></ellipse>
+        <ellipse cx="25" cy="2" rx="11.5" ry="16"><animate attributeName="ry" values="16;16;1.8;16;16" keyTimes="0;.9;.93;.96;1" dur="3.5s" repeatCount="indefinite"/></ellipse>
+      </g>
+      <g fill="#fff"><animate attributeName="opacity" values="1;0;1" keyTimes="0;.905;.955" calcMode="discrete" dur="3.5s" repeatCount="indefinite"/>
+        <circle cx="-21" cy="-5" r="5"/><circle cx="29" cy="-5" r="5"/>
+        <circle cx="-28.5" cy="8" r="2.2"/><circle cx="21.5" cy="8" r="2.2"/>
+      </g>
+      <ellipse cy="28" rx="7" ry="4.5" fill="#1d1a3a"/>
+      <path d="M-13,41Q0,55 13,41" fill="none" stroke="#1d1a3a" stroke-width="5" stroke-linecap="round"/>
+    </g>
+    <circle r="113" fill="url(#b-rim)"/>
+    <ellipse cx="-42" cy="-62" rx="50" ry="25" transform="rotate(-32 -42 -62)" fill="url(#b-hl)"><animate attributeName="opacity" values="1;.72;1" dur="3s" repeatCount="indefinite"/></ellipse>
+    <circle cx="-86" cy="-14" r="7.5" fill="#fff" opacity=".85"/>
+    <path d="M58,86A104,104 0 0 0 98,34" fill="none" stroke="#fff" stroke-opacity=".55" stroke-width="8" stroke-linecap="round"/>
+    <g clip-path="url(#b-clip)">
+      <g opacity=".5">
+        <animateTransform attributeName="transform" type="translate" values="-230 0;230 0;230 0" keyTimes="0;.3;1" dur="4.5s" repeatCount="indefinite"/>
+        <path d="M-20,-130h30l-40,260h-30zM22,-130h10l-40,260h-10z" fill="#fff"/>
+      </g>
+    </g>
+    <circle r="113" fill="none" stroke="#1d1a3a" stroke-width="10"/>
+  </g>
+</svg>

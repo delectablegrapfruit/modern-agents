@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b0b14">
+<meta name="description" content="Memaze — a Super-Monkey-Ball-style maze game where the player, the win and lose animations and the background are your own pictures, GIFs and videos.">
+<title>Memaze</title>
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body data-state="boot">
+<div id="bg-layer">
+  <canvas id="bg"></canvas>
+  <div id="bg-media" hidden></div>
+</div>
+
+<div id="stage">
+  <div id="board">
+    <canvas id="maze"></canvas>
+    <div id="world-overlay"><div id="goal-media" hidden></div></div>
+  </div>
+  <div id="player" hidden><div id="player-media"></div></div>
+  <div id="joy" aria-hidden="true"><div class="ring"></div><div class="knob"></div></div>
+</div>
+
+<div id="hud" hidden>
+  <div class="hud-top">
+    <div class="hud-left"><div id="hud-label"></div><div id="hud-sub"></div></div>
+    <div class="hud-center"><div id="hud-time"></div><div id="hud-goals"></div></div>
+    <div class="hud-right">
+      <div><div id="hud-gems"></div><div id="hud-lives"></div></div>
+      <button id="btn-pause" aria-label="Pause">❚❚</button>
+    </div>
+  </div>
+  <div id="hud-banner"></div>
+  <div id="hud-hint"></div>
+  <canvas id="minimap" hidden></canvas>
+  <div id="fps"></div>
+</div>
+
+<div id="fx" hidden>
+  <div id="fx-media"></div>
+  <canvas id="fx-confetti"></canvas>
+  <div id="fx-skip">tap to skip</div>
+</div>
+
+<div id="screens"></div>
+<div id="dropzone" hidden><div>Drop to add to <b id="drop-slot">Player</b><small>Images, GIFs, videos · whole folders work too</small></div></div>
+<div id="modal" hidden></div>
+<div id="toasts"></div>
+<div id="loading">Loading…</div>
+
+<noscript><p style="color:#fff;font:16px system-ui;padding:2em">Memaze needs JavaScript.</p></noscript>
+
+<script src="js/util.js"></script>
+<script src="js/config.js"></script>
+<script src="js/gen.js"></script>
+<script src="js/world.js"></script>
+<script src="js/render.js"></script>
+<script src="js/background.js"></script>
+<script src="js/media.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/input.js"></script>
+<script src="js/game.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

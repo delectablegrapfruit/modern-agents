@@ -1,0 +1,7 @@
+# Your own media stays on your computer: ignore everything in here except
+# this file, README.txt and the .gitkeep files that keep the empty folders.
+*
+!*/
+!/.gitignore
+!/README.txt
+!.gitkeep
