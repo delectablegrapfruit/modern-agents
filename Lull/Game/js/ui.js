@@ -37,13 +37,24 @@
     settings: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M2 4h7M12 4h2M2 8h2M7 8h7M2 12h8M13 12h1"/><circle cx="10.5" cy="4" r="1.5"/><circle cx="5.5" cy="8" r="1.5"/><circle cx="11.5" cy="12" r="1.5"/></svg>',
     pin: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><rect x="3" y="2.5" width="10" height="7" rx="1.5"/><path d="M5.5 12.5h5M8 9.5v4"/></svg>',
     hide: '<svg viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 8.5h8"/></svg>',
+    sound: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6.2h2.2L8 3.5v9L4.7 9.8H2.5z"/><path d="M10.6 6a2.8 2.8 0 0 1 0 4M12.4 4.2a5.4 5.4 0 0 1 0 7.6"/></svg>',
+    muted: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6.2h2.2L8 3.5v9L4.7 9.8H2.5z"/><path d="M10.6 6a2.8 2.8 0 0 1 .5 2.6M2.5 2.5l11 11"/></svg>',
     close: '<svg viewBox="0 0 16 16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg>',
   };
 
   // ---- toasts and modals ----------------------------------------------------------------------------------------------
 
+  /** Plays a sound pack's sample; muted, it says why nothing is heard instead of leaving you wondering. */
+  function listen(app, id) {
+    if (app.settings.muted) toast('Muted — M or the speaker up top brings the sound back', null, 2400);
+    app.sound.preview(id);
+  }
+
   function toast(msg, kind, ms) {
     const box = document.getElementById('toasts');
+    // Above a board tab's bars (status, items, controls, puzzle actions), never over them.
+    const bar = document.querySelector('.view.active > .statusbar, .view.active > .puz-actions'), holder = box.offsetParent;
+    box.style.bottom = bar && holder ? Math.max(14, Math.round(holder.getBoundingClientRect().bottom - bar.getBoundingClientRect().top + 8)) + 'px' : '';
     const el = h('div', { class: 'toast ' + (kind || '') }, msg);
     box.appendChild(el);
     while (box.children.length > 3) box.removeChild(box.firstChild);
@@ -194,7 +205,7 @@
         const isSound = sub === 'sound';
         cards.push(h('div', { class: 'card' + (equipped ? ' equipped' : '') },
           isSound
-            ? h('button', { class: 'preview sound-preview', title: 'Play a sample', onclick: () => app.sound.preview(id) }, h('span', { class: 'big-icon' }, '►'), h('span', null, 'Listen'))
+            ? h('button', { class: 'preview sound-preview', title: 'Play a sample', onclick: () => listen(app, id) }, h('span', { class: 'big-icon' }, '►'), h('span', null, 'Listen'))
             : h('div', { class: 'preview' }, cosmeticPreview(app, sub, id, 150, 64)),
           h('h3', null, c.name),
           c.desc ? h('p', null, c.desc) : null,
@@ -232,11 +243,21 @@
       h('i', { style: { height: (100 * o.v / max).toFixed(1) + '%' } }), h('span', null, o.label))));
   }
 
-  /** The Achievements tab: every milestone, earned or not, the legendary ones set apart. */
+  /**
+   * The Achievements tab: every milestone, earned or not, the legendary ones set apart. Each group folds away (its
+   * header keeps the count), and a filter shows all of them, the ones still to do, or the earned ones.
+   */
   function renderAchievements(app) {
     const st = app.state, S = st.stats, A = L.Achievements, got = st.achievements || {};
+    const filter = app.achFilter || 'all', open = app.achOpen || (app.achOpen = {});
     const n = A.LIST.filter((a) => got[a.id]).length;
-    const els = [h('div', { class: 'kpis' }, kpi(n + ' / ' + A.LIST.length, 'Earned'), kpi(fmtInt(S.lines.achievements || 0) + ' ◆', 'Lines from them'), kpi(fmtInt(A.total()) + ' ◆', 'All of them pay'))];
+    const num = (v) => (v >= 10000 ? fmt(v).replace(/\.0+(?=\D)/, '') : fmtInt(v));
+    const seg = h('div', { class: 'seg' }, [['all', 'All ' + A.LIST.length], ['left', 'To do ' + (A.LIST.length - n)], ['got', 'Earned ' + n]].map(([k, label]) =>
+      h('button', { 'aria-pressed': String(filter === k), onclick: () => { app.achFilter = k; renderAchievements(app); } }, label)));
+    const els = [
+      h('div', { class: 'kpis three' }, kpi(n + ' / ' + A.LIST.length, 'Earned'), kpi(fmtInt(S.lines.achievements || 0) + ' ◆', 'Lines from them'), kpi(fmtInt(A.total()) + ' ◆', 'All of them pay')),
+      h('div', { class: 'ach-tools' }, seg),
+    ];
     const row = (a) => {
       const when = got[a.id], pr = !when && a.progress ? a.progress(st) : null;
       return h('div', { class: 'ach' + (when ? ' got' : '') + (a.tier === 'legend' ? ' legend' : '') },
@@ -244,15 +265,26 @@
         h('div', { class: 'grow' },
           h('div', { class: 't' }, a.name, a.tier === 'legend' ? h('span', { class: 'tier' }, 'Legendary') : null),
           h('div', { class: 'd' }, a.desc + (when ? ' · ' + new Date(when).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : '')),
-          pr ? h('div', { class: 'bar' }, h('i', { style: { width: (100 * Math.min(1, pr[0] / pr[1])).toFixed(1) + '%' } })) : null),
-        h('span', { class: 'ach-pay' }, (pr ? fmtInt(Math.min(pr[0], pr[1])) + '/' + fmtInt(pr[1]) + ' · ' : '') + '+' + fmtInt(a.pay) + ' ◆'));
+          pr ? h('div', { class: 'ach-prog' }, h('div', { class: 'bar' }, h('i', { style: { width: (100 * Math.min(1, pr[0] / pr[1])).toFixed(1) + '%' } })), h('span', null, num(Math.min(pr[0], pr[1])) + ' / ' + num(pr[1]))) : null),
+        h('span', { class: 'ach-pay' }, '+' + fmtInt(a.pay) + ' ◆'));
     };
+    const shown = (a) => filter === 'all' || (filter === 'got') === !!got[a.id];
     for (const g of A.GROUPS) {
-      const list = A.LIST.filter((a) => a.group === g.id);
-      els.push(h('h4', null, g.name));
-      els.push(h('div', { class: 'ach-list' }, list.filter((a) => a.tier !== 'legend').map(row)));
-      const leg = list.filter((a) => a.tier === 'legend');
-      if (leg.length) els.push(h('div', { class: 'ach-list legend-list' }, leg.map(row)));
+      // Easiest first, so each group reads upward in difficulty.
+      const list = A.LIST.filter((a) => a.group === g.id).sort((x, y) => x.pay - y.pay);
+      if (!list.length) continue;
+      const have = list.filter((a) => got[a.id]), paid = have.reduce((t, a) => t + a.pay, 0), all = list.reduce((t, a) => t + a.pay, 0);
+      const plain = list.filter((a) => a.tier !== 'legend' && shown(a)), leg = list.filter((a) => a.tier === 'legend' && shown(a));
+      els.push(h('details', { class: 'ach-group', 'data-group': g.id, open: !!open[g.id], ontoggle: (e) => { open[g.id] = e.currentTarget.open; } },
+        h('summary', null,
+          h('span', { class: 'chev' }, '›'),
+          h('b', null, g.name),
+          h('span', { class: 'ach-count' }, have.length + ' / ' + list.length),
+          h('div', { class: 'bar' }, h('i', { style: { width: (100 * have.length / list.length).toFixed(1) + '%' } })),
+          h('span', { class: 'ach-pay' }, num(paid) + ' / ' + num(all) + ' ◆')),
+        plain.length ? h('div', { class: 'ach-list' }, plain.map(row)) : null,
+        leg.length ? h('div', { class: 'ach-list legend-list' }, leg.map(row)) : null,
+        plain.length || leg.length ? null : h('p', { class: 'ach-none' }, filter === 'got' ? 'None earned here yet.' : 'Every one of these is yours.')));
     }
     document.getElementById('ach-body').replaceChildren(...els);
   }
@@ -273,10 +305,10 @@
         kpi(fmtInt(S.lines.earned), 'Lines earned, all time'),
         kpi(fmtInt(S.free.lines), 'Lines cleared in Free Play'),
         kpi(fmtInt(solvedAll), 'Puzzles solved'),
-        kpi(count(st.factory.stats.shipped), 'Factory minos shipped'),
+        kpi(count(st.factory.stats.minos), 'Factory minos made'),
         kpi(fmtDuration(S.timeMs.total), 'Time with Lull'),
         kpi(fmtInt(S.sessions), 'Sessions'),
-        kpi(Object.keys(st.history).length + '', 'Days played')));
+        kpi(fmtInt(S.days || 0), 'Days played')));
       els.push(h('h4', null, 'Lines earned, last 14 days'), historyChart(app, 'lines', 14));
       els.push(h('h4', null, 'Where lines came from'), hbars([['Free Play', S.lines.play], ['Puzzles', S.lines.puzzles], ['Factory', S.lines.contracts], ['Achievements', S.lines.achievements || 0]]));
       els.push(h('h4', null, 'Time by mode'), table([
@@ -324,20 +356,23 @@
       els.push(h('h4', null, 'Wildcards (solved / met)'), table(modRows));
       els.push(h('h4', null, 'Puzzles solved, last 14 days'), historyChart(app, 'puzzles', 14));
     } else if (sub === 'factory') {
-      const f = st.factory, fs = f.stats, r = Factory.rates(f);
-      const presses = Object.values(f.owned).reduce((a, b) => a + b, 0);
-      els.push(h('div', { class: 'kpis' },
-        kpi(fmt(r.perSec) + '¢', 'Per second'), kpi(fmt(f.lifetime) + '¢', 'Credits, all time'), kpi(fmtInt(presses), 'Presses'),
-        kpi(fmtInt(f.crates), 'Crates opened'), kpi(fmtInt(fs.lines), 'Lines from crates'), kpi(count(fs.shipped), 'Minos shipped')));
-      const lines = [];
-      for (let t = 1; t <= Factory.MAX_TIER; t++) if (f.owned[t]) lines.push([Factory.TIERS[t].name, Math.round(Factory.tierRate(f, t))]);
-      if (lines.length) els.push(h('h4', null, 'Income by press (¢/s)'), hbars(lines));
-      const pulled = fs.caught + fs.caughtAuto;
-      els.push(h('h4', null, 'Quality control'), table([
-        ['Defects pulled by hand', count(fs.caught)], ['Defects pulled by the inspector', count(fs.caughtAuto)],
-        ['Defects shipped (refunded)', count(fs.escaped)], ['Good minos binned', count(fs.wasted)], ['Catch rate', (pulled + fs.escaped) ? pct(pulled / (pulled + fs.escaped), 1) : '—'],
-        ['Best streak', fmtInt(f.bestStreak)], ['Earned while away', fmt(fs.offlineEarned) + '¢'], ['Time in the factory', fmtDuration(S.timeMs.factory)],
-      ]));
+      const f = st.factory, fs = f.stats;
+      els.push(h('div', { class: 'kpis three' },
+        kpi(Factory.quarters(Factory.perHour(f) / 4) + ' ◆', 'Lines per hour'), kpi(fmtInt(fs.lines), 'Lines collected'), kpi(count(fs.minos), 'Minos made'),
+        kpi(fmtInt(fs.pieces), 'Pieces'), kpi(fmtInt(fs.collects), 'Collects'), kpi(fmtInt(fs.best), 'Best single collect')));
+      els.push(h('h4', null, 'Minos by press'), hbars(Factory.MOLDS.map((n, k) => [String(n), (fs.byPress[k] || 0) * n]))); // byPress counts pieces
+      // Every shape of each size: the ones pressed in colour, the rest faint.
+      for (const n of [5, 6, 7]) {
+        const list = Factory.shapes(n), seen = fs.seen[n] || '';
+        els.push(h('h4', null, 'Shapes pressed · ' + Factory.NAMES[n].toLowerCase() + 'es ' + Factory.seenCount(f, n) + ' / ' + list.length),
+          h('div', { class: 'catalog sm' }, list.map((c, s) => { const cv = L.FactoryArt.shapeCanvas(look, c, 30, look.colors[1 + (s % 7)], seen[s] === '1'); cv.title = Factory.shapeName(n, s); return cv; })));
+      }
+      const rows = [
+        ['Days collected', fmtInt(fs.days)], ['Minos made while away', count(fs.away)], ['Time the line waited on a full bin', fmtDuration(fs.fullMs)],
+        ['Lines spent on the line', fmtInt(fs.spent)], ['Time watching', fmtDuration(S.timeMs.factory)],
+      ];
+      if (f.legacy) rows.push(['Before the rebuild', count(f.legacy.shipped) + ' minos shipped']);
+      els.push(h('h4', null, 'The line'), table(rows));
     } else {
       const bought = S.items.bought, used = S.items.used;
       els.push(h('div', { class: 'kpis' }, kpi(fmtInt(S.lines.spent), 'Lines spent'), kpi(fmtInt(S.cosmetics.bought), 'Cosmetics bought'),
@@ -360,7 +395,7 @@
     const row = (label, hint, control) => h('div', { class: 'set-row' }, h('div', { class: 'lbl' }, label, hint ? h('span', { class: 'hint' }, hint) : null), control);
     const card = (title, ...rows) => h('div', { class: 'set-card' }, title ? h('div', { class: 'set-card-title' }, title) : null, rows);
     const toggle = (k, onChange) => {
-      const b = h('button', { class: 'switch', role: 'switch', 'aria-checked': String(!!s[k]), onclick: () => { set(k, !s[k]); b.setAttribute('aria-checked', String(!!s[k])); if (onChange) onChange(); } });
+      const b = h('button', { class: 'switch', role: 'switch', 'data-setting': k, 'aria-checked': String(!!s[k]), onclick: () => { set(k, !s[k]); b.setAttribute('aria-checked', String(!!s[k])); if (onChange) onChange(); } });
       return b;
     };
     const range = (k, min, max, step, unit, scale) => {
@@ -415,19 +450,20 @@
             row('Mouse control', 'Point to aim · click to place · right-click to turn clockwise · wheel to lower', toggle('mouse'))),
           card('Board', row('Next pieces shown', null, range('preview', 1, 6, 1, ''))),
           card('Puzzles',
-            row('Counter-clockwise puzzles', 'Off: every puzzle solves with clockwise turns only (Up or right-click). On: new puzzles need Z (counter-clockwise) or A (half turn) somewhere', toggle('ccwPuzzles', () => { const pm = app.modes.puzzle; if (pm && pm.puzzle && !pm.done) pm.loadNumbered(pm.ps.diff); }))),
+            row('Counter-clockwise puzzles', 'Off: every puzzle solves with one turn button, Up or right-click (clockwise; counter-clockwise under Inverted Controls). On: new puzzles need the other turn (Z) or a half turn (A) somewhere', toggle('ccwPuzzles', () => { const pm = app.modes.puzzle; if (pm && pm.puzzle && !pm.done) pm.loadNumbered(pm.ps.diff); else if (pm && pm.puzzle) pm.renderNav(); }))),
         ],
       },
       sound: {
         icon: '♪', label: 'Sound',
         body: () => [card(null,
+          row('Mute', 'Silences everything at once and leaves the settings below as they are. Also M, or the speaker up top', toggle('muted')),
           row('Sound effects', null, toggle('sound')),
           row('Volume', null, range('volume', 0, 100, 1, '%', 100)),
-          row('Classic music', 'Korobeiniki, remixed soft and bright, while a Classic game runs', toggle('music', () => app.modes.classic && app.modes.classic.renderControls())),
+          row('Classic music', 'Korobeiniki, slowed and dreamy, while a Classic game runs', toggle('music', () => app.modes.classic && app.modes.classic.renderControls())),
           row('Classic announcer', 'The Tetris Worlds announcer calls singles, doubles, triples, tetrises and T-spins', toggle('announcer')),
           row('Music volume', null, range('musicVolume', 0, 60, 1, '%', 100)),
           row('Announcer volume', null, range('announcerVolume', 0, 100, 1, '%', 100)),
-          row('Sound pack', (L.SOUNDS[app.state.equipped.sound] || L.SOUNDS.soft).name + ' — more in the Shop', h('button', { class: 'btn sm', onclick: () => app.sound.preview(app.state.equipped.sound) }, '► Listen')))],
+          row('Sound pack', (L.SOUNDS[app.state.equipped.sound] || L.SOUNDS.soft).name + ' — more in the Shop', h('button', { class: 'btn sm', onclick: () => listen(app, app.state.equipped.sound) }, '► Listen')))],
       },
       keys: {
         icon: '⌘', label: 'Keys',

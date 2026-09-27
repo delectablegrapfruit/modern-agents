@@ -58,7 +58,7 @@
     candy:    { name: 'Candy', price: 600, colors: ['#000', '#7ee8fa', '#fdfd96', '#ff9cee', '#b5ff9c', '#ff6b9d', '#9cb4ff', '#ffc09c', '#8a7f9c', '#ff85c0', '#c7ff85', '#85ffe0', '#c485ff', '#ffa585', '#d0c3e0', '#fff'] },
     handheld: { name: 'Handheld', price: 750, colors: ['#000', '#9bbc0f', '#8bac0f', '#306230', '#8bac0f', '#306230', '#0f380f', '#9bbc0f', '#0f380f', '#8bac0f', '#306230', '#9bbc0f', '#306230', '#8bac0f', '#0f380f', '#cadc9f'] },
     vapor:    { name: 'Vapor', price: 900, colors: ['#000', '#01cdfe', '#fffb96', '#b967ff', '#05ffa1', '#ff71ce', '#7b8cff', '#ffb3fd', '#50456b', '#ff9ff3', '#a3fff0', '#6effd6', '#c89bff', '#ffa3c7', '#9f95c9', '#fdf6ff'] },
-    assembly: { name: 'Assembly Line', price: 0, reward: 'Own a tetromino press in the factory', colors: ['#000', '#f2c14e', '#f78154', '#4d9078', '#b4436c', '#5fad56', '#2e86ab', '#f2a541', '#3d4451', '#e0a458', '#8bb174', '#5b8e7d', '#a1869e', '#d1495b', '#8d99ae', '#edf2f4'] },
+    assembly: { name: 'Assembly Line', price: 0, reward: 'Build a second press in the factory', colors: ['#000', '#f2c14e', '#f78154', '#4d9078', '#b4436c', '#5fad56', '#2e86ab', '#f2a541', '#3d4451', '#e0a458', '#8bb174', '#5b8e7d', '#a1869e', '#d1495b', '#8d99ae', '#edf2f4'] },
     gold:     { name: 'Gold Leaf', price: 2500, colors: ['#000', '#f9e79f', '#f4d03f', '#d4ac0d', '#f7dc6f', '#b7950b', '#e9c46a', '#fcf3cf', '#5a4a1f', '#f5cba7', '#e59866', '#dc7633', '#f0b27a', '#ca6f1e', '#b9a37a', '#fffaf0'] },
     prism:    { name: 'Prism', price: 4000, animated: true, colors: null },
   };
@@ -75,7 +75,7 @@
     brick:   { name: 'Brick', price: 900 },
     gem:     { name: 'Gem', price: 1200 },
     jelly:   { name: 'Jelly', price: 1500 },
-    steel:   { name: 'Steel', price: 0, reward: 'Own 100 presses in the factory' },
+    steel:   { name: 'Steel', price: 0, reward: 'Build all four factory presses' },
   };
 
   const FRAMES = {
@@ -86,7 +86,7 @@
     glow:     { name: 'Glow', price: 500 },
     brass:    { name: 'Brass', price: 1000 },
     rainbow:  { name: 'Rainbow', price: 1500, animated: true },
-    hazard:   { name: 'Hazard Tape', price: 0, reward: 'Own a hexomino press in the factory' },
+    hazard:   { name: 'Hazard Tape', price: 0, reward: 'Build a third press in the factory' },
   };
 
   const BACKDROPS = {
@@ -97,7 +97,7 @@
     blueprint: { name: 'Blueprint', price: 400 },
     dusk:      { name: 'Dusk', price: 600 },
     stars:     { name: 'Starfield', price: 800 },
-    belt:      { name: 'Conveyor', price: 0, reward: 'Pull 150 defects off the belt by hand' },
+    belt:      { name: 'Conveyor', price: 0, reward: 'Collect 500 lines from the factory' },
   };
 
   const EFFECTS = {
@@ -106,7 +106,7 @@
     ripple:   { name: 'Ripple', price: 700 },
     shatter:  { name: 'Shatter', price: 900 },
     confetti: { name: 'Confetti', price: 1200 },
-    sparks:   { name: 'Welding Sparks', price: 0, reward: 'Open 25 factory crates' },
+    sparks:   { name: 'Welding Sparks', price: 0, reward: 'Build the tallest factory bin' },
   };
 
   const GHOSTS = {
@@ -119,7 +119,7 @@
 
   // Sound packs (the synth voices live in audio.js).
   const SOUNDS = {
-    soft:       { name: 'Drift', price: 0, desc: 'Airy bells and soft thuds in a big, calm room.' },
+    soft:       { name: 'Drift', price: 0, desc: 'Glassy tones, droplets and airy chords, in the music\'s key.' },
     typewriter: { name: 'Typewriter', price: 300, desc: 'Keys and clacks; every clear zips the carriage back and rings the bell.' },
     chip:       { name: 'Chiptune', price: 400, desc: 'An old handheld: a coin for every line, a power-up for four.' },
     bubbles:    { name: 'Bubbles', price: 450, desc: 'Everything goes bloop; clears fizz up like soda.' },
@@ -151,6 +151,7 @@
         bg: 'glass', tint: 0.78, accent: ACCENTS[0], theme: 'dark', onTop: true,
         sound: true, volume: 0.35, das: 230, arr: 55, lowerRepeat: 70, mouse: true, preview: 5,
         motion: 'full', showKeys: true, music: true, musicVolume: 0.25, announcer: true, announcerVolume: 0.4, ccwPuzzles: false,
+        muted: false, // the top bar's mute (M): over everything, separate from the toggles and volumes above
       },
       tab: 'play',
       free: null,
@@ -158,11 +159,12 @@
       puzzle: { diff: 'E', next: { E: 1, M: 1, H: 1 }, current: null, solved: {}, history: [], saved: [] },
       factory: Factory.create(),
       stats: {
-        sessions: 0, timeMs: { play: 0, classic: 0, puzzle: 0, factory: 0, total: 0 },
+        sessions: 0, days: 0, timeMs: { play: 0, classic: 0, puzzle: 0, factory: 0, total: 0 },
         classic: { games: 0, best: 0, bestLevel: 0, bestLines: 0, lines: 0, pieces: 0 },
         lines: { earned: 0, spent: 0, play: 0, puzzles: 0, contracts: 0, achievements: 0, refunded: 0 },
         free: { boardLog: [], boards: 1, pieces: 0, lines: 0, score: 0, bestScore: 0, bestLines: 0, clears: [0, 0, 0, 0, 0, 0], tspins: 0, tspinLines: 0, perfect: 0, maxCombo: 0, maxB2B: 0, holds: 0, rotations: 0, moves: 0, lowers: 0, drops: 0, byType: {}, topouts: 0 },
-        puzzle: { E: freshPuzzleDiff(), M: freshPuzzleDiff(), H: freshPuzzleDiff(), mods: {}, daily: 0, lastDaily: null },
+        // firstRun: first-try solves in a row; dailyRun: Dailies solved on consecutive dates (runDay is the last one).
+        puzzle: { E: freshPuzzleDiff(), M: freshPuzzleDiff(), H: freshPuzzleDiff(), mods: {}, daily: 0, lastDaily: null, firstRun: 0, bestFirstRun: 0, dailyRun: 0, bestDailyRun: 0, runDay: null },
         items: { bought: {}, used: {} },
         cosmetics: { bought: 0, spent: 0 },
       },
@@ -197,8 +199,18 @@
       if (free && !st.owned[k].includes(free)) st.owned[k].push(free);
       if (!COSMETICS[k][st.equipped[k]] || !st.owned[k].includes(st.equipped[k])) st.equipped[k] = free;
     }
+    st.settings.muted = st.settings.muted === true;
     if (!Array.isArray(st.puzzle.history)) st.puzzle.history = [];
     if (!Array.isArray(st.puzzle.saved)) st.puzzle.saved = [];
+    // Days played used to be counted from the day log alone (which keeps 120 days); older saves start from that, once.
+    if (!st.stats.daysCounted) {
+      st.stats.days = Math.max(st.stats.days || 0, Object.keys(st.history || {}).length);
+      for (const d of Object.values(st.history || {})) if (d && typeof d === 'object') d.played = 1;
+      st.stats.daysCounted = 1;
+    }
+    // The factory's own save (v6: presses fill a bin with lines); credits are gone from the day log too.
+    st.factory = Factory.migrate(st.factory);
+    for (const d of Object.values(st.history || {})) if (d && typeof d === 'object') delete d.credits;
     st.v = SAVE_VERSION;
     return st;
   }
@@ -259,11 +271,19 @@
       const k = dateKey();
       const h = this.state.history;
       if (!h[k]) {
-        h[k] = { lines: 0, pieces: 0, puzzles: 0, credits: 0, ms: 0 };
+        h[k] = { lines: 0, pieces: 0, puzzles: 0, minos: 0, ms: 0 };
         const keys = Object.keys(h).sort();
         while (keys.length > 120) delete h[keys.shift()];
       }
       return h[k];
+    }
+
+    /** Today counts as a day played: called from real, in-front play (a factory running alone does not count). */
+    played() {
+      const d = this.day();
+      if (d.played) return;
+      d.played = 1;
+      this.state.stats.days = (this.state.stats.days || 0) + 1;
     }
 
     addLines(n, source) {

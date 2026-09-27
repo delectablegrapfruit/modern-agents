@@ -23,7 +23,7 @@
   }
 
   function freshStats() {
-    return { pieces: 0, lines: 0, score: 0, clears: [0, 0, 0, 0, 0, 0], tspins: 0, tspinLines: 0, perfect: 0, combo: -1, maxCombo: 0, b2b: -1, maxB2B: 0, holds: 0, rotations: 0, moves: 0, lowers: 0, drops: 0, byType: {}, startedAt: Date.now(), playMs: 0, items: {}, banked: 0, chain: 0, bestChain: 0, tst: 0 };
+    return { pieces: 0, lines: 0, score: 0, clears: [0, 0, 0, 0, 0, 0], tspins: 0, tspinLines: 0, perfect: 0, combo: -1, maxCombo: 0, b2b: -1, maxB2B: 0, holds: 0, rotations: 0, moves: 0, lowers: 0, drops: 0, byType: {}, startedAt: Date.now(), playMs: 0, items: {}, banked: 0, chain: 0, bestChain: 0, tst: 0, quadRun: 0 };
   }
 
   class Game extends Emitter {
@@ -173,8 +173,11 @@
       if (!p || this.over || this.mods.noRotate || p.type.kicks === 'none') return false;
       const from = p.rot, to = (p.rot + dir + 4) % 4;
       const kicks = Pieces.kicksFor(p.type, from, to);
-      for (let i = 0; i < kicks.length; i++) {
-        const [kx, ky] = kicks[i];
+      for (let i = 0; i <= kicks.length; i++) {
+        // Past the end of the table, one last try: a nudge off the wall, ceiling or stack (odd shapes only).
+        const k = i < kicks.length ? kicks[i] : this.nudge(p, to);
+        if (!k) break;
+        const [kx, ky] = k;
         if (this.fitsAt(p, to, p.x + kx, p.y + ky)) {
           p.rot = to;
           p.x = this.board.wx(p.x + kx);
@@ -188,6 +191,44 @@
       }
       this.emit('blocked', 'rotate');
       return false;
+    }
+
+    /**
+     * The turn no kick could fit, nudged just enough: a long or big shape (a Noodle is six tall on end, a Giant up to
+     * eight) that would poke out past the ceiling, floor or a wall slides back in by exactly the overflow, as long as
+     * the way back in is clear; one that would dip into the stack is lifted onto it, or slid off a block beside it,
+     * by the fewest rows or columns that fit, as long as it still covers a cell it covered before (so it stands up
+     * where it was and never hops out of a well or through a wall of blocks). Returns [dx, dy] or null.
+     * Only for shapes beyond the seven (whose SRS kicks stay exactly SRS), and never in puzzles: a fixed queue keeps
+     * exactly the turns its generator searched.
+     */
+    nudge(p, to) {
+      if (this.fixed || (p.type.kicks !== 'generic' && p.type.kicks !== 'big')) return null;
+      const b = this.board, cells = p.type.rots[to], bnd = p.type.rotBounds[to], ghost = this.passes(p);
+      let ox = 0, oy = 0;
+      if (!b.wrap) {
+        if (p.x + bnd.minX < 0) ox = -(p.x + bnd.minX);
+        else if (p.x + bnd.maxX >= this.w) ox = this.w - 1 - (p.x + bnd.maxX);
+      }
+      if (p.y + bnd.minY < 0) oy = -(p.y + bnd.minY);
+      else if (p.y + bnd.maxY >= this.h) oy = this.h - 1 - (p.y + bnd.maxY);
+      // Sliding back in from outside, every step of the way must be clear (cells still outside do not count).
+      const steps = Math.max(Math.abs(ox), Math.abs(oy));
+      let clear = steps > 0;
+      for (let t = 0; clear && t <= steps && !ghost; t++) {
+        const sx = Math.sign(ox) * Math.min(t, Math.abs(ox)), sy = Math.sign(oy) * Math.min(t, Math.abs(oy));
+        for (const [cx, cy] of cells) if (b.inside(p.x + sx + cx, p.y + sy + cy) && b.filled(p.x + sx + cx, p.y + sy + cy)) clear = false;
+      }
+      if (clear && this.fitsAt(p, to, p.x + ox, p.y + oy)) return [ox, oy];
+      // Blocked by the stack: lift it, or slide it sideways, by the least that fits.
+      const was = new Set(this.cellsOf(p).map((c) => c.join(',')));
+      const covers = (dx, dy) => cells.some(([cx, cy]) => was.has(b.wx(p.x + dx + cx) + ',' + (p.y + dy + cy)));
+      for (let k = 1; k < p.type.n; k++) {
+        for (const [dx, dy] of [[ox - k, oy], [ox + k, oy], [ox, oy + k]]) {
+          if (this.fitsAt(p, to, p.x + dx, p.y + dy) && covers(dx, dy)) return [dx, dy];
+        }
+      }
+      return null;
     }
 
     /** Steps sideways toward a column (mouse play). */
@@ -396,7 +437,7 @@
       const p = this.piece;
       this.pushHistory();
       const [x, y] = this.cellsOf(p)[0];
-      const result = { type: p.type.id, special: 'drill', cells: [], rows: [], removed: [], lines: 0, score: 0, drilled: [] };
+      const result = { type: p.type.id, special: 'drill', cells: [], rows: [], removed: [], lines: 0, score: 0, drilled: [], bit: [x, y] };
       for (let yy = y; yy >= 0; yy--) {
         const old = this.board.get(x, yy);
         if (old) { result.drilled.push([x, yy, old]); this.board.set(x, yy, 0); }
@@ -428,6 +469,9 @@
         if (s.combo > 0) pts += 50 * s.combo;
         s.clears[Math.min(n, 5)]++;
         if (this.board.isEmpty()) { result.perfect = true; s.perfect++; pts += 3000; }
+        // Quads in a row: set by hand (a golden piece counts; lasers and board items do not); any other clear ends it.
+        if (n >= 4 && (!result.special || result.special === 'golden')) s.quadRun = (s.quadRun || 0) + 1;
+        else s.quadRun = 0;
       } else {
         s.combo = -1;
       }

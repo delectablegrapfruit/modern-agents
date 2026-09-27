@@ -65,7 +65,7 @@ body.browser #app { inset: 10px; box-shadow: var(--shadow), inset 0 0 0 1px rgba
 body.browser #app.bg-glass { background: rgba(var(--bg), 0.62); -webkit-backdrop-filter: blur(24px) saturate(1.3); backdrop-filter: blur(24px) saturate(1.3); }
 #app.bg-tint { background: rgba(var(--bg), var(--tint)); }
 #app.bg-solid { background: rgb(var(--bg)); }
-#app.bg-clear header#titlebar, #app.bg-clear .statusbar, #app.bg-clear .puz-head, #app.bg-clear .puz-goal { text-shadow: 0 1px 2px rgba(0,0,0,0.6); }
+#app.bg-clear header#titlebar, #app.bg-clear .statusbar, #app.bg-clear .puz-bar, #app.bg-clear .puz-card { text-shadow: 0 1px 2px rgba(0,0,0,0.6); }
 
 header#titlebar {
   flex: none; height: 40px;
@@ -86,14 +86,15 @@ header#titlebar {
 .spacer { flex: 1; align-self: stretch; }
 .tabs { display: flex; gap: 2px; margin-left: 8px; }
 .tabs button {
-  display: flex; align-items: center; gap: 5px;
+  display: flex; align-items: center; gap: 5px; position: relative;
   border: 0; background: transparent; color: var(--muted);
   padding: 5px 9px; border-radius: 8px; font-weight: 600; font-size: 12px;
 }
 .tabs button svg { width: 14px; height: 14px; flex: none; }
 .tabs button:hover { background: var(--panel-2); color: var(--fg); }
 .tabs button[aria-selected="true"] { background: var(--panel-3); color: var(--fg); }
-.tabs button .badge { width: 6px; height: 6px; border-radius: 3px; background: var(--good); margin-left: 1px; }
+/* Out of the flow, so a tab gaining or losing its dot never shifts the others. */
+.tabs button .badge { position: absolute; top: 3px; right: 2px; width: 6px; height: 6px; border-radius: 3px; background: var(--good); box-shadow: 0 0 0 1.5px rgb(var(--bg)); }
 .icon-btn {
   width: 26px; height: 26px; border: 0; border-radius: 7px; background: transparent; color: var(--muted);
   display: grid; place-items: center; padding: 0;
@@ -101,6 +102,9 @@ header#titlebar {
 .icon-btn:hover { background: var(--panel-2); color: var(--fg); }
 .icon-btn svg { width: 15px; height: 15px; }
 .icon-btn.on { color: var(--accent); }
+/* Muted: the slashed speaker in a soft amber wash, so it reads at a glance from any tab. */
+.icon-btn.muted { color: color-mix(in srgb, var(--warn) 72%, var(--fg)); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+.icon-btn.muted:hover { color: color-mix(in srgb, var(--warn) 72%, var(--fg)); background: color-mix(in srgb, var(--warn) 22%, transparent); }
 .winbtns { display: flex; gap: 1px; margin-left: 2px; }
 body.browser .winbtns { display: none; }
 .wallet {
@@ -250,59 +254,176 @@ main { flex: 1; position: relative; min-height: 0; }
 
 /* ---- puzzle -------------------------------------------------------------------------------------------------- */
 
-.puz-head { flex: none; display: flex; align-items: center; gap: 8px; padding: 8px 10px 2px; flex-wrap: wrap; }
-.puz-id { font-weight: 700; flex: 1; min-width: 120px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.puz-id .sub { color: var(--muted); font-weight: 500; }
-.puz-tools { display: flex; gap: 5px; align-items: center; }
-.puz-goal { flex: none; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 4px 10px 0; font-size: 12px; }
-.puz-goal .goal { font-weight: 700; margin-right: 4px; }
-.mod {
-  display: inline-flex; align-items: center; gap: 4px;
-  border-radius: 999px; padding: 1px 8px; font-size: 11px; font-weight: 600;
-  background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--fg); border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
-  cursor: help;
+/* Every row here has a fixed height and never wraps, so nothing a puzzle shows (more wildcards, a longer title, a
+   finished state) can move the board. */
+.puz-bar { flex: none; display: flex; align-items: center; gap: 6px; height: 42px; padding: 0 10px; }
+.puz-bar .seg { flex: none; }
+#puz-diff .short { display: none; }
+.puz-nav { margin-left: auto; display: flex; gap: 4px; min-width: 0; }
+.puz-nav .btn { height: 28px; padding: 0 10px; gap: 5px; }
+.puz-nav .btn[aria-pressed="true"] { border-color: color-mix(in srgb, var(--accent) 55%, transparent); background: color-mix(in srgb, var(--accent) 14%, var(--panel-2)); }
+.puz-nav .tick { color: var(--good); font-size: 11px; margin-left: -1px; }
+.pz-i { display: inline-grid; place-items: center; width: 14px; height: 14px; flex: none; }
+.pz-i svg { width: 100%; height: 100%; display: block; }
+
+.puz-card {
+  flex: none; margin: 0 10px; padding: 7px 8px 8px 10px; display: flex; flex-direction: column; gap: 6px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
 }
-.mod .i { font-size: 10px; opacity: 0.85; }
-.puz-actions { flex: none; display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; padding: 4px 10px 10px; }
+.puz-top { display: flex; align-items: center; gap: 8px; height: 34px; }
+.puz-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; margin: 0 1px; }
+.puz-name { flex: 1; min-width: 0; }
+.puz-title { display: flex; align-items: center; gap: 8px; height: 18px; white-space: nowrap; }
+.puz-title .t { font-weight: 700; font-size: 14px; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.puz-title .done {
+  flex: none; font-size: 10px; font-weight: 700; letter-spacing: 0.02em; color: var(--good);
+  border: 1px solid color-mix(in srgb, var(--good) 40%, transparent); border-radius: 999px; padding: 0 6px; line-height: 15px;
+}
+.puz-id { height: 16px; color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.puz-seed {
+  flex: none; display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 8px 0 10px;
+  border: 1px solid var(--line); background: var(--panel-2); border-radius: 999px;
+  font: 600 11.5px var(--mono-font); color: var(--muted);
+}
+.puz-seed .pz-i { width: 12px; height: 12px; opacity: 0.7; }
+.puz-seed:hover { color: var(--fg); border-color: var(--line-2); }
+#puz-save { flex: none; font-size: 15px; }
+
+.puz-goal {
+  position: relative; overflow: hidden; display: flex; align-items: center; gap: 7px; height: 28px; padding: 0 10px 0 8px;
+  background: var(--well); border-radius: 8px; font-size: 12.5px;
+}
+.puz-goal .goal-i { color: var(--accent); }
+.puz-goal .goal-i.gems { color: var(--gem); }
+.puz-goal .goal { font-weight: 700; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.puz-goal .prog { margin-left: auto; flex: none; color: var(--muted); font-size: 11.5px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.puz-goal .meter { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; }
+.puz-goal .meter i { display: block; height: 100%; background: var(--accent); opacity: 0.75; transition: width 0.35s ease; }
+
+.puz-mods { display: flex; align-items: center; gap: 5px; height: 24px; overflow: hidden; white-space: nowrap; }
+.mod {
+  flex: none; display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 9px 0 7px;
+  border-radius: 999px; font-size: 11.5px; font-weight: 600; color: var(--fg); cursor: help;
+  background: color-mix(in srgb, var(--accent) 13%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 32%, transparent);
+}
+.mod .pz-i { width: 13px; height: 13px; color: var(--accent); }
+.mod:hover, .mod[aria-expanded] { border-color: color-mix(in srgb, var(--accent) 70%, transparent); }
+/* Both Ways asks for other keys than usual: it gets a warmer tint so it is not missed. */
+.mod-spin { background: color-mix(in srgb, var(--warn) 14%, transparent); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
+.mod-spin .pz-i { color: color-mix(in srgb, var(--warn) 75%, var(--fg)); }
+.mod-spin:hover, .mod-spin[aria-expanded] { border-color: color-mix(in srgb, var(--warn) 75%, transparent); }
+.mod .s { display: none; }
+.puz-mods.tight .mod .n { display: none; }
+.puz-mods.tight .mod .s { display: inline; }
+.puz-mods.icons .mod .s { display: none; }
+.puz-mods.icons .mod { padding: 0 7px; }
+.mod-none { color: var(--faint); font-size: 11.5px; padding-left: 2px; }
+.puz-pop {
+  position: absolute; z-index: 6; width: max-content; max-width: min(260px, calc(100% - 16px));
+  background: rgb(var(--bg)); border: 1px solid var(--line-2); border-radius: 10px; box-shadow: var(--shadow);
+  padding: 8px 10px; font-size: 12px; animation: rise 0.14s ease;
+}
+.puz-pop .tip-title { display: flex; align-items: center; gap: 6px; }
+.puz-pop .pz-i { color: var(--accent); }
+
+#view-puzzle .boardwrap { margin-top: 2px; }
+.puz-actions {
+  flex: none; display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  height: 50px; padding: 0 10px; border-top: 1px solid var(--line);
+}
+.puz-actions .grp { display: flex; gap: 6px; }
+.puz-actions .btn { height: 32px; padding: 0 11px; }
+.puz-actions .btn .pz-i { width: 13px; height: 13px; }
+.puz-actions .btn.on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
+.btn.primary kbd { background: rgba(0,0,0,0.1); border-color: rgba(0,0,0,0.14); color: rgba(13,16,22,0.75); }
+
+/* The solved and not-yet cards. */
+.puz-result { min-width: 236px; }
+.puz-result .ring { width: 30px; height: 30px; margin: 0 auto 6px; display: grid; color: var(--good); }
+.puz-result.failed .ring { color: var(--muted); }
+.puz-result .board-sum { margin: 10px 0 2px; text-align: center; }
+.puz-result .bs.pay { border-color: color-mix(in srgb, var(--gem) 40%, transparent); }
+.puz-result .bs .gem { color: var(--gem); font-size: 11px; }
+.puz-result .bs .l { white-space: normal; }
+
+/* A wide window keeps the tab a calm column: the bars and the card line up with the board instead of the edges. */
+@media (min-width: 720px) {
+  .puz-bar, .puz-actions { padding-left: max(10px, calc(50% - 320px)); padding-right: max(10px, calc(50% - 320px)); }
+  .puz-card { width: min(640px, calc(100% - 20px)); margin: 0 auto; }
+}
+/* The nav's labels drop (fitNav) only when they would not fit beside the difficulties. */
+.puz-nav.icons .lbl { display: none; }
+@media (max-width: 600px) { .puz-nav .btn { padding: 0 8px; } }
+@media (max-width: 480px) {
+  .puz-actions kbd { display: none; }
+  .puz-actions .btn { padding: 0 9px; }
+}
+@media (max-width: 380px) {
+  #puz-diff .full { display: none; }
+  #puz-diff .short { display: inline; }
+  .puz-seed .pz-i { display: none; }
+  .puz-actions .grp .btn .lbl { display: none; }
+  .puz-goal .prog { display: none; }
+}
+@media (max-height: 520px) {
+  .puz-bar { height: 36px; }
+  .puz-card { gap: 4px; padding-top: 5px; padding-bottom: 6px; }
+  .puz-actions { height: 42px; }
+}
 
 /* ---- factory ------------------------------------------------------------------------------------------------- */
 
 #view-factory { padding: 10px 12px 0; gap: 8px; }
-.fac-top { flex: none; display: grid; grid-template-columns: 1fr 1fr 1.6fr; gap: 6px; }
-.fac-top .kpi { min-width: 0; }
-.fac-top .kpi.credits .v { color: var(--fg); }
-.fac-top .crate { display: flex; flex-direction: column; justify-content: center; }
-.crate-row { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); min-width: 0; }
-.crate-row span:nth-child(2) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.crate-row .v { font-size: 16px; }
-.fac-belt { flex: none; position: relative; height: clamp(74px, 15vh, 120px); }
-.fac-belt canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.fac-top { flex: none; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+.fac-top .kpi { min-width: 0; padding: 5px 10px 6px; }
+.fac-top .kpi .v { font-size: 16px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fac-top .kpi .l { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kpi.warn { border-color: color-mix(in srgb, var(--warn) 55%, transparent); background: color-mix(in srgb, var(--warn) 7%, var(--panel)); }
+.kpi.warn .v { color: var(--warn); }
+.fac-floor { flex: none; position: relative; height: clamp(160px, 40vh, 304px); }
+.fac-floor canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.fac-collect { flex: none; display: flex; }
+.fac-collect .btn { flex: 1; min-width: 0; height: 36px; font-size: 13px; overflow: hidden; text-overflow: ellipsis; }
+.fac-collect .btn .sub { font-weight: 500; opacity: 0.7; }
+.fac-collect .btn:disabled { background: var(--panel-2); border-color: var(--line-2); color: var(--muted); opacity: 1; }
 .fac-list { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 5px; padding-bottom: 12px; }
 .fac-h { margin: 6px 2px 0; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
 .fac-ico { flex: none; width: 34px; height: 34px; border-radius: 8px; background: var(--well); display: grid; place-items: center; overflow: hidden; }
-.fac-ico.big { font-size: 17px; }
 .fac-ico canvas { width: 34px; height: 34px; }
-.fac-buy { flex: none; display: flex; flex-direction: column; gap: 4px; align-items: stretch; }
-.fac-buy .btn { white-space: nowrap; }
-.row-card.locked { opacity: 0.55; }
-.row-card .bar { margin-top: 4px; }
 .fac-note { color: var(--muted); font-size: 11px; margin: 6px 2px 0; }
+#fac-list .row-card { flex: none; }
 #fac-list .row-card .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#fac-list .row-card > .btn { flex: none; }
+.fac-molds { gap: 8px; padding: 6px 10px; }
+.fac-molds .lbl { flex: none; color: var(--muted); font-size: 11.5px; font-weight: 600; }
+.fac-molds .chips { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
+.chip.on { color: var(--fg); border-color: color-mix(in srgb, var(--accent) 55%, transparent); }
+.mold-pick { display: flex; flex-direction: column; gap: 8px; }
+.mold-any { text-align: left; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 6px 10px; color: var(--muted); font-size: 12px; }
+.mold-any b { color: var(--fg); }
+.mold-any:hover, .mold:hover { background: var(--panel-2); }
+.mold-any.on, .mold.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.catalog.molds { grid-template-columns: repeat(10, 30px); max-height: 330px; justify-content: start; }
+.catalog.sm { grid-template-columns: repeat(auto-fill, 30px); gap: 3px; margin-bottom: 4px; }
+.catalog.sm canvas { width: 30px; height: 30px; border-radius: 5px; }
+.mold { padding: 0; border: 1px solid var(--line); background: var(--panel); border-radius: 6px; width: 30px; height: 30px; display: grid; place-items: center; }
+.catalog .mold canvas { background: transparent; border-radius: 0; }
+.mold-cap { margin: 0 !important; font: 600 11px var(--mono-font); }
 @media (max-width: 420px) {
-  .fac-top { grid-template-columns: 1fr 1fr; } .fac-top .crate { grid-column: 1 / -1; }
-  #fac-list .row-card .d .opt { display: none; }
+  .fac-top .kpi { padding: 5px 7px 6px; }
+  .fac-top .kpi .v { font-size: 15px; }
+  .fac-top .kpi .l { font-size: 10px; }
   #fac-list .row-card { gap: 8px; padding: 7px 8px; }
-  .fac-buy .btn { padding: 3px 7px; font-size: 11px; }
 }
-.row-card.contract .t .lvl { font-weight: 500; }
-.fac-foot { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: 11px; padding: 2px 2px 4px; }
+@media (max-width: 340px) { .fac-top .kpi .v { font-size: 13px; } }
+/* Narrow: the Collect button keeps its main label; the detail after it would be cut on both sides. */
+@media (max-width: 360px) { .fac-collect .btn .sub { display: none; } }
 .row-card {
   display: flex; align-items: center; gap: 10px;
   background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px;
 }
 .row-card .grow { flex: 1; min-width: 0; }
 .row-card .t { font-weight: 700; }
-.row-card .t .lvl { color: var(--muted); font-weight: 600; font-size: 11px; margin-left: 4px; }
 .row-card .d { color: var(--muted); font-size: 11.5px; }
 .row-card.highlight { border-color: color-mix(in srgb, var(--accent) 60%, transparent); background: color-mix(in srgb, var(--accent) 8%, var(--panel)); }
 .bar { height: 6px; background: var(--panel-2); border-radius: 3px; overflow: hidden; margin-top: 5px; }
@@ -336,6 +457,8 @@ main { flex: 1; position: relative; min-height: 0; }
 
 .stats-body { flex: 1; min-height: 0; padding: 4px 12px 14px; }
 .kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px; margin-bottom: 10px; }
+/* Rows of three (or six) tiles: always three across, filling the row like the Factory's own. */
+.kpis.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
 .kpi .v { font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .kpi .l { color: var(--muted); font-size: 11px; }
@@ -439,11 +562,12 @@ body.browser .edge { display: none; }
 }
 @media (max-width: 380px) {
   #btn-pin { display: none; }
-  .tabs button { padding: 6px 5px; }
-  .puz-tools .btn { display: none; }
+  header#titlebar { gap: 2px; }
+  .tabs button { padding: 6px 4px; }
+  #titlebar .icon-btn { width: 24px; }
 }
-@media (max-height: 520px) {
-  .beltwrap { height: 180px; }
+@media (max-width: 340px) {
+  .tabs button { padding: 6px 3px; }
 }
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
@@ -463,30 +587,46 @@ body.browser .edge { display: none; }
 .sound-preview:hover { background: var(--panel-3); }
 .sound-preview .big-icon { font-size: 20px; color: var(--accent); }
 
-/* ---- puzzle history ------------------------------------------------------------------------------------------ */
+/* ---- puzzle history, play a seed --------------------------------------------------------------------------------- */
 
-.modal-hist { height: min(640px, calc(100% - 24px)); }
+.modal-hist { height: min(620px, calc(100% - 24px)); }
 .modal-hist .body { flex: 1; min-height: 0; display: flex; overflow: hidden; padding-bottom: 12px; }
-.hist-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.hist-wrap { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; }
 .hist-head { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; color: var(--muted); font-size: 11.5px; }
-.hist-head .seg button { padding: 3px 8px; font-size: 11.5px; }
-.hist { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 3px; overflow-y: auto; padding-right: 2px; }
+.hist-head .seg { min-width: 0; }
+.hist-head .seg button { padding: 3px 8px; font-size: 11.5px; white-space: nowrap; }
+.hist-head .seg .c { margin-left: 5px; font: 600 10px var(--mono-font); color: var(--faint); }
+.hist-head .seg button[aria-pressed="true"] .c { color: var(--muted); }
+.hist-sum { white-space: nowrap; }
+.hist { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 3px; overflow-y: auto; padding-right: 2px; scrollbar-width: thin; }
 .hist .empty { text-align: center; padding: 24px 8px; }
-.hist-row { flex: none; display: flex; align-items: center; gap: 6px; padding: 5px 6px 5px 8px; border-radius: 9px; background: var(--panel); border: 1px solid var(--line); }
+.hist-row { flex: none; display: flex; align-items: center; gap: 6px; height: 42px; padding: 0 4px 0 9px; border-radius: 9px; background: var(--panel); border: 1px solid var(--line); }
+.hist-row.current { border-color: color-mix(in srgb, var(--accent) 55%, transparent); }
 .hist-row .grow { flex: 1; min-width: 0; }
 .hist-row .t, .hist-row .d { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hist-row .t { font-weight: 700; font-size: 12px; }
 .hist-row .t .sub { color: var(--muted); font-weight: 500; }
-.hist-row .d { color: var(--muted); font-size: 10.5px; }
-.hist-row .d .mods { letter-spacing: 1px; }
-.hist-row.solved .d { color: color-mix(in srgb, var(--good) 75%, var(--muted)); }
+.hist-row .d { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 10.5px; }
+.hist-row .d .st { overflow: hidden; text-overflow: ellipsis; }
+.hist-row .d .mods { flex: none; display: inline-flex; gap: 3px; color: var(--faint); }
+.hist-row .d .mods .pz-i { width: 11px; height: 11px; }
+.hist-row.solved .d .st { color: color-mix(in srgb, var(--good) 75%, var(--muted)); }
 .hist-row .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
-.hist-row .seedchip { flex: none; font: 600 10.5px var(--mono-font); color: var(--muted); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 2px 5px; }
+.hist-row .seedchip { flex: none; font: 600 10.5px var(--mono-font); color: var(--muted); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; }
 .hist-row .seedchip:hover { color: var(--fg); border-color: var(--line-2); }
 .hist-row .icon-btn { flex: none; width: 26px; height: 26px; font-size: 14px; }
 .hist-row .icon-btn.play { color: var(--accent); font-size: 12px; }
 .star.on, .hist-row .star.on { color: #f2c14e; }
+@media (max-width: 460px) { .hist-sum, .hist-head .seg .c { display: none; } .hist-head .seg { flex: 1; } .hist-head .seg button { flex: 1; padding: 3px 4px; } }
 @media (max-width: 380px) { .hist-row .seedchip { display: none; } }
+
+.seed-modal p { margin-top: 0; }
+.seed-modal input[type="text"] { font-size: 15px; letter-spacing: 0.06em; text-transform: uppercase; padding: 9px 11px; }
+.seed-modal input::placeholder { color: var(--faint); letter-spacing: 0.06em; }
+.seed-status { display: flex; align-items: center; gap: 6px; min-height: 18px; margin-top: 7px; font-size: 11.5px; color: var(--faint); }
+.seed-status.ok { color: var(--fg); }
+.seed-status.bad { color: var(--bad); }
+.seed-status .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
 
 /* ---- settings ------------------------------------------------------------------------------------------------ */
 
@@ -541,9 +681,11 @@ kbd.big { font-size: 12px; padding: 3px 7px; }
 .ach .grow { flex: 1; min-width: 0; }
 .ach .t { font-weight: 700; font-size: 12.5px; color: var(--muted); }
 .ach .d { color: var(--muted); font-size: 11px; }
-.ach .bar { margin-top: 4px; }
+.ach-prog { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.ach-prog .bar { flex: 1; margin: 0; height: 4px; }
+.ach-prog span { flex: none; min-width: 12ch; text-align: right; font: 600 10px var(--mono-font); color: var(--faint); font-variant-numeric: tabular-nums; }
 .ach-i { flex: none; width: 20px; text-align: center; color: var(--faint); font-size: 14px; }
-.ach-pay { flex: none; font: 700 11px var(--mono-font); color: var(--muted); }
+.ach-pay { flex: none; min-width: 8ch; text-align: right; font: 700 11px var(--mono-font); color: var(--muted); }
 .ach.got { border-color: color-mix(in srgb, var(--gem) 45%, transparent); }
 .ach.got .t { color: var(--fg); }
 .ach.got .ach-pay { color: var(--gem); }
@@ -555,3 +697,21 @@ kbd.big { font-size: 12px; padding: 3px 7px; }
 .ach.legend.got .ach-pay { color: #f2c14e; }
 .ach .tier { margin-left: 6px; font: 700 9px var(--mono-font); letter-spacing: 0.08em; text-transform: uppercase; color: #d9a93a; border: 1px solid color-mix(in srgb, #f2c14e 45%, transparent); border-radius: 5px; padding: 0 4px; vertical-align: 1px; }
 #view-achievements .stats-body { padding-top: 10px; }
+/* Groups fold away; the header keeps the count, a bar and what the group has paid of what it pays. */
+.ach-tools { display: flex; justify-content: flex-end; margin: -2px 0 8px; }
+.ach-group { margin-bottom: 6px; }
+.ach-group > summary { list-style: none; display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px; cursor: pointer; user-select: none;
+  background: var(--panel); border: 1px solid var(--line); }
+.ach-group > summary::-webkit-details-marker { display: none; }
+.ach-group > summary:hover { background: var(--panel-2); }
+.ach-group > summary b { font-size: 12.5px; white-space: nowrap; }
+.ach-group > summary .ach-pay { margin-left: auto; min-width: 0; white-space: nowrap; }
+.ach-group > summary .chev { flex: none; width: 12px; color: var(--faint); transition: transform 0.15s; text-align: center; }
+.ach-group[open] > summary .chev { transform: rotate(90deg); }
+.ach-group > summary .bar { flex: 1; min-width: 30px; margin: 0; height: 4px; }
+.ach-group > summary .bar > i { background: var(--gem); }
+.ach-count { flex: none; font: 600 11px var(--mono-font); color: var(--muted); }
+@media (max-width: 380px) { .ach-group > summary .bar { display: none; } }
+.ach-group[open] > summary { margin-bottom: 4px; }
+.ach-group > .ach-list { padding-left: 8px; }
+.ach-none { margin: 2px 0 8px 10px; color: var(--faint); font-size: 11.5px; }

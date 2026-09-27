@@ -1,5 +1,5 @@
-// Lull — synthesized sound: effects in swappable packs (a Shop cosmetic), Classic's music, and Classic's whispering
-// announcer. Every sound is made on the fly with Web Audio (and the system's speech voices): nothing to download.
+// Lull — sound: synthesized effects in swappable packs (a Shop cosmetic) and Classic's music, all made on the fly with
+// Web Audio, plus Classic's announcer, whose recorded clips are embedded (voice-data.js): nothing to download.
 (function (root) {
   'use strict';
   const L = (root.Lull = root.Lull || {});
@@ -7,41 +7,72 @@
   const PENTA = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21, 24, 26, 28, 31];
   const note = (base, step) => base * Math.pow(2, (PENTA[Math.max(0, Math.min(PENTA.length - 1, step))]) / 12);
   const rand = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+  const hz = (m) => 440 * Math.pow(2, (m - 69) / 12); // MIDI note to Hz (A4 = 69)
+  const AM = [0, 3, 5, 7, 10, 12, 15, 17, 19, 22, 24]; // A minor pentatonic, in semitones from A
 
   /**
    * A pack turns an event into voices:
    *   f frequency · to slide target · d duration · w wave · g gain · at delay · a attack
    *   n noise burst · q low-pass · hp high-pass · bp band-pass · fe [from, to] low-pass sweep over the note
    *   p partials [[multiple, level, decay share]] · dt detuned twin (cents) · vib vibrato (cents) · rv reverb send
+   *   fm [ratio, index, decay share] a sine modulating the tone's pitch, its depth fading · pan stereo position
    * Packs may voice any event themselves; the rest fall back to Sound.common in the pack's wave, scale and room.
    */
   const PACKS = {
-    // The default: airy sines in a big soft room, on a D major pentatonic.
+    // The default, in the music's world: glassy FM tones, water droplets and airy chord swells, all in A minor (and
+    // its relative, C major) so they sit with Classic's music. Movement is barely there; clears bloom and fade.
     soft: {
-      base: 294, wave: 'sine', decay: 0.9, reverb: 0.12, attack: 0.012, chorus: 7,
-      move: () => [{ f: 1175, d: 0.1, g: 0.026, a: 0.004, rv: 0.1 }],
-      rotate: () => [{ f: 1480, d: 0.28, g: 0.03, a: 0.006, rv: 0.18, dt: 8 }, { f: 2217, d: 0.22, g: 0.012, at: 0.025, rv: 0.21 }],
-      lower: () => [{ f: 587, d: 0.12, g: 0.03, a: 0.006, rv: 0.1 }],
-      lock: () => [
-        { f: 147, d: 0.5, g: 0.15, a: 0.01, rv: 0.1 },
-        { f: 294, d: 0.4, g: 0.04, a: 0.012, rv: 0.15, dt: 6 },
-        { n: 1, d: 0.2, g: 0.014, hp: 3500, rv: 0.18 },
-      ],
-      hold: () => [{ f: 587, to: 880, d: 0.4, g: 0.045, a: 0.04, rv: 0.21, dt: 10 }],
-      blocked: () => [{ f: 196, d: 0.12, g: 0.03, a: 0.004, q: 700 }],
-      clear: (s, n) => {
-        n = Math.min(n || 1, 4);
-        const steps = [0, 2, 4, 5, 7, 9, 10, 12].slice(0, 2 + n * 2);
-        return steps.map((st, i) => ({ f: note(587, st), d: 1.1, g: 0.05, a: 0.01, at: i * 0.055, rv: 0.21, dt: 6, p: [[2, 0.2, 0.3]] }));
+      // Shared sounds (Sound.common) fall on the C major pentatonic from here: A minor's notes too.
+      base: 523, wave: 'sine', decay: 0.9, reverb: 0.1, attack: 0.01,
+      // A glass tone: a sine with a brief inharmonic FM shimmer on its attack.
+      glass: (m, at, g, d, o) => Object.assign({ f: hz(m), at, g, d, a: 0.005, fm: [3.5, 0.45, 0.12], rv: 0.14 }, o),
+      // A soft electric-piano tone: FM at a ratio of one, warm and round, fading bright to plain.
+      keys: (m, at, g, d, o) => Object.assign({ f: hz(m), at, g, d, a: 0.01, fm: [1, 0.9, 0.25], dt: 5, rv: 0.16 }, o),
+      // A droplet: a short sine that slides up as it fades.
+      drop: (m, at, g, d, o) => Object.assign({ f: hz(m), to: hz(m) * 1.33, at, g, d, a: 0.003, rv: 0.08 }, o),
+      // Air: a slow-swelling detuned pair, for pads under chords.
+      air: (m, at, g, d, o) => Object.assign({ f: hz(m), at, g, d, a: 0.14, dt: 7, rv: 0.2 }, o),
+      move() { return [this.drop(72, 0, 0.028, 0.07)]; },
+      rotate() { return [this.glass(76, 0, 0.045, 0.2, { fm: [2, 0.35, 0.1], rv: 0.12 })]; },
+      lower() { return [this.drop(64, 0, 0.036, 0.08, { to: hz(67) })]; },
+      lock() { return [{ f: 110, to: 98, d: 0.38, g: 0.17, a: 0.008 }, this.keys(57, 0, 0.06, 0.4, { dt: 0, rv: 0.1 }), { n: 1, d: 0.08, g: 0.018, q: 700 }]; },
+      hold() { return [this.air(69, 0, 0.032, 0.45, { to: hz(72), a: 0.06 }), this.glass(76, 0.05, 0.016, 0.4, { pan: 0.3 })]; },
+      blocked() { return [{ f: hz(50), d: 0.12, g: 0.03, a: 0.006, q: 500 }]; },
+      // A line: an Am chord (A C E, then G, then B for Am9) blooming up, over a breath of air.
+      clear(s, n) {
+        n = Math.min(n || 1, 3);
+        const tones = [69, 72, 76, 79, 83].slice(0, 2 + n);
+        return [this.air(57, 0, 0.045, 1.4)].concat(tones.map((m, i) => this.keys(m, i * 0.045, 0.046, 1.2, { pan: (i % 2 ? 0.35 : -0.35) * (i / tones.length) })));
       },
-      quad: () => {
-        const pad = [294, 370, 440, 659].map((f) => ({ f, d: 2.2, g: 0.035, a: 0.25, rv: 0.24, dt: 9 }));
-        const run = [0, 2, 4, 5, 7, 9, 10, 12, 11].map((st, i) => ({ f: note(587, st), d: 1.2, g: 0.045, a: 0.01, at: i * 0.05, rv: 0.22, p: [[2, 0.2, 0.3]] }));
+      // Four: an Am7 pad swells while glass tones rise through A minor.
+      quad() {
+        const pad = [57, 64, 67, 72].map((m) => this.air(m, 0, 0.045, 2.2, { a: 0.3, rv: 0.22 }));
+        const run = [69, 72, 76, 79, 81, 83, 84, 88].map((m, i) => this.glass(m, i * 0.06, 0.06, 1.3, { pan: i % 2 ? 0.4 : -0.4 }));
         return pad.concat(run);
       },
-      tspin: () => [7, 4, 9, 12].map((st, i) => ({ f: note(587, st), d: 1, g: 0.05, at: i * 0.07, rv: 0.22, dt: 8, vib: 12 })),
-      perfect: () => [0, 2, 4, 5, 7, 9, 10, 12, 13].map((st, i) => ({ f: note(587, st), d: 1.8, g: 0.045, at: i * 0.08, a: 0.02, rv: 0.26, dt: 8, p: [[2, 0.25, 0.4]] })),
-      combo: (s, n) => [{ f: note(1175, Math.min(9, n || 1)), d: 0.7, g: 0.035, a: 0.008, rv: 0.21, dt: 7 }],
+      // A T-spin: a quicker, wavering shimmer up an A minor chord.
+      tspin() { return [this.air(64, 0, 0.04, 1.2)].concat([76, 81, 83, 88].map((m, i) => this.glass(m, i * 0.07, 0.062, 1.0, { vib: 10, pan: i % 2 ? 0.3 : -0.3 }))); },
+      // A perfect clear: C major 9, the relative major, opening under a long bloom.
+      perfect() {
+        const pad = [60, 64, 67, 71, 74].map((m) => this.air(m, 0, 0.026, 2.8, { a: 0.4, rv: 0.24 }));
+        return pad.concat([69, 72, 76, 79, 83, 84, 88].map((m, i) => this.keys(m, i * 0.08, 0.042, 1.6, { pan: i % 2 ? 0.35 : -0.35 })));
+      },
+      combo(s, n) { return [this.glass(69 + AM[Math.min(9, n || 1)], 0, 0.045, 0.6)]; },
+      // A soft, low thoom: a falling sine and a dark puff of air.
+      boom() { return [{ f: 98, to: 41, d: 0.8, g: 0.12, a: 0.01 }, { n: 1, d: 0.6, g: 0.09, q: 320 }, this.air(45, 0, 0.05, 1.2, { rv: 0.12 })]; },
+      drill() { return [{ n: 1, d: 0.4, g: 0.04, fe: [1400, 300] }, { f: 110, to: 82, d: 0.4, g: 0.025 }]; },
+      buy() { return [this.glass(76, 0, 0.11, 0.5, { fm: [2, 0.6, 0.2] }), this.glass(81, 0.08, 0.11, 0.7, { fm: [2, 0.6, 0.2] })]; },
+      error() { return [{ f: hz(52), to: hz(50), d: 0.25, g: 0.045, q: 700 }]; },
+      solve() { return [this.air(57, 0, 0.075, 1.8)].concat([69, 72, 76, 79, 83, 84].map((m, i) => this.keys(m, i * 0.07, 0.085, 1.5, { pan: i % 2 ? 0.35 : -0.35 }))); },
+      fail() { return [this.air(76, 0, 0.034, 0.6, { to: hz(69), a: 0.03, q: 1500 })]; },
+      golden() { return [81, 84, 88, 84, 88].map((m, i) => this.glass(m, i * 0.06, 0.075, 0.7)); },
+      item() { return [this.drop(64, 0, 0.05, 0.25, { to: hz(69) }), this.glass(81, 0.08, 0.02, 0.4)]; },
+      // The factory line, heard only while you watch it: a muffled press, a droplet onto the belt, a soft key as a piece
+      // settles in the bin, and two quiet glass tones when the bin is full.
+      stamp() { return [{ f: hz(45), d: 0.12, g: 0.05, a: 0.004, q: 400 }, { n: 1, d: 0.04, g: 0.012, q: 500 }]; },
+      pack() { return [this.drop(69, 0, 0.03, 0.12), { n: 1, d: 0.03, g: 0.01, q: 900 }]; },
+      land() { return [this.keys(64, 0, 0.03, 0.35, { dt: 0, rv: 0.12 }), { n: 1, d: 0.05, g: 0.015, q: 600 }]; },
+      bell() { return [this.glass(81, 0, 0.04, 1.2), this.glass(88, 0.14, 0.03, 1.4)]; },
     },
 
     // A desk-bound machine: clicks, clacks, the carriage return's zip and its bell.
@@ -161,6 +192,7 @@
     volume: 0.35,
     pack: 'soft',
     master: null,
+    muted: false,
     lastAt: {},
     PACKS,
 
@@ -168,25 +200,43 @@
       if (this.ctx) return this.ctx;
       const AC = root.AudioContext || root.webkitAudioContext;
       if (!AC) return null;
-      try {
-        const ctx = this.ctx = new AC();
-        this.master = ctx.createGain();
-        const comp = ctx.createDynamicsCompressor();
-        this.master.connect(comp).connect(ctx.destination);
-        // A shared room: a soft, dark, two-and-a-half-second tail.
-        const len = Math.floor(ctx.sampleRate * 2.6);
-        const ir = ctx.createBuffer(2, len, ctx.sampleRate);
-        for (let c = 0; c < 2; c++) {
-          const d = ir.getChannelData(c);
-          let lp = 0;
-          for (let i = 0; i < len; i++) { lp = lp * 0.6 + (Math.random() * 2 - 1) * 0.4; d[i] = lp * Math.pow(1 - i / len, 2.6); }
-        }
-        this.reverb = ctx.createConvolver();
-        this.reverb.buffer = ir;
-        const wet = ctx.createGain(); wet.gain.value = 0.9;
-        this.reverb.connect(wet).connect(this.master);
-      } catch (e) { this.ctx = null; }
+      try { this.wire(new AC()); } catch (e) { this.ctx = null; }
       return this.ctx;
+    },
+
+    /** The master chain and the shared room, on a context (a live one, or an offline one for a render). */
+    wire(ctx) {
+      this.ctx = ctx;
+      this.master = ctx.createGain();
+      const comp = ctx.createDynamicsCompressor();
+      // Mute sits last, after everything, so nothing that sets a level elsewhere can undo it.
+      this.muteGain = ctx.createGain(); this.muteGain.gain.value = this.muted ? 0 : 1;
+      this.master.connect(comp).connect(this.muteGain).connect(ctx.destination);
+      // A shared room: a soft, dark, two-and-a-half-second tail.
+      const len = Math.floor(ctx.sampleRate * 2.6);
+      const ir = ctx.createBuffer(2, len, ctx.sampleRate);
+      for (let c = 0; c < 2; c++) {
+        const d = ir.getChannelData(c);
+        let lp = 0;
+        for (let i = 0; i < len; i++) { lp = lp * 0.6 + (Math.random() * 2 - 1) * 0.4; d[i] = lp * Math.pow(1 - i / len, 2.6); }
+      }
+      this.reverb = ctx.createConvolver();
+      this.reverb.buffer = ir;
+      const wet = ctx.createGain(); wet.gain.value = 0.9;
+      this.reverb.connect(wet).connect(this.master);
+    },
+
+    /**
+     * Renders into an OfflineAudioContext instead of the speakers (scripts/audio-render.cjs measures sounds this way):
+     * fn schedules on the offline context, then the live one comes back. Resolves to the AudioBuffer.
+     */
+    offline(seconds, fn, rate) {
+      const OAC = root.OfflineAudioContext || root.webkitOfflineAudioContext;
+      rate = rate || 44100;
+      const ctx = new OAC(2, Math.ceil(seconds * rate), rate);
+      const saved = [this.ctx, this.master, this.reverb, this.muteGain];
+      try { this.wire(ctx); this.muteGain.gain.value = 1; this.master.gain.value = this.volume; fn(ctx); } finally { [this.ctx, this.master, this.reverb, this.muteGain] = saved; }
+      return ctx.startRendering();
     },
 
     rnd(a, b) { return rand(a, b); },
@@ -207,6 +257,7 @@
       if (v.hp) filt('highpass', v.hp);
       if (v.bp) { const f = filt('bandpass', v.bp); f.Q.value = 3; }
       if (v.fe) { const f = filt('lowpass', v.fe[0]); f.frequency.setValueAtTime(v.fe[0], t); f.frequency.exponentialRampToValueAtTime(v.fe[1], t + v.d); f.Q.value = 4; }
+      if (v.pan && ctx.createStereoPanner) { const p = ctx.createStereoPanner(); p.pan.value = v.pan; out.connect(p); out = p; }
       out.connect(this.master);
       const rv = v.rv != null ? v.rv : pack.reverb || 0;
       if (rv && this.reverb) { const s = ctx.createGain(); s.gain.value = rv; out.connect(s).connect(this.reverb); }
@@ -232,7 +283,15 @@
         o.start(t); o.stop(t + v.d + 0.05);
         return o;
       };
-      osc(v.f, 0).connect(g);
+      const main = osc(v.f, 0);
+      main.connect(g);
+      if (v.fm) {
+        const [ratio, index, share] = v.fm, m = ctx.createOscillator(), mg = ctx.createGain();
+        m.frequency.value = v.f * ratio;
+        mg.gain.setValueAtTime(v.f * index, t);
+        mg.gain.exponentialRampToValueAtTime(Math.max(0.01, v.f * index * 0.02), t + Math.max(0.02, v.d * (share || 0.3)));
+        m.connect(mg).connect(main.frequency); m.start(t); m.stop(t + v.d + 0.05);
+      }
       const dt = v.dt != null ? v.dt : 0;
       if (dt) { const g2 = ctx.createGain(); g2.gain.value = 0.6; osc(v.f, dt).connect(g2).connect(g); }
       const partials = v.p || (v.h ? [[v.h, 0.25, 0.4]] : null);
@@ -270,7 +329,6 @@
         case 'fail': return [{ f: note(base, 4), d: 0.35, w, g: 0.08, to: note(base, 0) * 0.8 }];
         case 'boom': return [{ n: 1, d: 0.5, g: 0.3, q: 450 }, { f: 90, d: 0.45, w: 'sine', g: 0.22, to: 38 }];
         case 'drill': return [{ n: 1, d: 0.35, g: 0.1, q: 2500 }];
-        case 'catch': return [{ f: note(base * 2, Math.min(10, arg || 0)), d: 0.12, w, g: 0.07, q }];
         case 'golden': return arp([7, 9, 10, 9, 10], 0.05, 0.08);
         case 'pack': return [{ f: note(base * 2, 5), d: 0.1, w, g: 0.06 }, { n: 1, d: 0.03, g: 0.03, q: 1800 }];
         case 'stamp': return [{ n: 1, d: 0.05, g: 0.03, q: 600 }];
@@ -279,6 +337,12 @@
         case 'land': return [{ n: 1, d: 0.05, g: 0.05, q: 700 }];
         default: return null;
       }
+    },
+
+    /** The voices a pack makes for an event (its own, or the shared ones). */
+    voices(name, arg, packId) {
+      const pack = PACKS[packId || this.pack] || PACKS.soft;
+      return { pack, list: typeof pack[name] === 'function' ? pack[name](this, arg) : this.common(pack, name, arg) };
     },
 
     play(name, arg, packId) {
@@ -291,9 +355,23 @@
       if (now - (this.lastAt[name] || 0) < 28) return;
       this.lastAt[name] = now;
       this.master.gain.value = this.volume;
-      const pack = PACKS[packId || this.pack] || PACKS.soft;
-      const voices = typeof pack[name] === 'function' ? pack[name](this, arg) : this.common(pack, name, arg);
-      if (voices) for (const v of voices) this.voice(v, 0, pack);
+      if (this.muted) return; // nobody would hear it: skip building it
+      const { pack, list } = this.voices(name, arg, packId);
+      if (list) for (const v of list) this.voice(v, 0, pack);
+    },
+
+    /** Silences everything at once — notes already ringing too — with a short ramp so it does not click. The levels
+     * underneath (effects, music, announcer) are left alone, so unmuting brings back exactly what was there. */
+    setMuted(on) {
+      this.muted = !!on;
+      const g = this.muteGain;
+      if (!g) return;
+      const t = this.ctx.currentTime;
+      g.gain.cancelScheduledValues(t);
+      // A context not yet running has frozen time: a ramp would still be under way when it wakes, so set it outright.
+      if (this.ctx.state !== 'running') { g.gain.value = this.muted ? 0 : 1; return; }
+      g.gain.setValueAtTime(g.gain.value, t);
+      g.gain.linearRampToValueAtTime(this.muted ? 0 : 1, t + 0.05);
     },
 
     /** A short phrase that shows off a pack (Shop preview). */
@@ -303,67 +381,96 @@
     },
   };
 
-  // ---- Classic's music: Korobeiniki (a 19th-century Russian folk song, public domain), remixed ------------------------
+  // ---- Classic's music: Korobeiniki (a 19th-century Russian folk song, public domain), slowed and dreamed -----------
   //
-  // Kept in A minor, the tune as written, arranged soft and laid out as a two-minute suite so it rarely repeats:
-  // an intro of chords, the tune on electric piano, again an octave up with a harmony and a soft beat, the bridge on
-  // a breathy lead and again in full, an interlude with a counter-melody, and the tune once more.
+  // The tune as written, in its own key (A minor), taken down to 80 and dressed like a late-night console menu: a
+  // glassy FM electric piano over wide, slowly filtered pads of extended chords (min9, min11, maj9 on the relative
+  // major), a warm sub, a quiet arpeggio in places, all on a faint tape wobble with chorus, a dark echo and the shared
+  // room. A three-minute suite, so it rarely repeats: pads and arpeggio; the theme; the theme with a harmony and a soft
+  // beat; the bridge floating at half time; an interlude with its counter-melody on glass; the theme over a low
+  // counter-line; the bridge in time; and a short coda that breathes before it goes round again (from the theme).
+  //
+  // Korobeiniki's A part in A minor, in eighths, as everyone knows it (scripts/test.cjs checks TUNE_A against this):
+  //   E5 2  B4 1  C5 1  D5 2  C5 1  B4 1 | A4 2  A4 1  C5 1  E5 2  D5 1  C5 1 | B4 3  C5 1  D5 2  E5 2 | C5 2  A4 2  A4 4
+  //   rest 1  D5 2  F5 1  A5 2  G5 1  F5 1 | E5 3  C5 1  E5 2  D5 1  C5 1 | B4 2  B4 1  C5 1  D5 2  E5 2 | C5 2  A4 2  A4 2  rest 2
+  // and its B part: E5 4 C5 4 | D5 4 B4 4 | C5 4 A4 4 | G#4 4 B4 2 rest 2 | E5 4 C5 4 | D5 4 B4 4 | C5 2 E5 2 A5 4 | G#5 8
 
   const MIDI = (n) => { // 'E5', 'C#4', '-' (rest)
     if (n === '-') return null;
     const m = /^([A-G])(#?)(\d)$/.exec(n);
     return { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[m[1]] + (m[2] ? 1 : 0) + (Number(m[3]) + 1) * 12;
   };
-  const hz = (m) => 440 * Math.pow(2, (m - 69) / 12);
+  // A line in eighths, cut into bars of eight; a note held over a bar line stays in the bar it starts in.
   const bars = (str) => {
-    const out = [[]];
+    const out = [];
     let len = 0;
     for (const t of str.split(',')) {
       const [n, l] = t.trim().split(' ');
-      out[out.length - 1].push([MIDI(n), Number(l)]);
+      while (out.length <= Math.floor(len / 8)) out.push([]);
+      out[Math.floor(len / 8)].push([MIDI(n), Number(l)]);
       len += Number(l);
-      if (len % 8 === 0) out.push([]);
     }
-    out.pop();
+    while (out.length < len / 8) out.push([]);
     return out;
   };
-  const TUNE_A = bars('E5 2,B4 1,C5 1,D5 2,C5 1,B4 1,A4 2,A4 1,C5 1,E5 2,D5 1,C5 1,B4 3,C5 1,D5 2,E5 2,C5 2,A4 2,A4 4,- 1,D5 2,F5 1,A5 2,G5 1,F5 1,E5 3,C5 1,E5 2,D5 1,C5 1,B4 2,B4 1,C5 1,D5 2,E5 2,C5 2,A4 2,A4 2,- 2');
-  const TUNE_B = bars('E5 4,C5 4,D5 4,B4 4,C5 4,A4 4,G#4 4,B4 2,- 2,E5 4,C5 4,D5 4,B4 4,C5 2,E5 2,A5 4,G#5 8');
+  // Every note twice as long: a line at half time, over twice the bars.
+  const slow = (str) => str.split(',').map((t) => { const [n, l] = t.trim().split(' '); return n + ' ' + l * 2; }).join(',');
+  const A_PART = 'E5 2,B4 1,C5 1,D5 2,C5 1,B4 1,A4 2,A4 1,C5 1,E5 2,D5 1,C5 1,B4 3,C5 1,D5 2,E5 2,C5 2,A4 2,A4 4,- 1,D5 2,F5 1,A5 2,G5 1,F5 1,E5 3,C5 1,E5 2,D5 1,C5 1,B4 2,B4 1,C5 1,D5 2,E5 2,C5 2,A4 2,A4 2,- 2';
+  const B_PART = 'E5 4,C5 4,D5 4,B4 4,C5 4,A4 4,G#4 4,B4 2,- 2,E5 4,C5 4,D5 4,B4 4,C5 2,E5 2,A5 4,G#5 8';
+  const TUNE_A = bars(A_PART);
+  const TUNE_B = bars(B_PART);
+  const TUNE_B_SLOW = bars(slow(B_PART));
+  // The interlude's counter-melody (over PROG_I), and a low line that moves under the theme in the variation.
   const COUNTER = bars('A5 6,G5 2,G5 8,F5 6,E5 2,D5 8,C5 6,D5 2,E5 8,D5 4,C5 4,B4 8');
-  // Chords: [bass note, voicing]
+  const UNDER = bars('B3 8,C4 8,D4 4,B3 4,C4 4,E4 4,F4 8,E4 8,D4 4,B3 4,C4 8');
+  // Chords: [bass, pad voicing]. Extended and voiced close, under the tune; the dominant keeps its G# only where the
+  // bridge's melody has one.
   const CH = {
-    Am: [45, [57, 60, 64, 67]], E7: [40, [56, 59, 62, 64]], Dm: [38, [57, 60, 62, 65]], C: [48, [55, 59, 60, 64]],
-    F: [41, [57, 60, 64, 65]], Em: [40, [55, 59, 62, 64]], Es: [40, [57, 59, 62, 64]],
+    Am9: [45, [55, 59, 60, 64]], Am11: [45, [55, 60, 62, 64]], Em11: [40, [55, 57, 62, 64]], E9: [40, [56, 59, 62, 66]],
+    Dm9: [38, [53, 57, 60, 64]], Cmaj9: [36, [55, 59, 62, 64]], Fmaj9: [41, [57, 60, 64, 67]], Esus: [40, [57, 59, 62, 64]],
   };
-  const PROG_A = ['E7', 'Am', 'E7', 'Am', 'Dm', 'C', 'E7', 'Am'];
-  const PROG_B = ['Am', 'E7', 'Am', 'E7', 'Am', 'E7', 'Am', 'E7'];
-  const PROG_I = ['F', 'Em', 'Dm', 'Es', 'F', 'Em', 'Dm', 'E7'];
+  const PROG_A = ['Em11', 'Am9', 'Em11', 'Am9', 'Dm9', 'Cmaj9', 'Em11', 'Am9'];
+  const PROG_V = ['Em11', 'Am9', 'Em11', 'Am9', 'Dm9', 'Fmaj9', 'Em11', 'Am11'];
+  const PROG_B = ['Am9', 'E9', 'Am9', 'E9', 'Am9', 'E9', 'Am9', 'E9'];
+  const PROG_I = ['Fmaj9', 'Em11', 'Dm9', 'Esus', 'Fmaj9', 'Em11', 'Dm9', 'E9'];
+  const DRIFT = ['Fmaj9', 'Em11', 'Dm9', 'Esus'];
+  // Arpeggio shapes, as indexes into the voicing, one per eighth.
+  const ARPS = { rise: [0, 1, 2, 3, 0, 1, 2, 3], wave: [0, 2, 1, 3, 2, 1, 3, 1], fall: [3, 2, 1, 0, 3, 2, 1, 2] };
 
+  // hold: bars per chord (2 = half time) · arp and arpUp (semitones) · groove: 0 none, 1 a soft kick, 2 kick and brush
   const SECTIONS = [
-    { name: 'intro', prog: PROG_I.slice(0, 4), lead: null, groove: 0, arp: true, once: true },
-    { name: 'A1', prog: PROG_A, lead: TUNE_A, voice: 'piano', groove: 1 },
-    { name: 'A2', prog: PROG_A, lead: TUNE_A, voice: 'piano', up: 12, harmony: true, groove: 2, arp: true },
-    { name: 'B1', prog: PROG_B, lead: TUNE_B, voice: 'flute', groove: 1 },
-    { name: 'B2', prog: PROG_B, lead: TUNE_B, voice: 'piano', harmony: true, groove: 2, arp: true },
-    { name: 'interlude', prog: PROG_I, lead: COUNTER, voice: 'flute', groove: 1, arp: true },
-    { name: 'A3', prog: PROG_A, lead: TUNE_A, voice: 'piano', groove: 2 },
+    { name: 'intro', prog: DRIFT, arp: 'rise', arpUp: 12, bells: true, once: true },
+    { name: 'theme', prog: PROG_A, lead: TUNE_A, voice: 'keys', bells: true },
+    { name: 'theme2', prog: PROG_A, lead: TUNE_A, voice: 'keys', harmony: true, arp: 'wave', groove: 2 },
+    { name: 'float', prog: PROG_B, hold: 2, lead: TUNE_B_SLOW, voice: 'breath', drops: true, bells: true, groove: 1 },
+    { name: 'interlude', prog: PROG_I, lead: COUNTER, voice: 'glass', arp: 'rise', groove: 1 },
+    { name: 'variation', prog: PROG_V, lead: TUNE_A, voice: 'keys', under: UNDER, groove: 2 },
+    { name: 'bridge', prog: PROG_B, lead: TUNE_B, voice: 'keys', harmony: true, arp: 'wave', groove: 2, bells: true },
+    { name: 'coda', prog: DRIFT, arp: 'fall', arpUp: 12, drops: true, bells: true },
   ];
   const SONG = (() => {
     const list = [];
-    SECTIONS.forEach((s, si) => s.prog.forEach((c, b) => list.push({ section: s.name, si, chord: CH[c], lead: s.lead ? s.lead[b] : null, voice: s.voice, up: s.up || 0, harmony: !!s.harmony, groove: s.groove, arp: !!s.arp, once: !!s.once })));
-    return { bars: list, loopFrom: list.findIndex((b) => !b.once) };
+    SECTIONS.forEach((s, si) => {
+      const hold = s.hold || 1;
+      s.prog.forEach((c, ci) => {
+        for (let k = 0; k < hold; k++) {
+          const b = ci * hold + k;
+          list.push({
+            section: s.name, si, name: c, harm: CH[c], chord: k === 0 ? CH[c] : null, hold, left: hold - k, lead: s.lead ? s.lead[b] : null,
+            under: s.under ? s.under[b] : null, voice: s.voice, harmony: !!s.harmony, arp: s.arp || null, arpUp: s.arpUp || 0,
+            groove: s.groove || 0, bells: !!s.bells, drops: !!s.drops, once: !!s.once,
+          });
+        }
+      });
+    });
+    return { bars: list, loopFrom: list.findIndex((b) => !b.once), tunes: { A: TUNE_A, B: TUNE_B, slowB: TUNE_B_SLOW }, chords: CH };
   })();
 
-  // A harmonic minor (with G#), for harmonies a third below the tune.
-  const SCALE = [0, 2, 4, 5, 8, 9, 11];
-  function thirdBelow(m) {
-    const pc = ((m % 12) + 12) % 12;
-    let i = SCALE.indexOf(pc);
-    if (i < 0) return m - 3;
-    const j = (i - 2 + 7) % 7;
-    let d = SCALE[i] - SCALE[j];
-    if (d <= 0) d += 12;
-    return m - d;
+  // A harmony under the tune: the nearest note of the bar's chord a third to a sixth below, so it never rubs.
+  function harmonyBelow(m, chord) {
+    const pcs = [chord[0]].concat(chord[1]).map((x) => x % 12);
+    for (let d = 3; d <= 9; d++) if (pcs.includes((m - d) % 12)) return m - d;
+    return m - 5;
   }
 
   /**
@@ -373,44 +480,111 @@
     playing: false,
     volume: 0.25,
     tempo: 1,
-    bpm: 112,
+    bpm: 80,
     timer: null,
     gain: null,
+    live: 0, // oscillators scheduled and not yet ended
 
     start() {
       const ctx = Sound.ensure();
       if (!ctx || this.playing) return;
       if (ctx.state === 'suspended') ctx.resume();
       this.playing = true;
-      this.gain = ctx.createGain();
-      this.gain.gain.value = this.volume;
-      const lp = ctx.createBiquadFilter();
-      lp.type = 'lowpass'; lp.frequency.value = 5200; lp.Q.value = 0.3;
-      const delay = ctx.createDelay(1), fb = ctx.createGain(), wet = ctx.createGain(), dlp = ctx.createBiquadFilter();
-      delay.delayTime.value = 0.39; fb.gain.value = 0.2; wet.gain.value = 0.12; dlp.type = 'lowpass'; dlp.frequency.value = 2200;
-      this.bus = ctx.createGain();
-      this.bus.connect(lp);
-      lp.connect(this.gain);
-      lp.connect(delay); delay.connect(dlp); dlp.connect(fb); fb.connect(delay); dlp.connect(wet); wet.connect(this.gain);
-      if (Sound.reverb) { const rs = ctx.createGain(); rs.gain.value = 0.18; lp.connect(rs).connect(Sound.reverb); this.revSend = rs; }
-      this.gain.connect(Sound.master);
-      Sound.master.gain.value = Sound.volume || 0.35;
+      this.wire(ctx);
+      Sound.master.gain.value = Sound.volume; // a Volume of 0 is a real 0
       this.pos = { bar: this.pos && this.pos.bar != null ? this.pos.bar : 0, at: ctx.currentTime + 0.1 };
+      this.fresh = true;
       this.timer = setInterval(() => this.schedule(), 60);
       this.schedule();
+    },
+
+    /**
+     * The mixing desk, built per start: instruments → tape wobble → a slowly moving low-pass → the volume (which the
+     * announcer ducks) → the speakers, a chorus either side, a dark dotted-eighth echo, and the shared room (with the
+     * bass kept out of it so the tail stays clear). Pads have their own wide, breathing filter.
+     */
+    wire(ctx) {
+      const lfos = this.lfos = [], sends = this.sends = [];
+      const lfo = (f, depth, param) => { const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.value = f; g.gain.value = depth; o.connect(g).connect(param); o.start(); lfos.push(o); };
+      const pan = (v, dest) => { const p = ctx.createStereoPanner(); p.pan.value = v; p.connect(dest); return p; };
+      this.bus = ctx.createGain();
+      // Tape: a short delay whose length sways slowly (wow, about five cents) and a little faster (flutter).
+      const tape = ctx.createDelay(0.1);
+      tape.delayTime.value = 0.012;
+      lfo(0.29, 0.0016, tape.delayTime); lfo(4.7, 0.00005, tape.delayTime);
+      const tone = ctx.createBiquadFilter();
+      tone.type = 'lowpass'; tone.frequency.value = 3600; tone.Q.value = 0.4;
+      lfo(0.023, 700, tone.frequency);
+      this.gain = ctx.createGain();
+      this.gain.gain.value = this.volume;
+      this.bus.connect(tape).connect(tone).connect(this.gain);
+      this.gain.connect(Sound.master);
+      // Chorus: two slowly swaying copies, one each side.
+      for (const [t, f, side] of [[0.021, 0.19, -0.7], [0.027, 0.13, 0.7]]) {
+        const d = ctx.createDelay(0.1), g = ctx.createGain();
+        d.delayTime.value = t; lfo(f, 0.003, d.delayTime); g.gain.value = 0.3;
+        this.gain.connect(d).connect(g).connect(pan(side, Sound.master));
+        sends.push(g);
+      }
+      // Echo: a dotted eighth, darker on each repeat, and short-lived.
+      const echo = this.echo = ctx.createDelay(2), fb = ctx.createGain(), elp = ctx.createBiquadFilter(), wet = ctx.createGain();
+      echo.delayTime.value = 60 / this.bpm * 0.75; fb.gain.value = 0.28; elp.type = 'lowpass'; elp.frequency.value = 1700; wet.gain.value = 0.15;
+      this.gain.connect(echo); echo.connect(elp); elp.connect(fb); fb.connect(echo); elp.connect(wet).connect(Sound.master);
+      sends.push(wet);
+      if (Sound.reverb) {
+        const hp = ctx.createBiquadFilter(), rs = ctx.createGain();
+        hp.type = 'highpass'; hp.frequency.value = 240; rs.gain.value = 0.3;
+        this.gain.connect(hp).connect(rs).connect(Sound.reverb);
+        sends.push(rs);
+      }
+      // Pads: left and right through a filter that opens and closes over about twenty seconds.
+      const padF = ctx.createBiquadFilter(), padF2 = ctx.createBiquadFilter();
+      padF.type = 'lowpass'; padF.frequency.value = 1100; padF.Q.value = 0.6;
+      padF2.type = 'lowpass'; padF2.frequency.value = 2400; padF2.Q.value = 0.3;
+      lfo(0.05, 450, padF.frequency);
+      padF.connect(padF2).connect(this.bus);
+      this.padL = pan(-0.55, padF); this.padR = pan(0.55, padF);
+      // Either side of centre, for the arpeggio and the bells.
+      this.left = pan(-0.35, this.bus); this.right = pan(0.35, this.bus);
+    },
+
+    /** Inside Sound.offline: the suite from a bar, for some seconds, onto the offline context. */
+    render(ctx, seconds, bar) {
+      const keep = ['gain', 'bus', 'lfos', 'sends', 'echo', 'padL', 'padR', 'left', 'right', 'pos', 'playing', 'fresh'].map((k) => [k, this[k]]);
+      this.wire(ctx);
+      this.playing = true;
+      this.pos = { bar: bar || 0, at: 0.05 };
+      this.fresh = true;
+      this.fill(seconds);
+      for (const [k, v] of keep) this[k] = v;
     },
 
     stop() {
       if (!this.playing) return;
       this.playing = false;
       clearInterval(this.timer);
-      const g = this.gain, ctx = Sound.ctx, rs = this.revSend;
-      if (g && ctx) { g.gain.setTargetAtTime(0, ctx.currentTime, 0.08); setTimeout(() => { g.disconnect(); if (rs) rs.disconnect(); }, 700); }
-      this.gain = null; this.revSend = null;
+      // Bars are scheduled whole and ahead: come back to the one that was sounding, not the one after it.
+      const p = this.pos;
+      if (p && p.sched && Sound.ctx) {
+        const now = Sound.ctx.currentTime, cur = p.sched.filter((b) => b.at <= now).pop() || p.sched[0];
+        if (cur) p.bar = cur.bar;
+      }
+      const g = this.gain, ctx = Sound.ctx, sends = this.sends || [], lfos = this.lfos || [];
+      if (g && ctx) {
+        g.gain.cancelScheduledValues(ctx.currentTime);
+        g.gain.setTargetAtTime(0, ctx.currentTime, 0.08);
+        setTimeout(() => { g.disconnect(); for (const s of sends) s.disconnect(); for (const o of lfos) { try { o.stop(); } catch (e) { /* done */ } } }, 700);
+      }
+      this.gain = null;
     },
 
-    /** Back to the top (a new game). */
-    rewind() { this.pos = null; },
+    /** Back to the top (a new game). While playing, what was scheduled fades out and the suite starts again. */
+    rewind() {
+      const was = this.playing;
+      if (was) this.stop();
+      this.pos = null;
+      if (was) this.start();
+    },
 
     setVolume(v) { if (v === this.volume) return; this.volume = v; if (this.gain) this.gain.gain.value = v; },
 
@@ -424,134 +598,186 @@
       p.setTargetAtTime(v, to, 0.25);
     },
 
-    env(o, at, dur, gain, attack, dest, release) {
-      const ctx = Sound.ctx, g = ctx.createGain();
-      g.gain.setValueAtTime(0.0001, at);
-      g.gain.exponentialRampToValueAtTime(gain, at + attack);
-      g.gain.setTargetAtTime(0.0001, at + Math.max(attack, dur), release || dur * 0.35 + 0.05);
-      o.connect(g).connect(dest || this.bus);
-      return g;
-    },
+    // ---- instruments: every note is a few oscillators that stop on their own and are let go when they do ----------
 
     osc(type, f, at, end) {
       const o = Sound.ctx.createOscillator();
       o.type = type; o.frequency.value = f;
       o.start(at); o.stop(end);
+      this.live++;
+      o.onended = () => { this.live--; o.disconnect(); if (o.tail) for (const n of o.tail) n.disconnect(); };
       return o;
     },
 
-    /** Electric piano: a sine whose brightness (a modulator) fades fast while the tone fades slowly. */
-    piano(f, at, dur, gain) {
-      const ctx = Sound.ctx, end = at + dur * 1.4 + 0.6;
-      const o = this.osc('sine', f, at, end), m = this.osc('sine', f * 2, at, end), mg = ctx.createGain();
-      mg.gain.setValueAtTime(f * 0.7, at); mg.gain.exponentialRampToValueAtTime(f * 0.04, at + 0.3);
-      m.connect(mg).connect(o.frequency);
-      const g = ctx.createGain();
+    /** An envelope: in over attack, held to dur, then away with a time-constant of release. */
+    env(o, at, dur, gain, attack, dest, release) {
+      const g = Sound.ctx.createGain();
       g.gain.setValueAtTime(0.0001, at);
-      g.gain.exponentialRampToValueAtTime(gain, at + 0.01);
-      g.gain.exponentialRampToValueAtTime(gain * 0.45, at + 0.25);
-      g.gain.setTargetAtTime(0.0001, at + dur, 0.18);
-      o.connect(g).connect(this.bus);
+      g.gain.exponentialRampToValueAtTime(gain, at + attack);
+      g.gain.setTargetAtTime(0.0001, at + Math.max(attack, dur), release || dur * 0.35 + 0.05);
+      o.connect(g).connect(dest || this.bus);
+      (o.tail = o.tail || []).push(g);
+      return g;
     },
 
-    kalimba(f, at, dur, gain) {
-      const end = at + 0.9;
-      this.env(this.osc('sine', f, at, end), at, 0.02, gain, 0.004, null, 0.22);
-      this.env(this.osc('sine', f * 5.4, at, end), at, 0.01, gain * 0.12, 0.002, null, 0.04);
-      this.env(this.osc('triangle', f * 2, at, end), at, 0.02, gain * 0.15, 0.003, null, 0.08);
+    /** A modulator on o's pitch whose depth (in Hz) falls from a to b over time. */
+    fm(o, ratio, a, b, at, time, end) {
+      const m = this.osc('sine', o.frequency.value * ratio, at, end), g = Sound.ctx.createGain();
+      g.gain.setValueAtTime(a, at); g.gain.exponentialRampToValueAtTime(b, at + time);
+      m.connect(g).connect(o.frequency);
+      (m.tail = m.tail || []).push(g);
     },
 
-    bell(f, at, dur, gain) {
-      const end = at + dur + 1.6;
-      this.env(this.osc('sine', f, at, end), at, 0.05, gain, 0.005, null, 0.5 + dur * 0.2);
-      this.env(this.osc('sine', f * 2.76, at, end), at, 0.02, gain * 0.2, 0.003, null, 0.2);
-      this.env(this.osc('sine', f * 2, at, end), at, 0.03, gain * 0.25, 0.004, null, 0.35);
+    /** Electric piano, glass-edged: FM at one (the round body, bright then plain) and a brief high glint. */
+    keys(f, at, dur, gain, dest) {
+      const end = at + dur + 1.6, o = this.osc('sine', f, at, end);
+      this.fm(o, 1, f * 1.1, f * 0.06, at, 0.8, end);
+      this.fm(o, 7, f * 0.2, f * 0.003, at, 0.12, at + 0.3);
+      const g = this.env(o, at, dur, gain, 0.012, dest, 0.28);
+      g.gain.setTargetAtTime(gain * 0.45, at + 0.012, 0.2);
+      g.gain.setTargetAtTime(0.0001, at + dur, 0.28);
     },
 
-    flute(f, at, dur, gain) {
-      const ctx = Sound.ctx, end = at + dur + 0.5;
-      const o = this.osc('sine', f, at, end), lfo = this.osc('sine', 5, at, end), lg = ctx.createGain();
-      lg.gain.setValueAtTime(0, at); lg.gain.linearRampToValueAtTime(9, at + Math.min(0.4, dur));
-      lfo.connect(lg).connect(o.detune);
-      this.env(o, at, dur * 0.95, gain, 0.07, null, 0.08);
-      this.env(this.osc('triangle', f * 2, at, end), at, dur * 0.9, gain * 0.08, 0.09, null, 0.06);
+    /** A breathy lead: triangle and sine a hair apart, a slow swell and a vibrato that arrives late. */
+    breath(f, at, dur, gain, dest) {
+      const ctx = Sound.ctx, end = at + dur + 1.2;
+      const a = this.osc('triangle', f, at, end), b = this.osc('sine', f, at, end), v = this.osc('sine', 4.6, at, end), vg = ctx.createGain();
+      b.detune.value = 6;
+      vg.gain.setValueAtTime(0, at); vg.gain.linearRampToValueAtTime(7, at + Math.min(0.8, dur));
+      v.connect(vg); vg.connect(a.detune); vg.connect(b.detune);
+      v.tail = [vg];
+      this.env(a, at, dur, gain * 0.6, 0.16, dest, 0.3);
+      this.env(b, at, dur, gain * 0.5, 0.2, dest, 0.3);
     },
 
-    lead(voice, f, at, dur, gain) {
-      if (voice === 'kalimba') this.kalimba(f, at, dur, gain * 0.9);
-      else if (voice === 'bell') this.bell(f, at, dur, gain * 0.7);
-      else if (voice === 'flute') this.flute(f, at, dur, gain * 0.75);
-      else this.piano(f, at, dur, gain);
+    /** A glass bell: inharmonic FM that shimmers and fades over a few seconds. */
+    bell(f, at, gain, dest) {
+      const end = at + 4, o = this.osc('sine', f, at, end);
+      this.fm(o, 3.5, f * 1.1, f * 0.02, at, 1.2, end);
+      this.env(o, at, 0.01, gain, 0.004, dest, 0.9);
     },
 
-    noise(at, dur, gain, hp) {
+    /** The arpeggio's soft digital pluck. */
+    pluck(f, at, gain, dest) {
+      const end = at + 1.2, o = this.osc('sine', f, at, end);
+      this.fm(o, 2, f * 0.5, f * 0.02, at, 0.15, end);
+      this.env(o, at, 0.01, gain, 0.004, dest, 0.2);
+    },
+
+    /** A water droplet: a sine that leaps up as it vanishes. */
+    drop(f, at, gain, dest) {
+      const o = this.osc('sine', f, at, at + 0.4);
+      o.frequency.setValueAtTime(f, at); o.frequency.exponentialRampToValueAtTime(f * 1.6, at + 0.05);
+      this.env(o, at, 0.01, gain, 0.003, dest, 0.04);
+    },
+
+    /** A pad note: two saws a few cents apart, one each side, swelling in and out slowly (each chord's swell
+     * overlaps the last one's fade, so there is never a hole between them). */
+    pad(m, at, len) {
+      const end = at + len + 3;
+      for (const [cents, side] of [[-7, this.padL], [7, this.padR]]) {
+        const o = this.osc('sawtooth', hz(m), at, end), g = Sound.ctx.createGain();
+        o.detune.value = cents;
+        g.gain.setValueAtTime(0, at); g.gain.linearRampToValueAtTime(0.011, at + 0.9);
+        g.gain.setTargetAtTime(0, at + len - 0.3, 0.6);
+        o.connect(g).connect(side);
+        o.tail = [g];
+      }
+    },
+
+    /** The bass: a round sine with a softer one an octave down under it. */
+    bass(m, at, dur, gain) {
+      const end = at + dur + 1.5;
+      this.env(this.osc('sine', hz(m), at, end), at, dur, gain, 0.04, null, 0.3);
+      this.env(this.osc('sine', hz(m - 12), at, end), at, dur, gain * 0.5, 0.06, null, 0.3);
+    },
+
+    /** A felt kick: low and short, no click. */
+    kick(at, gain) {
+      const o = this.osc('sine', 78, at, at + 0.6);
+      o.frequency.setValueAtTime(78, at); o.frequency.exponentialRampToValueAtTime(46, at + 0.14);
+      this.env(o, at, 0.02, gain, 0.005, null, 0.1);
+    },
+
+    /** A brush: a puff of mid-band noise, no top. */
+    brush(at, gain) {
       const ctx = Sound.ctx;
-      if (!this.noiseBuf) {
-        const len = Math.floor(ctx.sampleRate * 0.2);
+      if (!this.noiseBuf || this.noiseBuf.sampleRate !== ctx.sampleRate) {
+        const len = Math.floor(ctx.sampleRate * 0.4);
         this.noiseBuf = ctx.createBuffer(1, len, ctx.sampleRate);
         const d = this.noiseBuf.getChannelData(0);
         for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
       }
       const src = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
-      src.buffer = this.noiseBuf; f.type = 'highpass'; f.frequency.value = hp;
-      g.gain.setValueAtTime(gain, at); g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
-      src.connect(f).connect(g).connect(this.bus); src.start(at); src.stop(at + dur + 0.02);
+      src.buffer = this.noiseBuf; f.type = 'bandpass'; f.frequency.value = 1100; f.Q.value = 1.4;
+      g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(gain, at + 0.015); g.gain.setTargetAtTime(0.0001, at + 0.02, 0.06);
+      src.connect(f).connect(g).connect(this.right);
+      src.start(at); src.stop(at + 0.4);
+      src.onended = () => { src.disconnect(); f.disconnect(); g.disconnect(); };
     },
 
-    kick(at, gain) {
-      const ctx = Sound.ctx, o = this.osc('sine', 110, at, at + 0.3), g = ctx.createGain();
-      o.frequency.setValueAtTime(110, at); o.frequency.exponentialRampToValueAtTime(42, at + 0.16);
-      g.gain.setValueAtTime(gain, at); g.gain.exponentialRampToValueAtTime(0.0001, at + 0.25);
-      o.connect(g).connect(this.bus);
+    lead(voice, f, at, dur, gain) {
+      if (voice === 'breath') this.breath(f, at, dur, gain * 0.8);
+      else if (voice === 'glass') { this.bell(f, at, gain * 0.75, this.bus); this.breath(f, at, dur, gain * 0.3); }
+      else this.keys(f, at, dur, gain);
     },
 
     /** One bar at a time, a little ahead, as Web Audio likes it. */
     schedule() {
       const ctx = Sound.ctx;
       if (!ctx || !this.playing) return;
+      this.fill(ctx.currentTime + 0.35, Sound.muted);
+    },
+
+    /** Schedules bars up to a time. Silent (muted) keeps time without building notes; the next heard bar sounds its chord. */
+    fill(until, silent) {
       const p = this.pos;
-      while (p.at < ctx.currentTime + 0.35) {
+      if (!p) return;
+      while (p.at < until) {
         const e = 60 / (this.bpm * this.tempo) / 2; // an eighth
-        const bar = SONG.bars[p.bar];
-        this.playBar(bar, p.at, e);
+        if (this.echo) this.echo.delayTime.setTargetAtTime(e * 1.5, p.at, 0.5);
+        if (silent) this.fresh = true;
+        else this.playBar(SONG.bars[p.bar], p.at, e, p.bar);
+        p.sched = (p.sched || []).concat({ bar: p.bar, at: p.at }).slice(-3);
         p.at += e * 8;
         p.bar++;
         if (p.bar >= SONG.bars.length) p.bar = SONG.loopFrom;
       }
     },
 
-    playBar(bar, t0, e) {
-      const [root, voicing] = bar.chord;
-      // Pad: the chord, swelling in.
-      for (const m of voicing) {
-        this.env(this.osc('triangle', hz(m), t0, t0 + e * 8 + 1.2), t0, e * 7.6, 0.012, 0.35, null, 0.4);
-        this.env(this.osc('sine', hz(m) * 1.003, t0, t0 + e * 8 + 1.2), t0, e * 7.6, 0.01, 0.4, null, 0.4);
+    playBar(bar, t0, e, idx) {
+      // A fixed scatter per bar, so bells and droplets land in the same places every time round.
+      const rnd = (k) => { const x = Math.sin((idx * 8 + k) * 12.9898) * 43758.5453; return x - Math.floor(x); };
+      const [root, voicing] = bar.harm;
+      // A held chord sounds from its first bar; coming back (after a pause) in the middle of one, it sounds from here.
+      const fresh = this.fresh;
+      this.fresh = false;
+      if (bar.chord || fresh) {
+        const len = e * 8 * bar.left;
+        for (const m of voicing) this.pad(m, t0, len);
+        this.bass(root, t0, len - e * 0.5, 0.13);
       }
-      // Bass: root on one, the fifth on three, a pickup when the beat is in.
-      this.env(this.osc('sine', hz(root), t0, t0 + e * 4), t0, e * 2.8, 0.2, 0.012, null, 0.08);
-      this.env(this.osc('sine', hz(root + 7), t0 + e * 4, t0 + e * 8), t0 + e * 4, e * 2.2, 0.15, 0.012, null, 0.08);
-      if (bar.groove >= 2) this.env(this.osc('sine', hz(root + 12), t0 + e * 7, t0 + e * 8.5), t0 + e * 7, e * 0.8, 0.09, 0.01, null, 0.05);
-      // Arpeggio: the voicing, rippling up and down in eighths.
+      if (bar.groove >= 2) this.bass(root + 12, t0 + e * 6, e * 1.5, 0.04);
       if (bar.arp) {
-        const order = [0, 1, 2, 3, 2, 1, 2, 3];
-        order.forEach((k, i) => {
-          const at = t0 + i * e, f = hz(voicing[k] + 12);
-          this.env(this.osc('sine', f, at, at + e * 2), at, e * 0.4, 0.018, 0.006, null, 0.12);
-        });
+        ARPS[bar.arp].forEach((k, i) => this.pluck(hz(voicing[k] + bar.arpUp), t0 + i * e, 0.02, i % 2 ? this.right : this.left));
       }
-      // Beat: a shaker on the off-beats; a soft kick on one and three.
-      if (bar.groove >= 1) for (let i = 1; i < 8; i += 2) this.noise(t0 + i * e, 0.05, 0.014, 7000);
-      if (bar.groove >= 2) { this.kick(t0, 0.12); this.kick(t0 + e * 4, 0.09); }
-      // The tune (and its harmony a third below).
+      if (bar.bells && rnd(1) < 0.75) this.bell(hz(voicing[Math.floor(rnd(2) * 4)] + 12), t0 + e * 2 * Math.floor(rnd(3) * 4), 0.016, rnd(4) < 0.5 ? this.left : this.right);
+      if (bar.drops) for (let i = 0; i < 2; i++) this.drop(hz(81 + AM[Math.floor(rnd(5 + i) * 5)]), t0 + e * Math.floor(rnd(7 + i) * 8), 0.012, i ? this.left : this.right);
+      if (bar.groove >= 1 && (bar.chord || fresh)) this.kick(t0, 0.12);
+      if (bar.groove >= 2) { this.kick(t0 + e * 5, 0.06); this.brush(t0 + e * 2, 0.018); this.brush(t0 + e * 6, 0.018); }
       if (bar.lead) {
         let at = t0;
         for (const [m, l] of bar.lead) {
           if (m != null) {
-            this.lead(bar.voice, hz(m + bar.up), at, l * e, 0.11);
-            if (bar.harmony) this.lead(bar.voice, hz(thirdBelow(m) + bar.up), at, l * e, 0.045);
+            this.lead(bar.voice, hz(m), at, l * e, 0.12);
+            if (bar.harmony) this.keys(hz(harmonyBelow(m, bar.harm)), at, l * e, 0.04);
           }
           at += l * e;
         }
+      }
+      if (bar.under) {
+        let at = t0;
+        for (const [m, l] of bar.under) { if (m != null) this.breath(hz(m), at, l * e, 0.07); at += l * e; }
       }
     },
   };

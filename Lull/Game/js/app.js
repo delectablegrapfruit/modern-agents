@@ -63,7 +63,9 @@
       appEl.className = 'bg-' + s.bg;
       this.sound.enabled = !!s.sound;
       this.sound.volume = s.volume;
+      if (this.sound.master) this.sound.master.gain.value = s.volume;
       this.sound.pack = this.state.equipped.sound || 'soft';
+      this.applyMute();
       const css = getComputedStyle(rootEl);
       const v = (k) => css.getPropertyValue(k).trim();
       this.theme = { name: theme, well: v('--well'), grid: v('--grid'), line: v('--line-2'), muted: v('--muted'), fg: v('--fg'), accent: s.accent, fog: v('--fog'), mono: v('--mono') };
@@ -74,6 +76,27 @@
         this.applyLook();
         if (this.modes.play) this.modes.play.game.previewCount = s.preview;
       }
+    },
+
+    /** Mute on or off: the audio, the top-bar button and any open Settings switch, all from settings.muted. */
+    applyMute() {
+      const on = !!this.settings.muted;
+      this.sound.setMuted(on);
+      const b = document.getElementById('btn-mute');
+      if (b) {
+        b.innerHTML = UI.ICONS[on ? 'muted' : 'sound'];
+        b.classList.toggle('muted', on);
+        b.setAttribute('aria-pressed', String(on));
+        b.setAttribute('aria-label', on ? 'Unmute' : 'Mute');
+        b.title = (on ? 'Unmute' : 'Mute') + ' (M)';
+      }
+      for (const sw of document.querySelectorAll('.switch[data-setting="muted"]')) sw.setAttribute('aria-checked', String(on));
+    },
+
+    toggleMute() {
+      this.settings.muted = !this.settings.muted;
+      this.store.touch();
+      this.applyMute();
     },
 
     look() { return Render.makeLook(this.state.equipped, this.theme, performance.now()); },
@@ -95,6 +118,7 @@
       document.getElementById('btn-hide').innerHTML = UI.ICONS.hide;
       document.getElementById('btn-close').innerHTML = UI.ICONS.close;
       document.getElementById('btn-settings').addEventListener('click', () => UI.openSettings(this));
+      document.getElementById('btn-mute').addEventListener('click', () => this.toggleMute());
       document.getElementById('btn-pin').addEventListener('click', () => { this.settings.onTop = !this.settings.onTop; this.store.touch(); this.applySettings(); toast(this.settings.onTop ? 'Floating above other windows' : 'Behaves like a normal window', null, 1600); });
       document.getElementById('btn-hide').addEventListener('click', () => { this.saveNow(); native.post('hide'); });
       document.getElementById('btn-close').addEventListener('click', () => { this.saveNow(); native.post('quit'); });
@@ -147,6 +171,8 @@
       root.addEventListener('keydown', (e) => {
         const t = e.target;
         const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA');
+        // M mutes on every tab and over any open window (a plain M only: ⌘M and friends belong to the system).
+        if (!typing && e.code === 'KeyM' && !e.metaKey && !e.ctrlKey && !e.altKey) { if (!e.repeat) this.toggleMute(); e.preventDefault(); return; }
         if (UI.modalOpen()) {
           if (e.key === 'Escape') { UI.closeTopModal(); e.preventDefault(); }
           else if (e.key === 'Enter' && !(t && t.tagName === 'TEXTAREA')) { if (UI.submitTopModal()) e.preventDefault(); }
@@ -158,24 +184,25 @@
         if ((e.metaKey || e.ctrlKey) && e.code === 'KeyZ' && this.tab === 'puzzle') { this.modes.puzzle.undo(); e.preventDefault(); return; }
         if (e.key === 'Escape' && this.tab === 'play' && this.modes.play.closeTray()) { e.preventDefault(); return; }
         if (e.key === 'Escape' && native.available) { this.saveNow(); native.post('hide'); return; }
+        if (this.tab === 'factory' && !e.metaKey && !e.ctrlKey && this.modes.factory.key(e)) { e.preventDefault(); return; }
         if (this.keys.down(e)) this.activity();
       });
       root.addEventListener('keyup', (e) => this.keys.up(e));
       root.addEventListener('blur', () => { this.keys.releaseAll(); if (this.modes.classic && this.modes.classic.running()) this.modes.classic.togglePause(true); });
-      root.addEventListener('focus', () => { this.focusedAt = performance.now(); });
+      root.addEventListener('focus', () => { this.focusedAt = performance.now(); setTimeout(() => this.announceUnheard(), 400); });
       root.addEventListener('mousedown', () => this.activity(), true);
       // Clicked buttons let go of focus, so Space and Enter keep playing instead of pressing them again.
       document.addEventListener('mouseup', (e) => {
         const b = e.target && e.target.closest && e.target.closest('button');
         if (b && !b.closest('.modal')) setTimeout(() => b.blur(), 0);
       });
-      document.addEventListener('visibilitychange', () => { if (document.hidden) { this.saveNow(); L.Music.stop(); } else this.modes.factory.catchUp(true); });
+      document.addEventListener('visibilitychange', () => { if (document.hidden) { this.saveNow(); L.Music.stop(); } else { this.modes.factory.catchUp(true); setTimeout(() => this.announceUnheard(), 400); } });
       root.addEventListener('pagehide', () => this.saveNow());
       root.addEventListener('beforeunload', () => this.saveNow());
       root.addEventListener('resize', () => { this.onResize(); });
       if (root.ResizeObserver) {
         const ro = new ResizeObserver(() => this.onResize());
-        for (const id of ['cv-play', 'cv-classic', 'cv-puzzle', 'cv-belt']) ro.observe(document.getElementById(id).parentElement);
+        for (const id of ['cv-play', 'cv-classic', 'cv-puzzle', 'cv-floor']) ro.observe(document.getElementById(id).parentElement);
       }
       if (root.matchMedia) {
         const mq = root.matchMedia('(prefers-color-scheme: light)');
@@ -186,7 +213,7 @@
       L.fromNative = (msg) => {
         if (!msg) return;
         if (msg.type === 'flush') { this.saveNow(); native.post('flushed'); }
-        else if (msg.type === 'shown') { this.focusedAt = performance.now(); this.modes.factory.catchUp(true); }
+        else if (msg.type === 'shown') { this.focusedAt = performance.now(); this.modes.factory.catchUp(true); setTimeout(() => this.announceUnheard(), 400); }
         else if (msg.type === 'toggleTop') { this.settings.onTop = !this.settings.onTop; this.applySettings(); }
         else if (msg.type === 'tab') this.setTab(msg.tab);
         else if (msg.type === 'settings') UI.openSettings(this);
@@ -199,14 +226,28 @@
     achieve(event) {
       const got = L.Achievements.check(this.state, event);
       if (!got.length) return;
-      for (const a of got) {
-        this.store.addLines(a.pay, 'achievements');
-        toast((a.tier === 'legend' ? '◆ Legendary: ' : '★ ') + a.name + ' · +' + a.pay + ' ◆', 'good', a.tier === 'legend' ? 6000 : 3200);
-      }
-      this.sound.play(got.some((a) => a.tier === 'legend') ? 'perfect' : 'solve');
+      for (const a of got) this.store.addLines(a.pay, 'achievements');
+      // Earned in the background (the factory, the minute check): no chime from a hidden window; said on return.
+      if (document.hidden || !document.hasFocus()) this.unheard = (this.unheard || []).concat(got);
+      else this.announce(got);
       if (this.tab === 'achievements') UI.renderAchievements(this);
       this.refreshWallet(true);
       this.store.touch();
+    },
+
+    announce(got, away) {
+      const legend = got.some((a) => a.tier === 'legend');
+      if (away && got.length > 3) toast('★ ' + got.length + ' achievements while you were away · +' + fmtInt(got.reduce((n, a) => n + a.pay, 0)) + ' ◆', 'good', 6000);
+      else for (const a of got) toast((a.tier === 'legend' ? '◆ Legendary: ' : '★ ') + a.name + ' · +' + fmtInt(a.pay) + ' ◆', 'good', a.tier === 'legend' ? 6000 : 3200);
+      this.sound.play(legend ? 'perfect' : 'solve');
+    },
+
+    /** Back in front: the achievements earned meanwhile, once. */
+    announceUnheard() {
+      if (!this.unheard || !this.unheard.length || document.hidden || !document.hasFocus()) return;
+      const got = this.unheard;
+      this.unheard = null;
+      this.announce(got, true);
     },
 
     onResize() {
@@ -255,19 +296,19 @@
         else if (this.tab === 'puzzle') S.puzzle += 1000;
         else if (this.tab === 'factory') S.factory += 1000;
         this.store.day().ms += 1000;
+        this.store.played();
         this.store.dirty = true;
       }
       this.secondCount = (this.secondCount || 0) + 1;
+      // Lifetime achievements (time, days, lines from anywhere) are looked at once a minute too.
+      if (this.secondCount % 60 === 0) this.achieve({ mode: 'tick' });
       if (this.store.dirty && performance.now() - this.lastSave > 5000) this.saveNow();
     },
 
     saveNow() {
       if (!this.store) return;
       this.modes.play && this.modes.play.save();
-      if (this.modes.puzzle && this.modes.puzzle.puzzle && this.state.puzzle.current && !this.modes.puzzle.done) {
-        this.state.puzzle.current.ms = Math.round(this.modes.puzzle.elapsed());
-      }
-      this.state.factory.lastTick = this.tab === 'factory' ? Date.now() : this.state.factory.lastTick;
+      if (this.modes.puzzle) this.modes.puzzle.bankTime();
       this.store.save();
       this.lastSave = performance.now();
     },
@@ -280,7 +321,7 @@
           h('p', null, 'Blocks here never fall on their own. Line them up, lower them, drop them when you are ready — or leave and come back. Nothing is timed and nothing is lost.'),
           h('p', null, h('b', null, 'Play'), ' — endless and relaxed. Every cleared line is banked as ◆ lines to spend in the ', h('b', null, 'Shop'), ' on one-shot items (bombs, drills, a piece you draw yourself) and cosmetics.'),
           h('p', null, h('b', null, 'Puzzles'), ' — short, seeded, infinite, with wildcards like Big Minos, Wraparound and Upside Down. Every seed has a solution.'),
-          h('p', null, h('b', null, 'Factory'), ' — a little idler: buy presses that stamp minos, flick cracked ones off the belt, and trade full crates for lines. It runs while you work.'),
+          h('p', null, h('b', null, 'Factory'), ' — presses fill a bin with lines; collect it now and then. It runs while you work.'),
           h('div', { class: 'keys', style: { marginTop: '10px' } }, L.KEY_HELP.slice(0, 7).map(([k, d]) => [h('span', { class: 'k' }, h('kbd', null, k)), h('span', null, d)]))),
         buttons: [{ label: 'Start', kind: 'primary' }],
       });
@@ -298,7 +339,7 @@
       check('free play moves and drops', () => { const g = this.modes.play.game; const before = g.s.pieces; this.setTab('play'); this.modes.play.action('left'); this.modes.play.action('drop'); return g.s.pieces === before + 1 || g.over; });
       check('board canvas painted', () => { this.modes.play.view.render(performance.now()); const c = document.getElementById('cv-play'); return c.width > 0 && c.height > 0; });
       check('puzzle tab loads', () => { this.setTab('puzzle'); return !!this.modes.puzzle.puzzle; });
-      check('factory runs', () => { this.setTab('factory'); const f = this.state.factory; if (!f.owned[1]) { f.credits += 10; L.Factory.buy(f, 1); } const before = f.stats.shipped; L.Factory.runExpected(f, 60); return f.stats.shipped > before; });
+      check('factory runs', () => { this.setTab('factory'); const f = L.Factory.create(); L.Factory.step(f, 700); return f.stats.minos >= 4; });
       check('shop and stats render', () => { this.setTab('shop'); this.setTab('stats'); return document.getElementById('stats-body').children.length > 0; });
       check('save serialises', () => JSON.parse(this.store.serialize()).v === L.SAVE_VERSION);
       this.setTab('play');

@@ -13,6 +13,7 @@
     <nav class="tabs" id="tabs" role="tablist"></nav>
     <div class="spacer" data-drag></div>
     <button class="wallet" id="wallet" title="Lines banked — spend them in the Shop"><span class="gem">◆</span><span id="wallet-n">0</span></button>
+    <button class="icon-btn" id="btn-mute" title="Mute (M)" aria-label="Mute" aria-pressed="false"></button>
     <button class="icon-btn" id="btn-settings" title="Settings"></button>
     <div class="winbtns" id="winbtns">
       <button class="icon-btn" id="btn-pin" title="Float on top"></button>
@@ -36,20 +37,26 @@
       <div class="classic-controls" id="classic-controls"></div>
     </section>
 
-    <!-- Puzzles -->
+    <!-- Puzzles: a slim bar (difficulty, Daily, Seed, History), the puzzle's card (name, seed, goal, wildcards), the board, the actions -->
     <section class="view" id="view-puzzle" data-tab="puzzle">
-      <div class="puz-head">
+      <div class="puz-bar">
         <div class="seg" id="puz-diff"></div>
-        <div class="puz-id" id="puz-id"></div>
-        <div class="puz-tools">
-          <button class="chip" id="puz-seed" title="Copy this puzzle's seed"></button>
-          <button class="btn sm" id="puz-seedbtn" title="Play a seed">Seed…</button>
-          <button class="btn sm" id="puz-daily" title="Today's puzzle">Daily</button>
-          <button class="btn sm star" id="puz-save" title="Save this seed (find it under History ▸ Saved)">☆</button>
-          <button class="btn sm" id="puz-history" title="Puzzles you have played, and seeds you saved">History</button>
+        <div class="puz-nav">
+          <button class="btn sm" id="puz-daily" title="Today's puzzle"></button>
+          <button class="btn sm" id="puz-seedbtn" title="Play a seed, or a random one"></button>
+          <button class="btn sm" id="puz-history" title="Puzzles you have played, and seeds you saved"></button>
         </div>
       </div>
-      <div class="puz-goal" id="puz-goal"></div>
+      <div class="puz-card" id="puz-card">
+        <div class="puz-top">
+          <span class="puz-dot" id="puz-dot"></span>
+          <div class="puz-name"><div class="puz-title" id="puz-title"></div><div class="puz-id" id="puz-id"></div></div>
+          <button class="puz-seed" id="puz-seed" title="Copy this puzzle's seed"></button>
+          <button class="icon-btn star" id="puz-save" title="Save this seed (find it under History ▸ Saved)"></button>
+        </div>
+        <div class="puz-goal" id="puz-goal"></div>
+        <div class="puz-mods" id="puz-mods"></div>
+      </div>
       <div class="boardwrap"><canvas id="cv-puzzle"></canvas><div class="overlay hidden" id="puz-overlay"></div></div>
       <div class="puz-actions" id="puz-actions"></div>
     </section>
@@ -57,7 +64,8 @@
     <!-- Factory -->
     <section class="view" id="view-factory" data-tab="factory">
       <div class="fac-top" id="fac-top"></div>
-      <div class="fac-belt"><canvas id="cv-belt"></canvas></div>
+      <div class="fac-floor"><canvas id="cv-floor"></canvas></div>
+      <div class="fac-collect" id="fac-collect"></div>
       <div class="fac-list scroll" id="fac-list"></div>
     </section>
 
@@ -92,6 +100,7 @@
 <script src="js/factory.js"></script>
 <script src="js/store.js"></script>
 <script src="js/achievements.js"></script>
+<script src="js/fxphysics.js"></script>
 <script src="js/render.js"></script>
 <script src="js/factoryview.js"></script>
 <script src="js/voice-data.js"></script>

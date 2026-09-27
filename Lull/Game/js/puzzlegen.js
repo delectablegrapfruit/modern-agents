@@ -30,7 +30,7 @@
     // Puzzles have no hold slot, except with this wildcard — and then the queue comes out of order, so it is needed.
     hold:   { name: 'Hold', icon: '⇆', desc: 'The hold slot is open, and you will need it: the queue arrives out of order.', w: { E: 0.8, M: 1.3, H: 1.6 } },
     // Only on "S" seeds (Settings ▸ Controls ▸ Counter-clockwise puzzles): turns go both ways, and the puzzle needs it.
-    spin:   { name: 'Both Ways', icon: '↺', desc: 'A spot here needs a counter-clockwise turn (Z) or a half turn (A).', w: { E: 0, M: 0, H: 0 }, x: ['rigid'] },
+    spin:   { name: 'Both Ways', icon: '↺', desc: 'A spot here needs the other turn (Z) or a half turn (A).', w: { E: 0, M: 0, H: 0 }, x: ['rigid'] },
     mono:   { name: 'Monochrome', icon: '◐', desc: 'Garbage and pieces share one colour.', w: { E: 1, M: 1, H: 1 } },
   };
 
@@ -45,7 +45,7 @@
 
   // ---- seeds ----------------------------------------------------------------------------------------------------------
 
-  // An "S" after the difficulty (MS-3K7Q2XA) is the both-ways puzzle for that code: counter-clockwise turns count.
+  // An "S" after the difficulty (MS-3K7Q2XA) is the both-ways puzzle for that code: turns the other way count.
   const tag = (diff, spin) => diff + (spin ? 'S' : '');
   function numberedSeed(diff, n, spin) { return tag(diff, spin) + '-' + codeFromInt(hash32('lull:' + diff + ':' + n)); }
 
@@ -138,10 +138,10 @@
         else if (m === 2) { if (opts.heavy) continue; ny = y - 1; }
         else {
           if (!canRotate) break;
-          // Clockwise only, unless the puzzle turns both ways: every ordinary puzzle can be solved with a single turn
-          // button (Up, or a right-click), so nobody playing with arrows or the mouse alone meets a spin that needs
-          // the other direction.
-          if (m !== 3 && !opts.ccw) continue;
+          // One direction only, unless the puzzle turns both ways: every ordinary puzzle can be solved with a single
+          // turn button (Up, or a right-click), so nobody playing with arrows or the mouse alone meets a spin that
+          // needs the other direction. That button turns clockwise, or counter-clockwise under Inverted Controls.
+          if (!opts.both && m !== (opts.turn < 0 ? 4 : 3)) continue;
           nr = (r + (m === 3 ? 1 : m === 4 ? 3 : 2)) % 4;
           const kicks = Pieces.kicksFor(type, r, nr);
           let ok = false;
@@ -222,7 +222,7 @@
         else if (m === 2) { if (opts.heavy) continue; ny = y - 1; }
         else {
           if (!canRotate) break;
-          if (m !== 3 && !opts.ccw) continue;
+          if (!opts.both && m !== (opts.turn < 0 ? 4 : 3)) continue;
           nr = (r + (m === 3 ? 1 : m === 4 ? 3 : 2)) % 4;
           let ok = false;
           for (const [kx, ky] of Pieces.kicksFor(type, r, nr)) {
@@ -328,7 +328,17 @@
     return null;
   }
 
-  function optsOf(mods) { return { noRotate: mods.includes('rigid'), heavy: mods.includes('heavy'), ccw: mods.includes('spin') }; }
+  /**
+   * The board turn a puzzle's single turn button gives: the arrow that turns (Up, or whichever arrow points away from
+   * the floor on a turned view) and right-click turn clockwise, and Inverted Controls reverses both. Upside Down and
+   * Sideways are true rotations of the picture, never mirror images, so a clockwise turn looks clockwise there too.
+   * Returns the move's name in reach's paths: 'CW' or 'CCW'.
+   */
+  function primaryTurn(mods) { return mods.includes('invert') ? 'CCW' : 'CW'; }
+
+  function optsOf(mods) {
+    return { noRotate: mods.includes('rigid'), heavy: mods.includes('heavy'), both: mods.includes('spin'), turn: primaryTurn(mods) === 'CCW' ? -1 : 1 };
+  }
 
   // ---- specs ----------------------------------------------------------------------------------------------------------
 
@@ -486,12 +496,13 @@
 
   /**
    * Plays the solution forwards on the real rules (line clears shift later targets down) and returns the per-step
-   * targets as they appear in play, or null if any step cannot be reached or the goal is not met.
+   * targets as they appear in play, or null if any step cannot be reached or the goal is not met. `primaryOnly`
+   * allows only the single turn button's direction, even on a both-ways puzzle.
    */
-  function verify(puzzle, cwOnly) {
+  function verify(puzzle, primaryOnly) {
     const board = Board.fromArray(puzzle.w, puzzle.h, puzzle.cells, { wrap: puzzle.wrap });
     const opts = optsOf(puzzle.mods);
-    if (cwOnly) opts.ccw = false;
+    if (primaryOnly) opts.both = false;
     const cleared = []; // original row indices already cleared
     const targets = [];
     let lines = 0;
@@ -549,7 +560,7 @@
       const puzzle = finish(built, spec, seed, diff, title, rng);
       const targets = verify(puzzle);
       if (!targets) continue;
-      // A both-ways puzzle has to need it: no clockwise-only way through (the last tries let that go).
+      // A both-ways puzzle has to need it: no way through with the single turn button alone (late tries let that go).
       if (spin && attempt < 64 && verify(puzzle, true)) continue;
       if (spec.mods.includes('hold')) {
         const q = requireHold(puzzle, rng);
@@ -598,5 +609,5 @@
     return 'Clear ' + p.goal.lines + ' line' + (p.goal.lines === 1 ? '' : 's');
   }
 
-  L.Puzzles = { DIFFS, MODS, GOALS, generate, verify, reach, goalStates, goalMet, parseSeed, numberedSeed, dailySeed, dailyDateOf, randomSeed, goalText, GEN_VERSION, SEEDS_PER_DIFF, restingStates, solvableInOrder };
+  L.Puzzles = { DIFFS, MODS, GOALS, generate, verify, reach, goalStates, goalMet, parseSeed, numberedSeed, dailySeed, dailyDateOf, randomSeed, goalText, GEN_VERSION, SEEDS_PER_DIFF, restingStates, solvableInOrder, primaryTurn };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

@@ -330,9 +330,14 @@
   // ---- effects --------------------------------------------------------------------------------------------------------
 
   class FX {
-    constructor() { this.clear(); }
-    get active() { return this.parts.length || this.flashes.length || this.texts.length || this.fades.length || this.streaks.length || this.movers.length || this.pops.length || this.sweeps.length || this.shake > 0.01; }
-    clear() { this.parts = []; this.flashes = []; this.texts = []; this.fades = []; this.streaks = []; this.movers = []; this.pops = []; this.sweeps = []; this.shake = 0; }
+    constructor() { this.world = L.FxPhysics ? new L.FxPhysics.World() : null; this.clear(); }
+    get active() { return this.parts.length || this.flashes.length || this.texts.length || this.fades.length || this.streaks.length || this.movers.length || this.pops.length || this.sweeps.length || this.props.length || (this.world && this.world.active) || this.shake > 0.01; }
+    clear() { this.parts = []; this.flashes = []; this.texts = []; this.fades = []; this.streaks = []; this.movers = []; this.pops = []; this.sweeps = []; this.props = []; this.shake = 0; if (this.world) this.world.clear(); }
+    /**
+     * A drawn moment with its own timeline (a beam, a fuse, a drill bit): draw(ctx, k, t) with k running 0→1 over
+     * dur, after an optional delay; update(k, t, dt) runs each step.
+     */
+    prop(dur, draw, o) { this.props.push(Object.assign({ t: 0, delay: 0, dur, draw, update: null }, o || {})); }
     /** A block sliding from one spot to another, falling with gravity (sand, settle). */
     mover(m) { this.movers.push(Object.assign({ t: 0, delay: 0, dur: 0.3 }, m)); }
     /** A glow that swells out of each cell: a piece has just changed. */
@@ -408,6 +413,11 @@
       this.pops = this.pops.filter((f) => f.t < f.dur);
       for (const f of this.sweeps) f.t += dt;
       this.sweeps = this.sweeps.filter((f) => f.t < f.dur);
+      if (this.props.length) {
+        for (const f of this.props) { f.t += dt; if (f.update && f.t >= f.delay) f.update(clamp((f.t - f.delay) / f.dur, 0, 1), f.t - f.delay, dt); }
+        this.props = this.props.filter((f) => f.t < f.delay + f.dur);
+      }
+      if (this.world) this.world.step(dt);
       this.shake *= Math.exp(-dt * 14);
     }
 
@@ -425,6 +435,11 @@
       for (const m of this.movers) {
         const k = clamp((m.t - m.delay) / m.dur, 0, 1), e = k * k;
         drawCell(ctx, m.skin, m.color, m.x0 + (m.x1 - m.x0) * e, m.y0 + (m.y1 - m.y0) * e, m.s);
+      }
+      if (this.world) this.world.draw(ctx, cellSprite);
+      for (const f of this.props) {
+        if (f.t < f.delay) continue;
+        ctx.save(); f.draw(ctx, clamp((f.t - f.delay) / f.dur, 0, 1), f.t - f.delay); ctx.restore();
       }
       for (const f of this.flashes) {
         ctx.fillStyle = rgba(f.color, 0.75 * (1 - f.t / f.dur));
@@ -485,7 +500,10 @@
         } else if (p.kind === 'ring') {
           ctx.strokeStyle = rgba(p.color, a * 0.8); ctx.lineWidth = p.width || 2;
           const rk = p.inward ? 1 - k : 1 - Math.pow(1 - k, 2);
+          // A ring may be kept inside a rectangle (the well), as the other effects stay on the board.
+          if (p.clip) { ctx.save(); ctx.beginPath(); ctx.rect(p.clip.x, p.clip.y, p.clip.w, p.clip.h); ctx.clip(); }
           ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(0.1, p.size * rk), 0, Math.PI * 2); ctx.stroke();
+          if (p.clip) ctx.restore();
         }
       }
       for (const f of this.texts) {
@@ -558,6 +576,8 @@
         this.cssW = w; this.cssH = h; this.dpr = dpr;
         this.canvas.width = Math.round(w * dpr); this.canvas.height = Math.round(h * dpr);
         this.lay = null;
+        // The item effects were laid out for the old size: let them go rather than play in the wrong place.
+        if (this.fx.world) { this.fx.world.clear(); this.fx.props = []; }
         this.dirty = true;
       }
     }
@@ -585,7 +605,9 @@
         bx = Math.round((W - bw) / 2);
         by = Math.round((H - bh - 3.2 * s) / 2 + 3.2 * s);
         hold = { x: bx, y: by - 3.2 * s, w: 3.4 * s, h: 2.9 * s };
-        next = { x: bx + 3.8 * s, y: by - 3.2 * s, w: bw - 3.8 * s, h: 2.9 * s };
+        // No hold slot (most puzzles): the queue takes the whole width over the board.
+        const nx = g.mods.noHold ? 0 : 3.8 * s;
+        next = { x: bx + nx, y: by - 3.2 * s, w: bw - nx, h: 2.9 * s };
         nextDir = 'h';
       }
       this.lay = { s, cols, rows, board: { x: bx, y: by, w: bw, h: bh }, hold, next, nextDir, wide };
@@ -670,8 +692,10 @@
       ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
       ctx.__dpr = this.dpr;
       ctx.clearRect(0, 0, this.cssW, this.cssH);
-      const shake = this.fx.shake;
-      if (shake > 0.2) ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
+      // Shake moves only the board and its effects (never the hold and queue beside it), and stays small.
+      const shake = Math.min(8, this.fx.shake), shx = shake > 0.2 ? (Math.random() - 0.5) * shake : 0, shy = shake > 0.2 ? (Math.random() - 0.5) * shake : 0;
+      ctx.save();
+      if (shx || shy) ctx.translate(shx, shy);
 
       drawBackdrop(ctx, look.backdrop, board, s, cols, rows, look.theme, now);
       const p = g.piece;
@@ -688,14 +712,21 @@
         }
       }
 
-      // Settled blocks (minus any still sliding into place).
+      // Settled blocks (minus any still sliding or falling into place).
       let hidden = null, hideAll = false;
       for (const m of this.fx.movers) { if (m.hideAll) hideAll = true; else if (m.key) (hidden = hidden || new Set()).add(m.key); }
+      let mask = null;
+      if (this.fx.world && this.fx.world.hiding) {
+        if (!this.hideMask || this.hideMask.length !== g.w * g.h) this.hideMask = new Uint8Array(g.w * g.h);
+        mask = this.hideMask; mask.fill(0);
+        this.fx.world.fillHidden(mask);
+      }
       for (let y = 0; y < g.h && !hideAll; y++) {
         for (let x = 0; x < g.w; x++) {
           const v = g.board.get(x, y);
           if (!v) continue;
           if (hidden && hidden.has(x + ',' + y)) continue;
+          if (mask && mask[y * g.w + x]) continue;
           if (v & CELL.HIDDEN) continue;
           if (near && !near.has(x + ',' + y)) continue;
           const [sx, sy] = this.toScreen(x, y);
@@ -759,7 +790,9 @@
           const [sx, sy] = this.toScreen(cx, cy);
           if (p.special === 'bomb' || p.special === 'drill' || p.special === 'blackhole') { drawSpecial(ctx, p.special, sx, sy, s, now); continue; }
           const tint = p.special === 'anvil' ? '#5b6270' : p.special === 'golden' ? '#f2c14e' : color;
-          drawCell(ctx, look.skin, tint, sx, sy, s, p.special === 'phase' ? (overlapping ? 0.45 : 0.75) : p.special === 'anvil' && overlapping ? 0.7 : 1);
+          // Phasing: translucent, and it shimmers (more faintly still while inside other blocks).
+          const shimmer = p.special === 'phase' && !this.reducedMotion ? 0.12 * Math.sin(now / 170 + (cx + cy) * 0.9) : 0;
+          drawCell(ctx, look.skin, tint, sx, sy, s, p.special === 'phase' ? (overlapping ? 0.4 : 0.72) + shimmer : p.special === 'anvil' && overlapping ? 0.7 : 1);
           if (p.special === 'golden') {
             const k = ((now / 900 + (cx + cy) * 0.12) % 1.4) - 0.2;
             ctx.save(); ctx.beginPath(); ctx.rect(sx, sy, s, s); ctx.clip();
@@ -775,7 +808,16 @@
             ctx.restore();
           }
           if (p.special === 'laser') { ctx.save(); ctx.strokeStyle = 'rgba(255,60,80,' + (0.6 + 0.4 * Math.sin(now / 90)) + ')'; ctx.lineWidth = 2; ctx.strokeRect(sx + 2, sy + 2, s - 4, s - 4); ctx.fillStyle = '#fff'; ctx.fillRect(sx + s * 0.42, sy + s * 0.42, s * 0.16, s * 0.16); ctx.restore(); }
-          if (p.special === 'phase') { ctx.save(); ctx.setLineDash([2, 3]); ctx.strokeStyle = '#ffffff'; ctx.globalAlpha = 0.7; ctx.strokeRect(sx + 1.5, sy + 1.5, s - 3, s - 3); ctx.restore(); }
+          if (p.special === 'phase') {
+            ctx.save(); ctx.setLineDash([2, 3]); ctx.lineDashOffset = this.reducedMotion ? 0 : -now / 60; ctx.strokeStyle = '#ffffff'; ctx.globalAlpha = 0.7; ctx.strokeRect(sx + 1.5, sy + 1.5, s - 3, s - 3);
+            if (!this.reducedMotion) {
+              // A soft band of light drifting down through it.
+              const k = ((now / 800 + (cx - cy) * 0.11) % 1.4) - 0.2;
+              ctx.beginPath(); ctx.rect(sx, sy, s, s); ctx.clip();
+              ctx.globalAlpha = 0.35; ctx.fillStyle = '#e4dcff'; ctx.fillRect(sx, sy + s * k - s * 0.1, s, s * 0.2);
+            }
+            ctx.restore();
+          }
           if (p.special === 'sand') { ctx.fillStyle = 'rgba(0,0,0,0.28)'; for (let k = 0; k < 4; k++) ctx.fillRect(sx + s * (0.2 + 0.5 * (k % 2)), sy + s * (0.25 + 0.4 * (k >> 1)), Math.max(1, s * 0.1), Math.max(1, s * 0.1)); }
         }
       }
@@ -802,8 +844,12 @@
         ctx.restore();
       }
 
+      ctx.restore();
       this.drawSide(ctx, now);
+      ctx.save();
+      if (shx || shy) ctx.translate(shx, shy);
       this.fx.draw(ctx);
+      ctx.restore();
       this.dirty = false;
     }
 
@@ -875,11 +921,15 @@
     }
 
     onLock(result, reduced) {
+      if (this.fx.world) this.fx.world.land();
       if (!this.lay) this.layout();
       const s = this.lay.s, look = this.look;
       const effect = look.effect;
       const pieceColor = this.colorOf(result.color || 8);
-      if (!reduced && result.dropCells && result.dropDist > 0) {
+      // Items the physics layer animates from the engine's own record of what moved and what went.
+      const sp = result.special, phys = !reduced && !!this.fx.world;
+      const falls = phys && (sp === 'anvil' || sp === 'phase' || sp === 'sand');
+      if (!reduced && !falls && result.dropCells && result.dropDist > 0) {
         // The drop's trail, and a little shake that grows with the fall.
         const tops = new Map();
         for (const [x, y] of result.dropCells) tops.set(x, Math.max(tops.has(x) ? tops.get(x) : -1, y));
@@ -889,7 +939,7 @@
         }
         this.fx.shake = Math.max(this.fx.shake, Math.min(1.5, result.dropDist * 0.12));
       }
-      if (!reduced && result.cells && result.cells.length && !result.lines) {
+      if (!reduced && !falls && result.cells && result.cells.length && !result.lines) {
         // Dust where it landed.
         const low = new Map();
         for (const [x, y] of result.cells) low.set(x, Math.min(low.has(x) ? low.get(x) : Infinity, y));
@@ -897,14 +947,29 @@
       }
       if (result.cells && result.cells.length && this.view.vanish) {
         this.fx.fadeCells(result.cells.map(([x, y]) => { const [sx, sy] = this.toScreen(x, y); return { x: sx, y: sy, s, color: this.colorOf(result.color || 8) }; }), look.skin, 1.4);
-      } else if (result.cells && result.cells.length && !reduced) {
+      } else if (result.cells && result.cells.length && !reduced && !falls && sp !== 'laser') {
         for (const [x, y] of result.cells) { if (y >= this.game.h) continue; const [sx, sy] = this.toScreen(x, y); this.fx.flash(sx, sy, s, s, '#ffffff', 0.16); }
       }
+      if (phys) {
+        if (sp === 'drill' && result.bit) this.drillFx(result);
+        else if (sp === 'bomb' && result.blastCenter) this.bombFx(result);
+        else if (sp === 'laser' && result.laser) this.laserFx(result);
+        else if (sp === 'blackhole' && result.center) this.blackholeFx(result);
+        else if (sp === 'anvil') this.anvilFx(result);
+        else if (sp === 'sand' && result.sand) this.sandFx(result, pieceColor);
+        else if (sp === 'magnet' && result.moves) this.magnetFx(result);
+        else if (sp === 'phase') this.phaseFx(result, pieceColor);
+        else if (sp === 'settle' && result.before) this.settleFx(result);
+      }
+      const done = phys && /^(drill|bomb|laser|blackhole|anvil|sand|magnet|phase|settle)$/.test(sp || '');
       if (result.lines) {
-        const cells = this.rowCells(result.rows, result.removed);
+        // A laser's own rows go in its beam; any other full rows clear as usual.
+        const own = done && result.laser ? new Set(result.laser) : null;
+        const rowsN = own ? result.rows.filter((y) => !own.has(y)) : result.rows, remN = own ? result.removed.filter((_, i) => !own.has(result.rows[i])) : result.removed;
+        const cells = this.rowCells(rowsN, remN);
         this.fx.burst(effect, cells, s, reduced);
         if (effect === 'ripple' && !reduced) {
-          for (const y of result.rows) {
+          for (const y of rowsN) {
             const [ax, ay] = this.toScreen(0, y), [bx, by] = this.toScreen(this.game.w - 1, y);
             this.fx.ring((ax + bx) / 2 + s / 2, (ay + by) / 2 + s / 2, look.theme.accent, s * this.game.w * 0.7);
           }
@@ -918,7 +983,7 @@
         const b = this.lay.board;
         this.fx.text(result.mini ? 'T-SPIN MINI' : 'T-SPIN', b.x + b.w / 2, b.y + b.h * 0.42, '#d6b4ff', Math.max(13, Math.min(20, s * 0.8)));
       }
-      if (result.special === 'settle' && result.before && !reduced) {
+      if (result.special === 'settle' && result.before && !reduced && !done) {
         // Every column's blocks fall into place.
         const g = this.game, w = g.w, before = result.before;
         for (let x = 0; x < w; x++) {
@@ -935,7 +1000,7 @@
         this.fx.sweep(b, '#ffffff', 'y', 0.4);
         this.fx.shake = Math.max(this.fx.shake, 3);
       }
-      if (result.sand && !reduced && !result.lines) {
+      if (result.sand && !reduced && !result.lines && !done) {
         for (const [x, y, ny] of result.sand) {
           if (y === ny) continue;
           const [sx, sy0] = this.toScreen(x, y), [, sy1] = this.toScreen(x, ny);
@@ -943,12 +1008,12 @@
         }
       }
       const toCells = (list) => list.map(([x, y, v]) => { const [sx, sy] = this.toScreen(x, y); return { x: sx, y: sy, color: this.colorOf(v) }; });
-      if (result.smashed && result.smashed.length) {
+      if (result.smashed && result.smashed.length && !done) {
         this.fx.burst(reduced ? 'fade' : 'shatter', toCells(result.smashed), s, reduced);
         if (!reduced) { this.fx.shake = 9; for (const [x] of new Set(result.smashed.map(([x]) => x)).entries()) { const [sx, sy] = this.toScreen(x, 0); this.fx.puff(sx + s / 2, sy + s, look.theme.muted, 5, s * 0.4); } }
       }
-      if (result.special === 'anvil' && !reduced) { this.fx.shake = Math.max(this.fx.shake, 6); const b = this.lay.board; this.fx.text('CLANG', b.x + b.w / 2, b.y + b.h * 0.35, '#c7ced9', 20); }
-      if (result.swallowed && !reduced) {
+      if (result.special === 'anvil' && !reduced && !done) { this.fx.shake = Math.max(this.fx.shake, 6); const b = this.lay.board; this.fx.text('CLANG', b.x + b.w / 2, b.y + b.h * 0.35, '#c7ced9', 20); }
+      if (done) { /* animated above */ } else if (result.swallowed && !reduced) {
         const [cx0, cy0] = this.toScreen(result.center[0], result.center[1]), cx = cx0 + s / 2, cy = cy0 + s / 2;
         for (const c of toCells(result.swallowed)) {
           const dx = c.x + s / 2 - cx, dy = c.y + s / 2 - cy;
@@ -958,7 +1023,7 @@
         this.fx.ring(cx, cy, '#ffb35c', s * 2.5, { max: 0.5 });
         this.fx.shake = Math.max(this.fx.shake, 5);
       } else if (result.swallowed) this.fx.burst('fade', toCells(result.swallowed), s, true);
-      if (result.laser && !reduced) {
+      if (result.laser && !reduced && !done) {
         for (const y of result.laser) {
           const [ax, ay] = this.toScreen(0, y), [bx] = this.toScreen(this.game.w - 1, y);
           const x0 = Math.min(ax, bx), w = Math.abs(bx - ax) + s;
@@ -969,7 +1034,7 @@
         this.fx.shake = Math.max(this.fx.shake, 4);
         const b = this.lay.board; this.fx.text('ZAP', b.x + b.w / 2, b.y + b.h * 0.3, '#ff6b7a', 22);
       }
-      if (result.moves && result.moves.length && !reduced) {
+      if (result.moves && result.moves.length && !reduced && !done) {
         const all = result.special === 'tornado';
         for (const [x0, y0, x1, y1, v] of result.moves) {
           const [sx0, sy0] = this.toScreen(x0, y0), [sx1, sy1] = this.toScreen(x1, y1);
@@ -988,15 +1053,15 @@
       if (result.golden && result.cells && !reduced) {
         for (const c of this.screenCells(result.cells)) for (let k = 0; k < 3; k++) this.fx.parts.push({ kind: 'conf', x: c.x + s / 2, y: c.y + s / 2, vx: (Math.random() - 0.5) * 180, vy: -100 - Math.random() * 120, g: 380, drag: 1.5, life: 0, max: 1.2, size: s * 0.3, color: Math.random() < 0.5 ? '#ffd35a' : '#fff1b8', rot: 0, vr: (Math.random() - 0.5) * 16 });
       }
-      if (result.blast && result.blast.length && !reduced) {
+      if (result.blast && result.blast.length && !reduced && !done) {
         const b = this.lay.board;
         this.fx.flash(b.x, b.y, b.w, b.h, '#fff3d6', 0.22);
       }
-      if (result.blast && result.blast.length) {
+      if (result.blast && result.blast.length && !done) {
         this.fx.burst(reduced ? 'fade' : 'shatter', result.blast.map(([x, y, v]) => { const [sx, sy] = this.toScreen(x, y); return { x: sx, y: sy, color: this.colorOf(v) }; }), s, reduced);
         if (!reduced) this.fx.shake = 7;
       }
-      if (result.blastCenter && !reduced) {
+      if (result.blastCenter && !reduced && !done) {
         const [sx, sy] = this.toScreen(result.blastCenter[0], result.blastCenter[1]);
         const cx = sx + s / 2, cy = sy + s / 2;
         this.fx.ring(cx, cy, '#ffb347', s * 3.2, { width: 4 });
@@ -1005,7 +1070,7 @@
         this.fx.burst('sparks', [{ x: sx, y: sy, color: '#ffd166' }, { x: sx, y: sy, color: '#ffd166' }], s, false);
         this.fx.shake = 9;
       }
-      if (result.special === 'drill' && result.drilled && !reduced) {
+      if (result.special === 'drill' && result.drilled && !reduced && !done) {
         const top = result.drilled.length ? result.drilled[0] : null;
         if (top) {
           const [sx, sy0] = this.toScreen(top[0], top[1]), [, sy1] = this.toScreen(top[0], 0);
@@ -1014,16 +1079,318 @@
           this.fx.shake = Math.max(this.fx.shake, 4);
         }
       }
-      if (result.drilled && result.drilled.length) this.fx.burst(reduced ? 'fade' : 'sparks', result.drilled.map(([x, y, v]) => { const [sx, sy] = this.toScreen(x, y); return { x: sx, y: sy, color: this.colorOf(v) }; }), s, reduced);
+      if (result.drilled && result.drilled.length && !done) this.fx.burst(reduced ? 'fade' : 'sparks', result.drilled.map(([x, y, v]) => { const [sx, sy] = this.toScreen(x, y); return { x: sx, y: sy, color: this.colorOf(v) }; }), s, reduced);
       this.dirty = true;
+    }
+
+    // ---- item animations: the physics layer (js/fxphysics.js), fed with what the engine really moved ----------------
+
+    /** The physics world, framed on the board as drawn now: gravity pulls toward the board's own floor on screen. */
+    phys() {
+      if (!this.lay) this.layout();
+      const w = this.fx.world, [gx, gy] = this.screenDir(0, -1);
+      if (!this.solidFn) this.solidFn = (px, py) => this.solidAt(px, py);
+      w.setFrame(this.lay.board, gx, gy, this.lay.s, this.solidFn);
+      return w;
+    }
+
+    /** Is there a settled block under a screen point? (No allocation: the physics asks this every frame.) */
+    solidAt(px, py) {
+      const { s, board } = this.lay, g = this.game, rot = this.view.rot;
+      if (px < board.x || py < board.y || px >= board.x + board.w || py >= board.y + board.h) return false;
+      const c = Math.floor((px - board.x) / s), r = Math.floor((py - board.y) / s);
+      let x, y;
+      if (rot === 0) { x = c; y = g.h - 1 - r; } else if (rot === 180) { x = g.w - 1 - c; y = r; } else if (rot === 90) { x = r; y = c; } else { x = g.w - 1 - r; y = g.h - 1 - c; }
+      return g.board.get(x, y) !== 0;
+    }
+
+    /** Screen centre of a logical cell. */
+    mid(x, y) { const [sx, sy] = this.toScreen(x, y), h = this.lay.s / 2; return [sx + h, sy + h]; }
+
+    /** Where a row (numbered before the clear) sits once the cleared rows are gone; null if it was cleared itself. */
+    afterClear(rows, y) {
+      let n = 0;
+      for (const r of rows || []) { if (r === y) return null; if (r < y) n++; }
+      return y - n;
+    }
+
+    /** Hides a board cell under a falling body until it lands there. */
+    keyOf(x, y) { return y == null || y < 0 || y >= this.game.h ? -1 : y * this.game.w + x; }
+
+    /** A block falling into a row that was cleared comes apart when it gets there, rather than just vanishing. */
+    intoClear(fy) {
+      if (fy != null) return null;
+      if (!this.intoClearFn) this.intoClearFn = (b) => this.fx.world.burst('pixels', b);
+      return this.intoClearFn;
+    }
+
+    /** Drill: the bit spins down its column; each block it meets bursts into chips and sparks. */
+    drillFx(r) {
+      const w = this.phys(), s = this.lay.s, fx = this.fx, look = this.look;
+      const [bx, by] = r.bit, speed = Math.max(30, (by + 1) / 0.4), T = Math.max(0, by) / speed; // rows a second
+      const [x0, y0] = this.mid(bx, by), [x1, y1] = this.mid(bx, 0), gx = w.gx, gy = w.gy;
+      for (const [x, y, v] of r.drilled) {
+        const [cx, cy] = this.mid(x, y);
+        w.body({ mode: 'hold', x: cx, y: cy, size: s, color: this.colorOf(v), skin: look.skin, wake: Math.max(0, (by - y - 0.6) / speed), act: 'chips', max: 5 });
+      }
+      const top = r.drilled.length ? r.drilled[0][1] : -1; // the first block the bit meets
+      const ang = Math.atan2(gy, gx) - Math.PI / 2, pos = (t) => { const d = T ? Math.min(1, t / T) : 1; return [x0 + (x1 - x0) * d, y0 + (y1 - y0) * d]; };
+      fx.prop(T + 0.2, (ctx, k, t) => {
+        const [px, py] = pos(t), j = t < T ? (Math.random() - 0.5) * 1.4 : 0;
+        ctx.globalAlpha = t < T ? 1 : Math.max(0, 1 - (t - T) / 0.2);
+        ctx.translate(px + j, py + j); ctx.rotate(ang);
+        drawSpecial(ctx, 'drill', -s / 2, -s / 2, s, t * 3000);
+      }, {
+        update: (k, t, dt) => {
+          // Grinding: sparks off the tip while it is inside the stack.
+          if (t >= T || Math.random() > dt * 40 || by - (T ? t / T : 1) * by > top + 0.5) return;
+          const [px, py] = pos(t), tx = px + gx * s * 0.45, ty = py + gy * s * 0.45;
+          const side = Math.random() < 0.5 ? 1 : -1, v = s * (6 + Math.random() * 8);
+          w.part('spark', tx, ty, -gy * side * v - gx * s * 4, gx * side * v - gy * s * 4, 0.2 + Math.random() * 0.15, 1.5, Math.random() < 0.5 ? '#ffd166' : '#fff3c4', 0.6);
+        },
+      });
+      w.after(T, () => { w.dust(x1 + gx * s * 0.5, y1 + gy * s * 0.5, s, 5, look.theme.muted); fx.shake = Math.max(fx.shake, 2.5); });
+    }
+
+    /** Bomb: the fuse flares, a shockwave rings out, and the diamond's blocks are thrown outward and tumble. */
+    bombFx(r) {
+      const w = this.phys(), s = this.lay.s, fx = this.fx, look = this.look, FUSE = 0.09;
+      const [cx, cy] = this.mid(r.blastCenter[0], r.blastCenter[1]), ux = -w.gx, uy = -w.gy, chips = [];
+      fx.prop(FUSE, (ctx, k, t) => {
+        const z = s * (1 + k * 0.4);
+        ctx.translate(cx, cy);
+        drawSpecial(ctx, 'bomb', -z / 2, -z / 2, z, t * 3000);
+        ctx.globalAlpha = k * k; ctx.fillStyle = '#fff6d8';
+        ctx.beginPath(); ctx.arc(0, 0, z * 0.55 * k, 0, Math.PI * 2); ctx.fill();
+      });
+      for (const [x, y, v] of r.blast) {
+        const [bx, by] = this.mid(x, y);
+        let dx = bx - cx, dy = by - cy;
+        const d = Math.hypot(dx, dy) / s;
+        if (d < 0.01) { dx = ux; dy = uy; } else { dx /= d * s; dy /= d * s; }
+        // Closer blocks get the harder kick, all of them a lift against gravity.
+        const sp = s * (15 - d * 3.5) * (0.85 + Math.random() * 0.3), lift = s * (5 + Math.random() * 4);
+        w.body({ mode: 'hold', wake: FUSE, next: 'free', x: bx, y: by, vx: dx * sp + ux * lift, vy: dy * sp + uy * lift, va: (Math.random() - 0.5) * 18, size: s, color: this.colorOf(v), skin: look.skin, rest: 0.35, fric: 0.7, solid: true, fadeAt: 0.45 + Math.random() * 0.1, max: 0.8 });
+        chips.push([bx, by, dx, dy, this.colorOf(v)]);
+      }
+      w.after(FUSE, () => {
+        fx.prop(0.22, (ctx, k) => {
+          const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, s * 2.6 * (0.5 + k * 0.5));
+          g.addColorStop(0, 'rgba(255,250,230,' + (0.9 * (1 - k)) + ')'); g.addColorStop(0.45, 'rgba(255,179,71,' + (0.55 * (1 - k)) + ')'); g.addColorStop(1, 'rgba(255,120,40,0)');
+          ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, s * 2.6, 0, Math.PI * 2); ctx.fill();
+        });
+        fx.ring(cx, cy, '#fff3d6', s * 3.4, { width: 4, max: 0.35 });
+        fx.ring(cx, cy, '#ffb347', s * 2.4, { width: 2.5, max: 0.5 });
+        w.sparks(cx, cy, s, 14, ['#ffd166', '#fff3c4', '#ff8c42']);
+        w.dust(cx, cy, s, 8, '#8a8f99');
+        // Every block sheds a few chips as it goes.
+        for (const [bx, by, dx, dy, c] of chips) for (let k = 0; k < 3; k++) {
+          const v = s * (8 + Math.random() * 10), a = (Math.random() - 0.5) * 1.2, ca = Math.cos(a), sa = Math.sin(a);
+          const p = w.part('chip', bx, by, (dx * ca - dy * sa) * v + ux * s * 4, (dx * sa + dy * ca) * v + uy * s * 4, 0.45 + Math.random() * 0.3, s * (0.15 + Math.random() * 0.15), c, 1);
+          p.va = (Math.random() - 0.5) * 20;
+        }
+        fx.shake = Math.max(fx.shake, 4);
+      });
+    }
+
+    /** Laser: a charge line, then a beam across each row it touches, spreading from the piece; the blocks come apart into drifting pixels. */
+    laserFx(r) {
+      const w = this.phys(), s = this.lay.s, fx = this.fx, look = this.look, g = this.game, CHARGE = 0.14;
+      const horiz = this.view.rot % 180 === 0;
+      const rows = r.laser.slice().sort((a, b) => b - a); // top row first
+      rows.forEach((y, i) => {
+        const data = r.removed[r.rows.indexOf(y)] || [];
+        const mine = r.cells.filter(([, cy]) => cy === y), from = mine.length ? mine.reduce((a, [cx]) => a + cx, 0) / mine.length : g.w / 2;
+        const t0 = CHARGE + i * 0.05;
+        for (let x = 0; x < g.w; x++) {
+          if (!data[x]) continue;
+          const [cx, cy] = this.mid(x, y);
+          w.body({ mode: 'hold', x: cx, y: cy, size: s, color: this.colorOf(data[x]), skin: look.skin, wake: t0 + Math.abs(x - from) * 0.012, act: 'pixels', max: 5 });
+        }
+        const [ax, ay] = this.toScreen(0, y), [bx, by] = this.toScreen(g.w - 1, y), [fx0, fy0] = this.mid(Math.round(from), y);
+        const x0 = Math.min(ax, bx), y0 = Math.min(ay, by), len = (horiz ? Math.abs(bx - ax) : Math.abs(by - ay)) + s;
+        fx.prop(t0 + 0.28, (ctx, k, t) => {
+          // Across the row: from x0/y0 over len, centred on the row's middle line.
+          const band = (half, a, col, reach) => {
+            ctx.globalAlpha = a; ctx.fillStyle = col;
+            if (horiz) { const l = Math.max(x0, fx0 - reach), rr2 = Math.min(x0 + len, fx0 + reach); ctx.fillRect(l, y0 + s / 2 - half, rr2 - l, half * 2); }
+            else { const t2 = Math.max(y0, fy0 - reach), b2 = Math.min(y0 + len, fy0 + reach); ctx.fillRect(x0 + s / 2 - half, t2, half * 2, b2 - t2); }
+          };
+          if (t < t0) {
+            const c = t / t0;
+            band(Math.max(0.5, s * 0.03), (0.25 + 0.6 * c) * (0.8 + 0.2 * Math.sin(t * 90)), '#ff3c50', len * c);
+          } else {
+            const u = (t - t0) / 0.28, reach = (t - t0) / 0.012 * s + s;
+            band(s * 0.5 * (1 - u * 0.6), 0.28 * (1 - u), '#ff3c50', reach);
+            band(s * 0.2 * (1 - u), 0.9 * (1 - u), '#ffe0e4', reach);
+            band(Math.max(0.5, s * 0.06 * (1 - u)), 1 - u, '#ffffff', reach);
+          }
+        });
+        w.after(t0, () => { w.sparks(fx0, fy0, s, 5, ['#ff6b7a', '#ffffff']); });
+      });
+      w.after(CHARGE, () => { fx.shake = Math.max(fx.shake, 2.5); const b = this.lay.board; fx.text('ZAP', b.x + b.w / 2, b.y + b.h * 0.3, '#ff6b7a', 22); });
+    }
+
+    /** Black hole: everything in reach is pulled in on a tightening spiral, stretched and shrinking, then it collapses. */
+    blackholeFx(r) {
+      const w = this.phys(), s = this.lay.s, fx = this.fx, look = this.look;
+      const [cx, cy] = this.mid(r.center[0], r.center[1]);
+      let T = 0.3;
+      for (const [x, y, v] of r.swallowed) {
+        const [bx, by] = this.mid(x, y), dx = bx - cx, dy = by - cy, rad = Math.max(s * 0.3, Math.hypot(dx, dy));
+        const acc = s * 18 * (0.85 + Math.random() * 0.3), delay = Math.random() * 0.08;
+        T = Math.max(T, delay + Math.sqrt(2 * rad / acc));
+        w.body({ mode: 'hold', wake: delay, next: 'spiral', x: bx, y: by, cx, cy, rad, ang: Math.atan2(dy, dx), w0: 2.2, acc, size: s, color: this.colorOf(v), skin: look.skin, max: 3 });
+      }
+      fx.ring(cx, cy, '#b48cff', s * 4, { inward: true, max: Math.min(0.8, T), width: 3 });
+      fx.prop(T, (ctx, k, t) => {
+        // The hole itself swells as it feeds, then pinches shut.
+        const z = s * (k < 0.8 ? 1 + k * 0.6 : 1.48 * (1 - (k - 0.8) / 0.2));
+        if (z <= 0.5) return;
+        ctx.translate(cx, cy); ctx.rotate(t * 3);
+        drawSpecial(ctx, 'blackhole', -z / 2, -z / 2, z, t * 1000);
+      });
+      w.after(T, () => {
+        fx.prop(0.3, (ctx, k) => {
+          const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, s * 1.8);
+          g.addColorStop(0, 'rgba(255,255,255,' + (1 - k) + ')'); g.addColorStop(0.4, 'rgba(200,170,255,' + (0.6 * (1 - k)) + ')'); g.addColorStop(1, 'rgba(160,90,255,0)');
+          ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, s * 1.8 * (0.4 + k * 0.6), 0, Math.PI * 2); ctx.fill();
+        });
+        fx.ring(cx, cy, '#e4d6ff', s * 2.6, { max: 0.4, width: 2 });
+        w.sparks(cx, cy, s, 10, ['#b48cff', '#ffb35c', '#ffffff']);
+        fx.shake = Math.max(fx.shake, 3);
+      });
+    }
+
+    /** Anvil: it falls, speeding up, crushing each block it meets flat, and lands with a heavy thud. */
+    anvilFx(r) {
+      const w = this.phys(), s = this.lay.s, fx = this.fx, look = this.look;
+      const dist = r.dropDist || 0, GS = 1.6, v0 = s * 6, g = w.g * GS;
+      const at = (rows) => rows <= 0 ? 0 : (-v0 + Math.sqrt(v0 * v0 + 2 * g * rows * s)) / g; // time to fall that many rows
+      const paint = (ctx, z) => {
+        drawCell(ctx, look.skin, '#5b6270', -z / 2, -z / 2, z);
+        ctx.strokeStyle = '#1d2026'; ctx.lineWidth = Math.max(1, z * 0.08); ctx.strokeRect(-z * 0.4, -z * 0.4, z * 0.8, z * 0.8);
+        ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.fillRect(-z * 0.35, -z * 0.35, z * 0.7, z * 0.12);
+      };
+      const bottom = new Map();
+      let first = true;
+      for (const [x, y] of r.cells) {
+        const y0 = y + dist, fy = this.afterClear(r.rows, y);
+        bottom.set(x, Math.min(bottom.has(x) ? bottom.get(x) : Infinity, y0));
+        const [sx, sy] = this.mid(x, y0), [tx, ty] = this.mid(x, fy == null ? y : fy);
+        const onLand = first ? () => this.anvilLand(r, dist) : null;
+        first = false;
+        w.body({ mode: 'drop', x: sx, y: sy, tx, ty, v0, gs: GS, rest: 0.06, size: s, paint, color: '#5b6270', key: fy == null ? -1 : this.keyOf(x, fy), settle: 0.03, max: 3, onLand, onDone: this.intoClear(fy) });
+      }
+      for (const [x, y, v] of r.smashed || []) {
+        const [cx, cy] = this.mid(x, y), top = bottom.has(x) ? bottom.get(x) : y + 1;
+        w.body({ mode: 'hold', x: cx, y: cy, size: s, color: this.colorOf(v), skin: look.skin, wake: at(top - (y + 1)), act: 'crush', max: 5 });
+      }
+    }
+
+    anvilLand(r, dist) {
+      const w = this.fx.world, s = this.lay.s, fx = this.fx, b = this.lay.board;
+      const low = new Map();
+      for (const [x, y] of r.cells) low.set(x, Math.min(low.has(x) ? low.get(x) : Infinity, y));
+      for (const [x, y] of low) { const [cx, cy] = this.mid(x, y); w.dust(cx + w.gx * s * 0.5, cy + w.gy * s * 0.5, s, 4, this.look.theme.muted); }
+      fx.shake = Math.max(fx.shake, 4 + Math.min(2, dist * 0.15));
+      fx.text('CLANG', b.x + b.w / 2, b.y + b.h * 0.35, '#c7ced9', 20);
+    }
+
+    /** Sand: each block drops on its own, trickling grains, lands with a small bounce and a puff. */
+    sandFx(r, color) {
+      const w = this.phys(), s = this.lay.s, look = this.look;
+      r.sand.forEach(([x, y, ny], i) => {
+        if (y === ny) return;
+        const fy = this.afterClear(r.rows, ny), [sx, sy] = this.mid(x, y), [tx, ty] = this.mid(x, fy == null ? ny : fy);
+        const onLand = (bd) => {
+          const px = bd.x + w.gx * s * 0.5, py = bd.y + w.gy * s * 0.5;
+          for (let k = 0; k < 4; k++) { const side = Math.random() - 0.5; w.part('grain', px, py, -w.gy * side * s * 8 - w.gx * s * 3, w.gx * side * s * 8 - w.gy * s * 3, 0.35, Math.max(1.5, s * 0.08), '#e8c07a', 1); }
+        };
+        w.body({ mode: 'hold', wake: i * 0.03 + Math.random() * 0.02, next: 'drop', x: sx, y: sy, tx, ty, v0: s * 2, rest: 0.3, size: s, color, skin: look.skin, key: this.keyOf(x, fy), trail: '#e8c07a', settle: 0.04, max: 3, onLand, onDone: this.intoClear(fy) });
+      });
+    }
+
+    /** Magnet: a faint field over its columns, then their blocks are yanked down and land with a squash and a puff. */
+    magnetFx(r) {
+      const w = this.phys(), s = this.lay.s, fx = this.fx, look = this.look, g = this.game, PULL = 0.07;
+      const cols = Array.from(new Set(r.cells.map(([x]) => x)));
+      const horiz = this.view.rot % 180 === 0;
+      fx.prop(0.6, (ctx, k, t) => {
+        ctx.setLineDash([s * 0.25, s * 0.35]); ctx.lineDashOffset = -t * s * 6 * (w.gy + w.gx > 0 ? 1 : -1); ctx.lineWidth = Math.max(1, s * 0.06);
+        cols.forEach((x, i) => {
+          const [ax, ay] = this.mid(x, 0), [bx, by] = this.mid(x, g.h - 1);
+          ctx.globalAlpha = 0.45 * Math.sin(Math.PI * k);
+          for (const off of [-0.22, 0.22]) {
+            ctx.strokeStyle = (i + (off > 0 ? 1 : 0)) % 2 ? '#4878e0' : '#e04848';
+            ctx.beginPath();
+            if (horiz) { ctx.moveTo(bx + off * s, by); ctx.lineTo(ax + off * s, ay); } else { ctx.moveTo(bx, by + off * s); ctx.lineTo(ax, ay + off * s); }
+            ctx.stroke();
+          }
+        });
+      });
+      for (const [x, y0, , y1, v] of r.moves) {
+        const fy = this.afterClear(r.rows, y1), [sx, sy] = this.mid(x, y0), [tx, ty] = this.mid(x, fy == null ? y1 : fy);
+        const onLand = (bd) => w.dust(bd.x + w.gx * s * 0.5, bd.y + w.gy * s * 0.5, s, 2, look.theme.muted);
+        w.body({ mode: 'hold', wake: PULL, next: 'drop', x: sx, y: sy, tx, ty, v0: 0, gs: 2.6, rest: 0.12, size: s, color: this.colorOf(v), skin: look.skin, key: this.keyOf(x, fy), settle: 0.05, max: 3, onLand, onDone: this.intoClear(fy) });
+      }
+    }
+
+    /** Phase: the ghostly piece sinks through the stack and materialises with a ripple in its gap. */
+    phaseFx(r, color) {
+      const w = this.phys(), s = this.lay.s, fx = this.fx, look = this.look, dist = r.dropDist || 0;
+      const cells = r.cells.filter(([, y]) => y < this.game.h);
+      if (!cells.length) return;
+      const paint = (ctx, z) => {
+        drawCell(ctx, look.skin, color, -z / 2, -z / 2, z, 0.45);
+        ctx.setLineDash([2, 3]); ctx.strokeStyle = '#ffffff'; ctx.globalAlpha *= 0.7; ctx.strokeRect(-z / 2 + 1.5, -z / 2 + 1.5, z - 3, z - 3); ctx.setLineDash([]);
+      };
+      const land = () => {
+        const [cx, cy] = this.centerOf(cells);
+        fx.ring(cx, cy, '#c7b8ff', s * 3, { max: 0.5, width: 3 });
+        fx.ring(cx, cy, '#ffffff', s * 1.8, { max: 0.35, width: 2 });
+        fx.pop(this.screenCells(cells, '#c7b8ff'), '#c7b8ff', 0.4);
+        for (const [x, y] of cells) {
+          // Motes drawn in from around the cell: it gathers itself.
+          const [mx, my] = this.mid(x, y);
+          for (let k = 0; k < 4; k++) { const a = Math.random() * Math.PI * 2, d = s * (0.8 + Math.random() * 0.4); w.part('pixel', mx + Math.cos(a) * d, my + Math.sin(a) * d, -Math.cos(a) * d * 5, -Math.sin(a) * d * 5, 0.2, Math.max(1.5, s * 0.1), '#e4dcff', 0, 5); }
+        }
+      };
+      let first = true;
+      for (const [x, y] of cells) {
+        const fy = this.afterClear(r.rows, y), [sx, sy] = this.mid(x, Math.min(this.game.h - 1, y + dist)), [tx, ty] = this.mid(x, fy == null ? y : fy);
+        w.body({ mode: 'drop', x: sx, y: sy, tx, ty, v0: s * 16, gs: 1.5, rest: 0, size: s, paint, color, key: this.keyOf(x, fy), settle: 0.02, max: 3, onLand: first ? land : null, onDone: this.intoClear(fy) });
+        first = false;
+      }
+    }
+
+    /** Settle: every column's blocks drop into place and bounce a little. */
+    settleFx(r) {
+      const w = this.phys(), s = this.lay.s, g = this.game, look = this.look, before = r.before;
+      for (let x = 0; x < g.w; x++) {
+        let dst = 0;
+        for (let y = 0; y < g.h; y++) {
+          const v = before[y * g.w + x];
+          if (!v) continue;
+          if (dst !== y) {
+            const fy = this.afterClear(r.rows, dst), [sx, sy] = this.mid(x, y), [tx, ty] = this.mid(x, fy == null ? dst : fy);
+            w.body({ mode: 'drop', x: sx, y: sy, tx, ty, v0: 0, gs: 1.5, rest: 0.25, size: s, color: this.colorOf(v), skin: look.skin, key: this.keyOf(x, fy), settle: 0.03, max: 3, onDone: this.intoClear(fy) });
+          }
+          dst++;
+        }
+      }
+      this.fx.sweep(this.lay.board, '#ffffff', 'y', 0.4);
+      this.fx.shake = Math.max(this.fx.shake, 2);
     }
 
     /** Nuke: everything goes, very brightly. */
     onNuke(gone, reduced) {
+      if (this.fx.world) this.fx.world.land();
       if (!this.lay) this.layout();
       const s = this.lay.s, b = this.lay.board;
       const cells = gone.map(([x, y, v]) => { const [sx, sy] = this.toScreen(x, y); return { x: sx, y: sy, color: this.colorOf(v) }; });
       if (reduced) { this.fx.burst('fade', cells, s, true); this.dirty = true; return; }
+      if (this.fx.world) { this.nukeFx(gone); this.dirty = true; return; }
       this.fx.burst('shatter', cells.length > 140 ? cells.filter((_, i) => i % 2 === 0) : cells, s, false);
       this.fx.flash(b.x - s, b.y - s, b.w + 2 * s, b.h + 2 * s, '#fffbe6', 0.9);
       this.fx.flash(b.x, b.y, b.w, b.h, '#ffb347', 0.5);
@@ -1036,8 +1403,65 @@
       this.dirty = true;
     }
 
+    /** Nuke: a white flash, then every block is blown out from the middle of the stack, tumbling. */
+    nukeFx(gone) {
+      const w = this.phys(), s = this.lay.s, b = this.lay.board, fx = this.fx, look = this.look, WAKE = 0.06;
+      const pts = gone.map(([x, y, v]) => { const [cx, cy] = this.mid(x, y); return [cx, cy, v]; });
+      const cx = pts.reduce((a, p) => a + p[0], 0) / pts.length, cy = pts.reduce((a, p) => a + p[1], 0) / pts.length, ux = -w.gx, uy = -w.gy;
+      // Bounded: past the body pool's size, every other block is a quick shrinking fade instead of a body.
+      const every = pts.length > w.maxBodies * 0.9 ? 2 : 1;
+      pts.forEach(([x, y, v], i) => {
+        const color = this.colorOf(v);
+        if (i % every) { w.part('fade', x, y, 0, 0, 0.25, s, color, 0); return; }
+        let dx = x - cx, dy = y - cy;
+        const d = Math.hypot(dx, dy) || 1;
+        dx /= d; dy /= d;
+        const sp = s * (9 + Math.random() * 9) * (0.7 + 0.3 * Math.min(1, d / (s * 4))), lift = s * (5 + Math.random() * 7);
+        w.body({ mode: 'hold', wake: WAKE, next: 'free', x, y, vx: dx * sp + ux * lift, vy: dy * sp + uy * lift, va: (Math.random() - 0.5) * 20, size: s, color, skin: look.skin, rest: 0.3, fric: 0.75, fadeAt: 0.6 + Math.random() * 0.25, max: 1.15 });
+      });
+      // Warm underneath, white on top: it reads as a white flash that cools as it fades.
+      fx.flash(b.x, b.y, b.w, b.h, '#ffb347', 0.14);
+      fx.flash(b.x, b.y, b.w, b.h, '#ffffff', 0.3);
+      w.after(WAKE, () => {
+        const clip = { x: b.x, y: b.y, w: b.w, h: b.h };
+        fx.ring(cx, cy, '#ffffff', b.h * 0.8, { max: 0.6, width: 5, clip });
+        fx.ring(cx, cy, '#ff9f43', b.h * 0.55, { max: 0.8, width: 3, clip });
+        w.dust(cx, cy, s, 16, '#9a8f86');
+        w.sparks(cx, cy, s, 18, ['#ffd166', '#fff3c4', '#ff8c42']);
+        fx.shake = Math.max(fx.shake, 7);
+      });
+      fx.text('KABOOM', b.x + b.w / 2, b.y + b.h * 0.35, '#ffe28a', 24);
+    }
+
+    /** Chroma Purge: a soft pulse of the piece's colour spreads out; each block it reaches glows and dissolves into grains. */
+    purgeFx(cells) {
+      const w = this.phys(), s = this.lay.s, fx = this.fx, look = this.look, p = this.game.piece;
+      const [px, py] = p ? this.centerOf(this.game.cellsOf(p)) : [cells[0].x + s / 2, cells[0].y + s / 2];
+      const color = p ? this.colorOf(p.type.color) : cells[0].color;
+      const far = Math.max(s, ...cells.map((c) => Math.hypot(c.x + s / 2 - px, c.y + s / 2 - py)));
+      const V = Math.max(s * 22, far / 0.35), wakes = [];
+      for (const c of cells) {
+        const wake = 0.04 + Math.hypot(c.x + s / 2 - px, c.y + s / 2 - py) / V;
+        wakes.push(wake);
+        w.body({ mode: 'hold', x: c.x + s / 2, y: c.y + s / 2, size: s, color: c.color, skin: look.skin, wake, act: 'grains', max: 5 });
+      }
+      const b = this.lay.board, R = far + s;
+      fx.prop(R / V + 0.3, (ctx, k, t) => {
+        ctx.beginPath(); ctx.rect(b.x, b.y, b.w, b.h); ctx.clip();
+        const r = Math.max(1, V * t), fade = Math.max(0, 1 - t / (R / V + 0.3));
+        ctx.globalAlpha = 0.16 * fade; ctx.strokeStyle = color; ctx.lineWidth = s * 1.4;
+        ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.stroke();
+        ctx.globalAlpha = 0.6 * fade; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.stroke();
+        // Each block lights up as the pulse reaches it.
+        ctx.fillStyle = '#ffffff';
+        cells.forEach((c, i) => { const u = (t - wakes[i] + 0.06) / 0.2; if (u > 0 && u < 1) { ctx.globalAlpha = 0.55 * Math.sin(Math.PI * u); ctx.fillRect(c.x, c.y, s, s); } });
+      });
+    }
+
     /** Blocks sliding to new spots (Mirror World). */
     onMoves(moves, dir, reduced) {
+      if (this.fx.world) this.fx.world.land();
       if (!this.lay) this.layout();
       const s = this.lay.s;
       if (!reduced) {
@@ -1068,6 +1492,8 @@
       if (!this.lay) this.layout();
       const g = this.game, s = this.lay.s, fx = this.fx, b = this.lay.board;
       this.dirty = true;
+      // A rewind takes back what the last item did, its show included.
+      if (id === 'rewind' && fx.world) { fx.world.clear(); fx.props = []; }
       if (id === 'rewind') { fx.sweep(b, '#8fd3ff', 'y', 0.55); if (!reduced) fx.text('↶', b.x + b.w / 2, b.y + b.h * 0.4, '#8fd3ff', 30); return; }
       if (!piece || id === 'settle' || id === 'purge') return;
       const cells = g.cellsOf(piece), color = this.colorOf(piece.type.color);
@@ -1139,8 +1565,10 @@
     bump(reduced) { if (!reduced) this.fx.shake = Math.max(this.fx.shake, 1.2); this.dirty = true; }
 
     onPurge(gone, reduced) {
+      if (this.fx.world) this.fx.world.land();
       if (!this.lay) this.layout();
       const s = this.lay.s, cells = gone.map(([x, y, v]) => { const [sx, sy] = this.toScreen(x, y); return { x: sx, y: sy, color: this.colorOf(v) }; });
+      if (!reduced && this.fx.world && cells.length) { this.purgeFx(cells); this.dirty = true; return; }
       this.fx.burst(reduced ? 'fade' : 'sparkle', cells, s, reduced);
       if (!reduced && cells.length) {
         // A wave of colour rolls out from the piece to each block it takes.

@@ -1,5 +1,5 @@
 // Lull — piece shapes: the seven SRS tetrominoes, pentominoes and friends, big (2×) pieces, custom shapes,
-// and polyomino tools the factory uses to tell a legal product from a defective one.
+// and polyomino tools that enumerate the shapes the factory presses.
 // Coordinates are y-up: row 0 is the floor.
 (function (root) {
   'use strict';
@@ -236,19 +236,11 @@
     return freeCache[n];
   }
 
-  /** Why a shape is not a legal n-omino, or null when it is. */
-  function defectOf(cells, n) {
-    if (cells.length > n) return 'overweight';
-    if (cells.length < n) return 'underweight';
-    if (!isConnected(cells)) return 'disconnected';
-    return null;
-  }
-
   Object.assign(L, {
     Pieces: {
       COLOR, TYPES, TETROMINOES, PENTOMINOES, MIRROR,
       get, bigOf, customType, mirrorOf, defineType, kicksFor, rotateCW, boundsOf, shapeKey,
-      normalize, keyOf, freeKey, isConnected, freePolyominoes, defectOf,
+      normalize, keyOf, freeKey, isConnected, freePolyominoes,
     },
   });
 })(typeof globalThis !== 'undefined' ? globalThis : this);
