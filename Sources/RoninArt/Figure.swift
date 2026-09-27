@@ -441,7 +441,11 @@ public enum Figure {
                 p.drag = k == 0 ? 0.05 : 0.02
                 return p
             default:
-                var p = Pose.mix(key(cast, .strike(1)), base, 0.5)
+                // Recovering: the weapon comes back up the way it went down (the kanabō over the top).
+                let blow = key(cast, .strike(1))
+                var home = base
+                if cast == .foe(.brute), home.blade < 0, blow.blade > 0 { home.blade += 2 * .pi }
+                var p = Pose.mix(blow, home, 0.5)
                 p.stream = 0.4
                 return p
             }
