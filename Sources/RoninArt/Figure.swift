@@ -782,10 +782,11 @@ public enum Figure {
                             rock: 0.03, lag: 0.008, roll: 0.005, head: 0.15, arms: 0.25, carry: 0.01, droop: -0.04)
             // The shinobi: a low, driving sprint, pitched hard forward over it, on the balls of his feet: each foot down
             // for a quarter of the stride and snatched up again, the heel flicked up behind and the knee driven
-            // through, so that half his time he is in the air.
+            // through, so that half his time he is in the air. All of it in the legs: the shoulders held square and the
+            // arms still, the knife up and ready.
             case .runner:
                 return Gait(stride: 1.4, planted: 3, hips: 0.5, give: 0.03, sink: Gait.running, lift: 0.2, peak: 0.35, lean: 0.86,
-                            rock: 0.05, lag: 0.012, roll: 0.014, head: 0.45, arms: 0, carry: 0, droop: 0,
+                            rock: 0.05, lag: 0.012, roll: 0.004, head: 0.45, arms: 0, carry: 0, droop: 0,
                             recovery: [v(-0.42, 0.26), v(-0.08, 0.31), v(0.28, 0.17)], behind: 0.085, heels: 0.4)
             // The oni: a slow, ponderous tread, each foot picked up and stamped down, sinking deep into it and
             // heaving up out of it, the shoulders rolling, the kanabō bouncing on the shoulder.
@@ -883,14 +884,14 @@ public enum Figure {
             p.hold = v(0.2 - 0.012 * cos(phase), -0.12 - g.carry * settle)
             p.blade = 1.66 + g.droop * settle
         case .foe(.runner):
-            // Sprinting: both arms pumping hard against the legs, bent at the elbow, driven back past the hip and up
-            // to the chin (the near one back as the near foot comes down ahead); the knife reversed along the forearm
-            // (sakate), tucked out of the wind.
-            let swing = -cos(phase - 0.3)
+            // Sprinting on his legs alone, the arms held still: the knife hand up before his chin, the knife reversed
+            // along the forearm (sakate) and ready, as he holds it on guard; the free arm swept back along his side.
+            // Both are carried with the body as it rocks over the stride, never swung.
+            let rock = p.lean - g.lean
             p.grip = .one
             p.hold = nil
-            p.arm = pump(swing)
-            p.arm2 = pump(-swing)
+            p.arm = (Figure.sprintArms.knife.upper - rock, Figure.sprintArms.knife.fore - rock)
+            p.arm2 = (Figure.sprintArms.free.upper - rock, Figure.sprintArms.free.fore - rock)
             p.blade = tucked(p, cast)
             p.heels = g.heels
             p.stream = 1
@@ -934,12 +935,10 @@ public enum Figure {
         return v(c(p0.x, p1.x, p2.x, p3.x), c(p0.y, p1.y, p2.y, p3.y))
     }
 
-    /// A sprinter's arm, `swing` of the way forward (1) or back (-1): driven back and up behind the hip with the elbow
-    /// opening, and up to the chin with the elbow closed.
-    static func pump(_ swing: CGFloat) -> (upper: CGFloat, fore: CGFloat) {
-        let upper = -0.3 + 1.05 * swing
-        return (upper, upper + 1.35 + 0.4 * swing)
-    }
+    /// How the runner carries his arms as he sprints, at his gait's lean (each turned with the body as it rocks): the
+    /// knife arm's upper arm down along his side and the forearm raised before him, the fist before his chin; the free
+    /// arm swept back behind the hip, the elbow a little bent.
+    static let sprintArms = (knife: (upper: CGFloat(0.72), fore: CGFloat(2.78)), free: (upper: CGFloat(-1.45), fore: CGFloat(-1.0)))
 
     /// The runner's knife held reversed (sakate): its blade laid back along the forearm from the fist, the point out
     /// past the elbow; the angle it lies at in pose `p`.

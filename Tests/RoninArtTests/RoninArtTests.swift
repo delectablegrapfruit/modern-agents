@@ -639,8 +639,8 @@ final class RoninArtTests: XCTestCase {
     func testTheRunnerSprintsLowAndLongAndHalfTheTimeInTheAir() {
         // The shinobi's strength is his speed: a low, driving sprint pitched hard forward, on the balls of his feet,
         // each foot down a quarter of the stride and half his time in the air; the heel flicked up high behind him and
-        // the knee driven through; both arms pumping hard against each other, the knife tucked along the forearm; his
-        // legs turning over faster than any other man's.
+        // the knee driven through; his legs turning over faster than any other man's. He runs on his legs alone: the
+        // arms held still, the knife up before his chin reversed along the forearm, the free arm swept back.
         let cast = Cast.foe(.runner), n = Frame.walkFrames
         let feet = (0..<n).map { Figure.footing(cast, .walk($0)) }
         XCTAssertGreaterThanOrEqual(feet.filter { min($0.front.y, $0.back.y) > 0.01 }.count, n / 2, "not in the air long enough")
@@ -662,12 +662,22 @@ final class RoninArtTests: XCTestCase {
         XCTAssertTrue(lifted.contains { $0.y > 0.25 && abs($0.x) < 0.12 }, "the foot is not tucked under him as the knee comes through")
         // The knee driven up ahead of the hips.
         XCTAssertGreaterThan(bones.map { max($0[3].x, $0[5].x) - $0[0].x }.max()!, 0.2)
-        // Both arms pumping hard, against each other.
-        let near = bones.map { $0[8].x - $0[0].x }, far = bones.map { $0[10].x - $0[0].x }
-        XCTAssertGreaterThan(near.max()! - near.min()!, 0.25, "the knife arm hardly pumps")
-        XCTAssertGreaterThan(far.max()! - far.min()!, 0.25, "the free arm hardly pumps")
-        let mean = (near.reduce(0, +) / CGFloat(n), far.reduce(0, +) / CGFloat(n))
-        XCTAssertLessThan(zip(near, far).map { ($0 - mean.0) * ($1 - mean.1) }.reduce(0, +), 0, "the arms swing together")
+        // The arms still on the body through the whole stride (the hands kept where they are from the neck, the body
+        // rocking under them as it will), the knife hand up before his face and the free one back behind his hips.
+        let leans = (0..<n).map { Figure.pose(cast, .walk($0)).lean }
+        for (hand, name) in [(8, "knife"), (10, "free")] {
+            let from = zip(bones, leans).map { b, lean -> CGPoint in
+                let d = CGPoint(x: b[hand].x - b[1].x, y: b[hand].y - b[1].y)
+                return CGPoint(x: d.x * cos(lean) - d.y * sin(lean), y: d.x * sin(lean) + d.y * cos(lean))
+            }
+            let spread = max(from.map(\.x).max()! - from.map(\.x).min()!, from.map(\.y).max()! - from.map(\.y).min()!)
+            XCTAssertLessThan(spread, 0.03, "the \(name) arm swings")
+        }
+        for b in bones {
+            XCTAssertGreaterThan(b[8].x, b[1].x + 0.08, "the knife is not held out before him")
+            XCTAssertGreaterThan(b[8].y, b[1].y - 0.06, "the knife is carried low")
+            XCTAssertLessThan(b[10].x, b[0].x, "the free arm is not swept back")
+        }
         func cadence(_ kind: Kind) -> Double { kind.speed / Double(Figure.stride(.foe(kind)) * Build.of(.foe(kind)).height) }
         for kind in Kind.allCases where kind != .runner { XCTAssertGreaterThan(cadence(.runner), cadence(kind) * 1.15, "\(kind)") }
     }
