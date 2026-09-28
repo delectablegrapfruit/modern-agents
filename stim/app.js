@@ -7218,7 +7218,12 @@ function openSearch() {
     <div class="sh-sech"><b>Trending searches</b></div><div class="sh-trend">${TREND.map((t, i) => `<button data-q="${t}"><i>${i + 1}</i>${t}${i < 3 ? IF('flame') : ''}</button>`).join('')}</div></div>`);
   const close = sheet('Search', el), inp = $('input', el), sug = $('.sh-sug', el);
   const go = q => { close(); runSearch(q); };
-  ['keydown', 'keyup'].forEach(ev => inp.addEventListener(ev, e => { if (e.key !== 'Escape') e.stopPropagation(); if (ev === 'keydown' && e.key === 'Enter') { e.preventDefault(); go(inp.value || inp.placeholder); } }));
+  // typing stays in the field; Escape closes Search (the app's own Escape handlers skip inputs)
+  ['keydown', 'keyup'].forEach(ev => inp.addEventListener(ev, e => {
+    e.stopPropagation();
+    if (e.key === 'Escape') { e.preventDefault(); if (ev === 'keydown') close(); }
+    else if (ev === 'keydown' && e.key === 'Enter') { e.preventDefault(); go(inp.value || inp.placeholder); }
+  }));
   inp.addEventListener('input', () => {
     const v = inp.value.trim().toLowerCase();
     const m = v ? PRL.filter(p => (p.n + ' ' + p.t).toLowerCase().includes(v)).slice(0, 6) : [];
