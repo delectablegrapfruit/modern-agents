@@ -556,9 +556,13 @@ kbd { font: 600 12px/1 var(--ui); min-width: 24px; height: 24px; padding: 0 7px;
 .fd-poll.done button::before { width: var(--p); }
 .fd-poll.done button em { display: block; }
 .fd-poll.done button:not(.me)::before { background: #d9cce1; }
-.fd-poll.done button.me { color: #fff; }
+.fd-poll.done button.me span { color: #fff; }
+.fd-poll.done button.me em { color: #7b3cff; }
 .fd-svbot { flex: none; display: flex; align-items: center; gap: 4px; padding: 10px 10px 0; transition: opacity .2s; }
-.fd-svin { flex: 1; min-width: 0; height: 42px; padding: 0 16px; border-radius: 21px; border: 1.5px solid rgba(255, 255, 255, .45); color: rgba(255, 255, 255, .85); text-align: left; font-size: 14px; }
+.fd-svf { flex: 1; min-width: 0; display: flex; }
+.fd-svin { flex: 1; min-width: 0; height: 42px; padding: 0 16px; border-radius: 21px; border: 1.5px solid rgba(255, 255, 255, .45); background: transparent; color: #fff; font: 16px var(--ui); outline: none; -webkit-user-select: text; user-select: text; }
+.fd-svin::placeholder { color: rgba(255, 255, 255, .8); }
+.fd-svin:focus { border-color: #fff; }
 .fd-rx { flex: none; width: 38px; height: 42px; font-size: 24px; line-height: 42px; transition: transform .12s; }
 .fd-rx:active { transform: scale(1.3); }
 .fd-seen { display: flex; align-items: center; gap: 8px; height: 42px; padding: 0 8px; font-size: 14px; }
@@ -576,6 +580,7 @@ kbd { font: 600 12px/1 var(--ui); min-width: 24px; height: 24px; padding: 0 7px;
 .fd-ch time { color: var(--muted); font-size: 12px; }
 .fd-cb p { margin: 2px 0 3px; font-size: 14.5px; line-height: 1.35; overflow-wrap: anywhere; }
 .fd-cb small { font-size: 12px; font-weight: 600; color: var(--muted); }
+.fd-cb small button { font-weight: 700; color: var(--muted); }
 .fd-cl { flex: none; width: 30px; height: 30px; display: grid; place-items: center; color: var(--muted); }
 .fd-cl svg { width: 16px; height: 16px; }
 .fd-cl.on { color: #ff2e4d; }
@@ -671,7 +676,12 @@ kbd { font: 600 12px/1 var(--ui); min-width: 24px; height: 24px; padding: 0 7px;
 .fd-cwho { display: flex; align-items: center; gap: 8px; font-size: 14.5px; min-width: 0; }
 .fd-cwho b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fd-cwho .fd-av { box-shadow: 0 0 0 1.5px rgba(255, 255, 255, .8); }
-.fd-cfol { flex: none; height: 28px; padding: 0 11px; border-radius: 10px; border: 1.5px solid rgba(255, 255, 255, .8); font: 700 12.5px/1 var(--ui); color: #fff; text-shadow: none; }
+.fd-cwho button { color: #fff; font-size: 15px; }
+.fd-rf { position: relative; margin-bottom: 8px; border-radius: 16px; }
+.fd-rf .fd-av { box-shadow: 0 0 0 2px #fff, 0 6px 14px -6px rgba(0, 0, 0, .5); }
+.fd-rf i { position: absolute; left: 50%; bottom: -9px; width: 20px; height: 20px; margin-left: -10px; border-radius: 7px; display: grid; place-items: center; background: #ff2e6e; color: #fff; transition: transform .25s var(--spring), background .2s; }
+.fd-rf i svg { width: 13px; height: 13px; stroke-width: 3.2; }
+.fd-rf.on i { background: #12c48b; transform: scale(0); transition-delay: .6s; }
 .fd-cinfo p { margin: 0; font-size: 14px; line-height: 1.35; }
 .fd-csnd { display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; opacity: .92; }
 .fd-csnd svg { width: 15px; height: 15px; flex: none; }
