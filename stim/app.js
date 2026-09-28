@@ -3743,13 +3743,14 @@ function plMeta(id) {
   return { rate: m[0], votes: m[1] + (TODAY % 997) * 43, pop: m[2], gross: m[3] };
 }
 const plChartOf = (kind, day) => plGames().map(id => { const r = plSeed(`${kind}:${id}:${day}`), m = plMeta(id); return [id, (kind === 'free' ? m.pop : m.gross) + r() * 2.2]; }).sort((a, b) => b[1] - a[1]).map(x => x[0]);
-// challenges: the play achievements still to earn, with their progress
+// challenges: the play achievements still to earn, with their progress. [achievement, game, () => current, goal, text?]
 const PL_CHAL = [
   ['tap-1k', 'tap', () => S.taps, 1000], ['crit', 'tap', () => S.crits, 25], ['auto-10', 'tap', () => S.tap.A, 10], ['tap-10k', 'tap', () => S.taps, 10000],
   ['perfect', 'hold', () => S.perfects, 10], ['hold-5', 'hold', () => plS.holdBest, 5],
   ['rings', 'rings', () => S.rings, 100], ['ring-25', 'rings', () => plS.ringBest, 25],
   ['pet', 'pet', () => Math.min(S.pet.food, S.pet.fun, S.pet.love), 90, v => `Lowest need ${Math.round(v)}%`], ['pet-100', 'pet', () => S.pets, 100],
 ];
+const plAddChal = L => { PL_CHAL.push(...L); }; // the other games in Play add theirs from their own sections
 const plChalAll = () => PL_CHAL.map(([id, g, cur, goal, txt]) => {
   const a = ACH.find(x => x.id === id); if (!a || !APPS[g]) return null;
   const v = Math.min(cur(), goal), done = !!S.ach[id];
@@ -3912,6 +3913,11 @@ addAch([
   ['gt-3', 'Flawless', 'Clear a Gate Army level with three stars', 'star', () => Object.values(GT.stars).some(v => v >= 3)],
   ['gt-500', 'Legion', 'Lead an army of 500 in Gate Army', 'flame', () => GT.best >= 500],
   ['gt-10', 'Warlord', 'Reach level 10 in Gate Army', 'level', () => GT.level >= 10],
+]);
+const gtGot = id => (S.ach[id] ? 1 : 0);
+plAddChal([
+  ['gt-win', 'gates', () => GT.wins, 1], ['gt-10', 'gates', () => GT.level, 10, v => `Level ${v} of 10`], ['gt-500', 'gates', () => GT.best, 500],
+  ['gt-3', 'gates', () => Math.max(0, ...Object.values(GT.stars)), 3, v => `${v} / 3 stars`], ['gt-flip', 'gates', () => gtGot('gt-flip'), 1], ['gt-mini', 'gates', () => gtGot('gt-mini'), 1],
 ]);
 addStats([
   ['Gate Army level', () => fmt(GT.level)],
@@ -4803,6 +4809,7 @@ def({
   id: 'gates', name: 'Gate Army', tag: 'Crowd runner', c: '#2f7bff', genre: 'Action',
   blurb: 'Pick the right gate, grow your army and take down the boss.',
   art: ART,
+  progress() { const L = GT.level; return { pct: ((L - 1) % 5) / 5, text: chestLv(L) ? `Level ${L} · Chest level` : `Level ${L} · Chest at level ${Math.ceil(L / 5) * 5}` }; },
   test: { get g() { return g; }, update: dt => update(dt), newRun: L => newRun(L), setArmy: n => setArmy(n), get running() { return !!raf; }, frame: () => { const t0 = performance.now(); update(1 / 60); const t1 = performance.now(); draw(); return [t1 - t0, performance.now() - t1, g.bullets.length, parts.length, sol.length]; }, mkLevel, gApply, MULS }, // for automated tests
   init() { newRun(GT.level); },
   badge: () => (dropReady() ? 1 : 0),
@@ -4893,6 +4900,7 @@ addAch([
   ['tw-1k', 'Four digits', 'Reach 1,000 power in Power Tower', 'bolt', () => TWS.maxPow >= 1000],
   ['tw-hero', 'Hero of the realm', 'Free the princess 25 times', 'heart', () => TWS.wins >= 25],
 ]);
+plAddChal([['tw-first', 'tower', () => TWS.wins, 1], ['tw-ten', 'tower', () => TWS.best, 10, v => `Level ${v} of 10`], ['tw-1k', 'tower', () => TWS.maxPow, 1000], ['tw-hero', 'tower', () => TWS.wins, 25]]);
 addStats([
   ['Power Tower level', () => fmt(TWS.lv)],
   ['highest power', () => fmt(TWS.maxPow)],
@@ -6160,6 +6168,7 @@ def({
   genre: 'Puzzle',
   blurb: 'Absorb weaker monsters, grow your power and free the princess at the top. Most players never pass level 20.',
   art: ART,
+  progress() { const L = TWS.lv, m = plMile(L); return { pct: L / m, text: TWS.maxPow ? `Level ${L} · ${fmt(TWS.maxPow)} power record` : `Level ${L}` }; },
   init() { lifeTick(true); },
   bg() { lifeTick(); },
   badge: () => (TWS.out && TWS.lives >= MAXL ? 1 : 0),
