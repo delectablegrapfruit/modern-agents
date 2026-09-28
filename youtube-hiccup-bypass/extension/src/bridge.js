@@ -2,7 +2,7 @@
 // event; stat names flow up and are only counted, so a page script faking events can't reach chrome.storage.
 const EVENTS = { config: 'ythb:config', ready: 'ythb:ready', stat: 'ythb:stat' };
 
-const stats = { timersBoosted: 0, adsFastForwarded: 0, stallsRecovered: 0, dialogsDismissed: 0 };
+const stats = { requestsPatched: 0, timersBoosted: 0, adsFastForwarded: 0, stallsRecovered: 0, dialogsDismissed: 0 };
 let settings = null;
 
 const pushSettings = () => {

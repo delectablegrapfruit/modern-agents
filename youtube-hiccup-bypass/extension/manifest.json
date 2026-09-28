@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "YouTube Hiccup Bypass",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Cuts the artificial startup delay, ad-slot dead time, stalls and anti-adblock dialogs YouTube serves ad-blocker/VPN users.",
   "minimum_chrome_version": "111",
   "permissions": ["storage"],

@@ -13,12 +13,15 @@ Use it alongside your ad blocker, not instead of one.
 
 | Hiccup | How it's bypassed | Toggle |
 | --- | --- | --- |
-| ~5 s black player before every video | Shortens `setTimeout` calls of 1–10 s whose callback contains `resolve(1)` (the player's startup gate) to ×0.001, as uBlock Origin's `nano-stb` scriptlet does | Startup delay |
+| Spinner that keeps restarting for seconds before playback (YouTube's server-enforced "SABR backoff": ~80% of the skipped ad's length) | Player requests (`/youtubei/v1/player`, `get_watch`, `playlist/watch`, via fetch or XHR) get `playbackContext.contentPlaybackContext.isInlinePlaybackNoAd = true`, so YouTube serves the video with no ads and no backoff. Covers in-app navigation; a page opened directly has its player response baked into the HTML and gets the no-picture reload below | Ad backoff |
+| ~5 s black player before every video | Shortens the one `setTimeout(…resolve(1)…, 5000)` startup gate to 5 ms, at most once per 30 s: shortening network retry timers would turn a wait into a request storm | Startup gate |
 | Black/frozen "ad" slot for the ad's full length | While the player has `ad-showing`/`ad-interrupting`: mute, 16× speed, press Skip; mute state and chosen speed come back after | Ad-slot dead time |
-| Playback frozen mid-video / spinner forever | Clock stuck 4 s while playing → re-seek in place → pause/play → reload stream at the same second (max 3 per video, refilled after 60 s) | Stalls |
+| No picture / frozen playback | No picture 2.5 s while playing → reload at the same second (a fresh, patched player request). Frozen 4 s mid-video → re-seek → pause/play → reload. Max 3 per video, refilled after 60 s | Stalls |
 | "Ad blockers are not allowed" dialog | Closes it and resumes the video | Anti-adblock dialog |
 
-Popup: the four toggles (saved in `chrome.storage.sync`, applied live) and per-tab counts.
+Each action is logged to the DevTools console as `[YouTube Hiccup Bypass] …`.
+
+Popup: the five toggles (saved in `chrome.storage.sync`, applied live) and per-tab counts.
 
 ## Not fixable client-side
 
@@ -31,14 +34,14 @@ Popup: the four toggles (saved in `chrome.storage.sync`, applied live) and per-t
 ```
 extension/
   manifest.json
-  src/page.js       page world, document_start: timer wrap, ad slot, stalls, dialog; selectors/tunables at top
+  src/page.js       page world, document_start: request patch, timer wrap, ad slot, stalls, dialog; tunables at top
   src/bridge.js     isolated world: chrome.storage → page.js settings, page.js → per-tab counts
   src/defaults.js   default settings (bridge + popup)
   popup/            toggles + counts
 test/e2e.mjs        headless Chromium + the extension against a stand-in watch page
 ```
 
-YouTube renames classes; when a feature stops working, update the selectors at the top of `src/page.js`.
+YouTube renames endpoints, fields and classes; when a feature stops working, update the tunables at the top of `src/page.js`.
 
 ## Test
 
