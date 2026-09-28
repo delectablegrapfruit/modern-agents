@@ -379,6 +379,18 @@
       return true;
     }
 
+    // The picture as shown right now, copied into the square canvas c (for effects that cut it up). False if none yet.
+    snapshot(c) {
+      const f = this.current(performance.now());
+      if (!f) return false;
+      const px = this.canvas.width;
+      if (c.width !== px || c.height !== px) { c.width = c.height = px; }
+      const g = c.getContext('2d');
+      if (this.src.live) this.paint(g, px, f, false);
+      else { g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, px, px); g.drawImage(this.canvas, 0, 0); }
+      return true;
+    }
+
     // Draw a frame into a square box the way the player sees it: whole, centred (object-fit: contain).
     paint(g, size, f, display) {
       g.setTransform(1, 0, 0, 1, 0, 0);

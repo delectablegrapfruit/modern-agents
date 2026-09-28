@@ -33,13 +33,35 @@
     shrink: { name: 'Shrink', w: 16, dur: 10 },
   };
   const BULLET_V = 520, BULLET_RUN = 1800; // Bullet: speed and how far it carries you (it finishes on a junction)
-  const APEX_VIEW = 2000;                  // Launch: world units across the screen's shorter side at the top
-  const UP = 0.45, AIR = 1.4, DOWN = 0.55; // Launch: seconds going up, at the top, coming down (you steer throughout)
+  const APEX_VIEW = 1200;                  // Launch: world units across the screen's shorter side at the top
+  const UP = 0.3, AIR = 0.75, DOWN = 0.4;  // Launch: seconds going up, at the top, coming down (you steer throughout)
+  const HOP = 0.08, HOP_GROW = 0.18;       // ...how high the picture rises on screen (share of the shorter side), how much it grows
   const HITSTOP = 0.07, SHAKE = 0.32;      // a hit: the game freezes this long, then the view shakes this long
+  const BREAK = 0.6, BUILD = 0.5;          // a loss shatters the picture (seconds the pieces fly); it flies back together as you spawn
   const SHRINK = 0.5;
   const ICE_GRIP = 2.2;   // on ice, how fast your movement catches up with your drag (per second): low = more drift
   const ICE_MAX = 700;    // ...and the fastest you can slide
   const smooth = (k) => k * k * (3 - 2 * k);
+  // The picture cut into glassy shards: a jittered 4x4 grid over its visible part b (box units, 0-1), each cell split
+  // along a random diagonal. Each shard has its own heading out from the middle, distance (in box sizes) and spin.
+  function cutShards(seed, b) {
+    const r = rng(seed), N = 4, P = [], mx = (b.x0 + b.x1) / 2, my = (b.y0 + b.y1) / 2, span = Math.max(b.x1 - b.x0, b.y1 - b.y0);
+    for (let j = 0; j <= N; j++) for (let i = 0; i <= N; i++) {
+      const inner = i > 0 && j > 0 && i < N && j < N;
+      const u = (i + (inner ? r.range(-0.3, 0.3) : 0)) / N, v = (j + (inner ? r.range(-0.3, 0.3) : 0)) / N;
+      P.push({ x: b.x0 + u * (b.x1 - b.x0), y: b.y0 + v * (b.y1 - b.y0) });
+    }
+    const at = (i, j) => P[j * (N + 1) + i], out = [];
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+      const a = at(i, j), b = at(i + 1, j), c = at(i + 1, j + 1), d = at(i, j + 1);
+      for (const tri of r.chance(0.5) ? [[a, b, c], [a, c, d]] : [[a, b, d], [b, c, d]]) {
+        const cx = (tri[0].x + tri[1].x + tri[2].x) / 3, cy = (tri[0].y + tri[1].y + tri[2].y) / 3;
+        const ang = Math.atan2(cy - my, cx - mx) + r.range(-0.5, 0.5);
+        out.push({ pts: tri, c: { x: cx, y: cy }, dx: Math.cos(ang), dy: Math.sin(ang), v: span * r.range(0.35, 0.85) * (0.7 + (1.2 * Math.hypot(cx - mx, cy - my)) / span), w: r.range(-3, 3) });
+      }
+    }
+    return out;
+  }
   const polyLen = (p) => { let l = 0; for (let i = 1; i < p.length; i++) l += Math.hypot(p[i].x - p[i - 1].x, p[i].y - p[i - 1].y); return l; };
 
   const S = () => MZ.Save.settings;
@@ -188,7 +210,7 @@
     maze: null, world: null, gems: [], beacons: [],
     ball: { x: 0, y: 0 },
     cam: { x: 0, y: 0, zoom: 1 }, userZoom: 1,
-    t: 0, playT: 0, clock: 0, elapsed: 0, restarts: 0, gemsTaken: 0, stateT: 0, lastTick: -1, attract: 0,
+    t: 0, flow: 0, playT: 0, clock: 0, elapsed: 0, restarts: 0, gemsTaken: 0, stateT: 0, lastTick: -1, attract: 0,
     checkpoints: [], cpIdx: -1, boxes: [],
     hp: HEARTS, bonus: 0, hurtT: REGEN, guardT: 0, stuck: false, clearT: 0, touched: false, runT: 0, scale: 1, item: null, roll: null, fx: {}, lastSafe: null,
     FX, Player, Backdrop, GoalMedia, ITEMS, HEARTS, MAX_BONUS, REGEN, ICE_GRIP,
@@ -199,6 +221,7 @@
       this.input = new MZ.Input(MZ.$('#stage'));
       this.sprite = new MZ.Sprite(MZ.$('#player-canvas'));
       this.input.onZoom = (k) => this.zoomBy(k);
+      this.input.onUse = () => this.useItem();
       Backdrop.init();
       this.applySettings();
       window.addEventListener('resize', () => this.resize());
@@ -394,6 +417,7 @@
       this.resetPower();
       this.cam.zoom = this.zoomTarget();
       this.setState('play');
+      this.assemble();
       MZ.Audio.Music.ensure();
       this.emit('begin');
     },
@@ -419,6 +443,7 @@
       this.cam.zoom = this.zoomTarget();
       this.lastTick = -1;
       this.setState('play');
+      this.assemble();
       MZ.Audio.Music.ensure();
       this.emit('begin');
       this.emit('bonus', 'Back to checkpoint');
@@ -616,7 +641,74 @@
     // How solid the picture looks: faded while the shield is down, filling back in as it recharges.
     shieldLook() { return this.hp >= HEARTS ? 1 : this.recharging() ? 0.45 + 0.55 * clamp((this.hurtT - REGEN + RECHARGE) / RECHARGE, 0, 1) : 0.45; },
     boxesOn() { return S().gameplay.boxes && this.mode !== 'trial'; }, // Time Trial has no mystery boxes
-    shielded() { const fx = this.fx; return this.guardT > 0 || this.stuck || fx.star > 0 || !!fx.bullet || !!fx.launch || !!fx.bubble; },
+    shielded() { const fx = this.fx; return this.guardT > 0 || this.stuck || fx.star > 0 || !!fx.bullet || !!fx.launch || !!fx.bubble || this.building(); },
+    // A loss shatters the picture; spawning in, the pieces fly back together (you can already move, and nothing hurts).
+    shatter() {
+      if (S().display.reducedMotion) return false;
+      this.pieces = { kind: 'break', t0: this.t, T: BREAK, seed: hashInts(Math.floor(this.t * 1000), 0x5a7) };
+      MZ.Audio.play('shatter');
+      return true;
+    },
+    assemble() {
+      this.pieces = S().display.reducedMotion ? null : { kind: 'build', t0: this.t, T: BUILD, seed: hashInts(Math.floor(this.t * 1000), 0xb17d) };
+    },
+    building() { return !!(this.pieces && this.pieces.kind === 'build' && this.t - this.pieces.t0 < this.pieces.T); },
+    // The shards, cut from the picture as it looks this frame, in screen space around the centre (css: the box in px).
+    drawPieces(css) {
+      const P = this.pieces, k = clamp((this.t - P.t0) / P.T, 0, 1);
+      if (P.kind === 'build' && k >= 1) { this.pieces = null; this.formedAt = this.t; MZ.Audio.play('pop'); return; }
+      if (P.kind === 'break' && k >= 1) return; // gone until the next spawn
+      const src = this.shardCanvas || (this.shardCanvas = document.createElement('canvas'));
+      if (!this.sprite.snapshot(src)) return;
+      if (!P.list) P.list = cutShards(P.seed, this.opaqueBounds(src)); // cut once the picture is there to cut
+      const g = this.renderer.ctx, dpr = this.renderer.dpr, cx = this.renderer.w / 2, cy = this.renderer.h / 2;
+      // Breaking: a burst that slows, the shards spinning, shrinking and fading. Building: in from afar, settling.
+      const e = P.kind === 'break' ? 1 - Math.pow(1 - k, 2.4) : Math.pow(1 - k, 3);
+      const alpha = P.kind === 'break' ? (k < 0.4 ? 1 : 1 - (k - 0.4) / 0.6) : Math.min(1, k * 3);
+      const sc = P.kind === 'break' ? 1 - 0.25 * k : 1;
+      g.save();
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      g.globalAlpha = alpha;
+      for (const s of P.list) {
+        const d = s.v * css * e;
+        g.save();
+        g.translate(cx + (s.c.x - 0.5) * css + s.dx * d, cy + (s.c.y - 0.5) * css + s.dy * d);
+        g.rotate(s.w * e);
+        g.scale(sc, sc);
+        g.beginPath();
+        s.pts.forEach((p, i) => (i ? g.lineTo : g.moveTo).call(g, (p.x - s.c.x) * css, (p.y - s.c.y) * css));
+        g.closePath();
+        g.clip();
+        g.drawImage(src, -s.c.x * css, -s.c.y * css, css, css);
+        g.restore();
+      }
+      g.restore();
+    },
+    // Where picture c is visible (alpha over half), in box units, a little padded; the whole box if it can't be read.
+    opaqueBounds(c) {
+      const n = 48, s = this.boundsCanvas || (this.boundsCanvas = document.createElement('canvas'));
+      s.width = s.height = n;
+      const g = s.getContext('2d', { willReadFrequently: true });
+      let d;
+      try { g.drawImage(c, 0, 0, n, n); d = g.getImageData(0, 0, n, n).data; } catch (e) { return { x0: 0, y0: 0, x1: 1, y1: 1 }; }
+      let x0 = n, y0 = n, x1 = -1, y1 = -1;
+      for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (d[(y * n + x) * 4 + 3] > 128) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+      if (x1 < 0) return { x0: 0, y0: 0, x1: 1, y1: 1 };
+      return { x0: Math.max(0, (x0 - 1) / n), y0: Math.max(0, (y0 - 1) / n), x1: Math.min(1, (x1 + 2) / n), y1: Math.min(1, (y1 + 2) / n) };
+    },
+    // ...and once whole, a faint ring snaps out from it.
+    drawFormed(css, k) {
+      const g = this.renderer.ctx, dpr = this.renderer.dpr;
+      g.save();
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      g.globalAlpha = 0.55 * (1 - k);
+      g.strokeStyle = '#fff';
+      g.lineWidth = 2;
+      g.beginPath();
+      g.arc(this.renderer.w / 2, this.renderer.h / 2, css * (0.5 + 0.35 * (1 - (1 - k) * (1 - k))), 0, Math.PI * 2);
+      g.stroke();
+      g.restore();
+    },
     // A fall into the void: a hit (unless shielded), then a bubble floats you back to the last solid ground you stood
     // on, like the bubble in Mario Galaxy. True if the hit lost the level.
     fall() {
@@ -1061,6 +1153,7 @@
     // Out of hearts, or out of time. A lit flag takes you back to it (not after time runs out); otherwise the maze
     // starts over. Gauntlet and Endless also cost a life.
     async lose(reason) {
+      const flow = ++this.flow; // a newer win or loss (or a quit) takes over from this one
       if (reason === 'fall') MZ.Save.progress.stats.falls++;
       this.fx = {};
       this.roll = null;
@@ -1069,8 +1162,12 @@
       this.emit('power');
       MZ.Audio.play('lose');
       MZ.Save.saveProgress();
+      if (this.shatter()) { // the pieces fly before the lose screen covers them
+        await new Promise((res) => setTimeout(res, BREAK * 850));
+        if (this.state !== 'fx' || this.flow !== flow) return;
+      }
       await FX.play('lose');
-      if (this.state !== 'fx') return; // quit meanwhile
+      if (this.state !== 'fx' || this.flow !== flow) return; // quit meanwhile
       const cp = reason !== 'time' && this.maze && this.cpIdx >= 0 && this.checkpoints[this.cpIdx];
       if (this.mode === 'gauntlet') {
         this.run.lives--;
@@ -1086,6 +1183,7 @@
     },
 
     async win() {
+      const flow = ++this.flow;
       this.setState('fx');
       MZ.Audio.play('win');
       const st = MZ.Save.progress.stats;
@@ -1093,7 +1191,7 @@
       st.gems += this.gemsTaken;
       const res = this.results(); // saved before the win media, so closing the tab during it keeps the clear
       await FX.play('win');
-      if (this.state !== 'fx') return;
+      if (this.state !== 'fx' || this.flow !== flow) return;
       if (this.mode === 'gauntlet') {
         this.run.cleared++;
         const G = MZ.Save.progress.gauntlet, k = this.run.key;
@@ -1260,12 +1358,15 @@
       // Player sprite: the user's media, upright and still at the centre of the screen (up in the air on a Launch).
       const pl = MZ.$('#player');
       if (showPlayer) {
-        const lift = this.lift(), z = lift ? this.zoomTarget() * (1 + 0.3 * lift) : this.cam.zoom;
+        const lift = this.lift(), z = lift ? this.zoomTarget() * (1 + HOP_GROW * lift) : this.cam.zoom;
         const css = this.box() * z, size = css.toFixed(1) + 'px';
         this.sprite.update(performance.now(), false, css, Math.min(window.devicePixelRatio || 1, s.display.quality));
         pl.hidden = false;
         pl.style.width = pl.style.height = size;
-        pl.style.transform = lift ? 'translate(-50%,calc(-50% - ' + (lift * Math.min(innerWidth, innerHeight) * 0.14).toFixed(1) + 'px))' : 'translate(-50%,-50%)';
+        pl.style.transform = lift ? 'translate(-50%,calc(-50% - ' + (lift * Math.min(innerWidth, innerHeight) * HOP).toFixed(1) + 'px))' : 'translate(-50%,-50%)';
+        if (this.pieces) this.drawPieces(css);
+        if (this.formedAt != null && this.t - this.formedAt < 0.3) this.drawFormed(css, (this.t - this.formedAt) / 0.3);
+        pl.style.visibility = this.pieces ? 'hidden' : ''; // in pieces: those are drawn instead
         // Health shows on the picture only: on a hit the shield flares and the picture jolts; it blinks while the edges
         // hold, stays faded and drained of colour while the shield is down, and fills back in with a shimmer as it
         // recharges.

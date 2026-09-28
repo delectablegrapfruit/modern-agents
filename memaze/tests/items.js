@@ -88,6 +88,14 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     check('the Extra hit goes first', G.bonus === 0 && G.hp === 2);
     G.quit();
 
+    // ----- a right click uses the item -----
+    G.startJourney(6);
+    G.giveItem('shrink');
+    const stage = MZ.$('#stage'), mouse = (type, buttons) => stage.dispatchEvent(new PointerEvent(type, { pointerType: 'mouse', pointerId: 1, isPrimary: true, button: 2, buttons, clientX: innerWidth / 2, clientY: innerHeight / 2, bubbles: true }));
+    mouse('pointerdown', 2); mouse('pointerup', 0);
+    check('a right click uses the item, and never drags', !G.item && G.fx.shrink > 0 && !G.input.drag);
+    G.quit();
+
     // ----- mystery box -----
     G.startJourney(10);
     const bx = G.boxes[0];
@@ -198,18 +206,18 @@ try { ({ chromium } = require('playwright')); } catch (e) {
       G.draw();
     }
     const wide = Math.max(...G.trail.map((r) => r.x1 - r.x0)), moved = Math.hypot(G.ball.x - a.x, G.ball.y - a.y);
-    check('Launch is short, like a real launch', T <= 2.6, T.toFixed(2) + ' s');
-    check('Launch flies high: the camera pulls far out', minZ < G.zoomTarget() * 0.25, (minZ / G.zoomTarget()).toFixed(3));
-    check('Launch steers freely, over the void too', moved > 800 && overVoid, Math.round(moved) + ' units');
+    check('Launch is short, like a real launch', T <= 1.6, T.toFixed(2) + ' s');
+    check('Launch goes up: the camera pulls out, but not too far', minZ < G.zoomTarget() * 0.5 && minZ > G.zoomTarget() * 0.15, (minZ / G.zoomTarget()).toFixed(3));
+    check('Launch steers freely, over the void too, with a modest reach', moved > 400 && moved < 1100 && overVoid, Math.round(moved) + ' units');
     const went = (G.fx.bubble ? G.fx.bubble.a : G.ball), gone = (went.x - a.x) * toward.x + (went.y - a.y) * toward.y;
-    check('Launch goes where you steer', gone > 800, Math.round(gone) + ' units the way you dragged');
+    check('Launch goes where you steer', gone > 400, Math.round(gone) + ' units the way you dragged');
     check('Launch maps what it flies over', wide > 1000 && wide > before * 4, Math.round(before) + ' -> ' + Math.round(wide));
     check('camera back down after landing', G.state !== 'play' || Math.abs(G.cam.zoom - G.zoomTarget()) < 1e-6);
     G.quit();
     // Steered onto the board: down exactly there, unhurt. Steered over the void: a fall (a hit), then the nearest floor.
     const launchTo = (p) => {
       G.giveItem('launch'); G.useItem();
-      for (let i = 0; i < 60 * 8 && G.fx.launch; i++) { if (G.fx.launch.t > 1.2) { G.ball.x = p.x; G.ball.y = p.y; } frame(1 / 60); }
+      for (let i = 0; i < 60 * 8 && G.fx.launch; i++) { if (G.fx.launch.t > G.fx.launch.T - 0.3) { G.ball.x = p.x; G.ball.y = p.y; } frame(1 / 60); }
     };
     G.startJourney(14);
     const node = G.maze.nodes[G.maze.mainPath[Math.floor(G.maze.mainPath.length / 2)]];
@@ -229,9 +237,16 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     const c = G.checkpoints[0];
     G.ball.x = c.x; G.ball.y = c.y; run(0.05);
     check('touching a flag lights it', G.cpIdx === 0 && c.lit, 'level ' + L);
+    let built = 0;
+    const assemble = G.assemble;
+    G.assemble = function () { built++; return assemble.call(this); };
     d = voidDir(); events.length = 0; touch(d); away(d); events.length = 0; touch(d);
-    return new Promise((resolve) => setTimeout(() => {
+    check('a loss shatters the picture', !!G.pieces && G.pieces.kind === 'break' && G.state === 'fx');
+    const until = (ok, then, n) => (ok() || n > 150 ? then() : setTimeout(() => until(ok, then, n + 1), 20)); // the loss plays out on timers
+    return new Promise((resolve) => until(() => G.state === 'play', () => {
+      G.assemble = assemble;
       check('a loss goes back to the lit flag, hearts full', G.state === 'play' && Math.hypot(G.ball.x - c.x, G.ball.y - c.y) < 1 && G.hp === 2, G.state);
+      check('...and the pieces fly back together as you spawn', built === 1);
       G.quit();
       // ----- Time Trial: no boxes, no time limit, ghosts only here -----
       G.startJourney(3);
@@ -263,7 +278,7 @@ try { ({ chromium } = require('playwright')); } catch (e) {
       G.quit();
       resolve(res);
       });
-    }, 50));
+    }, 0));
   });
   let bad = 0;
   for (const r of out) { if (!r.ok) bad++; console.log((r.ok ? 'ok   ' : 'FAIL ') + r.name + (r.info ? '  (' + r.info + ')' : '')); }

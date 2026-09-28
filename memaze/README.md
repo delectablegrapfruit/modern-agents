@@ -30,7 +30,8 @@ No build step, no dependencies: plain HTML/CSS/JS, plus an optional Python serve
   No rapid hits: for 0.75 s the edges hold like walls, and a new hit needs a new touch (holding against the edge, or
   sliding along it, never counts twice). 5 s after you're off the edge the shield is back: over the last second it
   recharges with a rising sound and a gold shimmer, and the picture fills back in. A second touch before that and
-  your *lose* media plays, then you go back to the last flag you reached, or the start.
+  your picture shatters into glassy shards, your *lose* media plays, then you go back to the last flag you reached, or
+  the start. Spawning in (every start, restart and flag), the shards fly back together; nothing hurts until you're whole.
 - **Falling off the board** (a bridge vanishing under you, a Launch coming down in the void, the magic carpet running
   out) costs a hit, then a bubble floats you back to the last solid ground you stood on, like Mario Galaxy.
 - **The hitbox is your picture.** Every pixel that is at least half opaque counts; transparent parts don't. Animated GIFs,
@@ -54,7 +55,7 @@ No build step, no dependencies: plain HTML/CSS/JS, plus an optional Python serve
 Colour-cycling **?** boxes sit on junctions and dead ends (about one per 1500 units of corridor; in Endless up to one
 per chunk). Touching one shatters it; with an empty item slot you also get an item (the slot spins first), with a full
 one you get nothing. A shattered box is back 25 seconds later. Use the item
-with **Space**, **E**, the slot button (bottom left) or gamepad **A**/**X**. Settings: *Mystery boxes* turns them off;
+with **right click**, **Space**, **E**, the slot button (bottom left) or gamepad **A**/**X**. Settings: *Mystery boxes* turns them off;
 Time Trial never has them.
 
 | Item | What it does |
@@ -62,7 +63,7 @@ Time Trial never has them.
 | **Invincible** | 8 s without damage; the edges hold like walls. Your picture glows. |
 | **Extra hit** | Used at once: a gold ring turns around you and takes the next hit instead (up to two rings). Rings don't come back. |
 | **Bullet** | Carries you along the corridors toward GOAL (Endless: outward) for about 1800 units, over vanishing bridges and all, finishing on a junction short of GOAL. Invincible while flying. |
-| **Launch** | A 2.4 s hop: the camera pulls far out while you're up, and you steer (drag or keys, at the zoomed-out scale), over the void and everything; a shadow marks the spot below you. You come down right where you are: on the board, you're fine; in the void, it's a fall (a hit, then the nearest floor). The map fills in with everything the screen showed. |
+| **Launch** | A short 1.45 s hop: the camera pulls out while you're up, and you steer (drag or keys, at the zoomed-out scale), over the void and everything; a shadow marks the spot below you. You come down right where you are: on the board, you're fine; in the void, it's a fall (a hit, then the nearest floor). The map fills in with everything the screen showed. |
 | **Magic carpet** | The rarest item: 3.5 s of floating over the void. It flickers when it's about to run out: be over floor by then, or it's a fall. |
 | **Shrink** | Half size (picture and hitbox) for 10 s; you grow back as soon as there's room. |
 
@@ -140,7 +141,7 @@ media shows the RGB behind it). Maze floors: Flat, Neon (edges follow the RGB), 
 | | |
 |---|---|
 | WASD / arrows | move |
-| Space / E | use item |
+| Right click, Space / E | use item |
 | Esc / P | pause, back |
 | R | restart |
 | M | map on / off |

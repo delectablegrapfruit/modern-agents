@@ -1,5 +1,6 @@
 /* Memaze — input. The player stays at the centre of the screen; dragging moves the maze under it 1:1.
- * Keys (WASD/arrows) and a gamepad's left stick or d-pad move it at a steady speed. Pinch or scroll to zoom. */
+ * Keys (WASD/arrows) and a gamepad's left stick or d-pad move it at a steady speed. Pinch or scroll to zoom.
+ * A right click uses the item you hold (even mid-drag). */
 (function () {
   'use strict';
   const MZ = window.MZ;
@@ -13,6 +14,7 @@
       this.grabDX = 0; this.grabDY = 0;
       this.keys = new Set();
       this.onZoom = null;
+      this.onUse = null; // right click
       this.pinch = null;
 
       el.addEventListener('pointerdown', (e) => this.down(e));
@@ -46,6 +48,7 @@
     down(e) {
       if (!this.enabled) return;
       MZ.Audio.unlock();
+      if (e.pointerType === 'mouse' && e.button === 2) { if (this.onUse) this.onUse(); return; } // never a drag
       if (e.isPrimary) { this.pointers.clear(); this.pinch = null; this.drag = null; } // nothing else is down: drop stale fingers
       this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       try { this.el.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
@@ -62,6 +65,7 @@
       this.drag = { id: e.pointerId, x: e.clientX, y: e.clientY };
     }
     move(e) {
+      if (this.enabled && e.pointerType === 'mouse' && e.button === 2 && e.buttons & 2 && this.onUse) this.onUse(); // pressed while dragging
       const p = this.pointers.get(e.pointerId);
       if (!p) return;
       p.x = e.clientX; p.y = e.clientY;

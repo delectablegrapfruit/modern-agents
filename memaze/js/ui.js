@@ -658,7 +658,7 @@
         h('ul', { class: 'facts' },
           h('li', null, 'Drag the maze to move through it.'),
           h('li', null, 'Touching the edge breaks your shield: your picture turns grey and faded. Touch it again before the shield recharges (5 s once you’re off the edge) and you’re out. Holding against the edge never counts twice. Your picture is the hitbox: transparent parts don’t count.'),
-          h('li', null, 'Touch a mystery box to shatter it. With an empty slot you get an item; use it with Space, E or the button in the corner.'),
+          h('li', null, 'Touch a mystery box to shatter it. With an empty slot you get an item; use it with a right click, Space, E or the button in the corner.'),
           h('ul', { class: 'items' },
             h('li', null, h('b', null, 'Invincible'), ': no damage for 8 s; the edges hold like walls.'),
             h('li', null, h('b', null, 'Extra hit'), ': a gold ring around you that takes the next hit (up to two).'),
@@ -686,7 +686,7 @@
           h('li', null, 'Vanishing bridges blink, then disappear.'),
           h('li', null, 'Time Trial: any level you’ve reached, with no mystery boxes and no time limit. Your fastest run comes back as a ghost to race.'),
           h('li', null, 'Endless: gems add 3 s, beacons are checkpoints and add 12 s.'),
-          h('li', null, 'Keys: WASD or arrows move, Space or E item, Esc or P pause, R restart, M map, F full screen, + and - zoom, Enter next level.')),
+          h('li', null, 'Keys: WASD or arrows move, right click, Space or E item, Esc or P pause, R restart, M map, F full screen, + and - zoom, Enter next level.')),
       ]);
     },
 
