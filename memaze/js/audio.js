@@ -106,6 +106,12 @@
         case 'launch': this.tone(200, 0.7, { type: 'sine', to: 900, vol: 0.16 }); this.noise(0.5, { filter: 'highpass', freq: 800, to: 3000, vol: 0.12 }); break;
         case 'land': this.noise(0.15, { filter: 'lowpass', freq: 400, vol: 0.35 }); this.tone(90, 0.18, { type: 'sine', vol: 0.18 }); break;
         case 'expire': this.tone(880, 0.25, { type: 'triangle', to: 330, vol: 0.1 }); break;
+        case 'storm': this.noise(0.6, { filter: 'lowpass', freq: 180, to: 90, vol: 0.22 }); this.tone(55, 0.5, { type: 'sine', vol: 0.08, attack: 0.15 }); break; // a thundercloud gathering
+        case 'zap': // the lightning: a crack, a buzz dropping away, and thunder rolling after it
+          this.noise(0.09, { filter: 'highpass', freq: 2200, vol: 0.4 });
+          this.tone(1400, 0.14, { type: 'sawtooth', to: 160, vol: 0.07 });
+          this.noise(1.1, { filter: 'lowpass', freq: 260, to: 50, vol: 0.42, at: 0.03 });
+          break;
       }
     },
   };

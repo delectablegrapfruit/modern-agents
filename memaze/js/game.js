@@ -42,6 +42,7 @@
   const HITSTOP = 0.07, SHAKE = 0.32;      // a hit: the game freezes this long, then the view shakes this long
   const BREAK = 0.6, BUILD = 0.5;          // a loss shatters the picture (seconds the pieces fly); it flies back together as you spawn
   const SHRINK = 0.5;
+  const STRIKE = 0.45, STORM = 0.95;      // Shrink: a thundercloud gathers, its lightning strikes (then you shrink), it clears
   const ICE_GRIP = 2.2;   // on ice, how fast your movement catches up with your drag (per second): low = more drift
   const ICE_MAX = 700;    // ...and the fastest you can slide
   const smooth = (k) => k * k * (3 - 2 * k);
@@ -711,6 +712,41 @@
       if (x1 < 0) return { x0: 0, y0: 0, x1: 1, y1: 1 };
       return { x0: Math.max(0, (x0 - 1) / n), y0: Math.max(0, (y0 - 1) / n), x1: Math.min(1, (x1 + 2) / n), y1: Math.min(1, (y1 + 2) / n) };
     },
+    // Shrink's thundercloud, over the picture at the centre of the screen (css: the picture's box in px): it gathers,
+    // flickers, a bolt strikes the picture with a flash, and it drifts apart.
+    drawStorm(css, W) {
+      const g = this.renderer.ctx, dpr = this.renderer.dpr, cx = this.renderer.w / 2, cy = this.renderer.h / 2;
+      const size = Math.max(css, 40), t = W.t, r = rng(W.seed);
+      const grow = smooth(clamp(t / 0.3, 0, 1)), fade = 1 - smooth(clamp((t - STRIKE - 0.2) / (STORM - STRIKE - 0.2), 0, 1));
+      const ky = cy - size * (1.6 + 0.2 * (1 - grow)), kw = size * 1.05 * (0.4 + 0.6 * grow);
+      g.save();
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      g.globalAlpha = fade;
+      const puffs = [[-0.62, 0.12, 0.42], [-0.25, -0.12, 0.55], [0.2, -0.18, 0.6], [0.6, 0.08, 0.45], [0, 0.18, 0.5]];
+      const lit = !W.hit && (Math.floor(t * 22) % 5 === 0) && t > 0.15; // flickers before it strikes
+      for (const [col, dy, sc] of [['#1d1f2e', 0.1, 1], [lit ? '#8d95c4' : '#4a4f6e', 0, 1], [lit ? '#b3bbe6' : '#5d6385', -0.1, 0.6]]) {
+        g.fillStyle = col; // each layer one shape, so no seams where the puffs overlap
+        g.beginPath();
+        for (const [px, py, pr] of puffs) { g.moveTo(cx + px * kw + pr * kw * sc, ky + (py + dy) * kw); g.arc(cx + px * kw, ky + (py + dy) * kw, pr * kw * sc, 0, Math.PI * 2); }
+        g.fill();
+      }
+      if (W.hit && t < STRIKE + 0.2 && Math.floor((t - STRIKE) * 30) % 3 !== 1) { // the bolt, flickering
+        const pts = [[cx + r.range(-0.1, 0.1) * kw, ky + 0.35 * kw]], y1 = cy - css * 0.25, n = 6;
+        for (let i = 1; i < n; i++) pts.push([cx + r.range(-0.22, 0.22) * size, pts[0][1] + ((y1 - pts[0][1]) * i) / n]);
+        pts.push([cx, y1]);
+        g.lineJoin = 'miter'; g.lineCap = 'round';
+        for (const [col, w] of [['rgba(150,190,255,0.5)', 16], ['rgba(40,40,80,0.6)', 8], ['#fff8d6', 5]]) {
+          g.strokeStyle = col; g.lineWidth = w;
+          g.beginPath(); pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.stroke();
+        }
+      }
+      if (W.hit && t < STRIKE + 0.18) { // the flash where it hits
+        const k = (t - STRIKE) / 0.18, rad = g.createRadialGradient(cx, cy, 0, cx, cy, size * 1.1);
+        rad.addColorStop(0, 'rgba(255,252,220,' + (0.8 * (1 - k)).toFixed(3) + ')'); rad.addColorStop(1, 'rgba(255,252,220,0)');
+        g.globalAlpha = 1; g.fillStyle = rad; g.fillRect(cx - size * 1.2, cy - size * 1.2, size * 2.4, size * 2.4);
+      }
+      g.restore();
+    },
     // ...and once whole, a faint ring snaps out from it.
     drawFormed(css, k) {
       const g = this.renderer.ctx, dpr = this.renderer.dpr;
@@ -766,6 +802,12 @@
       if (this.hp < HEARTS && this.hurtT >= REGEN) { this.hp = HEARTS; this.emit('power'); }
       if (this.hp < HEARTS && !this.recharging() && (this.beepT -= dt) <= 0) { this.beepT = 0.8; MZ.Audio.play('low'); } // shield's down
       if (this.roll && (this.roll.t += dt) >= ROLL) this.endRoll();
+      if (fx.storm) {
+        const W = fx.storm;
+        W.t += dt;
+        if (!W.hit && W.t >= STRIKE) { W.hit = true; fx.shrink = ITEMS.shrink.dur; this.shakeT = Math.max(this.shakeT, 0.2); MZ.Audio.play('zap'); this.emit('power'); }
+        if (W.t >= STORM) fx.storm = null;
+      }
       for (const k of ['star', 'carpet', 'shrink', 'path']) {
         if (!(fx[k] > 0)) continue;
         fx[k] -= dt;
@@ -862,6 +904,9 @@
         const route = this.bulletRoute();
         if (!route) { MZ.toast('Nowhere to fly', 1200); return false; }
         fx.bullet = route;
+      } else if (id === 'shrink') {
+        fx.storm = { t: 0, hit: false, seed: hashInts(Math.floor(this.t * 1000), 0x57) }; // the strike does the shrinking
+        MZ.Audio.play('storm');
       } else if (id === 'path') {
         const P = this.pathRoute();
         if (!P) { MZ.toast('No way to show from here', 1200); return false; }
@@ -1458,6 +1503,7 @@
         pl.style.width = pl.style.height = size;
         pl.style.transform = lift ? 'translate(-50%,calc(-50% - ' + (lift * Math.min(innerWidth, innerHeight) * HOP).toFixed(1) + 'px))' : 'translate(-50%,-50%)';
         if (this.pieces) this.drawPieces(css);
+        if (fx.storm) this.drawStorm(css, fx.storm);
         if (this.formedAt != null && this.t - this.formedAt < 0.3) this.drawFormed(css, (this.t - this.formedAt) / 0.3);
         pl.style.visibility = this.pieces ? 'hidden' : ''; // in pieces: those are drawn instead
         // Health shows on the picture only: on a hit the shield flares and the picture jolts; it blinks while the edges

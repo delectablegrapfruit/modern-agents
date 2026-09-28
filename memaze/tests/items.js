@@ -126,7 +126,7 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     G.giveItem('shrink');
     const stage = MZ.$('#stage'), mouse = (type, buttons) => stage.dispatchEvent(new PointerEvent(type, { pointerType: 'mouse', pointerId: 1, isPrimary: true, button: 2, buttons, clientX: innerWidth / 2, clientY: innerHeight / 2, bubbles: true }));
     mouse('pointerdown', 2); mouse('pointerup', 0);
-    check('a right click uses the item, and never drags', !G.item && G.fx.shrink > 0 && !G.input.drag);
+    check('a right click uses the item, and never drags', !G.item && !!G.fx.storm && !G.input.drag);
     G.quit();
 
     // ----- mystery box -----
@@ -179,8 +179,10 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     G.startJourney(6);
     const full = G.box();
     G.giveItem('shrink'); G.useItem();
-    run(0.5);
-    check('Shrink halves the picture and its hitbox', Math.abs(G.box() - full / 2) < 0.01, G.box() / full);
+    check('Shrink summons a thundercloud first: nothing shrinks yet', !!G.fx.storm && !(G.fx.shrink > 0) && Math.abs(G.box() - full) < 0.01);
+    run(0.3); G.draw();
+    run(0.6); G.draw();
+    check('...its lightning strikes, and that halves the picture and its hitbox', Math.abs(G.box() - full / 2) < 0.01 && G.fx.shrink > 0, G.box() / full);
     run(10.5);
     check('Shrink grows back', Math.abs(G.box() - full) < 0.01, G.box() / full);
     G.quit();
