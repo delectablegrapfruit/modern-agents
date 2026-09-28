@@ -6828,6 +6828,7 @@ function openPDP(tab, l) {
   viewed.add(pr.id); giftBump('view');
   const others = (() => { const rr = seeded(hs(pr.id)); const pool = GOODS.filter(p => p.id !== pr.id); const a = pool[Math.floor(rr() * pool.length)]; let b = pool[Math.floor(rr() * pool.length)]; if (b === a) b = pool[(pool.indexOf(a) + 5) % pool.length]; return [a, b]; })();
   const fbt = others.map(p => mkL(p, { k: .85, off: .9, tag: '', ci: 0 }));
+  const fbtP = f => Math.max(1, Math.round(f.p * .92)); // bundle price of an add-on
   const dist = pr.u ? [96, 3, 1, 0, 0] : (() => { const b4 = ri(6, 12), b3 = ri(2, 5); return [98 - b4 - b3, b4, b3, 1, 1]; })();
   const car = carouselHTML(pr, ci);
   const el = html(`<div class="sh-page sh-pdp">
@@ -6845,7 +6846,7 @@ function openPDP(tab, l) {
       <div class="sh-b2 sh-qb" ${l.b2 ? '' : 'hidden'}></div>
       ${pr.u ? `<div class="sh-note">${si('box')}Delivered to your phone. It activates the moment your order arrives.</div>` : ''}
       <div class="sh-sec2"><b>Frequently bought together</b></div>
-      <div class="sh-fbt"><div class="sh-fbti">${tile(pr, ci)}<span>${pz(vPrice(l, 0).p)}</span></div>${fbt.map(f => `<i>${si('plus')}</i><div class="sh-fbti" data-l="${f.id}" role="button">${tile(PRM[f.pid], 0)}<span>${pz(f.p)}</span></div>`).join('')}</div>
+      <div class="sh-fbt"><div class="sh-fbti">${tile(pr, ci)}<span class="sh-fbtm">${pz(vPrice(l, 0).p)}</span></div>${fbt.map(f => `<i>${si('plus')}</i><div class="sh-fbti" data-l="${f.id}" role="button">${tile(PRM[f.pid], 0)}<span>${pz(f.p)}</span></div>`).join('')}</div>
       <button class="sh-fbtb" data-a="fbt">Add all 3 to cart · <span class="sh-fbtp"></span></button>
       <div class="sh-sec2"><b>Reviews</b><span>${fmt(l.rv)} ratings</span></div>
       <div class="sh-rs"><div class="sh-rsn"><b>${l.r}</b>${starsHTML(l.r)}<small>${fmt(l.rv)} ratings</small></div><div class="sh-rsb">${dist.map((v, i) => `<div><span>${5 - i}</span><i><u style="width:${v}%"></u></i><small>${v}%</small></div>`).join('')}</div></div>
@@ -6863,8 +6864,9 @@ function openPDP(tab, l) {
     $('.sh-qn', el).textContent = q;
     const qb = $('.sh-qb', el); if (l.b2) qb.textContent = q % 3 === 2 ? 'Add 1 more to get 1 free' : q >= 3 ? `You get ${Math.floor(q / 3)} free` : 'Buy 2 get 1 free';
     setH($('.sh-buyp', el), pz(v.p * q - (l.b2 ? Math.floor(q / 3) * v.p : 0)));
-    const fb = v.p + fbt.reduce((s, f) => s + f.p, 0), fbS = Math.round(fb * .08);
-    setH($('.sh-fbtp', el), `${pz(fb - fbS)} <small>Save ${pz(fbS)}</small>`);
+    const fb = v.p + fbt.reduce((s, f) => s + fbtP(f), 0), fbS = fbt.reduce((s, f) => s + f.p - fbtP(f), 0);
+    setH($('.sh-fbtm', el), pz(v.p));
+    setH($('.sh-fbtp', el), `${pz(fb)}${fbS ? ` <small>Save ${pz(fbS)}</small>` : ''}`);
     const n = cartUnits(); setT($('.sh-pcn', el), n || '');
   };
   const urg = () => { inCart = Math.max(120, inCart + ri(-6, 14)); $('.sh-urgt', el).textContent = l.ld ? `${fmt(inCart)} people have this in their cart · Deal ends in ${cd(l.until - T())}` : l.stock <= 8 ? `Only ${l.stock} left · ${fmt(inCart)} people have this in their cart` : `Selling fast · ${fmt(inCart)} people have this in their cart`; };
@@ -6895,9 +6897,9 @@ function openPDP(tab, l) {
     else if (k === 'buy') bnow();
     else if (k === 'gocart') { clearPages(tab); if (tab === 'cart') renderCart(); else showTab(bundleById('shop'), 'cart'); }
     else if (k === 'fbt') {
-      const v = vPrice(l, sz); let ok = addLine(l, ci, sz, 1, $('.sh-fbt', el));
-      fbt.forEach(f => { const was = f.p; f.p = Math.max(1, Math.round(f.p * .92)); ok = addLine(f, 0, 0, 1) && ok; f.p = was; });
-      if (ok) toast(`3 items added · You saved ${fmt(Math.round((v.p + fbt.reduce((s2, f) => s2 + f.p, 0)) * .08))} more`);
+      let ok = addLine(l, ci, sz, 1, $('.sh-fbt', el)), fbS = 0;
+      fbt.forEach(f => { const was = f.p; f.p = fbtP(f); if (addLine(f, 0, 0, 1)) fbS += was - f.p; else ok = false; f.p = was; });
+      if (ok) toast(fbS ? `3 items added · You saved ${fmt(fbS)}` : '3 items added');
       upd();
     }
     else if (k === 'more') { $('.sh-rvs', el).insertAdjacentHTML('beforeend', reviewsHTML(pr, l, revN, 3)); revN += 3; sfx.click(); }
