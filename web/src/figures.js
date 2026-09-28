@@ -11,7 +11,8 @@ function paintCSS(p) {
 }
 
 /** A shape's path, as a Path2D in the sketch's pixels (y up). Paths come as pen moves: in a Float32Array, an op then
- *  its points (0 move x y, 1 line x y, 2 quad x y cx cy, 3 close), or as tokens ('M', x, y, 'L', ..., 'Q', x, y, cx, cy, 'Z'). */
+ *  its points (0 move x y, 1 line x y, 2 quad cx cy x y, 3 close: API.md), or as tokens ('M', x, y, 'L', ..., 'Q',
+ *  x, y, cx, cy, 'Z'). */
 function shapePath(shape) {
   if (shape._p) return shape._p;
   const p = new Path2D();
@@ -35,7 +36,7 @@ function shapePath(shape) {
         const op = d[i++];
         if (op === 0) { p.moveTo(d[i], d[i + 1]); i += 2; }
         else if (op === 1) { p.lineTo(d[i], d[i + 1]); i += 2; }
-        else if (op === 2) { p.quadraticCurveTo(d[i + 2], d[i + 3], d[i], d[i + 1]); i += 4; }
+        else if (op === 2) { p.quadraticCurveTo(d[i], d[i + 1], d[i + 2], d[i + 3]); i += 4; }
         else if (op === 3) p.closePath();
         else break;
       }
@@ -95,17 +96,25 @@ class Piece {
   constructor(sketch) {
     this.sketch = sketch;
     this.W = sketch.width; this.H = sketch.height;
-    const rim = sketch.rimRadius ?? sketch.rim?.radius ?? 1.4;
+    const rim = sketch.rim?.radius ?? sketch.rimRadius ?? 1.4;
     this.rimRadius = rim;
-    const box = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
-    for (const list of [sketch.underlay, sketch.body, sketch.overlay]) for (const s of list || []) shapeBounds(s, box);
-    const margin = rim * 3 + 2;
-    if (!(box.minX <= box.maxX)) { box.minX = 0; box.minY = 0; box.maxX = 1; box.maxY = 1; }
-    const x0 = Math.max(0, Math.floor(box.minX - margin)), y0 = Math.max(0, Math.floor(box.minY - margin));
-    const x1 = Math.min(this.W, Math.ceil(box.maxX + margin)), y1 = Math.min(this.H, Math.ceil(box.maxY + margin));
-    this.bx = x0; this.by = y0; this.bw = Math.max(1, x1 - x0); this.bh = Math.max(1, y1 - y0);
+    const r = sketch.rim;
+    this.rimCSS = r && r.color ? paintCSS([r.color[0], r.color[1], r.color[2], r.alpha ?? 0.3]) : paintCSS(r || [0.7, 0.72, 0.8, 0.3]);
+    if (sketch.bounds && sketch.bounds.width > 0) {
+      // The app's crop (Sketch.bounds(margin: rimRadius * 3 + 2)), as the core gives it.
+      const b = sketch.bounds;
+      this.bx = b.x; this.by = b.y; this.bw = Math.max(1, b.width); this.bh = Math.max(1, b.height);
+    } else {
+      const box = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+      for (const list of [sketch.underlay, sketch.body, sketch.overlay]) for (const s of list || []) shapeBounds(s, box);
+      const margin = rim * 3 + 2;
+      if (!(box.minX <= box.maxX)) { box.minX = 0; box.minY = 0; box.maxX = 1; box.maxY = 1; }
+      const x0 = Math.max(0, Math.floor(box.minX - margin)), y0 = Math.max(0, Math.floor(box.minY - margin));
+      const x1 = Math.min(this.W, Math.ceil(box.maxX + margin)), y1 = Math.min(this.H, Math.ceil(box.maxY + margin));
+      this.bx = x0; this.by = y0; this.bw = Math.max(1, x1 - x0); this.bh = Math.max(1, y1 - y0);
+    }
     // As fractions of the canvas (Figures.Piece.rect, y up).
-    this.rect = { x: x0 / this.W, y: y0 / this.H, w: this.bw / this.W, h: this.bh / this.H };
+    this.rect = { x: this.bx / this.W, y: this.by / this.H, w: this.bw / this.W, h: this.bh / this.H };
     this.rasters = new Map();
     this.empty = !(sketch.body?.length || sketch.overlay?.length || sketch.underlay?.length);
   }
@@ -134,7 +143,7 @@ class Piece {
       for (const shape of s.body) drawShape(l, shape);
       x.save();
       x.setTransform(1, 0, 0, 1, 0, 0);
-      x.shadowColor = paintCSS(s.rim ? (s.rim.color ?? s.rim) : [0.7, 0.72, 0.8, 0.3]);
+      x.shadowColor = this.rimCSS;
       x.shadowBlur = this.rimRadius * 1.6 * k;
       x.drawImage(layerCanvas, 0, 0, w, h, 0, 0, w, h);
       x.restore();

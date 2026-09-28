@@ -1,10 +1,9 @@
 // Drives the page headlessly in Chromium: plays stages on the autopilot, cuts both ways, takes screenshots of the
 // panel at the app's size (520 x 180) and at phone width, and reports console errors and the frame time.
 //
-//   node web/test/run.mjs [--mock] [--out <dir>] [--only <name,...>]
+//   web/build.sh && web/assemble.sh && node web/test/run.mjs [--out <dir>] [--only <name,...>]
 //
-// Serves web/dist (index page from harness.html). With --mock, the core is web/test/mock-core.js (for working on the
-// presentation before the WebAssembly core is built).
+// Serves web/dist (harness.html as the index, beside core.js and ronin.wasm) with python3's http.server.
 import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -18,23 +17,16 @@ try { playwright = require('playwright'); } catch { playwright = require('/opt/n
 const here = path.dirname(fileURLToPath(import.meta.url));
 const web = path.resolve(here, '..');
 const args = process.argv.slice(2);
-const mock = args.includes('--mock');
 const outArg = args.indexOf('--out');
-const out = outArg >= 0 ? args[outArg + 1] : path.join(web, 'test', 'shots');
+const out = outArg >= 0 ? args[outArg + 1] : path.join(process.env.TMPDIR || '/tmp', 'ronin-web-shots');
 const onlyArg = args.indexOf('--only');
 const only = onlyArg >= 0 ? new Set(args[onlyArg + 1].split(',')) : null;
 fs.mkdirSync(out, { recursive: true });
 
-// A directory to serve: the harness as index.html, and the core (the real one, or the mock).
+// A directory to serve: the harness as index.html, and the core beside it.
 const serve = fs.mkdtempSync(path.join(process.env.TMPDIR || '/tmp', 'ronin-web-'));
 fs.copyFileSync(path.join(web, 'dist', 'harness.html'), path.join(serve, 'index.html'));
-if (mock) {
-  fs.copyFileSync(path.join(here, 'mock-core.js'), path.join(serve, 'core.js'));
-} else {
-  for (const f of fs.readdirSync(path.join(web, 'dist'))) {
-    if (f !== 'index.html' && f !== 'harness.html' && !f.startsWith('.')) fs.copyFileSync(path.join(web, 'dist', f), path.join(serve, f));
-  }
-}
+for (const f of ['core.js', 'ronin.wasm']) fs.copyFileSync(path.join(web, 'dist', f), path.join(serve, f));
 const port = 8700 + Math.floor(Math.random() * 200);
 const server = spawn('python3', ['-m', 'http.server', String(port), '--bind', '127.0.0.1'], { cwd: serve, stdio: 'ignore' });
 await new Promise((r) => setTimeout(r, 700));

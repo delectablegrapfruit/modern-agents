@@ -9,53 +9,55 @@ Object.defineProperties(DuelScene.prototype, Object.getOwnPropertyDescriptors({
   introduce(fight) {
     const fs = this.fs;
     const card = new Node();
+    // The words are the core's (the stage's card as the app builds it); the pictograms are drawn here.
+    const given = this.session.card(fight.stage) || { title: `STAGE ${fight.stage}`, lines: [], endless: this.session.isEndless, crest: false,
+      subtitle: (ModeInfo[fight.mode] || ModeInfo.bushido).title.toUpperCase() + '   ·   ' + SettingNames[fight.setting].toUpperCase() };
     const lines = [];
-    if ((this.session.career.kills || 0) === 0 && !Prefs.hintShown && !Prefs.floorHints) {
-      lines.push({ icon: Icons.buttons(15 * fs, Palette.ink.css(), Palette.gold.css()), text: null });
-    }
-    const newcomer = introduces(fight.stage);
-    if (newcomer) {
+    for (const line of given.lines || []) {
       let icon;
-      if (newcomer === 'warlord') {
-        icon = Icons.crest(16 * fs);
-      } else {
-        const figure = new FigureSprite(newcomer);
-        figure.apply(F.idle(0), 20 * fs);
-        figure.setTint(Palette.gold, 1);
-        figure.at(0, -9 * fs);
-        icon = new Node();
-        icon.add(figure);
+      switch (line.icon) {
+        case 'buttons':
+          if (line.unlessHintShown && (Prefs.hintShown || Prefs.floorHints)) continue;
+          icon = Icons.buttons(15 * fs, Palette.ink.css(), Palette.gold.css());
+          break;
+        case 'figure': {
+          // On the dark plate the silhouette is drawn light, in the gold of the tip.
+          const figure = new FigureSprite(line.kind);
+          figure.apply(F.idle(0), 20 * fs);
+          figure.setTint(Palette.gold, 1);
+          figure.at(0, -9 * fs);
+          icon = new Node();
+          icon.add(figure);
+          break;
+        }
+        case 'crest': icon = Icons.crest(16 * fs); break;
+        case 'gourd': icon = Icons.gourd(15 * fs, Palette.jade.mix(RGB.white, 0.25).css()); break;
+        case 'infinity': icon = Icons.infinity(15 * fs, Palette.gold.css()); break;
+        case 'shards': {
+          icon = new Node();
+          for (let k = 0; k < Tuning.shardsPerHeart; k++) {
+            const piece = Icons.shard(15 * fs, Math.min(k, 2));
+            piece.fillColor = Palette.gold.css();
+            piece.strokeColor = Palette.gold.mix(RGB.white, 0.45).css();
+            icon.add(piece);
+          }
+          break;
+        }
+        default: icon = new Node();
       }
-      lines.push({ icon, text: DuelScene.tip(newcomer, this.session.rules) });
-    } else if (fight.stage === 1 && fight.bearerIndex !== null && fight.bearerIndex !== undefined) {
-      lines.push({ icon: Icons.gourd(15 * fs, Palette.jade.mix(RGB.white, 0.25).css()), text: 'CATCH HIM TWICE, THEN CATCH THE GOURD' });
+      lines.push({ icon, text: line.text || null });
     }
-    const run = this.session.career.endless;
-    if (run) {
-      const best = this.session.career.bestRuns?.[`${this.session.career.mode}/${run.start}`]?.cleared ?? 0;
-      const text = run.cleared === 0 ? 'THE SAME STAGE, AGAIN AND AGAIN' : `${run.cleared} CLEARED IN A ROW` + (best > run.cleared ? ` · BEST ${best}` : '');
-      lines.push({ icon: Icons.infinity(15 * fs, Palette.gold.css()), text });
-    }
-    if (fight.stage === 2) {
-      const shards = new Node();
-      for (let k = 0; k < Tuning.shardsPerHeart; k++) {
-        const piece = Icons.shard(15 * fs, Math.min(k, 2));
-        piece.fillColor = Palette.gold.css();
-        piece.strokeColor = Palette.gold.mix(RGB.white, 0.45).css();
-        shards.add(piece);
-      }
-      lines.push({ icon: shards, text: 'CUT AS THE RING TURNS GOLD — A SHARD' });
-    }
+    const newcomer = given.crest ? null : introduces(fight.stage);
     const tall = (50 + 18 * lines.length) * fs;
     const plate = card.add(Icons.band(Math.min(this.field.w, 340 * fs), tall));
     plate.z = -0.1;
     const top = tall / 2;
     const title = card.add(new Label(Fonts.heading, 23 * fs, '#fff'));
-    title.set(`STAGE ${fight.stage}`, 5 * fs);
+    title.set(given.title || `STAGE ${fight.stage}`, 5 * fs);
     title.at(0, top - 16 * fs);
-    if (this.session.isEndless) card.add(Icons.infinity(18 * fs, Palette.gold.css())).at(-title.width / 2 - 16 * fs, title.y);
+    if (given.endless ?? this.session.isEndless) card.add(Icons.infinity(18 * fs, Palette.gold.css())).at(-title.width / 2 - 16 * fs, title.y);
     const sub = card.add(new Label(Fonts.text, 10.5 * fs, Palette.ink.css(0.85)));
-    sub.set((ModeInfo[fight.mode] || ModeInfo.bushido).title.toUpperCase() + '   ·   ' + SettingNames[fight.setting].toUpperCase(), 2 * fs);
+    sub.set(given.subtitle, 2 * fs);
     sub.at(9 * fs, top - 34 * fs);
     card.add(Icons.seal(fight.mode, 13 * fs)).at(sub.x - sub.width / 2 - 12 * fs, sub.y);
     lines.forEach((line, k) => {
@@ -70,7 +72,7 @@ Object.defineProperties(DuelScene.prototype, Object.getOwnPropertyDescriptors({
       }
       row.add(line.icon);
     });
-    if (!newcomer && fight.isBossStage) card.add(Icons.crest(14 * fs)).at(0, -top - 4 * fs);
+    if (given.crest ?? (!newcomer && fight.isBossStage)) card.add(Icons.crest(14 * fs)).at(0, -top - 4 * fs);
     const holder = new Node();
     holder.at(this.field.x + this.field.w / 2, this.field.y + this.field.h * 0.6);
     holder.add(card);
@@ -219,7 +221,7 @@ Object.defineProperties(DuelScene.prototype, Object.getOwnPropertyDescriptors({
         }
         return;
       case 'milestone':
-        this.slam(`${event.count} HITS`, Palette.gold, Icons.swords(18 * this.fs, Palette.gold.css()), 0.5);
+        this.slam(`${event.combo ?? event.count} HITS`, Palette.gold, Icons.swords(18 * this.fs, Palette.gold.css()), 0.5);
         this.slowmo = 0.3;
         this.world.speed = 0.4;
         this.fx.add(shockwave(Palette.gold, { radius: this.ronin * 0.3, grow: 6, width: 2.5, duration: 0.6 })).at(this.hero.standing, this.groundY + this.ronin * 0.5);
@@ -951,7 +953,17 @@ Object.defineProperties(DuelScene.prototype, Object.getOwnPropertyDescriptors({
     let total = fight.score;
     let caption = null;
     let best = false;
-    if (!won) {
+    let marks = [this.session.promotion ? this.session.promotion.toUpperCase() : null];
+    const given = career.banner;
+    if (given && given.outcome === outcome) {
+      // The card's words and numbers as the core books them (DuelScene.showBanner).
+      const icons = { skull: Icons.skull, swords: Icons.swords, clock: Icons.clock, steps: Icons.steps, infinity: Icons.infinity };
+      stats = (given.stats || []).map((s) => [(icons[s.icon] || Icons.skull)(13 * fs, ink), String(s.text)]);
+      total = given.score ?? total;
+      caption = given.caption ?? null;
+      marks = given.marks || marks;
+      if (given.title) title.set(given.title, 7 * fs);
+    } else if (!won) {
       const run = career.lastRun;
       if (run && run.stage === fight.stage) {
         stats = [
@@ -980,7 +992,8 @@ Object.defineProperties(DuelScene.prototype, Object.getOwnPropertyDescriptors({
     score.set(grouped(total));
     score.at(0, -12 * fs);
     let y = -30 * fs;
-    const marks = [this.session.promotion ? this.session.promotion.toUpperCase() : null, best ? 'BEST RUN' : null].filter(Boolean);
+    if (best) marks.push('BEST RUN');
+    marks = marks.filter(Boolean);
     if (marks.length) {
       const promo = node.add(new Label(Fonts.italic, 12 * fs, Palette.gold.css()));
       promo.set('▲ ' + marks.join(' · '), 2 * fs);
@@ -1037,18 +1050,14 @@ function struckPiece(cast, variant) {
 
 /** Where a figure's blade meets another's in a clash (Figure.contact), if the core tells it. */
 function contactPoint(cast, frame) {
-  const core = Figures.core;
-  if (core && typeof core.contact === 'function') {
-    const c = core.contact(cast, frame);
-    if (c) return { x: c.x ?? c[0], y: c.y ?? c[1] };
-  }
-  return null;
+  const info = figureInfo(cast, frame);
+  return info && info.contact ? info.contact : null;
 }
 
 /** How far apart the ronin and the warlord stand for their blades to meet (Figure.clashGap). */
 function clashGap() {
-  const core = Figures.core;
-  if (core && typeof core.clashGap === 'function') return core.clashGap();
+  const gap = Figures.core?.tuning?.Figure?.clashGap;
+  if (typeof gap === 'number') return gap;
   const mine = contactPoint('hero', F.clash(0)), theirs = contactPoint('warlord', F.clash(0));
   if (mine && theirs) return mine.x + theirs.x * Builds.warlord.height;
   return 0.62;

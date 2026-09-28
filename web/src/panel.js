@@ -283,22 +283,20 @@ class Panel {
       return body;
     };
 
+    // Where you are, and the career.
     const kills = career.kills || 0;
-    const merit = Rank.merit(kills, career.killsByMode || {});
-    if (career.endless) note(`${ModeInfo[mode].title} · endless on stage ${career.endless.stage} · ${career.endless.cleared} in a row`);
-    else note(`${ModeInfo[mode].title} · stage ${fight.stage} · ${SettingNames[fight.setting]}`);
-    let record = `${career.rank || Rank.title(merit)} · ${count(kills, 'kill')}`;
+    if (career.endless) note(`${career.modeTitle} · endless on stage ${career.endless.stage} · ${career.endless.cleared} in a row`);
+    else note(`${career.modeTitle} · stage ${fight.stage} · ${SettingNames[fight.setting]}`);
+    let record = `${career.rank} · ${count(kills, 'kill')}`;
     if ((career.streak || 0) > 1) record += ` · ${career.streak} in a row`;
     note(record);
-    const next = Rank.next(merit);
-    if (next) note(`${count(Rank.kills(merit, next[0], mode), 'more kill')} to ${next[1]}`);
+    if (career.nextRank) note(`${count(career.nextRank.killsNeeded, 'more kill')} to ${career.nextRank.title}`);
     if ((career.bestCombo || 0) > 0) note(`Best combo ${career.bestCombo} · ${career.flawless || 0} flawless · ${count(career.falls || 0, 'fall')}`);
-    const bestRuns = career.bestRuns || {};
     if (career.endless) {
-      const best = bestRuns[`${mode}/${career.endless.start}`];
+      const best = career.bestEndlessRun;
       if (best) note(`Best on stage ${career.endless.start}: ${best.cleared} in a row · ${grouped(best.score)}`);
-    } else if (bestRuns[mode]) {
-      note(`Best run ${count(bestRuns[mode].cleared, 'stage')} · ${grouped(bestRuns[mode].score)}`);
+    } else if (career.bestCampaignRun) {
+      note(`Best run ${count(career.bestCampaignRun.cleared, 'stage')} · ${grouped(career.bestCampaignRun.score)}`);
     }
     if ((career.score || 0) > 0) note(`${grouped(career.score)} points in all · best stage ${grouped(career.bestScore || 0)}`);
     sep();
@@ -306,34 +304,32 @@ class Panel {
     item(this.visible ? 'Hide Ronin' : 'Show Ronin', () => { this.toggle(); this.refreshMenu(); }, { hint: Shortcuts[Prefs.shortcut].title });
     item('Compact', () => { if (!this.visible) this.show(); this.setCompact(!this.compact); this.refreshMenu(); }, { on: this.compact });
 
+    // Each mode's campaign: its stage, and the hearts it carries of the most it can hold.
     const modes = sub('Difficulty');
-    for (const md of Modes) {
-      const hearts = md === mode && !career.endless && !fight.outcome ? fight.hp : (career.hearts?.[md] ?? ModeInfo[md].hearts);
-      const stage = career.stages?.[md] ?? 1;
-      item(`${ModeInfo[md].title} — ${ModeInfo[md].gist} · ♥ ${hearts}/${ModeInfo[md].hearts} · stage ${stage}`, () => {
-        if (md !== mode) { session.choose(md); this.scene.loadFight(true); }
+    for (const m of career.modes || []) {
+      item(`${m.title} — ${m.gist} · ♥ ${m.hearts}/${m.maxHearts} · stage ${m.stage}`, () => {
+        if (m.mode !== mode) { session.choose(m.mode); this.scene.loadFight(true); }
         this.closeMenu();
-      }, { on: md === mode, into: modes });
+      }, { on: !!m.selected, into: modes });
     }
 
+    // Endless: any stage reached, played over and over; each keeps its own best run.
     const endless = sub('Endless');
-    const bestCampaign = bestRuns[mode];
-    item(`Campaign · stage ${career.stages?.[mode] ?? 1}` + (bestCampaign ? ` · best ${count(bestCampaign.cleared, 'stage')}` : ''), () => {
+    const bestCampaign = career.bestCampaignRun;
+    item(`Campaign · stage ${career.stage}` + (bestCampaign ? ` · best ${count(bestCampaign.cleared, 'stage')}` : ''), () => {
       if (career.endless) { session.leaveEndless(); this.scene.loadFight(true); }
       this.closeMenu();
     }, { on: !career.endless, into: endless });
     endless.appendChild(el('hr'));
-    const reached = Math.max(1, career.reached?.[mode] ?? career.stages?.[mode] ?? 1);
-    let stages = [...Array(reached).keys()].map((k) => k + 1);
-    if (stages.length > 30) stages = stages.filter((s) => s === 1 || s % 5 === 0 || s === reached);
+    let stages = career.endlessStages || [];
+    const last = stages.length ? stages[stages.length - 1].stage : 1;
+    if (stages.length > 30) stages = stages.filter((s) => s.stage === 1 || s.stage % 5 === 0 || s.stage === last);
     for (const s of stages) {
-      let title = `Stage ${s}` + (s % 5 === 0 ? ' · warlord' : '');
-      const best = bestRuns[`${mode}/${s}`];
-      if (best) title += ` · best ${best.cleared} in a row`;
-      item(title, () => { session.startEndless(s); this.scene.loadFight(true); this.closeMenu(); }, { on: career.endless?.start === s, into: endless });
+      let title = `Stage ${s.stage}` + (s.warlord ? ' · warlord' : '');
+      if (s.best) title += ` · best ${s.best.cleared ?? s.best} in a row`;
+      item(title, () => { session.startEndless(s.stage); this.scene.loadFight(true); this.closeMenu(); }, { on: !!s.selected, into: endless });
     }
-    const most = career.bestEndless?.[mode];
-    if (most > 0) { endless.appendChild(el('hr')); note(`Most clears in a row: ${most}`, endless); }
+    if ((career.bestEndless || 0) > 0) { endless.appendChild(el('hr')); note(`Most clears in a row: ${career.bestEndless}`, endless); }
 
     const sizes = sub('Size');
     Prefs.sizes.forEach((sz, k) => item(sz.title, () => this.setSize(k), { on: k === Prefs.size, into: sizes }));
@@ -383,9 +379,10 @@ class Panel {
     item("Restore the Game's Rules", () => set((r) => Object.assign(r, game)), { on: false, enabled: !standard, into: dev });
     sep();
 
-    const restartTitle = !fight.outcome ? `Restart Stage · ♥ ${fight.hp}` : fight.outcome === 'victory' ? 'Next Stage' : `Start Over · Stage ${career.current ?? 1}`;
+    // Walking away from a fight keeps the hearts it cost; past a stage's card, this goes on as the card does.
+    const restartTitle = career.restartTitle || (!fight.outcome ? `Restart Stage · ♥ ${fight.hp}` : fight.outcome === 'victory' ? 'Next Stage' : `Start Over · Stage ${career.current}`);
     item(restartTitle, () => {
-      if (fight.outcome) session.next(); else session.restart();
+      session.restart();
       this.scene.loadFight(true);
       this.closeMenu();
     });

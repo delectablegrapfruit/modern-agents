@@ -41,185 +41,148 @@ const Prefs = {
   },
 };
 
-const STANDARD_RULES = { passThrough: false, slipPast: true, runnersPassAll: true, passBusy: true, shove: true, noBruteKnockback: true };
 
-/** The fight as the scene reads it: the core's state, with the few things the app asks of Fight worked out here. */
+/** The fight as the scene reads it: the core's `state()`, with the few questions the app asks of Fight answered
+ *  from it. */
 class FightView {
-  constructor(s, tuning) {
+  constructor(s) {
     this.raw = s;
     for (const key of Object.keys(s)) if (!FightView.derived.has(key)) this[key] = s[key];
-    this.bossStage = typeof s.boss === 'boolean' ? s.boss : s.difficulty?.boss ?? s.stage % 5 === 0;
-    this.tuning = tuning;
-    this.foes = (s.foes || []).map((f) => normalizeFoe(f));
+    this.bossStage = !!(s.difficulty?.boss ?? s.stage % 5 === 0);
+    this.foes = (s.foes || []).map(normalizeFoe);
     this.arrows = s.arrows || [];
     this.stats = s.stats || {};
     this.mode = s.mode || 'bushido';
-    this.maxHP = s.maxHP ?? s.maxHp ?? ModeInfo[this.mode].hearts;
-    this.setting = s.setting ?? settingOf(s.stage);
-    if (typeof this.setting === 'string') this.setting = Math.max(0, Settings8.indexOf(this.setting));
-    this.combo = s.combo ?? 0;
+    this.setting = s.settingIndex ?? settingOf(s.stage);
     this.outcome = s.outcome ?? null;
     this.gourd = s.gourd ? normalizeGourd(s.gourd) : null;
-    this.bossID = s.bossID ?? s.bossId ?? null;
+    this.bossID = s.bossID ?? null;
+    this.targets = s.target || null;
+    this.facing = s.hero?.facing ?? 'right';
+    this.stumble = s.hero?.stumble ?? 0;
   }
-  get inBloodlust() { return this.bloodlust ?? this.combo >= Tuning.bloodlust; }
-  get reachNow() { return this.reach ?? (this.inBloodlust ? Tuning.bloodlustReach : Tuning.reach); }
-  get mult() { return this.multiplier ?? Math.min(8, 1 + Math.floor(this.combo / 10)); }
-  get isStumbling() { return (this.stumble ?? 0) > 0; }
+  get inBloodlust() { return !!this.bloodlust; }
+  get reachNow() { return this.reach; }
+  get mult() { return this.multiplier; }
+  get isStumbling() { return this.stumble > 0; }
   get boss() { return this.bossID === null ? null : this.foes.find((f) => f.id === this.bossID) || null; }
   get isBossStage() { return this.boss !== null || this.bossStage; }
-  get gourdBonus() { return Math.round(Tuning.gourdPoints * ({ shoshin: 0.5, bushido: 1, shura: 1.6, oni: 3 }[this.mode] || 1)); }
   foe(id) { return this.foes.find((f) => f.id === id) || null; }
-  /** Whether a cut to `side` would find something now (Fight.target). */
-  target(side) {
-    if (this.targets && side in this.targets) return this.targets[side] || null;
-    const reach = this.reachNow;
-    const g = this.gourd;
-    if (g && g.catchable && sideOf(g.land) === side && Math.abs(g.x) <= reach) return { gourd: true };
-    let best = null, dist = Infinity;
-    for (const f of this.foes) {
-      if (f.targetable && sideOf(f.x) === side && f.gap <= reach && f.gap < dist) { best = { foe: f.id }; dist = f.gap; }
-    }
-    for (const a of this.arrows) {
-      if (!a.deflected && sideOf(a.x) === side && Math.abs(a.x) <= reach && Math.abs(a.x) < dist) { best = { arrow: a.id }; dist = Math.abs(a.x); }
-    }
-    return best;
-  }
+  /** What a cut to `side` would hit now (Fight.target), or null. */
+  target(side) { return this.targets ? this.targets[side] || null : null; }
   /** Whether a cut at `foe` now would turn his blow aside (Fight.turns). */
-  turns(foe) { return !!(foe.glare ?? foe.turns ?? false); }
+  turns(foe) { return !!foe.turns; }
 }
-
-/** The fight's own names for what the view works out (never copied over from the state). */
-FightView.derived = new Set(['boss', 'inBloodlust', 'reachNow', 'mult', 'isStumbling', 'isBossStage', 'gourdBonus', 'target', 'turns', 'foe']);
+/** What the view works out itself (never copied over from the state). */
+FightView.derived = new Set(['boss', 'target', 'hero', 'inBloodlust', 'reachNow', 'mult', 'isStumbling', 'isBossStage', 'turns', 'foe']);
 
 function normalizeFoe(f) {
-  const kind = f.kind;
-  const info = KindInfo[kind] || KindInfo.grunt;
   const span = f.span ?? 0;
-  const progress = f.progress ?? (span > 0 ? clamp(1 - f.timer / span, 0, 1) : 1);
   const distance = f.distance ?? Math.abs(f.x);
-  const phase = f.phase;
   return Object.assign({}, f, {
-    kind, progress, distance, maxHP: f.maxHP ?? f.maxHp ?? f.hp,
-    contact: f.contact ?? info.range,
-    gap: f.gap ?? distance - info.width / 2,
-    alive: f.alive ?? phase !== 'dying',
-    targetable: f.targetable ?? (phase !== 'dying' && phase !== 'leaping'),
-    guardSet: f.guardSet ?? (phase === 'guarding' && span - f.timer >= Tuning.guardRise - 1e-9),
-    guardAge: f.guardAge ?? (phase === 'guarding' ? span - f.timer : 0),
-    readying: f.readying ?? (f.bearer && phase === 'advancing' && !f.darting && f.hover < Tuning.dartTell),
-    darting: !!f.darting, bearer: !!f.bearer,
+    progress: f.progress ?? (span > 0 ? clamp(1 - f.timer / span, 0, 1) : 1),
+    distance,
+    contact: f.contact ?? KindInfo[f.kind].range,
+    gap: f.gap ?? distance - KindInfo[f.kind].width / 2,
+    darting: !!f.darting,
+    bearer: !!f.bearer,
   });
 }
 
 function normalizeGourd(g) {
   const progress = g.progress ?? (g.span > 0 ? clamp(1 - g.timer / g.span, 0, 1) : 1);
-  return Object.assign({}, g, {
-    progress, x: g.x ?? g.start + (g.land - g.start) * progress,
-    catchable: g.catchable ?? g.timer <= Tuning.catchWindow + 1e-9,
-  });
+  return Object.assign({}, g, { progress, x: g.x ?? g.start + (g.land - g.start) * progress, catchable: !!g.catchable });
 }
 
-/** An event from the core, by the names the scene handles (FightEvent). */
-function normalizeEvent(e) {
-  if (!e || !e.type) return e;
-  const out = { ...e };
-  if (out.type === 'bloodlust' && out.on === undefined) out.on = !!(e.value ?? e.active ?? e.bloodlust);
-  if (out.type === 'milestone' && out.count === undefined) out.count = e.n ?? e.value ?? e.combo;
-  if (out.type === 'ended' && out.outcome === undefined) out.outcome = e.value ?? e.result;
-  if (out.type === 'wounded' && out.foe === undefined) out.foe = null;
-  return out;
-}
-
+/** The career and the fight in progress (the app's GameSession), played through the core. */
 class Session {
   constructor(core) {
     this.core = core;
     this.promotion = null;
-    this.unsaved = 0;
+    this.fightId = 0;
     const saved = Store.get('save');
     let loaded = false;
     if (saved) {
       try { loaded = !!core.loadSave(saved); } catch { loaded = false; }
-      if (!loaded) Store.set('save.unreadable', saved);
+      // A save that cannot be read is set aside, never written over.
+      if (!loaded) Store.set('save.unreadable-' + new Date().toISOString().replace(/:/g, '-'), saved);
     }
-    if (!loaded) core.newGame({ seed: Math.floor(Math.random() * 2 ** 31) + 1 });
-    this.standard = typeof core.standardRules === 'function' ? core.standardRules() : { ...STANDARD_RULES };
+    if (!loaded) core.newGame({});
+    this.standard = core.standardRules();
     this.applyRules(Prefs.crowding(this.standard));
-    this.setAutopilot(Prefs.autopilot);
+    this.pilot = Prefs.autopilot;
+    core.setAutopilot(this.pilot);
     this.refresh(true);
   }
 
   refresh(career = false) {
-    this.fight = new FightView(this.core.state(), Tuning);
+    this.fight = new FightView(this.core.state());
     if (career || !this.careerCache) this.careerCache = this.core.career();
   }
   get career() { return this.careerCache; }
-  get isEndless() { const c = this.career; return !!(c.isEndless ?? c.endless); }
+  get isEndless() { return !!this.career.isEndless; }
 
-  get rules() { return typeof this.core.rules === 'function' ? this.core.rules() : { ...this.standard }; }
-  applyRules(rules) { if (typeof this.core.setRules === 'function') this.core.setRules(rules); }
-  setRules(rules) { Prefs.setCrowding(rules, this.standard); this.applyRules(rules); }
-
-  get autopilot() { return !!this.pilot; }
-  setAutopilot(on) { this.pilot = !!on; Prefs.autopilot = this.pilot; this.core.setAutopilot(this.pilot); }
-
-  /** The run's score so far: every stage of it, this one included; after a fall, the run that just ended. */
-  get runScore() {
-    const c = this.career, f = this.fight;
-    if (typeof c.runScore === 'number') return c.runScore;
-    const run = c.endless || (c.runs && c.runs[c.mode]) || null;
-    if (!f.outcome) return (run ? run.score : 0) + f.score;
-    if (f.outcome === 'victory') return Math.max(run ? run.score : 0, f.score);
-    const last = c.lastRun;
-    return last && last.stage === f.stage && last.score >= f.score ? last.score : f.score;
+  get rules() { return this.core.rules(); }
+  applyRules(rules) { this.core.setRules(rules); }
+  setRules(rules) {
+    const only = {};
+    for (const name of Prefs.crowdRules) only[name] = !!rules[name];
+    Prefs.setCrowding(only, this.standard);
+    this.applyRules(only);
   }
 
+  get autopilot() { return this.pilot; }
+  setAutopilot(on) { this.pilot = !!on; Prefs.autopilot = this.pilot; this.core.setAutopilot(this.pilot); this.refresh(false); }
+
+  /** The run's score so far: every stage of it, this one included; after a fall, the run that just ended. */
+  get runScore() { return this.fight.runScore ?? this.fight.score; }
+
+  /** A fight that ends is booked (by the core) and saved on the spot. */
   conclude(events) {
+    for (const e of events) if (e.type === 'promotion') this.promotion = e.rank;
     if (!events.some((e) => e.type === 'ended')) return;
     this.refresh(true);
-    this.promotion = this.career.promotion ?? this.career.promoted ?? null;
+    this.promotion = this.promotion ?? this.fight.promotion ?? this.career.promotion ?? null;
     this.save();
   }
 
   advance(dt) {
-    const events = (this.core.advance(dt) || []).map(normalizeEvent);
+    const events = this.core.advance(dt);
     this.refresh(false);
-    this.unsaved += dt;
     this.conclude(events);
-    if (this.unsaved > 10) this.save();
+    if (this.fight.saveDue) this.save();
     return events;
   }
 
   strike(side) {
-    const events = (this.core.strike(side) || []).map(normalizeEvent);
+    const events = this.core.strike(side);
     this.refresh(false);
     this.conclude(events);
     return events;
   }
 
-  /** The next fight (what clicking the banner does). */
-  next() {
+  /** Past the banner: the next stage; after a fall, the first stage again (or the endless run's first). */
+  next() { this.act(() => this.core.next()); }
+
+  /** A menu action: each leaves a fight in progress as a restart leaves it (the core books that). */
+  act(fn) {
+    fn();
+    this.fightId++;
     this.promotion = null;
-    this.core.next();
-    this.core.setAutopilot(this.pilot);
     this.refresh(true);
     this.save();
   }
+  restart() { this.act(() => this.core.restart()); }
+  choose(mode) { this.act(() => this.core.choose(mode)); }
+  startEndless(stage) { this.act(() => this.core.startEndless(stage)); }
+  leaveEndless() { this.act(() => this.core.leaveEndless()); }
+  reset() { this.act(() => this.core.reset({})); }
+  jump(stage) { this.act(() => this.core.jump(stage)); }
 
-  /** The menu's actions, each leaving a fight in progress as a restart leaves it. */
-  act(fn) { fn(); this.core.setAutopilot(this.pilot); this.promotion = null; this.refresh(true); this.save(); }
-  restart() { this.act(() => (this.core.restart ? this.core.restart() : this.core.begin({ restart: true }))); }
-  choose(mode) { this.act(() => this.core.begin({ mode })); }
-  startEndless(stage) { this.act(() => this.core.begin({ endless: true, stage })); }
-  leaveEndless() { this.act(() => this.core.begin({ endless: false })); }
-  reset() {
-    const mode = this.career.mode;
-    this.act(() => { this.core.newGame({ seed: Math.floor(Math.random() * 2 ** 31) + 1 }); if (mode !== 'bushido') this.core.begin({ mode }); });
-  }
-  jump(stage) { this.act(() => this.core.begin({ stage })); }
+  /** The stage's title card, as the core words it (DuelScene.introduce). */
+  card(stage) { try { return this.core.stage(stage).card; } catch { return null; } }
 
   save() {
-    this.unsaved = 0;
     try { Store.set('save', this.core.saveJSON()); } catch { /* not kept */ }
   }
 }

@@ -40,13 +40,30 @@ function footing(cast, frame) {
 /** Where the point of a figure's weapon is in a frame, and the blade's angle (Figure.tip, Pose.blade), if the core
  *  tells them. */
 function weaponLine(cast, frame) {
-  const core = Figures.core;
-  if (core && typeof core.tip === 'function') {
-    const t = core.tip(cast, frame);
-    const blade = typeof core.blade === 'function' ? core.blade(cast, frame) : null;
-    if (t) return { tip: { x: t.x ?? t[0], y: t.y ?? t[1] }, blade };
+  const info = figureInfo(cast, frame);
+  if (!info || !info.tip) return null;
+  let blade = info.blade ?? null;
+  if (blade === null && info.anatomy) {
+    // (Until the core gives Pose.blade: the line from the neck to the point stands in for the blade's.)
+    const unit = Builds[cast].pixels * Builds[cast].height;
+    const neck = { x: info.anatomy.neck.x / unit - FigureCanvas.feetX, y: info.anatomy.neck.y / unit - FigureCanvas.feetY };
+    // Pose.blade runs from straight down (0) round toward the way he faces: a point along it is at (sin, -cos).
+    blade = Math.atan2(info.tip.x - neck.x, -(info.tip.y - neck.y));
   }
-  return null;
+  return { tip: info.tip, blade };
+}
+
+/** What the core tells of a figure in a frame (Figure.footing, .tip, .contact, .anatomy, whether it is smeared). */
+const figureInfoCache = new Map();
+function figureInfo(cast, frame) {
+  const key = cast + '|' + frame;
+  let info = figureInfoCache.get(key);
+  if (info === undefined) {
+    const core = Figures.core;
+    try { info = core && typeof core.figure === 'function' ? core.figure(cast, frame) : null; } catch { info = null; }
+    figureInfoCache.set(key, info);
+  }
+  return info;
 }
 
 // MARK: A foe
