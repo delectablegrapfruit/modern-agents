@@ -6286,6 +6286,8 @@ const SH = slice('shop', {
   seen: 0, spins: 1, coupons: [], cart: [], orders: [], gift: null, newUntil: 0, extended: 0, nu: [],
   saved: 0, spent: 0, delivered: 0, addr: 0, recent: [], cid: 0, oid: 0, dropAt: 0,
 });
+if (!Number.isFinite(SH.saved)) SH.saved = 0;
+SH.cart = SH.cart.filter(l => l && Number.isFinite(l.p) && Number.isFinite(l.was));
 addAch([
   ['order1', 'Checked out', 'Place your first order', 'tag', () => (S.ordersPlaced || 0) >= 1],
   ['saver', 'Smart shopper', 'Save 10,000 hits in Shop', 'gem', () => SH.saved >= 10000],
@@ -6685,7 +6687,7 @@ function lineHTML(l) {
   const low = !l.gift && l.stock <= 6 ? `<span class="sh-low">Only ${l.stock} left</span>` : '';
   return `<div class="sh-line${l.gift ? ' gift' : ''}${l.sel || l.gift ? '' : ' off'}" data-k="${l.key}">
     ${l.gift ? '<span class="sh-ck on dis" aria-hidden="true"></span>' : `<button class="sh-ck${l.sel ? ' on' : ''}" data-a="sel" role="checkbox" aria-checked="${!!l.sel}" aria-label="Select"></button>`}
-    <button class="sh-lth" data-a="view" aria-label="${pr.n}">${tile(pr, l.ci)}</button>
+    ${l.gift ? `<span class="sh-lth">${tile(pr, l.ci)}</span>` : `<button class="sh-lth" data-a="view" aria-label="${pr.n}">${tile(pr, l.ci)}</button>`}
     <div class="sh-lt"><span class="sh-ltt">${l.t}</span>${vn ? `<span class="sh-lv">${vn}</span>` : ''}${tag}${low}
       <div class="sh-lp">${pz(l.p)}<s>${fmt(l.was)}</s>${l.gift ? '' : `<span class="sh-step"><button data-a="dec" aria-label="Fewer">${si('minus')}</button><b>${l.q}</b><button data-a="inc" aria-label="More">${si('plus')}</button></span>`}</div>
       ${l.b2 && !l.gift ? `<span class="sh-b2">${l.q % 3 === 2 ? 'Add 1 more to get 1 free' : l.q >= 3 ? `${Math.floor(l.q / 3)} free with Buy 2 get 1` : 'Buy 2 get 1 free'}</span>` : ''}
@@ -6748,7 +6750,7 @@ function removeLine(l, el) {
 }
 // a listing rebuilt from a cart or order line, at the size-0 base price
 function lineL(l) {
-  const pr = PRM[l.pid], add = pr.sizes && !l.nu ? pr.sizes[l.si][1] : 0, bp = l.bp || Math.max(1, l.p - add), bw = l.bw || Math.round(l.was * bp / l.p);
+  const pr = PRM[l.pid], add = pr.sizes && !l.nu ? pr.sizes[l.si][1] : 0, bp = l.bp || Math.max(1, l.p - add), bw = l.bw || (l.p ? Math.round(l.was * bp / l.p) : pr.was);
   return mkL(pr, { p: bp, was: bw, ci: l.ci, tag: '', pfx: '', x: { t: l.t, stock: Math.max(l.stock || 9, l.q), b2: l.b2 || 0, nu: l.nu || 0, ld: l.until ? 1 : 0, until: l.until || 0, after: l.after ? l.after - add : 0 } });
 }
 
@@ -7385,7 +7387,7 @@ def({
       if (k === 'checkout') { const lines = SH.cart.filter(x => x.sel || x.gift); if (!lines.some(x => !x.gift)) { sfx.nope(); toast('Select an item to check out'); return; } act(); openCheckout('cart', lines); return; }
       if (!l) return;
       if (k === 'sel') { l.sel = l.sel ? 0 : 1; sfx.click(); renderCart(); }
-      else if (k === 'view') openPDP('cart', lineL(l));
+      else if (k === 'view') { if (!l.gift) openPDP('cart', lineL(l)); }
       else if (k === 'rm') removeLine(l, row);
       else if (k === 'inc') {
         if (l.nu) { sfx.nope(); toast('Limit 1 per customer at this price'); return; }
