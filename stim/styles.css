@@ -929,6 +929,8 @@ kbd { font: 600 12px/1 var(--ui); min-width: 24px; height: 24px; padding: 0 7px;
 .hd-hud > div, .rg-hud > div { padding: 9px 4px 8px; border-radius: 18px; background: var(--soft); }
 .hd-hud b, .rg-hud b { display: block; font: 700 22px/1.1 var(--fun); font-variant-numeric: tabular-nums; }
 .hd-hud small, .rg-hud small { font-size: 11.5px; color: var(--muted); font-weight: 700; }
+.hd-hud > div.up, .rg-hud > div.up { animation: pl-best .9s var(--ease); }
+@keyframes pl-best { 0% { transform: scale(1.1); box-shadow: inset 0 0 0 2.5px var(--gold); } 60% { transform: none; box-shadow: inset 0 0 0 2.5px var(--gold); } }
 .hd-stage { display: grid; place-items: center; padding: 6px 0; }
 .hd-ring { position: relative; width: 240px; height: 240px; border-radius: 50%; touch-action: none; cursor: pointer; }
 .hd-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); fill: none; }
