@@ -7460,9 +7460,11 @@ def({
       if (a.dataset.a === 'track') { o.open = o.open ? 0 : 1; sfx.click(); card.replaceWith(html(ordHTML(o))); }
       else if (a.dataset.a === 'claim') { o.claimed = 1; const [x, y] = centerOf(a); earn(o.credit, x, y - 20, { raw: true }); sfx.coin(); haptic(true); save(); refreshBadges(); card.replaceWith(html(ordHTML(o))); }
       else if (a.dataset.a === 'again') {
-        let n = 0;
-        for (const l of o.lines) if (!l.gift && !l.nu) { const L = lineL({ ...l, until: 0, after: 0 }); if (addLine(L, l.ci, l.si, l.q)) n++; }
+        // at today's regular price: deal, bundle and new customer prices stay with the order they were on
+        let n = 0, tried = 0;
+        for (const l of o.lines) if (!l.gift && PRM[l.pid]) { tried++; const L = mkL(PRM[l.pid], { k: 1, ci: l.ci, tag: '', pfx: '', x: { t: l.t } }); if (addLine(L, l.ci, l.si, l.q)) n++; }
         if (n) toast(`${n} item${n > 1 ? 's' : ''} added to your cart`);
+        else if (!tried) { sfx.nope(); toast('These items can’t be bought again'); }
       }
     });
   },
