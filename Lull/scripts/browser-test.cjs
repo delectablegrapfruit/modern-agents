@@ -2295,7 +2295,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     const f0 = await ev(() => Lull.Collapse.idle.frames), p0 = await pix();
     await page.waitForTimeout(1500);
     const f1 = await ev(() => Lull.Collapse.idle.frames), p1 = await pix();
-    check('pieces travel along the bar, drawn every frame at 30 to 60 fps', p0 !== p1 && f1 - f0 >= 30 && f1 - f0 <= 100, String(f1 - f0));
+    check('pieces travel along the bar, drawn every display frame', p0 !== p1 && f1 - f0 >= 60 && f1 - f0 <= 100, String(f1 - f0));
     const cells = await ev(() => Lull.Collapse.idle.pieces.length);
     check('in the equipped look, a few pieces along the bar', cells >= 3, String(cells));
     // Run the parade by hand for four minutes of bar time at 30 fps and watch every frame and every move.
@@ -2306,11 +2306,12 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
         i.seed = seed; i.reset(i.cols);
         i.onMove = (p, kind, from, to) => log.push({ n: p.n, id: p.id, kind, from: { ...from }, to: { rot: to.rot, x: to.x, y: to.y } });
         const at = () => new Map(i.pieces.map((p) => [p.n, { id: p.id, rot: p.rot, x: p.x, y: p.y, v0: p.v0 }]));
-        let prev = at(), minN = 99, maxN = 0, subcell = 0, turns = 0, shifts = 0, passes = 0, fastPasses = 0, rainMax = 0, rainBehind = 0, rainLooks = 0;
-        const v0s = new Set(), spawnT = [], ex0 = i.exited, ov0 = i.overtakes;
+        let prev = at(), minN = 99, maxN = 0, subcell = 0, turns = 0, shifts = 0, passes = 0, fastPasses = 0, rainMax = 0, rainBehind = 0, rainLooks = 0, braked = 0, darts = 0;
+        const v0s = new Set(), spawnT = [], ex0 = i.exited, ov0 = i.overtakes, y0 = i.yields, d0 = i.dodges;
         for (let f = 0; f < 240 * 30; f++) {
           log.length = 0;
-          i.step(uneven ? (f % 3 ? 1 / 60 : 1 / 20) : 1 / 30);
+          const dt = uneven ? (f % 3 ? 1 / 60 : 1 / 20) : 1 / 30;
+          i.step(dt);
           const now = at();
           const onBar = i.pieces.filter((p) => i.hi(p) > 0);
           minN = Math.min(minN, onBar.length); maxN = Math.max(maxN, onBar.length);
@@ -2337,7 +2338,9 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
           for (const p of i.pieces) {
             v0s.add(p.v0);
             const was = prev.get(p.n);
-            if (!was) { spawnT.push(i.t); if (p.x + P.get(p.id).rotBounds[p.rot].maxX + 1 > 0.5) bad.push('came in on the bar'); continue; }
+            if (!was) { spawnT.push(i.t); if (p.v0 > 5) darts++; if (p.x + P.get(p.id).rotBounds[p.rot].maxX + 1 > 0.5) bad.push('came in on the bar'); continue; }
+            // Nobody ever slows down (or speeds up): every step is its own speed, exactly.
+            if (Math.abs(p.x - was.x - p.v0 * dt) > 1e-6 || p.v !== p.v0) braked++;
             const moved = log.some((m) => m.n === p.n);
             // Travel is smooth: forward only, less than a cell a frame, and mostly between whole cells.
             if (!moved) {
@@ -2360,8 +2363,8 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
             rainLooks++;
             for (let k = 0; k < K.POOL; k++) {
               if (!(i.t - i.rt[k] < i.rl[k])) continue;
-              const col = i.rx[k], row = i.ry[k];
-              if (row >= p.y + b.minY && row <= p.y + b.maxY && col < p.x + b.minX && col > p.x + b.minX - 12) { rainBehind++; break; }
+              const col = i.rainX(k, i.t - i.rt[k]), row = i.ry[k];
+              if (row >= p.y + b.minY && row <= p.y + b.maxY && col < p.x + b.minX && col > p.x + b.minX - 4) { rainBehind++; break; }
             }
           }
           prev = now;
@@ -2369,22 +2372,89 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
         i.onMove = null;
         const gaps = spawnT.slice(1).map((t, k) => Math.round((t - spawnT[k]) * 10) / 10);
         const vs = [...v0s];
-        return { bad: bad.slice(0, 5), nbad: bad.length, minN, maxN, subcell, turns, shifts, passes, fastPasses, overtakes: i.overtakes - ov0, exited: i.exited - ex0, cols: i.cols,
+        return { bad: bad.slice(0, 5), nbad: bad.length, minN, maxN, subcell, turns, shifts, passes, fastPasses, overtakes: i.overtakes - ov0, exited: i.exited - ex0, cols: i.cols, braked, darts, yields: i.yields - y0, dodges: i.dodges - d0,
           speeds: vs.length, vmin: Math.min(...vs), vmax: Math.max(...vs), gaps, rainMax, rainBehind, rainLooks,
           sig: JSON.stringify(i.pieces.map((p) => [p.id, p.rot, p.x.toFixed(6), p.y])) };
       };
       const a = run(7919), b = run(7919), c = run(104729), d = run(31337, true);
       i.reset(i.cols);
-      return { a, c: { bad: c.bad, passes: c.passes }, d: { bad: d.bad, passes: d.passes }, same: a.sig === b.sig && a.turns === b.turns && a.gaps.join() === b.gaps.join(), differs: a.sig !== c.sig };
+      return { a, c: { bad: c.bad, passes: c.passes, braked: c.braked, yields: c.yields }, d: { bad: d.bad, passes: d.passes, braked: d.braked }, same: a.sig === b.sig && a.turns === b.turns && a.gaps.join() === b.gaps.join(), differs: a.sig !== c.sig };
     }, K);
     const m = march.a;
     check('never an overlap, and pieces sharing a lane always a clear cell apart, over minutes of passing (uneven frames too)', m.nbad === 0 && march.c.bad.length === 0 && march.d.bad.length === 0, JSON.stringify([m.bad, march.c.bad, march.d.bad]));
     check('they fall along the bar smoothly, between whole cells, each at its own speed from a drift to a dart', m.subcell > 10000 && m.speeds >= 20 && m.vmin < 1.5 && m.vmax > 4, JSON.stringify({ subcell: m.subcell, speeds: m.speeds, vmin: m.vmin, vmax: m.vmax }));
     check('lanes and turns are the game\'s: whole lanes, SRS turns with their kicks, now and then', m.turns >= 20 && m.shifts >= 20, JSON.stringify({ turns: m.turns, shifts: m.shifts }));
+    check('nobody ever slows down: every piece travels at its own speed all the way, darts included', m.braked === 0 && march.c.braked === 0 && march.d.braked === 0 && m.darts >= 3, JSON.stringify({ braked: [m.braked, march.c.braked, march.d.braked], darts: m.darts }));
+    check('meetings are made together: the faster piece moves over early and the slower one steps aside for it too', m.yields >= 5 && m.dodges >= 5 && march.c.yields >= 5, JSON.stringify({ yields: m.yields, dodges: m.dodges, c: march.c.yields }));
     check('fast pieces pass slow ones, weaving round them', m.passes >= 5 && m.fastPasses === m.passes && m.overtakes === m.passes && march.c.passes >= 3 && march.d.passes >= 3, JSON.stringify({ passes: m.passes, fast: m.fastPasses, overtakes: m.overtakes, c: march.c.passes, d: march.d.passes }));
     check('a new piece comes in at varying intervals, and the parade flows on: never empty, never crowded', m.gaps.length > 20 && new Set(m.gaps).size >= 10 && m.minN >= 2 && m.maxN <= Math.ceil(m.cols / 5) && m.exited >= 20, JSON.stringify({ gaps: m.gaps.slice(0, 12), minN: m.minN, maxN: m.maxN, exited: m.exited }));
     check('a rain of glyphs trails behind the moving pieces, bounded', m.rainMax > 10 && m.rainMax <= K.POOL && m.rainLooks > 50 && m.rainBehind >= m.rainLooks * 0.8, JSON.stringify({ rainMax: m.rainMax, looks: m.rainLooks, behind: m.rainBehind }));
     check('the parade is the same for the same seed, and another seed goes another way', march.same && march.differs, JSON.stringify({ same: march.same, differs: march.differs }));
+    // Smooth travel: at an even frame rate every piece moves by the same amount every frame (drawn at its exact,
+    // sub-pixel place: no rounding to whole pixels), and in the live loop too, paced to whole display frames.
+    const smooth = await ev(async () => {
+      const i = Lull.Collapse.idle, sd = (a) => { const m = a.reduce((u, v) => u + v, 0) / a.length; return [m, Math.sqrt(a.reduce((u, v) => u + (v - m) ** 2, 0) / a.length)]; };
+      i.seed = 424242; i.reset(i.cols);
+      const steps = new Map(), last = new Map();
+      for (let f = 0; f < 600; f++) {
+        i.step(1 / 60);
+        for (const p of i.pieces) { const X = i.screenX(p) * i.dpr; if (last.has(p.n)) { if (!steps.has(p.n)) steps.set(p.n, []); steps.get(p.n).push(X - last.get(p.n)); } last.set(p.n, X); }
+      }
+      let worst = 0;
+      for (const a of steps.values()) if (a.length > 30) { const [m, d] = sd(a); worst = Math.max(worst, d / m); }
+      // Live: the real loop's displacement per display frame, for 3 seconds.
+      const live = await new Promise((res) => {
+        const rec = new Map();
+        let n = 0;
+        const frame = () => {
+          for (const p of i.pieces) { if (!rec.has(p.n)) rec.set(p.n, []); rec.get(p.n).push(i.screenX(p) * i.dpr); }
+          if (++n < 180) requestAnimationFrame(frame);
+          else {
+            const out = [];
+            for (const a of rec.values()) if (a.length > 90) { const [m, d] = sd(a.slice(1).map((x, k) => x - a[k])); out.push(+(d / m).toFixed(4)); }
+            res(out);
+          }
+        };
+        requestAnimationFrame(frame);
+      });
+      return { worst, live, pieces: steps.size, subpx: i.pieces.some((p) => Math.abs(i.screenX(p) * i.dpr - Math.round(i.screenX(p) * i.dpr)) > 0.01), rows: Number.isInteger(i.top * i.dpr) && Number.isInteger(i.s * i.dpr) };
+    });
+    check('travel is even: the same step every frame for a steady piece, drawn at sub-pixel places (rows on whole pixels), in the live loop too', smooth.worst < 1e-6 && smooth.live.length >= 2 && Math.max(...smooth.live) < 0.03 && smooth.subpx && smooth.rows, JSON.stringify(smooth));
+    // The rain is a steady stream: one piece alone on the bar keeps about the same number of glyphs lit, each fading
+    // smoothly over two to three seconds and changing its character only now and then, gently.
+    const rain = await ev((K) => {
+      const i = Lull.Collapse.idle, B = Lull.BarIdle;
+      i.seed = 99; i.reset(i.cols);
+      // A Level 4 walker, alone.
+      const p = i.pieces[0];
+      i.pieces = [p]; p.com = []; p.calm = Infinity; i.due = Infinity; i.rt.fill(-1e9);
+      p.x0 = 2; p.t0 = i.t; p.x = 2; p.v0 = p.v = B.speedAt(4);
+      const counts = [], track = [], k0 = [];
+      let jumps = 0, rises = 0, swaps = 0, glyphFrames = 0, minLife = Infinity;
+      const prevA = new Float64Array(K.POOL), prevG = new Int32Array(K.POOL).fill(-1);
+      for (let f = 0; f < 60 * 8; f++) {
+        i.step(1 / 60);
+        if (i.xAt(p, i.t) > i.cols - 12) { p.x0 = 2; p.t0 = i.t; }
+        if (f >= 60 * 3.5) counts.push(i.rainCount());
+        for (let k = 0; k < K.POOL; k++) {
+          const age = i.t - i.rt[k], a = i.rainAlpha(k, age);
+          if (age >= 0 && age < i.rl[k]) {
+            minLife = Math.min(minLife, i.rl[k]);
+            if (age > 1 / 30) { if (Math.abs(a - prevA[k]) > i.ra[k] / (Lull.BarIdle.RAIN_IN * 60) + 1e-6) jumps++; if (age > 0.2 && a > prevA[k] + 1e-9) rises++; }
+            const g = i.rainGlyph(k, age);
+            glyphFrames++;
+            if (prevG[k] >= 0 && g[0] !== prevG[k] && age > 1 / 30) swaps++;
+            prevG[k] = g[0];
+          } else prevG[k] = -1;
+          prevA[k] = a;
+        }
+      }
+      const mean = counts.reduce((u, v) => u + v, 0) / counts.length, spread = Math.sqrt(counts.reduce((u, v) => u + (v - mean) ** 2, 0) / counts.length) / mean;
+      return { v: p.v0, mean, spread, min: Math.min(...counts), max: Math.max(...counts), jumps, rises, minLife, swapsPerGlyphSecond: swaps / (glyphFrames / 60), life: B.RAIN_LIFE };
+    }, K);
+    check('the rain streams steadily behind a piece: a stable count lit, fading smoothly over 2 to 3 seconds, glyphs changing only now and then',
+      rain.mean > 8 && rain.spread < 0.15 && rain.min > 0 && rain.jumps === 0 && rain.rises === 0 && rain.minLife >= 1.5 && rain.swapsPerGlyphSecond < 0.5, JSON.stringify(rain));
+    await ev(() => { const i = Lull.Collapse.idle; i.reset(i.cols); });
     // Reduced motion: one still frame, no rain.
     const still = await ev(async () => {
       const i = Lull.Collapse.idle;
@@ -2435,13 +2505,13 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
             o.drawImage(cv, 0, cv.height * k);
             const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
             let sum = 0; for (let j = 3; j < d.length; j += 16) sum += d[j]; sums.push(sum);
-            // Every cell on whole device pixels, wherever it has travelled to.
-            for (const p of i.pieces) { const X = i.snap(i.left + p.x * i.s) * i.dpr; if (Math.abs(Math.round(X) - X) > 1e-6 || Math.abs(X - (i.left + p.x * i.s) * i.dpr) > 0.5 + 1e-6 || !Number.isInteger(i.top * i.dpr) || !Number.isInteger(i.s * i.dpr)) crisp = false; }
+            // Rows and cell sizes on whole device pixels (the travel along the bar is sub-pixel, from sharp sprites).
+            if (!Number.isInteger(i.top * i.dpr) || !Number.isInteger(i.s * i.dpr)) crisp = false;
           }
           i.start();
           return { url: out.toDataURL(), distinct: new Set(sums).size, drawn: sums.every((x) => x > 0), crisp };
         });
-        check('the bar draws its pieces and their rain as they travel, every cell on whole device pixels (' + theme + ', ' + w + ')', strip.drawn && strip.distinct >= 6 && strip.crisp, JSON.stringify({ distinct: strip.distinct, crisp: strip.crisp }));
+        check('the bar draws its pieces and their rain as they travel, rows on whole device pixels (' + theme + ', ' + w + ')', strip.drawn && strip.distinct >= 6 && strip.crisp, JSON.stringify({ distinct: strip.distinct, crisp: strip.crisp }));
         if (OUT) {
           await page.screenshot({ path: path.join(OUT, '95-collapsed-' + theme + '-' + w + '.png'), clip: { x: 0, y: 0, width: w, height: 60 } });
           require('fs').writeFileSync(path.join(OUT, '95-collapsed-strip-' + theme + '-' + w + '.png'), Buffer.from(strip.url.split(',')[1], 'base64'));

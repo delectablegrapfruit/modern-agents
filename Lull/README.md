@@ -363,19 +363,25 @@ and first-try rates by difficulty and wildcard, factory output and shapes presse
 pieces falls along it (`js/collapse.js`): the bar is a well on its side, four lanes deep, and pieces come in from the
 left and travel smoothly to the right, each in its own SRS orientation and at its own speed — a game gravity level on
 the Classic curve, mostly Level 1–2 drifters (about a cell a second), some Level 3–5 walkers and now and then a Level
-7–9 dart. Lanes and turns are the game's: a whole lane at a time, or a true SRS turn with its kicks, and instant, as on
-the board. A piece closing on a slower one looks ahead for a way past — up to three lanes and turns, often a turn to
-something flatter that fits the free band — and takes it a move every 0.14 s; the slower one steps aside when that is
-the only way, and with no way at all the faster one eases off and follows, a cell and a half back. Pieces sharing a
-lane always keep a clear cell between them, so nothing ever overlaps, lands or stacks; free ones hop a lane or turn
-now and then, just because. A new piece comes in once the last is 5 to 13 cells along, so the parade flows on without
-crowding or empty stretches. Behind each one a thin rain of mirrored glyphs in its colour lights the cells it has just
-left and fades — some three cells long behind a drifter, ten behind a dart, brighter the faster it goes (a ring of 384
-glyph cells, drawn from one small atlas per colour). Nothing is drawn under them — no track, no lanes — and they are
-your palette and skin, softened, on whole device pixels: each fades in at the left and fades out before the expand
-button. It draws at 30 fps (60 while a dart is on the bar), stops while hidden, and holds one still frame with no rain
-under reduced motion. Classic pauses, the factory runs on. Collapsed, it resizes only sideways (dragging the edge, the
-pieces keep their places and travel on), and it opens back to the height it had, across launches too.
+7–9 dart — and nobody ever slows down. Lanes and turns are the game's: a whole lane at a time, or a true SRS turn (the
+kicks that keep its column), and instant, as on the board. Since speeds are steady, every meeting is known ahead: two
+pieces side by side along the bar take opposite bands of two lanes, lying flat, and they agree which when the later one
+comes in, then both set off for them 2.2 s early (far ahead of a dart, close ahead of a drifter), a move every 0.14 s —
+the faster one moves over, the slower one steps aside, whichever is fewer moves. A piece changes band only with nobody
+beside it, and a new piece comes in only when every meeting on its way can be agreed like that (a dart that finds no
+way in keeps its turn for 3 s), so there is always a way past and nothing ever overlaps, lands or stacks; pieces
+sharing a lane keep a clear cell between them. Free ones hop a lane or turn now and then, just because. A new piece
+comes in once the last is 5 to 13 cells along, so the parade flows on without crowding or empty stretches. Behind each
+one a steady rain of mirrored glyphs in its colour streams back: born continuously at the rear of each of its lanes
+(more the faster it goes), drifting gently back and fading over 2.2 to 3 s, brightest at the head — some six cells
+behind a drifter, twenty-five behind a dart; a third of them change character now and then, in a slow cross-fade (a
+pool of 512 glyphs, drawn from one small atlas per colour). Nothing is drawn under them — no track, no lanes — and they
+are your palette and skin, softened, each cell a device-resolution sprite at its exact sub-pixel place; each fades in
+at the left and fades out before the expand button. The logic runs on a fixed 60 Hz tick of bar time (the same at any
+frame rate); the drawing comes every display frame, paced to whole frames so the travel is even, stops while hidden,
+and holds one still frame with no rain under reduced motion. Classic pauses, the factory runs on. Collapsed, it
+resizes only sideways (dragging the edge, the pieces keep their places and travel on, and meetings a wider bar brings
+are agreed then), and it opens back to the height it had, across launches too.
 
 **Mute** — the speaker in the title bar (between the wallet and Settings, on every tab), M, or Settings ▸ Sound ▸ Mute:
 one switch, kept in sync everywhere and saved. It ramps a gain that sits after everything else to zero in 50 ms, so
