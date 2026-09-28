@@ -359,16 +359,23 @@ and first-try rates by difficulty and wildcard, factory output and shapes presse
 
 **Window** — the panel floats over every Space, full-screen apps included: it never activates Lull (activating a regular app pulls the screen back to its own Space), so ⌥⌘L shows it right over whatever is in front and hands it the keyboard. When the pointer leaves, Lull dims and fades to 60% (Settings ▸ Window ▸ Fade when the pointer leaves); it comes back as soon as the pointer does.
 
-**Collapse** — the chevron, ⌘J or a double-click on the empty bar rolls Lull up into its title bar, where a few pieces
-march slowly across it in four lanes (`js/collapse.js`). They all move together on one beat, a step to the right every
-0.9 s — a 0.55 s eased glide from cell to cell, then a rest — and now and then, on the beat and never two at once, one
-turns as it steps (a true SRS turn about the same centre, never kicked out of line; its cells stay upright as it
-turns, drawing in a little so they never overlap) or slides a lane, never both, and still a step right like the rest. A new piece comes in after a wait of 8 to 16 beats, drawn afresh each time, and at least two empty columns
-behind the one ahead, so none ever touches, lands or stacks. Nothing is drawn under them — no track, no lanes — and
-they are your palette and skin, softened: each fades in at the left and fades out before the expand button. It is
-drawn at 30 fps only while they glide, stops while hidden, and holds one still frame under reduced motion. Classic
-pauses, the factory runs on. Collapsed, it resizes only sideways (dragging the edge, the pieces keep their places and the beat goes on), and it opens back to the
-height it had, across launches too.
+**Collapse** — the chevron, ⌘J or a double-click on the empty bar rolls Lull up into its title bar, where a parade of
+pieces falls along it (`js/collapse.js`): the bar is a well on its side, four lanes deep, and pieces come in from the
+left and travel smoothly to the right, each in its own SRS orientation and at its own speed — a game gravity level on
+the Classic curve, mostly Level 1–2 drifters (about a cell a second), some Level 3–5 walkers and now and then a Level
+7–9 dart. Lanes and turns are the game's: a whole lane at a time, or a true SRS turn with its kicks, and instant, as on
+the board. A piece closing on a slower one looks ahead for a way past — up to three lanes and turns, often a turn to
+something flatter that fits the free band — and takes it a move every 0.14 s; the slower one steps aside when that is
+the only way, and with no way at all the faster one eases off and follows, a cell and a half back. Pieces sharing a
+lane always keep a clear cell between them, so nothing ever overlaps, lands or stacks; free ones hop a lane or turn
+now and then, just because. A new piece comes in once the last is 5 to 13 cells along, so the parade flows on without
+crowding or empty stretches. Behind each one a thin rain of mirrored glyphs in its colour lights the cells it has just
+left and fades — some three cells long behind a drifter, ten behind a dart, brighter the faster it goes (a ring of 384
+glyph cells, drawn from one small atlas per colour). Nothing is drawn under them — no track, no lanes — and they are
+your palette and skin, softened, on whole device pixels: each fades in at the left and fades out before the expand
+button. It draws at 30 fps (60 while a dart is on the bar), stops while hidden, and holds one still frame with no rain
+under reduced motion. Classic pauses, the factory runs on. Collapsed, it resizes only sideways (dragging the edge, the
+pieces keep their places and travel on), and it opens back to the height it had, across launches too.
 
 **Mute** — the speaker in the title bar (between the wallet and Settings, on every tab), M, or Settings ▸ Sound ▸ Mute:
 one switch, kept in sync everywhere and saved. It ramps a gain that sits after everything else to zero in 50 ms, so
@@ -425,7 +432,7 @@ first time. The save lives in `~/Library/Application Support/Lull/save.json` (Se
 
 | Path | |
 |---|---|
-| `Game/` | the game: `index.html`, `css/`, and `js/` — `icons` (the one SVG icon set), `pieces` (SRS tetrominoes, pentominoes, big and custom shapes, polyomino enumeration), `board`, `engine` (the floating-piece rules and every item), `items` (the chain multiplier, combos, Luck, the daily gift, power-ups earned in play), `library` (the Relaxed board library: shelved and retired boards, names, caps), `puzzlegen` (seeds, wildcards, reverse construction, reachability search, forward verification), `factory` (presses, the belt, the bin, one step for play and time away, save repair), `store` (save, catalog, stats), `achievements`, `fxphysics` (the item effects' blocks, debris and dust: gravity, bounces, spirals, fixed pools), `render` (canvas: skins, frames, effects, item animations, rotated views), `factoryview` (the factory floor, drawn like the board), `hints` (control hints: the struggle signals, their limits and retirement), `collapse` (the window rolled up into its title bar, and the pieces that march along it), `modes`, `ui`, `app` |
+| `Game/` | the game: `index.html`, `css/`, and `js/` — `icons` (the one SVG icon set), `pieces` (SRS tetrominoes, pentominoes, big and custom shapes, polyomino enumeration), `board`, `engine` (the floating-piece rules and every item), `items` (the chain multiplier, combos, Luck, the daily gift, power-ups earned in play), `library` (the Relaxed board library: shelved and retired boards, names, caps), `puzzlegen` (seeds, wildcards, reverse construction, reachability search, forward verification), `factory` (presses, the belt, the bin, one step for play and time away, save repair), `store` (save, catalog, stats), `achievements`, `fxphysics` (the item effects' blocks, debris and dust: gravity, bounces, spirals, fixed pools), `render` (canvas: skins, frames, effects, item animations, rotated views), `factoryview` (the factory floor, drawn like the board), `hints` (control hints: the struggle signals, their limits and retirement), `collapse` (the window rolled up into its title bar, and the parade of pieces along it), `modes`, `ui`, `app` |
 | `Sources/Lull/` | the macOS shell: a borderless `NSPanel` (floating, all Spaces, edge-resizable, draggable by the page's title bar) around a transparent `WKWebView`, a blur for the Glass background, the save file, the ⌥⌘L hot key, and a self-test CI runs |
 | `scripts/` | `make-app.sh`, `icon.swift`, `line-glyph.py` (builds the line glyph's font into `lull.css`), `test.cjs`, `browser-test.cjs`, `audio-render.cjs` (renders and measures the synthesized audio offline), `pitch.cjs` (finds the notes in a render, to check sound effects are in the music's key), `splice-voice.py` (cuts the announcer's lines from a recording) |
 

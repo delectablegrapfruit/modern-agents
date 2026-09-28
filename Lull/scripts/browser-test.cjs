@@ -2290,78 +2290,115 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     check('the chevron rolls the window up into its title bar: nothing below it, only the pieces and the expand button', c1.on && c1.saved === true && c1.h >= 40 && c1.h <= 44 && c1.main === 0 && c1.shown === 'bar-idle,btn-collapse' && c1.label === 'Expand' && c1.expanded === 'false', JSON.stringify(c1));
     check('the idle canvas spans the bar up to the expand button, which stays at the right', c1.cvLeft < 3 && c1.cvGap >= 0 && c1.cvGap < 8 && c1.btnRight < 12, JSON.stringify(c1));
     const pix = () => ev(() => document.getElementById('bar-idle').toDataURL());
-    const K = await ev(() => { const B = Lull.BarIdle; return { BEAT: B.BEAT, GLIDE: B.GLIDE, MIN: B.SPAWN_MIN, MAX: B.SPAWN_MAX, SPACE: B.SPACE, ROWS: B.ROWS }; });
-    check('one calm tempo for the whole bar: a step every 0.7 s or more, gliding for part of it and resting for the rest', K.BEAT >= 0.7 && K.GLIDE >= 0.3 && K.GLIDE < K.BEAT && K.ROWS === 4, JSON.stringify(K));
-    const f0 = await ev(() => [Lull.Collapse.idle.frames, Lull.Collapse.idle.beats]), p0 = await pix();
-    await page.waitForTimeout(Math.round(K.BEAT * 2300));
-    const f1 = await ev(() => [Lull.Collapse.idle.frames, Lull.Collapse.idle.beats]), p1 = await pix();
-    const nb = f1[1] - f0[1], nf = f1[0] - f0[0];
-    check('pieces drift along the bar, drawn at about 30 fps and only while they glide', p0 !== p1 && nb >= 1 && nf >= 5 && nf <= nb * (K.GLIDE * 30 + 3) + 3, JSON.stringify({ beats: nb, frames: nf }));
+    const K = await ev(() => { const B = Lull.BarIdle; return { ROWS: B.ROWS, CLEAR: B.CLEAR, POOL: B.POOL, slow: B.speedAt(B.KINDS[0][1]), fast: B.speedAt(B.KINDS[B.KINDS.length - 1][2]) }; });
+    check('four lanes, and speeds from the game\'s own gravity: a Level 1 drift (a cell a second) up to a dart', K.ROWS === 4 && Math.abs(K.slow - 1) < 1e-9 && K.fast > 6 && K.fast < 14, JSON.stringify(K));
+    const f0 = await ev(() => Lull.Collapse.idle.frames), p0 = await pix();
+    await page.waitForTimeout(1500);
+    const f1 = await ev(() => Lull.Collapse.idle.frames), p1 = await pix();
+    check('pieces travel along the bar, drawn every frame at 30 to 60 fps', p0 !== p1 && f1 - f0 >= 30 && f1 - f0 <= 100, String(f1 - f0));
     const cells = await ev(() => Lull.Collapse.idle.pieces.length);
     check('in the equipped look, a few pieces along the bar', cells >= 3, String(cells));
-    // Walk the march on by hand for four minutes of bar time at 30 fps and watch every frame.
+    // Run the parade by hand for four minutes of bar time at 30 fps and watch every frame and every move.
     const march = await ev((K) => {
       const i = Lull.Collapse.idle, P = Lull.Pieces;
-      const run = (seed) => {
-        const bad = [];
+      const run = (seed, uneven) => {
+        const bad = [], log = [];
         i.seed = seed; i.reset(i.cols);
-        const span = (p) => i.span(p);
-        const snap = () => new Map(i.pieces.map((p) => [p.n, { id: p.id, rot: p.rot, x: p.x, y: p.y, lo: span(p).lo }]));
-        let prev = snap(), beats = i.beats, g = i.g0, maxN = 0, minN = 99, turns = 0, shifts = 0, steps = 0, exits = 0, lastLo = [], ticks = 0, oneEach = true;
-        const intervals = [], spawns = [], ex0 = i.exited;
+        i.onMove = (p, kind, from, to) => log.push({ n: p.n, id: p.id, kind, from: { ...from }, to: { rot: to.rot, x: to.x, y: to.y } });
+        const at = () => new Map(i.pieces.map((p) => [p.n, { id: p.id, rot: p.rot, x: p.x, y: p.y, v0: p.v0 }]));
+        let prev = at(), minN = 99, maxN = 0, subcell = 0, turns = 0, shifts = 0, passes = 0, fastPasses = 0, rainMax = 0, rainBehind = 0, rainLooks = 0;
+        const v0s = new Set(), spawnT = [], ex0 = i.exited, ov0 = i.overtakes;
         for (let f = 0; f < 240 * 30; f++) {
-          i.step(1 / 30);
-          const now = snap(), ticked = i.beats !== beats;
-          if (ticked) { ticks++; if (i.beats - beats !== 1) bad.push('two beats in one frame'); if (i.g0 - g < K.BEAT - 1e-6) intervals.push(i.g0 - g); g = i.g0; beats = i.beats; }
-          maxN = Math.max(maxN, now.size); minN = Math.min(minN, now.size);
-          const seen = new Set();
-          let flourish = 0;
+          log.length = 0;
+          i.step(uneven ? (f % 3 ? 1 / 60 : 1 / 20) : 1 / 30);
+          const now = at();
+          const onBar = i.pieces.filter((p) => i.hi(p) > 0);
+          minN = Math.min(minN, onBar.length); maxN = Math.max(maxN, onBar.length);
+          // Nothing overlaps, and pieces sharing a lane keep CLEAR cells apart, checked from the shapes themselves.
+          const cellsOf = (p) => P.get(p.id).rots[p.rot].map(([cx, cy]) => [p.x + cx, p.y + cy]);
           for (const p of i.pieces) {
-            if (!Number.isInteger(p.x) || !Number.isInteger(p.y)) bad.push('not on the grid ' + p.id);
-            if (!P.get(p.id).rots[p.rot]) bad.push('no such rotation');
-            for (const [x, y] of i.cellsOf(p)) {
-              if (y < 0 || y >= 4) bad.push('out of the lanes ' + p.id + ' ' + y);
-              const k = x + ',' + y;
-              if (seen.has(k)) bad.push('overlap at ' + k);
-              seen.add(k);
+            if (!Number.isInteger(p.y) || !P.get(p.id).rots[p.rot]) bad.push('off the lanes ' + p.id);
+            for (const [, y] of cellsOf(p)) if (y < 0 || y >= K.ROWS) bad.push('out of the lanes ' + p.id);
+            for (const q of i.pieces) if (q !== p) for (const [ax, ay] of cellsOf(p)) for (const [bx, by] of cellsOf(q)) {
+              if (ay === by && Math.abs(ax - bx) < 1 - 1e-6) bad.push('overlap ' + p.id + q.id);
+              if (ay === by && Math.abs(ax - bx) < 1 + K.CLEAR - 1e-6) bad.push('closer than ' + K.CLEAR + ' ' + p.id + q.id);
             }
-            for (const q of i.pieces) if (q !== p) { const a = span(p), b = span(q); if (b.lo <= a.hi + K.SPACE && b.hi >= a.lo - K.SPACE) bad.push('closer than ' + K.SPACE + ' columns'); }
-            const was = prev.get(p.n);
-            if (!was) { if (ticked) spawns.push(i.beats); else bad.push('came in off the beat'); continue; }
-            const dx = p.x - was.x, dy = p.y - was.y, moved = dx || dy || p.rot !== was.rot;
-            if (!ticked) { if (moved) bad.push('moved off the beat ' + p.id); continue; }
-            // Every piece, every beat, one cell right, a turning one too: nobody stands still, hops or walks back.
-            if (dx !== 1) { bad.push('out of step on a beat ' + p.id + ' dx ' + dx); continue; }
-            if (p.rot !== was.rot) {
-              turns++; flourish++;
-              const d = (p.rot - was.rot + 4) % 4;
-              const first = P.kicksFor(P.get(p.id), was.rot, p.rot)[0];
-              if (d === 2 || dy !== 0 || first[0] !== 0 || first[1] !== 0) bad.push('turn off its SRS centre or kicked ' + p.id + ' ' + was.rot + '>' + p.rot + ' ' + dx + ',' + dy);
-            } else if (dy === 0) steps++;
-            else if (Math.abs(dy) === 1) { shifts++; flourish++; }
-            else bad.push('not one cell ' + dx + ',' + dy);
           }
-          if (flourish > 1) oneEach = false;
-          for (const [n, w] of prev) if (!now.has(n)) { exits++; lastLo.push(w.lo); if (!ticked) bad.push('left off the beat'); }
+          // Moves: whole lanes, or the game's SRS turn with one of its kicks; nothing else jumps.
+          for (const m of log) {
+            const dx = m.to.x - m.from.x, dy = m.to.y - m.from.y;
+            if (m.kind === 'shift') { shifts++; if (Math.abs(dx) > 1e-9 || Math.abs(dy) !== 1 || m.to.rot !== m.from.rot) bad.push('shift not one lane'); }
+            else {
+              turns++;
+              const d = (m.to.rot - m.from.rot + 4) % 4, ks = P.kicksFor(P.get(m.id), m.from.rot, m.to.rot);
+              if ((d !== 1 && d !== 3) || !ks.some(([kx, ky]) => Math.abs(kx - dx) < 1e-9 && ky === dy)) bad.push('turn not SRS ' + m.id + ' ' + m.from.rot + '>' + m.to.rot + ' ' + dx + ',' + dy);
+            }
+          }
+          for (const p of i.pieces) {
+            v0s.add(p.v0);
+            const was = prev.get(p.n);
+            if (!was) { spawnT.push(i.t); if (p.x + P.get(p.id).rotBounds[p.rot].maxX + 1 > 0.5) bad.push('came in on the bar'); continue; }
+            const moved = log.some((m) => m.n === p.n);
+            // Travel is smooth: forward only, less than a cell a frame, and mostly between whole cells.
+            if (!moved) {
+              const dx = p.x - was.x;
+              if (dx < -1e-9 || dx >= 1 || p.y !== was.y || p.rot !== was.rot) bad.push('jumped ' + p.id + ' ' + dx);
+              if (Math.abs(p.x - Math.round(p.x)) > 0.01) subcell++;
+            }
+          }
+          // Overtakes: one piece's centre passing another's, and who passed whom.
+          for (const [n, a] of now) for (const [m, b] of now) {
+            const pa = prev.get(n), pb = prev.get(m);
+            if (pa && pb && pa.x < pb.x && a.x > b.x) { passes++; if (a.v0 > b.v0) fastPasses++; }
+          }
+          // The rain: bounded, and lit behind the pieces that make it.
+          const lit = i.rainCount();
+          rainMax = Math.max(rainMax, lit);
+          if (f % 30 === 0) for (const p of onBar) {
+            const b = P.get(p.id).rotBounds[p.rot];
+            if (p.v < 0.8 || p.x + b.minX < 6 || p.x + b.maxX > i.cols - 8) continue;
+            rainLooks++;
+            for (let k = 0; k < K.POOL; k++) {
+              if (!(i.t - i.rt[k] < i.rl[k])) continue;
+              const col = i.rx[k], row = i.ry[k];
+              if (row >= p.y + b.minY && row <= p.y + b.maxY && col < p.x + b.minX && col > p.x + b.minX - 12) { rainBehind++; break; }
+            }
+          }
           prev = now;
         }
-        const gaps = spawns.slice(1).map((b, k) => b - spawns[k]);
-        return { bad: bad.slice(0, 5), maxN, minN, turns, shifts, steps, ticks, oneEach, intervals: intervals.slice(0, 3), exits, exited: i.exited - ex0, cols: i.cols,
-          gone: lastLo.every((lo) => lo >= i.cols - 1), gaps, keys: Object.keys(i).filter((k) => /grid|stack|flying/.test(k)),
-          sig: JSON.stringify(i.pieces.map((p) => [p.id, p.rot, p.x, p.y])) };
+        i.onMove = null;
+        const gaps = spawnT.slice(1).map((t, k) => Math.round((t - spawnT[k]) * 10) / 10);
+        const vs = [...v0s];
+        return { bad: bad.slice(0, 5), nbad: bad.length, minN, maxN, subcell, turns, shifts, passes, fastPasses, overtakes: i.overtakes - ov0, exited: i.exited - ex0, cols: i.cols,
+          speeds: vs.length, vmin: Math.min(...vs), vmax: Math.max(...vs), gaps, rainMax, rainBehind, rainLooks,
+          sig: JSON.stringify(i.pieces.map((p) => [p.id, p.rot, p.x.toFixed(6), p.y])) };
       };
-      const a = run(7919), b = run(7919), c = run(104729);
+      const a = run(7919), b = run(7919), c = run(104729), d = run(31337, true);
       i.reset(i.cols);
-      return { a, same: a.sig === b.sig && a.turns === b.turns && a.gaps.join() === b.gaps.join(), differs: a.sig !== c.sig, c: { bad: c.bad, turns: c.turns, shifts: c.shifts } };
+      return { a, c: { bad: c.bad, passes: c.passes }, d: { bad: d.bad, passes: d.passes }, same: a.sig === b.sig && a.turns === b.turns && a.gaps.join() === b.gaps.join(), differs: a.sig !== c.sig };
     }, K);
-    const m = march.a, gaps = m.gaps;
-    check('every piece steps on the one shared beat, all together, and nothing moves between beats', m.bad.length === 0 && march.c.bad.length === 0 && m.ticks >= Math.floor(240 / K.BEAT) - 1 && m.intervals.length === 0, JSON.stringify(m.bad.concat(march.c.bad, m.intervals)));
-    check('they step right a whole cell at a time, every one of them on every beat; now and then one turns on the game\'s SRS centre (never kicked) or changes lane as it steps, never both, never two at once, and rarely', m.steps > 500 && m.turns >= 5 && m.shifts >= 3 && m.oneEach && (m.turns + m.shifts) * 12 < m.steps, JSON.stringify({ steps: m.steps, turns: m.turns, shifts: m.shifts }));
-    check('a new piece comes in after a wait that varies (' + K.MIN + ' to ' + K.MAX + ' beats, longer only if the last one is still too close)', gaps.length > 10 && Math.min(...gaps) >= K.MIN && Math.max(...gaps) <= K.MAX + 4 && new Set(gaps).size >= 5, JSON.stringify(gaps));
-    check('none of them land or stack: each walks off the right edge and more come, a few at a time', m.exits >= 12 && m.exited === m.exits && m.gone && m.minN >= 2 && m.maxN <= Math.ceil(m.cols / (K.MIN - 1)) && m.keys.length === 0, JSON.stringify({ exits: m.exits, minN: m.minN, maxN: m.maxN, cols: m.cols }));
-    check('the march is the same for the same seed, and another seed walks another way', march.same && march.differs, JSON.stringify({ same: march.same, differs: march.differs }));
-    // Dragging the collapsed bar's edge keeps the march: the same pieces in the same places, the beat going on.
-    const pose = () => ev(() => { const i = Lull.Collapse.idle; i.resize(); return { cols: i.cols, beats: i.beats, next: i.next, due: i.due, serial: i.serial, pieces: i.pieces.map((p) => [p.n, p.id, p.rot, p.x, p.y].join()), los: i.pieces.map((p) => i.span(p).lo) }; });
+    const m = march.a;
+    check('never an overlap, and pieces sharing a lane always a clear cell apart, over minutes of passing (uneven frames too)', m.nbad === 0 && march.c.bad.length === 0 && march.d.bad.length === 0, JSON.stringify([m.bad, march.c.bad, march.d.bad]));
+    check('they fall along the bar smoothly, between whole cells, each at its own speed from a drift to a dart', m.subcell > 10000 && m.speeds >= 20 && m.vmin < 1.5 && m.vmax > 4, JSON.stringify({ subcell: m.subcell, speeds: m.speeds, vmin: m.vmin, vmax: m.vmax }));
+    check('lanes and turns are the game\'s: whole lanes, SRS turns with their kicks, now and then', m.turns >= 20 && m.shifts >= 20, JSON.stringify({ turns: m.turns, shifts: m.shifts }));
+    check('fast pieces pass slow ones, weaving round them', m.passes >= 5 && m.fastPasses === m.passes && m.overtakes === m.passes && march.c.passes >= 3 && march.d.passes >= 3, JSON.stringify({ passes: m.passes, fast: m.fastPasses, overtakes: m.overtakes, c: march.c.passes, d: march.d.passes }));
+    check('a new piece comes in at varying intervals, and the parade flows on: never empty, never crowded', m.gaps.length > 20 && new Set(m.gaps).size >= 10 && m.minN >= 2 && m.maxN <= Math.ceil(m.cols / 5) && m.exited >= 20, JSON.stringify({ gaps: m.gaps.slice(0, 12), minN: m.minN, maxN: m.maxN, exited: m.exited }));
+    check('a rain of glyphs trails behind the moving pieces, bounded', m.rainMax > 10 && m.rainMax <= K.POOL && m.rainLooks > 50 && m.rainBehind >= m.rainLooks * 0.8, JSON.stringify({ rainMax: m.rainMax, looks: m.rainLooks, behind: m.rainBehind }));
+    check('the parade is the same for the same seed, and another seed goes another way', march.same && march.differs, JSON.stringify({ same: march.same, differs: march.differs }));
+    // Reduced motion: one still frame, no rain.
+    const still = await ev(async () => {
+      const i = Lull.Collapse.idle;
+      Lull.app.settings.motion = 'reduced';
+      const t0 = i.t, x0 = i.pieces.map((p) => p.x).join();
+      await new Promise((r) => setTimeout(r, 900));
+      i.atlas.clear(); i.draw();
+      const out = { t: i.t === t0, x: i.pieces.map((p) => p.x).join() === x0, rain: i.atlas.size, lit: i.rainCount() };
+      Lull.app.settings.motion = 'full';
+      return out;
+    });
+    check('under reduced motion the bar holds one still frame, and draws no rain', still.t && still.x && still.rain === 0, JSON.stringify(still));
+    // Dragging the collapsed bar's edge keeps the parade: the same pieces in the same places.
+    const pose = () => ev(() => { const i = Lull.Collapse.idle; i.resize(); return { cols: i.cols, t: i.t, serial: i.serial, pieces: i.pieces.map((p) => [p.n, p.id, p.rot, p.x, p.y].join()), los: i.pieces.map((p) => i.lo(p)) }; });
     await ev(() => Lull.Collapse.idle.stop());
     const rz0 = await pose();
     await page.setViewportSize({ width: 540, height: 760 });
@@ -2370,13 +2407,13 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     const rz2 = await pose();
     await page.setViewportSize({ width: 520, height: 760 });
     await ev(() => Lull.Collapse.idle.start());
-    const same = (a, b) => a.beats === b.beats && a.next === b.next && a.due === b.due && a.serial === b.serial;
-    check('resizing the collapsed bar keeps its pieces where they were and the beat going (no reshuffle)',
+    const same = (a, b) => a.t === b.t && a.serial === b.serial;
+    check('resizing the collapsed bar keeps its pieces where they were (no reshuffle)',
       rz1.cols > rz0.cols && rz2.cols < rz0.cols && same(rz0, rz1) && same(rz1, rz2) && rz1.pieces.join('|') === rz0.pieces.join('|')
         && rz2.pieces.length >= 1 && rz2.pieces.every((q) => rz1.pieces.includes(q)) && rz2.los.every((lo) => lo < rz2.cols)
         && rz1.pieces.filter((q, k) => rz1.los[k] < rz2.cols).join('|') === rz2.pieces.join('|'),
       JSON.stringify({ rz0, rz1, rz2 }));
-    // The same drawing in both themes and two widths, at rest and as a frame strip through one beat's glide (a turn in it).
+    // The same drawing in both themes and two widths, as a frame strip.
     for (const theme of ['dark', 'light']) {
       await ev((t) => { Lull.app.settings.theme = t; Lull.app.applySettings(); }, theme);
       for (const w of [520, 900]) {
@@ -2384,37 +2421,27 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
         await page.waitForTimeout(250);
         const strip = await ev(() => {
           const i = Lull.Collapse.idle;
-          // As the bar opens at this width (dragged to it, the pieces would keep their places and walk on into the rest).
-          i.stop(); i.look = i.getLook(); i.resize(true);
-          const cv = i.cv, px = () => cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
-          // The frame at rest just before a beat, and the first frame of the glide after it: the same, pixel for pixel,
-          // whatever the beat brings (a turn's cells keep their light where it was).
-          const t0 = i.turns || 0;
-          let rest = null, pop = 0, turnPop = -1;
-          for (let n = 0; n < 400 && (i.turns || 0) === t0; n++) {
-            i.t = i.next - 1e-6; i.draw(); rest = px();
-            i.step(i.next - i.t + 1e-9);
-            i.t = i.g0; i.draw(); const now = px();
-            let d = 0; for (let j = 0; j < now.length; j++) if (Math.abs(now[j] - rest[j]) > 2) d++;
-            if (d) pop++;
-            if ((i.turns || 0) !== t0) turnPop = d;
-          }
-          if ((i.turns || 0) === t0) i.step(i.next - i.t + 1e-9);
-          const n = 6, out = document.createElement('canvas');
+          // As the bar opens at this width (dragged to it, the pieces would keep their places and travel on into the rest).
+          i.stop(); i.look = i.getLook(); i.resize(true); i.reset(i.cols);
+          const cv = i.cv, n = 8, out = document.createElement('canvas');
           out.width = cv.width; out.height = cv.height * n;
           const o = out.getContext('2d');
-          const g0 = i.g0, sums = [];
+          o.fillStyle = 'rgb(' + getComputedStyle(document.body).getPropertyValue('--bg').trim() + ')'; o.fillRect(0, 0, out.width, out.height);
+          const sums = [];
+          let crisp = true;
           for (let k = 0; k < n; k++) {
-            i.t = g0 + (i.constructor.GLIDE * k) / (n - 1); i.draw();
+            for (let f = 0; f < 12; f++) i.step(1 / 30);
+            i.draw();
             o.drawImage(cv, 0, cv.height * k);
             const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
             let sum = 0; for (let j = 3; j < d.length; j += 16) sum += d[j]; sums.push(sum);
+            // Every cell on whole device pixels, wherever it has travelled to.
+            for (const p of i.pieces) { const X = i.snap(i.left + p.x * i.s) * i.dpr; if (Math.abs(Math.round(X) - X) > 1e-6 || Math.abs(X - (i.left + p.x * i.s) * i.dpr) > 0.5 + 1e-6 || !Number.isInteger(i.top * i.dpr) || !Number.isInteger(i.s * i.dpr)) crisp = false; }
           }
           i.start();
-          return { url: out.toDataURL(), distinct: new Set(sums).size, drawn: sums.every((x) => x > 0), pop, turnPop };
+          return { url: out.toDataURL(), distinct: new Set(sums).size, drawn: sums.every((x) => x > 0), crisp };
         });
-        check('the bar draws its pieces through a glide (' + theme + ', ' + w + ')', strip.drawn && strip.distinct >= 3, JSON.stringify({ distinct: strip.distinct }));
-        check('no frame jumps as a beat falls, a turn\'s first frame included (' + theme + ', ' + w + ')', strip.pop === 0 && strip.turnPop === 0, JSON.stringify({ pop: strip.pop, turnPop: strip.turnPop }));
+        check('the bar draws its pieces and their rain as they travel, every cell on whole device pixels (' + theme + ', ' + w + ')', strip.drawn && strip.distinct >= 6 && strip.crisp, JSON.stringify({ distinct: strip.distinct, crisp: strip.crisp }));
         if (OUT) {
           await page.screenshot({ path: path.join(OUT, '95-collapsed-' + theme + '-' + w + '.png'), clip: { x: 0, y: 0, width: w, height: 60 } });
           require('fs').writeFileSync(path.join(OUT, '95-collapsed-strip-' + theme + '-' + w + '.png'), Buffer.from(strip.url.split(',')[1], 'base64'));
