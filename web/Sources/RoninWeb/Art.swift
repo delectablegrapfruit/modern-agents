@@ -114,6 +114,43 @@ func parseFrame(_ key: String) -> Frame? {
     }
 }
 
+/// One of the ronin's frames with the blade kept in its scabbard, for what befalls him before the stage's draw (the
+/// app's `HeroSprite.sheathedPiece`): on his feet (the blow that fells him included) he stands as the iai does, the
+/// sword hand on the hilt and the other at the scabbard's mouth (unless pressed to his wound); going over, the other
+/// hand is thrown out to break his fall.
+func sheathedPose(_ frame: Frame) -> Pose {
+    var p = Figure.pose(.hero, frame)
+    let afoot: Bool
+    if case .fall(let k) = frame { afoot = k == 0 } else { afoot = true }
+    if afoot {
+        let iai = Figure.pose(.hero, .iai(0))
+        p.front = iai.front
+        p.back = iai.back
+        p.shift = iai.shift
+        p.lift = iai.lift
+        p.airborne = false
+        if !p.clutch { p.grip = .saya }
+    } else if case .fall(let k) = frame, k < 3 {
+        p.grip = .saya
+    }
+    p.sheathed = 1
+    p.saya = 0
+    p.ghosts = []
+    p.drag = 0
+    p.smear = nil
+    return p
+}
+
+/// How long the brute's club is, in his heights (`FoeSprite.clubLength`), and where it runs in a frame, grip to head
+/// (`FoeSprite.club`): back from the head (`Figure.tip`) along the club's line.
+let clubLength: CGFloat = 0.6
+
+func club(_ cast: Cast, _ frame: Frame) -> (grip: CGPoint, head: CGPoint)? {
+    guard cast == .foe(.brute), let head = Figure.tip(cast, frame) else { return nil }
+    let angle = Figure.pose(cast, frame).blade
+    return (CGPoint(x: head.x - sin(angle) * clubLength, y: head.y + cos(angle) * clubLength), head)
+}
+
 /// Pixels a figure-height of this cast is drawn at on its sketch's canvas.
 func unit(_ cast: Cast) -> CGFloat { Figure.pixelHeight(cast) * Build.of(cast).height }
 

@@ -17,8 +17,9 @@ is on the PATH (or via `npx binaryen` when Node is; `RONIN_WASM_OPT=0` skips it,
 picks one). `web/dist/` is not committed.
 
 The web package (`web/Package.swift`) depends on the root package by path; the root package, the app and CI are
-untouched by it. RoninCore and RoninArt build for WASI against FoundationEssentials (no ICU), which is what keeps the
-module small.
+untouched by it. For WASI, RoninCore and RoninArt import no Foundation at all (`#if os(WASI)`: WASILibc for the
+maths, a few Core Graphics value types from `Geometry+WASI.swift`, the SVG preview writer and `SaveGame.load(Data)`
+left out); on every other platform they are exactly as before.
 
 ## Loading
 
@@ -188,8 +189,13 @@ under the current rules.
 - `core.frames(cast)` — frame keys drawn for the cast (`Figure.frames(for:)`); `core.has(cast, frame)`.
 - `core.footing(cast, frame)` — `Figure.footing`: `{front:{x,y}, back:{x,y}}` in figure heights from the spot stood on.
 - `core.figure(cast, frame)` — `{footing, tip` (`Figure.tip`, or null for a bow), `contact` (`Figure.contact`),
-  `smeared, armed, airborne, roll, anatomy {hip, waist, chest, neck, head, headRadius, knee, height}}`.
-- `core.sketch(cast, frame, {armed = true})` — one frame drawn, see below.
+  `club` (the brute's `{grip, head}`, `FoeSprite.club`; null for others), `smeared, armed, airborne, roll, blade,
+  blade2, lean, clutch, sheathed, anatomy {hip, waist, chest, neck, head, headRadius, knee, height}}`. Points in
+  figure heights from the feet (x toward the way he faces, y up) except `anatomy` (canvas pixels, y up).
+- `core.clashGap(heroFrame = 'clash(0)', warlordFrame = 'clash(0)')` — `Figure.clashGap`.
+- `core.sketch(cast, frame, {armed = true, sheathed = false})` — one frame drawn, see below. `sheathed` (the hero):
+  the frame with the blade kept in its scabbard, as the app draws a blow, a winded breath or the fall before the
+  stage's draw (`HeroSprite.sheathedPiece`).
 
 Casts: `'hero'`, `'grunt'`, `'runner'`, `'brute'`, `'dancer'`, `'archer'`, `'warlord'` (`'foe:grunt'` works too).
 
@@ -241,13 +247,72 @@ nOverlay, boundsX, boundsY, boundsW, boundsH, smeared(0/1), unit, anchorX, ancho
 (underlay, body, overlay in order): `kind(0 path, 1 ellipse), flags(1 fill, 2 stroke, 4 round), fillRGBA(4),
 strokeRGBA(4), width, n`, then `n` floats of data (ellipse: `x, y, w, h`; path: the commands above).
 
-### Ragdolls
+### Ragdolls — `core.ragdoll`
 
-Milestone 2 (`core.ragdoll`).
+The dead, as the app's `Carnage` (Sources/Ronin/Carnage.swift) makes them: RoninArt's `Ragdoll`, a jointed body let
+fall under its own weight, kept in the core by id until removed. Doll points are in the figure's own heights from the
+spot he stood on (x toward the way he faced, y up, the ground at 0); the page mirrors them for a figure facing left
+(`facing` −1) and scales them by `ronin × build height` (`tuning.Figure.casts[cast].height`) screen pixels per figure
+height. Rolls are random as in the app; `ragdoll.seed(n)` makes them repeatable.
+
+What the app does at a killing cut (`DuelScene.sever`), for the page to follow:
+
+1. The foe's figure freezes, drawn white, in `ragdoll.struck(cast, variant)` (variant random in
+   `0..<tuning.Figure.struckVariants`) until the blade lands (the hero's cut's impact delay).
+2. Which way he comes apart, from the cut (with gore on; with gore off every man is felled whole): `kesa` →
+   `'falling'`, `gyaku`/`nukitsuke` → `'rising'`, `dou` → `'level'`, `sune` → `'legs'`, `shomen` → `'head'`, `tsuki`
+   → `'level'` now and then (the gore's `tears`), else felled whole; the warlord always loses his head; how often a
+   cut severs at all is the gore's `severs` (Carnage.swift `Gore`). Shot by a deflected arrow: felled whole, from the
+   frame he was in.
+3. `ragdoll.sever(cast, severance, {variant, back, force})` with `back = away × facing` (away: +1 if the cut went
+   right, −1 left; facing: +1 if he stood left of the ronin, facing right) and `force` 1.5 for the warlord, 1.25 for
+   the brute, 1 otherwise. Returns:
+   - slant or level: `{upper, lower, standFor, weapon}` — `upper` flies (already reaching for a pose), `lower` stands
+     on its planted feet; after `standFor` seconds call `ragdoll.collapse(lower)`.
+   - `'legs'`: `{body, weapon}` — down onto his knees and over.
+   - `'head'`: `{body, standFor, head, weapon}` — the headless body stands `standFor` then `collapse(body)`; the head
+     is a rigid piece: draw `ragdoll.head(cast, variant)` (on the whole canvas where it was; `wound` in canvas pixels
+     y up, `angle` the way blood leaves it) and fly it yourself (the app throws it up and away, spinning, gravity,
+     one bounce, then it skids and lies).
+   - `weapon`: `{hand, turn, bow}` — his weapon leaves his hand (`Carnage.drop`): draw `ragdoll.weapon(cast)` (lying
+     level, its grip at the canvas's middle), turned by `facing × turn`, the grip at `hand` (figure heights), and fly
+     it as a rigid piece.
+4. Felled whole: `ragdoll.fell(cast, {variant | frame, force})` → `{body, weapon}`.
+5. Each frame: `ragdoll.step(dt)` (all dolls; fast path) → `[{id, time, settled, resting, hip, moved, bleeding:
+   {at, angle}, wounded, standing}]`. Redraw a doll with `ragdoll.draw(id)` when `moved × scale` passes about half a
+   pixel (the app: 0.6 points; a slow one at most every 1/40 s, a few per frame always, more while 3 ms allow). A
+   doll whose `settled` turns true is done: draw it once more and keep the picture; `remove(id)` it.
+6. `ragdoll.draw(id)` → a sketch of `doll.framed().pose`, with `place: {x, y}`: put the sketch's `anchor` (its feet
+   on the canvas) at `origin + (facing·place.x, place.y) × scale`, where origin is the spot he stood on.
+7. Blood leaves `bleeding.at` (doll terms) at `bleeding.angle` (radians from +x, before mirroring).
+
+Lower level: `create(cast, {frame | variant, style: 'plain'|'felled'|'hamstrung'|'cut', severed: {part:
+'above'|'below'|'headless', at, slant}, back, force, lift})`, `collapse(id)`, `reach(id, target = 'wild' | 'thrown'
+| 'struck' | frameKey, {variant, fling})`, `raise(id, dy)`, `push(id, joint, {x, y})`, `thrown(id, {x, y}, spin)`,
+`planted(id, on)`, `wounded(id, joint, along)`, `stir(id, amount)`, `step(dt, ids, {points: true})` (with the 11
+joints), `info(id)`, `remove(ids)`, `clear()`, `count()`, `joints` (`{low: 0, high: 1, head: 2, frontKnee: 3,
+frontFoot: 4, backKnee: 5, backFoot: 6, frontElbow: 7, frontHand: 8, backElbow: 9, backHand: 10}`).
+
+Costs (Node, one doll): `step` ≈ 30 µs of physics per doll per 1/60 s (plus ≈ 40 µs per call), `draw` ≈ 100 µs.
+
+## Size and speed
+
+`ronin.wasm`: ≈4.3 MB (≈1.55 MB gzipped) after `wasm-opt -Oz`; ≈6.7 MB straight from the linker. Most of it is the
+Swift standard library (≈5.5 MB of the unoptimised size). Foundation is not linked at all: the bridge carries its
+own Codable JSON coder (`JSONCoding.swift`), checked against Foundation's (`web/test/native`: saves written by either
+read back identically by both). Loading and starting it takes ≈30 ms in Node.
+
+Per call, in Node 22 (a browser is similar): `state()` ≈ 30–110 µs (more foes, more), `advance(1/60)` ≈ 5–30 µs,
+`strike` ≈ 10 µs, other calls ≈ 15–90 µs, `sketch` ≈ 0.1–1.4 ms (all 376 frames of all casts ≈ 150 ms).
 
 ## Wire format (for maintainers)
 
 Exports: `ronin_buffer(n) → ptr` (an input buffer of n bytes), `ronin_out() → ptr` (the last output),
 `ronin_rpc(len) → outLen` (JSON request `{op, …}` → `{ok, result | error}`), `ronin_advance(dt) → len`,
-`ronin_strike(side ∓1) → len`, `ronin_state() → len` (JSON), `ronin_sketch(len) → len` (input `cast|frame|armed`,
-output floats). The module is a WASI reactor: `_initialize` once, then any export.
+`ronin_strike(side ∓1) → len`, `ronin_state() → len` (JSON), `ronin_sketch(len) → len` (input
+`cast|frame|armed|sheathed`, output floats), `ronin_piece(len) → len` (JSON `{kind: doll|struck|head|weapon, …}` →
+floats), `ronin_dolls_step(dt) → len` (JSON), `ronin_doll_draw(id) → len` (floats: the sketch, then `place.x,
+place.y`). The module is a WASI reactor: `_initialize` once, then any export. Outputs stay valid until the next call.
+
+Checks: `web/build.sh --test` (the module, in Node), and the save format against Foundation's:
+`docker run --rm -v "$PWD":/work -w /work/web/test/native swift:6.0 swift run -c release --scratch-path /tmp/b`.

@@ -215,17 +215,25 @@ export class Core {
   /** Footing, weapon tip, blade contact, anatomy and flags for a frame. */
   figure(cast, frame) { return this._call({ op: 'figure', cast: castKey(cast), frame }); }
 
+  /** Figure.clashGap: how far apart (ronin heights) the ronin and the warlord stand for their blades to meet. */
+  clashGap(heroFrame = 'clash(0)', warlordFrame = 'clash(0)') {
+    return this._call({ op: 'clashGap', frame: heroFrame, warlordFrame });
+  }
+
   /** Draws a frame: { width, height, anchor, rim, bounds, underlay, body, overlay, ... } (see API.md).
-   *  `armed: false` leaves the weapon out. */
-  sketch(cast, frame, { armed = true } = {}) {
+   *  `armed: false` leaves the weapon out. `sheathed: true` (the hero): the frame with the blade kept in its
+   *  scabbard, as the app draws what befalls him before the stage's draw (a blow, winded, the fall). */
+  sketch(cast, frame, { armed = true, sheathed = false } = {}) {
     const key = castKey(cast);
-    const length = this.exports.ronin_sketch(this._input(`${key}|${frame}|${armed ? 1 : 0}`));
+    const length = this.exports.ronin_sketch(this._input(`${key}|${frame}|${armed ? 1 : 0}|${sheathed ? 1 : 0}`));
     if (!length) throw new Error(`Ronin core: no sketch for ${key} / ${frame}`);
     const ptr = this.exports.ronin_out();
     const floats = new Float32Array(this.exports.memory.buffer.slice(ptr, ptr + length));
     const sketch = decodeSketch(floats, 0).sketch;
     sketch.cast = key;
     sketch.frame = frame;
+    sketch.armed = armed;
+    sketch.sheathed = sheathed;
     return sketch;
   }
 }
@@ -363,8 +371,117 @@ function paint(ctx, shapes) {
 
 // MARK: Ragdolls
 
+/** `core.ragdoll`: the dead, as the app's Carnage makes them (see API.md, "Ragdolls"). Dolls live in the core by id
+ *  until removed. Points are in figure heights from the spot he stood on, x toward the way he faced, y up. */
 class RagdollAPI {
-  constructor(core) { this.core = core; }
+  constructor(core) {
+    this.core = core;
+    this._joints = null;
+  }
+
+  _do(action, options = {}) {
+    return this.core._call({ op: 'ragdoll', options: { ...options, action } });
+  }
+
+  _piece(request) {
+    const core = this.core;
+    const length = core.exports.ronin_piece(core._input(JSON.stringify(request)));
+    if (!length) throw new Error(`Ronin core: no ${request.kind} sketch for ${JSON.stringify(request)}`);
+    const ptr = core.exports.ronin_out();
+    const floats = new Float32Array(core.exports.memory.buffer.slice(ptr, ptr + length));
+    const { sketch, next } = decodeSketch(floats, 0);
+    return { sketch, floats, next };
+  }
+
+  /** The joint indices: {low, high, head, frontKnee, frontFoot, backKnee, backFoot, frontElbow, frontHand, backElbow, backHand}. */
+  get joints() {
+    if (!this._joints) this._joints = this._do('joints');
+    return this._joints;
+  }
+
+  /** Makes the dolls' rolls repeatable (they are random otherwise, as in the app). */
+  seed(seed) { return this._do('seed', { seed: seed == null ? undefined : String(seed) }); }
+
+  /** Carnage.sever: a foe cut apart by a killing cut. `severance`: 'falling' | 'rising' (kesa / gyaku-kesa, on a
+   *  slant), 'level' (dō), 'legs' (sune-giri), 'head'. From `Figure.struck(cast, variant)`. `back`: the way the upper
+   *  part is thrown along his own facing (the app passes away-from-the-ronin × his facing). Returns ids and timings:
+   *  {upper, lower, standFor} | {body} (legs) | {body, standFor, head: variant} (head), and `weapon` {hand, turn, bow}. */
+  sever(cast, severance = 'level', { variant = 0, back = -1, force = 1 } = {}) {
+    return this._do('sever', { cast, severance, variant, back, force });
+  }
+
+  /** Carnage.fell: run through or shot, down whole from `frame` or `Figure.struck(cast, variant)` (default the
+   *  stagger). Returns {body, weapon}. */
+  fell(cast, { frame, variant, back = -1, force = 1 } = {}) {
+    return this._do('fell', { cast, frame, variant, back, force });
+  }
+
+  /** A doll of your own: style 'plain' | 'felled' | 'hamstrung' | 'cut' (with `severed: {part: 'above'|'below'|'headless', at, slant}`). */
+  create(cast, { frame, variant, style = 'plain', severed, back, force, lift } = {}) {
+    return this._do('create', { cast, frame, variant, style, severed, back, force, lift });
+  }
+
+  /** A standing doll's knees go (and it reaches for the pose it was given, as the app does after `standFor`). */
+  collapse(id) { return this._do('collapse', { id }); }
+  /** Reach for a pose: 'wild' (any a blow throws a man into), 'thrown', 'struck' (+variant), or a frame key. */
+  reach(id, target = 'wild', { variant, fling = false } = {}) {
+    return this._do('reach', { id, target, targetVariant: variant, fling });
+  }
+  raise(id, dy) { return this._do('raise', { id, dy }); }
+  push(id, joint, { x = 0, y = 0 } = {}) { return this._do('push', { id, joint, x, y }); }
+  thrown(id, { x = 0, y = 0 } = {}, spin = 0) { return this._do('thrown', { id, x, y, spin }); }
+  planted(id, on = true) { return this._do('planted', { id, on }); }
+  wounded(id, joint, along = 0.5) { return this._do('wounded', { id, joint, along }); }
+  stir(id, amount = 1) { return this._do('stir', { id, amount }); }
+
+  /** Steps the dolls (all when `ids` is left out) `dt` seconds. Returns each one's
+   *  {id, time, settled, resting, hip, moved, bleeding: {at, angle}, wounded, standing, points?}. `moved`: how far
+   *  (figure heights) its joints have gone since it was last drawn — the app redraws a doll once that passes
+   *  0.6 points on screen. */
+  step(dt, ids, { points = false } = {}) {
+    if (ids == null && !points) {
+      const core = this.core;
+      return JSON.parse(core._outText(core.exports.ronin_dolls_step(+dt || 0)));
+    }
+    return this._do('step', { dt, ids: ids == null ? undefined : [].concat(ids), points });
+  }
+
+  info(id) { return this._do('info', { id }); }
+  remove(ids) { return this._do('remove', { ids: [].concat(ids) }); }
+  clear() { return this._do('clear'); }
+  count() { return this._do('count'); }
+
+  /** Draws a doll as it now lies (`Figure.sketch(cast, pose: doll.framed().pose)`). `sketch.place` {x, y}: where the
+   *  sketch's anchor (its feet on the canvas) goes, in the doll's terms: world = origin + facing·place.x·scale,
+   *  origin.y + place.y·scale (scale: screen pixels per figure height = ronin × build height). */
+  draw(id) {
+    const core = this.core;
+    const length = core.exports.ronin_doll_draw(id | 0);
+    if (!length) throw new Error(`Ronin core: no ragdoll ${id}`);
+    const ptr = core.exports.ronin_out();
+    const floats = new Float32Array(core.exports.memory.buffer.slice(ptr, ptr + length));
+    const { sketch, next } = decodeSketch(floats, 0);
+    sketch.place = { x: floats[next], y: floats[next + 1] };
+    return sketch;
+  }
+
+  /** Figures.struck: a foe frozen in the pose a killing blow throws him into (his cloth at rest), weapon in hand. */
+  struck(cast, variant = 0, { armed = true } = {}) {
+    return this._piece({ kind: 'struck', cast, variant, armed }).sketch;
+  }
+
+  /** Figures.head: the head struck off from `struck(cast, variant)`, where it was on the canvas, with `wound` (canvas
+   *  pixels, y up: where the neck was cut) and `angle` (radians: the way blood leaves it). */
+  head(cast, variant = 0) {
+    const sketch = this._piece({ kind: 'head', cast, variant }).sketch;
+    const { wound, angle } = this._do('head', { cast, variant });
+    sketch.wound = wound;
+    sketch.angle = angle;
+    return sketch;
+  }
+
+  /** Figure.weapon: a foe's weapon on its own, lying level, its grip at the canvas's middle. */
+  weapon(cast) { return this._piece({ kind: 'weapon', cast }).sketch; }
 }
 
 // MARK: WASI, as little of it as the Swift runtime needs
