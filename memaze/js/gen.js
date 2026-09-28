@@ -334,7 +334,7 @@
     const polarish = lat === 'polar';
     const aspect = polarish ? 1 : mask.aspect;
     const jit = lat === 'polar' || lat === 'organic' ? 0 : p.jitter;
-    const S = spacingFor(lat, p.hw * (1 + p.hwVar), jit + p.wobble);
+    const S = spacingFor(lat, p.hw * (1 + p.hwVar), jit + p.wobble) * (p.spread || 1); // (the Gauntlet's stone blocks are bigger)
     const nodeArea = LATTICES[lat].area * S * S;
     const N = p.nodes / maskFill(mask);
     const H2 = Math.sqrt((N * nodeArea) / (4 * aspect)), W2 = H2 * aspect;
@@ -434,6 +434,38 @@
         nb[e.a].add(e.b); nb[e.b].add(e.a);
       });
     }
+    // Lanes (the Gauntlet's stone grids, after Super Mario Galaxy's Cyclone Stone): a few rows and columns opened up end
+    // to end into long straight avenues for Tox Boxes to tumble along, cutting across the maze between them.
+    const lanes = [];
+    if (p.lanes > 0 && lat === 'square' && !jit) {
+      const lines = new Map();
+      edges.forEach((e, i) => {
+        if (e.bridge) return;
+        const A = nodes[e.a], B = nodes[e.b], h = Math.abs(A.y - B.y) < 1;
+        const k = (h ? 'h' : 'v') + Math.round(h ? A.y : A.x);
+        if (!lines.has(k)) lines.set(k, { h, at: h ? A.y : A.x, list: [] });
+        lines.get(k).list.push({ i, lo: Math.min(h ? A.x : A.y, h ? B.x : B.y), a: (h ? A.x < B.x : A.y < B.y) ? e.a : e.b, b: (h ? A.x < B.x : A.y < B.y) ? e.b : e.a });
+      });
+      const runs = [];
+      for (const L of lines.values()) {
+        L.list.sort((x, y) => x.lo - y.lo);
+        let run = [];
+        for (const q of L.list) {
+          if (run.length && run[run.length - 1].b !== q.a) { runs.push({ h: L.h, at: L.at, run }); run = []; }
+          run.push(q);
+        }
+        if (run.length) runs.push({ h: L.h, at: L.at, run });
+      }
+      const cands = runs.filter((x) => x.run.length >= 4);
+      r.shuffle(cands);
+      cands.sort((x, y) => y.run.length - x.run.length + (r() - 0.5) * 4);
+      for (const c of cands) {
+        if (lanes.length >= p.lanes) break;
+        if (lanes.some((l) => l.h === c.h && Math.abs(l.at - c.at) < 2.5 * S)) continue; // parallel lanes keep a few rows apart
+        for (const q of c.run) inTree[q.i] = 1;
+        lanes.push({ h: c.h, at: c.at, nodes: [c.run[0].a].concat(c.run.map((q) => q.b)) });
+      }
+    }
     let maze = edges.filter((e, i) => inTree[i]);
     const madj = adjacency(n, maze);
 
@@ -507,6 +539,7 @@
       parTime: Math.ceil(par),
       timeLimit: Math.ceil((par * p.timeFactor + 15) / 5) * 5,
       fixes,
+      lanes: lanes.map((l) => l.nodes),
     };
   }
   function boundsOf(edges) {

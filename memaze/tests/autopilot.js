@@ -2,8 +2,8 @@
 // route the level generator says solves the level: fetching keys before their doors, pressing switches, riding moving
 // platforms, stepping through portals, holding back on ice, taking an item box's item and using it (a Magic carpet or
 // a Launch across a gap, Shrink for a shrink gate), and in the Gauntlet getting past each Tox Box by standing on a
-// hollow tile until it has tumbled right over. Proves every level can be finished inside its time limit
-// without a single touch of the edge, and shows how par compares with a steady run that knows the way.
+// hollow tile until it has tumbled right over, or waiting for one to go by. Proves every level can be finished inside
+// its time limit without a single touch of the edge, and shows how par compares with a steady run that knows the way.
 //
 //   node tests/autopilot.js                    levels 1-25
 //   node tests/autopilot.js 1-60               a range
@@ -90,9 +90,10 @@ if (!levels.length || levels.some((l) => !(l >= 1)) || !(speed > 0)) { console.e
         else if (leg.type === 'shrink') plan.push({ type: 'shrink', phase: 'use' });
         else if (leg.type === 'warp') plan.push({ type: 'warp', to: m.portals[leg.portal].b });
       }
-      // Tox Boxes: where a path runs along a box's track, the spots to wait at (clear of it at either end, and each hollow
-      // tile in between, where it only ever lands hollow side down), and a check that going on from one to the next now
-      // never meets the box: never walking into it at rest, never under it as it lands (or just about to).
+      // Tox Boxes: the stretches of a path where one could meet a box (along its track, or across it), each with spots to
+      // wait at (clear of every box just before and after, and each hollow tile on the way, where its box only ever lands
+      // hollow side down), and a check that going on from one spot to the next now never meets a box: never walking into
+      // one at rest, never under one as it lands (or is just about to).
       const toxes = m.toxes || [], Rp = G.box() * ((G.sprite.mask && G.sprite.mask.maxR) || 0.5) + 3;
       const locate = (P, q) => { let best = { d: Infinity, s: 0 }; for (let i = 1; i < P.pts.length; i++) { const a = P.pts[i - 1], b = P.pts[i], L = P.cum[i] - P.cum[i - 1] || 1, f = Math.max(0, Math.min(1, ((q.x - a.x) * (b.x - a.x) + (q.y - a.y) * (b.y - a.y)) / (L * L))), x = a.x + (b.x - a.x) * f, y = a.y + (b.y - a.y) * f, d = Math.hypot(q.x - x, q.y - y); if (d < best.d) best = { d, s: P.cum[i - 1] + f * L }; } return best; };
       const pointAt = (P, d) => { let i = 1; while (i < P.pts.length - 1 && P.cum[i] < d) i++; const f = Math.min(1, Math.max(0, (d - P.cum[i - 1]) / (P.cum[i] - P.cum[i - 1] || 1))); return { x: P.pts[i - 1].x + (P.pts[i].x - P.pts[i - 1].x) * f, y: P.pts[i - 1].y + (P.pts[i].y - P.pts[i - 1].y) * f }; };
@@ -103,25 +104,35 @@ if (!levels.length || levels.some((l) => !(l >= 1)) || !(speed > 0)) { console.e
         const st = MZ.toxAt(bx, t), k = st.f === 0 ? st.i : st.f > 0.75 ? st.j : -1; // (in the air, it's only where it lands that counts)
         return k < 0 || !over(bx.tiles[k], q, bx.s / 2) || (MZ.toxFace(bx, k) === 0 && within(bx.tiles[k], q, bx.s / 2)); // (the game allows a little more)
       };
+      const near = (q) => toxes.filter((bx) => bx.tiles.some((T) => over(T, q, bx.s / 2 + 4)));
       for (const P of plan) {
         if (P.type !== 'path') continue;
         P.tox = [];
-        for (const bx of toxes) {
-          const at = bx.tiles.map((T) => locate(P, T));
-          if (at.some((q) => q.d > 2)) continue; // not along this path
-          const lo = Math.min(at[0].s, at[bx.n].s), hi = Math.max(at[0].s, at[bx.n].s), clear = (d) => bx.tiles.every((T) => !over(T, pointAt(P, d), bx.s / 2 + 4));
-          let a = lo, b = hi;
-          while (a > 0 && !clear(a)) a -= 2;
-          while (b < P.len && !clear(b)) b += 2;
-          const spots = [a].concat(at.filter((q, k) => k > 0 && k < bx.n && MZ.toxFace(bx, k) === 0).map((q) => q.s).sort((x, y) => x - y), [b]);
-          P.tox.push({ bx, spots, a, b, go: null });
+        if (!toxes.length) continue;
+        let z = null;
+        for (let d = 0; ; d = Math.min(P.len, d + 3)) {
+          const hit = near(pointAt(P, d));
+          if (hit.length) { if (!z) z = { a: Math.max(0, d - 3), boxes: new Set() }; for (const bx of hit) z.boxes.add(bx); }
+          else if (z) { z.b = d; P.tox.push(z); z = null; }
+          if (d >= P.len) break;
         }
-        P.tox.sort((x, y) => x.a - y.a);
+        if (z) { z.b = P.len; P.tox.push(z); }
+        for (const z of P.tox) {
+          z.boxes = [...z.boxes];
+          const holes = [];
+          for (const bx of z.boxes) bx.tiles.forEach((T, k) => {
+            if (MZ.toxFace(bx, k) !== 0) return;
+            const q = locate(P, T);
+            if (q.d < 2 && q.s > z.a && q.s < z.b && near(T).length === 1) holes.push(q.s);
+          });
+          z.spots = [z.a].concat(holes.sort((x, y) => x - y), [z.b]);
+          z.go = null;
+        }
       }
-      const passable = (P, bx, s0, s1, t0) => { // from s0 to s1 at full speed from t0 (the arrival spot is safe to wait at)
+      const passable = (P, z, s0, s1, t0) => { // from s0 to s1 at full speed from t0 (the arrival spot is safe to wait at)
         for (let k = 1; ; k++) {
-          const d = Math.min(s1, s0 + speed * dt * k);
-          if (!safe(bx, pointAt(P, d), t0 + (k - 1) * dt)) return false;
+          const d = Math.min(s1, s0 + speed * dt * k), q = pointAt(P, d), t = t0 + (k - 1) * dt;
+          if (!z.boxes.every((bx) => safe(bx, q, t))) return false;
           if (d >= s1) return true;
         }
       };
@@ -151,7 +162,7 @@ if (!levels.length || levels.some((l) => !(l >= 1)) || !(speed > 0)) { console.e
           if (zt) {
             if (zt.go == null && s >= zt.a - 0.01) { // at a spot: on to the next one only if the box can't get in the way
               const to = zt.spots.find((v) => v > s + 0.01);
-              if (passable(seg, zt.bx, s, to, t)) zt.go = to;
+              if (passable(seg, zt, s, to, t)) zt.go = to;
             }
             nx = Math.min(nx, zt.go != null ? zt.go : Math.max(s, zt.a));
             if (zt.go != null && nx >= zt.go - 0.01) zt.go = null;
@@ -189,7 +200,7 @@ if (!levels.length || levels.some((l) => !(l >= 1)) || !(speed > 0)) { console.e
       }
       AP.want = null;
       const cur = plan[pi] || {}, bq = G.world.query(G.ball.x, G.ball.y, G.playT);
-      AP.debug = { tox: JSON.stringify((cur.tox || []).map((z) => ({ a: Math.round(z.a), b: Math.round(z.b), spots: z.spots.map(Math.round), go: z.go, n: z.bx.n, h: z.bx.h, s: z.bx.s }))), blinks: JSON.stringify((cur.blinks || []).map((z) => [Math.round(z.a), Math.round(z.b), z.bl.period.toFixed(2), z.bl.on.toFixed(2)])), segAt: (() => { const q = G.world.query(G.ball.x, G.ball.y, G.playT - 0.02); return q.seg ? [q.seg.blink ? 'blink' : '', q.seg.sw ? 'sw' : '', q.depth.toFixed(1)].join(' ') : 'none'; })(), leg: pi + '/' + plan.length + ' ' + cur.type, s: Math.round(s) + '/' + Math.round(cur.len || 0), ball: Math.round(G.ball.x) + ',' + Math.round(G.ball.y), depth: bq.depth.toFixed(1), dyn: !!(bq.seg && bq.seg.dyn), mover: cur.mv ? JSON.stringify(MZ.moverAt(cur.mv, G.playT)) + ' a=' + Math.round(cur.mv.a.x) + ',' + Math.round(cur.mv.a.y) : '', barred: G.maze && G.maze.doors.filter((d) => !d.open).length };
+      AP.debug = { tox: JSON.stringify((cur.tox || []).map((z) => ({ a: Math.round(z.a), b: Math.round(z.b), spots: z.spots.map(Math.round), go: z.go, boxes: z.boxes.length }))), blinks: JSON.stringify((cur.blinks || []).map((z) => [Math.round(z.a), Math.round(z.b), z.bl.period.toFixed(2), z.bl.on.toFixed(2)])), segAt: (() => { const q = G.world.query(G.ball.x, G.ball.y, G.playT - 0.02); return q.seg ? [q.seg.blink ? 'blink' : '', q.seg.sw ? 'sw' : '', q.depth.toFixed(1)].join(' ') : 'none'; })(), leg: pi + '/' + plan.length + ' ' + cur.type, s: Math.round(s) + '/' + Math.round(cur.len || 0), ball: Math.round(G.ball.x) + ',' + Math.round(G.ball.y), depth: bq.depth.toFixed(1), dyn: !!(bq.seg && bq.seg.dyn), mover: cur.mv ? JSON.stringify(MZ.moverAt(cur.mv, G.playT)) + ' a=' + Math.round(cur.mv.a.x) + ',' + Math.round(cur.mv.a.y) : '', barred: G.maze && G.maze.doors.filter((d) => !d.open).length };
       const r = { toxes: toxes.length, level: m.level, boss: m.boss, layout: m.lattice + '/' + m.mask, mechs: (m.mechs || []).join('+') + (m.mods && m.mods.length ? ' [' + m.mods.join(',') + ']' : ''), outcome: AP.outcome || (G.state === 'play' ? 'stuck' : G.state), time: G.elapsed, par: m.parTime, limit: m.timeLimit, wait, progress: Math.round((100 * done) / Math.max(1, plan.length)) };
       G.quit();
       return r;

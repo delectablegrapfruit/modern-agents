@@ -208,6 +208,10 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     for (let d = 1; d < 12 && !G.maze.toxes.some((b) => b.route); d++) { G.run.cleared = d; G.nextGauntlet(); }
     const tx = G.maze.toxes.find((b) => b.route);
     check('the Gauntlet has Tox Boxes, some on the route', !!tx, G.maze.toxes.length);
+    const gm = G.maze, gdeg = gm.nodes.map(() => 0);
+    for (const e of gm.edges) { gdeg[e.a]++; gdeg[e.b]++; }
+    check('Gauntlet mazes are stone grids (after the Cyclone Stone): straight corridors, long lanes cut right across', gm.lattice === 'square' && gm.edges.every((e) => e.pts.length === 2) && gm.lanes.length >= 1 && gm.lanes.every((l) => l.length >= 5), gm.lanes.map((l) => l.length - 1).join('+') + ' cells');
+    check('...with Tox Boxes tumbling along the lanes, right through the junctions', gm.toxes.some((b) => b.lane && gm.nodes.some((v, i) => gdeg[i] >= 3 && b.tiles.slice(1, -1).some((T) => Math.hypot(T.x - v.x, T.y - v.y) < b.s / 2))));
     check('...each tumbling along the floor, with a hollow tile between the ends of its track', G.maze.toxes.every((b) => b.tiles.every((T) => G.world.query(T.x, T.y, G.playT).depth > b.s * 0.3) && b.tiles.some((T, k) => k > 0 && k < b.n && MZ.toxFace(b, k) === 0)));
     const buf = G.box() * 0.035, step = tx.roll + tx.rest, end0 = tx.end;
     const at = (c) => { tx.phase = c - (G.playT + 1 / 60); }; // the box's own clock reads c on the next frame
