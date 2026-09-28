@@ -61,9 +61,10 @@
     bullet: '<path d="M4 16h3M3 11h5M3 21h5" stroke="#fff" stroke-width="2" stroke-linecap="round" opacity=".8"/><path d="M10 9h9a7 7 0 0 1 0 14h-9z" fill="#1c1b26" stroke="#fff" stroke-width="2" stroke-linejoin="round"/><path d="M12 9v14" stroke="#ff3d5a" stroke-width="3"/><circle cx="21" cy="14" r="1.8" fill="#fff"/>',
     launch: '<path d="M16 3l8 10h-5v8h-6v-8H8z" fill="#7cf0ff" stroke="#fff" stroke-width="2" stroke-linejoin="round"/><ellipse cx="16" cy="27" rx="8" ry="2.6" fill="rgba(0,0,0,.45)" stroke="#fff" stroke-width="1.5"/>',
     carpet: '<path d="M5 10c4-2 8 2 11 0s7-2 11 0v12c-4-2-8 2-11 0s-7-2-11 0z" fill="#8e1b4d" stroke="#ffc53d" stroke-width="2" stroke-linejoin="round"/><path d="M5 12l-3 1M5 16l-3 0M5 20l-3-1M27 12l3 1M27 16l3 0M27 20l3-1" stroke="#ffc53d" stroke-width="1.6" stroke-linecap="round"/><path d="M16 12.5l3 3.5-3 3.5-3-3.5z" fill="none" stroke="#ffc53d" stroke-width="1.6"/>',
+    path: '<path d="M5 27c7 0 4-9 11-9s5-8 11-8" fill="none" stroke="rgba(0,0,0,.45)" stroke-width="5" stroke-linecap="round"/><path d="M5 27c7 0 4-9 11-9s5-8 11-8" fill="none" stroke="#ffe27a" stroke-width="3" stroke-linecap="round" stroke-dasharray="3.5 3.5"/><path d="M25 3v9" stroke="#fff" stroke-width="2" stroke-linecap="round"/><path d="M25 3.5l6 2.5-6 2.5z" fill="#3ddc97" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"/>',
     shrink: '<rect x="11" y="11" width="10" height="10" rx="2.5" fill="#b8ff6a" stroke="#fff" stroke-width="2"/><path d="M3 3l6 6M29 3l-6 6M3 29l6-6M29 29l-6-6" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><path d="M9 5v4H5M23 5v4h4M9 27v-4H5M23 27v-4h4" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>',
   };
-  const ROLL_ORDER = ['star', 'bullet', 'carpet', 'heart', 'launch', 'shrink'];
+  const ROLL_ORDER = ['star', 'bullet', 'carpet', 'heart', 'path', 'launch', 'shrink'];
   // Menu icons (drawn in the text colour).
   const MENU_ICONS = {
     chapters: '<g W><path d="M6 6h8v20H6zM14 6h6v20h-6zM20 8l5 1-3 18-5-1z"/><path d="M9 11h2M17 11h0"/></g>',
@@ -188,7 +189,7 @@
         hud.keys.innerHTML = held.map((col) => MZ.Renderer.keySVG(col)).join(''); // the same key and token as in the maze
       }
       const act = [];
-      for (const k of ['star', 'carpet', 'shrink']) if (fx[k] > 0) act.push([k, fx[k] / G.ITEMS[k].dur]);
+      for (const k of ['star', 'carpet', 'shrink', 'path']) if (fx[k] > 0) act.push([k, fx[k] / G.ITEMS[k].dur]);
       if (fx.bullet) act.push(['bullet', 1 - fx.bullet.s / fx.bullet.len]);
       if (fx.launch) act.push(['launch', 1 - fx.launch.t / fx.launch.T]);
       const ek = act.map((a) => a[0] + Math.round(a[1] * 40)).join();
@@ -670,6 +671,7 @@
             h('li', null, h('b', null, 'Bullet'), ': carries you along the corridors toward GOAL.'),
             h('li', null, h('b', null, 'Launch'), ' (rare): a short hop above the maze. Steer while you’re up, as far as the ring of clouds; you come down right where you are, so aim for the board: landing in the void is a fall. The map keeps all you saw.'),
             h('li', null, h('b', null, 'Magic carpet'), ' (rare): float over the gaps for 3.5 s. Be over floor when it runs out.'),
+            h('li', null, h('b', null, 'Path'), ': for 6 s a glowing trail shows the way to GOAL from wherever you are (or to the key or switch that opens it), on the map too.'),
             h('li', null, h('b', null, 'Shrink'), ': half size for 10 s, for the tight spots.')),
           h('li', null, 'Levels come in chapters of ten; the tenth is a boss. New things appear along the way:'),
           h('ul', { class: 'items' },

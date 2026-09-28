@@ -105,6 +105,22 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     check('an edge touch and a drag into it in the same frame cost one hit', G.hp === 1 && G.state === 'play' && !events.some((e) => e.startsWith('lose')), events.join());
     G.quit();
 
+    // ----- Path: shows the way -----
+    G.startJourney(3);
+    G.giveItem('path');
+    check('Path is used, and lasts a while', G.useItem() && G.fx.path > 5);
+    const pl = G.pathLine.pts, pEnd = pl[pl.length - 1], pGoal = G.maze.goal;
+    G.draw();
+    check('Path leads to GOAL', Math.hypot(pEnd.x - pGoal.x, pEnd.y - pGoal.y) < 1, Math.round(Math.hypot(pEnd.x - pGoal.x, pEnd.y - pGoal.y)));
+    G.quit();
+    G.startJourney(5);
+    G.giveItem('path'); G.useItem();
+    const k5 = G.maze.keys[0], e5 = G.pathLine.pts[G.pathLine.pts.length - 1];
+    check('...or, with GOAL behind a door you can\'t open yet, to its key', Math.hypot(e5.x - k5.x, e5.y - k5.y) < 1);
+    run(6.5);
+    check('...and fades after 6 s', !(G.fx.path > 0));
+    G.quit();
+
     // ----- a right click uses the item -----
     G.startJourney(6);
     G.giveItem('shrink');

@@ -67,6 +67,7 @@ Time Trial never has them.
 | **Bullet** | Carries you along the corridors toward GOAL (Endless: outward) for about 1800 units, over vanishing bridges and all, finishing on a junction short of GOAL. Invincible while flying. |
 | **Launch** | As rare as the carpet. A short 1.45 s hop: the camera pulls out while you're up, and you steer (drag or keys, at the zoomed-out scale), over the void and everything, up to 340 units from where you took off: a ring of clouds marks that border, with a haze beyond it. A shadow marks the spot below you. You come down right where you are: on the board, you're fine; in the void, it's a fall (a hit, then the nearest floor). The map fills in with everything the screen showed. |
 | **Magic carpet** | The rarest item, with Launch: 3.5 s of floating over the void. It flickers when it's about to run out: be over floor by then, or it's a fall. |
+| **Path** | For 6 s a glowing trail runs along the floor from wherever you are to GOAL, and on the map (over the fog too). It follows you as you move, and only goes where you can: with GOAL behind a door you can't open yet (or a switched-off bridge), it leads to the nearest key or switch instead. Endless: to the nearest unlit beacon. |
 | **Shrink** | Half size (picture and hitbox) for 10 s; you grow back as soon as there's room. |
 
 ### Modes

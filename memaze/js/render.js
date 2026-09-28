@@ -290,6 +290,7 @@
         ctx.setLineDash([]);
       }
       this.drawSwitchBridges(blinks, s.mech, s.clock || 0);
+      if (s.path) this.drawPath(s.path, s.clock || 0);
       ctx.lineCap = 'butt';
       if (s.mech) this.drawMovers(s.mech, t, th);
 
@@ -321,6 +322,18 @@
         const r = Math.min(20, b.e.hw * 0.52) * (1 + 0.06 * Math.sin(clock * 3));
         for (const p of b.marks) plateGlyph(ctx, p.x, p.y, r, c, false, ICON, 'rgba(20,14,40,0.85)');
       }
+    }
+    // The Path item: a glowing trail along the floor with dashes flowing toward where it leads.
+    drawPath(P, clock) {
+      const ctx = this.ctx, pts = P.pts;
+      if (pts.length < 2) return;
+      ctx.save();
+      ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+      ctx.beginPath(); pts.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)));
+      ctx.globalAlpha = 0.3 * P.a; ctx.strokeStyle = '#ffe27a'; ctx.lineWidth = 26; ctx.stroke();
+      ctx.globalAlpha = P.a; ctx.strokeStyle = 'rgba(80,50,0,0.55)'; ctx.lineWidth = 11; ctx.setLineDash([16, 18]); ctx.lineDashOffset = -clock * 90; ctx.stroke();
+      ctx.strokeStyle = '#fff6c9'; ctx.lineWidth = 6; ctx.stroke();
+      ctx.restore();
     }
     // Moving platforms: a dotted track over the void, and the platform itself (floor) with arrows on it.
     drawMovers(m, t, th) {
@@ -751,7 +764,7 @@
       this.fog.getContext('2d').fillRect(x0, y0, x1 - x0, y1 - y0);
     }
     // view: the world rectangle on screen, outlined so the map and the screen line up. Markers show once seen.
-    draw(pos, goal, gems, view, flags, boxes, mech) {
+    draw(pos, goal, gems, view, flags, boxes, mech, path) {
       if (!this.maze) return;
       const g = this.ctx, W = this.canvas.width, H = this.canvas.height;
       const u = W / 150;
@@ -759,6 +772,10 @@
       g.drawImage(this.base, 0, 0);
       this.switches(g, mech, u); // under the fog, like every corridor
       g.drawImage(this.fog, 0, 0);
+      if (path && path.length > 1) { // the Path item shows the way on the map too, fog or not
+        g.save(); g.lineJoin = 'round'; g.lineCap = 'round'; g.strokeStyle = '#ffe27a'; g.lineWidth = Math.max(1.5, 1.4 * u);
+        g.beginPath(); path.forEach((q, i) => (i ? g.lineTo : g.moveTo).call(g, this.ox + q.x * this.sc, this.oy + q.y * this.sc)); g.stroke(); g.restore();
+      }
       const dot = (x, y, r, c) => { g.fillStyle = c; g.beginPath(); g.arc(this.ox + x * this.sc, this.oy + y * this.sc, r, 0, TAU); g.fill(); };
       if (flags) for (const c of flags) if (c.seen) { dot(c.x, c.y, 3.4 * u, '#000'); dot(c.x, c.y, 2.4 * u, c.lit ? '#3ddc97' : '#ffc53d'); }
       if (boxes) for (const b of boxes) if (b.seen) { dot(b.x, b.y, 2.9 * u, '#000'); dot(b.x, b.y, 2 * u, '#d38bff'); }

@@ -31,6 +31,7 @@
     launch: { name: 'Launch', w: 3 },
     carpet: { name: 'Magic carpet', w: 3, dur: 3.5 }, // these two are the rarest (and the carpet is short)
     shrink: { name: 'Shrink', w: 16, dur: 10 },
+    path: { name: 'Path', w: 12, dur: 6 }, // shows the way to GOAL for a while
   };
   const BULLET_V = 520, BULLET_RUN = 1800; // Bullet: speed and how far it carries you (it finishes on a junction)
   const GEM_CHARM = 5, MAX_LIVES = 9;      // Gauntlet: every this many gems pays out (a life, a shield, an item, time)
@@ -765,11 +766,12 @@
       if (this.hp < HEARTS && this.hurtT >= REGEN) { this.hp = HEARTS; this.emit('power'); }
       if (this.hp < HEARTS && !this.recharging() && (this.beepT -= dt) <= 0) { this.beepT = 0.8; MZ.Audio.play('low'); } // shield's down
       if (this.roll && (this.roll.t += dt) >= ROLL) this.endRoll();
-      for (const k of ['star', 'carpet', 'shrink']) {
+      for (const k of ['star', 'carpet', 'shrink', 'path']) {
         if (!(fx[k] > 0)) continue;
         fx[k] -= dt;
         if (fx[k] <= 0) { fx[k] = 0; MZ.Audio.play('expire'); this.emit('power'); }
       }
+      if (fx.path > 0 && (this.pathT = (this.pathT || 0) - dt) <= 0) { this.pathT = 0.35; this.pathLine = this.pathRoute() || this.pathLine; } // it follows you
       const want = fx.shrink > 0 ? SHRINK : 1;
       if (this.scale > want) this.scale = Math.max(want, this.scale - dt * 2.5);
       else if (this.scale < want) {
@@ -860,6 +862,11 @@
         const route = this.bulletRoute();
         if (!route) { MZ.toast('Nowhere to fly', 1200); return false; }
         fx.bullet = route;
+      } else if (id === 'path') {
+        const P = this.pathRoute();
+        if (!P) { MZ.toast('No way to show from here', 1200); return false; }
+        this.pathLine = P; this.pathT = 0.35;
+        fx.path = ITEMS.path.dur;
       } else if (id === 'launch') {
         fx.launch = { t: 0, T: UP + AIR + DOWN, apex: clamp(Math.min(innerWidth, innerHeight) / APEX_VIEW / this.zoomTarget(), 0.02, 1), from: { x: this.ball.x, y: this.ball.y } };
       } else fx[id] = ITEMS[id].dur;
@@ -888,11 +895,10 @@
       });
       return { E, pos, adj, solid, id: (p) => ids.get(Math.round(p.x * 4) + ',' + Math.round(p.y * 4)) };
     },
-    // Bullet: the route from here along the corridors, toward GOAL (stopping short of it), or in Endless outward, as far
-    // as the run allows, finishing on a junction with solid floor.
-    bulletRoute() {
-      const b = this.ball, g = this.graph();
-      let at = null, bd = Infinity; // the nearest point on any corridor
+    // Where on the corridors the player is: the nearest point on any of them ({r, s}: corridor and distance along it).
+    nearestOnCorridor(g) {
+      const b = this.ball;
+      let at = null, bd = Infinity;
       for (const r of g.E) {
         const p = r.e.pts;
         let acc = 0;
@@ -904,11 +910,15 @@
           acc += sl;
         }
       }
-      if (!at || bd > 300) return null;
-      // Shut doors (unless you carry their key) and switched-off bridges stop the Bullet too.
+      return bd > 300 ? null : at;
+    },
+    // Shortest distances along the corridors from `at` (leaving by either end of its corridor), past what's passable
+    // now: not shut doors (unless you carry their key), not switched-off bridges, and, with `gates`, one-way gates
+    // only the way they point.
+    corridorDists(g, at, gates) {
       const m = this.maze, closed = new Set(m ? m.doors.filter((d) => !d.open && !this.keysHeld.get(d.color)).map((d) => d.edge) : []);
       const shut = (e) => closed.has(e.id) || (e.type === 'switch' && (this.world.sw[e.sw.g] | 0) !== e.sw.on);
-      // Shortest distances from here, leaving by either end of this corridor.
+      const gateOn = new Map(gates && m ? m.gates.map((q) => [q.edge, g.id(m.nodes[q.from])]) : []); // edge -> the node it's entered from
       const n = g.pos.length, dist = new Float64Array(n).fill(Infinity), prev = new Array(n).fill(null), done = new Uint8Array(n);
       dist[at.r.a] = at.s; dist[at.r.b] = Math.min(dist[at.r.b], at.r.len - at.s);
       if (at.r.a === at.r.b) dist[at.r.a] = Math.min(at.s, at.r.len - at.s);
@@ -919,38 +929,16 @@
         done[u] = 1;
         for (const r of g.adj[u]) {
           if (shut(r.e)) continue;
+          if (gateOn.has(r.e.id) && gateOn.get(r.e.id) !== u) continue;
           const v = r.a === u ? r.b : r.a;
           if (dist[u] + r.len < dist[v]) { dist[v] = dist[u] + r.len; prev[v] = r; }
         }
       }
-      let target = -1;
-      if (this.maze) {
-        target = g.id(this.maze.goal);
-        if (dist[target] === Infinity) { // GOAL is behind a shut door or a missing bridge: as close to it as you can get
-          const dg = new Float64Array(n).fill(Infinity), dn = new Uint8Array(n);
-          dg[target] = 0;
-          for (;;) {
-            let u = -1;
-            for (let i = 0; i < n; i++) if (!dn[i] && dg[i] < Infinity && (u < 0 || dg[i] < dg[u])) u = i;
-            if (u < 0) break;
-            dn[u] = 1;
-            for (const r of g.adj[u]) { const v = r.a === u ? r.b : r.a; if (dg[u] + r.len < dg[v]) dg[v] = dg[u] + r.len; }
-          }
-          let best = Infinity;
-          for (let i = 0; i < n; i++) if (dist[i] < Infinity && g.solid[i] && dg[i] < best) { best = dg[i]; target = i; }
-        }
-      } else {
-        const o = this.run.origin;
-        let far = -1;
-        for (let i = 0; i < n; i++) {
-          if (!g.solid[i] || dist[i] > BULLET_RUN * 1.4) continue;
-          const d = Math.hypot(g.pos[i].x - o.x, g.pos[i].y - o.y);
-          if (d > far) { far = d; target = i; }
-        }
-      }
-      if (target == null || target < 0 || dist[target] === Infinity) return null;
-      // Walk back from the target, then lay the corridors out from here.
-      const chain = [];
+      return { dist, prev };
+    },
+    // The polyline from the player along the corridors to junction `target` (nodeAt: where each junction falls on it).
+    chainPoints(g, at, prev, target) {
+      const b = this.ball, chain = [];
       let v = target;
       while (prev[v]) { const r = prev[v], u = r.a === v ? r.b : r.a; chain.push({ r, from: u, to: v }); v = u; }
       chain.reverse();
@@ -968,6 +956,67 @@
       }
       const cum = [0];
       for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y));
+      return { pts, nodeAt, cum };
+    },
+    // The junction nearest GOAL (as the corridors go) that `dist` reaches: where to head when GOAL itself is shut off.
+    nearGoal(g, dist) {
+      const n = g.pos.length, target = g.id(this.maze.goal), dg = new Float64Array(n).fill(Infinity), dn = new Uint8Array(n);
+      dg[target] = 0;
+      for (;;) {
+        let u = -1;
+        for (let i = 0; i < n; i++) if (!dn[i] && dg[i] < Infinity && (u < 0 || dg[i] < dg[u])) u = i;
+        if (u < 0) break;
+        dn[u] = 1;
+        for (const r of g.adj[u]) { const v = r.a === u ? r.b : r.a; if (dg[u] + r.len < dg[v]) dg[v] = dg[u] + r.len; }
+      }
+      let best = Infinity, at = -1;
+      for (let i = 0; i < n; i++) if (dist[i] < Infinity && g.solid[i] && dg[i] < best) { best = dg[i]; at = i; }
+      return at;
+    },
+    // Path: the way from here to GOAL along the corridors as they are now (not through doors you can't open, switched-off
+    // bridges, or one-way gates the wrong way). If GOAL is shut off, the way to what opens it: the nearest key still
+    // lying about, or a switch; else as close to GOAL as you can get. Endless: to the nearest unlit beacon.
+    pathRoute() {
+      const g = this.graph(), at = this.nearestOnCorridor(g);
+      if (!at) return null;
+      const { dist, prev } = this.corridorDists(g, at, true);
+      const nearest = (list) => {
+        let best = -1;
+        for (const p of list) { const i = g.id(p); if (i != null && dist[i] < Infinity && (best < 0 || dist[i] < dist[best])) best = i; }
+        return best;
+      };
+      let target = -1;
+      if (this.maze) {
+        const m = this.maze;
+        target = g.id(m.goal);
+        if (!(dist[target] < Infinity)) target = nearest(m.keys.filter((k) => !k.taken).concat(m.plates));
+        if (target < 0) target = this.nearGoal(g, dist);
+      } else target = nearest((this.beacons || []).filter((bc) => !bc.lit));
+      if (target < 0 || !(dist[target] < Infinity)) return null;
+      return this.chainPoints(g, at, prev, target);
+    },
+    // Bullet: the route from here along the corridors, toward GOAL (stopping short of it), or in Endless outward, as far
+    // as the run allows, finishing on a junction with solid floor. Shut doors and switched-off bridges stop it too.
+    bulletRoute() {
+      const g = this.graph(), at = this.nearestOnCorridor(g);
+      if (!at) return null;
+      const { dist, prev } = this.corridorDists(g, at, false), n = g.pos.length;
+      let target = -1;
+      if (this.maze) {
+        target = g.id(this.maze.goal);
+        if (dist[target] === Infinity) target = this.nearGoal(g, dist); // GOAL is behind a shut door or a missing bridge
+      } else {
+        const o = this.run.origin;
+        let far = -1;
+        for (let i = 0; i < n; i++) {
+          if (!g.solid[i] || dist[i] > BULLET_RUN * 1.4) continue;
+          const d = Math.hypot(g.pos[i].x - o.x, g.pos[i].y - o.y);
+          if (d > far) { far = d; target = i; }
+        }
+      }
+      if (target == null || target < 0 || dist[target] === Infinity) return null;
+      // Walk back from the target, then lay the corridors out from here.
+      const { pts, nodeAt, cum } = this.chainPoints(g, at, prev, target);
       let len = cum[cum.length - 1];
       if (this.maze) { // stop short of GOAL: the finish is yours
         const G = this.maze.goal, stop = this.goalR() + this.box() * 0.75 + 12;
@@ -1379,6 +1428,7 @@
         beacons: this.mode === 'endless' && !menu ? this.beacons : null,
         flags: !menu && maze ? this.checkpoints : null,
         mech: maze && maze.doors ? maze : null, // doors and keys, switches, gates, platforms, portals, ice
+        path: !menu && fx.path > 0 && this.pathLine ? { pts: this.pathLine.pts, a: Math.min(1, (ITEMS.path.dur - fx.path) * 4, fx.path * 1.5) } : null,
         boxes: boxesOn ? this.boxes.filter((x) => x.takenAt == null || this.runT - x.takenAt >= BOX_BACK) : null,
         boxAge: (x) => (x.takenAt == null ? 9 : this.runT - x.takenAt - BOX_BACK),
         shards: boxesOn ? this.boxes.filter((x) => x.takenAt != null && this.runT - x.takenAt < SHATTER).map((x) => ({ x: x.x, y: x.y, k: (this.runT - x.takenAt) / SHATTER })) : null,
@@ -1443,7 +1493,7 @@
           if (this.minimap.size() && this.maze) { this.minimap.setMaze(this.maze); this.revealAll(); }
         }
         if (this.mode === 'endless') this.minimap.drawRadar(this.world, b, this.beacons, view, this.seenNear(b.x, b.y, 1000).concat([view]), boxesOn ? this.boxes : null);
-        else this.minimap.draw(b, this.maze && this.maze.goal, this.gems, view, this.checkpoints, boxesOn ? this.boxes : null, this.maze);
+        else this.minimap.draw(b, this.maze && this.maze.goal, this.gems, view, this.checkpoints, boxesOn ? this.boxes : null, this.maze, fx.path > 0 && this.pathLine ? this.pathLine.pts : null);
       } else mmEl.hidden = true;
       this.emit('frame');
     },
