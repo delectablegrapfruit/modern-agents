@@ -22,7 +22,7 @@
   // blackHold: the root black clip was stopped on its first (fully black) frame at 796.
   var st = { f: 2, blackHold: false, skip: null, done: false };
 
-  // ---- sound: the sleeper's slow breath (a 2.3 s swelling hiss) -----------------------------
+  // ---- sound: the sleeper's slow breath (a ~2 s snore, starting 0.175 s after the frame) ------
   function breath() {
     SRPG.sound.play('breath');
   }
@@ -196,7 +196,8 @@
       // (black.gotoAndPlay(11)).
       SRPG.engine.blackPlay(11);
       st.blackHold = false;
-      SRPG.sound.music(null);
+      SRPG.sound.setVolume(100); // LoopB/C/D.setVolume(100): full volume again
+      SRPG.sound.stopAll(); // loopA.stop(): every sound stops
       st.skip = fx.hotspot('skip', 496, 373, 48, 21, function () { gotoFrame(SKIP_TO); });
       frameActions(2);
     },

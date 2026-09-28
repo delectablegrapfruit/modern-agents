@@ -64,6 +64,7 @@ function eq(a, b, msg) { ok(JSON.stringify(a) === JSON.stringify(b), msg + ' (' 
   await ev(() => { SRPG.save.remove(); SRPG.rng.seed(7); SRPG.engine.go('title'); });
   eq(await scene(), 'title', 'boot shows the title');
   ok((await ev(() => window.__music.slice(-1)[0])) === 'beginning', 'title plays the Beginning loop');
+  eq(await ev(() => SRPG.sound.volume), 50, 'title: global volume 50 (LoopA.setVolume(50) on a global Sound object)');
   eq((await tst()).fade, 1, 'first boot fades in from black');
   eq([(await tst()).alpha, (await tst()).layer], [1, '1'], 'the black layer covers the title');
   await t.step(8);
@@ -92,6 +93,7 @@ function eq(a, b, msg) { ok(JSON.stringify(a) === JSON.stringify(b), msg + ' (' 
   await t.clickUI('continue');
   eq(await scene(), 'title', 'no save: stays on the title');
   eq((await sounds()).filter((n) => n === 'error').length, 1, 'no save: error sound');
+  eq(await ev(() => SRPG.sound.volume), 50, 'no save: the error plays at the title\'s half volume');
 
   console.log('# instructions');
   await t.clickUI('instructions');
@@ -221,7 +223,7 @@ function eq(a, b, msg) { ok(JSON.stringify(a) === JSON.stringify(b), msg + ' (' 
   let g = await t.state();
   eq({ pname: g.pname, gamelength: g.gamelength, str: g.strength, intl: g.intelligence, cha: g.charm, hpmax: g.hpmax, hp: g.hp, cash: g.cash, day: g.day, time: g.time },
     { pname: 'Tester', gamelength: 100, str: 7, intl: 9, cha: 4, hpmax: 22, hp: 22, cash: 100, day: 1, time: 8 }, 'new game uses the chosen name, length and stats (leftover points dropped)');
-  ok((await ev(() => window.__music.slice(-1)[0])) === null, 'title music stops for the intro');
+  eq(await ev(() => [SRPG.sound.state().music, SRPG.sound.volume]), [null, 100], 'title music stops for the intro (loopA.stop()), full volume again');
 
   console.log('# intro');
   eq(await ev(() => SRPG.intro.st.f), 2, 'film starts at frame 2');
@@ -329,13 +331,14 @@ function eq(a, b, msg) { ok(JSON.stringify(a) === JSON.stringify(b), msg + ' (' 
   eq([g.mapx, g.mapy], [456, 622], 'loading puts you at the start junction, 8 px up');
   eq(g.fps, 1, 'loading switches SHOW FPS on (the original\'s quirk)');
   ok((await ev(() => window.__music.slice(-1)[0])) === 'main', 'city music after loading');
+  eq(await ev(() => SRPG.sound.volume), 100, 'loading: full volume again (loopB.setVolume(100))');
 
   console.log('# YOU DIED');
   await t.newGame({ pname: 'HEYZEUS!!!s', gamelength: 100, charm: 2, strength: 10, intelligence: 5 });
   await ev(() => SRPG.game.die());
   eq(await scene(), 'death', 'die() shows YOU DIED');
   eq((await t.state()).hp, 0, 'HP 0');
-  ok((await ev(() => window.__music.slice(-1)[0])) === null, 'all music stops');
+  eq(await ev(() => [SRPG.sound.state().music, SRPG.sound.state().sources]), [null, 0], 'all sounds and music stop (stopSounds)');
   // sprite 2334's timeline: the reeled-back pose of frame 19 comes back on 25 and is held 31..45;
   // 20..24 and 26..30 shudder; from 53 the figure lies dead
   const P = await ev(() => [19, 20, 22, 24, 25, 26, 28, 30, 31, 38, 45, 46, 53, 60, 149].map((f) => JSON.stringify(SRPG.screens.death.pose(f))));
@@ -391,6 +394,7 @@ function eq(a, b, msg) { ok(JSON.stringify(a) === JSON.stringify(b), msg + ' (' 
     for (;;) {
       if (n < final + 100) { n += stepN; seq.push(n); } else { seq.push(final); break; }
     }
+    await ev(() => { SRPG.sound.unlock(); SRPG.sound.music('inside'); });
     const got = [await ev(() => SRPG.results.st.netcalc)];
     await sounds();
     let guard = 0;
@@ -398,11 +402,14 @@ function eq(a, b, msg) { ok(JSON.stringify(a) === JSON.stringify(b), msg + ' (' 
       await t.step(1);
       got.push(await ev(() => SRPG.results.st.netcalc));
     }
-    return { seq, got, final, works: (await sounds()).filter((x) => x === 'work').length };
+    return { seq, got, final, works: (await sounds()).filter((x) => x === 'work').length, snd: await ev(() => SRPG.sound.state()) };
   }
   let r = await countRun(5000, 20000, 1000, 0);
   eq(r.got, r.seq, 'count-up from -loans in steps of max(100, round(final/500)), snapping to the final');
   eq(r.works, r.got.length - 1, 'work sound on every step');
+  // $SFXwork.stop(); $SFXwork.start(): every step stops every sound (the music too) and restarts
+  // the work sound, so they never pile up
+  ok(r.snd.music === null && r.snd.sources <= 6, 'count-up: the music stops, and only the last work sound is playing', r.snd);
   eq(await ev(() => SRPG.results.st.rf), 133, 'then the bright flash (frame 133)');
   await t.step(1);
   await shot('results-flash');

@@ -120,7 +120,7 @@
       var s = S();
       if (s) { s.hp = 0; s.over = true; }
       death.t = 1;
-      SRPG.sound.music(null); // stopSounds
+      SRPG.sound.stopAll(); // stopSounds
     },
     tick: function () {
       death.t++;
@@ -217,6 +217,10 @@
       rs.rf = 133; // SKIP goes away
       buildButtons();
     }
+    // $SFXwork.stop(); $SFXwork.start(): stop() on a global Sound object silences everything (the
+    // music too), and restarting it every tick leaves only a quiet crackle of its first 1/35 s;
+    // the last one plays out in full.
+    SRPG.sound.stopAll();
     SRPG.sound.play('work');
   }
 

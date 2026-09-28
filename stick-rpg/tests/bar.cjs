@@ -24,11 +24,14 @@ function check(cond, msg, extra) {
     return -1;
   }, [cond, max]);
   // Buttons make no sound of their own: the original loads _click.wav but never starts it.
+  // Every sound played goes to window.__snd.
   await ev(() => {
     window.__clicks = 0;
+    window.__snd = [];
     const play = SRPG.sound.play;
-    SRPG.sound.play = function (n) { if (n === 'click') window.__clicks++; return play.apply(this, arguments); };
+    SRPG.sound.play = function (n) { window.__snd.push(n); if (n === 'click') window.__clicks++; return play.apply(this, arguments); };
   });
+  const snd = () => ev(() => window.__snd.splice(0));
 
   // ---------------------------------------------------------------------------------------------
   console.log('Bar: drink, bottle, conditions');
@@ -36,6 +39,19 @@ function check(cond, msg, extra) {
   await t.open('bar');
   await t.step(12);
   await shot('bar');
+  // Canvas pixel [r, g, b] at stage (x, y).
+  const px = (x, y) => ev(([x, y]) => {
+    SRPG.engine.draw();
+    const k = SRPG.engine.pixelScale || 1;
+    return Array.from(document.getElementById('game').getContext('2d').getImageData(Math.round(x * k), Math.round(y * k), 1, 1).data.slice(0, 3));
+  }, [x, y]);
+  const isWood = (c) => c[0] > 110 && c[0] < 145 && c[1] > 50 && c[1] < 80 && c[2] < 25;
+  // The chairs are seen from behind at 3/4 (the original's view): under the seat the back's two
+  // stretchers (y 279.5-283 and 293-297 for the front chair) with the wall showing between them.
+  check(isWood(await px(105, 281)) && !isWood(await px(105, 288)) && isWood(await px(105, 295)), 'front chair: 3/4 back view with two stretchers',
+    [await px(105, 281), await px(105, 288), await px(105, 295)]);
+  check(isWood(await px(74, 264)) && isWood(await px(100, 232)) && !isWood(await px(84.5, 250)), 'front chair: seat side, crest rail and slat gaps',
+    [await px(74, 264), await px(100, 232), await px(84.5, 250)]);
   let s = await t.state();
   check((await t.uiText()).indexOf('DRINK BEER - $20') >= 0 && (await t.uiText()).indexOf('BUY BOTTLE OF') >= 0, 'menu labels shown');
   await t.clickUI('drink');
@@ -112,6 +128,24 @@ function check(cond, msg, extra) {
   check(f.attpts === 1, 'attack points min(int(10/20)+1, 15) = 1', f.attpts);
   await t.step(3);
   await shot('fight-start');
+  // The backdrop's wall runs into the floor band with no horizon line (the original has none).
+  const lum = (c) => (c[0] + c[1] + c[2]) / 3;
+  check(Math.abs(lum(await px(100, 188)) - lum(await px(100, 185))) < 6, 'fight backdrop: no line at y=188', [await px(100, 185), await px(100, 188)]);
+  // The opponent's "hp/ max" is the HUD's label at 125%: Arial Black 12.5 (ink about 21 x 8.5 px
+  // for "7/ 7" at x 405-426.5, y 14-22.5 in the original).
+  const lbl = await ev(() => {
+    SRPG.engine.draw();
+    const k = SRPG.engine.pixelScale || 1, x0 = 395, y0 = 8, w = 50, h = 20;
+    const d = document.getElementById('game').getContext('2d').getImageData(x0 * k, y0 * k, w * k, h * k).data;
+    let l = 1e9, t0 = 1e9, r = -1, b = -1;
+    for (let y = 0; y < h * k; y++) for (let x = 0; x < w * k; x++) {
+      const i = (y * w * k + x) * 4;
+      if (d[i] > 230 && d[i + 1] > 230 && d[i + 2] > 230) { l = Math.min(l, x); r = Math.max(r, x); t0 = Math.min(t0, y); b = Math.max(b, y); }
+    }
+    return [x0 + l / k, y0 + t0 / k, x0 + r / k, y0 + b / k];
+  });
+  check(lbl[2] - lbl[0] >= 19 && lbl[3] - lbl[1] >= 8 && Math.abs(lbl[1] - 14) <= 1 && Math.abs(lbl[3] - 22.5) <= 1,
+    'opponent HP label: Arial Black 12.5 size and place', lbl);
 
   // Formulas: re-seed, roll the same way the original does, and compare.
   const roll = (kind, str, knife) => ev(([kind, str, knife]) => {
@@ -206,6 +240,7 @@ function check(cond, msg, extra) {
   check(f.hpmax2 >= 10 && f.hpmax2 <= 19, 'barfight 2: opponent HP 10..19', f.hpmax2);
   check(f.attpts === 4, 'strength 60 -> 4 attack points', f.attpts);
   // Punch, then kick: points 4 -> 3 -> 1 ...
+  await snd();
   await t.clickUI('punch');
   check((await fight()).attpts === 3, 'PUNCH: 1 point');
   let hp2Before = (await fight()).hp2;
@@ -217,11 +252,13 @@ function check(cond, msg, extra) {
   await t.step(14);
   await shot('fight-punch-flip');
   await until('SRPG.fight.st.attmode === 0');
+  check(JSON.stringify(await snd()) === '["punch","punch"]', 'PUNCH: the punch sound twice (clip frames 25 and 27)');
   await t.clickUI('kick');
   check((await fight()).attpts === 1, 'KICK: 2 points');
   await t.step(12);
   await shot('fight-kick');
   await until('SRPG.fight.st.attmode === 0');
+  check(JSON.stringify(await snd()) === '["kick"]', 'KICK: the kick sound (clip frame 65)');
   await t.clickUI('punch');
   await until('SRPG.fight.st.att === 2 || SRPG.fight.st.hp2 <= 0');
   f = await fight();
@@ -239,6 +276,7 @@ function check(cond, msg, extra) {
   }
   f = await fight();
   check(f.p2 >= 216, 'opponent knocked out', f);
+  check(await ev(() => SRPG.sound.state().music === null && SRPG.sound.state().sources === 0), 'KO: LoopC.stop() at frame 216 silences the music and every sound');
   await t.step(10);
   await shot('fight-ko-fall');
   const before = await t.state();
@@ -340,9 +378,11 @@ function check(cond, msg, extra) {
   // Board frame 1: both boards almost on top of each other; hit the bull.
   await ev(() => { SRPG.darts.st.bf = 1; });
   let g = await dpos('ghost');
+  await snd();
   await click(g.x + 1.1, g.y);
   d = await ev(() => SRPG.darts.st);
   check(d.points === 50 && d.throws === 9, 'bullseye: 50', d.points);
+  check(JSON.stringify(await snd()) === '["footstep"]', 'a scoring throw plays the footstep sound (SFXfootstep: there is no dart sound)');
   // Frame 10: the boards are 63px apart. The ghost (on top) takes clicks inside its rings.
   await ev(() => { SRPG.darts.st.bf = 10; });
   let m = await dpos('main');
@@ -357,9 +397,11 @@ function check(cond, msg, extra) {
   await click(m.x + 0.5, m.y + 70); // solid board's 5 ring, outside the ghost
   d = await ev(() => SRPG.darts.st);
   check(d.points === 110, 'solid board 5 ring', d.points);
+  await snd();
   await click(60, 60); // on the wall: a miss
   d = await ev(() => SRPG.darts.st);
   check(d.points === 110 && d.throws === 4 && /sad/.test(d.last), 'miss: 0 points, still uses a dart', d);
+  check(JSON.stringify(await snd()) === '[]', 'a miss is silent');
   await click(200, 350); // on the panel: not a throw
   check((await ev(() => SRPG.darts.st.throws)) === 4, 'clicks below the room do nothing');
   await ev(() => SRPG.engine.draw());

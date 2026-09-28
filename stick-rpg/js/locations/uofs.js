@@ -44,8 +44,7 @@
 
   function begin(kind) {
     if (!rules.start(S(), kind)) {
-      // The original just ignores the click; the error buzz is the brief's rule for refused actions.
-      SRPG.sound.play('error');
+      // The original just ignores the click (no error sound).
       refresh();
       return;
     }
@@ -65,6 +64,9 @@
       st.anim = null;
       st.frame = 0;
       SRPG.engine.blackPlay(1);
+      // ...and its LoopB.stop() / LoopD.start(): every sound stops, the loop starts from the top
+      SRPG.sound.stopAll();
+      SRPG.sound.music('inside');
       refresh();
     }
   }
@@ -196,29 +198,32 @@
     });
   }
 
-  // Studying at a desk with a stack of books, pencil scribbling.
+  // Studying at a desk with a stack of books, pencil scribbling. The original redraws only the
+  // pencil: the student leans over the desk the whole time, head at (357.5, 182.5), arms on the
+  // desk top (215).
   function drawStudy(ctx, ox, oy, f) {
     var x = ox - 2;
-    var y = oy + 5;
+    var y = oy;
     var wob = (f % 4 < 2) ? 0 : 2;
     // stool legs / figure's legs under the desk
     ctx.strokeStyle = '#000';
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.moveTo(x - 6, y + 67);
-    ctx.lineTo(x - 12, y + 118);
+    ctx.lineTo(x - 12, y + 121);
     ctx.moveTo(x + 8, y + 67);
-    ctx.lineTo(x + 14, y + 118);
+    ctx.lineTo(x + 14, y + 121);
     ctx.stroke();
-    // body and arm to the pencil
+    // neck, and both arms spread onto the desk (the right one on the pencil)
+    ctx.lineWidth = 1.2;
     ctx.beginPath();
-    ctx.moveTo(x, y + 36);
-    ctx.lineTo(x, y + 70);
-    ctx.moveTo(x, y + 50);
-    ctx.lineTo(x + 12 + wob, y + 62);
-    ctx.lineTo(x + 5 + wob, y + 64);
+    ctx.moveTo(x - 0.5, y + 51);
+    ctx.lineTo(x - 0.5, y + 66);
+    ctx.lineTo(x - 17, y + 70.5);
+    ctx.moveTo(x - 0.5, y + 66);
+    ctx.lineTo(x + 9 + wob, y + 68);
     ctx.stroke();
-    figureHead(ctx, x, y + 20, 16);
+    figureHead(ctx, x + 0.5, y + 37.5, 15.6);
     // desk
     D.poly(ctx, [x - 55, y + 70, x + 36, y + 70, x + 46, y + 81, x - 45, y + 81], '#ccb71e', '#000', 1);
     D.poly(ctx, [x - 55, y + 70, x - 45, y + 81, x - 45, y + 123, x - 55, y + 113], '#787032', '#000', 1);
@@ -232,30 +237,25 @@
     ctx.moveTo(x + 4 + wob, y + 72);
     ctx.lineTo(x + 12 + wob, y + 60);
     ctx.stroke();
-    // books
-    D.poly(ctx, [x - 53, y + 59, x - 22, y + 58, x - 18, y + 65, x - 50, y + 66], '#3399ff', '#000', 0.8);
-    D.poly(ctx, [x - 54, y + 51, x - 22, y + 51, x - 19, y + 58, x - 52, y + 59], '#cccccc', '#000', 0.8);
-    D.poly(ctx, [x - 58, y + 43, x - 30, y + 42, x - 21, y + 51, x - 53, y + 52], '#ff6633', '#000', 0.8);
+    // books, stacked on the desk's left end
+    D.poly(ctx, [x - 53, y + 72, x - 22, y + 71, x - 18, y + 78, x - 50, y + 79], '#3399ff', '#000', 0.8);
+    D.poly(ctx, [x - 54, y + 64, x - 22, y + 64, x - 19, y + 71, x - 52, y + 72], '#cccccc', '#000', 0.8);
+    D.poly(ctx, [x - 58, y + 56, x - 30, y + 55, x - 21, y + 64, x - 53, y + 65], '#ff6633', '#000', 0.8);
   }
 
-  // Class: sitting at a school desk (with an apple for the teacher), then nodding off from frame 11
-  // until the head rests on the desk (the sprite's head top: 166, then 179 -> 215).
+  // Class: sitting at a school desk (with an apple for the teacher), then nodding off from frame 11:
+  // the head sinks, squashes flat as it hits the desk (frame 15) and ends lying on the desk top,
+  // in front of it. The original's head per frame pair: [from frame, centre y, half height].
+  var CLASS_HEAD = [[21, 223.85, 8.15], [19, 224.6, 8.1], [17, 218.5, 4.1], [15, 212.45, 2.05], [13, 200.5, 10.2],
+    [11, 192.45, 12.85], [1, 182.45, 16.05]];
   function drawClass(ctx, ox, oy, f) {
     var x = ox - 2;
-    var top = f < 11 ? 166 : 179 + (f - 11) * (36 / 14);
-    var sleep = (top - 166) / 49; // 0 awake .. 1 face down
+    var head = CLASS_HEAD.filter(function (h) { return f >= h[0]; })[0] || CLASS_HEAD[CLASS_HEAD.length - 1];
     ctx.strokeStyle = '#000';
     ctx.lineWidth = 1.3;
     ctx.beginPath();
-    ctx.moveTo(x - 2, top + 30);
+    ctx.moveTo(x - 2, head[1] + head[2]);
     ctx.lineTo(x, 262);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.ellipse(x - 2, top + 16 - sleep * 7, 16 + sleep * 2, 16 - sleep * 7.5, 0, 0, Math.PI * 2);
-    ctx.fillStyle = '#0066cc';
-    ctx.fill();
-    ctx.strokeStyle = '#000';
-    ctx.lineWidth = 1;
     ctx.stroke();
     // desk: grey top, front rail and four legs
     D.poly(ctx, [x - 33, 221, x + 36, 221, x + 43, 238, x - 17, 238], '#cccccc', '#000', 1);
@@ -277,6 +277,14 @@
     ctx.stroke();
     D.line(ctx, x + 31, 224, x + 33, 220, '#336600', 1.2);
     D.poly(ctx, [x + 33, 222, x + 38, 219, x + 34, 224], '#009933');
+    // the head, drawn over the desk
+    ctx.beginPath();
+    ctx.ellipse(x - 2, head[1], 16, head[2], 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#0066cc';
+    ctx.fill();
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 1;
+    ctx.stroke();
   }
 
   // --- the campus -----------------------------------------------------------------------------------

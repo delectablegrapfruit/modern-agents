@@ -83,10 +83,14 @@
     opts = opts || {};
     var size = opts.size || 12;
     var e = ui.el('div', 'nopoint', null, html);
+    // Without Arial Black the bold fallback is widened 12% (Arial Black's measure), as the shared
+    // style does for menus; a sized box is narrowed to match, so it clips and centres the same.
+    var k = SRPG.hud && SRPG.hud.fonts && SRPG.hud.fonts().black ? 1 : 1.12;
     var css = 'position:absolute;left:' + x + 'px;top:' + y + 'px;font:bold ' + size + 'px ' + FONT + ';color:' +
       (opts.color || '#000') + ';line-height:' + (opts.lh || Math.round(size * 1.4)) + 'px;white-space:pre;text-align:' +
       (opts.align || 'left') + ';';
-    if (opts.w != null) css += 'width:' + opts.w + 'px;overflow:hidden;';
+    if (opts.w != null) css += 'width:' + (opts.w / k) + 'px;overflow:hidden;';
+    if (k !== 1) css += 'transform:scaleX(' + k + ');transform-origin:0 0;';
     e.style.cssText = css;
     if (opts.id) e.setAttribute('data-text', opts.id);
     return e;
@@ -122,7 +126,7 @@
   function showMain() {
     var s = S();
     panel();
-    text('"Hello there, this is New Lines Incorporated.\nWhat can I do for you today?"', 227, 122, { lh: 17 });
+    text('"Hello there, this is New Lines Incorporated.\nWhat can I do for you today?"', 227, 122.5, { lh: 17 });
     if (s.job === 1) {
       iconBtn({ icon: 'apply', label: 'APPLY FOR A JOB', x: 361, y: 206, id: 'apply' }, function () {
         result(rules.apply(S()));
@@ -150,16 +154,16 @@
 
   function showFail() {
     panel();
-    text('"Thanks for applying.  Sadly, you did not pass\nthe aptitude test.  Maybe next time around!"', 198, 121, { lh: 17 });
+    text('"Thanks for applying.  Sadly, you did not pass\nthe aptitude test.  Maybe next time around!"', 198, 122, { lh: 17 });
     text(esc(st.intreq), 267, 202, { size: 12, color: '#003399', w: 183, align: 'center', lh: 17, id: 'intreq' });
     okPill(backToMenu);
   }
 
   function showHired() {
     panel();
-    text('CONGRATULATIONS!\nYOU ARE NOW A:', 267, 125, { size: 16, color: '#fff', lh: 22.5 });
-    text(esc(st.jobtext), 250, 206, { size: 20, color: '#ffff00', w: 217, align: 'center', lh: 27, id: 'jobtext' });
-    text(esc(st.wagetext), 212, 278, { size: 16, color: '#fff', w: 293, align: 'center', lh: 22, id: 'wagetext' });
+    text('CONGRATULATIONS!\nYOU ARE NOW A:', 267, 127.5, { size: 16, color: '#fff', lh: 22 });
+    text(esc(st.jobtext), 250, 208.5, { size: 20, color: '#ffff00', w: 217, align: 'center', lh: 27, id: 'jobtext' });
+    text(esc(st.wagetext), 212, 281, { size: 16, color: '#fff', w: 293, align: 'center', lh: 22, id: 'wagetext' });
     okPill(backToMenu);
   }
 

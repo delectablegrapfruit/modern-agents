@@ -29,8 +29,7 @@
         g.drink = { t: 1 };
         return true;
       }
-      g.error();
-      return false;
+      return false; // refused silently, as the original (only BUY BOTTLE plays the error sound)
     },
     // BUY BOTTLE OF BEER - $30: one bottle (haveBooze) per click, no time cost, no limit.
     bottle: function (g) {
@@ -52,8 +51,7 @@
         SRPG.engine.go('fight', { from: 'bar' });
         return true;
       }
-      g.error();
-      return false;
+      return false; // refused silently, as the original
     },
     // PLAY DRUNKEN DARTS: free, no time.
     darts: function () {
@@ -322,40 +320,54 @@
     ctx.restore();
   }
 
-  // Wooden chair seen from the front: slatted back, seat, two rungs, four legs.
+  // Wooden chair seen from behind, turned a little (the original's 3/4 view): the slatted back
+  // faces the room, the seat's left side shows beside it, two stretchers run between the legs.
+  // Local units: (0, 0) is the stage point (x, y) at scale 1 (the front chair: 70, 227).
   function chair(ctx, x, y, k) {
     ctx.save();
     ctx.translate(x, y);
     ctx.scale(k, k);
-    var wood = '#844200', dark = '#4a2500', light = '#9c5410';
-    ctx.lineWidth = 1;
-    // back legs (behind)
-    D.rect(ctx, 49, 60, 4, 36, '#6a3500', dark, 0.8);
-    D.rect(ctx, 10, 60, 4, 38, '#6a3500', dark, 0.8);
-    // back posts
-    D.rect(ctx, 8, 6, 5, 57, wood, dark, 0.8);
-    D.rect(ctx, 50, 4, 5, 57, wood, dark, 0.8);
-    // curved top rail
+    var wood = '#804000', ink = '#333333';
+    function part(pts) { poly(ctx, pts, wood, ink, 1); }
+    // the far legs (front-left and front-right), seen past the side and through the back
+    part([-0.5, 32, 3.9, 32.5, 3.9, 92.5, -0.5, 92.5]);
+    part([49.4, 38, 53.1, 38, 53.1, 92, 49.4, 92]);
+    // the far side's stretchers, glimpsed between the right legs
+    part([53.1, 53.5, 58, 53.5, 58, 56.5, 53.1, 56.5]);
+    part([53.1, 66.5, 58, 66.5, 58, 69.5, 53.1, 69.5]);
+    // the seat's left side: its rail and two stretchers, slanting back
+    part([-0.5, 32, 8.25, 33.5, 8.25, 42.5, -0.5, 41]);
+    part([3.9, 53, 8.25, 54.5, 8.25, 58, 3.9, 56.5]);
+    part([3.9, 66, 8.25, 67.5, 8.25, 71, 3.9, 69.5]);
+    // the back legs, the rail under the seat and the stretchers between them
+    part([58, 33, 62, 33, 62, 92.5, 58, 92.5]);
+    part([8.25, 33, 12.6, 33, 12.6, 95, 8.25, 95]);
+    part([8.25, 35, 62, 35, 62, 42.5, 8.25, 42.5]);
+    part([12.6, 52.5, 58, 52, 58, 55.5, 12.6, 56]);
+    part([12.6, 66, 58, 65.5, 58, 69, 12.6, 69.5]);
+    // the back: posts and a curved crest rail framing six gaps (the seat shows at their feet)
     ctx.beginPath();
-    ctx.moveTo(6, 6);
-    ctx.quadraticCurveTo(31, -2, 58, 3);
-    ctx.lineTo(58, 10);
-    ctx.quadraticCurveTo(31, 5, 6, 13);
+    ctx.moveTo(8.25, 3.75);
+    ctx.quadraticCurveTo(35, 0.2, 62, 0.6);
+    ctx.lineTo(62, 35);
+    ctx.lineTo(8.25, 35);
     ctx.closePath();
-    ctx.fillStyle = light;
-    ctx.fill();
-    ctx.strokeStyle = dark;
+    var gaps = [[12, 17.6], [21, 25.75], [29.1, 33.6], [37.25, 41.75], [45.1, 49.5], [53.25, 58.25]];
+    gaps.forEach(function (gx, i) {
+      var top = 11.9 - i * 0.35;
+      ctx.moveTo(gx[0], top);
+      ctx.lineTo(gx[0], 35);
+      ctx.lineTo(gx[1], 35);
+      ctx.lineTo(gx[1], top);
+      ctx.closePath();
+    });
+    ctx.fillStyle = wood;
+    ctx.fill('evenodd');
+    ctx.strokeStyle = ink;
+    ctx.lineWidth = 1;
     ctx.stroke();
-    // slats
-    for (var i = 0; i < 5; i++) D.rect(ctx, 16 + i * 7.3, 11, 3.6, 22, wood, dark, 0.7);
-    // seat (front edge) and rails
-    D.rect(ctx, 0, 33, 60, 7, light, dark, 0.9);
-    D.rect(ctx, 2, 40, 56, 3, wood, dark, 0.7);
-    D.rect(ctx, 3, 58, 54, 4, wood, dark, 0.7);
-    D.rect(ctx, 3, 78, 54, 3.5, wood, dark, 0.7);
-    // front legs
-    D.rect(ctx, 1, 40, 5, 58, wood, dark, 0.8);
-    D.rect(ctx, 53, 40, 5, 58, wood, dark, 0.8);
+    // the seat, seen at the foot of each gap
+    gaps.forEach(function (gx, i) { part([gx[0], 31 - i * 0.2, gx[1], 31.5 - i * 0.2, gx[1], 35, gx[0], 35]); });
     ctx.restore();
   }
 

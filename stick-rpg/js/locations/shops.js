@@ -25,7 +25,10 @@
     var t = ui.el('div', 'nopoint', parent, html);
     t.style.cssText = 'position:absolute;left:' + x + 'px;top:' + y + 'px;' + (w ? 'width:' + w + 'px;' : 'white-space:nowrap;') +
       'font:bold ' + (o.size || 12) + 'px ' + FONT + ';color:' + (o.color || '#000') + ';line-height:' + (o.lh || 16.85) + 'px;' +
-      'text-align:' + (o.align || 'left');
+      'text-align:' + (o.align || 'left') +
+      // o.wide: without Arial Black the bold fallback is widened 12% about the box's centre line
+      // (Arial Black's measure), as the shared style does for menu text
+      (o.wide && !(SRPG.hud && SRPG.hud.fonts && SRPG.hud.fonts().black) ? ';transform:scaleX(1.12);transform-origin:50% 0' : '');
     if (o.id) t.setAttribute('data-id', o.id);
     return t;
   }
@@ -69,7 +72,9 @@
   }
 
   // Food: pay, heal, one hour. The original's condition order is kept for each item.
-  function food(g, cost, heal, sfx) {
+  // The store's candy bar and nachos (buttons 934 / 927) cap HP after either branch, so a refused
+  // purchase caps it too (capAlways); McSticks caps only after a sale.
+  function food(g, cost, heal, sfx, capAlways) {
     var s = g.s;
     if (s.cash > cost - 1 && s.hp < s.hpmax && s.time < 24) {
       s.cash -= cost;
@@ -78,6 +83,7 @@
       if (s.hp > s.hpmax) s.hp = s.hpmax;
       g.sfx(sfx);
     } else g.error();
+    if (capAlways && s.hp > s.hpmax) s.hp = s.hpmax;
   }
 
   // =========================================================================================
@@ -94,12 +100,12 @@
     var p = menuPanel(g, r);
     p.setAttribute('data-screen', win ? 'robbed' : 'jail');
     if (win) {
-      textBox(p, 'YOU DID IT!!!', 0, 139 - r.y, r.w, { size: 24, lh: 30, align: 'center' });
+      textBox(p, 'YOU DID IT!!!', 0, 141 - r.y, r.w, { size: 24, lh: 30, align: 'center', wide: true });
       textBox(p, 'You scoped the joint out, then slipped back at<br>midnight and cleaned the whole place out.', 177 - r.x, 175 - r.y, null);
       textBox(p, 'You got away with <span style="font-size:16px">$</span> <span data-id="robamount" style="font-size:16px">' +
-        v.rob.amount + '</span>', 204.5 - r.x, 209 - r.y, null, { lh: 20 });
+        v.rob.amount + '</span>', 204.5 - r.x, 211 - r.y, null, { lh: 20 });
     } else {
-      textBox(p, 'YOU GOT CAUGHT!!!', 0, 111 - r.y, r.w, { size: 24, lh: 30, align: 'center' });
+      textBox(p, 'YOU GOT CAUGHT!!!', 0, 113 - r.y, r.w, { size: 24, lh: 30, align: 'center', wide: true });
       textBox(p, "You didn't have the charm to get away with it,<br>or luck just wasn't on your side. Either<br>" +
         "way, you're stuck behind bars for the<br>next 5 days.", 158 - r.x, 168 - r.y, null);
     }
@@ -149,11 +155,11 @@
       });
       item(g, p, r, {
         icon: 'candybar', id: 'candybar', x: 187.3, y: 197, gap: 5.5, dy: 2, label: lbl('CANDY BAR ' + hp('(+3 HP)') + SEP + price('$2')),
-        onClick: function (gg) { food(gg, 2, 3, 'eat'); },
+        onClick: function (gg) { food(gg, 2, 3, 'eat', true); },
       });
       item(g, p, r, {
         icon: 'nachos', id: 'nachos', x: 187.3, y: 245.8, gap: 6.5, dy: 2, label: lbl('NACHOS ' + hp('(+7 HP)') + SEP + price('$4')),
-        onClick: function (gg) { food(gg, 4, 7, 'eat'); },
+        onClick: function (gg) { food(gg, 4, 7, 'eat', true); },
       });
       item(g, p, r, {
         icon: 'smokes', id: 'smokes', x: 372.1, y: 148.5, gap: 7, dy: 1.5, label: lbl('SMOKES' + SEP + price('$10')),
@@ -750,16 +756,17 @@
     }
   }
   function register(ctx, o) {
-    // o: top (white sloped panel), front, side, display and base polygons in stage px
+    // o: top (white sloped panel), front, side, display and base polygons in stage px. The base
+    // (a steel block standing on the counter) goes first: the register stands on it.
+    if (o.baseSide) D.poly(ctx, o.baseSide, '#999999', '#333333', 1);
+    if (o.baseTop) D.poly(ctx, o.baseTop, '#cccccc', '#333333', 1);
+    D.poly(ctx, o.base, '#666666', '#333333', 1);
     D.poly(ctx, o.side, '#999999', '#333333', 1);
     D.poly(ctx, o.top, '#ffffff', '#333333', 1);
     D.poly(ctx, o.front, '#cccccc', '#333333', 1);
     var d = o.display;
     D.rect(ctx, d[0], d[1], d[2], d[3], '#006600', K, 1);
     if (!o.blank) D.text(ctx, '0.', d[0] + d[2] - 4, d[1] + d[3] / 2 + 1, { size: 11, align: 'right', baseline: 'middle', color: '#33ff33', font: '"Courier New", monospace' });
-    if (o.baseSide) D.poly(ctx, o.baseSide, '#cccccc', '#333333', 1);
-    if (o.baseTop) D.poly(ctx, o.baseTop, '#cccccc', '#333333', 1);
-    D.poly(ctx, o.base, '#666666', '#333333', 1);
   }
   function drawMcSticks(ctx) {
     // menu lights and the dark strip under them
@@ -794,25 +801,6 @@
     D.poly(ctx, [208, 141.5, 212, 141.5, 212, 171, 208, 171], '#999999', '#333333', 1);
     D.rect(ctx, 75, 171, 136, 11, '#cccccc', '#333333', 1);
 
-    // registers: left, middle (seen straight on), right
-    register(ctx, {
-      side: [32.5, 93.5, 45, 122.5, 45, 172.5, 32.5, 180.5], top: [-1, 93.5, 32.5, 93.5, 45, 122.5, -1, 122.5],
-      front: [-1, 122.5, 32.5, 122.5, 32.5, 180.5, -1, 180.5], display: [-1, 130.5, 28, 17.5], blank: true,
-      baseSide: [42.5, 181, 67.5, 167.5, 67.5, 187.5, 42.5, 200.5], baseTop: [-1, 176, 60, 167.5, 67.5, 167.5, 42.5, 181, -1, 181],
-      base: [-1, 181, 42.5, 181, 42.5, 200.5, -1, 200.5],
-    });
-    register(ctx, {
-      side: [297.5, 89, 297.5, 89, 297.5, 89], top: [225, 89, 297.5, 89, 297.5, 125, 225, 125],
-      front: [225, 125, 297.5, 125, 297.5, 161, 225, 161], display: [229.5, 126.5, 63, 17.5],
-      baseTop: [215, 161, 308.5, 161, 308.5, 164, 215, 164], base: [215, 164, 308.5, 164, 308.5, 197.5, 215, 197.5],
-    });
-    register(ctx, {
-      side: [448.75, 94.25, 461.25, 123.75, 461.25, 181.25, 448.75, 175], top: [448.75, 94.25, 521, 94.25, 533, 123.75, 461.25, 123.75],
-      front: [461.25, 123.75, 533, 123.75, 533, 181.25, 461.25, 181.25], display: [465.5, 131.25, 63.5, 17.5],
-      baseSide: [430, 190, 451, 181.25, 451, 202.5, 430, 211], baseTop: [446, 176, 540, 176, 544, 181.25, 451, 181.25],
-      base: [451, 181.25, 544, 181.25, 544, 202.5, 451, 202.5],
-    });
-
     // curved counter: brushed-steel top, rim, yellow front with orange-framed panels
     ctx.beginPath();
     ctx.moveTo(-1, 182);
@@ -832,6 +820,24 @@
     ctx.lineWidth = 1;
     ctx.strokeStyle = '#333333';
     ctx.stroke();
+    // registers (left, middle seen straight on, right), standing on steel blocks on the counter top
+    register(ctx, {
+      side: [32.5, 93.5, 45, 122.5, 45, 172.5, 32.5, 180.5], top: [-1, 93.5, 32.5, 93.5, 45, 122.5, -1, 122.5],
+      front: [-1, 122.5, 32.5, 122.5, 32.5, 180.5, -1, 180.5], display: [-1, 130.5, 28, 17.5], blank: true,
+      baseSide: [42.5, 181, 67.5, 167.5, 67.5, 187.5, 42.5, 200.5], baseTop: [-1, 167.5, 67.5, 167.5, 42.5, 181, -1, 181],
+      base: [-1, 181, 42.5, 181, 42.5, 200.5, -1, 200.5],
+    });
+    register(ctx, {
+      side: [297.5, 89, 297.5, 89, 297.5, 89], top: [225, 89, 297.5, 89, 297.5, 125, 225, 125],
+      front: [225, 125, 297.5, 125, 297.5, 161, 225, 161], display: [229.5, 126.5, 63, 17.5],
+      baseTop: [215, 161, 308.5, 161, 308.5, 164, 215, 164], base: [215, 164, 308.5, 164, 308.5, 197.5, 215, 197.5],
+    });
+    register(ctx, {
+      side: [448.75, 94.25, 461.25, 123.75, 461.25, 181.25, 448.75, 175], top: [448.75, 94.25, 521, 94.25, 533, 123.75, 461.25, 123.75],
+      front: [461.25, 123.75, 533, 123.75, 533, 181.25, 461.25, 181.25], display: [465.5, 131.25, 63.5, 17.5],
+      baseSide: [430, 190, 451, 181.25, 451, 202.5, 430, 211], baseTop: [446, 176, 540, 176, 544, 181.25, 451, 181.25],
+      base: [451, 181.25, 544, 181.25, 544, 202.5, 451, 202.5],
+    });
     var h = function (c0, c1) {
       var g = ctx.createLinearGradient(0, 0, 550, 0);
       g.addColorStop(0, c0);

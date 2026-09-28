@@ -87,15 +87,16 @@
       c.sy = c.y + s.mapy;
     });
   }
-  // Walk frame 2's test, against where the cars were last put (whatever their state).
+  // Walk frame 2's test, against where the cars were last put (whatever their state). The source
+  // reads as "inside car1's box or inside car2's", but its compiled jumps make it
+  //   ((car1's box) || px > car2.x - 35) && px < car2.x + 30 && py > car2.y - 52 && py < car2.y + 55
+  // so only car2 knocks you down; car1 alone never does, it only stretches car2's box to the left
+  // (checked in Ruffle: car1 driving through the player leaves him standing, car2 flattens him).
   function carHits() {
-    var px = MAP.PERSON_X, py = MAP.PERSON_Y;
-    for (var i = 0; i < cars.length; i++) {
-      var c = cars[i];
-      if (c.sx === null) continue;
-      if (px > c.sx - 35 && px < c.sx + 30 && py > c.sy - 52 && py < c.sy + 55) return true;
-    }
-    return false;
+    var px = MAP.PERSON_X, py = MAP.PERSON_Y, c1 = cars[0], c2 = cars[1];
+    if (c2.sx === null) return false;
+    var in1 = c1.sx !== null && px > c1.sx - 35 && px < c1.sx + 30 && py > c1.sy - 52 && py < c1.sy + 55;
+    return (in1 || px > c2.sx - 35) && px < c2.sx + 30 && py > c2.sy - 52 && py < c2.sy + 55;
   }
 
   // --- helpers ------------------------------------------------------------------------------
@@ -146,12 +147,13 @@
     }
   }
 
-  // One frame of the walk clip. Its script runs to the end; the root timeline's last goto (a door
-  // or root frame 3) then takes effect.
+  // One frame of the walk clip. A door, a fall or a car hit sends the root timeline elsewhere, which
+  // removes the clip, and its script stops right there (Ruffle): after a door or a fall the cars
+  // neither move nor come on that tick; a hit comes after walk frame 2 has moved them once, and
+  // they are not placed again.
   function walkClip(s) {
     var frame = st.walkFrame;
     st.walkFrame = frame === 1 ? 2 : 1;
-    var knocked = false;
     if (frame === 1) {
       var m = MAP.readKeys(s, input());
       st.move = m;
@@ -167,27 +169,27 @@
       }
     }
     var r = MAP.walkLoop(s, st.move, frame === 1);
-    if (r.falls) {
-      s.hp -= 10 * r.falls;
+    if (r.event && r.event.door) { enterLocation(r.event.door); return; }
+    if (r.event) {
+      s.hp -= 10;
       fall(s);
-      knocked = true;
+      st.stun = KNOCKDOWN;
+      return;
     }
     moveCars();
     if (frame === 1) spawnCars();
     else if (carHits()) {
       hitByCar(s);
-      knocked = true;
+      st.stun = KNOCKDOWN;
+      return;
     }
     placeCars(s);
-    if (r.event && r.event.door) { enterLocation(r.event.door); return; } // a door after a fall wins
-    if (knocked) {
-      st.stun = KNOCKDOWN;
-      knockdownFrame(s); // root frame 3's script runs in the same tick: fcount = 1
-    }
   }
 
-  // Root frame 3 (looped by frame 4): fcount + 1, the moving cars drive on (no new ones), and at 40
-  // back to frame 2, where a new walk clip starts at its frame 1 straight away.
+  // Root frame 3 (looped by frame 4), from the tick after the fall or hit: fcount + 1, the moving
+  // cars drive on (no new ones), and at 40 back to frame 2. The new walk clip runs both its frames
+  // in that same tick (Ruffle logs the cars moving 18 px on it: this script's 6, then 6 per frame),
+  // and the tick after is its frame 1 again.
   function knockdownFrame(s) {
     st.stun--;
     moveCars();
@@ -195,6 +197,7 @@
     if (st.stun === 0) {
       arrive(s, false);
       walkClip(s);
+      if (st.stun === 0 && SRPG.engine.sceneName === 'city') walkClip(s);
     }
   }
 
@@ -467,7 +470,7 @@
       var anim = null, prog = 0;
       if (st.stun > 0) {
         anim = st.stunKind;
-        prog = (KNOCKDOWN - 1 - st.stun) / KNOCKDOWN;
+        prog = (KNOCKDOWN - st.stun) / KNOCKDOWN; // ticks since the fall / hit, over 40
       }
       sp.player(ctx, MAP.PLAYER_X, MAP.PLAYER_Y, {
         rot: s.rot, color: SRPG.game.personColor(s.karma), phase: st.moving ? st.walkPhase : null,

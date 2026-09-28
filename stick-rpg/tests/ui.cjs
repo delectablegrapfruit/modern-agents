@@ -222,6 +222,55 @@ let SRPG_ICON_LIST = [];
   });
   ['start', 'midnight', 'hurt'].forEach((n) => fs.writeFileSync(shotPath('hud-crisp-' + n), Buffer.from(crisp[n].split(',')[1], 'base64')));
   ok(crisp.hand[0] < 150 && crisp.hand[1] > 180, 'midnight clock: red face with a dark hand at 12 ' + JSON.stringify(crisp.hand));
+  // Clip 682's frames 44-48 (21:00-23:59) paint the hours left before midnight red (#cc0000);
+  // up to 20:59 that part of the face is grey. The dial's grey back rim shows at the lower right.
+  const dial = await page.evaluate(() => {
+    const out = {};
+    [20, 21, 22, 23.5].forEach((tm) => {
+      const c = document.createElement('canvas');
+      c.width = 240; c.height = 240;
+      const g = c.getContext('2d');
+      g.scale(4, 4);
+      SRPG.hud.clock(g, 30, 30, tm);
+      const a = (260 * Math.PI) / 180; // just left of 12 o'clock, inside the bezel
+      const p = g.getImageData(Math.round((30 + Math.cos(a) * 8) * 4), Math.round((30 + Math.sin(a) * 8) * 4), 1, 1).data;
+      const rim = g.getImageData(Math.round((30 + 16 * Math.SQRT1_2) * 4), Math.round((30 + 16 * Math.SQRT1_2) * 4), 1, 1).data;
+      out[tm] = { left: Array.from(p.slice(0, 3)), rim: Array.from(rim) };
+    });
+    return out;
+  });
+  const isRed = (p) => p[0] > 180 && p[1] < 40 && p[2] < 40;
+  ok(!isRed(dial[20].left) && dial[20].left[0] > 200 && dial[20].left[2] > 200, 'clock at 20:00: the hours left are grey ' + JSON.stringify(dial[20].left));
+  [21, 22, 23.5].forEach((tm) => ok(isRed(dial[tm].left), 'clock at ' + tm + ': the hours left before midnight are red ' + JSON.stringify(dial[tm].left)));
+  ok(dial[22].rim[3] > 200 && Math.abs(dial[22].rim[0] - 102) < 20 && Math.abs(dial[22].rim[2] - 102) < 20,
+    'clock: grey back-rim crescent at the lower right ' + JSON.stringify(dial[22].rim));
+
+  // The bank's house tiles sit high in the tile, like the original's (roof top ~1 px under the tile
+  // edge, grass ~5 px above its bottom at 35 px); GO HOME's house (inventory) is unchanged.
+  const houses = await page.evaluate(() => {
+    function box(name, size) {
+      const c = document.createElement('canvas');
+      c.width = c.height = size * 4;
+      const g = c.getContext('2d');
+      g.scale(4, 4);
+      SRPG.icons.draw(g, name, size);
+      const d = g.getImageData(0, 0, size * 4, size * 4).data;
+      const red = [1e9, 1e9, -1, -1], green = [1e9, 1e9, -1, -1];
+      for (let y = 0; y < size * 4; y++) for (let x = 0; x < size * 4; x++) {
+        const i = (y * size * 4 + x) * 4;
+        if (d[i + 3] < 200) continue;
+        const b = d[i] > 150 && d[i + 1] < 60 && d[i + 2] < 60 ? red : d[i + 1] > 100 && d[i] < 80 && d[i + 2] < 80 ? green : null;
+        if (!b) continue;
+        b[0] = Math.min(b[0], x); b[1] = Math.min(b[1], y); b[2] = Math.max(b[2], x); b[3] = Math.max(b[3], y);
+      }
+      return { roof: red.map((v) => v / 4), grass: green.map((v) => v / 4) };
+    }
+    return { re: box('realestate', 35), home: box('house', 37.5) };
+  });
+  ok(houses.re.roof[1] >= 0 && houses.re.roof[1] <= 2.5, 'real-estate house: roof top ~1 px under the tile edge ' + JSON.stringify(houses.re));
+  ok(houses.re.grass[3] <= 31 && houses.re.grass[3] >= 28, 'real-estate house: grass ~5 px above the tile bottom ' + JSON.stringify(houses.re));
+  ok(houses.re.roof[2] - houses.re.roof[0] <= 29.5, 'real-estate house: narrower than GO HOME\'s (~26 px of roof in a 35 px tile) ' + JSON.stringify(houses.re));
+  ok(houses.home.roof[1] > 4, 'GO HOME house keeps its lower placement ' + JSON.stringify(houses.home));
 
   // ---------------------------------------------------------------- SHOW FPS
   await t.newGame({ pname: 'Tester' });
@@ -432,12 +481,21 @@ let SRPG_ICON_LIST = [];
   await page.evaluate(() => { SRPG.city.closePanel(); SRPG.city.openPanel('stats'); });
   await t.clickUI('on-music');
   eq((await st()).music, 1, 'MUSIC ON while on: no change');
+  // MUSIC OFF is LoopB.stop() on a global Sound (every sound stops); MUSIC ON is LoopB.start(0, ...)
+  // (main.mp3 from the top)
+  await page.evaluate(() => { SRPG.sound.unlock(); SRPG.sound.play('crash'); });
+  await new Promise((r) => setTimeout(r, 800));
+  const snd0 = await page.evaluate(() => SRPG.sound.state());
   await t.clickUI('off-music');
   eq((await st()).music, 0, 'MUSIC OFF');
   eq(await page.evaluate(() => SRPG.sound.musicOn), false, 'music stopped');
+  const snd1 = await page.evaluate(() => SRPG.sound.state());
+  ok(snd0.sources > 10 && snd0.step > 4 && snd1.sources === 0 && !snd1.playing, 'MUSIC OFF: the music and every sound stop ' + JSON.stringify([snd0, snd1]));
   await t.clickUI('on-music');
   eq((await st()).music, 1, 'MUSIC ON');
   eq(await page.evaluate(() => SRPG.sound.musicOn), true, 'music started');
+  const snd2 = await page.evaluate(() => SRPG.sound.state());
+  ok(snd2.music === 'main' && snd2.playing && snd2.step <= 4, 'MUSIC ON: main.mp3 from the top ' + JSON.stringify(snd2));
   await t.clickUI('off-optimize');
   eq((await st()).optimize, 0, 'OPTIMIZE OFF');
   await t.shot(shotPath('stats-toggles'));

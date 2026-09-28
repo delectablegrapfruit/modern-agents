@@ -219,9 +219,13 @@
     opts = opts || {};
     var size = opts.size || 12;
     var e = ui.el('div', 'nopoint', null, html);
+    // Without Arial Black the bold fallback is widened 12% (Arial Black's measure), as the shared
+    // style does for menus; a sized box is narrowed to match, so it wraps and centres the same.
+    var k = SRPG.hud && SRPG.hud.fonts && SRPG.hud.fonts().black ? 1 : 1.12;
     e.style.cssText = 'position:absolute;left:' + x + 'px;top:' + y + 'px;font:bold ' + size + 'px ' + FONT + ';color:' +
       (opts.color || '#000') + ';line-height:' + (opts.lh || 17) + 'px;white-space:' + (opts.wrap ? 'pre-wrap' : 'pre') +
-      ';text-align:' + (opts.align || 'left') + ';' + (opts.w ? 'width:' + opts.w + 'px;' : '');
+      ';text-align:' + (opts.align || 'left') + ';' + (opts.w ? 'width:' + (opts.w / k) + 'px;' : '') +
+      (k !== 1 ? 'transform:scaleX(' + k + ');transform-origin:0 0;' : '');
     if (opts.id) e.setAttribute('data-text', opts.id);
     return e;
   }
@@ -243,12 +247,29 @@
     return p;
   }
 
+  // The six bus buttons, placed one by one in the original: [tile x, tile y, label top] (stage px).
+  // Their tiles are 40 x 36 and sit a little above the middle of the three-line labels.
+  var BUS_SPOTS = [
+    [[171.5, 142.5, 141.25], [171.5, 192, 190.1], [171.5, 241, 240.4]],
+    [[346.5, 143, 141], [345.5, 193, 192.4], [345.5, 243, 243.6]],
+  ];
+  function busTile(b, dy) {
+    var tile = b.querySelector('.ico');
+    tile.style.width = '40px';
+    tile.style.height = '36px';
+    tile.style.alignSelf = 'flex-start';
+    tile.style.marginTop = dy + 'px';
+    var cv = tile.querySelector('canvas');
+    if (cv) cv.style.margin = '-1.25px 0 0 0.25px'; // the 38 px picture, centred (the tile clips it)
+  }
+
   function showDepot() {
     panel();
-    text('"This is the bus depot.  Our buses roll out at the very\nstart of the day.  Miss them and you\'re outta luck."', 164, 96);
+    text('"This is the bus depot.  Our buses roll out at the very\nstart of the day.  Miss them and you\'re outta luck."', 164, 98);
     CITIES.forEach(function (c) {
-      iconBtn({ icon: 'bus', label: 'Sell Commodities -<br>' + esc(c.label) + '<br>$' + c.price, x: c.col ? 346.5 : 172.5,
-        y: 143 + c.row * 50, size: 37, font: 11, lh: 14, w: 165, id: 'bus_' + c.id, gap: 5, mixed: true }, function () {
+      var at = BUS_SPOTS[c.col][c.row];
+      var b = iconBtn({ icon: 'bus', label: 'Sell Commodities -<br>' + esc(c.label) + '<br>$' + c.price, x: at[0],
+        y: at[2], size: 38, font: 11, lh: 14, w: 165, id: 'bus_' + c.id, gap: 4, mixed: true }, function () {
         var s = S();
         var trip = travel(s, c);
         if (!trip) {
@@ -262,6 +283,7 @@
         st.screen = 'city';
         refresh();
       });
+      busTile(b, at[1] - at[2]);
     });
     iconBtn({ icon: 'leave', label: 'LEAVE', x: 345, y: 294, w: 81, id: 'leave' }, function () {
       SRPG.location.leave();
@@ -271,7 +293,7 @@
   function showCity() {
     var trip = st.trip || { summary: TEXT.nobody, offer: 0 };
     panel();
-    text('SELL COMMODITIES', 154, 87, { color: '#000066', w: 356, align: 'center' });
+    text('SELL COMMODITIES', 149.5, 88, { color: '#000066', w: 356, align: 'center' });
     text(esc(trip.summary), 174, 110, { size: 14, w: 316, align: 'center', wrap: true, lh: 20, id: 'summary' });
     if (trip.offer > 0 && !st.taken) {
       iconBtn({ icon: 'work', label: 'TAKE IT', x: 179, y: 297, w: 90, id: 'takeit' }, function () {

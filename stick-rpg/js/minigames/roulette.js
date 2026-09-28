@@ -132,7 +132,6 @@
     t.bet += ch.v;
     t.bets[key] = betOf(key) + ch.v;
     t.activeBet = t.bets[key];
-    SRPG.sound.play('chip');
   }
 
   // The 0 chip: give back the active space's bet.
@@ -144,7 +143,6 @@
     t.bet -= back;
     t.bets[activeKey()] = 0;
     t.activeBet = 0;
-    SRPG.sound.play('chip');
   }
 
   function clearAll() {
@@ -154,7 +152,6 @@
     t.bet = 0;
     t.activeBet = '';
     t.bets = {};
-    SRPG.sound.play('chip');
   }
 
   function spin() {
@@ -215,7 +212,6 @@
     t.activeBet = '';
     t.bets = {};
     t.spinT = 0;
-    if (total > 0) SRPG.sound.play('chip');
     build();
   }
 

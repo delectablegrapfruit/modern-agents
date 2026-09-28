@@ -98,6 +98,22 @@ function eq(name, a, b) { check(name + ' (' + JSON.stringify(a) + ' vs ' + JSON.
   s = await S();
   eq('food at 23:00', [s.cash, s.hp, s.time], [48, 8, 24]);
   await sounds();
+  // Candy bar and nachos (buttons 934 / 927) cap hp at hpmax after either branch, so a refused
+  // purchase still caps an over-full hp; the slushee has no cap (only an edited state gets here).
+  await t.set({ hp: 25, hpmax: 20, cash: 40, time: 12 });
+  await t.clickUI('nachos');
+  s = await S();
+  eq('nachos refused but hp capped', [s.cash, s.hp, s.time], [40, 20, 12]);
+  await t.set({ hp: 25 });
+  await t.clickUI('candybar');
+  s = await S();
+  eq('candy bar refused but hp capped', [s.cash, s.hp, s.time], [40, 20, 12]);
+  await t.set({ hp: 25 });
+  await t.clickUI('slushee');
+  s = await S();
+  eq('slushee refused, no cap', [s.cash, s.hp, s.time], [40, 25, 12]);
+  eq('over-full hp: three refusals', await sounds(), ['error', 'error', 'error']);
+  await t.set({ hp: 8, hpmax: 20, cash: 48, time: 24 });
   // smokes and pills: no time cost, 99 max
   await t.set({ cash: 1000, time: 12, items: { smokes: 0, pills: 0 } });
   await t.clickUI('smokes');
@@ -142,6 +158,15 @@ function eq(name, a, b) { check(name + ' (' + JSON.stringify(a) + ' vs ' + JSON.
   check('robbed amount shown', (await text()).indexOf('$ ' + pred.amt) >= 0, await text());
   eq('robbery sound', await sounds(), ['work']);
   await shot('store-robbed');
+  // The title sits where the original's does (frame 28: text top 141 in the panel at 113,125) and,
+  // without Arial Black, gets the fallback's 12% widening like the menus.
+  const title = await page.evaluate(() => {
+    const e = Array.from(document.querySelectorAll('#ui div')).find((d) => d.textContent === 'YOU DID IT!!!');
+    const r = e.getBoundingClientRect(), st = document.getElementById('stage').getBoundingClientRect(), k = 550 / st.width;
+    return { top: (r.top - st.top) * k, w: r.width * k, black: SRPG.hud.fonts().black };
+  });
+  check('robbed title top at 142 (141 inside the panel border)', Math.abs(title.top - 142) < 0.6, title);
+  check('robbed title widened without Arial Black', title.black || Math.abs(title.w - 356 * 1.12) < 1, title);
   await t.set({ mapx: 100, mapy: 100 });
   await t.clickUI('ok');
   s = await S();
@@ -293,6 +318,17 @@ function eq(name, a, b) { check(name + ' (' + JSON.stringify(a) + ' vs ' + JSON.
   await fresh({ cash: 200, hp: 1, hpmax: 200, time: 8, job: 1, karma: 0 });
   await visit('mcsticks');
   await shot('mcsticks');
+  // The left register stands on a steel block in front of the counter top (front #666666, side
+  // #999999, top #cccccc), as in the original.
+  const mcPx = (x, y) => page.evaluate(([x, y]) => {
+    SRPG.engine.draw();
+    const k = SRPG.engine.pixelScale || 1;
+    const d = document.getElementById('game').getContext('2d').getImageData(Math.round(x * k), Math.round(y * k), 1, 1).data;
+    return [d[0], d[1], d[2]];
+  }, [x, y]);
+  eq('mcsticks: steel block front', await mcPx(20, 191), [102, 102, 102]);
+  eq('mcsticks: steel block side', await mcPx(55, 185), [153, 153, 153]);
+  eq('mcsticks: steel block top', await mcPx(58, 170), [204, 204, 204]);
   eq('mcsticks buttons', (await ids()).sort(), ['burger', 'cook', 'fries', 'leave', 'milkshake', 'tripleburger'].sort());
   await t.clickUI('milkshake');
   await t.clickUI('fries');

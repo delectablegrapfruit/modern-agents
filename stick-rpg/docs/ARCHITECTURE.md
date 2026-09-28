@@ -87,7 +87,7 @@ SRPG.registerLocation({
 After a button's `onClick`, the menu rebuilds (so labels/disabled states refresh) unless the
 handler switched screens or opened a sub-screen. The `g` handle: `g.s`, `g.spend(n)` (false +
 error sound if short), `g.canAfford(n)`, `g.error()`, `g.sfx(name)`, `g.pop(text)` (big rising
-text + sound), `g.msg(text)`, `g.addKarma(n)`, `g.addStat(name, n)`, `g.heal(n)`,
+text), `g.msg(text)`, `g.addKarma(n)`, `g.addStat(name, n)`, `g.heal(n)`,
 `g.show({ title, titleColor, quote, body, icon, buttons, ok, panel })` (replace the panel with a
 sub-screen), `g.back()`, `g.refresh()`, `g.leave()`, `g.go(screen, params)`, `g.endGame()`, `g.die()`.
 
@@ -153,9 +153,15 @@ inventory skateboard car
 
 ## Sounds
 
-`SRPG.sound.play(name)`: click error eat drink work purchase fall carhit crash footstep skate
-ansmachine roulette reel handle win ignition punch swoosh fireball energy stat sleep dart cards
-chip door breath stamp. `SRPG.sound.music(name | null, force)`: beginning main inside fight (`force` plays even with MUSIC OFF, as the original does on arrival). Buttons make no click sound: the original never plays its click sample.
+`SRPG.sound.play(name)`: error eat drink work purchase fall carhit crash footstep skate ansmachine
+roulette reel1 reel2 reel3 handle win ignition punch kick fireball energy breath stamp (and click,
+which nothing plays). The old names reel, swoosh and dart are aliases of reel1, kick and footstep;
+any other name plays nothing. `SRPG.sound.music(name | null, force)`: beginning main inside fight
+(`force` plays even with MUSIC OFF, as the original does on arrival); changing the loop also stops
+every effect still playing, as the original's global Sound objects do. `SRPG.sound.stopAll()` stops
+the music and every effect (the original's stopSounds / LoopX.stop()); `SRPG.sound.setVolume(0-100)`
+is the global volume (50 on the title screen, 100 from the intro or a load). Buttons make no click
+sound: the original never plays its click sample.
 
 ## Testing
 

@@ -49,6 +49,18 @@ function eq(a, b, msg) { ok(JSON.stringify(a) === JSON.stringify(b), msg + ' (go
   ok(/What would you like to do\?/.test(menuText), 'menu heading');
   await t.step(12);
   await shot('home-menu');
+  // Stage rectangle [left, top, width, height] of the element matching sel (or with text sel).
+  const rect = (sel) => page.evaluate((sel) => {
+    const e = /^[.[]/.test(sel) ? document.querySelector('#ui ' + sel) : Array.from(document.querySelectorAll('#ui div')).find((d) => d.textContent === sel);
+    if (!e) return null;
+    const r = e.getBoundingClientRect(), st = document.getElementById('stage').getBoundingClientRect(), k = 550 / st.width;
+    return [(r.left - st.left) * k, (r.top - st.top) * k, r.width * k, r.height * k].map((v) => Math.round(v * 100) / 100);
+  }, sel);
+  const near = (a, b, tol, msg) => ok(a && b.every((v, i) => v == null || Math.abs(a[i] - v) <= tol), msg + ' (got ' + JSON.stringify(a) + ', want ' + JSON.stringify(b) + ')');
+  // the original's home panel (shape at 181.5-537, 46.5-298.5), as the bank's
+  near(await rect('.fpanel'), [181, 47, 356, 252], 0.3, 'home panel');
+  // the heading keeps its 360 px box (the bold fallback is widened 12% inside it)
+  near(await rect('What would you like to do?'), [182, 64, 360], 0.3, 'menu heading box');
   await t.set({ items: { tv: 1, computer: 1 } });
   await t.open('home');
   ok(await has('tv') && await has('computer'), 'TV / computer buttons once owned');
@@ -165,6 +177,10 @@ function eq(a, b, msg) { ok(JSON.stringify(a) === JSON.stringify(b), msg + ' (go
   eq(await mode(), 'messages', 'messages screen');
   eq(await txt('msgtext'), 'YOU HAVE (3) NEW MESSAGES', 'count heading');
   eq(await txt('msgbody'), "''first one''", 'oldest message first, in two-apostrophe quotes');
+  // placed so the ink lines up with the original's fields (Ruffle captures)
+  near(await rect('[data-id="msgtext"]'), [241, 76.2, 320], 0.3, 'message heading field');
+  near(await rect('[data-id="msgbody"]'), [210.2, 112.91, 316.7], 0.3, 'message body field');
+  near(await rect('.fpanel'), [181, 47, 356, 252], 0.3, 'messages panel');
   await sounds();
   await t.clickUI('erase');
   eq(await txt('msgtext'), 'YOU HAVE (2) NEW MESSAGES', 'erase drops one');
@@ -190,7 +206,7 @@ function eq(a, b, msg) { ok(JSON.stringify(a) === JSON.stringify(b), msg + ' (go
   await sounds();
   await t.clickUI('tv');
   eq(await mode(), 'menu', 'no TV at 23:00');
-  ok((await sounds()).includes('error'), 'refused with the error sound');
+  ok(!(await sounds()).includes('error'), 'refused silently, as the original ignores the click');
   await fresh({ items: { tv: 1 }, time: 15, intelligence: 5 });
   await t.clickUI('tv');
   eq(await mode(), 'news', 'StickNews');

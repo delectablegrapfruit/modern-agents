@@ -159,11 +159,11 @@
       case 25: sfx('punch'); break;
       case 27: sfx('punch'); landHit(c); break;
       case 54: case 89: case 150: case 215: endAttack(c); break;
-      case 65: sfx('swoosh'); break;
+      case 65: sfx('kick'); break;
       case 67: case 130: landHit(c); break;
       case 110: sfx('fireball'); break;
       case 185: sfx('energy'); landHit(c); break;
-      case 216: SRPG.sound.music(null); break; // the fight music stops as he goes down
+      case 216: SRPG.sound.stopAll(); break; // LoopC.stop() as he goes down: every sound stops
       case 234: F.itfroze = false; break;
       case 295:
         // STRENGTH INCREASED!!! (+3, capped at 999; max HP +3 regardless)
@@ -262,7 +262,7 @@
   }
 
   function backToBar() {
-    SRPG.sound.music(null);
+    SRPG.sound.stopAll(); // LoopC.stop()
     SRPG.location.open(F.from);
   }
 
@@ -755,7 +755,6 @@
       c.fillStyle = bandGrad(c);
       c.fillRect(-300, 188, 1200, 212);
       c.restore();
-      D.line(c, 0, 188, 550, 188, 'rgba(140,140,140,0.3)', 0.8);
     }
     ctx.drawImage(bg, 0, 0, SRPG.W, SRPG.H);
   }
@@ -821,11 +820,10 @@
     ctx.lineWidth = 1.3;
     ctx.strokeStyle = '#000';
     ctx.stroke();
-    ctx.font = 'bold 10.4px ' + FONT;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#fff';
-    ctx.fillText(F.hp2 + '/ ' + F.hpmax2, 416, 19);
+    // "hp2/ hpmax2": the HUD's label on the bar clip shown at 125% (Arial Black 12.5, white), with
+    // the hp figure right-aligned against the slash
+    var hpStr = String(F.hp2);
+    SRPG.hud.text(ctx, hpStr + '/ ' + F.hpmax2, 412.6 - SRPG.hud.textWidth(ctx, hpStr, 12.5), 22.4, 12.5, '#fff', 'left');
     ctx.restore();
     if (SRPG.hud.heart) {
       ctx.save();

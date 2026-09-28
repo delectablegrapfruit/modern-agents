@@ -610,6 +610,68 @@ function eq(a, b, msg) { check(a === b, msg + ' (got ' + JSON.stringify(a) + ', 
   eq(await scene(), 'city', 'and out on the street');
 
   // ------------------------------------------------------------------------------------------
+  // Sounds (srpg_as.txt 4114-4181, 5649): the handle; firstReel / thirdReel / secondReel on machine
+  // frames 23 / 31 / 39; one SFXwinSound.start(0.1, 3) call on a win; the wheel on SPIN. Blackjack
+  // and the roulette chips make no sound. Going back to root frame 40 (every game's LEAVE) re-runs
+  // its LoopB.stop() (a global Sound: every sound stops) and starts inside.mp3 from the top.
+  await ev(() => {
+    window.__snd = [];
+    const play = SRPG.sound.play;
+    SRPG.sound.play = function (n) { window.__snd.push([SRPG.slots.state ? SRPG.slots.state.mf : 0, n]); return play.apply(this, arguments); };
+    SRPG.sound.unlock();
+  });
+  const snd = () => ev(() => window.__snd.splice(0));
+  await t.newGame({ cash: 1000, karma: 0, time: 8 });
+  await t.open('casino');
+  await t.clickUI('slots');
+  await snd();
+  await forceRandom([0, 0, 0]);
+  await t.clickUI('handle');
+  await t.step(60);
+  eq(JSON.stringify(await snd()), JSON.stringify([[2, 'handle'], [23, 'reel1'], [31, 'reel3'], [39, 'reel2'], [47, 'win']]),
+    'slots: handle, the three reel sounds on frames 23 / 31 / 39, one win call on frame 47');
+  await forceRandom([0, 1, 2]);
+  await t.clickUI('handle');
+  await t.step(60);
+  eq((await snd()).map((x) => x[1]).join(','), 'handle,reel1,reel3,reel2', 'a losing pull: no win sound');
+  await forceRandom([0, 0, 0]);
+  await t.clickUI('handle');
+  await t.step(50);
+  const before = await ev(() => SRPG.sound.state());
+  await t.clickUI('leave');
+  const after = await ev(() => SRPG.sound.state());
+  check(before.sources > 10 && after.music === 'inside' && after.step <= 4 && after.sources <= 6,
+    'slots LEAVE: the win jingle is cut, inside.mp3 starts from the top ' + JSON.stringify([before, after]));
+  await snd();
+  await t.clickUI('blackjack');
+  await t.clickUI('chip25');
+  await t.clickUI('chip0');
+  await t.clickUI('chip25');
+  await t.clickUI('deal');
+  if (await hasUI('hit')) await t.clickUI('hit');
+  if (await hasUI('stand')) await t.clickUI('stand');
+  await t.step(2);
+  eq(JSON.stringify(await snd()), '[]', 'blackjack: no sounds (chips, deal, hit, stand)');
+  if (await hasUI('ok')) await t.clickUI('ok');
+  await t.clickUI('leave');
+  await t.clickUI('roulette');
+  await snd();
+  await t.clickUI('sp-red');
+  await t.clickUI('chip5');
+  await t.clickUI('chip0');
+  await t.clickUI('chip25');
+  await t.clickUI('clearall');
+  await t.clickUI('sp-red');
+  await t.clickUI('chip5');
+  eq(JSON.stringify(await snd()), '[]', 'roulette: the chips make no sound');
+  await t.clickUI('spin');
+  eq((await snd()).map((x) => x[1]).join(','), 'roulette', 'SPIN: the wheel sound (7.3 s, one call)');
+  guard = 0;
+  while ((await rt()).spinning && guard++ < 400) await t.step(5);
+  eq(JSON.stringify(await snd()), '[]', 'no chip sound on the payout');
+  await t.clickUI('leave');
+
+  // ------------------------------------------------------------------------------------------
   eq(await ev(() => window.__clicks), 0, 'no button played a click sound');
   const errs = t.errors.filter((e) => !/requestfailed|ERR_FILE_NOT_FOUND/.test(e));
   eq(errs.length, 0, 'no page errors ' + errs.join('\n'));

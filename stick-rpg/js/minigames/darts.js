@@ -81,7 +81,7 @@
     st.last = MSG[p];
     if (p > 0) {
       st.points += p;
-      SRPG.sound.play('dart');
+      SRPG.sound.play('footstep'); // a scoring throw plays SFXfootstep (there is no dart sound)
     }
     refresh();
     return true;

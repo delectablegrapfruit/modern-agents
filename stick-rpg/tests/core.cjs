@@ -2,7 +2,8 @@
 // 1), save / load, the walk clip (sprite 720: keys, speeds, facings, walls, doors, falls, its two
 // frames), traffic (spawn, lanes, speed, colours, collision, hit / crash), the knock-down (root
 // frame 3), street-people click areas, city entry (root frame 2), the night's sleep, rank, karma
-// and its colours, the black fades, music, exit nudges, input, and the text policy.
+// and its colours, the black fades, music, exit nudges, input, sound (effects and loops rendered
+// offline and measured against the original's samples), and the text policy.
 //   node tests/core.cjs
 const fs = require('fs');
 const path = require('path');
@@ -65,6 +66,42 @@ function eq(a, b, msg) { ok(JSON.stringify(a) === JSON.stringify(b), msg + ' (go
   ok(Object.keys(s0.items).every((k) => s0.items[k] === 0) && s0.booze === 0 && s0.packNumber === 0, 'no items, no booze, no packs given');
   eq([s0.msgs.length, s0.electionMessage, s0.dealMessages], [1, 0, [0, 0, 0, 0, 0]], 'one message (the McSticks job), no election or deal messages');
   eq([s0.hoboMoney, s0.hoboBooze, s0.smokesKid], [0, 0, 0], 'street people\'s one-off gifts not given');
+
+  // ---------------------------------------------------------------------------------------------
+  console.log('Flash string-to-number (SRPG.util.flashNumber / flashInt, the typed amounts)');
+  // Number(x) and int(x) of each string, traced by the original SWF running in Ruffle.
+  const NUM = [
+    ['12e', '12', '12'], ['12e+', '12', '12'], ['12e-', '12', '12'], ['12E', '12', '12'], ['1.5e', '1.5', '1'],
+    ['5.e2', '500', '500'], ['1e+2', '100', '100'], ['1e2.5', 'NaN', '0'], ['12e5x', 'NaN', '0'],
+    ['+.5', '0.5', '0'], ['-.5e1', '-5', '-5'], ['0x10', '16', '16'], ['-0x10', 'NaN', '0'],
+    ['+0x10', 'NaN', '0'], ['0x-1', '-1', '-1'], [' 0x10', 'NaN', '0'], ['0x10 ', 'NaN', '0'],
+    ['0010', '8', '8'], ['0019', '19', '19'], ['-010', '-8', '-8'], ['+010', '8', '8'],
+    ['010.5', '10.5', '10'], ['0.1', '0.1', '0'], ['00.5', '0.5', '0'], ['1e', '1', '1'], ['e', 'NaN', '0'],
+    ['.', '0', '0'], ['-', 'NaN', '0'], ['+', 'NaN', '0'], ['1.2.3', 'NaN', '0'], ['5 ', 'NaN', '0'],
+    [' 5', '5', '5'], ['\t5', '5', '5'], ['\r5', '5', '5'], ['5\t', 'NaN', '0'],
+    ['1e0010', '10000000000', '1410065408'], ['1e+010', '10000000000', '1410065408'], ['0e5', '0', '0'],
+    ['0x7FFFFFFF', '2147483647', '2147483647'], ['0xFFFFFFFF', '-1', '-1'], ['0x100000000', '0', '0'],
+    ['99999999999', '99999999999', '1215752191'], ['-99999999999', '-99999999999', '-1215752191'],
+    ['3000000000', '3000000000', '-1294967296'], ['1.9999999999', '1.9999999999', '1'],
+    ['Infinity', 'NaN', '0'], ['-Infinity', 'NaN', '0'], ['NaN', 'NaN', '0'], ['\u0663', 'NaN', '0'],
+    ['\uff15', 'NaN', '0'], ['1e309', 'Infinity', '0'], ['4e9', '4000000000', '-294967296'],
+    ['0777777777777', '-1', '-1'], [' 010', '10', '10'], ['-0019', '-19', '-19'], ['0x+10', '16', '16'],
+    ['-00', '0', '0'], ['00', '0', '0'], ['-0', '0', '0'], ['0x', 'NaN', '0'], ['0X-F', '-15', '-15'],
+    ['-077777777777', '1', '1'], ['0x80000000', '-2147483648', '-2147483648'],
+    ['0x7fffffff', '2147483647', '2147483647'], ['1.e', '1', '1'], ['.e1', '0', '0'], ['-.', '0', '0'],
+    ['+.', '0', '0'], ['.5e', '0.5', '0'], ['1e+', '1', '1'], ['1ee', 'NaN', '0'], ['0x1e', '30', '30'],
+    ['5e-', '5', '5'], [' 12e', '12', '12'], ['\n5', '5', '5'], ['\u00a05', 'NaN', '0'],
+    ['\u20035', 'NaN', '0'], ['0 ', 'NaN', '0'], ['010e2', '1000', '1000'], ['-0x', 'NaN', '0'],
+    ['0xg', 'NaN', '0'], ['1e-', '1', '1'], ['12e+3', '12000', '12000'], ['+-5', 'NaN', '0'],
+    ['--5', 'NaN', '0'], ['-+010', 'NaN', '0'], ['0x0x1', 'NaN', '0'], ['08.5', '8.5', '8'],
+    ['0o10', 'NaN', '0'], ['1d', 'NaN', '0'], ['1f', 'NaN', '0'], ['0.', '0', '0'], ['-0.', '0', '0'],
+    ['07e1', '70', '70'], ['007', '7', '7'], ['-7', '-7', '-7'], ['0x-80000000', '-2147483648', '-2147483648'],
+    ['0x-FFFFFFFF', '1', '1'],
+  ];
+  const nums = await ev((tab) => tab.filter(([v, n, i]) => String(SRPG.util.flashNumber(v)) !== n || String(SRPG.util.flashInt(v)) !== i)
+    .map(([v, n, i]) => [v, n, i, String(SRPG.util.flashNumber(v)), String(SRPG.util.flashInt(v))]), NUM);
+  eq(nums, [], NUM.length + ' strings convert as in Ruffle (exponent mark without digits ignored, signed octal, 32-bit hex, only space/tab/CR/LF skipped)');
+  eq(await ev(() => [SRPG.util.flashNumber(12.5), SRPG.util.flashInt(-7.9), SRPG.util.flashInt(undefined)]), [12.5, -7, 0], 'numbers pass through; int() truncates toward 0; undefined is 0');
 
   // ---------------------------------------------------------------------------------------------
   console.log('Save / load (saveGame / loadGame)');
@@ -229,9 +266,19 @@ function eq(a, b, msg) { ok(JSON.stringify(a) === JSON.stringify(b), msg + ' (go
   eq((await loop({ mapx: 447, mapy: 900, dwelling: 5 }, L)).door, 'mansion', '...the castle uses it too');
   eq((await loop({ mapx: 1050, mapy: 754, dwelling: 4 }, U)).door, 'oldapartment', 'home door leads to the old apartment once you have moved out');
   const dd = await loop({ mapx: 447, mapy: 320 }, { xmove: 3, ymove: 3 });
-  eq([dd.door, dd.mapx, dd.mapy, dd.m], ['mcsticks', 447, 323, [0, 3]], 'a door zeroes xmove but the rest of the sub-step still moves y');
+  // A door or a fall sends the root timeline away and the walk clip's script stops there (Ruffle):
+  // no step on the other axis, no further sub-step (diagonal replays of the original match this).
+  eq([dd.door, dd.mapx, dd.mapy, dd.m], ['mcsticks', 447, 320, [0, 3]], 'a door zeroes xmove and ends the walk: no y step after it');
   const sk = await loop({ mapx: 447, mapy: 320 }, { xmove: 4, walkspeed: 2 });
-  eq([sk.door, sk.mapx], ['mcsticks', 447], 'skating into a door skips the next sub-step');
+  eq([sk.door, sk.mapx], ['mcsticks', 447], 'skating into a door: no further sub-step');
+  const dn = await loop({ mapx: 117, mapy: 540 }, { xmove: -3, ymove: 3 });
+  eq([dn.door, dn.mapx, dn.mapy], ['nli', 117, 540], 'up-right into the NLI door at mapy 540: in at 540 (Ruffle), not 543');
+  const fx = await loop({ mapx: 1228, mapy: 600 }, { xmove: 3, ymove: 3 });
+  eq([fx.fall, fx.falls, fx.mapx, fx.mapy, fx.m], [true, 1, 1211, 600, [0, 3]], 'up-left off the west edge: pushed back 20, no y step after the fall');
+  const fd = await loop({ mapx: -658, mapy: 207 }, { xmove: -3, ymove: -3 }, false);
+  eq([fd.fall, fd.mapx, fd.mapy], [true, -641, 207], 'frame 2 falls the same way (down-right off the east edge, no y step)');
+  const fs5 = await loop({ mapx: 1225, mapy: 600, driving: 1 }, { xmove: 4, walkspeed: 5 });
+  eq([fs5.falls, fs5.mapx], [1, 1213], 'the sports car (5 sub-steps) stops at the fall: no more steps back towards the edge');
   // edges
   const edges = [['east edge (right)', { mapx: -657, mapy: 100 }, R, 'mapx', -641], ['west edge (left)', { mapx: 1227, mapy: 600 }, L, 'mapx', 1211],
     ['south edge (down)', { mapx: 200, mapy: -687 }, D, 'mapy', -671], ['north edge (up)', { mapx: 200, mapy: 1011 }, U, 'mapy', 995]];
@@ -377,10 +424,10 @@ function eq(a, b, msg) { ok(JSON.stringify(a) === JSON.stringify(b), msg + ' (go
   }
   await sfx();
   const hw = await hitAt(250, 200, false);
-  eq([hw.stun, hw.kind, hw.hp, hw.msgs], [39, 'hit', 90, 1], 'on foot: knocked flat, -10 HP, a lawyer / reporter message');
+  eq([hw.stun, hw.kind, hw.hp, hw.msgs], [40, 'hit', 90, 1], 'on foot: knocked flat, -10 HP, a lawyer / reporter message');
   eq((await sfx()).includes('carhit'), true, 'the car-hit sound');
   const hd = await hitAt(250, 200, true);
-  eq([hd.stun, hd.kind, hd.hp, hd.msgs], [39, 'crash', 90, 0], 'driving: a crash, -10 HP, no message');
+  eq([hd.stun, hd.kind, hd.hp, hd.msgs], [40, 'crash', 90, 0], 'driving: a crash, -10 HP, no message');
   eq((await sfx()).includes('crash'), true, 'the crash sound');
   const f1 = await ev(() => {
     const s = SRPG.game.s;
@@ -393,30 +440,96 @@ function eq(a, b, msg) { ok(JSON.stringify(a) === JSON.stringify(b), msg + ' (go
     return SRPG.city.st.stun;
   });
   eq(f1, 0, 'no collision test on walk frame 1');
+  // Which car: the source reads "car1's box or car2's box", but the compiled jumps make it
+  // ((car1's box) || px > car2.x - 35) && px < car2.x + 30 && py > car2.y - 52 && py < car2.y + 55,
+  // so only car2 knocks you down (Ruffle: car1 alone drives straight through the player).
+  const hit2 = (c1, c2) => ev(([c1, c2]) => {
+    const s = SRPG.game.s;
+    s.hp = 100; s.driving = 0;
+    SRPG.city.st.stun = 0;
+    SRPG.city.clearTraffic();
+    [c1, c2].forEach((p, i) => {
+      if (!p) return;
+      const c = SRPG.city.cars[i];
+      c.placed = true; c.s = 5000; c.clip = 1; c.x = p[0] - s.mapx; c.y = p[1] - s.mapy; c.sx = p[0]; c.sy = p[1];
+    });
+    SRPG.city.st.walkFrame = 2;
+    SRPG.city.st.move = { xmove: 0, ymove: 0, walkspeed: 1 };
+    SRPG.engine.step(1);
+    const r = [SRPG.city.st.stun > 0, s.hp];
+    SRPG.city.st.stun = 0;
+    return r;
+  }, [c1, c2]);
+  eq(await hit2([250, 200], null), [false, 100], 'car1 right over the player: no hit (car1 never knocks you down)');
+  eq(await hit2([250, 200], [250, 600]), [false, 100], '...nor with car2 elsewhere on the road');
+  eq(await hit2(null, [250, 200]), [true, 90], 'car2 over the player: hit');
+  eq(await hit2(null, [290, 200]), [false, 100], 'car2 just right of the player (x - 35 = 255 > 247.15): miss');
+  eq(await hit2([250, 200], [290, 200]), [true, 90], '...but with car1 over the player it hits: car1 stretches car2\'s box to the left');
+  eq(await hit2([250, 200], [210, 200]), [false, 100], 'car2 too far left (x + 30 = 240 < 247.15): car1 does not help');
+  // the hit tick: walk frame 2 moved the cars once before its test, then its script stops (the cars
+  // are not placed again); root frame 3 moves and places them from the next tick
+  const ht = await ev(() => {
+    const s = SRPG.game.s;
+    s.hp = 100; s.driving = 0;
+    SRPG.city.st.stun = 0;
+    SRPG.city.clearTraffic();
+    const c = SRPG.city.cars[1];
+    c.placed = true; c.s = 1; c.clip = 1; c.x = 250 - s.mapx; c.y = 206 - s.mapy; c.sx = 250; c.sy = 206;
+    SRPG.city.st.walkFrame = 2;
+    SRPG.city.st.move = { xmove: 0, ymove: 0, walkspeed: 1 };
+    const y0 = c.y;
+    SRPG.engine.step(1);
+    const r = [SRPG.city.st.stun, c.y - y0, c.sy];
+    SRPG.engine.step(1);
+    r.push(SRPG.city.st.stun, c.y - y0, c.sy);
+    SRPG.city.st.stun = 0;
+    return r;
+  });
+  eq(ht, [40, -6, 206, 39, -12, 194], 'hit tick: the car moved 6 px (not placed again); next tick root frame 3: fcount 1, 6 px more, placed');
+
+  // a door on walk frame 1: the walk clip is gone, so no traffic that tick
+  await fresh({ mapx: 447, mapy: 320 });
+  const dt = await ev(() => {
+    const [a, b] = SRPG.city.cars;
+    a.placed = true; a.s = 1; a.clip = 1; a.x = 15; a.y = 300;
+    b.s = 3; b.clip = 33; // would come on for sure on this frame 1
+    SRPG.engine.keys.ArrowLeft = true;
+    SRPG.engine.step(1);
+    SRPG.engine.keys.ArrowLeft = false;
+    const r = [SRPG.engine.sceneName, SRPG.location.current, a.y, b.s];
+    SRPG.location.leave();
+    return r;
+  });
+  eq(dt, ['location', 'mcsticks', 300, 3], 'walking into a door: the cars neither move, count down nor come on that tick');
 
   // ---------------------------------------------------------------------------------------------
   console.log('Knock-down (root frame 3)');
   await fresh({ mapx: 200, mapy: 1011, hp: 50 });
-  await ev(() => { const c = SRPG.city.cars[0]; c.placed = true; c.s = 1; c.clip = 1; c.x = 15; c.y = 0; });
+  await ev(() => {
+    const [a, b] = SRPG.city.cars;
+    a.placed = true; a.s = 1; a.clip = 1; a.x = 15; a.y = 0;
+    b.s = 3; b.clip = 33; // would come on for sure on this frame 1
+  });
   await t.hold(['ArrowUp'], 1);
-  const k0 = await ev(() => ({ stun: SRPG.city.st.stun, kind: SRPG.city.st.stunKind, hp: SRPG.game.s.hp, mapy: SRPG.game.s.mapy, cy: SRPG.city.cars[0].y }));
-  eq([k0.stun, k0.kind, k0.hp, k0.mapy], [39, 'fall', 40, 995], 'falling off: -10 HP, pushed back 20, fcount 1 of 40');
-  eq(k0.cy, -12, 'the fall tick moves the cars twice (walk frame, then root frame 3)');
+  const k0 = await ev(() => ({ stun: SRPG.city.st.stun, kind: SRPG.city.st.stunKind, hp: SRPG.game.s.hp, mapy: SRPG.game.s.mapy, cy: SRPG.city.cars[0].y, c2: SRPG.city.cars[1].s }));
+  eq([k0.stun, k0.kind, k0.hp, k0.mapy], [40, 'fall', 40, 995], 'falling off: -10 HP, pushed back 20; root frame 3 counts from the next tick');
+  eq([k0.cy, k0.c2], [0, 3], 'the fall tick has no traffic: the walk clip stops at the fall (Ruffle: the cars move 0 px)');
   eq((await sfx()).includes('fall'), true, 'the fall sound');
   eq(await ev(() => SRPG.hud.hit(477, 21)), null, 'no HUD buttons while down');
   await ev(() => { SRPG.game.s.intelligence = 1500; SRPG.city.cars[1].s = 500; SRPG.city.cars[1].clip = 33; });
   const during = await ev(() => {
     const out = [];
     SRPG.engine.keys.ArrowDown = true;
-    for (let i = 0; i < 38; i++) { SRPG.engine.step(1); out.push([SRPG.game.s.mapy, SRPG.city.st.stun]); }
+    for (let i = 0; i < 39; i++) { SRPG.engine.step(1); out.push([SRPG.game.s.mapy, SRPG.city.st.stun]); }
     return out;
   });
-  ok(during.every((p) => p[0] === 995), 'no walking for 38 ticks, keys held');
-  eq(await ev(() => [SRPG.city.cars[0].y, SRPG.city.cars[1].s]), [-12 - 6 * 38, 500], 'moving cars drive on, no count-down');
+  ok(during.every((p) => p[0] === 995) && during[38][1] === 1, 'no walking for 39 ticks (fcount 1-39), keys held', during.slice(-1));
+  eq(await ev(() => [SRPG.city.cars[0].y, SRPG.city.cars[1].s]), [-6 * 39, 500], 'moving cars drive on 6 px a tick, no count-down');
   await t.step(1);
   await ev(() => { SRPG.engine.keys.ArrowDown = false; });
-  const k40 = await ev(() => ({ stun: SRPG.city.st.stun, mapy: SRPG.game.s.mapy, int: SRPG.game.s.intelligence }));
-  eq([k40.stun, k40.mapy, k40.int], [0, 991, 999], 'fcount 40: back to root frame 2 (stat caps) and a new walk clip walks the same tick');
+  const k40 = await ev(() => ({ stun: SRPG.city.st.stun, mapy: SRPG.game.s.mapy, int: SRPG.game.s.intelligence, cy: SRPG.city.cars[0].y, wf: SRPG.city.st.walkFrame }));
+  eq([k40.stun, k40.mapy, k40.int], [0, 987, 999], 'fcount 40: back to root frame 2 (stat caps), and the new walk clip runs both its frames that tick (two steps)');
+  eq([k40.cy, k40.wf], [-6 * 39 - 18, 1], '...the cars move 18 px on it (root frame 3, walk frames 1 and 2, as Ruffle logs), and the next tick is walk frame 1');
 
   // clicking a street person while down
   await fresh({ mapx: 400, mapy: 200 });
@@ -675,6 +788,247 @@ function eq(a, b, msg) { ok(JSON.stringify(a) === JSON.stringify(b), msg + ' (go
   };
   const badc = kc.colors.filter(([k, c]) => c !== orig(k));
   eq(badc, [], 'every karma from -110 to 110 (half steps) gets the original\'s colour (0-10 blue, > 10 lighter per 10, < 0 darker per 10)');
+
+  // ---------------------------------------------------------------------------------------------
+  console.log('Sound (sound.js rendered offline, measured against the original\'s samples)');
+  {
+    // js/core/sound.js runs on its own page with an OfflineAudioContext behind a Proxy (virtual
+    // currentTime and timers), and each render is measured there: K-weighted loudness (BS.1770,
+    // ungated) and length of the part within 40 dB of the peak, as in the audio audit.
+    const rp = await t.browser.newPage();
+    await rp.setContent('<html><body></body></html>');
+    const SRC = fs.readFileSync(path.join(h.ROOT, 'js/core/sound.js'), 'utf8');
+    const render = (jobs) => rp.evaluate(async ({ SRC, jobs }) => {
+      const SR = 44100;
+      function biquad(x, b, a) {
+        const y = new Float64Array(x.length);
+        let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+        for (let i = 0; i < x.length; i++) {
+          const v = b[0] * x[i] + b[1] * x1 + b[2] * x2 - a[1] * y1 - a[2] * y2;
+          x2 = x1; x1 = x[i]; y2 = y1; y1 = v; y[i] = v;
+        }
+        return y;
+      }
+      function rbj(type, f0, Q) { // RBJ cookbook low/high-pass
+        const w = 2 * Math.PI * f0 / SR, al = Math.sin(w) / (2 * Q), c = Math.cos(w), a0 = 1 + al;
+        const b = type === 'lp' ? [(1 - c) / 2, 1 - c, (1 - c) / 2] : [(1 + c) / 2, -(1 + c), (1 + c) / 2];
+        return [b.map((v) => v / a0), [1, -2 * c / a0, (1 - al) / a0]];
+      }
+      function kweight(x) {
+        let K = Math.tan(Math.PI * 1681.974450955533 / SR), Q = 0.7071752369554196;
+        const Vh = Math.pow(10, 3.999843853973347 / 20), Vb = Math.pow(Vh, 0.4996667741545416);
+        let a0 = 1 + K / Q + K * K;
+        const y = biquad(x, [(Vh + Vb * K / Q + K * K) / a0, 2 * (K * K - Vh) / a0, (Vh - Vb * K / Q + K * K) / a0], [1, 2 * (K * K - 1) / a0, (1 - K / Q + K * K) / a0]);
+        K = Math.tan(Math.PI * 38.13547087602444 / SR); Q = 0.5003270373238773; a0 = 1 + K / Q + K * K;
+        return biquad(y, [1, -2, 1], [1, 2 * (K * K - 1) / a0, (1 - K / Q + K * K) / a0]);
+      }
+      const ms = (x, i0, i1) => { let e = 0; i0 = Math.max(0, i0 | 0); i1 = Math.min(x.length, i1 | 0); for (let i = i0; i < i1; i++) e += x[i] * x[i]; return e / Math.max(1, i1 - i0); };
+      const db = (v) => 10 * Math.log10(v + 1e-20);
+      const r1 = (v) => Math.round(v * 10) / 10;
+      const r3 = (v) => Math.round(v * 1000) / 1000;
+      function analyze(x, o) {
+        const out = {};
+        let pk = 0;
+        for (let i = 0; i < x.length; i++) pk = Math.max(pk, Math.abs(x[i]));
+        out.peak = r1(20 * Math.log10(pk + 1e-12));
+        const hop = Math.round(SR * 0.005), win = 2 * hop, env = [];
+        for (let i = 0; i + win <= x.length; i += hop) env.push(db(ms(x, i, i + win)));
+        const top = Math.max.apply(null, env);
+        const act = env.map((v, i) => (v > top - 40 && v > -140 ? i : -1)).filter((i) => i >= 0);
+        if (!act.length) return { silent: true, peak: out.peak };
+        const a0 = act[0], a1 = act[act.length - 1];
+        out.start = r3(a0 * 0.005);
+        out.dur = r3((a1 - a0 + 1) * 0.005);
+        const k = kweight(x);
+        out.lufs = r1(-0.691 + db(ms(k, a0 * hop, (a1 + 2) * hop)));
+        if (o.win) out.lufsWin = o.win.map((w) => r1(-0.691 + db(ms(k, w[0] * SR, w[1] * SR))));
+        if (o.win) out.peakWin = o.win.map((w) => { let m = 0; for (let i = Math.round(w[0] * SR); i < w[1] * SR; i++) m = Math.max(m, Math.abs(x[i])); return r1(20 * Math.log10(m + 1e-12)); });
+        if (o.period) { // correlation of the waveform with itself `lag` seconds later
+          const [a, n, lag] = o.period.map((v) => Math.round(v * SR));
+          let c = 0, e1 = 0, e2 = 0;
+          for (let i = a; i < a + n; i++) { c += x[i] * x[i + lag]; e1 += x[i] * x[i]; e2 += x[i + lag] * x[i + lag]; }
+          out.pcorr = r3(c / Math.sqrt(e1 * e2 + 1e-20));
+        }
+        const E = ms(x, 0, x.length);
+        let hi = x;
+        for (let s = 0; s < 4; s++) hi = biquad(hi, ...rbj('hp', 5512, 0.7071));
+        out.above5k = r3(ms(hi, 0, x.length) / E);
+        out.lo150 = r3(ms(biquad(x, ...rbj('lp', 150, 0.7071)), 0, x.length) / E);
+        out.hp300 = r3(ms(biquad(x, ...rbj('hp', 300, 0.7071)), 0, x.length) / E);
+        if (o.trig !== undefined) {
+          const t = Math.round(o.trig * SR);
+          let head = 0, rest = 0;
+          for (let i = t - 2; i <= t + 2; i++) head = Math.max(head, Math.abs(x[i]));
+          for (let i = t + 44; i < x.length; i++) rest = Math.max(rest, Math.abs(x[i]));
+          out.head = r3(head); out.rest = r3(rest);
+        }
+        if (o.gaps) { // share of 5 ms frames more than 20 dB under the loudest
+          const e5 = [];
+          for (let i = Math.round(o.gaps[0] * SR); i + hop <= o.gaps[1] * SR; i += hop) e5.push(db(ms(x, i, i + hop)));
+          const m = Math.max.apply(null, e5);
+          out.gaps = r3(e5.filter((v) => v < m - 20).length / e5.length);
+        }
+        if (o.after !== undefined) { let m = 0; for (let i = Math.round(o.after * SR); i < x.length; i++) m = Math.max(m, Math.abs(x[i])); out.after = m; }
+        if (o.pitch) { // strongest autocorrelation lag (60-600 Hz) over a window
+          const i0 = Math.round(o.pitch[0] * SR), n = Math.round((o.pitch[1] - o.pitch[0]) * SR);
+          let best = 0, bl = 0;
+          const e0 = ms(x, i0, i0 + n) * n;
+          for (let lag = Math.round(SR / 600); lag <= Math.round(SR / 60); lag++) {
+            let c = 0;
+            for (let i = i0; i < i0 + n; i++) c += x[i] * x[i + lag];
+            if (c / e0 > best) { best = c / e0; bl = lag; }
+          }
+          out.f0 = r1(SR / bl); out.ac = r3(best);
+        }
+        return out;
+      }
+      const results = [];
+      for (const job of jobs) {
+        const off = new OfflineAudioContext(1, Math.round(SR * job.dur), SR);
+        let T = 0, id = 0;
+        const q = [];
+        let seed = job.seed || 12345; // the same noise on every run (mulberry32)
+        Math.random = function () {
+          seed = (seed + 0x6d2b79f5) | 0;
+          let r = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+          r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r;
+          return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+        };
+        window.SRPG = {};
+        window.AudioContext = function () {
+          return new Proxy(off, { get(t, k) {
+            if (k === 'currentTime') return T;
+            if (k === 'state') return 'running';
+            const v = t[k];
+            return typeof v === 'function' ? v.bind(t) : v;
+          } });
+        };
+        window.setTimeout = function (fn, ms) { q.push({ t: T + ms / 1000, fn, id: ++id }); return id; };
+        window.clearTimeout = function (n) { const i = q.findIndex((e) => e.id === n); if (i >= 0) q.splice(i, 1); };
+        (0, eval)(SRC);
+        const snd = SRPG.sound;
+        snd.unlock();
+        const ev = job.seq.slice().sort((a, b) => a[0] - b[0]);
+        let ei = 0;
+        for (;;) {
+          q.sort((a, b) => a.t - b.t);
+          const nt = q.length ? q[0].t : Infinity, ne = ei < ev.length ? ev[ei][0] : Infinity;
+          if (Math.min(nt, ne) > job.dur) break;
+          if (ne <= nt) {
+            const [t, a] = ev[ei++];
+            T = t;
+            if (a === '!stop') snd.stopAll();
+            else if (a === '!off') snd.setMusic(false);
+            else if (a.indexOf('!vol:') === 0) snd.setVolume(+a.slice(5));
+            else if (a.indexOf('!music:') === 0) snd.music(a.slice(7), true);
+            else snd.play(a);
+          } else {
+            const e = q.shift();
+            T = e.t;
+            e.fn();
+          }
+        }
+        const buf = await off.startRendering();
+        results.push(analyze(buf.getChannelData(0), job));
+      }
+      return results;
+    }, { SRC, jobs });
+
+    // The original's samples (11 kHz MP3s, trimmed; the part the script plays): start of the
+    // sound, its length and loudness (LUFS), from the audio audit.
+    const ORIG = {
+      error: [0.15, 0.135, -26.7], eat: [0, 0.364, -22.5], drink: [0.04, 0.659, -18.1], work: [0.005, 0.878, -20.6],
+      purchase: [0, 0.873, -17.8], fall: [0.04, 0.763, -11.8], carhit: [0, 0.384, -18.1], crash: [0, 2.624, -16.8],
+      footstep: [0.04, 0.269, -34.8], skate: [0, 0.259, -31.8], ansmachine: [0.07, 1.003, -24.0], roulette: [0, 7.378, -17.5],
+      reel1: [0.02, 0.813, -25.4], reel2: [0.03, 0.958, -26.8], reel3: [0.03, 0.853, -26.3], handle: [0.035, 1.736, -32.4],
+      win: [0, 1.901, -25.2], ignition: [0, 2.045, -15.4], breath: [0.19, 1.971, -16.1], punch: [0, 0.21, -11.1],
+      kick: [0, 0.958, -12.5], fireball: [0, 2.878, -10.9], energy: [0, 1.761, -8.8], stamp: [0, 0.224, -12.3],
+    };
+    const names = Object.keys(ORIG);
+    const fx = await render(names.map((n) => ({ dur: n === 'roulette' ? 8.5 : 3.5, seq: [[0, n]] })));
+    names.forEach((n, i) => {
+      const [st, du, lu] = ORIG[n], m = fx[i];
+      ok(Math.abs(m.lufs - lu) <= 1.5 && Math.abs(m.dur - du) <= Math.max(0.06, 0.1 * du) && Math.abs(m.start - st) <= 0.03,
+        n + ': loudness, length and start within 1.5 LU / 10% / 30 ms of the original (' + [st, du, lu].join(' / ') + ')', m);
+      ok(m.above5k < 0.05, n + ': band-limited like the 11 kHz original (' + (m.above5k * 100).toFixed(1) + '% above 5.5 kHz)');
+    });
+    eq(new Set([1, 2, 3].map((k) => fx[names.indexOf('reel' + k)].dur)).size, 3, 'three different reel sounds');
+    ok(fx[names.indexOf('footstep')].lufs - fx[names.indexOf('roulette')].lufs < -12, 'balance: the footstep ~17 LU under the roulette wheel, as in the original');
+
+    const [snore, click, clickK, stop, sw, cnt, win, v50, v100, skate] = await render([
+      { dur: 3, seq: [[0, 'breath']], pitch: [0.9, 1.3] },
+      { dur: 5, seq: [[4.4, 'footstep']], trig: 4.4 }, // the start time that made noise() click
+      { dur: 5.5, seq: [[4.4, 'kick']], trig: 4.4 },
+      { dur: 4, seq: [[0, 'roulette'], [2.2, '!stop']], after: 2.21 },
+      { dur: 2, seq: [[0, '!off'], [0, 'crash'], [0.5, '!music:inside'], [0.5, '!off']], after: 0.52 },
+      // results count-up: SFXwork.stop(); SFXwork.start() on every tick for 3 s
+      { dur: 3.2, seq: [].concat(...Array.from({ length: 105 }, (_, i) => [[i / 35, '!stop'], [i / 35, 'work']])), win: [[0, 104 / 35]] },
+      { dur: 3, seq: [[0, 'win']] },
+      { dur: 1, seq: [[0, '!vol:50'], [0, 'footstep']] },
+      { dur: 1, seq: [[0, 'footstep']] },
+      { dur: 3, seq: Array.from({ length: 17 }, (_, i) => [i * 6 / 35, 'skate']), gaps: [0.3, 2.7] },
+    ]);
+    ok([131, 262, 393, 524].some((f) => Math.abs(snore.f0 / f - 1) < 0.04) && snore.ac > 0.5, 'intro breath: a harmonic snore on ~131 Hz, not noise', snore);
+    ok(click.head < 0.01 && clickK.head < 0.01, 'no one-sample click when a voice starts (the gain starts at 0)', [click, clickK]);
+    eq(stop.after, 0, 'stopAll() cuts the 7.3 s roulette roll dead (the original\'s LoopX.stop() on a global Sound)');
+    ok(sw.after < 0.001, 'a change of music loop stops the effects still playing (even with music off)', sw.after);
+    ok(Math.abs(cnt.lufsWin[0] - -41.1) <= 2 && cnt.peakWin[0] < -20, 'count-up: stop + work every tick is a quiet crackle (original -41.1 LUFS, peak -24 dBFS)', cnt);
+    ok(Math.abs(win.dur - 1.9) < 0.1, 'win: one call is the whole 1.9 s (start(0.1, 3): three loops)', win.dur);
+    ok(Math.abs(v50.lufs - v100.lufs + 6) < 0.3, 'setVolume(50): 6 dB down (the title\'s global volume)', [v50.lufs, v100.lufs]);
+    ok(skate.gaps < 0.05, 'skating: a skate every 6 ticks makes a continuous roll (no gaps)', skate.gaps);
+
+    // Music: tempo and loop length from the original's loops; loudness, register and repetition
+    // measured on the render. The title loop plays at the title's 50% volume.
+    const info = await ev(() => ['beginning', 'main', 'inside', 'fight'].map((n) => SRPG.sound.loopInfo(n)));
+    eq(info.map((l) => [l.bpm, Math.round(l.seconds * 100) / 100]), [[159.7, 6.01], [100, 57.6], [140, 6.86], [140, 6.86]],
+      'loops: title 159.7 bpm / 6.01 s, main 100 bpm / 57.6 s, inside and fight 140 bpm / 6.86 s');
+    const L = info.map((l) => l.seconds);
+    // (our loops start 0.05 s after the call: one whole loop is measured)
+    const mu = await render([
+      { dur: 0.05 + L[0], seq: [[0, '!vol:50'], [0, '!music:beginning']], win: [[0.05, 0.05 + L[0]]] },
+      { dur: 0.05 + L[1], seq: [[0, '!music:main']], win: [[0.05, 0.05 + L[1]], [0.05, 0.05 + 8 * 2.4]], period: [0.05, 2.4, 4 * 2.4] },
+      { dur: 0.05 + 2 * L[2], seq: [[0, '!music:inside']], win: [[0.05, 0.05 + L[2]]], period: [0.05, L[2] - 0.1, L[2]] },
+      { dur: 0.05 + L[3], seq: [[0, '!music:fight']], win: [[0.05, 0.05 + L[3]]] },
+    ]);
+    const [ti, ma, ins, fi] = mu;
+    ok(Math.abs(ti.lufsWin[0] - -26.2) <= 1.5 && ti.hp300 > 0.9, 'title loop: -26.2 LUFS at 50% volume, no bass (400-1600 Hz)', ti);
+    ok(Math.abs(ma.lufsWin[0] - -22.8) <= 1.5 && ma.lo150 > 0.75, 'main loop: -22.8 LUFS, a ~65 Hz bass (most energy under 100 Hz)', ma);
+    ok(ma.lufsWin[1] < ma.lufsWin[0] - 1.5, 'main loop: bars 1-8 quieter than the whole (original -25.2 vs -22.8)', ma.lufsWin);
+    ok(Math.abs(ins.lufsWin[0] - -32.1) <= 1.5 && ins.lo150 > 0.4 && ins.lo150 < 0.9, 'inside loop: -32.1 LUFS, a quiet bass at 55-150 Hz', ins);
+    ok(Math.abs(fi.lufsWin[0] - -23.2) <= 1.5 && fi.lo150 > 0.75, 'fight loop: -23.2 LUFS, a heavy ~65 Hz bass', fi);
+    ok(ins.pcorr > 0.95, 'inside loop repeats every 6.86 s (16 beats at 140 bpm)', ins.pcorr);
+    ok(ma.pcorr > 0.95, 'main loop: its 4-bar pattern repeats every 9.6 s (100 bpm)', ma.pcorr);
+    await rp.close();
+  }
+  {
+    // In the game: a building's frame script (LoopB.stop() on a global Sound) stops every sound
+    // and starts inside.mp3 from the top, also when a minigame or animation goes back to it.
+    await fresh({ mapx: 456, mapy: 630 });
+    const g = await ev(() => {
+      SRPG.sound.unlock();
+      const out = { city: SRPG.sound.state() };
+      SRPG.sound.play('crash');
+      out.crash = SRPG.sound.state().sources;
+      SRPG.location.open('mcsticks');
+      out.enter = SRPG.sound.state();
+      SRPG.sound.play('crash');
+      SRPG.location.open('mcsticks', { resume: true, fade: true });
+      out.back = SRPG.sound.state();
+      SRPG.sound.play('crash');
+      SRPG.location.leave();
+      out.leave = SRPG.sound.state();
+      SRPG.sound.play('crash');
+      SRPG.location.open('hobo');
+      out.street = SRPG.sound.state().sources;
+      SRPG.location.leave();
+      return out;
+    });
+    ok(g.city.music === 'main' && g.crash > 10, 'city: main.mp3, and the crash is playing', g);
+    ok(g.enter.music === 'inside' && g.enter.step <= 4 && g.enter.sources <= 6, 'entering a building: the crash is cut, inside.mp3 from the top', g.enter);
+    ok(g.back.music === 'inside' && g.back.step <= 4 && g.back.sources <= 6, 'back to the root frame: every sound stops, inside.mp3 from the top again', g.back);
+    ok(g.leave.music === 'main' && g.leave.sources <= 6, 'LEAVE (LoopD.stop()): every sound stops, main.mp3', g.leave);
+    ok(g.street > 10, 'a street dialog leaves the sounds alone', g.street);
+  }
 
   // ---------------------------------------------------------------------------------------------
   console.log('Engine');

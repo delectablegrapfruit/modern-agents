@@ -440,10 +440,19 @@
     ctx.save();
     ctx.translate(cx, cy);
     ctx.lineJoin = 'round';
-    // the dial's back rim shows as a second ring, down and to the right
-    D.circle(ctx, 0.9, 1.1, r + 0.8, null, '#111', 1);
+    // the dial's back rim: a grey disc behind the face, showing as a crescent down and to the right
+    D.circle(ctx, 2.5, 2.5, r - 0.5, '#666666', '#111', 0.9);
     D.circle(ctx, 0, 0, r, hrs >= 24 ? '#cc0000' : '#e4e4e4', null);
     if (hrs < 24) {
+      // clip frames 44-48 (21:00-23:59): the hours left before midnight are red, under the bezel
+      if (hrs >= 21) {
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.arc(0, 0, r, -Math.PI / 2 + (hrs / 24) * Math.PI * 2, Math.PI * 1.5);
+        ctx.closePath();
+        ctx.fillStyle = '#cc0000';
+        ctx.fill();
+      }
       // bevelled bezel with notches on the upper-left of the dial
       ctx.save();
       ctx.beginPath();
@@ -816,6 +825,7 @@
     outlined: outlined,
     backpack: backpack,
     text: abText,
+    textWidth: abWidth,
     impactText: impactText,
     fonts: fonts,
 

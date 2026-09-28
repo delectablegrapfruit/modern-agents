@@ -15,7 +15,7 @@
   var FONT = D.FONT; // the original's type (Arial Black)
   var PLAIN = D.FONT_PLAIN; // device-font text fields (prices, units, "Game saved")
   var RED = '#cc0000'; // screen headings
-  var PANEL = { x: 182, y: 47, w: 355, h: 250 };
+  var PANEL = { x: 181, y: 47, w: 356, h: 252 };
   var STOCKS = SRPG.STOCKS; // XGS FSY DYC MLG SR2 SAR (the original's ABC XYZ RTW LLG BIX IJA)
 
   // --- texts ----------------------------------------------------------------------------------
@@ -102,15 +102,19 @@
   // A text field: box at stage (x, y), width w. o: { size, color, align, font, bold, lh, id, nowrap, h }
   // Lines are o.lh apart (default 1.28 x size); the first line sits where a single line would.
   // o.h: the original field's height; text past it is cut off, as Flash clips a text field.
+  // Without Arial Black, the bold fallback is widened 12% (Arial Black's measure) like the shared
+  // style's menu text; the box is narrowed to match, so it wraps, clips and centres the same.
   function field(p, html, x, y, w, o) {
     o = o || {};
     var size = o.size || 12, lh = o.lh || size * 1.28;
+    var k = o.bold !== false && (!o.font || o.font === FONT) && !(SRPG.hud && SRPG.hud.fonts && SRPG.hud.fonts().black) ? 1.12 : 1;
     var t = ui.el('div', 'nopoint', p, html);
     t.style.cssText = 'position:absolute;box-sizing:border-box;left:' + (x - OX) + 'px;top:' + (y - OY - (lh - size * 1.28) / 2) + 'px;' +
-      (w ? 'width:' + w + 'px;' : '') + (o.h ? 'height:' + (o.h + (lh - size * 1.28) / 2) + 'px;overflow:hidden;' : '') +
+      (w ? 'width:' + (w / k) + 'px;' : '') + (o.h ? 'height:' + (o.h + (lh - size * 1.28) / 2) + 'px;overflow:hidden;' : '') +
       'font:' + (o.bold === false ? '' : 'bold ') + size + 'px ' + (o.font || FONT) + ';color:' + (o.color || '#000') +
       ';line-height:' + lh + 'px;text-align:' + (o.align || 'left') +
-      ';padding:2px 2px 0;white-space:' + (w && !o.nowrap ? 'pre-wrap' : 'pre') + ';';
+      ';padding:2px ' + (2 / k) + 'px 0;white-space:' + (w && !o.nowrap ? 'pre-wrap' : 'pre') + ';' +
+      (k !== 1 ? 'transform:scaleX(' + k + ');transform-origin:0 0;' : '');
     if (o.id) t.setAttribute('data-id', o.id);
     return t;
   }
@@ -165,7 +169,7 @@
   function buildMenu(g) {
     var s = g.s, v = V(g);
     var p = panel(g);
-    field(p, 'What would you like to do?', PANEL.x, 64, 360, { size: 12, align: 'center' });
+    field(p, 'What would you like to do?', 182, 64, 360, { size: 12, align: 'center' });
     ibtn(g, p, { icon: 'messages', label: 'CHECK MESSAGES', x: 199, y: 113.5, id: 'messages' }, function () { openMessages(g); });
     ibtn(g, p, { icon: 'sleep', label: 'SLEEP', x: 199, y: 166.5, id: 'sleep' }, function () { sleep(g); });
     ibtn(g, p, { icon: 'save', label: 'SAVE', x: 198, y: 247.5, gap: 9, w: 90, id: 'save' }, function () {
@@ -180,7 +184,7 @@
     }
     if (s.items.computer) {
       ibtn(g, p, { icon: 'computer', label: 'USE COMPUTER', x: 374, y: 166.5, size: 39, gap: 7.5, w: 160, id: 'computer' }, function () {
-        if (!(s.time < 23)) return g.error();
+        if (!(s.time < 23)) return; // the original ignores the click
         show(g, 'computer');
       });
     }
@@ -209,13 +213,13 @@
       for (var i = 0; i < lines.length; i++) if (re.test(lines[i])) return lines[i];
       return '';
     }
-    field(p, esc(pick('hp', /HP RESTORED/)), 198.2, 47.5, 316.7, { size: 16, color: '#990000', align: 'center', id: 'hptext' });
-    field(p, esc(pick('int', /INTELLIGENCE/)), 198.2, 73.5, 316.7, { size: 12, color: '#ffff00', align: 'center', id: 'inttext' });
-    field(p, esc(pick('str', /STRENGTH/)), 198.2, 91.5, 316.7, { size: 12, color: '#ffff00', align: 'center', id: 'strtext' });
-    field(p, esc(pick('cha', /CHARM/)), 198.2, 108.5, 316.7, { size: 12, color: '#ffff00', align: 'center', id: 'chatext' });
-    field(p, esc(pick('pills', /CAFFEINE/)), 201.2, 188.6, 316.7, { size: 12, color: '#66ccff', align: 'center', id: 'pilltext' });
-    field(p, esc(pick('bank', /loan/)), 201.5, 222.7, 316.7, { size: 12, color: '#000066', align: 'center', id: 'banktext' });
-    if (isMansion(g)) field(p, esc(pick('earn', /Political/)), 198.2, 248.6, 227.8, { size: 12, align: 'center', id: 'earntext' });
+    field(p, esc(pick('hp', /HP RESTORED/)), 198.2, 50.75, 316.7, { size: 16, color: '#990000', align: 'center', id: 'hptext' });
+    field(p, esc(pick('int', /INTELLIGENCE/)), 198.2, 75.75, 316.7, { size: 12, color: '#ffff00', align: 'center', id: 'inttext' });
+    field(p, esc(pick('str', /STRENGTH/)), 198.2, 93.75, 316.7, { size: 12, color: '#ffff00', align: 'center', id: 'strtext' });
+    field(p, esc(pick('cha', /CHARM/)), 198.2, 110.75, 316.7, { size: 12, color: '#ffff00', align: 'center', id: 'chatext' });
+    field(p, esc(pick('pills', /CAFFEINE/)), 201.2, 190.85, 316.7, { size: 12, color: '#66ccff', align: 'center', id: 'pilltext' });
+    field(p, esc(pick('bank', /loan/)), 201.5, 224.95, 316.7, { size: 12, color: '#000066', align: 'center', id: 'banktext' });
+    if (isMansion(g)) field(p, esc(pick('earn', /Political/)), 198.2, 250.6, 227.8, { size: 12, align: 'center', lh: 16.9, id: 'earntext' });
     art(g, p, 300, 110, 100, 75, drawSleeper, true);
     tbtn(g, p, 'OK', 446.5, 252.5, 69.5, 25.5, 'ok', toMenu);
   }
@@ -235,8 +239,8 @@
     var p = panel(g);
     var m = msgTexts(s);
     art(g, p, 199, 62, 36, 48, drawMachine, true);
-    field(p, esc(m.head), 241, 73, 320, { size: 16, color: RED, nowrap: true, id: 'msgtext' });
-    field(p, esc(m.body), 210.2, 111.8, 316.7, { size: 14, align: 'center', lh: 19.7, h: 132.5, id: 'msgbody' });
+    field(p, esc(m.head), 241, 76.2, 320, { size: 16, color: RED, nowrap: true, id: 'msgtext' });
+    field(p, esc(m.body), 210.2, 113.8, 316.7, { size: 14, align: 'center', lh: 19.7, h: 132.5, id: 'msgbody' });
     var b = ibtn(g, p, { label: 'ERASE / NEXT MESSAGE', x: 209, y: 246, size: 35.5, w: 200, id: 'erase' }, function () {
       // Drop the oldest message (the original shifts the array down and cuts the last slot).
       if (s.msgs.length > 0) {
@@ -256,7 +260,7 @@
   // --- TV (frames 68, 84-87) -------------------------------------------------------------------
   function watchTV(g) {
     var s = g.s;
-    if (!(s.time < 23)) return g.error();
+    if (!(s.time < 23)) return; // the original ignores the click
     if (isMansion(g) && s.items.satellite === 1) return show(g, 'satellite');
     if (isMansion(g) && s.items.satellite === 0) return openNews(g, true);
     if (!isMansion(g)) return openNews(g, false);
@@ -289,7 +293,7 @@
   function buildSatellite(g) {
     var p = panel(g);
     art(g, p, 185, 49, 53, 60, drawTV);
-    field(p, 'STICK-CHOICE<br>SATELLITE TV', 296.5, 58, 160, { size: 16, color: RED, lh: 22.5, nowrap: true });
+    field(p, 'STICK-CHOICE<br>SATELLITE TV', 296.5, 60, 160, { size: 16, color: RED, lh: 22.5, nowrap: true });
     // All three channels use the small TV picture in the original.
     ibtn(g, p, { icon: 'tv', label: 'WATCH NEWS', x: 269, y: 121.5, size: 39, gap: 12.5, w: 190, id: 'news' }, function () { openNews(g, true); });
     ibtn(g, p, { icon: 'tv', label: 'WATCH FITNESS CHANNEL', x: 269, y: 166.5, size: 39, gap: 12, w: 240, id: 'fitness' }, function () { openFitness(g); });
@@ -305,12 +309,12 @@
     var p = panel(g);
     art(g, p, 185, 49, 53, 60, drawTV);
     var title = { news: 'NEWS', fitness: 'FITNESS', dating: 'DATING' }[v.mode];
-    field(p, title, 263, 69.5, 200, { size: 16, color: RED, align: 'center', nowrap: false, id: 'tvtitle' });
+    field(p, title, 263, 72.3, 200, { size: 16, color: RED, align: 'center', nowrap: false, id: 'tvtitle' });
     if (v.mode === 'fitness') art(g, p, 300, 90, 120, 130, drawLifter, true);
-    else field(p, esc(newsbody), 210.2, 111.8, 316.7, { size: 14, align: 'center', lh: 19.7, h: 132.5, id: 'newsbody' });
+    else field(p, esc(newsbody), 210.2, 113.8, 316.7, { size: 14, align: 'center', lh: 19.7, h: 132.5, id: 'newsbody' });
     var dx = v.mode === 'news' ? 0 : 4; // the strength / charm clips sit 4 px right of the news one
-    field(p, v.stat.label, 240.5 + dx, 247, 240, { size: 14, color: '#fff', align: 'center', nowrap: false });
-    v.statEl = field(p, String(s[v.stat.name]), 331.8 + dx, 267.6, 60, { size: 17.6, color: '#ffff00', font: PLAIN, bold: false, align: 'center', id: 'statvalue' });
+    field(p, v.stat.label, 240.5 + dx, 246.25, 240, { size: 14, color: '#fff', align: 'center', nowrap: false });
+    v.statEl = field(p, String(s[v.stat.name]), 331.8 + dx, 268.7, 60, { size: 17.6, color: '#ffff00', font: PLAIN, bold: false, align: 'center', id: 'statvalue' });
     tbtn(g, p, 'OK', 465, 269.5, 69, 25.5, 'ok', function () {
       s.time += 1;
       toMenu(g);
@@ -330,7 +334,7 @@
   // --- computer and stocks (frames 69-71 / 81-83) ----------------------------------------------
   function buildComputer(g) {
     var p = panel(g);
-    field(p, 'What would you like to do?', PANEL.x, 64, 360, { size: 12, align: 'center' });
+    field(p, 'What would you like to do?', 182, 64, 360, { size: 12, align: 'center' });
     ibtn(g, p, { icon: 'stocks', label: 'BUY/SELL STOCKS', x: 202.5, y: 120, size: 38, gap: 7, w: 200, id: 'stocks' }, function () { openStocks(g); });
     tbtn(g, p, 'OK', 446.5, 252.5, 69.5, 25.5, 'ok', toMenu);
   }
@@ -359,10 +363,10 @@
   };
 
   function stockHeads(p, dx) {
-    field(p, 'Name', 187.7 + dx, 69.4, null, { size: 12 });
-    field(p, 'Price/Unit', 244.2 + dx, 69.4, null, { size: 12 });
-    field(p, 'Gain/Loss', 321.2 + dx, 69.4, null, { size: 12 });
-    field(p, '# of Units<br>You Own', 396.4 + dx, 51.4, null, { size: 12, lh: 16.9 });
+    field(p, 'Name', 187.7 + dx, 71.9, null, { size: 12 });
+    field(p, 'Price/Unit', 244.2 + dx, 71.9, null, { size: 12 });
+    field(p, 'Gain/Loss', 321.2 + dx, 71.9, null, { size: 12 });
+    field(p, '# of Units<br>You Own', 396.4 + dx, 53.15, null, { size: 12, lh: 16.9 });
     var line = ui.el('div', 'nopoint', p);
     line.style.cssText = 'position:absolute;left:' + (190.6 + dx - OX) + 'px;top:' + (95.5 - OY) + 'px;width:270.8px;height:1px;background:#000';
   }
@@ -430,20 +434,20 @@
     var v = V(g), t = v.trade;
     var p = panel(g);
     stockHeads(p, 26);
-    field(p, t.k, 217.8, 105.5, 32.2, { size: 12, font: PLAIN, bold: false, align: 'center', id: 'curstock' });
-    field(p, '$', 278.3, 104.65, null, { size: 12 });
-    field(p, '$', 348.3, 104.65, null, { size: 12 });
-    field(p, String(t.price), 286.8, 104.5, 47.2, { size: 12, font: PLAIN, bold: false, align: 'center', id: 'curprice' });
-    field(p, String(t.diff), 357.8, 104.5, 47.2, { size: 12, font: PLAIN, bold: false, align: 'center', id: 'curdiff' });
-    v.yoursEl = field(p, String(t.yours), 422.75, 105.5, 62.2, { size: 12, font: PLAIN, bold: false, align: 'center', id: 'curyours' });
-    field(p, 'AMOUNT:', 304.5, 156.5, null, { size: 14, color: '#000066' });
+    field(p, t.k, 217.8, 107, 32.2, { size: 12, font: PLAIN, bold: false, align: 'center', id: 'curstock' });
+    field(p, '$', 278.3, 106.65, null, { size: 12 });
+    field(p, '$', 348.3, 106.65, null, { size: 12 });
+    field(p, String(t.price), 286.8, 106, 47.2, { size: 12, font: PLAIN, bold: false, align: 'center', id: 'curprice' });
+    field(p, String(t.diff), 357.8, 106, 47.2, { size: 12, font: PLAIN, bold: false, align: 'center', id: 'curdiff' });
+    v.yoursEl = field(p, String(t.yours), 422.75, 107, 62.2, { size: 12, font: PLAIN, bold: false, align: 'center', id: 'curyours' });
+    field(p, 'AMOUNT:', 304.5, 158.25, null, { size: 14, color: '#000066' });
     var inp = ui.input(p, 307.3 - OX, 181.3 - OY, 72.75, { maxLength: 7, value: '0', onEnter: function () {} });
     inp.setAttribute('data-id', 'units');
     inp.style.cssText += ';height:24.6px;text-align:right;font:bold 14px ' + FONT + ';color:#000066;padding:1px 3px';
     v.input = inp;
     tbtn(g, p, 'BUY', 232, 180.5, 69.5, 25.5, 'buy', buy, 10);
     tbtn(g, p, 'SELL', 386, 180.5, 69.5, 25.5, 'sell', sell, 10);
-    field(p, t.yours > 0 ? esc('You bought in at $' + t.bought + '. ') : '', 235, 214.9, 221, { size: 12, font: PLAIN, bold: false, align: 'center', id: 'boughtin' });
+    field(p, t.yours > 0 ? esc('You bought in at $' + t.bought + '. ') : '', 235, 216.9, 221, { size: 12, font: PLAIN, bold: false, align: 'center', id: 'boughtin' });
     tbtn(g, p, 'OK', 188, 269.5, 69, 25.5, 'ok', function () { show(g, 'computer'); });
   }
 
@@ -474,8 +478,8 @@
   function buildCampaign(g) {
     var v = V(g);
     var p = panel(g);
-    field(p, 'RUN CAMPAIGN', 262, 45.5, 200, { size: 16, color: RED, align: 'center' });
-    field(p, esc(newsbody), 210.2, 79.8, 317.7, { size: 14, align: 'center', lh: 19.7, h: 182.2, id: 'newsbody' });
+    field(p, 'RUN CAMPAIGN', 262, 48.3, 200, { size: 16, color: RED, align: 'center' });
+    field(p, esc(newsbody), 210.2, 81.8, 317.7, { size: 14, align: 'center', lh: 19.7, h: 182.2, id: 'newsbody' });
     if (v.mode === 'campaign') {
       // The original's three campaign buttons show the same green money stack as BUY/SELL STOCKS.
       ibtn(g, p, { icon: 'stocks', label: 'RUN $50,000<br>CAMPAIGN', x: 210.5, y: 216.5, size: 38, gap: 7, w: 150, id: 'run50' }, function () {
@@ -1214,7 +1218,7 @@
     view: function (g) {
       var p = blankPanel('oldapartment');
       // The original's line sits where the menu heading does (text 1883 at the same spot as 1890).
-      field(p, "Looks like this isn't your place anymore...", PANEL.x, 64, 360, { size: 12, align: 'center', nowrap: true, id: 'oldtext' });
+      field(p, "Looks like this isn't your place anymore...", 182, 64, 360, { size: 12, align: 'center', nowrap: true, id: 'oldtext' });
       ibtn(g, p, { icon: 'leave', label: 'LEAVE', x: 439, y: 247.5, w: 100, id: 'leave' }, function () { g.leave(); });
       return { custom: true };
     },

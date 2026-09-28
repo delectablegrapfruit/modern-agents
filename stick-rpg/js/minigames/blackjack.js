@@ -57,13 +57,11 @@
     if (c.v === 0) { // the grey chip gives the bet back
       s.cash += b.bet;
       b.bet = 0;
-      SRPG.sound.play('chip');
       return;
     }
     if (!(s.cash > c.need)) return; // the original's "cash > n - 1" check; nothing happens
     s.cash -= c.v;
     b.bet += c.v;
-    SRPG.sound.play('chip');
   }
 
   function deal() {
@@ -90,7 +88,6 @@
     b.phand = b.cardn[0] + b.cardn[1];
     b.dcards = 2;
     b.dhand = b.cardn[4] + b.cardn[5];
-    SRPG.sound.play('cards');
     build();
   }
 
@@ -102,7 +99,6 @@
 
   function hit() {
     if (b.phase !== 'deal' || !b.buttons) return;
-    var had = b.pcards;
     if (b.pcards === 3) { b.show[4] = true; b.phand += b.cardn[b.pcards]; b.pcards += 1; }
     if (b.pcards === 2) { b.show[3] = true; b.phand += b.cardn[b.pcards]; b.pcards += 1; }
     for (var i = 0; i < b.pcards; i++) {
@@ -111,7 +107,6 @@
         b.phand = sum(0, b.pcards);
       }
     }
-    if (b.pcards !== had) SRPG.sound.play('cards'); // at the 4-card limit the button does nothing
     if (b.phand > 21) {
       b.text = 'BUST!';
       b.show[10] = false;
@@ -148,7 +143,6 @@
       b.text = 'PLAYER WIN';
       s.cash += b.bet * 2;
     }
-    SRPG.sound.play('cards');
     b.ok = true;
     build();
   }

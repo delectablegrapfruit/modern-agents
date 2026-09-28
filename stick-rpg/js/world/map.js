@@ -140,44 +140,43 @@
   };
 
   // The walk loop: walkspeed sub-steps of (xmove, ymove) with the original's mapx / mapy limits
-  // verbatim. m = { xmove, ymove, walkspeed } is updated in place: a door or a fall zeroes the axis
-  // that caused it and skips a sub-step (the original's "xmove = 0; i = i + 1"), while the rest of
-  // that sub-step still runs, so the other axis moves on. doors: true for frame 1, false for frame 2.
-  // Returns { event, falls }: event is null, { door: id } or { fall: true } (like the root
-  // timeline's gotos, the last one wins); falls counts the edge falls (10 HP each).
+  // verbatim. doors: true for frame 1, false for frame 2. A door or a fall ends it on the spot: the
+  // original zeroes the move (m is updated in place) and sends the root timeline to the building or
+  // to frame 3, which removes the walk clip, so the rest of its script never runs (Ruffle stops a
+  // script whose clip is gone): no step on the other axis, no further sub-step, no traffic.
+  // Returns { event, falls }: event is null, { door: id } or { fall: true }; falls is 1 for an edge
+  // fall (10 HP), else 0.
   MAP.walkLoop = function (s, m, doors) {
     var out = { event: null, falls: 0 };
     var walkin = doors && s.driving === 0;
-    var skip = 0;
-    function door(id, axis) { m[axis] = 0; skip++; out.event = { door: id }; }
-    function fall(axis) { m[axis] = 0; skip++; out.falls++; out.event = { fall: true }; }
+    function door(id, axis) { m[axis] = 0; out.event = { door: id }; return out; }
+    function fall(axis) { m[axis] = 0; out.falls = 1; out.event = { fall: true }; return out; }
     for (var i = 0; i < m.walkspeed; i++) {
-      skip = 0;
       if (m.xmove < 0) { // walking right
         if (s.mapx > 119) s.mapx += m.xmove;
         else {
           if (walkin) {
-            if (between(s.mapy, -226, -167)) door('store', 'xmove');
-            if (between(s.mapy, 485, 541)) door('nli', 'xmove');
-            if (between(s.mapy, 758, 781)) door('bank', 'xmove');
-            if (between(s.mapy, -524, -501)) door('pawn', 'xmove');
+            if (between(s.mapy, -226, -167)) return door('store', 'xmove');
+            if (between(s.mapy, 485, 541)) return door('nli', 'xmove');
+            if (between(s.mapy, 758, 781)) return door('bank', 'xmove');
+            if (between(s.mapy, -524, -501)) return door('pawn', 'xmove');
           }
           if (between(s.mapy, -4, 328)) s.mapx += m.xmove;
         }
-        if (s.mapx < -660) { s.mapx += 20; fall('xmove'); }
+        if (s.mapx < -660) { s.mapx += 20; return fall('xmove'); }
       }
       if (m.xmove > 0) { // walking left
         if (s.mapx < 447) s.mapx += m.xmove;
         else {
           if (walkin) {
-            if (between(s.mapy, 65, 97)) door('bar', 'xmove');
-            if (between(s.mapy, -511, -467)) door('casino', 'xmove');
-            if (between(s.mapy, 302, 346)) door('mcsticks', 'xmove');
-            if (between(s.mapy, 888, 920) && (s.dwelling === 4 || s.dwelling === 5)) door('mansion', 'xmove');
+            if (between(s.mapy, 65, 97)) return door('bar', 'xmove');
+            if (between(s.mapy, -511, -467)) return door('casino', 'xmove');
+            if (between(s.mapy, 302, 346)) return door('mcsticks', 'xmove');
+            if (between(s.mapy, 888, 920) && (s.dwelling === 4 || s.dwelling === 5)) return door('mansion', 'xmove');
           }
           if (between(s.mapy, 424, 758)) s.mapx += m.xmove;
         }
-        if (s.mapx > 1230) { s.mapx -= 20; fall('xmove'); }
+        if (s.mapx > 1230) { s.mapx -= 20; return fall('xmove'); }
       }
       if (m.ymove < 0) { // walking down
         if (doors) {
@@ -185,11 +184,11 @@
           else {
             if (s.mapx < 119) {
               if (s.mapy > -1) s.mapy += m.ymove;
-              else if (walkin && between(s.mapx, -538, -497)) door('bus', 'ymove');
+              else if (walkin && between(s.mapx, -538, -497)) return door('bus', 'ymove');
             }
             if (s.mapx > 447) {
               if (s.mapy > 427) s.mapy += m.ymove;
-              else if (walkin && between(s.mapx, 889, 930)) door('furniture', 'ymove');
+              else if (walkin && between(s.mapx, 889, 930)) return door('furniture', 'ymove');
             }
           }
         } else {
@@ -199,7 +198,7 @@
           else if (s.mapx < 119 && s.mapy > -1) s.mapy += m.ymove;
           if (s.mapx > 447 && s.mapy > 427) s.mapy += m.ymove;
         }
-        if (s.mapy < -690) { s.mapy += 20; fall('ymove'); }
+        if (s.mapy < -690) { s.mapy += 20; return fall('ymove'); }
       }
       if (m.ymove > 0) { // walking up
         if (doors) {
@@ -207,11 +206,11 @@
           else {
             if (s.mapx < 119) {
               if (s.mapy < 325) s.mapy += m.ymove;
-              else if (walkin && between(s.mapx, -426, -405)) door('uofs', 'ymove');
+              else if (walkin && between(s.mapx, -426, -405)) return door('uofs', 'ymove');
             }
             if (s.mapx > 448) {
               if (s.mapy < 754) s.mapy += m.ymove;
-              else if (walkin && between(s.mapx, 1043, 1069)) door(dwellingDoor(s), 'ymove');
+              else if (walkin && between(s.mapx, 1043, 1069)) return door(dwellingDoor(s), 'ymove');
             }
           }
         } else {
@@ -220,9 +219,8 @@
           else if (s.mapx < 119 && s.mapy < 325) s.mapy += m.ymove;
           if (s.mapx > 448 && s.mapy < 754) s.mapy += m.ymove;
         }
-        if (s.mapy > 1014) { s.mapy -= 20; fall('ymove'); }
+        if (s.mapy > 1014) { s.mapy -= 20; return fall('ymove'); }
       }
-      i += skip;
     }
     return out;
   };

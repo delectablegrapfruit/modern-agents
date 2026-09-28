@@ -109,13 +109,18 @@
   };
 
   // --- DOM helpers (stage coordinates; the original's measured positions) -------------------------
+  // Without Arial Black the bold fallback is widened 12% (Arial Black's measure), as the shared
+  // style does for menus; a sized box is narrowed to match, so it wraps, clips and centres the same.
+  function wide() { return !(SRPG.hud && SRPG.hud.fonts && SRPG.hud.fonts().black); }
   function text(html, x, y, opts) {
     opts = opts || {};
     var e = ui.el('div', 'nopoint', null, html);
+    var k = wide() ? 1.12 : 1;
     var css = 'position:absolute;left:' + x + 'px;top:' + y + 'px;font:bold ' + (opts.size || 12) + 'px ' + FONT +
       ';color:' + (opts.color || '#000') + ';line-height:' + (opts.lh || Math.round((opts.size || 12) * 1.4)) + 'px;' +
       'white-space:' + (opts.wrap ? 'normal' : 'pre') + ';text-align:' + (opts.align || 'left') + ';';
-    if (opts.w != null) css += 'width:' + opts.w + 'px;';
+    if (opts.w != null) css += 'width:' + (opts.w / k) + 'px;';
+    if (k !== 1) css += 'transform:scaleX(' + k + ');transform-origin:0 0;';
     if (opts.clip) css += 'overflow:hidden;';
     if (opts.id) e.setAttribute('data-text', opts.id);
     e.style.cssText = css + (opts.css || '');
@@ -164,7 +169,7 @@
 
   // AMOUNT: label, white box and the 7-character field (right aligned, like the original).
   function amountField(y) {
-    text('AMOUNT:', 314, y - 25, { size: 14, color: '#000066' });
+    text('AMOUNT:', 314, y - 22.25, { size: 14, color: '#000066' });
     var box = ui.el('div', 'nopoint');
     box.style.cssText = 'position:absolute;left:312px;top:' + y + 'px;width:82px;height:24px;background:#fff;border:1px solid #003399;box-sizing:border-box;';
     var inp = ui.input(null, 314, y + 1, 78, { maxLength: 7, value: st.amount });
@@ -175,10 +180,10 @@
   }
 
   function rateLines() {
-    text('CURRENT INTEREST RATE:', 200, 246, { size: 10, color: '#000066', lh: 14 });
-    text(esc(flashNum(S().bankrate)), 351, 244, { size: 12, color: '#000066', w: 30, align: 'right', clip: true, lh: 17, id: 'bankrate' });
-    text('%', 381, 246, { size: 10, color: '#000066', lh: 14 });
-    text('- Interest compounds every day\n on your closing balance', 202, 261, { size: 8, color: '#000066', lh: 11 });
+    text('CURRENT INTEREST RATE:', 200, 249, { size: 10, color: '#000066', lh: 14 });
+    text(esc(flashNum(S().bankrate)), 351, 245.5, { size: 12, color: '#000066', w: 30, align: 'right', clip: true, lh: 17, id: 'bankrate' });
+    text('%', 381, 249, { size: 10, color: '#000066', lh: 14 });
+    text('- Interest compounds every day\n on your closing balance', 202, 262.75, { size: 8, color: '#000066', lh: 11 });
   }
 
   // --- screens ------------------------------------------------------------------------------------
@@ -227,7 +232,7 @@
 
   function showLoan() {
     panel(181, 47, 356, 252);
-    text('"The most we can lend you is $1000,\nand you get 15 days to pay us back.\nSo, how much do you need?"', 259, 63);
+    text('"The most we can lend you is $1000,\nand you get 15 days to pay us back.\nSo, how much do you need?"', 259, 64.5);
     amountField(147);
     pill('OK', 408, 148, 70, 'ok', function () {
       if (rules.borrow(S(), st.amount)) backToMain();
@@ -239,9 +244,9 @@
   function showRepay() {
     var s = S();
     panel(181, 47, 356, 252);
-    text('"Your current loan is: $' + num14('bankloan', s.bankloan), 258, 62, { lh: 19, w: 270, clip: true });
+    text('"Your current loan is: $' + num14('bankloan', s.bankloan), 258, 63, { lh: 19, w: 270, clip: true });
     text('You have <span data-text="bankloandays" style="display:inline-block;min-width:23px;text-align:center;font-size:14px">' +
-      esc(String(s.bankloandays)) + '</span> days left before it comes due.\nHow much are you paying back today?"', 226, 82, { lh: 17 });
+      esc(String(s.bankloandays)) + '</span> days left before it comes due.\nHow much are you paying back today?"', 226, 83.25, { lh: 17 });
     amountField(147);
     pill('OK', 408, 148, 70, 'ok', function () {
       if (rules.repay(S(), st.amount)) backToMain();
@@ -270,16 +275,16 @@
   // jail the game can also run out of days.
   function showRobbed() {
     panel(113, 125, 356, 162);
-    text('YOU DID IT!!!', 113, 136, { size: 24, w: 356, align: 'center', lh: 34 });
-    text('You scoped the joint out, then slipped back at\nmidnight and cleaned the whole place out.', 175, 174, { lh: 17 });
-    text('You got away with $<span data-text="robamount" style="font-size:16px;margin-left:3px">' + esc(String(st.robamount)) + '</span>', 202, 207, { lh: 22 });
+    text('YOU DID IT!!!', 113, 140, { size: 24, w: 356, align: 'center', lh: 34 });
+    text('You scoped the joint out, then slipped\nback at midnight and cleaned it out.', 175, 176, { lh: 17 });
+    text('You got away with <span style="font-size:16px">$</span><span data-text="robamount" style="font-size:16px;margin-left:3px">' + esc(String(st.robamount)) + '</span>', 202, 210.5, { lh: 22 });
     pill('OK', 256, 246, 70, 'ok', function () { robberyDone(false); });
   }
 
   function showJail() {
     panel(97, 94, 356, 222);
-    text('YOU GOT CAUGHT!!!', 97, 109, { size: 24, w: 356, align: 'center', lh: 34 });
-    text('Maybe you weren\'t charming enough to get\naway with it, or maybe luck was against you.\nWhatever the reason, you\'re locked up\nfor 5 days.', 158, 166, { lh: 17 });
+    text('YOU GOT CAUGHT!!!', 97, 113, { size: 24, w: 356, align: 'center', lh: 34 });
+    text('Maybe you weren\'t charming enough to\nget away with it, or maybe luck was\nagainst you. Whatever the reason,\nyou\'re locked up for 5 days.', 158, 168.5, { lh: 17 });
     pill('OK', 240, 271, 70, 'ok', function () { robberyDone(true); });
   }
 

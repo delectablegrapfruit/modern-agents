@@ -1305,7 +1305,14 @@
   ICONS.pills = scaled(pills, 1.1, 1.1, 24, 26);
   ICONS.knife = scaled(knife, 1.1, 1.1, 24, 26);
   ICONS.bottle = ICONS.givebooze = scaled(bottle, 1.12, 1.12, 24, 24);
-  ICONS.house = ICONS.realestate = ICONS.apartment = ICONS.penthouse = ICONS.mansion = ICONS.castle = scaled(house, 1.1, 1.1, 24, 26);
+  ICONS.house = scaled(house, 1.1, 1.1, 24, 26);
+  // The bank's house tiles (BUY REAL ESTATE and the four homes): the same house 10% narrower,
+  // sitting in the tile's upper part (roof top 1 px under the tile edge, grass 5 px above the bottom).
+  var bankHouse = scaled(house, 0.99, 1.1, 24, 26);
+  ICONS.realestate = ICONS.apartment = ICONS.penthouse = ICONS.mansion = ICONS.castle = function (ctx) {
+    ctx.translate(-1, -5.1);
+    bankHouse(ctx);
+  };
   ICONS.tv = ICONS.news = ICONS.fitness = ICONS.dating = scaled(tv, 1.08, 1.05, 24, 24);
 
   var NAMES = Object.keys(ICONS);

@@ -41,8 +41,6 @@
       reels: [{ f: 1, playing: false }, { f: 1, playing: false }, { f: 1, playing: false }],
       sym: [0, 0, 0],
       textwin: 0,
-      winLoops: 0,
-      winWait: 0,
     };
   }
 
@@ -60,9 +58,9 @@
     if (f === 3) { m.reels[0].playing = true; m.betlock = 1; }
     else if (f === 9) m.reels[1].playing = true;
     else if (f === 15) m.reels[2].playing = true;
-    else if (f === 23) SRPG.sound.play('reel'); // "firstReel"
-    else if (f === 31) { m.sym[0] = rnd(3) + 1; SRPG.sound.play('reel'); } // "thirdReel"
-    else if (f === 39) { m.sym[1] = rnd(3) + 1; SRPG.sound.play('reel'); } // "secondReel"
+    else if (f === 23) SRPG.sound.play('reel1'); // SFXreel1 (firstReel)
+    else if (f === 31) { m.sym[0] = rnd(3) + 1; SRPG.sound.play('reel3'); } // SFXreel3 (thirdReel)
+    else if (f === 39) { m.sym[1] = rnd(3) + 1; SRPG.sound.play('reel2'); } // SFXreel2 (secondReel)
     else if (f === 46) m.sym[2] = rnd(3) + 1;
     else if (f === 47) {
       var cash = 0, cherry = 0, dead = 0;
@@ -76,7 +74,7 @@
       if (cash === 3) m.textwin = m.bet * 15;
       if (dead === 3) m.textwin = m.bet * 2;
       s.cash += m.textwin;
-      if (m.textwin > 0) { SRPG.sound.play('win'); m.winLoops = 2; m.winWait = 20; } // start(0.1, 3)
+      if (m.textwin > 0) SRPG.sound.play('win'); // start(0.1, 3): the jingle three times over, one call
     } else if (f === 55) {
       frame2();
       m.playing = false;
@@ -457,7 +455,6 @@
       }
       if (!m) return;
       for (var i = 0; i < 3; i++) tickReel(m.reels[i], m.sym[i]);
-      if (m.winLoops > 0 && --m.winWait <= 0) { SRPG.sound.play('win'); m.winLoops -= 1; m.winWait = 20; }
     },
     render: function (ctx) {
       var s = S();

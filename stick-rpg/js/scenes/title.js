@@ -326,6 +326,7 @@
       return false;
     }
     s.fps = 1; // the original's loadGame() switches SHOW FPS on
+    SRPG.sound.setVolume(100); // loopB.setVolume(100): full volume again
     SRPG.game.start(s);
     SRPG.engine.go('city', { fade: 19 }); // black.gotoAndPlay(11): a 19-frame fade in
     return true;
@@ -780,6 +781,8 @@
       SRPG.engine.blackPlay(1);
       // Root frame 1 also sets music = 1 again, and the intro screen starts the title loop
       // without looking at it: after a game played with MUSIC OFF the title still has music.
+      // LoopA.setVolume(50) sets the global volume: the title plays at half volume.
+      SRPG.sound.setVolume(50);
       SRPG.sound.music('beginning');
       if (!SRPG.sound.musicOn) SRPG.sound.setMusic(true);
       build();

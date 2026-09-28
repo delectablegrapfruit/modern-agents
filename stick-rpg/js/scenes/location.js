@@ -155,6 +155,10 @@
       if ((!params.resume || params.fade) && !def.overlay) SRPG.engine.blackPlay(1);
       active = true;
       armed = false;
+      // The frame script's LoopB.stop() is on a global Sound object, so every sound stops, and
+      // inside.mp3 starts again from the top even when it was already playing (a return to the
+      // building's root frame after a minigame, a sub-screen or an animation).
+      if ((!params.resume || params.fade) && !def.overlay && def.music !== null) SRPG.sound.stopAll();
       if (def.music !== null) SRPG.sound.music(def.overlay ? 'main' : def.music || 'inside');
       if (def.onEnter && !params.resume) def.onEnter(cur.g);
       if (cur && cur.def === def) build();

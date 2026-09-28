@@ -314,8 +314,9 @@ function check(cond, msg) {
     s.hp = s.hpmax;
     s.mapx = 250; s.mapy = 200;
     const p = SRPG.MAP.playerPos(s);
-    const c = SRPG.city.cars[0];
-    // a car on the road (placed, clip frame 1), even if the traffic was cleared before
+    // car2 (only car2 knocks you down: the original's compiled hit test) on the road (placed, clip
+    // frame 1), even if the traffic was cleared before
+    const c = SRPG.city.cars[1];
     c.s = 1; c.x = 15; c.y = p.y + 80; c.rot = 0; c.clip = 1; c.placed = true;
     s.mapx = 247 - 15; // stand in the up lane
   });

@@ -51,6 +51,22 @@ function eq(a, b, msg) {
     SRPG.sound.play = function (n) { if (n === 'click') window.__clicks++; return p.apply(this, arguments); };
   });
   const lastMusic = () => ev(() => window.__music[window.__music.length - 1]);
+  // Stage rectangle [left, top, width, CSS width] of the #ui text element whose text is `t` (the
+  // bold fallback, without Arial Black, is widened 12% by a transform).
+  const rectOf = (t) => ev((t) => {
+    const e = Array.from(document.querySelectorAll('#ui div')).find((d) => d.textContent === t);
+    if (!e) return null;
+    const r = e.getBoundingClientRect(), st = document.getElementById('stage').getBoundingClientRect(), k = 550 / st.width;
+    return [(r.left - st.left) * k, (r.top - st.top) * k, r.width * k, e.offsetWidth].map((v) => Math.round(v * 100) / 100);
+  }, t);
+  const noBlack = await ev(() => !SRPG.hud.fonts().black);
+  const near = (a, b, tol, msg) => check(a && b.every((v, i) => v == null || Math.abs(a[i] - v) <= tol), msg + ' (got ' + JSON.stringify(a) + ', want ' + JSON.stringify(b) + ')');
+  // Canvas pixel [r, g, b] at stage (x, y): the game canvas, or a canvas in #ui (selector).
+  const pixel = (x, y, sel) => ev(([x, y, sel]) => {
+    const c = sel ? document.querySelector(sel) : document.getElementById('game');
+    const k = c.width / 550;
+    return Array.from(c.getContext('2d').getImageData(Math.round(x * k), Math.round(y * k), 1, 1).data.slice(0, 3));
+  }, [x, y, sel]);
 
   // ================================================================ BANK
   await game({ cash: 500, bankcash: 1234, bankrate: 3.5 });
@@ -64,6 +80,13 @@ function eq(a, b, msg) {
   eq(await txt('bankcash'), '1234', 'bank: balance shown');
   eq(await txt('cash'), '500', 'bank: cash shown');
   eq(await txt('bankrate'), '3.5', 'bank: rate shown');
+  // Text boxes sit where the original's fields put their ink (measured against Ruffle); the bold
+  // fallback is widened 12% like the menus, and a sized box keeps its visual width.
+  near(await rectOf('AMOUNT:'), [314, 131.75], 0.3, 'bank: AMOUNT: label');
+  const rate = await rectOf('CURRENT INTEREST RATE:');
+  near(rate, [200, 249], 0.3, 'bank: rate label');
+  check(rate && Math.abs(rate[2] - rate[3] * (noBlack ? 1.12 : 1)) < 0.6, 'bank: fallback text widened 12% ' + JSON.stringify(rate));
+  near(await rectOf('"Hello, this is the bank.  What can I do for you?"'), [181, 55, 356], 0.3, 'bank: centred quote keeps its 356 px box');
 
   // deposit
   await amount('200'); await click('deposit');
@@ -251,6 +274,7 @@ function eq(a, b, msg) {
   check(st.time === 24 && st.day === 6 && st.items.ammo >= 1 && st.items.ammo <= 5, 'charm 10: caught, 5 days, rest of day gone, 5-9 bullets used');
   check(await has('ok'), 'jail screen');
   await shot('bank-jail');
+  near(await rectOf('YOU GOT CAUGHT!!!'), [97, 113, 356], 0.3, 'jail: title placed as the original\'s (frame 29)');
   const k0 = st.karma;
   await click('ok');
   st = await s();
@@ -266,6 +290,7 @@ function eq(a, b, msg) {
   check(st.cash === 100 + robbed && robbed >= 0 && robbed < 500 && st.day === 1 && st.time === 24, 'charm 999: got away with ' + robbed);
   eq(await txt('robamount'), String(robbed), 'loot shown');
   await shot('bank-robbed');
+  near(await rectOf('YOU DID IT!!!'), [113, 140, 356], 0.3, 'robbed: title placed as the original\'s (frame 28)');
   await click('ok');
   st = await s();
   eq([st.karma, st.mapx, st.mapy], [-10, 456, 630], 'robbery OK: -10 karma, start junction');
@@ -317,6 +342,10 @@ function eq(a, b, msg) {
   eq([st.job, st.karma, st.msgs.length], [2, 1, msgs0 + 1], 'hired as janitor: +1 karma, a voicemail');
   eq([await txt('jobtext'), await txt('wagetext')], ['JANITOR', 'Your pay is now $8 an hour.'], 'congratulations screen');
   await shot('nli-hired');
+  // placed as the original's promotion fields (the job title's box stays 217 px wide, centred)
+  near(await rectOf('CONGRATULATIONS!\nYOU ARE NOW A:'), [267, 127.5], 0.3, 'congratulations text');
+  near(await rectOf('JANITOR'), [250, 208.5, 217], 0.3, 'job title field');
+  near(await rectOf('Your pay is now $8 an hour.'), [212, 281, 293], 0.3, 'wage field');
   await t.step(12);
   await click('ok');
   eq(await black(), 1, 'OK after the congratulations fades the lobby in again');
@@ -390,10 +419,26 @@ function eq(a, b, msg) {
   await t.step(1);
   eq((await s()).intelligence, 11, 'study: +1 intelligence at frame 10');
   await shot('uofs-study');
-  await t.step(14);
+  // The original redraws only the pencil: the student leans over the desk the whole time, head
+  // centred at (357.5, 182.5).
+  const ANIM = '#ui canvas[data-anim]';
+  const isHead = (p) => p[0] < 20 && Math.abs(p[1] - 102) < 20 && Math.abs(p[2] - 204) < 20;
+  check(isHead(await pixel(357.5, 182.5, ANIM)) && isHead(await pixel(357.5, 170, ANIM)) && !isHead(await pixel(357.5, 160, ANIM)),
+    'study: head low over the desk at frame 10');
+  await t.step(13);
+  check(isHead(await pixel(357.5, 182.5, ANIM)) && !isHead(await pixel(357.5, 160, ANIM)), 'study: head still there at frame 23');
+  await t.step(1);
   check(!(await has('study')), 'animation still running at frame 24');
+  await ev(() => { SRPG.sound.unlock(); SRPG.sound.play('work'); });
+  await new Promise((r) => setTimeout(r, 600));
+  const sndA = await ev(() => SRPG.sound.state());
   await t.step(1);
   check(await has('study'), 'menu back after 25 frames');
+  // gotoAndStop(60) also re-runs the frame's LoopB.stop() (a global Sound: every sound stops) and
+  // LoopD.start(): inside.mp3 from the top
+  const sndB = await ev(() => SRPG.sound.state());
+  check(sndA.step > 4 && sndA.sources > 3 && sndB.music === 'inside' && sndB.step <= 4 && sndB.sources <= 6,
+    'end of the animation: every sound stops, inside.mp3 starts from the top ' + JSON.stringify([sndA, sndB]));
   eq(await black(), 1, 'the clip\'s gotoAndStop(60) replays the menu frame\'s black clip');
   await click('class');
   st = await s();
@@ -403,7 +448,11 @@ function eq(a, b, msg) {
   await t.step(1);
   eq((await s()).intelligence, 13, 'class: +2 intelligence at frame 11');
   await shot('uofs-class');
-  await t.step(14);
+  check(isHead(await pixel(355, 192.5, ANIM)), 'class: the head sinks from frame 11');
+  // from frame 21 the flattened head lies on the desk top, drawn in front of it
+  await t.step(10);
+  check(isHead(await pixel(355, 224, ANIM)) && isHead(await pixel(343, 224, ANIM)), 'class: head lying on the desk at frame 21');
+  await t.step(4);
   await click('gym');
   await t.step(9);
   eq([(await s()).strength, (await s()).hpmax], [10, 25], 'gym: not yet at frame 10');
@@ -459,6 +508,20 @@ function eq(a, b, msg) {
   await enter('bus');
   await shot('bus-depot');
   for (const c of Object.keys(prices)) check(await has('bus_' + c), 'bus to ' + c);
+  // The six buttons are placed one by one as in the original: 40 x 36 tiles at their own heights,
+  // the three-line labels a little above them.
+  const busBox = (id) => ev((id) => {
+    const st = document.getElementById('stage').getBoundingClientRect(), k = 550 / st.width;
+    const r = document.querySelector('#ui [data-id="' + id + '"] .ico').getBoundingClientRect();
+    const l = document.querySelector('#ui [data-id="' + id + '"] .lbl').getBoundingClientRect();
+    return [(r.left - st.left) * k, (r.top - st.top) * k, r.width * k, r.height * k, (l.top - st.top) * k].map((v) => Math.round(v * 100) / 100);
+  }, id);
+  near(await busBox('bus_brooklyn'), [171.5, 142.5, 40, 36, 141.25], 0.3, 'bus: Brooklyn button');
+  near(await busBox('bus_detroit'), [171.5, 192, 40, 36, 190.1], 0.3, 'bus: Detroit button');
+  near(await busBox('bus_losangeles'), [171.5, 241, 40, 36, 240.4], 0.3, 'bus: Los Angeles button');
+  near(await busBox('bus_chicago'), [346.5, 143, 40, 36, 141], 0.3, 'bus: Chicago button');
+  near(await busBox('bus_camden'), [345.5, 193, 40, 36, 192.4], 0.3, 'bus: Camden button');
+  near(await busBox('bus_lasvegas'), [345.5, 243, 40, 36, 243.6], 0.3, 'bus: Las Vegas button');
   // time and money
   let r = await trip('detroit', { time: 1 });
   eq([r.st.cash, r.screen], [1000, 'depot'], 'bus only leaves at midnight (time 0)');

@@ -41,17 +41,32 @@
     pick: function (arr) { return arr[Math.floor(next() * arr.length)]; },
   };
 
-  // Flash's string-to-number (checked in Ruffle): a leading 0 with only digits 0-7 is octal ('0100'
-  // is 64), 0x/0X is hex, leading spaces are skipped, anything else non-numeric is NaN. flashInt is
-  // AS1 int(): truncation to a 32-bit integer, NaN and Infinity become 0.
+  // Flash's string-to-number, as Ruffle runs the original (probed there string by string):
+  // - hex: 0x / 0X, an optional sign after it, hex digits; folded into 32 bits, so '0xFFFFFFFF' is
+  //   -1 and '0x80000000' is -2147483648; the sign applies afterwards ('0x-1' is -1);
+  // - octal: an optional sign, a leading 0 and only digits 0-7 ('0100' is 64, '+010' 8, '-010' -8),
+  //   also folded into 32 bits; no leading spaces allowed ('09' and ' 010' are decimal);
+  // - decimal: leading spaces, tabs, CR and LF are skipped (not other white space), anything after
+  //   the number makes it NaN, and an exponent mark without digits is ignored ('12e' is 12, '.' 0).
+  // flashInt is AS1 int(): truncation to a 32-bit integer, NaN and Infinity become 0.
   function flashNumber(v) {
     if (typeof v === 'number') return v;
     var t = String(v);
-    if (/^0[0-7]+$/.test(t)) return parseInt(t, 8);
-    if (/^0[xX][0-9a-fA-F]+$/.test(t)) return parseInt(t.slice(2), 16);
-    t = t.replace(/^\s+/, '');
-    if (!/^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/.test(t)) return NaN;
-    return Number(t);
+    var m = /^0[xX]([-+]?)([0-9a-fA-F]+)$/.exec(t);
+    var n, i;
+    if (m) {
+      for (n = 0, i = 0; i < m[2].length; i++) n = ((n << 4) | parseInt(m[2].charAt(i), 16)) | 0;
+      return m[1] === '-' ? -n | 0 : n;
+    }
+    m = /^([-+]?)0([0-7]+)$/.exec(t);
+    if (m) {
+      for (n = 0, i = 0; i < m[2].length; i++) n = ((n << 3) | +m[2].charAt(i)) | 0;
+      return m[1] === '-' ? -n | 0 : n;
+    }
+    m = /^([-+]?)(\d*)(?:\.(\d*))?(?:[eE]([-+]?)(\d*))?$/.exec(t.replace(/^[ \t\r\n]+/, ''));
+    if (!m || (m[2] === '' && m[3] === undefined)) return NaN;
+    n = Number((m[2] || '0') + '.' + (m[3] || '0') + (m[5] ? 'e' + (m[4] || '') + m[5] : ''));
+    return m[1] === '-' ? -n : n;
   }
   function flashInt(v) {
     var n = flashNumber(v);
