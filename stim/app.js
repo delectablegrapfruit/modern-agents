@@ -392,7 +392,7 @@ const ACH = [];
 const addAch = list => list.forEach(([id, n, d, i, t]) => ACH.push({ id, n, d, i, t }));
 addAch([
   ['combo', 'On a roll', 'Reach a ×10 combo', 'bolt', () => S.bestCombo >= 54],
-  ['pickups', 'Can’t put it down', 'Unlock 25 times', 'lock', () => S.pickups >= 25],
+  ['pickups', 'Regular', 'Unlock 25 times', 'lock', () => S.pickups >= 25],
   ['level', 'Top tier', 'Reach level 10', 'level', () => lvl().l >= 10],
   ['night', 'Night owl', 'Play between midnight and 4 am', 'moon', () => new Date().getHours() < 4],
   ['grass', 'Touched grass', 'Take a break, then come back', 'leaf'],

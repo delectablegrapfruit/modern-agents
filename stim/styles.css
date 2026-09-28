@@ -327,6 +327,7 @@ kbd { font: 600 12px/1 var(--ui); min-width: 24px; height: 24px; padding: 0 7px;
 .scrim.show { opacity: 1; }
 .sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 85; max-height: 80%; display: flex; flex-direction: column; background: var(--bg); border-radius: 26px 26px 0 0; padding-bottom: calc(var(--sb) + 12px); transform: translateY(105%); transition: transform .28s var(--ease); }
 .sheet.show { transform: none; }
+.sheet:not(.show) { pointer-events: none; } /* a closing sheet takes no more taps */
 .grab { flex: none; display: grid; place-items: center; padding: 8px 0 4px; touch-action: none; cursor: grab; }
 .grab::before { content: ""; width: 38px; height: 5px; border-radius: 3px; background: var(--bar); }
 .sheet h3 { margin: 4px 0 12px; text-align: center; font: 700 20px/1.2 var(--fun); }
