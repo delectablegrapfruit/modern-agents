@@ -1,8 +1,3 @@
-#if os(WASI)
-import FoundationEssentials
-#else
-import Foundation
-#endif
 import RoninArt
 import RoninCore
 
@@ -31,9 +26,11 @@ func ronin_buffer(_ size: Int32) -> UnsafeMutablePointer<UInt8> {
 @_cdecl("ronin_out")
 func ronin_out() -> UnsafeMutablePointer<UInt8> { outBuffer }
 
-private func input(_ length: Int32) -> String {
-    String(decoding: UnsafeBufferPointer(start: inBuffer, count: Int(max(0, min(Int32(inCapacity), length)))), as: UTF8.self)
+private func inputBytes(_ length: Int32) -> [UInt8] {
+    Array(UnsafeBufferPointer(start: inBuffer, count: Int(max(0, min(Int32(inCapacity), length)))))
 }
+
+private func input(_ length: Int32) -> String { String(decoding: inputBytes(length), as: UTF8.self) }
 
 private func emit(_ bytes: [UInt8]) -> Int32 {
     if bytes.count > outCapacity {
@@ -71,19 +68,45 @@ func ronin_strike(_ side: Int32) -> Int32 {
 @_cdecl("ronin_state")
 func ronin_state() -> Int32 { emit(session.stateJSON()) }
 
-/// A sketch: the input is `cast|frame|armed` (armed 1 or 0; `|armed` may be left off). The output is the sketch's
-/// floats, or nothing for a cast or frame that does not read.
+/// A sketch: the input is `cast|frame|armed|sheathed` (1 or 0; the last two may be left off: armed, not sheathed).
+/// The output is the sketch's floats, or nothing for a cast or frame that does not read.
 @_cdecl("ronin_sketch")
 func ronin_sketch(_ length: Int32) -> Int32 {
     let parts = input(length).split(separator: "|", omittingEmptySubsequences: false).map(String.init)
     guard parts.count >= 2, let cast = parseCast(parts[0]), let frame = parseFrame(parts[1]) else { return emit([]) }
     let armed = parts.count < 3 || parts[2] != "0"
-    var pose = Figure.pose(cast, frame)
+    let sheathed = parts.count >= 4 && parts[3] == "1"
+    var pose = sheathed ? sheathedPose(frame) : Figure.pose(cast, frame)
     let isSmeared = smeared(pose)
     pose.armed = pose.armed && armed
     var encoder = SketchEncoder()
     encoder.encode(Figure.sketch(cast, pose: pose), cast: cast, smeared: isSmeared)
     return emit(encoder.bytes)
+}
+
+/// A sketch of a piece of the dead: the input is a JSON `PieceRequest` (Ragdolls.swift), the output floats, or nothing
+/// if it does not read.
+@_cdecl("ronin_piece")
+func ronin_piece(_ length: Int32) -> Int32 {
+    guard let request = try? JSON.decode(PieceRequest.self, from: inputBytes(length)),
+          let bytes = try? pieceSketch(request) else { return emit([]) }
+    return emit(bytes)
+}
+
+/// Every ragdoll stepped `dt` seconds (the page's frame): their states, as JSON (`RagdollAPI.step` with no ids).
+@_cdecl("ronin_dolls_step")
+func ronin_dolls_step(_ dt: Double) -> Int32 {
+    var w = JSONWriter(capacity: 1024)
+    stepDolls(dt, ids: nil, points: false, &w)
+    return emit(w.bytes)
+}
+
+/// A ragdoll drawn as it now lies: sketch floats, then where its anchor goes (two floats); nothing if there is no such
+/// doll.
+@_cdecl("ronin_doll_draw")
+func ronin_doll_draw(_ id: Int32) -> Int32 {
+    guard let bytes = try? pieceSketch(PieceRequest(kind: "doll", id: Int(id))) else { return emit([]) }
+    return emit(bytes)
 }
 
 // MARK: Everything else: JSON in, JSON out
@@ -124,6 +147,7 @@ struct Request: Decodable {
     var json: String?
     var cast: String?
     var frame: String?
+    var warlordFrame: String?
     var side: String?
     var id: Int?
     var dt: Double?
@@ -159,7 +183,7 @@ func ronin_rpc(_ length: Int32) -> Int32 {
     var w = JSONWriter(capacity: 1024)
     w.beginObject()
     do {
-        let request = try JSONDecoder().decode(Request.self, from: Data(input(length).utf8))
+        let request = try JSON.decode(Request.self, from: inputBytes(length))
         var result = JSONWriter(capacity: 1024)
         try handle(request, &result)
         w.field("ok", true)
@@ -191,7 +215,7 @@ private func handle(_ r: Request, _ w: inout JSONWriter) throws {
         session.saveDue = true
         w.value(true)
     case "loadSave":
-        guard let json = r.json, let save = SaveGame.load(Data(json.utf8)) else { return w.value(false) }
+        guard let json = r.json, let save = loadSave(Array(json.utf8)) else { return w.value(false) }
         let rules = session.rules
         session = WebSession(save: save)
         session.rules = rules
@@ -273,6 +297,10 @@ private func handle(_ r: Request, _ w: inout JSONWriter) throws {
         w.endObject()
     case "figure":
         try writeFigure(r, &w)
+    case "clashGap":
+        let hero = try r.frame.map { try requireFrame($0) } ?? .clash(0)
+        let warlord = try r.warlordFrame.map { try requireFrame($0) } ?? .clash(0)
+        w.value(Double(Figure.clashGap(hero: hero, warlord: warlord)))
     case "stage":
         let mode = try parseMode(r.mode) ?? session.career.mode
         writeStage(r.stage ?? session.fight.stage, mode: mode, &w)

@@ -414,10 +414,21 @@ func writeFigure(_ r: Request, _ w: inout JSONWriter) throws {
     w.key("footing"); w.beginObject(); w.key("front"); w.point(footing.front); w.key("back"); w.point(footing.back); w.endObject()
     w.key("tip"); w.point(Figure.tip(cast, frame))
     w.key("contact"); w.point(Figure.contact(cast, frame))
+    w.key("club")
+    if let line = club(cast, frame) {
+        w.beginObject(); w.key("grip"); w.point(line.grip); w.key("head"); w.point(line.head); w.endObject()
+    } else {
+        w.null()
+    }
     w.field("smeared", smeared(pose))
     w.field("armed", pose.armed)
     w.field("airborne", pose.airborne)
     w.field("roll", Double(pose.roll))
+    w.field("blade", Double(pose.blade))
+    w.field("blade2", Double(pose.blade2))
+    w.field("lean", Double(pose.lean))
+    w.field("clutch", pose.clutch)
+    w.field("sheathed", Double(pose.sheathed))
     w.key("anatomy")
     w.beginObject()
     w.key("hip"); w.point(a.hip)

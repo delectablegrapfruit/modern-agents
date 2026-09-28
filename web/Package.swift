@@ -5,7 +5,8 @@ import PackageDescription
 // page's JavaScript (core.js) calls. Built by build.sh (in Docker, with the SwiftWasm SDK); the root package and its
 // CI know nothing of it.
 let exports = [
-    "ronin_buffer", "ronin_out", "ronin_rpc", "ronin_advance", "ronin_strike", "ronin_state", "ronin_sketch",
+    "ronin_buffer", "ronin_out", "ronin_rpc", "ronin_advance", "ronin_strike", "ronin_state", "ronin_sketch", "ronin_piece",
+    "ronin_dolls_step", "ronin_doll_draw",
 ]
 
 let package = Package(

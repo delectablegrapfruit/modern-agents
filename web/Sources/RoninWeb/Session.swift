@@ -1,8 +1,3 @@
-#if os(WASI)
-import FoundationEssentials
-#else
-import Foundation
-#endif
 import RoninCore
 
 /// The career and the fight in progress: the app's `GameSession` (Sources/Ronin/Session.swift), action for action,
@@ -153,12 +148,10 @@ struct WebSession {
         fight.foes[i].timer = 0.6
     }
 
-    /// The save file's JSON: exactly what the app's `Store` writes.
+    /// The save file's JSON: what the app's `Store` writes (`SaveGame`, as JSON).
     mutating func saveJSON() -> String {
         unsaved = 0
         saveDue = false
-        let encoder = JSONEncoder()
-        guard let data = try? encoder.encode(SaveGame(career: career, fight: fight)) else { return "" }
-        return String(decoding: data, as: UTF8.self)
+        return String(decoding: saveFile(SaveGame(career: career, fight: fight)), as: UTF8.self)
     }
 }

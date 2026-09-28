@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import assert from 'node:assert/strict';
-import { loadCore, decodeSketch } from '../core.js';
+import { loadCore, drawSketch, shapePath } from '../core.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const wasmPath = process.argv[2] || join(here, '..', 'dist', 'ronin.wasm');
@@ -271,19 +271,126 @@ await test('frame keys: every case reads back, bad ones are refused', () => {
   assert.ok(typeof foot.front.x === 'number' && typeof foot.back.y === 'number');
   const fig = core.figure('hero', 'cut(kesa,4)');
   assert.ok(fig.tip && fig.anatomy.headRadius > 0);
+  assert.ok(core.figure('brute', 'windup(3)').club.head, 'the brute has a club');
+  assert.equal(core.figure('grunt', 'windup(3)').club, null);
+  const sheathed = core.sketch('hero', 'hurt(1)', { sheathed: true });
+  const drawn = core.sketch('hero', 'hurt(1)');
+  assert.ok(sheathed.sheathed && sheathed.body.length > 0);
+  assert.notDeepEqual(sheathed.body.map((s) => s.path && s.path.length), drawn.body.map((s) => s.path && s.path.length));
+  assert.ok(core.clashGap() > 0 && core.clashGap('clash(1)', 'clash(1)') > 0);
   assert.ok(core.has('archer', 'aim') && !core.has('grunt', 'aim'));
   const size = core.figureSize('hero', 100);
   assert.ok(Math.abs(size.width / size.height - core.tuning.Figure.canvas.width / core.tuning.Figure.canvas.height) < 1e-9);
+});
+
+await test('drawSketch paints underlay, the body with its rim, then the overlay (on a recording canvas)', () => {
+  // Node has no canvas: a recording stand-in for Path2D, the 2D context and OffscreenCanvas.
+  const log = [];
+  class FakePath { constructor() { this.ops = 0; } moveTo() { this.ops++; } lineTo() { this.ops++; } quadraticCurveTo() { this.ops++; } closePath() { this.ops++; } ellipse() { this.ops++; } }
+  function fakeContext(name) {
+    let m = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
+    return {
+      save() {}, restore() {},
+      transform(a, b, c, d, e, f) { m = { a: m.a * a + m.c * b, b: m.b * a + m.d * b, c: m.a * c + m.c * d, d: m.b * c + m.d * d, e: m.a * e + m.c * f + m.e, f: m.b * e + m.d * f + m.f }; },
+      setTransform(a, b, c, d, e, f) { m = { a, b, c, d, e, f }; },
+      getTransform() { return { ...m }; },
+      clearRect() {}, fill() { log.push(name + ':fill'); }, stroke() { log.push(name + ':stroke'); },
+      drawImage() { log.push(name + ':drawImage:' + this.shadowBlur.toFixed(2)); },
+      set fillStyle(v) {}, set strokeStyle(v) {}, set lineWidth(v) {}, set lineCap(v) {}, set lineJoin(v) {}, set shadowColor(v) {},
+      shadowBlur: 0,
+    };
+  }
+  const saved = { Path2D: globalThis.Path2D, OffscreenCanvas: globalThis.OffscreenCanvas };
+  globalThis.Path2D = FakePath;
+  globalThis.OffscreenCanvas = class { constructor(w, h) { this.width = w; this.height = h; this.ctx = fakeContext('layer'); } getContext() { return this.ctx; } };
+  try {
+    const s = core.sketch('hero', 'cut(kesa,4)');
+    const ctx = fakeContext('main');
+    ctx.transform(2, 0, 0, 2, 0, 0);
+    drawSketch(ctx, s);
+    const shapes = (list) => list.reduce((n, sh) => n + (sh.fill ? 1 : 0) + (sh.stroke ? 1 : 0), 0);
+    assert.equal(log.filter((l) => l.startsWith('layer:')).length, shapes(s.body));
+    assert.equal(log.filter((l) => l.startsWith('main:') && !l.includes('drawImage')).length, shapes(s.underlay) + shapes(s.overlay));
+    const draw = log.find((l) => l.startsWith('main:drawImage'));
+    assert.ok(draw && Math.abs(parseFloat(draw.split(':')[2]) - s.rim.radius * 1.6 * 2) < 0.01, draw);
+    assert.ok(shapePath(s.body[0]).ops > 0);
+  } finally {
+    globalThis.Path2D = saved.Path2D;
+    globalThis.OffscreenCanvas = saved.OffscreenCanvas;
+  }
+});
+
+await test('ragdolls: every severance of every foe falls and comes to rest, and draws', () => {
+  const rd = core.ragdoll;
+  rd.seed(1);
+  rd.clear();
+  assert.equal(rd.joints.frontHand, 8);
+  let drawn = 0, steps = 0;
+  const t0 = performance.now();
+  for (const cast of CASTS.slice(1)) {
+    for (const severance of ['falling', 'rising', 'level', 'legs', 'head']) {
+      const parts = rd.sever(cast, severance, { variant: 1, back: 1, force: 1.25 });
+      assert.ok(parts.weapon && typeof parts.weapon.turn === 'number');
+      const ids = [parts.upper, parts.lower, parts.body].filter((id) => id != null);
+      assert.ok(ids.length >= 1, JSON.stringify(parts));
+      let collapsed = false;
+      for (let t = 0; t < 8; t += 1 / 30) {
+        if (!collapsed && parts.standFor != null && t >= parts.standFor) {
+          for (const id of [parts.lower, parts.body]) if (id != null) rd.collapse(id);
+          collapsed = true;
+        }
+        const states = rd.step(1 / 30, ids);
+        steps++;
+        if (states.every((s) => s.settled)) break;
+      }
+      for (const id of ids) {
+        const s = rd.draw(id);
+        drawn++;
+        assert.ok(s.body.length > 0 && typeof s.place.x === 'number' && typeof s.place.y === 'number');
+        const info = rd.info(id);
+        assert.equal(info.points.length, 11);
+        assert.ok(info.settled, `${cast} ${severance} doll ${id} did not settle`);
+        assert.ok(info.hip.y > -0.2 && info.hip.y < 0.6, `${cast} ${severance}: hip at ${info.hip.y}`);
+      }
+      rd.remove(ids);
+    }
+    const felled = rd.fell(cast, { force: 1 });
+    rd.step(3, [felled.body]);
+    assert.ok(rd.draw(felled.body).body.length > 0);
+    rd.remove(felled.body);
+    const head = rd.head(cast, 2);
+    assert.ok(head.body.length > 0 && head.wound && typeof head.angle === 'number');
+    assert.ok(rd.struck(cast, 3).body.length > 0);
+    assert.ok(rd.weapon(cast).body.length + rd.weapon(cast).overlay.length > 0);
+  }
+  assert.equal(rd.count(), 0);
+  console.log(`      ${drawn} pieces fallen and drawn, ${steps} batched steps, in ${(performance.now() - t0).toFixed(0)} ms`);
+  const id = rd.create('hero', { frame: 'fall(0)', style: 'felled' });
+  rd.reach(id, 'thrown', { fling: true });
+  rd.step(0.5, id);
+  const stepMs = time(() => rd.step(1 / 60, id), 200);
+  const drawMs = time(() => rd.draw(id), 50);
+  console.log(`      one doll: step(1/60) ${(stepMs * 1000).toFixed(0)} µs, draw ${(drawMs * 1000).toFixed(0)} µs`);
+  rd.clear();
 });
 
 await test('timings: state() and advance() per frame', () => {
   core.newGame({ seed: 11, mode: 'oni' });
   core.begin({ stage: 9 });
   core.setAutopilot(true);
-  core.advance(20);
+  // A crowded moment: as many foes on the lane as it gets.
+  let busiest = 0, save = null;
+  for (let t = 0; t < 60 && !core.state().outcome; t += 0.25) {
+    core.advance(0.25);
+    const n = core.state().foes.length;
+    if (n > busiest) { busiest = n; save = core.saveJSON(); }
+  }
+  core.loadSave(save);
   const n = core.state().foes.length;
   const stateMs = time(() => core.state(), 2000);
-  const advanceMs = time(() => core.advance(1 / 60), 2000);
+  core.loadSave(save);
+  const advanceMs = time(() => core.advance(1 / 60), 600);
+  core.loadSave(save);
   const sketchMs = time(() => core.sketch('hero', 'cut(kesa,4)'), 200);
   console.log(`      state(): ${(stateMs * 1000).toFixed(0)} µs with ${n} foes · advance(1/60): ${(advanceMs * 1000).toFixed(0)} µs · sketch(hero, cut): ${(sketchMs * 1000).toFixed(0)} µs`);
   assert.ok(stateMs < 1, `state() takes ${stateMs} ms`);
