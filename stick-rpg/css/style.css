@@ -18,7 +18,7 @@ html, body {
   transform: translate(-50%, -50%);
   background: #0a6fd8;
   overflow: hidden;
-  font-family: "Arial Black", "Arial Bold", Arial, Helvetica, sans-serif;
+  font-family: "Arial Black", "Arial Bold", Gadget, Arial, Helvetica, sans-serif;
 }
 
 #game {
@@ -44,35 +44,37 @@ html, body {
 
 .box { position: absolute; box-sizing: border-box; }
 
-/* The translucent blue rounded panel used by every building menu and dialog. */
+/* The translucent blue rounded panel (the original's shape 105: #4884ff at 90%, a dark blue rim).
+   Its corners scale with the panel, as the original's scaled shape did (11 x 16 px at 356 x 202). */
 .fpanel {
   position: absolute;
   box-sizing: border-box;
-  background: rgba(51, 119, 255, 0.78);
-  border: 1px solid #0d3fa6;
-  border-radius: 14px;
-  color: #002a80;
+  background: rgba(72, 132, 255, 0.898);
+  border: 1.5px solid rgba(0, 54, 165, 0.95);
+  border-radius: 3.09% / 7.92%;
+  color: #000066;
 }
 
+/* The shopkeeper's line at the top of a menu: Arial Black 12, black, centred. */
 .quote {
   position: absolute;
   box-sizing: border-box;
   text-align: center;
-  font: bold 8.5px "Arial Black", Arial, sans-serif;
+  font: 12px/17px "Arial Black", "Arial Bold", Gadget, Arial, sans-serif;
   color: #000;
-  line-height: 1.3;
 }
-.quote.big { font-size: 9.5px; }
+.quote.big { font-size: 12px; line-height: 17px; }
 
+/* Free text in panels (balances, notes): Arial Black 12, dark navy. */
 .ftext {
   position: absolute;
   box-sizing: border-box;
-  font: bold 8px "Arial Black", Arial, sans-serif;
-  color: #002a80;
-  line-height: 1.35;
+  font: 12px/1.4 "Arial Black", "Arial Bold", Gadget, Arial, sans-serif;
+  color: #000066;
 }
 
-/* Icon button: square light-blue tile with an icon and a bold dark-blue label beside it. */
+/* Icon button: the square tile (48 px scaled to 75% = 36) with the icon drawn on it, and the
+   label beside it. The tile is CSS; SRPG.icons.draw paints only the object on top. */
 .ibtn {
   position: absolute;
   display: flex;
@@ -81,54 +83,79 @@ html, body {
   box-sizing: border-box;
 }
 .ibtn .ico {
+  position: relative;
   flex: 0 0 auto;
   box-sizing: border-box;
-  background: linear-gradient(#5cb2ff, #2f8ef5);
-  border: 1px solid #1d5fc4;
-  border-radius: 6px;
+  background: #3399ff;
+  border: 0.75px solid #3366cc;
+  border-radius: 5px;
   overflow: hidden;
 }
-.ibtn .ico canvas { display: block; }
+/* location.js's default 34 px tiles are drawn at the original's 36 px */
+.ibtn .ico[style*="width: 34px"] { transform: scale(1.0588); }
+.ibtn .ico canvas { display: block; position: relative; }
 .ibtn .lbl {
-  display: flex;
-  align-items: center;
-  margin-left: 6px;
-  font: bold 7.2px "Arial Black", Arial, sans-serif;
-  color: #002a80;
-  line-height: 1.25;
+  /* a plain block (so spans and <br> flow inline), centred on the tile by the button's flexbox */
+  display: block;
+  min-height: 0 !important;
+  margin-left: 6.5px;
+  padding-top: 1px;
+  font: 9px/12.6px "Arial Black", "Arial Bold", Gadget, Arial, sans-serif;
+  color: #003399;
   text-transform: uppercase;
 }
-.ibtn .lbl .hp, .red { color: #e10000; }
-.ibtn:hover .ico { background: linear-gradient(#9cd1ff, #4fa3ff); border-color: #fff; }
-.ibtn:hover .lbl { color: #fff; }
+.ibtn .lbl .hp, .hp, .red { color: #cc0000; }
+.ibtn .lbl .hp, .ibtn .lbl .big { font-size: 10.5px; }
+.ibtn[data-id="leave"] .lbl { font-size: 10.5px; }
+/* hover: the tile turns pale and the label pales (the original's over frame) */
+.ibtn:hover .ico { background: #95caff; border-color: #66b2ff; }
+.ibtn:hover .lbl, .ibtn:hover .lbl * { color: #aed7ff !important; }
+.ibtn:hover .lbl .hp, .ibtn:hover .lbl .red { color: #ff6666 !important; }
+/* pressed: the whole button drops ~2 px */
+.ibtn:active .ico, .ibtn:active .lbl { transform: translate(1.9px, 1.9px); }
+.ibtn:active .ico[style*="width: 34px"] { transform: translate(1.9px, 1.9px) scale(1.0588); }
 .ibtn.disabled { cursor: default; opacity: 0.45; }
-.ibtn.disabled:hover .ico { background: linear-gradient(#5cb2ff, #2f8ef5); border-color: #1d5fc4; }
-.ibtn.disabled:hover .lbl { color: #002a80; }
+.ibtn.disabled:hover .ico { background: #3399ff; border-color: #3366cc; }
+.ibtn.disabled:hover .lbl, .ibtn.disabled:hover .lbl * { color: #003399 !important; }
+.ibtn.disabled:hover .lbl .hp { color: #cc0000 !important; }
+.ibtn.disabled:active .ico, .ibtn.disabled:active .lbl { transform: none; }
+.ibtn.static { cursor: default; }
+.ibtn.static:hover .ico { background: #3399ff; border-color: #3366cc; }
+.ibtn.static:hover .lbl, .ibtn.static:hover .lbl * { color: #003399 !important; }
+.ibtn.static:active .ico, .ibtn.static:active .lbl { transform: none; }
 
-/* Rounded pill text button (OK / DONE / YES / NO). */
+/* Rounded text button (OK / CANCEL / DEPOSIT / YES / NO): a #3399ff pill with navy type. */
 .tbtn {
   position: absolute;
   box-sizing: border-box;
   min-width: 34px;
-  padding: 3px 9px;
+  padding: 5.5px 10px;
   text-align: center;
-  font: bold 8px "Arial Black", Arial, sans-serif;
-  color: #002a80;
-  background: linear-gradient(#63b6ff, #2d8cf2);
-  border: 1px solid #1d5fc4;
-  border-radius: 8px;
+  font: 10.5px/12px "Arial Black", "Arial Bold", Gadget, Arial, sans-serif;
+  color: #003399;
+  background: #3399ff;
+  border: 0.75px solid #3366cc;
+  border-radius: 6px;
   cursor: pointer;
   white-space: nowrap;
 }
-.tbtn:hover { color: #fff; background: linear-gradient(#9cd1ff, #4fa3ff); }
-.tbtn.plain { background: none; border: none; padding: 0; font-size: 10px; color: #002299; text-align: left; }
-.tbtn.plain:hover { background: none; color: #fff; }
-.tbtn.xbtn { background: rgba(20, 60, 190, 0.35); border: 1.5px solid #001a66; color: #001a66; border-radius: 4px; }
-.ibtn.static { cursor: default; }
-.ibtn.static:hover .ico { background: linear-gradient(#5cb2ff, #2f8ef5); border-color: #1d5fc4; }
-.ibtn.static:hover .lbl { color: #002a80; }
+.tbtn:hover { color: #3399ff; background: #95caff; border-color: #66b2ff; }
+.tbtn:active { transform: translate(1px, 1px); }
+.tbtn.plain { background: none; border: none; padding: 0; font-size: 10.5px; color: #0033cc; text-align: left; }
+.tbtn.plain:hover { background: none; color: #aed7ff; }
+.tbtn.xbtn {
+  background: transparent;
+  border: 1.5px solid #000099;
+  color: #000066;
+  border-radius: 4px;
+  font-size: 17px;
+  line-height: 18px;
+  padding: 1px 0;
+}
+.tbtn.xbtn:hover { background: #95caff; border-color: #3399ff; color: #3399ff; }
 .tbtn.inline { position: relative; display: inline-block; margin: 0 4px; }
 .tbtn.disabled { opacity: 0.45; cursor: default; }
+.tbtn.disabled:hover { color: #003399; background: #3399ff; border-color: #3366cc; }
 /* Outlined white-on-blue text used by the title/new-game screens. */
 .tbtn.outline {
   background: none;
@@ -142,16 +169,19 @@ html, body {
 }
 .tbtn.outline:hover { color: #fff; text-shadow: -1.5px -1.5px 0 #0a5ad8, 1.5px -1.5px 0 #0a5ad8, -1.5px 1.5px 0 #0a5ad8, 1.5px 1.5px 0 #0a5ad8; }
 
+/* The original's white edit boxes (bank amounts, the name): right-aligned navy Arial Black 14. */
 .finput {
   position: absolute;
   box-sizing: border-box;
-  height: 18px;
-  font: bold 11px Arial, sans-serif;
-  color: #000;
+  height: 21px;
+  font: 14px "Arial Black", "Arial Bold", Gadget, Arial, sans-serif;
+  color: #000066;
   background: #fff;
-  border: 1px solid #000;
-  padding: 1px 3px;
+  border: 1px solid #333;
+  border-radius: 2px;
+  padding: 0 3px;
   outline: none;
+  text-align: right;
 }
 
 /* Modals */
@@ -161,23 +191,101 @@ html, body {
   top: 0;
   width: 550px;
   height: 400px;
-  background: rgba(0, 0, 0, 0.15);
+  background: rgba(0, 0, 0, 0.12);
   z-index: 50;
 }
-.fpanel.modal { padding: 12px 14px 10px; }
-.modal-title { font: bold 11px "Arial Black", Arial, sans-serif; color: #e10000; text-align: center; margin-bottom: 6px; }
-.modal-text { font: bold 8.5px "Arial Black", Arial, sans-serif; color: #000; text-align: center; line-height: 1.35; margin-bottom: 10px; }
+.fpanel.modal { padding: 14px 16px 12px; border-radius: 11px / 16px; }
+.modal-title { font: 16px "Arial Black", "Arial Bold", Gadget, Arial, sans-serif; color: #cc0000; text-align: center; margin-bottom: 8px; }
+.modal-text { font: 12px/17px "Arial Black", "Arial Bold", Gadget, Arial, sans-serif; color: #000; text-align: center; margin-bottom: 12px; }
 .modal-buttons { text-align: center; }
 
+/* Big rising message ("CHARM INCREASED!!!"): white Verdana with a navy edge. */
 .poptext {
   position: absolute;
   text-align: center;
-  font: bold 20px "Arial Black", Arial, sans-serif;
-  color: #ffe600;
-  text-shadow: -2px -2px 0 #003399, 2px -2px 0 #003399, -2px 2px 0 #003399, 2px 2px 0 #003399;
+  font: bold 16px Verdana, "DejaVu Sans", Geneva, sans-serif;
+  color: #fff;
+  text-shadow: -1px -1px 0 #000066, 1px -1px 0 #000066, -1px 1px 0 #000066, 1px 1px 0 #000066, 0 0 3px rgba(0, 0, 102, 0.6);
   transition: opacity 0.7s, transform 0.7s;
   z-index: 60;
 }
 .poptext.fade { opacity: 0; transform: translateY(-18px); }
 
 .hidden { display: none !important; }
+
+/* ---- INVENTORY / STATS panels (js/systems/panels.js) --------------------------------------- */
+#ui .panel-layer, #ui .panel-layer .fpanel, #ui .inv-ring, #ui .ptxt, #ui canvas.inv-pic, #ui .inv-tip, #ui .inv-tip *,
+#ui canvas.part, #ui canvas.inv-smoker, #ui .inv-content, #ui .stats-content { pointer-events: none; }
+#ui .inv-item, #ui .phit, #ui .pclose, #ui .inv-home { pointer-events: auto; }
+.panel-layer .inv-panel { border-radius: 13.2px / 24px; }
+.panel-layer .stats-panel { border-radius: 8.8px / 24px; }
+.panel-layer .quit-panel { border-radius: 7.7px / 8px; border-width: 1px; }
+.inv-ring { position: absolute; border-radius: 50%; background: rgb(65, 119, 229); }
+.inv-content, .stats-content { position: absolute; left: 0; top: 0; width: 0; height: 0; }
+/* text placed on its baseline: top = baseline, pulled up by the font's (ascent - descent) / 2 */
+.ptxt {
+  position: absolute;
+  line-height: 0;
+  margin-top: -0.394em;
+  white-space: nowrap;
+  font-family: "Arial Black", "Arial Bold", Gadget, Arial, sans-serif;
+  pointer-events: none;
+}
+.ptxt-c { transform: translateX(-50%); }
+.ptxt-r { transform: translateX(-100%); }
+.ptxt-clip { overflow: hidden; line-height: 2.4em; height: 2.4em; margin-top: -1.594em; width: var(--clip); }
+.pverdana { font-family: Verdana, "DejaVu Sans", Geneva, sans-serif; font-weight: bold; margin-top: -0.395em; }
+.pverdana.pnum { font-weight: normal; -webkit-text-stroke: 0; }
+.phit, .pclose { position: absolute; cursor: pointer; box-sizing: border-box; }
+.phit.inert { cursor: default; }
+.pclose { border: 1.6px solid #000099; border-radius: 3.5px; }
+.pclose-x {
+  position: absolute; left: 0.5px; top: 0.5px; width: 20px; height: 20px; background: #000066;
+  clip-path: polygon(12% 14%, 43% 14%, 49.5% 24.8%, 56% 14%, 87% 14%, 65% 50.5%, 87% 87%, 56% 87%, 49.5% 76.2%, 43% 87%, 12% 87%, 34% 50.5%);
+}
+.pclose:hover { background: #95caff; border-color: #3399ff; }
+.pclose:hover .pclose-x { background: #3399ff; }
+.pclose.inert:hover { background: transparent; border-color: #000099; }
+.pclose.inert:hover .pclose-x { background: #000066; }
+.pclose:active .pclose-x { transform: translate(1px, 1px); }
+.inv-item { position: absolute; cursor: pointer; }
+canvas.inv-pic { position: absolute; opacity: 0.5; pointer-events: none; }
+canvas.inv-pic.over { opacity: 1; transform: translateX(var(--dx, 0px)) scale(var(--over, 1.1)); }
+.inv-tip { display: none; pointer-events: none; }
+.inv-tip.show { display: block; }
+.inv-tip * { pointer-events: none; }
+.inv-tipbox { position: absolute; background: rgba(255, 255, 255, 0.25); }
+.inv-home { cursor: pointer; }
+.inv-home canvas { position: absolute; }
+.inv-home:hover canvas { filter: brightness(1.18) contrast(0.86); }
+.inv-home:active canvas { transform: translate(1.35px, 1.35px); }
+canvas.part, canvas.inv-smoker { position: absolute; pointer-events: none; }
+
+/* SHOW FPS: the frame counter at the bottom-left, above everything (fpsShower). */
+.fps-shower {
+  position: absolute;
+  left: 5.95px;
+  top: 381px;
+  font: 14px/16px "Arial Black", "Arial Bold", Gadget, Arial, sans-serif;
+  color: #fff;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 100;
+  display: none;
+}
+
+/* Without Arial Black installed, the bold fallback is thickened and widened (Arial Black runs
+   about 12% wider) so the type keeps its weight and measure. */
+.srpg-noblack #stage { -webkit-text-stroke: 0.3px currentColor; }
+.srpg-noblack .ibtn .lbl, .srpg-noblack .quote, .srpg-noblack .ftext, .srpg-noblack .tbtn,
+.srpg-noblack .ptxt, .srpg-noblack .fps-shower, .srpg-noblack .modal-text, .srpg-noblack .modal-title { font-weight: bold; }
+.srpg-noblack .ptxt { margin-top: -0.347em; transform: scaleX(1.12); transform-origin: 0 0; }
+.srpg-noblack .ptxt-c { transform: translateX(-50%) scaleX(1.12); transform-origin: 50% 0; }
+.srpg-noblack .ptxt-r { transform: translateX(-100%) scaleX(1.12); transform-origin: 100% 0; }
+.srpg-noblack .ptxt-clip { margin-top: -1.547em; width: calc(var(--clip) / 1.12); }
+.srpg-noblack .pverdana { transform: none; }
+.srpg-noblack .ibtn .lbl { transform: scaleX(1.12); transform-origin: 0 50%; }
+.srpg-noblack .ibtn:active .lbl { transform: translate(1.9px, 1.9px) scaleX(1.12); }
+.srpg-noblack .ibtn.disabled:active .lbl, .srpg-noblack .ibtn.static:active .lbl { transform: scaleX(1.12); }
+.srpg-noblack .quote, .srpg-noblack .modal-text { transform: scaleX(1.1); transform-origin: 50% 0; }
+.srpg-noblack .fps-shower { transform: scaleX(1.12); transform-origin: 0 0; }
