@@ -724,7 +724,7 @@
     // flickers, a bolt strikes the picture with a flash, and it drifts apart.
     drawStorm(css, W) {
       const g = this.renderer.ctx, dpr = this.renderer.dpr, cx = this.renderer.w / 2, cy = this.renderer.h / 2;
-      const size = Math.max(css, 40), t = W.t, r = rng(W.seed);
+      const size = Math.max(W.size || css, 40), t = W.t, r = rng(W.seed); // sized as the picture was when summoned: it doesn't shrink with you
       const grow = smooth(clamp(t / 0.3, 0, 1)), fade = 1 - smooth(clamp((t - STRIKE - 0.2) / (STORM - STRIKE - 0.2), 0, 1));
       const ky = cy - size * (1.6 + 0.2 * (1 - grow)), kw = size * 1.05 * (0.4 + 0.6 * grow);
       g.save();
@@ -738,6 +738,19 @@
         for (const [px, py, pr] of puffs) { g.moveTo(cx + px * kw + pr * kw * sc, ky + (py + dy) * kw); g.arc(cx + px * kw, ky + (py + dy) * kw, pr * kw * sc, 0, Math.PI * 2); }
         g.fill();
       }
+      // An angry face: brows slanting down to the middle, eyes glaring down at you (flashing as it strikes), a frown.
+      const fx0 = cx, fy = ky + 0.02 * kw, mad = W.hit && t < STRIKE + 0.25;
+      g.lineCap = 'round';
+      for (const s of [-1, 1]) {
+        g.fillStyle = mad ? '#fff3a0' : '#f4f6ff';
+        g.beginPath(); g.ellipse(fx0 + s * 0.22 * kw, fy, 0.1 * kw, 0.075 * kw, 0, 0, Math.PI * 2); g.fill();
+        g.fillStyle = '#1d1f2e';
+        g.beginPath(); g.arc(fx0 + s * 0.19 * kw, fy + 0.025 * kw, 0.045 * kw, 0, Math.PI * 2); g.fill();
+        g.strokeStyle = '#141522'; g.lineWidth = Math.max(2, 0.055 * kw);
+        g.beginPath(); g.moveTo(fx0 + s * 0.36 * kw, fy - 0.15 * kw); g.lineTo(fx0 + s * 0.1 * kw, fy - 0.06 * kw); g.stroke();
+      }
+      g.strokeStyle = '#141522'; g.lineWidth = Math.max(2, 0.045 * kw);
+      g.beginPath(); g.arc(fx0, fy + 0.27 * kw, 0.12 * kw, Math.PI * 1.15, Math.PI * 1.85); g.stroke();
       if (W.hit && t < STRIKE + 0.2 && Math.floor((t - STRIKE) * 30) % 3 !== 1) { // the bolt, flickering
         const pts = [[cx + r.range(-0.1, 0.1) * kw, ky + 0.35 * kw]], y1 = cy - css * 0.25, n = 6;
         for (let i = 1; i < n; i++) pts.push([cx + r.range(-0.22, 0.22) * size, pts[0][1] + ((y1 - pts[0][1]) * i) / n]);
@@ -913,7 +926,7 @@
         if (!route) { MZ.toast('Nowhere to fly', 1200); return false; }
         fx.bullet = route;
       } else if (id === 'shrink') {
-        fx.storm = { t: 0, hit: false, seed: hashInts(Math.floor(this.t * 1000), 0x57) }; // the strike does the shrinking
+        fx.storm = { t: 0, hit: false, seed: hashInts(Math.floor(this.t * 1000), 0x57), size: this.box() * this.cam.zoom }; // the strike does the shrinking (the cloud keeps this size)
         MZ.Audio.play('storm');
       } else if (id === 'path') {
         const P = this.pathRoute();
