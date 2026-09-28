@@ -2667,12 +2667,13 @@ const TIPS = [
   ['d', 'Curses cut your power in half'],
 ];
 let oel = {}, lev = null, root = null, cv = null, cx = null, sbEl = null, over = null, tipEl = null, hud = null, hintB = null;
-let W = 0, H = 0, DPR = 1, gy = 0, rh = 0, cs = 1, cam = 0, shk = 0, flash = 0, gt = 0, raf = 0, lastT = 0, dark = false, pal = DAY, skyG = null, ptr = null, tipUntil = 0;
+let tscale = 1, W = 0, H = 0, DPR = 1, gy = 0, rh = 0, cs = 1, cam = 0, shk = 0, flash = 0, gt = 0, raf = 0, lastT = 0, dark = false, pal = DAY, skyG = null, ptr = null, tipUntil = 0;
 const tws = [], tps = [], tfl = [], flies = [];
 const st = { p: 0, sh: 0, show: 0, ti: 0, at: null, phase: 'play', snap: null, fatal: null, hover: null, sel: null, hint: null, hintAt: 0, tut: null, moves: 0, revives: 0, hinted: 0, tok: 0, need: 0, revEnd: 0, titleAt: -9e9, meterAt: 0, meterU: .5, mult: 2, cage: 0, prin: null, armedAt: 0 };
 const hero = { x: 0, y: 0, dx: 0, rot: 0, flip: 1, sq: 0, hurt: 0, bump: 0, glow: 0, air: 0, ghost: 0, alpha: 1, walk: 0, drag: null };
-const hintCost = () => 10 + TWS.lv * 2, refillCost = () => 90, reward = L => 20 + L * 6;
-const revCost = () => (20 + TWS.lv * 4) * (1 + st.revives);
+const curL = () => (lev ? lev.L : TWS.lv);
+const hintCost = () => 10 + curL() * 2, refillCost = () => 90, reward = L => 20 + L * 6;
+const revCost = () => (20 + curL() * 4) * (1 + st.revives);
 
 // ---------- the clock: tweens run on game time, so they pause when the game is hidden ----------
 const anim = (d, fn) => new Promise(res => { tws.push({ t0: gt, d: Math.max(1, d), fn, res }); });
@@ -3314,8 +3315,8 @@ function frame(ts) {
   const busy = tws.length || tps.length || tfl.length || flies.length || ptr || hero.drag || shk || flash > .01 || st.phase === 'busy' || st.phase === 'win' || st.phase === 'fail' || gt - st.titleAt < 1600 || st.hint || (st.tut && !st.moves);
   if (!busy && lastT && ts - lastT < 30) { raf = requestAnimationFrame(frame); return; } // a calm scene redraws at 30 fps
   const dt = Math.min(50, lastT ? ts - lastT : 16.7); lastT = ts;
-  gt += dt;
-  update(dt);
+  gt += dt * tscale;
+  update(dt * tscale);
   draw();
   raf = requestAnimationFrame(frame);
 }
@@ -3570,7 +3571,7 @@ async function victory(r, tok) {
   sfx.giggle();
   await sleep(900);
   if (tok !== st.tok) return;
-  TWS.wins++; S.towerWins++; save(); queueCheck();
+  TWS.wins++; S.towerWins++; TWS.lv = lev.L + 1; TWS.best = Math.max(TWS.best, TWS.lv); save(); queueCheck();
   st.phase = 'win'; st.meterAt = gt; st.mult = 2;
   showOver('win');
 }
@@ -3623,7 +3624,7 @@ function claim(m, btn) {
   sfx.win(); haptic(true); burst(x, y, { n: 22, colors: ['#ffd23f', '#ffc21a', '#fff'] });
   if (m > 1 && oel.segs) { const sg = oel.segs.children[segAt(st.meterU)]; if (sg) restart(sg, 'hit'); }
   if (oel.needle) oel.needle.classList.add('stop');
-  TWS.lv++; TWS.best = Math.max(TWS.best, TWS.lv); save(); queueCheck();
+  save();
   const tok = st.tok;
   setTimeout(() => { if (tok === st.tok) { hideOver(); newLevel(); } }, 750);
 }
@@ -3680,14 +3681,14 @@ function newLevel() {
   showTip(tip && tip[1]);
   renderHud();
 }
-function lifeTick() {
+function lifeTick(quiet) {
   if (TWS.lives >= MAXL) { TWS.lifeAt = 0; return; }
   if (!TWS.lifeAt) TWS.lifeAt = T() + LIFE_MS;
   let got = 0;
   while (TWS.lives < MAXL && T() >= TWS.lifeAt) { TWS.lives++; TWS.lifeAt += LIFE_MS; got = 1; }
   if (TWS.lives >= MAXL) {
     TWS.lifeAt = 0;
-    if (got && TWS.out && S.onboarded && curApp !== 'tower') alertOnce('tw-lives', 'tower', `Your lives are full. Level ${TWS.lv} is ready.`, 600000);
+    if (got && !quiet && TWS.out && S.onboarded && curApp !== 'tower') alertOnce('tw-lives', 'tower', `Your lives are full. Level ${TWS.lv} is ready.`, 600000);
   }
 }
 function showTip(txt) {
@@ -3783,8 +3784,8 @@ def({
   genre: 'Puzzle',
   blurb: 'Absorb weaker monsters, grow your power and free the princess at the top. Most players never pass level 20.',
   art: ART,
-  init() { lifeTick(); },
-  bg: lifeTick,
+  init() { lifeTick(true); },
+  bg() { lifeTick(); },
   badge: () => (TWS.out && TWS.lives >= MAXL ? 1 : 0),
   wait: () => (TWS.out && TWS.lives >= MAXL ? [{ t: 'Your lives are full', sub: `Power Tower · Level ${TWS.lv}` }] : []),
   ping: () => (TWS.wins
@@ -3796,7 +3797,7 @@ def({
       <div class="tw-tip" hidden></div><div class="tw-over" hidden></div></div>`;
     right.innerHTML = `<button class="chip tw-hb" aria-label="Hint">${BULB}Hint<span class="tw-hc">${IF('bolt')}<b></b></span></button>`;
     root = $('.tw', b); cv = $('.tw-cv', b); cx = cv.getContext('2d'); sbEl = $('.tw-sb', b); over = $('.tw-over', b); tipEl = $('.tw-tip', b); hintB = $('.tw-hb', right);
-    cv.twDebug = { state: () => ({ lev, st, hero, cam, W, H, gy }), best: () => bestMove() }; // for automated tests
+    cv.twDebug = { state: () => ({ lev, st, hero, cam, W, H, gy }), best: () => bestMove(), speed: k => { tscale = k; } }; // for automated tests
     hud = { lv: $('.tw-lv b', b), prog: $('.tw-prog', b), lives: $('.tw-lives b', b), next: $('.tw-lives small', b) };
     setPal();
     try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', setPal); } catch {}
@@ -3859,7 +3860,7 @@ def({
     setPal();
     if (TWS.out && TWS.lives > 0) TWS.out = 0;
     lifeTick();
-    if (!lev || (lev.L !== TWS.lv && st.phase !== 'busy' && st.phase !== 'claimed')) newLevel();
+    if (!lev || (lev.L !== TWS.lv && (st.phase === 'play' || st.phase === 'out') && !st.moves)) newLevel();
     size();
     if (st.phase === 'play' && !st.moves && TWS.lives <= 0) { st.phase = 'out'; showOver('out'); }
     renderHud();
