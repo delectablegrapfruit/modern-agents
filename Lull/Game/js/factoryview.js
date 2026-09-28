@@ -1,14 +1,15 @@
 // Lull — the Factory floor: a small scene on the board's own plate, in the board's materials. A gantry holds one
 // press per bay (each bay sized to its pieces); each press stamps its piece a mino at a time into a recessed mold
 // window and drops it straight down onto the belt. The belt carries it to a cradle lift, which sets its minos one by
-// one into a bin four minos wide, drawn in 12-line sections: the one filling open (more, as the height allows), the
-// others closed to bars. Every full row of the bin is one line. No text is drawn here: names and numbers live in the page around it.
+// one into a bin four minos wide. The bin always shows every mino it holds as a mino: its cells have their own size,
+// in whole device pixels, so its whole capacity fits the tower (a window near the smallest pans over the top of what it
+// holds instead). Every full row of the bin is one line. No text is drawn here: names and numbers live in the page around it.
 //
 // The scene is a 35.5 × 19.5 cell grid (y down), shown from half a row down (19 rows), and taller when the page has
 // the height for it: whole rows are added above (and one under the floor), for a hall and a taller bin, as
 // many as the window's height gives (never a matter of what is built). The cell size always follows the width. Its still parts are painted once into two offscreen layers (the floor, and the bin's
-// tower with the lift's mast), repainted only when what they show changes; a frame is those two images, the moving
-// parts and the minos.
+// tower with the lift's mast), repainted only when what they show changes, and the bin's minos into a third, repainted
+// when the bin changes; a frame is those images, the moving parts and the minos on their way.
 (function (root) {
   'use strict';
   const L = (root.Lull = root.Lull || {});
@@ -41,8 +42,8 @@
   const ROD = 0.28, RAM_H = 0.45, RAM_REST = 0.6;
   const LIFT = { x0: 28.75, x1: 30.25, cx: 29.5, rail: 0.2 };
   const BIN = { x0: 30.5, t0: 30.75, t1: 34.75, x1: 35, bottom: 18.5 };
-  const SEC = 12;                    // rows in a section of the bin
-  const PER = SEC * 4;               // minos in a section
+  const MINBC = 3;                   // the smallest bin cell, in device px; a bin that cannot fit at it pans
+  const FLATBC = 8;                  // bin cells smaller than this (device px) are plain flat squares with a gap
   const LEGS = [3.5, 10.5, 17.5, 24.5];
   const ROLLERS = [X0, X0 + 27.9], ROLLER_R = 0.34; // the belt's end rollers (the far one clear of the lift's rail)
 
@@ -55,7 +56,7 @@
   const HOP = 0.15, SLIDE = 0.18, SETTLE = 0.06;
   const DROP = 0.32, DROP_SETTLE = 0.08, GHOSTS_AT = DROP + 0.25, GHOSTS_FADE = 0.2;
   const STAMP_DOWN = 0.11, STAMP_HOLD = 0.07, STAMP_UP = 0.38, FLASH = 0.25;
-  const SECTION = 0.42, GROW = 0.5, BUILD = 0.6, LID = 0.4;
+  const GROW = 0.5, BUILD = 0.6, LID = 0.4;
   // Collect: a glaze, then the block lifts a row and clears (its cells shrinking, as a cleared line does in Play);
   // the loose minos ride up on top of it, and drop to the bottom once it has gone.
   const C_GLAZE = 0.12, C_RISE = 0.36, C_LOOSE = 0.46, C_FALL = 0.26, C_END = C_LOOSE + C_FALL;
@@ -132,8 +133,12 @@
       this.t = 0;
       this.w = 1; this.h = 1; this.dpr = 1; this.cs = 8; this.ox = 0; this.oy = 0; this.plateH = 0;
       this.E = 0; this.F = 0;                    // rows added to the scene (a taller plate), and of those, under the floor
-      this.K = 1; this.sig = 0.5;                // the bin's plan: sections open at once, and a closed one's height
-      this.plan();
+      this.lv = null; this.planKey = -1;         // the bin's plan: each size's cell, rows shown and height (device px)
+      // The bin as drawn: its cell (device px, and CSS px), the tray's left edge, width and bottom (CSS px), the rows
+      // it shows and the first of them (above 0 only when it pans), and its size (level) as laid out.
+      this.bcD = 1; this.bc = 1; this.bx = 0; this.bw = 4; this.bb = 0; this.vis = 12; this.base = 0; this.lvShown = -1;
+      this.mouthFrom = 0; this.mouthT0 = -9;
+      this.binC = null; this.binKey = { bin: null, landed: -1, base: -1, bc: 0, vis: 0, skin: null, light: null, dpr: 0, cols: [] };
       this.slide = 0;                            // the belt's treads, in cells
       this.stampAt = [-9, -9, -9, -9];           // each ram's last stroke
       this.stampReal = [false, false, false, false];
@@ -150,14 +155,8 @@
       this.riders = [];                          // minos past the belt's end, until they land
       this.inflight = 0;
       this.expectLen = -1;
-      this.at = { x: 0, y: 0, rh: 1 };
-      // The bin's sections: how open each is (1 = the one filling), how grown (a new one grows in), where they sit.
-      this.S = 0; this.o = 0;
-      this.secA = new Float64Array(9); this.secFrom = new Float64Array(9); this.secTo = new Float64Array(9); this.secT0 = new Float64Array(9);
-      this.secG = new Float64Array(9); this.secGT0 = new Float64Array(9);
-      this.slot = new Float64Array(9); this.bottom = new Float64Array(9);
-      this.holdSections = 0;
-      this.mouth = BIN.bottom - SEC; this.restMouth = this.mouth;
+      this.at = { x: 0, y: 0, s: 1 };
+      this.mouth = BIN.bottom - 12; this.restMouth = this.mouth;
       this.moving = false;
       this.lidK = 0;
       this.collectA = null;                      // the block lifting out of the bin
@@ -189,36 +188,43 @@
         this.w = w; this.h = h; this.dpr = dpr;
         this.canvas.width = Math.round(w * dpr); this.canvas.height = Math.round(h * dpr);
       }
-      if (E !== this.E) { this.E = E; this.F = E >= DEEP ? 1 : 0; this.plan(); }
+      if (E !== this.E) { this.E = E; this.F = E >= DEEP ? 1 : 0; }
       this.cs = cs;
       this.ox = Math.round((w - COLS * cs) / 2);
       this.oy = -Math.round(this.top * cs);
     }
 
     /**
-     * The bin's plan for this height (the window's alone, so it never changes with what is built): K sections open at
-     * once and the rest closed to sig rows, as many open as leave a closed one at least a row (at most two), so the
-     * biggest bin just reaches the highest mouth. Every size up is then taller than the last by whole or half rows,
-     * the second by a whole section; a scene too short for that keeps one open and half-row slivers.
+     * The bin's plan for this scene (its height and cell size alone, so it never changes with what is built): for each
+     * size, its cell in whole device pixels (never bigger than a floor cell), the rows it shows and its height. The
+     * biggest takes the whole height up to the highest mouth; the smallest has a floor cell if there is room; those
+     * between are spaced evenly, and each is at least a row (at most 10 px) taller than the last. A size whose rows
+     * would need cells under MINBC shows as many rows as fit at MINBC, and pans.
      */
     plan() {
-      const T = BIN.bottom - this.mouthTop, n = Factory.BIN_ROWS[Factory.BIN_ROWS.length - 1] / SEC;
-      let K = 1, sig = Math.max(0.5, Math.min(2, Math.floor((2 * (T - SEC)) / (n - 1)) / 2));
-      for (let k = 5; k > 1; k--) {
-        const s = Math.min(2, Math.floor((2 * (T - SEC * k)) / (n - k)) / 2);
-        if (s >= 1) { K = k; sig = s; break; }
+      const cs = this.cs, d = this.dpr, key = (cs * 10 + d) * 1000 + this.E;
+      if (key === this.planKey && this.lv) return;
+      this.planKey = key;
+      const R = Factory.BIN_ROWS, n = R.length, full = Math.max(1, Math.round(cs * d));
+      const hmax = Math.floor((BIN.bottom - this.mouthTop) * cs * d), step = Math.round((Math.min(cs, 10) + 1) * d);
+      const h0 = Math.max(R[0] * MINBC, Math.min(R[0] * full, hmax - (n - 1) * step));
+      const lv = new Array(n);
+      let cap = hmax + step;
+      for (let l = n - 1; l >= 0; l--) {
+        const want = Math.floor(Math.min(h0 + ((hmax - h0) * l) / (n - 1), cap - step));
+        let bc = Math.min(full, Math.floor(want / R[l])), vis = R[l];
+        if (bc < MINBC) { bc = MINBC; vis = Math.max(4, Math.floor(want / MINBC)); }
+        lv[l] = { bc, vis, h: vis * bc };
+        cap = lv[l].h;
       }
-      this.K = K; this.sig = sig;
+      this.lv = lv;
     }
 
     /** The highest the bin's mouth may be, in cells: under the roof in a hall, the lift's head wheel kept clear. */
     get mouthTop() { return this.top + (this.hall ? ROOF.y1 + 1.55 : 2); }
 
-    /** The bin's height at rest, in cells, for S sections. */
-    binHeight(S) { const k = Math.min(S, this.K); return k * SEC + (S - k) * this.sig; }
-
-    /** A closed section's bar (a full one in its top row's colours, an empty one as an outline), in px. */
-    barH() { return Math.max(2, this.px(Math.min(0.85, 0.4 + 0.3 * (this.sig - 0.5)) * this.cs)); }
+    /** The bin's height at rest for a size (level), in cells. */
+    binHeight(l) { this.plan(); return this.lv[l].h / this.dpr / this.cs; }
 
     /** The scene's top edge, in cells (above 0 once rows are added). */
     get top() { return TOP - this.E + this.F; }
@@ -226,7 +232,7 @@
     get hall() { return this.E - this.F >= HALL; }
 
     /** The bin's mouth at rest, in cells, for the model's bin. */
-    restMouthOf(f) { return BIN.bottom - this.binHeight(Factory.BIN_ROWS[f.binLevel] / SEC); }
+    restMouthOf(f) { return BIN.bottom - this.binHeight(f.binLevel); }
 
     X(c) { return this.ox + c * this.cs; }
     Y(r) { return this.oy + r * this.cs; }
@@ -247,68 +253,46 @@
     /** A number that changes whenever a hotspot would move. */
     layoutKey(f) { return ((((this.w * 100 + this.cs) * 1000 + this.ox) * 10 + f.presses) * 10 + f.binLevel) * 100 + this.E; }
 
-    // ---- the bin's sections -----------------------------------------------------------------------------------------
+    // ---- the bin ----------------------------------------------------------------------------------------------------
 
     /** How many minos are drawn in the bin: everything but those still on their way up the lift. */
     landed(f) { return Math.max(0, f.bin.length - this.inflight); }
 
-    /** Eases each section toward open (the one filling) or a sliver, and a taller bin's new sections up into place. */
-    sections(f, landed) {
-      const S = Factory.BIN_ROWS[f.binLevel] / SEC, t = this.t, reduced = this.reduced;
-      const o = Math.min(S - 1, Math.floor(landed / PER));
-      // The open window: the one filling and, as the height allows, the full ones under it (or the empty ones above).
-      const K = Math.min(S, this.K), lo = Math.max(0, Math.min(o - K + 1, S - K));
-      if (S !== this.S) {
-        const grow = this.S > 0 && S > this.S && !reduced;
-        for (let k = 0; k < 9; k++) {
-          if (k >= S) { this.secA[k] = this.secTo[k] = this.secFrom[k] = 0; this.secG[k] = 0; }
-          else if (k >= this.S) { this.secA[k] = this.secFrom[k] = this.secTo[k] = 0; this.secG[k] = grow ? 0 : 1; this.secGT0[k] = t; }
-          else if (!grow) this.secG[k] = 1;
-        }
-        if (!grow) for (let k = 0; k < S; k++) { const a = k >= lo && k < lo + K ? 1 : 0; this.secA[k] = this.secFrom[k] = this.secTo[k] = a; }
-        this.S = S;
+    /** Lays the bin out for this frame: its cell, the tray's place (whole device pixels), the rows it shows, and its
+     *  mouth, which rises to a taller bin's over GROW. */
+    layoutBin(f) {
+      this.plan();
+      const l = f.binLevel, g = this.lv[l], d = this.dpr, rows = Factory.BIN_ROWS[l];
+      this.bcD = g.bc; this.bc = g.bc / d; this.vis = g.vis;
+      const cx = Math.round(this.X((BIN.t0 + BIN.t1) / 2) * d);
+      this.bx = (cx - 2 * g.bc) / d; this.bw = (4 * g.bc) / d;
+      this.bb = this.px(this.Y(BIN.bottom));
+      // A bin that pans keeps the top of what it holds in view (the minos on their way included), a row clear above.
+      this.base = g.vis >= rows ? 0 : Math.max(0, Math.min(rows - g.vis, Math.ceil(f.bin.length / 4) - g.vis + 1));
+      const rest = this.restMouthOf(f);
+      if (l !== this.lvShown) {
+        if (this.lvShown >= 0 && l > this.lvShown && !this.reduced) { this.mouthFrom = this.mouth; this.mouthT0 = this.t; }
+        else this.mouthT0 = -9;
+        this.lvShown = l;
       }
-      let moving = false, H = 0;
-      for (let k = 0; k < S; k++) {
-        const want = k >= lo && k < lo + K ? 1 : 0;
-        if (this.secTo[k] !== want && t >= this.holdSections) {
-          this.secFrom[k] = this.secA[k]; this.secTo[k] = want; this.secT0[k] = t;
-          if (reduced) this.secA[k] = this.secFrom[k] = want;
-        }
-        if (this.secA[k] !== this.secTo[k]) {
-          const e = clamp01((t - this.secT0[k]) / SECTION);
-          this.secA[k] = e >= 1 || reduced ? this.secTo[k] : this.secFrom[k] + (this.secTo[k] - this.secFrom[k]) * easeInOut(e);
-          moving = true;
-        }
-        if (this.secG[k] < 1) {
-          const e = reduced ? 1 : clamp01((t - this.secGT0[k]) / GROW);
-          this.secG[k] = e >= 1 ? 1 : easeOut(e);
-          moving = true;
-        }
-        const slot = this.secG[k] * (this.sig + (SEC - this.sig) * this.secA[k]);
-        this.slot[k] = slot;
-        this.bottom[k] = BIN.bottom - H;
-        H += slot;
-      }
-      this.o = o;
-      this.mouth = BIN.bottom - H;
-      this.restMouth = this.restMouthOf(f);
-      this.moving = moving;
+      const e = this.reduced ? 1 : clamp01((this.t - this.mouthT0) / GROW);
+      this.moving = e < 1;
+      this.mouth = e < 1 ? this.mouthFrom + (rest - this.mouthFrom) * easeOut(e) : rest;
+      this.restMouth = rest;
     }
 
-    /** Where mino i of the bin sits: its cell's left edge and bottom, in cells, and its row height. */
+    /** The bin's outer walls, in CSS px: a wall as thick as the gap from BIN.x0 to the tray at the smallest size,
+     *  either side of the tray (the tower is as slim as its cells). */
+    wallL() { return this.bx - this.px((BIN.t0 - BIN.x0) * this.cs); }
+    wallR() { return this.bx + this.bw + this.px((BIN.x1 - BIN.t1) * this.cs); }
+
+    /** Where mino i of the bin sits: its cell's left edge and bottom, and its size, in scene cells. */
     slotOf(i, out) {
-      const k = Math.min(this.S - 1, Math.floor(i / PER)), j = i - k * PER, rh = this.slot[k] / SEC;
-      out.x = BIN.t0 + (i % 4);
-      out.y = this.bottom[k] - Math.floor(j / 4) * rh;
-      out.rh = rh;
+      const row = Math.floor(i / 4) - this.base;
+      out.x = (this.bx + (i % 4) * this.bc - this.ox) / this.cs;
+      out.y = (this.bb - row * this.bc - this.oy) / this.cs;
+      out.s = this.bc / this.cs;
       return out;
-    }
-
-    /** The top of what Collect would take, in cells: the last full row of the open section (or the slivers under it). */
-    washTop(landed) {
-      const rows = Math.floor(landed / 4), o = Math.min(this.S - 1, Math.floor(landed / PER));
-      return this.bottom[o] - Math.max(0, rows - o * SEC) * (this.slot[o] / SEC);
     }
 
     // ---- events -----------------------------------------------------------------------------------------------------
@@ -350,14 +334,14 @@
     }
 
     /** Every passing motion finished at once (the tab is left or shown): the view's clock stops while it is away, so
-     *  nothing half-played may resume on return. The lift lands, a collect ends, sections snap to their places. */
+     *  nothing half-played may resume on return. The lift lands, a collect ends, the bin snaps to its height. */
     settle() {
       this.flushLift();
-      this.collectA = null; this.catchA = null; this.holdSections = 0;
+      this.collectA = null; this.catchA = null;
       this.fx.clear();
       this.drops = new WeakMap();
       for (let k = 0; k < 4; k++) { this.stampAt[k] = -9; this.stampReal[k] = false; this.built[k] = -9; this.ghostsAt[k] = -9; }
-      this.S = 0; // the next frame lays the sections out afresh, without easing
+      this.lvShown = -1; // the next frame lays the bin out afresh, without easing
       this.towerKey[0] = null;
     }
 
@@ -383,7 +367,7 @@
         const cid = Math.ceil(this.phi / PITCH - 1e-9), dist = cid * PITCH - this.phi;
         if (cid > this.claimed && dist <= V * HOP) {
           const p = q[0], j = p.next, c = p.cells[j];
-          riders.push({ st: 0, color: p.color, idx: p.idx0 + j, cid, d0: Math.max(0.05, dist), fx: p.x + c[0], fy: BY - c[1] + p.y[j], t0: this.t, dur: 0, x: 0, y: 0 });
+          riders.push({ st: 0, color: p.color, idx: p.idx0 + j, cid, d0: Math.max(0.05, dist), fx: p.x + c[0], fy: BY - c[1] + p.y[j], t0: this.t, dur: 0, x: 0, y: 0, s: 1 });
           this.claimed = cid;
           hopping = true;
           p.next++;
@@ -402,7 +386,8 @@
           if (p.y[j] < fall) { p.vy[j] += 60 * dt; p.y[j] = Math.min(fall, p.y[j] + p.vy[j] * dt); }
         }
       }
-      // Each mino: hop into its cradle, ride up, slide over the chute, fall to its slot, settle.
+      // Each mino: hop into its cradle, ride up, slide over the chute (taking the bin's cell size), fall to its slot,
+      // settle.
       for (let i = 0; i < riders.length; i++) {
         const r = riders[i];
         if (r.st === 0) {
@@ -423,17 +408,18 @@
           this.slotOf(r.idx, at);
           r.x = LIFT.cx - 0.5 + (at.x - (LIFT.cx - 0.5)) * e;
           r.y = exitY + (this.mouth - exitY) * e;
+          r.s = 1 + (at.s - 1) * e;
           if (k >= 1) { r.st = 3; r.t0 = this.t; r.dur = 0.12 * Math.sqrt(Math.max(0.25, at.y - this.mouth)); }
         }
         if (r.st === 3) {
           const k = clamp01((this.t - r.t0) / r.dur);
           this.slotOf(r.idx, at);
-          r.x = at.x; r.y = this.mouth + (at.y - this.mouth) * easeIn(k);
+          r.x = at.x; r.y = this.mouth + (at.y - this.mouth) * easeIn(k); r.s = at.s;
           if (k >= 1) { r.st = 4; r.t0 = this.t; }
         }
         if (r.st === 4) {
           this.slotOf(r.idx, at);
-          r.x = at.x; r.y = at.y;
+          r.x = at.x; r.y = at.y; r.s = at.s;
           if (this.t - r.t0 >= SETTLE) r.st = 5;
         }
       }
@@ -444,29 +430,25 @@
 
     // ---- collecting and time away -----------------------------------------------------------------------------------
 
-    /**
-     * What Collect takes, as drawn now: the open section's full rows (cells) and the full sections under it (their
-     * slivers), and the loose minos left over. Taken just before the model collects.
-     */
+    /** What Collect takes, as drawn now: the full rows in view (cells, in CSS px) and the loose minos over them.
+     *  Taken just before the model collects. */
     snapshot(f, look) {
-      const landed = this.landed(f), rows = Math.floor(landed / 4), cs = this.cs, at = { x: 0, y: 0, rh: 1 };
-      const cells = [], bars = [], loose = [];
-      for (let i = 0; i < landed; i++) {
-        const k = Math.floor(i / PER), color = look.colors[parseInt(f.bin[i], 16)] || look.theme.accent;
-        this.slotOf(i, at);
-        if (i >= rows * 4) loose.push({ x: at.x, y: at.y, color });
-        else if (this.secA[k] >= 0.5) cells.push({ x: this.px(this.X(at.x)), y: this.px(this.Y(at.y - at.rh)), w: cs, h: Math.max(1, this.px(at.rh * cs)), color });
-        else if (i % PER >= PER - 4) bars.push({ x: this.px(this.X(at.x)), y: this.px(this.Y(this.bottom[k] - 0.05)) - this.barH(), w: cs, h: this.barH(), color });
+      const landed = this.landed(f), rows = Math.floor(landed / 4), bc = this.bc;
+      const cells = [], loose = [];
+      for (let i = this.base * 4; i < landed; i++) {
+        const r = Math.floor(i / 4) - this.base;
+        if (r >= this.vis) break;
+        const color = look.colors[parseInt(f.bin[i], 16)] || look.theme.accent, x = this.bx + (i % 4) * bc, y = this.bb - (r + 1) * bc;
+        if (i >= rows * 4) loose.push({ x, y, color });
+        else cells.push({ x, y, w: bc, h: bc, color });
       }
-      return { cells, bars, loose, rows, top: this.washTop(landed) };
+      return { cells, loose, rows, bc, flat: this.bcD < FLATBC };
     }
 
     /** The block lifts out as one: a glaze, the equipped clear effect, a rise and a fade; loose minos fall. */
     collected(snap, look, reduced) {
       this.flushLift();
       this.collectA = { t0: this.t, snap, reduced: !!reduced, burst: false, effect: look.effect };
-      // The sections keep their places a moment, then ease down so the one filling is at the bottom again.
-      this.holdSections = reduced ? 0 : this.t + C_LOOSE;
     }
 
     /** Minos made while away, fading in row by row (the page counts the numbers up beside them). */
@@ -476,7 +458,7 @@
       this.catchA = { t0: this.t, from, to, row0: Math.floor(from / 4), stagger: Math.min(0.02, 0.3 / Math.max(1, rows)) };
     }
 
-    /** Whether anything is on its way right now (a lift running, a block lifting, sections easing). */
+    /** Whether anything is on its way right now (a lift running, a block lifting, a taller bin rising). */
     get busy() { return !!(this.collectA || this.catchA || this.riders.length || this.queue.length || this.moving); }
 
     // ---- materials --------------------------------------------------------------------------------------------------
@@ -536,8 +518,8 @@
 
     /** A recessed tray, as the board's side trays are drawn (the tray in Board.drawSide, render.js): the well's wash,
      *  a shadow under the top edge and a fine rim; a grid when given one. */
-    recessed(c, x, y, w, h, gx, gb, rows) {
-      const S = this.sty, cs = this.cs, r = Math.max(3, Math.min(8, 0.3 * cs));
+    recessed(c, x, y, w, h, gx, gb, rows, rad) {
+      const S = this.sty, cs = this.cs, r = rad != null ? rad : Math.max(3, Math.min(8, 0.3 * cs));
       c.save();
       rr(c, x, y, w, h, r); c.clip();
       const g = c.createLinearGradient(0, y, 0, y + h);
@@ -698,10 +680,10 @@
       c.restore();
     }
 
-    /** The bin's tower and the lift's mast: rails, wheels, chute, walls and ears, plinth, and the tray (with the open
-     *  section's grid and the empty sections' outlines). */
+    /** The bin's tower and the lift's mast: rails, wheels, chute, walls and ears, plinth, and the tray between the
+     *  walls, as wide as four of the bin's cells (with their grid, when they are big enough for one). */
     paintTower(c, shadow) {
-      const S = this.sty, cs = this.cs, X = (v) => this.px(this.X(v)), Y = (v) => this.px(this.Y(v));
+      const S = this.sty, cs = this.cs, d = this.dpr, X = (v) => this.px(this.X(v)), Y = (v) => this.px(this.Y(v));
       const mouth = this.mouth, exitY = mouth - 1.25, mast = this.hall ? this.top + ROOF.y0 : Math.min(3.25, exitY);
       // The mast: two raised rails, a wheel at each end of the chain.
       this.raised(c, X(LIFT.x0), Y(mast), X(LIFT.x0 + LIFT.rail) - X(LIFT.x0), Y(FY) - Y(mast) + 1, 1, shadow);
@@ -715,37 +697,36 @@
       // The chute: a raised lip from the head of the lift over the bin's left ear.
       this.paintChute(c, exitY, mouth, shadow);
       // The bin: plinth, walls and ears, and the tray between.
-      this.raised(c, X(BIN.x0 - 0.1), Y(BIN.bottom), X(BIN.x1 + 0.1) - X(BIN.x0 - 0.1), Y(FY) - Y(BIN.bottom) + 1, 1.5, shadow);
-      this.raised(c, X(BIN.x0), Y(mouth), X(BIN.t0) - X(BIN.x0), Y(BIN.bottom) - Y(mouth), 1, shadow);
-      this.raised(c, X(BIN.t1), Y(mouth), X(BIN.x1) - X(BIN.t1), Y(BIN.bottom) - Y(mouth), 1, shadow);
-      this.raised(c, X(BIN.x0 - 0.3), Y(mouth), X(BIN.t0) - X(BIN.x0 - 0.3), Math.max(2, Y(mouth + 0.25) - Y(mouth)), 1, false);
-      this.raised(c, X(BIN.t1), Y(mouth), X(BIN.x1 + 0.3) - X(BIN.t1), Math.max(2, Y(mouth + 0.25) - Y(mouth)), 1, false);
-      const tx = X(BIN.t0), ty = Y(mouth), tw = X(BIN.t1) - tx, th = Y(BIN.bottom) - ty;
-      this.recessed(c, tx, ty, tw, th);
-      // The open section's grid (fading with it as sections open and close); the empty sections, as quiet outlines.
-      c.save(); rr(c, tx, ty, tw, th, Math.max(3, Math.min(8, 0.3 * cs))); c.clip();
-      for (let k = 0; k < this.S; k++) {
-        const a = this.secA[k] * this.secG[k], b = this.Y(this.bottom[k]);
-        if (a > 0.02) {
-          const rh = (this.slot[k] / SEC) * cs;
-          c.globalAlpha = a; c.strokeStyle = S.grid; c.lineWidth = 1; c.beginPath();
-          for (let x = 1; x < 4; x++) { const p = X(BIN.t0 + x) + 0.5; c.moveTo(p, this.px(b - SEC * rh)); c.lineTo(p, b); }
-          for (let r = 1; r < SEC; r++) { const p = this.px(b - r * rh) + 0.5; c.moveTo(tx, p); c.lineTo(tx + tw, p); }
-          c.stroke(); c.globalAlpha = 1;
-        }
+      const tx = this.bx, tw = this.bw, tr = tx + tw, ty = Y(mouth), tb = this.bb, th = tb - ty, wl = this.wallL(), wr = this.wallR(), e = this.px(0.3 * cs);
+      this.raised(c, wl - this.px(0.1 * cs), Y(BIN.bottom), wr - wl + 2 * this.px(0.1 * cs), Y(FY) - Y(BIN.bottom) + 1, 1.5, shadow);
+      this.raised(c, wl, ty, tx - wl, tb - ty, 1, shadow);
+      this.raised(c, tr, ty, wr - tr, tb - ty, 1, shadow);
+      this.raised(c, wl - e, ty, tx - wl + e, Math.max(2, Y(mouth + 0.25) - ty), 1, false);
+      this.raised(c, tr, ty, wr + e - tr, Math.max(2, Y(mouth + 0.25) - ty), 1, false);
+      const rad = Math.max(1, Math.min(3, 0.3 * cs, tw / 6));
+      this.recessed(c, tx, ty, tw, th, 0, 0, 0, rad);
+      // The grid, a device pixel fine, where the cells are big enough to show one.
+      if (this.bcD >= 6) {
+        const bc = this.bc, h = 0.5 / d;
+        c.save(); rr(c, tx, ty, tw, th, rad); c.clip();
+        c.strokeStyle = S.grid; c.lineWidth = 1 / d; c.beginPath();
+        for (let x = 1; x < 4; x++) { const p = tx + x * bc - h; c.moveTo(p, ty); c.lineTo(p, tb); }
+        for (let y = tb - bc; y > ty + 0.5; y -= bc) { c.moveTo(tx, y - h); c.lineTo(tr, y - h); }
+        c.stroke();
+        c.restore();
       }
-      c.restore();
-      // The sizes still to build, standing over the mouth as a dashed outline of the tower they will make, a band
-      // each: the next one as the next bay is drawn, the later ones quieter.
-      const lv = Factory.BIN_ROWS.indexOf(this.S * SEC), r = Math.max(3, Math.min(8, 0.3 * cs));
+      // The sizes still to build, standing over the mouth as a dashed outline of the tower they will make (as slim as
+      // their cells), a band each: the next one as the next bay is drawn, the later ones quieter.
+      const lv = this.lvShown, r = Math.max(3, Math.min(8, 0.3 * cs));
       if (lv >= 0) {
         c.save();
         c.setLineDash([3, 3]); c.strokeStyle = S.ink; c.lineWidth = 1;
         let y1 = mouth - 0.5;
         for (let n = lv + 1; n < Factory.BIN_ROWS.length; n++) {
-          const y0 = BIN.bottom - this.binHeight(Factory.BIN_ROWS[n] / SEC) - 0.25;
+          const y0 = BIN.bottom - this.binHeight(n) - 0.25;
           c.globalAlpha = n === lv + 1 ? 0.8 : 0.4;
-          rr(c, X(BIN.t0) + 0.5, Y(y0) + 0.5, X(BIN.t1) - X(BIN.t0) - 1, Y(y1) - Y(y0) - 1, r); c.stroke();
+          const half = (2 * this.lv[n].bc) / d + this.px((BIN.t0 - BIN.x0) * cs), mid = this.bx + this.bw / 2;
+          rr(c, this.px(mid - half) + 0.5, Y(y0) + 0.5, 2 * half - 1, Y(y1) - Y(y0) - 1, r); c.stroke();
           y1 = y0 - 0.25;
         }
         c.restore();
@@ -755,7 +736,7 @@
     /** The chute: a short raised lip from the head of the lift down over the bin's left ear. */
     paintChute(c, exitY, mouth, shadow) {
       const S = this.sty, cs = this.cs;
-      const x0 = this.X(LIFT.x1 - 0.1), y0 = this.Y(exitY + 0.3), x1 = this.X(BIN.t0 + 0.35), y1 = this.Y(mouth - 0.2), t = Math.max(2.5, 0.22 * cs);
+      const x0 = this.X(LIFT.x1 - 0.1), y0 = this.Y(exitY + 0.3), x1 = this.bx + Math.min(0.35 * cs, 0.25 * this.bw), y1 = this.Y(mouth - 0.2), t = Math.max(2.5, 0.22 * cs);
       c.save();
       if (shadow) { c.shadowColor = S.shadow; c.shadowBlur = 0.4 * cs; c.shadowOffsetY = 0.15 * cs; }
       c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.lineTo(x1, y1 + t); c.lineTo(x0, y0 + t); c.closePath();
@@ -785,7 +766,7 @@
         this.staticDraws++;
       }
       if (this.moving) { this.towerKey[0] = null; return; } // drawn live while it moves
-      if (!this.same(this.towerKey, th, this.cs, dpr, size, this.S, this.o, 0)) {
+      if (!this.same(this.towerKey, th, this.cs, dpr, size, this.lvShown, this.bcD, this.mouth)) {
         if (!this.towerC) this.towerC = makeCanvas(1, 1);
         const c = this.towerC;
         c.width = Math.round(this.w * dpr); c.height = Math.round(this.h * dpr);
@@ -814,9 +795,9 @@
       const waiting = Factory.isFull(f);
       if (!waiting && !reduced) this.slide = (this.slide + Factory.BELT.speed * dt) % 60;
       if (reduced && this.inflight) this.flushLift();
+      this.layoutBin(f);
       if (!reduced) this.liftStep(dt);
       const landed = this.landed(f);
-      this.sections(f, landed);
       this.layers(f, th);
 
       ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
@@ -933,7 +914,7 @@
       }
     }
 
-    /** One mino in the skin, any height (a closing section squashes its cells). */
+    /** One mino in the skin. */
     cell(ctx, look, color, x, y, w, h, alpha) {
       const img = cellSprite(look.skin, color, w * this.dpr, ctx.__light);
       if (alpha != null && alpha < 1) { ctx.globalAlpha = alpha; ctx.drawImage(img, x, y, w, h); ctx.globalAlpha = 1; }
@@ -1015,67 +996,80 @@
         const r = riders[i];
         if (r.st === 5) continue;
         let y = this.Y(r.y);
-        if (r.st === 4) y += Math.sin(Math.PI * clamp01((this.t - r.t0) / SETTLE));
-        this.cell(ctx, look, look.colors[r.color] || look.theme.accent, this.px(this.X(r.x)), this.px(y - cs), cs, cs);
+        const color = look.colors[r.color] || look.theme.accent;
+        if (r.st >= 3) { this.mino(ctx, look, color, this.px(this.X(r.x)), this.px(y) - this.bc, this.bc); continue; }
+        const s = Math.max(1, this.px(r.s * cs));
+        this.cell(ctx, look, color, this.px(this.X(r.x)), this.px(y) - s, s, s);
       }
     }
 
-    /** The bin's minos: the open section in cells, full sections as bars in their top row's colours. */
-    drawBin(ctx, f, look, S, landed) {
-      const cs = this.cs, t = this.t, ca = this.collectA, cu = this.catchA;
-      const hide = ca && t - ca.t0 < (ca.reduced ? 0.32 : C_END) ? ca.snap.loose.length : 0;
-      if (cu && t - cu.t0 > 1.4) this.catchA = null;
-      const bh = this.barH();
-      for (let k = 0; k < this.S; k++) {
-        const count = Math.max(0, Math.min(PER, landed - k * PER)), a = this.secA[k], g = this.secG[k];
-        const rh = this.slot[k] / SEC, bottom = this.bottom[k];
-        if (a > 0.001 && count) {
-          const h = rh >= 0.999 ? cs : Math.max(1, this.px(rh * cs));
-          for (let j = 0; j < count; j++) {
-            const i = k * PER + j;
-            if (i < hide) continue;
-            let alpha = a * g;
-            if (cu && i >= cu.from && i < cu.to) alpha *= clamp01((t - cu.t0 - (Math.floor(i / 4) - cu.row0) * cu.stagger) / 0.5);
-            if (alpha <= 0.001) continue;
-            const color = look.colors[parseInt(f.bin[i], 16)] || S.accent;
-            const x = this.px(this.X(BIN.t0 + (j % 4))), y = this.px(this.Y(bottom - Math.floor(j / 4) * rh)) - h;
-            this.cell(ctx, look, color, x, y, cs, h, alpha < 1 ? alpha : null);
-          }
-        }
-        if (a < 0.999) {
-          const alpha = (1 - a) * g;
-          if (alpha <= 0.001) continue;
-          const by = this.px(this.Y(bottom - 0.05));
-          ctx.globalAlpha = alpha;
-          if (count <= Math.max(0, hide - k * PER)) {
-            const x0 = this.px(this.X(BIN.t0 + 0.1)), x1 = this.px(this.X(BIN.t1 - 0.1));
-            ctx.strokeStyle = S.ink2; ctx.lineWidth = 1;
-            rr(ctx, x0 + 0.5, by - bh + 0.5, x1 - x0 - 1, bh - 1, 1.5); ctx.stroke();
-          } else {
-            for (let j = Math.floor((count - 1) / 4) * 4; j < count; j++) {
-              const i = k * PER + j;
-              if (i < hide) continue;
-              ctx.fillStyle = look.colors[parseInt(f.bin[i], 16)] || S.accent;
-              rr(ctx, this.px(this.X(BIN.t0 + (j % 4))) + 0.5, by - bh, cs - 1, bh, 1.5); ctx.fill();
-            }
-          }
-          ctx.globalAlpha = 1;
-        }
+    /** A mino of the bin at size s (CSS px): in the skin, or under FLATBC device px a flat square with a gap of a
+     *  device pixel at its top and right, so the smallest still read as minos. */
+    mino(ctx, look, color, x, y, s, alpha) {
+      const d = this.dpr;
+      if (Math.round(s * d) >= FLATBC) { this.cell(ctx, look, color, x, y, s, s, alpha); return; }
+      if (alpha != null && alpha < 1) ctx.globalAlpha = alpha;
+      ctx.fillStyle = color; ctx.fillRect(x, y + 1 / d, s - 1 / d, s - 1 / d);
+      if (alpha != null && alpha < 1) ctx.globalAlpha = 1;
+    }
+
+    /** The bin's minos in view, from mino `from` on, with the tray's bottom left at x, b (CSS px); minos made while
+     *  away (cu) fade in row by row. */
+    paintMinos(c, f, look, landed, from, cu, x, b) {
+      const bc = this.bc, t = this.t, acc = this.sty.accent;
+      for (let i = Math.max(from, this.base * 4); i < landed; i++) {
+        const r = Math.floor(i / 4) - this.base;
+        if (r >= this.vis) break;
+        let alpha = null;
+        if (cu && i >= cu.from && i < cu.to) { alpha = clamp01((t - cu.t0 - (Math.floor(i / 4) - cu.row0) * cu.stagger) / 0.5); if (alpha <= 0.001) continue; }
+        this.mino(c, look, look.colors[parseInt(f.bin[i], 16)] || acc, x + (i % 4) * bc, b - (r + 1) * bc, bc, alpha);
       }
-      // Pointing at the bin (or at Collect): a wash over exactly what Collect would take, and the walls lit.
+    }
+
+    /** The bin's minos at rest, painted once into their own layer until the bin (or its look) changes. */
+    binLayer(f, look, landed) {
+      const k = this.binKey, cols = look.colors, light = this.sty.light;
+      let same = !!this.binC && k.bin === f.bin && k.landed === landed && k.base === this.base && k.bc === this.bcD && k.vis === this.vis &&
+        k.skin === look.skin && k.light === light && k.dpr === this.dpr && k.cols.length === cols.length;
+      for (let i = 0; same && i < cols.length; i++) if (k.cols[i] !== cols[i]) same = false;
+      if (same) return this.binC;
+      k.bin = f.bin; k.landed = landed; k.base = this.base; k.bc = this.bcD; k.vis = this.vis; k.skin = look.skin; k.light = light; k.dpr = this.dpr;
+      k.cols.length = cols.length; for (let i = 0; i < cols.length; i++) k.cols[i] = cols[i];
+      if (!this.binC) this.binC = makeCanvas(1, 1);
+      const c = this.binC, d = this.dpr;
+      c.width = 4 * this.bcD; c.height = Math.max(1, this.vis * this.bcD);
+      const x = c.getContext('2d'); x.setTransform(d, 0, 0, d, 0, 0); x.__dpr = d; x.__light = light;
+      this.paintMinos(x, f, look, landed, 0, null, 0, this.vis * this.bc);
+      return c;
+    }
+
+    /** The bin's minos, every one a mino; pointing at the bin (or Collect) washes what Collect would take. */
+    drawBin(ctx, f, look, S, landed) {
+      const t = this.t, ca = this.collectA, bc = this.bc, bx = this.bx, bb = this.bb, top = bb - this.vis * bc;
+      const hide = ca && t - ca.t0 < (ca.reduced ? 0.32 : C_END) ? ca.snap.loose.length : 0;
+      if (this.catchA && t - this.catchA.t0 > 1.4) this.catchA = null;
+      if (hide || this.catchA) this.paintMinos(ctx, f, look, landed, hide, this.catchA, bx, bb);
+      else if (landed) ctx.drawImage(this.binLayer(f, look, landed), bx, top, this.bw, bb - top);
+      // A bin that pans: what is under the view fades into the tray's floor.
+      if (this.base > 0) {
+        ctx.fillStyle = S.well1;
+        for (let k = 1; k <= 4; k++) { ctx.globalAlpha = 0.2 * k; ctx.fillRect(bx, bb - (5 - k) * bc, this.bw, bc); }
+        ctx.globalAlpha = 1;
+      }
       const hv = this.hover;
       if ((this.preview || (hv && hv.kind === 'bin')) && !ca) {
-        const x0 = this.px(this.X(BIN.t0)), x1 = this.px(this.X(BIN.t1));
+        const x0 = bx, x1 = bx + this.bw;
+        const full = Math.min(this.vis, Math.floor(landed / 4) - this.base);
         if (landed >= 4) {
-          const top = this.px(this.Y(this.washTop(landed))), bot = this.px(this.Y(BIN.bottom));
-          ctx.fillStyle = S.wash; ctx.fillRect(x0, top, x1 - x0, bot - top);
-          ctx.strokeStyle = S.washLine; ctx.lineWidth = 1; rr(ctx, x0 + 0.5, top + 0.5, x1 - x0 - 1, bot - top - 1, 2); ctx.stroke();
+          const wt = full > 0 ? bb - full * bc : bb - 2 / this.dpr;
+          ctx.fillStyle = S.wash; ctx.fillRect(x0, wt, x1 - x0, bb - wt);
+          ctx.strokeStyle = S.washLine; ctx.lineWidth = 1; rr(ctx, x0 + 0.5, wt + 0.5, x1 - x0 - 1, bb - wt - 1, Math.min(2, bc / 2)); ctx.stroke();
         }
-        const m = this.px(this.Y(this.mouth)), b = this.px(this.Y(BIN.bottom));
-        const l0 = this.px(this.X(BIN.x0)), r1 = this.px(this.X(BIN.x1));
+        const m = this.px(this.Y(this.mouth));
+        const l0 = this.wallL(), r1 = this.wallR();
         ctx.strokeStyle = S.ink; ctx.lineWidth = 1;
-        rr(ctx, l0 + 0.5, m + 0.5, x0 - l0 - 1, b - m - 1, 1); ctx.stroke();
-        rr(ctx, x1 + 0.5, m + 0.5, r1 - x1 - 1, b - m - 1, 1); ctx.stroke();
+        rr(ctx, l0 + 0.5, m + 0.5, x0 - l0 - 1, bb - m - 1, 1); ctx.stroke();
+        rr(ctx, x1 + 0.5, m + 0.5, r1 - x1 - 1, bb - m - 1, 1); ctx.stroke();
       }
     }
 
@@ -1086,7 +1080,7 @@
       else this.lidK = full ? Math.min(1, this.lidK + dt / LID) : Math.max(0, this.lidK - dt / (LID * 0.75));
       if (this.lidK <= 0) return;
       const cs = this.cs, e = easeOut(this.lidK);
-      const x0 = this.px(this.X(BIN.x0 - 0.3)), x1 = this.px(this.X(BIN.x1 + 0.3)), w = x1 - x0;
+      const x0 = this.wallL() - this.px(0.3 * cs), x1 = this.wallR() + this.px(0.3 * cs), w = x1 - x0;
       const h = Math.max(3, this.px(0.4 * cs)), y = this.px(this.Y(this.mouth)) - h + 1, lx = this.px(x0 + w * (1 - e));
       ctx.save();
       ctx.beginPath(); ctx.rect(x0 - 1, y - 2, w + 2, h + 4); ctx.clip();
@@ -1095,7 +1089,7 @@
       ctx.restore();
       // The gate: a short warm bar across the chute's end.
       ctx.globalAlpha = e;
-      const gx = this.px(this.X(BIN.x0 - 0.45)), gy = this.px(this.Y(this.mouth - 1.05));
+      const gx = this.wallL() - this.px(0.45 * cs), gy = this.px(this.Y(this.mouth - 1.05));
       ctx.fillStyle = S.warn; rr(ctx, gx - 1, gy, 2.5, Math.round(0.8 * cs), 1.2); ctx.fill();
       ctx.globalAlpha = 1;
     }
@@ -1109,8 +1103,8 @@
       if (ca.reduced) {
         const a = e < 0.12 ? 1 : 1 - clamp01((e - 0.12) / 0.2);
         this.paintBlock(ctx, look, snap, 0, a, 0.3 * clamp01(e / 0.12), 1);
-        if (!ca.burst) { ca.burst = true; this.fx.burst('fade', this.burstCells(snap), cs, true); }
-        for (let i = 0; i < snap.loose.length && e < 0.32; i++) this.cell(ctx, look, snap.loose[i].color, this.px(this.X(BIN.t0 + i)), this.px(this.Y(BIN.bottom)) - cs, cs, cs);
+        if (!ca.burst) { ca.burst = true; this.fx.burst('fade', this.burstCells(snap), snap.bc, true); }
+        for (let i = 0; i < snap.loose.length && e < 0.32; i++) this.mino(ctx, look, snap.loose[i].color, this.bx + i * snap.bc, this.bb - snap.bc, snap.bc);
         if (e > 0.32) this.collectA = null;
         return;
       }
@@ -1120,10 +1114,11 @@
         // as a ghost of the rows.
         ca.burst = true;
         const n = this.fx.parts.length;
-        this.fx.burst(ca.effect, this.burstCells(snap), cs, false);
+        this.fx.burst(ca.effect, this.burstCells(snap), snap.bc, false);
         for (let i = this.fx.parts.length - 1; i >= n; i--) if (this.fx.parts[i].kind === 'sq') this.fx.parts.splice(i, 1);
       }
-      const k = e < C_GLAZE ? 0 : clamp01((e - C_GLAZE) / C_RISE), dy = -easeOut(k) * cs;
+      // The block lifts a row of the bin (never less than half a floor cell, so a bin of small cells still lifts).
+      const k = e < C_GLAZE ? 0 : clamp01((e - C_GLAZE) / C_RISE), dy = -easeOut(k) * Math.max(snap.bc, 0.5 * cs);
       if (k < 1) {
         // The glaze holds while the cells shrink toward their centres and fade late: no frame shows dim rows.
         const glaze = e < C_GLAZE ? 0.3 * (e / C_GLAZE) : 0.3;
@@ -1133,32 +1128,31 @@
       if (e < C_END) {
         const f = e < C_LOOSE ? 0 : easeIn(clamp01((e - C_LOOSE) / C_FALL));
         for (let i = 0; i < snap.loose.length; i++) {
-          const m = snap.loose[i], tx = BIN.t0 + i, y0 = this.Y(m.y) + dy, y1 = this.Y(BIN.bottom);
-          this.cell(ctx, look, m.color, this.px(this.X(m.x + (tx - m.x) * f)), this.px(y0 + (y1 - y0) * f) - cs, cs, cs);
+          const m = snap.loose[i], tx = this.bx + i * snap.bc, y0 = m.y + dy, y1 = this.bb - snap.bc;
+          this.mino(ctx, look, m.color, this.px(m.x + (tx - m.x) * f), this.px(y0 + (y1 - y0) * f), snap.bc);
         }
       } else this.collectA = null;
     }
 
-    /** The collected block at a lift of dy px: its cells (scaled about their centres by sc) and slivers, glazed. */
+    /** The collected block at a lift of dy px: its cells (scaled about their centres by sc), glazed. */
     paintBlock(ctx, look, snap, dy, alpha, glaze, sc) {
       if (alpha <= 0.001) return;
       for (let i = 0; i < snap.cells.length; i++) {
         const c = snap.cells[i], w = this.px(c.w * sc), hh = this.px(c.h * sc);
-        if (w < 1 || hh < 1) continue;
+        if (w * this.dpr < 1 || hh * this.dpr < 1) continue;
         const x = this.px(c.x + (c.w - w) / 2), y = this.px(c.y + dy + (c.h - hh) / 2);
+        if (snap.flat) {
+          ctx.globalAlpha = alpha; ctx.fillStyle = c.color; ctx.fillRect(x, y + 1 / this.dpr, w - 1 / this.dpr, hh - 1 / this.dpr);
+          if (glaze > 0.005) { ctx.fillStyle = white(glaze); ctx.fillRect(x, y + 1 / this.dpr, w - 1 / this.dpr, hh - 1 / this.dpr); }
+          ctx.globalAlpha = 1;
+          continue;
+        }
         this.cell(ctx, look, c.color, x, y, w, hh, alpha < 1 ? alpha : null);
         if (glaze > 0.005) { ctx.fillStyle = white(glaze * alpha); rr(ctx, x + 1, y + 1, w - 2, hh - 2, w * 0.17); ctx.fill(); }
       }
-      ctx.globalAlpha = alpha;
-      for (let i = 0; i < snap.bars.length; i++) {
-        const b = snap.bars[i], w = Math.max(1, this.px((b.w - 1) * sc));
-        ctx.fillStyle = b.color; rr(ctx, this.px(b.x + 0.5 + (b.w - 1 - w) / 2), this.px(b.y + dy), w, b.h, 1.5); ctx.fill();
-        if (glaze > 0.005) { ctx.fillStyle = white(glaze); ctx.fill(); }
-      }
-      ctx.globalAlpha = 1;
     }
 
-    /** The open section's collected cells for the clear effect, all at once: at most 120 (whole rows, sampled). */
+    /** The collected cells for the clear effect, all at once: at most 120 (whole rows, sampled). */
     burstCells(snap) {
       const rows = Math.ceil(snap.cells.length / 4), every = Math.max(1, Math.ceil((rows * 4) / 120)), out = [];
       for (let r = 0; r < rows; r += every) for (let c = 0; c < 4; c++) { const cell = snap.cells[r * 4 + c]; if (cell) out.push({ x: cell.x, y: cell.y, color: cell.color }); }

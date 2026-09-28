@@ -218,6 +218,8 @@
     serialize() { return JSON.stringify(this.state); }
 
     save() {
+      // Replaced (Reset, Import): the page is on its way out, and nothing it still holds may be written over the new save.
+      if (this.replaced) return;
       const json = this.serialize();
       this.dirty = false;
       if (native.available) native.post('save', { data: json });
@@ -229,18 +231,41 @@
 
     touch() { this.dirty = true; this.emit('change'); }
 
+    /**
+     * Replaces the whole save and starts the page over from it (Reset, Import). The new save is written at once — to
+     * localStorage, or in the app to the save file, where the panel also rebuilds the save it hands the page and
+     * reloads it — and from then on this page saves nothing: its boards, factory and timers still hold the old
+     * progress, and its last saves on the way out (pagehide, a flush) would bring it back. In a browser the caller
+     * reloads the page (`restart`).
+     */
+    replace(state) {
+      this.state = state;
+      this.dirty = false;
+      this.replaced = true;
+      const json = this.serialize();
+      if (native.available) native.post('reset', { data: json });
+      else {
+        try { root.localStorage && root.localStorage.setItem(LS_KEY, json); } catch (e) { /* storage full or blocked */ }
+      }
+      return json;
+    }
+
+    /** After `replace`: a browser reloads the page itself; the app reloads it once the new save is on disk. */
+    restart() {
+      if (!native.available && root.location) root.location.reload();
+    }
+
+    /** Everything back to a new save, the settings kept. */
     reset() {
-      const keepSettings = this.state.settings;
-      this.state = defaults();
-      this.state.settings = keepSettings;
-      this.save();
+      const st = defaults();
+      st.settings = this.state.settings;
+      return this.replace(st);
     }
 
     importJSON(text) {
       const parsed = JSON.parse(text);
       if (!parsed || typeof parsed !== 'object' || parsed.v == null) throw new Error('Not a Lull save');
-      this.state = loadState(parsed);
-      this.save();
+      return this.replace(loadState(parsed));
     }
 
     // ---- lines: the currency ----------------------------------------------------------------------------------------

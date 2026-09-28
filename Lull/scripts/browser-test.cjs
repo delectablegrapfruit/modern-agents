@@ -1339,6 +1339,28 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     const binH = await ev(() => { const M = Lull.app.modes.factory, f = Object.assign({}, Lull.app.store.state.factory); return Lull.Factory.BIN_ROWS.map((_, lv) => { f.binLevel = lv; return Math.round(M.view.rect('bin', 0, f).h); }); });
     const cs = await ev(() => Lull.app.modes.factory.view.cs);
     check(w + '×' + hgt + ': every bin size up is drawn taller (' + binH.join(', ') + ' px)', binH.every((v, i) => i === 0 || v - binH[i - 1] >= (hgt >= 700 ? Math.min(cs, 10) - 0.5 : 1)), JSON.stringify(binH));
+    // Every mino the bin holds is drawn as a mino (no slivers, no bars): square cells of the bin's own size, in whole
+    // device pixels, the whole bin inside the tower's height. It pans only when its cells would be under 3 device px.
+    const held = await ev(() => {
+      const v = Lull.app.modes.factory.view, f0 = Lull.app.store.state.factory, look = Lull.app.look(), out = [], orig = v.mino;
+      for (let lv = 0; lv < Lull.Factory.BIN_ROWS.length; lv++) {
+        const f = Object.assign({}, f0, { binLevel: lv, belt: [] }), rows = Lull.Factory.BIN_ROWS[lv];
+        for (const n of [rows * 4, rows * 2 + 3]) {
+          f.bin = '1234567'.repeat(n).slice(0, n); v.flushLift(); v.lvShown = -1; v.layoutBin(f);
+          let drawn = 0, odd = 0;
+          v.mino = function (c, lk, color, x, y, s) { drawn++; if (s !== v.bcD / v.dpr || Math.abs(x * v.dpr - Math.round(x * v.dpr)) > 1e-6 || Math.abs(y * v.dpr - Math.round(y * v.dpr)) > 1e-6) odd++; return orig.apply(this, arguments); };
+          v.binKey.bin = null; v.binLayer(f, look, n);
+          v.mino = orig;
+          const want = Math.min(n - v.base * 4, v.vis * 4), top = v.bb - v.vis * v.bc;
+          out.push({ lv, n, drawn, want, odd, bc: v.bcD, pans: v.vis < rows, fits: top >= v.px(v.Y(v.mouthTop)) - 0.01 && v.bcD >= 3 && Number.isInteger(v.bcD) });
+        }
+      }
+      v.lvShown = -1; v.binKey.bin = null; v.layoutBin(f0);
+      return out;
+    });
+    const heldOk = (r) => r.drawn === r.want && r.odd === 0 && r.fits && (r.pans ? r.lv === 4 && hgt < 700 : r.want === r.n);
+    check(w + '×' + hgt + ': every mino in the bin is drawn as a whole-pixel mino cell, and every bin fits the tower (cells ' + [...new Set(held.map((r) => r.bc))].join(', ') + ' device px)',
+      held.every(heldOk), JSON.stringify(held.filter((r) => !heldOk(r) || r.pans)));
   }
   // Buying from the list (a real click) never moves the scene: the plate keeps its height and place the next frame.
   await page.setViewportSize({ width: 520, height: 760 });
@@ -1371,12 +1393,12 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   // belt's end included), and it never passes through a mino riding up ahead.
   const lift = await ev(() => {
     const F = Lull.Factory, V = new Lull.FloorView(document.createElement('canvas')), f = F.create();
-    V.cs = 13; f.binLevel = 4; f.bin = ''; V.sections(f, 0);
+    V.cs = 13; f.binLevel = 4; f.bin = ''; V.layoutBin(f);
     let bad = 0, frames = 0, first = null;
     for (const n of [4, 5, 6, 7]) for (let s = 0; s < F.shapes(n).length; s++) {
       V.flushLift(); V.enter({ n, s, c: 1 }); V.queue[0].idx0 = f.bin.length; f.bin += '1'.repeat(n);
       for (let t = 0; t < 8 && (V.queue.length || V.riders.length); t += 1 / 120) {
-        V.t += 1 / 120; V.liftStep(1 / 120); V.sections(f, f.bin.length - V.inflight);
+        V.t += 1 / 120; V.layoutBin(f); V.liftStep(1 / 120);
         const box = V.riders.filter((r) => r.st < 3).map((r) => [r.x, r.y]), q = V.queue[0];
         if (q) for (let j = q.next; j < q.cells.length; j++) box.push([q.x + q.cells[j][0], 17.5 - q.cells[j][1] + q.y[j]]);
         for (let a = 0; a < box.length; a++) for (let b = a + 1; b < box.length; b++) if (Math.abs(box[a][0] - box[b][0]) < 0.98 && Math.abs(box[a][1] - box[b][1]) < 0.98) { bad++; first = first || [n, s, t]; }
@@ -1850,6 +1872,9 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     g.drop();
     const r0 = F.rotations, h0 = F.holds;
     g.holdPiece(); m.afterHold();
+    // A T in open air always turns (a random piece, or one against the stack, may not).
+    for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) g.board.set(x, y, 0);
+    g.replacePiece({ id: 'T' });
     let turned = 0;
     for (let i = 0; i < 3; i++) if (g.rotate(1)) turned++;
     m.deleteBoard(Lull.app.store.state.boards.cur);
@@ -2965,6 +2990,58 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
       check(theme + ': a legendary toast\'s gold word reads at 4.5:1 or more (and on hover)', t.legend.contrast >= 4.5, t.legend.contrast.toFixed(2));
     }
     await ev((t) => { Lull.app.settings.theme = t; Lull.app.applySettings(); document.getElementById('toasts').replaceChildren(); Lull.app.achOpen = {}; Lull.app.setTab('play'); }, theme0);
+  }
+
+  // ---- Settings ▸ Data ▸ Reset, and Import: the page starts over from exactly the save it was given --------------------
+  console.log('reset and import');
+  {
+    const closeAll = () => ev(() => { while (Lull.UI.modalOpen()) Lull.UI.closeTopModal(); });
+    await closeAll();
+    // Progress everywhere, a setting that must be kept, and changes still unsaved when Reset is pressed (the old page's
+    // last save on its way out, and its boards and factory in memory, must not come back).
+    await ev(() => {
+      const app = Lull.app, st = app.store.state;
+      st.lines = 4321; st.achievements.quad = Date.now(); st.achievements.pc = Date.now();
+      st.settings.das = 199;
+      st.factory.binLevel = 2; st.factory.stats.collects = 9; st.factory.stats.minos = 5000;
+      app.setTab('play');
+      const g = app.modes.play.game;
+      for (let x = 1; x < 10; x++) g.board.set(x, 0, 8);
+      app.saveNow();
+      st.lines = 5000; app.store.touch();
+    });
+    const before = await ev(() => ({ retired: Lull.app.store.state.boards.retired.length, cells: Lull.app.modes.play.game.board.count() }));
+    await ev(() => Lull.UI.openSettings(Lull.app, 'data'));
+    await page.click('.modal .btn.danger:has-text("Reset…")');
+    await Promise.all([page.waitForEvent('load'), page.locator('.modal .btn.danger', { hasText: /^Reset$/ }).last().click()]);
+    await page.waitForTimeout(600);
+    await closeAll();
+    const fresh = await ev(() => {
+      const app = Lull.app, st = app.store.state, B = st.boards, f = st.factory;
+      const stored = JSON.parse(localStorage.getItem('lull.save.v1'));
+      return {
+        lines: st.lines, ach: Object.keys(st.achievements).length, retired: B.retired.length, shelved: B.list.filter((b) => b.id !== B.cur).length,
+        cells: app.modes.play.game.board.count(), collects: f.stats.collects, binLevel: f.binLevel, minos: f.stats.minos,
+        das: st.settings.das, storedLines: stored.lines, storedDas: stored.settings.das, storedAch: Object.keys(stored.achievements).length,
+      };
+    });
+    check('the test had progress to lose', before.cells > 0, JSON.stringify(before));
+    check('Reset: lines 0, no achievements, no boards kept, the play board empty, the factory new', fresh.lines === 0 && fresh.ach === 0 && fresh.retired === 0 && fresh.shelved === 0
+      && fresh.cells === 0 && fresh.collects === 0 && fresh.binLevel === 0 && fresh.minos < 100, JSON.stringify(fresh));
+    check('Reset keeps the settings, and the stored save is the fresh one', fresh.das === 199 && fresh.storedDas === 199 && fresh.storedLines === 0 && fresh.storedAch === 0, JSON.stringify(fresh));
+    await ev(() => { Lull.app.store.state.lines = 50; Lull.app.saveNow(); });
+    check('saving works again after the reset', await ev(() => JSON.parse(localStorage.getItem('lull.save.v1')).lines === 50));
+
+    // Import: the pasted save, not the one in memory, is what comes back.
+    const text = await ev(() => { const st = JSON.parse(Lull.app.store.serialize()); st.lines = 777; st.achievements = { quad: 1 }; return JSON.stringify(st); });
+    await ev(() => { Lull.app.store.state.lines = 12; Lull.app.store.touch(); Lull.UI.openSettings(Lull.app, 'data'); });
+    await page.click('.modal .btn:has-text("Import")');
+    await page.fill('.modal textarea', text);
+    await Promise.all([page.waitForEvent('load'), page.locator('.modal .btn.primary', { hasText: /^Import$/ }).last().click()]);
+    await page.waitForTimeout(600);
+    await closeAll();
+    const imported = await ev(() => ({ lines: Lull.app.store.state.lines, ach: Object.keys(Lull.app.store.state.achievements).join(), stored: JSON.parse(localStorage.getItem('lull.save.v1')).lines }));
+    check('Import: the pasted save comes back after the reload, and is the stored one', imported.lines === 777 && imported.stored === 777 && /quad/.test(imported.ach), JSON.stringify(imported));
   }
 
   check('no page errors', errors.length === 0, errors.slice(0, 5).join('\n'));

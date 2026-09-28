@@ -842,7 +842,7 @@
           card('Save', row('Progress', null,
             h('div', { class: 'btns' }, h('button', { class: 'btn sm', onclick: () => openExport(app) }, 'Export'), h('button', { class: 'btn sm', onclick: () => openImport(app) }, 'Import')))),
           card('Reset', row('Reset everything', null,
-            h('button', { class: 'btn sm danger', onclick: () => confirm('Reset everything?', 'Deletes all progress. Settings are kept.', 'Reset', () => { app.store.reset(); location.reload(); }, 'danger') }, 'Reset…'))),
+            h('button', { class: 'btn sm danger', onclick: () => confirm('Reset everything?', 'Deletes all progress. Settings are kept.', 'Reset', () => { app.store.reset(); app.store.restart(); }, 'danger') }, 'Reset…'))),
           h('p', { class: 'set-about' }, 'Lull ' + (L.VERSION || '') + ' · puzzle generator v' + Puzzles.GEN_VERSION),
         ],
       },
@@ -878,7 +878,7 @@
     openModal({
       title: 'Import save', body: h('div', null, h('p', null, 'Replaces current progress.'), ta),
       buttons: [{ label: 'Cancel' }, { label: 'Import', kind: 'primary', onClick: () => {
-        try { app.store.importJSON(ta.value); location.reload(); } catch (e) { toast('Not a Lull save', 'bad'); return false; }
+        try { app.store.importJSON(ta.value); app.store.restart(); } catch (e) { toast('Not a Lull save', 'bad'); return false; }
       } }],
     });
   }

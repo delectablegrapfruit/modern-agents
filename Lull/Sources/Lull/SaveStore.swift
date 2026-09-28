@@ -28,6 +28,19 @@ final class SaveStore {
             try? FileManager.default.copyItem(at: fileURL, to: backupURL)
             lastBackup = Date()
         }
+        write(data)
+    }
+
+    /// Replaces the save outright (Reset, Import): the old one is not kept as the previous copy either, so nothing
+    /// falls back to it.
+    func replace(_ json: String) {
+        guard let data = json.data(using: .utf8), !data.isEmpty else { return }
+        try? FileManager.default.removeItem(at: backupURL)
+        lastBackup = Date()
+        write(data)
+    }
+
+    private func write(_ data: Data) {
         do {
             try data.write(to: fileURL, options: .atomic)
         } catch {

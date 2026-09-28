@@ -1737,6 +1737,63 @@ test('mute ramps a gain after everything and leaves the levels alone', () => {
     assert.strictEqual(S.volume, saved.volume);
   } finally { Object.assign(S, saved); }
 });
+test('native Reset: the fresh save goes to the panel as one reset message, and the old page saves nothing after it', () => {
+  const posts = [];
+  const hadWebkit = 'webkit' in globalThis, oldWebkit = globalThis.webkit;
+  globalThis.webkit = { messageHandlers: { lull: { postMessage: (m) => posts.push(m) } } };
+  try {
+    assert(L.native.available);
+    const s = new L.Store();
+    s.state.lines = 900; s.state.achievements.quad = 1; s.state.settings.das = 199;
+    s.state.boards.retired.push({ id: 'b1' }); s.state.factory.stats.collects = 4;
+    s.save();
+    assert.deepStrictEqual(posts.map((m) => m.type), ['save']);
+    s.reset();
+    assert.deepStrictEqual(posts.map((m) => m.type), ['save', 'reset']);
+    const sent = JSON.parse(posts[1].data);
+    assert.deepStrictEqual([sent.lines, Object.keys(sent.achievements).length, sent.boards.retired.length, sent.factory.stats.collects, sent.settings.das], [0, 0, 0, 0, 199]);
+    // The page on its way out (a pending autosave, a flush, pagehide) writes nothing over it.
+    s.state.lines = 5; s.touch(); s.save(); s.save();
+    assert.strictEqual(posts.length, 2);
+    // The panel does the reload: the page must not reload itself onto its old embedded save.
+    let reloaded = false;
+    const hadLocation = 'location' in globalThis, oldLocation = globalThis.location;
+    globalThis.location = { reload: () => { reloaded = true; } };
+    try { s.restart(); } finally { if (hadLocation) globalThis.location = oldLocation; else delete globalThis.location; }
+    assert.strictEqual(reloaded, false);
+    // Import goes the same way.
+    const t = new L.Store();
+    t.importJSON(JSON.stringify(Object.assign(L.defaultState(), { lines: 777 })));
+    assert.strictEqual(posts[2].type, 'reset');
+    assert.strictEqual(JSON.parse(posts[2].data).lines, 777);
+    t.save();
+    assert.strictEqual(posts.length, 3);
+    assert.throws(() => new L.Store().importJSON('{"a":1}'));
+    assert.strictEqual(posts.length, 3, 'a bad import sends nothing');
+  } finally { if (hadWebkit) globalThis.webkit = oldWebkit; else delete globalThis.webkit; }
+});
+test('browser Reset: the fresh save is stored at once, the page reloads, and the old page saves nothing after it', () => {
+  const mem = {}, hadLS = 'localStorage' in globalThis, oldLS = globalThis.localStorage;
+  globalThis.localStorage = { getItem: (k) => (k in mem ? mem[k] : null), setItem: (k, v) => { mem[k] = String(v); } };
+  let reloaded = 0;
+  const hadLocation = 'location' in globalThis, oldLocation = globalThis.location;
+  globalThis.location = { reload: () => { reloaded++; } };
+  try {
+    assert(!L.native.available);
+    const s = new L.Store();
+    s.state.lines = 900; s.state.settings.das = 199; s.save();
+    s.reset(); s.restart();
+    assert.strictEqual(reloaded, 1);
+    s.state.lines = 900; s.save();
+    const stored = JSON.parse(mem['lull.save.v1']);
+    assert.deepStrictEqual([stored.lines, stored.settings.das], [0, 199]);
+    const again = new L.Store(); again.load();
+    assert.deepStrictEqual([again.state.lines, again.state.settings.das], [0, 199]);
+  } finally {
+    if (hadLS) globalThis.localStorage = oldLS; else delete globalThis.localStorage;
+    if (hadLocation) globalThis.location = oldLocation; else delete globalThis.location;
+  }
+});
 test('the shop sells cosmetics', () => {
   const s = new L.Store();
   s.state.lines = 1000;

@@ -48,10 +48,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var fadeAway = true
     private var pointerInside = true
     private let selfTest = ProcessInfo.processInfo.environment["LULL_SELFTEST"] != nil
+    /// The one saved frame: always the window as it really is, the bar while collapsed. The height it had open, and
+    /// whether it was collapsed, are kept beside it; opening grows from wherever the bar is then.
     private static let frameName = "LullPanel.v2"
-    /// Collapsed into its title bar, the panel saves its frame under another name, so the expanded one is never
-    /// overwritten by the bar; the height it had open, and whether it was collapsed, are kept beside it.
-    private static let barFrameName = "LullPanel.bar"
+    /// Where an older version saved the bar's frame while collapsed (switching names restored stale frames); removed.
+    private static let legacyBarFrameName = "LullPanel.bar"
     private static let collapsedKey = "LullCollapsed"
     private static let expandedHeightKey = "LullExpandedHeight"
     private static let barHeightKey = "LullBarHeight"
@@ -81,25 +82,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let size = AppDelegate.defaultSize()
         panel = FloatingPanel(contentRect: NSRect(origin: .zero, size: size))
         panel.delegate = self
-        if !panel.setFrameUsingName(AppDelegate.frameName) || panel.frame.width < panel.minSize.width || panel.frame.height < panel.minSize.height {
-            let visible = (NSScreen.main ?? NSScreen.screens[0]).visibleFrame
-            panel.setFrame(NSRect(x: visible.maxX - size.width - 28, y: visible.maxY - size.height - 28, width: size.width, height: size.height), display: false)
-        }
-        // Collapsed when it last quit: back as the bar straight away (the page confirms, or expands it, once loaded).
         let defaults = UserDefaults.standard
-        if defaults.bool(forKey: AppDelegate.collapsedKey) {
-            let bar = AppDelegate.clampBar(CGFloat(defaults.double(forKey: AppDelegate.barHeightKey)))
-            let saved = CGFloat(defaults.double(forKey: AppDelegate.expandedHeightKey))
-            expandedHeight = saved >= FloatingPanel.expandedMinSize.height ? saved : panel.frame.height
-            collapsed = true
-            panel.minSize = NSSize(width: FloatingPanel.expandedMinSize.width, height: bar)
-            var f = panel.frame
-            if panel.setFrameUsingName(AppDelegate.barFrameName) { f = panel.frame }
-            panel.setFrame(NSRect(x: f.minX, y: f.maxY - bar, width: max(f.width, FloatingPanel.expandedMinSize.width), height: bar), display: false)
-            _ = panel.setFrameAutosaveName(AppDelegate.barFrameName)
-        } else {
-            _ = panel.setFrameAutosaveName(AppDelegate.frameName)
+        let minSize = FloatingPanel.expandedMinSize
+        collapsed = defaults.bool(forKey: AppDelegate.collapsedKey)
+        let bar = AppDelegate.clampBar(CGFloat(defaults.double(forKey: AppDelegate.barHeightKey)))
+        let savedHeight = CGFloat(defaults.double(forKey: AppDelegate.expandedHeightKey))
+        expandedHeight = savedHeight >= minSize.height ? savedHeight : 0
+        // The saved frame is read before the autosave name is set (setting it may save or apply a frame of its own),
+        // and applied with nothing to stretch it: while collapsed it is the bar.
+        let saved = defaults.string(forKey: "NSWindow Frame " + AppDelegate.frameName)
+        NSWindow.removeFrame(usingName: AppDelegate.legacyBarFrameName)
+        panel.minSize = NSSize(width: minSize.width, height: 24)
+        _ = panel.setFrameAutosaveName(AppDelegate.frameName)
+        if let saved { panel.setFrame(from: saved) }
+        var frame = panel.frame
+        if saved == nil || frame.width < minSize.width || frame.height < 24 || !AppDelegate.isOnScreen(frame) {
+            let visible = (NSScreen.main ?? NSScreen.screens[0]).visibleFrame
+            let height = collapsed ? bar : size.height
+            frame = NSRect(x: visible.maxX - size.width - 28, y: visible.maxY - height - 28, width: size.width, height: height)
         }
+        if collapsed {
+            // Collapsed when it last quit: back as the bar, its top where it was (the page confirms, or expands it,
+            // once loaded). An older version left the open frame saved here: that is the height to open to.
+            if expandedHeight == 0 && frame.height >= minSize.height { expandedHeight = frame.height }
+            frame = NSRect(x: frame.minX, y: frame.maxY - bar, width: frame.width, height: bar)
+            panel.minSize = NSSize(width: minSize.width, height: bar)
+        } else {
+            // Open, but the saved frame is a bar (it quit collapsed without saying so): it opens down from there.
+            if frame.height < minSize.height { frame = openFrame(from: frame) }
+            panel.minSize = minSize
+        }
+        panel.setFrame(frame, display: false)
 
         chrome = ChromeView(frame: NSRect(origin: .zero, size: panel.frame.size))
         chrome.autoresizingMask = [.width, .height]
@@ -194,13 +207,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         height >= 24 && height <= 120 ? height : defaultBarHeight
     }
 
+    /// Whether the top of a frame (where the title bar is) is on some screen, so the window can be grabbed.
+    private static func isOnScreen(_ frame: NSRect) -> Bool {
+        let top = NSRect(x: frame.minX, y: frame.maxY - 24, width: frame.width, height: 24)
+        return NSScreen.screens.contains { $0.visibleFrame.intersects(top) }
+    }
+
+    /// The open window for a bar at `bar`: the same left and top edges and width, the height it had open, growing
+    /// down; if that runs off the bottom of the screen it grows up just as far as it must, and never past the top.
+    private func openFrame(from bar: NSRect) -> NSRect {
+        let minHeight = FloatingPanel.expandedMinSize.height
+        var height = max(minHeight, expandedHeight >= minHeight ? expandedHeight : AppDelegate.defaultSize().height)
+        let screen = NSScreen.screens.first { $0.visibleFrame.intersects(bar) } ?? panel.screen ?? NSScreen.main
+        let visible = screen?.visibleFrame
+        if let visible { height = min(height, max(minHeight, visible.height)) }
+        var target = NSRect(x: bar.minX, y: bar.maxY - height, width: bar.width, height: height)
+        if let visible {
+            if target.minY < visible.minY { target.origin.y = visible.minY }
+            if target.maxY > visible.maxY { target.origin.y = max(visible.minY, visible.maxY - height) }
+        }
+        return target
+    }
+
     /// Rolls the panel up into its title bar (the page has already hidden everything below it) or back down to the
-    /// height it had, keeping the top edge where it is. Collapsed, it resizes only sideways.
+    /// height it had. Both start from the window as it is now, wherever it has been moved: collapsing keeps its top
+    /// and left edges, and opening grows down from the bar's top-left (see openFrame). Collapsed, it resizes only
+    /// sideways and can be dragged anywhere. One autosave name the whole time, so AppKit never puts back an old frame.
     private func setCollapsed(_ on: Bool, bar requested: CGFloat, animate: Bool) {
         let bar = AppDelegate.clampBar(requested)
         let defaults = UserDefaults.standard
-        defaults.set(Double(bar), forKey: AppDelegate.barHeightKey)
         let f = panel.frame
+        if on { defaults.set(Double(bar), forKey: AppDelegate.barHeightKey) }
         if on == collapsed {
             // Already so (the launch restored it): only follow the page's bar height.
             if on && abs(f.height - bar) > 0.5 {
@@ -214,26 +251,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if on {
             expandedHeight = f.height
             defaults.set(Double(f.height), forKey: AppDelegate.expandedHeightKey)
-            // The open frame stays saved as it is now; the bar saves its own from here on.
-            panel.saveFrame(usingName: AppDelegate.frameName)
-            _ = panel.setFrameAutosaveName(AppDelegate.barFrameName)
             panel.minSize = NSSize(width: FloatingPanel.expandedMinSize.width, height: bar)
             chrome.verticalResize = false
             panel.setFrame(NSRect(x: f.minX, y: f.maxY - bar, width: f.width, height: bar), display: true, animate: animate)
         } else {
-            let minHeight = FloatingPanel.expandedMinSize.height
-            let height = max(minHeight, expandedHeight >= minHeight ? expandedHeight : AppDelegate.defaultSize().height)
-            var target = NSRect(x: f.minX, y: f.maxY - height, width: f.width, height: height)
-            // Opening downwards off the bottom of the screen: it opens upwards as far as it must instead.
-            if let visible = (panel.screen ?? NSScreen.main)?.visibleFrame, target.minY < visible.minY {
-                target.origin.y = min(visible.minY, visible.maxY - height)
-            }
-            _ = panel.setFrameAutosaveName("")
-            panel.minSize = FloatingPanel.expandedMinSize
+            let target = openFrame(from: f)
             chrome.verticalResize = true
             panel.setFrame(target, display: true, animate: animate)
-            _ = panel.setFrameAutosaveName(AppDelegate.frameName)
-            panel.saveFrame(usingName: AppDelegate.frameName)
+            panel.minSize = FloatingPanel.expandedMinSize
         }
         panel.invalidateShadow()
     }
@@ -272,6 +297,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         switch body["type"] as? String {
         case "save":
             if let data = body["data"] as? String { store.save(data) }
+        case "reset":
+            // Reset or Import: the page sends the whole new save and saves nothing after it. It is written, and the
+            // page reloaded with it (a plain reload would run the boot script made with the old save).
+            if let data = body["data"] as? String {
+                store.replace(data)
+                reloadGame()
+            }
         case "window":
             if let bg = body["bg"] as? String { background = bg }
             if let t = body["theme"] as? String { theme = t }

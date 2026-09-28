@@ -155,15 +155,16 @@ grows by whole rows into the height the bar and a full list leave (up to 1.8 tim
 alone, so a purchase never moves it, and a list row that goes leaves its space at the bottom: a row of ground under the
 belt, then a hall over the gantry — a roof beam from the post to the lift's mast, tall windows in the back wall, a lamp
 hung over each bay (lit, with a soft pool of light, once its press is built; a dashed outline until then). The bin's
-tower rises into it: each size is drawn taller than the last (as many sections open as the height allows, the rest
-closed to a bar a row or two apart), the biggest just under the roof, and the sizes still to build stand over the bin
-as a dashed outline, a band each. The
+tower rises into it: each size is drawn taller than the last (the smallest in floor-sized cells, the biggest just under
+the roof, those between evenly spaced), and the sizes still to build stand over the bin as a dashed outline, a band
+each. The
 floor is a small scene in the board's materials, your skin and palette, with no text on it:
 a gantry of presses, each in a bay sized to its pieces (a mold window one cell wider than its longest shape, so a
 piece drops straight down onto a belt of 28 cells); a ram stamps each mino into the window; at the belt's end a
-cradle lift carries the minos up one by one (the column nearest it first, so none ever passes another), over a chute and into the bin, which is drawn in 12-line sections — the
-one filling open, cell by cell (with the full ones just under it, or the empty ones above, as the height allows), the
-other full ones as thin slivers in their top row's colours, the other empty ones as outlines. Collected rows lift out as one and clear away, the loose minos riding up on them and then dropping to the bottom;
+cradle lift carries the minos up one by one (the column nearest it first, so none ever passes another), over a chute and into the bin (shrinking to its cells on the way), which always shows every mino it holds as a
+mino — never a bar: its cells have their own size, in whole device pixels, so its whole capacity fits the tower, and the
+tower is as slim as four of them (under 8 device pixels a cell is a flat square with a pixel's gap; a window so short
+that the biggest bin would need cells under 3 pans instead, keeping the top of what it holds in view). Collected rows lift out as one and clear away, the loose minos riding up on them and then dropping to the bottom;
 the lines fly to the wallet, which counts them (and any achievement the collect earned) as they land. Click a press to pin its mold to one
 shape (free; pay never changes) and fill in Stats ▸ Factory's shape sets.
 
@@ -381,7 +382,11 @@ at the left and fades out before the expand button. The logic runs on a fixed 60
 frame rate); the drawing comes every display frame, paced to whole frames so the travel is even, stops while hidden,
 and holds one still frame with no rain under reduced motion. Classic pauses, the factory runs on. Collapsed, it
 resizes only sideways (dragging the edge, the pieces keep their places and travel on, and meetings a wider bar brings
-are agreed then), and it opens back to the height it had, across launches too.
+are agreed then), and it opens back to the height it had, across launches too. Both ways it starts from where the
+window is now: collapsing keeps its top and left edges wherever it has been moved, the bar can be dragged anywhere, and
+expanding grows down from the bar's top-left (up just as far as it must near the bottom of the screen), at the width the
+bar has. The panel keeps one saved frame, always the window as it is (the bar while collapsed), with the open height
+beside it.
 
 **Mute** — the speaker in the title bar (between the wallet and Settings, on every tab), M, or Settings ▸ Sound ▸ Mute:
 one switch, kept in sync everywhere and saved. It ramps a gain that sits after everything else to zero in 50 ms, so
@@ -433,6 +438,9 @@ node Lull/scripts/audio-render.cjs out/ --harmony   # every pack's pitched sound
 
 A packaged build is committed by CI to [`dist/Lull.app.zip`](../dist/). It is ad-hoc signed: right-click ▸ Open the
 first time. The save lives in `~/Library/Application Support/Lull/save.json` (Settings ▸ Export copies it).
+Settings ▸ Data ▸ Reset (everything but the settings) and Import replace the save outright: the page hands the new one
+over and saves nothing more, the app writes it (dropping the previous copy) and reloads the page with it; in a browser it
+goes to localStorage and the page reloads.
 
 ## Layout
 
