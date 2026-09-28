@@ -1037,6 +1037,8 @@ kbd { font: 600 12px/1 var(--ui); min-width: 24px; height: 24px; padding: 0 7px;
 .mk-pos { display: flex; justify-content: space-between; padding: 9px 12px; border-radius: 12px; background: var(--soft); font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .mk.won .mk-pos { background: color-mix(in oklab, var(--mint), var(--card) 80%); color: color-mix(in oklab, var(--mint), var(--ink) 30%); }
 .mk.won { box-shadow: 0 0 0 2px var(--mint); }
+.mk.lost .mk-pos { background: color-mix(in oklab, var(--red), var(--card) 88%); color: color-mix(in oklab, var(--red), var(--ink) 30%); }
+.tr-pl.neg { background: color-mix(in oklab, var(--red), var(--card) 86%); color: color-mix(in oklab, var(--red), var(--ink) 25%); }
 .mk-meta { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--muted); font-weight: 600; font-variant-numeric: tabular-nums; }
 .mk-tb { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--c); transition: width .5s linear; }
 
@@ -1106,28 +1108,34 @@ kbd { font: 600 12px/1 var(--ui); min-width: 24px; height: 24px; padding: 0 7px;
 .chest > div { flex: 1; display: flex; flex-direction: column; gap: 6px; }
 .chest.ready .cb { animation: boxshake .6s linear infinite; }
 
-/* ---------- Rank ---------- */
-.rk-head { display: flex; align-items: center; gap: 14px; }
-.gem { width: 56px; height: 56px; flex: none; display: grid; place-items: center; }
-.gem svg { width: 56px; height: 56px; filter: drop-shadow(0 6px 10px rgba(0, 0, 0, .18)); }
-.rk-head b { display: block; font: 700 22px/1.1 var(--fun); }
-.rk-head small { color: var(--muted); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.rk-me { margin-left: auto; text-align: right; }
-.rk-me b { font: 700 30px/1 var(--fun); font-variant-numeric: tabular-nums; }
-.rk-list { display: flex; flex-direction: column; gap: 2px; border-radius: 20px; overflow: hidden; }
-.rr { display: flex; align-items: center; gap: 12px; padding: 9px 14px; background: var(--card); font-variant-numeric: tabular-nums; }
-.rr .n { width: 26px; font: 700 14px/1 var(--fun); color: var(--muted); }
-.rr .av { width: 30px; height: 30px; border-radius: 50%; background: var(--bar); flex: none; }
-.rr .nm { flex: 1; height: 9px; border-radius: 5px; background: var(--bar); max-width: var(--w); }
-.rr .p { margin-left: auto; font: 700 14px/1 var(--fun); }
-.rr.up { background: color-mix(in oklab, var(--mint), var(--card) 88%); }
-.rr.down { background: color-mix(in oklab, var(--red), var(--card) 90%); }
-.rr.me { background: var(--gold); color: var(--gold-ink); }
-.rr.me .n { color: var(--gold-ink); }
-.rr.me .av { background: #fff; }
-.rr.me .nm { background: none; height: auto; max-width: none; font-weight: 800; }
-.rr.cut { border-top: 2px dashed color-mix(in oklab, var(--mint), transparent 30%); }
-.rr.cut2 { border-top: 2px dashed color-mix(in oklab, var(--red), transparent 30%); }
+/* ---------- Leaderboard ---------- */
+.lb-me { display: flex; align-items: center; gap: 14px; background: linear-gradient(135deg, color-mix(in oklab, var(--c), var(--card) 78%), var(--card)); }
+.lb-av { width: 48px; height: 48px; border-radius: 16px; flex: none; display: grid; place-items: center; color: #fff; background: linear-gradient(160deg, color-mix(in oklab, var(--c), #fff 15%), color-mix(in oklab, var(--c), #000 20%)); box-shadow: inset 0 -3px 0 rgba(0, 0, 0, .15); }
+.lb-av svg { width: 24px; height: 24px; }
+.lb-sc { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.lb-sc small { color: var(--muted); font-size: 12px; font-weight: 700; }
+.lb-sc b { font: 700 30px/1 var(--fun); font-variant-numeric: tabular-nums; }
+.lb-rk { text-align: center; padding: 8px 12px; border-radius: 14px; background: var(--soft); }
+.lb-rk small { display: block; color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+.lb-rk b { font: 700 22px/1.1 var(--fun); color: var(--muted); }
+.lb-seg { align-self: stretch; }
+.lb-seg button { flex: 1; padding: 8px 10px; }
+.lb-list { display: flex; flex-direction: column; gap: 2px; border-radius: 20px; overflow: hidden; }
+.lb-row { display: flex; align-items: center; gap: 12px; padding: 11px 14px; background: var(--card); }
+.lb-row .n { width: 22px; font: 700 14px/1 var(--fun); color: var(--muted); opacity: .6; }
+.lb-row .av { width: 32px; height: 32px; border-radius: 50%; flex: none; }
+.lb-row .nm { flex: 1; max-width: var(--w); height: 10px; border-radius: 5px; }
+.lb-row .p { margin-left: auto; width: 44px; height: 10px; border-radius: 5px; }
+.lb-row .sk { background: linear-gradient(90deg, var(--bar) 30%, color-mix(in oklab, var(--bar), var(--card) 60%) 50%, var(--bar) 70%); background-size: 300% 100%; animation: lbsh 1.6s linear infinite; }
+@keyframes lbsh { from { background-position: 100% 0; } to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .lb-row .sk { animation: none; } }
+.lb-soon { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; }
+.lb-soon .lb-ic { width: 56px; height: 56px; border-radius: 18px; display: grid; place-items: center; color: var(--c); background: color-mix(in oklab, var(--c), var(--card) 86%); }
+.lb-soon .lb-ic svg { width: 30px; height: 30px; }
+.lb-soon h3 { margin: 6px 0 0; font: 700 19px/1.2 var(--fun); }
+.lb-soon p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.45; max-width: 30ch; }
+.lb-soon .srow { align-self: stretch; margin: 8px -16px -16px; text-align: left; }
+
 /* ==== /MODULE goals ==== */
 
 /* ==== MODULE play ==== */

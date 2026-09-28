@@ -200,7 +200,7 @@ function holdTone() {
   return { set: f => o.frequency.setTargetAtTime(f, a.currentTime, .015), stop: () => { g.gain.setTargetAtTime(.0001, a.currentTime, .025); o.stop(a.currentTime + .2); } };
 }
 const semi = n => Math.pow(2, n / 12);
-const APP_KEY = { rocket: 6, flip: 8, predict: 10, trade: 13, tap: 0, scroll: 2, inbox: 4, slots: 5, swipe: 7, loop: 9, loot: 11, scratch: 12, streak: 14, quests: 16, rank: 17, pet: 19, shop: 21, hold: 23, rings: 24, you: 3 };
+const APP_KEY = { rocket: 6, flip: 8, predict: 10, trade: 13, tap: 0, posts: 2, clips: 9, discover: 7, activity: 15, profile: 18, inbox: 4, slots: 5, loot: 11, scratch: 12, streak: 14, quests: 16, rank: 17, pet: 19, shop: 21, cart: 20, orders: 22, hold: 23, rings: 24, gates: 1, tower: 25, arcade: 26, you: 3 };
 const sfx = {
   tap: k => { const f = 392 * semi(Math.min(k, 24)); tone(f, .06, 'triangle', .16, 0, f * 1.3); },
   crit: () => { tone(1568, .12, 'square', .07, 0, 2349); tone(2093, .18, 'sine', .1, .04); },
@@ -345,7 +345,6 @@ function earn(n, x, y, o = {}) {
   const m = (o.raw ? 1 : mult()) * (boostOn() ? 2 : 1);
   const g = Math.max(1, Math.round(n * m));
   S.hits += g; S.total += g; S.today.hits += g;
-  if (S.league) S.league.me += g;
   floatText(x, y, `+${fmt(g)}`, o.cls);
   renderHits(); renderLevel(); queueCheck();
   return g;
@@ -377,7 +376,7 @@ function renderLevel() {
   const L = lvl();
   $('#lvl-n').textContent = L.l;
   $('#lvl-prg').style.strokeDashoffset = String(100 - L.pct * 100);
-  if (lastLvl && L.l > lastLvl) { sfx.level(); haptic(true); confetti(140); restart($('#hud-lvl'), 'up'); bannerAward(`Level ${L.l}`, 'The next level is closer than it looks.', 'level'); }
+  if (lastLvl && L.l > lastLvl) { sfx.level(); haptic(true); confetti(140); restart($('#hud-lvl'), 'up'); bannerAward(`Level ${L.l}`, 'New rewards unlocked. Keep going!', 'level'); }
   lastLvl = L.l;
 }
 function renderBoost() {
@@ -731,7 +730,7 @@ function islandPop(app) {
   clearTimeout(islandT); islandT = setTimeout(() => is.classList.remove('pop'), 1400);
 }
 function renderNC() {
-  $('#nc-list').innerHTML = notifs.length ? notifs.map(n => nciHTML(n)).join('') : '<div class="nc-empty">Nothing waiting. Enjoy it.</div>';
+  $('#nc-list').innerHTML = notifs.length ? notifs.map(n => nciHTML(n)).join('') : '<div class="nc-empty">No new notifications</div>';
 }
 function openNC() { if (lockOn) return; ncOn = true; quietIds.clear(); renderNC(); $('#nc').classList.add('show'); sfx.whoosh(); }
 function closeNC() { if (!ncOn) return; ncOn = false; $('#nc').classList.remove('show'); }
@@ -743,7 +742,7 @@ function renderLock(fresh) {
   $('#lk-date').textContent = d.toLocaleDateString('en', { weekday: 'long', month: 'long', day: 'numeric' });
   const st = $('#lk-stack');
   if (!S.onboarded) {
-    st.innerHTML = '<div class="lk-intro"><div class="a-logo">st<span class="i">ı<b class="tittle">1</b></span>m</div><p>Every hook a phone has, with nothing inside.</p><p>Twenty hooks in eight apps, sorted by type. The home screen shows what’s waiting, and notifications stay quiet while you’re in an app.</p></div>';
+    st.innerHTML = '<div class="lk-intro"><div class="a-logo">st<span class="i">ı<b class="tittle">1</b></span>m</div><p>Everything you love, all in one place.</p><p>Games, deals, friends and rewards, with something new every time you look.</p></div>';
     $('#lk-hint').textContent = 'Swipe up or tap to start';
     return;
   }
@@ -860,7 +859,7 @@ function showTab(B, t, quiet) {
   if (mode === 'launcher') {
     const game = !isHome(B, t);
     $('.ax:not(.aback)', B.view).hidden = game; $('.aback', B.view).hidden = !game;
-    $('.at b', B.view).textContent = game ? APPS[t].name : B.name;
+    const tb = $('.at b', B.view); tb.textContent = game ? APPS[t].name : B.name; tb.style.color = game ? APPS[t].c : '';
     if (game && prev !== t) splash(B, t);
   }
   const a = APPS[t];
@@ -2421,7 +2420,7 @@ function mailLoop() {
   setTimeout(() => { if (!document.hidden && S.onboarded && !lockOn) addMail(); mailLoop(); }, (open ? rnd(3000, 7000) : rnd(12000, 25000)) * paceK());
 }
 def({
-  id: 'inbox', name: 'Inbox', tag: 'Unread dots · inbox zero', c: '#2f9bff',
+  id: 'inbox', name: 'Inbox', tag: 'Messages', c: '#2f9bff',
   init() { for (let i = 0; i < 7; i++) addMail(); mail.forEach((m, i) => { m.ts = T() - i * ri(20, 200) * 1000; }); mailLoop(); },
   wait() { const un = mail.filter(m => m.un).length; return un ? [{ t: `${un} unread message${un > 1 ? 's' : ''}`, r: un }] : []; },
   badge: () => mail.filter(m => m.un).length,
@@ -2489,12 +2488,13 @@ function regen() {
   while (S.energy < MAXE && T() - S.energyAt >= REGEN) { S.energy++; S.energyAt += REGEN; got = true; }
   if (got && S.energy >= MAXE && S.onboarded) alertOnce('spins', 'slots', 'Spins are full. Pull when you like.', 120000);
 }
+// most pulls pay: 10% three of a kind, 75% two in a row, 15% a miss by one reel
 function outcome() {
   const r = R();
-  if (r < .09) { const k = pickW(SYMS.map(s => [s, 300 / SYM[s].pay])); return [k, k, k]; }
-  if (r < .58) { const k = pick(SYMS); let o; do o = pick(SYMS); while (o === k); return [k, k, o]; }
-  const a = pick(SYMS); let b; do b = pick(SYMS); while (b === a);
-  return [a, b, pick(SYMS)];
+  if (r < .1) { const k = pickW(SYMS.map(s => [s, 300 / SYM[s].pay])); return [k, k, k]; }
+  const k = pick(SYMS); let o; do o = pick(SYMS); while (o === k);
+  if (r < .85) return [k, k, o];
+  return [k, o, k]; // the third reel lands the match the second one missed
 }
 function pullLever() {
   const lever = $('#sl-lever');
@@ -2504,12 +2504,12 @@ function pullLever() {
 async function spin() {
   if (spinning) return;
   regen();
-  if (S.energy <= 0) { sfx.nope(); restart($('#sl-pull'), 'shake'); toast(`Next free spin in ${secsToSpin()}s. Or watch 3 clips in Loop.`); return; }
+  if (S.energy <= 0) { sfx.nope(); restart($('#sl-pull'), 'shake'); toast(`Next free spin in ${secsToSpin()}s. Or watch 3 clips in Feed.`); return; }
   spinning = true;
   if (S.energy >= MAXE) S.energyAt = T();
   S.energy--; S.spins++; act(); APPS.slots.render();
   sfx.lever(); haptic();
-  const res = outcome(), tease = res[0] === res[1], near = tease && res[2] !== res[0];
+  const res = outcome(), tease = res[0] === res[1] || res[0] === res[2], near = res[0] === res[1] && res[2] !== res[0];
   const durs = [700, 1050, tease ? 2200 : 1400];
   const slot = $('#sl'), out = $('#sl-res');
   slot.classList.add('hot'); out.textContent = '';
@@ -2535,14 +2535,14 @@ async function spin() {
   if (res[0] === res[1] && res[1] === res[2]) {
     win = SYM[res[0]].pay; out.textContent = `JACKPOT +${win}`; S.jackpots++;
     sfx.win(); confetti(160); haptic(true); unlock('jackpot'); restart(slot, 'flash');
-  } else if (tease) { win = 5; out.textContent = 'So close!'; sfx.coin(); } else { win = 1; out.textContent = 'Almost!'; sfx.click(); }
+  } else if (res[0] === res[1]) { win = 5; out.textContent = 'Two in a row!'; sfx.coin(); } else { win = 0; out.textContent = 'So close!'; sfx.click(); }
   restart(out, 'pop');
-  const [x, y] = centerOf($('.wins', slot)); earn(win, x, y);
+  const [x, y] = centerOf($('.wins', slot)); if (win) earn(win, x, y);
   spinning = false;
   APPS.slots.render();
 }
 def({
-  id: 'slots', name: 'Slots', tag: 'Variable reward · near miss', c: '#ffb000',
+  id: 'slots', name: 'Slots', tag: 'Classic three-reel slots', c: '#ffb000',
   bg: regen,
   wait: () => (S.energy ? [{ t: `${S.energy} free spin${S.energy > 1 ? 's' : ''}` }] : []),
   badge: () => S.energy,
@@ -2555,7 +2555,7 @@ def({
       <div class="sres" id="sl-res">Pull the lever</div><button class="pbtn" id="sl-pull" style="--c:#ff2e4d">PULL</button>
       <div class="energy"><span class="bolts" id="sl-bolts"></span><span id="sl-t"></span></div></div>
       <div class="card"><h3>Payouts</h3><div class="paytable">${[...SYMS].reverse().map(k => `<span class="trip">${symSVG(k).repeat(3)}</span><b>+${SYM[k].pay}</b>`).join('')}<small>Two in a row</small><b>+5</b></div></div>
-      <p class="fine">A free spin every 20 s, up to 5. Three clips in Loop earn another.</p></div>`;
+      <p class="fine">A free spin every 20 s, up to 5. Watch 3 clips in Feed for another.</p></div>`;
     track($('.pad', b));
     $$('.strip', b).forEach((s, i) => { s.innerHTML = slotState[i].map(cellHTML).join(''); });
     const lever = $('#sl-lever', b), knob = $('#sl-knob', b);
@@ -2593,7 +2593,7 @@ function rocketGo() {
   if (!free) { if (bet < 1) { sfx.nope(); toast('You need hits to bet. Tap earns some.'); return; } if (!spend(bet)) return; }
   else S.rocketAt = T() + ROCKET_FREE;
   act(); S.launches++;
-  rkt = { bet, t0: now(), m: 1, crash: crashPoint(), cashed: false, pts: [[0, 1]], last: 0, tone: holdTone() };
+  rkt = { bet, free, safe: chance(.85), t0: now(), m: 1, crash: crashPoint(), cashed: false, pts: [[0, 1]], last: 0, tone: holdTone() };
   $('#rc-m').className = 'rc-m'; $('#rc-sub').textContent = free ? 'Free launch' : `Riding ${fmt(bet)} hits`;
   sfx.whoosh(); haptic();
   rkt.raf = requestAnimationFrame(rocketStep);
@@ -2604,7 +2604,10 @@ function rocketStep() {
   const t = (now() - rkt.t0) / 1000;
   rkt.m = Math.exp(ROCKET_K * t);
   if (t - rkt.last > .05) { rkt.pts.push([t, rkt.m]); rkt.last = t; }
-  if (!rkt.cashed && rkt.m >= rkt.crash - .02) { rkt.m = rkt.crash - .01; rocketCash(true); } // it never lets you lose
+  if (!rkt.cashed && rkt.m >= rkt.crash - .02) {
+    if (rkt.safe) { rkt.m = rkt.crash - .01; rocketCash(true); } // Auto Cash-Out catches most flights
+    else { rkt.m = rkt.crash; rkt.cashed = true; rkt.bust = true; rkt.win = 0; rkt.shown = rkt.crash; rocketCrash(); return; }
+  }
   if (rkt.cashed && rkt.m >= rkt.shown) { rocketCrash(); return; }
   if (rkt.tone) rkt.tone.set(160 + Math.min(1400, rkt.m * 90));
   drawRocket();
@@ -2634,7 +2637,7 @@ function rocketCash(auto) {
   const [x, y] = centerOf($('#rc-m'));
   earn(win, x, y + 50, { raw: true }); sfx.win(); haptic(true); confetti(50);
   $('#rc-m').classList.add('win');
-  $('#rc-sub').textContent = auto ? `Auto cash-out saved you at ${rkt.m.toFixed(2)}×` : `Cashed out at ${rkt.m.toFixed(2)}×`;
+  $('#rc-sub').textContent = auto ? `Auto Cash-Out at ${rkt.m.toFixed(2)}×` : `Cashed out at ${rkt.m.toFixed(2)}×`;
   $('#rc-go').textContent = `Won ${fmt(win)}`;
   queueCheck();
 }
@@ -2644,20 +2647,21 @@ function rocketCrash() {
   noise(.5, .16, 0, 1200, 120); haptic(true);
   const missed = Math.round(rkt.bet * rkt.shown) - rkt.win;
   $('#rc-m').className = 'rc-m crash'; $('#rc-m').textContent = rkt.shown.toFixed(2) + '×';
-  $('#rc-sub').textContent = `Crashed. Holding on would have paid ${fmt(missed)} more.`;
+  if (rkt.bust) { $('#rc-sub').textContent = rkt.free ? `Flew away at ${rkt.shown.toFixed(2)}×. Your next free launch is on its way.` : `Flew away at ${rkt.shown.toFixed(2)}×. Run it back?`; $('#rc-go').textContent = 'Flew away'; sfx.lose(); }
+  else $('#rc-sub').textContent = `Crashed. Holding on would have paid ${fmt(missed)} more.`;
   $('#rc-ship').hidden = true;
   rocketHist.unshift(rkt.shown); rocketHist.length = 8;
   setTimeout(() => { rkt = null; APPS.rocket.render(); }, 1300);
 }
 def({
-  id: 'rocket', name: 'Rocket', tag: 'Crash betting · rigged to win', c: '#ff6a00',
+  id: 'rocket', name: 'Rocket', tag: 'Cash out before it flies away', c: '#ff6a00',
   wait: () => (T() >= S.rocketAt ? [{ t: 'A free rocket launch' }] : []),
   badge: () => (T() >= S.rocketAt ? 1 : 0),
   ping: () => (T() >= S.rocketAt ? `Free launch ready. The last one hit ${rocketHist[0].toFixed(2)}×` : `Someone just cashed out at ${rnd(3, 40).toFixed(2)}×`),
   build(b) {
     b.innerHTML = `<div class="pad"><div class="rc-scr" id="rc-scr"><div class="rc-hist" id="rc-hist"></div><svg id="rc-svg" class="rc-svg"></svg><div class="rc-ship" id="rc-ship" hidden>${SHIP}</div><div class="rc-m" id="rc-m">1.00×</div><div class="rc-sub" id="rc-sub"></div></div>
       ${chipsHTML('rc-st', rStake)}<button class="pbtn" id="rc-go"></button>
-      <p class="fine">Cash out before it crashes. It never crashes first.</p></div>`;
+      <p class="fine">Cash out before it flies away. Auto Cash-Out covers most flights.</p></div>`;
     track($('.pad', b));
     bindChips($('#rc-st', b), v => { rStake = v; this.render(); });
     $('#rc-go', b).onclick = rocketGo;
@@ -2679,7 +2683,7 @@ def({
 
 // ---------- Flip: double or nothing, and it's never nothing ----------
 const FLIP_MAX = 8;
-let flipping = false, fStake = 10;
+let flipping = false, flipTails = false, fStake = 10;
 function flipGo() {
   if (flipping) return;
   const f = S.flip;
@@ -2689,9 +2693,9 @@ function flipGo() {
     if (!spend(st)) return;
     f.pot = st; f.n = 0;
   }
-  flipping = true; act(); S.flips++;
-  const long = f.n >= 4, dur = long ? 1500 : 800, coin = $('#fp-coin');
-  f.rot = (f.rot || 0) + (long ? 3240 : 1800);
+  flipping = true; act(); S.flips++; flipTails = false;
+  const heads = chance(.88), long = f.n >= 4, dur = long ? 1500 : 800, coin = $('#fp-coin');
+  f.rot = (f.rot || 0) - ((f.rot || 0) % 360) + (long ? 3240 : 1800) + (heads ? 0 : 180);
   coin.style.transition = `transform ${dur}ms cubic-bezier(.2,.8,.3,1)`;
   coin.style.transform = `rotateY(${f.rot}deg)`;
   restart($('#fp-stage'), 'toss');
@@ -2700,6 +2704,12 @@ function flipGo() {
   if (long) sfx.riser(dur / 1000);
   APPS.flip.render();
   setTimeout(() => {
+    if (!heads) { // tails takes the pot
+      const [x, y] = centerOf($('#fp-coin'));
+      floatText(x, y - 90, 'Tails', 'miss'); sfx.lose(); haptic(true);
+      f.pot = 0; f.n = 0; flipping = false; flipTails = true;
+      APPS.flip.render(); refreshBadges(); return;
+    }
     f.pot *= 2; f.n++; flipping = false;
     S.maxFlips = Math.max(S.maxFlips, f.n);
     const [x, y] = centerOf($('#fp-coin'));
@@ -2719,16 +2729,16 @@ function flipCash(max) {
   APPS.flip.render(); refreshBadges();
 }
 def({
-  id: 'flip', name: 'Flip', tag: 'Double or nothing · let it ride', c: '#e0a100',
+  id: 'flip', name: 'Flip', tag: 'Double or nothing', c: '#e0a100',
   wait: () => (S.flip.pot ? [{ t: 'Your pot is still riding', hot: 1, r: fmt(S.flip.pot) }] : []),
   badge: () => (S.flip.pot ? 1 : 0),
-  ping: () => (S.flip.pot ? `Your pot of ${fmt(S.flip.pot)} is waiting. Let it ride?` : 'Double or nothing. It always lands heads.'),
+  ping: () => (S.flip.pot ? `Your pot of ${fmt(S.flip.pot)} is waiting. Let it ride?` : 'Double or nothing. Feeling lucky?'),
   build(b) {
     b.innerHTML = `<div class="pad"><div class="fp-pot" id="fp-pot"><small>Pot</small><b id="fp-v">0</b><small id="fp-n"></small></div>
       <div class="coin-stage" id="fp-stage"><div class="coin-w"><div class="coin" id="fp-coin"><div class="face h">${IF('bolt')}</div><div class="face t">${I('close')}</div></div></div></div>
       <div class="ladder" id="fp-lad"></div>${chipsHTML('fp-st', fStake)}
       <div class="row2"><button class="pbtn" id="fp-go" style="--c:#e0a100"></button><button class="pbtn" id="fp-cash" style="--c:#12b886"></button></div>
-      <p class="fine">Heads doubles the pot. It always lands heads. Eight in a row is the max.</p></div>`;
+      <p class="fine">Heads doubles the pot, tails ends the run. Cash out whenever you like. Eight in a row pays the max.</p></div>`;
     track($('.pad', b));
     bindChips($('#fp-st', b), v => { fStake = v; this.render(); });
     $('#fp-go', b).onclick = flipGo;
@@ -2738,7 +2748,7 @@ def({
     if (!this.view) return;
     const f = S.flip;
     $('#fp-v').textContent = fmt(f.pot);
-    $('#fp-n').textContent = f.pot ? `${f.n} heads in a row` : 'Pick a stake and flip';
+    $('#fp-n').textContent = f.pot ? `${f.n} heads in a row` : flipTails ? 'Tails. Run it back?' : 'Pick a stake and flip';
     $('#fp-lad').innerHTML = Array.from({ length: FLIP_MAX }, (_, i) => `<span class="${i < f.n ? 'done' : i === f.n && f.pot ? 'next' : ''}">×${2 ** (i + 1)}</span>`).join('');
     $('#fp-st').hidden = !!f.pot;
     const go = $('#fp-go'), cash = $('#fp-cash');
@@ -2753,6 +2763,7 @@ def({
 // ---------- Scratch: the tactile lottery ----------
 const SCRATCH_FREE = 30000;
 const scratchFree = () => T() >= S.scratchAt || S.scratchExtra > 0;
+const SXPAY = k => SYM[k].pay * 2;
 let sx = null;
 function newScratch() {
   const free = scratchFree();
@@ -2761,9 +2772,8 @@ function newScratch() {
   const r = R(), top = pickW(SYMS.map(s => [s, 300 / SYM[s].pay]));
   const other = () => { let k; do k = pick(SYMS); while (k === top); return k; };
   let cells;
-  if (r < .2) cells = [top, top, top, other(), other(), other()];
-  else if (r < .7) cells = [top, top, other(), other(), other(), other()];
-  else cells = Array.from({ length: 6 }, () => pick(SYMS));
+  if (r < .85) cells = [top, top, top, other(), other(), other()]; // most cards win
+  else cells = [top, top, other(), other(), other(), other()]; // the rest miss by one
   // exactly one triple on a winning card, none on a losing one
   const fix = protect => {
     const count = {}; cells.forEach(k => { count[k] = (count[k] || 0) + 1; });
@@ -2772,7 +2782,7 @@ function newScratch() {
       if (k !== protect && count[k] >= 3) { let o; do o = pick(SYMS); while (o === protect || (count[o] || 0) >= 2); count[k]--; count[o] = (count[o] || 0) + 1; cells[i] = o; }
     }
   };
-  fix(r < .2 ? top : null);
+  fix(r < .85 ? top : null);
   cells.sort(() => R() - .5);
   sx = { cells, done: false, moves: 0 };
   $('#sx-cells').innerHTML = cells.map(k => `<div class="sx-cell">${symSVG(k)}</div>`).join('');
@@ -2811,22 +2821,22 @@ function finishScratch() {
   const out = $('#sx-res'), [x, y] = centerOf($('#sx-cells'));
   if (win) {
     $$('.sx-cell').forEach((el, i) => { if (sx.cells[i] === win) el.classList.add('hit'); });
-    out.textContent = `Winner! +${SYM[win].pay}`; S.scratchWins++;
-    earn(SYM[win].pay, x, y); sfx.win(); confetti(120); haptic(true);
-  } else if (pair) { out.textContent = 'So close. One more?'; earn(2, x, y); sfx.coin(); }
-  else { out.textContent = 'No match. One more?'; earn(1, x, y); sfx.click(); }
+    out.textContent = `Winner! +${SXPAY(win)}`; S.scratchWins++;
+    earn(SXPAY(win), x, y); sfx.win(); confetti(120); haptic(true);
+  } else if (pair) { out.textContent = 'So close. One more?'; sfx.click(); }
+  else { out.textContent = 'No match. One more?'; sfx.click(); }
   restart(out, 'pop'); act(); queueCheck();
   APPS.scratch.render();
 }
 def({
-  id: 'scratch', name: 'Scratch', tag: 'Scratch-off · near miss', c: '#12b886',
+  id: 'scratch', name: 'Scratch', tag: 'Instant-win scratch cards', c: '#12b886',
   wait: () => (scratchFree() ? [{ t: 'A free scratch card' }] : []),
   badge: () => (scratchFree() ? 1 + S.scratchExtra : 0),
   ping: () => (scratchFree() ? 'Your free scratch card is ready' : null),
   build(b) {
     b.innerHTML = `<div class="pad"><div class="sx-ticket"><div class="sx-cells" id="sx-cells"></div><canvas id="sx-cv" aria-label="Scratch area"></canvas></div>
-      <div class="sx-res" id="sx-res"></div><button class="pbtn" id="sx-new"></button><p class="fine">Three of a kind wins. A free card every 30 s.</p>
-      <div class="card"><h3>Prizes</h3><div class="paytable">${[...SYMS].reverse().map(k => `<span class="trip">${symSVG(k).repeat(3)}</span><b>+${SYM[k].pay}</b>`).join('')}</div></div></div>`;
+      <div class="sx-res" id="sx-res"></div><button class="pbtn" id="sx-new"></button><p class="fine">Match three to win. A free card every 30 s.</p>
+      <div class="card"><h3>Prizes</h3><div class="paytable">${[...SYMS].reverse().map(k => `<span class="trip">${symSVG(k).repeat(3)}</span><b>+${SXPAY(k)}</b>`).join('')}</div></div></div>`;
     track($('.pad', b));
     const cv = $('#sx-cv', b);
     let last = null, sndT = 0;
@@ -2907,7 +2917,7 @@ async function openBox() {
   a.render(it.id); refreshBadges(); queueCheck();
 }
 def({
-  id: 'loot', name: 'Loot', tag: 'Blind boxes · collect the set', c: '#9b5cff',
+  id: 'loot', name: 'Loot', tag: 'Mystery boxes · collect all 24', c: '#9b5cff',
   wait: () => (lootFree() ? [{ t: 'A free box to open' }] : []),
   badge: () => (lootFree() ? 1 + S.loot.extra : 0),
   ping: () => (lootFree() ? 'A free box is ready. What’s inside?' : null),
@@ -2944,7 +2954,7 @@ addStats([
   ['trades', () => fmt(S.trades)],
 ]);
 // ---------- Trade: coins that only go up while you hold them ----------
-const COINS = [['HIT', '#e59a00'], ['DOPA', '#ff4fa3'], ['BLOB', '#9b5cff'], ['PING', '#2f9bff']];
+const COINS = [['HIT', '#e59a00'], ['GLOW', '#ff4fa3'], ['BLOB', '#9b5cff'], ['PING', '#2f9bff']];
 const hist = {};
 let tStake = 10, tHover = null;
 COINS.forEach(([k], i) => {
@@ -2962,7 +2972,7 @@ function tradeTick() {
   COINS.forEach(([k]) => {
     const c = S.trade.c[k];
     let d;
-    if (c.u > 0) d = chance(.14) ? -rnd(.003, .012) : rnd(.004, .016); // anything you hold climbs
+    if (c.u > 0) d = c.bad ? (chance(.68) ? -rnd(.003, .012) : rnd(.002, .01)) : (chance(.2) ? -rnd(.003, .012) : rnd(.004, .015)); // most positions climb; about one in seven slides
     else if (c.pump > 0) { d = rnd(.006, .02); c.pump--; } // and it keeps going after you sell
     else d = rnd(-.009, .0095);
     c.p = Math.max(.001, c.p * (1 + d));
@@ -2983,6 +2993,7 @@ function buyCoin() {
   const k = S.trade.sel, c = S.trade.c[k], st = stakeVal(tStake);
   if (st < 1) { sfx.nope(); toast('You need hits to buy. Tap earns some.'); return; }
   if (!spend(st)) return;
+  if (!c.u) c.bad = chance(.15);
   c.u += st / c.p; c.cost += st; S.trades++; act(); haptic();
   const [x, y] = centerOf($('#tr-buy')); burst(x, y, { n: 12, colors: ['#12c48b', '#fff'], shape: 'dot' });
   toast(`Bought ${fmt(st / c.p)} $${k}`);
@@ -2991,16 +3002,16 @@ function buyCoin() {
 function sellCoin() {
   const k = S.trade.sel, c = S.trade.c[k];
   if (!c.u) { sfx.nope(); toast(`You don’t hold any $${k}`); return; }
-  const v = Math.round(c.u * c.p), gain = c.cost ? v / c.cost - 1 : 0;
+  const raw = c.u * c.p, v = Math.round(raw), gain = c.cost ? raw / c.cost - 1 : 0;
   const [x, y] = centerOf($('#tr-sell'));
-  earn(v, x, y - 20, { raw: true }); c.u = 0; c.cost = 0; c.pump = 8; S.trades++; act();
-  sfx.big(); confetti(60); haptic(true);
+  earn(v, x, y - 20, { raw: true }); c.u = 0; c.cost = 0; c.pump = 8; c.bad = false; S.trades++; act();
+  if (gain >= 0) { sfx.big(); confetti(60); haptic(true); } else sfx.coin();
   toast(`Sold for ${fmt(v)} (${gain >= 0 ? '+' : ''}${(gain * 100).toFixed(1)}%)`);
   setTimeout(() => notify('trade', `$${k} is up again since you sold. Buy back in?`), 5000);
   APPS.trade.render();
 }
 def({
-  id: 'trade', name: 'Trade', tag: 'Crypto trading · only goes up', c: '#12b886',
+  id: 'trade', name: 'Trade', tag: 'Buy and sell crypto', c: '#12b886',
   badge: () => Math.min(9, S.trade.athNew),
   ping: () => { const [k] = pick(COINS), h = hist[k], ch = (h[h.length - 1] / h[0] - 1) * 100; return `$${k} is ${ch >= 0 ? 'up' : 'down'} ${Math.abs(ch).toFixed(1)}% in the last minute`; },
   build(b) {
@@ -3008,7 +3019,7 @@ def({
       <div class="card tr-chart"><div class="tr-hd"><b id="tr-sym"></b><span id="tr-px"></span></div><div class="tr-plot" id="tr-plot"><div class="tr-x" id="tr-x" hidden></div><div class="tr-tip" id="tr-tip" hidden></div><div id="tr-svg"></div></div></div>
       <div class="coins" id="tr-coins">${COINS.map(([k, cc]) => `<button class="coin-row" data-k="${k}" style="--cc:${cc}"><span class="cb">${k[0]}</span><span><b>$${k}</b><small class="hd"></small></span><span class="sp"></span><span class="px"><span class="pv"></span><small class="ch"></small></span></button>`).join('')}</div>${chipsHTML('tr-st', tStake)}
       <div class="row2"><button class="pbtn" id="tr-buy" style="--c:#12b886"></button><button class="pbtn" id="tr-sell" style="--c:#ff2e4d"></button></div>
-      <p class="fine">Prices tick every half second. Anything you hold goes up.</p></div>`;
+      <p class="fine">Prices update every half second. Past performance does not guarantee future results.</p></div>`;
     track($('.pad', b));
     bindChips($('#tr-st', b), v => { tStake = v; this.render(); });
     $('#tr-buy', b).onclick = buyCoin;
@@ -3024,7 +3035,8 @@ def({
     const v = pval(), cost = pcost(), sel = S.trade.sel, c = S.trade.c[sel], col = COINS.find(x => x[0] === sel)[1], h = hist[sel];
     $('#tr-val').textContent = fmt(Math.round(v));
     const pl = cost ? v / cost - 1 : 0;
-    $('#tr-pl').textContent = cost ? `▲ ${(pl * 100).toFixed(1)}% · +${fmt(Math.round(v - cost))}` : 'Buy something. It goes up.';
+    $('#tr-pl').textContent = cost ? `${pl >= 0 ? '▲' : '▼'} ${Math.abs(pl * 100).toFixed(1)}% · ${pl >= 0 ? '+' : '−'}${fmt(Math.abs(Math.round(v - cost)))}` : 'Buy a coin to start your portfolio';
+    $('#tr-pl').classList.toggle('neg', !!cost && pl < 0);
     $('#tr-sym').textContent = `$${sel}`;
     const ch = (h[h.length - 1] / h[0] - 1) * 100;
     $('#tr-px').textContent = `${px(c.p)} · ${ch >= 0 ? '▲' : '▼'} ${Math.abs(ch).toFixed(1)}% 1m`;
@@ -3054,7 +3066,7 @@ def({
 // ---------- Predict: prediction markets about this phone, and you're always right ----------
 const MQ = [
   s => `Will a notification arrive in the next ${s} s?`, s => `Will Blob get hungry in the next ${s} s?`,
-  s => `Will you reach a ×3 combo in ${s} s?`, s => `Will someone pass you in Rank in ${s} s?`,
+  s => `Will you reach a ×3 combo in ${s} s?`, s => `Will Feed get 20 new posts in ${s} s?`,
   () => 'Will the next lever pull be a near miss?', s => `Will Inbox hit 10 unread in ${s} s?`,
   s => `Will $HIT close higher in ${s} s?`, () => 'Will the next rocket fly past 5×?',
   () => 'Will the next loot box be rare or better?', s => `Will your pulse survive the next ${s} s?`,
@@ -3079,14 +3091,16 @@ function marketTick() {
 }
 function resolveMarket(m, i) {
   m.done = true;
-  const outcome = m.pos ? m.pos.side : (chance(m.yes) ? 'yes' : 'no');
+  const other = m.pos && (m.pos.side === 'yes' ? 'no' : 'yes');
+  m.won = !!m.pos && chance(.88);
+  const outcome = m.pos ? (m.won ? m.pos.side : other) : (chance(m.yes) ? 'yes' : 'no');
   m.outcome = outcome;
-  if (m.pos) {
+  if (m.pos && m.won) {
     const pay = Math.round(m.pos.stake / m.pos.price);
     m.paid = pay; S.predWins++;
     if (curApp === 'predict') { const el = $(`.mk[data-id="${m.id}"]`); const [x, y] = el ? centerOf(el) : [FW / 2, FH / 2]; earn(pay, x, y, { raw: true }); confetti(60); sfx.win(); haptic(true); }
     else { earn(pay, null, null, { raw: true }); notify('predict', `You were right. Resolved ${outcome.toUpperCase()}: +${fmt(pay)}`); }
-  }
+  } else if (m.pos && curApp === 'predict') sfx.lose();
   setTimeout(() => { const j = markets.indexOf(m); if (j >= 0) { markets[j] = mkMarket(); newMarkets++; if (APPS.predict.view) APPS.predict.render(true); } }, 1800);
   if (APPS.predict.view) APPS.predict.render();
   queueCheck();
@@ -3105,12 +3119,12 @@ function buyMarket(m, side, btn) {
   APPS.predict.render();
 }
 def({
-  id: 'predict', name: 'Predict', tag: 'Prediction markets · always right', c: '#3b7bff',
+  id: 'predict', name: 'Predict', tag: 'Trade on what happens next', c: '#3b7bff',
   wait: () => markets.filter(m => m.pos && !m.done).map(m => ({ t: 'Your prediction resolves', due: m.ends })),
   badge: () => Math.min(9, newMarkets),
   ping: () => { const m = pick(markets.filter(x => !x.done)); return m ? `“${m.q}” is at ${Math.round(m.yes * 100)}%` : null; },
   build(b) {
-    b.innerHTML = `<div class="pad">${chipsHTML('pd-st', mStake)}<div id="pd-list" style="display:flex;flex-direction:column;gap:12px"></div><p class="fine">Buy YES or NO. Every market resolves your way.</p></div>`;
+    b.innerHTML = `<div class="pad">${chipsHTML('pd-st', mStake)}<div id="pd-list" style="display:flex;flex-direction:column;gap:12px"></div><p class="fine">Buy YES or NO. Each share pays 100¢ if you’re right.</p></div>`;
     track($('.pad', b));
     bindChips($('#pd-st', b), v => { mStake = v; });
     $('#pd-list', b).addEventListener('click', e => {
@@ -3138,8 +3152,8 @@ def({
       $('.mk-tb', el).style.width = clamp((m.ends - T()) / m.dur, 0, 1) * 100 + '%';
       const pos = $('.mk-pos', el);
       pos.hidden = !m.pos;
-      if (m.pos) pos.innerHTML = m.done ? `<span>You were right</span><span>+${fmt(m.paid)}</span>` : `<span>You: ${m.pos.side.toUpperCase()} · ${fmt(m.pos.shares)} shares</span><span>Pays ${fmt(Math.round(m.pos.stake / m.pos.price))}</span>`;
-      el.classList.toggle('won', !!(m.done && m.pos));
+      if (m.pos) pos.innerHTML = m.done ? (m.won ? `<span>You were right</span><span>+${fmt(m.paid)}</span>` : `<span>Resolved ${m.outcome.toUpperCase()}</span><span>−${fmt(m.pos.stake)}</span>`) : `<span>You: ${m.pos.side.toUpperCase()} · ${fmt(m.pos.shares)} shares</span><span>Pays ${fmt(Math.round(m.pos.stake / m.pos.price))}</span>`;
+      el.classList.toggle('won', !!(m.done && m.pos && m.won)); el.classList.toggle('lost', !!(m.done && m.pos && !m.won));
       $$('button', el).forEach(x => { x.disabled = m.done; });
     });
   },
@@ -3152,7 +3166,6 @@ addAch([
   ['pulse', 'Heartbeat', 'Keep a pulse of 20', 'flame', () => S.pulse.best >= 20],
   ['day7', 'Day seven', 'Claim a day-7 reward', 'chest'],
   ['quests', 'Busy', 'Finish 10 quests', 'check', () => S.questsDone >= 10],
-  ['promo', 'Promoted', 'Move up a league', 'level'],
 ]);
 addQuests([
   ['pulses', 'Feed your pulse {n} times', 2, 5],
@@ -3194,7 +3207,7 @@ function claimLogin() {
   APPS.streak.render(); refreshBadges();
 }
 def({
-  id: 'streak', name: 'Streak', tag: 'Streaks · loss aversion', c: '#ff7a00',
+  id: 'streak', name: 'Streak', tag: 'Daily rewards', c: '#ff7a00',
   bg: tickPulse,
   wait() {
     const L = [];
@@ -3269,7 +3282,7 @@ function claimQuest(q, btn) {
 }
 const sigQ = () => [...S.quests, S.rapid.q].map(q => `${qProg(q)}${q.claimed}`).join('|') + S.chest + S.rapid.until;
 def({
-  id: 'quests', name: 'Quests', tag: 'Goals · endowed progress', c: '#2fb344',
+  id: 'quests', name: 'Quests', tag: 'Daily quests', c: '#2fb344',
   bg: tickQuests,
   init() { if (!Array.isArray(S.quests)) newQuests(); if (!S.rapid || !S.rapid.q) newRapid(); },
   wait() {
@@ -3306,47 +3319,29 @@ def({
   tick() { this.render(); },
 });
 
-// ---------- Rank: leagues with a five-minute week ----------
-const LEAGUES = [['Bronze', '#c77b3a'], ['Silver', '#98a2b3'], ['Gold', '#ffc21a'], ['Ruby', '#ff2e4d'], ['Emerald', '#12c48b'], ['Diamond', '#3bb6ff'], ['Obsidian', '#3a2a4a']];
-const LEAGUE_MS = 300000;
-function newLeague(tier) {
-  S.league = { tier, endsAt: T() + LEAGUE_MS, me: 0, rank: 30, passed: 0, rivals: Array.from({ length: 29 }, () => ({ pts: ri(0, 30), rate: rnd(.4, 3 + tier * 1.6), w: ri(40, 85) })) };
-}
-const myRank = () => 1 + S.league.rivals.filter(r => r.pts > S.league.me).length;
-function tickRank() {
-  const L = S.league;
-  L.rivals.forEach(r => { r.pts += r.rate * rnd(.2, 1.8); });
-  const rk = myRank();
-  if (rk > L.rank) { L.passed += rk - L.rank; if (S.onboarded) alertOnce('passed', 'rank', `Someone passed you. You’re #${rk}.`, 45000); }
-  else if (rk < L.rank && curApp === 'rank') { sfx.fresh(); toast(`You passed ${L.rank - rk} ${L.rank - rk === 1 ? 'person' : 'people'}`); }
-  L.rank = rk;
-  if (T() >= L.endsAt) {
-    const name = LEAGUES[L.tier][0];
-    const loud = curApp === 'rank' || !muted('rank');
-    if (rk <= 5 && L.tier < LEAGUES.length - 1) { S.promos++; unlock('promo'); if (loud) confetti(150); notify('rank', `Promoted to ${LEAGUES[L.tier + 1][0]} League!`); newLeague(L.tier + 1); }
-    else if (rk >= 26 && L.tier > 0) { if (loud) sfx.lose(); notify('rank', `Demoted to ${LEAGUES[L.tier - 1][0]}. Earn it back.`); newLeague(L.tier - 1); }
-    else { if (S.onboarded) notify('rank', `You finished #${rk} in ${name}. A new week started.`); newLeague(L.tier); }
-  } else if (T() > L.endsAt - 45000 && rk > 5 && S.onboarded) alertOnce('rankend', 'rank', `League ends in {left}. You’re #${rk}. Top 5 move up.`, 30000, { until: L.endsAt });
-}
-const gemSVG = c => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3.5h12l3.5 5.5L12 20.5 2.5 9z" fill="${c}"/><path d="M2.5 9h19M9 3.5 12 9l3-5.5M12 20.5 8.5 9M12 20.5 15.5 9" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="1.1"/></svg>`;
+// ---------- Leaderboard: a placeholder until real rankings go live ----------
+const LB = slice('board', { notify: false, seg: 0 });
+const LB_SEG = ['Global', 'Friends', 'This week'];
+G.rank = '<path d="M4 20.5h16M6.5 20.5V13h3.5v7.5M10 20.5V8.5h4v12M14 20.5V11h3.5v9.5"/><path d="m12 2.8.9 1.8 2 .3-1.4 1.4.3 2-1.8-.9-1.8.9.3-2-1.4-1.4 2-.3z" fill="currentColor" stroke="none"/>';
 def({
-  id: 'rank', name: 'Rank', tag: 'Leaderboards · social comparison', c: '#2a6bff',
-  bg: tickRank,
-  init() { if (!S.league || !S.league.rivals) newLeague(0); },
-  wait: () => (S.league.endsAt - T() < 60000 && myRank() > 5 ? [{ t: `You’re #${myRank()}. Top 5 move up`, due: S.league.endsAt }] : []),
-  badge: () => Math.min(9, S.league.passed),
-  ping: () => `You’re #${myRank()} in ${LEAGUES[S.league.tier][0]} League`,
+  id: 'rank', name: 'Leaderboard', tag: 'Global rankings', c: '#2a6bff',
   build(b) {
-    b.innerHTML = '<div class="pad"><div class="card rk-head" id="rk-h"></div><div class="rk-list" id="rk-l"></div><p class="fine">Top 5 move up. Bottom 5 move down. A week lasts five minutes.</p></div>';
+    const w = [64, 48, 72, 56, 42, 68, 52, 46, 60, 50];
+    b.innerHTML = `<div class="pad"><div class="card lb-me"><span class="lb-av">${I('star')}</span><div class="lb-sc"><small>Your score</small><b id="lb-score">0</b><small id="lb-sub"></small></div><div class="lb-rk"><small>Rank</small><b>—</b></div></div>
+      <div class="seg lb-seg" id="lb-seg" role="tablist">${LB_SEG.map((l, i) => `<button role="tab" data-i="${i}">${l}</button>`).join('')}</div>
+      <div class="lb-list" aria-hidden="true">${w.map((x, i) => `<div class="lb-row"><span class="n">${i + 1}</span><span class="av sk"></span><span class="nm sk" style="--w:${x}%"></span><span class="p sk"></span></div>`).join('')}</div>
+      <div class="card lb-soon"><span class="lb-ic">${glyph('rank')}</span><h3>Leaderboards are coming</h3><p>Climb global and weekly rankings and see how you stack up against friends. Your score already counts.</p>
+      <label class="srow"><span class="rt"><b>Notify me</b><small>When leaderboards go live</small></span><input type="checkbox" class="sw" id="lb-notify"></label></div></div>`;
     track($('.pad', b));
+    $('#lb-seg', b).onclick = e => { const x = e.target.closest('[data-i]'); if (!x) return; LB.seg = +x.dataset.i; sfx.click(); this.render(); };
+    const nt = $('#lb-notify', b); nt.checked = !!LB.notify;
+    nt.onchange = () => { LB.notify = nt.checked; save(); if (nt.checked) { haptic(); toast('We’ll let you know'); } };
   },
-  open() { S.league.passed = 0; },
   render() {
     if (!this.view) return;
-    const L = S.league, [name, col] = LEAGUES[L.tier], rk = myRank();
-    $('#rk-h').innerHTML = `<span class="gem">${gemSVG(col)}</span><div><b>${name} League</b><small>Ends in ${cd(L.endsAt - T())}</small></div><div class="rk-me"><b>#${rk}</b><small>${fmt(L.me)} pts</small></div>`;
-    const rows = [...L.rivals.map(r => ({ ...r, me: false })), { pts: L.me, me: true }].sort((a, b) => b.pts - a.pts);
-    $('#rk-l').innerHTML = rows.map((r, i) => `<div class="rr${r.me ? ' me' : i < 5 ? ' up' : i >= 25 ? ' down' : ''}${i === 5 ? ' cut' : i === 25 ? ' cut2' : ''}"><span class="n">${i + 1}</span><span class="av"></span>${r.me ? '<span class="nm">You</span>' : `<span class="nm" style="--w:${r.w}%"></span>`}<span class="p">${fmt(Math.floor(r.pts))}</span></div>`).join('');
+    $('#lb-score').textContent = fmt(S.total);
+    $('#lb-sub').textContent = `Level ${lvl().l} · best combo ×${Math.min(10, 1 + Math.floor(S.bestCombo / 6))}`;
+    $$('#lb-seg [data-i]').forEach(x => x.classList.toggle('on', +x.dataset.i === LB.seg));
   },
   tick() { this.render(); },
 });
@@ -7465,7 +7460,7 @@ def({
 // ---------- You: screen time, achievements, settings ----------
 const statsHTML = () => STATS.map(([l, f]) => `<div class="stat"><b>${f()}</b><span>${l}</span></div>`).join('');
 def({
-  id: 'you', name: 'You', tag: 'Screen time · achievements', c: '#6b5b7b',
+  id: 'you', name: 'You', tag: 'Stats, awards and settings', c: '#6b5b7b',
   badge: () => Math.max(0, Object.keys(S.ach).length - S.achSeen),
   ping: () => `You’ve spent ${dur(S.today.ms)} on stim today`,
   build(b) {
@@ -7479,7 +7474,7 @@ def({
       <label class="srow"><span class="rt"><b>Haptics</b><small>Vibration on Android. Taps on iPhone with iOS 18 or later.</small></span><input type="checkbox" class="sw" id="set-haptics"></label>
       <label class="srow"><span class="rt"><b>Break reminders</b><small>Every 15 minutes</small></span><input type="checkbox" class="sw" id="set-nudges"></label>
       <button class="danger" id="set-reset">Reset progress</button></div>
-      <p class="fine">stim has no content, no accounts and no network. Every like, rival and message is made up on this device. Progress stays in this browser.</p></div>`;
+      <p class="fine">Your progress is saved on this device.</p></div>`;
     track($('.pad', b));
     const sw = (id, k) => { const i = $(id, b); i.checked = !!S.settings[k]; i.onchange = () => { S.settings[k] = i.checked; save(); if (i.checked) (k === 'sound' ? sfx.pop(5) : haptic()); }; };
     sw('#set-sound', 'sound'); sw('#set-haptics', 'haptics'); sw('#set-nudges', 'nudges'); sw('#set-focus', 'focus');
@@ -7548,7 +7543,7 @@ function renderWaiting() {
   if (sig !== waitSig) {
     if (now() - lastInput < 700 && waitSig) return;
     waitSig = sig;
-    box.innerHTML = items.length ? items.map(i => `<button class="wt" data-open="${i.id}">${subIcon(i.id)}<span class="wt-t"><b></b><small></small></span><span class="wt-r"></span></button>`).join('') : '<p class="wt-empty">Nothing is waiting. Enjoy it while it lasts.</p>';
+    box.innerHTML = items.length ? items.map(i => `<button class="wt" data-open="${i.id}">${subIcon(i.id)}<span class="wt-t"><b></b><small></small></span><span class="wt-r"></span></button>`).join('') : '<p class="wt-empty">You’re all caught up.</p>';
   }
   items.forEach((it, k) => {
     const row = box.children[k]; if (!row) return;
@@ -7570,7 +7565,7 @@ function ratePrompt() {
     const s = e.target.closest('[data-s]'); if (!s) return;
     const n = +s.dataset.s;
     $$('.stars button', m).forEach((b, i) => b.classList.toggle('on', i < n));
-    if (n < 5) { $('p', m).textContent = 'Sorry to hear that. Did you mean five?'; sfx.nope(); setTimeout(() => $$('.stars button', m).forEach(b => b.classList.add('on')), 500); return; }
+    if (n < 5) { $('p', m).textContent = 'We’re always improving. How about now?'; sfx.nope(); setTimeout(() => $$('.stars button', m).forEach(b => b.classList.add('on')), 500); return; }
     sfx.win(); earn(20, FW / 2, FH / 2, { raw: true }); setTimeout(() => m.remove(), 500);
   });
 }
@@ -7580,10 +7575,10 @@ function nudge() {
     const t = e.target.closest('[data-a]'); if (!t) return;
     const a = t.dataset.a;
     if (a === 'keep' || a === 'stay') { m.remove(); sfx.pop(7); earn(10, FW / 2, FH / 2, { raw: true }); }
-    else if (a === 'brk') { sfx.nope(); $('.mcard', m).innerHTML = `<span class="mic" style="background:var(--soft)">${I('bell')}</span><h3>Are you sure?</h3><p>Your pulse will die, Blob will get hungry and ${ri(4, 12)} people will pass you in Rank.</p><button class="pbtn" data-a="stay">Stay</button><button class="link" data-a="leave">Leave anyway</button>`; }
+    else if (a === 'brk') { sfx.nope(); $('.mcard', m).innerHTML = `<span class="mic" style="background:var(--soft)">${I('bell')}</span><h3>Are you sure?</h3><p>Your pulse will stop, ${APPS.pet.name} will get hungry and your rapid quest will expire.</p><button class="pbtn" data-a="stay">Stay</button><button class="link" data-a="leave">Leave anyway</button>`; }
     else if (a === 'leave') {
       m.remove();
-      const g = html('<div class="grass"><b>Go touch grass.</b><p>This phone will wait. It always does.</p><button class="pbtn">I’m back</button></div>');
+      const g = html('<div class="grass"><b>Enjoy your break</b><p>We’ll keep everything right where you left it.</p><button class="pbtn">I’m back</button></div>');
       phone.append(g); $('button', g).onclick = () => { g.remove(); unlock('grass'); };
     }
   });
@@ -7593,8 +7588,8 @@ function batteryTick() {
   el.style.width = b + '%'; el.parentElement.classList.toggle('low', b <= 20);
   if (b <= 20 && !lowWarned && !lockOn && S.onboarded) {
     lowWarned = true;
-    const m = modal('<h3>20% battery remaining</h3><p>Plug in soon. Or don’t.</p><div class="row2"><button class="pbtn" style="--c:#8a7b93" data-x>Close</button><button class="pbtn" data-l>Low Power Mode</button></div>');
-    m.addEventListener('click', e => { if (e.target.closest('[data-l]')) toast('Low Power Mode isn’t available while stimming'); if (e.target.closest('button')) m.remove(); });
+    const m = modal('<h3>20% battery remaining</h3><p>Connect to power soon.</p><div class="row2"><button class="pbtn" style="--c:#8a7b93" data-x>Close</button><button class="pbtn" data-l>Low Power Mode</button></div>');
+    m.addEventListener('click', e => { if (e.target.closest('[data-l]')) toast('Low Power Mode is unavailable right now'); if (e.target.closest('button')) m.remove(); });
   }
 }
 
@@ -7655,13 +7650,15 @@ addEventListener('pagehide', save);
 // ---------- keyboard ----------
 function onKey(e) {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.target.closest && e.target.closest('input, textarea, select, [contenteditable]')) return; // typing is typing
   const k = e.key, down = e.type === 'keydown';
   if (!down) { if (k === ' ' && curApp && APPS[curApp].key) { APPS[curApp].key(e); e.preventDefault(); } return; }
   if (lockOn) { if ([' ', 'Enter', 'ArrowUp'].includes(k)) { e.preventDefault(); unlockPhone(); } return; }
   const modalEl = $('.modal');
   if (k === 'Escape' || k === 'h') {
-    const sc = $('.scrim.show');
+    const sc = $$('.scrim.show').pop(); // the top sheet first
     if (modalEl) modalEl.remove(); else if (sc) sc.click(); else if (ncOn) closeNC();
+    else if (curApp && APPS[curApp].back && APPS[curApp].back()) {} // an app steps back through its own pages
     else if (curBundle && navMode(curBundle) === 'launcher' && !isHome(curBundle, curApp)) showTab(curBundle, curBundle.tabs[0]);
     else closeApp();
     return;

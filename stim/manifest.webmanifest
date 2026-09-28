@@ -1,7 +1,7 @@
 {
   "name": "stim",
   "short_name": "stim",
-  "description": "Every hook a phone has, with nothing inside.",
+  "description": "Games, deals, friends and rewards in one app.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
