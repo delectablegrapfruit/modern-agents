@@ -306,11 +306,20 @@
     return String(parseFloat(n.toPrecision(15)));
   }
 
-  function hpPct(hp, hpmax) { return hpmax > 0 ? Math.floor((hp / hpmax) * 100) : 0; }
-  function fillFrac(pct) {
-    if (pct >= 100) return 1;
-    if (pct < 5) return pct > 0 ? 0.02 : 0;
-    return Math.floor(pct / 5) * 5 / 100;
+  // Flash's int(): truncates toward zero
+  function hpPct(hp, hpmax) {
+    if (!(hpmax > 0)) return 0;
+    var v = (hp / hpmax) * 100;
+    return v < 0 ? Math.ceil(v) : Math.floor(v);
+  }
+  // Where the red fill is cut (bar-local x), or null for the full bar. The clip's pictures change
+  // every 5 frames (frames 1-4 = the 0% picture, 100-104 = full); measured on the original the cut
+  // sits at stage x 45.2 + 1.4654 * step (step = int(pct / 5) * 5), so even the 0% picture keeps a
+  // sliver at the bottom-left corner, and only the 100% picture fills the slanted right end.
+  function fillEdge(pct) {
+    if (pct >= 100) return null;
+    var step = pct > 0 ? Math.floor(pct / 5) * 5 : 0;
+    return -62.96 + 1.22117 * step;
   }
 
   // ox, oy, sc: where the bar clip sits (the player's: 120.75, 16.9, 1.2; the bar-fight enemy's:
@@ -334,14 +343,13 @@
     path();
     ctx.fillStyle = '#660000';
     ctx.fill();
-    var f = fillFrac(pct);
-    if (f > 0) {
+    if (hp > 0) {
+      var edge = fillEdge(pct);
       ctx.save();
       path();
       ctx.clip();
       ctx.fillStyle = '#ff0000';
-      // the fill is cut vertically at the same fraction of the bar's mid-line
-      ctx.fillRect(-70, -4, 5.8 + 126.8 * f, 10);
+      ctx.fillRect(-70, -4, (edge == null ? 69 : edge) + 70, 10);
       ctx.restore();
     }
     path();
@@ -364,41 +372,54 @@
   }
 
   // --- cash -------------------------------------------------------------------------------------
-  // The gold "$" (a shape in the original: 16 x 22 px at 218..234, 5..28): a heavy S with a bar
-  // through it, orange-shaded gold with a brown rim.
-  function dollarPath(ctx) {
+  // The gold "$" (a shape in the original, 218..234 x 5..28): two orange bars behind a heavy S that
+  // stick out above and below it and show through its two counters, the S shaded yellow to orange
+  // from left to right, all with a thin dark rim. Traced from the original at 2x.
+  function dollarS(ctx) {
     ctx.beginPath();
-    ctx.moveTo(231.1, 13.1);
-    ctx.bezierCurveTo(230.3, 11.1, 228.4, 10.4, 226.2, 10.4);
-    ctx.bezierCurveTo(223, 10.4, 221.1, 12.1, 221.1, 14.2);
-    ctx.bezierCurveTo(221.1, 16.9, 223.6, 17.5, 226.2, 18);
-    ctx.bezierCurveTo(228.9, 18.6, 231.2, 19.4, 231.2, 21.9);
-    ctx.bezierCurveTo(231.2, 24, 229.1, 25.1, 226.2, 25.1);
-    ctx.bezierCurveTo(223.6, 25.1, 221.7, 24.2, 220.9, 22.3);
+    ctx.moveTo(233.6, 13.1); // top terminal, underside (a hairline slit against the spine)
+    ctx.lineTo(228.4, 13.1);
+    ctx.lineTo(228.4, 10.9); // upper counter
+    ctx.lineTo(223, 10.9);
+    ctx.lineTo(223, 13.4);
+    ctx.lineTo(229.2, 13.6); // spine, top-right edge
+    ctx.bezierCurveTo(231.5, 14.3, 233.8, 15.6, 233.8, 17.8);
+    ctx.lineTo(233.8, 21); // lower bowl
+    ctx.bezierCurveTo(233.6, 23.6, 230.6, 25.1, 226.3, 25.1);
+    ctx.bezierCurveTo(222, 25.1, 218.4, 23.6, 218.3, 21);
+    ctx.lineTo(218.2, 19); // bottom terminal
+    ctx.lineTo(223, 19);
+    ctx.lineTo(223, 21.8); // lower counter
+    ctx.lineTo(228.4, 21.8);
+    ctx.lineTo(228.4, 19.6);
+    ctx.bezierCurveTo(228.4, 18.8, 227.9, 18.4, 227.1, 18.3);
+    ctx.lineTo(223, 17.4); // spine, bottom-left edge
+    ctx.bezierCurveTo(220.2, 16.6, 218.6, 14.8, 218.6, 12);
+    ctx.bezierCurveTo(218.6, 9, 221.6, 7.4, 225.8, 7.4); // top bowl
+    ctx.bezierCurveTo(230, 7.4, 233.3, 9, 233.4, 11);
+    ctx.closePath();
   }
   function dollar(ctx) {
     ctx.save();
-    ctx.lineCap = 'butt';
-    ctx.lineJoin = 'round';
-    var g = ctx.createLinearGradient(219, 6, 233, 27);
-    g.addColorStop(0, '#fff066');
-    g.addColorStop(0.45, '#ffcc00');
-    g.addColorStop(1, '#ff9000');
-    // the double bar, whose ends stick out above and below the S
-    ctx.fillStyle = '#6b3a00';
-    ctx.fillRect(222.5, 5.3, 2.9, 22.5);
-    ctx.fillRect(226.9, 5.3, 2.9, 22.5);
-    ctx.fillStyle = g;
-    ctx.fillRect(223.2, 6.1, 1.5, 20.9);
-    ctx.fillRect(227.6, 6.1, 1.5, 20.9);
-    // the S: brown rim, then gold
-    ctx.strokeStyle = '#6b3a00';
-    ctx.lineWidth = 6.6;
-    dollarPath(ctx);
+    ctx.lineJoin = 'miter';
+    ctx.lineWidth = 0.7;
+    ctx.strokeStyle = '#333333';
+    ctx.fillStyle = '#ff9900';
+    ctx.beginPath();
+    ctx.rect(223, 5.5, 2.5, 22);
+    ctx.rect(226.4, 5.5, 2.7, 22);
+    ctx.fill();
     ctx.stroke();
-    ctx.strokeStyle = g;
-    ctx.lineWidth = 4.6;
-    dollarPath(ctx);
+    var g = ctx.createLinearGradient(219, 0, 233.5, 0);
+    g.addColorStop(0, '#fffa00');
+    g.addColorStop(0.28, '#fff000');
+    g.addColorStop(0.48, '#ffd800');
+    g.addColorStop(0.69, '#ffc000');
+    g.addColorStop(1, '#ff9c00');
+    dollarS(ctx);
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.lineWidth = 0.8;
     ctx.stroke();
     ctx.restore();
   }
@@ -474,6 +495,14 @@
         ctx.strokeStyle = '#222';
         ctx.stroke();
       }
+    } else {
+      // midnight: the full red face keeps a dark hand at 12 o'clock
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(0, -r);
+      ctx.lineWidth = 0.9;
+      ctx.strokeStyle = '#660000';
+      ctx.stroke();
     }
     D.circle(ctx, 0, 0, r, null, '#000', 1);
     D.circle(ctx, 0, 0, 1.6, '#fff', '#000', 0.7);
@@ -481,12 +510,10 @@
   }
 
   function day(ctx, s) {
-    var f = fonts();
     abText(ctx, 'DAY', 374.84, 22.9, 15, '#000099');
     abText(ctx, 'DAY', 375.97, 24.07, 15, '#0099ff');
     abText(ctx, num(s.day), 414.97, 23.32, 15, '#000000');
     abText(ctx, num(s.day), 415.97, 23.92, 15, '#0099ff');
-    return f;
   }
 
   // --- map buttons ------------------------------------------------------------------------------
@@ -511,94 +538,112 @@
     ctx.restore();
   }
 
+  // Traced from the original (stage coordinates, drawn relative to the button's centre): grey
+  // straps looping out at the top corners, a slanted dark top, a darker left side, the bright
+  // front with a darker pocket carrying the yellow star and a slot.
   function backpackArt(ctx, hover) {
     ctx.save();
+    ctx.translate(-477.3, -21.1);
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
     var edge = '#000066';
-    // shoulder straps looping up at the top corners (grey)
-    ctx.strokeStyle = '#1a1a1a';
-    ctx.lineWidth = 3.4;
-    ctx.beginPath();
-    ctx.moveTo(-8.3, -12.2); ctx.lineTo(-12.9, -16.6); ctx.lineTo(-17, -8.2); ctx.lineTo(-11.6, 2.6);
-    ctx.moveTo(4.6, -14.8); ctx.lineTo(8.9, -18.4); ctx.lineTo(12.6, -15.4); ctx.lineTo(13.9, -12.2);
-    ctx.stroke();
-    ctx.strokeStyle = hover ? '#e6e6e6' : '#cccccc';
-    ctx.lineWidth = 1.9;
-    ctx.stroke();
-    // body (slightly tilted), darker flap across the top
-    function body() {
+    // straps (behind the bag): black rim, grey band
+    function straps() {
       ctx.beginPath();
-      ctx.moveTo(-6.2, -15.6);
-      ctx.lineTo(12, -14);
-      ctx.quadraticCurveTo(14.6, -13.7, 14.8, -11);
-      ctx.lineTo(17.3, 15.8);
-      ctx.quadraticCurveTo(17.5, 19.3, 14.2, 19.2);
-      ctx.lineTo(-8.2, 16.4);
-      ctx.quadraticCurveTo(-11.5, 16, -11.5, 12.8);
-      ctx.lineTo(-10.3, -12);
-      ctx.quadraticCurveTo(-9.8, -15.8, -6.2, -15.6);
-      ctx.closePath();
+      ctx.moveTo(468.6, 9.6); ctx.lineTo(466, 5.4); ctx.lineTo(461.4, 13.8); ctx.lineTo(466.2, 24.2);
+      ctx.moveTo(482.6, 6.8); ctx.lineTo(486.2, 3.2); ctx.lineTo(489.4, 9.4);
     }
-    body();
-    ctx.fillStyle = '#0000ff';
-    ctx.fill();
-    ctx.save();
-    body();
-    ctx.clip();
-    ctx.beginPath();
-    ctx.moveTo(-12, -9.8);
-    ctx.lineTo(16, -8.3);
-    ctx.lineTo(16, -17);
-    ctx.lineTo(-12, -17);
-    ctx.closePath();
-    ctx.fillStyle = '#0000c8';
-    ctx.fill();
-    ctx.beginPath();
-    ctx.moveTo(-12, -9.8);
-    ctx.lineTo(16, -8.3);
-    ctx.lineWidth = 0.8;
-    ctx.strokeStyle = edge;
+    straps();
+    ctx.strokeStyle = '#111';
+    ctx.lineWidth = 3.1;
     ctx.stroke();
-    ctx.restore();
-    body();
-    ctx.lineWidth = 1.1;
-    ctx.strokeStyle = edge;
+    straps();
+    ctx.strokeStyle = hover ? '#b3b3b3' : '#999999';
+    ctx.lineWidth = 1.7;
     ctx.stroke();
-    // front pocket with a thick rim
+    // the whole bag: bright blue front, rounded bulging bottom
     ctx.beginPath();
-    ctx.moveTo(-1.3, -7.4);
-    ctx.lineTo(11.6, -6.9);
-    ctx.quadraticCurveTo(13.5, -6.8, 13.7, -4.8);
-    ctx.lineTo(14.5, 13.8);
-    ctx.quadraticCurveTo(14.6, 16.4, 12.1, 16.3);
-    ctx.lineTo(-0.9, 15.6);
-    ctx.quadraticCurveTo(-3.4, 15.5, -3.4, 13.1);
-    ctx.lineTo(-3.5, -5.2);
-    ctx.quadraticCurveTo(-3.5, -7.4, -1.3, -7.4);
+    ctx.moveTo(468.3, 9.7);
+    ctx.lineTo(492.6, 9.9);
+    ctx.quadraticCurveTo(494.6, 11, 494.7, 13.5);
+    ctx.lineTo(495, 36.6);
+    ctx.quadraticCurveTo(494.6, 38.9, 492.3, 39.2);
+    ctx.quadraticCurveTo(482, 40.6, 471.4, 39.3);
+    ctx.quadraticCurveTo(468.4, 38.4, 466.6, 35.5);
+    ctx.quadraticCurveTo(465.2, 32.5, 465.3, 28);
+    ctx.lineTo(465.6, 13);
+    ctx.quadraticCurveTo(466, 10.4, 468.3, 9.7);
     ctx.closePath();
     ctx.fillStyle = '#0000ff';
     ctx.fill();
-    ctx.lineWidth = 2.4;
-    ctx.strokeStyle = '#0000b8';
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = edge;
     ctx.stroke();
+    // the left side, a shade darker, with a seam down it
+    ctx.beginPath();
+    ctx.moveTo(466.2, 11.6);
+    ctx.lineTo(470.6, 10.3);
+    ctx.lineTo(470.8, 38.9);
+    ctx.quadraticCurveTo(468, 37.8, 466.6, 35.4);
+    ctx.quadraticCurveTo(465.4, 32.4, 465.5, 28);
+    ctx.lineTo(465.8, 13);
+    ctx.closePath();
+    ctx.fillStyle = '#0000cc';
+    ctx.fill();
     ctx.lineWidth = 0.7;
+    ctx.strokeStyle = '#000099';
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(468.1, 12.4);
+    ctx.lineTo(468.3, 35.6);
+    ctx.lineWidth = 0.6;
+    ctx.stroke();
+    // the slanted top
+    ctx.beginPath();
+    ctx.moveTo(468.2, 9.9);
+    ctx.lineTo(469.2, 7.2);
+    ctx.lineTo(479, 5);
+    ctx.lineTo(482.4, 5.4);
+    ctx.lineTo(490.6, 7.6);
+    ctx.lineTo(492.9, 10);
+    ctx.closePath();
+    ctx.fillStyle = edge;
+    ctx.fill();
+    ctx.lineWidth = 0.6;
     ctx.strokeStyle = edge;
+    ctx.stroke();
+    ctx.fillStyle = '#0000cc';
+    ctx.fillRect(471, 10, 21.6, 0.9);
+    // the pocket: bevelled top corners, darker blue, navy rim
+    ctx.beginPath();
+    ctx.moveTo(477.4, 14.1);
+    ctx.lineTo(487.6, 14.1);
+    ctx.lineTo(490.5, 17);
+    ctx.lineTo(490.5, 34.4);
+    ctx.quadraticCurveTo(490.4, 36.6, 488.3, 36.7);
+    ctx.lineTo(476.7, 36.7);
+    ctx.quadraticCurveTo(474.6, 36.6, 474.5, 34.4);
+    ctx.lineTo(474.5, 17);
+    ctx.closePath();
+    ctx.fillStyle = '#0000cc';
+    ctx.fill();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = '#000099';
     ctx.stroke();
     // slot under the star
-    D.roundRect(ctx, -0.4, 9, 10.8, 3.7, 1.2, '#0000b3', edge, 0.6);
+    D.roundRect(ctx, 477.2, 29.1, 11.8, 4.4, 1, '#00009a', edge, 0.7);
     // yellow star
     ctx.beginPath();
     for (var i = 0; i < 10; i++) {
       var a = -Math.PI / 2 + (i * Math.PI) / 5;
-      var rr = i % 2 ? 2.5 : 5.7;
-      ctx.lineTo(4.8 + Math.cos(a) * rr, 1.8 + Math.sin(a) * rr);
+      var rr = i % 2 ? 2.6 : 6.2;
+      ctx.lineTo(482.6 + Math.cos(a) * rr, 21.9 + Math.sin(a) * rr);
     }
     ctx.closePath();
     ctx.fillStyle = '#ffff00';
     ctx.fill();
-    ctx.strokeStyle = '#333300';
-    ctx.lineWidth = 0.7;
+    ctx.strokeStyle = '#1a1a00';
+    ctx.lineWidth = 0.8;
     ctx.stroke();
     ctx.restore();
   }
@@ -646,7 +691,7 @@
     ctx.moveTo(536.9, 29.4); ctx.lineTo(533.1, 36.9);
     ctx.moveTo(536.9, 29.4); ctx.lineTo(541.9, 36.9);
     ctx.stroke();
-    D.circle(ctx, 536.9, 15, 4.3, hover ? '#1a8cff' : '#0066cc', '#000', 1.1);
+    D.circle(ctx, 536.9, 15, 4.3, hover ? '#004cf2' : '#0045bb', '#000', 1.1);
     ctx.restore();
   }
 
@@ -676,6 +721,8 @@
 
   function fpsUpdate() {
     var s = fpsSync();
+    // back on the title screen the counter is hidden again (root frame 1 hides fpsShower)
+    if (SRPG.engine && SRPG.engine.sceneName === 'title') fps.visible = false;
     fpsSample();
     if (!fps.el) {
       var stage = document.getElementById('stage');
@@ -696,6 +743,11 @@
       fpsUpdate();
       setInterval(fpsUpdate, 100);
     });
+  }
+
+  function mapButtonsHidden() {
+    var st = SRPG.city && SRPG.city.st;
+    return !!(st && (st.panel || st.stun > 0));
   }
 
   // --- public ---------------------------------------------------------------------------------
@@ -719,9 +771,9 @@
         cash(ctx, s);
         clock(ctx, 347.85, 17.35, s.time);
         day(ctx, s);
-        // the backpack and "?" are only on the map, and vanish while a panel is open
-        var panelOpen = SRPG.city && SRPG.city.st && SRPG.city.st.panel;
-        if (mode === 'map' && !panelOpen) {
+        // the backpack and "?" are only on the map, and vanish while a panel is open or while
+        // you lie knocked down (root frames 3 and 5/6 remove them)
+        if (mode === 'map' && !mapButtonsHidden()) {
           var down = SRPG.engine && SRPG.engine.mouse.down;
           var hi = mouseIn(hud.INVENTORY_BOX);
           var hs = mouseIn(hud.STATS_BOX);
@@ -734,6 +786,7 @@
 
     // Which map HUD button (if any) is at stage point x, y.
     hit: function (x, y) {
+      if (mapButtonsHidden()) return null;
       var b = hud.INVENTORY_BOX;
       if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return 'inventory';
       b = hud.STATS_BOX;
@@ -762,5 +815,7 @@
     set fpsVisible(v) { fpsSync(); fps.visible = !!v; fpsUpdate(); },
     fpsSample: fpsSample,
     fpsUpdate: fpsUpdate,
+    // the last frames-per-second count (the original's _root.frate)
+    frameRate: function () { return parseInt(fps.text, 10) || 0; },
   });
 })();

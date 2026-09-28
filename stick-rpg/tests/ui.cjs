@@ -130,6 +130,22 @@ let SRPG_ICON_LIST = [];
     await t.step(1);
     await t.shot(shotPath(c.name));
   }
+  // the "hp/ max" label is one string (the YOU DIED screen relabels it)
+  const labels = await page.evaluate(() => {
+    const c = document.createElement('canvas').getContext('2d');
+    const seen = [];
+    const f = c.fillText.bind(c);
+    c.fillText = (str, x, y) => { seen.push(String(str)); f(str, x, y); };
+    SRPG.hud.draw(c, { hp: 15, hpmax: 25, cash: 100, time: 8, day: 1, karma: 0 }, 'fight');
+    return seen;
+  });
+  ok(labels.includes('15/ 25'), 'HP label drawn as "15/ 25": ' + JSON.stringify(labels));
+  // knocked down (root frame 3): no backpack / "?" and no clicking them
+  await page.evaluate(() => { SRPG.city.st.stun = 20; });
+  eq(await page.evaluate(() => SRPG.hud.hit(477, 21)), null, 'HUD buttons gone while knocked down');
+  await t.shot(shotPath('hud-map-knocked-down'));
+  await page.evaluate(() => { SRPG.city.st.stun = 0; });
+  eq(await page.evaluate(() => SRPG.hud.hit(477, 21)), 'inventory', 'HUD buttons back after the knock-down');
   // backpack hover state
   await t.set({ hp: 25, hpmax: 25, time: 8, cash: 100, day: 1 });
   await page.mouse.move(477, 21);
@@ -146,6 +162,66 @@ let SRPG_ICON_LIST = [];
   await t.open('__plain');
   await t.step(1);
   await t.shot(shotPath('hud-inside'));
+
+  // The HP bar's red fill, measured on the original (stage x where the red ends, sampled on a row
+  // just under the numbers): 5% steps from x 45.2 at 0% by 1.4654 per %, only 100% fills the slanted
+  // right end. Rendered offscreen at 4x.
+  const bar = await page.evaluate(() => {
+    function edgeAt(hp, hpmax) {
+      const c = document.createElement('canvas');
+      c.width = 1000; c.height = 120;
+      const g = c.getContext('2d');
+      g.scale(4, 4);
+      g.fillStyle = '#33cc00'; g.fillRect(0, 0, 250, 30);
+      SRPG.hud.hpBar(g, hp, hpmax, 120.75, 16.9, 1.2, { t: 0 });
+      const d = g.getImageData(0, Math.round(22.75 * 4), 1000, 1).data;
+      let last = null;
+      for (let x = 38 * 4; x < 205 * 4; x++) {
+        const r = d[x * 4], gg = d[x * 4 + 1], b = d[x * 4 + 2];
+        if (r > 230 && gg < 40 && b < 40) last = x;
+      }
+      // top-right corner of the bar (inside the slanted end): red only when full
+      const tr = g.getImageData(Math.round(197 * 4), Math.round(13.9 * 4), 1, 1).data;
+      return { edge: last == null ? null : (last + 1) / 4, corner: [tr[0], tr[1], tr[2]] };
+    }
+    return {
+      p100: edgeAt(25, 25), p95: edgeAt(39, 40), p60: edgeAt(15, 25), p62: edgeAt(25, 40), p56: edgeAt(14, 25),
+      p37: edgeAt(15, 40), p20: edgeAt(5, 25), p12: edgeAt(5, 40), p2: edgeAt(1, 40), p0: edgeAt(0.2, 40), dead: edgeAt(0, 40),
+    };
+  });
+  ok(bar.p100.corner[0] > 230 && bar.p100.corner[1] < 40, 'full HP fills the slanted right end of the bar ' + JSON.stringify(bar.p100));
+  ok(bar.p95.corner[0] < 140, '95% leaves the right end dark ' + JSON.stringify(bar.p95));
+  [['p60', 134], ['p62', 134], ['p56', 125.25], ['p37', 95.5], ['p20', 75], ['p12', 60]].forEach(([k, want]) => {
+    ok(bar[k].edge != null && Math.abs(bar[k].edge - want) <= 1.2, 'HP fill ends where the original\'s does (' + k + ': ' + JSON.stringify(bar[k].edge) + ', want ' + want + ')');
+  });
+  ok(bar.p2.edge != null && bar.p2.edge < 47 && bar.p0.edge != null && bar.p0.edge < 47, 'under 5% (even int() = 0) a sliver is left: ' + JSON.stringify([bar.p2, bar.p0]));
+  eq(bar.dead.edge, null, 'no fill at 0 HP');
+  if (process.env.VERBOSE) console.log('bar edges', JSON.stringify(bar));
+  // crisp 2x renders of the HUD strip for side-by-side checks with ref/hud-map.png
+  const crisp = await page.evaluate(() => {
+    const out = {};
+    [['start', { hp: 25, hpmax: 25, time: 8, cash: 100, day: 1 }], ['midnight', { hp: 40, hpmax: 40, time: 24, cash: 99, day: 7 }],
+      ['hurt', { hp: 15, hpmax: 40, time: 18, cash: 12345, day: 365 }]].forEach(([n, st]) => {
+      const c = document.createElement('canvas');
+      c.width = 1100; c.height = 90;
+      const g = c.getContext('2d');
+      g.scale(2, 2);
+      g.fillStyle = '#33cc00'; g.fillRect(0, 0, 245, 45); g.fillStyle = '#666'; g.fillRect(245, 0, 305, 45);
+      SRPG.hud.draw(g, Object.assign({ karma: 0 }, st), 'map');
+      out[n] = c.toDataURL();
+    });
+    // the midnight dial keeps a dark hand at 12 o'clock
+    const c = document.createElement('canvas');
+    c.width = 240; c.height = 240;
+    const g = c.getContext('2d');
+    g.scale(4, 4);
+    SRPG.hud.clock(g, 30, 30, 24);
+    const hand = g.getImageData(120, 88, 1, 1).data, face = g.getImageData(144, 120, 1, 1).data;
+    out.hand = [hand[0], face[0]];
+    return out;
+  });
+  ['start', 'midnight', 'hurt'].forEach((n) => fs.writeFileSync(shotPath('hud-crisp-' + n), Buffer.from(crisp[n].split(',')[1], 'base64')));
+  ok(crisp.hand[0] < 150 && crisp.hand[1] > 180, 'midnight clock: red face with a dark hand at 12 ' + JSON.stringify(crisp.hand));
 
   // ---------------------------------------------------------------- SHOW FPS
   await t.newGame({ pname: 'Tester' });
@@ -207,6 +283,7 @@ let SRPG_ICON_LIST = [];
   eq(s.karma, -1, 'smoking costs 1 karma');
   eq(s.charm, 5, 'charm not raised yet (animation frame 5)');
   ok(await page.evaluate(() => !!document.querySelector('[data-id="smoking"]')), 'smoking animation shown');
+  eq(await page.evaluate(() => getComputedStyle(document.querySelector('.pnum')).fontWeight), '400', 'the charm number is plain (not bold) Verdana');
   await t.step(5);
   await t.shot(shotPath('inventory-smoking-early'));
   await t.step(4);
@@ -257,6 +334,25 @@ let SRPG_ICON_LIST = [];
   await t.step(20);
   s = await st();
   ok(s.charm === 50 && s.hp === 10 && !(await page.evaluate(() => !!SRPG.city.st.panel)), 'closed mid-drag: HP and pack spent, no charm');
+  // a second click on the (already vanished) smokes slot does not light another one
+  await t.set({ hp: 25, time: 10, karma: 0, charm: 50, items: { smokes: 3 } });
+  await page.evaluate(() => SRPG.city.openPanel('inventory'));
+  await page.evaluate(() => { const e = document.querySelector('[data-id="inv-smokes"]'); e.click(); e.click(); });
+  s = await st();
+  ok(s.hp === 15 && s.items.smokes === 2 && s.time === 11 && s.karma === -1, 'double click smokes once: ' + JSON.stringify([s.hp, s.items.smokes, s.time, s.karma]));
+  // the animation advances one frame per game tick even if both the city scene and the panel's
+  // own hook drive it (city.js may call panel.tick() itself)
+  const frames = await page.evaluate(() => {
+    const p = SRPG.panels.active;
+    const a = p.animFrame;
+    SRPG.engine.step(1);
+    p.tick(); p.tick();
+    return [a, p.animFrame];
+  });
+  eq(frames[1] - frames[0], 1, 'one animation frame per tick');
+  await t.step(60);
+  eq((await st()).charm, 51, 'charm +1 once');
+  await page.evaluate(() => SRPG.city.closePanel());
 
   // ---------------------------------------------------------------- go home (button 763)
   const haveHome = await page.evaluate(() => !!SRPG.locations.home);
@@ -356,7 +452,16 @@ let SRPG_ICON_LIST = [];
   text = (await t.uiText()).replace(/\s+/g, ' ');
   ok(!/ARE YOU SURE/.test(text) && /SHOW FPS/.test(text), 'NO returns to the stats');
   await t.clickUI('quit');
-  await t.clickUI('yes');
+  const ends = await page.evaluate(() => {
+    let n = 0;
+    const orig = SRPG.game.endGame;
+    SRPG.game.endGame = function () { n++; return orig.apply(this, arguments); };
+    const y = document.querySelector('[data-id="yes"]');
+    y.click(); y.click();
+    SRPG.game.endGame = orig;
+    return n;
+  });
+  eq(ends, 1, 'YES clicked twice ends the game once');
   eq(await scene(), 'results', 'YES ends the game (results)');
   eq((await st()).over, true, 'game over');
 
@@ -367,7 +472,7 @@ let SRPG_ICON_LIST = [];
     SRPG.registerLocation({
       id: '__uitest',
       view: () => ({
-        quote: 'Welcome to McSticks, may I take your order?',
+        quote: 'Hi there, welcome to McSticks! What can I get ya?',
         buttons: [
           { icon: 'milkshake', label: 'MILKSHAKE <span class="hp">(+12 HP)</span> &nbsp;- &nbsp;<span class="big">$8</span>', col: 0, row: 0, w: 175, id: 'b1', onClick() {} },
           { icon: 'fries', label: 'FRIES <span class="hp">(+20 HP)</span> &nbsp;- &nbsp;<span class="big">$12</span>', col: 0, row: 1, w: 175, id: 'b2', onClick() {} },

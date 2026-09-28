@@ -719,63 +719,98 @@
     line(ctx, [15.5, 24, 16.5, 42], 'rgba(255,120,120,0.55)', 1.2);
   }
 
-  function bunTop(ctx, x0, y0, w, h) {
+  // McSticks burgers, traced from the original tiles: a big glossy dome of a bun (lit from the
+  // upper right, dark at the left), olive patties, cheese corners peeking out at the sides and
+  // triangles dripping down the front, a rounded bottom bun.
+  var BUN = [0, '#f7eb8c', 0.16, '#eaa93c', 0.5, '#c98012', 1, '#6a4003'];
+  function bunDome(ctx, x0, x1, yTop, yBase, hx, hy) {
+    var w = x1 - x0, h = yBase - yTop;
     ctx.beginPath();
-    ctx.moveTo(x0, y0 + h);
-    ctx.bezierCurveTo(x0 - 1, y0 - h * 0.15, x0 + w * 0.2, y0, x0 + w / 2, y0);
-    ctx.bezierCurveTo(x0 + w * 0.8, y0, x0 + w + 1, y0 - h * 0.15, x0 + w, y0 + h);
+    ctx.moveTo(x0, yBase);
+    ctx.bezierCurveTo(x0 - 0.6, yTop + h * 0.3, x0 + w * 0.2, yTop, x0 + w * 0.52, yTop);
+    ctx.bezierCurveTo(x1 - w * 0.18, yTop, x1 + 0.6, yTop + h * 0.3, x1, yBase);
+    ctx.bezierCurveTo(x1 - w * 0.25, yBase + 1.3, x0 + w * 0.25, yBase + 1.3, x0, yBase);
     ctx.closePath();
-    fs(ctx, rg(ctx, x0 + w * 0.35, y0 + h * 0.3, 1, w * 0.7, [0, '#f2b35a', 0.5, '#cc8024', 1, '#8a4d0a']), '#000', 1.2);
-    ell(ctx, x0 + w * 0.3, y0 + h * 0.4, w * 0.12, h * 0.16, -0.3);
-    fs(ctx, 'rgba(255,230,170,0.55)');
+    fs(ctx, rg(ctx, hx, hy, 0.3, w * 0.66, BUN), '#000', 1.3);
   }
-  function patty(ctx, x0, y0, w, h) {
-    rr(ctx, x0, y0, w, h, h / 2);
-    fs(ctx, lg(ctx, 0, y0, 0, y0 + h, [0, '#7a3d0a', 1, '#3d1a00']), '#000', 1);
-  }
-  function cheese(ctx, x0, y0, w) {
-    poly(ctx, [x0, y0, x0 + w, y0, x0 + w + 2, y0 + 3.5, x0 + w * 0.7, y0 + 1.5, x0 + w * 0.5, y0 + 4.5, x0 + w * 0.3, y0 + 1.5, x0 - 2, y0 + 3.5]);
-    fs(ctx, '#ffd11a', '#000', 0.8);
-  }
-  function lettuce(ctx, x0, y0, w) {
+  function bunBottom(ctx, x0, x1, yTop, yBot, hx, hy) {
+    var w = x1 - x0;
     ctx.beginPath();
-    ctx.moveTo(x0 - 1.5, y0);
-    for (var i = 0; i <= 10; i++) ctx.lineTo(x0 - 1.5 + (w + 3) * i / 10, y0 + (i % 2 ? 3.2 : 0.3));
-    ctx.lineTo(x0 + w, y0 - 1);
+    ctx.moveTo(x0, yTop);
+    ctx.bezierCurveTo(x0 + w * 0.3, yTop - 1.2, x1 - w * 0.3, yTop - 1.2, x1, yTop);
+    ctx.bezierCurveTo(x1 + 1, yBot - 2, x1 - w * 0.2, yBot, x0 + w * 0.5, yBot);
+    ctx.bezierCurveTo(x0 + w * 0.2, yBot, x0 - 1, yBot - 2, x0, yTop);
     ctx.closePath();
-    fs(ctx, '#3cb33c', '#0b4d0b', 0.7);
+    fs(ctx, rg(ctx, hx, hy, 0.3, w * 0.62, BUN), '#000', 1.3);
   }
+  // an olive-brown patty between y0 and y1, slightly domed on top
+  function pattyBand(ctx, x0, x1, y0, y1) {
+    ctx.beginPath();
+    ctx.moveTo(x0, y0 + 1);
+    ctx.bezierCurveTo(x0 + 8, y0 - 0.8, x1 - 8, y0 - 0.8, x1, y0 + 1);
+    ctx.bezierCurveTo(x1 + 1.4, y0 + 3, x1 + 1, y1 - 0.4, x1 - 1.6, y1);
+    ctx.bezierCurveTo(x1 - 12, y1 + 1.2, x0 + 12, y1 + 1.2, x0 + 1.6, y1);
+    ctx.bezierCurveTo(x0 - 1, y1 - 0.4, x0 - 1.4, y0 + 3, x0, y0 + 1);
+    ctx.closePath();
+    fs(ctx, '#5c4b1c', '#000', 1.2);
+  }
+  // a cheese corner sticking out past the bun at the left or right (dir -1 / 1)
+  function cheeseTip(ctx, x, y, dir) {
+    poly(ctx, [x, y - 1.3, x + dir * 4.2, y + 0.4, x, y + 1.6]);
+    fs(ctx, '#ffcc00', '#000', 0.9);
+  }
+  function cheeseDrip(ctx, x0, x1, y0, tipX, tipY) {
+    poly(ctx, [x0, y0, x1, y0, tipX, tipY]);
+    fs(ctx, '#ffcc00', '#000', 1);
+  }
+
   function burger(ctx) {
-    bunTop(ctx, 5, 10, 38, 13);
-    cheese(ctx, 6, 22.5, 36);
-    patty(ctx, 5, 24, 38, 6);
-    ctx.beginPath();
-    ctx.moveTo(5.5, 31);
-    ctx.lineTo(42.5, 31);
-    ctx.bezierCurveTo(43, 37, 38, 38.5, 24, 38.5);
-    ctx.bezierCurveTo(10, 38.5, 5, 37, 5.5, 31);
-    ctx.closePath();
-    fs(ctx, lg(ctx, 0, 31, 0, 38.5, [0, '#e6a04a', 1, '#9a5a14']), '#000', 1.1);
+    bunBottom(ctx, 3.6, 43.6, 28.6, 38.7, 34, 33);
+    pattyBand(ctx, 3.4, 43.8, 21.8, 29.6);
+    cheeseTip(ctx, 6.6, 22.2, -1);
+    cheeseTip(ctx, 41.2, 21.6, 1);
+    line(ctx, [43.5, 22.2, 47.6, 24.3], '#000', 0.9);
+    bunDome(ctx, 4.2, 43.6, 7.1, 22.4, 31, 17.5);
+    cheeseDrip(ctx, 19.6, 30.4, 24.2, 24.2, 32.2);
   }
 
   function tripleburger(ctx) {
-    bunTop(ctx, 6, 4.5, 36, 11);
-    lettuce(ctx, 6, 14.5, 36);
-    cheese(ctx, 7, 16, 34);
-    patty(ctx, 6, 17.5, 36, 5);
-    poly(ctx, [8, 23, 40, 23, 38, 26, 10, 26]);
-    fs(ctx, '#e62e2e', '#600', 0.7);
-    patty(ctx, 6, 25.5, 36, 5);
-    lettuce(ctx, 6, 30.5, 36);
-    cheese(ctx, 7, 31.5, 34);
-    patty(ctx, 6, 33, 36, 5);
+    bunBottom(ctx, 3.4, 43.8, 35.4, 45.3, 34, 41);
+    pattyBand(ctx, 3.6, 44, 30.6, 37);
+    // pale pickle slices over the bottom bun
+    ell(ctx, 8.4, 36.4, 5.6, 2.3, 0.12);
+    fs(ctx, '#77a63b', '#3b5a12', 0.8);
+    ell(ctx, 39.4, 35.8, 5.6, 2.2, -0.1);
+    fs(ctx, '#77a63b', '#3b5a12', 0.8);
+    ell(ctx, 23.6, 39, 6.6, 2.3, 0);
+    fs(ctx, '#77a63b', '#3b5a12', 0.8);
+    // tomato
     ctx.beginPath();
-    ctx.moveTo(6.5, 38.5);
-    ctx.lineTo(41.5, 38.5);
-    ctx.bezierCurveTo(42, 44, 37, 45, 24, 45);
-    ctx.bezierCurveTo(11, 45, 6, 44, 6.5, 38.5);
+    ctx.moveTo(4.4, 29.4);
+    ctx.bezierCurveTo(16, 28, 32, 28, 43.2, 29.4);
+    ctx.lineTo(42.6, 33);
+    ctx.bezierCurveTo(30, 34.2, 17, 34.2, 5, 33);
     ctx.closePath();
-    fs(ctx, lg(ctx, 0, 38.5, 0, 45, [0, '#e6a04a', 1, '#9a5a14']), '#000', 1.1);
+    fs(ctx, '#dd1111', '#000', 1);
+    pattyBand(ctx, 3.6, 44, 24.2, 30.2);
+    cheeseDrip(ctx, 8.6, 17.4, 24.4, 12.4, 30.6);
+    cheeseDrip(ctx, 19.4, 30.6, 24.4, 24.2, 31.6);
+    cheeseDrip(ctx, 31.8, 40.6, 24.4, 36.2, 29.8);
+    cheeseTip(ctx, 5.8, 23.3, -1);
+    cheeseTip(ctx, 41.6, 23, 1);
+    line(ctx, [44, 23.4, 47.6, 25.4], '#000', 0.9);
+    pattyBand(ctx, 3.2, 44.2, 17, 24.8);
+    // wavy lettuce under the top bun
+    ctx.beginPath();
+    ctx.moveTo(2.4, 14.2);
+    ctx.lineTo(45.6, 14.2);
+    for (var i = 0; i <= 12; i++) {
+      var x = 45.6 - i * 43.2 / 12;
+      ctx.lineTo(x, 18.4 + (i % 2 ? 2.6 : 0) + (i % 3 === 0 ? 0.8 : 0));
+    }
+    ctx.closePath();
+    fs(ctx, lg(ctx, 0, 14, 0, 21, [0, '#44dd11', 1, '#2a9a1a']), '#1a5a0a', 0.8);
+    bunDome(ctx, 4.2, 43.2, 2.2, 16.6, 31, 10);
   }
 
   // --- bus depot, furniture, university -------------------------------------------------------
@@ -1263,11 +1298,11 @@
   };
 
   // sizes matched to the original tiles
-  ICONS.burger = scaled(burger, 1.12, 1.15, 24, 25);
+  ICONS.burger = burger;
   ICONS.messages = scaled(messages, 1.2, 1.06, 24, 25);
-  ICONS.smokes = scaled(smokes, 1.2, 1.2, 24, 25);
+  ICONS.smokes = scaled(smokes, 1.13, 1.13, 23, 25);
   ICONS.givesmokes = ICONS.smokes;
-  ICONS.pills = scaled(pills, 1.15, 1.15, 24, 25);
+  ICONS.pills = scaled(pills, 1.1, 1.1, 24, 26);
   ICONS.knife = scaled(knife, 1.1, 1.1, 24, 26);
   ICONS.bottle = ICONS.givebooze = scaled(bottle, 1.12, 1.12, 24, 24);
   ICONS.house = ICONS.realestate = ICONS.apartment = ICONS.penthouse = ICONS.mansion = ICONS.castle = scaled(house, 1.1, 1.1, 24, 26);

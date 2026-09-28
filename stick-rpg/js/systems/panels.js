@@ -312,6 +312,7 @@
       });
       // Go home (button 763, the house)
       var home = hitButton(content, 436.5, 314.5, 34.3, 34.8, 'gohome', function () {
+        if (closed) return;
         finish(false);
         goHome(s);
       }, 'inv-home');
@@ -325,6 +326,7 @@
     // Button 727: light up if hp > 10 and time < 24: -10 HP, one pack, +1 hour, -1 karma (not
     // clamped here), then the animation (charm +1 on its frame 15). Nothing happens otherwise.
     function smoke() {
+      if (closed || anim) return; // already lit (a second click on the vanished slot)
       if (!(s.hp > 10 && s.time < 24)) return;
       s.hp -= 10;
       s.items.smokes -= 1;
@@ -353,8 +355,16 @@
       c.restore();
     }
 
+    var lastFrame = -1;
     function tick() {
+      // the scene was switched under us (ui.clear): stop, like the original leaving frame 5
+      if (!closed && !root.parentNode) { closed = true; if (active === api) active = null; }
       if (closed || !anim) return;
+      // one animation frame per game tick, however many callers drive it (the wrapped city tick
+      // and, once city.js calls panel.tick() itself, that too)
+      var fr = SRPG.engine ? SRPG.engine.frame : lastFrame + 1;
+      if (fr === lastFrame) return;
+      lastFrame = fr;
       anim++;
       if (anim === 15) {
         // sprite 724 frame 15: charm = min(charm + 1, 999); the number is shown bigger from here
@@ -500,6 +510,7 @@
         txt(content, 'WANT TO QUIT?', 273.5, 293.16, 15, '#000099', { cls: 'pquitq' });
         var yes = hitButton(content, 296.2, 315.8, 39.1, 16.6, 'yes', function () {
           // button 865: _root.gotoAndPlay(130) -> the end-of-game results
+          if (closed) return;
           finish(false);
           if (SRPG.city && SRPG.city.st) SRPG.city.st.panel = null;
           SRPG.game.endGame();
