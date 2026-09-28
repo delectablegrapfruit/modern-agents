@@ -2265,7 +2265,7 @@ private struct Drawer {
         // The body carried along: two echoes behind it, fainter as they go.
         if pose.drag != 0 {
             let body = pen.sketch.body
-            for (k, alpha) in [(CGFloat(2), CGFloat(0.12)), (1, 0.24)] {
+            for (k, alpha) in [(CGFloat(2), CGFloat(0.2)), (1, 0.38)] {
                 let dx = -face.x * pose.drag * H * k
                 under += body.map { $0.mapped { CGPoint(x: $0.x + dx, y: $0.y) }.inked(Paint(ink, alpha)) }
             }
@@ -2283,7 +2283,7 @@ private struct Drawer {
             d.arm(d.main, d.body, from: d.nearShoulder)
             if g.armed, build.weapon != .bow { d.weapon(d.main.hand, d.other.hand) }
             if let tip = d.tip { blades.append((d.main.hand, tip)) }
-            let alpha = 0.1 + 0.28 * CGFloat(i + 1) / (count + 1)
+            let alpha = 0.16 + 0.36 * CGFloat(i + 1) / (count + 1)
             under += d.pen.sketch.body.map { $0.inked(Paint(ink, alpha)) }
         }
         if let tip, !blades.isEmpty { blades.append((main.hand, tip)) }
@@ -2292,7 +2292,7 @@ private struct Drawer {
         if blades.count > 1 {
             for i in 0..<(blades.count - 1) {
                 let a = blades[i], b = blades[i + 1]
-                let alpha = 0.22 + 0.62 * CGFloat(i + 1) / CGFloat(blades.count - 1)
+                let alpha = 0.3 + 0.6 * CGFloat(i + 1) / CGFloat(blades.count - 1)
                 for (from, to) in [(CGFloat(0.28), CGFloat(0.5)), (0.53, 0.76), (0.79, 1.0)] {
                     func along(_ p: (hand: CGPoint, tip: CGPoint), _ t: CGFloat) -> CGPoint {
                         CGPoint(x: p.hand.x + (p.tip.x - p.hand.x) * t, y: p.hand.y + (p.tip.y - p.hand.y) * t)
@@ -2571,7 +2571,7 @@ private struct Drawer {
             let top = at(wound, face, dx * H)
             fill([at(top, face, 0.006 * H), at(top, face, -0.006 * H), CGPoint(x: top.x - face.x * 0.004 * H, y: top.y - length * H)], blood)
         }
-        let paint = Paint(RGB(0.2, 0.16, 0.18))
+        let paint = Paint(Palette.shade.mix(.white, 0.07))
         segment(elbow, hand, 0.034 * H * k, 0.048 * H * k, 0.02 * H * k, paint, bulge: 0.25, at: 0.24)
         let d = unit(elbow, hand), n = CGPoint(x: -d.y, y: d.x)
         fill([at(hand, n, 0.016 * H), at(hand, d, 0.03 * H), at(hand, n, -0.016 * H), at(hand, d, -0.008 * H)], paint)
@@ -2826,7 +2826,7 @@ private struct Drawer {
             string.move(top)
             string.line(nock)
             string.line(bottom)
-            pen.stroke(string, Paint(RGB(0.5, 0.5, 0.5), 0.9), width: max(1, 0.006 * H))
+            pen.stroke(string, Paint(RGB(0.38, 0.38, 0.42), 0.9), width: max(1, 0.006 * H))
         }
     }
 
@@ -2948,7 +2948,7 @@ private struct Drawer {
                                                   (0.1, 0.12, 0.3, 0.4), (-0.1, 0.18, 0.24, 0.3)] {
                 let head = at(at(tip, n, offset * H), blade, -back * H), tail = at(head, blade, -length * H)
                 let w = 0.012 * H
-                pen.fill([at(head, n, w / 2), at(head, blade, w * 1.5), at(head, n, -w / 2), tail], Paint(.white, alpha * smear.strength))
+                pen.fill([at(head, n, w / 2), at(head, blade, w * 1.5), at(head, n, -w / 2), tail], Paint(Palette.steel, 0.85 * alpha * smear.strength))
             }
             let r = 0.035 * H
             pen.fill([at(tip, blade, r * 1.6), at(tip, n, r * 0.45), at(tip, blade, -r * 0.8), at(tip, n, -r * 0.45)], Paint(.white, 0.9 * smear.strength))
@@ -2966,13 +2966,13 @@ private struct Drawer {
             let a0 = smear.from + (smear.to - smear.from) * t0, a1 = smear.from + (smear.to - smear.from) * t1
             let w0 = (0.02 * H + 0.2 * H * t0 * t0) * scale, w1 = (0.02 * H + 0.2 * H * t1 * t1) * scale
             pen.fill([point(a0, outer), point(a1, outer), point(a1, outer - w1), point(a0, outer - w0)],
-                     Paint(.white, (0.05 + 0.35 * t1) * smear.strength))
+                     Paint(Palette.steel, (0.04 + 0.28 * t1) * smear.strength))
         }
         var edge = Path()
         for i in 0...steps {
             let p = point(smear.from + (smear.to - smear.from) * CGFloat(i) / CGFloat(steps), outer)
             if i == 0 { edge.move(p) } else { edge.line(p) }
         }
-        pen.stroke(edge, Paint(.white, 0.9 * smear.strength), width: max(1, 0.012 * H), round: true)
+        pen.stroke(edge, Paint(Palette.steel, 0.85 * smear.strength), width: max(1, 0.012 * H), round: true)
     }
 }

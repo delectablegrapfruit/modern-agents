@@ -697,6 +697,23 @@ final class RoninArtTests: XCTestCase {
         }
     }
 
+    func testTheFiguresStayDarkShapesOnAnySky() {
+        // Figures are silhouettes that belong in the dusk and the moonlight: the far limbs a touch off black, not grey;
+        // the rim of light faint and cool, not a warm halo; a smear's echoes dark enough to read as the body, not fog.
+        func luma(_ c: RGB) -> CGFloat { 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b }
+        XCTAssertLessThan(luma(Palette.shade), 0.09)
+        XCTAssertGreaterThan(luma(Palette.shade), luma(Palette.silhouette) + 0.03, "the far side no longer reads in depth")
+        let rim = Figure.sketch(.hero, .idle(0)).rim
+        XCTAssertLessThanOrEqual(rim.alpha, 0.35)
+        XCTAssertGreaterThanOrEqual(rim.rgb.b, rim.rgb.r, "a warm rim")
+        for cast in casts where cast != .foe(.archer) {
+            let underlay = Figure.sketch(cast, cast == .hero ? .cut(.kesa, 3) : .strike(0)).underlay
+            XCTAssertGreaterThan(underlay.compactMap { $0.fill?.alpha }.max() ?? 0, 0.45, "\(cast)'s smear is a pale fog")
+        }
+        // The ronin still shows his red.
+        XCTAssertTrue(Figure.sketch(.hero, .idle(0)).body.contains { $0.fill?.rgb == Palette.blood })
+    }
+
     func testTheSheetIsSVG() {
         let svg = Figure.sketch(.hero, .idle(0)).svg()
         XCTAssertTrue(svg.hasPrefix("<g"))
