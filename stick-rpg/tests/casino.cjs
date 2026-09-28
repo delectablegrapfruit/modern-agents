@@ -480,20 +480,23 @@ function eq(a, b, msg) { check(a === b, msg + ' (got ' + JSON.stringify(a) + ', 
 
   // ------------------------------------------------------------------------------------------
   // Review additions: original quirks and look details
-  // Canvas pixel at stage (x, y) after a redraw (the game canvas is 550 x 400).
+  // Canvas pixel at stage (x, y) after a redraw (the backing store is 550 x 400 times
+  // SRPG.engine.pixelScale).
   const px = (x, y) => ev(([x, y]) => {
     SRPG.engine.draw();
-    const d = document.getElementById('game').getContext('2d').getImageData(Math.round(x), Math.round(y), 1, 1).data;
+    const k = SRPG.engine.pixelScale || 1;
+    const d = document.getElementById('game').getContext('2d').getImageData(Math.round(x * k), Math.round(y * k), 1, 1).data;
     return [d[0], d[1], d[2]];
   }, [x, y]);
   const isWhite = (c) => c[0] > 235 && c[1] > 235 && c[2] > 235;
   // share of non-white pixels in a stage rectangle
   const inked = (x, y, w, h) => ev(([x, y, w, h]) => {
     SRPG.engine.draw();
-    const d = document.getElementById('game').getContext('2d').getImageData(x, y, w, h).data;
+    const k = SRPG.engine.pixelScale || 1;
+    const d = document.getElementById('game').getContext('2d').getImageData(Math.round(x * k), Math.round(y * k), Math.round(w * k), Math.round(h * k)).data;
     let n = 0;
     for (let i = 0; i < d.length; i += 4) if (!(d[i] > 235 && d[i + 1] > 235 && d[i + 2] > 235)) n++;
-    return n / (w * h);
+    return n / (d.length / 4);
   }, [x, y, w, h]);
   const colorOf = (c) => (c[1] > 180 && c[0] < 90 ? 'green' : c[0] > 180 && c[1] < 90 ? 'red' : c[0] < 50 && c[1] < 50 && c[2] < 50 ? 'black' : 'other ' + c.join(','));
 
