@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>YouTube Hiccup Bypass</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <h1>YouTube Hiccup Bypass</h1>
+
+    <form id="settings">
+      <label>
+        <input type="checkbox" name="timerBoost" />
+        <span><b>Startup delay</b><small>Cut the ~5 s wait before playback</small></span>
+      </label>
+      <label>
+        <input type="checkbox" name="adFastForward" />
+        <span><b>Ad-slot dead time</b><small>Run black/frozen ad slots at 16×, muted, auto-skip</small></span>
+      </label>
+      <label>
+        <input type="checkbox" name="stallRecovery" />
+        <span><b>Stalls</b><small>Re-seek → pause/play → reload after 4 s frozen</small></span>
+      </label>
+      <label>
+        <input type="checkbox" name="dismissEnforcement" />
+        <span><b>Anti-adblock dialog</b><small>Close it and resume playback</small></span>
+      </label>
+    </form>
+
+    <h2>This tab</h2>
+    <dl id="stats">
+      <dt>Timers shortened</dt><dd data-stat="timersBoosted">–</dd>
+      <dt>Ad slots fast-forwarded</dt><dd data-stat="adsFastForwarded">–</dd>
+      <dt>Stalls recovered</dt><dd data-stat="stallsRecovered">–</dd>
+      <dt>Dialogs dismissed</dt><dd data-stat="dialogsDismissed">–</dd>
+    </dl>
+    <p id="note" hidden>Open a YouTube tab to see its counts.</p>
+    <p class="hint">Startup-delay changes apply on the next page load.</p>
+
+    <script src="../src/defaults.js"></script>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>
