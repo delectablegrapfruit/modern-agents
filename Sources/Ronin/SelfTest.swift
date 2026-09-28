@@ -196,15 +196,18 @@ enum SelfTest {
         }
         if session.fight.boss?.phase == .windup { try snapshot("7b-warlord-windup", panel) } else { print("no warlord wind-up to show") }
         // A cut into his set guard, with the real button: parried, the blades bind where they cross, sparks and all
-        // (not taken if his guard is not set in reach within a few seconds; only from far enough out that he does not
-        // answer it, so the rest of his fight is as it would have been).
+        // (from far enough out that he does not answer it, so the rest of his fight is as it would have been; his guard
+        // is set for him when he comes into reach, if he has not raised it himself).
         let parried = session.fight.stats.parried, clashes = scene.clashesDrawn, wounds = session.fight.stats.damage
         var opening: Side?
         let waiting = Date()
         while Date().timeIntervalSince(waiting) < 6, session.fight.outcome == nil, opening == nil {
             let fight = session.fight
-            if let boss = fight.boss, boss.guardSet, boss.distance > boss.contact + 0.07, !fight.isStumbling, fight.cooldown == 0,
+            if let boss = fight.boss, boss.distance > boss.contact + 0.07, !fight.isStumbling, fight.cooldown == 0,
                fight.target(boss.side) == .foe(boss.id) {
+                // In reach and far enough out: if his guard is not already set, it is set for him (as his own rules
+                // would raise it), so the clash is always shown.
+                if !boss.guardSet { session.setWarlordGuard() }
                 opening = boss.side
             } else {
                 try await pause(0.02)

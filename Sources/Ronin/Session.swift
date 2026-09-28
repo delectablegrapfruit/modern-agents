@@ -38,6 +38,15 @@ final class GameSession {
         }
     }
 
+    /// For the self-test: the warlord's guard set before him now, just as his own rules raise it, so a cut into it is
+    /// parried.
+    func setWarlordGuard() {
+        guard let i = fight.foes.firstIndex(where: { $0.kind == .warlord }) else { return }
+        fight.foes[i].phase = .guarding
+        fight.foes[i].span = Tuning.guardRise + 0.6
+        fight.foes[i].timer = 0.6
+    }
+
     /// Runs the fight forward. A fight that ends is booked and saved on the spot.
     func advance(_ dt: Double) -> [FightEvent] {
         let events = fight.step(dt)
