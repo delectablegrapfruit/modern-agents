@@ -1931,7 +1931,7 @@
   /**
    * The Factory: one slow line. The floor on its plate (presses, belt, lift, bin), a bar of figures under it with
    * Collect at the right, and the two things to build at the bottom. The floor's parts are buttons too: a press opens
-   * its mold, the next bay builds, the bin collects. Everything it makes is minos; four in a row of the bin are a line.
+   * its mold, the next bay builds, the bin collects. Everything it makes is minos; every four in the bin are a line.
    */
   class FactoryMode {
     constructor(app) {
@@ -2108,7 +2108,7 @@
 
     // ---- verbs --------------------------------------------------------------------------------------------------------
 
-    /** Banks every full row of the bin as a line; loose minos stay. Minos still on the lift land first. */
+    /** Banks every four minos in the bin as a line; the 0–3 loose ones stay. Minos still on the lift land first. */
     collect() {
       const f = this.f;
       this.view.flushLift();
@@ -2133,7 +2133,7 @@
       return true;
     }
 
-    /** Builds the next press or a taller bin; short of lines, it says so (a soft no, and the button's flash). */
+    /** Builds the next press or a bigger bin; short of lines, it says so (a soft no, and the button's flash). */
     upgrade(kind) {
       const u = Factory.nextUpgrade(this.f, kind);
       if (!u) return false;
@@ -2290,7 +2290,7 @@
         onmouseenter: preview(true), onmouseleave: preview(false), onfocus: preview(true), onblur: preview(false) });
       this.cKey = null;
       this.collectEl.replaceChildren(this.cBtn);
-      // The things to build: the next press, then a taller bin (a row goes once there is nothing left to build).
+      // The things to build: the next press, then a bigger bin (a row goes once there is nothing left to build).
       const row = (up, ico, title, meta, btn) => h('div', { class: 'fac-up', 'data-up': up }, facIcon(ico), h('div', { class: 'txt' }, h('div', { class: 't' }, title), h('div', { class: 'd' }, meta)), btn);
       const buy = (kind) => (e) => { if (e.currentTarget.getAttribute('aria-disabled') === 'true') { this.app.sound.play('blocked'); return; } this.upgrade(kind); };
       const rows = [];
@@ -2302,7 +2302,7 @@
       }
       if (nb) {
         this.binBtn = h('button', { class: 'btn sm', onclick: buy('bin') }, 'Build · ' + fmtInt(nb.cost) + ' ' + LINE);
-        rows.push(row('bin', 'fac-bin', 'Taller bin', Factory.BIN_ROWS[f.binLevel] + ' → ' + nb.to + ' lines', this.binBtn));
+        rows.push(row('bin', 'fac-bin', 'Bigger bin', nb.from + ' → ' + nb.to + ' lines', this.binBtn));
       }
       this.list.replaceChildren(...(rows.length ? [h('div', { class: 'fac-group' }, rows)] : []));
       this.list.classList.toggle('hidden', !rows.length);
@@ -2398,7 +2398,7 @@
 
     /** Lines in bin, every frame (only written when it changes, so it follows the minos as they land). */
     updateBin() {
-      const q = Math.round(this.displayed() * 4), cap = Factory.BIN_ROWS[this.f.binLevel];
+      const q = Math.round(this.displayed() * 4), cap = Factory.binLines(this.f.binLevel);
       if (q === this.binQ && cap === this.binCap) return;
       this.binQ = q; this.binCap = cap;
       this.binV.nodeValue = Factory.quarters(q / 4);

@@ -143,10 +143,13 @@ play. History, and Stats ▸ Puzzles, end with one quiet line — "37 of 12,884,
 Counter-clockwise puzzles on); each difficulty button's tooltip gives its own share of 4,294,967,296.
 
 **Factory** — one slow line. Up to four presses (tetromino, pentomino, hexomino, heptomino) each form one piece every
-ten minutes, a mino at a time; a belt carries it to a lift that sets each mino into a bin four minos wide, so every full row is one ⦵ line
-— a quarter line per mino, never more: 6 lines an hour with one press, 13.5, 22.5, 33 with four (every factory figure is a decimal, to the quarter line). The bin holds 12 rows
-(24, 48, 72, 108 when built taller); when the next piece will not fit, the line waits — nothing is lost — until you
-Collect (the button, a click on the bin, or C), which banks the full rows and leaves the loose minos. It runs while
+ten minutes, a mino at a time; a belt carries it to a lift that sets each mino into a bin, row by row, and every four minos in it are one ⦵ line
+— a quarter line per mino, never more: 6 lines an hour with one press, 13.5, 22.5, 33 with four (every factory figure is a decimal, to the quarter line). The bin is 4 columns
+by 12 rows (48 minos, 12 lines); each bigger bin adds two columns and some rows, so it grows wider rather than skinnier:
+6 × 16 (24 lines), 8 × 24 (48), 10 × 32 (80), 12 × 40 (120). When the next piece will not fit, the line waits — nothing is lost — until you
+Collect (the button, a click on the bin, or C), which banks every whole line — the first minos in, four at a time, so
+where the width is not a multiple of four a line can end partway along a row — and leaves the last 0–3 loose (every
+bin holds whole lines, so a full one empties). It runs while
 Lull is closed, replayed on return with the same step as on screen, so time away is capped only by the bin (on the
 Factory tab the new minos just fade in; elsewhere a toast gives the lines made). Presses
 (150, 450, 1,200 ⦵) and bins (60, 200, 500, 1,000 ⦵) are all there is to buy. The tab reads like Play: the floor on the
@@ -155,17 +158,20 @@ to build below, from the top of the window like the other tabs. The plate's cell
 grows by whole rows into the height the bar and a full list leave (up to 1.8 times as tall as wide) — the window's height
 alone, so a purchase never moves it, and a list row that goes leaves its space at the bottom: a row of ground under the
 belt, then a hall over the gantry — a roof beam from the post to the lift's mast, tall windows in the back wall, a lamp
-hung over each bay (lit, with a soft pool of light, once its press is built; a dashed outline until then). The bin's
-tower rises into it: each size is drawn taller than the last (the smallest in floor-sized cells, the biggest just under
-the roof, those between evenly spaced), and the sizes still to build stand over the bin as a dashed outline, a band
-each. The
+hung over each bay (lit, with a soft pool of light, once its press is built; a dashed outline until then). The bin
+stands at the right, left wall by the lift, growing to the right into room kept for the widest (so the scene is 42
+cells across): each size is drawn wider and taller than the last, all in the bin's own cell — a floor cell or one step
+down (the widest tray fits 10.5 floor cells) — wherever the height allows, and the sizes still to build stand round it
+as dashed outlines of the towers they will make, each up its left wall, across its top and down to the plinth. The
 floor is a small scene in the board's materials, your skin and palette, with no text on it:
 a gantry of presses, each in a bay sized to its pieces (a mold window one cell wider than its longest shape, so a
 piece drops straight down onto a belt of 28 cells); a ram stamps each mino into the window; at the belt's end a
-cradle lift carries the minos up one by one (the column nearest it first, so none ever passes another), over a chute and into the bin (shrinking to its cells on the way), which always shows every mino it holds as a
-mino — never a bar: its cells have their own size, in whole device pixels, so its whole capacity fits the tower, and the
-tower is as slim as four of them (under 8 device pixels a cell is a flat square with a pixel's gap; a window so short
-that the biggest bin would need cells under 3 pans instead, keeping the top of what it holds in view). Collected rows lift out as one and clear away, the loose minos riding up on them and then dropping to the bottom;
+cradle lift carries the minos up one by one (the column nearest it first, so none ever passes another), over a chute and into its slot in the bin (shrinking to its cells on the way), which always shows every mino it holds as a
+mino — never a bar: its cells have their own size, in whole device pixels, and the tower is as wide as its columns (in
+a window too short for the tallest bin its cells shrink, each smaller size keeping inside the next; under 8 device
+pixels a cell is a flat square with a pixel's gap; a window so short that it would need cells under 3 pans instead,
+keeping the top of what it holds in view). Pointing at the bin (or Collect) washes what it takes, a step where a line
+ends partway along a row. Collected lines lift out as one and clear away, the loose minos riding up on them and then dropping to the bottom;
 the lines fly to the wallet, which counts them (and any achievement the collect earned) as they land. Click a press to pin its mold to one
 shape (free; pay never changes) and fill in Stats ▸ Factory's shape sets.
 
@@ -259,7 +265,7 @@ clears, a warm felt note and soft sub when a piece sets and a low thoom for boom
 brighter than the music, all in its A minor (and anything played that has no sound of its own yet gets a quiet pluck)
 — Chiptune coins and power-ups, rolling Marimba, Analog Synth stabs, ringing Glass, Wind Chimes — all synthesized,
 each with its own clears; its preview is a Listen button); a few are factory rewards (a second, third and fourth
-press, the tallest bin, 500 lines collected), marked with a lock and what earns them on hover. A tile says In use, Use (click it, or the tile) or its price, dimmed when you cannot afford it. Buying
+press, the biggest bin, 500 lines collected), marked with a lock and what earns them on hover. A tile says In use, Use (click it, or the tile) or its price, dimmed when you cannot afford it. Buying
 is two clicks on the same spot — the price turns into Confirm for three seconds — and a new cosmetic goes straight on.
 
 **Look** — one small design system (`css/lull.css`, its tokens at the top): a midnight-ink dark and a porcelain light

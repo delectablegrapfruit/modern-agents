@@ -1,7 +1,8 @@
 // Lull — the Factory: one slow line. Up to four presses each form a polyomino every ten minutes (a tetromino, a
-// pentomino, a hexomino, a heptomino); a belt carries every piece to a bin four minos wide, so each full row of the
-// bin is one line — a quarter line per mino, nothing more. The bin holds a fixed number of rows; when the next piece
-// will not fit, the line just waits until you collect. One step() runs it, on screen and for time away alike.
+// pentomino, a hexomino, a heptomino); a belt carries every piece to a bin, and every four minos in it are one line — a
+// quarter line per mino, nothing more. Each bin is a number of columns by a number of rows (a bigger one is wider as well
+// as taller); when the next piece will not fit, the line just waits until you collect. One step() runs it, on screen
+// and for time away alike.
 (function (root) {
   'use strict';
   const L = (root.Lull = root.Lull || {});
@@ -11,7 +12,10 @@
   const CYCLE = 600;                       // seconds for any press to form one piece
   const MOLDS = [4, 5, 6, 7];              // press k makes (4 + k)-ominoes
   const PRESS_COST = [0, 150, 450, 1200];  // press 1 comes built
-  const BIN_ROWS = [12, 24, 48, 72, 108];
+  // The bins: columns by rows. Each size up adds two columns and some rows, so the bin grows wider rather than
+  // skinnier (about three times as tall as wide at every size); it holds 12, 24, 48, 80 and 120 lines.
+  const BIN_COLS = [4, 6, 8, 10, 12];
+  const BIN_ROWS = [12, 16, 24, 32, 40];
   const BIN_COST = [60, 200, 500, 1000];   // levels 1–4
   const BELT = { len: 28, speed: 0.5, gap: 1 };
   // Each press has a bay sized to its pieces (a mold one cell wider than its longest shape): where the bays start on
@@ -21,7 +25,7 @@
   const dropX = (k, w) => BAY_X[k] + 0.25 + Math.floor((MOLDS[k] + 1 - w) / 2);
   const SUB = 0.25;                        // the model's sub-step, in seconds
   const START_P = 0.75;                    // a new factory's first piece is nearly formed
-  const PAY = 0.25;                        // lines per mino (display only: the bin pays whole rows)
+  const PAY = 0.25;                        // lines per mino (display only: Collect pays whole lines of four minos)
   const MAX_AWAY = 30 * 86400;
   const NAMES = { 4: 'Tetromino', 5: 'Pentomino', 6: 'Hexomino', 7: 'Heptomino' };
   const EPS = 1e-9;
@@ -101,7 +105,11 @@
     return f;
   }
 
-  const capacity = (f) => BIN_ROWS[f.binLevel] * 4;
+  /** A bin size's capacity, in minos (columns by rows). */
+  const binMinos = (l) => BIN_COLS[l] * BIN_ROWS[l];
+  /** What a bin size holds, in lines. */
+  const binLines = (l) => binMinos(l) * PAY;
+  const capacity = (f) => binMinos(f.binLevel);
   /** Minos an hour: every built press finishes one piece a cycle, whatever its size. */
   function perHour(f) { let m = 0; for (let k = 0; k < f.presses; k++) m += (3600 / CYCLE) * MOLDS[k]; return m; }
   const widthOf = (it) => shapes(it.n)[it.s].w;
@@ -228,7 +236,8 @@
 
   // ---- collecting and building ------------------------------------------------------------------------------------
 
-  /** Takes every full row (one line each); the loose minos stay behind as the new bottom row. */
+  /** Takes every whole line: the first minos in, four to a line, whatever the bin's width (so a line is not a row, and
+   *  pay stays exactly a quarter line a mino). The last 0–3 minos stay behind, loose, at the start of the bottom row. */
   function collect(f, today) {
     const n = Math.floor(f.bin.length / 4);
     if (!n) return null;
@@ -241,10 +250,11 @@
     return { collected: n, loose: f.bin.length, taken };
   }
 
-  /** What the next press or bin costs and what it gives ({ cost, to }), or null at the top. */
+  /** What the next press or bin costs and what it gives ({ cost, to }: a press's mold size; a bin's lines, and `from`,
+   *  the lines the bin holds now), or null at the top. */
   function nextUpgrade(f, kind) {
     if (kind === 'press') return f.presses < MOLDS.length ? { cost: PRESS_COST[f.presses], to: MOLDS[f.presses] } : null;
-    if (kind === 'bin') return f.binLevel < BIN_ROWS.length - 1 ? { cost: BIN_COST[f.binLevel], to: BIN_ROWS[f.binLevel + 1] } : null;
+    if (kind === 'bin') return f.binLevel < BIN_ROWS.length - 1 ? { cost: BIN_COST[f.binLevel], to: binLines(f.binLevel + 1), from: binLines(f.binLevel) } : null;
     return null;
   }
 
@@ -327,7 +337,7 @@
   }
 
   L.Factory = {
-    VERSION, CYCLE, MOLDS, PRESS_COST, BIN_ROWS, BIN_COST, BELT, BAY_X, BAYS, dropX, SUB, START_P, PAY, NAMES, HOLE,
+    VERSION, CYCLE, MOLDS, PRESS_COST, BIN_COLS, BIN_ROWS, BIN_COST, binMinos, binLines, BELT, BAY_X, BAYS, dropX, SUB, START_P, PAY, NAMES, HOLE,
     create, repair, shapes, flat, hasHole, capacity, perHour, timeToFull, isFull, status, collect, upgrade, nextUpgrade,
     setPin, step, catchUp, eta, shapeName, seenCount, quarters, widthOf,
   };

@@ -763,13 +763,14 @@ const beltOk = (f) => {
   }
   return f.belt.every((it) => it.x >= 0 && it.x + Factory.widthOf(it) <= Factory.BELT.len + 1e-9);
 };
-test('a new factory: one press nearly done, a twelve-row bin, nothing else', () => {
+test('a new factory: one press nearly done, a bin four columns by twelve rows, nothing else', () => {
   const f = Factory.create();
   assert.strictEqual(f.v, 6);
   assert.strictEqual(f.presses, 1);
   assert.strictEqual(f.molds.length, 1);
   assert.strictEqual(f.molds[0].p, 0.75);
   assert.strictEqual(Factory.capacity(f), 48);
+  assert.strictEqual(Factory.BIN_COLS[f.binLevel], 4);
   assert.strictEqual(Factory.BIN_ROWS[f.binLevel], 12);
   assert.strictEqual(f.bin, '');
   assert.deepStrictEqual(f.belt, []);
@@ -876,7 +877,7 @@ test('bays: sized to each press, filling the belt; every piece drops straight do
   }
   assert(drops > 60, drops + ' drops');
 });
-test('collect: whole rows only, loose minos stay, days counted once each', () => {
+test('collect: whole lines only, loose minos stay, days counted once each', () => {
   const f = Factory.create();
   assert.strictEqual(Factory.collect(f), null);
   f.bin = '1234567123456';
@@ -891,6 +892,44 @@ test('collect: whole rows only, loose minos stay, days counted once each', () =>
   Factory.collect(f, '2026-09-27');
   assert.deepStrictEqual([f.stats.days, f.stats.lines, f.stats.collects, f.stats.best], [2, 6, 3, 3]);
 });
+test('bins: each size up is wider and taller (columns by rows); capacity in minos, whole lines when full', () => {
+  assert.deepStrictEqual(Factory.BIN_COLS, [4, 6, 8, 10, 12]);
+  assert.deepStrictEqual(Factory.BIN_ROWS, [12, 16, 24, 32, 40]);
+  assert.deepStrictEqual(Factory.BIN_COLS.map((_, l) => Factory.binMinos(l)), [48, 96, 192, 320, 480]);
+  assert.deepStrictEqual(Factory.BIN_COLS.map((_, l) => Factory.binLines(l)), [12, 24, 48, 80, 120]);
+  for (let l = 1; l < Factory.BIN_COLS.length; l++) assert(Factory.BIN_COLS[l] > Factory.BIN_COLS[l - 1] && Factory.BIN_ROWS[l] > Factory.BIN_ROWS[l - 1]);
+  // Every capacity is whole lines, so a full bin collects to nothing loose.
+  assert(Factory.BIN_COLS.every((_, l) => Factory.binMinos(l) % 4 === 0));
+  const f = Factory.create();
+  for (let l = 0; l < 5; l++) {
+    f.binLevel = l; f.belt = [];
+    f.bin = '1'.repeat(Factory.capacity(f));
+    const st = Factory.status(f);
+    assert.deepStrictEqual([st.cap, st.lines, st.loose, st.full], [Factory.binMinos(l), Factory.binLines(l), 0, true]);
+    const r = Factory.collect(f, 'd');
+    assert.deepStrictEqual([r.collected, r.loose, f.bin], [Factory.binLines(l), 0, '']);
+  }
+  // Six columns: 30 minos are five rows, the last not full. Collect takes seven lines (28 minos: four rows and four of
+  // the fifth); the last two stay, loose. Pay is a quarter line a mino whatever the width.
+  f.binLevel = 1; f.bin = '123456'.repeat(5);
+  const r = Factory.collect(f, 'd');
+  assert.deepStrictEqual([r.collected, r.loose, f.bin, r.taken.length], [7, 2, '56', 28]);
+  // A wide bin fills to its capacity, a piece at a time, and then the line waits.
+  const g = withPresses(4, 31); g.binLevel = 2;
+  for (let i = 0; i < 3 * 3600; i++) Factory.step(g, 1);
+  assert(Factory.isFull(g) && g.bin.length <= 192 && g.bin.length > 192 - 7 && beltOk(g));
+});
+test('a bin that caps a day: what collecting twice a day for three days makes, at every size, is pinned', () => {
+  // Hours to fill: capacity / rate. This pins what a line that waits at a full bin actually makes, one press and four.
+  const got = [1, 4].map((p) => Factory.BIN_COLS.map((_, l) => {
+    const f = withPresses(p, 7 + l);
+    f.binLevel = l; f.lastTick = 0;
+    let lines = 0;
+    for (let h = 12; h <= 72; h += 12) { Factory.catchUp(f, h * HOUR); const r = Factory.collect(f, 'd'); if (r) lines += r.collected; }
+    return lines;
+  }));
+  assert.deepStrictEqual(got, [[72, 144, 288, 431, 431], [67, 138, 284, 473, 716]]);
+});
 test('upgrades: exact prices, four presses and five bins at most, paid in lines', () => {
   const f = Factory.create();
   const costs = [];
@@ -900,8 +939,8 @@ test('upgrades: exact prices, four presses and five bins at most, paid in lines'
   assert.strictEqual(f.presses, 4); assert(!Factory.upgrade(f, 'press'));
   const bins = [];
   while ((u = Factory.nextUpgrade(f, 'bin'))) { bins.push([u.cost, u.to]); Factory.upgrade(f, 'bin'); }
-  assert.deepStrictEqual(bins, [[60, 24], [200, 48], [500, 72], [1000, 108]]);
-  assert.strictEqual(Factory.capacity(f), 432); assert(!Factory.upgrade(f, 'bin'));
+  assert.deepStrictEqual(bins, [[60, 24], [200, 48], [500, 80], [1000, 120]]);
+  assert.strictEqual(Factory.capacity(f), 480); assert(!Factory.upgrade(f, 'bin'));
   assert.strictEqual(f.stats.spent, 3560);
   assert.deepStrictEqual(f.molds.map((m) => m.pin), [-1, -1, -1, -1]);
   const s = new L.Store();
@@ -959,12 +998,12 @@ test('time: a clock set back makes nothing; a long gap is capped by the bin', ()
   const t0 = Date.now();
   const r = Factory.catchUp(g, now);
   assert.strictEqual(r.seconds, 30 * 86400, 'at most thirty days are replayed');
-  assert(g.bin.length <= 432 && g.bin.length > 425);
+  assert(g.bin.length <= 480 && g.bin.length > 473);
   assert(Date.now() - t0 < 2000, 'and quickly');
   const one = Factory.create(); one.binLevel = 4; one.lastTick = now - 30 * 24 * HOUR;
   const t1 = Date.now();
   Factory.catchUp(one, now);
-  assert(one.bin.length > 425 && Date.now() - t1 < 2000, 'the slowest case (one press, the tallest bin) is quick too');
+  assert(one.bin.length > 473 && Date.now() - t1 < 2000, 'the slowest case (one press, the biggest bin) is quick too');
 });
 test('a broken factory is repaired', () => {
   const junk = Factory.repair({ v: 6, presses: 9, binLevel: -3, bin: 'zz12!!' + '3'.repeat(100), molds: [{ s: 999, pin: 'x' }, null], belt: [{ n: 4, s: 1, x: 50 }, { n: 9, s: 0, x: 3 }, { n: 5, s: 1, x: 34 }], stats: { minos: 'lots', seen: { 5: '1' } } });

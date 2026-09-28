@@ -145,7 +145,7 @@
     { id: 'fac_1k', group: 'factory', name: 'A Thousand Lines', desc: 'Collect 1,000 lines.', pay: 100, on: 'factory', test: (s) => s.factory.stats.lines >= 1000, progress: (s) => [s.factory.stats.lines, 1000] },
     { id: 'fac_keyhole', group: 'factory', name: 'Keyhole', desc: 'Press the heptomino with a hole on a press set to Any.', pay: 120, on: 'factory', test: (s) => !!s.factory.stats.holeFree },
     { id: 'fac_line', group: 'factory', name: 'Full Line', desc: 'Build all 4 presses.', pay: 150, on: 'factory', test: (s) => s.factory.presses >= 4, progress: (s) => [s.factory.presses, 4] },
-    { id: 'fac_silo', group: 'factory', name: 'Silo', desc: 'Build the tallest bin.', pay: 150, on: 'factory', test: (s) => s.factory.binLevel >= 4, progress: (s) => [s.factory.binLevel, 4] },
+    { id: 'fac_silo', group: 'factory', name: 'Silo', desc: 'Build the biggest bin.', pay: 150, on: 'factory', test: (s) => s.factory.binLevel >= 4, progress: (s) => [s.factory.binLevel, 4] },
     { id: 'fac_35', group: 'factory', name: 'Thirty-Five', desc: 'Press all 35 hexominoes.', pay: 150, on: 'factory', test: (s) => fseen(s, 6) >= 35, progress: (s) => [fseen(s, 6), 35] },
     { id: 'fac_10k', group: 'factory', name: 'Ten Thousand Minos', desc: 'Make 10,000 minos.', pay: 150, on: 'factory', test: (s) => s.factory.stats.minos >= 10000, progress: (s) => [s.factory.stats.minos, 10000] },
     { id: 'fac_days30', group: 'factory', name: 'Shift Worker', desc: 'Collect on 30 days.', pay: 150, on: 'factory', test: (s) => s.factory.stats.days >= 30, progress: (s) => [s.factory.stats.days, 30] },

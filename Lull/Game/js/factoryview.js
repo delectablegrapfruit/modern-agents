@@ -1,11 +1,13 @@
 // Lull — the Factory floor: a small scene on the board's own plate, in the board's materials. A gantry holds one
 // press per bay (each bay sized to its pieces); each press stamps its piece a mino at a time into a recessed mold
 // window and drops it straight down onto the belt. The belt carries it to a cradle lift, which sets its minos one by
-// one into a bin four minos wide. The bin always shows every mino it holds as a mino: its cells have their own size,
-// in whole device pixels, so its whole capacity fits the tower (a window near the smallest pans over the top of what it
-// holds instead). Every full row of the bin is one line. No text is drawn here: names and numbers live in the page around it.
+// one into the bin, row by row. A bigger bin is wider as well as taller (its columns and rows are the model's), so its
+// cells keep one size: a floor cell or a little less (the widest bin fits the space kept for it), smaller only where
+// the window is too short for the tallest; every mino it holds is drawn as a mino, in whole device pixels (a window
+// near the smallest pans over the top of what it holds instead). Every four minos in the bin are one line. No text is
+// drawn here: names and numbers live in the page around it.
 //
-// The scene is a 35.5 × 19.5 cell grid (y down), shown from half a row down (19 rows), and taller when the page has
+// The scene is a 42 × 19.5 cell grid (y down), shown from half a row down (19 rows), and taller when the page has
 // the height for it: whole rows are added above (and one under the floor), for a hall and a taller bin, as
 // many as the window's height gives (never a matter of what is built). The cell size always follows the width. Its still parts are painted once into two offscreen layers (the floor, and the bin's
 // tower with the lift's mast), repainted only when what they show changes, and the bin's minos into a third, repainted
@@ -20,12 +22,13 @@
 
   // The scene is drawn 0.5 row up into the plate: its top half row is only ever empty (the tallest bin's mast stops
   // 1.25 rows down), so the plate shows 19 rows and the air above the gantry is no deeper than it need be.
-  const COLS = 35.5, TOP = 0.5, ROWS = 19.5 - TOP;
+  const COLS = 42, TOP = 0.5, ROWS = 19.5 - TOP;
   // A taller plate adds whole rows (never more than EMAX: the scene is at most 1.8 times as tall as it is wide). From DEEP
   // rows one of them goes under the floor; the rest go above. From HALL rows up the floor is a hall: a roof beam from
   // the post to the lift's mast, a lamp hung from it over each bay and, from WALL rows up, tall windows in the back
-  // wall. The bin's tower rises into the height: the biggest bin just reaches under the roof, and the sizes still to
-  // build stand over the bin as a dashed outline, one band each (see plan()).
+  // wall. The bin's tower rises into the height, and grows to the right into the room kept for the widest (TRAY): every
+  // size in the bin's own cell where the height allows, and the sizes still to build drawn round it as dashed outlines
+  // (see plan()).
   const EMAX = Math.floor(1.8 * COLS - ROWS), HALL = 3, DEEP = 6;
   const ROOF = { y0: 0.75, y1: 1.45 };   // the roof beam, from the scene's top edge
   const WALL = { gap: 1.5, min: 5 };     // the windows: clear of the roof and the lamps by gap, and at least min tall
@@ -41,7 +44,9 @@
   const CYL = { w: 0.7, y0: 5.7, y1: 7.2 };
   const ROD = 0.28, RAM_H = 0.45, RAM_REST = 0.6;
   const LIFT = { x0: 28.75, x1: 30.25, cx: 29.5, rail: 0.2 };
-  const BIN = { x0: 30.5, t0: 30.75, t1: 34.75, x1: 35, bottom: 18.5 };
+  // The bin: its left wall's outer edge and the tray's left edge (it grows to the right), and its tray's bottom. TRAY is
+  // the room kept for the widest bin's tray, in floor cells (its cells are TRAY / 12 of a floor cell: one step down).
+  const BIN = { x0: 30.5, t0: 30.75, bottom: 18.5 }, BWALL = BIN.t0 - BIN.x0, TRAY = 10.5;
   const MINBC = 3;                   // the smallest bin cell, in device px; a bin that cannot fit at it pans
   const FLATBC = 8;                  // bin cells smaller than this (device px) are plain flat squares with a gap
   const LEGS = [3.5, 10.5, 17.5, 24.5];
@@ -137,8 +142,9 @@
       // The bin as drawn: its cell (device px, and CSS px), the tray's left edge, width and bottom (CSS px), the rows
       // it shows and the first of them (above 0 only when it pans), and its size (level) as laid out.
       this.bcD = 1; this.bc = 1; this.bx = 0; this.bw = 4; this.bb = 0; this.vis = 12; this.base = 0; this.lvShown = -1;
+      this.cols = 4;                             // the bin's columns, as laid out
       this.mouthFrom = 0; this.mouthT0 = -9;
-      this.binC = null; this.binKey = { bin: null, landed: -1, base: -1, bc: 0, vis: 0, skin: null, light: null, dpr: 0, cols: [] };
+      this.binC = null; this.binKey = { bin: null, landed: -1, base: -1, bc: 0, vis: 0, w: 0, skin: null, light: null, dpr: 0, cols: [] };
       this.slide = 0;                            // the belt's treads, in cells
       this.stampAt = [-9, -9, -9, -9];           // each ram's last stroke
       this.stampReal = [false, false, false, false];
@@ -195,28 +201,31 @@
     }
 
     /**
-     * The bin's plan for this scene (its height and cell size alone, so it never changes with what is built): for each
-     * size, its cell in whole device pixels (never bigger than a floor cell), the rows it shows and its height. The
-     * biggest takes the whole height up to the highest mouth; the smallest has a floor cell if there is room; those
-     * between are spaced evenly, and each is at least a row (at most 10 px) taller than the last. A size whose rows
-     * would need cells under MINBC shows as many rows as fit at MINBC, and pans.
+     * The bin's plan for this scene (its width, height and cell size alone, so it never changes with what is built):
+     * for each size, its cell in whole device pixels, its columns, the rows it shows, and its width and height. Every
+     * size has the bin's own cell (`cell`: a floor cell, or less so that the widest tray fits the TRAY cells kept for
+     * it) wherever the height allows. In a window too short for the tallest, a size's cells shrink until it fits, and
+     * each size down keeps inside the next one up, at least one of that one's cells narrower and lower (so the smaller
+     * sizes keep bigger cells, never above `cell`, kept as binCell). A size whose rows would need cells under MINBC shows as many rows
+     * as fit at MINBC, and pans.
      */
     plan() {
       const cs = this.cs, d = this.dpr, key = (cs * 10 + d) * 1000 + this.E;
       if (key === this.planKey && this.lv) return;
       this.planKey = key;
-      const R = Factory.BIN_ROWS, n = R.length, full = Math.max(1, Math.round(cs * d));
-      const hmax = Math.floor((BIN.bottom - this.mouthTop) * cs * d), step = Math.round((Math.min(cs, 10) + 1) * d);
-      const h0 = Math.max(R[0] * MINBC, Math.min(R[0] * full, hmax - (n - 1) * step));
+      const C = Factory.BIN_COLS, R = Factory.BIN_ROWS, n = R.length, full = Math.max(1, Math.round(cs * d));
+      const hmax = Math.floor((BIN.bottom - this.mouthTop) * cs * d);
+      const cell = Math.max(MINBC, Math.min(full, Math.floor((TRAY * cs * d) / C[n - 1])));
       const lv = new Array(n);
-      let cap = hmax + step;
+      let capW = Infinity, capH = Infinity, gap = 0;
       for (let l = n - 1; l >= 0; l--) {
-        const want = Math.floor(Math.min(h0 + ((hmax - h0) * l) / (n - 1), cap - step));
-        let bc = Math.min(full, Math.floor(want / R[l])), vis = R[l];
-        if (bc < MINBC) { bc = MINBC; vis = Math.max(4, Math.floor(want / MINBC)); }
-        lv[l] = { bc, vis, h: vis * bc };
-        cap = lv[l].h;
+        const room = Math.min(hmax, capH - gap);
+        let bc = Math.min(cell, Math.floor(room / R[l]), Math.floor((capW - gap) / C[l])), vis = R[l];
+        if (bc < MINBC) { bc = MINBC; vis = Math.max(4, Math.min(R[l], Math.floor(room / MINBC))); }
+        lv[l] = { bc, vis, cols: C[l], w: C[l] * bc, h: vis * bc };
+        capW = lv[l].w; capH = lv[l].h; gap = bc;
       }
+      this.binCell = cell;
       this.lv = lv;
     }
 
@@ -225,6 +234,9 @@
 
     /** The bin's height at rest for a size (level), in cells. */
     binHeight(l) { this.plan(); return this.lv[l].h / this.dpr / this.cs; }
+
+    /** The tray's left edge, in CSS px on the device pixel grid: every size starts here and grows to the right. */
+    trayLeft() { return Math.round(this.X(BIN.t0) * this.dpr) / this.dpr; }
 
     /** The scene's top edge, in cells (above 0 once rows are added). */
     get top() { return TOP - this.E + this.F; }
@@ -243,8 +255,9 @@
     rect(kind, k, f) {
       const cs = this.cs;
       if (kind === 'bin') {
-        const top = (f ? this.restMouthOf(f) : this.restMouth) - 0.5;
-        return { x: this.X(BIN.x0 - 0.35), y: this.Y(top), w: (BIN.x1 - BIN.x0 + 0.7) * cs, h: (FY - top) * cs };
+        this.plan();
+        const top = (f ? this.restMouthOf(f) : this.restMouth) - 0.5, tw = this.lv[f ? f.binLevel : Math.max(0, this.lvShown)].w / this.dpr;
+        return { x: this.trayLeft() - (BWALL + 0.35) * cs, y: this.Y(top), w: tw + 2 * (BWALL + 0.35) * cs, h: (FY - top) * cs };
       }
       const b = WIN[k];
       return { x: this.X(b.x - 0.2), y: this.Y(HOUSING.y0 - 0.2), w: (b.w + 0.4) * cs, h: (WB + 0.3 - HOUSING.y0 + 0.2) * cs };
@@ -263,12 +276,11 @@
     layoutBin(f) {
       this.plan();
       const l = f.binLevel, g = this.lv[l], d = this.dpr, rows = Factory.BIN_ROWS[l];
-      this.bcD = g.bc; this.bc = g.bc / d; this.vis = g.vis;
-      const cx = Math.round(this.X((BIN.t0 + BIN.t1) / 2) * d);
-      this.bx = (cx - 2 * g.bc) / d; this.bw = (4 * g.bc) / d;
+      this.bcD = g.bc; this.bc = g.bc / d; this.vis = g.vis; this.cols = g.cols;
+      this.bx = this.trayLeft(); this.bw = g.w / d;
       this.bb = this.px(this.Y(BIN.bottom));
       // A bin that pans keeps the top of what it holds in view (the minos on their way included), a row clear above.
-      this.base = g.vis >= rows ? 0 : Math.max(0, Math.min(rows - g.vis, Math.ceil(f.bin.length / 4) - g.vis + 1));
+      this.base = g.vis >= rows ? 0 : Math.max(0, Math.min(rows - g.vis, Math.ceil(f.bin.length / g.cols) - g.vis + 1));
       const rest = this.restMouthOf(f);
       if (l !== this.lvShown) {
         if (this.lvShown >= 0 && l > this.lvShown && !this.reduced) { this.mouthFrom = this.mouth; this.mouthT0 = this.t; }
@@ -281,15 +293,16 @@
       this.restMouth = rest;
     }
 
-    /** The bin's outer walls, in CSS px: a wall as thick as the gap from BIN.x0 to the tray at the smallest size,
-     *  either side of the tray (the tower is as slim as its cells). */
-    wallL() { return this.bx - this.px((BIN.t0 - BIN.x0) * this.cs); }
-    wallR() { return this.bx + this.bw + this.px((BIN.x1 - BIN.t1) * this.cs); }
+    /** The bin's outer walls, in CSS px: a wall BWALL thick either side of the tray (the tower is as wide as its
+     *  columns). */
+    wallL() { return this.bx - this.px(BWALL * this.cs); }
+    wallR() { return this.bx + this.bw + this.px(BWALL * this.cs); }
 
-    /** Where mino i of the bin sits: its cell's left edge and bottom, and its size, in scene cells. */
+    /** Where mino i of the bin sits (the bin fills row by row, left to right): its cell's left edge and bottom, and
+     *  its size, in scene cells. */
     slotOf(i, out) {
-      const row = Math.floor(i / 4) - this.base;
-      out.x = (this.bx + (i % 4) * this.bc - this.ox) / this.cs;
+      const cols = this.cols, row = Math.floor(i / cols) - this.base;
+      out.x = (this.bx + (i % cols) * this.bc - this.ox) / this.cs;
       out.y = (this.bb - row * this.bc - this.oy) / this.cs;
       out.s = this.bc / this.cs;
       return out;
@@ -430,19 +443,20 @@
 
     // ---- collecting and time away -----------------------------------------------------------------------------------
 
-    /** What Collect takes, as drawn now: the full rows in view (cells, in CSS px) and the loose minos over them.
-     *  Taken just before the model collects. */
+    /** What Collect takes, as drawn now: the minos of every whole line in view (cells, in CSS px: whole rows, and
+     *  the start of the next when the width is not a multiple of four) and the loose minos after them. Taken just
+     *  before the model collects. */
     snapshot(f, look) {
-      const landed = this.landed(f), rows = Math.floor(landed / 4), bc = this.bc;
+      const landed = this.landed(f), lines = Math.floor(landed / 4), bc = this.bc, cols = this.cols;
       const cells = [], loose = [];
-      for (let i = this.base * 4; i < landed; i++) {
-        const r = Math.floor(i / 4) - this.base;
+      for (let i = this.base * cols; i < landed; i++) {
+        const r = Math.floor(i / cols) - this.base;
         if (r >= this.vis) break;
-        const color = look.colors[parseInt(f.bin[i], 16)] || look.theme.accent, x = this.bx + (i % 4) * bc, y = this.bb - (r + 1) * bc;
-        if (i >= rows * 4) loose.push({ x, y, color });
+        const color = look.colors[parseInt(f.bin[i], 16)] || look.theme.accent, x = this.bx + (i % cols) * bc, y = this.bb - (r + 1) * bc;
+        if (i >= lines * 4) loose.push({ x, y, color });
         else cells.push({ x, y, w: bc, h: bc, color });
       }
-      return { cells, loose, rows, bc, flat: this.bcD < FLATBC };
+      return { cells, loose, lines, cols, bc, flat: this.bcD < FLATBC };
     }
 
     /** The block lifts out as one: a glaze, the equipped clear effect, a rise and a fade; loose minos fall. */
@@ -454,8 +468,8 @@
     /** Minos made while away, fading in row by row (the page counts the numbers up beside them). */
     caughtUp(from, to) {
       if (this.reduced || to <= from) { this.catchA = null; return; }
-      const rows = Math.ceil(to / 4) - Math.floor(from / 4);
-      this.catchA = { t0: this.t, from, to, row0: Math.floor(from / 4), stagger: Math.min(0.02, 0.3 / Math.max(1, rows)) };
+      const cols = this.cols, rows = Math.ceil(to / cols) - Math.floor(from / cols);
+      this.catchA = { t0: this.t, from, to, row0: Math.floor(from / cols), stagger: Math.min(0.02, 0.3 / Math.max(1, rows)) };
     }
 
     /** Whether anything is on its way right now (a lift running, a block lifting, a taller bin rising). */
@@ -681,7 +695,7 @@
     }
 
     /** The bin's tower and the lift's mast: rails, wheels, chute, walls and ears, plinth, and the tray between the
-     *  walls, as wide as four of the bin's cells (with their grid, when they are big enough for one). */
+     *  walls, as wide as the bin's columns (with their grid, when its cells are big enough for one). */
     paintTower(c, shadow) {
       const S = this.sty, cs = this.cs, d = this.dpr, X = (v) => this.px(this.X(v)), Y = (v) => this.px(this.Y(v));
       const mouth = this.mouth, exitY = mouth - 1.25, mast = this.hall ? this.top + ROOF.y0 : Math.min(3.25, exitY);
@@ -710,24 +724,26 @@
         const bc = this.bc, h = 0.5 / d;
         c.save(); rr(c, tx, ty, tw, th, rad); c.clip();
         c.strokeStyle = S.grid; c.lineWidth = 1 / d; c.beginPath();
-        for (let x = 1; x < 4; x++) { const p = tx + x * bc - h; c.moveTo(p, ty); c.lineTo(p, tb); }
+        for (let x = 1; x < this.cols; x++) { const p = tx + x * bc - h; c.moveTo(p, ty); c.lineTo(p, tb); }
         for (let y = tb - bc; y > ty + 0.5; y -= bc) { c.moveTo(tx, y - h); c.lineTo(tr, y - h); }
         c.stroke();
         c.restore();
       }
-      // The sizes still to build, standing over the mouth as a dashed outline of the tower they will make (as slim as
-      // their cells), a band each: the next one as the next bay is drawn, the later ones quieter.
+      // The sizes still to build, as a dashed outline of the tower each will make round this one (they all stand on
+      // the plinth and share its left wall, each wider and taller than the last): up the left wall from over the mouth,
+      // across its top and down its right wall to the plinth. The next one as the next bay is drawn, the later ones
+      // quieter.
       const lv = this.lvShown, r = Math.max(3, Math.min(8, 0.3 * cs));
       if (lv >= 0) {
         c.save();
-        c.setLineDash([3, 3]); c.strokeStyle = S.ink; c.lineWidth = 1;
-        let y1 = mouth - 0.5;
+        c.setLineDash([3, 3]); c.strokeStyle = S.ink; c.lineWidth = 1; c.lineJoin = 'round';
+        const x0 = this.px(wl) + 0.5, wall = this.px(BWALL * cs);
+        let from = Y(mouth - 0.75);
         for (let n = lv + 1; n < Factory.BIN_ROWS.length; n++) {
-          const y0 = BIN.bottom - this.binHeight(n) - 0.25;
+          const g = this.lv[n], top = this.px(tb - g.h / d - 0.25 * cs) + 0.5, x1 = this.px(tx + g.w / d + wall) - 0.5;
           c.globalAlpha = n === lv + 1 ? 0.8 : 0.4;
-          const half = (2 * this.lv[n].bc) / d + this.px((BIN.t0 - BIN.x0) * cs), mid = this.bx + this.bw / 2;
-          rr(c, this.px(mid - half) + 0.5, Y(y0) + 0.5, 2 * half - 1, Y(y1) - Y(y0) - 1, r); c.stroke();
-          y1 = y0 - 0.25;
+          c.beginPath(); c.moveTo(x0, Math.max(from, top + r)); c.arcTo(x0, top, x1, top, r); c.arcTo(x1, top, x1, tb, r); c.lineTo(x1, tb); c.stroke();
+          from = top - this.px(0.35 * cs);
         }
         c.restore();
       }
@@ -1017,27 +1033,28 @@
      *  away (cu) fade in row by row. */
     paintMinos(c, f, look, landed, from, cu, x, b) {
       const bc = this.bc, t = this.t, acc = this.sty.accent;
-      for (let i = Math.max(from, this.base * 4); i < landed; i++) {
-        const r = Math.floor(i / 4) - this.base;
+      const cols = this.cols;
+      for (let i = Math.max(from, this.base * cols); i < landed; i++) {
+        const r = Math.floor(i / cols) - this.base;
         if (r >= this.vis) break;
         let alpha = null;
-        if (cu && i >= cu.from && i < cu.to) { alpha = clamp01((t - cu.t0 - (Math.floor(i / 4) - cu.row0) * cu.stagger) / 0.5); if (alpha <= 0.001) continue; }
-        this.mino(c, look, look.colors[parseInt(f.bin[i], 16)] || acc, x + (i % 4) * bc, b - (r + 1) * bc, bc, alpha);
+        if (cu && i >= cu.from && i < cu.to) { alpha = clamp01((t - cu.t0 - (Math.floor(i / cols) - cu.row0) * cu.stagger) / 0.5); if (alpha <= 0.001) continue; }
+        this.mino(c, look, look.colors[parseInt(f.bin[i], 16)] || acc, x + (i % cols) * bc, b - (r + 1) * bc, bc, alpha);
       }
     }
 
     /** The bin's minos at rest, painted once into their own layer until the bin (or its look) changes. */
     binLayer(f, look, landed) {
       const k = this.binKey, cols = look.colors, light = this.sty.light;
-      let same = !!this.binC && k.bin === f.bin && k.landed === landed && k.base === this.base && k.bc === this.bcD && k.vis === this.vis &&
+      let same = !!this.binC && k.bin === f.bin && k.landed === landed && k.base === this.base && k.bc === this.bcD && k.vis === this.vis && k.w === this.cols &&
         k.skin === look.skin && k.light === light && k.dpr === this.dpr && k.cols.length === cols.length;
       for (let i = 0; same && i < cols.length; i++) if (k.cols[i] !== cols[i]) same = false;
       if (same) return this.binC;
-      k.bin = f.bin; k.landed = landed; k.base = this.base; k.bc = this.bcD; k.vis = this.vis; k.skin = look.skin; k.light = light; k.dpr = this.dpr;
+      k.bin = f.bin; k.landed = landed; k.base = this.base; k.bc = this.bcD; k.vis = this.vis; k.w = this.cols; k.skin = look.skin; k.light = light; k.dpr = this.dpr;
       k.cols.length = cols.length; for (let i = 0; i < cols.length; i++) k.cols[i] = cols[i];
       if (!this.binC) this.binC = makeCanvas(1, 1);
       const c = this.binC, d = this.dpr;
-      c.width = 4 * this.bcD; c.height = Math.max(1, this.vis * this.bcD);
+      c.width = this.cols * this.bcD; c.height = Math.max(1, this.vis * this.bcD);
       const x = c.getContext('2d'); x.setTransform(d, 0, 0, d, 0, 0); x.__dpr = d; x.__light = light;
       this.paintMinos(x, f, look, landed, 0, null, 0, this.vis * this.bc);
       return c;
@@ -1058,12 +1075,24 @@
       }
       const hv = this.hover;
       if ((this.preview || (hv && hv.kind === 'bin')) && !ca) {
-        const x0 = bx, x1 = bx + this.bw;
-        const full = Math.min(this.vis, Math.floor(landed / 4) - this.base);
+        const x0 = bx, x1 = bx + this.bw, cols = this.cols, taken = Math.floor(landed / 4) * 4;
+        // What Collect takes: its whole rows, and the start of the next row when a line ends partway along one.
+        let full = Math.floor(taken / cols) - this.base, part = taken % cols;
+        if (full >= this.vis) { full = this.vis; part = 0; } else if (full < 0) { full = 0; part = 0; }
         if (landed >= 4) {
-          const wt = full > 0 ? bb - full * bc : bb - 2 / this.dpr;
-          ctx.fillStyle = S.wash; ctx.fillRect(x0, wt, x1 - x0, bb - wt);
-          ctx.strokeStyle = S.washLine; ctx.lineWidth = 1; rr(ctx, x0 + 0.5, wt + 0.5, x1 - x0 - 1, bb - wt - 1, Math.min(2, bc / 2)); ctx.stroke();
+          ctx.lineWidth = 1; ctx.strokeStyle = S.washLine; ctx.fillStyle = S.wash;
+          if (!part) {
+            const wt = full > 0 ? bb - full * bc : bb - 2 / this.dpr;
+            ctx.fillRect(x0, wt, x1 - x0, bb - wt);
+            rr(ctx, x0 + 0.5, wt + 0.5, x1 - x0 - 1, bb - wt - 1, Math.min(2, bc / 2)); ctx.stroke();
+          } else {
+            // A step: full rows the whole width, then the next row as far as the last line reaches.
+            const xs = this.px(x0 + part * bc), yf = bb - full * bc, yp = yf - bc;
+            ctx.beginPath(); ctx.moveTo(x0, bb); ctx.lineTo(x1, bb); ctx.lineTo(x1, yf); ctx.lineTo(xs, yf); ctx.lineTo(xs, yp); ctx.lineTo(x0, yp); ctx.closePath(); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(x0 + 0.5, bb - 0.5); ctx.lineTo(x1 - 0.5, bb - 0.5);
+            if (full > 0) { ctx.lineTo(x1 - 0.5, yf + 0.5); ctx.lineTo(xs - 0.5, yf + 0.5); } else ctx.lineTo(xs - 0.5, bb - 0.5);
+            ctx.lineTo(xs - 0.5, yp + 0.5); ctx.lineTo(x0 + 0.5, yp + 0.5); ctx.closePath(); ctx.stroke();
+          }
         }
         const m = this.px(this.Y(this.mouth));
         const l0 = this.wallL(), r1 = this.wallR();
@@ -1154,8 +1183,8 @@
 
     /** The collected cells for the clear effect, all at once: at most 120 (whole rows, sampled). */
     burstCells(snap) {
-      const rows = Math.ceil(snap.cells.length / 4), every = Math.max(1, Math.ceil((rows * 4) / 120)), out = [];
-      for (let r = 0; r < rows; r += every) for (let c = 0; c < 4; c++) { const cell = snap.cells[r * 4 + c]; if (cell) out.push({ x: cell.x, y: cell.y, color: cell.color }); }
+      const cols = snap.cols, rows = Math.ceil(snap.cells.length / cols), every = Math.max(1, Math.ceil((rows * cols) / 120)), out = [];
+      for (let r = 0; r < rows; r += every) for (let c = 0; c < cols; c++) { const cell = snap.cells[r * cols + c]; if (cell) out.push({ x: cell.x, y: cell.y, color: cell.color }); }
       return out;
     }
   }

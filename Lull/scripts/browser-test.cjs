@@ -1305,7 +1305,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     await page.waitForTimeout(150);
     return t;
   };
-  for (const [w, hgt, want] of [[400, 700, 10], [520, 760, 13], [900, 900, 20], [420, 900, 10], [300, 440, 7]]) {
+  for (const [w, hgt, want] of [[400, 700, 8], [520, 760, 11], [900, 900, 17], [420, 900, 9], [300, 440, 6]]) {
     const other = await tabTop(w, hgt), Es = new Set();
     for (const [name, fn] of Object.entries(facStates)) {
       await ev((src) => { new Function('return ' + src)()(); Lull.app.refreshWallet(); Lull.app.modes.factory.build(); }, fn.toString());
@@ -1335,24 +1335,30 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     }
     // The scene's height is the window's alone: the same whatever is built.
     check(w + '×' + hgt + ': the scene is as tall in every state (' + [...Es].join(', ') + ' rows added)', Es.size === 1, JSON.stringify([...Es]));
-    // Every taller bin is drawn taller: by at least a row once there is height (half a row in a short window).
-    const binH = await ev(() => { const M = Lull.app.modes.factory, f = Object.assign({}, Lull.app.store.state.factory); return Lull.Factory.BIN_ROWS.map((_, lv) => { f.binLevel = lv; return Math.round(M.view.rect('bin', 0, f).h); }); });
-    const cs = await ev(() => Lull.app.modes.factory.view.cs);
-    check(w + '×' + hgt + ': every bin size up is drawn taller (' + binH.join(', ') + ' px)', binH.every((v, i) => i === 0 || v - binH[i - 1] >= (hgt >= 700 ? Math.min(cs, 10) - 0.5 : 1)), JSON.stringify(binH));
+    // Every bigger bin is drawn wider and taller, by at least one of its cells each way; its cells keep one size (the
+    // bin's own cell, a floor cell or one step down) wherever the window has the height, and never get skinny.
+    const bins = await ev(() => {
+      const M = Lull.app.modes.factory, v = M.view, f = Object.assign({}, Lull.app.store.state.factory);
+      v.plan();
+      return { cell: v.binCell, full: Math.round(v.cs * v.dpr), dpr: v.dpr, lv: Lull.Factory.BIN_ROWS.map((_, lv) => { f.binLevel = lv; const r = v.rect('bin', 0, f); return { w: r.w, h: r.h, bc: v.lv[lv].bc, cols: v.lv[lv].cols }; }) };
+    });
+    const grows = bins.lv.every((b, i) => i === 0 || (b.w - bins.lv[i - 1].w >= b.bc / bins.dpr - 0.01 && b.h - bins.lv[i - 1].h >= b.bc / bins.dpr - 0.01 && b.cols > bins.lv[i - 1].cols));
+    const bcs = bins.lv.map((b) => b.bc), even = hgt >= 700 ? Math.min(...bcs) >= 0.8 * bins.full && Math.max(...bcs) <= bins.cell && Math.max(...bcs) / Math.min(...bcs) <= 1.1 : Math.min(...bcs) >= 3;
+    check(w + '×' + hgt + ': every bin size up is drawn wider and taller, its cells near one size (' + bcs.join(', ') + ' device px; floor ' + bins.full + ')', grows && even && bins.cell <= bins.full && bins.cell >= Math.floor(0.85 * bins.full), JSON.stringify(bins));
     // Every mino the bin holds is drawn as a mino (no slivers, no bars): square cells of the bin's own size, in whole
     // device pixels, the whole bin inside the tower's height. It pans only when its cells would be under 3 device px.
     const held = await ev(() => {
       const v = Lull.app.modes.factory.view, f0 = Lull.app.store.state.factory, look = Lull.app.look(), out = [], orig = v.mino;
       for (let lv = 0; lv < Lull.Factory.BIN_ROWS.length; lv++) {
-        const f = Object.assign({}, f0, { binLevel: lv, belt: [] }), rows = Lull.Factory.BIN_ROWS[lv];
-        for (const n of [rows * 4, rows * 2 + 3]) {
+        const f = Object.assign({}, f0, { binLevel: lv, belt: [] }), rows = Lull.Factory.BIN_ROWS[lv], cols = Lull.Factory.BIN_COLS[lv];
+        for (const n of [rows * cols, (rows >> 1) * cols + 3]) {
           f.bin = '1234567'.repeat(n).slice(0, n); v.flushLift(); v.lvShown = -1; v.layoutBin(f);
           let drawn = 0, odd = 0;
           v.mino = function (c, lk, color, x, y, s) { drawn++; if (s !== v.bcD / v.dpr || Math.abs(x * v.dpr - Math.round(x * v.dpr)) > 1e-6 || Math.abs(y * v.dpr - Math.round(y * v.dpr)) > 1e-6) odd++; return orig.apply(this, arguments); };
           v.binKey.bin = null; v.binLayer(f, look, n);
           v.mino = orig;
-          const want = Math.min(n - v.base * 4, v.vis * 4), top = v.bb - v.vis * v.bc;
-          out.push({ lv, n, drawn, want, odd, bc: v.bcD, pans: v.vis < rows, fits: top >= v.px(v.Y(v.mouthTop)) - 0.01 && v.bcD >= 3 && Number.isInteger(v.bcD) });
+          const want = Math.min(n - v.base * cols, v.vis * cols), top = v.bb - v.vis * v.bc, right = v.bx + v.bw;
+          out.push({ lv, n, drawn, want, odd, bc: v.bcD, cols: v.cols, pans: v.vis < rows, fits: top >= v.px(v.Y(v.mouthTop)) - 0.01 && v.bcD >= 3 && Number.isInteger(v.bcD) && v.cols === cols && Math.abs(v.bw - cols * v.bc) < 1e-6 && v.wallR() <= v.w - 0.25 * v.cs });
         }
       }
       v.lvShown = -1; v.binKey.bin = null; v.layoutBin(f0);
@@ -1416,11 +1422,11 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     for (let i = 0; i < 4; i++) {
       M.upgrade('bin');
       const b = document.querySelector('.fac-hot[data-hot=bin]'), r = M.view.rect('bin', 0, f);
-      out.push([Math.round(parseFloat(b.style.top)), Math.round(r.y)]);
+      out.push([Math.round(parseFloat(b.style.top)), Math.round(r.y), Math.round(parseFloat(b.style.width)), Math.round(r.w)]);
     }
     return out;
   });
-  check('building a taller bin moves the bin\'s click target with it', binHot.every(([a, b]) => a === b) && binHot[3][0] < binHot[0][0], JSON.stringify(binHot));
+  check('building a bigger bin moves and widens the bin\'s click target with it', binHot.every(([a, b, c, d]) => a === b && c === d) && binHot.every((r, i) => i === 0 || (r[0] < binHot[i - 1][0] && r[2] > binHot[i - 1][2])), JSON.stringify(binHot));
   // Leaving the tab mid-collect: nothing half-played resumes on return.
   const settle = await ev(async () => {
     const M = Lull.app.modes.factory, f = Lull.app.store.state.factory;
