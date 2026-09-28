@@ -42,7 +42,7 @@
     { id: 'default:portal', slot: 'goal', name: 'Marker', kind: 'builtin' },
     { id: 'default:flag', slot: 'goal', name: 'Flag', kind: 'image', url: 'assets/defaults/goal-flag.svg' },
     { id: 'none', slot: 'music', name: 'No music', kind: 'builtin' },
-    { id: 'default:synth', slot: 'music', name: 'Synth Loop', kind: 'builtin' },
+    { id: 'default:synth', slot: 'music', name: 'Screensaver', kind: 'builtin' },
   ].map((d) => Object.assign({ source: 'default' }, d));
 
   // ---------- IndexedDB (falls back to memory when storage is blocked) ----------

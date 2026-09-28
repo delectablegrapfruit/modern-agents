@@ -1,4 +1,4 @@
-/* Memaze — sound: synthesized effects (WebAudio, no files) and music (the player's files or a built-in synth loop). */
+/* Memaze — sound: synthesized effects (WebAudio, no files) and music (the player's files or the built-in chill loop). */
 (function () {
   'use strict';
   const MZ = window.MZ;
@@ -87,6 +87,7 @@
           break;
         case 'bubble': this.tone(300, 0.5, { type: 'sine', to: 700, vol: 0.12 }); this.tone(900, 0.35, { type: 'sine', to: 1300, vol: 0.05, at: 0.12 }); break;
         case 'pop': this.noise(0.06, { filter: 'bandpass', freq: 1800, q: 3, vol: 0.3 }); this.tone(1500, 0.08, { type: 'sine', to: 600, vol: 0.12 }); break;
+        case 'unlock': this.noise(0.05, { filter: 'bandpass', freq: 2500, q: 4, vol: 0.3 }); this.tone(330, 0.12, { type: 'square', vol: 0.06, at: 0.04 }); [660, 990].forEach((f, i) => this.tone(f, 0.25, { type: 'triangle', vol: 0.11, at: 0.1 + i * 0.07 })); break;
         case 'key': [880, 1175, 1760].forEach((f, i) => this.tone(f, 0.18, { type: 'triangle', vol: 0.13, at: i * 0.06 })); this.noise(0.08, { filter: 'highpass', freq: 4000, vol: 0.1, at: 0.18 }); break;
         case 'switch': this.tone(520, 0.07, { type: 'square', vol: 0.08 }); this.tone(780, 0.1, { type: 'square', vol: 0.06, at: 0.07 }); this.noise(0.05, { filter: 'lowpass', freq: 600, vol: 0.25 }); break;
         case 'warp': this.tone(1600, 0.35, { type: 'sine', to: 200, vol: 0.12 }); this.tone(200, 0.35, { type: 'sine', to: 1400, vol: 0.08, at: 0.12 }); break;
@@ -168,42 +169,143 @@
     applyVolume() { if (this.el) this.el.volume = Math.min(1, A.vol.master * A.vol.music * (this.ducked ? 0.25 : 1)); },
   };
 
-  // A small generative loop: four chords, arpeggio, bass and hats, scheduled ahead on the audio clock.
+  // The built-in music, "Screensaver": a chill loop with a late-90s-internet feel (think Hypnospace Outlaw). Jazzy
+  // electric-piano chords over a warm pad and a round bass, soft swung drums with vinyl crackle, glassy chimes echoing
+  // in a tape delay, everything bent a few cents by a slow wobble. 84 bpm in D; every 32 bars the melody is new. All
+  // synthesized, scheduled a little ahead on the audio clock.
   const Synth = {
     start() {
       const c = A.ctx;
       if (!c) return { stop() {} };
-      const out = c.createGain();
-      out.gain.value = 0.55;
-      out.connect(A.music);
-      const bpm = 108, step = 60 / bpm / 4;
-      const chords = [[57, 60, 64, 67], [53, 57, 60, 64], [48, 52, 55, 60], [55, 59, 62, 67]];
-      const pat = [0, 1, 2, 3, 2, 1, 2, 3, 0, 2, 1, 3, 2, 1, 3, 2];
+      const t0 = c.currentTime;
+      const out = c.createGain(), warm = c.createBiquadFilter();
+      out.gain.setValueAtTime(0.0001, t0);
+      out.gain.exponentialRampToValueAtTime(1.35, t0 + 2.5); // fades in
+      warm.type = 'lowpass'; warm.frequency.value = 6500; warm.Q.value = 0.3;
+      out.connect(warm); warm.connect(A.music);
+      const bpm = 84, beat = 60 / bpm, s16 = beat / 4, bar = beat * 4;
+      // Echo: a dotted eighth, darker each time round.
+      const echo = c.createDelay(2), fb = c.createGain(), dark = c.createBiquadFilter(), wet = c.createGain();
+      echo.delayTime.value = beat * 0.75; fb.gain.value = 0.4; dark.type = 'lowpass'; dark.frequency.value = 2400; wet.gain.value = 0.55;
+      echo.connect(dark); dark.connect(fb); fb.connect(echo); dark.connect(wet); wet.connect(out);
+      // Tape wobble: one slow LFO bends every pitched note a few cents.
+      const wob = c.createOscillator(), wobAmt = c.createGain();
+      wob.frequency.value = 0.27; wobAmt.gain.value = 7; wob.connect(wobAmt); wob.start(t0);
+      // Vinyl crackle: a looped buffer of sparse clicks over a whisper of hiss.
+      const crackle = c.createBufferSource(), cbuf = c.createBuffer(1, c.sampleRate * 3, c.sampleRate), cd = cbuf.getChannelData(0);
+      for (let i = 0; i < cd.length; i++) cd[i] = (Math.random() * 2 - 1) * 0.01 + (Math.random() < 0.0005 ? (Math.random() * 2 - 1) * 0.55 : 0);
+      const chp = c.createBiquadFilter(), cg = c.createGain();
+      chp.type = 'highpass'; chp.frequency.value = 1400; cg.gain.value = 0.16;
+      crackle.buffer = cbuf; crackle.loop = true; crackle.connect(chp); chp.connect(cg); cg.connect(out); crackle.start(t0);
+
       const mf = (m) => 440 * Math.pow(2, (m - 69) / 12);
-      let n = 0, next = c.currentTime + 0.1, dead = false;
-      const note = (f, t, d, type, v) => {
-        const o = c.createOscillator(), g = c.createGain();
-        o.type = type; o.frequency.value = f;
-        g.gain.setValueAtTime(0.0001, t);
-        g.gain.exponentialRampToValueAtTime(v, t + 0.01);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + d);
-        o.connect(g); g.connect(out);
-        o.start(t); o.stop(t + d + 0.02);
+      const env = (param, t, a, peak, d) => { param.setValueAtTime(0.0001, t); param.exponentialRampToValueAtTime(peak, t + a); param.exponentialRampToValueAtTime(0.0001, t + a + d); };
+      const osc = (type, f, t, end) => { const o = c.createOscillator(); o.type = type; o.frequency.value = f; wobAmt.connect(o.detune); o.start(t); o.stop(end); return o; };
+      // Electric piano: FM (the bark dies away fast) plus a faint bell tine; a little of it goes to the echo.
+      const ep = (m, t, dur, v) => {
+        const f = mf(m), end = t + dur + 0.1, car = osc('sine', f, t, end), mod = osc('sine', f, t, end), tine = osc('sine', f * 4, t, end);
+        const mg = c.createGain(), g = c.createGain(), tg = c.createGain(), send = c.createGain();
+        mg.gain.setValueAtTime(f * 1.4, t); mg.gain.exponentialRampToValueAtTime(f * 0.12, t + 0.4);
+        mod.connect(mg); mg.connect(car.frequency);
+        env(g.gain, t, 0.01, v, dur); env(tg.gain, t, 0.003, v * 0.1, 0.22);
+        send.gain.value = 0.18;
+        car.connect(g); tine.connect(tg); g.connect(out); tg.connect(out); g.connect(send); send.connect(echo);
       };
+      // Pad: two slightly detuned saws per note through a lowpass that breathes.
+      const pad = (notes, t, dur) => {
+        const lp = c.createBiquadFilter(), g = c.createGain(), end = t + dur + 1;
+        lp.type = 'lowpass'; lp.Q.value = 0.5;
+        lp.frequency.setValueAtTime(650, t); lp.frequency.linearRampToValueAtTime(1150, t + dur * 0.5); lp.frequency.linearRampToValueAtTime(650, t + dur);
+        g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.022, t + dur * 0.35); g.gain.linearRampToValueAtTime(0.0001, t + dur + 0.8);
+        for (const m of notes) for (const d of [-7, 7]) { const o = osc('sawtooth', mf(m), t, end); o.detune.value = d; o.connect(lp); }
+        lp.connect(g); g.connect(out);
+      };
+      // Bass: a round sine with a quiet triangle an octave up for definition.
+      const bass = (m, t, dur, v) => {
+        const g = c.createGain(), g2 = c.createGain(), end = t + dur + 0.1;
+        env(g.gain, t, 0.012, v, dur); env(g2.gain, t, 0.012, v * 0.12, dur * 0.6);
+        osc('sine', mf(m), t, end).connect(g); osc('triangle', mf(m + 12), t, end).connect(g2);
+        g.connect(out); g2.connect(out);
+      };
+      // Chimes: glassy bells (a sine and an inharmonic partial), mostly heard through the echo.
+      const chime = (m, t, v) => {
+        const g = c.createGain(), g2 = c.createGain(), send = c.createGain(), end = t + 1.6;
+        env(g.gain, t, 0.004, v, 1.3); env(g2.gain, t, 0.002, v * 0.3, 0.4);
+        osc('sine', mf(m), t, end).connect(g); osc('sine', mf(m) * 2.76, t, end).connect(g2);
+        send.gain.value = 0.7;
+        g.connect(out); g2.connect(out); g.connect(send); send.connect(echo);
+      };
+      const hit = (t, o) => A.noise(o.dur, Object.assign({ at: Math.max(0, t - c.currentTime), dest: out }, o));
+      const kick = (t, v) => { const g = c.createGain(), o = c.createOscillator(); o.frequency.setValueAtTime(110, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.14); env(g.gain, t, 0.004, v, 0.3); o.connect(g); g.connect(out); o.start(t); o.stop(t + 0.4); };
+      const snare = (t, v) => { hit(t, { dur: 0.16, filter: 'bandpass', freq: 1900, q: 0.8, vol: v }); hit(t, { dur: 0.06, filter: 'lowpass', freq: 500, vol: v * 0.5 }); };
+      const hat = (t, v) => hit(t, { dur: 0.035, filter: 'highpass', freq: 7500, vol: v });
+
+      // D major, jazzy: bass note and a voicing per bar.
+      const A1 = [[50, [54, 57, 61, 64]], [47, [50, 54, 57, 61]], [52, [55, 59, 62, 66]], [45, [55, 59, 62, 64]]]; // Dmaj9 Bm9 Em9 A9sus
+      const B1 = [[43, [54, 57, 59, 62]], [42, [52, 57, 61, 64]], [52, [55, 59, 62, 66]], [45, [55, 61, 64, 66]]]; // Gmaj9 F#m7 Em9 A13
+      const SCALE = [69, 71, 74, 76, 78, 81, 83, 86, 88]; // the chimes: D major pentatonic, up high
+      const COMP = [[[0, 5, 0.9], [10, 4, 0.7]], [[0, 3, 0.8], [6, 3, 0.6], [11, 4, 0.7]], [[3, 4, 0.75], [8, 3, 0.6], [14, 2, 0.55]]]; // [step, length in 16ths, velocity]
+      let rnd = MZ.rng(Math.floor(Math.random() * 1e9)), melody = null, melodyKey = '';
+      const makeMelody = () => { // two bars of eighths, a gentle random walk along the scale, with rests
+        const out2 = [];
+        let i = r2(2, 5);
+        for (let k = 0; k < 16; k++) {
+          if (rnd() < 0.62) { out2.push(null); continue; }
+          i = Math.max(0, Math.min(SCALE.length - 1, i + [-2, -1, -1, 1, 1, 2][Math.floor(rnd() * 6)]));
+          out2.push(SCALE[i]);
+        }
+        return out2;
+      };
+      function r2(a, b) { return a + Math.floor(rnd() * (b - a + 1)); }
+
+      let n = 0, next = t0 + 0.15, dead = false, comp = null;
       const tick = () => {
         if (dead) return;
-        while (next < c.currentTime + 0.25) {
-          const bar = Math.floor(n / 16) % 4, s = n % 16, ch = chords[bar];
-          note(mf(ch[pat[s]] + 12), next, step * 1.8, 'triangle', 0.07);
-          if (s % 8 === 0) note(mf(ch[0] - 12), next, step * 7, 'sine', 0.16);
-          if (s % 4 === 2) A.noise(0.05, { at: next - c.currentTime, freq: 8000, filter: 'highpass', vol: 0.03, dest: out });
-          next += step;
+        while (next < c.currentTime + 0.3) {
+          const barN = Math.floor(n / 16), st = n % 16, inCycle = barN % 32, sec = Math.floor(inCycle / 8), last = inCycle === 31;
+          const prog = sec === 2 ? B1 : A1, [root, voicing] = prog[barN % 4];
+          const t = next + (st % 2 ? s16 * 0.18 : 0); // swing
+          if (st === 0) {
+            if (inCycle === 0) { melody = null; }
+            pad(voicing.map((m) => m - 12), t, bar);
+            comp = COMP[r2(0, COMP.length - 1)];
+          }
+          for (const [at, len, v] of comp || []) if (at === st) voicing.forEach((m, k) => ep(m, t + k * 0.014, len * s16 * 1.6, 0.05 * v));
+          // Bass: the root, a fifth or octave on the "and of three", a note leading into the next bar.
+          if (st === 0) bass(root, t, beat * (sec === 0 ? 3.5 : 1.6), 0.2);
+          if (sec > 0 && st === 10) bass(root + (rnd() < 0.5 ? 7 : 12), t, beat * 0.5, 0.14);
+          if (sec > 0 && st === 14) { const nx = prog[(barN + 1) % 4][0]; bass(nx + (rnd() < 0.5 ? -1 : 1), t, beat * 0.25, 0.1); }
+          // Drums: hats from the start; kick and brushed snare from the second section; a breath at the end of each cycle.
+          const full = sec > 0 && !(last && st >= 8);
+          if (st % 2 === 0) hat(t, st % 4 === 0 ? 0.05 : 0.035);
+          else if (sec > 0) hat(t, 0.015);
+          if (full && (st === 0 || st === 10 || (st === 7 && rnd() < 0.35))) kick(t, st === 0 ? 0.42 : 0.3);
+          if (full && (st === 4 || st === 12)) snare(t, 0.11);
+          if (full && st === 15 && rnd() < 0.3) snare(t, 0.035);
+          // Chimes: a two-bar melody, new every cycle, repeated through the first and last sections; the middle
+          // section arpeggiates the chords instead.
+          if ((sec === 1 || sec === 3) && st % 2 === 0) {
+            const key = Math.floor(barN / 32) + '/' + sec;
+            if (!melody || melodyKey !== key) { melody = makeMelody(); melodyKey = key; }
+            const m = melody[((barN % 2) * 8) + st / 2];
+            if (m != null && !(last && st >= 8)) chime(m + (sec === 3 && barN % 8 >= 6 && rnd() < 0.3 ? 12 : 0), t, 0.05);
+          }
+          if (sec === 2 && [0, 3, 6, 8, 11, 14].includes(st)) chime(voicing[[0, 1, 2, 3, 2, 1][[0, 3, 6, 8, 11, 14].indexOf(st)]] + 12, t, 0.022);
+          next += s16;
           n++;
         }
-        setTimeout(tick, 60);
+        setTimeout(tick, 50);
       };
       tick();
-      return { stop() { dead = true; out.gain.setTargetAtTime(0, c.currentTime, 0.1); setTimeout(() => out.disconnect(), 600); } };
+      return {
+        stop() {
+          dead = true;
+          const now = c.currentTime;
+          out.gain.cancelScheduledValues(now);
+          out.gain.setTargetAtTime(0.0001, now, 0.25);
+          setTimeout(() => { try { crackle.stop(); wob.stop(); } catch (e) { /* already stopped */ } out.disconnect(); }, 1500);
+        },
+      };
     },
   };
 

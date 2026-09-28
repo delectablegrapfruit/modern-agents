@@ -177,10 +177,10 @@
         hud.item.setAttribute('aria-label', G.item ? 'Use ' + G.ITEMS[G.item].name : 'No item');
         hud.item.title = G.item ? G.ITEMS[G.item].name : '';
       }
-      const kk = G.keysHeld ? [...G.keysHeld].join() : ''; // keys you're carrying
+      const held = G.keysHeld ? [...G.keysHeld].flatMap(([col, n]) => Array(n).fill(col)) : [], kk = held.join(); // keys you're carrying
       if (c.keys !== kk) {
         c.keys = kk;
-        hud.keys.innerHTML = kk ? [...G.keysHeld].map((col) => '<span style="color:' + col + '">' + svg(MENU_ICONS.key) + '</span>').join('') : '';
+        hud.keys.innerHTML = held.map((col) => '<span style="color:' + col + '">' + svg(MENU_ICONS.key) + '</span>').join('');
       }
       const act = [];
       for (const k of ['star', 'carpet', 'shrink']) if (fx[k] > 0) act.push([k, fx[k] / G.ITEMS[k].dur]);
@@ -664,11 +664,11 @@
             h('li', null, h('b', null, 'Extra hit'), ': a gold ring around you that takes the next hit (up to two).'),
             h('li', null, h('b', null, 'Bullet'), ': carries you along the corridors toward GOAL.'),
             h('li', null, h('b', null, 'Launch'), ': a short hop high above the maze. Steer while you’re up; you come down right where you are, so aim for the board: landing in the void is a fall. The map keeps all you saw.'),
-            h('li', null, h('b', null, 'Magic carpet'), ': float over the gaps for 6 s. Be over floor when it runs out.'),
+            h('li', null, h('b', null, 'Magic carpet'), ' (rare): float over the gaps for 3.5 s. Be over floor when it runs out.'),
             h('li', null, h('b', null, 'Shrink'), ': half size for 10 s, for the tight spots.')),
           h('li', null, 'Levels come in chapters of ten; the tenth is a boss. New things appear along the way:'),
           h('ul', { class: 'items' },
-            h('li', null, h('b', null, 'Keys and doors'), ': a door opens once you have the key of its colour.'),
+            h('li', null, h('b', null, 'Keys and doors'), ': pick up a key, then bump into the door of its colour to open it.'),
             h('li', null, h('b', null, 'Vanishing bridges'), ': they blink, then disappear for a moment.'),
             h('li', null, h('b', null, 'One-way gates'), ': pass them only the way the arrows point.'),
             h('li', null, h('b', null, 'Switches'), ': step on one to flip the bridges of its colour: some appear, some go.'),

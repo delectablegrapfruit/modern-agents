@@ -49,6 +49,8 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     for (const mc of L.MECHS) { const m = L.build(L.levelParams(mc.from)); if (!m.mechs.includes(mc.id)) sched = mc.id; }
     check('each mechanic is introduced on its own level', sched === true, sched);
     const b10 = L.build(L.levelParams(10)), l9 = L.build(L.levelParams(9));
+    const w = G.ITEMS;
+    check('the magic carpet is the rarest item, and short', Object.keys(w).every((id) => id === 'carpet' || w[id].w > w.carpet.w) && w.carpet.dur < 4, w.carpet.w + ' / ' + w.carpet.dur + ' s');
     check('bosses are bigger than the levels before them', b10.boss && b10.nodes.length > l9.nodes.length * 1.2, b10.nodes.length + ' vs ' + l9.nodes.length);
     check('no remix before level 36, one or more after', L.levelParams(35).mods.length === 0 && [36, 41, 47, 58].every((lv) => L.levelParams(lv).mods.length >= 1));
 
@@ -62,12 +64,17 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     const s1 = (G.ball.x - door.x) * door.nx + (G.ball.y - door.y) * door.ny;
     check('a shut door is a wall: it stops you, and never hurts', s1 < 0 && hits.length === 0 && G.state === 'play', s1.toFixed(1));
     put(key);
-    check('the key opens its door', door.open && G.keysHeld.has(door.color));
+    check('picking up the key doesn\'t open the door by itself', !door.open && G.keysHeld.get(door.color) === 1);
+    G.draw();
+    check('the key shows in the corner', document.querySelectorAll('#hud-keys svg').length === 1);
     put(before);
-    run(1.5, { x: door.nx, y: door.ny });
-    check('...and you can walk through it', (G.ball.x - door.x) * door.nx + (G.ball.y - door.y) * door.ny > 20);
+    for (let i = 0; i < 90 && (G.ball.x - door.x) * door.nx + (G.ball.y - door.y) * door.ny < 25; i++) run(1 / 60, { x: door.nx, y: door.ny });
+    check('bumping into the door with its key opens it, and you walk through', door.open && (G.ball.x - door.x) * door.nx + (G.ball.y - door.y) * door.ny > 20 && hits.length === 0);
+    check('...using the key up', !G.keysHeld.get(door.color));
+    door.seen = true; G.draw();
+    check('an opened door stays on the map', G.maze.doors.every((d) => d.edge !== door.edge || d.open));
     G.restartLevel();
-    check('restart shuts the doors and puts the keys back', !door.open && !key.taken && G.keysHeld.size === 0);
+    check('restart shuts the doors and puts the keys back', !door.open && !key.taken && !G.keysHeld.get(door.color));
     G.quit();
 
     // ----- one-way gates -----

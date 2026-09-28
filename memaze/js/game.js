@@ -29,7 +29,7 @@
     heart: { name: 'Extra hit', w: 16 },
     bullet: { name: 'Bullet', w: 12 },
     launch: { name: 'Launch', w: 12 },
-    carpet: { name: 'Magic carpet', w: 18, dur: 6 },
+    carpet: { name: 'Magic carpet', w: 5, dur: 3.5 }, // the rarest, and short
     shrink: { name: 'Shrink', w: 16, dur: 10 },
   };
   const BULLET_V = 520, BULLET_RUN = 1800; // Bullet: speed and how far it carries you (it finishes on a junction)
@@ -367,7 +367,7 @@
     // Keys back where they were, doors shut, switches up, portals ready.
     resetMech() {
       const m = this.maze;
-      this.keysHeld = new Set();
+      this.keysHeld = new Map(); // colour -> how many keys of it you carry
       this.warpLock = null;
       this.vel = { x: 0, y: 0 };
       if (!m) return;
@@ -571,12 +571,24 @@
       }
     },
     // Moving the centre from (x0, y0) to (x1, y1): does a shut door or a one-way gate (crossed the wrong way) stop it?
+    // Bumping into a door with its key in your pocket opens it (and uses the key up).
     barred(x0, y0, x1, y1) {
       const m = this.maze;
       if (!m) return false;
-      for (const d of m.doors) if (!d.open && this.overBar(x1, y1, d)) return true;
+      for (const d of m.doors) {
+        if (d.open || !this.overBar(x1, y1, d)) continue;
+        if (!this.keysHeld.get(d.color)) return true;
+        this.openDoor(d);
+      }
       for (const g of m.gates) if ((x1 - x0) * g.nx + (y1 - y0) * g.ny < 0 && MZ.segsCross(x0, y0, x1, y1, g.ax, g.ay, g.bx, g.by)) return true;
       return false;
+    },
+    openDoor(d) {
+      d.open = true;
+      d.openAt = this.t;
+      this.keysHeld.set(d.color, this.keysHeld.get(d.color) - 1);
+      MZ.Audio.play('unlock');
+      this.emit('power');
     },
     // Does the picture at (x, y) overlap a door's bar?
     overBar(x, y, d) {
@@ -762,8 +774,8 @@
         }
       }
       if (!at || bd > 300) return null;
-      // Shut doors and switched-off bridges stop the Bullet too.
-      const m = this.maze, closed = new Set(m ? m.doors.filter((d) => !d.open).map((d) => d.edge) : []);
+      // Shut doors (unless you carry their key) and switched-off bridges stop the Bullet too.
+      const m = this.maze, closed = new Set(m ? m.doors.filter((d) => !d.open && !this.keysHeld.get(d.color)).map((d) => d.edge) : []);
       const shut = (e) => closed.has(e.id) || (e.type === 'switch' && (this.world.sw[e.sw.g] | 0) !== e.sw.on);
       // Shortest distances from here, leaving by either end of this corridor.
       const n = g.pos.length, dist = new Float64Array(n).fill(Infinity), prev = new Array(n).fill(null), done = new Uint8Array(n);
@@ -884,6 +896,7 @@
         for (let i = 1; i <= n; i++) {
           const q = this.along(B.pts, B.cum, from + ((to - from) * i) / n);
           if (q.x !== b.x || q.y !== b.y) B.dir = Math.atan2(q.y - b.y, q.x - b.x);
+          if (this.maze) for (const d of this.maze.doors) if (!d.open && MZ.segsCross(b.x, b.y, q.x, q.y, d.ax, d.ay, d.bx, d.by)) this.openDoor(d); // flying through with its key
           b.x = q.x; b.y = q.y;
           B.s = from + ((to - from) * i) / n;
           if (this.pickups()) return;
@@ -995,12 +1008,11 @@
       }
       if (this.maze) {
         const m = this.maze;
-        // Keys open every door of their colour.
+        // Keys go in your pocket; a door of their colour opens when you bump into it.
         for (const k of m.keys) {
           if (k.taken || !this.touches(k.x, k.y, 16)) continue;
           k.taken = true;
-          this.keysHeld.add(k.color);
-          for (const d of m.doors) if (d.color === k.color && !d.open) { d.open = true; d.openAt = this.t; }
+          this.keysHeld.set(k.color, (this.keysHeld.get(k.color) || 0) + 1);
           MZ.Audio.play('key');
           this.emit('power');
         }

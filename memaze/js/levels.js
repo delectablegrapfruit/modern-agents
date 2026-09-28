@@ -429,11 +429,11 @@
 
     // The route that solves it: fetch each key before its door, press each switch before its bridge, ride each
     // platform, step through each portal; then on to GOAL.
-    const open = new Set(), sw = {};
+    const held = {}, opened = new Set(), sw = {}; // keys carried by colour; doors already opened (each takes a key)
     const ok = (e, from) => {
       if (removed.has(e.id)) return false;
       const d = doorOn.get(e.id);
-      if (d && !open.has(d.color)) return false;
+      if (d && !opened.has(e.id) && !(held[d.color] > 0)) return false;
       if (e.sw && (sw[e.sw.g] | 0) !== e.sw.on) return false;
       const g = gateOn.get(e.id);
       if (g && g.from !== from) return false;
@@ -444,6 +444,7 @@
     const walk = (to) => {
       const pth = path(n, adj, pos, to, ok);
       if (!pth) return false;
+      for (const st of pth) { const d = doorOn.get(st.e.id); if (d && !opened.has(st.e.id)) { opened.add(st.e.id); held[d.color]--; } }
       if (pth.length) legs.push({ type: 'walk', steps: pth });
       pos = to;
       return true;
@@ -453,7 +454,7 @@
       if (b.kind === 'door') {
         if (b.item == null || !walk(b.item)) { failed = i; break; }
         legs.push({ type: 'key', color: b.color });
-        open.add(b.color);
+        held[b.color] = (held[b.color] || 0) + 1;
         if (!walk(b.v)) failed = i;
       } else if (b.kind === 'switch') {
         if (b.item == null || !walk(b.item)) { failed = i; break; }

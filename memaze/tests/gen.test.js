@@ -109,7 +109,7 @@ for (const [label, p] of lvCases) {
   assert.strictEqual(sig(m), sig(m2), label + ': level not deterministic');
   const ids = new Set(m.edges.map((e) => e.id)), mech = p.mech;
   asked += mech.keys + mech.switches + mech.movers + mech.portals; placed += m.doors.length + m.plates.length + m.movers.length + m.portals.length;
-  let at = m.mainPath[0], keys = new Set(), sw = {};
+  let at = m.mainPath[0], keys = Object.assign(new Map(), { opened: new Set() }), sw = {};
   const doorOn = new Map(m.doors.map((d) => [d.edge, d])), gateOn = new Map(m.gates.map((g) => [g.edge, g]));
   for (const leg of m.route) {
     if (leg.type === 'walk') {
@@ -117,13 +117,13 @@ for (const [label, p] of lvCases) {
         assert.strictEqual(st.from, at, label + ': the route jumps');
         assert.ok(ids.has(st.e.id), label + ': the route walks a corridor that isn\'t there');
         const d = doorOn.get(st.e.id);
-        assert.ok(!d || keys.has(d.color), label + ': the route walks through a shut door');
+        if (d && !keys.opened.has(st.e.id)) { assert.ok(keys.get(d.color) > 0, label + ': the route walks through a shut door without its key'); keys.set(d.color, keys.get(d.color) - 1); keys.opened.add(st.e.id); }
         assert.ok(!st.e.sw || (sw[st.e.sw.g] | 0) === st.e.sw.on, label + ': the route walks a switch bridge that is away');
         const g = gateOn.get(st.e.id);
         assert.ok(!g || g.from === st.from, label + ': the route goes the wrong way through a gate');
         at = st.e.a === at ? st.e.b : st.e.a;
       }
-    } else if (leg.type === 'key') { const k = m.keys.find((x) => x.color === leg.color); assert.strictEqual(k.node, at, label + ': key not where the route is'); keys.add(leg.color); }
+    } else if (leg.type === 'key') { const k = m.keys.find((x) => x.color === leg.color); assert.strictEqual(k.node, at, label + ': key not where the route is'); keys.set(leg.color, (keys.get(leg.color) || 0) + 1); }
     else if (leg.type === 'press') { const pl = m.plates.find((x) => x.g === leg.g); assert.strictEqual(pl.node, at, label + ': switch not where the route is'); sw[leg.g] = (sw[leg.g] | 0) ^ 1; }
     else if (leg.type === 'ride') { const mv = m.movers[leg.mover]; assert.ok(Math.hypot(mv.from.x - m.nodes[at].x, mv.from.y - m.nodes[at].y) < 1, label + ': platform not where the route is'); at = m.nodes.findIndex((n) => n.x === mv.to.x && n.y === mv.to.y); }
     else if (leg.type === 'warp') { const pt = m.portals[leg.portal]; assert.strictEqual(pt.a.node, at, label + ': portal not where the route is'); at = pt.b.node; }

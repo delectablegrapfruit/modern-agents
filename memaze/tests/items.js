@@ -130,7 +130,7 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     run(1.5, d);
     check('Magic carpet floats over the void', G.hp === 2 && !onFloor() && G.world.query(G.ball.x, G.ball.y, G.playT).depth < 0);
     let bubbled = false;
-    for (let i = 0; i < 60 * 8; i++) { run(1 / 60); if (G.fx.bubble) bubbled = true; }
+    for (let i = 0; i < 60 * 8 && !(bubbled && !G.fx.bubble); i++) { run(1 / 60); if (G.fx.bubble) bubbled = true; }
     check('carpet running out over the void: a hit, and a bubble floats you back to the last solid ground', G.hp === 1 && bubbled && onFloor() && G.state === 'play' && Math.hypot(G.ball.x - home.x, G.ball.y - home.y) < 150, G.hp);
     G.quit();
 

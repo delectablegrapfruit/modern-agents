@@ -23,10 +23,11 @@
       chroma: { on: false, color: '#00ff00', tol: 0.35, soft: 0.25 },
     },
     rgb: RGB,
-    music: { media: 'none' },
+    music: { media: 'default:synth' }, // the built-in chill loop
     audio: { master: 0.8, sfx: 0.8, music: 0.5, media: 0.8 },
     display: { floor: 'classic', quality: 2, reducedMotion: false, reduceFlash: false, fps: false },
     extras: { unlockAll: false },
+    v: 2,
   };
   // Built-in media that no longer exist: saved choices move to their replacements. Settings that no longer exist are dropped.
   const RENAMED = { 'default:ball': 'default:sticker', 'default:splat': 'default:oops' };
@@ -66,7 +67,10 @@
     seenPatterns: ['rgb'],
   };
 
-  function migrate(st) {
+  function migrate(st, raw) {
+    // Version 2 brought the new built-in music: it plays unless it's been turned off since.
+    if (raw && !(raw.v >= 2) && st.music.media === 'none') st.music.media = 'default:synth';
+    st.v = 2;
     for (const slot of ['player', 'lose']) if (RENAMED[st[slot].media]) st[slot].media = RENAMED[st[slot].media];
     for (const g in GONE) for (const k of GONE[g]) delete st[g][k];
     // The hitbox is now the picture itself, sized against the maze (0.6-1.25); Strict is what every rule does now.
@@ -88,7 +92,8 @@
   const Save = {
     settings: null, progress: null,
     load() {
-      this.settings = migrate(MZ.merge(DEFAULTS, MZ.store.load('settings', null)));
+      const raw = MZ.store.load('settings', null);
+      this.settings = migrate(MZ.merge(DEFAULTS, raw), raw);
       this.progress = oldProgress(MZ.merge(PROGRESS, MZ.store.load('progress', null)));
     },
     saveSettings() { MZ.store.save('settings', this.settings); },
@@ -123,7 +128,7 @@
     importJSON(text) {
       const j = JSON.parse(text);
       if (!j || j.app !== 'memaze') throw new Error('Not a Memaze save file');
-      this.settings = migrate(MZ.merge(DEFAULTS, j.settings));
+      this.settings = migrate(MZ.merge(DEFAULTS, j.settings), j.settings);
       this.progress = oldProgress(MZ.merge(PROGRESS, j.progress));
       this.saveSettings();
       this.saveProgress();

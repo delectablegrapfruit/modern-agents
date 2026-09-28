@@ -239,21 +239,28 @@
         }
         ctx.restore();
       }
-      for (const d of m.doors) {
-        const k = d.open ? Math.min(1, (MZ.Game.t - (d.openAt || 0)) / 0.45) : 0;
-        if (k >= 1) continue;
+      for (const d of m.doors) { // shut: a bar with a keyhole; opening, it splits and slides into the walls; open, the stubs stay
+        const k = d.open ? Math.min(1, (MZ.Game.t - (d.openAt || 0)) / 0.45) : 0, e = 1 - (1 - k) * (1 - k), f = 1 - 0.78 * e;
         ctx.save();
-        ctx.globalAlpha = 1 - k;
-        const cx = d.x, cy = d.y, sh = k * 14; // it sinks away as it opens
         ctx.lineCap = 'round';
-        ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 16 * px;
-        ctx.beginPath(); ctx.moveTo(d.ax, d.ay); ctx.lineTo(d.bx, d.by); ctx.stroke();
-        ctx.strokeStyle = d.color; ctx.lineWidth = 11 * px;
-        ctx.beginPath(); ctx.moveTo(d.ax, d.ay); ctx.lineTo(d.bx, d.by); ctx.stroke();
-        ctx.translate(cx, cy + sh * px);
-        ctx.fillStyle = '#1b1530'; // the keyhole
-        ctx.beginPath(); ctx.arc(0, -2 * px, 3.2 * px, 0, TAU); ctx.fill();
-        ctx.fillRect(-1.6 * px, -1 * px, 3.2 * px, 6 * px);
+        if (d.open) { // the threshold, dashed in the door's colour
+          ctx.setLineDash([5 * px, 6 * px]); ctx.globalAlpha = 0.55 * e;
+          ctx.strokeStyle = d.color; ctx.lineWidth = 2.5 * px;
+          ctx.beginPath(); ctx.moveTo(d.ax, d.ay); ctx.lineTo(d.bx, d.by); ctx.stroke();
+          ctx.setLineDash([]); ctx.globalAlpha = 1;
+        }
+        const half = (x0, y0) => { ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x0 + (d.x - x0) * f, y0 + (d.y - y0) * f); };
+        for (const [w, c] of [[16, 'rgba(0,0,0,0.5)'], [11, d.color]]) {
+          ctx.strokeStyle = c; ctx.lineWidth = w * px;
+          half(d.ax, d.ay); ctx.stroke();
+          half(d.bx, d.by); ctx.stroke();
+        }
+        if (!d.open) {
+          ctx.translate(d.x, d.y);
+          ctx.fillStyle = '#1b1530'; // the keyhole
+          ctx.beginPath(); ctx.arc(0, -2 * px, 3.2 * px, 0, TAU); ctx.fill();
+          ctx.fillRect(-1.6 * px, -1 * px, 3.2 * px, 6 * px);
+        }
         ctx.restore();
       }
       for (const kk of m.keys) if (!kk.taken) this.drawKey(kk, t);
@@ -613,7 +620,12 @@
       if (flags) for (const c of flags) if (c.seen) { dot(c.x, c.y, 3.4 * u, '#000'); dot(c.x, c.y, 2.4 * u, c.lit ? '#3ddc97' : '#ffc53d'); }
       if (boxes) for (const b of boxes) if (b.seen) { dot(b.x, b.y, 2.9 * u, '#000'); dot(b.x, b.y, 2 * u, '#d38bff'); }
       if (mech && mech.doors) { // what's been seen of the mechanics
-        for (const d of mech.doors) if (d.seen && !d.open) { g.strokeStyle = d.color; g.lineWidth = 3 * u; g.beginPath(); g.moveTo(this.ox + d.ax * this.sc, this.oy + d.ay * this.sc); g.lineTo(this.ox + d.bx * this.sc, this.oy + d.by * this.sc); g.stroke(); }
+        for (const d of mech.doors) if (d.seen) { // shut: solid; opened: dashed, so you can still see where it was
+          g.strokeStyle = d.color; g.lineWidth = (d.open ? 2 : 3) * u;
+          if (d.open) g.setLineDash([2 * u, 2 * u]);
+          g.beginPath(); g.moveTo(this.ox + d.ax * this.sc, this.oy + d.ay * this.sc); g.lineTo(this.ox + d.bx * this.sc, this.oy + d.by * this.sc); g.stroke();
+          g.setLineDash([]);
+        }
         for (const k of mech.keys) if (k.seen && !k.taken) { dot(k.x, k.y, 3 * u, '#000'); dot(k.x, k.y, 2.2 * u, k.color); }
         for (const pl of mech.plates) if (pl.seen) { dot(pl.x, pl.y, 3 * u, '#000'); dot(pl.x, pl.y, 2.2 * u, pl.color); }
         for (const pt of mech.portals) for (const e of [pt.a, pt.b]) if (e.seen) { dot(e.x, e.y, 3.2 * u, pt.color); dot(e.x, e.y, 1.6 * u, '#000'); }
