@@ -184,6 +184,19 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     G.startGauntlet({ diff: 'easy' });
     check('...but a new run starts empty-handed', !G.item && !G.bonus);
     G.quit();
+    // Gauntlet gems: their own count, paying out every few.
+    const P = MZ.Save.progress, main0 = P.stats.gems, gg0 = P.gauntletGems || 0;
+    G.startGauntlet({ diff: 'normal' });
+    const lives0 = G.run.lives;
+    for (let i = 0; i < G.GEM_CHARM; i++) G.gauntletGem();
+    check('Gauntlet: every few gems pay out a life at once', G.run.lives === lives0 + 1 && G.run.gems === G.GEM_CHARM, lives0 + ' -> ' + G.run.lives);
+    G.gemsTaken = 3; G.win();
+    check('Gauntlet gems are counted apart from the main levels\' gems', P.stats.gems === main0 && P.gauntletGems === gg0 + G.GEM_CHARM, P.stats.gems + ' / ' + P.gauntletGems);
+    G.quit();
+    G.startGauntlet({ diff: 'easy' });
+    for (let i = 0; i < G.GEM_CHARM; i++) G.gauntletGem();
+    check('...on Easy (lives unlimited) they pay out an Extra hit instead', G.bonus === 1);
+    G.quit();
     return res;
   });
   let bad = 0;

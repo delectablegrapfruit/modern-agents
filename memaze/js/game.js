@@ -33,6 +33,7 @@
     shrink: { name: 'Shrink', w: 16, dur: 10 },
   };
   const BULLET_V = 520, BULLET_RUN = 1800; // Bullet: speed and how far it carries you (it finishes on a junction)
+  const GEM_CHARM = 5, MAX_LIVES = 9;      // Gauntlet: every this many gems pays out (a life, a shield, an item, time)
   const APEX_VIEW = 1100;                  // Launch: world units across the screen's shorter side at the top
   const REACH = 340;                       // Launch: how far from take-off you can steer; clouds mark the border
   const UP = 0.3, AIR = 0.75, DOWN = 0.4;  // Launch: seconds going up, at the top, coming down (you steer throughout)
@@ -214,7 +215,7 @@
     t: 0, flow: 0, playT: 0, clock: 0, elapsed: 0, restarts: 0, gemsTaken: 0, stateT: 0, lastTick: -1, attract: 0,
     checkpoints: [], cpIdx: -1, boxes: [],
     hp: HEARTS, bonus: 0, hurtT: REGEN, guardT: 0, stuck: false, clearT: 0, touched: false, runT: 0, scale: 1, item: null, roll: null, fx: {}, lastSafe: null,
-    FX, Player, Backdrop, GoalMedia, ITEMS, ROLL, HEARTS, MAX_BONUS, REGEN, ICE_GRIP,
+    FX, Player, Backdrop, GoalMedia, ITEMS, ROLL, HEARTS, MAX_BONUS, REGEN, ICE_GRIP, GEM_CHARM,
 
     init() {
       this.renderer = new MZ.Renderer(MZ.$('#maze'));
@@ -344,6 +345,7 @@
       this.mode = 'gauntlet';
       this.run = { seed: hashStr('memaze/gauntlet/' + seedText), seedText, userSeed: !!o.seedText, style: o.style, diff: o.diff, key, cleared: 0, lives: D.lives, prevBest: MZ.Save.progress.gauntlet[key] || 0 };
       this.item = null; this.roll = null; this.bonus = 0; // a fresh run starts empty-handed
+      this.run.gems = 0;
       this.nextGauntlet();
     },
     nextGauntlet() {
@@ -432,7 +434,7 @@
     restartLevel() {
       if (this.mode === 'endless') return;
       this.restarts = this.state === 'result' ? 0 : this.restarts + 1; // Retry after a clear is a fresh attempt
-      this.gems.forEach((g) => (g.taken = false));
+      if (this.mode !== 'gauntlet') this.gems.forEach((g) => (g.taken = false)); // Gauntlet gems are banked as you take them
       this.cpIdx = -1;
       for (const c of this.checkpoints) c.lit = false;
       for (const b of this.boxes) b.takenAt = null;
@@ -801,6 +803,31 @@
       return false;
     },
 
+    // ----- Gauntlet gems: their own count, and every GEM_CHARM of them pays out at once -----
+    gauntletGem() {
+      const r = this.run, P = MZ.Save.progress;
+      r.gems = (r.gems || 0) + 1;
+      P.gauntletGems = (P.gauntletGems || 0) + 1;
+      if (r.gems % GEM_CHARM === 0) this.gemCharm();
+    },
+    // What the next GEM_CHARM gems will give: a life; with lives unlimited or full, an Extra hit shield; with those
+    // full too, an item (if the slot is free); else time.
+    nextCharm() {
+      const r = this.run;
+      if (isFinite(r.lives) && r.lives < MAX_LIVES) return 'life';
+      if (this.bonus < MAX_BONUS) return 'shield';
+      if (!this.item && !this.roll) return 'item';
+      return 'time';
+    },
+    gemCharm() {
+      const what = this.nextCharm();
+      if (what === 'life') { this.run.lives++; this.emit('bonus', 'Gems: extra life'); MZ.Audio.play('heal'); }
+      else if (what === 'shield') { this.bonus++; this.emit('bonus', 'Gems: Extra hit'); MZ.Audio.play('heal'); }
+      else if (what === 'item') { this.roll = { t: 0, id: this.pickItem() }; this.emit('bonus', 'Gems: an item'); MZ.Audio.play('box'); }
+      else { this.clock += 10; this.emit('bonus', 'Gems: +10s'); MZ.Audio.play('item'); }
+      this.emit('power');
+    },
+
     // ----- mystery boxes and items -----
     pickItem() {
       const w = {};
@@ -1083,6 +1110,7 @@
           this.gemsTaken++;
           MZ.Audio.play('gem');
           if (this.mode === 'endless') { this.run.taken.add(g.key); this.run.gems = (this.run.gems || 0) + 1; this.clock += 3; this.emit('bonus', '+3s'); }
+          if (this.mode === 'gauntlet') this.gauntletGem();
           this.emit('gem');
         }
       }
@@ -1202,7 +1230,7 @@
       MZ.Audio.play('win');
       const st = MZ.Save.progress.stats;
       st.wins++;
-      st.gems += this.gemsTaken;
+      if (this.mode !== 'gauntlet') st.gems += this.gemsTaken; // Gauntlet gems are counted apart (see gauntletGem)
       const res = this.results(); // saved before the win media, so closing the tab during it keeps the clear
       await FX.play('win');
       if (this.state !== 'fx' || this.flow !== flow) return;
@@ -1253,7 +1281,7 @@
       const P = MZ.Save.progress;
       let res;
       if (this.mode === 'gauntlet') {
-        res = { mode: 'gauntlet', score: this.run.cleared, best: P.gauntlet[this.run.key] || 0, newBest: this.run.cleared > this.run.prevBest, style: this.run.style, diff: this.run.diff };
+        res = { mode: 'gauntlet', score: this.run.cleared, best: P.gauntlet[this.run.key] || 0, newBest: this.run.cleared > this.run.prevBest, style: this.run.style, diff: this.run.diff, gems: this.run.gems || 0 };
       } else {
         const sc = this.endlessScore();
         res = { mode: 'endless', score: sc, best: Math.max(P.endlessBest, sc), newBest: sc > P.endlessBest, gems: this.run.gems || 0, dist: Math.round(this.run.best), beacons: this.run.beaconsLit };

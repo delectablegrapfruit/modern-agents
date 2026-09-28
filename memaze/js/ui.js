@@ -154,6 +154,11 @@
         set('gems', this.hud.gems, 'Gems ' + (G.run.gems || 0));
         set('goals', this.hud.goals, 'Score ' + G.endlessScore());
         this.hud.goals.classList.remove('late');
+      } else if (G.mode === 'gauntlet' && G.maze) { // the run's gems toward the next payout, and what it will be
+        const n = (G.run.gems || 0) % G.GEM_CHARM;
+        set('gems', this.hud.gems, 'Gems ' + n + '/' + G.GEM_CHARM + ' → ' + { life: '+1 life', shield: 'Extra hit', item: 'item', time: '+10s' }[G.nextCharm()]);
+        set('goals', this.hud.goals, 'Par ' + par(G.maze.parTime));
+        this.hud.goals.classList.toggle('late', G.elapsed > G.maze.parTime);
       } else if (G.maze) {
         set('gems', this.hud.gems, G.gems.length ? 'Gems ' + G.gemsTaken + '/' + G.gems.length : '');
         set('goals', this.hud.goals, 'Par ' + par(G.maze.parTime));
@@ -678,7 +683,7 @@
             h('li', null, h('b', null, 'Darkness'), ': you only see what’s near you.'),
             h('li', null, h('b', null, 'Remix'), ': past level 35, levels get a twist: narrow, rushed, mirrored, no map, and more.')),
           h('li', null, 'Falling off the board costs a hit; a bubble floats you back to solid ground.'),
-          h('li', null, 'Gauntlet: an endless run of mazes, getting harder (Progressive) or at random, at the difficulty you choose. The item in your slot and your Extra hit shields come along to the next maze. Share a seed to play the same run.'),
+          h('li', null, 'Gauntlet: an endless run of mazes, getting harder (Progressive) or at random, at the difficulty you choose. The item in your slot and your Extra hit shields come along to the next maze. Every 5 gems pays out at once: a life (on Easy, or with 9 lives, an Extra hit; then an item; then time). Share a seed to play the same run.'),
           h('li', null, 'The map fills in as you go: only what has been on screen shows up.'),
           h('li', null, 'Reach GOAL before the time runs out.'),
           h('li', null, 'Long mazes have flags. Touch one and a loss sends you back to it, not the start. Restart or running out of time starts over.'),
@@ -747,7 +752,7 @@
       const G = Game(), L = MZ.Levels, run = G.run;
       const again = () => (r.mode === 'gauntlet' ? G.startGauntlet({ style: run.style, diff: run.diff, seedText: run.userSeed ? run.seedText : null }) : G.startEndless());
       const rows = r.mode === 'gauntlet'
-        ? [['Mazes', (r.style === 'random' ? 'Random' : 'Progressive') + ' · ' + L.GAUNTLET[r.diff].name], ['Depth', String(r.score)], ['Best', String(r.best)], ['Seed', run.seedText]]
+        ? [['Mazes', (r.style === 'random' ? 'Random' : 'Progressive') + ' · ' + L.GAUNTLET[r.diff].name], ['Depth', String(r.score)], ['Best', String(r.best)], ['Gems', String(r.gems || 0)], ['Seed', run.seedText]]
         : [['Score', String(r.score)], ['Distance', r.dist + ' m'], ['Gems', String(r.gems)], ['Beacons', String(r.beacons)], ['Best', String(r.best)]];
       return this.panel(null, [
         h('h1', { class: 'clear over' }, r.newBest ? 'NEW BEST!' : 'GAME OVER'),

@@ -64,6 +64,7 @@
     journey: { unlocked: 1, levels: {} }, // levels[n] = {stars, best, gems}
     stats: { wins: 0, falls: 0, gems: 0, playTime: 0, runs: 0 },
     gauntlet: {}, endlessBest: 0, trials: {}, // gauntlet['progressive/normal'] = deepest maze cleared; trials[level] = best time
+    gauntletGems: 0, // gems taken in the Gauntlet (kept apart from stats.gems, the main levels' gems)
     seenPatterns: ['rgb'],
   };
 
