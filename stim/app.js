@@ -2734,7 +2734,8 @@ def({
     rec.forEach(id => {
       const el = $(`.pl-cc[data-g="${id}"]`, b); if (!el) return;
       const p = plProg(id), bar = $('.pl-pb', el), t = $('.pl-ct', el);
-      bar.hidden = !p; if (p) $('i', bar).style.width = clamp(p.pct, 0, 1) * 100 + '%';
+      if (bar.hidden !== !p) bar.hidden = !p;
+      if (p) $('i', bar).style.width = clamp(p.pct, 0, 1) * 100 + '%';
       const txt = p ? p.text : `${dur((plS.secs[id] || 0) * 1000)} played`;
       if (t.textContent !== txt) t.textContent = txt;
     });
@@ -2744,7 +2745,7 @@ def({
       try { n = Math.max(0, Math.floor(a.badge ? a.badge() : 0)); } catch {}
       const bd = $('.pl-bd', el), t = n ? (n > 99 ? '99+' : String(n)) : '';
       if (bd.textContent !== t) bd.textContent = t;
-      $('.pl-new', el).hidden = !!plS.last[el.dataset.g];
+      const nd = $('.pl-new', el), seen = !!plS.last[el.dataset.g]; if (nd.hidden !== seen) nd.hidden = seen;
     });
     // happening now
     const evs = plEvents(), es = evs.map(e => e.k + e.live).join();
