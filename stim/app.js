@@ -984,9 +984,9 @@ let folSet = new Set();
 const isFol = id => folSet.has(id);
 
 addAch([
-  ['cards', 'Bottomless', 'See 500 posts', 'down', () => S.feedSeen >= 500],
+  ['cards', 'Explorer', 'See 500 posts', 'down', () => S.feedSeen >= 500],
   ['match', 'Mutuals', 'Follow each other with 10 people', 'heart', () => S.matches >= 10],
-  ['clips', 'Autopilot', 'Watch 100 clips', 'play', () => S.clips >= 100],
+  ['clips', 'Clip fan', 'Watch 100 clips', 'play', () => S.clips >= 100],
   ['fdpost', 'First post', 'Share a post', 'send', () => S.feedPosts >= 1],
   ['fdheart', 'Generous', 'Like 100 posts', 'heart', () => S.feedLikes >= 100],
   ['fdviral', 'Taking off', 'Get 1,000 hearts on one post', 'star', () => F.myPosts.some(p => p.likes >= 1000)],
@@ -1340,6 +1340,9 @@ function evText(e) {
   }
 }
 const plain = s => s.replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, '’');
+// comments people left on something, newest first, so its comments sheet can show them again (x is escaped)
+function keepCm(it, c) { const a = it.cmts || (it.cmts = []); a.unshift(c); if (a.length > 40) a.length = 40; return c; }
+const cmOnMine = (mp, read) => { const u = stranger(), x = pick(CMTS); mp.cm++; keepCm(mp, { u, x: esc(x), ts: T(), l: 0 }); return addEvent('comment', [u], { p: mp.id, x, read }); };
 // the network keeps talking to you even when you haven't posted
 function socialEvent(read) {
   const live = F.myStory && T() - F.myStory.ts < 864e5;
@@ -1350,7 +1353,7 @@ function socialEvent(read) {
   if (k === 'suggest') return addEvent('suggest', [stranger()], { read });
   if (k === 'story') return addEvent('story', [chance(.5) ? friend() : stranger()], { x: pick(RX), read });
   if (k === 'like') { mp.likes++; return addEvent('like', [stranger()], { p: mp.id, read }); }
-  mp.cm++; return addEvent('comment', [stranger()], { p: mp.id, x: pick(CMTS), read });
+  return cmOnMine(mp, read);
 }
 
 // ---------- stories ----------
@@ -1383,6 +1386,7 @@ function openStory(uid) {
   phone.append(el);
   SV = { el, order, i, f: 0, t: 0, last: now(), held: false, paused: false, raf: 0, shown: 0 };
   el.addEventListener('click', e => {
+    if (!SV || SV.el !== el) return; // closing
     if (e.target.closest('[data-x]')) { closeStory(); return; }
     const rx = e.target.closest('[data-rx]');
     if (rx) {
@@ -1503,11 +1507,15 @@ addEventListener('keydown', e => {
 });
 
 // ---------- sheets: comments, share, more, people ----------
+const shut = el => !el.closest('.sheet.show'); // a sheet on its way out ignores taps
 const cmHTML = c => { const u = whoOf(c.u); return `<div class="fd-c${c.fresh ? ' fd-cnew' : ''}">${avHTML(u, 'sm')}<div class="fd-cb"><div class="fd-ch"><b>${u.handle}</b>${c.au ? '<em>Author</em>' : ''}<time data-ts="${c.ts}">${ago(c.ts)}</time></div><p>${c.x}</p><small>${c.l ? `${fmt(c.l)} ${c.l === 1 ? 'like' : 'likes'} · ` : ''}<button data-rp="${u.handle}">Reply</button></small></div><button class="fd-cl" data-cl aria-label="Like comment">${fi('heart')}</button></div>`; };
 function commentsSheet(it, onChange) {
-  const r = rng((it.seed || 1) ^ 0x5bd1e995), n0 = Math.min(it.cm, 16), au = it.u > 0 ? it.u : 0;
-  const items = Array.from({ length: n0 }, (_, i) => ({ u: stranger(r), x: esc(rp(r, CMTS)), ts: T() - (i + 1) * Math.round(2 + r() * 30) * 60000, l: Math.floor(Math.exp(r() * 6) - 1) }));
-  if (au && n0 > 2) items.splice(1, 0, { u: au, au: 1, x: esc(rp(r, ['thank you 🫶', 'ily all', 'more soon 👀', '🤍🤍', 'right?!'])), ts: T() - 3 * 60000, l: Math.round(r() * 300) });
+  // comments left while you were around come first; the rest of the count is filled in from the post's seed, older than those
+  const kept = it.cmts || (it.cmts = []), shown = new Set(kept), t0 = Math.min(T(), ...kept.map(c => c.ts));
+  const r = rng((it.seed || 1) ^ 0x5bd1e995), n0 = clamp(it.cm - kept.length, 0, 16), au = it.u > 0 ? it.u : 0;
+  const items = Array.from({ length: n0 }, (_, i) => ({ u: stranger(r), x: esc(rp(r, CMTS)), ts: t0 - (i + 1) * Math.round(2 + r() * 30) * 60000, l: Math.floor(Math.exp(r() * 6) - 1) }));
+  if (au && n0 > 2) items.splice(1, 0, { u: au, au: 1, x: esc(rp(r, ['thank you 🫶', 'ily all', 'more soon 👀', '🤍🤍', 'right?!'])), ts: t0 - 3 * 60000, l: Math.round(r() * 300) });
+  items.unshift(...kept);
   const ph = it.u > 0 ? `Add a comment for ${person(it.u).handle}…` : 'Add a comment…', cmt = n => `${fmt(n)} ${n === 1 ? 'comment' : 'comments'}`;
   const wrap = html(`<div class="fd-cs"><div class="fd-cls">${items.length ? items.map(cmHTML).join('') : '<p class="fd-cempty">No comments yet. Start the conversation.</p>'}</div>
     <div class="fd-cdock"><div class="fd-cq">${['❤️', '🙌', '🔥', '👏', '😍', '😮', '😂', '🥹'].map(x => `<button type="button" data-q="${x}">${x}</button>`).join('')}</div>
@@ -1519,9 +1527,10 @@ function commentsSheet(it, onChange) {
   ['keydown', 'keyup', 'keypress'].forEach(ev => inp.addEventListener(ev, e => { e.stopPropagation(); if (e.key === 'Escape') inp.blur(); }));
   inp.oninput = () => { btn.disabled = !inp.value.trim(); };
   const send = txt => {
-    txt = txt.trim(); if (!txt) return;
+    txt = txt.trim(); if (!txt || shut(wrap)) return;
     $('.fd-cempty', list) && $('.fd-cempty', list).remove();
-    list.prepend(html(cmHTML({ u: 0, x: esc(txt), ts: T(), l: 0, fresh: 1 })));
+    const c = keepCm(it, { u: 0, x: esc(txt), ts: T(), l: 0 }); shown.add(c);
+    list.prepend(html(cmHTML({ ...c, fresh: 1 })));
     it.cm++; bump(); S.feedComments++; act(); sfx.pop(3); haptic();
     const [x, y] = centerOf(btn); earn(3, x, y - 30);
     if (it.u > 0 && chance(.6)) setTimeout(() => addEvent('cmlike', [it.u], { x: txt }), ri(5000, 15000));
@@ -1536,10 +1545,11 @@ function commentsSheet(it, onChange) {
   // the conversation keeps going while you read it
   const iv = setInterval(() => {
     if (!wrap.isConnected) { clearInterval(iv); return; }
+    const add = c => { shown.add(c); $('.fd-cempty', list) && $('.fd-cempty', list).remove(); list.prepend(html(cmHTML({ ...c, fresh: 1 }))); if (list.children.length > 40) list.lastElementChild.remove(); };
+    const news = it.cmts.filter(c => !shown.has(c)); // left elsewhere since the sheet opened (your own posts)
+    if (news.length) { news.reverse().forEach(add); bump(); }
     if (document.hidden || !curBundle || curBundle.id !== 'feed' || !chance(.5) || wrap.parentElement.scrollTop > 60) return;
-    $('.fd-cempty', list) && $('.fd-cempty', list).remove();
-    list.prepend(html(cmHTML({ u: stranger(), x: esc(pick(CMTS)), ts: T(), l: 0, fresh: 1 })));
-    if (list.children.length > 40) list.lastElementChild.remove();
+    add(keepCm(it, { u: stranger(), x: esc(pick(CMTS)), ts: T(), l: 0 }));
     it.cm++; bump();
   }, 2800);
   return close;
@@ -1551,6 +1561,7 @@ function shareSheet(it, onShared) {
     <button class="pbtn" data-send disabled>Send</button></div>`);
   const close = sheet('Share', c), sel = new Set(), send = $('[data-send]', c);
   c.onclick = e => {
+    if (shut(c)) return;
     const p = e.target.closest('.fd-shp');
     if (p) { const id = +p.dataset.id; sel.has(id) ? sel.delete(id) : sel.add(id); p.classList.toggle('on', sel.has(id)); send.disabled = !sel.size; send.textContent = sel.size > 1 ? `Send separately (${sel.size})` : 'Send'; sfx.click(); return; }
     const x = e.target.closest('[data-x]');
@@ -1570,7 +1581,7 @@ function userSheet(id) {
     <button class="fd-fol fd-l${isFol(id) ? ' on' : ''}" data-fu="${id}">${isFol(id) ? 'Following' : 'Follow'}</button>
     <div class="fd-grid">${Array.from({ length: 9 }, () => `<span class="fd-gt" style="background-image:${artURI(Math.floor(r() * 2e9) + 1)}"></span>`).join('')}</div></div>`);
   sheet(u.handle, c);
-  $('[data-fu]', c).onclick = e => { const on = follow(id); if (on) { const [x, y] = centerOf(e.currentTarget); earn(2, x, y - 30); } };
+  $('[data-fu]', c).onclick = e => { if (shut(c)) return; const on = follow(id); if (on) { const [x, y] = centerOf(e.currentTarget); earn(2, x, y - 30); } };
 }
 function moreSheet(p, el) {
   const u = p.u > 0 ? person(p.u) : null;
@@ -1583,7 +1594,7 @@ function moreSheet(p, el) {
   const c = html(`<div class="fd-opts">${rows.map(([k, i, t]) => `<button data-k="${k}">${fi(i)}<span>${t}</span></button>`).join('')}</div>`);
   const close = sheet('', c);
   c.onclick = e => {
-    const b = e.target.closest('[data-k]'); if (!b) return;
+    const b = e.target.closest('[data-k]'); if (!b || shut(c)) return;
     const k = b.dataset.k;
     close();
     if (k === 'story') { F.myStory = { s: p.seed, ts: T(), f: p.f || 0, views: 0 }; renderStories(); toast('Added to your story'); }
@@ -1627,6 +1638,16 @@ function postHTML(p) {
     <div class="fd-media" data-a="media" style="aspect-ratio:${p.H === 100 ? '1' : '4 / 5'}">${media}</div>${cta}
     <div class="fd-bar"><button class="fd-b fd-like${p.liked ? ' on' : ''}" data-a="like" aria-label="Like">${fi('heart')}<span>${fmt(p.likes)}</span></button><button class="fd-b fd-bc" data-a="comments" aria-label="Comments">${fi('chat')}<span>${fmt(p.cm)}</span></button><button class="fd-b fd-bs" data-a="share" aria-label="Share">${fi('send')}<span>${fmt(p.sh || 0)}</span></button><button class="fd-b fd-save${p.saved ? ' on' : ''}" data-a="save" aria-label="Save">${fi('save')}</button></div>
     <p class="fd-cap"><b>${name}</b> ${p.cap}</p>${top}${more}</article>`;
+}
+// the comment count and the "View all" link under a post
+function syncCm(p, el) {
+  const s = $('.fd-bc span', el), v = fmt(p.cm);
+  if (s.textContent !== v) s.textContent = v;
+  if (p.cm < 2) return;
+  let m = $('.fd-cml', el);
+  if (!m) { m = html('<button class="fd-cml" data-a="comments"></button>'); el.append(m); }
+  const t = `View all ${v} comments`;
+  if (m.textContent !== t) m.textContent = t;
 }
 function sugHTML() {
   const ids = [];
@@ -1739,7 +1760,7 @@ function onFeedClick(e) {
     if (t - (p.tap || 0) < 330) { p.tap = 0; const [x, y] = heartAt(a, e); likePost(p, post, true, x, y); }
     else p.tap = t;
   } else if (k === 'like') likePost(p, post);
-  else if (k === 'comments') commentsSheet(p, () => { $('.fd-bc span', post).textContent = fmt(p.cm); const m = $('.fd-cml', post); if (m) m.textContent = `View all ${fmt(p.cm)} comments`; });
+  else if (k === 'comments') commentsSheet(p, () => syncCm(p, post));
   else if (k === 'share') shareSheet(p, () => { $('.fd-bs span', post).textContent = fmt(p.sh); });
   else if (k === 'save') savePost(p, post);
   else if (k === 'more') moreSheet(p, post);
@@ -1787,7 +1808,7 @@ function growPost(mp, t) {
     addEvent('like', us, { p: mp.id, n: Math.max(0, add - 2) });
   }
   if (F.myStory && F.myStory.s === mp.seed) F.myStory.views = Math.max(F.myStory.views || 0, Math.round(mp.views * .4));
-  if (chance(Math.min(.45, rate * .04))) { mp.cm++; addEvent('comment', [stranger()], { p: mp.id, x: pick(CMTS) }); }
+  if (chance(Math.min(.45, rate * .04))) cmOnMine(mp);
   if (chance(Math.min(.5, rate * .05))) { F.followers++; F.gained++; if (chance(.4)) addEvent('follow', [stranger()]); }
   for (const m of [100, 500, 1000, 5000, 10000]) if (mp.likes >= m && mp.ms < m) { mp.ms = m; addEvent('mile', [], { p: mp.id, x: m }); if (m >= 1000) alertOnce('fd-mile', 'activity', `Your post reached ${fmt(m)} hearts`, 120000); }
   if (age > 14 && !mp.n1 && mp.likes > 2) { mp.n1 = 1; alertOnce('fd-hearts', 'activity', `${person(stranger()).handle} and ${fmt(mp.likes - 1)} others liked your post`, 60000); }
@@ -1842,7 +1863,8 @@ def({
     }), { root: this.sc, threshold: [0, .55] });
     this.loadIO = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) moreItems(); }, { root: this.sc, rootMargin: '0px 0px 900px 0px' });
     renderStories();
-    for (const mp of F.myPosts.slice(0, 1)) if (T() - mp.ts < 36e5) { posts.set(mp.id, mp); this.list.insertBefore(html(postHTML(mp)), this.sent); }
+    // your latest post stays near the top for an hour (a brand-new one is inserted by publish())
+    for (const mp of F.myPosts.slice(0, 1)) if (T() - mp.ts < 36e5 && !posts.has(mp.id)) { posts.set(mp.id, mp); const el = html(postHTML(mp)); this.list.insertBefore(el, this.sent); observe(el); }
     moreItems(5);
     this.list.addEventListener('click', onFeedClick);
     // carousels: dots and the counter follow the swipe
@@ -1868,6 +1890,7 @@ def({
       if (!p.mine && chance(Math.min(.9, .3 + p.rate))) p.likes += ri(1, 1 + Math.round(p.rate * 3));
       const s = el._lc || (el._lc = $('.fd-like span', el)), v = fmt(p.likes);
       if (s.textContent !== v) s.textContent = v;
+      if (p.mine) syncCm(p, el); // comments keep arriving on your own posts
     }
     const show = F.newPosts > 0 && now() > this.pillAt && this.sc.scrollTop > 240;
     if (show === this.pill.hidden) {
@@ -1924,6 +1947,7 @@ function openCreate() {
     upd();
   };
   el.addEventListener('click', e => {
+    if (!NP || NP.el !== el) return; // closing
     if (e.target.closest('[data-x]')) { closeCreate(); return; }
     const t = e.target.closest('[data-pick],[data-f],[data-c],[data-k]');
     if (!t) return;
@@ -2029,7 +2053,7 @@ def({
         if (x === 'like') likeClip(c);
         else if (x === 'comments') { commentsSheet(k, () => { $('.fd-rc span', c).textContent = fmt(k.cm); }); }
         else if (x === 'share') shareSheet(k, () => { $('.fd-rs span', c).textContent = fmt(k.sh); });
-        else if (x === 'save') { k.saved = !k.saved; a.classList.toggle('on', k.saved); if (k.saved) { F.saved = [{ s: k.seed, H: 125, f: 0 }, ...F.saved].slice(0, 60); toast('Saved to your collection'); sfx.pop(2); } else sfx.close(); }
+        else if (x === 'save') { k.saved = !k.saved; a.classList.toggle('on', k.saved); if (k.saved) { F.saved = [{ s: k.seed, H: 125, f: 0 }, ...F.saved.filter(v => v.s !== k.seed)].slice(0, 60); toast('Saved to your collection'); sfx.pop(2); } else { F.saved = F.saved.filter(v => v.s !== k.seed); sfx.close(); } }
         else if (x === 'follow') { follow(k.u, true); a.classList.add('on'); a.dataset.a = 'user'; $('i', a).innerHTML = fi('check'); const [fx, fy] = centerOf(a); earn(2, fx - 30, fy); if (maybeBack(k.u)) setTimeout(() => toast(`${person(k.u).handle} followed you back`), 900); }
         else if (x === 'user') userSheet(k.u);
         return;
@@ -2130,8 +2154,9 @@ function requestsSheet() {
   };
   const drop = id => { reqList = reqList.filter(x => x !== id); F.requests = Math.max(0, F.requests - 1); if (!F.requests) F.reveal = false; };
   c.onclick = e => {
+    if (shut(c)) return;
     if (e.target.closest('[data-rv]')) {
-      if (!spend(300)) return;
+      if (F.reveal || !spend(300)) return;
       F.reveal = true; sfx.unlock(); haptic(true);
       $('.fd-rqb', c).classList.add('open');
       setTimeout(draw, 700);
@@ -2142,8 +2167,9 @@ function requestsSheet() {
       sfx.big(); act(); earn(Math.min(40, k * 2), FW / 2, FH * .5); toast(`${fmt(k)} new followers`); close();
     }
     const ok = e.target.closest('[data-ok]'), no = e.target.closest('[data-no]');
-    if (ok) { const id = +ok.dataset.ok; drop(id); F.followers++; F.gained++; sfx.pop(4); act(); const [x, y] = centerOf(ok); earn(1, x, y - 20); ok.closest('.fd-rq').remove(); if (!F.requests) draw(); }
-    if (no) { drop(+no.dataset.no); no.closest('.fd-rq').remove(); sfx.close(); if (!F.requests) draw(); }
+    if (ok) { const id = +ok.dataset.ok; drop(id); F.followers++; F.gained++; sfx.pop(4); act(); const [x, y] = centerOf(ok); earn(1, x, y - 20); ok.closest('.fd-rq').remove(); }
+    if (no) { drop(+no.dataset.no); no.closest('.fd-rq').remove(); sfx.close(); }
+    if (ok || no) { const all = $('[data-all]', c); if (!F.requests) draw(); else if (all) all.textContent = `Confirm all ${fmt(F.requests)}`; }
     APPS.discover.render(); refreshBadges();
   };
   draw();
@@ -2265,7 +2291,7 @@ function postSheet(mp) {
     <div class="fd-pstn"><div><b class="fd-pl">${fmt(mp.likes)}</b><small>hearts</small></div><div><b class="fd-pc2">${fmt(mp.cm)}</b><small>comments</small></div><div><b class="fd-pv">${fmt(mp.views)}</b><small>accounts reached</small></div></div>
     ${mp.cap ? `<p class="fd-cap"><b>${F.me.handle}</b> ${esc(mp.cap)}</p>` : ''}<button class="pbtn" data-cm style="--c:#7b61ff">View comments</button></div>`);
   const close = sheet('Your post', c);
-  $('[data-cm]', c).onclick = () => { close(); setTimeout(() => commentsSheet(mp), 260); };
+  $('[data-cm]', c).onclick = () => { if (shut(c)) return; close(); setTimeout(() => commentsSheet(mp), 260); };
   const iv = setInterval(() => {
     if (!c.isConnected) { clearInterval(iv); return; }
     $('.fd-pl', c).textContent = fmt(mp.likes); $('.fd-pc2', c).textContent = fmt(mp.cm); $('.fd-pv', c).textContent = fmt(mp.views);
@@ -2290,7 +2316,7 @@ function shareProfile() {
   const finder = (x, y) => `<rect x="${x + .5}" y="${y + .5}" width="6" height="6" rx="1.6" fill="none" stroke="currentColor" stroke-width="1"/><rect x="${x + 2}" y="${y + 2}" width="3" height="3" rx=".8"/>`;
   const c = html(`<div class="fd-qr"><div class="fd-qrc">${avHTML(meU(), 'lg')}<svg viewBox="-1 -1 23 23" fill="currentColor">${cells}${finder(0, 0)}${finder(14, 0)}${finder(0, 14)}</svg><b>@${F.me.handle}</b></div><div class="row2"><button class="pbtn" data-l style="--c:#7b61ff">Copy link</button><button class="pbtn" data-s style="--c:#ff4fa3">Share to…</button></div></div>`);
   const close = sheet('Share profile', c);
-  c.onclick = e => { if (e.target.closest('[data-l],[data-s]')) { toast(e.target.closest('[data-l]') ? 'Link copied' : 'Shared'); sfx.swoosh(); act(); close(); } };
+  c.onclick = e => { if (!shut(c) && e.target.closest('[data-l],[data-s]')) { toast(e.target.closest('[data-l]') ? 'Link copied' : 'Shared'); sfx.swoosh(); act(); close(); } };
 }
 def({
   id: 'profile', name: 'Profile', tag: '', c: '#7b61ff',
