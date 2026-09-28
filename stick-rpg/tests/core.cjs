@@ -490,7 +490,8 @@ function eq(a, b, msg) { ok(JSON.stringify(a) === JSON.stringify(b), msg + ' (go
   eq(await sfx(), ['ignition'], 'the ignition');
   await t.step(12);
   await page.keyboard.press('c');
-  eq(await ev(() => [SRPG.game.s.driving, SRPG.engine.black]), [0, 10], 'out: on foot, no fade');
+  // the handler's first jump only skips the ignition, so the fade plays both ways (Ruffle-checked)
+  eq(await ev(() => [SRPG.game.s.driving, SRPG.engine.black]), [0, 1], 'out: on foot, black clip from frame 1');
   eq(await sfx(), [], '...and no sound');
   await ev(() => { SRPG.city.st.stun = 5; });
   await page.keyboard.press('c');

@@ -245,8 +245,13 @@
   // Rendered at the screen's pixel scale (capped at 2 to bound memory) so the map stays sharp.
   function staticLayer(s) {
     var k = Math.min(2, SRPG.engine.pixelScale || 1);
-    var key = [s.dwelling, s.items.car === 0 ? 1 : 0, k].join('|');
+    var base = [s.dwelling, s.items.car === 0 ? 1 : 0].join('|');
+    var key = base + '|' + k;
     if (st.staticCanvas && st.staticKey === key) return st.staticCanvas;
+    // while the window is being resized, keep drawing the old picture scaled; rebuild once it settles
+    if (st.staticCanvas && st.staticKey.indexOf(base + '|') === 0 && Date.now() - (SRPG.engine.lastResize || 0) < 300) {
+      return st.staticCanvas;
+    }
     var B = SRPG.mapArt.BOUNDS;
     var c = st.staticCanvas || document.createElement('canvas');
     c.width = Math.ceil(B.w * k);
@@ -307,8 +312,9 @@
       else walkClip(s);
     },
 
-    // 'c' (the walk clip's key handler, so not while knocked down or in a panel): getting in plays
-    // the ignition and the black fade; getting out is silent.
+    // 'c' (the walk clip's key handler, so not while knocked down or in a panel): the black fade
+    // plays both ways (the handler's first jump only skips the ignition sound, which is for getting
+    // in: srpg_as.txt 2874-2885, jump L860221 -> L860270; confirmed in Ruffle).
     // I / Esc are this version's shortcuts for the two HUD buttons (the original has none), so they
     // work only when the buttons are there; Esc also closes a panel, like its X.
     onKey: function (k) {
@@ -322,11 +328,10 @@
       if (k === 'i') { city.openPanel('inventory'); return; }
       if (k === 'Escape') { city.openPanel('stats'); return; }
       if (k === 'c' && (s.items.car === 1 || s.items.car === 2)) {
-        if (s.driving === 0) {
-          SRPG.sound.play('ignition');
-          SRPG.engine.blackPlay(1);
-          s.driving = 1;
-        } else if (s.driving === 1) s.driving = 0;
+        if (s.driving === 0) SRPG.sound.play('ignition');
+        SRPG.engine.blackPlay(1);
+        if (s.driving === 0) s.driving = 1;
+        else if (s.driving === 1) s.driving = 0;
       }
     },
 

@@ -67,8 +67,10 @@
       window.addEventListener('blur', engine.releaseAll);
 
       var stage = document.getElementById('stage');
+      stage.addEventListener('contextmenu', function (e) { e.preventDefault(); });
       stage.addEventListener('mousedown', function (e) {
         if (e.target !== canvas && e.target.id !== 'ui') return;
+        if (e.button !== 0) return; // Flash buttons answer the primary button only
         var p = engine.toStage(e.clientX, e.clientY);
         engine.mouse.down = true;
         SRPG.sound.unlock();
@@ -110,11 +112,12 @@
       if (f >= 11 && f <= 30) return (30 - f) / 19;
       return 0;
     },
-    drawBlack: function (ctx) {
-      var a = engine.blackAlpha();
-      if (a <= 0) return;
-      ctx.fillStyle = 'rgba(0,0,0,' + a + ')';
-      ctx.fillRect(0, 0, SRPG.W, SRPG.H);
+    // Shown on a black layer above the canvas AND the HTML menus (#black), like the original clip
+    // that sits above everything. Screens that play it call this from render(); the layer is cleared
+    // at the start of every draw, so other screens never show it.
+    drawBlack: function () {
+      var el = blackEl();
+      if (el) el.style.opacity = String(engine.blackAlpha());
     },
 
     // Test hook: advance the simulation n ticks synchronously (no rAF needed), then redraw.
@@ -128,6 +131,8 @@
     pixelScale: 1,
 
     draw: function () {
+      var el = blackEl();
+      if (el && el.style.opacity !== '0') el.style.opacity = '0';
       var ctx = engine.ctx;
       var k = engine.pixelScale;
       ctx.setTransform(k, 0, 0, k, 0, 0);
@@ -147,7 +152,14 @@
     return k;
   }
 
+  var blackNode;
+  function blackEl() {
+    if (blackNode === undefined) blackNode = document.getElementById('black') || null;
+    return blackNode;
+  }
+
   function fit() {
+    engine.lastResize = Date.now();
     var stage = document.getElementById('stage');
     var s = Math.min(window.innerWidth / SRPG.W, window.innerHeight / SRPG.H);
     stage.style.transform = 'translate(-50%, -50%) scale(' + s + ')';

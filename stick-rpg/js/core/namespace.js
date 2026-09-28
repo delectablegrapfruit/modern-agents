@@ -41,7 +41,26 @@
     pick: function (arr) { return arr[Math.floor(next() * arr.length)]; },
   };
 
+  // Flash's string-to-number (checked in Ruffle): a leading 0 with only digits 0-7 is octal ('0100'
+  // is 64), 0x/0X is hex, leading spaces are skipped, anything else non-numeric is NaN. flashInt is
+  // AS1 int(): truncation to a 32-bit integer, NaN and Infinity become 0.
+  function flashNumber(v) {
+    if (typeof v === 'number') return v;
+    var t = String(v);
+    if (/^0[0-7]+$/.test(t)) return parseInt(t, 8);
+    if (/^0[xX][0-9a-fA-F]+$/.test(t)) return parseInt(t.slice(2), 16);
+    t = t.replace(/^\s+/, '');
+    if (!/^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/.test(t)) return NaN;
+    return Number(t);
+  }
+  function flashInt(v) {
+    var n = flashNumber(v);
+    return isFinite(n) ? n | 0 : 0;
+  }
+
   SRPG.util = {
+    flashNumber: flashNumber,
+    flashInt: flashInt,
     clamp: function (v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; },
     commas: function (n) {
       var neg = n < 0;

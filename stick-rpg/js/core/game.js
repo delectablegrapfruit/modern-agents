@@ -166,7 +166,7 @@
         s.hpmax += 1;
       }
       if (mansion && (s.job === 8 || s.job === 9)) {
-        out.earn = 'Political career earns you $5000 today.';
+        out.earn = 'Your time in office paid out $5000 today.';
         s.cash += 5000;
       }
 

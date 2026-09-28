@@ -21,6 +21,19 @@ html, body {
   font-family: "Arial Black", "Arial Bold", Gadget, Arial, Helvetica, sans-serif;
 }
 
+/* the original's black fade clip: above the canvas and the menus, never takes clicks */
+#black {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 550px;
+  height: 400px;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 80; /* above the menus, modals and pop-up text; below the FPS counter */
+}
+
 #game {
   position: absolute;
   left: 0;

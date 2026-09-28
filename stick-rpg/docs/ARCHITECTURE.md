@@ -91,7 +91,27 @@ text + sound), `g.msg(text)`, `g.addKarma(n)`, `g.addStat(name, n)`, `g.heal(n)`
 sub-screen), `g.back()`, `g.refresh()`, `g.leave()`, `g.go(screen, params)`, `g.endGame()`, `g.die()`.
 
 Open one with `SRPG.location.open(id)`; minigames return with
-`SRPG.location.open(id, { resume: true })` (no fade, no `onEnter`).
+`SRPG.location.open(id, { resume: true })` (no `onEnter`; add `fade: true` when the original goes
+back to the building's root frame, whose script replays the black clip). Leave with
+`SRPG.location.leave()` (door nudge), `leave('key')` (another building's nudge) or
+`leave({ nudge: false })`. `SRPG.location.current` is null while a minigame is showing.
+
+## City, walking and the black fade
+
+- Walking follows the original's walk clip (sprite 720), whose two frames alternate every tick:
+  frame 1 reads the keys (`SRPG.MAP.readKeys`: left beats right, up beats down), walks with doors,
+  counts footsteps and spawns cars; frame 2 walks again without doors and tests collisions
+  (`SRPG.MAP.walkLoop(s, move, doors)`). A fall or car hit is root frame 3's 40-tick knock-down.
+- `SRPG.engine.blackPlay(1)` plays the black clip over 9 ticks, `blackPlay(11)` over 19;
+  screens that show it call `SRPG.engine.drawBlack()` in `render()` (the city and buildings do).
+  It is an HTML layer (`#black`) over the canvas and the menus.
+- `SRPG.engine.go('city', { fade: true | 19 })`; leaving a building passes `rebuild` and no fade.
+- `SRPG.city.clearTraffic()` removes both cars (tests); `SRPG.city.dialogTick()` keeps the car clips
+  running under a street dialog (location.js calls it).
+- `SRPG.util.flashNumber(str)` / `flashInt(str)`: Flash's string-to-number and AS1 `int()`, for
+  typed amounts (octal with a leading 0, hex, 32-bit wrap).
+- The canvas is drawn at the displayed resolution (`SRPG.engine.pixelScale`); draw in 550×400
+  stage units as usual, and scale pixel reads by `pixelScale` in tests.
 
 Location ids: `store`, `nli`, `bank`, `pawn`, `bar`, `casino`, `mcsticks`, `mansion`, `bus`,
 `furniture`, `uofs`, `home` (apartment, dwelling 1–3), `oldapartment` (the apartment once you own
@@ -132,7 +152,7 @@ inventory skateboard car
 
 `SRPG.sound.play(name)`: click error eat drink work purchase fall carhit crash footstep skate
 ansmachine roulette reel handle win ignition punch swoosh fireball energy stat sleep dart cards
-chip door breath stamp. `SRPG.sound.music(name | null)`: beginning main inside fight.
+chip door breath stamp. `SRPG.sound.music(name | null, force)`: beginning main inside fight (`force` plays even with MUSIC OFF, as the original does on arrival). Buttons make no click sound: the original never plays its click sample.
 
 ## Testing
 
