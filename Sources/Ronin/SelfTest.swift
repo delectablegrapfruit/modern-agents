@@ -183,25 +183,16 @@ enum SelfTest {
         try await until("the warlord arrived", timeout: 60) { session.fight.boss != nil || session.fight.outcome != nil }
         guard session.fight.outcome == nil else { throw Failure("stage 5 ended (\(session.fight.outcome!.rawValue)) before its warlord came") }
         scene.timeScale = 1
-        try await until("the warlord closed in", timeout: 10) { (session.fight.boss?.distance ?? 0) < 0.55 }
-        try await pause(0.2)
-        try snapshot("7-warlord", panel)
-        // His bar is up in the header, never across the fighters.
-        guard let bar = scene.bossBar, bar.minY >= scene.laneTop - 0.5 else { throw Failure("the warlord's bar was drawn over the lane") }
-        // His blow coming, and the marker over him that times it (not taken if he does not wind up soon).
-        let watching = Date()
-        while Date().timeIntervalSince(watching) < 3, session.fight.outcome == nil,
-              !(session.fight.boss.map { $0.phase == .windup && $0.progress > 0.4 } ?? false) {
-            try await pause(0.02)
-        }
-        if session.fight.boss?.phase == .windup { try snapshot("7b-warlord-windup", panel) } else { print("no warlord wind-up to show") }
-        // A cut into his set guard, with the real button: parried, the blades bind where they cross, sparks and all
-        // (from far enough out that he does not answer it, so the rest of his fight is as it would have been; his guard
-        // is set for him when he comes into reach, if he has not raised it himself).
+        // As he walks into reach, a cut into his set guard with the real button: parried, the blades bind where they
+        // cross, sparks and all. The autopilot holds its hand meanwhile (or it would cut him first), and his guard is set
+        // for him if he has not raised it himself; the cut is made from far enough out that he does not answer it, so
+        // the rest of his fight is as it would have been.
+        let piloting = session.autopilot
+        session.autopilot = false
         let parried = session.fight.stats.parried, clashes = scene.clashesDrawn, wounds = session.fight.stats.damage
         var opening: Side?
         let waiting = Date()
-        while Date().timeIntervalSince(waiting) < 6, session.fight.outcome == nil, opening == nil {
+        while Date().timeIntervalSince(waiting) < 12, session.fight.outcome == nil, opening == nil {
             let fight = session.fight
             if let boss = fight.boss, boss.distance > boss.contact + 0.07, !fight.isStumbling, fight.cooldown == 0,
                fight.target(boss.side) == .foe(boss.id) {
@@ -230,6 +221,19 @@ enum SelfTest {
         } else {
             print("no set guard in reach to cut into")
         }
+        session.autopilot = piloting
+        try await until("the warlord closed in", timeout: 10) { (session.fight.boss?.distance ?? 0) < 0.55 }
+        try await pause(0.2)
+        try snapshot("7-warlord", panel)
+        // His bar is up in the header, never across the fighters.
+        guard let bar = scene.bossBar, bar.minY >= scene.laneTop - 0.5 else { throw Failure("the warlord's bar was drawn over the lane") }
+        // His blow coming, and the marker over him that times it (not taken if he does not wind up soon).
+        let watching = Date()
+        while Date().timeIntervalSince(watching) < 3, session.fight.outcome == nil,
+              !(session.fight.boss.map { $0.phase == .windup && $0.progress > 0.4 } ?? false) {
+            try await pause(0.02)
+        }
+        if session.fight.boss?.phase == .windup { try snapshot("7b-warlord-windup", panel) } else { print("no warlord wind-up to show") }
         scene.timeScale = 3
         try await until("stage 5 ended", timeout: 40) { session.fight.outcome != nil }
         guard session.fight.outcome == .victory else { throw Failure("the autopilot lost to the warlord") }
