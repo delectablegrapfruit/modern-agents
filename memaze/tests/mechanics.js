@@ -54,6 +54,14 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     check('bosses are bigger than the levels before them', b10.boss && b10.nodes.length > l9.nodes.length * 1.2, b10.nodes.length + ' vs ' + l9.nodes.length);
     check('no remix before level 36, one or more after', L.levelParams(35).mods.length === 0 && [36, 41, 47, 58].every((lv) => L.levelParams(lv).mods.length >= 1));
 
+    // ----- stars -----
+    G.startJourney(21);
+    const parT = G.maze.parTime, starsAt = (t) => { G.elapsed = t; G.gemsTaken = 0; return G.results().stars; };
+    const sUnder = starsAt(parT - 0.5), sAt = starsAt(parT), sOver = starsAt(parT + 0.01);
+    check('a star for beating par (at or under it), none for going over', sUnder === sAt && sAt === sOver + 1, [sUnder, sAt, sOver].join(' / '));
+    MZ.Save.progress.journey.levels[21] = undefined; delete MZ.Save.progress.journey.levels[21]; MZ.Save.saveProgress();
+    G.quit();
+
     // ----- keys and doors -----
     G.startJourney(5);
     let m = G.maze, door = m.doors[0], key = m.keys.find((k) => k.color === door.color);
