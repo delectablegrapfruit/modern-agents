@@ -1,4 +1,8 @@
+#if os(WASI)
+import WASILibc
+#else
 import Foundation
+#endif
 #if canImport(CoreGraphics)
 import CoreGraphics
 #endif
@@ -213,6 +217,9 @@ public struct Pen {
 
 // MARK: SVG, for previews
 
+// (Not in the WebAssembly build, whose Foundation has no String(format:); the web page draws the shapes itself.)
+#if !os(WASI)
+
 extension Sketch {
     private static func number(_ v: CGFloat) -> String { String(format: "%.1f", Double(v)) }
 
@@ -269,3 +276,4 @@ extension Sketch {
         return out + "</g>"
     }
 }
+#endif

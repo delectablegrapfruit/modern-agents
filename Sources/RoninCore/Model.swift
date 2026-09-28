@@ -1,4 +1,8 @@
+#if os(WASI)
+import WASILibc
+#else
 import Foundation
+#endif
 
 /// The lane is one dimension. The ronin stands at 0; foes come from the left (negative) and the right (positive).
 /// The panel shows −1…1, and foes enter from just beyond.

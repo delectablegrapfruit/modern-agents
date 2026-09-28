@@ -1,4 +1,8 @@
+#if os(WASI)
+import WASILibc
+#else
 import Foundation
+#endif
 
 /// Plays a fight. The perfect pilot cuts the moment something is in reach (a brute's club as it glares is met, and
 /// turned aside, the same way), and catches a falling gourd the moment it can. A human-like one sees the lane, decides,

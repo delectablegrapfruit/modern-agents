@@ -1,4 +1,8 @@
+#if os(WASI)
+import WASILibc
+#else
 import Foundation
+#endif
 #if canImport(CoreGraphics)
 import CoreGraphics
 #endif

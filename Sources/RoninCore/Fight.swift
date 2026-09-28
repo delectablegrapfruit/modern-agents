@@ -1,4 +1,8 @@
+#if os(WASI)
+import WASILibc
+#else
 import Foundation
+#endif
 
 public enum Outcome: String, Codable, Sendable {
     case victory, defeat

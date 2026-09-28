@@ -1,4 +1,8 @@
+#if os(WASI)
+import WASILibc
+#else
 import Foundation
+#endif
 
 /// A run: stages won one after another, hearts carried, until the ronin falls. The campaign's climbs stage by stage
 /// from the first stage after its last fall; an endless run plays the stage it started on over and over, a fresh roll
@@ -297,6 +301,9 @@ public struct SaveGame: Codable, Equatable, Sendable {
         self.fight = fight
     }
 
+    // (The WebAssembly build has no Foundation, and reads saves with a JSON decoder of its own, the same way:
+    // web/Sources/RoninWeb.)
+    #if !os(WASI)
     /// Reads a save file: the fight in progress if it still reads, else a fresh roll of the career's stage at the
     /// hearts carried. Nil only when not even the career can be read.
     public static func load(_ data: Data) -> SaveGame? {
@@ -312,6 +319,7 @@ public struct SaveGame: Codable, Equatable, Sendable {
         }
         return SaveGame(career: header.career, fight: header.career.makeFight())
     }
+    #endif
 }
 
 extension KeyedDecodingContainer {
