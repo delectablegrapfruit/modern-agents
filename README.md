@@ -183,6 +183,12 @@ make run     # builds build/Ronin.app (macOS 14+) and opens it
 
 All but `make run` work on Linux too.
 
+The browser version lives in `web/`: the core and the art compiled to WebAssembly (`web/Package.swift`, built in
+Docker with the SwiftWasm SDK by `web/build.sh`, its JS API in `web/API.md`), and the app's scene ported to a canvas
+page (`web/src/`, put together by `web/assemble.sh` into `web/dist/index.html` beside `core.js` and `ronin.wasm`).
+It plays the same fights and draws the same figures; saves move between it and the app. `node web/test/run.mjs`
+drives it in headless Chromium.
+
 - `RoninCore` is the game. It runs a fixed 120 Hz step, is seeded, and uses Foundation only. The same stage and
   seed always make the same fight, and a saved fight resumes exactly.
 - `RoninArt` holds the figures, and uses Foundation only. Each frame is posed from a small skeleton and drawn as a
