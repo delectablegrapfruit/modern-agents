@@ -834,8 +834,7 @@ Object.defineProperties(DuelScene.prototype, Object.getOwnPropertyDescriptors({
         severance = Math.random() < gore.severs ? cut : null;
       }
     }
-    const piece = variant !== null ? struckPiece(sprite.cast, variant) : sprite.body.piece;
-    const gash = this.carnage.kill(sprite.cast, severance, piece, feet, facing, sideSign(side), force, variant ?? 0);
+    const gash = this.carnage.kill(sprite.cast, severance, feet, facing, sideSign(side), force, variant !== null ? { variant } : { frame: sprite.shown });
     const thrown = side === 'right' ? 0.6 : Math.PI - 0.6;
     if (gore.on) {
       this.spray(Palette.blood, gash, { count: boss ? 90 : heavy ? 56 : 36, speed: 2.4, size: 0.08, life: 0.7, spread: 1.6, angle: thrown, gravity: 6 });
@@ -1036,14 +1035,14 @@ DuelScene.tip = function (kind, rules) {
 DuelScene.heightOf = (cut) => ({ sune: 0.3, dou: 0.48, shomen: 0.72 }[cut] ?? 0.58);
 DuelScene.slopeOf = (cut) => ({ kesa: -0.7, gyaku: 0.7, nukitsuke: 0.7, dou: 0, sune: 0.1, shomen: -1.35, tsuki: 0 }[cut] ?? 0);
 
-/** A foe in the pose a blow throws him into (Figures.struck), if the core draws it; else his stagger. */
+/** A foe in the pose a blow throws him into (Figures.struck), weapon in hand: what his figure freezes in at a killing
+ *  blow, exactly as the carnage lets him fall from it. */
 function struckPiece(cast, variant) {
   const core = Figures.core;
   const key = `struck|${cast}|${variant}`;
   let p = Figures.cache.get(key);
   if (p) return p;
-  if (core && typeof core.sketchStruck === 'function') p = new Piece(core.sketchStruck(cast, variant));
-  else p = Figures.piece(cast, F.stagger(0));
+  try { p = new Piece(core.ragdoll.struck(cast, variant)); } catch { p = Figures.piece(cast, F.stagger(0)); }
   Figures.cache.set(key, p);
   return p;
 }

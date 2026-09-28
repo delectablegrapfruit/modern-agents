@@ -489,7 +489,10 @@ class FoeSprite extends Node {
     if (FoeSprite.clubs.has(key)) return FoeSprite.clubs.get(key);
     let line = null;
     const w = weaponLine(cast, frame);
-    if (w && w.blade !== null && w.blade !== undefined) {
+    const given = figureInfo(cast, frame)?.club;
+    if (given) {
+      line = { grip: given.grip, head: given.head };
+    } else if (w && w.blade !== null && w.blade !== undefined) {
       const head = w.tip, angle = w.blade;
       line = { grip: { x: head.x - Math.sin(angle) * FoeSprite.clubLength, y: head.y + Math.cos(angle) * FoeSprite.clubLength }, head };
     } else {
@@ -1103,7 +1106,7 @@ class HeroSprite extends Node {
     let p = HeroSprite.sheathedPieces.get(frame);
     if (p) return p;
     const core = Figures.core;
-    if (core && typeof core.sketchSheathed === 'function') p = new Piece(core.sketchSheathed(frame));
+    if (core) p = new Piece(core.sketch('hero', frame, { sheathed: true }));
     else p = Figures.piece('hero', frame);
     HeroSprite.sheathedPieces.set(frame, p);
     return p;

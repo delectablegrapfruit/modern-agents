@@ -215,6 +215,7 @@ class Panel {
     // A moment after the fight stops, the panel stops drawing, so a paused game costs nothing.
     if (!this.visible || this.awayFor > 1.2) return;
     this.scene.update(dt);
+    const t1 = performance.now();
     const frozen = this.scene.frozenWorld && !this.scene.isEngaging;
     if (frozen) {
       // Everything holds but what plays over the lane.
@@ -224,10 +225,14 @@ class Panel {
     } else {
       this.scene.root.tick(dt);
     }
+    const t2 = performance.now();
     R.render(this.scene.root, Palette.background.css());
-    const spent = performance.now() - t0;
+    const t3 = performance.now();
+    const spent = t3 - t0;
     const f = this.frames;
-    f.n++; f.total += spent; f.worst = Math.max(f.worst, spent);
+    f.parts = f.parts || { update: 0, tick: 0, render: 0, carnage: 0 };
+    f.parts.update += t1 - t0; f.parts.tick += t2 - t1; f.parts.render += t3 - t2; f.parts.carnage += this.scene.carnageTime || 0;
+    f.n++; f.total += spent; f.worst = Math.max(f.worst, spent); f.dt = (f.dt || 0) + dt; if (spent > 16.7) f.slow = (f.slow || 0) + 1;
   }
 
   // MARK: The menu (App.menuNeedsUpdate)

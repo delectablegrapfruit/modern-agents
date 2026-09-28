@@ -96,7 +96,8 @@ async function boot() {
   els.status.hidden = true;
   els.wrap.hidden = false;
   const panel = new Panel(session, els);
-  window.ronin = { panel, session, core, R, Figures };
+  // For tests: `manual` stops the clock, and `step(dt)` draws one frame `dt` seconds on.
+  window.ronin = { panel, session, core, R, Figures, manual: false, step: (dt) => { panel.frame(dt); preloadStep(panel, 4); } };
   els.menuButton.addEventListener('click', () => panel.toggleMenu());
   els.showButton.addEventListener('click', () => panel.show());
   document.addEventListener('pointerdown', (e) => {
@@ -108,8 +109,10 @@ async function boot() {
     const dt = Math.min(0.1, Math.max(0, (now - last) / 1000));
     last = now;
     try {
-      panel.frame(dt);
-      preloadStep(panel, 4);
+      if (!window.ronin.manual) {
+        panel.frame(dt);
+        preloadStep(panel, 4);
+      }
     } catch (err) {
       console.error(err);
     }

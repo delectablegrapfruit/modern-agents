@@ -290,7 +290,10 @@ class Sprite extends Node {
       return;
     }
     if (!this.texture) return;
-    const img = this.texture.tinted(this.color);
+    if (this._tex !== this.texture || this._color !== this.color) {
+      this._tex = this.texture; this._color = this.color; this._img = this.texture.tinted(this.color);
+    }
+    const img = this._img;
     ctx.scale(1, -1);
     ctx.drawImage(img, -this.ax * this.w, -(1 - this.ay) * this.h, this.w, this.h);
   }
@@ -439,6 +442,10 @@ class Emitter extends Node {
     p.scale = this.pScale + (Math.random() - 0.5) * this.scaleRange;
     p.rot = this.pRotation + (Math.random() - 0.5) * this.rotationRange;
     p.tex = this.texture; p.color = this.color; p.additive = this.additive;
+    if (this._imgColor !== this.color || this._imgTex !== this.texture) {
+      this._imgColor = this.color; this._imgTex = this.texture; this._img = this.texture.tinted(this.color);
+    }
+    p.img = this._img;
     p.ax = this.xAccel; p.ay = this.yAccel; p.alphaSpeed = this.alphaSpeed; p.scaleSpeed = this.scaleSpeed;
     p.rotSpeed = this.rotationSpeed; p.seq = this.alphaSeq; p.a0 = p.alpha;
     if (this.target && this.target !== this) {
@@ -503,28 +510,31 @@ function paintParticles(ctx, parts) {
   if (!parts.length) return;
   const base = ctx.globalAlpha, op = ctx.globalCompositeOperation;
   const m = ctx.getTransform();
-  for (const p of parts) {
+  let mode = op, moved = false;
+  for (let k = 0; k < parts.length; k++) {
+    const p = parts[k];
     if (p.scale <= 0) continue;
     const a = base * clamp(p.seq ? seqValue(p.seq, p.age / p.life) * p.a0 : p.alpha, 0, 1);
     if (a <= 0.004) continue;
     ctx.globalAlpha = a;
-    ctx.globalCompositeOperation = p.additive ? 'lighter' : op;
-    const img = p.tex.tinted(p.color);
+    const want = p.additive ? 'lighter' : op;
+    if (want !== mode) { ctx.globalCompositeOperation = want; mode = want; }
+    const img = p.img || (p.img = p.tex.tinted(p.color));
     const w = p.tex.w * p.scale, h = p.tex.h * p.scale;
     if (p.rot !== 0 || !p.tex.symmetric) {
-      ctx.setTransform(m);
       ctx.translate(p.x, p.y);
       ctx.rotate(p.rot);
       ctx.scale(1, -1);
       ctx.drawImage(img, -w / 2, -h / 2, w, h);
-    } else {
       ctx.setTransform(m);
+      moved = true;
+    } else {
       ctx.drawImage(img, p.x - w / 2, p.y - h / 2, w, h);
     }
   }
-  ctx.setTransform(m);
+  if (moved) ctx.setTransform(m);
   ctx.globalAlpha = base;
-  ctx.globalCompositeOperation = op;
+  if (mode !== op) ctx.globalCompositeOperation = op;
 }
 
 /** A node that keeps particles emitted into it (an emitter's `target`), and draws them as its own. */

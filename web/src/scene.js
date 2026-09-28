@@ -476,7 +476,9 @@ class DuelScene {
     }
     while (this.impacts.length && this.clock >= this.impacts[0].at) this.impacts.shift().run();
     if (this.world.speed < 1) this.world.speed = Math.min(1, this.world.speed + dt * 0.9);
-    if (!this.isAwayPaused || this.session.fight.outcome) this.carnage.update(this.hitStop > 0 ? 0 : dt * this.world.speed);
+    const tc = performance.now();
+    if (!this.isAwayPaused || this.session.fight.outcome) this.carnage.update(this.hitStop > 0 ? 0 : dt * this.world.speed, dt);
+    this.carnageTime = performance.now() - tc;
     this.shakeWorld(dt);
     const step = advanced || this.session.fight.outcome ? dt : 0;
     this.sync(step, step > 0 ? dt : Math.max(0, Math.min(dt, this.swingUntil - (this.clock - dt))));

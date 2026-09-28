@@ -113,8 +113,10 @@ try {
     await page.waitForTimeout(500);
     await shot(page, '5-cleared');
   }
-  const frames = await page.evaluate(() => { const f = window.ronin.panel.frames; return { n: f.n, avg: f.total / Math.max(1, f.n), worst: f.worst }; });
-  report.frames.stage1 = frames;
+  report.frames.stage1 = await page.evaluate(() => {
+    const f = window.ronin.panel.frames;
+    return { n: f.n, avg: +(f.total / Math.max(1, f.n)).toFixed(2), worst: f.worst, fps: +(f.n / Math.max(0.001, f.dt || 0)).toFixed(1), slow: f.slow || 0 };
+  });
 
   async function playStage(stage, name, until, extra) {
     await page.evaluate((s) => { window.ronin.session.jump(s); window.ronin.panel.scene.loadFight(true); window.ronin.panel.frames = { n: 0, total: 0, worst: 0 }; }, stage);
@@ -122,21 +124,58 @@ try {
     const ok = await waitFor(page, until, null, 90000);
     if (extra) await extra();
     await shot(page, name);
-    const f = await page.evaluate(() => { const f = window.ronin.panel.frames; return { n: f.n, avg: f.total / Math.max(1, f.n), worst: f.worst }; });
-    report.frames[name] = { ...f, reached: ok };
+    report.frames[name] = { ...(await frameStats()), reached: ok };
+  }
+  async function frameStats() {
+    return page.evaluate(() => {
+      const f = window.ronin.panel.frames, n = Math.max(1, f.n), p = f.parts || {};
+      const per = (v) => +(v / n).toFixed(2);
+      return { n: f.n, avg: per(f.total), worst: +f.worst.toFixed(1), fps: +(f.n / Math.max(0.001, f.dt || 0)).toFixed(1), slow: f.slow || 0,
+        update: per(p.update || 0), carnage: per(p.carnage || 0), tick: per(p.tick || 0), render: per(p.render || 0),
+        dead: window.ronin.panel.scene.carnage.count, drawn: window.ronin.R.list.length,
+        particles: window.ronin.R.list.reduce((t, e) => t + (e.n.parts ? e.n.parts.length : 0), 0) };
+    });
+  }
+  /** Cuts toward a side with the real mouse button. */
+  async function cut(side) {
+    const box = await page.locator('#lane').boundingBox();
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height * 0.6, { button: side === 'left' ? 'left' : 'right' });
   }
   if (want('brute')) {
-    await playStage(3, '6b-brute-glare', () => window.ronin.panel.scene.clubsGlaring > 0);
-    await waitFor(page, () => window.ronin.panel.scene.turnsDrawn > 0, null, 30000);
-    await page.waitForTimeout(30);
+    // As the app's self-test: a brute at the end of his wind-up, his club glaring, met with the real button.
+    await playStage(3, '6a-brute', () => window.ronin.session.fight.stats.kills >= 6);
+    await page.evaluate(() => {
+      window.ronin.session.setAutopilot(false);
+      window.ronin.core.raiseBruteClub('right');
+      window.ronin.session.refresh(true);
+    });
+    await waitFor(page, () => window.ronin.panel.scene.clubsGlaring > 0, null, 3000);
+    // (The fight held still while the screenshot is taken, so the cut still meets the glare.)
+    await page.evaluate(() => { window.ronin.panel.scene.timeScale = 0; });
+    await shot(page, '6b-brute-glare');
+    await cut('right');
+    await page.evaluate(() => { window.ronin.panel.scene.timeScale = 1; });
+    await waitFor(page, () => window.ronin.panel.scene.turnsDrawn > 0, null, 3000);
+    await page.waitForTimeout(40);
     await shot(page, '6c-brute-turned');
+    await page.evaluate(() => window.ronin.session.setAutopilot(true));
   }
   if (want('archer')) await playStage(4, '6d-archer', () => window.ronin.session.fight.arrows.length > 0 || window.ronin.session.fight.foes.some((f) => f.phase === 'aiming' && f.progress > 0.7));
   if (want('warlord')) {
-    await playStage(5, '7-warlord', () => !!window.ronin.session.fight.boss);
-    await waitFor(page, () => window.ronin.panel.scene.clashesDrawn > 0, null, 40000);
-    await page.waitForTimeout(20);
+    await playStage(5, '7-warlord', () => { const b = window.ronin.session.fight.boss; return !!b && b.gap < 0.6; });
+    // As the self-test: his guard set before him, and a cut into it with the real button.
+    await waitFor(page, () => { const b = window.ronin.session.fight.boss; return !!b && b.gap <= window.ronin.session.fight.reach + 0.02 && b.phase !== 'windup'; }, null, 20000);
+    const side = await page.evaluate(() => {
+      window.ronin.session.setAutopilot(false);
+      window.ronin.core.setWarlordGuard();
+      window.ronin.session.refresh(true);
+      return window.ronin.session.fight.boss.x < 0 ? 'left' : 'right';
+    });
+    await cut(side);
+    await waitFor(page, () => window.ronin.panel.scene.clashesDrawn > 0, null, 3000);
+    await page.waitForTimeout(10);
     await shot(page, '7c-warlord-clash');
+    await page.evaluate(() => window.ronin.session.setAutopilot(true));
     await waitFor(page, () => window.ronin.session.fight.outcome === 'victory', null, 90000);
     await page.waitForTimeout(700);
     await shot(page, '8-warlord-slain');
