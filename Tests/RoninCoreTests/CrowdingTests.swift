@@ -120,6 +120,47 @@ final class CrowdingTests: XCTestCase {
         XCTAssertEqual(old, Crowding(slipPast: true, shove: true))
     }
 
+    func testAFightSavedBeforeTheseRulesResumes() throws {
+        // Saved by the build before: its rules without runners passing everyone, its stats without turned blows, its
+        // pilot without brutes weighed or presses timed. The fight resumes where it was, not rolled afresh.
+        var fight = Fight(stage: 9, seed: 21)
+        fight.pilot = .human(seed: 3)
+        fight.crowding = Crowding(slipPast: true, shove: true)
+        for _ in 0..<(120 * 20) where (fight.pilot?.queue.isEmpty ?? true) || fight.time < 8 { _ = fight.step(Tuning.step) }
+        XCTAssertFalse(fight.pilot?.queue.isEmpty ?? true, "a press on its way, to be read back")
+        let save = SaveGame(career: Career(seed: 5), fight: fight)
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(save)) as? [String: Any])
+        var saved = try XCTUnwrap(json["fight"] as? [String: Any])
+        var crowding = try XCTUnwrap(saved["crowding"] as? [String: Any])
+        XCTAssertNotNil(crowding.removeValue(forKey: "runnersPassAll"))
+        saved["crowding"] = crowding
+        var stats = try XCTUnwrap(saved["stats"] as? [String: Any])
+        XCTAssertNotNil(stats.removeValue(forKey: "turned"))
+        saved["stats"] = stats
+        var pilot = try XCTUnwrap(saved["pilot"] as? [String: Any])
+        XCTAssertNotNil(pilot.removeValue(forKey: "clubs"))
+        let queue = try XCTUnwrap(pilot["queue"] as? [[String: Any]])
+        pilot["queue"] = queue.map { press in
+            var old = press
+            old["timed"] = nil
+            return old
+        }
+        saved["pilot"] = pilot
+        json["fight"] = saved
+        let loaded = try XCTUnwrap(SaveGame.load(JSONSerialization.data(withJSONObject: json)))
+        var expected = fight
+        expected.pilot?.clubs = []
+        if var p = expected.pilot {
+            p.queue = p.queue.map { press in
+                var old = press
+                old.timed = false
+                return old
+            }
+            expected.pilot = p
+        }
+        XCTAssertEqual(loaded.fight, expected, "the fight in progress resumes, not rolled afresh")
+    }
+
     // MARK: Runners pass everyone
 
     func testRunnersPassEveryoneButTheWarlord() {
