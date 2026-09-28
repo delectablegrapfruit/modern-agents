@@ -267,7 +267,8 @@ builds and tests, bundles and packages the app, and launches the packaged copy w
 self-test does these things in order:
 
 1. Checks the defaults (floor hints off, a Medium panel, gore on) and that the marker over every kind of foe's head,
-   a gourd bearer's too, stays on the lane at every size, and that a bearer's pips and marker stay clear of his gourd.
+   a gourd bearer's too, stays on the lane at every size, that a bearer's pips and marker stay clear of his gourd,
+   and that a word slammed onto the lane (BLOODLUST, 25 HITS) stays under the combo's number at every size.
 2. Grows the panel out of its default corner and folds it there and back without it leaving the screen, and checks
    the header cannot go under the menu bar.
 3. Shows what a new player first sees, turns floor hints on, and makes the first cut and a whiff with real left-

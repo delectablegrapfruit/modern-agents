@@ -104,7 +104,7 @@ final class DuelScene: SKScene {
     /// How much blood there is now: the stage's, or bloodlust's, or none with gore turned off.
     private var gore: Gore { Gore.of(stage: session.fight.stage, bloodlust: session.fight.inBloodlust, on: goreOn) }
     /// Text scale: 1 on the medium panel.
-    private var fs: CGFloat { max(0.85, min(1.25, field.height / 126)) }
+    private var fs: CGFloat { DuelScene.textScale(field) }
 
     // Back to front.
     private let scenery = SKNode()
@@ -584,6 +584,24 @@ final class DuelScene: SKScene {
     }
 
     func laneX(_ x: Double) -> CGFloat { field.midX + CGFloat(x) * field.width / 2 }
+
+    /// Where the combo's number sits (its middle, in points up a scene whose lane ends at `top`, at text scale `fs`):
+    /// near the top of the lane, lower while the warlord is on it, clear of the warning marker over his head.
+    static func comboY(top: CGFloat, fs: CGFloat, boss: Bool) -> CGFloat { top - (boss ? 34 : 24) * fs }
+
+    /// How far the combo's number reaches below its middle at its largest (popping, its shadow under it), and a word
+    /// slammed onto the lane either side of its middle (its plate, swelling as it goes), at text scale 1.
+    static let comboDrop: CGFloat = 14
+    static let slamHalf: CGFloat = 17.5
+
+    /// Where a word slammed onto the lane sits (its middle): two thirds of the way up the lane, or lower, so that its
+    /// plate always stays under the combo's number (`comboY`), never across it, at every size.
+    static func slamY(field: CGRect, top: CGFloat, fs: CGFloat, boss: Bool) -> CGFloat {
+        min(field.minY + field.height * 0.64, comboY(top: top, fs: fs, boss: boss) - (comboDrop + slamHalf + 2) * fs)
+    }
+
+    /// The text scale for a lane `field` (1 on the medium panel).
+    static func textScale(_ field: CGRect) -> CGFloat { max(0.85, min(1.25, field.height / 126)) }
 
     /// Where the scene draws a lane position, at the height of a figure's middle.
     func point(lane x: Double) -> CGPoint { CGPoint(x: laneX(x), y: groundY + ronin * 0.5) }
@@ -1136,14 +1154,13 @@ final class DuelScene: SKScene {
         }
         let showCombo = fight.combo >= 3 && fight.outcome == nil
         for node in [comboLabel, comboShadow] as [SKNode] { node.isHidden = !showCombo }
-        // Over a word slammed onto the lane the number needs no haze of its own (the word's plate is dark), and the
-        // haze would darken the word.
-        comboBack.isHidden = !showCombo || slamNode != nil
+        comboBack.isHidden = !showCombo
         // The multiplier only once it multiplies.
         comboTimes.isHidden = !showCombo || fight.multiplier < 2
         let boss = fight.boss
-        // Lower while the warlord is on the lane, clear of the warning marker over his head.
-        let comboY = top - (boss != nil ? 34 : 24) * fs
+        let comboY = DuelScene.comboY(top: top, fs: fs, boss: boss != nil)
+        // A word slammed onto the lane stays under the number (the warlord arriving or the panel resized under it too).
+        slamNode?.position.y = DuelScene.slamY(field: field, top: top, fs: fs, boss: boss != nil)
         comboLabel.position = CGPoint(x: field.midX, y: comboY)
         comboShadow.position = CGPoint(x: field.midX + 1.5, y: comboY - 1.5)
         comboTimes.position = CGPoint(x: field.midX + comboLabel.frame.width / 2 + 4, y: comboY - 3 * fs)
@@ -1954,15 +1971,16 @@ final class DuelScene: SKScene {
     }
 
     /// Big text slammed onto the lane, on a dark plate, with an optional pictogram before it, held `hold` seconds.
-    /// It goes under the combo and every warning marker (a blow coming is never covered), its glow behind its plate;
-    /// a new one takes the place of the last. With Reduce Motion it drops in from nearer.
+    /// It sits below the combo's number, clear of it (`slamY`), and is drawn under it and every warning marker (a blow
+    /// coming is never covered), its glow behind its plate; a new one takes the place of the last. With Reduce Motion
+    /// it drops in from nearer.
     private func slam(_ text: String, color: RGB, icon: SKNode? = nil, hold: TimeInterval = 0.65) {
         if let old = slamNode {
             old.removeAllActions()
             old.run(.sequence([.fadeOut(withDuration: 0.08), .removeFromParent()]))
         }
         let node = SKNode()
-        node.position = CGPoint(x: field.midX, y: field.minY + field.height * 0.64)
+        node.position = CGPoint(x: field.midX, y: DuelScene.slamY(field: field, top: top, fs: fs, boss: session.fight.boss != nil))
         let label = Art.label(Art.headingFont, size: 20 * fs, color: color.color())
         Art.track(label, text, 4 * fs)
         let iconWidth: CGFloat = icon == nil ? 0 : 24 * fs

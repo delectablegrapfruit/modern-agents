@@ -5,19 +5,20 @@ import RoninArt
 import RoninCore
 
 /// `RONIN_SELFTEST=1 Ronin.app/Contents/MacOS/Ronin`: in a scratch save and a scratch defaults domain, checks the
-/// defaults (floor hints off, a Medium panel, gore on) and that what is drawn over a foe's head stays on the lane at
-/// every size (a gourd-bearer's pips and marker clear of his gourd), grows the panel from its default corner and folds
-/// it there and back without it leaving the screen, shows what a new player first sees, makes the first cut and a whiff
-/// with real left and right mouse-button events, lets the autopilot clear stage 1 and checks that its dead fall on
-/// under the card, folds into the pill and back and changes the size with the dead still lying there, advances from the
-/// banner, shows a new foe's card and checks it follows a resize, fights a warlord (his bar in the header, his blow
-/// coming, a cut into his set guard bound on his blade), switches to Oni and rides a combo into bloodlust, falls and
-/// starts again from stage 1, switches back and finds Bushidō's stage and hearts kept, runs an endless stage with gore
-/// off (nobody cut apart, not a drop of blood) straight into the next, checks that dragging the window holds the fight
-/// still and that a stage won with the pointer away does not start the next behind its back, folds into the pill and
-/// back, checks that leaving pauses and gives the keys back (so a key typed elsewhere does nothing) and that coming
-/// back takes the dwell, and checks the save. Exits 0, or 1 saying what failed. With `RONIN_SNAPSHOTS=<dir>` it also
-/// writes what the panel showed along the way as PNGs, and fails if one cannot be taken.
+/// defaults (floor hints off, a Medium panel, gore on), that what is drawn over a foe's head stays on the lane at every
+/// size (a gourd-bearer's pips and marker clear of his gourd) and that a word slammed onto the lane stays under the
+/// combo, grows the panel from its default corner and folds it there and back without it leaving the screen, shows what
+/// a new player first sees, makes the first cut and a whiff with real left and right mouse-button events, lets the
+/// autopilot clear stage 1 and checks that its dead fall on under the card, folds into the pill and back and changes
+/// the size with the dead still lying there, advances from the banner, shows a new foe's card and checks it follows a
+/// resize, fights a warlord (his bar in the header, his blow coming, a cut into his set guard bound on his blade),
+/// switches to Oni and rides a combo into bloodlust, falls and starts again from stage 1, switches back and finds
+/// Bushidō's stage and hearts kept, runs an endless stage with gore off (nobody cut apart, not a drop of blood)
+/// straight into the next, checks that dragging the window holds the fight still and that a stage won with the pointer
+/// away does not start the next behind its back, folds into the pill and back, checks that leaving pauses and gives the
+/// keys back (so a key typed elsewhere does nothing) and that coming back takes the dwell, and checks the save. Exits
+/// 0, or 1 saying what failed. With `RONIN_SNAPSHOTS=<dir>` it also writes what the panel showed along the way as PNGs,
+/// and fails if one cannot be taken.
 enum SelfTest {
     static var enabled: Bool { ProcessInfo.processInfo.environment["RONIN_SELFTEST"] != nil }
 
@@ -60,6 +61,7 @@ enum SelfTest {
         guard Settings.size == .medium else { throw Failure("the panel was not Medium by default") }
         guard Settings.gore else { throw Failure("gore was off by default") }
         try checkOverhead()
+        try checkSlams()
         panel.setCompact(false)
         panel.setSize(.medium)
 
@@ -394,6 +396,25 @@ enum SelfTest {
                             throw Failure("the marker over a \(kind.title)'s gourd at \(option.title) comes down to \(ring), onto the gourd (its top at \(marks.gourd.maxY))")
                         }
                     }
+                }
+            }
+        }
+    }
+
+    /// At every size, with a warlord on the lane or not, a word slammed onto the lane (BLOODLUST, 25 HITS) sits under
+    /// the combo's number, its plate never across it, and above the ground.
+    @MainActor
+    private static func checkSlams() throws {
+        for option in Settings.Size.allCases {
+            let lane = DuelScene.lane(in: PanelController.contentSize(option))
+            let top = lane.field.maxY, fs = DuelScene.textScale(lane.field)
+            for boss in [false, true] {
+                let number = DuelScene.comboY(top: top, fs: fs, boss: boss) - DuelScene.comboDrop * fs
+                let middle = DuelScene.slamY(field: lane.field, top: top, fs: fs, boss: boss)
+                let plate = (low: middle - DuelScene.slamHalf * fs, high: middle + DuelScene.slamHalf * fs)
+                guard plate.high <= number, plate.low >= lane.groundY else {
+                    throw Failure("a word slammed onto the lane at \(option.title)\(boss ? " with a warlord" : "") spans \(plate.low)...\(plate.high): "
+                        + "the combo's number comes down to \(number), the ground is at \(lane.groundY)")
                 }
             }
         }
