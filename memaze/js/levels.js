@@ -131,6 +131,13 @@
     p.chapter = c;
     p.seed = Math.floor(r() * 4294967296);
     p.level = level;
+    // A hand-made layout (chapter 1) replaces the generated maze; its own mechanics, pace and pad. Gauntlet mazes (a
+    // seed given) stay generated. Last, so no r() call above moves.
+    const lay = o.seed == null && MZ.Layouts && MZ.Layouts.find((x) => x.level === level);
+    if (lay) {
+      Object.assign(p, { layout: lay.id, seed: lay.seed, hw: lay.hw, timeFactor: lay.timeFactor, parPad: lay.parPad || 0, gems: lay.gems.length });
+      p.mech = Object.assign({ list: [], keys: 0, blink: false, gates: 0, loopGates: 0, switches: 0, movers: 0, portals: 0, gaps: 0, squeezes: 0, ice: 0, dark: 0 }, lay.mech);
+    }
     return p;
   }
   // Gauntlet: o = { seed, style: 'progressive' | 'random', diff }. Progressive goes deeper and harder with every maze;
@@ -262,7 +269,7 @@
     if (p.mech && p.mech.gaps) m = cutGaps(m, p.mech.gaps, rng(hashInts(m.seed, 0x6a9)));
     m.level = p.level; m.boss = !!p.boss; m.chapter = p.chapter || chapterOf(p.level || 1);
     m.mods = p.mods || []; m.mechs = (p.mech && p.mech.list) || [];
-    let barriers = null;
+    let barriers = m.fixed ? m.fixed.map((b) => Object.assign({}, b)) : null; // a layout pins its doors
     for (let tries = 0; tries < 6; tries++) {
       const res = mechanize(m, p, barriers);
       if (res.ok) return res.m;
@@ -397,7 +404,8 @@
       b.u = u; b.v = v; b.e = e; b.item = null;
       reserve(u); reserve(v);
       if (b.kind === 'door') {
-        const color = KEY_COLORS[doorN++ % KEY_COLORS.length], k = spot(comp[u], u);
+        const color = KEY_COLORS[(b.pinColor != null ? b.pinColor : doorN) % KEY_COLORS.length], k = b.pinKey != null ? (taken.add(b.pinKey), b.pinKey) : spot(comp[u], u); // (a layout pins key and colour)
+        doorN++;
         const bar = across(e, u, 0.5);
         m.doors.push(Object.assign(bar, { color, edge: e.id, open: false }));
         avoid.push({ x: bar.x, y: bar.y, r: e.hw + 40 });
@@ -619,7 +627,7 @@
       else waitT += 0.4;
     }
     if (m.dark) dragT *= 1.15;
-    const par = Math.ceil(dragT + turns * 0.2 + waitT + 1.5 - (m.goal.r * 0.66 + BALL_R) / 160);
+    const par = Math.ceil(dragT + turns * 0.2 + waitT + 1.5 + ((p && p.parPad) || 0) - (m.goal.r * 0.66 + BALL_R) / 160);
     return { par: Math.max(3, par), limit: Math.ceil((par * p.timeFactor + 15) / 5) * 5, len };
   }
 

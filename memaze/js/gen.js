@@ -326,6 +326,7 @@
 
   // ---------- the level generator ----------
   function generate(p) {
+    if (p.layout) return fromLayout(p);
     const r = rng(p.seed >>> 0);
     const mask = makeMask(p.mask, r);
     const lat = LATTICES[p.lattice] ? p.lattice : 'square';
@@ -497,19 +498,33 @@
 
     const disc = (i) => ({ x: nodes[i].x, y: nodes[i].y, r: Math.max(BALL_R * 2.6, p.hw * 1.45) });
     const start = disc(a), goal = disc(b);
+    const { turns, par } = parOf(nodes, maze, mainPath, goal, 0);
+    return {
+      seed: p.seed >>> 0, params: p, S, lattice: lat, mask: mask.id,
+      nodes, edges: maze, start, goal, gems, mainPath, turns,
+      bounds: boundsOf(maze),
+      parTime: Math.ceil(par),
+      timeLimit: Math.ceil((par * p.timeFactor + 15) / 5) * 5,
+      fixes,
+    };
+  }
+  function boundsOf(edges) {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const e of maze) for (const q of e.pts) {
+    for (const e of edges) for (const q of e.pts) {
       minX = Math.min(minX, q.x - e.hw); maxX = Math.max(maxX, q.x + e.hw);
       minY = Math.min(minY, q.y - e.hw); maxY = Math.max(maxY, q.y + e.hw);
     }
+    return { minX, minY, maxX, maxY };
+  }
+  // Par ~ a steady drag by someone who knows the way: slower on narrow paths, a beat per real turn, the average wait
+  // at each vanishing bridge (gone, or not up long enough to cross), and a couple of seconds (plus pad).
+  function parOf(nodes, maze, mainPath, goal, pad) {
     let turns = 0;
     for (let i = 1; i + 1 < mainPath.length; i++) {
       const P = nodes[mainPath[i - 1]], Q = nodes[mainPath[i]], R = nodes[mainPath[i + 1]];
       const c = ((Q.x - P.x) * (R.x - Q.x) + (Q.y - P.y) * (R.y - Q.y)) / (Math.hypot(Q.x - P.x, Q.y - P.y) * Math.hypot(R.x - Q.x, R.y - Q.y) || 1);
       if (c < 0.8) turns++;
     }
-    // Par ~ a steady drag by someone who knows the way: slower on narrow paths, a beat per real turn, the average wait
-    // at each vanishing bridge (gone, or not up long enough to cross), and a couple of seconds.
     let dragT = 0, waitT = 0;
     for (let i = 0; i + 1 < mainPath.length; i++) {
       const e = maze.find((x) => (x.a === mainPath[i] && x.b === mainPath[i + 1]) || (x.b === mainPath[i] && x.a === mainPath[i + 1]));
@@ -520,14 +535,45 @@
         waitT += (block * block) / (2 * P);
       }
     }
-    const par = dragT - (goal.r * 0.66 + BALL_R) / DRAG_WIDE + turns * 0.2 + waitT + 1.5; // the goal counts once the player touches it
+    const par = dragT - (goal.r * 0.66 + BALL_R) / DRAG_WIDE + turns * 0.2 + waitT + 1.5 + (pad || 0); // the goal counts once the player touches it
+    return { turns, par };
+  }
+
+  // ---------- hand-made layouts (chapter 1: MZ.Layouts, in layouts.js) ----------
+  // The layout is the maze: its corridors exactly as drawn, START and GOAL discs, gems, and pins for what the rest of
+  // the pipeline would otherwise place (doors with their keys and colours, mystery boxes, flags).
+  function fromLayout(p) {
+    const L = (MZ.Layouts || []).find((x) => x.id === p.layout);
+    if (!L) throw new Error('Memaze: no layout ' + p.layout);
+    const nodes = L.nodes.map(([x, y]) => ({ x, y }));
+    const maze = L.edges.map((E, i) => {
+      const pts = E.pts.map(([x, y]) => ({ x, y }));
+      const e = { a: E.a, b: E.b, hw: E.hw, pts, type: E.type || 'normal', wob: 0, len: polyLen(pts), seed: hashInts(p.seed, i) };
+      if (e.type === 'bridge') e.bridge = true;
+      if (E.blink) e.blink = Object.assign({}, E.blink);
+      return e;
+    });
+    const n = nodes.length, madj = adjacency(n, maze), a = L.start.node, b = L.goal.node;
+    const fromStart = dijkstra(n, maze, madj, a);
+    const mainPath = [];
+    for (let v = b; v >= 0; v = fromStart.prev[v]) mainPath.push(v);
+    mainPath.reverse();
+    const onMain = new Uint8Array(n);
+    mainPath.forEach((v) => (onMain[v] = 1));
+    for (const e of maze) e.main = !!(onMain[e.a] && onMain[e.b] && Math.abs(fromStart.dist[e.a] - fromStart.dist[e.b]) - e.len < 1e-6);
+    const fixes = enforceGaps(maze, nodes, 150); // a layout is drawn with room to spare: 0
+    const start = { x: nodes[a].x, y: nodes[a].y, r: L.start.r }, goal = { x: nodes[b].x, y: nodes[b].y, r: L.goal.r };
+    const { turns, par } = parOf(nodes, maze, mainPath, goal, L.parPad);
+    const idxOf = (d) => mainPath.findIndex((v, j) => j + 1 < mainPath.length && ((v === d.a && mainPath[j + 1] === d.b) || (v === d.b && mainPath[j + 1] === d.a)));
     return {
-      seed: p.seed >>> 0, params: p, S, lattice: lat, mask: mask.id,
-      nodes, edges: maze, start, goal, gems, mainPath, turns,
-      bounds: { minX, minY, maxX, maxY },
+      seed: p.seed >>> 0, params: p, S: 150, lattice: 'square', mask: L.id, name: L.name,
+      nodes, edges: maze, start, goal, gems: L.gems.map(([x, y]) => ({ x, y })), mainPath, turns,
+      bounds: boundsOf(maze),
       parTime: Math.ceil(par),
       timeLimit: Math.ceil((par * p.timeFactor + 15) / 5) * 5,
       fixes,
+      fixed: (L.doors || []).map((d) => ({ kind: 'door', idx: idxOf(d), pinKey: d.key, pinColor: d.color })).sort((x, y) => x.idx - y.idx),
+      boxesAt: L.boxes, flagsAt: L.flags,
     };
   }
   function angleDiff(A, B) {
@@ -726,6 +772,7 @@
   // Flags go evenly along the main route (none on short mazes), each on a junction that no vanishing bridge touches,
   // with a round platform that stays clear of every corridor it doesn't join.
   function placeCheckpoints(m) {
+    if (m.flagsAt) return m.flagsAt.map((v) => ({ idx: m.mainPath.indexOf(v), x: m.nodes[v].x, y: m.nodes[v].y, r: Math.max(BALL_R * 2.3, ((m.params && m.params.hw) || 36) * 1.3), lit: false, seen: false })); // pinned by a layout
     const mp = m.mainPath, nodes = m.nodes, edges = m.edges;
     if (!mp || mp.length < 6) return [];
     const inc = new Map();
@@ -773,6 +820,7 @@
   // Mystery boxes: on junctions and dead ends touched by solid floor, one per ~1500 units of corridor, spread out
   // (each as far as possible from the others and the start), never on or next to the start, the goal, a flag or a gem.
   function placeBoxes(m, flags) {
+    if (m.boxesAt) return m.boxesAt.map((v) => ({ x: m.nodes[v].x, y: m.nodes[v].y })); // pinned by a layout
     const r = rng(hashInts(m.seed, 0xb0c5));
     const solid = new Uint8Array(m.nodes.length);
     let total = 0;

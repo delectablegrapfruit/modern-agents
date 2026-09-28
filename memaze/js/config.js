@@ -85,6 +85,10 @@
   // Tutorial tips and the Daily maze are gone; the one Gauntlet best becomes the Progressive/Normal one.
   const oldProgress = (p) => {
     delete p.hintsSeen; delete p.daily; delete p.dailyDone;
+    if (!(p.ch1 >= 2)) { // chapter 1 was rebuilt by hand: old best times there no longer compare (stars and progress stay)
+      for (let L = 1; L <= 10; L++) { if (p.journey.levels[L]) delete p.journey.levels[L].best; delete p.trials[L]; }
+      p.ch1 = 2;
+    }
     if (p.gauntletBest) p.gauntlet['progressive/normal'] = Math.max(p.gauntlet['progressive/normal'] || 0, p.gauntletBest);
     delete p.gauntletBest;
     return p;

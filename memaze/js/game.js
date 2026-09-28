@@ -1475,14 +1475,23 @@
         const m = MZ.Levels.build(MZ.Levels.levelParams(Math.max(4, lv)));
         this.attractMaze = m;
         this.attractWorld = MZ.World.fromMaze(m);
-        this.attractPts = [];
-        for (const i of m.mainPath) this.attractPts.push(m.nodes[i]);
+        this.attractPts = []; // along the corridors as drawn (junction to junction would cut across curves and void)
+        for (let i = 0; i + 1 < m.mainPath.length; i++) {
+          const u = m.mainPath[i], v = m.mainPath[i + 1], e = m.edges.find((x) => (x.a === u && x.b === v) || (x.a === v && x.b === u));
+          const P = !e ? [m.nodes[u], m.nodes[v]] : e.a === u ? e.pts : e.pts.slice().reverse();
+          for (let k = this.attractPts.length ? 1 : 0; k < P.length; k++) this.attractPts.push(P[k]);
+        }
+        if (!this.attractPts.length) this.attractPts.push(m.start);
+        this.attractCum = [0];
+        for (let i = 1; i < this.attractPts.length; i++) this.attractCum.push(this.attractCum[i - 1] + Math.hypot(this.attractPts[i].x - this.attractPts[i - 1].x, this.attractPts[i].y - this.attractPts[i - 1].y));
       }
-      const pts = this.attractPts, sp = S().display.reducedMotion ? 0 : 0.15;
-      this.attract = (this.attract + dt * sp) % Math.max(1, pts.length - 1);
-      const i = Math.floor(this.attract), f = this.attract - i;
+      const pts = this.attractPts, cum = this.attractCum, sp = S().display.reducedMotion ? 0 : 24; // world units per second
+      this.attract = (this.attract + dt * sp) % Math.max(1, cum[cum.length - 1]);
+      let i = 1;
+      while (i < cum.length - 1 && cum[i] < this.attract) i++;
+      const A = pts[i - 1] || pts[0], B = pts[i] || A, f = clamp((this.attract - (cum[i - 1] || 0)) / ((cum[i] - cum[i - 1]) || 1), 0, 1);
       // Snaps into place on the first frames of the menu, then glides.
-      const A = pts[i], B = pts[Math.min(pts.length - 1, i + 1)], k = this.stateT < 0.1 ? 1 : 1 - Math.exp(-dt * 1.5);
+      const k = this.stateT < 0.1 ? 1 : 1 - Math.exp(-dt * 1.5);
       this.cam.x = lerp(this.cam.x, lerp(A.x, B.x, f), k);
       this.cam.y = lerp(this.cam.y, lerp(A.y, B.y, f), k);
       this.cam.zoom = lerp(this.cam.zoom, this.menuZoom, k);

@@ -83,13 +83,30 @@ Time Trial never has them.
 
 | Chapter | Levels | New |
 |---|---|---|
-| 1 First Steps | 1-10 | **Keys and doors** (5): pick up the key of a door's colour (it waits somewhere before the door), then bump into the door to open it; each key opens one door. Keys, doors, gates, switches and portals are drawn as chunky icons that scale with the maze (they look at any zoom the way the home menu's zoomed-out maze shows them); a door blocks exactly as thick as its bar is drawn, a key is picked up where it's drawn, and the map and the HUD show the same key. Opened doors slide into the walls, leave a dashed line across the floor, and stay on the map, dashed. **Vanishing bridges** (8): they blink, disappear for a moment, then come back. |
+| 1 First Steps | 1-10 | Hand-made, not generated; each level is a shape with one idea (below). **Keys and doors** (5): pick up the key of a door's colour (it waits somewhere before the door), then bump into the door to open it; each key opens one door. Keys, doors, gates, switches and portals are drawn as chunky icons that scale with the maze (they look at any zoom the way the home menu's zoomed-out maze shows them); a door blocks exactly as thick as its bar is drawn, a key is picked up where it's drawn, and the map and the HUD show the same key. Opened doors slide into the walls, leave a dashed line across the floor, and stay on the map, dashed. **Vanishing bridges** (8): they blink, disappear for a moment, then come back. |
 | 2 Locks and Levers | 11-20 | **One-way gates** (12): arrows on the floor; you pass only the way they point. **Item puzzles** (14): gold-framed item boxes show the item they always give (even over a full slot; Time Trial and boxes off too), and the level needs it: a missing corridor (a see-through ghost with that item's badge over the void) is crossed with a Magic carpet or a Launch, and a shrink gate (lime bar between two posts) lets only a shrunk picture through. A box comes back a moment after its item is spent, so a wasted one can be fetched again. **Switches** (16): step on one to flip the bridges of its colour: the missing ones appear, the others go. Step off and on again to flip them back. A bridge that's down is a see-through ghost with dashed rims in its switch's colour and that switch's badge floating over the gap; a press flashes every bridge of its colour as it comes or goes (on the map too: up, a corridor in the colour; down, dashed). |
 | 3 Moving Parts | 21-30 | **Moving platforms** (21): they shuttle across a gap, resting at each end; step on, ride, step off. **Portals** (25): step onto one, come out of its twin (the way on is often through one). |
 | 4 Cold and Dark | 31-40 | **Ice** (28): you drift, and keep sliding after you stop. **Darkness** (32): only a circle around you is lit, and only that fills in on the map. |
 | Remix I, II... | 36 on | Every level gets a **remix** modifier (bosses two): *Narrow* corridors, *Rush* (less time), *No map*, *Blackout* (a smaller light), *Frost* (ice everywhere), *Flicker* (more, quicker vanishing bridges), *Mirror* (the drag turned around). |
 
-Each chapter leans on its own layouts and shapes; its first levels are smaller, building up to the boss. Mechanics sit
+**Chapter 1 is hand-made** (`js/layouts.js`): ten set pieces, each built around one idea, with the first screen always
+showing something to touch, no compulsory squeeze under hw 30 (every narrower way is an optional short cut, with a box on
+the safe road), and vanishing bridges you can cross however fast you drag (pairs take turns).
+
+| Level | Shape | The idea |
+|---|---|---|
+| 1 First Steps | a paperclip ribbon: straight, S-bend, U-turn, slalom, a wide victory lane | dragging moves the world; no wrong turns |
+| 2 The Big Tree | trunk, a bough loop, branches, a ring canopy with GOAL on top | junctions are choices; every branch pays; a broken branch for a Launch or carpet |
+| 3 Pearls | a necklace of five round rooms | each bead: a narrow short cut (gems) or the wide road round (a box) |
+| 4 Snail Shell | a spiral tightening to GOAL | steer, pick, squeeze: an optional crack straight to the heart |
+| 5 The Key | the level is a key: bow, shaft, teeth | a door needs its key (the door on the first screen, the key round the bow) |
+| 6 The Flower | stem, a roundabout heart, four petal loops | the key is somewhere: find it |
+| 7 The Castle | two nested walls, towers, a turret, the keep | two colours; a key you see before you can reach it |
+| 8 Atoll | a ring of islands, GOAL across the reef | bridges come and go: watch, then go (or take the solid shore road) |
+| 9 Island Hopping | a bay: coast road, a key island, a lagoon loop, a causeway | keys live on islands; bridges that take turns |
+| 10 The Summit | terraces up to a crater rim | the boss: every lesson again, then timing or precision to the peak |
+
+The other chapters lean on their own generated layouts and shapes; their first levels are smaller, building up to the boss. Mechanics sit
 on corridors that split the maze in two (side loops around one are taken out), so they can't be walked around. Every
 level comes with a route that is sure to solve it (fetch each key before its door, press each switch before its bridge,
 ride, step through), which sets par and the time limit; the autopilot test plays that route.
@@ -160,6 +177,7 @@ index.html  css/style.css
 js/util.js        seeded RNG, maths, storage, DOM helpers
 js/config.js      defaults, unlocks, save data
 js/gen.js         maze generation (lattices, shapes, carving, vanishing bridges, endless chunks), flags, box spots
+js/layouts.js     chapter 1's hand-made layouts (data)
 js/world.js       corridor geometry in a spatial hash; "how deep inside the floor is this point"; switch bridges, platforms
 js/levels.js      chapters, bosses, remix, Gauntlet depths; fitting mechanics into a maze with a route that solves it
 js/render.js      maze floor, markers, flags, gems, beacons, boxes, doors, keys, switches, gates, platforms, portals, ice,
@@ -186,6 +204,8 @@ tests/            generator, level and sprite tests; autopilot; items; mechanics
 ```sh
 node tests/gen.test.js       # 200 mazes: deterministic, connected, corridors never touch, sane timings; endless seams;
                              # 120 levels with mechanics: deterministic, solved by their route, sane time limits
+node tests/hand.test.js      # chapter 1's hand-made layouts: used by their levels, doors and keys where pinned, no
+                             # compulsory squeeze, bridges up long enough, boxes and flags where they may go
 node tests/sprite.test.js    # GIF decoder, pixel hitbox mask, embedded defaults up to date
 node tests/autopilot.js 1-40 # plays each level's route with the real game code (keys, switches, platforms, portals,
                              # ice), not one touch of the edge allowed; --gauntlet=hard/random/seed for Gauntlet depths

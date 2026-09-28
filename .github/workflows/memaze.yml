@@ -20,6 +20,8 @@ jobs:
           node-version: 22
       - name: Generator and levels (200 mazes, 120 levels, endless chunks)
         run: node memaze/tests/gen.test.js
+      - name: Chapter 1's hand-made layouts
+        run: node memaze/tests/hand.test.js
       - name: Player picture (GIF decoder, pixel hitbox, embedded defaults)
         run: node memaze/tests/sprite.test.js
       - name: serve.py answers and serves the game
@@ -34,6 +36,8 @@ jobs:
           cd memaze && npm init -y >/dev/null && npm i --no-save playwright@1 && npx playwright install --with-deps chromium
           node tests/autopilot.js 1-40 --strict
           node tests/autopilot.js 1-10 --gauntlet=hard/random/ci --strict
+          node tests/autopilot.js 8-10 --strict --speed=90
+          node tests/autopilot.js 8-10 --strict --speed=200
       - name: Hits, mystery boxes, items and flags
         run: cd memaze && node tests/items.js
       - name: Level mechanics, remix, Gauntlet and the menu

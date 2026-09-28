@@ -2,7 +2,7 @@
 // for the level design on top of it (mechanics placed, a route that solves every level, par and time limits).
 // Run: node tests/gen.test.js
 const assert = require('assert');
-const MZ = require('./load.js')(['util.js', 'gen.js', 'world.js', 'levels.js']);
+const MZ = require('./load.js')(['util.js', 'gen.js', 'layouts.js', 'world.js', 'levels.js']);
 const G = MZ.Gen, LV = MZ.Levels;
 const TYPES = new Set(['normal', 'bridge', 'blink']);
 
