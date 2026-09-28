@@ -1,4 +1,9 @@
+#if os(WASI)
+import FoundationEssentials
+import WASILibc
+#else
 import Foundation
+#endif
 
 /// A run: stages won one after another, hearts carried, until the ronin falls. The campaign's climbs stage by stage
 /// from the first stage after its last fall; an endless run plays the stage it started on over and over, a fresh roll
