@@ -2446,5 +2446,238 @@ console.log('control hints');
   });
 }
 
-console.log(failed ? '\n' + failed + ' failed, ' + passed + ' passed' : '\nall ' + passed + ' passed');
-process.exit(failed ? 1 : 0);
+console.log('touch gestures');
+{
+  load(['touch.js']);
+  const { TouchGestures, Touch } = L, TT = Touch.T;
+  // A board 10 wide with 33 px cells (an iPhone held upright): step 33 at sensitivity 5. Every intent is recorded;
+  // refuse() makes moves into a wall fail from then on.
+  const rig = (over) => {
+    const out = [];
+    let wall = null;
+    const G = new TouchGestures((it) => { out.push(it.type + (it.dir ? ':' + it.dir : '') + (it.side ? ':' + it.side : '') + (it.undo ? ':undo' : '')); return !(wall && it.type === 'move' && it.dir === wall); });
+    const o = Object.assign({ step: 33, flickV: 1.1, flickMin: 28, slide: 'x', floor: [0, 1], centerX: 150, onHold: false, softMs: 0 }, over);
+    return { G, out, o, wallOn: (d) => { wall = d; } };
+  };
+  /** One finger from (x, y) by (dx, dy) in n moves, gap ms apart, starting at t (lifted unless keep). */
+  const path = (r, t, x, y, dx, dy, n, gap, keep) => {
+    r.G.down(1, x, y, t, r.o);
+    for (let i = 1; i <= n; i++) r.G.move(1, x + (dx * i) / n, y + (dy * i) / n, t + i * gap);
+    if (!keep) r.G.up(1, x + dx, y + dy, t + n * gap + 4);
+    return t + n * gap + 4;
+  };
+  test('touch: a tap is under 10 px and 280 ms; the side of the well it lands on picks the turn', () => {
+    let r = rig();
+    r.G.down(1, 200, 300, 0, r.o); r.G.move(1, 206, 305, 60); r.G.up(1, 206, 305, 120);
+    assert.deepStrictEqual(r.out, ['tap:right']);
+    r = rig(); r.G.down(1, 60, 300, 0, r.o); r.G.up(1, 61, 300, 90);
+    assert.deepStrictEqual(r.out, ['tap:left']);
+    r = rig(); r.G.down(1, 200, 300, 0, r.o); r.G.move(1, 211, 300, 60); r.G.up(1, 200, 300, 120);
+    assert.deepStrictEqual(r.out, [], 'past SLOP (even if it comes back) is not a tap');
+    r = rig(); r.G.down(1, 200, 300, 0, r.o); r.G.up(1, 200, 300, TT.TAP_MS + 30);
+    assert.deepStrictEqual(r.out, [], 'held too long');
+    r = rig({ onHold: true }); r.G.down(1, 20, 20, 0, r.o); r.G.up(1, 20, 20, 80);
+    assert.deepStrictEqual(r.out, ['hold'], 'a tap on the Hold box holds');
+  });
+  test('touch: a cell per step of finger travel, the step set by sensitivity (1, 5, 10)', () => {
+    assert.deepStrictEqual([1, 5, 10].map((k) => Touch.stepFor(33, k)), [53, 33, 17]);
+    assert.strictEqual(Touch.stepFor(8, 10), TT.STEP_MIN); assert.strictEqual(Touch.stepFor(60, 1), TT.STEP_MAX);
+    for (const [sens, cells] of [[1, 2], [5, 3], [10, 6]]) {
+      const r = rig({ step: Touch.stepFor(33, sens) });
+      path(r, 0, 50, 300, 110, 0, 30, 16);
+      assert.deepStrictEqual(r.out, Array(cells).fill('move:right'), 'sensitivity ' + sens);
+    }
+    const r = rig();
+    path(r, 0, 50, 300, 33 * 3.2, 0, 20, 16);
+    assert.strictEqual(r.out.length, 3, '3.2 steps: 3 cells');
+  });
+  test('touch: turning back needs a quarter step more before the first step the other way', () => {
+    const r = rig();
+    r.G.down(1, 100, 300, 0, r.o);
+    r.G.move(1, 120, 300, 16); r.G.move(1, 134, 300, 32); // one step right (at 33)
+    assert.deepStrictEqual(r.out, ['move:right']);
+    r.G.move(1, 100, 300, 64); // back to where the step began: one step's travel the other way, not yet enough
+    assert.deepStrictEqual(r.out, ['move:right']);
+    r.G.move(1, 92, 300, 80); // not quite 1.25 steps back from the new anchor (133)
+    assert.deepStrictEqual(r.out, ['move:right']);
+    r.G.move(1, 90, 300, 90); // 1.25 steps and a little
+    assert.deepStrictEqual(r.out, ['move:right', 'move:left']);
+  });
+  test('touch: out and back to where it began, in one touch: the piece is back where it began', () => {
+    for (const k of [1, 2, 3, 4]) {
+      const r = rig();
+      r.G.down(1, 200, 300, 0, r.o);
+      let t = 0;
+      const to = (x) => r.G.move(1, x, 300, (t += 16));
+      const go = (from, dx) => { for (let i = 1; i <= 20; i++) to(from + (dx * i) / 20); };
+      go(200, 33 * (k + 0.1)); go(200 + 33 * (k + 0.1), -33 * (k + 0.1));
+      r.G.up(1, 200, 300, t + 4);
+      const net = r.out.filter((x) => x === 'move:right').length - r.out.filter((x) => x === 'move:left').length;
+      assert.strictEqual(net, k === 1 ? 1 : 0, k + ' steps out and back: ' + JSON.stringify(r.out));
+    }
+    const r = rig();
+    r.G.down(1, 200, 300, 0, r.o);
+    let t = 0;
+    for (let w = 0; w < 4; w++) for (const x of [243, 200 - 43, 200]) r.G.move(1, x, 300, (t += 40));
+    r.G.up(1, 200, 300, t + 4);
+    const net = r.out.filter((x) => x === 'move:right').length - r.out.filter((x) => x === 'move:left').length;
+    assert(Math.abs(net) <= 1 && r.out.length >= 8, 'a wiggle ends near where it began: ' + JSON.stringify(r.out));
+  });
+  test('touch: a move into a wall re-anchors at the finger, so there is nothing to unwind', () => {
+    const r = rig();
+    r.G.down(1, 100, 300, 0, r.o);
+    r.G.move(1, 134, 300, 16);
+    r.wallOn('right');
+    r.G.move(1, 240, 300, 60); // three steps' worth into the wall: one refused try
+    r.G.move(1, 210, 300, 90); r.G.move(1, 200, 300, 110); // backing off a little: no step yet
+    assert.deepStrictEqual(r.out, ['move:right', 'move:right'], JSON.stringify(r.out));
+    r.G.move(1, 198, 300, 130); // 42 px back from the wall point: 1.25 steps with the turn-back margin
+    assert.deepStrictEqual(r.out, ['move:right', 'move:right', 'move:left']);
+  });
+  test('touch: down under a ledge, then slide, in one touch (the axis follows the finger, however slowly)', () => {
+    for (const gap of [16, 45]) {
+      const r = rig();
+      r.G.down(1, 100, 100, 0, r.o);
+      let t = 0;
+      for (let i = 1; i <= 12; i++) r.G.move(1, 100, 100 + i * 6, (t += gap));
+      for (let i = 1; i <= 12; i++) r.G.move(1, 100 + i * 6, 172, (t += gap));
+      r.G.up(1, 172, 172, t + 4);
+      assert.deepStrictEqual(r.out, ['lower', 'lower', 'move:right', 'move:right'], gap + ' ms: ' + JSON.stringify(r.out));
+    }
+  });
+  test('touch: a swipe toward the floor at 1.2 px/ms is a hard drop; a drag at 0.5 px/ms only lowers', () => {
+    let r = rig();
+    path(r, 0, 100, 100, 0, 96, 10, 8); // 1.2 px/ms
+    assert.deepStrictEqual(r.out.filter((x) => x !== 'lower'), ['drop'], JSON.stringify(r.out));
+    r = rig();
+    path(r, 0, 100, 100, 0, 200, 50, 8); // 0.5 px/ms
+    assert(r.out.length === 6 && r.out.every((x) => x === 'lower'), JSON.stringify(r.out));
+    for (const [k, fires] of [[0, true], [1, true], [2, false]]) {
+      r = rig({ flickV: TT.FLICK_V[k] }); path(r, 0, 100, 100, 0, 96, 10, 8);
+      assert.strictEqual(r.out.includes('drop'), fires, 'Light / Medium / Firm at 1.2 px/ms');
+    }
+    r = rig(); path(r, 0, 100, 100, 0, 20, 2, 8); assert.deepStrictEqual(r.out, [], 'too short: under FLICK_MIN');
+    r = rig(); path(r, 0, 100, 100, 70, 60, 10, 5); assert(!r.out.includes('drop'), 'too slanted: more than 30 degrees off');
+    r = rig(); path(r, 0, 100, 100, 0, 200, 25, 8); assert(!r.out.includes('drop'), 'too long a stroke');
+    // A rest, then a swipe: the swipe counts from where the finger set off.
+    r = rig(); r.G.down(1, 100, 100, 0, r.o); for (let i = 1; i <= 6; i++) r.G.move(1, 100, 100 + i * 20, 400 + i * 12); r.G.up(1, 100, 220, 480);
+    assert(r.out.includes('drop'), JSON.stringify(r.out));
+  });
+  test('touch: a slide step the swipe itself made in its last 60 ms is taken back first', () => {
+    const r = rig();
+    r.G.down(1, 100, 100, 0, r.o);
+    r.G.move(1, 112, 101, 10); // setting off sideways
+    r.G.move(1, 134, 120, 18); // the swipe begins on a slant: a step right
+    for (let i = 1; i <= 4; i++) r.G.move(1, 134, 120 + i * 25, 18 + i * 8);
+    r.G.up(1, 134, 220, 54);
+    assert.deepStrictEqual(r.out.filter((x) => x !== 'lower'), ['move:right', 'move:left:undo', 'drop'], JSON.stringify(r.out));
+  });
+  test('touch: a slide or a slow lowering that runs straight into a swipe: the swipe still drops, the slide stays', () => {
+    let r = rig(), t = 0;
+    r.G.down(1, 100, 300, 0, r.o);
+    for (let i = 1; i <= 6; i++) r.G.move(1, 100 + i * 12, 300, (t += 30)); // 72 px right, slowly: two steps
+    for (let i = 1; i <= 6; i++) r.G.move(1, 172, 300 + i * 25, (t += 10)); // then at once 150 px down at 2.5 px/ms
+    r.G.up(1, 172, 450, t + 4);
+    assert.deepStrictEqual(r.out.filter((x) => x !== 'lower'), ['move:right', 'move:right', 'drop'], JSON.stringify(r.out));
+    r = rig(); t = 0;
+    r.G.down(1, 100, 100, 0, r.o);
+    for (let i = 1; i <= 12; i++) r.G.move(1, 100, 100 + i * 6, (t += 30)); // 72 px down at 0.2 px/ms: two rows
+    for (let i = 1; i <= 6; i++) r.G.move(1, 100, 172 + i * 25, (t += 10));
+    r.G.up(1, 100, 322, t + 4);
+    assert.deepStrictEqual(r.out.slice(0, 2), ['lower', 'lower'], JSON.stringify(r.out));
+    assert.strictEqual(r.out[r.out.length - 1], 'drop', JSON.stringify(r.out));
+    // A long drag at more than half the swipe speed is still one old stroke: no drop at its end.
+    r = rig({ flickV: 1.5 }); t = 0;
+    r.G.down(1, 100, 100, 0, r.o);
+    for (let i = 1; i <= 30; i++) r.G.move(1, 100, 100 + i * 8, (t += 8)); // 240 ms at 1 px/ms
+    for (let i = 1; i <= 3; i++) r.G.move(1, 100, 340 + i * 16, (t += 8));
+    r.G.up(1, 100, 388, t + 4);
+    assert(!r.out.includes('drop'), JSON.stringify(r.out));
+  });
+  test('touch: a swipe away from the floor holds; one drop or hold a touch; on a turned board the floor is where it is', () => {
+    let r = rig();
+    path(r, 0, 100, 300, 0, -120, 6, 8);
+    assert.deepStrictEqual(r.out, ['hold']);
+    r = rig();
+    r.G.down(1, 100, 300, 0, r.o);
+    for (let i = 1; i <= 6; i++) r.G.move(1, 100, 300 - i * 20, i * 8);
+    for (let i = 1; i <= 12; i++) r.G.move(1, 100, 180 + i * 20, 48 + i * 8);
+    r.G.up(1, 100, 420, 150);
+    assert.deepStrictEqual(r.out, ['hold'], 'back down after the hold: nothing');
+    r = rig({ slide: 'y', floor: [-1, 0] }); // Sideways: the floor is on the left, vertical moves slide
+    path(r, 0, 300, 300, -120, 0, 6, 8);
+    assert.deepStrictEqual(r.out.filter((x) => x !== 'lower'), ['drop']);
+    r = rig({ slide: 'y', floor: [-1, 0] });
+    path(r, 0, 300, 300, 0, 70, 20, 16);
+    assert.deepStrictEqual(r.out, ['move:down', 'move:down']);
+  });
+  test('touch: a two-finger tap turns 180°; a late second finger is ignored; three fingers cancel', () => {
+    let r = rig();
+    r.G.down(1, 100, 300, 0, r.o); r.G.down(2, 200, 300, 60); r.G.up(1, 101, 300, 150); r.G.up(2, 200, 301, 170);
+    assert.deepStrictEqual(r.out, ['r180']);
+    r = rig();
+    r.G.down(1, 100, 300, 0, r.o); r.G.down(2, 200, 300, 200); r.G.up(1, 100, 300, 220); r.G.up(2, 200, 300, 240);
+    assert.deepStrictEqual(r.out, ['tap:left'], 'the second finger came too late for a two-finger tap: ignored, the first one taps');
+    r = rig();
+    r.G.down(1, 100, 300, 0, r.o); r.G.move(1, 140, 300, 30); r.G.down(2, 200, 300, 60); r.G.move(2, 260, 300, 80); r.G.move(1, 180, 300, 100); r.G.up(2, 260, 300, 110); r.G.up(1, 180, 300, 130);
+    assert.deepStrictEqual(r.out, ['move:right', 'move:right'], 'a finger landing during a drag is ignored');
+    r = rig();
+    r.G.down(1, 100, 300, 0, r.o); r.G.move(1, 140, 300, 30); r.G.down(2, 200, 300, 40); r.G.down(3, 220, 300, 50);
+    r.G.move(1, 240, 300, 80); r.G.up(1, 240, 300, 90); r.G.up(2, 200, 300, 90); r.G.up(3, 220, 300, 90);
+    assert.deepStrictEqual(r.out, ['move:right'], 'three fingers: cancelled');
+    r = rig();
+    r.G.down(1, 100, 300, 0, r.o); r.G.move(1, 140, 300, 30); r.G.cancel(1); r.G.up(1, 240, 300, 90);
+    assert.deepStrictEqual(r.out, ['move:right'], 'a system gesture (pointercancel): no more');
+  });
+  test('touch: a new piece mid-touch (gravity set it) takes no drop, lowering or hold; slides go on', () => {
+    const r = rig();
+    r.G.down(1, 100, 100, 0, r.o);
+    r.G.move(1, 100, 140, 40);
+    r.G.newPiece();
+    for (let i = 1; i <= 5; i++) r.G.move(1, 100, 140 + i * 30, 40 + i * 8);
+    for (let i = 1; i <= 10; i++) r.G.move(1, 100 + i * 8, 290, 80 + i * 16);
+    r.G.up(1, 180, 290, 260);
+    assert.deepStrictEqual(r.out, ['lower', 'move:right', 'move:right'], JSON.stringify(r.out));
+    const c = rig(); c.G.down(1, 100, 100, 0, c.o); c.G.move(1, 100, 104, 20); c.G.consume(); c.G.up(1, 100, 104, 60);
+    assert.deepStrictEqual(c.out, [], 'consumed (a card came up): not even a tap');
+  });
+  test('touch: Classic: a finger resting a step or more down the board keeps lowering every Lower repeat', () => {
+    const r = rig({ softMs: 70 });
+    r.G.down(1, 100, 100, 0, r.o);
+    for (let i = 1; i <= 8; i++) r.G.move(1, 100, 100 + i * 5, i * 16); // 40 px down: one lower
+    for (let t = 140; t <= 500; t += 16) r.G.tick(t);
+    const n = r.out.length;
+    assert(n >= 4 && n <= 6 && r.out.every((x) => x === 'lower'), JSON.stringify(r.out));
+    r.G.move(1, 100, 120, 510); // moved back up: it stops
+    for (let t = 520; t <= 800; t += 16) r.G.tick(t);
+    assert.strictEqual(r.out.length, n);
+    const q = rig(); q.G.down(1, 100, 100, 0, q.o); for (let t = 16; t < 600; t += 16) q.G.tick(t); q.G.up(1, 100, 100, 600);
+    assert.deepStrictEqual(q.out, [], 'no soft drop in Relaxed, and a long still press is nothing');
+  });
+  test('touch: hints speak gestures to a touch player; taps and swipes retire them', () => {
+    load(['hints.js']);
+    const { Detector, content } = L.Hints;
+    const view = { screenDir: (dx, dy) => [dx, -dy] }, side = { screenDir: (dx, dy) => [dy, dx] };
+    assert.deepStrictEqual(content('drop', 'touch', view), ['Swipe ↓ drops']);
+    assert.deepStrictEqual(content('lower', 'touch', side), ['Drag ← lowers, then slide'], 'Sideways: the floor is on the left');
+    assert.deepStrictEqual(content('hold', 'touch', view), ['Swipe ↑ holds']);
+    assert.deepStrictEqual(content('otherWay', 'touch', view), ['Tap left: other way']);
+    assert.deepStrictEqual(content('otherWay', 'touch', view, { bothWays: true }), ['Two fingers: 180°']);
+    assert.deepStrictEqual(content('invert', 'touch', view), ['Drag is mirrored']);
+    assert.deepStrictEqual(content('mouseTurn', 'touch', view), ['Tap turns']);
+    const d = new Detector(), place = () => d.action({ act: 'drop', a: 'drop', ok: true, touch: true, set: true, piece: {} }, 0);
+    for (let i = 0; i < 8; i++) place();
+    assert.deepStrictEqual(d.pending && [d.pending.id, d.pending.variant], ['mouseTurn', 'touch'], 'eight pieces set by touch, never turned');
+    const e = new Detector(), p = {};
+    for (let i = 0; i < 5; i++) e.action({ act: 'up', a: 'moveL', ok: true, rep: false, touch: true, piece: p, rot: 90 }, i);
+    assert.strictEqual(e.pending, null, 'a swipe on a turned board is not an Up key pressed wrong');
+    for (let i = 0; i < 3; i++) e.action({ act: 'cw', a: 'cw', ok: true, touch: true, piece: {} }, 10 + i);
+    assert(e.hs.retired.mouseTurn, 'tap turns retire the hint');
+  });
+}
+
+// The Home Screen web app: the offline copy, the manifest and icons, the deployed build (scripts/web-test.cjs).
+require('./web-test.cjs')(test).then(() => {
+  console.log(failed ? '\n' + failed + ' failed, ' + passed + ' passed' : '\nall ' + passed + ' passed');
+  process.exit(failed ? 1 : 0);
+});

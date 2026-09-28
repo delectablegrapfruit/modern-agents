@@ -47,9 +47,14 @@
    */
   function toast(msg, kind, ms, ico, opts) {
     const box = document.getElementById('toasts');
-    // Above a board tab's bars (status, items, controls, puzzle actions), never over them.
+    // Above a board tab's bars (status, items, controls, puzzle actions), never over them. On a phone held upright the
+    // well fills the middle of the screen, where the thumb works: there toasts come in at the top, under the title bar.
     const bar = document.querySelector('.view.active > .statusbar, .view.active > .puz-actions'), holder = box.offsetParent;
-    box.style.bottom = bar && holder ? Math.max(14, Math.round(holder.getBoundingClientRect().bottom - bar.getBoundingClientRect().top + 8)) + 'px' : '';
+    const top = !!(root.matchMedia && root.matchMedia('(hover: none) and (pointer: coarse) and (orientation: portrait)').matches);
+    const main = document.getElementById('main');
+    box.classList.toggle('top', top);
+    box.style.top = top && main && holder ? Math.round(main.getBoundingClientRect().top - holder.getBoundingClientRect().top + 8) + 'px' : '';
+    box.style.bottom = !top && bar && holder ? Math.max(14, Math.round(holder.getBoundingClientRect().bottom - bar.getBoundingClientRect().top + 8)) + 'px' : '';
     const go = opts && opts.onClick;
     const el = h('div', { class: 'toast ' + (kind || '') + (go ? ' link' : ''), 'data-area': (opts && opts.area) || null }, ico ? icon(ico) : null, h('span', { class: 'toast-t' }, msg), go ? icon('chevRight', 'toast-go') : null);
     let timer = 0;
@@ -85,7 +90,9 @@
   /**
    * A dialog open, the toasts let the pointer through (and never jump behind it). Over a live board with mouse control
    * a click sets a piece, so there a toast takes the pointer only once it has rested on it a moment (ARM_MS) without
-   * playing; a click made on the way is the board's.
+   * playing; a click made on the way is the board's. A finger has no hover to rest with: a touch player's toast is
+   * tapped straight away, except while a board is being touched and for a moment after (L.Touch.boardBusy), so a
+   * toast that turns up under a swipe never takes it.
    */
   const ARM_MS = 350;
   let ptr = null, armTimer = 0;
@@ -97,12 +104,13 @@
     if (e && e.clientX != null) ptr = [e.clientX, e.clientY];
     const box = root.document && document.getElementById('toasts'), links = box ? box.querySelectorAll('.toast.link') : [];
     if (!links.length) return;
-    const modal = modalOpen(), board = !modal && liveBoard();
-    box.classList.toggle('through', modal || board);
+    const modal = modalOpen(), touch = !!(L.Touch && L.Touch.using);
+    const board = !modal && !touch && liveBoard();
+    box.classList.toggle('through', modal || board || (touch && L.Touch.boardBusy()));
     const now = performance.now();
     for (const t of links) {
       const r = t.getBoundingClientRect(), on = board && ptr && ptr[0] >= r.left && ptr[0] <= r.right && ptr[1] >= r.top && ptr[1] <= r.bottom;
-      if (!on || (e && e.type === 'mousedown' && !t.classList.contains('armed'))) { t.armAt = on ? now : 0; t.classList.remove('armed'); continue; }
+      if (!on || (e && (e.type === 'mousedown' || e.type === 'pointerdown') && !t.classList.contains('armed'))) { t.armAt = on ? now : 0; t.classList.remove('armed'); continue; }
       if (t.classList.contains('armed')) continue;
       if (!t.armAt) t.armAt = now;
       if (now - t.armAt >= ARM_MS) t.classList.add('armed');
@@ -110,8 +118,9 @@
     }
   }
   if (root.document) {
-    document.addEventListener('mousemove', syncToasts, { capture: true, passive: true });
-    document.addEventListener('mousedown', syncToasts, { capture: true, passive: true });
+    const mouseOnly = (e) => { if ((e.pointerType || 'mouse') === 'mouse' && !(L.Touch && L.Touch.recent())) syncToasts(e); else syncToasts(); };
+    document.addEventListener('pointermove', mouseOnly, { capture: true, passive: true });
+    document.addEventListener('pointerdown', mouseOnly, { capture: true, passive: true });
   }
 
   const modals = [];
@@ -154,7 +163,7 @@
       h('header', null, opts.icon ? icon(opts.icon) : null, h('span', { class: 'ttl' }, opts.title || ''), h('button', { class: 'icon-btn x', html: ICONS.close, 'aria-label': 'Close', onclick: close })),
       h('div', { class: 'body' }, opts.body),
       footer);
-    const scrim = h('div', { class: 'scrim', onmousedown: (e) => { if (e.target === scrim) close(); } }, modal);
+    const scrim = h('div', { class: 'scrim', onpointerdown: (e) => { if (e.target === scrim) close(); } }, modal);
     rootEl.appendChild(scrim);
     const handle = { close, el: modal, scrim, opts };
     modals.push(handle);
@@ -445,7 +454,7 @@
   const CHEV_R = ICONS.chevRight;
 
   // Anywhere else, a price asking for confirmation goes back to its price.
-  if (root.document) document.addEventListener('mousedown', (e) => { if (shopUI.armed && !shopUI.armed.contains(e.target)) disarmShop(); }, true);
+  if (root.document) document.addEventListener('pointerdown', (e) => { if (shopUI.armed && !shopUI.armed.contains(e.target)) disarmShop(); }, true);
 
   // ---- statistics -----------------------------------------------------------------------------------------------------
 
@@ -588,7 +597,7 @@
     return true;
   }
   if (root.document) {
-    document.addEventListener('mousedown', (e) => { if (L.app && L.app.achMenu && !(e.target.closest && e.target.closest('.ach-recent'))) closeRecent(L.app); }, true);
+    document.addEventListener('pointerdown', (e) => { if (L.app && L.app.achMenu && !(e.target.closest && e.target.closest('.ach-recent'))) closeRecent(L.app); }, true);
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && L.app && L.app.achMenu && !modalOpen() && closeRecent(L.app)) { e.preventDefault(); e.stopPropagation(); } }, true);
   }
 
@@ -767,6 +776,17 @@
       });
       return wrap;
     };
+    /** A segmented control: one choice of a few, the chosen one raised. */
+    const seg = (k, options) => {
+      const wrap = h('div', { class: 'seg set-seg', role: 'group' });
+      options.forEach(([v, label]) => {
+        const b = h('button', { 'data-v': String(v), 'aria-pressed': String(s[k] === v), onclick: () => { set(k, v); wrap.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); } }, label);
+        wrap.appendChild(b);
+      });
+      return wrap;
+    };
+    // A touch screen gets the Touch card; with no mouse or trackpad at all, the pointer's settings go.
+    const touchy = !!(L.Touch && L.Touch.available()), touchOnly = !!(L.Touch && L.Touch.touchOnly());
     const bgPreview = (mode) => h('span', { class: 'tile-prev bgp bgp-' + mode }, h('i'));
     const themePreview = (t) => h('span', { class: 'tile-prev thp thp-' + t }, h('i'), h('i'), h('i'));
 
@@ -799,25 +819,36 @@
         icon: 'window', label: 'Window',
         body: () => [card(null,
           row('Float above other windows', null, toggle('onTop')),
-          row('Fade when the pointer leaves', null, toggle('fadeAway')),
+          touchOnly ? null : row('Fade when the pointer leaves', null, toggle('fadeAway')),
           row('Show and hide', null, h('kbd', { class: 'big' }, '⌥⌘L')))],
       } : null,
       controls: {
         icon: 'controls', label: 'Controls',
-        body: () => [
-          card('Keyboard',
+        body: () => {
+          const keyboard = card('Keyboard',
             row('Repeat delay', null, range('das', 60, 400, 5, ' ms')),
             row('Repeat rate', null, range('arr', 0, 150, 5, ' ms')),
-            row('Lower repeat', null, range('lowerRepeat', 0, 150, 5, ' ms'))),
-          card('Mouse',
+            row('Lower repeat', null, range('lowerRepeat', 0, 150, 5, ' ms')));
+          return [
+          touchOnly ? null : keyboard,
+          touchy ? card('Touch',
+            row('Touch controls', null, toggle('touch')),
+            row('Drag sensitivity', null, range('touchSens', 1, 10, 1, '')),
+            row('Hard drop swipe', null, seg('touchFlick', [[0, 'Light'], [1, 'Medium'], [2, 'Firm']])),
+            row('Tap to turn', null, seg('tapTurn', [['sides', 'Sides'], ['cw', 'Clockwise']])),
+            root.navigator && 'vibrate' in root.navigator ? row('Haptics', null, toggle('haptics')) : null) : null,
+          touchOnly ? null : card('Mouse',
             row('Mouse control', null, toggle('mouse'))),
           card('Board', row('Next pieces shown', null, range('preview', 1, 6, 1, '')),
             row('Control hints', null, toggle('hints'))),
-          card('Classic',
+          touchOnly ? null : card('Classic',
             row('Pause when the pointer leaves', null, toggle('pauseAway'))),
           card('Puzzles',
-            row('Counter-clockwise puzzles', 'New puzzles use Z and A', toggle('ccwPuzzles', () => { const pm = app.modes.puzzle; if (pm && pm.puzzle && !pm.done) pm.loadNumbered(pm.ps.diff); else if (pm && pm.puzzle) pm.renderNav(); }))),
-        ],
+            row('Counter-clockwise puzzles', touchOnly ? 'New puzzles use tap left and two fingers' : 'New puzzles use Z and A', toggle('ccwPuzzles', () => { const pm = app.modes.puzzle; if (pm && pm.puzzle && !pm.done) pm.loadNumbered(pm.ps.diff); else if (pm && pm.puzzle) pm.renderNav(); }))),
+          // With no keyboard to speak of, its timings come last (a tablet may still have one).
+          touchOnly ? keyboard : null,
+          ];
+        },
       },
       sound: {
         icon: 'sound', label: 'Sound',
@@ -834,7 +865,9 @@
       },
       keys: {
         icon: 'keys', label: 'Keys',
-        body: () => [card(null, h('div', { class: 'keys' }, L.KEY_HELP.map(([k, d]) => [h('span', { class: 'k' }, h('kbd', null, k)), h('span', null, d)])))],
+        body: () => [
+          touchy && L.TOUCH_HELP ? card('Touch', h('div', { class: 'keys gestures' }, L.TOUCH_HELP.map(([k, d]) => [h('span', { class: 'k' }, h('span', { class: 'gest' }, k)), h('span', null, d)]))) : null,
+          card(touchy ? 'Keyboard' : null, h('div', { class: 'keys' }, L.KEY_HELP.filter(([k]) => !(touchOnly && /^(Mouse|Left click|Right click|Wheel|Click HOLD)/.test(k))).map(([k, d]) => [h('span', { class: 'k' }, h('kbd', null, k)), h('span', null, d)])))],
       },
       data: {
         icon: 'data', label: 'Data',
@@ -854,7 +887,7 @@
     const show = (id) => {
       cur = id;
       nav.querySelectorAll('button').forEach((b) => b.setAttribute('aria-current', String(b.dataset.id === id)));
-      pane.replaceChildren(...sections[id].body());
+      pane.replaceChildren(...sections[id].body().filter(Boolean));
       pane.scrollTop = 0;
     };
     ids.forEach((id) => nav.appendChild(h('button', { 'data-id': id, onclick: () => show(id) }, h('span', { class: 'ni', html: L.Icons.icon(sections[id].icon) }), h('span', null, sections[id].label))));
@@ -957,6 +990,8 @@
     const tip = h('div', { class: 'tip hidden', role: 'tooltip' });
     app.appendChild(tip);
     let timer = null, cur = null;
+    // The foot names a key; to a touch player, the gesture instead (data-tip-touch), or nothing.
+    const foot = (el) => (L.Touch && L.Touch.using ? el.dataset.tipTouch : el.dataset.tipFoot);
     const hide = () => { clearTimeout(timer); tip.classList.add('hidden'); };
     const show = (el) => {
       if (!el.isConnected) return;
@@ -964,7 +999,7 @@
       tip.replaceChildren(...[
         el.dataset.tipTitle ? h('div', { class: 'tip-title' }, el.dataset.tipIcon ? icon(el.dataset.tipIcon) : null, el.dataset.tipTitle) : null,
         h('div', { class: 'tip-body' }, el.dataset.tip),
-        el.dataset.tipFoot ? h('div', { class: 'tip-foot' }, el.dataset.tipFoot) : null].filter(Boolean));
+        foot(el) ? h('div', { class: 'tip-foot' }, foot(el)) : null].filter(Boolean));
       // A name and a key (the title bar's small buttons) fit on one short line.
       tip.classList.toggle('compact', !el.dataset.tipTitle && el.dataset.tip.length < 32);
       tip.classList.remove('hidden');
@@ -975,16 +1010,37 @@
       if (y < 44) y = r.bottom + 8 - a.top;
       tip.style.left = x + 'px'; tip.style.top = y + 'px';
     };
-    document.addEventListener('mouseover', (e) => {
+    // A mouse's hover only: a tap's emulated mouseover (iOS: "the first tap is a hover") never shows one.
+    document.addEventListener('pointerover', (e) => {
+      if (e.pointerType !== 'mouse' || (L.Touch && L.Touch.recent())) return;
       const el = e.target && e.target.closest ? e.target.closest('[data-tip]') : null;
       if (el === cur) return;
       cur = el;
       hide();
       if (el) timer = setTimeout(() => show(el), 260);
     });
-    document.addEventListener('mousedown', hide, true);
+    // A finger: a long press on anything with a tip shows it, until the next touch or three seconds (never on a board,
+    // where a finger at rest is play). The tap that ends a long press does not press the button too.
+    let press = null, swallow = 0;
+    const endPress = () => { if (press) clearTimeout(press.timer); press = null; };
+    document.addEventListener('pointerdown', (e) => {
+      hide(); cur = null;
+      endPress();
+      if (e.pointerType === 'mouse') return;
+      const el = e.target && e.target.closest ? e.target.closest('[data-tip]') : null;
+      if (!el || e.target.closest('canvas') || !el.dataset.tip) return;
+      press = { el, id: e.pointerId, x: e.clientX, y: e.clientY, timer: setTimeout(() => {
+        if (!press || !el.isConnected) return;
+        show(el); cur = el; press.shown = true;
+        clearTimeout(timer); timer = setTimeout(hide, 3000);
+      }, L.Touch ? L.Touch.T.LONG_PRESS : 500) };
+    }, true);
+    document.addEventListener('pointermove', (e) => { if (press && e.pointerId === press.id && Math.hypot(e.clientX - press.x, e.clientY - press.y) >= 10) endPress(); }, true);
+    document.addEventListener('pointerup', (e) => { if (press && press.shown) swallow = performance.now(); endPress(); }, true);
+    document.addEventListener('pointercancel', endPress, true);
+    document.addEventListener('click', (e) => { if (swallow && performance.now() - swallow < 400) { swallow = 0; e.preventDefault(); e.stopPropagation(); } }, true);
     document.addEventListener('keydown', hide, true);
   }
 
-  L.UI = { initTooltips, h, ICONS, icon, toast, openModal, modalOpen, closeTopModal, submitTopModal, confirm, canvasFor, renderShop, refreshShopPrices, renderStats, renderAchievements, showAchievement, openSettings, openOrderSlip, openPickOfThree, openBlueprint, copyText, lookWith, drawMiniPiece };
+  L.UI = { initTooltips, h, ICONS, icon, toast, syncToasts, openModal, modalOpen, closeTopModal, submitTopModal, confirm, canvasFor, renderShop, refreshShopPrices, renderStats, renderAchievements, showAchievement, openSettings, openOrderSlip, openPickOfThree, openBlueprint, copyText, lookWith, drawMiniPiece };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

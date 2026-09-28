@@ -63,6 +63,7 @@
       this.wheelAt = 0;
       this.setGrace = SET_GRACE_MS;
       this.bindMouse();
+      this.bindTouch();
       if (!app.hints && L.Hints) app.hints = new L.Hints.Coach(app); // control hints (js/hints.js)
     }
 
@@ -133,8 +134,8 @@
       }
       this.view.dirty = true;
       // Keys are in charge until the mouse moves again (so arrows work with the pointer resting on the board).
-      if (!this.mouseActing) { this.lastInput = 'key'; this.view.pointerCol = null; this.rawCol = null; }
-      if (this.app.hints && prevPiece) this.app.hints.action(this, { act, a: asked, ok, rep: !!rep, mouse: !!this.mouseActing, piece: prevPiece, set: (a === 'drop' || a === 'lower') && g.piece !== prevPiece });
+      if (!this.mouseActing && !this.touchActing) { this.lastInput = 'key'; this.view.pointerCol = null; this.rawCol = null; }
+      if (this.app.hints && prevPiece) this.app.hints.action(this, { act, a: asked, ok, rep: !!rep, mouse: !!this.mouseActing, touch: !!this.touchActing, piece: prevPiece, set: (a === 'drop' || a === 'lower') && g.piece !== prevPiece });
       if (this.afterAction) this.afterAction(a);
       return ok;
     }
@@ -165,7 +166,11 @@
       this.pointer = null;
       const enabled = () => this.settings.mouse && this.game && !this.blocked();
       const mouse = (fn) => { this.mouseActing = true; this.lastInput = 'mouse'; try { fn(); } finally { this.mouseActing = false; } };
-      c.addEventListener('mousemove', (e) => {
+      // Pointer events, mouse only (a finger or a pen is bindTouch's); a tap's emulated mouse events, which could come
+      // a moment after it, are ignored too (as a click, a tap would hard-drop the piece).
+      const isMouse = (e) => (e.pointerType || 'mouse') === 'mouse' && !(L.Touch && L.Touch.recent());
+      c.addEventListener('pointermove', (e) => {
+        if (!isMouse(e)) return;
         const p = pos(e), moved = !this.pointer || Math.abs(p[0] - this.pointer[0]) + Math.abs(p[1] - this.pointer[1]) > 1;
         this.pointer = p;
         if (!enabled()) return;
@@ -175,9 +180,9 @@
         if (moved) this.follow();
         c.style.cursor = hold ? 'pointer' : 'default';
       });
-      c.addEventListener('mouseleave', () => { this.pointer = null; this.rawCol = null; this.view.pointerCol = null; this.view.holdHover = false; this.view.dirty = true; });
-      c.addEventListener('mousedown', (e) => {
-        if (!enabled()) return;
+      c.addEventListener('pointerleave', (e) => { if ((e.pointerType || 'mouse') !== 'mouse') return; this.pointer = null; this.rawCol = null; this.view.pointerCol = null; this.view.holdHover = false; this.view.dirty = true; });
+      c.addEventListener('pointerdown', (e) => {
+        if (!isMouse(e) || !enabled()) return;
         if (performance.now() - this.app.focusedAt < 300) return; // the click that brought the window forward
         const [px, py] = pos(e);
         this.pointer = [px, py];
@@ -194,7 +199,7 @@
       });
       c.addEventListener('contextmenu', (e) => e.preventDefault());
       c.addEventListener('wheel', (e) => {
-        if (!enabled()) return;
+        if (!enabled() || (L.Touch && L.Touch.recent())) return;
         e.preventDefault();
         const now = performance.now();
         if (e.deltaY <= 1 || now - this.wheelAt < 45) return;
@@ -232,6 +237,108 @@
       this.view.dirty = true;
     }
 
+    /**
+     * Touch play (js/touch.js reads the gestures; this carries them out, in the screen's directions like the arrows):
+     *  - drag along the piece's sideways axis: a cell per step of finger travel (Settings: Drag sensitivity)
+     *  - drag toward the floor: lower a row per step (never sets the piece; in Classic a finger resting down the board
+     *    keeps lowering)
+     *  - swipe toward the floor: hard drop; away from it: hold
+     *  - tap: turn (right half clockwise, left half counter-clockwise; or always clockwise: Settings ▸ Tap to turn)
+     *  - two-finger tap: turn 180°; tap HOLD: hold
+     * Only the canvas starts a gesture: the bars, buttons, cards and toasts are elements of their own.
+     */
+    bindTouch() {
+      const c = this.canvas, Touch = L.Touch;
+      if (!Touch || !L.TouchGestures) return;
+      this.gest = new L.TouchGestures((it) => this.touchIntent(it));
+      const pos = (e) => { const r = c.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+      const isTouch = (e) => e.pointerType === 'touch' || e.pointerType === 'pen';
+      const events = (e) => (e.getCoalescedEvents && e.getCoalescedEvents().length ? e.getCoalescedEvents() : [e]);
+      c.addEventListener('pointerdown', (e) => {
+        if (!isTouch(e)) return;
+        e.preventDefault(); // no emulated mouse events (a click would drop the piece), no text selection
+        Touch.boardDown(e.pointerId);
+        try { c.setPointerCapture(e.pointerId); } catch (err) { /* the pointer is gone already */ }
+        this.app.activity && this.app.activity();
+        const [x, y] = pos(e), t = e.timeStamp || performance.now();
+        if (this.gest.active) { this.gest.down(e.pointerId, x, y, t); return; }
+        const opts = this.touchOpts(x, y);
+        this.gest.down(e.pointerId, x, y, t, opts);
+        if (opts && !opts.tapOnly && this.touchIntercept && this.touchIntercept()) this.gest.consume();
+        this.touchPiece = this.game && this.game.piece;
+      });
+      c.addEventListener('pointermove', (e) => {
+        if (!isTouch(e) || !this.gest.active) return;
+        e.preventDefault();
+        this.touchGuard();
+        for (const ce of events(e)) { const [x, y] = pos(ce); this.gest.move(e.pointerId, x, y, ce.timeStamp || e.timeStamp || performance.now()); }
+      });
+      const end = (e) => {
+        if (!isTouch(e)) return;
+        Touch.boardUp(e.pointerId);
+        if (e.type === 'pointercancel') { this.gest.cancel(e.pointerId); return; }
+        this.touchGuard();
+        const [x, y] = pos(e);
+        this.gest.up(e.pointerId, x, y, e.timeStamp || performance.now());
+      };
+      c.addEventListener('pointerup', end);
+      c.addEventListener('pointercancel', end);
+      c.addEventListener('lostpointercapture', (e) => { if (isTouch(e)) Touch.boardUp(e.pointerId); });
+    }
+
+    /** The frame a new touch is read in (see TouchGestures.down), or null when a touch here does nothing. */
+    touchOpts(x, y) {
+      const st = this.settings, g = this.game;
+      if (!st.touch || !g || UI.modalOpen()) return null;
+      const tapOnly = !!(this.touchTapStarts && this.touchTapStarts());
+      if (!tapOnly && this.blocked()) return null;
+      const lay = this.view.lay;
+      if (!lay) return null;
+      // The screen's axes on this board, as the arrows see them: the one that moves the piece, and toward its floor.
+      const floor = ['down', 'left', 'right', 'up'].find((a) => this.mapArrow(a) === 'lower') || 'down';
+      this.touchFloor = floor;
+      const slide = /^move/.test(this.mapArrow('left')) ? 'x' : 'y';
+      return {
+        step: L.Touch.stepFor(lay.s, st.touchSens), flickV: L.Touch.T.FLICK_V[st.touchFlick != null ? st.touchFlick : 1] || 1.1,
+        flickMin: Math.max(L.Touch.T.FLICK_MIN, L.Touch.T.FLICK_MIN_CELLS * lay.s), slide, floor: ARROWS[floor],
+        centerX: lay.board.x + lay.board.w / 2, onHold: this.view.onHoldTouch(x, y),
+        softMs: this.softDrop ? Math.max(16, st.lowerRepeat || 70) : 0, tapOnly,
+      };
+    }
+
+    /** Mid-touch: a card or a window that came up takes the rest of it; a new piece takes its lowering, drop and hold. */
+    touchGuard() {
+      if (!this.gest.active) return;
+      if (UI.modalOpen() || (this.blocked() && !(this.touchTapStarts && this.touchTapStarts()))) { this.gest.consume(); return; }
+      if (this.game && this.game.piece !== this.touchPiece) { this.touchPiece = this.game.piece; this.gest.newPiece(); }
+    }
+
+    /** One gesture's intent, through action() like a key (so Inverted Controls, the set grace and the hints apply). */
+    touchIntent(it) {
+      if (!this.game || UI.modalOpen()) return false;
+      this.touchActing = true;
+      this.lastInput = 'touch';
+      this.view.pointerCol = null; this.rawCol = null;
+      let ok = false;
+      try {
+        switch (it.type) {
+          case 'move': ok = this.action(it.dir, !it.fresh); break;
+          case 'lower': ok = this.action(this.touchFloor || 'down', true); if (ok) this.app.sound.play('lower'); break;
+          case 'drop': ok = this.action('drop'); break;
+          case 'hold': ok = this.action('hold'); break;
+          case 'r180': ok = this.action('r180'); break;
+          case 'tap':
+            if (this.touchTapStarts && this.touchTapStarts()) { ok = this.action('drop'); break; }
+            ok = this.action(this.settings.tapTurn === 'cw' ? 'rotate' : it.side === 'left' ? 'ccw' : 'cw');
+            break;
+        }
+      } finally { this.touchActing = false; }
+      // The piece in play after our own drop or hold is the next one: not a change under the finger.
+      if (this.game) this.touchPiece = this.game.piece;
+      if (ok && !it.undo) L.Touch.haptic(it.type === 'drop' || it.type === 'hold' ? 8 : 4);
+      return ok;
+    }
+
     showCard(content) {
       this.overlay.replaceChildren(h('div', { class: 'card' }, content));
       this.overlay.classList.remove('hidden');
@@ -240,6 +347,7 @@
     get cardOpen() { return !this.overlay.classList.contains('hidden'); }
 
     frame(now, dt) {
+      if (this.gest && this.gest.active) { this.touchGuard(); this.gest.tick(now); }
       if (this.app.hints) this.app.hints.frame(this, now, dt);
       this.view.reducedMotion = this.reduced;
       this.view.fx.update(dt);
@@ -291,6 +399,9 @@
     }
 
     blocked() { return this.cardOpen || this.paused || this.over || !this.started; }
+
+    /** A tap on the board starts a game (or the next one) when no card is up: as Space does. */
+    touchTapStarts() { return (!this.started || this.over) && !this.cardOpen && !this.paused; }
 
     /** Seconds per row at the current level (the guideline curve). */
     gravity() { const l = Math.min(this.level, 20); return Math.max(0.012, Math.pow(0.8 - (l - 1) * 0.007, l - 1)); }
@@ -1062,6 +1173,9 @@
         })));
     }
 
+    /** A touch on the board with a tray open closes the tray, and does nothing else. */
+    touchIntercept() { if (!this.tray) return false; this.openTray(null); return true; }
+
     /** Esc closes an open tray first (the app's own Esc handling comes after). */
     closeTray() { if (!this.tray) return false; this.openTray(null); return true; }
 
@@ -1212,6 +1326,9 @@
   const MOD_KEYS = { spin: 'Z turns counter-clockwise · A turns 180°', hold: 'C holds', side: 'Arrows follow the screen', flip: 'Arrows follow the screen' };
   /** The keys line for a wildcard in a puzzle: Inverted Controls swap the turns, so Z turns clockwise there. */
   const modKeys = (m, mods) => (m === 'spin' && mods.includes('invert') ? 'Z turns clockwise here (controls are inverted) · A turns 180°' : MOD_KEYS[m] || null);
+  // The same, in gestures, for a touch player.
+  const MOD_TOUCH = { spin: 'Tap left turns counter-clockwise · Two fingers: 180°', hold: 'Swipe ↑ or tap HOLD holds', side: 'Swipes follow the screen', flip: 'Swipes follow the screen' };
+  const modTouch = (m, mods, tapTurn) => (m === 'spin' && tapTurn === 'cw' ? 'Two fingers: 180°' : m === 'spin' && mods.includes('invert') ? 'Tap left turns clockwise here (controls are inverted) · Two fingers: 180°' : MOD_TOUCH[m] || null);
   const DIFF_COST = { E: 10, M: 20, H: 35 };
   /** "2026-09-26" → "Sat, Sep 26" (with the year when it is not this one). */
   function dayLabel(key) {
@@ -1239,7 +1356,7 @@
       this.el.seed.addEventListener('click', () => { if (this.puzzle) { UI.copyText(this.puzzle.seed); toast('Copied', 'good', 1200); } });
       // Wildcard chips explain themselves on hover (the tooltip) and on a click or tap (a small card that stays).
       this.el.mods.addEventListener('click', (e) => { const b = e.target.closest('.mod'); if (b) this.togglePop(b); });
-      document.addEventListener('mousedown', (e) => { if (this.pop && !e.target.closest('.mod, .puz-pop')) this.closePop(); }, true);
+      document.addEventListener('pointerdown', (e) => { if (this.pop && !e.target.closest('.mod, .puz-pop')) this.closePop(); }, true);
       document.addEventListener('keydown', () => this.closePop(), true);
       // Chips shorten, then drop to icons, rather than wrap: the card keeps one height whatever the puzzle.
       // The bar does the same with its Daily / Seed / History labels: words when they fit, icons alone when not.
@@ -1713,7 +1830,7 @@
       if (!p.mods.length) { this.el.mods.replaceChildren(h('span', { class: 'mod-none' }, 'No wildcards')); return; }
       this.el.mods.replaceChildren(...p.mods.map((m) => {
         const M = Puzzles.MODS[m];
-        return h('button', { class: 'mod mod-' + m, 'data-mod': m, 'data-tip-title': M.name, 'data-tip': M.desc, 'data-tip-foot': modKeys(m, p.mods) },
+        return h('button', { class: 'mod mod-' + m, 'data-mod': m, 'data-tip-title': M.name, 'data-tip': M.desc, 'data-tip-foot': modKeys(m, p.mods), 'data-tip-touch': modTouch(m, p.mods, this.settings.tapTurn) },
           icon(m), h('span', { class: 'n' }, M.name), h('span', { class: 's' }, MOD_SHORT[m] || M.name));
       }));
       this.fitMods();
@@ -1732,7 +1849,7 @@
       const m = chip.dataset.mod, open = this.pop && this.pop.dataset.mod === m;
       this.closePop();
       if (open || !Puzzles.MODS[m]) return;
-      const M = Puzzles.MODS[m], keys = modKeys(m, this.puzzle.mods);
+      const M = Puzzles.MODS[m], keys = L.Touch && L.Touch.using ? modTouch(m, this.puzzle.mods, this.settings.tapTurn) : modKeys(m, this.puzzle.mods);
       const pop = h('div', { class: 'puz-pop', 'data-mod': m, role: 'note' },
         h('div', { class: 'tip-title' }, icon(m), ' ', M.name), h('div', { class: 'tip-body' }, M.desc), keys ? h('div', { class: 'tip-foot' }, keys) : null);
       this.el.view.appendChild(pop);

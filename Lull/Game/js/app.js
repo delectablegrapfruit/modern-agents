@@ -222,6 +222,7 @@
       root.addEventListener('blur', () => { this.keys.releaseAll(); if (this.modes.classic && this.modes.classic.running()) this.modes.classic.togglePause(true); });
       root.addEventListener('focus', () => { this.focusedAt = performance.now(); setTimeout(() => this.announceUnheard(), 400); });
       root.addEventListener('mousedown', () => this.activity(), true);
+      root.addEventListener('pointerdown', () => this.activity(), true);
       // Clicked buttons let go of focus, so Space and Enter keep playing instead of pressing them again.
       document.addEventListener('mouseup', (e) => {
         const b = e.target && e.target.closest && e.target.closest('button');
@@ -245,7 +246,7 @@
       // Classic pauses too (Settings ▸ Controls ▸ Pause Classic when the pointer leaves); P or Resume carries on.
       document.documentElement.addEventListener('mouseleave', () => this.pointerLeft());
       if (!native.available) {
-        document.documentElement.addEventListener('mouseleave', () => { if (this.settings.fadeAway !== false) document.body.classList.add('away'); });
+        document.documentElement.addEventListener('mouseleave', () => { if (this.settings.fadeAway !== false && !this.touchNow()) document.body.classList.add('away'); });
         document.documentElement.addEventListener('mouseenter', () => document.body.classList.remove('away'));
       }
       L.fromNative = (msg) => {
@@ -263,9 +264,13 @@
 
     /** The pointer has left Lull's window: a running Classic game pauses, as P would. */
     pointerLeft() {
+      if (this.touchNow()) return; // a finger lifting is not a pointer leaving (Classic pauses when the page is hidden)
       const c = this.modes.classic;
       if (this.settings.pauseAway !== false && c && c.running()) c.togglePause(true);
     },
+
+    /** Touch in use (a finger was down a moment ago, or the device has no mouse at all). */
+    touchNow() { return !!(L.Touch && (L.Touch.recent() || L.Touch.touchOnly())); },
 
     openSettings() { L.Collapse.set(false); UI.openSettings(this); },
 
@@ -378,7 +383,10 @@
         width: 440,
         body: h('div', null,
           h('p', null, 'Pieces fall only when you drop them.'),
-          h('div', { class: 'keys', style: { marginTop: '10px' } }, L.KEY_HELP.slice(0, 7).map(([k, d]) => [h('span', { class: 'k' }, h('kbd', null, k)), h('span', null, d)]))),
+          // A phone or a tablet with no keyboard or mouse: the gestures instead of the keys.
+          L.Touch && L.Touch.touchOnly() && L.TOUCH_HELP
+            ? h('div', { class: 'keys gestures', style: { marginTop: '10px' } }, L.TOUCH_HELP.slice(0, 7).map(([k, d]) => [h('span', { class: 'k' }, h('span', { class: 'gest' }, k)), h('span', null, d)]))
+            : h('div', { class: 'keys', style: { marginTop: '10px' } }, L.KEY_HELP.slice(0, 7).map(([k, d]) => [h('span', { class: 'k' }, h('kbd', null, k)), h('span', null, d)]))),
         buttons: [{ label: 'Start', kind: 'primary' }],
       });
     },

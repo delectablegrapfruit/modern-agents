@@ -147,6 +147,9 @@
         motion: 'full', showKeys: true, music: true, musicVolume: 0.25, announcer: true, announcerRelaxed: false, announcerVolume: 0.35, ccwPuzzles: false, pauseAway: true,
         muted: false, // the top bar's mute (M): over everything, separate from the toggles and volumes above
         hints: true, // control hints (js/hints.js); they retire on their own either way
+        // Touch (js/touch.js): gestures on, drag sensitivity 1–10, hard-drop swipe (0 Light, 1 Medium, 2 Firm), what a
+        // tap turns ('sides': right clockwise, left counter-clockwise; 'cw': always clockwise), haptics where there are any.
+        touch: true, touchSens: 5, touchFlick: 1, tapTurn: 'sides', haptics: true,
       },
       tab: 'play',
       free: null, // the Relaxed board in play (Game.toJSON)

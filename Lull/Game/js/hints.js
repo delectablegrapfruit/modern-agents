@@ -27,7 +27,9 @@
    *  hold       a Hold puzzle failed or retried without holding once
    *  invert     Inverted Controls: three fresh presses into a wall the piece could leave the other way
    *  keys       four keys that do nothing within 8 s on a board
-   *  mouseTurn  eight clicked pieces in a row never turned; or two clicked pieces undone within 5 s
+   *  mouseTurn  eight clicked (or touch-dropped) pieces in a row never turned; or two such pieces undone within 5 s
+   * A touch player gets the touch words for the same hints (variant 'touch': Swipe ↓ drops, Tap turns …); taps and
+   * swipes retire them as clicks and keys do.
    */
   const SKILL = { turnArrow: 4, otherWay: 3, drop: 3, lower: 4, hold: 3, invert: 8, keys: 12, mouseTurn: 3 };
   const IDS = Object.keys(SKILL);
@@ -91,7 +93,7 @@
 
     /**
      * An input on a board. e: { act (the key's action: up, left, cw …), a (what it did on this board: rotate, moveL,
-     * lower …, before Inverted Controls), ok, rep, mouse, set (it set the piece), piece, rot (the view's turn),
+     * lower …, before Inverted Controls), ok, rep, mouse, touch (a gesture: its moves name screen arrows), set (it set the piece), piece, rot (the view's turn),
      * inverted, noRotate (Rigid, or a shape that never turns), wall ('wall' | 'block' when a move was stopped),
    * lowerThenSlide, otherSideFree }.
      */
@@ -100,22 +102,23 @@
       const t = this.pieceOf(e.piece), c = this.c, a = e.a;
       t.engaged = true; t.inputAt = now; t.idled = false;
       const turn = /^(rotate|rotateInv|cw|ccw|r180)$/.test(a), move = a === 'moveL' || a === 'moveR';
-      const arrowKey = !e.mouse && /^(up|down|left|right)$/.test(e.act);
+      const arrowKey = !e.mouse && !e.touch && /^(up|down|left|right)$/.test(e.act);
+      const via = e.touch ? 'touch' : null;
       if (turn && e.ok) {
         t.turned = true; c.upWrong = 0;
         if (e.rot) this.skill('turnArrow');
         if (a === 'ccw' || a === 'r180') this.skill('otherWay');
-        if (e.mouse) this.skill('mouseTurn');
+        if (e.mouse || e.touch) this.skill('mouseTurn');
       }
       if (e.ok && arrowKey && (turn || move)) this.skill('keys');
       // The long way round: three quick clockwise turns on one piece are one turn the other way.
       if (turn && !e.mouse && !e.rep && (a === 'rotate' || a === 'cw') && e.ok) {
         t.run = t.run && now - t.runAt < T.tripleGapMs ? t.run + 1 : 1;
         t.runAt = now;
-        if (t.run >= 3) { t.run = 0; if (++c.triples >= T.triples) { c.triples = 0; this.raise('otherWay', null, now); } }
+        if (t.run >= 3) { t.run = 0; if (++c.triples >= T.triples) { c.triples = 0; this.raise('otherWay', via, now); } }
       } else if (!e.rep) t.run = 0;
       // Up on a turned board, where another arrow turns: weighed more when it set the piece before it ever turned.
-      if (e.rot && !e.noRotate && e.act === 'up' && !e.mouse && !e.rep && a !== 'rotate' && !t.turned) {
+      if (e.rot && !e.noRotate && e.act === 'up' && !e.mouse && !e.touch && !e.rep && a !== 'rotate' && !t.turned) {
         c.upWrong += e.set ? 2 : 1;
         if (c.upWrong >= (e.rot === 180 ? T.upWrong180 : T.upWrong90)) { c.upWrong = 0; this.raise('turnArrow', null, now); }
       }
@@ -127,8 +130,8 @@
           t.failDir = dir; t.failAt = now;
           if (t.fail >= T.failStreak) {
             t.fail = 0;
-            if (e.inverted && e.otherSideFree) this.raise('invert', null, now);
-            else if (e.wall === 'block' && e.lowerThenSlide) this.raise('lower', null, now);
+            if (e.inverted && e.otherSideFree) this.raise('invert', via, now);
+            else if (e.wall === 'block' && e.lowerThenSlide) this.raise('lower', via, now);
           }
         }
       }
@@ -141,12 +144,14 @@
     placed(e, t, now) {
       const c = this.c;
       this.skill('drop');
-      c.lastPlace = { mouse: !!e.mouse, at: now };
-      if (!e.mouse) { c.clickNoTurn = 0; c.clickNoLower = 0; return; }
+      c.lastPlace = { mouse: !!e.mouse, touch: !!e.touch, at: now };
+      if (!e.mouse && !e.touch) { c.clickNoTurn = 0; c.clickNoLower = 0; return; }
+      const via = e.touch ? 'touch' : 'mouse';
+      if (c.via !== via) { c.via = via; c.clickNoTurn = 0; c.clickNoLower = 0; } // a run is one device's
       c.clickNoTurn = t.turned ? 0 : c.clickNoTurn + 1;
       c.clickNoLower = t.lowered || this.hs.skill.lower ? 0 : c.clickNoLower + 1;
-      if (c.clickNoTurn >= T.clickNoTurn) { c.clickNoTurn = 0; this.raise('mouseTurn', 'mouse', now); }
-      else if (c.clickNoLower >= T.clickNoLower) { c.clickNoLower = 0; this.raise('lower', 'mouse', now); }
+      if (c.clickNoTurn >= T.clickNoTurn) { c.clickNoTurn = 0; this.raise('mouseTurn', via, now); }
+      else if (c.clickNoLower >= T.clickNoLower) { c.clickNoLower = 0; this.raise('lower', via, now); }
     }
 
     /** Any piece set, by anyone (gravity and items too): the count that retires every hint. */
@@ -159,7 +164,7 @@
     idle(e, now) {
       if (this.over || !e.relaxed || !e.floating || !e.piece) return;
       const t = this.pieceOf(e.piece);
-      if (t.engaged && !t.idled && now - t.inputAt >= T.idleMs) { t.idled = true; this.raise('drop', e.mouse ? 'mouse' : null, now); }
+      if (t.engaged && !t.idled && now - t.inputAt >= T.idleMs) { t.idled = true; this.raise('drop', e.mouse ? 'mouse' : e.touch ? 'touch' : null, now); }
     }
 
     /** A key that does nothing, pressed on a board. */
@@ -173,18 +178,19 @@
 
     /** A puzzle attempt that ended (failed, or retried part way): a Hold puzzle never held. */
     attemptEnded(e, now) {
-      if (!this.over && e.holdMod && !e.holds) this.raise('hold', e.mouse ? 'mouse' : null, now);
+      if (!this.over && e.holdMod && !e.holds) this.raise('hold', e.mouse ? 'mouse' : e.touch ? 'touch' : null, now);
     }
 
     /** An undo (or Rewind): a clicked piece taken back at once was probably not meant to go there. */
     undo(now) {
       const c = this.c, p = c.lastPlace;
       c.lastPlace = null;
-      if (this.over || !p || !p.mouse || now - p.at > T.misdropMs) return;
+      if (this.over || !p || !(p.mouse || p.touch) || now - p.at > T.misdropMs) return;
       if (++c.misdrops < T.misdrops) return;
       c.misdrops = 0;
-      if (this.eligible('mouseTurn')) this.raise('mouseTurn', 'mouse', now);
-      else this.raise('lower', 'mouse', now);
+      const via = p.touch ? 'touch' : 'mouse';
+      if (this.eligible('mouseTurn')) this.raise('mouseTurn', via, now);
+      else this.raise('lower', via, now);
     }
 
     /** The hint to show now, if one is due and the moment allows (calm: the caller decides). */
@@ -206,9 +212,23 @@
   const ARROW = { '0,-1': '↑', '0,1': '↓', '-1,0': '←', '1,0': '→' };
   const arrowFor = (view, dx, dy) => ARROW[view.screenDir(dx, dy).join(',')] || '↑';
 
-  /** What a hint says: key caps and as few words as will do. */
-  function content(id, variant, view) {
+  /**
+   * What a hint says: key caps and as few words as will do. A touch player gets the gesture in words (the arrows
+   * name the screen direction; plain arrows, never emoji). extra: { bothWays (a Both Ways puzzle), tapTurn }.
+   */
+  function content(id, variant, view, extra) {
     const mouse = variant === 'mouse';
+    if (variant === 'touch') {
+      const down = arrowFor(view, 0, -1), up = arrowFor(view, 0, 1);
+      switch (id) {
+        case 'drop': return ['Swipe ' + down + ' drops'];
+        case 'lower': return ['Drag ' + down + ' lowers, then slide'];
+        case 'hold': return ['Swipe ' + up + ' holds'];
+        case 'otherWay': return [extra && (extra.bothWays || extra.tapTurn === 'cw') ? 'Two fingers: 180°' : 'Tap left: other way'];
+        case 'invert': return ['Drag is mirrored'];
+        case 'mouseTurn': return ['Tap turns'];
+      }
+    }
     switch (id) {
       case 'turnArrow': return [[arrowFor(view, 0, 1)], 'turns'];
       case 'otherWay': return [['Z'], 'turns the other way'];
@@ -267,7 +287,7 @@
 
     attemptEnded(mode) {
       if (!this.on || !mode.puzzle) return;
-      this.d.attemptEnded({ holdMod: mode.puzzle.mods.includes('hold'), holds: mode.game.s.holds || 0, mouse: mode.lastInput === 'mouse' }, this.now());
+      this.d.attemptEnded({ holdMod: mode.puzzle.mods.includes('hold'), holds: mode.game.s.holds || 0, mouse: mode.lastInput === 'mouse', touch: mode.lastInput === 'touch' }, this.now());
     }
 
     undo() { if (this.on) this.d.undo(this.now()); }
@@ -303,7 +323,7 @@
       const relaxed = mode !== app.modes.classic;
       if (relaxed && g && g.piece && !g.over && !mode.cardOpen && !L.UI.modalOpen() && !document.hidden && document.hasFocus()) {
         const p = g.piece;
-        this.d.idle({ relaxed, piece: p, floating: g.fitsAt(p, p.rot, p.x, p.y - 1), mouse: mode.lastInput === 'mouse' }, now);
+        this.d.idle({ relaxed, piece: p, floating: g.fitsAt(p, p.rot, p.x, p.y - 1), mouse: mode.lastInput === 'mouse', touch: mode.lastInput === 'touch' }, now);
       }
       if (this.shownFor) return;
       const due = this.d.take(now, this.calm(mode));
@@ -314,13 +334,15 @@
       const wrap = mode.canvas.parentElement;
       if (!this.el) this.el = L.UI.h('div', { class: 'lhint', role: 'status', 'aria-live': 'polite' });
       if (this.el.parentElement !== wrap) wrap.appendChild(this.el);
-      const parts = content(due.id, due.variant || (mode.lastInput === 'mouse' ? 'mouse' : null), mode.view);
+      const variant = mode.lastInput === 'touch' ? 'touch' : due.variant || (mode.lastInput === 'mouse' ? 'mouse' : null);
+      const parts = content(due.id, variant, mode.view, { bothWays: !!(mode.puzzle && mode.puzzle.mods && mode.puzzle.mods.includes('spin')), tapTurn: this.app.settings.tapTurn });
       const kids = [];
       for (const part of parts) {
         if (Array.isArray(part)) for (const k of part) kids.push(L.UI.h('kbd', null, k));
         else if (part) kids.push(L.UI.h('span', null, part));
       }
       this.el.replaceChildren(...kids);
+      this.el.classList.toggle('plain', !parts.some((p) => Array.isArray(p) && p.length));
       this.el.dataset.hint = due.id;
       // Centred low in the well: under the piece on an upright board, clear of the stack on an Upside Down one.
       const lay = mode.view.lay;

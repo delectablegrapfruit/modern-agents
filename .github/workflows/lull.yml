@@ -13,9 +13,11 @@ on:
 permissions:
   contents: read
 
+# A newer push replaces an older run, except on branch lull: there a run may be deploying, and a deployment cut
+# short is not undone by the next one starting (the pages job below also waits its turn across runs).
 concurrency:
   group: lull-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/lull' }}
 
 jobs:
   game:
@@ -41,6 +43,39 @@ jobs:
           name: Lull-screenshots
           if-no-files-found: warn
           path: ${{ runner.temp }}/shots/*.png
+
+  pages:
+    name: Web app to GitHub Pages
+    # Only branch lull deploys, and only once the game's tests have passed. The site is the game folder as the offline
+    # copy lists it, with sw.js stamped by a hash of the files (a new hash is a new version on phones).
+    needs: game
+    if: github.event_name == 'push' && github.ref == 'refs/heads/lull'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    # One deployment at a time across runs; runs on lull are never cancelled (see the top), so one under way finishes.
+    concurrency:
+      group: lull-pages
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build the site
+        run: node Lull/scripts/web-build.cjs "$RUNNER_TEMP/site"
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ runner.temp }}/site
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
 
   macos:
     name: macOS app build and launch test

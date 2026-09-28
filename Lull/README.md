@@ -6,7 +6,8 @@ tomorrow. Nothing is timed and nothing is lost.
 
 On macOS it is a borderless, resizable panel that floats above other apps (and every Space), with a clear, glass,
 tinted or solid background inside a distinct border. ⌥⌘L shows and hides it from anywhere; Esc tucks it away. The
-same game runs in any browser from `Game/index.html`.
+same game runs in any browser from `Game/index.html`, and on iPhone and iPad from the Home Screen, offline
+([iPhone and iPad](#iphone-and-ipad)).
 
 **Title bar** — left to right: the places to play (Play, Puzzles, Factory, Classic) in one recessed track; empty bar to
 drag the window by; the places to look (Stats, Achievements) as quiet icons; the wallet, which is also the Shop's
@@ -358,6 +359,35 @@ and first-try rates by difficulty and wildcard, factory output and shapes presse
 | wheel | lower one row (never sets the piece) |
 | click HOLD | hold, or swap back |
 
+## Touch
+
+On a phone or a tablet the board is played with one finger, anywhere on it (`js/touch.js` reads the gestures;
+`BoardMode.bindTouch` in `js/modes.js` carries them out through the same `action()` as the keys):
+
+| | |
+|---|---|
+| drag sideways | move, a cell per cell of finger travel (relative: the piece follows how far the finger goes, not where it is); into a wall it stops, with nothing to unwind |
+| drag down | lower a row per cell of travel; never sets the piece. Down under a ledge, then sideways, works in one touch. In Classic a finger resting down the board keeps lowering (every Lower repeat) |
+| swipe down | hard drop — the only way a touch sets a piece (a quick stroke: 1.1 px/ms by default, at least 28 px, under 0.22 s, within 30° of straight; a sideways step in its last 60 ms is taken back first) |
+| swipe up | hold |
+| tap | turn: the right half of the well clockwise, the left half counter-clockwise (Settings ▸ Controls ▸ Touch ▸ Tap to turn: Clockwise makes every tap clockwise) |
+| two-finger tap | turn 180° |
+| tap HOLD | hold, or swap back |
+
+Directions are the screen's, as the arrows are: on an Upside Down board a swipe up drops, on a Sideways one a swipe left
+drops and a drag up or down moves. Inverted Controls mirror a drag and swap the taps, as they do the keys. The 0.18 s
+after a set holds back a swipe's drop too, a new piece mid-touch (Classic's gravity set the last one) takes no drop,
+lowering or hold from it, and one touch drops or holds once at most. Only the board's canvas starts a gesture: the
+bars, buttons, cards and toasts are taps of their own, and a touch on the board with a power-up tray open only closes
+the tray. A tap never reaches the board as a click (it would drop the piece). Settings ▸ Controls ▸ Touch: Touch
+controls, Drag sensitivity (1–10, the finger travel per cell), Hard drop swipe (Light, Medium, Firm) and Tap to turn;
+Haptics where the device has them (not iPhone: Safari has no vibration). With no mouse or trackpad, the Mouse card and
+"when the pointer leaves" go. A long press shows a tooltip; the control hints name the gesture (`Swipe ↓ drops`, `Tap
+turns`). A phone held upright gets the whole screen, clear of the notch and home indicator: a title bar of two rows
+(Lull, Stats, Achievements, the wallet, sound and Settings; then the places to play), every button at least 44 px,
+toasts at the top, away from the well, and no key caps; on its side the bars stand beside the board. No page zoom,
+bounce or text selection; there is no window to roll up.
+
 **Window** — the panel floats over every Space, full-screen apps included: it never activates Lull (activating a regular app pulls the screen back to its own Space), so ⌥⌘L shows it right over whatever is in front and hands it the keyboard. When the pointer leaves, Lull dims and fades to 60% (Settings ▸ Window ▸ Fade when the pointer leaves); it comes back as soon as the pointer does.
 
 **Collapse** — the chevron, ⌘J or a double-click on the empty bar rolls Lull up into its title bar, where a parade of
@@ -431,9 +461,15 @@ cd Lull && swift run          # the same, straight from the package
 open Lull/Game/index.html     # any browser, any OS (saves to localStorage)
 
 node Lull/scripts/test.cjs            # game logic: 750 puzzles replayed through the engine, turns, items, factory, board library, save
-node Lull/scripts/browser-test.cjs    # the page played in headless Chromium (needs Playwright)
+node Lull/scripts/browser-test.cjs    # the page played in headless Chromium (needs Playwright), then touch-test.cjs
+node Lull/scripts/touch-test.cjs      # an emulated phone played with real touches: gestures, layout, 44 px targets
 node Lull/scripts/audio-render.cjs out/   # every sound and a minute of music rendered offline: WAVs, peak, loudness, brightness
 node Lull/scripts/audio-render.cjs out/ --harmony   # every pack's pitched sounds in every section: notes found, share in its key, A/B mixes
+
+node Lull/scripts/web-build.cjs site/          # the web app as deployed: the offline copy's files, sw.js stamped with their hash
+npx serve site                                 # (or any static server) then open the address it prints
+node Lull/scripts/web-browser-test.cjs         # the web app alone: offline, updates, Home Screen (browser-test.cjs runs it too)
+node Lull/scripts/web-icons.cjs                # redraws Game/icons/ from the app icon's design (needs Playwright)
 ```
 
 A packaged build is committed by CI to [`dist/Lull.app.zip`](../dist/). It is ad-hoc signed: right-click ▸ Open the
@@ -442,13 +478,49 @@ Settings ▸ Data ▸ Reset (everything but the settings) and Import replace the
 over and saves nothing more, the app writes it (dropping the previous copy) and reloads the page with it; in a browser it
 goes to localStorage and the page reloads.
 
+## iPhone and iPad
+
+The game is also a Home Screen web app, served by GitHub Pages at
+**https://delectablegrapfruit.github.io/modern-agents/** — no App Store, no sideloading.
+
+**Add to Home Screen** — open that address in Safari, tap Share, then Add to Home Screen, then Add. Lull opens from its
+icon full screen, with no browser around it, and plays with no connection once it has been opened once. The save lives
+in that Home Screen app's own storage (Safari's tabs and the Home Screen app keep separate saves; Settings ▸ Data ▸
+Export and Import move one across).
+
+**Offline** — `Game/sw.js` keeps every file the game loads (its `FILES`, which `test.cjs` holds to the files in `Game/`
+and every file the page names) in one cache named for the build, and serves from it first. A new build installs
+beside the old one and takes over at the next launch; while the app is open, a quiet Update ready toast offers it now
+(a tap saves and reloads). Coming back to the app looks for a new build at most every half hour. The macOS app and a page
+opened from a file never register the worker; the manifest and icons are ignored there.
+
+**Full screen** — the status bar is see-through (`black-translucent`): the window fills the screen inside the phone's
+safe areas (`--safe-*` in `lull.css`), the theme's ground around it; on the light theme the status bar sits on a band of
+slate, since its words are always white.
+
+**Lasting storage** — the save is in `localStorage`, the same in a tab and on the Home Screen (nothing depends on the
+macOS shell). The page asks that it be kept (`navigator.storage.persist`) from the Home Screen and in a tab, where the
+browser is likelier to clear it. Chromium and Safari decide without asking the player; Firefox shows a prompt, so a
+Firefox tab does not ask.
+
+**Deploy** — the `pages` job in `.github/workflows/lull.yml` runs on pushes to branch `lull` once the Linux test job
+passes: `scripts/web-build.cjs` builds the site and `actions/deploy-pages` publishes it. Every path is relative, so it
+works under `/modern-agents/`. Once, in the repository's settings:
+
+1. Settings ▸ Pages ▸ Build and deployment ▸ Source: **GitHub Actions**.
+2. Settings ▸ Environments ▸ `github-pages` ▸ Deployment branches and tags: add **`lull`** (Pages allows only the default
+   branch until then; the environment appears after step 1).
+3. Re-run the latest Lull workflow run (Actions ▸ Lull ▸ Re-run jobs), or push to `lull`.
+
+The address is shown on the `pages` job and under Settings ▸ Pages.
+
 ## Layout
 
 | Path | |
 |---|---|
-| `Game/` | the game: `index.html`, `css/`, and `js/` — `icons` (the one SVG icon set), `pieces` (SRS tetrominoes, pentominoes, big and custom shapes, polyomino enumeration), `board`, `engine` (the floating-piece rules and every item), `items` (the chain multiplier, combos, Luck, the daily gift, power-ups earned in play), `library` (the Relaxed board library: shelved and retired boards, names, caps), `puzzlegen` (seeds, wildcards, reverse construction, reachability search, forward verification), `factory` (presses, the belt, the bin, one step for play and time away, save repair), `store` (save, catalog, stats), `achievements`, `fxphysics` (the item effects' blocks, debris and dust: gravity, bounces, spirals, fixed pools), `render` (canvas: skins, frames, effects, item animations, rotated views), `factoryview` (the factory floor, drawn like the board), `hints` (control hints: the struggle signals, their limits and retirement), `collapse` (the window rolled up into its title bar, and the parade of pieces along it), `modes`, `ui`, `app` |
+| `Game/` | the game: `index.html`, `manifest.webmanifest`, `sw.js` (the offline copy), `icons/` (the Home Screen icons), `css/`, and `js/` — `webapp` (the Home Screen app: the worker, its updates, lasting storage), `icons` (the one SVG icon set), `pieces` (SRS tetrominoes, pentominoes, big and custom shapes, polyomino enumeration), `board`, `engine` (the floating-piece rules and every item), `items` (the chain multiplier, combos, Luck, the daily gift, power-ups earned in play), `library` (the Relaxed board library: shelved and retired boards, names, caps), `puzzlegen` (seeds, wildcards, reverse construction, reachability search, forward verification), `factory` (presses, the belt, the bin, one step for play and time away, save repair), `store` (save, catalog, stats), `achievements`, `fxphysics` (the item effects' blocks, debris and dust: gravity, bounces, spirals, fixed pools), `render` (canvas: skins, frames, effects, item animations, rotated views), `factoryview` (the factory floor, drawn like the board), `hints` (control hints: the struggle signals, their limits and retirement), `touch` (the touch gestures: a pure reader of fingers, and the page's touch helpers), `webapp` (the Home Screen web app: the offline copy's registration and updates), `collapse` (the window rolled up into its title bar, and the parade of pieces along it), `modes`, `ui`, `app` |
 | `Sources/Lull/` | the macOS shell: a borderless `NSPanel` (floating, all Spaces, edge-resizable, draggable by the page's title bar) around a transparent `WKWebView`, a blur for the Glass background, the save file, the ⌥⌘L hot key, and a self-test CI runs |
-| `scripts/` | `make-app.sh`, `icon.swift`, `line-glyph.py` (builds the line glyph's font into `lull.css`), `test.cjs`, `browser-test.cjs`, `audio-render.cjs` (renders and measures the synthesized audio offline), `pitch.cjs` (finds the notes in a render, to check sound effects are in the music's key), `splice-voice.py` (cuts the announcer's lines from a recording) |
+| `scripts/` | `make-app.sh`, `icon.swift`, `line-glyph.py` (builds the line glyph's font into `lull.css`), `test.cjs`, `browser-test.cjs`, `audio-render.cjs` (renders and measures the synthesized audio offline), `pitch.cjs` (finds the notes in a render, to check sound effects are in the music's key), `splice-voice.py` (cuts the announcer's lines from a recording), `web-build.cjs` (the site as deployed), `web-icons.cjs` (the Home Screen icons), `web-test.cjs` and `web-browser-test.cjs` (the web app's tests, run by the two above), `touch-test.cjs` (an emulated phone played with gestures, run by browser-test) |
 
 ## Credits
 

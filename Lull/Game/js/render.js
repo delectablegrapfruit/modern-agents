@@ -943,6 +943,13 @@
       return px >= b.x - 4 && px <= b.x + b.w + 4 && py >= b.y - 4 && py <= b.y + b.h + 4;
     }
 
+    /** Is a screen point on the hold box, for a finger: its hit area grown to at least 44 × 44, centred on it? */
+    onHoldTouch(px, py) {
+      if (!this.lay || !this.game || this.game.mods.noHold) return false;
+      const b = this.lay.hold, w = Math.max(b.w, 44), h = Math.max(b.h, 44);
+      return Math.abs(px - (b.x + b.w / 2)) <= w / 2 && Math.abs(py - (b.y + b.h / 2)) <= h / 2;
+    }
+
     columnAt(px, py) {
       if (!this.lay || !this.game) return null;
       const { s, board } = this.lay, g = this.game, rot = this.view.rot;

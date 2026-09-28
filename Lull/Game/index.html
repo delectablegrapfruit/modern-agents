@@ -2,8 +2,20 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Lull</title>
+<!-- The Home Screen web app (js/webapp.js, sw.js): its manifest, icons and the phone's status bar. The macOS app ignores these. -->
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Lull">
+<meta name="application-name" content="Lull">
+<meta name="theme-color" content="#0d1017" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f0f2f6" media="(prefers-color-scheme: light)">
+<meta name="format-detection" content="telephone=no">
 <link rel="stylesheet" href="css/lull.css">
 </head>
 <body>
@@ -124,10 +136,12 @@
 <script src="js/voice-data.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/input.js"></script>
+<script src="js/touch.js"></script>
 <script src="js/hints.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/modes.js"></script>
 <script src="js/collapse.js"></script>
 <script src="js/app.js"></script>
+<script src="js/webapp.js"></script>
 </body>
 </html>

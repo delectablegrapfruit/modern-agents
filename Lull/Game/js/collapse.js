@@ -602,6 +602,7 @@
       document.getElementById('titlebar').addEventListener('dblclick', (e) => {
         const t = e.target;
         if (!t || !t.closest || t.closest('button, input') || !t.closest('[data-drag]')) return;
+        if (L.Touch && L.Touch.recent()) return; // a double tap on a phone: there is no window to roll up
         e.preventDefault();
         this.toggle();
       });
