@@ -636,6 +636,85 @@ final class RoninArtTests: XCTestCase {
         }
     }
 
+    func testTheRunnerSprintsLowAndLongAndHalfTheTimeInTheAir() {
+        // The shinobi's strength is his speed: a low, driving sprint pitched hard forward, on the balls of his feet,
+        // each foot down a quarter of the stride and half his time in the air; the heel flicked up high behind him and
+        // the knee driven through; both arms pumping hard against each other, the knife tucked along the forearm; his
+        // legs turning over faster than any other man's.
+        let cast = Cast.foe(.runner), n = Frame.walkFrames
+        let feet = (0..<n).map { Figure.footing(cast, .walk($0)) }
+        XCTAssertGreaterThanOrEqual(feet.filter { min($0.front.y, $0.back.y) > 0.01 }.count, n / 2, "not in the air long enough")
+        let bones = (0..<n).map { Figure.skeleton(cast, Figure.pose(cast, .walk($0))) }
+        for k in 0..<n {
+            let p = Figure.pose(cast, .walk(k))
+            XCTAssertGreaterThan(p.lean, 0.75, "walk \(k) runs upright")
+            XCTAssertGreaterThan(p.heels, 0.2, "walk \(k) runs flat-footed")
+            for kind in Kind.allCases where kind != .runner {
+                XCTAssertGreaterThan(p.lean, Figure.pose(.foe(kind), .walk(k)).lean + 0.3, "walk \(k) is pitched no further than the \(kind)'s")
+            }
+            // The knife reversed along the forearm, its point out past the elbow.
+            let elbow = bones[k][7], hand = bones[k][8]
+            let forearm = atan2(elbow.x - hand.x, -(elbow.y - hand.y))
+            XCTAssertEqual(remainder(p.blade - forearm, 2 * .pi), 0, accuracy: 0.35, "walk \(k): the knife is not tucked")
+        }
+        let lifted = feet.flatMap { [$0.front, $0.back] }
+        XCTAssertTrue(lifted.contains { $0.y > 0.2 && $0.x < -0.3 }, "the heel is not flicked up behind him")
+        XCTAssertTrue(lifted.contains { $0.y > 0.25 && abs($0.x) < 0.12 }, "the foot is not tucked under him as the knee comes through")
+        // The knee driven up ahead of the hips.
+        XCTAssertGreaterThan(bones.map { max($0[3].x, $0[5].x) - $0[0].x }.max()!, 0.2)
+        // Both arms pumping hard, against each other.
+        let near = bones.map { $0[8].x - $0[0].x }, far = bones.map { $0[10].x - $0[0].x }
+        XCTAssertGreaterThan(near.max()! - near.min()!, 0.25, "the knife arm hardly pumps")
+        XCTAssertGreaterThan(far.max()! - far.min()!, 0.25, "the free arm hardly pumps")
+        let mean = (near.reduce(0, +) / CGFloat(n), far.reduce(0, +) / CGFloat(n))
+        XCTAssertLessThan(zip(near, far).map { ($0 - mean.0) * ($1 - mean.1) }.reduce(0, +), 0, "the arms swing together")
+        func cadence(_ kind: Kind) -> Double { kind.speed / Double(Figure.stride(.foe(kind)) * Build.of(.foe(kind)).height) }
+        for kind in Kind.allCases where kind != .runner { XCTAssertGreaterThan(cadence(.runner), cadence(kind) * 1.15, "\(kind)") }
+    }
+
+    func testTheRunnerIsNeverStillOnTheBallsOfHisFeet() {
+        // His guard: low, on the balls of his feet, bouncing and twitching (far more than any other man breathes), his
+        // feet where they are.
+        let cast = Cast.foe(.runner)
+        let home = Figure.footing(cast, .idle(0))
+        func hips(_ cast: Cast) -> [CGFloat] { (0..<Frame.foeIdleFrames).map { Figure.skeleton(cast, Figure.pose(cast, .idle($0)))[0].y } }
+        for k in 0..<Frame.foeIdleFrames {
+            let feet = Figure.footing(cast, .idle(k))
+            XCTAssertGreaterThan(Figure.pose(cast, .idle(k)).heels, 0.2, "idle \(k) stands flat-footed")
+            XCTAssertEqual(feet.front.x, home.front.x, accuracy: 0.002, "idle \(k)")
+            XCTAssertEqual(feet.back.x, home.back.x, accuracy: 0.002, "idle \(k)")
+            XCTAssertLessThan(max(feet.front.y, feet.back.y), 0.004, "idle \(k)")
+        }
+        let bounce = hips(cast).max()! - hips(cast).min()!
+        XCTAssertGreaterThan(bounce, 0.02)
+        for kind in Kind.allCases where kind != .runner {
+            let theirs = hips(.foe(kind))
+            XCTAssertGreaterThan(bounce, (theirs.max()! - theirs.min()!) * 2, "\(kind)")
+        }
+        // Lower than he stands in the sprint, pitched further forward than any other man's guard but the sprint.
+        XCTAssertLessThan(hips(cast)[0], Figure.skeleton(cast, Figure.pose(cast, .walk(0)))[0].y)
+        for kind in Kind.allCases where kind != .runner {
+            XCTAssertGreaterThan(Figure.pose(cast, .idle(0)).lean, Figure.pose(.foe(kind), .idle(0)).lean + 0.2, "\(kind)")
+        }
+    }
+
+    func testTheRunnerBurstsOutOfACoilInOneLongLunge() {
+        // Coiled low like a sprinter set to go, then out in one long lunge, the knife whipped a long way through the one
+        // frame of the blow (smeared, the body blurring after itself), and clean again as it carries through.
+        let cast = Cast.foe(.runner)
+        let coiled = Frame.windup(Frame.windupFrames - 1)
+        let stance = Figure.footing(cast, .idle(0)), blow = Figure.footing(cast, .strike(0))
+        XCTAssertGreaterThan(blow.front.x - blow.back.x, (stance.front.x - stance.back.x) * 1.6, "the lunge is short")
+        XCTAssertLessThan(Figure.skeleton(cast, Figure.pose(cast, coiled))[0].y, Figure.skeleton(cast, Figure.pose(cast, .idle(0)))[0].y - 0.04,
+                          "he does not coil")
+        let from = Figure.tip(cast, coiled)!, to = Figure.tip(cast, .strike(0))!
+        XCTAssertGreaterThan(hypot(to.x - from.x, to.y - from.y), 0.5, "the knife hardly moves")
+        let pose = Figure.pose(cast, .strike(0))
+        XCTAssertFalse(pose.ghosts.isEmpty)
+        XCTAssertGreaterThan(pose.drag, Figure.pose(.foe(.grunt), .strike(0)).drag, "the blow is no faster than a spearman's")
+        XCTAssertTrue(Figure.pose(cast, .strike(1)).ghosts.isEmpty)
+    }
+
     func testAFoeWalksOnBentKneesThatNeverLock() {
         // Every foe comes on in a crouch: a knee on the ground keeps a real bend through the whole stride (as the
         // foot lands, as the body passes over it, as it pushes off), and a leg in the air folds further.

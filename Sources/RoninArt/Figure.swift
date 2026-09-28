@@ -217,6 +217,8 @@ public struct Pose: Sendable {
     public var twist: CGFloat = 0
     /// In the air: the hips stay put instead of the lower foot finding the ground.
     public var airborne = false
+    /// On the balls of his feet: how far a foot on the ground is pointed, the heel raised off it (radians).
+    public var heels: CGFloat = 0
     /// Where cloth (ribbons, coat tails, banners) is in its flutter, 0…1.
     public var wave: CGFloat = 0
     /// How hard cloth streams back (0 at rest, 1 in a hard swing).
@@ -250,6 +252,7 @@ public struct Pose: Sendable {
         p.draw = m(a.draw, b.draw)
         p.tilt = m(a.tilt, b.tilt)
         p.twist = m(a.twist, b.twist)
+        p.heels = m(a.heels, b.heels)
         p.stream = m(a.stream, b.stream)
         p.wave = m(a.wave, b.wave)
         p.smear = nil
@@ -313,8 +316,10 @@ public struct Build: Sendable {
             case .grunt:
                 return Build(height: 0.95, bulk: 1.04, brawn: 1.2, chest: 0.19, waist: 0.07, head: 0.048, legs: .leggings, skirt: 0.14,
                              weapon: .spear, gear: .jingasa, eyes: RGB(1, 0.22, 0.12), accent: RGB(0.75, 0.12, 0.1))
+            // The shinobi, built for speed: the lightest of them, wiry and long in the leg, the muscle lean and hard
+            // rather than heavy, nothing on him to catch the wind.
             case .runner:
-                return Build(height: 0.9, bulk: 0.96, brawn: 1.14, chest: 0.175, waist: 0.062, head: 0.049, legs: .leggings, weapon: .knife,
+                return Build(height: 0.9, bulk: 0.93, brawn: 1.08, chest: 0.165, waist: 0.057, head: 0.048, legs: .leggings, weapon: .knife,
                              gear: .hood, eyes: RGB(1, 0.6, 0.12), accent: RGB(1, 0.5, 0.1))
             case .brute:
                 return Build(height: 1.22, bulk: 1.4, brawn: 1.26, chest: 0.29, waist: 0.106, head: 0.042, legs: .bare, skirt: 0.1,
@@ -631,6 +636,7 @@ public enum Figure {
         let base = stance(cast)
         switch frame {
         case .idle(let k):
+            if cast == .foe(.runner) { return twitch(k) }
             let n = cast == .hero ? Frame.heroIdleFrames : Frame.foeIdleFrames
             return breathe(base, k, of: n)
         case .iai(let k):
@@ -744,6 +750,16 @@ public enum Figure {
         var arms: CGFloat
         var carry: CGFloat
         var droop: CGFloat
+        /// A sprinter's leg recovery, in place of the eased swing: where the swinging foot goes between leaving the
+        /// ground behind him and coming down ahead of him, from the spot he stands on (figure heights, y up), at even
+        /// shares of its time in the air: the heel flicked up behind, the knee driven through with the foot tucked
+        /// under the hips, the shin unfolding ahead and clawing back down onto the ground.
+        var recovery: [CGPoint]? = nil
+        /// How far back the feet are on the ground, from under the hips to behind them (figure heights): a sprinter's
+        /// foot comes down under him and drives off well behind.
+        var behind: CGFloat = 0
+        /// How far the heels are raised (the feet pointed, radians): running on the balls of the feet.
+        var heels: CGFloat = 0
 
         /// A walker's hips: lowest as a foot lands, highest as the body passes over it.
         static let walking: [CGFloat] = [1, 0.75, 0.25, 0, 0.25, 0.75]
@@ -764,10 +780,13 @@ public enum Figure {
             case .grunt:
                 return Gait(stride: 0.86, planted: 7, hips: 0.535, give: 0.018, sink: Gait.walking, lift: 0.07, peak: 0.45, lean: 0.3,
                             rock: 0.03, lag: 0.008, roll: 0.005, head: 0.15, arms: 0.25, carry: 0.01, droop: -0.04)
-            // The shinobi: a low sprint, the heels kicking high, both feet off the ground between the steps.
+            // The shinobi: a low, driving sprint, pitched hard forward over it, on the balls of his feet: each foot down
+            // for a quarter of the stride and snatched up again, the heel flicked up behind and the knee driven
+            // through, so that half his time he is in the air.
             case .runner:
-                return Gait(stride: 1.25, planted: 4, hips: 0.49, give: 0.03, sink: Gait.running, lift: 0.16, peak: 0.35, lean: 0.72,
-                            rock: 0.04, lag: 0.01, roll: 0.006, head: 0.38, arms: 0.35, carry: 0.01, droop: 0)
+                return Gait(stride: 1.4, planted: 3, hips: 0.5, give: 0.03, sink: Gait.running, lift: 0.2, peak: 0.35, lean: 0.86,
+                            rock: 0.05, lag: 0.012, roll: 0.014, head: 0.45, arms: 0, carry: 0, droop: 0,
+                            recovery: [v(-0.42, 0.26), v(-0.08, 0.31), v(0.28, 0.17)], behind: 0.085, heels: 0.4)
             // The oni: a slow, ponderous tread, each foot picked up and stamped down, sinking deep into it and
             // heaving up out of it, the shoulders rolling, the kanabō bouncing on the shoulder.
             case .brute:
@@ -812,14 +831,20 @@ public enum Figure {
         let frame = (k % n + n) % n
         let beat = g.stride / CGFloat(n)
         // Where a foot is `j` frames after it came down, from the spot he stands on (y: how far it is lifted).
-        let reach = CGFloat(g.planted - 1) * beat / 2
+        let reach = CGFloat(g.planted - 1) * beat / 2 - g.behind
         let rise = log(0.5) / log(max(0.05, min(0.95, g.peak)))
         func foot(_ j: Int) -> CGPoint {
             if j < g.planted { return v(reach - CGFloat(j) * beat, 0) }
-            // In the air: eased off the ground and down onto it again a stride on, as the body goes on at its pace.
             let frames = CGFloat(n - g.planted + 1), t = CGFloat(j - g.planted + 1) / frames
+            let off = reach - CGFloat(g.planted - 1) * beat
+            if let recovery = g.recovery {
+                // A sprinter's recovery: through its points from where the foot left the ground to where it comes down
+                // (a smooth curve through them, at even shares of the time).
+                return curve([v(off, 0)] + recovery + [v(reach, 0)], t)
+            }
+            // In the air: eased off the ground and down onto it again a stride on, as the body goes on at its pace.
             let ease = t * t * (3 - 2 * t)
-            return v(-reach + g.stride * ease - frames * beat * t, g.lift * sin(.pi * pow(t, rise)))
+            return v(off + g.stride * ease - frames * beat * t, g.lift * sin(.pi * pow(t, rise)))
         }
         // The near foot comes down on the first frame, the far one half a stride on.
         let near = foot(frame), far = foot((frame + half) % n)
@@ -858,11 +883,17 @@ public enum Figure {
             p.hold = v(0.2 - 0.012 * cos(phase), -0.12 - g.carry * settle)
             p.blade = 1.66 + g.droop * settle
         case .foe(.runner):
-            // Bent low, the knife reversed along the forearm (sakate) and carried out in front, pumping with the
-            // stride; the free arm driving back.
-            p.hold = v(0.13 - 0.05 * cos(phase), -0.15 + 0.025 * cos(phase))
-            p.blade = -0.9 - 0.15 * cos(phase)
-            p.arm2 = (-1.05 + 0.4 * cos(phase), -0.55 + 0.3 * cos(phase))
+            // Sprinting: both arms pumping hard against the legs, bent at the elbow, driven back past the hip and up
+            // to the chin (the near one back as the near foot comes down ahead); the knife reversed along the forearm
+            // (sakate), tucked out of the wind.
+            let swing = -cos(phase - 0.3)
+            p.grip = .one
+            p.hold = nil
+            p.arm = pump(swing)
+            p.arm2 = pump(-swing)
+            p.blade = tucked(p, cast)
+            p.heels = g.heels
+            p.stream = 1
         case .foe(.brute):
             // The kanabō shouldered, both fists on it, its weight bouncing on the shoulder with each footfall.
             p.hold = v(0.09, -0.07 - g.carry * settle)
@@ -886,6 +917,59 @@ public enum Figure {
         default:
             break
         }
+        return p
+    }
+
+    /// A point `t` of the way along a smooth curve through `points` (at even shares of `t`).
+    static func curve(_ points: [CGPoint], _ t: CGFloat) -> CGPoint {
+        guard points.count > 1 else { return points.first ?? .zero }
+        let s = max(0, min(1, t)) * CGFloat(points.count - 1)
+        let i = min(points.count - 2, Int(s)), f = s - CGFloat(i)
+        let p1 = points[i], p2 = points[i + 1]
+        let p0 = i > 0 ? points[i - 1] : v(2 * p1.x - p2.x, 2 * p1.y - p2.y)
+        let p3 = i + 2 < points.count ? points[i + 2] : v(2 * p2.x - p1.x, 2 * p2.y - p1.y)
+        func c(_ a: CGFloat, _ b: CGFloat, _ c: CGFloat, _ d: CGFloat) -> CGFloat {
+            0.5 * (2 * b + (c - a) * f + (2 * a - 5 * b + 4 * c - d) * f * f + (3 * b - a - 3 * c + d) * f * f * f)
+        }
+        return v(c(p0.x, p1.x, p2.x, p3.x), c(p0.y, p1.y, p2.y, p3.y))
+    }
+
+    /// A sprinter's arm, `swing` of the way forward (1) or back (-1): driven back and up behind the hip with the elbow
+    /// opening, and up to the chin with the elbow closed.
+    static func pump(_ swing: CGFloat) -> (upper: CGFloat, fore: CGFloat) {
+        let upper = -0.3 + 1.05 * swing
+        return (upper, upper + 1.35 + 0.4 * swing)
+    }
+
+    /// The runner's knife held reversed (sakate): its blade laid back along the forearm from the fist, the point out
+    /// past the elbow; the angle it lies at in pose `p`.
+    static func tucked(_ p: Pose, _ cast: Cast) -> CGFloat {
+        let build = Build.of(cast), H = pixelHeight(cast) * build.height
+        let arm = Drawer(pose: p, build: build, H: H).main
+        return atan2(arm.elbow.x - arm.hand.x, -(arm.elbow.y - arm.hand.y)) - 0.22
+    }
+
+    /// The runner's guard, never still: bouncing on the balls of his feet (twice through the six frames, the second
+    /// time lighter), his weight rocking forward, a twitch of the head and a flick of the knife hand; his feet where his
+    /// stance has them.
+    static func twitch(_ k: Int) -> Pose {
+        let cast = Cast.foe(.runner)
+        var p = stance(cast)
+        let n = Frame.foeIdleFrames, i = (k % n + n) % n
+        let feet = footing(p), hips = hipHeight(p)
+        let drop: [CGFloat] = [0, 0.024, 0.008, -0.004, 0.016, 0.003]
+        let sway: [CGFloat] = [0, 0.008, 0.016, 0.006, -0.004, -0.003]
+        let pitch: [CGFloat] = [0, 0.05, 0.08, 0.02, 0.04, -0.01]
+        let glance: [CGFloat] = [0, 0.04, -0.16, -0.1, 0.05, 0.02]
+        let flick: [CGFloat] = [0, -0.08, 0.22, 0.1, -0.06, 0]
+        plant(&p, hip: v(p.shift + sway[i], hips - drop[i]), front: feet.front, back: feet.back)
+        p.lean += pitch[i]
+        p.tilt += glance[i] - pitch[i]
+        p.arm = (p.arm.upper + flick[i], p.arm.fore + flick[i] * 1.5)
+        p.arm2 = (p.arm2.upper - flick[i] * 0.4, p.arm2.fore - flick[i] * 0.3)
+        p.blade = tucked(p, cast)
+        p.wave = CGFloat(i) / CGFloat(n)
+        p.stream = 0.25
         return p
     }
 
@@ -931,13 +1015,14 @@ public enum Figure {
                 p.hold = v(0.19, -0.13)
                 p.blade = 1.6
             case .runner:
-                // Crouched, the knife reversed along the forearm (sakate), the free hand out for balance.
-                p.lean = 0.5
-                p.front = (0.62, 0.24)
-                p.back = (-0.55, -0.62)
-                p.hold = v(0.15, -0.12)
-                p.arm2 = (-0.7, -0.25)
-                p.blade = -0.35
+                // Low and wide on the balls of his feet, pitched forward over the front knee and ready to go: the knife
+                // reversed along the forearm (sakate) and held up close before his chin, the free hand reaching out low
+                // ahead of him.
+                plant(&p, hip: v(0.01, 0.41), front: v(0.24, 0), back: v(-0.29, 0))
+                p.lean = 0.7
+                p.arm = (0.35, 2.55)
+                p.arm2 = (1.2, 1.55)
+                p.heels = 0.4
             case .brute:
                 // The kanabō over the shoulder, hunched under it.
                 p.lean = 0.28
@@ -986,6 +1071,7 @@ public enum Figure {
             let feet = footing(p)
             plant(&p, hip: v(p.shift, hipHeight(p) - sink), front: feet.front, back: feet.back)
             p.tilt = min(0, 0.14 - p.lean)
+            if kind == .runner { p.blade = tucked(p, cast) }
         }
         return p
     }
@@ -1176,30 +1262,34 @@ public enum Figure {
                 p.hold = k == 0 ? v(0.12, -0.1) : v(0.08, -0.12)
                 p.blade = k == 0 ? 1.57 : 1.52
                 if k == 0 { p.smear = sweep(1.57, 1.57, 0.9, thrust: true) }
-            // The shinobi: springs from a crouch and slashes across on the way through.
+            // The shinobi: drops into a sprinter's crouch with the knife drawn back, and bursts out of it in one long
+            // lunge, the knife whipped out of its tuck and through at the end of his reach, the free arm flung back.
             case (.runner, .windup(1)):
-                p.lean = 0.3
-                p.front = (0.8, 0.5)
-                p.back = (-0.5, -1.0)
-                p.hold = v(0.02, 0.1)
-                p.blade = 3.3
-                p.arm2 = (0.9, 1.4)
+                // Gathering: the back foot stepped back and the hips dropped between the feet, the knife hand drawn
+                // back past the hip, the free hand reaching ahead.
+                plant(&p, hip: v(-0.02, 0.4), front: v(0.24, 0), back: v(-0.4, 0))
+                p.lean = 0.8
+                p.tilt = 0.3 - p.lean
+                p.arm = (-1.0, -0.45)
+                p.arm2 = (0.8, 1.3)
             case (.runner, .windup(2)):
-                // Sunk deeper into the crouch, the feet where they were.
-                p.lean = 0.36
-                p.front = (0.95, 0.65)
-                p.back = (-0.45, -1.15)
-                let crouch = footing(key(cast, .windup(1)))
-                plant(&p, hip: v(0, hipHeight(p)), front: v(crouch.front.x, 0), back: crouch.back)
-                p.hold = v(-0.02, 0.14)
-                p.blade = 3.55
-                p.arm2 = (1.0, 1.5)
+                // Coiled: sunk deeper over the same feet, pitched right over the front knee like a sprinter set to go,
+                // the knife hand drawn right back and up behind him.
+                plant(&p, hip: v(0.01, 0.35), front: v(0.24, 0), back: v(-0.4, 0))
+                p.lean = 1.0
+                p.tilt = 0.3 - p.lean
+                p.arm = (-1.75, -1.2)
+                p.arm2 = (0.55, 1.05)
             case (.runner, .strike(let k)):
-                lunge(&p, k == 0 ? 0.55 : 0.45, deep: 1.15)
-                p.hold = k == 0 ? v(0.28, -0.14) : v(0.2, -0.24)
-                p.blade = k == 0 ? 0.95 : 0.5
-                p.arm2 = (-1.3, -0.9)
-                if k == 0 { p.smear = sweep(3.2, 0.95, 0.9) }
+                // Stretched out long and low along the lunge, from the back heel to the point of the knife; then the
+                // knife carried on up through the follow-through.
+                lunge(&p, k == 0 ? 0.62 : 0.5, deep: 1.22)
+                p.tilt = 0.32 - p.lean
+                p.arm = k == 0 ? (1.3, 1.75) : (1.95, 2.55)
+                p.arm2 = k == 0 ? (-1.55, -1.25) : (-1.2, -0.8)
+                p.blade = k == 0 ? 0.8 : 1.55
+                p.stream = 1
+                if k == 0 { p.smear = sweep(2, 0.8, 1) }
             // The oni: the kanabō cocked back behind the head (kept under the top of the lane), then brought down
             // into the ground.
             case (.brute, .windup(1)):
@@ -1337,6 +1427,7 @@ public enum Figure {
             default:
                 break
             }
+            if kind == .runner, frame != .strike(0), frame != .strike(1) { p.blade = tucked(p, cast) }
             if frame == .stagger(0) {
                 // Rocked back where he stands, on his own stance's footing (so a blow taken in his stance, or the
                 // freeze of a killing one, leaves his feet where they were), the hips thrown back over the back foot.
@@ -1344,6 +1435,8 @@ public enum Figure {
                 let reach = thigh + shin - 0.012
                 func highest(_ f: CGPoint) -> CGFloat { f.y + (reach * reach - (f.x - hip.x) * (f.x - hip.x)).squareRoot() }
                 plant(&p, hip: v(hip.x, min(hipHeight(p), highest(feet.front), highest(feet.back))), front: v(feet.front.x, 0), back: feet.back)
+                // Knocked back onto his heels.
+                p.heels = 0
             }
         }
         return p
@@ -1362,6 +1455,7 @@ public enum Figure {
         p.hold2 = nil
         p.draw = 0
         p.armed = false
+        p.heels = 0
         p.lean = -0.46
         p.tilt = -0.6
         p.front = (0.55, 0.05)
@@ -2503,8 +2597,22 @@ private struct Drawer {
             toe = angles.shin + .pi / 2 + max(-0.95, min(0.9, square))
         }
         let t = dir(toe), u = CGPoint(x: -t.y, y: t.x)
+        // On the balls of his feet, a foot on the ground (or just off it) turned up about the ball of the foot, the
+        // heel lifted.
+        var raise: CGFloat = 0
+        if standing, pose.heels > 0 {
+            let off = (ankle.y - (Figure.feet.y + 0.025) * H) / H
+            raise = pose.heels * max(0, min(1, 1 - off / 0.06))
+        }
+        let ball = CGPoint(x: ankle.x + (t.x * 0.07 - u.x * 0.027) * H, y: ankle.y + (t.y * 0.07 - u.y * 0.027) * H)
         func f(_ a: CGFloat, _ b: CGFloat) -> CGPoint {
-            grounded(CGPoint(x: ankle.x + (t.x * a + u.x * b) * H, y: ankle.y + (t.y * a + u.y * b) * H))
+            var p = CGPoint(x: ankle.x + (t.x * a + u.x * b) * H, y: ankle.y + (t.y * a + u.y * b) * H)
+            if raise > 0 {
+                let x = p.x - ball.x, y = p.y - ball.y
+                p = CGPoint(x: ball.x + x * cos(raise) + y * sin(raise), y: ball.y - x * sin(raise) + y * cos(raise))
+                if let floor { p.y = max(floor, p.y) }
+            }
+            return grounded(p)
         }
         fill([f(-0.018, 0), f(0, 0.014), f(0.09, -0.022), f(0.075, -0.027), f(-0.024, -0.027)], paint)
     }
@@ -2869,13 +2977,13 @@ private struct Drawer {
     }
 
     /// A slender, slightly curved blade: black spine, a bright cutting edge, a small guard and a wrapped grip.
-    /// `visible` shortens it from the tip (a blade going into its scabbard).
+    /// `visible` shortens it from the tip (a blade going into its scabbard); `grip`, how far the hilt shows behind the hand.
     mutating func blade(from hand: CGPoint, angle: CGFloat, length: CGFloat, width: CGFloat, gleam: CGFloat, visible: CGFloat = 1,
-                        flat: CGFloat = 1) {
+                        grip: CGFloat = 0.11, flat: CGFloat = 1) {
         let (d, scale) = bladeVector(angle, flat: flat)
         let n = CGPoint(x: -d.y, y: d.x)
         // Grip and guard.
-        fill([at(hand, n, width * 0.55), at(at(hand, d, -0.11 * H), n, width * 0.45), at(at(hand, d, -0.11 * H), n, -width * 0.45),
+        fill([at(hand, n, width * 0.55), at(at(hand, d, -grip * H), n, width * 0.45), at(at(hand, d, -grip * H), n, -width * 0.45),
               at(hand, n, -width * 0.55)], body)
         fill([at(hand, n, 0.03 * H), at(hand, d, 0.012 * H), at(hand, n, -0.03 * H), at(hand, d, -0.012 * H)], body)
         var shown = length * scale * max(0, min(1, visible))
@@ -2917,7 +3025,7 @@ private struct Drawer {
         case .nodachi:
             blade(from: hand, angle: pose.blade, length: 0.78 * H, width: 0.03 * H, gleam: 0.85)
         case .knife:
-            blade(from: hand, angle: pose.blade, length: 0.25 * H, width: 0.024 * H, gleam: 0.75)
+            blade(from: hand, angle: pose.blade, length: 0.25 * H, width: 0.024 * H, gleam: 0.75, grip: 0.04)
         case .twin:
             blade(from: hand, angle: pose.blade, length: 0.4 * H, width: 0.022 * H, gleam: 0.8)
             blade(from: backHand, angle: pose.blade2, length: 0.38 * H, width: 0.02 * H, gleam: 0.5)
