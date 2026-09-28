@@ -73,14 +73,14 @@
       var s = game.s;
       if (s.cash >= 200000 && s.dwelling === 5 && s.electionMessage === 0 &&
           s.intelligence >= 777 && s.strength >= 777 && s.charm >= 777 && s.karma < 0) {
-        game.pushMsg('This is the United Nations of Stick calling. Your wicked wealth and power have earned ' +
-          'you a nomination for Dictator of all Stick Nations. Call us back if you want to run a campaign!');
+        game.pushMsg('United Nations of Stick here. Word of your wicked riches and power has reached us, and ' +
+          'you are now a candidate for Dictator of all Stick Nations. Ring us back if you feel like campaigning!');
         s.electionMessage = 1;
       }
       if (s.cash >= 200000 && s.dwelling === 5 && s.electionMessage === 0 &&
           s.intelligence >= 666 && s.strength >= 666 && s.charm >= 666 && s.karma > 0) {
-        game.pushMsg('This is the United Nations of Stick calling. Your generous wealth and power have earned ' +
-          'you a nomination for President of all Stick Nations. Call us back if you want to run a campaign!');
+        game.pushMsg('United Nations of Stick here. Word of your kindly riches and power has reached us, and ' +
+          'you are now a candidate for President of all Stick Nations. Ring us back if you feel like campaigning!');
         s.electionMessage = 2;
       }
       if (s.intelligence > 999) s.intelligence = 999;
@@ -109,8 +109,9 @@
       });
 
       // Interest on savings and on the loan, then the rate drifts by -0.5..+0.4 (never below 0).
-      s.bankcash += Math.floor(s.bankcash * (s.bankrate / 100));
-      s.bankloan += Math.floor(s.bankloan * (s.bankrate / 100));
+      // (the original's int(): truncation to a 32-bit integer)
+      s.bankcash += (s.bankcash * (s.bankrate / 100)) | 0;
+      s.bankloan += (s.bankloan * (s.bankrate / 100)) | 0;
       s.bankrate += rnd(10) / 10 - 0.5;
       if (s.bankrate < 0) s.bankrate = 0;
 
@@ -123,12 +124,9 @@
         s.bankloandays -= 1;
         out.bank = s.bankloandays + ' day left to pay off your loan ($' + s.bankloan + ')';
       }
-      if (s.bankloandays === 0) {
-        // The bank's "collection agents" pay a visit: the original sends you straight to YOU DIED.
-        out.dead = true;
-        s.hp = 0;
-        return out;
-      }
+      // The bank's "collection agents" pay a visit: YOU DIED. In the original the jump to the death
+      // frame doesn't stop the button script, so the rest of the night still happens first.
+      if (s.bankloandays === 0) out.dead = true;
 
       var restore = 20;
       if (s.items.bed === 1) restore = 30;
@@ -172,12 +170,13 @@
       if (s.items.alarm > 0) s.time -= 4;
 
       if (s.day === 365) {
-        game.pushMsg("Hello! It's the game developer calling to say CONGRATULATIONS! You made it through a " +
-          "whole virtual YEAR! Enjoy your brand new sports car. Press 'C' to hop in or out while walking.");
+        game.pushMsg("Hey hey! Your friendly game developer on the line with a big CONGRATS-A-RAMA! A whole " +
+          "virtual YEAR survived! A shiny sports car is yours now. Tap 'C' while walking to hop in or out.");
         s.items.car = 2;
       }
 
       if (game.timeUp()) out.ended = true;
+      if (out.dead) s.hp = 0;
       out.lines = [out.bank, out.hp, out.pills, out.int, out.str, out.cha, out.earn].filter(Boolean);
       return out;
     },

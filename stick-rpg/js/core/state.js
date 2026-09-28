@@ -51,8 +51,8 @@
       hoboBooze: 0, // gave Harold booze once
       smokesKid: 0, // gave the smokes kid a pack once (skateboard received)
       msgs: [
-        "Heyyy... yeah. It's Richard, the manager down at McSticks. So, um, you got the job. " +
-          "Just come in and start whenever, okay? Okaaay. Bye now.",
+        "Ummm, hiii... yeah. Richard here, the manager at McSticks. So, uh, the job's yours. Swing by and " +
+          "clock in whenever you like, okay? Okaaay. Buh-bye now.",
       ],
       dealMessages: [0, 0, 0, 0, 0],
       electionMessage: 0, // 1 nominated Dictator, 2 nominated President, 3 ran or declined
@@ -93,6 +93,7 @@
         s.mapy = SRPG.START_MAPY - 8;
         s.driving = 0;
         s.over = false;
+        s.fps = 1; // the original's loadGame switches SHOW FPS on (a quirk kept as is)
         return s;
       } catch (e) {
         return null;

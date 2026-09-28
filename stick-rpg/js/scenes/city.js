@@ -96,7 +96,8 @@
 
   function enter(id) {
     SRPG.engine.releaseAll();
-    SRPG.sound.play('door');
+    var def = SRPG.locations[id];
+    if (!(def && def.overlay)) SRPG.sound.play('door'); // street people are clicked silently
     SRPG.location.open(id);
   }
 
@@ -124,16 +125,19 @@
   }
 
   // Pre-render the static city (ground, roads, buildings) once; redraw when what's shown changes.
+  // Rendered at the screen's pixel scale (capped at 2 to bound memory) so the map stays sharp.
   function staticLayer(s) {
-    var key = [s.dwelling, s.items.car === 0 ? 1 : 0].join('|');
+    var k = Math.min(2, SRPG.engine.pixelScale || 1);
+    var key = [s.dwelling, s.items.car === 0 ? 1 : 0, k].join('|');
     if (st.staticCanvas && st.staticKey === key) return st.staticCanvas;
     var B = SRPG.mapArt.BOUNDS;
     var c = st.staticCanvas || document.createElement('canvas');
-    c.width = B.w;
-    c.height = B.h;
+    c.width = Math.ceil(B.w * k);
+    c.height = Math.ceil(B.h * k);
     var cx = c.getContext('2d');
-    cx.clearRect(0, 0, B.w, B.h);
+    cx.clearRect(0, 0, c.width, c.height);
     cx.save();
+    cx.scale(k, k);
     cx.translate(-B.x, -B.y);
     SRPG.mapArt.drawStatic(cx, s);
     cx.restore();
@@ -250,7 +254,7 @@
       var H = SRPG.H;
       SRPG.mapArt.drawSky(ctx, s, SRPG.engine.frame);
       var B = SRPG.mapArt.BOUNDS;
-      ctx.drawImage(staticLayer(s), s.mapx + B.x, s.mapy + B.y);
+      ctx.drawImage(staticLayer(s), s.mapx + B.x, s.mapy + B.y, B.w, B.h);
 
       var t = SRPG.engine.frame;
       var sp = SRPG.sprites;

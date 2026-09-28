@@ -11,6 +11,10 @@
 
   var cur = null; // { def, g, sub }
   var fade = 0;
+  var active = false; // the location screen is showing (false while a minigame runs)
+  // Double-click guard: the second click of a double-click that began on another screen (e.g. a
+  // minigame's exit button) must not press the menu button that appears under the pointer.
+  var armed = false;
 
   function S() { return SRPG.game.s; }
 
@@ -78,6 +82,7 @@
     var p = panelRect(def, v);
     var panel = ui.panel(p.x, p.y, p.w, p.h);
     panel.setAttribute('data-loc', def.id);
+    panel.addEventListener('mousedown', function (e) { if (e.detail <= 1) armed = true; }, true);
     if (v.quote != null || v.quoteHtml != null) {
       ui.quote(panel, v.quoteHtml != null ? v.quoteHtml : '"' + esc(v.quote) + '"', 12, v.quoteY != null ? v.quoteY : 18, p.w - 24, 'big');
     }
@@ -86,7 +91,8 @@
     (v.buttons || []).forEach(function (b) {
       if (b.hidden) return;
       var pos = btnPos(local, b, v);
-      ui.iconButton(panel, { icon: b.icon, label: b.label, x: pos.x, y: pos.y, w: b.w || 160, disabled: b.disabled, id: b.id, size: b.size }, function () {
+      ui.iconButton(panel, { icon: b.icon, label: b.label, x: pos.x, y: pos.y, w: b.w || 160, disabled: b.disabled, id: b.id, size: b.size }, function (e) {
+        if (e && e.detail > 1 && !armed) return;
         SRPG.sound.play('click');
         b.onClick(g);
         if (cur && cur.def === def && !cur.sub && SRPG.engine.sceneName === 'location') build();
@@ -94,7 +100,8 @@
     });
     if (v.leave !== false) {
       var lp = btnPos(local, v.leaveAt || { col: 1, row: 3 }, v);
-      ui.iconButton(panel, { icon: 'leave', label: 'LEAVE', x: lp.x, y: lp.y, w: 120, id: 'leave' }, function () {
+      ui.iconButton(panel, { icon: 'leave', label: 'LEAVE', x: lp.x, y: lp.y, w: 120, id: 'leave' }, function (e) {
+        if (e && e.detail > 1 && !armed) return;
         SRPG.sound.play('click');
         SRPG.location.leave();
       });
@@ -145,12 +152,14 @@
       var def = SRPG.locations[params.id];
       if (!def) throw new Error('Unknown location ' + params.id);
       cur = { def: def, g: makeG(def), sub: null };
-      fade = params.resume ? 0 : 10;
+      fade = params.resume || def.overlay ? 0 : 10; // street dialogs pop up instantly
+      active = true;
+      armed = false;
       if (def.music !== null) SRPG.sound.music(def.overlay ? 'main' : def.music || 'inside');
       if (def.onEnter && !params.resume) def.onEnter(cur.g);
       if (cur && cur.def === def) build();
     },
-    exit: function () {},
+    exit: function () { active = false; },
     tick: function () {
       var s = S();
       if (fade > 0) fade--;
@@ -186,14 +195,17 @@
       opts = opts || {};
       SRPG.engine.go('location', { id: id, resume: !!opts.resume });
     },
-    get current() { return cur && cur.def.id; },
+    // The location on screen (null while a minigame or another screen is showing).
+    get current() { return active && cur ? cur.def.id : null; },
     get g() { return cur && cur.g; },
-    // Back to the street, nudged away from the door.
-    leave: function (nudgeKey) {
+    // Back to the street, nudged away from the door. leave({ nudge: false }) skips the nudge
+    // (e.g. after being moved elsewhere); leave('key') uses another building's nudge.
+    leave: function (opt) {
       var s = S();
       var def = cur && cur.def;
-      var key = nudgeKey || (def && (def.exit || def.id));
-      var n = SRPG.MAP.exitNudge[key];
+      var key = typeof opt === 'string' ? opt : (def && (def.exit || def.id));
+      if (opt && typeof opt === 'object' && opt.nudge === false) key = null;
+      var n = key && SRPG.MAP.exitNudge[key];
       if (n && !(def && def.overlay)) {
         if (n.mapx) s.mapx += n.mapx;
         if (n.mapy) s.mapy += n.mapy;

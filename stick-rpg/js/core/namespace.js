@@ -22,8 +22,8 @@
     SRPG.locations[def.id] = def;
   };
 
-  // Random numbers. random(n) has Flash's AS1 semantics: an integer in [0, n-1] (n may be
-  // fractional; floor(Math.random() * n)). Seedable so tests can pin outcomes.
+  // Random numbers. random(n) has Flash's AS1 semantics: n is first truncated to an integer, then
+  // the result is an integer in [0, n-1] (0 when n < 1). Seedable so tests can pin outcomes.
   var seed = null;
   function next() {
     if (seed === null) return Math.random();
@@ -37,7 +37,7 @@
     seed: function (n) { seed = n >>> 0; },
     unseed: function () { seed = null; },
     float: next, // [0, 1)
-    random: function (n) { return n > 0 ? Math.floor(next() * n) : 0; },
+    random: function (n) { n = Math.floor(n); return n > 0 ? Math.floor(next() * n) : 0; },
     pick: function (arr) { return arr[Math.floor(next() * arr.length)]; },
   };
 

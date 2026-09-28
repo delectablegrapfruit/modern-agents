@@ -104,8 +104,15 @@
       engine.draw();
     },
 
+    // Backing-store pixels per stage pixel (the canvas is drawn at the size it is shown, so it
+    // stays sharp when the stage is scaled up).
+    pixelScale: 1,
+
     draw: function () {
-      if (current && current.render) current.render(engine.ctx);
+      var ctx = engine.ctx;
+      var k = engine.pixelScale;
+      ctx.setTransform(k, 0, 0, k, 0, 0);
+      if (current && current.render) current.render(ctx);
     },
   });
 
@@ -125,6 +132,15 @@
     var stage = document.getElementById('stage');
     var s = Math.min(window.innerWidth / SRPG.W, window.innerHeight / SRPG.H);
     stage.style.transform = 'translate(-50%, -50%) scale(' + s + ')';
+    // Match the canvas resolution to its on-screen size (capped to keep big screens fast).
+    var k = Math.max(1, Math.min(3, Math.round(s * (window.devicePixelRatio || 1) * 4) / 4));
+    var c = engine.canvas;
+    if (c && k !== engine.pixelScale) {
+      engine.pixelScale = k;
+      c.width = Math.round(SRPG.W * k);
+      c.height = Math.round(SRPG.H * k);
+      engine.draw();
+    }
   }
 
   function tick() {
