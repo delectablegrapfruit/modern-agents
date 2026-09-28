@@ -2654,7 +2654,7 @@ const armyR = () => SP * Math.sqrt(Math.min(MAXD, g.n) + .6); // px at scale 1
 const armyHW = () => armyR() * u / RW; // half-width in lanes
 const armyHD = () => armyR() * .55 * u / pxm; // half-depth in meters
 const steerLim = () => Math.max(.42, .96 - armyHW() * .9);
-const coins = () => Math.floor(g.kills / 3) + g.bonus;
+const coins = () => Math.floor(Math.sqrt(g.kills) * 2) + g.bonus;
 function hordeInit(h) {
   h.D = Math.min(h.wide ? 72 : 60, h.n); h.off = []; h.st = 0; h.acc = 0; h.fl = 0;
   if (h.wide) {
@@ -2769,6 +2769,7 @@ function banner(big, small, icon, cls = '') {
 
 // ---------- the simulation ----------
 function update(dt) {
+  if (g.st === 'paused') return;
   g.t += dt;
   const st = g.st, live = st === 'play' || st === 'boss';
   if (live) {
@@ -2794,11 +2795,11 @@ function update(dt) {
       if (s.done) s.fade = Math.max(0, s.fade - dt * 4); else if (live && d <= 0) passGate(s);
     } else if (s.t === 'h') {
       if (!s.set && d < DF) { s.set = 1; const n = Math.min(s.n, Math.max(4, Math.ceil(g.n * (.7 + diffOf(g.L) * .5)))); if (n < s.n) { s.n = n; hordeInit(s); } } // sized when it comes into view
-      if (live || s.st === 1) hordeUpdate(s, d, dt);
+      if (live) hordeUpdate(s, d, dt);
     }
     else { s.fl = Math.max(0, s.fl - dt * 6); s.sh = Math.max(0, s.sh - dt * 8); if (live && !s.done && d <= .4 && d > -1.5 && Math.abs(s.x - g.ax) < .22 + armyHW() * .5) smashCrate(s); }
   }
-  if (st === 'play' && g.dist >= g.zEnd) enterBoss();
+  if (g.st === 'play' && g.dist >= g.zEnd) enterBoss();
   bossUpdate(dt);
   if (st === 'dead' && (g.deadT += dt) > 1.1 && !g.shown) showFail();
   if (st === 'won' && (g.wonT += dt) > 1.6 && !g.shown) showWin();
@@ -2839,7 +2840,7 @@ function bulletsUpdate(dt) {
       else if (s.t === 'c') { if (b.pz < s.z - .3 && b.z >= s.z - .3 && Math.abs(b.x - s.x) < .26) { hitCrate(s, w.dmg); hit = true; } }
       else if (s.st < 2 && Math.abs(b.z - s.z) < hHD(s) && Math.abs(b.x - s.x) < s.hw) { killH(s, w.dmg); hit = true; }
     }
-    if (!hit && B.hp > 0 && b.pz < B.z - .7 && b.z >= B.z - .7 && Math.abs(b.x - B.x) < .42) { hitBoss(w.dmg); hit = true; }
+    if (!hit && B.hp > 0 && b.pz < B.z - .7 && b.z >= B.z - .7 && Math.abs(b.x - B.x) < .42) { if (B.st !== 'wait') hitBoss(w.dmg); hit = true; } // it only takes damage once it's awake
     if (hit) g.bullets.splice(i, 1);
   }
 }
@@ -3198,7 +3199,7 @@ function drawBullets(c) {
   }
 }
 function drawArmy(c, labels) {
-  const ax = armyX(), sw = 14 * u, sh = 19.25 * u, run = g.v > .3, cheer = g.st === 'won';
+  const ax = armyX(), sw = 14 * u, sh = 19.25 * u, run = g.v > .3, cheer = g.st === 'won' || g.st === 'win';
   for (const o of solOrd) {
     if (o.sc <= 0) continue;
     const ps = 1 + o.y * u / camH, ss = ps * (o.sc < 1 ? o.sc * (1.5 - .5 * o.sc) : 1);
@@ -3309,6 +3310,8 @@ function showWin() {
 }
 function mbPos() { const t = ((now() - g.mb0) / 1300) % 2; return t < 1 ? t : 2 - t; }
 function claim(m) {
+  if (g.claimed) return;
+  g.claimed = true;
   const btn = $('[data-a="claim"]', root) || $('[data-a="skip"]', root), [x, y] = btn ? centerOf(btn) : [FW / 2, FH / 2];
   const got = earn(g.reward * m, x, y - 30);
   sfx.coin(); haptic(true);
@@ -3399,7 +3402,7 @@ def({
   id: 'gates', name: 'Gate Army', tag: 'Crowd runner', c: '#2f7bff', genre: 'Action',
   blurb: 'Pick the right gate, grow your army and take down the boss.',
   art: ART,
-  test: { get g() { return g; }, update: dt => update(dt), newRun: L => newRun(L), setArmy: n => setArmy(n), get running() { return !!raf; }, mkLevel, gApply, MULS }, // for automated tests
+  test: { get g() { return g; }, update: dt => update(dt), newRun: L => newRun(L), setArmy: n => setArmy(n), get running() { return !!raf; }, frame: () => { const t0 = performance.now(); update(1 / 60); const t1 = performance.now(); draw(); return [t1 - t0, performance.now() - t1, g.bullets.length, parts.length, sol.length]; }, mkLevel, gApply, MULS }, // for automated tests
   init() { newRun(GT.level); },
   badge: () => (dropReady() ? 1 : 0),
   wait: () => (dropReady() ? [{ t: 'Supply drop ready', r: 'Open' }] : []),
@@ -3437,6 +3440,7 @@ def({
     if (window.ResizeObserver) new ResizeObserver(() => { if (vis && resize() && !raf) draw(); }).observe(root);
     const redraw = () => { sizeKey = ''; if (vis && resize() && !raf) draw(); };
     matchMedia('(prefers-color-scheme: dark)').addEventListener('change', redraw);
+    new MutationObserver(redraw).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
     if (document.fonts && document.fonts.load) document.fonts.load(`700 20px DynaPuff`).then(() => { if (vis && !raf) draw(); }).catch(() => {});
   },
   open() {
@@ -3461,7 +3465,7 @@ def({
 });
 // held arrows steer; the app's key() only sees the first keydown
 const held = e => ({ ArrowLeft: 'l', a: 'l', A: 'l', ArrowRight: 'r', d: 'r', D: 'r' })[e.key];
-addEventListener('keydown', e => { const k = held(e); if (k && curApp === 'gates' && !lockOn && !e.metaKey && !e.ctrlKey && !e.altKey) keys[k] = 1; });
+addEventListener('keydown', e => { const k = held(e); if (k && curApp === 'gates' && !lockOn && !$('.modal') && !e.metaKey && !e.ctrlKey && !e.altKey) keys[k] = 1; });
 addEventListener('keyup', e => { const k = held(e); if (k) keys[k] = 0; });
 addEventListener('blur', () => { keys.l = keys.r = 0; });
 document.addEventListener('visibilitychange', () => { if (document.hidden && vis) pause(); });
