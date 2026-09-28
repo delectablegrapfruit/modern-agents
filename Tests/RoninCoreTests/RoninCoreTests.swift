@@ -95,8 +95,9 @@ final class RoninCoreTests: XCTestCase {
         XCTAssertFalse(fight.isStumbling)
         XCTAssertEqual(fight.combo, Tuning.bloodlust + 1, "bloodlust kept")
 
-        // A brute knocked out of reach by the first cut: the second is let go too.
+        // A brute knocked out of reach by the first cut (with knock-back): the second is let go too.
         var brute = lane()
+        brute.crowding = .queue
         brute.roster = [.brute]
         brute.place(.brute, at: 0.3 + Kind.brute.width / 2)
         brute.strike(.right)
@@ -163,6 +164,7 @@ final class RoninCoreTests: XCTestCase {
 
     func testFoesQueueBehindTheOneInFront() {
         var fight = lane()
+        fight.crowding = .queue
         let a = fight.place(.grunt, at: 0.5)
         let b = fight.place(.grunt, at: 0.6)
         _ = run(&fight, 1.0)
@@ -173,8 +175,9 @@ final class RoninCoreTests: XCTestCase {
     }
 
     func testOnlyTheManInFrontStrikes() {
-        // A spearman stopped behind a runner is at his spear's length, but waits his turn.
+        // In a queue, a spearman stopped behind a runner is at his spear's length, but waits his turn.
         var fight = lane(stage: 8)
+        fight.crowding = .queue
         fight.roster = [.runner, .grunt]
         fight.hp = 50
         fight.place(.runner, at: 0.2)
@@ -190,6 +193,7 @@ final class RoninCoreTests: XCTestCase {
 
     func testNobodyRaisesHisWeaponWithAComradeComingDownInFront() {
         var fight = lane(stage: 8)
+        fight.crowding = .queue
         fight.roster = [.dancer, .grunt]
         fight.hp = 50
         let dancer = fight.place(.dancer, at: -0.2, hp: 3)
@@ -214,8 +218,9 @@ final class RoninCoreTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(landing - fight.foe(grunt)!.distance, (Kind.dancer.width + Kind.grunt.width) / 2)
     }
 
-    func testABruteTakesThreeCutsAndIsKnockedBack() {
+    func testABruteTakesThreeCutsAndWithKnockbackIsKnockedBack() {
         var fight = lane()
+        fight.crowding = .queue
         fight.roster = [.brute]
         let id = fight.place(.brute, at: -0.2)
         fight.strike(.left)
@@ -487,7 +492,7 @@ final class RoninCoreTests: XCTestCase {
         XCTAssertNotEqual(career.makeFight().seed, lost.seed, "a retry is a fresh roll")
     }
 
-    func testEndlessStartsFromAnUnlockedStageAndRunsOn() {
+    func testEndlessPlaysAnUnlockedStageOverAndOver() {
         var career = Career(seed: 5)
         func play(_ win: Bool) -> Fight {
             var fight = career.makeFight()
@@ -501,17 +506,27 @@ final class RoninCoreTests: XCTestCase {
         XCTAssertEqual(career.unlocked, 1...3)
         career.startEndless(at: 9)
         XCTAssertEqual(career.endless?.start, 3, "only unlocked stages")
-        XCTAssertEqual(career.makeFight().stage, 3)
+        let first = career.makeFight()
+        XCTAssertEqual(first.stage, 3)
         let won = play(true)
-        XCTAssertEqual(career.endless?.stage, 4)
+        XCTAssertEqual(career.endless?.stage, 3, "the same stage again")
         XCTAssertEqual(career.endless?.cleared, 1)
         XCTAssertEqual(career.endless?.hearts, won.hp)
-        XCTAssertEqual(career.unlocked, 1...4)
+        let again = career.makeFight()
+        XCTAssertEqual(again.stage, 3)
+        XCTAssertNotEqual(again.seed, first.seed, "rolled afresh")
+        XCTAssertEqual(again.hp, won.hp, "the hearts carried")
+        XCTAssertEqual(career.unlocked, 1...4, "a stage won opens the next")
         XCTAssertEqual(career.stage, 3, "the campaign waits where it was")
+        _ = play(true)
+        XCTAssertEqual(career.endless?.stage, 3)
+        XCTAssertEqual(career.endless?.cleared, 2, "two clears of it in a row")
         _ = play(false)
-        XCTAssertEqual(career.lastRun?.cleared, 1)
-        XCTAssertEqual(career.bestEndless[Mode.bushido.rawValue], 1)
-        XCTAssertEqual(career.endless, Endless(start: 3), "the next run begins where this one did")
+        XCTAssertEqual(career.lastRun?.cleared, 2)
+        XCTAssertEqual(career.lastRun?.stage, 3)
+        XCTAssertEqual(career.bestEndless[Mode.bushido.rawValue], 2)
+        XCTAssertEqual(career.bestRun(from: 3)?.cleared, 2)
+        XCTAssertEqual(career.endless, Endless(start: 3), "the next run is on the same stage")
         career.leaveEndless()
         XCTAssertEqual(career.makeFight().stage, 3)
     }

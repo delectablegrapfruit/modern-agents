@@ -103,7 +103,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         // Where you are, and the career.
         if let run = career.endless {
-            note("\(career.mode.title) · endless from \(run.start) · stage \(fight.stage)", to: menu)
+            note("\(career.mode.title) · endless on stage \(run.stage) · \(run.cleared) in a row", to: menu)
         } else {
             note("\(career.mode.title) · stage \(fight.stage) · \(fight.setting.name)", to: menu)
         }
@@ -116,9 +116,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if career.bestCombo > 0 {
             note("Best combo \(career.bestCombo) · \(career.flawless) flawless · \(count(career.falls, "fall"))", to: menu)
         }
-        let best: Run?
-        if let run = career.endless { best = career.bestRun(from: run.start) } else { best = career.bestCampaignRun }
-        if let best { note("Best run \(count(best.cleared, "stage")) · \(DuelScene.grouped(best.score))", to: menu) }
+        // The best run of the kind being played: the campaign's most stages, or on the endless run's stage its most
+        // clears in a row.
+        if let run = career.endless {
+            if let best = career.bestRun(from: run.start) {
+                note("Best on stage \(run.start): \(best.cleared) in a row · \(DuelScene.grouped(best.score))", to: menu)
+            }
+        } else if let best = career.bestCampaignRun {
+            note("Best run \(count(best.cleared, "stage")) · \(DuelScene.grouped(best.score))", to: menu)
+        }
         if career.score > 0 {
             note("\(DuelScene.grouped(career.score)) points in all · best stage \(DuelScene.grouped(career.bestScore))", to: menu)
         }
@@ -144,8 +150,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         submenu("Difficulty", modes)
 
-        // Endless: stage after stage from any stage reached, hearts carried, until the ronin falls. Each starting
-        // stage keeps its own best run.
+        // Endless: any stage reached, played over and over (a fresh roll each time), hearts carried, until the ronin
+        // falls. Each stage keeps its own best run: the most clears in a row.
         let endless = NSMenu()
         var campaignTitle = "Campaign · stage \(career.stage)"
         if let best = career.bestCampaignRun { campaignTitle += " · best \(count(best.cleared, "stage"))" }
@@ -158,8 +164,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         var stages = Array(unlocked)
         if stages.count > 30 { stages = stages.filter { $0 == 1 || $0 % 5 == 0 || $0 == unlocked.upperBound } }
         for stage in stages {
-            var title = "From Stage \(stage)" + (stage % 5 == 0 ? " · warlord" : "")
-            if let best = career.bestRun(from: stage) { title += " · best \(best.cleared)" }
+            var title = "Stage \(stage)" + (stage % 5 == 0 ? " · warlord" : "")
+            if let best = career.bestRun(from: stage) { title += " · best \(best.cleared) in a row" }
             let item = NSMenuItem(title: title, action: #selector(startEndless(_:)), keyEquivalent: "")
             item.target = self
             item.tag = stage
@@ -168,7 +174,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         if let most = career.bestEndless[career.mode.rawValue], most > 0 {
             endless.addItem(.separator())
-            note("Most stages in a run: \(most)", to: endless)
+            note("Most clears in a row: \(most)", to: endless)
         }
         submenu("Endless", endless)
 
@@ -210,7 +216,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ] { note(line, to: controls) }
         submenu("Controls", controls)
 
-        // Development: the crowd rules, to try them out in play.
+        // Development: the crowd rules, the game's ticked, to try the game without one (or with another).
         let development = NSMenu()
         let crowd = Settings.crowding
         func rule(_ title: String, _ tag: Int, _ on: Bool, enabled: Bool = true) {
@@ -220,16 +226,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             item.state = on ? .on : .off
             development.addItem(item)
         }
-        let queued = !crowd.passThrough && !crowd.slipPast && !crowd.passBusy && !crowd.shove
-        note("Crowd (the game as it plays: Queue)", to: development)
-        rule("Queue — each waits behind the man in front", 0, queued)
+        note("Crowd (the game: Slip Past, Runners Pass Everyone, Pass the Busy, Shove Through)", to: development)
+        rule("Queue — each waits behind the man in front", 0, !crowd.passes)
         rule("Full Pass-Through — everyone walks through everyone", 1, crowd.passThrough)
         rule("Slip Past — runners, dancers and the gourd-bearer past brutes and archers", 2, crowd.slipPast, enabled: !crowd.passThrough)
+        rule("Runners Pass Everyone — past anyone but the warlord", 6, crowd.runnersPassAll, enabled: !crowd.passThrough)
         rule("Pass the Busy — past a man winding up or recovering", 3, crowd.passBusy, enabled: !crowd.passThrough)
         rule("Shove Through — the brute through lighter men", 4, crowd.shove, enabled: !crowd.passThrough)
         development.addItem(.separator())
-        note("The brute", to: development)
-        rule("No Brute Knockback — a cut neither moves him nor breaks his blow", 5, crowd.noBruteKnockback)
+        note("The brute (the game: No Knockback)", to: development)
+        rule("No Brute Knockback — a cut neither moves him nor breaks his blow; cut as his club glares to turn it", 5,
+             crowd.noBruteKnockback)
+        development.addItem(.separator())
+        rule("Restore the Game's Rules", 7, false, enabled: !crowd.isStandard)
         submenu(crowd.isStandard ? "Development" : "Development (rules changed)", development)
         menu.addItem(.separator())
 
@@ -296,20 +305,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Settings.reduceMotion.toggle()
     }
 
-    /// A development crowd rule on or off (Queue turns the passing rules off), played from the next step on.
+    /// A crowd rule on or off, played from the next step on. Queue turns every passing rule off (and, already a queue,
+    /// back to the game's); Restore puts every rule back as the game plays it.
     @objc private func toggleRule(_ sender: NSMenuItem) {
         var crowd = Settings.crowding
+        let game = Crowding.standard
         switch sender.tag {
         case 0:
+            let queued = !crowd.passes
             crowd.passThrough = false
-            crowd.slipPast = false
-            crowd.passBusy = false
-            crowd.shove = false
+            crowd.slipPast = queued && game.slipPast
+            crowd.runnersPassAll = queued && game.runnersPassAll
+            crowd.passBusy = queued && game.passBusy
+            crowd.shove = queued && game.shove
         case 1: crowd.passThrough.toggle()
         case 2: crowd.slipPast.toggle()
         case 3: crowd.passBusy.toggle()
         case 4: crowd.shove.toggle()
         case 5: crowd.noBruteKnockback.toggle()
+        case 6: crowd.runnersPassAll.toggle()
+        case 7: crowd = game
         default: return
         }
         Settings.crowding = crowd

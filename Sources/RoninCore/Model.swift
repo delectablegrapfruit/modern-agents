@@ -51,19 +51,29 @@ public enum Tuning {
     public static let dartPace = 5.0
     /// How long the gourd-bearer crouches over his weapon, readying himself, before each dart: the tell.
     public static let dartTell = 0.3
-    /// How many times the gourd-bearer darts in (cut or not) before he makes off with the gourd, and how long he stays
-    /// about before he makes off with it whatever.
+    /// How long the gourd-bearer waits at his spot, his way in clear, before each dart (the last `dartTell` of it
+    /// crouched): the same beat every time, so it can be learnt. While anyone stands between him and the ronin the
+    /// wait holds, and it never ends sooner than a whole tell after his way clears.
+    public static let bearerWait = 0.8
+    /// How many times the gourd-bearer darts in (cut or not) before he makes off with the gourd; he never goes before
+    /// then. `bearerStay` is only a backstop: how long he may wait in the open, his way in clear, without darting.
     public static let bearerDarts = 3
     public static let bearerStay = 8.0
     /// How long the gourd-bearer takes to spring back out of reach from a cut that doesn't fell him.
     public static let spring = 0.3
-    /// How long a gourd flung from its fallen bearer is in the air, and the last of that in which it is low enough to
-    /// catch with a cut toward it. Uncaught, it shatters on the ground.
-    public static let gourdFlight = 0.95...1.2
+    /// How long a gourd flung from its fallen bearer is in the air (always the same), and the last of that in which it
+    /// is low enough to catch with a cut toward it. Uncaught, it shatters on the ground.
+    public static let gourdFlight = 1.0
     public static let catchWindow = 0.2
-    /// How far from the ronin a flung gourd comes down (on his side or over the ronin's head on the other): within any
-    /// reach.
-    public static let gourdLanding = 0.09...0.21
+    /// How far from the ronin a flung gourd comes down (on his side or over the ronin's head on the other): always the
+    /// same spot, marked on the ground as it goes up, within any reach.
+    public static let gourdLanding = 0.15
+    /// The brute's club, with no knock-back (`Crowding.noBruteKnockback`): a cut in this last stretch of his wind-up
+    /// that does not fell him meets the club and turns his blow aside (the club glares for it), and he is thrown off
+    /// balance this long, unable to strike. The window is the same length every time, longer than it takes to see the
+    /// glare and cut; it holds the last `senNoSen` of the wind-up, where a cut that fells him gives a shard instead.
+    public static let parryWindow = 0.3
+    public static let bruteStagger = 0.7
     /// The points a gourd, or a heart made of shards, is worth when no heart is missing, before the mode's score.
     public static let gourdPoints = 500
     /// Sen-no-sen: a man cut down in this last moment of his wind-up, his blow all but on the ronin, gives a shard of a
@@ -86,7 +96,8 @@ public enum Kind: String, Codable, Sendable, CaseIterable {
     case grunt
     /// Quick, one cut.
     case runner
-    /// Slow and armoured: three cuts, and each knocks him back. His blow costs two.
+    /// Slow and armoured: three cuts, and his blow costs two. In play a cut neither knocks him back nor breaks his
+    /// blow, but one made as his club glares, at the end of his wind-up, turns it aside (`Tuning.parryWindow`).
     case brute
     /// Two cuts (three from stage 12); each cut that doesn't fell him sends him leaping over your head to your other
     /// side.
@@ -221,14 +232,15 @@ public struct Foe: Codable, Equatable, Sendable {
     public var leapFrom = 0.0
     public var leapTo = 0.0
     public var hits = 0
-    /// Carries the stage's one gourd of medicine. He keeps just out of reach and darts in to strike (his blow coming
-    /// as he gets there), and after his third dart makes off with it. A cut that doesn't fell him sends him springing
-    /// back out of reach, so each of his two cuts has to catch him on a dart; cut down, he flings the gourd into the
-    /// air, and it has to be caught as it comes down (`Gourd`).
+    /// Carries the stage's one gourd of medicine. He keeps just out of reach and, to a steady beat, darts in to strike
+    /// (his blow coming as he gets there) whenever nobody stands between him and the ronin, and after his third dart
+    /// makes off with it. A cut that doesn't fell him sends him springing back out of reach, so each of his two cuts
+    /// has to catch him on a dart; cut down, he flings the gourd into the air, and it has to be caught as it comes down
+    /// (`Gourd`).
     public var bearer = false
-    /// The gourd-bearer: seconds before he darts in (counting down only while he waits at his spot), whether he is
-    /// darting now (his dart is his wind-up: `phase` is `.windup`), how many times he has darted, and how long he has
-    /// been on the lane.
+    /// The gourd-bearer: seconds before he darts in (counting down only while he waits at his spot with his way in
+    /// clear), whether he is darting now (his dart is his wind-up: `phase` is `.windup`), how many times he has darted,
+    /// and how long he has waited in the open without going (`Tuning.bearerStay`).
     public var hover = 0.0
     public var darting = false
     public var darts = 0
@@ -266,9 +278,12 @@ public struct Foe: Codable, Equatable, Sendable {
     public var guardSet: Bool { phase == .guarding && span - timer >= Tuning.guardRise - 1e-9 }
     /// His blow is all but on the ronin: the last `Tuning.senNoSen` of his wind-up. Cut down now, he gives a shard.
     public var senNoSen: Bool { phase == .windup && timer <= Tuning.senNoSen + 1e-9 }
-    /// The gourd-bearer crouched at his spot, readying himself to dart (the tell), or poised there for his way in to
-    /// clear.
+    /// The gourd-bearer crouched at his spot, readying himself to dart: the tell, a whole `Tuning.dartTell` before he
+    /// goes.
     public var readying: Bool { bearer && phase == .advancing && !darting && hover < Tuning.dartTell }
+    /// The brute's club glares: the last `Tuning.parryWindow` of his wind-up, when (with no knock-back) a cut that does
+    /// not fell him meets the club and turns his blow aside (`Fight.turns`).
+    public var clubGlares: Bool { kind == .brute && phase == .windup && timer <= Tuning.parryWindow + 1e-9 }
 
     mutating func enter(_ phase: Phase, for seconds: Double) {
         self.phase = phase
@@ -291,9 +306,10 @@ public struct Arrow: Codable, Equatable, Sendable {
 }
 
 /// The gourd of medicine, flung into the air as its bearer falls. It comes down within reach, on his side or over the
-/// ronin's head on the other, and in the last `Tuning.catchWindow` of its fall a cut toward it catches it (a heart
-/// back, or points with none missing). Before that it is still out of reach overhead, and a cut toward it meets
-/// nothing; left to come down, it shatters.
+/// ronin's head on the other, always the same time later and the same way from the ronin, and in the last
+/// `Tuning.catchWindow` of its fall a cut toward it catches it (a heart back, or points with none missing), whoever
+/// stands on that side. Before that it is still out of reach overhead, and a cut toward it meets nothing; left to come
+/// down, it shatters.
 public struct Gourd: Codable, Equatable, Sendable {
     /// The bearer it was flung from.
     public var from: Int

@@ -91,8 +91,10 @@ final class DuelScene: SKScene {
     }
     private var bind: Bind?
     private var bindShown: Frame?
-    /// How many times the blades have been drawn meeting in a bind (the self-test catches one).
+    /// How many times the blades have been drawn meeting in a bind, and the ronin's blade meeting a brute's club (the
+    /// self-test catches one of each).
     private(set) var clashesDrawn = 0
+    private(set) var turnsDrawn = 0
 
     private var field = CGRect(x: 0, y: 0, width: 420, height: 126)
     private var groundY: CGFloat = 20
@@ -465,6 +467,13 @@ final class DuelScene: SKScene {
             // him darting in, and the gourd he lets go of as he falls must be caught too.
             lines.append((Icons.gourd(15 * fs, Palette.jade.mix(.white, 0.25).color()), "CATCH HIM TWICE, THEN CATCH THE GOURD"))
         }
+        if let run = session.career.endless {
+            // Endless: this stage over and over, and how many times in a row it has been cleared so far.
+            let best = session.career.bestRun(from: run.start)?.cleared ?? 0
+            let text = run.cleared == 0 ? "THE SAME STAGE, AGAIN AND AGAIN"
+                : "\(run.cleared) CLEARED IN A ROW" + (best > run.cleared ? " · BEST \(best)" : "")
+            lines.append((Icons.infinity(15 * fs, Palette.gold.color()), text))
+        }
         if fight.stage == 2 {
             // Shards: cut a man down as the ring over him runs into gold.
             let shards = SKNode()
@@ -540,7 +549,7 @@ final class DuelScene: SKScene {
         switch kind {
         case .grunt: return "ONE CUT"
         case .runner: return "FAST — ONE CUT"
-        case .brute: return "THREE CUTS"
+        case .brute: return Settings.crowding.noBruteKnockback ? "THREE CUTS — CUT AS HIS CLUB GLARES" : "THREE CUTS"
         case .archer: return "CUT THE ARROW BACK"
         case .dancer: return "LEAPS OVER YOU"
         case .warlord: return "A WARLORD — WAIT OUT HIS GUARD"
@@ -1136,8 +1145,9 @@ final class DuelScene: SKScene {
             sprite.zPosition = foe.kind == .warlord ? 4 : foe.bearer && foe.phase == .advancing && !foe.darting ? 2.5 : 3
             // A leap's arc; the gourd-bearer's spring back out of reach is a short hop off his heels.
             let air = foe.phase == .leaping ? CGFloat(sin(foe.progress * .pi)) * ronin * (foe.bearer ? FoeSprite.hop : 0.95) : 0
-            // The heavy ones' steps are felt.
-            if let step = sprite.update(foe, at: CGPoint(x: laneX(foe.x), y: groundY), air: air, hero: heroX, dt: dt) {
+            // The heavy ones' steps are felt. The brute's club glares while a cut would turn his blow.
+            if let step = sprite.update(foe, at: CGPoint(x: laneX(foe.x), y: groundY), air: air, hero: heroX, dt: dt,
+                                        club: fight.turns(foe), calm: calm) {
                 if foe.kind == .brute || foe.kind == .warlord { footfall(sprite, at: step) }
                 // The runner's feet kick up a little dust behind him as they strike and drive off.
                 if foe.kind == .runner { kick(sprite, at: step) }
@@ -1373,7 +1383,7 @@ final class DuelScene: SKScene {
         let fight = session.fight
         // Whatever the ronin does next (another cut, a blow taken) ends a clash he was bound in.
         switch event {
-        case .cut, .whiff, .deflected, .parried, .wounded: letGoOfBind()
+        case .cut, .whiff, .deflected, .parried, .turned, .wounded: letGoOfBind()
         default: break
         }
         switch event {
@@ -1521,6 +1531,21 @@ final class DuelScene: SKScene {
             bindShown = hero.drawnFrame
             sprite.bind(.block)
             if let mine = Figure.contact(.hero, .clash(0)) { dash(to: heroX + spot + side.sign.cg * mine.x * ronin, side: side) }
+        case .turned(let side, let id):
+            // The cut goes to the brute's club as it glares: the ronin swings as at any big man, and the brute is held
+            // as he stands, the glare still on his club, until the blade gets there; then steel rings on steel and he
+            // reels (`clubMet`).
+            guard let sprite = foeSprites[id] else { return }
+            let distance = abs(sprite.position.x - heroX)
+            let style = chooseCut(sprite.kind, distance: distance)
+            if style == .nukitsuke { drawFlash(side) }
+            hero.cut(side, style, distance: distance)
+            dash(to: sprite.position.x, side: side)
+            let delay = HeroSprite.impact(style)
+            swingUntil = clock + delay
+            sprite.hold(delay)
+            heldUntil[id] = clock + delay
+            later(delay) { [self] in clubMet(sprite, id: id, side: side) }
         case .summoned(let id, _):
             // A roar, and men come running in from both ends of the lane.
             if let sprite = foeSprites[id] {
@@ -1785,6 +1810,40 @@ final class DuelScene: SKScene {
         fx.addChild(at(p, Art.shockwave(Palette.steel, radius: ronin * 0.04, grow: 3.5, width: 1.2, duration: 0.2)))
         shake(1.4)
     }
+
+    // MARK: The brute's club
+
+    /// The ronin's blade meets the brute's club as it glares, and turns his blow: where it meets the club, most of the
+    /// way up it, a white-hot flash, sparks thrown off along the club both ways and showering down, the steel's ring
+    /// spreading from it, the lane flashed pale and jolted, a short freeze; and the brute reels. The clash with the
+    /// warlord's blade in small. With Reduce Motion the freeze is shorter, the flashes fainter and the lane barely
+    /// moves.
+    private func clubMet(_ sprite: FoeSprite, id: Int, side: Side) {
+        turnsDrawn += 1
+        let met = sprite.clubPoint(0.7)
+            ?? (CGPoint(x: sprite.position.x, y: groundY + sprite.height), side == .right ? .pi * 0.75 : .pi * 0.25)
+        let p = met.point
+        let hot = Palette.gold.mix(.white, 0.35)
+        fx.addChild(at(p, Art.flash(.white, size: ronin * 1.3, duration: 0.16, alpha: calm ? 0.5 : 1)))
+        for angle in [met.angle, met.angle + .pi] {
+            fx.addChild(at(p, Art.burst(hot, count: 9, speed: ronin * 2.4, size: ronin * 0.05, life: 0.32, spread: 0.5, angle: angle,
+                                        gravity: ronin * 5)))
+        }
+        fx.addChild(at(p, Art.burst(.white, count: 12, speed: ronin * 3.2, size: ronin * 0.05, life: 0.16)))
+        fx.addChild(at(p, Art.shockwave(Palette.steel, radius: ronin * 0.05, grow: 6, width: 2, duration: 0.3)))
+        fx.addChild(at(p, Art.shockwave(hot, radius: ronin * 0.05, grow: 9, width: 1, duration: 0.45)))
+        fx.addChild(at(p, Art.burst(Palette.gold, count: 12, speed: ronin * 0.8, size: ronin * 0.04, life: 0.55, spread: 1.4, angle: -.pi / 2,
+                                    gravity: ronin * 7)))
+        flashLane(0.08, fade: 0.2, color: Palette.steel)
+        // (Unless a second cut has cut him down meanwhile.)
+        if foeSprites[id] === sprite { sprite.showTurned() }
+        hitStop = max(hitStop, calm ? 0.035 : 0.06)
+        shake(2)
+        punch(0.03, at: p)
+    }
+
+    /// Foes whose club glares on the lane now (the self-test looks for one).
+    var clubsGlaring: Int { foeSprites.values.filter(\.glaring).count }
 
     /// The ronin's blade crossing the gap to a foe: a hot streak along the ground line.
     private func dash(to x: CGFloat, side: Side) {
@@ -2281,8 +2340,8 @@ final class DuelScene: SKScene {
         hero.finish(victory: outcome == .victory)
         world.speed = min(world.speed, 0.3)
         if outcome == .victory, session.career.isEndless {
-            // An endless run goes straight on: a word, the blade home, a rank if the stage earned one, and the next
-            // stage's card.
+            // An endless run goes straight on: a word, the blade home, a rank if the stage earned one, and the same
+            // stage's card again, rolled afresh.
             let fight = session.fight
             slam(fight.stats.damage == 0 ? "FLAWLESS" : "CLEARED", color: fight.stats.damage == 0 ? Palette.gold : look.accent.mix(.white, 0.3),
                  icon: Icons.infinity(18 * fs, Palette.gold.color()))
@@ -2297,7 +2356,7 @@ final class DuelScene: SKScene {
             overlay.run(.sequence([.wait(forDuration: rank == nil ? 1.7 : 2.6), .run { [weak self] in
                 MainActor.assumeIsolated {
                     guard let self, self.session.fight.outcome == .victory, self.session.career.isEndless else { return }
-                    // On to the next stage, but not into it behind the player's back: if the pointer left meanwhile,
+                    // On to the stage again, but not into it behind the player's back: if the pointer left meanwhile,
                     // it waits under the curtain, and coming back takes the dwell, as it does for any fight.
                     self.session.next()
                     self.loadFight(intro: true)

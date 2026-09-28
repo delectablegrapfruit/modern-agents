@@ -38,6 +38,24 @@ final class GameSession {
         }
     }
 
+    /// For the self-test: a brute at his striking distance on `side`, his club raised and glaring (in the last of his
+    /// wind-up, `Tuning.parryWindow`), just as his own rules bring it down, so a cut toward him turns his blow aside.
+    /// Returns his id.
+    @discardableResult
+    func raiseBruteClub(on side: Side) -> Int {
+        let id = fight.place(.brute, at: side.sign * Kind.brute.range)
+        // Counted in the roster as arrived now, ahead of those still to come (the gourd-bearer among them).
+        fight.roster.insert(.brute, at: fight.arrived)
+        if let bearer = fight.bearerIndex, bearer >= fight.arrived { fight.bearerIndex = bearer + 1 }
+        fight.arrived += 1
+        if let i = fight.foes.firstIndex(where: { $0.id == id }) {
+            fight.foes[i].phase = .windup
+            fight.foes[i].span = fight.foes[i].windup
+            fight.foes[i].timer = Tuning.parryWindow * 0.8
+        }
+        return id
+    }
+
     /// For the self-test: the warlord's guard set before him now, just as his own rules raise it, so a cut into it is
     /// parried.
     func setWarlordGuard() {
@@ -47,8 +65,8 @@ final class GameSession {
         fight.foes[i].timer = 0.6
     }
 
-    /// Runs the fight forward, under the development crowd rules chosen (`Settings.crowding`). A fight that ends is
-    /// booked and saved on the spot.
+    /// Runs the fight forward, under the crowd rules chosen (`Settings.crowding`: the game's, unless changed in the
+    /// Development menu). A fight that ends is booked and saved on the spot.
     func advance(_ dt: Double) -> [FightEvent] {
         fight.crowding = Settings.crowding
         let events = fight.step(dt)
@@ -71,7 +89,7 @@ final class GameSession {
         save()
     }
 
-    /// The next fight: the next stage after a win, stage 1 after a fall (in an endless run, the run's first stage).
+    /// The next fight: the next stage after a win, stage 1 after a fall (in an endless run, its stage afresh either way).
     func next() {
         promotion = nil
         let autopilot = fight.autopilot
@@ -106,7 +124,7 @@ final class GameSession {
         next()
     }
 
-    /// Starts an endless run from an unlocked stage. The fight in progress is left as a restart leaves it.
+    /// Starts an endless run on an unlocked stage. The fight in progress is left as a restart leaves it.
     func startEndless(at stage: Int) {
         career.abandon(fight)
         career.startEndless(at: stage)
@@ -248,33 +266,53 @@ enum Settings {
         set { defaults.set(newValue, forKey: "gore") }
     }
 
-    /// Calmer effects: less shake, no zoom punches, softer full-lane flashes, lightning a slow glow. The blood and the
-    /// dead are untouched (`gore` is theirs). Follows the system's Reduce Motion until chosen in the menu (choosing
-    /// what the system says follows it again).
-    /// Development: how the crowd on the lane gets past each other and whether a cut knocks the brute back
-    /// (`Crowding`), for trying the rules out. Standard (queues, knock-back) unless changed in the Development menu;
-    /// played from the next step on.
+    /// How the crowd on the lane gets past each other and whether a cut knocks the brute back (`Crowding`): the
+    /// game's (`Crowding.standard`) unless changed in the Development menu, to try the game without a rule or with
+    /// another. Played from the next step on.
+    ///
+    /// Only a rule set away from the game's is stored ("crowd." and its name), so whoever never changed one follows
+    /// the game's rules as they are, now and after an update. The "dev." keys of the build before this one, whose game
+    /// was the queue with the brute knocked back, recorded every rule whatever its value; they are dropped the first
+    /// time the rules are read, so nobody is left on the old queue without choosing it again.
     @MainActor static var crowding: Crowding {
         get {
             if let known = crowdingRead { return known }
-            let read = Crowding(passThrough: defaults.bool(forKey: "dev.passThrough"), slipPast: defaults.bool(forKey: "dev.slipPast"),
-                                passBusy: defaults.bool(forKey: "dev.passBusy"), shove: defaults.bool(forKey: "dev.shove"),
-                                noBruteKnockback: defaults.bool(forKey: "dev.noBruteKnockback"))
+            for key in legacyCrowdKeys { defaults.removeObject(forKey: key) }
+            var read = Crowding.standard
+            for (name, rule) in crowdRules {
+                if let on = defaults.object(forKey: "crowd." + name) as? Bool { read[keyPath: rule] = on }
+            }
             crowdingRead = read
             return read
         }
         set {
-            defaults.set(newValue.passThrough, forKey: "dev.passThrough")
-            defaults.set(newValue.slipPast, forKey: "dev.slipPast")
-            defaults.set(newValue.passBusy, forKey: "dev.passBusy")
-            defaults.set(newValue.shove, forKey: "dev.shove")
-            defaults.set(newValue.noBruteKnockback, forKey: "dev.noBruteKnockback")
+            for (name, rule) in crowdRules {
+                if newValue[keyPath: rule] == Crowding.standard[keyPath: rule] {
+                    defaults.removeObject(forKey: "crowd." + name)
+                } else {
+                    defaults.set(newValue[keyPath: rule], forKey: "crowd." + name)
+                }
+            }
             crowdingRead = newValue
         }
     }
+
+    /// Each crowd rule by the name it is stored under.
+    static let crowdRules: [(String, WritableKeyPath<Crowding, Bool>)] = [
+        ("passThrough", \.passThrough), ("slipPast", \.slipPast), ("runnersPassAll", \.runnersPassAll),
+        ("passBusy", \.passBusy), ("shove", \.shove), ("noBruteKnockback", \.noBruteKnockback),
+    ]
+    /// The keys the build before stored the rules under.
+    static let legacyCrowdKeys = ["dev.passThrough", "dev.slipPast", "dev.passBusy", "dev.shove", "dev.noBruteKnockback"]
     /// The rules as last read or set (read every step, so not from the defaults each time).
     @MainActor private static var crowdingRead: Crowding?
 
+    /// For the self-test: the rules read afresh from the defaults at their next use.
+    @MainActor static func rereadCrowding() { crowdingRead = nil }
+
+    /// Calmer effects: less shake, no zoom punches, softer full-lane flashes, lightning a slow glow. The blood and the
+    /// dead are untouched (`gore` is theirs). Follows the system's Reduce Motion until chosen in the menu (choosing
+    /// what the system says follows it again).
     @MainActor static var reduceMotion: Bool {
         get { defaults.object(forKey: "reduceMotion") as? Bool ?? NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
         set {

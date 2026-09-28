@@ -9,7 +9,9 @@ import RoninCore
 /// sight line to the ronin; pips for the cuts a tough one has left; the gourd over a bearer's head (his pips either
 /// side of it), flaring as he gathers himself to dart in; the warlord's guard as a pale ward before him, faint while
 /// it comes up and flashing as it sets, a cut that meets it taken braced on his blade and shoved off (`bind`, in step
-/// with the ronin), and his fury as a red haze that deepens as he is cut down.
+/// with the ronin), and his fury as a red haze that deepens as he is cut down; and the brute's club glaring while a cut
+/// would turn his blow aside (steel-white along the club, a glint running up it and a white-gold flare at its head),
+/// and his reeling when it has been (`showTurned`).
 ///
 /// It moves smoothly: it is drawn where the fight has him as he walks or darts, while a jump the fight makes (a
 /// knock-back, a shove) glides; a blow that wounds him holds him as he is until the blade gets there, and the
@@ -99,6 +101,15 @@ final class FoeSprite: SKNode {
     /// on him and the cuts his pips show, as last set.
     private var wardSet = false
     private var ringStep = -1
+    /// The brute's club glaring (`Fight.turns`): its sheen, the glint running up it, the flare at its head and the star
+    /// in the flare, built the first time it glares; how long it has glared; and whether it glared on the last update.
+    private var glare: SKNode?
+    private var glareSheen = SKSpriteNode(texture: Art.streak)
+    private var glareGlint = SKSpriteNode(texture: Art.spark)
+    private var glareFlare = SKSpriteNode(texture: Art.glow)
+    private var glareStar = SKNode()
+    private var glareAge = 0.0
+    private(set) var glaring = false
     private var tinted: (color: RGB, amount: CGFloat)?
     private var pipsShown = -1
     /// The setting's light on him (`Ambient`).
@@ -345,9 +356,11 @@ final class FoeSprite: SKNode {
 
     /// Puts the foe where the fight has him and picks his frame. `position` is where the fight has him on the lane,
     /// and `hero` the ronin's x, the middle of the lane: for the archer's sight line, and to measure the lane by.
-    /// Returns where a foot of his came down on the ground this time, if one did (its x, in the parent's space).
+    /// `club`: a cut now would turn his blow aside (`Fight.turns`), and his club glares for it (held steady when
+    /// `calm`). Returns where a foot of his came down on the ground this time, if one did (its x, in the parent's space).
     @discardableResult
-    func update(_ foe: Foe, at position: CGPoint, air: CGFloat, hero: CGFloat, dt: Double) -> CGFloat? {
+    func update(_ foe: Foe, at position: CGPoint, air: CGFloat, hero: CGFloat, dt: Double, club: Bool = false,
+                calm: Bool = false) -> CGFloat? {
         age += dt
         heroX = hero
         strikeClock += dt
@@ -656,7 +669,120 @@ final class FoeSprite: SKNode {
             let hidden = leaping || foe.phase == .windup && gourd == nil
             for pip in pips { pip.isHidden = hidden }
         }
+        // (Still lit while the cut that meets it is on its way.)
+        drawGlare(club || holding && glaring, calm: calm, dt: dt)
         return planted
+    }
+
+    // MARK: The brute's club
+
+    /// How long the kanabō is drawn, from the grip to the head, in his heights.
+    nonisolated static let clubLength: CGFloat = 0.6
+    private static var clubs: [Frame: (grip: CGPoint, head: CGPoint)?] = [:]
+
+    /// Where the brute's club runs in a frame, from the grip to the head, in his own heights from his feet (x toward
+    /// the way he faces, y up): back from the head (`Figure.tip`) along the club's line in the pose. Nil for any other
+    /// cast, or a frame without it.
+    static func club(_ cast: Cast, _ frame: Frame) -> (grip: CGPoint, head: CGPoint)? {
+        guard cast == .foe(.brute) else { return nil }
+        if let known = clubs[frame] { return known }
+        var line: (grip: CGPoint, head: CGPoint)?
+        if let head = Figure.tip(cast, frame) {
+            let angle = Figure.pose(cast, frame).blade
+            line = (CGPoint(x: head.x - sin(angle) * clubLength, y: head.y + cos(angle) * clubLength), head)
+        }
+        clubs[frame] = line
+        return line
+    }
+
+    /// A point `share` of the way up his club from the grip to the head as he is drawn now, in the parent's space, and
+    /// which way the club runs there (radians, in the parent's space): where a blade meets it. Nil but for a brute.
+    func clubPoint(_ share: CGFloat) -> (point: CGPoint, angle: CGFloat)? {
+        guard let line = FoeSprite.club(cast, shown), let parent else { return nil }
+        func local(_ t: CGFloat) -> CGPoint {
+            CGPoint(x: (line.grip.x + (line.head.x - line.grip.x) * t) * height, y: (line.grip.y + (line.head.y - line.grip.y) * t) * height)
+        }
+        let p = body.convert(local(share), to: parent), q = body.convert(local(min(1, share + 0.2)), to: parent)
+        return (p, atan2(q.y - p.y, q.x - p.x))
+    }
+
+    /// The glare on the brute's club while a cut would turn his blow (`on`), laid along the club as it is drawn and
+    /// moving with him: a steel-white sheen brightening toward the head, a white glint running up from the grip again
+    /// and again, and a white-gold flare with a four-pointed star at the head that pops as the glare begins and pulses
+    /// while it lasts. Calm (Reduce Motion): the sheen and the flare held steady, no glint, no pop. It is its own
+    /// colour and place: the red of the warning and the gold of the ring over his head are not on the club.
+    private func drawGlare(_ on: Bool, calm: Bool, dt: Double) {
+        guard on, let line = FoeSprite.club(cast, shown) else {
+            glaring = false
+            if let glare, !glare.isHidden {
+                glare.alpha -= CGFloat(dt) / 0.08
+                if glare.alpha <= 0 { glare.isHidden = true }
+            }
+            return
+        }
+        let node: SKNode
+        if let glare {
+            node = glare
+        } else {
+            node = SKNode()
+            // On his figure, over it, so it turns, leans and squashes with him.
+            node.zPosition = 0.3
+            for sprite in [glareSheen, glareGlint, glareFlare] {
+                sprite.colorBlendFactor = 1
+                sprite.blendMode = .add
+                node.addChild(sprite)
+            }
+            glareSheen.anchorPoint = CGPoint(x: 0, y: 0.5)
+            glareSheen.color = Palette.steel.mix(.white, 0.35).color()
+            glareGlint.color = .white
+            glareFlare.color = Palette.gold.mix(.white, 0.55).color()
+            for angle in [CGFloat.pi / 4, -CGFloat.pi / 4] {
+                let ray = SKSpriteNode(texture: Art.streak)
+                ray.color = .white
+                ray.colorBlendFactor = 1
+                ray.blendMode = .add
+                ray.zRotation = angle
+                glareStar.addChild(ray)
+            }
+            node.addChild(glareStar)
+            body.addChild(node)
+            glare = node
+        }
+        if !glaring {
+            glareAge = 0
+            node.isHidden = false
+        }
+        glaring = true
+        glareAge += dt
+        node.alpha = 1
+        let grip = CGPoint(x: line.grip.x * height, y: line.grip.y * height)
+        let head = CGPoint(x: line.head.x * height, y: line.head.y * height)
+        let length = hypot(head.x - grip.x, head.y - grip.y)
+        let t = CGFloat(glareAge)
+        glareSheen.position = grip
+        glareSheen.zRotation = atan2(head.y - grip.y, head.x - grip.x)
+        glareSheen.size = CGSize(width: length * 1.08, height: max(3, height * 0.1))
+        glareSheen.alpha = calm ? 0.6 : 0.55 + 0.2 * sin(t * 24)
+        // Up the club from the grip to the head, a quarter of a second a run.
+        let run = (t / 0.24).truncatingRemainder(dividingBy: 1)
+        glareGlint.isHidden = calm
+        glareGlint.position = CGPoint(x: grip.x + (head.x - grip.x) * run, y: grip.y + (head.y - grip.y) * run)
+        glareGlint.size = CGSize(width: height * 0.16, height: height * 0.16)
+        glareGlint.alpha = sin(run * .pi)
+        // The flare pops as the glare begins, then pulses; the star turns slowly.
+        let pop: CGFloat = calm ? 1 : 1 + 0.9 * max(0, 1 - t / 0.1)
+        let pulse: CGFloat = calm ? 1 : 1 + 0.14 * sin(t * 28)
+        glareFlare.position = head
+        glareFlare.size = CGSize(width: height * 0.5, height: height * 0.5)
+        glareFlare.setScale(pop * pulse)
+        glareFlare.alpha = 0.9
+        glareStar.position = head
+        glareStar.zRotation = calm ? 0 : t * 1.5
+        glareStar.setScale(pop)
+        for case let ray as SKSpriteNode in glareStar.children {
+            ray.size = CGSize(width: height * 0.55, height: max(1.5, height * 0.02))
+            ray.alpha = calm ? 0.7 : 0.6 + 0.3 * pulse
+        }
     }
 
     /// The fastest the fight moves him along the lane by walking, in lane units a second: the gourd-bearer's dart, a
@@ -761,6 +887,18 @@ final class FoeSprite: SKNode {
 
     func showStagger() { staggerHold = 0.3 }
 
+    /// His blow turned aside on his club (the blade has just met it): the glare goes out, he is jolted and reels, off
+    /// balance where he stands, for as long as the fight has him so (`Tuning.bruteStagger`), no knock-back.
+    func showTurned() {
+        holding = false
+        bound = nil
+        glaring = false
+        staggerHold = Tuning.bruteStagger
+        jolt = ronin * 0.05
+        squash = 0.07
+        echo.alpha = 0
+    }
+
     /// A cut that wounds him is on its way (it lands `seconds` from now, when the drawn blade gets there): until it
     /// does (`flashHit`) he is held as he stands, in his pose, with his pips, and the knock-back, leap or spring the
     /// fight has already sent him into starts then.
@@ -807,6 +945,8 @@ final class FoeSprite: SKNode {
         sight.alpha = 0
         glint.alpha = 0
         ward.alpha = 0
+        glare?.isHidden = true
+        glaring = false
     }
 
     /// The blade lands on him: a flash in the setting's light and a jolt back (and whatever a held blow was keeping
