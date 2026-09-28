@@ -208,9 +208,9 @@ try {
   }
   if (want('hints')) {
     // Floor hints on (teaching the buttons again), gore off: the dead fall whole and nothing bleeds.
+    const shedBefore = await page.evaluate(() => ({ shed: window.ronin.panel.scene.shed + window.ronin.panel.scene.carnage.shed, severed: window.ronin.panel.scene.carnage.severings }));
     await page.evaluate(() => {
       window.ronin.panel.setFloorHints(true);
-      window.Prefs_gore = true;
       localStorage.setItem('ronin.gore', '0');
       window.ronin.session.setAutopilot(true);
       window.ronin.session.jump(11);
@@ -218,7 +218,9 @@ try {
     });
     await hover(page, true);
     await waitFor(page, () => window.ronin.session.fight.stats.kills >= 5, null, 60000);
-    report.goreOff = await page.evaluate(() => ({ shed: window.ronin.panel.scene.shed + window.ronin.panel.scene.carnage.shed, severed: window.ronin.panel.scene.carnage.severings }));
+    const shedAfter = await page.evaluate(() => ({ shed: window.ronin.panel.scene.shed + window.ronin.panel.scene.carnage.shed, severed: window.ronin.panel.scene.carnage.severings }));
+    // (Blood spilt and men cut apart while gore was off: none of either.)
+    report.goreOff = { shed: shedAfter.shed - shedBefore.shed, severed: shedAfter.severed - shedBefore.severed };
     await shot(page, '13-hints-gore-off');
     await page.evaluate(() => { window.ronin.panel.setFloorHints(false); localStorage.setItem('ronin.gore', '1'); });
   }

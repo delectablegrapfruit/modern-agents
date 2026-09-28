@@ -63,7 +63,16 @@ async function fontsReady() {
 
 async function loadTheCore() {
   const url = window.RONIN_CORE_URL || './core.js';
-  const mod = await import(url);
+  let mod;
+  try {
+    mod = await import(url);
+  } catch (err) {
+    // A viewer that will not import a module file may still run it from its text.
+    const response = await fetch(url);
+    if (!response.ok) throw err;
+    const blob = new Blob([await response.text()], { type: 'text/javascript' });
+    mod = await import(URL.createObjectURL(blob));
+  }
   const loadCore = mod.loadCore || mod.default;
   const wasm = window.RONIN_WASM_URL || './ronin.wasm';
   return await loadCore(wasm);
