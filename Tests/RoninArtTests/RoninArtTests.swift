@@ -47,21 +47,23 @@ final class RoninArtTests: XCTestCase {
     /// The shapes of a sketch's figure filled with a colour.
     private func filled(_ sketch: Sketch, _ rgb: RGB) -> [Shape] { sketch.body.filter { $0.fill?.rgb == rgb } }
 
-    /// The frames of a cut swung fastest (the blade whipping through the middle of its arc): the smear frames.
+    /// The frames of a cut swung fastest (the blade whipping through the middle of its arc).
     private func fast(_ cut: Cut) -> [Int] { cut == .nukitsuke ? [4, 5] : [3, 4] }
 
-    /// How opaque shapes laid one over another are at a point (their outlines taken as polygons).
+    /// How opaque shapes laid one over another are at a point (their outlines taken as polygons, filled as Core
+    /// Graphics and SVG fill them: wherever the outline winds round the point).
     private func coverage(_ shapes: [Shape], at p: CGPoint) -> CGFloat {
         var clear: CGFloat = 1
         for shape in shapes {
             guard let fill = shape.fill, case .path(let path) = shape.kind else { continue }
             let points = path.points
-            var inside = false
+            var winding = 0
             for (i, a) in points.enumerated() {
                 let b = points[(i + 1) % points.count]
-                if (a.y > p.y) != (b.y > p.y), p.x < a.x + (p.y - a.y) / (b.y - a.y) * (b.x - a.x) { inside.toggle() }
+                guard (a.y > p.y) != (b.y > p.y), p.x < a.x + (p.y - a.y) / (b.y - a.y) * (b.x - a.x) else { continue }
+                winding += b.y > a.y ? 1 : -1
             }
-            if inside { clear *= 1 - fill.alpha }
+            if winding != 0 { clear *= 1 - fill.alpha }
         }
         return 1 - clear
     }
@@ -241,7 +243,7 @@ final class RoninArtTests: XCTestCase {
                 XCTAssertEqual(Figure.pose(.hero, .chain(cut, k)).blade, Figure.pose(.hero, .cut(cut, k)).blade, accuracy: 0.0001)
             }
             for k in 0..<Frame.chainFrames {
-                XCTAssertEqual(Figure.pose(.hero, .chain(cut, k)).ghosts.isEmpty, !fast(cut).contains(k), "\(cut) chain \(k)")
+                XCTAssertEqual(Figure.pose(.hero, .chain(cut, k)).ghosts.isEmpty, k == 0, "\(cut) chain \(k)")
             }
         }
     }
@@ -427,69 +429,133 @@ final class RoninArtTests: XCTestCase {
         }
     }
 
-    func testOnlyTheFastestFramesAreSmeared() {
-        // A smear is for the one or two fastest frames of a motion (the blade whipping through the middle of a cut,
-        // the whole of a foe's blow, the chiburi's snap, the blade flung off the warlord's); the frames either side are
-        // drawn clean, so they read as poses rather than as blur. The body blurs after itself on one frame of a lunge
-        // at most.
+    func testEveryFastMotionIsSmeared() {
+        // As an animator smears a motion: every frame of a swing (the draw's too, and the first of the follow-through)
+        // is a smear frame, running along the path since the frame before, so the whole cut reads as one motion; the
+        // chamber, the end of the follow-through, zanshin and the way back into guard are clean poses. The bright trail
+        // builds to the blade whipping through and dies away after it; the body blurs after itself as far as the lunge
+        // carries it in each frame (never when a cut is swung again from the lunge, the feet planted).
         for cut in Cut.allCases {
+            var strengths: [CGFloat] = []
             for k in 0..<Frame.cutFrames {
                 let pose = Figure.pose(.hero, .cut(cut, k)), sketch = Figure.sketch(.hero, .cut(cut, k))
-                if fast(cut).contains(k) {
-                    XCTAssertFalse(pose.ghosts.isEmpty, "\(cut) \(k)")
-                    XCTAssertNotNil(pose.smear, "\(cut) \(k)")
-                    XCTAssertFalse(sketch.underlay.isEmpty, "\(cut) \(k)")
+                if (1...6).contains(k) {
+                    XCTAssertGreaterThanOrEqual(pose.ghosts.count, 8, "\(cut) \(k): the path is too coarse to run smooth")
+                    XCTAssertFalse(sketch.underlay.isEmpty, "\(cut) \(k) is not smeared")
+                    if k < 6 || cut == .nukitsuke { XCTAssertGreaterThan(pose.drag, 0, "\(cut) \(k): the body is not carried") }
+                    // (The draw's first two frames push the hilt out, the blade still in the scabbard: no trail yet.)
+                    if cut != .nukitsuke || k >= 3 {
+                        XCTAssertNotNil(pose.smear, "\(cut) \(k) leaves no trail")
+                        strengths.append(pose.smear?.strength ?? 0)
+                    }
                 } else {
                     XCTAssertTrue(pose.ghosts.isEmpty && pose.smear == nil && pose.drag == 0, "\(cut) \(k) is smeared")
                     XCTAssertTrue(sketch.underlay.isEmpty && sketch.overlay.isEmpty, "\(cut) \(k) is smeared")
                 }
             }
-            XCTAssertEqual((0..<Frame.cutFrames).filter { Figure.pose(.hero, .cut(cut, $0)).drag != 0 }.count, 1, "\(cut)")
+            let peak = strengths.firstIndex(of: strengths.max()!)!
+            XCTAssertTrue(peak > 0 && peak < strengths.count - 1, "\(cut): the trail is brightest at an end of the swing, not in it")
+            XCTAssertLessThan(strengths.last!, 0.5, "\(cut): the trail does not die away")
+            if cut != .nukitsuke {
+                for k in 0..<Frame.chainFrames {
+                    let pose = Figure.pose(.hero, .chain(cut, k))
+                    XCTAssertEqual(pose.ghosts.isEmpty, k == 0, "\(cut) chain \(k)")
+                    XCTAssertEqual(pose.drag, 0, "\(cut) chain \(k): the planted lunge blurs")
+                }
+            }
             for k in 0..<Frame.recoverFrames {
                 XCTAssertTrue(Figure.sketch(.hero, .recover(cut, k)).underlay.isEmpty, "the return to guard is clean")
             }
         }
+        // A foe's blow from the coil, and on into its follow-through (the body flung into it, then less so); the
+        // recovery, the wind-up and a stagger are clean; a leap carries the body.
         for kind in Kind.allCases where kind != .archer {
             let cast = Cast.foe(kind)
-            XCTAssertFalse(Figure.sketch(cast, .strike(0)).underlay.isEmpty, "\(kind)'s blow")
-            XCTAssertNotEqual(Figure.pose(cast, .strike(0)).drag, 0, "\(kind)'s blow")
-            let clean = [Frame.strike(1), .strike(2), .windup(Frame.windupFrames - 1), .stagger(0)]
-            for f in clean + (Figure.frames(for: cast).contains(.leap) ? [.leap] : []) {
+            for k in 0...1 {
+                XCTAssertFalse(Figure.pose(cast, .strike(k)).ghosts.isEmpty, "\(kind) strike \(k)")
+                XCTAssertFalse(Figure.sketch(cast, .strike(k)).underlay.isEmpty, "\(kind) strike \(k)")
+            }
+            XCTAssertGreaterThan(Figure.pose(cast, .strike(0)).drag, Figure.pose(cast, .strike(1)).drag, "\(kind)'s blow")
+            XCTAssertGreaterThan(Figure.pose(cast, .strike(1)).drag, 0, "\(kind)'s follow-through")
+            for f in [Frame.strike(2), .windup(Frame.windupFrames - 1), .stagger(0), .idle(0), .walk(0)] {
                 XCTAssertTrue(Figure.sketch(cast, f).underlay.isEmpty, "\(kind) \(f) is smeared")
             }
+            if Figure.frames(for: cast).contains(.leap) { XCTAssertGreaterThan(Figure.pose(cast, .leap).drag, 0, "\(kind)'s leap") }
         }
-        for f in [Frame.idle(0), .stumble(0), .stumble(1), .repelled(0), .repelled(1), .hurt(0), .clash(0), .flourish(1), .flourish(3)] {
+        // The ronin carried past his mark, flung back off a guard or off the warlord's blade, struck; the chiburi's
+        // snap and its stop; each smeared, and what follows each of them clean.
+        for f in [Frame.stumble(0), .repelled(0), .clash(1), .flourish(2), .flourish(3)] {
+            XCTAssertFalse(Figure.pose(.hero, f).ghosts.isEmpty, "\(f)")
+            XCTAssertFalse(Figure.sketch(.hero, f).underlay.isEmpty, "\(f) is not smeared")
+        }
+        XCTAssertLessThan(Figure.pose(.hero, .hurt(0)).drag, 0, "the blow does not carry him back")
+        XCTAssertLessThan(Figure.pose(.hero, .clash(1)).drag, 0, "he is not thrown back off the blade")
+        for f in [Frame.idle(0), .stumble(1), .repelled(1), .hurt(1), .hurt(2), .clash(0), .flourish(0), .flourish(1), .flourish(4)] {
             XCTAssertTrue(Figure.sketch(.hero, f).underlay.isEmpty, "\(f) is smeared")
         }
-        XCTAssertFalse(Figure.sketch(.hero, .flourish(2)).underlay.isEmpty, "the chiburi's snap")
-        XCTAssertFalse(Figure.sketch(.hero, .clash(1)).underlay.isEmpty, "the blade flung off the warlord's")
     }
 
-    func testASmearIsOneSweepDenseAtTheBladeAndThinningBackAlongTheSwing() {
-        // Not the arms and the blade drawn again back along the swing, but one soft sweep of ink along the path the
-        // blade took since the frame before: nearly as dark as the figure just behind the blade, and fading to nothing
-        // back where the swing came from; the steel edge of the trail over it. (A thrust leaves speed lines instead.)
-        var smeared: [(Cast, Frame)] = [(.hero, .flourish(2)), (.hero, .clash(1))]
-        for cut in Cut.allCases where cut != .tsuki { smeared += fast(cut).map { (.hero, .cut(cut, $0)) } }
+    func testASmearIsTheMotionNotCopiesOfTheFigure() {
+        // Not the arms, the blade and the body drawn again back along the motion (a stack of copies), but the motion
+        // itself: nothing of a smear is drawn dark on its own (every shape of it faint, building up only where the
+        // motion lingers), all of it in the figure's own ink under a bright steel edge; the sweep of the blade nearly as
+        // dark as the figure just behind the blade and fading back along the swing, smoothly, in steps too fine to see;
+        // and where the hands were a frame ago, no second pair of hands. (A thrust leaves speed lines.)
+        var smeared: [(Cast, Frame)] = [(.hero, .flourish(2)), (.hero, .flourish(3)), (.hero, .clash(1)), (.hero, .repelled(0))]
+        for cut in Cut.allCases where cut != .tsuki { smeared += (cut == .nukitsuke ? [4, 5] : [2, 3, 4, 5]).map { (.hero, .cut(cut, $0)) } }
         smeared += [Kind.runner, .brute, .dancer, .warlord].map { (.foe($0), .strike(0)) }
         for (cast, frame) in smeared {
-            let pose = Figure.pose(cast, frame), sketch = Figure.sketch(cast, frame)
+            var pose = Figure.pose(cast, frame)
+            let sketch = Figure.sketch(cast, frame)
             let H = Figure.pixelHeight(cast) * Build.of(cast).height
-            XCTAssertGreaterThanOrEqual(pose.ghosts.count, 8, "\(cast) \(frame): the path is too coarse to be one sweep")
-            // A point a little in from the point of the blade, as it was a moment ago and as it was near the start.
+            for shape in sketch.underlay {
+                XCTAssertEqual((shape.fill ?? shape.stroke)?.rgb, Palette.silhouette, "\(cast) \(frame): not in the figure's ink")
+                XCTAssertLessThanOrEqual((shape.fill ?? shape.stroke)?.alpha ?? 1, 0.3, "\(cast) \(frame): a copy drawn dark on its own")
+            }
+            XCTAssertTrue(sketch.overlay.contains { $0.fill?.rgb == Palette.steel }, "\(cast) \(frame): no steel edge")
+            // The sweep on its own (without the blur of the body), along the path of a point near the tip of the blade
+            // from where the frame before left it (oldest first).
+            pose.drag = 0
+            let sweep = Figure.sketch(cast, pose: pose).underlay
             func along(_ p: Pose, _ share: CGFloat) -> CGPoint {
                 let hand = Figure.skeleton(cast, p)[8], tip = Figure.tip(cast, pose: p) ?? hand
                 return CGPoint(x: (Figure.feet.x + hand.x + (tip.x - hand.x) * share) * H, y: (Figure.feet.y + hand.y + (tip.y - hand.y) * share) * H)
             }
-            let dense = coverage(sketch.underlay, at: along(pose.ghosts[pose.ghosts.count - 1], 0.85))
-            let early = coverage(sketch.underlay, at: along(pose.ghosts[1], 0.85))
+            let path = pose.ghosts.dropFirst().map { along($0, 0.85) }
+            let dense = coverage(sweep, at: path.last!), early = coverage(sweep, at: path.first!)
             XCTAssertGreaterThan(dense, 0.55, "\(cast) \(frame): the sweep is a pale fog at the blade")
             XCTAssertLessThan(early, dense * 0.5, "\(cast) \(frame): the sweep does not thin back along the swing")
-            XCTAssertTrue(sketch.overlay.contains { $0.fill?.rgb == Palette.steel }, "\(cast) \(frame): no steel edge")
-            // In the figure's own ink, never lighter than it.
-            for shape in sketch.underlay { XCTAssertEqual((shape.fill ?? shape.stroke)?.rgb, Palette.silhouette, "\(cast) \(frame)") }
+            // Followed closely along that path, the ink never steps: no band, no edge of a copy. (A foe's blow may
+            // turn a weapon back along its own line, as the runner's knife does coming out of its tuck, and the sweep
+            // then has an edge where it folds: a sharper change, but still nothing like a copy's.)
+            var ink: [CGFloat] = []
+            for (a, b) in zip(path, path.dropFirst()) {
+                for i in 0..<8 { ink.append(coverage(sweep, at: CGPoint(x: a.x + (b.x - a.x) * CGFloat(i) / 8, y: a.y + (b.y - a.y) * CGFloat(i) / 8))) }
+            }
+            let step = zip(ink, ink.dropFirst()).map { abs($1 - $0) }.max() ?? 0
+            XCTAssertLessThan(step, cast == .hero ? 0.12 : 0.25, "\(cast) \(frame): the sweep is banded (a step of \(step))")
+            // Where the hands were a frame ago, only the faintest trace of them.
+            let hands = Figure.skeleton(cast, pose.ghosts[0])[8]
+            let then = coverage(sweep, at: CGPoint(x: (Figure.feet.x + hands.x) * H, y: (Figure.feet.y + hands.y) * H))
+            XCTAssertLessThan(then, 0.3, "\(cast) \(frame): the hands are drawn again where they were")
         }
         XCTAssertTrue(Figure.pose(.hero, .cut(.tsuki, 4)).smear?.thrust ?? false)
+    }
+
+    func testASmearRunsOnFromTheFrameBefore() {
+        // Each frame of a swing smears the way from the frame before: its first in-between is that frame's pose, so
+        // the sweep starts where the eye last saw the blade and the hands, and one frame's smear leads into the next.
+        for cut in Cut.allCases {
+            for k in 1...6 {
+                let pose = Figure.pose(.hero, .cut(cut, k)), before = Figure.pose(.hero, .cut(cut, k - 1))
+                guard let first = pose.ghosts.first else { XCTFail("\(cut) \(k) is not smeared"); continue }
+                let a = Figure.skeleton(.hero, first)[8], b = Figure.skeleton(.hero, before)[8]
+                XCTAssertEqual(hypot(a.x - b.x, a.y - b.y), 0, accuracy: 0.02, "\(cut) \(k): the hands' smear starts elsewhere")
+                if let p = Figure.tip(.hero, pose: first), let q = Figure.tip(.hero, pose: before) {
+                    XCTAssertEqual(hypot(p.x - q.x, p.y - q.y), 0, accuracy: 0.02, "\(cut) \(k): the sweep starts elsewhere")
+                }
+            }
+        }
     }
 
     func testTheDeadStartFromPosesTheyCanFallFrom() {
@@ -639,8 +705,8 @@ final class RoninArtTests: XCTestCase {
     func testTheRunnerSprintsLowAndLongAndHalfTheTimeInTheAir() {
         // The shinobi's strength is his speed: a low, driving sprint pitched hard forward, on the balls of his feet,
         // each foot down a quarter of the stride and half his time in the air; the heel flicked up high behind him and
-        // the knee driven through; both arms pumping hard against each other, the knife tucked along the forearm; his
-        // legs turning over faster than any other man's.
+        // the knee driven through; his legs turning over faster than any other man's. He runs on his legs alone: the
+        // arms held still, the knife up before his chin reversed along the forearm, the free arm swept back.
         let cast = Cast.foe(.runner), n = Frame.walkFrames
         let feet = (0..<n).map { Figure.footing(cast, .walk($0)) }
         XCTAssertGreaterThanOrEqual(feet.filter { min($0.front.y, $0.back.y) > 0.01 }.count, n / 2, "not in the air long enough")
@@ -662,12 +728,22 @@ final class RoninArtTests: XCTestCase {
         XCTAssertTrue(lifted.contains { $0.y > 0.25 && abs($0.x) < 0.12 }, "the foot is not tucked under him as the knee comes through")
         // The knee driven up ahead of the hips.
         XCTAssertGreaterThan(bones.map { max($0[3].x, $0[5].x) - $0[0].x }.max()!, 0.2)
-        // Both arms pumping hard, against each other.
-        let near = bones.map { $0[8].x - $0[0].x }, far = bones.map { $0[10].x - $0[0].x }
-        XCTAssertGreaterThan(near.max()! - near.min()!, 0.25, "the knife arm hardly pumps")
-        XCTAssertGreaterThan(far.max()! - far.min()!, 0.25, "the free arm hardly pumps")
-        let mean = (near.reduce(0, +) / CGFloat(n), far.reduce(0, +) / CGFloat(n))
-        XCTAssertLessThan(zip(near, far).map { ($0 - mean.0) * ($1 - mean.1) }.reduce(0, +), 0, "the arms swing together")
+        // The arms still on the body through the whole stride (the hands kept where they are from the neck, the body
+        // rocking under them as it will), the knife hand up before his face and the free one back behind his hips.
+        let leans = (0..<n).map { Figure.pose(cast, .walk($0)).lean }
+        for (hand, name) in [(8, "knife"), (10, "free")] {
+            let from = zip(bones, leans).map { b, lean -> CGPoint in
+                let d = CGPoint(x: b[hand].x - b[1].x, y: b[hand].y - b[1].y)
+                return CGPoint(x: d.x * cos(lean) - d.y * sin(lean), y: d.x * sin(lean) + d.y * cos(lean))
+            }
+            let spread = max(from.map(\.x).max()! - from.map(\.x).min()!, from.map(\.y).max()! - from.map(\.y).min()!)
+            XCTAssertLessThan(spread, 0.03, "the \(name) arm swings")
+        }
+        for b in bones {
+            XCTAssertGreaterThan(b[8].x, b[1].x + 0.08, "the knife is not held out before him")
+            XCTAssertGreaterThan(b[8].y, b[1].y - 0.06, "the knife is carried low")
+            XCTAssertLessThan(b[10].x, b[0].x, "the free arm is not swept back")
+        }
         func cadence(_ kind: Kind) -> Double { kind.speed / Double(Figure.stride(.foe(kind)) * Build.of(.foe(kind)).height) }
         for kind in Kind.allCases where kind != .runner { XCTAssertGreaterThan(cadence(.runner), cadence(kind) * 1.15, "\(kind)") }
     }
@@ -700,7 +776,8 @@ final class RoninArtTests: XCTestCase {
 
     func testTheRunnerBurstsOutOfACoilInOneLongLunge() {
         // Coiled low like a sprinter set to go, then out in one long lunge, the knife whipped a long way through the one
-        // frame of the blow (smeared, the body blurring after itself), and clean again as it carries through.
+        // frame of the blow (smeared, the body blurring after itself further than any other man's), and smeared less as
+        // it carries through.
         let cast = Cast.foe(.runner)
         let coiled = Frame.windup(Frame.windupFrames - 1)
         let stance = Figure.footing(cast, .idle(0)), blow = Figure.footing(cast, .strike(0))
@@ -712,7 +789,8 @@ final class RoninArtTests: XCTestCase {
         let pose = Figure.pose(cast, .strike(0))
         XCTAssertFalse(pose.ghosts.isEmpty)
         XCTAssertGreaterThan(pose.drag, Figure.pose(.foe(.grunt), .strike(0)).drag, "the blow is no faster than a spearman's")
-        XCTAssertTrue(Figure.pose(cast, .strike(1)).ghosts.isEmpty)
+        XCTAssertFalse(Figure.pose(cast, .strike(1)).ghosts.isEmpty)
+        XCTAssertLessThan(Figure.pose(cast, .strike(1)).drag, pose.drag)
     }
 
     func testAFoeWalksOnBentKneesThatNeverLock() {

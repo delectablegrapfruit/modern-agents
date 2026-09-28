@@ -103,9 +103,9 @@ public struct Shape: Sendable {
 }
 
 /// A picture as shapes: the figure itself (drawn as one, with a thin rim of light around it), an underlay drawn first
-/// without the rim (a smear frame's sweep of ink, its hands stretched along it and the blur off the back of the body),
-/// and an overlay drawn on top without the rim (the bright steel edge of a swing). Rendered with Core Graphics in the
-/// app and as SVG for previews.
+/// without the rim (a smear frame's sweep of ink between the blades, the arms dissolving along it and the blur of the
+/// body), and an overlay drawn on top without the rim (the bright steel edge of a swing). Rendered with Core Graphics in
+/// the app and as SVG for previews.
 public struct Sketch: Sendable {
     public var width: Int
     public var height: Int
