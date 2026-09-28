@@ -51,10 +51,12 @@ where it is.
   every warlord after, up to 40). His bar sits in the header (or, when the header is crowded, runs as a thin line
   along its foot), and stage 5's card warns you: *wait out his guard*. He raises his guard as he closes in, and
   sometimes as he recovers: a faint ward grows before him, then flashes and rings as it sets.
-  - A cut that meets it **still rising** glances off with a spark, no harm done on either side.
-  - A cut into a **set** guard is turned aside (a gold ⊗ over you): it throws you off balance, ends your combo and
-    draws his answer, a two-heart blow. So wait for it to drop; brought in close behind it, he strikes the moment it
-    does.
+  - A cut that meets it **still rising** clashes lightly on his blade and glances off with a few sparks, and you
+    draw back into guard: no harm done on either side.
+  - A cut into a **set** guard binds on his blade: the blades ring and cross in a spray of sparks and a flash of
+    steel, the lane pushed in and frozen on it, then he shoves you off and you back off a step or two in guard (a gold
+    ⊗ over you). It throws you off balance, ends your combo and draws his answer, a two-heart blow that catches you
+    backing off if he was close. So wait for it to drop; brought in close behind it, he strikes the moment it does.
 
   Cut him and he is thrown back or somersaults over your head, and half the time he comes down cutting. At three
   quarters, a half and a quarter of his strength (ticks on his bar) he calls men in from both ends of the lane (from
@@ -129,7 +131,7 @@ where it is.
 | Size | A strip 340, 420 or 520 pt wide and at most 180 pt tall (menu ▸ Size; Medium until you choose). It stays wholly on screen, and grows or shrinks toward the screen's middle, so a panel in a corner keeps to its corner. Press **C** or the header's – button to fold it into a 196×28 pill that shows the mode, the stage, your hearts and the run's score (123K, 1.2M once it is long). Click the pill to unfold it. |
 | At a glance | The panel is small, so it uses pictures more than words. The header shows the mode as a vermilion seal (初 Shoshin, 武 Bushidō, 修 Shura, 鬼 Oni), the stage (with ∞ in an endless run), your hearts, a warlord's bar and the run's score (every stage of it so far). A won stage's card shows a skull for kills, crossed swords for your best combo, a clock for time and the score, and ▶ to go on. After a fall it shows the run instead: steps for the stages it cleared (∞ in endless), kills, best combo and score, and ↻ with the stage you start again from. ▲ marks a rank earned, or a run that beat its record (BEST RUN). The pause screen is a pause sign. What text there is is set in Optima capitals with wide letter-spacing, on dark bands edged with fine gold rules. |
 | Presence | No Dock icon. It has a menu bar icon. **⌃⌥R** shows and hides the panel from anywhere, on the screen you are working on. Menu ▸ Shortcut offers ⌃⌥⌘R and ⌃⇧R instead, and if another app holds the one chosen, the next free one is used. **Esc** or **⌘W** hides it too. It floats on every Space and over full-screen apps. It dims to 60% while the pointer is elsewhere (menu ▸ Dim When Pointer Leaves). |
-| Motion | Menu ▸ Reduce Motion (following the system setting until you choose): far less shake, no zoom punches, soft and slow full-lane flashes, lightning as a slow glow, a steady bloodlust edge and heartbeat, small faint impact lines, slams that drop in from nearer, and no thump through the lane from the heavy ones' steps. The blood and the dead are as they always are (that is menu ▸ Gore). |
+| Motion | Menu ▸ Reduce Motion (following the system setting until you choose): far less shake, no zoom punches, soft and slow full-lane flashes, lightning as a slow glow, a steady bloodlust edge and heartbeat, small faint impact lines, a shorter freeze and fainter flashes when blades clash, slams that drop in from nearer, and no thump through the lane from the heavy ones' steps. The blood and the dead are as they always are (that is menu ▸ Gore). |
 | Gore | Menu ▸ Gore, on until you turn it off. It builds with the stages and is heaviest in bloodlust; off, there is no blood at all and nobody comes apart (see *Gore* above). It takes effect at once. |
 | Sound | None. |
 | Save | Continuous (`~/Library/Application Support/Ronin/save.json`). If you quit mid-fight, you resume on the same frame. An update may roll the stage in progress afresh (at the hearts you carried into it), but the career always carries over. A save that cannot be read is set aside as `save.unreadable-<date>.json`, never written over. Menu ▸ Reset Career… starts again from nothing. |
@@ -189,12 +191,18 @@ All but `make run` work on Linux too.
     stance, and seven cuts (nukitsuke, kesa-giri, gyaku-kesa, shōmen, dō-giri, morote-zuki, sune-giri) of nine
     frames each: chambered in the cut's kamae, the swing with the wrists still cocked, the blade whipping through,
     full extension on a stamping lunge, the follow-through, and zanshin. Five more swing a cut again from the lunge
-    of the last, and six step him back into guard. His feet keep to the ground: he moves along the lane only in the
-    blur of a lunge or a blow, or as a lifted foot is carried and set down.
+    of the last, and six step him back into guard. Two more cross blades with the warlord's (the bind, and forced off
+    it), and four back him off in guard a foot at a time. His feet keep to the ground: he moves along the lane only in
+    the blur of a lunge or a blow, or as a lifted foot is carried and set down.
     - **Footwork:** from a long lunge he pushes off and lifts the front foot back first, from a short one he draws the
       back foot up first; a cut swung again on the same side while he is still planted in the last one's lunge keeps
       its footing. Out of place after a blow, he steps back into guard a foot at a time, each foot moving only the way
-      he is going.
+      he is going; well off it (driven back into a clash, or backing off from one), he first steps toward it in guard.
+    - **The clash:** a cut into the warlord's guard carries on into a bind on his blade, the ronin lunging out to where
+      the blades meet or, the warlord standing closer, driven back into it; the warlord takes it braced on the same
+      beat. Parried, the ronin is forced off it (the warlord shoving it off), the blade driven up and his coat and hair
+      streaming, and backs off in guard a step or two; glancing off a guard still rising, he only draws back out of
+      the bind.
     - **Struck,** he wheels to face whoever dealt the blow, so it drives him away from them, and reels one of three
       ways: rocked back and bracing, staggered back a step at a time, or dropped to a knee and pushed back up (more
       often the last, and slower, the worse he is hurt). Before the draw he is rocked back where he stands, his hand
@@ -214,14 +222,14 @@ All but `make run` work on Linux too.
     it comes round and its trail a flat ellipse; a thrust leaves speed lines. In the app he darts out along the lane
     into each cut and back, stretched into it.
   - **Textures** are cut down to what each frame draws, keeping its place on the canvas, so the feet stay put.
-- `Ronin` is the app. It uses AppKit (the panel, the menu bar, a Carbon hot key) and SpriteKit (the lane). The
-  effects include slash crescents laid along each cut, enemies cut in half, ink sprays, hit-stop, slow motion,
-  screen shake, focus lines snapping in around a big foe's death (the warlord's drawn for the blow, crisp, running in
-  from past every edge of the panel), and weather in two layers: in front of the fight, and further off, finer and
-  fainter, behind the ground, where what falls sinks out of sight and embers rise from beyond the horizon. Nothing
-  blinks out in mid-air, and the wind never leaves one side of the lane bare. The figures, living and dead, stand in
-  each setting's light: drawn a little toward its darkest tone, flashed in its own light when struck, and leaving
-  dark, see-through ghosts (the pose just left, the ronin's afterimages) rather than pale grey ones.
+- `Ronin` is the app. It uses AppKit (the panel, the menu bar, a Carbon hot key) and SpriteKit (the lane). The effects
+  include slash crescents laid along each cut, blades binding in a ring of sparks and a flash of steel, enemies cut in
+  half, ink sprays, hit-stop, slow motion, screen shake, focus lines snapping in around a big foe's death (the warlord's
+  drawn for the blow, crisp, running in from past every edge of the panel), and weather in two layers: in front of the
+  fight, and further off, finer and fainter, behind the ground, where what falls sinks out of sight and embers rise from
+  beyond the horizon. Nothing blinks out in mid-air, and the wind never leaves one side of the lane bare. The figures,
+  living and dead, stand in each setting's light: drawn a little toward its darkest tone, flashed in its own light when
+  struck, and leaving dark, see-through ghosts (the pose just left, the ronin's afterimages) rather than pale grey ones.
 - `ronin-sim` plays stages headless with a human-like pilot (0.22 s reaction, 7 cuts a second, an occasional
   wrong-way cut; `--reaction`, `--rate` and `--slips` change them, and `--rash` makes it lose patience with a
   warlord's set guard now and then) or a perfect one (`--perfect`), in one mode or every mode (`--mode all`), over
@@ -244,7 +252,9 @@ All but `make run` work on Linux too.
     head struck off, the body left without it, and the halves of the kesa, gyaku and dō cuts drawn apart,
   - `ragdoll`: each kind's dead falling as the game lets them fall, a frame every tenth of a second, a row for each
     way a man is cut down (felled whole, kesa, gyaku, dō, the shin cut, shōmen; a warlord only loses his head), and
-    a row of them at rest.
+    a row of them at rest,
+  - `clash`: the ronin and the warlord through a parry, stood as the game stands them for the blades to meet (where
+    they meet marked): the bind, the ronin forced off it, then backing off in guard a foot at a time.
 
   `KINDS="grunt,brute"` draws only those kinds on `cuts`, `dead` and `ragdoll`. It exits 2 for arguments it cannot
   use, and 1 if the sheet cannot be written.
@@ -257,7 +267,8 @@ builds and tests, bundles and packages the app, and launches the packaged copy w
 self-test does these things in order:
 
 1. Checks the defaults (floor hints off, a Medium panel, gore on) and that the marker over every kind of foe's head,
-   a gourd bearer's too, stays on the lane at every size, and that a bearer's pips and marker stay clear of his gourd.
+   a gourd bearer's too, stays on the lane at every size, that a bearer's pips and marker stay clear of his gourd,
+   and that a word slammed onto the lane (BLOODLUST, 25 HITS) stays under the combo's number at every size.
 2. Grows the panel out of its default corner and folds it there and back without it leaving the screen, and checks
    the header cannot go under the menu bar.
 3. Shows what a new player first sees, turns floor hints on, and makes the first cut and a whiff with real left-
@@ -267,8 +278,9 @@ self-test does these things in order:
 5. Folds into the pill and back, turns floor hints off and changes the size, the dead still lying there and the
    card still up, then advances from the banner.
 6. Shows the card for a newly introduced enemy, and checks it follows the panel to another size.
-7. Fights a warlord: his bar in the header, never over the lane, his blow coming (if he winds up within 3 s), and
-   his death.
+7. Fights a warlord: his bar in the header, never over the lane, his blow coming (if he winds up within 3 s), a cut
+   into his set guard with the real button, parried and bound on his blade (if his guard is set in reach, far enough
+   out that he would not answer, within 6 s), and his death.
 8. Switches to Oni and rides a combo into bloodlust.
 9. Falls, and starts over from stage 1 with full hearts, the stage reached left unlocked and the fallen run kept.
 10. Switches back and checks that Bushidō kept its stage and its hearts.

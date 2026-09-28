@@ -5,14 +5,15 @@ import RoninArt
 import RoninCore
 
 /// `RONIN_SELFTEST=1 Ronin.app/Contents/MacOS/Ronin`: in a scratch save and a scratch defaults domain, checks the
-/// defaults (floor hints off, a Medium panel, gore on) and that what is drawn over a foe's head stays on the lane at
-/// every size (a gourd-bearer's pips and marker clear of his gourd), grows the panel from its default corner and folds
-/// it there and back without it leaving the screen, shows what a new player first sees, makes the first cut and a whiff
-/// with real left and right mouse-button events, lets the autopilot clear stage 1 and checks that its dead fall on
-/// under the card, folds into the pill and back and changes the size with the dead still lying there, advances from the
-/// banner, shows a new foe's card and checks it follows a resize, fights a warlord (his bar in the header, his blow
-/// coming), switches to Oni and rides a combo into bloodlust, falls and starts again from stage 1, switches back and
-/// finds Bushidō's stage and hearts kept, runs an endless stage with gore off (nobody cut apart, not a drop of blood)
+/// defaults (floor hints off, a Medium panel, gore on), that what is drawn over a foe's head stays on the lane at every
+/// size (a gourd-bearer's pips and marker clear of his gourd) and that a word slammed onto the lane stays under the
+/// combo, grows the panel from its default corner and folds it there and back without it leaving the screen, shows what
+/// a new player first sees, makes the first cut and a whiff with real left and right mouse-button events, lets the
+/// autopilot clear stage 1 and checks that its dead fall on under the card, folds into the pill and back and changes
+/// the size with the dead still lying there, advances from the banner, shows a new foe's card and checks it follows a
+/// resize, fights a warlord (his bar in the header, his blow coming, a cut into his set guard bound on his blade),
+/// switches to Oni and rides a combo into bloodlust, falls and starts again from stage 1, switches back and finds
+/// Bushidō's stage and hearts kept, runs an endless stage with gore off (nobody cut apart, not a drop of blood)
 /// straight into the next, checks that dragging the window holds the fight still and that a stage won with the pointer
 /// away does not start the next behind its back, folds into the pill and back, checks that leaving pauses and gives the
 /// keys back (so a key typed elsewhere does nothing) and that coming back takes the dwell, and checks the save. Exits
@@ -60,6 +61,7 @@ enum SelfTest {
         guard Settings.size == .medium else { throw Failure("the panel was not Medium by default") }
         guard Settings.gore else { throw Failure("gore was off by default") }
         try checkOverhead()
+        try checkSlams()
         panel.setCompact(false)
         panel.setSize(.medium)
 
@@ -193,6 +195,38 @@ enum SelfTest {
             try await pause(0.02)
         }
         if session.fight.boss?.phase == .windup { try snapshot("7b-warlord-windup", panel) } else { print("no warlord wind-up to show") }
+        // A cut into his set guard, with the real button: parried, the blades bind where they cross, sparks and all
+        // (not taken if his guard is not set in reach within a few seconds; only from far enough out that he does not
+        // answer it, so the rest of his fight is as it would have been).
+        let parried = session.fight.stats.parried, clashes = scene.clashesDrawn, wounds = session.fight.stats.damage
+        var opening: Side?
+        let waiting = Date()
+        while Date().timeIntervalSince(waiting) < 6, session.fight.outcome == nil, opening == nil {
+            let fight = session.fight
+            if let boss = fight.boss, boss.guardSet, boss.distance > boss.contact + 0.07, !fight.isStumbling, fight.cooldown == 0,
+               fight.target(boss.side) == .foe(boss.id) {
+                opening = boss.side
+            } else {
+                try await pause(0.02)
+            }
+        }
+        if let side = opening {
+            click(side, panel)
+            guard session.fight.stats.parried == parried + 1, session.fight.isStumbling else { throw Failure("a cut into the warlord's set guard was not parried") }
+            let binding = Date()
+            while scene.clashesDrawn == clashes, Date().timeIntervalSince(binding) < 1, session.fight.stats.damage == wounds {
+                try await pause(0.01)
+            }
+            if scene.clashesDrawn > clashes {
+                try snapshot("7c-warlord-clash", panel)
+            } else if session.fight.stats.damage == wounds {
+                throw Failure("a parried cut never met the warlord's blade")
+            } else {
+                print("the ronin was struck before his parried cut met the warlord's blade")
+            }
+        } else {
+            print("no set guard in reach to cut into")
+        }
         scene.timeScale = 3
         try await until("stage 5 ended", timeout: 40) { session.fight.outcome != nil }
         guard session.fight.outcome == .victory else { throw Failure("the autopilot lost to the warlord") }
@@ -362,6 +396,25 @@ enum SelfTest {
                             throw Failure("the marker over a \(kind.title)'s gourd at \(option.title) comes down to \(ring), onto the gourd (its top at \(marks.gourd.maxY))")
                         }
                     }
+                }
+            }
+        }
+    }
+
+    /// At every size, with a warlord on the lane or not, a word slammed onto the lane (BLOODLUST, 25 HITS) sits under
+    /// the combo's number, its plate never across it, and above the ground.
+    @MainActor
+    private static func checkSlams() throws {
+        for option in Settings.Size.allCases {
+            let lane = DuelScene.lane(in: PanelController.contentSize(option))
+            let top = lane.field.maxY, fs = DuelScene.textScale(lane.field)
+            for boss in [false, true] {
+                let number = DuelScene.comboY(top: top, fs: fs, boss: boss) - DuelScene.comboDrop * fs
+                let middle = DuelScene.slamY(field: lane.field, top: top, fs: fs, boss: boss)
+                let plate = (low: middle - DuelScene.slamHalf * fs, high: middle + DuelScene.slamHalf * fs)
+                guard plate.high <= number, plate.low >= lane.groundY else {
+                    throw Failure("a word slammed onto the lane at \(option.title)\(boss ? " with a warlord" : "") spans \(plate.low)...\(plate.high): "
+                        + "the combo's number comes down to \(number), the ground is at \(lane.groundY)")
                 }
             }
         }

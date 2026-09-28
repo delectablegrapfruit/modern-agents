@@ -77,6 +77,19 @@ final class DuelScene: SKScene {
     private var swingUntil = 0.0
     /// Foes held for a wounding blade still on its way, until when: whatever the blow sends them into starts then.
     private var heldUntil: [Int: Double] = [:]
+    /// A cut bound on the warlord's blade (`followBind`): on whom, which way, whether it was parried (rather than
+    /// glancing off a guard still rising), and where the ronin's feet are in the bind (points from his place); and the
+    /// ronin's frame when last looked at, for the moments the blades meet and part.
+    private struct Bind {
+        let foe: Int
+        let side: Side
+        let parried: Bool
+        let spot: CGFloat
+    }
+    private var bind: Bind?
+    private var bindShown: Frame?
+    /// How many times the blades have been drawn meeting in a bind (the self-test catches one).
+    private(set) var clashesDrawn = 0
 
     private var field = CGRect(x: 0, y: 0, width: 420, height: 126)
     private var groundY: CGFloat = 20
@@ -91,7 +104,7 @@ final class DuelScene: SKScene {
     /// How much blood there is now: the stage's, or bloodlust's, or none with gore turned off.
     private var gore: Gore { Gore.of(stage: session.fight.stage, bloodlust: session.fight.inBloodlust, on: goreOn) }
     /// Text scale: 1 on the medium panel.
-    private var fs: CGFloat { max(0.85, min(1.25, field.height / 126)) }
+    private var fs: CGFloat { DuelScene.textScale(field) }
 
     // Back to front.
     private let scenery = SKNode()
@@ -345,6 +358,7 @@ final class DuelScene: SKScene {
         arrowSprites = [:]
         gourdSpots = [:]
         heldUntil = [:]
+        bind = nil
         fx.removeAllChildren()
         overlay.removeAllChildren()
         overlay.removeAllActions()
@@ -570,6 +584,24 @@ final class DuelScene: SKScene {
     }
 
     func laneX(_ x: Double) -> CGFloat { field.midX + CGFloat(x) * field.width / 2 }
+
+    /// Where the combo's number sits (its middle, in points up a scene whose lane ends at `top`, at text scale `fs`):
+    /// near the top of the lane, lower while the warlord is on it, clear of the warning marker over his head.
+    static func comboY(top: CGFloat, fs: CGFloat, boss: Bool) -> CGFloat { top - (boss ? 34 : 24) * fs }
+
+    /// How far the combo's number reaches below its middle at its largest (popping, its shadow under it), and a word
+    /// slammed onto the lane either side of its middle (its plate, swelling as it goes), at text scale 1.
+    static let comboDrop: CGFloat = 14
+    static let slamHalf: CGFloat = 17.5
+
+    /// Where a word slammed onto the lane sits (its middle): two thirds of the way up the lane, or lower, so that its
+    /// plate always stays under the combo's number (`comboY`), never across it, at every size.
+    static func slamY(field: CGRect, top: CGFloat, fs: CGFloat, boss: Bool) -> CGFloat {
+        min(field.minY + field.height * 0.64, comboY(top: top, fs: fs, boss: boss) - (comboDrop + slamHalf + 2) * fs)
+    }
+
+    /// The text scale for a lane `field` (1 on the medium panel).
+    static func textScale(_ field: CGRect) -> CGFloat { max(0.85, min(1.25, field.height / 126)) }
 
     /// Where the scene draws a lane position, at the height of a figure's middle.
     func point(lane x: Double) -> CGPoint { CGPoint(x: laneX(x), y: groundY + ronin * 0.5) }
@@ -1035,6 +1067,9 @@ final class DuelScene: SKScene {
     /// his swing is running on through a freeze).
     private func sync(_ dt: Double, hero heroDT: Double? = nil) {
         let fight = session.fight
+        // (A warlord bound on the ronin's blade is kept in step with him before he is drawn, and again once the ronin
+        // has moved on a frame, so the two bind and part on the same frame.)
+        followBind()
         var live = Set<Int>()
         for foe in fight.foes where foe.alive {
             live.insert(foe.id)
@@ -1082,6 +1117,7 @@ final class DuelScene: SKScene {
         // Down to his last hearts, the ronin's guard sags and heaves; on the last, worse.
         hero.strain = HeroSprite.strain(hp: fight.hp, of: fight.maxHP)
         hero.update(dt: heroDT ?? dt, bloodlust: fight.inBloodlust)
+        followBind()
         refreshHUD()
     }
 
@@ -1118,14 +1154,13 @@ final class DuelScene: SKScene {
         }
         let showCombo = fight.combo >= 3 && fight.outcome == nil
         for node in [comboLabel, comboShadow] as [SKNode] { node.isHidden = !showCombo }
-        // Over a word slammed onto the lane the number needs no haze of its own (the word's plate is dark), and the
-        // haze would darken the word.
-        comboBack.isHidden = !showCombo || slamNode != nil
+        comboBack.isHidden = !showCombo
         // The multiplier only once it multiplies.
         comboTimes.isHidden = !showCombo || fight.multiplier < 2
         let boss = fight.boss
-        // Lower while the warlord is on the lane, clear of the warning marker over his head.
-        let comboY = top - (boss != nil ? 34 : 24) * fs
+        let comboY = DuelScene.comboY(top: top, fs: fs, boss: boss != nil)
+        // A word slammed onto the lane stays under the number (the warlord arriving or the panel resized under it too).
+        slamNode?.position.y = DuelScene.slamY(field: field, top: top, fs: fs, boss: boss != nil)
         comboLabel.position = CGPoint(x: field.midX, y: comboY)
         comboShadow.position = CGPoint(x: field.midX + 1.5, y: comboY - 1.5)
         comboTimes.position = CGPoint(x: field.midX + comboLabel.frame.width / 2 + 4, y: comboY - 3 * fs)
@@ -1266,6 +1301,11 @@ final class DuelScene: SKScene {
 
     private func handle(_ event: FightEvent) {
         let fight = session.fight
+        // Whatever the ronin does next (another cut, a blow taken) ends a clash he was bound in.
+        switch event {
+        case .cut, .whiff, .deflected, .parried, .wounded: letGoOfBind()
+        default: break
+        }
         switch event {
         case .cut(let side, let id, let killed):
             guard let sprite = foeSprites[id] else { return }
@@ -1389,43 +1429,27 @@ final class DuelScene: SKScene {
             // and rings as it sets.
             break
         case .parried(let side, let id):
-            if !fight.isStumbling {
-                // A glance: the cut met his guard still coming up and slid off it. Nothing is lost on either side: the
-                // ronin's swing plays out, sparks fly where it meets the rising blade, and the guard goes on up.
-                guard let sprite = foeSprites[id] else { return }
-                let distance = abs(sprite.position.x - heroX)
-                let style = chooseCut(sprite.kind, distance: distance)
-                if style == .nukitsuke { drawFlash(side) }
-                hero.cut(side, style, distance: distance)
-                let delay = HeroSprite.impact(style)
-                swingUntil = clock + delay
-                later(delay) { [self] in
-                    sprite.showParry(glanced: true)
-                    let p = CGPoint(x: sprite.position.x - side.sign.cg * ronin * 0.28, y: groundY + ronin * 0.62)
-                    fx.addChild(at(p, Art.burst(Palette.gold, count: 12, speed: ronin * 2, size: ronin * 0.05, life: 0.22,
-                                                spread: 1.1, angle: side == .right ? .pi : 0)))
-                    hitStop = max(hitStop, 0.03)
-                }
+            let parried = fight.isStumbling
+            guard let sprite = foeSprites[id] else {
+                if parried { hero.repel(side, for: fight.stumble) }
                 return
             }
-            // Parried: steel on steel, sparks where the blades met, the ronin thrown back, the warlord unmoved.
-            hero.repel(side, for: fight.stumble)
-            guard let sprite = foeSprites[id] else { return }
-            sprite.showParry(glanced: false)
-            let p = CGPoint(x: sprite.position.x - side.sign.cg * ronin * 0.28, y: groundY + ronin * 0.62)
-            fx.addChild(at(p, Art.burst(Palette.gold, count: 26, speed: ronin * 2.4, size: ronin * 0.06, life: 0.3,
-                                        spread: 1.1, angle: side == .right ? .pi : 0)))
-            fx.addChild(at(p, Art.burst(.white, count: 10, speed: ronin * 3.2, size: ronin * 0.08, life: 0.16)))
-            fx.addChild(at(p, Art.shockwave(Palette.steel, radius: ronin * 0.1, grow: 4, width: 2, duration: 0.25)))
-            // Over his head, a gold ⊗, not the grey ✕ of a miss: the guard turned it (wait for it to drop).
-            let blocked = Icons.blocked(ronin * 0.24, Palette.gold.mix(.white, 0.2).color())
-            blocked.position = CGPoint(x: heroX, y: groundY + ronin * 1.2)
-            blocked.setScale(0.4)
-            overlay.addChild(blocked)
-            blocked.run(.sequence([.scale(to: 1, duration: 0.08), .wait(forDuration: 0.3),
-                                   .group([.fadeOut(withDuration: 0.25), .moveBy(x: 0, y: 6, duration: 0.25)]), .removeFromParent()]))
-            hitStop = max(hitStop, 0.06)
-            shake(2)
+            // The cut is carried on into his blade and stops dead on it in the bind, the ronin stood where the two
+            // blades meet (`Figure.clashGap` from him), the warlord holding his guard for it. Parried (the guard was
+            // set), the ronin is then forced off the blade and backs off out of reach, the warlord shoving it off on
+            // the same beat; glancing off a guard still rising, the clash is lighter and the ronin only draws back out
+            // of it. The moments the blades meet and part are drawn as the ronin's frames reach them (`followBind`).
+            let x = sprite.standing
+            let style = chooseCut(sprite.kind, distance: abs(x - heroX), guarded: true)
+            if style == .nukitsuke { drawFlash(side) }
+            let spot = x - side.sign.cg * Figure.clashGap() * ronin - heroX
+            let timing = hero.clash(side, style, at: spot, for: fight.stumble, forced: parried)
+            // His swing carries on through the freeze on the bind until his feet are set in it.
+            swingUntil = clock + timing.impact + timing.settle
+            bind = Bind(foe: id, side: side, parried: parried, spot: spot)
+            bindShown = hero.drawnFrame
+            sprite.bind(.block)
+            if let mine = Figure.contact(.hero, .clash(0)) { dash(to: heroX + spot + side.sign.cg * mine.x * ronin, side: side) }
         case .summoned(let id, _):
             // A roar, and men come running in from both ends of the lane.
             if let sprite = foeSprites[id] {
@@ -1559,6 +1583,137 @@ final class DuelScene: SKScene {
                                     spread: spread, angle: angle, gravity: ronin * gravity, additive: additive, texture: texture)))
     }
 
+    // MARK: A clash with the warlord
+
+    /// How long of the warlord's wind-up to a parried cut's answer must be left for it to wait out the clash: an answer
+    /// coming sooner lets go of the bind as soon as the freeze on it is over, so the blade going up is seen.
+    private static let answerSeen = 0.12
+
+    /// Keeps a warlord bound on the ronin's blade in step with the ronin: his guard held where he stands while the cut
+    /// comes, then the frame of the clash the ronin is in, so the two bind and part on the same beats (and the freeze on
+    /// the bind has them crossed); let go once the ronin is out of it, or once the freeze on the bind is over if his
+    /// answer to a parried cut is coming too fast to wait. The blades meeting and parting are drawn as the ronin's
+    /// frames reach them.
+    private func followBind() {
+        guard let b = bind else { return }
+        let frame = hero.drawnFrame
+        if frame != bindShown {
+            bindShown = frame
+            if frame == .clash(0) { bladesMeet(b) }
+            if frame == .clash(1), b.parried { bladesPart(b) }
+        }
+        guard let sprite = foeSprites[b.foe] else {
+            bind = nil
+            return
+        }
+        var held: Frame?
+        switch frame {
+        case .cut: held = .block
+        case .clash(let k): held = .clash(k)
+        default: held = nil
+        }
+        if case .clash? = held, hitStop <= 0, let foe = session.fight.foe(b.foe), foe.phase == .windup, foe.timer < DuelScene.answerSeen {
+            held = nil
+        }
+        sprite.bind(held)
+        if held == nil { bind = nil }
+    }
+
+    /// Ends a clash, letting go of the warlord (whatever the fight has him doing shows).
+    private func letGoOfBind() {
+        if let b = bind { foeSprites[b.foe]?.bind(nil) }
+        bind = nil
+    }
+
+    /// Which way (radians, on the lane) a figure's blade runs from where it meets another's to its point, the figure
+    /// facing `facing` (+1 right), and how far that is (points).
+    private func bladeRun(_ cast: Cast, _ frame: Frame, facing: CGFloat) -> (angle: CGFloat, length: CGFloat) {
+        guard let c = Figure.contact(cast, frame), let t = Figure.tip(cast, frame) else { return (facing > 0 ? 0.7 : .pi - 0.7, ronin * 0.4) }
+        return (atan2(t.y - c.y, facing * (t.x - c.x)), hypot(t.x - c.x, t.y - c.y) * ronin * Build.of(cast).height)
+    }
+
+    /// The blades meeting in the bind, where they cross (`Figure.contact`). Parried: steel on steel, a white-hot flash
+    /// and a glint running out along each blade, sparks sprayed off along both and showering down, the blade's ring
+    /// spreading from it, the lane flashing pale and pushed in toward it and shaken, the warlord's ward flaring, a
+    /// freeze on it, and a gold ⊗ over the ronin (the guard turned it: wait for it to drop). Glancing off a guard still
+    /// rising: a lighter clash, a few sparks, a small ring, a short freeze, nothing lost. With Reduce Motion the freeze
+    /// is shorter, the flashes fainter, and the lane barely moves.
+    private func bladesMeet(_ b: Bind) {
+        clashesDrawn += 1
+        let sign = b.side.sign.cg, strong = b.parried
+        let cast = foeSprites[b.foe]?.cast ?? .foe(.warlord)
+        let mine = Figure.contact(.hero, .clash(0)) ?? CGPoint(x: 0.47, y: 1)
+        let p = CGPoint(x: heroX + b.spot + sign * mine.x * ronin, y: groundY + mine.y * ronin)
+        let hot = Palette.gold.mix(.white, 0.35)
+        fx.addChild(at(p, Art.flash(.white, size: ronin * (strong ? 1.6 : 0.9), duration: strong ? 0.18 : 0.1, alpha: calm ? 0.55 : 1)))
+        // Along the ronin's blade and the warlord's (facing him), out from where they cross toward the points.
+        for (angle, length) in [bladeRun(.hero, .clash(0), facing: sign), bladeRun(cast, .clash(0), facing: -sign)] {
+            // (Brightest four fifths of the way along: run out to the point as it grows.)
+            let glint = SKSpriteNode(texture: Art.streak)
+            glint.anchorPoint = CGPoint(x: 0, y: 0.5)
+            glint.size = CGSize(width: length * (strong ? 1.1 : 0.8), height: max(5, ronin * 0.09))
+            glint.position = p
+            glint.zRotation = angle
+            glint.color = Palette.steel.mix(.white, 0.6).color()
+            glint.colorBlendFactor = 1
+            glint.blendMode = .add
+            glint.xScale = 0.3
+            glint.run(.sequence([.group([.scaleX(to: 1.2, duration: 0.1), .fadeOut(withDuration: strong ? 0.18 : 0.1)]), .removeFromParent()]))
+            fx.addChild(glint)
+            for k in 0..<(strong ? 3 : 1) {
+                let out = ronin * 0.09 * CGFloat(k)
+                fx.addChild(at(CGPoint(x: p.x + cos(angle) * out, y: p.y + sin(angle) * out),
+                               Art.burst(hot, count: strong ? 10 - 2 * k : 6, speed: ronin * (strong ? 2.6 : 1.7), size: ronin * (strong ? 0.05 : 0.04),
+                                         life: strong ? 0.34 : 0.2, spread: 0.45, angle: angle, gravity: ronin * 5)))
+            }
+        }
+        // Hot fragments every way, and the blade's ring.
+        fx.addChild(at(p, Art.burst(.white, count: strong ? 14 : 5, speed: ronin * (strong ? 3.4 : 2.4), size: ronin * 0.055, life: strong ? 0.16 : 0.12)))
+        fx.addChild(at(p, Art.shockwave(Palette.steel, radius: ronin * 0.05, grow: strong ? 6 : 3.5, width: strong ? 2.2 : 1.3,
+                                        duration: strong ? 0.3 : 0.2)))
+        guard strong else {
+            // Slid off a guard still coming up: it goes on up, and nothing is lost either side.
+            foeSprites[b.foe]?.showParry(glanced: true)
+            hitStop = max(hitStop, calm ? 0.02 : 0.03)
+            shake(0.8)
+            return
+        }
+        fx.addChild(at(p, Art.shockwave(hot, radius: ronin * 0.05, grow: 10, width: 1, duration: 0.5)))
+        fx.addChild(at(p, Art.burst(Palette.gold, count: 16, speed: ronin * 0.9, size: ronin * 0.04, life: 0.6, spread: 1.4, angle: -.pi / 2,
+                                    gravity: ronin * 7)))
+        focus(at: p, size: ronin * 2.6, color: .white, alpha: 0.4)
+        flashLane(0.1, fade: 0.2, color: Palette.steel)
+        foeSprites[b.foe]?.showParry(glanced: false)
+        let blocked = Icons.blocked(ronin * 0.24, Palette.gold.mix(.white, 0.2).color())
+        blocked.position = CGPoint(x: heroX + b.spot, y: groundY + ronin * 1.25)
+        blocked.setScale(0.4)
+        overlay.addChild(blocked)
+        blocked.run(.sequence([.scale(to: 1, duration: 0.08), .wait(forDuration: 0.3),
+                               .group([.fadeOut(withDuration: 0.25), .moveBy(x: 0, y: 6, duration: 0.25)]), .removeFromParent()]))
+        hitStop = max(hitStop, calm ? 0.04 : 0.065)
+        shake(2.4)
+        punch(0.035, at: p)
+    }
+
+    /// The parried ronin forced off the warlord's blade, his own scraped up along it and off: sparks running out along
+    /// the warlord's blade toward its point, a flash and a ring where they part, and the lane jolted.
+    private func bladesPart(_ b: Bind) {
+        let sign = b.side.sign.cg
+        let cast = foeSprites[b.foe]?.cast ?? .foe(.warlord)
+        let mine = Figure.contact(.hero, .clash(1)) ?? CGPoint(x: 0.12, y: 1.24)
+        let p = CGPoint(x: heroX + b.spot + sign * mine.x * ronin, y: groundY + mine.y * ronin)
+        let angle = bladeRun(cast, .clash(1), facing: -sign).angle
+        fx.addChild(at(p, Art.flash(Palette.steel, size: ronin * 0.8, duration: 0.1, alpha: calm ? 0.45 : 0.8)))
+        for k in 0..<3 {
+            let out = ronin * 0.07 * CGFloat(k)
+            fx.addChild(at(CGPoint(x: p.x + cos(angle) * out, y: p.y + sin(angle) * out),
+                           Art.burst(Palette.gold.mix(.white, 0.25), count: 7 - k, speed: ronin * 2.2, size: ronin * 0.045, life: 0.28,
+                                     spread: 0.5, angle: angle, gravity: ronin * 5)))
+        }
+        fx.addChild(at(p, Art.shockwave(Palette.steel, radius: ronin * 0.04, grow: 3.5, width: 1.2, duration: 0.2)))
+        shake(1.4)
+    }
+
     /// The ronin's blade crossing the gap to a foe: a hot streak along the ground line.
     private func dash(to x: CGFloat, side: Side) {
         let distance = abs(x - heroX)
@@ -1590,14 +1745,16 @@ final class DuelScene: SKScene {
 
     /// A cut to suit what is in front of him, never the same one twice running. The first of a stage is drawn from the
     /// scabbard (nukitsuke); then a thrust or a stamping shōmen to close a long gap, shōmen and kesa-giri for the big
-    /// ones, shin cuts and rising cuts for the quick and low, level and diagonal cuts to meet an arrow.
-    private func chooseCut(_ kind: Kind?, distance: CGFloat) -> Cut {
+    /// ones, shin cuts and rising cuts for the quick and low, level and diagonal cuts to meet an arrow. Into a guard
+    /// (`guarded`), one that comes down onto the blade held up across him, to bind on it: shōmen or kesa-giri.
+    private func chooseCut(_ kind: Kind?, distance: CGFloat, guarded: Bool = false) -> Cut {
         if hero.sheathed {
             lastCut = .nukitsuke
             return .nukitsuke
         }
         let options: [Cut]
-        if kind == nil { options = [.dou, .kesa, .gyaku] }
+        if guarded { options = [.shomen, .kesa] }
+        else if kind == nil { options = [.dou, .kesa, .gyaku] }
         else if distance > ronin * 0.9 { options = [.tsuki, .shomen] }
         else if kind == .brute || kind == .warlord { options = [.shomen, .kesa, .dou] }
         else if kind == .runner || kind == .dancer { options = [.sune, .gyaku, .dou] }
@@ -1814,15 +1971,16 @@ final class DuelScene: SKScene {
     }
 
     /// Big text slammed onto the lane, on a dark plate, with an optional pictogram before it, held `hold` seconds.
-    /// It goes under the combo and every warning marker (a blow coming is never covered), its glow behind its plate;
-    /// a new one takes the place of the last. With Reduce Motion it drops in from nearer.
+    /// It sits below the combo's number, clear of it (`slamY`), and is drawn under it and every warning marker (a blow
+    /// coming is never covered), its glow behind its plate; a new one takes the place of the last. With Reduce Motion
+    /// it drops in from nearer.
     private func slam(_ text: String, color: RGB, icon: SKNode? = nil, hold: TimeInterval = 0.65) {
         if let old = slamNode {
             old.removeAllActions()
             old.run(.sequence([.fadeOut(withDuration: 0.08), .removeFromParent()]))
         }
         let node = SKNode()
-        node.position = CGPoint(x: field.midX, y: field.minY + field.height * 0.64)
+        node.position = CGPoint(x: field.midX, y: DuelScene.slamY(field: field, top: top, fs: fs, boss: session.fight.boss != nil))
         let label = Art.label(Art.headingFont, size: 20 * fs, color: color.color())
         Art.track(label, text, 4 * fs)
         let iconWidth: CGFloat = icon == nil ? 0 : 24 * fs
