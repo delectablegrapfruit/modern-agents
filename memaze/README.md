@@ -22,6 +22,11 @@ No build step, no dependencies: plain HTML/CSS/JS, plus an optional Python serve
 - **Your media sits still in the middle of the screen, upright and unchanged. You move the maze.** Drag anywhere: the
   maze follows your finger or mouse 1:1 and stops when you stop. WASD/arrows and a gamepad move at a steady speed.
   Settings can invert the drag and change its speed.
+- **With a mouse, no need to keep clicking and dragging** (Settings → Mouse): **Glide** (default) steers with the
+  pointer: you head toward it, faster the further it is from your picture, and stop when it rests on your picture or
+  leaves the window (a small chevron shows the way you're heading; click-and-drag still works). **Lock** captures the
+  mouse with one click (pointer lock): just move it and the maze follows 1:1; Esc lets go and pauses. **Drag** is
+  click-and-drag only.
 - **The paths float over nothing.** Reach **GOAL** and your *win* media plays.
 - **Two hits, like the shields in Bungie's Halo.** Touching the edge breaks your shield: you stop right at the edge,
   the game freezes for a split second, the view shakes, electric sparks burst from your picture as it jolts, and phones

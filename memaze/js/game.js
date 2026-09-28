@@ -7,6 +7,7 @@
   const R = Gen.BALL_R;
 
   const KEY_SPEED = 140; // keys and gamepad, world units per second
+  const GLIDE = 230;     // mouse Glide at full tilt (pointer far from the picture), world units per second
   const VIEW = 0.12;     // the player's box fills this much of the screen's shorter side (the widest view: zoom only goes in)
   const MAX_ZOOM = 4;    // how far pinch, wheel and +/- zoom in
   const BUFFER = 0.035;  // hitbox forgiveness: solid pixels may reach this far (share of the box) over the edge
@@ -226,6 +227,7 @@
       this.sprite = new MZ.Sprite(MZ.$('#player-canvas'));
       this.input.onZoom = (k) => this.zoomBy(k);
       this.input.onUse = () => this.useItem();
+      this.input.onUnlock = () => { if (this.state === 'play') this.pause(); }; // Esc let the captured mouse go
       Backdrop.init();
       this.applySettings();
       window.addEventListener('resize', () => this.resize());
@@ -247,6 +249,8 @@
       const s = S();
       MZ.Audio.setVolumes({ master: s.audio.master, sfx: s.audio.sfx, music: s.audio.music, media: s.audio.media });
       MZ.Audio.Music.set(s.music.media);
+      this.input.mouseMode = s.controls.mouse || 'glide';
+      if (this.input.mouseMode !== 'lock') this.input.unlock();
       document.documentElement.classList.toggle('reduced-motion', s.display.reducedMotion);
       document.documentElement.classList.toggle('reduce-flash', s.display.reduceFlash);
       Player.apply();
@@ -476,7 +480,7 @@
       this.state = st;
       this.stateT = 0;
       this.input.enabled = st === 'play';
-      if (st !== 'play') this.input.release();
+      if (st !== 'play') { this.input.release(); this.input.unlock(); }
       this.input.takeGrab(); // drop finger travel from before (the maze would jump)
       document.body.dataset.state = st;
       this.emit('state', st);
@@ -548,7 +552,8 @@
       this.carry(dt);
       const d = inp.takeGrab(), u = inp.vector();
       const sg = cfg.invert !== this.mod('mirror') ? 1 : -1, k = clamp(cfg.speed || 1, 0.5, 2) / this.cam.zoom;
-      let mx = d.x * sg * k + u.x * KEY_SPEED * dt, my = d.y * sg * k + u.y * KEY_SPEED * dt;
+      const gl = this.glideVec(), gk = GLIDE * clamp(cfg.speed || 1, 0.5, 2) * (this.mod('mirror') ? -1 : 1) * dt;
+      let mx = d.x * sg * k + u.x * KEY_SPEED * dt + gl.x * gk, my = d.y * sg * k + u.y * KEY_SPEED * dt + gl.y * gk;
       const free = fx.carpet > 0; // the magic carpet floats over the void
       // Ice: your movement only slowly catches up with your drag, and keeps sliding after you stop.
       if (dt > 0) {
@@ -666,6 +671,27 @@
     shieldLook() { return this.hp >= HEARTS ? 1 : this.recharging() ? 0.45 + 0.55 * clamp((this.hurtT - REGEN + RECHARGE) / RECHARGE, 0, 1) : 0.45; },
     boxesOn() { return S().gameplay.boxes && this.mode !== 'trial'; }, // Time Trial has no mystery boxes
     shielded() { const fx = this.fx; return this.guardT > 0 || this.stuck || fx.star > 0 || !!fx.bullet || !!fx.launch || !!fx.bubble || this.building(); },
+    // Mouse Glide: where the pointer says to head (|v| <= 1). The picture's own area is a rest spot.
+    glideVec() {
+      const css = this.box() * this.cam.zoom;
+      return (this.glide = this.input.glide(innerWidth / 2, innerHeight / 2, Math.max(24, css * 0.6), Math.min(innerWidth, innerHeight) * 0.3));
+    },
+    // ...shown as a small chevron at the picture's edge pointing the way, stronger the faster you glide.
+    drawGlide(css, v) {
+      const m = Math.hypot(v.x, v.y);
+      if (m < 0.03 || this.state !== 'play') return;
+      const g = this.renderer.ctx, dpr = this.renderer.dpr, a = Math.atan2(v.y, v.x), r = Math.max(24, css * 0.6) + 10;
+      g.save();
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      g.translate(this.renderer.w / 2 + Math.cos(a) * r, this.renderer.h / 2 + Math.sin(a) * r);
+      g.rotate(a);
+      g.globalAlpha = 0.25 + 0.6 * m;
+      g.lineCap = 'round'; g.lineJoin = 'round';
+      g.beginPath(); g.moveTo(-6, -9); g.lineTo(4, 0); g.lineTo(-6, 9);
+      g.strokeStyle = 'rgba(0,0,0,0.45)'; g.lineWidth = 7; g.stroke();
+      g.strokeStyle = '#fff'; g.lineWidth = 3.5; g.stroke();
+      g.restore();
+    },
     // A loss shatters the picture; spawning in, the pieces fly back together (you can already move, and nothing hurts).
     shatter() {
       if (S().display.reducedMotion) return false;
@@ -1166,9 +1192,9 @@
       const L = fx.launch;
       L.t = Math.min(L.T, L.t + dt);
       const cfg = S().controls, u = this.input.vector(), sg = cfg.invert !== this.mod('mirror') ? 1 : -1, k = clamp(cfg.speed || 1, 0.5, 2) / this.cam.zoom;
-      const kz = KEY_SPEED / this.liftZoom(); // keys keep their speed on screen
-      b.x += grab.x * sg * k + u.x * kz * dt;
-      b.y += grab.y * sg * k + u.y * kz * dt;
+      const kz = KEY_SPEED / this.liftZoom(), gl = this.glideVec(), gz = (GLIDE * clamp(cfg.speed || 1, 0.5, 2) * (this.mod('mirror') ? -1 : 1)) / this.liftZoom(); // keys and Glide keep their speed on screen
+      b.x += grab.x * sg * k + u.x * kz * dt + gl.x * gz * dt;
+      b.y += grab.y * sg * k + u.y * kz * dt + gl.y * gz * dt;
       const ox = b.x - L.from.x, oy = b.y - L.from.y, od = Math.hypot(ox, oy); // no further than the clouds
       if (od > REACH) { b.x = L.from.x + (ox / od) * REACH; b.y = L.from.y + (oy / od) * REACH; }
       if (L.t < L.T) return;
@@ -1569,6 +1595,7 @@
         pl.style.transform = lift ? 'translate(-50%,calc(-50% - ' + (lift * Math.min(innerWidth, innerHeight) * HOP).toFixed(1) + 'px))' : 'translate(-50%,-50%)';
         if (this.pieces) this.drawPieces(css);
         if (fx.storm) this.drawStorm(css, fx.storm);
+        if (this.glide && !this.pieces) this.drawGlide(css, this.glide);
         if (this.formedAt != null && this.t - this.formedAt < 0.3) this.drawFormed(css, (this.t - this.formedAt) / 0.3);
         pl.style.visibility = this.pieces ? 'hidden' : ''; // in pieces: those are drawn instead
         // Health shows on the picture only: on a hit the shield flares and the picture jolts; it blinks while the edges

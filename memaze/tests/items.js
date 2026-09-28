@@ -105,6 +105,34 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     check('an edge touch and a drag into it in the same frame cost one hit', G.hp === 1 && G.state === 'play' && !events.some((e) => e.startsWith('lose')), events.join());
     G.quit();
 
+    // ----- mouse: Glide steers toward the pointer without a click; Lock drags without a button -----
+    G.startJourney(1);
+    S.controls.mouse = 'glide'; G.applySettings();
+    const stg = MZ.$('#stage'), hover = (x, y) => stg.dispatchEvent(new PointerEvent('pointermove', { pointerType: 'mouse', pointerId: 1, isPrimary: true, button: -1, buttons: 0, clientX: x, clientY: y, bubbles: true }));
+    const fwd = G.maze.nodes[G.maze.mainPath[1]], g0x = G.ball.x, g0y = G.ball.y, fl = Math.hypot(fwd.x - g0x, fwd.y - g0y);
+    const fdir = { x: (fwd.x - g0x) / fl, y: (fwd.y - g0y) / fl };
+    hover(innerWidth / 2 + fdir.x * 300, innerHeight / 2 + fdir.y * 300); // the pointer well ahead, along the corridor
+    run(0.5);
+    const glided = (G.ball.x - g0x) * fdir.x + (G.ball.y - g0y) * fdir.y;
+    check('Glide: you head toward the mouse pointer, no button held', glided > 40 && !G.input.drag, Math.round(glided));
+    hover(innerWidth / 2 + 3, innerHeight / 2 - 2); // resting on the picture
+    const r0x = G.ball.x, r0y = G.ball.y;
+    run(0.3);
+    check('...and stop with the pointer resting on your picture', Math.hypot(G.ball.x - r0x, G.ball.y - r0y) < 0.5);
+    hover(innerWidth / 2 + fdir.x * 300, innerHeight / 2 + fdir.y * 300);
+    stg.dispatchEvent(new PointerEvent('pointerleave', { pointerType: 'mouse', pointerId: 1, bubbles: false }));
+    const l0x = G.ball.x, l0y = G.ball.y;
+    run(0.3);
+    check('...or with the pointer off the window', Math.hypot(G.ball.x - l0x, G.ball.y - l0y) < 0.5);
+    S.controls.mouse = 'lock'; G.applySettings();
+    G.input.locked = true; // (a real browser captures the mouse on a click; headless it's pretended)
+    const gx0 = G.input.grabDX;
+    stg.dispatchEvent(new PointerEvent('pointermove', { pointerType: 'mouse', pointerId: 1, isPrimary: true, buttons: 0, movementX: 25, movementY: 0, clientX: 10, clientY: 10, bubbles: true }));
+    check('Lock: with the mouse captured, moving it drags the maze, no button held', G.input.grabDX - gx0 === 25);
+    G.input.grabDX = 0; G.input.grabDY = 0; G.input.locked = false;
+    S.controls.mouse = 'glide'; G.applySettings();
+    G.quit();
+
     // ----- Path: shows the way -----
     G.startJourney(3);
     G.giveItem('path');

@@ -1,6 +1,11 @@
 /* Memaze — input. The player stays at the centre of the screen; dragging moves the maze under it 1:1.
  * Keys (WASD/arrows) and a gamepad's left stick or d-pad move it at a steady speed. Pinch or scroll to zoom.
- * A right click uses the item you hold (even mid-drag). */
+ * A right click uses the item you hold (even mid-drag).
+ * With a mouse there's no need to keep clicking and dragging (the Mouse setting):
+ *   glide  (default) the pointer steers: you head toward it, faster the further it is; rest it on your picture to stop.
+ *          Clicking and dragging still works.
+ *   lock   click once and the mouse is captured (pointer lock): moving it drags the maze 1:1, no button held; Esc lets go.
+ *   drag   click and drag only. */
 (function () {
   'use strict';
   const MZ = window.MZ;
@@ -15,6 +20,10 @@
       this.keys = new Set();
       this.onZoom = null;
       this.onUse = null; // right click
+      this.mouseMode = 'glide';
+      this.mouse = null; // Glide: where the mouse pointer is over the stage (null: away, or not a mouse)
+      this.locked = false; // Lock: the mouse is captured
+      this.onUnlock = null;
       this.pinch = null;
 
       el.addEventListener('pointerdown', (e) => this.down(e));
@@ -24,13 +33,19 @@
       el.addEventListener('lostpointercapture', (e) => this.up(e));
       el.addEventListener('wheel', (e) => { if (this.enabled && this.onZoom) { e.preventDefault(); this.onZoom(Math.exp(-e.deltaY * 0.0015)); } }, { passive: false });
       el.addEventListener('contextmenu', (e) => e.preventDefault());
+      el.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') this.mouse = null; });
+      document.addEventListener('pointerlockchange', () => {
+        const was = this.locked;
+        this.locked = document.pointerLockElement === this.el;
+        if (was && !this.locked && this.onUnlock) this.onUnlock();
+      });
       window.addEventListener('keydown', (e) => {
         if (e.target && /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
         const k = this.keyDir(e.code);
         if (k) { this.keys.add(e.code); if (this.enabled) e.preventDefault(); }
       });
       window.addEventListener('keyup', (e) => this.keys.delete(e.code));
-      window.addEventListener('blur', () => { this.keys.clear(); this.release(); });
+      window.addEventListener('blur', () => { this.keys.clear(); this.release(); this.mouse = null; });
       const lifted = (e) => { // the untracked finger from before play is up: the waiting one drags on
         const w = this.pinch && this.pinch.wait;
         if (!w || e.pointerType !== w || this.pointers.has(e.pointerId) || this.pointers.size !== 1) return;
@@ -49,6 +64,7 @@
       if (!this.enabled) return;
       MZ.Audio.unlock();
       if (e.pointerType === 'mouse' && e.button === 2) { if (this.onUse) this.onUse(); return; } // never a drag
+      if (e.pointerType === 'mouse' && this.mouseMode === 'lock') { this.lock(); return; } // captured, the mouse drags without a button
       if (e.isPrimary) { this.pointers.clear(); this.pinch = null; this.drag = null; } // nothing else is down: drop stale fingers
       this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       try { this.el.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
@@ -66,6 +82,10 @@
     }
     move(e) {
       if (this.enabled && e.pointerType === 'mouse' && e.button === 2 && e.buttons & 2 && this.onUse) this.onUse(); // pressed while dragging
+      if (e.pointerType === 'mouse') {
+        if (this.locked) { if (this.enabled) { this.grabDX += e.movementX || 0; this.grabDY += e.movementY || 0; } return; }
+        this.mouse = { x: e.clientX, y: e.clientY };
+      }
       const p = this.pointers.get(e.pointerId);
       if (!p) return;
       p.x = e.clientX; p.y = e.clientY;
@@ -95,6 +115,23 @@
       }
     }
     release() { this.drag = null; }
+    lock() {
+      if (this.locked || !this.el.requestPointerLock) return;
+      try {
+        const r = this.el.requestPointerLock();
+        if (r && r.catch) r.catch(() => { if (MZ.toast) MZ.toast('Mouse lock isn\'t allowed here: try Glide', 2200); });
+      } catch (err) { /* not allowed here */ }
+    }
+    unlock() { if (this.locked && document.exitPointerLock) document.exitPointerLock(); }
+    // Glide: the way to head, |v| <= 1, from the screen centre (cx, cy) toward the pointer: nothing within `dead` px (on
+    // the picture), full speed `range` px beyond that. Not while a button drags.
+    glide(cx, cy, dead, range) {
+      if (this.mouseMode !== 'glide' || !this.mouse || this.drag || this.pinch) return { x: 0, y: 0 };
+      const dx = this.mouse.x - cx, dy = this.mouse.y - cy, d = Math.hypot(dx, dy);
+      if (d <= dead) return { x: 0, y: 0 };
+      const k = Math.pow(Math.min(1, (d - dead) / range), 1.3) / d;
+      return { x: dx * k, y: dy * k };
+    }
 
     // Finger or mouse travel since the last call, in screen pixels.
     takeGrab() {

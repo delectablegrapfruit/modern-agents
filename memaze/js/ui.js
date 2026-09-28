@@ -628,6 +628,8 @@
     settings() {
       return this.panel('Settings', [
         section('Controls',
+          segmented('Mouse', 'controls.mouse', [['glide', 'Glide'], ['lock', 'Lock'], ['drag', 'Drag']], () => this.rebuild()),
+          h('p', { class: 'note' }, { glide: 'Glide: point where to go, no clicking; rest the pointer on your picture to stop. Click and drag still works.', lock: 'Lock: click once and the mouse is captured; just move it (Esc lets go).', drag: 'Drag: click and drag the maze.' }[S().controls.mouse || 'glide']),
           toggle('Invert drag', 'controls.invert'),
           range('Drag speed', 'controls.speed', 0.5, 2, 0.05, times)),
         section('Gameplay',
@@ -666,7 +668,7 @@
     help() {
       return this.panel('How to play', [
         h('ul', { class: 'facts' },
-          h('li', null, 'Drag the maze to move through it.'),
+          h('li', null, 'Drag the maze to move through it. With a mouse you don\'t have to: by default (Glide) you head toward the pointer, faster the further it is, and stop with it resting on your picture. Settings → Mouse also has Lock (click once, then just move the mouse; Esc lets go) and Drag.'),
           h('li', null, 'Touching the edge breaks your shield: your picture turns grey and faded. Touch it again before the shield recharges (5 s once you’re off the edge) and you’re out. Holding against the edge never counts twice. Your picture is the hitbox: transparent parts don’t count.'),
           h('li', null, 'Touch a mystery box to shatter it. With an empty slot you get an item; use it with a right click, Space, E or the button in the corner.'),
           h('ul', { class: 'items' },
