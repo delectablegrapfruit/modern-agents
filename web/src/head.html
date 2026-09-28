@@ -1,0 +1,241 @@
+<title>Ronin</title>
+<style>
+  /* One dark world, as the app is: the panel's own palette (RoninArt's Palette) on the page around it. */
+  :root {
+    color-scheme: dark;
+    --ground: #070506;
+    --panel: #090608;
+    --plate: #0f0b0d;
+    --plate-2: #181215;
+    --ink: #f2ebe0;
+    --ink-soft: rgba(242, 235, 224, 0.62);
+    --ink-faint: rgba(242, 235, 224, 0.14);
+    --gold: #edc26b;
+    --gold-soft: rgba(237, 194, 107, 0.55);
+    --seal: #b81a14;
+    --blood: #db141a;
+    --display: Optima, 'Optima nova', Marcellus, Candara, 'Segoe UI', sans-serif;
+    --text: Optima, 'Optima nova', Candara, 'Segoe UI', 'Gill Sans', system-ui, sans-serif;
+  }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font: 15px/1.45 var(--text);
+    -webkit-font-smoothing: antialiased;
+  }
+  #ronin {
+    box-sizing: border-box;
+    min-height: 100%;
+    padding-inline: 16px;
+    padding-block: 18px 28px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    background: radial-gradient(ellipse at 50% 38%, #1a0d0e 0%, var(--ground) 62%);
+  }
+  .bar {
+    width: 100%;
+    max-width: 1144px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font: 600 17px/1 var(--display);
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+  }
+  .brand .seal {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 3px;
+    background: var(--seal);
+    border: 1px solid rgba(242, 102, 77, 0.6);
+    color: #faeed9;
+    font: 600 16px/1 'Hiragino Mincho ProN', 'Noto Serif JP', 'Yu Mincho', serif;
+    letter-spacing: 0;
+  }
+  .brand small {
+    font: 13px/1 var(--text);
+    letter-spacing: 0.08em;
+    text-transform: none;
+    color: var(--ink-soft);
+  }
+  button { font: inherit; color: inherit; }
+  #menu-button, #show-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--gold-soft);
+    background: var(--plate);
+    color: var(--ink);
+    font: 600 13px/1 var(--display);
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+  #menu-button:hover, #show-button:hover { background: var(--plate-2); border-color: var(--gold); }
+  #menu-button:focus-visible, #show-button:focus-visible, .item:focus-visible, summary:focus-visible, #lane:focus-visible {
+    outline: 2px solid var(--gold);
+    outline-offset: 2px;
+  }
+  .stage-row {
+    width: 100%;
+    max-width: 1144px;
+    display: flex;
+    justify-content: center;
+    position: relative;
+  }
+  #panel-wrap { width: 100%; display: flex; justify-content: center; }
+  #lane {
+    display: block;
+    max-width: 100%;
+    background: var(--panel);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.65), 0 2px 8px rgba(0, 0, 0, 0.5);
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+    transition: opacity 0.25s ease;
+    cursor: crosshair;
+  }
+  #status, #shown-hidden {
+    font: 600 13px/1.4 var(--display);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    padding-block: 40px;
+  }
+  #shown-hidden { display: flex; flex-direction: column; align-items: center; gap: 12px; padding-block: 24px; }
+  #shown-hidden[hidden] { display: none; }
+  #help {
+    margin: 0;
+    max-width: 62ch;
+    text-align: center;
+    font-size: 13.5px;
+    color: var(--ink-soft);
+    text-wrap: balance;
+  }
+  #help kbd {
+    display: inline-block;
+    min-width: 1.4em;
+    padding: 1px 5px;
+    border-radius: 4px;
+    border: 1px solid var(--ink-faint);
+    background: var(--plate);
+    color: var(--ink);
+    font: 12px/1.3 var(--text);
+    text-align: center;
+  }
+  #help b { color: var(--gold); font-weight: 600; }
+  #fail {
+    max-width: 52ch;
+    padding: 18px 20px;
+    border-radius: 10px;
+    border: 1px solid rgba(219, 20, 26, 0.5);
+    background: #160a0b;
+    color: var(--ink);
+    text-align: center;
+  }
+  #fail strong { display: block; font: 600 16px/1.3 var(--display); letter-spacing: 0.1em; text-transform: uppercase; color: #f4a09a; margin-bottom: 6px; }
+  #fail span { color: var(--ink-soft); font-size: 14px; }
+
+  /* The menu: the app's menu bar menu, as a sheet. */
+  #menu {
+    position: absolute;
+    top: 0;
+    right: 0;
+    z-index: 10;
+    width: min(420px, 100%);
+    max-height: min(78vh, 720px);
+    overflow-y: auto;
+    box-sizing: border-box;
+    padding: 8px;
+    border-radius: 10px;
+    border: 1px solid rgba(237, 194, 107, 0.35);
+    background: rgba(15, 11, 13, 0.97);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7);
+    font-size: 13.5px;
+  }
+  #menu .note {
+    padding: 3px 10px;
+    color: var(--ink-soft);
+    font-variant-numeric: tabular-nums;
+  }
+  #menu hr { border: 0; border-top: 1px solid var(--ink-faint); margin: 6px 4px; }
+  #menu .item {
+    display: grid;
+    grid-template-columns: 18px 1fr auto;
+    align-items: baseline;
+    gap: 6px;
+    width: 100%;
+    padding: 6px 10px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+  }
+  #menu .item:hover:not(:disabled) { background: rgba(237, 194, 107, 0.14); }
+  #menu .item:disabled { color: rgba(242, 235, 224, 0.35); cursor: default; }
+  #menu .item .tick { color: var(--gold); }
+  #menu .item .key { color: var(--ink-soft); font-size: 12px; }
+  #menu .item.danger .label { color: #f4a09a; }
+  #menu details.sub > summary {
+    list-style: none;
+    padding: 6px 10px 6px 34px;
+    border-radius: 6px;
+    cursor: pointer;
+    position: relative;
+  }
+  #menu details.sub > summary::-webkit-details-marker { display: none; }
+  #menu details.sub > summary::after {
+    content: '›';
+    position: absolute;
+    right: 12px;
+    color: var(--ink-soft);
+    transition: transform 0.15s ease;
+  }
+  #menu details.sub[open] > summary::after { transform: rotate(90deg); }
+  #menu details.sub > summary:hover { background: rgba(237, 194, 107, 0.14); }
+  #menu .subbody { margin: 2px 0 6px 18px; padding-left: 6px; border-left: 1px solid var(--ink-faint); }
+  @media (max-width: 560px) {
+    #menu { position: fixed; left: 16px; right: 16px; top: auto; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); width: auto; max-height: 70vh; }
+    .brand small { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #lane, #menu details.sub > summary::after { transition: none; }
+  }
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Marcellus&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@600&text=%E5%88%9D%E6%AD%A6%E4%BF%AE%E9%AC%BC%E5%85%88&display=swap">
+
+<div id="ronin">
+  <div class="bar">
+    <div class="brand"><span class="seal" aria-hidden="true">武</span>Ronin <small>a pocket sword-fight</small></div>
+    <button id="menu-button" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="menu">Menu</button>
+  </div>
+  <div class="stage-row">
+    <p id="status">Loading…</p>
+    <div id="panel-wrap" hidden><canvas id="lane" aria-label="The lane: left button cuts left, right button cuts right"></canvas></div>
+    <div id="shown-hidden" hidden>Ronin is hidden<button id="show-button" type="button">Show Ronin</button></div>
+    <div id="menu" role="menu" hidden></div>
+  </div>
+  <p id="help"><b>Cut left:</b> left button, <kbd>←</kbd> <kbd>A</kbd> <kbd>F</kbd> · <b>Cut right:</b> right button, <kbd>→</kbd> <kbd>D</kbd> <kbd>J</kbd> · on a touch screen, tap that half of the lane · <kbd>Space</kbd> goes on · move the pointer off the lane to pause</p>
+  <div id="fail" hidden><p id="fail-text"></p></div>
+</div>
