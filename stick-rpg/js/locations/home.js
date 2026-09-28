@@ -478,13 +478,14 @@
     field(p, 'RUN CAMPAIGN', 262, 45.5, 200, { size: 16, color: RED, align: 'center' });
     field(p, esc(newsbody), 210.2, 79.8, 317.7, { size: 14, align: 'center', lh: 19.7, h: 182.2, id: 'newsbody' });
     if (v.mode === 'campaign') {
-      ibtn(g, p, { icon: 'campaign', label: 'RUN $50,000<br>CAMPAIGN', x: 210.5, y: 216.5, size: 38, gap: 7, w: 150, id: 'run50' }, function () {
+      // The original's three campaign buttons show the same green money stack as BUY/SELL STOCKS.
+      ibtn(g, p, { icon: 'stocks', label: 'RUN $50,000<br>CAMPAIGN', x: 210.5, y: 216.5, size: 38, gap: 7, w: 150, id: 'run50' }, function () {
         runCampaign(g, 50000, rnd(2) === 0);
       });
-      ibtn(g, p, { icon: 'campaign', label: 'RUN $100,000<br>CAMPAIGN', x: 368, y: 218.5, size: 38, gap: 7, w: 150, id: 'run100' }, function () {
+      ibtn(g, p, { icon: 'stocks', label: 'RUN $100,000<br>CAMPAIGN', x: 368, y: 218.5, size: 38, gap: 7, w: 150, id: 'run100' }, function () {
         runCampaign(g, 100000, rnd(4) < 3);
       });
-      ibtn(g, p, { icon: 'campaign', label: 'RUN $200,000<br>CAMPAIGN', x: 209, y: 258, size: 37, gap: 7.5, w: 150, id: 'run200' }, function () {
+      ibtn(g, p, { icon: 'stocks', label: 'RUN $200,000<br>CAMPAIGN', x: 209, y: 258, size: 37, gap: 7.5, w: 150, id: 'run200' }, function () {
         runCampaign(g, 200000, true);
       });
     }

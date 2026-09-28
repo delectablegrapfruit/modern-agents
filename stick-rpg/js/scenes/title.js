@@ -450,20 +450,38 @@
   var COMP_G1 = [-216.6, -159.8, -105.3, -30.6, 22.3, 62.0, 105.0, 153.7];
   var COMP_G2 = [-224.1, -167.1, -115.0, -37.3, 17.4, 56.5, 99.0, 148.3];
 
+  // The logo never changes, so it is drawn once into a transparent layer (source-over blending
+  // is associative, so the layer over the backdrop looks exactly like drawing it in place).
+  var logoCache = null;
   function drawLogo(ctx) {
+    if (!logoCache) logoCache = buildLogo();
+    ctx.drawImage(logoCache, 0, 0);
+  }
+
+  function buildLogo() {
     var lx = 289.3, ly = 73.65;
-    ctx.save();
-    ctx.globalAlpha = 0.5;
-    // faint white bands behind the words
-    ctx.save();
+    var c = document.createElement('canvas');
+    c.width = SRPG.W;
+    c.height = SRPG.H;
+    var ctx = c.getContext('2d');
+    // Each letter is one filled glyph in the original, blended at its own alpha. The fallback
+    // face strokes over its fill to thicken it, so draw each letter opaque on a scratch layer
+    // first and blend that, or the overlap would show as a brighter outline.
+    var tmp = document.createElement('canvas');
+    tmp.width = SRPG.W;
+    tmp.height = SRPG.H;
+    var tc = tmp.getContext('2d');
+    // faint white bands behind the words (the whole logo is at 50%, the bands at 25% of that)
     ctx.globalAlpha = 0.5 * 0.25;
     ctx.fillStyle = '#fff';
     ctx.fillRect(-8, 27.05, 575, 82);
     ctx.fillRect(-12, 123.95, 575, 47.2);
-    ctx.restore();
     // One Impact letter stretched sideways by sx about its own origin x.
     var letter = function (L, x, baseline, size, sx, color, a) {
-      fx.text(ctx, L[0], lx + x + L[2] * sx, ly + baseline, { face: 'impact', size: size, color: color, width: (L[3] - L[2]) * sx, alpha: a });
+      tc.clearRect(0, 0, tmp.width, tmp.height);
+      fx.text(tc, L[0], lx + x + L[2] * sx, ly + baseline, { face: 'impact', size: size, color: color, width: (L[3] - L[2]) * sx });
+      ctx.globalAlpha = 0.5 * a;
+      ctx.drawImage(tmp, 0, 0);
     };
     // COMPLETE: long streaks (C and E only), ghosts, then the letters
     letter(COMP[0], -304.1, 36 + 60, 60, 8.055, '#ffff00', 0.25);
@@ -479,7 +497,7 @@
       letter(c, STICK_G1[i], -64.1 + 96, 96, 1.2, '#ffffff', 0.25);
     });
     STICK.forEach(function (c) { letter(c, c[1], -63.1 + 96, 96, 1, '#ffffff', 1); });
-    ctx.restore();
+    return c;
   }
 
   function drawTitleMenu(ctx) {
@@ -639,8 +657,8 @@
     if (p === 1) {
       para(ctx, [
         ['It was a slow, forgettable afternoon, and you', 22, 22],
-        ['felt yourself sinking toward  s l e e p . . .  .  Your eyelids', 48.7, 22],
-        ['grew heavy, yet sleep never quite arrived.  Instead you', 77.4, 22],
+        ['felt yourself sinking toward  s l e e p . . .  .  Heavy lids', 48.7, 22],
+        ['drooped shut, yet sleep never quite arrived.  Instead you', 77.4, 22],
         ['drifted into a hazy place between dreaming and waking,', 104.55, 18],
         ['the hypnagogic state.', 131.25, 22],
       ], 55.6, 96.25);

@@ -94,22 +94,21 @@ function installAnimatedHook(page) {
     ref.getContext('2d').drawImage(img, 0, 0);
     const R = ref.getContext('2d').getImageData(0, 0, W, H).data;
     // the original's render shows both the castle and the mansion; draw both for the comparison
-    function render(dwellings) {
+    function render() {
       const c = document.createElement('canvas'); c.width = W; c.height = H;
       const x = c.getContext('2d');
       x.fillStyle = '#fff'; x.fillRect(0, 0, W, H);
       const s = JSON.parse(JSON.stringify(SRPG.game.s));
-      for (const d of dwellings) {
-        s.dwelling = d;
-        const l = document.createElement('canvas'); l.width = W; l.height = H;
-        const y = l.getContext('2d');
-        y.translate(1100, 1000);
-        SRPG.mapArt.drawStatic(y, s);
-        x.drawImage(l, 0, 0);
-      }
+      s.dwelling = 5;
+      const l = document.createElement('canvas'); l.width = W; l.height = H;
+      const y = l.getContext('2d');
+      y.translate(1100, 1000);
+      SRPG.mapArt.drawStatic(y, s);
+      SRPG.mapArt.drawBuilding(y, 'mansion');
+      x.drawImage(l, 0, 0);
       return c;
     }
-    const mine = render([5, 4]);
+    const mine = render();
     const M = mine.getContext('2d').getImageData(0, 0, W, H).data;
     let n = 0, close = 0, sum = 0, cov = 0, covBoth = 0;
     for (let y = 0; y < H; y += 2) {
@@ -254,7 +253,8 @@ function installAnimatedHook(page) {
   await moving(['ArrowUp', 'Shift'], 9, 'skate');
   await moving(['ArrowRight', 'Shift'], 9, 'skate-right');
   await t.step(1); await shot('standing');
-  await t.step(400); await shot('asleep');
+  for (let i = 0; i < 40; i++) await t.step(10); // drawn along the way, as in the game
+  await shot('asleep');
   const sleepMode = await page.evaluate(() => SRPG.sprites.idleFrame(401));
   check(sleepMode >= 132 && sleepMode <= 180, 'standing still for 400 ticks: asleep (frame ' + sleepMode + ')');
 

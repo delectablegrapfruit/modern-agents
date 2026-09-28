@@ -388,9 +388,13 @@
   // ---------------------------------------------------------------------------------------------
   // the player's animation state (which clip section is playing and since when)
 
-  var pst = { key: '', since: 0 };
+  var pst = { key: '', since: 0, last: -10 };
   function sectionTicks(key) {
     var t = now();
+    // not drawn for a while (inside a building, a new game): the clip starts over, as the
+    // original's root frame 2 restarts the person clip at frame 20 on every return to the map
+    if (t - pst.last > 12 || t < pst.last) pst.key = '';
+    pst.last = t;
     if (pst.key !== key) {
       pst.key = key;
       pst.since = t;

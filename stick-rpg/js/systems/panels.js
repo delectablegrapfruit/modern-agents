@@ -316,9 +316,9 @@
         goHome(s);
       }, 'inv-home');
       // the house art fills its 34 x 35 button (shape 764 at 56%)
-      var hc = artCanvas(home, -3.4, -3.8, 41.1, 41.1, 'inv-homeart');
+      var hc = artCanvas(home, -1.6, -3.2, 37.5, 37.5, 'inv-homeart');
       if (SRPG.icons) {
-        try { SRPG.icons.draw(hc.ctx, 'house', 41.1); } catch (e) {}
+        try { SRPG.icons.draw(hc.ctx, 'house', 37.5); } catch (e) {}
       }
     }
 

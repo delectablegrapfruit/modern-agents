@@ -520,17 +520,16 @@
     ctx.scale(s, s);
     var DK = '#336600', TL = '#339966', BARK = '#cc6600', EDGE = '#330000';
     // branches
-    poly(ctx, [31, 61, 31, 47, 35, 37, 42, 37, 39, 47, 40, 57], BARK, EDGE, 1);
-    poly(ctx, [58, 40, 60, 28, 61, 19, 65, 19, 64, 30, 65, 36], BARK, EDGE, 1);
-    poly(ctx, [54, 51, 60, 49, 66, 51, 71, 51, 71, 55, 62, 56, 55, 57], BARK, EDGE, 1);
+    poly(ctx, [31, 61, 31, 47, 35, 37, 42, 37, 39, 47, 40, 57], BARK, EDGE, 1.5);
+    poly(ctx, [58, 40, 60, 28, 61, 19, 65, 19, 64, 30, 65, 36], BARK, EDGE, 1.5);
+    poly(ctx, [54, 51, 60, 49, 66, 51, 71, 51, 71, 55, 62, 56, 55, 57], BARK, EDGE, 1.5);
     // trunk
     poly(ctx, [-1, 75, 8, 75, 14, 72, 20, 68, 26, 64, 32, 59, 41, 53, 47, 48, 53, 43, 59, 38, 65, 33, 71, 29,
       74, 26, 79, 29, 78, 33, 74, 35, 68, 39, 62, 44, 56, 50, 50, 54, 44, 59, 38, 64, 32, 69, 26, 75, 20, 81,
-      14, 88, 8, 96, 5, 100, 1, 97, -2, 86], BARK, EDGE, 1.2);
+      14, 88, 8, 96, 5, 100, 1, 97, -2, 86], BARK, EDGE, 1.8);
     // darker underside and a lighter streak
     poly(ctx, [6, 97, 12, 89, 20, 80, 30, 71, 40, 63, 50, 55, 60, 47, 70, 39, 76, 34, 74, 35, 68, 39, 62, 44,
       56, 50, 50, 54, 44, 59, 38, 64, 32, 69, 26, 75, 20, 81, 14, 88, 8, 96, 5, 100], '#a34f00');
-    line(ctx, [1, 79, 12, 76, 26, 68, 40, 58, 54, 47, 68, 36], '#e07a1a', 1.3);
     ellipse(ctx, 1.5, 88, 2.5, 12, '#b35900', EDGE, 1, -0.12);
     clump(ctx, 49, 32, 0.5, 0.72, TL, true);
     clump(ctx, 37, 29, 0.72, 0.66, DK);
@@ -677,22 +676,22 @@
       ctx.stroke();
     }
     function merlon(x, y, w, h, g) {
-      rect(ctx, x, y, w, h, g || '#8c8c8c', OUT, 1.4);
-      rect(ctx, x + 1, y + 1, w - 2, 2.5, '#e0e0e0');
+      rect(ctx, x, y, w, h, g || '#8c8c8c', OUT, 1.5);
+      rect(ctx, x + 1.5, y + 1.5, w - 3, 1.5, 'rgba(255,255,255,0.35)');
     }
     // crenellated ring on top of a round tower
     function ring(cx, r, top, bottom) {
-      var ry = r * 0.3, i, a;
+      var ry = r * 0.24, i, a;
       body(cx, r, top, bottom);
       for (i = 0; i < 6; i++) { // back battlements
         a = Math.PI + 0.3 + i * (Math.PI - 0.6) / 5;
-        merlon(cx + (r - 5) * Math.cos(a) - 5, top + (r - 5) * 0.3 * Math.sin(a) - 12, 10, 12, '#7a7a7a');
+        merlon(cx + (r - 5) * Math.cos(a) - 5, top + (r - 5) * 0.24 * Math.sin(a) - 13, 10, 13, '#a6a6a6');
       }
       ellipse(ctx, cx, top, r, ry, grad(cx, r), OUT, 2);
       ellipse(ctx, cx, top + 2, r - 7, ry - 2.5, '#dadada', OUT, 1.4);
       for (i = 0; i < 5; i++) { // front battlements
         a = 0.35 + i * (Math.PI - 0.7) / 4;
-        merlon(cx + r * Math.cos(a) - 5.5, top + ry * Math.sin(a) - 11, 11, 14);
+        merlon(cx + r * Math.cos(a) - 5.5, top + ry * Math.sin(a) - 13, 11, 16, '#8c8c8c');
       }
     }
     function slit(x, y) {
@@ -1184,7 +1183,7 @@
     line(ctx, [158, 344, 165, 338], '#fff', 0.8);
     line(ctx, [160, 381, 167, 375], '#fff', 0.8);
     if (!SKIP.enter) enterSign(ctx, 5);
-    graffiti(ctx, 208, 531);
+    graffiti(ctx, 206, 528);
   }
   // The ENTER neon: `lit` = how many letters glow (0..5).
   function enterSign(ctx, lit) {
@@ -1200,22 +1199,37 @@
   function graffiti(ctx, x, y) {
     ctx.save();
     ctx.translate(x, y);
-    ctx.fillStyle = '#ff6600';
-    ctx.strokeStyle = '#993300';
-    ctx.lineWidth = 0.6;
+    // wavy orange flames behind the letters
     ctx.beginPath();
-    ctx.moveTo(-4, -2);
-    for (var i = 0; i < 11; i++) {
-      ctx.lineTo(2 + i * 9, -16 - (i % 3) * 3);
-      ctx.lineTo(5 + i * 9, -6);
+    ctx.moveTo(4, 2);
+    for (var i = 0; i < 10; i++) {
+      var bx = 6 + i * 10;
+      ctx.quadraticCurveTo(bx + 1, -14 - (i % 3) * 3, bx + 6, -8 - (i % 2) * 4);
+      ctx.quadraticCurveTo(bx + 8, -4, bx + 10, -6);
     }
-    ctx.lineTo(104, -2);
+    ctx.lineTo(110, 2);
     ctx.closePath();
+    ctx.fillStyle = '#ff6600';
     ctx.fill();
+    ctx.lineWidth = 0.7;
+    ctx.strokeStyle = '#1a1a1a';
     ctx.stroke();
-    for (i = 0; i < 9; i++) line(ctx, [4 + i * 11, 8, 4 + i * 11, 13 + (i % 3) * 2], '#66cc66', 2.2);
-    label(ctx, 'CYCLONE', 50, 1, { font: 'italic bold 26px ' + SANS, fill: lin(ctx, 0, 0, 100, 0, [0, '#0033ff', 0.45, '#9933ff', 0.75, '#ff33cc', 1, '#ff6699']),
-      stroke: '#1a1a66', lw: 1.4, fitW: 100, m: [1, 0, -0.3, 1] });
+    // pale green drips underneath
+    ctx.beginPath();
+    ctx.moveTo(4, 6);
+    for (i = 0; i < 9; i++) ctx.quadraticCurveTo(10 + i * 11, 16 + (i % 2) * 3, 15 + i * 11, 7);
+    ctx.lineTo(104, 4);
+    ctx.closePath();
+    ctx.fillStyle = '#80cc80';
+    ctx.fill();
+    ctx.lineWidth = 0.6;
+    ctx.stroke();
+    var word = 'CYCLONE';
+    var cols = ['#0000ff', '#1a1aff', '#6633ff', '#9933ff', '#cc33ff', '#ff33cc', '#ff3399'];
+    for (i = 0; i < word.length; i++) {
+      label(ctx, word[i], 12 + i * 14, -1 + (i % 2 ? -2 : 1.5), { font: 'italic bold 31px ' + SANS, fill: cols[i], stroke: '#1a1a1a', lw: 1.5,
+        rot: (i % 3 - 1) * 0.14, m: [1, 0, -0.35, 1], sx: 0.85 });
+    }
     label(ctx, 'Cr.MK', 118, -3, { font: 'italic 7px ' + SANS, fill: '#1a1a1a' });
     label(ctx, '2002', 120, 4, { font: 'italic 6px ' + SANS, fill: '#1a1a1a' });
     ctx.restore();
@@ -1225,22 +1239,22 @@
     poly(ctx, [221, 577.5, 457, 577.5, 457, 811, 221, 811], '#9900ff', '#1a1a1a', 1.2);
     poly(ctx, [221, 577.5, 221, 811, 141, 890, 141, 656], '#7400c1', '#1a1a1a', 1.2);
     poly(ctx, [221, 811, 457, 811, 378, 890, 141, 890], '#570091', '#1a1a1a', 1.2);
-    label(ctx, 'PAWN SHOP', 205, 648, { font: 'bold 15px ' + SANS, fill: '#d9d9d9', m: [1, -0.99, 0, 1], rot: Math.PI / 2, sx: 0.85 });
-    label(ctx, 'BUY AND SELL', 191, 651, { font: 'bold 6.5px ' + SANS, fill: '#cccccc', m: [1, -0.99, 0, 1], rot: Math.PI / 2 });
+    label(ctx, 'PAWN SHOP', 205, 648, { font: 'bold 15px Impact, ' + SANS, fill: '#d9d9d9', stroke: '#d9d9d9', lw: 1.1, m: [1, -0.99, 0, 1], rot: Math.PI / 2, fitW: 112 });
+    label(ctx, 'BUY AND SELL', 191, 651, { font: 'bold 6.5px Impact, ' + SANS, fill: '#cccccc', stroke: '#cccccc', lw: 0.4, m: [1, -0.99, 0, 1], rot: Math.PI / 2, fitW: 66 });
     // door
     poly(ctx, [141, 688.5, 174, 657.5, 174, 705, 141, 735], '#999999', '#1a1a1a', 1);
     poly(ctx, [143.5, 688, 171.5, 662, 171.5, 704, 143.5, 730], '#ccccff', '#333', 0.8);
     line(ctx, [153, 689, 153, 709], '#666', 2);
     // barred window
     poly(ctx, [147.5, 752, 178.5, 725, 178.5 - 0.5, 832, 147.5, 860], '#00ccff', '#1a1a1a', 1);
-    line(ctx, [162, 740, 162, 845], '#666', 2.8);
-    line(ctx, [162, 740, 162, 845], '#b3b3b3', 1.2);
     for (var i = 0; i < 6; i++) {
       var y = 755 + i * 17;
-      line(ctx, [149, y + 8, 180, y - 12], '#333', 3);
-      line(ctx, [149, y + 8, 180, y - 12], '#b3b3b3', 1.5);
-      ellipse(ctx, 180, y - 12, 2, 2, '#e6e6e6', '#333', 0.8);
+      line(ctx, [148, y + 9, 181, y - 13], '#333', 3.6);
+      line(ctx, [148, y + 9, 181, y - 13], '#b3b3b3', 2);
+      poly(ctx, [179, y - 16, 184, y - 16, 184, y - 11, 179, y - 11], '#e6e6e6', '#333', 0.8);
     }
+    line(ctx, [161, 738, 161, 848], '#333', 4.2);
+    line(ctx, [161, 738, 161, 848], '#b3b3b3', 2.4);
     pawnGraffiti(ctx);
   }
   function pawnGraffiti(ctx) {
@@ -1250,6 +1264,10 @@
     ctx.clip();
     // white spiky splash and outlined bubble letters
     ctx.fillStyle = '#ffffff';
+    ctx.save();
+    ctx.translate(205, 855);
+    ctx.scale(1.4, 1.3);
+    ctx.translate(-205, -855);
     ctx.beginPath();
     ctx.moveTo(185, 838);
     ctx.lineTo(210, 830); ctx.lineTo(200, 840); ctx.lineTo(230, 836); ctx.lineTo(214, 848);
@@ -1257,7 +1275,9 @@
     ctx.lineTo(206, 880); ctx.lineTo(182, 872); ctx.lineTo(188, 856); ctx.lineTo(176, 850);
     ctx.closePath();
     ctx.fill();
-    label(ctx, 'LINE', 335, 852, { font: 'bold 50px ' + SANS, stroke: '#ffffff', lw: 1.4, m: [1, 0, -0.3, 1], fitW: 200 });
+    ctx.restore();
+    label(ctx, 'LINE', 330, 855, { font: 'bold 62px ' + SANS, stroke: '#ffffff', lw: 1.6, m: [1, 0, -0.35, 1], fitW: 225 });
+    label(ctx, 'LINE', 330, 855, { font: 'bold 62px ' + SANS, stroke: 'rgba(255,255,255,0.6)', lw: 0.8, m: [1, 0, -0.35, 1], fitW: 212, sy: 0.8 });
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -1388,6 +1408,12 @@
       MAP.trees.forEach(function (t, i) { if (i > 0) tree(ctx, t.x, t.y, 1); });
       if (dw === 5) castle(ctx);
       if (dw === 4) mansion(ctx);
+    },
+
+    // One building on its own (debugging and tests): 'castle' | 'mansion'.
+    drawBuilding: function (ctx, name) {
+      if (name === 'castle') castle(ctx);
+      if (name === 'mansion') mansion(ctx);
     },
 
     // Animated bits of the map (neon signs, castle flags and guard, casino sparkles), drawn over

@@ -427,13 +427,13 @@ let SRPG_ICON_LIST = [];
       // stage points: panel interior (over the plain grey background in mine), a tile, a panel edge
       return {
         tileMine: px(A, 190, 110, 2), tileRef: px(B, 190, 110, 2),
-        tile2Mine: px(A, 196, 256, 2), tile2Ref: px(B, 196, 256, 2),
+        tile2Mine: px(A, 375, 262, 2), tile2Ref: px(B, 375, 262, 2),
       };
     }, [mine, ref]);
     await cmp.close();
     const d = (p, q) => Math.max(Math.abs(p[0] - q[0]), Math.abs(p[1] - q[1]), Math.abs(p[2] - q[2]));
     ok(d(res.tileMine, res.tileRef) < 20, 'tile colour matches the reference ' + JSON.stringify(res));
-    ok(d(res.tile2Mine, res.tile2Ref) < 20, 'fourth-row tile lines up with the reference ' + JSON.stringify(res));
+    ok(d(res.tile2Mine, res.tile2Ref) < 20, 'LEAVE tile (4th row) lines up with the reference ' + JSON.stringify(res));
     // location.js's default panel vs the original's shape 105 at (359.4, 172.05) x (1, 1.25)
     const pr = await page.evaluate(() => { const r = document.querySelector('.fpanel').getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; });
     console.log('info: default menu panel', pr.map((v) => +v.toFixed(1)).join(','), 'original 181.5,45.9,356,252.4');

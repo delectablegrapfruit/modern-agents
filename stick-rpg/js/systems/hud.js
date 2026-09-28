@@ -32,20 +32,33 @@
     return fontCheck;
   }
 
-  // Arial Black text on the canvas (bold fallback gets a hairline stroke in its own colour).
+  // Arial Black text on the canvas. The bold fallback gets a hairline stroke in its own colour and
+  // is widened 12% (Arial Black's measure).
   function abText(ctx, str, x, y, size, color, align) {
     var f = fonts();
+    ctx.save();
     ctx.font = (f.black ? '' : 'bold ') + size + 'px ' + AB;
     ctx.textAlign = align || 'left';
     ctx.textBaseline = 'alphabetic';
     ctx.fillStyle = color;
-    ctx.fillText(str, x, y);
+    ctx.translate(x, y);
+    if (!f.black) ctx.scale(1.12, 1);
+    ctx.fillText(str, 0, 0);
     if (!f.black) {
-      ctx.lineWidth = size * 0.07;
+      ctx.lineWidth = size * 0.06;
       ctx.lineJoin = 'round';
       ctx.strokeStyle = color;
-      ctx.strokeText(str, x, y);
+      ctx.strokeText(str, 0, 0);
     }
+    ctx.restore();
+  }
+  function abWidth(ctx, str, size) {
+    var f = fonts();
+    ctx.save();
+    ctx.font = (f.black ? '' : 'bold ') + size + 'px ' + AB;
+    var w = ctx.measureText(str).width * (f.black ? 1 : 1.12);
+    ctx.restore();
+    return w;
   }
 
   // Impact text (the cash figure). Without Impact: a condensed bold sans of the same height.
@@ -287,6 +300,12 @@
   // --- the HP bar -----------------------------------------------------------------------------
   // hp_bar is a 104-frame clip: frame n shows n% HP (keyframes every 5%), so the red fill snaps
   // down to the 5% step below; under 5% only a sliver is left. HP <= 0 is death (core handles it).
+  // Numbers as Flash prints them (no float noise).
+  function num(n) {
+    if (typeof n !== 'number' || !isFinite(n)) return String(n);
+    return String(parseFloat(n.toPrecision(15)));
+  }
+
   function hpPct(hp, hpmax) { return hpmax > 0 ? Math.floor((hp / hpmax) * 100) : 0; }
   function fillFrac(pct) {
     if (pct >= 100) return 1;
@@ -330,11 +349,11 @@
     ctx.lineJoin = 'miter';
     ctx.strokeStyle = '#000';
     ctx.stroke();
-    // "hp/ hpmax": hp right-aligned before the slash, max after it (Arial Black 10, white)
+    // "hp/ hpmax" (Arial Black 10, white): the hp field is right-aligned against the slash and
+    // max follows it. Drawn as one string (the YOU DIED screen swaps this label).
     var dx = opts.textDx || 0;
-    abText(ctx, String(Math.max(0, Math.round(hp))), -32.15 + dx, 4.62, 10, '#fff', 'right');
-    abText(ctx, '/', -32.8 + dx, 4.65, 10, '#fff', 'left');
-    abText(ctx, String(Math.round(hpmax)), -26.85 + dx, 4.62, 10, '#fff', 'left');
+    var hpStr = num(hp);
+    abText(ctx, hpStr + '/ ' + num(hpmax), -32.15 + dx - abWidth(ctx, hpStr, 10), 4.62, 10, '#fff', 'left');
     // the heart
     var k = heartState(pct);
     var hp0 = HEART[k].pos;
@@ -345,31 +364,48 @@
   }
 
   // --- cash -------------------------------------------------------------------------------------
-  function dollar(ctx, x, y) {
-    // the gold "$" (a shape in the original, 16 x 22 px)
-    var f = fonts();
+  // The gold "$" (a shape in the original: 16 x 22 px at 218..234, 5..28): a heavy S with a bar
+  // through it, orange-shaded gold with a brown rim.
+  function dollarPath(ctx) {
+    ctx.beginPath();
+    ctx.moveTo(231.1, 13.1);
+    ctx.bezierCurveTo(230.3, 11.1, 228.4, 10.4, 226.2, 10.4);
+    ctx.bezierCurveTo(223, 10.4, 221.1, 12.1, 221.1, 14.2);
+    ctx.bezierCurveTo(221.1, 16.9, 223.6, 17.5, 226.2, 18);
+    ctx.bezierCurveTo(228.9, 18.6, 231.2, 19.4, 231.2, 21.9);
+    ctx.bezierCurveTo(231.2, 24, 229.1, 25.1, 226.2, 25.1);
+    ctx.bezierCurveTo(223.6, 25.1, 221.7, 24.2, 220.9, 22.3);
+  }
+  function dollar(ctx) {
     ctx.save();
-    ctx.translate(x, y);
-    ctx.font = (f.impact ? '' : 'bold ') + '27px ' + IMPACT;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'alphabetic';
-    var g = ctx.createLinearGradient(-8, -18, 8, 2);
-    g.addColorStop(0, '#ffe34d');
-    g.addColorStop(0.45, '#ffcc00');
-    g.addColorStop(1, '#f08c00');
+    ctx.lineCap = 'butt';
     ctx.lineJoin = 'round';
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = '#8a4b00';
-    if (!f.impact) { ctx.scale(0.85, 1); }
-    ctx.strokeText('$', 0, 0);
+    var g = ctx.createLinearGradient(219, 6, 233, 27);
+    g.addColorStop(0, '#fff066');
+    g.addColorStop(0.45, '#ffcc00');
+    g.addColorStop(1, '#ff9000');
+    // the double bar, whose ends stick out above and below the S
+    ctx.fillStyle = '#6b3a00';
+    ctx.fillRect(222.5, 5.3, 2.9, 22.5);
+    ctx.fillRect(226.9, 5.3, 2.9, 22.5);
     ctx.fillStyle = g;
-    ctx.fillText('$', 0, 0);
+    ctx.fillRect(223.2, 6.1, 1.5, 20.9);
+    ctx.fillRect(227.6, 6.1, 1.5, 20.9);
+    // the S: brown rim, then gold
+    ctx.strokeStyle = '#6b3a00';
+    ctx.lineWidth = 6.6;
+    dollarPath(ctx);
+    ctx.stroke();
+    ctx.strokeStyle = g;
+    ctx.lineWidth = 4.6;
+    dollarPath(ctx);
+    ctx.stroke();
     ctx.restore();
   }
 
   function cash(ctx, s) {
-    dollar(ctx, 226.1, 26.3);
-    var str = String(Math.round(s.cash));
+    dollar(ctx);
+    var str = num(s.cash);
     impactText(ctx, str, 238.95, 23.9, 20, '#cc6600'); // the darker copy peeks out up-left
     impactText(ctx, str, 239.7, 24.9, 20, '#ffcc66');
   }
@@ -448,8 +484,8 @@
     var f = fonts();
     abText(ctx, 'DAY', 374.84, 22.9, 15, '#000099');
     abText(ctx, 'DAY', 375.97, 24.07, 15, '#0099ff');
-    abText(ctx, String(s.day), 414.97, 23.32, 15, '#000000');
-    abText(ctx, String(s.day), 415.97, 23.92, 15, '#0099ff');
+    abText(ctx, num(s.day), 414.97, 23.32, 15, '#000000');
+    abText(ctx, num(s.day), 415.97, 23.92, 15, '#0099ff');
     return f;
   }
 
@@ -710,7 +746,9 @@
     hpPct: hpPct,
     heartState: heartState,
     // heart(ctx, x, y, frac[, tick]) — frac is hp / hpmax
-    heart: function (ctx, x, y, frac, t) { drawHeart(ctx, x, y, Math.floor(frac * 100), t == null ? SRPG.engine.frame : t, 0.83); },
+    // (drawn in the heart clip's own units: about 21 x 20; the HUD shows it at 1.0, the bar-fight
+    // enemy's at 1.04)
+    heart: function (ctx, x, y, frac, t) { drawHeart(ctx, x, y, Math.floor(frac * 100), t == null ? SRPG.engine.frame : t, 1); },
     clock: clock,
     outlined: outlined,
     backpack: backpack,

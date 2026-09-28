@@ -61,13 +61,11 @@
     return o;
   }
 
-  // Rotate every joint about the feet (0, 58) by angle a (clockwise = falling to the right).
-  function tilt(p, a) {
+  function moved(p, dx, dy, only) {
     var o = {};
-    var c = Math.cos(a), s = Math.sin(a);
     for (var k in p) {
-      var x = p[k][0], y = p[k][1] - 58;
-      o[k] = [x * c - y * s, 58 + x * s + y * c].concat(p[k].slice(2));
+      o[k] = p[k].slice();
+      if (!only || only.indexOf(k) >= 0) { o[k][0] += dx; o[k][1] += dy; }
     }
     return o;
   }
@@ -76,6 +74,42 @@
   var DEAD = { h: [66, 34, 18], n: [47.5, 31.6], s: [38, 31], hip: [12.3, 31],
     la: [27, 43.5], lh: [10, 43.5], ra: [30, 18.3], rh: [12, 15],
     lk: [-9, 32.5], lf: [-30, 34], rk: [-7.5, 47.5], rf: [-26, 44] };
+
+  // Sprite 2334, frame by frame (poses fitted to the extents of the original's drawings, frame
+  // 47 measured from a Ruffle capture):
+  //   1..15 standing; 16..19 the upper body reels back 4 px a frame (feet planted); 20..30 it
+  //   shudders sideways by up to 3 px; 31..45 it holds still; 46..49 it folds at the knees and
+  //   topples to the right; 50..51 bounces (8 px up, then down); 52 settles; 53.. lies dead
+  //   with X eyes.
+  var UPPER = ['h', 'n', 's', 'la', 'lh', 'ra', 'rh'];
+  var SHUDDER = [-0.85, -1.7, -2.8, -1.7, -0.85, 0, 1.1, 1.95, 3.1, 1.95, 1.1];
+  // frame 47: knees buckled, head thrown back to the right
+  var BUCKLE = { h: [42.6, -13.6, 18], n: [32.6, 1.9], s: [27.6, 11.4], hip: [15.1, 33],
+    la: [11.1, 14.9], lh: [0.1, 25.9], ra: [32.6, 28.4], rh: [21.6, 31.4],
+    lk: [-1.4, 43], lf: [-13.9, 57], rk: [16.6, 57], rf: [2.6, 58.4] };
+  function reel(k) {
+    return moved(moved(STAND, 4 * k, 4 * k, UPPER), 2 * k, 2 * k, ['hip']);
+  }
+  // Between BUCKLE and DEAD with the head held up at (hx, hy) (the neck follows it).
+  function falling(t, hx, hy) {
+    var p = mix(BUCKLE, DEAD, t);
+    var dx = hx - p.h[0], dy = hy - p.h[1];
+    p = moved(p, dx, dy, ['h', 'n']);
+    return moved(p, dx / 2, dy / 2, ['s']);
+  }
+  function deathPose(f) {
+    if (f <= 15) return { p: STAND, dy: 0 };
+    if (f <= 19) return { p: reel(f - 15), dy: 0 };
+    if (f <= 30) return { p: moved(reel(4), SHUDDER[f - 20], 0, UPPER), dy: 0 };
+    if (f <= 45) return { p: reel(4), dy: 0 };
+    if (f === 46) return { p: mix(reel(4), BUCKLE, 0.35), dy: 0 };
+    if (f === 47) return { p: BUCKLE, dy: 0 };
+    if (f === 48) return { p: falling(0.6, 61, 4.8), dy: 0 };
+    if (f === 49) return { p: falling(0.85, 65.2, 16.4), dy: 0 };
+    if (f <= 51) return { p: moved(DEAD, 0, -5, ['ra', 'rh']), dy: f === 50 ? -8 : 0 };
+    if (f === 52) return { p: moved(moved(DEAD, 0, 2, ['h', 'n']), 0, 4, ['rh']), dy: 0 };
+    return { p: DEAD, dy: 0, dead: true };
+  }
 
   // ================================================================================== DEATH
   var death = {
@@ -95,35 +129,43 @@
       var s = S();
       fx.bg(ctx);
       var f = death.t;
+      var dp = deathPose(f);
       ctx.save();
-      ctx.translate(262.4, 232.1);
-      if (f <= 15) figure(ctx, STAND);
-      else if (f <= 45) {
-        // reel back, then twitch
-        var lean = Math.min(4, f - 15) * 0.075;
-        var p = tilt(STAND, lean);
-        if (f >= 20) {
-          var w = [0, 1, 2, 1, 0, 3, 4, 3, 2, 1][(f - 20) % 10];
-          p.la = [p.la[0] - w, p.la[1] - w * 1.5];
-          p.lh = [p.lh[0] - w * 2, p.lh[1] - w * 3];
-          p.ra = [p.ra[0] + w, p.ra[1] - w];
-          p.rh = [p.rh[0] + w * 2.5, p.rh[1] - w * 2];
-        }
-        figure(ctx, p);
-      } else if (f <= 49) {
-        figure(ctx, tilt(STAND, [0.55, 0.9, 1.25, 1.5][f - 46]));
-      } else if (f <= 52) {
-        ctx.translate(0, f === 50 ? -8 : 0);
-        figure(ctx, mix(tilt(STAND, 1.57), DEAD, f === 52 ? 1 : 0.6));
-      } else {
-        figure(ctx, DEAD, { xEyes: [[72.3, 22.4], [71.5, 34.1]] });
-      }
+      ctx.translate(262.4, 232.1 + dp.dy);
+      figure(ctx, dp.p, dp.dead ? { xEyes: [[72.3, 22.4], [71.5, 34.1]] } : null);
       ctx.restore();
       if (f >= 65) fx.text(ctx, 'YOU DIED', 177.5, 153.3, { size: 40, color: '#0066cc', width: 213.5 });
-      if (s && SRPG.hud) SRPG.hud.draw(ctx, s, 'fight');
+      if (s && SRPG.hud) deadHud(ctx, s, f);
     },
   };
   SRPG.registerScreen('death', death);
+
+  // The HP bar (heart, bar and "hp/ max") stays up on YOU DIED. Its clip keeps playing: every
+  // fifth frame it asks for frame int(hp / hpmax * 100) = 0, which the player ignores, so the bar
+  // sweeps from empty to full (the heart healing as it goes) over its 104 frames, again and again,
+  // while the label reads 0 (seen in Ruffle; the reference shot caught it full).
+  function deadHud(ctx, s, f) {
+    var bf = ((f - 1) % 104) + 1;
+    var shown = { hp: bf >= 100 ? s.hpmax : ((bf + 0.5) / 100) * s.hpmax, hpmax: s.hpmax };
+    // The label is bound to the real hp (0): swap it in as the HUD writes the hp figure (the
+    // right-aligned number before the slash, or an "hp/ max" string).
+    var both = /^\s*-?[\d.]+\s*\/\s*-?[\d.]+\s*$/;
+    ['fillText', 'strokeText'].forEach(function (m) {
+      ctx[m] = function (str, x, y, w) {
+        str = String(str);
+        if (this.textAlign === 'right' && /^-?[\d.]+$/.test(str)) str = '0';
+        else if (both.test(str)) str = '0/ ' + s.hpmax;
+        var P = CanvasRenderingContext2D.prototype[m];
+        return w == null ? P.call(this, str, x, y) : P.call(this, str, x, y, w);
+      };
+    });
+    try {
+      SRPG.hud.draw(ctx, shown, 'fight');
+    } finally {
+      delete ctx.fillText;
+      delete ctx.strokeText;
+    }
+  }
 
   // ================================================================================ RESULTS
   // [text, face size, colour, normal x, y, jolted x, y, rotation (deg), local x, baseline]
@@ -194,9 +236,11 @@
         toStamp();
       });
     } else if (rs.rf >= 161) {
-      // DONE (frame 161): back to the title screen. The save is left alone.
+      // DONE (frame 161): gotoFrame(0), back to root frame 1: every variable is reset and the
+      // title comes back as on boot (the black clip is re-created, so it fades in from black
+      // again). The save is left alone.
       rs.hot.done = fx.hotspot('done', 484.8, 368.3, 59.8, 25.6, function () {
-        SRPG.engine.go('title', { again: true });
+        SRPG.engine.go('title');
       });
     }
   }
@@ -216,7 +260,19 @@
     return { p: p, toe: toe };
   }
 
-  // Rank stamp: a rough frame and the rank in Courier New Bold 69px (wrapping at 17 letters),
+  // The first line of the rank as the stamp's text box wraps it (17 letters per line).
+  function stampLine(rank) {
+    var words = String(rank).split(' ');
+    var line = '';
+    for (var i = 0; i < words.length; i++) {
+      var tl = line ? line + ' ' + words[i] : words[i];
+      if (line && tl.length > 17) break;
+      line = tl;
+    }
+    return line;
+  }
+
+  // Rank stamp: a rough frame and the rank in Courier New Bold 69px (first line only),
   // dark red, dropping from 4x/10x size to 80% over 10 frames, then (frames 31..50) darkening to
   // black and fading to 20%.
   function drawStamp(ctx) {
@@ -261,18 +317,10 @@
       var qy = side === 0 ? -46 + r2 * 14 : side === 1 ? 40 + r2 * 14 : -42 + r1 * 94;
       ctx.fillRect(qx, qy, 1.5 + r2 * 2, 1.5 + r1 * 2);
     }
-    // the rank, word-wrapped like the original's 707-wide text box
-    var words = String(rs.rank).split(' ');
-    var lines = [];
-    var line = '';
-    words.forEach(function (w) {
-      var tl = line ? line + ' ' + w : w;
-      if (line && tl.length > 17) { lines.push(line); line = w; } else line = tl;
-    });
-    if (line) lines.push(line);
-    lines.forEach(function (l, li) {
-      fx.text(ctx, l, 58.15, 26.9 + li * 78, { face: 'courier', size: 69, color: col, align: 'center' });
-    });
+    // The rank sits in a word-wrapping text box 707 wide (17 letters of 69px Courier) but only
+    // one line tall, so a longer rank shows just its first line: 'JUVENILE DELINQUENT' stamps
+    // 'JUVENILE', 'SELFLESS MILLIONAIRE' stamps 'SELFLESS' (checked in Ruffle).
+    fx.text(ctx, stampLine(rs.rank), 58.15, 26.9, { face: 'courier', size: 69, color: col, align: 'center' });
     ctx.restore();
   }
 
@@ -280,7 +328,7 @@
     st: rs,
     enter: function () {
       var s = S();
-      if (!s) { SRPG.engine.go('title', { again: true }); return; }
+      if (!s) { SRPG.engine.go('title'); return; }
       SRPG.game.karmaAdjust();
       s.over = true;
       rs.final = s.cash + s.bankcash - s.bankloan;
@@ -375,6 +423,7 @@
       if (rs.sf > 0) drawStamp(ctx);
     },
   };
+  results.stampLine = stampLine;
   SRPG.results = results;
   SRPG.registerScreen('results', results);
 })();

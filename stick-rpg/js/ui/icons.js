@@ -60,6 +60,18 @@
     ctx.rotate(a);
     ctx.translate(-cx, -cy);
   }
+  // Draw f scaled by (sx, sy) about (cx, cy), optionally turned by a (radians).
+  function scaled(f, sx, sy, cx, cy, a) {
+    return function (ctx) {
+      ctx.save();
+      ctx.translate(cx, cy);
+      if (a) ctx.rotate(a);
+      ctx.scale(sx, sy);
+      ctx.translate(-cx, -cy);
+      f(ctx);
+      ctx.restore();
+    };
+  }
   var AB = '"Arial Black", "Arial Bold", Gadget, Arial, sans-serif';
   var IMPACT = 'Impact, Haettenschweiler, "Arial Black", sans-serif';
   var TIMES = '"Times New Roman", Times, "Liberation Serif", "DejaVu Serif", serif';
@@ -197,7 +209,10 @@
   function save(ctx) {
     // a manila folder with papers sticking out
     ctx.save();
-    rot(ctx, 24, 25, 0.05);
+    rot(ctx, 24, 25, 0.1);
+    ctx.translate(24, 25);
+    ctx.scale(1.08, 1.08);
+    ctx.translate(-24, -25);
     poly(ctx, [16, 7.5, 33, 5.5, 39.5, 36, 36.5, 40.5]);
     fs(ctx, '#f2f2f2', '#222', 0.9);
     for (var i = 0; i < 4; i++) line(ctx, [18 + i * 1.3, 8.5 + i * 0.6, 34 + i * 1.2, 7 + i * 0.4], '#9a9a9a', 0.5);
@@ -266,7 +281,10 @@
 
   function candybar(ctx) {
     ctx.save();
-    rot(ctx, 24, 24, -0.62);
+    rot(ctx, 24, 24, -0.8);
+    ctx.translate(24, 24);
+    ctx.scale(1.12, 1.12);
+    ctx.translate(-24, -24);
     // crimped ends
     poly(ctx, [2, 17, 6, 18.5, 4, 20.5, 6.5, 22.5, 4, 24.5, 6.5, 26.5, 4, 28.5, 6, 30.5, 2, 31.5]);
     fs(ctx, '#ff9a1a', '#000', 0.9);
@@ -420,25 +438,30 @@
   function knife(ctx) { knifeArt(ctx); }
 
   function gunArt(ctx) {
-    // handgun pointing right: silver slide, black grip
-    poly(ctx, [15, 19.5, 26, 19.5, 27, 26, 23, 27.5, 18.5, 26]);
-    fs(ctx, '#3a3a3a', '#000', 1);
+    // handgun pointing right: long silver slide, black grip raked back
     ctx.beginPath();
-    ctx.moveTo(18.5, 20);
-    ctx.quadraticCurveTo(19, 28, 27.5, 26.5);
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = '#1e1e1e';
+    ctx.moveTo(20.5, 20.5);
+    ctx.quadraticCurveTo(21, 30, 31.5, 28);
+    ctx.lineTo(31.5, 20.5);
+    ctx.lineWidth = 2.6;
+    ctx.strokeStyle = '#000';
     ctx.stroke();
-    poly(ctx, [7, 19, 19.5, 19, 18, 26, 17.5, 39.5, 10.5, 41.5, 6, 38.5, 9.5, 27]);
-    fs(ctx, lg(ctx, 6, 0, 19, 0, [0, '#1a1a1a', 0.5, '#3d3d3d', 1, '#1f1f1f']), '#000', 1.2);
-    for (var i = 0; i < 4; i++) line(ctx, [9 + i * 0.4, 30 + i * 2.5, 15.5 + i * 0.2, 29 + i * 2.5], '#555', 0.6);
-    rr(ctx, 6.5, 11, 36, 9, 1);
-    fs(ctx, lg(ctx, 0, 11, 0, 20, [0, '#f0f0f0', 0.5, '#bdbdbd', 1, '#8a8a8a']), '#000', 1.2);
-    for (var j = 0; j < 4; j++) line(ctx, [9.5 + j * 1.6, 12.5, 9.5 + j * 1.6, 18], '#777', 0.5);
-    rr(ctx, 27, 12.8, 7, 2.8, 0.5);
-    fs(ctx, '#666');
-    ctx.fillStyle = '#555';
-    ctx.fillRect(40.5, 12.5, 2, 6);
+    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = '#333';
+    ctx.stroke();
+    line(ctx, [24.5, 20.5, 26.5, 25.5], '#111', 1.6);
+    poly(ctx, [6.5, 19, 21.5, 19, 20, 25, 19.5, 41, 10.5, 43.5, 4.5, 40.5, 8, 28]);
+    fs(ctx, lg(ctx, 5, 0, 21, 0, [0, '#171717', 0.5, '#3d3d3d', 1, '#1f1f1f']), '#000', 1.3);
+    for (var i = 0; i < 5; i++) line(ctx, [8 + i * 0.35, 29 + i * 2.6, 17.5 + i * 0.1, 28 + i * 2.6], '#565656', 0.7);
+    rr(ctx, 4, 10, 41, 10.5, 1.2);
+    fs(ctx, lg(ctx, 0, 10, 0, 20.5, [0, '#f5f5f5', 0.45, '#c8c8c8', 1, '#8a8a8a']), '#000', 1.3);
+    rr(ctx, 4, 17, 41, 3.5, 0.8);
+    fs(ctx, '#9a9a9a', '#000', 0.8);
+    for (var j = 0; j < 5; j++) line(ctx, [7 + j * 1.6, 11.5, 7 + j * 1.6, 16.5], '#6e6e6e', 0.55);
+    rr(ctx, 27, 11.8, 9, 3, 0.5);
+    fs(ctx, '#6e6e6e');
+    ctx.fillStyle = '#444';
+    ctx.fillRect(43, 11.5, 1.6, 5);
   }
   function gun(ctx) { gunArt(ctx); }
 
@@ -890,11 +913,8 @@
     fs(ctx, '#8a8a8a', '#000', 1);
     rr(ctx, 10, 9, 23, 35, 0.6);
     fs(ctx, lg(ctx, 10, 0, 33, 0, [0, '#9a9a9a', 0.4, '#d6d6d6', 1, '#a8a8a8']), '#000', 1.2);
-    line(ctx, [10, 20, 33, 20], '#555', 0.8);
-    rr(ctx, 13, 12, 2, 6, 0.8);
-    fs(ctx, '#555');
-    rr(ctx, 13, 23, 2, 12, 0.8);
-    fs(ctx, '#555');
+    rr(ctx, 12.5, 16, 1.8, 15, 0.8);
+    fs(ctx, '#4a4a4a');
   }
 
   function minibar(ctx) {
@@ -1241,6 +1261,17 @@
     line(ctx, [32, 30, 36, 35, 44, 23], '#003300', 5);
     line(ctx, [32, 30, 36, 35, 44, 23], '#33cc33', 2.8);
   };
+
+  // sizes matched to the original tiles
+  ICONS.burger = scaled(burger, 1.12, 1.15, 24, 25);
+  ICONS.messages = scaled(messages, 1.2, 1.06, 24, 25);
+  ICONS.smokes = scaled(smokes, 1.2, 1.2, 24, 25);
+  ICONS.givesmokes = ICONS.smokes;
+  ICONS.pills = scaled(pills, 1.15, 1.15, 24, 25);
+  ICONS.knife = scaled(knife, 1.1, 1.1, 24, 26);
+  ICONS.bottle = ICONS.givebooze = scaled(bottle, 1.12, 1.12, 24, 24);
+  ICONS.house = ICONS.realestate = ICONS.apartment = ICONS.penthouse = ICONS.mansion = ICONS.castle = scaled(house, 1.1, 1.1, 24, 26);
+  ICONS.tv = ICONS.news = ICONS.fitness = ICONS.dating = scaled(tv, 1.08, 1.05, 24, 24);
 
   var NAMES = Object.keys(ICONS);
 
