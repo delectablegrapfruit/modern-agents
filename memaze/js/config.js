@@ -89,6 +89,10 @@
       for (let L = 1; L <= 10; L++) { if (p.journey.levels[L]) delete p.journey.levels[L].best; delete p.trials[L]; }
       p.ch1 = 2;
     }
+    if (!(p.ch2 >= 2)) { // ...and chapter 2 (levels 11-20)
+      for (let L = 11; L <= 20; L++) { if (p.journey.levels[L]) delete p.journey.levels[L].best; delete p.trials[L]; }
+      p.ch2 = 2;
+    }
     if (p.gauntletBest) p.gauntlet['progressive/normal'] = Math.max(p.gauntlet['progressive/normal'] || 0, p.gauntletBest);
     delete p.gauntletBest;
     return p;

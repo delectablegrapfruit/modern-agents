@@ -1102,7 +1102,7 @@
     bulletRoute() {
       const g = this.graph(), at = this.nearestOnCorridor(g);
       if (!at) return null;
-      const { dist, prev } = this.corridorDists(g, at, false), n = g.pos.length;
+      const { dist, prev } = this.corridorDists(g, at, true), n = g.pos.length; // (never backwards through a one-way gate)
       let target = -1;
       if (this.maze) {
         target = g.id(this.maze.goal);
