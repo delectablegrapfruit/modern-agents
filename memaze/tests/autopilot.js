@@ -1,7 +1,7 @@
 // Autopilot: plays levels with the real game code, moving only by dragging the maze (the input's takeGrab), along the
 // route the level generator says solves the level: fetching keys before their doors, pressing switches, riding moving
 // platforms, stepping through portals, holding back on ice, taking an item box's item and using it (a Magic carpet or
-// a Launch across a gap, Shrink for a shrink gate), and in the Gauntlet timing its way past the cyclone stones. Proves every level can be finished inside its time limit
+// a Launch across a gap, Shrink for a shrink gate). Proves every level can be finished inside its time limit
 // without a single touch of the edge, and shows how par compares with a steady run that knows the way.
 //
 //   node tests/autopilot.js                    levels 1-25
@@ -89,30 +89,6 @@ if (!levels.length || levels.some((l) => !(l >= 1)) || !(speed > 0)) { console.e
         else if (leg.type === 'shrink') plan.push({ type: 'shrink', phase: 'use' });
         else if (leg.type === 'warp') plan.push({ type: 'warp', to: m.portals[leg.portal].b });
       }
-      // Cyclone stones: where each path comes within reach of one's sweep, and a check that going on now clears it.
-      const stones = m.stones || [], REACH = G.box() * 0.55 + 6;
-      const pointAt = (P, d) => { let i = 1; while (i < P.pts.length - 1 && P.cum[i] < d) i++; const f = Math.min(1, Math.max(0, (d - P.cum[i - 1]) / (P.cum[i] - P.cum[i - 1] || 1))); return { x: P.pts[i - 1].x + (P.pts[i].x - P.pts[i - 1].x) * f, y: P.pts[i - 1].y + (P.pts[i].y - P.pts[i - 1].y) * f }; };
-      const toSweep = (q, st) => { let d = Infinity; for (let i = 1; i < st.path.length; i++) d = Math.min(d, Math.sqrt(MZ.segDist2(q.x, q.y, st.path[i - 1].x, st.path[i - 1].y, st.path[i].x, st.path[i].y))); return d; };
-      for (const P of plan) {
-        if (P.type !== 'path') continue;
-        P.zones = [];
-        for (const st of stones) {
-          let a = -1;
-          for (let d = 0; d <= P.len + 4; d += 4) {
-            const near = d <= P.len && toSweep(pointAt(P, d), st) < st.r + REACH + 6;
-            if (near && a < 0) a = d;
-            if (!near && a >= 0) { P.zones.push({ a, b: Math.min(P.len, d) }); a = -1; }
-          }
-        }
-        P.zones.sort((x, y) => x.a - y.a);
-      }
-      const clear = (P, s0, s1, t0) => { // moving from s0 to s1 at full speed from t0: never within reach of a stone
-        for (let k = 0, d = s0; d <= s1 + 8; k++, d = s0 + speed * k / 60) {
-          const q = pointAt(P, Math.min(P.len, d)), t = t0 + k / 60;
-          for (const st of stones) { const c = MZ.stoneAt(st, t); if (Math.hypot(q.x - c.x, q.y - c.y) < st.r + REACH) return false; }
-        }
-        return true;
-      };
       const dt = 1 / 60, frames = Math.ceil((m.timeLimit + 10) / dt);
       let pi = 0, s = 0, j = 0, wait = 0, done = 0;
       const at = (P, d) => {
@@ -135,8 +111,6 @@ if (!levels.length || levels.some((l) => !(l >= 1)) || !(speed > 0)) { console.e
             const ph = MZ.blinkPhase(z.bl, t), left = (z.bl.on - ph) * z.bl.period;
             if (!(ph < z.bl.on && (z.b - s) / speed + MARGIN < left)) nx = Math.min(nx, Math.max(s, z.a - HOLD));
           }
-          const zs = seg.zones && seg.zones.find((q) => q.b > s);
-          if (zs && s <= zs.a && nx > zs.a - 4 && !clear(seg, s, zs.b, t)) nx = Math.min(nx, Math.max(s, zs.a - 4)); // wait for the stone to go
           if (nx - s < speed * dt * 0.5) wait += dt;
           s = nx;
           const T = at(seg, s);
@@ -171,7 +145,7 @@ if (!levels.length || levels.some((l) => !(l >= 1)) || !(speed > 0)) { console.e
       AP.want = null;
       const cur = plan[pi] || {}, bq = G.world.query(G.ball.x, G.ball.y, G.playT);
       AP.debug = { blinks: JSON.stringify((cur.blinks || []).map((z) => [Math.round(z.a), Math.round(z.b), z.bl.period.toFixed(2), z.bl.on.toFixed(2)])), segAt: (() => { const q = G.world.query(G.ball.x, G.ball.y, G.playT - 0.02); return q.seg ? [q.seg.blink ? 'blink' : '', q.seg.sw ? 'sw' : '', q.depth.toFixed(1)].join(' ') : 'none'; })(), leg: pi + '/' + plan.length + ' ' + cur.type, s: Math.round(s) + '/' + Math.round(cur.len || 0), ball: Math.round(G.ball.x) + ',' + Math.round(G.ball.y), depth: bq.depth.toFixed(1), dyn: !!(bq.seg && bq.seg.dyn), mover: cur.mv ? JSON.stringify(MZ.moverAt(cur.mv, G.playT)) + ' a=' + Math.round(cur.mv.a.x) + ',' + Math.round(cur.mv.a.y) : '', barred: G.maze && G.maze.doors.filter((d) => !d.open).length };
-      const r = { stones: stones.length, level: m.level, boss: m.boss, layout: m.lattice + '/' + m.mask, mechs: (m.mechs || []).join('+') + (m.mods && m.mods.length ? ' [' + m.mods.join(',') + ']' : ''), outcome: AP.outcome || (G.state === 'play' ? 'stuck' : G.state), time: G.elapsed, par: m.parTime, limit: m.timeLimit, wait, progress: Math.round((100 * done) / Math.max(1, plan.length)) };
+      const r = { level: m.level, boss: m.boss, layout: m.lattice + '/' + m.mask, mechs: (m.mechs || []).join('+') + (m.mods && m.mods.length ? ' [' + m.mods.join(',') + ']' : ''), outcome: AP.outcome || (G.state === 'play' ? 'stuck' : G.state), time: G.elapsed, par: m.parTime, limit: m.timeLimit, wait, progress: Math.round((100 * done) / Math.max(1, plan.length)) };
       G.quit();
       return r;
     };
@@ -191,7 +165,7 @@ if (!levels.length || levels.some((l) => !(l >= 1)) || !(speed > 0)) { console.e
     results.push(r);
     const diff = r.time - r.par;
     if (process.env.APDEBUG && r.outcome !== 'win') console.log('   ', JSON.stringify(await page.evaluate(() => window.AP.debug)), '\n', (await page.evaluate(() => (window.AP.log || []).join('\n'))));
-    console.log(pad(r.n, 5), ' ', r.outcome.padEnd(5), pad(r.time.toFixed(1) + 's', 7), pad(r.par + 's', 5), pad((diff >= 0 ? '+' : '') + diff.toFixed(1), 6), pad(r.limit + 's', 6), pad(r.wait.toFixed(1) + 's', 6), pad(r.progress + '%', 5), ' ', (r.boss ? 'BOSS ' : '') + (gauntlet ? 'L' + r.level + ' ' : '') + r.mechs + (r.stones ? ' +' + r.stones + ' stones' : '') + '  ' + r.layout);
+    console.log(pad(r.n, 5), ' ', r.outcome.padEnd(5), pad(r.time.toFixed(1) + 's', 7), pad(r.par + 's', 5), pad((diff >= 0 ? '+' : '') + diff.toFixed(1), 6), pad(r.limit + 's', 6), pad(r.wait.toFixed(1) + 's', 6), pad(r.progress + '%', 5), ' ', (r.boss ? 'BOSS ' : '') + (gauntlet ? 'L' + r.level + ' ' : '') + r.mechs + '  ' + r.layout);
   }
   const won = results.filter((r) => r.outcome === 'win');
   const underPar = won.filter((r) => r.time <= r.par).length;

@@ -23,23 +23,6 @@
     return { x: mv.a.x + (mv.b.x - mv.a.x) * k, y: mv.a.y + (mv.b.y - mv.a.y) * k, k };
   }
 
-  // Where a cyclone stone is at time t: resting at its far end (path[0]) for `rest`, sweeping in along its path to its
-  // reach (the junction), a moment there (`hold`), and back, eased.
-  function stoneAt(st, t) {
-    const c = ((((t / st.period + st.phase) % 1) + 1) % 1) * st.period, T = st.travel;
-    let k;
-    if (c < st.rest) k = 0;
-    else if (c < st.rest + T) k = (c - st.rest) / T;
-    else if (c < st.rest + T + st.hold) k = 1;
-    else k = 1 - (c - st.rest - T - st.hold) / T;
-    k = k * k * (3 - 2 * k);
-    const d = k * st.len, P = st.path, cum = st.cum;
-    let i = 1;
-    while (i < P.length - 1 && cum[i] < d) i++;
-    const f = (d - cum[i - 1]) / (cum[i] - cum[i - 1] || 1);
-    return { x: P[i - 1].x + (P[i].x - P[i - 1].x) * f, y: P[i - 1].y + (P[i].y - P[i - 1].y) * f, k };
-  }
-
   class World {
     constructor() {
       this.grid = new Map();
@@ -147,5 +130,4 @@
   MZ.blinkOn = blinkOn;
   MZ.blinkPhase = blinkPhase;
   MZ.moverAt = moverAt;
-  MZ.stoneAt = stoneAt;
 })();
