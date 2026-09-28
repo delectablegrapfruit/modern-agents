@@ -72,8 +72,9 @@
       for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
       return (this._nb = b);
     },
-    play(name) {
+    play(name, k) { // k: how loud (0-1), for the sounds that carry
       if (!this.ctx || this.ctx.state !== 'running') return;
+      k = k == null ? 1 : k;
       switch (name) {
         case 'click': this.tone(880, 0.06, { type: 'triangle', vol: 0.12 }); break;
         case 'gem': [1320, 1760, 2637].forEach((f, i) => this.tone(f, 0.16, { type: 'triangle', vol: 0.16, at: i * 0.05 })); break;
@@ -105,6 +106,8 @@
         case 'bullet': this.noise(0.6, { filter: 'bandpass', freq: 300, to: 1800, q: 0.8, vol: 0.25 }); this.tone(110, 0.5, { type: 'sawtooth', to: 220, vol: 0.08 }); break;
         case 'launch': this.tone(200, 0.7, { type: 'sine', to: 900, vol: 0.16 }); this.noise(0.5, { filter: 'highpass', freq: 800, to: 3000, vol: 0.12 }); break;
         case 'land': this.noise(0.15, { filter: 'lowpass', freq: 400, vol: 0.35 }); this.tone(90, 0.18, { type: 'sine', vol: 0.18 }); break;
+        case 'thud': this.noise(0.22, { filter: 'lowpass', freq: 240, to: 90, vol: 0.4 * k }); this.tone(62, 0.24, { type: 'sine', to: 42, vol: 0.22 * k }); break; // a Tox Box lands
+        case 'crush': this.noise(0.12, { filter: 'bandpass', freq: 700, q: 1.5, vol: 0.3, at: 0.01 }); this.tone(140, 0.25, { type: 'sawtooth', to: 50, vol: 0.08 }); break; // ...on you
         case 'expire': this.tone(880, 0.25, { type: 'triangle', to: 330, vol: 0.1 }); break;
         case 'storm': this.noise(0.6, { filter: 'lowpass', freq: 180, to: 90, vol: 0.22 }); this.tone(55, 0.5, { type: 'sine', vol: 0.08, attack: 0.15 }); break; // a thundercloud gathering
         case 'zap': // the lightning: a crack, a buzz dropping away, and thunder rolling after it

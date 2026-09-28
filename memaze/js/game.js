@@ -47,6 +47,7 @@
   const ICE_GRIP = 2.2;   // on ice, how fast your movement catches up with your drag (per second): low = more drift
   const ICE_MAX = 700;    // ...and the fastest you can slide
   const smooth = (k) => k * k * (3 - 2 * k);
+  const toxFar = (T, x, y) => Math.max(Math.abs((x - T.x) * T.ux + (y - T.y) * T.uy), Math.abs((y - T.y) * T.ux - (x - T.x) * T.uy)); // (square distance from a tile's middle)
   // The picture cut into glassy shards: a jittered 4x4 grid over its visible part b (box units, 0-1), each cell split
   // along a random diagonal. Each shard has its own heading out from the middle, distance (in box sizes) and spin.
   function cutShards(seed, b) {
@@ -292,6 +293,7 @@
         for (const q of m.gaps || []) if (!q.seen && (inside(q.a, 30) || inside(q.b, 30))) q.seen = true;
         for (const pt of m.portals) for (const e of [pt.a, pt.b]) if (!e.seen && inside(e, pt.r)) e.seen = true;
         for (const mv of m.movers) if (!mv.seen && (inside(mv.a, mv.r) || inside(mv.b, mv.r))) mv.seen = true;
+        for (const bx of m.toxes || []) if (!bx.seen && bx.tiles.some((c) => inside(c, bx.s))) bx.seen = true;
       }
       if (this.maze && !this.maze.goal.seen && inside(this.maze.goal, this.maze.goal.r)) this.maze.goal.seen = true;
       const last = this.trail[this.trail.length - 1];
@@ -416,6 +418,7 @@
       for (const pt of m.portals) pt.seen = false;
       for (const q of [].concat(m.gaps || [], m.squeezes || [])) q.seen = false;
       for (const gb of m.gboxes || []) { gb.out = false; gb.back = null; gb.seen = false; gb.bornAt = null; gb.gotAt = null; }
+      for (const bx of m.toxes || []) bx.seen = false;
       this.world.sw = {};
     },
     mod(id) { return !!(this.maze && this.maze.mods && this.maze.mods.includes(id)); },
@@ -599,6 +602,7 @@
         if (this.pickups()) return;
         if (this.warped) { this.warped = false; break; }
       }
+      if (this.toxStep(dt)) return;
       this.offEdge(dt);
       this.noteSafe();
       if (this.mode === 'endless') this.endlessTick();
@@ -635,7 +639,87 @@
         if (this.overBar(x0, y0, q) && segDist2(x1, y1, q.ax, q.ay, q.bx, q.by) > segDist2(x0, y0, q.ax, q.ay, q.bx, q.by)) continue; // stepping off it
         return true;
       }
+      return this.toxBarred(x0, y0, x1, y1);
+    },
+
+    // ----- Tox Boxes (Gauntlet) -----
+    // A Tox Box at rest is solid: the picture can't move into it (stepping out of one is always allowed). One resting
+    // hollow side down over you holds you in until it tumbles on. While it tumbles, nothing is solid: what counts is
+    // where it lands.
+    toxBarred(x0, y0, x1, y1) {
+      const m = this.maze;
+      if (!m || !m.toxes || !m.toxes.length || this.fx.star > 0) return false;
+      const buf = this.box() * BUFFER;
+      for (const bx of m.toxes) {
+        const st = MZ.toxAt(bx, this.playT);
+        if (st.f > 0) continue;
+        const T = bx.tiles[st.i], out = bx.s / 2 - buf;
+        if (MZ.toxFace(bx, st.i) === 0 && this.toxCover(T, bx.s / 2 + 2 * buf, x0, y0) === 'all') { // inside it
+          if (this.toxCover(T, bx.s / 2 + 2 * buf, x1, y1) !== 'all') return true;
+          continue;
+        }
+        if (this.toxCover(T, out, x1, y1) === 'none') continue;
+        if (this.toxCover(T, out, x0, y0) !== 'none' && toxFar(T, x1, y1) > toxFar(T, x0, y0)) continue; // stepping out of it
+        return true;
+      }
       return false;
+    },
+    // How much of the picture at (x, y) lies inside the square of tile T (half-size a): 'none', 'some' or 'all' of its
+    // solid pixels (before the picture has loaded, its box's inscribed circle stands in).
+    toxCover(T, a, x, y) {
+      const mask = this.sprite.mask, W = this.box();
+      const dx = x - T.x, dy = y - T.y, lu = dx * T.ux + dy * T.uy, lv = dy * T.ux - dx * T.uy;
+      const R = (mask && mask.n ? mask.maxR : 0.45) * W;
+      if (Math.abs(lu) >= a + R || Math.abs(lv) >= a + R) return 'none';
+      if (Math.abs(lu) + R <= a && Math.abs(lv) + R <= a) return 'all';
+      if (!mask || !mask.n) {
+        const cu = Math.max(0, Math.abs(lu) - a), cv = Math.max(0, Math.abs(lv) - a);
+        return cu * cu + cv * cv >= R * R ? 'none' : 'some';
+      }
+      const p = mask.pts;
+      let inn = 0;
+      for (let i = 0; i < p.length; i += 2) {
+        const px = p[i] * W, py = p[i + 1] * W, qu = lu + px * T.ux + py * T.uy, qv = lv + py * T.ux - px * T.uy;
+        if (Math.abs(qu) < a && Math.abs(qv) < a) inn++;
+      }
+      return inn === 0 ? 'none' : inn === mask.n ? 'all' : 'some';
+    },
+    // Each frame: every box that lands this frame thuds (and shakes the view when close). One landing on you crushes:
+    // a hit, and you're squeezed out behind it (onto the tile it just left), unless it came down hollow side down right
+    // over you. Invincible, they pass through you. True if the hit lost the maze.
+    toxStep(dt) {
+      const m = this.maze;
+      if (!m || !m.toxes || !m.toxes.length) return false;
+      const b = this.ball, buf = this.box() * BUFFER;
+      for (const bx of m.toxes) {
+        const was = MZ.toxAt(bx, this.playT - dt), now = MZ.toxAt(bx, this.playT);
+        if (now.f > 0 || (was.f === 0 && was.i === now.i)) continue; // no landing this frame
+        const T = bx.tiles[now.i], near = Math.hypot(T.x - b.x, T.y - b.y);
+        if (near < 700) MZ.Audio.play('thud', clamp(1.15 - near / 600, 0.12, 1));
+        if (near < 160) this.shakeT = Math.max(this.shakeT, 0.1);
+        if (this.fx.star > 0 || this.toxCover(T, bx.s / 2 - buf, b.x, b.y) === 'none') continue;
+        if (MZ.toxFace(bx, now.i) === 0 && this.toxCover(T, bx.s / 2 + 2 * buf, b.x, b.y) === 'all') continue; // safe inside
+        const back = bx.tiles[was.i]; // (where it came from: it's moved on from there)
+        b.x = back.x; b.y = back.y;
+        this.vel.x = this.vel.y = 0;
+        this.input.takeGrab();
+        MZ.Audio.play('crush');
+        if (S().gameplay.rule !== 'casual' && !this.shielded() && this.hurt()) return true;
+      }
+      return false;
+    },
+    // How hidden the picture is inside a Tox Box (0: not at all, 1: shut in), fading as the box comes down or lifts off.
+    toxInside() {
+      const m = this.maze;
+      if (!m || !m.toxes || !m.toxes.length) return 0;
+      const b = this.ball, a = this.box() * BUFFER * 2;
+      for (const bx of m.toxes) {
+        const st = MZ.toxAt(bx, this.playT), inAt = (k) => MZ.toxFace(bx, k) === 0 && this.toxCover(bx.tiles[k], bx.s / 2 + a, b.x, b.y) === 'all';
+        if (st.f === 0) { if (inAt(st.i)) return 1; continue; }
+        if (inAt(st.j)) return st.f; // coming down over you
+        if (inAt(st.i)) return 1 - st.f; // lifting off
+      }
+      return 0;
     },
     openDoor(d) {
       d.open = true;
@@ -1605,7 +1689,8 @@
         const cls = (fx.star > 0 ? ' invincible' + (fx.star < 1.5 ? ' ending' : '') : '') + (this.guardT > 0 && this.state === 'play' ? ' guard' : '') +
           (fx.bullet ? ' bullet' : '') + (fx.bubble ? ' bubbled' : '') + (flare ? ' flare' : '') + (this.recharging() ? ' recharge' : '') + (look < 1 ? ' down' : '');
         if (pl.className !== cls.trim()) pl.className = cls.trim();
-        const pm = pl.firstElementChild, op = look >= 1 ? '' : look.toFixed(2), gray = look >= 1 ? '' : ((1 - look) / 0.55 * 0.9).toFixed(2);
+        const hid = this.state === 'play' ? this.toxInside() : 0, seen = Math.min(look, 1 - 0.72 * hid); // shut inside a Tox Box: faint under it
+        const pm = pl.firstElementChild, op = seen >= 1 ? '' : seen.toFixed(2), gray = look >= 1 ? '' : ((1 - look) / 0.55 * 0.9).toFixed(2);
         if (pm.style.opacity !== op) pm.style.opacity = op;
         if (pm.style.getPropertyValue('--gray') !== gray) pm.style.setProperty('--gray', gray);
       } else pl.hidden = true;

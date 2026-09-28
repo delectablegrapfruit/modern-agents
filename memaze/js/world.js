@@ -22,6 +22,25 @@
     k = k * k * (3 - 2 * k);
     return { x: mv.a.x + (mv.b.x - mv.a.x) * k, y: mv.a.y + (mv.b.y - mv.a.y) * k, k };
   }
+  // Tox Boxes (Gauntlet): stone cubes tumbling tile by tile along a track (bx.tiles, centres and headings), tile 0 to tile n and back, one tile
+  // per `roll` seconds, resting `rest` between tumbles and `end` at either end. Where one is at time t: the tile it's on
+  // (or leaving), the tile it's tumbling onto (the same while it rests), how far over it is (0-1: a slow lift, then a
+  // heavy landing) and, resting, how long since it landed.
+  function toxAt(bx, t) {
+    const n = bx.n, half = bx.end + n * bx.roll + (n - 1) * bx.rest;
+    let c = ((((t + bx.phase) % (2 * half)) + 2 * half) % (2 * half));
+    const back = c >= half;
+    if (back) c -= half;
+    const at = (k) => (back ? n - k : k);
+    if (c < bx.end) return { i: at(0), j: at(0), f: 0, since: c };
+    c -= bx.end;
+    const step = bx.roll + bx.rest, m = Math.min(n - 1, Math.floor(c / step)), w = c - m * step;
+    if (w < bx.roll) { const f = w / bx.roll; return { i: at(m), j: at(m + 1), f: f * f, since: null }; }
+    return { i: at(m + 1), j: at(m + 1), f: 0, since: w - bx.roll };
+  }
+  // Which of the four faces around its tumbling axis is face down on tile k (face 0 is the hollow one): rolling back
+  // undoes rolling on, so it's always the same face on the same tile, and the hollow lands on every fourth.
+  const toxFace = (bx, k) => (((k - bx.h) % 4) + 4) % 4;
 
   class World {
     constructor() {
@@ -130,4 +149,6 @@
   MZ.blinkOn = blinkOn;
   MZ.blinkPhase = blinkPhase;
   MZ.moverAt = moverAt;
+  MZ.toxAt = toxAt;
+  MZ.toxFace = toxFace;
 })();

@@ -693,6 +693,7 @@
             h('li', null, h('b', null, 'Remix'), ': past level 35, levels get a twist: narrow, rushed, mirrored, no map, and more.')),
           h('li', null, 'Falling off the board costs a hit; a bubble floats you back to solid ground.'),
           h('li', null, 'Gauntlet: an endless run of mazes, getting harder (Progressive) or at random, at the difficulty you choose. The item in your slot and your Extra hit shields come along to the next maze. Every 5 gems pays out at once: a life (on Easy, or with 9 lives, an Extra hit; then an item; then time). Share a seed to play the same run.'),
+          h('li', null, 'Tox Boxes (Gauntlet): stone blocks tumbling up and down corridors. One at rest is a wall; one landing on you is a hit. Each lands hollow side down on the tiles with green corners: stand there and let it tumble right over you. Invincible, they pass through you.'),
           h('li', null, 'The map fills in as you go: only what has been on screen shows up.'),
           h('li', null, 'Reach GOAL before the time runs out.'),
           h('li', null, 'Long mazes have flags. Touch one and a loss sends you back to it, not the start. Restart or running out of time starts over.'),

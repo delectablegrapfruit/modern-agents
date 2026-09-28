@@ -1,6 +1,6 @@
 // The level mechanics and modes, played with the real game code in Chromium (from file://): doors and keys, one-way
-// gates, switches, portals, moving platforms, ice, darkness, remix modifiers, chapters and bosses, Gauntlet settings,
-// and the menu. Exits 1 on any failed check or page error.
+// gates, switches, portals, moving platforms, ice, darkness, remix modifiers, chapters and bosses, Gauntlet settings and
+// its Tox Boxes, and the menu. Exits 1 on any failed check or page error.
 //
 //   node tests/mechanics.js
 //
@@ -200,6 +200,43 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     G.quit();
     G.startTrial(14);
     check('item boxes are there in Time Trial too (it has no mystery boxes)', G.maze.gboxes.length >= 2 && !G.boxesOn());
+    G.quit();
+
+    // ----- Gauntlet's Tox Boxes -----
+    check('no Tox Boxes outside the Gauntlet', [3, 12, 25].every((lv) => !(L.build(L.levelParams(lv)).toxes || []).length));
+    G.startGauntlet({ diff: 'hard', seedText: 'tox' });
+    for (let d = 1; d < 12 && !G.maze.toxes.some((b) => b.route); d++) { G.run.cleared = d; G.nextGauntlet(); }
+    const tx = G.maze.toxes.find((b) => b.route);
+    check('the Gauntlet has Tox Boxes, some on the route', !!tx, G.maze.toxes.length);
+    check('...each tumbling along the floor, with a hollow tile between the ends of its track', G.maze.toxes.every((b) => b.tiles.every((T) => G.world.query(T.x, T.y, G.playT).depth > b.s * 0.3) && b.tiles.some((T, k) => k > 0 && k < b.n && MZ.toxFace(b, k) === 0)));
+    const buf = G.box() * 0.035, step = tx.roll + tx.rest, end0 = tx.end;
+    const at = (c) => { tx.phase = c - (G.playT + 1 / 60); }; // the box's own clock reads c on the next frame
+    const fresh = () => { G.pieces = null; G.hp = 2; G.bonus = 0; G.guardT = 0; G.stuck = false; G.fx = {}; G.scale = 1; hits.length = 0; };
+    const T0 = tx.tiles[0], T1 = tx.tiles[1], rev = { x: -T1.ux, y: -T1.uy };
+    fresh(); tx.end = 30; at(1); put(T1);
+    run(0.6, rev);
+    check('a Tox Box at rest is solid: you can\'t move into it (and bumping it doesn\'t hurt)', G.toxCover(T0, tx.s / 2 - buf, G.ball.x, G.ball.y) === 'none' && Math.hypot(G.ball.x - T1.x, G.ball.y - T1.y) > 3 && !hits.length, Math.hypot(G.ball.x - T1.x, G.ball.y - T1.y).toFixed(0));
+    tx.end = end0;
+    const tSolid = tx.tiles.findIndex((T, k) => k > 0 && MZ.toxFace(tx, k) !== 0), tHollow = tx.tiles.findIndex((T, k) => k > 0 && MZ.toxFace(tx, k) === 0);
+    const onto = (k) => tx.end + (k - 1) * step; // (going up the track) when it starts tumbling onto tile k
+    fresh(); at(onto(tSolid) - 0.05); put(tx.tiles[tSolid]);
+    run(0.05 + tx.roll + 0.1);
+    const Tb = tx.tiles[tSolid - 1];
+    check('one landing on you crushes: a hit, and you\'re squeezed out behind it, onto the floor', hits.length === 1 && G.hp === 1 && Math.hypot(G.ball.x - Tb.x, G.ball.y - Tb.y) < 2 && G.toxCover(tx.tiles[tSolid], tx.s / 2 - buf, G.ball.x, G.ball.y) === 'none' && !G.hitAt(G.ball.x, G.ball.y), hits.length + ' hits');
+    fresh(); at(onto(tHollow) - 0.05); put(tx.tiles[tHollow]);
+    run(0.05 + tx.roll + 0.05);
+    const Th = tx.tiles[tHollow], held0 = { x: G.ball.x, y: G.ball.y };
+    check('...but on a hollow tile it comes down hollow side down over you: no hit, you\'re inside', !hits.length && G.toxInside() === 1);
+    run(0.2, rev);
+    check('...and it holds you in until it tumbles on', G.toxCover(Th, tx.s / 2 + 2 * buf, G.ball.x, G.ball.y) === 'all' && Math.hypot(G.ball.x - held0.x, G.ball.y - held0.y) < tx.s * 0.5, Math.hypot(G.ball.x - held0.x, G.ball.y - held0.y).toFixed(0));
+    run(tx.rest + tx.roll + 0.05);
+    const was = { x: G.ball.x, y: G.ball.y };
+    run(0.4, rev);
+    check('...then you\'re free, on its other side', !hits.length && Math.hypot(G.ball.x - was.x, G.ball.y - was.y) > 30 && G.toxInside() === 0);
+    fresh(); G.giveItem('star'); G.useItem(); tx.end = 30; at(1); put(T1);
+    run(0.5, rev);
+    check('with Invincible you pass right through them', G.toxCover(T0, tx.s / 2 - buf, G.ball.x, G.ball.y) !== 'none' && !hits.length);
+    tx.end = end0;
     G.quit();
 
     // ----- Gauntlet -----

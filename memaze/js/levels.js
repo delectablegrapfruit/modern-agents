@@ -147,10 +147,19 @@
     if (o.style === 'random') return rng(hashInts(o.seed, depth, 5)).int(D.span[0], D.span[1]);
     return D.start + Math.floor(depth * 1.4);
   }
+  // Tox Boxes (Gauntlet only): how many tumble about a maze, by difficulty and depth (bosses get two more), and how fast.
+  const TOX = {
+    easy: { n: (d) => (d < 1 ? 0 : Math.min(2, 1 + Math.floor(d / 5))), roll: 0.6, rest: 0.5 },
+    normal: { n: (d) => Math.min(4, 1 + Math.floor(d / 3)), roll: 0.52, rest: 0.42 },
+    hard: { n: (d) => Math.min(6, 2 + Math.floor(d / 3)), roll: 0.46, rest: 0.36 },
+    extreme: { n: (d) => Math.min(8, 3 + Math.floor(d / 3)), roll: 0.4, rest: 0.3 },
+  };
   function gauntletParams(o, depth) {
-    const level = gauntletLevel(o, depth);
-    const p = levelParams(level, { seed: hashInts(o.seed, depth, 99), boss: (depth + 1) % 10 === 0 });
+    const level = gauntletLevel(o, depth), boss = (depth + 1) % 10 === 0;
+    const p = levelParams(level, { seed: hashInts(o.seed, depth, 99), boss });
     p.timeFactor *= 0.9;
+    const T = TOX[o.diff] || TOX.normal;
+    p.tox = { count: T.n(depth) + (boss ? 2 : 0), roll: T.roll, rest: T.rest };
     return p;
   }
 
@@ -272,10 +281,147 @@
     let barriers = m.fixed ? m.fixed.map((b) => Object.assign({}, b)) : null; // a layout pins its barriers
     for (let tries = 0; tries < 6; tries++) {
       const res = mechanize(m, p, barriers);
-      if (res.ok) return res.m;
+      if (res.ok) { placeToxes(res.m, p); return res.m; }
       barriers = res.barriers.filter((x, i) => i !== res.failed); // leave out the one that couldn't be solved
     }
-    return mechanize(m, Object.assign({}, p, { mech: {} }), []).m;
+    const m0 = mechanize(m, Object.assign({}, p, { mech: {} }), []).m;
+    placeToxes(m0, p);
+    return m0;
+  }
+
+  // Tox Boxes, after the Cyclone Stone in Super Mario Galaxy: stone cubes as wide as the corridor, tumbling up and down
+  // a stretch of it (round gentle bends only). Most sit on the route, where the only way past is to stand on a hollow
+  // tile (marked on the floor) and let the box land hollow side down over you; the rest sit in side corridors, the dead
+  // ends out to gems first. Each keeps clear of junctions, keys, switches, portals and item boxes; par allows for the wait.
+  const TOX_MIN = 2, TOX_MAX = 7; // tumbles from one end of a track to the other (it's one more tiles long)
+  function placeToxes(m, p) {
+    m.toxes = [];
+    const want = p.tox ? p.tox.count : 0;
+    if (!want || !m.route) return;
+    const r = rng(hashInts(m.seed, 0x70c5)), n = m.nodes.length, adj = adjacency(n, m.edges);
+    const walked = new Map(); // edge id -> how often the route walks it
+    for (const L of m.route) if (L.type === 'walk') for (const st of L.steps) walked.set(st.e.id, (walked.get(st.e.id) || 0) + 1);
+    const gemAt = new Set(m.gems.map((g) => g.x + ',' + g.y));
+    const barred = new Set([].concat(m.doors, m.gates, m.squeezes || []).map((d) => d.edge));
+    const things = [].concat(
+      m.keys.map((o) => ({ x: o.x, y: o.y, r: 40 })), m.plates.map((o) => ({ x: o.x, y: o.y, r: o.r + 10 })), (m.gboxes || []).map((o) => ({ x: o.x, y: o.y, r: 40 })),
+      m.portals.flatMap((pt) => [pt.a, pt.b].map((o) => ({ x: o.x, y: o.y, r: pt.r + 10 }))), (m.gaps || []).flatMap((q) => [q.a, q.b].map((o) => ({ x: o.x, y: o.y, r: q.hw + 20 }))),
+      m.movers.flatMap((mv) => [mv.a, mv.b].map((o) => ({ x: o.x, y: o.y, r: mv.r + 10 }))),
+      [{ x: m.start.x, y: m.start.y, r: m.start.r + 260 }, { x: m.goal.x, y: m.goal.y, r: m.goal.r + 60 }], m.avoid || []);
+    // How close a square (centre c, along u, half-size a) comes to the floor of another corridor f.
+    const sqDist = (c, u, a, P, Q) => {
+      const loc = (q) => ({ x: (q.x - c.x) * u.x + (q.y - c.y) * u.y, y: -(q.x - c.x) * u.y + (q.y - c.y) * u.x });
+      const A = loc(P), B = loc(Q), inSq = (q) => Math.abs(q.x) <= a && Math.abs(q.y) <= a;
+      if (inSq(A) || inSq(B) || MZ.segsCross(A.x, A.y, B.x, B.y, -a, -a, a, a) || MZ.segsCross(A.x, A.y, B.x, B.y, -a, a, a, -a)) return 0;
+      const toSq = (q) => Math.hypot(Math.max(0, Math.abs(q.x) - a), Math.max(0, Math.abs(q.y) - a));
+      let d = Math.min(toSq(A), toSq(B));
+      for (const [x, y] of [[-a, -a], [a, -a], [a, a], [-a, a]]) d = Math.min(d, Math.sqrt(segDist2(x, y, A.x, A.y, B.x, B.y)));
+      return d;
+    };
+    // Corridors from junction to junction (or out to a dead end), through the bends in between.
+    const deg = adj.map((l) => l.length), inChain = new Set(), chains = [];
+    for (let v0 = 0; v0 < n; v0++) {
+      if (deg[v0] === 2 || !deg[v0]) continue;
+      for (const e0 of adj[v0]) {
+        if (inChain.has(e0.id)) continue;
+        const es = [], pts = [];
+        let v = v0, e = e0;
+        for (;;) {
+          inChain.add(e.id); es.push(e);
+          const P = e.a === v ? e.pts : e.pts.slice().reverse();
+          for (let k = pts.length ? 1 : 0; k < P.length; k++) pts.push({ x: P[k].x, y: P[k].y });
+          v = e.a === v ? e.b : e.a;
+          if (deg[v] !== 2) break;
+          e = adj[v][0] === e ? adj[v][1] : adj[v][0];
+          if (inChain.has(e.id)) break;
+        }
+        chains.push({ es, pts, ends: [v0, v] });
+      }
+    }
+    const segKey = (P, Q) => Math.round(P.x) + ',' + Math.round(P.y) + '|' + Math.round(Q.x) + ',' + Math.round(Q.y);
+    const clearOf = (own, c, u, a) => { // a box here keeps off every other corridor's floor
+      for (const f of m.edges) {
+        const P = f.pts;
+        for (let i = 1; i < P.length; i++) {
+          if (own.has(segKey(P[i - 1], P[i]))) continue;
+          if (Math.sqrt(segDist2(c.x, c.y, P[i - 1].x, P[i - 1].y, P[i].x, P[i].y)) > a * 1.5 + f.hw + 4) continue;
+          if (sqDist(c, u, a, P[i - 1], P[i]) < f.hw + 2) return false;
+        }
+      }
+      return true;
+    };
+    const cands = [];
+    chains.forEach((ch, ci) => {
+      const times = walked.get(ch.es[0].id) || 0;
+      if (ch.es.some((e) => e.type !== 'normal' || e.ice || e.blink || e.sw || barred.has(e.id) || (walked.get(e.id) || 0) !== times) || times > 1) return;
+      const [v0, v1] = ch.ends, leaf0 = deg[v0] === 1, leaf1 = deg[v1] === 1;
+      const gem = (leaf0 && gemAt.has(m.nodes[v0].x + ',' + m.nodes[v0].y)) || (leaf1 && gemAt.has(m.nodes[v1].x + ',' + m.nodes[v1].y));
+      const kind = times ? 'route' : gem ? 'gem' : 'side';
+      const hw = Math.min(...ch.es.map((e) => e.hw)), s = clamp(hw * 1.84, 60, 84), a = s / 2 + 2, P = ch.pts, cum = [0];
+      for (let k = 1; k < P.length; k++) cum.push(cum[k - 1] + Math.hypot(P[k].x - P[k - 1].x, P[k].y - P[k - 1].y));
+      const L = cum[cum.length - 1];
+      if (L < (TOX_MIN + 1) * s + 16) return;
+      const at = (d) => {
+        d = clamp(d, 0, L);
+        let k = 1;
+        while (k < P.length - 1 && cum[k] < d) k++;
+        const f = (d - cum[k - 1]) / (cum[k] - cum[k - 1] || 1);
+        return { x: P[k - 1].x + (P[k].x - P[k - 1].x) * f, y: P[k - 1].y + (P[k].y - P[k - 1].y) * f };
+      };
+      const dirAt = (d) => { const p0 = at(d - s / 2), p1 = at(d + s / 2), l = Math.hypot(p1.x - p0.x, p1.y - p0.y) || 1; return { x: (p1.x - p0.x) / l, y: (p1.y - p0.y) / l }; };
+      const own = (d0, d1) => { // this corridor's own floor, around the stretch d0..d1
+        const o = new Set();
+        for (let k = 1; k < P.length; k++) if (cum[k] > d0 - s && cum[k - 1] < d1 + s) { o.add(segKey(P[k - 1], P[k])); o.add(segKey(P[k], P[k - 1])); }
+        return o;
+      };
+      // Each end pulls back until a box there is clear of the other corridors at the junction (and, at a dead end,
+      // leaves room to stand by the gem).
+      let mA = s / 2 + (leaf0 ? 30 : 8), mB = s / 2 + (leaf1 ? 30 : 8);
+      while (mA < L / 2 && !clearOf(own(mA, mA), at(mA), dirAt(mA), a)) mA += 4;
+      while (mB < L / 2 && !clearOf(own(L - mB, L - mB), at(L - mB), dirAt(L - mB), a)) mB += 4;
+      const span = L - mA - mB, count = Math.floor(span / s) + 1;
+      if (count < TOX_MIN + 1) return;
+      const d0 = mA + (span - (count - 1) * s) / 2;
+      const tiles = [];
+      for (let k = 0; k < count; k++) { const c = at(d0 + k * s), u = dirAt(d0 + k * s); tiles.push({ x: c.x, y: c.y, ux: u.x, uy: u.y, d: d0 + k * s }); }
+      // It tumbles round gentle bends only: split where the corridor turns sharply, and keep the longest run (no more
+      // than TOX_MAX tumbles, from its middle) clear of keys, switches, portals, item boxes and the like.
+      const runs = [];
+      let run = [tiles[0]];
+      for (let k = 1; k < count; k++) {
+        const A = tiles[k - 1], B = tiles[k], turn = Math.acos(clamp(A.ux * B.ux + A.uy * B.uy, -1, 1));
+        if (turn > 0.4) { runs.push(run); run = []; }
+        run.push(B);
+      }
+      runs.push(run);
+      for (let T of runs) {
+        if (T.length > TOX_MAX + 1) { const k = Math.floor((T.length - TOX_MAX - 1) / 2); T = T.slice(k, k + TOX_MAX + 1); }
+        if (T.length < TOX_MIN + 1) continue;
+        if (T.some((c) => things.some((o) => Math.hypot(o.x - c.x, o.y - c.y) < o.r + s * 0.71))) continue;
+        cands.push({ chain: ci, kind, s, tiles: T.map((c) => ({ x: c.x, y: c.y, ux: c.ux, uy: c.uy })), score: r() + T.length * 0.05 });
+      }
+    });
+    cands.sort((x, y) => y.score - x.score);
+    const mid = (c) => c.tiles[Math.floor(c.tiles.length / 2)];
+    const picked = [], ok = (c) => !picked.some((q) => q.chain === c.chain || Math.hypot(mid(q).x - mid(c).x, mid(q).y - mid(c).y) < 380);
+    const take = (kind, upTo) => { for (const c of cands) if (picked.length < upTo && c.kind === kind && !picked.includes(c) && ok(c)) picked.push(c); };
+    take('route', Math.ceil(want * 0.6));
+    take('gem', want);
+    take('route', want);
+    take('side', want);
+    let wait = 0;
+    for (const c of picked) {
+      const n = c.tiles.length - 1, roll = p.tox.roll * r.range(0.92, 1.08), rest = p.tox.rest * r.range(0.9, 1.15), end = rest + 0.5;
+      const half = end + n * roll + (n - 1) * rest, h = r.int(1, Math.min(3, n - 1));
+      m.toxes.push({ tiles: c.tiles, s: c.s, n, h, roll, rest, end, phase: r.range(0, 2 * half), route: c.kind === 'route', guard: c.kind === 'gem', seen: false });
+      for (const t of c.tiles) if (m.avoid) m.avoid.push({ x: t.x, y: t.y, r: c.s * 0.71 + 20 }); // no mystery box or flag on its track
+      for (let k = 1; k <= n; k++) if (m.keepClear) m.keepClear.push({ ax: c.tiles[k - 1].x, ay: c.tiles[k - 1].y, bx: c.tiles[k].x, by: c.tiles[k].y, r: c.s * 0.71 });
+      if (c.kind === 'route') wait += half + 0.5; // waiting for it to come over you: half its round trip, on average
+    }
+    if (wait) {
+      m.parTime = Math.ceil(m.parTime + wait);
+      m.timeLimit = Math.max(m.timeLimit, Math.ceil((m.parTime * p.timeFactor + 15) / 5) * 5);
+    }
   }
 
   function mechanize(base, p, fixed) {

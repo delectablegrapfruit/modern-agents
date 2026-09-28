@@ -148,6 +148,36 @@
   // at any zoom they look like the menu's chunky icons, and what's drawn is what acts: a shut door blocks exactly as
   // thick as its bar (Levels.DOOR_R = 8 icon pixels), a key is picked up where it's drawn (Levels.KEY_R).
   const ICON = 2;
+
+  // ---------- Tox Boxes ----------
+  const TOX_STONE = [150, 142, 192]; // lavender-grey stone
+  const toxRGB = (b) => 'rgb(' + TOX_STONE.map((c) => Math.round(c * b)).join(',') + ')';
+  // One side of a Tox Box, in its own s x s square (up is -y): the hollow side (a thick rim round the dark inside), or
+  // an angry face (heavy brows down to the middle over glaring eyes, gritted teeth).
+  function toxFaceArt(g, s, hollow) {
+    const h = s / 2;
+    if (hollow) {
+      const q = h - s * 0.11, gr = g.createRadialGradient(0, 0, q * 0.15, 0, 0, q * 1.45);
+      gr.addColorStop(0, '#07050e'); gr.addColorStop(1, '#2d2545');
+      g.fillStyle = gr; g.fillRect(-q, -q, 2 * q, 2 * q);
+      g.strokeStyle = 'rgba(0,0,0,0.6)'; g.lineWidth = s * 0.035; g.strokeRect(-q, -q, 2 * q, 2 * q);
+      g.strokeStyle = 'rgba(255,255,255,0.14)'; g.lineWidth = s * 0.02; g.strokeRect(-h * 0.93, -h * 0.93, h * 1.86, h * 1.86);
+      return;
+    }
+    g.strokeStyle = 'rgba(255,255,255,0.16)'; g.lineWidth = s * 0.035; g.strokeRect(-h * 0.82, -h * 0.82, h * 1.64, h * 1.64); // bevel
+    g.lineCap = 'round';
+    for (const k of [-1, 1]) {
+      g.fillStyle = '#fff4d0'; g.beginPath(); g.ellipse(k * s * 0.19, -s * 0.03, s * 0.115, s * 0.085, 0, 0, TAU); g.fill();
+      g.fillStyle = '#1a1328'; g.beginPath(); g.arc(k * s * 0.15, -s * 0.01, s * 0.05, 0, TAU); g.fill();
+      g.strokeStyle = '#2a2140'; g.lineWidth = s * 0.08; g.beginPath(); g.moveTo(k * s * 0.35, -s * 0.2); g.lineTo(k * s * 0.07, -s * 0.07); g.stroke();
+    }
+    g.fillStyle = '#1a1328'; g.fillRect(-s * 0.2, s * 0.14, s * 0.4, s * 0.15);
+    g.fillStyle = '#efe6cf'; g.fillRect(-s * 0.17, s * 0.165, s * 0.34, s * 0.1);
+    g.strokeStyle = '#1a1328'; g.lineWidth = s * 0.02; g.lineCap = 'butt';
+    g.beginPath(); g.moveTo(-s * 0.17, s * 0.215); g.lineTo(s * 0.17, s * 0.215);
+    for (const x of [-0.085, 0, 0.085]) { g.moveTo(x * s, s * 0.165); g.lineTo(x * s, s * 0.265); }
+    g.stroke();
+  }
   const KEY_S = 13, KEY_TILT = -0.6; // key size (world units) and its tilt
   function keyPath(g, s) { // bow, shaft, two teeth
     g.beginPath(); g.arc(-s * 0.55, 0, s * 0.5, 0, TAU);
@@ -308,6 +338,8 @@
       if (s.path) this.drawPath(s.path, s.clock || 0);
       ctx.lineCap = 'butt';
       if (s.mech) this.drawMovers(s.mech, t, th);
+      const toxes = s.mech && s.mech.toxes && s.mech.toxes.length ? s.mech.toxes.filter((bx) => bx.tiles.some((q) => Math.abs(q.x - cam.x) < hw + bx.s && Math.abs(q.y - cam.y) < hh + bx.s)) : [];
+      for (const bx of toxes) this.drawToxTrack(bx, t);
 
       if (s.start) this.drawStart(s.start, th);
       if (s.goal && !s.goal.media) this.drawGoal(s.goal, th);
@@ -317,7 +349,86 @@
       if (s.gems) for (const g of s.gems) if (!g.taken) this.drawGem(g);
       if (s.boxes) for (const b of s.boxes) this.drawBox(b, s.clock || 0, s.boxAge ? s.boxAge(b) : 9);
       if (s.shards) for (const b of s.shards) this.drawShards(b, s.clock || 0);
+      for (const bx of toxes) this.drawTox(bx, t);
       if (s.under) this.drawUnder(s.under, s.clock || 0);
+    }
+    // A Tox Box's track: the tiles it lands on, faintly; the hollow ones (where it always comes down hollow side down:
+    // stand there and it passes right over you) with bright corner brackets.
+    drawToxTrack(bx, t) {
+      const ctx = this.ctx, px = this.px, s = bx.s, h = s / 2;
+      for (let k = 0; k <= bx.n; k++) {
+        const T = bx.tiles[k];
+        ctx.save();
+        ctx.translate(T.x, T.y); ctx.rotate(Math.atan2(T.uy, T.ux));
+        ctx.fillStyle = 'rgba(24,14,48,0.16)'; ctx.fillRect(-h, -h, s, s);
+        ctx.strokeStyle = 'rgba(24,14,48,0.32)'; ctx.lineWidth = 2 * px; ctx.strokeRect(-h + 2, -h + 2, s - 4, s - 4);
+        if (MZ.toxFace(bx, k) === 0) {
+          const q = h * 0.8, l = h * 0.36;
+          ctx.beginPath();
+          for (const [a, b] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) { ctx.moveTo(a * q, b * (q - l)); ctx.lineTo(a * q, b * q); ctx.lineTo(a * (q - l), b * q); }
+          ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+          ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.lineWidth = 7 * px; ctx.stroke();
+          ctx.strokeStyle = 'rgba(140,255,200,' + (0.7 + 0.3 * Math.sin(t * 3 + k)).toFixed(3) + ')'; ctx.lineWidth = 3.5 * px; ctx.stroke();
+          ctx.setLineDash([4 * px, 4 * px]); ctx.strokeStyle = 'rgba(140,255,200,0.45)'; ctx.lineWidth = 1.5 * px;
+          ctx.strokeRect(-q * 0.6, -q * 0.6, q * 1.2, q * 1.2); ctx.setLineDash([]);
+        }
+        ctx.restore();
+      }
+    }
+    // A Tox Box: resting, a stone block (its top face, a darker front below it); tumbling, two faces foreshortened as it
+    // goes over its leading edge, lifting toward you as it does; landing, a puff of dust.
+    drawTox(bx, t) {
+      const ctx = this.ctx, s = bx.s, h = s / 2, st = MZ.toxAt(bx, t), A = bx.tiles[st.i], B = bx.tiles[st.j];
+      if (bx.up == null) { // the face art's up: whichever side of the box is nearest the top of the screen, the same for every face
+        let x = 0, y = 0;
+        for (const q of bx.tiles) { x += q.ux; y += q.uy; }
+        bx.up = -Math.round(Math.atan2(y, x) / (Math.PI / 2)) * (Math.PI / 2);
+      }
+      let a0 = Math.atan2(A.uy, A.ux), a1 = Math.atan2(B.uy, B.ux);
+      while (a1 - a0 > Math.PI) a1 -= TAU;
+      while (a1 - a0 < -Math.PI) a1 += TAU;
+      const f = st.f, d = st.j >= st.i ? 1 : -1, th = (f * Math.PI) / 2, c = Math.cos(th), sn = Math.sin(th);
+      const ox = st.f > 0 ? (A.x + B.x) / 2 : A.x, oy = st.f > 0 ? (A.y + B.y) / 2 : A.y, rot = a0 + (a1 - a0) * f;
+      // Along the track (x, forward), from the edge it tumbles over: the side rising to become the top, then the old top.
+      const x0 = st.f > 0 ? -d * s * c : -h, xm = st.f > 0 ? -d * s * c + d * s * sn : -h, x1 = st.f > 0 ? d * s * sn : h;
+      const lo = Math.min(x0, x1), w = Math.abs(x1 - x0), ext = s * 0.1, lift = 1 + 0.07 * Math.sin(2 * th);
+      const face = (u0, u1, k, lit) => {
+        const ww = Math.abs(u1 - u0);
+        if (ww < 0.5) return;
+        const l = Math.min(u0, u1);
+        ctx.save();
+        ctx.beginPath(); ctx.rect(l, -h, ww, s); ctx.clip();
+        ctx.fillStyle = toxRGB(1); ctx.fillRect(l, -h, ww, s);
+        ctx.translate(l + ww / 2, 0); ctx.scale(ww / s, 1); ctx.rotate(bx.up);
+        toxFaceArt(ctx, s, k === 0);
+        ctx.restore();
+        if (lit < 1) { ctx.fillStyle = 'rgba(12,6,28,' + ((1 - lit) * 0.8).toFixed(3) + ')'; ctx.fillRect(l, -h, ww, s); }
+        ctx.strokeStyle = 'rgba(22,14,40,0.9)'; ctx.lineWidth = s * 0.035; ctx.strokeRect(l, -h, ww, s);
+      };
+      const box = (dx, dy, fill) => { // the footprint, moved (dx, dy) on the floor
+        ctx.save(); ctx.translate(ox + dx, oy + dy); ctx.rotate(rot); ctx.fillStyle = fill; ctx.fillRect(lo, -h, w, s); ctx.restore();
+      };
+      box(s * 0.07, s * 0.16, 'rgba(0,0,0,0.3)'); // shadow
+      if (st.f === 0 && st.since < 0.4) { // dust
+        const k = st.since / 0.4;
+        ctx.save(); ctx.translate(ox, oy); ctx.rotate(rot);
+        ctx.fillStyle = 'rgba(225,218,245,' + (0.4 * (1 - k)).toFixed(3) + ')';
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * TAU + 0.4, r = h * (1.05 + 0.5 * k);
+          ctx.beginPath(); ctx.arc(Math.cos(a) * r * 1.1, Math.sin(a) * r * 1.1, s * (0.08 + 0.12 * k), 0, TAU); ctx.fill();
+        }
+        ctx.restore();
+      }
+      for (let i = 4; i >= 1; i--) box(0, (ext * i) / 4, toxRGB(0.42)); // its front, below the top
+      ctx.save();
+      ctx.translate(ox, oy); ctx.rotate(rot);
+      if (lift !== 1) { const cx = lo + w / 2; ctx.translate(cx, 0); ctx.scale(lift, lift); ctx.translate(-cx, 0); }
+      if (st.f === 0) face(-h, h, MZ.toxFace(bx, st.i + 2), 1);
+      else {
+        face(x0, xm, MZ.toxFace(bx, st.i - d), 0.55 + 0.45 * sn);
+        face(xm, x1, MZ.toxFace(bx, st.i + 2), 0.55 + 0.45 * c);
+      }
+      ctx.restore();
     }
     // Switch bridges: one that's down carries its switch's badge over the gap (closed until you press that colour);
     // pressing the switch flashes all its bridges in its colour as they come or go.
@@ -870,6 +981,13 @@
         for (const q of mech.squeezes || []) if (q.seen) doorBar(g, this.ox + q.ax * this.sc, this.oy + q.ay * this.sc, this.ox + q.bx * this.sc, this.oy + q.by * this.sc, ITEM_TINT.shrink, Math.max(ICON * this.sc, 0.2 * u), false);
         for (const gb of mech.gboxes || []) if (gb.seen && !gb.out) { const x = this.ox + gb.x * this.sc, y = this.oy + gb.y * this.sc, h = 2.6 * u; g.fillStyle = '#000'; g.fillRect(x - h - 0.8 * u, y - h - 0.8 * u, 2 * h + 1.6 * u, 2 * h + 1.6 * u); g.fillStyle = '#ffd84a'; g.fillRect(x - h, y - h, 2 * h, 2 * h); }
         for (const pt of mech.portals) for (const e of [pt.a, pt.b]) if (e.seen) { dot(e.x, e.y, 3.2 * u, pt.color); dot(e.x, e.y, 1.6 * u, '#000'); }
+        const now = MZ.Game ? MZ.Game.playT : 0;
+        for (const bx of mech.toxes || []) if (bx.seen) { // a Tox Box: its track, and the box where it is now
+          g.save(); g.lineCap = 'butt'; g.lineJoin = 'round'; g.strokeStyle = 'rgba(160,150,205,0.5)'; g.lineWidth = Math.max(1.5, bx.s * this.sc);
+          g.beginPath(); bx.tiles.forEach((q, i) => (i ? g.lineTo : g.moveTo).call(g, this.ox + q.x * this.sc, this.oy + q.y * this.sc)); g.stroke(); g.restore();
+          const st = MZ.toxAt(bx, now), T = bx.tiles[st.f > 0.5 ? st.j : st.i], x = this.ox + T.x * this.sc, y = this.oy + T.y * this.sc, q = Math.max(2.2 * u, bx.s * this.sc * 0.5);
+          g.fillStyle = '#000'; g.fillRect(x - q - 0.7 * u, y - q - 0.7 * u, 2 * q + 1.4 * u, 2 * q + 1.4 * u); g.fillStyle = '#a79fd8'; g.fillRect(x - q, y - q, 2 * q, 2 * q);
+        }
         for (const mv of mech.movers) if (mv.seen) {
           g.setLineDash([2 * u, 2 * u]); g.strokeStyle = 'rgba(255,255,255,0.7)'; g.lineWidth = Math.max(1, u);
           g.beginPath(); g.moveTo(this.ox + mv.a.x * this.sc, this.oy + mv.a.y * this.sc); g.lineTo(this.ox + mv.b.x * this.sc, this.oy + mv.b.y * this.sc); g.stroke(); g.setLineDash([]);
