@@ -271,8 +271,8 @@ public struct Build: Sendable {
     /// How heavy the limbs are (1 is the ronin).
     public var bulk: CGFloat = 1
     /// How far the muscle swells between the joints beyond `bulk` (1 is the ronin): the shoulders and the back, the
-    /// upper arms and forearms, the thighs and calves, the neck. The joints themselves (wrists, elbows, knees, ankles)
-    /// stay as fine as `bulk` has them, so a man built heavy is thick with muscle, not swollen.
+    /// upper arms and forearms, the thighs (the calves a little less), the neck. The joints themselves (wrists, elbows,
+    /// knees, ankles) stay as fine as `bulk` has them, so a man built heavy is thick with muscle, not swollen.
     public var brawn: CGFloat = 1
     /// Chest depth and waist, as shares of the height.
     public var chest: CGFloat = 0.17
