@@ -343,14 +343,18 @@
       const seedText = o.seedText || MZ.randomSeed();
       this.mode = 'gauntlet';
       this.run = { seed: hashStr('memaze/gauntlet/' + seedText), seedText, userSeed: !!o.seedText, style: o.style, diff: o.diff, key, cleared: 0, lives: D.lives, prevBest: MZ.Save.progress.gauntlet[key] || 0 };
-      this.item = null; this.roll = null; // a fresh run starts empty-handed
+      this.item = null; this.roll = null; this.bonus = 0; // a fresh run starts empty-handed
       this.nextGauntlet();
     },
     nextGauntlet() {
       const r = this.run, p = MZ.Levels.gauntletParams(r, r.cleared);
-      const keep = this.item || (this.roll && this.roll.id !== 'heart' ? this.roll.id : null); // the item in your slot comes along
+      // The item in your slot (or the one spinning in) and your Extra hit shields come along.
+      const keep = this.item || (this.roll && this.roll.id !== 'heart' ? this.roll.id : null);
+      const rings = Math.min(MAX_BONUS, this.bonus + (this.roll && this.roll.id === 'heart' ? 1 : 0));
       this.loadMaze(p, { label: 'Gauntlet · ' + (p.boss ? 'Boss · ' : '') + 'Depth ' + (r.cleared + 1), depth: r.cleared + 1 });
-      if (keep && ITEMS[keep]) { this.item = keep; this.emit('power'); }
+      if (keep && ITEMS[keep]) this.item = keep;
+      this.bonus = rings;
+      this.emit('power');
     },
     startEndless() {
       this.mode = 'endless';
@@ -551,7 +555,7 @@
           mx = v.x * dt; my = v.y * dt;
         } else { v.x = mx / dt; v.y = my / dt; }
       }
-      const soft = S().gameplay.rule === 'casual' || this.shielded(); // edges hold like walls
+      let soft = S().gameplay.rule === 'casual' || this.shielded(); // edges hold like walls
       this.touched = false;
       // Standing still can still go wrong: an animation frame reaching over the edge (a touch), or a bridge vanishing
       // underneath, the carpet running out over the void (a fall).
@@ -561,7 +565,7 @@
         // itself reached over the edge (a new animation frame while pressed into a wall or a corner): back onto the
         // floor, and it's a touch.
         if (!this.unstick() && (!(this.world.query(b.x, b.y, this.playT).depth > 0) || !this.unstick(0.8))) { this.fall(); return; }
-        if (!soft && this.hurt()) return;
+        if (!soft) { if (this.hurt()) return; soft = true; } // that was this frame's hit: the edges hold now
       }
       // Move in slices far shorter than the hitbox buffer, so the first touch is found and no gap is ever skipped.
       const n = Math.max(1, Math.ceil(Math.hypot(mx, my) / (this.box() * BUFFER * 0.5)));

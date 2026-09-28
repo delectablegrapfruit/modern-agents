@@ -95,6 +95,16 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     check('a picture that grows over the edge is pushed back onto the floor, no bubble', !G.fx.bubble && onFloor() && G.state === 'play');
     S.gameplay.rule = 'normal'; G.quit();
 
+    // ----- a touch at the start of a frame (the picture's next frame reaching over the edge) and a drag into the edge
+    // in that same frame are one hit, not two (it used to lose from full health, with animated pictures) -----
+    G.startJourney(6); d = voidDir();
+    S.gameplay.rule = 'casual'; run(0.6, d); S.gameplay.rule = 'normal'; // right at the edge, no hit
+    G.guardT = 0; G.stuck = false; G.hp = 2; G.bonus = 0; events.length = 0;
+    for (let k = 0; k < 40 && !G.hitAt(G.ball.x, G.ball.y); k++) { G.ball.x += d.x * 0.5; G.ball.y += d.y * 0.5; } // a hair over it
+    run(1 / 60, d);
+    check('an edge touch and a drag into it in the same frame cost one hit', G.hp === 1 && G.state === 'play' && !events.some((e) => e.startsWith('lose')), events.join());
+    G.quit();
+
     // ----- a right click uses the item -----
     G.startJourney(6);
     G.giveItem('shrink');

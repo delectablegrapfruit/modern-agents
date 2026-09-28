@@ -677,7 +677,7 @@
             h('li', null, h('b', null, 'Darkness'), ': you only see what’s near you.'),
             h('li', null, h('b', null, 'Remix'), ': past level 35, levels get a twist: narrow, rushed, mirrored, no map, and more.')),
           h('li', null, 'Falling off the board costs a hit; a bubble floats you back to solid ground.'),
-          h('li', null, 'Gauntlet: an endless run of mazes, getting harder (Progressive) or at random, at the difficulty you choose. The item in your slot comes along to the next maze. Share a seed to play the same run.'),
+          h('li', null, 'Gauntlet: an endless run of mazes, getting harder (Progressive) or at random, at the difficulty you choose. The item in your slot and your Extra hit shields come along to the next maze. Share a seed to play the same run.'),
           h('li', null, 'The map fills in as you go: only what has been on screen shows up.'),
           h('li', null, 'Reach GOAL before the time runs out.'),
           h('li', null, 'Long mazes have flags. Touch one and a loss sends you back to it, not the start. Restart or running out of time starts over.'),

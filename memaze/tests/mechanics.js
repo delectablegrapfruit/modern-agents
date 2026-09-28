@@ -174,12 +174,12 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     check('every tenth Gauntlet maze is a boss', L.gauntletParams({ style: 'progressive', diff: 'easy', seed: 3 }, 9).boss && !L.gauntletParams({ style: 'progressive', diff: 'easy', seed: 3 }, 8).boss);
     G.startGauntlet({ diff: 'easy' });
     check('Easy Gauntlet has unlimited lives', G.run.lives === Infinity);
-    G.giveItem('shrink');
+    G.giveItem('shrink'); G.giveItem('heart');
     G.run.cleared++; G.nextGauntlet(); // what a clear does once the win media is over
-    check('Gauntlet: the item in your slot comes along to the next maze', G.item === 'shrink' && G.run.cleared === 1);
+    check('Gauntlet: the item in your slot and your Extra hit shields come along to the next maze', G.item === 'shrink' && G.bonus === 1 && G.run.cleared === 1);
     G.quit();
     G.startGauntlet({ diff: 'easy' });
-    check('...but a new run starts empty-handed', !G.item);
+    check('...but a new run starts empty-handed', !G.item && !G.bonus);
     G.quit();
     return res;
   });
