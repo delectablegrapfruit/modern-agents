@@ -321,6 +321,41 @@ try {
     report.shots.push(tf);
     await ctx.close();
   }
+  if (want('resume')) {
+    // The fight in progress is saved and picked up again where it was.
+    const p = await open(552, 420);
+    await p.evaluate(() => { window.ronin.session.setAutopilot(true); window.ronin.session.jump(2); window.ronin.panel.scene.loadFight(true); });
+    const b = await p.locator('#lane').boundingBox();
+    await p.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+    await p.waitForFunction(() => window.ronin.session.fight.stats.kills >= 4, null, { timeout: 60000 });
+    await p.mouse.move(2, 2);
+    await p.waitForTimeout(300);
+    const before = await p.evaluate(() => { const f = window.ronin.session.fight; return { stage: f.stage, kills: f.stats.kills, time: +f.time.toFixed(2), seed: f.seed }; });
+    await p.reload();
+    await p.waitForFunction(() => window.ronin && window.ronin.panel, null, { timeout: 60000 });
+    const after = await p.evaluate(() => { const f = window.ronin.session.fight; return { stage: f.stage, kills: f.stats.kills, time: +f.time.toFixed(2), seed: f.seed }; });
+    report.resume = { before, after, same: before.seed === after.seed && before.kills === after.kills };
+    await p.close();
+  }
+  if (want('big')) {
+    // A wide desktop window at a Retina scale: the panel at its largest.
+    const p = await open(1440, 900, 2);
+    await p.evaluate(() => { window.ronin.session.setAutopilot(true); window.ronin.session.jump(7); window.ronin.panel.scene.loadFight(true); });
+    const b = await p.locator('#lane').boundingBox();
+    await p.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+    await p.waitForTimeout(1000);
+    await p.evaluate(() => { window.ronin.panel.frames = { n: 0, total: 0, worst: 0 }; });
+    await p.waitForTimeout(15000);
+    report.frames.big = await p.evaluate(() => {
+      const f = window.ronin.panel.frames, n = Math.max(1, f.n), q = f.parts || {};
+      return { canvas: `${window.ronin.panel.canvas.width}x${window.ronin.panel.canvas.height}`, n: f.n, avg: +(f.total / n).toFixed(2), fps: +(f.n / Math.max(0.001, f.dt || 0)).toFixed(1),
+        slow: f.slow || 0, render: +((q.render || 0) / n).toFixed(2), update: +((q.update || 0) / n).toFixed(2) };
+    });
+    const file = path.join(out, 'desktop-wide.png');
+    await p.screenshot({ path: file });
+    report.shots.push(file);
+    await p.close();
+  }
   if (want('csp')) {
     // A viewer whose Content-Security-Policy does not allow WebAssembly: the page says so.
     const html = fs.readFileSync(path.join(serve, 'index.html'), 'utf8')

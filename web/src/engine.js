@@ -560,22 +560,38 @@ const R = {
     ctx.globalCompositeOperation = 'source-over';
     ctx.fillStyle = background;
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-    const list = this.list;
-    list.length = 0;
-    collect(root, [s, 0, 0, -s, 0, this.H * s], 1, 0, list);
-    list.sort((a, b) => a.z - b.z || a.o - b.o);
-    for (const e of list) {
-      const m = e.m;
-      ctx.setTransform(m[0], m[1], m[2], m[3], m[4], m[5]);
-      ctx.globalAlpha = e.a;
-      ctx.globalCompositeOperation = e.n.blend || 'source-over';
-      e.n.paint(ctx);
-    }
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.globalAlpha = 1;
-    ctx.globalCompositeOperation = 'source-over';
+    drawTree(ctx, root, [s, 0, 0, -s, 0, this.H * s], this.list);
+  },
+
+  /** Draws nodes that never change once into a picture `w` by `h` points (at the renderer's pixels), as one sprite
+   *  anchored at its bottom left: the scenery, which would otherwise fill its paths every frame. */
+  bake(nodes, w, h) {
+    const s = this.px;
+    const c = makeCanvas(w * s, h * s);
+    const holder = new Node();
+    for (const n of nodes) holder.add(n);
+    drawTree(c.getContext('2d'), holder, [s, 0, 0, -s, 0, h * s], []);
+    const sprite = new Sprite(new Texture(c, w, h), w, h);
+    sprite.ax = 0; sprite.ay = 0;
+    return sprite;
   },
 };
+
+function drawTree(ctx, root, base, list) {
+  list.length = 0;
+  collect(root, base, 1, 0, list);
+  list.sort((a, b) => a.z - b.z || a.o - b.o);
+  for (const e of list) {
+    const m = e.m;
+    ctx.setTransform(m[0], m[1], m[2], m[3], m[4], m[5]);
+    ctx.globalAlpha = e.a;
+    ctx.globalCompositeOperation = e.n.blend || 'source-over';
+    e.n.paint(ctx);
+  }
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+}
 
 let collectOrder = 0;
 function collect(node, parent, alpha, z, out) {

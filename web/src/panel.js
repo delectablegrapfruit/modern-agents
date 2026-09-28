@@ -48,12 +48,15 @@ class Panel {
     // Folded, the pill keeps the scale the panel had.
     const scale = Math.min(avail / unfolded, 2.2);
     const cssW = size.w * scale, cssH = size.h * scale;
+    // Device pixels a point: the screen's, but no more than four (a wide Retina window would draw a canvas of millions
+    // of pixels every frame for detail nobody sees at that size).
     const dpr = Math.min(3, window.devicePixelRatio || 1);
+    const px = Math.min(scale * dpr, 4);
     this.canvas.style.width = `${cssW}px`;
     this.canvas.style.height = `${cssH}px`;
     this.canvas.style.borderRadius = `${(this.compact ? PILL.h / 2 : 12) * scale}px`;
-    this.canvas.width = Math.round(cssW * dpr);
-    this.canvas.height = Math.round(cssH * dpr);
+    this.canvas.width = Math.round(size.w * px);
+    this.canvas.height = Math.round(size.h * px);
     this.cssScale = scale;
     R.W = size.w;
     R.H = size.h;
@@ -221,15 +224,9 @@ class Panel {
     if (!this.visible || this.awayFor > 1.2) return;
     this.scene.update(dt);
     const t1 = performance.now();
-    const frozen = this.scene.frozenWorld && !this.scene.isEngaging;
-    if (frozen) {
-      // Everything holds but what plays over the lane.
-      this.scene.overlay.tick(0);
-      this.scene.header.tick(dt);
-      this.scene.pill.tick(dt);
-    } else {
-      this.scene.root.tick(dt);
-    }
+    // (Paused, the fight and the figures hold, and what plays over the lane holds with them (its speed is 0), while
+    // the sky goes on, as the app's SKView does until it stops drawing.)
+    this.scene.root.tick(dt);
     const t2 = performance.now();
     R.render(this.scene.root, Palette.background.css());
     const t3 = performance.now();

@@ -276,14 +276,14 @@ class DuelScene {
     this.groundY = lane.groundY;
     this.ronin = lane.ronin;
     const resized = !this.laidOut || this.laidOut.w !== w || this.laidOut.h !== this.size.h;
-    if (resized || this.laidOut.setting !== this.shownSetting) this.buildScenery();
+    if (resized || this.laidOut.setting !== this.shownSetting || this.laidOut.px !== R.px) this.buildScenery();
     this.carnage.relayout(this.field, this.groundY, this.ronin, this.heroX);
     if (resized) {
       this.hero.layout(this.ronin, { x: this.heroX, y: this.groundY });
       for (const s of this.foeSprites.values()) s.layout(this.ronin, this.headroom);
       for (const side of ['left', 'right']) this.hint?.childNamed(side)?.at(this.laneX(sideSign(side) * 0.62), this.groundY + this.ronin * 0.2);
     }
-    this.laidOut = { w, h: this.size.h, setting: this.shownSetting };
+    this.laidOut = { w, h: this.size.h, setting: this.shownSetting, px: R.px };
     const f = this.field;
     this.vignette.size(w * 1.25, f.h * 1.6).at(f.x + f.w / 2, f.y + f.h / 2);
     this.rage.size(this.vignette.w, this.vignette.h).at(this.vignette.x, this.vignette.y);
@@ -360,20 +360,22 @@ class DuelScene {
     halo.run(A.forever(A.seq(A.fadeTo(0.38, 2.5), A.fadeTo(0.55, 2.5))));
     const disc = this.scenery.add(tintedSprite(Art.dot, look.sun, r * 2, r * 2)).at(sunX, sunY);
     disc.z = 2;
+    // The hills and the landmarks are paths that never change: drawn once into pictures (the mist between them,
+    // added over what is behind it, stays live).
     const seed = BigInt(this.shownSetting ?? 0) + 11n;
-    const far = this.scenery.add(new Shape(ridgePath(w, g, h * 0.1, h * 0.34, seed, 6)));
+    const far = new Shape(ridgePath(w, g, h * 0.1, h * 0.34, seed, 6));
     far.fillColor = look.far.mix(look.horizon, 0.35).css();
-    far.z = 3;
+    this.scenery.add(R.bake([far], w, h)).z = 3;
     const mist = this.scenery.add(tintedSprite(Art.glow, look.horizon, w * 1.6, h * 0.45)).at(this.field.x + w / 2, g + h * 0.06);
     mist.blend = BLEND.add;
     mist.alpha = 0.4;
     mist.z = 4;
-    const near = this.scenery.add(new Shape(ridgePath(w, g, h * 0.03, h * 0.12, BigInt(0xFA11) + BigInt(Math.round(w)), 10)));
+    const near = new Shape(ridgePath(w, g, h * 0.03, h * 0.12, BigInt(0xFA11) + BigInt(Math.round(w)), 10));
     near.fillColor = look.near.mix(look.far, 0.35).css();
-    near.z = 5;
-    const landmark = this.scenery.add(new Shape(landmarkPath(look.landmark, w, h, g, 0x7EAn)));
+    const landmark = new Shape(landmarkPath(look.landmark, w, h, g, 0x7EAn));
     landmark.fillColor = look.near.mix(look.far, 0.2).css();
-    landmark.z = 6;
+    landmark.z = 1;
+    this.scenery.add(R.bake([near, landmark], w, h)).z = 5;
     if (look.landmark === 'village') {
       for (const x of [0.05, 0.16, 0.84, 0.95]) {
         const fire = this.scenery.add(tintedSprite(Art.glow, rgb(1, 0.45, 0.1), h * 0.7, h * 0.6)).at(w * x, g + h * 0.35);
@@ -484,8 +486,6 @@ class DuelScene {
     this.sync(step, step > 0 ? dt : Math.max(0, Math.min(dt, this.swingUntil - (this.clock - dt))));
   }
 
-  /** Whether the scene's own actions and particles should run this frame (paused away, only the cards' do). */
-  get frozenWorld() { return this.isAwayPaused && !this.session.fight.outcome; }
 
   drawEngageRing() {
     if (!this.pointer) return;
