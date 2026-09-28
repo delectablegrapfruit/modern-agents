@@ -1068,7 +1068,7 @@ function burstRing(ev) {
   const q = new THREE.Quaternion(ev.q.x, ev.q.y, ev.q.z, ev.q.w), axis = new THREE.Vector3(ev.ax, ev.ay, ev.az);
   const at = new THREE.Vector3(ev.x, ev.y, ev.z), toCam = camera.position.clone().sub(at).normalize();
   const src = game.meshes.get(ev.ring), mat = src && src.material !== ringMat ? src.material : ringMat;
-  if (mat !== ringMat) shards.push({ kind: 'mat', mat, t: 0, life: 4.05 }); // the glow cools on the pieces, then is freed
+  if (mat !== ringMat) shards.push({ kind: 'mat', mat, t: 0, life: 4.05, h: 1 }); // the pieces cool back to the ring's colour, then it is freed
   const bite = 1 - (0.6 * ev.squeeze) / (RP.RING.R - RP.RING.r);
   for (let k = 0; k < 3; k++) { // three big pieces drift apart, slowly enough to watch
     const m = new THREE.Mesh(shardGeos[k], mat); m.castShadow = true;
@@ -1100,7 +1100,7 @@ const dq = new THREE.Quaternion();
 function updateShards(dt) {
   for (let i = shards.length - 1; i >= 0; i--) {
     const s = shards[i]; s.t += dt;
-    if (s.kind === 'mat') { s.mat.emissiveIntensity *= Math.exp(-2.5 * dt); if (s.t > s.life) { s.mat.dispose(); shards.splice(i, 1); } continue; }
+    if (s.kind === 'mat') { if (s.t > s.life) { s.mat.dispose(); shards.splice(i, 1); } continue; }
     if (s.kind === 'shock') { const a = Math.min(1, s.t / s.life); s.m.scale.setScalar(1 + 1.4 * a); s.m.material.opacity = 0.95 * (1 - a * a); }
     else {
       s.v.y -= s.g * dt; s.m.position.addScaledVector(s.v, dt);
@@ -1109,6 +1109,9 @@ function updateShards(dt) {
     }
     if (s.t > s.life) { scene.remove(s.m); if (s.kind === 'shock') s.m.material.dispose(); shards.splice(i, 1); }
   }
+}
+function coolPieces(realDt) { // in real time, so the pieces are back to the ring's colour ~0.5 s after the snap even in slow motion
+  for (const s of shards) if (s.kind === 'mat' && s.h > 0.001) { s.h *= Math.exp(-6 * realDt); heat(s.mat, s.h); }
 }
 // slow motion for the snap: 0.3x, then ease back
 let slowT = 0;
@@ -1179,7 +1182,7 @@ const Sound = (() => {
 const game = {
   mode: 'hotdog', sim: null, meshes: new Map(), thrown: 0, score: 0, results: [],
   state: 'aim', current: null, flyT: 0, resultT: 0,
-  power: 0, aim: 0, dragging: false, moved: false, kbWind: false, snapHold: 0, relFov: 0, sx: 0, sy: 0, lastPower: null, lastAim: null, lastSound: new Map(), dents: new Map(), straining: new Set(),
+  power: 0, aim: 0, dragging: false, moved: false, pending: null, kbWind: false, snapHold: 0, relFov: 0, sx: 0, sy: 0, lastPower: null, lastAim: null, lastSound: new Map(), dents: new Map(), straining: new Set(),
 };
 const store = {
   get(k) { try { return Number(localStorage.getItem(k)) || 0; } catch { return 0; } },
@@ -1193,7 +1196,7 @@ function newRound(mode = game.mode) {
   shards.length = 0; relax.length = 0; game.meshes.clear(); game.lastSound.clear(); game.dents.clear(); game.straining.clear(); slowT = 0; game.snapHold = 0;
   if (!game.sim || game.sim.mode !== mode) game.sim = new RP.Sim(mode); else game.sim.reset();
   game.mode = mode; game.thrown = 0; game.score = 0; game.results = []; game.current = null;
-  game.state = 'aim'; game.power = 0; game.aim = 0; game.kbWind = false;
+  game.state = 'aim'; game.power = 0; game.aim = 0; game.kbWind = false; game.pending = null;
   dogMesh.visible = mode === 'hotdog'; squash.visible = mode === 'balloon';
   dogDef.reset(); balDef.reset(); dogDef.dirty = balDef.dirty = false;
   for (const b of document.querySelectorAll('.mode')) b.setAttribute('aria-selected', String(b.dataset.mode === mode));
@@ -1294,7 +1297,11 @@ function drainEvents() {
 
 const qT = new THREE.Quaternion(), invQ = new THREE.Quaternion();
 const STRAIN = 0.7; // seconds of visible strain before a ring snaps
-const HOT = new THREE.Color('#ff3a1a');
+const HOT = new THREE.Color('#ff3a1a'), HOT_ALBEDO = new THREE.Color('#c0200a');
+function heat(mat, h) { // a strained ring runs red-hot whatever its colour: tint toward deep red plus a red glow
+  mat.color.copy(ringMat.color).lerp(HOT_ALBEDO, 0.7 * h); mat.metalness = ringMat.metalness; mat.roughness = ringMat.roughness;
+  mat.emissiveIntensity = 0.55 * h;
+}
 function strain(r) { // 0..1 as the ring nears breaking
   const g = r.grip;
   return g && g.stuck ? clamp(1 - (g.breakAt - g.stuckT) / STRAIN, 0, 1) : 0;
@@ -1313,8 +1320,7 @@ function syncScene(dt) {
     m.scale.set(bite, 1 - 0.15 * st, bite);
     if (st > 0) {
       if (!game.straining.has(r.id)) { game.straining.add(r.id); Sound.strain(); m.material = ringMat.clone(); m.material.emissive.set(HOT); }
-      m.material.color.copy(ringMat.color); m.material.metalness = ringMat.metalness; m.material.roughness = ringMat.roughness;
-      m.material.emissiveIntensity = 0.55 * st * st;
+      heat(m.material, st * st);
       if (!reduceMotion) { const e = st * st, tt = sim.time; m.rotateX(0.05 * e * Math.sin(tt * Math.PI * 2 * 19)); m.rotateZ(0.05 * e * Math.sin(tt * Math.PI * 2 * 23 + 1)); }
     }
   }
@@ -1393,7 +1399,10 @@ function updateGame(dt, simDt) {
     const onDog = game.sim.rings.some((r) => r.grip);
     if (game.resultT > 1.3 && !onDog && game.snapHold <= 0) {
       if (game.thrown >= ROUND) endRound();
-      else { game.state = 'aim'; game.power = 0; game.aim = game.lastAim ?? 0; updateHud(); updateMeter(); }
+      else {
+        game.state = 'aim'; game.power = 0; game.aim = game.lastAim ?? 0; updateHud(); updateMeter();
+        if (game.pending) { const p = game.pending; game.pending = null; startDrag(p.x, p.y); dragTo({ clientX: p.lx, clientY: p.ly }); }
+      }
     }
   }
 }
@@ -1406,16 +1415,25 @@ function dragTo(e) {
   if (Math.hypot(dx, dy) > 6) game.moved = true;
   updateMeter();
 }
+function startDrag(x, y) { game.dragging = true; game.moved = false; game.sx = x; game.sy = y; canvas.classList.add('dragging'); }
 canvas.addEventListener('pointerdown', (e) => {
   Sound.init();
   if (!$('panel').hidden) { closePanel(); return; } // a tap outside the panel just closes it
-  if (game.state !== 'aim' || e.button > 0) return;
-  game.dragging = true; game.moved = false; game.sx = e.clientX; game.sy = e.clientY;
-  canvas.setPointerCapture(e.pointerId); canvas.classList.add('dragging');
+  if (e.button > 0) return;
+  if (game.state === 'flying' || game.state === 'result') { // held: it becomes the wind-up once aiming resumes
+    game.pending = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY };
+    canvas.setPointerCapture(e.pointerId); return;
+  }
+  if (game.state !== 'aim') return;
+  startDrag(e.clientX, e.clientY); canvas.setPointerCapture(e.pointerId);
   dragTo(e);
 });
-canvas.addEventListener('pointermove', (e) => { if (game.dragging) dragTo(e); });
+canvas.addEventListener('pointermove', (e) => {
+  if (game.pending) { game.pending.lx = e.clientX; game.pending.ly = e.clientY; }
+  if (game.dragging) dragTo(e);
+});
 function endDrag(cancelled) {
+  game.pending = null;
   if (!game.dragging) return;
   game.dragging = false; canvas.classList.remove('dragging');
   if (!cancelled && game.power > 0.04) toss(); else { game.power = 0; game.kbWind = false; updateMeter(); }
@@ -1493,7 +1511,7 @@ function frame(now) {
   acc += dt; let n = 0;
   while (acc >= STEP && n < 6) { game.sim.step(STEP * ts); acc -= STEP; n++; } // slow motion: shorter steps, not fewer
   if (n === 6) acc = 0;
-  drainEvents(); syncScene(sdt); updateGame(dt, sdt); updateShards(sdt); updateCamera(dt);
+  drainEvents(); syncScene(sdt); updateGame(dt, sdt); updateShards(sdt); coolPieces(dt); updateCamera(dt);
   hand.visible = winding(); // the ring in hand only shows while winding up
   if (hand.visible) layoutHand(now);
   renderer.clear();
