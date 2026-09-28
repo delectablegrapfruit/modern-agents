@@ -306,12 +306,12 @@
       profile: HOTDOG_P, pivot: HOTDOG_P.top / 2, mass: 0.25,
       freq: 2.4, zeta: 0.14, yawDamp: 0.6, squash: null,
       assist: { radius: 0.1, above: 0.4, kp: 1600, kd: 80, ko: 40 },
-      grip: { f0: 30, f1: 25, breakMin: 2.2, breakMax: 3.2 },
+      grip: { f0: 30, f1: 25, breakMin: 1.8, breakMax: 2.6 },
     },
     balloon: {
       profile: BALLOON_P, pivot: 0.19, mass: 0.6,
       freq: 1.5, zeta: 0.1, yawDamp: 0.4, squash: { K: 800, C: 5.6, A: 3.5, max: 0.18 },
-      assist: { radius: 0.08, above: 0.3, kp: 1100, kd: 66, ko: 25 },
+      assist: { radius: 0.06, above: 0.3, kp: 900, kd: 60, ko: 25 },
       knotY: 0.337, // the neck: a ring below this and around the axis is on the knot
     },
   };
@@ -509,7 +509,7 @@
         r.vp.x = r.vp.y = r.vp.z = 0; r.wp.x = r.wp.y = r.wp.z = 0;
         r.lastContact = r.contact; r.contact = false; r.pen = 0;
         this.assist(r, h);
-        if (this.mode === 'hotdog') this.tryGrip(r);
+        if (this.mode === 'hotdog') this.tryGrip(r); else this.neckCatch(r, h);
       }
       const active = free.filter((r) => !r.grip);
       // contacts
@@ -553,6 +553,16 @@
       const la = r.L.x * r.ax + r.L.y * r.ay + r.L.z * r.az, keep = Math.exp(-a.ko * wgt * h);
       r.L.x = la * r.ax + (r.L.x - la * r.ax) * keep; r.L.y = la * r.ay + (r.L.y - la * r.ay) * keep; r.L.z = la * r.az + (r.L.z - la * r.az) * keep;
       r.omega();
+    }
+
+    // Balloon: a ring threaded on the short neck loses its rebound off the shoulders instead of hopping off the knot.
+    neckCatch(r, h) {
+      const tg = this.target, l = tg.toLocal(r.p.x, r.p.y, r.p.z, T3), y = l.y + tg.spec.pivot;
+      if (Math.hypot(l.x, l.z) > 0.02 || y < 0.28 || y > tg.P.top + 0.02) return;
+      const va = r.v.x * tg.ax + r.v.y * tg.ay + r.v.z * tg.az;
+      if (va <= 0) return;
+      const k = 1 - Math.exp(-30 * h);
+      r.v.x -= va * tg.ax * k; r.v.y -= va * tg.ay * k; r.v.z -= va * tg.az * k;
     }
 
     // Hot dog: a ring centred on the tip and moving down it squeezes on.
@@ -945,8 +955,8 @@ balMesh.position.y = -BAL_PIVOT; balMesh.castShadow = true; balMesh.receiveShado
 const knotMat = new THREE.MeshPhysicalMaterial({ color: '#2b87dd', roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.1 });
 const knot = new THREE.Group();
 { // the tie: a lumpy twist around the neck and the rolled lip on top
-  const lumpA = new THREE.Mesh(new THREE.SphereGeometry(0.017, 20, 14), knotMat); lumpA.scale.set(1.35, 0.68, 1.1); lumpA.rotation.z = 0.3; lumpA.position.set(0.003, 0.351, 0.002);
-  const lumpB = new THREE.Mesh(new THREE.SphereGeometry(0.011, 16, 12), knotMat); lumpB.scale.set(1.15, 0.78, 1.2); lumpB.position.set(-0.01, 0.358, -0.005);
+  const lumpA = new THREE.Mesh(new THREE.SphereGeometry(0.017, 20, 14), knotMat); lumpA.scale.set(1.4, 0.62, 1.05); lumpA.rotation.z = 0.3; lumpA.position.set(0.009, 0.352, 0.003);
+  const lumpB = new THREE.Mesh(new THREE.SphereGeometry(0.011, 16, 12), knotMat); lumpB.scale.set(1.15, 0.78, 1.2); lumpB.position.set(-0.014, 0.356, -0.007);
   const lip = new THREE.Mesh(new THREE.TorusGeometry(0.012, 0.0038, 10, 26), knotMat); lip.rotation.set(Math.PI / 2 + 0.25, 0.08, 0); lip.position.set(-0.003, 0.37, 0.002);
   const tie = new THREE.Mesh(new THREE.TorusGeometry(0.0175, 0.005, 10, 28), knotMat); tie.rotation.x = Math.PI / 2; tie.position.y = 0.339;
   knot.add(lumpA, lumpB, lip, tie);
@@ -1051,42 +1061,51 @@ function applyRingColor() {
 function ringMesh() { const m = new THREE.Mesh(ringGeo, ringMat); m.castShadow = true; m.receiveShadow = true; return m; }
 const shardGeos = [0, 1, 2].map((k) => { const g = new THREE.TorusGeometry(RP.RING.R, RP.RING.r, 14, 22, (Math.PI * 2) / 3 - 0.12); g.rotateZ(k * (Math.PI * 2) / 3 + 0.06); g.rotateX(Math.PI / 2); return g; });
 const chipGeo = new THREE.BoxGeometry(0.007, 0.005, 0.006);
-const shockGeo = new THREE.TorusGeometry(RP.RING.R, 0.0022, 8, 72); shockGeo.rotateX(Math.PI / 2);
+const shockGeo = new THREE.TorusGeometry(RP.RING.R, 0.0035, 8, 72); shockGeo.rotateX(Math.PI / 2);
 const shards = []; // pieces, chips and the shock ring of snapped rings
 const randDir = () => new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
 function burstRing(ev) {
   const q = new THREE.Quaternion(ev.q.x, ev.q.y, ev.q.z, ev.q.w), axis = new THREE.Vector3(ev.ax, ev.ay, ev.az);
-  const at = new THREE.Vector3(ev.x, ev.y, ev.z);
+  const at = new THREE.Vector3(ev.x, ev.y, ev.z), toCam = camera.position.clone().sub(at).normalize();
+  const src = game.meshes.get(ev.ring), mat = src && src.material !== ringMat ? src.material : ringMat;
+  if (mat !== ringMat) shards.push({ kind: 'mat', mat, t: 0, life: 4.05 }); // the glow cools on the pieces, then is freed
+  const bite = 1 - (0.6 * ev.squeeze) / (RP.RING.R - RP.RING.r);
   for (let k = 0; k < 3; k++) { // three big pieces drift apart, slowly enough to watch
-    const m = new THREE.Mesh(shardGeos[k], ringMat); m.castShadow = true;
-    m.position.copy(at); m.quaternion.copy(q);
+    const m = new THREE.Mesh(shardGeos[k], mat); m.castShadow = true;
+    m.position.copy(at); m.quaternion.copy(q); m.scale.set(bite, 0.85, bite);
     const mid = (k + 0.5) * (Math.PI * 2) / 3, out = new THREE.Vector3(Math.cos(mid), 0, Math.sin(mid)).applyQuaternion(q);
-    const v = out.multiplyScalar(0.45 + Math.random() * 0.3).addScaledVector(axis, 0.25 + Math.random() * 0.3);
+    const behind = out.dot(toCam) < -0.3;
+    const v = out.clone().multiplyScalar(0.45 + Math.random() * 0.3).addScaledVector(axis, 0.25 + Math.random() * 0.3);
     v.z += 0.1 + Math.random() * 0.15; // toward the camera a little
-    scene.add(m); shards.push({ kind: 'piece', m, v, spin: randDir().multiplyScalar(2.5 + Math.random() * 3.5), t: 0, life: 4, g: 3.2 });
+    if (behind) v.addScaledVector(axis, 0.35).addScaledVector(toCam, 0.3); // lift the piece behind the dog into view
+    scene.add(m); shards.push({ kind: 'piece', m, v, spin: randDir().multiplyScalar(2.5 + Math.random() * 3.5), t: 0, life: 4, g: 3.2, s0: bite });
   }
-  for (let k = 0; k < 10; k++) { // chips fly from the break points
-    const m = new THREE.Mesh(chipGeo, ringMat);
+  for (let k = 0; k < (reduceMotion ? 4 : 10); k++) { // chips fly from the break points
+    const m = new THREE.Mesh(chipGeo, mat);
     const ang = Math.floor(Math.random() * 3) * (Math.PI * 2) / 3 + 0.06 + (Math.random() - 0.5) * 0.2;
     m.position.copy(at).addScaledVector(new THREE.Vector3(Math.cos(ang), 0, Math.sin(ang)).applyQuaternion(q), RP.RING.R);
     m.scale.setScalar(0.6 + Math.random() * 0.8);
     const v = randDir().multiplyScalar(0.5 + Math.random() * 0.6).addScaledVector(axis, 0.3);
     scene.add(m); shards.push({ kind: 'chip', m, v, spin: randDir().multiplyScalar(12), t: 0, life: 2.5, g: 3.2 });
   }
-  const shock = new THREE.Mesh(shockGeo, new THREE.MeshBasicMaterial({ color: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#d8432b', transparent: true, depthWrite: false }));
-  shock.position.copy(at); shock.quaternion.copy(q); shock.renderOrder = 5;
-  scene.add(shock); shards.push({ kind: 'shock', m: shock, t: 0, life: 0.45 });
-  relax.push({ s: ev.s, d0: ev.squeeze, t: 0 });
+  if (!reduceMotion) {
+    const shock = new THREE.Mesh(shockGeo, new THREE.MeshBasicMaterial({ color: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#d8432b', transparent: true, depthWrite: false }));
+    shock.position.copy(at); shock.quaternion.copy(q); shock.renderOrder = 5;
+    scene.add(shock); shards.push({ kind: 'shock', m: shock, t: 0, life: 0.5 });
+  }
+  relax.push({ s: ev.s, d0: ev.squeeze * 1.6, t: 0 }); // from the pinch as deep as the strain left it
   slowMo();
 }
 const dq = new THREE.Quaternion();
 function updateShards(dt) {
   for (let i = shards.length - 1; i >= 0; i--) {
     const s = shards[i]; s.t += dt;
-    if (s.kind === 'shock') { const a = Math.min(1, s.t / s.life); s.m.scale.setScalar(1 + 1.4 * a); s.m.material.opacity = 0.9 * (1 - a) ** 1.5; }
+    if (s.kind === 'mat') { s.mat.emissiveIntensity *= Math.exp(-2.5 * dt); if (s.t > s.life) { s.mat.dispose(); shards.splice(i, 1); } continue; }
+    if (s.kind === 'shock') { const a = Math.min(1, s.t / s.life); s.m.scale.setScalar(1 + 1.4 * a); s.m.material.opacity = 0.95 * (1 - a * a); }
     else {
       s.v.y -= s.g * dt; s.m.position.addScaledVector(s.v, dt);
       dq.setFromAxisAngle(tmpA.copy(s.spin).normalize(), s.spin.length() * dt); s.m.quaternion.premultiply(dq);
+      if (s.s0) { const k = Math.min(1, s.t / 0.15), b = s.s0 + (1 - s.s0) * k; s.m.scale.set(b, 0.85 + 0.15 * k, b); if (k === 1) s.s0 = 0; }
     }
     if (s.t > s.life) { scene.remove(s.m); if (s.kind === 'shock') s.m.material.dispose(); shards.splice(i, 1); }
   }
@@ -1108,9 +1127,10 @@ function layoutHand(t) {
   const D = clamp(Math.min(W * 0.2, H * 0.17), 64, 150), k = D / (2 * (RP.RING.R + RP.RING.r));
   const wide = W >= 760 && W >= H, dockH = wide ? 0 : $('dock').offsetHeight;
   const bob = reduceMotion || game.dragging ? 0 : Math.sin(t * 0.0025) * 3;
+  const tilt = 1.05 + 0.3 * p, half = (D / 2) * (1 - 0.12 * p) * Math.sin(tilt);
   hand.scale.setScalar(k * (1 - 0.12 * p));
-  hand.position.set(-game.aim * 26, -H / 2 + dockH + 18 + D * 0.32 - 26 * p + bob, 0);
-  hand.rotation.set(1.05 + 0.3 * p, t * 0.0005, game.aim * 0.25);
+  hand.position.set(-game.aim * 26, Math.max(-H / 2 + dockH + 18 + D * 0.32 - 26 * p + bob, -H / 2 + dockH + half + 8), 0);
+  hand.rotation.set(tilt, t * 0.0005, game.aim * 0.25);
 }
 
 // ---------------- sound: all synthesized ----------------
@@ -1159,7 +1179,7 @@ const Sound = (() => {
 const game = {
   mode: 'hotdog', sim: null, meshes: new Map(), thrown: 0, score: 0, results: [],
   state: 'aim', current: null, flyT: 0, resultT: 0,
-  power: 0, aim: 0, dragging: false, kbWind: false, sx: 0, sy: 0, lastPower: null, lastAim: null, lastSound: new Map(), dents: new Map(), straining: new Set(),
+  power: 0, aim: 0, dragging: false, moved: false, kbWind: false, snapHold: 0, relFov: 0, sx: 0, sy: 0, lastPower: null, lastAim: null, lastSound: new Map(), dents: new Map(), straining: new Set(),
 };
 const store = {
   get(k) { try { return Number(localStorage.getItem(k)) || 0; } catch { return 0; } },
@@ -1168,9 +1188,9 @@ const store = {
 const bestKey = () => `ring-toss-best-${game.mode}`;
 
 function newRound(mode = game.mode) {
-  for (const m of game.meshes.values()) scene.remove(m);
-  for (const s of shards) scene.remove(s.m);
-  shards.length = 0; relax.length = 0; game.meshes.clear(); game.lastSound.clear(); game.dents.clear(); game.straining.clear(); slowT = 0;
+  for (const m of game.meshes.values()) { scene.remove(m); if (m.material !== ringMat) m.material.dispose(); }
+  for (const s of shards) { if (s.m) scene.remove(s.m); if (s.kind === 'shock') s.m.material.dispose(); if (s.kind === 'mat') s.mat.dispose(); }
+  shards.length = 0; relax.length = 0; game.meshes.clear(); game.lastSound.clear(); game.dents.clear(); game.straining.clear(); slowT = 0; game.snapHold = 0;
   if (!game.sim || game.sim.mode !== mode) game.sim = new RP.Sim(mode); else game.sim.reset();
   game.mode = mode; game.thrown = 0; game.score = 0; game.results = []; game.current = null;
   game.state = 'aim'; game.power = 0; game.aim = 0; game.kbWind = false;
@@ -1201,7 +1221,7 @@ function updateMeter() {
   const deg = game.aim * RP.THROW.yawMax * 180 / Math.PI;
   $('aimTxt').textContent = Math.abs(deg) < 0.05 ? 'straight' : `${Math.abs(deg).toFixed(1)}° ${deg > 0 ? 'right' : 'left'}`;
   $('dock').classList.toggle('idle', !(game.dragging || game.power > 0));
-  aimLine.visible = game.state === 'aim' && (game.dragging || game.power > 0);
+  aimLine.visible = winding();
   aimLine.position.x = RP.THROW.z * Math.tan(game.aim * RP.THROW.yawMax);
 }
 
@@ -1210,7 +1230,7 @@ function toss() {
   const r = game.sim.throwRing(game.power, game.aim);
   const mesh = ringMesh(); mesh.position.set(r.p.x, r.p.y, r.p.z);
   scene.add(mesh); game.meshes.set(r.id, mesh);
-  game.current = r; game.thrown++; game.state = 'flying'; game.flyT = 0;
+  game.current = r; game.thrown++; game.state = 'flying'; game.flyT = 0; game.relFov = view.fov; slowT = 0;
   game.lastPower = game.power; game.lastAim = game.aim;
   game.kbWind = false; aimLine.visible = false;
   $('hint').style.opacity = '0';
@@ -1261,7 +1281,7 @@ function endRound() {
 function drainEvents() {
   const ev = game.sim.events;
   for (const e of ev) {
-    if (e.kind === 'snap') { Sound.snap(); burstRing(e); const m = game.meshes.get(e.ring); if (m) m.visible = false; continue; }
+    if (e.kind === 'snap') { Sound.snap(); burstRing(e); game.snapHold = 1.5; const m = game.meshes.get(e.ring); if (m) m.visible = false; continue; }
     if (e.kind === 'grip') { Sound.squeak(); continue; }
     if (e.kind === 'stuck') { Sound.creak(); continue; }
     const k = e.ring + e.kind, t = game.sim.time;
@@ -1273,7 +1293,8 @@ function drainEvents() {
 }
 
 const qT = new THREE.Quaternion(), invQ = new THREE.Quaternion();
-const STRAIN = 0.55; // seconds of visible strain before a ring snaps
+const STRAIN = 0.7; // seconds of visible strain before a ring snaps
+const HOT = new THREE.Color('#ff3a1a');
 function strain(r) { // 0..1 as the ring nears breaking
   const g = r.grip;
   return g && g.stuck ? clamp(1 - (g.breakAt - g.stuckT) / STRAIN, 0, 1) : 0;
@@ -1286,12 +1307,15 @@ function syncScene(dt) {
     const m = game.meshes.get(r.id); if (!m) continue;
     if (r.out || r.broken) { m.visible = false; continue; }
     m.position.set(r.p.x, r.p.y, r.p.z); m.quaternion.set(r.q.x, r.q.y, r.q.z, r.q.w);
+    // under strain the ring bites in with the deepening pinch, glows hot and trembles
     const st = strain(r);
-    m.scale.set(1 + 0.05 * st, 1, 1 + 0.05 * st);
+    const bite = st > 0 ? 1 - (0.6 * r.grip.squeeze * st) / (RP.RING.R - RP.RING.r) : 1;
+    m.scale.set(bite, 1 - 0.15 * st, bite);
     if (st > 0) {
-      if (!game.straining.has(r.id)) { game.straining.add(r.id); Sound.strain(); }
-      const a = 0.0016 * st; m.position.x += (Math.random() - 0.5) * a; m.position.y += (Math.random() - 0.5) * a; m.position.z += (Math.random() - 0.5) * a;
-      m.rotateX((Math.random() - 0.5) * 0.05 * st); m.rotateZ((Math.random() - 0.5) * 0.05 * st);
+      if (!game.straining.has(r.id)) { game.straining.add(r.id); Sound.strain(); m.material = ringMat.clone(); m.material.emissive.set(HOT); }
+      m.material.color.copy(ringMat.color); m.material.metalness = ringMat.metalness; m.material.roughness = ringMat.roughness;
+      m.material.emissiveIntensity = 0.55 * st * st;
+      if (!reduceMotion) { const e = st * st, tt = sim.time; m.rotateX(0.05 * e * Math.sin(tt * Math.PI * 2 * 19)); m.rotateZ(0.05 * e * Math.sin(tt * Math.PI * 2 * 23 + 1)); }
     }
   }
   if (game.mode === 'hotdog') {
@@ -1333,7 +1357,7 @@ function frameFor(points, look) {
   return THREE.MathUtils.radToDeg(2 * Math.atan(Math.max(tv, th / camera.aspect) * 1.08));
 }
 const centre = new THREE.Vector3(0, RP.CENTER_Y - 0.03, 0), ringPos = new THREE.Vector3(), lookWant = new THREE.Vector3();
-const winding = () => game.state === 'aim' && game.thrown < ROUND && (game.dragging || game.kbWind);
+const winding = () => game.state === 'aim' && game.thrown < ROUND && (game.kbWind || (game.dragging && game.moved));
 function updateCamera(dt) {
   const r = game.current;
   let pts = [[centre, 0.3, 0.21]];
@@ -1348,7 +1372,8 @@ function updateCamera(dt) {
     lookWant.lerp(ringPos, 0.5);
     pts = [[centre, 0.3, 0.21], [ringPos, 0.09, 0.09]];
   }
-  const fovWant = Math.min(70, frameFor(pts, lookWant));
+  let fovWant = Math.min(70, frameFor(pts, lookWant));
+  if (game.state === 'flying' && game.relFov) { if (fovWant >= game.relFov) game.relFov = 0; else fovWant = game.relFov; } // no zoom back in on release
   const k = view.ready ? 1 - Math.exp(-7 * dt) : 1;
   view.look.lerp(lookWant, k); view.fov += (fovWant - view.fov) * k; view.ready = true;
   camera.position.copy(CAM); camera.lookAt(view.look);
@@ -1364,7 +1389,9 @@ function updateGame(dt, simDt) {
     if (res) scoreThrow(res);
   } else if (game.state === 'result') {
     game.resultT += dt;
-    if (game.resultT > 1.3) {
+    game.snapHold = Math.max(0, game.snapHold - dt);
+    const onDog = game.sim.rings.some((r) => r.grip);
+    if (game.resultT > 1.3 && !onDog && game.snapHold <= 0) {
       if (game.thrown >= ROUND) endRound();
       else { game.state = 'aim'; game.power = 0; game.aim = game.lastAim ?? 0; updateHud(); updateMeter(); }
     }
@@ -1376,12 +1403,14 @@ function dragTo(e) {
   const dx = e.clientX - game.sx, dy = e.clientY - game.sy, H = window.innerHeight, W = Math.min(window.innerWidth, 800);
   game.power = clamp(dy / (0.42 * H), 0, 1);
   game.aim = clamp(-dx / (0.45 * W), -1, 1); // pull left to throw right, like a slingshot
+  if (Math.hypot(dx, dy) > 6) game.moved = true;
   updateMeter();
 }
 canvas.addEventListener('pointerdown', (e) => {
-  Sound.init(); closePanel();
+  Sound.init();
+  if (!$('panel').hidden) { closePanel(); return; } // a tap outside the panel just closes it
   if (game.state !== 'aim' || e.button > 0) return;
-  game.dragging = true; game.sx = e.clientX; game.sy = e.clientY;
+  game.dragging = true; game.moved = false; game.sx = e.clientX; game.sy = e.clientY;
   canvas.setPointerCapture(e.pointerId); canvas.classList.add('dragging');
   dragTo(e);
 });
@@ -1410,6 +1439,9 @@ window.addEventListener('keydown', (e) => {
   Sound.init(); e.preventDefault(); updateMeter();
 });
 for (const b of document.querySelectorAll('.mode')) b.addEventListener('click', () => { Sound.init(); newRound(b.dataset.mode); });
+document.addEventListener('focusin', (e) => { // keyboard wind-up ends when focus moves to a control
+  if ((e.target instanceof HTMLButtonElement || e.target instanceof HTMLInputElement) && game.kbWind) { game.kbWind = false; game.power = 0; updateMeter(); }
+});
 $('again').addEventListener('click', () => newRound());
 $('mute').addEventListener('click', () => {
   const m = $('mute').getAttribute('aria-pressed') !== 'true';
@@ -1457,9 +1489,9 @@ const STEP = 1 / 120;
 let acc = 0, last = performance.now();
 function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
-  const sdt = dt * timeScale(dt);
-  acc += sdt; let n = 0;
-  while (acc >= STEP && n < 6) { game.sim.step(STEP); acc -= STEP; n++; }
+  const ts = timeScale(dt), sdt = dt * ts;
+  acc += dt; let n = 0;
+  while (acc >= STEP && n < 6) { game.sim.step(STEP * ts); acc -= STEP; n++; } // slow motion: shorter steps, not fewer
   if (n === 6) acc = 0;
   drainEvents(); syncScene(sdt); updateGame(dt, sdt); updateShards(sdt); updateCamera(dt);
   hand.visible = winding(); // the ring in hand only shows while winding up

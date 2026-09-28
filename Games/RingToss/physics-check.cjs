@@ -38,7 +38,7 @@ const steady = () => 0.5; // no hand wobble
 const good = toss('hotdog', 0.6, 0, steady);
 check(good.key === 'ringer', 'a straight 60% toss rings the hot dog');
 check(good.gripAt && good.stuckAt && good.gripAt.s - good.stuckAt.s > 0.02, `the ring squeezes on and slides down before it holds (${good.gripAt && good.stuckAt ? ((good.gripAt.s - good.stuckAt.s) * 100).toFixed(1) : '?'} cm)`);
-check(good.snapAt && good.snapAt - good.stuckAt.t > 2 && good.snapAt - good.stuckAt.t < 3.5, 'the dog snaps the ring 2–3.5 s after it stops');
+check(good.snapAt && good.snapAt - good.stuckAt.t > 1.7 && good.snapAt - good.stuckAt.t < 2.7, 'the dog snaps the ring about 2 s after it stops');
 check(toss('hotdog', 0.3, 0, steady).key === 'miss', 'a 30% toss falls short into the void');
 check(toss('hotdog', 0.9, 0, steady).key !== 'ringer', 'a 90% toss sails past');
 check(toss('hotdog', 0.5, 0, steady).tiltDeg > 3, 'clipping the dog swings it on its pivot');
@@ -53,6 +53,12 @@ for (let p = 0.56; p <= 0.66001; p += 0.02) for (let a = -0.15; a <= 0.15001; a 
 console.log(`     near-perfect throws (${n}): hot dog ringers ${ringers}, balloon bullseyes ${knots}, slowest result ${slowest.toFixed(1)} s`);
 check(ringers >= n * 0.4, 'near-perfect throws often ring the hot dog (the assist is doing its job)');
 check(knots > 0 && knots <= ringers / 2, 'the knot is at most half as easy');
+
+// A dead-centre throw at the knot threads it and stays: the short neck must not let the rebound hop off.
+let centre = 0, cn = 0;
+for (let seed = 1; seed <= 40; seed++) for (const p of [0.58, 0.6, 0.62]) { centre += toss('balloon', p, 0, seeded(seed * 7919)).key === 'bullseye'; cn++; }
+console.log(`     dead-centre throws at the knot: ${centre} of ${cn} bullseyes`);
+check(centre >= cn * 0.7, 'most dead-centre throws at the knot stay on it');
 check(slowest <= 7.01, 'every throw is decided within 7 s');
 
 process.exit(failed ? 1 : 0);

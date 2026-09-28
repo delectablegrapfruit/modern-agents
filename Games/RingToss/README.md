@@ -9,7 +9,7 @@ Open `index.html` in a browser (three.js loads from cdn.jsdelivr.net, so it need
 
 | Input | Does |
 | --- | --- |
-| Drag down | Wind up: farther = more power (the meter keeps a tick at your last toss) |
+| Drag down | Wind up: farther = more power (the meter keeps a tick at your last toss); the ring in hand shows and the camera pulls back while you do |
 | Drag sideways | Aim, slingshot style; a dashed line shows where the ring will cross the target |
 | Release | Toss |
 | ← → / ↑ ↓ (Shift = ×5), Space | Aim / power / toss by keyboard |
@@ -29,11 +29,12 @@ Five rings a round.
 - Both targets are pinned at their centre (the anchor marker). Hits swing and spin them, and a torsion spring stands them
   back up.
 - The ring (inner Ø 86 mm) is tighter than the hot dog (Ø 97 mm). A ring that threads the tip grips on and slides
-  down 3–11 cm, squeezing the dog (a pinch with the meat bulging either side). It holds, then after 2–3 s the dog
-  snaps it into three pieces that fly off, and the dog springs back.
+  down 3–11 cm, squeezing the dog (a pinch with the meat bulging either side). It holds, then after about 2 s it
+  strains (glows, trembles, bites deeper) and the dog snaps it: slow motion, three pieces drifting apart, chips and a
+  shock ring, and the dog springs back. The next throw waits until the snap has played.
 - The balloon is translucent, slick (μ 0.1) and springy (restitution 0.55). It squashes and dents where rings press
   and rocks on its pivot, so most rings bounce off it.
-- Assist: because the rings are so tight, a ring coming down near the tip (within 10 cm) or the knot (within 8 cm)
+- Assist: because the rings are so tight, a ring coming down near the tip (within 10 cm) or the knot (within 6 cm)
   gets steered onto it and squared up.
 
 ## Physics
