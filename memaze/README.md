@@ -30,8 +30,9 @@ No build step, no dependencies: plain HTML/CSS/JS, plus an optional Python serve
   No rapid hits: for 0.75 s the edges hold like walls, and a new hit needs a new touch (holding against the edge, or
   sliding along it, never counts twice). 5 s after you're off the edge the shield is back: over the last second it
   recharges with a rising sound and a gold shimmer, and the picture fills back in. A second touch before that and
-  your *lose* media plays, then you go back to the last flag you reached, or the start. A bridge vanishing under you, or a magic carpet running out over
-  the void, counts as a touch and puts you on the nearest floor.
+  your *lose* media plays, then you go back to the last flag you reached, or the start.
+- **Falling off the board** (a bridge vanishing under you, a Launch coming down in the void, the magic carpet running
+  out) costs a hit, then a bubble floats you back to the last solid ground you stood on, like Mario Galaxy.
 - **The hitbox is your picture.** Every pixel that is at least half opaque counts; transparent parts don't. Animated GIFs,
   APNG/WebP animations and videos are checked frame by frame, and chroma-keyed pixels drop out too. A small buffer
   (3.5% of the picture's size) lets an edge graze the void without losing.
@@ -40,8 +41,8 @@ No build step, no dependencies: plain HTML/CSS/JS, plus an optional Python serve
   flags and boxes appear once you've seen them.
 - **Stars**: one for finishing, one for beating par, one for collecting every gem (gems hide in dead ends). Stars unlock
   background patterns.
-- **Vanishing bridges** appear from level 8: they blink, disappear for a moment, then come back. Island shapes are
-  joined by narrow bridges.
+- **Mechanics** arrive one at a time (see Chapters), each introduced on a level of its own and mixed with the others
+  after that.
 - **Flags** stand on the main route of long mazes (up to 3). Touch one and a loss sends you back to it with the clock,
   gems and bridges carrying on. Running out of time, or Restart, starts the maze over.
 - **Ghosts** are in Time Trial only (see Modes).
@@ -69,12 +70,25 @@ Time Trial never has them.
 
 | Mode | What |
 |---|---|
-| **Journey** | Levels 1, 2, 3 and on forever. Each level is generated from its number, so level 12 is the same maze for everyone. Difficulty ramps up to about level 35. |
-| **Time Trial** | Any level you've reached, with no mystery boxes and no time limit. Your fastest run replays as a see-through ghost of your picture on the same clock (an arrow at the screen edge points to it when it's off screen); each level keeps its best time. |
-| **Daily** | One maze per day, the same for everyone; best time kept. |
-| **Gauntlet** | Back-to-back random mazes that get harder, 3 lives (one more every 5 clears). |
+| **Chapters** | Levels 1, 2, 3 and on forever, ten to a chapter; the tenth is a boss maze (half as big again, every mechanic seen so far, more flags). Each level is generated from its number, so level 12 is the same maze for everyone. The menu's Continue card shows your chapter and where you are in it. |
+| **Gauntlet** | An endless run of mazes. **Progressive** starts at your difficulty and goes deeper and harder with every maze; **Random** picks each maze's difficulty anywhere in your difficulty's band. Difficulty: Easy (unlimited lives), Normal (5), Hard (3), Extreme (1); one more life every 5 clears. Every tenth maze is a boss. Seeds live here: the same seed and settings give the same run, and **Copy link** shares it (`index.html#gauntlet=seed&style=random&diff=hard`). Each style and difficulty keeps its best depth. |
 | **Endless** | One unbounded maze streamed in chunks around you, narrower and meaner the farther you get. Gems add 3 seconds, beacons are checkpoints that add 12 seconds, 3 lives. |
-| **Seed** | Type any seed, choose layout, shape, size, path width, difficulty and vanishing bridges. **Copy link** shares it (`index.html#seed=...`). |
+| **Time Trial** | Any level you've reached, with no mystery boxes and no time limit. Your fastest run replays as a see-through ghost of your picture on the same clock (an arrow at the screen edge points to it when it's off screen); each level keeps its best time. |
+
+### Chapters and mechanics
+
+| Chapter | Levels | New |
+|---|---|---|
+| 1 First Steps | 1-10 | **Keys and doors** (5): a door opens once you have the key of its colour, which waits somewhere before it. **Vanishing bridges** (8): they blink, disappear for a moment, then come back. |
+| 2 Locks and Levers | 11-20 | **One-way gates** (12): arrows on the floor; you pass only the way they point. **Switches** (16): step on one to flip the bridges of its colour: the missing ones appear, the others go. Step off and on again to flip them back. |
+| 3 Moving Parts | 21-30 | **Moving platforms** (21): they shuttle across a gap, resting at each end; step on, ride, step off. **Portals** (25): step onto one, come out of its twin (the way on is often through one). |
+| 4 Cold and Dark | 31-40 | **Ice** (28): you drift, and keep sliding after you stop. **Darkness** (32): only a circle around you is lit, and only that fills in on the map. |
+| Remix I, II... | 36 on | Every level gets a **remix** modifier (bosses two): *Narrow* corridors, *Rush* (less time), *No map*, *Blackout* (a smaller light), *Frost* (ice everywhere), *Flicker* (more, quicker vanishing bridges), *Mirror* (the drag turned around). |
+
+Each chapter leans on its own layouts and shapes; its first levels are smaller, building up to the boss. Mechanics sit
+on corridors that split the maze in two (side loops around one are taken out), so they can't be walked around. Every
+level comes with a route that is sure to solve it (fetch each key before its door, press each switch before its bridge,
+ride, step through), which sets par and the time limit; the autopilot test plays that route.
 
 ### Mazes
 
@@ -82,8 +96,8 @@ A maze is a spanning tree (growing-tree algorithm, optionally braided) carved fr
 into floating corridors with wobble and varying width. Five layouts (Grid, Shards (triangulated), Honeycomb, Rings
 (polar) and Wilds (Poisson-disk, organic)) times fifteen shapes (Block, Disc, Diamond, Cross, Heart, Donut, Star,
 Serpent, Figure Eight, Crescent, Hourglass, Blob, Swiss Cheese, Archipelago (islands joined by narrow bridges), Spiral).
-Start and goal sit at the ends of a long route; par and the time limit come from the route's length, width, turns and
-vanishing bridges.
+Start and goal sit at the ends of a long route; par and the time limit come from the solving route's length, width,
+turns, ice and darkness, and the waits at vanishing bridges and moving platforms.
 
 ## Make it yours
 
@@ -138,31 +152,38 @@ index.html  css/style.css
 js/util.js        seeded RNG, maths, storage, DOM helpers
 js/config.js      defaults, unlocks, save data
 js/gen.js         maze generation (lattices, shapes, carving, vanishing bridges, endless chunks), flags, box spots
-js/world.js       corridor geometry in a spatial hash; "how deep inside the floor is this point"
-js/render.js      maze floor, start and goal markers, flags, gems, beacons, mystery boxes, item effects, minimap
+js/world.js       corridor geometry in a spatial hash; "how deep inside the floor is this point"; switch bridges, platforms
+js/levels.js      chapters, bosses, remix, Gauntlet depths; fitting mechanics into a maze with a route that solves it
+js/render.js      maze floor, markers, flags, gems, beacons, boxes, doors, keys, switches, gates, platforms, portals, ice,
+                  darkness, item effects, minimap
 js/background.js  RGB engine and patterns
 js/media.js       media library: defaults, server folders, linked folders, imports; chroma key
 js/sprite.js      the player picture: GIF decoding, frame-by-frame painting, the pixel hitbox
 js/defaults-data.js  built-in player pictures as data URLs (generated by scripts/embed-defaults.mjs)
 js/audio.js       synthesized sound effects, music playlist, built-in synth loop
 js/input.js       drag, pinch and wheel zoom, keys, gamepad
-js/game.js        modes, movement, hits and healing, mystery boxes and items, checkpoints, level flow, win/lose media
+js/game.js        modes, movement, hits and healing, falls, mechanics at play, mystery boxes and items, checkpoints,
+                  level flow, win/lose media
 js/ghosts.js      Time Trial ghosts: records runs, replays the best one
-js/ui.js          menus, customisation screens, HUD (item slot, effect timers)
+js/ui.js          menus, chapters, Gauntlet setup, customisation screens, HUD (keys, item slot, effect timers)
 serve.py          local server + media API (Python 3.8+, stdlib only)
 assets/           logo, favicon, default player/win/lose/goal art
 scripts/make-pixel-gif.mjs   regenerates the default pixel GIF (own GIF encoder)
 scripts/embed-defaults.mjs   regenerates js/defaults-data.js after changing a built-in player picture
-tests/            generator and sprite tests; autopilot; items
+tests/            generator, level and sprite tests; autopilot; items; mechanics
 ```
 
 ## Tests
 
 ```sh
-node tests/gen.test.js       # 200 mazes: deterministic, connected, corridors never touch, sane timings; endless seams
+node tests/gen.test.js       # 200 mazes: deterministic, connected, corridors never touch, sane timings; endless seams;
+                             # 120 levels with mechanics: deterministic, solved by their route, sane time limits
 node tests/sprite.test.js    # GIF decoder, pixel hitbox mask, embedded defaults up to date
-node tests/autopilot.js 1-30 # drags through levels with the real game code, not one touch of the edge allowed (needs Playwright + Chromium)
-node tests/items.js          # hits and healing, boxes, every item, flags, Time Trial and ghosts, Endless items (needs Playwright + Chromium)
+node tests/autopilot.js 1-40 # plays each level's route with the real game code (keys, switches, platforms, portals,
+                             # ice), not one touch of the edge allowed; --gauntlet=hard/random/seed for Gauntlet depths
+node tests/items.js          # hits and healing, falls, boxes, every item, flags, Time Trial and ghosts, Endless items
+node tests/mechanics.js      # doors, gates, switches, portals, platforms, ice, darkness, remix, Gauntlet, the menu
+                             # (the last three need Playwright + Chromium)
 ```
 
 Save data (settings, stars, best times) is in `localStorage`; the Save data section in Settings exports and imports it

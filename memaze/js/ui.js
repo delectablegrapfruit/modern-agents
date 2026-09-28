@@ -64,6 +64,21 @@
     shrink: '<rect x="11" y="11" width="10" height="10" rx="2.5" fill="#b8ff6a" stroke="#fff" stroke-width="2"/><path d="M3 3l6 6M29 3l-6 6M3 29l6-6M29 29l-6-6" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><path d="M9 5v4H5M23 5v4h4M9 27v-4H5M23 27v-4h4" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>',
   };
   const ROLL_ORDER = ['star', 'bullet', 'carpet', 'heart', 'launch', 'shrink'];
+  // Menu icons (drawn in the text colour).
+  const MENU_ICONS = {
+    chapters: '<g W><path d="M6 6h8v20H6zM14 6h6v20h-6zM20 8l5 1-3 18-5-1z"/><path d="M9 11h2M17 11h0"/></g>',
+    gauntlet: '<g W><path d="M4 8h7v6h6v6h6v6h5"/><path d="M24 4v8M20 8l4 4 4-4"/></g>',
+    endless: '<g W><path d="M16 16c-3-4-5-6-8-6a6 6 0 0 0 0 12c3 0 5-2 8-6s5-6 8-6a6 6 0 0 1 0 12c-3 0-5-2-8-6z"/></g>',
+    trial: '<g W><circle cx="16" cy="18" r="10"/><path d="M16 18v-5M13 4h6M16 4v4M24 9l2-2"/></g>',
+    media: '<g W><rect x="4" y="7" width="24" height="18" rx="3"/><circle cx="11" cy="13" r="2.4"/><path d="M5 23l8-7 5 5 3-3 6 5"/></g>',
+    background: '<g W><circle cx="16" cy="16" r="11"/><path d="M16 5a11 11 0 0 1 0 22z" fill="currentColor"/></g>',
+    settings: '<g W><circle cx="16" cy="16" r="4"/><path d="M16 3v4M16 25v4M3 16h4M25 16h4M6.8 6.8l2.8 2.8M22.4 22.4l2.8 2.8M6.8 25.2l2.8-2.8M22.4 9.6l2.8-2.8"/></g>',
+    help: '<g W><circle cx="16" cy="16" r="12"/><path d="M12.5 12.5a3.5 3.5 0 1 1 5 3.2c-1 .5-1.5 1.3-1.5 2.3v.5"/><path d="M16 22.5v.5"/></g>',
+    full: '<g W><path d="M5 11V5h6M21 5h6v6M27 21v6h-6M11 27H5v-6"/></g>',
+    key: '<g W><circle cx="10" cy="16" r="5"/><path d="M15 16h13M24 16v4M28 16v3"/></g>',
+  };
+  const LINE = 'stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"';
+  for (const k in MENU_ICONS) MENU_ICONS[k] = MENU_ICONS[k].replace('<g W>', '<g ' + LINE + '>');
   const svg = (inner) => '<svg viewBox="0 0 32 32" aria-hidden="true">' + inner + '</svg>';
   // Star rating drawn with CSS shapes.
   const starRow = (n, cls) => h('span', { class: cls, role: 'img', 'aria-label': n + (n === 1 ? ' star' : ' stars') },
@@ -80,7 +95,7 @@
       this.hud = {
         label: $('#hud-label'), time: $('#hud-time'), goals: $('#hud-goals'), gems: $('#hud-gems'),
         lives: $('#hud-lives'), banner: $('#hud-banner'), fps: $('#fps'),
-        item: $('#hud-item'), effects: $('#hud-effects'),
+        item: $('#hud-item'), effects: $('#hud-effects'), keys: $('#hud-keys'),
       };
       $('#btn-pause').addEventListener('click', () => { MZ.Audio.play('click'); Game().pause(); });
       this.hud.item.addEventListener('click', () => { MZ.Audio.unlock(); Game().useItem(); });
@@ -90,6 +105,12 @@
       G.on('result', (r) => this.show('results', r));
       G.on('over', (r) => this.show('over', r));
       G.on('bonus', (txt) => this.banner(txt, 900));
+      // A new level says what's special about it: a boss, a mechanic seen for the first time, remix modifiers.
+      G.on('level', (m) => {
+        const L = MZ.Levels, intro = G.mode !== 'gauntlet' && m.level ? L.introOf(m.level) : null;
+        const txt = m.boss ? 'Boss' : intro ? 'New: ' + intro.name : m.mods && m.mods.length ? 'Remix: ' + m.mods.map((x) => L.MODS[x]).join(' · ') : '';
+        if (txt) setTimeout(() => this.banner(txt, 1800), 150);
+      });
       G.on('tick', () => { this.hud.time.classList.remove('warn'); void this.hud.time.offsetWidth; this.hud.time.classList.add('warn'); });
       G.on('unlocks', (ids) => {
         for (const id of ids || []) {
@@ -139,7 +160,7 @@
         set('goals', this.hud.goals, 'Par ' + par(G.maze.parTime));
         this.hud.goals.classList.toggle('late', G.elapsed > G.maze.parTime);
       }
-      set('lives', this.hud.lives, G.mode === 'gauntlet' || G.mode === 'endless' ? 'Lives ' + Math.max(0, G.run.lives) : '');
+      set('lives', this.hud.lives, (G.mode === 'gauntlet' || G.mode === 'endless') && isFinite(G.run.lives) ? 'Lives ' + Math.max(0, G.run.lives) : '');
       set('fps', this.hud.fps, S().display.fps ? G.fps + ' fps' : '');
       this.updatePower(c);
     },
@@ -155,6 +176,11 @@
         hud.item.className = rolling ? 'rolling' : G.item ? 'ready' : '';
         hud.item.setAttribute('aria-label', G.item ? 'Use ' + G.ITEMS[G.item].name : 'No item');
         hud.item.title = G.item ? G.ITEMS[G.item].name : '';
+      }
+      const kk = G.keysHeld ? [...G.keysHeld].join() : ''; // keys you're carrying
+      if (c.keys !== kk) {
+        c.keys = kk;
+        hud.keys.innerHTML = kk ? [...G.keysHeld].map((col) => '<span style="color:' + col + '">' + svg(MENU_ICONS.key) + '</span>').join('') : '';
       }
       const act = [];
       for (const k of ['star', 'carpet', 'shrink']) if (fx[k] > 0) act.push([k, fx[k] / G.ITEMS[k].dur]);
@@ -395,109 +421,90 @@
     },
   };
 
+  // Chapters of ten, each ending in a boss; the chapter after the one you're on shows, locked.
+  function chapterList(tile, o) {
+    const pr = P(), L = MZ.Levels, top = Math.max(1, pr.journey.unlocked), all = S().extras.unlockAll;
+    const last = Math.max(L.chapterOf(top) + 1, all ? 8 : 2);
+    const out = [];
+    for (let c = 1; c <= last; c++) {
+      const first = (c - 1) * L.CHAPTER + 1, locked = first > top && !all;
+      let stars = 0;
+      for (let i = first; i < first + L.CHAPTER; i++) stars += (pr.journey.levels[i] || {}).stars || 0;
+      out.push(h('div', { class: 'chapter' + (locked ? ' locked' : '') },
+        h('div', { class: 'ch-head' }, h('b', null, 'Chapter ' + c), h('span', null, L.chapterName(c)), o && o.stars ? h('span', { class: 'ch-stars' }, stars + ' / ' + L.CHAPTER * 3) : null),
+        h('div', { class: 'levels' }, Array.from({ length: L.CHAPTER }, (_, k) => tile(first + k, first + k > top && !all, first + k === top)))));
+    }
+    return out;
+  }
+  function levelTile(i, locked, next, kids, onclick) {
+    const L = MZ.Levels, intro = L.introOf(i), boss = L.isBoss(i);
+    return h('button', {
+      class: 'lv' + (locked ? ' locked' : '') + (next ? ' next' : '') + (boss ? ' boss' : '') + (i >= L.REMIX_FROM ? ' remix' : '') + (intro ? ' intro' : ''),
+      disabled: locked, 'aria-label': (boss ? 'Boss, level ' : 'Level ') + i + (locked ? ', locked' : ''), title: intro ? intro.name : boss ? 'Boss' : '',
+      onclick: () => { MZ.Audio.play('click'); onclick(i); },
+    }, h('b', null, boss ? 'Boss' : String(i)), locked ? null : kids);
+  }
+
   // ---------- screen builders ----------
   UI.screens = {
     title() {
-      const lvl = Math.max(1, P().journey.unlocked);
-      const G = Game();
-      const body = [
+      const G = Game(), L = MZ.Levels, top = Math.max(1, P().journey.unlocked), ch = L.chapterOf(top), inCh = (top - 1) % L.CHAPTER;
+      const go = (fn) => () => { MZ.Audio.unlock(); MZ.Audio.play('click'); fn(); };
+      const mode = (label, icon, fn) => h('button', { class: 'mode', onclick: go(fn) }, h('span', { class: 'mode-ico', html: svg(MENU_ICONS[icon]) }), h('b', null, label));
+      const small = (label, icon, fn) => h('button', { class: 'mini', 'aria-label': label, title: label, onclick: go(fn) }, h('span', { html: svg(MENU_ICONS[icon]) }), h('small', null, label));
+      return this.panel(null, [
         h('img', { class: 'logo', src: 'assets/logo.svg', alt: 'Memaze', onerror: (e) => { e.target.replaceWith(h('h1', { class: 'logo-text' }, 'MEMAZE')); } }),
-        btn(lvl > 1 ? 'Continue: Level ' + lvl : 'Play', () => G.startJourney(lvl), 'primary big'),
-        h('div', { class: 'grid3' },
-          btn('Levels', () => this.show('levels')),
-          btn('Time Trial', () => this.show('trials')),
-          btn('Daily', () => G.startDaily()),
-          btn('Gauntlet', () => G.startGauntlet()),
-          btn('Endless', () => this.show('endless')),
-          btn('Seed', () => this.show('custom'))),
-        h('div', { class: 'grid3' },
-          btn('Media', () => this.show('media')),
-          btn('Background', () => this.show('background')),
-          btn('Settings', () => this.show('settings'))),
-        h('div', { class: 'foot' },
-          h('a', { href: '#', onclick: (e) => { e.preventDefault(); this.show('help'); } }, 'How to play'),
-          h('a', { href: '#', onclick: (e) => { e.preventDefault(); this.fullscreen(); } }, 'Full screen')),
-      ];
-      return this.panel(null, body, { noBack: true, cls: 'title' });
+        h('button', { class: 'continue', onclick: go(() => G.startJourney(top)) },
+          h('span', { class: 'cont-top' }, 'Chapter ' + ch + ' · ' + L.chapterName(ch)),
+          h('span', { class: 'cont-main' }, top > 1 ? 'Continue' : 'Play'),
+          h('span', { class: 'cont-sub' }, L.label(top)),
+          h('span', { class: 'cont-bar' }, Array.from({ length: L.CHAPTER }, (_, i) => h('i', { class: (i < inCh ? 'done' : i === inCh ? 'now' : '') + (i === L.CHAPTER - 1 ? ' boss' : '') })))),
+        h('div', { class: 'modes' },
+          mode('Chapters', 'chapters', () => this.show('chapters')),
+          mode('Gauntlet', 'gauntlet', () => this.show('gauntlet')),
+          mode('Endless', 'endless', () => G.startEndless()),
+          mode('Time Trial', 'trial', () => this.show('trials'))),
+        h('div', { class: 'menu-bar' },
+          small('Media', 'media', () => this.show('media')),
+          small('Background', 'background', () => this.show('background')),
+          small('Settings', 'settings', () => this.show('settings')),
+          small('Help', 'help', () => this.show('help')),
+          small('Fullscreen', 'full', () => this.fullscreen())),
+      ], { noBack: true, cls: 'title' });
     },
 
-    levels() {
-      const pr = P(), top = Math.max(pr.journey.unlocked, 1);
-      const page = this._lvPage != null ? this._lvPage : Math.floor((top - 1) / 40);
-      const grid = h('div', { class: 'levels' });
-      for (let i = page * 40 + 1; i <= page * 40 + 40; i++) {
-        const rec = pr.journey.levels[i], locked = i > top && !S().extras.unlockAll;
-        grid.appendChild(h('button', {
-          class: 'lv' + (locked ? ' locked' : '') + (i === top ? ' next' : ''), disabled: locked, 'aria-label': 'Level ' + i + (locked ? ', locked' : ''),
-          onclick: () => { MZ.Audio.play('click'); Game().startJourney(i); },
-        }, h('b', null, String(i)), locked ? null : starRow(rec ? rec.stars : 0, 'lvstars')));
-      }
-      const stars = MZ.Save.stars();
-      const nav = h('div', { class: 'row' },
-        btn('Prev', () => { this._lvPage = Math.max(0, page - 1); this.rebuild(); }, 'small' + (page ? '' : ' hide')),
-        h('span', { class: 'muted' }, (page * 40 + 1) + '–' + (page * 40 + 40) + ' · ' + stars + (stars === 1 ? ' star' : ' stars')),
-        btn('Next', () => { this._lvPage = page + 1; this.rebuild(); }, 'small' + (S().extras.unlockAll || (page + 1) * 40 < top ? '' : ' hide')));
-      return this.panel('Levels', [grid, nav], { wide: true });
+    chapters() {
+      const pr = P();
+      const el = this.panel('Chapters', chapterList((i, locked, next) => levelTile(i, locked, next, starRow((pr.journey.levels[i] || {}).stars || 0, 'lvstars'), (n) => Game().startJourney(n)), { stars: true }), { wide: true });
+      setTimeout(() => { const n = el.querySelector('.lv.next'); if (n && n.scrollIntoView) n.scrollIntoView({ block: 'center' }); }, 0);
+      return el;
     },
-
     // Time Trial: every level reached so far, with its best time.
     trials() {
-      const pr = P(), top = Math.max(pr.journey.unlocked, 1);
-      const page = this._trPage != null ? this._trPage : Math.floor((top - 1) / 40);
-      const grid = h('div', { class: 'levels trials' });
-      for (let i = page * 40 + 1; i <= page * 40 + 40; i++) {
-        const best = pr.trials[i], locked = i > top && !S().extras.unlockAll;
-        grid.appendChild(h('button', {
-          class: 'lv' + (locked ? ' locked' : ''), disabled: locked, 'aria-label': 'Level ' + i + (locked ? ', locked' : best != null ? ', best ' + MZ.fmtClock(best) : ''),
-          onclick: () => { MZ.Audio.play('click'); Game().startTrial(i); },
-        }, h('b', null, String(i)), locked ? null : h('span', { class: 'lvtime' }, best != null ? MZ.fmtClock(best) : '–')));
-      }
-      const nav = h('div', { class: 'row' },
-        btn('Prev', () => { this._trPage = Math.max(0, page - 1); this.rebuild(); }, 'small' + (page ? '' : ' hide')),
-        h('span', { class: 'muted' }, (page * 40 + 1) + '–' + (page * 40 + 40)),
-        btn('Next', () => { this._trPage = page + 1; this.rebuild(); }, 'small' + (S().extras.unlockAll || (page + 1) * 40 < top ? '' : ' hide')));
-      return this.panel('Time Trial', [grid, nav], { wide: true });
+      const pr = P();
+      return this.panel('Time Trial', chapterList((i, locked, next) => levelTile(i, locked, false,
+        h('span', { class: 'lvtime' }, pr.trials[i] != null ? MZ.fmtClock(pr.trials[i]) : '–'), (n) => Game().startTrial(n))), { wide: true });
     },
-
-    custom() {
-      const o = this._custom || (this._custom = { seed: randomSeed(), lattice: 'auto', mask: 'auto', size: 0.4, width: 0.5, difficulty: 0.5, hazards: { blink: true } });
-      const seedIn = h('input', { type: 'text', value: o.seed, maxlength: 40, spellcheck: false, oninput: () => (o.seed = seedIn.value.trim() || 'memaze') });
-      const sel = (label, key, opts) => {
-        const s = h('select', { onchange: () => (o[key] = s.value) }, opts.map(([v, l]) => h('option', { value: v, selected: o[key] === v }, l)));
-        return h('label', { class: 'ctl' }, h('span', null, label), s);
+    // Gauntlet: an endless run of mazes, Progressive (deeper and harder) or Random, at a difficulty, from a seed.
+    gauntlet() {
+      const o = this._gnt || (this._gnt = { style: 'progressive', diff: 'normal', seedText: '' });
+      const G = Game(), L = MZ.Levels;
+      const pick = (label, key, opts) => {
+        const wrap = h('div', { class: 'seg' }, opts.map(([v, l]) => h('button', { class: o[key] === v ? 'on' : '', onclick: () => { MZ.Audio.play('click'); o[key] = v; this.rebuild(); } }, l)));
+        return h('div', { class: 'ctl' }, h('span', null, label), wrap);
       };
-      const rng = (label, key, fmt) => {
-        const out = h('output', null, fmt(o[key]));
-        const i = h('input', { type: 'range', min: 0, max: 1, step: 0.01, value: o[key], oninput: () => { o[key] = parseFloat(i.value); out.textContent = fmt(o[key]); } });
-        return h('label', { class: 'ctl' }, h('span', null, label), i, out);
-      };
-      const hz = (label, key) => {
-        const i = h('input', { type: 'checkbox', checked: !!o.hazards[key], onchange: () => (o.hazards[key] = i.checked) });
-        return h('label', { class: 'ctl toggle' }, h('span', null, label), i, h('i', { class: 'sw' }));
-      };
-      const lats = [['auto', 'Surprise me']].concat(Object.entries(MZ.Gen.LATTICES).map(([k, v]) => [k, v.name]));
-      const masks = [['auto', 'Surprise me']].concat(Object.entries(MZ.Gen.MASKS).map(([k, v]) => [k, v.name]));
-      return this.panel('Seed maze', [
-        h('label', { class: 'ctl' }, h('span', null, 'Seed'), h('div', { class: 'row tight' }, seedIn, btn('Random', () => { o.seed = randomSeed(); seedIn.value = o.seed; }, 'small'))),
-        sel('Layout', 'lattice', lats),
-        sel('Shape', 'mask', masks),
-        rng('Size', 'size', (v) => Math.round(20 + v * 380) + ' junctions'),
-        rng('Path width', 'width', (v) => (v < 0.34 ? 'narrow' : v < 0.67 ? 'medium' : 'wide')),
-        rng('Difficulty', 'difficulty', (v) => (v < 0.34 ? 'chill' : v < 0.67 ? 'normal' : 'spicy')),
-        section('Hazards', hz('Vanishing bridges', 'blink')),
+      const seedIn = h('input', { type: 'text', value: o.seedText, placeholder: 'Random', maxlength: 40, spellcheck: false, oninput: () => (o.seedText = seedIn.value.trim()) });
+      const best = P().gauntlet[o.style + '/' + o.diff] || 0, D = L.GAUNTLET[o.diff];
+      return this.panel('Gauntlet', [
+        pick('Mazes', 'style', [['progressive', 'Progressive'], ['random', 'Random']]),
+        pick('Difficulty', 'diff', Object.keys(L.GAUNTLET).map((k) => [k, L.GAUNTLET[k].name])),
+        h('label', { class: 'ctl' }, h('span', null, 'Seed'), h('div', { class: 'row tight' }, seedIn, btn('Random', () => { o.seedText = MZ.randomSeed(); seedIn.value = o.seedText; }, 'small'))),
+        h('table', { class: 'stats' },
+          h('tr', null, h('th', null, 'Lives'), h('td', null, isFinite(D.lives) ? String(D.lives) : 'Unlimited')),
+          h('tr', null, h('th', null, 'Best depth'), h('td', null, best ? String(best) : '–'))),
         h('div', { class: 'row' },
-          btn('Play', () => Game().startCustom(MZ.clone(o)), 'primary'),
-          btn('Copy link', () => copy(shareLink(o), 'Link copied'), '')),
-      ]);
-    },
-
-    endless() {
-      const seedIn = h('input', { type: 'text', placeholder: 'random', maxlength: 40, spellcheck: false });
-      const best = P().endlessBest || 0;
-      return this.panel('Endless', [
-        h('label', { class: 'ctl' }, h('span', null, 'Seed'), seedIn),
-        best ? h('p', { class: 'muted' }, 'Best ' + best) : null,
-        btn('Start', () => Game().startEndless(seedIn.value.trim() || null), 'primary'),
+          btn('Start', () => G.startGauntlet(Object.assign({}, o, { seedText: o.seedText || null })), 'primary big'),
+          o.seedText ? btn('Copy link', () => copy(gauntletLink(o), 'Link copied'), 'small ghost') : null),
       ]);
     },
 
@@ -659,6 +666,19 @@
             h('li', null, h('b', null, 'Launch'), ': a short hop high above the maze. Steer while you’re up; you come down right where you are, so aim for the board: landing in the void is a fall. The map keeps all you saw.'),
             h('li', null, h('b', null, 'Magic carpet'), ': float over the gaps for 6 s. Be over floor when it runs out.'),
             h('li', null, h('b', null, 'Shrink'), ': half size for 10 s, for the tight spots.')),
+          h('li', null, 'Levels come in chapters of ten; the tenth is a boss. New things appear along the way:'),
+          h('ul', { class: 'items' },
+            h('li', null, h('b', null, 'Keys and doors'), ': a door opens once you have the key of its colour.'),
+            h('li', null, h('b', null, 'Vanishing bridges'), ': they blink, then disappear for a moment.'),
+            h('li', null, h('b', null, 'One-way gates'), ': pass them only the way the arrows point.'),
+            h('li', null, h('b', null, 'Switches'), ': step on one to flip the bridges of its colour: some appear, some go.'),
+            h('li', null, h('b', null, 'Moving platforms'), ': ride them across the gaps.'),
+            h('li', null, h('b', null, 'Portals'), ': step in, come out of its twin.'),
+            h('li', null, h('b', null, 'Ice'), ': you drift, and keep sliding when you stop.'),
+            h('li', null, h('b', null, 'Darkness'), ': you only see what’s near you.'),
+            h('li', null, h('b', null, 'Remix'), ': past level 35, levels get a twist: narrow, rushed, mirrored, no map, and more.')),
+          h('li', null, 'Falling off the board costs a hit; a bubble floats you back to solid ground.'),
+          h('li', null, 'Gauntlet: an endless run of mazes, getting harder (Progressive) or at random, at the difficulty you choose. Share a seed to play the same run.'),
           h('li', null, 'The map fills in as you go: only what has been on screen shows up.'),
           h('li', null, 'Reach GOAL before the time runs out.'),
           h('li', null, 'Long mazes have flags. Touch one and a loss sends you back to it, not the start. Restart or running out of time starts over.'),
@@ -685,30 +705,24 @@
     },
 
     results(r) {
-      const G = Game();
+      const G = Game(), L = MZ.Levels;
       if (r.mode === 'trial') return this.screens.trialResults.call(this, r);
       setTimeout(() => { for (let i = 0; i < r.stars; i++) setTimeout(() => MZ.Audio.play('star'), 250 + i * 280); }, 0);
-      const next = () => {
-        if (r.mode === 'journey') G.startJourney(r.level + 1);
-        else if (r.mode === 'daily') G.quit();
-        else if (r.mode === 'custom') { const o = G.run.opts; o.seed = randomSeed(); G.startCustom(o); }
-      };
+      const next = () => G.startJourney(r.level + 1);
       const rows = [['Time', MZ.fmtClock(r.time)], ['Par', par(r.par)]];
       if (r.best != null) rows.push(['Best', MZ.fmtClock(r.best) + (r.newBest ? ' (new)' : '')]);
       rows.push(['Gems', r.gems + '/' + r.gemsTotal], ['Restarts', String(r.restarts)]);
-      const share = r.mode === 'daily' ? 'Memaze Daily ' + G.run.day + ': ' + MZ.fmtClock(r.time) + ', ' + r.stars + '/3 stars'
-        : r.mode === 'custom' ? shareLink(G.run.opts) : null;
-      const auto = r.mode === 'journey' && S().gameplay.autoNext;
+      const auto = S().gameplay.autoNext;
       if (auto) setTimeout(() => { if (this.current && this.current.name === 'results') next(); }, 2500);
+      const boss = L.isBoss(r.level);
       return this.panel(null, [
-        h('h1', { class: 'clear' }, 'CLEAR!'),
+        h('h1', { class: 'clear' }, boss ? 'CHAPTER ' + L.chapterOf(r.level) + ' CLEAR!' : 'CLEAR!'),
         starRow(r.stars, 'stars'),
         h('table', { class: 'stats' }, rows.map(([k, v]) => h('tr', null, h('th', null, k), h('td', null, v)))),
         h('div', { class: 'row' },
-          btn(r.mode === 'journey' ? 'Next level' : r.mode === 'daily' ? 'Done' : 'New seed', next, 'primary'),
+          btn(boss ? 'Next chapter' : 'Next level', next, 'primary'),
           btn('Retry', () => G.restartLevel()),
-          r.mode !== 'daily' ? btn('Menu', () => G.quit(), 'ghost') : null),
-        share ? btn('Copy ' + (r.mode === 'daily' ? 'result' : 'link'), () => copy(share, 'Copied'), 'small ghost') : null,
+          btn('Menu', () => G.quit(), 'ghost')),
       ], { noBack: true, cls: 'results' });
     },
 
@@ -730,14 +744,16 @@
     },
 
     over(r) {
-      const G = Game();
-      const again = () => (r.mode === 'gauntlet' ? G.startGauntlet() : G.startEndless(G.run.seedText));
-      const rows = r.mode === 'gauntlet' ? [['Mazes cleared', String(r.score)], ['Best', String(r.best)]]
+      const G = Game(), L = MZ.Levels, run = G.run;
+      const again = () => (r.mode === 'gauntlet' ? G.startGauntlet({ style: run.style, diff: run.diff, seedText: run.userSeed ? run.seedText : null }) : G.startEndless());
+      const rows = r.mode === 'gauntlet'
+        ? [['Mazes', (r.style === 'random' ? 'Random' : 'Progressive') + ' · ' + L.GAUNTLET[r.diff].name], ['Depth', String(r.score)], ['Best', String(r.best)], ['Seed', run.seedText]]
         : [['Score', String(r.score)], ['Distance', r.dist + ' m'], ['Gems', String(r.gems)], ['Beacons', String(r.beacons)], ['Best', String(r.best)]];
       return this.panel(null, [
         h('h1', { class: 'clear over' }, r.newBest ? 'NEW BEST!' : 'GAME OVER'),
         h('table', { class: 'stats' }, rows.map(([k, v]) => h('tr', null, h('th', null, k), h('td', null, v)))),
         h('div', { class: 'row' }, btn('Again', again, 'primary'), btn('Menu', () => G.quit(), 'ghost')),
+        r.mode === 'gauntlet' ? btn('Copy link', () => copy(gauntletLink({ seedText: run.seedText, style: run.style, diff: run.diff }), 'Link copied'), 'small ghost') : null,
       ], { noBack: true, cls: 'results' });
     },
   };
@@ -777,10 +793,9 @@
     bar.children[2].style.background = 'hsl(' + S().rgb.hueTo + ',90%,55%)';
   };
 
-  const WORDS = ['banana', 'wobble', 'neon', 'pickle', 'comet', 'mango', 'turbo', 'sprout', 'pixel', 'yeti', 'waffle', 'quasar', 'noodle', 'ember', 'otter', 'glitch'];
-  function randomSeed() { return WORDS[(Math.random() * WORDS.length) | 0] + '-' + ((Math.random() * 1000) | 0); }
-  function shareLink(o) {
-    const q = new URLSearchParams({ seed: o.seed, lat: o.lattice, shape: o.mask, size: o.size, width: o.width, diff: o.difficulty, hz: o.hazards && o.hazards.blink ? 'blink' : '' });
+  // Gauntlet links: #gauntlet=<seed>&style=random&diff=hard opens straight into that run.
+  function gauntletLink(o) {
+    const q = new URLSearchParams({ gauntlet: o.seedText, style: o.style, diff: o.diff });
     return location.href.split('#')[0] + '#' + q.toString();
   }
   function copy(text, msg) {
@@ -791,22 +806,14 @@
       else manual();
     } catch (e) { manual(); }
   }
-  // #seed=… links open straight into that maze. 'hz=blink' turns vanishing bridges on, 'hz=' off; no hz means on.
+  // (Old #seed=… links open a Gauntlet run from that seed.)
   UI.fromHash = function () {
-    const hs = location.hash.replace(/^#/, '');
-    if (!hs) return false;
-    const q = new URLSearchParams(hs);
-    if (!q.get('seed')) return false;
-    const num = (k, d) => { const v = parseFloat(q.get(k)); return isFinite(v) ? clamp(v, 0, 1) : d; };
-    const rawHz = q.get('hz');
-    const hz = (rawHz === null ? 'blink' : rawHz).split('.');
-    const o = {
-      seed: q.get('seed').slice(0, 40), lattice: MZ.Gen.LATTICES[q.get('lat')] ? q.get('lat') : 'auto', mask: MZ.Gen.MASKS[q.get('shape')] ? q.get('shape') : 'auto',
-      size: num('size', 0.4), width: num('width', 0.5), difficulty: num('diff', 0.5),
-      hazards: { blink: hz.includes('blink') },
-    };
-    UI._custom = o;
-    Game().startCustom(MZ.clone(o));
+    const q = new URLSearchParams(location.hash.replace(/^#/, ''));
+    const seed = q.get('gauntlet') || q.get('seed');
+    if (!seed) return false;
+    const L = MZ.Levels, o = { seedText: seed.slice(0, 40), style: q.get('style') === 'random' ? 'random' : 'progressive', diff: L.GAUNTLET[q.get('diff')] ? q.get('diff') : 'normal' };
+    UI._gnt = Object.assign({}, o);
+    Game().startGauntlet(o);
     return true;
   };
 

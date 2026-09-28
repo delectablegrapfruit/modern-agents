@@ -56,19 +56,25 @@
     for (const b of blinks) if (b.a > 0) { g.globalAlpha = b.a; g.lineWidth = 2 * (b.e.hw + th.rimW * px); g.stroke(b.line); }
     g.globalAlpha = 1;
   }
-  // Bridges that are up get their fill; gone ones leave a faint dashed ghost of where they come back.
+  // Bridges that are up get their fill; gone ones leave a faint dashed ghost of where they come back. Switch bridges
+  // wear their switch's colour.
+  const swColor = (e) => (e.sw && MZ.Levels ? MZ.Levels.SWITCH_COLORS[e.sw.g % MZ.Levels.SWITCH_COLORS.length] : null);
   function bridgeFills(g, blinks, th, px) {
     for (const b of blinks) {
+      const c = swColor(b.e);
       if (b.a > 0) {
-        g.globalAlpha = b.a; g.strokeStyle = th.blink; g.lineWidth = 2 * b.e.hw; g.stroke(b.line); g.globalAlpha = 1;
+        g.globalAlpha = b.a; g.strokeStyle = th.blink; g.lineWidth = 2 * b.e.hw; g.stroke(b.line);
+        if (c) { g.globalAlpha = 0.5 * b.a; g.strokeStyle = c; g.stroke(b.line); g.globalAlpha = 1; g.setLineDash([10 * px, 10 * px]); g.lineWidth = 3 * px; g.strokeStyle = c; g.stroke(b.line); g.setLineDash([]); }
+        g.globalAlpha = 1;
         continue;
       }
-      g.strokeStyle = 'rgba(255,255,255,0.08)'; g.lineWidth = 2 * b.e.hw; g.stroke(b.line);
+      g.strokeStyle = c ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.08)'; g.lineWidth = 2 * b.e.hw; g.stroke(b.line);
       g.setLineDash([12 * px, 14 * px]);
-      g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 3 * px; g.stroke(b.line);
+      g.strokeStyle = c || 'rgba(255,255,255,0.55)'; g.lineWidth = 3 * px; g.stroke(b.line);
       g.setLineDash([]);
     }
   }
+  const dynAlpha = (e, t, world) => (e.type === 'switch' ? ((world.sw[e.sw.g] | 0) === e.sw.on ? 1 : 0) : blinkAlpha(e.blink, t));
 
   class Renderer {
     constructor(canvas) {
@@ -109,7 +115,7 @@
       for (const p of parts) {
         const paths = p.paths || buildPaths(p);
         union.addPath(paths.solid);
-        for (const b of paths.blinks) blinks.push({ e: b.e, line: b.line, a: blinkAlpha(b.e.blink, t) });
+        for (const b of paths.blinks) blinks.push({ e: b.e, line: b.line, a: dynAlpha(b.e, t, s.world) });
       }
       ctx.lineJoin = 'round';
       ctx.lineCap = 'round';
@@ -160,16 +166,136 @@
         ctx.fill(union);
         ctx.fill(union); // twice: where capsule edges overlap inside the floor, one pass leaves a faint antialiasing hairline
       }
+      // Ice: a pale, glassy sheen with streaks along the corridor.
+      for (const p of parts) for (const e of p.edges) {
+        if (!e.ice) continue;
+        const line = e.iceLine || (e.iceLine = (() => { const l = new Path2D(); l.moveTo(e.pts[0].x, e.pts[0].y); for (let i = 1; i < e.pts.length; i++) l.lineTo(e.pts[i].x, e.pts[i].y); return l; })());
+        ctx.strokeStyle = 'rgba(190,240,255,0.55)'; ctx.lineWidth = 2 * e.hw; ctx.stroke(line);
+        ctx.setLineDash([e.hw * 0.9, e.hw * 1.6]);
+        ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 2.5 * px; ctx.stroke(line);
+        ctx.setLineDash([]);
+      }
       ctx.lineCap = 'butt';
+      if (s.mech) this.drawMovers(s.mech, t, th);
 
       if (s.start) this.drawStart(s.start, th);
       if (s.goal && !s.goal.media) this.drawGoal(s.goal, th);
       if (s.flags) for (const c of s.flags) this.drawFlag(c);
+      if (s.mech) this.drawMech(s.mech, s.clock || 0);
       if (s.beacons) for (const b of s.beacons) this.drawBeacon(b);
       if (s.gems) for (const g of s.gems) if (!g.taken) this.drawGem(g);
       if (s.boxes) for (const b of s.boxes) this.drawBox(b, s.clock || 0, s.boxAge ? s.boxAge(b) : 9);
       if (s.shards) for (const b of s.shards) this.drawShards(b, s.clock || 0);
       if (s.under) this.drawUnder(s.under, s.clock || 0);
+    }
+    // Moving platforms: a dotted track over the void, and the platform itself (floor) with arrows on it.
+    drawMovers(m, t, th) {
+      const ctx = this.ctx, px = this.px;
+      for (const mv of m.movers) {
+        ctx.save();
+        ctx.setLineDash([6 * px, 10 * px]);
+        ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 3 * px; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(mv.a.x, mv.a.y); ctx.lineTo(mv.b.x, mv.b.y); ctx.stroke();
+        ctx.setLineDash([]);
+        const p = MZ.moverAt(mv, t), ang = Math.atan2(mv.b.y - mv.a.y, mv.b.x - mv.a.x);
+        ctx.translate(p.x, p.y);
+        ctx.beginPath(); ctx.arc(0, 0, mv.r, 0, TAU);
+        ctx.fillStyle = th.floor === 'rgba(255,255,255,0.2)' ? 'rgba(255,255,255,0.35)' : th.floor; ctx.fill();
+        ctx.strokeStyle = th.rim; ctx.lineWidth = th.rimW * 2 * px; ctx.stroke();
+        ctx.strokeStyle = 'rgba(0,0,0,0.18)'; ctx.lineWidth = 3 * px;
+        ctx.beginPath(); ctx.arc(0, 0, mv.r * 0.72, 0, TAU); ctx.stroke();
+        ctx.rotate(ang);
+        ctx.fillStyle = 'rgba(0,0,0,0.22)';
+        for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(s * mv.r * 0.9, 0); ctx.lineTo(s * mv.r * 0.6, -mv.r * 0.2); ctx.lineTo(s * mv.r * 0.6, mv.r * 0.2); ctx.closePath(); ctx.fill(); }
+        ctx.restore();
+      }
+    }
+    // Doors, keys, switches, one-way gates and portals.
+    drawMech(m, t) {
+      const ctx = this.ctx, px = this.px;
+      for (const pt of m.portals) for (const e of [pt.a, pt.b]) this.drawPortal(e, pt.r, pt.color, t);
+      for (const pl of m.plates) {
+        const on = (MZ.Game.world && MZ.Game.world.sw[pl.g]) | 0, r = pl.r;
+        ctx.save(); ctx.translate(pl.x, pl.y);
+        ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.fill();
+        ctx.strokeStyle = pl.color; ctx.lineWidth = 4 * px; ctx.stroke();
+        ctx.fillStyle = pl.color; ctx.globalAlpha = on ? 1 : 0.55;
+        ctx.beginPath(); ctx.arc(0, on ? r * 0.04 : -r * 0.08, r * 0.55, 0, TAU); ctx.fill();
+        ctx.globalAlpha = 1; ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.lineWidth = 2.5 * px; ctx.stroke();
+        ctx.restore();
+      }
+      for (const g of m.gates) { // two chevrons pointing the way through, between two posts
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 3 * px; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(g.ax, g.ay); ctx.lineTo(g.bx, g.by); ctx.setLineDash([4 * px, 7 * px]); ctx.stroke(); ctx.setLineDash([]);
+        const w = Math.hypot(g.bx - g.ax, g.by - g.ay) / 2, bob = Math.sin(t * 5) * w * 0.06;
+        ctx.translate(g.x + g.nx * bob, g.y + g.ny * bob);
+        ctx.rotate(Math.atan2(g.ny, g.nx));
+        ctx.lineJoin = 'round';
+        for (const o of [-w * 0.28, w * 0.18]) {
+          ctx.beginPath(); ctx.moveTo(o - w * 0.22, -w * 0.45); ctx.lineTo(o + w * 0.12, 0); ctx.lineTo(o - w * 0.22, w * 0.45);
+          ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 9 * px; ctx.stroke();
+          ctx.strokeStyle = '#7dffb5'; ctx.lineWidth = 5 * px; ctx.stroke();
+        }
+        ctx.restore();
+      }
+      for (const d of m.doors) {
+        const k = d.open ? Math.min(1, (MZ.Game.t - (d.openAt || 0)) / 0.45) : 0;
+        if (k >= 1) continue;
+        ctx.save();
+        ctx.globalAlpha = 1 - k;
+        const cx = d.x, cy = d.y, sh = k * 14; // it sinks away as it opens
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 16 * px;
+        ctx.beginPath(); ctx.moveTo(d.ax, d.ay); ctx.lineTo(d.bx, d.by); ctx.stroke();
+        ctx.strokeStyle = d.color; ctx.lineWidth = 11 * px;
+        ctx.beginPath(); ctx.moveTo(d.ax, d.ay); ctx.lineTo(d.bx, d.by); ctx.stroke();
+        ctx.translate(cx, cy + sh * px);
+        ctx.fillStyle = '#1b1530'; // the keyhole
+        ctx.beginPath(); ctx.arc(0, -2 * px, 3.2 * px, 0, TAU); ctx.fill();
+        ctx.fillRect(-1.6 * px, -1 * px, 3.2 * px, 6 * px);
+        ctx.restore();
+      }
+      for (const kk of m.keys) if (!kk.taken) this.drawKey(kk, t);
+    }
+    drawKey(k, t) {
+      const ctx = this.ctx, px = this.px, s = 13;
+      ctx.save();
+      ctx.translate(k.x, k.y + Math.sin(t * 3 + k.x) * 2.5);
+      ctx.rotate(-0.6 + Math.sin(t * 2) * 0.12);
+      ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+      const shape = () => {
+        ctx.beginPath(); ctx.arc(-s * 0.55, 0, s * 0.5, 0, TAU);
+        ctx.moveTo(-s * 0.05, 0); ctx.lineTo(s * 1.1, 0);
+        ctx.moveTo(s * 0.75, 0); ctx.lineTo(s * 0.75, s * 0.42);
+        ctx.moveTo(s * 1.05, 0); ctx.lineTo(s * 1.05, s * 0.32);
+      };
+      shape(); ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 9 * px; ctx.stroke();
+      shape(); ctx.strokeStyle = k.color; ctx.lineWidth = 5 * px; ctx.stroke();
+      ctx.restore();
+    }
+    drawPortal(e, r, color, t) {
+      const ctx = this.ctx, px = this.px;
+      ctx.save(); ctx.translate(e.x, e.y);
+      const g = ctx.createRadialGradient(0, 0, r * 0.1, 0, 0, r);
+      g.addColorStop(0, 'rgba(10,6,30,0.95)'); g.addColorStop(0.7, 'rgba(20,10,50,0.75)'); g.addColorStop(1, color);
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, r * 0.95, 0, TAU); ctx.fill();
+      ctx.strokeStyle = color; ctx.lineWidth = 3 * px; ctx.lineCap = 'round';
+      for (let i = 0; i < 3; i++) { // swirling arms
+        const a0 = t * 2.2 + (i * TAU) / 3;
+        ctx.beginPath(); ctx.arc(0, 0, r * (0.35 + 0.18 * i), a0, a0 + 2.1); ctx.stroke();
+      }
+      ctx.restore();
+    }
+    // Darkness: everything but a soft circle of light around the player.
+    drawDark(cam, p, R) {
+      const ctx = this.ctx, s = this.toScreen(cam, p.x, p.y), r = R * cam.zoom;
+      ctx.save();
+      ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+      const g = ctx.createRadialGradient(s.x, s.y, r * 0.55, s.x, s.y, r);
+      g.addColorStop(0, 'rgba(4,3,12,0)'); g.addColorStop(0.7, 'rgba(4,3,12,0.8)'); g.addColorStop(1, 'rgba(4,3,12,0.97)');
+      ctx.fillStyle = g; ctx.fillRect(0, 0, this.w, this.h);
+      ctx.restore();
     }
     // A checkpoint: a flag on a round platform, dashed gold until reached, solid green after.
     drawFlag(c) {
@@ -327,6 +453,11 @@
         ctx.restore();
       }
       if (u.burst != null || u.crackle != null) this.drawSparks(u, W, t);
+      if (u.warp) { // coming out of a portal: rings closing in
+        ctx.save(); ctx.globalAlpha = 1 - u.warp.k; ctx.strokeStyle = u.warp.color; ctx.lineWidth = 4 * px;
+        for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.arc(0, 0, W * (1.6 - u.warp.k * 1.1 + i * 0.25), 0, TAU); ctx.stroke(); }
+        ctx.restore();
+      }
       if (u.bubble != null || u.pop != null) this.drawBubble(u, W, t);
       if (u.carpet > 0) {
         ctx.globalAlpha = u.carpet;
@@ -450,7 +581,8 @@
       g.clearRect(0, 0, W, H);
       g.lineCap = 'round'; g.lineJoin = 'round';
       for (const e of maze.edges) {
-        g.strokeStyle = e.type === 'blink' ? 'rgba(255,255,255,0.45)' : '#fff';
+        const c = swColor(e);
+        g.strokeStyle = c || (e.type === 'blink' ? 'rgba(255,255,255,0.45)' : e.ice ? '#c4f1ff' : '#fff');
         g.lineWidth = Math.max(1.5, e.hw * 2 * sc);
         g.beginPath();
         e.pts.forEach((q, i) => (i ? g.lineTo : g.moveTo).call(g, this.ox + q.x * sc, this.oy + q.y * sc));
@@ -470,7 +602,7 @@
       this.fog.getContext('2d').fillRect(x0, y0, x1 - x0, y1 - y0);
     }
     // view: the world rectangle on screen, outlined so the map and the screen line up. Markers show once seen.
-    draw(pos, goal, gems, view, flags, boxes) {
+    draw(pos, goal, gems, view, flags, boxes, mech) {
       if (!this.maze) return;
       const g = this.ctx, W = this.canvas.width, H = this.canvas.height;
       g.clearRect(0, 0, W, H);
@@ -480,6 +612,16 @@
       const u = W / 150;
       if (flags) for (const c of flags) if (c.seen) { dot(c.x, c.y, 3.4 * u, '#000'); dot(c.x, c.y, 2.4 * u, c.lit ? '#3ddc97' : '#ffc53d'); }
       if (boxes) for (const b of boxes) if (b.seen) { dot(b.x, b.y, 2.9 * u, '#000'); dot(b.x, b.y, 2 * u, '#d38bff'); }
+      if (mech && mech.doors) { // what's been seen of the mechanics
+        for (const d of mech.doors) if (d.seen && !d.open) { g.strokeStyle = d.color; g.lineWidth = 3 * u; g.beginPath(); g.moveTo(this.ox + d.ax * this.sc, this.oy + d.ay * this.sc); g.lineTo(this.ox + d.bx * this.sc, this.oy + d.by * this.sc); g.stroke(); }
+        for (const k of mech.keys) if (k.seen && !k.taken) { dot(k.x, k.y, 3 * u, '#000'); dot(k.x, k.y, 2.2 * u, k.color); }
+        for (const pl of mech.plates) if (pl.seen) { dot(pl.x, pl.y, 3 * u, '#000'); dot(pl.x, pl.y, 2.2 * u, pl.color); }
+        for (const pt of mech.portals) for (const e of [pt.a, pt.b]) if (e.seen) { dot(e.x, e.y, 3.2 * u, pt.color); dot(e.x, e.y, 1.6 * u, '#000'); }
+        for (const mv of mech.movers) if (mv.seen) {
+          g.setLineDash([2 * u, 2 * u]); g.strokeStyle = 'rgba(255,255,255,0.7)'; g.lineWidth = Math.max(1, u);
+          g.beginPath(); g.moveTo(this.ox + mv.a.x * this.sc, this.oy + mv.a.y * this.sc); g.lineTo(this.ox + mv.b.x * this.sc, this.oy + mv.b.y * this.sc); g.stroke(); g.setLineDash([]);
+        }
+      }
       if (gems) for (const gm of gems) if (!gm.taken && gm.seen) dot(gm.x, gm.y, 2.5 * u, '#3cf2ff');
       if (goal && goal.seen) dot(goal.x, goal.y, 4.5 * u, '#ffb300');
       if (pos && view) {

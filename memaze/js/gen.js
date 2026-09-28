@@ -629,31 +629,6 @@
       maxPath: lerp(2500, 7000, t),
     };
   }
-  function levelParams(level, salt) {
-    const r = rng(hashStr('memaze/' + (salt || 'journey') + '/' + level));
-    const p = tierParams(level, r);
-    p.seed = Math.floor(r() * 4294967296);
-    p.level = level;
-    return p;
-  }
-  // Custom: every choice can be 'auto'; size 0..1, width 0..1 (0 = narrow), hazards { blink }.
-  function customParams(o) {
-    const seed = hashStr('memaze/custom/' + o.seed);
-    const r = rng(seed);
-    const level = Math.round(lerp(4, 30, o.difficulty == null ? 0.5 : o.difficulty));
-    const p = tierParams(level, r);
-    if (o.lattice && o.lattice !== 'auto') p.lattice = o.lattice;
-    if (o.mask && o.mask !== 'auto') p.mask = o.mask;
-    if (p.lattice === 'polar' && MASKS[p.mask].aspect !== 1) p.mask = 'circle';
-    if (o.size != null) p.nodes = Math.round(lerp(20, 400, o.size));
-    if (o.width != null) p.hw = lerp(26, 52, o.width);
-    const hz = o.hazards || {};
-    if (hz.blink === false) p.blink = 0; else if (hz.blink) p.blink = p.blink || 0.07;
-    p.seed = seed;
-    p.level = level;
-    return p;
-  }
-
   // ---------- endless: an unbounded chunked maze ----------
   const EC = 7, ES = 170;
   function endlessDifficulty(cx, cy) { return clamp(Math.max(Math.abs(cx), Math.abs(cy)) / 10, 0, 1); }
@@ -767,7 +742,9 @@
     const ends = [m.start, m.goal];
     const ok = (idx) => {
       const v = mp[idx], P = nodes[v], mine = inc.get(v) || [];
-      if (mine.some((e) => e.type === 'blink')) return false;
+      if (mine.some((e) => e.type !== 'normal') || (m.reserved && m.reserved.has(v))) return false; // clear of bridges and mechanics
+      for (const k of m.keepClear || []) if (Math.sqrt(segDist2(P.x, P.y, k.ax, k.ay, k.bx, k.by)) < k.r + R + CLEAR) return false;
+      for (const a of m.avoid || []) if (Math.hypot(a.x - P.x, a.y - P.y) < a.r + R) return false;
       for (const d of ends) if (Math.hypot(d.x - P.x, d.y - P.y) < d.r + R + CLEAR) return false;
       for (const e of edges) {
         if (e.a === v || e.b === v) continue;
@@ -799,13 +776,14 @@
     const r = rng(hashInts(m.seed, 0xb0c5));
     const solid = new Uint8Array(m.nodes.length);
     let total = 0;
-    for (const e of m.edges) { total += polyLen(e.pts); if (e.type !== 'blink') solid[e.a] = solid[e.b] = 1; }
+    for (const e of m.edges) { total += polyLen(e.pts); if (e.type === 'normal' || e.type === 'bridge') solid[e.a] = solid[e.b] = 1; }
     const want = clamp(Math.round(total / 1500), 1, 10);
     const away = [{ x: m.start.x, y: m.start.y, r: m.start.r + 70 }, { x: m.goal.x, y: m.goal.y, r: m.goal.r + 90 }];
     for (const c of flags || []) away.push({ x: c.x, y: c.y, r: c.r + 50 });
     for (const g of m.gems) away.push({ x: g.x, y: g.y, r: 60 });
+    for (const a of m.avoid || []) away.push(a);
     const cands = [];
-    m.nodes.forEach((P, i) => { if (solid[i] && away.every((a) => Math.hypot(a.x - P.x, a.y - P.y) > a.r)) cands.push({ x: P.x, y: P.y }); });
+    m.nodes.forEach((P, i) => { if (solid[i] && !(m.reserved && m.reserved.has(i)) && away.every((a) => Math.hypot(a.x - P.x, a.y - P.y) > a.r)) cands.push({ x: P.x, y: P.y }); });
     r.shuffle(cands);
     const out = [], MIN = 320;
     while (out.length < want && cands.length) {
@@ -831,7 +809,7 @@
 
   MZ.Gen = {
     BALL_R, HW_MIN, GAP, MASKS, LATTICES, MASK_UNLOCK, LAT_UNLOCK,
-    generate, levelParams, customParams, tierParams, checkpoints: placeCheckpoints, boxes: placeBoxes,
+    generate, tierParams, checkpoints: placeCheckpoints, boxes: placeBoxes,
     endless: { EC, ES, chunk: (seed, cx, cy) => { const c = endlessChunk(seed, cx, cy); c.boxes = chunkBoxes(seed, c); return c; }, difficulty: endlessDifficulty },
   };
 })();

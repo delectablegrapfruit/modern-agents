@@ -18,7 +18,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Generator (200 mazes + endless chunks)
+      - name: Generator and levels (200 mazes, 120 levels, endless chunks)
         run: node memaze/tests/gen.test.js
       - name: Player picture (GIF decoder, pixel hitbox, embedded defaults)
         run: node memaze/tests/sprite.test.js
@@ -29,9 +29,12 @@ jobs:
           curl -fsS localhost:8765/api/media
           curl -fsS -o /dev/null localhost:8765/
           curl -fsS -o /dev/null localhost:8765/js/game.js
-      - name: Autopilot drags through levels 1-30 without touching an edge
+      - name: Autopilot plays levels 1-40 and Gauntlet mazes without touching an edge
         run: |
           cd memaze && npm init -y >/dev/null && npm i --no-save playwright@1 && npx playwright install --with-deps chromium
-          node tests/autopilot.js 1-30 --strict
-      - name: Hearts, mystery boxes, items and flags
+          node tests/autopilot.js 1-40 --strict
+          node tests/autopilot.js 1-10 --gauntlet=hard/random/ci --strict
+      - name: Hits, mystery boxes, items and flags
         run: cd memaze && node tests/items.js
+      - name: Level mechanics, remix, Gauntlet and the menu
+        run: cd memaze && node tests/mechanics.js

@@ -48,21 +48,21 @@
     rgb: null,
     stripes: { stars: 3 }, checker: { stars: 8 }, dots: { stars: 14 }, waves: { stars: 20 }, stars: { stars: 28 },
     tunnel: { stars: 36 }, synth: { stars: 45 }, plasma: { stars: 55 },
-    kaleido: { gauntlet: 6 }, matrix: { endless: 1500 }, hypno: { daily: 1 },
+    kaleido: { gauntlet: 6 }, matrix: { endless: 1500 }, hypno: { chapter: 2 },
   };
   function reqText(req) {
     if (!req) return 'Unlocked';
     if (req.stars) return req.stars + (req.stars === 1 ? ' star' : ' stars') + ' in Levels';
-    if (req.gauntlet) return 'Clear ' + req.gauntlet + ' mazes in one Gauntlet';
+    if (req.gauntlet) return 'Reach depth ' + req.gauntlet + ' in Gauntlet';
     if (req.endless) return 'Score ' + req.endless + ' in Endless';
-    if (req.daily) return 'Finish a Daily maze';
+    if (req.chapter) return 'Beat the Chapter ' + req.chapter + ' boss';
     return '';
   }
 
   const PROGRESS = {
     journey: { unlocked: 1, levels: {} }, // levels[n] = {stars, best, gems}
     stats: { wins: 0, falls: 0, gems: 0, playTime: 0, runs: 0 },
-    gauntletBest: 0, endlessBest: 0, daily: {}, dailyDone: 0, trials: {}, // trials[level] = best Time Trial time
+    gauntlet: {}, endlessBest: 0, trials: {}, // gauntlet['progressive/normal'] = deepest maze cleared; trials[level] = best time
     seenPatterns: ['rgb'],
   };
 
@@ -77,7 +77,13 @@
     return st;
   }
 
-  const oldProgress = (p) => { delete p.hintsSeen; return p; }; // tutorial tips are gone
+  // Tutorial tips and the Daily maze are gone; the one Gauntlet best becomes the Progressive/Normal one.
+  const oldProgress = (p) => {
+    delete p.hintsSeen; delete p.daily; delete p.dailyDone;
+    if (p.gauntletBest) p.gauntlet['progressive/normal'] = Math.max(p.gauntlet['progressive/normal'] || 0, p.gauntletBest);
+    delete p.gauntletBest;
+    return p;
+  };
 
   const Save = {
     settings: null, progress: null,
@@ -98,9 +104,9 @@
       if (!req) return true;
       const p = this.progress;
       if (req.stars) return this.stars() >= req.stars;
-      if (req.gauntlet) return p.gauntletBest >= req.gauntlet;
+      if (req.gauntlet) return Object.values(p.gauntlet).some((d) => d >= req.gauntlet);
       if (req.endless) return p.endlessBest >= req.endless;
-      if (req.daily) return p.dailyDone >= req.daily;
+      if (req.chapter) return p.journey.unlocked > req.chapter * 10;
       return false;
     },
     // Patterns unlocked since last asked (for the "new!" toast).

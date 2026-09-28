@@ -82,6 +82,10 @@
       segDist2(cx, cy, ax, ay, bx, by), segDist2(dx, dy, ax, ay, bx, by));
   }
 
+  // A friendly random seed, like "comet-417".
+  const WORDS = ['banana', 'wobble', 'neon', 'pickle', 'comet', 'mango', 'turbo', 'sprout', 'pixel', 'yeti', 'waffle', 'quasar', 'noodle', 'ember', 'otter', 'glitch'];
+  const randomSeed = () => WORDS[(Math.random() * WORDS.length) | 0] + '-' + ((Math.random() * 1000) | 0);
+
   function fmtTime(sec) {
     if (!isFinite(sec)) return '--:--';
     sec = Math.max(0, sec);
@@ -172,7 +176,7 @@
   }
 
   Object.assign(MZ, {
-    hashStr, hashInts, h01, rng, clamp, lerp,
+    hashStr, hashInts, h01, rng, clamp, lerp, randomSeed,
     segDist2, segsCross, segSegDist2, fmtTime, fmtClock, store, merge, clone, emitter, $, $$, h, toast, download, today,
   });
 })();

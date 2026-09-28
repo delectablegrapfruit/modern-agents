@@ -145,8 +145,14 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     G.quit();
 
     // ----- Bullet -----
-    G.startJourney(14);
-    const m = G.maze, g0 = Math.hypot(G.ball.x - m.goal.x, G.ball.y - m.goal.y);
+    // How far along the level's own route a point is (the route of a level with no doors is one walk to GOAL).
+    const routeAt = (mz) => {
+      const P = [];
+      for (const st of mz.route[0].steps) { const Q = st.e.a === st.from ? st.e.pts : st.e.pts.slice().reverse(); P.push(...(P.length ? Q.slice(1) : Q)); }
+      return (x, y) => { let best = Infinity, at = 0, acc = 0; for (let i = 1; i < P.length; i++) { const d = MZ.segDist2(x, y, P[i - 1].x, P[i - 1].y, P[i].x, P[i].y); if (d < best) { best = d; at = acc; } acc += Math.hypot(P[i].x - P[i - 1].x, P[i].y - P[i - 1].y); } return at; };
+    };
+    G.startJourney(13);
+    const m = G.maze, along = routeAt(m), g0 = along(G.ball.x, G.ball.y);
     G.giveItem('bullet');
     check('Bullet is used', G.useItem() && !!G.fx.bullet);
     const len = G.fx.bullet.len;
@@ -154,13 +160,26 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     for (let i = 0; i < 60 * 8 && G.fx.bullet; i++) { grab = { x: 500, y: 500 }; frame(1 / 60); maxT += 1 / 60; }
     check('Bullet carries you about 1800 units along the corridors', len > 1500 && !G.fx.bullet, Math.round(len) + ' in ' + maxT.toFixed(1) + 's');
     check('Bullet lands on the floor, unhurt, short of GOAL', onFloor() && G.hp === 2 && G.state === 'play');
-    check('Bullet heads for GOAL', Math.hypot(G.ball.x - m.goal.x, G.ball.y - m.goal.y) < g0, Math.round(g0) + ' -> ' + Math.round(Math.hypot(G.ball.x - m.goal.x, G.ball.y - m.goal.y)));
+    check('Bullet heads along the corridors toward GOAL', along(G.ball.x, G.ball.y) > g0 + 1200, Math.round(g0) + ' -> ' + Math.round(along(G.ball.x, G.ball.y)));
     // Near the goal it stops short and the finish is yours.
     const last = m.mainPath[m.mainPath.length - 3];
     G.ball.x = m.nodes[last].x; G.ball.y = m.nodes[last].y;
     G.giveItem('bullet'); G.useItem();
     for (let i = 0; i < 60 * 8 && G.fx.bullet; i++) frame(1 / 60);
     check('Bullet near GOAL stops short of it', G.state === 'play' && onFloor(), G.state);
+    G.quit();
+    // A shut door stops the Bullet: it never crosses one.
+    G.startJourney(5);
+    const door = G.maze.doors[0];
+    G.maze.keys[0].x += 1e5; // (out of reach, so it can't be picked up on the way)
+    let crossed = false;
+    G.giveItem('bullet');
+    if (G.useItem()) for (let i = 0; i < 60 * 8 && G.fx.bullet; i++) {
+      const x0 = G.ball.x, y0 = G.ball.y;
+      frame(1 / 60);
+      if (MZ.segsCross(x0, y0, G.ball.x, G.ball.y, door.ax, door.ay, door.bx, door.by)) crossed = true;
+    }
+    check('a shut door stops the Bullet', !crossed && !door.open);
     G.quit();
 
     // ----- Launch: steer in the air, come down right where you are (on the board, or in the void) -----
@@ -182,7 +201,8 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     check('Launch is short, like a real launch', T <= 2.6, T.toFixed(2) + ' s');
     check('Launch flies high: the camera pulls far out', minZ < G.zoomTarget() * 0.25, (minZ / G.zoomTarget()).toFixed(3));
     check('Launch steers freely, over the void too', moved > 800 && overVoid, Math.round(moved) + ' units');
-    check('Launch goes where you steer (toward GOAL here)', Math.hypot(gl.x - G.ball.x, gl.y - G.ball.y) < len0 - 600, Math.round(len0) + ' -> ' + Math.round(Math.hypot(gl.x - G.ball.x, gl.y - G.ball.y)));
+    const went = (G.fx.bubble ? G.fx.bubble.a : G.ball), gone = (went.x - a.x) * toward.x + (went.y - a.y) * toward.y;
+    check('Launch goes where you steer', gone > 800, Math.round(gone) + ' units the way you dragged');
     check('Launch maps what it flies over', wide > 1000 && wide > before * 4, Math.round(before) + ' -> ' + Math.round(wide));
     check('camera back down after landing', G.state !== 'play' || Math.abs(G.cam.zoom - G.zoomTarget()) < 1e-6);
     G.quit();

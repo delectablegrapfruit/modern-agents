@@ -1,8 +1,9 @@
-// Headless checks for the maze generator: determinism, connectivity, corridor gaps, surface types, sane timing.
+// Headless checks for the maze generator (determinism, connectivity, corridor gaps, surface types, sane timing) and
+// for the level design on top of it (mechanics placed, a route that solves every level, par and time limits).
 // Run: node tests/gen.test.js
 const assert = require('assert');
-const MZ = require('./load.js')(['util.js', 'gen.js', 'world.js']);
-const G = MZ.Gen;
+const MZ = require('./load.js')(['util.js', 'gen.js', 'world.js', 'levels.js']);
+const G = MZ.Gen, LV = MZ.Levels;
 const TYPES = new Set(['normal', 'bridge', 'blink']);
 
 function gapViolations(m) {
@@ -42,14 +43,18 @@ const routeLen = (m) => {
 
 let total = 0, badMazes = 0, blinks = 0, bridges = 0, boxTotal = 0, flagTotal = 0;
 const cases = [];
-for (let L = 1; L <= 80; L++) cases.push(['journey ' + L, G.levelParams(L)]);
+for (let L = 1; L <= 80; L++) cases.push(['level ' + L, LV.levelParams(L)]);
+// Gauntlet mazes from many seeds, every difficulty and style: every layout and shape turns up.
+const diffs = Object.keys(LV.GAUNTLET);
 for (let i = 0; i < 120; i++) {
-  const lat = Object.keys(G.LATTICES)[i % 5], mask = Object.keys(G.MASKS)[i % Object.keys(G.MASKS).length];
-  cases.push(['custom ' + lat + '/' + mask, G.customParams({ seed: 'test' + i, lattice: lat, mask, size: (i % 7) / 6, width: (i % 5) / 4, difficulty: (i % 3) / 2 })]);
+  const o = { seed: MZ.hashStr('test' + i), style: i % 2 ? 'random' : 'progressive', diff: diffs[i % diffs.length] };
+  cases.push(['gauntlet ' + o.diff + '/' + o.style + ' #' + i, LV.gauntletParams(o, i % 25)]);
 }
+const lats = new Set(), masks = new Set();
 for (const [label, p] of cases) {
   assert.ok(noOldParams(p), label + ': params still carry ice/sticky/boost');
   const m = G.generate(p);
+  lats.add(m.lattice); masks.add(m.mask);
   const m2 = G.generate(p);
   assert.strictEqual(JSON.stringify(m.edges.map((e) => [e.pts, e.hw, e.type, e.blink])), JSON.stringify(m2.edges.map((e) => [e.pts, e.hw, e.type, e.blink])), label + ': not deterministic');
   assert.strictEqual(m.parTime + '/' + m.timeLimit + '/' + JSON.stringify(m.gems), m2.parTime + '/' + m2.timeLimit + '/' + JSON.stringify(m2.gems), label + ': timing or gems not deterministic');
@@ -69,7 +74,7 @@ for (const [label, p] of cases) {
   assert.ok(Number.isInteger(m.parTime) && m.parTime >= 3, label + ': par ' + m.parTime);
   assert.ok(m.parTime >= len / 180, label + ': par ' + m.parTime + ' faster than dragging ' + Math.round(len) + ' at 180/s');
   assert.ok(m.parTime <= len / 110 + m.turns * 0.2 + 1.5 + 3 * m.edges.filter((e) => e.type === 'blink').length + 1, label + ': par too slack');
-  assert.ok(m.timeLimit % 5 === 0 && m.timeLimit >= (m.parTime - 1) * 2.3 + 15, label + ': time limit ' + m.timeLimit + ' vs par ' + m.parTime);
+  assert.ok(m.timeLimit % 5 === 0 && m.timeLimit >= (m.parTime - 1) * Math.min(2.3, p.timeFactor) + 15, label + ': time limit ' + m.timeLimit + ' vs par ' + m.parTime);
   // Flags and mystery boxes: deterministic, on solid floor (never a vanishing bridge), clear of the start and the goal.
   const flags = G.checkpoints(m), boxes = G.boxes(m, flags);
   assert.strictEqual(JSON.stringify(boxes), JSON.stringify(G.boxes(m2, G.checkpoints(m2))), label + ': boxes not deterministic');
@@ -88,15 +93,49 @@ for (const [label, p] of cases) {
   if (g.bad) { badMazes++; console.log('gap violations', label, g.bad, 'worst slack', g.worst.toFixed(1)); }
 }
 assert.ok(blinks > 0, 'no vanishing bridges generated at all');
-// Custom hazard switch: only 'blink' is left, and it works both ways.
-for (const on of [false, true]) {
-  const p = G.customParams({ seed: 'hz', difficulty: 1, hazards: { blink: on, ice: true, sticky: true, boost: true } });
-  assert.ok(noOldParams(p), 'custom params still carry ice/sticky/boost');
-  assert.ok(on ? p.blink > 0 : p.blink === 0, 'custom blink switch ' + on);
-  const m = G.generate(p);
-  assert.ok(m.edges.every((e) => TYPES.has(e.type)), 'custom hazards: unknown surface');
-  if (!on) assert.ok(m.edges.every((e) => e.type !== 'blink'), 'custom blink off still has vanishing bridges');
+assert.strictEqual(lats.size, Object.keys(G.LATTICES).length, 'not every layout turns up: ' + [...lats]);
+assert.ok(masks.size >= 12, 'too few shapes turn up: ' + [...masks]);
+
+// Levels: mechanics placed where they were asked for, a route that solves each level (every corridor it walks is
+// there, it picks up each key before its door, presses each switch before its bridge, rides each platform, steps
+// through each portal), deterministic, and a time limit with room to spare.
+let asked = 0, placed = 0;
+const lvCases = [];
+for (let L = 1; L <= 80; L++) lvCases.push(['level ' + L, LV.levelParams(L)]);
+for (let i = 0; i < 40; i++) lvCases.push(['gauntlet #' + i, LV.gauntletParams({ seed: MZ.hashStr('lv' + i), style: i % 2 ? 'random' : 'progressive', diff: diffs[i % diffs.length] }, i)]);
+for (const [label, p] of lvCases) {
+  const m = LV.build(p), m2 = LV.build(p);
+  const sig = (x) => JSON.stringify([x.route.map((l) => l.type + (l.steps ? l.steps.map((s) => s.e.id + ':' + s.from).join(',') : '')), x.doors, x.keys, x.plates, x.portals, x.gates, x.movers.map((v) => [v.a, v.b, v.period]), x.edges.map((e) => [e.id, e.type, !!e.ice]), x.parTime, x.timeLimit]);
+  assert.strictEqual(sig(m), sig(m2), label + ': level not deterministic');
+  const ids = new Set(m.edges.map((e) => e.id)), mech = p.mech;
+  asked += mech.keys + mech.switches + mech.movers + mech.portals; placed += m.doors.length + m.plates.length + m.movers.length + m.portals.length;
+  let at = m.mainPath[0], keys = new Set(), sw = {};
+  const doorOn = new Map(m.doors.map((d) => [d.edge, d])), gateOn = new Map(m.gates.map((g) => [g.edge, g]));
+  for (const leg of m.route) {
+    if (leg.type === 'walk') {
+      for (const st of leg.steps) {
+        assert.strictEqual(st.from, at, label + ': the route jumps');
+        assert.ok(ids.has(st.e.id), label + ': the route walks a corridor that isn\'t there');
+        const d = doorOn.get(st.e.id);
+        assert.ok(!d || keys.has(d.color), label + ': the route walks through a shut door');
+        assert.ok(!st.e.sw || (sw[st.e.sw.g] | 0) === st.e.sw.on, label + ': the route walks a switch bridge that is away');
+        const g = gateOn.get(st.e.id);
+        assert.ok(!g || g.from === st.from, label + ': the route goes the wrong way through a gate');
+        at = st.e.a === at ? st.e.b : st.e.a;
+      }
+    } else if (leg.type === 'key') { const k = m.keys.find((x) => x.color === leg.color); assert.strictEqual(k.node, at, label + ': key not where the route is'); keys.add(leg.color); }
+    else if (leg.type === 'press') { const pl = m.plates.find((x) => x.g === leg.g); assert.strictEqual(pl.node, at, label + ': switch not where the route is'); sw[leg.g] = (sw[leg.g] | 0) ^ 1; }
+    else if (leg.type === 'ride') { const mv = m.movers[leg.mover]; assert.ok(Math.hypot(mv.from.x - m.nodes[at].x, mv.from.y - m.nodes[at].y) < 1, label + ': platform not where the route is'); at = m.nodes.findIndex((n) => n.x === mv.to.x && n.y === mv.to.y); }
+    else if (leg.type === 'warp') { const pt = m.portals[leg.portal]; assert.strictEqual(pt.a.node, at, label + ': portal not where the route is'); at = pt.b.node; }
+  }
+  assert.strictEqual(at, m.mainPath[m.mainPath.length - 1], label + ': the route doesn\'t reach GOAL');
+  assert.ok(m.parTime >= m.routeLen / 190, label + ': par ' + m.parTime + ' faster than dragging the route (' + Math.round(m.routeLen) + ') at 190/s');
+  assert.ok(m.timeLimit % 5 === 0 && m.timeLimit >= m.parTime * 1.4, label + ': time limit ' + m.timeLimit + ' vs par ' + m.parTime);
+  for (const it of [...m.keys, ...m.plates]) assert.ok(m.edges.some((e) => (e.a === it.node || e.b === it.node) && (e.type === 'normal' || e.type === 'bridge')), label + ': an item on floor that comes and goes');
 }
+assert.ok(placed >= asked * 0.9, 'mechanics placed ' + placed + ' of ' + asked + ' asked for');
+console.log(lvCases.length + ' levels solved by their route; ' + placed + '/' + asked + ' doors, switches, platforms and portals placed');
+
 // Endless chunks: deterministic, only known surfaces, no pads, and seamless links (the link's far end is the neighbour's node).
 let chunkBlinks = 0, chunkBoxes = 0;
 for (let cx = -12; cx <= 12; cx += (Math.abs(cx) < 3 ? 1 : 3)) for (let cy = -3; cy <= 3; cy++) {

@@ -87,6 +87,9 @@
           break;
         case 'bubble': this.tone(300, 0.5, { type: 'sine', to: 700, vol: 0.12 }); this.tone(900, 0.35, { type: 'sine', to: 1300, vol: 0.05, at: 0.12 }); break;
         case 'pop': this.noise(0.06, { filter: 'bandpass', freq: 1800, q: 3, vol: 0.3 }); this.tone(1500, 0.08, { type: 'sine', to: 600, vol: 0.12 }); break;
+        case 'key': [880, 1175, 1760].forEach((f, i) => this.tone(f, 0.18, { type: 'triangle', vol: 0.13, at: i * 0.06 })); this.noise(0.08, { filter: 'highpass', freq: 4000, vol: 0.1, at: 0.18 }); break;
+        case 'switch': this.tone(520, 0.07, { type: 'square', vol: 0.08 }); this.tone(780, 0.1, { type: 'square', vol: 0.06, at: 0.07 }); this.noise(0.05, { filter: 'lowpass', freq: 600, vol: 0.25 }); break;
+        case 'warp': this.tone(1600, 0.35, { type: 'sine', to: 200, vol: 0.12 }); this.tone(200, 0.35, { type: 'sine', to: 1400, vol: 0.08, at: 0.12 }); break;
         case 'low': [1050, 1050].forEach((f, i) => this.tone(f, 0.05, { type: 'square', vol: 0.03, at: i * 0.12 })); break;
         case 'heal': [660, 880].forEach((f, i) => this.tone(f, 0.18, { type: 'sine', vol: 0.12, at: i * 0.08 })); break;
         case 'recharge': this.tone(260, 0.95, { type: 'sine', to: 1250, vol: 0.13, attack: 0.08 }); this.tone(520, 0.95, { type: 'triangle', to: 2500, vol: 0.05, attack: 0.08 }); break;

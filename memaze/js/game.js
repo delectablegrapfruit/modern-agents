@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   const MZ = window.MZ;
-  const { clamp, lerp, hashStr, hashInts, rng } = MZ;
+  const { clamp, lerp, hashStr, hashInts, rng, segDist2 } = MZ;
   const Gen = MZ.Gen;
   const R = Gen.BALL_R;
 
@@ -37,6 +37,8 @@
   const UP = 0.45, AIR = 1.4, DOWN = 0.55; // Launch: seconds going up, at the top, coming down (you steer throughout)
   const HITSTOP = 0.07, SHAKE = 0.32;      // a hit: the game freezes this long, then the view shakes this long
   const SHRINK = 0.5;
+  const ICE_GRIP = 2.2;   // on ice, how fast your movement catches up with your drag (per second): low = more drift
+  const ICE_MAX = 700;    // ...and the fastest you can slide
   const smooth = (k) => k * k * (3 - 2 * k);
   const polyLen = (p) => { let l = 0; for (let i = 1; i < p.length; i++) l += Math.hypot(p[i].x - p[i - 1].x, p[i].y - p[i - 1].y); return l; };
 
@@ -189,7 +191,7 @@
     t: 0, playT: 0, clock: 0, elapsed: 0, restarts: 0, gemsTaken: 0, stateT: 0, lastTick: -1, attract: 0,
     checkpoints: [], cpIdx: -1, boxes: [],
     hp: HEARTS, bonus: 0, hurtT: REGEN, guardT: 0, stuck: false, clearT: 0, touched: false, runT: 0, scale: 1, item: null, roll: null, fx: {}, lastSafe: null,
-    FX, Player, Backdrop, GoalMedia, ITEMS, HEARTS, MAX_BONUS, REGEN,
+    FX, Player, Backdrop, GoalMedia, ITEMS, HEARTS, MAX_BONUS, REGEN, ICE_GRIP,
 
     init() {
       this.renderer = new MZ.Renderer(MZ.$('#maze'));
@@ -244,12 +246,21 @@
     revealAll() { if (this.trail) for (const r of this.trail) this.minimap.reveal(r); },
     // Remember what the screen shows (for the map), and mark gems, beacons and the goal once they have been on it.
     look() {
-      const v = this.viewRect(), inside = (o, r) => o.x + r > v.x0 && o.x - r < v.x1 && o.y + r > v.y0 && o.y - r < v.y1;
+      let v = this.viewRect();
+      const dark = this.maze && this.maze.dark;
+      if (dark) { const b = this.ball; v = { x0: Math.max(v.x0, b.x - dark), y0: Math.max(v.y0, b.y - dark), x1: Math.min(v.x1, b.x + dark), y1: Math.min(v.y1, b.y + dark) }; } // only what the light reaches
+      const inside = (o, r) => o.x + r > v.x0 && o.x - r < v.x1 && o.y + r > v.y0 && o.y - r < v.y1;
       const keep = (o) => { if (o.key && this.run && this.run.seenKeys) this.run.seenKeys.add(o.key); };
       if (this.gems) for (const g of this.gems) if (!g.seen && inside(g, 15)) { g.seen = true; keep(g); }
       if (this.beacons) for (const bc of this.beacons) if (!bc.seen && inside(bc, bc.r)) { bc.seen = true; keep(bc); }
       if (this.boxes) for (const bx of this.boxes) if (!bx.seen && inside(bx, BOX_R)) { bx.seen = true; keep(bx); }
       if (this.maze) for (const c of this.checkpoints) if (!c.seen && inside(c, c.r)) c.seen = true;
+      if (this.maze) {
+        const m = this.maze;
+        for (const o of [].concat(m.doors, m.keys, m.plates, m.gates)) if (!o.seen && inside(o, 20)) o.seen = true;
+        for (const pt of m.portals) for (const e of [pt.a, pt.b]) if (!e.seen && inside(e, pt.r)) e.seen = true;
+        for (const mv of m.movers) if (!mv.seen && (inside(mv.a, mv.r) || inside(mv.b, mv.r))) mv.seen = true;
+      }
       if (this.maze && !this.maze.goal.seen && inside(this.maze.goal, this.maze.goal.r)) this.maze.goal.seen = true;
       const last = this.trail[this.trail.length - 1];
       const moved = !last || Math.abs(v.x0 - last.x0) + Math.abs(v.y0 - last.y0) + Math.abs(v.x1 - last.x1) + Math.abs(v.y1 - last.y1) > 12;
@@ -288,49 +299,36 @@
     zoomBy(k) { this.userZoom = clamp(this.userZoom * k, 1, MAX_ZOOM); }, // never wider than the default view
 
     // ----- starting things -----
+    // Chapters: level by level, ten to a chapter, the tenth a boss.
     startJourney(level) {
       this.mode = 'journey';
       this.run = { level };
-      const p = Gen.levelParams(level);
-      this.loadMaze(p, { label: 'Level ' + level, level });
+      this.loadMaze(MZ.Levels.levelParams(level), { label: MZ.Levels.label(level), level });
     },
     // Time Trial: any level reached so far, no mystery boxes, no time limit; your best run races you as a ghost.
     startTrial(level) {
       this.mode = 'trial';
       this.run = { level };
-      this.loadMaze(Gen.levelParams(level), { label: 'Time Trial · Level ' + level, level });
+      this.loadMaze(MZ.Levels.levelParams(level), { label: 'Time Trial · ' + MZ.Levels.label(level), level });
     },
-    startGauntlet() {
+    // Gauntlet: an endless run of mazes. o = { seedText, style: 'progressive' | 'random', diff }; the same seed (and
+    // settings) always gives the same run.
+    startGauntlet(o) {
+      o = Object.assign({ style: 'progressive', diff: 'normal' }, o);
+      const D = MZ.Levels.GAUNTLET[o.diff] || MZ.Levels.GAUNTLET.normal, key = o.style + '/' + o.diff;
+      const seedText = o.seedText || MZ.randomSeed();
       this.mode = 'gauntlet';
-      this.run = { seed: (Math.random() * 1e9) | 0, cleared: 0, lives: 3, prevBest: MZ.Save.progress.gauntletBest };
+      this.run = { seed: hashStr('memaze/gauntlet/' + seedText), seedText, userSeed: !!o.seedText, style: o.style, diff: o.diff, key, cleared: 0, lives: D.lives, prevBest: MZ.Save.progress.gauntlet[key] || 0 };
       this.nextGauntlet();
     },
     nextGauntlet() {
-      const r = this.run, lv = 3 + Math.round(r.cleared * 1.6);
-      const p = Gen.tierParams(lv, rng(hashInts(r.seed, r.cleared)));
-      p.seed = hashInts(r.seed, r.cleared, 99);
-      p.timeFactor *= 0.9;
-      this.loadMaze(p, { label: 'Gauntlet · Maze ' + (r.cleared + 1) });
+      const r = this.run, p = MZ.Levels.gauntletParams(r, r.cleared);
+      this.loadMaze(p, { label: 'Gauntlet · ' + (p.boss ? 'Boss · ' : '') + 'Depth ' + (r.cleared + 1), depth: r.cleared + 1 });
     },
-    startDaily() {
-      const day = MZ.today();
-      this.mode = 'daily';
-      this.run = { day };
-      const r = rng(hashStr('memaze/daily/' + day));
-      const p = Gen.tierParams(14 + r.int(0, 10), r);
-      p.seed = hashStr('memaze/daily/seed/' + day);
-      this.loadMaze(p, { label: 'Daily · ' + day });
-    },
-    startCustom(o) {
-      this.mode = 'custom';
-      this.run = { opts: o };
-      const p = Gen.customParams(o);
-      this.loadMaze(p, { label: 'Seed “' + o.seed + '”' });
-    },
-    startEndless(seedText) {
+    startEndless() {
       this.mode = 'endless';
-      const seed = hashStr('memaze/endless/' + (seedText || String(Math.random())));
-      this.run = { seed, seedText, lives: 3, taken: new Set(), lit: new Set(), seenKeys: new Set(), boxTaken: new Map(), best: 0, gems: 0, beaconsLit: 0, check: null };
+      const seed = hashStr('memaze/endless/' + String(Math.random()));
+      this.run = { seed, lives: 3, taken: new Set(), lit: new Set(), seenKeys: new Set(), boxTaken: new Map(), best: 0, gems: 0, beaconsLit: 0, check: null };
       this.checkpoints = [];
       this.trail = [];
       this.seenBuckets = new Map();
@@ -348,7 +346,7 @@
     },
 
     loadMaze(params, meta) {
-      const m = Gen.generate(params);
+      const m = MZ.Levels.build(params);
       this.maze = m;
       this.world = MZ.World.fromMaze(m);
       this.gems = m.gems.map((g) => Object.assign({ taken: false }, g));
@@ -362,9 +360,24 @@
       this.minimap.setMaze(m);
       this.trail = [];
       this.restarts = 0;
+      this.resetMech();
       this.beginLevel(m.start, m.timeLimit, true);
-      this.emit('level');
+      this.emit('level', m);
     },
+    // Keys back where they were, doors shut, switches up, portals ready.
+    resetMech() {
+      const m = this.maze;
+      this.keysHeld = new Set();
+      this.warpLock = null;
+      this.vel = { x: 0, y: 0 };
+      if (!m) return;
+      for (const d of m.doors) { d.open = false; d.openAt = null; d.seen = false; }
+      for (const k of m.keys) { k.taken = false; k.seen = false; }
+      for (const pl of m.plates) { pl.down = false; pl.seen = false; }
+      for (const pt of m.portals) pt.seen = false;
+      this.world.sw = {};
+    },
+    mod(id) { return !!(this.maze && this.maze.mods && this.maze.mods.includes(id)); },
 
     // Straight into play: the player appears on the start marker and the clock runs. 'random' media re-rolls only on a new maze.
     beginLevel(start, timeLimit, fresh) {
@@ -392,6 +405,7 @@
       this.cpIdx = -1;
       for (const c of this.checkpoints) c.lit = false;
       for (const b of this.boxes) b.takenAt = null;
+      this.resetMech();
       this.beginLevel(this.maze.start, this.maze.timeLimit);
     },
 
@@ -492,10 +506,22 @@
       this.tickPower(dt);
       if (fx.bullet || fx.launch || fx.bubble) { this.touched = false; this.offEdge(dt); this.fly(dt); if (this.state === 'play' && this.mode === 'endless') this.endlessTick(); return; }
 
+      this.carry(dt);
       const d = inp.takeGrab(), u = inp.vector();
-      const sg = cfg.invert ? 1 : -1, k = clamp(cfg.speed || 1, 0.5, 2) / this.cam.zoom;
-      const mx = d.x * sg * k + u.x * KEY_SPEED * dt, my = d.y * sg * k + u.y * KEY_SPEED * dt;
+      const sg = cfg.invert !== this.mod('mirror') ? 1 : -1, k = clamp(cfg.speed || 1, 0.5, 2) / this.cam.zoom;
+      let mx = d.x * sg * k + u.x * KEY_SPEED * dt, my = d.y * sg * k + u.y * KEY_SPEED * dt;
       const free = fx.carpet > 0; // the magic carpet floats over the void
+      // Ice: your movement only slowly catches up with your drag, and keeps sliding after you stop.
+      if (dt > 0) {
+        const q = !free && this.world.query(b.x, b.y, this.playT), v = this.vel;
+        if (q && q.seg && q.seg.ice) {
+          const a = 1 - Math.exp(-dt * ICE_GRIP);
+          v.x += (mx / dt - v.x) * a; v.y += (my / dt - v.y) * a;
+          const sp = Math.hypot(v.x, v.y);
+          if (sp > ICE_MAX) { v.x *= ICE_MAX / sp; v.y *= ICE_MAX / sp; }
+          mx = v.x * dt; my = v.y * dt;
+        } else { v.x = mx / dt; v.y = my / dt; }
+      }
       const soft = S().gameplay.rule === 'casual' || this.shielded(); // edges hold like walls
       this.touched = false;
       // Standing still can still go wrong: an animation frame reaching over the edge (a touch), or a bridge vanishing
@@ -509,15 +535,22 @@
       const n = Math.max(1, Math.ceil(Math.hypot(mx, my) / (this.box() * BUFFER * 0.5)));
       const sx = mx / n, sy = my / n;
       for (let i = 0; i < n; i++) {
-        if (free || !this.hitAt(b.x + sx, b.y + sy)) { b.x += sx; b.y += sy; }
+        if (this.barred(b.x, b.y, b.x + sx, b.y + sy)) { // a shut door or a one-way gate: a wall, never a hit
+          this.vel.x = this.vel.y = 0;
+          if (sx && !this.barred(b.x, b.y, b.x + sx, b.y) && (free || !this.hitAt(b.x + sx, b.y))) b.x += sx;
+          else if (sy && !this.barred(b.x, b.y, b.x, b.y + sy) && (free || !this.hitAt(b.x, b.y + sy))) b.y += sy;
+          else break;
+        } else if (free || !this.hitAt(b.x + sx, b.y + sy)) { b.x += sx; b.y += sy; }
         else {
           this.touched = true;
+          this.vel.x = this.vel.y = 0;
           if (!soft) { this.toEdge(sx, sy); if (this.hurt()) return; break; } // a hit: stop right at the edge
           if (sx && !this.hitAt(b.x + sx, b.y)) b.x += sx; // Walls: slide along the edge...
           else if (sy && !this.hitAt(b.x, b.y + sy)) b.y += sy;
           else { this.toEdge(sx, sy); break; } // ...or stop right at it
         }
         if (this.pickups()) return;
+        if (this.warped) { this.warped = false; break; }
       }
       this.offEdge(dt);
       this.noteSafe();
@@ -528,6 +561,31 @@
       if (this.touched) { this.clearT = 0; return; }
       this.clearT += dt;
       if (this.stuck && this.clearT >= CLEAR) this.stuck = false;
+    },
+    // A moving platform carries whoever stands on it.
+    carry(dt) {
+      const b = this.ball;
+      for (const mv of this.world.movers) {
+        const p0 = MZ.moverAt(mv, this.playT - dt), p1 = MZ.moverAt(mv, this.playT);
+        if (Math.hypot(b.x - p0.x, b.y - p0.y) < mv.r - 2) { b.x += p1.x - p0.x; b.y += p1.y - p0.y; return; }
+      }
+    },
+    // Moving the centre from (x0, y0) to (x1, y1): does a shut door or a one-way gate (crossed the wrong way) stop it?
+    barred(x0, y0, x1, y1) {
+      const m = this.maze;
+      if (!m) return false;
+      for (const d of m.doors) if (!d.open && this.overBar(x1, y1, d)) return true;
+      for (const g of m.gates) if ((x1 - x0) * g.nx + (y1 - y0) * g.ny < 0 && MZ.segsCross(x0, y0, x1, y1, g.ax, g.ay, g.bx, g.by)) return true;
+      return false;
+    },
+    // Does the picture at (x, y) overlap a door's bar?
+    overBar(x, y, d) {
+      const mask = this.sprite.mask, W = this.box(), reach = (mask ? mask.maxR : 0.5) * W + 5;
+      if (segDist2(x, y, d.ax, d.ay, d.bx, d.by) > reach * reach) return false;
+      if (!mask) return true;
+      const p = mask.pts;
+      for (let i = 0; i < p.length; i += 2) if (segDist2(x + p[i] * W, y + p[i + 1] * W, d.ax, d.ay, d.bx, d.by) < 25) return true;
+      return false;
     },
     toEdge(sx, sy) {
       const b = this.ball;
@@ -608,12 +666,12 @@
       const b = this.ball;
       if (this.fx.carpet > 0 && this.hitAt(b.x, b.y)) return; // floating over the void
       const q = this.world.query(b.x, b.y, this.playT);
-      if (q.seg && !q.seg.blink && q.depth > 0) this.lastSafe = { x: b.x, y: b.y };
+      if (q.seg && !q.seg.dyn && q.depth > 0) this.lastSafe = { x: b.x, y: b.y };
     },
     // Put the player on the nearest solid floor where the whole picture fits.
     rescue() {
       const b = this.ball, w = this.world, t = this.playT;
-      const ok = (x, y) => { const q = w.query(x, y, t); return q.seg && !q.seg.blink && q.depth > 0 && !this.hitAt(x, y); };
+      const ok = (x, y) => { const q = w.query(x, y, t); return q.seg && !q.seg.dyn && q.depth > 0 && !this.hitAt(x, y); };
       for (let r = 6; r <= 600; r += 6) {
         const n = Math.max(12, Math.round(r / 4));
         for (let i = 0; i < n; i++) {
@@ -682,7 +740,7 @@
       const E = edges.map((e) => {
         const r = { e, a: id(e.pts[0]), b: id(e.pts[e.pts.length - 1]), len: polyLen(e.pts) };
         adj[r.a].push(r); adj[r.b].push(r);
-        if (e.type !== 'blink') solid[r.a] = solid[r.b] = true;
+        if (e.type === 'normal' || e.type === 'bridge') solid[r.a] = solid[r.b] = true;
         return r;
       });
       return { E, pos, adj, solid, id: (p) => ids.get(Math.round(p.x * 4) + ',' + Math.round(p.y * 4)) };
@@ -704,6 +762,9 @@
         }
       }
       if (!at || bd > 300) return null;
+      // Shut doors and switched-off bridges stop the Bullet too.
+      const m = this.maze, closed = new Set(m ? m.doors.filter((d) => !d.open).map((d) => d.edge) : []);
+      const shut = (e) => closed.has(e.id) || (e.type === 'switch' && (this.world.sw[e.sw.g] | 0) !== e.sw.on);
       // Shortest distances from here, leaving by either end of this corridor.
       const n = g.pos.length, dist = new Float64Array(n).fill(Infinity), prev = new Array(n).fill(null), done = new Uint8Array(n);
       dist[at.r.a] = at.s; dist[at.r.b] = Math.min(dist[at.r.b], at.r.len - at.s);
@@ -714,13 +775,28 @@
         if (u < 0) break;
         done[u] = 1;
         for (const r of g.adj[u]) {
+          if (shut(r.e)) continue;
           const v = r.a === u ? r.b : r.a;
           if (dist[u] + r.len < dist[v]) { dist[v] = dist[u] + r.len; prev[v] = r; }
         }
       }
       let target = -1;
-      if (this.maze) target = g.id(this.maze.goal);
-      else {
+      if (this.maze) {
+        target = g.id(this.maze.goal);
+        if (dist[target] === Infinity) { // GOAL is behind a shut door or a missing bridge: as close to it as you can get
+          const dg = new Float64Array(n).fill(Infinity), dn = new Uint8Array(n);
+          dg[target] = 0;
+          for (;;) {
+            let u = -1;
+            for (let i = 0; i < n; i++) if (!dn[i] && dg[i] < Infinity && (u < 0 || dg[i] < dg[u])) u = i;
+            if (u < 0) break;
+            dn[u] = 1;
+            for (const r of g.adj[u]) { const v = r.a === u ? r.b : r.a; if (dg[u] + r.len < dg[v]) dg[v] = dg[u] + r.len; }
+          }
+          let best = Infinity;
+          for (let i = 0; i < n; i++) if (dist[i] < Infinity && g.solid[i] && dg[i] < best) { best = dg[i]; target = i; }
+        }
+      } else {
         const o = this.run.origin;
         let far = -1;
         for (let i = 0; i < n; i++) {
@@ -917,6 +993,39 @@
           break;
         }
       }
+      if (this.maze) {
+        const m = this.maze;
+        // Keys open every door of their colour.
+        for (const k of m.keys) {
+          if (k.taken || !this.touches(k.x, k.y, 16)) continue;
+          k.taken = true;
+          this.keysHeld.add(k.color);
+          for (const d of m.doors) if (d.color === k.color && !d.open) { d.open = true; d.openAt = this.t; }
+          MZ.Audio.play('key');
+          this.emit('power');
+        }
+        // Switches flip their bridges each time you step on (not while you stand there).
+        for (const pl of m.plates) {
+          const on = this.touches(pl.x, pl.y, pl.r * 0.6);
+          if (on && !pl.down) { this.world.sw[pl.g] = (this.world.sw[pl.g] | 0) ^ 1; pl.pressAt = this.t; MZ.Audio.play('switch'); }
+          pl.down = on;
+        }
+        // Portals: step on one, come out of its twin (which won't send you back until you've stepped off it).
+        if (this.warpLock && !this.touches(this.warpLock.x, this.warpLock.y, this.warpLock.r * 0.45)) this.warpLock = null;
+        if (!this.warpLock) {
+          for (const pt of m.portals) {
+            const [A, B] = this.touches(pt.a.x, pt.a.y, pt.r * 0.45) ? [pt.a, pt.b] : this.touches(pt.b.x, pt.b.y, pt.r * 0.45) ? [pt.b, pt.a] : [];
+            if (!A) continue;
+            this.ball.x = B.x; this.ball.y = B.y;
+            this.warpLock = { x: B.x, y: B.y, r: pt.r };
+            this.warpAt = this.t; this.warpColor = pt.color;
+            this.warped = true;
+            this.vel.x = this.vel.y = 0;
+            MZ.Audio.play('warp');
+            break;
+          }
+        }
+      }
       // Boxes: touching one shatters it; an empty slot spins for an item (a full one gets nothing). It's back later.
       if (this.boxes && this.boxesOn()) {
         for (const bx of this.boxes) {
@@ -975,8 +1084,9 @@
       if (this.state !== 'fx') return;
       if (this.mode === 'gauntlet') {
         this.run.cleared++;
-        if (this.run.cleared > MZ.Save.progress.gauntletBest) { MZ.Save.progress.gauntletBest = this.run.cleared; MZ.Save.saveProgress(); }
-        if (this.run.cleared % 5 === 0 && this.run.lives < 5) { this.run.lives++; MZ.toast('Extra life'); }
+        const G = MZ.Save.progress.gauntlet, k = this.run.key;
+        if (this.run.cleared > (G[k] || 0)) { G[k] = this.run.cleared; MZ.Save.saveProgress(); }
+        if (this.run.cleared % 5 === 0 && isFinite(this.run.lives) && this.run.lives < 5) { this.run.lives++; MZ.toast('Extra life'); }
         this.emit('unlocks', MZ.Save.newlyUnlocked());
         return this.nextGauntlet();
       }
@@ -1010,12 +1120,6 @@
         res.best = P.trials[L];
         res.prev = prev;
         res.level = L;
-      } else if (this.mode === 'daily') {
-        const d = this.run.day, prev = P.daily[d];
-        res.newBest = prev == null || time < prev;
-        if (prev == null) P.dailyDone++;
-        P.daily[d] = prev == null ? time : Math.min(prev, time);
-        res.best = P.daily[d];
       }
       MZ.Save.saveProgress();
       return res;
@@ -1025,7 +1129,7 @@
       const P = MZ.Save.progress;
       let res;
       if (this.mode === 'gauntlet') {
-        res = { mode: 'gauntlet', score: this.run.cleared, best: P.gauntletBest, newBest: this.run.cleared > this.run.prevBest };
+        res = { mode: 'gauntlet', score: this.run.cleared, best: P.gauntlet[this.run.key] || 0, newBest: this.run.cleared > this.run.prevBest, style: this.run.style, diff: this.run.diff };
       } else {
         const sc = this.endlessScore();
         res = { mode: 'endless', score: sc, best: Math.max(P.endlessBest, sc), newBest: sc > P.endlessBest, gems: this.run.gems || 0, dist: Math.round(this.run.best), beacons: this.run.beaconsLit };
@@ -1070,7 +1174,7 @@
       this.loadChunks(b.x, b.y);
       r.best = Math.max(r.best, Math.hypot(b.x - r.origin.x, b.y - r.origin.y) / Gen.endless.ES);
       const q = this.world.query(b.x, b.y, this.playT);
-      if (q.seg && !q.seg.blink && !this.hitAt(b.x, b.y)) {
+      if (q.seg && !q.seg.dyn && !this.hitAt(b.x, b.y)) {
         // Remember the nearest safe junction for respawns.
         let best = null, bd = Infinity;
         const k = this.chunkKey(b.x, b.y), c = this.chunks.get(k);
@@ -1089,7 +1193,7 @@
     stepAttract(dt) {
       if (!this.attractMaze) {
         const lv = Math.min(MZ.Save.progress.journey.unlocked, 40);
-        const m = Gen.generate(Gen.levelParams(Math.max(4, lv)));
+        const m = MZ.Levels.build(MZ.Levels.levelParams(Math.max(4, lv)));
         this.attractMaze = m;
         this.attractWorld = MZ.World.fromMaze(m);
         this.attractPts = [];
@@ -1122,6 +1226,7 @@
         gems: menu ? maze && maze.gems : this.gems,
         beacons: this.mode === 'endless' && !menu ? this.beacons : null,
         flags: !menu && maze ? this.checkpoints : null,
+        mech: maze && maze.doors ? maze : null, // doors and keys, switches, gates, platforms, portals, ice
         boxes: boxesOn ? this.boxes.filter((x) => x.takenAt == null || this.runT - x.takenAt >= BOX_BACK) : null,
         boxAge: (x) => (x.takenAt == null ? 9 : this.runT - x.takenAt - BOX_BACK),
         shards: boxesOn ? this.boxes.filter((x) => x.takenAt != null && this.runT - x.takenAt < SHATTER).map((x) => ({ x: x.x, y: x.y, k: (this.runT - x.takenAt) / SHATTER })) : null,
@@ -1135,8 +1240,10 @@
           bubble: fx.bubble ? fx.bubble.t / fx.bubble.T : null,
           pop: this.popAtT != null && this.t - this.popAtT < 0.35 ? (this.t - this.popAtT) / 0.35 : null,
           bullet: fx.bullet ? fx.bullet.dir : null,
+          warp: this.warpAt != null && this.t - this.warpAt < 0.5 ? { k: (this.t - this.warpAt) / 0.5, color: this.warpColor } : null,
         } : null,
       });
+      if (!menu && this.maze && this.maze.dark) this.renderer.drawDark(this.cam, b, this.maze.dark); // only a small circle of light
 
       // Player sprite: the user's media, upright and still at the centre of the screen (up in the air on a Launch).
       const pl = MZ.$('#player');
@@ -1172,7 +1279,7 @@
       const view = menu || !this.world ? null : this.look();
       const mm = s.gameplay.minimap;
       const mmEl = MZ.$('#minimap');
-      if (!menu && view && mm !== 'off') {
+      if (!menu && view && mm !== 'off' && !this.mod('nomap')) {
         mmEl.hidden = false;
         if (this.minimap.dirty) {
           // Sized once it's actually on screen (it's hidden while a level is built).
@@ -1180,7 +1287,7 @@
           if (this.minimap.size() && this.maze) { this.minimap.setMaze(this.maze); this.revealAll(); }
         }
         if (this.mode === 'endless') this.minimap.drawRadar(this.world, b, this.beacons, view, this.seenNear(b.x, b.y, 1000).concat([view]), boxesOn ? this.boxes : null);
-        else this.minimap.draw(b, this.maze && this.maze.goal, this.gems, view, this.checkpoints, boxesOn ? this.boxes : null);
+        else this.minimap.draw(b, this.maze && this.maze.goal, this.gems, view, this.checkpoints, boxesOn ? this.boxes : null, this.maze);
       } else mmEl.hidden = true;
       this.emit('frame');
     },
