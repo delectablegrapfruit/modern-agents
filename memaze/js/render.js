@@ -19,10 +19,36 @@
     for (let i = 1; i < e.pts.length; i++) p.lineTo(e.pts[i].x, e.pts[i].y);
     return p;
   }
+  // A switch bridge's two long edges (where its rims run), for the dashed outline it shows while it's down.
+  function sideLines(e) {
+    const P = e.pts, n = P.length, p = new Path2D();
+    for (const side of [1, -1]) for (let i = 0; i < n; i++) {
+      const a = P[Math.max(0, i - 1)], b = P[Math.min(n - 1, i + 1)], L = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+      const x = P[i].x - ((b.y - a.y) / L) * e.hw * side, y = P[i].y + ((b.x - a.x) / L) * e.hw * side;
+      if (i) p.lineTo(x, y); else p.moveTo(x, y);
+    }
+    return p;
+  }
+  // Evenly spaced spots along a bridge (one about every 260 units) for its switch badges.
+  function marksAlong(e) {
+    const P = e.pts, cum = [0];
+    for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + Math.hypot(P[i].x - P[i - 1].x, P[i].y - P[i - 1].y));
+    const len = cum[cum.length - 1], n = Math.max(1, Math.round(len / 260)), out = [];
+    for (let k = 0; k < n; k++) {
+      const d = (len * (k + 0.5)) / n;
+      let i = 1;
+      while (i < P.length - 1 && cum[i] < d) i++;
+      const f = (d - cum[i - 1]) / (cum[i] - cum[i - 1] || 1);
+      out.push({ x: P[i - 1].x + (P[i].x - P[i - 1].x) * f, y: P[i - 1].y + (P[i].y - P[i - 1].y) * f });
+    }
+    return out;
+  }
+  // The fixed floor. Floor that comes and goes (vanishing and switch bridges) is left out and drawn each frame in
+  // its current state, the way world.query sees it: a switch bridge that's down must never look like floor.
   function buildPaths(part) {
     const solid = new Path2D();
-    for (const s of part.segs) if (!s.blink) capsule(solid, s.ax, s.ay, s.bx, s.by, s.hw);
-    part.paths = { solid, blinks: part.blinks.map((e) => ({ e, line: edgeLine(e) })) };
+    for (const s of part.segs) if (!s.dyn) capsule(solid, s.ax, s.ay, s.bx, s.by, s.hw);
+    part.paths = { solid, blinks: part.blinks.map((e) => ({ e, line: edgeLine(e), sides: e.sw ? sideLines(e) : null, marks: e.sw ? marksAlong(e) : null })) };
     return part.paths;
   }
 
@@ -57,7 +83,8 @@
     g.globalAlpha = 1;
   }
   // Bridges that are up get their fill; gone ones leave a faint dashed ghost of where they come back. Switch bridges
-  // wear their switch's colour.
+  // wear their switch's colour; one that's down is a tinted ghost with dashed rims in that colour (its switch badges
+  // go on top, in drawSwitchBridges).
   const swColor = (e) => (e.sw && MZ.Levels ? MZ.Levels.SWITCH_COLORS[e.sw.g % MZ.Levels.SWITCH_COLORS.length] : null);
   function bridgeFills(g, blinks, th, px) {
     for (const b of blinks) {
@@ -68,13 +95,105 @@
         g.globalAlpha = 1;
         continue;
       }
-      g.strokeStyle = c ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.08)'; g.lineWidth = 2 * b.e.hw; g.stroke(b.line);
+      if (c) {
+        g.strokeStyle = c; g.globalAlpha = 0.2; g.lineWidth = 2 * b.e.hw; g.stroke(b.line);
+        g.globalAlpha = 1; g.setLineDash([9 * px, 7 * px]);
+        g.strokeStyle = 'rgba(0,0,0,0.45)'; g.lineWidth = 6 * px; g.stroke(b.sides);
+        g.strokeStyle = c; g.lineWidth = 3 * px; g.stroke(b.sides);
+        g.setLineDash([]);
+        continue;
+      }
+      g.strokeStyle = 'rgba(255,255,255,0.08)'; g.lineWidth = 2 * b.e.hw; g.stroke(b.line);
       g.setLineDash([12 * px, 14 * px]);
-      g.strokeStyle = c || 'rgba(255,255,255,0.55)'; g.lineWidth = 3 * px; g.stroke(b.line);
+      g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 3 * px; g.stroke(b.line);
       g.setLineDash([]);
     }
   }
   const dynAlpha = (e, t, world) => (e.type === 'switch' ? ((world.sw[e.sw.g] | 0) === e.sw.on ? 1 : 0) : blinkAlpha(e.blink, t));
+  // When a switch of colour group g was last pressed (game clock), or -Infinity.
+  function pressedAt(mech, g) {
+    let at = -Infinity;
+    if (mech && mech.plates) for (const pl of mech.plates) if (pl.g === g && pl.pressAt != null && pl.pressAt > at) at = pl.pressAt;
+    return at;
+  }
+  // A switch plate, as drawn on the floor and (smaller) as the badge on its bridges: a dark dish with a ring in its
+  // colour and a button, raised and dim while the switch is up, pressed in and bright once pressed.
+  function plateGlyph(ctx, x, y, r, color, on, px, dish) {
+    ctx.save(); ctx.translate(x, y);
+    ctx.fillStyle = dish || 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.fill();
+    ctx.strokeStyle = color; ctx.lineWidth = 4 * px; ctx.stroke();
+    ctx.fillStyle = color; ctx.globalAlpha = on ? 1 : 0.55;
+    ctx.beginPath(); ctx.arc(0, on ? r * 0.04 : -r * 0.08, r * 0.55, 0, TAU); ctx.fill();
+    ctx.globalAlpha = 1; ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.lineWidth = 2.5 * px; ctx.stroke();
+    ctx.restore();
+  }
+
+  // ---------- keys and doors: one look everywhere (the maze, the map, the HUD) ----------
+  // Sizes come from the gameplay (Levels.DOOR_R, Levels.KEY_R), so what's drawn is exactly what blocks and what picks up.
+  const DOOR_R = () => (MZ.Levels ? MZ.Levels.DOOR_R : 5);
+  const KEY_R = () => (MZ.Levels ? MZ.Levels.KEY_R : 16);
+  // A key sits on a round token in its colour: the token is the circle that picks it up, and the key (tilted, rocking a
+  // little) never leaves it. Proportions of the token radius R: key size s, dark outline, colour line, rim.
+  const KEY = { s: 0.72, tilt: -0.6, dark: 0.21, line: 0.12, rim: 0.12, fill: 0.4 };
+  function keyPath(g, s) { // bow, shaft, two teeth; centred on the token
+    g.beginPath(); g.arc(-s * 0.575, 0, s * 0.5, 0, TAU);
+    g.moveTo(-s * 0.075, 0); g.lineTo(s * 1.075, 0);
+    g.moveTo(s * 0.725, 0); g.lineTo(s * 0.725, s * 0.42);
+    g.moveTo(s * 1.025, 0); g.lineTo(s * 1.025, s * 0.32);
+  }
+  // px: one screen pixel in the units g draws in (lines never get thinner than a few pixels).
+  function keyToken(g, x, y, R, color, rot, px) {
+    g.save();
+    g.translate(x, y);
+    const rim = Math.max(KEY.rim * R, 2 * px);
+    g.beginPath(); g.arc(0, 0, R - rim / 2, 0, TAU);
+    g.fillStyle = '#fff'; g.fill(); // a pale tint of its colour, the same on any floor or backdrop
+    g.globalAlpha = KEY.fill; g.fillStyle = color; g.fill(); g.globalAlpha = 1;
+    g.strokeStyle = 'rgba(0,0,0,0.45)'; g.lineWidth = rim; g.stroke();
+    g.rotate(rot);
+    g.lineJoin = 'round'; g.lineCap = 'round';
+    const s = KEY.s * R, dark = Math.max(KEY.dark * R, 5 * px), line = Math.min(dark * 0.6, Math.max(KEY.line * R, 2.8 * px));
+    const k = Math.min(1, (R - rim - dark / 2) / (1.1 * s)); // thick lines on a small token: shrink the key to stay inside it
+    keyPath(g, s * k); g.strokeStyle = 'rgba(0,0,0,0.55)'; g.lineWidth = dark; g.stroke();
+    keyPath(g, s * k); g.strokeStyle = color; g.lineWidth = line; g.stroke();
+    g.restore();
+  }
+  // The same key as an SVG (32 x 32), for the HUD.
+  function keySVG(color) {
+    const R = 15, s = KEY.s * R, n = (v) => +v.toFixed(2);
+    const d = 'M' + n(-s * 0.075) + ' 0H' + n(s * 1.075) + 'M' + n(s * 0.725) + ' 0V' + n(s * 0.42) + 'M' + n(s * 1.025) + ' 0V' + n(s * 0.32);
+    const shape = (st, w) => '<g fill="none" stroke="' + st + '" stroke-width="' + n(w) + '" stroke-linecap="round" stroke-linejoin="round"><circle cx="' + n(-s * 0.575) + '" r="' + n(s * 0.5) + '"/><path d="' + d + '"/></g>';
+    const r = n(R - KEY.rim * R / 2);
+    return '<svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="' + r + '" fill="#fff"/><circle cx="16" cy="16" r="' + r + '" fill="' + color + '" fill-opacity="' + KEY.fill + '" stroke="rgba(0,0,0,0.45)" stroke-width="' + n(KEY.rim * R) + '"/>' +
+      '<g transform="translate(16 16) rotate(' + n((KEY.tilt * 180) / Math.PI) + ')">' + shape('rgba(0,0,0,0.55)', KEY.dark * R) + shape(color, KEY.line * R) + '</g></svg>';
+  }
+  // A shut door: a bar in its colour with a dark rim, R either side of its centre line (as thick as it blocks).
+  function doorBar(g, ax, ay, bx, by, R, color, px) {
+    const rim = Math.min(2.5 * px, R * 0.3);
+    g.lineCap = 'round';
+    g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, by);
+    g.strokeStyle = 'rgba(0,0,0,0.55)'; g.lineWidth = 2 * R; g.stroke();
+    g.strokeStyle = color; g.lineWidth = 2 * (R - rim); g.stroke();
+  }
+  // One half of an opening door: from (x0, y0), flat, out to its end (x1, y1), round.
+  function doorHalf(g, x0, y0, x1, y1, R) {
+    const a = Math.atan2(y1 - y0, x1 - x0), c = Math.cos(a + Math.PI / 2) * R, s = Math.sin(a + Math.PI / 2) * R;
+    g.beginPath(); g.moveTo(x0 + c, y0 + s); g.lineTo(x1 + c, y1 + s); g.arc(x1, y1, R, a + Math.PI / 2, a - Math.PI / 2, true); g.lineTo(x0 - c, y0 - s); g.closePath();
+  }
+  // How far the floor reaches from a door's centre toward each end of its bar (found once, then kept on the door).
+  function doorSpan(d, world) {
+    if (d.span) return d.span;
+    const L = Math.hypot(d.ax - d.x, d.ay - d.y);
+    if (!world || !L) return { a: L, b: L, L };
+    const edge = (ex, ey) => {
+      const ux = (ex - d.x) / L, uy = (ey - d.y) / L;
+      if (world.query(d.x + ux * L, d.y + uy * L, 0).depth > 0) return L;
+      let lo = 0, hi = L;
+      for (let i = 0; i < 12; i++) { const m = (lo + hi) / 2; if (world.query(d.x + ux * m, d.y + uy * m, 0).depth > 0) lo = m; else hi = m; }
+      return lo;
+    };
+    return (d.span = { a: edge(d.ax, d.ay), b: edge(d.bx, d.by), L });
+  }
 
   class Renderer {
     constructor(canvas) {
@@ -108,14 +227,14 @@
       const hw = this.w / 2 / z + 80, hh = this.h / 2 / z + 80;
       const parts = s.world.visibleParts(cam.x - hw, cam.y - hh, cam.x + hw, cam.y + hh);
       const th = theme(s.floor, s.hue, s.rgb), px = 1 / z;
-      this.px = px;
+      this.px = px; this.world = s.world;
 
       // One union path per frame: every pass paints each pixel once, even where tiles overlap.
       const union = new Path2D(), blinks = [];
       for (const p of parts) {
         const paths = p.paths || buildPaths(p);
         union.addPath(paths.solid);
-        for (const b of paths.blinks) blinks.push({ e: b.e, line: b.line, a: dynAlpha(b.e, t, s.world) });
+        for (const b of paths.blinks) blinks.push({ e: b.e, line: b.line, sides: b.sides, marks: b.marks, a: dynAlpha(b.e, t, s.world) });
       }
       ctx.lineJoin = 'round';
       ctx.lineCap = 'round';
@@ -175,6 +294,7 @@
         ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 2.5 * px; ctx.stroke(line);
         ctx.setLineDash([]);
       }
+      this.drawSwitchBridges(blinks, s.mech, s.clock || 0);
       ctx.lineCap = 'butt';
       if (s.mech) this.drawMovers(s.mech, t, th);
 
@@ -187,6 +307,25 @@
       if (s.boxes) for (const b of s.boxes) this.drawBox(b, s.clock || 0, s.boxAge ? s.boxAge(b) : 9);
       if (s.shards) for (const b of s.shards) this.drawShards(b, s.clock || 0);
       if (s.under) this.drawUnder(s.under, s.clock || 0);
+    }
+    // Switch bridges: one that's down carries its switch's badge over the gap (closed until you press that colour);
+    // pressing the switch flashes all its bridges in its colour as they come or go.
+    drawSwitchBridges(blinks, mech, clock) {
+      const ctx = this.ctx, px = this.px;
+      for (const b of blinks) {
+        const c = swColor(b.e);
+        if (!c) continue;
+        const k = (clock - pressedAt(mech, b.e.sw.g)) / 0.7;
+        if (k >= 0 && k < 1) {
+          ctx.save();
+          ctx.strokeStyle = c; ctx.globalAlpha = 0.8 * (1 - k) * (1 - k);
+          ctx.lineWidth = 2 * b.e.hw + (10 + 36 * k) * px; ctx.stroke(b.line);
+          ctx.restore();
+        }
+        if (b.a > 0) continue;
+        const r = Math.min(20, b.e.hw * 0.52) * (1 + 0.06 * Math.sin(clock * 3));
+        for (const p of b.marks) plateGlyph(ctx, p.x, p.y, r, c, false, px, 'rgba(20,14,40,0.85)');
+      }
     }
     // Moving platforms: a dotted track over the void, and the platform itself (floor) with arrows on it.
     drawMovers(m, t, th) {
@@ -215,14 +354,14 @@
       const ctx = this.ctx, px = this.px;
       for (const pt of m.portals) for (const e of [pt.a, pt.b]) this.drawPortal(e, pt.r, pt.color, t);
       for (const pl of m.plates) {
-        const on = (MZ.Game.world && MZ.Game.world.sw[pl.g]) | 0, r = pl.r;
-        ctx.save(); ctx.translate(pl.x, pl.y);
-        ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.fill();
-        ctx.strokeStyle = pl.color; ctx.lineWidth = 4 * px; ctx.stroke();
-        ctx.fillStyle = pl.color; ctx.globalAlpha = on ? 1 : 0.55;
-        ctx.beginPath(); ctx.arc(0, on ? r * 0.04 : -r * 0.08, r * 0.55, 0, TAU); ctx.fill();
-        ctx.globalAlpha = 1; ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.lineWidth = 2.5 * px; ctx.stroke();
-        ctx.restore();
+        const on = (MZ.Game.world && MZ.Game.world.sw[pl.g]) | 0, k = pl.pressAt != null ? (t - pl.pressAt) / 0.6 : 1;
+        plateGlyph(ctx, pl.x, pl.y, pl.r, pl.color, on, px);
+        if (k >= 0 && k < 1) { // pressed: a ring in its colour bursts out
+          ctx.save();
+          ctx.globalAlpha = 1 - k; ctx.strokeStyle = pl.color; ctx.lineWidth = 4 * px;
+          ctx.beginPath(); ctx.arc(pl.x, pl.y, pl.r * (1.1 + 1.4 * k), 0, TAU); ctx.stroke();
+          ctx.restore();
+        }
       }
       for (const g of m.gates) { // two chevrons pointing the way through, between two posts
         ctx.save();
@@ -239,47 +378,40 @@
         }
         ctx.restore();
       }
-      for (const d of m.doors) { // shut: a bar with a keyhole; opening, it splits and slides into the walls; open, the stubs stay
-        const k = d.open ? Math.min(1, (MZ.Game.t - (d.openAt || 0)) / 0.45) : 0, e = 1 - (1 - k) * (1 - k), f = 1 - 0.78 * e;
+      const R = DOOR_R();
+      for (const d of m.doors) { // shut: a bar with a keyhole; opening, it splits and slides into the walls, where it stays
+        const k = d.open ? Math.min(1, (MZ.Game.t - (d.openAt || 0)) / 0.45) : 0, e = 1 - (1 - k) * (1 - k);
         ctx.save();
-        ctx.lineCap = 'round';
-        if (d.open) { // the threshold, dashed in the door's colour
-          ctx.setLineDash([5 * px, 6 * px]); ctx.globalAlpha = 0.55 * e;
-          ctx.strokeStyle = d.color; ctx.lineWidth = 2.5 * px;
-          ctx.beginPath(); ctx.moveTo(d.ax, d.ay); ctx.lineTo(d.bx, d.by); ctx.stroke();
-          ctx.setLineDash([]); ctx.globalAlpha = 1;
-        }
-        const half = (x0, y0) => { ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x0 + (d.x - x0) * f, y0 + (d.y - y0) * f); };
-        for (const [w, c] of [[16, 'rgba(0,0,0,0.5)'], [11, d.color]]) {
-          ctx.strokeStyle = c; ctx.lineWidth = w * px;
-          half(d.ax, d.ay); ctx.stroke();
-          half(d.bx, d.by); ctx.stroke();
-        }
         if (!d.open) {
+          doorBar(ctx, d.ax, d.ay, d.bx, d.by, R, d.color, px);
           ctx.translate(d.x, d.y);
           ctx.fillStyle = '#1b1530'; // the keyhole
-          ctx.beginPath(); ctx.arc(0, -2 * px, 3.2 * px, 0, TAU); ctx.fill();
-          ctx.fillRect(-1.6 * px, -1 * px, 3.2 * px, 6 * px);
+          ctx.beginPath(); ctx.arc(0, -0.28 * R, 0.36 * R, 0, TAU); ctx.fill();
+          ctx.beginPath(); ctx.moveTo(-0.15 * R, -0.1 * R); ctx.lineTo(0.15 * R, -0.1 * R); ctx.lineTo(0.22 * R, 0.62 * R); ctx.lineTo(-0.22 * R, 0.62 * R); ctx.closePath(); ctx.fill();
+          ctx.restore();
+          continue;
+        }
+        // The threshold, dashed in the door's colour; the halves end up flush with the floor's edge, so nothing that
+        // looks solid is left where you can walk.
+        ctx.lineCap = 'round';
+        ctx.setLineDash([5 * px, 6 * px]); ctx.globalAlpha = 0.55 * e;
+        ctx.strokeStyle = d.color; ctx.lineWidth = 2.5 * px;
+        ctx.beginPath(); ctx.moveTo(d.ax, d.ay); ctx.lineTo(d.bx, d.by); ctx.stroke();
+        ctx.setLineDash([]); ctx.globalAlpha = 1;
+        const sp = doorSpan(d, this.world), rim = Math.min(2.5 * px, R * 0.3);
+        for (const [ex, ey, reach] of [[d.ax, d.ay, sp.a], [d.bx, d.by, sp.b]]) {
+          const ux = (ex - d.x) / sp.L, uy = (ey - d.y) / sp.L, f = reach * e;
+          if (f >= sp.L) continue; // the floor reaches past the bar's end: it's all gone into the wall
+          doorHalf(ctx, d.x + ux * f, d.y + uy * f, ex, ey, R); ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fill();
+          doorHalf(ctx, d.x + ux * Math.min(sp.L, f + rim), d.y + uy * Math.min(sp.L, f + rim), ex, ey, R - rim); ctx.fillStyle = d.color; ctx.fill();
         }
         ctx.restore();
       }
       for (const kk of m.keys) if (!kk.taken) this.drawKey(kk, t);
     }
+    // A key on its token, exactly where (and as big as) it's picked up; it rocks a little but never leaves the token.
     drawKey(k, t) {
-      const ctx = this.ctx, px = this.px, s = 13;
-      ctx.save();
-      ctx.translate(k.x, k.y + Math.sin(t * 3 + k.x) * 2.5);
-      ctx.rotate(-0.6 + Math.sin(t * 2) * 0.12);
-      ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-      const shape = () => {
-        ctx.beginPath(); ctx.arc(-s * 0.55, 0, s * 0.5, 0, TAU);
-        ctx.moveTo(-s * 0.05, 0); ctx.lineTo(s * 1.1, 0);
-        ctx.moveTo(s * 0.75, 0); ctx.lineTo(s * 0.75, s * 0.42);
-        ctx.moveTo(s * 1.05, 0); ctx.lineTo(s * 1.05, s * 0.32);
-      };
-      shape(); ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 9 * px; ctx.stroke();
-      shape(); ctx.strokeStyle = k.color; ctx.lineWidth = 5 * px; ctx.stroke();
-      ctx.restore();
+      keyToken(this.ctx, k.x, k.y, KEY_R(), k.color, KEY.tilt + Math.sin(t * 2 + k.x) * 0.12, this.px);
     }
     drawPortal(e, r, color, t) {
       const ctx = this.ctx, px = this.px;
@@ -587,9 +719,10 @@
       const g = this.base.getContext('2d');
       g.clearRect(0, 0, W, H);
       g.lineCap = 'round'; g.lineJoin = 'round';
+      this.swEdges = maze.edges.filter((e) => e.sw); // drawn each frame, up or down (see switches())
       for (const e of maze.edges) {
-        const c = swColor(e);
-        g.strokeStyle = c || (e.type === 'blink' ? 'rgba(255,255,255,0.45)' : e.ice ? '#c4f1ff' : '#fff');
+        if (e.sw) continue;
+        g.strokeStyle = e.type === 'blink' ? 'rgba(255,255,255,0.45)' : e.ice ? '#c4f1ff' : '#fff';
         g.lineWidth = Math.max(1.5, e.hw * 2 * sc);
         g.beginPath();
         e.pts.forEach((q, i) => (i ? g.lineTo : g.moveTo).call(g, this.ox + q.x * sc, this.oy + q.y * sc));
@@ -612,21 +745,25 @@
     draw(pos, goal, gems, view, flags, boxes, mech) {
       if (!this.maze) return;
       const g = this.ctx, W = this.canvas.width, H = this.canvas.height;
+      const u = W / 150;
       g.clearRect(0, 0, W, H);
       g.drawImage(this.base, 0, 0);
+      this.switches(g, mech, u); // under the fog, like every corridor
       g.drawImage(this.fog, 0, 0);
       const dot = (x, y, r, c) => { g.fillStyle = c; g.beginPath(); g.arc(this.ox + x * this.sc, this.oy + y * this.sc, r, 0, TAU); g.fill(); };
-      const u = W / 150;
       if (flags) for (const c of flags) if (c.seen) { dot(c.x, c.y, 3.4 * u, '#000'); dot(c.x, c.y, 2.4 * u, c.lit ? '#3ddc97' : '#ffc53d'); }
       if (boxes) for (const b of boxes) if (b.seen) { dot(b.x, b.y, 2.9 * u, '#000'); dot(b.x, b.y, 2 * u, '#d38bff'); }
       if (mech && mech.doors) { // what's been seen of the mechanics
-        for (const d of mech.doors) if (d.seen) { // shut: solid; opened: dashed, so you can still see where it was
-          g.strokeStyle = d.color; g.lineWidth = (d.open ? 2 : 3) * u;
-          if (d.open) g.setLineDash([2 * u, 2 * u]);
-          g.beginPath(); g.moveTo(this.ox + d.ax * this.sc, this.oy + d.ay * this.sc); g.lineTo(this.ox + d.bx * this.sc, this.oy + d.by * this.sc); g.stroke();
-          g.setLineDash([]);
+        for (const d of mech.doors) if (d.seen) { // as in the maze: shut, a bar with a dark rim; opened, a dashed threshold
+          const ax = this.ox + d.ax * this.sc, ay = this.oy + d.ay * this.sc, bx = this.ox + d.bx * this.sc, by = this.oy + d.by * this.sc;
+          g.save();
+          if (d.open) {
+            g.setLineDash([1.6 * u, 1.4 * u]); g.lineCap = 'round'; g.strokeStyle = d.color; g.lineWidth = 1.2 * u;
+            g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, by); g.stroke();
+          } else doorBar(g, ax, ay, bx, by, Math.max(DOOR_R() * this.sc, 1.6 * u), d.color, 0.4 * u);
+          g.restore();
         }
-        for (const k of mech.keys) if (k.seen && !k.taken) { dot(k.x, k.y, 3 * u, '#000'); dot(k.x, k.y, 2.2 * u, k.color); }
+        for (const k of mech.keys) if (k.seen && !k.taken) keyToken(g, this.ox + k.x * this.sc, this.oy + k.y * this.sc, Math.max(KEY_R() * this.sc, 4.6 * u), k.color, KEY.tilt, 0.28 * u);
         for (const pl of mech.plates) if (pl.seen) { dot(pl.x, pl.y, 3 * u, '#000'); dot(pl.x, pl.y, 2.2 * u, pl.color); }
         for (const pt of mech.portals) for (const e of [pt.a, pt.b]) if (e.seen) { dot(e.x, e.y, 3.2 * u, pt.color); dot(e.x, e.y, 1.6 * u, '#000'); }
         for (const mv of mech.movers) if (mv.seen) {
@@ -642,6 +779,31 @@
         g.strokeRect(this.ox + view.x0 * this.sc, this.oy + view.y0 * this.sc, (view.x1 - view.x0) * this.sc, (view.y1 - view.y0) * this.sc);
       }
       if (pos) { dot(pos.x, pos.y, 4.5 * u, '#000'); dot(pos.x, pos.y, 3.2 * u, '#ff3d7f'); }
+    }
+    // Switch bridges on the map: up, a corridor in the switch's colour; down, a thin dashed line in it (a gap, the way
+    // an opened door is dashed). For a moment after a press, the bridges of that colour pulse.
+    switches(g, mech, u) {
+      if (!this.swEdges || !this.swEdges.length) return;
+      const w = MZ.Game && MZ.Game.world, sw = (w && w.sw) || {}, now = (MZ.Game && MZ.Game.t) || 0;
+      g.save();
+      g.lineJoin = 'round';
+      for (const e of this.swEdges) {
+        const c = swColor(e), up = (sw[e.sw.g] | 0) === e.sw.on, k = (now - pressedAt(mech, e.sw.g)) / 1.5;
+        g.beginPath();
+        e.pts.forEach((q, i) => (i ? g.lineTo : g.moveTo).call(g, this.ox + q.x * this.sc, this.oy + q.y * this.sc));
+        const full = Math.max(1.5, e.hw * 2 * this.sc);
+        if (k >= 0 && k < 1) { // just pressed: a pulsing halo
+          g.strokeStyle = c; g.lineCap = 'round'; g.globalAlpha = (1 - k) * (0.5 + 0.5 * Math.cos(k * 6 * Math.PI)) * 0.7;
+          g.lineWidth = full + 5 * u; g.stroke();
+          g.globalAlpha = 1;
+        }
+        g.strokeStyle = c;
+        if (up) { g.lineCap = 'butt'; g.lineWidth = full; g.setLineDash([]); }
+        else { g.lineCap = 'butt'; g.lineWidth = Math.max(1, 1.6 * u); g.setLineDash([2.4 * u, 1.6 * u]); }
+        g.stroke();
+        g.setLineDash([]);
+      }
+      g.restore();
     }
     // Endless: a radar of what's near the player, fogged except where the screen has been (seen: rectangles).
     drawRadar(world, pos, beacons, view, seen, boxes) {
@@ -689,6 +851,7 @@
     }
   }
 
+  Renderer.keySVG = keySVG;
   MZ.Renderer = Renderer;
   MZ.Minimap = Minimap;
   MZ.FLOORS = FLOORS;

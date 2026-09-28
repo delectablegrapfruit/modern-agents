@@ -75,7 +75,6 @@
     settings: '<g W><circle cx="16" cy="16" r="4"/><path d="M16 3v4M16 25v4M3 16h4M25 16h4M6.8 6.8l2.8 2.8M22.4 22.4l2.8 2.8M6.8 25.2l2.8-2.8M22.4 9.6l2.8-2.8"/></g>',
     help: '<g W><circle cx="16" cy="16" r="12"/><path d="M12.5 12.5a3.5 3.5 0 1 1 5 3.2c-1 .5-1.5 1.3-1.5 2.3v.5"/><path d="M16 22.5v.5"/></g>',
     full: '<g W><path d="M5 11V5h6M21 5h6v6M27 21v6h-6M11 27H5v-6"/></g>',
-    key: '<g W><circle cx="10" cy="16" r="5"/><path d="M15 16h13M24 16v4M28 16v3"/></g>',
   };
   const LINE = 'stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"';
   for (const k in MENU_ICONS) MENU_ICONS[k] = MENU_ICONS[k].replace('<g W>', '<g ' + LINE + '>');
@@ -180,7 +179,7 @@
       const held = G.keysHeld ? [...G.keysHeld].flatMap(([col, n]) => Array(n).fill(col)) : [], kk = held.join(); // keys you're carrying
       if (c.keys !== kk) {
         c.keys = kk;
-        hud.keys.innerHTML = held.map((col) => '<span style="color:' + col + '">' + svg(MENU_ICONS.key) + '</span>').join('');
+        hud.keys.innerHTML = held.map((col) => MZ.Renderer.keySVG(col)).join(''); // the same key and token as in the maze
       }
       const act = [];
       for (const k of ['star', 'carpet', 'shrink']) if (fx[k] > 0) act.push([k, fx[k] / G.ITEMS[k].dur]);

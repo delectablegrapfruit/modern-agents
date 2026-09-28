@@ -602,8 +602,10 @@
       if (!m) return false;
       for (const d of m.doors) {
         if (d.open || !this.overBar(x1, y1, d)) continue;
-        if (!this.keysHeld.get(d.color)) return true;
-        this.openDoor(d);
+        if (this.keysHeld.get(d.color)) { this.openDoor(d); continue; }
+        // Already on the bar (a Launch came down on it, Shrink ran out next to it): stepping away is always allowed.
+        if (this.overBar(x0, y0, d) && segDist2(x1, y1, d.ax, d.ay, d.bx, d.by) > segDist2(x0, y0, d.ax, d.ay, d.bx, d.by)) continue;
+        return true;
       }
       for (const g of m.gates) if ((x1 - x0) * g.nx + (y1 - y0) * g.ny < 0 && MZ.segsCross(x0, y0, x1, y1, g.ax, g.ay, g.bx, g.by)) return true;
       return false;
@@ -615,13 +617,13 @@
       MZ.Audio.play('unlock');
       this.emit('power');
     },
-    // Does the picture at (x, y) overlap a door's bar?
+    // Does the picture at (x, y) overlap a door's bar (the capsule DOOR_R either side of it, exactly as it's drawn)?
     overBar(x, y, d) {
-      const mask = this.sprite.mask, W = this.box(), reach = (mask ? mask.maxR : 0.5) * W + 5;
+      const mask = this.sprite.mask, W = this.box(), R = MZ.Levels.DOOR_R, reach = (mask ? mask.maxR : 0.5) * W + R;
       if (segDist2(x, y, d.ax, d.ay, d.bx, d.by) > reach * reach) return false;
       if (!mask) return true;
       const p = mask.pts;
-      for (let i = 0; i < p.length; i += 2) if (segDist2(x + p[i] * W, y + p[i + 1] * W, d.ax, d.ay, d.bx, d.by) < 25) return true;
+      for (let i = 0; i < p.length; i += 2) if (segDist2(x + p[i] * W, y + p[i + 1] * W, d.ax, d.ay, d.bx, d.by) < R * R) return true;
       return false;
     },
     toEdge(sx, sy) {
@@ -1102,7 +1104,7 @@
         const m = this.maze;
         // Keys go in your pocket; a door of their colour opens when you bump into it.
         for (const k of m.keys) {
-          if (k.taken || !this.touches(k.x, k.y, 16)) continue;
+          if (k.taken || !this.touches(k.x, k.y, MZ.Levels.KEY_R)) continue; // the key's drawn token
           k.taken = true;
           this.keysHeld.set(k.color, (this.keysHeld.get(k.color) || 0) + 1);
           MZ.Audio.play('key');

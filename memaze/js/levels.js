@@ -34,6 +34,9 @@
     { lat: ['organic', 'hex'], mask: ['islands', 'blob', 'cheese', 'crescent', 'spiral'] },
   ];
   const KEY_COLORS = ['#ffc53d', '#3cf2ff', '#ff7ad9'];
+  // Where keys and doors act, in world units; the drawing (maze, map, HUD) uses the same numbers. A shut door is a
+  // capsule this far either side of its bar; a key is picked up when the picture overlaps a circle this big.
+  const DOOR_R = 5, KEY_R = 16;
   const SWITCH_COLORS = ['#b388ff', '#7dffb5'];
   const PORTAL_COLORS = ['#ff9f43', '#5ee7ff', '#c77dff'];
   const GAUNTLET = {
@@ -551,7 +554,7 @@
   }
 
   MZ.Levels = {
-    CHAPTER, MECHS, MODS, GAUNTLET, REMIX_FROM, KEY_COLORS, SWITCH_COLORS,
+    CHAPTER, MECHS, MODS, GAUNTLET, REMIX_FROM, KEY_COLORS, SWITCH_COLORS, DOOR_R, KEY_R,
     chapterOf, isBoss, chapterName, introOf, levelParams, gauntletParams, gauntletLevel, build,
     label(level) { return isBoss(level) ? 'Boss · Chapter ' + chapterOf(level) : 'Level ' + level; },
   };
