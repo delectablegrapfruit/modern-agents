@@ -1,13 +1,13 @@
 // Page-world half. Runs at document_start in YouTube's own JS world, before any of its scripts, so it can wrap
 // fetch, XHR and setTimeout before the player captures them and call the player's API (movie_player.seekTo() and
 // friends are page-world expandos an isolated content script cannot see). It has no chrome.* access: settings
-// arrive from bridge.js as JSON on a DOM event and stat counts go back the same way.
+// arrive from content.js as JSON on a DOM event and stat counts go back the same way.
 (() => {
   'use strict';
 
-  const EVENTS = { config: 'ythb:config', ready: 'ythb:ready', stat: 'ythb:stat' };
+  const EVENTS = { config: 'yff:config', ready: 'yff:ready', stat: 'yff:stat' };
 
-  // All on until bridge.js has read chrome.storage (a few ms after document_start).
+  // All on until content.js has read chrome.storage (a few ms after document_start).
   const settings = {
     noAdRequests: true,
     timerBoost: true,
@@ -37,7 +37,7 @@
   const nativeSetInterval = window.setInterval;
   const fnToString = Function.prototype.toString;
 
-  const log = (...args) => console.info('[YouTube Hiccup Bypass]', ...args);
+  const log = (...args) => console.info('[Focus & Fix]', ...args);
   const stat = (name) => document.dispatchEvent(new CustomEvent(EVENTS.stat, { detail: name }));
   const call = (obj, method, ...args) => (typeof obj?.[method] === 'function' ? (obj[method](...args), true) : false);
   const isAdShowing = (player) => AD.classes.some((c) => player.classList.contains(c));

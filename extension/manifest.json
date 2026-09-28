@@ -1,13 +1,28 @@
 {
   "manifest_version": 3,
-  "name": "YouTube Hiccup Bypass",
-  "version": "1.1.0",
-  "description": "Cuts the artificial startup delay, ad-slot dead time, stalls and anti-adblock dialogs YouTube serves ad-blocker/VPN users.",
+  "name": "Focus & Fix for YouTube",
+  "version": "2.0.0",
+  "description": "Hide YouTube's distractions, filter videos by keyword, channel or length, and fix ad-blocker playback hiccups.",
   "minimum_chrome_version": "111",
-  "permissions": ["storage"],
+  "permissions": ["storage", "contextMenus"],
+  "background": { "service_worker": "background.js" },
   "action": {
-    "default_title": "YouTube Hiccup Bypass",
+    "default_title": "Focus & Fix for YouTube",
     "default_popup": "popup/popup.html"
+  },
+  "options_page": "options/options.html",
+  "commands": {
+    "toggle-hiding": {
+      "suggested_key": { "default": "Alt+Shift+U" },
+      "description": "Turn hiding on or off"
+    },
+    "pick-element": {
+      "suggested_key": { "default": "Alt+Shift+H" },
+      "description": "Pick an element to hide"
+    },
+    "pause-15": {
+      "description": "Pause hiding for 15 minutes"
+    }
   },
   "content_scripts": [
     {
@@ -19,7 +34,7 @@
     },
     {
       "matches": ["*://*.youtube.com/*", "*://*.youtube-nocookie.com/*"],
-      "js": ["src/defaults.js", "src/bridge.js"],
+      "js": ["src/schema.js", "src/store.js", "src/picker.js", "src/content.js"],
       "run_at": "document_start",
       "all_frames": true
     }

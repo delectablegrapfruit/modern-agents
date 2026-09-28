@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Focus &amp; Fix for YouTube — Settings</title>
+    <link rel="stylesheet" href="../ui/ui.css" />
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Focus &amp; Fix for YouTube</h1>
+        <p id="status" aria-live="polite"></p>
+        <nav>
+          <a href="#general">General</a><a href="#hide">Hide</a><a href="#filters">Filters</a>
+          <a href="#custom">Custom rules</a><a href="#playback">Playback</a><a href="#backup">Backup</a>
+        </nav>
+      </header>
+
+      <section id="general">
+        <h2>General</h2>
+        <label class="opt">
+          <input type="checkbox" class="switch" data-key="enabled" />
+          <span><b>Hiding on</b><small>Alt+Shift+U toggles it from any tab</small></span>
+        </label>
+
+        <h3>Schedule</h3>
+        <label class="opt">
+          <input type="checkbox" class="switch" data-key="schedule.enabled" />
+          <span><b>Only hide during set hours</b><small>Outside them YouTube looks as usual; playback fixes always run</small></span>
+        </label>
+        <div class="row">
+          <label>From <input type="time" data-key="schedule.start" /></label>
+          <label>to <input type="time" data-key="schedule.end" /></label>
+          <span class="muted">(can cross midnight)</span>
+        </div>
+        <div class="row days" id="days"></div>
+
+        <h3>Friction</h3>
+        <div class="row">
+          <label>Wait <input type="number" min="0" max="300" data-key="friction.pauseDelaySec" /> seconds before a pause or switch-off takes effect</label>
+        </div>
+        <label class="opt">
+          <input type="checkbox" class="switch" data-key="friction.lockDuringSchedule" />
+          <span><b>Lock during scheduled hours</b><small>No switching off, pausing or “Show all” until the window ends</small></span>
+        </label>
+      </section>
+
+      <section id="hide">
+        <h2>Hide elements</h2>
+        <div class="presets" id="presets"></div>
+        <input type="search" id="search" placeholder="Find an option…" aria-label="Find an option" />
+        <div id="groups"></div>
+      </section>
+
+      <section id="filters">
+        <h2>Feed filters</h2>
+        <p>Hide individual videos in feeds, search results and sidebars. History, playlists and You are left alone.</p>
+        <div class="columns">
+          <label class="field">
+            <b>Title keywords</b><small>One per line. <code>/pattern/i</code> for a regular expression.</small>
+            <textarea rows="6" data-key="filters.keywords" data-list spellcheck="false"></textarea>
+          </label>
+          <label class="field">
+            <b>Channels</b><small>Name or @handle, one per line</small>
+            <textarea rows="6" data-key="filters.channels" data-list spellcheck="false"></textarea>
+          </label>
+          <label class="field">
+            <b>Always show</b><small>Channels never filtered, whatever else matches</small>
+            <textarea rows="6" data-key="filters.allowChannels" data-list spellcheck="false"></textarea>
+          </label>
+        </div>
+        <label class="opt">
+          <input type="checkbox" class="switch" data-key="filters.hideWatched" />
+          <span><b>Watched videos</b><small>Watched at least <input type="number" min="1" max="100" data-key="filters.watchedPercent" /> %</small></span>
+        </label>
+        <div class="row">
+          <label>Shorter than <input type="number" min="0" data-key="filters.minMinutes" /> min</label>
+          <label>Longer than <input type="number" min="0" data-key="filters.maxMinutes" /> min</label>
+          <span class="muted">(0 = no limit)</span>
+        </div>
+        <label class="opt"><input type="checkbox" class="switch" data-key="filters.hideLive" /><span><b>Live streams</b></span></label>
+        <label class="opt"><input type="checkbox" class="switch" data-key="filters.hideUpcoming" /><span><b>Upcoming & premieres</b></span></label>
+        <label class="opt"><input type="checkbox" class="switch" data-key="filters.hideMembers" /><span><b>Members-only videos</b></span></label>
+        <div class="row">
+          <span>Filtered videos are</span>
+          <label><input type="radio" name="mode" value="hide" data-key="filters.mode" /> hidden</label>
+          <label><input type="radio" name="mode" value="dim" data-key="filters.mode" /> dimmed (to check what matches)</label>
+        </div>
+      </section>
+
+      <section id="custom">
+        <h2>Custom rules</h2>
+        <p>
+          Made with the picker (popup button, right-click → <i>Hide this element…</i>, or Alt+Shift+H on YouTube), or
+          typed here as CSS selectors.
+        </p>
+        <div id="rules"></div>
+        <form id="add-rule" class="row">
+          <input type="text" name="selector" placeholder="CSS selector, e.g. ytd-watch-metadata #actions" spellcheck="false" required />
+          <select name="page"></select>
+          <button type="submit">Add</button>
+        </form>
+        <p id="rule-error" class="error" hidden></p>
+      </section>
+
+      <section id="playback">
+        <h2>Playback fixes</h2>
+        <p>Undo the slowdowns YouTube applies to ad-blocker and VPN users. These run whether hiding is on or not.</p>
+        <div id="fixes"></div>
+      </section>
+
+      <section id="backup">
+        <h2>Backup</h2>
+        <div class="row">
+          <button type="button" id="export">Export settings</button>
+          <label class="button">Import…<input type="file" id="import" accept=".json,application/json" hidden /></label>
+          <button type="button" id="reset" class="danger">Reset everything</button>
+        </div>
+        <p id="backup-note" aria-live="polite"></p>
+      </section>
+    </main>
+
+    <script src="../src/schema.js"></script>
+    <script src="../src/store.js"></script>
+    <script src="../ui/controls.js"></script>
+    <script type="module" src="options.js"></script>
+  </body>
+</html>
