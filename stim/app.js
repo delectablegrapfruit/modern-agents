@@ -6957,7 +6957,7 @@ function openCheckout(tab, lines) {
         <div class="sh-pm"><span class="sh-pmi">${IF('bolt')}</span><span class="sh-dt"><b>Hits balance</b><small class="sh-bal"></small></span><span class="sh-rad on"></span></div>
         <div class="sh-short" hidden><b></b><small>Earn more hits, or remove something from your order.</small><div class="row2"><button class="sh-sbtn" data-a="earn">Earn hits</button><button class="sh-sbtn ghost" data-a="back">Edit order</button></div></div>
       </section>
-      <section class="sh-cks"><h4>${si('box')}Order summary <small class="sh-cnt"></small></h4><div class="sh-oth">${lines.map(l => `<span class="sh-othi">${tile(PRM[l.pid], l.ci)}${l.q > 1 ? `<b>×${l.q}</b>` : ''}${l.gift ? '<em>FREE</em>' : ''}</span>`).join('')}</div><div class="sh-rows"></div></section>
+      <section class="sh-cks"><h4>${si('box')}Order summary <small class="sh-cnt"></small></h4><div class="sh-oth"></div><div class="sh-rows"></div></section>
       <p class="fine">Payments are encrypted and processed securely. By placing this order you agree to the Terms of Sale.</p>
     </div>
     <div class="sh-pf sh-cof"><div class="sh-cot"><span>Total</span><b class="sh-ctot"></b><small class="sh-csav"></small></div>
@@ -6971,6 +6971,8 @@ function openCheckout(tab, lines) {
     setH($('.sh-dexp', el), k.shipCp ? `<s>${fmt(EXP_FEE)}</s> FREE` : pz(EXP_FEE));
     setH($('.sh-bal', el), `Available: ${pz(S.hits)}`);
     setT($('.sh-cnt', el), `(${k.n} item${k.n > 1 ? 's' : ''}${k.giftOk ? ' + gift' : ''})`);
+    // only what the order will contain: the free gift shows once the order qualifies for it
+    setH($('.sh-oth', el), items().map(l => `<span class="sh-othi">${tile(PRM[l.pid], l.ci)}${l.q > 1 ? `<b>×${l.q}</b>` : ''}${l.gift ? '<em>FREE</em>' : ''}</span>`).join(''));
     setH($('.sh-rows', el), sumRows(k, { co: 1, ship }));
     setH($('.sh-ctot', el), pz(k.total));
     setH($('.sh-csav', el), `Saving ${pz(k.saved)}`);
