@@ -19,6 +19,8 @@ public struct FightStats: Codable, Equatable, Sendable {
     /// Cuts the warlord turned aside with his guard set, and cuts that glanced off it while it was still coming up.
     public var parried = 0
     public var glanced = 0
+    /// Brutes' blows turned aside by a cut into the glare on the club.
+    public var turned = 0
 
     public init() {}
 }
@@ -37,6 +39,7 @@ extension FightStats {
         bestCombo = try c.decode(Int.self, forKey: .bestCombo)
         parried = try c.decode(Int.self, forKey: .parried)
         glanced = try c.decodeIfPresent(Int.self, forKey: .glanced) ?? 0
+        turned = try c.decodeIfPresent(Int.self, forKey: .turned) ?? 0
     }
 }
 
@@ -84,51 +87,63 @@ public enum FightEvent: Equatable, Sendable {
     case parried(Side, foe: Int)
     /// The warlord called men in from both ends of the lane.
     case summoned(foe: Int, allies: [Int])
+    /// A cut met the brute's club as it glared, at the end of his wind-up (with no knock-back, `Crowding`): his blow is
+    /// turned aside and he is thrown off balance for `Tuning.bruteStagger`, where he stands. The cut does not wound
+    /// him (steel met steel), but it counts to the combo.
+    case turned(Side, foe: Int)
     case ended(Outcome)
 }
 
-/// One stage: a lane, the ronin in the middle, and the stage's roster coming at him from both sides.
+/// How the men on one side of the lane get past each other, and how a cut moves the brute. The game plays
+/// `standard`; the Development menu (and `ronin-sim --crowd`) can turn each rule off or on, to try the game without it.
+/// With no passing rule on, each side is a queue: every man waits behind the one in front, and only the man in front
+/// strikes.
 ///
-/// Cut left or right. A cut hits the nearest foe (or incoming arrow, or falling gourd) on that side whose near edge is
-/// within reach; with nothing in reach it is a whiff, and the ronin stumbles and can't cut for a moment. Every kill and
-/// deflection adds to the combo, which multiplies the score and at 20 brings on bloodlust (longer reach). Any wound,
-/// whiff or parried cut breaks it. Clear the roster to win; lose all your hearts (the mode's `hearts`) and you fall.
-///
-/// Hearts come back two ways, neither of them sure. The stage's gourd: its bearer has to be caught on two of his
-/// darts, and the gourd he flings as he falls caught as it comes down. And shards: a man cut down in the last moment
-/// of his wind-up (sen-no-sen, `Tuning.senNoSen`) gives a shard, and three make a heart, but a wound scatters them.
-/// Development rules, for trying out how the men on one side of the lane get past each other and how a cut moves the
-/// brute; not part of the game as it plays. With none set, each side is a queue: every man waits behind the one in
-/// front, and only the man in front strikes.
+/// Two things hold whatever the rules: nobody walks through the warlord, and nobody cuts in front of the gourd-bearer
+/// on his dart (the way in he waited for stays his, so a cut toward him meets him).
 public struct Crowding: Codable, Equatable, Sendable {
     /// Every man walks through every other to his own striking distance, and strikes from there.
     public var passThrough = false
     /// The small, quick men (the runner, the blade dancer, the gourd-bearer) slip past a brute or an archer in front.
     public var slipPast = false
+    /// Runners pass everyone (spearmen, brutes, archers, dancers, other runners), all but the warlord.
+    public var runnersPassAll = false
     /// Anyone may pass a man who is winding up a blow or recovering from one.
     public var passBusy = false
     /// The brute strides through lighter men (anyone but another brute, an archer or the warlord), shoving aside
     /// those he walks into (not a man already bringing his blow down).
     public var shove = false
-    /// A cut neither knocks the brute back nor breaks a blow he is winding up: he takes it and keeps coming.
+    /// A cut neither knocks the brute back nor breaks a blow he is winding up: he takes it and keeps coming. His blow
+    /// can be turned aside instead: a cut that does not fell him, made as his club glares at the end of his wind-up
+    /// (`Tuning.parryWindow`), meets the club and throws him off balance.
     public var noBruteKnockback = false
 
-    public init(passThrough: Bool = false, slipPast: Bool = false, passBusy: Bool = false, shove: Bool = false,
-                noBruteKnockback: Bool = false) {
+    public init(passThrough: Bool = false, slipPast: Bool = false, runnersPassAll: Bool = false, passBusy: Bool = false,
+                shove: Bool = false, noBruteKnockback: Bool = false) {
         self.passThrough = passThrough
         self.slipPast = slipPast
+        self.runnersPassAll = runnersPassAll
         self.passBusy = passBusy
         self.shove = shove
         self.noBruteKnockback = noBruteKnockback
     }
 
-    /// The game as it plays: queues, and a cut knocks the brute back.
-    public static let standard = Crowding()
+    /// The game as it plays: the quick slip past the heavy, runners pass everyone, anyone passes a man busy with a
+    /// blow, the brute shoves through, and a cut does not knock him back (his blow is turned aside at the glare).
+    public static let standard = Crowding(slipPast: true, runnersPassAll: true, passBusy: true, shove: true, noBruteKnockback: true)
+    /// Every side a queue, and a cut knocks the brute back and breaks his blow: the game before these rules.
+    public static let queue = Crowding()
     public var isStandard: Bool { self == .standard }
+    /// Whether any rule lets a man get past another (with none, each side is a queue).
+    public var passes: Bool { passThrough || slipPast || runnersPassAll || passBusy || shove }
 
     /// Whether `man`, nearer the ronin on his side, stands in the way of `follower`.
     public func blocks(_ man: Foe, _ follower: Foe) -> Bool {
+        // Nobody cuts in front of the gourd-bearer on his dart, and nobody walks through the warlord.
+        if man.bearer, man.darting { return true }
+        if man.kind == .warlord { return true }
         if passThrough { return false }
+        if runnersPassAll, follower.kind == .runner { return false }
         if passBusy, man.phase == .windup || man.phase == .recoil { return false }
         if slipPast, follower.kind == .runner || follower.kind == .dancer || follower.bearer, man.kind == .brute || man.kind == .archer {
             return false
@@ -141,6 +156,32 @@ public struct Crowding: Codable, Equatable, Sendable {
     func shoves(_ man: Foe) -> Bool { man.kind != .brute && man.kind != .archer && man.kind != .warlord }
 }
 
+extension Crowding {
+    /// Reads saved rules, a rule the save lacks (it is older) taking the default of the rules it was saved under
+    /// (none on).
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        passThrough = try c.decodeIfPresent(Bool.self, forKey: .passThrough) ?? false
+        slipPast = try c.decodeIfPresent(Bool.self, forKey: .slipPast) ?? false
+        runnersPassAll = try c.decodeIfPresent(Bool.self, forKey: .runnersPassAll) ?? false
+        passBusy = try c.decodeIfPresent(Bool.self, forKey: .passBusy) ?? false
+        shove = try c.decodeIfPresent(Bool.self, forKey: .shove) ?? false
+        noBruteKnockback = try c.decodeIfPresent(Bool.self, forKey: .noBruteKnockback) ?? false
+    }
+}
+
+/// One stage: a lane, the ronin in the middle, and the stage's roster coming at him from both sides.
+///
+/// Cut left or right. A cut hits the nearest foe (or incoming arrow) on that side whose near edge is within reach, or
+/// the falling gourd if it is low enough to catch there; with nothing in reach it is a whiff, and the ronin stumbles
+/// and can't cut for a moment. Every kill, deflection and turned blow adds to the combo, which multiplies the score and
+/// at 20 brings on bloodlust (longer reach). Any wound, whiff or parried cut breaks it. Clear the roster to win; lose
+/// all your hearts (the mode's `hearts`) and you fall.
+///
+/// Hearts come back two ways, both earned. The stage's gourd: its bearer has to be caught on two of his darts, and the
+/// gourd he flings as he falls caught as it comes down; played right, every step of it can be counted on. And shards:
+/// a man cut down in the last moment of his wind-up (sen-no-sen, `Tuning.senNoSen`) gives a shard, and three make a
+/// heart, but a wound scatters them. The crowd on the lane follows `crowding` (`Crowding.standard` in play).
 public struct Fight: Codable, Equatable, Sendable {
     public enum Target: Codable, Equatable, Sendable {
         case foe(Int)
@@ -246,18 +287,22 @@ public struct Fight: Codable, Equatable, Sendable {
 
     public func foe(_ id: Int) -> Foe? { foes.first { $0.id == id } }
 
-    /// What a cut to `side` would hit now: the nearest foe, incoming arrow or catchable gourd within reach.
+    /// Whether a cut at `foe` now would turn his blow aside rather than wound him: a brute with no knock-back
+    /// (`Crowding.noBruteKnockback`) whose club glares (`Foe.clubGlares`), with more than one cut left in him. A cut
+    /// that can fell him fells him instead (in the last `Tuning.senNoSen`, for a shard).
+    public func turns(_ foe: Foe) -> Bool { crowding.noBruteKnockback && foe.clubGlares && foe.hp > 1 }
+
+    /// What a cut to `side` would hit now: the falling gourd if it is low enough to catch there (it is caught whoever
+    /// stands on that side), or else the nearest foe or incoming arrow within reach.
     public func target(_ side: Side) -> Target? {
         let reach = self.reach
+        if let gourd, gourd.catchable, gourd.side == side, abs(gourd.x) <= reach { return .gourd }
         var best: (target: Target, distance: Double)?
         for foe in foes where foe.targetable && Side.of(foe.x) == side && foe.gap <= reach {
             if foe.gap < best?.distance ?? .infinity { best = (.foe(foe.id), foe.gap) }
         }
         for arrow in arrows where !arrow.deflected && arrow.side == side && abs(arrow.x) <= reach {
             if abs(arrow.x) < best?.distance ?? .infinity { best = (.arrow(arrow.id), abs(arrow.x)) }
-        }
-        if let gourd, gourd.catchable, gourd.side == side, abs(gourd.x) <= reach {
-            if abs(gourd.x) < best?.distance ?? .infinity { best = (.gourd, abs(gourd.x)) }
         }
         return best?.target
     }
@@ -332,6 +377,17 @@ public struct Fight: Codable, Equatable, Sendable {
             foes[i].chained = riposte
             foes[i].guardRest = rng.range(0.9, 1.6)
             if riposte { events.append(.raised(foe: id)) }
+        case .foe(let id)? where foe(id).map(turns) == true:
+            // The brute's club met as it glares: his blow is turned aside, and he is thrown off balance where he
+            // stands. Steel meets steel, so he is not wounded.
+            guard let i = foes.firstIndex(where: { $0.id == id }) else { return }
+            cooldown = Tuning.cooldown
+            stats.turned += 1
+            foes[i].enter(.recoil, for: Tuning.bruteStagger)
+            foes[i].chained = false
+            score += points(50 * multiplier)
+            events.append(.turned(side, foe: id))
+            raiseCombo(&events)
         case .foe(let id)?:
             guard let i = foes.firstIndex(where: { $0.id == id }) else { return }
             cooldown = Tuning.cooldown
@@ -455,7 +511,7 @@ public struct Fight: Codable, Equatable, Sendable {
             foe.bearer = true
             foe.hp = max(foe.hp, 2)
             foe.maxHP = foe.hp
-            foe.hover = rng.range(0.5, 1.0)
+            foe.hover = Tuning.bearerWait
         }
         nextID += 1
         foes.append(foe)
@@ -629,16 +685,20 @@ public struct Fight: Codable, Equatable, Sendable {
         foes.contains { $0.phase == .leaping && $0.side == side && abs($0.leapTo) < foe.distance }
     }
 
-    /// The gourd-bearer: he waits just out of reach (and behind the man in front, if anyone stands nearer), crouches
-    /// to ready himself (`Tuning.dartTell`), darts in and strikes, backs off, and after his third dart (or once he has
-    /// been about too long) makes off with the gourd. His dart is his wind-up: he runs in to his striking distance with
-    /// his blade coming down, and the blow lands as he gets there (`Tuning.dartWindup` after he goes). He can only be
-    /// cut while he is close, and a cut that doesn't fell him sends him springing back out of reach (see `wound`), so
-    /// each of his two cuts has to catch him on a dart of his own. `hover` counts down only while he waits at his spot,
-    /// so it says how soon he will go.
+    /// The gourd-bearer: he waits just out of reach (and behind the man in front, if one stands in his way), crouches
+    /// to ready himself (`Tuning.dartTell`), darts in and strikes, backs off, and after his third dart makes off with
+    /// the gourd. His dart is his wind-up: he runs in to his striking distance with his blade coming down, and the blow
+    /// lands as he gets there (`Tuning.dartWindup` after he goes). He can only be cut while he is close, and a cut that
+    /// doesn't fell him sends him springing back out of reach (see `wound`), so each of his two cuts has to catch him on
+    /// a dart of his own.
+    ///
+    /// Nothing about it is left to chance. He goes only with nobody between him and the ronin (nor anyone coming down
+    /// there from a leap), so a cut toward him meets him, and nobody cuts in front of him on his way in (`Crowding`).
+    /// He waits the same `Tuning.bearerWait` at his spot before every dart, counted only while his way in is clear, and
+    /// the tell always runs its whole length; he never leaves before his darts are spent. `hover` counts down that
+    /// wait, so it says how soon he will go.
     private mutating func bear(_ f: inout Foe, side: Side, front: Foe?, _ events: inout [FightEvent]) {
         let h = Tuning.step
-        if f.distance < 1 { f.lingered += h }
         // Where the man in front leaves him room to stand, as anyone queueing would.
         let behind = front.map { $0.distance + ($0.kind.width + f.kind.width) / 2 + 0.01 } ?? 0
         let hover = max(reach + f.kind.width / 2 + 0.09, behind)
@@ -655,17 +715,22 @@ public struct Fight: Codable, Equatable, Sendable {
             } else if f.distance < hover - 0.0005 {
                 f.x = side.sign * min(hover, f.distance + f.speed * 2.5 * h)
             }
-            if abs(f.distance - hover) < 0.01 {
-                f.hover = max(0, f.hover - h)
-                // He goes only when his striking spot is clear. However quick the stage, his blow comes late enough
-                // to be met by a cut made on seeing him go.
-                if f.hover <= 0, behind <= f.contact + 0.0005 {
-                    f.darting = true
-                    f.darts += 1
-                    f.hover = rng.range(0.6, 1.3)
-                    f.enter(.windup, for: max(Tuning.dartWindup, f.windup * 0.45))
-                    events.append(.raised(foe: f.id))
-                }
+            guard abs(f.distance - hover) < 0.01 else { break }
+            guard clear(for: f, on: side) else {
+                // Someone between him and the ronin: he waits, standing, and when his way clears the whole tell comes
+                // before he goes.
+                f.hover = max(f.hover, Tuning.dartTell)
+                break
+            }
+            f.hover = max(0, f.hover - h)
+            f.lingered += h
+            // However quick the stage, his blow comes late enough to be met by a cut made on seeing him go.
+            if f.hover <= 0 {
+                f.darting = true
+                f.darts += 1
+                f.hover = Tuning.bearerWait
+                f.enter(.windup, for: max(Tuning.dartWindup, f.windup * 0.45))
+                events.append(.raised(foe: f.id))
             }
         case .windup:
             // The dart: in at a run to where his weapon reaches (never through the man in front), the blade coming
@@ -674,8 +739,8 @@ public struct Fight: Codable, Equatable, Sendable {
             if f.distance > stop { f.x = side.sign * max(stop, f.distance - f.speed * Tuning.dartPace * h) }
             f.timer -= h
             if f.timer <= 0 {
-                // A blow lands only from where his weapon reaches: one brought up short by a man landing in front of
-                // him is pulled.
+                // A blow lands only from where his weapon reaches: one brought up short by a man in front of him is
+                // pulled.
                 if f.distance <= f.contact + 0.02 { hurt(f.kind.damage, by: f.id, &events) }
                 f.darting = false
                 f.enter(.recoil, for: 0.3)
@@ -696,6 +761,14 @@ public struct Fight: Codable, Equatable, Sendable {
             }
         case .aiming, .leaping, .guarding, .dying:
             break
+        }
+    }
+
+    /// Nobody stands between the gourd-bearer `f` and the ronin on `side`, nor is anyone in the air coming down there.
+    private func clear(for f: Foe, on side: Side) -> Bool {
+        !foes.contains { other in
+            guard other.id != f.id, other.alive, other.side == side else { return false }
+            return (other.phase == .leaping ? abs(other.leapTo) : other.distance) < f.distance
         }
     }
 
@@ -747,13 +820,12 @@ public struct Fight: Codable, Equatable, Sendable {
         }
     }
 
-    /// The gourd flung up out of its fallen bearer's hands (at `x`): it comes down within reach, on his side or over
-    /// the ronin's head on the other, a second or so later.
+    /// The gourd flung up out of its fallen bearer's hands (at `x`): it comes down on his side or over the ronin's head
+    /// on the other, always `Tuning.gourdLanding` from the ronin and `Tuning.gourdFlight` later. Only the side is
+    /// rolled, and it shows at once (where it will land is marked as it goes up).
     private mutating func fling(from bearer: Int, at x: Double, _ events: inout [FightEvent]) {
         let side = rng.chance(0.5) ? Side.of(x) : Side.of(x).opposite
-        let land = side.sign * rng.range(Tuning.gourdLanding.lowerBound, Tuning.gourdLanding.upperBound)
-        gourd = Gourd(from: bearer, start: x, land: land,
-                      flight: rng.range(Tuning.gourdFlight.lowerBound, Tuning.gourdFlight.upperBound))
+        gourd = Gourd(from: bearer, start: x, land: side.sign * Tuning.gourdLanding, flight: Tuning.gourdFlight)
         events.append(.flung(foe: bearer))
     }
 
@@ -818,11 +890,16 @@ public struct Fight: Codable, Equatable, Sendable {
         } else if leaps {
             let from = foes[i].x
             let far = Side.of(from).opposite
-            // He comes down at his striking distance, or behind a man already bringing his blow down there.
+            // He comes down at his striking distance, or behind a man already bringing his blow down there (behind
+            // wherever a gourd-bearer's dart is taking him: nobody comes down in front of him on it).
             var land = max(Tuning.landing, foes[i].contact)
             for j in foes.indices where j != i && foes[j].phase == .windup && Side.of(foes[j].x) == far {
                 let room = (foes[i].kind.width + foes[j].kind.width) / 2 + 0.01
-                if abs(foes[j].distance - land) < room { land = max(land, foes[j].distance + room) }
+                if foes[j].darting {
+                    land = max(land, foes[j].contact + room)
+                } else if abs(foes[j].distance - land) < room {
+                    land = max(land, foes[j].distance + room)
+                }
             }
             foes[i].leapFrom = from
             foes[i].leapTo = far.sign * land
@@ -830,8 +907,11 @@ public struct Fight: Codable, Equatable, Sendable {
             events.append(.leapt(foe: foes[i].id))
         } else if crowding.noBruteKnockback, foes[i].kind == .brute {
             // Unmoved (`Crowding.noBruteKnockback`): he takes the cut where he stands, and a blow he was winding up
-            // comes on regardless.
-            if foes[i].phase != .windup { foes[i].enter(.recoil, for: 0.3) }
+            // comes on regardless (turned aside only at the glare, `turns`); thrown off balance, he stays so.
+            if foes[i].phase == .recoil, foes[i].timer >= 0.3 {
+            } else if foes[i].phase != .windup {
+                foes[i].enter(.recoil, for: 0.3)
+            }
         } else {
             let sign = Side.of(foes[i].x).sign
             foes[i].x = sign * min(Tuning.edge, foes[i].distance + (foes[i].kind == .warlord ? 0.06 : 0.07))

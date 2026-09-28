@@ -131,6 +131,32 @@ final class CareerTests: XCTestCase {
         XCTAssertEqual(unknown, Career(seed: 5), "what this build cannot read takes its default")
     }
 
+    func testAnEndlessRunThatClimbedStagesBeforeGoesOnWhereItIs() throws {
+        // Saved when endless runs climbed: started at 3, now on stage 5 with two cleared and two hearts. It is booked as
+        // it stands (a record from stage 3), and play goes on as a run on stage 5, hearts kept, the fight in progress
+        // still its own.
+        let json = #"""
+            {"seed":5,"mode":"bushido","reached":{"bushido":6},"stages":{"bushido":4},
+             "endless":{"start":3,"stage":5,"hearts":2,"shards":1,"cleared":2,"score":900,"kills":40,"bestCombo":12}}
+            """#
+        let career = try JSONDecoder().decode(Career.self, from: Data(json.utf8))
+        let run = try XCTUnwrap(career.endless)
+        XCTAssertEqual(run.start, 5)
+        XCTAssertEqual(run.stage, 5)
+        XCTAssertEqual(run.hearts, 2)
+        XCTAssertEqual(run.shards, 1)
+        XCTAssertEqual(run.cleared, 0)
+        XCTAssertEqual(career.bestRun(from: 3)?.cleared, 2, "the run as it stood, kept as the best from its start")
+        XCTAssertEqual(career.bestEndless["bushido"], 2)
+        let fight = career.makeFight()
+        XCTAssertEqual(fight.stage, 5)
+        XCTAssertEqual(fight.hp, 2)
+        var going = career
+        XCTAssertNil(going.abandon(fight), "the fight in progress is the run's")
+        // Read again, it is as it was: a run on its own stage is left alone.
+        XCTAssertEqual(try JSONDecoder().decode(Career.self, from: JSONEncoder().encode(career)), career)
+    }
+
     // MARK: Walking away
 
     func testWalkingAwayKeepsTheWoundsAndCountsTheKills() {
@@ -360,7 +386,10 @@ final class CareerTests: XCTestCase {
         career.shards = ["shura": 2]
         career.reached = ["shura": 6, "bushido": 12]
         career.highest = ["shura": 5, "bushido": 11]
-        career.endless = run
+        // (An endless run stays on its stage.)
+        var endless = run
+        endless.stage = endless.start
+        career.endless = endless
         career.bestEndless = ["shura": 4]
         career.runs = ["bushido": run]
         career.bestRuns = ["shura/3": run]
