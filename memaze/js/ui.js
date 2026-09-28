@@ -65,6 +65,7 @@
     shrink: '<rect x="11" y="11" width="10" height="10" rx="2.5" fill="#b8ff6a" stroke="#fff" stroke-width="2"/><path d="M3 3l6 6M29 3l-6 6M3 29l6-6M29 29l-6-6" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><path d="M9 5v4H5M23 5v4h4M9 27v-4H5M23 27v-4h4" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>',
   };
   const ROLL_ORDER = ['star', 'bullet', 'carpet', 'heart', 'path', 'launch', 'shrink'];
+  MZ.itemIconSVG = (id) => (ICONS[id] ? '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">' + ICONS[id] + '</svg>' : null); // for the canvas
   // Menu icons (drawn in the text colour).
   const MENU_ICONS = {
     chapters: '<g W><path d="M6 6h8v20H6zM14 6h6v20h-6zM20 8l5 1-3 18-5-1z"/><path d="M9 11h2M17 11h0"/></g>',
@@ -173,7 +174,7 @@
     updatePower(c) {
       const G = Game(), fx = G.fx, hud = this.hud;
       // The spin cycles through the items, then settles on the one you really get for its last moments.
-      const on = G.boxesOn(), rolling = G.roll ? (G.roll.t > G.ROLL - 0.3 ? G.roll.id : ROLL_ORDER[Math.floor(G.roll.t / 0.07) % ROLL_ORDER.length]) : null;
+      const on = G.boxesOn() || !!G.item || !!G.roll, rolling = G.roll ? (G.roll.t > G.ROLL - 0.3 ? G.roll.id : ROLL_ORDER[Math.floor(G.roll.t / 0.07) % ROLL_ORDER.length]) : null;
       const ik = on ? (rolling ? 'r:' + rolling : G.item || '') : 'off';
       if (c.item !== ik) {
         c.item = ik;
@@ -678,6 +679,7 @@
             h('li', null, h('b', null, 'Keys and doors'), ': pick up a key, then bump into the door of its colour to open it.'),
             h('li', null, h('b', null, 'Vanishing bridges'), ': they blink, then disappear for a moment.'),
             h('li', null, h('b', null, 'One-way gates'), ': pass them only the way the arrows point.'),
+            h('li', null, h('b', null, 'Item puzzles'), ': a gold-framed box always gives the item on it, and the level needs it: float or launch over a missing corridor, shrink through a shrink gate. Wasted it? The box comes back.'),
             h('li', null, h('b', null, 'Switches'), ': step on one to flip the bridges of its colour: some appear, some go.'),
             h('li', null, h('b', null, 'Moving platforms'), ': ride them across the gaps.'),
             h('li', null, h('b', null, 'Portals'), ': step in, come out of its twin.'),

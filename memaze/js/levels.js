@@ -15,6 +15,7 @@
     { id: 'keys', name: 'Keys and doors', from: 5 },
     { id: 'blink', name: 'Vanishing bridges', from: 8 },
     { id: 'gates', name: 'One-way gates', from: 12 },
+    { id: 'items', name: 'Item puzzles', from: 14 },
     { id: 'switches', name: 'Switches', from: 16 },
     { id: 'movers', name: 'Moving platforms', from: 21 },
     { id: 'portals', name: 'Portals', from: 25 },
@@ -34,6 +35,7 @@
     { lat: ['organic', 'hex'], mask: ['islands', 'blob', 'cheese', 'crescent', 'spiral'] },
   ];
   const KEY_COLORS = ['#ffc53d', '#3cf2ff', '#ff7ad9'];
+  const GAP_MAX = 300; // the longest missing corridor (node to node): within a Launch's reach, and a carpet's float
   // Where keys and doors act, in world units, matching how they're drawn (render.js, ICON): a shut door blocks this far
   // either side of its bar (its dark rim); a key is picked up when the picture overlaps a circle this big around it.
   const DOOR_R = 16, KEY_R = 20;
@@ -82,6 +84,9 @@
       switches: has('switches') ? (boss ? 2 : 1) : 0,
       movers: has('movers') ? (boss ? 2 : 1) : 0,
       portals: has('portals') ? 1 : 0,
+      gaps: has('items') ? 1 : 0,                           // a missing corridor: float or hop across (a box gives what it takes)
+      squeezes: has('items') && (boss || r.chance(0.5)) ? 1 : 0, // a gate only a shrunk picture fits through
+
       ice: has('ice') ? r.range(0.18, 0.32) : 0,
       dark: has('dark') ? (boss ? 125 : 140) : 0,
     };
@@ -218,8 +223,43 @@
   }
 
   // ---------- fitting the mechanics in ----------
+  // Long corridors on the route get a piece cut out of their middle (split in three: floor, gap, floor), so an item
+  // puzzle's gap is never longer than a Launch reaches. The middle piece is the one mechanize takes away.
+  function cutGaps(m, count, r) {
+    const mp = m.mainPath, nodes = m.nodes.slice(), edges = m.edges.slice(), path = mp.slice();
+    const edgeAt = (a, b) => edges.findIndex((e) => (e.a === a && e.b === b) || (e.a === b && e.b === a));
+    const cands = [];
+    for (let i = 2; i < path.length - 3; i++) {
+      const k = edgeAt(path[i], path[i + 1]), e = edges[k];
+      if (e.type !== 'normal' || polyLen(e.pts) < 300) continue;
+      cands.push({ i, k, score: Math.abs(i / path.length - 0.55) + r() * 0.2 });
+    }
+    cands.sort((a, b) => a.score - b.score);
+    let done = 0;
+    for (const c of cands) {
+      if (done >= count) break;
+      const e = edges[c.k], P = e.pts, cum = [0];
+      for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + Math.hypot(P[i].x - P[i - 1].x, P[i].y - P[i - 1].y));
+      const len = cum[cum.length - 1], gap = Math.min(len - 140, r.range(120, 210)), s0 = (len - gap) / 2, s1 = s0 + gap;
+      const at = (d) => { let i = 1; while (i < P.length - 1 && cum[i] < d) i++; const f = (d - cum[i - 1]) / (cum[i] - cum[i - 1] || 1); return { i, x: P[i - 1].x + (P[i].x - P[i - 1].x) * f, y: P[i - 1].y + (P[i].y - P[i - 1].y) * f }; };
+      const A = at(s0), B = at(s1), nA = nodes.length, nB = nA + 1;
+      nodes.push({ x: A.x, y: A.y }, { x: B.x, y: B.y });
+      const piece = (a, b, pts) => Object.assign({}, e, { a, b, pts, len: polyLen(pts), main: true });
+      const e1 = piece(e.a, nA, P.slice(0, A.i).concat([{ x: A.x, y: A.y }]));
+      const e2 = Object.assign(piece(nA, nB, [{ x: A.x, y: A.y }].concat(P.slice(A.i, B.i), [{ x: B.x, y: B.y }])), { gapCut: true });
+      const e3 = piece(nB, e.b, [{ x: B.x, y: B.y }].concat(P.slice(B.i)));
+      edges.splice(c.k, 1, e1, e2, e3);
+      const i = path.indexOf(e.a) + 1 === path.indexOf(e.b) ? path.indexOf(e.a) : path.indexOf(e.b);
+      path.splice(i + 1, 0, ...(path[i] === e.a ? [nA, nB] : [nB, nA]));
+      for (const q of cands) if (q.k > c.k) q.k += 2;
+      done++;
+    }
+    return done ? Object.assign({}, m, { nodes, edges, mainPath: path }) : m;
+  }
+
   function build(p) {
-    const m = Gen.generate(p);
+    let m = Gen.generate(p);
+    if (p.mech && p.mech.gaps) m = cutGaps(m, p.mech.gaps, rng(hashInts(m.seed, 0x6a9)));
     m.level = p.level; m.boss = !!p.boss; m.chapter = p.chapter || chapterOf(p.level || 1);
     m.mods = p.mods || []; m.mechs = (p.mech && p.mech.list) || [];
     let barriers = null;
@@ -269,7 +309,7 @@
     if (fixed) for (const b of fixed) chokepoint(routeEdges[b.idx]);
     if (!barriers) {
       const want = [];
-      for (const [kind, count] of [['door', mech.keys], ['switch', mech.switches], ['mover', mech.movers], ['portal', mech.portals], ['gate', mech.gates]]) {
+      for (const [kind, count] of [['door', mech.keys], ['switch', mech.switches], ['mover', mech.movers], ['portal', mech.portals], ['gate', mech.gates], ['gap', mech.gaps], ['squeeze', mech.squeezes]]) {
         for (let i = 0; i < (count || 0); i++) want.push(kind);
       }
       r.shuffle(want);
@@ -284,8 +324,10 @@
           const solidBeside = (x) => adj[x].some((f) => f !== e && f.type === 'normal' && !pruned.has(f.id)); // somewhere to stand either side
           if (!solidBeside(mp[i]) || !solidBeside(mp[i + 1])) continue;
           if (kind === 'mover' && (e.plen < 2 * Math.max(38, e.hw * 1.2) + 70 || e.plen > 560)) continue;
+          if (kind === 'gap' && !e.gapCut) { const d = Math.hypot(nodes[mp[i]].x - nodes[mp[i + 1]].x, nodes[mp[i]].y - nodes[mp[i + 1]].y); if (d < 2 * e.hw + 30 || d > GAP_MAX) continue; }
+          if (kind !== 'gap' && e.gapCut) continue; // cut out for a gap: nothing else goes there
           if (kind !== 'mover' && kind !== 'portal' && e.plen < 70) continue;
-          const d = Math.abs((cum[i] + cum[i + 1]) / 2 - target) + (bridges.has(e.id) ? 0 : 250); // real chokepoints first
+          const d = Math.abs((cum[i] + cum[i + 1]) / 2 - target) + (bridges.has(e.id) ? 0 : 250) - (kind === 'gap' && e.gapCut ? 600 : 0); // real chokepoints first
           if (d < bd) { bd = d; best = i; }
         }
         if (best >= 0 && chokepoint(routeEdges[best])) { usedIdx.add(best); barriers.push({ kind, idx: best }); }
@@ -319,7 +361,7 @@
     const taken = new Set([start, goal]);
     // An item spot in `region`, reached from node `from`: a dead end off the main route, a fair walk away (not too
     // far), else any junction off the route, else the route itself.
-    function spot(region, from, far, leafOnly) {
+    function spot(region, from, far, leafOnly, near) {
       const dist = new Float64Array(n).fill(Infinity);
       dist[from] = 0;
       const q = [from];
@@ -331,7 +373,7 @@
           if (dist[u] + e.plen < dist[w]) { dist[w] = dist[u] + e.plen; q.push(w); }
         }
       }
-      const cap = far ? 2600 : 1400;
+      const cap = near ? 450 : far ? 2600 : 1400; // near: a Shrink box must leave time to reach its gate
       let best = -1, bs = -Infinity;
       for (let v = 0; v < n; v++) {
         if (comp[v] !== region || taken.has(v) || dist[v] === Infinity) continue;
@@ -345,6 +387,7 @@
     }
 
     m.doors = []; m.keys = []; m.plates = []; m.movers = []; m.portals = []; m.gates = []; m.pads = [];
+    m.gaps = []; m.squeezes = []; m.gboxes = []; // item puzzles: missing corridors, shrink gates, and the boxes that solve them
     const removed = new Set();
     const reserved = new Set(), avoid = [], keepClear = [];
     const reserve = (v) => { reserved.add(v); for (const e of adj[v]) { reserved.add(e.a); reserved.add(e.b); } };
@@ -391,6 +434,22 @@
         const bar = across(e, u, 0.5);
         m.gates.push(Object.assign(bar, { edge: e.id, from: u }));
         avoid.push({ x: bar.x, y: bar.y, r: e.hw + 40 });
+      } else if (b.kind === 'gap') { // the corridor is missing: a Magic carpet floats you over, a Launch hops you over
+        const U = nodes[u], V = nodes[v], d = Math.hypot(V.x - U.x, V.y - U.y), item = d > 200 || r.chance(0.45) ? 'launch' : 'carpet';
+        removed.add(e.id);
+        b.gap = m.gaps.length; b.need = item;
+        m.gaps.push({ item, from: u, to: v, a: { x: U.x, y: U.y }, b: { x: V.x, y: V.y }, pts: e.pts, hw: e.hw });
+        keepClear.push({ ax: U.x, ay: U.y, bx: V.x, by: V.y, r: e.hw });
+        avoid.push({ x: (U.x + V.x) / 2, y: (U.y + V.y) / 2, r: d / 2 + 30 });
+        const k = spot(comp[u], u);
+        if (k >= 0) { m.gboxes.push({ item, x: nodes[k].x, y: nodes[k].y, node: k }); b.item = k; reserve(k); avoid.push({ x: nodes[k].x, y: nodes[k].y, r: 55 }); }
+      } else if (b.kind === 'squeeze') { // a low gate across the corridor: only a shrunk picture gets through
+        const bar = across(e, u, 0.5);
+        m.squeezes.push(Object.assign(bar, { edge: e.id, from: u }));
+        avoid.push({ x: bar.x, y: bar.y, r: e.hw + 40 });
+        b.need = 'shrink';
+        const k = spot(comp[u], u, false, false, true);
+        if (k >= 0) { m.gboxes.push({ item: 'shrink', x: nodes[k].x, y: nodes[k].y, node: k }); b.item = k; reserve(k); avoid.push({ x: nodes[k].x, y: nodes[k].y, r: 55 }); }
       }
     });
     // Gates on loops too (never on an edge that splits the maze, so they only ever send you the long way round).
@@ -429,12 +488,15 @@
     }
     const gateOn = new Map(m.gates.map((g) => [g.edge, g]));
     const doorOn = new Map(m.doors.map((d) => [d.edge, d]));
+    const squeezeOn = new Map(m.squeezes.map((q) => [q.edge, q]));
 
     // The route that solves it: fetch each key before its door, press each switch before its bridge, ride each
     // platform, step through each portal; then on to GOAL.
     const held = {}, opened = new Set(), sw = {}; // keys carried by colour; doors already opened (each takes a key)
+    const shrunk = new Set(); // shrink gates you've been shrunk for
     const ok = (e, from) => {
       if (removed.has(e.id)) return false;
+      if (squeezeOn.has(e.id) && !shrunk.has(e.id)) return false;
       const d = doorOn.get(e.id);
       if (d && !opened.has(e.id) && !(held[d.color] > 0)) return false;
       if (e.sw && (sw[e.sw.g] | 0) !== e.sw.on) return false;
@@ -472,6 +534,12 @@
         if (b.portal < 0 || !walk(b.a)) { failed = i; break; }
         legs.push({ type: 'warp', portal: b.portal });
         pos = b.b;
+      } else if (b.kind === 'gap' || b.kind === 'squeeze') { // fetch the box's item, then use it at the gap or the gate
+        if (b.item == null || !walk(b.item)) { failed = i; break; }
+        legs.push({ type: 'item', item: b.need });
+        if (!walk(b.u)) { failed = i; break; }
+        if (b.kind === 'gap') { legs.push({ type: 'cross', item: b.need, gap: b.gap }); pos = b.v; }
+        else { legs.push({ type: 'shrink' }); shrunk.add(b.e.id); if (!walk(b.v)) failed = i; }
       } else if (!walk(b.v)) failed = i;
     }
     if (failed < 0 && !walk(goal)) failed = barriers.length - 1;
@@ -482,7 +550,7 @@
     const usedByRoute = new Set();
     for (const L of legs) if (L.type === 'walk') for (const s of L.steps) usedByRoute.add(s.e.id);
     const plateNodes = new Set(m.plates.map((pl) => pl.node));
-    const decoyCands = edges.filter((e) => e.type === 'normal' && !usedByRoute.has(e.id) && !removed.has(e.id) && !gateOn.has(e.id) && !doorOn.has(e.id) &&
+    const decoyCands = edges.filter((e) => e.type === 'normal' && !usedByRoute.has(e.id) && !removed.has(e.id) && !gateOn.has(e.id) && !doorOn.has(e.id) && !squeezeOn.has(e.id) &&
       !plateNodes.has(e.a) && !plateNodes.has(e.b) && e.a !== start && e.b !== start && e.a !== goal && e.b !== goal && e.plen >= 80);
     r.shuffle(decoyCands);
     const groups = [...new Set(m.plates.map((pl) => pl.g))];
@@ -493,7 +561,7 @@
 
     // Ice: some corridors, a few of them on the main route.
     if (mech.ice > 0) {
-      const iceable = edges.filter((e) => e.type === 'normal' && !removed.has(e.id) && !gateOn.has(e.id) && !doorOn.has(e.id));
+      const iceable = edges.filter((e) => e.type === 'normal' && !removed.has(e.id) && !gateOn.has(e.id) && !doorOn.has(e.id) && !squeezeOn.has(e.id));
       r.shuffle(iceable);
       iceable.sort((a, b) => (routeEdges.includes(b) ? 1 : 0) - (routeEdges.includes(a) ? 1 : 0) + (r() - 0.5) * 1.6);
       for (const e of iceable.slice(0, Math.round(iceable.length * mech.ice))) e.ice = true;
@@ -501,7 +569,7 @@
     m.dark = mech.dark || 0;
 
     // Gems: any that sit where an item went move to another dead end.
-    const itemNodes = new Set([...m.keys.map((k) => k.node), ...m.plates.map((pl) => pl.node), ...m.portals.flatMap((pt) => [pt.a.node, pt.b.node])]);
+    const itemNodes = new Set([...m.keys.map((k) => k.node), ...m.plates.map((pl) => pl.node), ...m.portals.flatMap((pt) => [pt.a.node, pt.b.node]), ...m.gboxes.map((gb) => gb.node)]);
     const gems = base.gems.filter((g) => { const i = nodes.findIndex((nd) => nd.x === g.x && nd.y === g.y); return !itemNodes.has(i); });
     const gemSet = new Set(gems.map((g) => g.x + ',' + g.y));
     const freeLeaves = [];
@@ -546,7 +614,9 @@
       } else if (L.type === 'ride') {
         const mv = m.movers[L.mover];
         waitT += mv.period / 2 + mv.travel + 0.6;
-      } else waitT += 0.4;
+      } else if (L.type === 'cross') { const G = m.gaps[L.gap]; waitT += Math.hypot(G.b.x - G.a.x, G.b.y - G.a.y) / 140 + (L.item === 'launch' ? 1.45 : 0.4); }
+      else if (L.type === 'shrink') waitT += 1;
+      else waitT += 0.4;
     }
     if (m.dark) dragT *= 1.15;
     const par = Math.ceil(dragT + turns * 0.2 + waitT + 1.5 - (m.goal.r * 0.66 + BALL_R) / 160);

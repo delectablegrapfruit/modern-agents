@@ -284,7 +284,8 @@
       if (this.maze) for (const c of this.checkpoints) if (!c.seen && inside(c, c.r)) c.seen = true;
       if (this.maze) {
         const m = this.maze;
-        for (const o of [].concat(m.doors, m.keys, m.plates, m.gates)) if (!o.seen && inside(o, 20)) o.seen = true;
+        for (const o of [].concat(m.doors, m.keys, m.plates, m.gates, m.squeezes || [], m.gboxes || [])) if (!o.seen && inside(o, 20)) o.seen = true;
+        for (const q of m.gaps || []) if (!q.seen && (inside(q.a, 30) || inside(q.b, 30))) q.seen = true;
         for (const pt of m.portals) for (const e of [pt.a, pt.b]) if (!e.seen && inside(e, pt.r)) e.seen = true;
         for (const mv of m.movers) if (!mv.seen && (inside(mv.a, mv.r) || inside(mv.b, mv.r))) mv.seen = true;
       }
@@ -409,6 +410,8 @@
       for (const k of m.keys) { k.taken = false; k.seen = false; }
       for (const pl of m.plates) { pl.down = false; pl.seen = false; }
       for (const pt of m.portals) pt.seen = false;
+      for (const q of [].concat(m.gaps || [], m.squeezes || [])) q.seen = false;
+      for (const gb of m.gboxes || []) { gb.out = false; gb.back = null; gb.seen = false; gb.bornAt = null; gb.gotAt = null; }
       this.world.sw = {};
     },
     mod(id) { return !!(this.maze && this.maze.mods && this.maze.mods.includes(id)); },
@@ -622,6 +625,11 @@
         return true;
       }
       for (const g of m.gates) if ((x1 - x0) * g.nx + (y1 - y0) * g.ny < 0 && MZ.segsCross(x0, y0, x1, y1, g.ax, g.ay, g.bx, g.by)) return true;
+      if (this.scale > SHRINK + 0.05) for (const q of m.squeezes || []) { // a shrink gate: only a shrunk picture gets through
+        if (!this.overBar(x1, y1, q)) continue;
+        if (this.overBar(x0, y0, q) && segDist2(x1, y1, q.ax, q.ay, q.bx, q.by) > segDist2(x0, y0, q.ax, q.ay, q.bx, q.by)) continue; // stepping off it
+        return true;
+      }
       return false;
     },
     openDoor(d) {
@@ -962,6 +970,7 @@
     // only the way they point.
     corridorDists(g, at, gates) {
       const m = this.maze, closed = new Set(m ? m.doors.filter((d) => !d.open && !this.keysHeld.get(d.color)).map((d) => d.edge) : []);
+      if (m && this.scale > SHRINK + 0.05) for (const q of m.squeezes || []) closed.add(q.edge);
       const shut = (e) => closed.has(e.id) || (e.type === 'switch' && (this.world.sw[e.sw.g] | 0) !== e.sw.on);
       const gateOn = new Map(gates && m ? m.gates.map((q) => [q.edge, g.id(m.nodes[q.from])]) : []); // edge -> the node it's entered from
       const n = g.pos.length, dist = new Float64Array(n).fill(Infinity), prev = new Array(n).fill(null), done = new Uint8Array(n);
@@ -1034,7 +1043,11 @@
       if (this.maze) {
         const m = this.maze;
         target = g.id(m.goal);
-        if (!(dist[target] < Infinity)) target = nearest(m.keys.filter((k) => !k.taken).concat(m.plates));
+        if (!(dist[target] < Infinity)) { // what opens the way: a key, a switch, an item box, or the gap you hold the item for
+          const gapStarts = (m.gaps || []).filter((q) => this.item === q.item).map((q) => q.a);
+          const boxes = (m.gboxes || []).filter((gb) => !gb.out && this.item !== gb.item);
+          target = nearest(gapStarts.length ? gapStarts : m.keys.filter((k) => !k.taken).concat(m.plates, boxes));
+        }
         if (target < 0) target = this.nearGoal(g, dist);
       } else target = nearest((this.beacons || []).filter((bc) => !bc.lit));
       if (target < 0 || !(dist[target] < Infinity)) return null;
@@ -1131,7 +1144,7 @@
       }
       const L = fx.launch;
       L.t = Math.min(L.T, L.t + dt);
-      const cfg = S().controls, u = this.input.vector(), sg = cfg.invert ? 1 : -1, k = clamp(cfg.speed || 1, 0.5, 2) / this.cam.zoom;
+      const cfg = S().controls, u = this.input.vector(), sg = cfg.invert !== this.mod('mirror') ? 1 : -1, k = clamp(cfg.speed || 1, 0.5, 2) / this.cam.zoom;
       const kz = KEY_SPEED / this.liftZoom(); // keys keep their speed on screen
       b.x += grab.x * sg * k + u.x * kz * dt;
       b.y += grab.y * sg * k + u.y * kz * dt;
@@ -1263,6 +1276,26 @@
             MZ.Audio.play('warp');
             break;
           }
+        }
+      }
+      // Item boxes (puzzles): always there (Time Trial and boxes off too), always give their item (instead of what you
+      // hold), and come back a moment after that item is spent, so a wasted one can be fetched again.
+      if (this.maze && this.maze.gboxes) {
+        const fx = this.fx;
+        for (const gb of this.maze.gboxes) {
+          if (gb.out) {
+            const busy = this.item === gb.item || (gb.item === 'carpet' && fx.carpet > 0) || (gb.item === 'launch' && !!fx.launch) || (gb.item === 'shrink' && (!!fx.storm || fx.shrink > 0));
+            if (busy) gb.back = null;
+            else if (gb.back == null) gb.back = this.runT + 1.5;
+            else if (this.runT >= gb.back) { gb.out = false; gb.bornAt = this.runT; }
+            continue;
+          }
+          if (!this.touches(gb.x, gb.y, BOX_R + 2)) continue;
+          gb.out = true; gb.back = null; gb.gotAt = this.runT;
+          this.roll = null; this.item = gb.item;
+          MZ.Audio.play('shatter'); MZ.Audio.play('item');
+          this.emit('bonus', ITEMS[gb.item].name);
+          this.emit('power');
         }
       }
       // Boxes: touching one shatters it; an empty slot spins for an item (a full one gets nothing). It's back later.
@@ -1476,7 +1509,9 @@
         path: !menu && fx.path > 0 && this.pathLine ? { pts: this.pathLine.pts, a: Math.min(1, (ITEMS.path.dur - fx.path) * 4, fx.path * 1.5) } : null,
         boxes: boxesOn ? this.boxes.filter((x) => x.takenAt == null || this.runT - x.takenAt >= BOX_BACK) : null,
         boxAge: (x) => (x.takenAt == null ? 9 : this.runT - x.takenAt - BOX_BACK),
-        shards: boxesOn ? this.boxes.filter((x) => x.takenAt != null && this.runT - x.takenAt < SHATTER).map((x) => ({ x: x.x, y: x.y, k: (this.runT - x.takenAt) / SHATTER })) : null,
+        shards: (boxesOn ? this.boxes.filter((x) => x.takenAt != null && this.runT - x.takenAt < SHATTER).map((x) => ({ x: x.x, y: x.y, k: (this.runT - x.takenAt) / SHATTER })) : [])
+          .concat(!menu && maze && maze.gboxes ? maze.gboxes.filter((x) => x.gotAt != null && this.runT - x.gotAt < SHATTER).map((x) => ({ x: x.x, y: x.y, k: (this.runT - x.gotAt) / SHATTER, gold: true })) : []),
+        runT: this.runT,
         // Under the player: a Launch's shadow on the ground, the magic carpet (flickering as it runs out), the Bullet.
         under: showPlayer && this.state !== 'menu' ? {
           x: b.x, y: b.y, W: this.box(), lift: this.lift(),

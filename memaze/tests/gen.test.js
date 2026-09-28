@@ -99,18 +99,20 @@ assert.ok(masks.size >= 12, 'too few shapes turn up: ' + [...masks]);
 // Levels: mechanics placed where they were asked for, a route that solves each level (every corridor it walks is
 // there, it picks up each key before its door, presses each switch before its bridge, rides each platform, steps
 // through each portal), deterministic, and a time limit with room to spare.
-let asked = 0, placed = 0;
+let asked = 0, placed = 0, gapsPlaced = 0, squeezesPlaced = 0;
 const lvCases = [];
 for (let L = 1; L <= 80; L++) lvCases.push(['level ' + L, LV.levelParams(L)]);
 for (let i = 0; i < 40; i++) lvCases.push(['gauntlet #' + i, LV.gauntletParams({ seed: MZ.hashStr('lv' + i), style: i % 2 ? 'random' : 'progressive', diff: diffs[i % diffs.length] }, i)]);
 for (const [label, p] of lvCases) {
   const m = LV.build(p), m2 = LV.build(p);
-  const sig = (x) => JSON.stringify([x.route.map((l) => l.type + (l.steps ? l.steps.map((s) => s.e.id + ':' + s.from).join(',') : '')), x.doors, x.keys, x.plates, x.portals, x.gates, x.movers.map((v) => [v.a, v.b, v.period]), x.edges.map((e) => [e.id, e.type, !!e.ice]), x.parTime, x.timeLimit]);
+  const sig = (x) => JSON.stringify([x.route.map((l) => l.type + (l.steps ? l.steps.map((s) => s.e.id + ':' + s.from).join(',') : '')), x.doors, x.keys, x.plates, x.portals, x.gates, x.gaps.map((q) => [q.item, q.from, q.to]), x.squeezes, x.gboxes, x.movers.map((v) => [v.a, v.b, v.period]), x.edges.map((e) => [e.id, e.type, !!e.ice]), x.parTime, x.timeLimit]);
   assert.strictEqual(sig(m), sig(m2), label + ': level not deterministic');
   const ids = new Set(m.edges.map((e) => e.id)), mech = p.mech;
-  asked += mech.keys + mech.switches + mech.movers + mech.portals; placed += m.doors.length + m.plates.length + m.movers.length + m.portals.length;
-  let at = m.mainPath[0], keys = Object.assign(new Map(), { opened: new Set() }), sw = {};
-  const doorOn = new Map(m.doors.map((d) => [d.edge, d])), gateOn = new Map(m.gates.map((g) => [g.edge, g]));
+  asked += mech.keys + mech.switches + mech.movers + mech.portals + (mech.gaps || 0) + (mech.squeezes || 0);
+  placed += m.doors.length + m.plates.length + m.movers.length + m.portals.length + m.gaps.length + m.squeezes.length;
+  gapsPlaced += m.gaps.length; squeezesPlaced += m.squeezes.length;
+  let at = m.mainPath[0], keys = Object.assign(new Map(), { opened: new Set() }), sw = {}, holding = null, shrunk = false;
+  const doorOn = new Map(m.doors.map((d) => [d.edge, d])), gateOn = new Map(m.gates.map((g) => [g.edge, g])), squeezeOn = new Map(m.squeezes.map((q) => [q.edge, q]));
   for (const leg of m.route) {
     if (leg.type === 'walk') {
       for (const st of leg.steps) {
@@ -121,20 +123,31 @@ for (const [label, p] of lvCases) {
         assert.ok(!st.e.sw || (sw[st.e.sw.g] | 0) === st.e.sw.on, label + ': the route walks a switch bridge that is away');
         const g = gateOn.get(st.e.id);
         assert.ok(!g || g.from === st.from, label + ': the route goes the wrong way through a gate');
+        if (squeezeOn.has(st.e.id)) { assert.ok(shrunk, label + ': the route goes through a shrink gate unshrunk'); shrunk = false; }
         at = st.e.a === at ? st.e.b : st.e.a;
       }
     } else if (leg.type === 'key') { const k = m.keys.find((x) => x.color === leg.color); assert.strictEqual(k.node, at, label + ': key not where the route is'); keys.set(leg.color, (keys.get(leg.color) || 0) + 1); }
     else if (leg.type === 'press') { const pl = m.plates.find((x) => x.g === leg.g); assert.strictEqual(pl.node, at, label + ': switch not where the route is'); sw[leg.g] = (sw[leg.g] | 0) ^ 1; }
     else if (leg.type === 'ride') { const mv = m.movers[leg.mover]; assert.ok(Math.hypot(mv.from.x - m.nodes[at].x, mv.from.y - m.nodes[at].y) < 1, label + ': platform not where the route is'); at = m.nodes.findIndex((n) => n.x === mv.to.x && n.y === mv.to.y); }
     else if (leg.type === 'warp') { const pt = m.portals[leg.portal]; assert.strictEqual(pt.a.node, at, label + ': portal not where the route is'); at = pt.b.node; }
+    else if (leg.type === 'item') { const gb = m.gboxes.find((x) => x.node === at && x.item === leg.item); assert.ok(gb, label + ': no ' + leg.item + ' box where the route takes one'); holding = leg.item; }
+    else if (leg.type === 'cross') {
+      const G = m.gaps[leg.gap];
+      assert.strictEqual(G.from, at, label + ': gap not where the route is');
+      assert.strictEqual(holding, G.item, label + ': crossing a gap without its item'); holding = null;
+      assert.ok(!ids.has(m.edges.find((e) => (e.a === G.from && e.b === G.to) || (e.a === G.to && e.b === G.from)) || -1), label + ': a gap with its corridor still there');
+      assert.ok(Math.hypot(G.b.x - G.a.x, G.b.y - G.a.y) <= 300, label + ': a gap too long for a Launch');
+      at = G.to;
+    } else if (leg.type === 'shrink') { assert.strictEqual(holding, 'shrink', label + ': shrinking without Shrink'); holding = null; shrunk = true; }
   }
   assert.strictEqual(at, m.mainPath[m.mainPath.length - 1], label + ': the route doesn\'t reach GOAL');
   assert.ok(m.parTime >= m.routeLen / 190, label + ': par ' + m.parTime + ' faster than dragging the route (' + Math.round(m.routeLen) + ') at 190/s');
   assert.ok(m.timeLimit % 5 === 0 && m.timeLimit >= m.parTime * 1.4, label + ': time limit ' + m.timeLimit + ' vs par ' + m.parTime);
-  for (const it of [...m.keys, ...m.plates]) assert.ok(m.edges.some((e) => (e.a === it.node || e.b === it.node) && (e.type === 'normal' || e.type === 'bridge')), label + ': an item on floor that comes and goes');
+  for (const it of [...m.keys, ...m.plates, ...m.gboxes]) assert.ok(m.edges.some((e) => (e.a === it.node || e.b === it.node) && (e.type === 'normal' || e.type === 'bridge')), label + ': an item on floor that comes and goes');
 }
 assert.ok(placed >= asked * 0.9, 'mechanics placed ' + placed + ' of ' + asked + ' asked for');
-console.log(lvCases.length + ' levels solved by their route; ' + placed + '/' + asked + ' doors, switches, platforms and portals placed');
+assert.ok(gapsPlaced > 5 && squeezesPlaced > 3, 'item puzzles placed: ' + gapsPlaced + ' gaps, ' + squeezesPlaced + ' shrink gates');
+console.log(lvCases.length + ' levels solved by their route; ' + placed + '/' + asked + ' doors, switches, platforms, portals, gaps and shrink gates placed (' + gapsPlaced + ' gaps, ' + squeezesPlaced + ' shrink gates)');
 
 // Endless chunks: deterministic, only known surfaces, no pads, and seamless links (the link's far end is the neighbour's node).
 let chunkBlinks = 0, chunkBoxes = 0;

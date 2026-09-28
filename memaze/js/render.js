@@ -19,6 +19,21 @@
     for (let i = 1; i < e.pts.length; i++) p.lineTo(e.pts[i].x, e.pts[i].y);
     return p;
   }
+  // Item puzzles: each item's colour, and its HUD icon as an image for the canvas (the SVGs live in ui.js).
+  const ITEM_TINT = { carpet: '#ffc53d', launch: '#7cf0ff', shrink: '#b8ff6a' };
+  const iconImgs = {};
+  function itemImg(id) {
+    if (iconImgs[id]) return iconImgs[id];
+    const svg = MZ.itemIconSVG && MZ.itemIconSVG(id);
+    if (!svg) return null;
+    const img = new Image();
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+    return (iconImgs[id] = img);
+  }
+  function drawIcon(ctx, id, x, y, size) {
+    const img = itemImg(id);
+    if (img && img.complete && img.naturalWidth) ctx.drawImage(img, x - size / 2, y - size / 2, size, size);
+  }
   // A switch bridge's two long edges (where its rims run), for the dashed outline it shows while it's down.
   function sideLines(e) {
     const P = e.pts, n = P.length, p = new Path2D();
@@ -222,7 +237,7 @@
       const hw = this.w / 2 / z + 80, hh = this.h / 2 / z + 80;
       const parts = s.world.visibleParts(cam.x - hw, cam.y - hh, cam.x + hw, cam.y + hh);
       const th = theme(s.floor, s.hue, s.rgb), px = 1 / z;
-      this.px = px; this.world = s.world;
+      this.px = px; this.world = s.world; this.runT = s.runT;
 
       // One union path per frame: every pass paints each pixel once, even where tiles overlap.
       const union = new Path2D(), blinks = [];
@@ -407,6 +422,63 @@
         ctx.restore();
       }
       for (const kk of m.keys) if (!kk.taken) this.drawKey(kk, t);
+      for (const q of m.gaps || []) this.drawGap(q, t);
+      for (const q of m.squeezes || []) this.drawSqueeze(q, t);
+      for (const gb of m.gboxes || []) if (!gb.out) this.drawItemBox(gb, t, gb.bornAt != null && this.runT != null ? this.runT - gb.bornAt : 9);
+    }
+    // An item puzzle's gap: where the corridor is missing, a ghost of it with dashed rims in the item's colour, and
+    // that item's badge floating over the void (the box before it gives the item).
+    drawGap(q, t) {
+      const ctx = this.ctx, px = this.px, c = ITEM_TINT[q.item] || '#fff';
+      if (!q.line) { q.line = new Path2D(); q.pts.forEach((p, i) => (i ? q.line.lineTo(p.x, p.y) : q.line.moveTo(p.x, p.y))); q.sides = sideLines(q); }
+      ctx.save();
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      ctx.globalAlpha = 0.18; ctx.strokeStyle = c; ctx.lineWidth = 2 * q.hw; ctx.stroke(q.line);
+      ctx.globalAlpha = 1; ctx.setLineDash([9 * px, 7 * px]); ctx.lineDashOffset = -t * 12 * px;
+      ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.lineWidth = 6 * px; ctx.stroke(q.sides);
+      ctx.strokeStyle = c; ctx.lineWidth = 3 * px; ctx.stroke(q.sides);
+      ctx.setLineDash([]);
+      const mid = q.pts[Math.floor(q.pts.length / 2)], mid0 = q.pts[Math.max(0, Math.floor(q.pts.length / 2) - 1)];
+      const x = (mid.x + mid0.x) / 2, y = (mid.y + mid0.y) / 2 + Math.sin(t * 2.5) * 3, r = Math.min(22, q.hw * 0.7);
+      ctx.fillStyle = 'rgba(20,14,40,0.85)'; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+      ctx.strokeStyle = c; ctx.lineWidth = 2 * ICON; ctx.stroke();
+      drawIcon(ctx, q.item, x, y, r * 1.45);
+      ctx.restore();
+    }
+    // A shrink gate: posts either side and a striped bar between, with Shrink's badge; only a shrunk picture fits.
+    drawSqueeze(q, t) {
+      const ctx = this.ctx, u = ICON, c = ITEM_TINT.shrink;
+      ctx.save();
+      ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(q.ax, q.ay); ctx.lineTo(q.bx, q.by);
+      ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 16 * u; ctx.stroke();
+      ctx.strokeStyle = c; ctx.lineWidth = 11 * u; ctx.stroke();
+      ctx.setLineDash([5 * u, 5 * u]); ctx.lineCap = 'butt'; ctx.strokeStyle = '#2b3a12'; ctx.lineWidth = 11 * u; ctx.stroke(); ctx.setLineDash([]);
+      for (const [x, y] of [[q.ax, q.ay], [q.bx, q.by]]) { ctx.fillStyle = '#1b1530'; ctx.beginPath(); ctx.arc(x, y, 9 * u, 0, TAU); ctx.fill(); ctx.strokeStyle = c; ctx.lineWidth = 2 * u; ctx.stroke(); }
+      const r = 11 * u * (1 + 0.05 * Math.sin(t * 3));
+      ctx.fillStyle = 'rgba(20,14,40,0.9)'; ctx.beginPath(); ctx.arc(q.x, q.y, r, 0, TAU); ctx.fill();
+      ctx.strokeStyle = c; ctx.lineWidth = 2 * u; ctx.stroke();
+      drawIcon(ctx, 'shrink', q.x, q.y, r * 1.5);
+      ctx.restore();
+    }
+    // An item box (for a puzzle): a steady gold-framed crate showing the item it always gives, with a glow; not the
+    // colour-cycling "?" of a mystery box.
+    drawItemBox(b, t, age) {
+      const ctx = this.ctx, px = this.px, pop = age < 0.35 ? Math.max(0, age / 0.35) : 1, r = 17 * pop, c = ITEM_TINT[b.item] || '#ffd84a';
+      if (r <= 0.5) return;
+      ctx.save();
+      ctx.translate(b.x, b.y);
+      const glow = 0.3 + 0.15 * Math.sin(t * 3);
+      ctx.globalAlpha = glow; ctx.fillStyle = c; ctx.beginPath(); ctx.arc(0, 0, r * 1.75, 0, TAU); ctx.fill(); ctx.globalAlpha = 1;
+      const k = r * 0.32;
+      ctx.beginPath();
+      ctx.moveTo(-r + k, -r); ctx.lineTo(r - k, -r); ctx.quadraticCurveTo(r, -r, r, -r + k); ctx.lineTo(r, r - k); ctx.quadraticCurveTo(r, r, r - k, r);
+      ctx.lineTo(-r + k, r); ctx.quadraticCurveTo(-r, r, -r, r - k); ctx.lineTo(-r, -r + k); ctx.quadraticCurveTo(-r, -r, -r + k, -r); ctx.closePath();
+      ctx.fillStyle = '#1f1a3a'; ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 7 * px; ctx.stroke();
+      ctx.strokeStyle = '#ffd84a'; ctx.lineWidth = 3.5 * px; ctx.stroke();
+      drawIcon(ctx, b.item, 0, 0, r * 1.5);
+      ctx.restore();
     }
     // A key, bobbing and rocking a little on its spot (it's picked up within Levels.KEY_R of it).
     drawKey(k, t) {
@@ -516,7 +588,7 @@
         ctx.translate(Math.cos(a) * d, Math.sin(a) * d);
         ctx.rotate(a + k * (i % 2 ? 7 : -6));
         ctx.beginPath(); ctx.moveTo(-s, -s * 0.7); ctx.lineTo(s, -s * 0.4); ctx.lineTo(s * 0.2, s * 0.9); ctx.closePath();
-        ctx.fillStyle = 'hsl(' + ((hue + i * 25) % 360) + ',95%,62%)'; ctx.fill();
+        ctx.fillStyle = b.gold ? (i % 2 ? '#ffd84a' : '#1f1a3a') : 'hsl(' + ((hue + i * 25) % 360) + ',95%,62%)'; ctx.fill();
         ctx.strokeStyle = '#fff'; ctx.lineWidth = 2 * px; ctx.stroke();
         ctx.restore();
       }
@@ -791,6 +863,12 @@
         }
         for (const k of mech.keys) if (k.seen && !k.taken) { const f = Math.max(this.sc, (2.6 * u) / KEY_S); keyIcon(g, this.ox + k.x * this.sc, this.oy + k.y * this.sc, KEY_S * f, k.color, KEY_TILT, (ICON * f) * 0.75); }
         for (const pl of mech.plates) if (pl.seen) { dot(pl.x, pl.y, 3 * u, '#000'); dot(pl.x, pl.y, 2.2 * u, pl.color); }
+        for (const q of mech.gaps || []) if (q.seen) { // a gap: dashed in its item's colour
+          g.save(); g.setLineDash([1.6 * u, 1.4 * u]); g.strokeStyle = ITEM_TINT[q.item]; g.lineWidth = Math.max(1, 1.4 * u);
+          g.beginPath(); q.pts.forEach((p, i) => (i ? g.lineTo : g.moveTo).call(g, this.ox + p.x * this.sc, this.oy + p.y * this.sc)); g.stroke(); g.restore();
+        }
+        for (const q of mech.squeezes || []) if (q.seen) doorBar(g, this.ox + q.ax * this.sc, this.oy + q.ay * this.sc, this.ox + q.bx * this.sc, this.oy + q.by * this.sc, ITEM_TINT.shrink, Math.max(ICON * this.sc, 0.2 * u), false);
+        for (const gb of mech.gboxes || []) if (gb.seen && !gb.out) { const x = this.ox + gb.x * this.sc, y = this.oy + gb.y * this.sc, h = 2.6 * u; g.fillStyle = '#000'; g.fillRect(x - h - 0.8 * u, y - h - 0.8 * u, 2 * h + 1.6 * u, 2 * h + 1.6 * u); g.fillStyle = '#ffd84a'; g.fillRect(x - h, y - h, 2 * h, 2 * h); }
         for (const pt of mech.portals) for (const e of [pt.a, pt.b]) if (e.seen) { dot(e.x, e.y, 3.2 * u, pt.color); dot(e.x, e.y, 1.6 * u, '#000'); }
         for (const mv of mech.movers) if (mv.seen) {
           g.setLineDash([2 * u, 2 * u]); g.strokeStyle = 'rgba(255,255,255,0.7)'; g.lineWidth = Math.max(1, u);

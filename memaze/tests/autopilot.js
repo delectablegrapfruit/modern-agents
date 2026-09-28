@@ -1,6 +1,7 @@
 // Autopilot: plays levels with the real game code, moving only by dragging the maze (the input's takeGrab), along the
 // route the level generator says solves the level: fetching keys before their doors, pressing switches, riding moving
-// platforms, stepping through portals, holding back on ice. Proves every level can be finished inside its time limit
+// platforms, stepping through portals, holding back on ice, taking an item box's item and using it (a Magic carpet or
+// a Launch across a gap, Shrink for a shrink gate). Proves every level can be finished inside its time limit
 // without a single touch of the edge, and shows how par compares with a steady run that knows the way.
 //
 //   node tests/autopilot.js                    levels 1-25
@@ -56,7 +57,7 @@ if (!levels.length || levels.some((l) => !(l >= 1)) || !(speed > 0)) { console.e
       if (!w) return { x: 0, y: 0 };
       let mx = w.x, my = w.y;
       const dt = AP.dt, q = G.world.query(G.ball.x, G.ball.y, G.playT);
-      if (q.seg && q.seg.ice && dt > 0) {
+      if (q.seg && q.seg.ice && dt > 0 && !(G.fx.carpet > 0) && !G.fx.launch) { // (floating or flying, ice doesn't drift you)
         const a = 1 - Math.exp(-dt * G.ICE_GRIP), v = G.vel;
         mx = dt * (v.x + (w.x / dt - v.x) / a); my = dt * (v.y + (w.y / dt - v.y) / a);
       }
@@ -83,6 +84,9 @@ if (!levels.length || levels.some((l) => !(l >= 1)) || !(speed > 0)) { console.e
           }
           plan.push({ type: 'path', pts, cum, blinks, len: acc });
         } else if (leg.type === 'ride') plan.push({ type: 'ride', mv: m.movers[leg.mover], phase: 'wait' });
+        else if (leg.type === 'item') plan.push({ type: 'item', item: leg.item, t: 0 });
+        else if (leg.type === 'cross') plan.push({ type: 'cross', item: leg.item, gap: m.gaps[leg.gap], phase: 'use' });
+        else if (leg.type === 'shrink') plan.push({ type: 'shrink', phase: 'use' });
         else if (leg.type === 'warp') plan.push({ type: 'warp', to: m.portals[leg.portal].b });
       }
       const dt = 1 / 60, frames = Math.ceil((m.timeLimit + 10) / dt);
@@ -120,6 +124,19 @@ if (!levels.length || levels.some((l) => !(l >= 1)) || !(speed > 0)) { console.e
           if (seg.phase === 'ride') { wait += dt; if (p.k === 1) seg.phase = 'off'; }
           if (seg.phase === 'off' && go(mv.to)) next();
         } else if (seg && seg.type === 'warp') next();
+        else if (seg && seg.type === 'item') { if (G.item === seg.item) next(); else if ((seg.t += dt) > 1) { AP.outcome = 'no ' + seg.item; } }
+        else if (seg && seg.type === 'cross') { // use the item at the gap's near end, then straight across to its far end
+          const T = seg.gap.b;
+          if (seg.phase === 'use') { if (G.useItem()) seg.phase = 'go'; else AP.outcome = 'no ' + seg.item; }
+          else {
+            const d = Math.hypot(T.x - b.x, T.y - b.y), v = seg.item === 'launch' ? 420 : speed, k = Math.min(1, (v * dt) / (d || 1));
+            AP.want = { x: (T.x - b.x) * k, y: (T.y - b.y) * k };
+            if (d < 0.5 && !G.fx.launch) next(); // a Launch has to come down first
+          }
+        } else if (seg && seg.type === 'shrink') { // use Shrink and wait for the lightning to do its work
+          if (seg.phase === 'use') { if (G.useItem()) seg.phase = 'wait'; else AP.outcome = 'no shrink'; }
+          else { wait += dt; if (G.scale <= 0.5 + 1e-6) next(); }
+        }
         const before = { x: b.x, y: b.y };
         step(dt);
         done = pi;

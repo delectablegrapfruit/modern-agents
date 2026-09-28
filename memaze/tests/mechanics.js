@@ -160,6 +160,45 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     check('No map hides the map', MZ.$('#minimap').hidden);
     G.quit();
 
+    // ----- item puzzles: item boxes, gaps, shrink gates -----
+    G.startJourney(14);
+    m = G.maze;
+    const q = m.squeezes[0], gp = m.gaps[0], gbs = m.gboxes;
+    check('item puzzles: a gap and a shrink gate, each with an item box that gives what it needs', m.gaps.length >= 1 && m.squeezes.length >= 1 && gbs.some((x) => x.item === 'shrink') && gbs.some((x) => x.item === gp.item));
+    const gb = gbs.find((x) => x.item === gp.item);
+    G.giveItem('star'); // a full slot
+    put(gb);
+    check('an item box gives its item, even over a full slot', G.item === gp.item && gb.out, G.item);
+    G.useItem();
+    let back = false;
+    for (let i = 0; i < 60 * 5 && !back; i++) { run(1 / 60); back = !gb.out; }
+    check('...and it comes back once that item is spent, so a wasted one can be fetched again', back);
+    // A shrink gate: a wall at full size; shrunk, you go through.
+    G.resetMech(); G.resetPower();
+    const qd = { x: q.nx, y: q.ny };
+    put(off(q, -45)); run(1.2, qd);
+    const through = () => (G.ball.x - q.x) * q.nx + (G.ball.y - q.y) * q.ny;
+    check('a shrink gate stops you at full size (a wall, never a hit)', through() < 0, through().toFixed(1));
+    G.giveItem('shrink'); G.useItem();
+    run(1);
+    run(1.2, qd);
+    check('...shrunk (by the lightning), you get through', G.scale <= 0.51 && through() > 20, through().toFixed(1));
+    // A gap: no way over on foot; a Magic carpet floats you across.
+    G.resetMech(); G.resetPower();
+    S.gameplay.rule = 'casual'; // edges are walls: the attempt on foot can't hurt
+    const gd = { x: gp.b.x - gp.a.x, y: gp.b.y - gp.a.y }, gl = Math.hypot(gd.x, gd.y); gd.x /= gl; gd.y /= gl;
+    put(gp.a); run(2, gd);
+    const toB = () => Math.hypot(G.ball.x - gp.b.x, G.ball.y - gp.b.y);
+    check('a gap can\'t be crossed on foot', toB() > gl * 0.5, Math.round(toB()));
+    S.gameplay.rule = 'normal';
+    put(gp.a); G.giveItem('carpet'); G.useItem();
+    run(gl / 140 + 0.2, gd); run(0.3);
+    check('...a Magic carpet floats you across it', toB() < 30 && !G.hitAt(G.ball.x, G.ball.y) && !G.fx.bubble, Math.round(toB()));
+    G.quit();
+    G.startTrial(14);
+    check('item boxes are there in Time Trial too (it has no mystery boxes)', G.maze.gboxes.length >= 2 && !G.boxesOn());
+    G.quit();
+
     // ----- Gauntlet -----
     G.startGauntlet({ seedText: 'same', style: 'progressive', diff: 'normal' });
     const e1 = JSON.stringify(G.maze.edges.map((e) => [e.a, e.b]));
