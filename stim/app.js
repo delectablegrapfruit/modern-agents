@@ -2511,62 +2511,1180 @@ def({ id: 'tower', name: 'Power Tower', tag: '', c: '#8a3ffc', build(b) { b.inne
 // ==== /MODULE tower ====
 
 // ==== MODULE shop: store, cart, orders ====
-// ---------- Shop: flash sales, fake scarcity, fake savings ----------
-const WARES = [
-  { n: '2× hits for 60 s', p: 150, g: 'tap', fx: () => { S.boostUntil = Math.max(T(), S.boostUntil) + 60000; } },
-  { n: 'Streak freeze', p: 120, g: 'streak', fx: () => { S.freezes++; } },
-  { n: 'Refill all spins', p: 80, g: 'slots', fx: () => { S.energy = Math.max(S.energy, MAXE); } },
-  { n: 'Mystery box', p: 90, g: 'loot', fx: () => { S.loot.extra++; } },
-  { n: '3 super-likes', p: 60, g: 'discover', fx: () => { S.supers += 3; } },
-  { n: 'Snack pack for Blob', p: 40, g: 'pet', fx: () => { S.pet.food = 100; } },
-  { n: '2 scratch cards', p: 50, g: 'scratch', fx: () => { S.scratchExtra += 2; } },
-  { n: 'Auto-tapper +1', p: 400, g: 'tap', fx: () => { S.tap.A++; } },
-];
-let deals = [], dealN = 0, freshDeals = 0;
-function mkDeal() {
-  const w = pick(WARES), off = pick([30, 40, 50, 60, 70, 80]), old = Math.round(w.p * 1.8), price = Math.max(5, Math.round(old * (1 - off / 100))), life = ri(60, 150) * 1000;
-  return { id: ++dealN, w, off, old, price, stock: ri(1, 5), viewers: ri(40, 900), ends: T() + life, life, fresh: true };
-}
-function tickShop() {
-  if (!deals.length) deals = [mkDeal(), mkDeal(), mkDeal()];
-  deals = deals.map(d => { d.viewers = Math.max(12, d.viewers + ri(-20, 30)); if (T() > d.ends) { freshDeals++; return mkDeal(); } return d; });
-}
-function buyDeal(d, btn) {
-  if (!d || d.stock <= 0 || !spend(d.price)) return;
-  d.stock--; S.buys++; d.w.fx(); act();
-  const [x, y] = centerOf(btn); burst(x, y, { n: 18 }); haptic(true);
-  toast(`You saved ${fmt(d.old - d.price)}!`);
-  APPS.shop.render(true); refreshBadges(); queueCheck();
-}
-def({
-  id: 'shop', name: 'Shop', tag: 'Flash sales · scarcity', c: '#e5007a',
-  bg: tickShop,
-  init: tickShop,
-  wait: () => (freshDeals ? [{ t: `${freshDeals} new deal${freshDeals > 1 ? 's' : ''}` }] : []),
-  badge: () => Math.min(9, freshDeals),
-  ping: () => { const d = pick(deals.filter(d => d.stock > 0 && d.ends - T() > 30000)); return d ? `${d.off}% off: ${d.w.n}. Only ${d.stock} left.` : null; },
-  build(b) {
-    b.innerHTML = '<div class="pad"><div class="mega"><b>Mega sale</b><span id="sh-mega"></span></div><div id="sh-list" style="display:flex;flex-direction:column;gap:12px"></div><p class="fine">Prices in hits. The sale always ends soon.</p></div>';
-    track($('.pad', b));
-    $('#sh-list', b).addEventListener('click', e => { const btn = e.target.closest('[data-d]'); if (btn) buyDeal(deals.find(d => d.id === +btn.dataset.d), btn); });
-  },
-  open() { freshDeals = 0; },
-  render(full) {
-    if (!this.view) return;
-    $('#sh-mega').textContent = `ends in 0:${String(60 - new Date().getSeconds()).padStart(2, '0')}`;
-    const sig = deals.map(d => d.id + ':' + d.stock).join();
-    if (full || this._sig !== sig) {
-      this._sig = sig;
-      $('#sh-list').innerHTML = deals.map(d => `<div class="deal${d.stock ? '' : ' sold'}${d.fresh ? ' fresh' : ''}" data-id="${d.id}">${subIcon(d.w.g)}<div class="dn"><b>${d.w.n}</b><small>${d.stock ? `Only ${d.stock} left` : 'Sold out'}</small><em>${I('eye')}<span class="vw">${d.viewers}</span> viewing</em></div><div class="dp"><span class="off">-${d.off}%</span><s>${fmt(d.old)}</s><button class="buy" data-d="${d.id}"${d.stock ? '' : ' disabled'}>${IF('bolt')}${fmt(d.price)}</button></div><i class="tb"></i></div>`).join('');
-      deals.forEach(d => { d.fresh = false; });
-    }
-    deals.forEach(d => { const el = $(`.deal[data-id="${d.id}"]`); if (!el) return; $('.vw', el).textContent = d.viewers; $('.tb', el).style.width = clamp((d.ends - T()) / d.life, 0, 1) * 100 + '%'; });
-  },
-  tick() { this.render(); },
+// ---------- Shop: a storefront, a cart, checkout with swipe to pay, and order tracking ----------
+const SH = slice('shop', {
+  seen: 0, spins: 1, coupons: [], cart: [], orders: [], gift: null, newUntil: 0, extended: 0, nu: [],
+  saved: 0, spent: 0, delivered: 0, addr: 0, recent: [], cid: 0, oid: 0, dropAt: 0,
 });
-// stubs until the shop module builds them
-def({ id: 'cart', name: 'Cart', tag: '', c: '#ff5a1f', build(b) { b.innerHTML = '<div class="pad"></div>'; } });
-def({ id: 'orders', name: 'Orders', tag: '', c: '#12b886', build(b) { b.innerHTML = '<div class="pad"></div>'; } });
+addAch([
+  ['order1', 'Checked out', 'Place your first order', 'tag', () => (S.ordersPlaced || 0) >= 1],
+  ['saver', 'Smart shopper', 'Save 10,000 hits in Shop', 'gem', () => SH.saved >= 10000],
+  ['haul', 'Porch pileup', 'Get 10 orders delivered', 'chest', () => SH.delivered >= 10],
+]);
+addStats([
+  ['orders placed', () => fmt(S.ordersPlaced || 0)],
+  ['saved in Shop', () => fmt(SH.saved)],
+]);
+addQuests([
+  ['carted', 'Add {n} items to your cart', 3, 8],
+  ['ordersPlaced', 'Place {n} orders', 1, 2],
+]);
+const FREE_SHIP = 99, STD_FEE = 12, EXP_FEE = 39, GIFT_MIN = 49;
+const SI = {
+  search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.8-4.8"/>',
+  ticket: '<path d="M3.5 7.5A1.5 1.5 0 0 1 5 6h14a1.5 1.5 0 0 1 1.5 1.5v2.2a2.3 2.3 0 0 0 0 4.6v2.2A1.5 1.5 0 0 1 19 18H5a1.5 1.5 0 0 1-1.5-1.5v-2.2a2.3 2.3 0 0 0 0-4.6z"/><path d="M14.5 6.5v11" stroke-dasharray="1.5 2.2"/>',
+  gift: '<rect x="4" y="10" width="16" height="10.5" rx="2"/><path d="M3 7.5h18V10H3zM12 7.5v13"/><path d="M12 7.5C10.8 4 7 3.6 7.2 6c.2 1.6 2.6 1.5 4.8 1.5zM12 7.5c1.2-3.5 5-3.9 4.8-1.5-.2 1.6-2.6 1.5-4.8 1.5z"/>',
+  shield: '<path d="M12 3 5 5.8v5.4c0 4.4 3 8 7 9.3 4-1.3 7-4.9 7-9.3V5.8z"/><path d="m9 12 2.2 2.2L15.3 10"/>',
+  pin: '<path d="M12 21s-6.5-5.8-6.5-11a6.5 6.5 0 0 1 13 0c0 5.2-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.4"/>',
+  clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+  chev: '<path d="m9.5 5.5 6.5 6.5-6.5 6.5"/>',
+  plus: '<path d="M12 5.5v13M5.5 12h13"/>', minus: '<path d="M5.5 12h13"/>',
+  box: '<path d="M3.5 7.5 12 3.5l8.5 4v9L12 20.5l-8.5-4z"/><path d="M3.5 7.5 12 11.5l8.5-4M12 11.5v9"/>',
+  cart: G.cart, truck: G.orders, check: P.check, lock: P.lock, down: P.down, close: P.close, back: P.back,
+};
+const si = n => `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${SI[n]}</svg>`;
+const pz = (n, cls = '') => `<span class="sh-pz${cls ? ' ' + cls : ''}">${IF('bolt')}${fmt(n)}</span>`;
+const hs = s => [...s].reduce((a, c) => (Math.imul(a, 31) + c.charCodeAt(0)) >>> 0, 7);
+const seeded = seed => () => { seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(R() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+const clk = ts => { const d = new Date(ts); return `${d.getHours() % 12 || 12}:${String(d.getMinutes()).padStart(2, '0')} ${d.getHours() < 12 ? 'AM' : 'PM'}`; };
+const hms = ms => { const s = Math.max(0, Math.floor(ms / 1000)); return [Math.floor(s / 3600), Math.floor((s % 3600) / 60), s % 60].map(v => String(v).padStart(2, '0')); };
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+// only touch the DOM when the markup really changed, so a tick never swaps an element out from under a finger
+const setH = (el, h) => { if (el && el._h !== h) { el._h = h; el.innerHTML = h; } };
+const setT = (el, t) => { t = String(t); if (el && el.textContent !== t) el.textContent = t; };
+const shade = (hex, k) => { const n = parseInt(hex.slice(1), 16), t = k < 0 ? 0 : 255, a = Math.abs(k), f = v => Math.round(v + (t - v) * a); return '#' + ((1 << 24) | (f(n >> 16) << 16) | (f((n >> 8) & 255) << 8) | f(n & 255)).toString(16).slice(1); };
+
+// ---------- product art: every listing photo is drawn here (100×100) ----------
+const sd = (rx = 30, cy = 90) => `<ellipse cx="50" cy="${cy}" rx="${rx}" ry="4" fill="#1d1026" opacity=".1"/>`;
+const gl = (x, y, w, h) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${Math.min(w, h) / 2}" fill="#fff" opacity=".55"/>`;
+const O = (d, w = 2) => `stroke="${d}" stroke-width="${w}" stroke-linejoin="round" stroke-linecap="round"`;
+const RAINBOW = ['#ff4d6d', '#ff9f1c', '#ffd23f', '#2ec4b6', '#3b7bff', '#9b5cff'];
+const ART = {
+  buds: (c, d) => `${sd(26)}<rect x="27" y="54" width="46" height="32" rx="15" fill="${c}" ${O(d)}/><path d="M28 65h44" stroke="${d}" stroke-width="1.6"/><circle cx="50" cy="75" r="1.8" fill="#34d399"/>${gl(34, 58, 12, 3)}
+    <g transform="rotate(-18 36 34)"><rect x="32.5" y="30" width="7" height="22" rx="3.5" fill="${c}" ${O(d)}/><circle cx="36" cy="27" r="9.5" fill="${c}" ${O(d)}/><circle cx="38.8" cy="26" r="3.2" fill="${d}" opacity=".55"/>${gl(30, 21, 5, 2.4)}</g>
+    <g transform="rotate(18 64 34)"><rect x="60.5" y="30" width="7" height="22" rx="3.5" fill="${c}" ${O(d)}/><circle cx="64" cy="27" r="9.5" fill="${c}" ${O(d)}/><circle cx="61.2" cy="26" r="3.2" fill="${d}" opacity=".55"/>${gl(62, 21, 5, 2.4)}</g>`,
+  led: (c, d, l, nm) => { const cols = nm === 'RGB' ? RAINBOW : [c, c, c, c, c, c]; const pts = [[62, 66], [70, 69], [78, 67], [84, 73], [80, 81], [71, 84]];
+    return `${sd(34)}<circle cx="40" cy="47" r="30" fill="${cols[0]}" opacity=".16"/><circle cx="40" cy="47" r="25" fill="#f4f1f7" stroke="#cfc8d8" stroke-width="2"/><circle cx="40" cy="47" r="17" fill="none" stroke="${nm === 'RGB' ? '#ff6fa8' : c}" stroke-width="8"/><circle cx="40" cy="47" r="17" fill="none" stroke="#fff" stroke-width="2" stroke-dasharray="1.5 4.2" opacity=".85"/><circle cx="40" cy="47" r="7.5" fill="#fff" stroke="#cfc8d8" stroke-width="2"/>
+    <path d="M56 62c8 7 20-1 26 7s-2 16-15 16" fill="none" stroke="#e9e4ef" stroke-width="8" stroke-linecap="round"/><path d="M56 62c8 7 20-1 26 7s-2 16-15 16" fill="none" stroke="#fff" stroke-width="5.5" stroke-linecap="round"/>
+    ${pts.map(([x, y], i) => `<circle cx="${x}" cy="${y}" r="5" fill="${cols[i]}" opacity=".3"/><circle cx="${x}" cy="${y}" r="2.3" fill="${cols[i]}"/>`).join('')}`; },
+  case: (c, d, l) => `${sd(20)}<g transform="rotate(-9 50 50)"><rect x="31" y="13" width="38" height="74" rx="11" fill="${c}" ${O(d)}/><rect x="35" y="18" width="17" height="19" rx="6" fill="${d}" opacity=".5"/><circle cx="40.5" cy="23.5" r="3.4" fill="#1d1026"/><circle cx="46.5" cy="31" r="3.4" fill="#1d1026"/><circle cx="40.5" cy="31" r="1.7" fill="#fff" opacity=".85"/>
+    <path d="M50 64c-4-3.4-9-6.6-9-11 0-2.5 2-4.3 4.4-4.3 1.9 0 3.6 1 4.6 2.6 1-1.6 2.7-2.6 4.6-2.6 2.4 0 4.4 1.8 4.4 4.3 0 4.4-5 7.6-9 11z" fill="${l}"/>${[[40, 72], [58, 76], [46, 80], [60, 44], [38, 58]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="1.5" fill="#fff" opacity=".8"/>`).join('')}${gl(62, 20, 3.5, 44)}</g>`,
+  bottle: (c, d, l) => `${sd(18)}<path d="M61 20c11 0 13 4 13 9s-3 8-11 8" fill="none" stroke="${d}" stroke-width="4.5" stroke-linecap="round"/><rect x="36" y="27" width="28" height="61" rx="11" fill="${c}" ${O(d)}/><rect x="38" y="13" width="24" height="17" rx="6" fill="${d}" ${O(shade(d, -.25))}/><rect x="36" y="47" width="28" height="9" fill="${l}" opacity=".75"/>
+    ${[36, 44, 62, 70, 78].map(y => `<path d="M55 ${y}h6" stroke="#fff" stroke-width="1.6" stroke-linecap="round" opacity=".85"/>`).join('')}${gl(41, 33, 4, 46)}`,
+  sneaker: (c, d) => `${sd(40)}<path d="M10 70c0 9 5 12 12 12h58c8 0 11-4 11-9 0-3-2-5-5-5H14c-3 0-4 1-4 2z" fill="#fff" ${O('#cfc8d8')}/><path d="M13 70c-3-13 4-22 13-25l12-5c5 8 14 11 22 8l5-2c11 3 19 10 22 16 2 4 0 8-5 8H14z" fill="${c}" ${O(d)}/>
+    <path d="M24 46c4-4 9-6 14-6" fill="none" stroke="${d}" stroke-width="2"/><path d="M27 66c16-1 30-7 42-18" fill="none" stroke="#fff" stroke-width="4.5" stroke-linecap="round" opacity=".9"/>${[0, 1, 2].map(i => `<path d="M${44 + i * 6} ${47 - i * 1} l4 6" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/>`).join('')}<path d="M16 76h70" stroke="#e3dde9" stroke-width="2" stroke-dasharray="3 3"/>`,
+  hoodie: (c, d) => `${sd(34)}<path d="M33 22c11-5 23-5 34 0l15 11c3 9 6 20 7 32l-10 3-5-19v38H29V49l-5 19-10-3c1-12 4-23 7-32z" fill="${c}" ${O(d)}/><path d="M36 22c3 10 8 15 14 15s11-5 14-15c-3-6-8-9-14-9s-11 3-14 9z" fill="${d}" ${O(d)}/><path d="M40 23c2 6 5 9 10 9s8-3 10-9" fill="none" stroke="${shade(d, -.35)}" stroke-width="2"/>
+    <path d="M45 34v13M55 34v13" stroke="#fff" stroke-width="2" stroke-linecap="round"/><circle cx="45" cy="48" r="1.6" fill="#fff"/><circle cx="55" cy="48" r="1.6" fill="#fff"/><path d="M36 66h28l-4 13H40z" fill="none" stroke="${d}" stroke-width="2" stroke-linejoin="round"/><path d="M29 82h42" stroke="${d}" stroke-width="3"/>`,
+  fryer: (c, d, l) => `${sd(30)}<path d="M24 30c0-9 6-14 14-14h24c8 0 14 5 14 14v48c0 5-3 8-8 8H32c-5 0-8-3-8-8z" fill="${c}" ${O(d)}/><rect x="31" y="21" width="38" height="15" rx="5" fill="#1d1026"/><path d="M36 28.5h7" stroke="#ff7a00" stroke-width="3" stroke-linecap="round"/><circle cx="52" cy="28.5" r="2" fill="#3ddc97"/><circle cx="60" cy="28.5" r="2" fill="#fff" opacity=".6"/><rect x="28" y="42" width="44" height="38" rx="8" fill="${shade(c, -.12)}" ${O(d)}/><rect x="35" y="48" width="30" height="14" rx="4" fill="#1d1026" opacity=".8"/><path d="M38 52h10" stroke="#fff" stroke-width="2" stroke-linecap="round" opacity=".35"/><rect x="42" y="67" width="16" height="7" rx="3.5" fill="${d}"/>${gl(30, 19, 3.5, 14)}`,
+  drone: (c, d) => `${sd(38)}<path d="M28 33 72 69M72 33 28 69" stroke="#3a3340" stroke-width="5" stroke-linecap="round"/>${[[25, 31], [75, 31], [25, 71], [75, 71]].map(([x, y]) => `<ellipse cx="${x}" cy="${y}" rx="15" ry="4.2" fill="#cfd0da" opacity=".75"/><circle cx="${x}" cy="${y}" r="3" fill="#3a3340"/>`).join('')}<rect x="35" y="41" width="30" height="21" rx="9" fill="${c}" ${O(d)}/><circle cx="50" cy="64" r="5.5" fill="#1d1026"/><circle cx="51.5" cy="62.6" r="1.8" fill="#fff" opacity=".8"/>${gl(39, 44, 10, 2.6)}`,
+  watch: c => `${sd(16)}<rect x="38" y="7" width="24" height="28" rx="7" fill="${c}" ${O(shade(c, -.3))}/><rect x="38" y="65" width="24" height="28" rx="7" fill="${c}" ${O(shade(c, -.3))}/>${[74, 80, 86].map(y => `<circle cx="50" cy="${y}" r="1.5" fill="${shade(c, -.35)}"/>`).join('')}<rect x="29" y="27" width="42" height="46" rx="13" fill="#2a2533" ${O('#15101b')}/><rect x="33" y="31" width="34" height="38" rx="10" fill="#0b0810"/>
+    <circle cx="50" cy="50" r="11" fill="none" stroke="#ff2e4d" stroke-width="3.2" stroke-dasharray="52 100" stroke-linecap="round" transform="rotate(-90 50 50)"/><circle cx="50" cy="50" r="7" fill="none" stroke="#9cff3d" stroke-width="3.2" stroke-dasharray="30 100" stroke-linecap="round" transform="rotate(-90 50 50)"/><circle cx="50" cy="50" r="3" fill="none" stroke="#3dd6ff" stroke-width="3" stroke-dasharray="14 100" stroke-linecap="round" transform="rotate(-90 50 50)"/><rect x="70" y="42" width="4" height="11" rx="2" fill="#15101b"/>`,
+  massage: (c, d) => `${sd(28)}<rect x="44" y="44" width="17" height="43" rx="7.5" fill="${d}" ${O(shade(d, -.3))}/><path d="M47 56h11M47 62h11M47 68h11" stroke="${shade(d, -.3)}" stroke-width="1.6" opacity=".6"/><rect x="18" y="21" width="62" height="27" rx="13.5" fill="${c}" ${O(d)}/><rect x="11" y="30" width="10" height="9" rx="2" fill="#4a4452"/><circle cx="11" cy="34.5" r="8" fill="#5b5563" ${O('#3a3340')}/>
+    ${[0, 1, 2].map(i => `<path d="M${66 + i * 4} 27v15" stroke="${d}" stroke-width="2" stroke-linecap="round"/>`).join('')}<circle cx="52.5" cy="52" r="2.6" fill="#ff2e4d"/>${gl(26, 25, 20, 3.4)}`,
+  ringlight: (c, d) => `${sd(22)}<path d="M50 60v24M50 84l-15 6M50 84l15 6M50 84v6" stroke="#3a3340" stroke-width="3" stroke-linecap="round"/><circle cx="50" cy="35" r="27" fill="none" stroke="${c}" stroke-width="18" opacity=".22"/><circle cx="50" cy="35" r="23" fill="none" stroke="#d6d0dd" stroke-width="11"/><circle cx="50" cy="35" r="23" fill="none" stroke="${shade(c, .55)}" stroke-width="8"/><circle cx="50" cy="35" r="23" fill="none" stroke="#fff" stroke-width="2" stroke-dasharray="1.2 3" opacity=".9"/>
+    <rect x="44" y="24" width="12" height="21" rx="3" fill="#2a2533"/><rect x="46" y="26.5" width="8" height="15" rx="1.5" fill="${c}" opacity=".7"/><path d="M50 45v15" stroke="#3a3340" stroke-width="3"/>`,
+  blender: (c, d) => `${sd(18)}<rect x="36" y="16" width="28" height="54" rx="8" fill="#fff" fill-opacity=".5" stroke="#cfc8d8" stroke-width="2"/><rect x="38.5" y="36" width="23" height="32" rx="6" fill="${c}"/>${[[44, 44, 2.2], [53, 52, 1.6], [47, 60, 1.8], [56, 42, 1.3]].map(([x, y, r]) => `<circle cx="${x}" cy="${y}" r="${r}" fill="#fff" opacity=".7"/>`).join('')}<rect x="37" y="10" width="26" height="9" rx="4" fill="${d}"/><rect x="47" y="5" width="6" height="7" rx="2" fill="${d}"/>
+    <rect x="33" y="66" width="34" height="21" rx="7" fill="#2a2533"/><circle cx="50" cy="76.5" r="3.2" fill="${c}"/>${gl(40, 20, 3.5, 30)}`,
+  shades: c => `${sd(34, 72)}<path d="M8 34l6 6M92 34l-6 6" stroke="#1d1026" stroke-width="3" stroke-linecap="round"/><path d="M14 40h72" stroke="#1d1026" stroke-width="3"/><path d="M15 40h29c0 12-5 19-14.5 19S15 52 15 40z" fill="${c}" ${O('#1d1026', 3)}/><path d="M56 40h29c0 12-5 19-14.5 19S56 52 56 40z" fill="${c}" ${O('#1d1026', 3)}/>
+    <path d="M44 42c4-4 8-4 12 0" fill="none" stroke="#1d1026" stroke-width="3"/><path d="M20 43h8l-6 9z" fill="#fff" opacity=".45"/><path d="M61 43h8l-6 9z" fill="#fff" opacity=".45"/>`,
+  backpack: (c, d) => `${sd(28)}<path d="M41 19c0-8 18-8 18 0" fill="none" stroke="${d}" stroke-width="4.5" stroke-linecap="round"/><rect x="25" y="17" width="50" height="70" rx="19" fill="${c}" ${O(d)}/><path d="M33 33c11-6 23-6 34 0" fill="none" stroke="${d}" stroke-width="2"/><rect x="32" y="52" width="36" height="27" rx="10" fill="${d}" fill-opacity=".35" ${O(d)}/><path d="M36 60h28" stroke="${d}" stroke-width="1.8"/><rect x="47.5" y="58" width="5" height="8" rx="2.5" fill="#fff"/>${gl(30, 24, 3.5, 20)}`,
+  lamp: (c, d) => `${sd(22)}<path d="M62 30 82 72H56z" fill="#ffe9a6" opacity=".55"/><ellipse cx="36" cy="84" rx="17" ry="5.5" fill="${c}" ${O(d)}/><path d="M36 82 50 52 36 28" fill="none" stroke="${d}" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="50" cy="52" r="3.6" fill="${c}" ${O(d)}/><circle cx="36" cy="28" r="3.6" fill="${c}" ${O(d)}/>
+    <path d="M38 22 60 16l6 17-24 3z" fill="${c}" ${O(d)}/><path d="M43 35.5 65 32.5" stroke="#ffd23f" stroke-width="3" stroke-linecap="round"/>`,
+  speaker: (c, d) => `${sd(36)}<path d="M76 36c9 9 9 23 0 32" fill="none" stroke="${d}" stroke-width="4" stroke-linecap="round"/><rect x="15" y="32" width="66" height="40" rx="20" fill="${c}" ${O(d)}/>${Array.from({ length: 24 }, (_, i) => `<circle cx="${30 + (i % 8) * 5.2}" cy="${42 + Math.floor(i / 8) * 8}" r="1.5" fill="${d}" opacity=".7"/>`).join('')}<path d="M24 33v38M72 33v38" stroke="${d}" stroke-width="2"/>${gl(28, 35, 20, 3)}`,
+  mouse: c => `${sd(20)}<path d="M50 11c19 0 22 22 22 43 0 22-10 34-22 34S28 76 28 54c0-21 3-43 22-43z" fill="#2a2533" ${O('#15101b')}/><path d="M50 11v26M29 40c14 5 28 5 42 0" fill="none" stroke="#15101b" stroke-width="2"/><rect x="47" y="19" width="6" height="12" rx="3" fill="${c}"/>
+    <path d="M31 50c-2 14 1 27 9 33M69 50c2 14-1 27-9 33" fill="none" stroke="${c}" stroke-width="3" stroke-linecap="round"/><circle cx="50" cy="63" r="6" fill="${c}" opacity=".35"/><circle cx="50" cy="63" r="3" fill="${c}"/>${gl(35, 22, 3.5, 12)}`,
+  keyboard: (c, d, l, nm) => { const cols = nm === 'Rainbow' ? RAINBOW : [c, shade(c, .3), c, shade(c, .3), c, shade(c, .3)]; let k = '';
+    for (let r = 0; r < 4; r++) for (let i = 0; i < 10; i++) { if (r === 3 && i > 1 && i < 8) continue; k += `<rect x="${14.5 + i * 7.2}" y="${35 + r * 8}" width="6" height="6.2" rx="1.6" fill="${(r === 1 && i === 2) || (r === 2 && i > 0 && i < 4) ? cols[i % 6] : '#4a4452'}"/>`; }
+    return `${sd(40, 80)}<rect x="8" y="28" width="84" height="44" rx="10" fill="none" stroke="url(#kg)" stroke-width="4" opacity=".7"/><defs><linearGradient id="kg">${cols.map((x, i) => `<stop offset="${i / 5}" stop-color="${x}"/>`).join('')}</linearGradient></defs><rect x="11" y="31" width="78" height="38" rx="7" fill="#2a2533" ${O('#15101b')}/>${k}<rect x="29" y="59" width="43" height="6.2" rx="1.6" fill="#4a4452"/>`; },
+  humid: (c, d, l) => `${sd(22)}<path d="M46 26c-6-6 2-10-2-16M54 26c6-6-2-10 2-16" fill="none" stroke="#b9c7ea" stroke-width="3.2" stroke-linecap="round" opacity=".9"/><path d="M29 86c-7-26 1-50 21-50s28 24 21 50z" fill="${c}" ${O(d)}/><ellipse cx="50" cy="37" rx="9" ry="3" fill="${d}"/><path d="M33 72h34" stroke="${shade(c, .6)}" stroke-width="5" stroke-linecap="round"/><circle cx="50" cy="60" r="3" fill="${d}" opacity=".6"/>${gl(35, 46, 3.5, 18)}`,
+  plush: (c, d) => `${sd(26)}<ellipse cx="38" cy="25" rx="7.5" ry="17" fill="${c}" ${O(d)} transform="rotate(-10 38 25)"/><ellipse cx="62" cy="25" rx="7.5" ry="17" fill="${c}" ${O(d)} transform="rotate(10 62 25)"/><ellipse cx="38" cy="26" rx="3.5" ry="11" fill="#ff9fbf" opacity=".6" transform="rotate(-10 38 26)"/><ellipse cx="62" cy="26" rx="3.5" ry="11" fill="#ff9fbf" opacity=".6" transform="rotate(10 62 26)"/>
+    <ellipse cx="50" cy="73" rx="22" ry="16" fill="${c}" ${O(d)}/><circle cx="50" cy="50" r="20" fill="${c}" ${O(d)}/><circle cx="43" cy="49" r="2.6" fill="#1d1026"/><circle cx="57" cy="49" r="2.6" fill="#1d1026"/><ellipse cx="39" cy="56" rx="4" ry="2.4" fill="#ff8fb1" opacity=".75"/><ellipse cx="61" cy="56" rx="4" ry="2.4" fill="#ff8fb1" opacity=".75"/><path d="M47 55q3 3 6 0" fill="none" stroke="#1d1026" stroke-width="1.6" stroke-linecap="round"/>`,
+  brushes: c => `${sd(28)}${[-32, -12, 8, 28].map((a, i) => `<g transform="rotate(${a} 50 90)"><rect x="46.5" y="40" width="7" height="48" rx="3.5" fill="${c}" ${O(shade(c, -.3), 1.5)}/><rect x="45.5" y="31" width="9" height="11" rx="1.5" fill="#e3dce9" ${O('#b9b0c4', 1.2)}/><path d="${['M45.5 31c0-12 9-12 9 0z', 'M45.5 31c-1-16 10-16 9 0z', 'M45.5 31l4.5-15 4.5 15z', 'M45.5 31c0-8 3-11 4.5-11s4.5 3 4.5 11z'][i]}" fill="${i % 2 ? '#3a2a24' : '#f3d7c4'}" ${O('#2a1d18', 1)}/></g>`).join('')}`,
+  petbed: (c, d) => `${sd(42, 84)}<ellipse cx="50" cy="62" rx="42" ry="22" fill="${c}" ${O(d)}/><ellipse cx="50" cy="58" rx="29" ry="12" fill="${d}" opacity=".5"/><ellipse cx="50" cy="61" rx="25" ry="9" fill="${shade(c, .35)}"/>${Array.from({ length: 14 }, (_, i) => { const a = (i / 14) * Math.PI * 2; return `<circle cx="${(50 + Math.cos(a) * 36).toFixed(1)}" cy="${(62 + Math.sin(a) * 17).toFixed(1)}" r="2" fill="#fff" opacity=".45"/>`; }).join('')}`,
+  yoga: (c, d, l) => `${sd(36, 82)}<rect x="14" y="38" width="66" height="32" rx="16" fill="${c}" ${O(d)}/><circle cx="78" cy="54" r="16" fill="${l}" ${O(d)}/><circle cx="78" cy="54" r="11" fill="none" stroke="${d}" stroke-width="1.6" opacity=".7"/><circle cx="78" cy="54" r="6" fill="none" stroke="${d}" stroke-width="1.6" opacity=".7"/><circle cx="78" cy="54" r="2" fill="${d}"/><rect x="30" y="36.5" width="6" height="35" rx="2" fill="#3a3340"/><rect x="52" y="36.5" width="6" height="35" rx="2" fill="#3a3340"/>${gl(19, 43, 22, 3)}`,
+  power: (c, d) => `${sd(24)}<path d="M50 16c0-8 8-9 16-9h16" fill="none" stroke="#3a3340" stroke-width="3" stroke-linecap="round"/><rect x="28" y="15" width="44" height="72" rx="11" fill="${c}" ${O(d)}/><rect x="34" y="23" width="32" height="18" rx="5" fill="#1d1026"/><path d="M43 32h6m2 0h6" stroke="#3ddc97" stroke-width="3" stroke-linecap="round"/><path d="M52 50 43 64h6l-2 11 10-15h-6l2-10z" fill="${d}" opacity=".75"/>${[0, 1, 2, 3].map(i => `<circle cx="${41 + i * 6}" cy="81" r="1.6" fill="${i < 3 ? '#3ddc97' : '#cfc8d8'}"/>`).join('')}${gl(32, 44, 3.5, 30)}`,
+  cap: (c, d) => `${sd(36, 78)}<path d="M56 60c14-3 26 0 34 8-9 5-24 6-38 1z" fill="${d}" ${O(shade(d, -.25))}/><path d="M18 64c-1-24 12-38 32-38s33 13 32 34c-19-7-44-7-64 4z" fill="${c}" ${O(d)}/><path d="M50 26c-9 9-12 22-12 36M50 26c7 9 9 20 9 33" fill="none" stroke="${d}" stroke-width="1.8"/><circle cx="50" cy="26" r="3.2" fill="${d}"/>${gl(26, 40, 3.5, 14)}`,
+  tumbler: (c, d) => `${sd(20)}<path d="M53 17 60 3" stroke="${shade(c, -.45)}" stroke-width="4" stroke-linecap="round"/><path d="M67 33h9c4 0 5 3 5 6v19c0 4-2 6-6 6h-8" fill="none" stroke="${d}" stroke-width="5"/><rect x="29" y="16" width="42" height="11" rx="4.5" fill="#ece8f1" ${O('#c9c2d3')}/><path d="M31 27h38l-5 58c0 2-1 3-3 3H39c-2 0-3-1-3-3z" fill="${c}" ${O(d)}/><path d="M33 38h34" stroke="${shade(c, .45)}" stroke-width="2" opacity=".8"/>${gl(37, 32, 4, 44)}`,
+  popit: (c, d, l, nm) => { const cols = nm === 'Rainbow' ? RAINBOW : nm === 'Neon' ? ['#3dfcb4', '#ff3dcf', '#fff23d', '#3dc4ff', '#ff8a3d', '#b43dff'] : ['#ffb3cc', '#ffd6a5', '#fdffb6', '#caffbf', '#a0c4ff', '#d7b6ff'];
+    return `${sd(32)}<rect x="17" y="17" width="66" height="66" rx="20" fill="#fff" ${O('#ddd4e6')}/>${Array.from({ length: 16 }, (_, i) => { const x = 30 + (i % 4) * 13.3, y = 30 + Math.floor(i / 4) * 13.3, k = cols[Math.floor(i / 4) + (i % 4 > 1 ? 1 : 0)]; return `<circle cx="${x}" cy="${y}" r="5.6" fill="${k}" stroke="${shade(k, -.2)}" stroke-width="1"/><circle cx="${x - 1.8}" cy="${y - 1.8}" r="1.5" fill="#fff" opacity=".7"/>`; }).join('')}`; },
+  projector: (c, d) => `${sd(26)}${[[20, 20], [34, 10], [52, 6], [70, 12], [82, 24], [26, 34], [76, 36], [60, 20], [42, 22]].map(([x, y], i) => `<circle cx="${x}" cy="${y}" r="${i % 3 ? 1.4 : 2.2}" fill="${i % 2 ? c : shade(c, .5)}"/>`).join('')}<path d="M24 70c0-18 11-30 26-30s26 12 26 30z" fill="#241b33" ${O('#15101b')}/>${[[38, 56], [50, 50], [62, 58], [45, 63], [56, 64]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="1.8" fill="${c}"/>`).join('')}<path d="M30 58c6-10 14-14 20-14" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" opacity=".35"/><rect x="21" y="68" width="58" height="17" rx="6" fill="#ece8f1" ${O('#c9c2d3')}/><circle cx="33" cy="76.5" r="2.4" fill="${c}"/>`,
+  vacuum: (c, d) => `${sd(38)}<path d="M72 14 38 80" stroke="#9a94a3" stroke-width="4.5" stroke-linecap="round"/><g transform="rotate(27 70 30)"><rect x="61" y="14" width="20" height="34" rx="8" fill="${c}" ${O(d)}/><rect x="64" y="30" width="14" height="14" rx="5" fill="#fff" opacity=".55"/><path d="M71 14V6h8" fill="none" stroke="${d}" stroke-width="4" stroke-linecap="round"/></g><rect x="16" y="75" width="40" height="11" rx="5.5" fill="#3a3340"/><rect x="20" y="78" width="30" height="3.5" rx="1.7" fill="${c}"/>`,
+  candle: (c, d, l) => `${sd(22)}<circle cx="50" cy="26" r="15" fill="#ffc21a" opacity=".18"/><path d="M50 13c7 9 5 16 0 19-5-3-7-10 0-19z" fill="#ffb200"/><path d="M50 21c3 4 2.5 7 0 9-2.5-2-3-5 0-9z" fill="#fff1a8"/><path d="M50 32v8" stroke="#1d1026" stroke-width="1.6"/><rect x="29" y="38" width="42" height="48" rx="10" fill="${c}" ${O(d)}/><ellipse cx="50" cy="42" rx="18" ry="4" fill="${l}"/>
+    <rect x="36" y="56" width="28" height="17" rx="3" fill="#fff" opacity=".88"/><path d="M40 62h20M43 67.5h14" stroke="${d}" stroke-width="1.6" stroke-linecap="round"/>${gl(33, 46, 3.5, 30)}`,
+  boost: (c, d) => `<circle cx="50" cy="48" r="38" fill="${c}" opacity=".2"/><circle cx="50" cy="48" r="31" fill="${d}"/><circle cx="50" cy="46" r="29" fill="${c}"/><path d="M53.5 20 34 51h13l-3 25 22-33H53z" fill="#fff" ${O(d, 2.4)}/><ellipse cx="40" cy="30" rx="9" ry="4.5" fill="#fff" opacity=".45" transform="rotate(-30 40 30)"/>
+    <rect x="58" y="62" width="30" height="21" rx="10.5" fill="#ff2e4d" stroke="#fff" stroke-width="2.5"/><text x="73" y="77.5" text-anchor="middle" font-family="DynaPuff, ui-rounded, sans-serif" font-weight="700" font-size="14" fill="#fff">2×</text>`,
+  freeze: (c, d) => `${sd(26)}<rect x="22" y="20" width="56" height="60" rx="16" fill="${c}" opacity=".45" ${O(d)}/><rect x="27" y="25" width="46" height="50" rx="12" fill="#fff" opacity=".35"/><path d="M50 72c10 0 16-6 16-14 0-7-5-12-9-17-1 4-3 6-6 7 1-7-2-12-7-16 0 8-5 12-8 17-2 3-2 8 0 12 2 7 7 11 14 11z" fill="#ff7a1a" opacity=".92"/><path d="M50 72c5 0 8-3 8-7 0-4-3-6-5-9-.5 2-2 3-3 3 .5-3-1-6-3-7 0 4-3 6-4 9-1 5 2 11 7 11z" fill="#ffd23f"/>
+    <path d="M26 30 34 22M66 22l8 8" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".8"/>${gl(28, 58, 4, 14)}`,
+  spins: (c, d) => `${sd(30)}<path d="M80 30v24" stroke="#3a3340" stroke-width="3"/><circle cx="80" cy="27" r="5" fill="${c}" ${O(d)}/><rect x="14" y="22" width="62" height="62" rx="15" fill="${c}" ${O(d)}/><rect x="20" y="36" width="50" height="30" rx="7" fill="#1d1026"/>${[0, 1, 2].map(i => `<rect x="${23 + i * 15.3}" y="39" width="13.5" height="24" rx="3.5" fill="#fff"/><path d="M${31 + i * 15.3} 43l-5 9h4l-1 7 5-9h-4z" fill="#ffc21a"/>`).join('')}<rect x="24" y="70" width="42" height="7" rx="3.5" fill="${d}"/><circle cx="26" cy="29" r="2.4" fill="#fff" opacity=".7"/><circle cx="64" cy="29" r="2.4" fill="#fff" opacity=".7"/>`,
+};
+
+// ---------- the catalog: id, category, name, listing title, price, was, colors, sizes, highlights ----------
+const PR_RAW = [
+  ['buds', 'tech', 'Wireless Earbuds Pro', '2025 New Wireless Earbuds Pro Bluetooth 5.3 HiFi Deep Bass Noise Cancelling IPX7 Waterproof 48H Playtime Touch Control with LED Charging Case', 24, 289, 'White:#f5f5f8,Black:#3a3541,Pink:#ffb3cc,Sage:#a8d5ba', '1 pair:0,2 pairs:17', '48H playtime,IPX7 waterproof,Bluetooth 5.3'],
+  ['led', 'home', 'LED Strip Lights', 'LED Strip Lights for Bedroom 100ft RGB Color Changing Music Sync Smart App Control with Remote Neon Room Decor Party Gaming Setup', 9, 159, 'RGB:#ff3d9a,Warm white:#ffb347,Ice blue:#5ec8ff', '16.4ft:0,32.8ft:5,65.6ft:11,100ft:18', '16M colors,Music sync,App + remote'],
+  ['case', 'tech', 'Glitter Heart Phone Case', 'Shockproof Phone Case Cute Glitter Heart Clear Soft TPU Bumper Full Camera Protection Anti-Scratch Slim Cover for Most Phones', 4, 69, 'Bubblegum:#ff8fc2,Lilac:#b9a2ff,Mint:#7fe0c0,Midnight:#3b3350', '6.1 in:0,6.7 in:1', 'Drop tested 10ft,Raised camera lip,Wireless charging'],
+  ['bottle', 'sports', 'Motivational Water Bottle', 'Motivational Water Bottle Half Gallon with Time Marker Straw Handle Leakproof BPA Free Tritan Sports Jug for Gym Fitness Outdoor', 8, 119, 'Sky:#6fb7ff,Peach:#ffab8a,Lime:#b6e36a,Grape:#a58bff', '32oz:0,64oz:4,128oz:9', 'Time markers,Leakproof lid,BPA free'],
+  ['sneaker', 'fashion', 'Air Cushion Sneakers', 'Air Cushion Running Shoes for Men Women Breathable Mesh Lightweight Non Slip Walking Sneakers Casual Athletic Tennis Gym Trainers', 29, 359, 'Cloud:#eceaf2,Hot pink:#ff4fa3,Volt:#c6f432,Black:#3a3541', 'US 7:0,US 8:0,US 9:0,US 10:0,US 11:2', 'Air cushion sole,Breathable mesh,Non-slip grip'],
+  ['hoodie', 'fashion', 'Oversized Fleece Hoodie', 'Oversized Hoodie for Women Men Heavyweight Fleece Pullover Sweatshirt Drop Shoulder Kangaroo Pocket Streetwear Cozy Loungewear', 16, 219, 'Lavender:#b9a2ff,Sage:#9cc9a8,Cream:#f3e6cf,Charcoal:#4d4854', 'S:0,M:0,L:0,XL:2,XXL:4', '400gsm fleece,Drop shoulder,Kangaroo pocket'],
+  ['fryer', 'kitchen', 'Digital Air Fryer', 'Air Fryer Large Capacity 1700W Oilless Cooker with Digital Touch Screen 8 Presets Nonstick Dishwasher Safe Basket Family Size', 49, 699, 'Black:#35313c,White:#f2f1f5,Sage:#a9c9b0,Blush:#f7b7c4', '4.2QT:0,5.8QT:8,7.5QT:16', '1700W rapid air,8 presets,Nonstick basket'],
+  ['drone', 'tech', 'Mini Drone 4K', 'Mini Drone with 4K HD Dual Camera Foldable RC Quadcopter WiFi FPV Live Video Altitude Hold One Key Return Gesture Selfie', 39, 599, 'Grey:#9aa0ab,Black:#3a3541,Orange:#ff8a3d', '1 battery:0,2 batteries:7,3 batteries:12', '4K dual camera,Altitude hold,Foldable arms'],
+  ['watch', 'tech', 'Smart Watch Ultra', 'Smart Watch Ultra Fitness Tracker Answer Make Calls Heart Rate Sleep Monitor Step Counter 100+ Sport Modes IP68 Waterproof AMOLED', 27, 399, 'Orange:#ff7a2e,Midnight:#4a4260,Starlight:#efe6d6,Pink:#ff9ec4', '41mm:0,45mm:3,49mm:6', 'AMOLED display,Heart rate + sleep,IP68'],
+  ['massage', 'beauty', 'Deep Tissue Massage Gun', 'Massage Gun Deep Tissue Percussion Muscle Massager Handheld Electric 30 Speeds 10 Heads Quiet Portable Back Neck Shoulder Relief', 33, 459, 'Graphite:#5a5563,Rose:#f29bb2,Ocean:#5aa9e6', '', '30 speeds,10 heads,Ultra quiet'],
+  ['ringlight', 'tech', 'Selfie Ring Light', 'Selfie Ring Light with Tripod Stand and Phone Holder Dimmable LED Circle Light 3 Modes 10 Brightness Levels for Makeup Live Stream Video', 12, 189, 'Warm:#ffc15e,Daylight:#9bbcff,Pink:#ff9ecb', '10 in:0,12 in:3,18 in:9', '3 light modes,63 in tripod,Bluetooth remote'],
+  ['blender', 'kitchen', 'Portable Blender', 'Portable Blender for Shakes and Smoothies USB-C Rechargeable 6 Blades 380ml Mini Personal Juicer Cup Travel Gym Office BPA Free', 11, 149, 'Berry:#ff5c8a,Mango:#ffb02e,Matcha:#8fcf6b,Blueberry:#6f7bff', '', '6 steel blades,USB-C charging,380 ml'],
+  ['shades', 'fashion', 'Retro Sunglasses', 'Retro Polarized Sunglasses for Women Men Trendy Oversized Square Frame UV400 Protection Fashion Shades', 5, 99, 'Smoke:#4a4260,Rose:#ff7aa8,Amber:#ffa53d,Ocean:#3fa7ff', '1 pair:0,2 pack:2,4 pack:5', 'UV400,Polarized,Scratch resistant'],
+  ['backpack', 'fashion', 'Travel Laptop Backpack', 'Travel Laptop Backpack 17 Inch Water Resistant Anti Theft College School Bookbag with USB Charging Port Business Carry On Daypack', 19, 259, 'Navy:#46578c,Sand:#d9c3a0,Blush:#f4b6c2,Olive:#8a9a62', '', 'Fits 17 in laptop,USB port,Anti-theft pocket'],
+  ['lamp', 'home', 'LED Desk Lamp', 'LED Desk Lamp with Wireless Charger USB Port Eye-Caring Dimmable Foldable Reading Light 5 Color Modes Touch Control Home Office Dorm', 14, 199, 'White:#f2f1f5,Black:#3a3541,Mint:#9fe3c9', '', 'Wireless charger,5 color modes,Touch dimmer'],
+  ['speaker', 'tech', 'Waterproof Bluetooth Speaker', 'Portable Bluetooth Speaker IPX7 Waterproof Loud Stereo Sound Rich Bass 24H Playtime RGB Lights Outdoor Shower Beach Party Speaker', 17, 249, 'Teal:#2fc4b2,Coral:#ff7f6e,Black:#3a3541,Lilac:#b9a2ff', '', '24H playtime,IPX7,RGB lights'],
+  ['mouse', 'tech', 'RGB Gaming Mouse', 'Wireless Gaming Mouse RGB Rechargeable 7 Programmable Buttons 16000 DPI Ergonomic Silent Click Lightweight Mice for PC Laptop', 7, 129, 'Neon:#3dfcb4,Magenta:#ff3dcf,Ice:#58c7ff', '', '16000 DPI,7 buttons,Rechargeable'],
+  ['keyboard', 'tech', 'Mechanical Keyboard 60%', 'Mechanical Gaming Keyboard 60% RGB Backlit Hot Swappable Blue Switches Compact 61 Keys Wired USB-C Anti-Ghosting for PC Laptop', 22, 329, 'Rainbow:#ff5ca8,Ice:#58c7ff,Sunset:#ff9a3d', '', 'Hot swappable,RGB backlight,Anti-ghosting'],
+  ['humid', 'home', 'Cool Mist Humidifier', 'Cool Mist Humidifier for Bedroom 2.5L Ultra Quiet Essential Oil Diffuser 7 Color Night Light Auto Shut Off 30H Runtime Large Room', 13, 179, 'Cloud:#e6ebf5,Pink:#ffc2d6,Sky:#bfe0ff', '', '2.5L tank,30H runtime,7 color light'],
+  ['plush', 'toys', 'Bunny Plush', 'Kawaii Bunny Plush Toy Super Soft Stuffed Animal Cute Plushie Pillow Hugging Doll Birthday Gift for Kids Adults', 6, 89, 'Cream:#fbeede,Pink:#ffc2d6,Lavender:#d8c9ff,Mint:#c4f0dd', '8 in:0,16 in:4,32 in:11', 'Ultra soft,Hypoallergenic,Machine washable'],
+  ['brushes', 'beauty', 'Makeup Brush Set 16 Pcs', 'Makeup Brushes 16 Pcs Premium Synthetic Foundation Powder Concealer Eyeshadow Blush Brush Set with Case Professional Kabuki Kit', 6, 119, 'Rose gold:#e8a0a0,Black:#3a3541,Pearl:#e6dcea', '', '16 pieces,Vegan bristles,Travel case'],
+  ['petbed', 'pets', 'Calming Donut Pet Bed', 'Calming Dog Bed Cat Bed Donut Cuddler Anti Anxiety Round Fluffy Plush Faux Fur Pet Bed for Small Medium Dogs Cats Washable Non Slip', 15, 199, 'Taupe:#c8b39a,Pink:#f7b7c9,Grey:#b9b6c2', 'S 20 in:0,M 24 in:4,L 30 in:9', 'Faux fur,Raised rim,Machine washable'],
+  ['yoga', 'sports', 'Non-Slip Yoga Mat', 'Extra Thick Yoga Mat Non Slip TPE Exercise Mat with Carrying Strap for Pilates Workout Fitness Home Gym Floor', 9, 129, 'Lilac:#b9a2ff,Teal:#3ec7b5,Coral:#ff8a7a,Black:#3a3541', '', '10mm thick,Non-slip,Carry strap'],
+  ['power', 'tech', 'Power Bank 20000mAh', 'Portable Charger Power Bank 20000mAh Fast Charging USB-C PD 22.5W Slim Battery Pack LED Display for iPhone Samsung Android', 12, 169, 'White:#f2f1f5,Black:#3a3541,Lavender:#c7b6ff', '10000mAh:0,20000mAh:4,30000mAh:9', '22.5W fast charge,LED display,3 outputs'],
+  ['cap', 'fashion', 'Vintage Baseball Cap', 'Vintage Washed Baseball Cap for Men Women Adjustable Cotton Dad Hat Low Profile Unstructured Classic Plain Sun Hat', 4, 59, 'Pink:#ffa3c4,Navy:#46578c,Khaki:#cdb98f,Black:#3a3541', '1 pc:0,2 pack:3', '100% cotton,Adjustable strap,Washed finish'],
+  ['tumbler', 'kitchen', '40oz Tumbler with Handle', '40oz Tumbler with Handle and Straw Lid Stainless Steel Vacuum Insulated Cup Keeps Cold 34 Hours Leak Resistant Travel Mug Car Cup', 10, 149, 'Rose quartz:#f4a7b9,Lilac:#b9a2ff,Seafoam:#8fd9c6,Cream:#f1e4cc', '30oz:0,40oz:2,64oz:6', '34H cold,Leak resistant,Fits cup holders'],
+  ['popit', 'toys', 'Pop It Fidget Toy', 'Pop It Fidget Toy Rainbow Push Bubble Sensory Toys Stress Relief Squeeze Silicone Popper Game for Kids Adults Classroom', 2, 39, 'Rainbow:#ff5c7a,Pastel:#ffb3cc,Neon:#3dfcb4', '1 pc:0,3 pack:2,10 pack:6', 'Food-grade silicone,Washable,Endless popping'],
+  ['projector', 'home', 'Galaxy Star Projector', 'Galaxy Projector Star Night Light Aurora Nebula Ceiling Projector with Bluetooth Speaker White Noise Timer Remote for Bedroom Gaming Room', 18, 259, 'Nebula:#9b5cff,Aurora:#2fd6b0,Sunset:#ff7a59', '', 'Bluetooth speaker,White noise,Auto-off timer'],
+  ['vacuum', 'home', 'Cordless Stick Vacuum', 'Cordless Vacuum Cleaner 30000Pa Powerful Suction Stick Vacuum 6 in 1 Lightweight 45min Runtime LED Display for Carpet Hardwood Pet Hair', 45, 699, 'Violet:#8a6cff,Teal:#2fc4b2,Rose:#ff7aa8', '', '30000Pa suction,45 min runtime,6 in 1'],
+  ['candle', 'home', 'Scented Candle Set', 'Scented Candles Gift Set Soy Wax Aromatherapy Jar Candles Long Lasting Vanilla Lavender Sea Salt Home Fragrance Birthday Gifts', 7, 99, 'Vanilla:#f6d9a8,Lavender:#cdb8ff,Sea salt:#a8dcef,Rose:#f7b0c0', '1 jar:0,4 pack:6,8 pack:11', 'Natural soy wax,50H burn,Cotton wick'],
+  ['boost', 'boost', '2× Hits Boost', '2× Hits Boost Doubles Every Hit You Earn Stacks With Active Boosts Activates on Delivery', 49, 240, 'Gold:#ffc21a', '5 min:0,15 min:70,30 min:130', 'Doubles all hits,Stacks,Activates on delivery'],
+  ['freeze', 'boost', 'Streak Freeze', 'Streak Freeze Protects Your Daily Streak When You Miss a Day Keep Your Progress Stackable Activates on Delivery', 39, 180, 'Ice:#8fd8ff', '1 pc:0,3 pack:60,5 pack:90', 'Saves your streak,Stackable,Activates on delivery'],
+  ['spins', 'boost', 'Free Spins Bundle', 'Free Spins Bundle for Slots Extra Pulls Beyond Your Refill Timer Stackable Top Up Activates on Delivery', 25, 120, 'Cherry:#ff3d6e', '5 spins:0,15 spins:40,40 spins:95', 'Extra pulls,Stackable,Activates on delivery'],
+];
+const UT = {
+  boost: { sz: [5, 15, 30], fx: n => { S.boostUntil = Math.max(T(), S.boostUntil) + n * 60000; }, msg: n => `Your ${n}-minute 2× hits boost is on` },
+  freeze: { sz: [1, 3, 5], fx: n => { S.freezes += n; }, msg: n => `${n} streak freeze${n > 1 ? 's' : ''} added` },
+  spins: { sz: [5, 15, 40], fx: n => { S.energy += n; }, msg: n => `${n} free spins added to Slots` },
+};
+const PRL = PR_RAW.map(([id, cat, n, t, p, was, cols, sizes, feats]) => ({
+  id, cat, n, t, p, was, u: UT[id] || null,
+  cols: cols.split(',').map(x => x.split(':')),
+  sizes: sizes ? sizes.split(',').map(x => { const [a, b] = x.split(':'); return [a, +b]; }) : null,
+  feats: feats.split(','),
+}));
+const PRM = Object.fromEntries(PRL.map(p => [p.id, p]));
+const GOODS = PRL.filter(p => !p.u);
+const CATS = [['all', 'For you'], ['boost', 'Power-ups'], ['tech', 'Electronics'], ['home', 'Home'], ['kitchen', 'Kitchen'], ['fashion', 'Fashion'], ['beauty', 'Beauty'], ['sports', 'Sports'], ['toys', 'Toys'], ['pets', 'Pets']];
+const CATN = Object.fromEntries(CATS);
+const TREND = ['wireless earbuds', 'led lights for bedroom', 'air fryer', '40oz tumbler', 'phone case', 'oversized hoodie', 'mini drone', 'smart watch', 'massage gun', 'pop it'];
+const BUYERS = ['Maya', 'Jordan', 'Priya', 'Sam', 'Leo', 'Ava', 'Noah', 'Zoe', 'Eli', 'Mia', 'Omar', 'Lucia', 'Kai', 'Nina', 'Theo', 'Ruby', 'Dev', 'Ivy'];
+const CITIES = ['Austin', 'Denver', 'Leeds', 'Toronto', 'Phoenix', 'Brooklyn', 'Portland', 'Dublin', 'Perth', 'Tampa', 'Oakland', 'Boise', 'Tucson', 'Halifax'];
+const ADDR = [
+  ['Alex Rivera', '(555) 010-4477', '88 Marzipan Ave, Apt 3C', 'Sugar Hill, CA 90012'],
+  ['Alex Rivera', '(555) 010-4477', '1 Gumdrop Plaza, Floor 9', 'Sugar Hill, CA 90017'],
+];
+
+// ---------- art cache ----------
+const ACache = new Map();
+function art(pr, ci = 0) {
+  const key = pr.id + ':' + ci;
+  let s = ACache.get(key);
+  if (!s) { const [nm, c] = pr.cols[ci] || pr.cols[0]; s = `<svg class="sh-art" viewBox="0 0 100 100" aria-hidden="true">${ART[pr.id](c, shade(c, -.3), shade(c, .55), nm)}</svg>`; ACache.set(key, s); }
+  return s;
+}
+const tile = (pr, ci, inner = '', cls = '') => `<span class="sh-img${cls ? ' ' + cls : ''}" style="--h:${(pr.cols[ci] || pr.cols[0])[1]}">${art(pr, ci)}${inner}</span>`;
+
+// ---------- listings: one product, many offers ----------
+let lidN = 0;
+const LS = new Map();
+const PFX = ['', '', '', '', '2025 New ', 'Upgraded ', 'Hot Sale ', 'Clearance ', 'Premium ', '[Top Rated] '];
+const SOLD = [['800+', 2], ['1K+', 4], ['5K+', 5], ['10K+', 6], ['50K+', 3], ['100K+', 1.5]];
+const TAGT = { left: l => `Only ${l.stock} left`, almost: () => 'Almost sold out', b2: () => 'Buy 2 get 1 free', low: () => 'Lowest price in 180 days', best: l => `#1 Best-seller in ${CATN[PRM[l.pid].cat]}`, local: () => 'Local warehouse', fast: () => 'Selling fast' };
+const TAGC = { left: 'red', almost: 'red', b2: 'grn', low: 'org', best: 'gld', local: 'blu', fast: 'red' };
+const offOf = l => clamp(Math.round((1 - l.p / l.was) * 100), 1, 99);
+function mkL(pr, o = {}) {
+  const p = o.p || Math.max(1, Math.round(pr.p * (o.k || rnd(.8, 1.2))));
+  const was = o.was || Math.max(p + 4, Math.round(p / (1 - (o.off || pickW([[rnd(.8, .86), 3], [rnd(.86, .92), 5], [rnd(.92, .95), 3]])))));
+  const tag = o.tag != null ? o.tag : pr.u ? pick(['', 'best']) : pickW([['', 26], ['left', 16], ['almost', 8], ['b2', 14], ['low', 10], ['best', 10], ['local', 8], ['fast', 8]]);
+  const l = {
+    id: ++lidN, pid: pr.id, ci: o.ci != null ? o.ci : ri(0, pr.cols.length - 1), p, was,
+    t: (pr.u ? '' : o.pfx != null ? o.pfx : pick(PFX)) + pr.t,
+    r: pr.u ? '4.9' : rnd(4.5, 4.9).toFixed(1), rv: ri(300, 42000), sold: pickW(SOLD), tag, b2: tag === 'b2' ? 1 : 0,
+    stock: tag === 'left' ? ri(2, 6) : tag === 'almost' ? ri(1, 3) : ri(9, 60), ...o.x,
+  };
+  LS.set(l.id, l);
+  return l;
+}
+// the price of a size: small steps for goods, bigger packs for power-ups; the "was" price scales with it
+function vPrice(l, si) {
+  const pr = PRM[l.pid], add = pr.sizes && !l.nu ? pr.sizes[si][1] : 0;
+  return { p: l.p + add, was: Math.round(l.was * (l.p + add) / l.p), after: l.after ? l.after + add : 0 };
+}
+const varName = (pr, ci, si) => [pr.cols.length > 1 ? pr.cols[ci][0] : '', pr.sizes ? pr.sizes[si][0] : ''].filter(Boolean).join(' · ');
+const starsHTML = r => `<span class="sh-st" style="--r:${(+r * 20).toFixed(0)}%" aria-label="${r} stars"></span>`;
+function cardHTML(l) {
+  const pr = PRM[l.pid];
+  return `<div class="sh-card" data-l="${l.id}" role="button" tabindex="0">${tile(pr, l.ci, (l.nu ? '<em class="sh-ribbon">New customer price</em>' : '') + addBtn(l.id))}<span class="sh-cbody"><span class="sh-ct">${l.t}</span><span class="sh-cp">${pz(l.p)}<s>${fmt(l.was)}</s><em class="sh-off">-${offOf(l)}%</em></span><span class="sh-cr">${starsHTML(l.r)}<span>${l.r}</span><span class="sh-dot">·</span><span>${l.sold} sold</span></span>${l.tag ? `<span class="sh-tag ${TAGC[l.tag]}">${TAGT[l.tag](l)}</span>` : ''}</span></div>`;
+}
+const addBtn = id => `<button class="sh-add" data-add="${id}" aria-label="Add to cart">${si('cart')}<i>+</i></button>`;
+const recs = (n, not) => { const out = []; const bag = shuffle(GOODS.filter(p => p.id !== not)); for (let i = 0; i < n; i++) out.push(mkL(bag[i % bag.length])); return out.map(cardHTML).join(''); };
+
+// ---------- lightning deals, new customer deals, the free gift ----------
+let LD = [], ldN = 0, flt = { cat: 'all', q: '', none: false }, bagP = [], viewed = new Set();
+function mkDeal(used = []) {
+  const pr = pick(GOODS.filter(p => !used.includes(p.id)));
+  const dur = ri(150, 540) * 1000, l = mkL(pr, { k: rnd(.5, .75), off: rnd(.88, .96), tag: '', x: { ld: 1, after: Math.round(pr.p * rnd(1.05, 1.25)) } });
+  l.until = T() + dur;
+  return { id: ++ldN, l, ends: l.until, cl: ri(48, 86), v: rnd(.02, .12) };
+}
+const nuPrice = pid => 1 + (hs(pid) % 9);
+function nuPick(n, not = []) { return shuffle(GOODS.filter(p => !not.includes(p.id) && p.p >= 9)).slice(0, n).map(p => p.id); }
+let NU = [];
+function nuListings() {
+  const sig = SH.nu.join();
+  if (NU.sig !== sig) { NU = SH.nu.map(pid => mkL(PRM[pid], { p: nuPrice(pid), was: PRM[pid].was, ci: 0, tag: '', pfx: '', x: { nu: 1 } })); NU.sig = sig; }
+  return NU;
+}
+const GIFTS = ['projector', 'speaker', 'plush', 'humid', 'lamp', 'blender', 'tumbler', 'candle'];
+function newGift(p) { SH.gift = { p, gid: pick(GIFTS.filter(g => !SH.gift || g !== SH.gift.gid)), ready: 0 }; }
+// progress toward the free gift: quick at first, then it waits at 98% for one more item
+function giftBump(kind) {
+  const g = SH.gift; if (!g || g.ready) return;
+  if (g.p >= 98) {
+    if (kind !== 'cart') return;
+    g.p = 100; g.ready = 1;
+    const pr = PRM[g.gid];
+    SH.cart.unshift({ key: 'gift', gift: 1, pid: pr.id, ci: 0, si: 0, q: 1, p: 0, p0: 0, was: pr.was, t: pr.n, sel: 1, stock: 1 });
+    setTimeout(() => { sfx.win(); confetti(90); toast(`Free gift unlocked: ${pr.n}. It’s in your cart.`); }, 350);
+  } else {
+    const inc = { view: 6, cart: 15, search: 4, spin: 12 }[kind] || 3;
+    g.p = Math.min(98, g.p + Math.max(1, Math.round(inc * (1 - g.p / 220))));
+    if (g.p >= 91) g.p = 98;
+  }
+  paintGift();
+}
+
+// ---------- coupons ----------
+const WHEEL = [
+  ['100', 'bundle', '#ff2e4d', 'OFF'], ['20%', 'p20', '#ffb200', 'OFF'], ['FREE', 'ship', '#12b886', 'SHIP'], ['50', 'o50', '#3b7bff', 'OFF'],
+  ['30%', 'p30', '#ff4fa3', 'OFF'], ['15', 'o15', '#8a4dff', 'OFF'], ['200', 'o200', '#ff7a00', 'OFF'], ['40%', 'p40', '#14a3b8', 'OFF'],
+];
+const mkC = (k, v, min, mins, cap = 0) => ({ id: ++SH.cid, k, v, min, cap, exp: T() + mins * 60000 });
+const PRIZE = {
+  bundle: () => [mkC('off', 15, 99, 30), mkC('off', 25, 199, 30), mkC('off', 60, 399, 30)],
+  p20: () => [mkC('pct', 20, 49, 20, 40)], ship: () => [mkC('ship', 0, 0, 30)], o50: () => [mkC('off', 50, 299, 20)],
+  p30: () => [mkC('pct', 30, 129, 15, 30)], o15: () => [mkC('off', 15, 79, 20)], o200: () => [mkC('off', 200, 1499, 15)], p40: () => [mkC('pct', 40, 99, 10, 25)],
+};
+const PRIZE_N = { bundle: '100 hits in coupons', p20: '20% off', ship: 'free express shipping', o50: '50 hits off', p30: '30% off', o15: '15 hits off', o200: '200 hits off', p40: '40% off' };
+const cName = c => (c.k === 'ship' ? 'free express shipping' : c.k === 'pct' ? `${c.v}% off` : `${c.v} hits off`);
+const cVal = (c, g) => (c.k === 'ship' || g < c.min ? 0 : c.k === 'pct' ? Math.min(c.cap || 1e9, Math.round(g * c.v / 100)) : Math.min(c.v, g));
+function bestCoupon(g) {
+  let best = { c: null, v: 0 }, next = null;
+  for (const c of SH.coupons) {
+    if (c.k === 'ship' || c.exp < T()) continue;
+    const v = cVal(c, g);
+    if (v > best.v) best = { c, v };
+    else if (g < c.min && c.min - g <= 150) { const pv = c.k === 'pct' ? Math.min(c.cap || 1e9, Math.round(c.min * c.v / 100)) : c.v; if (!next || pv > next.pv) next = { c, gap: c.min - g, pv }; }
+  }
+  if (next && next.pv <= best.v) next = null;
+  return { ...best, next };
+}
+const cpHTML = c => `<div class="sh-coup${c.k === 'ship' ? ' ship' : ''}"><span class="sh-coupv">${c.k === 'off' ? `${pz(c.v)}<small>OFF</small>` : c.k === 'pct' ? `<b>${c.v}%</b><small>OFF</small>` : `<b>FREE</b><small>EXPRESS</small>`}</span><span class="sh-coupt"><b>${c.k === 'ship' ? 'Free express shipping' : c.min ? `Orders over ${pz(c.min)}` : 'No minimum'}</b><small>${c.k === 'pct' && c.cap ? `Up to ${pz(c.cap)} off` : c.k === 'ship' ? 'Any order' : 'One per order'}</small><em class="sh-cpx" data-exp="${c.exp}">Expires in ${cd(c.exp - T())}</em></span></div>`;
+function paintCountdowns() {
+  $$('.sh-cpx', phone).forEach(e => { const t = +e.dataset.exp - T(); setT(e, t > 0 ? `Expires in ${cd(t)}` : 'Expired'); e.classList.toggle('hot', t > 0 && t < 120000); });
+  $$('[data-until]', phone).forEach(e => setT(e, cd(+e.dataset.until - T())));
+}
+const walletBtn = id => `<button class="chip sh-wal" id="${id}" aria-label="Coupons">${si('ticket')}<span></span></button>`;
+function paintWallet() {
+  $$('.sh-wal span', phone).forEach(e => setT(e, SH.coupons.length || ''));
+}
+function openWallet() {
+  const list = SH.coupons.slice().sort((a, b) => a.exp - b.exp);
+  const el = html(`<div class="sh-wl">${list.length ? list.map(cpHTML).join('') : '<p class="sh-wl-e">No coupons yet. Spin the wheel to win one.</p>'}${SH.spins > 0 ? `<button class="pbtn sh-spinbtn" data-spin>${si('gift')}Spin to win a coupon</button>` : ''}<p class="fine">Your best coupon is applied at checkout automatically. One coupon per order.</p></div>`);
+  const close = sheet('Your coupons', el);
+  el.addEventListener('click', e => { if (e.target.closest('[data-spin]')) { close(); setTimeout(() => showWheel(), 320); } });
+}
+
+// ---------- spin the wheel: every spin lands on a coupon ----------
+let wheelRot = 0;
+function wheelSVG() {
+  const P2 = a => [Math.sin(a * Math.PI / 180) * 96, -Math.cos(a * Math.PI / 180) * 96].map(v => v.toFixed(2));
+  return `<svg viewBox="-100 -100 200 200" aria-hidden="true"><circle r="99" fill="#1d1026"/>${WHEEL.map(([lab, , col, sub], i) => {
+    const [x0, y0] = P2(i * 45), [x1, y1] = P2(i * 45 + 45), bolt = /^\d+$/.test(lab);
+    return `<path d="M0 0L${x0} ${y0}A96 96 0 0 1 ${x1} ${y1}Z" fill="${col}"/><g transform="rotate(${i * 45 + 22.5})">${bolt ? `<g fill="#fff" transform="translate(-6 -86) scale(.5)">${FP.bolt}</g>` : ''}<text y="-${bolt ? 56 : 62}" text-anchor="middle" font-family="DynaPuff, ui-rounded, sans-serif" font-weight="700" font-size="${lab.length > 3 ? 15 : 18}" fill="#fff">${lab}</text><text y="-43" text-anchor="middle" font-family="system-ui, sans-serif" font-weight="800" font-size="8.5" letter-spacing="1" fill="#fff" opacity=".85">${sub}</text></g>`;
+  }).join('')}${Array.from({ length: 16 }, (_, i) => { const [x, y] = P2(i * 22.5).map(v => v * 1.0); return `<circle cx="${x}" cy="${y}" r="2.6" fill="#ffe9a6"/>`; }).join('')}<circle r="26" fill="#fff"/><circle r="22" fill="#ff2e4d"/></svg>`;
+}
+function showWheel(first) {
+  if (SH.spins <= 0) { sfx.nope(); toast('No spins left. Every order earns another.'); return; }
+  if ($('.modal')) return;
+  const m = modal(`<div class="sh-wh"><small class="sh-whk">${first ? 'Welcome gift' : 'Bonus spin'}</small><h3>Spin to win</h3><p class="sh-whp">Every spin wins a coupon, up to ${pz(200)} off.</p><div class="sh-wheel"><div class="sh-wrot" style="transform:rotate(${wheelRot}deg)">${wheelSVG()}</div><span class="sh-wptr"></span><button class="sh-wgo" data-spin>SPIN</button></div><button class="pbtn" data-spin>Spin now</button><button class="link" data-x>No thanks</button></div>`);
+  $('.mcard', m).classList.add('sh-whc');
+  let spun = false, sure = false;
+  m.addEventListener('click', e => {
+    if (e.target.closest('[data-x]')) {
+      if (spun || sure) { m.remove(); return; }
+      sure = true; sfx.nope();
+      $('.sh-whp', m).textContent = 'Leave without your coupon? New customers win the biggest coupons on their first spin.';
+      e.target.closest('[data-x]').textContent = 'Leave anyway';
+      return;
+    }
+    if (e.target.closest('[data-use]')) { m.remove(); return; }
+    if (!e.target.closest('[data-spin]') || spun) return;
+    spun = true; SH.spins--;
+    const idx = first || !SH.seenBundle ? 0 : pickW([[1, 30], [2, 20], [5, 26], [3, 10], [4, 7], [7, 5], [6, 2]]);
+    SH.seenBundle = 1;
+    const won = PRIZE[WHEEL[idx][1]]();
+    SH.coupons.push(...won); giftBump('spin'); save(); refreshBadges(); paintWallet();
+    const turns = reduced ? 1 : 6, target = wheelRot - (wheelRot % 360) + turns * 360 + (360 - (idx * 45 + 22.5)) + rnd(-14, 14);
+    wheelRot = target;
+    const rot = $('.sh-wrot', m), ms = reduced ? 600 : 4200;
+    rot.style.transition = `transform ${ms}ms cubic-bezier(.15,.85,.12,1)`;
+    requestAnimationFrame(() => { rot.style.transform = `rotate(${target}deg)`; });
+    $$('[data-spin]', m).forEach(b => { b.disabled = true; });
+    sfx.lever(); haptic();
+    if (!reduced) for (let k = 0; k < 26; k++) setTimeout(() => { if (m.isConnected) { sfx.tick(); if (k % 4 === 0) haptic(); } }, ms * (1 - Math.pow(1 - k / 26, .45)) * .92);
+    setTimeout(() => {
+      if (!m.isConnected) return;
+      sfx.win(); confetti(140); haptic(true);
+      $('.mcard', m).innerHTML = `<div class="sh-wh won"><span class="mic" style="background:${WHEEL[idx][2]};color:#fff">${si('gift')}</span><h3>You won ${PRIZE_N[WHEEL[idx][1]]}!</h3><p>Added to your coupons. Use ${won.length > 1 ? 'them' : 'it'} before ${won.length > 1 ? 'they expire' : 'it expires'}.</p><div class="sh-wl">${won.map(cpHTML).join('')}</div><button class="pbtn" data-use>Shop now</button></div>`;
+    }, ms + 250);
+  });
+}
+
+// ---------- cart ----------
+const cartUnits = () => SH.cart.reduce((s, l) => s + (l.gift ? 0 : l.q), 0);
+function addLine(l, ci, si, q, from) {
+  const pr = PRM[l.pid], v = vPrice(l, si), key = `${l.pid}|${ci}|${si}|${l.nu ? 'n' : ''}`;
+  let line = SH.cart.find(x => x.key === key);
+  if (line) {
+    if (l.nu) { sfx.nope(); toast('Limit 1 per customer at this price'); return false; }
+    if (line.q + q > line.stock) { sfx.nope(); toast(`Only ${line.stock} left in stock`); return false; }
+    line.q += q; line.sel = 1;
+  } else {
+    line = { key, pid: l.pid, ci, si, q: l.nu ? 1 : Math.min(q, l.stock), p: v.p, p0: v.p, was: v.was, bp: l.p, bw: l.was, t: l.t, sel: 1, b2: l.b2 || 0, nu: l.nu || 0, stock: l.nu ? 1 : l.stock, until: l.until || 0, after: v.after };
+    const gi = SH.cart.findIndex(x => x.gift);
+    SH.cart.splice(gi < 0 ? 0 : gi + 1, 0, line);
+  }
+  S.carted = (S.carted || 0) + q;
+  act(); sfx.pop(4); haptic();
+  if (from) fly(from, pr, ci);
+  giftBump('cart');
+  cartDirty = true; save(); refreshBadges(); queueCheck();
+  return true;
+}
+function fly(from, pr, ci) {
+  const B = bundleById('shop'), tab = B.view && $('.btabs [data-t="cart"]', B.view);
+  if (reduced || !tab || !from || B.view.classList.contains('sh-focus')) { toast('Added to cart'); return; }
+  const [x0, y0] = centerOf(from), [x1, y1] = centerOf(tab);
+  const f = html(`<div class="sh-fly" style="--h:${pr.cols[ci][1]}">${art(pr, ci)}</div>`);
+  f.style.left = x0 + 'px'; f.style.top = y0 + 'px';
+  phone.append(f); void f.offsetWidth;
+  f.style.transform = `translate(${x1 - x0}px, ${y1 - y0}px) scale(.22)`; f.style.opacity = '.4';
+  setTimeout(() => { f.remove(); restart($('.tg', tab), 'sh-bump'); }, 560);
+}
+function calc(lines, ship = 'std') {
+  let retail = 0, sub = 0, b2 = 0, n = 0;
+  const gifts = [];
+  for (const l of lines) {
+    if (l.gift) { gifts.push(l); continue; }
+    retail += l.was * l.q; sub += l.p * l.q; n += l.q;
+    if (l.b2) b2 += Math.floor(l.q / 3) * l.p;
+  }
+  const goods = sub - b2, cp = bestCoupon(goods), giftOk = gifts.length > 0 && goods >= GIFT_MIN;
+  const giftVal = giftOk ? gifts.reduce((s, l) => s + l.was, 0) : 0, net = goods - cp.v;
+  const shipCp = SH.coupons.find(c => c.k === 'ship' && c.exp > T()), freeStd = net >= FREE_SHIP;
+  const shipFee = !n ? 0 : ship === 'exp' ? (shipCp ? 0 : EXP_FEE) : freeStd ? 0 : STD_FEE;
+  const saved = retail - sub + b2 + cp.v + giftVal + (ship === 'exp' && shipCp ? EXP_FEE : 0);
+  return { retail, sub, b2, goods, cp, gifts, giftOk, giftVal, net, freeStd, shipCp, shipFee, total: net + shipFee, saved, n, pct: retail + giftVal ? Math.round(saved / (retail + giftVal + (ship === 'exp' && shipCp ? EXP_FEE : 0)) * 100) : 0 };
+}
+function dropPrice() {
+  const L = SH.cart.filter(l => !l.gift && !l.nu && !l.until && l.p > 2);
+  if (!L.length) return null;
+  const l = pick(L), np = Math.max(1, Math.round(l.p * rnd(.78, .92)));
+  if (np >= l.p) return null;
+  l.p = np; SH.dropAt = T(); cartDirty = true; save();
+  return l;
+}
+let cartDirty = true, cartRecs = '';
+const fsHTML = k => {
+  const pct = clamp(k.net / FREE_SHIP, 0, 1) * 100;
+  return `<div class="sh-fs${k.freeStd ? ' ok' : ''}"><span>${si(k.freeStd ? 'check' : 'truck')}${k.freeStd ? 'You got free shipping' : `Add ${pz(FREE_SHIP - k.net)} more for free shipping`}</span><span class="sh-fsb"><i style="width:${pct}%"></i></span></div>`;
+};
+function lineHTML(l) {
+  const pr = PRM[l.pid], dropped = l.p0 - l.p, vn = varName(pr, l.ci, l.si);
+  let tag = '';
+  if (l.gift) tag = `<span class="sh-ltag gift">${si('gift')}Free gift</span>`;
+  else if (l.until) tag = `<span class="sh-ltag org">${IF('bolt')}Deal price ends in <b data-until="${l.until}">${cd(l.until - T())}</b></span>`;
+  else if (dropped > 0) tag = `<span class="sh-ltag grn">${si('down')}Price dropped ${pz(dropped)}</span>`;
+  else if (l.up) tag = '<span class="sh-ltag">Lightning deal ended</span>';
+  else if (l.nu) tag = '<span class="sh-ltag gld">New customer price</span>';
+  const low = !l.gift && l.stock <= 6 ? `<span class="sh-low">Only ${l.stock} left</span>` : '';
+  return `<div class="sh-line${l.gift ? ' gift' : ''}${l.sel || l.gift ? '' : ' off'}" data-k="${l.key}">
+    ${l.gift ? '<span class="sh-ck on dis" aria-hidden="true"></span>' : `<button class="sh-ck${l.sel ? ' on' : ''}" data-a="sel" role="checkbox" aria-checked="${!!l.sel}" aria-label="Select"></button>`}
+    <button class="sh-lth" data-a="view" aria-label="${pr.n}">${tile(pr, l.ci)}</button>
+    <div class="sh-lt"><span class="sh-ltt">${l.t}</span>${vn ? `<span class="sh-lv">${vn}</span>` : ''}${tag}${low}
+      <div class="sh-lp">${pz(l.p)}<s>${fmt(l.was)}</s>${l.gift ? '' : `<span class="sh-step"><button data-a="dec" aria-label="Fewer">${si('minus')}</button><b>${l.q}</b><button data-a="inc" aria-label="More">${si('plus')}</button></span>`}</div>
+      ${l.b2 && !l.gift ? `<span class="sh-b2">${l.q % 3 === 2 ? 'Add 1 more to get 1 free' : l.q >= 3 ? `${Math.floor(l.q / 3)} free with Buy 2 get 1` : 'Buy 2 get 1 free'}</span>` : ''}
+    </div>
+    <button class="sh-rm" data-a="rm" aria-label="Remove">${si('close')}</button></div>`;
+}
+function sumRows(k, o = {}) {
+  const rows = [
+    ['Retail price', `<s>${pz(k.retail + k.giftVal)}</s>`],
+    ['Item discounts', `−${pz(k.retail - k.sub)}`, 'sv'],
+  ];
+  if (k.b2) rows.push(['Buy 2 get 1 free', `−${pz(k.b2)}`, 'sv']);
+  if (k.cp.c) rows.push([`Coupon · ${cName(k.cp.c)}`, `−${pz(k.cp.v)}`, 'sv cp']);
+  else if (!o.co) rows.push(['Coupons', SH.coupons.length ? 'None apply yet' : 'Spin to win', 'cp']);
+  if (k.giftOk) rows.push(['Free gift', `−${pz(k.giftVal)}`, 'sv']);
+  if (o.ship === 'exp' && k.shipCp) rows.push(['Express shipping', `<s>${pz(EXP_FEE)}</s> FREE`, 'sv']);
+  else rows.push(['Shipping', k.shipFee ? pz(k.shipFee) : 'FREE', k.shipFee ? '' : 'sv']);
+  return `${rows.map(([a, b, c]) => `<div class="sh-row ${c || ''}"${c && c.includes('cp') && !o.co ? ' data-a="wallet" role="button"' : ''}><span>${a}</span><b>${b}</b></div>`).join('')}
+    ${k.cp.next ? `<div class="sh-hint">${si('ticket')}Add ${pz(k.cp.next.gap)} more to use your ${cName(k.cp.next.c)} coupon</div>` : ''}
+    <div class="sh-row tot"><span>Total</span><b>${pz(k.total)}</b></div>
+    <div class="sh-saving">You’re saving ${pz(k.saved)} <small>(${k.pct}%)</small></div>`;
+}
+function renderCart() {
+  const a = APPS.cart; if (!a.body) return;
+  cartDirty = false;
+  const sc = $('#sh-cs', a.body), ft = $('#sh-cf', a.body);
+  if (!cartRecs) cartRecs = recs(6);
+  const top = sc.scrollTop;
+  if (!SH.cart.length) {
+    sc.innerHTML = `<div class="sh-empty"><span class="sh-eic">${si('cart')}</span><b>Your cart is empty</b><small>Items you add will show up here.</small><button class="pbtn" data-a="shop">Start shopping</button></div><div class="sh-sech"><b>Recommended for you</b></div><div class="sh-grid">${cartRecs}</div>`;
+    ft.hidden = true; return;
+  }
+  const sel = SH.cart.filter(l => l.sel || l.gift), k = calc(sel), hot = SH.cart.filter(l => !l.gift && l.stock <= 6).length;
+  const gift = SH.cart.find(l => l.gift), paidSel = sel.some(l => !l.gift);
+  sc.innerHTML = `${fsHTML(k)}${hot ? `<div class="sh-hot">${IF('flame')}${hot} item${hot > 1 ? 's' : ''} in your cart ${hot > 1 ? 'are' : 'is'} selling fast</div>` : ''}
+    ${gift && !k.giftOk ? `<div class="sh-hint">${si('gift')}Add ${pz(GIFT_MIN - k.goods)} more to claim your free ${PRM[gift.pid].n}</div>` : ''}
+    <div class="sh-lines">${SH.cart.map(lineHTML).join('')}</div>
+    ${paidSel ? `<div class="sh-sum" id="sh-sum">${sumRows(k)}</div>` : ''}
+    <div class="sh-sech"><b>You may also like</b></div><div class="sh-grid">${cartRecs}</div>`;
+  sc.scrollTop = top;
+  const all = SH.cart.every(l => l.sel || l.gift), cnt = sel.filter(l => !l.gift).reduce((s, l) => s + l.q, 0);
+  ft.hidden = false;
+  ft.innerHTML = `<button class="sh-ck${all ? ' on' : ''}" data-a="all" role="checkbox" aria-checked="${all}" aria-label="Select all"></button><span class="sh-alll">All</span>
+    <span class="sh-ftot"><b>${pz(k.total)}</b><small>Saving ${pz(k.saved)}</small></span>
+    <button class="sh-cko" data-a="checkout"${cnt ? '' : ' disabled'}>Checkout (${cnt})</button>`;
+}
+function removeLine(l, el) {
+  const pr = PRM[l.pid], off = l.gift ? 100 : Math.round((1 - l.p / l.was) * 100);
+  const m = modal(`<span class="mic" style="background:var(--soft)">${tile(pr, l.ci)}</span><h3>${l.gift ? 'Remove your free gift?' : 'Remove this item?'}</h3><p>${l.gift ? 'You’ll need to unlock it again to get it for free.' : `It’s ${off}% off right now and ${fmt(ri(300, 4800))} people have it in their cart. This price may not come back.`}</p><button class="pbtn" data-k>Keep it</button><button class="link" data-r>Remove</button>`);
+  m.classList.add('sh-guilt');
+  m.addEventListener('click', e => {
+    if (e.target.closest('[data-k]')) { m.remove(); sfx.pop(6); return; }
+    if (!e.target.closest('[data-r]')) return;
+    m.remove(); sfx.close();
+    SH.cart = SH.cart.filter(x => x !== l);
+    if (l.gift && SH.gift) { SH.gift.ready = 0; SH.gift.p = 98; paintGift(); }
+    save(); refreshBadges();
+    if (el && !reduced) { el.classList.add('gone'); setTimeout(renderCart, 220); } else renderCart();
+  });
+}
+// a listing rebuilt from a cart or order line, at the size-0 base price
+function lineL(l) {
+  const pr = PRM[l.pid], add = pr.sizes && !l.nu ? pr.sizes[l.si][1] : 0, bp = l.bp || Math.max(1, l.p - add), bw = l.bw || Math.round(l.was * bp / l.p);
+  return mkL(pr, { p: bp, was: bw, ci: l.ci, tag: '', pfx: '', x: { t: l.t, stock: Math.max(l.stock || 9, l.q), b2: l.b2 || 0, nu: l.nu || 0, ld: l.until ? 1 : 0, until: l.until || 0, after: l.after ? l.after - add : 0 } });
+}
+
+// ---------- pages: detail, checkout and success slide over a tab ----------
+const PG = { shop: [], cart: [], orders: [] };
+const topPage = tab => (PG[tab] || [])[(PG[tab] || []).length - 1];
+function syncFocus() {
+  const B = bundleById('shop'); if (!B.view) return;
+  const t = curBundle === B && curApp && topPage(curApp);
+  B.view.classList.toggle('sh-focus', !!(t && t._focus));
+}
+function pushPage(tab, el, anim = true) {
+  const host = APPS[tab].body; if (!host) return;
+  const st = PG[tab];
+  if (st.length >= 6) { const old = st.shift(); if (old._close) old._close(); old.remove(); }
+  host.append(el); st.push(el);
+  if (anim && !reduced) { void el.offsetWidth; el.classList.add('in'); } else el.classList.add('in', 'now');
+  $('.sh-bk', el) && ($('.sh-bk', el).onclick = () => popPage(tab));
+  syncFocus();
+}
+function popPage(tab) {
+  const el = PG[tab].pop(); if (!el) return;
+  if (el._close) el._close();
+  sfx.close();
+  if (reduced) el.remove(); else { el.classList.remove('in', 'now'); el.classList.add('out'); setTimeout(() => el.remove(), 280); }
+  syncFocus();
+  if (tab === 'cart') renderCart();
+}
+// a tab going out of view stops anything a held key started
+const blurPages = () => { for (const k in PG) { const t = topPage(k); if (t && t._blur) t._blur(); } };
+function clearPages(tab) { for (const el of PG[tab]) { if (el._close) el._close(); el.remove(); } PG[tab].length = 0; syncFocus(); }
+function pageKey(tab, e) {
+  const t = topPage(tab); if (!t) return false;
+  if (t._key && t._key(e)) return true;
+  const sc = $('.sh-ps', t);
+  if (e.type === 'keydown' && sc && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) { sc.scrollBy({ top: e.key === 'ArrowDown' ? 260 : -260, behavior: 'smooth' }); return true; }
+  return false;
+}
+// Escape and H step back through pages before leaving the app
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape' && e.key !== 'h') return;
+  if (!curBundle || curBundle.id !== 'shop' || !curApp || !PG[curApp] || !PG[curApp].length || $('.modal') || $('.scrim.show') || e.target.closest && e.target.closest('input')) return;
+  e.stopPropagation(); e.preventDefault(); popPage(curApp);
+}, true);
+
+// ---------- product detail ----------
+const REVT = ['Exactly as pictured. Great quality for the price and it arrived faster than expected.', 'Bought one for me and one for my sister. We both love it!', 'Honestly better than the name brand. Would buy again.', 'Works perfectly. Packaging was nice too. Five stars.', 'Good value. The color is even prettier in person.', 'Took a few days but it was worth the wait. Very happy.', 'My third time ordering this. Never disappoints.', 'Super cute and well made. Already recommended it to friends.', 'Does what it says. Can’t beat this price.', 'Arrived well packed. Feels premium. Love it.', 'Great gift idea. Everyone asked where I got it.', 'Using it every day. No complaints at all.'];
+const REVN = ['J***a', 'M***k', 'S***h', 'T***y', 'A***n', 'K***e', 'R***o', 'D***l', 'L***y', 'B***t', 'C***s', 'N***i'];
+const RTAGS = ['Great value', 'Good quality', 'As described', 'Fast delivery', 'Looks premium', 'Easy to use'];
+function reviewsHTML(pr, l, from, n) {
+  const rr = seeded(hs(pr.id) + from * 7);
+  return Array.from({ length: n }, (_, i) => {
+    const st = rr() < .82 ? 5 : 4, d = new Date(Date.now() - (i + from + 1) * rr() * 3 * 864e5), ci = Math.floor(rr() * pr.cols.length), nm = REVN[Math.floor(rr() * REVN.length)];
+    return `<div class="sh-rv"><div class="sh-rvh"><span class="sh-av" style="--h:${pr.cols[ci][1]}">${nm[0]}</span><b>${nm}</b>${starsHTML(st)}<small>${d.toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' })}</small></div><small class="sh-rvv">Verified purchase · ${varName(pr, ci, Math.floor(rr() * (pr.sizes ? pr.sizes.length : 1))) || pr.n}</small><p>${st === 4 ? 'Good overall. Shipping took a little longer than I expected, but the item itself is great.' : REVT[Math.floor(rr() * REVT.length)]}</p><button class="sh-help" data-a="help">Helpful (${Math.floor(rr() * 60) + 3})</button></div>`;
+  }).join('');
+}
+function carouselHTML(pr, ci) {
+  const [nm, c] = pr.cols[ci], alt = pr.cols.length > 1 ? pr.cols.map((x, i) => i).filter(i => i !== ci).slice(0, 3) : [];
+  const slides = [
+    `<div class="sh-sl" style="--h:${c}">${art(pr, ci)}</div>`,
+    `<div class="sh-sl zoom" style="--h:${c}">${art(pr, ci)}</div>`,
+    `<div class="sh-sl feat" style="--h:${c}">${art(pr, ci)}<ul>${pr.feats.map(f => `<li>${si('check')}${f}</li>`).join('')}</ul></div>`,
+  ];
+  if (alt.length) slides.splice(1, 0, `<div class="sh-sl multi" style="--h:${c}">${[ci, ...alt].map(i => `<span>${art(pr, i)}</span>`).join('')}<em>${pr.cols.length} colors</em></div>`);
+  slides.push(`<div class="sh-sl box" style="--h:${c}"><b>What’s in the box</b>${art(pr, ci)}<small>1 × ${pr.n}${pr.u ? '' : ' · 1 × User guide'}</small></div>`);
+  return { html: slides.join(''), n: slides.length, nm };
+}
+function openPDP(tab, l) {
+  const pr = PRM[l.pid];
+  let ci = l.ci, sz = 0, q = 1, inCart = ri(320, 4200), revN = 3;
+  viewed.add(pr.id); giftBump('view');
+  const others = (() => { const rr = seeded(hs(pr.id)); const pool = GOODS.filter(p => p.id !== pr.id); const a = pool[Math.floor(rr() * pool.length)]; let b = pool[Math.floor(rr() * pool.length)]; if (b === a) b = pool[(pool.indexOf(a) + 5) % pool.length]; return [a, b]; })();
+  const fbt = others.map(p => mkL(p, { k: .85, off: .9, tag: '', ci: 0 }));
+  const dist = pr.u ? [96, 3, 1, 0, 0] : (() => { const b4 = ri(6, 12), b3 = ri(2, 5); return [98 - b4 - b3, b4, b3, 1, 1]; })();
+  const car = carouselHTML(pr, ci);
+  const el = html(`<div class="sh-page sh-pdp">
+    <div class="sh-pn"><button class="sh-bk" aria-label="Back">${si('back')}</button><b>${pr.n}</b><button class="sh-pcart" data-a="gocart" aria-label="Cart">${si('cart')}<span class="sh-pcn"></span></button></div>
+    <div class="sh-ps">
+      <div class="sh-carw"><div class="sh-car">${car.html}</div><span class="sh-carn">1/${car.n}</span></div>
+      ${l.ld ? `<div class="sh-ldband"><b>${IF('bolt')}Lightning deal</b><span>Ends in <i data-until="${l.until}">${cd(l.until - T())}</i></span></div>` : l.nu ? `<div class="sh-ldband nu"><b>${si('gift')}New customer price</b><span>Limit 1</span></div>` : ''}
+      <div class="sh-pp"><span class="sh-ppz"></span><s class="sh-ppw"></s><em class="sh-off sh-ppo"></em></div>
+      <div class="sh-pbadges">${l.tag === 'low' || !l.tag ? '<span class="sh-tag org">Lowest price in 180 days</span>' : ''}${l.b2 ? '<span class="sh-tag grn">Buy 2 get 1 free</span>' : ''}<span class="sh-tag blu">${si('truck')}Free shipping over ${pz(FREE_SHIP)}</span></div>
+      <h2 class="sh-pt">${l.t}</h2>
+      <div class="sh-prt">${starsHTML(l.r)}<b>${l.r}</b><span>(${fmt(l.rv)})</span><span class="sh-dot">·</span><span>${l.sold} sold</span>${l.tag === 'best' ? `<span class="sh-tag gld">#1 in ${CATN[pr.cat]}</span>` : ''}</div>
+      ${pr.cols.length > 1 ? `<div class="sh-opt"><div class="sh-oph">Color: <b class="sh-cn">${pr.cols[ci][0]}</b></div><div class="sh-sw">${pr.cols.map(([n, c], i) => `<button class="${i === ci ? 'on' : ''}" data-c="${i}" aria-label="${n}"><span class="sh-img" style="--h:${c}">${art(pr, i)}</span></button>`).join('')}</div></div>` : ''}
+      ${pr.sizes && !l.nu ? `<div class="sh-opt"><div class="sh-oph">${pr.u ? 'Pack' : 'Size'}: <b class="sh-sn">${pr.sizes[0][0]}</b></div><div class="sh-sz">${pr.sizes.map(([n], i) => `<button class="${i === 0 ? 'on' : ''}" data-s="${i}">${n}</button>`).join('')}</div></div>` : ''}
+      <div class="sh-qty"><span class="sh-oph">Quantity</span><span class="sh-step"><button data-a="dec" aria-label="Fewer">${si('minus')}</button><b class="sh-qn">1</b><button data-a="inc" aria-label="More">${si('plus')}</button></span><span class="sh-low">${l.nu ? 'Limit 1 per customer' : l.stock <= 8 ? `Only ${l.stock} left` : ''}</span></div>
+      <div class="sh-b2 sh-qb" ${l.b2 ? '' : 'hidden'}></div>
+      ${pr.u ? `<div class="sh-note">${si('box')}Delivered to your phone. It activates the moment your order arrives.</div>` : ''}
+      <div class="sh-sec2"><b>Frequently bought together</b></div>
+      <div class="sh-fbt"><div class="sh-fbti">${tile(pr, ci)}<span>${pz(vPrice(l, 0).p)}</span></div>${fbt.map(f => `<i>${si('plus')}</i><div class="sh-fbti" data-l="${f.id}" role="button">${tile(PRM[f.pid], 0)}<span>${pz(f.p)}</span></div>`).join('')}</div>
+      <button class="sh-fbtb" data-a="fbt">Add all 3 to cart · <span class="sh-fbtp"></span></button>
+      <div class="sh-sec2"><b>Reviews</b><span>${fmt(l.rv)} ratings</span></div>
+      <div class="sh-rs"><div class="sh-rsn"><b>${l.r}</b>${starsHTML(l.r)}<small>${fmt(l.rv)} ratings</small></div><div class="sh-rsb">${dist.map((v, i) => `<div><span>${5 - i}</span><i><u style="width:${v}%"></u></i><small>${v}%</small></div>`).join('')}</div></div>
+      <div class="sh-rtags">${RTAGS.slice(0, 4).map(t => `<span>${t} (${fmt(Math.round(l.rv * rnd(.04, .12)))})</span>`).join('')}</div>
+      <div class="sh-rvs">${reviewsHTML(pr, l, 0, revN)}</div>
+      <button class="sh-more" data-a="more">See more reviews</button>
+      <div class="sh-sec2"><b>You may also like</b></div>
+      <div class="sh-grid">${recs(4, pr.id)}</div>
+    </div>
+    <div class="sh-pf"><div class="sh-urg">${IF('flame')}<span class="sh-urgt"></span></div><div class="sh-pbtns"><button class="sh-atc" data-a="atc">Add to cart</button><button class="sh-buy" data-a="buy">Buy now<span class="sh-buyp"></span></button></div></div>
+  </div>`);
+  const upd = () => {
+    const v = vPrice(l, sz);
+    $('.sh-ppz', el).innerHTML = pz(v.p); $('.sh-ppw', el).textContent = fmt(v.was); $('.sh-ppo', el).textContent = `-${offOf({ p: v.p, was: v.was })}%`;
+    $('.sh-qn', el).textContent = q;
+    const qb = $('.sh-qb', el); if (l.b2) qb.textContent = q % 3 === 2 ? 'Add 1 more to get 1 free' : q >= 3 ? `You get ${Math.floor(q / 3)} free` : 'Buy 2 get 1 free';
+    setH($('.sh-buyp', el), pz(v.p * q - (l.b2 ? Math.floor(q / 3) * v.p : 0)));
+    const fb = v.p + fbt.reduce((s, f) => s + f.p, 0), fbS = Math.round(fb * .08);
+    setH($('.sh-fbtp', el), `${pz(fb - fbS)} <small>Save ${pz(fbS)}</small>`);
+    const n = cartUnits(); setT($('.sh-pcn', el), n || '');
+  };
+  const urg = () => { inCart = Math.max(120, inCart + ri(-6, 14)); $('.sh-urgt', el).textContent = l.ld ? `${fmt(inCart)} people have this in their cart · Deal ends in ${cd(l.until - T())}` : l.stock <= 8 ? `Only ${l.stock} left · ${fmt(inCart)} people have this in their cart` : `Selling fast · ${fmt(inCart)} people have this in their cart`; };
+  upd(); urg();
+  const carEl = $('.sh-car', el), carN = $('.sh-carn', el);
+  let carTot = car.n;
+  carEl.addEventListener('scroll', () => { const i = Math.round(carEl.scrollLeft / Math.max(1, carEl.clientWidth)) + 1; carN.textContent = `${i}/${carTot}`; }, { passive: true });
+  const bnow = () => {
+    if (l.ld && T() > l.until) { l.p = l.after; l.ld = 0; l.until = 0; }
+    const v = vPrice(l, sz), line = { key: 'now', pid: l.pid, ci, si: sz, q, p: v.p, p0: v.p, was: v.was, bp: l.p, bw: l.was, t: l.t, sel: 1, b2: l.b2 || 0, nu: l.nu || 0, stock: l.stock, until: l.until || 0, after: v.after };
+    act(); openCheckout(tab, [line]);
+  };
+  el.addEventListener('click', e => {
+    const c = e.target.closest('[data-c]'), s = e.target.closest('[data-s]'), a = e.target.closest('[data-a]'), fl = e.target.closest('.sh-grid [data-l], .sh-fbti[data-l]');
+    if (c) {
+      ci = +c.dataset.c; $$('.sh-sw button', el).forEach(b => b.classList.toggle('on', b === c)); $('.sh-cn', el).textContent = pr.cols[ci][0];
+      const cc = carouselHTML(pr, ci); carEl.innerHTML = cc.html; carTot = cc.n; carEl.scrollLeft = 0; carN.textContent = `1/${cc.n}`;
+      const f0 = $('.sh-fbti .sh-img', el); f0.outerHTML = tile(pr, ci); sfx.click(); return;
+    }
+    if (s) { sz = +s.dataset.s; $$('.sh-sz button', el).forEach(b => b.classList.toggle('on', b === s)); $('.sh-sn', el).textContent = pr.sizes[sz][0]; upd(); sfx.click(); return; }
+    if (fl && !e.target.closest('[data-add]')) { const L = LS.get(+fl.dataset.l); if (L) openPDP(tab, L); return; }
+    if (e.target.closest('.sh-grid')) { gridClick(e, tab); return; }
+    if (!a) return;
+    const k = a.dataset.a;
+    if (k === 'inc') { if (l.nu) { sfx.nope(); toast('Limit 1 per customer at this price'); return; } if (q >= l.stock) { sfx.nope(); toast(`Only ${l.stock} left in stock`); return; } q++; sfx.pop(q); upd(); }
+    else if (k === 'dec') { if (q > 1) { q--; sfx.click(); upd(); } }
+    else if (k === 'atc') { if (l.ld && T() > l.until) { l.p = l.after; l.ld = 0; l.until = 0; } if (addLine(l, ci, sz, q, $('.sh-carw', el))) upd(); }
+    else if (k === 'buy') bnow();
+    else if (k === 'gocart') { clearPages(tab); if (tab === 'cart') renderCart(); else showTab(bundleById('shop'), 'cart'); }
+    else if (k === 'fbt') {
+      const v = vPrice(l, sz); let ok = addLine(l, ci, sz, 1, $('.sh-fbt', el));
+      fbt.forEach(f => { const was = f.p; f.p = Math.max(1, Math.round(f.p * .92)); ok = addLine(f, 0, 0, 1) && ok; f.p = was; });
+      if (ok) toast(`3 items added · You saved ${fmt(Math.round((v.p + fbt.reduce((s2, f) => s2 + f.p, 0)) * .08))} more`);
+      upd();
+    }
+    else if (k === 'more') { $('.sh-rvs', el).insertAdjacentHTML('beforeend', reviewsHTML(pr, l, revN, 3)); revN += 3; sfx.click(); }
+    else if (k === 'help') { const m2 = a.textContent.match(/\d+/); if (!a.classList.contains('on')) { a.classList.add('on'); a.textContent = `Helpful (${+m2[0] + 1})`; sfx.pop(3); } }
+  });
+  el._tick = () => { urg(); const n = cartUnits(); setT($('.sh-pcn', el), n || ''); };
+  el._key = e => {
+    if (e.type !== 'keydown') return false;
+    if (e.key === 'Enter') { $('.sh-atc', el).click(); return true; }
+    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { carEl.scrollBy({ left: (e.key === 'ArrowRight' ? 1 : -1) * carEl.clientWidth, behavior: 'smooth' }); return true; }
+    return false;
+  };
+  pushPage(tab, el);
+}
+function gridClick(e, tab) {
+  const add = e.target.closest('[data-add]');
+  if (add) {
+    const l = LS.get(+add.dataset.add); if (!l) return;
+    const pr = PRM[l.pid];
+    if (l.ld && T() > l.until) { l.p = l.after; l.ld = 0; l.until = 0; }
+    addLine(l, l.ci, 0, 1, add.closest('.sh-card, .sh-ldc, .sh-nuc') || add);
+    if (pr.sizes && !l.nu) setTimeout(() => toast(`Added: ${varName(pr, l.ci, 0)}`), 20);
+    restart(add, 'sh-bump');
+    return;
+  }
+  const c = e.target.closest('[data-l]');
+  if (c) { const l = LS.get(+c.dataset.l); if (l) { sfx.click(); openPDP(tab, l); } }
+}
+
+// ---------- checkout: address, delivery, payment, summary, swipe to pay ----------
+function openCheckout(tab, lines) {
+  let ship = 'std', busy = false, holdT = 0;
+  const dStd = ri(240, 330) * 1000, dExp = ri(70, 100) * 1000;
+  const items = () => lines.filter(l => !l.gift || calc(lines).giftOk);
+  const el = html(`<div class="sh-page sh-co">
+    <div class="sh-pn"><button class="sh-bk" aria-label="Back">${si('back')}</button><b>Checkout</b><span class="sh-sec3">${si('lock')}Secure</span></div>
+    <div class="sh-ps">
+      <section class="sh-cks"><h4>${si('pin')}Shipping address</h4><div class="sh-addr"></div><button class="sh-chg" data-a="addr">Change</button></section>
+      <section class="sh-cks"><h4>${si('truck')}Delivery</h4>
+        <button class="sh-dopt on" data-ship="std"><span class="sh-rad"></span><span class="sh-dt"><b>Standard</b><small>Arrives by ${clk(T() + dStd)}</small></span><em class="sh-dstd"></em></button>
+        <button class="sh-dopt" data-ship="exp"><span class="sh-rad"></span><span class="sh-dt"><b>Express</b><small>Arrives by ${clk(T() + dExp)}</small></span><em class="sh-dexp"></em></button>
+      </section>
+      <section class="sh-cks"><h4>${IF('bolt')}Payment method</h4>
+        <div class="sh-pm"><span class="sh-pmi">${IF('bolt')}</span><span class="sh-dt"><b>Hits balance</b><small class="sh-bal"></small></span><span class="sh-rad on"></span></div>
+        <div class="sh-short" hidden><b></b><small>Earn more hits, or remove something from your order.</small><div class="row2"><button class="sh-sbtn" data-a="earn">Earn hits</button><button class="sh-sbtn ghost" data-a="back">Edit order</button></div></div>
+      </section>
+      <section class="sh-cks"><h4>${si('box')}Order summary <small class="sh-cnt"></small></h4><div class="sh-oth">${lines.map(l => `<span class="sh-othi">${tile(PRM[l.pid], l.ci)}${l.q > 1 ? `<b>×${l.q}</b>` : ''}${l.gift ? '<em>FREE</em>' : ''}</span>`).join('')}</div><div class="sh-rows"></div></section>
+      <p class="fine">Payments are encrypted and processed securely. By placing this order you agree to the Terms of Sale.</p>
+    </div>
+    <div class="sh-pf sh-cof"><div class="sh-cot"><span>Total</span><b class="sh-ctot"></b><small class="sh-csav"></small></div>
+      <div class="sh-swipe" data-nodrag><span class="sh-swf"></span><span class="sh-swt"></span><span class="sh-swk" role="button" aria-label="Swipe to pay">${si('chev')}${si('chev')}</span></div></div>
+  </div>`);
+  el._focus = true;
+  const paint = () => {
+    const k = calc(lines, ship), a = ADDR[SH.addr % ADDR.length];
+    setH($('.sh-addr', el), `<b>${a[0]}</b><span>${a[1]}</span><span>${a[2]}</span><span>${a[3]}</span>`);
+    setH($('.sh-dstd', el), k.freeStd ? 'FREE' : pz(STD_FEE));
+    setH($('.sh-dexp', el), k.shipCp ? `<s>${fmt(EXP_FEE)}</s> FREE` : pz(EXP_FEE));
+    setH($('.sh-bal', el), `Available: ${pz(S.hits)}`);
+    setT($('.sh-cnt', el), `(${k.n} item${k.n > 1 ? 's' : ''}${k.giftOk ? ' + gift' : ''})`);
+    setH($('.sh-rows', el), sumRows(k, { co: 1, ship }));
+    setH($('.sh-ctot', el), pz(k.total));
+    setH($('.sh-csav', el), `Saving ${pz(k.saved)}`);
+    const short = k.total - S.hits, sh = $('.sh-short', el);
+    sh.hidden = short <= 0;
+    if (short > 0) setH($('b', sh), `Your balance is ${pz(short)} short`);
+    if (!busy) setH(txt, `Swipe to pay ${pz(k.total)}`);
+    return k;
+  };
+  const trk = $('.sh-swipe', el), knob = $('.sh-swk', el), fill = $('.sh-swf', el), txt = $('.sh-swt', el);
+  paint();
+  // the slider: drag the knob all the way right
+  let max = 0, x = 0;
+  const measure = () => { max = Math.max(1, trk.clientWidth - knob.offsetWidth - 8); };
+  const setX = (v, t = '') => { x = v; knob.style.transition = fill.style.transition = t; knob.style.transform = `translateX(${v}px)`; fill.style.width = `${v + knob.offsetWidth + 4}px`; txt.style.opacity = String(clamp(1 - v / max * 1.6, 0, 1)); };
+  const reset = () => setX(0, 'transform .4s var(--spring), width .4s var(--spring)');
+  function complete() {
+    if (busy) return;
+    busy = true; measure(); setX(max, 'transform .15s ease-out, width .15s ease-out');
+    const k = paint();
+    if (!k.n) { busy = false; reset(); return; }
+    if (!spend(k.total)) {
+      haptic(true); restart(trk, 'shake'); trk.classList.add('no'); reset();
+      txt.style.opacity = '1'; setH(txt, 'Declined: not enough hits');
+      const sh = $('.sh-short', el), ps = $('.sh-ps', el); if (sh && !sh.hidden) { ps.scrollBy({ top: (sh.getBoundingClientRect().top - ps.getBoundingClientRect().top) / scale - 60, behavior: 'smooth' }); restart(sh, 'sh-bump'); }
+      setTimeout(() => { trk.classList.remove('no'); busy = false; paint(); }, 1600);
+      return;
+    }
+    trk.classList.add('ok'); txt.style.opacity = '1'; setH(txt, '<span class="sh-spin"></span>Processing payment');
+    sfx.thunk(); haptic(true);
+    const o = placeOrder(items(), ship, k, ship === 'exp' ? dExp : dStd);
+    setTimeout(() => successPage(tab, o), 1100);
+  }
+  drag(knob, {
+    axis: 'x', skip: () => busy,
+    onStart: () => { measure(); trk.classList.add('on'); haptic(); sfx.tick(); },
+    onMove: dx => setX(clamp(dx, 0, max)),
+    onEnd: () => { trk.classList.remove('on'); if (x >= max * .9) complete(); else { reset(); sfx.nope(); } },
+  });
+  trk.addEventListener('click', e => { if (e.target.closest('.sh-swk') || busy) return; restart(knob, 'sh-nudge'); toast('Slide the button to the right to pay'); });
+  el.addEventListener('click', e => {
+    const d = e.target.closest('[data-ship]'), a = e.target.closest('[data-a]');
+    if (d && !busy) { ship = d.dataset.ship; $$('.sh-dopt', el).forEach(b => b.classList.toggle('on', b === d)); sfx.click(); paint(); return; }
+    if (!a) return;
+    if (a.dataset.a === 'addr') { SH.addr++; sfx.click(); paint(); toast('Shipping address updated'); }
+    else if (a.dataset.a === 'earn') openApp('slots');
+    else if (a.dataset.a === 'back') popPage(tab);
+    else if (a.dataset.a === 'wallet') openWallet();
+  });
+  el._tick = () => { if (!busy) paint(); };
+  el._key = e => {
+    if (busy) return e.key === 'Enter' || e.key === ' ';
+    if (e.key === 'Enter' && e.type === 'keydown') { measure(); setX(max, 'transform .45s ease-in, width .45s ease-in'); setTimeout(complete, 470); return true; }
+    if (e.key === ' ') {
+      if (e.type === 'keydown') { if (holdT) return true; measure(); setX(max, 'transform 1s linear, width 1s linear'); holdT = setTimeout(() => { holdT = 0; complete(); }, 1000); }
+      else if (holdT) { clearTimeout(holdT); holdT = 0; reset(); }
+      return true;
+    }
+    return false;
+  };
+  el._close = () => { clearTimeout(holdT); holdT = 0; };
+  el._blur = () => { if (holdT) { clearTimeout(holdT); holdT = 0; reset(); } };
+  pushPage(tab, el);
+}
+const orderNo = () => `PO-${ri(100, 999)}-${String(ri(0, 99999999)).padStart(8, '0')}`;
+function placeOrder(lines, ship, k, dur) {
+  const o = {
+    id: ++SH.oid, no: orderNo(), t0: T(), dur, ship, delay: 0, lateAt: 0, late: 0, credit: 0, claimed: 0, rated: 0, st: 0, fx: 0, open: 0,
+    total: k.total, saved: k.saved, lines: lines.map(l => ({ pid: l.pid, ci: l.ci, si: l.si, q: l.q, p: l.p, was: l.was, bp: l.bp, bw: l.bw, t: l.t, b2: l.b2 || 0, gift: l.gift ? 1 : 0, nu: l.nu ? 1 : 0 })),
+  };
+  if (ship === 'std' && chance(.35)) { o.delay = ri(60, 110) * 1000; o.lateAt = o.t0 + dur * .45; }
+  SH.orders.unshift(o); if (SH.orders.length > 20) SH.orders.length = 20;
+  SH.cart = SH.cart.filter(l => !lines.includes(l));
+  S.ordersPlaced = (S.ordersPlaced || 0) + 1; S.buys++; SH.saved += k.saved; SH.spent += k.total; SH.spins++;
+  if (k.cp.c) SH.coupons = SH.coupons.filter(c => c !== k.cp.c);
+  if (ship === 'exp' && k.shipCp) SH.coupons = SH.coupons.filter(c => c !== k.shipCp);
+  for (const l of o.lines) if (l.nu) { const i = SH.nu.indexOf(l.pid); if (i >= 0) SH.nu[i] = nuPick(1, SH.nu)[0]; }
+  if (o.lines.some(l => l.gift)) newGift(ri(34, 46));
+  cartDirty = true; ordDirty = true; act(); save(); refreshBadges(); queueCheck(); paintWallet();
+  return o;
+}
+function successPage(tab, o) {
+  clearPages(tab);
+  const gift = o.lines.find(l => l.gift), eta = etaOf(o);
+  const el = html(`<div class="sh-page sh-okp"><div class="sh-ps">
+    <div class="sh-ok"><span class="sh-okc">${si('check')}</span><h3>Order placed</h3><p>Thanks, ${ADDR[0][0].split(' ')[0]}! We’ll let you know when it ships.</p>
+      <div class="sh-okm"><span>Order</span><b>${o.no}</b><span>Arrives by</span><b>${clk(eta)}</b><span>Paid</span><b>${pz(o.total)}</b></div>
+      <div class="sh-saved">You saved ${pz(o.saved)}</div>
+      ${gift ? `<div class="sh-okg">${tile(PRM[gift.pid], 0)}<span><b>Free gift included</b><small>${PRM[gift.pid].n}</small></span></div>` : ''}
+      <div class="sh-okspin">${si('gift')}<span><b>You earned a free spin</b><small>Win up to ${pz(200)} off your next order</small></span><button data-a="spin">Spin</button></div>
+      <button class="pbtn" data-a="shop">Keep shopping</button><button class="sh-link" data-a="view">View order</button></div>
+    <div class="sh-sec2"><b>Customers who bought this also bought</b></div><div class="sh-grid">${recs(4, o.lines[0].pid)}</div></div></div>`);
+  el.addEventListener('click', e => {
+    const a = e.target.closest('[data-a]');
+    if (!a) { if (e.target.closest('.sh-grid')) gridClick(e, tab); return; }
+    const B = bundleById('shop');
+    if (a.dataset.a === 'spin') showWheel();
+    else if (a.dataset.a === 'shop') { clearPages(tab); showTab(B, 'shop'); }
+    else if (a.dataset.a === 'view') { clearPages(tab); o.open = 1; showTab(B, 'orders'); }
+  });
+  el._key = e => { if (e.type === 'keydown' && e.key === 'Enter') { $('[data-a="shop"]', el).click(); return true; } return false; };
+  pushPage(tab, el, false);
+  sfx.win(); confetti(170); haptic(true);
+  if (tab === 'cart') renderCart();
+}
+
+// ---------- orders: Processing → Shipped → In transit → Out for delivery → Delivered ----------
+const STG = ['Processing', 'Shipped', 'In transit', 'Out for delivery', 'Delivered'];
+const AT = [0, .14, .32, .72, 1];
+const stT = (o, i) => o.t0 + AT[i] * o.dur + (i >= 3 ? o.delay : 0);
+// the promised arrival time; it only moves once the delay is announced
+const etaOf = o => (o.late || o.st >= 3 ? stT(o, 4) : o.t0 + o.dur);
+const rateRew = o => clamp(Math.round(o.total * .12), 3, 25);
+const lateCredit = o => clamp(Math.round(o.total * .2), 4, 30);
+function stageOf(o) { let s = 0; for (let i = 1; i < 5; i++) if (T() >= stT(o, i)) s = i; return s; }
+function progOf(o) {
+  const s = stageOf(o); if (s >= 4) return 1;
+  const a = stT(o, s), b = stT(o, s + 1);
+  return AT[s] + (AT[s + 1] - AT[s]) * clamp((T() - a) / (b - a), 0, 1);
+}
+const oName = o => { const p = o.lines.filter(l => !l.gift); return p.length ? PRM[p[0].pid].n + (p.length > 1 ? ` and ${p.length - 1} more` : '') : 'your order'; };
+let ordDirty = true;
+function deliver(o, quiet) {
+  o.fx = 1; SH.delivered++;
+  const msgs = [];
+  for (const l of o.lines) { const u = PRM[l.pid].u; if (u) { const n = u.sz[l.si] * l.q; u.fx(n); msgs.push(u.msg(n)); } }
+  if (!quiet && msgs.length) { toast(msgs.join(' · ')); refreshBadges(); }
+  return msgs;
+}
+function advance(o, s) {
+  o.st = s; ordDirty = true;
+  if (s === 3) alertOnce('sh-ofd', 'orders', `Out for delivery: ${oName(o)}. Arriving by ${clk(etaOf(o))}.`, 60000);
+  if (s === 4) {
+    const m = deliver(o);
+    alertOnce('sh-dlv', 'orders', `Delivered: ${m.length ? m[0] : oName(o)}. Rate your order to get ${rateRew(o)} hits.`, 60000);
+  }
+  save(); refreshBadges(); queueCheck();
+}
+function timelineHTML(o) {
+  const ev = [[stT(o, 0), 'Order placed', `Payment confirmed · ${fmt(o.total)} hits`], [stT(o, 1), 'Shipped', `Handed to carrier · Tracking SW${String(o.id * 7919 + 104729).padStart(9, '0')}`], [stT(o, 2), 'In transit', 'Departed sorting facility · Hub 7']];
+  if (o.delay) ev.push([o.lateAt, 'Delayed', `High volume at the regional facility. New estimate ${clk(stT(o, 4))}`]);
+  ev.push([(stT(o, 2) + stT(o, 3)) / 2, 'In transit', 'Arrived at local facility'], [stT(o, 3), 'Out for delivery', 'With courier · Your package is nearby'], [stT(o, 4), 'Delivered', PRM[o.lines[0].pid].u ? 'Delivered to your phone' : 'Left at front door']);
+  const t = T(), done = ev.filter(e => e[0] <= t).sort((a, b) => b[0] - a[0]);
+  return done.map((e, i) => `<div class="sh-ev${i ? '' : ' now'}${e[1] === 'Delayed' ? ' late' : ''}"><i></i><span><b>${e[1]}</b><small>${e[2]}</small></span><time>${clk(e[0])}</time></div>`).join('');
+}
+function ordHTML(o) {
+  const s = o.st, pay = o.lines.filter(l => !l.gift), items = pay.reduce((n, l) => n + l.q, 0);
+  const shown = o.lines.length > 4 ? 3 : 4;
+  const thumbs = o.lines.slice(0, shown).map(l => `<span class="sh-othi">${tile(PRM[l.pid], l.ci)}${l.q > 1 ? `<b>×${l.q}</b>` : ''}${l.gift ? '<em>FREE</em>' : ''}</span>`).join('') + (o.lines.length > shown ? `<span class="sh-omore">+${o.lines.length - shown}</span>` : '');
+  return `<div class="sh-ord s${s}" data-o="${o.id}" data-s="${s}" data-late="${o.late}" data-rated="${o.rated}" data-cl="${o.claimed}">
+    <div class="sh-oh"><span class="sh-ost">${s === 4 ? si('check') : si('truck')}${STG[s]}${o.late && s < 4 ? ' · Delayed' : ''}</span><small>${o.no}</small></div>
+    <div class="sh-oli">${thumbs}<span class="sh-ototal">${pz(o.total)}<small>${items} item${items > 1 ? 's' : ''}${o.ship === 'exp' ? ' · Express' : ''}</small></span></div>
+    <div class="sh-otrk"><span class="sh-obar"><i style="width:${(progOf(o) * 100).toFixed(1)}%"></i></span>${AT.map((a, i) => `<span class="sh-odot${i <= s ? ' on' : ''}" style="left:${a * 100}%"></span>`).join('')}</div>
+    <div class="sh-oeta"><span>${s < 4 ? 'Arrives by' : 'Delivered at'} <b>${clk(s < 4 ? etaOf(o) : stT(o, 4))}</b></span><small>${s < 4 ? `Next: ${STG[s + 1]}` : `You saved ${fmt(o.saved)} hits`}</small></div>
+    ${o.late && o.credit && !o.claimed ? `<div class="sh-late"><span><b>Your order is running late</b><small>Sorry about that. Here’s a credit on us.</small></span><button data-a="claim">Claim ${pz(o.credit)}</button></div>` : ''}
+    ${s === 4 && !o.rated ? `<div class="sh-rate"><span>Rate your order <b>+${rateRew(o)}</b>${IF('bolt')}</span><span class="sh-rst">${[1, 2, 3, 4, 5].map(i => `<button data-rate="${i}" aria-label="${i} stars">${IF('star')}</button>`).join('')}</span></div>` : ''}
+    ${o.rated ? `<div class="sh-rated">${starsHTML(o.rated)}<span>Thanks for your review</span></div>` : ''}
+    <div class="sh-oa"><button data-a="track">${o.open ? 'Hide tracking' : 'Track package'}</button><button data-a="again">Buy again</button></div>
+    <div class="sh-otl"${o.open ? '' : ' hidden'}>${timelineHTML(o)}</div></div>`;
+}
+function renderOrders() {
+  const a = APPS.orders; if (!a.body) return;
+  ordDirty = false;
+  const sc = $('#sh-osc', a.body);
+  sc.innerHTML = SH.orders.length ? SH.orders.map(ordHTML).join('') + '<p class="fine">Orders from the last 30 days</p>' : `<div class="sh-empty"><span class="sh-eic">${si('truck')}</span><b>No orders yet</b><small>When you place an order, you can track it here.</small><button class="pbtn" data-a="shop">Shop lightning deals</button></div>`;
+}
+function paintOrders() {
+  const a = APPS.orders; if (!a.body) return;
+  if (ordDirty && now() - lastInput > 600) { const sc = $('#sh-osc', a.body); const top = sc.scrollTop; renderOrders(); sc.scrollTop = top; return; }
+  for (const o of SH.orders) {
+    if (o.st >= 4) continue;
+    const el = $(`.sh-ord[data-o="${o.id}"]`, a.body); if (!el) continue;
+    $('.sh-obar i', el).style.width = (progOf(o) * 100).toFixed(1) + '%';
+    if (o.open) setH($('.sh-otl', el), timelineHTML(o));
+  }
+}
+
+// ---------- background: deals end, coupons expire, packages move ----------
+function bgShop() {
+  const t = T();
+  for (let i = 0; i < LD.length; i++) { const d = LD[i]; if (t > d.ends) LD[i] = mkDeal(LD.map(x => x.l.pid)); else d.cl = Math.min(99, d.cl + d.v); }
+  const nc = SH.coupons.length; SH.coupons = SH.coupons.filter(c => c.exp > t); if (SH.coupons.length !== nc) { cartDirty = true; paintWallet(); }
+  for (const l of SH.cart) if (l.until && t > l.until) { l.p = l.after || l.p; l.p0 = l.p; l.until = 0; l.up = 1; cartDirty = true; }
+  if (SH.newUntil && t > SH.newUntil) { SH.newUntil = t + 30 * 60000; SH.extended = 1; }
+  for (const o of SH.orders) {
+    if (o.st >= 4) continue;
+    if (o.delay && !o.late && t >= o.lateAt) { o.late = 1; o.credit = lateCredit(o); ordDirty = true; alertOnce('sh-late', 'orders', `Your order is running late. We added a ${o.credit}-hit credit for the wait. Tap to claim it.`, 60000); }
+    const s = stageOf(o); if (s !== o.st) advance(o, s);
+  }
+  if (curApp === 'cart' && cartDirty && !topPage('cart') && now() - lastInput > 600) renderCart();
+}
+
+// ---------- storefront ----------
+function pool() {
+  let L = flt.cat === 'all' ? PRL : PRL.filter(p => p.cat === flt.cat);
+  flt.none = false;
+  if (flt.q) {
+    const stop = new Set(['for', 'with', 'and', 'the', 'a', 'of', 'to', 'in']);
+    const w = flt.q.toLowerCase().split(/\s+/).filter(x => x && !stop.has(x)).map(x => x.replace(/(es|s)$/, ''));
+    const sc = L.map(p => [p, w.filter(x => (p.t + ' ' + p.n + ' ' + CATN[p.cat]).toLowerCase().includes(x)).length]);
+    const best = Math.max(0, ...sc.map(x => x[1]));
+    if (best) L = sc.filter(x => x[1] >= Math.max(1, best - 1)).flatMap(x => (x[1] === best ? [x[0], x[0], x[0]] : [x[0]])); else flt.none = true;
+  }
+  return L;
+}
+function more(n = 10) {
+  const a = APPS.shop; if (!a.grid) return;
+  const P2 = pool(), frag = document.createDocumentFragment();
+  for (let i = 0; i < n; i++) {
+    if (!bagP.length) bagP = shuffle(P2.slice());
+    frag.append(html(cardHTML(mkL(bagP.pop()))));
+  }
+  a.grid.append(frag);
+  const cards = a.grid.children;
+  if (cards.length > 180) {
+    const h = cards[60].offsetTop - cards[0].offsetTop;
+    for (let i = 0; i < 60; i++) { LS.delete(+cards[0].dataset.l); cards[0].remove(); }
+    a.sc.scrollTop -= h;
+  }
+  a.loadIO.unobserve(a.load); a.loadIO.observe(a.load);
+}
+function resetGrid() {
+  const a = APPS.shop;
+  for (const c of a.grid.children) LS.delete(+c.dataset.l);
+  a.grid.innerHTML = ''; bagP = [];
+  const home = flt.cat === 'all' && !flt.q;
+  $('#sh-home', a.body).hidden = !home;
+  $$('#sh-cats button', a.body).forEach(b => b.classList.toggle('on', b.dataset.cat === flt.cat));
+  pool();
+  $('#sh-rh', a.body).innerHTML = flt.q ? `<b>${flt.none ? `No exact matches for “${esc(flt.q)}”` : `Results for “${esc(flt.q)}”`}</b>${flt.none ? '<small>You may also like</small>' : `<small>${fmt(ri(1200, 9800))} items</small>`}<button class="sh-clr" data-a="clr" aria-label="Clear search">${si('close')}</button>` : home ? '<b>Recommended for you</b>' : `<b>${CATN[flt.cat]}</b><small>${fmt(ri(2000, 40000))}+ items · up to 95% off</small>`;
+  more(12);
+  a.sc.scrollTo({ top: 0 });
+}
+function setCat(k) { if (flt.cat === k && !flt.q) return; flt = { cat: k, q: '', none: false }; sfx.click(); resetGrid(); restart($(`#sh-cats [data-cat="${k}"]`, APPS.shop.body), 'sh-bump'); }
+function runSearch(q) {
+  q = q.trim().slice(0, 40); if (!q) return;
+  SH.recent = [q, ...SH.recent.filter(x => x !== q)].slice(0, 6);
+  flt = { cat: 'all', q, none: false }; giftBump('search'); act(); resetGrid();
+}
+function openSearch() {
+  const el = html(`<div class="sh-srch"><label class="sh-sin">${si('search')}<input type="search" enterkeyhint="search" autocomplete="off" placeholder="${TREND[ri(0, TREND.length - 1)]}" aria-label="Search"></label><div class="sh-sug" hidden></div>
+    ${SH.recent.length ? `<div class="sh-sech"><b>Recent</b></div><div class="sh-trend rec">${SH.recent.map(t => `<button data-q="${esc(t)}">${esc(t)}</button>`).join('')}</div>` : ''}
+    <div class="sh-sech"><b>Trending searches</b></div><div class="sh-trend">${TREND.map((t, i) => `<button data-q="${t}"><i>${i + 1}</i>${t}${i < 3 ? IF('flame') : ''}</button>`).join('')}</div></div>`);
+  const close = sheet('Search', el), inp = $('input', el), sug = $('.sh-sug', el);
+  const go = q => { close(); runSearch(q); };
+  ['keydown', 'keyup'].forEach(ev => inp.addEventListener(ev, e => { if (e.key !== 'Escape') e.stopPropagation(); if (ev === 'keydown' && e.key === 'Enter') { e.preventDefault(); go(inp.value || inp.placeholder); } }));
+  inp.addEventListener('input', () => {
+    const v = inp.value.trim().toLowerCase();
+    const m = v ? PRL.filter(p => (p.n + ' ' + p.t).toLowerCase().includes(v)).slice(0, 6) : [];
+    sug.hidden = !m.length;
+    sug.innerHTML = m.map(p => `<button data-q="${p.n}">${si('search')}<span>${p.n}</span><small>${CATN[p.cat]}</small></button>`).join('');
+  });
+  el.addEventListener('click', e => { const b = e.target.closest('[data-q]'); if (b) go(b.dataset.q); });
+  if (!matchMedia('(pointer: coarse)').matches) setTimeout(() => inp.focus(), 320);
+}
+const ldHTML = d => `<div class="sh-ldc" data-l="${d.l.id}" data-d="${d.id}" role="button" tabindex="0">${tile(PRM[d.l.pid], d.l.ci, `<em class="sh-off">-${offOf(d.l)}%</em>${addBtn(d.l.id)}`)}<span class="sh-cp">${pz(d.l.p)}<s>${fmt(d.l.was)}</s></span><span class="sh-ldb"><i></i><b></b></span><span class="sh-ldt">${si('clock')}<b data-until="${d.ends}">${cd(d.ends - T())}</b></span></div>`;
+function paintLD() {
+  const box = APPS.shop.body && $('#sh-ld', APPS.shop.body); if (!box) return;
+  LD.forEach((d, i) => {
+    let el = box.children[i];
+    if (!el || +el.dataset.d !== d.id) { if (el && now() - lastInput < 600) return; const n = html(ldHTML(d)); if (el) { LS.delete(+el.dataset.l); el.replaceWith(n); } else box.append(n); el = n; restart(el, 'sh-new'); }
+    $('.sh-ldb i', el).style.width = d.cl.toFixed(0) + '%';
+    const t = d.cl >= 95 ? 'Almost gone' : `${d.cl.toFixed(0)}% claimed`, b = $('.sh-ldb b', el); if (b.textContent !== t) b.textContent = t;
+  });
+}
+function paintNU() {
+  const box = APPS.shop.body && $('#sh-nu', APPS.shop.body); if (!box) return;
+  const L = nuListings();
+  if (box.dataset.sig !== NU.sig) {
+    box.dataset.sig = NU.sig;
+    box.innerHTML = `<div class="sh-nuh"><b>${si('gift')}${SH.extended ? 'New customer deals · extended' : 'New customer exclusive'}</b><span>Ends in <i class="sh-nucd"></i></span></div><div class="sh-nug">${L.map(l => `<div class="sh-nuc" data-l="${l.id}" role="button" tabindex="0">${tile(PRM[l.pid], 0, addBtn(l.id))}<span class="sh-cp">${pz(l.p)}<s>${fmt(l.was)}</s></span></div>`).join('')}</div><small class="sh-nuf">Limit 1 per customer · Only for your first orders</small>`;
+  }
+  const t = $('.sh-nucd', box); if (t) t.textContent = cd((SH.newUntil || T() + 1800000) - T());
+}
+function paintGift() {
+  const a = APPS.shop; if (!a.body || !SH.gift) return;
+  const g = SH.gift, pr = PRM[g.gid], box = $('#sh-gift', a.body);
+  if (box.dataset.gid !== g.gid) { box.dataset.gid = g.gid; $('.sh-gimg', box).innerHTML = tile(pr, 0, '<em>FREE</em>'); }
+  $('.sh-gn', box).textContent = g.ready ? `Your free ${pr.n} is in your cart` : `Free ${pr.n}`;
+  $('.sh-gb i', box).style.width = g.p + '%';
+  $('.sh-gp', box).textContent = g.p + '%';
+  $('.sh-gm', box).textContent = g.ready ? `Ships free with any order over ${GIFT_MIN} hits` : g.p >= 98 ? 'Almost there! Add 1 more item to your cart to unlock it.' : g.p >= 80 ? 'So close. Keep browsing to unlock your gift.' : 'Browse and add items to unlock your free gift.';
+  $('.sh-gbtn', box).textContent = g.ready ? 'View cart' : g.p >= 98 ? 'Add 1 more' : 'Keep going';
+  box.classList.toggle('hot', g.p >= 98 && !g.ready);
+}
+function heroHTML() {
+  const names = ['Payday sale', 'Mega clearance', 'Anniversary sale', 'Flash festival'], nm = names[dayNum() % names.length];
+  return `<div class="sh-hero" id="sh-hero" role="button"><span class="sh-ht"><small>${nm}</small><b>Up to 95% off</b><span class="sh-hcd">Ends in <i></i><i></i><i></i></span></span><span class="sh-ha">${art(PRM.fryer, 3)}${art(PRM.buds, 2)}${art(PRM.sneaker, 1)}</span></div>`;
+}
+let tickerIn = 5, phI = 0;
+function showTicker() {
+  const t = APPS.shop.body && $('#sh-ticker', APPS.shop.body); if (!t) return;
+  const pr = pick(GOODS);
+  t.innerHTML = `<span class="sh-img" style="--h:${pr.cols[0][1]}">${art(pr, 0)}</span><span><b>${pick(BUYERS)} in ${pick(CITIES)}</b> just bought ${pr.n}</span>`;
+  restart(t, 'on');
+}
+
+def({
+  id: 'shop', name: 'Deals', tag: 'Up to 95% off everything', c: '#e5007a',
+  badge: () => (SH.spins > 0 ? 1 : 0),
+  ping() {
+    const r = R(), t = T();
+    if (SH.spins > 0 && r < .22) return 'You have a free spin. Every spin wins a coupon.';
+    const c = SH.coupons.filter(x => x.exp - t > 90000 && x.exp - t < 15 * 60000).sort((a, b) => a.exp - b.exp)[0];
+    if (c && r < .5) return { text: `Your coupon for ${cName(c)} expires in {left}. Use it before it’s gone.`, until: c.exp };
+    const d = pick(LD.filter(x => x.ends - t > 90000));
+    if (d && r < .75) return { text: `Lightning deal: ${PRM[d.l.pid].n}, ${offOf(d.l)}% off. Ends in {left}.`, until: d.ends };
+    if (SH.newUntil && SH.newUntil - t > 90000 && r < .85) return { text: `New customer prices from 1 hit end in {left}.`, until: SH.newUntil };
+    const pr = pick(GOODS);
+    return pick([`Back in stock: ${pr.n}. Only a few left at this price.`, `Price drop: ${pr.n} is now ${fmt(Math.max(1, pr.p - ri(1, 3)))} hits.`, viewed.size ? `${viewed.size} item${viewed.size > 1 ? 's' : ''} you viewed ${viewed.size > 1 ? 'are' : 'is'} selling fast.` : `${CATN[pr.cat]} clearance: up to 95% off today.`]);
+  },
+  wait: () => {
+    const L = [], t = T();
+    const c = SH.coupons.filter(x => x.k !== 'ship').sort((a, b) => a.exp - b.exp)[0];
+    if (c && c.exp - t < 10 * 60000) L.push({ t: `Coupon: ${cName(c)}`, due: c.exp, sub: 'Shop · Expiring soon', id: 'shop' });
+    const dl = SH.cart.filter(l => l.until).sort((a, b) => a.until - b.until)[0];
+    if (dl) L.push({ t: 'Deal price in your cart ends', due: dl.until, id: 'cart' });
+    const ofd = SH.orders.find(o => o.st === 3);
+    if (ofd) L.push({ t: 'Out for delivery', sub: `Arrives by ${clk(etaOf(ofd))}`, hot: true, id: 'orders' });
+    const cr = SH.orders.find(o => o.late && o.credit && !o.claimed);
+    if (cr) L.push({ t: 'Credit for your late order', r: `+${cr.credit}`, id: 'orders' });
+    const rt = SH.orders.filter(o => o.st === 4 && !o.rated);
+    if (rt.length) L.push({ t: rt.length > 1 ? `Rate ${rt.length} orders` : 'Rate your order', r: `+${rt.reduce((n, o) => n + rateRew(o), 0)}`, id: 'orders' });
+    const n = cartUnits();
+    if (n && L.length < 3) L.push({ t: `${n} item${n > 1 ? 's' : ''} in your cart`, id: 'cart' });
+    if (SH.spins > 0 && L.length < 3) L.push({ t: 'Free spin: win a coupon', id: 'shop' });
+    return L.slice(0, 3);
+  },
+  init() {
+    S.carted = S.carted || 0; S.ordersPlaced = S.ordersPlaced || 0;
+    if (!SH.gift) newGift(62);
+    if (SH.nu.length !== 3) SH.nu = nuPick(3);
+    LD = []; for (let i = 0; i < 6; i++) LD.push(mkDeal(LD.map(x => x.l.pid)));
+    for (const o of SH.orders) { const s = stageOf(o); if (o.delay && !o.late && T() >= o.lateAt) { o.late = 1; o.credit = lateCredit(o); } if (s > o.st) { o.st = s; if (s === 4 && !o.fx) deliver(o, true); } }
+    SH.cart = SH.cart.filter(l => l && PRM[l.pid]);
+  },
+  bg: bgShop,
+  build(b, right) {
+    b.innerHTML = `<div class="sh-sc" id="sh-sc">
+      <div class="sh-top"><button class="sh-search" id="sh-search">${si('search')}<span class="sh-ph" id="sh-ph">${TREND[0]}</span><b>Search</b></button></div>
+      <div class="sh-trust"><span>${si('truck')}Free shipping over ${pz(FREE_SHIP)}</span><span>${si('shield')}Price adjustment within 30 days</span></div>
+      <div class="sh-cats" id="sh-cats">${CATS.map(([k, n]) => `<button data-cat="${k}"${k === 'all' ? ' class="on"' : ''}>${k === 'boost' ? IF('bolt') : ''}${n}</button>`).join('')}</div>
+      <div id="sh-home">${heroHTML()}
+        <div class="sh-gift" id="sh-gift" role="button" tabindex="0"><span class="sh-gimg"></span><span class="sh-gt"><b class="sh-gn"></b><span class="sh-gb"><i></i><span class="sh-gp"></span></span><small class="sh-gm"></small></span><span class="sh-gbtn"></span></div>
+        <div class="sh-sech"><b>${IF('bolt')}Lightning deals</b><span>Limited quantities</span></div>
+        <div class="sh-ld" id="sh-ld"></div>
+        <div class="sh-nu" id="sh-nu"></div>
+      </div>
+      <div class="sh-rh" id="sh-rh"><b>Recommended for you</b></div>
+      <div class="sh-grid" id="sh-grid"></div>
+      <div class="sh-load" id="sh-load"><i></i><i></i><i></i></div>
+    </div><div class="sh-ticker" id="sh-ticker" aria-hidden="true"></div>`;
+    right.innerHTML = walletBtn('sh-wal');
+    this.sc = $('#sh-sc', b); this.grid = $('#sh-grid', b); this.load = $('#sh-load', b);
+    this.loadIO = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) more(); }, { root: this.sc, rootMargin: '0px 0px 700px 0px' });
+    track(this.sc);
+    right.addEventListener('click', openWallet);
+    b.addEventListener('click', e => {
+      if (topPage('shop') && topPage('shop').contains(e.target)) return;
+      if (e.target.closest('#sh-search')) { sfx.click(); openSearch(); return; }
+      const cat = e.target.closest('[data-cat]'); if (cat) { setCat(cat.dataset.cat); return; }
+      if (e.target.closest('[data-a="clr"]')) { setCat('all'); return; }
+      if (e.target.closest('#sh-gift')) {
+        const g = SH.gift; sfx.click();
+        if (g.ready) showTab(bundleById('shop'), 'cart');
+        else this.sc.scrollTo({ top: this.grid.offsetTop - 60, behavior: 'smooth' });
+        return;
+      }
+      if (e.target.closest('#sh-hero')) { this.sc.scrollTo({ top: $('#sh-ld', b).offsetTop - 70, behavior: 'smooth' }); return; }
+      gridClick(e, 'shop');
+    });
+    b.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('[data-l][tabindex]')) { e.stopPropagation(); gridClick(e, 'shop'); } });
+    more(12);
+  },
+  open() {
+    syncFocus();
+    if (!SH.newUntil) SH.newUntil = T() + 30 * 60000;
+    if (!SH.seen) { SH.seen = 1; save(); setTimeout(() => { if (curApp === 'shop' && !topPage('shop')) showWheel(true); }, 900); }
+    else if (SH.coupons.length < 2 && T() - (SH.dropAt2 || 0) > 12 * 60000) {
+      SH.dropAt2 = T(); SH.coupons.push(mkC('off', 10, 59, 15)); save();
+      setTimeout(() => { if (curApp === 'shop') { toast('A 10-hit coupon was added to your wallet'); sfx.coin(); paintWallet(); } }, 700);
+    }
+  },
+  close() { blurPages(); const B = bundleById('shop'); if (B.view) B.view.classList.remove('sh-focus'); },
+  render() { paintGift(); paintNU(); paintLD(); paintWallet(); this.tick(true); },
+  tick(quick) {
+    const t = topPage('shop'); if (t && t._tick && !quick) t._tick();
+    const b = this.body;
+    const [h, m, s] = hms(Math.ceil((Date.now() + 1) / 14400000) * 14400000 - Date.now());
+    const is = $$('.sh-hcd i', b); if (is.length) { is[0].textContent = h; is[1].textContent = m; is[2].textContent = s; }
+    paintLD(); paintNU(); paintCountdowns(); paintWallet();
+    if (quick) return;
+    if (++phI % 3 === 0) { const ph = $('#sh-ph', b); ph.textContent = TREND[(phI / 3) % TREND.length]; restart(ph, 'sh-roll'); }
+    if (--tickerIn <= 0) { tickerIn = ri(9, 15); if (!t) showTicker(); }
+  },
+  key(e) {
+    if (pageKey('shop', e)) return true;
+    if (e.type !== 'keydown') return false;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { this.sc.scrollBy({ top: e.key === 'ArrowDown' ? 300 : -300, behavior: 'smooth' }); return true; }
+    if (e.key === '/') { openSearch(); return true; }
+    return false;
+  },
+});
+def({
+  id: 'cart', name: 'Cart', tag: 'Secure checkout', c: '#ff5a1f',
+  badge: () => cartUnits(),
+  ping() {
+    const L = SH.cart.filter(l => !l.gift), t = T();
+    if (!L.length) return null;
+    const deal = L.find(l => l.until && l.until - t > 90000);
+    if (deal && chance(.5)) return { text: `The deal price on ${PRM[deal.pid].n} in your cart ends in {left}.`, until: deal.until };
+    if (t - SH.dropAt > 120000 && chance(.6)) { const d = dropPrice(); if (d) return `Price dropped on ${PRM[d.pid].n} in your cart. Now ${fmt(d.p)} hits.`; }
+    const hot = L.filter(l => l.stock <= 6).length;
+    if (hot) return `${hot} item${hot > 1 ? 's' : ''} in your cart ${hot > 1 ? 'are' : 'is'} almost sold out.`;
+    return `You left ${L.length} item${L.length > 1 ? 's' : ''} in your cart. Check out before they sell out.`;
+  },
+  build(b, right) {
+    b.innerHTML = '<div class="sh-cart"><div class="sh-cs" id="sh-cs"></div><div class="sh-cf" id="sh-cf" hidden></div></div>';
+    right.innerHTML = walletBtn('sh-wal2');
+    right.addEventListener('click', openWallet);
+    this.sc = $('#sh-cs', b);
+    track(this.sc);
+    b.addEventListener('click', e => {
+      if (topPage('cart') && topPage('cart').contains(e.target)) return;
+      const a = e.target.closest('[data-a]');
+      if (!a) { gridClick(e, 'cart'); return; }
+      const k = a.dataset.a, row = a.closest('.sh-line'), l = row && SH.cart.find(x => x.key === row.dataset.k);
+      if (k === 'shop') { showTab(bundleById('shop'), 'shop'); return; }
+      if (k === 'wallet') { openWallet(); return; }
+      if (k === 'all') { const on = !SH.cart.every(x => x.sel || x.gift); SH.cart.forEach(x => { x.sel = on ? 1 : 0; }); sfx.click(); renderCart(); return; }
+      if (k === 'checkout') { const lines = SH.cart.filter(x => x.sel || x.gift); if (!lines.some(x => !x.gift)) { sfx.nope(); toast('Select an item to check out'); return; } act(); openCheckout('cart', lines); return; }
+      if (!l) return;
+      if (k === 'sel') { l.sel = l.sel ? 0 : 1; sfx.click(); renderCart(); }
+      else if (k === 'view') openPDP('cart', lineL(l));
+      else if (k === 'rm') removeLine(l, row);
+      else if (k === 'inc') {
+        if (l.nu) { sfx.nope(); toast('Limit 1 per customer at this price'); return; }
+        if (l.q >= l.stock) { sfx.nope(); toast(`Only ${l.stock} left in stock`); return; }
+        l.q++; l.sel = 1; S.carted++; sfx.pop(l.q); save(); refreshBadges(); renderCart();
+      } else if (k === 'dec') { if (l.q <= 1) removeLine(l, row); else { l.q--; sfx.click(); save(); refreshBadges(); renderCart(); } }
+    });
+  },
+  open() {
+    syncFocus(); cartRecs = '';
+    if (SH.cart.some(l => !l.gift) && T() - SH.dropAt > 5 * 60000 && chance(.4)) { const d = dropPrice(); if (d) setTimeout(() => toast(`Price dropped on ${PRM[d.pid].n} since you last looked`), 500); }
+  },
+  close() { blurPages(); const B = bundleById('shop'); if (B.view) B.view.classList.remove('sh-focus'); },
+  render() { renderCart(); paintWallet(); },
+  tick() { const t = topPage('cart'); if (t && t._tick) t._tick(); paintCountdowns(); paintWallet(); },
+  key(e) {
+    if (pageKey('cart', e)) return true;
+    if (e.type !== 'keydown') return false;
+    if (e.key === 'Enter') { const b = $('[data-a="checkout"]', this.body); if (b && !b.disabled) b.click(); return true; }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { this.sc.scrollBy({ top: e.key === 'ArrowDown' ? 260 : -260, behavior: 'smooth' }); return true; }
+    return false;
+  },
+});
+def({
+  id: 'orders', name: 'Orders', tag: 'Track your packages', c: '#12b886',
+  badge: () => SH.orders.filter(o => (o.st === 4 && !o.rated) || (o.late && o.credit && !o.claimed)).length,
+  ping() {
+    const a = SH.orders.find(o => o.st > 0 && o.st < 4);
+    if (a) return `Your order ending ${a.no.slice(-4)} is ${STG[a.st].toLowerCase()}. Arrives by ${clk(etaOf(a))}.`;
+    const r = SH.orders.find(o => o.st === 4 && !o.rated);
+    if (r) return `How was your order? Rate it to get ${rateRew(r)} hits.`;
+    return null;
+  },
+  build(b) {
+    b.innerHTML = '<div class="sh-osc" id="sh-osc"></div>';
+    this.sc = $('#sh-osc', b); track(this.sc);
+    b.addEventListener('click', e => {
+      if (topPage('orders') && topPage('orders').contains(e.target)) return;
+      const r = e.target.closest('[data-rate]'), a = e.target.closest('[data-a]'), card = e.target.closest('.sh-ord'), o = card && SH.orders.find(x => x.id === +card.dataset.o);
+      if (a && a.dataset.a === 'shop') { showTab(bundleById('shop'), 'shop'); return; }
+      if (!o) return;
+      if (r) {
+        const n = +r.dataset.rate; if (o.rated) return;
+        $$('.sh-rst button', card).forEach((x, i) => x.classList.toggle('on', i < n));
+        o.rated = n; S.reviews = (S.reviews || 0) + 1;
+        const [x, y] = centerOf(r); earn(rateRew(o), x, y - 20, { raw: true }); sfx.win(); haptic(true); act();
+        save(); refreshBadges(); setTimeout(() => { toast('Thanks for your review!'); renderOrders(); }, 450);
+        return;
+      }
+      if (!a) return;
+      if (a.dataset.a === 'track') { o.open = o.open ? 0 : 1; sfx.click(); card.replaceWith(html(ordHTML(o))); }
+      else if (a.dataset.a === 'claim') { o.claimed = 1; const [x, y] = centerOf(a); earn(o.credit, x, y - 20, { raw: true }); sfx.coin(); haptic(true); save(); refreshBadges(); card.replaceWith(html(ordHTML(o))); }
+      else if (a.dataset.a === 'again') {
+        let n = 0;
+        for (const l of o.lines) if (!l.gift && !l.nu) { const L = lineL({ ...l, until: 0, after: 0 }); if (addLine(L, l.ci, l.si, l.q)) n++; }
+        if (n) toast(`${n} item${n > 1 ? 's' : ''} added to your cart`);
+      }
+    });
+  },
+  open() { syncFocus(); renderOrders(); const o = SH.orders.find(x => x.open); if (o) { const el = $(`.sh-ord[data-o="${o.id}"]`, this.body); if (el) restart(el, 'sh-new'); } },
+  close() { blurPages(); const B = bundleById('shop'); if (B.view) B.view.classList.remove('sh-focus'); },
+  render() {},
+  tick() { const t = topPage('orders'); if (t && t._tick) t._tick(); paintOrders(); },
+  key(e) {
+    if (pageKey('orders', e)) return true;
+    if (e.type === 'keydown' && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) { this.sc.scrollBy({ top: e.key === 'ArrowDown' ? 260 : -260, behavior: 'smooth' }); return true; }
+    return false;
+  },
+});
 // ==== /MODULE shop ====
 
 // ---------- You: screen time, achievements, settings ----------
