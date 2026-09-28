@@ -68,10 +68,10 @@ where it is.
   heart, but it has to be won twice over, and it can be lost:
   - **He darts.** He takes two cuts and keeps just out of reach. Before each dart he crouches over his weapon for a
     moment and the gourd flares (the tell); then he runs in and his blow lands as he gets there, a third of a second
-    after he goes (0.32 s: long enough to meet with a cut made on seeing him go, never longer than it has to be). His
-    dart is his wind-up, marker and all, and a dart left alone lands. Each cut has to catch him close, on a dart of his
-    own: one that doesn't fell him sends him hopping back out of reach. After his third dart (cut or not), or once he
-    has been about for 8 seconds, he runs off the lane with the gourd.
+    after he goes (0.32 s, a little more on the slowest stages: long enough to meet with a cut made on seeing him go,
+    and no longer). His dart is his wind-up, marker and all, and a dart left alone lands. Each cut has to catch him
+    close, on a dart of his own: one that doesn't fell him sends him hopping back out of reach. After his third dart
+    (cut or not), or once he has been about for 8 seconds, he runs off the lane with the gourd.
   - **He falls, and the gourd flies.** Cut down, he flings it into the air: it sails up and comes down within reach,
     on his side or over your head on the other, a second or so later, and where it will land is marked on the ground
     as it goes up. In the last 0.2 s of its fall it flares: a cut toward it then catches it, and a heart comes back
