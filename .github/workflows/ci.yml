@@ -44,10 +44,14 @@ jobs:
           swift run -c release ronin-sim --mode all --stages 1-25 --seeds 4 --perfect --check
       - name: Balance — campaign runs from stage 1, hearts carried, in every mode
         run: swift run -c release ronin-sim --campaign --mode all --check
-      - name: Balance — the perfect pilot through the endless stages
+      - name: Balance — the perfect pilot on through stages 26-60
         run: swift run -c release ronin-sim --mode all --stages 26-60 --seeds 2 --perfect --check
       - name: Slower hands (closer to a first-time player; a report, not held to a bar)
         run: swift run -c release ronin-sim --mode shoshin --stages 1-12 --seeds 10 --reaction 0.3 --rate 5 --slips 0.05
+      - name: The gourd won by a quick, well-timed hand and by the default one (a report; the won column)
+        run: |
+          swift run -c release ronin-sim --hearts --mode all --stages 1-20 --seeds 6 --reaction 0.18 --rate 8 --slips 0.01 --timing 0.02 | grep -E "hearts$|^stage|all "
+          swift run -c release ronin-sim --hearts --mode all --stages 1-20 --seeds 6 | grep -E "hearts$|^stage|all "
       - name: A warlord stage, second by second (a report)
         run: swift run -c release ronin-sim --trace 5 | tail -25
 

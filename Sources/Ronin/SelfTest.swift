@@ -5,22 +5,23 @@ import RoninArt
 import RoninCore
 
 /// `RONIN_SELFTEST=1 Ronin.app/Contents/MacOS/Ronin`: in a scratch save and a scratch defaults domain, checks the
-/// defaults (floor hints off, a Medium panel, gore on), that what is drawn over a foe's head stays on the lane at every
-/// size (a gourd-bearer's pips and marker clear of his gourd) and that a word slammed onto the lane stays under the
-/// combo, grows the panel from its default corner and folds it there and back without it leaving the screen, shows what
-/// a new player first sees, makes the first cut and a whiff with real left and right mouse-button events, lets the
-/// autopilot clear stage 1 (the gourd its bearer flings drawn on the lane in the air, and caught or shattering) and
-/// checks that its dead fall on under the card, folds into the pill and back and changes
-/// the size with the dead still lying there, advances from the banner, shows a new foe's card and checks it follows a
-/// resize, fights a warlord (his bar in the header, clear of the shards beside the hearts, his blow coming, a cut into
-/// his set guard bound on his blade),
-/// switches to Oni and rides a combo into bloodlust, falls and starts again from stage 1, switches back and finds
-/// Bushidō's stage and hearts kept, runs an endless stage with gore off (nobody cut apart, not a drop of blood)
-/// straight into the next, checks that dragging the window holds the fight still and that a stage won with the pointer
-/// away does not start the next behind its back, folds into the pill and back, checks that leaving pauses and gives the
-/// keys back (so a key typed elsewhere does nothing) and that coming back takes the dwell, and checks the save. Exits
-/// 0, or 1 saying what failed. With `RONIN_SNAPSHOTS=<dir>` it also writes what the panel showed along the way as PNGs,
-/// and fails if one cannot be taken.
+/// defaults (floor hints off, a Medium panel, gore on, the game's crowd rules, even over a previous build's stored
+/// development rules), that what is drawn over a foe's head stays on the lane at every size (a gourd-bearer's pips and
+/// marker clear of his gourd) and that a word slammed onto the lane stays under the combo, grows the panel from its
+/// default corner and folds it there and back without it leaving the screen, shows what a new player first sees, makes
+/// the first cut and a whiff with real left and right mouse-button events, lets the autopilot clear stage 1 (the gourd
+/// its bearer flings drawn on the lane in the air, and caught or shattering) and checks that its dead fall on under the
+/// card, folds into the pill and back and changes the size with the dead still lying there, advances from the banner,
+/// meets a brute's club as it glares with the real button (drawn glaring, then turned aside in sparks), shows a new
+/// foe's card and checks it follows a resize, fights a warlord (his bar in the header, clear of the shards beside the
+/// hearts, his blow coming, a cut into his set guard bound on his blade), switches to Oni and rides a combo into
+/// bloodlust, falls and starts again from stage 1, switches back and finds Bushidō's stage and hearts kept, runs an
+/// endless stage with gore off (nobody cut apart, not a drop of blood) straight into a fresh roll of the same stage,
+/// checks that dragging the window holds the fight still and that a stage won with the pointer away does not start the
+/// next behind its back, folds into the pill and back, checks that leaving pauses and gives the keys back (so a key
+/// typed elsewhere does nothing) and that coming back takes the dwell, and checks the save. Exits 0, or 1 saying what
+/// failed. With `RONIN_SNAPSHOTS=<dir>` it also writes what the panel showed along the way as PNGs, and fails if one
+/// cannot be taken.
 enum SelfTest {
     static var enabled: Bool { ProcessInfo.processInfo.environment["RONIN_SELFTEST"] != nil }
 
@@ -62,6 +63,14 @@ enum SelfTest {
         guard !Settings.floorHints else { throw Failure("floor hints were on by default") }
         guard Settings.size == .medium else { throw Failure("the panel was not Medium by default") }
         guard Settings.gore else { throw Failure("gore was off by default") }
+        // The game's crowd rules unless changed, and rules the build before stored (its queue, every rule written down
+        // whatever its value) do not leave anyone on the old queue.
+        for (name, _) in Settings.crowdRules { Settings.defaults.removeObject(forKey: "crowd." + name) }
+        for key in Settings.legacyCrowdKeys { Settings.defaults.set(false, forKey: key) }
+        Settings.rereadCrowding()
+        guard Settings.crowding.isStandard else { throw Failure("the crowd rules were not the game's by default: \(Settings.crowding)") }
+        guard Settings.legacyCrowdKeys.allSatisfy({ Settings.defaults.object(forKey: $0) == nil })
+        else { throw Failure("the previous build's crowd rules were kept") }
         try checkOverhead()
         try checkSlams()
         panel.setCompact(false)
@@ -186,6 +195,33 @@ enum SelfTest {
         guard session.fight.stage == 2, session.fight.outcome == nil, session.fight.time == 0 else { throw Failure("the banner did not advance") }
         try await pause(0.5)
 
+        // A brute's club as it glares: on stage 3 (before anyone has arrived), a brute is brought to his striking
+        // distance with his club raised in the last of his wind-up, and drawn glaring; a cut toward him with the real
+        // button turns his blow aside, drawn as steel on steel, and he reels. The fight is held still meanwhile (the
+        // lane still drawn, and the blade still carried to the club by the scene's clock), and the autopilot holds its
+        // hand.
+        session.jump(to: 3)
+        scene.loadFight(intro: false)
+        let piloting = session.autopilot, pace = scene.timeScale
+        session.autopilot = false
+        scene.timeScale = 0
+        let turnedBefore = session.fight.stats.turned, turnsDrawn = scene.turnsDrawn
+        let brute = session.raiseBruteClub(on: .left)
+        try await pause(0.35)
+        guard scene.clubsGlaring > 0 else { throw Failure("the brute's club did not glare in the last of his wind-up") }
+        try snapshot("6b-brute-glare", panel)
+        guard session.fight.foe(brute).map(session.fight.turns) == true else { throw Failure("a cut at the brute's glaring club would not turn it") }
+        click(.left, panel)
+        guard session.fight.stats.turned == turnedBefore + 1, session.fight.foe(brute)?.phase == .recoil
+        else { throw Failure("a cut into the brute's glaring club did not turn his blow") }
+        try await until("the blade met the club", timeout: 2) { scene.turnsDrawn > turnsDrawn }
+        try await pause(0.03)
+        try snapshot("6c-brute-turned", panel)
+        try await pause(0.15)
+        guard scene.clubsGlaring == 0 else { throw Failure("the club still glared after the blow was turned") }
+        scene.timeScale = pace
+        session.autopilot = piloting
+
         // A new kind of foe gets a card: stage 4's archer.
         session.jump(to: 4)
         scene.loadFight(intro: true)
@@ -210,7 +246,6 @@ enum SelfTest {
         // cross, sparks and all. The autopilot holds its hand meanwhile (or it would cut him first), and his guard is set
         // for him if he has not raised it himself; the cut is made from far enough out that he does not answer it, so
         // the rest of his fight is as it would have been.
-        let piloting = session.autopilot
         session.autopilot = false
         let parried = session.fight.stats.parried, clashes = scene.clashesDrawn, wounds = session.fight.stats.damage
         var opening: Side?
@@ -303,16 +338,20 @@ enum SelfTest {
         else { throw Failure("Bushidō's stage and hearts were not kept") }
         session.autopilot = true
 
-        // Endless from stage 2: a win runs straight on into stage 3, without a card to click through. Stage 2 is fought
-        // with Gore off: its dead are all felled whole, and not a drop of blood is spilt.
+        // Endless on stage 2: a win runs straight on into a fresh roll of stage 2, without a card to click through. It is
+        // fought with Gore off: its dead are all felled whole, and not a drop of blood is spilt.
         let spilt = scene.bloodShed, severed = scene.severings, killed = session.career.kills
         Settings.gore = false
         session.startEndless(at: 2)
         scene.loadFight(intro: true)
         guard session.career.isEndless, session.fight.stage == 2 else { throw Failure("endless did not start at stage 2") }
+        let firstRoll = session.fight.seed
         scene.timeScale = 5
-        try await until("the endless run went on", timeout: 60) { session.fight.stage == 3 || session.fight.outcome == .defeat }
-        guard session.fight.stage == 3, session.career.endless?.cleared == 1 else { throw Failure("the endless run did not go on to stage 3") }
+        try await until("the endless run went on", timeout: 60) {
+            session.fight.seed != firstRoll && session.fight.outcome == nil || session.fight.outcome == .defeat
+        }
+        guard session.fight.stage == 2, session.fight.seed != firstRoll, session.career.endless?.cleared == 1
+        else { throw Failure("the endless run did not go on to stage 2 afresh (stage \(session.fight.stage))") }
         guard session.career.kills > killed else { throw Failure("stage 2 of the endless run was won without a kill") }
         guard scene.severings == severed else { throw Failure("with gore off, \(scene.severings - severed) men were cut apart") }
         guard scene.bloodShed == spilt else { throw Failure("with gore off, blood was spilt (\(scene.bloodShed - spilt) drops, pools and blots)") }
@@ -330,14 +369,15 @@ enum SelfTest {
         try await pause(0.3)
         guard !scene.isAwayPaused, session.fight.time > held else { throw Failure("letting go of the window did not let the fight run") }
 
-        // A stage won just as the pointer leaves goes on to the next, but does not start it: it waits, its card held,
-        // until the pointer comes back.
+        // A stage won just as the pointer leaves goes on to the next roll of it, but does not start it: it waits, its
+        // card held, until the pointer comes back.
         scene.timeScale = 5
         try await until("an endless stage ended", timeout: 60) { session.fight.outcome != nil }
         if session.fight.outcome == .victory {
-            let next = session.fight.stage + 1
+            let won = session.fight.seed, stage = session.fight.stage
             scene.setAway(true)
-            try await until("the next endless stage", timeout: 5) { session.fight.stage == next }
+            try await until("the next endless roll", timeout: 5) { session.fight.seed != won && session.fight.outcome == nil }
+            guard session.fight.stage == stage else { throw Failure("the endless run went on to stage \(session.fight.stage), not \(stage) again") }
             guard scene.isAwayPaused, !scene.isEngaging, session.fight.time == 0, scene.cardsHeld
             else { throw Failure("an endless stage went on into the next with the pointer away") }
             panel.updatePauseState()

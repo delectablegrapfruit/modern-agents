@@ -40,14 +40,27 @@ where it is.
   a cut is still landing waits for it, and is let go if the man it was meant for is gone (knocked back, in the air,
   felled) or has his guard coming up.
 - **Enemies** each strike from their own weapon's reach, so a blow drawn landing on you lands on you: *Ashigaru*
-  spearmen thrust from the length of the spear, at the very edge of your reach (one cut). *Runners* (fast). *Brutes*
-  (three cuts, each one knocks him back, and his blow costs two hearts). *Archers* stop out of reach and shoot: cut
-  the arrow once it is in reach and it flies back into them. *Blade dancers* take two cuts (three from stage 12), and
-  each cut that doesn't fell them sends them flipping over your head to your other side. Only the man at the front of
-  a line strikes; the ones behind wait their turn. When an enemy raises his weapon he flushes red and a red marker
-  appears over his head. The ring around the marker runs out as his blow comes; on a man one cut from falling, its
-  last stretch is gold (see *Shards*). An archer drawing his bow shows a red sight line to you, and pips over a tough
-  one count the cuts he has left.
+  spearmen thrust from the length of the spear, at the very edge of your reach (one cut). *Runners* (fast, one cut).
+  *Brutes* (three cuts, and his blow costs two hearts; see *The brute's club*). *Archers* stop out of reach and shoot:
+  cut the arrow once it is in reach and it flies back into them. *Blade dancers* take two cuts (three from stage 12),
+  and each cut that doesn't fell them sends them flipping over your head to your other side. When an enemy raises his
+  weapon he flushes red and a red marker appears over his head. The ring around the marker runs out as his blow comes;
+  on a man one cut from falling, its last stretch is gold (see *Shards*). An archer drawing his bow shows a red sight
+  line to you, and pips over a tough one count the cuts he has left.
+- **The crowd:** on each side the men get past each other as fighting men would. Runners pass everyone, and the
+  other quick ones (blade dancers, the gourd-bearer) slip past a brute or an archer; anyone walks past a man who is
+  winding up a blow or recovering from one; and a brute strides through lighter men, shoving them aside to stand behind
+  him. Otherwise a man waits behind the one in front. Nobody walks through the warlord, and nobody cuts in front of the
+  gourd-bearer on his dart. So several men on a side can strike at once: cut them as they come.
+- **The brute's club:** a cut neither knocks a brute back nor breaks his blow; he takes it and keeps coming. But in
+  the last 0.3 s of his wind-up his kanabō glares, a steel-white sheen along it, a glint running up it and a white-gold
+  star flaring at its head: a cut then meets the club and turns his blow aside. Steel rings on steel in a spray of
+  sparks and he reels, off balance where he stands for 0.7 s, unable to strike, while you cut him down (a cut while
+  he reels keeps him reeling). The turned blow is not a wound (the blade met the club, not the man), but it counts to
+  your combo. The window is the same every time, on every stage and mode, longer than it takes to see the glare and
+  cut. A brute one cut from falling has no glare: a cut then fells him, and in the gold at the end of his ring gives a
+  shard (see *Shards*), so the glare and the gold never mean the same moment. Stage 3's card says it: *cut as his club
+  glares*.
 - **Warlord:** every fifth stage ends with one, and each is tougher than the last (12 cuts at stage 5, four more
   every warlord after, up to 40). His bar sits in the header (or, when the header is crowded, runs as a thin line
   along its foot), and stage 5's card warns you: *wait out his guard*. He raises his guard as he closes in, and
@@ -65,18 +78,21 @@ where it is.
   and angrier, red haze and all, and more often follows one blow straight with a second. His blow costs two hearts,
   and none but his answer to a turned cut comes quicker than 0.3 s.
 - **The gourd:** once a stage, one spearman or runner comes in with a gourd of medicine over his head. It is a
-  heart, but it has to be won twice over, and it can be lost:
-  - **He darts.** He takes two cuts and keeps just out of reach. Before each dart he crouches over his weapon for a
-    moment and the gourd flares (the tell); then he runs in and his blow lands as he gets there, a third of a second
-    after he goes (0.32 s, a little more on the slowest stages: long enough to meet with a cut made on seeing him go,
-    and no longer). His dart is his wind-up, marker and all, and a dart left alone lands. Each cut has to catch him
-    close, on a dart of his own: one that doesn't fell him sends him hopping back out of reach. After his third dart
-    (cut or not), or once he has been about for 8 seconds, he runs off the lane with the gourd.
-  - **He falls, and the gourd flies.** Cut down, he flings it into the air: it sails up and comes down within reach,
-    on his side or over your head on the other, a second or so later, and where it will land is marked on the ground
-    as it goes up. In the last 0.2 s of its fall it flares: a cut toward it then catches it, and a heart comes back
-    (points if you are full). Cut at it while it is still overhead and you whiff; let it land and it shatters, the
-    medicine spilt. A man nearer you on its side is cut first, so catching it can mean letting a blow come.
+  heart, but it has to be won twice over, and it can be lost. Nothing about it is luck: played right, it is yours
+  every time.
+  - **He darts.** He takes two cuts and keeps just out of reach. He goes on a steady beat: 0.8 s at his spot, the last
+    0.3 s of it crouched over his weapon with the gourd flaring (the tell), then he runs in and his blow lands as he
+    gets there, a third of a second after he goes (0.32 s, a little more on the slowest stages: long enough to meet with
+    a cut made on seeing him go, and no longer). He goes only with nobody between him and you, and nobody cuts in
+    front of him on his way in, so a cut toward him meets him; while anyone stands between, he waits standing, and the
+    whole tell comes after the way clears. His dart is his wind-up, marker and all, and a dart left alone lands. Each
+    cut has to catch him close, on a dart of his own: one that doesn't fell him sends him hopping back out of reach.
+    After his third dart (cut or not) he runs off the lane with the gourd, and never before.
+  - **He falls, and the gourd flies.** Cut down, he flings it into the air: it sails up and comes down always a
+    second later and always the same way from you, on his side or over your head on the other, and where it will land
+    is marked on the ground as it goes up. In the last 0.2 s of its fall it flares: a cut toward it then catches it,
+    whoever stands on that side, and a heart comes back (points if you are full). Cut at it while it is still overhead
+    and you whiff; let it land and it shatters, the medicine spilt.
   - Stage 1's card says it: *catch him twice, then catch the gourd*. The pips for the cuts he has left sit either side
     of his gourd. The stage is not won while the gourd is in the air.
 - **Shards (sen-no-sen):** cut a man down in the last 0.15 s of his wind-up, his blow all but on you, and he gives a
@@ -84,8 +100,9 @@ where it is.
   heart that light up as you hold them. Three shards make a heart (its worth in points if you are full). The last
   stretch of his marker's ring is gold when the cut will fell him: cut as the ring runs into the gold. Cut earlier and
   he only falls; wait too long and his blow lands. A wound scatters every shard you hold. Only a killing cut of your
-  own blade counts (not a cut that knocks a brute back, nor an arrow turned back into a man). Stage 2's card says it:
-  *cut as the ring turns gold*. Shards carry from stage to stage with your hearts.
+  own blade counts (not a blow turned aside on a brute's club, nor an arrow turned back into a man). Stage 2's card
+  says it: *cut as the ring turns gold*. Shards carry from stage to stage with your hearts. Only your timing decides
+  it: a man's wind-up takes as long every time, and anyone walking in front of him as he winds up is seen coming.
 - **The dead** come apart along the line of the cut: halved on the slant or through the waist, heads taken (a warlord
   always loses his); cut across the shins, a man drops onto his knees and pitches onto his face; run through or shot,
   they are thrown back off their feet or fold where they stand. Each falls from the very pose his figure froze in at
@@ -99,15 +116,15 @@ where it is.
   flecks the ground, and when you are hit, runs down the glass. You wear the stage's blood until the chiburi throws
   it off.
 - **Gore** builds with the stages: a light touch at stage 1 (now and then a cut only fells a man), full by stage 10,
-  heavier on to stage 20 and on through an endless run. In **bloodlust** it is at its heaviest: more and bigger
-  sprays, wounds pumping longer, more men cut apart (a thrust may tear one open), more blood on the glass, wider,
-  darker pools. Menu ▸ Gore turns it off (it is on until you do): then nothing bleeds and nobody comes apart, every
-  man falls whole, and a blow still lands with its freeze, shake, the cut's mark and sparks off the blade. It takes
-  effect with whatever happens next; the blood already spilt stays.
-- **Combo:** every kill and every deflected arrow adds one. The combo multiplies your score (×2 at 10, up to ×8).
-  At **20** you go into **bloodlust**: the edges of the lane turn red and your reach gets longer. A wound, a whiff
-  or a turned cut ends the combo (a glance does not), and each stage starts it afresh. On your last heart the edges
-  darken with a heartbeat, and the last heart in the header beats.
+  heavier on to stage 20 and on past it. In **bloodlust** it is at its heaviest: more and bigger sprays, wounds
+  pumping longer, more men cut apart (a thrust may tear one open), more blood on the glass, wider, darker pools.
+  Menu ▸ Gore turns it off (it is on until you do): then nothing bleeds and nobody comes apart, every man falls
+  whole, and a blow still lands with its freeze, shake, the cut's mark and sparks off the blade. It takes effect with
+  whatever happens next; the blood already spilt stays.
+- **Combo:** every kill, every deflected arrow and every brute's blow turned aside adds one. The combo multiplies
+  your score (×2 at 10, up to ×8). At **20** you go into **bloodlust**: the edges of the lane turn red and your reach
+  gets longer. A wound, a whiff or a cut the warlord turns aside ends the combo (a glance does not), and each stage
+  starts it afresh. On your last heart the edges darken with a heartbeat, and the last heart in the header beats.
 - **Difficulty** (menu ▸ Difficulty): each mode keeps its own stage and the hearts it carries, both shown on its
   menu item.
 
@@ -128,12 +145,13 @@ where it is.
   have left (and no more shards than you came in with), with its kills counted, so it is never better than playing
   on. Switching difficulty, or going into or out of an endless run, leaves a fight the same way. Past a stage's card
   the item reads Next Stage, or Start Over and the stage you start from.
-- **Endless** (menu ▸ Endless): start a run from any stage you have reached. Stages follow one another without a
-  card to click through, hearts carried, until you fall; a stage won while the pointer is away goes on to the next,
-  which waits under the pause curtain. The fall card shows the run: stages cleared (∞), kills, best combo and score,
-  and ↻ starts a new run from the same stage. Each starting stage keeps its best run (shown on its menu item), a run
-  you leave through the menu included, and the campaign keeps its best too. A better run cleared more stages, or as
-  many for more points; a tie is no record.
+- **Endless** (menu ▸ Endless): play any stage you have reached over and over, a fresh roll of it each time, hearts
+  (and shards) carried, until you fall. One follows another without a card to click through (its card counts the
+  clears in a row); one won while the pointer is away goes on to the next roll, which waits under the pause curtain.
+  The fall card shows the run: clears in a row (∞), kills, best combo and score, and ↻ starts a new run on the same
+  stage. Each stage keeps its best run, its most clears in a row (shown on its menu item), a run you leave through the
+  menu included, and the campaign keeps its best too. A better run cleared more, or as many for more points; a tie is
+  no record. Winning a stage there opens the next one, as in the campaign.
 - **Rank:** every foe you cut down counts toward your rank, won, lost or walked away from; a kill on Shura counts a
   quarter more and one on Oni half as much again. The ranks run from Wanderer through Swordsman, Ronin, Duelist,
   Blademaster, Kensei, Sword Saint and Demon Blade up to Legend (25,000), which takes many hours. The menu shows your
@@ -146,11 +164,11 @@ where it is.
 | Pause | Starts the moment the pointer leaves the panel, or while you drag it by its header. When the pointer comes back it has to rest for a third of a second (a ring fills) before the fight resumes, so crossing the panel on the way to something else costs nothing. Click to skip the wait. That click never cuts. SpriteKit stops drawing while paused, so a paused game uses no CPU. Menu ▸ Pause When Pointer Leaves turns it off: the fight then runs on with the pointer away, until a stage's card comes up. |
 | Focus | Clicking the panel never activates Ronin. The app you were working in stays the active app. A click on the lane takes the keys (so the arrows cut) until the pointer leaves (while leaving pauses), then they go back to your app. Keys with ⌘, ⌃ or ⌥, and ones the game does not use, are left alone. |
 | Size | A strip 340, 420 or 520 pt wide and at most 180 pt tall (menu ▸ Size; Medium until you choose). It stays wholly on screen, and grows or shrinks toward the screen's middle, so a panel in a corner keeps to its corner. Press **C** or the header's – button to fold it into a 196×28 pill that shows the mode, the stage, your hearts and the run's score (123K, 1.2M once it is long). Click the pill to unfold it. |
-| At a glance | The panel is small, so it uses pictures more than words. The header shows the mode as a vermilion seal (初 Shoshin, 武 Bushidō, 修 Shura, 鬼 Oni), the stage (with ∞ in an endless run), your hearts, a warlord's bar and the run's score (every stage of it so far). A won stage's card shows a skull for kills, crossed swords for your best combo, a clock for time and the score, and ▶ to go on. After a fall it shows the run instead: steps for the stages it cleared (∞ in endless), kills, best combo and score, and ↻ with the stage you start again from. ▲ marks a rank earned, or a run that beat its record (BEST RUN). The pause screen is a pause sign. What text there is is set in Optima capitals with wide letter-spacing, on dark bands edged with fine gold rules. |
+| At a glance | The panel is small, so it uses pictures more than words. The header shows the mode as a vermilion seal (初 Shoshin, 武 Bushidō, 修 Shura, 鬼 Oni), the stage (with ∞ in an endless run), your hearts, a warlord's bar and the run's score (every stage of it so far). A won stage's card shows a skull for kills, crossed swords for your best combo, a clock for time and the score, and ▶ to go on. After a fall it shows the run instead: steps for the stages it cleared (in endless, ∞ and its clears in a row), kills, best combo and score, and ↻ with the stage you start again from. ▲ marks a rank earned, or a run that beat its record (BEST RUN). The pause screen is a pause sign. What text there is is set in Optima capitals with wide letter-spacing, on dark bands edged with fine gold rules. |
 | Presence | No Dock icon. It has a menu bar icon. **⌃⌥R** shows and hides the panel from anywhere, on the screen you are working on. Menu ▸ Shortcut offers ⌃⌥⌘R and ⌃⇧R instead, and if another app holds the one chosen, the next free one is used. **Esc** or **⌘W** hides it too. It floats on every Space and over full-screen apps. It dims to 60% while the pointer is elsewhere (menu ▸ Dim When Pointer Leaves). |
-| Motion | Menu ▸ Reduce Motion (following the system setting until you choose): far less shake, no zoom punches, soft and slow full-lane flashes, lightning as a slow glow, a steady bloodlust edge and heartbeat, small faint impact lines, a shorter freeze and fainter flashes when blades clash, slams that drop in from nearer, and no thump through the lane from the heavy ones' steps. The blood and the dead are as they always are (that is menu ▸ Gore). |
+| Motion | Menu ▸ Reduce Motion (following the system setting until you choose): far less shake, no zoom punches, soft and slow full-lane flashes, lightning as a slow glow, a steady bloodlust edge and heartbeat, small faint impact lines, a shorter freeze and fainter flashes when blades clash (or a blade meets a brute's club), the glare on his club held steady, slams that drop in from nearer, and no thump through the lane from the heavy ones' steps. The blood and the dead are as they always are (that is menu ▸ Gore). |
 | Gore | Menu ▸ Gore, on until you turn it off. It builds with the stages and is heaviest in bloodlust; off, there is no blood at all and nobody comes apart (see *Gore* above). It takes effect at once. |
-| Development | Menu ▸ Development, for trying out rules that are not the game's: how the crowd on each side gets past each other — Queue (the game: each man waits behind the one in front, and only the front man strikes), Full Pass-Through (everyone walks through everyone to his own striking distance), Slip Past (runners, blade dancers and the gourd-bearer past brutes and archers), Pass the Busy (past a man winding up or recovering) and Shove Through (the brute through lighter men, pushing them behind him) — and No Brute Knockback (a cut neither moves the brute nor breaks his blow). The passing rules combine; Full Pass-Through overrides the others. They are played from the next moment on and kept until changed back; the menu says when any is on. `ronin-sim --crowd pass,slip,busy,shove` and `--no-knockback` measure the same rules. |
+| Development | Menu ▸ Development, for trying the game without one of its rules, or with another. The game's are ticked: how the crowd on each side gets past each other — Slip Past (runners, blade dancers and the gourd-bearer past brutes and archers), Runners Pass Everyone (past anyone but the warlord), Pass the Busy (past a man winding up or recovering) and Shove Through (the brute through lighter men, pushing them behind him) — and No Brute Knockback (a cut neither moves the brute nor breaks his blow, which is turned aside at the glare instead). Queue turns the passing rules off (each man waits behind the one in front, and only the front man strikes; again, back on), Full Pass-Through lets everyone walk through everyone to his own striking distance (over the others), and turning No Brute Knockback off has every cut knock him back and break his blow (no glare). They are played from the next moment on and kept until changed back; the menu reads *Development (rules changed)* while they differ from the game's, and Restore the Game's Rules puts them back. Only the rules you change are stored, so an update to the game's rules reaches you; the rules an earlier build stored (when the game was the queue) are dropped. `ronin-sim --crowd slip,runners,busy,shove\|pass\|queue` and `--knockback` measure the same. |
 | Sound | None. |
 | Save | Continuous (`~/Library/Application Support/Ronin/save.json`). If you quit mid-fight, you resume on the same frame. An update may roll the stage in progress afresh (at the hearts you carried into it), but the career always carries over. A save that cannot be read is set aside as `save.unreadable-<date>.json`, never written over. Menu ▸ Reset Career… starts again from nothing. |
 
@@ -254,14 +272,20 @@ All but `make run` work on Linux too.
 - `ronin-sim` plays stages headless with a human-like pilot (0.22 s reaction, 7 cuts a second, an occasional
   wrong-way cut; `--reaction`, `--rate` and `--slips` change them, and `--rash` makes it lose patience with a
   warlord's set guard now and then) or a perfect one (`--perfect`), in one mode or every mode (`--mode all`), over
-  `--stages` and `--seeds`. A press the human-like pilot times to a moment it sees coming (the gourd coming down, the
-  gold at the end of a wind-up) lands off that moment by about `--timing` seconds (0.05), and never sooner after its
-  last press than its rate allows; with a heart to win back and the lane quiet, it lets a man wind up to cut him down
+  `--stages` and `--seeds`. A press the human-like pilot times to a moment it sees coming (the gourd coming down, a
+  brute's club glaring, the gold at the end of a wind-up) lands off that moment by about `--timing` seconds (0.05), and
+  never sooner after its last press than its rate allows; with a catch timed it keeps its hands free for it and cuts
+  only what is already in reach. A brute raising his club whom it cannot cut down before the blow, it meets at the
+  glare and cuts down as he reels. With a heart to win back and the lane quiet, it lets a man wind up to cut him down
   late for a shard as often as `--daring` (0.8) says. The perfect pilot catches the gourd the moment it can and never
-  waits for the gold. The table shows each stage's win rate, fight length, wounds, whiffs, parried cuts and the hearts
-  a warlord took; `--hearts` shows instead where hearts came from and went: how often the gourd-bearer was met and cut
-  down, and his gourd caught; the hearts the gourd gave back (and catches worth points), the hearts his blows took,
-  the shards earned and the hearts they made, the shards scattered, and every heart lost. `--campaign` plays runs
+  waits for the gold. The crowd plays the game's rules; `--crowd` names the passing rules to play instead (`slip`,
+  `runners`, `busy`, `shove`, `pass`, `standard`; `queue` or `none` for none of them) and `--knockback` has a cut
+  knock the brute back and break his blow. The table shows each stage's win rate, fight length, wounds, whiffs, parried
+  cuts, brutes' blows turned and the hearts a warlord took; `--hearts` shows instead where hearts came from and went:
+  how often the gourd-bearer was met and cut down, and his gourd caught; how often the ronin fell with the bearer
+  about or the gourd in the air, and of the rest how often the gourd was won; the hearts the gourd gave back (and
+  catches worth points), the hearts his blows took, the shards earned and the hearts they made, the shards
+  scattered, and every heart lost. `--campaign` plays runs
   from stage 1, hearts and shards carried, until the ronin falls: how far they get, the hearts the gourd and the
   shards gave back, the gourds caught at full hearts, shattered and carried off, and the hearts the bearers' blows
   took. `--trace <stage>` tells one fight second by second. With `--check` it exits 1 when the game misses a bar
@@ -289,14 +313,15 @@ All but `make run` work on Linux too.
 
 CI (`.github/workflows/ci.yml`) runs on every push to a branch and on pull requests (not on tags). The Linux job
 builds and tests, runs every `--check` above (the human-like pilot over stages 1-20, the perfect one over 1-25 and
-through the endless stages 26-60, a campaign in every mode), plays a slower pilot and traces a warlord stage (both
-reported, not held to a bar), and renders the `all`, `dead` and `ragdoll` sheets. Once it passes, the macOS job
-builds and tests, bundles and packages the app, and launches the packaged copy with `RONIN_SELFTEST=1`. The
-self-test does these things in order:
+on through stages 26-60, a campaign in every mode), plays a slower pilot, shows how often a quick, well-timed hand and
+the default one win the gourd, and traces a warlord stage (these three reported, not held to a bar), and renders the
+`all`, `dead` and `ragdoll` sheets. Once it passes, the macOS job builds and tests, bundles and packages the app, and
+launches the packaged copy with `RONIN_SELFTEST=1`. The self-test does these things in order:
 
-1. Checks the defaults (floor hints off, a Medium panel, gore on) and that the marker over every kind of foe's head,
-   a gourd bearer's too, stays on the lane at every size, that a bearer's pips and marker stay clear of his gourd,
-   and that a word slammed onto the lane (BLOODLUST, 25 HITS) stays under the combo's number at every size.
+1. Checks the defaults (floor hints off, a Medium panel, gore on, the game's crowd rules even where an earlier build
+   stored its own) and that the marker over every kind of foe's head, a gourd bearer's too, stays on the lane at every
+   size, that a bearer's pips and marker stay clear of his gourd, and that a word slammed onto the lane (BLOODLUST,
+   25 HITS) stays under the combo's number at every size.
 2. Grows the panel out of its default corner and folds it there and back without it leaving the screen, and checks
    the header cannot go under the menu bar.
 3. Shows what a new player first sees, turns floor hints on, and makes the first cut and a whiff with real left-
@@ -306,7 +331,9 @@ self-test does these things in order:
    last blow's freeze run out, and checks the win, the run's tally and the save.
 5. Folds into the pill and back, turns floor hints off and changes the size, the dead still lying there and the
    card still up, then advances from the banner.
-6. Shows the card for a newly introduced enemy, and checks it follows the panel to another size.
+6. On stage 3 brings in a brute at the end of his wind-up and sees his club drawn glaring, meets it with the real
+   button and sees his blow turned aside, steel on steel, the glare gone. Then shows the card for a newly introduced
+   enemy, and checks it follows the panel to another size.
 7. Fights a warlord: his bar in the header, never over the lane and clear of the shards beside the hearts and of the
    score, his blow coming (if he winds up within 3 s), a cut into his set guard with the real button, parried and
    bound on his blade (if his guard is set in reach, far enough out that he would not answer, within 6 s), and his
@@ -314,9 +341,9 @@ self-test does these things in order:
 8. Switches to Oni and rides a combo into bloodlust.
 9. Falls, and starts over from stage 1 with full hearts, the stage reached left unlocked and the fallen run kept.
 10. Switches back and checks that Bushidō kept its stage and its hearts.
-11. Runs an endless stage with gore off straight on into the next (its dead all felled whole, not a drop of blood
-    spilt), checks that dragging the window holds the fight still and that a stage won with the pointer away does
-    not start the next, and leaves the run, kept as the best from its stage.
+11. Runs an endless stage with gore off straight on into a fresh roll of the same stage (its dead all felled whole,
+    not a drop of blood spilt), checks that dragging the window holds the fight still and that a stage won with the
+    pointer away does not start the next roll, and leaves the run, kept as the best on its stage.
 12. Folds into the pill and back.
 13. Checks that leaving pauses and gives the keys back (a key typed then does nothing), and that coming back takes
     the dwell.
