@@ -88,6 +88,13 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     check('the Extra hit goes first', G.bonus === 0 && G.hp === 2);
     G.quit();
 
+    // ----- the picture growing over the edge (a new animation frame, pressed into a wall) is a touch, never a fall -----
+    G.startJourney(6); d = voidDir();
+    S.gameplay.rule = 'casual'; run(0.6, d); // pressed against the edge (casual: the edges are walls)
+    G.scale = 3; run(1 / 60, d); // a much bigger frame, reaching well over the edge
+    check('a picture that grows over the edge is pushed back onto the floor, no bubble', !G.fx.bubble && onFloor() && G.state === 'play');
+    S.gameplay.rule = 'normal'; G.quit();
+
     // ----- a right click uses the item -----
     G.startJourney(6);
     G.giveItem('shrink');
@@ -208,16 +215,17 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     const wide = Math.max(...G.trail.map((r) => r.x1 - r.x0)), moved = Math.hypot(G.ball.x - a.x, G.ball.y - a.y);
     check('Launch is short, like a real launch', T <= 1.6, T.toFixed(2) + ' s');
     check('Launch goes up: the camera pulls out, but not too far', minZ < G.zoomTarget() * 0.5 && minZ > G.zoomTarget() * 0.15, (minZ / G.zoomTarget()).toFixed(3));
-    check('Launch steers freely, over the void too, with a modest reach', moved > 400 && moved < 1100 && overVoid, Math.round(moved) + ' units');
+    check('Launch steers freely, over the void too, as far as the clouds', moved > 250 && moved <= 341 && overVoid, Math.round(moved) + ' units');
     const went = (G.fx.bubble ? G.fx.bubble.a : G.ball), gone = (went.x - a.x) * toward.x + (went.y - a.y) * toward.y;
-    check('Launch goes where you steer', gone > 400, Math.round(gone) + ' units the way you dragged');
+    check('Launch goes where you steer', gone > 250, Math.round(gone) + ' units the way you dragged');
     check('Launch maps what it flies over', wide > 1000 && wide > before * 4, Math.round(before) + ' -> ' + Math.round(wide));
     check('camera back down after landing', G.state !== 'play' || Math.abs(G.cam.zoom - G.zoomTarget()) < 1e-6);
     G.quit();
     // Steered onto the board: down exactly there, unhurt. Steered over the void: a fall (a hit), then the nearest floor.
     const launchTo = (p) => {
       G.giveItem('launch'); G.useItem();
-      for (let i = 0; i < 60 * 8 && G.fx.launch; i++) { if (G.fx.launch.t > G.fx.launch.T - 0.3) { G.ball.x = p.x; G.ball.y = p.y; } frame(1 / 60); }
+      // Placed there (with its take-off moved along, so the reach doesn't hold it back: that's checked above).
+      for (let i = 0; i < 60 * 8 && G.fx.launch; i++) { if (G.fx.launch.t > G.fx.launch.T - 0.3) { G.ball.x = p.x; G.ball.y = p.y; G.fx.launch.from = { x: p.x, y: p.y }; } frame(1 / 60); }
     };
     G.startJourney(14);
     const node = G.maze.nodes[G.maze.mainPath[Math.floor(G.maze.mainPath.length / 2)]];

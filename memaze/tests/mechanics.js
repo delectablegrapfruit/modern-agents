@@ -50,7 +50,7 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     check('each mechanic is introduced on its own level', sched === true, sched);
     const b10 = L.build(L.levelParams(10)), l9 = L.build(L.levelParams(9));
     const w = G.ITEMS;
-    check('the magic carpet is the rarest item, and short', Object.keys(w).every((id) => id === 'carpet' || w[id].w > w.carpet.w) && w.carpet.dur < 4, w.carpet.w + ' / ' + w.carpet.dur + ' s');
+    check('Launch and the magic carpet are the rarest items, equally; the carpet is short', w.launch.w === w.carpet.w && Object.keys(w).every((id) => id === 'carpet' || id === 'launch' || w[id].w > 2 * w.carpet.w) && w.carpet.dur < 4, w.launch.w + ' / ' + w.carpet.w + ' / ' + w.carpet.dur + ' s');
     check('bosses are bigger than the levels before them', b10.boss && b10.nodes.length > l9.nodes.length * 1.2, b10.nodes.length + ' vs ' + l9.nodes.length);
     check('no remix before level 36, one or more after', L.levelParams(35).mods.length === 0 && [36, 41, 47, 58].every((lv) => L.levelParams(lv).mods.length >= 1));
 
@@ -174,6 +174,12 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     check('every tenth Gauntlet maze is a boss', L.gauntletParams({ style: 'progressive', diff: 'easy', seed: 3 }, 9).boss && !L.gauntletParams({ style: 'progressive', diff: 'easy', seed: 3 }, 8).boss);
     G.startGauntlet({ diff: 'easy' });
     check('Easy Gauntlet has unlimited lives', G.run.lives === Infinity);
+    G.giveItem('shrink');
+    G.run.cleared++; G.nextGauntlet(); // what a clear does once the win media is over
+    check('Gauntlet: the item in your slot comes along to the next maze', G.item === 'shrink' && G.run.cleared === 1);
+    G.quit();
+    G.startGauntlet({ diff: 'easy' });
+    check('...but a new run starts empty-handed', !G.item);
     G.quit();
     return res;
   });

@@ -33,7 +33,9 @@ No build step, no dependencies: plain HTML/CSS/JS, plus an optional Python serve
   your picture shatters into glassy shards, your *lose* media plays, then you go back to the last flag you reached, or
   the start. Spawning in (every start, restart and flag), the shards fly back together; nothing hurts until you're whole.
 - **Falling off the board** (a bridge vanishing under you, a Launch coming down in the void, the magic carpet running
-  out) costs a hit, then a bubble floats you back to the last solid ground you stood on, like Mario Galaxy.
+  out) costs a hit, then a bubble floats you back to the last solid ground you stood on, like Mario Galaxy. Only when
+  the floor is gone from under the middle of your picture: pressing into a wall (even as an animated picture's next
+  frame reaches over the edge) is a touch, and you're pushed back onto the floor.
 - **The hitbox is your picture.** Every pixel that is at least half opaque counts; transparent parts don't. Animated GIFs,
   APNG/WebP animations and videos are checked frame by frame, and chroma-keyed pixels drop out too. A small buffer
   (3.5% of the picture's size) lets an edge graze the void without losing.
@@ -63,8 +65,8 @@ Time Trial never has them.
 | **Invincible** | 8 s without damage; the edges hold like walls. Your picture glows. |
 | **Extra hit** | Used at once: a gold ring turns around you and takes the next hit instead (up to two rings). Rings don't come back. |
 | **Bullet** | Carries you along the corridors toward GOAL (Endless: outward) for about 1800 units, over vanishing bridges and all, finishing on a junction short of GOAL. Invincible while flying. |
-| **Launch** | A short 1.45 s hop: the camera pulls out while you're up, and you steer (drag or keys, at the zoomed-out scale), over the void and everything; a shadow marks the spot below you. You come down right where you are: on the board, you're fine; in the void, it's a fall (a hit, then the nearest floor). The map fills in with everything the screen showed. |
-| **Magic carpet** | The rarest item: 3.5 s of floating over the void. It flickers when it's about to run out: be over floor by then, or it's a fall. |
+| **Launch** | As rare as the carpet. A short 1.45 s hop: the camera pulls out while you're up, and you steer (drag or keys, at the zoomed-out scale), over the void and everything, up to 340 units from where you took off: a ring of clouds marks that border, with a haze beyond it. A shadow marks the spot below you. You come down right where you are: on the board, you're fine; in the void, it's a fall (a hit, then the nearest floor). The map fills in with everything the screen showed. |
+| **Magic carpet** | The rarest item, with Launch: 3.5 s of floating over the void. It flickers when it's about to run out: be over floor by then, or it's a fall. |
 | **Shrink** | Half size (picture and hitbox) for 10 s; you grow back as soon as there's room. |
 
 ### Modes
@@ -72,7 +74,7 @@ Time Trial never has them.
 | Mode | What |
 |---|---|
 | **Chapters** | Levels 1, 2, 3 and on forever, ten to a chapter; the tenth is a boss maze (half as big again, every mechanic seen so far, more flags). Each level is generated from its number, so level 12 is the same maze for everyone. The menu's Continue card shows your chapter and where you are in it. |
-| **Gauntlet** | An endless run of mazes. **Progressive** starts at your difficulty and goes deeper and harder with every maze; **Random** picks each maze's difficulty anywhere in your difficulty's band. Difficulty: Easy (unlimited lives), Normal (5), Hard (3), Extreme (1); one more life every 5 clears. Every tenth maze is a boss. Seeds live here: the same seed and settings give the same run, and **Copy link** shares it (`index.html#gauntlet=seed&style=random&diff=hard`). Each style and difficulty keeps its best depth. |
+| **Gauntlet** | An endless run of mazes. **Progressive** starts at your difficulty and goes deeper and harder with every maze; **Random** picks each maze's difficulty anywhere in your difficulty's band. Difficulty: Easy (unlimited lives), Normal (5), Hard (3), Extreme (1); one more life every 5 clears. Every tenth maze is a boss. The item in your slot comes along to the next maze. Seeds live here: the same seed and settings give the same run, and **Copy link** shares it (`index.html#gauntlet=seed&style=random&diff=hard`). Each style and difficulty keeps its best depth. |
 | **Endless** | One unbounded maze streamed in chunks around you, narrower and meaner the farther you get. Gems add 3 seconds, beacons are checkpoints that add 12 seconds, 3 lives. |
 | **Time Trial** | Any level you've reached, with no mystery boxes and no time limit. Your fastest run replays as a see-through ghost of your picture on the same clock (an arrow at the screen edge points to it when it's off screen); each level keeps its best time. |
 
@@ -80,7 +82,7 @@ Time Trial never has them.
 
 | Chapter | Levels | New |
 |---|---|---|
-| 1 First Steps | 1-10 | **Keys and doors** (5): pick up the key of a door's colour (it waits somewhere before the door, on a round token that is exactly where it's picked up), then bump into the door to open it; each key opens one door. A door is drawn exactly as thick as it blocks, at any zoom; the map and the HUD show the same key and bar. Opened doors slide into the walls, leave a dashed line across the floor, and stay on the map, dashed. **Vanishing bridges** (8): they blink, disappear for a moment, then come back. |
+| 1 First Steps | 1-10 | **Keys and doors** (5): pick up the key of a door's colour (it waits somewhere before the door), then bump into the door to open it; each key opens one door. Keys, doors, gates, switches and portals are drawn as chunky icons that scale with the maze (they look at any zoom the way the home menu's zoomed-out maze shows them); a door blocks exactly as thick as its bar is drawn, a key is picked up where it's drawn, and the map and the HUD show the same key. Opened doors slide into the walls, leave a dashed line across the floor, and stay on the map, dashed. **Vanishing bridges** (8): they blink, disappear for a moment, then come back. |
 | 2 Locks and Levers | 11-20 | **One-way gates** (12): arrows on the floor; you pass only the way they point. **Switches** (16): step on one to flip the bridges of its colour: the missing ones appear, the others go. Step off and on again to flip them back. A bridge that's down is a see-through ghost with dashed rims in its switch's colour and that switch's badge floating over the gap; a press flashes every bridge of its colour as it comes or goes (on the map too: up, a corridor in the colour; down, dashed). |
 | 3 Moving Parts | 21-30 | **Moving platforms** (21): they shuttle across a gap, resting at each end; step on, ride, step off. **Portals** (25): step onto one, come out of its twin (the way on is often through one). |
 | 4 Cold and Dark | 31-40 | **Ice** (28): you drift, and keep sliding after you stop. **Darkness** (32): only a circle around you is lit, and only that fills in on the map. |

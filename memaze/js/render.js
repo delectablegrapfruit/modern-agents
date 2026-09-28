@@ -128,52 +128,47 @@
     ctx.restore();
   }
 
-  // ---------- keys and doors: one look everywhere (the maze, the map, the HUD) ----------
-  // Sizes come from the gameplay (Levels.DOOR_R, Levels.KEY_R), so what's drawn is exactly what blocks and what picks up.
-  const DOOR_R = () => (MZ.Levels ? MZ.Levels.DOOR_R : 5);
-  const KEY_R = () => (MZ.Levels ? MZ.Levels.KEY_R : 16);
-  // A key sits on a round token in its colour: the token is the circle that picks it up, and the key (tilted, rocking a
-  // little) never leaves it. Proportions of the token radius R: key size s, dark outline, colour line, rim.
-  const KEY = { s: 0.72, tilt: -0.6, dark: 0.21, line: 0.12, rim: 0.12, fill: 0.4 };
-  function keyPath(g, s) { // bow, shaft, two teeth; centred on the token
-    g.beginPath(); g.arc(-s * 0.575, 0, s * 0.5, 0, TAU);
-    g.moveTo(-s * 0.075, 0); g.lineTo(s * 1.075, 0);
-    g.moveTo(s * 0.725, 0); g.lineTo(s * 0.725, s * 0.42);
-    g.moveTo(s * 1.025, 0); g.lineTo(s * 1.025, s * 0.32);
+  // ---------- keys, doors, gates, switches, portals: drawn the way the home menu shows them ----------
+  // Their strokes are in world units (ICON per "pixel" of the icon, the scale the zoomed-out menu shows them at), so
+  // at any zoom they look like the menu's chunky icons, and what's drawn is what acts: a shut door blocks exactly as
+  // thick as its bar (Levels.DOOR_R = 8 icon pixels), a key is picked up where it's drawn (Levels.KEY_R).
+  const ICON = 2;
+  const KEY_S = 13, KEY_TILT = -0.6; // key size (world units) and its tilt
+  function keyPath(g, s) { // bow, shaft, two teeth
+    g.beginPath(); g.arc(-s * 0.55, 0, s * 0.5, 0, TAU);
+    g.moveTo(-s * 0.05, 0); g.lineTo(s * 1.1, 0);
+    g.moveTo(s * 0.75, 0); g.lineTo(s * 0.75, s * 0.42);
+    g.moveTo(s * 1.05, 0); g.lineTo(s * 1.05, s * 0.32);
   }
-  // px: one screen pixel in the units g draws in (lines never get thinner than a few pixels).
-  function keyToken(g, x, y, R, color, rot, px) {
+  // A key: a dark outline (9 icon pixels) and its colour (5), tilted by rot. s: its size; u: one icon pixel.
+  function keyIcon(g, x, y, s, color, rot, u) {
     g.save();
-    g.translate(x, y);
-    const rim = Math.max(KEY.rim * R, 2 * px);
-    g.beginPath(); g.arc(0, 0, R - rim / 2, 0, TAU);
-    g.fillStyle = '#fff'; g.fill(); // a pale tint of its colour, the same on any floor or backdrop
-    g.globalAlpha = KEY.fill; g.fillStyle = color; g.fill(); g.globalAlpha = 1;
-    g.strokeStyle = 'rgba(0,0,0,0.45)'; g.lineWidth = rim; g.stroke();
-    g.rotate(rot);
+    g.translate(x, y); g.rotate(rot);
     g.lineJoin = 'round'; g.lineCap = 'round';
-    const s = KEY.s * R, dark = Math.max(KEY.dark * R, 5 * px), line = Math.min(dark * 0.6, Math.max(KEY.line * R, 2.8 * px));
-    const k = Math.min(1, (R - rim - dark / 2) / (1.1 * s)); // thick lines on a small token: shrink the key to stay inside it
-    keyPath(g, s * k); g.strokeStyle = 'rgba(0,0,0,0.55)'; g.lineWidth = dark; g.stroke();
-    keyPath(g, s * k); g.strokeStyle = color; g.lineWidth = line; g.stroke();
+    keyPath(g, s); g.strokeStyle = 'rgba(0,0,0,0.5)'; g.lineWidth = 9 * u; g.stroke();
+    keyPath(g, s); g.strokeStyle = color; g.lineWidth = 5 * u; g.stroke();
     g.restore();
   }
   // The same key as an SVG (32 x 32), for the HUD.
   function keySVG(color) {
-    const R = 15, s = KEY.s * R, n = (v) => +v.toFixed(2);
-    const d = 'M' + n(-s * 0.075) + ' 0H' + n(s * 1.075) + 'M' + n(s * 0.725) + ' 0V' + n(s * 0.42) + 'M' + n(s * 1.025) + ' 0V' + n(s * 0.32);
-    const shape = (st, w) => '<g fill="none" stroke="' + st + '" stroke-width="' + n(w) + '" stroke-linecap="round" stroke-linejoin="round"><circle cx="' + n(-s * 0.575) + '" r="' + n(s * 0.5) + '"/><path d="' + d + '"/></g>';
-    const r = n(R - KEY.rim * R / 2);
-    return '<svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="' + r + '" fill="#fff"/><circle cx="16" cy="16" r="' + r + '" fill="' + color + '" fill-opacity="' + KEY.fill + '" stroke="rgba(0,0,0,0.45)" stroke-width="' + n(KEY.rim * R) + '"/>' +
-      '<g transform="translate(16 16) rotate(' + n((KEY.tilt * 180) / Math.PI) + ')">' + shape('rgba(0,0,0,0.55)', KEY.dark * R) + shape(color, KEY.line * R) + '</g></svg>';
+    const s = 9.5, u = s / KEY_S * ICON, n = (v) => +v.toFixed(2);
+    const d = 'M' + n(-s * 0.05) + ' 0H' + n(s * 1.1) + 'M' + n(s * 0.75) + ' 0V' + n(s * 0.42) + 'M' + n(s * 1.05) + ' 0V' + n(s * 0.32);
+    const shape = (st, w) => '<g fill="none" stroke="' + st + '" stroke-width="' + n(w) + '" stroke-linecap="round" stroke-linejoin="round"><circle cx="' + n(-s * 0.55) + '" r="' + n(s * 0.5) + '"/><path d="' + d + '"/></g>';
+    return '<svg viewBox="0 0 32 32" aria-hidden="true"><g transform="translate(16.5 15) rotate(' + n((KEY_TILT * 180) / Math.PI) + ')">' + shape('rgba(0,0,0,0.5)', 9 * u) + shape(color, 5 * u) + '</g></svg>';
   }
-  // A shut door: a bar in its colour with a dark rim, R either side of its centre line (as thick as it blocks).
-  function doorBar(g, ax, ay, bx, by, R, color, px) {
-    const rim = Math.min(2.5 * px, R * 0.3);
+  // A shut door: a round-ended bar in its colour with a dark rim (16 and 11 icon pixels), and a keyhole.
+  function doorBar(g, ax, ay, bx, by, color, u, hole) {
     g.lineCap = 'round';
     g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, by);
-    g.strokeStyle = 'rgba(0,0,0,0.55)'; g.lineWidth = 2 * R; g.stroke();
-    g.strokeStyle = color; g.lineWidth = 2 * (R - rim); g.stroke();
+    g.strokeStyle = 'rgba(0,0,0,0.5)'; g.lineWidth = 16 * u; g.stroke();
+    g.strokeStyle = color; g.lineWidth = 11 * u; g.stroke();
+    if (!hole) return;
+    g.save();
+    g.translate((ax + bx) / 2, (ay + by) / 2);
+    g.fillStyle = '#1b1530';
+    g.beginPath(); g.arc(0, -2 * u, 3.2 * u, 0, TAU); g.fill();
+    g.fillRect(-1.6 * u, -1 * u, 3.2 * u, 6 * u);
+    g.restore();
   }
   // One half of an opening door: from (x0, y0), flat, out to its end (x1, y1), round.
   function doorHalf(g, x0, y0, x1, y1, R) {
@@ -324,7 +319,7 @@
         }
         if (b.a > 0) continue;
         const r = Math.min(20, b.e.hw * 0.52) * (1 + 0.06 * Math.sin(clock * 3));
-        for (const p of b.marks) plateGlyph(ctx, p.x, p.y, r, c, false, px, 'rgba(20,14,40,0.85)');
+        for (const p of b.marks) plateGlyph(ctx, p.x, p.y, r, c, false, ICON, 'rgba(20,14,40,0.85)');
       }
     }
     // Moving platforms: a dotted track over the void, and the platform itself (floor) with arrows on it.
@@ -349,9 +344,9 @@
         ctx.restore();
       }
     }
-    // Doors, keys, switches, one-way gates and portals.
+    // Doors, keys, switches, one-way gates and portals, as icons (see ICON).
     drawMech(m, t) {
-      const ctx = this.ctx, px = this.px;
+      const ctx = this.ctx, px = ICON;
       for (const pt of m.portals) for (const e of [pt.a, pt.b]) this.drawPortal(e, pt.r, pt.color, t);
       for (const pl of m.plates) {
         const on = (MZ.Game.world && MZ.Game.world.sw[pl.g]) | 0, k = pl.pressAt != null ? (t - pl.pressAt) / 0.6 : 1;
@@ -378,43 +373,34 @@
         }
         ctx.restore();
       }
-      const R = DOOR_R();
       for (const d of m.doors) { // shut: a bar with a keyhole; opening, it splits and slides into the walls, where it stays
-        const k = d.open ? Math.min(1, (MZ.Game.t - (d.openAt || 0)) / 0.45) : 0, e = 1 - (1 - k) * (1 - k);
         ctx.save();
-        if (!d.open) {
-          doorBar(ctx, d.ax, d.ay, d.bx, d.by, R, d.color, px);
-          ctx.translate(d.x, d.y);
-          ctx.fillStyle = '#1b1530'; // the keyhole
-          ctx.beginPath(); ctx.arc(0, -0.28 * R, 0.36 * R, 0, TAU); ctx.fill();
-          ctx.beginPath(); ctx.moveTo(-0.15 * R, -0.1 * R); ctx.lineTo(0.15 * R, -0.1 * R); ctx.lineTo(0.22 * R, 0.62 * R); ctx.lineTo(-0.22 * R, 0.62 * R); ctx.closePath(); ctx.fill();
-          ctx.restore();
-          continue;
-        }
+        if (!d.open) { doorBar(ctx, d.ax, d.ay, d.bx, d.by, d.color, px, true); ctx.restore(); continue; }
         // The threshold, dashed in the door's colour; the halves end up flush with the floor's edge, so nothing that
         // looks solid is left where you can walk.
+        const k = Math.min(1, (MZ.Game.t - (d.openAt || 0)) / 0.45), e = 1 - (1 - k) * (1 - k);
         ctx.lineCap = 'round';
-        ctx.setLineDash([5 * px, 6 * px]); ctx.globalAlpha = 0.55 * e;
+        ctx.setLineDash([5 * px, 6 * px]); ctx.globalAlpha = 0.6 * e;
         ctx.strokeStyle = d.color; ctx.lineWidth = 2.5 * px;
         ctx.beginPath(); ctx.moveTo(d.ax, d.ay); ctx.lineTo(d.bx, d.by); ctx.stroke();
         ctx.setLineDash([]); ctx.globalAlpha = 1;
-        const sp = doorSpan(d, this.world), rim = Math.min(2.5 * px, R * 0.3);
+        const sp = doorSpan(d, this.world);
         for (const [ex, ey, reach] of [[d.ax, d.ay, sp.a], [d.bx, d.by, sp.b]]) {
           const ux = (ex - d.x) / sp.L, uy = (ey - d.y) / sp.L, f = reach * e;
           if (f >= sp.L) continue; // the floor reaches past the bar's end: it's all gone into the wall
-          doorHalf(ctx, d.x + ux * f, d.y + uy * f, ex, ey, R); ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fill();
-          doorHalf(ctx, d.x + ux * Math.min(sp.L, f + rim), d.y + uy * Math.min(sp.L, f + rim), ex, ey, R - rim); ctx.fillStyle = d.color; ctx.fill();
+          doorHalf(ctx, d.x + ux * f, d.y + uy * f, ex, ey, 8 * px); ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fill();
+          doorHalf(ctx, d.x + ux * Math.min(sp.L, f + 2.5 * px), d.y + uy * Math.min(sp.L, f + 2.5 * px), ex, ey, 5.5 * px); ctx.fillStyle = d.color; ctx.fill();
         }
         ctx.restore();
       }
       for (const kk of m.keys) if (!kk.taken) this.drawKey(kk, t);
     }
-    // A key on its token, exactly where (and as big as) it's picked up; it rocks a little but never leaves the token.
+    // A key, bobbing and rocking a little on its spot (it's picked up within Levels.KEY_R of it).
     drawKey(k, t) {
-      keyToken(this.ctx, k.x, k.y, KEY_R(), k.color, KEY.tilt + Math.sin(t * 2 + k.x) * 0.12, this.px);
+      keyIcon(this.ctx, k.x, k.y + Math.sin(t * 3 + k.x) * 2.5, KEY_S, k.color, KEY_TILT + Math.sin(t * 2) * 0.12, ICON);
     }
     drawPortal(e, r, color, t) {
-      const ctx = this.ctx, px = this.px;
+      const ctx = this.ctx, px = ICON;
       ctx.save(); ctx.translate(e.x, e.y);
       const g = ctx.createRadialGradient(0, 0, r * 0.1, 0, 0, r);
       g.addColorStop(0, 'rgba(10,6,30,0.95)'); g.addColorStop(0.7, 'rgba(20,10,50,0.75)'); g.addColorStop(1, color);
@@ -434,6 +420,29 @@
       const g = ctx.createRadialGradient(s.x, s.y, r * 0.55, s.x, s.y, r);
       g.addColorStop(0, 'rgba(4,3,12,0)'); g.addColorStop(0.7, 'rgba(4,3,12,0.8)'); g.addColorStop(1, 'rgba(4,3,12,0.97)');
       ctx.fillStyle = g; ctx.fillRect(0, 0, this.w, this.h);
+      ctx.restore();
+    }
+    // A Launch's border: a ring of puffy clouds at the edge of how far you can steer (centre c, radius R), and a haze
+    // past it. a: how high you are (0-1), so they gather as you rise and part as you come down.
+    drawClouds(cam, c, R, a, t) {
+      if (!(a > 0.01)) return;
+      const ctx = this.ctx, k = this.dpr * cam.zoom;
+      ctx.save();
+      ctx.setTransform(k, 0, 0, k, (this.dpr * this.w) / 2 - cam.x * k, (this.dpr * this.h) / 2 - cam.y * k);
+      const hw = this.w / 2 / cam.zoom + 10, hh = this.h / 2 / cam.zoom + 10;
+      ctx.beginPath(); ctx.rect(cam.x - hw, cam.y - hh, hw * 2, hh * 2); ctx.arc(c.x, c.y, R + 45, 0, TAU, true);
+      ctx.fillStyle = 'rgba(236,242,255,' + (0.5 * a).toFixed(3) + ')'; ctx.fill();
+      const n = Math.max(12, Math.round((TAU * R) / 40)), puffs = [];
+      for (let i = 0; i < n; i++) {
+        const h = Math.sin(i * 12.9898) * 43758.5453, j = h - Math.floor(h), th = (i / n) * TAU + t * 0.03;
+        const rr = R + 24 + 12 * Math.sin(i * 1.7 + t * 0.6), pr = 30 + 18 * j + 4 * Math.sin(t * 1.3 + i);
+        puffs.push([c.x + Math.cos(th) * rr, c.y + Math.sin(th) * rr, pr]);
+      }
+      ctx.globalAlpha = a;
+      ctx.fillStyle = 'rgba(146,160,204,0.95)'; // shadows first, then the white tops: one bank of cloud
+      for (const [x, y, r] of puffs) { ctx.beginPath(); ctx.arc(x + 4, y + 8, r, 0, TAU); ctx.fill(); }
+      ctx.fillStyle = '#fff';
+      for (const [x, y, r] of puffs) { ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill(); }
       ctx.restore();
     }
     // A checkpoint: a flag on a round platform, dashed gold until reached, solid green after.
@@ -760,10 +769,10 @@
           if (d.open) {
             g.setLineDash([1.6 * u, 1.4 * u]); g.lineCap = 'round'; g.strokeStyle = d.color; g.lineWidth = 1.2 * u;
             g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, by); g.stroke();
-          } else doorBar(g, ax, ay, bx, by, Math.max(DOOR_R() * this.sc, 1.6 * u), d.color, 0.4 * u);
+          } else doorBar(g, ax, ay, bx, by, d.color, Math.max(ICON * this.sc, 0.2 * u), false);
           g.restore();
         }
-        for (const k of mech.keys) if (k.seen && !k.taken) keyToken(g, this.ox + k.x * this.sc, this.oy + k.y * this.sc, Math.max(KEY_R() * this.sc, 4.6 * u), k.color, KEY.tilt, 0.28 * u);
+        for (const k of mech.keys) if (k.seen && !k.taken) { const f = Math.max(this.sc, (2.6 * u) / KEY_S); keyIcon(g, this.ox + k.x * this.sc, this.oy + k.y * this.sc, KEY_S * f, k.color, KEY_TILT, (ICON * f) * 0.75); }
         for (const pl of mech.plates) if (pl.seen) { dot(pl.x, pl.y, 3 * u, '#000'); dot(pl.x, pl.y, 2.2 * u, pl.color); }
         for (const pt of mech.portals) for (const e of [pt.a, pt.b]) if (e.seen) { dot(e.x, e.y, 3.2 * u, pt.color); dot(e.x, e.y, 1.6 * u, '#000'); }
         for (const mv of mech.movers) if (mv.seen) {

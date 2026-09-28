@@ -28,12 +28,13 @@
     star: { name: 'Invincible', w: 18, dur: 8 },
     heart: { name: 'Extra hit', w: 16 },
     bullet: { name: 'Bullet', w: 12 },
-    launch: { name: 'Launch', w: 12 },
-    carpet: { name: 'Magic carpet', w: 5, dur: 3.5 }, // the rarest, and short
+    launch: { name: 'Launch', w: 3 },
+    carpet: { name: 'Magic carpet', w: 3, dur: 3.5 }, // these two are the rarest (and the carpet is short)
     shrink: { name: 'Shrink', w: 16, dur: 10 },
   };
   const BULLET_V = 520, BULLET_RUN = 1800; // Bullet: speed and how far it carries you (it finishes on a junction)
-  const APEX_VIEW = 1200;                  // Launch: world units across the screen's shorter side at the top
+  const APEX_VIEW = 1100;                  // Launch: world units across the screen's shorter side at the top
+  const REACH = 340;                       // Launch: how far from take-off you can steer; clouds mark the border
   const UP = 0.3, AIR = 0.75, DOWN = 0.4;  // Launch: seconds going up, at the top, coming down (you steer throughout)
   const HOP = 0.08, HOP_GROW = 0.18;       // ...how high the picture rises on screen (share of the shorter side), how much it grows
   const HITSTOP = 0.07, SHAKE = 0.32;      // a hit: the game freezes this long, then the view shakes this long
@@ -342,11 +343,14 @@
       const seedText = o.seedText || MZ.randomSeed();
       this.mode = 'gauntlet';
       this.run = { seed: hashStr('memaze/gauntlet/' + seedText), seedText, userSeed: !!o.seedText, style: o.style, diff: o.diff, key, cleared: 0, lives: D.lives, prevBest: MZ.Save.progress.gauntlet[key] || 0 };
+      this.item = null; this.roll = null; // a fresh run starts empty-handed
       this.nextGauntlet();
     },
     nextGauntlet() {
       const r = this.run, p = MZ.Levels.gauntletParams(r, r.cleared);
+      const keep = this.item || (this.roll && this.roll.id !== 'heart' ? this.roll.id : null); // the item in your slot comes along
       this.loadMaze(p, { label: 'Gauntlet · ' + (p.boss ? 'Boss · ' : '') + 'Depth ' + (r.cleared + 1), depth: r.cleared + 1 });
+      if (keep && ITEMS[keep]) { this.item = keep; this.emit('power'); }
     },
     startEndless() {
       this.mode = 'endless';
@@ -553,7 +557,10 @@
       // underneath, the carpet running out over the void (a fall).
       if (!free && this.hitAt(b.x, b.y)) {
         this.touched = true;
-        if (!this.unstick()) { this.fall(); return; }
+        // A fall (the bubble) only when the floor is gone from under the picture's middle. Otherwise the picture
+        // itself reached over the edge (a new animation frame while pressed into a wall or a corner): back onto the
+        // floor, and it's a touch.
+        if (!this.unstick() && (!(this.world.query(b.x, b.y, this.playT).depth > 0) || !this.unstick(0.8))) { this.fall(); return; }
         if (!soft && this.hurt()) return;
       }
       // Move in slices far shorter than the hitbox buffer, so the first touch is found and no gap is ever skipped.
@@ -824,7 +831,7 @@
         if (!route) { MZ.toast('Nowhere to fly', 1200); return false; }
         fx.bullet = route;
       } else if (id === 'launch') {
-        fx.launch = { t: 0, T: UP + AIR + DOWN, apex: clamp(Math.min(innerWidth, innerHeight) / APEX_VIEW / this.zoomTarget(), 0.02, 1) };
+        fx.launch = { t: 0, T: UP + AIR + DOWN, apex: clamp(Math.min(innerWidth, innerHeight) / APEX_VIEW / this.zoomTarget(), 0.02, 1), from: { x: this.ball.x, y: this.ball.y } };
       } else fx[id] = ITEMS[id].dur;
       this.item = null;
       MZ.Audio.play(id === 'launch' ? 'launch' : id === 'bullet' ? 'bullet' : 'use');
@@ -1004,7 +1011,8 @@
       const kz = KEY_SPEED / this.liftZoom(); // keys keep their speed on screen
       b.x += grab.x * sg * k + u.x * kz * dt;
       b.y += grab.y * sg * k + u.y * kz * dt;
-      if (this.maze) { const B = this.maze.bounds; b.x = clamp(b.x, B.minX - 150, B.maxX + 150); b.y = clamp(b.y, B.minY - 150, B.maxY + 150); }
+      const ox = b.x - L.from.x, oy = b.y - L.from.y, od = Math.hypot(ox, oy); // no further than the clouds
+      if (od > REACH) { b.x = L.from.x + (ox / od) * REACH; b.y = L.from.y + (oy / od) * REACH; }
       if (L.t < L.T) return;
       // Down where you are. On the board, fine (a small nudge clears an edge); in the void, it's a fall: a hit, then the
       // nearest floor.
@@ -1043,9 +1051,9 @@
     },
     // Walls: something pushed the picture over the edge while standing still (a new animation frame): step clear if a
     // free spot is close by.
-    unstick() {
+    unstick(far) {
       const b = this.ball, W = this.box();
-      for (let r = W * 0.02; r <= W * 0.2; r += W * 0.02) {
+      for (let r = W * 0.02; r <= W * (far || 0.2); r += W * 0.02) {
         for (let a = 0; a < 16; a++) {
           const x = b.x + Math.cos(a * Math.PI / 8) * r, y = b.y + Math.sin(a * Math.PI / 8) * r;
           if (!this.hitAt(x, y)) { b.x = x; b.y = y; return true; }
@@ -1356,6 +1364,7 @@
         } : null,
       });
       if (!menu && this.maze && this.maze.dark) this.renderer.drawDark(this.cam, b, this.maze.dark); // only a small circle of light
+      if (fx.launch && !menu) this.renderer.drawClouds(this.cam, fx.launch.from, REACH, this.lift(), t); // how far a Launch can go
 
       // Player sprite: the user's media, upright and still at the centre of the screen (up in the air on a Launch).
       const pl = MZ.$('#player');
