@@ -103,6 +103,8 @@ body[data-state="play"] #stage:active { cursor: grabbing; }
 .reduced-motion #player.recharge #player-media { animation: none; filter: grayscale(var(--gray, 0)) drop-shadow(0 0 2px #fff6c8); }
 #player.flare #player-media { filter: grayscale(var(--gray, 0)) drop-shadow(0 0 2px #fff) drop-shadow(0 0 10px rgba(150, 220, 255, 0.95)); }
 #player.flare #player-media > * { animation: jolt 0.3s ease-out; }
+#player.bubbled #player-media > * { animation: bob 0.9s ease-in-out infinite; }
+@keyframes bob { 0%, 100% { transform: translateY(0) scale(0.92); } 50% { transform: translateY(-5%) scale(0.95); } }
 @keyframes jolt { 0% { transform: scale(0.8) rotate(-7deg); } 45% { transform: scale(1.08) rotate(4deg); } 100% { transform: none; } }
 .reduced-motion #player.flare #player-media > * { animation: none; }
 /* ...and glows while invincible */

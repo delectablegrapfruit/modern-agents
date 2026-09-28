@@ -85,6 +85,8 @@
           this.noise(0.25, { filter: 'bandpass', freq: 900, to: 200, q: 2, vol: 0.25, at: 0.02 });
           this.tone(90, 0.2, { type: 'sine', vol: 0.22 });
           break;
+        case 'bubble': this.tone(300, 0.5, { type: 'sine', to: 700, vol: 0.12 }); this.tone(900, 0.35, { type: 'sine', to: 1300, vol: 0.05, at: 0.12 }); break;
+        case 'pop': this.noise(0.06, { filter: 'bandpass', freq: 1800, q: 3, vol: 0.3 }); this.tone(1500, 0.08, { type: 'sine', to: 600, vol: 0.12 }); break;
         case 'low': [1050, 1050].forEach((f, i) => this.tone(f, 0.05, { type: 'square', vol: 0.03, at: i * 0.12 })); break;
         case 'heal': [660, 880].forEach((f, i) => this.tone(f, 0.18, { type: 'sine', vol: 0.12, at: i * 0.08 })); break;
         case 'recharge': this.tone(260, 0.95, { type: 'sine', to: 1250, vol: 0.13, attack: 0.08 }); this.tone(520, 0.95, { type: 'triangle', to: 2500, vol: 0.05, attack: 0.08 }); break;

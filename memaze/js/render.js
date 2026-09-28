@@ -277,6 +277,32 @@
       }
       ctx.restore();
     }
+    // A fall's bubble: a wobbling soap bubble around the picture, floating it home; it pops into droplets on arrival.
+    drawBubble(u, W, t) {
+      const ctx = this.ctx, px = this.px;
+      ctx.save();
+      if (u.bubble != null) {
+        const k = u.bubble, grow = Math.min(1, k / 0.15), r = W * (0.5 + 0.26 * grow) * (1 + 0.035 * Math.sin(t * 9));
+        const g = ctx.createRadialGradient(-r * 0.3, -r * 0.35, r * 0.1, 0, 0, r);
+        g.addColorStop(0, 'rgba(255,255,255,0.10)'); g.addColorStop(0.75, 'rgba(190,230,255,0.14)'); g.addColorStop(1, 'rgba(210,240,255,0.42)');
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.ellipse(0, 0, r * (1 + 0.03 * Math.sin(t * 7)), r * (1 - 0.03 * Math.sin(t * 7)), 0, 0, TAU); ctx.fill();
+        const hue = (t * 120) % 360;
+        ctx.lineWidth = 2.5 * px;
+        ctx.strokeStyle = 'hsla(' + hue + ',90%,75%,0.8)'; ctx.stroke();
+        ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 3 * px; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.arc(0, 0, r * 0.78, Math.PI * 1.1, Math.PI * 1.45); ctx.stroke(); // the shine
+        ctx.beginPath(); ctx.arc(-r * 0.52, -r * 0.2, r * 0.05, 0, TAU); ctx.fillStyle = '#fff'; ctx.fill();
+      } else {
+        const k = u.pop, r = W * (0.76 + 0.5 * k);
+        ctx.globalAlpha = 1 - k;
+        ctx.fillStyle = 'rgba(220,245,255,0.95)';
+        for (let i = 0; i < 12; i++) { const a = (i / 12) * TAU + 0.3; ctx.beginPath(); ctx.arc(Math.cos(a) * r, Math.sin(a) * r, 3.2 * px * (1 - k * 0.5), 0, TAU); ctx.fill(); }
+        ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 2 * px;
+        ctx.beginPath(); ctx.arc(0, 0, W * (0.76 + 0.25 * k), 0, TAU); ctx.stroke();
+      }
+      ctx.restore();
+    }
     // Under the player's picture: a Launch's shadow, the magic carpet, the Bullet's shell and speed lines.
     drawUnder(u, t) {
       const ctx = this.ctx, px = this.px, W = u.W;
@@ -301,6 +327,7 @@
         ctx.restore();
       }
       if (u.burst != null || u.crackle != null) this.drawSparks(u, W, t);
+      if (u.bubble != null || u.pop != null) this.drawBubble(u, W, t);
       if (u.carpet > 0) {
         ctx.globalAlpha = u.carpet;
         const w = W * 0.66, h = W * 0.36, y0 = W * 0.3, n = 10;

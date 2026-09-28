@@ -125,11 +125,13 @@ try { ({ chromium } = require('playwright')); } catch (e) {
 
     // ----- Magic carpet -----
     G.startJourney(6); d = voidDir();
+    const home = { x: G.ball.x, y: G.ball.y };
     G.giveItem('carpet'); G.useItem();
     run(1.5, d);
     check('Magic carpet floats over the void', G.hp === 2 && !onFloor() && G.world.query(G.ball.x, G.ball.y, G.playT).depth < 0);
-    run(5);
-    check('carpet running out over the void costs a heart and puts you on the floor', G.hp === 1 && onFloor() && G.state === 'play', G.hp);
+    let bubbled = false;
+    for (let i = 0; i < 60 * 8; i++) { run(1 / 60); if (G.fx.bubble) bubbled = true; }
+    check('carpet running out over the void: a hit, and a bubble floats you back to the last solid ground', G.hp === 1 && bubbled && onFloor() && G.state === 'play' && Math.hypot(G.ball.x - home.x, G.ball.y - home.y) < 150, G.hp);
     G.quit();
 
     // ----- Shrink -----
@@ -194,9 +196,11 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     events.length = 0;
     launchTo(node);
     check('Launch onto the board: down right there, unhurt', Math.hypot(G.ball.x - node.x, G.ball.y - node.y) < G.box() * 0.25 && G.hp === 2 && !events.some((e) => e.startsWith('hit')));
-    const B = G.maze.bounds, far = { x: B.minX - 100, y: B.minY - 100 };
+    const B = G.maze.bounds, far = { x: B.minX - 100, y: B.minY - 100 }, took = { x: G.ball.x, y: G.ball.y };
     launchTo(far);
-    check('Launch into the void: a hit, then the nearest floor', G.hp === 1 && events.includes('hit:1') && onFloor() && G.state === 'play');
+    check('Launch into the void: a hit, and a bubble', G.hp === 1 && events.includes('hit:1') && !!G.fx.bubble);
+    for (let i = 0; i < 60 * 4 && G.fx.bubble; i++) frame(1 / 60);
+    check('...that floats you back to where you took off', onFloor() && G.state === 'play' && Math.hypot(G.ball.x - took.x, G.ball.y - took.y) < 20);
     G.quit();
 
     // ----- checkpoints -----

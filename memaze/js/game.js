@@ -490,7 +490,7 @@
       }
       this.elapsed += dt;
       this.tickPower(dt);
-      if (fx.bullet || fx.launch) { this.touched = false; this.offEdge(dt); this.fly(dt); if (this.state === 'play' && this.mode === 'endless') this.endlessTick(); return; }
+      if (fx.bullet || fx.launch || fx.bubble) { this.touched = false; this.offEdge(dt); this.fly(dt); if (this.state === 'play' && this.mode === 'endless') this.endlessTick(); return; }
 
       const d = inp.takeGrab(), u = inp.vector();
       const sg = cfg.invert ? 1 : -1, k = clamp(cfg.speed || 1, 0.5, 2) / this.cam.zoom;
@@ -498,14 +498,12 @@
       const free = fx.carpet > 0; // the magic carpet floats over the void
       const soft = S().gameplay.rule === 'casual' || this.shielded(); // edges hold like walls
       this.touched = false;
-      // Standing still can still go wrong: a bridge vanishing underneath, an animation frame reaching over the edge, the
-      // carpet running out over the void. That costs a heart (unless shielded), then you're put on the nearest floor.
+      // Standing still can still go wrong: an animation frame reaching over the edge (a touch), or a bridge vanishing
+      // underneath, the carpet running out over the void (a fall).
       if (!free && this.hitAt(b.x, b.y)) {
         this.touched = true;
-        if (!(soft && this.unstick())) {
-          if (!this.shielded() && this.hurt()) return;
-          if (this.hitAt(b.x, b.y) && !this.unstick()) this.rescue();
-        }
+        if (!this.unstick()) { this.fall(); return; }
+        if (!soft && this.hurt()) return;
       }
       // Move in slices far shorter than the hitbox buffer, so the first touch is found and no gap is ever skipped.
       const n = Math.max(1, Math.ceil(Math.hypot(mx, my) / (this.box() * BUFFER * 0.5)));
@@ -548,7 +546,18 @@
     // How solid the picture looks: faded while the shield is down, filling back in as it recharges.
     shieldLook() { return this.hp >= HEARTS ? 1 : this.recharging() ? 0.45 + 0.55 * clamp((this.hurtT - REGEN + RECHARGE) / RECHARGE, 0, 1) : 0.45; },
     boxesOn() { return S().gameplay.boxes && this.mode !== 'trial'; }, // Time Trial has no mystery boxes
-    shielded() { const fx = this.fx; return this.guardT > 0 || this.stuck || fx.star > 0 || !!fx.bullet || !!fx.launch; },
+    shielded() { const fx = this.fx; return this.guardT > 0 || this.stuck || fx.star > 0 || !!fx.bullet || !!fx.launch || !!fx.bubble; },
+    // A fall into the void: a hit (unless shielded), then a bubble floats you back to the last solid ground you stood
+    // on, like the bubble in Mario Galaxy. True if the hit lost the level.
+    fall() {
+      if (!this.shielded() && this.hurt()) return true;
+      const b = this.ball, to = this.lastSafe || (this.maze ? this.maze.start : this.run.check), d = Math.hypot(to.x - b.x, to.y - b.y);
+      this.fx.bubble = { a: { x: b.x, y: b.y }, b: { x: to.x, y: to.y }, t: 0, T: clamp(0.9 + d / 700, 1.1, 2.4) };
+      this.input.takeGrab();
+      MZ.Audio.play('bubble');
+      this.emit('power');
+      return false;
+    },
     hurt() {
       if (this.bonus > 0) this.bonus--; else this.hp--;
       this.hurtT = 0;
@@ -593,10 +602,11 @@
         if (!fx.carpet && !fx.bullet && !fx.launch && this.hitAt(b.x, b.y) && !this.unstick()) this.scale = was; // no room yet
       }
     },
-    // Remember the last spot on solid floor (not a vanishing bridge): where a fall with nowhere closer ends up.
+    // Remember the last spot on solid floor (not a vanishing bridge), with the whole picture on it: where a fall's
+    // bubble takes you back to.
     noteSafe() {
       const b = this.ball;
-      if (this.fx.carpet > 0) return;
+      if (this.fx.carpet > 0 && this.hitAt(b.x, b.y)) return; // floating over the void
       const q = this.world.query(b.x, b.y, this.playT);
       if (q.seg && !q.seg.blink && q.depth > 0) this.lastSafe = { x: b.x, y: b.y };
     },
@@ -772,6 +782,23 @@
     // at the zoomed-out camera's scale, and comes down right where it is: on the board, or in the void.
     fly(dt) {
       const fx = this.fx, b = this.ball, grab = this.input.takeGrab();
+      if (fx.bubble) { // floating back: no steering, no pickups, then the bubble pops on solid ground
+        const U = fx.bubble;
+        U.t = Math.min(U.T, U.t + dt);
+        const e = smooth(U.t / U.T);
+        b.x = U.a.x + (U.b.x - U.a.x) * e;
+        b.y = U.a.y + (U.b.y - U.a.y) * e;
+        if (U.t < U.T) return;
+        fx.bubble = null;
+        this.popAtT = this.t;
+        this.guardT = Math.max(this.guardT, GUARD);
+        if (this.hitAt(b.x, b.y) && !this.unstick()) this.rescue(); // that ground changed meanwhile (a switch, say)
+        this.noteSafe();
+        this.input.takeGrab();
+        MZ.Audio.play('pop');
+        this.emit('power');
+        return;
+      }
       if (fx.bullet) {
         const B = fx.bullet;
         B.t += dt;
@@ -803,10 +830,7 @@
       this.input.takeGrab();
       MZ.Audio.play('land');
       this.emit('power');
-      if (this.hitAt(b.x, b.y) && !this.unstick()) {
-        if (!this.shielded() && this.hurt()) return;
-        this.rescue();
-      }
+      if (this.hitAt(b.x, b.y) && !this.unstick()) { this.fall(); return; }
       this.noteSafe();
       this.pickups();
     },
@@ -1107,7 +1131,9 @@
           carpet: fx.carpet > 0 ? (fx.carpet > 1.5 || Math.floor(fx.carpet * 8) % 2 ? 1 : 0.35) : 0,
           shield: this.bonus, // Extra hits: gold rings around the player
           burst: this.hitAtT != null && this.t - this.hitAtT < 0.45 ? (this.t - this.hitAtT) / 0.45 : null, // the shield breaking
-          crackle: this.hp < HEARTS && !this.recharging() && this.state === 'play' ? this.t : null, // ...and fizzing while it's down
+          crackle: this.hp < HEARTS && !this.recharging() && this.state === 'play' && !fx.bubble ? this.t : null, // ...and fizzing while it's down
+          bubble: fx.bubble ? fx.bubble.t / fx.bubble.T : null,
+          pop: this.popAtT != null && this.t - this.popAtT < 0.35 ? (this.t - this.popAtT) / 0.35 : null,
           bullet: fx.bullet ? fx.bullet.dir : null,
         } : null,
       });
@@ -1126,7 +1152,7 @@
         // recharges.
         const flare = this.state === 'play' && this.hitAtT != null && this.t - this.hitAtT < 0.3, look = this.shieldLook();
         const cls = (fx.star > 0 ? ' invincible' + (fx.star < 1.5 ? ' ending' : '') : '') + (this.guardT > 0 && this.state === 'play' ? ' guard' : '') +
-          (fx.bullet ? ' bullet' : '') + (flare ? ' flare' : '') + (this.recharging() ? ' recharge' : '') + (look < 1 ? ' down' : '');
+          (fx.bullet ? ' bullet' : '') + (fx.bubble ? ' bubbled' : '') + (flare ? ' flare' : '') + (this.recharging() ? ' recharge' : '') + (look < 1 ? ' down' : '');
         if (pl.className !== cls.trim()) pl.className = cls.trim();
         const pm = pl.firstElementChild, op = look >= 1 ? '' : look.toFixed(2), gray = look >= 1 ? '' : ((1 - look) / 0.55 * 0.9).toFixed(2);
         if (pm.style.opacity !== op) pm.style.opacity = op;
