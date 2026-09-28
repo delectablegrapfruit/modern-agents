@@ -3353,18 +3353,71 @@ def({
 // ==== /MODULE goals ====
 
 // ==== MODULE play: the games app and its classic games ====
+// ---------- shared: saved play state, seeded randomness, icon art ----------
+const plS = slice('play', { last: {}, secs: {}, holdBest: 0, ringBest: 0, adopted: 0, rank: -1, chart: 'free', remind: false });
+if (!plS.adopted) plS.adopted = T();
+// the same seed always draws the same numbers, so charts and key art stay put
+const plSeed = s => {
+  let h = 1779033703 ^ s.length;
+  for (let i = 0; i < s.length; i++) { h = Math.imul(h ^ s.charCodeAt(i), 3432918353); h = (h << 13) | (h >>> 19); }
+  return () => { h = Math.imul(h ^ (h >>> 16), 2246822507); h = Math.imul(h ^ (h >>> 13), 3266489909); return ((h ^= h >>> 16) >>> 0) / 4294967296; };
+};
+const plN = v => +v.toFixed(1);
+// icon art fills its tile (the inline size wins over the tile's glyph size) and is clipped to the tile's corners
+const plArt = inner => `<svg viewBox="0 0 64 64" style="width:100%;height:100%;border-radius:inherit" aria-hidden="true">${inner}</svg>`;
+const plSpark = (x, y, s, c = '#fff', o = 1) => `<path d="M${plN(x)} ${plN(y - s)}Q${plN(x)} ${plN(y)} ${plN(x + s)} ${plN(y)}Q${plN(x)} ${plN(y)} ${plN(x)} ${plN(y + s)}Q${plN(x)} ${plN(y)} ${plN(x - s)} ${plN(y)}Q${plN(x)} ${plN(y)} ${plN(x)} ${plN(y - s)}Z" fill="${c}" opacity="${o}"/>`;
+const plRays = (cx, cy, n, r, o, c = '#fff') => {
+  let d = '';
+  for (let i = 0; i < n; i++) { const a = (i / n - .25 / n) * Math.PI * 2, b = a + Math.PI / n; /* no edge lies flat */ d += `M${cx} ${cy}L${plN(cx + Math.cos(a) * r)} ${plN(cy + Math.sin(a) * r)}L${plN(cx + Math.cos(b) * r)} ${plN(cy + Math.sin(b) * r)}Z`; }
+  return `<path d="${d}" fill="${c}" opacity="${o}"/>`;
+};
+const PL_BOLT = 'M13.5 2 4 13.5h7L10 22l10-12h-7z', PL_HEART = 'M12 20.3S3.3 15.2 3.3 8.9A4.6 4.6 0 0 1 12 6.6a4.6 4.6 0 0 1 8.7 2.3c0 6.3-8.7 11.4-8.7 11.4z';
+const plCoin = (x, y, r, k = 1) => { const s = r * .058; return `<ellipse cx="${x}" cy="${y + .9}" rx="${plN(r * k)}" ry="${r}" fill="#c77700"/><ellipse cx="${x}" cy="${y}" rx="${plN(r * k)}" ry="${r}" fill="#ffb800"/><ellipse cx="${x}" cy="${y}" rx="${plN((r - 1.5) * k)}" ry="${plN(r - 1.5)}" fill="#ffd84a"/><path d="${PL_BOLT}" fill="#e08e00" transform="translate(${plN(x - 12 * s * k)} ${plN(y - 12 * s)}) scale(${(s * k).toFixed(3)} ${s.toFixed(3)})"/>`; };
+const plBub = (x, y, r, c, arc) => `<circle cx="${x}" cy="${y}" r="${r}" fill="none" stroke="#fff" stroke-opacity=".32" stroke-width="2.8"/><circle cx="${x}" cy="${y}" r="${r}" fill="none" stroke="#fff" stroke-width="2.8" stroke-linecap="round" pathLength="100" stroke-dasharray="${arc} 100" transform="rotate(-90 ${x} ${y})"/><circle cx="${x}" cy="${y}" r="${plN(r - 3.6)}" fill="${c}"/><ellipse cx="${plN(x - (r - 3.6) * .34)}" cy="${plN(y - (r - 3.6) * .42)}" rx="${plN((r - 3.6) * .42)}" ry="${plN((r - 3.6) * .25)}" fill="#fff" opacity=".6"/>`;
+const PL_BLOB = 'M100 22c48 0 82 36 82 84 0 40-30 60-82 60s-82-20-82-60c0-48 34-84 82-84z';
+const PL_ART = {
+  tap: plArt(plRays(32, 38, 12, 50, .13)
+    + '<ellipse cx="32" cy="54.5" rx="22" ry="5.5" fill="#5a0d00" opacity=".22"/><path d="M9 44v3.5a23 7.5 0 0 0 46 0V44z" fill="#e7dbee"/><ellipse cx="32" cy="44" rx="23" ry="7.5" fill="#fff"/>'
+    + '<path d="M14.5 35v6.5a17.5 6 0 0 0 35 0V35z" fill="#a8001f"/><ellipse cx="32" cy="35" rx="17.5" ry="6" fill="#ff1f45"/><ellipse cx="26.5" cy="33.3" rx="6.5" ry="1.9" fill="#fff" opacity=".55"/>'
+    + plCoin(15, 19, 6.2) + plCoin(48.5, 14.5, 6.6, .45) + plCoin(32, 8.5, 4.4, .8) + plSpark(55, 31, 3.3) + plSpark(8.5, 31.5, 2.6) + plSpark(40, 22, 1.8, '#fff', .8)),
+  hold: plArt('<circle cx="32" cy="32" r="21" fill="none" stroke="#00303c" stroke-opacity=".3" stroke-width="9"/>'
+    + '<circle cx="32" cy="32" r="21" fill="none" stroke="#ffc21a" stroke-width="9" pathLength="100" stroke-dasharray="13 87" stroke-dashoffset="-80" transform="rotate(-90 32 32)"/>'
+    + '<circle cx="32" cy="32" r="21" fill="none" stroke="#fff" stroke-width="4.6" stroke-linecap="round" pathLength="100" stroke-dasharray="86 14" transform="rotate(-90 32 32)"/>'
+    + '<circle cx="15.8" cy="18.6" r="4.4" fill="#fff" stroke="#ffc21a" stroke-width="2.2"/><circle cx="32" cy="32" r="11.5" fill="#fff"/><circle cx="32" cy="32" r="8.4" fill="#ffc21a"/><ellipse cx="29.3" cy="28.9" rx="3.7" ry="2.1" fill="#fff" opacity=".7"/>'
+    + plSpark(8.5, 9.5, 3.6) + plSpark(56, 55, 2.8) + plSpark(55, 9, 1.8, '#fff', .8)),
+  rings: plArt(plBub(24.5, 39.5, 16, '#ffd23f', 72) + plBub(47, 19.5, 10.5, '#5ce1ff', 38) + plBub(49, 47.5, 7.6, '#a4f04e', 88)
+    + '<g stroke="#fff" stroke-width="2.2" stroke-linecap="round" opacity=".95">' + [0, 60, 120, 180, 240, 300].map(d => { const a = (d + 15) * Math.PI / 180; return `<path d="M${plN(14 + Math.cos(a) * 3.6)} ${plN(14 + Math.sin(a) * 3.6)}L${plN(14 + Math.cos(a) * 6.8)} ${plN(14 + Math.sin(a) * 6.8)}"/>`; }).join('') + '</g>'
+    + plSpark(58, 32, 2.4) + plSpark(33, 9, 1.8, '#fff', .8)),
+  pet: plArt(plRays(32, 58, 10, 60, .1)
+    + `<g transform="translate(2 17.5) scale(.3)"><path d="${PL_BLOB}" fill="#ff9ec8"/><path d="M28 124c10 30 38 42 72 42s62-12 72-42c-12 18-38 28-72 28s-60-10-72-28z" fill="#e56aa3" opacity=".45"/><ellipse cx="70" cy="58" rx="22" ry="13" fill="#fff" opacity=".55"/>`
+    + '<ellipse cx="76" cy="96" rx="10" ry="13" fill="#1d1026"/><ellipse cx="124" cy="96" rx="10" ry="13" fill="#1d1026"/><circle cx="80" cy="90" r="4" fill="#fff"/><circle cx="128" cy="90" r="4" fill="#fff"/>'
+    + '<circle cx="54" cy="118" r="11" fill="#ff3c78" opacity=".32"/><circle cx="146" cy="118" r="11" fill="#ff3c78" opacity=".32"/><path d="M87 118q13 14 26 0" stroke="#1d1026" stroke-width="6.5" fill="none" stroke-linecap="round"/></g>'
+    + `<path d="${PL_HEART}" fill="#ff3f7f" transform="translate(42.5 3.5) rotate(12 12 12) scale(.66)"/><ellipse cx="49" cy="10.2" rx="2.1" ry="1.3" fill="#fff" opacity=".7" transform="rotate(-20 49 10.2)"/>`
+    + plSpark(10, 12, 3) + plSpark(20, 5.5, 1.7, '#fff', .8)),
+};
+const plTrophy = `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${G.rank}</svg>`;
+// milestones for progress bars: 10, 25, 50, 100, 250, 500, 1,000 ...
+const plMile = v => { for (let b = 10; ; b *= 10) for (const k of [1, 2.5, 5]) if (b * k > v) return b * k; };
+const plPetDay = () => Math.floor((T() - plS.adopted) / 864e5) + 1;
+
 addAch([
   ['tap-1', 'First tap', 'Tap the big button', 'check', () => S.taps >= 1],
   ['tap-1k', 'Thumb of steel', 'Tap 1,000 times', 'bolt', () => S.taps >= 1000],
+  ['tap-10k', 'Tap legend', 'Tap 10,000 times', 'bolt', () => S.taps >= 10000],
   ['crit', 'Critical', 'Land 25 crits', 'star', () => S.crits >= 25],
+  ['auto-10', 'Hands free', 'Upgrade the auto-tapper to level 10', 'level', () => S.tap.A >= 10],
   ['pet', 'Good owner', 'Get all of Blob’s needs above 90', 'heart'],
+  ['pet-100', 'Blob’s favorite', 'Tickle Blob 100 times', 'heart', () => S.pets >= 100],
   ['perfect', 'Perfectionist', 'Land 10 perfect holds', 'bolt', () => S.perfects >= 10],
+  ['hold-5', 'In the zone', 'Land 5 perfect holds in a row', 'star', () => plS.holdBest >= 5],
   ['rings', 'Quick hands', 'Catch 100 rings', 'check', () => S.rings >= 100],
+  ['ring-25', 'Clean sweep', 'Catch 25 rings in a row', 'gem', () => plS.ringBest >= 25],
 ]);
 addStats([
   ['taps', () => fmt(S.taps)],
   ['rings caught', () => fmt(S.rings)],
   ['rings missed', () => fmt(S.missed)],
+  ['time in games', () => dur(Object.values(plS.secs).reduce((s, x) => s + x, 0) * 1000)],
 ]);
 addQuests([
   ['taps', 'Tap {n} times', 60, 250],
@@ -3372,27 +3425,36 @@ addQuests([
   ['holds', 'Hold {n} times', 4, 15],
   ['pets', 'Tickle Blob {n} times', 5, 20],
 ]);
-// ---------- Tap: the clicker loop ----------
+
+// ---------- Tap Tycoon: the clicker ----------
 const UPG = [
-  { k: 'P', n: 'Stronger thumb', d: '+1 hit per tap', base: 20, g: 1.5 },
-  { k: 'A', n: 'Auto-tapper', d: '+1 hit every second, even while you’re gone', base: 50, g: 1.55 },
-  { k: 'C', n: 'Lucky crits', d: '+2% chance of a 5× tap', base: 120, g: 1.8, max: 20 },
+  { k: 'P', n: 'Stronger thumb', d: '+1 hit per tap', base: 20, g: 1.5, ic: `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${G.tap}</svg>`, c: '#ff5a36' },
+  { k: 'A', n: 'Auto-tapper', d: '+1 hit every second, even while you’re away', base: 50, g: 1.55, ic: `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${G.loop}</svg>`, c: '#3b7bff' },
+  { k: 'C', n: 'Lucky crits', d: '+2% chance of a 5× tap', base: 120, g: 1.8, max: 20, ic: IF('star'), c: '#f5a600' },
 ];
 const upPrice = u => Math.round(u.base * Math.pow(u.g, S.tap[u.k]));
 const tapPower = () => 1 + S.tap.P;
 const critP = () => .06 + .02 * S.tap.C;
+const PL_RANKS = [[0, 'Rookie'], [100, 'Apprentice'], [500, 'Pro'], [1000, 'Expert'], [2500, 'Master'], [5000, 'Grandmaster'], [10000, 'Legend'], [25000, 'Mythic'], [50000, 'Titan'], [100000, 'Tycoon']];
+const plRank = (n = S.taps) => { let i = 0; while (i < PL_RANKS.length - 1 && n >= PL_RANKS[i + 1][0]) i++; return i; };
+if (plS.rank < 0) plS.rank = plRank(); // ranks already reached count as reached
 def({
-  id: 'tap', name: 'Tap', tag: 'Clicker · number goes up', c: '#ff5a36',
+  id: 'tap', name: 'Tap Tycoon', tag: 'Idle clicker', c: '#ff5a36', art: PL_ART.tap,
+  genre: 'Idle Clicker', blurb: 'Tap, upgrade, and let the auto-tapper earn while you’re away.',
+  progress() { const i = plRank(), nx = PL_RANKS[i + 1]; return { pct: nx ? (S.taps - PL_RANKS[i][0]) / (nx[0] - PL_RANKS[i][0]) : 1, text: `${PL_RANKS[i][1]} · ${fmt(S.taps)} taps` }; },
   bg() {
     if (!S.tap.A || !S.onboarded) return;
     const g = earn(S.tap.A, null, null, { raw: true });
     if (curApp === 'tap') { const [x, y] = centerOf($('#tp-btn')); floatText(x + rnd(-60, 60), y - 100, `+${fmt(g)}`); }
   },
   badge: () => UPG.filter(u => (!u.max || S.tap[u.k] < u.max) && S.hits >= upPrice(u)).length,
-  ping: () => (S.tap.A ? `Your auto-tapper made ${fmt(S.tap.A * 30)} hits. Come get more.` : 'Your thumb is getting cold'),
+  ping() { const nx = PL_RANKS[plRank() + 1]; return S.tap.A ? `Your auto-tapper made ${fmt(S.tap.A * 30)} hits. Tap to collect more.` : nx ? `${fmt(nx[0] - S.taps)} taps to ${nx[1]}` : 'Your empire is waiting'; },
   build(b) {
-    b.innerHTML = `<div class="pad"><div class="tp-stats"><div><b id="tp-p"></b><small>per tap</small></div><div><b id="tp-a"></b><small>per second</small></div><div><b id="tp-c"></b><small>crit chance</small></div></div>
-      <div class="tp-zone"><button class="bigbtn" id="tp-btn" aria-label="Tap">TAP</button></div><div class="ups" id="tp-ups">${UPG.map(u => `<button class="upg" data-u="${u.k}"><span class="ut"><b>${u.n} <span class="lv"></span></b><small>${u.d}</small><small class="nd"></small></span><span class="buy"></span></button>`).join('')}</div></div>`;
+    b.innerHTML = `<div class="pad tp-pad"><div class="tp-rank"><span class="tp-medal">${I('level')}</span><span class="tp-rt"><small>Rank</small><b id="tp-rk"></b></span><span class="tp-rp"><small id="tp-rn"></small><span class="bar"><i id="tp-rb"></i></span></span></div>
+      <div class="tp-stats"><div><b id="tp-p"></b><small>per tap</small></div><div><b id="tp-a"></b><small>per second</small></div><div><b id="tp-c"></b><small>crit chance</small></div></div>
+      <div class="tp-zone"><button class="bigbtn" id="tp-btn" aria-label="Tap" data-nodrag>TAP</button></div>
+      <div class="pl-sub">Upgrades</div>
+      <div class="ups" id="tp-ups">${UPG.map(u => `<button class="upg" data-u="${u.k}"><span class="upi" style="--c:${u.c}">${u.ic}</span><span class="ut"><b>${u.n} <span class="lv"></span></b><small>${u.d}</small><small class="nd"></small></span><span class="buy"></span></button>`).join('')}</div></div>`;
     track($('.pad', b));
     const btn = $('#tp-btn', b);
     btn.addEventListener('pointerdown', e => { e.preventDefault(); doTap(e.clientX, e.clientY); });
@@ -3401,6 +3463,10 @@ def({
   },
   render() {
     if (!this.view) return;
+    const i = plRank(), nx = PL_RANKS[i + 1];
+    $('#tp-rk').textContent = PL_RANKS[i][1];
+    $('#tp-rn').textContent = nx ? `${fmt(S.taps)} / ${fmt(nx[0])} to ${nx[1]}` : `${fmt(S.taps)} taps`;
+    $('#tp-rb').style.width = (nx ? clamp((S.taps - PL_RANKS[i][0]) / (nx[0] - PL_RANKS[i][0]), 0, 1) : 1) * 100 + '%';
     $('#tp-p').textContent = fmt(tapPower());
     $('#tp-a').textContent = fmt(S.tap.A);
     $('#tp-c').textContent = Math.round(critP() * 100) + '%';
@@ -3424,6 +3490,14 @@ function doTap(cx, cy) {
   if (crit) { S.crits++; sfx.crit(); haptic(true); burst(x, y, { n: 18, colors: ['#ffc21a', '#ff2e4d', '#fff'], shape: 'dot', power: 1.4 }); }
   else { sfx.tap(combo); haptic(); burst(x, y, { n: 5, colors: ['#ff5a36', '#ffc21a', '#ffd6c7'], shape: 'dot' }); }
   restart($('#tp-btn'), 'squish');
+  const rk = plRank();
+  if (rk > plS.rank) { // a new rank pays out once
+    plS.rank = rk;
+    const bonus = rk * 60;
+    earn(bonus, x, y - 80, { raw: true }); confetti(60);
+    bannerAward(`${PL_RANKS[rk][1]} rank reached`, `Tap Tycoon · +${fmt(bonus)} hits`, 'level', 'tap');
+    restart($('.tp-rank'), 'up');
+  }
   if (now() - tapRender > 250) { tapRender = now(); APPS.tap.render(); }
 }
 function buyUp(u, row) {
@@ -3435,8 +3509,8 @@ function buyUp(u, row) {
   APPS.tap.render(); refreshBadges(); queueCheck();
 }
 
-// ---------- Hold: press, fill, release in the zone ----------
-let hold = null, goldHoldUntil = 0, nextGoldAt = T() + 45000, perfectRun = 0;
+// ---------- Sweet Spot: press, charge, let go in the gold ----------
+let hold = null, goldHoldUntil = 0, nextGoldAt = T() + 60000, perfectRun = 0;
 function holdStart() {
   if (hold || !$('#hd')) return;
   hold = { t0: now(), tone: holdTone(), raf: 0, p: 0 };
@@ -3452,6 +3526,12 @@ function holdStart() {
   };
   hold.raf = requestAnimationFrame(step);
 }
+function plHoldCancel() {
+  if (!hold) return;
+  cancelAnimationFrame(hold.raf); if (hold.tone) hold.tone.stop(); hold = null;
+  const r = $('#hd'); if (r) r.classList.remove('on');
+  const p = $('#hd-prg'); if (p) p.style.strokeDasharray = '0 100';
+}
 function holdEnd() {
   if (!hold) return;
   const p = hold.p;
@@ -3462,7 +3542,9 @@ function holdEnd() {
   res.className = 'hd-res';
   if (p >= .82 && p <= .94) {
     perfectRun++; S.perfects++;
-    res.textContent = perfectRun > 1 ? `PERFECT ×${perfectRun}` : 'PERFECT'; restart(res, 'perfect');
+    const best = perfectRun > plS.holdBest && perfectRun > 1;
+    if (perfectRun > plS.holdBest) { plS.holdBest = perfectRun; restart($('#hd-best').parentElement, 'up'); }
+    res.textContent = best ? `New best ×${perfectRun}` : perfectRun > 1 ? `Perfect ×${perfectRun}` : 'Perfect'; restart(res, 'perfect');
     earn(30 * gold + perfectRun * 5, x, y - 60); sfx.win(); haptic(true);
     burst(x, y, { n: 26, colors: ['#ffc21a', '#fff1a8', '#fff'], shape: 'dot', power: 1.5 });
   } else {
@@ -3473,40 +3555,48 @@ function holdEnd() {
     else { res.textContent = 'Too early'; earn(1, x, y - 60); sfx.click(); }
   }
   $('#hd-prg').style.strokeDasharray = '0 100';
-  $('#hd-run').textContent = `Perfect streak ${perfectRun}`;
+  APPS.hold.render();
   queueCheck();
 }
+// Golden Hold: a double-reward event every few minutes, announced once when it starts
 function tickHold() {
-  if (T() > nextGoldAt) {
-    goldHoldUntil = T() + 20000; nextGoldAt = T() + ri(45, 90) * 1000 * paceK();
-    if (S.onboarded && S.holds) notify('hold', 'Golden hold: double rewards for {left}', { until: goldHoldUntil, urgent: true }); // the Waiting widget shows it to everyone else
-  }
+  if (T() <= nextGoldAt) return;
+  goldHoldUntil = T() + 40000; nextGoldAt = T() + ri(150, 300) * 1000 * paceK();
+  if (S.onboarded && (S.holds || plS.remind) && curApp !== 'hold') alertOnce('goldhold', 'hold', 'Golden Hold is live: double rewards for {left}', 120000, { until: goldHoldUntil, urgent: true });
+  plS.remind = false;
 }
 def({
-  id: 'hold', name: 'Hold', tag: 'Progress bars · timing', c: '#00a8c0',
+  id: 'hold', name: 'Sweet Spot', tag: 'Timing', c: '#00a8c0', art: PL_ART.hold,
+  genre: 'Timing', blurb: 'Charge up, let go in the gold, and chain perfect holds.',
+  progress: () => ({ pct: S.perfects / plMile(S.perfects), text: plS.holdBest ? `Best streak ${plS.holdBest}` : `${fmt(S.perfects)} perfect holds` }),
   bg: tickHold,
-  wait: () => (T() < goldHoldUntil ? [{ t: 'Golden hold pays double', due: goldHoldUntil }] : []),
+  wait: () => (T() < goldHoldUntil ? [{ t: 'Golden Hold: double rewards', due: goldHoldUntil }] : []),
   badge: () => (T() < goldHoldUntil ? 1 : 0),
   build(b) {
-    b.innerHTML = `<div class="pad"><div id="hd-gold"></div><div class="hd-stage"><div class="hd-ring" id="hd" role="button" aria-label="Press and hold"><svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="15" class="trk" pathLength="100"/><circle cx="18" cy="18" r="15" class="zone" pathLength="100"/><circle cx="18" cy="18" r="15" class="prg" id="hd-prg" pathLength="100"/></svg><div class="hd-in">HOLD</div></div></div>
-      <div class="hd-res" id="hd-res">Let go in the gold</div><p class="fine" id="hd-run">Perfect streak 0</p><p class="fine">Press and hold. Release when the ring is inside the gold band.</p></div>`;
+    b.innerHTML = `<div class="pad"><div class="hd-hud"><div><b id="hd-run">0</b><small>streak</small></div><div><b id="hd-best">0</b><small>best</small></div><div><b id="hd-perf">0</b><small>perfect</small></div></div>
+      <div id="hd-gold"></div><div class="hd-stage"><div class="hd-ring" id="hd" role="button" aria-label="Press and hold" data-nodrag><svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="15" class="trk" pathLength="100"/><circle cx="18" cy="18" r="15" class="zone" pathLength="100"/><circle cx="18" cy="18" r="15" class="prg" id="hd-prg" pathLength="100"/></svg><div class="hd-in">HOLD</div></div></div>
+      <div class="hd-res" id="hd-res">Let go in the gold</div><p class="fine">Press and hold to charge. Let go while the ring is in the gold band. Perfect holds in a row pay more.</p></div>`;
     track($('.pad', b));
     const ring = $('#hd', b);
     ring.addEventListener('pointerdown', e => { e.preventDefault(); try { ring.setPointerCapture(e.pointerId); } catch {} holdStart(); });
     ring.addEventListener('pointerup', holdEnd); ring.addEventListener('pointercancel', holdEnd);
   },
+  close: plHoldCancel,
   render() {
     if (!this.view) return;
-    const g = T() < goldHoldUntil;
+    const g = T() < goldHoldUntil, note = $('#hd-gold');
     $('#hd').classList.toggle('gold', g);
-    $('#hd-gold').innerHTML = g ? `<div class="gold-note">Golden hold · double rewards · ${cd(goldHoldUntil - T())}</div>` : '';
+    $('#hd-run').textContent = perfectRun; $('#hd-best').textContent = plS.holdBest; $('#hd-perf').textContent = fmt(S.perfects);
+    if (!g) { if (note.firstChild) note.textContent = ''; return; }
+    if (!note.firstChild) note.innerHTML = '<div class="gold-note"><b>Golden Hold</b><span>Double rewards</span><span class="num" id="hd-gl"></span></div>';
+    $('#hd-gl').textContent = cd(goldHoldUntil - T());
   },
   tick() { this.render(); },
   key(e) { if (e.key === ' ') { if (e.type === 'keydown' && !e.repeat) holdStart(); else if (e.type === 'keyup') holdEnd(); return true; } },
 });
 
-// ---------- Rings: ephemeral things that vanish if you look away ----------
-let ringT = 0, ringCount = 0, caughtSession = 0, missedSession = 0;
+// ---------- Ring Rush: catch them before they fade ----------
+let ringT = 0, ringCount = 0, caughtSession = 0, missedSession = 0, plRingRun = 0;
 function spawnRing() {
   const ar = $('#rg-arena');
   if (!ar || ringCount >= 5) return;
@@ -3518,7 +3608,7 @@ function spawnRing() {
   ar.append(r); ringCount++;
   r._t = setTimeout(() => {
     if (!r.isConnected || r.classList.contains('gone')) return;
-    r.classList.add('missed'); S.missed++; missedSession++; ringCount--;
+    r.classList.add('missed'); S.missed++; missedSession++; ringCount--; plRingRun = 0;
     setTimeout(() => r.remove(), 350);
     APPS.rings.render();
   }, d * 1000);
@@ -3529,47 +3619,63 @@ function ringLoop() {
   spawnRing();
   ringT = setTimeout(ringLoop, rnd(900, 1700));
 }
+function plCatch(r) {
+  if (!r || r.classList.contains('gone') || r.classList.contains('missed')) return;
+  clearTimeout(r._t); r.classList.add('gone'); ringCount--;
+  const left = clamp(1 - (now() - r._born) / r._d, 0, 1), [x, y] = centerOf(r);
+  S.rings++; caughtSession++; plRingRun++; act();
+  if (plRingRun > plS.ringBest) { plS.ringBest = plRingRun; restart($('#rg-b').parentElement, 'up'); }
+  earn(2 + Math.round(left * 6), x, y - 30);
+  if (plRingRun % 10 === 0) { floatText(x, y - 64, `${plRingRun} in a row`, 'crit'); earn(plRingRun, x, y - 96); sfx.big(); }
+  else sfx.pop(Math.round(left * 12));
+  haptic();
+  burst(x, y, { n: 10, colors: [`hsl(${r.style.getPropertyValue('--h')} 90% 60%)`, '#fff'], shape: 'dot' });
+  setTimeout(() => r.remove(), 200);
+  APPS.rings.render(); queueCheck();
+}
 def({
-  id: 'rings', name: 'Rings', tag: 'Ephemeral · fear of missing out', c: '#ff3d6e',
-  bg() { if (curApp !== 'rings' && S.onboarded && chance(.08)) S.ringsLost++; },
+  id: 'rings', name: 'Ring Rush', tag: 'Reflex', c: '#ff3d6e', art: PL_ART.rings,
+  genre: 'Reflex', blurb: 'Catch every ring before it fades. Chain catches for bonus hits.',
+  progress: () => ({ pct: S.rings / plMile(S.rings), text: `${fmt(S.rings)} rings caught` }),
+  bg() { if (curApp !== 'rings' && S.onboarded && chance(.03)) S.ringsLost++; },
   badge: () => Math.min(99, S.ringsLost),
-  ping: () => { S.ringsLost += ri(2, 6); return `${S.ringsLost} rings vanished while you were gone`; },
+  ping: () => { S.ringsLost += ri(2, 6); return `${S.ringsLost} rings faded before you could catch them`; },
   build(b) {
-    b.innerHTML = '<div class="rg-top"><span>Caught <span id="rg-c">0</span></span><span class="miss">Missed <span id="rg-m">0</span></span></div><div id="rg-lost"></div><div class="arena" id="rg-arena"></div>';
-    $('#rg-arena', b).addEventListener('pointerdown', e => {
-      const r = e.target.closest('.rg');
-      if (!r || r.classList.contains('gone') || r.classList.contains('missed')) return;
-      clearTimeout(r._t); r.classList.add('gone'); ringCount--;
-      const left = clamp(1 - (now() - r._born) / r._d, 0, 1), [x, y] = centerOf(r);
-      S.rings++; caughtSession++; act();
-      earn(2 + Math.round(left * 6), x, y - 30);
-      sfx.pop(Math.round(left * 12)); haptic();
-      burst(x, y, { n: 10, colors: [`hsl(${r.style.getPropertyValue('--h')} 90% 60%)`, '#fff'], shape: 'dot' });
-      setTimeout(() => r.remove(), 200);
-      this.render(); queueCheck();
-    });
+    b.innerHTML = '<div class="rg-hud"><div><b id="rg-c">0</b><small>caught</small></div><div><b id="rg-s">0</b><small>in a row</small></div><div><b id="rg-b">0</b><small>best run</small></div><div class="miss"><b id="rg-m">0</b><small>missed</small></div></div><div id="rg-lost"></div><div class="arena" id="rg-arena" data-nodrag></div>';
+    $('#rg-arena', b).addEventListener('pointerdown', e => plCatch(e.target.closest('.rg')));
   },
   open() {
     const lost = S.ringsLost;
-    $('#rg-lost').innerHTML = lost ? `<div class="rg-lost">${lost} rings vanished while you were away.</div>` : '';
-    S.ringsLost = 0; caughtSession = 0; missedSession = 0;
-    setTimeout(ringLoop, 250);
+    $('#rg-lost').innerHTML = lost ? `<div class="rg-lost">You missed ${lost} ring${lost > 1 ? 's' : ''} while you were away</div>` : '';
+    S.ringsLost = 0; caughtSession = 0; missedSession = 0; plRingRun = 0;
+    clearTimeout(ringT); ringT = setTimeout(ringLoop, reduced ? 250 : 800); // after the splash
   },
   close() { clearTimeout(ringT); $$('.rg', $('#rg-arena')).forEach(r => { clearTimeout(r._t); r.remove(); }); ringCount = 0; },
-  render() { if (!this.view) return; $('#rg-c').textContent = caughtSession; $('#rg-m').textContent = missedSession; },
+  render() { if (!this.view) return; $('#rg-c').textContent = caughtSession; $('#rg-s').textContent = plRingRun; $('#rg-b').textContent = plS.ringBest; $('#rg-m').textContent = missedSession; },
+  key(e) {
+    if (e.key !== ' ' || e.type !== 'keydown') return;
+    const rs = $$('.rg:not(.gone):not(.missed)', $('#rg-arena')); // the one closest to fading
+    if (rs.length) plCatch(rs.reduce((a, c) => (a._born + a._d <= c._born + c._d ? a : c)));
+    return true;
+  },
 });
 
-// ---------- Blob: a creature that needs you ----------
+// ---------- Pocket Blob: a creature that needs you ----------
 const MOUTH = { happy: 'M84 118 Q100 136 116 118', meh: 'M86 124 L114 124', sad: 'M84 132 Q100 116 116 132' };
 const MOODC = { happy: '#ff9ec8', meh: '#c9a7ff', sad: '#a9b8c9' };
+const PL_MOODN = { happy: 'Happy', meh: 'Okay', sad: 'Sad' };
+const PL_NEEDS = [
+  ['Food', 'food', '<path d="M12 8.1c-1.3-1-3-1.3-4.6-.9C4.9 7.9 3.6 10.4 4 13.4c.5 3.9 3.3 7.6 5.6 7.6.9 0 1.5-.5 2.4-.5s1.5.5 2.4.5c2.3 0 5.1-3.7 5.6-7.6.4-3-.9-5.5-3.4-6.2-1.6-.4-3.3 0-4.6.9z"/><path d="M12.4 7.1c.2-2.2 1.6-3.8 3.8-4.1-.1 2.2-1.6 3.8-3.8 4.1z"/>', '#ff7a00'],
+  ['Fun', 'fun', FP.star, '#f5a600'],
+  ['Love', 'love', FP.heart, '#ff4f8b'],
+];
 const petMood = () => { const p = S.pet, avg = (p.food + p.fun + p.love) / 3; return avg > 62 ? 'happy' : avg > 32 ? 'meh' : 'sad'; };
 function tickPet() {
   const p = S.pet;
-  p.food = Math.max(0, p.food - .4); p.fun = Math.max(0, p.fun - .55); p.love = Math.max(0, p.love - .3);
-  if (!S.onboarded) return;
-  if (p.food < 25) alertOnce('pfood', 'pet', 'Blob is hungry', 90000);
-  else if (p.fun < 25) alertOnce('pfun', 'pet', 'Blob is bored. Come play.', 90000);
-  else if (p.love < 25) alertOnce('plove', 'pet', 'Blob misses you', 90000);
+  p.food = Math.max(0, p.food - .25); p.fun = Math.max(0, p.fun - .32); p.love = Math.max(0, p.love - .18);
+  if (!S.onboarded || curApp === 'pet') return;
+  const low = p.food < 25 ? 'Blob is hungry' : p.fun < 25 ? 'Blob is bored. Come play.' : p.love < 25 ? 'Blob misses you' : '';
+  if (low) alertOnce('pet', 'pet', low, 180000); // one pet alert every few minutes at most
 }
 function petHeart(n = 1) {
   const st = $('.pet-stage', APPS.pet.body);
@@ -3579,19 +3685,22 @@ function petHeart(n = 1) {
   }
 }
 def({
-  id: 'pet', name: 'Blob', tag: 'Virtual pet · guilt', c: '#ff7eb6',
+  id: 'pet', name: 'Pocket Blob', tag: 'Virtual pet', c: '#1fb981', art: PL_ART.pet,
+  genre: 'Virtual Pet', blurb: 'Adopt Blob. Feed, play and cuddle every day to keep Blob happy.',
+  progress() { const p = S.pet, low = ['food', 'fun', 'love'].find(k => p[k] < 30); return { pct: (p.food + p.fun + p.love) / 300, text: low ? { food: 'Blob is hungry', fun: 'Blob is bored', love: 'Blob is lonely' }[low] : `Day ${plPetDay()} · ${PL_MOODN[petMood()]}` }; },
   bg: tickPet,
   wait() { const low = ['food', 'fun', 'love'].find(k => S.pet[k] < 30); return low ? [{ t: { food: 'Blob is hungry', fun: 'Blob is bored', love: 'Blob is lonely' }[low], hot: 1 }] : []; },
   badge: () => ['food', 'fun', 'love'].filter(k => S.pet[k] < 30).length,
-  ping: () => (petMood() !== 'happy' ? 'Blob is waiting for you' : 'Blob wants to see you'),
+  ping: () => (petMood() !== 'happy' ? 'Blob is waiting for you' : 'Blob wants to play'),
   build(b) {
-    b.innerHTML = `<div class="pad"><div class="pet-stage"><div class="bubble" id="pt-say"></div><div class="pet" id="pt" role="button" aria-label="Tickle Blob">
-      <svg viewBox="0 0 200 180"><ellipse cx="100" cy="170" rx="60" ry="7" fill="rgba(0,0,0,.12)"/><path class="body" id="pt-body" d="M100 22c48 0 82 36 82 84 0 40-30 60-82 60s-82-20-82-60c0-48 34-84 82-84z"/><ellipse cx="72" cy="60" rx="20" ry="12" fill="rgba(255,255,255,.45)"/>
-      <ellipse class="eye" cx="76" cy="94" rx="8" ry="11" fill="#1d1026"/><ellipse class="eye" cx="124" cy="94" rx="8" ry="11" fill="#1d1026"/><circle cx="58" cy="114" r="9" fill="rgba(255,60,120,.3)"/><circle cx="142" cy="114" r="9" fill="rgba(255,60,120,.3)"/>
+    b.innerHTML = `<div class="pad"><div class="pt-top"><span class="pt-name"><b>Blob</b><small id="pt-day"></small></span><span class="pt-mood" id="pt-mood"></span></div>
+      <div class="pet-stage"><div class="bubble" id="pt-say"></div><div class="pet" id="pt" role="button" aria-label="Tickle Blob">
+      <svg viewBox="0 0 200 180"><ellipse cx="100" cy="170" rx="60" ry="7" fill="rgba(0,0,0,.12)"/><path class="body" id="pt-body" d="${PL_BLOB}"/><ellipse cx="72" cy="60" rx="20" ry="12" fill="rgba(255,255,255,.45)"/>
+      <ellipse class="eye" cx="76" cy="94" rx="8" ry="11" fill="#1d1026"/><ellipse class="eye" cx="124" cy="94" rx="8" ry="11" fill="#1d1026"/><circle cx="79" cy="89" r="3" fill="#fff"/><circle cx="127" cy="89" r="3" fill="#fff"/><circle cx="58" cy="114" r="9" fill="rgba(255,60,120,.3)"/><circle cx="142" cy="114" r="9" fill="rgba(255,60,120,.3)"/>
       <path id="pt-mouth" stroke="#1d1026" stroke-width="5" fill="none" stroke-linecap="round"/></svg></div></div>
-      <div class="card needs" id="pt-needs"></div>
-      <div class="row2"><button class="pbtn" id="pt-feed" style="--c:#ff7a00">Feed · 5</button><button class="pbtn" id="pt-play">Play</button></div>
-      <p class="fine">Tap Blob to tickle. Rub Blob to pet. Needs drop every second.</p></div>`;
+      <div class="card needs" id="pt-needs">${PL_NEEDS.map(([n, k, ic, c]) => `<div class="need" data-k="${k}"><span class="ni" style="--ic:${c}"><svg class="fill" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">${ic}</svg>${n}</span><div class="bar"><i></i></div><span class="nv"></span></div>`).join('')}</div>
+      <div class="row2"><button class="pbtn" id="pt-feed" style="--c:#ff7a00">Feed <span class="pt-cost">${IF('bolt')}5</span></button><button class="pbtn" id="pt-play">Play</button></div>
+      <p class="fine">Tap Blob to tickle. Rub Blob to pet. Blob gets hungry, bored and lonely over time.</p></div>`;
     track($('.pad', b));
     const pet = $('#pt', b);
     let rub = 0;
@@ -3609,15 +3718,191 @@ def({
     const p = S.pet, m = petMood();
     $('#pt-body').setAttribute('fill', MOODC[m]);
     $('#pt-mouth').setAttribute('d', MOUTH[m]);
+    $('#pt-day').textContent = `Day ${plPetDay()}`;
+    const md = $('#pt-mood'); md.textContent = PL_MOODN[m]; md.dataset.m = m;
     $('#pt-say').textContent = p.food < 30 ? 'feed me' : p.fun < 30 ? 'play with me' : p.love < 30 ? 'don’t go' : m === 'happy' ? 'love you' : 'stay?';
-    $('#pt-needs').innerHTML = [['Food', 'food'], ['Fun', 'fun'], ['Love', 'love']].map(([n, k]) => { const v = Math.round(p[k]); return `<div class="need${v < 30 ? ' low' : v < 60 ? ' mid' : ''}"><span>${n}</span><div class="bar"><i style="width:${v}%"></i></div><span>${v}%</span></div>`; }).join('');
+    PL_NEEDS.forEach(([, k]) => {
+      const row = $(`.need[data-k="${k}"]`, this.body), v = Math.round(p[k]);
+      row.className = `need${v < 30 ? ' low' : v < 60 ? ' mid' : ''}`;
+      $('.bar i', row).style.width = v + '%'; $('.nv', row).textContent = v + '%';
+    });
     if (p.food > 90 && p.fun > 90 && p.love > 90) unlock('pet');
   },
   tick() { this.render(); },
   key(e) { if (e.key === ' ' && e.type === 'keydown') { $('#pt').click(); return true; } },
 });
-// stub until the play module builds the games home
-def({ id: 'arcade', name: 'Games', tag: '', c: '#ff5a36', build(b) { b.innerHTML = `<div class="pad">${BUNDLES.find(B => B.id === 'play').tabs.slice(1).map(t => `<button class="pbtn" data-g="${t}">${APPS[t].name}</button>`).join('')}</div>`; b.onclick = e => { const g = e.target.closest('[data-g]'); if (g) openApp(g.dataset.g); }; } });
+
+// ---------- Games: the home of Play, where every game is its own app ----------
+const PL_CLASSIC = ['tap', 'hold', 'rings', 'pet'];
+const PL_PITCH = { tap: 'Tap to the top', hold: 'Find your sweet spot', rings: 'Quick hands win', pet: 'Meet your new best friend' };
+const plGames = () => bundleById('play').tabs.filter(t => t !== 'arcade' && APPS[t]);
+const plGenre = id => APPS[id].genre || 'Arcade';
+const plBlurb = id => APPS[id].blurb || APPS[id].tag || '';
+const plIcon = (id, cls = '') => `<span class="gl pl-gl ${cls}" style="--c:${APPS[id].c}">${glyph(id)}</span>`;
+const plProg = id => { const a = APPS[id]; try { const p = a.progress && a.progress(); if (p && typeof p.pct === 'number') return p; } catch {} return null; };
+const plRecent = () => plGames().filter(id => plS.last[id]).sort((a, b) => plS.last[b] - plS.last[a]);
+// chart data: rating, ratings count, how popular and how much it earns; new games draw theirs from a seed
+const PL_META = { tap: [4.8, 182400, 9.1, 8.2], hold: [4.7, 64300, 7.4, 5.2], rings: [4.6, 91800, 7.9, 6.1], pet: [4.9, 240100, 8.6, 9.3] };
+function plMeta(id) {
+  const r = plSeed('meta:' + id), m = PL_META[id] || [4.5 + Math.floor(r() * 5) / 10, 20000 + Math.floor(r() * 90000), 8.8 + r(), 6 + r() * 4];
+  return { rate: m[0], votes: m[1] + (TODAY % 997) * 43, pop: m[2], gross: m[3] };
+}
+const plChartOf = (kind, day) => plGames().map(id => { const r = plSeed(`${kind}:${id}:${day}`), m = plMeta(id); return [id, (kind === 'free' ? m.pop : m.gross) + r() * 2.2]; }).sort((a, b) => b[1] - a[1]).map(x => x[0]);
+// challenges: the play achievements still to earn, with their progress
+const PL_CHAL = [
+  ['tap-1k', 'tap', () => S.taps, 1000], ['crit', 'tap', () => S.crits, 25], ['auto-10', 'tap', () => S.tap.A, 10], ['tap-10k', 'tap', () => S.taps, 10000],
+  ['perfect', 'hold', () => S.perfects, 10], ['hold-5', 'hold', () => plS.holdBest, 5],
+  ['rings', 'rings', () => S.rings, 100], ['ring-25', 'rings', () => plS.ringBest, 25],
+  ['pet', 'pet', () => Math.min(S.pet.food, S.pet.fun, S.pet.love), 90, v => `Lowest need ${Math.round(v)}%`], ['pet-100', 'pet', () => S.pets, 100],
+];
+const plChalAll = () => PL_CHAL.map(([id, g, cur, goal, txt]) => {
+  const a = ACH.find(x => x.id === id); if (!a || !APPS[g]) return null;
+  const v = Math.min(cur(), goal), done = !!S.ach[id];
+  return { id, g, n: a.n, d: a.d, done, pct: done ? 1 : Math.min(.99, v / goal), txt: txt ? txt(v) : `${fmt(v)} / ${fmt(goal)}` };
+}).filter(Boolean);
+const plChalOpen = () => plChalAll().filter(c => !c.done).sort((a, b) => b.pct - a.pct);
+function plHeroes() {
+  const ids = plGames(), fresh = ids.filter(id => !PL_CLASSIC.includes(id)), old = PL_CLASSIC.filter(id => ids.includes(id));
+  const L = fresh.map(id => ({ id, label: 'New Game' }));
+  if (old.length) L.push({ id: old[TODAY % old.length], label: 'Editors’ Choice' });
+  if (old.length > 1) L.push({ id: old[(TODAY + 1) % old.length], label: 'Game of the Day' });
+  return L.slice(0, 5);
+}
+// key art: the game's colors, rays, confetti and its icon, drawn from a seed so it never shifts
+function plKeyArt(id) {
+  const r = plSeed('art:' + id), cols = ['#fff', '#ffd23f', '#fff', '#ffc0dc'];
+  let bits = '';
+  for (let i = 0; i < 18; i++) {
+    const x = plN(r() * 360), y = plN(r() * 270), s = plN(3 + r() * 6), k = r(), o = (.2 + r() * .45).toFixed(2), c = cols[Math.floor(r() * cols.length)], rot = Math.floor(r() * 180);
+    bits += k < .35 ? `<circle cx="${x}" cy="${y}" r="${plN(s * .55)}" fill="${c}" opacity="${o}"/>` : k < .7 ? plSpark(x, y, s, c, o) : `<rect x="${x}" y="${y}" width="${plN(s * 1.5)}" height="${plN(s * .6)}" rx="1.4" fill="${c}" opacity="${o}" transform="rotate(${rot} ${x} ${y})"/>`;
+  }
+  return `<div class="pl-art" aria-hidden="true"><svg viewBox="0 0 360 270" preserveAspectRatio="xMidYMid slice">${plRays(282, 128, 18, 460, .1)}<circle cx="282" cy="128" r="92" fill="#fff" opacity=".12"/><circle cx="282" cy="128" r="58" fill="#fff" opacity=".12"/>${bits}</svg>${plIcon(id, 'pl-big')}</div>`;
+}
+const plHeroHTML = h => { const a = APPS[h.id]; return `<div class="pl-hs"><div class="pl-hc" data-g="${h.id}" role="button" tabindex="0" aria-label="${a.name}" style="--c:${a.c}">${plKeyArt(h.id)}<div class="pl-hl"><small>${h.label}</small><b>${h.label === 'New Game' ? a.name : PL_PITCH[h.id] || a.name}</b><span>${plBlurb(h.id)}</span></div><div class="pl-lk">${plIcon(h.id)}<span class="pl-lt"><b>${a.name}</b><small>${plGenre(h.id)}</small></span><button class="pl-get" data-play="${h.id}">Play</button></div></div></div>`; };
+const plContHTML = id => `<button class="pl-cc" data-g="${id}" style="--c:${APPS[id].c}">${plIcon(id)}<b>${APPS[id].name}</b><small>${plGenre(id)}</small><span class="pl-pb"><i></i></span><small class="pl-ct"></small></button>`;
+const plLibHTML = id => `<button class="pl-app" data-g="${id}">${plIcon(id)}<span class="pl-bd"></span><span class="pl-an"><i class="pl-new" hidden></i>${APPS[id].name}</span></button>`;
+const plChHTML = c => `<button class="pl-chc" data-g="${c.g}" data-c="${c.id}" style="--c:${APPS[c.g].c}"><span class="pl-cht">${plIcon(c.g, 'pl-xs')}<span class="pl-rw">${IF('bolt')}25</span></span><b>${c.n}</b><small class="pl-cd">${c.d}</small><span class="pl-pb"><i></i></span><small class="pl-cv"></small></button>`;
+function plChartHTML(kind) {
+  const today = plChartOf(kind, TODAY), prev = plChartOf(kind, TODAY - 1);
+  return today.map((id, i) => {
+    const m = plMeta(id), d = prev.indexOf(id) - i;
+    const mv = d > 0 ? `<i class="pl-mv up">${I('up')}${d}</i>` : d < 0 ? `<i class="pl-mv dn">${I('down')}${-d}</i>` : '<i class="pl-mv">–</i>';
+    return `<div class="pl-cr" data-g="${id}" role="button" tabindex="0" style="--c:${APPS[id].c}"><span class="pl-rk"><b>${i + 1}</b>${mv}</span>${plIcon(id, 'pl-sm')}<span class="pl-ci"><b>${APPS[id].name}</b><small>${plGenre(id)}</small><small class="pl-st">${IF('star')}${m.rate.toFixed(1)} · ${fmt(m.votes)}</small></span><span class="pl-cb"><button class="pl-get" data-play="${id}">Play</button><small>In-App Purchases</small></span></div>`;
+  }).join('');
+}
+// what's on right now: Golden Hold (live or next), and a shop boost if one is running
+function plEvents() {
+  const L = [], ids = plGames();
+  if (boostOn()) L.push({ k: 'boost', id: plRecent()[0] || ids[0], live: true, end: S.boostUntil, title: 'Double Hits', sub: 'Every game pays 2× while it lasts.' });
+  if (ids.includes('hold')) { const g = T() < goldHoldUntil; L.push({ k: 'gold', id: 'hold', live: g, end: g ? goldHoldUntil : nextGoldAt, title: 'Golden Hold', sub: 'Perfect holds pay double in Sweet Spot.' }); }
+  return L;
+}
+const plEventHTML = ev => `<div class="pl-ev${ev.live ? ' live' : ''}" data-g="${ev.id}" data-k="${ev.k}" role="button" tabindex="0">${ev.k === 'boost' ? `<span class="gl pl-gl pl-sm" style="--c:#f5a600">${IF('bolt')}</span>` : plIcon(ev.id, 'pl-sm')}<span class="pl-ei"><small class="pl-et"></small><b>${ev.title}</b><span>${ev.sub}</span></span>${ev.live ? `<button class="pl-get" data-play="${ev.id}">Join</button>` : '<button class="pl-get pl-rm" data-remind>Notify Me</button>'}</div>`;
+function plChalSheet() {
+  const L = plChalAll().sort((a, b) => a.done - b.done || b.pct - a.pct);
+  const el = html(`<div class="pl-all">${L.map(c => `<button class="pl-ar${c.done ? ' done' : ''}" data-g="${c.g}" style="--c:${APPS[c.g].c}">${plIcon(c.g, 'pl-sm')}<span class="pl-ai"><small class="pl-ag">${APPS[c.g].name}</small><b>${c.n}</b><small>${c.d}</small>${c.done ? '' : `<span class="pl-pv"><span class="pl-pb"><i style="width:${c.pct * 100}%"></i></span><em>${c.txt}</em></span>`}</span>${c.done ? `<span class="pl-as">${I('check')}</span>` : `<span class="pl-rw">${IF('bolt')}25</span>`}</button>`).join('')}</div>`);
+  const close = sheet('Challenges', el);
+  el.onclick = e => { const x = e.target.closest('[data-g]'); if (x) { close(); openApp(x.dataset.g); } };
+}
+let plHeroTouch = 0, plHeroSecs = 0;
+const plHeroW = sc => (sc.firstElementChild ? sc.firstElementChild.offsetWidth : 0);
+function plHeroGo(i, smooth = true) {
+  const sc = $('#pl-hero'), w = sc && plHeroW(sc); if (!w) return;
+  const n = $$('.pl-hs', sc).length;
+  sc.scrollTo({ left: ((i % n) + n) % n * w, behavior: smooth && !reduced ? 'smooth' : 'auto' });
+}
+def({
+  id: 'arcade', name: 'Games', c: '#ff5a36',
+  get tag() { return new Date().toLocaleDateString('en', { weekday: 'long', month: 'long', day: 'numeric' }); },
+  // remember which games you play and for how long, open or not
+  bg() { if (curBundle && curBundle.id === 'play' && curApp && curApp !== 'arcade' && APPS[curApp]) { plS.last[curApp] = T(); plS.secs[curApp] = (plS.secs[curApp] || 0) + 1; } },
+  ping() { const c = plChalOpen().find(x => x.pct >= .75); return c ? `Almost there: ${c.n} in ${APPS[c.g].name} (${c.txt})` : null; },
+  build(b, right) {
+    const ids = plGames(), heroes = plHeroes();
+    b.innerHTML = `<div class="pad pl-home">
+      <div class="pl-hero" id="pl-hero">${heroes.map(plHeroHTML).join('')}<i class="pl-hsp"></i></div>
+      <div class="pl-dots" id="pl-dots">${heroes.map((_, i) => `<i class="${i ? '' : 'on'}"></i>`).join('')}</div>
+      <section class="pl-sec" id="pl-cont-s"><div class="pl-h"><b>Continue Playing</b></div><div class="pl-row" id="pl-cont"></div></section>
+      <section class="pl-sec" id="pl-live-s"><div class="pl-h"><b>Events</b></div><div class="pl-live" id="pl-live"></div></section>
+      <section class="pl-sec"><div class="pl-h"><b>Your Games</b><small>${ids.length} games</small></div><div class="pl-lib" id="pl-lib">${ids.map(plLibHTML).join('')}</div></section>
+      <section class="pl-sec" id="pl-ch-s"><div class="pl-h"><b>Challenges</b><button class="pl-more" data-all>See All</button></div><div class="pl-row" id="pl-ch"></div></section>
+      <section class="pl-sec"><div class="pl-h"><b>Top Charts</b><span class="seg" id="pl-seg"><button data-k="free">Free</button><button data-k="gross">Grossing</button></span></div><div class="pl-chart" id="pl-chart"></div></section>
+    </div>`;
+    right.innerHTML = `<button class="chip pl-tro" data-all aria-label="Challenges">${plTrophy}<span id="pl-tro-n"></span></button>`;
+    track($('.pad', b));
+    const sc = $('#pl-hero', b), dots = $$('#pl-dots i', b);
+    sc.addEventListener('scroll', () => { const w = plHeroW(sc), i = w ? Math.round(sc.scrollLeft / w) : 0; dots.forEach((d, k) => d.classList.toggle('on', k === i)); }, { passive: true });
+    ['pointerdown', 'touchstart', 'wheel'].forEach(ev => sc.addEventListener(ev, () => { plHeroTouch = now(); }, { passive: true }));
+    b.addEventListener('click', e => {
+      const t = e.target;
+      if (t.closest('[data-remind]')) { plS.remind = !plS.remind; sfx.click(); haptic(); toast(plS.remind ? 'We’ll let you know when Golden Hold starts' : 'Reminder off'); this.render(); return; }
+      const k = t.closest('#pl-seg [data-k]'); if (k) { if (plS.chart !== k.dataset.k) { plS.chart = k.dataset.k; sfx.click(); this.render(); } return; }
+      if (t.closest('[data-all]')) { plChalSheet(); return; }
+      const g = t.closest('[data-play],[data-g]'); if (g) openApp(g.dataset.play || g.dataset.g);
+    });
+    right.onclick = e => { if (e.target.closest('[data-all]')) plChalSheet(); };
+  },
+  open() { plHeroTouch = now(); this.render(true); },
+  render(full) {
+    if (!this.view) return;
+    const b = this.body;
+    // continue playing: rebuilt only when the order changes, which happens while you're in a game
+    const rec = plRecent().slice(0, 8), rs = rec.join();
+    if (full || rs !== this._rs) { this._rs = rs; $('#pl-cont', b).innerHTML = rec.map(plContHTML).join(''); $('#pl-cont-s', b).hidden = !rec.length; }
+    rec.forEach(id => {
+      const el = $(`.pl-cc[data-g="${id}"]`, b); if (!el) return;
+      const p = plProg(id), bar = $('.pl-pb', el), t = $('.pl-ct', el);
+      if (bar.hidden !== !p) bar.hidden = !p;
+      if (p) $('i', bar).style.width = clamp(p.pct, 0, 1) * 100 + '%';
+      const txt = p ? p.text : `${dur((plS.secs[id] || 0) * 1000)} played`;
+      if (t.textContent !== txt) t.textContent = txt;
+    });
+    // your games: badges and the blue dot on games you haven't opened yet
+    $$('.pl-app', b).forEach(el => {
+      const a = APPS[el.dataset.g]; let n = 0;
+      try { n = Math.max(0, Math.floor(a.badge ? a.badge() : 0)); } catch {}
+      const bd = $('.pl-bd', el), t = n ? (n > 99 ? '99+' : String(n)) : '';
+      if (bd.textContent !== t) bd.textContent = t;
+      const nd = $('.pl-new', el), seen = !!plS.last[el.dataset.g]; if (nd.hidden !== seen) nd.hidden = seen;
+    });
+    // happening now
+    const evs = plEvents(), es = evs.map(e => e.k + e.live).join();
+    if (full || es !== this._es) { this._es = es; $('#pl-live', b).innerHTML = evs.map(plEventHTML).join(''); $('#pl-live-s', b).hidden = !evs.length; }
+    evs.forEach(ev => {
+      const el = $(`.pl-ev[data-k="${ev.k}"]`, b); if (!el) return;
+      const t = ev.live ? `Live · ends in ${cd(ev.end - T())}` : `Starts in ${cd(ev.end - T())}`, et = $('.pl-et', el);
+      if (et.textContent !== t) et.textContent = t;
+      const rm = $('.pl-rm', el); if (rm) { const l = plS.remind ? 'Reminder Set' : 'Notify Me'; if (rm.textContent !== l) { rm.textContent = l; rm.classList.toggle('on', plS.remind); } }
+    });
+    // challenges, closest to done first; the order is set when you arrive and holds still while you look
+    const all = plChalAll();
+    if (full) { const ch = plChalOpen().slice(0, 6); $('#pl-ch', b).innerHTML = ch.map(plChHTML).join(''); $('#pl-ch-s', b).hidden = !ch.length; }
+    all.forEach(c => { const el = $(`.pl-chc[data-c="${c.id}"]`, b); if (!el) return; $('.pl-pb i', el).style.width = c.pct * 100 + '%'; const v = $('.pl-cv', el); if (v.textContent !== c.txt) v.textContent = c.txt; });
+    const tn = `${all.filter(c => c.done).length}/${all.length}`, tro = $('#pl-tro-n');
+    if (tro.textContent !== tn) tro.textContent = tn;
+    // top charts
+    const ck = plS.chart + TODAY;
+    if (full || ck !== this._ck) { this._ck = ck; $('#pl-chart', b).innerHTML = plChartHTML(plS.chart); $$('#pl-seg button', b).forEach(x => x.classList.toggle('on', x.dataset.k === plS.chart)); }
+  },
+  tick() {
+    this.render();
+    // the featured games take turns, unless you're touching them
+    if (reduced || now() - plHeroTouch < 8000 || ++plHeroSecs % 6) return;
+    const sc = $('#pl-hero'), w = plHeroW(sc);
+    if (w && !sc.classList.contains('mdrag')) plHeroGo(Math.round(sc.scrollLeft / w) + 1);
+  },
+  key(e) {
+    if (e.type !== 'keydown') return;
+    const sc = $('#pl-hero'), w = plHeroW(sc), i = w ? Math.round(sc.scrollLeft / w) : 0;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { plHeroTouch = now(); plHeroGo(i + (e.key === 'ArrowRight' ? 1 : -1)); return true; }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { $('.pad', this.body).scrollBy({ top: e.key === 'ArrowDown' ? 220 : -220, behavior: reduced ? 'auto' : 'smooth' }); return true; }
+    if (e.key === ' ' || e.key === 'Enter') {
+      const f = document.activeElement, t = f && this.body.contains(f) && f.closest('[data-play],[data-g],[data-remind],[data-all],[data-k]');
+      if (t) { t.click(); return true; } // whatever has keyboard focus
+      const h = $$('.pl-hc', sc)[i]; if (h) openApp(h.dataset.g); return true;
+    }
+  },
+});
 // ==== /MODULE play ====
 
 // ==== MODULE gates: gate army ====
