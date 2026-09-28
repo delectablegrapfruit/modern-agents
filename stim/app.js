@@ -1343,11 +1343,13 @@ function evText(e) {
 const plain = s => s.replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, '’');
 // the network keeps talking to you even when you haven't posted
 function socialEvent(read) {
-  const k = pickW([['follow', 5], ['mention', 2], ['suggest', 1.5], ['like', F.myPosts.length ? 4 : 0], ['comment', F.myPosts.length ? 2 : 0]]);
+  const live = F.myStory && T() - F.myStory.ts < 864e5;
+  const k = pickW([['follow', 5], ['mention', 2], ['suggest', 1.5], ['like', F.myPosts.length ? 4 : 0], ['comment', F.myPosts.length ? 2 : 0], ['story', live ? 2.5 : 0]]);
   const mp = F.myPosts.length ? pick(F.myPosts.slice(0, 6)) : null;
   if (k === 'follow') { F.followers++; return addEvent('follow', [stranger()], { read }); }
   if (k === 'mention') return addEvent('mention', [friend()], { x: pick(REPLIES), read });
   if (k === 'suggest') return addEvent('suggest', [stranger()], { read });
+  if (k === 'story') return addEvent('story', [chance(.5) ? friend() : stranger()], { x: pick(RX), read });
   if (k === 'like') { mp.likes++; return addEvent('like', [stranger()], { p: mp.id, read }); }
   mp.cm++; return addEvent('comment', [stranger()], { p: mp.id, x: pick(CMTS), read });
 }
@@ -1573,7 +1575,7 @@ function userSheet(id) {
 }
 function moreSheet(p, el) {
   const u = p.u > 0 ? person(p.u) : null;
-  const rows = [
+  const rows = p.u === 0 ? [['story', 'story', 'Add to your story'], ['ins', 'chart', 'View insights']] : [
     ['fav', 'star', 'Add to favorites'],
     ['hide', 'mute', 'Not interested'],
     u && isFol(p.u) ? ['unf', 'x', `Unfollow ${u.handle}`] : null,
@@ -1585,7 +1587,9 @@ function moreSheet(p, el) {
     const b = e.target.closest('[data-k]'); if (!b) return;
     const k = b.dataset.k;
     close();
-    if (k === 'fav') toast(u ? `${u.handle} added to favorites` : 'Added to favorites');
+    if (k === 'story') { F.myStory = { s: p.seed, ts: T(), f: p.f || 0, views: 0 }; renderStories(); toast('Added to your story'); }
+    else if (k === 'ins') postSheet(myPost(p.id));
+    else if (k === 'fav') toast(u ? `${u.handle} added to favorites` : 'Added to favorites');
     else if (k === 'hide') { toast('You’ll see fewer posts like this'); el.style.height = el.offsetHeight + 'px'; void el.offsetHeight; el.classList.add('fd-gone'); setTimeout(() => el.remove(), 320); }
     else if (k === 'unf') { follow(p.u, false); toast(`Unfollowed ${u.handle}`); }
     else toast(p.sp >= 0 ? 'This ad matches your recent activity' : p.sug ? 'Based on posts you’ve liked' : `You follow ${u ? u.handle : 'this account'}`);
@@ -1783,7 +1787,7 @@ function growPost(mp, t) {
     const us = []; for (let i = 0; i < Math.min(add, 2); i++) us.push(stranger());
     addEvent('like', us, { p: mp.id, n: Math.max(0, add - 2) });
   }
-  if (F.myStory && F.myStory.s === mp.seed) F.myStory.views = Math.round(mp.views * .4);
+  if (F.myStory && F.myStory.s === mp.seed) F.myStory.views = Math.max(F.myStory.views || 0, Math.round(mp.views * .4));
   if (chance(Math.min(.45, rate * .04))) { mp.cm++; addEvent('comment', [stranger()], { p: mp.id, x: pick(CMTS) }); }
   if (chance(Math.min(.5, rate * .05))) { F.followers++; F.gained++; if (chance(.4)) addEvent('follow', [stranger()]); }
   for (const m of [100, 500, 1000, 5000, 10000]) if (mp.likes >= m && mp.ms < m) { mp.ms = m; addEvent('mile', [], { p: mp.id, x: m }); if (m >= 1000) alertOnce('fd-mile', 'activity', `Your post reached ${fmt(m)} hearts`, 120000); }
@@ -1801,6 +1805,7 @@ function feedBg() {
   if (chance(.011)) socialEvent();
   if (chance(.03)) F.visits++;
   if (chance(.012)) { F.followers++; F.gained++; }
+  if (F.myStory && t - F.myStory.ts < 864e5 && chance(.25)) F.myStory.views = (F.myStory.views || 0) + ri(1, 3);
   for (const mp of F.myPosts.slice(0, 4)) growPost(mp, t);
   if (tickN % 40 === 0 && S.supers < 3) S.supers++;
 }
@@ -2023,7 +2028,7 @@ def({
       if (a) {
         const x = a.dataset.a;
         if (x === 'like') likeClip(c);
-        else if (x === 'comments') { pauseClip(c, true); commentsSheet(k, () => { $('.fd-rc span', c).textContent = fmt(k.cm); }); }
+        else if (x === 'comments') { commentsSheet(k, () => { $('.fd-rc span', c).textContent = fmt(k.cm); }); }
         else if (x === 'share') shareSheet(k, () => { $('.fd-rs span', c).textContent = fmt(k.sh); });
         else if (x === 'save') { k.saved = !k.saved; a.classList.toggle('on', k.saved); if (k.saved) { F.saved = [{ s: k.seed, H: 125, f: 0 }, ...F.saved].slice(0, 60); toast('Saved to your collection'); sfx.pop(2); } else sfx.close(); }
         else if (x === 'follow') { follow(k.u, true); a.classList.add('on'); a.dataset.a = 'user'; $('i', a).innerHTML = fi('check'); const [fx, fy] = centerOf(a); earn(2, fx - 30, fy); if (maybeBack(k.u)) setTimeout(() => toast(`${person(k.u).handle} followed you back`), 900); }
