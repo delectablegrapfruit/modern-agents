@@ -6871,11 +6871,21 @@ function openPDP(tab, l) {
   };
   const urg = () => { inCart = Math.max(120, inCart + ri(-6, 14)); $('.sh-urgt', el).textContent = l.ld ? `${fmt(inCart)} people have this in their cart · Deal ends in ${cd(l.until - T())}` : l.stock <= 8 ? `Only ${l.stock} left · ${fmt(inCart)} people have this in their cart` : `Selling fast · ${fmt(inCart)} people have this in their cart`; };
   upd(); urg();
+  // a lightning deal that ends while the page is open shows its new price here before anything is added at it
+  let dealOn = !!l.ld;
+  const dealOver = () => {
+    if (!dealOn || (l.ld && T() <= l.until)) return false;
+    if (l.ld) { l.p = l.after; l.ld = 0; l.until = 0; }
+    dealOn = false;
+    const b = $('.sh-ldband', el); if (b) { b.classList.add('end'); b.innerHTML = `<b>${IF('bolt')}Lightning deal ended</b>`; }
+    upd(); urg(); return true;
+  };
+  const dealGone = () => { if (!dealOver()) return false; sfx.nope(); toast('This lightning deal has ended'); return true; };
   const carEl = $('.sh-car', el), carN = $('.sh-carn', el);
   let carTot = car.n;
   carEl.addEventListener('scroll', () => { const i = Math.round(carEl.scrollLeft / Math.max(1, carEl.clientWidth)) + 1; carN.textContent = `${i}/${carTot}`; }, { passive: true });
   const bnow = () => {
-    if (l.ld && T() > l.until) { l.p = l.after; l.ld = 0; l.until = 0; }
+    if (dealGone()) return;
     const v = vPrice(l, sz), line = { key: 'now', pid: l.pid, ci, si: sz, q, p: v.p, p0: v.p, was: v.was, bp: l.p, bw: l.was, t: l.t, sel: 1, b2: l.b2 || 0, nu: l.nu || 0, stock: l.stock, until: l.until || 0, after: v.after };
     act(); openCheckout(tab, [line]);
   };
@@ -6893,10 +6903,11 @@ function openPDP(tab, l) {
     const k = a.dataset.a;
     if (k === 'inc') { if (l.nu) { sfx.nope(); toast('Limit 1 per customer at this price'); return; } if (q >= l.stock) { sfx.nope(); toast(`Only ${l.stock} left in stock`); return; } q++; sfx.pop(q); upd(); }
     else if (k === 'dec') { if (q > 1) { q--; sfx.click(); upd(); } }
-    else if (k === 'atc') { if (l.ld && T() > l.until) { l.p = l.after; l.ld = 0; l.until = 0; } if (addLine(l, ci, sz, q, $('.sh-carw', el))) upd(); }
+    else if (k === 'atc') { if (!dealGone() && addLine(l, ci, sz, q, $('.sh-carw', el))) upd(); }
     else if (k === 'buy') bnow();
     else if (k === 'gocart') { clearPages(tab); if (tab === 'cart') renderCart(); else showTab(bundleById('shop'), 'cart'); }
     else if (k === 'fbt') {
+      if (dealGone()) return;
       let ok = addLine(l, ci, sz, 1, $('.sh-fbt', el)), fbS = 0;
       fbt.forEach(f => { const was = f.p; f.p = fbtP(f); if (addLine(f, 0, 0, 1)) fbS += was - f.p; else ok = false; f.p = was; });
       if (ok) toast(fbS ? `3 items added · You saved ${fmt(fbS)}` : '3 items added');
@@ -6905,7 +6916,7 @@ function openPDP(tab, l) {
     else if (k === 'more') { $('.sh-rvs', el).insertAdjacentHTML('beforeend', reviewsHTML(pr, l, revN, 3)); revN += 3; sfx.click(); }
     else if (k === 'help') { const m2 = a.textContent.match(/\d+/); if (!a.classList.contains('on')) { a.classList.add('on'); a.textContent = `Helpful (${+m2[0] + 1})`; sfx.pop(3); } }
   });
-  el._tick = () => { urg(); const n = cartUnits(); setT($('.sh-pcn', el), n || ''); };
+  el._tick = () => { if (!dealOver()) urg(); const n = cartUnits(); setT($('.sh-pcn', el), n || ''); };
   el._key = e => {
     if (e.type !== 'keydown') return false;
     if (e.key === 'Enter') { $('.sh-atc', el).click(); return true; }
