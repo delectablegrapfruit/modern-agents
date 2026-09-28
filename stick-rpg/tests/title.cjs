@@ -1,6 +1,8 @@
 // Title area checks: title -> NEW GAME -> CREATE CHARACTER -> intro (and SKIP) -> city with the
 // chosen stats; the roll / +- rules; the cheat name; instructions paging; CONTINUE with and
-// without a save; YOU DIED -> results (count-up formula, flash, stamp, rank, DONE, save
+// without a save; the intro's shift and drop frames against the original's extents; YOU DIED
+// (pose timeline, the HP bar sweeping while the label reads 0) -> results (count-up formula,
+// flash, stamp, rank and its one-line stamp, DONE back to a title that fades in, save
 // untouched). Screenshots go to $OUT (default: the scratchpad's shots/title) and are compared
 // with the original's reference screenshots (mean pixel difference).
 //   node tests/title.cjs
@@ -158,6 +160,8 @@ function eq(a, b, msg) { ok(JSON.stringify(a) === JSON.stringify(b), msg + ' (' 
   eq([s.cha, s.intl, s.pts], [2, 1, 1], 'points move freely between stats');
   // the name field: "Anonymous", 11 characters max
   eq(await ev(() => document.querySelector('#ui [data-id="name"]').value), 'Anonymous', 'name defaults to Anonymous');
+  eq(await ev(() => { const cs = getComputedStyle(document.querySelector('#ui [data-id="name"]')); return [cs.textAlign, cs.color, cs.borderTopColor]; }),
+    ['left', 'rgb(0, 0, 0)', 'rgb(0, 0, 0)'], 'name field: black text, left-aligned, black border (as the original)');
   await page.fill('#ui [data-id="name"]', '');
   await page.type('#ui [data-id="name"]', 'ABCDEFGHIJKLMNOP');
   eq(await ev(() => document.querySelector('#ui [data-id="name"]').value), 'ABCDEFGHIJK', 'name limited to 11 characters');
@@ -188,6 +192,35 @@ function eq(a, b, msg) { ok(JSON.stringify(a) === JSON.stringify(b), msg + ' (' 
     await ev((f) => { SRPG.intro.st.f = f - 1; SRPG.intro.st.black = 0; }, f);
     await t.step(1);
     await shot('intro-' + f);
+  }
+  // The shift: the figure stays upright and fills the original's per-frame extent (686: ~38 tall,
+  // 695: ~13), and the big falling figure's head is at x 236, y 40 + 80 per frame.
+  const FXY = [255.35, 188];
+  async function inkBox(f, win) {
+    await ev((f) => { SRPG.intro.st.f = f - 1; SRPG.intro.st.black = 0; SRPG.intro.st.blackHold = false; }, f);
+    await t.step(1);
+    return ev((win) => {
+      const c = document.getElementById('game');
+      const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+      let x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1, bx = 0, by = 0, bn = 0;
+      for (let y = win[1]; y < win[3]; y++) for (let x = win[0]; x < win[2]; x++) {
+        const i = (y * c.width + x) * 4;
+        if (d[i] + d[i + 1] + d[i + 2] > 600) continue; // white film background
+        x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y);
+        if (d[i + 2] > 150 && d[i] < 60) { bx += x; by += y; bn++; } // the blue head
+      }
+      return { x0, y0, x1, y1, hx: bn ? bx / bn : null, hy: bn ? by / bn : null };
+    }, win);
+  }
+  for (const [f, top, bot] of [[680, -40.9, -5.65], [686, -59.7, -21.75], [690, -54.6, -25.25], [695, -47.65, -34.3]]) {
+    const b = await inkBox(f, [180, 80, 340, 220]);
+    ok(Math.abs(b.y0 - (FXY[1] + top)) <= 2.5 && Math.abs(b.y1 - (FXY[1] + bot)) <= 2.5,
+      'shift frame ' + f + ': figure spans y ' + (FXY[1] + top).toFixed(1) + '..' + (FXY[1] + bot).toFixed(1), b);
+    ok(b.hy !== null && b.hy < (b.y0 + b.y1) / 2, 'shift frame ' + f + ': upright (head on top)', b);
+  }
+  for (const f of [762, 763, 764, 765]) {
+    const b = await inkBox(f, [150, 0, 450, 400]);
+    ok(Math.abs(b.hx - 236.3) < 2.5 && Math.abs(b.hy - (40.4 + 80 * (f - 761))) < 2.5, 'drop frame ' + f + ': head at (236, ' + (40.4 + 80 * (f - 761)).toFixed(0) + ')', b);
   }
   // no screen change before frame 850
   await ev(() => { SRPG.intro.st.f = 700; SRPG.intro.st.black = 0; });
@@ -224,8 +257,7 @@ function eq(a, b, msg) { ok(JSON.stringify(a) === JSON.stringify(b), msg + ' (' 
   eq((await t.state()).pname, 'Skipper', 'same game after SKIP');
 
   console.log('# cheat name');
-  await ev(() => { SRPG.engine.go('title', { again: true }); SRPG.title.setMode('makechar'); });
-  eq((await tst()).fade, 0, 'returning to the title: no black fade');
+  await ev(() => { SRPG.engine.go('title'); SRPG.title.setMode('makechar'); });
   await page.fill('#ui [data-id="name"]', 'HEYZEUS!!!!');
   await t.clickUI('create-done');
   g = await t.state();
@@ -256,6 +288,37 @@ function eq(a, b, msg) { ok(JSON.stringify(a) === JSON.stringify(b), msg + ' (' 
   eq(await scene(), 'death', 'die() shows YOU DIED');
   eq((await t.state()).hp, 0, 'HP 0');
   ok((await ev(() => window.__music.slice(-1)[0])) === null, 'all music stops');
+  // sprite 2334's timeline: the reeled-back pose of frame 19 comes back on 25 and is held 31..45;
+  // 20..24 and 26..30 shudder; from 53 the figure lies dead
+  const P = await ev(() => [19, 20, 22, 24, 25, 26, 28, 30, 31, 38, 45, 46, 53, 60, 149].map((f) => JSON.stringify(SRPG.screens.death.pose(f))));
+  const [p19, p20, p22, p24, p25, p26, p28, p30, p31, p38, p45, p46, p53, p60, p149] = P;
+  ok(p25 === p19 && p31 === p19 && p38 === p19 && p45 === p19, 'frames 25 and 31..45: the reeled-back pose, held still');
+  ok([p20, p22, p24, p26, p28, p30].every((p) => p !== p19), 'frames 20..24 and 26..30: shudder');
+  ok(p46 !== p45, 'frame 46: starts to topple');
+  ok(p53 === p60 && p60 === p149 && JSON.parse(p53).dead, 'frame 53 on: lying dead');
+  // the HP bar clip keeps playing (its goto frame 0 is ignored): it sweeps empty -> full every
+  // 104 frames, while the label reads 0
+  async function barAt(f) {
+    return ev((f) => {
+      SRPG.screens.death.t = f;
+      const seen = [];
+      const CP = CanvasRenderingContext2D.prototype, of = CP.fillText;
+      CP.fillText = function (str) { seen.push(String(str)); return of.apply(this, arguments); };
+      try { SRPG.engine.draw(); } finally { CP.fillText = of; }
+      const d = document.getElementById('game').getContext('2d').getImageData(180, 18, 1, 1).data;
+      return { rgb: [d[0], d[1], d[2]], texts: seen };
+    }, f);
+  }
+  let bar = await barAt(100);
+  ok(bar.rgb[0] > 200 && bar.rgb[1] < 60, 'YOU DIED frame 100: the bar has swept up to full (as in the reference)', bar.rgb);
+  bar = await barAt(10);
+  ok(bar.rgb[0] < 150, 'frame 10: the bar near empty', bar.rgb);
+  bar = await barAt(108);
+  ok(bar.rgb[0] < 150, 'frame 108: wrapped round to empty again', bar.rgb);
+  bar = await barAt(50);
+  const lbl = bar.texts.join('');
+  ok(/^0\/ ?25$/.test(lbl) || /(^|[^\d])0\/ ?25/.test(lbl), 'the label reads 0/ 25 while the bar moves (half full)', bar.texts);
+  await ev(() => { SRPG.screens.death.t = 1; });
   for (const f of [15, 30, 48]) { await t.step(f - (await ev(() => SRPG.screens.death.t))); await shot('death-' + f); }
   await t.step(100 - (await ev(() => SRPG.screens.death.t)));
   await shot('you-died');
@@ -321,6 +384,16 @@ function eq(a, b, msg) { ok(JSON.stringify(a) === JSON.stringify(b), msg + ' (' 
   await ev(() => { SRPG.debug.newGame({ karma: 150 }); SRPG.game.endGame(); });
   eq(await ev(() => SRPG.game.s.karma), 100, 'karmaAdjust clamps karma on the results');
 
+  // the stamp's text box is one line tall: a long rank shows only its first wrapped line
+  eq(await ev(() => ['UTTER FAILURE', 'JUVENILE DELINQUENT', 'UNDENIABLY WICKED', 'SELFLESS MILLIONAIRE', 'WHITE COLLAR CRIMINAL',
+    'EXTRAORDINARILY GOOD', 'BILLIONAIRE GOD', 'MULTIMILLIONAIRE'].map(SRPG.results.stampLine)),
+  ['UTTER FAILURE', 'JUVENILE', 'UNDENIABLY WICKED', 'SELFLESS', 'WHITE COLLAR', 'EXTRAORDINARILY', 'BILLIONAIRE GOD', 'MULTIMILLIONAIRE'],
+  'stamp: first line of the rank only');
+  await countRun(2000, 0, 0, -50);
+  eq(await ev(() => SRPG.results.st.rank), 'JUVENILE DELINQUENT', 'rank: $2,000 evil = JUVENILE DELINQUENT');
+  await t.step(40);
+  await shot('results-long-rank');
+
   console.log('# results: SKIP and DONE');
   await ev(() => { SRPG.debug.newGame({ pname: 'Skip', cash: 900000, bankcash: 50000 }); SRPG.game.endGame(); });
   await t.step(5);
@@ -335,6 +408,7 @@ function eq(a, b, msg) { ok(JSON.stringify(a) === JSON.stringify(b), msg + ' (' 
   eq(await ev(() => SRPG.results.st.rank), 'UTTER FAILURE', 'rank: $100 = UTTER FAILURE');
   await t.clickUI('done');
   eq(await scene(), 'title', 'DONE: back to the title');
+  eq((await tst()).fade, 1, 'the title fades in from black again (root frame 1 re-creates the black clip)');
   eq((await tst()).mode, 'title', 'title menu');
   eq(await ev(() => localStorage.getItem('srpg.save')), saveBefore, 'the save is untouched by dying / the results');
 

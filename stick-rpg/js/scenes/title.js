@@ -409,6 +409,14 @@
       inp.style.font = '900 14px "Arial Black", "Arial Bold", Arial, sans-serif';
       inp.style.padding = '0 2px';
       inp.style.lineHeight = '22px';
+      // the original's field: black text, left-aligned, plain 1px black border (inline, so the
+      // shared .finput look used by the buildings can't change it)
+      inp.style.color = '#000';
+      inp.style.textAlign = 'left';
+      inp.style.border = '1px solid #000';
+      inp.style.borderRadius = '0';
+      inp.style.background = '#fff';
+      inp.style.boxShadow = 'none';
       inp.spellcheck = false;
       if (fx.face('black').heavy) {
         // no Arial Black here: widen and thicken the bold fallback to match
@@ -460,10 +468,10 @@
 
   function buildLogo() {
     var lx = 289.3, ly = 73.65;
-    var c = document.createElement('canvas');
-    c.width = SRPG.W;
-    c.height = SRPG.H;
-    var ctx = c.getContext('2d');
+    var layer = document.createElement('canvas');
+    layer.width = SRPG.W;
+    layer.height = SRPG.H;
+    var ctx = layer.getContext('2d');
     // Each letter is one filled glyph in the original, blended at its own alpha. The fallback
     // face strokes over its fill to thicken it, so draw each letter opaque on a scratch layer
     // first and blend that, or the overlap would show as a brighter outline.
@@ -497,7 +505,7 @@
       letter(c, STICK_G1[i], -64.1 + 96, 96, 1.2, '#ffffff', 0.25);
     });
     STICK.forEach(function (c) { letter(c, c[1], -63.1 + 96, 96, 1, '#ffffff', 1); });
-    return c;
+    return layer;
   }
 
   function drawTitleMenu(ctx) {
@@ -741,8 +749,7 @@
   // ------------------------------------------------------------------------------------------
   var scene = {
     st: st, // exposed for tests
-    enter: function (params) {
-      params = params || {};
+    enter: function () {
       st.mode = 'title';
       st.page = 1;
       st.gamelength = 0; // sprite 180 frame 1: UNLIMITED preselected
@@ -750,8 +757,9 @@
       st.frame = 0;
       roll();
       resetBubbles();
-      // First boot: the black clip fades the title in (frames 1..10).
-      st.fade = params.again ? 0 : 1;
+      // Root frame 1 (on boot, and again after the results' DONE, which re-creates the black
+      // clip): the title fades in from black (black clip frames 1..10).
+      st.fade = 1;
       SRPG.sound.music('beginning');
       build();
     },

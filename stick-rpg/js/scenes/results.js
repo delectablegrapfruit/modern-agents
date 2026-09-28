@@ -1,14 +1,15 @@
 // 'death' (root frame 100: YOU DIED) and 'results' (root frames 130..161: the end-of-game
 // screen). Neither touches the save: the last saved game can still be continued afterwards.
 //
-// YOU DIED: all sound stops, HP shows 0, your stick figure staggers and falls over (frames
-// 16..52), "YOU DIED" appears at frame 65 and at frame 150 (about 4.3 s) the results follow.
+// YOU DIED: all sound stops, HP shows 0 (the HP bar itself keeps sweeping empty -> full), your
+// stick figure reels, shudders and falls over (frames 16..52), "YOU DIED" appears at frame 65 and
+// at frame 150 (about 4.3 s) the results follow.
 //
 // Results: net worth counts up from -loans, one step per frame of max(100, round(final/500)),
 // with the work "ka-ching" every step, until it reaches final + 100 and snaps to the final value
 // (SKIP jumps straight to the stamp). The final figure flashes bright for 17 frames, then the
 // rank stamp slams down (a thud on its 10th frame, the text on the page jolts crooked), and DONE
-// returns to the title.
+// returns to the title, which fades in from black as on boot.
 (function () {
   'use strict';
   var SRPG = window.SRPG;
@@ -114,6 +115,7 @@
   // ================================================================================== DEATH
   var death = {
     t: 0,
+    pose: deathPose, // for tests
     enter: function () {
       var s = S();
       if (s) { s.hp = 0; s.over = true; }
@@ -147,23 +149,21 @@
   function deadHud(ctx, s, f) {
     var bf = ((f - 1) % 104) + 1;
     var shown = { hp: bf >= 100 ? s.hpmax : ((bf + 0.5) / 100) * s.hpmax, hpmax: s.hpmax };
-    // The label is bound to the real hp (0): swap it in as the HUD writes the hp figure (the
-    // right-aligned number before the slash, or an "hp/ max" string).
-    var both = /^\s*-?[\d.]+\s*\/\s*-?[\d.]+\s*$/;
-    ['fillText', 'strokeText'].forEach(function (m) {
-      ctx[m] = function (str, x, y, w) {
-        str = String(str);
-        if (this.textAlign === 'right' && /^-?[\d.]+$/.test(str)) str = '0';
-        else if (both.test(str)) str = '0/ ' + s.hpmax;
-        var P = CanvasRenderingContext2D.prototype[m];
-        return w == null ? P.call(this, str, x, y) : P.call(this, str, x, y, w);
-      };
+    // Two passes through the HUD: the bar and heart at the clip's frame (text switched off),
+    // then only the text, for the real hp (0), laid out by the HUD itself.
+    withOnly(ctx, ['fillText', 'strokeText'], function () { SRPG.hud.draw(ctx, shown, 'fight'); });
+    withOnly(ctx, ['fill', 'stroke', 'fillRect', 'strokeRect', 'drawImage', 'clearRect'], function () {
+      SRPG.hud.draw(ctx, { hp: 0, hpmax: s.hpmax }, 'fight');
     });
+  }
+
+  // Run fn with the named drawing methods of ctx turned into no-ops.
+  function withOnly(ctx, off, fn) {
+    off.forEach(function (m) { ctx[m] = function () {}; });
     try {
-      SRPG.hud.draw(ctx, shown, 'fight');
+      fn();
     } finally {
-      delete ctx.fillText;
-      delete ctx.strokeText;
+      off.forEach(function (m) { delete ctx[m]; });
     }
   }
 
@@ -245,7 +245,9 @@
     }
   }
 
-  // Idle loop of the figure on the left: arms down, hands to hips, foot tapping, arms down.
+  // Idle loop of the figure on the left (sprite 2378, 114 frames): arms down (1..12), hands to
+  // hips in three steps (13..24), foot tapping (25..68), hands on hips (69..72), arms back down
+  // in two steps (73..80), standing (81..114).
   function resultsPose(a) {
     var f = (a % 114) + 1;
     var toe = null;
@@ -256,7 +258,11 @@
       p = mix(STAND, AKIMBO, 1);
       var k = Math.floor((f - 25) / 8);
       toe = [[12.3, 54], [13, 55.5], [12.8, 54], [13, 55.5], [12.8, 54]][k];
-    } else p = mix(STAND, AKIMBO, 1 - Math.ceil((f - 64) / 4) / 4);
+    } else if (f <= 72) {
+      // 65..68 one more toe lift, 69..72 hands on hips (sprite 2378 reuses the frame-21 pose)
+      p = mix(STAND, AKIMBO, 1);
+      if (f <= 68) toe = [12.3, 54];
+    } else p = mix(STAND, AKIMBO, f <= 76 ? 2 / 3 : 1 / 3); // arms back down in two steps
     return { p: p, toe: toe };
   }
 

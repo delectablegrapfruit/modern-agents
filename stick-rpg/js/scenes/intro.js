@@ -3,7 +3,8 @@
 //   2..400    the camera pulls out of your sleeping stick figure's head (seen from above), turning
 //             a quarter turn as it zooms from 20x down to 0.5x; a slow breath every ~100 frames
 //   478..628  a grey "?" floats beside the head
-//   672..699  the figure unfolds, stands up and is pulled away into the distance (the shift)
+//   672..699  the figure unfolds, stands up with its arms raised, then recedes upright into the
+//             distance until it is a dot (the shift)
 //   727       a black blink
 //   761..766  a big figure drops through the screen into the 2nd Dimension
 //   796       a car horn/crash and black; 850 the city fades in with you lying on the road
@@ -79,7 +80,7 @@
 
   // The shift (frames 672..699): the figure unfolds, stands up with its arms raised and then
   // recedes, staying upright and shrinking to a dot. Each frame is its own drawing in the original;
-  // these are my own poses (a head circle plus polylines, film units, origin near the middle).
+  // these are simplified poses of our own (a head circle plus polylines, film units).
   var SHIFT_POSES = {
     // seen from above, limbs folded in: four stubs round the head
     folded: { head: [1.25, 0.6, 9.4], lines: [[-13.1, 0.6, -8.1, 0.6], [10.6, -1.25, 13.5, -1.25, 13.5, -6.9],

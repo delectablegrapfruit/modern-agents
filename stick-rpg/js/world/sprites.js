@@ -2,11 +2,14 @@
 // the edge, knocked flat), the street people and the cars. Positions are stage coordinates of the
 // sprite's registration point (the original's clip origin), rotations in degrees (0 = heading up).
 //
-// The player's look follows the original's 400-frame "person" clip: 20-116 standing (twice a
-// cycle a stretch, 104-113), after three cycles 120-180 falling asleep with a rising "Z",
-// 185-229 falling into the sky, 230-270 knocked flat by a car (231 on waking up), 275-302 walking,
-// 305-326 skateboarding, 327 in the car, 361-400 the car crash. The clip is rotated to the
-// walking direction as a whole, so a fall off the south edge drops "down" the screen.
+// The player's look follows the original's 400-frame "person" clip: 20 standing, 185-229 falling
+// into the sky, 230-270 knocked flat by a car (231 on waking up), 275-302 walking, 305-326
+// skateboarding, 327 in the car, 361-400 the car crash. The clip is rotated to the walking
+// direction as a whole, so a fall off the south edge drops "down" the screen.
+//
+// Standing still never gets past frame 21: the walk clip's first frame (every other tick) sends the
+// person back to frame 20 whenever no key is held (person.gotoAndPlay(20)), so the stretch and the
+// sleeping "Z" drawn in frames 84-180 never show in the game.
 (function () {
   'use strict';
   var SRPG = window.SRPG;
@@ -62,113 +65,48 @@
   }
   function now() { return SRPG.engine ? SRPG.engine.frame : 0; }
 
-  // ---------------------------------------------------------------------------------------------
-  // the standing / sleeping timeline (frames 20..180 of the person clip), precomputed tick by tick
-  // with the clip's own frame scripts: 84 count2 = 0; 115 count2++ and back to 85 until it is 2;
-  // 116 back to 21 and count++, on the third time on to 120; 180 back to 132.
-
-  var IDLE = (function () {
-    var seq = [];
-    var f = 20, count = 0, count2 = 0;
-    while (seq.length < 600) {
-      seq.push(f);
-      var next = f + 1;
-      if (next === 84) count2 = 0;
-      if (next === 115) {
-        seq.push(115);
-        count2++;
-        next = count2 < 2 ? 85 : 116;
-      }
-      if (next === 116) {
-        seq.push(116);
-        count++;
-        next = count === 3 ? 120 : 21;
-      }
-      if (next === 181) next = 132;
-      f = next;
-    }
-    return seq;
-  })();
-  function idleFrame(ticks) {
-    if (ticks < IDLE.length) return IDLE[ticks];
-    // after the first pass the clip loops 132..180 for ever
-    var start = IDLE.indexOf(132);
-    return 132 + ((ticks - start) % 49);
-  }
-
-  // Standing, seen from above: head with the elbows out and forearms forward.
-  function standing(ctx, color, f) {
-    var stretch = f >= 104 && f <= 113 ? f - 104 : -1;
-    if (stretch < 0) {
-      strokeLine(ctx, [-9.4, -1.4, -13, -3.9, -13, -8.4], ARM, 1.1);
-      strokeLine(ctx, [9, -1, 13.4, -3.6, 13.4, -7.6], INK, 1.1);
-      head(ctx, -0.4, -0.6, HEAD_R, color, 1.3);
-      return;
-    }
-    // the stretch: arms out, a big yawn (head tipped back), arms folded in again
-    var poses = [
-      [-9.5, -2, -14, 0, -17, -5, 9, -1, 14, -4, 17, -8],
-      [-9.5, -1, -15, 1, -19, -1, 9.5, -1, 15, -3, 18, -5],
-      [-9.5, 0, -15, 2, -19, 1, 9.5, 0, 15, -2, 19, -3],
-      [-9.5, 0, -15, 1, -18, -2, 9.5, 0, 15, -1, 18, -4],
-      [-9.5, 1, -15, 0, -10, -3, 9.5, 1, 15, 0, 10, -3],
-      [-9.5, 1, -14, -1, -9, -5, 9.5, 1, 14, -1, 9, -5],
-      [-9.5, 0, -12, -4, -9, -8, 9.5, 0, 12, -4, 9, -8],
-      [-9.5, -1, -13, -4, -11, -8, 9, -1, 13, -4, 12, -8],
-    ];
-    var p = poses[Math.min(poses.length - 1, stretch)];
-    strokeLine(ctx, p.slice(0, 6), ARM, 1.1);
-    strokeLine(ctx, p.slice(6), INK, 1.1);
-    head(ctx, -0.4, -0.6, HEAD_R + (stretch >= 2 && stretch <= 4 ? 0.6 : 0), color, stretch >= 2 && stretch <= 4 ? 2.2 : 1.3);
-  }
-
-  // Asleep on the ground (frames 132..180): a body lying with bent knees, the head beside it and a
-  // "Z" floating up and fading (a 60-frame loop).
-  function sleeping(ctx, color, f) {
-    strokeLine(ctx, [-22.4, 14.2, -17.2, 11.2, -10, 18.8, -5, 4.4, 3.4, -1.2, 9.4, -6.4], INK, 1.3);
-    strokeLine(ctx, [3.4, -1.2, 11, -3.4], INK, 1.3);
-    head(ctx, 28.8, -19.5, HEAD_R, color, 1.3);
-    var z = ((f - 132) % 60 + 60) % 60;
-    var a = z < 40 ? 1 : 1 - (z - 40) / 20;
-    ctx.save();
-    ctx.globalAlpha = Math.max(0, a) * 0.9;
-    ctx.font = (6 + z * 0.08).toFixed(1) + 'px "Times New Roman", Times, serif';
-    ctx.fillStyle = '#ffffff';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('Z', 12.4 + z * 0.12, -30.4 - z * 0.25);
-    ctx.restore();
-  }
-
-  // Walking (28 frames): legs stride forward/back under the head, arms swing opposite.
-  function walking(ctx, color, i) {
-    var t = (i / 28) * Math.PI * 2;
-    var s = Math.sin(t);
-    leg(ctx, -3.5, s);
-    leg(ctx, 2.5, -s);
-    arm(ctx, -1, -s);
-    arm(ctx, 1, s);
+  // Standing (frame 20), seen from above: head with the elbows out and forearms forward.
+  function standing(ctx, color) {
+    strokeLine(ctx, [-9.4, -1.4, -13, -3.9, -13, -8.4], ARM, 1.1);
+    strokeLine(ctx, [9, -1, 13.4, -3.6, 13.4, -7.6], INK, 1.1);
     head(ctx, -0.4, -0.6, HEAD_R, color, 1.3);
   }
-  function leg(ctx, x, s) {
-    if (Math.abs(s) < 0.12) return;
-    var l = 8.5 * Math.abs(s);
-    if (s > 0) strokeLine(ctx, [x, -8, x + 0.8, -8 - l], LEG, 1.3);
-    else strokeLine(ctx, [x, 8, x - 0.8, 8 + l], LEG, 1.3);
-  }
-  // side = -1 left, 1 right; a = -1 (back) .. 1 (forward)
-  function arm(ctx, side, a) {
-    var sx = side * 9.4, ex = side * 13.2;
-    var ang = a * 1.05; // forearm angle from straight ahead
-    var hx = ex + side * Math.sin(Math.max(0, -ang)) * 4 + side * Math.sin(Math.max(0, ang)) * -1.5;
-    var hy = -3 - 6.5 * Math.cos(ang);
-    if (a < -0.5) hy = -3 + 5 * (-a - 0.5) * 2;
-    strokeLine(ctx, [sx, -1, ex, -3 - a * 1.5, hx, hy], side < 0 ? ARM : INK, 1.1);
+
+  // Walking: the person clip's frames 275-301 (frame 302 jumps straight back to 275, so a stride
+  // lasts 27 ticks), each pose held for two ticks. Measured from the original's frames: head centre,
+  // then each visible limb as [shade, x0, y0, x1, y1, ...] (shade 0 black, 1 dark grey, 2 grey); the
+  // first point lies under the head. Legs stick out ahead of and behind the head, the arms swing.
+  var WALK_FRAMES = 27, SKATE_FRAMES = 21;
+  var LIMB = ['#000000', '#333333', '#666666'];
+  var WALK = [
+    [-0.3, -0.6, [[2, 1.2, -8.5, 1.5, -10, 2.2, -16.2], [2, -8.3, -1.8, -9.8, -2, -14.5, -3.5, -14.2, -13.2], [0, 7.8, -0.7, 9.2, -0.8, 12.5, -1.2], [2, -3.2, 6.8, -3.8, 8.2, -4.5, 16]]],
+    [-0.5, -0.7, [[1, 1.4, -8.5, 1.8, -10, 1.5, -12.5], [1, -8.8, -0.7, -10.2, -0.8, -14.2, -3, -14.8, -11.5], [1, 7.5, -2, 9, -2.2, 12.8, -4], [1, -4.5, 6.4, -5.2, 7.8, -4.2, 12.2]]],
+    [-0.8, -0.7, [[1, -9, -0.8, -10.5, -0.8, -14.8, -3, -15, -9.2], [1, 7.3, -1.6, 8.8, -1.8, 13.2, -5.5]]],
+    [-1.2, -0.7, [[1, 7, -0.8, 8.5, -0.8, 12.5, -3.2, 12.5, -7.8], [1, -9.5, -0.8, -11, -0.8, -15.2, -3.2, -15.2, -7.5]]],
+    [-1.5, -0.8, [[1, 6.8, -0.8, 8.2, -0.8, 12.8, -3.8, 12.5, -10.2], [1, -9.8, -0.8, -11.2, -0.8, -15.5, -3.2]]],
+    [-1.8, -0.8, [[1, -4.9, -8.4, -5.5, -9.8, -6, -13.2], [2, 6.3, -1.8, 7.8, -2, 12.5, -4, 12, -12.8], [0, -10, -0.8, -11.5, -0.8, -15.8, -0.5], [1, -0.9, 7.3, -0.8, 8.8, 0.8, 11.2]]],
+    [-1.8, -0.7, [[2, -4.7, -8.3, -5.2, -9.8, -6, -17.2], [2, 6.3, -1.6, 7.8, -1.8, 11.8, -4.2, 11.5, -12.8], [1, -10, -0.8, -11.5, -0.8, -15.5, 2.2], [2, 0.6, 7.1, 1, 8.5, 0, 15]]],
+    [-1.8, -0.6, [[2, -4.5, -8.3, -5, -9.8, -5.8, -17.2], [1, 6.3, -1.6, 7.8, -1.8, 11.2, -3.2, 11.2, -9.8], [2, -9.8, 1.2, -11.2, 1.5, -14.2, 5.2], [2, -1.8, 7.5, -1.8, 9, 0.8, 8.8, 0.2, 15]]],
+    [-1.6, -0.7, [[1, -5.1, -8.1, -5.8, -9.5, -5.5, -13.2], [1, 6.5, -0.8, 8, -0.8, 11.8, -3.5, 11.2, -8], [0, -9.8, -0.3, -11.2, -0.2, -16, -0.8], [1, -0, 7.3, 0.2, 8.8, 0.5, 11]]],
+    [-1.4, -0.7, [[1, 6.8, -0.8, 8.2, -0.8, 12.2, -6.8], [1, -9.5, -1.8, -11, -2, -15.2, -4.5]]],
+    [-1.3, -0.8, [[1, -9.5, -0.8, -11, -0.8, -14.5, -6.5], [1, 6.8, 0.1, 8.2, 0.2, 12.8, -3.5]]],
+    [-0.9, -0.7, [[1, -9.2, -0.8, -10.8, -0.8, -15.2, -4.2, -14.8, -9.5], [0, 7.2, -0.8, 8.8, -0.8, 13, -1]]],
+    [-0.6, -0.7, [[1, -8.8, -0.3, -10.2, -0.2, -14.5, -4.5, -14.2, -11.8], [1, 7.5, -0.8, 9, -0.8, 13, 3]]],
+    [-0.3, -0.7, [[2, -8.5, -0.8, -10, -0.8, -13.8, -4.5, -13.5, -13.8], [1, 1, -8.8, 1.2, -10.2, 2, -12.8], [2, 7.5, 1.4, 9, 1.8, 11.8, 5.8], [1, -3.9, 6.7, -4.5, 8, -4, 11.8]]]
+  ];
+  function walking(ctx, color, i) {
+    var p = WALK[Math.min(13, Math.floor(i / 2))];
+    for (var k = 0; k < p[2].length; k++) {
+      var l = p[2][k];
+      strokeLine(ctx, l.slice(1), LIMB[l[0]], 1.2);
+    }
+    head(ctx, p[0], p[1], HEAD_R, color, 1.3);
   }
 
-  // Skateboarding (22 frames): on the board, one arm up and forward, the other down and out.
+  // Skateboarding: frames 305-325 (326 jumps back to 305, a 21-tick cycle): on the board, one arm up
+  // and forward, the other down and out.
   function skating(ctx, color, i) {
-    var w = Math.sin((i / 22) * Math.PI * 2);
+    var w = Math.sin((i / SKATE_FRAMES) * Math.PI * 2);
     ctx.beginPath();
     if (ctx.roundRect) ctx.roundRect(-5.5, -18.2, 11.7, 35, 5.8);
     else ctx.rect(-5.5, -18.2, 11.7, 35);
@@ -404,8 +342,7 @@
 
   var sprites = (SRPG.sprites = {
     // opts: { rot (deg, 0 = up), color, phase (walk cycle; null = standing), mode: 'walk' | 'skate' |
-    //         'car' | 'sportscar', anim: null | 'fall' | 'hit' | 'crash' | 'wake', t: anim progress 0..1,
-    //         idle: ticks standing still (optional; otherwise counted here from engine frames) }
+    //         'car' | 'sportscar', anim: null | 'fall' | 'hit' | 'crash' | 'wake', t: anim progress 0..1 }
     player: function (ctx, x, y, o) {
       o = o || {};
       var color = o.color || NPC_BLUE;
@@ -426,13 +363,11 @@
         ctx.drawImage(carCanvas(o.mode === 'sportscar', null), 0.2 - CAR_OX, 12.5 - CAR_OY, CAR_W, CAR_H);
       } else if (o.phase != null) {
         var i = sectionTicks(o.mode === 'skate' ? 'skate' : 'walk');
-        if (o.mode === 'skate') skating(ctx, color, i % 22);
-        else walking(ctx, color, i % 28);
+        if (o.mode === 'skate') skating(ctx, color, i % SKATE_FRAMES);
+        else walking(ctx, color, i % WALK_FRAMES);
       } else {
-        var idle = o.idle != null ? o.idle : sectionTicks('idle');
-        var f = idleFrame(idle);
-        if (f >= 132) sleeping(ctx, color, f);
-        else standing(ctx, color, f);
+        sectionTicks('idle');
+        standing(ctx, color);
       }
       ctx.restore();
     },
@@ -445,7 +380,7 @@
       ctx.translate(x, y);
       if (o.kind === 'hobo') {
         // Homeless Harold sits against Sticky's wall, legs out toward the sidewalk; now and then
-        // he lifts his bottle (the original's 165-frame loop with random repeats).
+        // he lifts his bottle and drinks for a while.
         ctx.rotate(0.087);
         hobo(ctx, o.color || '#ff9900', f);
       } else if (o.kind === 'smokes') {
@@ -454,7 +389,7 @@
         kid(ctx, o.color || '#33ccff', f);
       } else {
         ctx.rotate(((o.rot || 0) * Math.PI) / 180);
-        if (o.phase != null && o.phase !== 0) walking(ctx, o.color || '#990000', Math.floor(o.phase) % 28);
+        if (o.phase != null && o.phase !== 0) walking(ctx, o.color || '#990000', Math.floor(o.phase) % WALK_FRAMES);
         else dealerStand(ctx, o.color || '#990000', f);
       }
       ctx.restore();
@@ -481,20 +416,38 @@
     },
 
     // exposed for tests
-    idleFrame: idleFrame,
+    hoboFrame: hoboFrame,
+    WALK_FRAMES: WALK_FRAMES,
+    SKATE_FRAMES: SKATE_FRAMES,
     carCanvas: carCanvas,
     CARFALL_FRAMES: CARFALL_S.length,
     FALL_VISIBLE: FALL_Y.length,
   });
 
+  // Homeless Harold's 165-frame clip, run tick by tick with its own frame scripts: at frame 45 he
+  // goes back to frame 1 unless random(5) == 0 (then 46-140 he lifts the bottle and drinks); at 140
+  // he drinks again from 71 unless random(5) == 0; at 165 back to 1. Precomputed once with a
+  // private seeded generator (so drawing never touches the game's random numbers) and looped where
+  // the clip is back at frame 1.
+  var HOBO = (function () {
+    var seq = [], n = 1, a = 20051;
+    function rnd5() { a = (Math.imul(a, 1103515245) + 12345) & 0x7fffffff; return (a >> 16) % 5; }
+    while (seq.length < 7000 || n !== 1) {
+      seq.push(n);
+      n++;
+      if (n === 45 && rnd5() !== 0) n = 1;
+      else if (n === 140 && rnd5() !== 0) n = 71;
+      else if (n === 165) n = 1;
+    }
+    return seq;
+  })();
+  function hoboFrame(f) { return HOBO[((f % HOBO.length) + HOBO.length) % HOBO.length]; }
+
   // Homeless Harold (orange head), sitting; `f` = engine frame.
   function hobo(ctx, color, f) {
-    // 1-45 sitting, then (one time in five) 46-140 raising the bottle and drinking, 141-165 lowering
-    var cyc = Math.floor(f / 165);
-    var drinks = ((cyc * 2654435761) >>> 0) % 5 === 0;
-    var k = f % 165;
+    var k = hoboFrame(f) - 1;
     var lift = 0;
-    if (drinks && k > 45) lift = k < 71 ? (k - 45) / 26 : k < 140 ? 1 : Math.max(0, 1 - (k - 140) / 25);
+    if (k > 45) lift = k < 71 ? (k - 45) / 26 : k < 140 ? 1 : Math.max(0, 1 - (k - 140) / 25);
     strokeLine(ctx, [3, -8, 10, -16, 19, -7], ARM, 1.1); // knees up
     strokeLine(ctx, [7, -5.5, 12.5, -7, 21, -4], ARM, 1.1);
     strokeLine(ctx, [7, 6, 12, 7.5, 20, 6.5], ARM, 1.1); // arm resting on the knee

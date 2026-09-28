@@ -159,16 +159,46 @@ function installAnimatedHook(page) {
     if (r.d === 5) check(castle && !mansion && r.cone[2] > 100, 'dwelling 5: the castle (and its cone above the edge)');
   }
 
-  console.log('Player sprite timeline (the person clip)');
-  const idle = await page.evaluate(() => {
-    const f = SRPG.sprites.idleFrame;
-    const first132 = (() => { for (let i = 0; i < 2000; i++) if (f(i) === 132) return i; return -1; })();
-    return { f0: f(0), f95: f(95), f96: f(96), f127: f(127), f128: f(128), first120: (() => { for (let i = 0; i < 2000; i++) if (f(i) === 120) return i; return -1; })(), first132, loop: [f(first132 + 48), f(first132 + 49)] };
+  console.log('Player sprite: standing still (the walk clip sends the person back to frame 20 every other tick)');
+  const stand = await page.evaluate(() => {
+    const s = SRPG.game.s;
+    const grab = () => {
+      SRPG.engine.draw();
+      const c = document.querySelector('canvas');
+      const x = c.getContext('2d');
+      const k = c.width / 550;
+      return Array.from(x.getImageData(Math.round((247 - 30) * k), Math.round((197 - 30) * k), Math.round(60 * k), Math.round(60 * k)).data);
+    };
+    s.mapx = 456; s.mapy = 630; s.driving = 0;
+    SRPG.city.cars.forEach((c) => { c.s = 500; });
+    SRPG.engine.step(2);
+    const a = grab();
+    let same = true;
+    for (let i = 0; i < 20; i++) {
+      SRPG.city.cars.forEach((c) => { c.s = 500; });
+      SRPG.engine.step(25);
+      const b = grab();
+      for (let j = 0; j < a.length; j++) if (a[j] !== b[j]) { same = false; break; }
+    }
+    return { same };
   });
-  check(idle.f0 === 20 && idle.f95 === 115 && idle.f96 === 85, 'standing plays 20..115, then 85..115 again (count2)');
-  check(idle.f127 === 116 && idle.f128 === 21, 'then 116 and back to 21 (count)');
-  check(idle.first120 === 382, 'after three rounds (382 ticks, ~11 s) it goes on to fall asleep (frame 120), got ' + idle.first120);
-  check(idle.first132 === 394 && idle.loop[0] === 180 && idle.loop[1] === 132, 'asleep from frame 132, looping 132..180');
+  check(stand.same, 'standing still for 500 ticks keeps the standing pose (no stretch, no falling asleep)');
+
+  console.log('Homeless Harold (clip 455: back to 1 at 45 unless random(5) == 0, back to 71 at 140, 165 -> 1)');
+  const hobo = await page.evaluate(() => {
+    const f = SRPG.sprites.hoboFrame;
+    let bad = 0, drinks = 0, n45 = 0, back1 = 0;
+    for (let i = 0; i < 20000; i++) {
+      const a = f(i), b = f(i + 1);
+      if (a === 46) drinks++;
+      if (a === 44) { if (b === 45) n45++; else if (b === 1) back1++; }
+      const ok = b === a + 1 || (a === 44 && b === 1) || (a === 139 && b === 71) || (a === 164 && b === 1);
+      if (!ok) bad++;
+    }
+    return { bad, drinks, n45, back1, first: f(0) };
+  });
+  check(hobo.bad === 0 && hobo.first === 1, 'the hobo clip only steps or jumps as its frame scripts allow (' + hobo.bad + ' bad steps)');
+  check(hobo.drinks > 0 && hobo.n45 > 0 && hobo.back1 > hobo.n45 * 2, 'he mostly sits, now and then drinks (' + hobo.n45 + ' drinks vs ' + hobo.back1 + ' repeats)');
 
   console.log('Cars');
   const cars = await page.evaluate(() => {
@@ -254,9 +284,7 @@ function installAnimatedHook(page) {
   await moving(['ArrowRight', 'Shift'], 9, 'skate-right');
   await t.step(1); await shot('standing');
   for (let i = 0; i < 40; i++) await t.step(10); // drawn along the way, as in the game
-  await shot('asleep');
-  const sleepMode = await page.evaluate(() => SRPG.sprites.idleFrame(401));
-  check(sleepMode >= 132 && sleepMode <= 180, 'standing still for 400 ticks: asleep (frame ' + sleepMode + ')');
+  await shot('standing-400-ticks');
 
   console.log('Driving');
   await t.set({ items: { car: 1 }, driving: 1, mapx: 30, mapy: 300, rot: 0 });
@@ -311,10 +339,61 @@ function installAnimatedHook(page) {
     const s = Object.assign({}, SRPG.game.s, { mapx: 60, mapy: -60, dwelling: 1 });
     const c = document.createElement('canvas'); c.width = 550; c.height = 400;
     const x = c.getContext('2d');
-    const px = (f) => { SRPG.mapArt.drawAnimated(x, s, f); return Array.from(x.getImageData(60 + 184.5, -60 + 333, 1, 1).data); };
-    return [px(0), px(15), px(69)];
+    // ENTER's first letter at map (184.5, 333); clip frame n is engine frame n - 1
+    const px = (f, X, Y, st) => { SRPG.mapArt.drawAnimated(x, st || s, f); return Array.from(x.getImageData(st ? st.mapx + X : 60 + X, st ? st.mapy + Y : -60 + Y, 1, 1).data); };
+    const enter = [px(0, 184.5, 333), px(8, 184.5, 333), px(9, 184.5, 333), px(69, 184.5, 333)];
+    // BUS DEPOT and the Sticky's neon: count sign-coloured pixels in their patches
+    const count = (f, st, X, Y, W, H, pred) => {
+      SRPG.mapArt.drawAnimated(x, st, f);
+      const d = x.getImageData(st.mapx + X, st.mapy + Y, W, H).data;
+      let n = 0;
+      for (let i = 0; i < d.length; i += 4) if (pred(d[i], d[i + 1], d[i + 2])) n++;
+      return n;
+    };
+    const sb = Object.assign({}, s, { mapx: -400, mapy: -150 });
+    const lit = (r, g, b) => r < 30 && g < 30 && b > 230;
+    const dark = (r, g, b) => r < 30 && g < 30 && b > 130 && b < 175;
+    const bus = { dark1: count(0, sb, 670, 226, 260, 24, dark), lit1: count(0, sb, 670, 226, 260, 24, lit), lit40: count(39, sb, 670, 226, 260, 24, lit), dark40: count(39, sb, 670, 226, 260, 24, dark) };
+    const sn = Object.assign({}, s, { mapx: 600, mapy: 100 });
+    const yel = (r, g, b) => r > 235 && g > 180 && g < 225 && b < 60;
+    const org = (r, g, b) => r > 180 && r < 225 && g > 80 && g < 125 && b < 40;
+    const fla = (r, g, b) => r > 235 && g > 130 && g < 170 && b < 40;
+    const neon = {};
+    [1, 20, 50, 66, 70].forEach((n) => {
+      neon[n] = { y: count(n - 1, sn, -335, 32, 65, 164, yel), o: count(n - 1, sn, -335, 32, 65, 164, org), f: count(n - 1, sn, -335, 32, 65, 164, fla) };
+    });
+    return { enter, bus, neon };
   });
-  check(anim[0][1] < 150 && anim[2][1] > 200, 'ENTER sign: unlit at frame 1, the E lit later (' + anim[0] + ' / ' + anim[2] + ')');
+  const green = (p) => p[1] > 200;
+  check(!green(anim.enter[0]) && !green(anim.enter[1]) && green(anim.enter[2]) && green(anim.enter[3]),
+    'ENTER: the E lights at clip frame 10, not before (' + anim.enter.map((p) => p[1]).join(', ') + ')');
+  check(anim.bus.dark1 > 200 && anim.bus.lit1 < 20 && anim.bus.lit40 > 200 && anim.bus.dark40 < 20,
+    'BUS DEPOT: unlit at frame 1, fully lit at frame 40 ' + JSON.stringify(anim.bus));
+  const nn = anim.neon;
+  check(nn[1].y < 10 && nn[1].o > 100, "Sticky's neon: all tubes dark orange at frame 1 " + JSON.stringify(nn[1]));
+  check(nn[20].y > 30 && nn[20].o > 100 && nn[50].y > nn[20].y && nn[50].o > 20, 'the words light up in turn (frames 20, 50) ' + JSON.stringify([nn[20], nn[50]]));
+  check(nn[66].f > 100 && nn[66].y < 10, 'frames 65-69 flash orange ' + JSON.stringify(nn[66]));
+  check(nn[70].y > 100 && nn[70].o < 10, 'frame 70: everything lit ' + JSON.stringify(nn[70]));
+
+  console.log('Drawing never uses the game\'s random numbers');
+  const rngSafe = await page.evaluate(() => {
+    SRPG.rng.seed(99);
+    const a = SRPG.rng.float();
+    SRPG.rng.seed(99);
+    const c = document.createElement('canvas'); c.width = 550; c.height = 400;
+    const x = c.getContext('2d');
+    const s = Object.assign({}, SRPG.game.s, { dwelling: 5 });
+    for (let f = 0; f < 300; f += 7) {
+      SRPG.mapArt.drawSky(x, s, f);
+      SRPG.mapArt.drawAnimated(x, s, f);
+      SRPG.sprites.npc(x, 100, 100, { kind: 'hobo', color: '#ff9900' });
+      SRPG.sprites.npc(x, 100, 100, { kind: 'smokes', color: '#33ccff' });
+      SRPG.sprites.player(x, 200, 200, { rot: 90, color: '#0066cc', phase: f, mode: 'walk' });
+      SRPG.sprites.car(x, 300, 200, { rot: 0, tint: { r: 60, g: 100, b: 150 }, fall: f % 30 });
+    }
+    return SRPG.rng.float() === a;
+  });
+  check(rngSafe, 'sky, animated signs, street people, player and cars leave SRPG.rng untouched');
   await t.set({ mapx: 40, mapy: -250 });
   for (const f of [3, 14, 24, 55]) { await page.evaluate((f) => { SRPG.engine.frame = f; SRPG.engine.draw(); }, f); await shot('anim-enter-' + f); }
   await t.set({ mapx: 450, mapy: -490 });
@@ -323,6 +402,32 @@ function installAnimatedHook(page) {
   for (const f of [6, 30, 66]) { await page.evaluate((f) => { SRPG.engine.frame = f; SRPG.engine.draw(); }, f); await shot('anim-neon-' + f); }
   await t.set({ mapx: -470, mapy: 20 });
   for (const f of [5, 20, 40]) { await page.evaluate((f) => { SRPG.engine.frame = f; SRPG.engine.draw(); }, f); await shot('anim-bus-' + f); }
+
+  console.log('Side by side with the original screenshots (same mapx / mapy, located on the full map)');
+  // [reference, mapx, mapy, rotation]: positions found by matching each screenshot to the map
+  const refs = [
+    ['start-position', 457, 629, 0], ['map-car-store', 312, -258, 0], ['map-pawn-dealer', 144, -498, 90],
+    ['map-stickys-hobo', 448, 110, 90], ['map-casino', 440, -330, 90], ['map-mcsticks-nli', 328, 374, 0],
+    ['map-top-edge-bank', 312, 978, 0], ['hud-map', 448, 754, 0],
+  ];
+  for (const [ref, mx, my, rot] of refs) {
+    const file = path.join(SCR, 'ref', ref + '.png');
+    if (!fs.existsSync(file)) continue;
+    await page.evaluate(() => { SRPG.city.cars.forEach((c) => { c.s = 500; }); });
+    await t.set({ mapx: mx, mapy: my, rot, time: 8, driving: 0 });
+    await t.step(1);
+    const mine = (await page.screenshot()).toString('base64');
+    const side = await page.evaluate(async ([a, b]) => {
+      const load = async (b64) => { const im = new Image(); im.src = 'data:image/png;base64,' + b64; await im.decode(); return im; };
+      const A = await load(a), B = await load(b);
+      const c = document.createElement('canvas'); c.width = A.width + B.width + 4; c.height = Math.max(A.height, B.height);
+      const x = c.getContext('2d');
+      x.fillStyle = '#f0f'; x.fillRect(0, 0, c.width, c.height);
+      x.drawImage(A, 0, 0); x.drawImage(B, A.width + 4, 0);
+      return c.toDataURL('image/png');
+    }, [fs.readFileSync(file).toString('base64'), mine]);
+    fs.writeFileSync(path.join(OUT, 'vs-' + ref + '.png'), Buffer.from(side.split(',')[1], 'base64'));
+  }
 
   const errs = t.errors.filter((e) => !/requestfailed|ERR_FILE_NOT_FOUND/.test(e));
   check(errs.length === 0, 'no page errors' + (errs.length ? ': ' + errs.join(' | ') : ''));

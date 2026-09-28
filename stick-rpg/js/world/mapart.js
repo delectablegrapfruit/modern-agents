@@ -297,10 +297,6 @@
     for (i = 0; i < WEST_LIGHT.length; i += 2) p.push(WEST_LIGHT[i + 1] + 10, WEST_LIGHT[i]);
     p.push(-987, -21);
     poly(ctx, p, '#663300');
-    // the slabs' own thickness where the sidewalks and the road reach the edge
-    rect(ctx, -999, -567, 12, 84, '#6b6560');
-    rect(ctx, -999, -483, 12, 180, '#3b3b3b');
-    rect(ctx, -999, -303, 12, 86, '#6b6560');
     // south face
     p = [-457, 896];
     for (i = 0; i < SOUTH_OUTER.length; i += 2) p.push(SOUTH_OUTER[i], SOUTH_OUTER[i + 1]);
@@ -314,11 +310,7 @@
     for (i = 0; i < SOUTH_LIGHT.length; i += 2) p.push(SOUTH_LIGHT[i], SOUTH_LIGHT[i + 1]);
     p.push(444, 896);
     poly(ctx, p, '#663300');
-    // sidewalk and road ends: slanted slabs
-    poly(ctx, [-210, 896, -126, 896, -126, 907, -222, 907], '#737373', '#333', 0.8);
-    poly(ctx, [-126, 896, 55, 896, 55, 907, -126, 907], '#3b3b3b', '#1a1a1a', 0.8);
-    poly(ctx, [55, 896, 141, 896, 141, 907, 55, 907], '#737373', '#333', 0.8);
-    // roots and cracks in the soil
+    // roots and cracks in the soil (under the slab ends drawn next)
     var r = prng(3);
     ctx.strokeStyle = 'rgba(214,170,120,0.8)';
     ctx.lineWidth = 0.9;
@@ -331,6 +323,14 @@
     for (i = 0; i < 85; i++) {
       crack(ctx, -450 + r() * 890, 899 + r() * 7, r, false);
     }
+    // the slabs' own thickness where the sidewalks and the road reach the edge
+    rect(ctx, -999, -567, 12, 84, '#6b6560');
+    rect(ctx, -999, -483, 12, 180, '#3b3b3b');
+    rect(ctx, -999, -303, 12, 86, '#6b6560');
+    // sidewalk and road ends on the south face: slanted slabs
+    poly(ctx, [-210, 896, -126, 896, -126, 907, -222, 907], '#737373', '#333', 0.8);
+    poly(ctx, [-126, 896, 55, 896, 55, 907, -126, 907], '#3b3b3b', '#1a1a1a', 0.8);
+    poly(ctx, [55, 896, 141, 896, 141, 907, 55, 907], '#737373', '#333', 0.8);
   }
   function crack(ctx, x, y, r, vertical) {
     var a = (vertical ? Math.PI / 2 : 0) + (r() - 0.5) * 1.6;
@@ -675,24 +675,86 @@
       ctx.strokeStyle = OUT;
       ctx.stroke();
     }
-    function merlon(x, y, w, h, g) {
-      rect(ctx, x, y, w, h, g || '#8c8c8c', OUT, 1.5);
-      rect(ctx, x + 1.5, y + 1.5, w - 3, 1.5, 'rgba(255,255,255,0.35)');
+    // A 3-D merlon on a straight wall: front face x0..x1 from y down to yb, a light top face and a
+    // side face receding up and to the right.
+    function block(x0, x1, y, yb, front, side) {
+      var d = 4.5, u = 6.5;
+      poly(ctx, [x1, y, x1 + d, y - u, x1 + d, yb - u, x1, yb], side, OUT, 1.4);
+      poly(ctx, [x0, y, x1, y, x1 + d, y - u, x0 + d, y - u], '#e6e6e6', OUT, 1.4);
+      poly(ctx, [x0, y, x1, y, x1, yb, x0, yb], front, OUT, 1.4);
     }
-    // crenellated ring on top of a round tower
-    function ring(cx, r, top, bottom) {
-      var ry = r * 0.24, i, a;
-      body(cx, r, top, bottom);
-      for (i = 0; i < 6; i++) { // back battlements
-        a = Math.PI + 0.3 + i * (Math.PI - 0.6) / 5;
-        merlon(cx + (r - 5) * Math.cos(a) - 5, top + (r - 5) * 0.24 * Math.sin(a) - 13, 10, 13, '#a6a6a6');
+    // The crenellated crown on top of a round tower (a wider ring): its outer band down to the rim
+    // ellipse at yb, the inner face of the far side with its merlons, the pale walkway inside and
+    // the near merlons in front of it. Rim ellipse centred at yc, radii r / ry; 12 merlons.
+    function crown(cx, r, yc, ry, yb) {
+      var i, k, t, p;
+      var H = 13.5, W = 19 * Math.PI / 180, IN = 15;
+      var inner = lin(ctx, cx - r, 0, cx + r, 0, [0, '#bdbdbd', 0.45, '#9a9a9a', 1, '#7a7a7a']);
+      // outer band
+      ctx.beginPath();
+      ctx.moveTo(cx - r, yc);
+      ctx.lineTo(cx - r, yb);
+      ctx.ellipse(cx, yb, r, ry, 0, Math.PI, 0, true);
+      ctx.lineTo(cx + r, yc);
+      ctx.closePath();
+      ctx.fillStyle = grad(cx, r);
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = OUT;
+      ctx.stroke();
+      function tooth(a0, a1, h) {
+        var q = [];
+        for (k = 0; k <= 4; k++) { t = a0 + (a1 - a0) * k / 4; q.push(cx + r * Math.cos(t), yc + ry * Math.sin(t)); }
+        for (k = 4; k >= 0; k--) { t = a0 + (a1 - a0) * k / 4; q.push(cx + r * Math.cos(t), yc + ry * Math.sin(t) - h); }
+        return q;
       }
-      ellipse(ctx, cx, top, r, ry, grad(cx, r), OUT, 2);
-      ellipse(ctx, cx, top + 2, r - 7, ry - 2.5, '#dadada', OUT, 1.4);
-      for (i = 0; i < 5; i++) { // front battlements
-        a = 0.35 + i * (Math.PI - 0.7) / 4;
-        merlon(cx + r * Math.cos(a) - 5.5, top + ry * Math.sin(a) - 13, 11, 16, '#8c8c8c');
+      // far merlons (their inner faces), then the opening: inner face of the far wall above the
+      // walkway, which runs round to the near rim
+      for (i = 0; i < 12; i++) {
+        t = (4 + 30 * i) * Math.PI / 180;
+        if (Math.sin(t) >= 0) continue;
+        poly(ctx, tooth(t - W / 2, t + W / 2, H - 1), inner, OUT, 1.6);
       }
+      ellipse(ctx, cx, yc, r, ry, inner, OUT, 1.8);
+      ctx.save();
+      ctx.beginPath();
+      ctx.ellipse(cx, yc, r, ry, 0, 0, Math.PI * 2);
+      ctx.clip();
+      ellipse(ctx, cx, yc + IN, r, ry, '#d9d9d9', OUT, 1.6);
+      ctx.restore();
+      // near merlons, standing on the rim in front of the walkway
+      for (i = 0; i < 12; i++) {
+        t = (4 + 30 * i) * Math.PI / 180;
+        if (Math.sin(t) < 0) continue;
+        p = tooth(t - W / 2, t + W / 2, H);
+        path(ctx, p);
+        ctx.fillStyle = grad(cx, r);
+        ctx.fill();
+        // outline the top and sides only: the merlon grows out of the band
+        ctx.beginPath();
+        ctx.moveTo(p[0], p[1]);
+        for (k = 18; k >= 10; k -= 2) ctx.lineTo(p[k], p[k + 1]);
+        ctx.lineTo(p[8], p[9]);
+        ctx.lineWidth = 1.6;
+        ctx.strokeStyle = OUT;
+        ctx.stroke();
+      }
+    }
+    // A window on a crown's band, its bottom edge following the band's curve.
+    function crownWindow(x, y, w, h, cx, r, ry) {
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + w, y);
+      for (var k = 0; k <= 6; k++) {
+        var xx = x + w - w * k / 6, u = (xx - cx) / r;
+        ctx.lineTo(xx, y + h + ry * 0.3 * (Math.sqrt(Math.max(0, 1 - u * u)) - 1));
+      }
+      ctx.closePath();
+      ctx.fillStyle = '#6e6e6e';
+      ctx.fill();
+      ctx.lineWidth = 1.6;
+      ctx.strokeStyle = OUT;
+      ctx.stroke();
     }
     function slit(x, y) {
       ctx.beginPath();
@@ -703,14 +765,18 @@
       ctx.strokeStyle = OUT;
       ctx.stroke();
     }
+    var k;
     // back-right tower with the yellow flag
-    body(-254, 25, -857, -777);
-    ring(-253.5, 37.5, -896, -857);
+    body(-253, 26.5, -860, -738);
+    crown(-254.5, 38.5, -882, 15.75, -860);
     slit(-241, -819);
     if (!SKIP.flag0) castleFlag(ctx, 0, 0);
-    // back wall
-    rect(ctx, -426.6, -831.7, 62.6, 75, '#4d4d4d', OUT, 2);
-    for (var k = 0; k < 3; k++) merlon(-424 + k * 21, -840, 14, 9, '#6e6e6e');
+    // back wall: dark face, a pale walkway and three merlons
+    rect(ctx, -426.6, -817, 62.6, 60, '#4d4d4d', OUT, 2);
+    rect(ctx, -426.6, -821.5, 62.6, 4.5, '#e0e0e0', OUT, 1.4);
+    block(-423.5, -408.5, -829, -821.5, '#4d4d4d', '#8c8c8c');
+    block(-399, -384.5, -829, -821.5, '#4d4d4d', '#8c8c8c');
+    block(-376.5, -362, -829, -821.5, '#4d4d4d', '#8c8c8c');
     // tall tower with the blue cone
     body(-452.8, 26, -842, -760);
     body(-452, 37.5, -889, -842);
@@ -727,41 +793,48 @@
     ctx.stroke();
     // walkway from the front-left tower to the tall tower
     poly(ctx, [-489, -801, -456.6, -823, -456.6, -810, -489, -788], '#cccccc', OUT, 1.8);
-    // east wall with the gate
+    // east wall with the gate: a portcullis of black bars over a pale opening
     poly(ctx, [-305.6, -766.7, -259, -824, -259, -729, -300, -679], lin(ctx, -305, 0, -259, 0, [0, '#9a9a9a', 1, '#7a7a7a']), OUT, 2);
     poly(ctx, [-305.6, -766.7, -259, -824, -259, -815, -303, -760], '#d0d0d0', OUT, 1.4);
-    ctx.save();
-    ctx.beginPath();
-    ctx.moveTo(-300, -682);
-    ctx.lineTo(-300, -742);
-    ctx.bezierCurveTo(-298, -770, -272, -782, -266, -760);
-    ctx.lineTo(-266, -729);
-    ctx.closePath();
+    function gate() {
+      ctx.beginPath();
+      ctx.moveTo(-300, -682);
+      ctx.lineTo(-300, -742);
+      ctx.bezierCurveTo(-298, -770, -272, -782, -266, -760);
+      ctx.lineTo(-266, -729);
+      ctx.closePath();
+    }
+    gate();
     ctx.fillStyle = '#333333';
     ctx.fill();
-    ctx.lineWidth = 2;
+    ctx.save();
+    ctx.clip();
+    // small pale gaps between the bars, in rows sloping up with the wall
+    for (k = 0; k < 3; k++) {
+      for (var j = 0; j < 9; j++) {
+        var hx = -292.5 + k * 8.5, hy = -774 + j * 11 - k * 3.8;
+        poly(ctx, [hx, hy, hx + 3, hy - 1.3, hx + 3, hy + 5.7, hx, hy + 7], '#cccccc');
+      }
+    }
+    ctx.restore();
+    gate();
+    ctx.lineWidth = 2.2;
     ctx.strokeStyle = '#1a1a1a';
     ctx.stroke();
-    ctx.clip();
-    ctx.strokeStyle = '#a6a6a6';
-    ctx.lineWidth = 1.4;
-    ctx.beginPath();
-    for (k = 0; k < 6; k++) { ctx.moveTo(-300 + k * 6.5, -790); ctx.lineTo(-300 + k * 6.5, -670); }
-    for (k = 0; k < 14; k++) { ctx.moveTo(-305, -770 + k * 8); ctx.lineTo(-260, -770 + k * 8 - 20); }
-    ctx.stroke();
-    ctx.restore();
-    // front curtain wall
-    rect(ctx, -501.6, -759, 140, 110, '#666666', OUT, 2);
-    for (k = 0; k < 5; k++) merlon(-494 + k * 27.5, -769, 17, 10);
+    // front curtain wall: face, a pale walkway behind five merlons
+    rect(ctx, -501.6, -745.5, 140, 96.5, '#666666', OUT, 2);
+    rect(ctx, -501.6, -751.5, 140, 6, '#e0e0e0', OUT, 1.4);
+    var ML = [[-493.5, -477], [-465.5, -449.5], [-443, -426], [-414.5, -397.5], [-381.5, -365]];
+    for (k = 0; k < ML.length; k++) block(ML[k][0], ML[k][1], -756, -745.5, '#7a7a7a', '#999999');
     // front towers
     body(-531.6, 28.5, -769, -649);
-    ring(-530.5, 42.5, -825, -769);
-    rect(ctx, -549, -791.7, 25, 20, '#8c8c8c', OUT, 1.6);
+    crown(-530.5, 42.5, -812, 15, -783);
+    crownWindow(-548.5, -789.5, 30, 18, -530.5, 42.5, 15);
     slit(-518, -719);
     if (!SKIP.flag1) castleFlag(ctx, 1, 0);
     body(-334.4, 28.7, -769, -649);
-    ring(-334.3, 41.3, -827, -769);
-    rect(ctx, -344, -791.7, 25, 20, '#8c8c8c', OUT, 1.6);
+    crown(-334.5, 41.3, -812, 15, -783);
+    crownWindow(-350.5, -789.5, 30.5, 18, -334.5, 41.3, 15);
     slit(-323, -719);
     if (!SKIP.flag2) castleFlag(ctx, 2, 0);
     // path from the gate to the sidewalk, and the guard waving at the gate
@@ -773,9 +846,9 @@
   // The castle's three flags (yellow, green, red); `wave` -1..1 ripples them (the original's
   // 16-frame flag clips).
   var FLAGS = [
-    [-251.6, -936.7, -890, '#ffff66', '#cccc00'],
-    [-535, -884, -818, '#33cc33', '#009900'],
-    [-337, -858, -818, '#ff3333', '#cc0000'],
+    [-251.6, -936.7, -879.5, '#ffff66', '#cccc00'],
+    [-535, -884, -809.5, '#33cc33', '#009900'],
+    [-337, -858, -811, '#ff3333', '#cc0000'],
   ];
   function castleFlag(ctx, i, wave) {
     var F = FLAGS[i], x = F[0], top = F[1];
@@ -795,7 +868,7 @@
   }
   // The little guard at the castle gate waves (four poses, 3 frames each).
   function guard(ctx, x, y, pose) {
-    ellipse(ctx, x, y, 4.5, 4.5, '#ffffff', '#000', 1.2);
+    ellipse(ctx, x, y, 4.5, 4.5, '#cccccc', '#000', 1.2);
     line(ctx, [x, y + 4.5, x, y + 20], '#000', 1.2);
     line(ctx, [x, y + 20, x - 4, y + 29], '#000', 1.2);
     line(ctx, [x, y + 20, x + 4, y + 29], '#000', 1.2);
@@ -821,7 +894,9 @@
     poly(ctx, [143.5, -591, 171.5, -619, 171.5, -571, 143.5, -550], '#00ccff', '#333', 0.8);
     line(ctx, [150, -590, 150, -566], '#999999', 2);
     // the gold dollar sign
-    label(ctx, '$', 240, -697, { font: 'bold 92px ' + SERIF, fill: '#ffcc00', extrude: '#4d3300', depth: 7, edx: -0.8, edy: 0.45, stroke: '#1a1400', lw: 1.2, m: [1, 0, -0.55, 1], rot: 0.3, sx: 0.78 });
+    // a tall, narrow 3-D $ standing slightly tilted, its dark sides toward the upper right
+    label(ctx, '$', 241, -696.5, { font: 'bold 96px ' + SERIF, fill: '#ffcc00', extrude: '#4d3300', depth: 6, edx: 1.4, edy: -0.6,
+      stroke: '#1a1400', lw: 1.6, rot: 0.34, sx: 0.58 });
   }
 
   function nli(ctx) {
@@ -928,14 +1003,19 @@
     poly(ctx, [-880, -192.5, -569, -192.5, -569, -21, -880, -21], '#e9e9ec', '#1a1a1a', 1.2);
     poly(ctx, [-960, -112.5, -880, -192.5, -880, -21, -960, -21], '#c9c9c9', '#1a1a1a', 1.2);
     rect(ctx, -689, -217.5, 59, 25, WALK, '#555', 1);
-    var o = { font: '34px ' + SERIF, fill: '#a6a6a6', stroke: '#262626', lw: 1.3, sx: -1, extrude: '#595959', depth: 2, edx: 1, edy: 1 };
-    o.fitW = 226;
-    label(ctx, 'FINE LINE', -696.5, -172, o);
-    o.fitW = 292;
-    label(ctx, 'FURNISHINGS', -731, -130, o);
-    poly(ctx, [-812, -162.5, -582, -162.5, -584, -157.5, -814, -157.5], '#a6a6a6', '#262626', 0.9);
-    poly(ctx, [-879, -122.5, -582, -122.5, -584, -117.5, -881, -117.5], '#a6a6a6', '#262626', 0.9);
-    poly(ctx, [-775, -157.5, -770, -157.5, -776, -122.5, -781, -122.5], '#a6a6a6', '#262626', 0.9);
+    // thin outlined italic capitals (leaning right once mirrored) with a grey edge, on two bars
+    // joined by two slanted struts
+    var o = { font: '27px ' + SERIF, fill: '#e2e2e2', stroke: '#333333', lw: 0.8, sx: -1, extrude: '#8c8c8c', depth: 2,
+      edx: 0.8, edy: 0.8, m: [1, 0, -0.3, 1], baseline: 'alphabetic' };
+    o.fitW = 206;
+    label(ctx, 'FINE LINE', -696, -163.5, o);
+    o.font = '30px ' + SERIF;
+    o.fitW = 271;
+    label(ctx, 'FURNISHINGS', -731.5, -123.5, o);
+    poly(ctx, [-766, -157.7, -759, -157.7, -790, -123, -797, -123], '#999999', '#262626', 0.9);
+    poly(ctx, [-626, -157.7, -619, -157.7, -650, -123, -657, -123], '#999999', '#262626', 0.9);
+    poly(ctx, [-808, -161.7, -586, -161.7, -590, -157.7, -812, -157.7], '#999999', '#262626', 0.9);
+    poly(ctx, [-874, -123, -589, -123, -594, -118, -879, -118], '#999999', '#262626', 0.9);
   }
 
   function mcsticks(ctx) {
@@ -986,24 +1066,40 @@
     poly(ctx, [-456.5, 41, -265, 41, -265, 387.5, -456.5, 387.5], '#669900', '#1a2700', 1.2);
     poly(ctx, [-456.5, 387.5, -265, 387.5, -277, 400, -456.5, 400], '#3d5900', '#1a2700', 1);
     rect(ctx, -265, 92.5, 55, 49, WALK, '#1a1a1a', 1);
-    if (!SKIP.neon) barNeon(ctx, 1);
+    if (!SKIP.neon) barNeon(ctx, 55);
     beerMug(ctx);
   }
-  // Neon "Sticky's" (yellow script) and "Liquor" (orange) on the roof; `lit` (0..1) is how
-  // much of the sign is switched on, from the bottom (where the words start).
-  function barNeon(ctx, lit) {
+  // The neon "Sticky's" / "Liquor" on the roof: hollow script letters, mirrored and running up
+  // the roof like every sign on the original's (flipped) map. n = frame of the original's 70-frame
+  // clip. Unlit tubes are dark orange; 5-39 "Sticky's" lights up from the top in 5-frame steps,
+  // 40-64 "Liquor" from the bottom, 65-69 everything flashes orange, 70 all lit, 1-4 all off.
+  var NEON_OFF = '#cc6600', NEON_ON = '#ffcc00', NEON_FLASH = '#ff9900';
+  var STK_LIT = [65, 97, 120, 143, 147, 164, 185]; // lit down to this y from frame 5, 10, ... 35
+  var LIQ_LIT = [195, 187, 171.5, 149, 130]; // lit up to this y from frame 40, 45, ... 60
+  function barNeon(ctx, n) {
+    var stk = n < 5 ? 0 : n < 40 ? STK_LIT[Math.floor((n - 5) / 5)] : 300;
+    var liq = n < 40 ? 300 : n < 65 ? LIQ_LIT[Math.floor((n - 40) / 5)] : 0;
+    var flash = n >= 65 && n < 70;
+    if (n === 70) { stk = 300; liq = 0; }
+    neonWords(ctx, flash ? NEON_FLASH : NEON_OFF);
+    if (flash) return;
     ctx.save();
     ctx.beginPath();
-    ctx.rect(-335, 178 - (8 + 140 * lit), 70, 8 + 140 * lit);
+    ctx.rect(-300, 0, 40, stk);
+    ctx.rect(-340, liq, 44, 300 - liq);
     ctx.clip();
-    // mirrored, running up the roof like every sign on the original's (flipped) map
-    var o = { font: 'italic 30px "Brush Script MT", "Segoe Script", cursive, ' + SERIF, stroke: '#ffcc00', lw: 1.4,
-      m: [0, -1, -1, 0], fitW: 136 };
-    label(ctx, "Sticky's", -281, 106, o);
-    o.stroke = '#cc6600';
-    o.fitW = 72;
-    label(ctx, 'Liquor', -316, 139, o);
+    neonWords(ctx, NEON_ON);
     ctx.restore();
+  }
+  function neonWords(ctx, col) {
+    var o = { font: 'italic 26px "Brush Script MT", "Segoe Script", "Lucida Handwriting", cursive, ' + SERIF,
+      stroke: col, lw: 1.3, m: [0, -1, -1, 0], fitW: 150 };
+    label(ctx, "Sticky's", -280, 112, o);
+    o.font = o.font.replace('26px', '32px');
+    o.fitW = 100;
+    label(ctx, 'Liquor', -316, 152, o);
+    // the long tail stroke under the words
+    line(ctx, [-325, 216, -290, 185], col, 1.4);
   }
   // The big tilted beer mug on Sticky's roof: glass with bubbles, foam, a handle and two legs.
   function beerMug(ctx) {
@@ -1183,7 +1279,7 @@
     line(ctx, [158, 344, 165, 338], '#fff', 0.8);
     line(ctx, [160, 381, 167, 375], '#fff', 0.8);
     if (!SKIP.enter) enterSign(ctx, 5);
-    graffiti(ctx, 206, 528);
+    graffiti(ctx, 206, 531);
   }
   // The ENTER neon: `lit` = how many letters glow (0..5).
   function enterSign(ctx, lit) {
@@ -1199,26 +1295,27 @@
   function graffiti(ctx, x, y) {
     ctx.save();
     ctx.translate(x, y);
-    // wavy orange flames behind the letters
+    // spiky orange flames along the top of the tag, outlined in black
     ctx.beginPath();
-    ctx.moveTo(4, 2);
-    for (var i = 0; i < 10; i++) {
-      var bx = 6 + i * 10;
-      ctx.quadraticCurveTo(bx + 1, -14 - (i % 3) * 3, bx + 6, -8 - (i % 2) * 4);
-      ctx.quadraticCurveTo(bx + 8, -4, bx + 10, -6);
+    ctx.moveTo(14, 4);
+    for (var i = 0; i < 11; i++) {
+      // flame tongues licking up and to the right
+      var bx = 18 + i * 10;
+      ctx.bezierCurveTo(bx + 1, -8, bx + 3, -13, bx + 9, -17 - (i % 3) * 2);
+      ctx.quadraticCurveTo(bx + 6, -10, bx + 10, -6 - (i % 2) * 2);
     }
-    ctx.lineTo(110, 2);
+    ctx.lineTo(128, 4);
     ctx.closePath();
     ctx.fillStyle = '#ff6600';
     ctx.fill();
-    ctx.lineWidth = 0.7;
+    ctx.lineWidth = 0.8;
     ctx.strokeStyle = '#1a1a1a';
     ctx.stroke();
     // pale green drips underneath
     ctx.beginPath();
-    ctx.moveTo(4, 6);
-    for (i = 0; i < 9; i++) ctx.quadraticCurveTo(10 + i * 11, 16 + (i % 2) * 3, 15 + i * 11, 7);
-    ctx.lineTo(104, 4);
+    ctx.moveTo(2, 10);
+    for (i = 0; i < 8; i++) ctx.quadraticCurveTo(7 + i * 11, 24 + (i % 2) * 3, 12 + i * 11, 13);
+    ctx.lineTo(92, 9);
     ctx.closePath();
     ctx.fillStyle = '#80cc80';
     ctx.fill();
@@ -1227,11 +1324,12 @@
     var word = 'CYCLONE';
     var cols = ['#0000ff', '#1a1aff', '#6633ff', '#9933ff', '#cc33ff', '#ff33cc', '#ff3399'];
     for (i = 0; i < word.length; i++) {
-      label(ctx, word[i], 12 + i * 14, -1 + (i % 2 ? -2 : 1.5), { font: 'italic bold 31px ' + SANS, fill: cols[i], stroke: '#1a1a1a', lw: 1.5,
-        rot: (i % 3 - 1) * 0.14, m: [1, 0, -0.35, 1], sx: 0.85 });
+      label(ctx, word[i], 18 + i * 14.5, 3 + (i % 2 ? -2 : 1.5), { font: 'italic 900 38px ' + SANS, fill: cols[i], stroke: '#1a1a1a',
+        lw: 1.6, rot: (i % 3 - 1) * 0.14, m: [1, 0, -0.45, 1], sx: 0.8 });
     }
-    label(ctx, 'Cr.MK', 118, -3, { font: 'italic 7px ' + SANS, fill: '#1a1a1a' });
-    label(ctx, '2002', 120, 4, { font: 'italic 6px ' + SANS, fill: '#1a1a1a' });
+    // the writer's signature
+    label(ctx, 'Cr.MK', 128, 8, { font: 'italic 9px ' + SERIF, fill: '#1a1a1a', rot: -0.2 });
+    label(ctx, '2002', 130, 16, { font: 'italic 7px ' + SERIF, fill: '#1a1a1a', rot: -0.2 });
     ctx.restore();
   }
 
@@ -1247,42 +1345,38 @@
     line(ctx, [153, 689, 153, 709], '#666', 2);
     // barred window
     poly(ctx, [147.5, 752, 178.5, 725, 178.5 - 0.5, 832, 147.5, 860], '#00ccff', '#1a1a1a', 1);
-    for (var i = 0; i < 6; i++) {
-      var y = 755 + i * 17;
-      line(ctx, [148, y + 9, 181, y - 13], '#333', 3.6);
-      line(ctx, [148, y + 9, 181, y - 13], '#b3b3b3', 2);
-      poly(ctx, [179, y - 16, 184, y - 16, 184, y - 11, 179, y - 11], '#e6e6e6', '#333', 0.8);
+    // seven round bars across it, rising to the right, and one upright in front
+    for (var i = 0; i < 7; i++) {
+      var y = 753 + i * 15;
+      line(ctx, [148, y, 180, y - 20], '#262626', 6);
+      line(ctx, [148, y, 180, y - 20], '#5c5c5c', 4.2);
+      line(ctx, [148.5, y - 1.2, 180.5, y - 21.2], '#9a9a9a', 1.3);
     }
-    line(ctx, [161, 738, 161, 848], '#333', 4.2);
-    line(ctx, [161, 738, 161, 848], '#b3b3b3', 2.4);
+    line(ctx, [162, 730, 162, 852], '#262626', 4.6);
+    line(ctx, [162, 730, 162, 852], '#a6a6a6', 2.8);
+    line(ctx, [161.5, 731, 161.5, 851], '#d9d9d9', 0.9);
     pawnGraffiti(ctx);
   }
   function pawnGraffiti(ctx) {
     ctx.save();
-    ctx.beginPath();
-    ctx.rect(150, 815, 300, 75);
+    // painted on the shop's front face only
+    path(ctx, [221, 811, 457, 811, 378, 890, 141, 890]);
     ctx.clip();
-    // white spiky splash and outlined bubble letters
-    ctx.fillStyle = '#ffffff';
-    ctx.save();
-    ctx.translate(205, 855);
-    ctx.scale(1.4, 1.3);
-    ctx.translate(-205, -855);
-    ctx.beginPath();
-    ctx.moveTo(185, 838);
-    ctx.lineTo(210, 830); ctx.lineTo(200, 840); ctx.lineTo(230, 836); ctx.lineTo(214, 848);
-    ctx.lineTo(236, 852); ctx.lineTo(210, 858); ctx.lineTo(228, 868); ctx.lineTo(196, 866);
-    ctx.lineTo(206, 880); ctx.lineTo(182, 872); ctx.lineTo(188, 856); ctx.lineTo(176, 850);
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
-    label(ctx, 'LINE', 330, 855, { font: 'bold 62px ' + SANS, stroke: '#ffffff', lw: 1.6, m: [1, 0, -0.35, 1], fitW: 225 });
-    label(ctx, 'LINE', 330, 855, { font: 'bold 62px ' + SANS, stroke: 'rgba(255,255,255,0.6)', lw: 0.8, m: [1, 0, -0.35, 1], fitW: 212, sy: 0.8 });
+    // a white splash with spikes flying off to the left, then tall outlined letters leaning right
+    poly(ctx, [262, 824, 214, 826, 236, 834, 190, 840, 228, 846, 176, 858, 230, 858, 196, 872, 240, 866, 226, 878,
+      262, 870], '#ffffff');
+    var o = { font: 'bold 86px ' + SANS, stroke: '#ffffff', lw: 1.6, m: [1, 0, -0.35, 1], fitW: 205, baseline: 'alphabetic' };
+    label(ctx, 'LINE', 315.5, 882, o);
+    o.stroke = 'rgba(255,255,255,0.6)';
+    o.lw = 0.8;
+    o.fitW = 194;
+    o.sy = 0.88;
+    label(ctx, 'LINE', 317, 879, o);
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.arc(292, 837, 6, 0, Math.PI * 2);
-    ctx.moveTo(360, 870); ctx.lineTo(372, 878); ctx.lineTo(384, 866);
+    ctx.arc(292, 832, 6, 0, Math.PI * 2);
+    ctx.moveTo(360, 872); ctx.lineTo(372, 880); ctx.lineTo(384, 868);
     ctx.stroke();
     ctx.restore();
   }
@@ -1295,13 +1389,57 @@
     poly(ctx, [662.5, 361, 925, 361, 879, 410, 611, 410], '#0072a8', '#072e40', 1.2);
     rect(ctx, 739, 212.5, 59.5, 6, WALK, '#666', 0.8);
   }
-  // "BUS DEPOT" on the roof (mirrored), its two words' colours (the neon flickers).
-  function busSign(ctx, dep, bus) {
-    var o = { font: 'italic bold 30px ' + SANS, fill: dep, stroke: '#0000aa', lw: 1.2, sx: -1, fitW: 146, m: [1, 0, 0.18, 1] };
-    label(ctx, 'DEPOT', 742, 239, o);
-    o.fill = bus;
-    o.fitW = 104;
-    label(ctx, 'BUS', 879, 239, o);
+  // "BUS DEPOT" on the roof: heavy capitals, mirrored like every sign on the map and leaning
+  // right. n = frame of the original's 51-frame clip: 1-15 unlit, 16-31 flickering letter by
+  // letter, 32-51 fully lit.
+  var BUS_DARK = '#000099', BUS_LIT = '#0000ff', BUS_HALF = '#0033ff';
+  function busColors(n) {
+    var dep, bus;
+    if (n <= 15) {
+      dep = [BUS_DARK, BUS_DARK, BUS_DARK, BUS_DARK, BUS_DARK];
+      bus = [BUS_DARK, BUS_DARK, BUS_DARK];
+    } else if (n <= 31) {
+      // D, E, P, O, T: D and E dark and the O pale while it flickers
+      dep = [20, 24, 27, 28, 29, 30, 31].indexOf(n) >= 0 ? [BUS_LIT, BUS_LIT, BUS_LIT, BUS_LIT, BUS_LIT] :
+        [BUS_DARK, BUS_DARK, BUS_LIT, BUS_HALF, BUS_LIT];
+      bus = n === 17 ? [BUS_LIT, BUS_LIT, BUS_LIT] : [BUS_LIT, BUS_LIT, n === 22 || n === 30 ? BUS_HALF : BUS_DARK];
+    } else {
+      dep = [BUS_LIT, BUS_LIT, BUS_LIT, BUS_LIT, BUS_LIT];
+      bus = [BUS_LIT, BUS_LIT, BUS_LIT];
+    }
+    return { dep: dep, bus: bus };
+  }
+  function busSign(ctx, n) {
+    var c = busColors(n);
+    var o = { font: '900 25px ' + SANS, sx: -1, m: [1, 0, -0.35, 1], baseline: 'alphabetic', lw: 1.8 };
+    word(ctx, 'DEPOT', 746, 246.5, 135, c.dep, o);
+    word(ctx, 'BUS', 876.5, 246.5, 86, c.bus, o);
+  }
+  // A word drawn letter by letter (each its own fill colour), fitted to width w and centred on x;
+  // o.sx = -1 mirrors it, o.m shears it.
+  function word(ctx, str, x, y, w, colors, o) {
+    ctx.save();
+    ctx.translate(x, y);
+    if (o.m) ctx.transform(o.m[0], o.m[1], o.m[2], o.m[3], 0, 0);
+    ctx.font = o.font;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = o.baseline || 'middle';
+    var total = ctx.measureText(str).width;
+    ctx.scale((o.sx || 1) * w / total, 1);
+    var cx = -total / 2;
+    ctx.lineJoin = 'round';
+    for (var i = 0; i < str.length; i++) {
+      ctx.fillStyle = colors[i];
+      ctx.fillText(str[i], cx, 0);
+      if (o.lw) {
+        // a stroke in the same colour makes the letters as heavy as the original's
+        ctx.lineWidth = o.lw;
+        ctx.strokeStyle = colors[i];
+        ctx.strokeText(str[i], cx, 0);
+      }
+      cx += ctx.measureText(str[i]).width;
+    }
+    ctx.restore();
   }
   // The parked bus, seen from above and tipped onto its side: windows along the right, wheels left.
   function busSprite(ctx) {
@@ -1403,7 +1541,7 @@
       // parts that stick out over the edges of the ground
       bank(ctx);
       nli(ctx);
-      if (!SKIP.bus) busSign(ctx, '#0000ff', '#000099');
+      if (!SKIP.bus) busSign(ctx, 40);
       // (the first entry of MAP.trees is the mansion's little grove, drawn with the mansion)
       MAP.trees.forEach(function (t, i) { if (i > 0) tree(ctx, t.x, t.y, 1); });
       if (dw === 5) castle(ctx);
@@ -1492,25 +1630,15 @@
       if (k >= p[2] && k <= p[3]) sparkle(ctx, p[0], p[1], TWINKLE[(k - p[2]) % 9]);
     }
   }
-  function busColors(f) {
-    // frames 1-15 as on the map, 16-31 flickering, then fully lit
-    var k = f % 51;
-    if (k < 15) return ['#0000ff', '#000099'];
-    if (k < 31) return [[16, 18, 21, 24, 27, 28].indexOf(k) >= 0 ? '#000099' : '#0000ff', k % 3 === 0 ? '#0000ff' : '#000099'];
-    return ['#0000ff', '#0000ff'];
-  }
   var ANIMS = [
     { id: 'enter', x: 174, y: 312, w: 22, h: 87, draw: function (ctx, f) {
-      // ENTER lights up a letter every 10 frames, then stays lit (70-frame loop)
-      enterSign(ctx, Math.min(5, Math.floor((f % 70) / 10)));
+      // ENTER lights up a letter at clip frames 10, 20, ... 50, then stays lit to 70
+      enterSign(ctx, Math.min(5, Math.floor((f % 70 + 1) / 10)));
     } },
-    { id: 'bus', x: 662, y: 222, w: 278, h: 34, sky: true, draw: function (ctx, f) {
-      var c = busColors(f);
-      busSign(ctx, c[0], c[1]);
-    } },
-    { id: 'neon', x: -334, y: 32, w: 68, h: 148, draw: function (ctx, f) {
-      // the letters light up in 14 steps of 5 frames, the last few fully lit
-      barNeon(ctx, Math.min(1, Math.floor((f % 70) / 5) / 10));
+    { id: 'bus', x: 662, y: 222, w: 278, h: 32, sky: true, draw: function (ctx, f) { busSign(ctx, f % 51 + 1); } },
+    { id: 'neon', x: -334, y: 30, w: 70, h: 196, draw: function (ctx, f) {
+      barNeon(ctx, f % 70 + 1);
+      beerMug(ctx); // the mug on the roof sits over the tail of the sign
     } },
     { id: 'spark', x: -374, y: 505, w: 140, h: 172, draw: function (ctx, f) {
       var p = sparkPath(f);
@@ -1522,12 +1650,29 @@
     { id: 'spark1', x: -256, y: 496, w: 22, h: 22, sky: true, draw: function (ctx, f) { pops(ctx, f, [1]); } },
     { id: 'spark3', x: -258, y: 760, w: 23, h: 23, draw: function (ctx, f) { pops(ctx, f, [3]); } },
     { id: 'flag0', dwelling: 5, x: -250, y: -941, w: 38, h: 26, sky: true, draw: function (ctx, f) { castleFlag(ctx, 0, flagWave(f, 0)); } },
-    { id: 'flag1', dwelling: 5, x: -534, y: -888, w: 38, h: 26, sky: true, draw: function (ctx, f) { castleFlag(ctx, 1, flagWave(f, 5)); } },
-    { id: 'flag2', dwelling: 5, x: -336, y: -862, w: 38, h: 26, sky: true, draw: function (ctx, f) { castleFlag(ctx, 2, flagWave(f, 11)); } },
+    { id: 'flag1', dwelling: 5, x: -534, y: -888, w: 38, h: 26, sky: true, draw: function (ctx, f) { castleFlag(ctx, 1, flagWave(f, 1)); } },
+    { id: 'flag2', dwelling: 5, x: -336, y: -862, w: 38, h: 26, sky: true, draw: function (ctx, f) { castleFlag(ctx, 2, flagWave(f, 2)); } },
     { id: 'guard', dwelling: 5, x: -272, y: -752, w: 22, h: 40, draw: function (ctx, f) { guard(ctx, -260, -744, Math.min(3, Math.floor((f % 11) / 3))); } },
   ];
-  // Each flag clip shows four shapes, four frames apiece.
-  function flagWave(f, off) {
-    return [0, 0.8, 0, -0.8][Math.floor(((f + off) % 16) / 4)];
+  // Each flag clip shows four shapes, four frames apiece; at its frame 16 it jumps back to a random
+  // frame (gotoAndPlay(random(12)), frame 0 counting as 1). Precomputed per flag with a private
+  // seeded generator so drawing never touches the game's random numbers.
+  function flagTimeline(seed) {
+    var seq = [], n = 1, a = seed;
+    while (seq.length < 3000 || n !== 1) {
+      seq.push(n);
+      n++;
+      if (n === 16) {
+        a = (Math.imul(a, 1103515245) + 12345) & 0x7fffffff;
+        n = Math.max(1, (a >> 16) % 12);
+      }
+    }
+    return seq;
+  }
+  var FLAG_T = [flagTimeline(11), flagTimeline(23), flagTimeline(37)];
+  function flagWave(f, i) {
+    var t = FLAG_T[i];
+    var n = t[f % t.length];
+    return [0, 0.8, 0, -0.8][Math.floor((n - 1) / 4)];
   }
 })();
