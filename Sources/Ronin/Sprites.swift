@@ -53,6 +53,8 @@ final class FoeSprite: SKNode {
     /// stopped.
     private var walk: CGFloat = 0
     private var pace: CGFloat = 0
+    /// The runner's wake: a dark streak off his back while he sprints.
+    private var trail: SKSpriteNode?
     private var stepping = false
     private var shownX: CGFloat?
     private var shownAir: CGFloat = 0
@@ -179,6 +181,16 @@ final class FoeSprite: SKNode {
                 pips.append(pip)
             }
         }
+        if foe.kind == .runner {
+            let streak = SKSpriteNode(texture: Art.streak)
+            streak.anchorPoint = CGPoint(x: 1, y: 0.5)
+            streak.colorBlendFactor = 1
+            streak.blendMode = .alpha
+            streak.alpha = 0
+            streak.zPosition = -0.2
+            pivot.addChild(streak)
+            trail = streak
+        }
         alpha = 0
         layout(ronin: ronin, headroom: headroom)
     }
@@ -186,6 +198,11 @@ final class FoeSprite: SKNode {
     required init?(coder aDecoder: NSCoder) { nil }
 
     var height: CGFloat { ronin * Build.of(cast).height }
+
+    /// The runner lives on speed: his guard twitches at twice the others' rate, and his blow is over in two-thirds
+    /// of their time.
+    private var idleRate: Double { kind == .runner ? 10 : 5 }
+    private var quick: Double { kind == .runner ? 0.65 : 1 }
 
     /// Sizes everything for a ronin `ronin` points tall, with the lane ending `headroom` points above the feet (kept
     /// as it was when nil): the warning marker comes down to stay under it.
@@ -424,7 +441,7 @@ final class FoeSprite: SKNode {
                 // A frame for each twelfth of a stride travelled, forward or back, so the feet keep to the ground (a
                 // dart's run takes a longer stride); and where a foot comes down.
                 let running = foe.darting
-                let unit = max(1, height * Figure.stride(cast) * (running ? 1.3 : 1) / CGFloat(Frame.walkFrames))
+                let unit = max(1, height * Figure.stride(cast) * (running && kind != .runner ? 1.3 : 1) / CGFloat(Frame.walkFrames))
                 let before = Int(floor(walk))
                 walk += shift * facing / unit
                 planted = landing(from: before, to: Int(floor(walk))).map { x + facing * $0 * height }
@@ -452,7 +469,7 @@ final class FoeSprite: SKNode {
                     frame = stride
                     leanTarget = pace > 0 ? min(0.1, pace / ronin * 0.045) : max(-0.05, pace / ronin * 0.02)
                 } else {
-                    frame = staggerHold > 0 ? .stagger(staggerHold > 0.15 ? 0 : 1) : .idle(Int(idleClock * 5) % Frame.foeIdleFrames)
+                    frame = staggerHold > 0 ? .stagger(staggerHold > 0.15 ? 0 : 1) : .idle(Int(idleClock * idleRate) % Frame.foeIdleFrames)
                 }
             case .windup:
                 let t = foe.progress
@@ -462,7 +479,7 @@ final class FoeSprite: SKNode {
                     frame = stride
                     leanTarget = 0.2
                     gathering = 1
-                } else if strikeClock < 0.09 {
+                } else if strikeClock < 0.09 * quick {
                     // Renzoku-waza: the first of a pair of blows has just landed and he is already going up again for
                     // the second. The blow is drawn (its smear from the coil), then the wind-up is picked up where
                     // its ring has got to.
@@ -478,13 +495,13 @@ final class FoeSprite: SKNode {
             case .guarding:
                 frame = .block
             case .recoil:
-                if strikeClock < 0.3 {
-                    frame = kind == .archer ? .loose : .strike(strikeClock < 0.09 ? 0 : strikeClock < 0.19 ? 1 : 2)
+                if strikeClock < 0.3 * quick {
+                    frame = kind == .archer ? .loose : .strike(strikeClock < 0.09 * quick ? 0 : strikeClock < 0.19 * quick ? 1 : 2)
                 } else if staggerHold > 0 {
                     frame = .stagger(staggerHold > 0.15 ? 0 : 1)
                     leanTarget = -0.1
                 } else {
-                    frame = kind == .archer ? .loose : .idle(Int(idleClock * 5) % Frame.foeIdleFrames)
+                    frame = kind == .archer ? .loose : .idle(Int(idleClock * idleRate) % Frame.foeIdleFrames)
                 }
             case .leaping:
                 if foe.bearer {
@@ -531,6 +548,17 @@ final class FoeSprite: SKNode {
         if let gourd {
             gourd.setScale(1 + 0.2 * gather)
             gourdHalo?.setScale(1 + 0.9 * gather)
+        }
+        if let trail {
+            // A dark streak off his back, longer and stronger the faster he goes (in the setting's shadow, like the
+            // smears): gone as he slows.
+            let s = min(1, max(0, pace) / (ronin * 1.5))
+            trail.color = ambient.ghost.color()
+            trail.position = CGPoint(x: -facing * height * 0.12, y: height * 0.05)
+            trail.xScale = facing
+            trail.size = CGSize(width: ronin * 0.6 * max(0.2, s), height: ronin * 0.2)
+            let want: CGFloat = stepping && pace > ronin * 0.5 && !leaping ? 0.28 * s : 0
+            trail.alpha += (want - trail.alpha) * min(1, CGFloat(dt) * 12)
         }
 
         if leaping, !foe.bearer {
@@ -650,7 +678,7 @@ final class FoeSprite: SKNode {
         let feet = (0..<n).map { Figure.footing(cast, .walk($0)) }
         func lifted(_ k: Int, front: Bool) -> Bool {
             let f = feet[wrap(k)]
-            return (front ? f.front.y : f.back.y) - min(f.front.y, f.back.y) > 0.0015
+            return (front ? f.front.y : f.back.y) > 0.0015
         }
         var found: [Int: CGFloat] = [:]
         for k in 0..<n {
@@ -712,7 +740,7 @@ final class FoeSprite: SKNode {
             default: return 5
             }
         }
-        if family(frame) != family(shown) {
+        if family(frame) != family(shown), family(frame) != 3 {
             echoFrame = shown
             Figures.apply(echo, cast, echoFrame, ronin: ronin)
             echo.alpha = 0.4
@@ -727,7 +755,7 @@ final class FoeSprite: SKNode {
     func showStrike() {
         bound = nil
         strikeClock = 0
-        lurch = ronin * (kind == .brute || kind == .warlord ? 0.09 : 0.06)
+        lurch = ronin * (kind == .brute || kind == .warlord ? 0.09 : kind == .runner ? 0.11 : 0.06)
         if kind == .brute { squash = 0.08 }
     }
 
@@ -1182,22 +1210,20 @@ final class HeroSprite: SKNode {
         if distance > ronin * 0.95 { afterimages(side, style, distance) }
     }
 
-    /// Faint copies of the ronin in the cut's own pose, strung out toward the foe across the gap he closed, gone
-    /// in a blink: dark, see-through silhouettes in the setting's shadow, like ink left behind by the brush.
+    /// A faint copy of the ronin in the cut's smear frame, a third of the way across the gap he closed, gone in a
+    /// blink: a dark, see-through silhouette in the setting's shadow, like ink left behind by the brush.
     private func afterimages(_ side: Side, _ style: Cut, _ distance: CGFloat) {
         guard let parent else { return }
         let span = distance - ronin * 0.35
-        for k in 1...2 {
-            let ghost = SKSpriteNode()
-            Figures.apply(ghost, .hero, .cut(style, 5), ronin: ronin)
-            ghost.xScale = side == .right ? 1 : -1
-            ghost.position = CGPoint(x: home.x + side.sign.cg * span * CGFloat(k) / 3, y: home.y)
-            ghost.zPosition = zPosition - 0.5
-            Art.setTint(ghost, ambient.ghost, 1)
-            ghost.alpha = 0.36 - 0.12 * CGFloat(k)
-            ghost.run(.sequence([.fadeOut(withDuration: 0.14), .removeFromParent()]))
-            parent.addChild(ghost)
-        }
+        let ghost = SKSpriteNode()
+        Figures.apply(ghost, .hero, .cut(style, 3), ronin: ronin)
+        ghost.xScale = side == .right ? 1 : -1
+        ghost.position = CGPoint(x: home.x + side.sign.cg * span / 3, y: home.y)
+        ghost.zPosition = zPosition - 0.5
+        Art.setTint(ghost, ambient.ghost, 1)
+        ghost.alpha = 0.22
+        ghost.run(.sequence([.fadeOut(withDuration: 0.1), .removeFromParent()]))
+        parent.addChild(ghost)
     }
 
     /// A cut at nothing: carried past the mark on the planted back foot, the front one coming down after it; and a

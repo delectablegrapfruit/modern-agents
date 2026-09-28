@@ -1022,6 +1022,15 @@ final class DuelScene: SKScene {
         bump = max(bump, (boss ? 0.9 : 0.7) * (0.35 + 0.65 * near))
     }
 
+    /// A light foot driving off at `x`: a little dust kicked back behind the runner, and no thump.
+    private func kick(_ sprite: FoeSprite, at x: CGFloat) {
+        let dust = Art.burst(look.ground.mix(look.horizon, 0.3).mix(.white, 0.25), count: 4, speed: ronin * 0.5, size: ronin * 0.05,
+                             life: 0.25, spread: 0.6, angle: sprite.facing > 0 ? .pi - 0.35 : 0.35, gravity: ronin * 0.8, additive: false)
+        dust.particleAlpha = 0.4
+        dust.particleAlphaSpeed = -0.4 / 0.25
+        fx.addChild(at(CGPoint(x: x, y: groundY + 1), dust))
+    }
+
     /// A flash of the whole lane (a wound, the warlord's arrival) in `color` (blood, unless given), fading over `fade`
     /// seconds; with Reduce Motion, soft and slow.
     private func flashLane(_ alpha: CGFloat, fade: TimeInterval, color: RGB = Palette.blood) {
@@ -1128,9 +1137,10 @@ final class DuelScene: SKScene {
             // A leap's arc; the gourd-bearer's spring back out of reach is a short hop off his heels.
             let air = foe.phase == .leaping ? CGFloat(sin(foe.progress * .pi)) * ronin * (foe.bearer ? FoeSprite.hop : 0.95) : 0
             // The heavy ones' steps are felt.
-            if let step = sprite.update(foe, at: CGPoint(x: laneX(foe.x), y: groundY), air: air, hero: heroX, dt: dt),
-               foe.kind == .brute || foe.kind == .warlord {
-                footfall(sprite, at: step)
+            if let step = sprite.update(foe, at: CGPoint(x: laneX(foe.x), y: groundY), air: air, hero: heroX, dt: dt) {
+                if foe.kind == .brute || foe.kind == .warlord { footfall(sprite, at: step) }
+                // The runner's feet kick up a little dust behind him as they strike and drive off.
+                if foe.kind == .runner { kick(sprite, at: step) }
             }
         }
         for (id, sprite) in foeSprites where !live.contains(id) {
