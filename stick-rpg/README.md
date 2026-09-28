@@ -20,6 +20,7 @@ Open `index.html` in a browser (double-clicking the file works; no server needed
 | I | inventory |
 | Esc | stats / options |
 | Mouse | menus, street people, HUD buttons |
+| Tab / Enter | move the yellow focus box over buttons / press it (hold to repeat), as in Flash |
 
 ## What's in it
 
@@ -38,7 +39,8 @@ Open `index.html` in a browser (double-clicking the file works; no server needed
 
 Mechanics follow the original's ActionScript: prices, formulas, random ranges, time costs and the
 order of checks. The original's quirks are kept (for example, a defaulted bank loan is fatal, and
-blackjack hands stop at four cards). A few outright bugs are fixed:
+blackjack hands stop at four cards). The rules were checked state-by-state against the original running in the Ruffle Flash emulator
+(hundreds of scripted scenarios and walking replays). A few outright bugs are fixed:
 
 - A timed game always ends once its last day is over (the original could skip past the end
   when days advanced outside of sleeping).
