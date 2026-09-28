@@ -4630,9 +4630,12 @@ function drawParts(c) {
 }
 
 // ---------- loop ----------
+// a system prompt, a sheet, the break screen or the notification center covers the road
+const covered = () => !!(ncOn || lockOn || document.hidden || $('.modal') || $('.grass') || $('.scrim.show'));
 function loop(t) {
   raf = 0;
   if (!vis || !g) return;
+  if ((g.st === 'play' || g.st === 'boss') && covered()) pause(); // the run waits for you
   const dt = Math.min(1 / 30, Math.max(0, (t - last) / 1000)); last = t;
   update(dt); draw(); hudSync();
   if (g.st === 'paused' || (g.st === 'fail' && !parts.length && !floats.length)) return; // nothing moves: stop until something changes
@@ -4853,6 +4856,11 @@ def({
     if (g && (g.st === 'play' || g.st === 'boss')) pause();
   },
   render() { if (this.view) hudSync(true); },
+  // the revive offer holds while something covers it, and starts over when you're back
+  tick() {
+    if (!g || g.st !== 'fail' || !$('.gt-revive:not(.gone)', root)) return;
+    if (covered()) { if (reviveT) { clearTimeout(reviveT); reviveT = 0; } } else if (!reviveT) armRevive();
+  },
   key(e) {
     if (e.type !== 'keydown') return e.key === ' ';
     const k = e.key;
@@ -4863,7 +4871,7 @@ def({
 });
 // held arrows steer; the app's key() only sees the first keydown
 const held = e => ({ ArrowLeft: 'l', a: 'l', A: 'l', ArrowRight: 'r', d: 'r', D: 'r' })[e.key];
-addEventListener('keydown', e => { const k = held(e); if (k && curApp === 'gates' && !lockOn && !$('.modal') && !e.metaKey && !e.ctrlKey && !e.altKey) keys[k] = 1; });
+addEventListener('keydown', e => { const k = held(e); if (k && curApp === 'gates' && !covered() && !e.metaKey && !e.ctrlKey && !e.altKey) keys[k] = 1; });
 addEventListener('keyup', e => { const k = held(e); if (k) keys[k] = 0; });
 addEventListener('blur', () => { keys.l = keys.r = 0; });
 document.addEventListener('visibilitychange', () => { if (document.hidden && vis) pause(); });
@@ -5672,9 +5680,12 @@ function rubble(t) {
 }
 
 // ---------- the loop: runs only while the game is on screen ----------
+// a system prompt, a sheet, the break screen or the notification center covers the game
+const covered = () => !!(ncOn || lockOn || document.hidden || $('.modal') || $('.grass') || $('.scrim.show'));
 function frame(ts) {
   raf = 0;
   if (curApp !== 'tower' || !cv) return;
+  if (covered()) { lastT = 0; raf = requestAnimationFrame(frame); return; } // game time (and the revive offer) waits until you're back
   if (!W && !size()) { raf = requestAnimationFrame(frame); return; }
   const busy = tws.length || tps.length || tfl.length || flies.length || ptr || hero.drag || shk || flash > .01 || st.phase === 'busy' || st.phase === 'win' || st.phase === 'fail' || gt - st.titleAt < 1600 || st.hint || (st.tut && !st.moves);
   if (!busy && lastT && ts - lastT < 30) { raf = requestAnimationFrame(frame); return; } // a calm scene redraws at 30 fps
