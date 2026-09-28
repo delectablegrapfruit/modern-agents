@@ -509,7 +509,7 @@
         r.vp.x = r.vp.y = r.vp.z = 0; r.wp.x = r.wp.y = r.wp.z = 0;
         r.lastContact = r.contact; r.contact = false; r.pen = 0;
         this.assist(r, h);
-        if (this.mode === 'hotdog') this.tryGrip(r); else this.neckCatch(r, h);
+        if (this.mode === 'hotdog') this.tryGrip(r, h); else this.neckCatch(r, h);
       }
       const active = free.filter((r) => !r.grip);
       // contacts
@@ -566,13 +566,13 @@
     }
 
     // Hot dog: a ring centred on the tip and moving down it squeezes on.
-    tryGrip(r) {
+    tryGrip(r, h) {
       const tg = this.target, l = tg.toLocal(r.p.x, r.p.y, r.p.z, T3);
       const catchT = HOTDOG_CATCH - tg.spec.pivot, radial = Math.hypot(l.x, l.z);
       const align = Math.abs(r.ax * tg.ax + r.ay * tg.ay + r.az * tg.az);
       // a ring left balanced on the tip gets pressed on after a moment
       const perched = r.lastContact && l.y > catchT - 0.04 && l.y < catchT + 0.06 && radial < 0.06;
-      r.tipT = perched ? (r.tipT || 0) + 1 / 480 : 0;
+      r.tipT = perched ? (r.tipT || 0) + h : 0;
       const loose = r.tipT > 0.6;
       if (radial > (loose ? 0.06 : 0.02) || align < (loose ? 0.4 : 0.8) || l.y > catchT + (loose ? 0.06 : 0.02) || l.y < catchT - 0.08) return;
       tg.pointVel(r.p.x, r.p.y, r.p.z, T2);
@@ -1182,7 +1182,7 @@ const Sound = (() => {
 const game = {
   mode: 'hotdog', sim: null, meshes: new Map(), thrown: 0, score: 0, results: [],
   state: 'aim', current: null, flyT: 0, resultT: 0,
-  power: 0, aim: 0, dragging: false, moved: false, pending: null, kbWind: false, snapHold: 0, relFov: 0, sx: 0, sy: 0, lastPower: null, lastAim: null, lastSound: new Map(), dents: new Map(), straining: new Set(),
+  power: 0, aim: 0, dragging: false, moved: false, pending: null, pointer: null, kbWind: false, snapHold: 0, relFov: 0, sx: 0, sy: 0, lastPower: null, lastAim: null, lastSound: new Map(), dents: new Map(), straining: new Set(),
 };
 const store = {
   get(k) { try { return Number(localStorage.getItem(k)) || 0; } catch { return 0; } },
@@ -1299,8 +1299,8 @@ const qT = new THREE.Quaternion(), invQ = new THREE.Quaternion();
 const STRAIN = 0.7; // seconds of visible strain before a ring snaps
 const HOT = new THREE.Color('#ff3a1a'), HOT_ALBEDO = new THREE.Color('#c0200a');
 function heat(mat, h) { // a strained ring runs red-hot whatever its colour: tint toward deep red plus a red glow
-  mat.color.copy(ringMat.color).lerp(HOT_ALBEDO, 0.7 * h); mat.metalness = ringMat.metalness; mat.roughness = ringMat.roughness;
-  mat.emissiveIntensity = 0.55 * h;
+  mat.color.copy(ringMat.color).lerp(HOT_ALBEDO, 0.92 * h); mat.metalness = ringMat.metalness * (1 - h); mat.roughness = ringMat.roughness;
+  mat.emissiveIntensity = 0.6 * h;
 }
 function strain(r) { // 0..1 as the ring nears breaking
   const g = r.grip;
@@ -1320,7 +1320,7 @@ function syncScene(dt) {
     m.scale.set(bite, 1 - 0.15 * st, bite);
     if (st > 0) {
       if (!game.straining.has(r.id)) { game.straining.add(r.id); Sound.strain(); m.material = ringMat.clone(); m.material.emissive.set(HOT); }
-      heat(m.material, st * st);
+      heat(m.material, st ** 1.5);
       if (!reduceMotion) { const e = st * st, tt = sim.time; m.rotateX(0.05 * e * Math.sin(tt * Math.PI * 2 * 19)); m.rotateZ(0.05 * e * Math.sin(tt * Math.PI * 2 * 23 + 1)); }
     }
   }
@@ -1379,7 +1379,10 @@ function updateCamera(dt) {
     pts = [[centre, 0.3, 0.21], [ringPos, 0.09, 0.09]];
   }
   let fovWant = Math.min(70, frameFor(pts, lookWant));
-  if (game.state === 'flying' && game.relFov) { if (fovWant >= game.relFov) game.relFov = 0; else fovWant = game.relFov; } // no zoom back in on release
+  if (game.state === 'flying' && game.relFov) { // no zoom back in on release: only widen until the ring tops out
+    fovWant = Math.max(fovWant, view.fov);
+    if (r && r.v.y < 0) game.relFov = 0;
+  }
   const k = view.ready ? 1 - Math.exp(-7 * dt) : 1;
   view.look.lerp(lookWant, k); view.fov += (fovWant - view.fov) * k; view.ready = true;
   camera.position.copy(CAM); camera.lookAt(view.look);
@@ -1401,7 +1404,7 @@ function updateGame(dt, simDt) {
       if (game.thrown >= ROUND) endRound();
       else {
         game.state = 'aim'; game.power = 0; game.aim = game.lastAim ?? 0; updateHud(); updateMeter();
-        if (game.pending) { const p = game.pending; game.pending = null; startDrag(p.x, p.y); dragTo({ clientX: p.lx, clientY: p.ly }); }
+        if (game.pending) { const p = game.pending; game.pending = null; startDrag(p.x, p.y, game.pointer); dragTo({ clientX: p.lx, clientY: p.ly }); }
       }
     }
   }
@@ -1415,20 +1418,22 @@ function dragTo(e) {
   if (Math.hypot(dx, dy) > 6) game.moved = true;
   updateMeter();
 }
-function startDrag(x, y) { game.dragging = true; game.moved = false; game.sx = x; game.sy = y; canvas.classList.add('dragging'); }
+function startDrag(x, y, id) { game.dragging = true; game.moved = false; game.kbWind = false; game.pointer = id; game.sx = x; game.sy = y; canvas.classList.add('dragging'); }
+const otherPointer = (e) => (game.dragging || game.pending) && e.pointerId !== game.pointer;
 canvas.addEventListener('pointerdown', (e) => {
   Sound.init();
   if (!$('panel').hidden) { closePanel(); return; } // a tap outside the panel just closes it
-  if (e.button > 0) return;
+  if (e.button > 0 || otherPointer(e)) return;
   if (game.state === 'flying' || game.state === 'result') { // held: it becomes the wind-up once aiming resumes
-    game.pending = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY };
+    game.pending = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY }; game.pointer = e.pointerId;
     canvas.setPointerCapture(e.pointerId); return;
   }
   if (game.state !== 'aim') return;
-  startDrag(e.clientX, e.clientY); canvas.setPointerCapture(e.pointerId);
+  startDrag(e.clientX, e.clientY, e.pointerId); canvas.setPointerCapture(e.pointerId);
   dragTo(e);
 });
 canvas.addEventListener('pointermove', (e) => {
+  if (otherPointer(e)) return;
   if (game.pending) { game.pending.lx = e.clientX; game.pending.ly = e.clientY; }
   if (game.dragging) dragTo(e);
 });
@@ -1436,10 +1441,10 @@ function endDrag(cancelled) {
   game.pending = null;
   if (!game.dragging) return;
   game.dragging = false; canvas.classList.remove('dragging');
-  if (!cancelled && game.power > 0.04) toss(); else { game.power = 0; game.kbWind = false; updateMeter(); }
+  if (!cancelled && game.moved && game.power > 0.04) toss(); else { game.power = 0; game.kbWind = false; updateMeter(); }
 }
-canvas.addEventListener('pointerup', () => endDrag(false));
-canvas.addEventListener('pointercancel', () => endDrag(true));
+canvas.addEventListener('pointerup', (e) => { if (!otherPointer(e)) endDrag(false); });
+canvas.addEventListener('pointercancel', (e) => { if (!otherPointer(e)) endDrag(true); });
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') { closePanel(); return; }
   const onControl = e.target instanceof HTMLButtonElement || e.target instanceof HTMLInputElement;
