@@ -47,15 +47,18 @@ async function fontsReady() {
   try {
     await Promise.race([
       Promise.all([
-        document.fonts.load(fontCSS(Fonts.heading, 20), 'STAGE 1'),
-        document.fonts.load(fontCSS(Fonts.text, 20), 'BUSHIDO'),
-        document.fonts.load(fontCSS(Fonts.italic, 20), 'CUT'),
+        // (With the letters beyond ASCII the cards use, so their subsets come too: BUSHIDŌ, ×, —.)
+        document.fonts.load(fontCSS(Fonts.heading, 20), 'STAGE 1 ×8 ▲ ŌĀ'),
+        document.fonts.load(fontCSS(Fonts.text, 20), 'BUSHIDŌ · SHURA'),
+        document.fonts.load(fontCSS(Fonts.italic, 20), 'CUT — ×2 Ō'),
         document.fonts.load(fontCSS(Fonts.seal, 20), '初武修鬼先'),
       ]),
       new Promise((r) => setTimeout(r, 1500)),
     ]);
   } catch { /* the fallback faces will do */ }
   R.fontEpoch++;
+  // A face (or a subset of one) that comes in later redraws the text set before it.
+  try { document.fonts.addEventListener('loadingdone', () => { R.fontEpoch++; }); } catch { /* no font loading API */ }
 }
 
 async function loadTheCore() {
@@ -140,18 +143,24 @@ function startPreload(panel) {
   if (stage % 5 === 0) kinds.push('warlord');
   const rest = Kinds.filter((k) => !kinds.includes(k));
   preloadQueue = [];
-  for (const f of hero) preloadQueue.push(['hero', f]);
-  for (const k of kinds) for (const f of Figures.frames(k)) preloadQueue.push([k, f]);
-  for (const k of rest) for (const f of Figures.frames(k)) preloadQueue.push([k, f]);
+  const frame = (cast, f) => () => Figures.piece(cast, f).raster(Figures.scale(cast, panel.scene.ronin));
+  // What a foe freezes in at a killing blow, and what the ronin may show before his first draw (HeroSprite.preload).
+  const struck = (cast) => { for (let v = 0; v < FrameCounts.struckVariants; v++) preloadQueue.push(() => struckPiece(cast, v).raster(Figures.scale(cast, panel.scene.ronin))); };
+  const sheathed = (f) => () => HeroSprite.sheathedPiece(f).raster(Figures.scale('hero', panel.scene.ronin));
+  for (const f of hero) preloadQueue.push(frame('hero', f));
+  for (const k of kinds) { for (const f of Figures.frames(k)) preloadQueue.push(frame(k, f)); struck(k); }
+  for (let k = 0; k < FrameCounts.hurt; k++) preloadQueue.push(sheathed(F.hurt(k)));
+  for (let v = 0; v < FrameCounts.windedCycles; v++) for (let k = 0; k < FrameCounts.winded; k++) preloadQueue.push(sheathed(F.winded(v, k)));
+  for (let k = 0; k < FrameCounts.fall; k++) preloadQueue.push(sheathed(F.fall(k)));
+  for (const k of rest) { for (const f of Figures.frames(k)) preloadQueue.push(frame(k, f)); struck(k); }
 }
 
 function preloadStep(panel, budgetMs) {
   if (!preloadQueue.length) return;
   const start = performance.now();
-  const ronin = panel.scene.ronin;
   while (preloadQueue.length && performance.now() - start < budgetMs) {
-    const [cast, frame] = preloadQueue.shift();
-    try { Figures.piece(cast, frame).raster(Figures.scale(cast, ronin)); } catch (err) { console.warn(err); }
+    const job = preloadQueue.shift();
+    try { job(); } catch (err) { console.warn(err); }
   }
 }
 

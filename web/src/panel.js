@@ -137,6 +137,8 @@ class Panel {
       e.preventDefault();
       Sound.wake();
       const p = this.scenePoint(e);
+      // A press that resumes the fight never cuts.
+      const wasPaused = this.scene.isAwayPaused && !this.session.fight.outcome && !this.compact;
       if (e.pointerType === 'touch') {
         if (!this.touching) { this.touching = true; this.updatePauseState(); }
       } else if (!this.hovering) {
@@ -148,6 +150,7 @@ class Panel {
       if (hit === 'compact') { this.setCompact(true); return; }
       if (hit === 'close') { this.hide(); return; }
       if (hit === 'drag') return;
+      if (wasPaused) { this.scene.engage(); this.refreshRunning(); return; }
       let side;
       if (e.pointerType === 'touch') side = p.x < R.W / 2 ? 'left' : 'right';
       else side = e.button === 2 || (e.button === 0 && e.ctrlKey) ? 'right' : 'left';
@@ -201,8 +204,10 @@ class Panel {
     Sound.wake();
     if (e.repeat) return;
     if (this.compact) return;
+    // A key that resumes the fight never cuts (as a click that resumes never does).
+    const wasPaused = this.scene.isAwayPaused && !this.session.fight.outcome;
     if (!this.hovering && !this.touching) { this.touching = true; this.updatePauseState(); }
-    this.scene.press(side);
+    if (wasPaused) this.scene.engage(); else this.scene.press(side);
     this.refreshRunning();
   }
 
@@ -254,6 +259,7 @@ class Panel {
 
   refreshMenu() {
     if (!this.menuOpen) return;
+    this.session.refresh(true);
     const m = this.els.menu;
     m.textContent = '';
     const session = this.session;
@@ -277,11 +283,11 @@ class Panel {
       return b;
     };
     const sep = (into = m) => into.appendChild(el('hr'));
-    const sub = (title, open = false) => {
+    const sub = (title, key = title) => {
       const d = el('details', 'sub');
-      d.open = open || !!this.openSubs?.has(title);
+      d.open = !!this.openSubs?.has(key);
       d.appendChild(el('summary', null, title));
-      d.addEventListener('toggle', () => { this.openSubs = this.openSubs || new Set(); if (d.open) this.openSubs.add(title); else this.openSubs.delete(title); });
+      d.addEventListener('toggle', () => { this.openSubs = this.openSubs || new Set(); if (d.open) this.openSubs.add(key); else this.openSubs.delete(key); });
       const body = el('div', 'subbody');
       d.appendChild(body);
       m.appendChild(d);
@@ -363,7 +369,7 @@ class Panel {
     const game = session.standard;
     const standard = Prefs.crowdRules.every((k) => !!crowd[k] === !!game[k]);
     const passes = crowd.passThrough || crowd.slipPast || crowd.runnersPassAll || crowd.passBusy || crowd.shove;
-    const dev = sub(standard ? 'Development' : 'Development (rules changed)');
+    const dev = sub(standard ? 'Development' : 'Development (rules changed)', 'Development');
     const set = (change) => { const r = { ...session.rules }; change(r); session.setRules(r); this.scene.refreshHUD(); this.refreshMenu(); };
     note('Crowd (the game: Slip Past, Runners Pass Everyone, Pass the Busy, Shove Through)', dev);
     item('Queue — each waits behind the man in front', () => set((r) => {

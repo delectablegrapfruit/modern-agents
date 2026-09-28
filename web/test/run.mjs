@@ -190,6 +190,63 @@ try {
     await page.waitForTimeout(600);
     await shot(page, '10-fallen');
   }
+  if (want('pause')) {
+    // Leaving pauses (the curtain and its pause sign, the panel dimmed); coming back takes the dwell (a ring fills).
+    await page.evaluate(() => { window.ronin.session.next(); window.ronin.panel.scene.loadFight(true); });
+    await hover(page, true);
+    await page.waitForTimeout(3000);
+    await hover(page, false);
+    await page.waitForTimeout(400);
+    report.paused = await page.evaluate(() => ({ away: window.ronin.panel.scene.isAwayPaused, opacity: window.ronin.panel.canvas.style.opacity }));
+    await shot(page, '12-paused');
+    const box = await page.locator('#lane').boundingBox();
+    await page.mouse.move(box.x + box.width * 0.7, box.y + box.height * 0.6);
+    await page.waitForTimeout(150);
+    await shot(page, '12b-dwell');
+    await page.waitForTimeout(400);
+    report.resumed = await page.evaluate(() => !window.ronin.panel.scene.isAwayPaused);
+  }
+  if (want('hints')) {
+    // Floor hints on (teaching the buttons again), gore off: the dead fall whole and nothing bleeds.
+    await page.evaluate(() => {
+      window.ronin.panel.setFloorHints(true);
+      window.Prefs_gore = true;
+      localStorage.setItem('ronin.gore', '0');
+      window.ronin.session.setAutopilot(true);
+      window.ronin.session.jump(11);
+      window.ronin.panel.scene.loadFight(true);
+    });
+    await hover(page, true);
+    await waitFor(page, () => window.ronin.session.fight.stats.kills >= 5, null, 60000);
+    report.goreOff = await page.evaluate(() => ({ shed: window.ronin.panel.scene.shed + window.ronin.panel.scene.carnage.shed, severed: window.ronin.panel.scene.carnage.severings }));
+    await shot(page, '13-hints-gore-off');
+    await page.evaluate(() => { window.ronin.panel.setFloorHints(false); localStorage.setItem('ronin.gore', '1'); });
+  }
+  if (want('endless')) {
+    await page.evaluate(() => { window.ronin.session.startEndless(2); window.ronin.panel.scene.loadFight(true); });
+    await hover(page, true);
+    await page.waitForTimeout(700);
+    await shot(page, '14-endless');
+    await page.evaluate(() => { window.ronin.session.leaveEndless(); window.ronin.panel.scene.loadFight(true); });
+  }
+  if (want('sizes')) {
+    // The dead stay, scaled with the lane, through another size.
+    await page.evaluate(() => { window.ronin.session.jump(2); window.ronin.panel.scene.loadFight(true); });
+    await hover(page, true);
+    await waitFor(page, () => window.ronin.session.fight.stats.kills >= 6, null, 60000);
+    await page.evaluate(() => window.ronin.panel.setSize(0));
+    await page.waitForTimeout(300);
+    await shot(page, '15-small');
+    await page.evaluate(() => window.ronin.panel.setSize(2));
+  }
+  if (want('hide')) {
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(200);
+    report.hidden = await page.evaluate(() => ({ panel: document.getElementById('panel-wrap').hidden, show: !document.getElementById('shown-hidden').hidden }));
+    await page.click('#show-button');
+    await page.waitForTimeout(200);
+    report.shownAgain = await page.evaluate(() => !document.getElementById('panel-wrap').hidden);
+  }
   if (want('compact')) {
     await page.evaluate(() => window.ronin.panel.setCompact(true));
     await page.waitForTimeout(300);
@@ -218,6 +275,65 @@ try {
     report.shots.push(file);
     report.phoneOverflow = await phone.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
     await phone.close();
+  }
+  if (want('input')) {
+    // The keys, the menu's items, and taps on a touch screen.
+    const page2 = await open(552, 520);
+    await page2.evaluate(() => { window.ronin.session.setAutopilot(false); window.ronin.session.jump(1); window.ronin.panel.scene.loadFight(true); });
+    await page2.mouse.move(2, 2);
+    await page2.keyboard.press('Space');
+    await page2.waitForFunction(() => window.ronin.session.fight.foes.some((f) => f.gap < window.ronin.session.fight.reach), null, { timeout: 20000 });
+    const side = await page2.evaluate(() => (window.ronin.session.fight.foes.find((f) => f.gap < window.ronin.session.fight.reach).x < 0 ? 'ArrowLeft' : 'ArrowRight'));
+    await page2.keyboard.press(side);
+    await page2.waitForTimeout(100);
+    report.keyCut = await page2.evaluate(() => window.ronin.session.fight.stats.cuts);
+    await page2.click('#menu-button');
+    await page2.locator('#menu .item', { hasText: 'Gore' }).click();
+    report.goreAfterMenu = await page2.evaluate(() => localStorage.getItem('ronin.gore'));
+    await page2.locator('#menu summary', { hasText: 'Difficulty' }).click();
+    await page2.locator('#menu .item', { hasText: 'Shura' }).click();
+    report.modeAfterMenu = await page2.evaluate(() => window.ronin.session.fight.mode);
+    await page2.click('#menu-button');
+    await page2.locator('#menu summary', { hasText: 'Development' }).click();
+    await page2.locator('#menu .item', { hasText: 'Queue' }).click();
+    report.devTitle = await page2.locator('#menu summary', { hasText: 'Development' }).textContent();
+    await page2.locator('#menu .item', { hasText: "Restore the Game's Rules" }).click();
+    report.devTitleRestored = await page2.locator('#menu summary', { hasText: 'Development' }).textContent();
+    const menuFile = path.join(out, 'menu-open.png');
+    await page2.screenshot({ path: menuFile, fullPage: true });
+    report.shots.push(menuFile);
+    await page2.keyboard.press('Escape');
+    await page2.close();
+    const ctx = await browser.newContext({ viewport: { width: 400, height: 760 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true, ignoreHTTPSErrors: true });
+    const touch = await ctx.newPage();
+    touch.on('pageerror', (e) => errors.push(`[touch] pageerror: ${e.stack || e.message}`));
+    await touch.goto(`http://127.0.0.1:${port}/index.html`);
+    await touch.waitForFunction(() => window.ronin && window.ronin.panel, null, { timeout: 60000 });
+    await touch.evaluate(() => { window.ronin.session.setAutopilot(false); window.ronin.session.jump(1); window.ronin.panel.scene.loadFight(true); });
+    const tb = await touch.locator('#lane').boundingBox();
+    await touch.touchscreen.tap(tb.x + tb.width * 0.25, tb.y + tb.height * 0.6);
+    await touch.waitForTimeout(2500);
+    await touch.touchscreen.tap(tb.x + tb.width * 0.75, tb.y + tb.height * 0.6);
+    await touch.waitForTimeout(150);
+    report.touch = await touch.evaluate(() => ({ running: !window.ronin.panel.scene.isAwayPaused, whiffs: window.ronin.session.fight.stats.whiffs, cuts: window.ronin.session.fight.stats.cuts }));
+    const tf = path.join(out, 'phone-touch.png');
+    await touch.screenshot({ path: tf });
+    report.shots.push(tf);
+    await ctx.close();
+  }
+  if (want('csp')) {
+    // A viewer whose Content-Security-Policy does not allow WebAssembly: the page says so.
+    const html = fs.readFileSync(path.join(serve, 'index.html'), 'utf8')
+      .replace('<meta charset="utf-8">', '<meta charset="utf-8">\n<meta http-equiv="Content-Security-Policy" content="script-src \'self\' \'unsafe-inline\'">');
+    fs.writeFileSync(path.join(serve, 'csp.html'), html);
+    const blocked = await browser.newPage({ viewport: { width: 552, height: 420 }, ignoreHTTPSErrors: true });
+    await blocked.goto(`http://127.0.0.1:${port}/csp.html`);
+    await blocked.waitForFunction(() => !document.getElementById('fail').hidden, null, { timeout: 20000 }).catch(() => {});
+    report.csp = await blocked.evaluate(() => document.getElementById('fail').hidden ? null : document.getElementById('fail').textContent.trim());
+    const file = path.join(out, 'csp.png');
+    await blocked.screenshot({ path: file });
+    report.shots.push(file);
+    await blocked.close();
   }
 } catch (err) {
   errors.push('test: ' + (err.stack || err.message));
