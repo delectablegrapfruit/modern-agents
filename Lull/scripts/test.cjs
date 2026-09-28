@@ -819,7 +819,9 @@ test('online steps and catch-up make exactly the same line', () => {
   a.binLevel = 4;
   const b = JSON.parse(JSON.stringify(a));
   for (let i = 0; i < 2 * 3600 / 0.25; i++) Factory.step(a, 0.25);
-  b.lastTick = Date.now() - 2 * HOUR; Factory.catchUp(b, Date.now());
+  // One clock reading: two could straddle a millisecond and give catch-up a longer gap than the online run.
+  const now = Date.now();
+  b.lastTick = now - 2 * HOUR; Factory.catchUp(b, now);
   assert.strictEqual(a.bin, b.bin);
   assert.deepStrictEqual(a.belt, b.belt);
   assert(a.bin.length > 100);
