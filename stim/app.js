@@ -6620,14 +6620,18 @@ function showWheel(first) {
 // ---------- cart ----------
 const cartUnits = () => SH.cart.reduce((s, l) => s + (l.gift ? 0 : l.q), 0);
 function addLine(l, ci, si, q, from) {
-  const pr = PRM[l.pid], v = vPrice(l, si), key = `${l.pid}|${ci}|${si}|${l.nu ? 'n' : ''}`;
-  let line = SH.cart.find(x => x.key === key);
+  // the new customer price is one item per product, whatever the color
+  if (l.nu && SH.cart.some(x => x.nu && x.pid === l.pid)) { sfx.nope(); toast('Limit 1 per customer at this price'); return false; }
+  const pr = PRM[l.pid], v = vPrice(l, si), until = l.until || 0, b2 = l.b2 || 0;
+  // one line per offer: same product, variant and price (and the same deal, if any)
+  let line = SH.cart.find(x => !x.gift && x.pid === l.pid && x.ci === ci && x.si === si && !x.nu === !l.nu && x.p0 === v.p && (x.until || 0) === until && (x.b2 || 0) === b2);
   if (line) {
-    if (l.nu) { sfx.nope(); toast('Limit 1 per customer at this price'); return false; }
     if (line.q + q > line.stock) { sfx.nope(); toast(`Only ${line.stock} left in stock`); return false; }
     line.q += q; line.sel = 1;
   } else {
-    line = { key, pid: l.pid, ci, si, q: l.nu ? 1 : Math.min(q, l.stock), p: v.p, p0: v.p, was: v.was, bp: l.p, bw: l.was, t: l.t, sel: 1, b2: l.b2 || 0, nu: l.nu || 0, stock: l.nu ? 1 : l.stock, until: l.until || 0, after: v.after };
+    let key = `${l.pid}|${ci}|${si}|${l.nu ? 'n' : ''}|${v.p}|${until}|${b2 ? 'b' : ''}`;
+    while (SH.cart.some(x => x.key === key)) key += '+';
+    line = { key, pid: l.pid, ci, si, q: l.nu ? 1 : Math.min(q, l.stock), p: v.p, p0: v.p, was: v.was, bp: l.p, bw: l.was, t: l.t, sel: 1, b2, nu: l.nu || 0, stock: l.nu ? 1 : l.stock, until, after: v.after };
     const gi = SH.cart.findIndex(x => x.gift);
     SH.cart.splice(gi < 0 ? 0 : gi + 1, 0, line);
   }
