@@ -6321,6 +6321,8 @@ const SH = slice('shop', {
   seen: 0, spins: 1, coupons: [], cart: [], orders: [], gift: null, newUntil: 0, extended: 0, nu: [],
   saved: 0, spent: 0, delivered: 0, addr: 0, recent: [], cid: 0, oid: 0, dropAt: 0,
 });
+if (!Number.isFinite(SH.saved)) SH.saved = 0;
+SH.cart = SH.cart.filter(l => l && Number.isFinite(l.p) && Number.isFinite(l.was));
 addAch([
   ['order1', 'Checked out', 'Place your first order', 'tag', () => (S.ordersPlaced || 0) >= 1],
   ['saver', 'Smart shopper', 'Save 10,000 hits in Shop', 'gem', () => SH.saved >= 10000],
@@ -6653,14 +6655,18 @@ function showWheel(first) {
 // ---------- cart ----------
 const cartUnits = () => SH.cart.reduce((s, l) => s + (l.gift ? 0 : l.q), 0);
 function addLine(l, ci, si, q, from) {
-  const pr = PRM[l.pid], v = vPrice(l, si), key = `${l.pid}|${ci}|${si}|${l.nu ? 'n' : ''}`;
-  let line = SH.cart.find(x => x.key === key);
+  // the new customer price is one item per product, whatever the color
+  if (l.nu && SH.cart.some(x => x.nu && x.pid === l.pid)) { sfx.nope(); toast('Limit 1 per customer at this price'); return false; }
+  const pr = PRM[l.pid], v = vPrice(l, si), until = l.until || 0, b2 = l.b2 || 0;
+  // one line per offer: same product, variant and price (and the same deal, if any)
+  let line = SH.cart.find(x => !x.gift && x.pid === l.pid && x.ci === ci && x.si === si && !x.nu === !l.nu && x.p0 === v.p && (x.until || 0) === until && (x.b2 || 0) === b2);
   if (line) {
-    if (l.nu) { sfx.nope(); toast('Limit 1 per customer at this price'); return false; }
     if (line.q + q > line.stock) { sfx.nope(); toast(`Only ${line.stock} left in stock`); return false; }
     line.q += q; line.sel = 1;
   } else {
-    line = { key, pid: l.pid, ci, si, q: l.nu ? 1 : Math.min(q, l.stock), p: v.p, p0: v.p, was: v.was, bp: l.p, bw: l.was, t: l.t, sel: 1, b2: l.b2 || 0, nu: l.nu || 0, stock: l.nu ? 1 : l.stock, until: l.until || 0, after: v.after };
+    let key = `${l.pid}|${ci}|${si}|${l.nu ? 'n' : ''}|${v.p}|${until}|${b2 ? 'b' : ''}`;
+    while (SH.cart.some(x => x.key === key)) key += '+';
+    line = { key, pid: l.pid, ci, si, q: l.nu ? 1 : Math.min(q, l.stock), p: v.p, p0: v.p, was: v.was, bp: l.p, bw: l.was, t: l.t, sel: 1, b2, nu: l.nu || 0, stock: l.nu ? 1 : l.stock, until, after: v.after };
     const gi = SH.cart.findIndex(x => x.gift);
     SH.cart.splice(gi < 0 ? 0 : gi + 1, 0, line);
   }
@@ -6720,7 +6726,7 @@ function lineHTML(l) {
   const low = !l.gift && l.stock <= 6 ? `<span class="sh-low">Only ${l.stock} left</span>` : '';
   return `<div class="sh-line${l.gift ? ' gift' : ''}${l.sel || l.gift ? '' : ' off'}" data-k="${l.key}">
     ${l.gift ? '<span class="sh-ck on dis" aria-hidden="true"></span>' : `<button class="sh-ck${l.sel ? ' on' : ''}" data-a="sel" role="checkbox" aria-checked="${!!l.sel}" aria-label="Select"></button>`}
-    <button class="sh-lth" data-a="view" aria-label="${pr.n}">${tile(pr, l.ci)}</button>
+    ${l.gift ? `<span class="sh-lth">${tile(pr, l.ci)}</span>` : `<button class="sh-lth" data-a="view" aria-label="${pr.n}">${tile(pr, l.ci)}</button>`}
     <div class="sh-lt"><span class="sh-ltt">${l.t}</span>${vn ? `<span class="sh-lv">${vn}</span>` : ''}${tag}${low}
       <div class="sh-lp">${pz(l.p)}<s>${fmt(l.was)}</s>${l.gift ? '' : `<span class="sh-step"><button data-a="dec" aria-label="Fewer">${si('minus')}</button><b>${l.q}</b><button data-a="inc" aria-label="More">${si('plus')}</button></span>`}</div>
       ${l.b2 && !l.gift ? `<span class="sh-b2">${l.q % 3 === 2 ? 'Add 1 more to get 1 free' : l.q >= 3 ? `${Math.floor(l.q / 3)} free with Buy 2 get 1` : 'Buy 2 get 1 free'}</span>` : ''}
@@ -6783,7 +6789,7 @@ function removeLine(l, el) {
 }
 // a listing rebuilt from a cart or order line, at the size-0 base price
 function lineL(l) {
-  const pr = PRM[l.pid], add = pr.sizes && !l.nu ? pr.sizes[l.si][1] : 0, bp = l.bp || Math.max(1, l.p - add), bw = l.bw || Math.round(l.was * bp / l.p);
+  const pr = PRM[l.pid], add = pr.sizes && !l.nu ? pr.sizes[l.si][1] : 0, bp = l.bp || Math.max(1, l.p - add), bw = l.bw || (l.p ? Math.round(l.was * bp / l.p) : pr.was);
   return mkL(pr, { p: bp, was: bw, ci: l.ci, tag: '', pfx: '', x: { t: l.t, stock: Math.max(l.stock || 9, l.q), b2: l.b2 || 0, nu: l.nu || 0, ld: l.until ? 1 : 0, until: l.until || 0, after: l.after ? l.after - add : 0 } });
 }
 
@@ -6857,6 +6863,7 @@ function openPDP(tab, l) {
   viewed.add(pr.id); giftBump('view');
   const others = (() => { const rr = seeded(hs(pr.id)); const pool = GOODS.filter(p => p.id !== pr.id); const a = pool[Math.floor(rr() * pool.length)]; let b = pool[Math.floor(rr() * pool.length)]; if (b === a) b = pool[(pool.indexOf(a) + 5) % pool.length]; return [a, b]; })();
   const fbt = others.map(p => mkL(p, { k: .85, off: .9, tag: '', ci: 0 }));
+  const fbtP = f => Math.max(1, Math.round(f.p * .92)); // bundle price of an add-on
   const dist = pr.u ? [96, 3, 1, 0, 0] : (() => { const b4 = ri(6, 12), b3 = ri(2, 5); return [98 - b4 - b3, b4, b3, 1, 1]; })();
   const car = carouselHTML(pr, ci);
   const el = html(`<div class="sh-page sh-pdp">
@@ -6874,7 +6881,7 @@ function openPDP(tab, l) {
       <div class="sh-b2 sh-qb" ${l.b2 ? '' : 'hidden'}></div>
       ${pr.u ? `<div class="sh-note">${si('box')}Delivered to your phone. It activates the moment your order arrives.</div>` : ''}
       <div class="sh-sec2"><b>Frequently bought together</b></div>
-      <div class="sh-fbt"><div class="sh-fbti">${tile(pr, ci)}<span>${pz(vPrice(l, 0).p)}</span></div>${fbt.map(f => `<i>${si('plus')}</i><div class="sh-fbti" data-l="${f.id}" role="button">${tile(PRM[f.pid], 0)}<span>${pz(f.p)}</span></div>`).join('')}</div>
+      <div class="sh-fbt"><div class="sh-fbti">${tile(pr, ci)}<span class="sh-fbtm">${pz(vPrice(l, 0).p)}</span></div>${fbt.map(f => `<i>${si('plus')}</i><div class="sh-fbti" data-l="${f.id}" role="button">${tile(PRM[f.pid], 0)}<span>${pz(f.p)}</span></div>`).join('')}</div>
       <button class="sh-fbtb" data-a="fbt">Add all 3 to cart · <span class="sh-fbtp"></span></button>
       <div class="sh-sec2"><b>Reviews</b><span>${fmt(l.rv)} ratings</span></div>
       <div class="sh-rs"><div class="sh-rsn"><b>${l.r}</b>${starsHTML(l.r)}<small>${fmt(l.rv)} ratings</small></div><div class="sh-rsb">${dist.map((v, i) => `<div><span>${5 - i}</span><i><u style="width:${v}%"></u></i><small>${v}%</small></div>`).join('')}</div></div>
@@ -6892,17 +6899,28 @@ function openPDP(tab, l) {
     $('.sh-qn', el).textContent = q;
     const qb = $('.sh-qb', el); if (l.b2) qb.textContent = q % 3 === 2 ? 'Add 1 more to get 1 free' : q >= 3 ? `You get ${Math.floor(q / 3)} free` : 'Buy 2 get 1 free';
     setH($('.sh-buyp', el), pz(v.p * q - (l.b2 ? Math.floor(q / 3) * v.p : 0)));
-    const fb = v.p + fbt.reduce((s, f) => s + f.p, 0), fbS = Math.round(fb * .08);
-    setH($('.sh-fbtp', el), `${pz(fb - fbS)} <small>Save ${pz(fbS)}</small>`);
+    const fb = v.p + fbt.reduce((s, f) => s + fbtP(f), 0), fbS = fbt.reduce((s, f) => s + f.p - fbtP(f), 0);
+    setH($('.sh-fbtm', el), pz(v.p));
+    setH($('.sh-fbtp', el), `${pz(fb)}${fbS ? ` <small>Save ${pz(fbS)}</small>` : ''}`);
     const n = cartUnits(); setT($('.sh-pcn', el), n || '');
   };
   const urg = () => { inCart = Math.max(120, inCart + ri(-6, 14)); $('.sh-urgt', el).textContent = l.ld ? `${fmt(inCart)} people have this in their cart · Deal ends in ${cd(l.until - T())}` : l.stock <= 8 ? `Only ${l.stock} left · ${fmt(inCart)} people have this in their cart` : `Selling fast · ${fmt(inCart)} people have this in their cart`; };
   upd(); urg();
+  // a lightning deal that ends while the page is open shows its new price here before anything is added at it
+  let dealOn = !!l.ld;
+  const dealOver = () => {
+    if (!dealOn || (l.ld && T() <= l.until)) return false;
+    if (l.ld) { l.p = l.after; l.ld = 0; l.until = 0; }
+    dealOn = false;
+    const b = $('.sh-ldband', el); if (b) { b.classList.add('end'); b.innerHTML = `<b>${IF('bolt')}Lightning deal ended</b>`; }
+    upd(); urg(); return true;
+  };
+  const dealGone = () => { if (!dealOver()) return false; sfx.nope(); toast('This lightning deal has ended'); return true; };
   const carEl = $('.sh-car', el), carN = $('.sh-carn', el);
   let carTot = car.n;
   carEl.addEventListener('scroll', () => { const i = Math.round(carEl.scrollLeft / Math.max(1, carEl.clientWidth)) + 1; carN.textContent = `${i}/${carTot}`; }, { passive: true });
   const bnow = () => {
-    if (l.ld && T() > l.until) { l.p = l.after; l.ld = 0; l.until = 0; }
+    if (dealGone()) return;
     const v = vPrice(l, sz), line = { key: 'now', pid: l.pid, ci, si: sz, q, p: v.p, p0: v.p, was: v.was, bp: l.p, bw: l.was, t: l.t, sel: 1, b2: l.b2 || 0, nu: l.nu || 0, stock: l.stock, until: l.until || 0, after: v.after };
     act(); openCheckout(tab, [line]);
   };
@@ -6920,19 +6938,20 @@ function openPDP(tab, l) {
     const k = a.dataset.a;
     if (k === 'inc') { if (l.nu) { sfx.nope(); toast('Limit 1 per customer at this price'); return; } if (q >= l.stock) { sfx.nope(); toast(`Only ${l.stock} left in stock`); return; } q++; sfx.pop(q); upd(); }
     else if (k === 'dec') { if (q > 1) { q--; sfx.click(); upd(); } }
-    else if (k === 'atc') { if (l.ld && T() > l.until) { l.p = l.after; l.ld = 0; l.until = 0; } if (addLine(l, ci, sz, q, $('.sh-carw', el))) upd(); }
+    else if (k === 'atc') { if (!dealGone() && addLine(l, ci, sz, q, $('.sh-carw', el))) upd(); }
     else if (k === 'buy') bnow();
     else if (k === 'gocart') { clearPages(tab); if (tab === 'cart') renderCart(); else showTab(bundleById('shop'), 'cart'); }
     else if (k === 'fbt') {
-      const v = vPrice(l, sz); let ok = addLine(l, ci, sz, 1, $('.sh-fbt', el));
-      fbt.forEach(f => { const was = f.p; f.p = Math.max(1, Math.round(f.p * .92)); ok = addLine(f, 0, 0, 1) && ok; f.p = was; });
-      if (ok) toast(`3 items added · You saved ${fmt(Math.round((v.p + fbt.reduce((s2, f) => s2 + f.p, 0)) * .08))} more`);
+      if (dealGone()) return;
+      let ok = addLine(l, ci, sz, 1, $('.sh-fbt', el)), fbS = 0;
+      fbt.forEach(f => { const was = f.p; f.p = fbtP(f); if (addLine(f, 0, 0, 1)) fbS += was - f.p; else ok = false; f.p = was; });
+      if (ok) toast(fbS ? `3 items added · You saved ${fmt(fbS)}` : '3 items added');
       upd();
     }
     else if (k === 'more') { $('.sh-rvs', el).insertAdjacentHTML('beforeend', reviewsHTML(pr, l, revN, 3)); revN += 3; sfx.click(); }
     else if (k === 'help') { const m2 = a.textContent.match(/\d+/); if (!a.classList.contains('on')) { a.classList.add('on'); a.textContent = `Helpful (${+m2[0] + 1})`; sfx.pop(3); } }
   });
-  el._tick = () => { urg(); const n = cartUnits(); setT($('.sh-pcn', el), n || ''); };
+  el._tick = () => { if (!dealOver()) urg(); const n = cartUnits(); setT($('.sh-pcn', el), n || ''); };
   el._key = e => {
     if (e.type !== 'keydown') return false;
     if (e.key === 'Enter') { $('.sh-atc', el).click(); return true; }
@@ -6973,7 +6992,7 @@ function openCheckout(tab, lines) {
         <div class="sh-pm"><span class="sh-pmi">${IF('bolt')}</span><span class="sh-dt"><b>Hits balance</b><small class="sh-bal"></small></span><span class="sh-rad on"></span></div>
         <div class="sh-short" hidden><b></b><small>Earn more hits, or remove something from your order.</small><div class="row2"><button class="sh-sbtn" data-a="earn">Earn hits</button><button class="sh-sbtn ghost" data-a="back">Edit order</button></div></div>
       </section>
-      <section class="sh-cks"><h4>${si('box')}Order summary <small class="sh-cnt"></small></h4><div class="sh-oth">${lines.map(l => `<span class="sh-othi">${tile(PRM[l.pid], l.ci)}${l.q > 1 ? `<b>×${l.q}</b>` : ''}${l.gift ? '<em>FREE</em>' : ''}</span>`).join('')}</div><div class="sh-rows"></div></section>
+      <section class="sh-cks"><h4>${si('box')}Order summary <small class="sh-cnt"></small></h4><div class="sh-oth"></div><div class="sh-rows"></div></section>
       <p class="fine">Payments are encrypted and processed securely. By placing this order you agree to the Terms of Sale.</p>
     </div>
     <div class="sh-pf sh-cof"><div class="sh-cot"><span>Total</span><b class="sh-ctot"></b><small class="sh-csav"></small></div>
@@ -6987,6 +7006,8 @@ function openCheckout(tab, lines) {
     setH($('.sh-dexp', el), k.shipCp ? `<s>${fmt(EXP_FEE)}</s> FREE` : pz(EXP_FEE));
     setH($('.sh-bal', el), `Available: ${pz(S.hits)}`);
     setT($('.sh-cnt', el), `(${k.n} item${k.n > 1 ? 's' : ''}${k.giftOk ? ' + gift' : ''})`);
+    // only what the order will contain: the free gift shows once the order qualifies for it
+    setH($('.sh-oth', el), items().map(l => `<span class="sh-othi">${tile(PRM[l.pid], l.ci)}${l.q > 1 ? `<b>×${l.q}</b>` : ''}${l.gift ? '<em>FREE</em>' : ''}</span>`).join(''));
     setH($('.sh-rows', el), sumRows(k, { co: 1, ship }));
     setH($('.sh-ctot', el), pz(k.total));
     setH($('.sh-csav', el), `Saving ${pz(k.saved)}`);
@@ -7232,7 +7253,12 @@ function openSearch() {
     <div class="sh-sech"><b>Trending searches</b></div><div class="sh-trend">${TREND.map((t, i) => `<button data-q="${t}"><i>${i + 1}</i>${t}${i < 3 ? IF('flame') : ''}</button>`).join('')}</div></div>`);
   const close = sheet('Search', el), inp = $('input', el), sug = $('.sh-sug', el);
   const go = q => { close(); runSearch(q); };
-  ['keydown', 'keyup'].forEach(ev => inp.addEventListener(ev, e => { if (e.key !== 'Escape') e.stopPropagation(); if (ev === 'keydown' && e.key === 'Enter') { e.preventDefault(); go(inp.value || inp.placeholder); } }));
+  // typing stays in the field; Escape closes Search (the app's own Escape handlers skip inputs)
+  ['keydown', 'keyup'].forEach(ev => inp.addEventListener(ev, e => {
+    e.stopPropagation();
+    if (e.key === 'Escape') { e.preventDefault(); if (ev === 'keydown') close(); }
+    else if (ev === 'keydown' && e.key === 'Enter') { e.preventDefault(); go(inp.value || inp.placeholder); }
+  }));
   inp.addEventListener('input', () => {
     const v = inp.value.trim().toLowerCase();
     const m = v ? PRL.filter(p => (p.n + ' ' + p.t).toLowerCase().includes(v)).slice(0, 6) : [];
@@ -7420,7 +7446,7 @@ def({
       if (k === 'checkout') { const lines = SH.cart.filter(x => x.sel || x.gift); if (!lines.some(x => !x.gift)) { sfx.nope(); toast('Select an item to check out'); return; } act(); openCheckout('cart', lines); return; }
       if (!l) return;
       if (k === 'sel') { l.sel = l.sel ? 0 : 1; sfx.click(); renderCart(); }
-      else if (k === 'view') openPDP('cart', lineL(l));
+      else if (k === 'view') { if (!l.gift) openPDP('cart', lineL(l)); }
       else if (k === 'rm') removeLine(l, row);
       else if (k === 'inc') {
         if (l.nu) { sfx.nope(); toast('Limit 1 per customer at this price'); return; }
@@ -7474,9 +7500,11 @@ def({
       if (a.dataset.a === 'track') { o.open = o.open ? 0 : 1; sfx.click(); card.replaceWith(html(ordHTML(o))); }
       else if (a.dataset.a === 'claim') { o.claimed = 1; const [x, y] = centerOf(a); earn(o.credit, x, y - 20, { raw: true }); sfx.coin(); haptic(true); save(); refreshBadges(); card.replaceWith(html(ordHTML(o))); }
       else if (a.dataset.a === 'again') {
-        let n = 0;
-        for (const l of o.lines) if (!l.gift && !l.nu) { const L = lineL({ ...l, until: 0, after: 0 }); if (addLine(L, l.ci, l.si, l.q)) n++; }
+        // at today's regular price: deal, bundle and new customer prices stay with the order they were on
+        let n = 0, tried = 0;
+        for (const l of o.lines) if (!l.gift && PRM[l.pid]) { tried++; const L = mkL(PRM[l.pid], { k: 1, ci: l.ci, tag: '', pfx: '', x: { t: l.t } }); if (addLine(L, l.ci, l.si, l.q)) n++; }
         if (n) toast(`${n} item${n > 1 ? 's' : ''} added to your cart`);
+        else if (!tried) { sfx.nope(); toast('These items can’t be bought again'); }
       }
     });
   },
