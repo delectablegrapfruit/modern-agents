@@ -570,7 +570,7 @@ final class FoeSprite: SKNode {
             trail.position = CGPoint(x: -facing * height * 0.12, y: height * 0.05)
             trail.xScale = facing
             trail.size = CGSize(width: ronin * 0.6 * max(0.2, s), height: ronin * 0.2)
-            let want: CGFloat = stepping && pace > ronin * 0.5 && !leaping ? 0.28 * s : 0
+            let want: CGFloat = stepping && pace > ronin * 0.5 && !leaping ? 0.18 * s : 0
             trail.alpha += (want - trail.alpha) * min(1, CGFloat(dt) * 12)
         }
 
@@ -866,7 +866,7 @@ final class FoeSprite: SKNode {
             default: return 5
             }
         }
-        if family(frame) != family(shown), family(frame) != 3 {
+        if family(frame) != family(shown), family(frame) != 3, !Figures.smeared(cast, frame) {
             echoFrame = shown
             Figures.apply(echo, cast, echoFrame, ronin: ronin)
             echo.alpha = 0.4
@@ -1010,7 +1010,7 @@ final class FoeSprite: SKNode {
 /// shaken by a blow, a miss or a parried cut, a guard that heaves, clutches at its wound (only if he has one) and
 /// sags at the knees, begun each time on a fresh breath; cuts on a darting lunge that stretches him into the blow,
 /// the next cut swung from where the last one planted him, and a step back into guard a foot at a time;
-/// afterimages when he closes a long gap; a ghost of his old stance when he turns; a stumble, and a wound taken three
+/// the smear of each fast frame drawn alone, never a copy of him behind it; a ghost of his old stance when he turns; a stumble, and a wound taken three
 /// ways, turned to face whoever dealt it so it drives him away from them (before the draw, rocked back where he stands
 /// with his hand on the hilt); a cut into the warlord's guard carried into a bind on his blade, then, parried, forced
 /// off it and backing off in guard a step or two (glancing off a guard still rising, only drawn back out of the bind);
@@ -1302,7 +1302,7 @@ final class HeroSprite: SKNode {
     /// A cut that landed (or was aimed) `distance` points away: he darts out along the lane into it, and steps back
     /// into guard: from a long lunge he pushes off and lifts the front foot back first, from a short one he draws the
     /// back foot up first. Swung again on the same side while still planted in the last one's lunge, the new cut
-    /// keeps that footing, the front foot where it is. A long reach leaves afterimages along the lunge. `start`
+    /// keeps that footing, the front foot where it is. The lunge's blur is the cut frames' own. `start`
     /// skips the first frames, for a blade that must already be at its mark (an arrow met the instant it is cut).
     func cut(_ side: Side, _ style: Cut, distance: CGFloat, from start: Int = 0) {
         guard !ended else { return }
@@ -1347,23 +1347,6 @@ final class HeroSprite: SKNode {
                     Beat(frame: .recover(style, 3), time: timing[Frame.cutFrames + 1], footwork: .home(.back))]
         }
         play(run)
-        if distance > ronin * 0.95 { afterimages(side, style, distance) }
-    }
-
-    /// A faint copy of the ronin in the cut's smear frame, a third of the way across the gap he closed, gone in a
-    /// blink: a dark, see-through silhouette in the setting's shadow, like ink left behind by the brush.
-    private func afterimages(_ side: Side, _ style: Cut, _ distance: CGFloat) {
-        guard let parent else { return }
-        let span = distance - ronin * 0.35
-        let ghost = SKSpriteNode()
-        Figures.apply(ghost, .hero, .cut(style, 3), ronin: ronin)
-        ghost.xScale = side == .right ? 1 : -1
-        ghost.position = CGPoint(x: home.x + side.sign.cg * span / 3, y: home.y)
-        ghost.zPosition = zPosition - 0.5
-        Art.setTint(ghost, ambient.ghost, 1)
-        ghost.alpha = 0.22
-        ghost.run(.sequence([.fadeOut(withDuration: 0.1), .removeFromParent()]))
-        parent.addChild(ghost)
     }
 
     /// A cut at nothing: carried past the mark on the planted back foot, the front one coming down after it; and a
@@ -1649,7 +1632,10 @@ final class HeroSprite: SKNode {
 
     private func show(_ frame: Frame, blend: Bool, sheathed look: Bool = false) {
         guard frame != pose || look != poseSheathed else { return }
-        if blend {
+        if !look, Figures.smeared(.hero, frame) {
+            // A smear frame carries its own trail: a ghost of the pose before (or of his turn) would be a second ronin.
+            echo.alpha = 0
+        } else if blend {
             echoPose = pose
             echoSheathed = poseSheathed
             draw(echo, echoPose, sheathed: echoSheathed)

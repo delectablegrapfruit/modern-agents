@@ -75,8 +75,8 @@ struct Look {
 /// How a setting lights the figures on its lane, living and dead, so they stand in it rather than over it: each is
 /// drawn a little toward the setting's darkest tone (`shade`, `amount` of the way: enough to take its colour, never so
 /// much that the rim of light round a figure is lost); a flash on one (a blow landing, a killing blow's freeze) is in
-/// the setting's own light; and the ghosts a figure leaves (the pose it has just left, the ronin's afterimages across
-/// a lunge) are dark, see-through silhouettes in its shadow (`ghost`), never a pale grey over the sky.
+/// the setting's own light; and the ghosts a figure leaves (the pose it has just left, as it turns or changes
+/// what it does) are dark, see-through silhouettes in its shadow (`ghost`), never a pale grey over the sky.
 struct Ambient: Equatable {
     var shade: RGB
     var amount: CGFloat

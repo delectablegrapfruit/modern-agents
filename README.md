@@ -31,8 +31,7 @@ where it is.
   - **sune-giri** (dropping to cut at the shins) and **gyaku-kesa** (rising from waki-gamae) for the quick ones,
   - **dō-giri** (level through the waist) and the diagonals to meet an arrow.
 
-  His hands lead each cut and the blade whips through after them. When he closes a long gap he leaves afterimages
-  behind. At the end of a stage he throws the blood from his blade (ō-chiburi), sinking into the snap on his guard's
+  His hands lead each cut and the blade whips through after them, the whole swing smeared. At the end of a stage he throws the blood from his blade (ō-chiburi), sinking into the snap on his guard's
   footing, and slides it home (nōtō) as he rises. If he falls, he goes down to one knee over his sword, pitches
   forward onto his hands and lies face down.
 - **Don't whiff:** a cut with nothing in reach makes him stumble (a grey ✕ over his head). For about a third of a
@@ -252,9 +251,9 @@ All but `make run` work on Linux too.
     - **The fall:** struck, the knees going, down on one knee over his sword, pitching forward off it onto his hands,
       and face down (the blade still in its scabbard if he never drew it).
   - **Smear frames:** every fast frame (the ronin's swings, the draw, the chiburi, a stumble or a turned cut, every
-    enemy's blow and leap) is drawn as a smear: the arms and weapon repeated back along the motion as fading
-    multiples, a solid sweep of ink between the blades split into dry-brush strands, the body dragging echoes behind
-    it, and the bright edge of the swing over the top. In the app a blow lands when the drawn blade gets there: until
+    enemy's blow and leap) is drawn as a smear: the arms dissolve back along their path, a soft fan of ink sweeps
+    between the blades under a steel edge, and the body blurs back the way it was carried; each smear starts where
+    the frame before left off, and no copy of the figure is ever left behind it. In the app a blow lands when the drawn blade gets there: until
     then the struck foe is held as he stands (a cut that doesn't fell him knocks him back or sends him leaping only
     then); a killing blow freezes him white, turned to the ronin, in the pose it throws him into, and he comes apart
     from exactly that pose as the frame freezes on the impact. A level cut is seen side-on, the blade shortening as
@@ -268,7 +267,7 @@ All but `make run` work on Linux too.
   fight, and further off, finer and fainter, behind the ground, where what falls sinks out of sight and embers rise from
   beyond the horizon. Nothing blinks out in mid-air, and the wind never leaves one side of the lane bare. The figures,
   living and dead, stand in each setting's light: drawn a little toward its darkest tone, flashed in its own light when
-  struck, and leaving dark, see-through ghosts (the pose just left, the ronin's afterimages) rather than pale grey ones.
+  struck, and leaving dark, see-through ghosts (the pose just left) rather than pale grey ones.
 - `ronin-sim` plays stages headless with a human-like pilot (0.22 s reaction, 7 cuts a second, an occasional
   wrong-way cut; `--reaction`, `--rate` and `--slips` change them, and `--rash` makes it lose patience with a
   warlord's set guard now and then) or a perfect one (`--perfect`), in one mode or every mode (`--mode all`), over

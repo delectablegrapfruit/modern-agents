@@ -27,6 +27,18 @@ enum Figures {
         return piece
     }
 
+    private static var smears: [Cast: [Frame: Bool]] = [:]
+
+    /// Whether a frame carries its own smear (in-betweens back along the motion, or the body blurred): no ghost of
+    /// the pose before should be left behind it, it would read as a second figure.
+    static func smeared(_ cast: Cast, _ frame: Frame) -> Bool {
+        if let known = smears[cast]?[frame] { return known }
+        let pose = Figure.pose(cast, frame)
+        let smeared = !pose.ghosts.isEmpty || pose.drag != 0
+        smears[cast, default: [:]][frame] = smeared
+        return smeared
+    }
+
     /// A sketch as a texture cut down to what it draws.
     static func render(_ sketch: Sketch) -> Piece {
         let bounds = sketch.bounds(margin: sketch.rimRadius * 3 + 2)
