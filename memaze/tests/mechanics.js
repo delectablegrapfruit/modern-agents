@@ -202,6 +202,27 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     check('item boxes are there in Time Trial too (it has no mystery boxes)', G.maze.gboxes.length >= 2 && !G.boxesOn());
     G.quit();
 
+    // ----- Gauntlet's cyclone stones -----
+    check('no cyclone stones outside the Gauntlet', [3, 12, 25].every((lv) => !(L.build(L.levelParams(lv)).stones || []).length));
+    G.startGauntlet({ diff: 'hard', seedText: 'stones' });
+    for (let d = 1; d < 12 && !G.maze.stones.length; d++) { G.run.cleared = d; G.nextGauntlet(); }
+    const stn = G.maze.stones[0];
+    check('the Gauntlet has cyclone stones', !!stn, G.maze.stones.length);
+    const holdAt = (st) => { const c = st.rest + st.travel + st.hold / 2; st.phase = (((c - G.playT - 1 / 60) / st.period) % 1 + 1) % 1; }; // in the junction next frame
+    holdAt(stn);
+    G.pieces = null; // (done reassembling: nothing hurts while you spawn in)
+    G.hp = 2; G.bonus = 0; G.guardT = 0; G.stuck = false; G.fx = {}; hits.length = 0;
+    put({ x: stn.jx, y: stn.jy });
+    const thrown = Math.hypot(G.ball.x - stn.jx, G.ball.y - stn.jy);
+    check('a cyclone stone costs a hit and throws you back, onto the floor', G.hp === 1 && hits.length === 1 && thrown > 20 && !G.hitAt(G.ball.x, G.ball.y), thrown.toFixed(0));
+    G.resetPower(); G.guardT = 0;
+    G.giveItem('star'); G.useItem();
+    holdAt(stn);
+    hits.length = 0;
+    put({ x: stn.jx, y: stn.jy });
+    check('with Invincible you smash it instead (and it comes back later)', stn.brokeAt != null && hits.length === 0 && G.hp === 2);
+    G.quit();
+
     // ----- Gauntlet -----
     G.startGauntlet({ seedText: 'same', style: 'progressive', diff: 'normal' });
     const e1 = JSON.stringify(G.maze.edges.map((e) => [e.a, e.b]));

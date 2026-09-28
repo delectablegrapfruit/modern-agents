@@ -313,6 +313,7 @@
       if (s.goal && !s.goal.media) this.drawGoal(s.goal, th);
       if (s.flags) for (const c of s.flags) this.drawFlag(c);
       if (s.mech) this.drawMech(s.mech, s.clock || 0);
+      if (s.mech && s.mech.stones && s.mech.stones.length) this.drawStones(s.mech.stones, s.stonesT != null ? s.stonesT : t);
       if (s.beacons) for (const b of s.beacons) this.drawBeacon(b);
       if (s.gems) for (const g of s.gems) if (!g.taken) this.drawGem(g);
       if (s.boxes) for (const b of s.boxes) this.drawBox(b, s.clock || 0, s.boxAge ? s.boxAge(b) : 9);
@@ -479,6 +480,77 @@
       ctx.strokeStyle = '#ffd84a'; ctx.lineWidth = 3.5 * px; ctx.stroke();
       drawIcon(ctx, b.item, 0, 0, r * 1.5);
       ctx.restore();
+    }
+    // Gauntlet's cyclone stones: a faint dashed track where each sweeps; the stone spinning inside its own little
+    // whirlwind, kicking up dust, with an angry face that stays upright; smashed, it bursts into chips.
+    drawStones(stones, t) {
+      const ctx = this.ctx, px = this.px;
+      for (const st of stones) {
+        ctx.save();
+        ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+        ctx.setLineDash([7 * px, 9 * px]);
+        ctx.beginPath(); st.path.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)));
+        ctx.strokeStyle = 'rgba(30,22,48,0.28)'; ctx.lineWidth = 5 * px; ctx.stroke(); // visible on light floors and dark ones
+        ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 2 * px; ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+        const r = st.r;
+        if (st.brokeAt != null && t - st.brokeAt < 10) {
+          const k = (t - st.brokeAt) / 0.6;
+          if (k < 1) { // chips flying
+            ctx.save(); ctx.translate(st.brokeX, st.brokeY); ctx.globalAlpha = 1 - k;
+            for (let i = 0; i < 10; i++) {
+              const a = i * 2.39996, d = r * (0.3 + 1.6 * k), s = r * 0.28 * (1 - 0.5 * k);
+              ctx.save(); ctx.translate(Math.cos(a) * d, Math.sin(a) * d); ctx.rotate(a + k * 6);
+              ctx.beginPath(); ctx.moveTo(-s, -s * 0.6); ctx.lineTo(s, -s * 0.3); ctx.lineTo(0, s); ctx.closePath();
+              ctx.fillStyle = i % 2 ? '#9d978f' : '#6f6a66'; ctx.fill();
+              ctx.restore();
+            }
+            ctx.restore();
+          }
+          continue;
+        }
+        const p = MZ.stoneAt(st, t);
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        // the whirlwind and its dust
+        ctx.fillStyle = 'rgba(214,200,172,0.2)'; ctx.beginPath(); ctx.arc(0, 0, r * 1.6, 0, TAU); ctx.fill();
+        for (let i = 0; i < 4; i++) {
+          const a = -t * 7 + (i * TAU) / 4, rr = r * (1.22 + 0.1 * (i % 2));
+          ctx.beginPath(); ctx.arc(0, 0, rr, a, a + 1.5);
+          ctx.strokeStyle = 'rgba(240,244,255,0.6)'; ctx.lineWidth = 2.5 * ICON * 0.5; ctx.stroke();
+        }
+        for (let i = 0; i < 6; i++) { // dust puffs flung round
+          const a = -t * 5 + i * 1.047, d = r * (1.45 + 0.15 * Math.sin(t * 6 + i));
+          ctx.fillStyle = 'rgba(214,200,172,0.45)'; ctx.beginPath(); ctx.arc(Math.cos(a) * d, Math.sin(a) * d, r * 0.12, 0, TAU); ctx.fill();
+        }
+        // the stone, spinning
+        ctx.save();
+        ctx.rotate(t * 9);
+        if (!st.shape) st.shape = Array.from({ length: 9 }, (_, i) => 0.88 + 0.12 * Math.abs(Math.sin(i * 12.9898 + st.len)));
+        ctx.beginPath();
+        st.shape.forEach((k, i) => { const a = (i / st.shape.length) * TAU; (i ? ctx.lineTo : ctx.moveTo).call(ctx, Math.cos(a) * r * k, Math.sin(a) * r * k); });
+        ctx.closePath();
+        const gr = ctx.createRadialGradient(-r * 0.3, -r * 0.35, r * 0.1, 0, 0, r);
+        gr.addColorStop(0, '#c9c3b8'); gr.addColorStop(1, '#6f6a66');
+        ctx.fillStyle = gr; ctx.fill();
+        ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 1.2 * ICON; ctx.stroke();
+        ctx.strokeStyle = 'rgba(40,36,34,0.45)'; ctx.lineWidth = 0.9 * ICON; // carved swirls
+        for (const s of [1, -1]) { ctx.beginPath(); ctx.arc(s * r * 0.15, 0, r * 0.62, s > 0 ? -0.4 : 2.7, s > 0 ? 1.2 : 4.3); ctx.stroke(); }
+        ctx.restore();
+        // the angry face, upright
+        const u = r / 22;
+        ctx.lineCap = 'round';
+        for (const s of [-1, 1]) {
+          ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.ellipse(s * 7 * u, -3 * u, 4.2 * u, 3.4 * u, 0, 0, TAU); ctx.fill();
+          ctx.fillStyle = '#1b1530'; ctx.beginPath(); ctx.arc(s * 6 * u, -2.2 * u, 2 * u, 0, TAU); ctx.fill();
+          ctx.strokeStyle = '#1b1530'; ctx.lineWidth = 2.4 * u; ctx.beginPath(); ctx.moveTo(s * 13 * u, -11 * u); ctx.lineTo(s * 3 * u, -6.5 * u); ctx.stroke();
+        }
+        ctx.fillStyle = '#1b1530'; ctx.beginPath(); ctx.rect(-7 * u, 5 * u, 14 * u, 5.5 * u); ctx.fill(); // gritted teeth
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.1 * u;
+        ctx.beginPath(); ctx.moveTo(-6 * u, 7.75 * u); ctx.lineTo(6 * u, 7.75 * u); for (const x of [-3.5, 0, 3.5]) { ctx.moveTo(x * u, 5.5 * u); ctx.lineTo(x * u, 10 * u); } ctx.stroke();
+        ctx.restore();
+      }
     }
     // A key, bobbing and rocking a little on its spot (it's picked up within Levels.KEY_R of it).
     drawKey(k, t) {
@@ -868,6 +940,8 @@
           g.beginPath(); q.pts.forEach((p, i) => (i ? g.lineTo : g.moveTo).call(g, this.ox + p.x * this.sc, this.oy + p.y * this.sc)); g.stroke(); g.restore();
         }
         for (const q of mech.squeezes || []) if (q.seen) doorBar(g, this.ox + q.ax * this.sc, this.oy + q.ay * this.sc, this.ox + q.bx * this.sc, this.oy + q.by * this.sc, ITEM_TINT.shrink, Math.max(ICON * this.sc, 0.2 * u), false);
+        const now = MZ.Game ? MZ.Game.playT : 0;
+        for (const st of mech.stones || []) if (st.seen && !(st.brokeAt != null && now - st.brokeAt < 10)) { const q = MZ.stoneAt(st, now); dot(q.x, q.y, 3.2 * u, '#000'); dot(q.x, q.y, 2.3 * u, '#a8a29a'); }
         for (const gb of mech.gboxes || []) if (gb.seen && !gb.out) { const x = this.ox + gb.x * this.sc, y = this.oy + gb.y * this.sc, h = 2.6 * u; g.fillStyle = '#000'; g.fillRect(x - h - 0.8 * u, y - h - 0.8 * u, 2 * h + 1.6 * u, 2 * h + 1.6 * u); g.fillStyle = '#ffd84a'; g.fillRect(x - h, y - h, 2 * h, 2 * h); }
         for (const pt of mech.portals) for (const e of [pt.a, pt.b]) if (e.seen) { dot(e.x, e.y, 3.2 * u, pt.color); dot(e.x, e.y, 1.6 * u, '#000'); }
         for (const mv of mech.movers) if (mv.seen) {

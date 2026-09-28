@@ -36,6 +36,7 @@
   };
   const BULLET_V = 520, BULLET_RUN = 1800; // Bullet: speed and how far it carries you (it finishes on a junction)
   const GEM_CHARM = 5, MAX_LIVES = 9;      // Gauntlet: every this many gems pays out (a life, a shield, an item, time)
+  const STONE_BACK = 10, KNOCK = 90;       // Gauntlet's cyclone stones: seconds a smashed one stays gone; how far one throws you
   const APEX_VIEW = 1100;                  // Launch: world units across the screen's shorter side at the top
   const REACH = 340;                       // Launch: how far from take-off you can steer; clouds mark the border
   const UP = 0.3, AIR = 0.75, DOWN = 0.4;  // Launch: seconds going up, at the top, coming down (you steer throughout)
@@ -290,6 +291,7 @@
         const m = this.maze;
         for (const o of [].concat(m.doors, m.keys, m.plates, m.gates, m.squeezes || [], m.gboxes || [])) if (!o.seen && inside(o, 20)) o.seen = true;
         for (const q of m.gaps || []) if (!q.seen && (inside(q.a, 30) || inside(q.b, 30))) q.seen = true;
+        for (const st of m.stones || []) if (!st.seen && inside({ x: st.jx, y: st.jy }, 40)) st.seen = true;
         for (const pt of m.portals) for (const e of [pt.a, pt.b]) if (!e.seen && inside(e, pt.r)) e.seen = true;
         for (const mv of m.movers) if (!mv.seen && (inside(mv.a, mv.r) || inside(mv.b, mv.r))) mv.seen = true;
       }
@@ -416,6 +418,7 @@
       for (const pt of m.portals) pt.seen = false;
       for (const q of [].concat(m.gaps || [], m.squeezes || [])) q.seen = false;
       for (const gb of m.gboxes || []) { gb.out = false; gb.back = null; gb.seen = false; gb.bornAt = null; gb.gotAt = null; }
+      for (const st of m.stones || []) { st.brokeAt = null; st.seen = false; }
       this.world.sw = {};
     },
     mod(id) { return !!(this.maze && this.maze.mods && this.maze.mods.includes(id)); },
@@ -599,9 +602,41 @@
         if (this.pickups()) return;
         if (this.warped) { this.warped = false; break; }
       }
+      if (this.stoneContact()) return;
       this.offEdge(dt);
       this.noteSafe();
       if (this.mode === 'endless') this.endlessTick();
+    },
+    // Gauntlet's cyclone stones: touching one throws you back (a hit, unless the edges are walls or you're shielded);
+    // with Invincible you smash it instead, and it's back STONE_BACK s later. True if the hit lost the maze.
+    stoneContact() {
+      const m = this.maze;
+      if (!m || !m.stones || !m.stones.length) return false;
+      for (const st of m.stones) {
+        if (st.brokeAt != null && this.playT - st.brokeAt < STONE_BACK) continue;
+        st.brokeAt = null;
+        const p = MZ.stoneAt(st, this.playT);
+        if (!this.touches(p.x, p.y, st.r)) continue;
+        if (this.fx.star > 0) { st.brokeAt = this.playT; st.brokeX = p.x; st.brokeY = p.y; MZ.Audio.play('shatter'); this.emit('bonus', 'Smashed!'); continue; }
+        this.knockback(p);
+        MZ.Audio.play('land');
+        if (S().gameplay.rule !== 'casual' && !this.shielded() && this.hurt()) return true;
+      }
+      return false;
+    },
+    // Thrown away from p, up to KNOCK units, whichever way the floor allows most (never over the edge or through a bar).
+    knockback(p) {
+      const b = this.ball, a0 = Math.atan2(b.y - p.y, b.x - p.x);
+      let best = null, bd = -1;
+      for (const da of [0, 0.6, -0.6, 1.3, -1.3, 2, -2]) {
+        const dx = Math.cos(a0 + da), dy = Math.sin(a0 + da);
+        let x = b.x, y = b.y, d = 0;
+        for (; d < KNOCK; d += 4) { const nx = x + dx * 4, ny = y + dy * 4; if (this.hitAt(nx, ny) || this.barred(x, y, nx, ny)) break; x = nx; y = ny; }
+        if (d > bd + 8) { bd = d; best = { x, y }; } // (straight away is preferred unless another way goes clearly further)
+      }
+      if (best) { b.x = best.x; b.y = best.y; }
+      this.vel.x = this.vel.y = 0;
+      this.input.takeGrab();
     },
     // After a hit, the edge can hurt again only once you've been clear of it for a beat.
     offEdge(dt) {
@@ -1562,6 +1597,7 @@
         beacons: this.mode === 'endless' && !menu ? this.beacons : null,
         flags: !menu && maze ? this.checkpoints : null,
         mech: maze && maze.doors ? maze : null, // doors and keys, switches, gates, platforms, portals, ice
+        stonesT: pt, // (cyclone stones run on the play clock)
         path: !menu && fx.path > 0 && this.pathLine ? { pts: this.pathLine.pts, a: Math.min(1, (ITEMS.path.dur - fx.path) * 4, fx.path * 1.5) } : null,
         boxes: boxesOn ? this.boxes.filter((x) => x.takenAt == null || this.runT - x.takenAt >= BOX_BACK) : null,
         boxAge: (x) => (x.takenAt == null ? 9 : this.runT - x.takenAt - BOX_BACK),

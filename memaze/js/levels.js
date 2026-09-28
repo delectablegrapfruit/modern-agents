@@ -147,10 +147,19 @@
     if (o.style === 'random') return rng(hashInts(o.seed, depth, 5)).int(D.span[0], D.span[1]);
     return D.start + Math.floor(depth * 1.4);
   }
+  // Cyclone stones (Gauntlet only): how many sweep a maze, and how fast, by difficulty and depth; bosses get two more.
+  const STONES = {
+    easy: { n: (d) => (d < 2 ? 0 : Math.min(2, 1 + Math.floor(d / 6))), speed: 85 },
+    normal: { n: (d) => Math.min(4, 1 + Math.floor(d / 4)), speed: 100 },
+    hard: { n: (d) => Math.min(6, 2 + Math.floor(d / 4)), speed: 115 },
+    extreme: { n: (d) => Math.min(8, 3 + Math.floor(d / 3)), speed: 135 },
+  };
   function gauntletParams(o, depth) {
-    const level = gauntletLevel(o, depth);
-    const p = levelParams(level, { seed: hashInts(o.seed, depth, 99), boss: (depth + 1) % 10 === 0 });
+    const level = gauntletLevel(o, depth), boss = (depth + 1) % 10 === 0;
+    const p = levelParams(level, { seed: hashInts(o.seed, depth, 99), boss });
     p.timeFactor *= 0.9;
+    const st = STONES[o.diff] || STONES.normal;
+    p.stones = { count: st.n(depth) + (boss ? 2 : 0), speed: st.speed };
     return p;
   }
 
@@ -272,10 +281,69 @@
     let barriers = m.fixed ? m.fixed.map((b) => Object.assign({}, b)) : null; // a layout pins its barriers
     for (let tries = 0; tries < 6; tries++) {
       const res = mechanize(m, p, barriers);
-      if (res.ok) return res.m;
+      if (res.ok) { placeStones(res.m, p); return res.m; }
       barriers = res.barriers.filter((x, i) => i !== res.failed); // leave out the one that couldn't be solved
     }
     return mechanize(m, Object.assign({}, p, { mech: {} }), []).m;
+  }
+
+  // Gauntlet: cyclone stones. Each sweeps along a side corridor (never one the route takes) into a junction the route
+  // goes through and back: resting at its far end, a moment in the junction. Getting past is a matter of timing, and
+  // the corridors leading in are always safe to wait in.
+  const STONE_R = 22, STONE_REACH = 250;
+  function placeStones(m, p) {
+    m.stones = [];
+    const want = p.stones ? p.stones.count : 0;
+    if (!want) return;
+    const r = rng(hashInts(m.seed, 0x570e)), n = m.nodes.length, adj = adjacency(n, m.edges);
+    const walked = new Set(), onRoute = new Set([m.mainPath[0]]);
+    for (const L of m.route) if (L.type === 'walk') for (const st of L.steps) { walked.add(st.e.id); onRoute.add(st.e.a); onRoute.add(st.e.b); }
+    const away = (P, Q, d) => Math.hypot(P.x - Q.x, P.y - Q.y) > d;
+    const cands = [];
+    for (const J of onRoute) {
+      const N = m.nodes[J];
+      if (!away(N, m.start, 450) || !away(N, m.goal, 300)) continue;
+      if (adj[J].some((e) => e.type !== 'normal' && e.type !== 'bridge')) continue; // not where you wait for a bridge
+      const things = [].concat(m.doors, m.gates, m.squeezes || [], m.keys, m.plates, m.gboxes || [], m.pads || [], (m.gaps || []).flatMap((q) => [q.a, q.b]), (m.movers || []).flatMap((q) => [q.from, q.to]));
+      if (things.some((o) => !away(N, o, 110))) continue; // clear of doors, gates, keys, switches, item boxes, portals...
+      for (const e of adj[J]) if (!walked.has(e.id) && e.type === 'normal') cands.push({ J, e });
+    }
+    r.shuffle(cands);
+    const at = [];
+    for (const c of cands) {
+      if (m.stones.length >= want) break;
+      const N = m.nodes[c.J];
+      if (at.some((q) => !away(N, q, 380))) continue;
+      // From the junction outward along the side corridor, and on through the next one where it just carries on.
+      let P = c.e.a === c.J ? c.e.pts.slice() : c.e.pts.slice().reverse(), v = c.e.a === c.J ? c.e.b : c.e.a, prev = c.e;
+      while (polyLen(P) < STONE_REACH + 45) {
+        const next = adj[v].filter((f) => f !== prev && !walked.has(f.id) && f.type === 'normal');
+        if (adj[v].length !== 2 || next.length !== 1) break;
+        const f = next[0], Q = f.a === v ? f.pts : f.pts.slice().reverse();
+        P = P.concat(Q.slice(1)); v = f.a === v ? f.b : f.a; prev = f;
+      }
+      if (polyLen(P) < 120) continue; // too short to sweep
+      const L = Math.min(polyLen(P) - 45, STONE_REACH), path = [{ x: P[0].x, y: P[0].y }];
+      let acc = 0;
+      for (let i = 1; i < P.length && acc < L; i++) {
+        const d = Math.hypot(P[i].x - P[i - 1].x, P[i].y - P[i - 1].y), f = Math.min(1, (L - acc) / d);
+        path.push({ x: P[i - 1].x + (P[i].x - P[i - 1].x) * f, y: P[i - 1].y + (P[i].y - P[i - 1].y) * f });
+        acc += d * f;
+      }
+      path.reverse(); // path[0]: its far end, where it rests; the last point: the junction
+      const cum = [0];
+      for (let i = 1; i < path.length; i++) cum.push(cum[i - 1] + Math.hypot(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y));
+      const len = cum[cum.length - 1], speed = p.stones.speed * r.range(0.9, 1.12), rest = r.range(0.9, 1.7), hold = 0.35, travel = len / speed;
+      m.stones.push({ path, cum, len, r: STONE_R, speed, rest, hold, travel, period: rest + hold + 2 * travel, phase: r(), jx: N.x, jy: N.y });
+      at.push(N);
+      if (m.avoid) m.avoid.push({ x: N.x, y: N.y, r: 140 }); // no flag or mystery box in its sweep
+      if (m.keepClear) m.keepClear.push({ ax: path[0].x, ay: path[0].y, bx: N.x, by: N.y, r: STONE_R });
+    }
+    // Par and the time limit allow for waiting at each (about a fifth of its sweep, on average).
+    if (m.stones.length) {
+      m.parTime = Math.ceil(m.parTime + m.stones.reduce((w, st) => w + Math.min(2.5, st.period * 0.2), 0));
+      m.timeLimit = Math.max(m.timeLimit, Math.ceil((m.parTime * 1.4) / 5) * 5);
+    }
   }
 
   function mechanize(base, p, fixed) {
