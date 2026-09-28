@@ -299,3 +299,7 @@ canvas.part, canvas.inv-smoker { position: absolute; pointer-events: none; }
 /* widened 10%, so the text wraps 10% narrower to stay inside its box */
 .srpg-noblack .quote, .srpg-noblack .modal-text { transform: scaleX(1.1); transform-origin: 50% 0; padding-left: 4.5%; padding-right: 4.5%; }
 .srpg-noblack .fps-shower { transform: scaleX(1.12); transform-origin: 0 0; }
+
+/* Flash's keyboard focus rectangle (Tab); a mouse click shows none */
+#ui [data-id]:focus { outline: none; }
+#ui [data-id]:focus-visible { outline: 2px solid #ffff00; outline-offset: 1px; }

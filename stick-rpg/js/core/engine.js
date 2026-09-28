@@ -52,10 +52,16 @@
         var k = normKey(e);
         if (!k) return;
         if (isTyping(e)) return;
-        if (/^(ArrowUp|ArrowDown|ArrowLeft|ArrowRight| |Tab)$/.test(k)) e.preventDefault();
+        if (/^(ArrowUp|ArrowDown|ArrowLeft|ArrowRight| )$/.test(k)) e.preventDefault();
+        // Flash's keyboard focus: Tab moves it over the buttons, Enter presses the focused one (again on
+        // every key repeat)
+        if (k === 'Tab' && SRPG.ui.refreshTabOrder) SRPG.ui.refreshTabOrder();
+        if (k === 'Enter' && !SRPG.ui.modalOpen && SRPG.ui.pressFocused && SRPG.ui.pressFocused()) { e.preventDefault(); return; }
         var wasDown = keys[k];
         keys[k] = true;
-        if (!wasDown) {
+        // keyPress handlers repeat with the keyboard's auto-repeat (scenes list them in repeatKeys)
+        var rep = e.repeat && current && current.repeatKeys && current.repeatKeys[k];
+        if (!wasDown || rep) {
           if (SRPG.ui.onKey && SRPG.ui.onKey(k, e)) return; // modal dialogs take keys first
           if (current && current.onKey) current.onKey(k, e);
         }

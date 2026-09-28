@@ -352,6 +352,8 @@
     // release is on the same button as the press (dragging off cancels). onClick is the release
     // (engine clickOnRelease); calling it directly acts as a whole click.
     clickOnRelease: true,
+    // 'c' is a keyPress handler in the original, so holding it keeps toggling with the key repeat
+    repeatKeys: { c: true },
     onMouseDown: function (x, y) {
       st.pressTarget = clickTarget(x, y);
     },
@@ -402,11 +404,33 @@
       });
     },
 
+    // OPTIMIZE (on by default) switches the original to _quality LOW while you walk (the walk clip,
+    // srpg_as.txt 2314-2322) and back to BEST when you stop: the frame is drawn at stage resolution
+    // without smoothing, so it looks jagged while moving.
     render: function (ctx) {
       var s = S();
       if (!s) return;
-      city.renderWorld(ctx);
-      SRPG.hud.draw(ctx, s, 'map');
+      var low = s.optimize === 1 && st.moving && (SRPG.engine.pixelScale || 1) > 1;
+      var c = ctx;
+      if (low) {
+        if (!st.lowCanvas) {
+          st.lowCanvas = document.createElement('canvas');
+          st.lowCanvas.width = SRPG.W;
+          st.lowCanvas.height = SRPG.H;
+        }
+        c = st.lowCanvas.getContext('2d');
+        c.setTransform(1, 0, 0, 1, 0, 0);
+        c.imageSmoothingEnabled = false;
+      }
+      city.renderWorld(c);
+      SRPG.hud.draw(c, s, 'map');
+      if (low) {
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(st.lowCanvas, 0, 0, ctx.canvas.width, ctx.canvas.height);
+        ctx.restore();
+      }
       SRPG.engine.drawBlack(ctx);
     },
 

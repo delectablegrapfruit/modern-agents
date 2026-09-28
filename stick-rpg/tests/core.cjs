@@ -725,6 +725,31 @@ function eq(a, b, msg) { ok(JSON.stringify(a) === JSON.stringify(b), msg + ' (go
   eq(await ev(() => !!SRPG.city.st.panel), true, 'backpack: a click opens it on release');
   await ev(() => SRPG.city.closePanel());
 
+  // Flash keyboard focus: Tab walks the buttons in stage order, Enter presses the focused one and
+  // repeats while held; 'c' is a keyPress handler, so its key repeat keeps toggling the car.
+  await fresh({ mapx: 456, mapy: 630 });
+  await ev(() => { SRPG.debug.set({ hp: 1, cash: 100, time: 8 }); SRPG.debug.open('mcsticks'); });
+  await page.keyboard.press('Tab');
+  eq(await ev(() => document.activeElement.getAttribute('data-id')), 'milkshake', 'Tab: focus on the first button (top left)');
+  eq(await ev(() => getComputedStyle(document.activeElement).outlineColor), 'rgb(255, 255, 0)', 'Tab: yellow focus box');
+  await page.keyboard.press('Tab');
+  const second = await ev(() => document.activeElement.getAttribute('data-id'));
+  ok(second && second !== 'milkshake', 'Tab again: the next button (' + second + ')');
+  await page.keyboard.down('Shift'); await page.keyboard.press('Tab'); await page.keyboard.up('Shift');
+  await page.keyboard.down('Enter');
+  await page.keyboard.down('Enter'); // an auto-repeat
+  await page.keyboard.up('Enter');
+  await new Promise((r) => setTimeout(r, 50));
+  eq(await ev(() => [SRPG.game.s.cash, SRPG.game.s.time]), [84, 10], 'held Enter: the focused MILKSHAKE bought twice');
+  eq(await ev(() => document.activeElement.getAttribute('data-id')), 'milkshake', 'focus stays on the button after the menu rebuilds');
+  await fresh({ mapx: 456, mapy: 630 });
+  await ev(() => { SRPG.game.s.items.car = 1; });
+  await page.keyboard.down('c');
+  await page.keyboard.down('c');
+  await page.keyboard.down('c');
+  await page.keyboard.up('c');
+  eq(await ev(() => SRPG.game.s.driving), 1, "held 'c': three toggles (press + 2 repeats) end in the car");
+
   await fresh({ mapx: 456, mapy: 630 });
   await t.step(2);
   await t.shot(path.join(OUT, 'core-city.png'));

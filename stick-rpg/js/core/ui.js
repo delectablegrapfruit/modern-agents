@@ -205,4 +205,53 @@
     }
     if (el.parentNode) el.parentNode.removeChild(el);
   }
+
+  // --- Flash's built-in keyboard focus ---------------------------------------------------------
+  // The original never turns it off, so Tab walks a yellow focus box over the buttons on screen
+  // (in stage order: top to bottom, then left to right) and Enter presses the focused one; held
+  // down, the key repeat presses it again and again (the famous "Tab to DEPOSIT / the 500 chip and
+  // hold Enter" tricks). Every clickable element in #ui carries a data-id, so those are the
+  // buttons; disabled, hidden and inert ones are skipped.
+  var lastFocusId = null;
+  function focusables() {
+    var list = Array.prototype.slice.call(uiRoot().querySelectorAll('[data-id]'));
+    return list.filter(function (e) {
+      if (e.tagName === 'INPUT' || e.tagName === 'TEXTAREA') return false;
+      if (e.classList.contains('disabled') || e.classList.contains('static') || e.classList.contains('inert')) return false;
+      var r = e.getBoundingClientRect();
+      return r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== 'hidden';
+    });
+  }
+  // Recomputed when Tab is pressed (engine.js) and after every Enter press.
+  function refreshTabOrder() {
+    var r = uiRoot();
+    if (!r) return;
+    var list = focusables().map(function (e) { return { e: e, r: e.getBoundingClientRect() }; });
+    var keep = list.map(function (o) { return o.e; });
+    Array.prototype.forEach.call(r.querySelectorAll('[tabindex]'), function (e) {
+      if (e.tagName !== 'INPUT' && e.tagName !== 'TEXTAREA' && keep.indexOf(e) < 0) e.removeAttribute('tabindex');
+    });
+    list.sort(function (a, b) { return Math.abs(a.r.top - b.r.top) > 4 ? a.r.top - b.r.top : a.r.left - b.r.left; });
+    list.forEach(function (o, i) { o.e.tabIndex = i + 1; });
+    // a menu that rebuilt itself after the press keeps the focus on the same button
+    var act = document.activeElement;
+    if (lastFocusId && (!act || act === document.body || !r.contains(act))) {
+      var again = r.querySelector('[data-id="' + lastFocusId.replace(/"/g, '') + '"]');
+      if (again && again.tabIndex > 0) again.focus({ preventScroll: true });
+    }
+  }
+  ui.pressFocused = function () {
+    var a = document.activeElement;
+    if (!a || !uiRoot().contains(a) || !a.getAttribute('data-id') || a.tagName === 'INPUT') return false;
+    lastFocusId = a.getAttribute('data-id');
+    a.click();
+    Promise.resolve().then(refreshTabOrder);
+    return true;
+  };
+  ui.refreshTabOrder = refreshTabOrder;
+  document.addEventListener('focusin', function (e) {
+    var t = e.target;
+    lastFocusId = t && t.getAttribute && uiRoot() && uiRoot().contains(t) ? t.getAttribute('data-id') : null;
+  });
+  document.addEventListener('mousedown', function () { lastFocusId = null; }, true);
 })();
