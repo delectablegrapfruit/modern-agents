@@ -276,7 +276,7 @@
     }
     return { comp, comps };
   }
-  function dijkstra(n, edges, adj, src) {
+  function dijkstra(n, edges, adj, src, ok) { // ok(edge index, from node): may it be walked that way (one-way gates)
     const dist = new Float64Array(n).fill(Infinity), prev = new Int32Array(n).fill(-1), done = new Uint8Array(n);
     dist[src] = 0;
     for (;;) {
@@ -285,6 +285,7 @@
       if (u < 0) break;
       done[u] = 1;
       for (const ei of adj[u]) {
+        if (ok && !ok(ei, u)) continue;
         const e = edges[ei], v = e.a === u ? e.b : e.a, nd = best + e.len;
         if (nd < dist[v]) { dist[v] = nd; prev[v] = u; }
       }
@@ -539,22 +540,28 @@
     return { turns, par };
   }
 
-  // ---------- hand-made layouts (chapter 1: MZ.Layouts, in layouts.js) ----------
+  // ---------- hand-made layouts (chapters 1 and 2: MZ.Layouts, in layouts.js) ----------
   // The layout is the maze: its corridors exactly as drawn, START and GOAL discs, gems, and pins for what the rest of
-  // the pipeline would otherwise place (doors with their keys and colours, mystery boxes, flags).
+  // the pipeline would otherwise place (doors with their keys and colours, one-way gates, switches with their plates and
+  // colours, item puzzles with their item boxes, mystery boxes, flags).
   function fromLayout(p) {
     const L = (MZ.Layouts || []).find((x) => x.id === p.layout);
     if (!L) throw new Error('Memaze: no layout ' + p.layout);
     const nodes = L.nodes.map(([x, y]) => ({ x, y }));
     const maze = L.edges.map((E, i) => {
       const pts = E.pts.map(([x, y]) => ({ x, y }));
-      const e = { a: E.a, b: E.b, hw: E.hw, pts, type: E.type || 'normal', wob: 0, len: polyLen(pts), seed: hashInts(p.seed, i) };
+      // A switch bridge off the route (up or down at first, its colour group's switch flips it) is plain floor to the
+      // generator; mechanize makes it a switch bridge.
+      const e = { a: E.a, b: E.b, hw: E.hw, pts, type: E.type === 'switch' ? 'normal' : E.type || 'normal', wob: 0, len: polyLen(pts), seed: hashInts(p.seed, i) };
       if (e.type === 'bridge') e.bridge = true;
       if (E.blink) e.blink = Object.assign({}, E.blink);
+      if (E.sw) e.pinSw = { g: E.sw.g, on: E.sw.on };
       return e;
     });
     const n = nodes.length, madj = adjacency(n, maze), a = L.start.node, b = L.goal.node;
-    const fromStart = dijkstra(n, maze, madj, a);
+    const edgeOf = (d) => maze.findIndex((e) => (e.a === d.a && e.b === d.b) || (e.a === d.b && e.b === d.a));
+    const oneWay = new Map((L.gates || []).map((g) => [edgeOf(g), g.from]));
+    const fromStart = dijkstra(n, maze, madj, a, (ei, u) => !oneWay.has(ei) || oneWay.get(ei) === u); // the route keeps to the gates
     const mainPath = [];
     for (let v = b; v >= 0; v = fromStart.prev[v]) mainPath.push(v);
     mainPath.reverse();
@@ -565,6 +572,19 @@
     const start = { x: nodes[a].x, y: nodes[a].y, r: L.start.r }, goal = { x: nodes[b].x, y: nodes[b].y, r: L.goal.r };
     const { turns, par } = parOf(nodes, maze, mainPath, goal, L.parPad);
     const idxOf = (d) => mainPath.findIndex((v, j) => j + 1 < mainPath.length && ((v === d.a && mainPath[j + 1] === d.b) || (v === d.b && mainPath[j + 1] === d.a)));
+    const onRoute = (d, what) => { const i = idxOf(d); if (i < 0) throw new Error('Memaze: layout ' + L.id + ': ' + what + ' ' + d.a + '-' + d.b + ' is off the route'); return i; };
+    const gates = L.gates || [], gaps = L.gaps || [], squeezes = L.squeezes || [];
+    // Pinned barriers on the route (mechanize places exactly these): doors with their keys and colours, one-way gates
+    // (pointing along the route), switch bridges with their switch, colour group and state, gaps with their item and
+    // item box, shrink gates with their Shrink box. Gates off the route are the level's one-way loops; gaps and shrink
+    // gates off it guard side ways (they get their item boxes too).
+    const fixed = [].concat(
+      (L.doors || []).map((d) => ({ kind: 'door', idx: idxOf(d), pinKey: d.key, pinColor: d.color })),
+      gates.filter((g) => idxOf(g) >= 0).map((g) => ({ kind: 'gate', idx: idxOf(g) })),
+      (L.switches || []).map((s) => ({ kind: 'switch', idx: onRoute(s, 'switch bridge'), pinPlate: s.plate, pinGroup: s.g, pinOn: s.on })),
+      gaps.filter((q) => idxOf(q) >= 0).map((q) => ({ kind: 'gap', idx: idxOf(q), pinItem: q.item, pinBox: q.box })),
+      squeezes.filter((q) => idxOf(q) >= 0).map((q) => ({ kind: 'squeeze', idx: idxOf(q), pinBox: q.box })),
+    ).sort((x, y) => x.idx - y.idx);
     return {
       seed: p.seed >>> 0, params: p, S: 150, lattice: 'square', mask: L.id, name: L.name,
       nodes, edges: maze, start, goal, gems: L.gems.map(([x, y]) => ({ x, y })), mainPath, turns,
@@ -572,7 +592,12 @@
       parTime: Math.ceil(par),
       timeLimit: Math.ceil((par * p.timeFactor + 15) / 5) * 5,
       fixes,
-      fixed: (L.doors || []).map((d) => ({ kind: 'door', idx: idxOf(d), pinKey: d.key, pinColor: d.color })).sort((x, y) => x.idx - y.idx),
+      fixed,
+      loopGatesAt: gates.filter((g) => idxOf(g) < 0).map((g) => ({ a: g.a, b: g.b, from: g.from })),
+      gapsAt: gaps.filter((q) => idxOf(q) < 0).map((q) => ({ a: q.a, b: q.b, item: q.item, box: q.box })),
+      squeezesAt: squeezes.filter((q) => idxOf(q) < 0).map((q) => ({ a: q.a, b: q.b, box: q.box })),
+      itemBoxesAt: (L.itemBoxes || []).map((x) => ({ node: x.node, item: x.item })), // more item boxes (a way back, say)
+      platesAt: (L.plates || []).map((x) => ({ node: x.node, g: x.g })), // more switches (one that isn't the way, say)
       boxesAt: L.boxes, flagsAt: L.flags,
     };
   }

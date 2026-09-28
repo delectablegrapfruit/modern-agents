@@ -127,7 +127,7 @@ for (const [label, p] of lvCases) {
         at = st.e.a === at ? st.e.b : st.e.a;
       }
     } else if (leg.type === 'key') { const k = m.keys.find((x) => x.color === leg.color); assert.strictEqual(k.node, at, label + ': key not where the route is'); keys.set(leg.color, (keys.get(leg.color) || 0) + 1); }
-    else if (leg.type === 'press') { const pl = m.plates.find((x) => x.g === leg.g); assert.strictEqual(pl.node, at, label + ': switch not where the route is'); sw[leg.g] = (sw[leg.g] | 0) ^ 1; }
+    else if (leg.type === 'press') { const pl = m.plates.find((x) => x.g === leg.g && x.node === at); assert.ok(pl, label + ': switch not where the route is'); sw[leg.g] = (sw[leg.g] | 0) ^ 1; } // (a hand-made level may have several switches of a colour)
     else if (leg.type === 'ride') { const mv = m.movers[leg.mover]; assert.ok(Math.hypot(mv.from.x - m.nodes[at].x, mv.from.y - m.nodes[at].y) < 1, label + ': platform not where the route is'); at = m.nodes.findIndex((n) => n.x === mv.to.x && n.y === mv.to.y); }
     else if (leg.type === 'warp') { const pt = m.portals[leg.portal]; assert.strictEqual(pt.a.node, at, label + ': portal not where the route is'); at = pt.b.node; }
     else if (leg.type === 'item') { const gb = m.gboxes.find((x) => x.node === at && x.item === leg.item); assert.ok(gb, label + ': no ' + leg.item + ' box where the route takes one'); holding = leg.item; }
