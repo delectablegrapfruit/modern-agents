@@ -467,17 +467,48 @@
       }
     }
     let maze = edges.filter((e, i) => inTree[i]);
-    const madj = adjacency(n, maze);
+    let madj = adjacency(n, maze);
 
-    // Start and goal: the two ends of (roughly) the longest route.
+    // Start and goal. GOAL is where the maze ends, not a stop along the way: it sits at a dead end. On a junction it
+    // would stand across the corridors beyond it, so whatever lies past it (gems, boxes, the rest of a loop) could only
+    // be reached by walking through GOAL, which ends the maze; exploring past it would end it by accident; and a player
+    // reading the corridors on beyond would rightly think there's more to find. At the end of its own corridor, GOAL
+    // takes nothing away and ends the route cleanly. So: the start is one end of (roughly) the longest route; GOAL is
+    // the dead end farthest along from it (within maxPath). If no dead end comes near the farthest point (a loopy maze),
+    // the farthest place that can be made one is: its other corridors are closed, each only if it's on a loop, so
+    // nothing is ever cut off.
     const d0 = dijkstra(n, maze, madj, r.int(0, n - 1)).dist;
     let a = 0;
     for (let i = 1; i < n; i++) if (d0[i] > d0[a]) a = i;
-    const da = dijkstra(n, maze, madj, a);
-    let b = a;
     const cap = p.maxPath || Infinity;
-    for (let i = 0; i < n; i++) if (da.dist[i] <= cap && da.dist[i] > da.dist[b]) b = i;
-    if (r.chance(0.5)) { const t = a; a = b; b = t; }
+    let b = -1;
+    {
+      const da = dijkstra(n, maze, madj, a);
+      const reach = (i) => i !== a && da.dist[i] <= cap;
+      let far = -1, leaf = -1;
+      for (let i = 0; i < n; i++) {
+        if (!reach(i)) continue;
+        if (far < 0 || da.dist[i] > da.dist[far]) far = i;
+        if (madj[i].length === 1 && (leaf < 0 || da.dist[i] > da.dist[leaf])) leaf = i;
+      }
+      if (leaf >= 0 && da.dist[leaf] >= 0.8 * da.dist[far]) b = leaf;
+      else {
+        const order = [];
+        for (let i = 0; i < n; i++) if (reach(i) && madj[i].length > 1 && (leaf < 0 || da.dist[i] > da.dist[leaf])) order.push(i);
+        order.sort((x, y) => da.dist[y] - da.dist[x]);
+        for (const v of order.slice(0, 24)) {
+          const keep = madj[v].find((ei) => { const e = maze[ei], o = e.a === v ? e.b : e.a; return o === da.prev[v] && Math.abs(da.dist[o] + e.len - da.dist[v]) < 1e-6; });
+          const drop = new Set(madj[v].filter((ei) => ei !== keep));
+          const rest = maze.filter((e, i) => !drop.has(i));
+          if (components(n, rest).comps.length !== 1) continue; // something would be cut off
+          maze = rest;
+          madj = adjacency(n, maze);
+          b = v;
+          break;
+        }
+        if (b < 0) b = leaf >= 0 ? leaf : far;
+      }
+    }
     const fromStart = dijkstra(n, maze, madj, a);
     const mainPath = [];
     for (let v = b; v >= 0; v = fromStart.prev[v]) mainPath.push(v);

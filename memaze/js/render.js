@@ -350,6 +350,7 @@
       if (s.boxes) for (const b of s.boxes) this.drawBox(b, s.clock || 0, s.boxAge ? s.boxAge(b) : 9);
       if (s.shards) for (const b of s.shards) this.drawShards(b, s.clock || 0);
       for (const bx of toxes) this.drawTox(bx, t);
+      if (s.mech) for (const q of s.mech.gaps || []) if (q.ledge && q.fog > 0.01) this.drawLedgeFog(q, s.clock || 0);
       if (s.under) this.drawUnder(s.under, s.clock || 0);
     }
     // A Tox Box's track: the tiles it lands on, faintly; the hollow ones (where it always comes down hollow side down:
@@ -533,7 +534,12 @@
         ctx.restore();
       }
       for (const kk of m.keys) if (!kk.taken) this.drawKey(kk, t);
-      for (const q of m.gaps || []) this.drawGap(q, t);
+      for (const c of m.crawls || []) { // a crawlspace: a dashed line down its middle in Shrink's colour
+        ctx.save(); ctx.setLineDash([6 * this.px, 6 * this.px]); ctx.lineDashOffset = -t * 10 * this.px; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+        ctx.strokeStyle = ITEM_TINT.shrink; ctx.globalAlpha = 0.55; ctx.lineWidth = 2.5 * this.px;
+        ctx.beginPath(); c.pts.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y))); ctx.stroke(); ctx.restore();
+      }
+      for (const q of m.gaps || []) if (q.ledge) this.drawLedge(q, t); else this.drawGap(q, t);
       for (const q of m.squeezes || []) this.drawSqueeze(q, t);
       for (const gb of m.gboxes || []) if (!gb.out) this.drawItemBox(gb, t, gb.bornAt != null && this.runT != null ? this.runT - gb.bornAt : 9);
     }
@@ -556,9 +562,41 @@
       drawIcon(ctx, q.item, x, y, r * 1.45);
       ctx.restore();
     }
+    // A ledge (the Gauntlet's): where to Launch from, a ring in Launch's colour with its badge. Nothing says where you'll
+    // come down: that's under the clouds.
+    drawLedge(q, t) {
+      const ctx = this.ctx, c = ITEM_TINT.launch, r = Math.min(30, q.hw * 0.9), k = 0.5 + 0.5 * Math.sin(t * 3);
+      ctx.save();
+      ctx.setLineDash([7 * this.px, 6 * this.px]); ctx.lineDashOffset = -t * 14 * this.px;
+      ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.lineWidth = 6 * this.px; ctx.beginPath(); ctx.arc(q.a.x, q.a.y, r, 0, TAU); ctx.stroke();
+      ctx.strokeStyle = c; ctx.globalAlpha = 0.6 + 0.4 * k; ctx.lineWidth = 3 * this.px; ctx.stroke();
+      ctx.setLineDash([]); ctx.globalAlpha = 1;
+      const x = q.a.x, y = q.a.y - r - 14 + Math.sin(t * 2.5) * 2, br = 13;
+      ctx.fillStyle = 'rgba(20,14,40,0.85)'; ctx.beginPath(); ctx.arc(x, y, br, 0, TAU); ctx.fill();
+      ctx.strokeStyle = c; ctx.lineWidth = 2 * ICON; ctx.stroke();
+      drawIcon(ctx, 'launch', x, y, br * 1.45);
+      ctx.restore();
+    }
+    // ...and the bank of cloud over where it comes down, until you Launch from it (it parts as you rise).
+    drawLedgeFog(q, t) {
+      const ctx = this.ctx, a = q.fog, R = 120, n = 14;
+      ctx.save();
+      ctx.globalAlpha = a;
+      const puffs = [];
+      for (let i = 0; i < n; i++) {
+        const h = Math.sin(i * 12.9898 + q.b.x * 0.01) * 43758.5453, j = h - Math.floor(h), th = (i / n) * TAU + t * 0.04;
+        const rr = (i % 2 ? 0.55 : 0.2) * R + 8 * Math.sin(t * 0.7 + i), pr = 38 + 22 * j + 4 * Math.sin(t * 1.1 + i);
+        puffs.push([q.b.x + Math.cos(th) * rr, q.b.y + Math.sin(th) * rr, pr]);
+      }
+      ctx.fillStyle = 'rgba(146,160,204,0.95)'; // shadows first, then the white tops: one bank of cloud
+      for (const [x, y, r] of puffs) { ctx.beginPath(); ctx.arc(x + 5, y + 9, r, 0, TAU); ctx.fill(); }
+      ctx.fillStyle = '#f4f7ff';
+      for (const [x, y, r] of puffs) { ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill(); }
+      ctx.restore();
+    }
     // A shrink gate: posts either side and a striped bar between, with Shrink's badge; only a shrunk picture fits.
     drawSqueeze(q, t) {
-      const ctx = this.ctx, u = ICON, c = ITEM_TINT.shrink;
+      const ctx = this.ctx, u = ICON * Math.min(1, Math.max(0.5, Math.hypot(q.bx - q.ax, q.by - q.ay) / 60)), c = ITEM_TINT.shrink; // (smaller across a crawlspace)
       ctx.save();
       ctx.lineCap = 'round';
       ctx.beginPath(); ctx.moveTo(q.ax, q.ay); ctx.lineTo(q.bx, q.by);
@@ -974,7 +1012,7 @@
         }
         for (const k of mech.keys) if (k.seen && !k.taken) { const f = Math.max(this.sc, (2.6 * u) / KEY_S); keyIcon(g, this.ox + k.x * this.sc, this.oy + k.y * this.sc, KEY_S * f, k.color, KEY_TILT, (ICON * f) * 0.75); }
         for (const pl of mech.plates) if (pl.seen) { dot(pl.x, pl.y, 3 * u, '#000'); dot(pl.x, pl.y, 2.2 * u, pl.color); }
-        for (const q of mech.gaps || []) if (q.seen) { // a gap: dashed in its item's colour
+        for (const q of mech.gaps || []) if (q.seen && (!q.ledge || q.revealed)) { // a gap: dashed in its item's colour (a ledge's, once you've jumped it)
           g.save(); g.setLineDash([1.6 * u, 1.4 * u]); g.strokeStyle = ITEM_TINT[q.item]; g.lineWidth = Math.max(1, 1.4 * u);
           g.beginPath(); q.pts.forEach((p, i) => (i ? g.lineTo : g.moveTo).call(g, this.ox + p.x * this.sc, this.oy + p.y * this.sc)); g.stroke(); g.restore();
         }

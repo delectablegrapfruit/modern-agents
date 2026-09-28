@@ -416,7 +416,7 @@
       for (const k of m.keys) { k.taken = false; k.seen = false; }
       for (const pl of m.plates) { pl.down = false; pl.seen = false; }
       for (const pt of m.portals) pt.seen = false;
-      for (const q of [].concat(m.gaps || [], m.squeezes || [])) q.seen = false;
+      for (const q of [].concat(m.gaps || [], m.squeezes || [])) { q.seen = false; q.revealed = false; }
       for (const gb of m.gboxes || []) { gb.out = false; gb.back = null; gb.seen = false; gb.bornAt = null; gb.gotAt = null; }
       for (const bx of m.toxes || []) bx.seen = false;
       this.world.sw = {};
@@ -549,7 +549,7 @@
         if (this.clock <= 0) { this.clock = 0; this.lose('time'); return; }
       }
       this.elapsed += dt;
-      this.tickPower(dt);
+      if (this.tickPower(dt)) return; // (squeezed in a crawlspace, and that lost the maze)
       if (fx.bullet || fx.launch || fx.bubble) { this.touched = false; this.offEdge(dt); this.fly(dt); if (this.state === 'play' && this.mode === 'endless') this.endlessTick(); return; }
 
       this.carry(dt);
@@ -643,12 +643,12 @@
     },
 
     // ----- Tox Boxes (Gauntlet) -----
-    // A Tox Box at rest is solid: the picture can't move into it (stepping out of one is always allowed). One resting
-    // hollow side down over you holds you in until it tumbles on. While it tumbles, nothing is solid: what counts is
-    // where it lands.
+    // A Tox Box at rest is solid, Invincible or not: the picture can't move into it (stepping out of one is always
+    // allowed). One resting hollow side down over you holds you in until it tumbles on. While it tumbles, nothing is
+    // solid: what counts is where it lands.
     toxBarred(x0, y0, x1, y1) {
       const m = this.maze;
-      if (!m || !m.toxes || !m.toxes.length || this.fx.star > 0) return false;
+      if (!m || !m.toxes || !m.toxes.length) return false;
       const buf = this.box() * BUFFER;
       for (const bx of m.toxes) {
         const st = MZ.toxAt(bx, this.playT);
@@ -685,8 +685,8 @@
       return inn === 0 ? 'none' : inn === mask.n ? 'all' : 'some';
     },
     // Each frame: every box that lands this frame thuds (and shakes the view when close). One landing on you crushes:
-    // a hit, and you're squeezed out behind it (onto the tile it just left), unless it came down hollow side down right
-    // over you. Invincible, they pass through you. True if the hit lost the maze.
+    // a hit (none while Invincible or shielded), and you're shoved out ahead of it, the way it's going, so being crushed
+    // never gets you past one; unless it came down hollow side down right over you. True if the hit lost the maze.
     toxStep(dt) {
       const m = this.maze;
       if (!m || !m.toxes || !m.toxes.length) return false;
@@ -697,10 +697,14 @@
         const T = bx.tiles[now.i], near = Math.hypot(T.x - b.x, T.y - b.y);
         if (near < 700) MZ.Audio.play('thud', clamp(1.15 - near / 600, 0.12, 1));
         if (near < 160) this.shakeT = Math.max(this.shakeT, 0.1);
-        if (this.fx.star > 0 || this.toxCover(T, bx.s / 2 - buf, b.x, b.y) === 'none') continue;
+        if (this.toxCover(T, bx.s / 2 - buf, b.x, b.y) === 'none') continue;
         if (MZ.toxFace(bx, now.i) === 0 && this.toxCover(T, bx.s / 2 + 2 * buf, b.x, b.y) === 'all') continue; // safe inside
-        const back = bx.tiles[was.i]; // (where it came from: it's moved on from there)
-        b.x = back.x; b.y = back.y;
+        // Out ahead of it: the next tile along, or past the end of its track; only if there's no floor there, behind it.
+        const d = now.i > was.i ? 1 : -1, W = this.box(), mask = this.sprite.mask, R = (mask && mask.n ? mask.maxR : 0.5) * W;
+        const next = bx.tiles[now.i + d], u = { x: T.ux * d, y: T.uy * d };
+        const ahead = next || { x: T.x + u.x * (bx.s / 2 + R + 6), y: T.y + u.y * (bx.s / 2 + R + 6) };
+        const to = !this.hitAt(ahead.x, ahead.y) ? ahead : bx.tiles[was.i];
+        b.x = to.x; b.y = to.y;
         this.vel.x = this.vel.y = 0;
         this.input.takeGrab();
         MZ.Audio.play('crush');
@@ -922,6 +926,7 @@
       return true;
     },
     // Hearts grow back, effects run down, the roulette lands, and a shrunk picture grows back once there is room for it.
+    // True if Shrink running out in a crawlspace lost the maze.
     tickPower(dt) {
       const fx = this.fx;
       if (this.guardT > 0) this.guardT = Math.max(0, this.guardT - dt);
@@ -942,7 +947,7 @@
       for (const k of ['star', 'carpet', 'shrink', 'path']) {
         if (!(fx[k] > 0)) continue;
         fx[k] -= dt;
-        if (fx[k] <= 0) { fx[k] = 0; MZ.Audio.play('expire'); this.emit('power'); }
+        if (fx[k] <= 0) { fx[k] = 0; MZ.Audio.play('expire'); this.emit('power'); if (k === 'shrink' && this.crawlOut()) return true; }
       }
       if (fx.path > 0 && (this.pathT = (this.pathT || 0) - dt) <= 0) { this.pathT = 0.35; this.pathLine = this.pathRoute() || this.pathLine; } // it follows you
       const want = fx.shrink > 0 ? SHRINK : 1;
@@ -952,6 +957,25 @@
         this.scale = Math.min(want, this.scale + dt * 1.5);
         if (!fx.carpet && !fx.bullet && !fx.launch && this.hitAt(b.x, b.y) && !this.unstick()) this.scale = was; // no room yet
       }
+    },
+    // Shrink ran out in a crawlspace (the Gauntlet's): no room to grow back. A hit, and a bubble floats you back out to
+    // its mouth, the way in; Shrink's item box will have another. True if the hit lost the maze.
+    crawlOut() {
+      const m = this.maze, b = this.ball;
+      if (!m || !m.crawls || this.state !== 'play') return false;
+      for (const c of m.crawls) {
+        let d2 = Infinity;
+        for (let i = 1; i < c.pts.length; i++) d2 = Math.min(d2, segDist2(b.x, b.y, c.pts[i - 1].x, c.pts[i - 1].y, c.pts[i].x, c.pts[i].y));
+        if (Math.sqrt(d2) > c.hw + 2 || Math.hypot(b.x - c.from.x, b.y - c.from.y) < c.hw + 30 || Math.hypot(b.x - c.to.x, b.y - c.to.y) < c.hw + 30) continue; // (at either mouth, there's room)
+        if (S().gameplay.rule !== 'casual' && !this.shielded() && this.hurt()) return true;
+        const d = Math.hypot(c.from.x - b.x, c.from.y - b.y);
+        this.fx.bubble = { a: { x: b.x, y: b.y }, b: { x: c.from.x, y: c.from.y }, t: 0, T: clamp(0.9 + d / 700, 1.1, 2.4) };
+        this.input.takeGrab();
+        MZ.Audio.play('bubble');
+        this.emit('power');
+        return false;
+      }
+      return false;
     },
     // Remember the last spot on solid floor (not a vanishing bridge), with the whole picture on it: where a fall's
     // bubble takes you back to.
@@ -1045,6 +1069,7 @@
         fx.path = ITEMS.path.dur;
       } else if (id === 'launch') {
         fx.launch = { t: 0, T: UP + AIR + DOWN, apex: clamp(Math.min(innerWidth, innerHeight) / APEX_VIEW / this.zoomTarget(), 0.02, 1), from: { x: this.ball.x, y: this.ball.y } };
+        for (const q of (this.maze && this.maze.gaps) || []) if (q.ledge && Math.hypot(q.a.x - this.ball.x, q.a.y - this.ball.y) < 120) q.revealed = true; // off a ledge: the clouds part as you rise
       } else fx[id] = ITEMS[id].dur;
       this.item = null;
       MZ.Audio.play(id === 'launch' ? 'launch' : id === 'bullet' ? 'bullet' : 'use');
@@ -1638,6 +1663,7 @@
       const world = menu ? this.attractWorld : this.world;
       const seed = maze ? maze.seed : this.run && this.run.seed ? this.run.seed : 7;
       const showPlayer = !menu, fx = this.fx, boxesOn = !menu && this.boxesOn();
+      if (!menu && maze) for (const q of maze.gaps || []) if (q.ledge) q.fog = q.revealed ? (fx.launch ? 1 - this.lift() : 0) : 1; // clouds hide where a ledge's Launch comes down
       this.renderer.draw({
         world, cam: this.cam, t: pt, floor: s.display.floor, hue: seed % 360, rgb, clock: t,
         start: maze ? maze.start : this.mode === 'endless' && this.run ? this.run.origin : null,

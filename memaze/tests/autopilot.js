@@ -185,7 +185,7 @@ if (!levels.length || levels.some((l) => !(l >= 1)) || !(speed > 0)) { console.e
           const T = seg.gap.b;
           if (seg.phase === 'use') { if (G.useItem()) seg.phase = 'go'; else AP.outcome = 'no ' + seg.item; }
           else {
-            const d = Math.hypot(T.x - b.x, T.y - b.y), v = seg.item === 'launch' ? 420 : speed, k = Math.min(1, (v * dt) / (d || 1));
+            const d = Math.hypot(T.x - b.x, T.y - b.y), v = seg.item === 'launch' ? 420 : Math.max(speed, 170), k = Math.min(1, (v * dt) / (d || 1)); // (on a carpet, no dawdling)
             AP.want = { x: (T.x - b.x) * k, y: (T.y - b.y) * k };
             if (d < 0.5 && !G.fx.launch) next(); // a Launch has to come down first
           }

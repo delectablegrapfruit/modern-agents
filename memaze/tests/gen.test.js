@@ -108,6 +108,7 @@ for (const [label, p] of lvCases) {
   const sig = (x) => JSON.stringify([x.route.map((l) => l.type + (l.steps ? l.steps.map((s) => s.e.id + ':' + s.from).join(',') : '')), x.doors, x.keys, x.plates, x.portals, x.gates, x.gaps.map((q) => [q.item, q.from, q.to]), x.squeezes, x.gboxes, x.movers.map((v) => [v.a, v.b, v.period]), x.edges.map((e) => [e.id, e.type, !!e.ice]), x.parTime, x.timeLimit]);
   assert.strictEqual(sig(m), sig(m2), label + ': level not deterministic');
   const ids = new Set(m.edges.map((e) => e.id)), mech = p.mech;
+  if (!p.layout) assert.strictEqual(m.edges.filter((e) => e.a === m.mainPath[m.mainPath.length - 1] || e.b === m.mainPath[m.mainPath.length - 1]).length, 1, label + ': GOAL not at a dead end');
   asked += mech.keys + mech.switches + mech.movers + mech.portals + (mech.gaps || 0) + (mech.squeezes || 0);
   placed += m.doors.length + m.plates.length + m.movers.length + m.portals.length + m.gaps.length + m.squeezes.length;
   gapsPlaced += m.gaps.length; squeezesPlaced += m.squeezes.length;
@@ -123,7 +124,9 @@ for (const [label, p] of lvCases) {
         assert.ok(!st.e.sw || (sw[st.e.sw.g] | 0) === st.e.sw.on, label + ': the route walks a switch bridge that is away');
         const g = gateOn.get(st.e.id);
         assert.ok(!g || g.from === st.from, label + ': the route goes the wrong way through a gate');
-        if (squeezeOn.has(st.e.id)) { assert.ok(shrunk, label + ': the route goes through a shrink gate unshrunk'); shrunk = false; }
+        if (squeezeOn.has(st.e.id)) assert.ok(shrunk, label + ': the route goes through a shrink gate unshrunk');
+        else if (!st.e.crawl) shrunk = false; // (Shrink lasts through a crawlspace, gate to gate)
+        assert.ok(!st.e.crawl || shrunk, label + ': the route goes through a crawlspace unshrunk');
         at = st.e.a === at ? st.e.b : st.e.a;
       }
     } else if (leg.type === 'key') { const k = m.keys.find((x) => x.color === leg.color); assert.strictEqual(k.node, at, label + ': key not where the route is'); keys.set(leg.color, (keys.get(leg.color) || 0) + 1); }
@@ -136,6 +139,7 @@ for (const [label, p] of lvCases) {
       assert.strictEqual(G.from, at, label + ': gap not where the route is');
       assert.strictEqual(holding, G.item, label + ': crossing a gap without its item'); holding = null;
       assert.ok(!ids.has(m.edges.find((e) => (e.a === G.from && e.b === G.to) || (e.a === G.to && e.b === G.from)) || -1), label + ': a gap with its corridor still there');
+      assert.ok(!(G.chain || []).some((id) => ids.has(id)), label + ': a long gap with some of its corridors still there');
       assert.ok(Math.hypot(G.b.x - G.a.x, G.b.y - G.a.y) <= 300, label + ': a gap too long for a Launch');
       at = G.to;
     } else if (leg.type === 'shrink') { assert.strictEqual(holding, 'shrink', label + ': shrinking without Shrink'); holding = null; shrunk = true; }

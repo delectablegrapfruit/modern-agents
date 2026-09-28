@@ -133,13 +133,15 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     // ----- ice -----
     G.startJourney(28);
     m = G.maze;
-    const ice = m.edges.filter((e) => e.ice && e.plen > 200).sort((a, b) => b.plen - a.plen)[0];
-    const A = ice.pts[0], Bp = ice.pts[ice.pts.length - 1], dl = Math.hypot(Bp.x - A.x, Bp.y - A.y), dir = { x: (Bp.x - A.x) / dl, y: (Bp.y - A.y) / dl };
-    put({ x: A.x + dir.x * 40, y: A.y + dir.y * 40 });
-    run(0.25, dir, 60);
+    let ice = null; // the longest straight stretch of ice: start a third of the way along it (well clear of any junction, where
+    for (const e of m.edges) if (e.ice) for (let i = 1; i < e.pts.length; i++) { const P = e.pts[i - 1], Q = e.pts[i], l = Math.hypot(Q.x - P.x, Q.y - P.y); if (!ice || l > ice.l) ice = { P, Q, l }; } // the floor may be another corridor's)
+    const dir = { x: (ice.Q.x - ice.P.x) / ice.l, y: (ice.Q.y - ice.P.y) / ice.l };
+    G.pieces = null; put({ x: ice.P.x + dir.x * ice.l * 0.3, y: ice.P.y + dir.y * ice.l * 0.3 });
+    const onIce = !!G.world.query(G.ball.x, G.ball.y, G.playT).seg.ice;
+    run(0.3, dir, 80);
     const p0 = { x: G.ball.x, y: G.ball.y };
     run(0.35); // let go
-    check('on ice you keep sliding after you stop', Math.hypot(G.ball.x - p0.x, G.ball.y - p0.y) > 3, Math.hypot(G.ball.x - p0.x, G.ball.y - p0.y).toFixed(1));
+    check('on ice you keep sliding after you stop', onIce && Math.hypot(G.ball.x - p0.x, G.ball.y - p0.y) > 3, Math.hypot(G.ball.x - p0.x, G.ball.y - p0.y).toFixed(1));
     G.quit();
 
     // ----- darkness -----
@@ -225,8 +227,8 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     const onto = (k) => tx.end + (k - 1) * step; // (going up the track) when it starts tumbling onto tile k
     fresh(); at(onto(tSolid) - 0.05); put(tx.tiles[tSolid]);
     run(0.05 + tx.roll + 0.1);
-    const Tb = tx.tiles[tSolid - 1];
-    check('one landing on you crushes: a hit, and you\'re squeezed out behind it, onto the floor', hits.length === 1 && G.hp === 1 && Math.hypot(G.ball.x - Tb.x, G.ball.y - Tb.y) < 2 && G.toxCover(tx.tiles[tSolid], tx.s / 2 - buf, G.ball.x, G.ball.y) === 'none' && !G.hitAt(G.ball.x, G.ball.y), hits.length + ' hits');
+    const Tk = tx.tiles[tSolid], ahead = (x, y) => (x - Tk.x) * Tk.ux + (y - Tk.y) * Tk.uy; // (how far along, past the tile it landed on)
+    check('one landing on you crushes: a hit, and you\'re shoved out ahead of it (never past it), onto the floor', hits.length === 1 && G.hp === 1 && ahead(G.ball.x, G.ball.y) >= tx.s / 2 && G.toxCover(Tk, tx.s / 2 - buf, G.ball.x, G.ball.y) === 'none' && !G.hitAt(G.ball.x, G.ball.y), hits.length + ' hits, ' + ahead(G.ball.x, G.ball.y).toFixed(0) + ' ahead');
     fresh(); at(onto(tHollow) - 0.05); put(tx.tiles[tHollow]);
     run(0.05 + tx.roll + 0.05);
     const Th = tx.tiles[tHollow], held0 = { x: G.ball.x, y: G.ball.y };
@@ -239,8 +241,49 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     check('...then you\'re free, on its other side', !hits.length && Math.hypot(G.ball.x - was.x, G.ball.y - was.y) > 30 && G.toxInside() === 0);
     fresh(); G.giveItem('star'); G.useItem(); tx.end = 30; at(1); put(T1);
     run(0.5, rev);
-    check('with Invincible you pass right through them', G.toxCover(T0, tx.s / 2 - buf, G.ball.x, G.ball.y) !== 'none' && !hits.length);
+    check('Invincible doesn\'t get you through: still solid', G.toxCover(T0, tx.s / 2 - buf, G.ball.x, G.ball.y) === 'none' && !hits.length);
     tx.end = end0;
+    at(onto(tSolid) - 0.05); put(Tk);
+    run(0.05 + tx.roll + 0.1);
+    check('...and one landing on you still shoves you out ahead of it (no hit)', G.fx.star > 0 && !hits.length && ahead(G.ball.x, G.ball.y) >= tx.s / 2, ahead(G.ball.x, G.ball.y).toFixed(0) + ' ahead');
+    G.quit();
+
+    // ----- the Gauntlet's item puzzles, and its goals -----
+    G.startGauntlet({ diff: 'extreme', seedText: 'items' });
+    const scanFor = (want) => { for (let d = 0; d < 40; d++) if (want(L.build(L.gauntletParams(G.run, d)))) return d; return -1; };
+    const gLd = scanFor((mm) => mm.gaps.some((q) => q.ledge)), gCr = scanFor((mm) => mm.crawls.length > 0), gCp = scanFor((mm) => mm.gaps.some((q) => !q.ledge && q.chain && q.chain.length > 1));
+    check('Gauntlet item puzzles ask more: Launch ledges, long Magic carpet floats, Shrink crawlspaces', gLd >= 0 && gCr >= 0 && gCp >= 0, [gLd, gCr, gCp].join(', '));
+    check('...and never a plain gap or shrink gate', [0, 6, 12, 18, 24].every((d) => { const mm = L.build(L.gauntletParams(G.run, d)); return mm.gaps.every((q) => q.chain) && mm.squeezes.length === 2 * mm.crawls.length; }));
+    const deadEnd = (mm) => mm.edges.filter((e) => e.a === mm.mainPath[mm.mainPath.length - 1] || e.b === mm.mainPath[mm.mainPath.length - 1]).length === 1;
+    check('GOAL is always at a dead end (nothing lies beyond it)', [0, 5, 10, 15, 20, 25].every((d) => deadEnd(L.build(L.gauntletParams(G.run, d)))) && [21, 30, 44, 60].every((lv) => deadEnd(L.build(L.levelParams(lv)))));
+    // A ledge: nothing says where you'll land, and clouds cover it, until you Launch off it.
+    G.run.cleared = gLd; G.nextGauntlet(); fresh();
+    const gLg = G.maze.gaps.find((q) => q.ledge);
+    put(gLg.a);
+    check('a Launch ledge: where it comes down is under cloud', gLg.fog === 1 && !gLg.revealed);
+    G.giveItem('launch'); G.useItem();
+    const gLdist = Math.hypot(gLg.b.x - gLg.a.x, gLg.b.y - gLg.a.y), gLdir = { x: (gLg.b.x - gLg.a.x) / gLdist, y: (gLg.b.y - gLg.a.y) / gLdist };
+    run(gLdist / 300, gLdir, 300); run(1.6 - gLdist / 300);
+    check('...Launch off it and the clouds part as you rise: steer to the far side and land', gLg.revealed && gLg.fog === 0 && Math.hypot(G.ball.x - gLg.b.x, G.ball.y - gLg.b.y) < 20 && !hits.length && !G.fx.bubble, Math.hypot(G.ball.x - gLg.b.x, G.ball.y - gLg.b.y).toFixed(0));
+    // A long float: several corridors gone, the carpet's whole run.
+    G.run.cleared = gCp; G.nextGauntlet(); fresh();
+    const gCarp = G.maze.gaps.find((q) => !q.ledge && q.chain && q.chain.length > 1), gCd = Math.hypot(gCarp.b.x - gCarp.a.x, gCarp.b.y - gCarp.a.y);
+    check('a Magic carpet float: two or more corridors gone, far across the void', gCarp.item === 'carpet' && gCd >= 200 && gCarp.chain.every((id) => !G.maze.edges.some((e) => e.id === id)), Math.round(gCd));
+    put(gCarp.a); G.giveItem('carpet'); G.useItem();
+    run(gCd / 170 + 0.05, { x: (gCarp.b.x - gCarp.a.x) / gCd, y: (gCarp.b.y - gCarp.a.y) / gCd }, 170); run(3.6);
+    check('...float straight across without dawdling and you make it', Math.hypot(G.ball.x - gCarp.b.x, G.ball.y - gCarp.b.y) < 25 && !hits.length && !G.fx.bubble);
+    // A crawlspace: a narrow way, a shrink gate at each end; Shrink has to last all the way through.
+    G.run.cleared = gCr; G.nextGauntlet(); fresh();
+    const gCrw = G.maze.crawls[0], gCrE = G.maze.edges.filter((e) => e.crawl), gCmid = gCrw.pts[Math.floor(gCrw.pts.length / 2)];
+    check('a Shrink crawlspace: too narrow for you, a shrink gate at each end', gCrE.length && gCrE.every((e) => e.hw * 2 < G.box() * 0.9) && G.maze.squeezes.filter((q) => gCrE.some((e) => e.id === q.edge)).length === 2);
+    put(gCrw.from);
+    const gCin = { x: gCrw.pts[1].x - gCrw.from.x, y: gCrw.pts[1].y - gCrw.from.y }, gCl = Math.hypot(gCin.x, gCin.y);
+    run(1, { x: gCin.x / gCl, y: gCin.y / gCl }, 100);
+    check('...full size, its gate stops you (no hit)', Math.hypot(G.ball.x - gCrw.from.x, G.ball.y - gCrw.from.y) < 40 && !hits.length);
+    fresh(); G.scale = 0.5; G.fx.shrink = 0.06; put(gCmid); run(0.1);
+    check('...and if Shrink runs out inside, you\'re squeezed: a hit, and a bubble back out to its mouth', hits.length === 1 && !!G.fx.bubble);
+    run(3);
+    check('...where there\'s room to grow back', Math.hypot(G.ball.x - gCrw.from.x, G.ball.y - gCrw.from.y) < 30 && !G.fx.bubble && G.scale > 0.9, G.scale.toFixed(2));
     G.quit();
 
     // ----- Gauntlet -----

@@ -100,6 +100,18 @@ for (const lay of MZ.Layouts) {
   }
   for (const x of lay.itemBoxes || []) assert.ok(m.gboxes.some((gb) => gb.node === x.node && gb.item === x.item), tag + 'an extra item box not placed');
   for (const id of lay.mech.list || []) assert.ok(m.mechs.includes(id), tag + 'mechanic ' + id + ' not listed');
+  { // GOAL ends the maze, so nothing may lie only beyond it: a GOAL on a junction is fine only where each other corridor
+    // there is just another way round to it.
+    const g = base.mainPath[base.mainPath.length - 1], links = m.nodes.map(() => []);
+    for (const e of m.edges) { links[e.a].push(e.b); links[e.b].push(e.a); }
+    for (const q of m.gaps) { links[q.from].push(q.to); links[q.to].push(q.from); }
+    for (const pt of m.portals) { links[pt.a.node].push(pt.b.node); links[pt.b.node].push(pt.a.node); }
+    for (const mv of m.movers) { const a = m.nodes.findIndex((v) => v.x === mv.from.x && v.y === mv.from.y), b = m.nodes.findIndex((v) => v.x === mv.to.x && v.y === mv.to.y); if (a >= 0 && b >= 0) { links[a].push(b); links[b].push(a); } }
+    const seen = new Set([g, base.mainPath[0]]), q = [base.mainPath[0]];
+    for (let i = 0; i < q.length; i++) for (const o of links[q[i]]) if (!seen.has(o)) { seen.add(o); q.push(o); }
+    const beyond = m.nodes.filter((v, i) => !seen.has(i) && links[i].length);
+    assert.ok(!beyond.length, tag + beyond.length + ' places only reachable through GOAL');
+  }
   // No squeeze you can't avoid: the widest way to GOAL and to every key, switch and item box is at least hw 30 (gaps
   // count as crossed, since their item is there).
   const adj = Array.from({ length: n }, () => []);

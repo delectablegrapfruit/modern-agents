@@ -36,6 +36,7 @@
   ];
   const KEY_COLORS = ['#ffc53d', '#3cf2ff', '#ff7ad9'];
   const GAP_MAX = 300; // the longest missing corridor (node to node): within a Launch's reach, and a carpet's float
+  const CRAWL_HW = 16, CRAWL_LEN = [300, 520]; // the Gauntlet's crawlspaces: only a shrunk picture fits; long, but not longer than Shrink lasts
   // Where keys and doors act, in world units, matching how they're drawn (render.js, ICON): a shut door blocks this far
   // either side of its bar (its dark rim); a key is picked up when the picture overlaps a circle this big around it.
   const DOOR_R = 16, KEY_R = 20;
@@ -161,7 +162,7 @@
     const p = levelParams(level, { seed: hashInts(o.seed, depth, 99), boss });
     p.timeFactor *= 0.9;
     const T = TOX[o.diff] || TOX.normal, count = T.n(depth) + (boss ? 2 : 0);
-    Object.assign(p, { lattice: 'square', jitter: 0, wobble: 0, holes: 0, spread: 1.4, braid: 0, lanes: Math.ceil(count * 0.7) }); // (the lanes are its loops)
+    Object.assign(p, { lattice: 'square', jitter: 0, wobble: 0, holes: 0, spread: 1.4, braid: 0, lanes: Math.ceil(count * 0.7), hardItems: true }); // (the lanes are its loops)
     p.tox = { count, roll: T.roll, rest: T.rest };
     return p;
   }
@@ -307,7 +308,7 @@
     for (const L of m.route) if (L.type === 'walk') for (const st of L.steps) walked.set(st.e.id, (walked.get(st.e.id) || 0) + 1);
     const gemAt = new Set(m.gems.map((g) => g.x + ',' + g.y));
     const barred = new Set([].concat(m.doors, m.gates, m.squeezes || []).map((d) => d.edge));
-    const plain = (e) => !!e && e.type === 'normal' && !e.blink && !e.sw && !barred.has(e.id);
+    const plain = (e) => !!e && e.type === 'normal' && !e.blink && !e.sw && !e.crawl && !barred.has(e.id);
     const things = [].concat(
       m.keys.map((o) => ({ x: o.x, y: o.y, r: 40 })), m.plates.map((o) => ({ x: o.x, y: o.y, r: o.r + 10 })), (m.gboxes || []).map((o) => ({ x: o.x, y: o.y, r: 40 })),
       m.portals.flatMap((pt) => [pt.a, pt.b].map((o) => ({ x: o.x, y: o.y, r: pt.r + 10 }))), (m.gaps || []).flatMap((q) => [q.a, q.b].map((o) => ({ x: o.x, y: o.y, r: q.hw + 20 }))),
@@ -495,9 +496,66 @@
       r.shuffle(want);
       barriers = [];
       const usedIdx = new Set();
+      // The Gauntlet's item puzzles ask more of the item than finding it: each takes a run of route corridors from mp[i]
+      // through bends only (no side ways off it). A gap becomes a ledge where the way on is off to one side and out of
+      // sight (a Launch, into clouds) or a long float over the void (a Magic carpet); a shrink gate becomes a crawlspace,
+      // a narrow winding corridor with a gate at each end that Shrink has to last the whole way through.
+      const runFrom = (i, kind, loose) => { // (loose: a single corridor will do)
+        const got = runFrom0(i, kind, loose);
+        if (!got) return null;
+        const run = routeEdges.slice(i, got.j), solid = (x) => adj[x].some((f) => !run.includes(f) && f.type === 'normal' && !pruned.has(f.id)); // somewhere to stand either end
+        return solid(mp[i]) && solid(mp[got.j]) ? got : null;
+      };
+      const runFrom0 = (i, kind, loose) => {
+        const U = nodes[mp[i]], P0 = nodes[mp[i - 1]];
+        let len = 0, turns = 0;
+        for (let j = i; j < routeEdges.length - 1; j++) {
+          const e = routeEdges[j];
+          if (e.type !== 'normal' || e.gapCut || usedIdx.has(j - 1) || usedIdx.has(j) || usedIdx.has(j + 1) || (j > i && deg[mp[j]] !== 2)) return null;
+          len += e.plen;
+          if (j === i && loose) {
+            const V = nodes[mp[i + 1]], d = Math.hypot(V.x - U.x, V.y - U.y);
+            if (kind === 'squeeze' && len >= 140) return { j: i + 1 };
+            if (kind === 'gap' && d >= 2 * e.hw + 30 && d <= GAP_MAX) return { j: i + 1, angled: false };
+            return null;
+          }
+          if (j > i) {
+            const A = nodes[mp[j - 1]], B = nodes[mp[j]], C = nodes[mp[j + 1]];
+            if (((B.x - A.x) * (C.x - B.x) + (B.y - A.y) * (C.y - B.y)) / (Math.hypot(B.x - A.x, B.y - A.y) * Math.hypot(C.x - B.x, C.y - B.y) || 1) < 0.8) turns++;
+            const V = nodes[mp[j + 1]], d = Math.hypot(V.x - U.x, V.y - U.y);
+            if (kind === 'squeeze' && len >= CRAWL_LEN[0] && len <= CRAWL_LEN[1] && turns >= 1) return { j: j + 1 };
+            if (kind === 'gap' && d >= 200 && d <= GAP_MAX) {
+              // (across open void: no other corridor in the way of the float)
+              const clear = edges.every((f) => f.a === mp[i] || f.b === mp[i] || f.a === mp[j + 1] || f.b === mp[j + 1] || routeEdges.slice(i, j + 1).includes(f) ||
+                f.pts.every((q, k) => !k || MZ.segSegDist2(U.x, U.y, V.x, V.y, f.pts[k - 1].x, f.pts[k - 1].y, q.x, q.y) > (f.hw + 12) ** 2));
+              const ahead = ((U.x - P0.x) * (V.x - U.x) + (U.y - P0.y) * (V.y - U.y)) / (Math.hypot(U.x - P0.x, U.y - P0.y) * d || 1);
+              if (clear) return { j: j + 1, angled: ahead < 0.82 }; // (angled: not straight on from the corridor you came along)
+            }
+          }
+          if (len > 800) return null;
+        }
+        return null;
+      };
       want.forEach((kind, j) => {
         const target = total * (0.15 + (0.7 * (j + 0.5)) / want.length);
         let best = -1, bd = Infinity;
+        if (p.hardItems && (kind === 'gap' || kind === 'squeeze')) {
+          for (const loose of [false, true]) {
+            const opts = [];
+            for (let i = 2; i < routeEdges.length - 2; i++) {
+              const got = runFrom(i, kind, loose);
+              if (got) opts.push({ i, got, d: Math.abs(cum[i] - target) - (kind === 'gap' && got.angled ? 400 : 0) });
+            }
+            opts.sort((x, y) => x.d - y.d);
+            const ok = opts.slice(0, 8).find((o) => chokepoint(routeEdges[o.i]));
+            if (ok) {
+              for (let k = ok.i - 1; k <= ok.got.j; k++) usedIdx.add(k);
+              barriers.push({ kind, idx: ok.i, j: ok.got.j, angled: !!ok.got.angled });
+              return;
+            }
+          }
+          // (nowhere for one: the plain kind instead)
+        }
         for (let i = 1; i < routeEdges.length - 1; i++) {
           const e = routeEdges[i];
           if (e.type !== 'normal' || usedIdx.has(i) || usedIdx.has(i - 1) || usedIdx.has(i + 1)) continue;
@@ -521,7 +579,7 @@
     }
 
     // Regions: what's reachable between one barrier and the next.
-    const cut = new Set(barriers.map((b) => routeEdges[b.idx].id));
+    const cut = new Set(barriers.flatMap((b) => routeEdges.slice(b.idx, b.j || b.idx + 1).map((e) => e.id)));
     const comp = new Int32Array(n).fill(-1);
     let nc = 0;
     for (let s = 0; s < n; s++) {
@@ -567,16 +625,44 @@
     }
 
     m.doors = []; m.keys = []; m.plates = []; m.movers = []; m.portals = []; m.gates = []; m.pads = [];
-    m.gaps = []; m.squeezes = []; m.gboxes = []; // item puzzles: missing corridors, shrink gates, and the boxes that solve them
+    m.gaps = []; m.squeezes = []; m.gboxes = []; m.crawls = []; // item puzzles: missing corridors, shrink gates (and crawlspaces), and the boxes that solve them
     const removed = new Set();
     const reserved = new Set(), avoid = [], keepClear = [];
     const reserve = (v) => { reserved.add(v); for (const e of adj[v]) { reserved.add(e.a); reserved.add(e.b); } };
     let doorN = 0, swN = 0;
     barriers.forEach((b) => {
-      const e = routeEdges[b.idx], u = mp[b.idx], v = mp[b.idx + 1];
+      const e = routeEdges[b.idx], u = mp[b.idx], v = mp[b.j || b.idx + 1];
       b.u = u; b.v = v; b.e = e; b.item = null;
       reserve(u); reserve(v);
-      if (b.kind === 'door') {
+      const run = routeEdges.slice(b.idx, b.j || b.idx + 1), runPts = () => { // (the corridors of a run, u to v)
+        const pts = [];
+        let at = u;
+        for (const f of run) { const P = f.a === at ? f.pts : f.pts.slice().reverse(); for (let k = pts.length ? 1 : 0; k < P.length; k++) pts.push({ x: P[k].x, y: P[k].y }); at = f.a === at ? f.b : f.a; }
+        return pts;
+      };
+      if (b.kind === 'gap' && b.j) { // a ledge (a Launch, into the clouds) or a long float (a Magic carpet: never a short one)
+        const U = nodes[u], V = nodes[v], item = b.j === b.idx + 1 || (b.angled && r.chance(0.65)) ? 'launch' : 'carpet', pts = runPts(), hw = Math.min(...run.map((f) => f.hw));
+        for (const f of run) removed.add(f.id);
+        b.gap = m.gaps.length; b.need = item;
+        m.gaps.push({ item, from: u, to: v, a: { x: U.x, y: U.y }, b: { x: V.x, y: V.y }, pts, hw, chain: run.map((f) => f.id), ledge: item === 'launch' });
+        for (let k = 1; k < pts.length; k++) keepClear.push({ ax: pts[k - 1].x, ay: pts[k - 1].y, bx: pts[k].x, by: pts[k].y, r: hw });
+        keepClear.push({ ax: U.x, ay: U.y, bx: V.x, by: V.y, r: 24 });
+        for (const q of pts) avoid.push({ x: q.x, y: q.y, r: hw + 30 });
+        avoid.push({ x: V.x, y: V.y, r: 110 }); // the landing: nothing else there
+        const k = spot(comp[u], u);
+        if (k >= 0) { m.gboxes.push({ item, x: nodes[k].x, y: nodes[k].y, node: k }); b.item = k; reserve(k); avoid.push({ x: nodes[k].x, y: nodes[k].y, r: 55 }); }
+      } else if (b.kind === 'squeeze' && b.j) { // a crawlspace: narrow and winding, a shrink gate at each end
+        for (const f of run) { f.hw = CRAWL_HW; f.crawl = true; }
+        const first = run[0], last = run[run.length - 1], at = (f, from) => across(f, from, Math.min(0.4, 34 / f.plen));
+        const g1 = Object.assign(at(first, u), { edge: first.id, from: u }), g2 = Object.assign(at(last, v), { edge: last.id, from: v });
+        m.squeezes.push(g1, g2);
+        m.crawls.push({ pts: runPts(), hw: CRAWL_HW, from: { x: nodes[u].x, y: nodes[u].y }, to: { x: nodes[v].x, y: nodes[v].y } });
+        for (const g of [g1, g2]) avoid.push({ x: g.x, y: g.y, r: CRAWL_HW + 40 });
+        for (const q of runPts()) avoid.push({ x: q.x, y: q.y, r: 50 });
+        b.need = 'shrink'; b.bars = [first.id, last.id];
+        const k = spot(comp[u], u, false, false, true);
+        if (k >= 0) { m.gboxes.push({ item: 'shrink', x: nodes[k].x, y: nodes[k].y, node: k }); b.item = k; reserve(k); avoid.push({ x: nodes[k].x, y: nodes[k].y, r: 55 }); }
+      } else if (b.kind === 'door') {
         const color = KEY_COLORS[(b.pinColor != null ? b.pinColor : doorN) % KEY_COLORS.length], k = b.pinKey != null ? (taken.add(b.pinKey), b.pinKey) : spot(comp[u], u); // (a layout pins key and colour)
         doorN++;
         const bar = across(e, u, 0.5);
@@ -757,7 +843,7 @@
         legs.push({ type: 'item', item: b.need });
         if (!walk(b.u)) { failed = i; break; }
         if (b.kind === 'gap') { legs.push({ type: 'cross', item: b.need, gap: b.gap }); pos = b.v; }
-        else { legs.push({ type: 'shrink' }); shrunk.add(b.e.id); if (!walk(b.v)) failed = i; }
+        else { legs.push({ type: 'shrink' }); for (const id of b.bars || [b.e.id]) shrunk.add(id); if (!walk(b.v)) failed = i; }
       } else if (!walk(b.v)) failed = i;
     }
     if (failed < 0 && !walk(goal)) failed = barriers.length - 1;
@@ -816,7 +902,7 @@
       if (L.type === 'walk') {
         let prev = null;
         for (const s of L.steps) {
-          const e = s.e, v = lerp(160, 110, clamp((46 - e.hw) / 20, 0, 1)) * (e.ice ? 0.8 : 1);
+          const e = s.e, v = e.crawl ? 70 : lerp(160, 110, clamp((46 - e.hw) / 20, 0, 1)) * (e.ice ? 0.8 : 1);
           dragT += e.plen / v;
           len += e.plen;
           if (e.type === 'blink') {
@@ -832,7 +918,7 @@
       } else if (L.type === 'ride') {
         const mv = m.movers[L.mover];
         waitT += mv.period / 2 + mv.travel + 0.6;
-      } else if (L.type === 'cross') { const G = m.gaps[L.gap]; waitT += Math.hypot(G.b.x - G.a.x, G.b.y - G.a.y) / 140 + (L.item === 'launch' ? 1.45 : 0.4); }
+      } else if (L.type === 'cross') { const G = m.gaps[L.gap]; waitT += Math.hypot(G.b.x - G.a.x, G.b.y - G.a.y) / 140 + (L.item === 'launch' ? 1.45 : 0.4) + (G.ledge ? 1 : 0); } // (a ledge: a look round from the top)
       else if (L.type === 'shrink') waitT += 1;
       else waitT += 0.4;
     }
