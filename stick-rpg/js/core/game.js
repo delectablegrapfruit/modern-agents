@@ -30,6 +30,13 @@
       if (s.karma > 100) s.karma = 100;
       if (s.karma < -100) s.karma = -100;
     },
+    // karma + n, then the original's karmaAdjust() (clamp to -100..100). Use it where the
+    // original calls karmaAdjust() after the change: Harold (+2), the smokes kid (-2), robbing the
+    // store (-10), slots (-1), roulette (-1), taking the bus-trip deal (-5), U of S (+1). Elsewhere the
+    // original doesn't clamp, and karma can pass +-100 until the next clamp (which the stats panel
+    // and the results also do): smoking (-1), NLI and McSticks work (+1 / +3), the smokes kid's
+    // death (-30), starting a bar fight (-2) and taking the dead guy's wallet (-3). Those change
+    // s.karma directly.
     addKarma: function (n) {
       game.s.karma += n;
       game.karmaAdjust();
@@ -69,8 +76,11 @@
     },
 
     // --- entering the city: nomination check and stat caps (the original's root frame 2) -----
+    // Runs on every return to the map: from a building, a street dialog, a panel, or the end of a
+    // knock-down.
     onEnterCity: function () {
       var s = game.s;
+      if (s.day === 0) s.day = 1;
       if (s.cash >= 200000 && s.dwelling === 5 && s.electionMessage === 0 &&
           s.intelligence >= 777 && s.strength >= 777 && s.charm >= 777 && s.karma < 0) {
         game.pushMsg('United Nations of Stick here. Word of your wicked riches and power has reached us, and ' +
@@ -118,11 +128,11 @@
       // Loan deadline. The checks run in sequence, exactly as the original's.
       if (s.bankloandays > 1) {
         s.bankloandays -= 1;
-        out.bank = s.bankloandays + ' days left to pay off your loan ($' + s.bankloan + ')';
+        out.bank = s.bankloandays + ' days left to pay back your loan ($' + s.bankloan + ')';
       }
       if (s.bankloandays === 1) {
         s.bankloandays -= 1;
-        out.bank = s.bankloandays + ' day left to pay off your loan ($' + s.bankloan + ')';
+        out.bank = s.bankloandays + ' day left to pay back your loan ($' + s.bankloan + ')';
       }
       // The bank's "collection agents" pay a visit: YOU DIED. In the original the jump to the death
       // frame doesn't stop the button script, so the rest of the night still happens first.

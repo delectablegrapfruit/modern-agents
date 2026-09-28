@@ -11,9 +11,13 @@
 
   SRPG.STOCKS = ['XGS', 'FSY', 'DYC', 'MLG', 'SR2', 'SAR'];
 
+  // A new game, as root frame 1 sets it up. (The original starts at day 0 and with stats of 0 until
+  // CREATE CHARACTER fills them in; root frame 2 turns day 0 into day 1 on arrival. Nothing shows
+  // either before that, so the state starts at day 1 and takes the stats from opts.)
   SRPG.newState = function (opts) {
     opts = opts || {};
     var rnd = SRPG.rng.random;
+    var bankrate = rnd(50) / 10 + 1; // drawn before the six stock prices, as in the original
     var stocks = {};
     SRPG.STOCKS.forEach(function (k) {
       var p = rnd(10) + 1;
@@ -30,7 +34,7 @@
       bankcash: 0,
       bankloan: 0,
       bankloandays: -1, // -1 = no loan
-      bankrate: rnd(50) / 10 + 1, // percent per day, drifts every night
+      bankrate: bankrate, // percent per day, drifts every night
       strength: str,
       intelligence: opts.intelligence != null ? opts.intelligence : 5,
       charm: opts.charm != null ? opts.charm : 5,
@@ -82,8 +86,11 @@
     exists: function () {
       try { return !!localStorage.getItem(SAVE_KEY); } catch (e) { return false; }
     },
-    // Loading puts you back on the street at the start junction, as the original did
-    // (position was never saved).
+    // Loading puts you back on the street 8 px above the start junction, as the original did (the
+    // position was never saved; loadGame() takes 8 off the fresh mapy), on foot, with SHOW FPS
+    // switched on. Everything else the original saved comes back (its 79-entry objArray covers
+    // every game variable, the street people's one-off gifts included); what it didn't save
+    // (car traffic, the facing) starts over in the city.
     read: function () {
       try {
         var raw = localStorage.getItem(SAVE_KEY);

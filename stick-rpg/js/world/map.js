@@ -49,19 +49,43 @@
       bus: { x: 611, y: 216, w: 319, h: 194, door: { x: 744, y: 213, w: 41, h: 12 }, face: 'north', name: 'Bus Depot', bus: { x: 482, y: 221, w: 41, h: 189 } },
     },
     trees: [
-      { x: -330, y: -681, w: 82, h: 77 }, // the mansion's own grove (drawn only with dwelling 4) { x: 160, y: -874, w: 110, h: 94 },
+      { x: -330, y: -681, w: 82, h: 77 }, // the mansion's own grove (drawn only with dwelling 4)
+      { x: 160, y: -874, w: 110, h: 94 }, // on the bank's lawn, leaning out over the north edge
       { x: 369, y: -261, w: 110, h: 97 }, { x: 897, y: -261, w: 110, h: 97 },
     ],
     // The unlocked car sitting on the apartment lawn (hotwire it with 350 intelligence).
     parkedCar: { x: -962, y: -620, w: 91, h: 49 },
-    // Street people you click on.
+    // Street people you click on (where they are drawn).
     npcs: {
       smokes: { x: -239, y: -602, color: '#33ccff' }, // the smokes kid
       hobo: { x: -253, y: 54, color: '#ff9900' }, // Homeless Harold, outside Sticky's
       dealer: { x: 159.5, y: 606, color: '#b00000' }, // the red-headed stick on the grass by the pawn shop
     },
+    // What a click has to hit: the hit shapes of the original's buttons (NPC3button, NPC2, NPC1),
+    // in map coordinates. The dealer's covers the stretch he paces up and down.
+    npcHit: {
+      smokes: { x0: -249.96, x1: -226.17, y0: -613.45, y1: -585.4 },
+      hobo: { x0: -263.65, x1: -231.85, y0: 39.18, y1: 70.98 },
+      dealer: { x0: 143.1, x1: 175.6, y0: 563.45, y1: 628.95 },
+    },
+    // The parked car's button is the car picture itself (turned to face east): its outline.
+    parkedCarHit: [
+      [-898.38, -621.5], [-897.63, -616.5], [-910.88, -616.5], [-910.88, -615.5], [-949.38, -615.5],
+      [-949.38, -614.5], [-956.88, -614.5], [-956.88, -613.5], [-960.38, -613.5], [-960.38, -612.5],
+      [-961.63, -612.5], [-962.63, -610.5], [-964.63, -594.5], [-964.38, -587.5], [-962.63, -576.5],
+      [-961.63, -574.5], [-960.38, -574.5], [-960.38, -573.5], [-957.13, -573.5], [-957.13, -572.5],
+      [-951.13, -572.5], [-951.13, -571.5], [-911.38, -571.5], [-911.38, -570.5], [-897.63, -570.5],
+      [-898.38, -565.5], [-896.88, -565.5], [-894.38, -570.5], [-881.63, -570.5], [-881.63, -571.5],
+      [-878.63, -571.5], [-878.63, -572.5], [-877.13, -572.5], [-872.88, -580.5], [-870.88, -589.5],
+      [-870.88, -597.5], [-872.38, -604.5], [-875.13, -610.5], [-875.88, -610.5], [-877.38, -613.5],
+      [-878.38, -613.5], [-878.38, -614.5], [-879.88, -614.5], [-879.88, -615.5], [-882.13, -615.5],
+      [-882.13, -616.5], [-894.38, -616.5], [-896.88, -621.5],
+    ],
     // Car lanes on the main road (car centre x) and the stretch they drive.
     lanes: { up: 15, down: -75, yStart: 825, yEnd: -800 },
+    // The person clip's exact stage position, used by the car collision test.
+    PERSON_X: 247.15,
+    PERSON_Y: 197.55,
   });
 
   // --- Doors: entering a building by walking into it (the original's mapx/mapy windows). ---
@@ -78,25 +102,31 @@
 
   function between(v, lo, hi) { return v > lo && v < hi; }
 
-  // The walk clip (sprite 720) has two frames and loops, so its two scripts take turns, one per
-  // tick. Frame 1 reads the keys (MAP.readKeys) and walks with the doors; frame 2 walks again
-  // with the same xmove / ymove but has no doors (MAP.walkLoop(s, m, false)).
-  //
-  // Frame 1: the keys. Sets s.rot as the original does and returns
-  // { xmove, ymove, walkspeed, moving, step } (step = what the footstep counter adds).
+  // --- Walking: the walk clip (sprite 720) --------------------------------------------------
+  // The clip has two frames and loops, so its two scripts take turns, one per tick:
+  //   frame 1 reads the keys (MAP.readKeys) and runs the walk loop with the doors,
+  //   frame 2 runs the walk loop again with frame 1's xmove / ymove, without the doors.
+  // The clip is re-created (starting at frame 1) whenever the root timeline comes back to the map.
+
+  // Frame 1's key handling. input: { left, right, up, down, shift } (arrows or A D W S).
+  // Sets s.rot as the original does and returns { xmove, ymove, walkspeed, moving, step }:
+  // step is what the footstep counter adds this frame.
   MAP.readKeys = function (s, input) {
     var walkspeed = 1;
     if (input.shift && s.items.skateboard === 1) walkspeed = 2;
     if (s.driving === 1 && s.items.car === 1) walkspeed = 3;
     if (s.driving === 1 && s.items.car === 2) walkspeed = 5;
+    // Two if / else pairs (after the left branch the bytecode jumps past the right test, after up
+    // past down): with both keys of a pair down, left beats right and up beats down.
     var xmove = 0, ymove = 0;
     if (input.left) { s.rot = 270; xmove = 4; } else if (input.right) { s.rot = 90; xmove = -4; }
     if (input.up) { s.rot = 0; ymove = 4; } else if (input.down) { s.rot = 180; ymove = -4; }
     var nowmoving = Math.abs(xmove) + Math.abs(ymove);
     var step = 0;
     if (nowmoving !== 0) {
-      // Diagonals test the keys, not the move, in this order. The right + down test has an empty
-      // body in the original, so that diagonal keeps facing down.
+      // The diagonal facings test the keys (not the move), in this order. The right + down test
+      // has an empty body in the original, so that diagonal keeps facing down. With left, right
+      // and up all held the player walks up-left but ends up facing 45 (up-right).
       if (input.left && input.up) s.rot = 315;
       if (input.up && input.right) s.rot = 45;
       if (input.down && input.left) s.rot = 225;
@@ -109,28 +139,20 @@
     return { xmove: xmove, ymove: ymove, walkspeed: walkspeed, moving: nowmoving !== 0, step: step };
   };
 
-  // The walk loop: walkspeed sub-steps of (xmove, ymove), the original's mapx/mapy limits verbatim.
-  // m = { xmove, ymove, walkspeed } is updated in place: a door or a fall zeroes the axis that
-  // caused it and skips one sub-step (the original's "xmove = 0; i = i + 1"), and the rest of the
-  // sub-step still runs, so the other axis moves too. doors: frame 1 (true) or frame 2 (false).
-  // Returns { event, falls }: event is null, { door: id } or { fall: true } (the last jump of the
-  // root timeline wins), falls counts the edge falls (each costs 10 HP).
+  // The walk loop: walkspeed sub-steps of (xmove, ymove) with the original's mapx / mapy limits
+  // verbatim. m = { xmove, ymove, walkspeed } is updated in place: a door or a fall zeroes the axis
+  // that caused it and skips a sub-step (the original's "xmove = 0; i = i + 1"), while the rest of
+  // that sub-step still runs, so the other axis moves on. doors: true for frame 1, false for frame 2.
+  // Returns { event, falls }: event is null, { door: id } or { fall: true } (like the root
+  // timeline's gotos, the last one wins); falls counts the edge falls (10 HP each).
   MAP.walkLoop = function (s, m, doors) {
     var out = { event: null, falls: 0 };
-    var walkin = doors && !s.driving;
-    function door(id, axis) {
-      m[axis] = 0;
-      out.skip++;
-      out.event = { door: id };
-    }
-    function fall(axis) {
-      m[axis] = 0;
-      out.skip++;
-      out.falls++;
-      out.event = { fall: true };
-    }
+    var walkin = doors && s.driving === 0;
+    var skip = 0;
+    function door(id, axis) { m[axis] = 0; skip++; out.event = { door: id }; }
+    function fall(axis) { m[axis] = 0; skip++; out.falls++; out.event = { fall: true }; }
     for (var i = 0; i < m.walkspeed; i++) {
-      out.skip = 0;
+      skip = 0;
       if (m.xmove < 0) { // walking right
         if (s.mapx > 119) s.mapx += m.xmove;
         else {
@@ -171,8 +193,8 @@
             }
           }
         } else {
-          // frame 2's version: the last test is not inside the else, so from mapx 448 to 450 a
-          // step down moves twice
+          // Frame 2's copy has its last test outside the else, so from mapx 448 to 450 (south of
+          // mapy 427) a step down moves twice.
           if (between(s.mapx, 116, 451)) s.mapy += m.ymove;
           else if (s.mapx < 119 && s.mapy > -1) s.mapy += m.ymove;
           if (s.mapx > 447 && s.mapy > 427) s.mapy += m.ymove;
@@ -193,25 +215,25 @@
             }
           }
         } else {
-          // frame 2: likewise, at mapx 449 a step up moves twice
+          // likewise: at mapx 449 (north of mapy 754) a step up moves twice
           if (between(s.mapx, 116, 450)) s.mapy += m.ymove;
           else if (s.mapx < 119 && s.mapy < 325) s.mapy += m.ymove;
           if (s.mapx > 448 && s.mapy < 754) s.mapy += m.ymove;
         }
         if (s.mapy > 1014) { s.mapy -= 20; fall('ymove'); }
       }
-      i += out.skip;
+      i += skip;
     }
-    delete out.skip;
     return out;
   };
 
-  // One frame-1 tick of walking (keys, then the walk loop with doors). input: { left, right, up,
-  // down, shift }. Returns { moved, dist, step, speed, event, falls, xmove, ymove }.
+  // One frame-1 tick of walking: the keys, then the walk loop with the doors. input: { left,
+  // right, up, down, shift }. Returns { moved, dist, step, speed, event, falls, move } where move
+  // is the { xmove, ymove, walkspeed } left for frame 2.
   MAP.walk = function (s, input) {
     var m = MAP.readKeys(s, input);
     var x0 = s.mapx, y0 = s.mapy;
-    var r = m.moving ? MAP.walkLoop(s, m, true) : { event: null, falls: 0 };
+    var r = MAP.walkLoop(s, m, true);
     return {
       moved: m.moving,
       dist: Math.abs(s.mapx - x0) + Math.abs(s.mapy - y0),
@@ -219,16 +241,15 @@
       speed: m.walkspeed,
       event: r.event,
       falls: r.falls,
-      xmove: m.xmove,
-      ymove: m.ymove,
+      move: m,
     };
   };
 
-  // Hit test of a clickable street person or the parked car, map point (x, y).
+  // Does a click at map point (x, y) hit this street person / the parked car?
   MAP.npcHitTest = function (id, x, y) {
     if (id === 'parkedcar') return inPoly(MAP.parkedCarHit, x, y);
     var b = MAP.npcHit[id];
-    return !!b && x > b.x0 && x < b.x1 && y > b.y0 && y < b.y1;
+    return !!b && x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1;
   };
   function inPoly(pts, x, y) {
     var inside = false;

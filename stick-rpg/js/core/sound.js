@@ -149,6 +149,7 @@
   var timer = null;
   var step = 0;
   var musicOn = true;
+  var forced = false; // playing although music is off (see music())
 
   function midi(n) { return 440 * Math.pow(2, (n - 69) / 12); }
 
@@ -172,17 +173,21 @@
       if (!sfxOn || !sfx[name]) return;
       try { sfx[name](); } catch (e) {}
     },
-    // Start a named music loop (no-op if already playing). null stops music.
-    music: function (name) {
-      if (name === current) return;
+    // Start a named music loop from the top (no-op if it is already the current loop). null stops
+    // music. force: play it even with music switched off, as the original's arrival after the
+    // intro or a load starts main.mp3 without checking the option (the next switch stops it).
+    music: function (name, force) {
+      if (name === current && (!force || forced || musicOn)) return;
       if (timer) clearTimeout(timer);
       timer = null;
       current = name;
       step = 0;
-      if (name && musicOn && ctx && ctx.state === 'running') schedule();
+      forced = !!(force && name);
+      if (name && (musicOn || forced) && ctx && ctx.state === 'running') schedule();
     },
     setMusic: function (on) {
       musicOn = !!on;
+      forced = false;
       if (timer) clearTimeout(timer);
       timer = null;
       if (musicOn && current && ctx && ctx.state === 'running') schedule();
@@ -194,8 +199,8 @@
     unlock: function () {
       var a = ac();
       if (!a) return;
-      if (a.state === 'suspended') a.resume().then(function () { if (!timer && current && musicOn) schedule(); });
-      else if (!timer && current && musicOn) schedule();
+      if (a.state === 'suspended') a.resume().then(function () { if (!timer && current && (musicOn || forced)) schedule(); });
+      else if (!timer && current && (musicOn || forced)) schedule();
     },
   };
 })();

@@ -1,6 +1,7 @@
 // Generic building / street-dialog screen: the interior art, the HUD, and the original's blue
 // panel with a quote, square icon buttons in two columns and LEAVE. Buildings are data +
-// callbacks registered with SRPG.registerLocation (see docs/ARCHITECTURE.md).
+// callbacks registered with SRPG.registerLocation (see docs/ARCHITECTURE.md). Pressing a button
+// makes no sound of its own: the original loads _click.wav but no script ever starts it.
 (function () {
   'use strict';
   var SRPG = window.SRPG;
@@ -10,7 +11,6 @@
   var DEFAULT_PANEL = { x: 182, y: 47, w: 355, h: 250 };
 
   var cur = null; // { def, g, sub }
-  var fade = 0;
   var active = false; // the location screen is showing (false while a minigame runs)
   // Double-click guard: the second click of a double-click that began on another screen (e.g. a
   // minigame's exit button) must not press the menu button that appears under the pointer.
@@ -93,7 +93,6 @@
       var pos = btnPos(local, b, v);
       ui.iconButton(panel, { icon: b.icon, label: b.label, x: pos.x, y: pos.y, w: b.w || 160, disabled: b.disabled, id: b.id, size: b.size }, function (e) {
         if (e && e.detail > 1 && !armed) return;
-        SRPG.sound.play('click');
         b.onClick(g);
         if (cur && cur.def === def && !cur.sub && SRPG.engine.sceneName === 'location') build();
       });
@@ -102,7 +101,6 @@
       var lp = btnPos(local, v.leaveAt || { col: 1, row: 3 }, v);
       ui.iconButton(panel, { icon: 'leave', label: 'LEAVE', x: lp.x, y: lp.y, w: 120, id: 'leave' }, function (e) {
         if (e && e.detail > 1 && !armed) return;
-        SRPG.sound.play('click');
         SRPG.location.leave();
       });
     }
@@ -135,12 +133,10 @@
       var by = b.y != null ? b.y : p.h - 34;
       if (b.icon) {
         ui.iconButton(panel, { icon: b.icon, label: b.label, x: bx, y: by, w: b.w || 150, id: b.id }, function () {
-          SRPG.sound.play('click');
           b.onClick(cur.g);
         });
       } else {
         ui.button(panel, b.label, function () {
-          SRPG.sound.play('click');
           b.onClick(cur.g);
         }, { x: bx, y: by, w: b.w || 56, id: b.id });
       }
@@ -152,7 +148,11 @@
       var def = SRPG.locations[params.id];
       if (!def) throw new Error('Unknown location ' + params.id);
       cur = { def: def, g: makeG(def), sub: null };
-      fade = params.resume || def.overlay ? 0 : 10; // street dialogs pop up instantly
+      // A building's frame script starts the black clip at frame 1 and swaps main.mp3 for
+      // inside.mp3 (LoopB.stop, LoopD.start when music is on). Street dialogs are drawn over the
+      // map with neither. A minigame handing back (resume) skips onEnter, and the fade unless it
+      // asks for it (the casino games go back to root frame 40, which re-runs the black clip).
+      if ((!params.resume || params.fade) && !def.overlay) SRPG.engine.blackPlay(1);
       active = true;
       armed = false;
       if (def.music !== null) SRPG.sound.music(def.overlay ? 'main' : def.music || 'inside');
@@ -162,8 +162,9 @@
     exit: function () { active = false; },
     tick: function () {
       var s = S();
-      if (fade > 0) fade--;
-      if (s && s.hp <= 0 && !s.over) SRPG.game.die();
+      if (s && s.hp <= 0 && !s.over) { SRPG.game.die(); return; }
+      // street dialogs: the car and person clips on the map below keep playing
+      if (cur && cur.def.overlay && SRPG.city && SRPG.city.dialogTick) SRPG.city.dialogTick();
       if (cur && cur.def.tick) cur.def.tick(cur.g);
     },
     render: function (ctx) {
@@ -181,25 +182,25 @@
       }
       if (def.foreground) def.foreground(ctx, s, SRPG.engine.frame, cur.g);
       SRPG.hud.draw(ctx, s, def.hud || 'inside');
-      if (fade > 0) {
-        ctx.fillStyle = 'rgba(0,0,0,' + fade / 10 + ')';
-        ctx.fillRect(0, 0, SRPG.W, SRPG.H);
-      }
+      SRPG.engine.drawBlack(ctx);
     },
   };
 
   SRPG.registerScreen('location', scene);
 
   SRPG.location = {
+    // opts: { resume: back from a minigame (no onEnter, no fade), fade: fade in from black anyway }
     open: function (id, opts) {
       opts = opts || {};
-      SRPG.engine.go('location', { id: id, resume: !!opts.resume });
+      SRPG.engine.go('location', { id: id, resume: !!opts.resume, fade: !!opts.fade });
     },
     // The location on screen (null while a minigame or another screen is showing).
     get current() { return active && cur ? cur.def.id : null; },
     get g() { return cur && cur.g; },
-    // Back to the street, nudged away from the door. leave({ nudge: false }) skips the nudge
-    // (e.g. after being moved elsewhere); leave('key') uses another building's nudge.
+    // Back to the street, nudged away from the door (each LEAVE button's mapx / mapy +-8), with
+    // main.mp3 back on. There is no fade: the root timeline just returns to frame 2 (a black fade
+    // still playing from the way in carries on). leave({ nudge: false }) skips the nudge (e.g.
+    // after being moved elsewhere); leave('key') uses another building's nudge.
     leave: function (opt) {
       var s = S();
       var def = cur && cur.def;
@@ -212,7 +213,8 @@
       }
       if (def && def.onLeave) def.onLeave(cur.g);
       cur = null;
-      SRPG.engine.go('city', { fade: !(def && def.overlay) });
+      // after a building the map, the player and the cars are new clips (see city.js)
+      SRPG.engine.go('city', { rebuild: !(def && def.overlay) });
     },
   };
 })();

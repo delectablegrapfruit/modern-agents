@@ -98,6 +98,25 @@
       return { x: ((cx - r.left) / r.width) * SRPG.W, y: ((cy - r.top) / r.height) * SRPG.H };
     },
 
+    // The original's "black" clip (sprite 243, above everything on the root timeline): played from
+    // frame 1 it fades in from black over frames 1-10 (entering a building, getting into the car),
+    // from frame 11 over frames 11-30 (arriving after the intro or a load); it stops at 10 and 30,
+    // transparent. It plays on whichever screen is showing; the city and buildings draw it.
+    black: 0, // the clip's current frame (0 = not played yet)
+    blackPlay: function (frame) { engine.black = frame; },
+    blackAlpha: function () {
+      var f = engine.black;
+      if (f >= 1 && f <= 10) return (10 - f) / 9;
+      if (f >= 11 && f <= 30) return (30 - f) / 19;
+      return 0;
+    },
+    drawBlack: function (ctx) {
+      var a = engine.blackAlpha();
+      if (a <= 0) return;
+      ctx.fillStyle = 'rgba(0,0,0,' + a + ')';
+      ctx.fillRect(0, 0, SRPG.W, SRPG.H);
+    },
+
     // Test hook: advance the simulation n ticks synchronously (no rAF needed), then redraw.
     step: function (n) {
       for (var i = 0; i < (n || 1); i++) tick();
@@ -145,6 +164,7 @@
 
   function tick() {
     engine.frame++;
+    if (engine.black > 0 && engine.black !== 10 && engine.black < 30) engine.black++;
     if (current && current.tick) current.tick();
   }
 
