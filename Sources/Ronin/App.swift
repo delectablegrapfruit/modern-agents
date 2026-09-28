@@ -209,6 +209,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             "Show or hide from anywhere: " + (live?.title ?? "the menu"),
         ] { note(line, to: controls) }
         submenu("Controls", controls)
+
+        // Development: the crowd rules, to try them out in play.
+        let development = NSMenu()
+        let crowd = Settings.crowding
+        func rule(_ title: String, _ tag: Int, _ on: Bool, enabled: Bool = true) {
+            let item = NSMenuItem(title: title, action: enabled ? #selector(toggleRule(_:)) : nil, keyEquivalent: "")
+            item.target = self
+            item.tag = tag
+            item.state = on ? .on : .off
+            development.addItem(item)
+        }
+        let queued = !crowd.passThrough && !crowd.slipPast && !crowd.passBusy && !crowd.shove
+        note("Crowd (the game as it plays: Queue)", to: development)
+        rule("Queue — each waits behind the man in front", 0, queued)
+        rule("Full Pass-Through — everyone walks through everyone", 1, crowd.passThrough)
+        rule("Slip Past — runners, dancers and the gourd-bearer past brutes and archers", 2, crowd.slipPast, enabled: !crowd.passThrough)
+        rule("Pass the Busy — past a man winding up or recovering", 3, crowd.passBusy, enabled: !crowd.passThrough)
+        rule("Shove Through — the brute through lighter men", 4, crowd.shove, enabled: !crowd.passThrough)
+        development.addItem(.separator())
+        note("The brute", to: development)
+        rule("No Brute Knockback — a cut neither moves him nor breaks his blow", 5, crowd.noBruteKnockback)
+        submenu(crowd.isStandard ? "Development" : "Development (rules changed)", development)
         menu.addItem(.separator())
 
         // Walking away from a fight keeps the hearts it cost; past a stage's card, this goes on as the card does.
@@ -272,6 +294,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func toggleReduceMotion() {
         Settings.reduceMotion.toggle()
+    }
+
+    /// A development crowd rule on or off (Queue turns the passing rules off), played from the next step on.
+    @objc private func toggleRule(_ sender: NSMenuItem) {
+        var crowd = Settings.crowding
+        switch sender.tag {
+        case 0:
+            crowd.passThrough = false
+            crowd.slipPast = false
+            crowd.passBusy = false
+            crowd.shove = false
+        case 1: crowd.passThrough.toggle()
+        case 2: crowd.slipPast.toggle()
+        case 3: crowd.passBusy.toggle()
+        case 4: crowd.shove.toggle()
+        case 5: crowd.noBruteKnockback.toggle()
+        default: return
+        }
+        Settings.crowding = crowd
     }
 
     /// Gore on or off: the lane takes it up with whatever happens next (the blood already spilt stays where it is).

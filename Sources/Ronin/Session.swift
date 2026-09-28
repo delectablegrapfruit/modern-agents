@@ -47,8 +47,10 @@ final class GameSession {
         fight.foes[i].timer = 0.6
     }
 
-    /// Runs the fight forward. A fight that ends is booked and saved on the spot.
+    /// Runs the fight forward, under the development crowd rules chosen (`Settings.crowding`). A fight that ends is
+    /// booked and saved on the spot.
     func advance(_ dt: Double) -> [FightEvent] {
+        fight.crowding = Settings.crowding
         let events = fight.step(dt)
         unsaved += dt
         conclude(events)
@@ -57,6 +59,7 @@ final class GameSession {
     }
 
     func strike(_ side: Side) -> [FightEvent] {
+        fight.crowding = Settings.crowding
         let events = fight.strike(side)
         conclude(events)
         return events
@@ -248,6 +251,30 @@ enum Settings {
     /// Calmer effects: less shake, no zoom punches, softer full-lane flashes, lightning a slow glow. The blood and the
     /// dead are untouched (`gore` is theirs). Follows the system's Reduce Motion until chosen in the menu (choosing
     /// what the system says follows it again).
+    /// Development: how the crowd on the lane gets past each other and whether a cut knocks the brute back
+    /// (`Crowding`), for trying the rules out. Standard (queues, knock-back) unless changed in the Development menu;
+    /// played from the next step on.
+    @MainActor static var crowding: Crowding {
+        get {
+            if let known = crowdingRead { return known }
+            let read = Crowding(passThrough: defaults.bool(forKey: "dev.passThrough"), slipPast: defaults.bool(forKey: "dev.slipPast"),
+                                passBusy: defaults.bool(forKey: "dev.passBusy"), shove: defaults.bool(forKey: "dev.shove"),
+                                noBruteKnockback: defaults.bool(forKey: "dev.noBruteKnockback"))
+            crowdingRead = read
+            return read
+        }
+        set {
+            defaults.set(newValue.passThrough, forKey: "dev.passThrough")
+            defaults.set(newValue.slipPast, forKey: "dev.slipPast")
+            defaults.set(newValue.passBusy, forKey: "dev.passBusy")
+            defaults.set(newValue.shove, forKey: "dev.shove")
+            defaults.set(newValue.noBruteKnockback, forKey: "dev.noBruteKnockback")
+            crowdingRead = newValue
+        }
+    }
+    /// The rules as last read or set (read every step, so not from the defaults each time).
+    @MainActor private static var crowdingRead: Crowding?
+
     @MainActor static var reduceMotion: Bool {
         get { defaults.object(forKey: "reduceMotion") as? Bool ?? NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
         set {

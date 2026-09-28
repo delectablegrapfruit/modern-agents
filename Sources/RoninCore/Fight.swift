@@ -97,6 +97,50 @@ public enum FightEvent: Equatable, Sendable {
 /// Hearts come back two ways, neither of them sure. The stage's gourd: its bearer has to be caught on two of his
 /// darts, and the gourd he flings as he falls caught as it comes down. And shards: a man cut down in the last moment
 /// of his wind-up (sen-no-sen, `Tuning.senNoSen`) gives a shard, and three make a heart, but a wound scatters them.
+/// Development rules, for trying out how the men on one side of the lane get past each other and how a cut moves the
+/// brute; not part of the game as it plays. With none set, each side is a queue: every man waits behind the one in
+/// front, and only the man in front strikes.
+public struct Crowding: Codable, Equatable, Sendable {
+    /// Every man walks through every other to his own striking distance, and strikes from there.
+    public var passThrough = false
+    /// The small, quick men (the runner, the blade dancer, the gourd-bearer) slip past a brute or an archer in front.
+    public var slipPast = false
+    /// Anyone may pass a man who is winding up a blow or recovering from one.
+    public var passBusy = false
+    /// The brute strides through lighter men (anyone but another brute, an archer or the warlord), shoving aside
+    /// those he walks into (not a man already bringing his blow down).
+    public var shove = false
+    /// A cut neither knocks the brute back nor breaks a blow he is winding up: he takes it and keeps coming.
+    public var noBruteKnockback = false
+
+    public init(passThrough: Bool = false, slipPast: Bool = false, passBusy: Bool = false, shove: Bool = false,
+                noBruteKnockback: Bool = false) {
+        self.passThrough = passThrough
+        self.slipPast = slipPast
+        self.passBusy = passBusy
+        self.shove = shove
+        self.noBruteKnockback = noBruteKnockback
+    }
+
+    /// The game as it plays: queues, and a cut knocks the brute back.
+    public static let standard = Crowding()
+    public var isStandard: Bool { self == .standard }
+
+    /// Whether `man`, nearer the ronin on his side, stands in the way of `follower`.
+    public func blocks(_ man: Foe, _ follower: Foe) -> Bool {
+        if passThrough { return false }
+        if passBusy, man.phase == .windup || man.phase == .recoil { return false }
+        if slipPast, follower.kind == .runner || follower.kind == .dancer || follower.bearer, man.kind == .brute || man.kind == .archer {
+            return false
+        }
+        if shove, follower.kind == .brute, shoves(man) { return false }
+        return true
+    }
+
+    /// Whether the brute, shoving through, pushes `man` aside.
+    func shoves(_ man: Foe) -> Bool { man.kind != .brute && man.kind != .archer && man.kind != .warlord }
+}
+
 public struct Fight: Codable, Equatable, Sendable {
     public enum Target: Codable, Equatable, Sendable {
         case foe(Int)
@@ -149,6 +193,8 @@ public struct Fight: Codable, Equatable, Sendable {
     public var shards = 0
     /// Plays the fight when set (the self-test and the balance runs).
     public var pilot: Pilot?
+    /// Development rules for the crowd on the lane (`Crowding.standard` in play).
+    public var crowding = Crowding.standard
     var accumulator = 0.0
 
     /// A stage, entered with `hearts` (full when nil: hearts carry from stage to stage) and `shards` of a heart.
@@ -452,14 +498,18 @@ public struct Fight: Codable, Equatable, Sendable {
             let order = foes.indices
                 .filter { foes[$0].targetable && Side.of(foes[$0].x) == side }
                 .sorted { foes[$0].distance < foes[$1].distance }
-            var front: Foe?
+            // The men already moved this step, nearest the ronin first; the man in `f`'s way is the nearest of them
+            // to him that blocks him (in a queue, simply the man in front).
+            var ahead: [Foe] = []
             for i in order {
                 var f = foes[i]
+                let front = ahead.last { crowding.blocks($0, f) }
                 if f.bearer, f.kind != .warlord {
                     // The gourd-bearer keeps his own distance and nobody queues behind him, but he never walks
                     // through the man in front.
                     bear(&f, side: side, front: front, &events)
                     foes[i] = f
+                    ahead.append(f)
                     continue
                 }
                 var stop = f.contact
@@ -555,7 +605,21 @@ public struct Fight: Codable, Equatable, Sendable {
                     break
                 }
                 foes[i] = f
-                front = f
+                if crowding.shove, f.kind == .brute { shove(from: i, side: side) }
+                ahead.append(f)
+            }
+        }
+    }
+
+    /// The brute striding through lighter men (`Crowding.shove`): anyone he walks into who is not bringing his blow
+    /// down is pushed aside, to stand just behind him.
+    private mutating func shove(from i: Int, side: Side) {
+        let brute = foes[i]
+        for j in foes.indices where j != i && foes[j].targetable && Side.of(foes[j].x) == side && crowding.shoves(foes[j]) {
+            guard foes[j].phase != .windup, foes[j].phase != .leaping, !foes[j].bearer else { continue }
+            let room = (brute.kind.width + foes[j].kind.width) / 2 + 0.01
+            if abs(foes[j].distance - brute.distance) < room {
+                foes[j].x = side.sign * min(Tuning.edge, brute.distance + room)
             }
         }
     }
@@ -764,6 +828,10 @@ public struct Fight: Codable, Equatable, Sendable {
             foes[i].leapTo = far.sign * land
             foes[i].enter(.leaping, for: Tuning.leap)
             events.append(.leapt(foe: foes[i].id))
+        } else if crowding.noBruteKnockback, foes[i].kind == .brute {
+            // Unmoved (`Crowding.noBruteKnockback`): he takes the cut where he stands, and a blow he was winding up
+            // comes on regardless.
+            if foes[i].phase != .windup { foes[i].enter(.recoil, for: 0.3) }
         } else {
             let sign = Side.of(foes[i].x).sign
             foes[i].x = sign * min(Tuning.edge, foes[i].distance + (foes[i].kind == .warlord ? 0.06 : 0.07))
@@ -860,6 +928,7 @@ extension Fight {
         gourd = try c.decodeIfPresent(Gourd.self, forKey: .gourd)
         shards = try c.decodeIfPresent(Int.self, forKey: .shards) ?? 0
         pilot = try c.decodeIfPresent(Pilot.self, forKey: .pilot)
+        crowding = try c.decodeIfPresent(Crowding.self, forKey: .crowding) ?? .standard
         accumulator = try c.decode(Double.self, forKey: .accumulator)
     }
 }

@@ -54,13 +54,15 @@ struct Options {
     var trace: Int?
     var campaign = false
     var modes: [Mode] = [.bushido]
+    /// Development crowd rules (`Crowding`), for measuring what they would do to the game.
+    var crowding = Crowding.standard
 }
 
 func usage() -> String {
     var text = """
     usage: ronin-sim [--stages 1-20] [--seeds 12] [--mode bushido|shoshin|shura|oni|all] [--reaction 0.22]
                      [--rate 7] [--slips 0.02] [--rash 0] [--timing 0.05] [--daring 0.8] [--perfect] [--hearts]
-                     [--check]
+                     [--check] [--crowd pass,slip,busy,shove] [--no-knockback]
            ronin-sim --campaign [--seeds 32] [--mode all] [--check]
            ronin-sim --trace <stage> [--mode bushido]
 
@@ -118,6 +120,20 @@ func parse(_ list: [String]) -> Options {
         case "--check": o.check = true
         case "--trace": o.trace = Int(number("--trace", arguments.next()) { $0 >= 1 && $0 == $0.rounded() })
         case "--campaign": o.campaign = true
+        case "--crowd":
+            // Development crowd rules, any of them: pass (everyone through everyone), slip (small men past brutes and
+            // archers), busy (past a man winding up or recovering), shove (the brute through lighter men).
+            for rule in (arguments.next() ?? "").split(separator: ",") {
+                switch rule {
+                case "pass": o.crowding.passThrough = true
+                case "slip": o.crowding.slipPast = true
+                case "busy": o.crowding.passBusy = true
+                case "shove": o.crowding.shove = true
+                case "queue": break
+                default: fail("--crowd takes pass, slip, busy, shove or queue, not \(rule)")
+                }
+            }
+        case "--no-knockback": o.crowding.noBruteKnockback = true
         case "--help", "-h":
             print(usage())
             exit(0)
@@ -167,6 +183,7 @@ func play(stage: Int, seed: Int, mode: Mode, hearts: Int? = nil, shards: Int = 0
           _ o: Options) -> (fight: Fight, tally: Tally) {
     var fight = Fight(stage: stage, seed: mixSeed(0xC0FFEE, UInt64(stage), UInt64(seed)), mode: mode, hearts: hearts, shards: shards)
     fight.pilot = pilot(seed, o)
+    fight.crowding = o.crowding
     var tally = Tally()
     var next = 1.0
     var bearer: Int?
