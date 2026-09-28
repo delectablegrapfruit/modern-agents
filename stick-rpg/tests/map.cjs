@@ -33,9 +33,10 @@ function installAnimatedHook(page) {
       const s = SRPG.game.s;
       const B = SRPG.mapArt.BOUNDS;
       let done = false;
-      ctx.drawImage = function (img, x, y) {
+      ctx.drawImage = function (img) {
         origDrawImage.apply(this, arguments);
-        if (!done && img && img.width === B.w && img.height === B.h && arguments.length === 3) {
+        // the cached static city is the only image this big (it may be rendered at 2x)
+        if (!done && img && img.width >= B.w && img.height >= B.h) {
           done = true;
           SRPG.mapArt.drawAnimated(this, s, SRPG.engine.frame);
         }
@@ -293,6 +294,38 @@ function installAnimatedHook(page) {
   await moving(['ArrowDown', 'ArrowLeft'], 6, 'drive-car-diagonal');
   await t.set({ items: { car: 2 } });
   await moving(['ArrowUp'], 8, 'drive-sportscar');
+
+  console.log('Driving off the edge: the car rolls on into the sky (person clip 328-352)');
+  // pixels of the stage around the player: count car-yellow and the player's blue head
+  const probe = () => page.evaluate(() => {
+    SRPG.engine.draw();
+    const c = document.querySelector('canvas');
+    const k = c.width / 550;
+    const d = c.getContext('2d').getImageData(Math.round(200 * k), Math.round(120 * k), Math.round(95 * k), Math.round(130 * k)).data;
+    let yellow = 0, blue = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      if (d[i] > 200 && d[i + 1] > 170 && d[i + 2] < 60) yellow++;
+      if (d[i] < 30 && d[i + 1] > 80 && d[i + 1] < 120 && d[i + 2] > 180) blue++;
+    }
+    return { yellow, blue };
+  });
+  await t.set({ items: { car: 1 }, driving: 1, mapx: 200, mapy: 1012, rot: 0, hp: 500 });
+  await page.evaluate(() => { SRPG.city.cars.forEach((c) => { c.s = 500; }); });
+  await t.hold(['ArrowUp'], 2);
+  const df = await page.evaluate(() => ({ kind: SRPG.city.st.stunKind, stun: SRPG.city.st.stun }));
+  check(df.kind === 'fall', 'driving off the north edge starts the fall');
+  await t.step(3); await shot('drive-fall-04');
+  const d4 = await probe();
+  await t.step(12); await shot('drive-fall-16');
+  const d16 = await probe();
+  await t.step(12); await shot('drive-fall-28');
+  const d28 = await probe();
+  check(d4.yellow > 500 && d4.blue < 20, 'the car, not the stick figure, goes over the edge ' + JSON.stringify(d4));
+  check(d16.yellow > 50 && d16.yellow < d4.yellow * 0.8, 'it shrinks away ' + JSON.stringify(d16));
+  check(d28.yellow < 5, 'and is gone by clip frame 353 ' + JSON.stringify(d28));
+  await t.step(20);
+  const sp = await page.evaluate(() => [SRPG.sprites.WALK_FRAMES, SRPG.sprites.SKATE_FRAMES, SRPG.sprites.PLAYER_CARFALL_FRAMES]);
+  check(sp[0] === 27 && sp[1] === 21 && sp[2] === 25, 'walk 275-301 (27 ticks), skate 305-325 (21), own-car fall 328-352 (25): ' + sp);
   await t.set({ driving: 0, items: { car: 0 } });
 
   console.log('Knocked down by a car, crashing, waking up');

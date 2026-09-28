@@ -345,7 +345,7 @@
     }
     s.fps = 1; // the original's loadGame() switches SHOW FPS on
     SRPG.game.start(s);
-    SRPG.engine.go('city', { fade: true });
+    SRPG.engine.go('city', { fade: 19 }); // black.gotoAndPlay(11): a 19-frame fade in
     return true;
   }
 

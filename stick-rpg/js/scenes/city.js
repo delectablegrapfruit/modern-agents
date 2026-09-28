@@ -15,10 +15,8 @@
     walkPhase: 0,
     stepcount: 0,
     moving: false,
-    dealerX: 0,
-    dealerDir: 1,
-    dealerPause: 0,
     fade: 0,
+    fadeMax: 10, // the black clip: 10 ticks from frame 1, 19 from frame 11 (after the intro / a load)
     panel: null, // open overlay panel element (inventory / stats) — freezes the map
     staticCanvas: null,
     staticKey: '',
@@ -27,21 +25,25 @@
   // --- traffic -----------------------------------------------------------------------------
   // Each car: s (state) 0 = driving down, 1 = driving up, 2 = just left the screen, >2 = count-
   // down to the next car (random(s) <= 2 spawns). Same numbers as the original.
+  // A new car is the one yellow car recoloured with Flash's colour transform: blue x150%, and red
+  // or green cut by random(100)%. A car that reaches the end of the road rolls off the paper edge
+  // (its clip's frames 2-33) before the countdown to the next one starts.
   var cars = [newCar(), newCar()];
-  function newCar() { return { s: 3, x: 0, y: 0, rot: 0, color: '#ff8800', wait: 0 }; }
-  var CAR_COLORS = ['#ff8800', '#ffd000', '#66dd22', '#22ccff', '#ff3355', '#bb66ff', '#ff66cc', '#eeeeee'];
+  function newCar() { return { s: 3, x: 0, y: 0, rot: 0, tint: null, wait: 0 }; }
 
-  function tickCar(c) {
+  // stunned: the original's root frame 3 only moves the cars already driving (no spawning)
+  function tickCar(c, stunned) {
     if (c.s < 2) {
       if (c.s === 0) c.y += CAR_SPEED;
       if (c.s === 1) c.y -= CAR_SPEED;
       if (c.y < -885 || c.y > 950) { c.s = 2; c.wait = 32; }
     } else if (c.s === 2) {
       if (--c.wait <= 0) c.s = 500;
-    } else if (c.s > 2) {
+    } else if (c.s > 2 && !stunned) {
       c.s -= 1;
       if (!(rnd(c.s) > 2)) {
-        c.color = SRPG.rng.pick(CAR_COLORS);
+        var tran = rnd(100), t1 = rnd(2);
+        c.tint = { r: 100 - t1 * tran, g: 100 - (1 - t1) * tran, b: 150 };
         if (rnd(2) === 0) { c.rot = 0; c.s = 1; c.x = MAP.lanes.up; c.y = MAP.lanes.yStart; }
         else { c.rot = 180; c.s = 0; c.x = MAP.lanes.down; c.y = MAP.lanes.yEnd; }
       }
@@ -101,9 +103,12 @@
     SRPG.location.open(id);
   }
 
+  // The dealer's own 87-frame clip: he walks 29 px north, waits, walks back and waits again.
   function dealerPos() {
     var d = MAP.npcs.dealer;
-    return { x: d.x + st.dealerX, y: d.y };
+    var f = SRPG.engine.frame % 87;
+    var dy = f < 24 ? (-29 * f) / 24 : f < 44 ? -29 : f < 64 ? -29 + (29 * (f - 44)) / 20 : 0;
+    return { x: d.x, y: d.y + dy, walking: f < 24 || (f >= 44 && f < 64), rot: f < 44 ? 0 : 180 };
   }
 
   function npcAt(s, x, y) {
@@ -155,8 +160,10 @@
       var s = S();
       SRPG.game.onEnterCity();
       st.panel = null;
-      st.fade = params.fade === false ? 0 : 10;
-      if (params.wake) knockDown('wake');
+      // params.fade: false, true (10 ticks) or a number of ticks. (params.wake is accepted but, as in
+      // the original, the get-up pose is replaced by the standing one on the next tick.)
+      st.fade = params.fade === false ? 0 : typeof params.fade === 'number' ? params.fade : 10;
+      st.fadeMax = Math.max(1, st.fade);
       SRPG.sound.music('main');
       SRPG.ui.clear();
     },
@@ -168,19 +175,8 @@
       if (st.fade > 0) st.fade--;
       if (st.panel || SRPG.ui.modalOpen) return; // the original stops the whole map for panels
 
-      // dealer paces up and down the alley
-      if (st.dealerPause > 0) st.dealerPause--;
-      else {
-        st.dealerX += st.dealerDir * 1.2;
-        var span = MAP.npcs.dealer.pace.x1 - MAP.npcs.dealer.pace.x0;
-        if (st.dealerX > span || st.dealerX < 0) {
-          st.dealerDir *= -1;
-          st.dealerX = Math.max(0, Math.min(span, st.dealerX));
-          st.dealerPause = 35 + rnd(70);
-        }
-      }
-
-      cars.forEach(tickCar);
+      var stunned = st.stun > 0;
+      cars.forEach(function (c) { tickCar(c, stunned); });
 
       if (st.stun > 0) {
         st.stun--;
@@ -188,7 +184,7 @@
       }
 
       var r = MAP.walk(s, input());
-      st.moving = r.moved && r.dist > 0;
+      st.moving = r.moved; // the walk animation follows the keys held, even against a wall
       if (st.moving) {
         st.walkPhase += 0.35 * r.speed;
         st.stepcount += r.step;
@@ -209,7 +205,7 @@
       if (st.panel) { if (k === 'Escape') city.closePanel(); return; }
       if (k === 'c' && (s.items.car === 1 || s.items.car === 2) && st.stun === 0) {
         SRPG.sound.play('ignition');
-        st.fade = 10;
+        st.fade = st.fadeMax = 10;
         s.driving = s.driving === 1 ? 0 : 1;
       }
       if (k === 'i') city.openPanel('inventory');
@@ -243,7 +239,7 @@
       city.renderWorld(ctx);
       SRPG.hud.draw(ctx, s, 'map');
       if (st.fade > 0) {
-        ctx.fillStyle = 'rgba(0,0,0,' + st.fade / 10 + ')';
+        ctx.fillStyle = 'rgba(0,0,0,' + st.fade / st.fadeMax + ')';
         ctx.fillRect(0, 0, SRPG.W, SRPG.H);
       }
     },
@@ -255,6 +251,7 @@
       SRPG.mapArt.drawSky(ctx, s, SRPG.engine.frame);
       var B = SRPG.mapArt.BOUNDS;
       ctx.drawImage(staticLayer(s), s.mapx + B.x, s.mapy + B.y, B.w, B.h);
+      if (SRPG.mapArt.drawAnimated) SRPG.mapArt.drawAnimated(ctx, s, SRPG.engine.frame);
 
       var t = SRPG.engine.frame;
       var sp = SRPG.sprites;
@@ -273,8 +270,7 @@
       sp.npc(ctx, q2.x, q2.y, { color: MAP.npcs.hobo.color, rot: 90, phase: 0, kind: 'hobo' });
       var dp = dealerPos();
       var q3 = MAP.toStage(s, dp.x, dp.y);
-      sp.npc(ctx, q3.x, q3.y, { color: MAP.npcs.dealer.color, rot: st.dealerDir > 0 ? 90 : 270,
-        phase: st.dealerPause > 0 ? 0 : t / 3, kind: 'dealer' });
+      sp.npc(ctx, q3.x, q3.y, { color: MAP.npcs.dealer.color, rot: dp.rot, phase: dp.walking ? t : 0, kind: 'dealer' });
 
       // the player (drawn below the cars, as in the original)
       var mode = s.driving === 1 ? (s.items.car === 2 ? 'sportscar' : 'car') : (SRPG.engine.keys.Shift && s.items.skateboard === 1 ? 'skate' : 'walk');
@@ -289,10 +285,10 @@
       });
 
       cars.forEach(function (c) {
-        if (c.s > 1) return;
+        if (c.s > 2) return;
         var q = MAP.toStage(s, c.x, c.y);
         if (q.y < -80 || q.y > H + 80) return;
-        sp.car(ctx, q.x, q.y, { rot: c.rot, color: c.color });
+        sp.car(ctx, q.x, q.y, { rot: c.rot, tint: c.tint, fall: c.s === 2 ? 33 - c.wait : 0 });
       });
     },
   };

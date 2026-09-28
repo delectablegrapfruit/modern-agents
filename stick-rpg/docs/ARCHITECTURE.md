@@ -132,7 +132,7 @@ inventory skateboard car
 
 `SRPG.sound.play(name)`: click error eat drink work purchase fall carhit crash footstep skate
 ansmachine roulette reel handle win ignition punch swoosh fireball energy stat sleep dart cards
-chip door. `SRPG.sound.music(name | null)`: beginning main inside fight.
+chip door breath stamp. `SRPG.sound.music(name | null)`: beginning main inside fight.
 
 ## Testing
 

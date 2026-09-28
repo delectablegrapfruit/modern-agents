@@ -202,9 +202,10 @@ function eq(a, b, msg) { ok(JSON.stringify(a) === JSON.stringify(b), msg + ' (' 
     return ev((win) => {
       const c = document.getElementById('game');
       const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+      const k = c.width / 550; // backing-store pixels per stage pixel
       let x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1, bx = 0, by = 0, bn = 0;
       for (let y = win[1]; y < win[3]; y++) for (let x = win[0]; x < win[2]; x++) {
-        const i = (y * c.width + x) * 4;
+        const i = (Math.floor(y * k) * c.width + Math.floor(x * k)) * 4;
         if (d[i] + d[i + 1] + d[i + 2] > 600) continue; // white film background
         x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y);
         if (d[i + 2] > 150 && d[i] < 60) { bx += x; by += y; bn++; } // the blue head
@@ -238,7 +239,9 @@ function eq(a, b, msg) { ok(JSON.stringify(a) === JSON.stringify(b), msg + ' (' 
   eq(await scene(), 'city', 'frame 850: the city');
   g = await t.state();
   eq([g.strength, g.intelligence, g.charm, g.pname], [7, 9, 4, 'Tester'], 'city with the chosen stats');
-  eq(await ev(() => [SRPG.city.st.stunKind, SRPG.city.st.stun > 30]), ['wake', true], 'you start lying on the road (day-0 wake-up)');
+  // day 0: the original's person frame 231 is replaced by the standing pose on the next tick,
+  // so a new game starts on your feet and free to move
+  eq(await ev(() => SRPG.city.st.stun), 0, 'a new game starts free to move');
   await t.step(45);
   await shot('city-after-intro');
 
@@ -305,7 +308,8 @@ function eq(a, b, msg) { ok(JSON.stringify(a) === JSON.stringify(b), msg + ' (' 
       const CP = CanvasRenderingContext2D.prototype, of = CP.fillText;
       CP.fillText = function (str) { seen.push(String(str)); return of.apply(this, arguments); };
       try { SRPG.engine.draw(); } finally { CP.fillText = of; }
-      const d = document.getElementById('game').getContext('2d').getImageData(180, 18, 1, 1).data;
+      const gc = document.getElementById('game'), k = gc.width / 550;
+      const d = gc.getContext('2d').getImageData(Math.floor(180 * k), Math.floor(18 * k), 1, 1).data;
       return { rgb: [d[0], d[1], d[2]], texts: seen };
     }, f);
   }
@@ -363,7 +367,7 @@ function eq(a, b, msg) { ok(JSON.stringify(a) === JSON.stringify(b), msg + ' (' 
   eq(await ev(() => [SRPG.results.st.rf, SRPG.results.st.sf]), [150, 1], 'frame 150: the stamp starts');
   await sounds();
   await t.step(9);
-  ok((await sounds()).includes('punch'), 'stamp thud on its 10th frame');
+  ok((await sounds()).includes('stamp'), 'stamp thud on its 10th frame');
   eq(await ev(() => Array.from(document.querySelectorAll('#ui [data-id]')).map((e) => e.getAttribute('data-id'))), [], 'no buttons while the stamp falls');
   await t.step(2);
   eq(await ev(() => SRPG.results.st.rf), 161, 'frame 161');

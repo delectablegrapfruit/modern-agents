@@ -22,45 +22,10 @@
   var st = { f: 2, black: 0, blackHold: false, skip: null, done: false };
 
   // ---- sound: the sleeper's slow breath (a 2.3 s swelling hiss) -----------------------------
-  var ac = null;
   function breath() {
-    try {
-      if (!ac) {
-        var AC = window.AudioContext || window.webkitAudioContext;
-        if (!AC) return;
-        ac = new AC();
-      }
-      if (ac.state === 'suspended') ac.resume();
-      var dur = 2.4;
-      var n = Math.floor(ac.sampleRate * dur);
-      var buf = ac.createBuffer(1, n, ac.sampleRate);
-      var d = buf.getChannelData(0);
-      for (var i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
-      var src = ac.createBufferSource();
-      src.buffer = buf;
-      var bp = ac.createBiquadFilter();
-      bp.type = 'bandpass';
-      bp.Q.value = 0.9;
-      var t = ac.currentTime;
-      bp.frequency.setValueAtTime(450, t);
-      bp.frequency.linearRampToValueAtTime(900, t + 0.7);
-      bp.frequency.linearRampToValueAtTime(2400, t + 1.4);
-      bp.frequency.linearRampToValueAtTime(2300, t + dur);
-      var g = ac.createGain();
-      g.gain.setValueAtTime(0.0001, t);
-      g.gain.linearRampToValueAtTime(0.0001, t + 0.2);
-      g.gain.linearRampToValueAtTime(0.18, t + 0.5);
-      g.gain.linearRampToValueAtTime(0.26, t + 1.2);
-      g.gain.linearRampToValueAtTime(0.14, t + 1.5);
-      g.gain.linearRampToValueAtTime(0.05, t + 1.95);
-      g.gain.linearRampToValueAtTime(0.0001, t + 2.3);
-      src.connect(bp);
-      bp.connect(g);
-      g.connect(ac.destination);
-      src.start(t);
-      src.stop(t + dur);
-    } catch (e) { /* no audio */ }
+    SRPG.sound.play('breath');
   }
+
 
   // ---- art ---------------------------------------------------------------------------------
   // The sleeper seen from above: head (r 18.5) and two arms poking out sideways. Drawn in the
@@ -201,7 +166,7 @@
     st.done = true;
     // Root frame 2 on day 0: you start the game lying on the road, just hit (person frames
     // 231..270), and the black clip fades the city in.
-    SRPG.engine.go('city', { fade: true, wake: true });
+    SRPG.engine.go('city', { fade: 19 }); // black.gotoAndPlay(11): a 19-frame fade in
   }
 
   function gotoFrame(f) {

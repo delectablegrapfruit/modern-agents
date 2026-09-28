@@ -367,7 +367,7 @@
       }
       if (rs.sf > 0 && rs.sf < 50) {
         rs.sf++;
-        if (rs.sf === 10) SRPG.sound.play('punch'); // the stamp's thud
+        if (rs.sf === 10) SRPG.sound.play('stamp'); // the stamp's thud
       }
       if (rs.rf === 131) countStep();
       else if (rs.rf < 161) {

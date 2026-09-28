@@ -4,7 +4,7 @@
 //
 // The player's look follows the original's 400-frame "person" clip: 20 standing, 185-229 falling
 // into the sky, 230-270 knocked flat by a car (231 on waking up), 275-302 walking, 305-326
-// skateboarding, 327 in the car, 361-400 the car crash. The clip is rotated to the walking
+// skateboarding, 327 in the car, 328-360 the car rolling off the edge, 361-400 the car crash. The clip is rotated to the walking
 // direction as a whole, so a fall off the south edge drops "down" the screen.
 //
 // Standing still never gets past frame 21: the walk clip's first frame (every other tick) sends the
@@ -15,7 +15,6 @@
   var SRPG = window.SRPG;
 
   var ARM = '#2b2b2b';
-  var LEG = '#666666';
   var INK = '#000000';
   var HEAD_R = 9.2;
   var NPC_BLUE = '#0066cc';
@@ -98,7 +97,7 @@
     var p = WALK[Math.min(13, Math.floor(i / 2))];
     for (var k = 0; k < p[2].length; k++) {
       var l = p[2][k];
-      strokeLine(ctx, l.slice(1), LIMB[l[0]], 1.2);
+      strokeLine(ctx, l.slice(1), LIMB[l[0]], 1.1);
     }
     head(ctx, p[0], p[1], HEAD_R, color, 1.3);
   }
@@ -323,6 +322,13 @@
   var CARFALL_S = [1, 1, 1, 0.99, 0.98, 0.97, 0.95, 0.93, 0.91, 0.88, 0.85, 0.82, 0.78, 0.74, 0.7, 0.65, 0.6,
     0.55, 0.49, 0.43, 0.37, 0.3, 0.23, 0.16, 0.09, 0.02];
 
+  // The player's own car falling off the edge (person clip frames 328-352, gone from 353): centre
+  // of the car (it sits at -5 in frame 327) and its scale, one entry per tick.
+  var PCARFALL = [[0, 1], [-6, 1], [-11.5, 0.99], [-16.5, 0.99], [-21, 0.98], [-24.5, 0.95], [-27.5, 0.93],
+    [-30, 0.915], [-32.5, 0.88], [-34, 0.85], [-34.5, 0.82], [-35, 0.79], [-35, 0.745], [-35, 0.7], [-34.5, 0.65],
+    [-33.5, 0.61], [-33, 0.55], [-31.5, 0.5], [-30.5, 0.44], [-29.5, 0.37], [-28.5, 0.31], [-27, 0.23],
+    [-26.5, 0.16], [-25, 0.106], [-24, 0.02]];
+
   // ---------------------------------------------------------------------------------------------
   // the player's animation state (which clip section is playing and since when)
 
@@ -351,7 +357,16 @@
       ctx.rotate(((o.rot || 0) * Math.PI) / 180);
       var k = Math.max(0, Math.min(39, Math.floor((o.t || 0) * 40)));
       var driving = o.mode === 'car' || o.mode === 'sportscar';
-      if (o.anim === 'fall') {
+      if (o.anim === 'fall' && driving) {
+        // driving off the edge: frame 185 sends the clip to 328, the car rolling on into the sky
+        sectionTicks('carfall');
+        var cf = PCARFALL[k];
+        if (cf) {
+          ctx.translate(0, cf[0]);
+          ctx.scale(cf[1], cf[1]);
+          ctx.drawImage(carCanvas(o.mode === 'sportscar', null), 0.2 - CAR_OX, 16.9 - CAR_OY, CAR_W, CAR_H);
+        }
+      } else if (o.anim === 'fall') {
         sectionTicks('fall');
         falling(ctx, color, k);
       } else if (o.anim === 'hit' || o.anim === 'wake') {
@@ -421,6 +436,7 @@
     SKATE_FRAMES: SKATE_FRAMES,
     carCanvas: carCanvas,
     CARFALL_FRAMES: CARFALL_S.length,
+    PLAYER_CARFALL_FRAMES: PCARFALL.length,
     FALL_VISIBLE: FALL_Y.length,
   });
 

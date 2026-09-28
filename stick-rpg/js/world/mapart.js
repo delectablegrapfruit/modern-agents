@@ -115,7 +115,7 @@
   // sky (fixed to the stage, like the original's two full-stage pictures)
 
   var skyDay = null;
-  var skyNight = null;
+  var skyNight = null, skyNightK = 0;
 
   function canvas(w, h) {
     var c = document.createElement('canvas');
@@ -124,9 +124,10 @@
     return c;
   }
 
-  function paintNight(c) {
+  function paintNight(c, k) {
     var ctx = c.getContext('2d');
-    var W = c.width, H = c.height;
+    ctx.scale(k, k);
+    var W = c.width / k, H = c.height / k;
     ctx.fillStyle = '#26132a';
     ctx.fillRect(0, 0, W, H);
     // a photo of the night sky: dark purple, darker toward the corners
@@ -633,12 +634,14 @@
     for (var i = 0; i < 3; i++) {
       var y0 = -783.6 + i * 34.5;
       poly(ctx, [-257.3, y0, -236, y0 + 12.6, -236, y0 + 40, -257.3, y0 + 28.6], '#ffffff', '#000', 1.2);
-      poly(ctx, [-255, y0 + 3.5, -238.3, y0 + 13.5, -238.3, y0 + 37, -255, y0 + 26.5], '#dde3ff', '#333', 0.8);
-      line(ctx, [-246.6, y0 + 8.5, -246.6, y0 + 32], '#fff', 1.6);
-      line(ctx, [-255, y0 + 11.3, -238.3, y0 + 21.3], '#fff', 1.6);
-      line(ctx, [-255, y0 + 19, -238.3, y0 + 29], '#fff', 1.6);
+      // four grey panes behind a white cross bar
+      poly(ctx, [-255, y0 + 3.5, -238.3, y0 + 13.5, -238.3, y0 + 37, -255, y0 + 26.5], '#e6e6e6', '#333', 0.8);
+      line(ctx, [-246.6, y0 + 8.5, -246.6, y0 + 32], '#1a1a1a', 2.6, 'butt');
+      line(ctx, [-255, y0 + 15, -238.3, y0 + 25.2], '#1a1a1a', 2.6, 'butt');
+      line(ctx, [-246.6, y0 + 8.5, -246.6, y0 + 32], '#ffffff', 1.3, 'butt');
+      line(ctx, [-255, y0 + 15, -238.3, y0 + 25.2], '#ffffff', 1.3, 'butt');
     }
-    poly(ctx, [-231, -739, -211, -723, -211, -685.5, -231, -700.5], '#999933', '#333300', 1);
+    poly(ctx, [-231, -739, -211, -723, -211, -685.5, -231, -700.5], '#6b6b00', '#333300', 1);
     poly(ctx, [-228, -733, -213.5, -721.5, -213.5, -689, -228, -700], '#663300', '#331a00', 1);
     line(ctx, [-228, -716.5, -213.5, -705], '#331a00', 1);
     // three trees on the lawn in front (the usual tree, mirrored and turned)
@@ -1023,23 +1026,25 @@
     poly(ctx, [-535, -210, -217.5, -210, -217.5, -40, -535, -40], ctx.fillStyle, '#1a1405', 1.2);
     poly(ctx, [-567.5, -177.5, -535, -210, -535, -40, -567.5, -7.5], '#998917', '#1a1405', 1.2);
     poly(ctx, [-535, -40, -217.5, -40, -282.5, 25, -600, 25], '#837514', '#1a1405', 1.2);
-    // the sign: red board on two legs, with the golden arches above it
-    mcLeg(ctx, -441, -102);
-    mcLeg(ctx, -341, -102);
-    poly(ctx, [-456, -117, -432.5, -145.6, -432.5, -132, -456, -103.5], '#ff0000', '#1a0000', 1);
-    poly(ctx, [-432.5, -145.6, -238, -145.6, -238, -132, -432.5, -132], '#cc0000', '#1a0000', 1);
-    poly(ctx, [-456, -132, -258.5, -132, -258.5, -102, -456, -102], '#990000', '#1a0000', 1);
-    poly(ctx, [-258.5, -132, -238, -145.6, -238, -118, -258.5, -102], '#b30000', '#1a0000', 1);
-    label(ctx, 'McSticks', -356, -116.5, { font: 'italic bold 22px ' + SANS, fill: '#ffff00', stroke: '#ffff00', lw: 0.6, sx: -1, fitW: 180, m: [1, 0, -0.25, 1] });
-    // golden arches: an M seen in perspective, with orange sides
+    // the sign: a red board leaning back on two legs (flat top, front face sloping down to the
+    // lower left), with the golden 3-D M standing on it
+    mcLeg(ctx, -425);
+    mcLeg(ctx, -325);
+    poly(ctx, [-432, -145, -436, -142, -455, -114, -455, -106, -432, -132], '#ff0000', '#1a0000', 1);
+    poly(ctx, [-432, -145, -240, -145, -240, -133, -432, -133], '#cc0000', '#1a0000', 1);
+    poly(ctx, [-432, -132.5, -240.5, -132.5, -274, -104, -454, -104], '#990000', '#1a0000', 1);
+    label(ctx, 'McSticks', -360, -107.5, { font: 'bold 21px ' + SANS, fill: '#ffff00', stroke: '#ffff00', lw: 0.6, sx: -1,
+      fitW: 168, m: [1, 0, -0.75, 1], baseline: 'alphabetic' });
+    // golden arches: an M leaning right, its orange top faces showing above and to the left
     var M = [
-      [-390, -130, -375, -160, -350, -186, -322, -205, -300, -207, -304, -192, -312, -174, -318, -160],
-      [-314, -160, -298, -181, -278, -199, -258, -207, -242, -206, -247, -190, -260, -170, -274, -150, -287, -130],
+      [-388, -131, -325, -182, -310, -195, -299, -201, -294, -196, -296, -181, -303, -167, -313, -156],
+      [-313, -156, -290, -176, -266, -191, -247, -201, -239, -198, -242, -187, -251, -174, -265, -157, -279, -145,
+        -290, -128],
     ];
     ctx.save();
     ctx.lineJoin = 'round';
     ctx.lineCap = 'butt';
-    var pass = [[-5, 4, '#1a1405', 20], [-5, 4, '#ff9900', 17.5], [0, 0, '#1a1405', 20], [0, 0, '#ffcc00', 17.5]];
+    var pass = [[-7.5, -8, '#1a1405', 15], [-7.5, -8, '#ff9900', 12.5], [0, 0, '#1a1405', 15], [0, 0, '#ffcc00', 12.5]];
     for (var q = 0; q < pass.length; q++) {
       for (var a = 0; a < M.length; a++) {
         ctx.save();
@@ -1056,9 +1061,11 @@
     }
     ctx.restore();
   }
-  function mcLeg(ctx, x, y) {
-    poly(ctx, [x, y, x + 36, y, x + 26, y + 16, x - 1, y + 16], '#ff0000', '#1a0000', 1);
-    poly(ctx, [x - 1, y + 9, x + 20, y + 9, x + 20, y + 16, x - 1, y + 16], '#990000', '#1a0000', 1);
+  // A leg under the board: its bright left side and dark front, sloping down to the left; x = the
+  // front's top-left corner.
+  function mcLeg(ctx, x) {
+    poly(ctx, [x - 13.5, -102, x - 1.5, -102, x - 15, -88, x - 16.5, -88], '#ff0000', '#1a0000', 1);
+    poly(ctx, [x - 1.5, -102, x + 17, -102, x + 3, -86.5, x - 15.5, -86.5], '#990000', '#1a0000', 1);
   }
 
   function bar(ctx) {
@@ -1152,11 +1159,11 @@
     poly(ctx, [-456.25, 434.5, -316.25, 434.5, -320.5, 443.75, -456.25, 443.75], '#2e3a00', '#1a1a00', 0.8);
     poly(ctx, [-441.25, 402, -283.75, 402, -316.25, 434.5, -456.25, 434.5, -456.25, 417.5], '#dddddd', '#1a1a1a', 1);
     drunk(ctx);
-    var t = { font: 'italic bold 11px ' + SANS, fill: '#ff0000', stroke: '#990000', lw: 0.8 };
-    t.fitW = 80;
-    label(ctx, 'Know When to', -348.5, 409, t);
-    t.fitW = 85;
-    label(ctx, 'Draw the Line', -356, 424, t);
+    var t = { font: 'bold 11.5px ' + SANS, fill: '#ff0000', stroke: '#cc0000', lw: 0.9, m: [1, 0, -0.35, 1] };
+    t.fitW = 90;
+    label(ctx, 'Know When to', -344, 410, t);
+    t.fitW = 88;
+    label(ctx, 'Draw the Line', -359, 424.5, t);
     // red carpet and posts
     rect(ctx, -284, 656.7, 74, 61.6, '#ff0000');
     ctx.save();
@@ -1170,6 +1177,12 @@
     for (var k = -330; k < -180; k += 6) { ctx.moveTo(k, 722); ctx.lineTo(k + 60, 652); }
     ctx.stroke();
     ctx.restore();
+    // velvet rope posts either side of the carpet (the C hides the ends of the first ones)
+    var posts = [-261, -239, -216];
+    for (var i = 0; i < posts.length; i++) {
+      stanchion(ctx, posts[i], 638);
+      stanchion(ctx, posts[i], 708);
+    }
     // the C: faces, top, then the pit
     poly(ctx, [-456.7, 555, -400.7, 500, -456.7, 590], '#4884ff', OUT, 1);
     poly(ctx, [-456.7, 690, -400.7, 777.3, -456.7, 833.3], '#3070ff', OUT, 1);
@@ -1187,19 +1200,15 @@
       sparkle(ctx, -361.7, 619.3, 1);
       sparkle(ctx, -291.7, 646.7, 0.25);
     }
-    // velvet rope posts
-    var posts = [-266.7, -246.7, -223.3];
-    for (var i = 0; i < posts.length; i++) {
-      stanchion(ctx, posts[i], 646);
-      stanchion(ctx, posts[i], 717);
-    }
   }
+  // A rope post along the carpet: a square bar leaning up to the right, its white cap at (x, y).
   function stanchion(ctx, x, y) {
     ctx.save();
     ctx.translate(x, y);
-    line(ctx, [-6, 6, 4, -4], '#1a1a1a', 4.5, 'butt');
-    line(ctx, [-6, 6, 4, -4], '#999', 2.5, 'butt');
-    poly(ctx, [3, -6, 7, -6, 7, -3, 3, -3], '#e6e6e6', '#333', 0.6);
+    line(ctx, [-17, 17, 0, 0], '#1a1a1a', 6, 'butt');
+    line(ctx, [-17, 17, 0, 0], '#5c5c5c', 4.4, 'butt');
+    line(ctx, [-17.8, 16.2, -0.8, -0.8], '#999999', 1.4, 'butt');
+    poly(ctx, [-2.5, -1.5, 1, -4.5, 3.8, -1.5, 0.3, 1.5], '#e6e6e6', '#333', 0.7);
     ctx.restore();
   }
   // A white die in perspective (three faces with pips), about 55 px across.
@@ -1496,17 +1505,23 @@
     },
 
     drawSky: function (ctx, s) {
-      if (!skyNight) {
-        skyNight = canvas(SRPG.W, SRPG.H);
-        paintNight(skyNight);
+      // the starry night at the screen's pixel scale (capped at 2) so the stars stay sharp; the soft
+      // cloud picture at stage size
+      var k = Math.min(2, (SRPG.engine && SRPG.engine.pixelScale) || 1);
+      if (!skyNight || skyNightK !== k) {
+        skyNight = canvas(Math.ceil(SRPG.W * k), Math.ceil(SRPG.H * k));
+        paintNight(skyNight, k);
+        skyNightK = k;
+      }
+      if (!skyDay) {
         skyDay = canvas(SRPG.W, SRPG.H);
         paintDay(skyDay);
       }
-      ctx.drawImage(skyNight, 0, 0);
+      ctx.drawImage(skyNight, 0, 0, SRPG.W, SRPG.H);
       var a = mapArt.skyAlpha(s ? s.time : 8);
       if (a > 0) {
         ctx.globalAlpha = a;
-        ctx.drawImage(skyDay, 0, 0);
+        ctx.drawImage(skyDay, 0, 0, SRPG.W, SRPG.H);
         ctx.globalAlpha = 1;
       }
     },
@@ -1570,7 +1585,7 @@
         ctx.rect(sx, sy, a.w, a.h);
         ctx.clip();
         if (a.sky) mapArt.drawSky(ctx, s);
-        ctx.drawImage(basePatch(a, s), sx, sy);
+        ctx.drawImage(basePatch(a, s), sx, sy, a.w, a.h);
         ctx.translate(s.mapx, s.mapy);
         a.draw(ctx, f);
         ctx.restore();
@@ -1578,14 +1593,17 @@
     },
   });
 
-  // The static city without one animated piece, for the patch it is redrawn over.
+  // The static city without one animated piece, for the patch it is redrawn over. Rendered at the
+  // screen's pixel scale (capped at 2), like the city scene's static layer.
   var patches = {};
   function basePatch(a, s) {
-    var key = a.id + '|' + s.dwelling;
+    var k = Math.min(2, (SRPG.engine && SRPG.engine.pixelScale) || 1);
+    var key = a.id + '|' + s.dwelling + '|' + k;
     var c = patches[key];
     if (c) return c;
-    c = canvas(a.w, a.h);
+    c = canvas(Math.ceil(a.w * k), Math.ceil(a.h * k));
     var x = c.getContext('2d');
+    x.scale(k, k);
     x.beginPath();
     x.rect(0, 0, a.w, a.h);
     x.clip();

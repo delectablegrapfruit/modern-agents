@@ -19,7 +19,7 @@
       [-1040, -760], [-574, -760], [-574, -824], [437, -824], [437, -331], [918, -331], [918, 410],
       [442, 410], [442, 898], [-457, 898], [-457, -21], [-1040, -21],
     ],
-    holes: [{ x: 523, y: 221, w: 88, h: 189 }],
+    holes: [{ x: 519.5, y: 224, w: 73.5, h: 186 }],
     // Thickness of the ground shown along the west and south edges (dirt / rock), in map px.
     edge: 22,
 
@@ -49,7 +49,7 @@
       bus: { x: 611, y: 216, w: 319, h: 194, door: { x: 744, y: 213, w: 41, h: 12 }, face: 'north', name: 'Bus Depot', bus: { x: 482, y: 221, w: 41, h: 189 } },
     },
     trees: [
-      { x: -330, y: -681, w: 82, h: 77 }, { x: 160, y: -874, w: 110, h: 94 },
+      { x: -330, y: -681, w: 82, h: 77 }, // the mansion's own grove (drawn only with dwelling 4) { x: 160, y: -874, w: 110, h: 94 },
       { x: 369, y: -261, w: 110, h: 97 }, { x: 897, y: -261, w: 110, h: 97 },
     ],
     // The unlocked car sitting on the apartment lawn (hotwire it with 350 intelligence).
@@ -58,7 +58,7 @@
     npcs: {
       smokes: { x: -239, y: -602, color: '#33ccff' }, // the smokes kid
       hobo: { x: -253, y: 54, color: '#ff9900' }, // Homeless Harold, outside Sticky's
-      dealer: { x: 157, y: 576, color: '#b00000', pace: { x0: 157, x1: 420 } }, // the red-headed stick, alley
+      dealer: { x: 159.5, y: 606, color: '#b00000' }, // the red-headed stick on the grass by the pawn shop
     },
     // Car lanes on the main road (car centre x) and the stretch they drive.
     lanes: { up: 15, down: -75, yStart: 825, yEnd: -800 },

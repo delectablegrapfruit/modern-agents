@@ -95,6 +95,39 @@
     sleep: function () { [392, 330, 294, 262].forEach(function (f, i) { tone(f, 0.3, 'sine', 0.07, i * 0.22); }); },
     dart: function () { tone(1200, 0.05, 'triangle', 0.05, 0, 400); noise(0.03, 0.08, 0.06, 1500); },
     cards: function () { noise(0.05, 0.06, 0, 3000); },
+    // the intro's sleeper: a 2.3 s swelling hiss, the band sweeping up as he breathes in
+    breath: function () {
+      var a = ac();
+      if (!a) return;
+      var dur = 2.4, t = a.currentTime;
+      var n = Math.floor(a.sampleRate * dur);
+      var buf = a.createBuffer(1, n, a.sampleRate);
+      var d = buf.getChannelData(0);
+      for (var i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+      var src = a.createBufferSource();
+      src.buffer = buf;
+      var bp = a.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.Q.value = 0.9;
+      bp.frequency.setValueAtTime(450, t);
+      bp.frequency.linearRampToValueAtTime(900, t + 0.7);
+      bp.frequency.linearRampToValueAtTime(2400, t + 1.4);
+      bp.frequency.linearRampToValueAtTime(2300, t + dur);
+      var g = a.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(0.0001, t + 0.2);
+      g.gain.linearRampToValueAtTime(0.18, t + 0.5);
+      g.gain.linearRampToValueAtTime(0.26, t + 1.2);
+      g.gain.linearRampToValueAtTime(0.14, t + 1.5);
+      g.gain.linearRampToValueAtTime(0.05, t + 1.95);
+      g.gain.linearRampToValueAtTime(0.0001, t + 2.3);
+      src.connect(bp);
+      bp.connect(g);
+      g.connect(master);
+      src.start(t);
+    },
+    // the results screen's rank stamp: a short low thud
+    stamp: function () { noise(0.12, 0.3, 0, 120); tone(70, 0.2, 'sine', 0.2, 0, 45); },
     door: function () { noise(0.12, 0.08, 0, 600); tone(160, 0.08, 'triangle', 0.05, 0.02, 120); },
     chip: function () { tone(2400, 0.03, 'square', 0.03); tone(2000, 0.03, 'square', 0.03, 0.03); },
   };
@@ -156,6 +189,7 @@
     },
     get musicOn() { return musicOn; },
     setSfx: function (on) { sfxOn = !!on; },
+    get sfxOn() { return sfxOn; },
     // Browsers only allow audio after a user gesture; engine.js calls this on the first input.
     unlock: function () {
       var a = ac();
