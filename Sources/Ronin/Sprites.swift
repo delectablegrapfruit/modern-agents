@@ -7,7 +7,8 @@ import RoninCore
 /// flush, a glint and a warning marker above its head whose ring runs down to the blow; for an archer drawing, a red
 /// sight line to the ronin; pips for the cuts a tough one has left; the gourd over a bearer's head (his pips either
 /// side of it), flaring as he gathers himself to dart in; the warlord's guard as a pale ward before him, faint while
-/// it comes up and flashing as it sets, and his fury as a red haze that deepens as he is cut down.
+/// it comes up and flashing as it sets, a cut that meets it taken braced on his blade and shoved off (`bind`, in step
+/// with the ronin), and his fury as a red haze that deepens as he is cut down.
 ///
 /// It moves smoothly: it is drawn where the fight has him as he walks or darts, while a jump the fight makes (a
 /// knock-back, a shove) glides; a blow that wounds him holds him as he is until the blade gets there, and the
@@ -84,6 +85,8 @@ final class FoeSprite: SKNode {
     /// was, so the leap is drawn from there and still comes down with him.
     private var holding = false
     private var holdLeft = 0.0
+    /// The warlord bound in a clash with the ronin's blade (`bind`): the frame he is held in, where he stands.
+    private var bound: Frame?
     private var lagged = false
     private var leapStart: Double?
     /// Whether the warlord's guard was set on the last update; how far round the warning ring was drawn; the tint
@@ -345,7 +348,9 @@ final class FoeSprite: SKNode {
         // The lane is drawn about the ronin, so where the fight has him says how many points a lane unit is.
         if abs(foe.x) > 0.05 { lanePoints = abs((position.x - hero) / CGFloat(foe.x)) }
         let leaping = foe.phase == .leaping && !holding
-        if !holding {
+        // Held as he stands: for a blade on its way to him, or bound in a clash with it.
+        let held = holding || bound != nil
+        if !held {
             // Facing the ronin, except in the air (where he is going) and running off with the gourd (away).
             let facingRight = foe.phase == .leaping ? foe.leapTo < 0 : foe.phase == .fleeing ? foe.x > 0 : foe.x < 0
             facing = facingRight ? 1 : -1
@@ -372,11 +377,11 @@ final class FoeSprite: SKNode {
                 leapStart = nil
                 lagged = false
             }
-            if holding, let held = shownX {
-                // The blade is still on its way: he stays where he stood.
-                x = held
+            if held, let stood = shownX {
+                // The blade is still on its way, or bound on his: he stays where he stood.
+                x = stood
                 lift = shownAir
-                glide = held - position.x
+                glide = stood - position.x
             } else if let last = shownX, let was = core, abs(position.x - was) < ronin * 2 {
                 // Walking and darting are drawn as they go (with only as much easing as smooths the fight's steps
                 // against the frame's); a jump the fight makes, faster than he can move, is glided off instead.
@@ -401,7 +406,7 @@ final class FoeSprite: SKNode {
         // On his feet, how fast he is going the way he faces (smoothed), and whether that is walking: begun once he
         // is plainly on the move, ended once he has plainly stopped, so a man creeping up in a queue or holding his
         // place never flickers between walking and standing, or between stepping in and backing off.
-        let onFoot = !holding && (foe.phase == .advancing || foe.phase == .fleeing)
+        let onFoot = !held && (foe.phase == .advancing || foe.phase == .fleeing)
         var planted: CGFloat?
         if !onFoot {
             pace = 0
@@ -489,6 +494,10 @@ final class FoeSprite: SKNode {
                 // (Never drawn: the scene lets the dead go before they get here.)
                 frame = .stagger(0)
             }
+        }
+        if let bound {
+            frame = bound
+            leanTarget = 0
         }
         if !has(frame) { frame = .idle(0) }
         if frame != shown { changePose(to: frame) }
@@ -692,8 +701,9 @@ final class FoeSprite: SKNode {
 
     // MARK: What happens to him
 
-    /// The blow: a lurch forward behind it.
+    /// The blow: a lurch forward behind it (out of any clash he was bound in).
     func showStrike() {
+        bound = nil
         strikeClock = 0
         lurch = ronin * (kind == .brute || kind == .warlord ? 0.09 : 0.06)
         if kind == .brute { squash = 0.08 }
@@ -705,6 +715,7 @@ final class FoeSprite: SKNode {
     /// does (`flashHit`) he is held as he stands, in his pose, with his pips, and the knock-back, leap or spring the
     /// fight has already sent him into starts then.
     func hold(_ seconds: Double) {
+        bound = nil
         holding = true
         holdLeft = seconds + 0.05
         lagged = true
@@ -727,6 +738,7 @@ final class FoeSprite: SKNode {
 
     private func freeze(_ piece: Figures.Piece) {
         holding = false
+        bound = nil
         shown = .stagger(0)
         Figures.apply(body, piece, cast, ronin: ronin)
         alpha = 1
@@ -751,6 +763,7 @@ final class FoeSprite: SKNode {
     /// from him starts).
     func flashHit() {
         holding = false
+        bound = nil
         hitFlash = 0.14
         jolt = ronin * 0.08
         squash = 0.09
@@ -775,15 +788,30 @@ final class FoeSprite: SKNode {
 
     /// A cut met his guard. Set, the blade rings off it and the warlord rocks but holds; still coming up, it
     /// glances off and the guard goes on up. `glanced` says which (when nil, whether the guard was set when he was
-    /// last drawn).
+    /// last drawn). Only a tremor goes through him, so the blades stay crossed where they met (`bind`).
     func showParry(glanced: Bool? = nil) {
         if glanced ?? !wardSet {
-            jolt = ronin * 0.045
+            jolt = ronin * 0.02
             ward.alpha = max(ward.alpha, 0.55)
         } else {
-            jolt = ronin * 0.03
+            jolt = ronin * 0.012
             ward.alpha = 1
         }
+    }
+
+    /// Where he is drawn along the lane (in the parent's space), without the jolt of a blow or the lurch into one.
+    var standing: CGFloat { shownX ?? position.x }
+
+    /// Holds the warlord in a clash with the ronin's blade, where he stands, the scene keeping it in step with the
+    /// ronin's frames: on his guard (`block`) while the cut comes, then taking the blow braced (`clash(0)`) and shoving
+    /// the blade off (`clash(1)`). Nil lets him go, and whatever the fight has him doing shows (gliding to wherever it
+    /// has him by then). A frame he has none of is ignored.
+    func bind(_ frame: Frame?) {
+        let frame = frame.flatMap { has($0) ? $0 : nil }
+        guard frame != bound else { return }
+        bound = frame
+        // Shown at once, so the freeze on the blow has the two of them crossed.
+        if let frame, frame != shown { changePose(to: frame) }
     }
 }
 
@@ -792,14 +820,17 @@ final class FoeSprite: SKNode {
 /// shaken by a blow, a miss or a parried cut, a guard that heaves, clutches at its wound (only if he has one) and
 /// sags at the knees, begun each time on a fresh breath; cuts on a darting lunge that stretches him into the blow,
 /// the next cut swung from where the last one planted him, and a step back into guard a foot at a time;
-/// afterimages when he closes a long gap; a ghost of his old stance when he turns; a stumble, a parried cut, and a
-/// wound taken three ways, turned to face whoever dealt it so it drives him away from them (before the draw, rocked
-/// back where he stands with his hand on the hilt); and at the end of a stage either the stage's last cut played out
-/// into the chiburi and the slow slide of the blade home, or the fall: to one knee over his sword, then pitching
-/// forward onto his face (the blade still in its scabbard if he never drew it).
+/// afterimages when he closes a long gap; a ghost of his old stance when he turns; a stumble, and a wound taken three
+/// ways, turned to face whoever dealt it so it drives him away from them (before the draw, rocked back where he stands
+/// with his hand on the hilt); a cut into the warlord's guard carried into a bind on his blade, then, parried, forced
+/// off it and backing off in guard a step or two (glancing off a guard still rising, only drawn back out of the bind);
+/// and at the end of a stage either the stage's last cut played out into the chiburi and the slow slide of the blade
+/// home, or the fall: to one knee over his sword, then pitching forward onto his face (the blade still in its
+/// scabbard if he never drew it).
 ///
 /// His feet keep to the ground: he moves along the lane only in the blur of a lunge or a blow, or as a foot is
-/// lifted and carried, the other kept where it stands.
+/// lifted and carried, the other kept where it stands. Well off his place, he steps back to it in guard a foot at a
+/// time before the shuffle home.
 @MainActor
 final class HeroSprite: SKNode {
     let body = SKSpriteNode()
@@ -813,6 +844,8 @@ final class HeroSprite: SKNode {
     private var poseSheathed = false
     private var echoPose = Frame.iai(0)
     private var echoSheathed = false
+    /// The frame he is drawn in (the scene keeps the warlord's clash in step with it).
+    var drawnFrame: Frame { pose }
     /// What he is doing, and for how long he has been doing it: standing his ground, playing out a run of frames (a
     /// cut, a stumble, a wound), or the end of the stage.
     private enum Act { case guarding, playing, flourishing, falling }
@@ -998,7 +1031,12 @@ final class HeroSprite: SKNode {
         }
         guard k >= beats.count, act == .playing else { return }
         let away = offset * facing.sign.cg
-        if abs(away) > ronin * 0.01 {
+        if abs(away) > ronin * HeroSprite.shuffleReach {
+            // Well off his place (driven back into a bind and backing off from it, or struck there, or lunged far
+            // out into one): a step toward it in guard, a foot at a time, back or forward; then again, until the
+            // shuffle can take him the rest of the way.
+            play(away > 0 ? HeroSprite.backing(HeroSprite.homingTime, blend: true) : HeroSprite.advancing(HeroSprite.homingTime))
+        } else if abs(away) > ronin * 0.01 {
             // Off his place: stepping back, the front foot lifted back and set down as the back one follows;
             // stepping forward out of the wide stance a blow leaves him in, the back foot drawn up first and the front
             // stepped out into guard.
@@ -1040,6 +1078,8 @@ final class HeroSprite: SKNode {
             offset = to
         }
         show(b.frame, blend: b.blend, sheathed: b.sheathed)
+        // Forced off the warlord's blade: thrown back, squashed into it.
+        if b.frame == .clash(1) { snap = -0.8 }
         // The flourish's moments: the blood flung off the blade as the chiburi snaps down (if there is any, and gore
         // is on), the blade home at the end.
         if act == .flourishing {
@@ -1147,6 +1187,85 @@ final class HeroSprite: SKNode {
         shaken = max(shaken, 0.6)
         play([Beat(frame: .stumble(0), time: 0.15, footwork: .thrown(side.sign.cg * ronin * 0.12), blend: true),
               Beat(frame: .stumble(1), time: max(0.15, seconds - 0.15), footwork: .keep(.back), blend: true)])
+    }
+
+    /// A cut into the warlord's guard, met by his blade: the swing carried on into the bind (`clash(0)`), the ronin's
+    /// feet `spot` from his place (along the lane, where the blades meet: `Figure.clashGap` from the warlord's),
+    /// lunging out to it through the swing or, the warlord standing closer than that, driven back into it as the blades
+    /// meet. Parried (`forced`), he is forced off the blade (`clash(1)`) on his planted back foot, finds his guard, and
+    /// backs off in it a foot at a time, a step or two (whichever leaves him nearer his place), paced to `seconds` (his
+    /// stumble); glanced off a guard still rising, he only draws back out of the bind into guard, with one quick step
+    /// back at most. Then he steps home. Returns how long until the blades meet, and how much longer after that his
+    /// feet take to settle in the bind (his swing carries on through the freeze on it that long).
+    @discardableResult
+    func clash(_ side: Side, _ style: Cut, at spot: CGFloat, for seconds: Double, forced: Bool) -> (impact: Double, settle: Double) {
+        guard !ended else { return (0, 0) }
+        face(side)
+        sheathed = false
+        snap = 1
+        let sign = side.sign.cg
+        let timing = style == .nukitsuke ? HeroSprite.drawTiming : HeroSprite.cutTiming
+        // (RoninArtTests.testTheRoninBacksOffAFootAtATime replays the parry's beats with the frames' footing.)
+        // The chamber and the swing to its mark, then the blade stopped dead on his.
+        var run = (0..<HeroSprite.swing).map { Beat(frame: .cut(style, $0), time: timing[$0]) }
+        let impact = timing.prefix(HeroSprite.swing).reduce(0, +)
+        let lunging = sign * (spot - offset) > ronin * 0.01
+        if lunging { run[0].footwork = .thrown(spot, over: impact) }
+        run.append(Beat(frame: .clash(0), time: forced ? HeroSprite.bindTime : HeroSprite.glanceBind, footwork: .thrown(spot)))
+        // Where he stands once he has his guard again: the back foot kept where it was in the bind.
+        let bound = Figure.footing(.hero, .clash(0)), guarded = Figure.footing(.hero, .retreat(3))
+        let away = (sign * spot + ronin * (bound.back.x - guarded.back.x)) / ronin
+        let step = Figure.retreatStep
+        if forced {
+            // Thrown off the blade over the planted back foot, the front one dragged back off the ground; the guard
+            // found on the same back foot; then backing off in it, a step or two, slower the longer he is off balance.
+            let slow = min(1.25, max(0.85, seconds / Tuning.parried))
+            run += [Beat(frame: .clash(1), time: HeroSprite.forcedTime * slow, footwork: .keep(.back), blend: true),
+                    Beat(frame: .retreat(3), time: HeroSprite.guardTime * slow, footwork: .keep(.back), blend: true)]
+            let steps = abs(away - 2 * step) < abs(away - step) ? 2 : 1
+            for _ in 0..<steps { run += HeroSprite.backing(HeroSprite.backingTime * slow) }
+            shaken = max(shaken, 1.2)
+        } else {
+            // Slid off a guard still coming up: the front foot drawn back out of the bind into guard, the back one
+            // planted, and a quick step back only if it takes him nearer his place.
+            run += [Beat(frame: .retreat(2), time: HeroSprite.glanceDraw, footwork: .keep(.back), blend: true),
+                    Beat(frame: .retreat(3), time: HeroSprite.glanceDraw, footwork: .keep(.back))]
+            if abs(away - step) < abs(away) { run += HeroSprite.backing(HeroSprite.glanceStep) }
+        }
+        play(run)
+        return (impact, lunging ? 0 : HeroSprite.dartTime)
+    }
+
+    /// The frames of a cut up to its blade reaching the mark (`impact`).
+    private nonisolated static let swing = 4
+    /// Seconds the blades stay bound (`clash(0)`): parried, and glancing; the parried ronin forced off the blade
+    /// (`clash(1)`) and finding his guard again, and each frame of a step back in it (all stretched for a longer
+    /// stumble: `clash`); the glancing one drawing back into guard, a frame at a time, and each frame of his quick step.
+    private nonisolated static let bindTime = 0.07
+    private nonisolated static let glanceBind = 0.055
+    private nonisolated static let forcedTime = 0.08
+    private nonisolated static let guardTime = 0.05
+    private nonisolated static let backingTime = 0.05
+    private nonisolated static let glanceDraw = 0.045
+    private nonisolated static let glanceStep = 0.04
+    /// How far off his place (in his heights) the shuffle takes him home from; further, he steps toward it in guard
+    /// first, and each frame of such a step.
+    private nonisolated static let shuffleReach: CGFloat = 0.25
+    private nonisolated static let homingTime = 0.055
+
+    /// A step back in guard, a foot at a time: the back foot lifted back over the planted front one and set down a
+    /// step behind, then the front one drawn back after it over the planted back one, into his guard's footing
+    /// (`Figure.retreatStep`).
+    private static func backing(_ time: Double, blend: Bool = false) -> [Beat] {
+        [Beat(frame: .retreat(0), time: time, footwork: .keep(.front), blend: blend), Beat(frame: .retreat(1), time: time, footwork: .keep(.front)),
+         Beat(frame: .retreat(2), time: time, footwork: .keep(.back)), Beat(frame: .retreat(3), time: time, footwork: .keep(.back))]
+    }
+
+    /// A step forward in guard, the same steps the other way round: the front foot lifted forward over the planted
+    /// back one and set down a step ahead, then the back one drawn up after it into his guard's footing.
+    private static func advancing(_ time: Double) -> [Beat] {
+        [Beat(frame: .retreat(2), time: time, footwork: .keep(.back), blend: true), Beat(frame: .retreat(1), time: time, footwork: .keep(.back)),
+         Beat(frame: .retreat(0), time: time, footwork: .keep(.front)), Beat(frame: .retreat(3), time: time, footwork: .keep(.front))]
     }
 
     /// A cut turned aside by the warlord's guard: the blade flung back, a step back on his heels.

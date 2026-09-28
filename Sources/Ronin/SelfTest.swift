@@ -11,13 +11,13 @@ import RoninCore
 /// with real left and right mouse-button events, lets the autopilot clear stage 1 and checks that its dead fall on
 /// under the card, folds into the pill and back and changes the size with the dead still lying there, advances from the
 /// banner, shows a new foe's card and checks it follows a resize, fights a warlord (his bar in the header, his blow
-/// coming), switches to Oni and rides a combo into bloodlust, falls and starts again from stage 1, switches back and
-/// finds Bushidō's stage and hearts kept, runs an endless stage with gore off (nobody cut apart, not a drop of blood)
-/// straight into the next, checks that dragging the window holds the fight still and that a stage won with the pointer
-/// away does not start the next behind its back, folds into the pill and back, checks that leaving pauses and gives the
-/// keys back (so a key typed elsewhere does nothing) and that coming back takes the dwell, and checks the save. Exits
-/// 0, or 1 saying what failed. With `RONIN_SNAPSHOTS=<dir>` it also writes what the panel showed along the way as PNGs,
-/// and fails if one cannot be taken.
+/// coming, a cut into his set guard bound on his blade), switches to Oni and rides a combo into bloodlust, falls and
+/// starts again from stage 1, switches back and finds Bushidō's stage and hearts kept, runs an endless stage with gore
+/// off (nobody cut apart, not a drop of blood) straight into the next, checks that dragging the window holds the fight
+/// still and that a stage won with the pointer away does not start the next behind its back, folds into the pill and
+/// back, checks that leaving pauses and gives the keys back (so a key typed elsewhere does nothing) and that coming
+/// back takes the dwell, and checks the save. Exits 0, or 1 saying what failed. With `RONIN_SNAPSHOTS=<dir>` it also
+/// writes what the panel showed along the way as PNGs, and fails if one cannot be taken.
 enum SelfTest {
     static var enabled: Bool { ProcessInfo.processInfo.environment["RONIN_SELFTEST"] != nil }
 
@@ -193,6 +193,38 @@ enum SelfTest {
             try await pause(0.02)
         }
         if session.fight.boss?.phase == .windup { try snapshot("7b-warlord-windup", panel) } else { print("no warlord wind-up to show") }
+        // A cut into his set guard, with the real button: parried, the blades bind where they cross, sparks and all
+        // (not taken if his guard is not set in reach within a few seconds; only from far enough out that he does not
+        // answer it, so the rest of his fight is as it would have been).
+        let parried = session.fight.stats.parried, clashes = scene.clashesDrawn, wounds = session.fight.stats.damage
+        var opening: Side?
+        let waiting = Date()
+        while Date().timeIntervalSince(waiting) < 6, session.fight.outcome == nil, opening == nil {
+            let fight = session.fight
+            if let boss = fight.boss, boss.guardSet, boss.distance > boss.contact + 0.07, !fight.isStumbling, fight.cooldown == 0,
+               fight.target(boss.side) == .foe(boss.id) {
+                opening = boss.side
+            } else {
+                try await pause(0.02)
+            }
+        }
+        if let side = opening {
+            click(side, panel)
+            guard session.fight.stats.parried == parried + 1, session.fight.isStumbling else { throw Failure("a cut into the warlord's set guard was not parried") }
+            let binding = Date()
+            while scene.clashesDrawn == clashes, Date().timeIntervalSince(binding) < 1, session.fight.stats.damage == wounds {
+                try await pause(0.01)
+            }
+            if scene.clashesDrawn > clashes {
+                try snapshot("7c-warlord-clash", panel)
+            } else if session.fight.stats.damage == wounds {
+                throw Failure("a parried cut never met the warlord's blade")
+            } else {
+                print("the ronin was struck before his parried cut met the warlord's blade")
+            }
+        } else {
+            print("no set guard in reach to cut into")
+        }
         scene.timeScale = 3
         try await until("stage 5 ended", timeout: 40) { session.fight.outcome != nil }
         guard session.fight.outcome == .victory else { throw Failure("the autopilot lost to the warlord") }
