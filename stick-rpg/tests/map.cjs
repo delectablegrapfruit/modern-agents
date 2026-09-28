@@ -19,34 +19,6 @@ function check(cond, msg) {
   else { failures++; console.log('  FAIL ' + msg); }
 }
 
-// The city renderWorld with the requested SRPG.mapArt.drawAnimated call after the static layer
-// (see core_requests); installed in the page so screenshots show the animated signs.
-function installAnimatedHook(page) {
-  return page.evaluate(() => {
-    if (SRPG.city.__animHook) return;
-    SRPG.city.__animHook = true;
-    const orig = SRPG.city.renderWorld;
-    const draw = SRPG.mapArt.drawStatic;
-    // run drawAnimated right after the static city image is blitted
-    const origDrawImage = CanvasRenderingContext2D.prototype.drawImage;
-    SRPG.city.renderWorld = function (ctx) {
-      const s = SRPG.game.s;
-      const B = SRPG.mapArt.BOUNDS;
-      let done = false;
-      ctx.drawImage = function (img) {
-        origDrawImage.apply(this, arguments);
-        // the cached static city is the only image this big (it may be rendered at 2x)
-        if (!done && img && img.width >= B.w && img.height >= B.h) {
-          done = true;
-          SRPG.mapArt.drawAnimated(this, s, SRPG.engine.frame);
-        }
-      };
-      try { orig.call(this, ctx); } finally { delete ctx.drawImage; }
-      return draw;
-    };
-  });
-}
-
 (async () => {
   const t = await h.open({ scale: 2 });
   const { page } = t;
@@ -54,7 +26,6 @@ function installAnimatedHook(page) {
   await page.evaluate(() => SRPG.rng.seed(7));
   // lots of HP: the test falls off the map and gets run over several times
   await t.newGame({ pname: 'Mapper', strength: 500 });
-  await installAnimatedHook(page);
 
   console.log('API');
   const api = await page.evaluate(() => ({
@@ -63,6 +34,15 @@ function installAnimatedHook(page) {
     sp: ['player', 'npc', 'car'].map((k) => typeof SRPG.sprites[k]),
   }));
   check(api.fns.every((x) => x === 'function') && api.sp.every((x) => x === 'function'), 'mapArt and sprites APIs present');
+  // the city draws the animated signs over its static picture itself
+  const animCalls = await page.evaluate(() => {
+    const orig = SRPG.mapArt.drawAnimated;
+    let n = 0;
+    SRPG.mapArt.drawAnimated = function () { n++; return orig.apply(this, arguments); };
+    try { SRPG.engine.draw(); } finally { SRPG.mapArt.drawAnimated = orig; }
+    return n;
+  });
+  check(animCalls === 1, 'the city draws the animated signs once a frame (' + animCalls + ')');
   const B = api.bounds;
   check(B.x <= -1060 && B.y <= -960 && B.x + B.w >= 935 && B.y + B.h >= 955, 'BOUNDS cover the ground, its edges, the castle towers and the depot sign');
 
@@ -171,12 +151,12 @@ function installAnimatedHook(page) {
       return Array.from(x.getImageData(Math.round((247 - 30) * k), Math.round((197 - 30) * k), Math.round(60 * k), Math.round(60 * k)).data);
     };
     s.mapx = 456; s.mapy = 630; s.driving = 0;
-    SRPG.city.cars.forEach((c) => { c.s = 500; });
+    SRPG.city.clearTraffic();
     SRPG.engine.step(2);
     const a = grab();
     let same = true;
     for (let i = 0; i < 20; i++) {
-      SRPG.city.cars.forEach((c) => { c.s = 500; });
+      SRPG.city.clearTraffic();
       SRPG.engine.step(25);
       const b = grab();
       for (let j = 0; j < a.length; j++) if (a[j] !== b[j]) { same = false; break; }
@@ -310,7 +290,7 @@ function installAnimatedHook(page) {
     return { yellow, blue };
   });
   await t.set({ items: { car: 1 }, driving: 1, mapx: 200, mapy: 1012, rot: 0, hp: 500 });
-  await page.evaluate(() => { SRPG.city.cars.forEach((c) => { c.s = 500; }); });
+  await page.evaluate(() => { SRPG.city.clearTraffic(); });
   await t.hold(['ArrowUp'], 2);
   const df = await page.evaluate(() => ({ kind: SRPG.city.st.stunKind, stun: SRPG.city.st.stun }));
   check(df.kind === 'fall', 'driving off the north edge starts the fall');
@@ -335,7 +315,8 @@ function installAnimatedHook(page) {
     s.mapx = 250; s.mapy = 200;
     const p = SRPG.MAP.playerPos(s);
     const c = SRPG.city.cars[0];
-    c.s = 1; c.x = 15; c.y = p.y + 80; c.rot = 0;
+    // a car on the road (placed, clip frame 1), even if the traffic was cleared before
+    c.s = 1; c.x = 15; c.y = p.y + 80; c.rot = 0; c.clip = 1; c.placed = true;
     s.mapx = 247 - 15; // stand in the up lane
   });
   await t.step(8);
@@ -352,8 +333,9 @@ function installAnimatedHook(page) {
   console.log('Traffic, parked car, street people');
   await page.evaluate(() => {
     const c = SRPG.city.cars;
-    c[0].s = 1; c[0].x = 15; c[0].y = -300; c[0].rot = 0; c[0].color = '#66dd22';
-    c[1].s = 0; c[1].x = -75; c[1].y = -380; c[1].rot = 180; c[1].color = '#ff8800';
+    // a green car going up and an orange one going down (Flash colour transforms)
+    Object.assign(c[0], { s: 1, x: 15, y: -300, rot: 0, tint: { r: 20, g: 100, b: 150 }, clip: 1, placed: true });
+    Object.assign(c[1], { s: 0, x: -75, y: -380, rot: 180, tint: { r: 100, g: 45, b: 150 }, clip: 1, placed: true });
     SRPG.game.s.mapx = 220; SRPG.game.s.mapy = 560;
   });
   await t.step(1);
@@ -446,7 +428,7 @@ function installAnimatedHook(page) {
   for (const [ref, mx, my, rot] of refs) {
     const file = path.join(SCR, 'ref', ref + '.png');
     if (!fs.existsSync(file)) continue;
-    await page.evaluate(() => { SRPG.city.cars.forEach((c) => { c.s = 500; }); });
+    await page.evaluate(() => { SRPG.city.clearTraffic(); });
     await t.set({ mapx: mx, mapy: my, rot, time: 8, driving: 0 });
     await t.step(1);
     const mine = (await page.screenshot()).toString('base64');

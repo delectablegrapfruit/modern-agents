@@ -707,6 +707,24 @@ function eq(a, b, msg) { ok(JSON.stringify(a) === JSON.stringify(b), msg + ' (go
     eq(hits, [], 'no 6-word run of the original in the core files');
   } else console.log('  (decompiled sources not found: text check skipped)');
 
+  // Map buttons act on release like Flash buttons: a press dragged off does nothing, a right or
+  // middle click does nothing, a normal click opens the backpack.
+  await fresh({ mapx: 456, mapy: 630 });
+  await t.step(2);
+  const bp = await ev(() => { const b = SRPG.hud.INVENTORY_BOX; return { x: b.x + b.w / 2, y: b.y + b.h / 2 }; });
+  await page.mouse.move(bp.x, bp.y);
+  await page.mouse.down();
+  eq(await ev(() => !!SRPG.city.st.panel), false, 'backpack: nothing on the press');
+  await page.mouse.move(300, 300);
+  await page.mouse.up();
+  eq(await ev(() => !!SRPG.city.st.panel), false, 'backpack: pressed and dragged off, nothing');
+  await page.mouse.click(bp.x, bp.y, { button: 'right' });
+  await page.mouse.click(bp.x, bp.y, { button: 'middle' });
+  eq(await ev(() => !!SRPG.city.st.panel), false, 'backpack: right and middle clicks do nothing');
+  await page.mouse.click(bp.x, bp.y);
+  eq(await ev(() => !!SRPG.city.st.panel), true, 'backpack: a click opens it on release');
+  await ev(() => SRPG.city.closePanel());
+
   await fresh({ mapx: 456, mapy: 630 });
   await t.step(2);
   await t.shot(path.join(OUT, 'core-city.png'));

@@ -36,8 +36,9 @@ function eq(a, b, msg) { ok(JSON.stringify(a) === JSON.stringify(b), msg + ' (go
   };
   await page.evaluate(() => {
     window.__snd = [];
+    window.__clicks = 0;
     const play = SRPG.sound.play;
-    SRPG.sound.play = function (n) { window.__snd.push(n); return play.apply(this, arguments); };
+    SRPG.sound.play = function (n) { window.__snd.push(n); if (n === 'click') window.__clicks++; return play.apply(this, arguments); };
   });
 
   // --- menu ---------------------------------------------------------------------------------------
@@ -74,6 +75,7 @@ function eq(a, b, msg) { ok(JSON.stringify(a) === JSON.stringify(b), msg + ' (go
   await shot('home-sleep-summary');
   await t.clickUI('ok');
   eq([await scene(), await mode()], ['location:home', 'menu'], 'OK goes back to the menu');
+  eq(await page.evaluate(() => SRPG.engine.black), 1, 'back at root frame 65, whose script replays the black clip');
 
   await fresh({ hp: 1, hpmax: 100, items: { bed: 1, freezer: 1 } });
   await t.clickUI('sleep');
@@ -294,11 +296,11 @@ function eq(a, b, msg) { ok(JSON.stringify(a) === JSON.stringify(b), msg + ' (go
   await t.clickUI('buy');
   s = await t.state();
   eq([s.cash, s.stocks.FSY.units, s.stocks.FSY.bought, await txt('curyours')], [70, 10, 3, '10'], 'buy 10 @ $3');
-  eq(await sounds(), ['click', 'purchase', 'error'], 'a successful buy of anything but SAR also plays the error sound (original bug)');
+  eq(await sounds(), ['purchase', 'error'], 'a successful buy of anything but SAR also plays the error sound (original bug); no click sound');
   await setUnits('100');
   await t.clickUI('buy');
   eq([(await t.state()).cash, (await t.state()).stocks.FSY.units], [70, 10], 'cannot afford: nothing happens');
-  eq(await sounds(), ['click'], 'a refused order is silent (original)');
+  eq(await sounds(), [], 'a refused order is silent (original)');
   for (const bad of ['0', '-3', 'abc', '']) {
     await setUnits(bad);
     await t.clickUI('buy');
@@ -312,6 +314,33 @@ function eq(a, b, msg) { ok(JSON.stringify(a) === JSON.stringify(b), msg + ' (go
   await setUnits('6');
   await t.clickUI('sell');
   eq((await t.state()).stocks.FSY.units, 5, 'cannot sell more than you own');
+  // int($_root.units) is Flash's conversion (checked in Ruffle): a leading 0 with digits 0-7 is
+  // octal, 0x is hex, a trailing space is NaN (0), and the result wraps to 32 bits.
+  await page.evaluate(() => { SRPG.game.s.cash = 1000; });
+  await setUnits('010');
+  await t.clickUI('buy');
+  s = await t.state();
+  eq([s.cash, s.stocks.FSY.units, await txt('curyours')], [1000 - 24, 13, '13'], 'BUY "010" buys 8 (octal)');
+  await setUnits('011');
+  await t.clickUI('sell');
+  s = await t.state();
+  eq([s.cash, s.stocks.FSY.units], [1000 - 24 + 27, 4], 'SELL "011" sells 9 (octal)');
+  await setUnits('09');
+  await t.clickUI('buy');
+  eq((await t.state()).stocks.FSY.units, 13, 'BUY "09" buys 9 (not octal)');
+  await setUnits('0x3');
+  await t.clickUI('sell');
+  eq((await t.state()).stocks.FSY.units, 10, 'SELL "0x3" sells 3 (hex)');
+  for (const bad of ['5 ', '3e9', '0b1']) {
+    await setUnits(bad);
+    await t.clickUI('buy');
+    await t.clickUI('sell');
+  }
+  eq((await t.state()).stocks.FSY.units, 10, 'a trailing space, a 32-bit wrap to negative and 0b do nothing');
+  await setUnits('5');
+  await t.clickUI('sell');
+  await page.evaluate(() => { SRPG.game.s.cash = 85; });
+  eq((await t.state()).stocks.FSY.units, 5, 'back to 5 units');
   eq(await txt('boughtin'), '', 'bought-in line only updates when the screen reopens');
   await shot('home-trade');
   await t.clickUI('ok');
@@ -331,7 +360,7 @@ function eq(a, b, msg) { ok(JSON.stringify(a) === JSON.stringify(b), msg + ' (go
   await t.clickUI('buy');
   s = await t.state();
   eq([s.cash, s.stocks.SAR.units, s.stocks.SAR.bought], [85 - 8, 3, 2.54], 'cost is rounded: 3 x $2.54 = $7.62 -> $8');
-  eq(await sounds(), ['click', 'purchase'], 'SAR plays only the purchase sound');
+  eq(await sounds(), ['purchase'], 'SAR plays only the purchase sound');
   await setUnits('1');
   await page.evaluate(() => { SRPG.game.s.cash = 2.53; });
   await t.clickUI('buy');
@@ -602,6 +631,8 @@ function eq(a, b, msg) { ok(JSON.stringify(a) === JSON.stringify(b), msg + ' (go
   await t.hold(['ArrowLeft'], 4);
   eq(await scene(), 'location:mansion', 'the castle door opens the mansion / castle home');
 
+  // Buttons make no sound of their own: the original loads _click.wav but never starts it.
+  eq(await page.evaluate(() => window.__clicks), 0, 'no button played a click sound');
   const errs = t.errors.filter((e) => !/requestfailed|ERR_FILE_NOT_FOUND/.test(e));
   ok(errs.length === 0, 'no page errors: ' + errs.join(' | '));
   await t.close();

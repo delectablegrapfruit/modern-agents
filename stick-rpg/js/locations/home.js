@@ -118,7 +118,6 @@
   // Menu icon button: tile of `size` px with its top-left at stage (x, y); label `gap` px to the right.
   function ibtn(g, p, o, onClick) {
     var b = ui.iconButton(p, { icon: o.icon, label: o.label, x: o.x - OX, y: o.y - OY, w: o.w || 170, size: o.size || 35, id: o.id }, function () {
-      SRPG.sound.play('click');
       onClick(g);
     });
     var l = b.querySelector('.lbl');
@@ -133,7 +132,6 @@
   // The original's rounded light-blue text button (OK, BUY/SELL, BUY, SELL).
   function tbtn(g, p, label, x, y, w, h, id, onClick, fs) {
     var b = ui.button(p, label, function () {
-      SRPG.sound.play('click');
       onClick(g);
     }, { x: x - OX, y: y - OY, w: w, id: id });
     // Size and shape as measured; colours and the hover look come from the shared .tbtn style.
@@ -392,10 +390,11 @@
   // BUY / SELL (the original's buttons, bugs and all): a failed order is silent, and a successful
   // one for any stock but SAR also plays the error sound, because the original's last per-stock
   // "if" carried the else branch.
+  // The AMOUNT field is read with int($_root.units): Flash's string-to-number (a leading 0 makes it
+  // octal, so '0100' is 64) and a 32-bit int (SRPG.util.flashInt, as the bank's AMOUNT).
   function units(g) {
     var inp = V(g).input;
-    var n = Number(inp ? inp.value : 0);
-    return isFinite(n) ? int(n) : NaN;
+    return SRPG.util.flashInt(inp ? inp.value : 0);
   }
   function buy(g) {
     var s = g.s, t = V(g).trade, n = units(g);

@@ -116,7 +116,6 @@
     t.activeSpace = sp.label;
     // The original's col1 handler reads "_root.col1" (unset) instead of betCol1.
     t.activeBet = sp.key === 'col1' ? undefined : betOf(sp.key);
-    SRPG.sound.play('click');
   }
 
   function activeKey() {
@@ -242,7 +241,8 @@
     if (t.spinning) return;
     s.cash += t.bet;
     t.bet = 0;
-    SRPG.location.open('casino', { resume: true });
+    // Back to root frame 40 (gotoAndStop(40)), whose script replays the black clip.
+    SRPG.location.open('casino', { resume: true, fade: true });
   }
 
   // --- drawing ---------------------------------------------------------------------------------
@@ -433,7 +433,6 @@
       spin();
     });
     var lb = ui.iconButton(null, { icon: 'leave', label: '<span style="position:relative;top:2px">LEAVE</span>', x: 452.5, y: 363.5, w: 90, size: 35, id: 'leave', disabled: t.spinning }, function () {
-      SRPG.sound.play('click');
       leave();
     });
     [[sb, 12], [lb, 10]].forEach(function (p) {

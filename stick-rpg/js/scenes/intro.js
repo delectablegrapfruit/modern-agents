@@ -19,7 +19,8 @@
   var FX = 255.35, FY = 188; // where the film clip sits on the stage
   var BREATHS = [2, 100, 200, 300, 401, 500, 600];
 
-  var st = { f: 2, black: 0, blackHold: false, skip: null, done: false };
+  // blackHold: the root black clip was stopped on its first (fully black) frame at 796.
+  var st = { f: 2, blackHold: false, skip: null, done: false };
 
   // ---- sound: the sleeper's slow breath (a 2.3 s swelling hiss) -----------------------------
   function breath() {
@@ -174,13 +175,13 @@
     frameActions(f);
   }
 
-  // Actions attached to film frames (sprite 199).
+  // Actions attached to film frames (sprite 199). The fades are the root black clip's.
   function frameActions(f) {
     if (BREATHS.indexOf(f) >= 0) breath();
-    if (f === 727) { st.black = 1; st.blackHold = false; } // black.gotoAndPlay(1)
+    if (f === 727) { SRPG.engine.blackPlay(1); st.blackHold = false; } // black.gotoAndPlay(1)
     if (f === 796) {
       SRPG.sound.play('carhit');
-      st.black = 1; // black.gotoAndStop(1): stays black
+      SRPG.engine.blackPlay(1); // black.gotoAndStop(1): stays black
       st.blackHold = true;
     }
     if (f >= END) finish();
@@ -191,8 +192,9 @@
     enter: function () {
       st.f = 2;
       st.done = false;
-      // DONE on CREATE CHARACTER: the title music stops and black fades out over 19 frames.
-      st.black = 11;
+      // DONE on CREATE CHARACTER: the title music stops and black fades out over 19 frames
+      // (black.gotoAndPlay(11)).
+      SRPG.engine.blackPlay(11);
       st.blackHold = false;
       SRPG.sound.music(null);
       st.skip = fx.hotspot('skip', 496, 373, 48, 21, function () { gotoFrame(SKIP_TO); });
@@ -201,10 +203,8 @@
     exit: function () {},
     tick: function () {
       if (st.done) return;
-      if (st.black > 0 && !st.blackHold) {
-        st.black += 1;
-        if (st.black === 11 || st.black > 30) st.black = 0; // the clip stops at frames 10 and 30
-      }
+      // stopped on frame 1: undo the engine's step of the clip
+      if (st.blackHold) SRPG.engine.blackPlay(1);
       st.f += 1;
       frameActions(st.f);
     },
@@ -234,7 +234,7 @@
       }
       // SKIP
       fx.text(ctx, 'SKIP', 503.2, 389, { size: 14, color: '#000000', width: 36 });
-      if (st.black > 0) fx.drawBlack(ctx, st.blackHold ? 1 : fx.blackAlpha(st.black));
+      SRPG.engine.drawBlack();
     },
     // tests
     gotoFrame: gotoFrame,

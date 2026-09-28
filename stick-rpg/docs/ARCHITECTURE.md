@@ -38,7 +38,8 @@ tests/*.cjs            Playwright checks (node tests/<name>.cjs)
 `exit()` runs, `#ui` is cleared, then `enter(params)`). Hooks, all optional:
 `enter(params)`, `exit()`, `tick()` (35×/s), `render(ctx)`, `onKey(key, e)`, `onKeyUp(key, e)`,
 `onClick(x, y, e)` (canvas/`#ui` background clicks, stage coordinates), `onMouseDown`, `onMouseUp`,
-`onMouseMove`. Keys: `ArrowUp`…, `Shift`, `Enter`, `Escape`, `' '`, lower-case letters.
+`onMouseMove`, and the flag `clickOnRelease` (onClick fires when the primary button is released,
+as Flash buttons do; the city uses it). Keys: `ArrowUp`…, `Shift`, `Enter`, `Escape`, `' '`, lower-case letters.
 `SRPG.engine.keys[k]` is true while held. `SRPG.engine.frame` counts ticks.
 
 Screen ids used across modules: `title`, `intro`, `city`, `location`, `death`, `results`,
@@ -110,6 +111,8 @@ back to the building's root frame, whose script replays the black clip). Leave w
   running under a street dialog (location.js calls it).
 - `SRPG.util.flashNumber(str)` / `flashInt(str)`: Flash's string-to-number and AS1 `int()`, for
   typed amounts (octal with a leading 0, hex, 32-bit wrap).
+- `SRPG.hud.draw(ctx, s, mode, { still: true })` draws a still HUD (no heartbeat or hover), used for
+  the instruction pages' picture of the game.
 - The canvas is drawn at the displayed resolution (`SRPG.engine.pixelScale`); draw in 550×400
   stage units as usual, and scale pixel reads by `pixelScale` in tests.
 

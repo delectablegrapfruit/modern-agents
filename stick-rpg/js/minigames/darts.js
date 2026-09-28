@@ -10,7 +10,7 @@
   var D = SRPG.draw;
 
   var FONT = '"Arial Black", "Arial Bold", Arial, Helvetica, sans-serif';
-  var PALE = '#94c9ff';
+  var PALE = '#95caff';
   var BLUE = '#003399';
 
   // The dart_board clip sits at (282.1, 185.5). Its two boards follow these 40-frame loops
@@ -88,11 +88,13 @@
   }
 
   // --- DOM -------------------------------------------------------------------------------------
+  // Text in the original's fields (Arial Black, #95caff), spaces kept as typed. The static texts
+  // are 12 px with lines 16.85 apart; (x, y) is the box's top-left in stage px.
   function txt(parent, html, x, y, o) {
     o = o || {};
     var t = ui.el('div', 'nopoint', parent, html);
-    t.style.cssText = 'position:absolute;left:' + x + 'px;top:' + y + 'px;font:bold ' + (o.size || 11) + 'px ' + FONT + ';color:' + PALE +
-      ';line-height:' + (o.lh || 17) + 'px;' + (o.w ? 'width:' + o.w + 'px;' : 'white-space:nowrap;') + 'text-align:' + (o.align || 'left');
+    t.style.cssText = 'position:absolute;left:' + x + 'px;top:' + y + 'px;font:bold ' + (o.size || 12) + 'px ' + FONT + ';color:' + PALE +
+      ';line-height:' + (o.lh || 16.85) + 'px;' + (o.w ? 'width:' + o.w + 'px;' : '') + 'white-space:pre;text-align:' + (o.align || 'left');
     if (o.id) t.setAttribute('data-id', o.id);
     return t;
   }
@@ -105,12 +107,15 @@
     p.style.pointerEvents = 'none';
     p.style.background = 'rgba(72,132,255,0.8)'; // opaque panel colour at this placement's 80%
     var ox = 4.3, oy = 302.1;
-    txt(p, 'YOU\'RE SMASHED.  CLICK THE DART BOARD TO LET A DART FLY.', 17 - ox, 309 - oy, { w: 400, lh: 17 });
-    txt(p, 'DARTS<br>REMAINING:', 26 - ox, 342 - oy, { lh: 17 });
-    el.throws = txt(p, '', 95.5 - ox, 342 - oy, { size: 23, lh: 34, id: 'darts-left' });
-    el.points = txt(p, '', 247 - ox, 342 - oy, { size: 23, lh: 34, w: 96, align: 'right', id: 'darts-points' });
-    txt(p, 'POINTS', 348.5 - ox, 351.5 - oy);
-    el.last = txt(p, '', 20 - ox, 378 - oy, { size: 13.5, lh: 18, w: 387, align: 'center', id: 'darts-last' });
+    // Static texts (baselines 321.65 / 338.5, 355.65 / 372.5 and 363.65 in the original): the
+    // instruction breaks before its last word, as the original's does.
+    txt(p, 'YOU\'RE SMASHED.  CLICK THE DART BOARD TO LET A<br>DART FLY.', 19 - ox, 308.5 - oy, { id: 'darts-help' });
+    txt(p, 'DARTS<br>REMAINING:', 26 - ox, 342.5 - oy);
+    txt(p, 'POINTS', 348 - ox, 350.5 - oy);
+    // The fields: dartThrows and dartPoints are 22 px, lastThrow 14 px (centred).
+    el.throws = txt(p, '', 95.5 - ox, 342.8 - oy, { size: 22, lh: 31, id: 'darts-left' });
+    el.points = txt(p, '', 247 - ox, 342.8 - oy, { size: 22, lh: 31, w: 96, align: 'right', id: 'darts-points' });
+    el.last = txt(p, '', 20 - ox, 377.4 - oy, { size: 14, lh: 19.75, w: 387, align: 'center', id: 'darts-last' });
 
     var ok = ui.el('div', '', null, 'OK');
     ok.setAttribute('data-id', 'darts-ok');
@@ -123,7 +128,6 @@
     ok.addEventListener('mousedown', function (e) { e.stopPropagation(); });
     ok.addEventListener('click', function (e) {
       e.stopPropagation();
-      SRPG.sound.play('click');
       leave();
     });
     el.ok = ok;

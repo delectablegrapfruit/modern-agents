@@ -166,7 +166,8 @@
     if (b.phase !== 'bet') return;
     s.cash += b.bet;
     b.bet = 0;
-    SRPG.location.open('casino', { resume: true });
+    // Back to root frame 40 (gotoAndStop(40)), whose script replays the black clip.
+    SRPG.location.open('casino', { resume: true, fade: true });
   }
 
   // --- drawing ---------------------------------------------------------------------------------
@@ -479,7 +480,6 @@
       });
       hoverButton(22.5, 347.5, 'DEAL', 'deal', deckIcon, function () { deal(); });
       ui.iconButton(null, { icon: 'leave', label: '<span style="position:relative;top:2px;' + labelCss('#003399', 10) + '">LEAVE</span>', x: 458.5, y: 346.5, w: 80, size: 35, id: 'leave' }, function () {
-        SRPG.sound.play('click');
         leave();
       });
     } else {
@@ -489,7 +489,6 @@
       }
       if (b.ok) {
         var okb = ui.button(null, 'OK', function () {
-          SRPG.sound.play('click');
           ok();
         }, { x: 460.5, y: 356, w: 68, id: 'ok' });
         okb.style.cssText += ';height:24px;padding:0;line-height:22px;font-size:10px;border-radius:9px;' +

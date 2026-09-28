@@ -114,8 +114,9 @@
       tris: [],
       el: {},
     };
-    // Entering a fight costs 2 karma.
-    SRPG.game.addKarma(-2);
+    // Entering a fight costs 2 karma. Frame 75's script has no karmaAdjust() after it, so this can
+    // take karma below -100 until the next clamp.
+    SRPG.game.s.karma -= 2;
     // Ten tumbling specks drifting down the backdrop (sprite 2019 x10, at half size).
     var TX = [39, 93.2, 163.3, 216.4, 328.8, -28.4, -76.4, -140.4, -174, 124.6];
     var TY = [-11.2, -13.6, -10.6, -12.8, -8.8, -7.2, -10.4, -7.2, -8.8, -11.5];
@@ -271,8 +272,9 @@
     return true;
   }
 
+  // OK under the winnings (Button 2133): another 3 karma, unclamped like the entry cost.
   function winOk() {
-    SRPG.game.addKarma(-3);
+    SRPG.game.s.karma -= 3;
     backToBar();
   }
 
@@ -370,7 +372,7 @@
       ';color:#330000;line-height:22px;display:none';
     ok.addEventListener('mouseenter', function () { ok.style.background = '#e01010'; });
     ok.addEventListener('mouseleave', function () { ok.style.background = '#cc0000'; });
-    ok.addEventListener('click', function (e) { e.stopPropagation(); SRPG.sound.play('click'); winOk(); });
+    ok.addEventListener('click', function (e) { e.stopPropagation(); winOk(); });
     el.ok = ok;
     refreshUI();
   }
@@ -403,7 +405,7 @@
       FONT + ';color:#0066cc;letter-spacing:-0.5px;transform:scaleX(0.82);line-height:26px';
     d.addEventListener('mouseenter', function () { d.style.color = '#3399ff'; });
     d.addEventListener('mouseleave', function () { d.style.color = '#0066cc'; });
-    d.addEventListener('click', function (e) { e.stopPropagation(); SRPG.sound.play('click'); backToBar(); });
+    d.addEventListener('click', function (e) { e.stopPropagation(); backToBar(); });
   }
 
   // --- drawing ---------------------------------------------------------------------------------

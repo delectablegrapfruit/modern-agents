@@ -23,6 +23,12 @@ function check(cond, msg, extra) {
     for (let i = 0; i < max; i++) { if (f()) return i; SRPG.engine.step(1); }
     return -1;
   }, [cond, max]);
+  // Buttons make no sound of their own: the original loads _click.wav but never starts it.
+  await ev(() => {
+    window.__clicks = 0;
+    const play = SRPG.sound.play;
+    SRPG.sound.play = function (n) { if (n === 'click') window.__clicks++; return play.apply(this, arguments); };
+  });
 
   // ---------------------------------------------------------------------------------------------
   console.log('Bar: drink, bottle, conditions');
@@ -251,9 +257,13 @@ function check(cond, msg, extra) {
   check(f.fwin >= 10 && f.fwin <= 19 && s.cash === before.cash + f.fwin, 'prize random(barfight*5)+barfight*5 = $10..19 added', [f.fwin, s.cash]);
   check(s.barfight === 3, 'barfight + 1', s.barfight);
   check((await t.uiText()).indexOf('OK') >= 0, 'OK shown under the winnings');
+  check(s.karma === -2, 'karma -2 so far', s.karma);
+  // Button 2133's karma - 3 has no karmaAdjust() after it: from -99 it goes to -102.
+  await t.set({ karma: -99 });
   await t.clickUI('fight-ok');
   s = await t.state();
-  check(s.karma === -5 && (await scene()) === 'location:bar', 'OK: karma -3 more (-5 for the fight), back in the bar', [s.karma, await scene()]);
+  check(s.karma === -102 && (await scene()) === 'location:bar', 'OK: karma -3 more, unclamped (-99 -> -102), back in the bar', [s.karma, await scene()]);
+  check((await ev(() => SRPG.engine.black)) === 1, 'OK: back at root frame 35, whose script replays the black clip');
   await ev(() => SRPG.rng.unseed());
 
   // ---------------------------------------------------------------------------------------------
@@ -280,6 +290,11 @@ function check(cond, msg, extra) {
   await t.clickUI('run');
   s = await t.state();
   check((await scene()) === 'location:bar' && s.time === 15 && s.karma === -2, 'RUN AWAY: back to the bar, 3 hours and 2 karma gone', [s.time, s.karma]);
+  // Frame 75's karma - 2 has no karmaAdjust() after it either: at -100 a fight leaves you at -102.
+  await t.set({ karma: -100, time: 12 });
+  await t.clickUI('barfight');
+  check((await t.state()).karma === -102, 'entering a fight at -100 karma: -102 (unclamped, as the original)', (await t.state()).karma);
+  await t.clickUI('run');
   await t.clickUI('barfight');
   await page.hover('[data-id="itfroze"]');
   await t.step(2);
@@ -300,6 +315,24 @@ function check(cond, msg, extra) {
   await page.mouse.move(380, 188);
   await t.step(1);
   await shot('darts');
+  // Frame 37's texts: Arial Black 12 (#95caff) for the instruction, DARTS REMAINING: and POINTS,
+  // 16.85 between lines; the dart count and points are 22, the last-throw line 14.
+  const dtext = await ev(() => {
+    const out = {};
+    document.querySelectorAll('#ui [data-screen="darts"] > div').forEach((e) => {
+      const c = getComputedStyle(e);
+      out[e.getAttribute('data-id') || e.textContent] = [c.fontSize, c.lineHeight, c.color, e.innerText.split('\n').length];
+    });
+    return out;
+  });
+  const pale = 'rgb(149, 202, 255)';
+  check(JSON.stringify(dtext['darts-help']) === JSON.stringify(['12px', '16.85px', pale, 2]), 'instruction: 12 px on two lines 16.85 apart', dtext['darts-help']);
+  check((await ev(() => document.querySelector('#ui [data-id="darts-help"]').innerText.split('\n')[1])).indexOf('DART') === 0,
+    'the instruction breaks before its last word, as the original');
+  check(JSON.stringify(dtext['DARTSREMAINING:']) === JSON.stringify(['12px', '16.85px', pale, 2]), 'DARTS REMAINING: 12 px', dtext['DARTSREMAINING:']);
+  check(JSON.stringify(dtext.POINTS) === JSON.stringify(['12px', '16.85px', pale, 1]), 'POINTS: 12 px', dtext.POINTS);
+  check(dtext['darts-left'][0] === '22px' && dtext['darts-points'][0] === '22px' && dtext['darts-last'][0] === '14px',
+    'dart count and points 22 px, last throw 14 px', [dtext['darts-left'], dtext['darts-points'], dtext['darts-last']]);
   const dpos = (which) => ev((w) => { const d = SRPG.darts; return d.boardPos(w, d.st.bf); }, which);
   const click = async (x, y) => { await page.mouse.click(x, y); };
   let d = await ev(() => SRPG.darts.st);
@@ -350,6 +383,7 @@ function check(cond, msg, extra) {
   check((await ev(() => SRPG.engine.sceneName)) === 'darts' && (await t.state()).time === 11, 'darts cost no time');
   await t.clickUI('darts-ok');
   check((await scene()) === 'location:bar' && (await ev(() => document.getElementById('stage').style.cursor)) === '', 'OK: back to the bar, pointer shown');
+  check((await ev(() => SRPG.engine.black)) === 1, 'darts OK: back at root frame 35, fading in');
 
   // ---------------------------------------------------------------------------------------------
   console.log('Fight: the opponent\'s two ways of replying');
@@ -467,6 +501,7 @@ function check(cond, msg, extra) {
     check(hits.length === 0, 'no 6-word run copied from the original', hits);
   }
 
+  check((await ev(() => window.__clicks)) === 0, 'no button played a click sound', await ev(() => window.__clicks));
   const errs = t.errors.filter((e) => !/requestfailed|ERR_FILE_NOT_FOUND/.test(e));
   check(errs.length === 0, 'no page errors', errs);
   await t.close();

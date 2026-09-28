@@ -47,7 +47,6 @@
   // the menu rebuilds unless the handler moved to another screen.
   function item(g, p, r, o) {
     var b = ui.iconButton(p, { icon: o.icon, label: o.label, x: o.x - r.x - (r.b || 0), y: o.y - r.y - (r.b || 0), w: o.w || 170, size: o.size || 36, id: o.id }, function () {
-      SRPG.sound.play('click');
       o.onClick(g);
       if (SRPG.engine.sceneName === 'location' && SRPG.location.current === g.def.id) g.refresh();
     });
@@ -105,7 +104,6 @@
         "way, you're stuck behind bars for the<br>next 5 days.", 158 - r.x, 168 - r.y, null);
     }
     var ok = ui.button(p, 'OK', function () {
-      SRPG.sound.play('click');
       // -10 karma when you leave the result; you wake up back at the start junction.
       g.addKarma(-10);
       v.rob = null;

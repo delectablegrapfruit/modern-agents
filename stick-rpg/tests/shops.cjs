@@ -27,8 +27,9 @@ function eq(name, a, b) { check(name + ' (' + JSON.stringify(a) + ' vs ' + JSON.
   // Count error / purchase sounds by wrapping SRPG.sound.play.
   await page.evaluate(() => {
     window.__snd = [];
+    window.__clicks = 0;
     const orig = SRPG.sound.play;
-    SRPG.sound.play = function (n) { window.__snd.push(n); return orig.apply(this, arguments); };
+    SRPG.sound.play = function (n) { window.__snd.push(n); if (n === 'click') window.__clicks++; return orig.apply(this, arguments); };
   });
   // Record music changes too.
   await page.evaluate(() => {
@@ -45,7 +46,9 @@ function eq(name, a, b) { check(name + ' (' + JSON.stringify(a) + ' vs ' + JSON.
     return [(r.left - st.left) * k, (r.top - st.top) * k];
   }, id);
   const near = (name, a, b, tol) => check(name + ' (' + JSON.stringify(a) + ' ~ ' + JSON.stringify(b) + ')', a && Math.abs(a[0] - b[0]) <= tol && Math.abs(a[1] - b[1]) <= tol);
-  const sounds = async () => { const s = await page.evaluate(() => window.__snd.filter((n) => n !== 'click')); await page.evaluate(() => { window.__snd = []; }); return s; };
+  // Every sound since the last call. Buttons make no click sound (the original never starts
+  // _click.wav), so the lists below hold only the effects.
+  const sounds = async () => { const s = await page.evaluate(() => window.__snd.slice()); await page.evaluate(() => { window.__snd = []; }); return s; };
   const fresh = async (o) => { await t.newGame(Object.assign({ pname: 'Tester' }, o || {})); await sounds(); };
   const visit = async (id, patch) => { if (patch) await t.set(patch); await t.open(id); await t.step(12); };
 
@@ -160,6 +163,7 @@ function eq(name, a, b) { check(name + ' (' + JSON.stringify(a) + ' vs ' + JSON.
   s = await S();
   eq('after jail', [s.karma, s.mapx, s.mapy, s.day], [-10, 456, 630, 8]);
   eq('after jail scene', await scene(), 'city');
+  eq('store music keeps playing after jail too', await lastMusic(), 'inside');
   // robbing from 21:00 on is refused
   await visit('store', { items: { gun: 1, ammo: 20 }, charm: 600, time: 21, day: 3, cash: 100 });
   await sounds();
@@ -512,6 +516,7 @@ function eq(name, a, b) { check(name + ' (' + JSON.stringify(a) + ' vs ' + JSON.
     eq(id + ' leave nudge', [s.mapx - 300, s.mapy - 300, await scene()], [nudge.mapx || 0, nudge.mapy || 0, 'city']);
   }
 
+  eq('no button played a click sound', await page.evaluate(() => window.__clicks), 0);
   const errs = t.errors.filter((e) => !/requestfailed|ERR_FILE_NOT_FOUND|Failed to load resource/.test(e));
   eq('page errors', errs, []);
   console.log(passes + ' passed, ' + failures + ' failed');

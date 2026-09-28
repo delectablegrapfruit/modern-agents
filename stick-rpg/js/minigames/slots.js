@@ -105,7 +105,6 @@
     if (m.betlock !== 0 || m.sel === i) return;
     m.sel = i;
     m.bet = BETS[i];
-    SRPG.sound.play('click');
   }
 
   // --- drawing ---------------------------------------------------------------------------------
@@ -437,8 +436,8 @@
     });
     var css = SRPG.casinoArt && SRPG.casinoArt.heavyCss ? SRPG.casinoArt.heavyCss(10, '#003399') : 'font-size:10px';
     ui.iconButton(null, { icon: 'leave', label: '<span style="position:relative;top:2px;' + css + '">LEAVE</span>', x: 445, y: 338.5, w: 90, size: 35, id: 'leave' }, function () {
-      SRPG.sound.play('click');
-      SRPG.location.open('casino', { resume: true });
+      // LEAVE (Button 1350) goes back to root frame 40, whose script replays the black clip.
+      SRPG.location.open('casino', { resume: true, fade: true });
     });
   }
 

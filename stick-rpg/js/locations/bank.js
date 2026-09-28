@@ -17,27 +17,12 @@
   function S() { return SRPG.game.s; }
 
   // --- Flash number conversions ---------------------------------------------------------------
-  // The AMOUNT field is free text (7 characters, any keys). Flash reads it with its own
-  // string-to-number, which differs from JavaScript's (all checked in Ruffle): a leading 0 makes the
-  // rest octal when every digit is 0-7 ('010' is 8, '0100' is 64, '09' is 9), 0x/0X is hex, leading
-  // spaces are skipped but a trailing one makes it NaN ('5 '), and there is no 0b/0o.
-  function num(v) {
-    if (typeof v === 'number') return v;
-    var t = String(v);
-    if (/^0[0-7]+$/.test(t)) return parseInt(t, 8);
-    if (/^0[xX][0-9a-fA-F]+$/.test(t)) return parseInt(t.slice(2), 16);
-    t = t.replace(/^\s+/, '');
-    if (!/^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/.test(t)) return NaN;
-    return Number(t);
-  }
-  // int() is a 32-bit conversion: it truncates toward 0, turns NaN and Infinity into 0 and wraps
-  // past 2^31. So '3e9' becomes -1294967296 and a DEPOSIT of it hands you $1,294,967,296 (seen in
-  // Ruffle); the original's exploit is kept.
-  function int(v) {
-    var n = num(v);
-    if (!isFinite(n)) return 0;
-    return n | 0; // ToInt32
-  }
+  // The AMOUNT field is free text (7 characters, any keys), read with Flash's own string-to-number
+  // (SRPG.util.flashNumber: '010' is 8, '0100' is 64, '09' is 9, 0x/0X is hex, a trailing space makes
+  // it NaN) and AS1 int() (SRPG.util.flashInt), a 32-bit conversion: '3e9' becomes -1294967296 and a
+  // DEPOSIT of it hands you $1,294,967,296 (seen in Ruffle); the original's exploit is kept.
+  var num = SRPG.util.flashNumber;
+  var int = SRPG.util.flashInt;
   // Flash prints numbers with 15 significant digits, so the drifting interest rate reads 3.3, not
   // 3.3000000000000003.
   function flashNum(n) {
@@ -151,10 +136,7 @@
   // Square icon tile + label (the original's menu buttons). font = label px, size = tile px.
   function iconBtn(o, onClick) {
     var b = ui.iconButton(null, { icon: o.icon, label: '<span>' + o.label + '</span>', x: o.x, y: o.y, w: o.w || 150, size: o.size || 36, id: o.id },
-      function () {
-        SRPG.sound.play('click');
-        onClick();
-      });
+      function () { onClick(); });
     var lbl = b.querySelector('.lbl');
     if (lbl) {
       lbl.style.fontSize = (o.font || 10.5) + 'px';
@@ -166,10 +148,7 @@
   // The original's rounded blue text buttons (DEPOSIT, WITHDRAW, OK, CANCEL): #3399ff with a
   // #3366cc edge and #003399 lettering; light blue with #3399ff lettering under the mouse.
   function pill(label, x, y, w, id, onClick) {
-    var b = ui.button(null, label, function () {
-      SRPG.sound.play('click');
-      onClick();
-    }, { x: x, y: y, w: w, id: id });
+    var b = ui.button(null, label, function () { onClick(); }, { x: x, y: y, w: w, id: id });
     b.style.cssText += ';height:26px;padding:0;line-height:24px;font-size:10.5px;border-radius:7px;background:#3399ff;' +
       'border:1px solid #3366cc;color:#003399;text-align:center;';
     b.addEventListener('mouseenter', function () { b.style.background = '#95caff'; b.style.color = '#3399ff'; b.style.borderColor = '#3399ff'; });
@@ -251,9 +230,9 @@
     text('"The most we can lend you is $1000,\nand you get 15 days to pay us back.\nSo, how much do you need?"', 259, 63);
     amountField(147);
     pill('OK', 408, 148, 70, 'ok', function () {
-      if (rules.borrow(S(), st.amount)) go('main');
+      if (rules.borrow(S(), st.amount)) backToMain();
     });
-    pill('CANCEL', 446, 254, 70, 'cancel', function () { go('main'); });
+    pill('CANCEL', 446, 254, 70, 'cancel', backToMain);
     rateLines();
   }
 
@@ -265,9 +244,9 @@
       esc(String(s.bankloandays)) + '</span> days left before it comes due.\nHow much are you paying back today?"', 226, 82, { lh: 17 });
     amountField(147);
     pill('OK', 408, 148, 70, 'ok', function () {
-      if (rules.repay(S(), st.amount)) go('main');
+      if (rules.repay(S(), st.amount)) backToMain();
     });
-    pill('CANCEL', 446, 254, 70, 'cancel', function () { go('main'); });
+    pill('CANCEL', 446, 254, 70, 'cancel', backToMain);
     rateLines();
   }
 
@@ -315,6 +294,9 @@
     s.mapx = SRPG.START_MAPX;
     s.mapy = SRPG.START_MAPY;
     SRPG.location.leave('none'); // no door nudge: you're back at the junction
+    // The OK buttons are the store's (frames 28/29): unlike every LEAVE button they never swap the
+    // inside loop back for the street music, so it keeps playing out on the map.
+    SRPG.sound.music('inside');
   }
 
   var SCREENS = { main: showMain, loan: showLoan, repay: showRepay, realestate: showRealEstate, robbed: showRobbed, jail: showJail };
@@ -323,6 +305,12 @@
     st.screen = screen;
     if (screen === 'main') st.amount = '0'; // frame 25's "var amount = 0"
     build();
+  }
+  // The loan and repayment screens' OK and CANCEL go back to root frame 25, whose script replays
+  // the black clip: the bank fades in again.
+  function backToMain() {
+    SRPG.engine.blackPlay(1);
+    go('main');
   }
 
   function build() {

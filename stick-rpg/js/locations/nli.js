@@ -94,10 +94,7 @@
 
   function iconBtn(o, onClick) {
     var b = ui.iconButton(null, { icon: o.icon, label: '<span>' + o.label + '</span>', x: o.x, y: o.y, w: o.w || 170, size: 36, id: o.id },
-      function () {
-        SRPG.sound.play('click');
-        onClick();
-      });
+      function () { onClick(); });
     var lbl = b.querySelector('.lbl');
     if (lbl) {
       lbl.style.fontSize = (o.font || 9) + 'px';
@@ -107,10 +104,7 @@
   }
 
   function okPill(onClick) {
-    var b = ui.button(null, 'OK', function () {
-      SRPG.sound.play('click');
-      onClick();
-    }, { x: 447, y: 316, w: 70, id: 'ok' });
+    var b = ui.button(null, 'OK', function () { onClick(); }, { x: 447, y: 316, w: 70, id: 'ok' });
     b.style.cssText += ';height:26px;padding:0;line-height:24px;font-size:10.5px;border-radius:7px;background:#3399ff;' +
       'border:1px solid #3366cc;color:#003399;text-align:center;';
     b.addEventListener('mouseenter', function () { b.style.background = '#95caff'; b.style.color = '#3399ff'; });
@@ -158,7 +152,7 @@
     panel();
     text('"Thanks for applying.  Sadly, you did not pass\nthe aptitude test.  Maybe next time around!"', 198, 121, { lh: 17 });
     text(esc(st.intreq), 267, 202, { size: 12, color: '#003399', w: 183, align: 'center', lh: 17, id: 'intreq' });
-    okPill(function () { go('main'); });
+    okPill(backToMenu);
   }
 
   function showHired() {
@@ -166,7 +160,7 @@
     text('CONGRATULATIONS!\nYOU ARE NOW A:', 267, 125, { size: 16, color: '#fff', lh: 22.5 });
     text(esc(st.jobtext), 250, 206, { size: 20, color: '#ffff00', w: 217, align: 'center', lh: 27, id: 'jobtext' });
     text(esc(st.wagetext), 212, 278, { size: 16, color: '#fff', w: 293, align: 'center', lh: 22, id: 'wagetext' });
-    okPill(function () { go('main'); });
+    okPill(backToMenu);
   }
 
   function result(r) {
@@ -186,6 +180,12 @@
   function go(screen) {
     st.screen = screen;
     refresh();
+  }
+  // The result screens' OK (Button 1049: gotoFrame(19)) goes back to root frame 20, whose script
+  // replays the black clip: the lobby fades in again.
+  function backToMenu() {
+    SRPG.engine.blackPlay(1);
+    go('main');
   }
   function refresh() {
     if (SRPG.location.current === 'nli') SRPG.location.g.refresh();

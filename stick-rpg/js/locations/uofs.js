@@ -61,8 +61,10 @@
     st.frame += 1;
     if (st.frame === a.at) rules.raise(S(), st.anim);
     if (st.frame >= a.frames) {
+      // The clip's last frame does gotoAndStop(60): the menu frame's script replays the black clip.
       st.anim = null;
       st.frame = 0;
+      SRPG.engine.blackPlay(1);
       refresh();
     }
   }
@@ -84,10 +86,7 @@
   function button(o, onClick) {
     var sub = o.sub ? '<br><span class="sub" style="color:' + o.subColor + '">' + o.sub + '</span>' : '';
     var b = ui.iconButton(null, { icon: o.icon, label: '<span>' + o.label + sub + '</span>', x: o.x, y: o.y, w: o.w || 180, size: 36, id: o.id },
-      function () {
-        SRPG.sound.play('click');
-        onClick();
-      });
+      function () { onClick(); });
     var lbl = b.querySelector('.lbl');
     lbl.style.fontSize = '9px';
     lbl.style.marginLeft = '5px';
@@ -124,7 +123,6 @@
     button({ icon: 'gym', label: 'GO TO THE GYM', sub: '(+1 STRENGTH)', subColor: '#600093', subHover: '#e4b3ff',
       x: 370.5, y: 121, w: 160, id: 'gym' }, function () { begin('gym'); });
     var leave = ui.iconButton(null, { icon: 'leave', label: 'LEAVE', x: 372, y: 250, w: 81, size: 36, id: 'leave' }, function () {
-      SRPG.sound.play('click');
       SRPG.location.leave();
     });
     leave.querySelector('.lbl').style.fontSize = '10.5px';

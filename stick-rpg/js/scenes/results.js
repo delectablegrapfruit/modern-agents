@@ -223,7 +223,14 @@
   function toStamp() {
     rs.rf = 150;
     rs.sf = 1;
+    frate();
     buildButtons();
+  }
+
+  // Frame 150 places the frame-rate field (frate) at the SHOW FPS counter's depth, replacing it:
+  // hide the counter now rather than on its next refresh.
+  function frate() {
+    if (SRPG.hud && SRPG.hud.fpsUpdate) SRPG.hud.fpsUpdate();
   }
 
   function buildButtons() {
@@ -372,7 +379,7 @@
       if (rs.rf === 131) countStep();
       else if (rs.rf < 161) {
         rs.rf++;
-        if (rs.rf === 150) { rs.sf = 1; }
+        if (rs.rf === 150) { rs.sf = 1; frate(); }
         if (rs.rf === 161) buildButtons();
       }
     },

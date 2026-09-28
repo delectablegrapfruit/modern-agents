@@ -246,23 +246,6 @@
     return st;
   };
 
-  // Black fade used by the original's "black" clip. From frame 1 it fades out over 9 frames;
-  // from frame 11 over 19 frames. Returns the overlay alpha for a frame of that clip.
-  fx.blackAlpha = function (f) {
-    if (f <= 0) return 0;
-    if (f <= 10) return Math.max(0, (10 - f) / 9);
-    if (f <= 30) return Math.max(0, (30 - f) / 19);
-    return 0;
-  };
-  fx.drawBlack = function (ctx, a) {
-    if (a <= 0) return;
-    ctx.save();
-    ctx.globalAlpha = Math.min(1, a);
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, SRPG.W, SRPG.H);
-    ctx.restore();
-  };
-
   // ------------------------------------------------------------------------------------------
   // Title screen state
   // ------------------------------------------------------------------------------------------
@@ -284,7 +267,6 @@
   var st = {
     mode: 'title', // 'title' | 'newgame' | 'makechar' | 'instructions'
     page: 1, // instructions page 1..7
-    fade: 0, // frame of the black fade clip (0 = none)
     bubbles: [],
     gamelength: 0,
     textname: 'Anonymous',
@@ -623,38 +605,94 @@
     });
   }
 
-  // A small HUD sample (heart + HP bar, cash, clock + day, backpack, stats) for page 6, drawn
-  // by the real HUD into an offscreen strip and cut into pieces.
-  var hudStrip = null;
-  function hudPieces() {
-    if (hudStrip) return hudStrip;
+  // ---- pages 5 and 6: a shrunken picture of the game (shapes 168 and 171 of sprite 149) ------
+  // The original shows a small shot of the game with a rough edge: you standing on the sidewalk
+  // at the corner of the convenience store, the HUD across the top. We take the same shot with
+  // the game's own art (the city at that scroll position, the player and the map HUD, as on a
+  // new game's first morning) and shrink it into the same box, stage x 259.9-505.5, y 95.7-275.
+  var SHOT = { x: 259.9, y: 95.7, w: 245.6, h: 179.3, mapx: 142, mapy: -63 };
+  var shotCache = null;
+
+  function gameShot() {
+    // drawn at 2x when the stage is shown big enough for 1x to look soft
+    var k = (SRPG.engine.pixelScale || 1) > 2.2 ? 2 : 1;
+    if (shotCache && shotCache.k === k) return shotCache.canvas;
     var c = document.createElement('canvas');
-    c.width = SRPG.W;
-    c.height = 46;
-    var cx = c.getContext('2d');
-    var dummy = { hp: 25, hpmax: 25, cash: 100, time: 8, day: 1, karma: 0 };
-    try { SRPG.hud.draw(cx, dummy, 'map'); } catch (e) { /* HUD missing: blank legend art */ }
-    hudStrip = c;
+    c.width = SRPG.W * k;
+    c.height = SRPG.H * k;
+    var x = c.getContext('2d');
+    x.scale(k, k);
+    var s = { mapx: SHOT.mapx, mapy: SHOT.mapy, dwelling: 1, time: 8, day: 1, cash: 100, hp: 25, hpmax: 25, karma: 0 };
+    try {
+      // (the city fills this whole view, so no sky is needed under it)
+      x.save();
+      x.beginPath();
+      x.rect(0, 0, SRPG.W, SRPG.H);
+      x.clip();
+      x.translate(s.mapx, s.mapy);
+      SRPG.mapArt.drawStatic(x, s);
+      x.restore();
+      // standing, facing down the street
+      SRPG.sprites.player(x, SRPG.MAP.PLAYER_X, SRPG.MAP.PLAYER_Y, { rot: 180, color: SRPG.game.personColor(0), mode: 'walk' });
+      SRPG.hud.draw(x, s, 'map', { still: true });
+    } catch (e) { /* art missing: keep what was drawn */ }
+    shotCache = { k: k, canvas: c };
     return c;
   }
 
-  function arrowKey(ctx, x, y, rot) {
-    SRPG.draw.roundRect(ctx, x - 11, y - 11, 22, 22, 4, '#e8eefc', '#223366', 1.2);
+  // How far the picture's torn edge wanders in from its box at distance d along a side.
+  function edgeIn(d, seed) {
+    var v = 1.8 + 1.3 * Math.sin(d / 11 + seed) + 0.5 * Math.sin(d / 4.3 + seed * 2.7);
+    return Math.max(0, Math.min(4.5, v));
+  }
+
+  function drawGameShot(ctx) {
+    var X = SHOT.x, Y = SHOT.y, W = SHOT.w, H = SHOT.h, d;
     ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(rot);
     ctx.beginPath();
-    ctx.moveTo(0, -6);
-    ctx.lineTo(5, 1);
-    ctx.lineTo(1.8, 1);
-    ctx.lineTo(1.8, 6);
-    ctx.lineTo(-1.8, 6);
-    ctx.lineTo(-1.8, 1);
-    ctx.lineTo(-5, 1);
+    ctx.moveTo(X + edgeIn(0, 1), Y + edgeIn(0, 4));
+    for (d = 3; d <= W; d += 3) ctx.lineTo(X + d, Y + edgeIn(d, 4));
+    for (d = 0; d <= H; d += 3) ctx.lineTo(X + W - edgeIn(d, 2), Y + d);
+    for (d = W; d >= 0; d -= 3) ctx.lineTo(X + d, Y + H - edgeIn(d, 5));
+    for (d = H; d >= 0; d -= 3) ctx.lineTo(X + edgeIn(d, 1), Y + d);
     ctx.closePath();
-    ctx.fillStyle = '#223366';
-    ctx.fill();
+    ctx.clip();
+    ctx.drawImage(gameShot(), X, Y, W, H);
     ctx.restore();
+  }
+
+  // Page 6 (shape 171): the picture again, a yellow box round each HUD piece, and each label
+  // underlined in white and joined to its box by a yellow line. Per row: the label (text, x,
+  // baseline), the underline (x0, y0, x1, y1), where the yellow line meets the box, the box.
+  var LEGEND = [
+    ['Health Remaining/Total Health', 48.3, 104.55, [47.2, 107.4, 232.85, 107.4], [263.15, 107.4], [263.15, 97.15, 348.85, 107.65]],
+    ['Cash on hand (Currently available)', 48.4, 135.45, [48.45, 138, 252.05, 138.65], [354.1, 108], [355.35, 98.15, 380.35, 108.15]],
+    ['Time of day/Current day', 48.7, 164.65, [48.45, 167.4, 189.7, 167.45], [406.6, 111.75], [407.35, 94.15, 453.3, 111.65]],
+    ['Character Inventory', 48.4, 193.15, [47.85, 196.1, 181.6, 196.1], [465.35, 116.15], [466.35, 95.15, 484.35, 116.15]],
+    ['Stats/Information', 49.2, 222.25, [47.9, 224.9, 155.4, 225.5], [489.7, 116.15], [490.35, 95.15, 506.35, 116.15]],
+  ];
+
+  function drawLegend(ctx) {
+    ctx.save();
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    LEGEND.forEach(function (l) {
+      var u = l[3], e = l[4], b = l[5];
+      ctx.strokeStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.moveTo(u[0], u[1]);
+      ctx.lineTo(u[2], u[3]);
+      ctx.stroke();
+      ctx.strokeStyle = '#ffff00';
+      ctx.beginPath();
+      ctx.moveTo(u[2], u[3]);
+      ctx.lineTo(e[0], e[1]);
+      ctx.rect(b[0], b[1], b[2] - b[0], b[3] - b[1]);
+      ctx.stroke();
+    });
+    ctx.restore();
+    LEGEND.forEach(function (l) { fx.text(ctx, l[0], l[1], l[2], { face: 'impact', size: 14, color: '#ffffff' }); });
   }
 
   function drawInstructions(ctx) {
@@ -709,30 +747,10 @@
         ['-  STEER CLEAR OF CARS AND', 93.6, 16],
         ['OTHER HAZARDS', 113, 16, 5.6],
       ], 45.8, 100.25);
-      // the arrow keys, and a stick figure walking up to a door
-      arrowKey(ctx, 380, 150, 0);
-      arrowKey(ctx, 356, 175, -Math.PI / 2);
-      arrowKey(ctx, 380, 175, Math.PI);
-      arrowKey(ctx, 404, 175, Math.PI / 2);
-      SRPG.draw.rect(ctx, 440, 200, 60, 58, '#b0a080', '#000', 1.5);
-      SRPG.draw.rect(ctx, 458, 222, 22, 36, '#663300', '#000', 1);
-      SRPG.draw.line(ctx, 330, 258, 520, 258, '#002a80', 1.5);
-      SRPG.draw.stick(ctx, 405, 257, 44, { color: '#000', dir: 'right', walk: 1.2, lw: 1.3, headFill: '#0066cc' });
+      drawGameShot(ctx);
     } else if (p === 6) {
-      var labels = [
-        ['Health Remaining/Total Health', 48.3, 104.55],
-        ['Cash on hand (Currently available)', 48.4, 135.45],
-        ['Time of day/Current day', 48.7, 164.65],
-        ['Character Inventory', 48.4, 193.15],
-        ['Stats/Information', 49.2, 222.25],
-      ];
-      labels.forEach(function (l) { fx.text(ctx, l[0], l[1], l[2], { face: 'impact', size: 14, color: '#ffffff' }); });
-      var hs = hudPieces();
-      // [source x, source width, destination x, row], drawn at 70% so the rows don't touch
-      [[4, 204, 270, 0], [210, 110, 290, 1], [330, 110, 290, 2], [458, 44, 300, 3], [508, 42, 300, 4]].forEach(function (q) {
-        var row = labels[q[3]];
-        ctx.drawImage(hs, q[0], 0, q[1], 40, q[2], row[2] - 19, q[1] * 0.7, 28);
-      });
+      drawGameShot(ctx);
+      drawLegend(ctx);
     } else if (p === 7) {
       para(ctx, [
         ['-  MOST THINGS YOU DO  (EATING, WORKING, AND SO ON)  EAT UP TIME.', 16, 16],
@@ -759,8 +777,11 @@
       resetBubbles();
       // Root frame 1 (on boot, and again after the results' DONE, which re-creates the black
       // clip): the title fades in from black (black clip frames 1..10).
-      st.fade = 1;
+      SRPG.engine.blackPlay(1);
+      // Root frame 1 also sets music = 1 again, and the intro screen starts the title loop
+      // without looking at it: after a game played with MUSIC OFF the title still has music.
       SRPG.sound.music('beginning');
+      if (!SRPG.sound.musicOn) SRPG.sound.setMusic(true);
       build();
     },
     exit: function () {
@@ -769,7 +790,6 @@
     tick: function () {
       st.frame++;
       tickBubbles();
-      if (st.fade > 0) st.fade = st.fade >= 10 ? 0 : st.fade + 1;
     },
     render: function (ctx) {
       fx.bg(ctx);
@@ -778,7 +798,7 @@
       else if (st.mode === 'newgame') drawNewGame(ctx);
       else if (st.mode === 'makechar') drawMakeChar(ctx);
       else if (st.mode === 'instructions') drawInstructions(ctx);
-      if (st.fade > 0) fx.drawBlack(ctx, fx.blackAlpha(st.fade));
+      SRPG.engine.drawBlack();
     },
     // For tests and the debug API.
     roll: roll,

@@ -40,6 +40,17 @@ function eq(a, b, msg) {
   const amount = async (v) => { await page.fill('#ui [data-id="amount"]', v); };
   const scene = () => ev(() => SRPG.engine.sceneName + (SRPG.location.current ? ':' + SRPG.location.current : ''));
   const seed = (n) => ev((n) => SRPG.rng.seed(n), n);
+  const black = () => ev(() => SRPG.engine.black);
+  // Record the music changes, and count click sounds: the original loads _click.wav but never
+  // starts it, so no button may play one.
+  await ev(() => {
+    window.__music = [];
+    window.__clicks = 0;
+    const m = SRPG.sound.music, p = SRPG.sound.play;
+    SRPG.sound.music = function (n) { window.__music.push(n); return m.apply(this, arguments); };
+    SRPG.sound.play = function (n) { if (n === 'click') window.__clicks++; return p.apply(this, arguments); };
+  });
+  const lastMusic = () => ev(() => window.__music[window.__music.length - 1]);
 
   // ================================================================ BANK
   await game({ cash: 500, bankcash: 1234, bankrate: 3.5 });
@@ -140,12 +151,17 @@ function eq(a, b, msg) {
     eq([st.bankloan, st.bankloandays, st.cash], [0, -1, cash0], 'loan "' + bad + '" refused');
     check(await has('cancel'), 'still on the loan screen after "' + bad + '"');
   }
+  eq(await black(), 10, 'a refused loan stays on the loan screen (no fade)');
   await click('cancel');
   eq(await ev(() => document.querySelector('#ui [data-id="amount"]').value), '0', 'amount reset to 0 back at the bank');
+  eq(await black(), 1, 'CANCEL goes back to root frame 25, whose script replays the black clip');
+  await t.step(12);
   await click('loan');
   await amount('1000.7'); await click('ok');
   st = await s();
   eq([st.bankloan, st.bankloandays, st.cash], [1000, 15, cash0 + 1000], 'loan 1000.7 borrows 1000 for 15 days');
+  eq(await black(), 1, 'loan OK: back at the bank, fading in');
+  await t.step(12);
   check(await has('repay') && !(await has('loan')), 'after the loan: REPAY shown, GET A LOAN hidden');
   await shot('bank-with-loan');
   await click('repay');
@@ -164,6 +180,7 @@ function eq(a, b, msg) {
   await amount('50'); await click('ok');
   st = await s();
   eq([st.bankloan, st.bankloandays, st.cash], [950, 15, 0], 'partial repay keeps the deadline');
+  eq(await black(), 1, 'repay OK: back at the bank, fading in');
   check(await has('repay'), 'back at the bank after a repayment');
   // overnight: interest on the loan and one day less
   await t.set({ bankrate: 2, cash: 5000 });
@@ -238,6 +255,7 @@ function eq(a, b, msg) {
   await click('ok');
   st = await s();
   eq([st.karma, st.mapx, st.mapy, await scene()], [k0 - 10, 456, 630, 'city'], 'jail OK: -10 karma, back at the start junction');
+  eq(await lastMusic(), 'inside', 'jail OK (the store\'s button) leaves the inside music playing on the map');
   // lucky robbery
   await game({ items: { gun: 1, ammo: 30 }, charm: 999, cash: 100 });
   await seed(11);
@@ -251,6 +269,7 @@ function eq(a, b, msg) {
   await click('ok');
   st = await s();
   eq([st.karma, st.mapx, st.mapy], [-10, 456, 630], 'robbery OK: -10 karma, start junction');
+  eq(await lastMusic(), 'inside', 'robbery OK leaves the inside music playing on the map, as at the store');
   // jail past the last day ends a timed game
   await game({ items: { gun: 1, ammo: 30 }, charm: 1, gamelength: 15, day: 12 });
   await enter('bank');
@@ -279,8 +298,10 @@ function eq(a, b, msg) {
   eq((await s()).job, 1, 'apply with 19 intelligence fails');
   eq(await txt('intreq'), '(NEED 20 INTELLIGENCE)', 'fail screen says what is needed');
   await shot('nli-fail');
+  await t.step(12);
   await click('ok');
   check(await has('apply'), 'OK returns to the NLI menu');
+  eq(await black(), 1, 'OK goes back to root frame 20, whose script replays the black clip');
   const hitAt = (x, y) => ev(([x, y]) => {
     const e = document.elementFromPoint(x, y);
     const b = e && e.closest('[data-id]');
@@ -296,7 +317,9 @@ function eq(a, b, msg) {
   eq([st.job, st.karma, st.msgs.length], [2, 1, msgs0 + 1], 'hired as janitor: +1 karma, a voicemail');
   eq([await txt('jobtext'), await txt('wagetext')], ['JANITOR', 'Your pay is now $8 an hour.'], 'congratulations screen');
   await shot('nli-hired');
+  await t.step(12);
   await click('ok');
+  eq(await black(), 1, 'OK after the congratulations fades the lobby in again');
   check(await has('promotion') && await has('work_janitor') && !(await has('apply')), 'janitor: promotion + janitor work');
   // the ladder: need 40/75/120/180/250, one rung per request
   const ladder = [[2, 40, 'MAIL ROOM CLERK', 10, 'work_mail'], [3, 75, 'SALESPERSON', 15, 'work_sales'],
@@ -371,6 +394,7 @@ function eq(a, b, msg) {
   check(!(await has('study')), 'animation still running at frame 24');
   await t.step(1);
   check(await has('study'), 'menu back after 25 frames');
+  eq(await black(), 1, 'the clip\'s gotoAndStop(60) replays the menu frame\'s black clip');
   await click('class');
   st = await s();
   eq([st.time, st.cash, st.karma], [14, 80, 2], 'class: 2 hours, $20, +1 karma');
@@ -629,6 +653,7 @@ function eq(a, b, msg) {
   });
   eq(bad, [], 'state holds only finite numbers, strings, arrays and objects');
 
+  eq(await ev(() => window.__clicks), 0, 'no button played a click sound');
   const errs = t.errors.filter((e) => !/requestfailed|ERR_FILE_NOT_FOUND|Failed to load resource/.test(e));
   eq(errs, [], 'no page errors');
   console.log(passes + ' passed, ' + failures + ' failed');

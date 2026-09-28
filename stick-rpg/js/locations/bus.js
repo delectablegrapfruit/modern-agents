@@ -228,10 +228,7 @@
 
   function iconBtn(o, onClick) {
     var b = ui.iconButton(null, { icon: o.icon, label: '<span>' + o.label + '</span>', x: o.x, y: o.y, w: o.w || 150, size: o.size || 36, id: o.id },
-      function () {
-        SRPG.sound.play('click');
-        onClick();
-      });
+      function () { onClick(); });
     var lbl = b.querySelector('.lbl');
     lbl.style.fontSize = (o.font || 10.5) + 'px';
     lbl.style.marginLeft = (o.gap != null ? o.gap : 4) + 'px';

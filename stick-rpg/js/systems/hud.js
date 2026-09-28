@@ -719,6 +719,13 @@
     return s;
   }
 
+  // From root frame 150 the results place their own frame-rate field (frate) at the depth the
+  // counter uses, which removes it: only the results' number shows from then on.
+  function fpsTakenByResults() {
+    var e = SRPG.engine;
+    return !!(e && e.sceneName === 'results' && SRPG.results && SRPG.results.st.rf >= 150);
+  }
+
   function fpsUpdate() {
     var s = fpsSync();
     // back on the title screen the counter is hidden again (root frame 1 hides fpsShower)
@@ -733,7 +740,7 @@
       stage.appendChild(fps.el);
     }
     if (fps.el.textContent !== fps.text) fps.el.textContent = fps.text;
-    var show = fps.visible && !!s;
+    var show = fps.visible && !!s && !fpsTakenByResults();
     if (fps.el.style.display !== (show ? 'block' : 'none')) fps.el.style.display = show ? 'block' : 'none';
   }
 
@@ -762,9 +769,12 @@
     STATS_BOX: { x: 514.5, y: 4, w: 28.5, h: 34.3 },
 
     // mode: 'map' (with backpack + "?"), 'inside' (buildings), 'fight' (HP bar only).
-    draw: function (ctx, s, mode) {
+    // opts.still: a picture of the HUD (the instructions' game shot): heart at rest, both map
+    // buttons shown and never lit by the mouse.
+    draw: function (ctx, s, mode, opts) {
       if (!s) return;
-      var t = SRPG.engine ? SRPG.engine.frame : 0;
+      var still = !!(opts && opts.still);
+      var t = still ? 0 : SRPG.engine ? SRPG.engine.frame : 0;
       ctx.save();
       hpBar(ctx, s.hp, s.hpmax, 120.75, 16.9, 1.2, { t: t });
       if (mode !== 'fight') {
@@ -773,10 +783,10 @@
         day(ctx, s);
         // the backpack and "?" are only on the map, and vanish while a panel is open or while
         // you lie knocked down (root frames 3 and 5/6 remove them)
-        if (mode === 'map' && !mapButtonsHidden()) {
-          var down = SRPG.engine && SRPG.engine.mouse.down;
-          var hi = mouseIn(hud.INVENTORY_BOX);
-          var hs = mouseIn(hud.STATS_BOX);
+        if (mode === 'map' && (still || !mapButtonsHidden())) {
+          var down = !still && SRPG.engine && SRPG.engine.mouse.down;
+          var hi = !still && mouseIn(hud.INVENTORY_BOX);
+          var hs = !still && mouseIn(hud.STATS_BOX);
           backpack(ctx, 477.3, 21.1, hi, hi && down);
           statsButton(ctx, hs, hs && down);
         }

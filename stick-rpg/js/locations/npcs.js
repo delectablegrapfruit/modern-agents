@@ -41,7 +41,6 @@
 
   function button(g, parent, o) {
     var b = ui.iconButton(parent, { icon: o.icon, label: o.label, x: o.x - PANEL.x - 1, y: ROW_Y - PANEL.y - 1, w: o.w || 150, size: 36, id: o.id }, function () {
-      SRPG.sound.play('click');
       o.onClick(g);
       if (SRPG.engine.sceneName === 'location' && SRPG.location.current === g.def.id) g.refresh();
     });

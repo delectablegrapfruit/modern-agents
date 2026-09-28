@@ -388,7 +388,32 @@ let SRPG_ICON_LIST = [];
   ok(/100 Days/.test(text), 'game length');
   ok(/MUSIC: ON OFF/.test(text) && /OPTIMIZE: ON OFF/.test(text) && /SHOW FPS: ON OFF/.test(text) && /QUIT/.test(text), 'switch rows');
   await t.shot(shotPath('stats'));
+  // the name sits in the original's fixed field (EditText 822, stage x 282.4-463.2), centred
+  const nameBox = () => page.evaluate(() => {
+    const e = document.querySelector('.pname');
+    const r = e.getBoundingClientRect();
+    const rg = document.createRange();
+    rg.selectNodeContents(e);
+    const tr = rg.getBoundingClientRect();
+    const x = document.querySelector('[data-id="close"]').getBoundingClientRect();
+    return { left: r.left, right: r.right, textLeft: tr.left, textMid: (tr.left + tr.right) / 2, textW: tr.width, clipped: e.scrollWidth > e.clientWidth, xLeft: x.left };
+  });
+  let nb = await nameBox();
+  ok(Math.abs(nb.left - 282.4) < 0.6 && Math.abs(nb.right - 463.2) < 0.6, 'name field spans x 282.4-463.2 ' + JSON.stringify(nb));
+  ok(Math.abs(nb.textMid - 372.8) < 1.5 && !nb.clipped, 'a short name is centred at 372.8 ' + JSON.stringify(nb));
   await page.evaluate(() => SRPG.city.closePanel());
+  // an 11-letter name of wide letters (the create-character box allows 11) is cut off at the
+  // field's edge instead of running under the X
+  await t.set({ pname: 'WWWWWWWWWWW' });
+  await page.evaluate(() => SRPG.city.openPanel('stats'));
+  nb = await nameBox();
+  ok(nb.right <= 463.3 && nb.left >= 282.3, 'a long name stays inside its field ' + JSON.stringify(nb));
+  ok(nb.textW <= 176.9 || nb.clipped, 'a name wider than the field is clipped ' + JSON.stringify(nb));
+  ok(nb.textLeft >= 284, 'it starts after the 2 px gutter, clear of STATS ' + JSON.stringify(nb));
+  await t.step(20); // let the arrival fade finish for the screenshot
+  await t.shot(shotPath('stats-long-name'));
+  await page.evaluate(() => SRPG.city.closePanel());
+  await t.set({ pname: 'Anonymous' });
   // net worth = cash + bank - loans; unlimited game; karma clamped to +-100 when opened
   await t.set({ cash: 1234, bankcash: 500, bankloan: 100, gamelength: 0, karma: 150, job: 3 });
   await page.evaluate(() => SRPG.city.openPanel('stats'));
@@ -464,6 +489,31 @@ let SRPG_ICON_LIST = [];
   eq(ends, 1, 'YES clicked twice ends the game once');
   eq(await scene(), 'results', 'YES ends the game (results)');
   eq((await st()).over, true, 'game over');
+
+  // SHOW FPS on the results: from root frame 150 the results' own frate field takes the
+  // counter's depth, so only one number shows
+  const fpsDisp = () => page.evaluate(() => getComputedStyle(document.querySelector('.fps-shower')).display);
+  for (const how of ['skip', 'count']) {
+    await t.newGame({ pname: 'Tester', fps: 1 });
+    await page.evaluate(() => { SRPG.city.openPanel('stats'); SRPG.city.closePanel(); });
+    eq(await fpsDisp(), 'block', how + ': SHOW FPS counter on');
+    await page.evaluate(() => SRPG.game.endGame());
+    await page.evaluate(() => SRPG.hud.fpsUpdate());
+    eq(await fpsDisp(), 'block', how + ': the counter stays up while the net worth counts');
+    if (how === 'skip') await t.clickUI('skip');
+    else {
+      await t.step(1);
+      while (await page.evaluate(() => SRPG.results.st.rf < 149)) await t.step(1);
+      eq(await fpsDisp(), 'block', how + ': still up at frame 149');
+      await t.step(1);
+    }
+    eq(await page.evaluate(() => SRPG.results.st.rf), 150, how + ': results frame 150');
+    eq(await fpsDisp(), 'none', how + ': frame 150 hides the counter at once (the results show frate instead)');
+    await t.step(15);
+    await page.evaluate(() => SRPG.hud.fpsUpdate());
+    eq(await fpsDisp(), 'none', how + ': and it stays hidden');
+  }
+  await t.shot(shotPath('results-fps'));
 
   // ---------------------------------------------------------------- menu CSS vs McSticks
   await t.newGame({ pname: 'Tester' });

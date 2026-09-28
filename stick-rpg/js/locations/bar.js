@@ -383,7 +383,6 @@
       // The second click of a double-click begun on another screen (the fight's OK sits over
       // DRINK BEER / GET INTO A BAR FIGHT) must not buy anything.
       if (e && e.detail > 1 && !g.armed) return;
-      SRPG.sound.play('click');
       o.onClick(g);
       if (SRPG.engine.sceneName === 'location' && SRPG.location.current === 'bar') g.refresh();
     });

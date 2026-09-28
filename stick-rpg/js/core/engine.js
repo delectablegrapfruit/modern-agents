@@ -8,6 +8,7 @@
   var SRPG = window.SRPG;
 
   var current = null;
+  var press = null; // the scene a primary press began on (for clickOnRelease scenes)
   var currentName = null;
   var keys = {};
   var last = 0;
@@ -75,12 +76,17 @@
         engine.mouse.down = true;
         SRPG.sound.unlock();
         if (current && current.onMouseDown) current.onMouseDown(p.x, p.y, e);
-        if (current && current.onClick) current.onClick(p.x, p.y, e);
+        // Scenes with clickOnRelease get onClick when the button comes back up (Flash buttons
+        // act on release); the others on the press.
+        if (current && current.clickOnRelease) press = current;
+        else if (current && current.onClick) current.onClick(p.x, p.y, e);
       });
       window.addEventListener('mouseup', function (e) {
         var p = engine.toStage(e.clientX, e.clientY);
         engine.mouse.down = false;
         if (current && current.onMouseUp) current.onMouseUp(p.x, p.y, e);
+        if (e.button === 0 && press && press === current && current.onClick) current.onClick(p.x, p.y, e);
+        press = null;
       });
       window.addEventListener('mousemove', function (e) {
         var p = engine.toStage(e.clientX, e.clientY);

@@ -1,5 +1,6 @@
 // Title area checks: title -> NEW GAME -> CREATE CHARACTER -> intro (and SKIP) -> city with the
-// chosen stats; the roll / +- rules; the cheat name; instructions paging; CONTINUE with and
+// chosen stats; the roll / +- rules; the cheat name; instructions paging and the shrunken game
+// shot on pages 5 and 6 (boxes and leader lines on 6); the root black clip; CONTINUE with and
 // without a save; the intro's shift and drop frames against the original's extents; YOU DIED
 // (pose timeline, the HP bar sweeping while the label reads 0) -> results (count-up formula,
 // flash, stamp, rank and its one-line stamp, DONE back to a title that fades in, save
@@ -26,7 +27,8 @@ function eq(a, b, msg) { ok(JSON.stringify(a) === JSON.stringify(b), msg + ' (' 
   const { page } = t;
   const ev = (fn, arg) => page.evaluate(fn, arg);
   const scene = () => ev(() => SRPG.engine.sceneName);
-  const tst = () => ev(() => { const s = SRPG.title.st; return { mode: s.mode, page: s.page, gamelength: s.gamelength, pts: s.pts, str: s.str, intl: s.intl, cha: s.cha, fade: s.fade }; });
+  // fade: the root black clip's frame (SRPG.engine.black), shown on the #black layer
+  const tst = () => ev(() => { const s = SRPG.title.st; return { mode: s.mode, page: s.page, gamelength: s.gamelength, pts: s.pts, str: s.str, intl: s.intl, cha: s.cha, fade: SRPG.engine.black, alpha: SRPG.engine.blackAlpha(), layer: document.getElementById('black').style.opacity }; });
   const shot = (name) => t.shot(path.join(OUT, name + '.png'));
   // record sounds
   await ev(() => {
@@ -63,8 +65,12 @@ function eq(a, b, msg) { ok(JSON.stringify(a) === JSON.stringify(b), msg + ' (' 
   eq(await scene(), 'title', 'boot shows the title');
   ok((await ev(() => window.__music.slice(-1)[0])) === 'beginning', 'title plays the Beginning loop');
   eq((await tst()).fade, 1, 'first boot fades in from black');
-  await t.step(12);
-  eq((await tst()).fade, 0, 'fade done after 10 frames');
+  eq([(await tst()).alpha, (await tst()).layer], [1, '1'], 'the black layer covers the title');
+  await t.step(8);
+  ok((await tst()).alpha > 0, 'still fading after 8 frames');
+  await t.step(1);
+  eq([(await tst()).fade, (await tst()).alpha, (await tst()).layer], [10, 0, '0'], 'fade done after 9 frames (the clip stops at frame 10)');
+  await t.step(3);
   const ids = await ev(() => Array.from(document.querySelectorAll('#ui [data-id]')).map((e) => e.getAttribute('data-id')));
   eq(ids, ['start', 'continue', 'instructions'], 'START / CONTINUE / INSTRUCTIONS hotspots');
   await t.step(30);
@@ -91,12 +97,47 @@ function eq(a, b, msg) { ok(JSON.stringify(a) === JSON.stringify(b), msg + ' (' 
   await t.clickUI('instructions');
   eq((await tst()).mode, 'instructions', 'INSTRUCTIONS opens page 1');
   eq((await tst()).page, 1, 'page 1');
+  // stage pixel of the canvas
+  const px = (x, y) => ev(([x, y]) => {
+    const c = document.getElementById('game'), k = c.width / 550;
+    return Array.from(c.getContext('2d').getImageData(Math.floor(x * k), Math.floor(y * k), 1, 1).data.slice(0, 3));
+  }, [x, y]);
+  const near = (a, b, tol) => a.every((v, i) => Math.abs(v - b[i]) <= (tol || 12));
+  // pages 5 and 6: the shrunken shot of the game (shapes 168 / 171), at stage x 259.9-505.5,
+  // y 95.7-275, scale 0.4466 x 0.4483 of the stage: map scrolled to (142, -63), the player at
+  // the store corner, the HUD on top
+  const inShot = (x, y) => [259.9 + x * 245.6 / 550, 95.7 + y * 179.3 / 400];
+  const shotPx = {};
   for (let p = 1; p <= 7; p++) {
     await t.step(2);
     await shot('instructions-' + p);
     eq((await tst()).page, p, 'page ' + p + ' of 7');
+    shotPx[p] = {
+      store: await px(...inShot(440, 300)), road: await px(...inShot(160, 250)), sidewalk: await px(...inShot(230, 290)),
+      head: await px(...inShot(247, 197)), heart: await px(...inShot(24, 16)), bag: await px(...inShot(478, 24)),
+      corner: await px(261, 97), hpBoxLeft: await px(263.15, 102), clockBoxTop: await px(430, 94.15),
+      underline: await px(100, 107.4), underline5: await px(100, 225.1), leader3: await px(298.15, 139.6), leader5: await px(322, 170.3),
+      oldKeys: await px(380, 150),
+    };
     await t.clickUI('next');
   }
+  for (const p of [5, 6]) {
+    const q = shotPx[p];
+    ok(near(q.store, [255, 204, 0], 20) && near(q.road, [102, 102, 102], 20) && near(q.sidewalk, [153, 153, 153], 30),
+      'page ' + p + ': the game shot shows the store, the road and the sidewalk', q);
+    ok(q.head[2] > 150 && q.head[0] < 60, 'page ' + p + ': you stand on the sidewalk by the store', q.head);
+    ok(q.heart[0] > 200 && q.heart[1] < 60, 'page ' + p + ': the HUD heart in the shot', q.heart);
+    ok(q.bag[2] > 100 && q.bag[0] < 100, 'page ' + p + ': the backpack button in the shot', q.bag);
+    ok(q.corner[2] > 200 && q.corner[0] < 120, 'page ' + p + ': the rough edge leaves the panel showing at the corner', q.corner);
+  }
+  ok(near(shotPx[5].oldKeys, shotPx[5].road, 20) || near(shotPx[5].oldKeys, [153, 153, 153], 30), 'page 5: no arrow-key art, only the shot', shotPx[5].oldKeys);
+  const Y = [255, 255, 0], Wh = [255, 255, 255];
+  const q6 = shotPx[6];
+  ok(near(q6.hpBoxLeft, Y, 30) && near(q6.clockBoxTop, Y, 30), 'page 6: yellow boxes round the HUD pieces', q6);
+  ok(near(q6.underline, Wh, 30) && near(q6.underline5, Wh, 30), 'page 6: the labels are underlined in white', q6);
+  ok(near(q6.leader3, Y, 40) && near(q6.leader5, Y, 40), 'page 6: yellow lines lead from the labels to the boxes', q6);
+  ok(!near(shotPx[5].hpBoxLeft, Y, 60) && !near(shotPx[5].underline, Wh, 30), 'page 5: no boxes or underlines', shotPx[5]);
+  ok([1, 2, 3, 4, 7].every((p) => !near(shotPx[p].store, [255, 204, 0], 20)), 'the shot is on pages 5 and 6 only');
   eq((await tst()).mode, 'title', 'NEXT on page 7 returns to the title');
   eq((await tst()).page, 1, 'instructions rewound to page 1');
   await t.clickUI('instructions');
@@ -186,10 +227,10 @@ function eq(a, b, msg) { ok(JSON.stringify(a) === JSON.stringify(b), msg + ' (' 
   eq(await ev(() => SRPG.intro.st.f), 2, 'film starts at frame 2');
   await t.step(1);
   await shot('intro-fade');
-  const f0 = await ev(() => SRPG.intro.st.black);
+  const f0 = await ev(() => SRPG.engine.black);
   ok(f0 >= 11 && f0 <= 30, 'fades in from black (black clip frames 11..30)', f0);
   for (const f of [120, 300, 399, 500, 676, 685, 764]) {
-    await ev((f) => { SRPG.intro.st.f = f - 1; SRPG.intro.st.black = 0; }, f);
+    await ev((f) => { SRPG.intro.st.f = f - 1; SRPG.engine.black = 0; }, f);
     await t.step(1);
     await shot('intro-' + f);
   }
@@ -197,7 +238,7 @@ function eq(a, b, msg) { ok(JSON.stringify(a) === JSON.stringify(b), msg + ' (' 
   // 695: ~13), and the big falling figure's head is at x 236, y 40 + 80 per frame.
   const FXY = [255.35, 188];
   async function inkBox(f, win) {
-    await ev((f) => { SRPG.intro.st.f = f - 1; SRPG.intro.st.black = 0; SRPG.intro.st.blackHold = false; }, f);
+    await ev((f) => { SRPG.intro.st.f = f - 1; SRPG.engine.black = 0; SRPG.intro.st.blackHold = false; }, f);
     await t.step(1);
     return ev((win) => {
       const c = document.getElementById('game');
@@ -224,16 +265,20 @@ function eq(a, b, msg) { ok(JSON.stringify(a) === JSON.stringify(b), msg + ' (' 
     ok(Math.abs(b.hx - 236.3) < 2.5 && Math.abs(b.hy - (40.4 + 80 * (f - 761))) < 2.5, 'drop frame ' + f + ': head at (236, ' + (40.4 + 80 * (f - 761)).toFixed(0) + ')', b);
   }
   // no screen change before frame 850
-  await ev(() => { SRPG.intro.st.f = 700; SRPG.intro.st.black = 0; });
+  await ev(() => { SRPG.intro.st.f = 700; SRPG.engine.black = 0; });
   await sounds();
   await t.step(26);
-  eq(await ev(() => SRPG.intro.st.black), 0, 'no blink at frame 726');
+  eq(await ev(() => SRPG.engine.black), 0, 'no blink at frame 726');
   await t.step(1);
-  eq(await ev(() => SRPG.intro.st.black), 1, 'frame 727: black blink');
-  await t.step(69);
-  eq(await ev(() => [SRPG.intro.st.f, SRPG.intro.st.black, SRPG.intro.st.blackHold]), [796, 1, true], 'frame 796: black stays');
+  eq(await ev(() => [SRPG.engine.black, document.getElementById('black').style.opacity]), [1, '1'], 'frame 727: black blink (the root black clip, over everything)');
+  await t.step(9);
+  eq(await ev(() => [SRPG.engine.black, SRPG.engine.blackAlpha()]), [10, 0], 'the blink clears after 9 frames');
+  await t.step(60);
+  eq(await ev(() => [SRPG.intro.st.f, SRPG.engine.black, SRPG.intro.st.blackHold]), [796, 1, true], 'frame 796: black stays');
+  await t.step(20);
+  eq(await ev(() => [SRPG.engine.black, SRPG.engine.blackAlpha()]), [1, 1], 'still fully black 20 frames later (the clip is stopped on frame 1)');
   ok((await sounds()).includes('carhit'), 'frame 796: car hit sound');
-  await t.step(53);
+  await t.step(33);
   eq(await scene(), 'intro', 'still the intro at frame 849');
   await t.step(1);
   eq(await scene(), 'city', 'frame 850: the city');
@@ -410,8 +455,12 @@ function eq(a, b, msg) { ok(JSON.stringify(a) === JSON.stringify(b), msg + ' (' 
   await shot('results');
   eq(await ev(() => SRPG.results.st.v), { pname: 'HEYZEUS!!!s', jobtitle: "'McSlave'", categ: 'Long Game (100 DAYS)', charm: 2, strength: 10, intelligence: 5, karma: 0, cash: 100, bankcash: 0, bankloan: 0 }, 'results lines');
   eq(await ev(() => SRPG.results.st.rank), 'UTTER FAILURE', 'rank: $100 = UTTER FAILURE');
+  // MUSIC OFF during the game (the STATS switch)
+  await ev(() => { SRPG.game.s.music = 0; SRPG.sound.setMusic(false); window.__music.length = 0; });
   await t.clickUI('done');
   eq(await scene(), 'title', 'DONE: back to the title');
+  eq(await ev(() => [SRPG.sound.musicOn, window.__music.slice(-1)[0]]), [true, 'beginning'],
+    'after a game with MUSIC OFF the title switches music back on and plays its loop (root frame 1: music = 1)');
   eq((await tst()).fade, 1, 'the title fades in from black again (root frame 1 re-creates the black clip)');
   eq((await tst()).mode, 'title', 'title menu');
   eq(await ev(() => localStorage.getItem('srpg.save')), saveBefore, 'the save is untouched by dying / the results');

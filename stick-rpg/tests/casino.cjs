@@ -27,6 +27,13 @@ function eq(a, b, msg) { check(a === b, msg + ' (got ' + JSON.stringify(a) + ', 
     SRPG.rng.random = function (n) { return q.length ? q.shift() : SRPG.rng._real(n); };
   }, vals);
   const hasUI = (id) => ev((id) => !!document.querySelector('#ui [data-id="' + id + '"]'), id);
+  const black = () => ev(() => SRPG.engine.black);
+  // Buttons make no sound of their own: the original loads _click.wav but never starts it.
+  await ev(() => {
+    window.__clicks = 0;
+    const play = SRPG.sound.play;
+    SRPG.sound.play = function (n) { if (n === 'click') window.__clicks++; return play.apply(this, arguments); };
+  });
 
   // ------------------------------------------------------------------------------------------
   // Casino menu
@@ -142,6 +149,7 @@ function eq(a, b, msg) { check(a === b, msg + ' (got ' + JSON.stringify(a) + ', 
   await t.step(10);
   await t.clickUI('leave');
   eq(await scene(), 'location:casino', 'slots LEAVE returns to the casino menu');
+  eq(await black(), 1, 'slots LEAVE: back at root frame 40, whose script replays the black clip');
   await t.step(60);
   eq((await t.state()).cash, 45, 'leaving mid-spin forfeits the bet');
   eq((await t.state()).time, 8, 'slots take no time');
@@ -169,6 +177,7 @@ function eq(a, b, msg) { check(a === b, msg + ' (got ' + JSON.stringify(a) + ', 
   eq((await bj()).bet, 30, 'chips add up');
   await t.clickUI('leave');
   eq(await scene(), 'location:casino', 'blackjack LEAVE returns to the menu');
+  eq(await black(), 1, 'blackjack LEAVE: the casino menu fades in from black');
   eq((await t.state()).cash, 100, 'LEAVE refunds the bet');
   await t.clickUI('blackjack');
 
@@ -475,6 +484,7 @@ function eq(a, b, msg) { check(a === b, msg + ' (got ' + JSON.stringify(a) + ', 
   eq((await t.state()).cash, 75, 'bet placed before leaving');
   await t.clickUI('leave');
   eq(await scene(), 'location:casino', 'roulette LEAVE returns to the menu');
+  eq(await black(), 1, 'roulette LEAVE: the casino menu fades in from black');
   eq((await t.state()).cash, 100, 'LEAVE refunds pending bets');
   eq((await t.state()).time, 8, 'roulette takes no time');
 
@@ -600,6 +610,7 @@ function eq(a, b, msg) { check(a === b, msg + ' (got ' + JSON.stringify(a) + ', 
   eq(await scene(), 'city', 'and out on the street');
 
   // ------------------------------------------------------------------------------------------
+  eq(await ev(() => window.__clicks), 0, 'no button played a click sound');
   const errs = t.errors.filter((e) => !/requestfailed|ERR_FILE_NOT_FOUND/.test(e));
   eq(errs.length, 0, 'no page errors ' + errs.join('\n'));
   console.log(passes + ' passed, ' + failures + ' failed');

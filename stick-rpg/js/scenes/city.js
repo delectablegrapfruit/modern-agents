@@ -268,6 +268,16 @@
     return c;
   }
 
+  // What a click at stage (x, y) would press: 'hud:inventory' / 'hud:stats' or 'npc:<id>'.
+  function clickTarget(x, y) {
+    var s = S();
+    if (!s) return null;
+    var h = SRPG.hud.hit(x, y);
+    if (h && !st.panel) return 'hud:' + h;
+    var who = npcAt(s, x, y);
+    return who ? 'npc:' + who : null;
+  }
+
   // --- scene --------------------------------------------------------------------------------
   var city = {
     cars: cars, // exposed for tests
@@ -338,15 +348,23 @@
     // The HUD buttons are not on root frames 3, 5 and 6 (SRPG.hud.hit is null while knocked down
     // or with a panel up), but the street people are buttons on the map itself, so they can be
     // clicked even then (a panel open at the time goes away with its root frame).
+    // The HUD buttons and street people are Flash buttons: they act on release, and only if the
+    // release is on the same button as the press (dragging off cancels). onClick is the release
+    // (engine clickOnRelease); calling it directly acts as a whole click.
+    clickOnRelease: true,
+    onMouseDown: function (x, y) {
+      st.pressTarget = clickTarget(x, y);
+    },
     onClick: function (x, y) {
       var s = S();
+      var pressed = st.pressTarget;
+      st.pressTarget = undefined;
       if (!s || SRPG.ui.modalOpen || s.over) return;
-      var h = SRPG.hud.hit(x, y);
-      if (h && !st.panel) { city.openPanel(h); return; }
-      var who = npcAt(s, x, y);
-      if (!who) return;
+      var tgt = clickTarget(x, y);
+      if (!tgt || (pressed !== undefined && pressed !== tgt)) return;
+      if (tgt.indexOf('hud:') === 0) { city.openPanel(tgt.slice(4)); return; }
       if (st.panel) city.closePanel();
-      enterLocation(who);
+      enterLocation(tgt.slice(4));
     },
 
     // Root frames 5 / 6. Closing one goes back to root frame 2 (its script, a new walk clip).

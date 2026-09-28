@@ -434,7 +434,12 @@
 
     function common(v, confirm) {
       txt(content, 'STATS', 226.3, 85.5, 16, '#0000cc', { cls: 'ptitle' });
-      txt(content, esc(s.pname), 372.8, 84.7, 16, '#000066', { align: 'center', cls: 'pname' });
+      // the name field (EditText 822): centred in a fixed box, stage x 282.4-463.2, which clips a
+      // long name instead of letting it run under the X (text inset by Flash's 2 px gutter)
+      var pn = txt(content, esc(s.pname), 282.4, 84.7, 16, '#000066', { clip: 180.8, cls: 'pname' });
+      pn.style.textAlign = 'center';
+      pn.style.padding = '0 2px';
+      pn.style.boxSizing = 'border-box';
       txt(content, 'JOB TITLE:', 248.85, 126.85, 12, '#000099');
       txt(content, esc(v.jobtitle), 334.1, 126.41, 12, '#000099', { clip: confirm ? 62.7 : 149.75, cls: 'pjob' });
       txt(content, 'CHARM:', 251.35, 156.65, 12, '#000099');
