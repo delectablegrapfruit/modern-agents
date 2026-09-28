@@ -548,6 +548,133 @@ final class RoninArtTests: XCTestCase {
         }
     }
 
+    func testAFootOnTheGroundHoldsItsPlaceAsTheBodyGoesOverIt() {
+        // Played a frame for each twelfth of the stride travelled, a foot down in two frames running is at the same
+        // spot on the ground in both (the body having gone on a twelfth of the stride between them): no sliding.
+        for kind in Kind.allCases {
+            let cast = Cast.foe(kind)
+            let beat = Figure.stride(cast) / CGFloat(Frame.walkFrames)
+            var planted = 0
+            for k in 0..<Frame.walkFrames {
+                let a = Figure.footing(cast, .walk(k)), b = Figure.footing(cast, .walk((k + 1) % Frame.walkFrames))
+                for (p, q, foot) in [(a.front, b.front, "near"), (a.back, b.back, "far")] where p.y < 0.001 && q.y < 0.001 {
+                    XCTAssertEqual(q.x + beat, p.x, accuracy: 0.002, "\(kind) walk \(k): the \(foot) foot slides")
+                    planted += 1
+                }
+            }
+            // Walking, each foot is down for more than half the stride (both at once as a foot lands); running, less.
+            if kind == .runner { XCTAssertLessThan(planted, Frame.walkFrames) } else { XCTAssertGreaterThanOrEqual(planted, Frame.walkFrames) }
+        }
+    }
+
+    func testAFoeWalksOnBentKneesThatNeverLock() {
+        // Every foe comes on in a crouch: a knee on the ground keeps a real bend through the whole stride (as the
+        // foot lands, as the body passes over it, as it pushes off), and a leg in the air folds further.
+        for kind in Kind.allCases {
+            let cast = Cast.foe(kind)
+            for k in 0..<Frame.walkFrames {
+                let p = Figure.pose(cast, .walk(k)), feet = Figure.footing(cast, .walk(k))
+                for (leg, foot, name) in [(p.front, feet.front, "near"), (p.back, feet.back, "far")] {
+                    let bend = leg.thigh - leg.shin
+                    XCTAssertGreaterThan(bend, Figure.walkingKnee - 0.01, "\(kind) walk \(k): the \(name) knee locks")
+                    if foot.y > 0.03 { XCTAssertGreaterThan(bend, 0.5, "\(kind) walk \(k): the \(name) leg swings through stiff") }
+                }
+                // The body pitched forward over the stride, the head held up out of it.
+                XCTAssertGreaterThan(p.lean, 0.1, "\(kind) walk \(k) walks upright")
+                XCTAssertLessThan(p.lean + p.tilt, p.lean, "\(kind) walk \(k) hangs his head")
+            }
+        }
+    }
+
+    func testTheHeavyTreadSinksIntoEachFootfall() {
+        // The oni and the warlord: slow, long, heavy steps; the hips at their lowest just after a foot comes down (the
+        // knee giving under the weight) and pushed up again over it; the foot lifted high and stamped down.
+        func hips(_ cast: Cast, _ k: Int) -> CGFloat { Figure.skeleton(cast, Figure.pose(cast, .walk(k)))[0].y }
+        let grunt = Cast.foe(.grunt)
+        func cadence(_ kind: Kind) -> Double { kind.speed / Double(Figure.stride(.foe(kind)) * Build.of(.foe(kind)).height) }
+        for kind in [Kind.brute, .warlord] {
+            let cast = Cast.foe(kind)
+            let half = Frame.walkFrames / 2
+            let step = (0..<half).map { hips(cast, $0) }
+            XCTAssertEqual(step.firstIndex(of: step.min()!), 1, "\(kind) sinks after the foot lands")
+            XCTAssertGreaterThan(step.max()! - step.min()!, 0.03, "\(kind) treads lightly")
+            XCTAssertGreaterThan(step.max()! - step.min()!, (0..<half).map { hips(grunt, $0) }.max()! - (0..<half).map { hips(grunt, $0) }.min()!)
+            let lifted = (0..<Frame.walkFrames).map { Figure.footing(cast, .walk($0)).front.y }.max()!
+            XCTAssertGreaterThan(lifted, 0.075, "\(kind) shuffles")
+            XCTAssertLessThan(cadence(kind), cadence(.grunt) * 0.7, "\(kind) hurries")
+        }
+    }
+
+    func testInAClashTheBladesMeet() {
+        // Stood `clashGap` apart, facing each other, the ronin's blade and the warlord's meet at the one point in the
+        // bind, crossed (not lying along each other), and still touch as he is forced off it (his back foot where it
+        // was, so he has not moved); the warlord takes it on his guard's footing.
+        let tall = Build.of(.foe(.warlord)).height, gap = Figure.clashGap()
+        XCTAssertGreaterThan(gap, 0.6)
+        XCTAssertLessThan(gap, 1.1)
+        let guardFeet = Figure.footing(.foe(.warlord), .block)
+        for k in 0..<Frame.clashFrames {
+            guard let mine = Figure.contact(.hero, .clash(k)), let theirs = Figure.contact(.foe(.warlord), .clash(k)) else {
+                XCTFail("clash \(k) has no contact")
+                continue
+            }
+            XCTAssertEqual(mine.y, theirs.y * tall, accuracy: 0.005, "clash \(k): the blades meet at different heights")
+            XCTAssertEqual(mine.x + theirs.x * tall, gap, accuracy: 0.01, "clash \(k): the blades do not meet")
+            // On each blade, between the guard and the point.
+            let hand = Figure.skeleton(.hero, Figure.pose(.hero, .clash(k)))[8], tip = Figure.tip(.hero, .clash(k))!
+            XCTAssertLessThan(hypot(mine.x - hand.x, mine.y - hand.y), hypot(tip.x - hand.x, tip.y - hand.y) + 0.001, "clash \(k)")
+            let feet = Figure.footing(.foe(.warlord), .clash(k))
+            XCTAssertEqual(feet.front.x, guardFeet.front.x, accuracy: 0.002)
+            XCTAssertEqual(feet.back.x, guardFeet.back.x, accuracy: 0.002)
+        }
+        let bind = (Figure.pose(.hero, .clash(0)).blade, .pi * 2 - Figure.pose(.foe(.warlord), .clash(0)).blade)
+        XCTAssertGreaterThan(abs(bind.0 - bind.1), 0.5, "the blades lie along each other rather than cross")
+        XCTAssertNotNil(Figure.contact(.foe(.warlord), .block))
+        XCTAssertNil(Figure.contact(.hero, .idle(0)))
+        // Forced off: both feet down in the bind; then the back one where it was and the front one off the ground.
+        let bound = Figure.footing(.hero, .clash(0)), forced = Figure.footing(.hero, .clash(1))
+        XCTAssertLessThan(max(bound.front.y, bound.back.y), 0.004)
+        XCTAssertEqual(forced.back.x, bound.back.x, accuracy: 0.002)
+        XCTAssertLessThan(forced.back.y, 0.004)
+        XCTAssertGreaterThan(forced.front.y, 0.03)
+        XCTAssertLessThan(forced.front.x, bound.front.x - 0.05)
+        XCTAssertFalse(Figure.pose(.hero, .clash(1)).ghosts.isEmpty, "thrown back, smeared")
+    }
+
+    func testTheRoninBacksOffAFootAtATime() {
+        // Forced off the warlord's blade, then backing off in guard: each foot lifted as it moves, the other planted
+        // where it was; each step takes him `retreatStep` further back, and he ends in his guard's footing.
+        let home = Figure.footing(.hero, .idle(0))
+        var beats: [(Frame, Footwork)] = [(.clash(1), .keep(front: false)), (.retreat(3), .keep(front: false))]
+        for _ in 0..<3 {
+            beats += [(.retreat(0), .keep(front: true)), (.retreat(1), .keep(front: true)), (.retreat(2), .keep(front: false)),
+                      (.retreat(3), .keep(front: false))]
+        }
+        beats.append((.idle(0), .hold))
+        let steps = replay(from: .clash(0), offset: 0, beats)
+        assertPlanted(steps, "backing off")
+        for (a, b) in zip(steps, steps.dropFirst()) {
+            XCTAssertLessThan(b.front.x, a.front.x + 0.002, "the front foot goes forward from \(a.frame) to \(b.frame)")
+            XCTAssertLessThan(b.back.x, a.back.x + 0.002, "the back foot goes forward from \(a.frame) to \(b.frame)")
+        }
+        let r = (0..<Frame.retreatFrames).map { Figure.footing(.hero, .retreat($0)) }
+        XCTAssertGreaterThan(r[0].back.y, 0.04)
+        XCTAssertLessThan(r[0].front.y, 0.004)
+        XCTAssertLessThan(max(r[1].front.y, r[1].back.y), 0.004)
+        XCTAssertGreaterThan(r[2].front.y, 0.04)
+        XCTAssertLessThan(r[2].back.y, 0.004)
+        XCTAssertEqual(r[3].front.x, home.front.x, accuracy: 0.002)
+        XCTAssertEqual(r[3].back.x, home.back.x, accuracy: 0.002)
+        XCTAssertEqual(r[1].back.x, home.back.x - Figure.retreatStep, accuracy: 0.002)
+        // Three steps back from where he stood in guard after the clash.
+        let back = steps.filter { $0.frame == .retreat(3) }.map(\.front.x)
+        for (a, b) in zip(back, back.dropFirst()) { XCTAssertEqual(b, a - Figure.retreatStep, accuracy: 0.002) }
+        // The guard held up.
+        for k in 0..<Frame.retreatFrames {
+            XCTAssertGreaterThan(Figure.pose(.hero, .retreat(k)).blade, Figure.pose(.hero, .idle(0)).blade + 0.15, "retreat \(k)")
+        }
+    }
+
     func testElbowsAndKneesBendOnlyTheWayTheyBend() {
         // In every frame an elbow folds forward, never back past straight, and a knee back (a back leg locked straight
         // under the weight may give a little the other way); measured as a doll measures its joints.
@@ -568,6 +695,23 @@ final class RoninArtTests: XCTestCase {
                 }
             }
         }
+    }
+
+    func testTheFiguresStayDarkShapesOnAnySky() {
+        // Figures are silhouettes that belong in the dusk and the moonlight: the far limbs a touch off black, not grey;
+        // the rim of light faint and cool, not a warm halo; a smear's echoes dark enough to read as the body, not fog.
+        func luma(_ c: RGB) -> CGFloat { 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b }
+        XCTAssertLessThan(luma(Palette.shade), 0.09)
+        XCTAssertGreaterThan(luma(Palette.shade), luma(Palette.silhouette) + 0.03, "the far side no longer reads in depth")
+        let rim = Figure.sketch(.hero, .idle(0)).rim
+        XCTAssertLessThanOrEqual(rim.alpha, 0.35)
+        XCTAssertGreaterThanOrEqual(rim.rgb.b, rim.rgb.r, "a warm rim")
+        for cast in casts where cast != .foe(.archer) {
+            let underlay = Figure.sketch(cast, cast == .hero ? .cut(.kesa, 3) : .strike(0)).underlay
+            XCTAssertGreaterThan(underlay.compactMap { $0.fill?.alpha }.max() ?? 0, 0.45, "\(cast)'s smear is a pale fog")
+        }
+        // The ronin still shows his red.
+        XCTAssertTrue(Figure.sketch(.hero, .idle(0)).body.contains { $0.fill?.rgb == Palette.blood })
     }
 
     func testTheSheetIsSVG() {

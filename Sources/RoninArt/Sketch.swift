@@ -111,8 +111,9 @@ public struct Sketch: Sendable {
     public var underlay: [Shape] = []
     public var body: [Shape] = []
     public var overlay: [Shape] = []
-    /// The rim of light: its colour and how far it spreads, in pixels.
-    public var rim = Paint(RGB(1, 0.92, 0.84), 0.6)
+    /// The rim of light: its colour and how far it spreads, in pixels. Faint and cool, moonlight on an edge, so a
+    /// figure stays a dark silhouette on any sky (a warm, strong rim haloes it pale against the night and the snow).
+    public var rim = Paint(RGB(0.7, 0.72, 0.8), 0.3)
     public var rimRadius: CGFloat = 1.4
 
     public init(width: Int, height: Int) {

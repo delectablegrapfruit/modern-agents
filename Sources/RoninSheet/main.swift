@@ -7,21 +7,24 @@ import RoninCore
 
 // ronin-sheet: draws figures as an SVG contact sheet, for looking at the art without the app.
 //
-//   ronin-sheet <out.svg> [hero|grunt|runner|brute|dancer|archer|warlord|all|cuts|dead|ragdoll] [--scale 1]
+//   ronin-sheet <out.svg> [hero|grunt|runner|brute|dancer|archer|warlord|all|cuts|dead|ragdoll|clash] [--scale 1]
 //
 // A cast (or all of them): every frame, each on a strip of dusk sky with the ground line through its feet, labelled
-// with its name. FRAMES="idle 0,kesa 3,kesa chain 2" draws only the frames named.
+// with its name. FRAMES="idle 0,kesa 3,kesa chain 2" draws only the frames named; CROP=0.5 only the middle half of
+// each canvas (a closer look), COLUMNS=12 that many to a row.
 // cuts: each kind as a blow leaves it and as a cut leaves it: the poses its figure freezes in at a killing blow (and
 // it is cut apart from), its head struck off, the body left without it, and the two halves of each cut through the
 // trunk, drawn apart (`dead` is the same sheet).
 // ragdoll: each kind's dead falling as the game lets them fall (a frame every tenth of a second, then at rest), a row
 // for each way a man is cut down (the shin cut drops him onto his knees, whole), and a row of them at rest.
 // KINDS="grunt,brute" draws only those kinds (cuts too).
+// clash: the ronin and the warlord facing each other through a parry: the bind and the ronin forced off it, stood
+// `Figure.clashGap` apart with the blades' meeting marked, then the ronin backing off in guard a foot at a time.
 // It exits 2 for arguments it cannot use, and 1 if the sheet cannot be written.
 
 func fail(_ message: String) -> Never {
     print(message)
-    print("usage: ronin-sheet <out.svg> [hero|grunt|runner|brute|dancer|archer|warlord|all|cuts|dead|ragdoll] [--scale 1]")
+    print("usage: ronin-sheet <out.svg> [hero|grunt|runner|brute|dancer|archer|warlord|all|cuts|dead|ragdoll|clash] [--scale 1]")
     print("       FRAMES=\"idle 0,kesa 3\" (a cast's frames by name)   KINDS=\"grunt,brute\" (cuts, dead, ragdoll)")
     exit(2)
 }
@@ -326,6 +329,52 @@ if sheet == "cuts" || sheet == "dead" {
     save(body, width: width, height: y)
 }
 
+// MARK: A clash with the warlord
+
+/// The ronin and the warlord facing each other as the game would stage a parry: the bind and the ronin forced off it,
+/// the two `Figure.clashGap` apart (gold marks where `Figure.contact` has the blades meet), then the ronin backing off in
+/// guard a foot at a time, each frame placed as its footwork leaves him (the foot kept planted stays where it was).
+if sheet == "clash" {
+    let R: CGFloat = 150 * scale
+    let tall = Build.of(.foe(.warlord)).height
+    let gap = Figure.clashGap()
+    enum Keep { case hold, front, back }
+    // (the ronin's frame, the foot he keeps where it was, the warlord's frame)
+    let beats: [(Frame, Keep, Frame)] = [(.clash(0), .hold, .clash(0)), (.clash(1), .back, .clash(1)), (.retreat(3), .back, .block),
+                                         (.retreat(0), .front, .block), (.retreat(1), .front, .block), (.retreat(2), .back, .block),
+                                         (.retreat(3), .back, .block), (.retreat(0), .front, .block), (.retreat(1), .front, .block),
+                                         (.retreat(2), .back, .block), (.retreat(3), .back, .block), (.idle(0), .hold, .block)]
+    let cellWidth = R * 2.4, cellHeight = R * 2.05, ground = R * 1.85
+    var body = "", offset: CGFloat = 0
+    var last = beats[0].0
+    for (i, (frame, keep, theirs)) in beats.enumerated() {
+        let before = Figure.footing(.hero, last), after = Figure.footing(.hero, frame)
+        switch keep {
+        case .hold: break
+        case .front: offset += before.front.x - after.front.x
+        case .back: offset += before.back.x - after.back.x
+        }
+        last = frame
+        let x0 = CGFloat(i % 4) * (cellWidth + 6), y0 = CGFloat(i / 4) * (cellHeight + 6)
+        let heroX = x0 + cellWidth * 0.62 - gap * R + offset * R, foeX = x0 + cellWidth * 0.62, G = y0 + ground
+        body += "<svg x=\"\(x0)\" y=\"\(y0)\" width=\"\(cellWidth)\" height=\"\(cellHeight)\"><rect width=\"100%\" height=\"100%\" fill=\"url(#sky)\"/>"
+        body += "<rect x=\"0\" y=\"\(ground)\" width=\"\(cellWidth)\" height=\"\(cellHeight - ground)\" fill=\"#1a0c0c\"/></svg>"
+        let hero = Figure.sketch(.hero, frame), foe = Figure.sketch(.foe(.warlord), theirs)
+        let hs = R / Figure.pixelHeight(.hero), fs = R / Figure.pixelHeight(.foe(.warlord))
+        body += hero.svg(x: heroX - Figure.feet.x * R, y: G - (Figure.canvas.height - Figure.feet.y) * R, scale: hs)
+        body += "<g transform=\"translate(\(foeX) \(G)) scale(-1 1)\">"
+        body += foe.svg(x: -Figure.feet.x * R * tall, y: -(Figure.canvas.height - Figure.feet.y) * R * tall, scale: fs) + "</g>"
+        if let c = Figure.contact(.hero, frame) {
+            body += "<circle cx=\"\(heroX + c.x * R)\" cy=\"\(G - c.y * R)\" r=\"\(R * 0.018)\" fill=\"none\" stroke=\"#ffd060\" stroke-width=\"1.5\"/>"
+        }
+        if let c = Figure.contact(.foe(.warlord), theirs), frame != .idle(0) {
+            body += "<circle cx=\"\(foeX - c.x * R * tall)\" cy=\"\(G - c.y * R * tall)\" r=\"\(R * 0.03)\" fill=\"none\" stroke=\"#ffd060\" stroke-width=\"1\"/>"
+        }
+        body += "<text x=\"\(x0 + 6)\" y=\"\(y0 + 14)\" font-family=\"Helvetica\" font-size=\"12\" fill=\"#fff\">\(name(frame)) / \(name(theirs))</text>"
+    }
+    save(body, width: 4 * (cellWidth + 6), height: CGFloat((beats.count + 3) / 4) * (cellHeight + 6))
+}
+
 // MARK: The frames
 
 let casts: [Cast]
@@ -361,14 +410,20 @@ func name(_ frame: Frame) -> String {
     case .hurt(let k): return "hurt \(k)"
     case .flourish(let k): return "flourish \(k)"
     case .fall(let k): return "fall \(k)"
+    case .clash(let k): return "clash \(k)"
+    case .retreat(let k): return "retreat \(k)"
     }
 }
 
-let columns = scale > 1.2 ? 3 : 6
+// CROP=0.5 draws only the middle half of each canvas's width (a closer look at the figure); COLUMNS=12 sets how many
+// frames go in a row.
+let environment = ProcessInfo.processInfo.environment
+let crop = environment["CROP"].flatMap { Double($0) }.map { CGFloat(max(0.1, min(1, $0))) } ?? 1
+let columns = environment["COLUMNS"].flatMap { Int($0) }.map { max(1, $0) } ?? (scale * crop > 1.2 ? 3 : 6)
 var body = ""
 var y: CGFloat = 0
 var width: CGFloat = 0
-let wanted = ProcessInfo.processInfo.environment["FRAMES"].map {
+let wanted = environment["FRAMES"].map {
     Set($0.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) })
 }
 var drawnAny = false
@@ -381,16 +436,17 @@ for cast in casts {
     var rowHeight: CGFloat = 0
     for (i, frame) in frames.enumerated() {
         let sketch = Figure.sketch(cast, frame)
-        let w = CGFloat(sketch.width) * scale, h = CGFloat(sketch.height) * scale
+        let w = CGFloat(sketch.width) * scale * crop, h = CGFloat(sketch.height) * scale
         if i > 0, i % columns == 0 {
             y += rowHeight + 18
             x = 0
             rowHeight = 0
         }
         let ground = y + h - Figure.feet.y / Figure.canvas.height * h
+        let view = "viewBox=\"\(CGFloat(sketch.width) * (1 - crop) / 2) 0 \(CGFloat(sketch.width) * crop) \(sketch.height)\""
         body += "<rect x=\"\(x)\" y=\"\(y)\" width=\"\(w)\" height=\"\(h)\" fill=\"url(#sky)\"/>"
         body += "<rect x=\"\(x)\" y=\"\(ground)\" width=\"\(w)\" height=\"\(y + h - ground)\" fill=\"#1a0c0c\"/>"
-        body += sketch.svg(x: x, y: y, scale: scale)
+        body += "<svg x=\"\(x)\" y=\"\(y)\" width=\"\(w)\" height=\"\(h)\" \(view)>" + sketch.svg() + "</svg>"
         body += "<text x=\"\(x + 6)\" y=\"\(y + 14)\" font-family=\"Helvetica\" font-size=\"12\" fill=\"#fff\">\(name(frame))</text>"
         if !sketch.fits(margin: 1) {
             body += "<rect x=\"\(x)\" y=\"\(y)\" width=\"\(w)\" height=\"\(h)\" fill=\"none\" stroke=\"red\" stroke-width=\"3\"/>"

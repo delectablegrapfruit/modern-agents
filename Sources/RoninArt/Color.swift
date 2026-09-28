@@ -32,5 +32,7 @@ public enum Palette {
     /// The gourd of medicine, and the heart it gives back.
     public static let jade = RGB(0.35, 0.95, 0.62)
     public static let silhouette = RGB(0.025, 0.02, 0.03)
-    public static let shade = RGB(0.13, 0.11, 0.13)
+    /// The far-side limbs and gear, a little off the silhouette so the figure reads in depth, and cool, so that it stays
+    /// a dark shape in the dusk and the moonlight rather than turning grey.
+    public static let shade = RGB(0.075, 0.068, 0.085)
 }
