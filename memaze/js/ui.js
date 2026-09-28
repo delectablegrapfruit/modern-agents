@@ -166,7 +166,8 @@
     // The item slot and the running effects, redrawn only when what they show changes.
     updatePower(c) {
       const G = Game(), fx = G.fx, hud = this.hud;
-      const on = G.boxesOn(), rolling = G.roll ? ROLL_ORDER[Math.floor(G.roll.t / 0.07) % ROLL_ORDER.length] : null;
+      // The spin cycles through the items, then settles on the one you really get for its last moments.
+      const on = G.boxesOn(), rolling = G.roll ? (G.roll.t > G.ROLL - 0.3 ? G.roll.id : ROLL_ORDER[Math.floor(G.roll.t / 0.07) % ROLL_ORDER.length]) : null;
       const ik = on ? (rolling ? 'r:' + rolling : G.item || '') : 'off';
       if (c.item !== ik) {
         c.item = ik;

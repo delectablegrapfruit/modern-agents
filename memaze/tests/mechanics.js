@@ -177,6 +177,9 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     G.giveItem('shrink'); G.giveItem('heart');
     G.run.cleared++; G.nextGauntlet(); // what a clear does once the win media is over
     check('Gauntlet: the item in your slot and your Extra hit shields come along to the next maze', G.item === 'shrink' && G.bonus === 1 && G.run.cleared === 1);
+    G.roll = { t: 0.2, id: 'carpet' }; // still spinning as the maze is cleared
+    G.win();
+    check('Gauntlet: a spin still going when you clear lands at once, and that item comes along', G.item === 'carpet' && !G.roll);
     G.quit();
     G.startGauntlet({ diff: 'easy' });
     check('...but a new run starts empty-handed', !G.item && !G.bonus);

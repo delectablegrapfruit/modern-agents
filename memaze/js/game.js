@@ -214,7 +214,7 @@
     t: 0, flow: 0, playT: 0, clock: 0, elapsed: 0, restarts: 0, gemsTaken: 0, stateT: 0, lastTick: -1, attract: 0,
     checkpoints: [], cpIdx: -1, boxes: [],
     hp: HEARTS, bonus: 0, hurtT: REGEN, guardT: 0, stuck: false, clearT: 0, touched: false, runT: 0, scale: 1, item: null, roll: null, fx: {}, lastSafe: null,
-    FX, Player, Backdrop, GoalMedia, ITEMS, HEARTS, MAX_BONUS, REGEN, ICE_GRIP,
+    FX, Player, Backdrop, GoalMedia, ITEMS, ROLL, HEARTS, MAX_BONUS, REGEN, ICE_GRIP,
 
     init() {
       this.renderer = new MZ.Renderer(MZ.$('#maze'));
@@ -349,8 +349,7 @@
     nextGauntlet() {
       const r = this.run, p = MZ.Levels.gauntletParams(r, r.cleared);
       // The item in your slot (or the one spinning in) and your Extra hit shields come along.
-      const keep = this.item || (this.roll && this.roll.id !== 'heart' ? this.roll.id : null);
-      const rings = Math.min(MAX_BONUS, this.bonus + (this.roll && this.roll.id === 'heart' ? 1 : 0));
+      const keep = this.item, rings = this.bonus; // (a spin still going landed when the maze was cleared)
       this.loadMaze(p, { label: 'Gauntlet · ' + (p.boss ? 'Boss · ' : '') + 'Depth ' + (r.cleared + 1), depth: r.cleared + 1 });
       if (keep && ITEMS[keep]) this.item = keep;
       this.bonus = rings;
@@ -1198,6 +1197,7 @@
 
     async win() {
       const flow = ++this.flow;
+      if (this.roll) this.endRoll(); // a spin still going lands now, so the slot shows what you really got
       this.setState('fx');
       MZ.Audio.play('win');
       const st = MZ.Save.progress.stats;
