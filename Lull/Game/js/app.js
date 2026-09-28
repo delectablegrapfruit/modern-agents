@@ -306,7 +306,7 @@
 
     onResize() {
       for (const k of ['play', 'classic', 'puzzle']) { const v = this.modes[k] && this.modes[k].view; if (v) { v.resize(); v.dirty = true; } }
-      if (this.modes.factory) this.modes.factory.view.resize();
+      if (this.modes.factory) this.modes.factory.relayout();
       clearTimeout(this.dragTimer);
       this.dragTimer = setTimeout(() => this.postDragRegions(), 120);
     },

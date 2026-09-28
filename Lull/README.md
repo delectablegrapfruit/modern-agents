@@ -142,14 +142,30 @@ play. History, and Stats ▸ Puzzles, end with one quiet line — "37 of 12,884,
 Counter-clockwise puzzles on); each difficulty button's tooltip gives its own share of 4,294,967,296.
 
 **Factory** — one slow line. Up to four presses (tetromino, pentomino, hexomino, heptomino) each form one piece every
-ten minutes, a mino at a time; a belt carries it to a straight lift that sets each mino into a bin four minos wide, so every full row is one ⦵ line
+ten minutes, a mino at a time; a belt carries it to a lift that sets each mino into a bin four minos wide, so every full row is one ⦵ line
 — a quarter line per mino, never more: 6 lines an hour with one press, 13.5, 22.5, 33 with four (every factory figure is a decimal, to the quarter line). The bin holds 12 rows
 (24, 48, 72, 108 when built taller); when the next piece will not fit, the line waits — nothing is lost — until you
 Collect (the button, a click on the bin, or C), which banks the full rows and leaves the loose minos. It runs while
-Lull is closed, replayed on return with the same step as on screen, so time away is capped only by the bin. Presses
-(150, 450, 1,200 ⦵) and bins (60, 200, 500, 1,000 ⦵) are all there is to buy. Click a press to pin its mold to one
-shape (free; pay never changes) and fill in Stats ▸ Factory's shape sets. Drawn like the board, in your skin and
-palette, on a plain well (the equipped backdrop stays on the play boards); hover anything for a line about it.
+Lull is closed, replayed on return with the same step as on screen, so time away is capped only by the bin (on the
+Factory tab the new minos just fade in; elsewhere a toast gives the lines made). Presses
+(150, 450, 1,200 ⦵) and bins (60, 200, 500, 1,000 ⦵) are all there is to buy. The tab reads like Play: the floor on the
+board's own plate, a bar under it (Lines / hour, Lines in bin, Full in, and Collect at the right), and the two things
+to build below, from the top of the window like the other tabs. The plate's cell size follows its width, and the scene
+grows by whole rows into the height the bar and a full list leave (up to 1.8 times as tall as wide) — the window's height
+alone, so a purchase never moves it, and a list row that goes leaves its space at the bottom: a row of ground under the
+belt, then a hall over the gantry — a roof beam from the post to the lift's mast, tall windows in the back wall, a lamp
+hung over each bay (lit, with a soft pool of light, once its press is built; a dashed outline until then). The bin's
+tower rises into it: each size is drawn taller than the last (as many sections open as the height allows, the rest
+closed to a bar a row or two apart), the biggest just under the roof, and the sizes still to build stand over the bin
+as a dashed outline, a band each. The
+floor is a small scene in the board's materials, your skin and palette, with no text on it:
+a gantry of presses, each in a bay sized to its pieces (a mold window one cell wider than its longest shape, so a
+piece drops straight down onto a belt of 28 cells); a ram stamps each mino into the window; at the belt's end a
+cradle lift carries the minos up one by one (the column nearest it first, so none ever passes another), over a chute and into the bin, which is drawn in 12-line sections — the
+one filling open, cell by cell (with the full ones just under it, or the empty ones above, as the height allows), the
+other full ones as thin slivers in their top row's colours, the other empty ones as outlines. Collected rows lift out as one and clear away, the loose minos riding up on them and then dropping to the bottom;
+the lines fly to the wallet, which counts them (and any achievement the collect earned) as they land. Click a press to pin its mold to one
+shape (free; pay never changes) and fill in Stats ▸ Factory's shape sets.
 
 **Power-ups** (items, in the code) — single-use, in five types on the bar under the Relaxed board. A type's button
 (with how many you hold) opens its tray; click one to use it (Esc closes the tray). There are no number keys for them.

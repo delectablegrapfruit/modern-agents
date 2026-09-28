@@ -581,49 +581,121 @@ kbd {
 
 /* ==== factory ======================================================================================================== */
 
-#view-factory { padding: 10px 12px 0; gap: 8px; }
-.fac-top { flex: none; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
-.fac-top .kpi { min-width: 0; padding: 7px 11px 7px; }
-.fac-top .kpi .v { font-size: var(--fs-lg); line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.fac-top .kpi .l { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.kpi.warn { border-color: color-mix(in srgb, var(--warn) 50%, transparent); background: color-mix(in srgb, var(--warn) 9%, var(--panel)); }
-.kpi.warn .v { color: var(--warn); }
-.fac-floor { flex: none; position: relative; height: clamp(160px, 40vh, 304px); }
-.fac-floor canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-.fac-collect { flex: none; display: flex; }
-.fac-collect .btn { flex: 1; min-width: 0; height: var(--h-lg); font-size: var(--fs-md); border-radius: var(--r-md); overflow: hidden; text-overflow: ellipsis; }
-.fac-collect .btn .sub { font-weight: 500; opacity: 0.7; }
-.fac-collect .btn:disabled { background: var(--panel); border-color: var(--line); color: var(--muted); opacity: 1; box-shadow: none; }
-.fac-list { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; padding-bottom: 12px; }
-.fac-h { margin: 8px 2px 0; }
-.fac-ico { flex: none; width: 36px; height: 36px; border-radius: 9px; background: var(--well); box-shadow: inset 0 0 0 1px var(--line); display: grid; place-items: center; overflow: hidden; }
-.fac-ico canvas { width: 34px; height: 34px; }
-#fac-list .row-card { flex: none; }
-#fac-list .row-card .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#fac-list .row-card > .btn { flex: none; }
-.fac-molds { gap: 8px; padding: 7px 10px; }
-.fac-molds .lbl { flex: none; color: var(--muted); font-size: var(--fs-xs); font-weight: 600; }
-.fac-molds .chips { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
-.mold-pick { display: flex; flex-direction: column; gap: 8px; }
-.mold-any { text-align: left; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 7px 10px; color: var(--muted); font-size: var(--fs-sm); }
-.mold-any b { color: var(--fg); }
-.mold-any:hover, .mold:hover { background: var(--panel-2); }
-.mold-any.on, .mold.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-.catalog.molds { grid-template-columns: repeat(10, 30px); max-height: 330px; justify-content: start; }
-.catalog.sm { grid-template-columns: repeat(auto-fill, 30px); gap: 3px; margin-bottom: 4px; }
-.catalog.sm canvas { width: 30px; height: 30px; border-radius: 6px; }
-.mold { padding: 0; border: 1px solid var(--line); background: var(--panel); border-radius: 7px; width: 30px; height: 30px; display: grid; place-items: center; }
-.catalog .mold canvas { background: transparent; border-radius: 0; }
-.mold-cap { margin: 0 !important; font: 600 var(--fs-xs) var(--mono-font); }
-@media (max-width: 420px) {
-  .fac-top .kpi { padding: 6px 8px; }
-  .fac-top .kpi .v { font-size: 14px; }
-  .fac-top .kpi .l { font-size: var(--fs-2xs); }
-  #fac-list .row-card { gap: 8px; padding: 7px 8px; }
+/* The Factory reads like Play: the scene on the board's plate from the top of the view, a bar of figures under it with
+   the one action at its right, then the two things to build. One column, at most 720 wide, centred; the plate's cell
+   size follows its width, and the scene grows by whole rows into the height the bar and a full list leave
+   (js/factoryview.js, modes.js plateRoom), so what little is left sits at the bottom. Short windows scroll. */
+#view-factory { padding: 10px 12px 12px; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; }
+#view-factory::-webkit-scrollbar { display: none; }
+.fac-col { width: 100%; max-width: 720px; margin-inline: auto; flex: 1 0 auto; display: flex; flex-direction: column; container-type: inline-size; }
+.fac-stage { flex: none; display: flex; flex-direction: column; gap: 8px; position: relative; isolation: isolate; }
+.fac-list { flex: none; margin-top: 14px; }
+
+/* The plate: Play's (Board.drawPlate), in CSS. A soft pool of the accent under it, a line of light along its top. */
+.fac-plate {
+  flex: none; position: relative; height: 254px; border-radius: 16px; border: 1px solid var(--plate-line);
+  background: linear-gradient(color-mix(in srgb, var(--accent) 7%, transparent), transparent 50%), linear-gradient(var(--plate), var(--plate-2)), var(--plate-base);
+  box-shadow: 0 12px 30px -6px var(--plate-shadow);
 }
-@media (max-width: 340px) { .fac-top .kpi .v { font-size: 13px; } }
-/* Narrow: the Collect button keeps its main label; the detail after it would be cut on both sides. */
-@media (max-width: 360px) { .fac-collect .btn .sub { display: none; } }
+:root[data-theme="light"] .fac-plate { background: linear-gradient(color-mix(in srgb, var(--accent) 5%, transparent), transparent 50%), linear-gradient(var(--plate), var(--plate-2)), var(--plate-base); }
+.fac-plate::before {
+  content: ""; position: absolute; inset: -40px -6px; z-index: -1; pointer-events: none;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--accent) 11%, transparent), transparent);
+}
+:root[data-theme="light"] .fac-plate::before { background: radial-gradient(closest-side, color-mix(in srgb, var(--accent) 10%, transparent), transparent); }
+.fac-plate::after { content: ""; position: absolute; top: 1px; left: 16px; right: 16px; height: 1px; pointer-events: none; background: linear-gradient(90deg, transparent, var(--plate-hi), transparent); }
+.fac-clip { position: absolute; inset: 0; border-radius: 15px; overflow: hidden; }
+.fac-clip canvas { display: block; width: 100%; height: 100%; }
+/* Hotspots over the scene: real buttons, so the app's tooltips, focus ring and keys all work on them. */
+.fac-hots { position: absolute; inset: 0; pointer-events: none; }
+.fac-hot { position: absolute; pointer-events: auto; padding: 0; border: 0; background: transparent; border-radius: 8px; cursor: pointer; }
+.fac-hot[aria-disabled="true"] { cursor: default; }
+.fac-hot:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+/* The bar: Play's status bar figures (copied from .statusbar .stat), Collect at the right. */
+.fac-bar { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; height: 48px; padding-right: 2px; }
+.fac-stats { display: flex; align-items: center; min-width: 0; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fac-stat { display: flex; flex-direction: column; gap: 3px; padding: 0 14px; line-height: 1; position: relative; min-width: 0; }
+.fac-stat:first-child { padding-left: 6px; }
+.fac-stat + .fac-stat::before { content: ""; position: absolute; left: 0; top: 3px; bottom: 3px; width: 1px; background: var(--line); }
+.fac-stat i { font-style: normal; font-size: 9.5px; font-weight: 650; letter-spacing: 0.11em; text-transform: uppercase; color: var(--faint); }
+.fac-stat b { font-size: 15px; font-weight: 640; color: var(--fg); letter-spacing: -0.01em; }
+.fac-stat b .of { font-size: 13px; font-weight: 560; color: var(--muted); }
+.fac-stat.warn b { color: var(--warn); }
+@media (max-width: 460px) { .fac-stat { padding: 0 10px; } }
+@media (max-width: 400px) { .fac-stat b { font-size: 14px; } .fac-stat b .of { font-size: 12px; } }
+@media (max-width: 330px) { .fac-stat { padding: 0 7px; } }
+.fac-collect { flex: none; display: flex; }
+.fac-collect .btn { height: 34px; min-width: 136px; padding: 0 16px; border-radius: var(--r-md); font-size: var(--fs-md); }
+.fac-collect .btn:disabled { background: var(--panel); border-color: var(--line-2); color: var(--muted); opacity: 1; box-shadow: none; }
+.fac-collect .btn.full { animation: fac-breathe 2.8s ease-in-out infinite; }
+@keyframes fac-breathe {
+  0%, 100% { box-shadow: var(--sh-1), inset 0 1px 0 rgba(255,255,255,0.3), 0 0 0 1px var(--accent-line), 0 0 0 0 transparent; }
+  50% { box-shadow: var(--sh-1), inset 0 1px 0 rgba(255,255,255,0.3), 0 0 0 1px var(--accent-line), 0 0 14px color-mix(in srgb, var(--accent) 45%, transparent); }
+}
+.fac-still .fac-collect .btn.full { animation: none; box-shadow: var(--sh-1), inset 0 1px 0 rgba(255,255,255,0.3), 0 0 0 1px var(--accent-line), 0 0 14px color-mix(in srgb, var(--accent) 30%, transparent); }
+@media (prefers-reduced-motion: reduce) { .fac-collect .btn.full { animation: none; } }
+/* A narrow column: the figures in three equal columns, Collect full width under them. */
+@container (max-width: 439px) {
+  .fac-bar { flex-direction: column; align-items: stretch; height: auto; gap: 8px; padding: 0; }
+  .fac-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); height: 44px; }
+  .fac-stat { padding: 0 10px; }
+  .fac-stat:first-child { padding-left: 6px; }
+  .fac-stat i, .fac-stat b { overflow: hidden; text-overflow: ellipsis; }
+  .fac-collect .btn { flex: 1; height: 38px; }
+}
+/* Narrower still (a browser window near 300 px): the figures' short names, so none is cut off. */
+@container (max-width: 330px) {
+  .fac-stat:first-child { padding-left: 4px; }
+  .fac-stat i[data-short] { font-size: 0; letter-spacing: 0; }
+  .fac-stat i[data-short]::before { content: attr(data-short); font-size: 9.5px; letter-spacing: 0.11em; }
+}
+/* A press's tooltip: its mold and, on a line of its own, the next mino's countdown (figures that hold still). */
+#app > .tip .tip-body { white-space: pre-line; font-variant-numeric: tabular-nums; }
+
+/* Collect's lines on their way to the wallet. */
+.fac-fly {
+  position: absolute; left: 0; top: 0; z-index: 40; pointer-events: none; white-space: nowrap;
+  font: 650 16px/1 var(--font); color: var(--gem); font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 12px color-mix(in srgb, var(--gem) 45%, transparent), 0 1px 2px rgba(0,0,0,0.25);
+  will-change: transform, opacity;
+}
+:root[data-theme="light"] .fac-fly { text-shadow: 0 0 10px color-mix(in srgb, var(--gem) 25%, transparent); }
+
+/* The things to build: one card, a row each (the row card's material), no header. */
+.fac-group { background: linear-gradient(to bottom, var(--panel-2), var(--panel)); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 0 12px; box-shadow: var(--hi); }
+.fac-up { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 10px; align-items: center; height: 48px; }
+.fac-up + .fac-up { border-top: 1px solid var(--line); }
+.fac-ico { width: 28px; height: 28px; border-radius: 8px; background: var(--well); box-shadow: inset 0 0 0 1px var(--line); display: grid; place-items: center; color: var(--muted); }
+.fac-ico svg { width: 16px; height: 16px; }
+.fac-up .txt { min-width: 0; }
+.fac-up .t { font-size: 13px; font-weight: 650; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fac-up .d { font-size: 11px; line-height: 1.3; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.fac-up .btn { font-variant-numeric: tabular-nums; }
+.fac-up .btn.go { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent-ink); }
+.fac-up .btn.go:hover { background: color-mix(in srgb, var(--accent) 24%, transparent); border-color: var(--accent); }
+.fac-up .btn[aria-disabled="true"] { background: var(--panel); border-color: var(--line-2); color: var(--muted); box-shadow: none; cursor: default; }
+.fac-up .btn.flash { animation: fac-flash 0.7s var(--ease-out); }
+@keyframes fac-flash { 25% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 40%, transparent); border-color: var(--warn); } }
+@media (max-width: 440px) { #view-factory { padding: 10px 8px 10px; } }
+
+/* The mold picker: Any, then every shape of the press's size in a grid that scrolls a whole row at a time. */
+.mold-pick { display: flex; flex-direction: column; gap: 8px; }
+.mold-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.mold-top .chip { font-family: var(--font); font-size: var(--fs-sm); height: 26px; padding: 0 12px; }
+.mold-count { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.catalog.molds { grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 4px; overflow-y: auto; overflow-x: hidden; scroll-snap-type: y mandatory; scroll-padding: 3px; padding: 3px; margin: -3px; scrollbar-width: thin; }
+.catalog.molds.n7 { grid-template-columns: repeat(auto-fill, minmax(48px, 1fr)); }
+.mold { aspect-ratio: 1; min-width: 0; padding: 0; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; display: grid; place-items: center; scroll-snap-align: start; transition: background-color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease); }
+.mold:hover { background: var(--panel-2); border-color: var(--line-2); }
+.mold.on, .mold.on:hover { border-color: transparent; background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.mold:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.catalog .mold canvas { background: transparent; border-radius: 0; display: block; }
+.mold-cap { height: 16px; font-size: 12px; line-height: 16px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Stats: every shape of a size, pressed ones first, square tiles edge to edge. */
+.catalog.sm { grid-template-columns: repeat(auto-fill, minmax(30px, 1fr)); gap: 3px; margin-bottom: 4px; }
+.catalog.sm .fac-shape { aspect-ratio: 1; display: grid; place-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; min-width: 0; overflow: hidden; }
+.catalog.sm .fac-shape canvas { display: block; background: transparent; border-radius: 0; }
 .row-card {
   display: flex; align-items: center; gap: 11px;
   background: linear-gradient(to bottom, var(--panel-2), var(--panel)); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 10px 12px; box-shadow: var(--hi);

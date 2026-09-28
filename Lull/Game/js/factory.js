@@ -13,8 +13,12 @@
   const PRESS_COST = [0, 150, 450, 1200];  // press 1 comes built
   const BIN_ROWS = [12, 24, 48, 72, 108];
   const BIN_COST = [60, 200, 500, 1000];   // levels 1–4
-  const BELT = { len: 35, speed: 0.5, gap: 1 };
-  const BAY = 8.5;                         // belt cells per press bay
+  const BELT = { len: 28, speed: 0.5, gap: 1 };
+  // Each press has a bay sized to its pieces (a mold one cell wider than its longest shape): where the bays start on
+  // the belt, and how wide each is. A piece drops straight down from its mold, whole cells in from the bay's edge.
+  const BAY_X = [0, 5.5, 12, 19.5];
+  const BAYS = [5.5, 6.5, 7.5, 8.5];
+  const dropX = (k, w) => BAY_X[k] + 0.25 + Math.floor((MOLDS[k] + 1 - w) / 2);
   const SUB = 0.25;                        // the model's sub-step, in seconds
   const START_P = 0.75;                    // a new factory's first piece is nearly formed
   const PAY = 0.25;                        // lines per mino (display only: the bin pays whole rows)
@@ -135,7 +139,7 @@
         if (out) for (let i = before; i < after; i++) out.push({ kind: 'mino', k });
       }
       if (m.p >= 1 - EPS) {
-        const c = shapes(n)[m.s], x0 = k * BAY + (BAY - c.w) / 2;
+        const c = shapes(n)[m.s], x0 = dropX(k, c.w);
         const clear = !belt.some((it) => it.x < x0 + c.w + 1 - EPS && it.x + widthOf(it) > x0 - 1 + EPS);
         if (clear) {
           const item = { n, s: m.s, c: m.c, x: x0, u: m.pin < 0 ? 1 : 0 };
@@ -143,7 +147,7 @@
           while (i < belt.length && belt[i].x > x0) i++;
           belt.splice(i, 0, item);
           moved = true;
-          if (out) out.push({ kind: 'drop', k, item });
+          if (out) out.push({ kind: 'drop', k, item, x: x0 });
           startPiece(f, k, m);
         } else if (!m.held) {
           m.held = true;
@@ -323,7 +327,7 @@
   }
 
   L.Factory = {
-    VERSION, CYCLE, MOLDS, PRESS_COST, BIN_ROWS, BIN_COST, BELT, BAY, SUB, START_P, PAY, NAMES, HOLE,
+    VERSION, CYCLE, MOLDS, PRESS_COST, BIN_ROWS, BIN_COST, BELT, BAY_X, BAYS, dropX, SUB, START_P, PAY, NAMES, HOLE,
     create, repair, shapes, flat, hasHole, capacity, perHour, timeToFull, isFull, status, collect, upgrade, nextUpgrade,
     setPin, step, catchUp, eta, shapeName, seenCount, quarters, widthOf,
   };

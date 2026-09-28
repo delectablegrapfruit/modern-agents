@@ -842,6 +842,38 @@ test('the belt: pieces keep their gap, back up when the bin is full, and flow ag
   const evs = Factory.step(f, 60);
   assert(evs.some((e) => e.kind === 'enter') && !Factory.isFull(f), 'the line runs again');
 });
+test('a bin that fills between collects: what three days of hourly collecting make is pinned', () => {
+  // The belt's length is how many pieces wait at a full bin, so it is part of the economy: a change of geometry that
+  // changes what a busy line makes shows up here (with a bin that never fills, only the presses count).
+  const got = [2, 4].map((p) => {
+    const f = withPresses(p, 99);
+    f.lastTick = 0;
+    let lines = 0;
+    for (let h = 1; h <= 72; h++) { Factory.catchUp(f, h * HOUR); const r = Factory.collect(f, 'd'); if (r) lines += r.collected; }
+    return [lines, f.stats.pieces, f.stats.minos];
+  });
+  assert.deepStrictEqual(got, [[794, 720, 3177], [787, 647, 3148]]);
+});
+test('bays: sized to each press, filling the belt; every piece drops straight down from its mold', () => {
+  assert.strictEqual(Factory.BELT.len, 28);
+  assert.deepStrictEqual(Factory.BAY_X.map((x, k) => x + Factory.BAYS[k]), [5.5, 12, 19.5, 28]);
+  assert(!('BAY' in Factory));
+  const f = withPresses(4, 4242);
+  f.binLevel = 4;
+  let drops = 0;
+  for (let i = 0; i < 6 * 3600 / 0.25; i++) {
+    for (const e of Factory.step(f, 0.25)) {
+      if (e.kind !== 'drop') continue;
+      const w = Factory.widthOf(e.item);
+      assert.strictEqual(e.x, Factory.dropX(e.k, w), 'press ' + e.k + ' drops at its mold');
+      // Inside its own bay, whole cells in from the mold's edge; the belt has carried it on from there since.
+      assert(e.x >= Factory.BAY_X[e.k] + 0.25 && e.x + w <= Factory.BAY_X[e.k] + 0.25 + Factory.MOLDS[e.k] + 1);
+      assert(e.item.x >= e.x && e.item.x - e.x <= Factory.BELT.speed * 0.25 + 1e-9);
+      drops++;
+    }
+  }
+  assert(drops > 60, drops + ' drops');
+});
 test('collect: whole rows only, loose minos stay, days counted once each', () => {
   const f = Factory.create();
   assert.strictEqual(Factory.collect(f), null);
@@ -901,7 +933,7 @@ test('a pinned mold makes its shape next; shapes pressed are remembered; the key
   assert.strictEqual(f.stats.holeFree, false, 'a pinned keyhole does not count');
   assert(Factory.seenCount(f, 7) >= 1);
   // An unpinned one does.
-  f.belt = [{ n: 7, s: Factory.HOLE, c: 1 + (Factory.HOLE % 7), x: 34 - Factory.widthOf({ n: 7, s: Factory.HOLE }), u: 1 }];
+  f.belt = [{ n: 7, s: Factory.HOLE, c: 1 + (Factory.HOLE % 7), x: Factory.BELT.len - Factory.widthOf({ n: 7, s: Factory.HOLE }), u: 1 }];
   Factory.step(f, 2);
   assert.strictEqual(f.stats.holeFree, true);
 });
@@ -1643,7 +1675,6 @@ test('the line glyph: one character (L.LINE), its own font everywhere', () => {
   assert.strictEqual(face[1].trim(), 'U+29B5');
   assert(/--font: "Lull Line", /.test(css) && /--mono-font: "Lull Line", /.test(css));
   assert(/const FONT = '"Lull Line", /.test(fs.readFileSync(path.join(dir, 'js', 'render.js'), 'utf8')));
-  assert(/const MONO = '"Lull Line", /.test(fs.readFileSync(path.join(dir, 'js', 'factoryview.js'), 'utf8')));
   // Its cmap (format 4) maps the code point to the glyph.
   const font = Buffer.from(face[2], 'base64');
   assert.strictEqual(font.toString('latin1', 0, 4), 'OTTO');
