@@ -93,7 +93,7 @@ for (const lay of MZ.Layouts) {
     assert.ok(d <= (q.item === 'carpet' ? CARPET_MAX : GAP_MAX), tag + 'a gap too long for its item (' + Math.round(d) + ')');
     assert.ok(m.gboxes.some((gb) => gb.node === q.box && gb.item === q.item), tag + 'a gap without its item box on the pinned node');
   }
-  assert.strictEqual(m.squeezes.length, (lay.squeezes || []).length, tag + 'shrink gates placed ' + m.squeezes.length + ' of ' + (lay.squeezes || []).length);
+  assert.strictEqual(m.crawls.length, (lay.squeezes || []).length, tag + 'Shrink ways placed ' + m.crawls.length + ' of ' + (lay.squeezes || []).length);
   for (const q of lay.squeezes || []) {
     assert.ok(m.squeezes.some((x) => x.edge === eid(q)), tag + 'a shrink gate not where it was pinned');
     assert.ok(m.gboxes.some((gb) => gb.node === q.box && gb.item === 'shrink'), tag + 'a shrink gate without its Shrink box on the pinned node');
@@ -113,9 +113,9 @@ for (const lay of MZ.Layouts) {
     assert.ok(!beyond.length, tag + beyond.length + ' places only reachable through GOAL');
   }
   // No squeeze you can't avoid: the widest way to GOAL and to every key, switch and item box is at least hw 30 (gaps
-  // count as crossed, since their item is there).
+  // and Shrink ways count as crossed, since their item is there).
   const adj = Array.from({ length: n }, () => []);
-  for (const e of m.edges) { adj[e.a].push(e); adj[e.b].push(e); }
+  for (const e of m.edges) { const x = e.crawl ? Object.assign({}, e, { hw: 999 }) : e; adj[e.a].push(x); adj[e.b].push(x); }
   for (const q of m.gaps) { const e = { a: q.from, b: q.to, hw: 999, gap: q }; adj[q.from].push(e); adj[q.to].push(e); }
   const widest = (from, to) => {
     let lo = 0, hi = 1000;
@@ -172,8 +172,9 @@ for (const lay of MZ.Layouts) {
   for (const pl of m.plates) for (const o of m.gems.concat(m.keys)) assert.ok(Math.hypot(pl.x - o.x, pl.y - o.y) >= 60, tag + 'a switch on top of a gem or key');
   for (const gm of m.gems) assert.ok(all.query(gm.x, gm.y, 0).depth > 0, tag + 'a gem off the floor');
   assert.strictEqual(JSON.stringify(m.gems), JSON.stringify(lay.gems.map(([x, y]) => ({ x, y }))), tag + 'gems moved (one sits where an item went)');
-  // Bars (doors, gates, shrink gates) across straight floor: 45 u of it either side, along the way through.
-  for (const d of m.doors.concat(m.gates, m.squeezes)) for (const s of [-45, 45]) assert.ok(all.query(d.x + d.nx * s, d.y + d.ny * s, 0).depth > 18, tag + 'a door, gate or shrink gate without straight floor either side');
+  // Bars (doors, gates) across straight floor: 45 u of it either side, along the way through. (A Shrink way's stops are
+  // inside its narrow corridor, and never seen.)
+  for (const d of m.doors.concat(m.gates)) for (const s of [-45, 45]) assert.ok(all.query(d.x + d.nx * s, d.y + d.ny * s, 0).depth > 18, tag + 'a door or gate without straight floor either side');
   // Gaps are real: the middle of the missing corridor is void, and the far end has floor straight on.
   for (const q of m.gaps) {
     assert.ok(all.query((q.a.x + q.b.x) / 2, (q.a.y + q.b.y) / 2, 0).depth < -20, tag + 'a gap with floor in its middle (walk across it)');

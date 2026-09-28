@@ -14,6 +14,20 @@
   const SOLID = 128;      // alpha at or above this is part of the hitbox
   const MAX_FRAMES = 240, FRAME_MAX = 320;
 
+  // ---------- shapes ----------
+  // An uploaded picture is cut to a shape (a circle unless you choose otherwise), filling it; 'original' keeps it whole
+  // and uncut, as the built-in pictures always are. The cut is the hitbox too. Each outline is points round a unit box.
+  const SHAPES = {
+    circle: Array.from({ length: 48 }, (_, i) => [0.5 + 0.5 * Math.cos((i / 48) * Math.PI * 2), 0.5 + 0.5 * Math.sin((i / 48) * Math.PI * 2)]),
+    rounded: (() => { const r = 0.22, out = []; for (const [cx, cy, a0] of [[1 - r, r, -90], [1 - r, 1 - r, 0], [r, 1 - r, 90], [r, r, 180]]) for (let k = 0; k <= 8; k++) { const a = ((a0 + (k / 8) * 90) * Math.PI) / 180; out.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]); } return out; })(),
+    square: [[0, 0], [1, 0], [1, 1], [0, 1]],
+    hexagon: Array.from({ length: 6 }, (_, i) => [0.5 + 0.5 * Math.cos(((i * 60 - 90) * Math.PI) / 180), 0.5 + 0.5 * Math.sin(((i * 60 - 90) * Math.PI) / 180)]),
+    heart: Array.from({ length: 64 }, (_, i) => { // the classic parametric heart, fitted to the box
+      const t = (i / 64) * Math.PI * 2, x = 16 * Math.sin(t) ** 3, y = -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t));
+      return [0.5 + x / 34, 0.47 + y / 34];
+    }),
+  };
+
   // ---------- GIF decoding ----------
   function lzw(minSize, data, count) {
     const clear = 1 << minSize, eoi = clear + 1;
@@ -239,6 +253,7 @@
       this.unload();
       this.key = keyer(opts && opts.chroma);
       this.pixel = !!(item && item.pixel);
+      this.shape = SHAPES[opts && opts.shape] ? opts.shape : null; // (null: whole and uncut)
       if (!item || item.kind === 'builtin') { this.src = null; this.mask = null; this.clear(); return; }
       let src = null;
       try {
@@ -251,6 +266,7 @@
       this.src = src;
       if (src && src.live) { // shown by the browser itself, which keeps it animating
         src.img.className = 'media-el' + (this.pixel ? ' pixelated' : '');
+        if (this.shape) { src.img.style.objectFit = 'cover'; src.img.style.clipPath = 'polygon(' + SHAPES[this.shape].map(([x, y]) => (x * 100).toFixed(2) + '% ' + (y * 100).toFixed(2) + '%').join(',') + ')'; }
         this.canvas.hidden = true;
         this.canvas.parentNode.appendChild(src.img);
       }
@@ -391,13 +407,22 @@
       return true;
     }
 
-    // Draw a frame into a square box the way the player sees it: whole, centred (object-fit: contain).
+    // Draw a frame into a square box the way the player sees it: whole, centred (object-fit: contain); or, cut to a
+    // shape, filling it (object-fit: cover).
     paint(g, size, f, display) {
       g.setTransform(1, 0, 0, 1, 0, 0);
       g.clearRect(0, 0, size, size);
-      const k = Math.min(size / f.w, size / f.h), w = f.w * k, h = f.h * k;
+      const k = (this.shape ? Math.max : Math.min)(size / f.w, size / f.h), w = f.w * k, h = f.h * k;
       g.imageSmoothingEnabled = !this.pixel;
+      if (this.shape) {
+        g.save();
+        g.beginPath();
+        SHAPES[this.shape].forEach(([x, y], i) => (i ? g.lineTo(x * size, y * size) : g.moveTo(x * size, y * size)));
+        g.closePath();
+        g.clip();
+      }
       g.drawImage(f.el, (size - w) / 2, (size - h) / 2, w, h);
+      if (this.shape) g.restore();
       if (display && this.key) {
         try {
           const im = g.getImageData(0, 0, size, size);
@@ -409,6 +434,7 @@
   }
 
   MZ.Sprite = Sprite;
+  MZ.SHAPES = SHAPES;
   MZ.decodeGif = decodeGif;
   MZ.buildMask = buildMask;
 })();

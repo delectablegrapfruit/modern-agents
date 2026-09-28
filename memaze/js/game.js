@@ -145,11 +145,12 @@
     apply(force) {
       const cfg = S().player;
       const item = choose(this, 'player', cfg.media, force);
-      const key = keyOf(item, cfg.chroma);
+      const shape = item && !/^default:/.test(item.id) && cfg.shape !== 'original' ? cfg.shape : null; // (your own pictures only: the built-in ones keep their own shape)
+      const key = keyOf(item, cfg.chroma) + '|' + shape;
       if (!force && key === this.key) return;
       this.item = item;
       this.key = key;
-      if (Game.sprite) Game.sprite.load(item, { chroma: cfg.chroma });
+      if (Game.sprite) Game.sprite.load(item, { chroma: cfg.chroma, shape });
     },
   };
   const GoalMedia = {
@@ -569,7 +570,7 @@
           mx = v.x * dt; my = v.y * dt;
         } else { v.x = mx / dt; v.y = my / dt; }
       }
-      let soft = S().gameplay.rule === 'casual' || this.shielded(); // edges hold like walls
+      let soft = S().gameplay.rule === 'casual' || this.shielded() || this.crawlHold(); // edges hold like walls
       this.touched = false;
       // Standing still can still go wrong: an animation frame reaching over the edge (a touch), or a bridge vanishing
       // underneath, the carpet running out over the void (a fall).
@@ -958,7 +959,15 @@
         if (!fx.carpet && !fx.bullet && !fx.launch && this.hitAt(b.x, b.y) && !this.unstick()) this.scale = was; // no room yet
       }
     },
-    // Shrink ran out in a crawlspace (the Gauntlet's): no room to grow back. A hit, and a bubble floats you back out to
+    // A Shrink way is too narrow for a full-size picture: pressing into it, its walls hold (no hit), as a wall would.
+    crawlHold() {
+      const m = this.maze, b = this.ball;
+      if (!m || !m.crawls || !m.crawls.length || this.scale <= SHRINK + 0.05) return false;
+      const W = this.box();
+      for (const c of m.crawls) for (let i = 1; i < c.pts.length; i++) if (segDist2(b.x, b.y, c.pts[i - 1].x, c.pts[i - 1].y, c.pts[i].x, c.pts[i].y) < (c.hw + W * 0.6) ** 2) return true;
+      return false;
+    },
+    // Shrink ran out in a Shrink way: no room to grow back. A hit, and a bubble floats you back out to
     // its mouth, the way in; Shrink's item box will have another. True if the hit lost the maze.
     crawlOut() {
       const m = this.maze, b = this.ball;
@@ -966,7 +975,12 @@
       for (const c of m.crawls) {
         let d2 = Infinity;
         for (let i = 1; i < c.pts.length; i++) d2 = Math.min(d2, segDist2(b.x, b.y, c.pts[i - 1].x, c.pts[i - 1].y, c.pts[i].x, c.pts[i].y));
-        if (Math.sqrt(d2) > c.hw + 2 || Math.hypot(b.x - c.from.x, b.y - c.from.y) < c.hw + 30 || Math.hypot(b.x - c.to.x, b.y - c.to.y) < c.hw + 30) continue; // (at either mouth, there's room)
+        if (Math.sqrt(d2) > c.hw + 2) continue;
+        const was = this.scale;
+        this.scale = 1;
+        const room = !this.hitAt(b.x, b.y); // (just at its mouth, there's room to grow back)
+        this.scale = was;
+        if (room) continue;
         if (S().gameplay.rule !== 'casual' && !this.shielded() && this.hurt()) return true;
         const d = Math.hypot(c.from.x - b.x, c.from.y - b.y);
         this.fx.bubble = { a: { x: b.x, y: b.y }, b: { x: c.from.x, y: c.from.y }, t: 0, T: clamp(0.9 + d / 700, 1.1, 2.4) };

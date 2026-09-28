@@ -368,6 +368,8 @@
           thumb.addEventListener('pointerleave', () => v.pause());
           v.addEventListener('loadedmetadata', () => { try { v.currentTime = Math.min(0.2, v.duration / 2); } catch (e) { /* ignore */ } });
         } else thumb.appendChild(icon(it));
+        const cut = slot === 'player' && !/^default:/.test(it.id) && MZ.SHAPES[S().player.shape]; // your own pictures, shown cut as they'll play
+        if (cut && thumb.firstChild) Object.assign(thumb.firstChild.style, { objectFit: 'cover', aspectRatio: '1', clipPath: 'polygon(' + cut.map(([x, y]) => (x * 100).toFixed(1) + '% ' + (y * 100).toFixed(1) + '%').join(',') + ')' });
         const tile = h('div', { class: 'tile' + (chosen(it.id) ? ' on' : ''), title: it.name, tabindex: 0 },
           thumb,
           h('div', { class: 'name' }, it.name),
@@ -525,7 +527,10 @@
       }, MZ.Media.SLOT_INFO[s].label)));
       const opts = [];
       if (tab === 'player') {
-        opts.push(range('Size', 'player.size', 0.6, 1.25, 0.05, times), this.chromaControls('player.chroma'));
+        opts.push(range('Size', 'player.size', 0.6, 1.25, 0.05, times),
+          select('Shape', 'player.shape', [['circle', 'Circle'], ['rounded', 'Rounded square'], ['square', 'Square'], ['hexagon', 'Hexagon'], ['heart', 'Heart'], ['original', 'As it is (uncut)']], () => this.rebuild()),
+          h('div', { class: 'note' }, 'Your own pictures are cut to this shape, and it is their hitbox. The built-in ones keep their own.'),
+          this.chromaControls('player.chroma'));
       } else if (tab === 'win' || tab === 'lose') {
         opts.push(toggle('Show ' + tab + ' media', tab + '.on'),
           range('Picture time', tab + '.duration', 0.5, 8, 0.1, secs),
@@ -684,7 +689,7 @@
             h('li', null, h('b', null, 'Keys and doors'), ': pick up a key, then bump into the door of its colour to open it.'),
             h('li', null, h('b', null, 'Vanishing bridges'), ': they blink, then disappear for a moment.'),
             h('li', null, h('b', null, 'One-way gates'), ': pass them only the way the arrows point.'),
-            h('li', null, h('b', null, 'Item puzzles'), ': a gold-framed box always gives the item on it, and the level needs it: float or launch over a missing corridor, shrink through a shrink gate. Wasted it? The box comes back.'),
+            h('li', null, h('b', null, 'Item puzzles'), ': a gold-framed box always gives the item on it, and the level needs it. Nothing at the obstacle says which: a corridor broken off over the void wants a float or a launch across, a way too narrow for you wants you smaller. Wasted it? The box comes back.'),
             h('li', null, h('b', null, 'Switches'), ': step on one to flip the bridges of its colour: some appear, some go.'),
             h('li', null, h('b', null, 'Moving platforms'), ': ride them across the gaps.'),
             h('li', null, h('b', null, 'Portals'), ': step in, come out of its twin.'),
@@ -694,7 +699,7 @@
           h('li', null, 'Falling off the board costs a hit; a bubble floats you back to solid ground.'),
           h('li', null, 'Gauntlet: an endless run of mazes, getting harder (Progressive) or at random, at the difficulty you choose. The item in your slot and your Extra hit shields come along to the next maze. Every 5 gems pays out at once: a life (on Easy, or with 9 lives, an Extra hit; then an item; then time). Share a seed to play the same run.'),
           h('li', null, 'Gauntlet mazes are stone grids after the Cyclone Stone: long straight lanes cut right across them, and Tox Boxes tumbling along those (and down some side corridors). One at rest is a wall; one landing on you is a hit. Duck into a side way and let it go by, or stand on a tile with green corners: it always lands hollow side down there, right over you. Not even Invincible gets you past: they stay solid, and one landing on you shoves you ahead of it.'),
-          h('li', null, 'Gauntlet item puzzles ask more: Launch off a ledge into the clouds and find where to land from the top; float a Magic carpet across several missing corridors without dawdling; Shrink for a narrow crawlspace and get through before it runs out, or you\'re squeezed back out.'),
+          h('li', null, 'Gauntlet item puzzles ask more: a ledge whose landing is lost in the clouds (you find it from the top of a Launch); several corridors gone at once (a Magic carpet has to go straight over); long, winding narrow ways (Shrink has to last all the way, or you\'re squeezed back out).'),
           h('li', null, 'The map fills in as you go: only what has been on screen shows up.'),
           h('li', null, 'Reach GOAL before the time runs out.'),
           h('li', null, 'Long mazes have flags. Touch one and a loss sends you back to it, not the start. Restart or running out of time starts over.'),

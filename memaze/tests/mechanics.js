@@ -186,12 +186,13 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     let back = false;
     for (let i = 0; i < 60 * 6 && !back; i++) { run(1 / 60); back = !gb.out; } // (a carpet is spent after 3.5 s, then 1.5 s)
     check('...and it comes back once that item is spent, so a wasted one can be fetched again', back);
-    // A shrink gate: a wall at full size; shrunk, you go through.
-    G.resetMech(); G.resetPower();
+    // A Shrink way: too narrow for you at full size (its walls hold you out, no hit); shrunk, you go through.
+    G.resetMech(); G.resetPower(); hits.length = 0;
+    check('nothing at an item obstacle says which item: no badges, no coloured gates or ghosts', !G.renderer.drawSqueeze && !G.renderer.drawGap && !G.renderer.drawLedge && typeof G.renderer.drawBreak === 'function' && m.crawls.length >= 1 && m.edges.filter((e) => e.crawl).every((e) => e.hw * 2 < G.box() * 0.9));
     const qd = { x: q.nx, y: q.ny };
     put(off(q, -45)); run(1.2, qd);
     const through = () => (G.ball.x - q.x) * q.nx + (G.ball.y - q.y) * q.ny;
-    check('a shrink gate stops you at full size (a wall, never a hit)', through() < 0, through().toFixed(1));
+    check('a Shrink way is too narrow for you: at full size you can\'t get in (its walls hold you, never a hit)', through() < 0 && !hits.length, through().toFixed(1));
     G.giveItem('shrink'); G.useItem();
     run(1);
     run(1.2, qd);
@@ -280,14 +281,14 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     put(gCarp.a); G.giveItem('carpet'); G.useItem();
     run(gCd / 170 + 0.05, { x: (gCarp.b.x - gCarp.a.x) / gCd, y: (gCarp.b.y - gCarp.a.y) / gCd }, 170); run(3.6);
     check('...float straight across without dawdling and you make it', Math.hypot(G.ball.x - gCarp.b.x, G.ball.y - gCarp.b.y) < 25 && !hits.length && !G.fx.bubble);
-    // A crawlspace: a narrow way, a shrink gate at each end; Shrink has to last all the way through.
+    // A long Shrink way: narrow and winding; Shrink has to last all the way through.
     G.run.cleared = gCr; G.nextGauntlet(); fresh();
     const gCrw = G.maze.crawls[0], gCrE = G.maze.edges.filter((e) => e.crawl), gCmid = gCrw.pts[Math.floor(gCrw.pts.length / 2)];
-    check('a Shrink crawlspace: too narrow for you, a shrink gate at each end', gCrE.length && gCrE.every((e) => e.hw * 2 < G.box() * 0.9) && G.maze.squeezes.filter((q) => gCrE.some((e) => e.id === q.edge)).length === 2);
+    check('a long Shrink way: too narrow for you all along, a stop just inside each mouth', gCrE.length > 1 && gCrE.every((e) => e.hw * 2 < G.box() * 0.9) && G.maze.squeezes.filter((q) => gCrE.some((e) => e.id === q.edge)).length === 2);
     put(gCrw.from);
     const gCin = { x: gCrw.pts[1].x - gCrw.from.x, y: gCrw.pts[1].y - gCrw.from.y }, gCl = Math.hypot(gCin.x, gCin.y);
     run(1, { x: gCin.x / gCl, y: gCin.y / gCl }, 100);
-    check('...full size, its gate stops you (no hit)', Math.hypot(G.ball.x - gCrw.from.x, G.ball.y - gCrw.from.y) < 40 && !hits.length);
+    check('...full size, you can\'t get in (no hit)', Math.hypot(G.ball.x - gCrw.from.x, G.ball.y - gCrw.from.y) < 40 && !hits.length);
     fresh(); G.scale = 0.5; G.fx.shrink = 0.06; put(gCmid); run(0.1);
     check('...and if Shrink runs out inside, you\'re squeezed: a hit, and a bubble back out to its mouth', hits.length === 1 && !!G.fx.bubble);
     run(3);
@@ -333,6 +334,30 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     G.quit();
     return res;
   });
+  // Your own picture: cut to a shape (a circle unless you choose otherwise), and that shape is its hitbox. The built-in
+  // pictures keep their own.
+  const shp = await page.evaluate(async () => {
+    const G = MZ.Game, S = MZ.Save.settings, wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const c = document.createElement('canvas');
+    c.width = c.height = 64;
+    c.getContext('2d').fillStyle = '#e33'; c.getContext('2d').fillRect(0, 0, 64, 64); // a square photo, opaque all over
+    const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
+    const [item] = await MZ.Media.importFiles([new File([blob], 'photo.png', { type: 'image/png' })], 'player');
+    const res = { def: S.player.shape }, was = S.player.media, look = async () => { G.applySettings(); await wait(400); G.sprite.update(performance.now(), true); const k = G.sprite.mask; return k ? { maxR: k.maxR, cells: k.cells } : null; };
+    S.player.media = item.id;
+    for (const sh of ['circle', 'square', 'heart', 'original']) { S.player.shape = sh; res[sh] = await look(); }
+    S.player.media = 'default:sticker';
+    S.player.shape = 'circle'; const b1 = await look();
+    S.player.shape = 'square'; const b2 = await look();
+    res.builtin = !!b1 && !!b2 && b1.cells === b2.cells;
+    S.player.media = was; S.player.shape = 'circle'; G.applySettings();
+    await MZ.Media.remove(item.id);
+    return res;
+  });
+  const full = 96 * 96;
+  out.push({ name: 'your own picture is cut to a circle by default, and that is its hitbox', ok: shp.def === 'circle' && shp.circle && shp.circle.maxR < 0.53 && Math.abs(shp.circle.cells / full - Math.PI / 4) < 0.04, info: shp.circle && (shp.circle.cells / full).toFixed(3) });
+  out.push({ name: '...or to the shape you choose (square, heart...), or left as it is', ok: shp.square && shp.square.maxR > 0.69 && shp.heart && shp.heart.cells < shp.circle.cells * 0.9 && shp.original && shp.original.cells > full * 0.95, info: [shp.square, shp.heart, shp.original].map((x) => x && (x.cells / full).toFixed(2)).join(' / ') });
+  out.push({ name: '...while the built-in pictures keep their own shape', ok: shp.builtin, info: '' });
   let bad = 0;
   for (const r of out) { if (!r.ok) bad++; console.log((r.ok ? 'ok   ' : 'FAIL ') + r.name + (r.info ? '  (' + r.info + ')' : '')); }
   for (const e of errors) console.log('pageerror ' + e);

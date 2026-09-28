@@ -6,7 +6,7 @@
  * switches [{a, b, plate (node), g (SWITCH_COLORS index)}] (route bridges, missing until their switch is stepped on),
  * edges of type 'switch' with sw {g, on} (bridges off the route that the switch of colour g flips: on 0 = up at first),
  * gaps [{a, b, item ('carpet' | 'launch'), box (node)}] (a missing route corridor and the item box that crosses it) and
- * squeezes [{a, b, box (node)}] (a shrink gate and its Shrink box).
+ * squeezes [{a, b, box (node)}] (a Shrink way: that corridor made too narrow for you, and its Shrink box).
  * gen.js turns one into a maze (fromLayout); levels.js picks it for its level. Loaded after gen.js, before levels.js. */
 (function () {
   'use strict';

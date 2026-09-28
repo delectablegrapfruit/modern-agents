@@ -267,7 +267,7 @@
       const hw = this.w / 2 / z + 80, hh = this.h / 2 / z + 80;
       const parts = s.world.visibleParts(cam.x - hw, cam.y - hh, cam.x + hw, cam.y + hh);
       const th = theme(s.floor, s.hue, s.rgb), px = 1 / z;
-      this.px = px; this.world = s.world; this.runT = s.runT;
+      this.px = px; this.world = s.world; this.runT = s.runT; this.th = th;
 
       // One union path per frame: every pass paints each pixel once, even where tiles overlap.
       const union = new Path2D(), blinks = [];
@@ -534,47 +534,44 @@
         ctx.restore();
       }
       for (const kk of m.keys) if (!kk.taken) this.drawKey(kk, t);
-      for (const c of m.crawls || []) { // a crawlspace: a dashed line down its middle in Shrink's colour
-        ctx.save(); ctx.setLineDash([6 * this.px, 6 * this.px]); ctx.lineDashOffset = -t * 10 * this.px; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-        ctx.strokeStyle = ITEM_TINT.shrink; ctx.globalAlpha = 0.55; ctx.lineWidth = 2.5 * this.px;
-        ctx.beginPath(); c.pts.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y))); ctx.stroke(); ctx.restore();
-      }
-      for (const q of m.gaps || []) if (q.ledge) this.drawLedge(q, t); else this.drawGap(q, t);
-      for (const q of m.squeezes || []) this.drawSqueeze(q, t);
+      for (const q of m.gaps || []) this.drawBreak(q, t); // (nothing says which item: the level shows it. A Shrink way is just narrow)
       for (const gb of m.gboxes || []) if (!gb.out) this.drawItemBox(gb, t, gb.bornAt != null && this.runT != null ? this.runT - gb.bornAt : 9);
     }
-    // An item puzzle's gap: where the corridor is missing, a ghost of it with dashed rims in the item's colour, and
-    // that item's badge floating over the void (the box before it gives the item).
-    drawGap(q, t) {
-      const ctx = this.ctx, px = this.px, c = ITEM_TINT[q.item] || '#fff';
-      if (!q.line) { q.line = new Path2D(); q.pts.forEach((p, i) => (i ? q.line.lineTo(p.x, p.y) : q.line.moveTo(p.x, p.y))); q.sides = sideLines(q); }
+    // A gap: the corridor broken off at either end (a cracked edge, rubble floating off into the void), so the way on is
+    // plain to see, and nothing says which item crosses it. The ends face each other; a ledge's faces the way the
+    // corridor was going (where it comes down is off to one side, under the clouds), and no rubble trails across it.
+    drawBreak(q, t) {
+      const ctx = this.ctx, px = this.px, th = this.th || {}, hw = q.hw, n = q.pts.length;
+      const dirOf = (A, B) => { const l = Math.hypot(B.x - A.x, B.y - A.y) || 1; return { x: (B.x - A.x) / l, y: (B.y - A.y) / l }; };
+      const ends = q.ledge ? [[q.a, dirOf(q.a, q.pts[1])], [q.b, dirOf(q.b, q.pts[n - 2])]] : [[q.a, dirOf(q.a, q.b)], [q.b, dirOf(q.b, q.a)]];
+      const rnd = (i) => { const h = Math.sin(i * 12.9898 + q.a.x * 0.013 + q.a.y * 0.007) * 43758.5453; return h - Math.floor(h); };
+      const chunk = (x, y, r, i, a) => { // a jagged bit of floor
+        ctx.beginPath();
+        for (let k = 0; k < 5; k++) { const th2 = (k / 5) * TAU + rnd(i * 7 + k) * 0.8 + t * 0.2 * (rnd(i) - 0.5), rr = r * (0.65 + 0.5 * rnd(i * 11 + k)); ctx[k ? 'lineTo' : 'moveTo'](x + Math.cos(th2) * rr, y + Math.sin(th2) * rr); }
+        ctx.closePath();
+        ctx.globalAlpha = a; ctx.fillStyle = th.floor || '#cfe'; ctx.fill();
+        ctx.strokeStyle = th.rim || 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1.5 * px; ctx.stroke();
+      };
       ctx.save();
-      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-      ctx.globalAlpha = 0.18; ctx.strokeStyle = c; ctx.lineWidth = 2 * q.hw; ctx.stroke(q.line);
-      ctx.globalAlpha = 1; ctx.setLineDash([9 * px, 7 * px]); ctx.lineDashOffset = -t * 12 * px;
-      ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.lineWidth = 6 * px; ctx.stroke(q.sides);
-      ctx.strokeStyle = c; ctx.lineWidth = 3 * px; ctx.stroke(q.sides);
-      ctx.setLineDash([]);
-      const mid = q.pts[Math.floor(q.pts.length / 2)], mid0 = q.pts[Math.max(0, Math.floor(q.pts.length / 2) - 1)];
-      const x = (mid.x + mid0.x) / 2, y = (mid.y + mid0.y) / 2 + Math.sin(t * 2.5) * 3, r = Math.min(22, q.hw * 0.7);
-      ctx.fillStyle = 'rgba(20,14,40,0.85)'; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
-      ctx.strokeStyle = c; ctx.lineWidth = 2 * ICON; ctx.stroke();
-      drawIcon(ctx, q.item, x, y, r * 1.45);
-      ctx.restore();
-    }
-    // A ledge (the Gauntlet's): where to Launch from, a ring in Launch's colour with its badge. Nothing says where you'll
-    // come down: that's under the clouds.
-    drawLedge(q, t) {
-      const ctx = this.ctx, c = ITEM_TINT.launch, r = Math.min(30, q.hw * 0.9), k = 0.5 + 0.5 * Math.sin(t * 3);
-      ctx.save();
-      ctx.setLineDash([7 * this.px, 6 * this.px]); ctx.lineDashOffset = -t * 14 * this.px;
-      ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.lineWidth = 6 * this.px; ctx.beginPath(); ctx.arc(q.a.x, q.a.y, r, 0, TAU); ctx.stroke();
-      ctx.strokeStyle = c; ctx.globalAlpha = 0.6 + 0.4 * k; ctx.lineWidth = 3 * this.px; ctx.stroke();
-      ctx.setLineDash([]); ctx.globalAlpha = 1;
-      const x = q.a.x, y = q.a.y - r - 14 + Math.sin(t * 2.5) * 2, br = 13;
-      ctx.fillStyle = 'rgba(20,14,40,0.85)'; ctx.beginPath(); ctx.arc(x, y, br, 0, TAU); ctx.fill();
-      ctx.strokeStyle = c; ctx.lineWidth = 2 * ICON; ctx.stroke();
-      drawIcon(ctx, 'launch', x, y, br * 1.45);
+      ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+      ends.forEach(([P, u], e) => {
+        const vx = -u.y, vy = u.x, c = hw * 0.72;
+        ctx.globalAlpha = 1; ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 2 * px; // the crack along the broken edge
+        ctx.beginPath();
+        for (let k = 0; k <= 6; k++) { const s = -0.75 + (1.5 * k) / 6, j = (rnd(e * 13 + k) - 0.5) * hw * 0.22; ctx[k ? 'lineTo' : 'moveTo'](P.x + u.x * (c + j) + vx * s * hw, P.y + u.y * (c + j) + vy * s * hw); }
+        ctx.stroke();
+        for (let i = 0; i < 6; i++) { // rubble drifting off it
+          const d = hw * (1.15 + 0.35 * i + 0.25 * rnd(e * 17 + i)), l = (rnd(e * 5 + i) - 0.5) * hw * 1.2, bob = Math.sin(t * 1.3 + i + e) * 2;
+          chunk(P.x + u.x * d + vx * l, P.y + u.y * d + vy * l + bob, hw * (0.2 - 0.02 * i) * (0.8 + 0.4 * rnd(i + e)), e * 31 + i, Math.max(0.15, 0.85 - 0.12 * i));
+        }
+      });
+      if (!q.ledge) { // a sparse trail of bits across: the way over
+        const L = Math.hypot(q.b.x - q.a.x, q.b.y - q.a.y), u = dirOf(q.a, q.b), steps = Math.floor(L / 38);
+        for (let i = 1; i < steps; i++) {
+          const f = i / steps, l = (rnd(90 + i) - 0.5) * hw * 0.8, bob = Math.sin(t * 1.1 + i * 0.9) * 2.5;
+          chunk(q.a.x + (q.b.x - q.a.x) * f - u.y * l, q.a.y + (q.b.y - q.a.y) * f + u.x * l + bob, hw * 0.1 * (0.8 + 0.5 * rnd(60 + i)), 200 + i, 0.3);
+        }
+      }
       ctx.restore();
     }
     // ...and the bank of cloud over where it comes down, until you Launch from it (it parts as you rise).
@@ -592,22 +589,6 @@
       for (const [x, y, r] of puffs) { ctx.beginPath(); ctx.arc(x + 5, y + 9, r, 0, TAU); ctx.fill(); }
       ctx.fillStyle = '#f4f7ff';
       for (const [x, y, r] of puffs) { ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill(); }
-      ctx.restore();
-    }
-    // A shrink gate: posts either side and a striped bar between, with Shrink's badge; only a shrunk picture fits.
-    drawSqueeze(q, t) {
-      const ctx = this.ctx, u = ICON * Math.min(1, Math.max(0.5, Math.hypot(q.bx - q.ax, q.by - q.ay) / 60)), c = ITEM_TINT.shrink; // (smaller across a crawlspace)
-      ctx.save();
-      ctx.lineCap = 'round';
-      ctx.beginPath(); ctx.moveTo(q.ax, q.ay); ctx.lineTo(q.bx, q.by);
-      ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 16 * u; ctx.stroke();
-      ctx.strokeStyle = c; ctx.lineWidth = 11 * u; ctx.stroke();
-      ctx.setLineDash([5 * u, 5 * u]); ctx.lineCap = 'butt'; ctx.strokeStyle = '#2b3a12'; ctx.lineWidth = 11 * u; ctx.stroke(); ctx.setLineDash([]);
-      for (const [x, y] of [[q.ax, q.ay], [q.bx, q.by]]) { ctx.fillStyle = '#1b1530'; ctx.beginPath(); ctx.arc(x, y, 9 * u, 0, TAU); ctx.fill(); ctx.strokeStyle = c; ctx.lineWidth = 2 * u; ctx.stroke(); }
-      const r = 11 * u * (1 + 0.05 * Math.sin(t * 3));
-      ctx.fillStyle = 'rgba(20,14,40,0.9)'; ctx.beginPath(); ctx.arc(q.x, q.y, r, 0, TAU); ctx.fill();
-      ctx.strokeStyle = c; ctx.lineWidth = 2 * u; ctx.stroke();
-      drawIcon(ctx, 'shrink', q.x, q.y, r * 1.5);
       ctx.restore();
     }
     // An item box (for a puzzle): a steady gold-framed crate showing the item it always gives, with a glow; not the
@@ -1012,11 +993,6 @@
         }
         for (const k of mech.keys) if (k.seen && !k.taken) { const f = Math.max(this.sc, (2.6 * u) / KEY_S); keyIcon(g, this.ox + k.x * this.sc, this.oy + k.y * this.sc, KEY_S * f, k.color, KEY_TILT, (ICON * f) * 0.75); }
         for (const pl of mech.plates) if (pl.seen) { dot(pl.x, pl.y, 3 * u, '#000'); dot(pl.x, pl.y, 2.2 * u, pl.color); }
-        for (const q of mech.gaps || []) if (q.seen && (!q.ledge || q.revealed)) { // a gap: dashed in its item's colour (a ledge's, once you've jumped it)
-          g.save(); g.setLineDash([1.6 * u, 1.4 * u]); g.strokeStyle = ITEM_TINT[q.item]; g.lineWidth = Math.max(1, 1.4 * u);
-          g.beginPath(); q.pts.forEach((p, i) => (i ? g.lineTo : g.moveTo).call(g, this.ox + p.x * this.sc, this.oy + p.y * this.sc)); g.stroke(); g.restore();
-        }
-        for (const q of mech.squeezes || []) if (q.seen) doorBar(g, this.ox + q.ax * this.sc, this.oy + q.ay * this.sc, this.ox + q.bx * this.sc, this.oy + q.by * this.sc, ITEM_TINT.shrink, Math.max(ICON * this.sc, 0.2 * u), false);
         for (const gb of mech.gboxes || []) if (gb.seen && !gb.out) { const x = this.ox + gb.x * this.sc, y = this.oy + gb.y * this.sc, h = 2.6 * u; g.fillStyle = '#000'; g.fillRect(x - h - 0.8 * u, y - h - 0.8 * u, 2 * h + 1.6 * u, 2 * h + 1.6 * u); g.fillStyle = '#ffd84a'; g.fillRect(x - h, y - h, 2 * h, 2 * h); }
         for (const pt of mech.portals) for (const e of [pt.a, pt.b]) if (e.seen) { dot(e.x, e.y, 3.2 * u, pt.color); dot(e.x, e.y, 1.6 * u, '#000'); }
         const now = MZ.Game ? MZ.Game.playT : 0;

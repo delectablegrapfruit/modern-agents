@@ -110,8 +110,8 @@ for (const [label, p] of lvCases) {
   const ids = new Set(m.edges.map((e) => e.id)), mech = p.mech;
   if (!p.layout) assert.strictEqual(m.edges.filter((e) => e.a === m.mainPath[m.mainPath.length - 1] || e.b === m.mainPath[m.mainPath.length - 1]).length, 1, label + ': GOAL not at a dead end');
   asked += mech.keys + mech.switches + mech.movers + mech.portals + (mech.gaps || 0) + (mech.squeezes || 0);
-  placed += m.doors.length + m.plates.length + m.movers.length + m.portals.length + m.gaps.length + m.squeezes.length;
-  gapsPlaced += m.gaps.length; squeezesPlaced += m.squeezes.length;
+  placed += m.doors.length + m.plates.length + m.movers.length + m.portals.length + m.gaps.length + m.crawls.length;
+  gapsPlaced += m.gaps.length; squeezesPlaced += m.crawls.length;
   let at = m.mainPath[0], keys = Object.assign(new Map(), { opened: new Set() }), sw = {}, holding = null, shrunk = false;
   const doorOn = new Map(m.doors.map((d) => [d.edge, d])), gateOn = new Map(m.gates.map((g) => [g.edge, g])), squeezeOn = new Map(m.squeezes.map((q) => [q.edge, q]));
   for (const leg of m.route) {
@@ -151,7 +151,7 @@ for (const [label, p] of lvCases) {
 }
 assert.ok(placed >= asked * 0.9, 'mechanics placed ' + placed + ' of ' + asked + ' asked for');
 assert.ok(gapsPlaced > 5 && squeezesPlaced > 3, 'item puzzles placed: ' + gapsPlaced + ' gaps, ' + squeezesPlaced + ' shrink gates');
-console.log(lvCases.length + ' levels solved by their route; ' + placed + '/' + asked + ' doors, switches, platforms, portals, gaps and shrink gates placed (' + gapsPlaced + ' gaps, ' + squeezesPlaced + ' shrink gates)');
+console.log(lvCases.length + ' levels solved by their route; ' + placed + '/' + asked + ' doors, switches, platforms, portals, gaps and Shrink ways placed (' + gapsPlaced + ' gaps, ' + squeezesPlaced + ' Shrink ways)');
 
 // Endless chunks: deterministic, only known surfaces, no pads, and seamless links (the link's far end is the neighbour's node).
 let chunkBlinks = 0, chunkBoxes = 0;

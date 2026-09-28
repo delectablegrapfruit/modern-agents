@@ -14,7 +14,7 @@
   const DEFAULTS = {
     controls: { invert: false, speed: 1, mouse: 'glide' }, // mouse: 'glide' (steer with the pointer), 'lock' (captured) or 'drag'
     gameplay: { rule: 'normal', timer: true, minimap: 'explored', zoom: 1, autoNext: false, boxes: true },
-    player: { media: 'default:sticker', size: 1, chroma: { on: false, color: '#00ff00', tol: 0.35, soft: 0.25 } },
+    player: { media: 'default:sticker', size: 1, shape: 'circle', chroma: { on: false, color: '#00ff00', tol: 0.35, soft: 0.25 } }, // shape: your own pictures are cut to it
     win: fxDefaults('default:burst', 2.4, 'pop'),
     lose: fxDefaults('default:oops', 1.7, 'none'),
     goal: { media: 'default:portal', size: 1, chroma: { on: false, color: '#00ff00', tol: 0.35, soft: 0.25 } },

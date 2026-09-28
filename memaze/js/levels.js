@@ -36,7 +36,7 @@
   ];
   const KEY_COLORS = ['#ffc53d', '#3cf2ff', '#ff7ad9'];
   const GAP_MAX = 300; // the longest missing corridor (node to node): within a Launch's reach, and a carpet's float
-  const CRAWL_HW = 16, CRAWL_LEN = [300, 520]; // the Gauntlet's crawlspaces: only a shrunk picture fits; long, but not longer than Shrink lasts
+  const CRAWL_HW = 16, CRAWL_LEN = [300, 520]; // Shrink ways: only a shrunk picture fits; the Gauntlet's long, but not longer than Shrink lasts
   // Where keys and doors act, in world units, matching how they're drawn (render.js, ICON): a shut door blocks this far
   // either side of its bar (its dark rim); a key is picked up when the picture overlaps a circle this big around it.
   const DOOR_R = 16, KEY_R = 20;
@@ -498,8 +498,8 @@
       const usedIdx = new Set();
       // The Gauntlet's item puzzles ask more of the item than finding it: each takes a run of route corridors from mp[i]
       // through bends only (no side ways off it). A gap becomes a ledge where the way on is off to one side and out of
-      // sight (a Launch, into clouds) or a long float over the void (a Magic carpet); a shrink gate becomes a crawlspace,
-      // a narrow winding corridor with a gate at each end that Shrink has to last the whole way through.
+      // sight (a Launch, into clouds) or a long float over the void (a Magic carpet); a Shrink way becomes a long, narrow,
+      // winding corridor that Shrink has to last the whole way through.
       const runFrom = (i, kind, loose) => { // (loose: a single corridor will do)
         const got = runFrom0(i, kind, loose);
         if (!got) return null;
@@ -625,10 +625,31 @@
     }
 
     m.doors = []; m.keys = []; m.plates = []; m.movers = []; m.portals = []; m.gates = []; m.pads = [];
-    m.gaps = []; m.squeezes = []; m.gboxes = []; m.crawls = []; // item puzzles: missing corridors, shrink gates (and crawlspaces), and the boxes that solve them
+    m.gaps = []; m.squeezes = []; m.gboxes = []; m.crawls = []; // item puzzles: missing corridors, Shrink ways (and the stops in their mouths), and the boxes that solve them
     const removed = new Set();
     const reserved = new Set(), avoid = [], keepClear = [];
     const reserve = (v) => { reserved.add(v); for (const e of adj[v]) { reserved.add(e.a); reserved.add(e.b); } };
+    // A Shrink way: corridors too narrow for you (nothing says so but the walls), from node u to node v. A full-size
+    // picture can't fit in (its walls hold it, no hit); a stop just inside each mouth, past the junction, keeps out even
+    // a picture small enough to fit. Only a shrunk one gets through, and Shrink has to last the whole way.
+    const crawlify = (run, u, v) => {
+      for (const f of run) { f.hw = CRAWL_HW; f.crawl = true; }
+      const mouth = (f, from) => { // (deep enough in that nobody going past the junction ever meets it)
+        const capR = Math.max(26, ...adj[from].filter((g) => !run.includes(g)).map((g) => g.hw)), R = DOOR_R + 28;
+        const clear = (bar) => edges.every((g) => run.includes(g) || g.pts.every((P, k) => !k || MZ.segSegDist2(bar.ax, bar.ay, bar.bx, bar.by, g.pts[k - 1].x, g.pts[k - 1].y, P.x, P.y) >= R * R));
+        let d = capR + 22;
+        while (d < f.plen * 0.5 && !clear(across(f, from, d / f.plen))) d += 4;
+        return Object.assign(across(f, from, Math.min(0.5, d / f.plen)), { edge: f.id, from });
+      };
+      const bars = [mouth(run[0], u), mouth(run[run.length - 1], v)], pts = [];
+      let at = u;
+      for (const f of run) { const P = f.a === at ? f.pts : f.pts.slice().reverse(); for (let k = pts.length ? 1 : 0; k < P.length; k++) pts.push({ x: P[k].x, y: P[k].y }); at = f.a === at ? f.b : f.a; }
+      m.squeezes.push(...bars);
+      m.crawls.push({ pts, hw: CRAWL_HW, from: { x: nodes[u].x, y: nodes[u].y }, to: { x: nodes[v].x, y: nodes[v].y } });
+      for (const g of bars) avoid.push({ x: g.x, y: g.y, r: CRAWL_HW + 40 });
+      for (const q of pts) avoid.push({ x: q.x, y: q.y, r: 50 });
+      return bars;
+    };
     let doorN = 0, swN = 0;
     barriers.forEach((b) => {
       const e = routeEdges[b.idx], u = mp[b.idx], v = mp[b.j || b.idx + 1];
@@ -651,15 +672,8 @@
         avoid.push({ x: V.x, y: V.y, r: 110 }); // the landing: nothing else there
         const k = spot(comp[u], u);
         if (k >= 0) { m.gboxes.push({ item, x: nodes[k].x, y: nodes[k].y, node: k }); b.item = k; reserve(k); avoid.push({ x: nodes[k].x, y: nodes[k].y, r: 55 }); }
-      } else if (b.kind === 'squeeze' && b.j) { // a crawlspace: narrow and winding, a shrink gate at each end
-        for (const f of run) { f.hw = CRAWL_HW; f.crawl = true; }
-        const first = run[0], last = run[run.length - 1], at = (f, from) => across(f, from, Math.min(0.4, 34 / f.plen));
-        const g1 = Object.assign(at(first, u), { edge: first.id, from: u }), g2 = Object.assign(at(last, v), { edge: last.id, from: v });
-        m.squeezes.push(g1, g2);
-        m.crawls.push({ pts: runPts(), hw: CRAWL_HW, from: { x: nodes[u].x, y: nodes[u].y }, to: { x: nodes[v].x, y: nodes[v].y } });
-        for (const g of [g1, g2]) avoid.push({ x: g.x, y: g.y, r: CRAWL_HW + 40 });
-        for (const q of runPts()) avoid.push({ x: q.x, y: q.y, r: 50 });
-        b.need = 'shrink'; b.bars = [first.id, last.id];
+      } else if (b.kind === 'squeeze' && b.j) { // the Gauntlet's: a long, winding Shrink way
+        b.need = 'shrink'; b.bars = crawlify(run, u, v).map((g) => g.edge);
         const k = spot(comp[u], u, false, false, true);
         if (k >= 0) { m.gboxes.push({ item: 'shrink', x: nodes[k].x, y: nodes[k].y, node: k }); b.item = k; reserve(k); avoid.push({ x: nodes[k].x, y: nodes[k].y, r: 55 }); }
       } else if (b.kind === 'door') {
@@ -712,11 +726,8 @@
         avoid.push({ x: (U.x + V.x) / 2, y: (U.y + V.y) / 2, r: d / 2 + 30 });
         const k = b.pinBox != null ? (taken.add(b.pinBox), b.pinBox) : spot(comp[u], u); // (a layout pins the item box)
         if (k >= 0) { if (!(b.pinBox != null && m.gboxes.some((gb) => gb.node === k && gb.item === item))) m.gboxes.push({ item, x: nodes[k].x, y: nodes[k].y, node: k }); b.item = k; reserve(k); avoid.push({ x: nodes[k].x, y: nodes[k].y, r: 55 }); }
-      } else if (b.kind === 'squeeze') { // a low gate across the corridor: only a shrunk picture gets through
-        const bar = across(e, u, 0.5);
-        m.squeezes.push(Object.assign(bar, { edge: e.id, from: u }));
-        avoid.push({ x: bar.x, y: bar.y, r: e.hw + 40 });
-        b.need = 'shrink';
+      } else if (b.kind === 'squeeze') { // a Shrink way, one corridor long
+        b.need = 'shrink'; b.bars = crawlify([e], u, v).map((g) => g.edge);
         const k = b.pinBox != null ? (taken.add(b.pinBox), b.pinBox) : spot(comp[u], u, false, false, true);
         if (k >= 0) { if (!(b.pinBox != null && m.gboxes.some((gb) => gb.node === k && gb.item === 'shrink'))) m.gboxes.push({ item: 'shrink', x: nodes[k].x, y: nodes[k].y, node: k }); b.item = k; reserve(k); avoid.push({ x: nodes[k].x, y: nodes[k].y, r: 55 }); }
       }
@@ -730,7 +741,7 @@
       reserve(e.a); reserve(e.b);
       avoid.push({ x: bar.x, y: bar.y, r: e.hw + 40 });
     }
-    // A layout's gaps and shrink gates off the route (guarding a side way), each with its item box.
+    // A layout's gaps and Shrink ways off the route (guarding a side way), each with its item box.
     const edgeAt = (a, b) => edges.find((f) => (f.a === a && f.b === b) || (f.a === b && f.b === a));
     const itemBox = (item, k) => {
       if (!m.gboxes.some((gb) => gb.node === k && gb.item === item)) m.gboxes.push({ item, x: nodes[k].x, y: nodes[k].y, node: k });
@@ -746,9 +757,7 @@
       itemBox(q.item, q.box);
     }
     for (const q of (pinned && base.squeezesAt) || []) {
-      const e = edgeAt(q.a, q.b), bar = across(e, q.a, 0.5);
-      m.squeezes.push(Object.assign(bar, { edge: e.id, from: q.a }));
-      avoid.push({ x: bar.x, y: bar.y, r: e.hw + 40 });
+      crawlify([edgeAt(q.a, q.b)], q.a, q.b);
       reserve(q.a); reserve(q.b);
       itemBox('shrink', q.box);
     }
@@ -795,7 +804,7 @@
     // The route that solves it: fetch each key before its door, press each switch before its bridge, ride each
     // platform, step through each portal; then on to GOAL.
     const held = {}, opened = new Set(), sw = {}; // keys carried by colour; doors already opened (each takes a key)
-    const shrunk = new Set(); // shrink gates you've been shrunk for
+    const shrunk = new Set(); // Shrink ways you've been shrunk for
     const ok = (e, from) => {
       if (removed.has(e.id)) return false;
       if (squeezeOn.has(e.id) && !shrunk.has(e.id)) return false;
