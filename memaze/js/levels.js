@@ -131,7 +131,7 @@
     p.chapter = c;
     p.seed = Math.floor(r() * 4294967296);
     p.level = level;
-    // A hand-made layout (chapter 1) replaces the generated maze; its own mechanics, pace and pad. Gauntlet mazes (a
+    // A hand-made layout (chapters 1 and 2) replaces the generated maze; its own mechanics, pace and pad. Gauntlet mazes (a
     // seed given) stay generated. Last, so no r() call above moves.
     const lay = o.seed == null && MZ.Layouts && MZ.Layouts.find((x) => x.level === level);
     if (lay) {
@@ -266,10 +266,10 @@
 
   function build(p) {
     let m = Gen.generate(p);
-    if (p.mech && p.mech.gaps) m = cutGaps(m, p.mech.gaps, rng(hashInts(m.seed, 0x6a9)));
+    if (p.mech && p.mech.gaps && !p.layout) m = cutGaps(m, p.mech.gaps, rng(hashInts(m.seed, 0x6a9))); // (a layout draws its own gaps)
     m.level = p.level; m.boss = !!p.boss; m.chapter = p.chapter || chapterOf(p.level || 1);
     m.mods = p.mods || []; m.mechs = (p.mech && p.mech.list) || [];
-    let barriers = m.fixed ? m.fixed.map((b) => Object.assign({}, b)) : null; // a layout pins its doors
+    let barriers = m.fixed ? m.fixed.map((b) => Object.assign({}, b)) : null; // a layout pins its barriers
     for (let tries = 0; tries < 6; tries++) {
       const res = mechanize(m, p, barriers);
       if (res.ok) return res.m;
@@ -283,7 +283,9 @@
     const r = rng(hashInts(base.seed, 0x3ec4));
     const m = Object.assign({}, base);
     const nodes = m.nodes, n = nodes.length;
+    const pinned = !!p.layout; // a hand-made layout: every mechanic is where it's pinned, nothing is placed at random
     let edges = base.edges.map((e, i) => Object.assign({}, e, { id: i, plen: polyLen(e.pts) }));
+    for (const e of edges) if (pinned && e.pinSw) { e.type = 'switch'; e.sw = { g: e.pinSw.g, on: e.pinSw.on }; } // its switch bridges off the route
     let adj = adjacency(n, edges), bridges = bridgesOf(n, adj);
     const mp = base.mainPath, start = mp[0], goal = mp[mp.length - 1];
     const edgeBetween = (a, b) => adj[a].find((e) => e.a === b || e.b === b);
@@ -313,7 +315,10 @@
       return false;
     };
     let barriers = fixed;
-    if (fixed) for (const b of fixed) chokepoint(routeEdges[b.idx]);
+    // (A layout's barriers stay exactly as drawn, nothing taken out round them: a gate on a loop is what makes it
+    // one-way, and a gap on a loop has another gap for company; tests/hand.test.js checks doors and the rest can't be
+    // walked round.)
+    if (fixed && !pinned) for (const b of fixed) chokepoint(routeEdges[b.idx]);
     if (!barriers) {
       const want = [];
       for (const [kind, count] of [['door', mech.keys], ['switch', mech.switches], ['mover', mech.movers], ['portal', mech.portals], ['gate', mech.gates], ['gap', mech.gaps], ['squeeze', mech.squeezes]]) {
@@ -412,11 +417,13 @@
         if (k >= 0) { m.keys.push({ color, x: nodes[k].x, y: nodes[k].y, node: k }); b.item = k; reserve(k); avoid.push({ x: nodes[k].x, y: nodes[k].y, r: 55 }); }
         b.color = color;
       } else if (b.kind === 'switch') {
-        const g = swN++ % SWITCH_COLORS.length, k = spot(comp[u], u, false, true);
+        const gi = swN++ % SWITCH_COLORS.length, g = b.pinGroup != null ? b.pinGroup : gi;
+        const k = b.pinPlate != null ? (taken.add(b.pinPlate), b.pinPlate) : spot(comp[u], u, false, true); // (a layout pins the switch and its colour)
         e.type = 'switch';
-        e.sw = { g, on: 1 };
+        e.sw = { g, on: b.pinOn != null ? b.pinOn : 1 }; // (a layout's may be up at first and go when its switch is pressed)
         delete e.blink;
-        if (k >= 0) { m.plates.push({ g, color: SWITCH_COLORS[g], x: nodes[k].x, y: nodes[k].y, node: k, r: Math.max(26, e.hw * 0.75) }); b.item = k; reserve(k); avoid.push({ x: nodes[k].x, y: nodes[k].y, r: 60 }); }
+        const shared = b.pinPlate != null && m.plates.some((pl) => pl.node === k && pl.g === g); // one switch can bring in several bridges
+        if (k >= 0) { if (!shared) m.plates.push({ g, color: SWITCH_COLORS[g], x: nodes[k].x, y: nodes[k].y, node: k, r: Math.max(26, e.hw * 0.75) }); b.item = k; reserve(k); avoid.push({ x: nodes[k].x, y: nodes[k].y, r: 60 }); }
         b.g = g;
       } else if (b.kind === 'mover') {
         removed.add(e.id);
@@ -443,21 +450,21 @@
         m.gates.push(Object.assign(bar, { edge: e.id, from: u }));
         avoid.push({ x: bar.x, y: bar.y, r: e.hw + 40 });
       } else if (b.kind === 'gap') { // the corridor is missing: a Magic carpet floats you over, a Launch hops you over
-        const U = nodes[u], V = nodes[v], d = Math.hypot(V.x - U.x, V.y - U.y), item = d > 200 || r.chance(0.45) ? 'launch' : 'carpet';
+        const U = nodes[u], V = nodes[v], d = Math.hypot(V.x - U.x, V.y - U.y), item = b.pinItem || (d > 200 || r.chance(0.45) ? 'launch' : 'carpet');
         removed.add(e.id);
         b.gap = m.gaps.length; b.need = item;
         m.gaps.push({ item, from: u, to: v, a: { x: U.x, y: U.y }, b: { x: V.x, y: V.y }, pts: e.pts, hw: e.hw });
         keepClear.push({ ax: U.x, ay: U.y, bx: V.x, by: V.y, r: e.hw });
         avoid.push({ x: (U.x + V.x) / 2, y: (U.y + V.y) / 2, r: d / 2 + 30 });
-        const k = spot(comp[u], u);
-        if (k >= 0) { m.gboxes.push({ item, x: nodes[k].x, y: nodes[k].y, node: k }); b.item = k; reserve(k); avoid.push({ x: nodes[k].x, y: nodes[k].y, r: 55 }); }
+        const k = b.pinBox != null ? (taken.add(b.pinBox), b.pinBox) : spot(comp[u], u); // (a layout pins the item box)
+        if (k >= 0) { if (!(b.pinBox != null && m.gboxes.some((gb) => gb.node === k && gb.item === item))) m.gboxes.push({ item, x: nodes[k].x, y: nodes[k].y, node: k }); b.item = k; reserve(k); avoid.push({ x: nodes[k].x, y: nodes[k].y, r: 55 }); }
       } else if (b.kind === 'squeeze') { // a low gate across the corridor: only a shrunk picture gets through
         const bar = across(e, u, 0.5);
         m.squeezes.push(Object.assign(bar, { edge: e.id, from: u }));
         avoid.push({ x: bar.x, y: bar.y, r: e.hw + 40 });
         b.need = 'shrink';
-        const k = spot(comp[u], u, false, false, true);
-        if (k >= 0) { m.gboxes.push({ item: 'shrink', x: nodes[k].x, y: nodes[k].y, node: k }); b.item = k; reserve(k); avoid.push({ x: nodes[k].x, y: nodes[k].y, r: 55 }); }
+        const k = b.pinBox != null ? (taken.add(b.pinBox), b.pinBox) : spot(comp[u], u, false, false, true);
+        if (k >= 0) { if (!(b.pinBox != null && m.gboxes.some((gb) => gb.node === k && gb.item === 'shrink'))) m.gboxes.push({ item: 'shrink', x: nodes[k].x, y: nodes[k].y, node: k }); b.item = k; reserve(k); avoid.push({ x: nodes[k].x, y: nodes[k].y, r: 55 }); }
       }
     });
     // Gates on loops too (never on an edge that splits the maze, so they only ever send you the long way round).
@@ -466,6 +473,39 @@
     for (const e of loopCands.slice(0, mech.loopGates || 0)) {
       const from = r.chance(0.5) ? e.a : e.b, bar = across(e, from, 0.5);
       m.gates.push(Object.assign(bar, { edge: e.id, from }));
+      reserve(e.a); reserve(e.b);
+      avoid.push({ x: bar.x, y: bar.y, r: e.hw + 40 });
+    }
+    // A layout's gaps and shrink gates off the route (guarding a side way), each with its item box.
+    const edgeAt = (a, b) => edges.find((f) => (f.a === a && f.b === b) || (f.a === b && f.b === a));
+    const itemBox = (item, k) => {
+      if (!m.gboxes.some((gb) => gb.node === k && gb.item === item)) m.gboxes.push({ item, x: nodes[k].x, y: nodes[k].y, node: k });
+      reserve(k); avoid.push({ x: nodes[k].x, y: nodes[k].y, r: 55 });
+    };
+    for (const q of (pinned && base.gapsAt) || []) {
+      const e = edgeAt(q.a, q.b), U = nodes[q.a], V = nodes[q.b];
+      removed.add(e.id);
+      m.gaps.push({ item: q.item, from: q.a, to: q.b, a: { x: U.x, y: U.y }, b: { x: V.x, y: V.y }, pts: e.a === q.a ? e.pts : e.pts.slice().reverse(), hw: e.hw });
+      keepClear.push({ ax: U.x, ay: U.y, bx: V.x, by: V.y, r: e.hw });
+      avoid.push({ x: (U.x + V.x) / 2, y: (U.y + V.y) / 2, r: Math.hypot(V.x - U.x, V.y - U.y) / 2 + 30 });
+      reserve(q.a); reserve(q.b);
+      itemBox(q.item, q.box);
+    }
+    for (const q of (pinned && base.squeezesAt) || []) {
+      const e = edgeAt(q.a, q.b), bar = across(e, q.a, 0.5);
+      m.squeezes.push(Object.assign(bar, { edge: e.id, from: q.a }));
+      avoid.push({ x: bar.x, y: bar.y, r: e.hw + 40 });
+      reserve(q.a); reserve(q.b);
+      itemBox('shrink', q.box);
+    }
+    for (const x of (pinned && base.itemBoxesAt) || []) itemBox(x.item, x.node);
+    for (const x of (pinned && base.platesAt) || []) { // switches that aren't on the way (they flip their colour all the same)
+      if (!m.plates.some((pl) => pl.node === x.node)) m.plates.push({ g: x.g, color: SWITCH_COLORS[x.g], x: nodes[x.node].x, y: nodes[x.node].y, node: x.node, r: 33 });
+      reserve(x.node); avoid.push({ x: nodes[x.node].x, y: nodes[x.node].y, r: 60 });
+    }
+    for (const q of (pinned && base.loopGatesAt) || []) { // a layout's own one-way loops
+      const e = edgeAt(q.a, q.b), bar = across(e, q.from, 0.5);
+      m.gates.push(Object.assign(bar, { edge: e.id, from: q.from }));
       reserve(e.a); reserve(e.b);
       avoid.push({ x: bar.x, y: bar.y, r: e.hw + 40 });
     }
@@ -530,9 +570,11 @@
         held[b.color] = (held[b.color] || 0) + 1;
         if (!walk(b.v)) failed = i;
       } else if (b.kind === 'switch') {
-        if (b.item == null || !walk(b.item)) { failed = i; break; }
-        legs.push({ type: 'press', g: b.g });
-        sw[b.g] = (sw[b.g] | 0) ^ 1;
+        if (b.pinPlate == null || (sw[b.g] | 0) !== b.e.sw.on) { // (a pinned switch already pressed for an earlier bridge of its colour isn't pressed again)
+          if (b.item == null || !walk(b.item)) { failed = i; break; }
+          legs.push({ type: 'press', g: b.g });
+          sw[b.g] = (sw[b.g] | 0) ^ 1;
+        }
         if (!walk(b.v)) failed = i;
       } else if (b.kind === 'mover') {
         if (!walk(b.u)) { failed = i; break; }
@@ -562,7 +604,7 @@
       !plateNodes.has(e.a) && !plateNodes.has(e.b) && e.a !== start && e.b !== start && e.a !== goal && e.b !== goal && e.plen >= 80);
     r.shuffle(decoyCands);
     const groups = [...new Set(m.plates.map((pl) => pl.g))];
-    for (const g of groups) {
+    for (const g of pinned ? [] : groups) { // (a layout draws its own)
       const e = decoyCands.shift();
       if (e) { e.type = 'switch'; e.sw = { g, on: 0 }; reserve(e.a); reserve(e.b); }
     }

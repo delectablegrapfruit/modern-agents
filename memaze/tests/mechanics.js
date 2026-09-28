@@ -174,7 +174,7 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     check('an item box gives its item, even over a full slot', G.item === gp.item && gb.out, G.item);
     G.useItem();
     let back = false;
-    for (let i = 0; i < 60 * 5 && !back; i++) { run(1 / 60); back = !gb.out; }
+    for (let i = 0; i < 60 * 6 && !back; i++) { run(1 / 60); back = !gb.out; } // (a carpet is spent after 3.5 s, then 1.5 s)
     check('...and it comes back once that item is spent, so a wasted one can be fetched again', back);
     // A shrink gate: a wall at full size; shrunk, you go through.
     G.resetMech(); G.resetPower();
