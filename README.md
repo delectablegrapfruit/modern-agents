@@ -45,8 +45,9 @@ where it is.
   the arrow once it is in reach and it flies back into them. *Blade dancers* take two cuts (three from stage 12), and
   each cut that doesn't fell them sends them flipping over your head to your other side. Only the man at the front of
   a line strikes; the ones behind wait their turn. When an enemy raises his weapon he flushes red and a red marker
-  appears over his head. The ring around the marker runs out as his blow comes. An archer drawing his bow shows a
-  red sight line to you, and pips over a tough one count the cuts he has left.
+  appears over his head. The ring around the marker runs out as his blow comes; on a man one cut from falling, its
+  last stretch is gold (see *Shards*). An archer drawing his bow shows a red sight line to you, and pips over a tough
+  one count the cuts he has left.
 - **Warlord:** every fifth stage ends with one, and each is tougher than the last (12 cuts at stage 5, four more
   every warlord after, up to 40). His bar sits in the header (or, when the header is crowded, runs as a thin line
   along its foot), and stage 5's card warns you: *wait out his guard*. He raises his guard as he closes in, and
@@ -63,13 +64,28 @@ where it is.
   stage 10 a runner among them and a brute or blade dancer behind, two from stage 15). As he weakens he grows faster
   and angrier, red haze and all, and more often follows one blow straight with a second. His blow costs two hearts,
   and none but his answer to a turned cut comes quicker than 0.3 s.
-- **The gourd:** once a stage, one spearman or runner comes in with a gourd of medicine over his head. He takes two
-  cuts and keeps just out of reach, darts in to strike and backs off again, and after his second blow (or if he has
-  been about too long) runs off the lane with it. Just before each dart he crouches over his weapon and the gourd
-  flares, and his blow never comes so quick that a cut made on seeing him go can't meet it. Each cut has to catch him
-  close, on a dart of his own: one that doesn't fell him sends him hopping back out of reach. Stage 1's card says
-  it: *catch him darting in, twice*. Cut him down and a heart comes back (points if you are full). The pips for the
-  cuts he has left sit either side of his gourd.
+- **The gourd:** once a stage, one spearman or runner comes in with a gourd of medicine over his head. It is a
+  heart, but it has to be won twice over, and it can be lost:
+  - **He darts.** He takes two cuts and keeps just out of reach. Before each dart he crouches over his weapon for a
+    moment and the gourd flares (the tell); then he runs in and his blow lands as he gets there, a third of a second
+    after he goes (0.32 s: long enough to meet with a cut made on seeing him go, never longer than it has to be). His
+    dart is his wind-up, marker and all, and a dart left alone lands. Each cut has to catch him close, on a dart of his
+    own: one that doesn't fell him sends him hopping back out of reach. After his third dart (cut or not), or once he
+    has been about for 8 seconds, he runs off the lane with the gourd.
+  - **He falls, and the gourd flies.** Cut down, he flings it into the air: it sails up and comes down within reach,
+    on his side or over your head on the other, a second or so later, and where it will land is marked on the ground
+    as it goes up. In the last 0.2 s of its fall it flares: a cut toward it then catches it, and a heart comes back
+    (points if you are full). Cut at it while it is still overhead and you whiff; let it land and it shatters, the
+    medicine spilt. A man nearer you on its side is cut first, so catching it can mean letting a blow come.
+  - Stage 1's card says it: *catch him twice, then catch the gourd*. The pips for the cuts he has left sit either side
+    of his gourd. The stage is not won while the gourd is in the air.
+- **Shards (sen-no-sen):** cut a man down in the last 0.15 s of his wind-up, his blow all but on you, and he gives a
+  shard of a heart: 先 flashes gold over him and the shard flies to its place beside your hearts, three pieces of a
+  heart that light up as you hold them. Three shards make a heart (its worth in points if you are full). The last
+  stretch of his marker's ring is gold when the cut will fell him: cut as the ring runs into the gold. Cut earlier and
+  he only falls; wait too long and his blow lands. A wound scatters every shard you hold. Only a killing cut of your
+  own blade counts (not a cut that knocks a brute back, nor an arrow turned back into a man). Stage 2's card says it:
+  *cut as the ring turns gold*. Shards carry from stage to stage with your hearts.
 - **The dead** come apart along the line of the cut: halved on the slant or through the waist, heads taken (a warlord
   always loses his); cut across the shins, a man drops onto his knees and pitches onto his face; run through or shot,
   they are thrown back off their feet or fold where they stand. Each falls from the very pose his figure froze in at
@@ -102,15 +118,16 @@ where it is.
   | **Shura** (the realm of carnage) | hard | 4 | faster, more, quicker blows | −3% | ×1.6 |
   | **Oni** (the demon) | insane | 3 | much faster, crowded, blows come fast | −8% | ×3 |
 
-- **Stages:** your hearts carry from one stage to the next; the gourd is the only way to get one back. Clear the
-  whole roster to move on. If you fall, the campaign starts again from **stage 1** with full hearts. Each stage
-  brings more enemies, faster ones, and new kinds, across eight settings: Crimson Dusk, Bamboo Grove, Blood Moon,
-  Frozen Pass, Storm Bridge, Burning Village, Sakura Temple and Ash Fields. By stage 25 everything is at full
-  strength; past it the enemies keep quickening up to stage 50, and the warlords keep hardening.
+- **Stages:** your hearts (and any shards of the next) carry from one stage to the next; the gourd and the shards are
+  the only ways to get one back. Clear the whole roster to move on. If you fall, the campaign starts again from
+  **stage 1** with full hearts. Each stage brings more enemies, faster ones, and new kinds, across eight settings:
+  Crimson Dusk, Bamboo Grove, Blood Moon, Frozen Pass, Storm Bridge, Burning Village, Sakura Temple and Ash Fields.
+  By stage 25 everything is at full strength; past it the enemies keep quickening up to stage 50, and the warlords
+  keep hardening.
 - **Walking away:** menu ▸ Restart Stage (it shows your hearts) is a fresh roll of the same stage at the hearts you
-  have left, with its kills counted, so it is never better than playing on. Switching difficulty, or going into or
-  out of an endless run, leaves a fight the same way. Past a stage's card the item reads Next Stage, or Start Over
-  and the stage you start from.
+  have left (and no more shards than you came in with), with its kills counted, so it is never better than playing
+  on. Switching difficulty, or going into or out of an endless run, leaves a fight the same way. Past a stage's card
+  the item reads Next Stage, or Start Over and the stage you start from.
 - **Endless** (menu ▸ Endless): start a run from any stage you have reached. Stages follow one another without a
   card to click through, hearts carried, until you fall; a stage won while the pointer is away goes on to the next,
   which waits under the pause curtain. The fall card shows the run: stages cleared (∞), kills, best combo and score,
@@ -186,7 +203,10 @@ All but `make run` work on Linux too.
     they fade in quickly as they arrive. The oni and the warlord are felt as they come: each foot they set down
     raises a puff of dust and sends a small thump through the lane, and they sink into it. The gourd-bearer walks in
     to his spot and backs off to it with the same stride, crouches over his weapon as he readies himself, darts in at
-    a run, low and leaning hard into it, and hops back from a cut rocked on his heels.
+    a run, low and leaning hard into it, his blade coming up as he gets there, and hops back from a cut rocked on his
+    heels. The gourd he flings as he falls turns end over end on its arc in its jade glow, flares and glints as it
+    comes low enough to catch, and is flicked off the ronin's rising blade into his hand, or bursts where it lands,
+    its pieces skittering and its medicine soaking away.
   - **The ronin** is drawn at a higher resolution and has the most frames: a breathing chūdan guard and the iai
     stance, and seven cuts (nukitsuke, kesa-giri, gyaku-kesa, shōmen, dō-giri, morote-zuki, sune-giri) of nine
     frames each: chambered in the cut's kamae, the swing with the wrists still cocked, the blade whipping through,
@@ -233,11 +253,18 @@ All but `make run` work on Linux too.
 - `ronin-sim` plays stages headless with a human-like pilot (0.22 s reaction, 7 cuts a second, an occasional
   wrong-way cut; `--reaction`, `--rate` and `--slips` change them, and `--rash` makes it lose patience with a
   warlord's set guard now and then) or a perfect one (`--perfect`), in one mode or every mode (`--mode all`), over
-  `--stages` and `--seeds`. The table shows each stage's win rate, fight length, wounds, whiffs, parried cuts and the
-  hearts a warlord took. `--campaign` plays runs from stage 1, hearts carried, until the ronin falls: how far they
-  get, and what the gourd did (hearts given back, catches at full hearts, bearers that got away). `--trace <stage>`
-  tells one fight second by second. With `--check` it exits 1 when the game misses a bar (`ronin-sim --help` prints
-  them), and bad arguments exit 2. The bars:
+  `--stages` and `--seeds`. A press the human-like pilot times to a moment it sees coming (the gourd coming down, the
+  gold at the end of a wind-up) lands off that moment by about `--timing` seconds (0.05), and never sooner after its
+  last press than its rate allows; with a heart to win back and the lane quiet, it lets a man wind up to cut him down
+  late for a shard as often as `--daring` (0.8) says. The perfect pilot catches the gourd the moment it can and never
+  waits for the gold. The table shows each stage's win rate, fight length, wounds, whiffs, parried cuts and the hearts
+  a warlord took; `--hearts` shows instead where hearts came from and went: how often the gourd-bearer was met and cut
+  down, and his gourd caught; the hearts the gourd gave back (and catches worth points), the hearts his blows took,
+  the shards earned and the hearts they made, the shards scattered, and every heart lost. `--campaign` plays runs
+  from stage 1, hearts and shards carried, until the ronin falls: how far they get, the hearts the gourd and the
+  shards gave back, the gourds caught at full hearts, shattered and carried off, and the hearts the bearers' blows
+  took. `--trace <stage>` tells one fight second by second. With `--check` it exits 1 when the game misses a bar
+  (`ronin-sim --help` prints them), and bad arguments exit 2. The bars:
   - the human-like pilot's early stages stay winnable (Shoshin 90% through stage 10 and 60% through 14; Bushidō 90%
     through 3 and 50% through 8; Shura 75% through 3 and 40% through 6; Oni 40% through 2),
   - it is parried at most 0.5 times a fight on any stage (unless `--rash`); more would mean guards turning cuts that
@@ -273,14 +300,16 @@ self-test does these things in order:
    the header cannot go under the menu bar.
 3. Shows what a new player first sees, turns floor hints on, and makes the first cut and a whiff with real left-
    and right-button events.
-4. Lets the autopilot clear stage 1, catches the ronin sheathing his blade with the last blow's freeze run out, and
-   checks the win, the run's tally and the save.
+4. Lets the autopilot clear stage 1: sees the gourd its bearer flings drawn on the lane in the air, and drawn caught
+   or shattering when it comes down (if the stage lasts that long); catches the ronin sheathing his blade with the
+   last blow's freeze run out, and checks the win, the run's tally and the save.
 5. Folds into the pill and back, turns floor hints off and changes the size, the dead still lying there and the
    card still up, then advances from the banner.
 6. Shows the card for a newly introduced enemy, and checks it follows the panel to another size.
-7. Fights a warlord: his bar in the header, never over the lane, his blow coming (if he winds up within 3 s), a cut
-   into his set guard with the real button, parried and bound on his blade (if his guard is set in reach, far enough
-   out that he would not answer, within 6 s), and his death.
+7. Fights a warlord: his bar in the header, never over the lane and clear of the shards beside the hearts and of the
+   score, his blow coming (if he winds up within 3 s), a cut into his set guard with the real button, parried and
+   bound on his blade (if his guard is set in reach, far enough out that he would not answer, within 6 s), and his
+   death.
 8. Switches to Oni and rides a combo into bloodlust.
 9. Falls, and starts over from stage 1 with full hearts, the stage reached left unlocked and the fallen run kept.
 10. Switches back and checks that Bushidō kept its stage and its hearts.

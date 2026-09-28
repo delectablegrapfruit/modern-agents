@@ -9,9 +9,11 @@ import RoninCore
 /// size (a gourd-bearer's pips and marker clear of his gourd) and that a word slammed onto the lane stays under the
 /// combo, grows the panel from its default corner and folds it there and back without it leaving the screen, shows what
 /// a new player first sees, makes the first cut and a whiff with real left and right mouse-button events, lets the
-/// autopilot clear stage 1 and checks that its dead fall on under the card, folds into the pill and back and changes
+/// autopilot clear stage 1 (the gourd its bearer flings drawn on the lane in the air, and caught or shattering) and
+/// checks that its dead fall on under the card, folds into the pill and back and changes
 /// the size with the dead still lying there, advances from the banner, shows a new foe's card and checks it follows a
-/// resize, fights a warlord (his bar in the header, his blow coming, a cut into his set guard bound on his blade),
+/// resize, fights a warlord (his bar in the header, clear of the shards beside the hearts, his blow coming, a cut into
+/// his set guard bound on his blade),
 /// switches to Oni and rides a combo into bloodlust, falls and starts again from stage 1, switches back and finds
 /// Bushidō's stage and hearts kept, runs an endless stage with gore off (nobody cut apart, not a drop of blood)
 /// straight into the next, checks that dragging the window holds the fight still and that a stage won with the pointer
@@ -122,6 +124,27 @@ enum SelfTest {
         scene.timeScale = 3
         try await pause(2.5)
         try snapshot("3-fight", panel)
+        // The gourd-bearer cut down: his gourd goes up in its arc, drawn on the lane, and comes down to be caught (the
+        // autopilot catches it the moment it can) or shatter. Not seen if the stage ends first.
+        let caught = scene.gourdsCaught, shattered = scene.gourdsShattered
+        try await until("stage 1's gourd in the air", timeout: 60) { session.fight.gourd != nil || session.fight.outcome != nil }
+        if session.fight.gourd != nil {
+            scene.timeScale = 1
+            try await pause(0.3)
+            if session.fight.gourd != nil {
+                guard let drawn = scene.gourdDrawn, drawn.minY >= scene.groundLine - 2, drawn.maxY <= scene.laneTop + 2,
+                      drawn.midX > 0, drawn.midX < scene.size.width
+                else { throw Failure("the gourd in the air was not drawn on the lane: \(String(describing: scene.gourdDrawn))") }
+                try snapshot("3b-gourd", panel)
+            }
+            try await until("the gourd came down", timeout: 5) { session.fight.gourd == nil }
+            try await pause(0.1)
+            guard scene.gourdsCaught + scene.gourdsShattered == caught + shattered + 1, scene.gourdDrawn == nil
+            else { throw Failure("the gourd came down without being drawn caught or shattering") }
+            scene.timeScale = 3
+        } else {
+            print("stage 1 ended before its gourd was seen in the air")
+        }
         try await until("stage 1 ended", timeout: 60) { session.fight.outcome != nil }
         guard session.fight.outcome == .victory else { throw Failure("the autopilot lost stage 1") }
         print("stage 1: \(session.fight.stats.kills) kills in \(Int(session.fight.time))s, best combo \(session.fight.stats.bestCombo)")
@@ -225,8 +248,11 @@ enum SelfTest {
         try await until("the warlord closed in", timeout: 10) { (session.fight.boss?.distance ?? 0) < 0.55 }
         try await pause(0.2)
         try snapshot("7-warlord", panel)
-        // His bar is up in the header, never across the fighters.
+        // His bar is up in the header, never across the fighters, nor across the shards beside the hearts or the score.
         guard let bar = scene.bossBar, bar.minY >= scene.laneTop - 0.5 else { throw Failure("the warlord's bar was drawn over the lane") }
+        let shards = scene.shardMeter
+        guard !shards.isNull, shards.minY >= scene.laneTop - 0.5, !shards.intersects(bar), shards.maxX < scene.scoreFrame.minX
+        else { throw Failure("the shards beside the hearts \(shards) run into the warlord's bar \(bar) or the score \(scene.scoreFrame)") }
         // His blow coming, and the marker over him that times it (not taken if he does not wind up soon).
         let watching = Date()
         while Date().timeIntervalSince(watching) < 3, session.fight.outcome == nil,

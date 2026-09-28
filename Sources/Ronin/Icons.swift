@@ -183,8 +183,37 @@ enum Icons {
         return node
     }
 
-    /// A hyōtan, the gourd of medicine a foe carries: two bulbs, a stopper, a cord. Cut him down without being
-    /// hurt while he is about, and a heart comes back.
+    /// One of the three shards of a heart (`piece` 0 the lowest, 1 the middle, 2 the top), where it sits in the heart's
+    /// lozenge (`heart(s)`) with a hair between it and the next: the three together are a heart. Filled by the caller.
+    static func shard(_ s: CGFloat, piece: Int) -> SKShapeNode {
+        let h = s / 2, w = s * 0.26, gap = max(0.35, s * 0.035)
+        func edge(_ y: CGFloat) -> CGFloat { w * (1 - abs(y) / h) }
+        let low = -h / 3, high = h / 3
+        let points: [CGPoint]
+        switch piece {
+        case 0:
+            let y = low - gap
+            points = [CGPoint(x: 0, y: -h), CGPoint(x: edge(y), y: y), CGPoint(x: -edge(y), y: y)]
+        case 1:
+            let a = low + gap, b = high - gap
+            points = [CGPoint(x: -edge(a), y: a), CGPoint(x: edge(a), y: a), CGPoint(x: w, y: 0), CGPoint(x: edge(b), y: b),
+                      CGPoint(x: -edge(b), y: b), CGPoint(x: -w, y: 0)]
+        default:
+            let y = high + gap
+            points = [CGPoint(x: -edge(y), y: y), CGPoint(x: edge(y), y: y), CGPoint(x: 0, y: h)]
+        }
+        let path = CGMutablePath()
+        path.addLines(between: points)
+        path.closeSubpath()
+        let node = SKShapeNode(path: path)
+        node.lineWidth = max(0.7, s * 0.07)
+        node.lineJoin = .round
+        node.isAntialiased = true
+        return node
+    }
+
+    /// A hyōtan, the gourd of medicine a foe carries: two bulbs, a stopper, a cord. Cut him down on two of his darts
+    /// and catch it as it comes down, and a heart comes back.
     static func gourd(_ s: CGFloat, _ color: SKColor) -> SKNode {
         let node = SKNode()
         node.addChild(shape(CGPath(ellipseIn: CGRect(x: -s * 0.3, y: -s * 0.5, width: s * 0.6, height: s * 0.56), transform: nil), fill: color))

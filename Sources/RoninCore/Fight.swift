@@ -60,10 +60,22 @@ public enum FightEvent: Equatable, Sendable {
     case bloodlust(Bool)
     /// Every 25th link of a combo.
     case milestone(Int)
-    /// The gourd-bearer fell: a heart back (`restored`), or `Fight.gourdBonus` points if none was missing.
+    /// The gourd-bearer fell, and his gourd is flung into the air (`Fight.gourd`): catch it as it comes down.
+    case flung(foe: Int)
+    /// The gourd flung from the bearer `foe` was caught: a heart back (`restored`), or `Fight.gourdBonus` points if
+    /// none was missing.
     case healed(foe: Int, restored: Bool)
+    /// The gourd flung from the bearer `foe` came down uncaught and shattered.
+    case shattered(foe: Int)
     /// The gourd-bearer got away with the gourd.
     case fled(foe: Int)
+    /// Sen-no-sen: `foe` cut down in the last moment of his wind-up, for a shard. `count` is how many are held now; at
+    /// `Tuning.shardsPerHeart` they have made a heart (`mended` follows, and none are held any more).
+    case shard(foe: Int, count: Int)
+    /// Shards made a heart: a heart back (`restored`), or `Fight.gourdBonus` points if none was missing.
+    case mended(restored: Bool)
+    /// A wound scattered the shards held (how many).
+    case scattered(Int)
     /// The warlord began to raise his guard. It is set `Tuning.guardRise` later (`Foe.guardSet`).
     case guarded(foe: Int)
     /// A cut met the warlord's guard. Set, it turned the cut aside: the ronin is thrown off balance (`isStumbling`),
@@ -77,14 +89,20 @@ public enum FightEvent: Equatable, Sendable {
 
 /// One stage: a lane, the ronin in the middle, and the stage's roster coming at him from both sides.
 ///
-/// Cut left or right. A cut hits the nearest foe (or incoming arrow) on that side whose near edge is within reach;
-/// with nothing in reach it is a whiff, and the ronin stumbles and can't cut for a moment. Every kill and deflection
-/// adds to the combo, which multiplies the score and at 20 brings on bloodlust (longer reach). Any wound, whiff or
-/// parried cut breaks it. Clear the roster to win; lose all your hearts (the mode's `hearts`) and you fall.
+/// Cut left or right. A cut hits the nearest foe (or incoming arrow, or falling gourd) on that side whose near edge is
+/// within reach; with nothing in reach it is a whiff, and the ronin stumbles and can't cut for a moment. Every kill and
+/// deflection adds to the combo, which multiplies the score and at 20 brings on bloodlust (longer reach). Any wound,
+/// whiff or parried cut breaks it. Clear the roster to win; lose all your hearts (the mode's `hearts`) and you fall.
+///
+/// Hearts come back two ways, neither of them sure. The stage's gourd: its bearer has to be caught on two of his
+/// darts, and the gourd he flings as he falls caught as it comes down. And shards: a man cut down in the last moment
+/// of his wind-up (sen-no-sen, `Tuning.senNoSen`) gives a shard, and three make a heart, but a wound scatters them.
 public struct Fight: Codable, Equatable, Sendable {
     public enum Target: Codable, Equatable, Sendable {
         case foe(Int)
         case arrow(Int)
+        /// The flung gourd, low enough to catch.
+        case gourd
     }
 
     public var stage: Int
@@ -118,16 +136,23 @@ public struct Fight: Codable, Equatable, Sendable {
     public var stats = FightStats()
     public var outcome: Outcome?
     public var bossID: Int?
-    /// Which of the roster carries the gourd, and whether its chance is spent: drunk for a heart, caught with no heart
-    /// missing (for points), or carried off. It does not mean a heart came back (`FightEvent.healed` says that).
+    /// Which of the roster carries the gourd, and whether its chance is spent: its bearer cut down (the gourd flung,
+    /// to be caught or to shatter) or gone off with it. It does not mean a heart came back (`FightEvent.healed` says
+    /// that).
     public var bearerIndex: Int?
     public var healed = false
+    /// The gourd in the air, flung from its fallen bearer, until it is caught or shatters. The stage is not won while
+    /// it is up.
+    public var gourd: Gourd?
+    /// Shards of a heart held (fewer than `Tuning.shardsPerHeart`): carried from stage to stage with the hearts, and
+    /// scattered by a wound.
+    public var shards = 0
     /// Plays the fight when set (the self-test and the balance runs).
     public var pilot: Pilot?
     var accumulator = 0.0
 
-    /// A stage, entered with `hearts` (full when nil: hearts carry from stage to stage).
-    public init(stage: Int, seed: UInt64, mode: Mode = .bushido, hearts: Int? = nil) {
+    /// A stage, entered with `hearts` (full when nil: hearts carry from stage to stage) and `shards` of a heart.
+    public init(stage: Int, seed: UInt64, mode: Mode = .bushido, hearts: Int? = nil, shards: Int = 0) {
         let difficulty = Difficulty(stage: stage, mode: mode)
         var rng = SeededRNG(seed: seed)
         let roster = difficulty.roster(rng: &rng)
@@ -135,6 +160,7 @@ public struct Fight: Codable, Equatable, Sendable {
         self.init(stage: stage, seed: seed, mode: mode, roster: roster, rng: rng)
         bearerIndex = bearer
         if let hearts { hp = max(1, min(maxHP, hearts)) }
+        self.shards = max(0, min(Tuning.shardsPerHeart - 1, shards))
     }
 
     /// A fight with a given roster (tests use it to stage a situation).
@@ -169,12 +195,12 @@ public struct Fight: Codable, Equatable, Sendable {
     public var isStumbling: Bool { stumble > 0 }
     public var boss: Foe? { bossID.flatMap { foe($0) } }
     public var setting: Setting { Setting.of(stage: stage) }
-    /// What catching the gourd-bearer scores when no heart is missing.
+    /// What catching the gourd, or making a heart of shards, scores when no heart is missing.
     public var gourdBonus: Int { points(Tuning.gourdPoints) }
 
     public func foe(_ id: Int) -> Foe? { foes.first { $0.id == id } }
 
-    /// What a cut to `side` would hit now: the nearest foe or incoming arrow within reach.
+    /// What a cut to `side` would hit now: the nearest foe, incoming arrow or catchable gourd within reach.
     public func target(_ side: Side) -> Target? {
         let reach = self.reach
         var best: (target: Target, distance: Double)?
@@ -183,6 +209,9 @@ public struct Fight: Codable, Equatable, Sendable {
         }
         for arrow in arrows where !arrow.deflected && arrow.side == side && abs(arrow.x) <= reach {
             if abs(arrow.x) < best?.distance ?? .infinity { best = (.arrow(arrow.id), abs(arrow.x)) }
+        }
+        if let gourd, gourd.catchable, gourd.side == side, abs(gourd.x) <= reach {
+            if abs(gourd.x) < best?.distance ?? .infinity { best = (.gourd, abs(gourd.x)) }
         }
         return best?.target
     }
@@ -228,6 +257,14 @@ public struct Fight: Codable, Equatable, Sendable {
             score += points(50 * multiplier)
             events.append(.deflected(side, arrow: id))
             raiseCombo(&events)
+        case .gourd?:
+            // Caught as it comes down: drunk for a heart, or worth points with none missing.
+            guard let caught = gourd else { return }
+            gourd = nil
+            cooldown = Tuning.cooldown
+            let restored = hp < maxHP
+            if restored { hp += 1 } else { score += gourdBonus }
+            events.append(.healed(foe: caught.from, restored: restored))
         case .foe(let id)? where foes.first(where: { $0.id == id })?.phase == .guarding:
             guard let i = foes.firstIndex(where: { $0.id == id }) else { return }
             guard foes[i].guardSet else {
@@ -253,10 +290,12 @@ public struct Fight: Codable, Equatable, Sendable {
             guard let i = foes.firstIndex(where: { $0.id == id }) else { return }
             cooldown = Tuning.cooldown
             stats.cuts += 1
+            let late = foes[i].senNoSen
             var after: [FightEvent] = []
             let killed = wound(i, byArrow: false, &after)
             events.append(.cut(side, foe: id, killed: killed))
             events += after
+            if killed, late { earnShard(from: id, &events) }
         case nil:
             stumble = Tuning.stumble * mode.stumble
             stats.whiffs += 1
@@ -297,6 +336,7 @@ public struct Fight: Codable, Equatable, Sendable {
         arrive(&events)
         march(&events)
         fly(&events)
+        toss(&events)
         foes.removeAll { $0.phase == .dying }
         settle(&events)
     }
@@ -309,7 +349,7 @@ public struct Fight: Codable, Equatable, Sendable {
         guard side == facing else { return true }
         switch target(side) {
         case .foe(let id)?: return foe(id)?.phase != .guarding
-        case .arrow?: return true
+        case .arrow?, .gourd?: return true
         case nil: return false
         }
     }
@@ -320,7 +360,8 @@ public struct Fight: Codable, Equatable, Sendable {
             hp = 0
             outcome = .defeat
             events.append(.ended(.defeat))
-        } else if defeated >= roster.count {
+        } else if defeated >= roster.count, gourd == nil {
+            // (A gourd still in the air is caught or shatters first.)
             outcome = .victory
             bonus = points(250 * stage + 150 * hp + (stats.damage == 0 ? 500 * stage : 0))
             score += bonus
@@ -524,11 +565,13 @@ public struct Fight: Codable, Equatable, Sendable {
         foes.contains { $0.phase == .leaping && $0.side == side && abs($0.leapTo) < foe.distance }
     }
 
-    /// The gourd-bearer: he waits just out of reach (and behind the man in front, if anyone stands nearer), darts in
-    /// and strikes, backs off, and after his second blow (or once he has been about too long) makes off with the
-    /// gourd. He can only be cut while he is close, and a cut that doesn't fell him sends him springing back out of
-    /// reach (see `wound`), so each of his two cuts has to catch him on a dart of his own. `hover` counts down only
-    /// while he waits at his spot, so it says how soon he will go.
+    /// The gourd-bearer: he waits just out of reach (and behind the man in front, if anyone stands nearer), crouches
+    /// to ready himself (`Tuning.dartTell`), darts in and strikes, backs off, and after his third dart (or once he has
+    /// been about too long) makes off with the gourd. His dart is his wind-up: he runs in to his striking distance with
+    /// his blade coming down, and the blow lands as he gets there (`Tuning.dartWindup` after he goes). He can only be
+    /// cut while he is close, and a cut that doesn't fell him sends him springing back out of reach (see `wound`), so
+    /// each of his two cuts has to catch him on a dart of his own. `hover` counts down only while he waits at his spot,
+    /// so it says how soon he will go.
     private mutating func bear(_ f: inout Foe, side: Side, front: Foe?, _ events: inout [FightEvent]) {
         let h = Tuning.step
         if f.distance < 1 { f.lingered += h }
@@ -537,33 +580,39 @@ public struct Fight: Codable, Equatable, Sendable {
         let hover = max(reach + f.kind.width / 2 + 0.09, behind)
         switch f.phase {
         case .advancing:
-            if !f.darting, f.darts >= 2 || f.lingered > 9 {
+            // (A dart is his wind-up; on his feet, he is not darting, whatever a save from before that says.)
+            f.darting = false
+            if f.darts >= Tuning.bearerDarts || f.lingered > Tuning.bearerStay {
                 f.enter(.fleeing, for: 0)
                 break
             }
-            let target = f.darting ? max(f.contact, behind) : hover
-            if f.distance > target + 0.0005 {
-                f.x = side.sign * max(target, f.distance - f.speed * (f.darting ? 5 : 1) * h)
-            } else if f.distance < target - 0.0005 {
-                f.x = side.sign * min(target, f.distance + f.speed * 2.5 * h)
+            if f.distance > hover + 0.0005 {
+                f.x = side.sign * max(hover, f.distance - f.speed * h)
+            } else if f.distance < hover - 0.0005 {
+                f.x = side.sign * min(hover, f.distance + f.speed * 2.5 * h)
             }
-            if f.darting, f.distance <= f.contact + 0.0005 {
-                // However quick the stage, his blow comes late enough to be met by a cut made on seeing him go.
-                f.enter(.windup, for: max(Tuning.dartWindup, f.windup * 0.32))
-                events.append(.raised(foe: f.id))
-            } else if !f.darting, abs(f.distance - hover) < 0.01 {
+            if abs(f.distance - hover) < 0.01 {
                 f.hover = max(0, f.hover - h)
-                // He goes only when his striking spot is clear.
+                // He goes only when his striking spot is clear. However quick the stage, his blow comes late enough
+                // to be met by a cut made on seeing him go.
                 if f.hover <= 0, behind <= f.contact + 0.0005 {
                     f.darting = true
+                    f.darts += 1
                     f.hover = rng.range(0.6, 1.3)
+                    f.enter(.windup, for: max(Tuning.dartWindup, f.windup * 0.45))
+                    events.append(.raised(foe: f.id))
                 }
             }
         case .windup:
+            // The dart: in at a run to where his weapon reaches (never through the man in front), the blade coming
+            // down as he gets there.
+            let stop = max(f.contact, behind)
+            if f.distance > stop { f.x = side.sign * max(stop, f.distance - f.speed * Tuning.dartPace * h) }
             f.timer -= h
             if f.timer <= 0 {
-                hurt(f.kind.damage, by: f.id, &events)
-                f.darts += 1
+                // A blow lands only from where his weapon reaches: one brought up short by a man landing in front of
+                // him is pulled.
+                if f.distance <= f.contact + 0.02 { hurt(f.kind.damage, by: f.id, &events) }
                 f.darting = false
                 f.enter(.recoil, for: 0.3)
             }
@@ -622,6 +671,40 @@ public struct Fight: Codable, Equatable, Sendable {
         if !spent.isEmpty { arrows.removeAll { spent.contains($0.id) } }
     }
 
+    /// The flung gourd comes down; if it reaches the ground uncaught, it shatters.
+    private mutating func toss(_ events: inout [FightEvent]) {
+        guard var flying = gourd else { return }
+        flying.timer -= Tuning.step
+        if flying.timer <= 0 {
+            gourd = nil
+            events.append(.shattered(foe: flying.from))
+        } else {
+            gourd = flying
+        }
+    }
+
+    /// The gourd flung up out of its fallen bearer's hands (at `x`): it comes down within reach, on his side or over
+    /// the ronin's head on the other, a second or so later.
+    private mutating func fling(from bearer: Int, at x: Double, _ events: inout [FightEvent]) {
+        let side = rng.chance(0.5) ? Side.of(x) : Side.of(x).opposite
+        let land = side.sign * rng.range(Tuning.gourdLanding.lowerBound, Tuning.gourdLanding.upperBound)
+        gourd = Gourd(from: bearer, start: x, land: land,
+                      flight: rng.range(Tuning.gourdFlight.lowerBound, Tuning.gourdFlight.upperBound))
+        events.append(.flung(foe: bearer))
+    }
+
+    /// Sen-no-sen: a shard for a man cut down as his blow came, and a heart (or its worth in points, with none missing)
+    /// for every `Tuning.shardsPerHeart` of them.
+    private mutating func earnShard(from foe: Int, _ events: inout [FightEvent]) {
+        shards += 1
+        events.append(.shard(foe: foe, count: shards))
+        guard shards >= Tuning.shardsPerHeart else { return }
+        shards = 0
+        let restored = hp < maxHP
+        if restored { hp += 1 } else { score += gourdBonus }
+        events.append(.mended(restored: restored))
+    }
+
     // MARK: Blows
 
     /// Takes a point off a foe. A foe who survives staggers back, or (a dancer, sometimes the warlord) leaps over the
@@ -637,10 +720,9 @@ public struct Fight: Codable, Equatable, Sendable {
             stats.kills += 1
             raiseCombo(&events)
             if foes[i].bearer, !healed {
+                // Cut down, he lets the gourd fly: it still has to be caught.
                 healed = true
-                let restored = hp < maxHP
-                if restored { hp += 1 } else { score += gourdBonus }
-                events.append(.healed(foe: foes[i].id, restored: restored))
+                fling(from: foes[i].id, at: foes[i].x, &events)
             }
             return true
         }
@@ -727,6 +809,10 @@ public struct Fight: Codable, Equatable, Sendable {
         stats.damage += damage
         breakCombo(&events)
         events.append(.wounded(foe: foe, damage: damage))
+        if shards > 0 {
+            events.append(.scattered(shards))
+            shards = 0
+        }
     }
 
     private mutating func raiseCombo(_ events: inout [FightEvent]) {
@@ -739,5 +825,41 @@ public struct Fight: Codable, Equatable, Sendable {
     private mutating func breakCombo(_ events: inout [FightEvent]) {
         if combo >= Tuning.bloodlust { events.append(.bloodlust(false)) }
         combo = 0
+    }
+}
+
+extension Fight {
+    /// Reads a saved fight, taking one saved before gourds were flung and shards were kept as having neither in hand.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(stage: try c.decode(Int.self, forKey: .stage), seed: try c.decode(UInt64.self, forKey: .seed),
+                  mode: try c.decode(Mode.self, forKey: .mode), roster: try c.decode([Kind].self, forKey: .roster),
+                  rng: try c.decode(SeededRNG.self, forKey: .rng))
+        difficulty = try c.decode(Difficulty.self, forKey: .difficulty)
+        time = try c.decode(Double.self, forKey: .time)
+        hp = try c.decode(Int.self, forKey: .hp)
+        maxHP = try c.decode(Int.self, forKey: .maxHP)
+        foes = try c.decode([Foe].self, forKey: .foes)
+        arrows = try c.decode([Arrow].self, forKey: .arrows)
+        arrived = try c.decode(Int.self, forKey: .arrived)
+        defeated = try c.decode(Int.self, forKey: .defeated)
+        nextID = try c.decode(Int.self, forKey: .nextID)
+        spawnTimer = try c.decode(Double.self, forKey: .spawnTimer)
+        cooldown = try c.decode(Double.self, forKey: .cooldown)
+        held = try c.decodeIfPresent(Side.self, forKey: .held)
+        stumble = try c.decode(Double.self, forKey: .stumble)
+        facing = try c.decode(Side.self, forKey: .facing)
+        combo = try c.decode(Int.self, forKey: .combo)
+        score = try c.decode(Int.self, forKey: .score)
+        bonus = try c.decode(Int.self, forKey: .bonus)
+        stats = try c.decode(FightStats.self, forKey: .stats)
+        outcome = try c.decodeIfPresent(Outcome.self, forKey: .outcome)
+        bossID = try c.decodeIfPresent(Int.self, forKey: .bossID)
+        bearerIndex = try c.decodeIfPresent(Int.self, forKey: .bearerIndex)
+        healed = try c.decode(Bool.self, forKey: .healed)
+        gourd = try c.decodeIfPresent(Gourd.self, forKey: .gourd)
+        shards = try c.decodeIfPresent(Int.self, forKey: .shards) ?? 0
+        pilot = try c.decodeIfPresent(Pilot.self, forKey: .pilot)
+        accumulator = try c.decode(Double.self, forKey: .accumulator)
     }
 }

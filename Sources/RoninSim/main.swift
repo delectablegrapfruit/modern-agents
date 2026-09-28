@@ -4,14 +4,18 @@ import RoninCore
 // ronin-sim: plays stages headless with the autopilot and prints how they went.
 //
 //   ronin-sim [--stages 1-20] [--seeds 12] [--mode bushido|shoshin|shura|oni|all] [--reaction 0.22] [--rate 7]
-//             [--slips 0.02] [--rash 0] [--perfect] [--check]
+//             [--slips 0.02] [--rash 0] [--timing 0.05] [--daring 0.8] [--perfect] [--hearts] [--check]
 //   ronin-sim --campaign [--seeds 32] [--mode all] [--check]   from stage 1, hearts carried, until the ronin falls
 //   ronin-sim --trace <stage> [--mode bushido]                  one fight, second by second
 //   ronin-sim --help                                            this, and the bars --check holds the game to
 //
 // The default pilot is human-like: it sees, decides, and its cut lands `reaction` seconds later, at most `rate` a
 // second, and slips the wrong way now and then; `--rash` makes it lose patience with a warlord's set guard that
-// often a second and cut into it anyway. --perfect cuts the instant anything is in reach. --check fails (exit 1) if
+// often a second and cut into it anyway. A press it times to a moment it sees coming (the gourd coming down, the last
+// moment of a wind-up) lands off it by `--timing` seconds or so, and `--daring` is how often, with a heart to win back
+// and the lane quiet, it lets a man wind up to cut him down late for a shard. --perfect cuts the instant anything is
+// in reach (and catches the gourd the moment it can). --hearts
+// prints where hearts came from and went, stage by stage, instead of the usual table. --check fails (exit 1) if
 // the early stages stop being winnable, if the pilot is parried by guards it could not have seen, if a perfect pilot
 // ever loses, or if fights run too short or too long for a break; with --campaign, if runs stop getting as far as
 // they should. Bad arguments exit 2.
@@ -23,9 +27,9 @@ let stageBars: [Mode: [(through: Int, rate: Double)]] = [
     .shura: [(3, 0.75), (6, 0.4)],
     .oni: [(2, 0.4)],
 ]
-/// The mean stage a campaign run (over 32 seeds) should reach, by mode: a floor that a gourd that stopped healing
-/// (14.3, 10.0, 6.4, 3.7), or stages that got much harder, would break. Real players can also restart a stage they
-/// are losing, which the runs never do.
+/// The mean stage a campaign run (over 32 seeds) should reach, by mode: a floor that hearts that stopped coming back
+/// (neither gourd nor shards: 13.1, 8.8, 5.8, 3.2), or stages that got much harder, would break. Real players can also
+/// restart a stage they are losing, which the runs never do.
 let campaignBars: [Mode: Double] = [.shoshin: 15, .bushido: 11, .shura: 7, .oni: 3.5]
 /// A patient pilot is only parried by a guard it cut into by mistake (a slip): more than this many a fight means
 /// guards are turning aside cuts that were on their way before the guard could be seen.
@@ -42,7 +46,10 @@ struct Options {
     var rate = 7.0
     var slips = 0.02
     var rash = 0.0
+    var timing = 0.05
+    var daring = 0.8
     var perfect = false
+    var hearts = false
     var check = false
     var trace: Int?
     var campaign = false
@@ -52,7 +59,8 @@ struct Options {
 func usage() -> String {
     var text = """
     usage: ronin-sim [--stages 1-20] [--seeds 12] [--mode bushido|shoshin|shura|oni|all] [--reaction 0.22]
-                     [--rate 7] [--slips 0.02] [--rash 0] [--perfect] [--check]
+                     [--rate 7] [--slips 0.02] [--rash 0] [--timing 0.05] [--daring 0.8] [--perfect] [--hearts]
+                     [--check]
            ronin-sim --campaign [--seeds 32] [--mode all] [--check]
            ronin-sim --trace <stage> [--mode bushido]
 
@@ -98,6 +106,9 @@ func parse(_ list: [String]) -> Options {
         case "--rate": o.rate = number("--rate", arguments.next()) { $0 > 0 }
         case "--slips": o.slips = number("--slips", arguments.next()) { (0...1).contains($0) }
         case "--rash": o.rash = number("--rash", arguments.next()) { $0 >= 0 }
+        case "--timing": o.timing = number("--timing", arguments.next()) { $0 >= 0 }
+        case "--daring": o.daring = number("--daring", arguments.next()) { (0...1).contains($0) }
+        case "--hearts": o.hearts = true
         case "--mode":
             let name = arguments.next() ?? ""
             if name == "all" { o.modes = Mode.allCases } else if let mode = Mode(rawValue: name) { o.modes = [mode] } else {
@@ -121,37 +132,61 @@ func parse(_ list: [String]) -> Options {
 let options = parse(Array(CommandLine.arguments.dropFirst()))
 
 func pilot(_ seed: Int, _ o: Options) -> Pilot {
-    o.perfect ? .perfect : .human(reaction: o.reaction, rate: o.rate, slips: o.slips, rash: o.rash, seed: UInt64(seed) &* 7919 &+ 17)
+    o.perfect ? .perfect : .human(reaction: o.reaction, rate: o.rate, slips: o.slips, rash: o.rash, timing: o.timing,
+                                  daring: o.daring, seed: UInt64(seed) &* 7919 &+ 17)
 }
 
 func clock(_ t: Double) -> String { String(format: "%6.2f", t) }
 
-/// How a fight's gourd went, and how many hearts the warlord took.
+/// Where a fight's hearts came from and went: how its gourd went (its bearer met, cut down, and the gourd caught for
+/// a heart or points, shattered, or carried off), the hearts its bearer's blows took, the shards earned, the hearts
+/// they made (or points), the shards a wound scattered, and the hearts the warlord took.
 struct Tally {
-    var restored = 0, atFull = 0, fled = 0
+    var met = 0, downed = 0, restored = 0, atFull = 0, shattered = 0, fled = 0, bearer = 0
+    var shards = 0, mended = 0, mendedFull = 0, scattered = 0
     var boss = 0
 
     var caught: Int { restored + atFull }
     static func += (a: inout Tally, b: Tally) {
+        a.met += b.met
+        a.downed += b.downed
         a.restored += b.restored
         a.atFull += b.atFull
+        a.shattered += b.shattered
         a.fled += b.fled
+        a.bearer += b.bearer
+        a.shards += b.shards
+        a.mended += b.mended
+        a.mendedFull += b.mendedFull
+        a.scattered += b.scattered
         a.boss += b.boss
     }
 }
 
-func play(stage: Int, seed: Int, mode: Mode, hearts: Int? = nil, log: Bool = false, _ o: Options) -> (fight: Fight, tally: Tally) {
-    var fight = Fight(stage: stage, seed: mixSeed(0xC0FFEE, UInt64(stage), UInt64(seed)), mode: mode, hearts: hearts)
+func play(stage: Int, seed: Int, mode: Mode, hearts: Int? = nil, shards: Int = 0, log: Bool = false,
+          _ o: Options) -> (fight: Fight, tally: Tally) {
+    var fight = Fight(stage: stage, seed: mixSeed(0xC0FFEE, UInt64(stage), UInt64(seed)), mode: mode, hearts: hearts, shards: shards)
     fight.pilot = pilot(seed, o)
     var tally = Tally()
     var next = 1.0
+    var bearer: Int?
     while fight.outcome == nil, fight.time < 600 {
         let events = fight.step(0.05)
+        if bearer == nil, let carrier = fight.foes.first(where: \.bearer) {
+            bearer = carrier.id
+            tally.met += 1
+        }
         for event in events {
             switch event {
+            case .flung: tally.downed += 1
             case .healed(_, let restored): if restored { tally.restored += 1 } else { tally.atFull += 1 }
+            case .shattered: tally.shattered += 1
             case .fled: tally.fled += 1
+            case .shard: tally.shards += 1
+            case .mended(let restored): if restored { tally.mended += 1 } else { tally.mendedFull += 1 }
+            case .scattered(let n): tally.scattered += n
             case .wounded(let foe?, let damage) where foe == fight.bossID: tally.boss += damage
+            case .wounded(let foe?, let damage) where foe == bearer: tally.bearer += damage
             default: break
             }
         }
@@ -168,8 +203,13 @@ func play(stage: Int, seed: Int, mode: Mode, hearts: Int? = nil, log: Bool = fal
                 print("\(clock(fight.time))  a cut \(side == .left ? "left" : "right") \(how)")
             case .summoned(_, let allies): print("\(clock(fight.time))  the warlord calls \(allies.count) men")
             case .whiff(let side): print("\(clock(fight.time))  whiff \(side == .left ? "left" : "right")")
-            case .healed(_, let restored): print("\(clock(fight.time))  the gourd: \(restored ? "a heart back" : "points")")
+            case .flung: print("\(clock(fight.time))  the gourd-bearer falls, the gourd in the air")
+            case .healed(_, let restored): print("\(clock(fight.time))  the gourd caught: \(restored ? "a heart back" : "points")")
+            case .shattered: print("\(clock(fight.time))  the gourd shattered")
             case .fled: print("\(clock(fight.time))  the gourd-bearer got away")
+            case .shard(_, let count): print("\(clock(fight.time))  sen-no-sen: shard \(count)")
+            case .mended(let restored): print("\(clock(fight.time))  the shards make \(restored ? "a heart" : "points")")
+            case .scattered(let n): print("\(clock(fight.time))  \(n) shard\(n == 1 ? "" : "s") scattered")
             case .bloodlust(let on): print("\(clock(fight.time))  bloodlust \(on ? "on" : "off")")
             case .ended(let outcome): print("\(clock(fight.time))  \(outcome.rawValue)")
             default: break
@@ -191,23 +231,25 @@ if let stage = options.trace {
 }
 
 print(options.perfect ? "perfect pilot" : "pilot: reaction \(options.reaction)s, \(options.rate) cuts/s, slips \(options.slips)"
-      + (options.rash > 0 ? ", rash \(options.rash)/s" : ""))
+      + ", timing ±\(options.timing)s, daring \(options.daring)" + (options.rash > 0 ? ", rash \(options.rash)/s" : ""))
 var failures: [String] = []
 
 if options.campaign {
-    // How far a run gets from stage 1 with hearts carried and one gourd a stage. The gourd columns are per run:
-    // hearts it gave back, catches with no heart missing (points), and bearers that got away with it.
-    print("mode       hearts  reached (median, mean, best)   minutes  hearts+   full   fled  caught")
+    // How far a run gets from stage 1 with hearts (and shards) carried. The other columns are per run: hearts the
+    // gourd gave back, and the shards; gourds caught with no heart missing (points), shattered, and carried off; the
+    // gourds caught of those met; and the hearts the bearers' blows took.
+    print("mode       hearts  reached (median, mean, best)   minutes  gourd+ shard+   full  broke   fled  caught  bearer-")
     for mode in Mode.allCases where options.modes.contains(mode) {
         var reached: [Int] = [], minutes = 0.0, gourds = Tally()
         for seed in 0..<options.seeds {
-            var stage = 1, hearts: Int? = nil
+            var stage = 1, hearts: Int? = nil, shards = 0
             while stage <= 40 {
-                let (fight, tally) = play(stage: stage, seed: seed * 101 + stage, mode: mode, hearts: hearts, options)
+                let (fight, tally) = play(stage: stage, seed: seed * 101 + stage, mode: mode, hearts: hearts, shards: shards, options)
                 minutes += fight.time / 60
                 gourds += tally
                 guard fight.outcome == .victory else { break }
                 hearts = fight.hp
+                shards = fight.shards
                 stage += 1
             }
             reached.append(stage)
@@ -215,15 +257,41 @@ if options.campaign {
         reached.sort()
         let n = Double(options.seeds)
         let mean = Double(reached.reduce(0, +)) / n
-        let met = gourds.caught + gourds.fled
-        let caught = met == 0 ? "-" : String(format: "%5.0f%%", 100 * Double(gourds.caught) / Double(met))
+        let met = gourds.caught + gourds.shattered + gourds.fled
+        let caught = met == 0 ? "    -" : String(format: "%5.0f%%", 100 * Double(gourds.caught) / Double(met))
         print(mode.title.padding(toLength: 10, withPad: " ", startingAt: 0)
-              + String(format: " %6d  %7d %6.1f %6d            %7.1f  %7.1f %6.1f %6.1f  ", mode.hearts, reached[reached.count / 2], mean,
-                       reached.last ?? 0, minutes / n, Double(gourds.restored) / n, Double(gourds.atFull) / n, Double(gourds.fled) / n)
-              + caught)
+              + String(format: " %6d  %7d %6.1f %6d            %7.1f  %6.1f %6.1f %6.1f %6.1f %6.1f  ", mode.hearts, reached[reached.count / 2], mean,
+                       reached.last ?? 0, minutes / n, Double(gourds.restored) / n, Double(gourds.mended) / n, Double(gourds.atFull) / n,
+                       Double(gourds.shattered) / n, Double(gourds.fled) / n)
+              + caught + String(format: "  %7.1f", Double(gourds.bearer) / n))
         if options.check, !options.perfect, let bar = campaignBars[mode], mean < bar {
             failures.append("\(mode.title) campaign: runs reach stage \(String(format: "%.1f", mean)) on average, under " + String(format: "%g", bar))
         }
+    }
+} else if options.hearts {
+    // Where hearts came from and went, a fight a stage from full hearts: of the fights that met the gourd-bearer, how
+    // often he was cut down, and of those how often the gourd was caught; then, a fight, the hearts the gourd gave back
+    // (and the catches worth points, hearts full), the hearts his blows took, the shards earned and the hearts they
+    // made (and points), the shards scattered, and every heart lost.
+    for mode in options.modes {
+        print("\n\(mode.title) (\(mode.gist)): \(mode.hearts) hearts")
+        print("stage  win%    met  downed  caught   gourd+  full  bearer-   shards  shard+  full  scattered   wounds")
+        var all = Tally(), allWounds = 0.0, fights = 0.0
+        for stage in options.stages {
+            var t = Tally(), wins = 0, wounds = 0.0
+            for seed in 0..<options.seeds {
+                let (fight, tally) = play(stage: stage, seed: seed, mode: mode, options)
+                t += tally
+                if fight.outcome == .victory { wins += 1 }
+                wounds += Double(fight.stats.damage)
+            }
+            all += t
+            allWounds += wounds
+            fights += Double(options.seeds)
+            let n = Double(options.seeds)
+            print(heartsRow(String(format: "%5d  %4.0f", stage, 100 * Double(wins) / n), t, wounds, n))
+        }
+        print(heartsRow("  all      ", all, allWounds, fights))
     }
 } else {
     for mode in options.modes {
@@ -270,6 +338,15 @@ if options.campaign {
         }
     }
 }
+/// A row of the `--hearts` table: `t` over `n` fights that lost `wounds` hearts in all.
+func heartsRow(_ lead: String, _ t: Tally, _ wounds: Double, _ n: Double) -> String {
+    func share(_ a: Int, _ b: Int) -> String { b == 0 ? "     -" : String(format: "%5.0f%%", 100 * Double(a) / Double(b)) }
+    return lead + String(format: "  %4.0f%%", 100 * Double(t.met) / n) + "  " + share(t.downed, t.met) + "  " + share(t.caught, t.downed)
+        + String(format: "   %6.2f %5.2f   %6.2f   %6.2f  %6.2f %5.2f     %6.2f   %6.2f", Double(t.restored) / n, Double(t.atFull) / n,
+                 Double(t.bearer) / n, Double(t.shards) / n, Double(t.mended) / n, Double(t.mendedFull) / n, Double(t.scattered) / n,
+                 wounds / n)
+}
+
 if !failures.isEmpty {
     for failure in failures { print("FAIL: \(failure)") }
     exit(1)

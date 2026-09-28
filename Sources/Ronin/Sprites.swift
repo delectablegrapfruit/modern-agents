@@ -4,7 +4,8 @@ import RoninArt
 import RoninCore
 
 /// A foe on the lane: its silhouette and shadow, in the setting's light (`Ambient`); while its blow is coming, a red
-/// flush, a glint and a warning marker above its head whose ring runs down to the blow; for an archer drawing, a red
+/// flush, a glint and a warning marker above its head whose ring runs down to the blow (its last stretch gold, on a man
+/// one cut from falling: cut him down as the ring runs into it, sen-no-sen, for a shard); for an archer drawing, a red
 /// sight line to the ronin; pips for the cuts a tough one has left; the gourd over a bearer's head (his pips either
 /// side of it), flaring as he gathers himself to dart in; the warlord's guard as a pale ward before him, faint while
 /// it comes up and flashing as it sets, a cut that meets it taken braced on his blade and shoved off (`bind`, in step
@@ -20,8 +21,9 @@ import RoninCore
 /// and fades in quickly as he arrives.
 ///
 /// The gourd-bearer moves as a man keeping his distance: he walks in to his spot and backs off to it with the same
-/// stride, crouches over his weapon as he readies himself (the gourd flaring), darts in at a committed run, low and
-/// leaning hard into it, and springs back from a cut in a short hop off his heels, rocked back, landing on his feet.
+/// stride, crouches over his weapon as he readies himself (the gourd flaring: the tell), darts in at a committed run,
+/// low and leaning hard into it, his blade coming up as he gets there and down as the ring runs out, and springs back
+/// from a cut in a short hop off his heels, rocked back, landing on his feet.
 @MainActor
 final class FoeSprite: SKNode {
     let id: Int
@@ -40,6 +42,8 @@ final class FoeSprite: SKNode {
     private let warning = SKNode()
     private let warningMark = SKShapeNode()
     private let warningRing = SKShapeNode()
+    /// The last `Tuning.senNoSen` of the ring, gold: the moment to cut him down for a shard.
+    private let warningGold = SKShapeNode()
     private let sight = SKSpriteNode(color: .white, size: CGSize(width: 1, height: 1))
     private var pips: [SKShapeNode] = []
     private(set) var gourd: SKNode?
@@ -105,8 +109,6 @@ final class FoeSprite: SKNode {
 
     /// How high (in ronin heights) the gourd-bearer's spring back out of reach takes him: a short hop.
     static let hop: CGFloat = 0.2
-    /// How long before his dart the gourd-bearer crouches to ready himself (seconds of his wait left).
-    static let readying = 0.25
 
     init(foe: Foe, ronin: CGFloat, headroom: CGFloat? = nil, ambient: Ambient = .plain) {
         id = foe.id
@@ -155,7 +157,12 @@ final class FoeSprite: SKNode {
         warningRing.strokeColor = Palette.blood.mix(.white, 0.35).color()
         warningRing.lineCap = .round
         warningRing.lineWidth = 1.6
+        warningGold.strokeColor = Palette.gold.mix(.white, 0.25).color()
+        warningGold.lineCap = .round
+        warningGold.lineWidth = 2.2
+        warningGold.glowWidth = 1
         warning.addChild(warningRing)
+        warning.addChild(warningGold)
         warning.addChild(warningMark)
         warning.isHidden = true
         // Over the HUD (the combo and its haze, the vignette): a blow coming is the one thing that must never be
@@ -316,8 +323,6 @@ final class FoeSprite: SKNode {
         placeOverhead()
     }
 
-    /// The same, for callers from when a gourd could also be spilled here: it never is now, so `broken` is ignored.
-    func dropGourd(broken _: Bool) { dropGourd() }
 
     // MARK: Each frame
 
@@ -406,7 +411,8 @@ final class FoeSprite: SKNode {
         // On his feet, how fast he is going the way he faces (smoothed), and whether that is walking: begun once he
         // is plainly on the move, ended once he has plainly stopped, so a man creeping up in a queue or holding his
         // place never flickers between walking and standing, or between stepping in and backing off.
-        let onFoot = !held && (foe.phase == .advancing || foe.phase == .fleeing)
+        // (The gourd-bearer's dart is his wind-up, run in on his feet.)
+        let onFoot = !held && (foe.phase == .advancing || foe.phase == .fleeing || foe.darting && foe.phase == .windup)
         var planted: CGFloat?
         if !onFoot {
             pace = 0
@@ -417,7 +423,7 @@ final class FoeSprite: SKNode {
             if stepping {
                 // A frame for each twelfth of a stride travelled, forward or back, so the feet keep to the ground (a
                 // dart's run takes a longer stride); and where a foot comes down.
-                let running = foe.bearer && foe.darting
+                let running = foe.darting
                 let unit = max(1, height * Figure.stride(cast) * (running ? 1.3 : 1) / CGFloat(Frame.walkFrames))
                 let before = Int(floor(walk))
                 walk += shift * facing / unit
@@ -432,13 +438,7 @@ final class FoeSprite: SKNode {
         if !holding {
             switch foe.phase {
             case .advancing, .fleeing:
-                let bearer = foe.bearer && foe.phase == .advancing
-                if bearer, foe.darting {
-                    // The dart, committed: in at a run, low and leaning hard into it, the gourd flaring.
-                    frame = stride
-                    leanTarget = 0.2
-                    gathering = 1
-                } else if bearer, !stepping, foe.hover < FoeSprite.readying {
+                if foe.readying, !stepping {
                     // Readying himself to go (or poised, waiting for his way in to clear): he crouches over his weapon
                     // and leans in, and the gourd flares.
                     frame = .windup(0)
@@ -456,7 +456,13 @@ final class FoeSprite: SKNode {
                 }
             case .windup:
                 let t = foe.progress
-                if strikeClock < 0.09 {
+                if foe.darting, stepping || foe.distance > foe.contact + 0.004 {
+                    // The gourd-bearer's dart, committed: in at a run, low and leaning hard into it, the gourd flaring;
+                    // his blade comes up as he gets there.
+                    frame = stride
+                    leanTarget = 0.2
+                    gathering = 1
+                } else if strikeClock < 0.09 {
                     // Renzoku-waza: the first of a pair of blows has just landed and he is already going up again for
                     // the second. The blow is drawn (its smear from the coil), then the wind-up is picked up where
                     // its ring has got to.
@@ -509,6 +515,8 @@ final class FoeSprite: SKNode {
         // The heavy ones sink into each step as the foot comes down.
         if planted != nil, kind == .brute || kind == .warlord { squash = max(squash, kind == .brute ? 0.045 : 0.035) }
 
+        // (His blade coming down at the end of his dart, the gourd still aflare.)
+        if foe.darting { gathering = 1 }
         gather += (gathering - gather) * min(1, CGFloat(dt) * 18)
         // Crouched as he gathers himself (not as he darts: then he is lunging).
         if gather > 0.01, !foe.darting { squash = max(squash, 0.07 * gather) }
@@ -548,14 +556,28 @@ final class FoeSprite: SKNode {
         glint.setScale(charging ? 0.6 + 0.5 * t + 0.12 * CGFloat(sin(foe.timer * 40)) : 1)
         warning.isHidden = foe.phase != .windup
         if foe.phase == .windup {
-            // The ring redrawn only as it runs down a step (sixtieths of the way round).
+            // The ring redrawn only as it runs down a step (sixtieths of the way round). On a man one cut from falling,
+            // the stretch of it that runs out last (the last `Tuning.senNoSen` before the blow) is gold: cut him down
+            // as the ring runs into it, for a shard.
             let step = Int(((1 - t) * 60).rounded(.up))
-            if step != ringStep {
-                ringStep = step
+            let late = foe.hp == 1 ? min(1, Tuning.senNoSen / max(foe.span, 1e-3)) : 0
+            let gold = min(step, Int((late * 60).rounded()))
+            if step * 64 + gold != ringStep {
+                ringStep = step * 64 + gold
+                let r = FoeSprite.markerRadius(ronin: ronin)
                 let ring = CGMutablePath()
-                ring.addArc(center: .zero, radius: FoeSprite.markerRadius(ronin: ronin), startAngle: .pi / 2,
-                            endAngle: .pi / 2 + CGFloat(step) / 60 * 2 * .pi, clockwise: false)
+                if step > gold {
+                    ring.addArc(center: .zero, radius: r, startAngle: .pi / 2 + CGFloat(gold) / 60 * 2 * .pi,
+                                endAngle: .pi / 2 + CGFloat(step) / 60 * 2 * .pi, clockwise: false)
+                }
                 warningRing.path = ring
+                let arc = CGMutablePath()
+                if gold > 0 {
+                    arc.addArc(center: .zero, radius: r, startAngle: .pi / 2, endAngle: .pi / 2 + CGFloat(gold) / 60 * 2 * .pi, clockwise: false)
+                }
+                warningGold.path = arc
+                // Brighter once the ring has run into the gold: now.
+                warningGold.alpha = step <= gold ? 1 : 0.7
             }
             warning.setScale(1 + 0.15 * CGFloat(max(0, sin(foe.timer * 30))) * t)
         }
@@ -612,7 +634,7 @@ final class FoeSprite: SKNode {
     /// The fastest the fight moves him along the lane by walking, in lane units a second: the gourd-bearer's dart, a
     /// warlord's fury, a man backing off from one who landed in front of him.
     private static func fastest(_ foe: Foe) -> CGFloat {
-        CGFloat(foe.bearer ? foe.speed * 5 : max(foe.speed * 1.5, 0.6))
+        CGFloat(foe.bearer ? foe.speed * Tuning.dartPace : max(foe.speed * 1.5, 0.6))
     }
 
     private static func wrap(_ k: Int) -> Int { (k % Frame.walkFrames + Frame.walkFrames) % Frame.walkFrames }
@@ -1619,6 +1641,91 @@ final class ArrowSprite: SKSpriteNode {
             trail.alpha = 0.9
             trail.size.width *= 2
             tip.color = Palette.gold.color()
+        }
+    }
+}
+
+/// The gourd flung up from its fallen bearer: it sails in an arc from where he held it over his head, up and down to
+/// where it comes down, turning end over end in its jade glow with a glint off it. Where it will come down is marked on
+/// the ground from the moment it is flung (`mark`, which the scene lays on the ground), and in the last moments of its
+/// fall, when a cut toward it catches it, it flares and glints and its mark lights up. With Reduce Motion it turns
+/// slowly and its flare holds steady.
+@MainActor
+final class GourdSprite: SKNode {
+    /// The bearer it was flung from, and where it left his hands (the scene's coordinates).
+    let from: Int
+    let start: CGPoint
+    /// Its height, and the mark on the ground where it comes down.
+    let size: CGFloat
+    let mark = SKShapeNode()
+    private let turning = SKNode()
+    private let halo = SKSpriteNode(texture: Art.glow)
+    private let glint = SKSpriteNode(texture: Art.glow)
+    private let spin: CGFloat
+    private var age = 0.0
+
+    /// How high over the line from his hands to the ground the arc rises (in ronin heights).
+    static let rise: CGFloat = 0.85
+
+    init(from: Int, start: CGPoint, toward side: Side, ronin: CGFloat) {
+        self.from = from
+        self.start = start
+        size = max(10, ronin * 0.22)
+        // End over end the way it is thrown.
+        spin = side == .right ? -7 : 7
+        super.init()
+        halo.size = CGSize(width: size * 2.6, height: size * 2.6)
+        halo.color = Palette.jade.color()
+        halo.colorBlendFactor = 1
+        halo.blendMode = .add
+        halo.alpha = 0.45
+        addChild(halo)
+        turning.addChild(Icons.gourd(size, Palette.jade.mix(.white, 0.25).color()))
+        addChild(turning)
+        glint.size = CGSize(width: size * 1.2, height: size * 1.2)
+        glint.color = .white
+        glint.colorBlendFactor = 1
+        glint.blendMode = .add
+        glint.alpha = 0
+        glint.position = CGPoint(x: size * 0.12, y: size * 0.18)
+        glint.zPosition = 1
+        addChild(glint)
+        let ring = CGPath(ellipseIn: CGRect(x: -size * 0.8, y: -size * 0.16, width: size * 1.6, height: size * 0.32), transform: nil)
+        mark.path = ring
+        mark.lineWidth = 1.2
+        mark.strokeColor = Palette.jade.mix(.white, 0.2).color()
+        mark.fillColor = Palette.jade.color(0.15)
+        mark.alpha = 0
+        position = start
+    }
+
+    required init?(coder aDecoder: NSCoder) { nil }
+
+    /// Puts it where the fight has it: `gourd` in the air, coming down at `land` along the lane on the ground at
+    /// `ground` (points), the arc kept under `ceiling`. `dt` runs its flare.
+    func update(_ gourd: Gourd, land: CGFloat, ground: CGFloat, ronin: CGFloat, ceiling: CGFloat, calm: Bool, dt: Double) {
+        age += dt
+        let p = CGFloat(gourd.progress)
+        // On the ground it rests on its bottom; the arc runs from his hands to there, and rises over that line.
+        let rest = ground + size * 0.5
+        let y = rest + (start.y - rest) * (1 - p) + ronin * GourdSprite.rise * 4 * p * (1 - p)
+        position = CGPoint(x: start.x + (land - start.x) * p, y: min(y, ceiling - size * 0.6))
+        turning.zRotation = (calm ? 0.35 : 1) * spin * p * CGFloat(gourd.span)
+        mark.position = CGPoint(x: land, y: ground)
+        let pulse = calm ? 0.5 : 0.5 + 0.5 * CGFloat(sin(age * 26))
+        if gourd.catchable {
+            // Low enough to catch: it flares and glints, and the spot it will land on lights up.
+            halo.alpha = 0.95
+            halo.setScale(1.5 + 0.2 * pulse)
+            glint.alpha = 0.4 + 0.6 * pulse
+            mark.alpha = 1
+            mark.fillColor = Palette.jade.color(0.2 + 0.25 * pulse)
+        } else {
+            halo.alpha = 0.45
+            halo.setScale(1)
+            glint.alpha = 0.15 * p
+            mark.alpha = 0.2 + 0.5 * p
+            mark.fillColor = Palette.jade.color(0.15)
         }
     }
 }
