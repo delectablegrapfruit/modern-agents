@@ -3778,13 +3778,14 @@ function plMeta(id) {
   return { rate: m[0], votes: m[1] + (TODAY % 997) * 43, pop: m[2], gross: m[3] };
 }
 const plChartOf = (kind, day) => plGames().map(id => { const r = plSeed(`${kind}:${id}:${day}`), m = plMeta(id); return [id, (kind === 'free' ? m.pop : m.gross) + r() * 2.2]; }).sort((a, b) => b[1] - a[1]).map(x => x[0]);
-// challenges: the play achievements still to earn, with their progress
+// challenges: the play achievements still to earn, with their progress. [achievement, game, () => current, goal, text?]
 const PL_CHAL = [
   ['tap-1k', 'tap', () => S.taps, 1000], ['crit', 'tap', () => S.crits, 25], ['auto-10', 'tap', () => S.tap.A, 10], ['tap-10k', 'tap', () => S.taps, 10000],
   ['perfect', 'hold', () => S.perfects, 10], ['hold-5', 'hold', () => plS.holdBest, 5],
   ['rings', 'rings', () => S.rings, 100], ['ring-25', 'rings', () => plS.ringBest, 25],
   ['pet', 'pet', () => Math.min(S.pet.food, S.pet.fun, S.pet.love), 90, v => `Lowest need ${Math.round(v)}%`], ['pet-100', 'pet', () => S.pets, 100],
 ];
+const plAddChal = L => { PL_CHAL.push(...L); }; // the other games in Play add theirs from their own sections
 const plChalAll = () => PL_CHAL.map(([id, g, cur, goal, txt]) => {
   const a = ACH.find(x => x.id === id); if (!a || !APPS[g]) return null;
   const v = Math.min(cur(), goal), done = !!S.ach[id];
@@ -3947,6 +3948,11 @@ addAch([
   ['gt-3', 'Flawless', 'Clear a Gate Army level with three stars', 'star', () => Object.values(GT.stars).some(v => v >= 3)],
   ['gt-500', 'Legion', 'Lead an army of 500 in Gate Army', 'flame', () => GT.best >= 500],
   ['gt-10', 'Warlord', 'Reach level 10 in Gate Army', 'level', () => GT.level >= 10],
+]);
+const gtGot = id => (S.ach[id] ? 1 : 0);
+plAddChal([
+  ['gt-win', 'gates', () => GT.wins, 1], ['gt-10', 'gates', () => GT.level, 10, v => `Level ${v} of 10`], ['gt-500', 'gates', () => GT.best, 500],
+  ['gt-3', 'gates', () => Math.max(0, ...Object.values(GT.stars)), 3, v => `${v} / 3 stars`], ['gt-flip', 'gates', () => gtGot('gt-flip'), 1], ['gt-mini', 'gates', () => gtGot('gt-mini'), 1],
 ]);
 addStats([
   ['Gate Army level', () => fmt(GT.level)],
@@ -4665,9 +4671,12 @@ function drawParts(c) {
 }
 
 // ---------- loop ----------
+// a system prompt, a sheet, the break screen or the notification center covers the road
+const covered = () => !!(ncOn || lockOn || document.hidden || $('.modal') || $('.grass') || $('.scrim.show'));
 function loop(t) {
   raf = 0;
   if (!vis || !g) return;
+  if ((g.st === 'play' || g.st === 'boss') && covered()) pause(); // the run waits for you
   const dt = Math.min(1 / 30, Math.max(0, (t - last) / 1000)); last = t;
   update(dt); draw(); hudSync();
   if (g.st === 'paused' || (g.st === 'fail' && !parts.length && !floats.length)) return; // nothing moves: stop until something changes
@@ -4835,6 +4844,7 @@ def({
   id: 'gates', name: 'Gate Army', tag: 'Crowd runner', c: '#2f7bff', genre: 'Action',
   blurb: 'Pick the right gate, grow your army and take down the boss.',
   art: ART,
+  progress() { const L = GT.level; return { pct: ((L - 1) % 5) / 5, text: chestLv(L) ? `Level ${L} · Chest level` : `Level ${L} · Chest at level ${Math.ceil(L / 5) * 5}` }; },
   test: { get g() { return g; }, update: dt => update(dt), newRun: L => newRun(L), setArmy: n => setArmy(n), get running() { return !!raf; }, frame: () => { const t0 = performance.now(); update(1 / 60); const t1 = performance.now(); draw(); return [t1 - t0, performance.now() - t1, g.bullets.length, parts.length, sol.length]; }, mkLevel, gApply, MULS }, // for automated tests
   init() { newRun(GT.level); },
   badge: () => (dropReady() ? 1 : 0),
@@ -4888,6 +4898,11 @@ def({
     if (g && (g.st === 'play' || g.st === 'boss')) pause();
   },
   render() { if (this.view) hudSync(true); },
+  // the revive offer holds while something covers it, and starts over when you're back
+  tick() {
+    if (!g || g.st !== 'fail' || !$('.gt-revive:not(.gone)', root)) return;
+    if (covered()) { if (reviveT) { clearTimeout(reviveT); reviveT = 0; } } else if (!reviveT) armRevive();
+  },
   key(e) {
     if (e.type !== 'keydown') return e.key === ' ';
     const k = e.key;
@@ -4898,7 +4913,7 @@ def({
 });
 // held arrows steer; the app's key() only sees the first keydown
 const held = e => ({ ArrowLeft: 'l', a: 'l', A: 'l', ArrowRight: 'r', d: 'r', D: 'r' })[e.key];
-addEventListener('keydown', e => { const k = held(e); if (k && curApp === 'gates' && !lockOn && !$('.modal') && !e.metaKey && !e.ctrlKey && !e.altKey) keys[k] = 1; });
+addEventListener('keydown', e => { const k = held(e); if (k && curApp === 'gates' && !covered() && !e.metaKey && !e.ctrlKey && !e.altKey) keys[k] = 1; });
 addEventListener('keyup', e => { const k = held(e); if (k) keys[k] = 0; });
 addEventListener('blur', () => { keys.l = keys.r = 0; });
 document.addEventListener('visibilitychange', () => { if (document.hidden && vis) pause(); });
@@ -4920,6 +4935,7 @@ addAch([
   ['tw-1k', 'Four digits', 'Reach 1,000 power in Power Tower', 'bolt', () => TWS.maxPow >= 1000],
   ['tw-hero', 'Hero of the realm', 'Free the princess 25 times', 'heart', () => TWS.wins >= 25],
 ]);
+plAddChal([['tw-first', 'tower', () => TWS.wins, 1], ['tw-ten', 'tower', () => TWS.best, 10, v => `Level ${v} of 10`], ['tw-1k', 'tower', () => TWS.maxPow, 1000], ['tw-hero', 'tower', () => TWS.wins, 25]]);
 addStats([
   ['Power Tower level', () => fmt(TWS.lv)],
   ['highest power', () => fmt(TWS.maxPow)],
@@ -5068,7 +5084,7 @@ const TIPS = [
 let oel = {}, lev = null, root = null, cv = null, cx = null, sbEl = null, over = null, tipEl = null, hud = null, hintB = null;
 let tscale = 1, W = 0, H = 0, DPR = 1, gy = 0, rh = 0, cs = 1, cam = 0, shk = 0, flash = 0, gt = 0, raf = 0, lastT = 0, dark = false, pal = DAY, skyG = null, ptr = null, tipUntil = 0;
 const tws = [], tps = [], tfl = [], flies = [];
-const st = { p: 0, sh: 0, show: 0, ti: 0, at: null, phase: 'play', snap: null, fatal: null, hover: null, sel: null, hint: null, hintAt: 0, tut: null, moves: 0, revives: 0, hinted: 0, tok: 0, need: 0, revEnd: 0, titleAt: -9e9, meterAt: 0, meterU: .5, mult: 2, cage: 0, prin: null, armedAt: 0 };
+const st = { p: 0, sh: 0, show: 0, ti: 0, at: null, phase: 'play', snap: null, fatal: null, hover: null, sel: null, hint: null, hintAt: 0, tut: null, moves: 0, revives: 0, hinted: 0, tok: 0, need: 0, revEnd: 0, titleAt: -9e9, meterAt: 0, meterU: .5, mult: 2, cage: 0, prin: null, armedAt: 0, paid: 0 };
 const hero = { x: 0, y: 0, dx: 0, rot: 0, flip: 1, sq: 0, hurt: 0, bump: 0, glow: 0, air: 0, ghost: 0, alpha: 1, walk: 0, drag: null };
 const curL = () => (lev ? lev.L : TWS.lv);
 const hintCost = () => 10 + curL() * 2, refillCost = () => 90, reward = L => 20 + L * 6;
@@ -5114,7 +5130,7 @@ function geo() {
   const sb = sbEl ? sbEl.offsetHeight : 0;
   gy = Math.round(H - 44 - sb);
   const top = 62, tw = Math.min(250, Math.round(W * .54)), left = W - tw - 24;
-  rh = Math.min(100, ...lev.towers.map(t => (gy - top - (t.fin ? 80 : 50)) / (t.floors + (t.fin ? .3 : 0))));
+  rh = Math.max(24, Math.min(100, ...lev.towers.map(t => (gy - top - (t.fin ? 80 : 50)) / (t.floors + (t.fin ? .3 : 0))))); // short screens keep rooms big enough to play
   cs = clamp(rh / 92, .64, 1.05);
   lev.towers.forEach((t, k) => {
     t.x0 = k * W + left; t.w = tw; t.rows = [];
@@ -5130,7 +5146,7 @@ function geo() {
 
 // ---------- drawing ----------
 function rr(x, y, w, h, r) {
-  r = Math.min(r, w / 2, h / 2);
+  r = Math.max(0, Math.min(r, w / 2, h / 2)); // arcTo throws on a negative radius (tiny rooms on short screens)
   cx.beginPath(); cx.moveTo(x + r, y); cx.arcTo(x + w, y, x + w, y + h, r); cx.arcTo(x + w, y + h, x, y + h, r); cx.arcTo(x, y + h, x, y, r); cx.arcTo(x, y, x + w, y, r); cx.closePath();
 }
 const ell = (x, y, a, b) => { cx.beginPath(); cx.ellipse(x, y, a, b, 0, 0, 6.2832); };
@@ -5707,17 +5723,20 @@ function rubble(t) {
 }
 
 // ---------- the loop: runs only while the game is on screen ----------
+// a system prompt, a sheet, the break screen or the notification center covers the game
+const covered = () => !!(ncOn || lockOn || document.hidden || $('.modal') || $('.grass') || $('.scrim.show'));
 function frame(ts) {
   raf = 0;
   if (curApp !== 'tower' || !cv) return;
+  if (covered()) { lastT = 0; raf = requestAnimationFrame(frame); return; } // game time (and the revive offer) waits until you're back
   if (!W && !size()) { raf = requestAnimationFrame(frame); return; }
   const busy = tws.length || tps.length || tfl.length || flies.length || ptr || hero.drag || shk || flash > .01 || st.phase === 'busy' || st.phase === 'win' || st.phase === 'fail' || gt - st.titleAt < 1600 || st.hint || (st.tut && !st.moves);
   if (!busy && lastT && ts - lastT < 30) { raf = requestAnimationFrame(frame); return; } // a calm scene redraws at 30 fps
   const dt = Math.min(50, lastT ? ts - lastT : 16.7); lastT = ts;
   gt += dt * tscale;
+  raf = requestAnimationFrame(frame); // asked for first, so one bad frame can't stop the game
   update(dt * tscale);
   draw();
-  raf = requestAnimationFrame(frame);
 }
 function update(dt) {
   const f = dt / 16.7;
@@ -5993,24 +6012,25 @@ function revive() {
   sfx.win(); haptic(true); hero.glow = 1; hero.bump = 1;
   renderHud(); save();
 }
+// a retry needs a life to spend; the last one buys a full attempt
 function spendLife() {
-  TWS.lives = Math.max(0, TWS.lives - 1);
+  if (TWS.lives <= 0) { TWS.lives = 0; TWS.out = 1; st.phase = 'out'; lifeTick(); renderHud(); showOver('out'); save(); return false; }
+  TWS.lives--;
   lifeTick();
   renderHud();
-  if (!TWS.lives) { TWS.out = 1; st.phase = 'out'; showOver('out'); save(); return false; }
   save(); return true;
 }
 function retry() {
   if (st.phase !== 'fail') return;
   if (!spendLife()) return;
-  hideOver(); newLevel();
+  hideOver(); newLevel(); st.paid = 1;
 }
 function restartLevel() {
   if (st.phase !== 'play' || !st.moves) { if (st.phase === 'play') { sfx.nope(); toast('You’re already at the start'); } return; }
   if (now() - st.armedAt > 2600) { st.armedAt = now(); sfx.nope(); toast('Tap again to restart. It uses 1 life.'); return; }
   st.armedAt = 0;
   if (!spendLife()) return;
-  sfx.whoosh(); newLevel();
+  sfx.whoosh(); newLevel(); st.paid = 1;
 }
 const MULTS = [[2, 22], [3, 18], [5, 20], [3, 18], [2, 22]];
 const segAt = u => { let x = u * 100; for (let i = 0; i < MULTS.length; i++) if ((x -= MULTS[i][1]) <= 0) return i; return MULTS.length - 1; };
@@ -6033,7 +6053,7 @@ function useHint() {
   const r = bestMove();
   if (!r) { sfx.nope(); toast('This run can’t reach the boss. Restart the level to try again.'); return; }
   if (!spend(hintCost())) return;
-  st.hint = r; st.hintAt = gt; st.hinted = 1; TWS.hints++;
+  st.hint = r; st.sel = r; st.hintAt = gt; st.hinted = 1; TWS.hints++; // the keyboard picks up where the hint points
   sfx.fresh(); haptic();
 }
 // the best room to take next, or null when the boss is already out of reach
@@ -6067,7 +6087,7 @@ function newLevel() {
   lev = genLevel(TWS.lv);
   st.tok++;
   tws.length = 0; tps.length = 0; tfl.length = 0; flies.length = 0;
-  Object.assign(st, { p: lev.p0, sh: 0, show: lev.p0, ti: 0, at: null, phase: 'play', snap: null, fatal: null, hover: null, sel: null, hint: null, tut: null, moves: 0, revives: 0, hinted: 0, cage: 0, prin: null, titleAt: gt, armedAt: 0 });
+  Object.assign(st, { p: lev.p0, sh: 0, show: lev.p0, ti: 0, at: null, phase: 'play', snap: null, fatal: null, hover: null, sel: null, hint: null, tut: null, moves: 0, revives: 0, hinted: 0, cage: 0, prin: null, titleAt: gt, armedAt: 0, paid: 0 });
   Object.assign(hero, { dx: 0, rot: 0, flip: 1, sq: 0, hurt: 0, bump: 0, glow: 0, air: 0, ghost: 0, alpha: 1, walk: 0, drag: null, faint: 0, gold: 0 });
   lev.towers.forEach(t => { t.sink = 0; t.gone = 0; t.rooms.forEach((r, i) => Object.assign(r, { done: 0, gone: 0, dx: 0, hurt: 0, pop: 0, fly: 0, spk: 0, open: 0, bump: 0, used: 0, show: r.v, ph: i * 1.7 + t.floors })); });
   cam = 0; shk = 0; flash = 0;
@@ -6183,6 +6203,7 @@ def({
   genre: 'Puzzle',
   blurb: 'Absorb weaker monsters, grow your power and free the princess at the top. Most players never pass level 20.',
   art: ART,
+  progress() { const L = TWS.lv, m = plMile(L); return { pct: L / m, text: TWS.maxPow ? `Level ${L} · ${fmt(TWS.maxPow)} power record` : `Level ${L}` }; },
   init() { lifeTick(true); },
   bg() { lifeTick(); },
   badge: () => (TWS.out && TWS.lives >= MAXL ? 1 : 0),
@@ -6261,7 +6282,7 @@ def({
     lifeTick();
     if (!lev || (lev.L !== TWS.lv && (st.phase === 'play' || st.phase === 'out') && !st.moves)) newLevel();
     size();
-    if (st.phase === 'play' && !st.moves && TWS.lives <= 0) { st.phase = 'out'; showOver('out'); }
+    if (st.phase === 'play' && !st.moves && !st.paid && TWS.lives <= 0) { st.phase = 'out'; showOver('out'); } // a retry already paid for stays playable
     renderHud();
     try { document.fonts && document.fonts.load(`700 20px DynaPuff`).catch(() => {}); } catch {}
     lastT = 0;
@@ -6291,7 +6312,7 @@ def({
     }
     if (st.phase !== 'play') return k.startsWith('Arrow') || k === 'Enter' || k === ' ';
     if (k.startsWith('Arrow')) { moveSel(k); return true; }
-    if (k === 'Enter' || k === ' ') { if (valid(st.sel)) go(st.sel); else moveSel('ArrowUp'); return true; }
+    if (k === 'Enter' || k === ' ') { const t = valid(st.sel) ? st.sel : valid(st.hint) ? st.hint : null; if (t) go(t); else moveSel('ArrowUp'); return true; }
     if (k === '?') { useHint(); return true; }
     return false;
   },
