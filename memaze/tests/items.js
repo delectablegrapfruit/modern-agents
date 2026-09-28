@@ -224,6 +224,13 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     }
     check('a shut door stops the Bullet', !crossed && !door.open);
     G.quit();
+    // ...and with GOAL behind a door you can't open yet, it takes you to the key.
+    G.startJourney(5);
+    const key5 = G.maze.keys[0];
+    G.giveItem('bullet');
+    if (G.useItem()) for (let i = 0; i < 60 * 8 && G.fx.bullet; i++) frame(1 / 60);
+    check('with GOAL shut off, the Bullet takes you to the key', G.keysHeld.get(key5.color) === 1 && Math.hypot(G.ball.x - key5.x, G.ball.y - key5.y) < 30 && onFloor(), Math.round(Math.hypot(G.ball.x - key5.x, G.ball.y - key5.y)));
+    G.quit();
 
     // ----- Launch: steer in the air, come down right where you are (on the board, or in the void) -----
     G.startJourney(14);

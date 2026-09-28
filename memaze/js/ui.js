@@ -184,10 +184,13 @@
         hud.item.setAttribute('aria-label', G.item ? 'Use ' + G.ITEMS[G.item].name : 'No item');
         hud.item.title = G.item ? G.ITEMS[G.item].name : '';
       }
-      const held = G.keysHeld ? [...G.keysHeld].flatMap(([col, n]) => Array(n).fill(col)) : [], kk = held.join(); // keys you're carrying
+      // The keys you carry: a chip per colour (with a count past one), the same key as in the maze; a new one pops in.
+      const held = G.keysHeld ? [...G.keysHeld].filter(([, n]) => n > 0) : [], kk = held.map(([col, n]) => col + n).join();
       if (c.keys !== kk) {
+        const was = c.keyCounts || new Map();
         c.keys = kk;
-        hud.keys.innerHTML = held.map((col) => MZ.Renderer.keySVG(col)).join(''); // the same key and token as in the maze
+        c.keyCounts = new Map(held);
+        hud.keys.innerHTML = held.map(([col, n]) => '<div class="key-chip' + (n > (was.get(col) || 0) ? ' new' : '') + '" style="--kc:' + col + '">' + MZ.Renderer.keySVG(col) + (n > 1 ? '<b>×' + n + '</b>' : '') + '</div>').join('');
       }
       const act = [];
       for (const k of ['star', 'carpet', 'shrink', 'path']) if (fx[k] > 0) act.push([k, fx[k] / G.ITEMS[k].dur]);

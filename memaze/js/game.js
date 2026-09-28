@@ -1034,27 +1034,32 @@
       const g = this.graph(), at = this.nearestOnCorridor(g);
       if (!at) return null;
       const { dist, prev } = this.corridorDists(g, at, true);
-      const nearest = (list) => {
-        let best = -1;
-        for (const p of list) { const i = g.id(p); if (i != null && dist[i] < Infinity && (best < 0 || dist[i] < dist[best])) best = i; }
-        return best;
-      };
       let target = -1;
       if (this.maze) {
-        const m = this.maze;
-        target = g.id(m.goal);
-        if (!(dist[target] < Infinity)) { // what opens the way: a key, a switch, an item box, or the gap you hold the item for
-          const gapStarts = (m.gaps || []).filter((q) => this.item === q.item).map((q) => q.a);
-          const boxes = (m.gboxes || []).filter((gb) => !gb.out && this.item !== gb.item);
-          target = nearest(gapStarts.length ? gapStarts : m.keys.filter((k) => !k.taken).concat(m.plates, boxes));
-        }
+        target = g.id(this.maze.goal);
+        if (!(dist[target] < Infinity)) target = this.opener(g, dist);
         if (target < 0) target = this.nearGoal(g, dist);
-      } else target = nearest((this.beacons || []).filter((bc) => !bc.lit));
+      } else target = this.nearestOf(g, dist, (this.beacons || []).filter((bc) => !bc.lit));
       if (target < 0 || !(dist[target] < Infinity)) return null;
       return this.chainPoints(g, at, prev, target);
     },
+    // Of these spots, the junction nearest along the corridors (-1: none reachable).
+    nearestOf(g, dist, list) {
+      let best = -1;
+      for (const p of list) { const i = g.id(p); if (i != null && dist[i] < Infinity && (best < 0 || dist[i] < dist[best])) best = i; }
+      return best;
+    },
+    // With GOAL shut off: what opens the way. The gap you hold the item for, else the nearest key still lying about,
+    // switch, or item box whose item you don't have.
+    opener(g, dist) {
+      const m = this.maze, gapStarts = (m.gaps || []).filter((q) => this.item === q.item).map((q) => q.a);
+      if (gapStarts.length) return this.nearestOf(g, dist, gapStarts);
+      const boxes = (m.gboxes || []).filter((gb) => !gb.out && this.item !== gb.item);
+      return this.nearestOf(g, dist, m.keys.filter((k) => !k.taken).concat(m.plates, boxes));
+    },
     // Bullet: the route from here along the corridors, toward GOAL (stopping short of it), or in Endless outward, as far
-    // as the run allows, finishing on a junction with solid floor. Shut doors and switched-off bridges stop it too.
+    // as the run allows, finishing on a junction with solid floor. Shut doors and switched-off bridges stop it too: with
+    // GOAL shut off it flies to what opens the way (the key, say).
     bulletRoute() {
       const g = this.graph(), at = this.nearestOnCorridor(g);
       if (!at) return null;
@@ -1062,7 +1067,10 @@
       let target = -1;
       if (this.maze) {
         target = g.id(this.maze.goal);
-        if (dist[target] === Infinity) target = this.nearGoal(g, dist); // GOAL is behind a shut door or a missing bridge
+        if (dist[target] === Infinity) { // GOAL is behind a shut door or a missing bridge: to what opens the way (a key), else close
+          target = this.opener(g, dist);
+          if (target < 0) target = this.nearGoal(g, dist);
+        }
       } else {
         const o = this.run.origin;
         let far = -1;

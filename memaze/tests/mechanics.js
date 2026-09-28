@@ -66,11 +66,14 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     put(key);
     check('picking up the key doesn\'t open the door by itself', !door.open && G.keysHeld.get(door.color) === 1);
     G.draw();
-    check('the key shows in the corner', document.querySelectorAll('#hud-keys svg').length === 1);
+    const chip = document.querySelector('#hud-keys .key-chip');
+    check('the key you carry shows beside the item slot, in its colour', document.querySelectorAll('#hud-keys .key-chip').length === 1 && !!chip.querySelector('svg') && chip.offsetWidth >= 40 && chip.style.getPropertyValue('--kc') === door.color);
     put(before);
     for (let i = 0; i < 90 && (G.ball.x - door.x) * door.nx + (G.ball.y - door.y) * door.ny < 25; i++) run(1 / 60, { x: door.nx, y: door.ny });
     check('bumping into the door with its key opens it, and you walk through', door.open && (G.ball.x - door.x) * door.nx + (G.ball.y - door.y) * door.ny > 20 && hits.length === 0);
     check('...using the key up', !G.keysHeld.get(door.color));
+    G.draw();
+    check('...and its chip goes', !document.querySelector('#hud-keys .key-chip'));
     door.seen = true; G.draw();
     check('an opened door stays on the map', G.maze.doors.every((d) => d.edge !== door.edge || d.open));
     G.restartLevel();
