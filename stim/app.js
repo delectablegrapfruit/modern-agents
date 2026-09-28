@@ -47,6 +47,7 @@ const P = {
   send: '<path d="m21.5 2.5-7 19-4-8.5-8.5-4z"/><path d="M21.5 2.5 10.5 13"/>',
   chest: '<path d="M3.5 10h17v9a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 19zM3.5 10V8a4 4 0 0 1 4-4h9a4 4 0 0 1 4 4v2"/><path d="M10 10v3.5h4V10"/>',
   tag: '<path d="M3 12.5V4.5A1.5 1.5 0 0 1 4.5 3h8L21 11.5 12.5 20z"/><circle cx="8" cy="8" r="1.6"/>',
+  back: '<path d="M15 4.5 7.5 12l7.5 7.5"/>',
 };
 const FP = {
   heart: P.heart, star: P.star,
@@ -78,7 +79,17 @@ const G = {
   predict: '<path d="M3.5 19.5h17M6 15.5l4-5 3.5 3L19 6"/><path d="M15 6h4v4"/>',
   trade: '<path d="M4 20V10M9 20V4M14 20v-7M19 20V8"/><path d="M2.5 20.5h19"/>',
 };
-const glyph = id => (id === 'streak' ? IF('flame') : `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${G[id]}</svg>`);
+Object.assign(G, {
+  posts: '<path d="M4 11.2 12 4.5l8 6.7V20h-5.5v-5.2h-5V20H4z"/>',
+  clips: G.loop, discover: G.swipe, activity: P.heart,
+  profile: '<circle cx="12" cy="8.5" r="4"/><path d="M4.5 20.5c1.2-3.8 4-5.5 7.5-5.5s6.3 1.7 7.5 5.5"/>',
+  cart: '<path d="M2.5 4h2.6l2.3 11.2h10.8l2.1-7.7H6.3"/><circle cx="9.6" cy="19.2" r="1.5"/><circle cx="17" cy="19.2" r="1.5"/>',
+  orders: '<path d="M2.5 6.5h11v9h-11zM13.5 9.5h4l3 3.2v2.8h-7"/><circle cx="6.5" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/>',
+  gates: '<path d="M4 20.5V9a8 8 0 0 1 16 0v11.5"/><path d="M8.5 20.5V12a3.5 3.5 0 0 1 7 0v8.5"/>',
+  tower: '<path d="M6 21V8.5l2-2V3h2.2v2h3.6V3H16v3.5l2 2V21z"/><path d="M10 21v-4h4v4M9 11.5h2M13 11.5h2"/>',
+});
+// an app can bring its own icon art (inner SVG markup); otherwise it uses its glyph
+const glyph = id => (id === 'streak' ? IF('flame') : APPS[id] && APPS[id].art ? APPS[id].art : `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${G[id]}</svg>`);
 const SHAPES = {
   orb: '<circle cx="12" cy="12" r="9.5"/>',
   cube: '<rect x="3" y="3" width="18" height="18" rx="5"/>',
@@ -125,6 +136,8 @@ const S = JSON.parse(JSON.stringify(DEF));
     if (d && typeof d === 'object' && !Array.isArray(d) && v && typeof v === 'object') Object.assign(d, v); else S[k] = v;
   }
 })();
+// modules keep their own state under one key: const F = slice('feed', { ...defaults })
+const slice = (k, d) => (S[k] = Object.assign(JSON.parse(JSON.stringify(d)), S[k] && typeof S[k] === 'object' && !Array.isArray(S[k]) ? S[k] : {}));
 let resetting = false;
 const save = () => { if (resetting) return; S.lastSeen = T(); store.set(S); };
 
@@ -374,35 +387,32 @@ function renderBoost() {
 }
 
 // ---------- achievements ----------
-const ACH = [
-  ['tap-1', 'First tap', 'Tap the big button', 'check', () => S.taps >= 1],
-  ['tap-1k', 'Thumb of steel', 'Tap 1,000 times', 'bolt', () => S.taps >= 1000],
-  ['crit', 'Critical', 'Land 25 crits', 'star', () => S.crits >= 25],
+// every app registers its own: addAch([[id, name, description, icon, test?], ...])
+const ACH = [];
+const addAch = list => list.forEach(([id, n, d, i, t]) => ACH.push({ id, n, d, i, t }));
+addAch([
   ['combo', 'On a roll', 'Reach a ×10 combo', 'bolt', () => S.bestCombo >= 54],
-  ['cards', 'Bottomless', 'Reveal 500 cards', 'down', () => S.cards >= 500],
-  ['zero', 'Inbox zero', 'Read every message', 'check'],
-  ['jackpot', 'Jackpot', 'Hit three of a kind', 'gem'],
-  ['match', 'Matchmaker', 'Get 10 matches', 'heart', () => S.matches >= 10],
-  ['clips', 'Autopilot', 'Watch 100 clips', 'play', () => S.clips >= 100],
-  ['legend', 'Legendary', 'Pull a legendary', 'star'],
-  ['collect', 'Completionist', 'Collect 12 of 24', 'gem', () => Object.keys(S.loot.own).length >= 12],
-  ['scratch', 'Lucky scratch', 'Win a scratch card', 'star', () => S.scratchWins >= 1],
-  ['pulse', 'Heartbeat', 'Keep a pulse of 20', 'flame', () => S.pulse.best >= 20],
-  ['day7', 'Day seven', 'Claim a day-7 reward', 'chest'],
-  ['quests', 'Busy', 'Finish 10 quests', 'check', () => S.questsDone >= 10],
-  ['promo', 'Promoted', 'Move up a league', 'level'],
-  ['pet', 'Good owner', 'Get all of Blob’s needs above 90', 'heart'],
-  ['perfect', 'Perfectionist', 'Land 10 perfect holds', 'bolt', () => S.perfects >= 10],
-  ['rings', 'Quick hands', 'Catch 100 rings', 'check', () => S.rings >= 100],
   ['pickups', 'Can’t put it down', 'Unlock 25 times', 'lock', () => S.pickups >= 25],
   ['level', 'Chronically online', 'Reach level 10', 'level', () => lvl().l >= 10],
   ['night', 'Night owl', 'Play between midnight and 4 am', 'moon', () => new Date().getHours() < 4],
   ['grass', 'Touched grass', 'Take a break, then come back', 'leaf'],
-  ['rocket', 'Moonshot', 'Cash out a rocket above 10×', 'up', () => S.bestCash >= 10],
-  ['flip8', 'Let it ride', 'Double a pot eight times', 'star', () => S.maxFlips >= 8],
-  ['oracle', 'Oracle', 'Win 10 predictions', 'eye', () => S.predWins >= 10],
-  ['whale', 'Whale', 'Grow a portfolio past 10,000', 'gem', () => (S.trade.athV || 0) >= 10000],
-].map(([id, n, d, i, t]) => ({ id, n, d, i, t }));
+]);
+// You shows these: addStats([[label, () => value], ...])
+const STATS = [];
+const addStats = list => STATS.push(...list);
+addStats([
+  ['screen time today', () => dur(S.today.ms)],
+  ['unlocks', () => fmt(S.pickups)],
+  ['notifications', () => fmt(S.notifs)],
+  ['hits today', () => fmt(S.today.hits)],
+  ['hits all time', () => fmt(S.total)],
+  ['best combo', () => `×${Math.min(10, 1 + Math.floor(S.bestCombo / 6))} (${S.bestCombo})`],
+  ['scrolled', () => { const m = S.scrollPx * .00016; return m < 1000 ? `${m.toFixed(m < 10 ? 1 : 0)} m` : `${(m / 1000).toFixed(2)} km`; }],
+]);
+// quest templates: addQuests([[stat key in S, 'Do it {n} times', lo, hi], ...])
+const QDEF = [];
+const addQuests = list => QDEF.push(...list);
+
 let chkT = 0;
 function queueCheck() {
   clearTimeout(chkT);
@@ -418,7 +428,7 @@ function unlock(id) {
 }
 
 // ---------- gestures ----------
-let noClickUntil = 0;
+let noClickUntil = 0, dragging = false; // dragging: one of drag()'s gestures is running
 const suppressClick = () => { noClickUntil = now() + 350; };
 document.addEventListener('click', e => {
   if (now() < noClickUntil && phone.contains(e.target)) { e.stopPropagation(); e.preventDefault(); }
@@ -435,7 +445,7 @@ function drag(elm, o) {
       if (!on) {
         if (Math.hypot(dx, dy) < 7) return;
         if (o.axis !== 'any' && (o.axis === 'y') !== (Math.abs(dy) > Math.abs(dx))) { done(); return; }
-        on = true; o.onStart && o.onStart();
+        on = true; dragging = true; o.onStart && o.onStart();
       }
       if (ev.cancelable) ev.preventDefault();
       o.onMove(dx, dy);
@@ -443,7 +453,7 @@ function drag(elm, o) {
     const up = ev => {
       if (ev.pointerId !== id) return;
       done();
-      if (on) { suppressClick(); o.onEnd(dx, dy); }
+      if (on) { dragging = false; suppressClick(); o.onEnd(dx, dy); }
     };
     const done = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); removeEventListener('pointercancel', up); };
     addEventListener('pointermove', mv, { passive: false });
@@ -506,6 +516,82 @@ function PTR(sc, onRefresh) {
     clearTimeout(wheelT); wheelT = setTimeout(() => { wheelAcc = 0; release(); }, 150);
   }, { passive: false });
   return { trigger() { if (busy) return; sc.scrollTo({ top: 0 }); set(TH, true); setTimeout(release, 200); } };
+}
+// ---------- a mouse drags content like a finger ----------
+// with a mouse, drag inside any scroller to scroll it, fling it, and land on its snap points. touch keeps native scrolling.
+// opt out with data-nodrag on anything that handles its own pointer (canvas, inputs and drag() gestures already win)
+const scrollerFor = (el, ax) => {
+  for (let n = el; n && n !== phone.parentElement; n = n.parentElement) {
+    const cs = getComputedStyle(n), ov = ax === 'y' ? cs.overflowY : cs.overflowX;
+    if ((ov === 'auto' || ov === 'scroll') && (ax === 'y' ? n.scrollHeight - n.clientHeight : n.scrollWidth - n.clientWidth) > 1) return n;
+  }
+  return null;
+};
+let flingRaf = 0;
+phone.addEventListener('wheel', () => cancelAnimationFrame(flingRaf), { passive: true });
+phone.addEventListener('pointerdown', e => {
+  if (e.pointerType !== 'mouse' || e.button !== 0) return;
+  cancelAnimationFrame(flingRaf);
+  if (e.target.closest('canvas, input, textarea, select, [data-nodrag]')) return;
+  const id = e.pointerId, sx = e.clientX, sy = e.clientY, samples = [];
+  let sc = null, ax = 'y', start = 0, snapped = false;
+  const setPos = v => { if (ax === 'y') sc.scrollTop = v; else sc.scrollLeft = v; };
+  const mv = ev => {
+    if (ev.pointerId !== id) return;
+    const dx = (ev.clientX - sx) / scale, dy = (ev.clientY - sy) / scale;
+    if (dragging) { finish(false); return; } // a card swipe or a sheet took this gesture
+    if (!sc) {
+      if (Math.hypot(dx, dy) < 8) return;
+      ax = Math.abs(dy) >= Math.abs(dx) ? 'y' : 'x';
+      sc = scrollerFor(e.target, ax);
+      if (!sc) { done(); return; }
+      start = ax === 'y' ? sc.scrollTop : sc.scrollLeft;
+      snapped = getComputedStyle(sc).scrollSnapType !== 'none';
+      if (snapped) sc.style.scrollSnapType = 'none'; // snapping would fight the drag; it comes back on release
+      sc.classList.add('mdrag');
+    }
+    if (ev.cancelable) ev.preventDefault();
+    const d = ax === 'y' ? dy : dx;
+    setPos(start - d);
+    samples.push([now(), d]); if (samples.length > 8) samples.shift();
+  };
+  const finish = fl => {
+    done();
+    if (!sc) return;
+    suppressClick(); sc.classList.remove('mdrag');
+    const t = now(), rec = samples.filter(x => t - x[0] < 120);
+    const v = fl && rec.length > 1 ? -(rec[rec.length - 1][1] - rec[0][1]) / Math.max(8, rec[rec.length - 1][0] - rec[0][0]) : 0; // px/ms, + is forward
+    if (snapped) snapTo(sc, ax, start, v); else if (fl) fling(sc, ax, v);
+  };
+  const up = ev => { if (ev.pointerId === id) finish(true); };
+  const done = () => { removeEventListener('pointermove', mv); removeEventListener('pointerup', up); removeEventListener('pointercancel', up); };
+  addEventListener('pointermove', mv, { passive: false }); addEventListener('pointerup', up); addEventListener('pointercancel', up);
+});
+function fling(sc, ax, v) {
+  let last = now();
+  const step = t => {
+    const dt = Math.min(40, t - last); last = t;
+    v *= Math.pow(.994, dt);
+    if (Math.abs(v) < .02) return;
+    if (ax === 'y') sc.scrollTop += v * dt; else sc.scrollLeft += v * dt;
+    flingRaf = requestAnimationFrame(step);
+  };
+  flingRaf = requestAnimationFrame(step);
+}
+// land on the next snap point in the drag's direction, like a finger flick
+function snapTo(sc, ax, start, v) {
+  const cur = ax === 'y' ? sc.scrollTop : sc.scrollLeft, box = sc.getBoundingClientRect();
+  const kids = [...sc.children].flatMap(c => [c, ...c.children]).filter(c => getComputedStyle(c).scrollSnapAlign !== 'none');
+  const pts = [...new Set(kids.map(c => { const r = c.getBoundingClientRect(); return Math.round((ax === 'y' ? r.top - box.top : r.left - box.left) / scale + cur); }))].sort((a, b) => a - b);
+  const restore = () => setTimeout(() => { sc.style.scrollSnapType = ''; }, 500);
+  if (!pts.length) { restore(); return; }
+  const near = p => pts.reduce((bi, x, i) => (Math.abs(x - p) < Math.abs(pts[bi] - p) ? i : bi), 0);
+  const moved = cur - start, dir = Math.abs(moved) > 40 || Math.abs(v) > .3 ? Math.sign(moved || v) : 0;
+  const si = near(start);
+  let ti = near(cur + v * 120);
+  if (dir && ti === si) ti = clamp(si + dir, 0, pts.length - 1);
+  sc.scrollTo({ [ax === 'y' ? 'top' : 'left']: pts[ti], behavior: 'smooth' });
+  restore();
 }
 function track(sc) {
   let last = sc.scrollTop;
@@ -708,25 +794,30 @@ const GB = {
   you: G.you,
 };
 const BUNDLES = [
-  { id: 'feed', name: 'Feed', c: '#7b61ff', tabs: ['scroll', 'loop', 'swipe'] },
+  { id: 'feed', name: 'Feed', c: '#7b61ff', nav: 'bottom', tabs: ['posts', 'clips', 'discover', 'activity', 'profile'] },
   { id: 'casino', name: 'Casino', c: '#f5a300', tabs: ['slots', 'rocket', 'flip', 'scratch', 'loot'] },
   { id: 'markets', name: 'Markets', c: '#12b886', tabs: ['trade', 'predict'] },
-  { id: 'play', name: 'Play', c: '#ff5a36', tabs: ['tap', 'hold', 'rings', 'pet'] },
+  { id: 'play', name: 'Play', c: '#ff5a36', nav: 'launcher', tabs: ['arcade', 'tap', 'hold', 'rings', 'pet', 'gates', 'tower'] },
   { id: 'inbox', name: 'Inbox', c: '#2f9bff', tabs: ['inbox'] },
   { id: 'goals', name: 'Goals', c: '#ff3d6e', tabs: ['streak', 'quests', 'rank'] },
-  { id: 'shop', name: 'Shop', c: '#c2179b', tabs: ['shop'] },
+  { id: 'shop', name: 'Shop', c: '#c2179b', nav: 'bottom', tabs: ['shop', 'cart', 'orders'] },
   { id: 'you', name: 'You', c: '#6b5b7b', tabs: ['you'] },
 ];
 BUNDLES.forEach(B => { B.bdg = 0; B.cur = null; B.view = null; });
 const GRID = ['feed', 'casino', 'markets', 'play'], DOCK = ['inbox', 'goals', 'shop', 'you'];
+// how a bundle shows its apps: pill tabs under the header, a tab bar at the bottom, or a launcher (first tab is home, the rest open like apps)
+const navMode = B => B.nav || (B.tabs.length > 1 ? 'pills' : 'none');
+const isHome = (B, t) => navMode(B) === 'launcher' && t === B.tabs[0];
 const bundleById = id => BUNDLES.find(B => B.id === id);
 const bundleOf = id => BUNDLES.find(B => B.tabs.includes(id));
 const bglyph = B => `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${GB[B.id]}</svg>`;
 let curApp = null, curBundle = null;
 const iconHTML = B => `<button class="ic" data-app="${B.id}" aria-label="${B.name}"><span class="gl" style="--c:${B.c}">${bglyph(B)}</span><span class="badge"></span><span>${B.name}</span></button>`;
 function mountBundle(B) {
-  const multi = B.tabs.length > 1;
-  const v = html(`<section class="app" style="--c:${B.c}" aria-label="${B.name}" hidden><header class="ah"><button class="ax" aria-label="Close">${I('close')}</button><div class="at"><b>${B.name}</b><small></small></div><div class="ar"></div></header>${multi ? `<nav class="tabs" role="tablist" aria-label="${B.name}">${B.tabs.map(t => `<button role="tab" data-t="${t}" style="--tc:${APPS[t].c}"><span class="tg">${glyph(t)}</span>${APPS[t].name}<span class="tb"></span></button>`).join('')}</nav>` : ''}<div class="bb"></div></section>`);
+  const mode = navMode(B);
+  const tab = t => `<button role="tab" data-t="${t}" style="--tc:${APPS[t].c}"><span class="tg">${glyph(t)}</span><span class="tl">${APPS[t].name}</span><span class="tb"></span></button>`;
+  const nav = cls => `<nav class="${cls}" role="tablist" aria-label="${B.name}">${B.tabs.map(tab).join('')}</nav>`;
+  const v = html(`<section class="app nav-${mode}" style="--c:${B.c}" aria-label="${B.name}" hidden><header class="ah"><button class="ax" aria-label="Close">${I('close')}</button>${mode === 'launcher' ? `<button class="ax aback" aria-label="Back to ${B.name}" hidden>${I('back')}</button>` : ''}<div class="at"><b>${B.name}</b><small></small></div><div class="ar"></div></header>${mode === 'pills' ? nav('tabs') : ''}<div class="bb"></div>${mode === 'bottom' ? nav('btabs') : ''}</section>`);
   $('#apps').append(v);
   B.view = v;
   $('.ax', v).onclick = () => closeApp();
@@ -735,7 +826,9 @@ function mountBundle(B) {
     onMove: (dx, dy) => { v.style.transition = 'none'; v.style.transform = `translateY(${Math.max(0, dy)}px)`; },
     onEnd: (dx, dy) => { v.style.transition = ''; v.style.transform = ''; if (dy > 100) closeApp(); },
   });
-  if (multi) $('.tabs', v).addEventListener('click', e => { const b = e.target.closest('[data-t]'); if (b) showTab(B, b.dataset.t); });
+  const nv = $('nav[role=tablist]', v);
+  if (nv) nv.addEventListener('click', e => { const b = e.target.closest('[data-t]'); if (b) showTab(B, b.dataset.t); });
+  if (mode === 'launcher') $('.aback', v).onclick = () => showTab(B, B.tabs[0]);
   B.tabs.forEach(t => { APPS[t].bdg = -1; }); // so the tab badges fill in on the next refresh
   return v;
 }
@@ -751,23 +844,38 @@ function ensureSub(t) {
 function showTab(B, t, quiet) {
   if (!B.view || !B.tabs.includes(t)) return;
   if (curBundle === B && curApp === t) return;
+  const prev = curBundle === B ? curApp : null, mode = navMode(B);
   if (curApp && curApp !== t && APPS[curApp].close) APPS[curApp].close();
   ensureSub(t);
   B.cur = t; S.tabs[B.id] = t; curApp = t;
   $$('.bb > .ab', B.view).forEach(x => { x.hidden = x.dataset.sub !== t; });
   $$('.ar > .ar-sub', B.view).forEach(x => { x.hidden = x.dataset.sub !== t; });
   refreshBadges(); // tab badges change the strip's width, so fill them before scrolling to the active tab
-  $$('.tabs [data-t]', B.view).forEach(x => {
+  $$('nav[role=tablist] [data-t]', B.view).forEach(x => {
     const on = x.dataset.t === t;
     x.classList.toggle('on', on); x.setAttribute('aria-selected', String(on));
-    if (on) { const nav = x.parentElement; nav.scrollTo({ left: Math.max(0, x.offsetLeft - 40), behavior: quiet ? 'auto' : 'smooth' }); }
+    if (on && mode === 'pills') { const nav = x.parentElement; nav.scrollTo({ left: Math.max(0, x.offsetLeft - 40), behavior: quiet ? 'auto' : 'smooth' }); }
   });
   $('.at small', B.view).textContent = APPS[t].tag;
+  if (mode === 'launcher') {
+    const game = !isHome(B, t);
+    $('.ax:not(.aback)', B.view).hidden = game; $('.aback', B.view).hidden = !game;
+    $('.at b', B.view).textContent = game ? APPS[t].name : B.name;
+    if (game && prev !== t) splash(B, t);
+  }
   const a = APPS[t];
   if (a.open) a.open();
   if (a.render) a.render();
   if (!quiet) { sfx.click(); haptic(); }
   refreshBadges();
+}
+// a game opens like its own app: its icon and name for a moment, then the game
+function splash(B, t) {
+  if (reduced) return;
+  const a = APPS[t], el = html(`<div class="splash" style="--c:${a.c}" aria-hidden="true"><span class="gl">${glyph(t)}</span><b>${a.name}</b></div>`);
+  $('.bb', B.view).append(el);
+  setTimeout(() => el.classList.add('out'), 700);
+  setTimeout(() => el.remove(), 1050);
 }
 function openApp(id, from) {
   if (lockOn) return;
@@ -800,8 +908,9 @@ function closeApp(instant) {
   }
   refreshBadges(); pump();
 }
-let badgeTotal = -1;
+let badgeTotal = -1, booted = false;
 function refreshBadges() {
+  if (!booted) return; // apps are still setting up
   let total = 0;
   for (const B of BUNDLES) {
     let sum = 0;
@@ -809,7 +918,7 @@ function refreshBadges() {
       const a = APPS[t], n = Math.max(0, Math.floor(a.badge ? a.badge() : 0));
       sum += n;
       if (n !== a.bdg) {
-        const tb = B.view && $(`.tabs [data-t="${t}"] .tb`, B.view);
+        const tb = B.view && $(`nav[role=tablist] [data-t="${t}"] .tb`, B.view);
         if (tb) { tb.textContent = n ? (n > 99 ? '99+' : n) : ''; if (n > a.bdg && a.bdg >= 0) restart(tb, 'bump'); }
         a.bdg = n;
       }
@@ -837,68 +946,49 @@ function refreshBadges() {
   if (nb.textContent !== nt) { if (notifs.length > (+nb.dataset.n || 0)) restart(nb, 'bump'); nb.textContent = nt; nb.dataset.n = notifs.length; }
 }
 
-// =====================================================================
-// the apps: one hook each
-// =====================================================================
-
-// ---------- Tap: the clicker loop ----------
-const UPG = [
-  { k: 'P', n: 'Stronger thumb', d: '+1 hit per tap', base: 20, g: 1.5 },
-  { k: 'A', n: 'Auto-tapper', d: '+1 hit every second, even while you’re gone', base: 50, g: 1.55 },
-  { k: 'C', n: 'Lucky crits', d: '+2% chance of a 5× tap', base: 120, g: 1.8, max: 20 },
-];
-const upPrice = u => Math.round(u.base * Math.pow(u.g, S.tap[u.k]));
-const tapPower = () => 1 + S.tap.P;
-const critP = () => .06 + .02 * S.tap.C;
-def({
-  id: 'tap', name: 'Tap', tag: 'Clicker · number goes up', c: '#ff5a36',
-  badge: () => UPG.filter(u => (!u.max || S.tap[u.k] < u.max) && S.hits >= upPrice(u)).length,
-  ping: () => (S.tap.A ? `Your auto-tapper made ${fmt(S.tap.A * 30)} hits. Come get more.` : 'Your thumb is getting cold'),
-  build(b) {
-    b.innerHTML = `<div class="pad"><div class="tp-stats"><div><b id="tp-p"></b><small>per tap</small></div><div><b id="tp-a"></b><small>per second</small></div><div><b id="tp-c"></b><small>crit chance</small></div></div>
-      <div class="tp-zone"><button class="bigbtn" id="tp-btn" aria-label="Tap">TAP</button></div><div class="ups" id="tp-ups">${UPG.map(u => `<button class="upg" data-u="${u.k}"><span class="ut"><b>${u.n} <span class="lv"></span></b><small>${u.d}</small><small class="nd"></small></span><span class="buy"></span></button>`).join('')}</div></div>`;
-    track($('.pad', b));
-    const btn = $('#tp-btn', b);
-    btn.addEventListener('pointerdown', e => { e.preventDefault(); doTap(e.clientX, e.clientY); });
-    btn.addEventListener('keydown', e => { if (e.key === 'Enter') { const r = btn.getBoundingClientRect(); doTap(r.left + r.width / 2, r.top + r.height / 2); } });
-    $('#tp-ups', b).addEventListener('click', e => { const r = e.target.closest('[data-u]'); if (r) buyUp(UPG.find(u => u.k === r.dataset.u), r); });
-  },
-  render() {
-    if (!this.view) return;
-    $('#tp-p').textContent = fmt(tapPower());
-    $('#tp-a').textContent = fmt(S.tap.A);
-    $('#tp-c').textContent = Math.round(critP() * 100) + '%';
-    UPG.forEach(u => {
-      const row = $(`#tp-ups [data-u="${u.k}"]`), maxed = u.max && S.tap[u.k] >= u.max, p = upPrice(u), ok = !maxed && S.hits >= p;
-      row.className = `upg${ok ? ' ok' : ' cant'}`;
-      $('.lv', row).textContent = `Lv ${S.tap[u.k]}`;
-      const nd = $('.nd', row); nd.textContent = !ok && !maxed ? `${fmt(p - S.hits)} more to go` : ''; nd.hidden = !nd.textContent;
-      const buy = $('.buy', row), label = maxed ? 'Max' : fmt(p);
-      if (buy.dataset.l !== label) { buy.dataset.l = label; buy.innerHTML = maxed ? 'Max' : IF('bolt') + label; }
-    });
-  },
-  tick() { this.render(); },
-  key(e) { if (e.key === ' ' && e.type === 'keydown') { const r = $('#tp-btn').getBoundingClientRect(); doTap(r.left + r.width / 2 + rnd(-50, 50) * scale, r.top + r.height / 2 + rnd(-50, 50) * scale); return true; } },
-});
-let tapRender = 0;
-function doTap(cx, cy) {
-  act(); S.taps++;
-  const crit = chance(critP()), [x, y] = toLocal(cx, cy);
-  earn(tapPower() * (crit ? 5 : 1), x, y - 34, { cls: crit ? 'crit' : '' });
-  if (crit) { S.crits++; sfx.crit(); haptic(true); burst(x, y, { n: 18, colors: ['#ffc21a', '#ff2e4d', '#fff'], shape: 'dot', power: 1.4 }); }
-  else { sfx.tap(combo); haptic(); burst(x, y, { n: 5, colors: ['#ff5a36', '#ffc21a', '#ffd6c7'], shape: 'dot' }); }
-  restart($('#tp-btn'), 'squish');
-  if (now() - tapRender > 250) { tapRender = now(); APPS.tap.render(); }
+// ---------- shared by casino and markets: stakes and charts ----------
+const STAKES = [['10', 10], ['50', 50], ['100', 100], ['Half', 'half'], ['All in', 'all']];
+const stakeVal = v => (v === 'half' ? Math.floor(S.hits / 2) : v === 'all' ? S.hits : v);
+const chipsHTML = (id, sel) => `<div class="chips" id="${id}">${STAKES.map(([l, v]) => `<button data-v="${v}" class="${String(v) === String(sel) ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+function bindChips(el, set) {
+  el.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    set(isNaN(+b.dataset.v) ? b.dataset.v : +b.dataset.v);
+    $$('button', el).forEach(x => x.classList.toggle('on', x === b)); sfx.click();
+  });
 }
-function buyUp(u, row) {
-  if (u.max && S.tap[u.k] >= u.max) return;
-  if (!spend(upPrice(u))) return;
-  S.tap[u.k]++; S.buys++;
-  const [x, y] = centerOf(row); burst(x, y, { n: 16 });
-  toast(`${u.n} is now level ${S.tap[u.k]}`);
-  APPS.tap.render(); refreshBadges(); queueCheck();
+// a single-series line: 2px stroke, soft area, faint gridlines, emphasized endpoint
+function sparkSVG(vals, w, h, color, o = {}) {
+  const pad = o.pad ?? 4, min = Math.min(...vals), max = Math.max(...vals), rng = max - min || 1;
+  const x = i => pad + (i / Math.max(1, vals.length - 1)) * (w - pad * 2), y = v => pad + (1 - (v - min) / rng) * (h - pad * 2);
+  const line = 'M' + vals.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join('L');
+  const lx = x(vals.length - 1), ly = y(vals[vals.length - 1]);
+  const grid = o.grid ? [.25, .5, .75].map(f => `<line x1="0" x2="${w}" y1="${(h * f).toFixed(1)}" y2="${(h * f).toFixed(1)}" stroke="var(--line)" stroke-width="1"/>`).join('') : '';
+  const area = o.area ? `<path d="${line}L${lx.toFixed(1)},${h}L${x(0).toFixed(1)},${h}Z" fill="${color}" opacity=".14"/>` : '';
+  const dot = o.dot ? `<circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="4" fill="${color}" stroke="var(--card)" stroke-width="2"/>` : '';
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" aria-hidden="true">${grid}${area}<path d="${line}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>${dot}</svg>`;
 }
 
+// =====================================================================
+// modules: each one owns its section below, its CSS block, its state slice
+// =====================================================================
+
+// ==== MODULE feed: posts, clips, discover, activity, profile ====
+addAch([
+  ['cards', 'Bottomless', 'Reveal 500 cards', 'down', () => S.cards >= 500],
+  ['match', 'Matchmaker', 'Get 10 matches', 'heart', () => S.matches >= 10],
+  ['clips', 'Autopilot', 'Watch 100 clips', 'play', () => S.clips >= 100],
+]);
+addStats([
+  ['cards revealed', () => fmt(S.cards)],
+  ['swipes', () => fmt(S.swipes)],
+  ['clips watched', () => fmt(S.clips)],
+]);
+addQuests([
+  ['cards', 'Reveal {n} cards', 25, 100],
+  ['swipes', 'Swipe {n} cards', 8, 30],
+  ['clips', 'Watch {n} clips', 4, 15],
+]);
 // ---------- Scroll: infinite scroll where every card pays ----------
 const TIERS = [['common', 58, 1, 3], ['uncommon', 26, 4, 8], ['rare', 11.5, 12, 25], ['epic', 3.8, 50, 90], ['legendary', .7, 250, 400]];
 let hotLeft = 0, cardGate = 0, cardsLoading = false;
@@ -910,7 +1000,7 @@ function mkCard(fresh) {
 }
 function revealCard(c) {
   if (c._r) return;
-  c._r = 1; c.classList.add('rev'); APPS.scroll.io.unobserve(c);
+  c._r = 1; c.classList.add('rev'); APPS.posts.io.unobserve(c);
   const t = +c.dataset.t, v = +c.dataset.v, [x, y] = centerOf(c);
   S.cards++; act();
   earn(v, x + 40, y - 10);
@@ -919,7 +1009,7 @@ function revealCard(c) {
   if (t === 4) { confetti(120); sfx.win(); }
 }
 function moreCards() {
-  const a = APPS.scroll;
+  const a = APPS.posts;
   if (cardsLoading || !a.list) return;
   cardsLoading = true;
   setTimeout(() => {
@@ -941,7 +1031,7 @@ function moreCards() {
 async function refreshScroll() {
   S.refreshes++;
   await wait(ri(260, 620));
-  const r = R(), a = APPS.scroll;
+  const r = R(), a = APPS.posts;
   if (r < .12) { sfx.nope(); toast('Nothing new. Pull again.'); return; }
   const big = r < .24, n = big ? 16 : ri(5, 9);
   hotLeft = big ? 16 : 4;
@@ -950,7 +1040,7 @@ async function refreshScroll() {
   if (big) { sfx.big(); confetti(70); haptic(true); toast(`Hot refresh: ${n} boosted cards`); } else { sfx.fresh(); toast(`${n} fresh cards`); }
 }
 def({
-  id: 'scroll', name: 'Scroll', tag: 'Infinite scroll · pull to refresh', c: '#7b61ff',
+  id: 'posts', name: 'Home', tag: 'Infinite scroll · pull to refresh', c: '#7b61ff',
   badge: () => Math.min(99, S.scrollNew),
   ping: () => { S.scrollNew += ri(4, 16); return `${Math.min(99, S.scrollNew)} new cards to reveal`; },
   build(b) {
@@ -970,6 +1060,198 @@ def({
   },
 });
 
+// ---------- Swipe: swipe cards with intermittent matches ----------
+const SHK = Object.keys(SHAPES);
+const mkSwipe = () => html(`<div class="scard" style="--h:${ri(0, 359)}"><div class="shp">${shapeSVG(pick(SHK), 'rgba(255,255,255,.92)')}</div><span class="pct">${ri(61, 99)}% match</span><b class="stamp yes">YES</b><b class="stamp no">NOPE</b></div>`);
+const topSwipe = () => $$('.scard', $('#deck')).filter(c => !c._gone).pop();
+function armSwipe() {
+  const c = topSwipe(); if (!c || c._armed) return;
+  c._armed = true; c.classList.add('top');
+  const yes = $('.stamp.yes', c), no = $('.stamp.no', c);
+  drag(c, {
+    axis: 'any',
+    onMove: (dx, dy) => { c.style.transition = 'none'; c.style.transform = `translate(${dx}px, ${dy * .5}px) rotate(${dx / 16}deg)`; yes.style.opacity = clamp(dx / 80, 0, 1); no.style.opacity = clamp(-dx / 80, 0, 1); },
+    onEnd: (dx, dy) => {
+      if (dx > 80) flingSwipe(1); else if (dx < -80) flingSwipe(-1); else if (dy < -100) flingSwipe(0);
+      else { c.style.transition = 'transform .25s cubic-bezier(.3,1.6,.5,1)'; c.style.transform = ''; yes.style.opacity = no.style.opacity = 0; }
+    },
+  });
+}
+function flingSwipe(dir) {
+  const c = topSwipe(); if (!c) return;
+  if (dir === 0 && S.supers <= 0) { sfx.nope(); toast('No super-likes left. The Shop has more.'); c.style.transition = 'transform .25s'; c.style.transform = ''; return; }
+  c._gone = true;
+  c.style.transition = 'transform .28s ease-in, opacity .28s';
+  c.style.transform = dir === 0 ? 'translate(0, -720px) scale(.9)' : `translate(${dir * 560}px, 40px) rotate(${dir * 28}deg)`;
+  c.style.opacity = '0';
+  setTimeout(() => c.remove(), 300);
+  $('#deck').prepend(mkSwipe());
+  armSwipe();
+  S.swipes++; act(); sfx.swoosh(); haptic();
+  const [x, y] = centerOf($('#deck'));
+  if (dir === 0) { S.supers--; showMatch(); }
+  else if (dir > 0) { earn(2, x, y); if (chance(.16)) setTimeout(showMatch, 150); }
+  else earn(1, x, y);
+  APPS.discover.render();
+}
+function showMatch() {
+  const a = APPS.discover;
+  const m = html(`<div class="match"><div class="two"><i style="--h:${ri(0, 359)}"></i><i></i></div><b>It’s a match!</b></div>`);
+  a.body.append(m);
+  S.matches++; sfx.match(); haptic(true);
+  const [x, y] = centerOf(m); burst(x, y, { n: 30, colors: ['#fff', '#ffd6e8', '#ff2e4d'], shape: 'heart', power: 1.4 });
+  earn(25, x, y - 90);
+  setTimeout(() => m.remove(), 1000);
+  queueCheck();
+}
+def({
+  id: 'discover', name: 'Discover', tag: 'Swipe cards · intermittent match', c: '#ff4fa3',
+  bg() { if (curApp !== 'discover' && chance(.04)) S.likesYou++; if (S.supers < 3 && tickN % 40 === 0) S.supers++; },
+  wait: () => (S.likesYou ? [{ t: `${S.likesYou} people liked you` }] : []),
+  badge: () => Math.min(99, S.likesYou),
+  ping: () => { S.likesYou += ri(1, 4); return `${S.likesYou} people liked you. See who.`; },
+  build(b, r) {
+    r.innerHTML = `<span class="chip" style="color:#ff4fa3">${IF('heart')}<span id="sw-m"></span></span>`;
+    b.innerHTML = `<button class="sw-lk" id="sw-lk"><span class="blurs">${[0, 1, 2].map(() => `<i style="--h:${ri(0, 359)}"></i>`).join('')}</span><span><b id="sw-lkn"></b><small>See who liked you</small></span></button>
+      <div class="deck" id="deck"></div>
+      <div class="sw-btns"><button class="sb no" aria-label="Nope">${I('close')}</button><button class="sb sup" aria-label="Super like">${IF('star')}<small id="sw-sup"></small></button><button class="sb yes" aria-label="Like">${IF('heart')}</button></div>`;
+    const deck = $('#deck', b);
+    for (let i = 0; i < 3; i++) deck.append(mkSwipe());
+    armSwipe();
+    $('.sb.no', b).onclick = () => flingSwipe(-1);
+    $('.sb.yes', b).onclick = () => flingSwipe(1);
+    $('.sb.sup', b).onclick = () => flingSwipe(0);
+    $('#sw-lk', b).onclick = () => {
+      const n = Math.max(1, Math.min(9, S.likesYou));
+      const c = html(`<div><div class="blurgrid">${Array.from({ length: n }, () => `<i style="--h:${ri(0, 359)}"></i>`).join('')}</div><p class="fine" style="margin:14px 0">${fmt(S.likesYou)} people liked you.</p><button class="pbtn" style="--c:#ff4fa3">Reveal for 300 hits</button></div>`);
+      const close = sheet('Liked you', c);
+      $('.pbtn', c).onclick = e => {
+        if (!spend(300)) return;
+        $('.blurgrid', c).classList.add('open');
+        e.currentTarget.remove();
+        $('.fine', c).textContent = 'They’re shapes. They were always shapes.';
+        S.likesYou = 0; APPS.discover.render(); refreshBadges();
+        setTimeout(close, 2200);
+      };
+    };
+  },
+  render() {
+    if (!this.view) return;
+    $('#sw-lkn').textContent = `${fmt(S.likesYou)} people liked you`;
+    $('#sw-sup').textContent = S.supers;
+    $('#sw-m').textContent = fmt(S.matches);
+  },
+  key(e) {
+    if (e.type !== 'keydown') return;
+    if (e.key === 'ArrowRight') { flingSwipe(1); return true; }
+    if (e.key === 'ArrowLeft') { flingSwipe(-1); return true; }
+    if (e.key === 'ArrowUp') { flingSwipe(0); return true; }
+  },
+});
+
+// ---------- Loop: autoplay that never asks ----------
+let curClip = null, clipRaf = 0, clipLast = 0, clipTap = 0, clipTimer = 0;
+function mkClip() {
+  const c = html(`<section class="clip" style="--h:${ri(0, 359)};--t:${rnd(.45, 1).toFixed(2)}s"><div class="shp">${shapeSVG(pick(SHK), 'rgba(255,255,255,.9)')}</div>
+    <span class="views">${I('eye')}<span class="vw"></span></span>
+    <div class="rail"><button class="lk" aria-label="Like">${I('heart')}<span></span></button><button aria-label="Share">${I('send')}<span>${fmt(ri(10, 9000))}</span></button></div>
+    <div class="next">Next in <b>2</b></div><div class="prog"><i></i></div></section>`);
+  c._c = { d: ri(4000, 7000), el: 0, likes: Math.round(Math.exp(rnd(5, 12))), views: Math.round(Math.exp(rnd(7, 14))), liked: false, seen: false, vt: 0 };
+  $('.lk span', c).textContent = fmt(c._c.likes); $('.vw', c).textContent = fmt(c._c.views);
+  return c;
+}
+function addClips(n) {
+  const a = APPS.clips;
+  for (let i = 0; i < n; i++) { const c = mkClip(); a.lp.append(c); a.io.observe(c); }
+}
+function clipTick(t) {
+  if (curApp !== 'clips') { clipRaf = 0; return; }
+  const dt = Math.min(100, t - clipLast); clipLast = t;
+  const c = curClip;
+  if (c && !document.hidden && !c.classList.contains('held')) {
+    const k = c._c;
+    k.el += dt;
+    if (k.el > 1200 && !k.seen) {
+      k.seen = true; S.clips++; S.earn++; earn(2, FW / 2, FH * .45);
+      if (S.earn >= 3) { S.earn = 0; S.energy++; sfx.coin(); toast('+1 free spin in Slots'); }
+    }
+    const p = Math.min(1, k.el / k.d), left = Math.ceil((k.d - k.el) / 1000), nx = $('.next', c);
+    $('.prog i', c).style.width = p * 100 + '%';
+    if (left <= 2 && p < 1) { nx.classList.add('show'); $('b', nx).textContent = left; } else nx.classList.remove('show');
+    if (p >= 1 && !k.done) { k.done = true; APPS.clips.lp.scrollBy({ top: APPS.clips.lp.clientHeight, behavior: 'smooth' }); }
+    k.vt += dt; if (k.vt > 500) { k.vt = 0; k.views += ri(3, 60); $('.vw', c).textContent = fmt(k.views); }
+  }
+  clipRaf = requestAnimationFrame(clipTick);
+}
+function likeClip(c, only) {
+  const k = c._c, b = $('.lk', c);
+  if (k.liked && only) { sfx.pop(5); return; }
+  k.liked = !k.liked; k.likes += k.liked ? 1 : -1;
+  b.classList.toggle('on', k.liked); $('span', b).textContent = fmt(k.likes);
+  if (k.liked) { act(); sfx.pop(combo % 12); haptic(); const [x, y] = centerOf(b); burst(x, y, { n: 12, colors: ['#ff2e4d', '#ff7aa0', '#fff'], shape: 'heart' }); if (!k.paid) { k.paid = true; earn(2, x - 30, y - 20); } } else sfx.close();
+}
+def({
+  id: 'clips', name: 'Clips', tag: 'Autoplay · vertical swipe', c: '#2b1a3a',
+  badge: () => Math.min(99, S.loopNew),
+  ping: () => { S.loopNew += ri(3, 12); return 'New clips picked for you'; },
+  build(b) {
+    b.innerHTML = '<div class="loops idle" id="lp"></div>';
+    this.lp = $('#lp', b);
+    this.io = new IntersectionObserver(es => es.forEach(e => {
+      const c = e.target;
+      if (e.intersectionRatio >= .6) {
+        c.classList.add('play');
+        if (curClip !== c) {
+          if (curClip) { curClip.classList.remove('held'); $('.next', curClip).classList.remove('show'); }
+          curClip = c; if (c._c.done) { c._c.done = false; c._c.el = 0; }
+          const kids = this.lp.children, i = Array.prototype.indexOf.call(kids, c);
+          if (i > kids.length - 4) addClips(5);
+          if (i > 0) $$('.swipehint', this.lp).forEach(x => x.remove());
+          if (curApp === 'clips') { sfx.tick(); haptic(); }
+        }
+      } else c.classList.remove('play');
+    }), { root: this.lp, threshold: [0, .6] });
+    addClips(6);
+    this.lp.firstElementChild.insertAdjacentHTML('beforeend', `<div class="swipehint">${I('up')}Swipe up</div>`);
+    track(this.lp);
+    this.lp.addEventListener('click', e => {
+      const c = e.target.closest('.clip'); if (!c) return;
+      if (e.target.closest('.lk')) { likeClip(c); return; }
+      if (e.target.closest('button')) { sfx.swoosh(); toast('Sent'); return; }
+      const t = now();
+      if (t - clipTap < 280) {
+        clearTimeout(clipTimer); clipTap = 0;
+        const r = c.getBoundingClientRect(), h = html(`<div class="big-heart" style="left:${(e.clientX - r.left) / scale}px;top:${(e.clientY - r.top) / scale}px;--r:${ri(-18, 18)}deg">${IF('heart')}</div>`);
+        c.append(h); h.addEventListener('animationend', () => h.remove());
+        likeClip(c, true);
+      } else { clipTap = t; clipTimer = setTimeout(() => { c.classList.toggle('held'); sfx.click(); }, 280); }
+    });
+  },
+  open() { S.loopNew = 0; this.lp.classList.remove('idle'); clipLast = now(); if (!clipRaf) clipRaf = requestAnimationFrame(clipTick); },
+  close() { this.lp.classList.add('idle'); },
+  key(e) {
+    if (e.type !== 'keydown') return;
+    if (e.key === 'ArrowDown' || e.key === 'j') { this.lp.scrollBy({ top: this.lp.clientHeight, behavior: 'smooth' }); return true; }
+    if (e.key === 'ArrowUp' || e.key === 'k') { this.lp.scrollBy({ top: -this.lp.clientHeight, behavior: 'smooth' }); return true; }
+    if (e.key === ' ' && curClip) { curClip.classList.toggle('held'); return true; }
+    if (e.key === 'l' && curClip) { likeClip(curClip, true); return true; }
+  },
+});
+// stubs until the feed module builds them
+def({ id: 'activity', name: 'Activity', tag: '', c: '#ff4fa3', build(b) { b.innerHTML = '<div class="pad"></div>'; } });
+def({ id: 'profile', name: 'Profile', tag: '', c: '#7b61ff', build(b) { b.innerHTML = '<div class="pad"></div>'; } });
+// ==== /MODULE feed ====
+
+// ==== MODULE inbox: inbox ====
+addAch([
+  ['zero', 'Inbox zero', 'Read every message', 'check'],
+]);
+addStats([
+  ['messages read', () => fmt(S.cleared)],
+]);
+addQuests([
+  ['cleared', 'Read {n} messages', 8, 30],
+]);
 // ---------- Inbox: unread dots that never stop ----------
 const mail = [];
 let mailN = 0, readRun = 0, readRunT = 0;
@@ -1022,6 +1304,8 @@ function mailLoop() {
 }
 def({
   id: 'inbox', name: 'Inbox', tag: 'Unread dots · inbox zero', c: '#2f9bff',
+  init() { for (let i = 0; i < 7; i++) addMail(); mail.forEach((m, i) => { m.ts = T() - i * ri(20, 200) * 1000; }); mailLoop(); },
+  wait() { const un = mail.filter(m => m.un).length; return un ? [{ t: `${un} unread message${un > 1 ? 's' : ''}`, r: un }] : []; },
   badge: () => mail.filter(m => m.un).length,
   ping: () => { const u = mail.filter(m => m.un).length; return u ? `${u} unread messages` : null; },
   build(b, r) {
@@ -1043,7 +1327,28 @@ def({
   sync() { if (this.list) $('#ib-zero').hidden = mail.length > 0; },
   key(e) { if (e.key === ' ' && e.type === 'keydown') { const m = mail.slice().reverse().find(x => x.un); if (m) readMail(m); return true; } },
 });
+// ==== /MODULE inbox ====
 
+// ==== MODULE casino: slots, rocket, flip, scratch, loot ====
+addAch([
+  ['jackpot', 'Jackpot', 'Hit three of a kind', 'gem'],
+  ['legend', 'Legendary', 'Pull a legendary', 'star'],
+  ['collect', 'Completionist', 'Collect 12 of 24', 'gem', () => Object.keys(S.loot.own).length >= 12],
+  ['scratch', 'Lucky scratch', 'Win a scratch card', 'star', () => S.scratchWins >= 1],
+  ['rocket', 'Moonshot', 'Cash out a rocket above 10×', 'up', () => S.bestCash >= 10],
+  ['flip8', 'Let it ride', 'Double a pot eight times', 'star', () => S.maxFlips >= 8],
+]);
+addStats([
+  ['lever pulls', () => fmt(S.spins)],
+  ['boxes opened', () => fmt(S.boxes)],
+  ['rocket launches', () => fmt(S.launches)],
+  ['coin flips', () => fmt(S.flips)],
+]);
+addQuests([
+  ['boxes', 'Open {n} boxes', 1, 4],
+  ['spins', 'Pull the lever {n} times', 3, 8],
+  ['scratches', 'Scratch {n} cards', 1, 3],
+]);
 // ---------- Slots: variable reward, near misses, energy timer ----------
 const MAXE = 5, REGEN = 20000, CELL = 58;
 const SYM = {
@@ -1120,6 +1425,8 @@ async function spin() {
 }
 def({
   id: 'slots', name: 'Slots', tag: 'Variable reward · near miss', c: '#ffb000',
+  bg: regen,
+  wait: () => (S.energy ? [{ t: `${S.energy} free spin${S.energy > 1 ? 's' : ''}` }] : []),
   badge: () => S.energy,
   ping: () => (S.energy >= MAXE ? 'Spins are full. Pull now!' : S.energy ? `${S.energy} free spins waiting` : null),
   build(b, r) {
@@ -1156,245 +1463,173 @@ def({
   key(e) { if (e.key === ' ' && e.type === 'keydown') { pullLever(); return true; } },
 });
 
-// ---------- Swipe: swipe cards with intermittent matches ----------
-const SHK = Object.keys(SHAPES);
-const mkSwipe = () => html(`<div class="scard" style="--h:${ri(0, 359)}"><div class="shp">${shapeSVG(pick(SHK), 'rgba(255,255,255,.92)')}</div><span class="pct">${ri(61, 99)}% match</span><b class="stamp yes">YES</b><b class="stamp no">NOPE</b></div>`);
-const topSwipe = () => $$('.scard', $('#deck')).filter(c => !c._gone).pop();
-function armSwipe() {
-  const c = topSwipe(); if (!c || c._armed) return;
-  c._armed = true; c.classList.add('top');
-  const yes = $('.stamp.yes', c), no = $('.stamp.no', c);
-  drag(c, {
-    axis: 'any',
-    onMove: (dx, dy) => { c.style.transition = 'none'; c.style.transform = `translate(${dx}px, ${dy * .5}px) rotate(${dx / 16}deg)`; yes.style.opacity = clamp(dx / 80, 0, 1); no.style.opacity = clamp(-dx / 80, 0, 1); },
-    onEnd: (dx, dy) => {
-      if (dx > 80) flingSwipe(1); else if (dx < -80) flingSwipe(-1); else if (dy < -100) flingSwipe(0);
-      else { c.style.transition = 'transform .25s cubic-bezier(.3,1.6,.5,1)'; c.style.transform = ''; yes.style.opacity = no.style.opacity = 0; }
-    },
-  });
+// ---------- Rocket: a crash game that never crashes on you ----------
+const ROCKET_K = .3, ROCKET_FREE = 30000;
+const crashPoint = () => clamp(.99 / (1 - R()), 1.25, 60);
+const rocketHist = Array.from({ length: 8 }, crashPoint);
+const SHIP = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2c3 2.2 5 6 5 10l-2 5H9l-2-5c0-3.8 2-7.8 5-10z" fill="#fff"/><circle cx="12" cy="10" r="2.2" fill="#3b7bff"/><path d="m7 12-3 4.5L7.5 17zM17 12l3 4.5-3.5.5z" fill="#ff2e4d"/><path d="M9.5 18h5L12 23z" fill="#ffc21a"/></svg>';
+let rkt = null, rStake = 10;
+function rocketGo() {
+  if (rkt) { if (!rkt.cashed) rocketCash(false); return; }
+  const free = T() >= S.rocketAt, bet = free ? 10 : stakeVal(rStake);
+  if (!free) { if (bet < 1) { sfx.nope(); toast('You need hits to bet. Tap earns some.'); return; } if (!spend(bet)) return; }
+  else S.rocketAt = T() + ROCKET_FREE;
+  act(); S.launches++;
+  rkt = { bet, t0: now(), m: 1, crash: crashPoint(), cashed: false, pts: [[0, 1]], last: 0, tone: holdTone() };
+  $('#rc-m').className = 'rc-m'; $('#rc-sub').textContent = free ? 'Free launch' : `Riding ${fmt(bet)} hits`;
+  sfx.whoosh(); haptic();
+  rkt.raf = requestAnimationFrame(rocketStep);
+  APPS.rocket.render(); refreshBadges();
 }
-function flingSwipe(dir) {
-  const c = topSwipe(); if (!c) return;
-  if (dir === 0 && S.supers <= 0) { sfx.nope(); toast('No super-likes left. The Shop has more.'); c.style.transition = 'transform .25s'; c.style.transform = ''; return; }
-  c._gone = true;
-  c.style.transition = 'transform .28s ease-in, opacity .28s';
-  c.style.transform = dir === 0 ? 'translate(0, -720px) scale(.9)' : `translate(${dir * 560}px, 40px) rotate(${dir * 28}deg)`;
-  c.style.opacity = '0';
-  setTimeout(() => c.remove(), 300);
-  $('#deck').prepend(mkSwipe());
-  armSwipe();
-  S.swipes++; act(); sfx.swoosh(); haptic();
-  const [x, y] = centerOf($('#deck'));
-  if (dir === 0) { S.supers--; showMatch(); }
-  else if (dir > 0) { earn(2, x, y); if (chance(.16)) setTimeout(showMatch, 150); }
-  else earn(1, x, y);
-  APPS.swipe.render();
+function rocketStep() {
+  if (!rkt) return;
+  const t = (now() - rkt.t0) / 1000;
+  rkt.m = Math.exp(ROCKET_K * t);
+  if (t - rkt.last > .05) { rkt.pts.push([t, rkt.m]); rkt.last = t; }
+  if (!rkt.cashed && rkt.m >= rkt.crash - .02) { rkt.m = rkt.crash - .01; rocketCash(true); } // it never lets you lose
+  if (rkt.cashed && rkt.m >= rkt.shown) { rocketCrash(); return; }
+  if (rkt.tone) rkt.tone.set(160 + Math.min(1400, rkt.m * 90));
+  drawRocket();
+  rkt.raf = requestAnimationFrame(rocketStep);
 }
-function showMatch() {
-  const a = APPS.swipe;
-  const m = html(`<div class="match"><div class="two"><i style="--h:${ri(0, 359)}"></i><i></i></div><b>It’s a match!</b></div>`);
-  a.body.append(m);
-  S.matches++; sfx.match(); haptic(true);
-  const [x, y] = centerOf(m); burst(x, y, { n: 30, colors: ['#fff', '#ffd6e8', '#ff2e4d'], shape: 'heart', power: 1.4 });
-  earn(25, x, y - 90);
-  setTimeout(() => m.remove(), 1000);
+function drawRocket() {
+  const scr = $('#rc-scr'); if (!scr || !rkt) return;
+  const W = scr.clientWidth, H = scr.clientHeight, t = (now() - rkt.t0) / 1000;
+  const tMax = Math.max(4, t * 1.15), mMax = Math.max(2, rkt.m * 1.2);
+  const X = v => 18 + (v / tMax) * (W - 50), Y = v => H - 22 - ((v - 1) / (mMax - 1)) * (H - 90);
+  const pts = [...rkt.pts, [t, rkt.m]];
+  const d = 'M' + pts.map(([a, b]) => `${X(a).toFixed(1)},${Y(b).toFixed(1)}`).join('L');
+  const [lx, ly] = [X(t), Y(rkt.m)];
+  $('#rc-svg').innerHTML = `<path d="${d}L${lx.toFixed(1)},${H - 22}L18,${H - 22}Z" fill="url(#rcg)"/><path d="${d}" fill="none" stroke="#ffb000" stroke-width="3" stroke-linecap="round"/><defs><linearGradient id="rcg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff6a00" stop-opacity=".45"/><stop offset="1" stop-color="#ff6a00" stop-opacity="0"/></linearGradient></defs>`;
+  const p2 = pts[Math.max(0, pts.length - 4)], ang = Math.atan2(Y(rkt.m) - Y(p2[1]), X(t) - X(p2[0])) * 180 / Math.PI + 90;
+  const ship = $('#rc-ship'); ship.style.transform = `translate(${lx}px, ${ly}px) rotate(${ang}deg)`; ship.hidden = false;
+  $('#rc-m').textContent = rkt.m.toFixed(2) + '×';
+  if (!rkt.cashed) $('#rc-go').textContent = `Cash out +${fmt(Math.round(rkt.bet * rkt.m))}`;
+}
+function rocketCash(auto) {
+  if (!rkt || rkt.cashed) return;
+  rkt.cashed = true; rkt.cashM = rkt.m;
+  const win = Math.round(rkt.bet * rkt.m);
+  rkt.win = win;
+  rkt.shown = Math.max(rkt.crash, rkt.m * rnd(1.15, 2.4)); // it always flies on a little past you
+  S.bestCash = Math.max(S.bestCash, rkt.m);
+  const [x, y] = centerOf($('#rc-m'));
+  earn(win, x, y + 50, { raw: true }); sfx.win(); haptic(true); confetti(50);
+  $('#rc-m').classList.add('win');
+  $('#rc-sub').textContent = auto ? `Auto cash-out saved you at ${rkt.m.toFixed(2)}×` : `Cashed out at ${rkt.m.toFixed(2)}×`;
+  $('#rc-go').textContent = `Won ${fmt(win)}`;
   queueCheck();
 }
+function rocketCrash() {
+  if (!rkt || rkt.over) return;
+  rkt.over = true; cancelAnimationFrame(rkt.raf); if (rkt.tone) { rkt.tone.stop(); rkt.tone = null; }
+  noise(.5, .16, 0, 1200, 120); haptic(true);
+  const missed = Math.round(rkt.bet * rkt.shown) - rkt.win;
+  $('#rc-m').className = 'rc-m crash'; $('#rc-m').textContent = rkt.shown.toFixed(2) + '×';
+  $('#rc-sub').textContent = `Crashed. Holding on would have paid ${fmt(missed)} more.`;
+  $('#rc-ship').hidden = true;
+  rocketHist.unshift(rkt.shown); rocketHist.length = 8;
+  setTimeout(() => { rkt = null; APPS.rocket.render(); }, 1300);
+}
 def({
-  id: 'swipe', name: 'Swipe', tag: 'Swipe cards · intermittent match', c: '#ff4fa3',
-  badge: () => Math.min(99, S.likesYou),
-  ping: () => { S.likesYou += ri(1, 4); return `${S.likesYou} people liked you. See who.`; },
-  build(b, r) {
-    r.innerHTML = `<span class="chip" style="color:#ff4fa3">${IF('heart')}<span id="sw-m"></span></span>`;
-    b.innerHTML = `<button class="sw-lk" id="sw-lk"><span class="blurs">${[0, 1, 2].map(() => `<i style="--h:${ri(0, 359)}"></i>`).join('')}</span><span><b id="sw-lkn"></b><small>See who liked you</small></span></button>
-      <div class="deck" id="deck"></div>
-      <div class="sw-btns"><button class="sb no" aria-label="Nope">${I('close')}</button><button class="sb sup" aria-label="Super like">${IF('star')}<small id="sw-sup"></small></button><button class="sb yes" aria-label="Like">${IF('heart')}</button></div>`;
-    const deck = $('#deck', b);
-    for (let i = 0; i < 3; i++) deck.append(mkSwipe());
-    armSwipe();
-    $('.sb.no', b).onclick = () => flingSwipe(-1);
-    $('.sb.yes', b).onclick = () => flingSwipe(1);
-    $('.sb.sup', b).onclick = () => flingSwipe(0);
-    $('#sw-lk', b).onclick = () => {
-      const n = Math.max(1, Math.min(9, S.likesYou));
-      const c = html(`<div><div class="blurgrid">${Array.from({ length: n }, () => `<i style="--h:${ri(0, 359)}"></i>`).join('')}</div><p class="fine" style="margin:14px 0">${fmt(S.likesYou)} people liked you.</p><button class="pbtn" style="--c:#ff4fa3">Reveal for 300 hits</button></div>`);
-      const close = sheet('Liked you', c);
-      $('.pbtn', c).onclick = e => {
-        if (!spend(300)) return;
-        $('.blurgrid', c).classList.add('open');
-        e.currentTarget.remove();
-        $('.fine', c).textContent = 'They’re shapes. They were always shapes.';
-        S.likesYou = 0; APPS.swipe.render(); refreshBadges();
-        setTimeout(close, 2200);
-      };
-    };
+  id: 'rocket', name: 'Rocket', tag: 'Crash betting · rigged to win', c: '#ff6a00',
+  wait: () => (T() >= S.rocketAt ? [{ t: 'A free rocket launch' }] : []),
+  badge: () => (T() >= S.rocketAt ? 1 : 0),
+  ping: () => (T() >= S.rocketAt ? `Free launch ready. The last one hit ${rocketHist[0].toFixed(2)}×` : `Someone just cashed out at ${rnd(3, 40).toFixed(2)}×`),
+  build(b) {
+    b.innerHTML = `<div class="pad"><div class="rc-scr" id="rc-scr"><div class="rc-hist" id="rc-hist"></div><svg id="rc-svg" class="rc-svg"></svg><div class="rc-ship" id="rc-ship" hidden>${SHIP}</div><div class="rc-m" id="rc-m">1.00×</div><div class="rc-sub" id="rc-sub"></div></div>
+      ${chipsHTML('rc-st', rStake)}<button class="pbtn" id="rc-go"></button>
+      <p class="fine">Cash out before it crashes. It never crashes first.</p></div>`;
+    track($('.pad', b));
+    bindChips($('#rc-st', b), v => { rStake = v; this.render(); });
+    $('#rc-go', b).onclick = rocketGo;
   },
   render() {
     if (!this.view) return;
-    $('#sw-lkn').textContent = `${fmt(S.likesYou)} people liked you`;
-    $('#sw-sup').textContent = S.supers;
-    $('#sw-m').textContent = fmt(S.matches);
-  },
-  key(e) {
-    if (e.type !== 'keydown') return;
-    if (e.key === 'ArrowRight') { flingSwipe(1); return true; }
-    if (e.key === 'ArrowLeft') { flingSwipe(-1); return true; }
-    if (e.key === 'ArrowUp') { flingSwipe(0); return true; }
-  },
-});
-
-// ---------- Loop: autoplay that never asks ----------
-let curClip = null, clipRaf = 0, clipLast = 0, clipTap = 0, clipTimer = 0;
-function mkClip() {
-  const c = html(`<section class="clip" style="--h:${ri(0, 359)};--t:${rnd(.45, 1).toFixed(2)}s"><div class="shp">${shapeSVG(pick(SHK), 'rgba(255,255,255,.9)')}</div>
-    <span class="views">${I('eye')}<span class="vw"></span></span>
-    <div class="rail"><button class="lk" aria-label="Like">${I('heart')}<span></span></button><button aria-label="Share">${I('send')}<span>${fmt(ri(10, 9000))}</span></button></div>
-    <div class="next">Next in <b>2</b></div><div class="prog"><i></i></div></section>`);
-  c._c = { d: ri(4000, 7000), el: 0, likes: Math.round(Math.exp(rnd(5, 12))), views: Math.round(Math.exp(rnd(7, 14))), liked: false, seen: false, vt: 0 };
-  $('.lk span', c).textContent = fmt(c._c.likes); $('.vw', c).textContent = fmt(c._c.views);
-  return c;
-}
-function addClips(n) {
-  const a = APPS.loop;
-  for (let i = 0; i < n; i++) { const c = mkClip(); a.lp.append(c); a.io.observe(c); }
-}
-function clipTick(t) {
-  if (curApp !== 'loop') { clipRaf = 0; return; }
-  const dt = Math.min(100, t - clipLast); clipLast = t;
-  const c = curClip;
-  if (c && !document.hidden && !c.classList.contains('held')) {
-    const k = c._c;
-    k.el += dt;
-    if (k.el > 1200 && !k.seen) {
-      k.seen = true; S.clips++; S.earn++; earn(2, FW / 2, FH * .45);
-      if (S.earn >= 3) { S.earn = 0; S.energy++; sfx.coin(); toast('+1 free spin in Slots'); }
-    }
-    const p = Math.min(1, k.el / k.d), left = Math.ceil((k.d - k.el) / 1000), nx = $('.next', c);
-    $('.prog i', c).style.width = p * 100 + '%';
-    if (left <= 2 && p < 1) { nx.classList.add('show'); $('b', nx).textContent = left; } else nx.classList.remove('show');
-    if (p >= 1 && !k.done) { k.done = true; APPS.loop.lp.scrollBy({ top: APPS.loop.lp.clientHeight, behavior: 'smooth' }); }
-    k.vt += dt; if (k.vt > 500) { k.vt = 0; k.views += ri(3, 60); $('.vw', c).textContent = fmt(k.views); }
-  }
-  clipRaf = requestAnimationFrame(clipTick);
-}
-function likeClip(c, only) {
-  const k = c._c, b = $('.lk', c);
-  if (k.liked && only) { sfx.pop(5); return; }
-  k.liked = !k.liked; k.likes += k.liked ? 1 : -1;
-  b.classList.toggle('on', k.liked); $('span', b).textContent = fmt(k.likes);
-  if (k.liked) { act(); sfx.pop(combo % 12); haptic(); const [x, y] = centerOf(b); burst(x, y, { n: 12, colors: ['#ff2e4d', '#ff7aa0', '#fff'], shape: 'heart' }); if (!k.paid) { k.paid = true; earn(2, x - 30, y - 20); } } else sfx.close();
-}
-def({
-  id: 'loop', name: 'Loop', tag: 'Autoplay · vertical swipe', c: '#2b1a3a',
-  badge: () => Math.min(99, S.loopNew),
-  ping: () => { S.loopNew += ri(3, 12); return 'New clips picked for you'; },
-  build(b) {
-    b.innerHTML = '<div class="loops idle" id="lp"></div>';
-    this.lp = $('#lp', b);
-    this.io = new IntersectionObserver(es => es.forEach(e => {
-      const c = e.target;
-      if (e.intersectionRatio >= .6) {
-        c.classList.add('play');
-        if (curClip !== c) {
-          if (curClip) { curClip.classList.remove('held'); $('.next', curClip).classList.remove('show'); }
-          curClip = c; if (c._c.done) { c._c.done = false; c._c.el = 0; }
-          const kids = this.lp.children, i = Array.prototype.indexOf.call(kids, c);
-          if (i > kids.length - 4) addClips(5);
-          if (i > 0) $$('.swipehint', this.lp).forEach(x => x.remove());
-          if (curApp === 'loop') { sfx.tick(); haptic(); }
-        }
-      } else c.classList.remove('play');
-    }), { root: this.lp, threshold: [0, .6] });
-    addClips(6);
-    this.lp.firstElementChild.insertAdjacentHTML('beforeend', `<div class="swipehint">${I('up')}Swipe up</div>`);
-    track(this.lp);
-    this.lp.addEventListener('click', e => {
-      const c = e.target.closest('.clip'); if (!c) return;
-      if (e.target.closest('.lk')) { likeClip(c); return; }
-      if (e.target.closest('button')) { sfx.swoosh(); toast('Sent'); return; }
-      const t = now();
-      if (t - clipTap < 280) {
-        clearTimeout(clipTimer); clipTap = 0;
-        const r = c.getBoundingClientRect(), h = html(`<div class="big-heart" style="left:${(e.clientX - r.left) / scale}px;top:${(e.clientY - r.top) / scale}px;--r:${ri(-18, 18)}deg">${IF('heart')}</div>`);
-        c.append(h); h.addEventListener('animationend', () => h.remove());
-        likeClip(c, true);
-      } else { clipTap = t; clipTimer = setTimeout(() => { c.classList.toggle('held'); sfx.click(); }, 280); }
-    });
-  },
-  open() { S.loopNew = 0; this.lp.classList.remove('idle'); clipLast = now(); if (!clipRaf) clipRaf = requestAnimationFrame(clipTick); },
-  close() { this.lp.classList.add('idle'); },
-  key(e) {
-    if (e.type !== 'keydown') return;
-    if (e.key === 'ArrowDown' || e.key === 'j') { this.lp.scrollBy({ top: this.lp.clientHeight, behavior: 'smooth' }); return true; }
-    if (e.key === 'ArrowUp' || e.key === 'k') { this.lp.scrollBy({ top: -this.lp.clientHeight, behavior: 'smooth' }); return true; }
-    if (e.key === ' ' && curClip) { curClip.classList.toggle('held'); return true; }
-    if (e.key === 'l' && curClip) { likeClip(curClip, true); return true; }
-  },
-});
-
-// ---------- Loot: blind boxes, rarity, a set to complete ----------
-const LCOL = { ruby: '#ff2e4d', mint: '#12c48b', sky: '#3b7bff', gold: '#ffc21a' };
-const ITEMS = [];
-for (const s of ['orb', 'cube', 'heart', 'bolt', 'star', 'diamond']) for (const c in LCOL) {
-  const r = c === 'gold' ? (s === 'star' ? 'legendary' : 'epic') : (s === 'star' || s === 'diamond') ? 'rare' : 'common';
-  ITEMS.push({ id: `${c}-${s}`, s, c, r, name: `${cap(c)} ${cap(s)}` });
-}
-const TIERC = { common: '#8f98a8', rare: '#3b7bff', epic: '#9b5cff', legendary: '#f5a600' };
-const NEWPAY = { common: 10, rare: 30, epic: 90, legendary: 400 }, DUPPAY = { common: 3, rare: 8, epic: 25, legendary: 100 };
-const LOOT_FREE = 40000, PITY = 30;
-const lootFree = () => T() >= S.loot.freeAt || S.loot.extra > 0;
-let opening = false;
-async function openBox() {
-  if (opening) return;
-  const free = lootFree();
-  if (!free && !spend(100)) return;
-  if (free) { if (T() >= S.loot.freeAt) S.loot.freeAt = T() + LOOT_FREE; else S.loot.extra--; }
-  opening = true; act(); S.boxes++;
-  restart($('#lt-box'), 'shake');
-  [0, 150, 300].forEach((d, i) => setTimeout(() => { sfx.shake(i); haptic(); }, d));
-  await wait(470);
-  S.loot.pity++;
-  const tier = S.loot.pity >= PITY ? 'legendary' : pickW([['common', 65], ['rare', 25], ['epic', 8], ['legendary', 2]]);
-  if (tier === 'legendary') S.loot.pity = 0;
-  const it = pick(ITEMS.filter(i => i.r === tier)), dup = !!S.loot.own[it.id];
-  S.loot.own[it.id] = (S.loot.own[it.id] || 0) + 1;
-  const a = APPS.loot;
-  const rv = html(`<div class="reveal" style="--rc:${TIERC[tier]}"><div class="rays"></div><div class="item">${shapeSVG(it.s, LCOL[it.c])}</div><span class="tier">${tier}</span><b>${it.name}</b><small>${dup ? 'Duplicate' : 'New to your collection'}</small></div>`);
-  a.body.append(rv);
-  const [x, y] = centerOf(rv);
-  earn(dup ? DUPPAY[tier] : NEWPAY[tier], x, y + 110);
-  if (tier === 'legendary') { confetti(200); sfx.win(); haptic(true); unlock('legend'); }
-  else if (tier === 'epic') { sfx.big(); burst(x, y, { n: 30, colors: ['#9b5cff', '#c05cff', '#fff'], shape: 'dot', power: 1.5 }); haptic(true); }
-  else { sfx.fresh(); burst(x, y, { n: 14, colors: [LCOL[it.c], '#fff'], shape: 'dot' }); }
-  const close = () => rv.remove();
-  rv.onclick = close; setTimeout(close, 1500);
-  opening = false;
-  a.render(it.id); refreshBadges(); queueCheck();
-}
-def({
-  id: 'loot', name: 'Loot', tag: 'Blind boxes · collect the set', c: '#9b5cff',
-  badge: () => (lootFree() ? 1 + S.loot.extra : 0),
-  ping: () => (lootFree() ? 'A free box is ready. What’s inside?' : null),
-  build(b) {
-    b.innerHTML = `<div class="pad"><div class="card"><div class="lt-top"><b>Collection <span id="lt-n"></span> / 24</b><small id="lt-pity"></small></div><div class="bar" style="margin-top:10px"><i id="lt-bar"></i></div></div>
-      <div class="lt-stage"><div class="lt-glow"></div><div class="lt-box" id="lt-box" role="button" tabindex="0" aria-label="Open the box"><div class="base"></div><div class="rib"></div><div class="lid"></div><span class="qm">?</span></div></div>
-      <button class="pbtn" id="lt-open"></button>
-      <div class="odds"><span>Common 65%</span><span>Rare 25%</span><span>Epic 8%</span><span>Legendary 2%</span></div>
-      <div class="coll" id="lt-coll"></div></div>`;
-    track($('.pad', b));
-    $('#lt-box', b).onclick = openBox;
-    $('#lt-open', b).onclick = openBox;
-  },
-  render(newId) {
-    if (!this.view) return;
-    const n = Object.keys(S.loot.own).length;
-    $('#lt-n').textContent = n; $('#lt-bar').style.width = (n / 24) * 100 + '%';
-    $('#lt-pity').textContent = `Legendary guaranteed in ${PITY - S.loot.pity}`;
-    $('#lt-open').textContent = lootFree() ? `Open free${S.loot.extra ? ` (+${S.loot.extra})` : ''}` : `Open · 100 hits · free in ${cd(S.loot.freeAt - T())}`;
-    if (newId !== undefined || !$('#lt-coll').children.length) $('#lt-coll').innerHTML = ITEMS.map(i => (S.loot.own[i.id] ? `<i class="${i.id === newId ? 'new' : ''}" title="${i.name}">${shapeSVG(i.s, LCOL[i.c])}</i>` : '<i>?</i>')).join('');
+    $('#rc-hist').innerHTML = rocketHist.map(m => `<span class="${m >= 2 ? 'hi' : ''}">${m.toFixed(2)}×</span>`).join('');
+    if (rkt) return;
+    const free = T() >= S.rocketAt;
+    $('#rc-go').textContent = free ? 'Launch · free' : `Launch · ${fmt(stakeVal(rStake))} hits`;
+    $('#rc-m').className = 'rc-m'; $('#rc-m').textContent = '1.00×';
+    $('#rc-sub').textContent = free ? 'A free launch is ready' : `Next free launch in ${cd(S.rocketAt - T())}`;
+    $('#rc-svg').innerHTML = ''; $('#rc-ship').hidden = true;
   },
   tick() { this.render(); },
-  key(e) { if (e.key === ' ' && e.type === 'keydown') { openBox(); return true; } },
+  close() { if (rkt && !rkt.over) { if (!rkt.cashed) rocketCash(false); rocketCrash(); } }, // leaving mid-flight cashes you out
+  key(e) { if (e.key === ' ' && e.type === 'keydown') { rocketGo(); return true; } },
+});
+
+// ---------- Flip: double or nothing, and it's never nothing ----------
+const FLIP_MAX = 8;
+let flipping = false, fStake = 10;
+function flipGo() {
+  if (flipping) return;
+  const f = S.flip;
+  if (!f.pot) {
+    const st = stakeVal(fStake);
+    if (st < 1) { sfx.nope(); toast('You need hits to flip. Tap earns some.'); return; }
+    if (!spend(st)) return;
+    f.pot = st; f.n = 0;
+  }
+  flipping = true; act(); S.flips++;
+  const long = f.n >= 4, dur = long ? 1500 : 800, coin = $('#fp-coin');
+  f.rot = (f.rot || 0) + (long ? 3240 : 1800);
+  coin.style.transition = `transform ${dur}ms cubic-bezier(.2,.8,.3,1)`;
+  coin.style.transform = `rotateY(${f.rot}deg)`;
+  restart($('#fp-stage'), 'toss');
+  const ticks = long ? 16 : 9;
+  for (let i = 0; i < ticks; i++) tone(1200 + i * 60, .02, 'square', .03, (1 - Math.pow(1 - i / ticks, 2)) * dur / 1000);
+  if (long) sfx.riser(dur / 1000);
+  APPS.flip.render();
+  setTimeout(() => {
+    f.pot *= 2; f.n++; flipping = false;
+    S.maxFlips = Math.max(S.maxFlips, f.n);
+    const [x, y] = centerOf($('#fp-coin'));
+    floatText(x, y - 90, `×${2 ** f.n}`, 'crit'); sfx.win(); haptic(true);
+    burst(x, y, { n: 14 + f.n * 4, colors: ['#ffc21a', '#fff1a8', '#fff'], shape: 'dot', power: 1 + f.n * .1 });
+    APPS.flip.render(); queueCheck();
+    if (f.n >= FLIP_MAX) setTimeout(() => flipCash(true), 500);
+  }, dur);
+}
+function flipCash(max) {
+  const f = S.flip;
+  if (!f.pot || flipping) return;
+  const g = f.pot, [x, y] = centerOf($('#fp-pot'));
+  earn(g, x, y, { raw: true }); f.pot = 0; f.n = 0;
+  confetti(max ? 200 : 90); sfx.big(); haptic(true);
+  toast(max ? `Max win. Banked ${fmt(g)}` : `Banked ${fmt(g)}`);
+  APPS.flip.render(); refreshBadges();
+}
+def({
+  id: 'flip', name: 'Flip', tag: 'Double or nothing · let it ride', c: '#e0a100',
+  wait: () => (S.flip.pot ? [{ t: 'Your pot is still riding', hot: 1, r: fmt(S.flip.pot) }] : []),
+  badge: () => (S.flip.pot ? 1 : 0),
+  ping: () => (S.flip.pot ? `Your pot of ${fmt(S.flip.pot)} is waiting. Let it ride?` : 'Double or nothing. It always lands heads.'),
+  build(b) {
+    b.innerHTML = `<div class="pad"><div class="fp-pot" id="fp-pot"><small>Pot</small><b id="fp-v">0</b><small id="fp-n"></small></div>
+      <div class="coin-stage" id="fp-stage"><div class="coin-w"><div class="coin" id="fp-coin"><div class="face h">${IF('bolt')}</div><div class="face t">${I('close')}</div></div></div></div>
+      <div class="ladder" id="fp-lad"></div>${chipsHTML('fp-st', fStake)}
+      <div class="row2"><button class="pbtn" id="fp-go" style="--c:#e0a100"></button><button class="pbtn" id="fp-cash" style="--c:#12b886"></button></div>
+      <p class="fine">Heads doubles the pot. It always lands heads. Eight in a row is the max.</p></div>`;
+    track($('.pad', b));
+    bindChips($('#fp-st', b), v => { fStake = v; this.render(); });
+    $('#fp-go', b).onclick = flipGo;
+    $('#fp-cash', b).onclick = () => flipCash(false);
+  },
+  render() {
+    if (!this.view) return;
+    const f = S.flip;
+    $('#fp-v').textContent = fmt(f.pot);
+    $('#fp-n').textContent = f.pot ? `${f.n} heads in a row` : 'Pick a stake and flip';
+    $('#fp-lad').innerHTML = Array.from({ length: FLIP_MAX }, (_, i) => `<span class="${i < f.n ? 'done' : i === f.n && f.pot ? 'next' : ''}">×${2 ** (i + 1)}</span>`).join('');
+    $('#fp-st').hidden = !!f.pot;
+    const go = $('#fp-go'), cash = $('#fp-cash');
+    go.disabled = flipping;
+    go.textContent = f.pot ? `Let it ride · ${fmt(f.pot * 2)}` : `Flip · ${fmt(stakeVal(fStake))}`;
+    cash.disabled = !f.pot || flipping; cash.classList.toggle('off', !f.pot);
+    cash.textContent = f.pot ? `Cash out ${fmt(f.pot)}` : 'Cash out';
+  },
+  key(e) { if (e.type !== 'keydown') return; if (e.key === ' ') { flipGo(); return true; } if (e.key === 'Enter') { flipCash(false); return true; } },
 });
 
 // ---------- Scratch: the tactile lottery ----------
@@ -1467,6 +1702,7 @@ function finishScratch() {
 }
 def({
   id: 'scratch', name: 'Scratch', tag: 'Scratch-off · near miss', c: '#12b886',
+  wait: () => (scratchFree() ? [{ t: 'A free scratch card' }] : []),
   badge: () => (scratchFree() ? 1 + S.scratchExtra : 0),
   ping: () => (scratchFree() ? 'Your free scratch card is ready' : null),
   build(b) {
@@ -1513,700 +1749,82 @@ def({
   },
 });
 
-// ---------- Streak: daily login, and a pulse that dies in 60 seconds ----------
-const LOGIN_REW = [10, 20, 30, 50, 80, 120, 300];
-const PULSE_MS = 60000, PULSE_OPEN = 30000;
-const loginReady = () => S.login.claimed !== TODAY;
-const pulseLeft = () => S.pulse.until - T();
-function tickPulse() {
-  if (S.pulse.until && pulseLeft() <= 0) {
-    S.pulse.dead = S.pulse.n; S.pulse.n = 0; S.pulse.until = 0; S.pulse.restoreUntil = T() + 20000;
-    if (curApp === 'streak' || !muted('streak')) { sfx.lose(); haptic(true); }
-    notify('streak', `Your pulse died at ×${S.pulse.dead}. Restore it in {left}?`, { until: S.pulse.restoreUntil, urgent: true });
-  } else if (S.pulse.until && pulseLeft() < 15000) alertOnce('pulse', 'streak', 'Your pulse dies in {left}', 60000, { until: S.pulse.until, urgent: true });
-  if (S.pulse.restoreUntil && T() > S.pulse.restoreUntil) { S.pulse.restoreUntil = 0; S.pulse.dead = 0; }
+// ---------- Loot: blind boxes, rarity, a set to complete ----------
+const LCOL = { ruby: '#ff2e4d', mint: '#12c48b', sky: '#3b7bff', gold: '#ffc21a' };
+const ITEMS = [];
+for (const s of ['orb', 'cube', 'heart', 'bolt', 'star', 'diamond']) for (const c in LCOL) {
+  const r = c === 'gold' ? (s === 'star' ? 'legendary' : 'epic') : (s === 'star' || s === 'diamond') ? 'rare' : 'common';
+  ITEMS.push({ id: `${c}-${s}`, s, c, r, name: `${cap(c)} ${cap(s)}` });
 }
-function feedPulse() {
-  const a = APPS.streak;
-  if (S.pulse.restoreUntil) {
-    if (!spend(20 * S.pulse.dead)) return;
-    S.pulse.n = S.pulse.dead; S.pulse.dead = 0; S.pulse.restoreUntil = 0; S.pulse.until = T() + PULSE_MS;
-    toast('Pulse restored'); sfx.beat(); a.render(); return;
-  }
-  if (S.pulse.until && pulseLeft() > PULSE_OPEN) { sfx.nope(); toast(`Too early. Ready in ${Math.ceil((pulseLeft() - PULSE_OPEN) / 1000)}s`); return; }
-  S.pulse.n++; S.pulse.best = Math.max(S.pulse.best, S.pulse.n); S.pulse.until = T() + PULSE_MS; S.pulses++;
-  act(); sfx.beat(); haptic(true);
-  const [x, y] = centerOf($('#pl-btn')); earn(S.pulse.n * 2, x, y - 30);
-  restart($('.pulse'), 'beat');
-  a.render(); refreshBadges(); queueCheck();
-}
-function claimLogin() {
-  if (!loginReady()) return;
-  const d = S.login.day, rew = LOGIN_REW[d - 1];
-  S.login.claimed = TODAY; S.login.day = d % 7 + 1;
-  const [x, y] = centerOf($('#st-claim')); earn(rew, x, y - 30, { raw: true });
-  sfx.win(); confetti(d === 7 ? 200 : 70); haptic(true);
-  if (d === 7) unlock('day7');
-  APPS.streak.render(); refreshBadges();
+const TIERC = { common: '#8f98a8', rare: '#3b7bff', epic: '#9b5cff', legendary: '#f5a600' };
+const NEWPAY = { common: 10, rare: 30, epic: 90, legendary: 400 }, DUPPAY = { common: 3, rare: 8, epic: 25, legendary: 100 };
+const LOOT_FREE = 40000, PITY = 30;
+const lootFree = () => T() >= S.loot.freeAt || S.loot.extra > 0;
+let opening = false;
+async function openBox() {
+  if (opening) return;
+  const free = lootFree();
+  if (!free && !spend(100)) return;
+  if (free) { if (T() >= S.loot.freeAt) S.loot.freeAt = T() + LOOT_FREE; else S.loot.extra--; }
+  opening = true; act(); S.boxes++;
+  restart($('#lt-box'), 'shake');
+  [0, 150, 300].forEach((d, i) => setTimeout(() => { sfx.shake(i); haptic(); }, d));
+  await wait(470);
+  S.loot.pity++;
+  const tier = S.loot.pity >= PITY ? 'legendary' : pickW([['common', 65], ['rare', 25], ['epic', 8], ['legendary', 2]]);
+  if (tier === 'legendary') S.loot.pity = 0;
+  const it = pick(ITEMS.filter(i => i.r === tier)), dup = !!S.loot.own[it.id];
+  S.loot.own[it.id] = (S.loot.own[it.id] || 0) + 1;
+  const a = APPS.loot;
+  const rv = html(`<div class="reveal" style="--rc:${TIERC[tier]}"><div class="rays"></div><div class="item">${shapeSVG(it.s, LCOL[it.c])}</div><span class="tier">${tier}</span><b>${it.name}</b><small>${dup ? 'Duplicate' : 'New to your collection'}</small></div>`);
+  a.body.append(rv);
+  const [x, y] = centerOf(rv);
+  earn(dup ? DUPPAY[tier] : NEWPAY[tier], x, y + 110);
+  if (tier === 'legendary') { confetti(200); sfx.win(); haptic(true); unlock('legend'); }
+  else if (tier === 'epic') { sfx.big(); burst(x, y, { n: 30, colors: ['#9b5cff', '#c05cff', '#fff'], shape: 'dot', power: 1.5 }); haptic(true); }
+  else { sfx.fresh(); burst(x, y, { n: 14, colors: [LCOL[it.c], '#fff'], shape: 'dot' }); }
+  const close = () => rv.remove();
+  rv.onclick = close; setTimeout(close, 1500);
+  opening = false;
+  a.render(it.id); refreshBadges(); queueCheck();
 }
 def({
-  id: 'streak', name: 'Streak', tag: 'Streaks · loss aversion', c: '#ff7a00',
-  badge: () => (loginReady() ? 1 : 0) + (S.pulse.restoreUntil ? 1 : 0) + (!S.pulse.until || pulseLeft() <= PULSE_OPEN ? 1 : 0),
-  ping: () => (loginReady() ? `Day ${S.login.day} reward is waiting` : !S.pulse.until ? 'Start a pulse. Keep it alive.' : `Keep your ${S.streak}-day streak going`),
+  id: 'loot', name: 'Loot', tag: 'Blind boxes · collect the set', c: '#9b5cff',
+  wait: () => (lootFree() ? [{ t: 'A free box to open' }] : []),
+  badge: () => (lootFree() ? 1 + S.loot.extra : 0),
+  ping: () => (lootFree() ? 'A free box is ready. What’s inside?' : null),
   build(b) {
-    b.innerHTML = `<div class="pad"><div class="card"><div class="st-hero"><span class="flame">${IF('flame')}</span><div><b><span id="st-n"></span>-day streak</b><small id="st-frz"></small></div></div>
-      <div class="cal" id="st-cal"></div><button class="pbtn gold" id="st-claim"></button></div>
-      <div class="card pulse"><h3 style="align-self:flex-start;margin:0">Pulse</h3><div class="pl-ring"><svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.5" class="trk" pathLength="100"/><circle cx="18" cy="18" r="15.5" class="ok" pathLength="100"/><circle cx="18" cy="18" r="15.5" class="prg" pathLength="100" id="pl-prg"/></svg><div class="pl-in"><b id="pl-t"></b><small id="pl-n"></small></div></div>
-      <button class="pbtn" id="pl-btn"></button><p class="pl-msg" id="pl-msg"></p></div>
-      <p class="fine">A pulse lasts 60 s. Feed it in the last 30 s to keep it alive. Miss it and it’s gone.</p></div>`;
+    b.innerHTML = `<div class="pad"><div class="card"><div class="lt-top"><b>Collection <span id="lt-n"></span> / 24</b><small id="lt-pity"></small></div><div class="bar" style="margin-top:10px"><i id="lt-bar"></i></div></div>
+      <div class="lt-stage"><div class="lt-glow"></div><div class="lt-box" id="lt-box" role="button" tabindex="0" aria-label="Open the box"><div class="base"></div><div class="rib"></div><div class="lid"></div><span class="qm">?</span></div></div>
+      <button class="pbtn" id="lt-open"></button>
+      <div class="odds"><span>Common 65%</span><span>Rare 25%</span><span>Epic 8%</span><span>Legendary 2%</span></div>
+      <div class="coll" id="lt-coll"></div></div>`;
     track($('.pad', b));
-    $('#st-claim', b).onclick = claimLogin;
-    $('#pl-btn', b).onclick = feedPulse;
+    $('#lt-box', b).onclick = openBox;
+    $('#lt-open', b).onclick = openBox;
   },
-  render() {
+  render(newId) {
     if (!this.view) return;
-    $('#st-n').textContent = S.streak;
-    $('#st-frz').textContent = `${S.freezes} streak freeze${S.freezes === 1 ? '' : 's'}${frozeUsed ? ` · ${frozeUsed} used while you were away` : ''}`;
-    const ready = loginReady(), cur = S.login.day;
-    $('#st-cal').innerHTML = LOGIN_REW.map((r, i) => {
-      const d = i + 1, done = ready ? d < cur : (cur === 1 ? true : d < cur);
-      return `<span class="cd${done ? ' done' : ''}${ready && d === cur ? ' today' : ''}">Day ${d}<b>${r}</b></span>`;
-    }).join('');
-    const c = $('#st-claim'); c.disabled = !ready; c.classList.toggle('off', !ready);
-    c.textContent = ready ? `Claim day ${cur} · +${LOGIN_REW[cur - 1]}` : 'Come back tomorrow';
-    const left = S.pulse.until ? pulseLeft() : 0;
-    $('#pl-prg').style.strokeDashoffset = String(100 - clamp(left / PULSE_MS, 0, 1) * 100);
-    $('#pl-t').textContent = S.pulse.until ? cd(left) : S.pulse.restoreUntil ? cd(S.pulse.restoreUntil - T()) : '1:00';
-    $('#pl-n').textContent = S.pulse.until ? `×${S.pulse.n} pulse` : S.pulse.restoreUntil ? `lost at ×${S.pulse.dead}` : `best ×${S.pulse.best}`;
-    $('.pulse').classList.toggle('dying', (!!S.pulse.until && left < 10000) || !!S.pulse.restoreUntil);
-    const btn = $('#pl-btn');
-    btn.textContent = S.pulse.restoreUntil ? `Restore for ${fmt(20 * S.pulse.dead)} hits` : !S.pulse.until ? 'Start a pulse' : left > PULSE_OPEN ? `Ready in ${Math.ceil((left - PULSE_OPEN) / 1000)}s` : 'Keep it alive';
-    btn.classList.toggle('off', !!S.pulse.until && left > PULSE_OPEN);
-    $('#pl-msg').textContent = S.pulse.until ? `Feeding now pays +${(S.pulse.n + 1) * 2}` : '';
+    const n = Object.keys(S.loot.own).length;
+    $('#lt-n').textContent = n; $('#lt-bar').style.width = (n / 24) * 100 + '%';
+    $('#lt-pity').textContent = `Legendary guaranteed in ${PITY - S.loot.pity}`;
+    $('#lt-open').textContent = lootFree() ? `Open free${S.loot.extra ? ` (+${S.loot.extra})` : ''}` : `Open · 100 hits · free in ${cd(S.loot.freeAt - T())}`;
+    if (newId !== undefined || !$('#lt-coll').children.length) $('#lt-coll').innerHTML = ITEMS.map(i => (S.loot.own[i.id] ? `<i class="${i.id === newId ? 'new' : ''}" title="${i.name}">${shapeSVG(i.s, LCOL[i.c])}</i>` : '<i>?</i>')).join('');
   },
   tick() { this.render(); },
-  key(e) { if (e.key === ' ' && e.type === 'keydown') { feedPulse(); return true; } },
+  key(e) { if (e.key === ' ' && e.type === 'keydown') { openBox(); return true; } },
 });
+// ==== /MODULE casino ====
 
-// ---------- Quests: endowed progress, goal gradient, a treadmill ----------
-const QDEF = [
-  ['taps', 'Tap {n} times', 60, 250], ['cleared', 'Read {n} messages', 8, 30], ['cards', 'Reveal {n} cards', 25, 100],
-  ['swipes', 'Swipe {n} cards', 8, 30], ['clips', 'Watch {n} clips', 4, 15], ['boxes', 'Open {n} boxes', 1, 4],
-  ['spins', 'Pull the lever {n} times', 3, 8], ['scratches', 'Scratch {n} cards', 1, 3], ['rings', 'Catch {n} rings', 10, 35],
-  ['holds', 'Hold {n} times', 4, 15], ['pulses', 'Feed your pulse {n} times', 2, 5], ['pets', 'Tickle Blob {n} times', 5, 20],
-];
-function mkQuest(rapid) {
-  const [k, t, lo, hi] = pick(QDEF), n = rapid ? Math.max(2, Math.round(lo * .9)) : ri(lo, hi);
-  const endow = rapid ? 0 : Math.min(n - 1, Math.max(1, Math.ceil(n * .12))); // "you've already started"
-  return { k, text: t.replace('{n}', n), n, base: (S[k] || 0) - endow, reward: rapid ? n * 3 + 40 : n * 2 + 30, claimed: false };
-}
-const qProg = q => clamp((S[q.k] || 0) - q.base, 0, q.n);
-const qDone = q => qProg(q) >= q.n;
-function newQuests() { const used = new Set(); S.quests = []; while (S.quests.length < 3) { const q = mkQuest(); if (!used.has(q.k)) { used.add(q.k); S.quests.push(q); } } }
-function newRapid() { S.rapid = { q: mkQuest(true), until: T() + 180000 }; }
-function tickQuests() {
-  if (T() > S.rapid.until) {
-    if (!S.rapid.q.claimed && !qDone(S.rapid.q) && S.onboarded) notify('quests', 'Rapid quest expired. A new one just started.');
-    newRapid();
-  }
-  if (!S.onboarded) return;
-  S.quests.forEach(q => { if (qDone(q) && !q.claimed && !q.told) { q.told = 1; notify('quests', `Quest complete: ${q.text}. Claim it.`); } });
-}
-function claimQuest(q, btn) {
-  if (q.claimed || !qDone(q)) return;
-  q.claimed = true; S.questsDone++; S.chest = Math.min(5, S.chest + 1);
-  const [x, y] = centerOf(btn); earn(q.reward, x, y - 20);
-  sfx.win(); burst(x, y, { n: 20 }); haptic(true);
-  if (S.quests.every(z => z.claimed)) setTimeout(() => { newQuests(); toast('New quests!'); APPS.quests.render(true); refreshBadges(); }, 700);
-  if (q === S.rapid.q) setTimeout(() => { newRapid(); APPS.quests.render(true); }, 700);
-  APPS.quests.render(true); refreshBadges(); queueCheck();
-}
-const sigQ = () => [...S.quests, S.rapid.q].map(q => `${qProg(q)}${q.claimed}`).join('|') + S.chest + S.rapid.until;
-def({
-  id: 'quests', name: 'Quests', tag: 'Goals · endowed progress', c: '#2fb344',
-  badge: () => [...S.quests, S.rapid.q].filter(q => qDone(q) && !q.claimed).length + (S.chest >= 5 ? 1 : 0),
-  ping: () => (S.rapid.q.claimed || S.rapid.until - T() < 45000 ? null : { text: `Rapid quest: ${S.rapid.q.text}. {left} left.`, until: S.rapid.until }),
-  build(b) {
-    b.innerHTML = '<div class="pad" id="qs"></div>';
-    track($('#qs', b));
-    $('#qs', b).addEventListener('click', e => {
-      const btn = e.target.closest('[data-q]');
-      if (btn) { claimQuest(btn.dataset.q === 'r' ? S.rapid.q : S.quests[+btn.dataset.q], btn); return; }
-      if (e.target.closest('#qs-chest') && S.chest >= 5) { S.chest = 0; const [x, y] = centerOf($('#qs-chest')); earn(200, x, y, { raw: true }); confetti(160); sfx.win(); haptic(true); this.render(true); refreshBadges(); }
-    });
-  },
-  render(full) {
-    if (!this.view) return;
-    const box = $('#qs');
-    if (!full && this._sig === sigQ()) { const tm = $('#qs-tm'); if (tm) tm.textContent = cd(S.rapid.until - T()); return; }
-    this._sig = sigQ();
-    const row = (q, i, rapid) => {
-      const p = qProg(q), done = p >= q.n;
-      return `<div class="q${rapid ? ' rapid' : ''}${q.claimed ? ' done-claimed' : ''}"><div class="q-h"><b>${q.text}</b>${done && !q.claimed ? `<button class="claim" data-q="${i}">Claim +${q.reward}</button>` : `<small>${q.claimed ? 'Claimed' : `${p} / ${q.n}`}</small>`}</div><div class="bar"><i style="width:${(p / q.n) * 100}%"></i></div>${rapid ? `<div class="q-h"><small>Rapid quest · +${q.reward}</small><span class="tm" id="qs-tm">${cd(S.rapid.until - T())}</span></div>` : ''}</div>`;
-    };
-    box.innerHTML = row(S.rapid.q, 'r', true) + '<div class="sec"><span>Quests</span></div>' + S.quests.map((q, i) => row(q, i)).join('') +
-      `<button class="card chest${S.chest >= 5 ? ' ready' : ''}" id="qs-chest"><span class="cb">${I('chest')}</span><div><b>${S.chest >= 5 ? 'Chest ready. Tap to open.' : 'Quest chest'}</b><div class="bar"><i style="width:${(S.chest / 5) * 100}%"></i></div><small class="fine" style="text-align:left">${S.chest} of 5 quests · +200</small></div></button>` +
-      '<p class="fine">Finish all three and three more appear. The rapid quest changes every 3 minutes.</p>';
-  },
-  tick() { this.render(); },
-});
-
-// ---------- Rank: leagues with a five-minute week ----------
-const LEAGUES = [['Bronze', '#c77b3a'], ['Silver', '#98a2b3'], ['Gold', '#ffc21a'], ['Ruby', '#ff2e4d'], ['Emerald', '#12c48b'], ['Diamond', '#3bb6ff'], ['Obsidian', '#3a2a4a']];
-const LEAGUE_MS = 300000;
-function newLeague(tier) {
-  S.league = { tier, endsAt: T() + LEAGUE_MS, me: 0, rank: 30, passed: 0, rivals: Array.from({ length: 29 }, () => ({ pts: ri(0, 30), rate: rnd(.4, 3 + tier * 1.6), w: ri(40, 85) })) };
-}
-const myRank = () => 1 + S.league.rivals.filter(r => r.pts > S.league.me).length;
-function tickRank() {
-  const L = S.league;
-  L.rivals.forEach(r => { r.pts += r.rate * rnd(.2, 1.8); });
-  const rk = myRank();
-  if (rk > L.rank) { L.passed += rk - L.rank; if (S.onboarded) alertOnce('passed', 'rank', `Someone passed you. You’re #${rk}.`, 45000); }
-  else if (rk < L.rank && curApp === 'rank') { sfx.fresh(); toast(`You passed ${L.rank - rk} ${L.rank - rk === 1 ? 'person' : 'people'}`); }
-  L.rank = rk;
-  if (T() >= L.endsAt) {
-    const name = LEAGUES[L.tier][0];
-    const loud = curApp === 'rank' || !muted('rank');
-    if (rk <= 5 && L.tier < LEAGUES.length - 1) { S.promos++; unlock('promo'); if (loud) confetti(150); notify('rank', `Promoted to ${LEAGUES[L.tier + 1][0]} League!`); newLeague(L.tier + 1); }
-    else if (rk >= 26 && L.tier > 0) { if (loud) sfx.lose(); notify('rank', `Demoted to ${LEAGUES[L.tier - 1][0]}. Earn it back.`); newLeague(L.tier - 1); }
-    else { if (S.onboarded) notify('rank', `You finished #${rk} in ${name}. A new week started.`); newLeague(L.tier); }
-  } else if (T() > L.endsAt - 45000 && rk > 5 && S.onboarded) alertOnce('rankend', 'rank', `League ends in {left}. You’re #${rk}. Top 5 move up.`, 30000, { until: L.endsAt });
-}
-const gemSVG = c => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3.5h12l3.5 5.5L12 20.5 2.5 9z" fill="${c}"/><path d="M2.5 9h19M9 3.5 12 9l3-5.5M12 20.5 8.5 9M12 20.5 15.5 9" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="1.1"/></svg>`;
-def({
-  id: 'rank', name: 'Rank', tag: 'Leaderboards · social comparison', c: '#2a6bff',
-  badge: () => Math.min(9, S.league.passed),
-  ping: () => `You’re #${myRank()} in ${LEAGUES[S.league.tier][0]} League`,
-  build(b) {
-    b.innerHTML = '<div class="pad"><div class="card rk-head" id="rk-h"></div><div class="rk-list" id="rk-l"></div><p class="fine">Top 5 move up. Bottom 5 move down. A week lasts five minutes.</p></div>';
-    track($('.pad', b));
-  },
-  open() { S.league.passed = 0; },
-  render() {
-    if (!this.view) return;
-    const L = S.league, [name, col] = LEAGUES[L.tier], rk = myRank();
-    $('#rk-h').innerHTML = `<span class="gem">${gemSVG(col)}</span><div><b>${name} League</b><small>Ends in ${cd(L.endsAt - T())}</small></div><div class="rk-me"><b>#${rk}</b><small>${fmt(L.me)} pts</small></div>`;
-    const rows = [...L.rivals.map(r => ({ ...r, me: false })), { pts: L.me, me: true }].sort((a, b) => b.pts - a.pts);
-    $('#rk-l').innerHTML = rows.map((r, i) => `<div class="rr${r.me ? ' me' : i < 5 ? ' up' : i >= 25 ? ' down' : ''}${i === 5 ? ' cut' : i === 25 ? ' cut2' : ''}"><span class="n">${i + 1}</span><span class="av"></span>${r.me ? '<span class="nm">You</span>' : `<span class="nm" style="--w:${r.w}%"></span>`}<span class="p">${fmt(Math.floor(r.pts))}</span></div>`).join('');
-  },
-  tick() { this.render(); },
-});
-
-// ---------- Blob: a creature that needs you ----------
-const MOUTH = { happy: 'M84 118 Q100 136 116 118', meh: 'M86 124 L114 124', sad: 'M84 132 Q100 116 116 132' };
-const MOODC = { happy: '#ff9ec8', meh: '#c9a7ff', sad: '#a9b8c9' };
-const petMood = () => { const p = S.pet, avg = (p.food + p.fun + p.love) / 3; return avg > 62 ? 'happy' : avg > 32 ? 'meh' : 'sad'; };
-function tickPet() {
-  const p = S.pet;
-  p.food = Math.max(0, p.food - .4); p.fun = Math.max(0, p.fun - .55); p.love = Math.max(0, p.love - .3);
-  if (!S.onboarded) return;
-  if (p.food < 25) alertOnce('pfood', 'pet', 'Blob is hungry', 90000);
-  else if (p.fun < 25) alertOnce('pfun', 'pet', 'Blob is bored. Come play.', 90000);
-  else if (p.love < 25) alertOnce('plove', 'pet', 'Blob misses you', 90000);
-}
-function petHeart(n = 1) {
-  const st = $('.pet-stage', APPS.pet.body);
-  for (let i = 0; i < n; i++) {
-    const h = html(`<i class="heartfx" style="left:${ri(35, 65)}%;top:${ri(30, 55)}%;--dx:${ri(-50, 50)}px">${IF('heart')}</i>`);
-    st.append(h); h.addEventListener('animationend', () => h.remove());
-  }
-}
-def({
-  id: 'pet', name: 'Blob', tag: 'Virtual pet · guilt', c: '#ff7eb6',
-  badge: () => ['food', 'fun', 'love'].filter(k => S.pet[k] < 30).length,
-  ping: () => (petMood() !== 'happy' ? 'Blob is waiting for you' : 'Blob wants to see you'),
-  build(b) {
-    b.innerHTML = `<div class="pad"><div class="pet-stage"><div class="bubble" id="pt-say"></div><div class="pet" id="pt" role="button" aria-label="Tickle Blob">
-      <svg viewBox="0 0 200 180"><ellipse cx="100" cy="170" rx="60" ry="7" fill="rgba(0,0,0,.12)"/><path class="body" id="pt-body" d="M100 22c48 0 82 36 82 84 0 40-30 60-82 60s-82-20-82-60c0-48 34-84 82-84z"/><ellipse cx="72" cy="60" rx="20" ry="12" fill="rgba(255,255,255,.45)"/>
-      <ellipse class="eye" cx="76" cy="94" rx="8" ry="11" fill="#1d1026"/><ellipse class="eye" cx="124" cy="94" rx="8" ry="11" fill="#1d1026"/><circle cx="58" cy="114" r="9" fill="rgba(255,60,120,.3)"/><circle cx="142" cy="114" r="9" fill="rgba(255,60,120,.3)"/>
-      <path id="pt-mouth" stroke="#1d1026" stroke-width="5" fill="none" stroke-linecap="round"/></svg></div></div>
-      <div class="card needs" id="pt-needs"></div>
-      <div class="row2"><button class="pbtn" id="pt-feed" style="--c:#ff7a00">Feed · 5</button><button class="pbtn" id="pt-play">Play</button></div>
-      <p class="fine">Tap Blob to tickle. Rub Blob to pet. Needs drop every second.</p></div>`;
-    track($('.pad', b));
-    const pet = $('#pt', b);
-    let rub = 0;
-    pet.addEventListener('click', () => {
-      S.pet.fun = Math.min(100, S.pet.fun + 5); S.pet.love = Math.min(100, S.pet.love + 2); S.pets++;
-      act(); restart(pet, 'tickle'); sfx.giggle(); haptic(); petHeart(2);
-      const [x, y] = centerOf(pet); earn(1, x, y - 80); this.render(); queueCheck();
-    });
-    drag(pet, { axis: 'any', onMove: (dx, dy) => { const d = Math.hypot(dx, dy); if (d - rub > 30) { rub = d; S.pet.love = Math.min(100, S.pet.love + 2); petHeart(); haptic(); this.render(); } }, onEnd: () => { rub = 0; sfx.giggle(); } });
-    $('#pt-feed', b).onclick = () => { if (!spend(5)) return; S.pet.food = Math.min(100, S.pet.food + 25); S.feeds++; act(); sfx.munch(); haptic(); petHeart(3); this.render(); };
-    $('#pt-play', b).onclick = () => { S.pet.fun = Math.min(100, S.pet.fun + 12); act(); sfx.giggle(); restart(pet, 'tickle'); petHeart(2); const [x, y] = centerOf(pet); earn(1, x, y - 80); this.render(); };
-  },
-  render() {
-    if (!this.view) return;
-    const p = S.pet, m = petMood();
-    $('#pt-body').setAttribute('fill', MOODC[m]);
-    $('#pt-mouth').setAttribute('d', MOUTH[m]);
-    $('#pt-say').textContent = p.food < 30 ? 'feed me' : p.fun < 30 ? 'play with me' : p.love < 30 ? 'don’t go' : m === 'happy' ? 'love you' : 'stay?';
-    $('#pt-needs').innerHTML = [['Food', 'food'], ['Fun', 'fun'], ['Love', 'love']].map(([n, k]) => { const v = Math.round(p[k]); return `<div class="need${v < 30 ? ' low' : v < 60 ? ' mid' : ''}"><span>${n}</span><div class="bar"><i style="width:${v}%"></i></div><span>${v}%</span></div>`; }).join('');
-    if (p.food > 90 && p.fun > 90 && p.love > 90) unlock('pet');
-  },
-  tick() { this.render(); },
-  key(e) { if (e.key === ' ' && e.type === 'keydown') { $('#pt').click(); return true; } },
-});
-
-// ---------- Shop: flash sales, fake scarcity, fake savings ----------
-const WARES = [
-  { n: '2× hits for 60 s', p: 150, g: 'tap', fx: () => { S.boostUntil = Math.max(T(), S.boostUntil) + 60000; } },
-  { n: 'Streak freeze', p: 120, g: 'streak', fx: () => { S.freezes++; } },
-  { n: 'Refill all spins', p: 80, g: 'slots', fx: () => { S.energy = Math.max(S.energy, MAXE); } },
-  { n: 'Mystery box', p: 90, g: 'loot', fx: () => { S.loot.extra++; } },
-  { n: '3 super-likes', p: 60, g: 'swipe', fx: () => { S.supers += 3; } },
-  { n: 'Snack pack for Blob', p: 40, g: 'pet', fx: () => { S.pet.food = 100; } },
-  { n: '2 scratch cards', p: 50, g: 'scratch', fx: () => { S.scratchExtra += 2; } },
-  { n: 'Auto-tapper +1', p: 400, g: 'tap', fx: () => { S.tap.A++; } },
-];
-let deals = [], dealN = 0, freshDeals = 0;
-function mkDeal() {
-  const w = pick(WARES), off = pick([30, 40, 50, 60, 70, 80]), old = Math.round(w.p * 1.8), price = Math.max(5, Math.round(old * (1 - off / 100))), life = ri(60, 150) * 1000;
-  return { id: ++dealN, w, off, old, price, stock: ri(1, 5), viewers: ri(40, 900), ends: T() + life, life, fresh: true };
-}
-function tickShop() {
-  if (!deals.length) deals = [mkDeal(), mkDeal(), mkDeal()];
-  deals = deals.map(d => { d.viewers = Math.max(12, d.viewers + ri(-20, 30)); if (T() > d.ends) { freshDeals++; return mkDeal(); } return d; });
-}
-function buyDeal(d, btn) {
-  if (!d || d.stock <= 0 || !spend(d.price)) return;
-  d.stock--; S.buys++; d.w.fx(); act();
-  const [x, y] = centerOf(btn); burst(x, y, { n: 18 }); haptic(true);
-  toast(`You saved ${fmt(d.old - d.price)}!`);
-  APPS.shop.render(true); refreshBadges(); queueCheck();
-}
-def({
-  id: 'shop', name: 'Shop', tag: 'Flash sales · scarcity', c: '#e5007a',
-  badge: () => Math.min(9, freshDeals),
-  ping: () => { const d = pick(deals.filter(d => d.stock > 0 && d.ends - T() > 30000)); return d ? `${d.off}% off: ${d.w.n}. Only ${d.stock} left.` : null; },
-  build(b) {
-    b.innerHTML = '<div class="pad"><div class="mega"><b>Mega sale</b><span id="sh-mega"></span></div><div id="sh-list" style="display:flex;flex-direction:column;gap:12px"></div><p class="fine">Prices in hits. The sale always ends soon.</p></div>';
-    track($('.pad', b));
-    $('#sh-list', b).addEventListener('click', e => { const btn = e.target.closest('[data-d]'); if (btn) buyDeal(deals.find(d => d.id === +btn.dataset.d), btn); });
-  },
-  open() { freshDeals = 0; },
-  render(full) {
-    if (!this.view) return;
-    $('#sh-mega').textContent = `ends in 0:${String(60 - new Date().getSeconds()).padStart(2, '0')}`;
-    const sig = deals.map(d => d.id + ':' + d.stock).join();
-    if (full || this._sig !== sig) {
-      this._sig = sig;
-      $('#sh-list').innerHTML = deals.map(d => `<div class="deal${d.stock ? '' : ' sold'}${d.fresh ? ' fresh' : ''}" data-id="${d.id}">${subIcon(d.w.g)}<div class="dn"><b>${d.w.n}</b><small>${d.stock ? `Only ${d.stock} left` : 'Sold out'}</small><em>${I('eye')}<span class="vw">${d.viewers}</span> viewing</em></div><div class="dp"><span class="off">-${d.off}%</span><s>${fmt(d.old)}</s><button class="buy" data-d="${d.id}"${d.stock ? '' : ' disabled'}>${IF('bolt')}${fmt(d.price)}</button></div><i class="tb"></i></div>`).join('');
-      deals.forEach(d => { d.fresh = false; });
-    }
-    deals.forEach(d => { const el = $(`.deal[data-id="${d.id}"]`); if (!el) return; $('.vw', el).textContent = d.viewers; $('.tb', el).style.width = clamp((d.ends - T()) / d.life, 0, 1) * 100 + '%'; });
-  },
-  tick() { this.render(); },
-});
-
-// ---------- Hold: press, fill, release in the zone ----------
-let hold = null, goldHoldUntil = 0, nextGoldAt = T() + 45000, perfectRun = 0;
-function holdStart() {
-  if (hold || !$('#hd')) return;
-  hold = { t0: now(), tone: holdTone(), raf: 0, p: 0 };
-  $('#hd').classList.add('on');
-  const step = () => {
-    if (!hold) return;
-    const p = Math.min(1, Math.pow((now() - hold.t0) / 1100, 1.3));
-    hold.p = p;
-    $('#hd-prg').style.strokeDasharray = `${p * 100} 100`;
-    if (hold.tone) hold.tone.set(180 + p * 900);
-    if (p >= 1) { holdEnd(); return; }
-    hold.raf = requestAnimationFrame(step);
-  };
-  hold.raf = requestAnimationFrame(step);
-}
-function holdEnd() {
-  if (!hold) return;
-  const p = hold.p;
-  cancelAnimationFrame(hold.raf); if (hold.tone) hold.tone.stop(); hold = null;
-  $('#hd').classList.remove('on');
-  S.holds++; act();
-  const gold = T() < goldHoldUntil ? 2 : 1, res = $('#hd-res'), [x, y] = centerOf($('#hd'));
-  res.className = 'hd-res';
-  if (p >= .82 && p <= .94) {
-    perfectRun++; S.perfects++;
-    res.textContent = perfectRun > 1 ? `PERFECT ×${perfectRun}` : 'PERFECT'; restart(res, 'perfect');
-    earn(30 * gold + perfectRun * 5, x, y - 60); sfx.win(); haptic(true);
-    burst(x, y, { n: 26, colors: ['#ffc21a', '#fff1a8', '#fff'], shape: 'dot', power: 1.5 });
-  } else {
-    perfectRun = 0; restart(res, 'pop');
-    if (p >= 1) { res.textContent = 'Overcharged'; earn(3 * gold, x, y - 60); sfx.nope(); }
-    else if (p > .94) { res.textContent = 'Just past it'; earn(8 * gold, x, y - 60); sfx.coin(); }
-    else if (p >= .6) { res.textContent = 'Almost'; earn(Math.round(p * 10) * gold, x, y - 60); sfx.click(); }
-    else { res.textContent = 'Too early'; earn(1, x, y - 60); sfx.click(); }
-  }
-  $('#hd-prg').style.strokeDasharray = '0 100';
-  $('#hd-run').textContent = `Perfect streak ${perfectRun}`;
-  queueCheck();
-}
-function tickHold() {
-  if (T() > nextGoldAt) {
-    goldHoldUntil = T() + 20000; nextGoldAt = T() + ri(45, 90) * 1000 * paceK();
-    if (S.onboarded && S.holds) notify('hold', 'Golden hold: double rewards for {left}', { until: goldHoldUntil, urgent: true }); // the Waiting widget shows it to everyone else
-  }
-}
-def({
-  id: 'hold', name: 'Hold', tag: 'Progress bars · timing', c: '#00a8c0',
-  badge: () => (T() < goldHoldUntil ? 1 : 0),
-  build(b) {
-    b.innerHTML = `<div class="pad"><div id="hd-gold"></div><div class="hd-stage"><div class="hd-ring" id="hd" role="button" aria-label="Press and hold"><svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="15" class="trk" pathLength="100"/><circle cx="18" cy="18" r="15" class="zone" pathLength="100"/><circle cx="18" cy="18" r="15" class="prg" id="hd-prg" pathLength="100"/></svg><div class="hd-in">HOLD</div></div></div>
-      <div class="hd-res" id="hd-res">Let go in the gold</div><p class="fine" id="hd-run">Perfect streak 0</p><p class="fine">Press and hold. Release when the ring is inside the gold band.</p></div>`;
-    track($('.pad', b));
-    const ring = $('#hd', b);
-    ring.addEventListener('pointerdown', e => { e.preventDefault(); try { ring.setPointerCapture(e.pointerId); } catch {} holdStart(); });
-    ring.addEventListener('pointerup', holdEnd); ring.addEventListener('pointercancel', holdEnd);
-  },
-  render() {
-    if (!this.view) return;
-    const g = T() < goldHoldUntil;
-    $('#hd').classList.toggle('gold', g);
-    $('#hd-gold').innerHTML = g ? `<div class="gold-note">Golden hold · double rewards · ${cd(goldHoldUntil - T())}</div>` : '';
-  },
-  tick() { this.render(); },
-  key(e) { if (e.key === ' ') { if (e.type === 'keydown' && !e.repeat) holdStart(); else if (e.type === 'keyup') holdEnd(); return true; } },
-});
-
-// ---------- Rings: ephemeral things that vanish if you look away ----------
-let ringT = 0, ringCount = 0, caughtSession = 0, missedSession = 0;
-function spawnRing() {
-  const ar = $('#rg-arena');
-  if (!ar || ringCount >= 5) return;
-  const taken = new Set($$('.rg', ar).map(r => r.dataset.cell));
-  let cell; do cell = ri(0, 11); while (taken.has(String(cell)) && taken.size < 12);
-  const col = cell % 3, row = Math.floor(cell / 3), d = rnd(3.5, 6);
-  const r = html(`<button class="rg" data-cell="${cell}" aria-label="Catch" style="left:${((col + .5) / 3) * 100 + rnd(-6, 6)}%;top:${((row + .5) / 4) * 100 + rnd(-5, 5)}%;--h:${ri(0, 359)};--d:${d}s"></button>`);
-  r._born = now(); r._d = d * 1000;
-  ar.append(r); ringCount++;
-  r._t = setTimeout(() => {
-    if (!r.isConnected || r.classList.contains('gone')) return;
-    r.classList.add('missed'); S.missed++; missedSession++; ringCount--;
-    setTimeout(() => r.remove(), 350);
-    APPS.rings.render();
-  }, d * 1000);
-}
-function ringLoop() {
-  clearTimeout(ringT);
-  if (curApp !== 'rings') return;
-  spawnRing();
-  ringT = setTimeout(ringLoop, rnd(900, 1700));
-}
-def({
-  id: 'rings', name: 'Rings', tag: 'Ephemeral · fear of missing out', c: '#ff3d6e',
-  badge: () => Math.min(99, S.ringsLost),
-  ping: () => { S.ringsLost += ri(2, 6); return `${S.ringsLost} rings vanished while you were gone`; },
-  build(b) {
-    b.innerHTML = '<div class="rg-top"><span>Caught <span id="rg-c">0</span></span><span class="miss">Missed <span id="rg-m">0</span></span></div><div id="rg-lost"></div><div class="arena" id="rg-arena"></div>';
-    $('#rg-arena', b).addEventListener('pointerdown', e => {
-      const r = e.target.closest('.rg');
-      if (!r || r.classList.contains('gone') || r.classList.contains('missed')) return;
-      clearTimeout(r._t); r.classList.add('gone'); ringCount--;
-      const left = clamp(1 - (now() - r._born) / r._d, 0, 1), [x, y] = centerOf(r);
-      S.rings++; caughtSession++; act();
-      earn(2 + Math.round(left * 6), x, y - 30);
-      sfx.pop(Math.round(left * 12)); haptic();
-      burst(x, y, { n: 10, colors: [`hsl(${r.style.getPropertyValue('--h')} 90% 60%)`, '#fff'], shape: 'dot' });
-      setTimeout(() => r.remove(), 200);
-      this.render(); queueCheck();
-    });
-  },
-  open() {
-    const lost = S.ringsLost;
-    $('#rg-lost').innerHTML = lost ? `<div class="rg-lost">${lost} rings vanished while you were away.</div>` : '';
-    S.ringsLost = 0; caughtSession = 0; missedSession = 0;
-    setTimeout(ringLoop, 250);
-  },
-  close() { clearTimeout(ringT); $$('.rg', $('#rg-arena')).forEach(r => { clearTimeout(r._t); r.remove(); }); ringCount = 0; },
-  render() { if (!this.view) return; $('#rg-c').textContent = caughtSession; $('#rg-m').textContent = missedSession; },
-});
-
-// =====================================================================
-// the money apps: every bet wins
-// =====================================================================
-const STAKES = [['10', 10], ['50', 50], ['100', 100], ['Half', 'half'], ['All in', 'all']];
-const stakeVal = v => (v === 'half' ? Math.floor(S.hits / 2) : v === 'all' ? S.hits : v);
-const chipsHTML = (id, sel) => `<div class="chips" id="${id}">${STAKES.map(([l, v]) => `<button data-v="${v}" class="${String(v) === String(sel) ? 'on' : ''}">${l}</button>`).join('')}</div>`;
-function bindChips(el, set) {
-  el.addEventListener('click', e => {
-    const b = e.target.closest('button'); if (!b) return;
-    set(isNaN(+b.dataset.v) ? b.dataset.v : +b.dataset.v);
-    $$('button', el).forEach(x => x.classList.toggle('on', x === b)); sfx.click();
-  });
-}
-// a single-series line: 2px stroke, soft area, faint gridlines, emphasized endpoint
-function sparkSVG(vals, w, h, color, o = {}) {
-  const pad = o.pad ?? 4, min = Math.min(...vals), max = Math.max(...vals), rng = max - min || 1;
-  const x = i => pad + (i / Math.max(1, vals.length - 1)) * (w - pad * 2), y = v => pad + (1 - (v - min) / rng) * (h - pad * 2);
-  const line = 'M' + vals.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join('L');
-  const lx = x(vals.length - 1), ly = y(vals[vals.length - 1]);
-  const grid = o.grid ? [.25, .5, .75].map(f => `<line x1="0" x2="${w}" y1="${(h * f).toFixed(1)}" y2="${(h * f).toFixed(1)}" stroke="var(--line)" stroke-width="1"/>`).join('') : '';
-  const area = o.area ? `<path d="${line}L${lx.toFixed(1)},${h}L${x(0).toFixed(1)},${h}Z" fill="${color}" opacity=".14"/>` : '';
-  const dot = o.dot ? `<circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="4" fill="${color}" stroke="var(--card)" stroke-width="2"/>` : '';
-  return `<svg class="spark" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" aria-hidden="true">${grid}${area}<path d="${line}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>${dot}</svg>`;
-}
-
-// ---------- Rocket: a crash game that never crashes on you ----------
-const ROCKET_K = .3, ROCKET_FREE = 30000;
-const crashPoint = () => clamp(.99 / (1 - R()), 1.25, 60);
-const rocketHist = Array.from({ length: 8 }, crashPoint);
-const SHIP = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2c3 2.2 5 6 5 10l-2 5H9l-2-5c0-3.8 2-7.8 5-10z" fill="#fff"/><circle cx="12" cy="10" r="2.2" fill="#3b7bff"/><path d="m7 12-3 4.5L7.5 17zM17 12l3 4.5-3.5.5z" fill="#ff2e4d"/><path d="M9.5 18h5L12 23z" fill="#ffc21a"/></svg>';
-let rkt = null, rStake = 10;
-function rocketGo() {
-  if (rkt) { if (!rkt.cashed) rocketCash(false); return; }
-  const free = T() >= S.rocketAt, bet = free ? 10 : stakeVal(rStake);
-  if (!free) { if (bet < 1) { sfx.nope(); toast('You need hits to bet. Tap earns some.'); return; } if (!spend(bet)) return; }
-  else S.rocketAt = T() + ROCKET_FREE;
-  act(); S.launches++;
-  rkt = { bet, t0: now(), m: 1, crash: crashPoint(), cashed: false, pts: [[0, 1]], last: 0, tone: holdTone() };
-  $('#rc-m').className = 'rc-m'; $('#rc-sub').textContent = free ? 'Free launch' : `Riding ${fmt(bet)} hits`;
-  sfx.whoosh(); haptic();
-  rkt.raf = requestAnimationFrame(rocketStep);
-  APPS.rocket.render(); refreshBadges();
-}
-function rocketStep() {
-  if (!rkt) return;
-  const t = (now() - rkt.t0) / 1000;
-  rkt.m = Math.exp(ROCKET_K * t);
-  if (t - rkt.last > .05) { rkt.pts.push([t, rkt.m]); rkt.last = t; }
-  if (!rkt.cashed && rkt.m >= rkt.crash - .02) { rkt.m = rkt.crash - .01; rocketCash(true); } // it never lets you lose
-  if (rkt.cashed && rkt.m >= rkt.shown) { rocketCrash(); return; }
-  if (rkt.tone) rkt.tone.set(160 + Math.min(1400, rkt.m * 90));
-  drawRocket();
-  rkt.raf = requestAnimationFrame(rocketStep);
-}
-function drawRocket() {
-  const scr = $('#rc-scr'); if (!scr || !rkt) return;
-  const W = scr.clientWidth, H = scr.clientHeight, t = (now() - rkt.t0) / 1000;
-  const tMax = Math.max(4, t * 1.15), mMax = Math.max(2, rkt.m * 1.2);
-  const X = v => 18 + (v / tMax) * (W - 50), Y = v => H - 22 - ((v - 1) / (mMax - 1)) * (H - 90);
-  const pts = [...rkt.pts, [t, rkt.m]];
-  const d = 'M' + pts.map(([a, b]) => `${X(a).toFixed(1)},${Y(b).toFixed(1)}`).join('L');
-  const [lx, ly] = [X(t), Y(rkt.m)];
-  $('#rc-svg').innerHTML = `<path d="${d}L${lx.toFixed(1)},${H - 22}L18,${H - 22}Z" fill="url(#rcg)"/><path d="${d}" fill="none" stroke="#ffb000" stroke-width="3" stroke-linecap="round"/><defs><linearGradient id="rcg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff6a00" stop-opacity=".45"/><stop offset="1" stop-color="#ff6a00" stop-opacity="0"/></linearGradient></defs>`;
-  const p2 = pts[Math.max(0, pts.length - 4)], ang = Math.atan2(Y(rkt.m) - Y(p2[1]), X(t) - X(p2[0])) * 180 / Math.PI + 90;
-  const ship = $('#rc-ship'); ship.style.transform = `translate(${lx}px, ${ly}px) rotate(${ang}deg)`; ship.hidden = false;
-  $('#rc-m').textContent = rkt.m.toFixed(2) + '×';
-  if (!rkt.cashed) $('#rc-go').textContent = `Cash out +${fmt(Math.round(rkt.bet * rkt.m))}`;
-}
-function rocketCash(auto) {
-  if (!rkt || rkt.cashed) return;
-  rkt.cashed = true; rkt.cashM = rkt.m;
-  const win = Math.round(rkt.bet * rkt.m);
-  rkt.win = win;
-  rkt.shown = Math.max(rkt.crash, rkt.m * rnd(1.15, 2.4)); // it always flies on a little past you
-  S.bestCash = Math.max(S.bestCash, rkt.m);
-  const [x, y] = centerOf($('#rc-m'));
-  earn(win, x, y + 50, { raw: true }); sfx.win(); haptic(true); confetti(50);
-  $('#rc-m').classList.add('win');
-  $('#rc-sub').textContent = auto ? `Auto cash-out saved you at ${rkt.m.toFixed(2)}×` : `Cashed out at ${rkt.m.toFixed(2)}×`;
-  $('#rc-go').textContent = `Won ${fmt(win)}`;
-  queueCheck();
-}
-function rocketCrash() {
-  if (!rkt || rkt.over) return;
-  rkt.over = true; cancelAnimationFrame(rkt.raf); if (rkt.tone) { rkt.tone.stop(); rkt.tone = null; }
-  noise(.5, .16, 0, 1200, 120); haptic(true);
-  const missed = Math.round(rkt.bet * rkt.shown) - rkt.win;
-  $('#rc-m').className = 'rc-m crash'; $('#rc-m').textContent = rkt.shown.toFixed(2) + '×';
-  $('#rc-sub').textContent = `Crashed. Holding on would have paid ${fmt(missed)} more.`;
-  $('#rc-ship').hidden = true;
-  rocketHist.unshift(rkt.shown); rocketHist.length = 8;
-  setTimeout(() => { rkt = null; APPS.rocket.render(); }, 1300);
-}
-def({
-  id: 'rocket', name: 'Rocket', tag: 'Crash betting · rigged to win', c: '#ff6a00',
-  badge: () => (T() >= S.rocketAt ? 1 : 0),
-  ping: () => (T() >= S.rocketAt ? `Free launch ready. The last one hit ${rocketHist[0].toFixed(2)}×` : `Someone just cashed out at ${rnd(3, 40).toFixed(2)}×`),
-  build(b) {
-    b.innerHTML = `<div class="pad"><div class="rc-scr" id="rc-scr"><div class="rc-hist" id="rc-hist"></div><svg id="rc-svg" class="rc-svg"></svg><div class="rc-ship" id="rc-ship" hidden>${SHIP}</div><div class="rc-m" id="rc-m">1.00×</div><div class="rc-sub" id="rc-sub"></div></div>
-      ${chipsHTML('rc-st', rStake)}<button class="pbtn" id="rc-go"></button>
-      <p class="fine">Cash out before it crashes. It never crashes first.</p></div>`;
-    track($('.pad', b));
-    bindChips($('#rc-st', b), v => { rStake = v; this.render(); });
-    $('#rc-go', b).onclick = rocketGo;
-  },
-  render() {
-    if (!this.view) return;
-    $('#rc-hist').innerHTML = rocketHist.map(m => `<span class="${m >= 2 ? 'hi' : ''}">${m.toFixed(2)}×</span>`).join('');
-    if (rkt) return;
-    const free = T() >= S.rocketAt;
-    $('#rc-go').textContent = free ? 'Launch · free' : `Launch · ${fmt(stakeVal(rStake))} hits`;
-    $('#rc-m').className = 'rc-m'; $('#rc-m').textContent = '1.00×';
-    $('#rc-sub').textContent = free ? 'A free launch is ready' : `Next free launch in ${cd(S.rocketAt - T())}`;
-    $('#rc-svg').innerHTML = ''; $('#rc-ship').hidden = true;
-  },
-  tick() { this.render(); },
-  close() { if (rkt && !rkt.over) { if (!rkt.cashed) rocketCash(false); rocketCrash(); } }, // leaving mid-flight cashes you out
-  key(e) { if (e.key === ' ' && e.type === 'keydown') { rocketGo(); return true; } },
-});
-
-// ---------- Flip: double or nothing, and it's never nothing ----------
-const FLIP_MAX = 8;
-let flipping = false, fStake = 10;
-function flipGo() {
-  if (flipping) return;
-  const f = S.flip;
-  if (!f.pot) {
-    const st = stakeVal(fStake);
-    if (st < 1) { sfx.nope(); toast('You need hits to flip. Tap earns some.'); return; }
-    if (!spend(st)) return;
-    f.pot = st; f.n = 0;
-  }
-  flipping = true; act(); S.flips++;
-  const long = f.n >= 4, dur = long ? 1500 : 800, coin = $('#fp-coin');
-  f.rot = (f.rot || 0) + (long ? 3240 : 1800);
-  coin.style.transition = `transform ${dur}ms cubic-bezier(.2,.8,.3,1)`;
-  coin.style.transform = `rotateY(${f.rot}deg)`;
-  restart($('#fp-stage'), 'toss');
-  const ticks = long ? 16 : 9;
-  for (let i = 0; i < ticks; i++) tone(1200 + i * 60, .02, 'square', .03, (1 - Math.pow(1 - i / ticks, 2)) * dur / 1000);
-  if (long) sfx.riser(dur / 1000);
-  APPS.flip.render();
-  setTimeout(() => {
-    f.pot *= 2; f.n++; flipping = false;
-    S.maxFlips = Math.max(S.maxFlips, f.n);
-    const [x, y] = centerOf($('#fp-coin'));
-    floatText(x, y - 90, `×${2 ** f.n}`, 'crit'); sfx.win(); haptic(true);
-    burst(x, y, { n: 14 + f.n * 4, colors: ['#ffc21a', '#fff1a8', '#fff'], shape: 'dot', power: 1 + f.n * .1 });
-    APPS.flip.render(); queueCheck();
-    if (f.n >= FLIP_MAX) setTimeout(() => flipCash(true), 500);
-  }, dur);
-}
-function flipCash(max) {
-  const f = S.flip;
-  if (!f.pot || flipping) return;
-  const g = f.pot, [x, y] = centerOf($('#fp-pot'));
-  earn(g, x, y, { raw: true }); f.pot = 0; f.n = 0;
-  confetti(max ? 200 : 90); sfx.big(); haptic(true);
-  toast(max ? `Max win. Banked ${fmt(g)}` : `Banked ${fmt(g)}`);
-  APPS.flip.render(); refreshBadges();
-}
-def({
-  id: 'flip', name: 'Flip', tag: 'Double or nothing · let it ride', c: '#e0a100',
-  badge: () => (S.flip.pot ? 1 : 0),
-  ping: () => (S.flip.pot ? `Your pot of ${fmt(S.flip.pot)} is waiting. Let it ride?` : 'Double or nothing. It always lands heads.'),
-  build(b) {
-    b.innerHTML = `<div class="pad"><div class="fp-pot" id="fp-pot"><small>Pot</small><b id="fp-v">0</b><small id="fp-n"></small></div>
-      <div class="coin-stage" id="fp-stage"><div class="coin-w"><div class="coin" id="fp-coin"><div class="face h">${IF('bolt')}</div><div class="face t">${I('close')}</div></div></div></div>
-      <div class="ladder" id="fp-lad"></div>${chipsHTML('fp-st', fStake)}
-      <div class="row2"><button class="pbtn" id="fp-go" style="--c:#e0a100"></button><button class="pbtn" id="fp-cash" style="--c:#12b886"></button></div>
-      <p class="fine">Heads doubles the pot. It always lands heads. Eight in a row is the max.</p></div>`;
-    track($('.pad', b));
-    bindChips($('#fp-st', b), v => { fStake = v; this.render(); });
-    $('#fp-go', b).onclick = flipGo;
-    $('#fp-cash', b).onclick = () => flipCash(false);
-  },
-  render() {
-    if (!this.view) return;
-    const f = S.flip;
-    $('#fp-v').textContent = fmt(f.pot);
-    $('#fp-n').textContent = f.pot ? `${f.n} heads in a row` : 'Pick a stake and flip';
-    $('#fp-lad').innerHTML = Array.from({ length: FLIP_MAX }, (_, i) => `<span class="${i < f.n ? 'done' : i === f.n && f.pot ? 'next' : ''}">×${2 ** (i + 1)}</span>`).join('');
-    $('#fp-st').hidden = !!f.pot;
-    const go = $('#fp-go'), cash = $('#fp-cash');
-    go.disabled = flipping;
-    go.textContent = f.pot ? `Let it ride · ${fmt(f.pot * 2)}` : `Flip · ${fmt(stakeVal(fStake))}`;
-    cash.disabled = !f.pot || flipping; cash.classList.toggle('off', !f.pot);
-    cash.textContent = f.pot ? `Cash out ${fmt(f.pot)}` : 'Cash out';
-  },
-  key(e) { if (e.type !== 'keydown') return; if (e.key === ' ') { flipGo(); return true; } if (e.key === 'Enter') { flipCash(false); return true; } },
-});
-
-// ---------- Predict: prediction markets about this phone, and you're always right ----------
-const MQ = [
-  s => `Will a notification arrive in the next ${s} s?`, s => `Will Blob get hungry in the next ${s} s?`,
-  s => `Will you reach a ×3 combo in ${s} s?`, s => `Will someone pass you in Rank in ${s} s?`,
-  () => 'Will the next lever pull be a near miss?', s => `Will Inbox hit 10 unread in ${s} s?`,
-  s => `Will $HIT close higher in ${s} s?`, () => 'Will the next rocket fly past 5×?',
-  () => 'Will the next loot box be rare or better?', s => `Will your pulse survive the next ${s} s?`,
-  s => `Will the Shop sale end in the next ${s} s?`, s => `Will you unlock an achievement in ${s} s?`,
-];
-let markets = [], mkN = 0, mStake = 10, newMarkets = 0;
-function mkMarket() {
-  const s = pick([30, 45, 60, 90]), yes = rnd(.15, .85);
-  return { id: ++mkN, q: pick(MQ)(s), yes, hist: Array.from({ length: 30 }, () => clamp(yes + rnd(-.08, .08), .03, .97)), dur: s * 1000, ends: T() + s * 1000, pos: null, vol: ri(2000, 90000), traders: ri(40, 3000), done: false };
-}
-function marketTick() {
-  if (!markets.length) markets = [mkMarket(), mkMarket(), mkMarket(), mkMarket()];
-  markets.forEach((m, i) => {
-    if (m.done) return;
-    let d = rnd(-.035, .035);
-    if (m.pos) d += (m.pos.side === 'yes' ? 1 : -1) * .012; // the crowd comes around to your side
-    m.yes = clamp(m.yes + d, .03, .97);
-    m.hist.push(m.yes); if (m.hist.length > 40) m.hist.shift();
-    m.vol += ri(10, 400); m.traders += ri(0, 6);
-    if (T() >= m.ends) resolveMarket(m, i);
-  });
-}
-function resolveMarket(m, i) {
-  m.done = true;
-  const outcome = m.pos ? m.pos.side : (chance(m.yes) ? 'yes' : 'no');
-  m.outcome = outcome;
-  if (m.pos) {
-    const pay = Math.round(m.pos.stake / m.pos.price);
-    m.paid = pay; S.predWins++;
-    if (curApp === 'predict') { const el = $(`.mk[data-id="${m.id}"]`); const [x, y] = el ? centerOf(el) : [FW / 2, FH / 2]; earn(pay, x, y, { raw: true }); confetti(60); sfx.win(); haptic(true); }
-    else { earn(pay, null, null, { raw: true }); notify('predict', `You were right. Resolved ${outcome.toUpperCase()}: +${fmt(pay)}`); }
-  }
-  setTimeout(() => { const j = markets.indexOf(m); if (j >= 0) { markets[j] = mkMarket(); newMarkets++; if (APPS.predict.view) APPS.predict.render(true); } }, 1800);
-  if (APPS.predict.view) APPS.predict.render();
-  queueCheck();
-}
-function buyMarket(m, side, btn) {
-  if (m.done || T() > m.ends - 3000) { sfx.nope(); toast('Trading closed on this one'); return; }
-  if (m.pos && m.pos.side !== side) { sfx.nope(); toast('You already picked a side'); return; }
-  const stake = stakeVal(mStake);
-  if (stake < 1) { sfx.nope(); toast('You need hits to trade. Tap earns some.'); return; }
-  if (!spend(stake)) return;
-  const price = side === 'yes' ? m.yes : 1 - m.yes;
-  if (m.pos) { m.pos.shares += stake / price; m.pos.stake += stake; m.pos.price = m.pos.stake / m.pos.shares; }
-  else m.pos = { side, stake, price, shares: stake / price };
-  act(); haptic();
-  const [x, y] = centerOf(btn); burst(x, y, { n: 10, colors: side === 'yes' ? ['#3b7bff', '#fff'] : ['#ff2e4d', '#fff'], shape: 'dot' });
-  APPS.predict.render();
-}
-def({
-  id: 'predict', name: 'Predict', tag: 'Prediction markets · always right', c: '#3b7bff',
-  badge: () => Math.min(9, newMarkets),
-  ping: () => { const m = pick(markets.filter(x => !x.done)); return m ? `“${m.q}” is at ${Math.round(m.yes * 100)}%` : null; },
-  build(b) {
-    b.innerHTML = `<div class="pad">${chipsHTML('pd-st', mStake)}<div id="pd-list" style="display:flex;flex-direction:column;gap:12px"></div><p class="fine">Buy YES or NO. Every market resolves your way.</p></div>`;
-    track($('.pad', b));
-    bindChips($('#pd-st', b), v => { mStake = v; });
-    $('#pd-list', b).addEventListener('click', e => {
-      const btn = e.target.closest('[data-side]'); if (!btn) return;
-      const m = markets.find(x => x.id === +btn.closest('.mk').dataset.id);
-      if (m) buyMarket(m, btn.dataset.side, btn);
-    });
-  },
-  open() { newMarkets = 0; },
-  render(full) {
-    if (!this.view) return;
-    const list = $('#pd-list');
-    if (full || list.children.length !== markets.length || markets.some((m, i) => +list.children[i].dataset.id !== m.id)) {
-      list.innerHTML = markets.map(m => `<div class="mk" data-id="${m.id}"><div class="mk-q">${m.q}</div><div class="mk-row"><div class="mk-pct"><b></b><small>chance yes</small></div><div class="mk-sp"></div></div><div class="mk-btns"><button class="y" data-side="yes"></button><button class="n" data-side="no"></button></div><div class="mk-pos" hidden></div><div class="mk-meta"><span class="mk-vol"></span><span class="mk-t"></span></div><i class="mk-tb"></i></div>`).join('');
-    }
-    const w = Math.max(120, (list.clientWidth || 300) - 120);
-    markets.forEach(m => {
-      const el = $(`.mk[data-id="${m.id}"]`, list); if (!el) return;
-      const yc = Math.round(m.yes * 100);
-      $('.mk-pct b', el).textContent = `${yc}%`;
-      $('.mk-sp', el).innerHTML = sparkSVG(m.hist, w, 44, '#3b7bff', { area: true, dot: true });
-      $('.y', el).textContent = `Yes ${yc}¢`; $('.n', el).textContent = `No ${100 - yc}¢`;
-      $('.mk-vol', el).textContent = `${fmt(m.vol)} hits traded · ${fmt(m.traders)} traders`;
-      $('.mk-t', el).textContent = m.done ? `Resolved ${m.outcome.toUpperCase()}` : `Resolves in ${cd(m.ends - T())}`;
-      $('.mk-tb', el).style.width = clamp((m.ends - T()) / m.dur, 0, 1) * 100 + '%';
-      const pos = $('.mk-pos', el);
-      pos.hidden = !m.pos;
-      if (m.pos) pos.innerHTML = m.done ? `<span>You were right</span><span>+${fmt(m.paid)}</span>` : `<span>You: ${m.pos.side.toUpperCase()} · ${fmt(m.pos.shares)} shares</span><span>Pays ${fmt(Math.round(m.pos.stake / m.pos.price))}</span>`;
-      el.classList.toggle('won', !!(m.done && m.pos));
-      $$('button', el).forEach(x => { x.disabled = m.done; });
-    });
-  },
-  tick() {},
-});
-
+// ==== MODULE markets: trade, predict ====
+addAch([
+  ['oracle', 'Oracle', 'Win 10 predictions', 'eye', () => S.predWins >= 10],
+  ['whale', 'Whale', 'Grow a portfolio past 10,000', 'gem', () => (S.trade.athV || 0) >= 10000],
+]);
+addStats([
+  ['predictions won', () => fmt(S.predWins)],
+  ['trades', () => fmt(S.trades)],
+]);
 // ---------- Trade: coins that only go up while you hold them ----------
 const COINS = [['HIT', '#e59a00'], ['DOPA', '#ff4fa3'], ['BLOB', '#9b5cff'], ['PING', '#2f9bff']];
 const hist = {};
@@ -2315,19 +1933,643 @@ def({
   key(e) { if (e.type !== 'keydown') return; if (e.key === ' ') { buyCoin(); return true; } if (e.key === 'Enter') { sellCoin(); return true; } },
 });
 
-// ---------- You: screen time, achievements, settings ----------
-const STATS = [
-  ['screen time today', () => dur(S.today.ms)], ['unlocks', () => fmt(S.pickups)],
-  ['notifications', () => fmt(S.notifs)], ['hits today', () => fmt(S.today.hits)],
-  ['hits all time', () => fmt(S.total)], ['best combo', () => `×${Math.min(10, 1 + Math.floor(S.bestCombo / 6))} (${S.bestCombo})`],
-  ['taps', () => fmt(S.taps)], ['cards revealed', () => fmt(S.cards)],
-  ['messages read', () => fmt(S.cleared)], ['swipes', () => fmt(S.swipes)],
-  ['clips watched', () => fmt(S.clips)], ['lever pulls', () => fmt(S.spins)],
-  ['boxes opened', () => fmt(S.boxes)], ['rings caught', () => fmt(S.rings)],
-  ['rocket launches', () => fmt(S.launches)], ['coin flips', () => fmt(S.flips)],
-  ['predictions won', () => fmt(S.predWins)], ['trades', () => fmt(S.trades)],
-  ['rings missed', () => fmt(S.missed)], ['scrolled', () => { const m = S.scrollPx * .00016; return m < 1000 ? `${m.toFixed(m < 10 ? 1 : 0)} m` : `${(m / 1000).toFixed(2)} km`; }],
+// ---------- Predict: prediction markets about this phone, and you're always right ----------
+const MQ = [
+  s => `Will a notification arrive in the next ${s} s?`, s => `Will Blob get hungry in the next ${s} s?`,
+  s => `Will you reach a ×3 combo in ${s} s?`, s => `Will someone pass you in Rank in ${s} s?`,
+  () => 'Will the next lever pull be a near miss?', s => `Will Inbox hit 10 unread in ${s} s?`,
+  s => `Will $HIT close higher in ${s} s?`, () => 'Will the next rocket fly past 5×?',
+  () => 'Will the next loot box be rare or better?', s => `Will your pulse survive the next ${s} s?`,
+  s => `Will the Shop sale end in the next ${s} s?`, s => `Will you unlock an achievement in ${s} s?`,
 ];
+let markets = [], mkN = 0, mStake = 10, newMarkets = 0;
+function mkMarket() {
+  const s = pick([30, 45, 60, 90]), yes = rnd(.15, .85);
+  return { id: ++mkN, q: pick(MQ)(s), yes, hist: Array.from({ length: 30 }, () => clamp(yes + rnd(-.08, .08), .03, .97)), dur: s * 1000, ends: T() + s * 1000, pos: null, vol: ri(2000, 90000), traders: ri(40, 3000), done: false };
+}
+function marketTick() {
+  if (!markets.length) markets = [mkMarket(), mkMarket(), mkMarket(), mkMarket()];
+  markets.forEach((m, i) => {
+    if (m.done) return;
+    let d = rnd(-.035, .035);
+    if (m.pos) d += (m.pos.side === 'yes' ? 1 : -1) * .012; // the crowd comes around to your side
+    m.yes = clamp(m.yes + d, .03, .97);
+    m.hist.push(m.yes); if (m.hist.length > 40) m.hist.shift();
+    m.vol += ri(10, 400); m.traders += ri(0, 6);
+    if (T() >= m.ends) resolveMarket(m, i);
+  });
+}
+function resolveMarket(m, i) {
+  m.done = true;
+  const outcome = m.pos ? m.pos.side : (chance(m.yes) ? 'yes' : 'no');
+  m.outcome = outcome;
+  if (m.pos) {
+    const pay = Math.round(m.pos.stake / m.pos.price);
+    m.paid = pay; S.predWins++;
+    if (curApp === 'predict') { const el = $(`.mk[data-id="${m.id}"]`); const [x, y] = el ? centerOf(el) : [FW / 2, FH / 2]; earn(pay, x, y, { raw: true }); confetti(60); sfx.win(); haptic(true); }
+    else { earn(pay, null, null, { raw: true }); notify('predict', `You were right. Resolved ${outcome.toUpperCase()}: +${fmt(pay)}`); }
+  }
+  setTimeout(() => { const j = markets.indexOf(m); if (j >= 0) { markets[j] = mkMarket(); newMarkets++; if (APPS.predict.view) APPS.predict.render(true); } }, 1800);
+  if (APPS.predict.view) APPS.predict.render();
+  queueCheck();
+}
+function buyMarket(m, side, btn) {
+  if (m.done || T() > m.ends - 3000) { sfx.nope(); toast('Trading closed on this one'); return; }
+  if (m.pos && m.pos.side !== side) { sfx.nope(); toast('You already picked a side'); return; }
+  const stake = stakeVal(mStake);
+  if (stake < 1) { sfx.nope(); toast('You need hits to trade. Tap earns some.'); return; }
+  if (!spend(stake)) return;
+  const price = side === 'yes' ? m.yes : 1 - m.yes;
+  if (m.pos) { m.pos.shares += stake / price; m.pos.stake += stake; m.pos.price = m.pos.stake / m.pos.shares; }
+  else m.pos = { side, stake, price, shares: stake / price };
+  act(); haptic();
+  const [x, y] = centerOf(btn); burst(x, y, { n: 10, colors: side === 'yes' ? ['#3b7bff', '#fff'] : ['#ff2e4d', '#fff'], shape: 'dot' });
+  APPS.predict.render();
+}
+def({
+  id: 'predict', name: 'Predict', tag: 'Prediction markets · always right', c: '#3b7bff',
+  wait: () => markets.filter(m => m.pos && !m.done).map(m => ({ t: 'Your prediction resolves', due: m.ends })),
+  badge: () => Math.min(9, newMarkets),
+  ping: () => { const m = pick(markets.filter(x => !x.done)); return m ? `“${m.q}” is at ${Math.round(m.yes * 100)}%` : null; },
+  build(b) {
+    b.innerHTML = `<div class="pad">${chipsHTML('pd-st', mStake)}<div id="pd-list" style="display:flex;flex-direction:column;gap:12px"></div><p class="fine">Buy YES or NO. Every market resolves your way.</p></div>`;
+    track($('.pad', b));
+    bindChips($('#pd-st', b), v => { mStake = v; });
+    $('#pd-list', b).addEventListener('click', e => {
+      const btn = e.target.closest('[data-side]'); if (!btn) return;
+      const m = markets.find(x => x.id === +btn.closest('.mk').dataset.id);
+      if (m) buyMarket(m, btn.dataset.side, btn);
+    });
+  },
+  open() { newMarkets = 0; },
+  render(full) {
+    if (!this.view) return;
+    const list = $('#pd-list');
+    if (full || list.children.length !== markets.length || markets.some((m, i) => +list.children[i].dataset.id !== m.id)) {
+      list.innerHTML = markets.map(m => `<div class="mk" data-id="${m.id}"><div class="mk-q">${m.q}</div><div class="mk-row"><div class="mk-pct"><b></b><small>chance yes</small></div><div class="mk-sp"></div></div><div class="mk-btns"><button class="y" data-side="yes"></button><button class="n" data-side="no"></button></div><div class="mk-pos" hidden></div><div class="mk-meta"><span class="mk-vol"></span><span class="mk-t"></span></div><i class="mk-tb"></i></div>`).join('');
+    }
+    const w = Math.max(120, (list.clientWidth || 300) - 120);
+    markets.forEach(m => {
+      const el = $(`.mk[data-id="${m.id}"]`, list); if (!el) return;
+      const yc = Math.round(m.yes * 100);
+      $('.mk-pct b', el).textContent = `${yc}%`;
+      $('.mk-sp', el).innerHTML = sparkSVG(m.hist, w, 44, '#3b7bff', { area: true, dot: true });
+      $('.y', el).textContent = `Yes ${yc}¢`; $('.n', el).textContent = `No ${100 - yc}¢`;
+      $('.mk-vol', el).textContent = `${fmt(m.vol)} hits traded · ${fmt(m.traders)} traders`;
+      $('.mk-t', el).textContent = m.done ? `Resolved ${m.outcome.toUpperCase()}` : `Resolves in ${cd(m.ends - T())}`;
+      $('.mk-tb', el).style.width = clamp((m.ends - T()) / m.dur, 0, 1) * 100 + '%';
+      const pos = $('.mk-pos', el);
+      pos.hidden = !m.pos;
+      if (m.pos) pos.innerHTML = m.done ? `<span>You were right</span><span>+${fmt(m.paid)}</span>` : `<span>You: ${m.pos.side.toUpperCase()} · ${fmt(m.pos.shares)} shares</span><span>Pays ${fmt(Math.round(m.pos.stake / m.pos.price))}</span>`;
+      el.classList.toggle('won', !!(m.done && m.pos));
+      $$('button', el).forEach(x => { x.disabled = m.done; });
+    });
+  },
+  tick() {},
+});
+// ==== /MODULE markets ====
+
+// ==== MODULE goals: streak, quests, leaderboard ====
+addAch([
+  ['pulse', 'Heartbeat', 'Keep a pulse of 20', 'flame', () => S.pulse.best >= 20],
+  ['day7', 'Day seven', 'Claim a day-7 reward', 'chest'],
+  ['quests', 'Busy', 'Finish 10 quests', 'check', () => S.questsDone >= 10],
+  ['promo', 'Promoted', 'Move up a league', 'level'],
+]);
+addQuests([
+  ['pulses', 'Feed your pulse {n} times', 2, 5],
+]);
+// ---------- Streak: daily login, and a pulse that dies in 60 seconds ----------
+const LOGIN_REW = [10, 20, 30, 50, 80, 120, 300];
+const PULSE_MS = 60000, PULSE_OPEN = 30000;
+const loginReady = () => S.login.claimed !== TODAY;
+const pulseLeft = () => S.pulse.until - T();
+function tickPulse() {
+  if (S.pulse.until && pulseLeft() <= 0) {
+    S.pulse.dead = S.pulse.n; S.pulse.n = 0; S.pulse.until = 0; S.pulse.restoreUntil = T() + 20000;
+    if (curApp === 'streak' || !muted('streak')) { sfx.lose(); haptic(true); }
+    notify('streak', `Your pulse died at ×${S.pulse.dead}. Restore it in {left}?`, { until: S.pulse.restoreUntil, urgent: true });
+  } else if (S.pulse.until && pulseLeft() < 15000) alertOnce('pulse', 'streak', 'Your pulse dies in {left}', 60000, { until: S.pulse.until, urgent: true });
+  if (S.pulse.restoreUntil && T() > S.pulse.restoreUntil) { S.pulse.restoreUntil = 0; S.pulse.dead = 0; }
+}
+function feedPulse() {
+  const a = APPS.streak;
+  if (S.pulse.restoreUntil) {
+    if (!spend(20 * S.pulse.dead)) return;
+    S.pulse.n = S.pulse.dead; S.pulse.dead = 0; S.pulse.restoreUntil = 0; S.pulse.until = T() + PULSE_MS;
+    toast('Pulse restored'); sfx.beat(); a.render(); return;
+  }
+  if (S.pulse.until && pulseLeft() > PULSE_OPEN) { sfx.nope(); toast(`Too early. Ready in ${Math.ceil((pulseLeft() - PULSE_OPEN) / 1000)}s`); return; }
+  S.pulse.n++; S.pulse.best = Math.max(S.pulse.best, S.pulse.n); S.pulse.until = T() + PULSE_MS; S.pulses++;
+  act(); sfx.beat(); haptic(true);
+  const [x, y] = centerOf($('#pl-btn')); earn(S.pulse.n * 2, x, y - 30);
+  restart($('.pulse'), 'beat');
+  a.render(); refreshBadges(); queueCheck();
+}
+function claimLogin() {
+  if (!loginReady()) return;
+  const d = S.login.day, rew = LOGIN_REW[d - 1];
+  S.login.claimed = TODAY; S.login.day = d % 7 + 1;
+  const [x, y] = centerOf($('#st-claim')); earn(rew, x, y - 30, { raw: true });
+  sfx.win(); confetti(d === 7 ? 200 : 70); haptic(true);
+  if (d === 7) unlock('day7');
+  APPS.streak.render(); refreshBadges();
+}
+def({
+  id: 'streak', name: 'Streak', tag: 'Streaks · loss aversion', c: '#ff7a00',
+  bg: tickPulse,
+  wait() {
+    const L = [];
+    if (S.pulse.restoreUntil) L.push({ t: `Restore your ×${S.pulse.dead} pulse`, due: S.pulse.restoreUntil });
+    else if (S.pulse.until && pulseLeft() <= PULSE_OPEN) L.push({ t: `Feed your ×${S.pulse.n} pulse`, due: S.pulse.until });
+    if (loginReady()) L.push({ t: `Day ${S.login.day} reward is ready`, hot: 1, r: `+${LOGIN_REW[S.login.day - 1]}` });
+    return L;
+  },
+  badge: () => (loginReady() ? 1 : 0) + (S.pulse.restoreUntil ? 1 : 0) + (!S.pulse.until || pulseLeft() <= PULSE_OPEN ? 1 : 0),
+  ping: () => (loginReady() ? `Day ${S.login.day} reward is waiting` : !S.pulse.until ? 'Start a pulse. Keep it alive.' : `Keep your ${S.streak}-day streak going`),
+  build(b) {
+    b.innerHTML = `<div class="pad"><div class="card"><div class="st-hero"><span class="flame">${IF('flame')}</span><div><b><span id="st-n"></span>-day streak</b><small id="st-frz"></small></div></div>
+      <div class="cal" id="st-cal"></div><button class="pbtn gold" id="st-claim"></button></div>
+      <div class="card pulse"><h3 style="align-self:flex-start;margin:0">Pulse</h3><div class="pl-ring"><svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.5" class="trk" pathLength="100"/><circle cx="18" cy="18" r="15.5" class="ok" pathLength="100"/><circle cx="18" cy="18" r="15.5" class="prg" pathLength="100" id="pl-prg"/></svg><div class="pl-in"><b id="pl-t"></b><small id="pl-n"></small></div></div>
+      <button class="pbtn" id="pl-btn"></button><p class="pl-msg" id="pl-msg"></p></div>
+      <p class="fine">A pulse lasts 60 s. Feed it in the last 30 s to keep it alive. Miss it and it’s gone.</p></div>`;
+    track($('.pad', b));
+    $('#st-claim', b).onclick = claimLogin;
+    $('#pl-btn', b).onclick = feedPulse;
+  },
+  render() {
+    if (!this.view) return;
+    $('#st-n').textContent = S.streak;
+    $('#st-frz').textContent = `${S.freezes} streak freeze${S.freezes === 1 ? '' : 's'}${frozeUsed ? ` · ${frozeUsed} used while you were away` : ''}`;
+    const ready = loginReady(), cur = S.login.day;
+    $('#st-cal').innerHTML = LOGIN_REW.map((r, i) => {
+      const d = i + 1, done = ready ? d < cur : (cur === 1 ? true : d < cur);
+      return `<span class="cd${done ? ' done' : ''}${ready && d === cur ? ' today' : ''}">Day ${d}<b>${r}</b></span>`;
+    }).join('');
+    const c = $('#st-claim'); c.disabled = !ready; c.classList.toggle('off', !ready);
+    c.textContent = ready ? `Claim day ${cur} · +${LOGIN_REW[cur - 1]}` : 'Come back tomorrow';
+    const left = S.pulse.until ? pulseLeft() : 0;
+    $('#pl-prg').style.strokeDashoffset = String(100 - clamp(left / PULSE_MS, 0, 1) * 100);
+    $('#pl-t').textContent = S.pulse.until ? cd(left) : S.pulse.restoreUntil ? cd(S.pulse.restoreUntil - T()) : '1:00';
+    $('#pl-n').textContent = S.pulse.until ? `×${S.pulse.n} pulse` : S.pulse.restoreUntil ? `lost at ×${S.pulse.dead}` : `best ×${S.pulse.best}`;
+    $('.pulse').classList.toggle('dying', (!!S.pulse.until && left < 10000) || !!S.pulse.restoreUntil);
+    const btn = $('#pl-btn');
+    btn.textContent = S.pulse.restoreUntil ? `Restore for ${fmt(20 * S.pulse.dead)} hits` : !S.pulse.until ? 'Start a pulse' : left > PULSE_OPEN ? `Ready in ${Math.ceil((left - PULSE_OPEN) / 1000)}s` : 'Keep it alive';
+    btn.classList.toggle('off', !!S.pulse.until && left > PULSE_OPEN);
+    $('#pl-msg').textContent = S.pulse.until ? `Feeding now pays +${(S.pulse.n + 1) * 2}` : '';
+  },
+  tick() { this.render(); },
+  key(e) { if (e.key === ' ' && e.type === 'keydown') { feedPulse(); return true; } },
+});
+
+// ---------- Quests: endowed progress, goal gradient, a treadmill ----------
+function mkQuest(rapid) {
+  const [k, t, lo, hi] = pick(QDEF), n = rapid ? Math.max(2, Math.round(lo * .9)) : ri(lo, hi);
+  const endow = rapid ? 0 : Math.min(n - 1, Math.max(1, Math.ceil(n * .12))); // "you've already started"
+  return { k, text: t.replace('{n}', n), n, base: (S[k] || 0) - endow, reward: rapid ? n * 3 + 40 : n * 2 + 30, claimed: false };
+}
+const qProg = q => clamp((S[q.k] || 0) - q.base, 0, q.n);
+const qDone = q => qProg(q) >= q.n;
+function newQuests() { const used = new Set(); S.quests = []; while (S.quests.length < 3) { const q = mkQuest(); if (!used.has(q.k)) { used.add(q.k); S.quests.push(q); } } }
+function newRapid() { S.rapid = { q: mkQuest(true), until: T() + 180000 }; }
+function tickQuests() {
+  if (T() > S.rapid.until) {
+    if (!S.rapid.q.claimed && !qDone(S.rapid.q) && S.onboarded) notify('quests', 'Rapid quest expired. A new one just started.');
+    newRapid();
+  }
+  if (!S.onboarded) return;
+  S.quests.forEach(q => { if (qDone(q) && !q.claimed && !q.told) { q.told = 1; notify('quests', `Quest complete: ${q.text}. Claim it.`); } });
+}
+function claimQuest(q, btn) {
+  if (q.claimed || !qDone(q)) return;
+  q.claimed = true; S.questsDone++; S.chest = Math.min(5, S.chest + 1);
+  const [x, y] = centerOf(btn); earn(q.reward, x, y - 20);
+  sfx.win(); burst(x, y, { n: 20 }); haptic(true);
+  if (S.quests.every(z => z.claimed)) setTimeout(() => { newQuests(); toast('New quests!'); APPS.quests.render(true); refreshBadges(); }, 700);
+  if (q === S.rapid.q) setTimeout(() => { newRapid(); APPS.quests.render(true); }, 700);
+  APPS.quests.render(true); refreshBadges(); queueCheck();
+}
+const sigQ = () => [...S.quests, S.rapid.q].map(q => `${qProg(q)}${q.claimed}`).join('|') + S.chest + S.rapid.until;
+def({
+  id: 'quests', name: 'Quests', tag: 'Goals · endowed progress', c: '#2fb344',
+  bg: tickQuests,
+  init() { if (!Array.isArray(S.quests)) newQuests(); if (!S.rapid || !S.rapid.q) newRapid(); },
+  wait() {
+    const L = [];
+    if (!S.rapid.q.claimed) L.push({ t: S.rapid.q.text, due: S.rapid.until, sub: `Rapid quest · ${qProg(S.rapid.q)} of ${S.rapid.q.n}` });
+    const claim = S.quests.filter(q => qDone(q) && !q.claimed).length;
+    if (claim) L.push({ t: `${claim} quest reward${claim > 1 ? 's' : ''} to claim`, hot: 1 });
+    return L;
+  },
+  badge: () => [...S.quests, S.rapid.q].filter(q => qDone(q) && !q.claimed).length + (S.chest >= 5 ? 1 : 0),
+  ping: () => (S.rapid.q.claimed || S.rapid.until - T() < 45000 ? null : { text: `Rapid quest: ${S.rapid.q.text}. {left} left.`, until: S.rapid.until }),
+  build(b) {
+    b.innerHTML = '<div class="pad" id="qs"></div>';
+    track($('#qs', b));
+    $('#qs', b).addEventListener('click', e => {
+      const btn = e.target.closest('[data-q]');
+      if (btn) { claimQuest(btn.dataset.q === 'r' ? S.rapid.q : S.quests[+btn.dataset.q], btn); return; }
+      if (e.target.closest('#qs-chest') && S.chest >= 5) { S.chest = 0; const [x, y] = centerOf($('#qs-chest')); earn(200, x, y, { raw: true }); confetti(160); sfx.win(); haptic(true); this.render(true); refreshBadges(); }
+    });
+  },
+  render(full) {
+    if (!this.view) return;
+    const box = $('#qs');
+    if (!full && this._sig === sigQ()) { const tm = $('#qs-tm'); if (tm) tm.textContent = cd(S.rapid.until - T()); return; }
+    this._sig = sigQ();
+    const row = (q, i, rapid) => {
+      const p = qProg(q), done = p >= q.n;
+      return `<div class="q${rapid ? ' rapid' : ''}${q.claimed ? ' done-claimed' : ''}"><div class="q-h"><b>${q.text}</b>${done && !q.claimed ? `<button class="claim" data-q="${i}">Claim +${q.reward}</button>` : `<small>${q.claimed ? 'Claimed' : `${p} / ${q.n}`}</small>`}</div><div class="bar"><i style="width:${(p / q.n) * 100}%"></i></div>${rapid ? `<div class="q-h"><small>Rapid quest · +${q.reward}</small><span class="tm" id="qs-tm">${cd(S.rapid.until - T())}</span></div>` : ''}</div>`;
+    };
+    box.innerHTML = row(S.rapid.q, 'r', true) + '<div class="sec"><span>Quests</span></div>' + S.quests.map((q, i) => row(q, i)).join('') +
+      `<button class="card chest${S.chest >= 5 ? ' ready' : ''}" id="qs-chest"><span class="cb">${I('chest')}</span><div><b>${S.chest >= 5 ? 'Chest ready. Tap to open.' : 'Quest chest'}</b><div class="bar"><i style="width:${(S.chest / 5) * 100}%"></i></div><small class="fine" style="text-align:left">${S.chest} of 5 quests · +200</small></div></button>` +
+      '<p class="fine">Finish all three and three more appear. The rapid quest changes every 3 minutes.</p>';
+  },
+  tick() { this.render(); },
+});
+
+// ---------- Rank: leagues with a five-minute week ----------
+const LEAGUES = [['Bronze', '#c77b3a'], ['Silver', '#98a2b3'], ['Gold', '#ffc21a'], ['Ruby', '#ff2e4d'], ['Emerald', '#12c48b'], ['Diamond', '#3bb6ff'], ['Obsidian', '#3a2a4a']];
+const LEAGUE_MS = 300000;
+function newLeague(tier) {
+  S.league = { tier, endsAt: T() + LEAGUE_MS, me: 0, rank: 30, passed: 0, rivals: Array.from({ length: 29 }, () => ({ pts: ri(0, 30), rate: rnd(.4, 3 + tier * 1.6), w: ri(40, 85) })) };
+}
+const myRank = () => 1 + S.league.rivals.filter(r => r.pts > S.league.me).length;
+function tickRank() {
+  const L = S.league;
+  L.rivals.forEach(r => { r.pts += r.rate * rnd(.2, 1.8); });
+  const rk = myRank();
+  if (rk > L.rank) { L.passed += rk - L.rank; if (S.onboarded) alertOnce('passed', 'rank', `Someone passed you. You’re #${rk}.`, 45000); }
+  else if (rk < L.rank && curApp === 'rank') { sfx.fresh(); toast(`You passed ${L.rank - rk} ${L.rank - rk === 1 ? 'person' : 'people'}`); }
+  L.rank = rk;
+  if (T() >= L.endsAt) {
+    const name = LEAGUES[L.tier][0];
+    const loud = curApp === 'rank' || !muted('rank');
+    if (rk <= 5 && L.tier < LEAGUES.length - 1) { S.promos++; unlock('promo'); if (loud) confetti(150); notify('rank', `Promoted to ${LEAGUES[L.tier + 1][0]} League!`); newLeague(L.tier + 1); }
+    else if (rk >= 26 && L.tier > 0) { if (loud) sfx.lose(); notify('rank', `Demoted to ${LEAGUES[L.tier - 1][0]}. Earn it back.`); newLeague(L.tier - 1); }
+    else { if (S.onboarded) notify('rank', `You finished #${rk} in ${name}. A new week started.`); newLeague(L.tier); }
+  } else if (T() > L.endsAt - 45000 && rk > 5 && S.onboarded) alertOnce('rankend', 'rank', `League ends in {left}. You’re #${rk}. Top 5 move up.`, 30000, { until: L.endsAt });
+}
+const gemSVG = c => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3.5h12l3.5 5.5L12 20.5 2.5 9z" fill="${c}"/><path d="M2.5 9h19M9 3.5 12 9l3-5.5M12 20.5 8.5 9M12 20.5 15.5 9" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="1.1"/></svg>`;
+def({
+  id: 'rank', name: 'Rank', tag: 'Leaderboards · social comparison', c: '#2a6bff',
+  bg: tickRank,
+  init() { if (!S.league || !S.league.rivals) newLeague(0); },
+  wait: () => (S.league.endsAt - T() < 60000 && myRank() > 5 ? [{ t: `You’re #${myRank()}. Top 5 move up`, due: S.league.endsAt }] : []),
+  badge: () => Math.min(9, S.league.passed),
+  ping: () => `You’re #${myRank()} in ${LEAGUES[S.league.tier][0]} League`,
+  build(b) {
+    b.innerHTML = '<div class="pad"><div class="card rk-head" id="rk-h"></div><div class="rk-list" id="rk-l"></div><p class="fine">Top 5 move up. Bottom 5 move down. A week lasts five minutes.</p></div>';
+    track($('.pad', b));
+  },
+  open() { S.league.passed = 0; },
+  render() {
+    if (!this.view) return;
+    const L = S.league, [name, col] = LEAGUES[L.tier], rk = myRank();
+    $('#rk-h').innerHTML = `<span class="gem">${gemSVG(col)}</span><div><b>${name} League</b><small>Ends in ${cd(L.endsAt - T())}</small></div><div class="rk-me"><b>#${rk}</b><small>${fmt(L.me)} pts</small></div>`;
+    const rows = [...L.rivals.map(r => ({ ...r, me: false })), { pts: L.me, me: true }].sort((a, b) => b.pts - a.pts);
+    $('#rk-l').innerHTML = rows.map((r, i) => `<div class="rr${r.me ? ' me' : i < 5 ? ' up' : i >= 25 ? ' down' : ''}${i === 5 ? ' cut' : i === 25 ? ' cut2' : ''}"><span class="n">${i + 1}</span><span class="av"></span>${r.me ? '<span class="nm">You</span>' : `<span class="nm" style="--w:${r.w}%"></span>`}<span class="p">${fmt(Math.floor(r.pts))}</span></div>`).join('');
+  },
+  tick() { this.render(); },
+});
+// ==== /MODULE goals ====
+
+// ==== MODULE play: the games app and its classic games ====
+addAch([
+  ['tap-1', 'First tap', 'Tap the big button', 'check', () => S.taps >= 1],
+  ['tap-1k', 'Thumb of steel', 'Tap 1,000 times', 'bolt', () => S.taps >= 1000],
+  ['crit', 'Critical', 'Land 25 crits', 'star', () => S.crits >= 25],
+  ['pet', 'Good owner', 'Get all of Blob’s needs above 90', 'heart'],
+  ['perfect', 'Perfectionist', 'Land 10 perfect holds', 'bolt', () => S.perfects >= 10],
+  ['rings', 'Quick hands', 'Catch 100 rings', 'check', () => S.rings >= 100],
+]);
+addStats([
+  ['taps', () => fmt(S.taps)],
+  ['rings caught', () => fmt(S.rings)],
+  ['rings missed', () => fmt(S.missed)],
+]);
+addQuests([
+  ['taps', 'Tap {n} times', 60, 250],
+  ['rings', 'Catch {n} rings', 10, 35],
+  ['holds', 'Hold {n} times', 4, 15],
+  ['pets', 'Tickle Blob {n} times', 5, 20],
+]);
+// ---------- Tap: the clicker loop ----------
+const UPG = [
+  { k: 'P', n: 'Stronger thumb', d: '+1 hit per tap', base: 20, g: 1.5 },
+  { k: 'A', n: 'Auto-tapper', d: '+1 hit every second, even while you’re gone', base: 50, g: 1.55 },
+  { k: 'C', n: 'Lucky crits', d: '+2% chance of a 5× tap', base: 120, g: 1.8, max: 20 },
+];
+const upPrice = u => Math.round(u.base * Math.pow(u.g, S.tap[u.k]));
+const tapPower = () => 1 + S.tap.P;
+const critP = () => .06 + .02 * S.tap.C;
+def({
+  id: 'tap', name: 'Tap', tag: 'Clicker · number goes up', c: '#ff5a36',
+  bg() {
+    if (!S.tap.A || !S.onboarded) return;
+    const g = earn(S.tap.A, null, null, { raw: true });
+    if (curApp === 'tap') { const [x, y] = centerOf($('#tp-btn')); floatText(x + rnd(-60, 60), y - 100, `+${fmt(g)}`); }
+  },
+  badge: () => UPG.filter(u => (!u.max || S.tap[u.k] < u.max) && S.hits >= upPrice(u)).length,
+  ping: () => (S.tap.A ? `Your auto-tapper made ${fmt(S.tap.A * 30)} hits. Come get more.` : 'Your thumb is getting cold'),
+  build(b) {
+    b.innerHTML = `<div class="pad"><div class="tp-stats"><div><b id="tp-p"></b><small>per tap</small></div><div><b id="tp-a"></b><small>per second</small></div><div><b id="tp-c"></b><small>crit chance</small></div></div>
+      <div class="tp-zone"><button class="bigbtn" id="tp-btn" aria-label="Tap">TAP</button></div><div class="ups" id="tp-ups">${UPG.map(u => `<button class="upg" data-u="${u.k}"><span class="ut"><b>${u.n} <span class="lv"></span></b><small>${u.d}</small><small class="nd"></small></span><span class="buy"></span></button>`).join('')}</div></div>`;
+    track($('.pad', b));
+    const btn = $('#tp-btn', b);
+    btn.addEventListener('pointerdown', e => { e.preventDefault(); doTap(e.clientX, e.clientY); });
+    btn.addEventListener('keydown', e => { if (e.key === 'Enter') { const r = btn.getBoundingClientRect(); doTap(r.left + r.width / 2, r.top + r.height / 2); } });
+    $('#tp-ups', b).addEventListener('click', e => { const r = e.target.closest('[data-u]'); if (r) buyUp(UPG.find(u => u.k === r.dataset.u), r); });
+  },
+  render() {
+    if (!this.view) return;
+    $('#tp-p').textContent = fmt(tapPower());
+    $('#tp-a').textContent = fmt(S.tap.A);
+    $('#tp-c').textContent = Math.round(critP() * 100) + '%';
+    UPG.forEach(u => {
+      const row = $(`#tp-ups [data-u="${u.k}"]`), maxed = u.max && S.tap[u.k] >= u.max, p = upPrice(u), ok = !maxed && S.hits >= p;
+      row.className = `upg${ok ? ' ok' : ' cant'}`;
+      $('.lv', row).textContent = `Lv ${S.tap[u.k]}`;
+      const nd = $('.nd', row); nd.textContent = !ok && !maxed ? `${fmt(p - S.hits)} more to go` : ''; nd.hidden = !nd.textContent;
+      const buy = $('.buy', row), label = maxed ? 'Max' : fmt(p);
+      if (buy.dataset.l !== label) { buy.dataset.l = label; buy.innerHTML = maxed ? 'Max' : IF('bolt') + label; }
+    });
+  },
+  tick() { this.render(); },
+  key(e) { if (e.key === ' ' && e.type === 'keydown') { const r = $('#tp-btn').getBoundingClientRect(); doTap(r.left + r.width / 2 + rnd(-50, 50) * scale, r.top + r.height / 2 + rnd(-50, 50) * scale); return true; } },
+});
+let tapRender = 0;
+function doTap(cx, cy) {
+  act(); S.taps++;
+  const crit = chance(critP()), [x, y] = toLocal(cx, cy);
+  earn(tapPower() * (crit ? 5 : 1), x, y - 34, { cls: crit ? 'crit' : '' });
+  if (crit) { S.crits++; sfx.crit(); haptic(true); burst(x, y, { n: 18, colors: ['#ffc21a', '#ff2e4d', '#fff'], shape: 'dot', power: 1.4 }); }
+  else { sfx.tap(combo); haptic(); burst(x, y, { n: 5, colors: ['#ff5a36', '#ffc21a', '#ffd6c7'], shape: 'dot' }); }
+  restart($('#tp-btn'), 'squish');
+  if (now() - tapRender > 250) { tapRender = now(); APPS.tap.render(); }
+}
+function buyUp(u, row) {
+  if (u.max && S.tap[u.k] >= u.max) return;
+  if (!spend(upPrice(u))) return;
+  S.tap[u.k]++; S.buys++;
+  const [x, y] = centerOf(row); burst(x, y, { n: 16 });
+  toast(`${u.n} is now level ${S.tap[u.k]}`);
+  APPS.tap.render(); refreshBadges(); queueCheck();
+}
+
+// ---------- Hold: press, fill, release in the zone ----------
+let hold = null, goldHoldUntil = 0, nextGoldAt = T() + 45000, perfectRun = 0;
+function holdStart() {
+  if (hold || !$('#hd')) return;
+  hold = { t0: now(), tone: holdTone(), raf: 0, p: 0 };
+  $('#hd').classList.add('on');
+  const step = () => {
+    if (!hold) return;
+    const p = Math.min(1, Math.pow((now() - hold.t0) / 1100, 1.3));
+    hold.p = p;
+    $('#hd-prg').style.strokeDasharray = `${p * 100} 100`;
+    if (hold.tone) hold.tone.set(180 + p * 900);
+    if (p >= 1) { holdEnd(); return; }
+    hold.raf = requestAnimationFrame(step);
+  };
+  hold.raf = requestAnimationFrame(step);
+}
+function holdEnd() {
+  if (!hold) return;
+  const p = hold.p;
+  cancelAnimationFrame(hold.raf); if (hold.tone) hold.tone.stop(); hold = null;
+  $('#hd').classList.remove('on');
+  S.holds++; act();
+  const gold = T() < goldHoldUntil ? 2 : 1, res = $('#hd-res'), [x, y] = centerOf($('#hd'));
+  res.className = 'hd-res';
+  if (p >= .82 && p <= .94) {
+    perfectRun++; S.perfects++;
+    res.textContent = perfectRun > 1 ? `PERFECT ×${perfectRun}` : 'PERFECT'; restart(res, 'perfect');
+    earn(30 * gold + perfectRun * 5, x, y - 60); sfx.win(); haptic(true);
+    burst(x, y, { n: 26, colors: ['#ffc21a', '#fff1a8', '#fff'], shape: 'dot', power: 1.5 });
+  } else {
+    perfectRun = 0; restart(res, 'pop');
+    if (p >= 1) { res.textContent = 'Overcharged'; earn(3 * gold, x, y - 60); sfx.nope(); }
+    else if (p > .94) { res.textContent = 'Just past it'; earn(8 * gold, x, y - 60); sfx.coin(); }
+    else if (p >= .6) { res.textContent = 'Almost'; earn(Math.round(p * 10) * gold, x, y - 60); sfx.click(); }
+    else { res.textContent = 'Too early'; earn(1, x, y - 60); sfx.click(); }
+  }
+  $('#hd-prg').style.strokeDasharray = '0 100';
+  $('#hd-run').textContent = `Perfect streak ${perfectRun}`;
+  queueCheck();
+}
+function tickHold() {
+  if (T() > nextGoldAt) {
+    goldHoldUntil = T() + 20000; nextGoldAt = T() + ri(45, 90) * 1000 * paceK();
+    if (S.onboarded && S.holds) notify('hold', 'Golden hold: double rewards for {left}', { until: goldHoldUntil, urgent: true }); // the Waiting widget shows it to everyone else
+  }
+}
+def({
+  id: 'hold', name: 'Hold', tag: 'Progress bars · timing', c: '#00a8c0',
+  bg: tickHold,
+  wait: () => (T() < goldHoldUntil ? [{ t: 'Golden hold pays double', due: goldHoldUntil }] : []),
+  badge: () => (T() < goldHoldUntil ? 1 : 0),
+  build(b) {
+    b.innerHTML = `<div class="pad"><div id="hd-gold"></div><div class="hd-stage"><div class="hd-ring" id="hd" role="button" aria-label="Press and hold"><svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="15" class="trk" pathLength="100"/><circle cx="18" cy="18" r="15" class="zone" pathLength="100"/><circle cx="18" cy="18" r="15" class="prg" id="hd-prg" pathLength="100"/></svg><div class="hd-in">HOLD</div></div></div>
+      <div class="hd-res" id="hd-res">Let go in the gold</div><p class="fine" id="hd-run">Perfect streak 0</p><p class="fine">Press and hold. Release when the ring is inside the gold band.</p></div>`;
+    track($('.pad', b));
+    const ring = $('#hd', b);
+    ring.addEventListener('pointerdown', e => { e.preventDefault(); try { ring.setPointerCapture(e.pointerId); } catch {} holdStart(); });
+    ring.addEventListener('pointerup', holdEnd); ring.addEventListener('pointercancel', holdEnd);
+  },
+  render() {
+    if (!this.view) return;
+    const g = T() < goldHoldUntil;
+    $('#hd').classList.toggle('gold', g);
+    $('#hd-gold').innerHTML = g ? `<div class="gold-note">Golden hold · double rewards · ${cd(goldHoldUntil - T())}</div>` : '';
+  },
+  tick() { this.render(); },
+  key(e) { if (e.key === ' ') { if (e.type === 'keydown' && !e.repeat) holdStart(); else if (e.type === 'keyup') holdEnd(); return true; } },
+});
+
+// ---------- Rings: ephemeral things that vanish if you look away ----------
+let ringT = 0, ringCount = 0, caughtSession = 0, missedSession = 0;
+function spawnRing() {
+  const ar = $('#rg-arena');
+  if (!ar || ringCount >= 5) return;
+  const taken = new Set($$('.rg', ar).map(r => r.dataset.cell));
+  let cell; do cell = ri(0, 11); while (taken.has(String(cell)) && taken.size < 12);
+  const col = cell % 3, row = Math.floor(cell / 3), d = rnd(3.5, 6);
+  const r = html(`<button class="rg" data-cell="${cell}" aria-label="Catch" style="left:${((col + .5) / 3) * 100 + rnd(-6, 6)}%;top:${((row + .5) / 4) * 100 + rnd(-5, 5)}%;--h:${ri(0, 359)};--d:${d}s"></button>`);
+  r._born = now(); r._d = d * 1000;
+  ar.append(r); ringCount++;
+  r._t = setTimeout(() => {
+    if (!r.isConnected || r.classList.contains('gone')) return;
+    r.classList.add('missed'); S.missed++; missedSession++; ringCount--;
+    setTimeout(() => r.remove(), 350);
+    APPS.rings.render();
+  }, d * 1000);
+}
+function ringLoop() {
+  clearTimeout(ringT);
+  if (curApp !== 'rings') return;
+  spawnRing();
+  ringT = setTimeout(ringLoop, rnd(900, 1700));
+}
+def({
+  id: 'rings', name: 'Rings', tag: 'Ephemeral · fear of missing out', c: '#ff3d6e',
+  bg() { if (curApp !== 'rings' && S.onboarded && chance(.08)) S.ringsLost++; },
+  badge: () => Math.min(99, S.ringsLost),
+  ping: () => { S.ringsLost += ri(2, 6); return `${S.ringsLost} rings vanished while you were gone`; },
+  build(b) {
+    b.innerHTML = '<div class="rg-top"><span>Caught <span id="rg-c">0</span></span><span class="miss">Missed <span id="rg-m">0</span></span></div><div id="rg-lost"></div><div class="arena" id="rg-arena"></div>';
+    $('#rg-arena', b).addEventListener('pointerdown', e => {
+      const r = e.target.closest('.rg');
+      if (!r || r.classList.contains('gone') || r.classList.contains('missed')) return;
+      clearTimeout(r._t); r.classList.add('gone'); ringCount--;
+      const left = clamp(1 - (now() - r._born) / r._d, 0, 1), [x, y] = centerOf(r);
+      S.rings++; caughtSession++; act();
+      earn(2 + Math.round(left * 6), x, y - 30);
+      sfx.pop(Math.round(left * 12)); haptic();
+      burst(x, y, { n: 10, colors: [`hsl(${r.style.getPropertyValue('--h')} 90% 60%)`, '#fff'], shape: 'dot' });
+      setTimeout(() => r.remove(), 200);
+      this.render(); queueCheck();
+    });
+  },
+  open() {
+    const lost = S.ringsLost;
+    $('#rg-lost').innerHTML = lost ? `<div class="rg-lost">${lost} rings vanished while you were away.</div>` : '';
+    S.ringsLost = 0; caughtSession = 0; missedSession = 0;
+    setTimeout(ringLoop, 250);
+  },
+  close() { clearTimeout(ringT); $$('.rg', $('#rg-arena')).forEach(r => { clearTimeout(r._t); r.remove(); }); ringCount = 0; },
+  render() { if (!this.view) return; $('#rg-c').textContent = caughtSession; $('#rg-m').textContent = missedSession; },
+});
+
+// ---------- Blob: a creature that needs you ----------
+const MOUTH = { happy: 'M84 118 Q100 136 116 118', meh: 'M86 124 L114 124', sad: 'M84 132 Q100 116 116 132' };
+const MOODC = { happy: '#ff9ec8', meh: '#c9a7ff', sad: '#a9b8c9' };
+const petMood = () => { const p = S.pet, avg = (p.food + p.fun + p.love) / 3; return avg > 62 ? 'happy' : avg > 32 ? 'meh' : 'sad'; };
+function tickPet() {
+  const p = S.pet;
+  p.food = Math.max(0, p.food - .4); p.fun = Math.max(0, p.fun - .55); p.love = Math.max(0, p.love - .3);
+  if (!S.onboarded) return;
+  if (p.food < 25) alertOnce('pfood', 'pet', 'Blob is hungry', 90000);
+  else if (p.fun < 25) alertOnce('pfun', 'pet', 'Blob is bored. Come play.', 90000);
+  else if (p.love < 25) alertOnce('plove', 'pet', 'Blob misses you', 90000);
+}
+function petHeart(n = 1) {
+  const st = $('.pet-stage', APPS.pet.body);
+  for (let i = 0; i < n; i++) {
+    const h = html(`<i class="heartfx" style="left:${ri(35, 65)}%;top:${ri(30, 55)}%;--dx:${ri(-50, 50)}px">${IF('heart')}</i>`);
+    st.append(h); h.addEventListener('animationend', () => h.remove());
+  }
+}
+def({
+  id: 'pet', name: 'Blob', tag: 'Virtual pet · guilt', c: '#ff7eb6',
+  bg: tickPet,
+  wait() { const low = ['food', 'fun', 'love'].find(k => S.pet[k] < 30); return low ? [{ t: { food: 'Blob is hungry', fun: 'Blob is bored', love: 'Blob is lonely' }[low], hot: 1 }] : []; },
+  badge: () => ['food', 'fun', 'love'].filter(k => S.pet[k] < 30).length,
+  ping: () => (petMood() !== 'happy' ? 'Blob is waiting for you' : 'Blob wants to see you'),
+  build(b) {
+    b.innerHTML = `<div class="pad"><div class="pet-stage"><div class="bubble" id="pt-say"></div><div class="pet" id="pt" role="button" aria-label="Tickle Blob">
+      <svg viewBox="0 0 200 180"><ellipse cx="100" cy="170" rx="60" ry="7" fill="rgba(0,0,0,.12)"/><path class="body" id="pt-body" d="M100 22c48 0 82 36 82 84 0 40-30 60-82 60s-82-20-82-60c0-48 34-84 82-84z"/><ellipse cx="72" cy="60" rx="20" ry="12" fill="rgba(255,255,255,.45)"/>
+      <ellipse class="eye" cx="76" cy="94" rx="8" ry="11" fill="#1d1026"/><ellipse class="eye" cx="124" cy="94" rx="8" ry="11" fill="#1d1026"/><circle cx="58" cy="114" r="9" fill="rgba(255,60,120,.3)"/><circle cx="142" cy="114" r="9" fill="rgba(255,60,120,.3)"/>
+      <path id="pt-mouth" stroke="#1d1026" stroke-width="5" fill="none" stroke-linecap="round"/></svg></div></div>
+      <div class="card needs" id="pt-needs"></div>
+      <div class="row2"><button class="pbtn" id="pt-feed" style="--c:#ff7a00">Feed · 5</button><button class="pbtn" id="pt-play">Play</button></div>
+      <p class="fine">Tap Blob to tickle. Rub Blob to pet. Needs drop every second.</p></div>`;
+    track($('.pad', b));
+    const pet = $('#pt', b);
+    let rub = 0;
+    pet.addEventListener('click', () => {
+      S.pet.fun = Math.min(100, S.pet.fun + 5); S.pet.love = Math.min(100, S.pet.love + 2); S.pets++;
+      act(); restart(pet, 'tickle'); sfx.giggle(); haptic(); petHeart(2);
+      const [x, y] = centerOf(pet); earn(1, x, y - 80); this.render(); queueCheck();
+    });
+    drag(pet, { axis: 'any', onMove: (dx, dy) => { const d = Math.hypot(dx, dy); if (d - rub > 30) { rub = d; S.pet.love = Math.min(100, S.pet.love + 2); petHeart(); haptic(); this.render(); } }, onEnd: () => { rub = 0; sfx.giggle(); } });
+    $('#pt-feed', b).onclick = () => { if (!spend(5)) return; S.pet.food = Math.min(100, S.pet.food + 25); S.feeds++; act(); sfx.munch(); haptic(); petHeart(3); this.render(); };
+    $('#pt-play', b).onclick = () => { S.pet.fun = Math.min(100, S.pet.fun + 12); act(); sfx.giggle(); restart(pet, 'tickle'); petHeart(2); const [x, y] = centerOf(pet); earn(1, x, y - 80); this.render(); };
+  },
+  render() {
+    if (!this.view) return;
+    const p = S.pet, m = petMood();
+    $('#pt-body').setAttribute('fill', MOODC[m]);
+    $('#pt-mouth').setAttribute('d', MOUTH[m]);
+    $('#pt-say').textContent = p.food < 30 ? 'feed me' : p.fun < 30 ? 'play with me' : p.love < 30 ? 'don’t go' : m === 'happy' ? 'love you' : 'stay?';
+    $('#pt-needs').innerHTML = [['Food', 'food'], ['Fun', 'fun'], ['Love', 'love']].map(([n, k]) => { const v = Math.round(p[k]); return `<div class="need${v < 30 ? ' low' : v < 60 ? ' mid' : ''}"><span>${n}</span><div class="bar"><i style="width:${v}%"></i></div><span>${v}%</span></div>`; }).join('');
+    if (p.food > 90 && p.fun > 90 && p.love > 90) unlock('pet');
+  },
+  tick() { this.render(); },
+  key(e) { if (e.key === ' ' && e.type === 'keydown') { $('#pt').click(); return true; } },
+});
+// stub until the play module builds the games home
+def({ id: 'arcade', name: 'Games', tag: '', c: '#ff5a36', build(b) { b.innerHTML = `<div class="pad">${BUNDLES.find(B => B.id === 'play').tabs.slice(1).map(t => `<button class="pbtn" data-g="${t}">${APPS[t].name}</button>`).join('')}</div>`; b.onclick = e => { const g = e.target.closest('[data-g]'); if (g) openApp(g.dataset.g); }; } });
+// ==== /MODULE play ====
+
+// ==== MODULE gates: gate army ====
+def({ id: 'gates', name: 'Gate Army', tag: '', c: '#2f7bff', build(b) { b.innerHTML = '<div class="pad"></div>'; } });
+// ==== /MODULE gates ====
+
+// ==== MODULE tower: power tower ====
+def({ id: 'tower', name: 'Power Tower', tag: '', c: '#8a3ffc', build(b) { b.innerHTML = '<div class="pad"></div>'; } });
+// ==== /MODULE tower ====
+
+// ==== MODULE shop: store, cart, orders ====
+// ---------- Shop: flash sales, fake scarcity, fake savings ----------
+const WARES = [
+  { n: '2× hits for 60 s', p: 150, g: 'tap', fx: () => { S.boostUntil = Math.max(T(), S.boostUntil) + 60000; } },
+  { n: 'Streak freeze', p: 120, g: 'streak', fx: () => { S.freezes++; } },
+  { n: 'Refill all spins', p: 80, g: 'slots', fx: () => { S.energy = Math.max(S.energy, MAXE); } },
+  { n: 'Mystery box', p: 90, g: 'loot', fx: () => { S.loot.extra++; } },
+  { n: '3 super-likes', p: 60, g: 'discover', fx: () => { S.supers += 3; } },
+  { n: 'Snack pack for Blob', p: 40, g: 'pet', fx: () => { S.pet.food = 100; } },
+  { n: '2 scratch cards', p: 50, g: 'scratch', fx: () => { S.scratchExtra += 2; } },
+  { n: 'Auto-tapper +1', p: 400, g: 'tap', fx: () => { S.tap.A++; } },
+];
+let deals = [], dealN = 0, freshDeals = 0;
+function mkDeal() {
+  const w = pick(WARES), off = pick([30, 40, 50, 60, 70, 80]), old = Math.round(w.p * 1.8), price = Math.max(5, Math.round(old * (1 - off / 100))), life = ri(60, 150) * 1000;
+  return { id: ++dealN, w, off, old, price, stock: ri(1, 5), viewers: ri(40, 900), ends: T() + life, life, fresh: true };
+}
+function tickShop() {
+  if (!deals.length) deals = [mkDeal(), mkDeal(), mkDeal()];
+  deals = deals.map(d => { d.viewers = Math.max(12, d.viewers + ri(-20, 30)); if (T() > d.ends) { freshDeals++; return mkDeal(); } return d; });
+}
+function buyDeal(d, btn) {
+  if (!d || d.stock <= 0 || !spend(d.price)) return;
+  d.stock--; S.buys++; d.w.fx(); act();
+  const [x, y] = centerOf(btn); burst(x, y, { n: 18 }); haptic(true);
+  toast(`You saved ${fmt(d.old - d.price)}!`);
+  APPS.shop.render(true); refreshBadges(); queueCheck();
+}
+def({
+  id: 'shop', name: 'Shop', tag: 'Flash sales · scarcity', c: '#e5007a',
+  bg: tickShop,
+  init: tickShop,
+  wait: () => (freshDeals ? [{ t: `${freshDeals} new deal${freshDeals > 1 ? 's' : ''}` }] : []),
+  badge: () => Math.min(9, freshDeals),
+  ping: () => { const d = pick(deals.filter(d => d.stock > 0 && d.ends - T() > 30000)); return d ? `${d.off}% off: ${d.w.n}. Only ${d.stock} left.` : null; },
+  build(b) {
+    b.innerHTML = '<div class="pad"><div class="mega"><b>Mega sale</b><span id="sh-mega"></span></div><div id="sh-list" style="display:flex;flex-direction:column;gap:12px"></div><p class="fine">Prices in hits. The sale always ends soon.</p></div>';
+    track($('.pad', b));
+    $('#sh-list', b).addEventListener('click', e => { const btn = e.target.closest('[data-d]'); if (btn) buyDeal(deals.find(d => d.id === +btn.dataset.d), btn); });
+  },
+  open() { freshDeals = 0; },
+  render(full) {
+    if (!this.view) return;
+    $('#sh-mega').textContent = `ends in 0:${String(60 - new Date().getSeconds()).padStart(2, '0')}`;
+    const sig = deals.map(d => d.id + ':' + d.stock).join();
+    if (full || this._sig !== sig) {
+      this._sig = sig;
+      $('#sh-list').innerHTML = deals.map(d => `<div class="deal${d.stock ? '' : ' sold'}${d.fresh ? ' fresh' : ''}" data-id="${d.id}">${subIcon(d.w.g)}<div class="dn"><b>${d.w.n}</b><small>${d.stock ? `Only ${d.stock} left` : 'Sold out'}</small><em>${I('eye')}<span class="vw">${d.viewers}</span> viewing</em></div><div class="dp"><span class="off">-${d.off}%</span><s>${fmt(d.old)}</s><button class="buy" data-d="${d.id}"${d.stock ? '' : ' disabled'}>${IF('bolt')}${fmt(d.price)}</button></div><i class="tb"></i></div>`).join('');
+      deals.forEach(d => { d.fresh = false; });
+    }
+    deals.forEach(d => { const el = $(`.deal[data-id="${d.id}"]`); if (!el) return; $('.vw', el).textContent = d.viewers; $('.tb', el).style.width = clamp((d.ends - T()) / d.life, 0, 1) * 100 + '%'; });
+  },
+  tick() { this.render(); },
+});
+// stubs until the shop module builds them
+def({ id: 'cart', name: 'Cart', tag: '', c: '#ff5a1f', build(b) { b.innerHTML = '<div class="pad"></div>'; } });
+def({ id: 'orders', name: 'Orders', tag: '', c: '#12b886', build(b) { b.innerHTML = '<div class="pad"></div>'; } });
+// ==== /MODULE shop ====
+
+// ---------- You: screen time, achievements, settings ----------
 const statsHTML = () => STATS.map(([l, f]) => `<div class="stat"><b>${f()}</b><span>${l}</span></div>`).join('');
 def({
   id: 'you', name: 'You', tag: 'Screen time · achievements', c: '#6b5b7b',
@@ -2338,7 +2580,7 @@ def({
       <div class="sec"><span>Notifications</span></div><div class="settings">
       <div class="srow"><span class="rt"><b>Pace</b><small>How often something new happens</small></span><span class="seg" id="set-pace"><button data-v="chill">Calm</button><button data-v="normal">Normal</button><button data-v="chaos">Busy</button></span></div>
       <label class="srow"><span class="rt"><b>Quiet inside apps</b><small>Banners wait until you’re back on the home screen</small></span><input type="checkbox" class="sw" id="set-focus"></label>
-      ${BUNDLES.map(B => `<label class="srow">${bundleIcon(B)}<span class="rt"><b>${B.name}</b><small>${B.tabs.length > 1 ? B.tabs.map(t => APPS[t].name).join(', ') : APPS[B.tabs[0]].tag}</small></span><input type="checkbox" class="sw" data-mute="${B.id}"></label>`).join('')}</div>
+      ${BUNDLES.map(B => `<label class="srow">${bundleIcon(B)}<span class="rt"><b>${B.name}</b><small>${B.tabs.length > 1 ? B.tabs.filter(t => !isHome(B, t)).map(t => APPS[t].name).join(', ') : APPS[B.tabs[0]].tag}</small></span><input type="checkbox" class="sw" data-mute="${B.id}"></label>`).join('')}</div>
       <div class="sec"><span>Settings</span></div><div class="settings">
       <label class="srow"><span class="rt"><b>Sound</b><small>Pops, dings and clicks</small></span><input type="checkbox" class="sw" id="set-sound"></label>
       <label class="srow"><span class="rt"><b>Haptics</b><small>Vibration on Android. Taps on iPhone with iOS 18 or later.</small></span><input type="checkbox" class="sw" id="set-haptics"></label>
@@ -2396,24 +2638,11 @@ function renderWidgets() {
 }
 // everything that wants you right now, so you can pick: deadlines first, then things that will spoil, then the rest
 function waiting() {
-  const L = [], add = (id, t, o = {}) => { if (!muted(id)) L.push({ id, t, ...o }); };
-  if (S.pulse.restoreUntil) add('streak', `Restore your ×${S.pulse.dead} pulse`, { due: S.pulse.restoreUntil });
-  else if (S.pulse.until && pulseLeft() <= PULSE_OPEN) add('streak', `Feed your ×${S.pulse.n} pulse`, { due: S.pulse.until });
-  if (T() < goldHoldUntil) add('hold', 'Golden hold pays double', { due: goldHoldUntil });
-  markets.filter(m => m.pos && !m.done).forEach(m => add('predict', 'Your prediction resolves', { due: m.ends }));
-  if (S.league.endsAt - T() < 60000 && myRank() > 5) add('rank', `You’re #${myRank()}. Top 5 move up`, { due: S.league.endsAt });
-  if (!S.rapid.q.claimed) add('quests', S.rapid.q.text, { due: S.rapid.until, sub: `Rapid quest · ${qProg(S.rapid.q)} of ${S.rapid.q.n}` });
-  if (loginReady()) add('streak', `Day ${S.login.day} reward is ready`, { hot: 1, r: `+${LOGIN_REW[S.login.day - 1]}` });
-  const claim = S.quests.filter(q => qDone(q) && !q.claimed).length; if (claim) add('quests', `${claim} quest reward${claim > 1 ? 's' : ''} to claim`, { hot: 1 });
-  if (S.flip.pot) add('flip', 'Your pot is still riding', { hot: 1, r: fmt(S.flip.pot) });
-  const low = ['food', 'fun', 'love'].find(k => S.pet[k] < 30); if (low) add('pet', { food: 'Blob is hungry', fun: 'Blob is bored', love: 'Blob is lonely' }[low], { hot: 1 });
-  const un = mail.filter(m => m.un).length; if (un) add('inbox', `${un} unread message${un > 1 ? 's' : ''}`, { r: un });
-  if (S.energy) add('slots', `${S.energy} free spin${S.energy > 1 ? 's' : ''}`);
-  if (T() >= S.rocketAt) add('rocket', 'A free rocket launch');
-  if (lootFree()) add('loot', 'A free box to open');
-  if (scratchFree()) add('scratch', 'A free scratch card');
-  if (freshDeals) add('shop', `${freshDeals} new deal${freshDeals > 1 ? 's' : ''}`);
-  if (S.likesYou) add('swipe', `${S.likesYou} people liked you`);
+  const L = [];
+  for (const a of Object.values(APPS)) {
+    if (!a.wait) continue;
+    for (const it of a.wait() || []) { const x = { id: a.id, ...it }; if (!muted(x.id)) L.push(x); }
+  }
   const rankOf = x => (x.due ? 0 : x.hot ? 1 : 2);
   return L.sort((a, b) => rankOf(a) - rankOf(b) || (a.due || 0) - (b.due || 0));
 }
@@ -2508,15 +2737,8 @@ setInterval(() => {
   tickN++;
   if (!lockOn) { S.timeMs += 1000; S.today.ms += 1000; sessionMs += 1000; }
   batteryTick();
-  if (S.tap.A && S.onboarded) {
-    const g = earn(S.tap.A, null, null, { raw: true });
-    if (curApp === 'tap') { const [x, y] = centerOf($('#tp-btn')); floatText(x + rnd(-60, 60), y - 100, `+${fmt(g)}`); }
-  }
-  tickPet(); tickPulse(); regen(); tickRank(); tickQuests(); tickShop(); tickHold();
-  if (S.supers < 3 && tickN % 40 === 0) S.supers++;
-  if (curApp !== 'rings' && S.onboarded && chance(.08)) S.ringsLost++;
-  if (curApp !== 'swipe' && chance(.04)) S.likesYou++;
-  if (curApp && APPS[curApp].tick) APPS[curApp].tick();
+  for (const a of Object.values(APPS)) if (a.bg) a.bg(); // every app's background clock, open or not
+  if (curApp && APPS[curApp].tick) APPS[curApp].tick(); // the open one redraws
   pruneNotifs(); renderWidgets(); renderBoost(); refreshBadges();
   if (tickN % 5 === 0) save();
   if (tickN % 10 === 0) { refreshTimes(); queueCheck(); }
@@ -2546,14 +2768,16 @@ function onKey(e) {
   const modalEl = $('.modal');
   if (k === 'Escape' || k === 'h') {
     const sc = $('.scrim.show');
-    if (modalEl) modalEl.remove(); else if (sc) sc.click(); else if (ncOn) closeNC(); else closeApp();
+    if (modalEl) modalEl.remove(); else if (sc) sc.click(); else if (ncOn) closeNC();
+    else if (curBundle && navMode(curBundle) === 'launcher' && !isHome(curBundle, curApp)) showTab(curBundle, curBundle.tabs[0]);
+    else closeApp();
     return;
   }
   if (modalEl) return;
   if (k === 'n') { ping(true); return; }
   if (k === 'L') { lock(); closeApp(true); return; }
   if (ncOn || $('.scrim.show')) return; // nothing changes behind an overlay
-  if (curBundle && /^[1-9]$/.test(k) && curBundle.tabs[+k - 1]) { showTab(curBundle, curBundle.tabs[+k - 1]); return; }
+  if (curBundle && navMode(curBundle) !== 'launcher' && /^[1-9]$/.test(k) && curBundle.tabs[+k - 1]) { showTab(curBundle, curBundle.tabs[+k - 1]); return; }
   if (curApp && APPS[curApp].key && (!e.repeat || APPS[curApp].id === 'tap') && APPS[curApp].key(e)) e.preventDefault();
 }
 addEventListener('keydown', onKey);
@@ -2600,20 +2824,17 @@ lockEl.addEventListener('click', e => {
   if (n) { notifs.splice(notifs.indexOf(n), 1); unlockPhone(n.app); } else unlockPhone();
 });
 
-if (!Array.isArray(S.quests)) newQuests();
-if (!S.rapid || !S.rapid.q) newRapid();
-if (!S.league || !S.league.rivals) newLeague(0);
-tickShop();
+for (const a of Object.values(APPS)) if (a.init) a.init(); // each app sets itself up
+booted = true;
 layout();
 addEventListener('resize', layout);
-for (let i = 0; i < 7; i++) addMail();
-mail.forEach((m, i) => { m.ts = T() - i * ri(20, 200) * 1000; });
 shownHits = S.hits; $('#hits').textContent = fmt(S.hits);
 renderLevel(); renderCombo(); renderWidgets(); renderBoost(); clock();
 lock();
 if (S.onboarded) { for (let i = 0; i < 3; i++) ping(); startSchedule(); }
 refreshBadges();
-mailLoop();
 queueCheck();
 if (frozeUsed) setTimeout(() => notify('streak', `A streak freeze saved your ${S.streak - 1}-day streak`), 800);
+// for automated tests
+window.stim = { S, APPS, BUNDLES, openApp, showTab, closeApp, ping, notify, get curApp() { return curApp; }, get curBundle() { return curBundle; } };
 })();
