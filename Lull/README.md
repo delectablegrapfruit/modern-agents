@@ -292,7 +292,7 @@ name, a plain description such as "Clear 4 lines with one piece. No power-ups on
 earned), easiest first, with a filter for all, to do or earned; the slow ones show their progress. Left of the filter,
 Recent: the latest earned (its icon and name; *Latest*, then the star alone, as the window narrows) goes to it, and its chevron lists the
 last six, newest first, with how long ago (`now`, `12 min`, `5 h`, `3 d`, then the date); it is not there until one is
-earned. The toast, Recent and its list all go through one function (`UI.showAchievement`). None is a
+earned. The toast, Recent and its list all go through one function (`UI.showAchievement`). Each place has its own quiet colour and its tab's icon — Free Play sea-glass teal, Classic handheld olive, Puzzles orchid, Factory copper, Lifetime a neutral slate (`--area-*` in `lull.css`, deep inks in light, each at least 4.5:1 on its tint, apart from the accent and the gold for colour-blind eyes too) — on the group's header and bar, each row's badge, bar and pay, Recent and the toast; a legendary one stays gold (`--gold-ink` for its words), with a dot of its place's colour. None is a
 gimme — the easiest is a quad with no power-ups on the board (15 ⦵) — and 150 pieces of ordinary play earn nothing new, nor do 150 with a
 few items used along the way (a test plays both, at a relaxed piece every three seconds).
 
@@ -359,11 +359,16 @@ and first-try rates by difficulty and wildcard, factory output and shapes presse
 
 **Window** — the panel floats over every Space, full-screen apps included: it never activates Lull (activating a regular app pulls the screen back to its own Space), so ⌥⌘L shows it right over whatever is in front and hands it the keyboard. When the pointer leaves, Lull dims and fades to 60% (Settings ▸ Window ▸ Fade when the pointer leaves); it comes back as soon as the pointer does.
 
-**Collapse** — the chevron, ⌘J or a double-click on the empty bar rolls Lull up into its title bar, where pieces march
-in from the left a cell at a time, turning (true SRS turns) and shifting lanes now and then, and walk off under the expand
-button, never landing (in your palette and skin; still under reduced motion) until you expand it. Classic pauses,
-the factory runs on. Collapsed, it resizes only sideways, and it opens back to the height it had, across launches too
-(`js/collapse.js`).
+**Collapse** — the chevron, ⌘J or a double-click on the empty bar rolls Lull up into its title bar, where a few pieces
+march slowly across it in four lanes (`js/collapse.js`). They all move together on one beat, a step to the right every
+0.9 s — a 0.55 s eased glide from cell to cell, then a rest — and now and then, on the beat and never two at once, one
+turns as it steps (a true SRS turn about the same centre, never kicked out of line; its cells stay upright as it
+turns, drawing in a little so they never overlap) or slides a lane, never both, and still a step right like the rest. A new piece comes in after a wait of 8 to 16 beats, drawn afresh each time, and at least two empty columns
+behind the one ahead, so none ever touches, lands or stacks. Nothing is drawn under them — no track, no lanes — and
+they are your palette and skin, softened: each fades in at the left and fades out before the expand button. It is
+drawn at 30 fps only while they glide, stops while hidden, and holds one still frame under reduced motion. Classic
+pauses, the factory runs on. Collapsed, it resizes only sideways (dragging the edge, the pieces keep their places and the beat goes on), and it opens back to the
+height it had, across launches too.
 
 **Mute** — the speaker in the title bar (between the wallet and Settings, on every tab), M, or Settings ▸ Sound ▸ Mute:
 one switch, kept in sync everywhere and saved. It ramps a gain that sits after everything else to zero in 50 ms, so

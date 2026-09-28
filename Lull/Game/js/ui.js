@@ -43,6 +43,7 @@
    * A small note above the bars that goes away by itself. With opts.onClick it is a button (the achievement ones: it
    * opens the thing it tells of): the whole pill takes a click or Enter, then goes; it stays while pointed at (for a
    * while) or focused (see syncToasts for when it lets the pointer through; the keyboard can always reach it).
+   * opts.area (an achievement's place to play) gives it that place's colour.
    */
   function toast(msg, kind, ms, ico, opts) {
     const box = document.getElementById('toasts');
@@ -50,7 +51,7 @@
     const bar = document.querySelector('.view.active > .statusbar, .view.active > .puz-actions'), holder = box.offsetParent;
     box.style.bottom = bar && holder ? Math.max(14, Math.round(holder.getBoundingClientRect().bottom - bar.getBoundingClientRect().top + 8)) + 'px' : '';
     const go = opts && opts.onClick;
-    const el = h('div', { class: 'toast ' + (kind || '') + (go ? ' link' : '') }, ico ? icon(ico) : null, h('span', { class: 'toast-t' }, msg), go ? icon('chevRight', 'toast-go') : null);
+    const el = h('div', { class: 'toast ' + (kind || '') + (go ? ' link' : ''), 'data-area': (opts && opts.area) || null }, ico ? icon(ico) : null, h('span', { class: 'toast-t' }, msg), go ? icon('chevRight', 'toast-go') : null);
     let timer = 0;
     const gone = () => { if (el.classList.contains('out')) return; clearTimeout(timer); el.classList.add('out'); setTimeout(() => el.remove(), 300); };
     const later = (t) => { clearTimeout(timer); timer = setTimeout(gone, t); };
@@ -475,7 +476,9 @@
 
   /**
    * The Achievements tab: every milestone, earned or not, the legendary ones set apart. Each group folds away (its
-   * header keeps the count), and a filter shows all of them, the ones still to do, or the earned ones.
+   * header keeps the count), and a filter shows all of them, the ones still to do, or the earned ones. Every group, row,
+   * Recent entry and toast carries its place to play as data-area: the CSS gives it that place's colour, and the
+   * header, Recent and the toast that place's tab icon.
    */
   function renderAchievements(app) {
     const st = app.state, S = st.stats, A = L.Achievements, got = st.achievements || {};
@@ -494,7 +497,7 @@
     ];
     const row = (a) => {
       const when = got[a.id], pr = !when && a.progress ? a.progress(st) : null;
-      return h('div', { class: 'ach' + (when ? ' got' : '') + (a.tier === 'legend' ? ' legend' : ''), 'data-id': a.id },
+      return h('div', { class: 'ach' + (when ? ' got' : '') + (a.tier === 'legend' ? ' legend' : ''), 'data-id': a.id, 'data-area': a.group },
         h('span', { class: 'ach-i', html: L.Icons.icon(a.tier === 'legend' ? 'legend' : when ? 'starOn' : 'star') }),
         h('div', { class: 'grow' },
           h('div', { class: 't' }, a.name, a.tier === 'legend' ? h('span', { class: 'tier' }, 'Legendary') : null),
@@ -511,9 +514,10 @@
       if (!list.length) continue;
       const have = list.filter((a) => got[a.id]), paid = have.reduce((t, a) => t + a.pay, 0), all = list.reduce((t, a) => t + a.pay, 0);
       const plain = list.filter((a) => a.tier !== 'legend' && shown(a)), leg = list.filter((a) => a.tier === 'legend' && shown(a));
-      els.push(h('details', { class: 'ach-group', 'data-group': g.id, open: !!open[g.id], ontoggle: (e) => { open[g.id] = e.currentTarget.open; } },
+      els.push(h('details', { class: 'ach-group', 'data-group': g.id, 'data-area': g.id, open: !!open[g.id], ontoggle: (e) => { open[g.id] = e.currentTarget.open; } },
         h('summary', null,
           h('span', { class: 'chev', html: ICONS.chevRight }),
+          h('span', { class: 'ach-area', html: L.Icons.icon(g.icon), 'aria-hidden': 'true' }),
           h('b', null, g.name),
           g.note ? h('span', { class: 'ach-info', tabindex: '0', 'aria-label': g.noteTitle + ': ' + g.note, 'data-tip-title': g.noteTitle, 'data-tip': g.note, html: INFO,
             onclick: (e) => { e.preventDefault(); e.stopPropagation(); } }) : null,
@@ -540,7 +544,9 @@
   function recentControl(app) {
     const list = L.Achievements.recent(app.state, RECENT_N);
     if (!list.length) { app.achMenu = false; return null; }
-    const latest = list[0].a, star = (a) => icon(a.tier === 'legend' ? 'legend' : 'starOn');
+    // Each one by its place's icon, in its colour; a legendary one also has the small gold diamond after its name.
+    const latest = list[0].a, place = (a) => icon(L.Achievements.groupOf(a).icon, 'area-i');
+    const gem = (a) => (a.tier === 'legend' ? icon('legend', 'leg-i') : null);
     const open = !!app.achMenu;
     const toggle = (on) => {
       app.achMenu = on;
@@ -550,11 +556,11 @@
       else next.querySelector('.ach-recent-more').focus({ preventScroll: true });
     };
     const menu = open ? h('div', { class: 'ach-menu', role: 'menu', 'aria-label': 'Recent' },
-      list.map(({ a, when }) => h('button', { role: 'menuitem', class: a.tier === 'legend' ? 'legend' : null, 'data-id': a.id, onclick: () => showAchievement(app, a.id) },
-        star(a), h('span', { class: 'nm' }, a.name), h('span', { class: 'ago' }, L.fmtAgo(when))))) : null;
+      list.map(({ a, when }) => h('button', { role: 'menuitem', class: a.tier === 'legend' ? 'legend' : null, 'data-id': a.id, 'data-area': a.group, onclick: () => showAchievement(app, a.id) },
+        place(a), h('span', { class: 'nm' }, a.name), gem(a), h('span', { class: 'ago' }, L.fmtAgo(when))))) : null;
     const ctl = h('div', { class: 'ach-recent' + (latest.tier === 'legend' ? ' legend' : '') + (open ? ' open' : '') },
-      h('button', { class: 'ach-recent-go', 'aria-label': 'Latest: ' + latest.name, 'data-tip': open ? null : 'Latest', onclick: () => showAchievement(app, latest.id) },
-        star(latest), h('span', { class: 'nm' }, latest.name), h('span', { class: 'short' }, 'Latest')),
+      h('button', { class: 'ach-recent-go', 'data-area': latest.group, 'aria-label': 'Latest: ' + latest.name, 'data-tip': open ? null : 'Latest', onclick: () => showAchievement(app, latest.id) },
+        place(latest), h('span', { class: 'nm' }, latest.name), gem(latest), h('span', { class: 'short' }, 'Latest')),
       h('button', { class: 'ach-recent-more', 'aria-label': 'Recent', 'aria-haspopup': 'menu', 'aria-expanded': String(open), 'data-tip': open ? null : 'Recent', html: ICONS.chevDown,
         onclick: () => toggle(!app.achMenu) }),
       menu);

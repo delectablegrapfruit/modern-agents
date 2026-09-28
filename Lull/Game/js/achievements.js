@@ -8,14 +8,16 @@
   // on: which event checks it ('play' lock, 'classic' lock or game over, 'puzzle' solve, 'factory', or 'any' — any
   // event, and the app's once-a-minute 'tick').
   // test(state, event) → earned? · progress(state) → [have, need] for the list (optional).
+  // Each group is a place to play, coded by colour (css/lull.css: --area-<id>, set on anything with data-area) and by
+  // that place's own tab icon, so it reads without the colour too; Lifetime, across all of them, is the neutral one.
   const GROUPS = [
     // "No power-ups on the board" (the skill ones) is said in each description; what it means exactly, once, here.
-    { id: 'play', name: 'Free Play', noteTitle: 'No power-ups on the board',
+    { id: 'play', name: 'Free Play', icon: 'play', noteTitle: 'No power-ups on the board',
       note: 'None used since the board was last empty. Luck power-ups do not count. One taken back before its piece is set does not count.' },
-    { id: 'classic', name: 'Classic' },
-    { id: 'puzzle', name: 'Puzzles' },
-    { id: 'lull', name: 'Lifetime' },
-    { id: 'factory', name: 'Factory' },
+    { id: 'classic', name: 'Classic', icon: 'classic' },
+    { id: 'puzzle', name: 'Puzzles', icon: 'puzzle' },
+    { id: 'lull', name: 'Lifetime', icon: 'lifetime' },
+    { id: 'factory', name: 'Factory', icon: 'factory' },
   ];
 
   const LIST = [
@@ -228,5 +230,8 @@
 
   function total() { return LIST.reduce((n, a) => n + a.pay, 0); }
 
-  L.Achievements = { LIST, GROUPS, check, total, puzzleRuns, earned, recent };
+  /** An achievement's group (its place to play: the colour and icon it is shown with). */
+  function groupOf(a) { return GROUPS.find((g) => g.id === a.group) || GROUPS[0]; }
+
+  L.Achievements = { LIST, GROUPS, groupOf, check, total, puzzleRuns, earned, recent };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

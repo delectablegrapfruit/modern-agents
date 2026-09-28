@@ -2290,61 +2290,135 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     check('the chevron rolls the window up into its title bar: nothing below it, only the pieces and the expand button', c1.on && c1.saved === true && c1.h >= 40 && c1.h <= 44 && c1.main === 0 && c1.shown === 'bar-idle,btn-collapse' && c1.label === 'Expand' && c1.expanded === 'false', JSON.stringify(c1));
     check('the idle canvas spans the bar up to the expand button, which stays at the right', c1.cvLeft < 3 && c1.cvGap >= 0 && c1.cvGap < 8 && c1.btnRight < 12, JSON.stringify(c1));
     const pix = () => ev(() => document.getElementById('bar-idle').toDataURL());
-    const f0 = await ev(() => Lull.Collapse.idle.frames), p0 = await pix();
-    await page.waitForTimeout(400);
-    const f1 = await ev(() => Lull.Collapse.idle.frames), p1 = await pix();
-    check('pieces drift along the bar (about 30 fps, not faster)', p0 !== p1 && f1 - f0 >= 6 && f1 - f0 <= 16, (f1 - f0) + ' frames');
+    const K = await ev(() => { const B = Lull.BarIdle; return { BEAT: B.BEAT, GLIDE: B.GLIDE, MIN: B.SPAWN_MIN, MAX: B.SPAWN_MAX, SPACE: B.SPACE, ROWS: B.ROWS }; });
+    check('one calm tempo for the whole bar: a step every 0.7 s or more, gliding for part of it and resting for the rest', K.BEAT >= 0.7 && K.GLIDE >= 0.3 && K.GLIDE < K.BEAT && K.ROWS === 4, JSON.stringify(K));
+    const f0 = await ev(() => [Lull.Collapse.idle.frames, Lull.Collapse.idle.beats]), p0 = await pix();
+    await page.waitForTimeout(Math.round(K.BEAT * 2300));
+    const f1 = await ev(() => [Lull.Collapse.idle.frames, Lull.Collapse.idle.beats]), p1 = await pix();
+    const nb = f1[1] - f0[1], nf = f1[0] - f0[0];
+    check('pieces drift along the bar, drawn at about 30 fps and only while they glide', p0 !== p1 && nb >= 1 && nf >= 5 && nf <= nb * (K.GLIDE * 30 + 3) + 3, JSON.stringify({ beats: nb, frames: nf }));
     const cells = await ev(() => Lull.Collapse.idle.pieces.length);
     check('in the equipped look, a few pieces along the bar', cells >= 3, String(cells));
-    // Walk the march on by hand for two minutes of bar time and watch every step.
-    const march = await ev(() => {
-      const i = Lull.Collapse.idle, P = Lull.Pieces, bad = [];
-      // A fixed seed: the march is random, and a rare one ends with a piece turning at the edge (not a landing).
-      i.seed = 7919; i.reset(i.cols);
-      const snap = () => new Map(i.pieces.map((p) => [p.n, { id: p.id, rot: p.rot, x: p.x, y: p.y, lo: i.span(p).lo }]));
-      let prev = snap(), maxN = 0, minN = 99, turns = 0, nudges = 0, steps = 0, exits = 0, lastLo = [];
-      const ex0 = i.exited;
-      for (let f = 0; f < 120 * 30; f++) {
-        i.step(1 / 30);
-        const now = snap();
-        maxN = Math.max(maxN, now.size); minN = Math.min(minN, now.size);
-        const seen = new Set();
-        for (const p of i.pieces) {
-          const cells = i.cellsOf(p);
-          if (!Number.isInteger(p.x) || !Number.isInteger(p.y)) bad.push('not on the grid ' + p.id);
-          if (!P.get(p.id).rots[p.rot]) bad.push('no such rotation');
-          for (const [x, y] of cells) {
-            if (y < 0 || y >= 4) bad.push('out of the lanes ' + p.id + ' ' + y);
-            const k = x + ',' + y;
-            if (seen.has(k)) bad.push('overlap at ' + k);
-            seen.add(k);
+    // Walk the march on by hand for four minutes of bar time at 30 fps and watch every frame.
+    const march = await ev((K) => {
+      const i = Lull.Collapse.idle, P = Lull.Pieces;
+      const run = (seed) => {
+        const bad = [];
+        i.seed = seed; i.reset(i.cols);
+        const span = (p) => i.span(p);
+        const snap = () => new Map(i.pieces.map((p) => [p.n, { id: p.id, rot: p.rot, x: p.x, y: p.y, lo: span(p).lo }]));
+        let prev = snap(), beats = i.beats, g = i.g0, maxN = 0, minN = 99, turns = 0, shifts = 0, steps = 0, exits = 0, lastLo = [], ticks = 0, oneEach = true;
+        const intervals = [], spawns = [], ex0 = i.exited;
+        for (let f = 0; f < 240 * 30; f++) {
+          i.step(1 / 30);
+          const now = snap(), ticked = i.beats !== beats;
+          if (ticked) { ticks++; if (i.beats - beats !== 1) bad.push('two beats in one frame'); if (i.g0 - g < K.BEAT - 1e-6) intervals.push(i.g0 - g); g = i.g0; beats = i.beats; }
+          maxN = Math.max(maxN, now.size); minN = Math.min(minN, now.size);
+          const seen = new Set();
+          let flourish = 0;
+          for (const p of i.pieces) {
+            if (!Number.isInteger(p.x) || !Number.isInteger(p.y)) bad.push('not on the grid ' + p.id);
+            if (!P.get(p.id).rots[p.rot]) bad.push('no such rotation');
+            for (const [x, y] of i.cellsOf(p)) {
+              if (y < 0 || y >= 4) bad.push('out of the lanes ' + p.id + ' ' + y);
+              const k = x + ',' + y;
+              if (seen.has(k)) bad.push('overlap at ' + k);
+              seen.add(k);
+            }
+            for (const q of i.pieces) if (q !== p) { const a = span(p), b = span(q); if (b.lo <= a.hi + K.SPACE && b.hi >= a.lo - K.SPACE) bad.push('closer than ' + K.SPACE + ' columns'); }
+            const was = prev.get(p.n);
+            if (!was) { if (ticked) spawns.push(i.beats); else bad.push('came in off the beat'); continue; }
+            const dx = p.x - was.x, dy = p.y - was.y, moved = dx || dy || p.rot !== was.rot;
+            if (!ticked) { if (moved) bad.push('moved off the beat ' + p.id); continue; }
+            // Every piece, every beat, one cell right, a turning one too: nobody stands still, hops or walks back.
+            if (dx !== 1) { bad.push('out of step on a beat ' + p.id + ' dx ' + dx); continue; }
+            if (p.rot !== was.rot) {
+              turns++; flourish++;
+              const d = (p.rot - was.rot + 4) % 4;
+              const first = P.kicksFor(P.get(p.id), was.rot, p.rot)[0];
+              if (d === 2 || dy !== 0 || first[0] !== 0 || first[1] !== 0) bad.push('turn off its SRS centre or kicked ' + p.id + ' ' + was.rot + '>' + p.rot + ' ' + dx + ',' + dy);
+            } else if (dy === 0) steps++;
+            else if (Math.abs(dy) === 1) { shifts++; flourish++; }
+            else bad.push('not one cell ' + dx + ',' + dy);
           }
-          const was = prev.get(p.n);
-          if (!was) continue;
-          const dx = p.x - was.x, dy = p.y - was.y;
-          if (p.rot !== was.rot) {
-            turns++;
-            const d = (p.rot - was.rot + 4) % 4;
-            const kicks = P.kicksFor(P.get(p.id), was.rot, p.rot);
-            if (d === 2 || !kicks.some(([kx, ky]) => kx === dx && ky === dy)) bad.push('turn off its SRS centre ' + p.id + ' ' + was.rot + '>' + p.rot + ' ' + dx + ',' + dy);
-          } else if (dx || dy) {
-            if (!((dx === 1 && dy === 0) || (dx === 0 && Math.abs(dy) === 1))) bad.push('not one cell ' + dx + ',' + dy);
-            if (dx) steps++; else nudges++;
-          }
+          if (flourish > 1) oneEach = false;
+          for (const [n, w] of prev) if (!now.has(n)) { exits++; lastLo.push(w.lo); if (!ticked) bad.push('left off the beat'); }
+          prev = now;
         }
-        for (const [n, w] of prev) if (!now.has(n)) { exits++; lastLo.push(w.lo); }
-        prev = now;
-      }
-      return { bad: bad.slice(0, 5), maxN, minN, turns, nudges, steps, exits, exited: i.exited - ex0, cols: i.cols, gone: lastLo.every((lo) => lo >= i.cols - 2), keys: Object.keys(i).filter((k) => /grid|stack|flying/.test(k)) };
-    });
-    check('the pieces step right a whole cell at a time, turn on the game\'s SRS centre and kicks, shift a lane now and then, and never touch', march.bad.length === 0 && march.steps > 200 && march.turns > 10 && march.nudges > 5, JSON.stringify(march));
-    check('none of them land or stack: each walks off the right edge and more come, a few at a time', march.exits > 20 && march.exited === march.exits && march.gone && march.minN >= 2 && march.maxN <= Math.ceil(march.cols / 4) && march.keys.length === 0, JSON.stringify(march));
+        const gaps = spawns.slice(1).map((b, k) => b - spawns[k]);
+        return { bad: bad.slice(0, 5), maxN, minN, turns, shifts, steps, ticks, oneEach, intervals: intervals.slice(0, 3), exits, exited: i.exited - ex0, cols: i.cols,
+          gone: lastLo.every((lo) => lo >= i.cols - 1), gaps, keys: Object.keys(i).filter((k) => /grid|stack|flying/.test(k)),
+          sig: JSON.stringify(i.pieces.map((p) => [p.id, p.rot, p.x, p.y])) };
+      };
+      const a = run(7919), b = run(7919), c = run(104729);
+      i.reset(i.cols);
+      return { a, same: a.sig === b.sig && a.turns === b.turns && a.gaps.join() === b.gaps.join(), differs: a.sig !== c.sig, c: { bad: c.bad, turns: c.turns, shifts: c.shifts } };
+    }, K);
+    const m = march.a, gaps = m.gaps;
+    check('every piece steps on the one shared beat, all together, and nothing moves between beats', m.bad.length === 0 && march.c.bad.length === 0 && m.ticks >= Math.floor(240 / K.BEAT) - 1 && m.intervals.length === 0, JSON.stringify(m.bad.concat(march.c.bad, m.intervals)));
+    check('they step right a whole cell at a time, every one of them on every beat; now and then one turns on the game\'s SRS centre (never kicked) or changes lane as it steps, never both, never two at once, and rarely', m.steps > 500 && m.turns >= 5 && m.shifts >= 3 && m.oneEach && (m.turns + m.shifts) * 12 < m.steps, JSON.stringify({ steps: m.steps, turns: m.turns, shifts: m.shifts }));
+    check('a new piece comes in after a wait that varies (' + K.MIN + ' to ' + K.MAX + ' beats, longer only if the last one is still too close)', gaps.length > 10 && Math.min(...gaps) >= K.MIN && Math.max(...gaps) <= K.MAX + 4 && new Set(gaps).size >= 5, JSON.stringify(gaps));
+    check('none of them land or stack: each walks off the right edge and more come, a few at a time', m.exits >= 12 && m.exited === m.exits && m.gone && m.minN >= 2 && m.maxN <= Math.ceil(m.cols / (K.MIN - 1)) && m.keys.length === 0, JSON.stringify({ exits: m.exits, minN: m.minN, maxN: m.maxN, cols: m.cols }));
+    check('the march is the same for the same seed, and another seed walks another way', march.same && march.differs, JSON.stringify({ same: march.same, differs: march.differs }));
+    // Dragging the collapsed bar's edge keeps the march: the same pieces in the same places, the beat going on.
+    const pose = () => ev(() => { const i = Lull.Collapse.idle; i.resize(); return { cols: i.cols, beats: i.beats, next: i.next, due: i.due, serial: i.serial, pieces: i.pieces.map((p) => [p.n, p.id, p.rot, p.x, p.y].join()), los: i.pieces.map((p) => i.span(p).lo) }; });
+    await ev(() => Lull.Collapse.idle.stop());
+    const rz0 = await pose();
+    await page.setViewportSize({ width: 540, height: 760 });
+    const rz1 = await pose();
+    await page.setViewportSize({ width: 420, height: 760 });
+    const rz2 = await pose();
+    await page.setViewportSize({ width: 520, height: 760 });
+    await ev(() => Lull.Collapse.idle.start());
+    const same = (a, b) => a.beats === b.beats && a.next === b.next && a.due === b.due && a.serial === b.serial;
+    check('resizing the collapsed bar keeps its pieces where they were and the beat going (no reshuffle)',
+      rz1.cols > rz0.cols && rz2.cols < rz0.cols && same(rz0, rz1) && same(rz1, rz2) && rz1.pieces.join('|') === rz0.pieces.join('|')
+        && rz2.pieces.length >= 1 && rz2.pieces.every((q) => rz1.pieces.includes(q)) && rz2.los.every((lo) => lo < rz2.cols)
+        && rz1.pieces.filter((q, k) => rz1.los[k] < rz2.cols).join('|') === rz2.pieces.join('|'),
+      JSON.stringify({ rz0, rz1, rz2 }));
+    // The same drawing in both themes and two widths, at rest and as a frame strip through one beat's glide (a turn in it).
     for (const theme of ['dark', 'light']) {
       await ev((t) => { Lull.app.settings.theme = t; Lull.app.applySettings(); }, theme);
       for (const w of [520, 900]) {
         await page.setViewportSize({ width: w, height: 760 });
         await page.waitForTimeout(250);
-        if (OUT) await page.screenshot({ path: path.join(OUT, '95-collapsed-' + theme + '-' + w + '.png'), clip: { x: 0, y: 0, width: w, height: 70 } });
+        const strip = await ev(() => {
+          const i = Lull.Collapse.idle;
+          // As the bar opens at this width (dragged to it, the pieces would keep their places and walk on into the rest).
+          i.stop(); i.look = i.getLook(); i.resize(true);
+          const cv = i.cv, px = () => cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+          // The frame at rest just before a beat, and the first frame of the glide after it: the same, pixel for pixel,
+          // whatever the beat brings (a turn's cells keep their light where it was).
+          const t0 = i.turns || 0;
+          let rest = null, pop = 0, turnPop = -1;
+          for (let n = 0; n < 400 && (i.turns || 0) === t0; n++) {
+            i.t = i.next - 1e-6; i.draw(); rest = px();
+            i.step(i.next - i.t + 1e-9);
+            i.t = i.g0; i.draw(); const now = px();
+            let d = 0; for (let j = 0; j < now.length; j++) if (Math.abs(now[j] - rest[j]) > 2) d++;
+            if (d) pop++;
+            if ((i.turns || 0) !== t0) turnPop = d;
+          }
+          if ((i.turns || 0) === t0) i.step(i.next - i.t + 1e-9);
+          const n = 6, out = document.createElement('canvas');
+          out.width = cv.width; out.height = cv.height * n;
+          const o = out.getContext('2d');
+          const g0 = i.g0, sums = [];
+          for (let k = 0; k < n; k++) {
+            i.t = g0 + (i.constructor.GLIDE * k) / (n - 1); i.draw();
+            o.drawImage(cv, 0, cv.height * k);
+            const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+            let sum = 0; for (let j = 3; j < d.length; j += 16) sum += d[j]; sums.push(sum);
+          }
+          i.start();
+          return { url: out.toDataURL(), distinct: new Set(sums).size, drawn: sums.every((x) => x > 0), pop, turnPop };
+        });
+        check('the bar draws its pieces through a glide (' + theme + ', ' + w + ')', strip.drawn && strip.distinct >= 3, JSON.stringify({ distinct: strip.distinct }));
+        check('no frame jumps as a beat falls, a turn\'s first frame included (' + theme + ', ' + w + ')', strip.pop === 0 && strip.turnPop === 0, JSON.stringify({ pop: strip.pop, turnPop: strip.turnPop }));
+        if (OUT) {
+          await page.screenshot({ path: path.join(OUT, '95-collapsed-' + theme + '-' + w + '.png'), clip: { x: 0, y: 0, width: w, height: 60 } });
+          require('fs').writeFileSync(path.join(OUT, '95-collapsed-strip-' + theme + '-' + w + '.png'), Buffer.from(strip.url.split(',')[1], 'base64'));
+        }
       }
     }
     await ev(() => { Lull.app.settings.theme = 'dark'; Lull.app.applySettings(); });
@@ -2636,6 +2710,164 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
     const told = await ev(() => Array.from(document.querySelectorAll('.toast.link')).map((t) => t.textContent).join());
     check('earned while rolled up: told on expanding, as a clickable toast', col.earned && hidden.toasts === 0 && hidden.unheard === 'lu_days30' && /Familiar Face/.test(told), JSON.stringify({ hidden, told }));
     await ev(([t, m]) => { Lull.app.settings.theme = t; Lull.app.settings.mouse = m; Lull.app.applySettings(); document.getElementById('toasts').replaceChildren(); Lull.app.setTab('play'); }, [theme0, mouse0]);
+  }
+
+  // ---- achievements: coloured by place to play ------------------------------------------------------------------------
+  console.log('achievement areas');
+  {
+    const theme0 = await ev(() => Lull.app.settings.theme);
+    // Some earned in every group (a legendary one too), all groups open.
+    await ev(() => {
+      const S = Lull.app.store.state, A = Lull.Achievements, now = Date.now();
+      for (const g of A.GROUPS) A.LIST.filter((a) => a.group === g.id && a.tier !== 'legend').slice(0, 2).forEach((a, i) => { S.achievements[a.id] = S.achievements[a.id] || now - 3600e3 * (i + 1); });
+      const leg = A.LIST.find((a) => a.group === 'factory' && a.tier === 'legend'); S.achievements[leg.id] = S.achievements[leg.id] || now - 86400e3;
+      // The latest few from different places, for Recent.
+      A.GROUPS.forEach((g, i) => { S.achievements[A.LIST.find((a) => a.group === g.id && a.tier !== 'legend').id] = now - 60e3 * (i + 1); });
+    });
+    // In-page helpers: colours parsed from computed styles (rgb() or color(srgb …)), stacked backgrounds composited over
+    // the solid window, and the WCAG contrast ratio.
+    const probe = () => ev(() => {
+      const parse = (c) => {
+        let m = /rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)/.exec(c);
+        if (m) return [+m[1], +m[2], +m[3], m[4] == null ? 1 : +m[4]];
+        m = /color\(srgb ([\d.e-]+) ([\d.e-]+) ([\d.e-]+)(?: \/ ([\d.e-]+))?\)/.exec(c);
+        if (m) return [m[1] * 255, m[2] * 255, m[3] * 255, m[4] == null ? 1 : +m[4]];
+        return null;
+      };
+      const over = (top, under) => [0, 1, 2].map((i) => top[i] * top[3] + under[i] * (1 - top[3])).concat(1);
+      const base = parse('rgb(' + getComputedStyle(document.documentElement).getPropertyValue('--bg') + ')');
+      const behind = (el) => { const chain = []; for (let e = el; e && e.id !== 'app'; e = e.parentElement) chain.push(parse(getComputedStyle(e).backgroundColor)); return chain.reverse().reduce((u, t) => (t && t[3] > 0 ? over(t, u) : u), base); };
+      const lum = (c) => { const f = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); };
+      const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+      const col = (el, prop, pseudo) => getComputedStyle(el, pseudo || null)[prop];
+      const out = { groups: {}, rows: {}, worst: 99, worstAt: '', fit: true, over: [] }, pays = { got: {}, plain: {} };
+      const low = (r, at) => { if (r < out.worst) { out.worst = r; out.worstAt = at; } };
+      for (const g of document.querySelectorAll('.ach-group')) {
+        const id = g.dataset.group, badge = g.querySelector('summary .ach-area'), fill = g.querySelector('summary .bar > i');
+        out.groups[id] = { area: getComputedStyle(g).getPropertyValue('--area').trim(), badge: col(badge, 'color'), ring: col(badge, 'boxShadow'), fill: col(fill, 'backgroundImage'), icon: !!badge.querySelector('svg') };
+        low(ratio(parse(col(badge, 'color')), behind(badge)), id + ' header badge');
+        const rows = { plain: new Set(), got: new Set(), legend: new Set(), area: new Set(), bars: new Set() };
+        for (const r of g.querySelectorAll('.ach')) {
+          const i = r.querySelector('.ach-i');
+          rows.area.add(getComputedStyle(r).getPropertyValue('--area').trim());
+          if (r.classList.contains('legend')) {
+            rows.legend.add(col(i, 'backgroundColor', '::after'));
+            // Its gold words (the tier, and the pay once earned) read too.
+            const tier = r.querySelector('.tier'); if (tier) low(ratio(parse(col(tier, 'color')), behind(tier)), r.dataset.id + ' tier');
+            if (r.classList.contains('got')) { const pay = r.querySelector('.ach-pay'); low(ratio(parse(col(pay, 'color')), behind(pay)), r.dataset.id + ' legendary pay'); }
+          } else {
+            (r.classList.contains('got') ? rows.got : rows.plain).add(col(i, 'color'));
+            if (r.classList.contains('got')) {
+              low(ratio(parse(col(i, 'color')), behind(i)), r.dataset.id + ' badge');
+              const pay = r.querySelector('.ach-pay'); low(ratio(parse(col(pay, 'color')), behind(pay)), r.dataset.id + ' pay');
+              pays.got[id] = parse(col(pay, 'color'));
+            } else pays.plain[id] = parse(col(r.querySelector('.ach-pay'), 'color'));
+          }
+          const bar = r.querySelector('.ach-prog .bar > i'); if (bar) rows.bars.add(col(bar, 'backgroundImage'));
+          if (r.scrollWidth > r.clientWidth + 1) { out.fit = false; out.over.push(r.dataset.id + ' ' + r.scrollWidth + '>' + r.clientWidth); }
+        }
+        out.rows[id] = Object.fromEntries(Object.entries(rows).map(([k, v]) => [k, [...v]]));
+        const sum = g.querySelector('summary'); if (sum.scrollWidth > sum.clientWidth + 1) { out.fit = false; out.over.push(id + ' header ' + sum.scrollWidth + '>' + sum.clientWidth); }
+      }
+      out.page = document.documentElement.scrollWidth <= innerWidth + 1;
+      const root = getComputedStyle(document.documentElement), tok = (k) => parse(root.getPropertyValue(k).trim().replace(/^#(..)(..)(..)$/, (_, r, g, b) => 'rgb(' + [r, g, b].map((x) => parseInt(x, 16)).join(',') + ')'));
+      // Apart from the accent, the legendary gold and the good and bad colours: the distance in OKLab (0.02 is about the
+      // smallest difference anyone sees).
+      const lin = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+      const oklab = (c) => { const [r, g, b] = c.slice(0, 3).map(lin);
+        const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b), m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b), s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+        return [0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s, 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s, 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s]; };
+      const d = (a, b) => { const x = oklab(a), y = oklab(b); return Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2]); };
+      // ... and for colour-blind eyes too: the least over normal sight and full deuteranopia and protanopia (Machado 2009).
+      const M = { deut: [[0.367322, 0.860646, -0.227968], [0.280085, 0.672501, 0.047413], [-0.01182, 0.04294, 0.968881]],
+        prot: [[0.152286, 1.052583, -0.204868], [0.114503, 0.786281, 0.099216], [-0.003882, -0.048116, 1.051998]] };
+      const unlin = (v) => { v = Math.max(0, Math.min(1, v)); return 255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055); };
+      const sim = (c, k) => { const l = c.slice(0, 3).map(lin); return M[k].map((row) => unlin(row[0] * l[0] + row[1] * l[1] + row[2] * l[2])); };
+      const dcvd = (a, b) => Math.min(d(a, b), ...['deut', 'prot'].map((k) => d(sim(a, k), sim(b, k))));
+      const places = ['play', 'classic', 'puzzle', 'factory'], min = (ks, f) => Math.min(...places.flatMap((a) => ks.map((k) => f(tok('--area-' + a), tok(k)))));
+      out.apart = min(['--accent', '--gold', '--good', '--bad'], d);
+      out.apartCvd = min(['--accent', '--gold'], dcvd);
+      out.apartCvdGB = min(['--good', '--bad'], dcvd);
+      // Earned pay in each place stands clear of the muted pay of one not yet earned.
+      out.payGap = Math.min(...Object.keys(pays.got).filter((g) => pays.plain[g]).map((g) => d(pays.got[g], pays.plain[g])));
+      out.payGapAt = Object.keys(pays.got).filter((g) => pays.plain[g]).map((g) => g + ':' + d(pays.got[g], pays.plain[g]).toFixed(3)).join(' ');
+      return out;
+    });
+    const areas = ['play', 'classic', 'puzzle', 'factory', 'lull'], seen = {};
+    for (const theme of ['dark', 'light']) for (const [w, hgt] of [[520, 760], [400, 700]]) {
+      await page.setViewportSize({ width: w, height: hgt });
+      await ev((t) => { const app = Lull.app; app.settings.theme = t; app.applySettings(); app.setTab('achievements'); app.achFilter = 'all'; app.achMenu = false; app.achOpen = { play: true, classic: true, puzzle: true, lull: true, factory: true }; Lull.UI.renderAchievements(app); document.getElementById('ach-body').scrollTop = 0; }, theme);
+      await page.waitForTimeout(80);
+      await shot('57-ach-areas-' + w + 'x' + hgt + '-' + theme);
+      const r = await probe();
+      const G = r.groups, R = r.rows, one = (a) => a.length === 1;
+      const headers = new Set(areas.map((a) => G[a] && G[a].badge)).size === 5 && new Set(areas.map((a) => G[a].fill)).size === 5 && areas.every((a) => G[a].icon && G[a].badge !== 'rgba(0, 0, 0, 0)');
+      const rows = areas.every((a) => one(R[a].area) && R[a].area[0] === G[a].area && one(R[a].plain) && one(R[a].got) && (R[a].bars.length <= 1) && (!R[a].bars.length || R[a].bars[0] === G[a].fill))
+        && new Set(areas.map((a) => R[a].plain[0])).size === 5 && new Set(areas.map((a) => R[a].got[0])).size === 5 && R.factory.legend.length === 1 && R.factory.legend[0] !== R.play.got[0];
+      check(w + '×' + hgt + ' ' + theme + ': each group and its rows carry their place\'s colour (header icon, bar, badges; one per place, five apart)', headers && rows, JSON.stringify({ G, R }));
+      check(w + '×' + hgt + ' ' + theme + ': the colours on their tints (and earned pay) read at 4.5:1 or more', r.worst >= 4.5, r.worst.toFixed(2) + ' at ' + r.worstAt);
+      check(w + '×' + hgt + ' ' + theme + ': headers and rows fit, no page scroll', r.fit && r.page, JSON.stringify({ over: r.over, page: r.page }));
+      if (w === 520) {
+        // Recent and its list: each one by its place's icon, in its colour.
+        await page.click('.ach-recent-more');
+        await page.waitForTimeout(150);
+        const rec = await ev(() => {
+          const A = Lull.Achievements, badge = (id) => getComputedStyle(document.querySelector('.ach-group[data-group="' + id + '"] summary .ach-area')).color;
+          const ref = (n) => { const e = document.createElement('span'); e.innerHTML = Lull.Icons.icon(n); return e.innerHTML; };
+          const one = (b) => { const a = A.LIST.find((x) => x.id === b.dataset.id) || A.LIST.find((x) => x.name === b.getAttribute('aria-label').replace(/^Latest: /, '')), i = b.querySelector('.ico.area-i');
+            return a && i.innerHTML === ref(A.groupOf(a).icon) && getComputedStyle(i).color === badge(a.group) ? a.group : null; };
+          const items = [...document.querySelectorAll('.ach-menu [role="menuitem"]')].map(one);
+          return { latest: one(document.querySelector('.ach-recent-go')), items };
+        });
+        await page.keyboard.press('Escape');
+        check(theme + ': Recent and its list show each one in its place\'s icon and colour', !!rec.latest && rec.items.length > 1 && rec.items.every(Boolean) && new Set(rec.items).size > 1, JSON.stringify(rec));
+        check(theme + ': the place colours stand apart from the accent, gold, good and bad', r.apart >= 0.07, r.apart.toFixed(3));
+        // The accent (focus, a jumped-to row) and the gold (legendary) sit beside them in the tab; good and bad don't.
+        check(theme + ': ... and from the accent and gold for colour-blind eyes too (deutan, protan)', r.apartCvd >= 0.075, r.apartCvd.toFixed(3) + ' (good, bad: ' + r.apartCvdGB.toFixed(3) + ')');
+        check(theme + ': earned pay in every place stands clear of pay not yet earned', r.payGap >= 0.05, r.payGapAt);
+        seen[theme] = areas.map((a) => G[a].badge).join();
+      }
+    }
+    check('the place colours change with the theme', seen.dark !== seen.light, JSON.stringify(seen));
+    // Toasts: each in its place's colour and icon, a legendary one edged in gold.
+    await page.setViewportSize({ width: 520, height: 760 });
+    for (const theme of ['dark', 'light']) {
+      const t = await ev((th) => {
+        const app = Lull.app, A = Lull.Achievements;
+        app.settings.theme = th; app.applySettings(); app.setTab('play');
+        const out = {};
+        for (const g of A.GROUPS) {
+          document.getElementById('toasts').replaceChildren();
+          const a = A.LIST.find((x) => x.group === g.id && x.tier !== 'legend');
+          app.announce([a]);
+          const el = document.querySelector('.toast'), i = el.querySelector('.ico');
+          const ref = document.createElement('span'); ref.innerHTML = Lull.Icons.icon(g.icon);
+          out[g.id] = { area: el.dataset.area, icon: i.innerHTML === ref.innerHTML, color: getComputedStyle(i).color, border: getComputedStyle(el).borderTopColor };
+        }
+        document.getElementById('toasts').replaceChildren();
+        const leg = A.LIST.find((x) => x.group === 'puzzle' && x.tier === 'legend');
+        app.announce([leg]);
+        const el = document.querySelector('.toast');
+        out.legend = { area: el.dataset.area, color: getComputedStyle(el.querySelector('.ico')).color, border: getComputedStyle(el).borderTopColor, gold: getComputedStyle(el.querySelector('.leg')).color, text: el.textContent };
+        // Its gold word reads at 4.5:1 on the toast, and on the toast under the pointer.
+        const rgb = (c) => { const m = /rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)/.exec(c) || /color\(srgb ([\d.e-]+) ([\d.e-]+) ([\d.e-]+)/.exec(c);
+          const v = [+m[1], +m[2], +m[3]]; return c.startsWith('color(') ? v.map((x) => x * 255) : v; };
+        const hexRgb = (h) => { const e = document.createElement('i'); e.style.color = h; document.body.append(e); const c = getComputedStyle(e).color; e.remove(); return rgb(c); };
+        const lum = (c) => { const f = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); };
+        const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+        const root = getComputedStyle(document.documentElement), word = rgb(out.legend.gold);
+        out.legend.contrast = Math.min(ratio(word, rgb(getComputedStyle(el).backgroundColor)), ratio(word, hexRgb(root.getPropertyValue('--raised-2').trim())));
+        return out;
+      }, theme);
+      await page.waitForTimeout(250);
+      await shot('58-ach-toast-area-' + theme);
+      const ids = ['play', 'classic', 'puzzle', 'factory', 'lull'];
+      const ok = ids.every((id) => t[id].area === id && t[id].icon) && new Set(ids.map((id) => t[id].color)).size === 5 && new Set(ids.map((id) => t[id].border)).size === 5
+        && t.legend.area === 'puzzle' && t.legend.color === t.puzzle.color && t.legend.border !== t.puzzle.border && /^Legendary: /.test(t.legend.text);
+      check(theme + ': an achievement\'s toast carries its place\'s icon and colour; a legendary one is edged and named in gold', ok, JSON.stringify(t));
+      check(theme + ': a legendary toast\'s gold word reads at 4.5:1 or more (and on hover)', t.legend.contrast >= 4.5, t.legend.contrast.toFixed(2));
+    }
+    await ev((t) => { Lull.app.settings.theme = t; Lull.app.applySettings(); document.getElementById('toasts').replaceChildren(); Lull.app.achOpen = {}; Lull.app.setTab('play'); }, theme0);
   }
 
   check('no page errors', errors.length === 0, errors.slice(0, 5).join('\n'));

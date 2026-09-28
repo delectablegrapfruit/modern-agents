@@ -8,15 +8,27 @@
 
   // ---- the idle bar --------------------------------------------------------------------------------------------------
   //
-  // Pieces on a march: four lanes along the bar, and tetrominoes come in from the left and step right one cell at a
-  // time, the way a player taps them across the board. Now and then one turns (the game's own SRS rotations, about the
-  // same centre and with the same kicks) or shifts a lane up or down. They never touch, never land and never stack:
-  // each walks on off the right edge, behind the expand button, and more keep coming.
+  // Pieces on a slow march: four lanes along the bar, and tetrominoes come in from the left and step right one cell at a
+  // time, all of them together on one shared beat — a short eased glide, then a rest. Now and then, on the beat and
+  // never more than one at a time, a piece turns as it steps (the game's own SRS rotation about the same centre, drawn
+  // turning, never kicked out of line) or slides a lane up or down. A new one comes in after a few beats' wait, drawn
+  // afresh each time, and never closer than a couple of empty columns to the one ahead, so they never touch,
+  // land or stack: each fades in at the left, walks on, and fades out before the expand button.
 
   const ROWS = 4;
-  const TICK = 0.14; // seconds between a piece's moves: a step right every other tick, maybe a turn or a nudge between
-  const SLIDE = 0.07; // seconds a step takes to draw, a short ease from cell to cell
+  const BEAT = 0.9; // seconds between steps: every piece moves on the same beat
+  const GLIDE = 0.55; // seconds a step takes to draw, eased from cell to cell; the rest of the beat is still
+  const SPAWN_MIN = 8, SPAWN_MAX = 16; // beats between one piece coming in and the next
+  const SPACE = 2; // empty columns kept between two pieces, whatever their lanes
+  const FLOURISH = 0.2; // the chance, each beat, that one piece turns or changes lane as it steps
+  const REST = 6; // beats a piece walks straight on after a turn or a lane change
+  const FADE_IN = 4, FADE_OUT = 6; // columns over which a piece appears at the left and is gone at the right
+  const FPS = 30;
   const IDS = ['I', 'O', 'T', 'S', 'Z', 'J', 'L'];
+
+  const ease = (k) => 0.5 - 0.5 * Math.cos(Math.PI * k);
+  // A coordinate on a whole device pixel when it is one already, give or take rounding; left as it is mid-glide.
+  const snap = (v, px) => { const r = Math.round(v / px) * px; return Math.abs(r - v) < 1e-6 ? r : v; };
 
   class BarIdle {
     constructor(canvas, getLook, isReduced) {
@@ -30,6 +42,9 @@
       this.cols = 0;
       this.serial = 0;
       this.exited = 0;
+      this.beats = 0;
+      this.pieces = [];
+      this.look = null;
       this.seed = 1 + Math.floor(Math.random() * 1e6);
       if (root.ResizeObserver) new ResizeObserver(() => { if (this.running) { this.resize(); this.draw(); } }).observe(canvas);
     }
@@ -44,8 +59,13 @@
       return this.bag.pop();
     }
 
-    /** Sizes the canvas to its box; a new column count starts the march afresh, walked ahead so it is never empty. */
-    resize() {
+    /**
+     * Sizes the canvas to its box. As the bar opens at a new width (or with nothing left on it) the march is walked
+     * ahead so it is full from end to end; while it is showing, a new column count keeps every piece where it is,
+     * counted from the left, and the beat and the wait for the next one go on as they were, so dragging the edge never
+     * reshuffles the bar.
+     */
+    resize(opening) {
       const r = this.cv.getBoundingClientRect();
       const dpr = Math.min(3, root.devicePixelRatio || 1);
       const w = Math.max(1, Math.round(r.width)), h = Math.max(1, Math.round(r.height));
@@ -53,19 +73,25 @@
       this.dpr = dpr; this.w = w; this.h = h;
       this.s = Math.max(4, Math.floor((h - 12) / ROWS));
       this.top = Math.round((h - this.s * ROWS) / 2);
-      const cols = Math.max(8, Math.floor((w - 16) / this.s));
+      const cols = Math.max(8, Math.floor((w - 12) / this.s));
       this.left = w - 4 - cols * this.s;
-      if (cols !== this.cols) this.reset(cols);
+      if (cols === this.cols) return;
+      if (!this.cols || opening) { this.reset(cols); return; }
+      this.cols = cols;
+      for (let i = this.pieces.length - 1; i >= 0; i--) if (this.span(this.pieces[i]).lo >= cols) this.pieces.splice(i, 1);
+      if (!this.pieces.length) this.reset(cols);
     }
 
+    /** Starts the march over, walked on unseen until the bar is full of pieces on their way, and at rest. */
     reset(cols) {
       this.cols = cols;
       this.pieces = [];
-      this.t = 0;
-      this.gap = 0;
-      // Walk a while unseen, so the bar is already full of pieces on their way.
-      const warm = (cols * 2 * TICK + 4) * 30;
-      for (let i = 0; i < warm; i++) this.step(1 / 30);
+      this.bag = null; this.gap = 0;
+      this.beats = 0;
+      this.due = 1 + Math.floor(this.rand() * 3);
+      for (let i = 0, n = cols + SPAWN_MAX * 2; i < n; i++) this.tick();
+      for (const p of this.pieces) { p.ox = 0; p.oy = 0; p.oa = 0; }
+      this.t = 0; this.g0 = -GLIDE; this.next = BEAT * 0.5;
     }
 
     /** A piece's cells on the bar, [col, lane] with lane 0 at the bottom (y up, like the board). */
@@ -74,132 +100,161 @@
       return L.Pieces.get(p.id).rots[r].map(([cx, cy]) => [px + cx, py + cy]);
     }
 
-    /** Whether a piece fits there: inside the four lanes and clear of every other piece. */
+    /** The span of columns a piece covers, in a pose (its own by default). */
+    span(p, rot, x) {
+      const b = L.Pieces.get(p.id).rotBounds[rot == null ? p.rot : rot], px = x == null ? p.x : x;
+      return { lo: px + b.minX, hi: px + b.maxX };
+    }
+
+    /** Whether a piece fits in a pose: inside the four lanes, with SPACE empty columns to every other piece. */
     fits(p, rot, x, y) {
-      const cells = this.cellsOf(p, rot, x, y);
-      for (const [, cy] of cells) if (cy < 0 || cy >= ROWS) return false;
+      const b = L.Pieces.get(p.id).rotBounds[rot], lo = x + b.minX, hi = x + b.maxX;
+      if (y + b.minY < 0 || y + b.maxY >= ROWS) return false;
       for (const q of this.pieces) {
         if (q === p) continue;
-        for (const [ax, ay] of this.cellsOf(q)) for (const [bx, by] of cells) if (ax === bx && ay === by) return false;
+        const o = this.span(q);
+        if (o.lo <= hi + SPACE && o.hi >= lo - SPACE) return false;
       }
       return true;
     }
 
-    /** The span of columns a piece covers. */
-    span(p) {
-      let lo = Infinity, hi = -Infinity;
-      for (const [cx] of this.cellsOf(p)) { if (cx < lo) lo = cx; if (cx > hi) hi = cx; }
-      return { lo, hi };
-    }
-
-    /** Moves a piece by whole cells, remembering where it was drawn so the step can ease across. */
-    move(p, dx, dy) {
-      p.x += dx; p.y += dy;
-      p.sx = this.slideOf(p, 'x') - dx; p.sy = this.slideOf(p, 'y') - dy; p.st = 0;
-    }
-
-    slideOf(p, axis) {
-      const k = Math.min(1, p.st / SLIDE), e = 1 - k * k * (3 - 2 * k);
-      return (axis === 'x' ? p.sx : p.sy) * e;
-    }
-
-    /** A turn as the game makes it: the next SRS rotation about the box centre, trying its kicks in order. */
-    turn(p, dir) {
-      const type = L.Pieces.get(p.id), to = (p.rot + dir + 4) % 4;
-      for (const [kx, ky] of L.Pieces.kicksFor(type, p.rot, to)) {
-        if (this.fits(p, to, p.x + kx, p.y + ky)) { p.rot = to; p.x += kx; p.y += ky; return true; }
-      }
-      return false;
-    }
-
-    spawn() {
-      const p = { n: ++this.serial, id: this.nextId(), rot: 0, x: 0, y: 0, sx: 0, sy: 0, st: 1, phase: 0 };
-      p.rot = Math.floor(this.rand() * 4);
-      const type = L.Pieces.get(p.id), b = type.rotBounds[p.rot];
-      // Any lane it fits in, and just out of sight past the left edge.
-      const lanes = [];
-      for (let y = -b.minY; y + b.maxY < ROWS; y++) lanes.push(y);
-      p.y = lanes[Math.floor(this.rand() * lanes.length)];
-      p.x = -1 - b.maxX;
-      if (!this.fits(p)) return;
-      p.due = this.t + TICK;
-      this.pieces.push(p);
-      this.gap = 3 + Math.floor(this.rand() * 6);
-    }
-
-    step(dt) {
-      this.t += dt;
-      for (const p of this.pieces) p.st += dt;
+    /** One beat: every piece steps right together; maybe one of them turns or changes lane as it goes; one may enter. */
+    tick() {
+      this.beats++;
       // The front of the line goes first, so nobody waits on a piece that is about to move.
-      const order = this.pieces.slice().sort((a, b) => this.span(b).hi - this.span(a).hi);
-      for (const p of order) {
-        while (p.due <= this.t) {
-          p.due += TICK;
-          p.phase ^= 1;
-          if (p.phase) {
-            if (this.fits(p, p.rot, p.x + 1, p.y)) this.move(p, 1, 0);
-          } else {
-            const r = this.rand();
-            if (r < 0.1) this.turn(p, this.rand() < 0.7 ? 1 : -1);
-            else if (r < 0.16) { const dy = this.rand() < 0.5 ? 1 : -1; if (this.fits(p, p.rot, p.x, p.y + dy)) this.move(p, 0, dy); }
-          }
+      this.pieces.sort((a, b) => this.span(b).hi - this.span(a).hi);
+      for (const p of this.pieces) {
+        p.ox = 0; p.oy = 0; p.oa = 0;
+        if (this.fits(p, p.rot, p.x + 1, p.y)) { p.x += 1; p.ox = -1; }
+      }
+      if (this.rand() < FLOURISH && this.pieces.length) {
+        const p = this.pieces[Math.floor(this.rand() * this.pieces.length)], sp = this.span(p);
+        // Only where it can be seen whole, and not again for a while.
+        if (p.ox && this.beats >= p.calm && sp.lo >= FADE_IN && sp.hi < this.cols - FADE_OUT) {
+          if (this.rand() < 0.6) this.turn(p, this.rand() < 0.7 ? 1 : -1);
+          else this.shift(p, this.rand() < 0.5 ? 1 : -1);
         }
       }
-      // Off the right edge and gone.
+      // Past the right edge and gone.
       for (let i = this.pieces.length - 1; i >= 0; i--) {
         if (this.span(this.pieces[i]).lo >= this.cols) { this.pieces.splice(i, 1); this.exited++; }
       }
-      // A new one once the last has come far enough in.
-      let lo = Infinity;
-      for (const p of this.pieces) lo = Math.min(lo, this.span(p).lo);
-      if (lo >= this.gap) this.spawn();
+      if (this.beats >= this.due) this.spawn();
+    }
+
+    /**
+     * A turn as the game makes it: the next SRS rotation about the box centre, its first test, with no kick. A kick
+     * would carry the piece sideways or into another lane as it turns, out of step with the rest, so where the plain
+     * turn does not fit the piece just walks on this beat.
+     */
+    turn(p, dir) {
+      const to = (p.rot + dir + 4) % 4;
+      if (!this.fits(p, to, p.x, p.y)) return false;
+      p.rot = to; p.oa = -dir;
+      p.calm = this.beats + REST; this.turns = (this.turns || 0) + 1;
+      return true;
+    }
+
+    shift(p, dy) {
+      if (!this.fits(p, p.rot, p.x, p.y + dy)) return false;
+      p.y += dy; p.oy = -dy;
+      p.calm = this.beats + REST; this.shifts = (this.shifts || 0) + 1;
+      return true;
+    }
+
+    /** A new piece just out of sight past the left edge, in any lane it fits; it steps in on the next beat. */
+    spawn() {
+      const p = { n: this.serial + 1, id: this.nextId(), rot: Math.floor(this.rand() * 4), x: 0, y: 0, ox: 0, oy: 0, oa: 0, calm: 0 };
+      const b = L.Pieces.get(p.id).rotBounds[p.rot];
+      const lanes = ROWS - b.h + 1;
+      p.y = Math.floor(this.rand() * lanes) - b.minY;
+      p.x = -1 - b.maxX;
+      if (!this.fits(p, p.rot, p.x, p.y)) { this.bag.push(p.id); return; } // too close to the last one: next beat
+      this.serial = p.n;
+      p.calm = this.beats + REST;
+      this.pieces.push(p);
+      // The next one after a few beats, and not the same few as last time.
+      let gap;
+      do gap = SPAWN_MIN + Math.floor(this.rand() * (SPAWN_MAX - SPAWN_MIN + 1)); while (gap === this.gap);
+      this.gap = gap;
+      this.due = this.beats + gap;
+    }
+
+    /** Advances bar time; the beat falls every BEAT seconds, whatever the frame rate. */
+    step(dt) {
+      this.t += dt;
+      while (this.t >= this.next) { this.g0 = this.next; this.next += BEAT; this.tick(); }
+    }
+
+    /** How far through the beat's glide the pieces are drawn, 0 to 1 (1 at rest, and always with reduced motion). */
+    progress() {
+      if (this.isReduced()) return 1;
+      return ease(Math.max(0, Math.min(1, (this.t - this.g0) / GLIDE)));
     }
 
     draw() {
       const ctx = this.cv.getContext('2d');
       ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-      ctx.__dpr = this.dpr;
       ctx.clearRect(0, 0, this.w, this.h);
-      const look = this.getLook();
-      const th = look.theme || {};
-      const s = this.s, top = this.top, left = this.left;
-      // The lanes: a recessed track the length of the bar, like the tabs' track.
-      L.Render.rr(ctx, left - 3.5, top - 2.5, this.cols * s + 6, ROWS * s + 5, 6);
-      ctx.fillStyle = th.well || 'rgba(0,0,0,0.3)'; ctx.fill();
-      ctx.strokeStyle = th.grid || 'rgba(255,255,255,0.06)'; ctx.lineWidth = 1; ctx.stroke();
-      ctx.save();
-      // Clipped to the track: pieces come out of its left end and pass under its right, by the expand button.
-      ctx.beginPath(); ctx.rect(left, top - 2, this.cols * s, ROWS * s + 4); ctx.clip();
+      const look = this.look || (this.look = this.getLook());
+      const light = !!(look.theme && look.theme.name === 'light');
+      ctx.__dpr = this.dpr; ctx.__light = light;
+      // Quiet on the bar: the equipped palette and skin, softened, with no track or lanes drawn under them.
+      const soft = light ? 0.78 : 0.7;
+      const s = this.s, left = this.left, top = this.top, cols = this.cols, px = 1 / this.dpr;
+      const u = 1 - this.progress();
       for (const p of this.pieces) {
-        const color = look.colors[L.Pieces.get(p.id).color];
-        const ox = this.slideOf(p, 'x'), oy = this.slideOf(p, 'y');
-        for (const [cx, cy] of this.cellsOf(p)) {
-          const gx = cx + ox;
-          // Out of nothing over the first couple of columns.
-          const a = Math.max(0, Math.min(1, (gx + 1) / 3));
-          if (a > 0) L.Render.drawCell(ctx, look.skin, color, left + gx * s, top + (ROWS - 1 - cy - oy) * s, s, a);
+        const type = L.Pieces.get(p.id), c = (type.n - 1) / 2, color = look.colors[type.color];
+        // The box centre, where the piece is drawn this frame, in cells (y up).
+        const bx = p.x + c + p.ox * u, by = p.y + c + p.oy * u;
+        const a = p.oa * u * Math.PI / 2, cos = Math.cos(a), sin = Math.sin(a), k = Math.max(Math.abs(cos), Math.abs(sin));
+        for (const cell of type.rots[p.rot]) {
+          // The cell's place about the box centre, on screen (y down), carried back by what is left of a turn.
+          const U = cell[0] - c, V = c - cell[1];
+          const gx = bx + U * cos - V * sin, gy = (ROWS - 1 - by) + U * sin + V * cos;
+          const alpha = soft * Math.max(0, Math.min(1, (gx + 1) / FADE_IN, (cols - 1 - gx) / FADE_OUT));
+          if (alpha <= 0.01) continue;
+          // Whole device pixels wherever the cell sits on the grid (at rest, and as a turn sets off), finer in a glide.
+          const x = snap(left + gx * s, px), y = snap(top + gy * s, px);
+          if (k === 1) L.Render.drawCell(ctx, look.skin, color, x, y, s, alpha);
+          else {
+            // Mid-turn the cells stay upright, so their light never swings round; they draw in a little as the piece
+            // turns, just enough that no two of them overlap, and are whole again when it lands.
+            ctx.save();
+            ctx.translate(x + s / 2, y + s / 2); ctx.scale(k, k);
+            L.Render.drawCell(ctx, look.skin, color, -s / 2, -s / 2, s, alpha);
+            ctx.restore();
+          }
         }
       }
-      ctx.restore();
     }
 
     start() {
       if (this.running) return;
       this.running = true;
-      this.resize();
+      this.look = this.getLook();
+      this.resize(true);
       this.draw();
       this.last = performance.now();
-      const loop = (t) => {
+      let drawn = true, still = 0;
+      const loop = (now) => {
         if (!this.running) return;
         this.raf = requestAnimationFrame(loop);
-        if (document.hidden) { this.last = t; return; }
-        // About 30 fps; with reduced motion the bar holds still.
-        if (t - this.last < 32 || this.isReduced()) return;
-        const dt = Math.min(0.1, (t - this.last) / 1000);
-        this.last = t;
+        if (document.hidden) { this.last = now; return; }
+        if (now - this.last < 1000 / FPS - 2) return;
+        const dt = Math.min(0.1, (now - this.last) / 1000);
+        this.last = now;
+        if (this.isReduced()) {
+          // A still, composed frame: redrawn now and then only so a change of theme or look shows.
+          if ((still += dt) > 0.5) { still = 0; this.look = this.getLook(); this.draw(); }
+          return;
+        }
+        const beats = this.beats;
         this.step(dt);
-        this.draw();
-        this.frames++;
+        if (this.beats !== beats) this.look = this.getLook();
+        // Drawn only while the pieces glide, and once more as they come to rest.
+        const gliding = this.t - this.g0 < GLIDE;
+        if (gliding || !drawn) { this.draw(); this.frames++; drawn = !gliding; }
       };
       this.raf = requestAnimationFrame(loop);
     }
@@ -209,6 +264,8 @@
       cancelAnimationFrame(this.raf);
     }
   }
+
+  BarIdle.BEAT = BEAT; BarIdle.GLIDE = GLIDE; BarIdle.SPAWN_MIN = SPAWN_MIN; BarIdle.SPAWN_MAX = SPAWN_MAX; BarIdle.SPACE = SPACE; BarIdle.ROWS = ROWS;
 
   // ---- collapsing and expanding ----------------------------------------------------------------------------------------
 

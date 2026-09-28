@@ -60,6 +60,9 @@
   --scrim: rgba(5,7,12,0.55);
   --desk: #0a0c11;
   --glow: 0.1;
+  /* the places to play, for the achievements (see "areas" below) */
+  --area-play: #67d2cc; --area-classic: #a7a662; --area-puzzle: #b889cd; --area-factory: #d29063; --area-lull: #c0c8d1;
+  --gold-ink: var(--gold);
   color-scheme: dark;
 }
 :root[data-theme="light"] {
@@ -83,6 +86,8 @@
   --scrim: rgba(24,30,44,0.3);
   --desk: #d5dae3;
   --glow: 0.07;
+  --area-play: #006763; --area-classic: #5c6000; --area-puzzle: #68448d; --area-factory: #7c2f00; --area-lull: #3b434d;
+  --gold-ink: #7f600b;
   color-scheme: light;
 }
 /* Derived accent tints (after the theme, so they follow it). */
@@ -90,6 +95,22 @@
   --accent-soft: color-mix(in srgb, var(--accent) 15%, transparent);
   --accent-line: color-mix(in srgb, var(--accent) 50%, transparent);
   --focus: color-mix(in srgb, var(--accent) 85%, transparent);
+}
+/* Areas: the places to play, each with its own quiet colour — Relaxed (Free Play) sea-glass teal, Classic the olive of
+   an old handheld, Puzzles orchid, Factory copper — and a neutral slate for Lifetime, across all of them. Hues sit
+   between the accent's blue, the legendary gold and the good and bad colours, softer than all of them, and apart in
+   lightness too (so they stay apart from the accent and the gold for colour-blind eyes as well, with each place's own
+   icon beside them). Dark: soft mid-tones on dark, Lifetime a pale slate clear of the muted text; light: deep inks,
+   every one at least 4.5:1 on its own tint. --gold-ink is the gold for words (deeper in light, to read at 4.5:1).
+   Anything with data-area="<group>" gets --area (and a soft tint and a line of it). */
+[data-area="play"] { --area: var(--area-play); }
+[data-area="classic"] { --area: var(--area-classic); }
+[data-area="puzzle"] { --area: var(--area-puzzle); }
+[data-area="factory"] { --area: var(--area-factory); }
+[data-area="lull"] { --area: var(--area-lull); }
+[data-area] {
+  --area-soft: color-mix(in srgb, var(--area) 14%, transparent);
+  --area-line: color-mix(in srgb, var(--area) 34%, transparent);
 }
 
 * { box-sizing: border-box; }
@@ -1232,8 +1253,8 @@ kbd.big { font-size: var(--fs-sm); height: 22px; padding: 0 7px; }
 
 /* ==== achievements ========================================================================================================== */
 
-/* A group's list: one card, a row per milestone separated by hairlines; earned ones lit in the line colour, the
-   legendary ones in gold. */
+/* A group's list: one card, a row per milestone separated by hairlines; earned ones lit in their place's colour
+   (--area), the legendary ones in gold. */
 .ach-list {
   display: flex; flex-direction: column; border-radius: var(--r-lg); overflow: hidden;
   background: var(--panel); border: 1px solid var(--line); box-shadow: var(--hi);
@@ -1245,23 +1266,27 @@ kbd.big { font-size: var(--fs-sm); height: 22px; padding: 0 7px; }
 .ach .d { color: var(--muted); font-size: var(--fs-sm); margin-top: 2px; line-height: 1.35; opacity: 0.9; }
 .ach-prog { display: flex; align-items: center; gap: 10px; margin-top: 7px; }
 .ach-prog .bar { flex: 1; margin: 0; height: 4px; background: var(--well); box-shadow: inset 0 0 0 1px var(--line); }
+.ach-prog .bar > i, .ach-group > summary .bar > i { background: linear-gradient(to right, color-mix(in srgb, var(--area) 55%, transparent), var(--area)); }
 .ach-prog span { flex: none; min-width: 9ch; text-align: right; font-size: var(--fs-xs); font-weight: 600; color: var(--faint); font-variant-numeric: tabular-nums; }
-.ach-i { flex: none; width: 30px; height: 30px; border-radius: 10px; display: grid; place-items: center; color: var(--faint); background: var(--well); box-shadow: inset 0 0 0 1px var(--line); }
+.ach-i { flex: none; width: 30px; height: 30px; border-radius: 10px; display: grid; place-items: center; color: color-mix(in srgb, var(--area) 50%, var(--faint)); background: var(--well); box-shadow: inset 0 0 0 1px var(--line); }
 .ach-i svg { width: 15px; height: 15px; }
 .ach-side { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
 .ach-pay { flex: none; text-align: right; font-size: var(--fs-sm); font-weight: 650; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ach-pay .gem { color: inherit; opacity: 0.8; }
 .ach-when { font-size: var(--fs-2xs); color: var(--faint); white-space: nowrap; }
 .ach.got .t { color: var(--fg); }
-.ach.got .ach-i { color: var(--gem); background: color-mix(in srgb, var(--gem) 14%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gem) 30%, transparent); }
-.ach.got .ach-pay { color: var(--gem); }
+.ach.got .ach-i { color: var(--area); background: var(--area-soft); box-shadow: inset 0 0 0 1px var(--area-line); }
+.ach.got .ach-pay { color: var(--area); }
 
 .legend-list { margin-top: 8px; border-color: color-mix(in srgb, var(--gold) 22%, var(--line)); background: linear-gradient(170deg, color-mix(in srgb, var(--gold) 6%, var(--panel)), var(--panel) 50%); }
 .ach.legend .ach-i { color: color-mix(in srgb, var(--gold) 70%, var(--faint)); background: color-mix(in srgb, var(--gold) 9%, transparent); }
 .ach.legend.got { background: color-mix(in srgb, var(--gold) 7%, transparent); }
 .ach.legend.got .ach-i { color: var(--gold); background: color-mix(in srgb, var(--gold) 18%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gold) 40%, transparent); }
-.ach.legend.got .ach-pay { color: var(--gold); }
-.ach .tier { font-size: 9px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gold); border: 1px solid color-mix(in srgb, var(--gold) 40%, transparent); border-radius: 5px; padding: 1px 5px; }
+.ach.legend.got .ach-pay { color: var(--gold-ink); }
+/* Legendary stays gold; its place is the small dot of that place's colour on the badge's corner. */
+.ach.legend .ach-i { position: relative; }
+.ach.legend .ach-i::after { content: ""; position: absolute; right: -2px; bottom: -2px; width: 8px; height: 8px; border-radius: 50%; background: var(--area); box-shadow: 0 0 0 2px rgb(var(--bg)); }
+.ach .tier { font-size: 9px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gold-ink); border: 1px solid color-mix(in srgb, var(--gold) 40%, transparent); border-radius: 5px; padding: 1px 5px; }
 #view-achievements .stats-body { padding-top: 14px; }
 /* Groups fold away; the header keeps the count, a bar and the lines earned of the lines available. */
 .ach-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: -2px 0 12px; position: relative; z-index: 3; container-type: inline-size; }
@@ -1278,8 +1303,9 @@ kbd.big { font-size: var(--fs-sm); height: 22px; padding: 0 7px; }
 .ach-recent-go > .ico, .ach-recent-go > .short { flex: none; }
 .ach-recent-go .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ach-recent-go .short { display: none; }
-.ach-recent .ico { width: 14px; height: 14px; color: var(--gem); }
-.ach-recent.legend .ach-recent-go .ico { color: var(--gold); }
+.ach-recent .ico { width: 14px; height: 14px; }
+.ach-recent .ico.area-i, .ach-menu .ico.area-i { color: var(--area); }
+.ach-recent .ico.leg-i, .ach-menu .ico.leg-i { width: 12px; height: 12px; color: var(--gold); margin-left: -3px; }
 .ach-recent-more { flex: none; width: 28px; justify-content: center; padding: 0; position: relative; }
 .ach-recent > button:focus-visible { outline: none; box-shadow: inset 0 0 0 1.5px var(--focus); }
 .ach-recent-more::before { content: ""; position: absolute; left: -2px; top: 7px; bottom: 7px; width: 1px; background: var(--line-2); }
@@ -1288,7 +1314,7 @@ kbd.big { font-size: var(--fs-sm); height: 22px; padding: 0 7px; }
 .ach-recent.open .ach-recent-more:focus-visible { box-shadow: var(--sh-1), var(--hi), inset 0 0 0 1.5px var(--focus); }
 .ach-recent.open .ach-recent-more::before { display: none; }
 .ach-recent.open .ach-recent-more svg { transform: rotate(180deg); }
-@container (max-width: 440px) { .ach-recent { flex: none; } .ach-recent-go .nm { display: none; } .ach-recent-go .short { display: inline; } .ach-recent-go { padding: 0 9px 0 8px; } }
+@container (max-width: 440px) { .ach-recent { flex: none; } .ach-recent-go .nm, .ach-recent-go .leg-i { display: none; } .ach-recent-go .short { display: inline; } .ach-recent-go { padding: 0 9px 0 8px; } }
 @container (max-width: 340px) { .ach-recent-go .short { display: none; } .ach-recent-go { width: 28px; justify-content: center; padding: 0; } }
 @container (max-width: 290px) { .ach-tools { gap: 6px; } .ach-tools > .seg button { padding: 0 5px; } }
 .ach-menu {
@@ -1304,7 +1330,7 @@ kbd.big { font-size: var(--fs-sm); height: 22px; padding: 0 7px; }
 .ach-menu button:focus-visible { box-shadow: inset 0 0 0 1.5px var(--focus); }
 .ach-menu .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ach-menu .ago { flex: none; margin-left: 10px; color: var(--muted); font-size: var(--fs-xs); font-weight: 600; font-variant-numeric: tabular-nums; }
-.ach-menu button.legend .ico { color: var(--gold); }
+.ach-menu .ico { width: 14px; height: 14px; }
 /* A row gone to (from a toast or Recent): one slow swell of the accent, or held still under reduced motion. */
 /* Gone to by keys, the row keeps a quiet ring once the light has faded. */
 .ach:focus-visible { outline: none; position: relative; }
@@ -1331,12 +1357,17 @@ kbd.big { font-size: var(--fs-sm); height: 22px; padding: 0 7px; }
 .ach-group > summary .chev svg { width: 14px; height: 14px; }
 .ach-group[open] > summary .chev { transform: rotate(90deg); }
 .ach-group > summary .bar { flex: 1; min-width: 30px; margin: 0; height: 5px; background: var(--well); box-shadow: inset 0 0 0 1px var(--line); }
-.ach-group > summary .bar > i { background: linear-gradient(to right, color-mix(in srgb, var(--gem) 60%, transparent), var(--gem)); }
+/* The group's place: its tab icon in its colour, on a soft tint of it. */
+.ach-area { flex: none; width: 24px; height: 24px; margin-left: -2px; border-radius: 8px; display: grid; place-items: center; color: var(--area); background: var(--area-soft); box-shadow: inset 0 0 0 1px var(--area-line); }
+.ach-area svg { width: 14px; height: 14px; }
 .ach-count { flex: none; font-size: var(--fs-sm); font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
 .ach-info { flex: none; display: inline-flex; width: 14px; height: 14px; color: var(--faint); cursor: help; margin-left: -4px; border-radius: 50%; }
 .ach-info svg { width: 14px; height: 14px; display: block; }
 .ach-info:hover, .ach-info:focus-visible { color: var(--accent-ink); }
+/* Narrow, the header draws in (the bar keeps what room is left), then lets the bar go. */
+@media (max-width: 440px) { .ach-group > summary { gap: 7px; padding: 0 12px 0 10px; } .ach-group > summary .bar { min-width: 16px; } }
 @media (max-width: 380px) { .ach-group > summary .bar { display: none; } }
+@media (max-width: 340px) { .ach-group > summary { gap: 6px; } .ach-group > summary .ach-count { display: none; } }
 .ach-group[open] > summary { margin-bottom: 8px; }
 .ach-none { margin: 2px 0 8px 12px; color: var(--faint); font-size: var(--fs-xs); }
 /* Free Play combos (Stats ▸ Free Play). */
@@ -1353,5 +1384,8 @@ kbd.big { font-size: var(--fs-sm); height: 22px; padding: 0 7px; }
 #app { transition: filter 0.45s ease, opacity 0.45s ease; }
 body.away #app { filter: brightness(0.6) saturate(0.8); }
 body.browser.away #app { opacity: 0.6; }
-.toast.legend-true { border-color: color-mix(in srgb, var(--gold) 60%, var(--line-2)); }
-.toast.legend-true .ico { color: var(--gold); }
+/* An achievement's toast: its place's icon and colour, edged in it; a legendary one edged and named in gold. */
+.toast[data-area] { border-color: color-mix(in srgb, var(--area) 42%, var(--line-2)); }
+.toast[data-area] > .ico:first-child { width: 24px; height: 24px; padding: 5px; margin: -4px 0 -4px -9px; border-radius: 50%; color: var(--area); background: var(--area-soft); box-shadow: inset 0 0 0 1px var(--area-line); }
+.toast.legend-true { border-color: color-mix(in srgb, var(--gold) 60%, var(--line-2)); box-shadow: var(--sh-2), var(--hi), 0 0 18px -6px color-mix(in srgb, var(--gold) 45%, transparent); }
+.toast .leg { color: var(--gold-ink); }

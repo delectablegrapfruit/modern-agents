@@ -18,6 +18,8 @@
     factory: svg('<path d="M1.75 14.25V7.4l3.9-2.35V7.4l3.9-2.35V7.4l2.2-1.3V1.75h2.5v12.5z" fill="currentColor" stroke="none"/>'),
     classic: svg(blk(6, 1.25, 4, 0.9) + '<path d="M8 6.5v2.4M6.75 7.9 8 9.15l1.25-1.25" stroke-width="1.3"/>' + blk(1.5, 10.75, 4, 0.9) + blk(6, 10.75, 4, 0.9) + blk(10.5, 10.75, 4, 0.9)),
     stats: svg('<rect x="2.25" y="8.25" width="2.75" height="5.5" rx="1"/><rect x="6.625" y="2.25" width="2.75" height="11.5" rx="1"/><rect x="11" y="5.25" width="2.75" height="8.5" rx="1"/>'),
+    // Lifetime (the achievements across every place): an hourglass.
+    lifetime: svg('<path d="M4.25 1.75h7.5M4.25 14.25h7.5M5.25 1.75v2.1c0 1.55 2.75 2.6 2.75 4.15S5.25 10.6 5.25 12.15v2.1M10.75 1.75v2.1c0 1.55-2.75 2.6-2.75 4.15s2.75 2.6 2.75 4.15v2.1"/><path d="M6.4 12.9 8 11.5l1.6 1.4z" fill="currentColor" stroke-width="1"/>'),
     trophy: svg('<path d="M4.75 2.25h6.5v3.9a3.25 3.25 0 0 1-6.5 0z"/><path d="M4.75 3.75h-2v.9a2.6 2.6 0 0 0 2.35 2.6M11.25 3.75h2v.9a2.6 2.6 0 0 1-2.35 2.6M8 9.4v3.1M5.25 13.75h5.5"/>'),
     shop: svg('<path d="M3 5.5h10l-.75 8.25H3.75z"/><path d="M5.75 5.5V4.4a2.25 2.25 0 0 1 4.5 0v1.1"/>'),
 

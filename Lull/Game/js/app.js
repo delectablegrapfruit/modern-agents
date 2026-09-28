@@ -283,15 +283,19 @@
       this.store.touch();
     },
 
-    /** One toast per achievement (a click or Enter on it goes to it in the tab); many at once from away: one, to Recent. */
+    /**
+     * One toast per achievement (a click or Enter on it goes to it in the tab), with its place's icon and colour (a
+     * legendary one also edged and named in gold); many at once from away: one, to Recent, in the neutral colour.
+     */
     announce(got, away) {
       const legend = got.some((a) => a.tier === 'legend');
       if (away && got.length > 3) {
-        toast(got.length + ' achievements while you were away · +' + fmtInt(got.reduce((n, a) => n + a.pay, 0)) + ' ' + LINE, 'good ach-toast', 6000, 'starOn',
-          { onClick: () => UI.showAchievement(this, null), label: got.length + ' achievements while you were away. Show recent' });
+        toast(got.length + ' achievements while you were away · +' + fmtInt(got.reduce((n, a) => n + a.pay, 0)) + ' ' + LINE, 'ach-toast', 6000, 'trophy',
+          { onClick: () => UI.showAchievement(this, null), label: got.length + ' achievements while you were away. Show recent', area: 'lull' });
       } else for (const a of got) {
-        toast((a.tier === 'legend' ? 'Legendary: ' : '') + a.name + ' · +' + fmtInt(a.pay) + ' ' + LINE, 'good ach-toast legend-' + (a.tier === 'legend'), a.tier === 'legend' ? 6000 : 3200, a.tier === 'legend' ? 'legend' : 'starOn',
-          { onClick: () => UI.showAchievement(this, a.id), label: (a.tier === 'legend' ? 'Legendary: ' : '') + a.name + '. Show in Achievements' });
+        const leg = a.tier === 'legend';
+        toast([leg ? h('span', { class: 'leg' }, 'Legendary: ') : null, a.name + ' · +' + fmtInt(a.pay) + ' ' + LINE], 'ach-toast legend-' + leg, leg ? 6000 : 3200, L.Achievements.groupOf(a).icon,
+          { onClick: () => UI.showAchievement(this, a.id), label: (leg ? 'Legendary: ' : '') + a.name + '. Show in Achievements', area: a.group });
       }
       this.sound.play(legend ? 'perfect' : 'solve');
     },
