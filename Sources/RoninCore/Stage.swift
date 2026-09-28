@@ -1,4 +1,9 @@
+#if os(WASI)
+import FoundationEssentials
+import WASILibc
+#else
 import Foundation
+#endif
 
 /// How hard a stage is. Stage 1 is spearmen alone; each stage after brings more foes, faster, from a wider cast.
 /// Every fifth stage ends with a warlord. By stage 25 every setting is at full strength; past it the foes only keep
