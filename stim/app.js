@@ -125,7 +125,8 @@ const S = JSON.parse(JSON.stringify(DEF));
     if (d && typeof d === 'object' && !Array.isArray(d) && v && typeof v === 'object') Object.assign(d, v); else S[k] = v;
   }
 })();
-const save = () => { S.lastSeen = T(); store.set(S); };
+let resetting = false;
+const save = () => { if (resetting) return; S.lastSeen = T(); store.set(S); };
 
 const TODAY = dayNum();
 let frozeUsed = 0;
@@ -140,7 +141,7 @@ if (S.lastDay !== TODAY) {
 if (S.today.day !== TODAY) S.today = { day: TODAY, ms: 0, hits: 0 };
 if (!S.energyAt) S.energyAt = T();
 let sessionMs = 0, tickN = 0;
-const PACE = { chill: 40000, normal: 18000, chaos: 7000 };
+const PACE = { chill: 60000, normal: 25000, chaos: 9000 };
 const paceK = () => ({ chill: 2, normal: 1, chaos: .5 })[S.settings.pace] || 1;
 
 // ---------- sound ----------
@@ -528,65 +529,79 @@ function modal(inner) {
 
 // ---------- notifications: one per hook, spaced out, quiet while you're busy ----------
 const notifs = [];
-let nid = 0, lockOn = false, ncOn = false, lastInput = 0, quietN = 0;
-const quietIn = new Set();
+let nid = 0, lockOn = false, ncOn = false, lastInput = 0;
+const quietIds = new Set(); // what arrived while you were inside an app
 ['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach(ev => addEventListener(ev, () => { lastInput = now(); }, { passive: true, capture: true }));
-const BANNER_MS = 5000, AWARD_MS = 4000, IDLE_MS = 1200;
-const bannerGap = () => ({ chill: 12000, normal: 7000, chaos: 3500 })[S.settings.pace] || 7000; // quiet time between banners
+const BANNER_MS = 5000, AWARD_MS = 4000, IDLE_MS = 1200, BANNER_GAP = 3000;
+// at most one ordinary banner per this long (start to start); everything else waits quietly in the notification center
+const bannerEvery = () => ({ chill: 60000, normal: 25000, chaos: 10000 })[S.settings.pace] || 25000;
+// texts with {left} show the time remaining when they are drawn, not when they were sent
+const leftTxt = ms => (ms < 60000 ? `${Math.max(1, Math.ceil(ms / 1000))} s` : cd(ms));
+const ntext = n => (n.until ? n.text.replace('{left}', leftTxt(n.until - T())) : n.text);
+const overlay = () => !!($('.grass') || $('.modal'));
 const bundleIcon = B => `<span class="gl mgl" style="--c:${B.c}">${bglyph(B)}</span>`;
 const subIcon = id => `<span class="gl mgl" style="--c:${APPS[id].c}">${glyph(id)}</span>`;
 const nTitle = app => { const B = bundleOf(app); return B.tabs.length > 1 ? `${B.name} · ${APPS[app].name}` : B.name; };
-const nciHTML = (n, fresh) => `<div class="nci${fresh ? ' fresh' : ''}" data-n="${n.id}">${bundleIcon(bundleOf(n.app))}<div class="bt"><div class="bh"><b>${nTitle(n.app)}</b><span>${ago(n.ts)}</span></div><div class="bx">${n.text}</div></div></div>`;
+const nciHTML = (n, fresh) => `<div class="nci${fresh ? ' fresh' : ''}" data-n="${n.id}">${bundleIcon(bundleOf(n.app))}<div class="bt"><div class="bh"><b>${nTitle(n.app)}</b><span>${ago(n.ts)}</span></div><div class="bx">${ntext(n)}</div></div></div>`;
 const muted = app => !!S.settings.mute[bundleOf(app).id];
 function notify(app, text, o = {}) {
   if (muted(app)) return;
   const old = notifs.findIndex(n => n.app === app); // one live notification per hook: the newer one replaces it
   if (old >= 0) notifs.splice(old, 1);
-  const n = { id: ++nid, app, text, ts: T() };
+  const n = { id: ++nid, app, text, ts: T(), until: o.until || 0, urgent: !!o.urgent };
   notifs.unshift(n); if (notifs.length > 40) notifs.pop();
   S.notifs++;
   if (lockOn) { renderLock(true); buzz(); }
-  else if (S.settings.focus && curBundle) { quietN++; quietIn.add(curBundle.name); } // it waits in the notification center
-  else if (!o.silent) banner(n);
+  else if (S.settings.focus && curBundle) quietIds.add(n.id); // it waits in the notification center
+  else if (!o.silent && !$('.grass')) banner(n); // a break stays silent
   if (ncOn) renderNC();
   refreshBadges();
 }
 const alertAt = {};
-function alertOnce(key, app, text, gap = 60000) { if (T() - (alertAt[key] || 0) < gap) return; alertAt[key] = T(); notify(app, text); }
+function alertOnce(key, app, text, gap = 60000, o) { if (T() - (alertAt[key] || 0) < gap * paceK()) return; alertAt[key] = T(); notify(app, text, o); }
 const bq = [];
-let bOn = null, bLast = -1e9, bT = 0;
+let bOn = null, bLast = -1e9, bStart = -1e9, bT = 0;
 const bSeen = {}; // one banner per hook per 30 s; the rest go straight to the notification center
+const bRank = x => (x.award ? 0 : x.urgent ? 1 : 2);
 function banner(n) {
-  if (!n.award && n.app && T() - (bSeen[n.app] || 0) < 30000) return;
-  if (n.award) bq.unshift(n);
-  else { const i = bq.findIndex(x => x.app && x.app === n.app); if (i >= 0) bq.splice(i, 1); bq.push(n); }
-  if (bq.length > 3) { const i = bq.findIndex(x => !x.award); bq.splice(i >= 0 ? i : bq.length - 1, 1); }
+  if (!n.award && !n.urgent && n.app && T() - (bSeen[n.app] || 0) < 30000) return;
+  if (n.award && /^Level /.test(n.title)) { const i = bq.findIndex(x => x.award && /^Level /.test(x.title)); if (i >= 0) bq.splice(i, 1); } // only the newest level
+  if (n.app) { const i = bq.findIndex(x => x.app === n.app); if (i >= 0) bq.splice(i, 1); }
+  // awards first, then things with a deadline, then the rest, each in arrival order
+  const at = bq.findIndex(x => bRank(x) > bRank(n));
+  bq.splice(at < 0 ? bq.length : at, 0, n);
+  const plain = bq.filter(x => bRank(x) === 2); // keep only the two newest ordinary ones queued
+  if (plain.length > 2) bq.splice(bq.indexOf(plain[0]), 1);
   pump();
 }
 function bannerAward(title, text, icon, go) { banner({ award: true, title, text, icon, go }); }
 function pump() {
   clearTimeout(bT);
-  if (bOn || (!bq.length && !quietN)) return;
+  if (bOn || lockOn || (!bq.length && !quietIds.size)) return; // unlocking pumps again
+  if (overlay() || document.hidden) { bT = setTimeout(pump, 1000); return; }
   if (S.settings.focus && curBundle) for (let i = bq.length - 1; i >= 0; i--) if (!bq[i].award) bq.splice(i, 1);
   // what arrived quietly while you were in an app comes back as one banner once you're out
-  if (quietN && !curBundle && !lockOn && !bq.some(x => x.summary)) bq.push({ summary: true });
+  if (quietIds.size && !curBundle && !bq.some(x => x.summary)) bq.splice(bq.findIndex(x => !x.award) < 0 ? bq.length : bq.findIndex(x => !x.award), 0, { summary: true, urgent: true });
   if (!bq.length) return;
-  // leave a gap after the last banner, and never drop one on you mid-tap
-  const w = Math.max(bannerGap() - (now() - bLast), IDLE_MS - (now() - lastInput), 0);
+  // a quiet gap after every banner, a budget for ordinary ones, and never one dropped on you mid-tap
+  const next = bq[0];
+  const w = Math.max(BANNER_GAP - (now() - bLast), IDLE_MS - (now() - lastInput), bRank(next) === 2 ? bannerEvery() - (now() - bStart) : 0, 0);
   if (w > 0) { bT = setTimeout(pump, w + 30); return; }
   showBanner(bq.shift());
 }
 function showBanner(n) {
   if (!n.award && !n.summary && !notifs.includes(n)) { pump(); return; } // already read in the notification center
+  if (n.until && n.until - T() < 6000) { dropN(n); pump(); return; } // too late to act on
   if (n.summary) {
-    if (!quietN || curBundle) { pump(); return; }
-    const names = [...quietIn], where = names.length > 1 ? names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1] : names[0];
-    n.text = `${quietN} notification${quietN === 1 ? '' : 's'} came in while you were in ${where}`;
-    quietN = 0; quietIn.clear();
+    const got = notifs.filter(x => quietIds.has(x.id)); quietIds.clear();
+    if (!got.length || curBundle) { pump(); return; }
+    const names = [...new Set(got.map(x => bundleOf(x.app).name))], where = names.length > 1 ? names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1] : names[0];
+    n.title = 'While you were busy'; n.text = `${got.length} new from ${where}`;
   }
   const icon = n.award ? `<span class="gl mgl" style="--c:#5a3c00">${I(n.icon || 'star')}</span>` : n.summary ? `<span class="gl mgl" style="--c:#ff2e4d">${I('bell')}</span>` : bundleIcon(bundleOf(n.app));
-  const title = n.award ? n.title : n.summary ? 'Notifications' : nTitle(n.app);
-  const node = html(`<div class="banner${n.award ? ' award' : ''}" role="status">${icon}<div class="bt"><div class="bh"><b>${title}</b><span>now</span></div><div class="bx">${n.text}</div></div></div>`);
+  const title = n.award || n.summary ? n.title : nTitle(n.app);
+  const node = html(`<div class="banner${n.award ? ' award' : ''}" role="status">${icon}<div class="bt"><div class="bh"><b>${title}</b><span>now</span></div><div class="bx">${ntext(n)}</div></div></div>`);
+  if (!n.award && !n.urgent) bStart = now();
   $('#banners').append(node);
   void node.offsetWidth; node.classList.add('in');
   if (n.award) sfx.win(); else { sfx.ding(n.app || 'you'); buzz(); if (n.app) { islandPop(n.app); bSeen[n.app] = T(); } }
@@ -608,6 +623,14 @@ function showBanner(n) {
   });
   bOn = { dismiss };
 }
+function dropN(n) { const i = notifs.indexOf(n); if (i >= 0) { notifs.splice(i, 1); if (ncOn) renderNC(); if (lockOn) renderLock(); refreshBadges(); } }
+// deadlines that have passed leave the notification center and the lock screen
+function pruneNotifs() {
+  const gone = notifs.filter(n => n.until && T() >= n.until);
+  if (!gone.length) return;
+  gone.forEach(n => notifs.splice(notifs.indexOf(n), 1));
+  if (ncOn) renderNC(); if (lockOn) renderLock(); refreshBadges();
+}
 function openFromNotif(n) {
   const i = notifs.indexOf(n); if (i >= 0) notifs.splice(i, 1);
   closeNC(); openApp(n.app); refreshBadges();
@@ -624,7 +647,7 @@ function islandPop(app) {
 function renderNC() {
   $('#nc-list').innerHTML = notifs.length ? notifs.map(n => nciHTML(n)).join('') : '<div class="nc-empty">Nothing waiting. Enjoy it.</div>';
 }
-function openNC() { if (lockOn) return; ncOn = true; quietN = 0; quietIn.clear(); renderNC(); $('#nc').classList.add('show'); sfx.whoosh(); }
+function openNC() { if (lockOn) return; ncOn = true; quietIds.clear(); renderNC(); $('#nc').classList.add('show'); sfx.whoosh(); }
 function closeNC() { if (!ncOn) return; ncOn = false; $('#nc').classList.remove('show'); }
 const nById = id => notifs.find(n => n.id === +id);
 
@@ -644,7 +667,8 @@ function renderLock(fresh) {
 }
 function lock() {
   if (lockOn) return;
-  closeNC(); lockOn = true; quietN = 0; quietIn.clear(); // the lock screen shows them instead
+  closeNC(); lockOn = true; quietIds.clear(); // the lock screen shows them instead
+  if (bOn) bOn.dismiss();
   const L = $('#lock'); L.hidden = false; L.style.transform = '';
   void L.offsetWidth; L.classList.remove('away');
   renderLock();
@@ -659,7 +683,7 @@ function unlockPhone(then) {
   else earn(2, FW / 2, 140, { raw: true });
   offline();
   if (then) setTimeout(() => openApp(then), 120);
-  refreshBadges(); queueCheck();
+  refreshBadges(); queueCheck(); pump();
 }
 function offline() {
   const away = Math.min(7200, (T() - (S.lastSeen || T())) / 1000);
@@ -732,6 +756,7 @@ function showTab(B, t, quiet) {
   B.cur = t; S.tabs[B.id] = t; curApp = t;
   $$('.bb > .ab', B.view).forEach(x => { x.hidden = x.dataset.sub !== t; });
   $$('.ar > .ar-sub', B.view).forEach(x => { x.hidden = x.dataset.sub !== t; });
+  refreshBadges(); // tab badges change the strip's width, so fill them before scrolling to the active tab
   $$('.tabs [data-t]', B.view).forEach(x => {
     const on = x.dataset.t === t;
     x.classList.toggle('on', on); x.setAttribute('aria-selected', String(on));
@@ -789,15 +814,16 @@ function refreshBadges() {
         a.bdg = n;
       }
     }
-    total += sum;
-    if (sum !== B.bdg) {
+    const shown = S.settings.mute[B.id] ? 0 : sum; // a muted app stops pulling at you from the home screen
+    total += shown;
+    if (shown !== B.bdg) {
       const el = $(`.ic[data-app="${B.id}"]`);
       if (el) {
         const b = $('.badge', el);
-        b.textContent = sum ? (sum > 99 ? '99+' : sum) : '';
-        if (sum > B.bdg) { restart(b, 'bump'); if (!B.bdg) restart(el, 'jig'); }
+        b.textContent = shown ? (shown > 99 ? '99+' : shown) : '';
+        if (shown > B.bdg) { restart(b, 'bump'); if (!B.bdg) restart(el, 'jig'); }
       }
-      B.bdg = sum;
+      B.bdg = shown;
     }
   }
   if (total !== badgeTotal) {
@@ -908,7 +934,8 @@ function moreCards() {
       a.sc.scrollTop -= h;
     }
     cardsLoading = false;
-    if (a.sc.scrollHeight - (a.sc.scrollTop + a.sc.clientHeight) < 700) moreCards();
+    // re-arm the load observer: it reports again if the load row is still near, and stays quiet while the tab is hidden
+    a.loadIO.unobserve(a.load); a.loadIO.observe(a.load);
   }, 110);
 }
 async function refreshScroll() {
@@ -930,7 +957,8 @@ def({
     b.innerHTML = `<div class="scroller" id="sr-sc">${spinner}<div class="ptr-body" id="sr-list"><div class="loadrow" id="sr-load"></div></div></div>`;
     this.sc = $('#sr-sc', b); this.list = $('#sr-list', b); this.load = $('#sr-load', b);
     this.io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) revealCard(e.target); }), { root: this.sc, threshold: .6 });
-    new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) moreCards(); }, { root: this.sc, rootMargin: '0px 0px 700px 0px' }).observe(this.load);
+    this.loadIO = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) moreCards(); }, { root: this.sc, rootMargin: '0px 0px 700px 0px' });
+    this.loadIO.observe(this.load);
     this.ptr = PTR(this.sc, refreshScroll);
     track(this.sc);
   },
@@ -1415,6 +1443,7 @@ function paintFoil() {
 }
 function scratchCheck() {
   const cv = $('#sx-cv'), c = cv.getContext('2d'), w = cv.width, h = cv.height;
+  if (!w || !h) return;
   const data = c.getImageData(0, 0, w, h).data;
   let clear = 0, tot = 0;
   for (let y = 4; y < h; y += 12) for (let x = 4; x < w; x += 12) { tot++; if (data[(y * w + x) * 4 + 3] < 40) clear++; }
@@ -1463,7 +1492,12 @@ def({
     cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
     $('#sx-new', b).onclick = () => newScratch();
   },
-  open() { if ((!sx || sx.done) && scratchFree()) setTimeout(newScratch, 80); },
+  open() {
+    clearTimeout(this.dealT);
+    if ((!sx || sx.done) && scratchFree()) this.dealT = setTimeout(() => { if (curApp === 'scratch' && (!sx || sx.done) && scratchFree()) newScratch(); }, 80);
+    else if (sx && !sx.done && !$('#sx-cv').width) paintFoil(); // dealt while hidden: paint the foil now that it has a size
+  },
+  close() { clearTimeout(this.dealT); },
   render() {
     if (!this.view) return;
     const btn = $('#sx-new');
@@ -1487,9 +1521,9 @@ const pulseLeft = () => S.pulse.until - T();
 function tickPulse() {
   if (S.pulse.until && pulseLeft() <= 0) {
     S.pulse.dead = S.pulse.n; S.pulse.n = 0; S.pulse.until = 0; S.pulse.restoreUntil = T() + 20000;
-    sfx.lose(); haptic(true);
-    notify('streak', `Your pulse died at ×${S.pulse.dead}. Restore it in 20 s?`);
-  } else if (S.pulse.until && pulseLeft() < 15000) alertOnce('pulse', 'streak', `Your pulse dies in ${Math.ceil(pulseLeft() / 1000)}s`, 60000);
+    if (curApp === 'streak' || !muted('streak')) { sfx.lose(); haptic(true); }
+    notify('streak', `Your pulse died at ×${S.pulse.dead}. Restore it in {left}?`, { until: S.pulse.restoreUntil, urgent: true });
+  } else if (S.pulse.until && pulseLeft() < 15000) alertOnce('pulse', 'streak', 'Your pulse dies in {left}', 60000, { until: S.pulse.until, urgent: true });
   if (S.pulse.restoreUntil && T() > S.pulse.restoreUntil) { S.pulse.restoreUntil = 0; S.pulse.dead = 0; }
 }
 function feedPulse() {
@@ -1563,7 +1597,7 @@ const QDEF = [
 ];
 function mkQuest(rapid) {
   const [k, t, lo, hi] = pick(QDEF), n = rapid ? Math.max(2, Math.round(lo * .9)) : ri(lo, hi);
-  const endow = rapid ? 0 : Math.max(1, Math.ceil(n * .12)); // "you've already started"
+  const endow = rapid ? 0 : Math.min(n - 1, Math.max(1, Math.ceil(n * .12))); // "you've already started"
   return { k, text: t.replace('{n}', n), n, base: (S[k] || 0) - endow, reward: rapid ? n * 3 + 40 : n * 2 + 30, claimed: false };
 }
 const qProg = q => clamp((S[q.k] || 0) - q.base, 0, q.n);
@@ -1591,7 +1625,7 @@ const sigQ = () => [...S.quests, S.rapid.q].map(q => `${qProg(q)}${q.claimed}`).
 def({
   id: 'quests', name: 'Quests', tag: 'Goals · endowed progress', c: '#2fb344',
   badge: () => [...S.quests, S.rapid.q].filter(q => qDone(q) && !q.claimed).length + (S.chest >= 5 ? 1 : 0),
-  ping: () => `Rapid quest: ${S.rapid.q.text}. ${cd(S.rapid.until - T())} left.`,
+  ping: () => (S.rapid.q.claimed || S.rapid.until - T() < 45000 ? null : { text: `Rapid quest: ${S.rapid.q.text}. {left} left.`, until: S.rapid.until }),
   build(b) {
     b.innerHTML = '<div class="pad" id="qs"></div>';
     track($('#qs', b));
@@ -1633,10 +1667,11 @@ function tickRank() {
   L.rank = rk;
   if (T() >= L.endsAt) {
     const name = LEAGUES[L.tier][0];
-    if (rk <= 5 && L.tier < LEAGUES.length - 1) { S.promos++; unlock('promo'); confetti(150); notify('rank', `Promoted to ${LEAGUES[L.tier + 1][0]} League!`); newLeague(L.tier + 1); }
-    else if (rk >= 26 && L.tier > 0) { sfx.lose(); notify('rank', `Demoted to ${LEAGUES[L.tier - 1][0]}. Earn it back.`); newLeague(L.tier - 1); }
+    const loud = curApp === 'rank' || !muted('rank');
+    if (rk <= 5 && L.tier < LEAGUES.length - 1) { S.promos++; unlock('promo'); if (loud) confetti(150); notify('rank', `Promoted to ${LEAGUES[L.tier + 1][0]} League!`); newLeague(L.tier + 1); }
+    else if (rk >= 26 && L.tier > 0) { if (loud) sfx.lose(); notify('rank', `Demoted to ${LEAGUES[L.tier - 1][0]}. Earn it back.`); newLeague(L.tier - 1); }
     else { if (S.onboarded) notify('rank', `You finished #${rk} in ${name}. A new week started.`); newLeague(L.tier); }
-  } else if (T() > L.endsAt - 45000 && rk > 5 && S.onboarded) alertOnce('rankend', 'rank', `League ends in ${cd(L.endsAt - T())}. You’re #${rk}. Top 5 move up.`, 30000);
+  } else if (T() > L.endsAt - 45000 && rk > 5 && S.onboarded) alertOnce('rankend', 'rank', `League ends in {left}. You’re #${rk}. Top 5 move up.`, 30000, { until: L.endsAt });
 }
 const gemSVG = c => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3.5h12l3.5 5.5L12 20.5 2.5 9z" fill="${c}"/><path d="M2.5 9h19M9 3.5 12 9l3-5.5M12 20.5 8.5 9M12 20.5 15.5 9" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="1.1"/></svg>`;
 def({
@@ -1744,7 +1779,7 @@ function buyDeal(d, btn) {
 def({
   id: 'shop', name: 'Shop', tag: 'Flash sales · scarcity', c: '#e5007a',
   badge: () => Math.min(9, freshDeals),
-  ping: () => { const d = pick(deals); return d ? `${d.off}% off: ${d.w.n}. Only ${d.stock} left.` : null; },
+  ping: () => { const d = pick(deals.filter(d => d.stock > 0 && d.ends - T() > 30000)); return d ? `${d.off}% off: ${d.w.n}. Only ${d.stock} left.` : null; },
   build(b) {
     b.innerHTML = '<div class="pad"><div class="mega"><b>Mega sale</b><span id="sh-mega"></span></div><div id="sh-list" style="display:flex;flex-direction:column;gap:12px"></div><p class="fine">Prices in hits. The sale always ends soon.</p></div>';
     track($('.pad', b));
@@ -1808,8 +1843,8 @@ function holdEnd() {
 }
 function tickHold() {
   if (T() > nextGoldAt) {
-    goldHoldUntil = T() + 20000; nextGoldAt = T() + ri(45, 90) * 1000;
-    if (S.onboarded) notify('hold', 'Golden hold: double rewards for 20 s');
+    goldHoldUntil = T() + 20000; nextGoldAt = T() + ri(45, 90) * 1000 * paceK();
+    if (S.onboarded && S.holds) notify('hold', 'Golden hold: double rewards for {left}', { until: goldHoldUntil, urgent: true }); // the Waiting widget shows it to everyone else
   }
 }
 def({
@@ -1969,7 +2004,8 @@ function rocketCash(auto) {
   queueCheck();
 }
 function rocketCrash() {
-  cancelAnimationFrame(rkt.raf); if (rkt.tone) rkt.tone.stop();
+  if (!rkt || rkt.over) return;
+  rkt.over = true; cancelAnimationFrame(rkt.raf); if (rkt.tone) { rkt.tone.stop(); rkt.tone = null; }
   noise(.5, .16, 0, 1200, 120); haptic(true);
   const missed = Math.round(rkt.bet * rkt.shown) - rkt.win;
   $('#rc-m').className = 'rc-m crash'; $('#rc-m').textContent = rkt.shown.toFixed(2) + '×';
@@ -2001,6 +2037,7 @@ def({
     $('#rc-svg').innerHTML = ''; $('#rc-ship').hidden = true;
   },
   tick() { this.render(); },
+  close() { if (rkt && !rkt.over) { if (!rkt.cashed) rocketCash(false); rocketCrash(); } }, // leaving mid-flight cashes you out
   key(e) { if (e.key === ' ' && e.type === 'keydown') { rocketGo(); return true; } },
 });
 
@@ -2301,7 +2338,7 @@ def({
       <div class="sec"><span>Notifications</span></div><div class="settings">
       <div class="srow"><span class="rt"><b>Pace</b><small>How often something new happens</small></span><span class="seg" id="set-pace"><button data-v="chill">Calm</button><button data-v="normal">Normal</button><button data-v="chaos">Busy</button></span></div>
       <label class="srow"><span class="rt"><b>Quiet inside apps</b><small>Banners wait until you’re back on the home screen</small></span><input type="checkbox" class="sw" id="set-focus"></label>
-      ${BUNDLES.filter(B => B.id !== 'you').map(B => `<label class="srow">${bundleIcon(B)}<span class="rt"><b>${B.name}</b><small>${B.tabs.length > 1 ? B.tabs.map(t => APPS[t].name).join(', ') : APPS[B.tabs[0]].tag}</small></span><input type="checkbox" class="sw" data-mute="${B.id}"></label>`).join('')}</div>
+      ${BUNDLES.map(B => `<label class="srow">${bundleIcon(B)}<span class="rt"><b>${B.name}</b><small>${B.tabs.length > 1 ? B.tabs.map(t => APPS[t].name).join(', ') : APPS[B.tabs[0]].tag}</small></span><input type="checkbox" class="sw" data-mute="${B.id}"></label>`).join('')}</div>
       <div class="sec"><span>Settings</span></div><div class="settings">
       <label class="srow"><span class="rt"><b>Sound</b><small>Pops, dings and clicks</small></span><input type="checkbox" class="sw" id="set-sound"></label>
       <label class="srow"><span class="rt"><b>Haptics</b><small>Vibration on Android. Taps on iPhone with iOS 18 or later.</small></span><input type="checkbox" class="sw" id="set-haptics"></label>
@@ -2320,6 +2357,7 @@ def({
           const B = bundleById(id);
           for (let k = notifs.length - 1; k >= 0; k--) if (B.tabs.includes(notifs[k].app)) notifs.splice(k, 1);
           for (let k = bq.length - 1; k >= 0; k--) if (bq[k].app && B.tabs.includes(bq[k].app)) bq.splice(k, 1);
+          if (ncOn) renderNC();
           refreshBadges(); toast(`${B.name} won’t send notifications`);
         } else { haptic(); toast(`${bundleById(id).name} can notify you again`); }
       };
@@ -2330,7 +2368,7 @@ def({
     let armedAt = 0;
     $('#set-reset', b).onclick = e => {
       const x = e.currentTarget;
-      if (now() - armedAt < 3000) { store.clear(); location.reload(); return; }
+      if (now() - armedAt < 3000) { resetting = true; store.clear(); location.reload(); return; }
       armedAt = now(); x.textContent = 'Tap again to erase everything'; sfx.nope();
       setTimeout(() => { x.textContent = 'Reset progress'; }, 3000);
     };
@@ -2364,7 +2402,7 @@ function waiting() {
   if (T() < goldHoldUntil) add('hold', 'Golden hold pays double', { due: goldHoldUntil });
   markets.filter(m => m.pos && !m.done).forEach(m => add('predict', 'Your prediction resolves', { due: m.ends }));
   if (S.league.endsAt - T() < 60000 && myRank() > 5) add('rank', `You’re #${myRank()}. Top 5 move up`, { due: S.league.endsAt });
-  if (!S.rapid.q.claimed) add('quests', `Rapid quest: ${S.rapid.q.text}`, { due: S.rapid.until, r: `${qProg(S.rapid.q)}/${S.rapid.q.n}` });
+  if (!S.rapid.q.claimed) add('quests', S.rapid.q.text, { due: S.rapid.until, sub: `Rapid quest · ${qProg(S.rapid.q)} of ${S.rapid.q.n}` });
   if (loginReady()) add('streak', `Day ${S.login.day} reward is ready`, { hot: 1, r: `+${LOGIN_REW[S.login.day - 1]}` });
   const claim = S.quests.filter(q => qDone(q) && !q.claimed).length; if (claim) add('quests', `${claim} quest reward${claim > 1 ? 's' : ''} to claim`, { hot: 1 });
   if (S.flip.pot) add('flip', 'Your pot is still riding', { hot: 1, r: fmt(S.flip.pot) });
@@ -2379,19 +2417,22 @@ function waiting() {
   const rankOf = x => (x.due ? 0 : x.hot ? 1 : 2);
   return L.sort((a, b) => rankOf(a) - rankOf(b) || (a.due || 0) - (b.due || 0));
 }
-let waitSig = '', waitAll = false;
-const WAIT_N = 3;
+let waitSig = '';
+// the list keeps a fixed height and scrolls inside; rows are rebuilt only when the set of apps changes, and never mid-tap
 function renderWaiting() {
-  const all = waiting(), items = waitAll ? all : all.slice(0, WAIT_N), box = $('#w-wait'), more = $('#w-wn');
-  more.hidden = all.length <= WAIT_N;
-  more.textContent = waitAll ? 'Show less' : `+${all.length - WAIT_N} more`;
-  const sig = items.map(i => i.id + i.t).join('|');
+  const items = waiting(), box = $('#w-wait');
+  $('#w-wn').textContent = items.length ? String(items.length) : '';
+  const sig = items.map(i => i.id).join('|');
   if (sig !== waitSig) {
+    if (now() - lastInput < 700 && waitSig) return;
     waitSig = sig;
-    box.innerHTML = items.length ? items.map(i => `<button class="wt" data-open="${i.id}">${subIcon(i.id)}<span class="wt-t"><b>${i.t}</b><small>${nTitle(i.id)}</small></span><span class="wt-r"></span></button>`).join('') : '<p class="wt-empty">Nothing is waiting. Enjoy it while it lasts.</p>';
+    box.innerHTML = items.length ? items.map(i => `<button class="wt" data-open="${i.id}">${subIcon(i.id)}<span class="wt-t"><b></b><small></small></span><span class="wt-r"></span></button>`).join('') : '<p class="wt-empty">Nothing is waiting. Enjoy it while it lasts.</p>';
   }
   items.forEach((it, k) => {
-    const r = box.children[k] && $('.wt-r', box.children[k]); if (!r) return;
+    const row = box.children[k]; if (!row) return;
+    const b = $('.wt-t b', row), sm = $('.wt-t small', row), r = $('.wt-r', row), sub = it.sub || nTitle(it.id);
+    if (b.textContent !== it.t) b.textContent = it.t;
+    if (sm.textContent !== sub) sm.textContent = sub;
     r.textContent = it.due ? cd(it.due - T()) : it.r != null ? String(it.r) : '';
     r.classList.toggle('due', !!it.due && it.due - T() < 15000);
   });
@@ -2442,10 +2483,16 @@ function startSchedule() {
   const mean = PACE[S.settings.pace] || PACE.normal;
   schedT = setTimeout(() => { if (!document.hidden) ping(); startSchedule(); }, Math.max(4000, -Math.log(1 - R()) * mean));
 }
-function ping() {
-  const ids = Object.keys(APPS).filter(id => APPS[id].ping && !muted(id) && !(curBundle && curBundle.tabs.includes(id)));
+function ping(force) {
+  // pick from every hook, then drop it if that app is muted or open, so muting really means fewer
+  const ok = id => !muted(id) && !(curBundle && curBundle.tabs.includes(id));
+  const ids = Object.keys(APPS).filter(id => APPS[id].ping && (!force || ok(id)));
   if (!ids.length) return;
-  for (let i = 0; i < 5; i++) { const id = pick(ids), t = APPS[id].ping(); if (t) { notify(id, t); return; } }
+  for (let i = 0; i < 5; i++) {
+    const id = pick(ids);
+    if (!ok(id)) return;
+    const r = APPS[id].ping(); if (r) { if (typeof r === 'string') notify(id, r); else notify(id, r.text, r); return; }
+  }
 }
 
 // ---------- the one-second heartbeat ----------
@@ -2470,7 +2517,7 @@ setInterval(() => {
   if (curApp !== 'rings' && S.onboarded && chance(.08)) S.ringsLost++;
   if (curApp !== 'swipe' && chance(.04)) S.likesYou++;
   if (curApp && APPS[curApp].tick) APPS[curApp].tick();
-  renderWidgets(); renderBoost(); refreshBadges();
+  pruneNotifs(); renderWidgets(); renderBoost(); refreshBadges();
   if (tickN % 5 === 0) save();
   if (tickN % 10 === 0) { refreshTimes(); queueCheck(); }
   if (!lockOn && S.onboarded && !$('.modal') && !$('.grass')) {
@@ -2483,8 +2530,8 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) { hiddenAt = T(); save(); return; }
   if (hiddenAt && T() - hiddenAt > 30000 && S.onboarded) {
     const away = (T() - hiddenAt) / 1000;
-    closeApp(true); lock();
-    for (let i = 0, n = Math.min(4, Math.round(away / 30)); i < n; i++) ping();
+    lock(); closeApp(true); // lock first so nothing queued plays under the lock screen
+    for (let i = 0, n = Math.min(3, Math.round(away / 60)); i < n; i++) ping(true);
   }
   hiddenAt = 0;
 });
@@ -2503,8 +2550,9 @@ function onKey(e) {
     return;
   }
   if (modalEl) return;
-  if (k === 'n') { ping(); return; }
-  if (k === 'L') { closeApp(true); lock(); return; }
+  if (k === 'n') { ping(true); return; }
+  if (k === 'L') { lock(); closeApp(true); return; }
+  if (ncOn || $('.scrim.show')) return; // nothing changes behind an overlay
   if (curBundle && /^[1-9]$/.test(k) && curBundle.tabs[+k - 1]) { showTab(curBundle, curBundle.tabs[+k - 1]); return; }
   if (curApp && APPS[curApp].key && (!e.repeat || APPS[curApp].id === 'tap') && APPS[curApp].key(e)) e.preventDefault();
 }
@@ -2519,7 +2567,6 @@ $('#home').addEventListener('click', e => {
   const b = e.target.closest('[data-app],[data-open]');
   if (b) openApp(b.dataset.app || b.dataset.open, b);
 });
-$('#w-wn').onclick = e => { e.stopPropagation(); waitAll = !waitAll; waitSig = ''; renderWaiting(); sfx.click(); };
 $('#hud-lvl').onclick = () => openApp('you');
 $('#hud-hits').onclick = () => openApp('shop');
 $('#hud-bell').onclick = () => (ncOn ? closeNC() : openNC());
