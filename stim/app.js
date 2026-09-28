@@ -107,7 +107,7 @@ const DEF = {
   today: { day: 0, ms: 0, hits: 0 },
   taps: 0, crits: 0, cards: 0, refreshes: 0, cleared: 0, spins: 0, jackpots: 0, swipes: 0, matches: 0,
   clips: 0, boxes: 0, scratches: 0, scratchWins: 0, pulses: 0, questsDone: 0, holds: 0, perfects: 0,
-  rings: 0, missed: 0, feeds: 0, pets: 0, buys: 0, promos: 0,
+  rings: 0, missed: 0, feeds: 0, pets: 0, buys: 0,
   tap: { P: 0, A: 0, C: 0 },
   energy: 5, energyAt: 0, earn: 0,
   streak: 0, lastDay: 0, freezes: 1, login: { day: 1, claimed: 0 },
@@ -116,7 +116,7 @@ const DEF = {
   scratchAt: 0, scratchExtra: 0,
   supers: 3, likesYou: 4, scrollNew: 12, loopNew: 8, ringsLost: 0,
   pet: { food: 70, fun: 55, love: 80 },
-  boostUntil: 0, quests: null, rapid: null, chest: 0, league: null,
+  boostUntil: 0, quests: null, rapid: null, chest: 0,
   rocketAt: 0, launches: 0, bestCash: 0, flip: { pot: 0, n: 0, rot: 0 }, flips: 0, maxFlips: 0, predWins: 0, trades: 0,
   trade: { sel: 'HIT', athV: 0, athNew: 0, c: {} },
   ach: {}, achSeen: 0, onboarded: false, lastSeen: 0,
@@ -138,6 +138,7 @@ const S = JSON.parse(JSON.stringify(DEF));
 })();
 // modules keep their own state under one key: const F = slice('feed', { ...defaults })
 const slice = (k, d) => (S[k] = Object.assign(JSON.parse(JSON.stringify(d)), S[k] && typeof S[k] === 'object' && !Array.isArray(S[k]) ? S[k] : {}));
+delete S.league; delete S.promos; if (S.ach) delete S.ach.promo; // leagues were retired
 let resetting = false;
 const save = () => { if (resetting) return; S.lastSeen = T(); store.set(S); };
 
@@ -392,7 +393,7 @@ const addAch = list => list.forEach(([id, n, d, i, t]) => ACH.push({ id, n, d, i
 addAch([
   ['combo', 'On a roll', 'Reach a ×10 combo', 'bolt', () => S.bestCombo >= 54],
   ['pickups', 'Can’t put it down', 'Unlock 25 times', 'lock', () => S.pickups >= 25],
-  ['level', 'Chronically online', 'Reach level 10', 'level', () => lvl().l >= 10],
+  ['level', 'Top tier', 'Reach level 10', 'level', () => lvl().l >= 10],
   ['night', 'Night owl', 'Play between midnight and 4 am', 'moon', () => new Date().getHours() < 4],
   ['grass', 'Touched grass', 'Take a break, then come back', 'leaf'],
 ]);
@@ -606,6 +607,8 @@ function sheet(title, content) {
   sfx.open();
   return close;
 }
+// close every open sheet through its own close (direct children only: overlays inside an app manage their own)
+const dismissSheets = () => $$('#phone > .scrim.show').forEach(s => s.click());
 function modal(inner) {
   const m = html(`<div class="modal" role="dialog"><div class="mcard">${inner}</div></div>`);
   phone.append(m); sfx.ding('you');
@@ -623,7 +626,7 @@ const bannerEvery = () => ({ chill: 60000, normal: 25000, chaos: 10000 })[S.sett
 // texts with {left} show the time remaining when they are drawn, not when they were sent
 const leftTxt = ms => (ms < 60000 ? `${Math.max(1, Math.ceil(ms / 1000))} s` : cd(ms));
 const ntext = n => (n.until ? n.text.replace('{left}', leftTxt(n.until - T())) : n.text);
-const overlay = () => !!($('.grass') || $('.modal'));
+const overlay = () => !!($('.grass') || $('.modal') || $('#phone > .scrim.show') || ncOn);
 const bundleIcon = B => `<span class="gl mgl" style="--c:${B.c}">${bglyph(B)}</span>`;
 const subIcon = id => `<span class="gl mgl" style="--c:${APPS[id].c}">${glyph(id)}</span>`;
 const nTitle = app => { const B = bundleOf(app); return B.tabs.length > 1 ? `${B.name} · ${APPS[app].name}` : B.name; };
@@ -638,7 +641,7 @@ function notify(app, text, o = {}) {
   S.notifs++;
   if (lockOn) { renderLock(true); buzz(); }
   else if (S.settings.focus && curBundle) quietIds.add(n.id); // it waits in the notification center
-  else if (!o.silent && !$('.grass')) banner(n); // a break stays silent
+  else if (!o.silent && !$('.grass') && !ncOn) banner(n); // a break stays silent; an open notification center already shows it
   if (ncOn) renderNC();
   refreshBadges();
 }
@@ -752,6 +755,7 @@ function renderLock(fresh) {
 }
 function lock() {
   if (lockOn) return;
+  dismissSheets(); $$('#phone > .modal').forEach(m => m.remove());
   closeNC(); lockOn = true; quietIds.clear(); // the lock screen shows them instead
   if (bOn) bOn.dismiss();
   const L = $('#lock'); L.hidden = false; L.style.transform = '';
@@ -898,6 +902,7 @@ function openApp(id, from) {
 function closeApp(instant) {
   if (!curBundle) return;
   const B = curBundle, a = curApp && APPS[curApp], v = B.view;
+  dismissSheets();
   curBundle = null; curApp = null;
   if (a && a.close) a.close();
   if (instant || reduced) v.hidden = true;
@@ -2413,7 +2418,7 @@ function archiveMail(m) {
 }
 function checkZero() {
   if (mail.some(m => m.un)) return;
-  unlock('zero'); toast('Inbox zero. Enjoy it.'); sfx.big(); confetti(50); earn(10, FW / 2, 200);
+  unlock('zero'); toast('Inbox zero'); sfx.big(); confetti(50); earn(10, FW / 2, 200);
 }
 function mailLoop() {
   const open = curApp === 'inbox';
@@ -2427,7 +2432,7 @@ def({
   ping: () => { const u = mail.filter(m => m.un).length; return u ? `${u} unread messages` : null; },
   build(b, r) {
     r.innerHTML = '<button class="chip" id="ib-all">Read all</button>';
-    b.innerHTML = '<div class="mlist" id="ib-list"></div><div class="zero" id="ib-zero" hidden><b>Inbox zero</b><small>For now.</small></div>';
+    b.innerHTML = '<div class="mlist" id="ib-list"></div><div class="zero" id="ib-zero" hidden><b>Inbox zero</b><small>You’re all caught up</small></div>';
     this.list = $('#ib-list', b);
     mail.forEach(m => this.list.append(mailEl(m)));
     track(this.list);
@@ -2581,7 +2586,7 @@ def({
   key(e) { if (e.key === ' ' && e.type === 'keydown') { pullLever(); return true; } },
 });
 
-// ---------- Rocket: a crash game that never crashes on you ----------
+// ---------- Rocket: crash betting; Auto Cash-Out catches most flights ----------
 const ROCKET_K = .3, ROCKET_FREE = 30000;
 const crashPoint = () => clamp(.99 / (1 - R()), 1.25, 60);
 const rocketHist = Array.from({ length: 8 }, crashPoint);
@@ -2681,11 +2686,12 @@ def({
   key(e) { if (e.key === ' ' && e.type === 'keydown') { rocketGo(); return true; } },
 });
 
-// ---------- Flip: double or nothing, and it's never nothing ----------
+// ---------- Flip: double or nothing, weighted toward heads ----------
 const FLIP_MAX = 8;
 let flipping = false, flipTails = false, fStake = 10;
 function flipGo() {
   if (flipping) return;
+  if (S.flip.n >= FLIP_MAX) { flipCash(true); return; } // eight in a row pays the max
   const f = S.flip;
   if (!f.pot) {
     const st = stakeVal(fStake);
@@ -2752,7 +2758,7 @@ def({
     $('#fp-lad').innerHTML = Array.from({ length: FLIP_MAX }, (_, i) => `<span class="${i < f.n ? 'done' : i === f.n && f.pot ? 'next' : ''}">×${2 ** (i + 1)}</span>`).join('');
     $('#fp-st').hidden = !!f.pot;
     const go = $('#fp-go'), cash = $('#fp-cash');
-    go.disabled = flipping;
+    go.disabled = flipping || f.n >= FLIP_MAX;
     go.textContent = f.pot ? `Let it ride · ${fmt(f.pot * 2)}` : `Flip · ${fmt(stakeVal(fStake))}`;
     cash.disabled = !f.pot || flipping; cash.classList.toggle('off', !f.pot);
     cash.textContent = f.pot ? `Cash out ${fmt(f.pot)}` : 'Cash out';
@@ -2953,10 +2959,12 @@ addStats([
   ['predictions won', () => fmt(S.predWins)],
   ['trades', () => fmt(S.trades)],
 ]);
-// ---------- Trade: coins that only go up while you hold them ----------
+// ---------- Trade: coins that mostly climb while you hold them ----------
 const COINS = [['HIT', '#e59a00'], ['GLOW', '#ff4fa3'], ['BLOB', '#9b5cff'], ['PING', '#2f9bff']];
 const hist = {};
 let tStake = 10, tHover = null;
+if (S.trade.c.DOPA) { if (!S.trade.c.GLOW) S.trade.c.GLOW = S.trade.c.DOPA; delete S.trade.c.DOPA; } // $DOPA became $GLOW
+if (!COINS.some(([k]) => k === S.trade.sel)) S.trade.sel = S.trade.sel === 'DOPA' ? 'GLOW' : 'HIT';
 COINS.forEach(([k], i) => {
   const c = S.trade.c[k] || (S.trade.c[k] = { p: [1.24, .38, 7.9, .062][i], u: 0, cost: 0 });
   c.pump = 0;
@@ -3032,7 +3040,7 @@ def({
   open() { S.trade.athNew = 0; },
   render() {
     if (!this.view) return;
-    const v = pval(), cost = pcost(), sel = S.trade.sel, c = S.trade.c[sel], col = COINS.find(x => x[0] === sel)[1], h = hist[sel];
+    const v = pval(), cost = pcost(), sel = S.trade.sel, c = S.trade.c[sel], col = (COINS.find(x => x[0] === sel) || COINS[0])[1], h = hist[sel];
     $('#tr-val').textContent = fmt(Math.round(v));
     const pl = cost ? v / cost - 1 : 0;
     $('#tr-pl').textContent = cost ? `${pl >= 0 ? '▲' : '▼'} ${Math.abs(pl * 100).toFixed(1)}% · ${pl >= 0 ? '+' : '−'}${fmt(Math.abs(Math.round(v - cost)))}` : 'Buy a coin to start your portfolio';
@@ -3063,14 +3071,13 @@ def({
   key(e) { if (e.type !== 'keydown') return; if (e.key === ' ') { buyCoin(); return true; } if (e.key === 'Enter') { sellCoin(); return true; } },
 });
 
-// ---------- Predict: prediction markets about this phone, and you're always right ----------
+// ---------- Predict: prediction markets, weighted your way ----------
 const MQ = [
-  s => `Will a notification arrive in the next ${s} s?`, s => `Will Blob get hungry in the next ${s} s?`,
-  s => `Will you reach a ×3 combo in ${s} s?`, s => `Will Feed get 20 new posts in ${s} s?`,
-  () => 'Will the next lever pull be a near miss?', s => `Will Inbox hit 10 unread in ${s} s?`,
-  s => `Will $HIT close higher in ${s} s?`, () => 'Will the next rocket fly past 5×?',
-  () => 'Will the next loot box be rare or better?', s => `Will your pulse survive the next ${s} s?`,
-  s => `Will the Shop sale end in the next ${s} s?`, s => `Will you unlock an achievement in ${s} s?`,
+  s => `Will $HIT close higher in ${s} s?`, s => `Will $GLOW be up 2% in ${s} s?`,
+  s => `Will $BLOB beat $PING over the next ${s} s?`, () => 'Will the next rocket fly past 5×?',
+  () => 'Will the next loot box be rare or better?', () => 'Will the next lever pull land three of a kind?',
+  s => `Will today’s top clip pass 1M views in ${s} s?`, s => `Will the lightning deal sell out in ${s} s?`,
+  () => 'Will the next Gate Army boss fall on the first try?', s => `Will anyone hit a ×10 combo in ${s} s?`,
 ];
 let markets = [], mkN = 0, mStake = 10, newMarkets = 0;
 function mkMarket() {
@@ -3257,7 +3264,9 @@ def({
 function mkQuest(rapid) {
   const [k, t, lo, hi] = pick(QDEF), n = rapid ? Math.max(2, Math.round(lo * .9)) : ri(lo, hi);
   const endow = rapid ? 0 : Math.min(n - 1, Math.max(1, Math.ceil(n * .12))); // "you've already started"
-  return { k, text: t.replace('{n}', n), n, base: (S[k] || 0) - endow, reward: rapid ? n * 3 + 40 : n * 2 + 30, claimed: false };
+  let text = t.replace('{n}', n);
+  if (n === 1) text = text.replace(/\b1 ((?:[A-Z]\w* )*)(\w+)/, (m, pre, w) => `1 ${pre}${/(x|ch|sh)es$/.test(w) ? w.slice(0, -2) : /ies$/.test(w) ? w.slice(0, -3) + 'y' : /s$/.test(w) ? w.slice(0, -1) : w}`);
+  return { k, text, n, base: (S[k] || 0) - endow, reward: rapid ? n * 3 + 40 : n * 2 + 30, claimed: false };
 }
 const qProg = q => clamp((S[q.k] || 0) - q.base, 0, q.n);
 const qDone = q => qProg(q) >= q.n;
@@ -7461,7 +7470,7 @@ def({
 const statsHTML = () => STATS.map(([l, f]) => `<div class="stat"><b>${f()}</b><span>${l}</span></div>`).join('');
 def({
   id: 'you', name: 'You', tag: 'Stats, awards and settings', c: '#6b5b7b',
-  badge: () => Math.max(0, Object.keys(S.ach).length - S.achSeen),
+  badge: () => Math.max(0, ACH.filter(a => S.ach[a.id]).length - S.achSeen),
   ping: () => `You’ve spent ${dur(S.today.ms)} on stim today`,
   build(b) {
     b.innerHTML = `<div class="pad"><div class="stats" id="me-stats"></div><div class="sec"><span>Achievements</span><span id="me-an"></span></div><div class="achs" id="me-achs"></div>
@@ -7504,11 +7513,11 @@ def({
     };
     $('#me-achs', b).onclick = e => { const x = e.target.closest('.ach'); if (!x) return; const a = ACH.find(y => y.id === x.dataset.a); sfx.click(); toast(S.ach[a.id] ? `${a.n}: ${a.d}` : a.d); };
   },
-  open() { S.achSeen = Object.keys(S.ach).length; },
+  open() { S.achSeen = ACH.filter(a => S.ach[a.id]).length; },
   render() {
     if (!this.view) return;
     $('#me-stats').innerHTML = statsHTML();
-    $('#me-an').textContent = `${Object.keys(S.ach).length} / ${ACH.length}`;
+    $('#me-an').textContent = `${ACH.filter(a => S.ach[a.id]).length} / ${ACH.length}`;
     $('#me-achs').innerHTML = ACH.map(a => `<button class="ach${S.ach[a.id] ? '' : ' locked'}" data-a="${a.id}"><span class="medal">${I(S.ach[a.id] ? a.i : 'lock')}</span>${S.ach[a.id] ? a.n : '???'}</button>`).join('');
   },
   tick() { $('#me-stats').innerHTML = statsHTML(); },
@@ -7650,7 +7659,8 @@ addEventListener('pagehide', save);
 // ---------- keyboard ----------
 function onKey(e) {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
-  if (e.target.closest && e.target.closest('input, textarea, select, [contenteditable]')) return; // typing is typing
+  if (e.target.closest && e.target.closest('textarea, select, [contenteditable], input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=button])')) return; // typing is typing
+  if (!lockOn && $('.grass')) return; // the break screen is in front of everything
   const k = e.key, down = e.type === 'keydown';
   if (!down) { if (k === ' ' && curApp && APPS[curApp].key) { APPS[curApp].key(e); e.preventDefault(); } return; }
   if (lockOn) { if ([' ', 'Enter', 'ArrowUp'].includes(k)) { e.preventDefault(); unlockPhone(); } return; }
