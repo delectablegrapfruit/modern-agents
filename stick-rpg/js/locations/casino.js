@@ -438,10 +438,19 @@
     ctx.restore();
   }
 
-  // Inline CSS for heavy DOM text (menu quote, button labels).
+  // Inline CSS for heavy DOM text inside icon-button labels. Where Arial Black is missing, the
+  // shared stylesheet already thickens and widens those labels (.srpg-noblack), so nothing is
+  // added here.
   function heavyCss(size, color) {
     return 'font-family:\'Arial Black\',\'Arial Bold\',Arial,Helvetica,sans-serif;font-weight:900;font-size:' + size +
-      'px;color:' + color + (hasArialBlack() ? '' : ';letter-spacing:0.06em;-webkit-text-stroke:' + (size * 0.045).toFixed(2) + 'px ' + color);
+      'px;color:' + color;
+  }
+
+  // Heavy free text outside the shared stylesheet's reach (the greeting): without Arial Black the
+  // bold fallback is widened 10% from its left edge and outlined in its own colour.
+  function heavyBlockCss(size, color) {
+    return heavyCss(size, color) + (hasArialBlack() ? '' : ';display:inline-block;transform:scaleX(1.1);' +
+      'transform-origin:0 0;-webkit-text-stroke:' + (size * 0.05).toFixed(2) + 'px ' + color);
   }
 
   // --- chips (blackjack and roulette) ------------------------------------------------------------
@@ -504,7 +513,7 @@
 
   // Menu labels are the original's 12 px Arial Black at the buttons' 0.75 scale, in #003399.
   function label(text, size) {
-    return '<span style="' + heavyCss(size || 9.5, '#003399') + '">' + text + '</span>';
+    return '<span style="position:relative;top:-1px;' + heavyCss(size || 9, '#003399') + '">' + text + '</span>';
   }
 
   SRPG.registerLocation({
@@ -516,9 +525,10 @@
     background: function (ctx, s, frame) { lobby(ctx, frame); },
     view: function () {
       return {
-        quoteHtml: '<div style="text-align:left;padding-left:43px;line-height:16.85px;' + heavyCss(12, '#000') + '">' +
-          GREETING + '</div>',
-        quoteY: 16,
+        // the original's greeting field is left-aligned (not centred like the other buildings')
+        body: '<div style="text-align:left;padding-left:39px;line-height:16.85px;white-space:nowrap">' +
+          '<span style="' + heavyBlockCss(12, '#000') + '">' + GREETING + '</span></div>',
+        bodyY: 16,
         buttons: [
           { icon: 'slots', label: label('PLAY SLOTS'), x: 27, y: 101, w: 130, size: 35, id: 'slots',
             onClick: function (g) { g.go('slots'); } },
@@ -527,7 +537,7 @@
           { icon: 'roulette', label: label('PLAY ROULETTE'), x: 28, y: 153, w: 150, size: 35, id: 'roulette',
             onClick: function (g) { g.go('roulette'); } },
           // (the original's LEAVE label sits a little lower beside its tile than the others)
-          { icon: 'leave', label: label('LEAVE', 10).replace('<span style="', '<span style="position:relative;top:3px;'),
+          { icon: 'leave', label: label('LEAVE', 10).replace('top:-1px', 'top:3px'),
             x: 252, y: 199, w: 100, size: 35, id: 'leave',
             onClick: function (g) { g.leave(); } },
         ],

@@ -436,7 +436,7 @@
       hotspot(b.x, b.y, b.w, b.h, 'bet' + BETS[i], function () { pickBet(i); });
     });
     var css = SRPG.casinoArt && SRPG.casinoArt.heavyCss ? SRPG.casinoArt.heavyCss(10, '#003399') : 'font-size:10px';
-    ui.iconButton(null, { icon: 'leave', label: '<span style="' + css + '">LEAVE</span>', x: 445, y: 338.5, w: 90, size: 35, id: 'leave' }, function () {
+    ui.iconButton(null, { icon: 'leave', label: '<span style="position:relative;top:2px;' + css + '">LEAVE</span>', x: 445, y: 338.5, w: 90, size: 35, id: 'leave' }, function () {
       SRPG.sound.play('click');
       SRPG.location.open('casino', { resume: true });
     });

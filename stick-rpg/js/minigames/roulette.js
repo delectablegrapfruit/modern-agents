@@ -432,7 +432,7 @@
     var sb = ui.iconButton(null, { icon: 'roulette', label: 'SPIN', x: 452.5, y: 318.5, w: 80, size: 35, id: 'spin', disabled: t.spinning }, function () {
       spin();
     });
-    var lb = ui.iconButton(null, { icon: 'leave', label: 'LEAVE', x: 452.5, y: 363.5, w: 90, size: 35, id: 'leave', disabled: t.spinning }, function () {
+    var lb = ui.iconButton(null, { icon: 'leave', label: '<span style="position:relative;top:2px">LEAVE</span>', x: 452.5, y: 363.5, w: 90, size: 35, id: 'leave', disabled: t.spinning }, function () {
       SRPG.sound.play('click');
       leave();
     });

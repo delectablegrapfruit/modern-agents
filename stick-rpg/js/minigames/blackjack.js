@@ -390,8 +390,9 @@
   }
 
   // Button labels: 12 px Arial Black at the buttons' 0.75 scale.
-  function labelCss(color) {
-    return SRPG.casinoArt && SRPG.casinoArt.heavyCss ? SRPG.casinoArt.heavyCss(9.5, color) : 'font-size:9.5px;color:' + color;
+  function labelCss(color, size) {
+    size = size || 9;
+    return SRPG.casinoArt && SRPG.casinoArt.heavyCss ? SRPG.casinoArt.heavyCss(size, color) : 'font-size:' + size + 'px;color:' + color;
   }
 
   // Icon button whose label only shows while the pointer is over it (as the original's DEAL,
@@ -477,7 +478,7 @@
         h.addEventListener('mouseup', function () { b.press = null; });
       });
       hoverButton(22.5, 347.5, 'DEAL', 'deal', deckIcon, function () { deal(); });
-      ui.iconButton(null, { icon: 'leave', label: '<span style="' + labelCss('#003399').replace('9.5px', '10px') + '">LEAVE</span>', x: 458.5, y: 346.5, w: 80, size: 35, id: 'leave' }, function () {
+      ui.iconButton(null, { icon: 'leave', label: '<span style="position:relative;top:2px;' + labelCss('#003399', 10) + '">LEAVE</span>', x: 458.5, y: 346.5, w: 80, size: 35, id: 'leave' }, function () {
         SRPG.sound.play('click');
         leave();
       });
