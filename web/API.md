@@ -51,7 +51,9 @@ if (s.saveDue) localStorage.ronin = core.saveJSON();
 ```
 
 `advance` and `strike` mirror `GameSession.advance` / `strike`: they apply the crowd rules, step the fight, and when
-it ends book it into the career (rank, runs, records) at once.
+it ends book it into the career (rank, runs, records) at once. The app feeds `advance` each frame's time clamped to
+0.1 s and scaled by its hit-stop and slow motion (`DuelScene.update`: `session.advance(dt * timeScale * slowmo)`);
+anything longer is simply played out (a stalled tab would otherwise fast-forward the fight).
 
 ## API
 
@@ -302,8 +304,9 @@ Swift standard library (≈5.5 MB of the unoptimised size). Foundation is not li
 own Codable JSON coder (`JSONCoding.swift`), checked against Foundation's (`web/test/native`: saves written by either
 read back identically by both). Loading and starting it takes ≈30 ms in Node.
 
-Per call, in Node 22 (a browser is similar): `state()` ≈ 30–110 µs (more foes, more), `advance(1/60)` ≈ 5–30 µs,
-`strike` ≈ 10 µs, other calls ≈ 15–90 µs, `sketch` ≈ 0.1–1.4 ms (all 376 frames of all casts ≈ 150 ms).
+Per call, in Node 22 (a browser is similar): `state()` ≈ 30–110 µs (more foes, more), `advance(1/60)` ≈ 10–30 µs,
+`strike` ≈ 3 µs, `career()` / `figure()` / `stage()` ≈ 50–95 µs, `saveJSON()` ≈ 0.9 ms, `loadSave()` ≈ 0.5 ms,
+`sketch` ≈ 0.1–1.4 ms (all 376 frames of all casts ≈ 150 ms).
 
 ## Wire format (for maintainers)
 

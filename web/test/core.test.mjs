@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import assert from 'node:assert/strict';
-import { loadCore, decodeSketch } from '../core.js';
+import { loadCore, drawSketch, shapePath } from '../core.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const wasmPath = process.argv[2] || join(here, '..', 'dist', 'ronin.wasm');
@@ -281,6 +281,43 @@ await test('frame keys: every case reads back, bad ones are refused', () => {
   assert.ok(core.has('archer', 'aim') && !core.has('grunt', 'aim'));
   const size = core.figureSize('hero', 100);
   assert.ok(Math.abs(size.width / size.height - core.tuning.Figure.canvas.width / core.tuning.Figure.canvas.height) < 1e-9);
+});
+
+await test('drawSketch paints underlay, the body with its rim, then the overlay (on a recording canvas)', () => {
+  // Node has no canvas: a recording stand-in for Path2D, the 2D context and OffscreenCanvas.
+  const log = [];
+  class FakePath { constructor() { this.ops = 0; } moveTo() { this.ops++; } lineTo() { this.ops++; } quadraticCurveTo() { this.ops++; } closePath() { this.ops++; } ellipse() { this.ops++; } }
+  function fakeContext(name) {
+    let m = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
+    return {
+      save() {}, restore() {},
+      transform(a, b, c, d, e, f) { m = { a: m.a * a + m.c * b, b: m.b * a + m.d * b, c: m.a * c + m.c * d, d: m.b * c + m.d * d, e: m.a * e + m.c * f + m.e, f: m.b * e + m.d * f + m.f }; },
+      setTransform(a, b, c, d, e, f) { m = { a, b, c, d, e, f }; },
+      getTransform() { return { ...m }; },
+      clearRect() {}, fill() { log.push(name + ':fill'); }, stroke() { log.push(name + ':stroke'); },
+      drawImage() { log.push(name + ':drawImage:' + this.shadowBlur.toFixed(2)); },
+      set fillStyle(v) {}, set strokeStyle(v) {}, set lineWidth(v) {}, set lineCap(v) {}, set lineJoin(v) {}, set shadowColor(v) {},
+      shadowBlur: 0,
+    };
+  }
+  const saved = { Path2D: globalThis.Path2D, OffscreenCanvas: globalThis.OffscreenCanvas };
+  globalThis.Path2D = FakePath;
+  globalThis.OffscreenCanvas = class { constructor(w, h) { this.width = w; this.height = h; this.ctx = fakeContext('layer'); } getContext() { return this.ctx; } };
+  try {
+    const s = core.sketch('hero', 'cut(kesa,4)');
+    const ctx = fakeContext('main');
+    ctx.transform(2, 0, 0, 2, 0, 0);
+    drawSketch(ctx, s);
+    const shapes = (list) => list.reduce((n, sh) => n + (sh.fill ? 1 : 0) + (sh.stroke ? 1 : 0), 0);
+    assert.equal(log.filter((l) => l.startsWith('layer:')).length, shapes(s.body));
+    assert.equal(log.filter((l) => l.startsWith('main:') && !l.includes('drawImage')).length, shapes(s.underlay) + shapes(s.overlay));
+    const draw = log.find((l) => l.startsWith('main:drawImage'));
+    assert.ok(draw && Math.abs(parseFloat(draw.split(':')[2]) - s.rim.radius * 1.6 * 2) < 0.01, draw);
+    assert.ok(shapePath(s.body[0]).ops > 0);
+  } finally {
+    globalThis.Path2D = saved.Path2D;
+    globalThis.OffscreenCanvas = saved.OffscreenCanvas;
+  }
 });
 
 await test('ragdolls: every severance of every foe falls and comes to rest, and draws', () => {
