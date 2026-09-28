@@ -21,6 +21,13 @@ public struct SeededRNG: RandomNumberGenerator, Codable, Equatable, Sendable {
     public mutating func int(_ range: ClosedRange<Int>) -> Int { Int.random(in: range, using: &self) }
 
     public mutating func chance(_ p: Double) -> Bool { unit() < p }
+
+    /// Close to a standard normal draw (mean 0, spread 1, never past ±3.5): four uniform draws summed, in arithmetic
+    /// alone, so it too is the same on every platform.
+    public mutating func normal() -> Double {
+        let sum = unit() + unit() + unit() + unit()
+        return (sum - 2) * Double(3).squareRoot()
+    }
 }
 
 /// Mixes numbers into a seed: the career, the stage, the run and the try at it name the fight.

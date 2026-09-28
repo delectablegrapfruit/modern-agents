@@ -348,6 +348,7 @@ final class CareerTests: XCTestCase {
         var run = Run(start: 3)
         run.stage = 5
         run.hearts = 2
+        run.shards = 1
         run.cleared = 2
         run.score = 4321
         run.kills = 55
@@ -356,6 +357,7 @@ final class CareerTests: XCTestCase {
         career.mode = .shura
         career.stages = ["shura": 4, "bushido": 9]
         career.hearts = ["shura": 2]
+        career.shards = ["shura": 2]
         career.reached = ["shura": 6, "bushido": 12]
         career.highest = ["shura": 5, "bushido": 11]
         career.endless = run

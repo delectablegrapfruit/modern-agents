@@ -6,8 +6,9 @@ public struct Run: Codable, Equatable, Sendable {
     public var start: Int
     /// The stage the run is on; once it has ended, the stage it fell at.
     public var stage: Int
-    /// The hearts carried into `stage` (nil: full).
+    /// The hearts carried into `stage` (nil: full), and the shards of a heart.
     public var hearts: Int?
+    public var shards = 0
     public var cleared = 0
     public var score = 0
     public var kills = 0
@@ -32,9 +33,9 @@ public typealias Endless = Run
 
 /// Everything that outlasts a stage.
 ///
-/// The campaign goes stage by stage and the ronin's hearts carry from one to the next; every stage holds one gourd
-/// of medicine for a single heart. Fall, and the campaign starts again from stage 1: that run is over, and kept if
-/// it was the mode's best. Walking away from a fight (Restart Stage, another difficulty, into or out of endless)
+/// The campaign goes stage by stage and the ronin's hearts (and any shards of one) carry from one to the next; every
+/// stage holds one gourd of medicine for a single heart, and a man cut down as his blow comes gives a shard. Fall, and
+/// the campaign starts again from stage 1: that run is over, and kept if it was the mode's best. Walking away from a fight (Restart Stage, another difficulty, into or out of endless)
 /// keeps the hearts it cost and counts its kills, so it is never better than playing on. Stages reached stay
 /// unlocked, and endless mode can start from any of them. Every foe cut down counts toward your rank. Each mode
 /// keeps its own campaign.
@@ -44,10 +45,11 @@ public typealias Endless = Run
 public struct Career: Codable, Equatable, Sendable {
     public var seed: UInt64
     public var mode = Mode.bushido
-    /// By mode: the campaign's stage, the hearts carried into it (nil: full), the furthest stage reached, and the
-    /// highest stage cleared.
+    /// By mode: the campaign's stage, the hearts carried into it (nil: full) and the shards of a heart, the furthest
+    /// stage reached, and the highest stage cleared.
     public var stages: [String: Int] = [:]
     public var hearts: [String: Int] = [:]
+    public var shards: [String: Int] = [:]
     public var reached: [String: Int] = [:]
     public var highest: [String: Int] = [:]
     /// The endless run in progress, if that is what is being played, and the most stages a run has cleared in each
@@ -101,6 +103,12 @@ public struct Career: Codable, Equatable, Sendable {
         set { hearts[mode.rawValue] = newValue }
     }
 
+    /// The shards of a heart carried into the next campaign stage.
+    public var carriedShards: Int {
+        get { shards[mode.rawValue] ?? 0 }
+        set { shards[mode.rawValue] = newValue == 0 ? nil : newValue }
+    }
+
     public var isEndless: Bool { endless != nil }
 
     /// The stage the next fight is: the endless run's, or the campaign's.
@@ -149,9 +157,11 @@ public struct Career: Codable, Equatable, Sendable {
         let salt = UInt64(truncatingIfNeeded: attempt) & 0xFFFF_FFFF | UInt64(mode.level) << 32 | (isEndless ? 1 << 40 : 0) | fallen
         let base = mixSeed(seed, UInt64(truncatingIfNeeded: kills))
         if let endless {
-            return Fight(stage: endless.stage, seed: mixSeed(base, UInt64(endless.stage), salt), mode: mode, hearts: endless.hearts)
+            return Fight(stage: endless.stage, seed: mixSeed(base, UInt64(endless.stage), salt), mode: mode, hearts: endless.hearts,
+                         shards: endless.shards)
         }
-        return Fight(stage: stage, seed: mixSeed(base, UInt64(stage), salt), mode: mode, hearts: hearts[mode.rawValue])
+        return Fight(stage: stage, seed: mixSeed(base, UInt64(stage), salt), mode: mode, hearts: hearts[mode.rawValue],
+                     shards: carriedShards)
     }
 
     /// Books a finished fight. Returns the rank it earned, if it earned one.
@@ -180,11 +190,13 @@ public struct Career: Codable, Equatable, Sendable {
             run.cleared += 1
             run.stage = fight.stage + 1
             run.hearts = fight.hp
+            run.shards = fight.shards
             if inEndless {
                 endless = run
             } else {
                 stage = fight.stage + 1
                 hearts[key] = fight.hp
+                carriedShards = fight.shards
                 runs[key] = run
             }
         case .defeat:
@@ -196,9 +208,10 @@ public struct Career: Codable, Equatable, Sendable {
                 // The run is over; the next begins where this one did.
                 endless = Run(start: run.start)
             } else {
-                // Fall, and the campaign begins again from the first stage, hearts whole.
+                // Fall, and the campaign begins again from the first stage, hearts whole (and no shards).
                 stages[key] = 1
                 hearts[key] = nil
+                shards[key] = nil
                 runs[key] = nil
             }
             lastRunIsBest = close(run, endless: inEndless)
@@ -209,18 +222,26 @@ public struct Career: Codable, Equatable, Sendable {
 
     /// Books a fight walked away from before it ended (Restart Stage, another difficulty, an endless run started or
     /// left). Its kills count toward rank, and the hearts it cost stay lost: the campaign, or the endless run, goes on
-    /// with no more than the fight had left (a gourd drunk in it is lost too). A fight that has ended was booked by
-    /// `record(_:)`, so this leaves it alone. Returns the rank it earned, if it earned one.
+    /// with no more than the fight had left, hearts and shards counted together (a gourd drunk in it, or a heart or
+    /// shards made in it, are lost too). A fight that has ended was booked by `record(_:)`, so this leaves it alone.
+    /// Returns the rank it earned, if it earned one.
     @discardableResult
     public mutating func abandon(_ fight: Fight) -> String? {
         guard fight.outcome == nil, fight.mode == mode, fight.stage == current else { return nil }
         let before = rank
         tally(fight)
+        func less(_ hearts: Int, _ shards: Int) -> Bool {
+            fight.hp * Tuning.shardsPerHeart + fight.shards < hearts * Tuning.shardsPerHeart + shards
+        }
         if var run = endless {
-            run.hearts = min(run.hearts ?? fight.maxHP, fight.hp)
+            if less(run.hearts ?? fight.maxHP, run.shards) {
+                run.hearts = fight.hp
+                run.shards = fight.shards
+            }
             endless = run
-        } else if fight.hp < carried {
+        } else if less(carried, carriedShards) {
             hearts[mode.rawValue] = fight.hp
+            carriedShards = fight.shards
         }
         return rank != before ? rank : nil
     }
@@ -300,6 +321,7 @@ extension Run {
         self.init(start: try c.decode(Int.self, forKey: .start))
         stage = max(1, c.saved(.stage, or: start))
         hearts = c.saved(.hearts, or: nil)
+        shards = c.saved(.shards, or: 0)
         cleared = c.saved(.cleared, or: 0)
         score = c.saved(.score, or: 0)
         kills = c.saved(.kills, or: 0)
@@ -316,6 +338,7 @@ extension Career {
         mode = c.saved(.mode, or: .bushido)
         stages = c.saved(.stages, or: [:])
         hearts = c.saved(.hearts, or: [:])
+        shards = c.saved(.shards, or: [:])
         reached = c.saved(.reached, or: [:])
         highest = c.saved(.highest, or: [:])
         endless = c.saved(.endless, or: nil)

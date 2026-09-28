@@ -9,12 +9,15 @@ import RoninCore
 /// Leaving the panel pauses at once; coming back takes a short, visible dwell before the fight resumes, so a pointer
 /// crossing the panel on its way somewhere else costs nothing. A click resumes at once, without cutting.
 ///
-/// The panel is small, so it says as much as it can without words: hearts (carried from stage to stage), the run's
-/// score, pictograms for kills, time and combo, a warning marker over a foe about to strike, a sight line from a
-/// drawing archer, a gourd over the foe whose medicine gives back a heart, a pale ward before a warlord on guard, his
-/// bar in the header, and which mouse button cuts which way (on a new career's first card, after a cut the wrong way,
-/// and under the lane if asked for) until you have cut both ways. What text there is is large, heavy, and on a dark
-/// plate. A blow coming is never covered: the words slammed onto the lane and the combo go under the warning markers.
+/// The panel is small, so it says as much as it can without words: hearts (carried from stage to stage) and the shards
+/// of the next beside them, the run's score, pictograms for kills, time and combo, a warning marker over a foe about to
+/// strike (the last of its ring gold on a man one cut from falling: the moment to cut him down for a shard), a sight
+/// line from a drawing archer, a gourd over the foe whose medicine gives back a heart (flung up when he falls, marked
+/// where it will land, flaring when it can be caught, and shattering, its medicine spilt, if it is not), a pale ward
+/// before a warlord on guard, his bar in the header, and which mouse button cuts which way (on a new career's first
+/// card, after a cut the wrong way, and under the lane if asked for) until you have cut both ways. What text there is
+/// is large, heavy, and on a dark plate. A blow coming is never covered: the words slammed onto the lane and the combo
+/// go under the warning markers.
 ///
 /// The dead stay where they fell for the whole stage, whatever is done to the panel (folded, resized, its menu used).
 ///
@@ -172,6 +175,15 @@ final class DuelScene: SKScene {
     private let compactButton = SKShapeNode()
     private let closeButton = SKShapeNode()
     private var hearts: [SKShapeNode] = []
+    /// The shards of the next heart, as three pieces of a heart after the last one (lit as they are held).
+    private var shardPieces: [SKShapeNode] = []
+    /// Shards drawn held (a shard is lit when it gets there; three fuse into a heart), while a shard or a heart made
+    /// of them is on its way (`shardsMoving`); hearts not yet drawn lit because the one made of shards has not got
+    /// there; and how long a heart that comes back waits to pop.
+    private var shownShards = 0
+    private var shardsMoving = 0
+    private var heldHearts = 0
+    private var heartWait = 0.35
     private var endlessGlyph = SKNode()
 
     private let pill = SKNode()
@@ -331,6 +343,13 @@ final class DuelScene: SKScene {
         // The warlord's bar lives in the header, out of the fighters' way: over the header's own plate.
         bossNode.zPosition = 1
         header.addChild(bossNode)
+        for k in 0..<Tuning.shardsPerHeart {
+            let piece = Icons.shard(11, piece: min(k, 2))
+            // Over the header's plate, with the hearts.
+            piece.zPosition = 0.5
+            header.addChild(piece)
+            shardPieces.append(piece)
+        }
         for _ in 0..<(Mode.allCases.map(\.hearts).max() ?? Mode.shoshin.hearts) {
             let heart = Icons.heart(11)
             header.addChild(heart)
@@ -357,6 +376,14 @@ final class DuelScene: SKScene {
         foeSprites = [:]
         arrowSprites = [:]
         gourdSpots = [:]
+        killSpots = [:]
+        flung?.mark.removeFromParent()
+        flung?.removeFromParent()
+        flung = nil
+        shardsMoving = 0
+        heldHearts = 0
+        heartWait = 0.35
+        shownShards = fight.shards
         heldUntil = [:]
         bind = nil
         fx.removeAllChildren()
@@ -434,9 +461,20 @@ final class DuelScene: SKScene {
             }
             lines.append((icon, DuelScene.tip(kind)))
         } else if fight.stage == 1, fight.bearerIndex != nil {
-            // Every stage holds a gourd, and this is where it is first met: he keeps out of reach, and each cut must
-            // catch him darting in.
-            lines.append((Icons.gourd(15 * fs, Palette.jade.mix(.white, 0.25).color()), "CATCH HIM DARTING IN, TWICE — A HEART"))
+            // Every stage holds a gourd, and this is where it is first met: he keeps out of reach, each cut must catch
+            // him darting in, and the gourd he lets go of as he falls must be caught too.
+            lines.append((Icons.gourd(15 * fs, Palette.jade.mix(.white, 0.25).color()), "CATCH HIM TWICE, THEN CATCH THE GOURD"))
+        }
+        if fight.stage == 2 {
+            // Shards: cut a man down as the ring over him runs into gold.
+            let shards = SKNode()
+            for k in 0..<Tuning.shardsPerHeart {
+                let piece = Icons.shard(15 * fs, piece: min(k, 2))
+                piece.fillColor = Palette.gold.color()
+                piece.strokeColor = Palette.gold.mix(.white, 0.45).color()
+                shards.addChild(piece)
+            }
+            lines.append((shards, "CUT AS THE RING TURNS GOLD — A SHARD"))
         }
         let tall: CGFloat = (50 + 18 * CGFloat(lines.count)) * fs
         // (Under everything on it: the panel draws by depth alone.)
@@ -704,9 +742,12 @@ final class DuelScene: SKScene {
         }
         for (k, heart) in hearts.enumerated() { heart.position = CGPoint(x: heartsX + CGFloat(k) * 9, y: mid) }
         scoreLabel.position = CGPoint(x: size.width - 48, y: mid)
-        // The warlord's bar begins past the last heart there is, with room for his crest before it.
+        // The shards of the next heart after the last heart there is, a little apart; the warlord's bar begins past
+        // them, with room for his crest before it.
         let shown = max(1, min(session.fight.maxHP, hearts.count))
-        bossLeft = heartsX + CGFloat(shown - 1) * 9 + 6 + 22
+        let shardX = heartsX + CGFloat(shown - 1) * 9 + 12
+        for piece in shardPieces { piece.position = CGPoint(x: shardX, y: mid) }
+        bossLeft = shardX + 6 + 22
         bossShape = nil
         bossRoomy = nil
     }
@@ -1114,6 +1155,15 @@ final class DuelScene: SKScene {
             sprite.removeFromParent()
             arrowSprites[id] = nil
         }
+        // The gourd in the air, on its arc (let go once the fight has none: caught, shattered or a new stage).
+        if let gourd = fight.gourd, fight.outcome == nil, let sprite = flung, sprite.from == gourd.from {
+            sprite.update(gourd, land: laneX(gourd.land), ground: groundY, ronin: ronin, ceiling: top, calm: calm, dt: dt)
+        } else if let sprite = flung {
+            // (He fell with it still up.)
+            sprite.mark.removeFromParent()
+            sprite.removeFromParent()
+            flung = nil
+        }
         // Down to his last hearts, the ronin's guard sags and heaves; on the last, worse.
         hero.strain = HeroSprite.strain(hp: fight.hp, of: fight.maxHP)
         hero.update(dt: heroDT ?? dt, bloodlust: fight.inBloodlust)
@@ -1190,23 +1240,33 @@ final class DuelScene: SKScene {
         }
         heartBeating = lastHeart
 
-        if fight.hp != shownHP || force {
-            if fight.hp < shownHP {
-                for k in fight.hp..<min(shownHP, hearts.count) {
+        // (A heart made of shards is lit when they have fused into it.)
+        let hp = max(0, fight.hp - heldHearts)
+        if hp != shownHP || force {
+            if hp < shownHP {
+                for k in hp..<min(shownHP, hearts.count) {
                     hearts[k].run(.sequence([.scale(to: 1.9, duration: 0.06), .scale(to: 1, duration: 0.2)]))
                 }
-            } else if fight.hp > shownHP, !force {
-                for k in shownHP..<min(fight.hp, hearts.count) {
-                    hearts[k].run(.sequence([.wait(forDuration: 0.35), .scale(to: 2.2, duration: 0.08), .scale(to: 1, duration: 0.3)]))
+            } else if hp > shownHP, !force {
+                for k in shownHP..<min(hp, hearts.count) {
+                    hearts[k].run(.sequence([.wait(forDuration: heartWait), .scale(to: 2.2, duration: 0.08), .scale(to: 1, duration: 0.3)]))
                 }
             }
-            shownHP = fight.hp
+            shownHP = hp
         }
+        heartWait = 0.35
         for (k, heart) in hearts.enumerated() {
             heart.isHidden = k >= fight.maxHP
-            let full = k < fight.hp
+            let full = k < hp
             heart.fillColor = full ? Palette.blood.color() : .clear
             heart.strokeColor = full ? Palette.blood.mix(.white, 0.35).color() : SKColor(white: 1, alpha: 0.3)
+        }
+        // The shards held, lit gold as each gets there.
+        if shardsMoving == 0 { shownShards = fight.shards }
+        for (k, piece) in shardPieces.enumerated() {
+            let lit = k < shownShards
+            piece.fillColor = lit ? Palette.gold.color() : .clear
+            piece.strokeColor = lit ? Palette.gold.mix(.white, 0.45).color() : SKColor(white: 1, alpha: 0.3)
         }
         // The run's score: every stage of it so far, this one included.
         let score = DuelScene.grouped(session.runScore)
@@ -1324,6 +1384,7 @@ final class DuelScene: SKScene {
                 // a blow throws a man into (the very pose his body falls from), until the blade arrives and he comes
                 // apart.
                 foeSprites[id] = nil
+                killSpots[id] = CGPoint(x: sprite.position.x, y: groundY + sprite.height * 0.62)
                 if sprite.gourd != nil {
                     gourdSpots[id] = CGPoint(x: sprite.position.x, y: sprite.position.y + sprite.height * 1.12)
                     sprite.dropGourd()
@@ -1469,20 +1530,21 @@ final class DuelScene: SKScene {
                 fx.addChild(edge)
             }
             shake(3)
+        case .flung(let id):
+            fling(id)
         case .healed(let id, let restored):
-            heal(id, restored: restored)
+            catchGourd(id, restored: restored)
+        case .shattered(let id):
+            shatter(id)
         case .fled(let id):
             // He got away with it: the gourd, crossed out, where he left the lane.
-            if let sprite = foeSprites[id] {
-                let x = min(max(sprite.position.x, field.minX + ronin * 0.3), field.maxX - ronin * 0.3)
-                let lost = SKNode()
-                lost.addChild(Icons.gourd(max(10, ronin * 0.2), Palette.jade.mix(.black, 0.3).color()))
-                lost.addChild(Icons.cross(max(12, ronin * 0.26), Palette.blood.mix(.white, 0.2).color()))
-                lost.position = CGPoint(x: x, y: groundY + ronin * 1.05)
-                overlay.addChild(lost)
-                lost.run(.sequence([.wait(forDuration: 0.6), .group([.fadeOut(withDuration: 0.5), .moveBy(x: 0, y: 8, duration: 0.5)]),
-                                    .removeFromParent()]))
-            }
+            if let sprite = foeSprites[id] { lostGourd(at: sprite.position.x) }
+        case .shard(let id, let count):
+            earnShard(id, count: count)
+        case .mended(let restored):
+            mend(restored: restored)
+        case .scattered:
+            scatterShards()
         case .wounded(let foe, let damage):
             // Who dealt it: the foe, or the arrow that has just left the lane (its sprite not yet swept away, and used
             // up here, so a second arrow in the same moment finds its own).
@@ -1740,8 +1802,11 @@ final class DuelScene: SKScene {
         impacts.append((clock + seconds, run))
         impacts.sort { $0.at < $1.at }
     }
-    /// Where a gourd-bearer's gourd was when he was cut down, for the gourd to fly from.
+    /// Where a gourd-bearer's gourd was when he was cut down, for the gourd to be flung from; where each man cut down
+    /// was struck, for a shard to fly from; and the gourd in the air.
     private var gourdSpots: [Int: CGPoint] = [:]
+    private var killSpots: [Int: CGPoint] = [:]
+    private var flung: GourdSprite?
 
     /// A cut to suit what is in front of him, never the same one twice running. The first of a stage is drawn from the
     /// scabbard (nukitsuke); then a thrust or a stamping shōmen to close a long gap, shōmen and kesa-giri for the big
@@ -1791,34 +1856,218 @@ final class DuelScene: SKScene {
         fx.addChild(glint)
     }
 
-    /// The gourd-bearer cut down: the gourd flies to the ronin and a heart lights up in the header (or, hearts full,
-    /// its worth in points).
-    private func heal(_ id: Int, restored: Bool) {
+    /// The gourd-bearer cut down: the gourd leaves his hands (from over his head, where he carried it) and goes up in
+    /// its arc, the spot it will land on marked on the ground (`GourdSprite`, kept on the fight's gourd by `sync`).
+    private func fling(_ id: Int) {
+        guard let gourd = session.fight.gourd, gourd.from == id else { return }
         let sprite = foeSprites[id]
-        let start = gourdSpots.removeValue(forKey: id)
-            ?? sprite.map { CGPoint(x: $0.position.x, y: groundY + $0.height * 1.12) } ?? CGPoint(x: heroX, y: groundY + ronin)
         sprite?.dropGourd()
-        let gourd = Icons.gourd(max(10, ronin * 0.2), Palette.jade.mix(.white, 0.25).color())
+        let start = gourdSpots.removeValue(forKey: id)
+            ?? sprite.map { CGPoint(x: $0.position.x, y: groundY + $0.height * 1.12) } ?? CGPoint(x: laneX(gourd.start), y: groundY + ronin)
+        flung?.mark.removeFromParent()
+        flung?.removeFromParent()
+        let node = GourdSprite(from: id, start: start, toward: Side.of(gourd.land - gourd.start), ronin: ronin)
+        // Over the fighters; its mark on the ground over the carpet of the dead, under the ronin (as the reach marks).
+        node.zPosition = 6
+        node.mark.zPosition = 14.9
+        fx.addChild(node)
+        world.addChild(node.mark)
+        flung = node
+        node.update(gourd, land: laneX(gourd.land), ground: groundY, ronin: ronin, ceiling: top, calm: calm, dt: 0)
+    }
+
+    /// The gourd caught as it came down: the ronin's blade meets it on the rise and flicks it to him, and a heart
+    /// lights up in the header (or, hearts full, its worth in points).
+    private func catchGourd(_ id: Int, restored: Bool) {
+        let node = flung?.from == id ? flung : nil
+        let start = node?.position ?? CGPoint(x: heroX, y: groundY + ronin)
+        node?.mark.run(.sequence([.group([.fadeOut(withDuration: 0.25), .scale(to: 1.6, duration: 0.25)]), .removeFromParent()]))
+        node?.removeFromParent()
+        flung = nil
+        gourdsCaught += 1
+        let side: Side = start.x < heroX ? .left : .right
+        hero.cut(side, .gyaku, distance: abs(start.x - heroX), from: 4)
+        swingUntil = clock
+        fx.addChild(at(start, Art.flash(Palette.jade, size: ronin * 0.9, duration: 0.18, alpha: calm ? 0.35 : 0.8)))
+        let gourd = Icons.gourd(max(10, ronin * 0.22), Palette.jade.mix(.white, 0.25).color())
         gourd.position = start
         overlay.addChild(gourd)
         let chest = CGPoint(x: hero.standing, y: groundY + ronin * 0.6)
-        let fly = SKAction.move(to: chest, duration: 0.3)
+        // Flicked up off the blade, then into his hand.
+        let up = SKAction.moveBy(x: (chest.x - start.x) * 0.3, y: ronin * 0.25, duration: 0.12)
+        up.timingMode = .easeOut
+        let fly = SKAction.move(to: chest, duration: 0.18)
         fly.timingMode = .easeIn
-        gourd.run(.sequence([.group([fly, .rotate(byAngle: 3, duration: 0.3)]), .removeFromParent()]))
-        overlay.run(.sequence([.wait(forDuration: 0.3), .run { [weak self] in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                self.fx.addChild(self.at(chest, Art.burst(Palette.jade, count: 30, speed: self.ronin * 1.6, size: self.ronin * 0.08, life: 0.6)))
-                self.fx.addChild(self.at(chest, Art.shockwave(Palette.jade, radius: self.ronin * 0.2, grow: 4, width: 2.5, duration: 0.45)))
-                if !restored {
-                    let bonus = Art.label(Art.headingFont, size: 13 * self.fs, color: Palette.gold.color())
-                    bonus.text = "+" + DuelScene.grouped(self.session.fight.gourdBonus)
-                    bonus.position = CGPoint(x: self.heroX, y: self.groundY + self.ronin * 1.15)
-                    self.overlay.addChild(bonus)
-                    bonus.run(.sequence([.group([.moveBy(x: 0, y: 10, duration: 0.7), .fadeOut(withDuration: 0.7)]), .removeFromParent()]))
-                }
+        gourd.run(.sequence([.group([.sequence([up, fly]), .rotate(byAngle: side == .right ? 3 : -3, duration: 0.3)]), .removeFromParent()]))
+        later(0.3) { [self] in
+            fx.addChild(at(chest, Art.burst(Palette.jade, count: 30, speed: ronin * 1.6, size: ronin * 0.08, life: 0.6)))
+            fx.addChild(at(chest, Art.shockwave(Palette.jade, radius: ronin * 0.2, grow: 4, width: 2.5, duration: 0.45)))
+            if !restored { bonusPoints() }
+        }
+    }
+
+    /// The gourd came down uncaught: it bursts on the ground where it landed, its pieces skittering off, its medicine
+    /// splashed up and soaking away in a pool, and the gourd, crossed out, over the spot. (The medicine is not blood:
+    /// it is spilt with gore off too.)
+    private func shatter(_ id: Int) {
+        guard let node = flung, node.from == id else { return }
+        flung = nil
+        gourdsShattered += 1
+        let x = node.mark.position.x
+        node.mark.removeFromParent()
+        node.removeFromParent()
+        let size = node.size
+        let shell = Palette.jade.mix(.white, 0.25).color()
+        for k in 0..<5 {
+            let piece = SKShapeNode(ellipseOf: CGSize(width: size * .random(in: 0.18...0.34), height: size * .random(in: 0.12...0.22)))
+            piece.fillColor = shell
+            piece.strokeColor = .clear
+            piece.position = CGPoint(x: x, y: groundY + size * 0.2)
+            piece.zRotation = .random(in: 0..<(2 * .pi))
+            let way: CGFloat = k % 2 == 0 ? 1 : -1
+            let across = way * ronin * .random(in: 0.08...0.3) * (calm ? 0.6 : 1)
+            let hop = ronin * .random(in: 0.05...0.18) * (calm ? 0.5 : 1)
+            let rise = SKAction.moveBy(x: across * 0.5, y: hop, duration: 0.14)
+            rise.timingMode = .easeOut
+            let drop = SKAction.moveBy(x: across * 0.5, y: -hop, duration: 0.16)
+            drop.timingMode = .easeIn
+            piece.run(.sequence([.group([.sequence([rise, drop]), .rotate(byAngle: way * .random(in: 2...5), duration: 0.3)]),
+                                 .wait(forDuration: 1.2), .fadeOut(withDuration: 0.8), .removeFromParent()]))
+            fx.addChild(piece)
+        }
+        let spot = CGPoint(x: x, y: groundY + size * 0.3)
+        fx.addChild(at(spot, Art.burst(Palette.jade, count: calm ? 10 : 24, speed: ronin * 1.1, size: ronin * 0.06, life: 0.5, spread: 1.4,
+                                       angle: .pi / 2, gravity: ronin * 4, additive: false)))
+        fx.addChild(at(spot, Art.flash(Palette.jade, size: ronin * 0.8, duration: 0.2, alpha: calm ? 0.3 : 0.6)))
+        let pool = SKShapeNode(ellipseOf: CGSize(width: ronin * 0.55, height: ronin * 0.07))
+        pool.fillColor = Palette.jade.mix(.black, 0.35).color(0.55)
+        pool.strokeColor = .clear
+        pool.position = CGPoint(x: x, y: groundY + 1)
+        pool.xScale = 0.3
+        // On the ground, over the blood and under the dead.
+        pool.zPosition = 3.5
+        pool.run(.sequence([.scaleX(to: 1, duration: 0.5), .wait(forDuration: 1.5), .fadeOut(withDuration: 1.5), .removeFromParent()]))
+        world.addChild(pool)
+        lostGourd(at: x)
+        shake(0.8)
+    }
+
+    /// The gourd lost (carried off, or shattered): the gourd, crossed out, over where it went.
+    private func lostGourd(at x: CGFloat) {
+        let lost = SKNode()
+        lost.addChild(Icons.gourd(max(10, ronin * 0.2), Palette.jade.mix(.black, 0.3).color()))
+        lost.addChild(Icons.cross(max(12, ronin * 0.26), Palette.blood.mix(.white, 0.2).color()))
+        lost.position = CGPoint(x: min(max(x, field.minX + ronin * 0.3), field.maxX - ronin * 0.3), y: groundY + ronin * 1.05)
+        overlay.addChild(lost)
+        lost.run(.sequence([.wait(forDuration: 0.6), .group([.fadeOut(withDuration: 0.5), .moveBy(x: 0, y: 8, duration: 0.5)]),
+                            .removeFromParent()]))
+    }
+
+    /// A heart's worth of points, hearts full: its number rising over the ronin.
+    private func bonusPoints() {
+        let bonus = Art.label(Art.headingFont, size: 13 * fs, color: Palette.gold.color())
+        bonus.text = "+" + DuelScene.grouped(session.fight.gourdBonus)
+        bonus.position = CGPoint(x: heroX, y: groundY + ronin * 1.15)
+        overlay.addChild(bonus)
+        bonus.run(.sequence([.group([.moveBy(x: 0, y: 10, duration: 0.7), .fadeOut(withDuration: 0.7)]), .removeFromParent()]))
+    }
+
+    // MARK: Shards
+
+    /// How long a shard takes from the man who gave it to its place in the header.
+    private var shardFlight: Double { calm ? 0.4 : 0.28 }
+
+    /// Sen-no-sen: a man cut down as his blow came. When the blade lands, 先 flashes gold over him and a shard flies from
+    /// him to its place beside the hearts, which lights with a glint as it gets there.
+    private func earnShard(_ id: Int, count: Int) {
+        let k = min(count, shardPieces.count) - 1
+        guard k >= 0 else { return }
+        let from = killSpots.removeValue(forKey: id) ?? CGPoint(x: hero.standing, y: groundY + ronin * 0.7)
+        shardsMoving += 1
+        later(max(0, swingUntil - clock)) { [self] in
+            let sen = Art.label(Art.sealFont, size: 14 * fs, color: Palette.gold.mix(.white, 0.2).color())
+            sen.text = "先"
+            sen.position = CGPoint(x: from.x, y: from.y + ronin * 0.5)
+            sen.setScale(calm ? 1 : 0.5)
+            overlay.addChild(sen)
+            sen.run(.sequence([.scale(to: 1, duration: 0.08), .wait(forDuration: 0.35),
+                               .group([.fadeOut(withDuration: 0.3), .moveBy(x: 0, y: 8, duration: 0.3)]), .removeFromParent()]))
+            fx.addChild(at(from, Art.flash(Palette.gold, size: ronin * 0.8, duration: 0.2, alpha: calm ? 0.35 : 0.8)))
+            let target = shardPieces[k].position
+            let shard = Icons.shard(11, piece: k)
+            shard.fillColor = Palette.gold.color()
+            shard.strokeColor = Palette.gold.mix(.white, 0.45).color()
+            shard.position = from
+            // Over the header as it gets there.
+            shard.zPosition = 85
+            shard.setScale(calm ? 1.2 : 2)
+            addChild(shard)
+            let fly = SKAction.move(to: target, duration: shardFlight)
+            fly.timingMode = .easeIn
+            shard.run(.sequence([.group([fly, .scale(to: 1, duration: shardFlight)]), .removeFromParent()]))
+            later(shardFlight) { [self] in
+                shardsMoving = max(0, shardsMoving - 1)
+                shownShards = max(shownShards, k + 1)
+                shardPieces[k].removeAction(forKey: "pop")
+                shardPieces[k].setScale(1)
+                shardPieces[k].run(.sequence([.scale(to: calm ? 1.3 : 1.9, duration: 0.06), .scale(to: 1, duration: 0.22)]), withKey: "pop")
+                overHeader(at(target, Art.flash(Palette.gold, size: 22, duration: 0.25, alpha: calm ? 0.4 : 0.9)))
             }
-        }]))
+        }
+    }
+
+    /// Three shards made a heart: once the third is in its place they flare and fuse, and the heart they make lights up
+    /// among the others with a pop, a ring of gold round the ronin (or, hearts full, a heart's worth in points).
+    private func mend(restored: Bool) {
+        shardsMoving += 1
+        if restored { heldHearts += 1 }
+        later(max(0, swingUntil - clock) + shardFlight + 0.12) { [self] in
+            shardsMoving = max(0, shardsMoving - 1)
+            let centre = shardPieces.first?.position ?? .zero
+            for piece in shardPieces {
+                piece.fillColor = Palette.gold.mix(.white, 0.6).color()
+                piece.run(.sequence([.scale(to: calm ? 1.2 : 1.6, duration: 0.08), .scale(to: 1, duration: 0.2)]))
+            }
+            shownShards = 0
+            overHeader(at(centre, Art.shockwave(Palette.gold, radius: 5, grow: 3, width: 1.5, duration: 0.35)))
+            let chest = CGPoint(x: hero.standing, y: groundY + ronin * 0.6)
+            fx.addChild(at(chest, Art.shockwave(Palette.gold, radius: ronin * 0.2, grow: 4, width: 2.5, duration: 0.45)))
+            if restored {
+                // Into the row of hearts, lit as it gets there.
+                let heart = Icons.heart(11)
+                heart.fillColor = Palette.blood.color()
+                heart.strokeColor = Palette.gold.color()
+                heart.position = centre
+                heart.zPosition = 85
+                addChild(heart)
+                let into = hearts[min(hearts.count - 1, max(0, session.fight.hp - heldHearts))].position
+                heart.run(.sequence([.move(to: into, duration: 0.16), .removeFromParent()]))
+                later(0.16) { [self] in
+                    heldHearts = max(0, heldHearts - 1)
+                    heartWait = 0
+                    overHeader(at(into, Art.flash(Palette.blood.mix(.white, 0.3), size: 24, duration: 0.3, alpha: calm ? 0.4 : 0.9)))
+                }
+            } else {
+                bonusPoints()
+            }
+        }
+    }
+
+    /// An effect drawn over the header's plate and what is on it (a shard or a heart getting there).
+    private func overHeader(_ node: SKNode) {
+        node.zPosition = 1.5
+        header.addChild(node)
+    }
+
+    /// A wound scattered the shards held: they crack and fall out of their places.
+    private func scatterShards() {
+        for k in 0..<min(shownShards, shardPieces.count) {
+            let piece = shardPieces[k]
+            overHeader(at(piece.position, Art.burst(Palette.gold, count: calm ? 4 : 9, speed: 28, size: 3, life: 0.5, spread: 1.2,
+                                                         angle: -.pi / 2, gravity: 90, additive: false)))
+            piece.run(.sequence([.scale(to: 1.4, duration: 0.05), .scale(to: 1, duration: 0.15)]))
+        }
+        shownShards = 0
     }
 
     /// The cut's mark in the air: a fine crescent laid along the line of the cut (diagonal down or up, straight down,
@@ -2216,6 +2465,17 @@ final class DuelScene: SKScene {
     var bossBar: CGRect? { bossNode.isHidden ? nil : bossTrack.frame.offsetBy(dx: bossNode.position.x, dy: bossNode.position.y) }
     /// The top of the lane: the header starts there.
     var laneTop: CGFloat { top }
+    /// Where the shards of the next heart are drawn in the header (in the scene's coordinates), and the score.
+    var shardMeter: CGRect { shardPieces.reduce(CGRect.null) { $0.union($1.frame) } }
+    var scoreFrame: CGRect { scoreLabel.frame }
+    /// Where the flung gourd is drawn while it is in the air (the lane's coordinates, which are the scene's but for a
+    /// shake); the ground line; and how many gourds have been drawn caught, and shattering, since launch.
+    var gourdDrawn: CGRect? {
+        flung.map { CGRect(x: $0.position.x - $0.size / 2, y: $0.position.y - $0.size / 2, width: $0.size, height: $0.size) }
+    }
+    var groundLine: CGFloat { groundY }
+    private(set) var gourdsCaught = 0
+    private(set) var gourdsShattered = 0
 
     /// Past the banner: the next stage; after a fall, the first stage again (or the endless run's first).
     func advanceFromBanner() {
