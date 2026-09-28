@@ -605,6 +605,76 @@ final class RoninArtTests: XCTestCase {
         }
     }
 
+    func testInAClashTheBladesMeet() {
+        // Stood `clashGap` apart, facing each other, the ronin's blade and the warlord's meet at the one point in the
+        // bind, crossed (not lying along each other), and still touch as he is forced off it (his back foot where it
+        // was, so he has not moved); the warlord takes it on his guard's footing.
+        let tall = Build.of(.foe(.warlord)).height, gap = Figure.clashGap()
+        XCTAssertGreaterThan(gap, 0.6)
+        XCTAssertLessThan(gap, 1.1)
+        let guardFeet = Figure.footing(.foe(.warlord), .block)
+        for k in 0..<Frame.clashFrames {
+            guard let mine = Figure.contact(.hero, .clash(k)), let theirs = Figure.contact(.foe(.warlord), .clash(k)) else {
+                XCTFail("clash \(k) has no contact")
+                continue
+            }
+            XCTAssertEqual(mine.y, theirs.y * tall, accuracy: 0.005, "clash \(k): the blades meet at different heights")
+            XCTAssertEqual(mine.x + theirs.x * tall, gap, accuracy: 0.01, "clash \(k): the blades do not meet")
+            // On each blade, between the guard and the point.
+            let hand = Figure.skeleton(.hero, Figure.pose(.hero, .clash(k)))[8], tip = Figure.tip(.hero, .clash(k))!
+            XCTAssertLessThan(hypot(mine.x - hand.x, mine.y - hand.y), hypot(tip.x - hand.x, tip.y - hand.y) + 0.001, "clash \(k)")
+            let feet = Figure.footing(.foe(.warlord), .clash(k))
+            XCTAssertEqual(feet.front.x, guardFeet.front.x, accuracy: 0.002)
+            XCTAssertEqual(feet.back.x, guardFeet.back.x, accuracy: 0.002)
+        }
+        let bind = (Figure.pose(.hero, .clash(0)).blade, .pi * 2 - Figure.pose(.foe(.warlord), .clash(0)).blade)
+        XCTAssertGreaterThan(abs(bind.0 - bind.1), 0.5, "the blades lie along each other rather than cross")
+        XCTAssertNotNil(Figure.contact(.foe(.warlord), .block))
+        XCTAssertNil(Figure.contact(.hero, .idle(0)))
+        // Forced off: both feet down in the bind; then the back one where it was and the front one off the ground.
+        let bound = Figure.footing(.hero, .clash(0)), forced = Figure.footing(.hero, .clash(1))
+        XCTAssertLessThan(max(bound.front.y, bound.back.y), 0.004)
+        XCTAssertEqual(forced.back.x, bound.back.x, accuracy: 0.002)
+        XCTAssertLessThan(forced.back.y, 0.004)
+        XCTAssertGreaterThan(forced.front.y, 0.03)
+        XCTAssertLessThan(forced.front.x, bound.front.x - 0.05)
+        XCTAssertFalse(Figure.pose(.hero, .clash(1)).ghosts.isEmpty, "thrown back, smeared")
+    }
+
+    func testTheRoninBacksOffAFootAtATime() {
+        // Forced off the warlord's blade, then backing off in guard: each foot lifted as it moves, the other planted
+        // where it was; each step takes him `retreatStep` further back, and he ends in his guard's footing.
+        let home = Figure.footing(.hero, .idle(0))
+        var beats: [(Frame, Footwork)] = [(.clash(1), .keep(front: false)), (.retreat(3), .keep(front: false))]
+        for _ in 0..<3 {
+            beats += [(.retreat(0), .keep(front: true)), (.retreat(1), .keep(front: true)), (.retreat(2), .keep(front: false)),
+                      (.retreat(3), .keep(front: false))]
+        }
+        beats.append((.idle(0), .hold))
+        let steps = replay(from: .clash(0), offset: 0, beats)
+        assertPlanted(steps, "backing off")
+        for (a, b) in zip(steps, steps.dropFirst()) {
+            XCTAssertLessThan(b.front.x, a.front.x + 0.002, "the front foot goes forward from \(a.frame) to \(b.frame)")
+            XCTAssertLessThan(b.back.x, a.back.x + 0.002, "the back foot goes forward from \(a.frame) to \(b.frame)")
+        }
+        let r = (0..<Frame.retreatFrames).map { Figure.footing(.hero, .retreat($0)) }
+        XCTAssertGreaterThan(r[0].back.y, 0.04)
+        XCTAssertLessThan(r[0].front.y, 0.004)
+        XCTAssertLessThan(max(r[1].front.y, r[1].back.y), 0.004)
+        XCTAssertGreaterThan(r[2].front.y, 0.04)
+        XCTAssertLessThan(r[2].back.y, 0.004)
+        XCTAssertEqual(r[3].front.x, home.front.x, accuracy: 0.002)
+        XCTAssertEqual(r[3].back.x, home.back.x, accuracy: 0.002)
+        XCTAssertEqual(r[1].back.x, home.back.x - Figure.retreatStep, accuracy: 0.002)
+        // Three steps back from where he stood in guard after the clash.
+        let back = steps.filter { $0.frame == .retreat(3) }.map(\.front.x)
+        for (a, b) in zip(back, back.dropFirst()) { XCTAssertEqual(b, a - Figure.retreatStep, accuracy: 0.002) }
+        // The guard held up.
+        for k in 0..<Frame.retreatFrames {
+            XCTAssertGreaterThan(Figure.pose(.hero, .retreat(k)).blade, Figure.pose(.hero, .idle(0)).blade + 0.15, "retreat \(k)")
+        }
+    }
+
     func testElbowsAndKneesBendOnlyTheWayTheyBend() {
         // In every frame an elbow folds forward, never back past straight, and a knee back (a back leg locked straight
         // under the weight may give a little the other way); measured as a doll measures its joints.

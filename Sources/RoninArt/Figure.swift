@@ -84,6 +84,17 @@ public enum Frame: Hashable, Sendable {
     /// Falling: struck, the knees buckling, kneeling over the planted sword, pitching forward off the knee onto his
     /// hands, and face down in the dirt.
     case fall(Int)
+    /// Blades crossed with the warlord's. The ronin (2 frames): his cut met by the warlord's raised blade and bound
+    /// on it at the moment of impact, in a lunge (0); then his blade driven back up off it and forced away, the
+    /// weight thrown back onto the back foot and the front foot coming off the ground (1). The warlord (2 frames): the
+    /// blow taken on his blade, braced and driven forward into it (0); then shoving the ronin's blade off (1), his
+    /// feet where his guard (`block`) has them. `Figure.contact` gives where the blades meet on each, and
+    /// `Figure.clashGap` how far apart they stand for them to.
+    case clash(Int)
+    /// The ronin backing off in guard with the guard up, a foot at a time so that neither slides (4 frames): the back
+    /// foot lifted back (0) and set down behind (1), the front one planted; then the front foot drawn back after it
+    /// (2) and set down, his feet as they are in guard (3), the back one planted. Played 0, 1, 2, 3 for each step.
+    case retreat(Int)
 
     public static let walkFrames = 12
     public static let foeIdleFrames = 6
@@ -102,6 +113,8 @@ public enum Frame: Hashable, Sendable {
     public static let strikeFrames = 3
     public static let hurtFrames = 3
     public static let fallFrames = 5
+    public static let clashFrames = 2
+    public static let retreatFrames = 4
 }
 
 /// A part of a man cut apart.
@@ -369,6 +382,7 @@ public enum Figure {
             }
             frames += (0..<Frame.shuffleFrames).map { .shuffle($0) }
             frames += [.stumble(0), .stumble(1), .repelled(0), .repelled(1)]
+            frames += (0..<Frame.clashFrames).map { .clash($0) } + (0..<Frame.retreatFrames).map { .retreat($0) }
             frames += (0..<Frame.hurtFrames).map { .hurt($0) } + (0..<Frame.fallFrames).map { .fall($0) }
             for v in 0..<Frame.windedCycles { frames += (0..<Frame.windedFrames).map { .winded(v, $0) } }
             for v in 0..<Frame.reels { frames += (0..<Frame.reelFrames).map { .reel(v, $0) } }
@@ -382,7 +396,7 @@ public enum Figure {
             if kind != .archer { frames += (0..<Frame.strikeFrames).map { .strike($0) } }
             frames += [.stagger(0), .stagger(1)]
             if kind == .dancer || kind == .warlord { frames.append(.leap) }
-            if kind == .warlord { frames.append(.block) }
+            if kind == .warlord { frames += [.block] + (0..<Frame.clashFrames).map { .clash($0) } }
             if kind == .archer { frames += [.aim, .loose] }
             return frames
         }
@@ -672,6 +686,10 @@ public enum Figure {
             return reel(v, k)
         case .flourish(let k):
             return flourish(k)
+        case .clash(let k):
+            return clash(cast, k)
+        case .retreat(let k):
+            return retreat(k)
         case .stumble(0) where cast == .hero, .repelled(0) where cast == .hero:
             // Carried past the mark, or flung back off a guard: smeared.
             var p = key(cast, frame)
@@ -1878,6 +1896,140 @@ public enum Figure {
         // The snap of the chiburi, smeared.
         if k == 2 || k == 3 { p.ghosts = Pose.between(flourish(k - 1), p) }
         return p
+    }
+
+    // MARK: Blades crossed
+
+    /// A clash with the warlord. The ronin: the bind, his cut struck home on the raised blade in a lunge, the arms
+    /// thrust up and out and the blade crossed on the other's (0); then forced off it, the blade driven back up and
+    /// away and the body thrown back over the planted back foot, the front foot dragged back off the ground (1). The
+    /// warlord, from his guard and on its footing: the blow taken on the blade, braced, the hips driven forward over
+    /// the bent front knee (0); then shoving the ronin's blade off, the arms thrust out (1).
+    static func clash(_ cast: Cast, _ k: Int) -> Pose {
+        guard cast == .hero else {
+            var p = key(cast, .block)
+            let feet = footing(p), standing = hipHeight(p)
+            if k <= 0 {
+                plant(&p, hip: v(0.035, standing - 0.02), front: feet.front, back: feet.back)
+                p.lean = 0.12
+                p.tilt = -0.08
+                p.hold = v(0.14, -0.22)
+                p.blade = 2.58
+                p.stream = 0.6
+                p.wave = 0.3
+            } else {
+                plant(&p, hip: v(0.045, standing - 0.04), front: feet.front, back: feet.back)
+                p.lean = 0.22
+                p.tilt = -0.14
+                p.hold = v(0.22, -0.17)
+                p.blade = 2.48
+                p.stream = 0.8
+                p.wave = 0.45
+            }
+            return p
+        }
+        // The bind: braced in a lunge, both feet down.
+        var p = stance(.hero)
+        plant(&p, hip: v(0, 0.43), front: v(0.32, 0), back: v(-0.35, 0))
+        p.lean = 0.3
+        p.tilt = -0.1
+        p.hold = v(0.2, 0.15)
+        p.blade = 2.25
+        p.stream = 0.9
+        p.wave = 0.5
+        guard k > 0 else {
+            // The last of the cut's trail behind the blade, stopped dead on the other.
+            p.smear = sweep(3.3, 2.25, 0.35)
+            return p
+        }
+        // Forced off, the back foot where it was: the blade still on the warlord's as it goes, where he shoves it off.
+        let bind = p, feet = footing(p)
+        plant(&p, hip: v(-0.1, 0.45), front: v(feet.front.x - 0.14, 0.05), back: feet.back)
+        p.lean = -0.18
+        p.tilt = -0.2
+        p.hold = v(0.12, 0.17)
+        let build = Build.of(.hero), H = pixelHeight(.hero) * build.height
+        let hand = Drawer(pose: p, build: build, H: H).main.hand
+        let theirs = contact(.foe(.warlord), .clash(1)) ?? .zero, tall = Build.of(.foe(.warlord)).height
+        let parting = v(clashGap() - theirs.x * tall - (hand.x / H - Figure.feet.x), theirs.y * tall - (hand.y / H - Figure.feet.y))
+        p.blade = atan2(parting.x, -parting.y)
+        p.stream = 0.7
+        p.wave = 0.65
+        // Thrown back: smeared.
+        p.ghosts = Pose.between(bind, p, [0.35, 0.7])
+        p.drag = -0.03
+        return p
+    }
+
+    /// Backing off in guard, the guard up (the hands higher, the point at the face): the back foot lifted back over
+    /// the planted front one (0) and set down a step behind (1); the front foot drawn back after it over the planted
+    /// back one (2) and set down, the feet as they are in guard (3).
+    static func retreat(_ k: Int) -> Pose {
+        var p = stance(.hero)
+        let home = footing(p), standing = hipHeight(p)
+        let step = Figure.retreatStep
+        switch k {
+        case 0:
+            plant(&p, hip: v(-0.02, 0.51), front: home.front, back: v(home.back.x - step * 0.45, 0.06))
+            p.lean = 0.04
+        case 1:
+            plant(&p, hip: v(-0.08, 0.48), front: home.front, back: v(home.back.x - step, 0))
+            p.lean = 0.0
+        case 2:
+            plant(&p, hip: v(-0.1, 0.485), front: v(home.front.x - step * 0.5, 0.06), back: v(home.back.x - step, 0))
+            p.lean = 0.04
+        default:
+            plant(&p, hip: v(0, standing - 0.008), front: home.front, back: home.back)
+            p.lean = 0.07
+        }
+        let bob = CGFloat([0.01, -0.005, 0.01, 0][min(max(k, 0), 3)])
+        p.hold = v(0.2, -0.12 + bob)
+        p.blade = 2.3 - bob * 3
+        p.stream = [0.35, 0.3, 0.35, 0.25][min(max(k, 0), 3)]
+        p.wave = 0.2 + 0.2 * CGFloat(k)
+        return p
+    }
+
+    /// How far each step of `retreat` takes him back, in his heights.
+    public static let retreatStep: CGFloat = 0.14
+
+    /// Where a figure's blade meets another's as they clash (the ronin's and the warlord's `clash` frames, and the
+    /// warlord's `block`), on the figure's canvas as `tip` gives the point of its weapon: from its feet, in its own
+    /// heights (x toward the way it faces, y up); nil for any other frame. The warlord's is a set way along his blade;
+    /// the ronin's is where his blade crosses the height of the warlord's in the same clash frame (the pair stand
+    /// `clashGap` apart for the two to meet).
+    public static func contact(_ cast: Cast, _ frame: Frame) -> CGPoint? {
+        switch (cast, frame) {
+        case (.foe(.warlord), .clash(let k)): return along(cast, frame, k <= 0 ? 0.34 : 0.62)
+        case (.foe(.warlord), .block): return along(cast, frame, 0.42)
+        case (.hero, .clash(let k)):
+            guard let theirs = contact(.foe(.warlord), .clash(k)) else { return nil }
+            let height = theirs.y * Build.of(.foe(.warlord)).height
+            let hand = along(.hero, frame, 0), tip = along(.hero, frame, 1)
+            guard tip.y > hand.y + 0.001 else { return tip }
+            let t = max(0.15, min(1, (height - hand.y) / (tip.y - hand.y)))
+            return CGPoint(x: hand.x + (tip.x - hand.x) * t, y: hand.y + (tip.y - hand.y) * t)
+        default:
+            return nil
+        }
+    }
+
+    /// How far apart the ronin and the warlord stand, feet to feet and facing each other, in the ronin's heights,
+    /// for their blades to meet where `contact` has them: in the bind (`clash(0)` of each) by default.
+    public static func clashGap(hero: Frame = .clash(0), warlord: Frame = .clash(0)) -> CGFloat {
+        guard let mine = contact(.hero, hero), let theirs = contact(.foe(.warlord), warlord) else { return 0 }
+        return mine.x + theirs.x * Build.of(.foe(.warlord)).height
+    }
+
+    /// A point `share` of the way along a figure's blade from the hand, from its feet in its own heights.
+    private static func along(_ cast: Cast, _ frame: Frame, _ share: CGFloat) -> CGPoint {
+        let build = Build.of(cast)
+        let H = pixelHeight(cast) * build.height
+        let p = pose(cast, frame)
+        let hand = Drawer(pose: p, build: build, H: H).main.hand
+        let (d, scale) = bladeVector(p.blade, flat: p.flat)
+        let point = at(hand, d, build.reach * H * scale * share)
+        return CGPoint(x: point.x / H - feet.x, y: point.y / H - feet.y)
     }
 }
 
