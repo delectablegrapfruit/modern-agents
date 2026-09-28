@@ -67,8 +67,9 @@ public struct Pilot: Codable, Equatable, Sendable {
             tossed = nil
             pressed = -1
         }
-        while let next = queue.first, next.at <= fight.time + 1e-9 {
-            queue.removeFirst()
+        while let first = queue.first, first.at <= fight.time + 1e-9 {
+            // A press timed to a moment goes before one made on sight when both are due.
+            let next = queue.remove(at: queue.firstIndex { $0.timed && $0.at <= fight.time + 1e-9 } ?? 0)
             // Hands only go so fast: a press due sooner after the last than they allow waits for them.
             if fight.time - pressed < 1 / rate - 1e-6 {
                 schedule(Planned(at: pressed + 1 / rate, side: next.side, target: next.target, timed: next.timed))
