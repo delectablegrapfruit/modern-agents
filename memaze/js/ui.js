@@ -684,7 +684,7 @@
         h('ul', { class: 'facts' },
           MZ.mobile ? h('li', null, 'Put a thumb down anywhere and a joystick appears: slide it the way to go, further for faster, and lift to stop. Two fingers zoom. (Settings → Touch → Drag drags the maze instead.)') : null,
           h('li', null, 'Drag the maze to move through it. With a mouse you don\'t have to: by default (Glide) you head toward the pointer, faster the further it is, and stop with it resting on your picture. Settings → Mouse also has Lock (click once, then just move the mouse; Esc lets go) and Drag.'),
-          h('li', null, 'Touching the edge breaks your shield: your picture turns grey and faded. Touch it again before the shield recharges (5 s after the hit) and you’re out. Holding against the edge never counts twice, but riding along it does once the moment’s grace is over. Your picture is the hitbox: transparent parts don’t count.'),
+          h('li', null, 'Touching the edge breaks your shield: your picture turns grey and faded. Touch it again before the shield recharges (5 s after the hit) and you’re out. For a moment after a hit the edges hold like walls; stay pressed against the edge past that and it’s the next hit. Your picture is the hitbox: transparent parts don’t count.'),
           h('li', null, 'Touch a mystery box to shatter it. With an empty slot you get an item; use it with a right click, Space, E or the button in the corner.'),
           h('ul', { class: 'items' },
             h('li', null, h('b', null, 'Invincible'), ': no damage for 8 s; the edges hold like walls.'),

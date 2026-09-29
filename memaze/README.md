@@ -39,8 +39,8 @@ No build step, no dependencies: plain HTML/CSS/JS, plus an optional Python serve
   the game freezes for a split second, the view shakes, electric sparks burst from your picture as it jolts, and phones
   buzz. Then the picture blinks, and stays grey and faded while the shield is down, fizzing now and then, with a soft
   warning beep. There is no health bar and no red; the grey picture is it.
-  No rapid hits: for 0.75 s the edges hold like walls, and a new hit needs a new touch: holding against the edge
-  never counts twice, but it's no shelter either: once the 0.75 s are up, riding on along it is a new touch. 5 s after the hit the shield is back, even if you're still pressed against the
+  No rapid hits: for 0.75 s after a hit the edges hold like walls while the picture blinks. That's all the grace
+  there is: after it, the edge hurts again, pressed into or ridden along, so get off it. 5 s after the hit the shield is back, even if you're still pressed against the
   edge: over the last second it
   recharges with a rising sound and a gold shimmer, and the picture fills back in. A second touch before that and
   your picture shatters into glassy shards, your *lose* media plays, then you go back to the last flag you reached, or

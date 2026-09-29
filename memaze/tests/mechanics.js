@@ -227,7 +227,7 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     check('...each tumbling along the floor, with a hollow tile between the ends of its track', G.maze.toxes.every((b) => b.tiles.every((T) => G.world.query(T.x, T.y, G.playT).depth > b.s * 0.3) && b.tiles.some((T, k) => k > 0 && k < b.n && MZ.toxFace(b, k) === 0)));
     const buf = G.box() * 0.035, step = tx.roll + tx.rest, end0 = tx.end;
     const at = (c) => { tx.phase = c - (G.playT + 1 / 60); }; // the box's own clock reads c on the next frame
-    const fresh = () => { G.pieces = null; G.hp = 2; G.bonus = 0; G.guardT = 0; G.stuck = false; G.fx = {}; G.scale = 1; hits.length = 0; };
+    const fresh = () => { G.pieces = null; G.hp = 2; G.bonus = 0; G.guardT = 0; G.fx = {}; G.scale = 1; hits.length = 0; };
     const T0 = tx.tiles[0], T1 = tx.tiles[1], rev = { x: -T1.ux, y: -T1.uy };
     fresh(); tx.end = 30; at(1); put(T1);
     run(0.6, rev);

@@ -61,22 +61,30 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     const look = () => parseFloat(MZ.$('#player-media').style.opacity || 1);
     check('hurt shows on the picture only: faded, no health HUD, no screen glow', look() < 0.5 && !MZ.$('#hud-health') && !MZ.$('#hurt-flash'), look());
     const hits = () => events.filter((e) => e.startsWith('hit')).length;
-    run(3.9, d); // held against the edge all along
-    check('holding against the edge never hits twice', G.hp === 1 && G.state === 'play' && hits() === 1, G.hp);
+    run(0.6, d); // pressing on, within the guard
+    check('for a moment after a hit the edges hold like walls: pressing on is no second hit yet', G.hp === 1 && G.state === 'play' && hits() === 1, G.hp);
+    away(d); // off the edge
+    run(2);
     check('not healed 4 s after the hit', G.hp === 1 && G.hurtLevel() > 0 && G.hurtLevel() < 0.3, G.hurtLevel().toFixed(2));
-    run(0.35, d);
+    run(0.45);
     G.draw();
     check('the last second: the shield recharges, the picture filling back in', MZ.$('#player').classList.contains('recharge') && look() > 0.45 && look() < 1, look());
-    run(1, d);
-    check('healed 5 s after the hit, even held against the edge the whole time (never damaged for good)', G.hp === 2 && G.hurtLevel() === 0 && hits() === 1, G.hp);
+    run(1);
+    check('healed 5 s after the hit', G.hp === 2 && G.hurtLevel() === 0 && hits() === 1, G.hp);
     G.draw();
     check('recharged: the picture is solid again', look() === 1 && !MZ.$('#player').classList.contains('recharge'), look());
-    away(d);
     events.length = 0;
     touch(d); run(0.3, { x: -d.x, y: -d.y }); run(0.55); // back off, then straight back in once the 0.75 s guard is over
     events.length = 0;
     touch(d);
     check('a second, separate touch before healing loses', events.includes('lose:fall') && G.state !== 'play', events.join());
+    G.quit();
+    // Staying pressed into the edge is no shelter: once the guard is over, it's the next hit.
+    G.startJourney(6); d = voidDir();
+    G.guardT = 0; G.hp = 2; G.bonus = 0; G.hurtT = 5; events.length = 0;
+    touch(d);
+    run(1.2, d); // never letting up
+    check('pressing on into the edge after a hit is no shelter: once the moment is up it is the next hit', events.includes('lose:fall'), events.join());
     G.quit();
     // Riding along the edge after a hit is no shelter: once the guard is over, sliding on along it is a new touch.
     // (On a long straight corridor: pressed into its side, then slid along it.)
@@ -89,7 +97,7 @@ try { ({ chromium } = require('playwright')); } catch (e) {
       if (!e) { G.quit(); continue; }
       const A = e.pts[0], B = e.pts[e.pts.length - 1], L = Math.hypot(B.x - A.x, B.y - A.y), u = { x: (B.x - A.x) / L, y: (B.y - A.y) / L }, nrm = { x: -u.y, y: u.x };
       G.ball.x = A.x + u.x * (L * 0.3); G.ball.y = A.y + u.y * (L * 0.3);
-      G.guardT = 0; G.stuck = false; G.hp = 2; G.bonus = 0; G.hurtT = 5; events.length = 0;
+      G.guardT = 0; G.hp = 2; G.bonus = 0; G.hurtT = 5; events.length = 0;
       touch(nrm);
       const dir = { x: u.x + nrm.x * 0.35, y: u.y + nrm.y * 0.35 }, dl = Math.hypot(dir.x, dir.y);
       dir.x /= dl; dir.y /= dl;
@@ -121,7 +129,7 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     // in that same frame are one hit, not two (it used to lose from full health, with animated pictures) -----
     G.startJourney(6); d = voidDir();
     S.gameplay.rule = 'casual'; run(0.6, d); S.gameplay.rule = 'normal'; // right at the edge, no hit
-    G.guardT = 0; G.stuck = false; G.hp = 2; G.bonus = 0; events.length = 0;
+    G.guardT = 0; G.hp = 2; G.bonus = 0; events.length = 0;
     for (let k = 0; k < 40 && !G.hitAt(G.ball.x, G.ball.y); k++) { G.ball.x += d.x * 0.5; G.ball.y += d.y * 0.5; } // a hair over it
     run(1 / 60, d);
     check('an edge touch and a drag into it in the same frame cost one hit', G.hp === 1 && G.state === 'play' && !events.some((e) => e.startsWith('lose')), events.join());
