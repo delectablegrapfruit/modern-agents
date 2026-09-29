@@ -92,8 +92,23 @@ flat I on an empty board is a perfect clear and combos never end, so the Free Pl
 chains, T-spins, perfect clears, score, Showman) count only on boards 10 wide or more, as do Painted Row and the
 Triathlon's quad; the line counts, pace, Clean Sweep (60 blocks, six rows' worth when wider), Toolbox, Tried
 Everything, Tinkerer and Old Growth count on any board. The Free Play group's note in Achievements says this. Retired keeps up to 50 read-only
-records, newest first — name, started and retired dates, the final stack and the whole summary — and past 50 the oldest
-goes (the Retire card says so). A record opens with a click and can be deleted. Retiring or deleting the board in play
+records, newest first — name, started and retired dates, the final stack, the pieces it ended with (the one in play, the
+held one and the first six of the queue) and the whole summary — and past 50 the oldest
+goes (the Retire card says so). A record opens with a click and can be deleted.
+*Full view* — a retired board can be looked at whole (`js/retiredview.js`): View on its row (or a click or tap on its
+thumbnail) or View in its record. Its final stack is drawn at play size where the board in play is, by the same board
+view (palette, skin, frame, backdrop, the Hold and Next trays), at its own size (a 4 × 40 or a 20 × 8 as it was);
+a board retired full shows the piece that could not come in, drawn as the Board full card shows it and outlined in
+the theme's red, so it stands apart from the stack it lies over. There is no ghost
+and nothing moves. The status bar's place says its name, when it was retired and why (Full, or Retired by hand), with
+Summary (its record's dates and numbers, in a window over it) and Back; the item bar's place has Previous, where it is
+("2 of 7") and Next, through the retired boards in the list's order, stopping at either end (← and → too, or a swipe
+sideways on the board by touch). Back, Esc or a click outside returns to where it was opened, focus on the View that
+opened it, and the board in play is exactly as it was: the view is a window over the play view, which is only hidden
+meanwhile, so no key, click, touch or power-up reaches it, and nothing is played, paid, counted, timed (its play time
+waits) or saved differently. To a screen reader it is a dialog named "Retired board:" and the board's name; the board
+is an image described by its name, size and why it was retired, and a step reads out the new name and place. A kept piece in a turn no piece has (a broken or hand-edited save) is
+left out of its record; a record that still cannot be drawn does not open, and one that fails to draw closes the view. Retiring or deleting the board in play
 always starts a new game in its place, and a full board is recorded as Full however it was retired. The windows are
 kept for the keyboard: the library opens with focus on the board in play, a question over it takes focus (Enter on a
 Delete question is Cancel) and nothing under it can be reached, and afterwards focus is back on the nearest row. A
@@ -570,10 +585,11 @@ cd Lull && swift run          # the same, straight from the package
 open Lull/Game/index.html     # any browser, any OS (saves to localStorage)
 
 node Lull/scripts/test.cjs            # game logic: 750 puzzles replayed through the engine, turns, items, factory, board library, save
-node Lull/scripts/browser-test.cjs    # the page played in headless Chromium (needs Playwright), then touch-, device- and undo-test
+node Lull/scripts/browser-test.cjs    # the page played in headless Chromium (needs Playwright), then touch-, device-, undo- and retired-test
 node Lull/scripts/touch-test.cjs      # an emulated phone played with real touches: gestures, layout, 44 px targets
 node Lull/scripts/device-test.cjs     # what a phone, a desktop browser, the app and a tablet with a trackpad are offered
 node Lull/scripts/undo-test.cjs       # every way of buying an Undo charges 5; the Board full and puzzle cards fit, down to 320 x 568
+node Lull/scripts/retired-test.cjs    # a retired board in full view: cell for cell at play size, read-only, stepping, back exactly
 node Lull/scripts/audio-render.cjs out/   # every sound and a minute of music rendered offline: WAVs, peak, loudness, brightness
 node Lull/scripts/audio-render.cjs out/ --harmony   # every pack's pitched sounds in every section: notes found, share in its key, A/B mixes
 
@@ -643,9 +659,9 @@ The address is shown on the `pages` job and under Settings ▸ Pages.
 
 | Path | |
 |---|---|
-| `Game/` | the game: `index.html`, `manifest.webmanifest`, `sw.js` (the offline copy), `icons/` (the Home Screen icons), `css/`, and `js/` — `webapp` (the Home Screen app: the worker, its updates, lasting storage), `icons` (the one SVG icon set), `pieces` (SRS tetrominoes, pentominoes, big and custom shapes, polyomino enumeration), `board`, `engine` (the floating-piece rules and every item), `items` (the chain multiplier, combos, Luck, the daily gift, power-ups earned in play), `library` (the Relaxed board library: shelved and retired boards, names, caps), `puzzlegen` (seeds, wildcards, reverse construction, reachability search, forward verification), `factory` (the chain: stamp heads, the store, presses, belts, the lift and the crate, in ticks for play and time away alike; `Factory.TUNE`; save repair), `store` (save, catalog, stats), `achievements`, `fxphysics` (the item effects' blocks, debris and dust: gravity, bounces, spirals, fixed pools), `render` (canvas: skins, frames, effects, item animations, rotated views), `factoryview` (the factory floor, drawn like the board), `hints` (control hints: the struggle signals, their limits and retirement), `touch` (the touch gestures: a pure reader of fingers, and the page's touch helpers), `webapp` (the Home Screen web app: the offline copy's registration and updates), `collapse` (the window rolled up into its title bar, and the parade of pieces along it), `modes`, `ui`, `app` |
+| `Game/` | the game: `index.html`, `manifest.webmanifest`, `sw.js` (the offline copy), `icons/` (the Home Screen icons), `css/`, and `js/` — `webapp` (the Home Screen app: the worker, its updates, lasting storage), `icons` (the one SVG icon set), `pieces` (SRS tetrominoes, pentominoes, big and custom shapes, polyomino enumeration), `board`, `engine` (the floating-piece rules and every item), `items` (the chain multiplier, combos, Luck, the daily gift, power-ups earned in play), `library` (the Relaxed board library: shelved and retired boards, names, caps), `puzzlegen` (seeds, wildcards, reverse construction, reachability search, forward verification), `factory` (the chain: stamp heads, the store, presses, belts, the lift and the crate, in ticks for play and time away alike; `Factory.TUNE`; save repair), `store` (save, catalog, stats), `achievements`, `fxphysics` (the item effects' blocks, debris and dust: gravity, bounces, spirals, fixed pools), `render` (canvas: skins, frames, effects, item animations, rotated views), `factoryview` (the factory floor, drawn like the board), `hints` (control hints: the struggle signals, their limits and retirement), `touch` (the touch gestures: a pure reader of fingers, and the page's touch helpers), `webapp` (the Home Screen web app: the offline copy's registration and updates), `collapse` (the window rolled up into its title bar, and the parade of pieces along it), `modes`, `retiredview` (a retired board in full view), `ui`, `app` |
 | `Sources/Lull/` | the macOS shell: a borderless `NSPanel` (floating, all Spaces, edge-resizable, draggable by the page's title bar) around a transparent `WKWebView`, a blur for the Glass background, the save file, the ⌥⌘L hot key, and a self-test CI runs |
-| `scripts/` | `make-app.sh`, `icon.swift`, `line-glyph.py` (builds the line glyph's font into `lull.css`), `test.cjs`, `browser-test.cjs`, `audio-render.cjs` (renders and measures the synthesized audio offline), `pitch.cjs` (finds the notes in a render, to check sound effects are in the music's key), `splice-voice.py` (cuts the announcer's lines from a recording), `web-build.cjs` (the site as deployed), `web-icons.cjs` (the Home Screen icons), `web-test.cjs` and `web-browser-test.cjs` (the web app's tests, run by the two above), `touch-test.cjs` (an emulated phone played with gestures, run by browser-test), `device-test.cjs` (what each device is offered in Settings and the bar, and live changes; run by browser-test), `sizes-test.cjs` (board sizes: the New board window, every extreme size, pay by width, layout; run by browser-test), `undo-test.cjs` (every way of buying an Undo, and the cards that offer it at every size; run by browser-test) |
+| `scripts/` | `make-app.sh`, `icon.swift`, `line-glyph.py` (builds the line glyph's font into `lull.css`), `test.cjs`, `browser-test.cjs`, `audio-render.cjs` (renders and measures the synthesized audio offline), `pitch.cjs` (finds the notes in a render, to check sound effects are in the music's key), `splice-voice.py` (cuts the announcer's lines from a recording), `web-build.cjs` (the site as deployed), `web-icons.cjs` (the Home Screen icons), `web-test.cjs` and `web-browser-test.cjs` (the web app's tests, run by the two above), `touch-test.cjs` (an emulated phone played with gestures, run by browser-test), `device-test.cjs` (what each device is offered in Settings and the bar, and live changes; run by browser-test), `sizes-test.cjs` (board sizes: the New board window, every extreme size, pay by width, layout; run by browser-test), `undo-test.cjs` (every way of buying an Undo, and the cards that offer it at every size; run by browser-test), `retired-test.cjs` (a retired board in full view at every size, by keys and by touch; run by browser-test) |
 
 ## Credits
 

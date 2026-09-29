@@ -1254,6 +1254,34 @@ div.lib-open { cursor: default; }
   .lib-open { gap: 8px; padding-right: 2px; }
 }
 
+/* A retired board in full view (js/retiredview.js): a window laid exactly over the play view, with no frame or scrim
+   of its own, so the board sits where the board in play does, at its size; its bars take the status bar's and the
+   item bar's places. The board in play and any window under it are hidden meanwhile (never closed). */
+body.fv-open #view-play > * { visibility: hidden; }
+#modal-root .scrim.fv-under { opacity: 0; }
+#modal-root .scrim.fv-scrim { background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; padding: 0; animation: none; }
+body.fv-open header#titlebar { opacity: 0.45; }
+.modal.modal-fullview {
+  position: absolute; width: auto; max-height: none; border: 0; border-radius: 0; background: transparent; box-shadow: none;
+  overflow: visible; animation: none;
+}
+.modal-fullview > header { display: none; }
+.modal-fullview .body { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+.fv-stage { touch-action: none; }
+.fv-bar .fv-title { min-width: 0; }
+.fv-bar .stats { flex: 1 1 auto; min-width: 0; }
+.fv-bar .fv-title b, .fv-bar .fv-title i { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fv-bar .fv-title i { text-transform: none; letter-spacing: 0.02em; font-size: var(--fs-xs); font-weight: 560; color: var(--muted); }
+.fv-foot { align-items: center; }
+.fv-foot .group-btn { flex: 1 1 0; }
+.fv-foot .group-btn[aria-disabled="true"] { opacity: 0.35; cursor: default; }
+@media (hover: hover) { .fv-foot .group-btn[aria-disabled="true"]:hover { background: transparent; color: var(--muted); } }
+.fv-pos { flex: none; min-width: 64px; text-align: center; color: var(--muted); font-size: var(--fs-sm); font-weight: 600; font-variant-numeric: tabular-nums; }
+.fv-live { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@media (max-width: 480px) { .fv-foot .group-btn .gl { display: inline; } }
+@media (max-width: 460px) { .fv-bar .btn.sm .lbl { display: none; } .fv-bar .btn.sm { width: 30px; padding: 0; justify-content: center; } }
+@media (max-width: 360px) { .fv-pos { min-width: 52px; } }
+
 /* New board: a size (Width and Height steppers, presets, the empty well drawn small) and Create. */
 .nb-body { display: flex; flex-direction: column; gap: 14px; position: relative; }
 /* The size read out after a button or a preset (VoiceOver); nothing on screen. */
@@ -1559,6 +1587,10 @@ body.browser.away #app { opacity: 0.6; }
   .set-row input[type="range"]::-webkit-slider-thumb { width: 24px; height: 24px; margin-top: -10px; }
   .set-row input[type="range"]::-moz-range-thumb { width: 24px; height: 24px; }
   .switch::before { content: ""; position: absolute; inset: -12px -6px; }
+  /* A retired row's two actions (View, Delete): full-size targets side by side, apart, at any width. */
+  .lib-row.retired .lib-acts { flex-direction: row; gap: 4px; }
+  .lib-row.retired .lib-acts .icon-btn { width: 44px; height: 44px; }
+  .lib-row.retired .lib-acts .icon-btn svg { width: 18px; height: 18px; }
 }
 /* Settings' sections as one strip across the top (narrow): a button widened to 44 px keeps its icon in the middle. The
    list down the side keeps its icons in one column. */

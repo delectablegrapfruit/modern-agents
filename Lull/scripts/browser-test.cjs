@@ -3771,6 +3771,8 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await require('./device-test.cjs')({ browser, check, PAGE, OUT });
   // ---- Undo is 5 everywhere; the Board full card's Undo; the result cards on the smallest phone (undo-test.cjs) --------
   await require('./undo-test.cjs')({ browser, check, PAGE, OUT });
+  // ---- a retired board in full view: at play size, read-only, stepping, back exactly (retired-test.cjs) ----------------
+  await require('./retired-test.cjs')({ browser, check, PAGE, OUT });
   // The Home Screen web app, served over http as it is deployed: offline, updates, full screen (web-browser-test.cjs).
   console.log('web app');
   await require('./web-browser-test.cjs')({ browser, check, OUT });

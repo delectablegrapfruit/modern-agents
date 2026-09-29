@@ -360,7 +360,8 @@
       if (focused && !L.Collapse.on && performance.now() - (this.lastActivity || 0) < 120000) {
         const S = this.state.stats.timeMs;
         S.total += 1000;
-        if (this.tab === 'play') { S.play += 1000; const bs = this.modes.play.game.s; bs.playMs = (bs.playMs || 0) + 1000; }
+        // (A retired board in full view is not play: the board in play's time waits.)
+        if (this.tab === 'play') { if (!this.modes.play.fullView) { S.play += 1000; const bs = this.modes.play.game.s; bs.playMs = (bs.playMs || 0) + 1000; } }
         else if (this.tab === 'classic') S.classic = (S.classic || 0) + 1000;
         else if (this.tab === 'puzzle') S.puzzle += 1000;
         else if (this.tab === 'factory') S.factory += 1000;

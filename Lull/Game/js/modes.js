@@ -1057,7 +1057,7 @@
      * of it at that scale, a larger one is fitted in, at one device pixel a cell or more, so every row is as tall. Cached by board, stack, look and scale, so it is redrawn only when one of those
      * changed.
      */
-    thumb(id, cells, w, hh) {
+    thumb(id, cells, w, hh, tip) {
       const eq = this.app.store.state.equipped, theme = this.app.theme;
       const dpr = Math.min(3, root.devicePixelRatio || 1);
       const str = typeof cells === 'string' ? cells : Library.encodeCells(cells);
@@ -1091,13 +1091,14 @@
         this.thumbs.set(id, url);
         if (this.thumbs.size > 80) this.thumbs.delete(this.thumbs.keys().next().value);
       }
-      return h('img', { class: 'lib-thumb', src: url.src, alt: '', style: { width: url.W + 'px', height: url.H + 'px' } });
+      return h('img', { class: 'lib-thumb', src: url.src, alt: '', 'data-tip': tip || null, style: { width: url.W + 'px', height: url.H + 'px' } });
     }
 
     /**
      * The Boards window: Saved (the board in play first, then the rest by when they were last played) and Retired.
      * A saved board resumes with a click (or Enter); each has Rename, Retire and Delete. A retired one opens its
-     * summary, and can be deleted. New board shelves the one in play. One at a time: asked again, the open one stays.
+     * summary; View (or its thumbnail) shows it in full view; it can be deleted. New board shelves the one in play.
+     * One at a time: asked again, the open one stays.
      */
     openLibrary() {
       if (this.libHandle && this.libHandle.el.isConnected) return this.libHandle;
@@ -1182,14 +1183,17 @@
             s.pieces ? act('retire', 'Retire', () => this.confirmRetire(rec.id, afterGone(rec.id))) : gap(),
             act('trash', 'Delete', () => this.confirmDelete(rec.id, afterGone(rec.id)), 'del')));
       };
+      // A retired row opens its record; its thumbnail (or View) opens the board in full view.
       const retiredRow = (e) => h('div', { class: 'lib-row retired', 'data-id': e.id },
-        h('button', { class: 'lib-open', 'data-id': e.id, 'aria-label': e.name, onclick: () => this.openRetired(e.id, afterGone(e.id)) },
-          this.thumb(e.id, e.cells, e.w, e.h),
+        h('button', { class: 'lib-open', 'data-id': e.id, 'aria-label': e.name, onclick: (ev) => { if (ev.target.closest && ev.target.closest('.lib-thumb')) this.openRetiredView(e.id, ev.currentTarget); else this.openRetired(e.id, afterGone(e.id)); } },
+          this.thumb(e.id, e.cells, e.w, e.h, 'View'),
           h('div', { class: 'grow' }, h('div', { class: 't' }, e.name),
             h('div', { class: 'd' }, e.reason === 'full' ? h('span', { class: 'tag full' }, 'Full') : null,
               h('span', { class: 'sz' }, when(e.at) + ' · ' + Library.sizeLabel(e.w, e.h)),
               h('span', { class: 'st' }, ['Lines ' + fmtInt(e.sum.lines || 0), 'Score ' + fmtInt(e.sum.score || 0)].join(' · '))))),
-        h('div', { class: 'lib-acts' }, act('trash', 'Delete', () => this.confirmDelete(e.id, afterGone(e.id)), 'del')));
+        h('div', { class: 'lib-acts' },
+          h('button', { class: 'icon-btn fv-open', 'aria-label': 'View', 'data-tip': 'View', html: L.Icons.icon('expand'), onclick: (ev) => { ev.stopPropagation(); this.openRetiredView(e.id, ev.currentTarget); } }),
+          act('trash', 'Delete', () => this.confirmDelete(e.id, afterGone(e.id)), 'del')));
       const newBtn = h('button', { class: 'btn sm primary lib-new', 'aria-label': 'New board', onclick: () => this.openNewBoard((made) => { if (made && handle && handle.el.isConnected) { tab = 'saved'; editing = null; draw(st.state.boards.cur); } }) }, ico('newBoard'), h('span', { class: 'lbl' }, 'New board'));
       const seg = h('div', { class: 'seg lib-tabs' }, [['saved', 'Saved'], ['retired', 'Retired']].map(([k, l]) =>
         h('button', { 'data-k': k, 'aria-pressed': String(k === tab), onclick: () => { tab = k; editing = null; draw(); } }, l, h('span', { class: 'c' }))));
@@ -1235,20 +1239,45 @@
       return handle;
     }
 
-    /** A retired board's record: its name, when it lived, its summary. Read-only; it can be deleted. */
+    /** A retired record's dates (started, retired; beside its thumbnail when asked) and its summary. */
+    recordBody(e, withThumb) {
+      const day = (t) => new Date(t).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+      return [h('div', { class: 'lib-dates' }, withThumb ? this.thumb(e.id, e.cells, e.w, e.h) : null, h('div', null, h('div', null, h('i', null, 'Started '), day(e.sum.startedAt || e.created)), h('div', null, h('i', null, 'Retired '), day(e.at)))), this.boardSummary(e.sum)];
+    }
+
+    /** A retired board's record: its name, when it lived, its summary. Read-only; View shows it in full; it can be deleted. */
     openRetired(id, after) {
       const B = this.app.store.state.boards, e = Library.findRetired(B, id);
       if (!e) return;
-      const day = (t) => new Date(t).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
       // Delete asks first; only once it is done does the record close (Cancel leaves it open, where it was).
       const rec = UI.openModal({
         title: e.name, icon: 'retire', width: 420, cls: 'modal-retire',
-        body: [h('div', { class: 'lib-dates' }, this.thumb(e.id, e.cells, e.w, e.h), h('div', null, h('div', null, h('i', null, 'Started '), day(e.sum.startedAt || e.created)), h('div', null, h('i', null, 'Retired '), day(e.at)))), this.boardSummary(e.sum)],
-        buttons: [{ label: 'Delete', kind: 'danger', onClick: () => { this.confirmDelete(id, () => { rec.close(); if (after) after(); }); return false; } }, { label: 'Close', kind: 'primary' }],
+        body: this.recordBody(e, true),
+        buttons: [{ label: 'Delete', kind: 'danger', onClick: () => { this.confirmDelete(id, () => { rec.close(); if (after) after(); }); return false; } },
+          { label: 'View', kind: 'fv-view', onClick: () => { this.openRetiredView(id, rec.el.querySelector('footer .fv-view')); return false; } },
+          { label: 'Close', kind: 'primary' }],
       });
+      return rec;
     }
 
-    blocked() { return this.cardOpen; }
+    /**
+     * A retired board in full view (js/retiredview.js): at play size where the board in play is, read-only, with
+     * Previous and Next through the retired boards; Back or Esc returns, focus to `back`. One at a time.
+     */
+    openRetiredView(id, back) {
+      if (this.fullView || !Library.findRetired(this.app.store.state.boards, id)) return this.fullView || null;
+      // A record that cannot be drawn opens nothing (the view makes its first board before it opens a thing).
+      try { this.fullView = new L.RetiredView(this, id, back || document.activeElement); } catch (err) { console.warn('Lull: a retired board could not be drawn', err); return null; }
+      return this.fullView;
+    }
+
+    /** While a retired board is in full view, it is what is drawn; the board in play waits, untouched. */
+    frame(now, dt) {
+      if (this.fullView) { this.fullView.frame(now, dt); return; }
+      super.frame(now, dt);
+    }
+
+    blocked() { return this.cardOpen || !!this.fullView; }
 
     renderStatus() {
       const s = this.game.s;

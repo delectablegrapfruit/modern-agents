@@ -2375,6 +2375,48 @@ console.log('board library');
     assert.strictEqual(st.boards.retired.length, 0);
     assert(!Library.removeRetired(st.boards, id));
   });
+  test('retire keeps the pieces a board ended with: in play (on a full board, the one that could not come in), held and next', () => {
+    const st = L.loadState({});
+    const g = played(41, 3);
+    g.holdPiece();
+    for (let y = 0; y < g.h - 2; y++) for (let x = 0; x < g.w - 1; x++) g.board.set(x, y, 8);
+    let guard = 0;
+    while (!g.over && guard++ < 50) g.drop();
+    assert(g.over && g.piece, 'the board filled up');
+    st.free = g.toJSON();
+    Library.ensure(st, 1000, rnd);
+    const e = Library.retire(st, st.boards.cur, g.toJSON(), 9000, 'full');
+    assert.deepStrictEqual(e.piece, { entry: Object.assign({}, g.piece.entry, { special: g.piece.special || null }), rot: g.piece.rot, x: g.piece.x, y: g.piece.y });
+    assert(!g.fitsAt(g.piece, e.piece.rot, e.piece.x, e.piece.y), 'the piece kept is the one with no room');
+    assert.deepStrictEqual(e.hold, g.hold);
+    assert.strictEqual(e.next.length, Library.NEXT_KEPT);
+    assert.deepStrictEqual(e.next, g.queue.slice(0, Library.NEXT_KEPT));
+    // Copies, not the game's own objects.
+    const kept = [e.hold.id, e.next[0].id];
+    g.hold.id = 'changed'; g.queue[0].id = 'changed';
+    assert.deepStrictEqual([e.hold.id, e.next[0].id], kept);
+    // Through the save and back: kept exactly; broken ones are dropped, never the record.
+    const back = L.loadState(JSON.parse(JSON.stringify(st)));
+    const B = Library.ensure(back, 9500, rnd), r = B.retired[0];
+    assert.deepStrictEqual([r.piece, r.hold, r.next, r.cells, r.reason], [e.piece, e.hold, e.next, e.cells, 'full']);
+    const odd = L.loadState({ v: 1, boards: { retired: [
+      { id: 'b7', w: 10, h: 20, piece: { entry: { id: 'T' }, rot: 0, x: 400, y: 3 }, hold: 'T', next: [{ id: 'I' }, null, { id: 5 }, { id: 'O', rot: 0 }] },
+      { id: 'b8', w: 10, h: 20, piece: { entry: {}, rot: 0, x: 3, y: 3 }, next: 'x' },
+      { id: 'b9', w: 6, h: 12 },
+    ] } });
+    const B2 = Library.ensure(odd, 1, rnd);
+    assert.deepStrictEqual(B2.retired.map((x) => [x.id, x.piece, x.hold, x.next.map((n) => n.id).join('')]), [['b7', null, null, 'IO'], ['b8', null, null, ''], ['b9', null, null, '']]);
+  });
+  test('retired pieces in a turn no piece has (a hand-edited or broken save) are dropped, never kept to be drawn', () => {
+    const odd = L.loadState({ v: 1, boards: { retired: [
+      { id: 'b1', w: 10, h: 20, reason: 'full', piece: { entry: { id: 'T' }, rot: 6, x: 4, y: 17 }, hold: { id: 'T', rot: 6 }, next: [{ id: 'I', rot: 6 }, { id: 'O', rot: 7 }, { id: 'S', rot: -1 }, { id: 'Z', rot: 1.5 }, { id: 'L', rot: 3 }, { id: 'J' }] },
+      { id: 'b2', w: 10, h: 20, reason: 'full', piece: { entry: { id: 'T', rot: 9 }, rot: 0, x: 4, y: 17 }, hold: { id: 'T', rot: 9 }, next: [{ id: 'T', rot: 7 }] },
+      { id: 'b3', w: 10, h: 20, reason: 'full', piece: { entry: { id: 'T', rot: 2 }, rot: 3, x: 4, y: 17 }, hold: { id: 'I', rot: 1 }, next: [{ id: 'T', rot: 0 }] },
+    ] } });
+    const B = Library.ensure(odd, 1, rnd);
+    assert.deepStrictEqual(B.retired.map((x) => [x.id, x.piece && x.piece.rot, x.hold && x.hold.rot, x.next.map((n) => n.id + (n.rot == null ? '' : n.rot)).join(' ')]),
+      [['b1', null, null, 'L3 J'], ['b2', null, null, ''], ['b3', 3, 1, 'T0']]);
+  });
   test('delete: a shelved board goes for good; deleting the one in play leaves cur empty for a new one', () => {
     const st = L.loadState({});
     st.free = played(7, 2).toJSON();

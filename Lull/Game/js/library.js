@@ -7,12 +7,17 @@
 //   record: { id, name, created, touched, game, earn } — the current board's game is the save's `free` (null here);
 //           a shelved one's is its Game.toJSON() (cells, piece, hold, queue, bag, RNG state, every per-board stat).
 //           earn is the save's per-board Earn record (js/items.js), parked with the board so a milestone pays once.
-//   entry:  { id, name, created, at, reason, sum, w, h, cells } — the board's summary (summarize) and its last stack.
+//   entry:  { id, name, created, at, reason, sum, w, h, cells, piece, hold, next } — the board's summary (summarize),
+//           its last stack, and the pieces it ended with: the one in play ({ entry, rot, x, y }: on a full board the
+//           piece that could not come in), the held one and the first few of the queue (entries, { id, rot, special }).
+//           Only shown (the full view, js/retiredview.js), never played.
 (function (root) {
   'use strict';
   const L = (root.Lull = root.Lull || {});
 
   const MAX_ACTIVE = 12, MAX_RETIRED = 50, NAME_MAX = 24;
+  // A retired record keeps this many of the queue: as many as Next can show (Settings ▸ Board, 1 to 6).
+  const NEXT_KEPT = 6;
   const ADJ = ['Quiet', 'Gentle', 'Mossy', 'Velvet', 'Sleepy', 'Patient', 'Cozy', 'Silent', 'Tidy', 'Lazy', 'Soft', 'Misty', 'Amber', 'Slow', 'Still', 'Mellow', 'Hushed', 'Dusky', 'Linen', 'Paper', 'Willow', 'Pale', 'Drowsy', 'Warm'];
   const NOUN = ['Harbor', 'Orchard', 'Garden', 'Porch', 'Meadow', 'Lantern', 'Pond', 'Attic', 'Cove', 'Hollow', 'Brook', 'Nook', 'Terrace', 'Pantry', 'Grove', 'Window', 'Lagoon', 'Valley', 'Cabin', 'Dune', 'Teacup', 'Alcove', 'Field', 'Tide'];
 
@@ -42,6 +47,10 @@
 
   const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
   const num = (v, d) => (typeof v === 'number' && isFinite(v) ? v : d);
+  /** A turn a piece can have: 0 to 3 (none: its first). */
+  const rotOk = (r) => r == null || (Number.isInteger(r) && r >= 0 && r < 4);
+  /** A piece as the queue and hold keep it: { id, rot, special } (an id and a turn it can have; what it names is the view's to check). */
+  const pieceEntry = (x) => isObj(x) && typeof x.id === 'string' && x.id.length > 0 && x.id.length <= 40 && rotOk(x.rot);
   /** A saved game that can be resumed: a size in range with a stack to match, a queue, a bag, a random stream, stats. */
   const playable = (g) => isObj(g) && validSize(g.w, g.h) && Array.isArray(g.cells) && g.cells.length === g.w * g.h && Array.isArray(g.queue) && Array.isArray(g.bag) && g.rng != null && isObj(g.s);
 
@@ -68,6 +77,10 @@
       // A stack that does not match its size is not drawn (the record keeps its numbers).
       if (sz.w !== e.w || sz.h !== e.h || e.cells.length !== sz.w * sz.h) e.cells = '';
       e.w = sz.w; e.h = sz.h; e.sum.w = e.w; e.sum.h = e.h; e.at = num(e.at, now); e.created = num(e.created, e.at);
+      const p = e.piece, near = (v, n) => Number.isInteger(v) && v >= -8 && v <= n + 8;
+      e.piece = isObj(p) && pieceEntry(p.entry) && Number.isInteger(p.rot) && rotOk(p.rot) && near(p.x, e.w) && near(p.y, e.h) ? p : null;
+      e.hold = pieceEntry(e.hold) ? e.hold : null;
+      e.next = Array.isArray(e.next) ? e.next.filter(pieceEntry).slice(0, NEXT_KEPT) : [];
       named(e);
     });
     if (B.retired.length > MAX_RETIRED) B.retired.length = MAX_RETIRED;
@@ -204,7 +217,7 @@
 
   /**
    * Retires a board (the one in play or a shelved one): out of the list, onto the front of the retired records, with
-   * its summary and last stack. Past MAX_RETIRED the oldest record goes. `game` is its Game.toJSON(). If it was the
+   * its summary, last stack and the pieces it ended with (in play, held, next). Past MAX_RETIRED the oldest record goes. `game` is its Game.toJSON(). If it was the
    * current board, cur is left empty: the caller starts a new one (newCurrent).
    */
   function retire(st, id, game, now, reason) {
@@ -212,7 +225,12 @@
     if (i < 0 || !game) return null;
     const rec = B.list[i];
     B.list.splice(i, 1);
-    const entry = { id: rec.id, name: rec.name, created: rec.created, at: now, reason: reason || 'manual', sum: summarize(game.s, now, game), w: game.w, h: game.h, cells: encodeCells(game.cells) };
+    const copy = (x) => (pieceEntry(x) ? JSON.parse(JSON.stringify(x)) : null), p = game.piece;
+    const entry = {
+      id: rec.id, name: rec.name, created: rec.created, at: now, reason: reason || 'manual', sum: summarize(game.s, now, game), w: game.w, h: game.h, cells: encodeCells(game.cells),
+      piece: p && copy(p.entry) ? { entry: copy(p.entry), rot: p.rot, x: p.x, y: p.y } : null,
+      hold: copy(game.hold), next: (Array.isArray(game.queue) ? game.queue : []).filter(pieceEntry).slice(0, NEXT_KEPT).map(copy),
+    };
     B.retired.unshift(entry);
     if (B.retired.length > MAX_RETIRED) B.retired.length = MAX_RETIRED;
     if (B.cur === id) B.cur = null;
@@ -262,5 +280,5 @@
     return (cur ? [cur] : []).concat(B.list.filter((r) => r !== cur).sort((a, b) => (b.touched || 0) - (a.touched || 0)));
   }
 
-  L.Library = { STANDARD, LIMITS, scale, bank, validSize, clampSize, sizeLabel, playable, MAX_ACTIVE, MAX_RETIRED, NAME_MAX, ADJ, NOUN, blank, ensure, find, findRetired, current, full, cleanName, uniqueName, makeName, add, shelve, take, startNew, open, rename, summarize, encodeCells, decodeCells, retire, remove, removeRetired, newCurrent, taper, ordered };
+  L.Library = { STANDARD, LIMITS, scale, bank, validSize, clampSize, sizeLabel, playable, MAX_ACTIVE, MAX_RETIRED, NAME_MAX, NEXT_KEPT, ADJ, NOUN, blank, ensure, find, findRetired, current, full, cleanName, uniqueName, makeName, add, shelve, take, startNew, open, rename, summarize, encodeCells, decodeCells, retire, remove, removeRetired, newCurrent, taper, ordered };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
