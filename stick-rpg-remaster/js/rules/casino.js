@@ -688,18 +688,37 @@
   // Applying a round to the state
 
   /**
+   * A round's net in whole dollars (cash holds whole dollars). Only blackjack's 3:2 natural on an
+   * odd bet has a fraction (+7.5 on $5). Rounding it always to the nearest dollar or always down
+   * moves B-14b's house edge by about 0.4 % at the $5 minimum (10⁶ basic-strategy hands, seed 99:
+   * 0.32 % or 1.13 % against 0.73 % exact); so the fraction becomes a whole dollar with its own
+   * probability (a $5 natural pays $8 or $7, $7.50 on average), decided by hash(seed, day, the
+   * day's hands, cash): no draw and no state field, so the rules stream stays aligned and every bet
+   * pays exactly 3:2 on average (docs/requests/W2-Night.md 6). A net that is not a number is 0.
+   * @returns {number}
+   */
+  function wholeNet(s, net) {
+    net = Number(net);
+    if (!isFinite(net)) return 0;
+    var lo = Mth.floor(net + 1e-9), frac = net - lo;
+    if (frac <= 1e-9) return lo;
+    var u = SR.util.hash(s.seed, 'casino.wholeNet', s.clock.day, s.daily.bjHands || 0, s.money.cash) / 4294967296;
+    return u < frac ? lo + 1 : lo;
+  }
+
+  /**
    * Applies one gamble round (B-14): the net to cash (a win is income 'win', through the lien),
    * -1 karma up to -10 a day (orig; not for darts or scratch), VIP points on the stake (P1; ×2 on
    * Saturday), casino.winToday, the jackpot and casinoBig log entries, the `gamble` event.
    * @param {string} game 'slots' | 'blackjack' | 'roulette' | 'darts' | 'scratch'
    * @param {number} bet the amount staked this round
-   * @param {number} net the round's net (whole dollars)
+   * @param {number} net the round's net (a fraction is paid as a whole dollar, wholeNet)
    * @param {object=} facts extra fields for the `gamble` payload (reels, pocket, ...)
    * @returns {object} a partial Result
    */
   function applyRound(s, game, bet, net, facts) {
     var res = partial(), c = s.casino, K = C().karma;
-    net = Mth.round(net);
+    net = wholeNet(s, net);
     if (net > 0) SR.rules.effects.credit(s, 'cash', net, 'win');
     else if (net < 0) s.money.cash = Mth.max(0, s.money.cash + net);
     if (game !== 'darts' && game !== 'scratch' && (s.daily.gambleKarma || 0) < K.dailyMax) {
@@ -936,13 +955,38 @@
   SR.def.fn('casino.dartsMatch', function (s, params, ctx) { return dartsMatch(s, params, ctx); });
   SR.def.fn('casino.vipDrink', function (s) { return vipDrink(s); });
   /**
+   * The most a session's net can move for its stake (B-14): a session never loses more than it
+   * staked, and never wins more than every dollar at the game's best odds: the top slot line
+   * (× bet, stake included), a straight up (35:1) or a natural (3:2).
+   * @returns {number[]|null} [lo, hi], or null for a game that settles no sessions
+   */
+  function sessionRange(s, game, wagered) {
+    var top;
+    if (game === 'slots') {
+      var p = pays(s), base = C().slots.pays;
+      top = Mth.max.apply(null, Object.keys(p).map(function (k) { return Mth.max(p[k], base[k] || 0); })) - 1;
+    } else if (game === 'roulette') top = C().roulette.pays.straight;
+    else if (game === 'blackjack') top = BJ().natural;
+    else return null;
+    return [-wagered, wagered * top];
+  }
+
+  /**
    * A whole session's net in one go ('<id>:resolve' of an engine that did not apply its rounds):
-   * params { game, net, rounds, wagered }; karma once per round (the daily cap still holds).
+   * params { game, net, rounds, wagered }; karma once per round (the daily cap still holds). The
+   * echoed net is held to what the stake could do (sessionRange), so a malformed result never pays
+   * more than the table could; a game other than slots, blackjack or roulette is refused.
    */
   SR.def.fn('casino.settle', function (s, params) {
     var game = params.game || 'slots', rounds = Mth.max(0, Mth.floor(Number(params.rounds) || 0));
     if (!params.apply) return {};
-    var res = applyRound(s, game, Mth.max(0, Number(params.wagered) || 0), Number(params.net) || 0, { rounds: rounds });
+    var wagered = Mth.max(0, Mth.floor(Number(params.wagered) || 0)), range = sessionRange(s, game, wagered);
+    if (!range) return { ok: false, reason: 'reason.badBet', vars: {} };
+    // Nothing staked, nothing played (a sampled session that could not afford its first bet): no
+    // karma, no `gamble` event.
+    if (!rounds && !wagered) return {};
+    var net = SR.util.clamp(Number(params.net) || 0, range[0], range[1]);
+    var res = applyRound(s, game, wagered, net, { rounds: rounds });
     for (var i = 1; i < rounds && (s.daily.gambleKarma || 0) < C().karma.dailyMax; i++) {
       SR.rules.stats.karma(s, C().karma.gamble);
       s.daily.gambleKarma = (s.daily.gambleKarma || 0) + 1;

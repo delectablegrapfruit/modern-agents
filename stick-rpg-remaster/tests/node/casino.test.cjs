@@ -438,4 +438,70 @@ T.section('rounds on the state: karma, VIP, winToday (B-14, B-29)');
   T.eq([l.money.cash, l.money.lien], [50, 950], 'winnings are income through the lien');
 }
 
+T.section('a natural on an odd bet pays 3:2 on average (docs/requests/W2-Night.md 6)');
+{
+  // Cash is whole dollars; a $5 natural is +7.5. It pays $8 or $7 by a hash of the state (no draw),
+  // $7.50 on average, so B-14b's edge holds at every bet size.
+  const paid = {}, N = 4000, before = K.json(SR.rng.rules.state());
+  let sum = 0;
+  for (let i = 0; i < N; i++) {
+    const s = K.state(SR, { money: { cash: 1000 + i }, daily: { bjHands: i % 60 } });
+    const r = CA.applyRound(s, 'blackjack', 5, 7.5);
+    const n = r.events[0].payload.net;
+    paid[n] = (paid[n] || 0) + 1;
+    sum += n;
+    if (s.money.cash !== 1000 + i + n) { T.ok(false, 'the gamble event says what was paid', [i, n, s.money.cash]); break; }
+  }
+  T.eq(Object.keys(paid).sort(), ['7', '8'], 'a $5 natural pays $7 or $8, never anything else');
+  T.ok(Math.abs(sum / N - 7.5) < 0.05, 'and $7.50 on average (the exact 3:2)', sum / N);
+  T.eq(K.json(SR.rng.rules.state()), before, 'the rounding draws nothing from the rules stream');
+  const s = K.state(SR, { money: { cash: 100 } });
+  const again = K.json(s);
+  const a = CA.applyRound(s, 'blackjack', 5, 7.5).events[0].payload.net;
+  const b = CA.applyRound(SR.util.merge(K.state(SR), again), 'blackjack', 5, 7.5).events[0].payload.net;
+  T.eq(a, b, 'the same state always pays the same (replays and reloads agree)');
+  const w = K.state(SR, { money: { cash: 100 } });
+  T.eq([10, -10, 0].map((n) => CA.applyRound(w, 'blackjack', 10, n).events[0].payload.net), [10, -10, 0], 'whole nets are paid as they are');
+  const losses = new Set();
+  for (let i = 0; i < 200; i++) losses.add(CA.applyRound(K.state(SR, { money: { cash: 500 + i } }), 'blackjack', 5, -7.5).events[0].payload.net);
+  T.eq([...losses].sort(), [-7, -8], 'a fractional loss (none in B-14b, but a settled session may carry one) is -7 or -8');
+  const nan = K.state(SR, { money: { cash: 100 } });
+  const z = CA.applyRound(nan, 'blackjack', 5, NaN);
+  T.eq([nan.money.cash, z.events[0].payload.net], [100, 0], 'a net that is not a number pays nothing (and the event says 0)');
+  // Through the pipeline: the engine's { round } form settles 1.5 × bet and pays it whole.
+  const q = K.state(SR, { money: { cash: 100 } });
+  const nat = { bet: 5, hands: [{ cards: [0, 9], bet: 5, done: true }], dealer: [4, 5], active: 0, playerBJ: true };
+  const hr = K.act(SR, q, 'bjHand', { round: nat, trueCount: 0 }, 2);
+  T.ok(hr.ok && [107, 108].indexOf(q.money.cash) >= 0 && q.money.cash - 100 === hr.events[0].payload.net,
+    'a $5 natural through casino.bjHand: +$7 or +$8, as the gamble event says', [hr.ok, hr.reason, q.money.cash]);
+}
+
+T.section('a whole session settled at once (casino.settle, apply: true)');
+{
+  const s = K.state(SR, { money: { cash: 1000 } });
+  const r = K.act(SR, s, 'settle', { game: 'slots', net: -15, rounds: 3, wagered: 15, apply: true }, 1);
+  T.eq([r.ok, s.money.cash, s.stats.karma, r.events.filter((e) => e.name === 'gamble').map((e) => [e.payload.game, e.payload.net, e.payload.rounds])],
+    [true, 985, -3, [['slots', -15, 3]]], 'a sampled session: its net, karma once a round, one gamble event');
+  const played = K.state(SR, { money: { cash: 1000 } });
+  const pr = K.act(SR, played, 'settle', { net: 50, rounds: 2, wagered: 10 }, 2);
+  T.eq([pr.ok, played.money.cash, played.stats.karma], [true, 1000, 0], 'a played session (no apply) was applied round by round: nothing more');
+  const idle = K.state(SR, { money: { cash: 2 } });
+  const ir = K.act(SR, idle, 'settle', { game: 'blackjack', net: 0, rounds: 0, wagered: 0, apply: true }, 3);
+  T.eq([ir.ok, idle.stats.karma, ir.events.length], [true, 0, 0], 'a sample that could not afford a bet costs no karma and raises no gamble event');
+  const cases = [
+    [{ game: 'slots', net: 1e9, rounds: 1, wagered: 5 }, 5 * 699],
+    [{ game: 'roulette', net: 1e9, rounds: 1, wagered: 10 }, 350],
+    [{ game: 'blackjack', net: 1e9, rounds: 1, wagered: 10 }, 15],
+    [{ game: 'slots', net: -1e9, rounds: 1, wagered: 25 }, -25],
+    [{ game: 'roulette', net: 500, rounds: 1, wagered: 0 }, 0],
+  ];
+  T.eq(cases.map(([p]) => {
+    const t = K.state(SR, { money: { cash: 1000 } });
+    const res = K.act(SR, t, 'settle', Object.assign({ apply: true }, p), 4);
+    return res.ok ? t.money.cash - 1000 : res.reason;
+  }), cases.map((c) => c[1]), 'an echoed net is held to what the stake could do: the top slot line, a straight up, a natural; never below -wagered');
+  T.eq(K.act(SR, K.state(SR, { money: { cash: 1000 } }), 'settle', { game: 'darts', net: 100, rounds: 1, wagered: 10, apply: true }, 5).reason,
+    'reason.badBet', 'only slots, blackjack and roulette settle sessions');
+}
+
 T.done();

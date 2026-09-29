@@ -36,7 +36,7 @@
     // ---------------------------------------------------------------------------------------------
     // Fighters (GDD §6.3; js/data/fighters.js). name · quirk (the fight screen's one-line hint)
     'fighter.wobbly_pete.name': 'Wobbly Pete',
-    'fighter.wobbly_pete.quirk': 'Swings wide. A lot of his punches hit the air.',
+    'fighter.wobbly_pete.quirk': 'Swings wide. A lot of what he throws hits the air.',
     'fighter.big_lou.name': 'Big Lou',
     'fighter.the_accountant.name': 'The Accountant',
     'fighter.the_accountant.quirk': 'Only ever kicks. He says it is more efficient.',
@@ -187,7 +187,7 @@
     // ---------------------------------------------------------------------------------------------
     // Fights (GDD §4.12; js/rules/fight.js)
     'toast.fight.wallet': 'You take {name}\'s wallet: {money}',
-    'toast.fight.drink': 'You buy {name} a drink. He says you\'re all right',
+    'toast.fight.drink': 'You buy {name} a drink. No hard feelings',
     'toast.fight.lose': 'The bouncer carries you out by the collar',
     'toast.fight.tab': 'Your share of the damages: {money}',
     'toast.fight.run': 'You leave at speed. Nobody claps',

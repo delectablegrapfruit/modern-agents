@@ -127,8 +127,9 @@
   <script src="../../js/audio/songs/stingers.js"></script>
   <script>
   // The sheet's logic (inline: this page is W2-Music's one sheet file). window.musicSheet:
-  //   ready, META, STINGERS, W1S, list(), analyze(buf, o), check(id, opts), verdict(info), grid(id,
-  //   variant, seconds), tempo(id, o), checkAll(), play(id, variant)
+  //   ready, META, STINGERS, W1S, MOTIF_SONGS, list(), stingerIds(), analyze(buf, o), check(id, opts),
+  //   verdict(info), grid(id, variant, seconds, pos), gridOf(id, seconds, pos), tempo(id, o),
+  //   checkAll(filter), play(id, variant), buffers
   (function () {
     'use strict';
     var SR = window.SR;

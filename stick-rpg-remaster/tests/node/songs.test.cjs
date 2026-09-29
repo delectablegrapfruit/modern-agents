@@ -197,8 +197,17 @@ T.section('the variants the callers ask for');
   Object.keys(fe.variants.minor.tracks).forEach((t) => Object.keys(fe.variants.minor.tracks[t]).forEach((p) => notesOf(fe.variants.minor.tracks[t][p]).forEach((n) => minorNotes.push(n % 12))));
   const fSharp = minorNotes.filter((n) => n === 6).length, bNat = minorNotes.filter((n) => n === 11).length, f = minorNotes.filter((n) => n === 5).length;
   T.ok(f > 20 * Math.max(1, fSharp) && bNat === 0, 'minor: D minor spelling (F ' + f + ', F# ' + fSharp + ', B natural ' + bNat + ' times)');
-  const dict = def('hail_to_the_stick').variants.dictator.tracks;
-  T.ok(Object.keys(dict).length > 0, 'dictator rewrites the march\'s pitched parts (B♭ minor)');
+  const hs = def('hail_to_the_stick'), dict = hs.variants.dictator.tracks;
+  const uncovered = [], naturals = [];
+  for (const p of Object.keys(hs.patterns)) {
+    for (const t of Object.keys(hs.patterns[p].tracks)) {
+      if (!pitched(hs, t)) continue;
+      const v = dict[t] && dict[t][p];
+      if (notesOf(hs.patterns[p].tracks[t]).some((n) => n % 12 === 2 || n % 12 === 7) && !v) uncovered.push(p + '/' + t);
+      if (v && notesOf(v).some((n) => n % 12 === 2 || n % 12 === 7)) naturals.push(p + '/' + t);
+    }
+  }
+  T.eq([uncovered, naturals], [[], []], 'dictator: every march part with a D or G is rewritten in B♭ minor (D♭, G♭), none left natural');
 }
 
 T.section('stingers (ART_AUDIO §13.4)');

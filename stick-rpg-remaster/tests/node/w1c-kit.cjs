@@ -95,6 +95,7 @@ function fixtures(SR) {
   A('slots', { timeRule: 'free', requires: [['fn', 'casino.canPlay', 'slots']], effects: [['fn', 'casino.slotsSpin']] });
   A('roulette', { timeRule: 'free', effects: [['fn', 'casino.rouletteSpin']] });
   A('bjHand', { timeRule: 'free', effects: [['fn', 'casino.bjHand']] });
+  A('settle', { timeRule: 'free', effects: [['fn', 'casino.settle']] });
   A('rally', { cost: { cash: 'election.cash', min: 'election.min' }, requires: [['fn', 'election.canCampaign']], effects: [['fn', 'election.campaign']] });
   A('tvAd', { cost: { cash: 'election.cash', min: 'election.min' }, requires: [['fn', 'election.canCampaign']], effects: [['fn', 'election.campaign']] });
   A('accept', { timeRule: 'free', effects: [['fn', 'election.accept']] });
