@@ -1,8 +1,10 @@
 // tests/e2e/render.test.cjs — owner: W1-G. The render core's acceptance (BUILD_PLAN §3.8): the
 // whole island (torn edges, the thickness band, the Dog-Ear flap, the Bus Hole, the sky and the
 // distant islands), every building by its archetype, masses, palette and door treatment (north
-// porches visible), zoom 0.8 / 1.0 / 1.25, lighting at every keyframe hour, the memory budgets of
-// ARCHITECTURE §17 at 1920 × 1080 (DPR 1 and 2, every zoom, after a full-map camera tour), the perf
+// porches visible; no lit window under a sign; the grain only on painted pixels), zoom 0.8 / 1.0 /
+// 1.25, lighting at every keyframe hour (no light through a building that hides its source), the
+// memory budgets of ARCHITECTURE §17 at 1920 × 1080 (DPR 1 and 2, every zoom, after a full-map
+// camera tour with traffic by day and night, and the sky through a day of tints), the perf
 // gate with stub actors (40 walkers, 14 cars) on High, the #fx transitions, confetti and jolt,
 // sky.drawWindow, world UI and particles, invalidation, index.html with no errors, and the
 // exteriors contact sheet. Screenshots: shots/W1-G/ (git-ignored).
@@ -184,6 +186,34 @@ function luma(p) { return 0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2]; }
   bld.filter((b) => b.face === 'S').forEach((b) => T.ok(b.door[3] === 255 && (dist(b.door, b.dark) < 30 || luma(b.door) < 90 || dist(b.door, hex(PAL.glass)) < 40), b.id + ': a south door in the facade', b.door));
   bld.filter((b) => b.face === 'E' || b.face === 'W').forEach((b) => T.ok(b.door[3] === 255 && (dist(b.door, b.trim) < 36 || dist(b.door, b.wallsRgb) < 36), b.id + ': an ' + b.face + ' awning in trim / walls stripes', b.door));
   bld.filter((b) => b.face === 'N').forEach((b) => T.ok(b.door[3] === 255 && dist(b.door, b.trim) < 36, b.id + ': the north canopy on the annex roof', b.door));
+  const paint = await page.evaluate(() => {
+    const E = SR.art.exterior, out = { veil: [], covered: [], offSprite: [], keep: [], pent: null };
+    const inside = (w, r) => w[0] < r[2] && w[0] + w[2] > r[0] && w[1] < r[3] && w[1] + w[3] > r[1];
+    SR.reg.worldmap.main.buildings.forEach((def) => {
+      const res = E.build(def, 1, 1), g = E.geom(def), x = res.albedo.getContext('2d');
+      const alpha = (wx, wy) => x.getImageData(Math.floor((wx - res.bounds[0]) * res.scale), Math.floor((wy - res.bounds[1]) * res.scale), 1, 1).data[3];
+      const b = res.bounds;
+      // The paper grain never paints where the building did not (no pale veil around it).
+      [[b[0] + 2, b[1] + 2], [b[2] - 3, b[1] + 2], [b[0] + 2, b[3] - 3], [b[2] - 3, b[3] - 3]].forEach((p) => { if (alpha(p[0], p[1])) out.veil.push([def.id, p]); });
+      // Lit windows sit on painted glass and never under a sign, a plate or a blade sign.
+      const covers = [g.signRect, g.bladeRect].filter(Boolean);
+      res.windows.forEach((w) => {
+        if (alpha(w[0] + w[2] / 2, w[1] + w[3] / 2) < 255) out.offSprite.push([def.id, w]);
+        if (covers.some((r) => inside(w, r))) out.covered.push([def.id, w]);
+      });
+      if (def.id === 'home_castle') {
+        const m = g.main, roof = [m.x0, m.y0 - 0.5 * m.h, m.x1, m.y1 - 0.5 * m.h];
+        res.windows.forEach((w) => { const cx = w[0] + w[2] / 2, cy = w[1] + w[3] / 2; if (cx > roof[0] && cx < roof[2] && cy > roof[1] && cy < roof[3]) out.keep.push(w); });
+      }
+      // Edgeview's set-back tiers leave the tower's north-west corner open: nothing there.
+      if (def.id === 'home_pent') out.pent = alpha(3762, 3195);
+    });
+    return out;
+  });
+  T.ok(paint.veil.length === 0 && paint.pent === 0, 'the paper grain touches only painted pixels (no veil beside set-back tiers)', paint);
+  T.eq(paint.offSprite, [], 'every lit-window rect lies on the painted facade');
+  T.eq(paint.covered, [], 'no lit window lies under a sign, name plate or blade sign');
+  T.eq(paint.keep, [], "the castle's north towers keep no lit windows behind the keep's roof");
   // North porches: the outer strip stays visible in the city (no building covers it).
   const porches = await page.evaluate(() => SR.render.lib.model().doors.filter((d) => d.geom.door.face === 'N').map((d) => ({ id: d.building, x: d.door.x, y: d.door.y, vis: d.geom.visible })));
   for (const p of porches) {
@@ -248,6 +278,32 @@ function luma(p) { return 0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2]; }
   const night = await page.evaluate(() => ({ nli: (SR.render.buildings.litWindows('nli', 1320, 1) || []).length, noon: SR.render.lighting.at(780).light }));
   T.ok(night.nli > 20 && night.noon === 0, 'lit windows by the seeded schedule at 22:00; no light factor at noon', night);
   T.ok(imgs[23] > imgs[13] + 5, 'the emissive pass adds lamp pools, spills and neon at night', imgs);
+  const hidden = await page.evaluate(() => {
+    // A car north of New Lines Inc. inside its projection: the building hides it, lights and all.
+    const car = { x: 3150, y: 1330, a: 0, kind: 'sedan' };
+    const box = (x0, y0, x1, y1) => {
+      SR.loop.step(1);
+      const c = SR.stage.world, k = c.width / SR.W, p0 = SR.render.toScreen(x0, y0), p1 = SR.render.toScreen(x1, y1);
+      return Array.from(c.getContext('2d').getImageData(Math.round(p0.x * k), Math.round(p0.y * k), Math.round((p1.x - p0.x) * k), Math.round((p1.y - p0.y) * k)).data);
+    };
+    const diff = (a, b) => a.reduce((n, v, i) => n + (v !== b[i] ? 1 : 0), 0);
+    SR.render.setView({ x: 3000, y: 1400, zoom: 1, min: 1320 });
+    SR.render.warm();
+    SR.loop.step(1);
+    const out = {};
+    const a0 = box(3000, 1240, 3380, 1450);
+    SR.render.actors.source('lightCar', () => [car], 'car');
+    out.hidden = diff(a0, box(3000, 1240, 3380, 1450));
+    // The same car on Main Street lights the asphalt ahead of it (the box holds only the cone).
+    SR.render.actors.source('lightCar', null);
+    const b0 = box(2500, 1410, 2610, 1490);
+    car.x = 2420; car.y = 1450;
+    SR.render.actors.source('lightCar', () => [car], 'car');
+    out.open = diff(b0, box(2500, 1410, 2610, 1490));
+    SR.render.actors.source('lightCar', null);
+    return out;
+  });
+  T.ok(hidden.hidden === 0 && hidden.open > 100, 'a car a building hides shows no headlights or tail lights through it; one in the open does', hidden);
   for (const hr of [8, 13, 19, 23]) {
     await frame(t, { x: 2330, y: 2150, zoom: 1, min: hr * 60 });
     await t.shot(path.join(SHOTS, 'city-' + String(hr).padStart(2, '0') + '00.png'));
@@ -284,6 +340,24 @@ function luma(p) { return 0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2]; }
     SR.render.actors.source('testPlayer', null);
     return out;
   });
+  const porch = await page.evaluate(() => {
+    // Fine Line's north porch: the player just south of the sign post stands in front of it.
+    const g = SR.render.lib.model().doors.find((d) => d.building === 'furniture').geom;
+    const p = { kind: 'player', x: g.post.x, y: g.post.y + 9, facing: 'down' };
+    SR.render.setView({ x: p.x, y: p.y - 40, zoom: 1.25, min: 780 });
+    SR.render.warm();
+    const head = () => {
+      SR.loop.step(1);
+      const c = SR.stage.world, k = c.width / SR.W, s = SR.render.toScreen(p.x, p.y - 47);
+      return Array.from(c.getContext('2d').getImageData(Math.round(s.x * k), Math.round(s.y * k), 1, 1).data);
+    };
+    const board = head();
+    SR.render.actors.source('porchPlayer', () => p, 'player');
+    const shown = head();
+    SR.render.actors.source('porchPlayer', null);
+    return { board, shown };
+  });
+  T.ok(dist(porch.board, porch.shown) > 20, "on a north porch's outer strip the player is drawn in front of the sign post", porch);
   T.ok(ui.fade[0] === 0.35 && ui.fade[1] <= 0.36, 'a building covering the player fades to 35 % within 150 ms', ui.fade);
   T.ok(ui.unfade === 1, 'and comes back when the player leaves its projection', ui.unfade);
   T.ok(ui.floats === 1 && ui.floatsAfter === 0, 'a float text lives 900 ms', ui);
@@ -433,36 +507,71 @@ function luma(p) { return 0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2]; }
   T.section('memory (1920 × 1080, DPR 1 and 2, every zoom, a full-map tour)');
   async function tour(tt, dpr) {
     const res = await tt.page.evaluate(([levels]) => {
-      const worst = { chunks: 0, chunkBytes: 0, spritePx: 0, small: 0, sky: 0, total: 0, stops: 0 };
+      // With the perf test's traffic (every car type in the lanes in view): car sprites count
+      // toward "props, actors and neon" like prop and neon sprites do.
+      window.RenderSheet.stubActors(40, 14, { follow: true });
+      const worst = { chunks: 0, chunkBytes: 0, spritePx: 0, small: 0, cars: 0, props: 0, sky: 0, total: 0, stops: 0 };
       const b = SR.render.lib.model().bbox;
+      const stop = (x, y, z, min) => {
+        SR.render.setView({ x, y, zoom: z, min });
+        SR.render.warm();
+        SR.loop.step(1);
+        const s = SR.render.stats();
+        worst.chunks = Math.max(worst.chunks, s.chunks.count);
+        worst.chunkBytes = Math.max(worst.chunkBytes, s.chunks.bytes);
+        worst.spritePx = Math.max(worst.spritePx, s.sprites.px);
+        worst.small = Math.max(worst.small, s.small.bytes);
+        worst.cars = Math.max(worst.cars, s.cars.px);
+        worst.props = Math.max(worst.props, s.props.px);
+        worst.sky = Math.max(worst.sky, s.sky.bytes);
+        worst.total = Math.max(worst.total, s.bytes);
+        worst.stops++;
+      };
       levels.forEach((z) => {
-        for (let y = b[1] + 200; y <= b[3]; y += 700) {
-          for (let x = b[0] + 200; x <= b[2]; x += 700) {
-            SR.render.setView({ x, y, zoom: z, min: 780 });
-            SR.render.warm();
-            SR.loop.step(1);
-            const s = SR.render.stats();
-            worst.chunks = Math.max(worst.chunks, s.chunks.count);
-            worst.chunkBytes = Math.max(worst.chunkBytes, s.chunks.bytes);
-            worst.spritePx = Math.max(worst.spritePx, s.sprites.px);
-            worst.small = Math.max(worst.small, s.small.bytes);
-            worst.sky = Math.max(worst.sky, s.sky.bytes);
-            worst.total = Math.max(worst.total, s.bytes);
-            worst.stops++;
-          }
-        }
+        for (let y = b[1] + 200; y <= b[3]; y += 700) for (let x = b[0] + 200; x <= b[2]; x += 700) stop(x, y, z, 780);
       });
-      return { worst, scale: SR.stage.scale, backing: [SR.stage.world.width, SR.stage.world.height] };
+      // At night the cars carry lit lamps (other sprites) and the light sprites join in.
+      for (let y = b[1] + 200; y <= b[3]; y += 1400) for (let x = b[0] + 200; x <= b[2]; x += 1400) stop(x, y, levels[levels.length - 1], 1320);
+      // A clock tween sweeps the sky through every 5-minute tint of the day (the clouds and the
+      // distant islands are re-tinted in place, never piled up).
+      SR.render.setView({ x: (b[0] + b[2]) / 2, y: b[1] + 100, zoom: levels[0], min: 0 });
+      for (let m = 0; m < 1440; m += 5) { SR.render.setView({ min: m }); SR.loop.step(1); worst.sky = Math.max(worst.sky, SR.render.stats().sky.bytes); }
+      SR.render.actors.source('stubPeds', null);
+      SR.render.actors.source('stubCars', null);
+      return { worst, scale: SR.stage.scale, backing: [SR.stage.world.width, SR.stage.world.height],
+        budgets: { cars: SR.render.actors.stats().budgetPx, props: SR.render.buildings.stats().propBudgetPx } };
     }, [LEVELS]);
     const w = res.worst;
     T.ok(w.chunks <= BUDGET.chunks && w.chunkBytes <= BUDGET.chunkBytes, 'DPR ' + dpr + ': ≤ 40 chunks (40 MB)', w);
     T.ok(w.spritePx <= BUDGET.spritePx, 'DPR ' + dpr + ': building sprites ≤ 12 Mpx', w.spritePx);
-    T.ok(w.small <= BUDGET.small && w.sky <= BUDGET.sky, 'DPR ' + dpr + ': props, neon and light sprites ≤ 8 MB; sky and clouds ≤ 6 MB', w);
+    T.ok(w.cars <= res.budgets.cars && w.props <= res.budgets.props, 'DPR ' + dpr + ': car and prop sprites stay within their LRU budgets', [w.cars, w.props, res.budgets]);
+    T.ok(w.small <= BUDGET.small && w.sky <= BUDGET.sky, 'DPR ' + dpr + ': props, cars, neon and light sprites ≤ 8 MB (with traffic, day and night); sky and clouds ≤ 6 MB (through a day of tints)', w);
     T.ok(w.total <= BUDGET.total, 'DPR ' + dpr + ': render caches ≤ 102 MB in all', w.total);
     return res;
   }
   const m1 = await tour(t, 1);
   T.ok(m1.worst.stops > 40, 'the tour visited the whole map at every zoom', m1.worst.stops);
+  const carBoxes = await page.evaluate(() => {
+    // A traffic car's sprite box holds the whole car: its shadow, lamps, sign and light bar.
+    const V = SR.art.vehicles, bad = [];
+    ['compact', 'sedan', 'taxi', 'van', 'police'].forEach((type) => {
+      for (let dir = 0; dir < 8; dir++) for (const lights of [false, true]) for (const brake of [false, true]) for (const ph of [0, 1]) {
+        const b = SR.render.actors.carBox(type, dir), sc = 2;
+        const c = document.createElement('canvas');
+        c.width = Math.ceil(b.w * sc); c.height = Math.ceil(b.h * sc);
+        const x = c.getContext('2d');
+        x.setTransform(sc, 0, 0, sc, b.ax * sc, b.ay * sc);
+        V.draw(x, type, dir, 0, 0, { t: ph * 0.5 + 0.01, brake, lights, shadow: true });
+        const d = x.getImageData(0, 0, c.width, c.height).data;
+        let edge = 0;
+        for (let i = 0; i < c.width; i++) edge += d[i * 4 + 3] + d[((c.height - 1) * c.width + i) * 4 + 3];
+        for (let j = 0; j < c.height; j++) edge += d[j * c.width * 4 + 3] + d[(j * c.width + c.width - 1) * 4 + 3];
+        if (edge) bad.push([type, dir, lights, brake, ph]);
+      }
+    });
+    return bad;
+  });
+  T.eq(carBoxes, [], 'car sprite boxes clip nothing (every type, direction, lamp, brake and light-bar state)');
   const t2 = await open({ width: 1920, height: 1080, dpr: 2 });
   const m2 = await tour(t2, 2);
   T.eq(m2.backing, [2560, 1440], 'DPR 2: the backing store is capped at 2560 × 1440');
@@ -470,25 +579,12 @@ function luma(p) { return 0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2]; }
 
   // -------------------------------------------------------------------------------------------
   T.section('perf (High, stub actors: 40 walkers and 14 cars)');
-  const cal = await page.evaluate(() => {
-    // A fixed JS workload (sorting and float math) that takes about 20 ms on the reference machine
-    // (ARCHITECTURE §17); tests/perf/calibrate.js replaces it when W1-Q's runner lands.
-    let seed = 12345;
-    const rnd = () => { seed = (seed * 1103515245 + 12345) >>> 0; return seed / 4294967296; };
-    const runs = [];
-    for (let r = 0; r < 3; r++) {
-      const t0 = performance.now();
-      const a = new Float64Array(160000);
-      for (let i = 0; i < a.length; i++) a[i] = rnd();
-      a.sort();
-      let s = 0;
-      for (let i = 0; i < 400000; i++) s += Math.sqrt(i) * Math.sin(i);
-      runs.push(performance.now() - t0 + (s > 1e12 ? 1 : 0));
-    }
-    runs.sort((x, y) => x - y);
-    return runs[1];
-  });
-  const factor = Math.max(0.5, Math.min(4, cal / 20));
+  // The calibration of ARCHITECTURE §17: W1-Q's workload (tests/perf/calibrate.js), whose median
+  // time over the reference machine's is the factor every CPU budget is multiplied by.
+  await page.addScriptTag({ path: path.join(h.ROOT, 'tests', 'perf', 'calibrate.js') });
+  const calib = await page.evaluate(() => window.SRCalibrate.run(9));
+  const cal = calib.ms;
+  const factor = calib.factor;
   const perf = await page.evaluate(() => {
     window.RenderSheet.stubActors(40, 14, { follow: true });
     SR.quality.set('high');

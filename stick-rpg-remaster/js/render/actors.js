@@ -18,6 +18,7 @@
   var frameCars = [];
   var frameBoxes = [];         // [x0, y0, x1, y1, ...] of this frame's actors (flat)
   var frameFocus = [];         // standee rects of the player, named people and marked pedestrians
+  var focusPool = [];          // their reused arrays (no per-frame garbage)
   var player = null;
   var warned = {};
   var stickOpts = {};
@@ -74,11 +75,15 @@
     var v = cur.v;
     posOf(e, cur.alpha, tmp);
     if (tmp.x < v.x0 - CULL || tmp.x > v.x1 + CULL || tmp.y < v.y0 - 20 || tmp.y > v.y1 + STANDEE_H + CULL) return;
-    if (kind === 'player' || kind === 'person' || e.marker) frameFocus.push([tmp.x - 12, tmp.y - STANDEE_H - (e.marker ? 30 : 0), tmp.x + 12, tmp.y]);
+    if (kind === 'player' || kind === 'person' || e.marker) {
+      var fr = focusPool[frameFocus.length] || (focusPool[frameFocus.length] = [0, 0, 0, 0]);
+      fr[0] = tmp.x - 12; fr[1] = tmp.y - STANDEE_H - (e.marker ? 30 : 0); fr[2] = tmp.x + 12; fr[3] = tmp.y;
+      frameFocus.push(fr);
+    }
     if (kind === 'player') cur.playerAdded = true;
     cur.push(sortKey(tmp.x, tmp.y, kind), 'actor', e, kind, cur.alpha);
-    if (kind === 'car') {
-      frameCars.push(e);
+    if (kind === 'car' || (kind === 'player' && e.mode === 'drive')) {
+      frameCars.push(e);   // headlights and tail lights (the player's own car too)
       frameBoxes.push(tmp.x - 60, tmp.y - 50, tmp.x + 60, tmp.y + 34);
     } else {
       frameBoxes.push(tmp.x - 16, tmp.y - STANDEE_H - 8, tmp.x + 16, tmp.y + 8);
@@ -87,20 +92,26 @@
   }
 
   // People standing on an east / west door mat sort in front of that building: its awning hangs
-  // over them, and drawing them after it keeps them readable at every door (GDD §3.6).
+  // over them, and drawing them after it keeps them readable at every door (GDD §3.6). So do people
+  // on a north porch's visible strip south of its sign post: the post is part of the building's
+  // sprite, and they stand in front of it (only the canopy's 8 u lip overhangs that strip).
   var awnings = null, awningModel = null;
   function sortKey(x, y, kind) {
     if (kind === 'car') return y;
     var m = SR.render.lib.model();
     if (m && awningModel !== m) {
       awningModel = m;
-      awnings = m.doors.filter(function (d) { return d.geom.awning && d.geom.porch; })
-        .map(function (d) { return { r: d.geom.porch, key: d.geom.sortY + 0.5 }; });
+      awnings = [];
+      m.doors.forEach(function (d) {
+        var g = d.geom;
+        if (g.awning && g.porch) awnings.push({ r: [g.porch[0] - 14, g.porch[1], g.porch[2] + 14, g.porch[3]], key: g.sortY + 0.5 });
+        else if (g.post && g.visible) awnings.push({ r: [g.visible[0], g.post.y, g.visible[2], g.visible[3]], key: g.sortY + 0.5 });
+      });
     }
     if (awnings) {
       for (var i = 0; i < awnings.length; i++) {
         var r = awnings[i].r;
-        if (x >= r[0] - 14 && x <= r[2] + 14 && y >= r[1] && y <= r[3]) return awnings[i].key;
+        if (x >= r[0] && x <= r[2] && y >= r[1] && y <= r[3]) return awnings[i].key;
       }
     }
     return y;
@@ -222,36 +233,74 @@
   // Traffic cars are rigid: while one drives along one of the 8 directions it is drawn from a
   // sprite cached per type, direction, lamp state and zoom (one drawImage instead of ~20 fills);
   // a car between directions (turning at a junction) and the player's car are drawn as vectors.
+  // The cache is an LRU bounded in device pixels: its share of ARCHITECTURE §17's "props, actors
+  // and neon ≤ 8 MB" (cars 1.25 Mpx + props 0.5 Mpx in buildings.js + neon ≤ 0.2 Mpx + light
+  // sprites 0.03 Mpx = 1.98 Mpx, 7.9 MB).
+  // A sprite that would not fit without evicting one drawn this frame is not cached: that car is
+  // drawn as vectors instead, so the budget holds and the cache never thrashes.
   var carSprites = {};
   var nCarSprites = 0;
   var carPx = 0;
   var SNAP = 0.035;              // radians (2°)
   var SPRITE_DPR_MAX = 1.5;
+  var CAR_BUDGET_PX = 1.25e6;    // device px (5 MB)
+  var CAR_PAD = 12;              // u around the footprint: the ink line, the (+4, +6) shadow, lamps
+  var CAR_TOP = 10;              // u above the cabin roof: the taxi sign and the police light bar
+
+  /** The sprite box of a type in a direction: ground half-extents plus the projected height (u). */
+  function carBox(V, type, dir) {
+    var sz = V.size ? V.size(type) : null;
+    var L0 = sz && sz.L ? sz.L : 110, W0 = sz && sz.W ? sz.W : 56, H0 = sz && sz.H ? sz.H : 50;
+    var a = dir * Math.PI / 4, ca = Math.abs(Math.cos(a)), sa = Math.abs(Math.sin(a));
+    var hx = (L0 * ca + W0 * sa) / 2, hy = (L0 * sa + W0 * ca) / 2;
+    return { ax: hx + CAR_PAD, ay: hy + 0.5 * (H0 + CAR_TOP) + CAR_PAD, w: 2 * (hx + CAR_PAD), h: 2 * hy + 0.5 * (H0 + CAR_TOP) + 2 * CAR_PAD };
+  }
+
+  /** Evicts car sprites not drawn this frame (another scale first, then the least recently used) until need px fit. */
+  function freeCarPx(need, frame, sc) {
+    while (carPx + need > CAR_BUDGET_PX) {
+      var worst = null, wk = null;
+      for (var k in carSprites) {
+        var e = carSprites[k];
+        if (e.used >= frame) continue;
+        if (!worst || (e.sc !== sc && worst.sc === sc) || ((e.sc !== sc) === (worst.sc !== sc) && e.used < worst.used)) { worst = e; wk = k; }
+      }
+      if (!worst) return false;
+      carPx -= worst.px;
+      nCarSprites--;
+      delete carSprites[wk];
+    }
+    return true;
+  }
 
   function carSprite(V, type, dir, v, lamps, brake, phase) {
     var sc = v.bz * Math.min(v.s, SPRITE_DPR_MAX);
     var key = type + '|' + dir + '|' + (lamps ? 1 : 0) + (brake ? 1 : 0) + phase + '|' + Math.round(sc * 1000);
     var hit = carSprites[key];
-    if (hit) return hit;
-    if (nCarSprites >= 64) { carSprites = {}; nCarSprites = 0; carPx = 0; }
-    var sz = V.size ? V.size(type) : null;
-    var L0 = sz && sz.L ? sz.L : 110, W0 = sz && sz.W ? sz.W : 56, H0 = sz && sz.H ? sz.H : 50;
-    var half = Math.max(L0, W0) / 2 + 14, up = half + H0 * 0.5 + 16, down = half + 12;
+    if (hit) { hit.used = v.frame; return hit; }
+    var box = carBox(V, type, dir);
+    var cw = Math.ceil(box.w * sc), chh = Math.ceil(box.h * sc);
+    if (!freeCarPx(cw * chh, v.frame, sc)) return null;
     var c = document.createElement('canvas');
-    c.width = Math.ceil(2 * half * sc); c.height = Math.ceil((up + down) * sc);
+    c.width = cw; c.height = chh;
     var x = c.getContext('2d');
-    x.setTransform(sc, 0, 0, sc, half * sc, up * sc);
+    x.setTransform(sc, 0, 0, sc, box.ax * sc, box.ay * sc);
     var o = { t: phase * 0.5 + 0.01, brake: brake, lights: lamps, shadow: true };
     V.draw(x, type, dir, 0, 0, o);
-    hit = carSprites[key] = { canvas: c, ax: half, ay: up, w: 2 * half, h: up + down, px: c.width * c.height };
+    hit = carSprites[key] = { canvas: c, ax: box.ax, ay: box.ay, w: box.w, h: box.h, px: cw * chh, used: v.frame, sc: sc };
     nCarSprites++;
     carPx += hit.px;
     return hit;
   }
 
+  /** @returns {string} the vehicle type of a car entity (traffic `kind`, or the player's `car`). */
+  function carType(e) {
+    return e.kind && typeof e.kind === 'string' && e.kind !== 'player' ? e.kind : typeof e.car === 'string' ? e.car : e.mode === 'drive' ? 'junker' : 'sedan';
+  }
+
   function drawCar(ctx, e, kind, x, y, v) {
     var V = SR.art.vehicles;
-    var type = e.kind && typeof e.kind === 'string' && e.kind !== 'player' ? e.kind : e.car || (kind === 'player' ? 'junker' : 'sedan');
+    var type = carType(e);
     var ang = num(e.a) ? e.a : num(e.angle) ? e.angle : 0;
     if (V && typeof V.draw === 'function' && !warned.carFailed) {
       var dir = V.dirFromAngle ? V.dirFromAngle(ang) : 0;
@@ -261,9 +310,11 @@
         if (kind !== 'player' && snapped) {
           var phase = type === 'police' && !L().flashReduction() ? Math.floor(v.t * 2) % 2 : 0;
           var sp = carSprite(V, type, dir, v, lamps, brake, phase);
-          ctx.drawImage(sp.canvas, x - sp.ax, y - sp.ay, sp.w, sp.h);
-          L().count.images++;
-          return;
+          if (sp) {
+            ctx.drawImage(sp.canvas, x - sp.ax, y - sp.ay, sp.w, sp.h);
+            L().count.images++;
+            return;
+          }
         }
         var o = carOpts;
         o.angle = ang; o.t = v.t; o.brake = brake; o.lights = lamps;
@@ -347,11 +398,24 @@
   }
 
   /** @returns {number[][]} this frame's focus rects for the occlusion fade: the player, named people and markers (standee boxes). */
+  var focusOut = [];
+  var focusRects = [];
+  var MARKER_LISTS = ['list', 'markers'];
   function focus(v) {
-    var out = frameFocus.slice();
-    var mk = listOf(SR.world && SR.world.markers, ['list', 'markers']);
-    if (mk) mk.forEach(function (e) { if (alive(e)) out.push([e.x - 12, e.y - STANDEE_H - 30, e.x + 12, e.y]); });
-    return out;
+    focusOut.length = 0;
+    for (var i = 0; i < frameFocus.length; i++) focusOut.push(frameFocus[i]);
+    var mk = listOf(SR.world && SR.world.markers, MARKER_LISTS), n = 0;
+    if (mk) {
+      for (var k = 0; k < mk.length; k++) {
+        var e = mk[k];
+        if (!alive(e)) continue;
+        var r = focusRects[n] || (focusRects[n] = [0, 0, 0, 0]);
+        r[0] = e.x - 12; r[1] = e.y - STANDEE_H - 30; r[2] = e.x + 12; r[3] = e.y;
+        focusOut.push(r);
+        n++;
+      }
+    }
+    return focusOut;
   }
 
   /** @returns {{x: number, y: number}|null} the player's feet. */
@@ -376,9 +440,12 @@
     playerPos: playerPos,
     player: function () { return player || playerEntity(); },
     cars: cars,
+    carType: carType,
     gradeRects: gradeRects,
     facing: facing,
-    /** @returns {{count: number, px: number}} the car sprite cache (device px). */
-    stats: function () { return { count: nCarSprites, px: carPx }; },
+    /** @returns {{count: number, px: number, budgetPx: number}} the car sprite cache (device px). */
+    stats: function () { return { count: nCarSprites, px: carPx, budgetPx: CAR_BUDGET_PX }; },
+    /** @returns {{ax: number, ay: number, w: number, h: number}|null} a traffic car's sprite box in u (tests). */
+    carBox: function (type, dir) { var V = SR.art.vehicles; return V && V.draw ? carBox(V, type, dir) : null; },
   };
 })();

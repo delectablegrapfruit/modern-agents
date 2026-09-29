@@ -2,8 +2,8 @@
 // builds the controls from the registries after SR.boot({ scene: false }), and exposes
 // window.soundSheet for tests/e2e/audio.test.cjs: analyze(buffer, o) (the objective checks of
 // ARCHITECTURE §18), check(kind, id) (render + analyze), chain() (the compressor's latency and the
-// unity gain below its threshold), calibrate() (a local CPU calibration standing in for
-// tests/perf/calibrate.js until W1-Q's lands), stress(n) and contact() (the waveform contact sheet).
+// unity gain below its threshold), calibrate() (the CPU calibration of tests/perf/calibrate.js, with a
+// local stand-in when that file is missing), stress(n) and contact() (the waveform contact sheet).
 // Colours come from css/tokens.css custom properties (no colour literals).
 (function () {
   'use strict';
@@ -232,10 +232,19 @@
     return next();
   }
 
-  // ---- CPU calibration (a stand-in for tests/perf/calibrate.js; the same workload as the art sheet) ----
+  // ---- CPU calibration (ARCHITECTURE §17) ----
+  // tests/perf/calibrate.js (W1-Q, loaded by sound.html as window.SRCalibrate) times its fixed
+  // workload; the budget scales by measured / reference, clamped 0.5-4. Without it (a checkout that
+  // lacks the file) a local stand-in runs: the art sheet's workload, REF_MS its estimated time on the
+  // reference machine.
 
-  var REF_MS = 35;   // the workload's estimated time on the reference machine (ARCHITECTURE §17)
+  var REF_MS = 35;
   function calibrate() {
+    var C = window.SRCalibrate;
+    if (C && typeof C.run === 'function') {
+      var r = C.run();
+      return { ms: r.ms, ref: r.reference, factor: r.factor, source: 'tests/perf/calibrate.js' };
+    }
     var best = Infinity, acc = 0;
     for (var run = 0; run < 5; run++) {
       var t0 = performance.now();
@@ -250,7 +259,7 @@
       if (dt < best) best = dt;
     }
     window.__calAcc = acc;
-    return { ms: best, ref: REF_MS, factor: Math.max(0.5, Math.min(4, best / REF_MS)) };
+    return { ms: best, ref: REF_MS, factor: Math.max(0.5, Math.min(4, best / REF_MS)), source: 'stand-in' };
   }
 
   // ---- live controls ----

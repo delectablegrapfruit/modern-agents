@@ -55,29 +55,37 @@ wave-2 packages (through the lead). The answers to requests addressed to W1-S ar
 - **Change:** record these additive names (all in W1-S's files):
   - `SR.audio.sfx(name, o)`: `o` also takes `pan` (-1..1 for a non-spatial sound) and `at` (a delay
     in seconds); `gain` is a multiplier and `pitch` a frequency ratio (1 = as written; W1-D's
-    voice blips pass `pitch`). It returns `null` for an unknown name (with one `console.warn`), an
-    **inert handle** (truthy; `inert: true`, `playing()` false, no-op `stop` / `set`) while the
-    audio is locked or when the sound is culled (> 900 u), else a handle `{ name, inert: false,
-    playing(), stop(), set({ gain, pitch, x, y }) }` (`set({ pitch })` retunes a loop: the engine
-    loop pitched by speed). A voice-bus recipe ducks the song 4 dB for its length (ART_AUDIO §13.7).
+    voice blips pass `pitch`). It always returns a handle `{ name, inert, voice, playing(), stop(),
+    set({ gain, pitch, x, y }) }` (`set({ pitch })` retunes a loop: the engine loop pitched by
+    speed). An unknown name warns once and returns an **inert handle** (`inert: true`, `playing()`
+    false, no-op `stop` / `set`), as does a **one-shot** played while the audio is not running,
+    culled (> 900 u) or dropped by the pool. A **loop** handle is never inert: its voice starts, or
+    starts again, on a `set()` once the audio runs, the sound is within 900 u and a voice is free
+    (a car started out of range, or a loop the pool stole, comes back as it approaches), and a
+    `set()` beyond 900 u releases the voice (culling); after `stop()` it stays silent. A
+    voice-bus recipe ducks the song 4 dB for its length (ART_AUDIO §13.7).
   - `SR.audio.duck(db, ms)` returns a release function; **`ms` omitted or `Infinity` holds the duck
     until `duck(0)` (which releases every held duck) or the release function**; overlapping ducks
     take the deepest (attack 80 ms, release 400 ms). This answers W1-M's request 8.
   - `SR.audio.music(id, { fade, variant })`: a falsy id fades out; the same id with another
-    variant switches on the next bar line; a song asked for while the audio is locked starts at
-    the unlock; a song left for another resumes at its position when it returns within 180 s
-    (ART_AUDIO §13.4: overlays). It returns nothing.
+    variant switches on the next bar line; a request made while the context is not running
+    (locked, a hidden tab, a system interruption), a stop included, applies when it runs; a song
+    left for another resumes at its position when it returns within 180 s (ART_AUDIO §13.4:
+    overlays). It returns nothing.
   - `SR.audio.stinger(id)` → `{ id, stop() }` or `null` (unknown id, locked).
   - `SR.audio.ambience(id, level)`: beds `city`, `birds`, `crickets`, `rain`, `wind`, `fog`, `casino`,
     `bar`, `fryer`, `office`, `campus`, `park`; level 0..1 (default 1), 0 fades out over 1 s and
-    stops; `SR.audio.ambience.list()`, `.time(min)` (a clock override for day / night; the default
-    reads `SR.state.clock.min`), `.status()`.
+    stops; calls made while the context is not running apply when it runs; a bed loop the voice
+    pool steals (loops are priority 0) restarts once a voice is free; `SR.audio.ambience.list()`,
+    `.time(min)` (a clock override for day / night; the default reads `SR.state.clock.min`),
+    `.status()`.
   - `SR.audio.renderOffline(kind, id, seconds, opts)`: `kind` may also be `'ambience'`; `seconds`
     is optional (a song: one pass of its order plus one bar, a stinger's order plus 1 s; a one-shot:
     its length plus 20 ms; a loop: 2 s, released so it ends in silence; a bed: 4 s); `opts`:
     `sampleRate` (44100), `variant`, `pos` `{ order, step }`, `seed`, `vary` (sfx; default off),
     `level` and `min` (a bed), `sfx: [{ at, name, gain, pitch, pan }]` (more one-shots: the stress
-    script), `chunk` (seconds per offline suspend; default 0.25).
+    script), `chunk` (seconds per offline suspend; default 0.25; `false` schedules everything
+    before rendering, the path of browsers without `OfflineAudioContext.suspend`).
   - `SR.audio.unlock()` (creates or resumes the context; the boot screen may call it from its own
     key or click handler), `SR.audio.state()` → `'locked' | 'unsupported' | 'suspended' | 'running'
     | 'closed'`, `SR.audio.stats()` (voices, peak, stolen, dropped, duck, bus gains, mono, what plays),
@@ -102,6 +110,11 @@ wave-2 packages (through the lead). The answers to requests addressed to W1-S ar
   6 ms lookahead delays the output; the seam check allows for it. (d) **Music notes are priority
   2.5** in the voice pool (above UI 2 and world one-shots 1, below stingers and the Stamp 3), so a
   flurry of clicks never steals the song's notes. (e) Mono downmixes after the master gain.
+  (f) The graph is buses → compressor → makeup trim → **master gain** → destination: the master
+  gain (the player's Master slider) sits after the compressor, not before it as CONTRACT §14.1
+  ("buses → master → compressor") and ARCHITECTURE §12 draw it, so the slider is a clean output
+  volume and never changes how hard the compressor works (offline renders run the master at 1, so
+  the objective tests are unaffected either way).
 - **Why:** §13.7 gives levels, a threshold and a ratio but not how the levels apply, the knee or
   music's voice priority.
 - **Meanwhile:** as described (named constants at the top of `js/audio/engine.js`; these are engine
@@ -125,15 +138,17 @@ wave-2 packages (through the lead). The answers to requests addressed to W1-S ar
   which now exists (item 3).
 - **Meanwhile:** the song plays at full level under minigames that keep it.
 
-## 7. `tools/validate.cjs`, `tests/perf/calibrate.js` (W1-Q)
+## 7. `tools/validate.cjs`, `tests/perf/calibrate.js` (W1-Q): nothing needed
 
-- **Change:** (a) `tools/validate.cjs` already loads `js/audio/music.js` and calls
-  `SR.audio.validate` (thank you); nothing else is needed for the audio formats. (b) When
-  `tests/perf/calibrate.js` lands, `tests/sheets/sound-sheet.js` `calibrate()` should use it: its
-  stand-in is the art sheet's workload with `REF_MS = 35` (the same estimate as
-  `tests/sheets/art-sheet.js`).
+- **Change:** none. (a) `tools/validate.cjs` already loads `js/audio/music.js` and calls
+  `SR.audio.validate`; nothing else is needed for the audio formats. (b) `tests/perf/calibrate.js`
+  has landed: `tests/sheets/sound.html` loads it and `sound-sheet.js` `calibrate()` uses it (the
+  art sheet's workload with `REF_MS = 35` stays only as a fallback for a checkout without it).
 - **Why:** the offline render budget (ARCHITECTURE §17 item 4) is scaled by the calibration factor.
-- **Meanwhile:** the stand-in; on this container the factor is about 1.8.
+- **Note:** on this shared container the factor measures 1.4-2.2 from run to run, so
+  `tests/e2e/audio.test.cjs` pairs each render with a calibration taken just before it and
+  judges the best pair; the busiest song plus the stress runs at about 2.6-2.9 % of real time
+  calibrated, close to the 3 % budget.
 
 ## 8. Wave 2 (through the lead): notes for W2-Music, W2-City, W2-Front
 
@@ -141,8 +156,9 @@ wave-2 packages (through the lead). The answers to requests addressed to W1-S ar
   near -19 dBFS RMS (sustained) or -11 dBFS peak (struck); the three W1-S songs use song gains 0.7-0.8
   and instrument gains 0.3-0.95 and peak near -11 dBFS through the compressor. Render cost grows
   with simultaneous voices: chords are cheap (one voice), and the busiest song
-  (`crossroads_strut`, 7 tracks, 8-16 voices) renders 60 s plus 480 sfx in about 2.5 s here against
-  a 3.4 s budget; keep new songs at or under that density. Open hats, snares and plucks right on a
+  (`crossroads_strut`, 7 tracks, 8-16 voices) renders 60 s plus 480 sfx at about 2.6-2.9 % of
+  real time calibrated, against the 3 % budget: keep new songs lighter than it (its sustained
+  pad chords, three saws a note, and its lead, a delay line a note, cost the most). Open hats, snares and plucks right on a
   loop's seam are fine (attacks are ≥ 3 ms) but keep loud noise hits away from it. W1-D plays
   `stingers.stamp` when it exists (else the `confirm` sfx); an `sfx` recipe `stamp` exists too.
   `sound.html` lists every song and stinger as it registers, and `tests/e2e/audio.test.cjs`

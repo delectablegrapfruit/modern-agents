@@ -411,6 +411,14 @@
       { osc: 'triangle', freq: 1400, env: hit(0.005, 0.03), dur: 0.035 },
       { noise: 'white', filter: { type: 'bandpass', freq: 2500, q: 2 }, env: hit(0.005, 0.02), dur: 0.025, gain: 0.35 },
     ] });
+  def('slot_ding', { bus: 'sfx', gain: 0.3, priority: 1,                  // a slot machine across the floor (the casino bed)
+    layers: [
+      { fm: { carrier: 'sine', ratio: 3.5, index: 0.8, indexDecay: 0.15 }, freq: 1319, filter: { type: 'lowpass', freq: 5000 },
+        env: hit(0.005, 0.45), dur: 0.45 },
+      { fm: { carrier: 'sine', ratio: 3.5, index: 0.8, indexDecay: 0.15 }, freq: 1760, filter: { type: 'lowpass', freq: 5000 },
+        env: hit(0.005, 0.5), dur: 0.5, start: 0.09, gain: 0.8 },
+    ],
+    vary: { pitch: 0.05, gain: 0.15 } });
   def('jackpot_bells', { bus: 'sfx', gain: 0.4, priority: 3,              // with the Stamp, the loudest
     layers: [[0, 1047], [0.1, 1319], [0.2, 1568], [0.3, 2093], [0.45, 1568], [0.55, 2093]].map(function (c) {
       return { fm: { carrier: 'sine', ratio: 3.5, index: 1, indexDecay: 0.2 }, freq: c[1], filter: { type: 'lowpass', freq: 5000 },

@@ -62,6 +62,7 @@ for (const mode of MODES) {
   T.eq(base.errors, [], mode + ' loads in index order');
   T.ok(base.booted, mode + ' boots headless');
   T.eq(base.registryErrors || [], [], 'no registration errors');
+  T.eq(base.consoleErrors, [], 'no console.error during load and boot');
   const kinds = Object.keys(base.kinds || {});
   for (const seed of SEEDS) {
     T.section('mode ' + mode + ': shuffle ' + seed);

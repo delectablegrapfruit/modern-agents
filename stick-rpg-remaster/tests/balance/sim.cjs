@@ -30,6 +30,19 @@ const SOURCES = ['wage', 'rent', 'salary', 'interest', 'deal', 'tour', 'loot', '
 const OWNERS = ['world', 'bag', 'phone', 'jail', 'trip', 'hospital'];
 const DECISIONS_PER_DAY = 200;
 const NEUTRAL = { shiftrush: { m: 1, hits: 0, misses: 0 }, timingring: { m: 1, hits: 0, misses: 0 } };
+// Skins load only in mode `all`, so the rules-mode sim maps an `open`'s skin to its engine with
+// CONTRACT §13's table (tools/validate.cjs SKINS). Hotwire resolves { started, misses }, not the
+// Timing Ring's { m }: a crime row, sampled by W3-Balance's bots, never given a neutral result.
+const { SKINS } = require(path.join(ROOT, 'tools', 'validate.cjs'));
+const NO_NEUTRAL = ['hotwire'];
+
+/** @returns {object|null} the neutral Auto result (B-23: m = 1.0) for an `open`, or null when there is none. */
+function neutral(SR, open) {
+  const name = open.skin || open.minigame;
+  if (NO_NEUTRAL.indexOf(name) >= 0) return null;
+  const engine = (SR.reg.skin && SR.reg.skin[name] && SR.reg.skin[name].engine) || SKINS[name] || name;
+  return NEUTRAL[engine] ? Object.assign({}, NEUTRAL[engine]) : null;
+}
 
 // B-23 bands, asserted on the median over seeds: { '<bot>/<policy>': { <day>: { <column>: [lo, hi] } } }.
 // W3-Balance transcribes BALANCE B-23 here with its bots.
@@ -76,6 +89,12 @@ function median(a) { const s = a.slice().sort((x, y) => x - y); return s.length 
 function simulate(o) {
   o = o || {};
   const SR = o.SR || loadRules();
+  const missing = ['state', 'act', 'night'].filter((m) => !(SR.rules && SR.rules[m]));
+  if (missing.length) {
+    const e = new Error('sim: the rules layer is not loaded yet (SR.rules.' + missing.join(', SR.rules.') + ' missing: W1-R / W1-E)');
+    e.pending = true;
+    throw e;
+  }
   const bot = typeof o.bot === 'object' && o.bot ? o.bot : bots[o.bot || 'idle'];
   if (!bot) throw new Error('sim: unknown bot "' + o.bot + '" (' + Object.keys(bots).join(', ') + ')');
   const policy = o.policy || 'normal';
@@ -128,8 +147,7 @@ function simulate(o) {
           if ((dl.kind === 'cash' || dl.kind === 'bank') && dl.n > 0) income[sourceOf(SR.reg.action[pick.id], dl)] += dl.n;
         });
         if (r.open && r.open.resolve) {
-          const engine = r.open.minigame;
-          const res = has(bot.minigame) ? bot.minigame(r.open, s, ctx) : NEUTRAL[SR.reg.skin && SR.reg.skin[engine] ? SR.reg.skin[engine].engine : engine] || null;
+          const res = has(bot.minigame) ? bot.minigame(r.open, s, ctx) : neutral(SR, r.open);
           if (res) SR.rules.act.run(s, r.open.resolve, res, actx());
           else run.unresolved++;
         }
@@ -233,7 +251,12 @@ function selftest() {
   const T = suite('balance sim --selftest (W1-Q)');
   T.section('the trivial bot, 20 seeds × 100 days');
   const t0 = Date.now();
-  const a = simulate({ bot: 'idle', seeds: 20, days: 100 });
+  let a;
+  try { a = simulate({ bot: 'idle', seeds: 20, days: 100 }); } catch (e) {
+    if (!e.pending) throw e;
+    T.ok(true, 'pending: ' + e.message);
+    return T.done();
+  }
   const ms = Date.now() - t0;
   T.ok(ms < 30000, 'runs in ' + ms + ' ms (< 30 s, rules loaded included)');
   T.eq(a.rows.length, 2000, '2,000 rows (one per seed and day)');
@@ -261,6 +284,16 @@ function selftest() {
   const d10 = summary(w.rows).find((x) => x.day === 10) || {};
   T.ok(w.runs.every((r) => r.actions > 0) && d10.cash > 100 && d10.int > 7 && d10.in_wage > 0,
     'works and trains through SR.rules.act.run (day 10 medians: cash ' + d10.cash + ', INT ' + d10.int + ', wage in ' + d10.in_wage + ')');
+  // A minigame row names a skin (D29); skins are not loaded in mode rules, so the sim maps it.
+  SR2.def.action('qa.rush', { building: 'qa', group: 'work', label: 'act.qa.rush', p: 0, cost: { min: 240 }, effects: [['open', 'orderup', {}]] });
+  SR2.def.action('qa.rush:resolve', { building: 'qa', p: 0, timeRule: 'free', effects: [['fn', 'qa.rushPay']] });
+  let seen = null;
+  SR2.def.fn('qa.rushPay', (s, params) => { seen = params; return { deltas: [] }; });
+  const rushBot = { name: 'rush', decide: (s, ctx) => (ctx.memo.day === ctx.day ? null : (ctx.memo.day = ctx.day, { id: 'qa.rush' })) };
+  const m = simulate({ SR: SR2, bot: rushBot, seeds: 1, days: 2 });
+  T.ok(m.runs[0].unresolved === 0 && seen && seen.m === 1, 'a Shift Rush skin (orderup) resolves with the neutral Auto { m: 1 } (' + JSON.stringify(seen) + ')', m.runs[0]);
+  T.eq([neutral(SR2, { minigame: 'pitch', skin: 'pitch' }), neutral(SR2, { minigame: 'hotwire', skin: 'hotwire' }), neutral(SR2, { minigame: 'fight', skin: 'fight' })],
+    [{ m: 1, hits: 0, misses: 0 }, null, null], 'neutral results: the Timing Ring skin pitch yes; hotwire and the fight no');
   T.section('bands');
   const sum = summary(a.rows);
   T.eq(sum.length, 100, 'the summary has a median row per day');
@@ -269,7 +302,7 @@ function selftest() {
   return T.done();
 }
 
-module.exports = { simulate, csv, summary, chart, assertBands, loadRules, median, sourceOf, BANDS, SOURCES };
+module.exports = { simulate, csv, summary, chart, assertBands, loadRules, median, sourceOf, neutral, BANDS, SOURCES };
 
 if (require.main === module) {
   const argv = process.argv.slice(2);
@@ -277,7 +310,8 @@ if (require.main === module) {
   if (argv.includes('--selftest')) selftest();
   else {
     const o = { bot: val('--bot') || 'idle', policy: val('--policy') || 'normal', seeds: Number(val('--seeds') || 20), days: Number(val('--days') || 100), difficulty: val('--difficulty') || 'standard' };
-    const res = simulate(o);
+    let res;
+    try { res = simulate(o); } catch (e) { console.error(e.message); process.exit(e.pending ? 0 : 1); }
     const text = csv(res.rows);
     const sum = summary(res.rows);
     const last = sum[sum.length - 1] || {};

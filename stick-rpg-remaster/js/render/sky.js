@@ -80,14 +80,27 @@
     return c;
   }
 
-  /** A cut-paper cloud: flat white bumps with a 1 u grey underside line (ART_AUDIO §4), pre-tinted by the ambient. */
-  function cloudSprite(variant, ambient) {
-    var key = variant + '|' + ambient;
-    if (cache.clouds[key]) return cache.clouds[key];
-    if (Object.keys(cache.clouds).length >= 36) cache.clouds = {};   // tints of past hours
-    var W = 320, H = 150;
-    var c = makeCanvas(W, H);
+  /** Clears a cached sprite canvas for a repaint in place (its context state back to the defaults). */
+  function repaint(c) {
     var x = c.getContext('2d');
+    x.setTransform(1, 0, 0, 1, 0, 0);
+    x.globalAlpha = 1;
+    x.globalCompositeOperation = 'source-over';
+    x.clearRect(0, 0, c.width, c.height);
+    return x;
+  }
+
+  /**
+   * A cut-paper cloud: flat white bumps with a 1 u grey underside line (ART_AUDIO §4), pre-tinted
+   * by the ambient. One canvas per variant, repainted in place when the ambient moves on (every 5
+   * game minutes, many times during a clock tween), so the tints never pile up past the §17 sky budget.
+   */
+  function cloudSprite(variant, ambient) {
+    var e = cache.clouds[variant];
+    if (e && e.ambient === ambient) return e.canvas;
+    var W = 320, H = 150;
+    var c = e ? e.canvas : makeCanvas(W, H);
+    var x = repaint(c);
     var body = L().mul(L().pal(['cloud', 'white'], 1), ambient);
     var line = L().mul(L().pal(['cloudLine', 'sidewalk'], 0.8), ambient);
     var n = 4 + Math.floor(L().hash01('cloud', variant, 'n') * 3);
@@ -105,7 +118,7 @@
     x.fill();
     x.fillStyle = line;
     x.fillRect(30, H - 25, W - 60, 2);
-    cache.clouds[key] = c;
+    cache.clouds[variant] = { canvas: c, ambient: ambient };
     return c;
   }
 
@@ -136,13 +149,13 @@
   // Distant islands and the Sky Ribbon (placeholders; SR.art.skyline.draw replaces them)
   // ---------------------------------------------------------------------------------------------
 
+  /** A distant island (placeholder), pre-tinted by the ambient: one canvas per city, repainted in place. */
   function islandSprite(city, ambient) {
-    var key = city + '|' + ambient;
-    if (cache.islands[key]) return cache.islands[key];
-    if (Object.keys(cache.islands).length >= 24) cache.islands = {};
+    var e = cache.islands[city];
+    if (e && e.ambient === ambient) return e;
     var W = 360, H = 240;
-    var c = makeCanvas(W, H);
-    var x = c.getContext('2d');
+    var c = e ? e.canvas : makeCanvas(W, H);
+    var x = repaint(c);
     var pk = 'city.' + city + '.';
     function col(k, fb) { return L().mul(L().pal([pk + k, fb], 0.7), ambient); }
     // The paper slab: a torn ellipse with its thickness band.
@@ -155,7 +168,6 @@
     x.closePath();
     x.save();
     x.translate(0, 12);
-    x.fillStyle = col('trim', 'strata2');
     x.fillStyle = L().mul(L().pal('strata2', 0.5), ambient);
     x.fill();
     x.restore();
@@ -180,8 +192,9 @@
     x.globalAlpha = 0.5;
     x.lineWidth = 1.5;
     x.stroke();
-    cache.islands[key] = { canvas: c, w: W, h: H, lights: lights };
-    return cache.islands[key];
+    x.globalAlpha = 1;
+    cache.islands[city] = { canvas: c, w: W, h: H, lights: lights, ambient: ambient };
+    return cache.islands[city];
   }
 
   function islandScreen(v, m, isl) {
@@ -352,7 +365,6 @@
       var TW = LAYER_TILE[0], TH = LAYER_TILE[1];
       var ox = v.x * p - v.t * DRIFT[li], oy = v.y * p;
       var scale = (0.55 + p * 0.65) * zk;
-      if (li === layers.length - 1) sheetShadow(ctx, v, m);
       for (var k = 0; k < CLOUDS_PER_LAYER; k++) {
         var lx = L().hash01('cl', li, k, 'x') * TW, ly = L().hash01('cl', li, k, 'y') * TH;
         var spr = cloudSprite(Math.floor(L().hash01('cl', li, k, 'v') * 6), sky.ambient);
@@ -368,6 +380,8 @@
         }
       }
     }
+    // The sheet casts its soft shadow on the nearest layer (ART_AUDIO §4): over those clouds.
+    if (layers.length) sheetShadow(ctx, v, m);
   }
 
   function sheetShadow(ctx, v, m) {
@@ -458,7 +472,7 @@
     var px = 0;
     if (cache.grad) px += cache.grad.width * cache.grad.height;
     if (cache.stars) px += cache.stars.width * cache.stars.height;
-    Object.keys(cache.clouds).forEach(function (k) { px += cache.clouds[k].width * cache.clouds[k].height; });
+    Object.keys(cache.clouds).forEach(function (k) { px += cache.clouds[k].canvas.width * cache.clouds[k].canvas.height; });
     Object.keys(cache.islands).forEach(function (k) { px += cache.islands[k].canvas.width * cache.islands[k].canvas.height; });
     if (cache.shadow) px += cache.shadow.canvas.width * cache.shadow.canvas.height;
     return { px: px, bytes: px * 4, clouds: Object.keys(cache.clouds).length, islands: Object.keys(cache.islands).length, skipped: cache.skipped };

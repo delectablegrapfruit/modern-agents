@@ -833,10 +833,8 @@
     var cw = CHUNK / ppuB;
     var x0 = i * cw, y0 = j * cw, x1 = x0 + cw, y1 = y0 + cw;
     var c = chunks[key];
-    if (!occupied(g, x0 - BAND, y0 - BAND, x1 + BAND, y1 + BAND)) {
-      chunks[key] = { key: key, gk: gk, i: i, j: j, cw: cw, canvas: null, empty: true, used: 0 };
-      return chunks[key];
-    }
+    // Open sky: nothing to bake, and no entry either (the draw pass skips unoccupied cells).
+    if (!occupied(g, x0 - BAND, y0 - BAND, x1 + BAND, y1 + BAND)) return null;
     if (!c || !c.canvas) {
       if (nChunks >= cmax()) evictOne(gk);
       var cv = free.pop() || document.createElement('canvas');
@@ -955,7 +953,7 @@
         if (d < bd) { bd = d; best = k; }
       }
       var c = bakeChunk(g, gk, ppuB, missing[best], missing[best + 1]);
-      c.used = v.frame;
+      if (c) c.used = v.frame;
       missing.splice(best, 2);
       baked++;
       if (performance.now() - t0 > BAKE_MS) break;
@@ -973,6 +971,7 @@
         var key = gk + ':' + i + ':' + j;
         if (chunks[key]) { chunks[key].used = v.frame; continue; }
         var c = bakeChunk(g, gk, ppuB, i, j);
+        if (!c) continue;
         c.used = v.frame;
         n++;
       }

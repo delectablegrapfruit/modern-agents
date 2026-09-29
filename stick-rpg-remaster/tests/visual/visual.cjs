@@ -14,6 +14,7 @@
 //   node tests/visual/visual.cjs --record        (re)write the goldens of the available scenes
 //   options: --only a,b · --list · --goldens <dir> · --strict (a pending scene or a missing golden
 //            fails) · --selftest (a 1-cell change is detected; captures are deterministic)
+// A scene that has a golden and turns pending fails: it was capturable once, so its setup broke.
 'use strict';
 const fs = require('fs');
 const os = require('os');
@@ -237,6 +238,9 @@ function diffPng(golden, current) {
  * @returns {Promise<{status: 'ok'|'pending'|'error', rows?: string[], size?: number[], full?: Buffer, note?: string, errors?: string[]}>}
  */
 async function capture(scene) {
+  if (scene.url && /^file:/.test(scene.url) && !fs.existsSync(require('url').fileURLToPath(scene.url.split(/[?#]/)[0]))) {
+    return { status: 'pending', note: 'its page does not exist yet' };
+  }
   let t;
   try {
     t = await h.open({ width: 1280, height: 720, dpr: 1, url: scene.url, hash: scene.hash, quality: 'high' });
@@ -298,14 +302,24 @@ function dump(id, golden, cap) {
 // ------------------------------------------------------------------------------------------------
 
 async function run(opts) {
-  const T = h.suite('visual (W1-Q)' + (opts.record ? ' --record' : ''));
+  const T = opts.T || h.suite('visual (W1-Q)' + (opts.record ? ' --record' : ''));
   const dir = opts.goldens || GOLDENS;
-  const list = SCENES.filter((s) => !opts.only || opts.only.includes(s.id));
+  const list = (opts.scenes || SCENES).filter((s) => !opts.only || opts.only.includes(s.id));
   const pending = [];
   const noGolden = [];
   for (const scene of list) {
     const cap = await capture(scene);
-    if (cap.status === 'pending') { pending.push(scene.id); continue; }
+    if (cap.status === 'pending') {
+      // A scene that has a golden was capturable once: pending now means its setup broke (or the
+      // golden is stale), never "not landed yet".
+      if (!opts.record && fs.existsSync(goldenFile(dir, scene.id))) {
+        T.section(scene.id + ' (' + scene.kind + ')');
+        T.ok(false, 'has a golden but cannot be captured any more (' + cap.note + '): fix its setup, or delete ' + path.relative(h.ROOT, goldenFile(dir, scene.id)) + ' if the scene is gone');
+        continue;
+      }
+      pending.push(scene.id);
+      continue;
+    }
     T.section(scene.id + ' (' + scene.kind + ', ' + scene.source + ' ' + scene.sel + ')');
     if (cap.status === 'error') { T.ok(false, 'captured (' + cap.note + ')', cap.errors); continue; }
     T.eq(cap.errors, [], 'zero console errors while setting up the scene');
@@ -327,7 +341,7 @@ async function run(opts) {
     if (opts.strict) T.ok(false, 'no pending scene (' + pending.length + ')');
   }
   if (noGolden.length) console.log('  no golden yet (record with --record): ' + noGolden.join(', '));
-  return T.done();
+  return opts.T ? { pending, noGolden } : T.done();
 }
 
 async function selftest() {
@@ -364,6 +378,17 @@ async function selftest() {
     fs.writeFileSync(goldenFile(tmp, 'artbible'), JSON.stringify(doc));
     const det = compare(readGolden(tmp, 'artbible').rows, c2.rows);
     T.ok(det.bad.length === 1 && det.bad[0].x === 40 && det.bad[0].y === 20, 'a 1-cell change in the golden fails the comparison at that cell', det.bad);
+
+    T.section('a scene with a golden that turns pending fails');
+    const never = { id: 'qa-never', kind: 'dev', source: 'canvas', sel: '#world', needs: () => false, setup: () => {} };
+    const inner = () => { const r = []; return { r, section() {}, ok(c, m) { r.push([!!c, m]); return !!c; }, eq(g, w, m) { return this.ok(JSON.stringify(g) === JSON.stringify(w), m); } }; };
+    const a = inner();
+    const ra = await run({ T: a, scenes: [never], goldens: tmp });
+    T.ok(a.r.length === 0 && ra.pending.join() === 'qa-never', 'without a golden, a scene whose owners have not landed is pending');
+    fs.writeFileSync(goldenFile(tmp, 'qa-never'), JSON.stringify(Object.assign({}, doc, { id: 'qa-never' })));
+    const b = inner();
+    await run({ T: b, scenes: [never], goldens: tmp });
+    T.ok(b.r.length === 1 && !b.r[0][0] && /cannot be captured/.test(b.r[0][1]), 'with a golden, the same scene fails (its setup broke or the golden is stale)', b.r);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
@@ -382,6 +407,6 @@ if (require.main === module) {
       record: argv.includes('--record'), strict: argv.includes('--strict'),
       only: val('--only') ? val('--only').split(',') : null, goldens: val('--goldens') ? path.resolve(val('--goldens')) : null,
     });
-    p.catch((e) => { console.error(e); process.exitCode = 1; });
+    p.catch((e) => { console.error(e); process.exit(1); });   // exit: an open browser would keep Node alive
   }
 }

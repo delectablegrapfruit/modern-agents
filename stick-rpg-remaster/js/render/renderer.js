@@ -250,10 +250,11 @@
     return best;
   }
 
+  var tunePaths = {};
   /** @returns {*} the SR.tuning value at a dotted path ('world.door.tag'), or fallback while it is missing. */
   function tune(path, fallback) {
     var v = SR.tuning;
-    var parts = path.split('.');
+    var parts = tunePaths[path] || (tunePaths[path] = path.split('.'));   // read every frame: no garbage
     for (var i = 0; i < parts.length; i++) {
       if (v === null || v === undefined || typeof v !== 'object') return fallback;
       v = v[parts[i]];

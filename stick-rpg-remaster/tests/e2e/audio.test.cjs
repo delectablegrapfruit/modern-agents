@@ -10,11 +10,14 @@
 //   for while locked starts at the unlock;
 // - live scheduling: every event on the tempo grid within 1 ms, scheduled ahead; the rain variant
 //   switches on a bar line; cross-fades; resume after an overlay; ducking (timed and held);
-//   stingers; captions with a direction and distance culling; loops with handles; volumes, the
-//   settings and mono; ambience beds; ≤ 24 voices under the stress button; the hidden tab suspends
-//   the context and showing it resumes it;
+//   stingers; captions with a direction and distance culling; loops with handles (a loop out of
+//   range waits for its voice, is released when culled, restarts when stolen); an unknown name
+//   still returns a handle; volumes, the settings and mono; ambience beds; ≤ 24 voices under the
+//   stress button, a stolen bed loop restarting; the hidden tab suspends the context and showing it
+//   resumes it, applying the music and ambience calls made meanwhile;
 // - offline rendering of 60 s of the busiest song plus an sfx stress script costs ≤ 3 % of real time
-//   (calibrated);
+//   (calibrated by tests/perf/calibrate.js); a voice stolen mid-envelope leaves no click; a render
+//   scheduled without suspend() (Firefox's path) keeps every note;
 // - index.html boots with zero console errors, locked until a key.
 // Screenshots: shots/W1-S/*.png (git-ignored).
 //   node tests/e2e/audio.test.cjs
@@ -149,12 +152,15 @@ async function openSheet(opts) {
     const hR = SR.audio.sfx('siren', { x: 500, y: 0 });
     const far = SR.audio.sfx('thunder', { x: 2000, y: 0 });
     SR.audio.sfx('knock');
-    return { got, volL: hL.voice.vol, farInert: far.inert, farPlaying: far.playing(), unknown: SR.audio.sfx('no_such_sound') };
+    const u = SR.audio.sfx('no_such_sound');
+    u.set({ gain: 0.5 }); u.stop();
+    return { got, volL: hL.voice.vol, farInert: far.inert, farPlaying: far.playing(), unknown: [u.inert, u.playing()] };
   });
   T.eq(caps.got.map((c) => c.key), ['cap.horn', 'cap.siren', 'cap.knock'], 'captions for horn, siren and knock; none for a culled sound');
   T.ok(caps.got[0].dir < -0.2 && caps.got[1].dir > 0.2 && caps.got[2].dir === null, 'captions carry the direction (pan) or null');
   T.ok(Math.abs(caps.volL - 1 / (1 + 500 / 400)) < 1e-6, 'gain 1 / (1 + d / 400) at 500 u');
-  T.eq([caps.farInert, caps.farPlaying, caps.unknown], [true, false, null], 'beyond 900 u a sound is culled; an unknown name is null');
+  T.eq([caps.farInert, caps.farPlaying], [true, false], 'beyond 900 u a one-shot is culled (an inert handle)');
+  T.eq(caps.unknown, [true, false], 'an unknown name still returns a handle (inert; CONTRACT §14.1), so callers never crash');
   const loop = await E(async () => {
     const hd = SR.audio.sfx('engine_loop');
     const p0 = hd.playing();
@@ -166,6 +172,28 @@ async function openSheet(opts) {
     return { p0, f, p1: hd.playing() };
   });
   T.ok(loop.p0 && Math.abs(loop.f - 110) < 3 && !loop.p1, 'a loop plays, set({ pitch: 2 }) retunes it (' + loop.f.toFixed(1) + ' Hz), stop() releases it');
+  const roam = await E(async () => {
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    SR.audio.listener(0, 0, 1);
+    const hd = SR.audio.sfx('engine_loop', { x: 2000, y: 0, pitch: 1.5 });
+    const a = [hd.inert, hd.playing(), hd.voice === null];
+    hd.set({ x: 300, y: 0 });
+    await wait(100);
+    const b = [hd.playing(), !!hd.voice && Math.abs(hd.voice.vol - 1 / (1 + 300 / 400)) < 1e-6, !!hd.voice && hd.voice.pitch0 === 1.5];
+    hd.set({ x: 1500, y: 0 });
+    await wait(600);
+    const c = [hd.playing(), hd.voice === null];
+    hd.set({ x: -200, y: 0 });
+    const d = hd.playing();
+    hd.stop();
+    await wait(500);
+    hd.set({ x: 0, y: 0 });
+    return { a, b, c, d, e: hd.playing() };
+  });
+  T.eq(roam.a, [false, false, true], 'a loop started beyond 900 u is a live handle waiting for its voice');
+  T.eq(roam.b, [true, true, true], 'set() bringing it within range starts it (distance gain, the pitch it was given)');
+  T.eq(roam.c, [false, true], 'set() beyond 900 u releases its voice (culled)');
+  T.eq([roam.d, roam.e], [true, false], 'it starts again when it returns; after stop() no set() restarts it');
   const vols = await E(async () => {
     SR.audio.setVolume('music', 0.5);
     SR.settings.set('audio.ui', 0.5);
@@ -232,6 +260,27 @@ async function openSheet(opts) {
   T.ok(stress.maxVoices <= 24 && stress.stats.peakVoices <= 24, 'at most 24 voices (max ' + stress.maxVoices + ', peak ' + stress.stats.peakVoices + ')');
   T.ok(stress.stats.stolen + stress.stats.dropped > 0, 'voices were stolen or dropped (stolen ' + stress.stats.stolen + ', dropped ' + stress.stats.dropped + ')');
   await t.shot(path.join(SHOTS, 'sound-sheet-live.png'));
+  await sleep(3000);
+  const revive = await E(async () => {
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const alive = (n) => SR.audio.engine.live().pool.voices.filter((v) => v.name === n && !v.done && !v.stolen).length;
+    SR.audio.ambience('city', 0.5);
+    const hd = SR.audio.sfx('engine_loop');
+    await wait(200);
+    const before = [alive('city_loop'), alive('engine_loop')];
+    const names = Object.keys(SR.reg.sfx).filter((k) => !SR.reg.sfx[k].loop);
+    for (let i = 0; i < 60; i++) SR.audio.sfx(names[i % names.length], { gain: 0.3 });
+    const during = [alive('city_loop'), alive('engine_loop'), hd.playing()];
+    await wait(3500);
+    hd.set({ gain: 1 });
+    await wait(100);
+    const after = [alive('city_loop'), alive('engine_loop'), hd.playing()];
+    hd.stop();
+    SR.audio.ambience('city', 0);
+    return { before, during, after };
+  });
+  T.eq([revive.before, revive.during], [[1, 1], [0, 0, false]], 'a burst of one-shots steals the loops first (priority 0)');
+  T.eq(revive.after, [1, 1, true], 'once voices are free the city bed restarts its loop, and a loop handle restarts on its next set()');
 
   T.section('the hidden tab suspends the context');
   const vis = await E(async () => {
@@ -245,6 +294,34 @@ async function openSheet(opts) {
   });
   T.eq(vis, ['suspended', 'running'], 'hidden → suspended, visible → running');
   await E(() => SR.audio.music(null, { fade: 0.1 }));
+  const held = await E(async () => {
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const set = (v) => { Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => v }); document.dispatchEvent(new Event('visibilitychange')); };
+    SR.audio.music('paper_sky', { fade: 0 });
+    SR.audio.ambience('rain', 0.5);
+    await wait(300);
+    set('hidden');
+    await wait(150);
+    const state = SR.audio.state();
+    SR.audio.music('home_sweet_paper', { fade: 0.2 });
+    SR.audio.ambience('rain', 0);
+    SR.audio.ambience('park', 0.4);
+    set('visible');
+    await wait(1500);
+    const s1 = SR.audio.stats();
+    const shown = [s1.music.song, s1.music.pending, s1.ambience];
+    set('hidden');
+    await wait(150);
+    SR.audio.music(null, { fade: 0.1 });
+    SR.audio.ambience('park', 0);
+    set('visible');
+    await wait(1500);
+    const s2 = SR.audio.stats();
+    return { state, shown, stopped: [s2.music.song, s2.ambience] };
+  });
+  T.eq(held.state, 'suspended', 'hidden again: suspended');
+  T.eq(held.shown, ['home_sweet_paper', null, { park: 0.4 }], 'a song change, a bed stop and a bed start asked for while hidden apply when the tab shows');
+  T.eq(held.stopped, [null, {}], 'music(null) and ambience(id, 0) asked for while hidden apply too');
 
   // ---- objective checks ----
   T.section('the master chain');
@@ -307,25 +384,29 @@ async function openSheet(opts) {
 
   T.section('render cost: 60 s of the busiest song + an sfx stress ≤ 3 % of real time (calibrated)');
   const busiest = songs.filter((s) => !s.variant && s.loops).sort((x, y) => y.stats.added / y.a.seconds - x.stats.added / x.a.seconds)[0].id;
-  const perf = await E(async (busiest) => {
-    const cal = soundSheet.calibrate();
+  const pairs = await E(async (busiest) => {
     const names = Object.keys(SR.reg.sfx).filter((k) => !SR.reg.sfx[k].loop);
     const r = SR.rng.create(11);
     const events = [];
     for (let i = 0; i < 480; i++) events.push({ at: r.float(0, 59.5), name: names[r.int(0, names.length - 1)], gain: 0.5, pan: r.float(-0.8, 0.8) });
     await SR.audio.renderOffline('song', busiest, 5);          // warm-up
-    let best = Infinity, stats = null;
-    for (let k = 0; k < 2; k++) {
+    // Each render is paired with a calibration measured just before it, so both see the same
+    // machine load (CI containers are shared and noisy); the best pair is judged.
+    const out = [];
+    for (let k = 0; k < 3; k++) {
+      const cal = soundSheet.calibrate();
       const t0 = performance.now();
       await SR.audio.renderOffline('song', busiest, 60, { sfx: events });
-      best = Math.min(best, performance.now() - t0);
-      stats = SR.audio.engine.lastRender();
+      out.push({ cal, ms: performance.now() - t0, stats: SR.audio.engine.lastRender() });
     }
-    return { cal, ms: best, stats };
+    return out;
   }, busiest);
-  const budget = 0.03 * 60000 * perf.cal.factor;
-  T.ok(perf.ms <= budget, busiest + ' 60 s + 480 sfx rendered in ' + perf.ms.toFixed(0) + ' ms ≤ ' + budget.toFixed(0) +
-    ' ms (3 % × calibration ' + perf.cal.factor.toFixed(2) + ')');
+  pairs.forEach((p) => { p.budget = 0.03 * 60000 * p.cal.factor; });
+  const perf = pairs.slice().sort((x, y) => x.ms / x.budget - y.ms / y.budget)[0];
+  T.eq(perf.cal.source, 'tests/perf/calibrate.js', 'the budget is calibrated by W1-Q\'s tests/perf/calibrate.js (ARCHITECTURE §17)');
+  T.ok(perf.ms <= perf.budget, busiest + ' 60 s + 480 sfx rendered in ' + perf.ms.toFixed(0) + ' ms ≤ ' + perf.budget.toFixed(0) +
+    ' ms (3 % × calibration ' + perf.cal.factor.toFixed(2) + '; ' + (100 * perf.ms / 60000 / perf.cal.factor).toFixed(2) +
+    ' % of real time calibrated; pairs ' + pairs.map((p) => p.ms.toFixed(0) + '/' + p.budget.toFixed(0)).join(', ') + ')');
   T.ok(perf.stats.peakVoices <= 24, 'the offline stress stays within 24 voices (peak ' + perf.stats.peakVoices + ', stolen ' + perf.stats.stolen + ')');
 
   T.section('contact sheet');
@@ -334,6 +415,41 @@ async function openSheet(opts) {
   await page.locator('[data-id="contact"]').screenshot({ path: path.join(SHOTS, 'contact-sheet.png') });
   await page.screenshot({ path: path.join(SHOTS, 'sound-sheet.png'), fullPage: true });
   T.ok(fs.existsSync(path.join(SHOTS, 'contact-sheet.png')), 'shots/W1-S/contact-sheet.png');
+
+  T.section('the voice pool offline: steals without clicks, renders without suspend()');
+  const steal = await E(async () => {
+    // 30 keys notes one 50 ms step apart: from the 25th on, each steals the oldest while it is still
+    // in its 1.4 s exponential decay (the steal lands up to a chunk ahead of the render position).
+    const inst = {}, tracks = {};
+    for (let i = 0; i < 30; i++) {
+      inst['t' + i] = { preset: 'keys', gain: 1 };
+      tracks['t' + i] = Array.from({ length: 64 }, (_, s) => (s === i ? 'C4:40' : '.')).join(' ');
+    }
+    SR.def.song('steal_probe', { bpm: 300, meter: [4, 4], stepsPerBeat: 4, gain: 1, inst, patterns: { P: { bars: 4, tracks } }, order: ['P'] });
+    const buf = await SR.audio.renderOffline('song', 'steal_probe', 3);
+    const d = buf.getChannelData(0), sr = buf.sampleRate;
+    const win = (a, b) => { let m = 0; for (let i = Math.round(a * sr); i < Math.round(b * sr); i++) m = Math.max(m, Math.abs(d[i] - d[i - 1])); return m; };
+    return { stats: SR.audio.engine.lastRender(), before: win(0.3, 1.19), steals: win(1.19, 1.55) };
+  });
+  T.ok(steal.stats.stolen >= 5 && steal.stats.peakVoices <= 24, 'the probe steals ' + steal.stats.stolen + ' voices mid-decay (peak ' + steal.stats.peakVoices + ')');
+  T.ok(steal.steals <= steal.before, 'no click where they are stolen: the largest sample step there (' + steal.steals.toFixed(3) +
+    ') is no larger than the waveform\'s own before the steals (' + steal.before.toFixed(3) + ')');
+  const whole = await E(async () => {
+    const a = soundSheet.analyze(await SR.audio.renderOffline('song', 'crossroads_strut', 12));
+    const b = soundSheet.analyze(await SR.audio.renderOffline('song', 'crossroads_strut', 12, { chunk: false }));
+    return { a: a.rmsDb, b: b.rmsDb, stats: SR.audio.engine.lastRender() };
+  });
+  const pl = await E(() => {
+    const ac = new OfflineAudioContext(1, 128, 44100), S = SR.audio.synth, r = SR.rng.create(3), bufs = new Set();
+    for (let i = 0; i < 200; i++) bufs.add(S.pluckBuffer(ac, 440 * (1 + r.float(-0.05, 0.05))).buffer);
+    const a = S.pluckBuffer(ac, 440), b = S.pluckBuffer(ac, 441), c = S.pluckBuffer(ac, 440);
+    return { n: bufs.size, same: a.buffer === b.buffer && a.buffer === c.buffer, ratio: b.rate / a.rate };
+  });
+  T.ok(pl.n <= 8 && pl.same && Math.abs(pl.ratio - 441 / 440) < 1e-9, 'Karplus-Strong buffers are shared per quarter semitone: 200 varied ' +
+    'plucks (±5 %) make ' + pl.n + ' buffers, each played at an exactly corrected rate');
+  T.ok(whole.stats.stolen === 0 && whole.stats.peakVoices <= 24 && Math.abs(whole.a - whole.b) < 0.5,
+    'scheduled all at once (no suspend(), as in Firefox) a song keeps every note: stolen ' + whole.stats.stolen + ', peak ' +
+    whole.stats.peakVoices + ', RMS ' + whole.b.toFixed(1) + ' vs ' + whole.a.toFixed(1) + ' dBFS chunked');
   T.eq(t.errors(), [], 'the sound sheet ran with zero console errors');
   await t.close();
 

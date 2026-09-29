@@ -682,7 +682,8 @@
 
   /**
    * Plays a song (cross-fading from the current one), switches the playing song's variant on the
-   * next bar line, or fades out with a falsy id. Before the audio unlocks, the last request waits.
+   * next bar line, or fades out with a falsy id. While the context is not running (locked, a hidden
+   * tab, a system interruption) the last request, a stop included, waits and applies when it runs.
    * @param {string|null} id a song id
    * @param {object} [o] { fade: seconds (default 1.2), variant: name }
    */
@@ -690,7 +691,7 @@
     o = o || {};
     var eng = engine();
     var E = eng && eng.live ? eng.live() : null;
-    if (!E) { M.pending = id ? { id: id, o: o } : null; return; }
+    if (!E) { M.pending = { id: id || null, o: o }; return; }
     M.pending = null;
     var now = E.ac.currentTime;
     var fade = o.fade === undefined ? FADE : Math.max(0, Number(o.fade) || 0);
@@ -764,7 +765,7 @@
     Object.keys(M.resume).forEach(function (k) { if (now - M.resume[k].at > RESUME_WINDOW) delete M.resume[k]; });
   }
 
-  /** Called by the engine once a context runs: plays the song asked for while locked. */
+  /** Called by the engine each time the context starts running: applies the request that waited. */
   function onUnlock() {
     if (M.pending) { var p = M.pending; M.pending = null; music(p.id, p.o); }
   }

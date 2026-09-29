@@ -5,11 +5,18 @@
 //   - every id reference resolves: text keys, icons, sfx, songs, skins and engines, sub-screens
 //     (the frozen ids of CONTRACT §10), buildings, actions, named fns, items, jobs, homes,
 //     furniture, perks, achievements, feature flags, palette keys (D32), tuning paths, cities;
+//     in data, and the ids code names outright (`text('…')`, `'reason.…'`, `{ key: 'toast.…' }`,
+//     `audio.sfx / music / stinger('…')`, `art.icon(ctx, '…')`, `iconURL('…')`; scanCode);
+//   - the frozen names: sub-screens in their files with their P / flag (a row opening a P1 one
+//     carries its flag), skins on their engines in their files, songs in their files (§10, §13, §14);
+//     `open` names a skin or an engine without skins (D29), and a minigame row's hpAbove covers
+//     its `:resolve`;
 //   - only known condition and effect names (SR.rules.conditions.names / effects.names), known
 //     rule events for `emit` and arc stages (§9.1), known HP-0 causes for `hurt`;
 //   - `p` on every def of the flagged kinds and `feature` (a known flag) on every def with p ≥ 1;
 //   - `repeatable` only where allowed; every HP-costing voluntary def has `hpAbove` ≥ its worst case;
-//   - text only in js/data/text/en-*.js; text length limits by prefix (GDD §6.11);
+//   - text only in js/data/text/en-*.js; text length limits by prefix (GDD §6.11; enc. and event.
+//     carry its "event and encounter cards ≤ 400");
 //   - song and sfx data formats (SR.audio.validate, with a structural fallback while it is a stub);
 //   - arc stages reachable; `open` actions have their `:resolve`;
 //   - no colour literal (#rgb…, rgb(, rgba(, hsl(, hsla() in js/** or css/** outside
@@ -42,7 +49,9 @@ const TIME_RULES = ['robbery', 'trip', 'free'];
 const ENGINES = ['fight', 'darts', 'slots', 'blackjack', 'roulette', 'scratch', 'shiftrush', 'timingring', 'duel'];
 const HP_CAUSES = ['fall', 'carHit', 'carCrash', 'fight', 'mugger', 'goons', 'other'];
 const INVOLUNTARY = ['fall', 'carHit', 'carCrash', 'fight', 'mugger', 'goons'];   // CONTRACT §8.2: exempt from hpAbove
-const LIMITS = { act: 28, bark: 60, toast: 80, greet: 140, news: 220, vm: 280, card: 400 };
+// CONTRACT §7 / ARCHITECTURE §7.2 by prefix; `enc.` and `event.` carry GDD §6.11's "event and
+// encounter cards ≤ 400", which the prefix list of §7 leaves without a key (W1-Q review).
+const LIMITS = { act: 28, bark: 60, toast: 80, greet: 140, news: 220, vm: 280, card: 400, enc: 400, event: 400 };
 const BUSES = ['music', 'sfx', 'ambience', 'ui', 'voice'];
 const PRESETS = ['bass', 'slap', 'lead', 'whistle', 'keys', 'clav', 'pluck', 'pad', 'brass', 'bell', 'vibes', 'organ', 'harmonica', 'kit'];
 // Kinds whose every def carries p (BUILD_PLAN Appendix B); any def that has p ≥ 1 needs feature.
@@ -54,6 +63,25 @@ const SUBSCREENS = {
   'furniture.browse': 'furniture', 'pawn.shop': 'shop', 'uofs.transcript': 'transcript', 'cityhall.campaign': 'campaign',
   'bus.board': 'bus', 'cityhall.mayor': 'mayor', 'casino.vip': 'vip',
 };
+// CONTRACT §10: the frozen sub-screens that are P1 as a whole, and their flags (the others are P0).
+const SUBSCREEN_P1 = { 'bank.cds': 'homesPlus', 'uofs.transcript': 'degrees', 'cityhall.mayor': 'civicPlus', 'casino.vip': 'nightlife' };
+// CONTRACT §13: the skins and their engines. `open` and `minigame.skin` name a skin, or an engine
+// without skins (D29); the three skinned engines are never opened by name.
+const SKINS = {
+  orderup: 'shiftrush', sortit: 'shiftrush', pitch: 'timingring', hotwire: 'timingring', holdup: 'duel', boardroom: 'duel',
+  debate: 'duel', interview: 'duel', interrogation: 'duel', tourhook: 'duel',
+};
+const SKINNED = ['shiftrush', 'timingring', 'duel'];
+// CONTRACT §14.2 (D21): the song ids, one file each in js/audio/songs/, and the stingers of stingers.js.
+const SONGS = ['paper_sky', 'crossroads_strut', 'home_sweet_paper', 'streetlights', 'fry_day', 'funky_aisle', 'pawnbroker_blues',
+  'showroom_smooth', 'compound_interest', 'please_hold', 'campus_canon', 'last_call_shuffle', 'high_roller_lounge', 'brawl_hall',
+  'tick_tock_trouble', 'midnight_express', 'hail_to_the_stick', 'doing_time', 'waiting_room', 'morning_edition', 'final_edition'];
+const STINGERS = ['fall', 'rescue', 'jail', 'flatlined', 'promotion', 'degree', 'jackpot', 'election_win', 'election_loss', 'stamp'];
+// Text-key namespaces that name nothing but text (CONTRACT §7), for the scan of literal keys in
+// code: `{ key: '<ns>.…' }` (toasts, stamps, messages, report lines) is a text reference only under
+// these (`key: 'cars.junker'` is a state path, `trip.*` also names actions, `city.*` palette keys).
+const CODE_KEY_NS = ['toast', 'stamp', 'vm', 'news', 'report', 'bark', 'greet', 'cap', 'tv', 'taunt', 'enc', 'event', 'arc', 'front', 'ori',
+  'ui', 'hud', 'reason', 'place', 'act', 'desc', 'card', 'sub', 'mg', 'ach', 'advisor', 'pocket', 'contact', 'key', 'set'];
 // Effects and named fns that make an action irreversible (crime, loans, fights, property, election;
 // CONTRACT §8.2): such an action may not be `repeatable`.
 const IRREVERSIBLE_EMITS = ['rob', 'jail', 'fight', 'loan', 'home', 'election', 'decree', 'trip'];
@@ -293,8 +321,10 @@ function validate(opts) {
     if (o === undefined) missing('tuning', where, 'tuning path "' + p + '" does not resolve', 'js/data/tuning.js');
   };
   const refSkinOrEngine = (name, where) => {
+    if (typeof name !== 'string') { err('skin', where, 'a minigame name must be a string (' + short(name) + ')'); return; }
+    if (SKINNED.indexOf(name) >= 0) { err('skin', where, '"' + name + '" is an engine with skins: open one of its skins (' + Object.keys(SKINS).filter((k) => SKINS[k] === name).join(', ') + '; CONTRACT §8.4 D29)'); return; }
     if (ENGINES.indexOf(name) >= 0 || has('skin', name)) return;
-    missing('skin', where, 'minigame "' + name + '" is neither an engine nor a registered skin', 'js/minigames/skins/' + name + '.js');
+    missing('skin', where, 'minigame "' + name + '" is neither an engine without skins nor a registered skin', 'js/minigames/skins/' + name + '.js');
   };
   const refSubscreen = (id, where) => {
     if (has('subscreen', id)) return;
@@ -464,6 +494,7 @@ function validate(opts) {
     if (P_KINDS.indexOf(kind) >= 0 && def.p === undefined) err('p', where, 'no p (the priority tag, GDD §0)');
     if (def.p !== undefined && [0, 1, 2].indexOf(def.p) < 0) err('p', where, 'p must be 0, 1 or 2 (' + short(def.p) + ')');
     if (def.p >= 1 && !def.feature) err('feature', where, 'p ' + def.p + ' without a feature flag (BUILD_PLAN Appendix B)');
+    if (def.p === 0 && def.feature) warn('feature', where, 'p 0 with the feature "' + def.feature + '": P0 behaviour has no flag, and this def hides while the flag is off (BUILD_PLAN Appendix B)');
     if (def.feature !== undefined && def.feature !== null) refFlag(def.feature, where);
   };
   for (const kind of idKinds) for (const e of entries(kind)) checkP(e.def, kind, kind + ' "' + e.id + '" (' + e.file + ')');
@@ -503,7 +534,11 @@ function validate(opts) {
       else if (d.minigame.skin.indexOf('.') > 0) refFn(d.minigame.skin, where + '.minigame.skin');
       else refSkinOrEngine(d.minigame.skin, where + '.minigame.skin');
     }
-    if (d.screen !== undefined) refSubscreen(d.screen, where + '.screen');
+    if (d.screen !== undefined) {
+      refSubscreen(d.screen, where + '.screen');
+      // a row that opens a P1 sub-screen hides with its flag (BUILD_PLAN Appendix B)
+      if (hasOwn(SUBSCREEN_P1, d.screen) && d.feature !== SUBSCREEN_P1[d.screen]) err('feature', where, 'opens the P1 sub-screen "' + d.screen + '" but its feature is ' + short(d.feature) + ', not "' + SUBSCREEN_P1[d.screen] + '" (CONTRACT §10)');
+    }
     scanFields(d, where);
     // repeatable only where allowed (CONTRACT §8.2)
     if (d.repeatable) {
@@ -520,18 +555,21 @@ function validate(opts) {
       });
       if (why.length) err('repeatable', where, 'repeatable is not allowed with ' + Array.from(new Set(why)).join(', ') + ' (CONTRACT §8.2)');
     }
-    // HP costs of voluntary actions need hpAbove ≥ the worst case (CONTRACT §8.2)
-    if (b !== 'world' && !resolve) {
-      const costHp = d.cost && d.cost.hp !== undefined ? (typeof d.cost.hp === 'number' ? Math.max(0, d.cost.hp) : Infinity) : 0;
-      const worst = costHp + worstHurt(d.effects);
-      if (worst > 0) {
-        const hp = findHpAbove(d.requires);
-        if (hp === null || hp === undefined) err('hpAbove', where, 'an HP cost (worst case ' + (worst === Infinity ? 'computed' : worst) + ') without ["hpAbove", n]');
-        else if (typeof hp === 'number' && worst !== Infinity && hp < worst) err('hpAbove', where, '["hpAbove", ' + hp + '] is below the worst-case HP cost ' + worst);
-      }
-    }
     let opens = false;
     eachEffect(d.effects, (x) => { if (x[0] === 'open') opens = true; });
+    // HP costs of voluntary actions need hpAbove ≥ the worst case (CONTRACT §8.2). An action that
+    // opens a minigame carries its `:resolve`'s possible voluntary hurt: the player chose it here.
+    if (b !== 'world' && !resolve) {
+      const hpOf = (x) => (x && isObj(x.cost) && x.cost.hp !== undefined ? (typeof x.cost.hp === 'number' ? Math.max(0, x.cost.hp) : Infinity) : 0);
+      const rd = (opens || d.minigame) && reg.action && hasOwn(reg.action, e.id + ':resolve') ? reg.action[e.id + ':resolve'] : null;
+      const worst = hpOf(d) + worstHurt(d.effects) + (isObj(rd) ? hpOf(rd) + worstHurt(rd.effects) : 0);
+      if (worst > 0) {
+        const hp = findHpAbove(d.requires);
+        const via = isObj(rd) && hpOf(rd) + worstHurt(rd.effects) > 0 ? ', ' + e.id + ':resolve included' : '';
+        if (hp === null || hp === undefined) err('hpAbove', where, 'an HP cost (worst case ' + (worst === Infinity ? 'computed' : worst) + via + ') without ["hpAbove", n]');
+        else if (typeof hp === 'number' && worst !== Infinity && hp < worst) err('hpAbove', where, '["hpAbove", ' + hp + '] is below the worst-case HP cost ' + worst + via);
+      }
+    }
     if (opens || d.minigame) openActions.push([e.id, where, e.file]);
     if (typeof b === 'string' && reg.building && hasOwn(reg.building, b) && !resolve && e.id.indexOf(b + '.') !== 0) warn('action', where, 'the id does not start with its building "' + b + '."');
   }
@@ -569,6 +607,9 @@ function validate(opts) {
       }
       if (kind === 'skin') {
         if (ENGINES.indexOf(d.engine) < 0) err('skin', where, 'engine "' + d.engine + '" is not one of ' + ENGINES.join(', '));
+        else if (hasOwn(SKINS, e.id) && d.engine !== SKINS[e.id]) err('skin', where, 'is a ' + SKINS[e.id] + ' skin (CONTRACT §13), not ' + d.engine);
+        if (hasOwn(SKINS, e.id) && e.file !== 'js/minigames/skins/' + e.id + '.js') err('skin', where, 'registered outside its file js/minigames/skins/' + e.id + '.js');
+        if (!hasOwn(SKINS, e.id) && !/^test_/.test(e.id)) warn('skin', where, 'not a skin of CONTRACT §13 (file a request)');
       }
       if (kind === 'encounter' || kind === 'event') {
         checkConds(d.conditions, where + '.conditions');
@@ -631,6 +672,13 @@ function validate(opts) {
     const where = 'subscreen "' + e.id + '" (' + e.file + ')';
     if (!isObj(d)) continue;
     if (!hasOwn(SUBSCREENS, e.id) && !/^test\./.test(e.id)) warn('subscreen', where, 'not one of the frozen ids of CONTRACT §10 (file a request)');
+    if (hasOwn(SUBSCREENS, e.id)) {
+      const file = 'js/ui/subscreens/' + SUBSCREENS[e.id] + '.js';
+      if (e.file !== file) err('subscreen', where, 'registered outside its frozen file ' + file + ' (CONTRACT §10)');
+      const flag = SUBSCREEN_P1[e.id];
+      if (flag && (d.p !== 1 || d.feature !== flag)) err('subscreen', where, 'is P1 behind "' + flag + '" (CONTRACT §10), not p ' + short(d.p) + ' / feature ' + short(d.feature));
+      if (!flag && d.p !== 0) err('subscreen', where, 'is P0 (CONTRACT §10; its P1 parts check their own flags), not p ' + short(d.p));
+    }
     if (typeof d.mount !== 'function') err('subscreen', where, 'mount(root, ctx) is missing');
     if (d.title !== undefined) refText(d.title, where + '.title'); else err('subscreen', where, 'no title (a breadcrumb text key)');
   }
@@ -713,6 +761,12 @@ function validate(opts) {
       try { problems = audioValidate ? list(audioValidate(kind, e.def)) : kind === 'song' ? songProblems(e.def) : sfxProblems(e.def); } catch (x) { problems = ['the validator threw: ' + x.message]; }
       problems.forEach((p) => err(kind, where, String(p)));
       if (kind === 'sfx' && isObj(e.def) && e.def.caption !== undefined && e.def.caption !== null) refText(e.def.caption, where + '.caption');
+      if (kind === 'song') {
+        // CONTRACT §14.2 (D21): one file per song id; stingers.<name> in stingers.js
+        const st = /^stingers\.(.+)$/.exec(e.id);
+        if (st ? STINGERS.indexOf(st[1]) < 0 : SONGS.indexOf(e.id) < 0) warn('song', where, 'not a song id of CONTRACT §14.2 (file a request)');
+        if (e.file !== songFile(e.id)) err('song', where, 'registered outside its file ' + songFile(e.id) + ' (CONTRACT §14.2)');
+      }
     }
   }
 
@@ -730,13 +784,52 @@ function validate(opts) {
   }
   out.stats.text = textCount;
 
-  // ---- file scans: colour literals, Math.random in pure files, stubs, index coverage
+  // ---- literal references in code (W1-Q review): the ids that code names outright must resolve
+  // like the data's. Text keys: the first argument of any `text('…')` call, any `'reason.…'` (a
+  // refusal reason is always a text key, CONTRACT §8.3), and `key: '<ns>.…'` in an object literal
+  // for the text-only namespaces of CODE_KEY_NS; a literal the same file tests with `has('…')` is
+  // optional, and a key built with `+` is skipped. Sounds: `audio.sfx('…')`, `audio.music('…')`,
+  // `audio.stinger('…')`. Icons: `art.icon(ctx, '…')`, `iconURL('…')`.
+  let codeRefs = 0;
+  function scanCode(rel, tok) {
+    const at = (k) => tok[k] || { t: '', v: '' };
+    const lines = new Map();         // a missing text key: one problem per file, with its lines
+    const optional = new Set();
+    for (let k = 2; k < tok.length; k++) if (tok[k].t === 's' && at(k - 1).v === '(' && at(k - 2).v === 'has') optional.add(tok[k].v);
+    for (let k = 1; k < tok.length; k++) {
+      const c = tok[k];
+      if (c.t !== 's' || c.tpl) continue;
+      const prev = at(k - 1).v;
+      if (prev === '+' || at(k + 1).v === '+') continue;
+      const w = rel + ':' + c.line;
+      if (KEY_RE.test(c.v)) {
+        const ns = c.v.split('.')[0];
+        const call = prev === '(' && at(k - 2).t === 'i' && at(k - 2).v === 'text';
+        const keyProp = prev === ':' && at(k - 2).t === 'i' && at(k - 2).v === 'key' && CODE_KEY_NS.indexOf(ns) >= 0;
+        if (call || keyProp || ns === 'reason') {
+          codeRefs++;
+          if (!has('text', c.v) && !optional.has(c.v)) (lines.get(c.v) || lines.set(c.v, []).get(c.v)).push(c.line);
+          continue;
+        }
+      }
+      if (prev === '(' && at(k - 2).t === 'i' && at(k - 3).v === '.' && at(k - 4).v === 'audio') {
+        const fn = at(k - 2).v;
+        if (fn === 'sfx') { codeRefs++; refSfx(c.v, w); } else if (fn === 'music') { codeRefs++; refSong(c.v, w); } else if (fn === 'stinger') { codeRefs++; refSong(c.v.indexOf('.') < 0 ? 'stingers.' + c.v : c.v, w); }
+      }
+      if (prev === '(' && at(k - 2).v === 'iconURL') { codeRefs++; refIcon(c.v, w); }
+      if (prev === ',' && at(k - 2).t === 'i' && at(k - 3).v === '(' && at(k - 4).v === 'icon' && at(k - 5).v === '.' && at(k - 6).v === 'art') { codeRefs++; refIcon(c.v, w); }
+    }
+    lines.forEach((ln, key) => missing('text', rel + ':' + ln.join(','), 'text key "' + key + '" (named in code) is not registered', textOwner(key)));
+  }
+
+  // ---- file scans: colour literals, Math.random in pure files, stubs, index coverage, code refs
   const diskFiles = S.walk(root, 'js', ['.js']).concat(S.walk(root, 'css', ['.css']));
   const allFiles = Array.from(new Set(diskFiles.concat(Object.keys(plant).filter((r) => /^(js\/.*\.js|css\/.*\.css)$/.test(r)))));
   const stubs = [];
   for (const rel of allFiles) {
     let src;
     try { src = read(rel); } catch (e) { continue; }
+    if (/\.js$/.test(rel) && !textFileRe.test(rel) && !STUB_RE.test(src)) scanCode(rel, S.lex(src));
     if (COLOUR_EXEMPT.indexOf(rel) < 0) {
       const lines = src.split('\n');
       let n = 0;
@@ -757,6 +850,7 @@ function validate(opts) {
     if (m) stubs.push({ rel, owner: m[1] });
   }
   out.stats.stubs = stubs.length;
+  out.stats.codeRefs = codeRefs;
   if (wave !== null) {
     const due = stubs.filter((s) => { const w = /W(\d)/.exec(s.owner); return w && Number(w[1]) <= wave; });
     due.forEach((s) => warn('stub', s.rel, 'still a stub (' + s.owner + ') at wave ' + wave));
@@ -834,14 +928,19 @@ function sfxProblems(d) {
 function selftest() {
   const { suite } = require(path.join(ROOT, 'tests', 'node', 'load.cjs'));
   const T = suite('tools/validate.cjs --selftest');
-  const base = validate({ wave: 1 });
-  const baseKeys = new Set(base.errors.map((e) => e.check + '|' + e.where + '|' + e.msg));
-  const newErrors = (r) => r.errors.filter((e) => !baseKeys.has(e.check + '|' + e.where + '|' + e.msg));
+  const base = { 1: validate({ wave: 1 }), strict: validate({}) };
+  const keys = (r) => new Set(r.errors.map((e) => e.check + '|' + e.where + '|' + e.msg));
+  const baseKeys = { 1: keys(base[1]), strict: keys(base.strict) };
+  const newErrors = (r, mode) => r.errors.filter((e) => !baseKeys[mode || 1].has(e.check + '|' + e.where + '|' + e.msg));
   T.section('the current tree');
-  T.ok(base.stats.registrations && Object.keys(base.stats.registrations).length > 0, 'mode all loads and boots (' + Object.keys(base.stats.registrations || {}).length + ' kinds registered)');
+  T.ok(base[1].stats.registrations !== undefined, 'mode all loads (' + Object.keys(base[1].stats.registrations || {}).length + ' kinds registered, ' + base[1].stats.stubs + ' stubs)');
   const plantRel = 'js/data/actions/qa-planted.js';
   const plant = (code) => ({ [plantRel]: "(function () { 'use strict'; var SR = window.SR;\n" + code + '\n})();\n' });
   const L = "label: 'act.world.fall'";
+  // A probe: does the tree have the condition vocabulary yet (the M0 stub tree does not)?
+  const probe = validate({ wave: 1, plant: plant("SR.def.action('bag.qaProbe', { building: 'bag', group: 'special', " + L + ", p: 0, requires: [['qaNoSuchCondition']] });") });
+  const hasVocab = !probe.warnings.some((w) => w.check === 'vocabulary' && /conditions/.test(w.where));
+  // [label, files, match, mode (1 = --wave 1, strict), needs]
   const cases = [
     ['a colour literal', { 'js/data/qa-colour.js': "(function () { 'use strict'; var ink = '#FF00AA'; })();\n" }, (e) => e.check === 'colour' && /qa-colour/.test(e.where)],
     ['an rgba() colour literal in css', { 'css/qa.css': '.x { color: rgba(0, 0, 0, .5); }\n' }, (e) => e.check === 'colour' && /css\/qa\.css/.test(e.where)],
@@ -852,22 +951,58 @@ function selftest() {
     ['a repeatable row with a confirm', plant("SR.def.action('bag.qaConfirm', { building: 'bag', group: 'buy', " + L + ", p: 0, confirm: 'act.world.fall', repeatable: true, effects: [] });"), (e) => e.check === 'repeatable' && /qaConfirm/.test(e.where)],
     ['a hurt without hpAbove', plant("SR.def.action('bag.qaHurt', { building: 'bag', group: 'train', " + L + ", p: 0, effects: [['hurt', 5, 'other']] });"), (e) => e.check === 'hpAbove' && /bag\.qaHurt/.test(e.where)],
     ['a possible hurt (in a chance branch) above its hpAbove', plant("SR.def.action('bag.qaHurt2', { building: 'bag', group: 'train', " + L + ", p: 0, requires: [['hpAbove', 5]], cost: { hp: 2 }, effects: [['chance', 0.5, [['hurt', 10, 'other']], []]] });"), (e) => e.check === 'hpAbove' && /qaHurt2/.test(e.where) && /12/.test(e.msg)],
-    ['an unknown condition', plant("SR.def.action('bag.qaCond', { building: 'bag', group: 'special', " + L + ", p: 0, requires: [['qaNoSuchCondition', 1]], effects: [] });"), (e) => e.check === 'conditions' && /qaNoSuchCondition/.test(e.msg)],
+    ['an unknown condition', plant("SR.def.action('bag.qaCond', { building: 'bag', group: 'special', " + L + ", p: 0, requires: [['qaNoSuchCondition', 1]], effects: [] });"), (e) => e.check === 'conditions' && /qaNoSuchCondition/.test(e.msg), 1, hasVocab],
     ['an unknown rule event', plant("SR.def.action('bag.qaEmit', { building: 'bag', group: 'special', " + L + ", p: 0, effects: [['emit', 'qaNoSuchEvent', {}]] });"), (e) => e.check === 'events' && /qaNoSuchEvent/.test(e.msg)],
-    ['an unregistered icon', plant("SR.def.action('bag.qaIcon', { building: 'bag', group: 'special', " + L + ", icon: 'qaNoSuchIcon', p: 0, effects: [] });"), (e) => e.check === 'icon' && /qaNoSuchIcon/.test(e.msg)],
-    ['an unknown palette key', plant("SR.def.fighter('qa_fighter', { n: 99, name: 'fighter.qa', palette: 'fighter.qaNoSuch', taunts: [] });"), (e) => e.check === 'palette' && /qaNoSuch/.test(e.msg)],
+    ['an unregistered icon (strict)', plant("SR.def.action('bag.qaIcon', { building: 'bag', group: 'special', " + L + ", icon: 'qaNoSuchIcon', p: 0, effects: [] });"), (e) => e.check === 'icon' && /qaNoSuchIcon/.test(e.msg), 'strict'],
+    ['an unknown palette key (strict)', plant("SR.def.fighter('qa_fighter', { n: 99, name: 'fighter.qa', palette: 'fighter.qaNoSuch', taunts: [] });"), (e) => e.check === 'palette' && /qaNoSuch/.test(e.msg), 'strict'],
     ['a text key over its length limit', { 'js/data/text/en-qa.js': "(function () { 'use strict'; window.SR.def.text({ 'act.world.qaLong': 'An action label far longer than twenty-eight' }); })();\n" }, (e) => e.check === 'length' && /qaLong/.test(e.where)],
-    ['a duplicate id', plant("SR.def.action('world.fall', { building: 'world', group: 'special', " + L + ', p: 0 });'), (e) => e.check === 'registry' && /duplicate/.test(e.msg)],
+    ['a duplicate id', plant("SR.def.action('bag.qaDup', { building: 'bag', group: 'special', " + L + ", p: 0 });\nSR.def.action('bag.qaDup', { building: 'bag', group: 'special', " + L + ', p: 0 });'), (e) => e.check === 'registry' && /duplicate/.test(e.msg)],
     ['Math.random in a pure file', { 'js/rules/qa-random.js': "(function () { 'use strict'; function roll() { return Math.random(); } })();\n" }, (e) => e.check === 'random' && /qa-random/.test(e.where)],
+    // W1-Q review additions
+    ['a hurt in the :resolve of a minigame row above its hpAbove', plant("SR.def.action('bag.qaMug', { building: 'bag', group: 'special', " + L + ", p: 0, requires: [['hpAbove', 5]], effects: [['open', 'holdup', {}]] });\nSR.def.action('bag.qaMug:resolve', { building: 'bag', p: 0, timeRule: 'free', effects: [['chance', 0.5, [['hurt', 12, 'other']], []]] });"),
+      (e) => e.check === 'hpAbove' && /bag\.qaMug"/.test(e.where) && /12/.test(e.msg) && /:resolve included/.test(e.msg)],
+    ['open naming a skinned engine', plant("SR.def.action('bag.qaDuel', { building: 'bag', group: 'special', " + L + ", p: 0, effects: [['open', 'duel', {}]] });\nSR.def.action('bag.qaDuel:resolve', { building: 'bag', p: 0, timeRule: 'free', effects: [] });"),
+      (e) => e.check === 'skin' && /bag\.qaDuel/.test(e.where) && /engine with skins/.test(e.msg)],
+    ['a P1 frozen sub-screen with the wrong flag', { 'js/ui/subscreens/bank.js': "(function () { 'use strict'; window.SR.def.subscreen('bank.cds', { title: 'sub.bank.cds', p: 1, feature: 'degrees', mount: function () {} }); })();\n" },
+      (e) => e.check === 'subscreen' && /bank\.cds/.test(e.where) && /homesPlus/.test(e.msg)],
+    ['a frozen sub-screen outside its file', { 'js/ui/subscreens/qa.js': "(function () { 'use strict'; window.SR.def.subscreen('home.tv', { title: 'sub.home.tv', p: 0, mount: function () {} }); })();\n" },
+      (e) => e.check === 'subscreen' && /home\.tv/.test(e.where) && /tv\.js/.test(e.msg)],
+    ['a row opening a P1 sub-screen without its flag', plant("SR.def.action('bag.qaCds', { building: 'bag', group: 'services', " + L + ", p: 0, screen: 'bank.cds' });"),
+      (e) => e.check === 'feature' && /bag\.qaCds/.test(e.where) && /homesPlus/.test(e.msg)],
+    ['a skin on the wrong engine', { 'js/minigames/skins/orderup.js': "(function () { 'use strict'; window.SR.def.skin('orderup', { engine: 'duel', params: {} }); })();\n" },
+      (e) => e.check === 'skin' && /orderup/.test(e.where) && /shiftrush/.test(e.msg)],
+    ['a song outside its file', { 'js/audio/songs/qa.js': "(function () { 'use strict'; window.SR.def.song('qa_song', { bpm: 100, meter: [4, 4], stepsPerBeat: 4, inst: { d: { preset: 'kit' } }, patterns: { A: { bars: 1, tracks: { d: 'k . h . s . h . k . h . s . h .' } } }, order: ['A'], loopFrom: 0 }); })();\n" },
+      (e) => e.check === 'song' && /qa_song/.test(e.where) && /qa_song\.js/.test(e.msg)],
+    ['text registered outside js/data/text/en-*.js', { 'js/data/actions/qa-text.js': "(function () { 'use strict'; window.SR.def.text({ 'act.world.qaStray': 'Stray' }); })();\n" },
+      (e) => e.check === 'text' && /qaStray/.test(e.where) && /en-\*/.test(e.msg)],
+    ['an encounter card over 400 characters', { 'js/data/text/en-qa.js': "(function () { 'use strict'; window.SR.def.text({ 'enc.qa.body': '" + 'A folded note. '.repeat(30) + "' }); })();\n" },
+      (e) => e.check === 'length' && /enc\.qa\.body/.test(e.where)],
+    ['a text key named in code that is not registered (strict)', { 'js/ui/qa-code.js': "(function () { 'use strict'; var SR = window.SR; function f() { SR.ui.toast({ key: 'toast.world.qaMissing' }); } })();\n" },
+      (e) => e.check === 'text' && /qa-code\.js:1/.test(e.where) && /toast\.world\.qaMissing/.test(e.msg), 'strict'],
+    ['a refusal reason named in code that is not registered (strict)', { 'js/rules/qa-reason.js': "(function () { 'use strict'; function f() { return { ok: false, reason: 'reason.qaMissing' }; } })();\n" },
+      (e) => e.check === 'text' && /qa-reason\.js/.test(e.where) && /reason\.qaMissing/.test(e.msg), 'strict'],
+    ['an sfx named in code that is not registered (strict)', { 'js/ui/qa-sound.js': "(function () { 'use strict'; var SR = window.SR; function f() { SR.audio.sfx('qa_no_sfx'); } })();\n" },
+      (e) => e.check === 'sfx' && /qa-sound\.js/.test(e.where) && /qa_no_sfx/.test(e.msg), 'strict'],
   ];
   T.section('each plant is caught (and only it)');
-  for (const [label, files, match] of cases) {
-    const r = validate({ wave: 1, plant: files });
-    const fresh = newErrors(r);
+  for (const [label, files, match, mode, needs] of cases) {
+    if (needs === false) { console.log('  skip ' + label + ' (the tree has no SR.rules.conditions.names yet)'); continue; }
+    const m = mode || 1;
+    const r = validate({ wave: m === 'strict' ? null : m, plant: files });
+    const fresh = newErrors(r, m);
     T.ok(fresh.some(match), 'fails on ' + label, fresh.slice(0, 3));
   }
   const clean = validate({ wave: 1, plant: plant("SR.def.action('bag.qaClean', { building: 'bag', group: 'train', " + L + ", p: 0, requires: [['hpAbove', 10]], cost: { min: 30, hp: 5 }, effects: [['chance', 0.5, [['hurt', 5, 'other']], []], ['stat', 'str', 1]], repeatable: true });") });
   T.eq(newErrors(clean).map((e) => e.msg), [], 'a valid planted action (hpAbove 10 ≥ worst case 10, repeatable) adds no error');
+  const code = validate({ plant: { 'js/ui/qa-code-ok.js': "(function () { 'use strict'; var SR = window.SR; function f(ctx, x) {\n" +
+    "  var item = { key: 'cars.junker' };                               // a state path, not a text namespace\n" +
+    "  var a = SR.text.has('ui.qaOptional') ? SR.text('ui.qaOptional') : '';   // optional: tested with has()\n" +
+    "  var b = SR.text('ui.' + x) + SR.text('reason.stat.' + x);         // built keys are skipped\n" +
+    "  SR.art.icon(ctx, 'qaNoIcon', 0, 0, 16);\n" +
+    "  return a + b + item.key; } })();\n" } });
+  const fresh = newErrors(code, 'strict');
+  T.ok(fresh.length === 1 && fresh[0].check === 'icon' && /qaNoIcon/.test(fresh[0].msg),
+    'code refs: a state path, a has()-guarded key and built keys pass; an unregistered icon in art.icon(ctx, …) fails', fresh);
 
   T.section('--wave downgrades stub-owned text keys');
   const missingKey = plant("SR.def.action('bag.qaText', { building: 'bag', group: 'special', label: 'act.mcsticks.qaMissing', p: 0, effects: [] });\n" +
@@ -878,7 +1013,7 @@ function selftest() {
   T.ok(w1.warnings.some((w) => /act\.mcsticks\.qaMissing/.test(w.msg)) && !newErrors(w1).some((e) => /act\.mcsticks\.qaMissing/.test(e.msg)),
     '--wave 1: a missing act.mcsticks.* key (en-food.js still a stub) is a warning');
   T.ok(strict.errors.some((e) => /act\.mcsticks\.qaMissing/.test(e.msg)), 'strict: the same key is an error');
-  T.ok(newErrors(w1).some((e) => /place\.qaMissing/.test(e.msg)), '--wave 1: a missing place.* key (en-world.js is real) stays an error');
+  T.ok(newErrors(w1).some((e) => /place\.qaMissing/.test(e.msg)), '--wave 1: a missing place.* key (its owner file is not a stub) stays an error');
   T.eq(textOwner('toast.act.writtenOff'), 'js/data/text/en-prog.js', 'toast.act.* belongs to en-prog.js (W1-R request 8)');
   T.eq([textOwner('act.mcsticks.fries'), textOwner('sub.bank.deposit'), textOwner('mg.hotwire.title'), textOwner('bark.ped.1'), textOwner('vm.harold.1'), textOwner('ui.fanNote')],
     ['js/data/text/en-food.js', 'js/data/text/en-money.js', 'js/data/text/en-street.js', 'js/data/text/en-city.js', 'js/data/text/en-street.js', 'js/data/text/en-ui.js'],
@@ -920,6 +1055,6 @@ function main(argv) {
   process.exitCode = r.errors.length ? 1 : 0;
 }
 
-module.exports = { validate, textOwner, songProblems, sfxProblems, RULE_EVENTS, ENGINES, SUBSCREENS, LIMITS };
+module.exports = { validate, textOwner, songProblems, sfxProblems, RULE_EVENTS, ENGINES, SUBSCREENS, SUBSCREEN_P1, SKINS, SONGS, STINGERS, LIMITS };
 
 if (require.main === module) main(process.argv.slice(2));

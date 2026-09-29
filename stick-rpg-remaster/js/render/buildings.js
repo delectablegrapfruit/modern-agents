@@ -3,7 +3,7 @@
 // zoom for buildings within the view expanded by half a view on every side, one mass per frame,
 // a 12 Mpx LRU (6 Mpx touch-compact) with the farthest evicted first, sprite DPR ≤ 1.5, flat
 // placeholders until baked), the occlusion fade (GDD §3.7), the lit-window schedule (ART_AUDIO §3)
-// and prop sprites cached per type, variant and zoom.
+// and prop sprites cached per type, variant and zoom (a 0.5 Mpx LRU, ARCHITECTURE §17).
 (function () {
   'use strict';
   var SR = window.SR;
@@ -16,6 +16,7 @@
   var FADE_TIME = 0.15;
   var DOOR_FOCUS = 160;              // a door within 160 u of the player keeps its porch clear
   var LIT_SLOT = 15;                 // the lit-window pattern changes every 15 game minutes
+  var PROP_BUDGET = 0.5e6;           // prop sprites, device px (2 MB of the §17 "props, actors and neon ≤ 8 MB")
 
   function L() { return SR.render.lib; }
 
@@ -89,7 +90,15 @@
       var e = sprites[rb.id];
       var d = Math.hypot((b[0] + b[2]) / 2 - v.x, (b[1] + b[3]) / 2 - v.y);
       if (e) e.dist = d;
-      if (!inRect(b, ex0, ey0, ex1, ey1)) continue;
+      if (!inRect(b, ex0, ey0, ex1, ey1)) {
+        // A bake the camera left behind would hold its canvas outside the budget: drop it (a
+        // finished sprite of another zoom stays until evicted).
+        if (e && e.job && !e.job.done) {
+          if (e.result) e.job = null;
+          else delete sprites[rb.id];
+        }
+        continue;
+      }
       if (e && e.key === key && e.job && e.job.done) continue;   // ready at this zoom
       pending++;
       var vis = inRect(b, v.x0, v.y0, v.x1, v.y1);
@@ -111,6 +120,8 @@
       cur.result = cur.job.result;
       cur.old = false;
       evict(v, best.id);
+    } else if (cur.job.steps === 1) {
+      evict(v, best.id);   // the bake's canvas now exists: make room for it at once
     }
     return 1;
   }
@@ -118,7 +129,9 @@
   /** Evicts sprites until the pixel budget holds: other zooms first, then the farthest. */
   function evict(v, keepId) {
     var total = 0, ids = Object.keys(sprites);
-    ids.forEach(function (id) { var e = sprites[id]; if (e.result) total += e.result.px; });
+    // Finished sprites plus the canvases of bakes in progress (an old zoom's sprite and its
+    // replacement coexist until the replacement is done).
+    ids.forEach(function (id) { var e = sprites[id]; if (e.result) total += e.result.px; if (e.job && !e.job.done) total += e.job.px || 0; });
     if (total <= budget()) return;
     var key = viewKey(v);
     ids.sort(function (a, b) {
@@ -130,7 +143,7 @@
       if (ids[i] === keepId) continue;
       var e = sprites[ids[i]];
       if (!e.result) continue;
-      total -= e.result.px;
+      total -= e.result.px + (e.job && !e.job.done ? e.job.px || 0 : 0);
       delete sprites[ids[i]];
     }
   }
@@ -155,6 +168,7 @@
     var focus = A && A.focus ? A.focus(v) : null;
     var dt = v.dt;
     var p = A && A.playerPos ? A.playerPos() : null;
+    var near = L().tune('world.door.tag', DOOR_FOCUS);
     for (var i = 0; i < m.buildings.length; i++) {
       var rb = m.buildings[i], g = rb.geom;
       var target = 1;
@@ -171,7 +185,7 @@
       }
       if (target === 1 && p) {
         // A door within 160 u of the player whose porch this building covers.
-        var ds = m.doors, near = L().tune('world.door.tag', DOOR_FOCUS);
+        var ds = m.doors;
         for (var d = 0; d < ds.length; d++) {
           var dg = ds[d].geom;
           if (dg === g || !dg.visible) continue;
@@ -268,17 +282,26 @@
     return c;
   }
 
-  function propSprite(p, v) {
-    var zk = v.bz + '@' + Math.round(spriteScale(v) * 1000);
-    var key = propKey(p) + '|' + zk;
-    var hit = props[key];
-    if (hit) return hit;
-    var sz = propSize(p.type, p.variant || 0, p.a || 0);
-    var sc = v.bz * spriteScale(v);
-    var cv = makeCanvas(sz[0] * sc, sz[1] * sc);
-    var x = cv.getContext('2d');
-    x.setTransform(sc, 0, 0, sc, sz[2] * sc, sz[3] * sc);
-    x.lineJoin = 'round'; x.lineCap = 'round';
+  /**
+   * Evicts prop sprites not drawn this frame (another zoom or scale first, then the least recently
+   * used) until need px fit the budget. @returns {boolean} they fit
+   */
+  function freePropPx(need, frame, zk) {
+    while (propPx + need > PROP_BUDGET) {
+      var worst = null, wk = null;
+      for (var k in props) {
+        var e = props[k];
+        if (e.used >= frame) continue;
+        if (!worst || (e.zk !== zk && worst.zk === zk) || ((e.zk !== zk) === (worst.zk !== zk) && e.used < worst.used)) { worst = e; wk = k; }
+      }
+      if (!worst) return false;
+      propPx -= worst.px;
+      delete props[wk];
+    }
+    return true;
+  }
+
+  function paintProp(x, p, sc) {
     var A = SR.art.props, ok = false;
     if (A && typeof A.draw === 'function') {
       try { A.draw(x, p.type, p.variant || 0, p.a || 0); ok = true; } catch (e) {
@@ -286,7 +309,24 @@
       }
     }
     if (!ok) placeholderProp(x, p.type, p.variant || 0, p.a || 0, Math.max(1.5, 1.5 / sc));
-    hit = props[key] = { canvas: cv, w: sz[0], h: sz[1], ax: sz[2], ay: sz[3], px: cv.width * cv.height };
+  }
+
+  function propSprite(p, v) {
+    var zk = v.bz + '@' + Math.round(spriteScale(v) * 1000);
+    var key = propKey(p) + '|' + zk;
+    var hit = props[key];
+    if (hit) { hit.used = v.frame; return hit; }
+    var sz = propSize(p.type, p.variant || 0, p.a || 0);
+    var sc = v.bz * spriteScale(v);
+    var cw = Math.max(1, Math.ceil(sz[0] * sc)), chh = Math.max(1, Math.ceil(sz[1] * sc));
+    // Over budget with every cached sprite in use this frame: draw this one as vectors (no cache).
+    if (!freePropPx(cw * chh, v.frame, zk)) return null;
+    var cv = makeCanvas(cw, chh);
+    var x = cv.getContext('2d');
+    x.setTransform(sc, 0, 0, sc, sz[2] * sc, sz[3] * sc);
+    x.lineJoin = 'round'; x.lineCap = 'round';
+    paintProp(x, p, sc);
+    hit = props[key] = { canvas: cv, w: sz[0], h: sz[1], ax: sz[2], ay: sz[3], px: cv.width * cv.height, used: v.frame, zk: zk };
     propPx += hit.px;
     return hit;
   }
@@ -447,8 +487,16 @@
   /** Draws one prop from its cached sprite (anchored at its ground contact point). */
   function drawProp(ctx, p, v) {
     var s = propSprite(p, v);
-    ctx.drawImage(s.canvas, p.x - s.ax, p.y - s.ay, s.w, s.h);
-    L().count.images++;
+    if (s) {
+      ctx.drawImage(s.canvas, p.x - s.ax, p.y - s.ay, s.w, s.h);
+      L().count.images++;
+      return;
+    }
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    paintProp(ctx, p, v.ppu);
+    ctx.restore();
   }
 
   /** @returns {object} sprite cache sizes (device px) for SR.render.stats(). */
@@ -457,9 +505,10 @@
     Object.keys(sprites).forEach(function (id) {
       var e = sprites[id];
       if (e.result) { px += e.result.px; count++; neonPx += e.result.neonPx || 0; neonCount += e.result.neon.length; }
-      else if (e.job && e.job.px) px += e.job.px;
+      if (e.job && !e.job.done && e.job.px) px += e.job.px;
     });
-    return { count: count, px: px, budgetPx: budget(), pending: pending, neonPx: neonPx, neonCount: neonCount, propPx: propPx, propCount: Object.keys(props).length };
+    return { count: count, px: px, budgetPx: budget(), pending: pending, neonPx: neonPx, neonCount: neonCount, propPx: propPx,
+      propCount: Object.keys(props).length, propBudgetPx: PROP_BUDGET };
   }
 
   SR.render.buildings = {

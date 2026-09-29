@@ -16,7 +16,7 @@
   var AWNING_DEPTH = 32;      // east / west awnings project 32 u over the sidewalk
   var AWNING_Z_IN = 64;       // awning height at the wall (u of z)
   var AWNING_Z_OUT = 50;      // and at its outer edge
-  var PORCH_N_EXTRA = 32;     // north porch depth = 0.5 · h_annex + 32 (B-15 `door.porchN`)
+  var PORCH_N_EXTRA = 32;     // north porch depth = 0.5 · h_annex + 32 (B-15 `door.porchN.add`; tuning wins)
   var CANOPY_OVER = 8;        // the north canopy overhangs the annex roof edge by 8 u
   var FLOOR_H = 40;           // one storey, u of z
   var TIER_H = 200;           // tower setback tiers every 200 u of height
@@ -24,6 +24,7 @@
   var NEON_IDS = ['bar', 'casino', 'mcsticks'];   // ART_AUDIO §3: the neon signs
   var NEON_MAX = [256, 128];  // neon sprites ≤ 256 × 128 device px (ARCHITECTURE §9.1)
   var DISPLAY_FONT = '"Arial Black", "Segoe UI Black", "Helvetica Neue", Arial, sans-serif';
+  var GRAIN_ALPHA = 0.06;     // paper grain over building sprites (ART_AUDIO §1.1 rule 3)
 
   function L() { return SR.render.lib; }
   function num(v) { return typeof v === 'number' && isFinite(v); }
@@ -140,7 +141,8 @@
         var annex = pickMass(masses, function (m) { return Math.abs(m.y0 - d.y) < 2 && d.x >= m.x0 && d.x <= m.x1; }) ||
           pickMass(masses, function (m) { return m.role === 'annex'; }) || main;
         var ha = annex.h || 48;
-        var depth = PROJ * ha + PORCH_N_EXTRA;
+        var add = L().tune('world.door.porchN.add', PORCH_N_EXTRA);
+        var depth = PROJ * ha + (typeof add === 'number' && add > 0 ? add : PORCH_N_EXTRA);
         g.door.mass = annex;
         g.porch = [d.x - PORCH_HALF, d.y - depth, d.x + PORCH_HALF, d.y];
         g.visible = [d.x - PORCH_HALF, d.y - depth, d.x + PORCH_HALF, d.y - PROJ * ha];
@@ -547,7 +549,11 @@
     outlineRect(ctx, P, lw, top ? [board[0], top[1], board[2], board[3]] : board);
     textOn(ctx, signText(g), [board[0] + 6, board[1] + 3, board[2] - 6, board[3] - 3], contrastInk(P, P.trim));
     g.signRect = board;
+    covered(g, top ? [board[0], top[1], board[2], board[3]] : board);
   }
+
+  /** Records a rect painted over the facade after its windows (a sign, a plate): no lit window shows through it. */
+  function covered(g, r) { if (g.covers) g.covers.push(r); }
 
   /** Placeholder cubes for tall roof features a detail hook would draw (the casino's dice). */
   function topBoxes(ctx, P, lw, g) {
@@ -608,8 +614,11 @@
     var midY = (m.y0 + m.y1) / 2;
     var north = towers.filter(function (t) { return t.y < midY; }), south = towers.filter(function (t) { return t.y >= midY; });
     var tallest = towers.reduce(function (a, t) { return !a || t.x > a.x ? t : a; }, null);
-    north.forEach(function (t) { tower(ctx, P, lw, t.x, t.y, t.r, t.h, t.x > (m.x0 + m.x1) / 2, out); });
+    var behind = [];
+    north.forEach(function (t) { tower(ctx, P, lw, t.x, t.y, t.r, t.h, t.x > (m.x0 + m.x1) / 2, behind); });
     block(ctx, P, lw, m, { facade: P.shade, roof: P.walls, noParapet: true, cornice: L().tone(P.walls, 1) });
+    // The keep hides the lower part of the north towers: their slit windows stay dark behind it.
+    behind.forEach(function (w) { if (!hits([w[0], w[1], w[0] + w[2], w[1] + w[3]], m.proj)) out.push(w); });
     // Crenellations along the south and north roof edges.
     var r = roofOf(m);
     var inset = towers.length ? Math.max.apply(null, towers.map(function (t) { return t.r; })) * 2 : R * 2;
@@ -830,6 +839,7 @@
         outlineRect(ctx, P, lw * 0.7, plate);
         textOn(ctx, t, plate, contrastInk(P, P.trim), { fill: 0.8 });
         g.signRect = plate;
+        covered(g, plate);
       }
     }
     if (g.stairs) {
@@ -856,6 +866,7 @@
         outlineRect(ctx, P, lw * 0.7, plate);
         textOn(ctx, t, plate, contrastInk(P, P.trim), { fill: 0.8 });
         if (!g.signRect) g.signRect = plate;
+        covered(g, plate);
       }
     }
     var xi = d.x, xo = d.x + sx * AWNING_DEPTH;
@@ -898,6 +909,8 @@
     ctx.restore();
     outlineRect(ctx, P, lw * 0.8, [bx0, by0, bx1, by1]);
     g.bladeRect = [bx0, by0, bx1, by1];
+    covered(g, g.bladeRect);
+    covered(g, [Math.min(xi, xo), yi0, Math.max(xi, xo), yo1 + 8]);   // the awning
   }
 
   function doorNorth(ctx, P, lw, g) {
@@ -908,6 +921,7 @@
     outlineRect(ctx, P, lw, [c[0], c[1], c[2], c[3]]);
     textOn(ctx, signText(g), [c[0] + 6, c[1] + 2, c[2] - 6, c[3] - 8], contrastInk(P, P.trim), { fill: 0.8 });
     g.signRect = c;
+    covered(g, c);
     // Standing sign post on the porch's outer strip.
     var p = g.post;
     var top = p.y - PROJ * p.h;
@@ -965,9 +979,9 @@
     ctx.save();
     ctx.fillStyle = P.trim;
     ctx.beginPath();
-    for (var x = f[0] + 10; x < f[2] - 6; x += 16) {
-      ctx.rect(x - 2, f[1] + 5, 4, 4);
-      out.push([x - 2, f[1] + 5, 4, 4]);
+    for (var x = f[0] + 10; x < f[2] - 6; x += 16) {   // under the cornice, clear of the name plate
+      ctx.rect(x - 2, f[1] + 3, 4, 4);
+      out.push([x - 2, f[1] + 3, 4, 4]);
     }
     ctx.fill();
     ctx.restore();
@@ -977,18 +991,39 @@
   // Baking
   // ---------------------------------------------------------------------------------------------
 
-  function grainPattern(ctx) {
+  // The paper grain over a sprite (ART_AUDIO §1.1 rule 3: multiplied at 6 %). A multiply over the
+  // sprite's transparent pixels would leave a faint pale veil around set-back tiers and roofs, so
+  // the grain is laid 'source-atop' as ink whose alpha is (1 - paper luminance): over any colour
+  // that darkens like a multiply (the same construction as SR.art.paper.grainURL), and it never
+  // touches a pixel the building did not paint.
+  var inkGrain = null;
+  var inkGrainSrc = null;
+
+  function grainInk() {
     var P = SR.art.paper;
     if (!P || typeof P.grain !== 'function') return null;
-    try {
-      var gr = P.grain();
-      if (!gr) return null;
-      if (typeof gr.setTransform === 'function' && !gr.getContext) return gr;   // already a pattern
-      return ctx.createPattern(gr, 'repeat');
-    } catch (e) {
-      SR.util.warnOnce('exterior.grain', 'SR.art.exterior: paper grain unavailable (' + e.message + ')');
+    var src;
+    try { src = P.grain('multiply'); } catch (e) { src = null; }
+    if (!src || typeof src.getContext !== 'function') {
+      SR.util.warnOnce('exterior.grain', 'SR.art.exterior: paper grain unavailable');
       return null;
     }
+    if (inkGrain && inkGrainSrc === src) return inkGrain;
+    var w = src.width, h = src.height;
+    var sd = src.getContext('2d').getImageData(0, 0, w, h).data;
+    var c = makeCanvas(w, h);
+    if (!c) return null;
+    var x = c.getContext('2d');
+    var img = x.createImageData(w, h), d = img.data;
+    var ink = L().chan(L().pal('ink', 0.1));
+    for (var o = 0; o < d.length; o += 4) {
+      d[o] = ink[0]; d[o + 1] = ink[1]; d[o + 2] = ink[2];
+      d[o + 3] = 255 - sd[o];
+    }
+    x.putImageData(img, 0, 0);
+    inkGrain = c;
+    inkGrainSrc = src;
+    return c;
   }
 
   /**
@@ -1008,6 +1043,7 @@
     var rnd = function (i) { return L().hash01(g.id, 'ext', i); };
     var windows = [];
     var neon = [];
+    var covers = [];      // rects painted over the facade after its windows (this bake's)
     var b = g.bounds;
     var cv = null, ctx = null, idx = 0;
     var steps = [];
@@ -1041,6 +1077,8 @@
         else if (g.door.face === 'E' || g.door.face === 'W') doorSide(ctx, P, lw, g);
         else if (g.door.face === 'N') doorNorth(ctx, P, lw, g);
       }
+      // Signs, plates and awnings painted over windows hide them: no lit glass through a sign at night.
+      dropCovered(windows, covers);
       if (g.id === 'casino' || (g.def.exterior && g.def.exterior.marquee)) marquee(ctx, P, g, windows);
       var ex = SR.reg && SR.reg.exterior && SR.reg.exterior[g.id];
       if (!ex || typeof ex.detail !== 'function') topBoxes(ctx, P, lw, g);
@@ -1051,15 +1089,13 @@
           SR.util.warnOnce('exterior.detail:' + g.id, 'SR.art.exterior: detail(' + g.id + ') threw: ' + e.message);
         }
       }
-      var pat = grainPattern(ctx);
+      var gi = grainInk();
+      var pat = gi ? ctx.createPattern(gi, 'repeat') : null;
       if (pat) {
         ctx.save();
-        ctx.beginPath();
-        g.masses.forEach(function (m) { ctx.rect(m.proj[0], m.proj[1], m.proj[2] - m.proj[0], m.proj[3] - m.proj[1]); });
-        ctx.clip();
         ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.globalCompositeOperation = 'multiply';
-        ctx.globalAlpha = 0.06;
+        ctx.globalCompositeOperation = 'source-atop';
+        ctx.globalAlpha = GRAIN_ALPHA;
         ctx.fillStyle = pat;
         ctx.fillRect(0, 0, cv.width, cv.height);
         ctx.restore();
@@ -1074,12 +1110,22 @@
     job.total = steps.length;
     job.step = function () {
       if (job.done) return true;
-      steps[idx++]();
+      g.covers = covers;    // geom is shared: another bake of this building may run in between
+      try { steps[idx++](); } finally { g.covers = null; }
       job.steps = idx;
       if (idx >= steps.length) job.done = true;
       return job.done;
     };
     return job;
+  }
+
+  /** Removes (in place) the window rects [x, y, w, h] that intersect any of the rects [x0, y0, x1, y1]. */
+  function dropCovered(windows, rects) {
+    if (!rects || !rects.length) return;
+    for (var i = windows.length - 1; i >= 0; i--) {
+      var w = windows[i], wr = [w[0], w[1], w[0] + w[2], w[1] + w[3]];
+      for (var k = 0; k < rects.length; k++) if (hits(wr, rects[k])) { windows.splice(i, 1); break; }
+    }
   }
 
   function detailGeom(g, P, lw, zoom, dpr, sc, windows) {
@@ -1128,6 +1174,7 @@
     placeholder: placeholder,
     reset: reset,
     archetypes: Object.keys(ARCH),
-    PROJ: PROJ,
   };
+  /** The projection factor in use (B-15 `projection.k`: screenY = y - k z), read from tuning per bake. */
+  Object.defineProperty(SR.art.exterior, 'PROJ', { enumerable: true, get: function () { return PROJ; } });
 })();

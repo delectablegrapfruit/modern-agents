@@ -170,8 +170,20 @@
   function grade(ctx, v, m) {
     var sky = v.sky;
     if (!sky || sky.white) return;
-    var G = SR.render.ground && SR.render.ground.model ? SR.render.ground.model(m) : null;
+    var R = SR.render.ground;
+    var G = R && R.model ? R.model(m) : null;
     if (!G || !G.gradeBase) return;
+    if (R.skyVisible && !R.skyVisible(v)) {
+      // The sheet fills the view (the usual case in the streets): one rect, no path to build.
+      L().stageTransform(ctx, v);
+      ctx.save();
+      ctx.globalCompositeOperation = 'multiply';
+      ctx.fillStyle = sky.ambient;
+      ctx.fillRect(0, 0, v.W, v.H);
+      ctx.restore();
+      L().count.fills++;
+      return;
+    }
     var path = new Path2D(G.gradeBase);
     // Buildings, props and people rise above the sheet's north edge into the sky: add their boxes.
     var B = SR.render.buildings, A = SR.render.actors;
@@ -251,12 +263,17 @@
         }
       }
     }
+    var light = ctx.globalAlpha;
+    occluders(v, m);
     if (between(v.min, LAMPS_ON, LAMPS_OFF)) {
       // Lamp pools and door light spills.
       var lamps = m.lamps || (m.lamps = m.props.filter(function (p) { return p.type === 'lamp'; }));
       for (var l = 0; l < lamps.length; l++) {
         var p = lamps[l];
         if (p.x < v.x0 - LAMP_R || p.x > v.x1 + LAMP_R || p.y < v.y0 - LAMP_R || p.y > v.y1 + LAMP_R) continue;
+        var lf = seen(p.x, p.y);
+        if (lf <= 0.01) continue;
+        ctx.globalAlpha = light * lf;
         ctx.drawImage(sp.pool, p.x - LAMP_R, p.y - LAMP_R * 0.7, LAMP_R * 2, LAMP_R * 1.4);
         ctx.drawImage(sp.pool, p.x - 12, p.y - 78, 24, 24);
         L().count.images += 2;
@@ -266,41 +283,110 @@
         var dr = doors[d].door, f = String(dr.face || 'S').toUpperCase();
         var sx = dr.x + (f === 'E' ? 30 : f === 'W' ? -30 : 0), sy = dr.y + (f === 'S' ? 26 : f === 'N' ? -34 : 0);
         if (sx < v.x0 - SPILL_R || sx > v.x1 + SPILL_R || sy < v.y0 - SPILL_R || sy > v.y1 + SPILL_R) continue;
+        var df = seen(sx, sy);
+        if (df <= 0.01) continue;
+        ctx.globalAlpha = light * df;
         ctx.drawImage(sp.pool, sx - SPILL_R, sy - SPILL_R * 0.7, SPILL_R * 2, SPILL_R * 1.4);
         L().count.images++;
       }
       var fo = m.wm.features && m.wm.features.fountain;
       if (fo && num(fo.x) && fo.x > v.x0 - 120 && fo.x < v.x1 + 120 && fo.y > v.y0 - 120 && fo.y < v.y1 + 120) {
-        ctx.save();
-        ctx.globalAlpha *= 0.8;
+        ctx.globalAlpha = light * 0.8 * seen(fo.x, fo.y);
         ctx.drawImage(sp.pool, fo.x - (fo.r || 90), fo.y - (fo.r || 90) * 0.75, (fo.r || 90) * 2, (fo.r || 90) * 1.5);
-        ctx.restore();
         L().count.images++;
       }
     }
-    // Headlights and tail lights of the cars in view.
+    // Headlights and tail lights of the cars in view (none for a car a building hides).
     var cars = A && A.cars ? A.cars() : null;
     if (cars && cars.length) {
-      var tails = [];
+      var V = SR.art.vehicles;
+      nTails = 0;
       for (var c = 0; c < cars.length; c++) {
         var car = cars[c];
-        var ang = num(car.a) ? car.a : 0;
+        var cf = seen(car.x, car.y);
+        if (cf <= 0.01) continue;
+        var ang = num(car.a) ? car.a : num(car.angle) ? car.angle : 0;
         var ca = Math.cos(ang), sa = Math.sin(ang);
-        // The cone lies on the ground in front of the car, rotated to its heading.
+        var type = A.carType ? A.carType(car) : 'sedan';
+        var lp = lampsOf(V, type, ang);
+        // The cone lies on the ground in front of the car, from its bumper, rotated to its heading.
+        ctx.globalAlpha = light * cf;
         ctx.setTransform(v.ppu * ca, v.ppu * sa, -v.ppu * sa, v.ppu * ca, car.x * v.ppu + v.tx, car.y * v.ppu + v.ty);
-        ctx.drawImage(sp.cone, 40, -CONE_LEN * Math.tan(CONE_HALF), CONE_LEN, 2 * CONE_LEN * Math.tan(CONE_HALF));
+        ctx.drawImage(sp.cone, lp.front, -CONE_LEN * Math.tan(CONE_HALF), CONE_LEN, 2 * CONE_LEN * Math.tan(CONE_HALF));
         L().count.images++;
-        tails.push(car.x - ca * 46 - sa * 14, car.y - 8 - sa * 46 + ca * 14, car.x - ca * 46 + sa * 14, car.y - 8 - sa * 46 - ca * 14);
+        // Tail lights on the rear face, unless the car heads south (its rear then faces north,
+        // behind the body) or a faded building leaves it mostly hidden.
+        if (sa > 0.7 || cf < 0.5) continue;
+        for (var q = 0; q < lp.tail.length; q++) {
+          tails[nTails++] = car.x + lp.tail[q][0];
+          tails[nTails++] = car.y + lp.tail[q][1];
+        }
       }
       L().worldTransform(ctx, v);
-      ctx.fillStyle = L().pal(['light.tail', 'ui.hp'], 0.4);
-      ctx.beginPath();
-      for (var tt = 0; tt < tails.length; tt += 2) ctx.rect(tails[tt] - 3, tails[tt + 1] - 2, 6, 4);
-      ctx.fill();
-      L().count.fills++;
+      if (nTails) {
+        ctx.globalAlpha = light;
+        ctx.fillStyle = L().pal(['light.tail', 'ui.hp'], 0.4);
+        ctx.beginPath();
+        for (var tt = 0; tt < nTails; tt += 2) ctx.rect(tails[tt] - 3, tails[tt + 1] - 2, 6, 4);
+        ctx.fill();
+        L().count.fills++;
+      }
     }
     ctx.restore();
     L().worldTransform(ctx, v);
+  }
+
+  // Light sources that a building drawn after them hides (its projection covers the source's
+  // ground point) are dimmed by that building's opacity: a car behind a tall block shows no lights
+  // through it, and a building faded to 35 % lets 65 % through.
+  var occ = [];
+  var tails = [];
+  var nTails = 0;
+
+  function occluders(v, m) {
+    occ.length = 0;
+    var list = m.buildings, pad = CONE_LEN + LAMP_R;
+    for (var i = 0; i < list.length; i++) {
+      var b = list[i].geom.bounds;
+      if (b[2] < v.x0 - pad || b[0] > v.x1 + pad || b[3] < v.y0 - pad || b[1] > v.y1 + pad) continue;
+      occ.push(list[i]);
+    }
+  }
+
+  /** @returns {number} 0..1: how much of a light source at a ground point shows past the buildings drawn after it. */
+  function seen(x, y) {
+    var f = 1;
+    for (var i = 0; i < occ.length; i++) {
+      var g = occ[i].geom;
+      if (g.sortY <= y) continue;              // drawn before the source: it cannot hide it
+      var cv = g.cover;
+      for (var k = 0; k < cv.length; k++) {
+        var r = cv[k];
+        if (x > r[0] && x < r[2] && y > r[1] && y < r[3]) { f *= 1 - occ[i].alpha; break; }
+      }
+    }
+    return f;
+  }
+
+  // Lamp positions per type and direction (W1-A's vehicles.lamps: screen offsets of the tail lamps
+  // at mid-body height) and the headlight cone's start at the front bumper; cached, no garbage.
+  var lampCache = {};
+  var FALLBACK_LAMPS = { front: 40, tail: [[-46, -22], [-46, 6]] };
+
+  function lampsOf(V, type, ang) {
+    var dir = V && V.dirFromAngle ? V.dirFromAngle(ang) : ((Math.round(ang / (Math.PI / 4)) % 8) + 8) % 8;
+    var key = type + '|' + dir;
+    var hit = lampCache[key];
+    if (hit) return hit;
+    if (!V || typeof V.lamps !== 'function') return FALLBACK_LAMPS;
+    var lp = null;
+    try { lp = V.lamps(type, dir); } catch (e) { lp = null; }
+    var sz = typeof V.size === 'function' ? V.size(type) : null;
+    hit = lampCache[key] = {
+      front: sz && sz.L ? sz.L / 2 - 6 : 40,
+      tail: lp && Array.isArray(lp.tail) && lp.tail.length ? lp.tail : FALLBACK_LAMPS.tail,
+    };
+    return hit;
   }
 
   // ---------------------------------------------------------------------------------------------

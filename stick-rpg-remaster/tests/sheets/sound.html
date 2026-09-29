@@ -6,7 +6,8 @@
      SR.audio.renderOffline and drawn as a waveform with the objective checks (peak, RMS, largest
      sample jump, NaN / denormals, start and end silence, the loop seam, the leitmotif).
      Opens from disk. Loads js/boot/*, js/core/*, the caption strings (en-ui.js) and js/audio/**,
-     and boots with SR.boot({ scene: false }). The first click or key press unlocks the audio.
+     and boots with SR.boot({ scene: false }); tests/perf/calibrate.js (W1-Q) calibrates the render
+     cost. The first click or key press unlocks the audio.
      window.soundSheet exposes the helpers tests/e2e/audio.test.cjs uses. Query: ?render (draw the
      offline contact sheet at once). -->
 <html lang="en">
@@ -149,6 +150,7 @@
   <script src="../../js/audio/songs/morning_edition.js"></script>
   <script src="../../js/audio/songs/final_edition.js"></script>
   <script src="../../js/audio/songs/stingers.js"></script>
+  <script src="../perf/calibrate.js"></script>
   <script src="sound-sheet.js"></script>
 </body>
 </html>

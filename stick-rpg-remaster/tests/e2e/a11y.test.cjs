@@ -93,11 +93,21 @@ function audit(rootSel) {
   const lum = (c) => [c.r, c.g, c.b].map((x) => { x /= 255; return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); }).reduce((s, x, i) => s + x * [0.2126, 0.7152, 0.0722][i], 0);
   const ratio = (a, b) => { const x = lum(a); const y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
   const bgOf = (el) => {
+    // the ancestors' backgrounds (html included) composited from the first opaque one (else the
+    // browser's white canvas) up to the element: a translucent panel shows what lies beneath it
+    const layers = [];
+    let base = { r: 255, g: 255, b: 255, a: 1 };
     for (let n = el; n; n = n.parentElement) {
       const c = parse(getComputedStyle(n).backgroundColor);
-      if (c && c.a >= 0.5) return c;
+      if (!c || c.a <= 0) continue;
+      if (c.a >= 0.999) { base = c; break; }
+      layers.push(c);
     }
-    return parse(getComputedStyle(document.body).backgroundColor) || { r: 255, g: 255, b: 255, a: 1 };
+    for (let k = layers.length - 1; k >= 0; k--) {
+      const c = layers[k];
+      base = { r: c.r * c.a + base.r * (1 - c.a), g: c.g * c.a + base.g * (1 - c.a), b: c.b * c.a + base.b * (1 - c.a), a: 1 };
+    }
+    return base;
   };
   const opacityOf = (el) => { let o = 1; for (let n = el; n; n = n.parentElement) o *= Number(getComputedStyle(n).opacity); return o; };
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
@@ -215,13 +225,53 @@ async function check(T, t, label, rootSel, opts) {
 
 // ------------------------------------------------------------------------------------------------
 
+// A page of planted problems: the audit and the Tab walk must catch each (and pass the clean part).
+const PLANTS = '<!doctype html><html lang="en"><head><title>a11y plants</title><style>' +
+  ':root { --focus: rgb(255, 210, 63); } body { background: rgb(255, 255, 255); font: 16px sans-serif; color: rgb(0, 0, 0); }' +
+  'button:focus { outline: 3px solid rgb(255, 210, 63); } #ui .noring:focus { outline: none; box-shadow: none; }' +
+  '.dark { background: rgb(20, 20, 20); padding: 8px; } .glass { background: rgba(255, 255, 255, 0.6); }</style></head><body>' +
+  // the Tab walk's scope comes first, with a wrap-around trap like SR.ui.focus's
+  '<div id="ui"><button>One</button><button class="noring">Two</button><button>Three</button></div>' +
+  '<script>document.addEventListener("keydown", function (e) { var b = Array.prototype.slice.call(document.querySelectorAll("#ui button"));' +
+  ' if (e.key === "Tab" && !e.shiftKey && document.activeElement === b[b.length - 1]) { e.preventDefault(); b[0].focus(); } });</script>' +
+  '<div id="clean"><button>Fine</button><p>Readable text</p><img alt="A folded crane" width="20" height="20" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></div>' +
+  '<div id="noname"><button data-id="bad-btn"></button></div>' +
+  '<div id="faint"><p style="color: rgb(170, 170, 170)">Faint text</p></div>' +
+  '<div id="tiny"><p style="font-size: 10px">Tiny text</p></div>' +
+  '<div id="noalt"><img width="20" height="20" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></div>' +
+  '<div id="dlg"><div role="dialog">Dialog body</div></div>' +
+  '<div id="glass" class="dark"><div class="glass"><p style="color: rgb(100, 100, 100)">Grey on frosted glass over ink</p></div></div>' +
+  '</body></html>';
+
+/** The audit and the Tab walk catch planted problems (a page of their own in the same browser). */
+async function selfCheck(T, t) {
+  T.section('the audit catches planted problems');
+  const p = await t.context.newPage();
+  try {
+    await p.setContent(PLANTS);
+    const a = (sel) => p.evaluate(audit, sel);
+    T.eq((await a('#clean')).issues, [], 'a named button, readable text and an image with alt pass');
+    T.ok(/no accessible name/.test((await a('#noname')).issues.join(' ')), 'a button without a name fails');
+    T.ok(/contrast 2\.\d+ < 4\.5/.test((await a('#faint')).issues.join(' ')), 'faint text (2.3:1) fails');
+    T.ok(/below 12 px/.test((await a('#tiny')).issues.join(' ')), '10 px text fails');
+    T.ok(/image without alt/.test((await a('#noalt')).issues.join(' ')), 'an image without alt fails');
+    T.ok(/dialog without a name/.test((await a('#dlg')).issues.join(' ')), 'a dialog without a name fails');
+    T.ok(/contrast 2\.\d+ < 4\.5/.test((await a('#glass')).issues.join(' ')), 'grey text on a translucent panel over ink fails (the panel is composited, not taken as opaque white)');
+    const w = await tabWalk({ page: p, eval: (fn, arg) => p.evaluate(fn, arg) });
+    T.ok(w.n === 3 && w.issues.length === 1 && /no visible focus ring/.test(w.issues[0]), 'the Tab walk reaches 3 controls in order and flags the one without a ring', w.issues);
+  } finally {
+    await p.close();
+  }
+}
+
 async function run() {
   const T = h.suite('e2e a11y (W1-Q)');
   const pending = [];
 
   // ---------------------------------------------------------------- the game page
-  T.section('the game page');
   const t = await h.open({ width: 1280, height: 720, fast: true });
+  await selfCheck(T, t);
+  T.section('the game page');
   const live = await t.eval(() => ({ aria: !!document.querySelector('#aria[role="status"][aria-live="polite"]'), lang: document.documentElement.lang, title: document.title }));
   T.ok(live.aria, '#aria is a polite live region (role status)');
   T.ok(!!live.lang && !!live.title, 'the page has a language and a title', live);
@@ -351,4 +401,4 @@ function focusEveryNav() {
 
 module.exports = { audit, focusInfo, markNavigables, tabWalk, check, focusEveryNav };
 
-if (require.main === module) run().catch((e) => { console.error(e); process.exitCode = 1; });
+if (require.main === module) run().catch((e) => { console.error(e); process.exit(1); });   // exit: an open browser would keep Node alive

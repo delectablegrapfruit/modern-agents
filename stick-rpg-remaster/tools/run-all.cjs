@@ -73,7 +73,7 @@ function plan(o) {
       { cmd: ['tools/shingles.cjs', '--selftest'], timeout: 2 * MIN },
     ] },
     { name: 'balance', suites: [{ cmd: ['tests/balance/sim.cjs', '--selftest'], timeout: 5 * MIN }] },
-    { name: 'e2e', suites: list('tests/e2e', /\.test\.cjs$/).map((f) => ({ cmd: [f], timeout: 20 * MIN })) },
+    { name: 'e2e', suites: list('tests/e2e', /\.test\.cjs$/).map((f) => ({ cmd: [f], timeout: 10 * MIN })) },
     { name: 'visual', suites: [
       { cmd: ['tests/visual/visual.cjs', '--selftest'], timeout: 5 * MIN },
       { cmd: ['tests/visual/visual.cjs'], timeout: 15 * MIN },
@@ -85,18 +85,31 @@ function plan(o) {
   ];
 }
 
-/** Runs one suite; @returns {Promise<{ok: boolean, ms: number, out: string, code: number|null, timedOut: boolean}>} */
+const GRACE_MS = 5000;
+
+/**
+ * Runs one suite; @returns {Promise<{ok: boolean, ms: number, out: string, code: number|null, timedOut: boolean}>}
+ * A suite past its timeout gets SIGTERM first: Playwright closes its browsers on SIGTERM, and they
+ * run in process groups of their own, so a bare SIGKILL of the suite would leave Chromium running
+ * (and loading the machine for the suites after it). SIGKILL follows after a grace period.
+ */
 function runSuite(s) {
   return new Promise((resolve) => {
     const t0 = Date.now();
-    const child = spawn(process.execPath, s.cmd, { cwd: ROOT, env: process.env });
+    const child = spawn(process.execPath, s.cmd, { cwd: ROOT, env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '';
     let timedOut = false;
+    let hard = null;
     child.stdout.on('data', (d) => { out += d; });
     child.stderr.on('data', (d) => { out += d; });
-    const timer = setTimeout(() => { timedOut = true; child.kill('SIGKILL'); }, s.timeout);
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill('SIGTERM');
+      hard = setTimeout(() => child.kill('SIGKILL'), s.grace === undefined ? GRACE_MS : s.grace);
+    }, s.timeout);
     child.on('close', (code) => {
       clearTimeout(timer);
+      if (hard) clearTimeout(hard);
       resolve({ ok: code === 0 && !timedOut, ms: Date.now() - t0, out, code, timedOut });
     });
   });
@@ -113,12 +126,16 @@ function excerpt(out) {
 async function main(argv) {
   const has = (f) => argv.includes(f);
   const val = (f) => { const k = argv.indexOf(f); return k >= 0 ? argv[k + 1] : undefined; };
-  let wave = has('--strict') ? null : val('--wave') !== undefined ? Number(val('--wave')) : inferWave(ROOT);
+  const wave = has('--strict') ? null : val('--wave') !== undefined ? Number(val('--wave')) : inferWave(ROOT);
   const inferred = !has('--strict') && val('--wave') === undefined;
+  if (wave !== null && !(Number.isInteger(wave) && wave >= 1 && wave <= 4)) { console.error('run-all: --wave takes 1-4'); process.exitCode = 2; return; }
   const only = val('--only') ? val('--only').split(',') : null;
   const skip = val('--skip') ? val('--skip').split(',') : [];
   const jobs = Math.max(1, Number(val('--jobs') || 1));
-  const groups = plan({ wave, full: has('--full') }).filter((g) => (!only || only.includes(g.name)) && !skip.includes(g.name));
+  const all = plan({ wave, full: has('--full') });
+  const unknown = (only || []).concat(skip).filter((n) => !all.some((g) => g.name === n));
+  if (unknown.length) { console.error('run-all: unknown group ' + unknown.join(', ') + ' (groups: ' + all.map((g) => g.name).join(', ') + ')'); process.exitCode = 2; return; }
+  const groups = all.filter((g) => (!only || only.includes(g.name)) && !skip.includes(g.name));
   if (has('--list')) {
     groups.forEach((g) => { console.log(g.name); g.suites.forEach((s) => console.log('  node ' + s.cmd.join(' '))); });
     return;

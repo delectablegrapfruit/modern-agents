@@ -1,8 +1,8 @@
 # Requests from W1-Q (Quality tooling), wave 1
 
 Each request names the file, the exact change, why, and the workaround used meanwhile
-(BUILD_PLAN §1.3). Items 1-4 are for the lead (CONTRACT, ARCHITECTURE); item 5 is for W1-R; items
-6-7 for W1-G; item 8 for W1-A, W1-S and W1-G together. Requests addressed to W1-Q by other packages
+(BUILD_PLAN §1.3). Items 1-4 and 8 are for the lead (CONTRACT, ARCHITECTURE, a kernel test); item 5
+is for W1-R; item 6 for W1-G; item 7 for W1-A and W1-S. Requests addressed to W1-Q by other packages
 were applied in W1-Q's files (listed at the end).
 
 ## 1. `docs/CONTRACT.md` §17-§18 (lead): record the quality tools' public interfaces
@@ -60,15 +60,16 @@ were applied in W1-Q's files (listed at the end).
   High on the render sheet while the JS work is 1.7 ms), so it cannot gate the game's CPU cost.
 - **Meanwhile:** implemented that way; the relative gate compares the same JS-work numbers.
 
-## 3. ARCHITECTURE §17 (lead): the 1.8 MB script budget is nearly spent in wave 1
+## 3. ARCHITECTURE §17 (lead): the 1.8 MB script budget is already exceeded in wave 1
 
 - **File:** `docs/ARCHITECTURE.md` §17 (Script size).
 - **Change:** decide before wave 2 whether the budget is raised (for example to 4 MB) or held with a
-  rule (comments count; no minification step exists): today the 257 scripts of `index.html` hold
-  1.78 MB (2^20 bytes) with 149 files still stubs, and the wave-1 files average about 12 KB.
+  rule (comments count; no minification step exists): the 257 scripts of `index.html` already hold
+  1.82 MB (2^20 bytes) with about 150 files still stubs, and the wave-1 files average about 12 KB.
 - **Why:** `tests/perf/perf.cjs` gates it (≤ 1.8 × 2^20 bytes: ARCHITECTURE's "MB" is 2^20 bytes
-  elsewhere in §17, a 1 MB chunk being 512 × 512 × 4); wave 2 will fail it.
-- **Meanwhile:** gated as written; it passes today by 0.02 MB.
+  elsewhere in §17, a 1 MB chunk being 512 × 512 × 4); wave 2 adds about 100 more real files.
+- **Meanwhile:** gated as written, so `tests/perf/perf.cjs` fails this one check today (every other
+  budget it gates passes on the wave-1 tree).
 
 ## 4. CONTRACT §7 (lead): owners of keys the prefix table leaves open
 
@@ -97,17 +98,7 @@ were applied in W1-Q's files (listed at the end).
   else the first `['cash' | 'bank', n, src]` of the action's effects, else its group (work → wage,
   crime → loot).
 
-## 6. `js/render/actors.js` (W1-G): the car sprite cache breaks the 8 MB "small sprites" budget
-
-- **File:** `js/render/actors.js` (the car sprite cache), or `js/render/renderer.js` `stats()`.
-- **Change:** bound the car sprite cache (an LRU by pixels, or fewer cached directions at zoom
-  1.25) so props + actors + neon stay ≤ 8 MB (ARCHITECTURE §17 "props, actors and neon ≤ 8 MB").
-- **Why:** `node tests/perf/perf.cjs --quick` tours the whole route at zoom 0.8, 1 and 1.25 (render
-  sheet, 40 walkers and 14 cars, 1920 × 1080, DPR 1): `stats().small.bytes` peaks at 12.1 MB, of
-  which `cars` is 48 sprites and 2.5 Mpx (about 10 MB) at zoom 1.25; props 0.6 Mpx, neon 0.04 Mpx.
-- **Meanwhile:** the perf runner reports it as a failed memory budget.
-
-## 7. `tests/e2e/render.test.cjs` (W1-G): use the shared calibration
+## 6. `tests/e2e/render.test.cjs` (W1-G): use the shared calibration
 
 - **File:** `tests/e2e/render.test.cjs` (the `cal` block of the perf section).
 - **Change:** `await page.addScriptTag({ path: path.join(h.ROOT, 'tests/perf/calibrate.js') });
@@ -115,7 +106,7 @@ were applied in W1-Q's files (listed at the end).
 - **Why:** one calibration workload and reference for every CPU budget (ARCHITECTURE §17).
 - **Meanwhile:** the stand-in workload in the test.
 
-## 8. `tests/sheets/art-sheet.js` (W1-A), `tests/sheets/sound-sheet.js` (W1-S): the shared calibration
+## 7. `tests/sheets/art-sheet.js` (W1-A), `tests/sheets/sound-sheet.js` (W1-S): the shared calibration
 
 - **File:** the two sheets' local `calibrate()` stand-ins (answers W1-A request 6b and W1-S
   request 7b).
@@ -124,6 +115,18 @@ were applied in W1-Q's files (listed at the end).
 - **Why:** the stand-ins assume a 35 ms reference; `calibrate.js` is sized for 20 ms on the reference
   machine and measures 28-35 ms (factor 1.4-1.75) in this container.
 - **Meanwhile:** the stand-ins.
+
+## 8. `tests/e2e/input.test.cjs` (lead, W1-K): a race that hangs the suite under load
+
+- **File:** `tests/e2e/input.test.cjs`, the rightClickBack check (line 213).
+- **Change:** attach the `contextmenu` listener before the click, then await it:
+  `await page.evaluate(() => { window.__menu = new Promise((res) => window.addEventListener('contextmenu', (e) => setTimeout(() => res(e.defaultPrevented)), { once: true })); });`
+  `await page.mouse.click(640, 400, { button: 'right' });` … `await page.evaluate(() => window.__menu)`.
+- **Why:** today `page.evaluate(...)` is started but not awaited before `page.mouse.click`, so on a
+  busy machine the click can land before the listener exists and the promise never settles: under
+  `node tools/run-all.cjs` (with another agent's perf tour running) the suite hung until run-all's
+  timeout killed it; run alone it passes (75 / 75).
+- **Meanwhile:** run-all times a suite out after 10 minutes and reports it as failed.
 
 ## Requests to W1-Q, applied in W1-Q's files
 
@@ -136,7 +139,7 @@ were applied in W1-Q's files (listed at the end).
   `carCrash` (and `fight`, `mugger`, `goons`, CONTRACT §8.2) are involuntary everywhere.
 - **W1-A #6a:** the palette walk accepts the numbers `sky.<i>.h` and `sky.<i>.light` and resolves the
   non-enumerable `ui` aliases by property access; every other leaf must be a colour.
-- **W1-A #6b, W1-S #7b:** `tests/perf/calibrate.js` exists (item 8 above for the switch).
+- **W1-A #6b, W1-S #7b:** `tests/perf/calibrate.js` exists (item 7 above for the switch).
 - **W1-S #7a:** `SR.audio.validate` checks every song and sfx; captions are checked as text keys.
 - **W1-M #3:** visual scenes read a minigame's `[data-id="mg-canvas"]` (`minigame-*` scenes).
 - **W1-G #5:** answered by item 2 (JS work per frame instead of best-of-3 stops).

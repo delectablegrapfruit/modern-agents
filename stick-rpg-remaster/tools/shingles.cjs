@@ -5,7 +5,8 @@
 //     interpolation (`'a ' + x + ' b'`, `${x}`, `{name}`) is one wildcard word `#`;
 //   - banned: tools/banned.txt (BUILD_PLAN Appendix A) over js/**, css/**, index.html, README.md;
 //   - binary: no binary file among the tracked (or about to be tracked) files of the project
-//     (`git ls-files`, read-only; shots/, tests/visual/out/ and tests/perf/out/ are git-ignored).
+//     (`git ls-files`, read-only; shots/, tests/visual/out/ and tests/perf/out/ are git-ignored);
+//     an exported tree that is not a git work tree is walked instead, minus those directories.
 //
 //   node tools/shingles.cjs                  every check (exit code 1 on a finding)
 //   node tools/shingles.cjs --banned         only the named checks (--shingles, --banned, --binary)
@@ -225,18 +226,23 @@ function strings(src) {
   return out;
 }
 
-/** @returns {string[]} lower-case words of a text: markup, entities and punctuation dropped, placeholders as `#`. */
+/**
+ * @returns {string[]} lower-case words of a text: markup, entities and punctuation dropped;
+ * placeholders and plain numbers as the wildcard `#` (a figure written out in one text and
+ * interpolated in the other is the same run).
+ */
 function words(text) {
   return String(text).toLowerCase()
     .replace(/<[^>]*>/g, ' ')
     .replace(/&[a-z]+;|&#\d+;/g, ' ')
-    .replace(/\{[a-z0-9_.]*\}/g, ' # ')
+    .replace(/\{[a-z0-9_.]*\}/gi, ' # ')
     .replace(/%[sd]/g, ' # ')
     .replace(/['’‘`]/g, '')
     .replace(/[^a-z0-9#]+/g, ' ')
     .trim()
     .split(/\s+/)
-    .filter(Boolean);
+    .filter(Boolean)
+    .map((w) => (/^\d+$/.test(w) ? '#' : w));
 }
 
 /** @returns {string[]} root-relative paths of the files under rel (a file or a directory) with one of exts. */
@@ -261,9 +267,12 @@ function walk(root, rel, exts) {
  * list or a path is not text a player reads, and would only match the recreation's own markup.
  */
 function isProse(text) {
-  const decl = String(text).match(/[a-z-]+\s*:\s*[^;:]+;/gi);
+  // Markup is dropped first: prose inside tags with inline styles (`You have <span style="a: 1;
+  // b: 2">#</span> days left`) is prose; only the style attributes were CSS (W1-Q review).
+  const bare = String(text).replace(/<[^>]*>/g, ' ');
+  const decl = bare.match(/[a-z-]+\s*:\s*[^;:]+;/gi);
   if (decl && decl.length >= 2) return false;
-  if (/^[\w./-]+\.(js|css|html|png|json)$/i.test(String(text).trim())) return false;
+  if (/^[\w./-]+\.(js|css|html|png|json)$/i.test(bare.trim())) return false;
   return true;
 }
 
@@ -456,18 +465,38 @@ function isBinary(buf, name) {
 }
 
 /**
+ * The files a tree would commit when it is not a git work tree (an exported tree such as a `git
+ * archive` of the M0 commit): every file except the directories the project's .gitignore names
+ * (plain directory entries: shots/, tests/visual/out/, tests/perf/out/), dot entries and
+ * node_modules.
+ * @returns {string[]} root-relative paths
+ */
+function walkTracked(root) {
+  let ignored = ['shots/', 'tests/visual/out/', 'tests/perf/out/'];
+  try {
+    ignored = ignored.concat(fs.readFileSync(path.join(root, '.gitignore'), 'utf8').split(/\r?\n/)
+      .map((l) => l.trim()).filter((l) => l && !/^[#!]/.test(l) && !/[*?[\]]/.test(l)).map((l) => l.replace(/^\//, '').replace(/\/?$/, '/')));
+  } catch (e) { /* no .gitignore: the defaults */ }
+  return walk(root, '.', null).map((r) => r.replace(/^\.\//, '')).filter((r) => !ignored.some((d) => r.startsWith(d)));
+}
+
+/**
  * The binary check over the project's tracked files and its untracked, not-ignored ones (they are
- * about to be committed). Read-only git (`ls-files`).
- * @returns {{findings: {file: string}[], files: number, error: (string|null)}}
+ * about to be committed). Read-only git (`ls-files`); outside a git work tree it walks the tree
+ * (walkTracked) and says so in `mode`.
+ * @returns {{findings: {file: string}[], files: number, error: (string|null), mode: string}}
  */
 function binaryCheck(opts) {
   const root = (opts && opts.root) || ROOT;
   let listed;
+  let mode = 'git';
   try {
     const run = (args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] }).split('\0').filter(Boolean);
     listed = Array.from(new Set(run(['ls-files', '-z']).concat(run(['ls-files', '-z', '--others', '--exclude-standard']))));
   } catch (e) {
-    return { findings: [], files: 0, error: 'git ls-files failed (' + e.message.split('\n')[0] + ')' };
+    if (opts && opts.gitOnly) return { findings: [], files: 0, error: 'git ls-files failed in ' + root + ' (' + e.message.split('\n')[0] + ')', mode };
+    listed = walkTracked(root);
+    mode = 'walk (not a git work tree)';
   }
   const findings = [];
   for (const rel of listed) {
@@ -475,7 +504,7 @@ function binaryCheck(opts) {
     try { buf = fs.readFileSync(path.join(root, rel)); } catch (e) { continue; }
     if (isBinary(buf, rel)) findings.push({ file: rel });
   }
-  return { findings, files: listed.length, error: null };
+  return { findings, files: listed.length, error: null, mode };
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -491,6 +520,10 @@ function selftest(opts) {
     const s = strings("var a = 'one' + 'two', b = \"x\" + n + 'y'; /* 'no' */ // 'no'\nvar r = /'q'/g, t = `t ${f('z')} u`; c = d / e / 'f';");
     T.eq(s.map((x) => x.text), ['onetwo', 'x # y', 't  #  u', 'f'], 'string runs: concatenation, the # wildcard, comments, regex and template literals');
     T.eq(words("Don't PANIC: it's only {n} dollars & <b>cents</b>!"), ['dont', 'panic', 'its', 'only', '#', 'dollars', 'cents'], 'words: case, apostrophes, placeholders, markup and punctuation');
+    T.eq([words('You have 5 days left'), words('You have {n} days left'), words(strings("var a = 'You have ' + n + ' days left';")[0].text)].map((w) => w.join(' ')), ['you have # days left', 'you have # days left', 'you have # days left'],
+      'words: a written figure and an interpolation are the same wildcard');
+    T.eq([isProse('position:absolute;left: # px;top: # px;'), isProse('You have <span style="display:inline-block;min-width:23px;font-size:14px"> # </span> days left'), isProse('js/data/items.js')],
+      [false, true, false], 'isProse: inline CSS and paths are not prose; prose inside styled markup is');
 
     T.section('banned strings (one plant per list)');
     const nf = (term) => term.split('').join('');    // plants are assembled here, never scanned
@@ -550,7 +583,15 @@ function selftest(opts) {
     T.ok(isBinary(Buffer.from('abc'), 'art/logo.png'), 'a binary extension marks a binary file');
     T.ok(!isBinary(Buffer.from('// text\n'), 'js/a.js'), 'a text file passes');
     const bin = binaryCheck({ root: ROOT });
-    T.ok(bin.error === null && bin.files > 50, 'git ls-files lists the project (' + bin.files + ' files)', bin.error);
+    T.ok(bin.error === null && bin.mode === 'git' && bin.files > 50, 'git ls-files lists the project (' + bin.files + ' files)', bin.error);
+    put('art/logo.png', 'not really a png');
+    put('shots/W1-Q/x.png', 'ignored');
+    put('tests/visual/out/y.png', 'ignored');
+    fs.mkdirSync(path.join(tmp, 'js'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, 'js/nul.js'), Buffer.from([0x76, 0x61, 0x72, 0x00, 0x0a]));
+    const walked = binaryCheck({ root: tmp });
+    T.eq([walked.mode, walked.findings.map((f) => f.file).sort()], ['walk (not a git work tree)', ['art/logo.png', 'js/nul.js']],
+      'outside a git work tree the check walks the tree, skipping the git-ignored shots/ and test dumps');
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
@@ -589,13 +630,13 @@ function main(argv) {
     const b = binaryCheck({ root });
     if (b.error) { console.log('BINARY ' + b.error); failed++; }
     for (const f of b.findings) console.log('BINARY ' + f.file + ' is a binary file');
-    if (!b.error) console.log('binary files: ' + b.findings.length + ' among ' + b.files + ' tracked or untracked files');
+    if (!b.error) console.log('binary files: ' + b.findings.length + ' among ' + b.files + (b.mode === 'git' ? ' tracked or untracked files' : ' files (' + b.mode + ')'));
     failed += b.findings.length;
   }
   if (!quiet) console.log('tools/shingles.cjs: ' + (failed ? 'FAIL' : 'ok') + ' (' + (Date.now() - t0) + ' ms)');
   process.exitCode = failed ? 1 : 0;
 }
 
-module.exports = { lex, strings, words, walk, isProse, textsOf, refIndex, shingleCheck, parseBanned, bannedCheck, isBinary, binaryCheck, RUN, MIN_REAL };
+module.exports = { lex, strings, words, walk, isProse, textsOf, refIndex, shingleCheck, parseBanned, bannedCheck, isBinary, binaryCheck, walkTracked, RUN, MIN_REAL };
 
 if (require.main === module) main(process.argv.slice(2));

@@ -23,13 +23,14 @@ Each request names the file, the exact change, why, and the workaround used mean
     float(x, y, text, colour), route(points | null), doorTags}` (tags, prompts and markers are
     per frame; `colour` is a palette key or a stat name: `str`, `int`, `cha`, `hp`, `money`,
     `time`, `heat`, `karma`).
-  - `SR.render.actors.{source(name, fn, kind), player(), playerPos(), cars(), stats()}`.
+  - `SR.render.actors.{source(name, fn, kind), player(), playerPos(), cars(), carType(e), carBox(type, dir),
+    stats()}` (`stats()` → `{ count, px, budgetPx }` of the car sprite LRU).
   - `SR.render.lighting.at(min, weather)` → `{ top, horizon, ambient, light, white }` and
     `SR.render.sky.colors` (the same), `SR.render.buildings.{sprite(id), litWindows(id, min, day),
     litFraction(id, min), neon(id)}`, `SR.render.ground.{model(), skyVisible(view),
     edgeInfo(x, y)}`.
   - `SR.art.exterior.{baker(def, zoom, dpr), geom(def), colours(geom), placeholder(ctx, def),
-    reset(), archetypes}`; `build()`'s result also carries `id`, `zoom`, `dpr`, `scale` (px per u),
+    reset(), archetypes, PROJ}` (`PROJ`: a read-only getter of the projection factor in use); `build()`'s result also carries `id`, `zoom`, `dpr`, `scale` (px per u),
     `px`, `neonPx`, and each neon entry `{ sprite, x, y, w, h, px }`; `bounds` is
     `[x0, y0, x1, y1]` in projected world units (x, y - 0.5 z), like every rect.
 - **Why:** W2-City (title drift, click-to-walk mapping, float texts, coin bursts, the route),
@@ -103,8 +104,22 @@ Each request names the file, the exact change, why, and the workaround used mean
 - **Traffic cars on the 8 directions are cached sprites** per type, direction, lamp state and zoom
   (one `drawImage` each); a car between directions (turning) and the player's car stay vectors.
   W1-A's vehicles cost about 22 path fills each, so 14 vector cars alone would pass the 250-fill
-  budget (§17). The cache is bounded (64 sprites) and counted in the "props, actors and neon ≤
-  8 MB" line.
+  budget (§17). The "props, actors and neon ≤ 8 MB" line is split: car sprites are an LRU of
+  1.25 Mpx (boxes fitted to each direction), prop sprites an LRU of 0.5 Mpx, neon ≤ 0.2 Mpx, the
+  light sprites 0.03 Mpx; a sprite that would only fit by evicting one drawn this frame is drawn as
+  vectors instead (bounded memory, no thrash). (Review: the first cut cleared 64 car sprites at
+  once and never evicted props; W1-Q's perf tour measured 12.1 MB.)
+- **Sky tints in place.** The clouds and distant islands are pre-tinted by the ambient; each
+  variant / city keeps one canvas repainted when the 5-minute tint moves on, so a clock tween or
+  the time-lapse never piles tints up (the first cut reached 16.5 MB through a day's tints).
+- **Hidden lights.** A light source (car cone and tail lights, lamp pool, door spill, fountain)
+  whose ground point lies under a building drawn after it is dimmed by that building's opacity
+  (hidden at 100 %, 65 % through a building faded to 35 %). Tail lights come from
+  `SR.art.vehicles.lamps` and are skipped for a car heading south (its rear faces north).
+- **The grain on sprites** is laid `source-atop` as ink with alpha (1 − paper luminance) × 6 %,
+  which darkens like the multiply but never touches a transparent pixel (a multiply left a pale
+  veil beside set-back tiers). Lit windows under signs, name plates, blade signs and awnings, and
+  the castle's north-tower slits behind the keep, are dropped from the window list.
 - **Bake zooms.** A zoom easing between levels draws from the nearest level's caches; a zoom below
   the smallest level (overviews, the title's wide shots) bakes at its own zoom rounded to 0.05.
 - **The sky pass is skipped** when every 64 u cell of the view is interior sheet (the chunks cover
@@ -119,3 +134,31 @@ Each request names the file, the exact change, why, and the workaround used mean
   pools r 90 u, headlights 160 u / 35°, flicker 2 % / 120 ms, the lit-window schedule, chunk and
   sprite budgets) are named constants in their render files; move them to `tuning.js` only if
   the lead wants them tunable.
+
+## 7. ARCHITECTURE §17 (lead): the script-size budget has no room left
+
+- **File:** ARCHITECTURE §17 ("Script size ≤ 1.8 MB of JS in total"), gated by
+  `tests/perf/perf.cjs`.
+- **Change:** decide how the budget is measured before wave 2 (for example: minified, or JS
+  without comments and indentation, or a larger cap). At the wave-1 HEAD the 257 scripts of
+  `index.html` held 1,886,472 bytes against a cap of 1,887,437 (965 bytes left); the render-core
+  review fixes add about 12 KB (bounded caches, hidden lights, the painter fixes), and every wave-2
+  package adds tens of KB.
+- **Meanwhile:** nothing; `perf.cjs` reports the overrun (1.82 MB at the time of the review).
+
+## 8. W1-Q (`tests/perf/perf.cjs`): time the stage contexts' own draw methods as native
+
+- **File:** `tests/perf/perf.cjs`, `runTour` (W1-Q).
+- **Change:** after wrapping `CanvasRenderingContext2D.prototype`, also wrap the own function
+  properties of `SR.stage.ctx` and `SR.stage.fxCtx` (skipping the PATH names) with the same
+  native timer, and restore them in the `finally`:
+  `Object.getOwnPropertyNames(c).forEach((k) => { const f = c[k]; if (typeof f !== 'function' || PATH.test(k)) return; own.push([c, k, f]); c[k] = function () { const a = performance.now(); try { return f.apply(this, arguments); } finally { nAcc += performance.now() - a; } }; });`
+- **Why:** `js/core/loop.js` (`instrument`) counts draws with per-instance `drawImage`, `fill` and
+  `fillRect` wrappers that call the prototype's original methods, so the runner's prototype
+  timers never see those calls on the stage contexts. Chromium's mid-frame raster flush often
+  lands in them, and the runner then books it as JS work: `high-dpr2-noon` reports render JS p95
+  ≈ 43 ms (native p95 ≈ 43 ms), all of it inside `drawImage` of building sprites. With the
+  instance methods timed, the same tour measures JS p95 1.6 ms (render 1.5 ms) against
+  11 ms × calibration.
+- **Meanwhile:** the DPR 2 configurations fail the CPU gates in CI (measured: `high-dpr2-noon`,
+  at HEAD and after the review alike); the DPR 1 and Low ×4 configurations pass.

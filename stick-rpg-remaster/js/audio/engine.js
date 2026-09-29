@@ -25,6 +25,7 @@
   // passes at unity and only peaks above -14 dBFS are squeezed.
   var COMP = { threshold: -14, ratio: 3, attack: 0.005, release: 0.15, knee: 0 };
   var MAX_VOICES = 24;                        // ARCHITECTURE §17
+  var POOL_WINDOW = 0.3;                      // s the pool looks back from a voice's start (≥ any schedule-ahead)
   var SPATIAL = { ref: 400, cull: 900, halfWidth: 640, maxPan: 0.8 };
   var DUCK = { attack: 0.08, release: 0.4 };  // ART_AUDIO §13.7
   var VOICE_DUCK_DB = 4;                      // the song ducks 4 dB under voice blips
@@ -142,8 +143,10 @@
     };
     P.add = function (v, t) {
       // Count every voice still sounding now or later (music is scheduled up to 120 ms ahead, so
-      // voices that end before t still overlap the ones that start before it).
-      var ref = Math.min(t, v.ac.currentTime);
+      // voices that end before t still overlap the ones that start before it), but look back at
+      // most POOL_WINDOW before t: a render scheduled all at once (no suspend(), as in Firefox) has
+      // currentTime 0 while it schedules minute 1, and must not count every earlier voice as live.
+      var ref = Math.max(Math.min(t, v.ac.currentTime), t - POOL_WINDOW);
       var live = [];
       for (var i = 0; i < P.voices.length; i++) {
         var w = P.voices[i];
@@ -279,48 +282,64 @@
 
   /**
    * Plays a sound effect (CONTRACT §14.1, D20).
+   * One-shots: an inert handle when the audio is not running, the sound is culled (> 900 u) or the
+   * pool dropped it. Loops (engine, skate, roulette): the handle stays usable; its voice starts, or
+   * starts again, on a set() once the audio runs, the sound is within 900 u and a voice is free (a
+   * loop started out of range, or stolen by the pool, comes back as it approaches), and a set()
+   * beyond 900 u releases the voice. An unknown name warns once and returns an inert handle.
    * @param {string} name a registered recipe
    * @param {object} [o] { x, y (world units: spatial), gain (×), pitch (ratio, 1 = as written), pan
    *   (-1..1 for a non-spatial sound), at (seconds from now) }
-   * @returns {object|null} a handle { stop(), set({ gain, pitch, x, y }), playing() } (inert while
-   *   the audio is locked, the sound is culled or stolen), or null for an unknown name
+   * @returns {object} a handle { name, inert, voice, playing(), stop(), set({ gain, pitch, x, y }) }
    */
   function sfx(name, o) {
     var rec = SR.reg.sfx && SR.reg.sfx[name];
-    if (!rec) { SR.util.warnOnce('audio.sfx.' + name, 'SR.audio.sfx: no sound "' + name + '"'); return null; }
+    if (!rec) { SR.util.warnOnce('audio.sfx.' + name, 'SR.audio.sfx: no sound "' + name + '"'); return inert(name); }
     o = o || {};
-    var sp = spatial(o.x, o.y);
-    if (sp.culled) return inert(name);
-    if (rec.caption) autoCaption(rec.caption, sp.spatial ? sp.pan : (num(o.pan) ? o.pan : null));
-    var E = live();
-    if (!E) return inert(name);
-    var base = num(o.gain) ? Math.max(0, o.gain) : 1;
-    var pan = L.E.graph.isMono ? 0 : (sp.spatial ? sp.pan : (num(o.pan) ? o.pan : 0));
-    var at = E.ac.currentTime + (num(o.at) && o.at > 0 ? o.at : 0);
-    var v = play(E, name, { at: at, gain: base * sp.gain, pitch: o.pitch, pan: pan, panner: sp.spatial });
-    if (!v) return inert(name);
-    if (rec.bus === 'voice') duck(VOICE_DUCK_DB, Math.max(50, (sfxLength(name) || 0.1) * 1000));
-    var state = { base: base, x: o.x, y: o.y };
+    var st = { base: num(o.gain) ? Math.max(0, o.gain) : 1, pitch: num(o.pitch) && o.pitch > 0 ? o.pitch : 1,
+      x: o.x, y: o.y, pan: num(o.pan) ? o.pan : 0, v: null, E: null, stopped: false };
+    var sp = spatial(st.x, st.y);
+    if (rec.caption && !sp.culled) autoCaption(rec.caption, sp.spatial ? sp.pan : (num(o.pan) ? o.pan : null));
+    /** Starts the voice `delay` s from now when the audio runs and the sound is in range. */
+    function begin(delay) {
+      var s = spatial(st.x, st.y);
+      var E = live();
+      if (s.culled || !E) return false;
+      var pan = E.graph.isMono ? 0 : (s.spatial ? s.pan : st.pan);
+      var v = play(E, name, { at: E.ac.currentTime + delay, gain: st.base * s.gain, pitch: st.pitch, pan: pan, panner: s.spatial });
+      if (!v) return false;
+      st.v = v; st.E = E;
+      return true;
+    }
+    function alive() { return !!st.v && !st.v.done && !st.v.stolen; }
+    function room() { var E = live(); return !!E && E.pool.count(E.ac.currentTime) < MAX_VOICES; }
+    if (!begin(num(o.at) && o.at > 0 ? o.at : 0) && !rec.loop) return inert(name);
+    if (st.v && rec.bus === 'voice') duck(VOICE_DUCK_DB, Math.max(50, (sfxLength(name) || 0.1) * 1000));
     return {
       name: name,
       inert: false,
-      voice: v,
-      playing: function () { return !v.done && !v.stolen && v.end > E.ac.currentTime; },
+      /** The current voice (null while a loop waits to start). */
+      get voice() { return st.v; },
+      playing: function () { return alive() && st.v.end > st.E.ac.currentTime; },
       stop: function () {
-        if (v.done || v.stolen) return;
-        var t = E.ac.currentTime;
-        if (v.loop) S().releaseVoice(v, t);
-        else S().cut(v, t, 0.02);
+        st.stopped = true;
+        if (!alive()) return;
+        var t = st.E.ac.currentTime;
+        if (st.v.loop) S().releaseVoice(st.v, t);
+        else S().cut(st.v, t, 0.02);
       },
       set: function (p) {
-        if (!p || v.done) return;
-        var t = E.ac.currentTime;
-        if (num(p.gain)) state.base = Math.max(0, p.gain);
-        if (num(p.x) && num(p.y)) { state.x = p.x; state.y = p.y; }
-        var s2 = spatial(state.x, state.y);
-        S().setVolume(v, state.base * (s2.culled ? 0 : s2.gain), t);
-        if (v.pan && s2.spatial && !L.E.graph.isMono) v.pan.pan.setTargetAtTime(s2.pan, t, 0.03);
-        if (num(p.pitch) && p.pitch > 0) S().retune(v, p.pitch / v.pitch0, t);
+        if (!p || st.stopped) return;
+        if (num(p.gain)) st.base = Math.max(0, p.gain);
+        if (num(p.x) && num(p.y)) { st.x = p.x; st.y = p.y; }
+        if (num(p.pitch) && p.pitch > 0) st.pitch = p.pitch;
+        if (!alive()) { if (rec.loop && room()) begin(0); return; }
+        var v = st.v, t = st.E.ac.currentTime;
+        var s2 = spatial(st.x, st.y);
+        if (s2.culled && v.loop) { S().releaseVoice(v, t); st.v = null; return; }
+        S().setVolume(v, st.base * (s2.culled ? 0 : s2.gain), t);
+        if (v.pan && s2.spatial && !st.E.graph.isMono) v.pan.pan.setTargetAtTime(s2.pan, t, 0.03);
+        if (num(p.pitch) && p.pitch > 0) S().retune(v, st.pitch / v.pitch0, t);
       },
     };
   }
@@ -428,8 +447,14 @@
     applyDuck();
   }
 
+  /**
+   * Runs each time the context (re)starts running: the first unlock, a tab shown again, a system
+   * interruption ended. Music and ambience asked for (or stopped) while it was not running are
+   * applied now; both hooks are idempotent, so the repeated calls (onstatechange, the resume
+   * promise, unlock()) are harmless.
+   */
   function onState() {
-    if (!L.ac || L.ac.state !== 'running' || L.ready) return;
+    if (!L.ac || L.ac.state !== 'running') return;
     L.ready = true;
     applyVolumes();
     applyDuck();
@@ -516,7 +541,8 @@
    *   one-shot's length plus 20 ms, 2 s for a loop (released so it ends in silence), 4 s for a bed
    * @param {object} [o] { sampleRate (44100), variant, pos: { order, step }, level (ambience),
    *   min (ambience clock), seed, vary (sfx; default false), sfx: [{ at, name, gain, pitch, pan }] (more
-   *   one-shots on the sfx path, e.g. the stress script) }
+   *   one-shots on the sfx path, e.g. the stress script), chunk (s scheduled per suspend, default
+   *   0.25; false schedules everything before rendering, as browsers without suspend() do) }
    * @returns {Promise<AudioBuffer>}
    */
   function renderOffline(kind, id, seconds, o) {
@@ -560,7 +586,7 @@
       }
     });
     function pumpAll(until) { pumps.forEach(function (p) { p(until); }); }
-    var chunked = typeof ac.suspend === 'function';
+    var chunked = typeof ac.suspend === 'function' && o.chunk !== false;   // false: all at once (Firefox's path)
     var chunk = num(o.chunk) && o.chunk >= 0.05 ? o.chunk : OFFLINE_CHUNK;
     pumpAll(chunked ? chunk + OFFLINE_AHEAD : secs + 1);
     if (chunked) {

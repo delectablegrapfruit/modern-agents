@@ -28,6 +28,7 @@
   var PLUCK_FADE = 0.06;
   var PLUCK_BURST = 0.004;      // ART_AUDIO §13.2: a 4 ms noise burst
   var PLUCK_FEEDBACK = 0.98;    // ... into a delay line with lowpass feedback 0.98
+  var PLUCK_GRID = 48;          // pluck buffers are cached per quarter semitone (48 steps an octave)
   var PULSE_HARMONICS = 64;
 
   // Per-context caches (noise buffers, pulse waves, pluck buffers).
@@ -94,14 +95,23 @@
   /**
    * A Karplus-Strong string at freq, computed once per context into a buffer (a DelayNode cannot
    * hold a period shorter than one render quantum inside a feedback loop, so the delay line runs in
-   * JS). Returns { buffer, rate }: play the buffer at `rate` for exact tuning.
+   * JS). Buffers are cached on a quarter-semitone grid (every MIDI note lands on it exactly); a
+   * frequency between grid points plays the nearest buffer at a corrected rate, so pitch variation
+   * (vary.pitch, the pitch option) never grows the cache (each buffer is 1.6 s: about 0.3 MB).
+   * Returns { buffer, rate }: play the buffer at `rate` for exact tuning.
    */
   function pluckBuffer(ac, freq) {
-    var sr = ac.sampleRate;
     var f = Math.max(20, Math.min(4000, freq));
     var c = cache(ac);
-    var key = f.toFixed(2);
-    if (c.pluck[key]) return c.pluck[key];
+    var step = Math.round(Math.log(f / 440) / Math.LN2 * PLUCK_GRID);
+    var hit = c.pluck[step];
+    if (!hit) hit = c.pluck[step] = pluckString(ac, 440 * Math.pow(2, step / PLUCK_GRID));
+    return { buffer: hit.buffer, rate: hit.rate * f / hit.f };
+  }
+
+  /** Computes one Karplus-Strong buffer at f. @returns {{buffer: AudioBuffer, rate: number, f: number}} */
+  function pluckString(ac, f) {
+    var sr = ac.sampleRate;
     var period = sr / f;
     var N = Math.max(2, Math.floor(period - 0.5));    // the two-point average adds half a sample
     var n = Math.round(sr * PLUCK_SECONDS);
@@ -124,8 +134,7 @@
       var k = i >= n - fade ? (n - 1 - i) / fade : 1;     // fade the tail to exactly 0 at the end
       y[i] *= norm * k;
     }
-    c.pluck[key] = { buffer: buf, rate: period / (N + 0.5) };
-    return c.pluck[key];
+    return { buffer: buf, rate: period / (N + 0.5), f: f };
   }
 
   /** A saw and its inverse as matching periodic waves (the lead's pulse is their difference). */
@@ -300,12 +309,35 @@
     var a = Math.max(MIN_ENV, e.a || 0), d = Math.max(0, e.d || 0), s = Math.max(0, Math.min(1, e.s || 0));
     var r = Math.max(MIN_ENV, e.r || 0);
     if (en.relAt !== undefined && t >= en.relAt) {
-      return t - en.relAt >= en.relR ? 0 : en.relLv * Math.pow(FLOOR, (t - en.relAt) / en.relR);
+      var k = t - en.relAt;
+      if (!en.relExp) return k >= en.relR + MIN_ENV ? 0 : en.relLv * (1 - k / (en.relR + MIN_ENV));
+      return k >= en.relR ? 0 : en.relLv * Math.pow(FLOOR, k / en.relR);
     }
     var g = en.gateAt;
     if (g === undefined || t <= g || (s === 0 && g >= en.t0 + a + d)) return levelAt(t, en.t0, en.peak, a, d, s);
     var lg = levelAt(g, en.t0, en.peak, a, d, s);
     return t - g >= r ? 0 : lg * Math.pow(FLOOR, (t - g) / r);
+  }
+
+  /**
+   * The shape of the automation segment a scheduled envelope record is in at time t: 'lin' (the
+   * attack, a final ramp to 0), 'exp' (a decay or a release) or 'hold' (before the start, the
+   * sustain). rampDown re-inserts a ramp of that shape ending at t, because cancelScheduledValues(t)
+   * removes the ramp in progress and would otherwise restore the value before it at once (a click).
+   * @returns {string}
+   */
+  function segmentAt(en, t) {
+    var e = en.e;
+    var a = Math.max(MIN_ENV, e.a || 0), d = Math.max(0, e.d || 0), s = Math.max(0, Math.min(1, e.s || 0));
+    var r = Math.max(MIN_ENV, e.r || 0);
+    if (en.relAt !== undefined && t >= en.relAt) return en.relExp && t < en.relAt + en.relR ? 'exp' : 'lin';
+    if (t <= en.t0) return 'hold';
+    var tA = en.t0 + a, tD = tA + d, g = en.gateAt;
+    var released = g !== undefined && t > g && !(s === 0 && g >= tD);
+    if (released) return t < g + r ? 'exp' : 'lin';
+    if (t < tA) return 'lin';
+    if (d > 0 && t < tD) return 'exp';
+    return s === 0 ? 'lin' : 'hold';
   }
 
   /** Schedules an attack/decay interrupted at tG, then the release; returns the end time. */
@@ -340,16 +372,25 @@
       var p = en.p;
       if (en.end !== undefined && en.end <= t) return;
       var lv = envLevel(en, t);
+      var seg = segmentAt(en, t);
       var rr = r === undefined ? Math.max(MIN_ENV, en.e.r || 0) : r;
-      // Hold the level the envelope has at t (computed from its own curve), then ramp down from
-      // it (exponential, then linear to 0). cancelAndHoldAtTime is not used: Chrome starts the
-      // next ramp from the event before the hold when that event is a setValueAtTime.
+      // Reach the level the envelope has at t along the segment it is in (computed from its own
+      // curve), then ramp down from it (exponential, then linear to 0). t may lie ahead of the
+      // render position (music is stolen up to 120 ms ahead, offline renders a chunk ahead):
+      // cancelScheduledValues(t) drops the ramp in progress, so a plain setValueAtTime(lv, t) would
+      // jump back to the level before that ramp until t and then step down (a click); a ramp of the
+      // same shape ending at (t, lv) follows the original curve exactly. cancelAndHoldAtTime is not
+      // used: Chrome starts the next ramp from the event before the hold when that event is a
+      // setValueAtTime.
       p.cancelScheduledValues(t);
-      p.setValueAtTime(lv, t);
-      if (lv > 0 && rr > MIN_ENV) p.exponentialRampToValueAtTime(lv * FLOOR, t + rr);
+      if (seg === 'lin') p.linearRampToValueAtTime(lv, t);
+      else if (seg === 'exp' && lv > 0) p.exponentialRampToValueAtTime(lv, t);
+      else p.setValueAtTime(lv, t);
+      var exp = lv > 0 && rr > MIN_ENV;
+      if (exp) p.exponentialRampToValueAtTime(lv * FLOOR, t + rr);
       p.linearRampToValueAtTime(0, t + rr + MIN_ENV);
       en.end = t + rr + MIN_ENV;
-      en.relAt = t; en.relLv = lv; en.relR = rr;
+      en.relAt = t; en.relLv = lv; en.relR = rr; en.relExp = exp;
       end = Math.max(end, en.end);
     });
     return end;
@@ -777,7 +818,8 @@
       var end = t + 0.03 + 0.12 + MIN_ENV;
       p.exponentialRampToValueAtTime(amp * 0.85 * FLOOR, t + 0.03 + 0.12);
       p.linearRampToValueAtTime(0, end);
-      v.envs.push({ p: p, t0: t, peak: amp * 0.85, e: { a: 0.003, d: 0.14, s: 0, r: 0.01 }, end: end });
+      // The record rampDown reads: the bursts as a 29 ms rise, then exactly the decay scheduled above.
+      v.envs.push({ p: p, t0: t, peak: amp * 0.85, e: { a: 0.029, d: 0.121, s: 0, r: 0.01 }, end: end });
       bp.connect(g);
       g.connect(v.out);
       return finish(v, end);

@@ -85,6 +85,7 @@ function snap() {
         'the same registrations (' + kinds.length + ' kinds, ' + kinds.reduce((a, k) => a + base.kinds[k].length, 0) + ' ids, files included)',
         kinds.filter((k) => JSON.stringify(s.kinds[k]) !== JSON.stringify(base.kinds[k])));
       T.eq(s.hooks, base.hooks, 'the same boot hooks (' + base.hooks.length + ')');
+      T.eq(s.missing.slice().sort(), base.missing.slice().sort(), 'the same missing text keys at the first scene (' + base.missing.length + ')');
       await t.eval(() => { if (window.SR.loop && typeof window.SR.loop.step === 'function') window.SR.loop.step(30); });
       T.eq(t.errors(), [], 'zero console errors after 30 frames');
       await t.close();
@@ -93,4 +94,4 @@ function snap() {
     fs.rmSync(dir, { recursive: true, force: true });
   }
   T.done();
-})().catch((e) => { console.error(e); process.exitCode = 1; });
+})().catch((e) => { console.error(e); process.exit(1); });   // exit: an open browser would keep Node alive

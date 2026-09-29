@@ -13,6 +13,7 @@
   'use strict';
   var SR = window.SR;
   var A = SR.audio;
+  var hasOwn = Object.prototype.hasOwnProperty;
 
   var FADE = 1;               // ART_AUDIO §13.7: ambience fades 1 s
   var LOOKAHEAD = 0.12;
@@ -113,12 +114,22 @@
       bed.nodes.push(sw);
       into = sw;
     }
+    // Each loop slot keeps its voice; a voice the pool stole (loops are priority 0, the first to go
+    // when 24 voices sound) is started again by revive() once a voice is free, fading in with the
+    // recipe's attack, so a bed never falls silent for good.
     def.loops.forEach(function (lp) {
-      var v = eng.play(E, lp.sfx, { at: now, gain: lp.gain, dest: into, vary: false, priority: 0 });
-      if (v) bed.loops.push(v);
+      bed.loops.push({ def: lp, v: eng.play(E, lp.sfx, { at: now, gain: lp.gain, dest: into, vary: false, priority: 0 }) });
       var rec = SR.reg.sfx && SR.reg.sfx[lp.sfx];
       if (rec && rec.caption && o.live && A.caption) A.caption(rec.caption, null);
     });
+    bed.revive = function (t) {
+      if (bed.stopAt !== null) return;
+      bed.loops.forEach(function (sl) {
+        if (sl.v && !sl.v.stolen && !sl.v.done) return;
+        if (E.pool.count(t) >= eng.MAX_VOICES) return;
+        sl.v = eng.play(E, sl.def.sfx, { at: t, gain: sl.def.gain, dest: into, vary: false, priority: 0 });
+      });
+    };
     def.events.forEach(function (ev) {
       bed.events.push({ def: ev, next: now + range(rng, ev.delay || [0, ev.every[1]], 0) });
     });
@@ -150,7 +161,7 @@
       hold(out.gain, t);
       out.gain.linearRampToValueAtTime(0, t + FADE);
       bed.stopAt = t + FADE;
-      bed.loops.forEach(function (v) { A.synth.releaseVoice(v, t + FADE); });
+      bed.loops.forEach(function (sl) { if (sl.v && !sl.v.stolen) A.synth.releaseVoice(sl.v, t + FADE); });
     };
     bed.dispose = function () {
       bed.lfos.forEach(function (l) { try { l.stop(); } catch (e) { /* stopped */ } });
@@ -187,6 +198,7 @@
     Object.keys(B.live).forEach(function (id) {
       var bed = B.live[id];
       if (bed.stopAt !== null && now > bed.stopAt + 1) { bed.dispose(); delete B.live[id]; return; }
+      bed.revive(now);
       bed.pump(now + LOOKAHEAD);
     });
     B.dying = B.dying.filter(function (bed) {
@@ -195,9 +207,24 @@
     });
   }
 
-  /** Starts the beds asked for while the audio was locked. */
+  /**
+   * Called by the engine each time the context starts running (the unlock, a tab shown again):
+   * brings the beds in line with the calls made while it was not running (starts, level changes
+   * and stops).
+   */
   function onUnlock() {
-    Object.keys(B.want).forEach(function (id) { if (!B.live[id]) ambience(id, B.want[id]); });
+    var E = A.engine && A.engine.live ? A.engine.live() : null;
+    if (!E) return;
+    var now = E.ac.currentTime;
+    Object.keys(B.live).forEach(function (id) {
+      var bed = B.live[id];
+      if (bed.stopAt !== null) return;
+      if (!hasOwn.call(B.want, id)) bed.stop(now);
+      else if (bed.level !== B.want[id]) bed.setLevel(B.want[id], now);
+    });
+    Object.keys(B.want).forEach(function (id) {
+      if (!B.live[id] || B.live[id].stopAt !== null) ambience(id, B.want[id]);
+    });
   }
 
   /** A bed on an offline environment (renderOffline 'ambience'). */

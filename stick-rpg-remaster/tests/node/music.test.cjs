@@ -1,7 +1,8 @@
 // tests/node/music.test.cjs — owner: W1-S. The audio data formats and the tracker, in Node (BUILD_PLAN
 // §3.9; CONTRACT §14; ART_AUDIO §13.8): sfx.js and the songs load in mode `all` (no DOM, audio or
 // browser random source at load time) and music.js loads as an extra file; every registered song
-// and sfx recipe passes SR.audio.validate; the step-string parser (tokens, chords, lengths,
+// and sfx recipe passes SR.audio.validate; every sound an ambience bed plays is registered (ambience.js
+// loads as an extra file too); the step-string parser (tokens, chords, lengths,
 // velocities, bare ! / ?, '-', '|'); the validator catches planted errors (the ART_AUDIO example's
 // short tracks among them); the leitmotif at the motif annotations; the sequencer's timing over
 // 60 s of jittery 25 ms ticks (every event within 1 ms of the ideal grid, never scheduled late,
@@ -51,6 +52,25 @@ T.section('every registered song and sfx is valid');
   T.ok(sfx.filter((n) => SR.reg.sfx[n].loop).every((n) => SR.reg.sfx[n].priority === 0 || SR.reg.sfx[n].bus === 'ambience'),
     'loops are priority 0 (ART_AUDIO §13.7)');
   T.ok(SR.reg.sfx.stamp.priority === 3 && SR.reg.sfx.jackpot_bells.priority === 3, 'the Stamp and the jackpot are priority 3');
+}
+
+T.section('the ambience beds play registered sounds (ART_AUDIO §13.6)');
+{
+  const r = L.load({ mode: 'all', extra: ['js/audio/music.js', 'js/audio/ambience.js'], keepGoing: true });
+  T.eq(r.errors.length, 0, 'ambience.js loads in Node (load-time clean)');
+  const beds = r.SR.audio.ambience.BEDS, reg = r.SR.reg.sfx;
+  T.eq(Object.keys(beds).sort(), ['bar', 'birds', 'campus', 'casino', 'city', 'crickets', 'fog', 'fryer', 'office', 'park', 'rain', 'wind'],
+    'the twelve beds of ART_AUDIO §13.6');
+  const refs = [];
+  for (const id of Object.keys(beds)) {
+    for (const l of beds[id].loops) refs.push({ bed: id, sfx: l.sfx, loop: true });
+    for (const e of beds[id].events) refs.push({ bed: id, sfx: e.sfx, loop: false });
+  }
+  T.eq(refs.filter((x) => !reg[x.sfx]).map((x) => x.bed + ': ' + x.sfx), [], 'every sound a bed plays is a registered recipe (' + refs.length + ')');
+  T.eq(refs.filter((x) => reg[x.sfx] && !!reg[x.sfx].loop !== x.loop).map((x) => x.bed + ': ' + x.sfx), [],
+    'bed loops are loop recipes and bed events are one-shots');
+  T.ok(Object.keys(beds).every((id) => beds[id].events.every((e) => Array.isArray(e.every) && e.every[0] > 0 && e.every[1] >= e.every[0])),
+    'every bed event has a positive [min, max] interval');
 }
 
 T.section('the step-string parser (CONTRACT §14.2, D19)');

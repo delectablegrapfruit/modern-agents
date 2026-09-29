@@ -24,9 +24,10 @@
 // Audio rendering cost (§17 item 4) is W1-S's audio suite.
 //
 //   node tests/perf/perf.cjs               every configuration (writes tests/perf/out/perf-last.json)
-//   options: --quick (a 10 s tour, High DPR 1 noon and Low ×4 noon only) · --record (write
-//            baseline.json from this run) · --only id,id · --json <file> · --selftest (the gate
-//            fails a planted 25 % regression; the calibration is deterministic)
+//   options: --quick (a 10 s tour, High DPR 1 noon and Low ×4 noon only; run-all's default) ·
+//            --record (record this run in baseline.json under its tour length: the lead runs both
+//            `--record` and `--record --quick` at a wave integration) · --only id,id · --json <file>
+//            · --selftest (the gate fails a planted 25 % regression; the calibration is deterministic)
 'use strict';
 const fs = require('fs');
 const os = require('os');
@@ -38,6 +39,7 @@ const CALIBRATE = path.join(__dirname, 'calibrate.js');
 const BASELINE = path.join(__dirname, 'baseline.json');
 const OUT = path.join(__dirname, 'out');
 const MIB = 1024 * 1024;
+const BASELINE_NOTE = 'Recorded by the lead at a wave integration with node tests/perf/perf.cjs --record and --record --quick, one recording per tour length (tours: frames → recording); the relative gate compares the p95 JS work of update (per fixed step) and render (per frame; one step and one render per 60 Hz frame), in ms, normalised by the calibration, on the same machine fingerprint and tour length.';
 
 // ARCHITECTURE §17 (reference machine). CPU budgets are multiplied by the calibration factor.
 const BUDGET = {
@@ -51,6 +53,7 @@ const BUDGET = {
   fills: 250,
   chunks: 40, chunkBytes: 40 * MIB, spritePx: 12e6, smallBytes: 8 * MIB, skyBytes: 6 * MIB,
   canvasBytes: 30 * MIB,     // the two stage canvases
+  totalBytes: 160 * MIB,     // everything: the render caches, the stage canvases and the JS heap
   bootMs: 1500,
   saveMs: 20,
   scriptBytes: 1.8 * MIB,    // "MB" in ARCHITECTURE §17 is 2^20 bytes (a 1 MB chunk is 512 × 512 × 4)
@@ -85,7 +88,14 @@ const sameMachine = (a, b) => !!a && !!b && a.cpu === b.cpu && a.cores === b.cor
  */
 function gate(run, baseline) {
   const out = { fail: [], warn: [], compared: 0 };
-  if (!baseline || !baseline.configs || !Object.keys(baseline.configs).length) { out.warn.push('no baseline yet: the lead records one with --record at the wave integration'); return out; }
+  // baseline.json keeps one recording per tour length (`tours`: the full 3,600-frame tour and the
+  // --quick 600-frame tour that run-all uses); a single recording at the top level also works.
+  if (baseline && baseline.tours) {
+    const lens = Object.keys(baseline.tours);
+    baseline = baseline.tours[String(run.frames)] || null;
+    if (!baseline && lens.length) { out.warn.push('no baseline for a ' + run.frames + '-frame tour (recorded: ' + lens.join(', ') + '): record one with --record' + (run.frames === 600 ? ' --quick' : '')); return out; }
+  }
+  if (!baseline || !baseline.configs || !Object.keys(baseline.configs).length) { out.warn.push('no baseline yet: the lead records one with --record (and --record --quick) at the wave integration'); return out; }
   if (baseline.frames && run.frames && baseline.frames !== run.frames) { out.warn.push('the baseline toured ' + baseline.frames + ' frames and this run ' + run.frames + ' (--quick?): not compared'); return out; }
   const same = sameMachine(run.fingerprint, baseline.fingerprint);
   const norm = baseline.calibration && run.calibration && baseline.calibration.ms > 0 ? baseline.calibration.ms / run.calibration.ms : 1;
@@ -106,6 +116,18 @@ function gate(run, baseline) {
   }
   if (!same) out.warn.push('the baseline was recorded on another machine (' + JSON.stringify(baseline.fingerprint) + '): the gate only warns');
   return out;
+}
+
+/**
+ * @returns {object} baseline.json with this run recorded under its tour length (the other tour
+ * lengths are kept; a top-level recording of the older form is dropped).
+ */
+function record(baseline, run) {
+  const tours = baseline && baseline.tours ? Object.assign({}, baseline.tours) : {};
+  const slot = { fingerprint: run.fingerprint, recorded: run.recorded, calibration: run.calibration, frames: run.frames, configs: {} };
+  Object.keys(run.configs).forEach((id) => { const c = run.configs[id]; if (!c.pending) slot.configs[id] = { driver: c.driver, update: +c.update.toFixed(3), render: +c.render.toFixed(3) }; });
+  tours[String(run.frames)] = slot;
+  return { v: 1, note: BASELINE_NOTE, tours };
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -153,7 +175,11 @@ function runTour(o) {
   const move = (k, zoom) => {
     const p = at(k);
     if (o.driver === 'sheet') SR.render.setView({ x: p[0], y: p[1], zoom: zoom || 1 });
-    else SR.debug.teleport(p[0], p[1]);
+    else {
+      SR.debug.teleport(p[0], p[1]);
+      // the city's camera picks its own zoom; the memory walk pins each level through the view override
+      if (zoom && SR.render && SR.render.setView) SR.render.setView({ zoom });
+    }
   };
   const pct = (a, q) => { const s = a.slice().sort((x, y) => x - y); return s.length ? s[Math.min(s.length - 1, Math.floor(s.length * q))] : 0; };
   for (let k = 0; k < 60; k++) { move(k); SR.loop.step(1); flush(); }       // warm-up: 1 s
@@ -238,9 +264,11 @@ function runTour(o) {
     mem.stops++;
   };
   sample();
-  if (o.memory && o.driver === 'sheet') {
-    // the whole route at every zoom, a stop every half second, caches warmed at each stop
+  if (o.memory && SR.render && SR.render.stats) {
+    // the whole route at every zoom, a stop every half second, caches warmed at each stop (both
+    // drivers: the city's zoom is pinned through SR.render.setView and released after)
     [0.8, 1, 1.25].forEach((z) => { for (let k = 0; k < 3600; k += 30) { move(k, z); if (SR.render.warm) SR.render.warm(); SR.loop.step(1); flush(); sample(); } });
+    if (o.driver !== 'sheet' && SR.render.setView) SR.render.setView({ zoom: null });
   }
   const canvases = [SR.stage && SR.stage.world, SR.stage && SR.stage.fx].filter(Boolean).reduce((a, c) => a + c.width * c.height * 4, 0);
   return { perf, wall, mem, canvases, heap: performance.memory ? performance.memory.usedJSHeapSize : null, backing: SR.stage && SR.stage.world ? [SR.stage.world.width, SR.stage.world.height] : null };
@@ -270,7 +298,13 @@ async function main(argv) {
     const tick = () => { if (window.SR && window.SR.booted) window.__bootedAt = performance.now(); else setTimeout(tick, 1); };
     tick();
   });
-  await t.reload();
+  if (typeof t.reload === 'function') await t.reload();
+  else {
+    // the M0 harness has no reload (D41): reload, wait for the boot, pause the loop
+    await t.page.reload();
+    await t.page.waitForFunction(() => window.SR && window.SR.booted === true, null, { timeout: 15000 });
+    await t.eval(() => { if (window.SR.loop && typeof window.SR.loop.pause === 'function') window.SR.loop.pause(); });
+  }
   const boot = await t.eval(() => ({ at: window.__bootedAt || null, scenes: window.SR.scenes.stack() }));
   await t.page.addScriptTag({ path: CALIBRATE });
   const cal = await t.eval(() => window.SRCalibrate.run(9));
@@ -302,7 +336,7 @@ async function main(argv) {
     // The game page when the city scene exists, else the render sheet.
     let tt = await h.open({ width: 1920, height: 1080, dpr: cfg.dpr, quality: cfg.preset });
     let driver = await tt.eval(setupTour, cfg);
-    if (!driver) {
+    if (!driver && fs.existsSync(path.join(ROOT, 'tests', 'sheets', 'render.html'))) {
       await tt.close();
       tt = await h.open({ width: 1920, height: 1080, dpr: cfg.dpr, quality: cfg.preset, url: sheetUrl });
       driver = await tt.eval(setupTour, cfg);
@@ -337,6 +371,10 @@ async function main(argv) {
       T.ok(m.spritePx <= BUDGET.spritePx, 'building sprites ≤ 12 Mpx (' + (m.spritePx / 1e6).toFixed(1) + ')');
       T.ok(m.smallBytes <= BUDGET.smallBytes && m.skyBytes <= BUDGET.skyBytes, 'props, actors and neon ≤ 8 MB (' + (m.smallBytes / MIB).toFixed(1) + '); sky ≤ 6 MB (' + (m.skyBytes / MIB).toFixed(1) + ')');
       T.ok(r.canvases <= BUDGET.canvasBytes, 'the stage canvases ≤ 30 MB (' + (r.canvases / MIB).toFixed(1) + ' MB, backing ' + (r.backing || []).join(' × ') + ')');
+      // ARCHITECTURE §17: ≤ 160 MB in total (the parts' budgets add up to more, so the total binds)
+      const total = m.total + r.canvases + (r.heap || 0);
+      T.ok(total <= BUDGET.totalBytes, 'in total ≤ 160 MB (' + (total / MIB).toFixed(1) + ' MB: render caches ' + (m.total / MIB).toFixed(1) + ' + stage canvases ' + (r.canvases / MIB).toFixed(1) +
+        ' + JS heap ' + (r.heap ? (r.heap / MIB).toFixed(1) : 'n/a') + ')');
     }
     T.eq(tt.errors(), [], 'zero console errors on the tour');
     await tt.close();
@@ -354,11 +392,8 @@ async function main(argv) {
   fs.writeFileSync(outFile, JSON.stringify(run, null, 1) + '\n');
   console.log('  results: ' + path.relative(ROOT, outFile));
   if (has('--record')) {
-    const keep = { v: 1, note: 'Recorded by the lead at a wave integration with node tests/perf/perf.cjs --record; the relative gate compares p95 update (per step) and render (per frame), in ms, on the same machine fingerprint.',
-      fingerprint: run.fingerprint, recorded: run.recorded, calibration: run.calibration, frames: run.frames, configs: {} };
-    Object.keys(run.configs).forEach((id) => { const c = run.configs[id]; if (!c.pending) keep.configs[id] = { driver: c.driver, update: +c.update.toFixed(3), render: +c.render.toFixed(3) }; });
-    fs.writeFileSync(BASELINE, JSON.stringify(keep, null, 2) + '\n');
-    console.log('  recorded ' + path.relative(ROOT, BASELINE));
+    fs.writeFileSync(BASELINE, JSON.stringify(record(baseline, run), null, 2) + '\n');
+    console.log('  recorded the ' + run.frames + '-frame tour in ' + path.relative(ROOT, BASELINE));
   }
   return T.done();
 }
@@ -385,14 +420,25 @@ function selftest() {
   T.ok(gate(runOf(0.1, 0.3), { fingerprint: fp, calibration: { ms: 30 }, configs: { x: { update: 0.05, render: 0.2 } } }).fail.length === 0, 'sub-0.25 ms differences are noise');
   T.ok(gate(runOf(12, 6.25), null).warn.length === 1 && gate(runOf(12, 6.25), null).fail.length === 0, 'without a baseline the gate warns');
   const bl = fs.existsSync(BASELINE) ? JSON.parse(fs.readFileSync(BASELINE, 'utf8')) : null;
-  T.ok(bl && bl.v === 1 && typeof bl.configs === 'object', 'tests/perf/baseline.json is readable (' + (bl ? Object.keys(bl.configs).length : 0) + ' recorded configurations)');
+  const tours = bl && bl.tours ? bl.tours : {};
+  T.ok(bl && bl.v === 1 && typeof tours === 'object', 'tests/perf/baseline.json is readable (' + (Object.keys(tours).map((f) => f + ' frames: ' + Object.keys(tours[f].configs || {}).length + ' configurations').join(', ') || 'no recording yet') + ')');
+  T.eq([gate(runOf(12, 6.25, { frames: 600 }), Object.assign({ frames: 3600 }, base)).fail, gate(runOf(12, 6.25, { frames: 600 }), Object.assign({ frames: 3600 }, base)).warn.length], [[], 1],
+    'a run of another tour length (--quick against a full baseline) is not compared, only warned about');
+  T.section('recording per tour length (run-all tours --quick)');
+  let bl2 = record(null, runOf(12, 5, { frames: 3600, recorded: 'a' }));
+  bl2 = record(bl2, runOf(3, 1.5, { frames: 600, recorded: 'b' }));
+  T.eq(Object.keys(bl2.tours).sort(), ['3600', '600'], 'a full and a --quick recording live side by side');
+  T.ok(gate(runOf(3, 1.9, { frames: 600 }), bl2).fail.length === 1 && gate(runOf(12, 6.25, { frames: 3600 }), bl2).fail.length === 1,
+    'each tour length is gated against its own recording (a planted 25 % regression fails in both)');
+  T.eq(gate(runOf(3, 1.6, { frames: 600 }), bl2).fail, [], 'a --quick run within 20 % of the --quick recording passes');
+  T.ok(/--quick/.test(gate(runOf(3, 1.5, { frames: 600 }), record(null, runOf(12, 5, { frames: 3600 }))).warn.join(' ')), 'a tour length without a recording says how to record it');
   return T.done();
 }
 
-module.exports = { BUDGET, CONFIGS, gate, fingerprint, setupTour, runTour };
+module.exports = { BUDGET, CONFIGS, gate, record, fingerprint, setupTour, runTour };
 
 if (require.main === module) {
   const argv = process.argv.slice(2);
   if (argv.includes('--selftest')) selftest();
-  else main(argv).catch((e) => { console.error(e); process.exitCode = 1; });
+  else main(argv).catch((e) => { console.error(e); process.exit(1); });   // exit: an open browser would keep Node alive
 }

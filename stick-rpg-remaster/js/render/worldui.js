@@ -11,9 +11,11 @@
   var DOOR_PROMPT = 96;        // the interact range: the tag carries the key hint (tuning.world.door.prompt)
   var NAME_TAG = 200;          // name tags over named people within 200 u
   var FLOAT_RISE = 40, FLOAT_MS = 900, FLOAT_FADE_MS = 300;
+  var FLOAT_OUTLINE = 3;       // UI §2.3 FloatText: a 3 px ink outline
   var FLOAT_MAX = 24;
   var UI_FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
   var DISPLAY_FONT = '"Arial Black", "Segoe UI Black", "Helvetica Neue", Arial, sans-serif';
+  var F_TAG = '700 14px ' + UI_FONT, F_KEY = '800 12px ' + UI_FONT, F_MARK = '900 16px ' + DISPLAY_FONT, F_FLOAT = '900 20px ' + DISPLAY_FONT;
 
   function L() { return SR.render.lib; }
   function num(v) { return typeof v === 'number' && isFinite(v); }
@@ -102,9 +104,9 @@
   function sy(v, y) { return (y * v.ppu + v.ty) / v.s; }
 
   function pill(ctx, cx, cy, text, key, strong) {
-    var font = '700 14px ' + UI_FONT;
+    var font = F_TAG;
     var tw = measure(ctx, font, text);
-    var kw = key ? measure(ctx, '800 12px ' + UI_FONT, key) + 12 : 0;
+    var kw = key ? measure(ctx, F_KEY, key) + 12 : 0;
     var w = tw + 16 + (key ? kw + 6 : 0), h = 24;
     var x = Math.round(cx - w / 2), y = Math.round(cy - h);
     var paper = L().pal(['ui.paper-0', 'paperEdge'], 0.98), ink = L().pal(['ui.ink-900', 'ink'], 0.1);
@@ -123,7 +125,7 @@
       ctx.beginPath(); rr(ctx, tx - 2, y + 4, kw, 16, 4); ctx.fill();
       ctx.strokeStyle = ink; ctx.lineWidth = 1; ctx.stroke();
       ctx.fillStyle = ink;
-      ctx.font = '800 12px ' + UI_FONT;
+      ctx.font = F_KEY;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(key, tx - 2 + kw / 2, y + 12.5);
@@ -255,7 +257,7 @@
         ctx.beginPath(); ctx.arc(x, y - 70 + bob, 11, 0, Math.PI * 2); ctx.fill();
         ctx.strokeStyle = ink; ctx.lineWidth = 2; ctx.stroke();
         ctx.fillStyle = ink;
-        ctx.font = '900 16px ' + DISPLAY_FONT;
+        ctx.font = F_MARK;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillText('!', x, y - 69 + bob);
         L().count.fills += 2;
@@ -283,11 +285,11 @@
       var x = sx(v, f.x), y = sy(v, f.y - 60 - FLOAT_RISE * k);
       ctx.save();
       ctx.globalAlpha = alpha;
-      ctx.font = '900 20px ' + DISPLAY_FONT;
+      ctx.font = F_FLOAT;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.lineJoin = 'round';
-      ctx.lineWidth = 3;
+      ctx.lineWidth = 2 * FLOAT_OUTLINE;   // stroked under the fill: FLOAT_OUTLINE px show outside the glyphs
       ctx.strokeStyle = L().pal(['fx.floatOutline', 'ink'], 0.1);
       ctx.strokeText(f.text, x, y);
       ctx.fillStyle = statColour(f.colour);
