@@ -316,7 +316,7 @@
 
   // --- buildings, porches and doors ------------------------------------------------------------------
   /** @returns {number[]} the projected rect of a mass [x0, y0 - 0.5h, x1, y1] (screen space before the camera). */
-  G.project = function (rect, h) { return [rect[0], rect[1] - 0.5 * h, rect[2], rect[3]]; };
+  G.project = function (rect, h) { return [rect[0], rect[1] - DIM.k * h, rect[2], rect[3]]; };
 
   /** @returns {{id: string, rect: number[], kind: string}[]} every building's projected rects (masses and tall tops). */
   G.projectedRects = function () {
@@ -335,13 +335,18 @@
     return b ? b.projected.concat(b.tops) : [];
   };
 
+  // Door and projection numbers from SR.tuning.world (B-15: projection, door.trigger, door.exit,
+  // door.porchN) via SR.world.cfg, read at build; the porch widths are ARCHITECTURE §8.1's.
+  var DIM = { k: 0.5, tw: 96, th: 48, off: 24, exit: 56, porchF: 0.5, porchAdd: 32 };
+  var PORCH_W = 96, STEP_D = 40, AWNING_D = 32;   // porch width, a south step's depth, an awning's depth (ARCHITECTURE §8.1)
+
   function porchOf(bdef, d) {
-    var annexH = 0;
+    var annexH = 0, hw = PORCH_W / 2;
     bdef.masses.forEach(function (m) { if (m.role === 'annex') annexH = m.h; });
-    if (d.face === 'S') return [d.x - 48, d.y, d.x + 48, d.y + 40];
-    if (d.face === 'E') return [d.x, d.y - 48, d.x + 32, d.y + 48];
-    if (d.face === 'W') return [d.x - 32, d.y - 48, d.x, d.y + 48];
-    return [d.x - 48, d.y - (0.5 * annexH + 32), d.x + 48, d.y];
+    if (d.face === 'S') return [d.x - hw, d.y, d.x + hw, d.y + STEP_D];
+    if (d.face === 'E') return [d.x, d.y - hw, d.x + AWNING_D, d.y + hw];
+    if (d.face === 'W') return [d.x - AWNING_D, d.y - hw, d.x, d.y + hw];
+    return [d.x - hw, d.y - (DIM.porchF * annexH + DIM.porchAdd), d.x + hw, d.y];
   }
 
   /** The largest part of the porch not covered by the building's own projected rects, cut from the building side. */
@@ -358,15 +363,16 @@
   }
 
   function buildDoor(bdef, projected) {
-    var d = bdef.door, n = NORMALS[d.face];
-    var tcx = d.x + n[0] * 24, tcy = d.y + n[1] * 24;
-    var trigger = n[0] ? [tcx - 24, tcy - 48, tcx + 24, tcy + 48] : [tcx - 48, tcy - 24, tcx + 48, tcy + 24];
+    var d = bdef.door, n = NORMALS[d.face], hw = DIM.tw / 2, hh = DIM.th / 2;
+    var tcx = d.x + n[0] * DIM.off, tcy = d.y + n[1] * DIM.off;
+    // The trigger's long side runs along the face (B-15 door.trigger 96 × 48).
+    var trigger = n[0] ? [tcx - hh, tcy - hw, tcx + hh, tcy + hw] : [tcx - hw, tcy - hh, tcx + hw, tcy + hh];
     var porch = porchOf(bdef, d);
     return {
       id: bdef.id, building: bdef.id, face: d.face, x: d.x, y: d.y,
       out: n.slice(), facing: FACING[d.face],
       trigger: trigger, tc: [tcx, tcy],
-      exit: { x: d.x + n[0] * 56, y: d.y + n[1] * 56, facing: FACING[d.face] },
+      exit: { x: d.x + n[0] * DIM.exit, y: d.y + n[1] * DIM.exit, facing: FACING[d.face] },
       kerb: d.kerb ? d.kerb.slice() : null,
       porch: porch, visible: visibleStrip(porch, projected, d.face),
       name: bdef.name || ('place.' + bdef.id),
@@ -552,6 +558,11 @@
     map = map || (SR.reg.worldmap && SR.reg.worldmap.main);
     if (!map) throw new Error('SR.world.geometry.build: no worldmap registered');
     G.map = map;
+    var cfg = SR.world.cfg || (SR.world.readCfg ? SR.world.readCfg() : null);
+    if (cfg) {
+      DIM.k = cfg.projection; DIM.tw = cfg.doorW; DIM.th = cfg.doorH; DIM.off = cfg.doorOffset; DIM.exit = cfg.exit;
+      DIM.porchF = cfg.porchFactor; DIM.porchAdd = cfg.porchAdd;
+    }
     var xs = map.outline.map(function (p) { return p[0]; }), ys = map.outline.map(function (p) { return p[1]; });
     G.bounds = [Math.min.apply(null, xs), Math.min.apply(null, ys), Math.max.apply(null, xs), Math.max.apply(null, ys)];
     G.holeRects = (map.holes || []).map(function (h) { return h.rect; });

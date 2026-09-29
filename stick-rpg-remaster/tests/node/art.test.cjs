@@ -285,4 +285,122 @@ T.eq(NEEDED_PROPS.filter((p) => !types.includes(p)), [], 'every prop ART_AUDIO �
 const r1 = SR.art.interior('no_such_interior');
 T.ok(r1 && typeof r1.drawStatic === 'function' && typeof r1.drawAnim === 'function', 'an unregistered id gets the placeholder renderer');
 T.ok(SR.art.interior('no_such_interior') === r1, 'renderers are cached per id');
+const skyAt = SR.art.interior.kit.skyAt;
+T.eq([skyAt(0).top, skyAt(720).top, skyAt(23.5 * 60).top !== skyAt(720).top], [P.sky[0].top, P.sky.find((k) => k.h === 9).top, true],
+  'the fallback window sky: minute 0 is midnight (not a missing clock), 720 is noon');
+T.eq([V.lightPhase(0), V.lightPhase(0.26), V.lightPhase(0.51), V.lightPhase(1.01)], [0, 0, 1, 0],
+  'police lights swap every 0.5 s (≤ 3 flashes a second; W1-G bakes phases at t 0.01 / 0.51)');
+
+// ---- drawing through a recording 2D context (no canvas in Node) ------------------------------------------
+T.section('drawing (a recording 2D context)');
+/** A 2D context stand-in: every call is a no-op, fills and strokes are recorded with their style. */
+function fakeCtx() {
+  const log = [];
+  const stub = new Proxy(function () {}, { get: (t, k) => (k === 'then' ? undefined : stub), apply: () => stub });
+  const base = {
+    canvas: { width: 1280, height: 720 }, log,
+    fillStyle: '#000000', strokeStyle: '#000000', globalAlpha: 1, lineWidth: 1, font: '10px sans-serif', globalCompositeOperation: 'source-over',
+    getTransform: () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }),
+    measureText: (s) => ({ width: String(s).length * 8 }),
+    createLinearGradient: () => ({ addColorStop() {} }), createRadialGradient: () => ({ addColorStop() {} }), createPattern: () => null,
+    fill() { log.push(['fill', String(this.fillStyle)]); }, stroke() { log.push(['stroke', String(this.strokeStyle)]); },
+    fillRect() { log.push(['fill', String(this.fillStyle)]); }, fillText(s) { log.push(['text', String(s)]); },
+  };
+  return new Proxy(base, { get: (t, k) => (k in t ? t[k] : (typeof k === 'string' ? () => stub : undefined)), set: (t, k, v) => { t[k] = v; return true; } });
+}
+const fills = (g) => g.log.filter((e) => e[0] === 'fill').map((e) => e[1].toUpperCase());
+const RA = load({ mode: 'all', extra: MINE_PURE });
+const SA = RA.SR, SS = SA.art.stick, VV = SA.art.vehicles, DD = SA.art.draw;
+const warnAll = [];
+console.warn = (msg) => warnAll.push(String(msg));
+let threw = [];
+try {
+  // every clip × facing × view, with every named look
+  Object.keys(SS.clips).forEach((c) => ['down', 'right', 'up', 'left'].forEach((f) => ['city', 'side'].forEach((view) => {
+    try { SS.draw(fakeCtx(), c, { view, facing: f, t: 0.3, look: 'harold', mood: 'happy' }); } catch (e) { threw.push(c + ' ' + f + ' ' + view + ': ' + e.message); }
+  })));
+  Object.keys(SS.looks).forEach((id) => { try { SS.draw(fakeCtx(), 'idle', { look: id, t: 0 }); SA.art.portraits.draw(fakeCtx(), id, 56, 'angry'); } catch (e) { threw.push(id + ': ' + e.message); } });
+  VV.TYPES.forEach((ty) => { for (let d = 0; d < 8; d++) { try { VV.draw(fakeCtx(), ty, d, 0, 0, { t: 0.4, driver: true, brake: true, lights: true }); } catch (e) { threw.push(ty + ' ' + d + ': ' + e.message); } } });
+  SA.art.interior.types().forEach((ty) => {
+    try {
+      const r = SA.art.interior.fromDef('node_' + ty, { window: { x: 60, y: 90, w: 200, h: 140 }, props: [{ type: ty, x: 200, y: 560 }], owner: { id: 'mel', x: 360, y: 430 }, you: { x: 250, y: 560 } });
+      r.drawStatic(fakeCtx(), null); r.drawAnim(fakeCtx(), 1.3, null, { owner: { pose: 'react-happy' } });
+    } catch (e) { threw.push('prop ' + ty + ': ' + e.message); }
+  });
+  SA.art.bible.draw(fakeCtx());
+  SA.art.logo.draw(fakeCtx(), 0.6);
+  DD.stamp(fakeCtx(), 'FLATLINED', 100, 100);
+} catch (e) { threw.push(e.stack); }
+T.eq(threw, [], 'every clip, facing, view, look, portrait, vehicle, prop type, the bible, the logo and the stamp draw without throwing');
+
+// a name that is both a pose and a clip: the still pose without t, the clip over time with t
+const hand = (pose, o) => SS.joints(pose, o).handR.map((v) => +v.toFixed(3));
+T.eq(hand('punch', {}), hand(SS.poses.punch, {}), 'draw / joints: "punch" without t is the still punch pose');
+T.ok(JSON.stringify(hand('punch', { t: 0 })) !== JSON.stringify(hand('punch', { t: 0.19 })), 'draw / joints: "punch" with t plays the punch clip');
+T.eq(hand('punch', { t: 0 }), hand(SS.poses.guard, {}), 'the punch clip starts from guard');
+
+// the player's own look: the accessory chosen in the New Game wizard shows without a look option
+SA.state = { player: { look: { acc: 'tophat' } }, stats: { karma: 0 } };
+const withHat = fakeCtx();
+SS.draw(withHat, 'idle', { player: true, t: 0 });
+T.ok(fills(withHat).includes(DD.color('acc.black').toUpperCase()), 'player: true without a look draws the player\'s own accessory (a top hat)');
+T.ok(fills(withHat).includes(SS.karmaColor(0).toUpperCase()), '… with the karma-coloured head');
+SA.state = null;
+
+// unknown person ids: warned once, cached (no allocation per frame)
+const u1 = SS.look('no_such_person'), u2 = SS.look('no_such_person');
+T.ok(u1 === u2, 'an unknown person id is normalised once and cached');
+T.eq(warnAll.filter((w) => /unknown person "no_such_person"/.test(w)).length, 1, 'an unknown person id warns once');
+
+// every fighter of data/fighters.js: its palette key and accessory resolve (no warning)
+const fightWarn = [];
+Object.keys(SA.reg.fighter || {}).forEach((id) => {
+  const f = SA.reg.fighter[id];
+  if (DD.color(f.palette) === f.palette) fightWarn.push(id + ': palette ' + f.palette);
+  if (!SS.accessory(f.accessory)) fightWarn.push(id + ': accessory ' + f.accessory);
+  if (!SS.look(id).names.includes(SS.accessory(f.accessory))) fightWarn.push(id + ': look lacks ' + f.accessory);
+});
+T.ok(Object.keys(SA.reg.fighter || {}).length >= 12, Object.keys(SA.reg.fighter || {}).length + ' fighters in data/fighters.js');
+T.eq(fightWarn, [], 'every fighter\'s palette key and accessory resolve, and its look wears the accessory');
+
+// every furniture piece of data/furniture.js has a kit prop and an icon
+const furnMiss = [];
+Object.keys(SA.reg.furniture || {}).forEach((id) => {
+  const f = SA.reg.furniture[id];
+  const before = warnAll.length;
+  SA.art.interior.fromDef('furn_' + id, { props: [{ type: f.draw || id, x: 100, y: 600 }] }).drawStatic(fakeCtx(), null);
+  if (warnAll.slice(before).some((w) => /unknown prop type/.test(w))) furnMiss.push(id + ': prop ' + (f.draw || id));
+  if (f.icon && typeof SA.reg.icon[f.icon] !== 'function') furnMiss.push(id + ': icon ' + f.icon);
+});
+T.ok(Object.keys(SA.reg.furniture || {}).length >= 14, Object.keys(SA.reg.furniture || {}).length + ' furniture pieces in data/furniture.js');
+T.eq(furnMiss, [], 'every furniture piece (B-08b, tier 1 and tier 2) draws as a kit prop and has an icon');
+T.ok(SA.art.interior.types().includes('workstation'), 'the tier-2 workstation is its own prop (not the PC again)');
+
+// vehicles: the driver of a closed car shows (the karma-coloured head), a driver with a look is an NPC
+const karmaHead = SS.karmaColor(40).toUpperCase();
+const seen = [];
+for (let d = 0; d < 8; d++) { const g = fakeCtx(); VV.draw(g, 'junker', d, 0, 0, { t: 0, driver: { karma: 40 } }); seen.push(fills(g).includes(karmaHead)); }
+T.ok(seen.filter(Boolean).length >= 6, 'the player shows through the junker\'s glass in ' + seen.filter(Boolean).length + ' of 8 directions', seen);
+const npc = fakeCtx();
+VV.draw(npc, 'taxi', 2, 0, 0, { t: 0, driver: { look: 3, karma: 40 } });
+T.ok(!fills(npc).includes(karmaHead) && fills(npc).includes(SS.look(3).headCol.toUpperCase()), 'a driver with a look is an NPC (its own head colour, not the karma band)');
+const policeAt = (t) => { const g = fakeCtx(); VV.draw(g, 'police', 2, 0, 0, { t, flashReduction: false }); return fills(g).join(); };
+T.ok(policeAt(0.01) !== policeAt(0.51), 'the police light bar alternates between t 0.01 and 0.51');
+const sk = fakeCtx();
+VV.skid(sk, 'sedan', 0, 0, 0, 80, 0.8);
+T.ok(sk.log.some((e) => e[0] === 'stroke' && e[1].toUpperCase() === DD.color('car.skid').toUpperCase()), 'skid marks (ART_AUDIO §8) stroke in car.skid');
+const steadyAt = (t) => { const g = fakeCtx(); VV.draw(g, 'police', 2, 0, 0, { t, flashReduction: true }); return fills(g).join(); };
+T.ok(steadyAt(0.01) === steadyAt(0.51), 'with Flash Reduction the light bar is steady');
+
+// interiors: a tall floor prop in front of a window is drawn again over the live sky
+const winDef = { window: { x: 60, y: 90, w: 220, h: 150 }, props: [{ type: 'shelf', x: 120, y: 420, h: 260 }, { type: 'plant', x: 600, y: 600 }] };
+const anim = fakeCtx();
+SA.art.interior.fromDef('node_window', winDef).drawAnim(anim, 0.5, null, {});
+const wood = DD.color('kit.wood').toUpperCase();
+T.ok(fills(anim).includes(wood), 'a tall shelf standing in front of the window is redrawn over the live sky each frame');
+const anim2 = fakeCtx();
+SA.art.interior.fromDef('node_window2', { window: winDef.window, props: [{ type: 'shelf', x: 700, y: 420 }] }).drawAnim(anim2, 0.5, null, {});
+T.ok(!fills(anim2).includes(wood), 'a shelf clear of the window stays in the cached static layer');
+console.warn = origWarn;
+T.eq(warnAll.filter((w) => /palette key|unknown accessory|unknown prop|unknown icon/.test(w)), [], 'no palette, accessory, prop or icon warning while drawing');
 T.done();

@@ -18,6 +18,8 @@
 //         radians), pilot (plane: default true), carry (plane: the player hangs below)
 // lamps(type, dir) → { head: [[dx, dy], ...], tail: [[dx, dy], ...] } screen offsets of the lamps
 //   for the emissive pass (ART_AUDIO §3).
+// skid(ctx, type, angle, x, y, len, alpha): the skid marks of a hard stop (two streaks behind the rear
+//   wheels, a ground decal the caller keeps and fades).
 // size(type) → { L, W, H }. TYPES: the type names. dirFromAngle(a) → 0-7. lightPhase(t) → 0 | 1: which
 //   half of the police light bar is lit at t (they swap every 0.5 s; steady with Flash Reduction).
 (function () {
@@ -444,6 +446,37 @@
     return { head: [sp(hl, -s.W * 0.35), sp(hl, s.W * 0.35)], tail: [sp(-hl, -s.W * 0.36), sp(-hl, s.W * 0.36)] };
   }
 
+  /**
+   * Skid marks (ART_AUDIO §8: on hard braking): two tyre streaks trailing the rear wheels for `len`
+   * units behind the car, a ground decal the caller keeps and fades (traffic decides when a car brakes
+   * hard; the ground pass draws the marks under the cars).
+   * @param {CanvasRenderingContext2D} ctx in world units
+   * @param {string} type
+   * @param {number} a the car's heading (radians, 0 east)
+   * @param {number} x ground centre of the car where the streaks end
+   * @param {number} y
+   * @param {number} len streak length in u
+   * @param {number=} alpha fade (default 1)
+   */
+  function skid(ctx, type, a, x, y, len, alpha) {
+    var s = SPECS[norm(type)] || SPECS.sedan;
+    var ca = Math.cos(a), sa = Math.sin(a);
+    var rear = -s.L * 0.3, hw = s.W * 0.36;
+    ctx.save();
+    if (alpha !== undefined) ctx.globalAlpha *= alpha;
+    ctx.strokeStyle = color('car.skid');
+    ctx.lineWidth = Math.max(4, s.W * 0.1);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    for (var side = -1; side <= 1; side += 2) {
+      var ly = side * hw;
+      ctx.moveTo(x + rear * ca - ly * sa, y + rear * sa + ly * ca);
+      ctx.lineTo(x + (rear - len) * ca - ly * sa, y + (rear - len) * sa + ly * ca);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
   /** @returns {{L: number, W: number, H: number}} a type's footprint and height in u. */
   function size(type) {
     var t = norm(type);
@@ -452,5 +485,5 @@
     return { L: s.L, W: s.W, H: s.cabin ? s.cabin[5] : s.body[1] };
   }
 
-  SR.art.vehicles = { draw: draw, lamps: lamps, size: size, dirFromAngle: dirFromAngle, lightPhase: lightPhase, TYPES: TYPES };
+  SR.art.vehicles = { draw: draw, lamps: lamps, skid: skid, size: size, dirFromAngle: dirFromAngle, lightPhase: lightPhase, TYPES: TYPES };
 })();

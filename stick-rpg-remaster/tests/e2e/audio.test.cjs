@@ -205,6 +205,28 @@ async function openSheet(opts) {
     'the beds of ART_AUDIO §13.6');
   await E(() => SR.audio.ambience('park', 0));
 
+  T.section('the sound sheet plays every song and sfx');
+  for (const id of await E(() => Object.keys(SR.reg.song).filter((k) => k.indexOf('stingers.') !== 0))) {
+    await page.click('[data-id="play-' + id + '"]');
+    await sleep(250);
+    T.eq(await E(() => SR.audio.stats().music.song), id, 'its button plays ' + id);
+  }
+  const played = await E(async () => {
+    const names = Object.keys(SR.reg.sfx).sort();
+    let ok = 0;
+    for (const n of names) {
+      const b = document.querySelector('[data-id="play-' + n + '"]');
+      if (!b) continue;
+      b.click();
+      if (SR.reg.sfx[n].loop) { await new Promise((r) => setTimeout(r, 40)); b.click(); }
+      ok++;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    return { ok, total: names.length };
+  });
+  T.eq(played.ok, played.total, 'every sfx button plays its sound (' + played.ok + '; loops toggled on and off)');
+  await E(() => SR.audio.music(null, { fade: 0.2 }));
+
   T.section('voices: ≤ 24 under stress (ARCHITECTURE §17)');
   const stress = await E(() => soundSheet.stress(200, 900));
   T.ok(stress.maxVoices <= 24 && stress.stats.peakVoices <= 24, 'at most 24 voices (max ' + stress.maxVoices + ', peak ' + stress.stats.peakVoices + ')');

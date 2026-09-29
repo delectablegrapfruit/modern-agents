@@ -2,8 +2,8 @@
 
 Each request names the file, the exact change, why, and the workaround used meanwhile
 (BUILD_PLAN §1.3). 1-3 are for the lead (CONTRACT, ARCHITECTURE, ART_AUDIO); 4 for W1-D; 5 for
-W3-Park (through the lead); 6 for W1-Q; 7 for W2 packages (through the lead). Requests addressed to
-W1-A by other packages are answered at the end.
+W3-Park (through the lead); 6 for W1-Q; 7 for W2 packages (through the lead); 8 for W1-G. Requests
+addressed to W1-A by other packages are answered at the end.
 
 ## 1. `docs/CONTRACT.md` §15 (lead): the rest of `SR.art`
 
@@ -21,7 +21,10 @@ W1-A by other packages are answered at the end.
   - `SR.art.stick`: `draw(ctx, pose, opts)` with `opts = { x, y, view: 'city'|'side', facing:
     'down'|'up'|'left'|'right', scale, look, player, karma, head, torso, limb, mood, t, rot, mount:
     'board', upper, anchor: 'feet'|'hip', shadow, alpha, splay }` (`pose` may be a pose array, a pose
-    name or a clip name evaluated at `opts.t`); `clip(name, t, out)` (a pooled result unless `out`);
+    name or a clip name evaluated at `opts.t`; a name that is both a pose and a clip — sit, drive,
+    knocked, sleep, guard, punch, kick, fireball, inkbeam, hurt, win, lose — plays the clip when
+    `opts.t` is given and is the still pose otherwise; `player: true` without a `look` draws the
+    player's own look, `SR.state.player.look`); `clip(name, t, out)` (a pooled result unless `out`);
     `poses`, `clips` (`{ dur, loop, keys }`), `duration(name)`, `looks`, `look(id)`, `pedLook(n)`,
     `karmaColor(k)`, `metrics(view, child)`, `joints(pose, opts)`, `ACCESSORIES`, `accessory(name)`.
     Clip names: `idle walk skate drive sit talk eat drink work work_desk work_mop work_cook work_serve
@@ -33,7 +36,13 @@ W1-A by other packages are answered at the end.
   - `SR.art.vehicles`: `draw(ctx, type, dir, x, y, opts)` with `opts = { angle, t, brake, lights,
     flashReduction, driver, shadow, alpha, scale, z, bank, pilot, carry }`; types `compact sedan taxi
     van police junker sports skybus plane` (`player` → junker, `cab` → taxi); `lamps(type, dir, angle)`
-    → `{ head, tail }` screen offsets for the emissive pass, `size(type)`, `dirFromAngle(a)`, `TYPES`.
+    → `{ head, tail }` screen offsets for the emissive pass, `skid(ctx, type, angle, x, y, len,
+    alpha)` (the skid marks of a hard stop: a ground decal W2-City keeps and fades and the ground
+    pass draws), `size(type)`, `dirFromAngle(a)`,
+    `lightPhase(t)` (0 | 1: which half of the police bar is lit; they swap every 0.5 s, so at most 2
+    flashes a second), `TYPES`. `driver: { look, karma, player }` or `true`: the head and shoulders
+    show through the windshield or the nearest side window (the open sports car seats the whole upper
+    body); a driver with a `look` is an NPC unless `player: true`, one without is the player.
   - `SR.art.icon(ctx, name, x, y, size, state)` (top-left at x, y; `state: 'disabled'`),
     `SR.art.iconURL(name, size, state)`, `SR.art.icon.CATEGORIES`, `.names()`, `.TABLE`.
   - `SR.art.logo`: `draw(ctx, t, { x, y, width, title, tag, color })` → box, `duration` (1.2 s),
@@ -45,7 +54,11 @@ W1-A by other packages are answered at the end.
     planks carpet concrete` (+ `tile`, `rows`; `perspective` 0 flat .. 1 true one-point), `floorY`,
     `vp`, `palette` (the `int.<id>` set name), `fns` (named custom fns: a function or `{ static(ctx,
     kit, state), anim(ctx, kit, t, state) }`); prop fields `sortY`, `when(state, params)`,
-    `pick(state, params)`, `flip`, `text` (a text key), `items`, `person`, `alt`.
+    `pick(state, params)`, `flip`, `text` (a text key), `items`, `person`, `alt`. `drawAnim` repaints
+    the live sky in every window (the def's `window` and `window` / `balconydoor` props) and draws
+    again whatever the static layer put in front of a window (wall props, tall floor props), so an
+    interior never shows the sky over a shelf; a custom `static` fn that paints over a window must
+    repeat that part in its `anim`.
 - **Why:** other packages already call several of these (W1-G `vehicles.dirFromAngle`, W1-D the
   interior params and portrait opts); recording them keeps later waves from re-deriving them.
 - **Meanwhile:** documented in each file's header.
@@ -102,12 +115,14 @@ W1-A by other packages are answered at the end.
 ## 6. `tools/validate.cjs`, `tests/perf/calibrate.js` (W1-Q)
 
 - **Change:** (a) the palette-key walk treats `sky.<i>.h` and `sky.<i>.light` as the numeric
-  keyframe fields they are; the palette's `ui` aliases are non-enumerable. (b) When
-  `tests/perf/calibrate.js` lands, `tests/sheets/art-sheet.js` should use it: its local stand-in
-  workload assumes 35 ms on the reference machine (measured 59 ms on this 2.1 GHz Xeon container).
+  keyframe fields they are; the palette's `ui` aliases are non-enumerable. (b) Done (review): the
+  actors sheet loads `tests/perf/calibrate.js` and `art-sheet.js` scales the budgets by its factor
+  (`SRCalibrate.run()`); the local stand-in runs only if the file is missing, and the e2e test
+  asserts that the real calibration was used.
 - **Why:** BUILD_PLAN §3.6 measures the rig "calibrated as in ARCHITECTURE §17".
-- **Meanwhile:** the local calibration; the raw costs (0.05-0.06 ms per city character with its
-  shadow, 0.09 ms per 96 px portrait, rasterisation included) are within the uncalibrated budgets.
+- **Meanwhile:** nothing left; for the record, a city character costs about 0.07-0.08 ms at the
+  sheet's 1:1 scale and 0.10-0.11 ms at the reference machine's 1920 × 1080 stage scale (1.5 device
+  px per unit) in headless Chromium, against 0.08 × the factor (≈ 1.5 on this container).
 
 ## 7. W2 packages (through the lead): person ids and looks
 
@@ -120,7 +135,20 @@ W1-A by other packages are answered at the end.
   object `{ head: 'npc.<name>', acc: ['beanie', ...], col: { beanie: 'acc.red' }, child }`.
 - **Why:** ART_AUDIO §7 names the people but no ids; W1-W's worldmap already uses `harold`, `kid`,
   `dealer`, `preacher`, `crease`, `mcholland`.
-- **Meanwhile:** aliases resolve the long forms (`skid`, `red`, `margin`, `lucky_lou`, ...).
+- **Meanwhile:** aliases resolve the long forms (`skid`, `red`, `margin`, `lucky_lou`, ...); an id the
+  rig does not know (and no `person.look` names) draws the plain look and warns once
+  (`SR.art.stick: unknown person "<id>"`), so a typo shows in the console.
+
+## 8. `js/render/actors.js` (W1-G): one police light phase
+
+- **File:** `js/render/actors.js`, `drawCar` (the cached-sprite path).
+- **Change:** take the phase from `SR.art.vehicles.lightPhase(v.t)` (0 | 1) instead of
+  `Math.floor(v.t * 2) % 2`, and keep baking the sprite at `t = phase * 0.5 + 0.01`.
+- **Why:** one definition of the light bar's rhythm. Until the review the vehicles swapped the colours
+  4 times a second, so both of the sprite path's phases (t 0.01 and 0.51) baked the same colours and
+  cached police cars never flashed; `lightPhase` now swaps every 0.5 s, the same rhythm W1-G uses
+  (and under the 3-flashes-a-second limit), so the current code works unchanged.
+- **Meanwhile:** nothing needed; the request only removes the duplicated formula.
 
 ## Requests to W1-A, answered
 

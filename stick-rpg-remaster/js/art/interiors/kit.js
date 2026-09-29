@@ -34,8 +34,10 @@
 //   params: the door resolver's ({ homeId, mode } at a home door), handed to when / pick / custom fns.
 //   drawStatic paints the cacheable layer (wall, window frame, floor, props, lights); the building
 //   scene caches it (redrawn on resize or a state change such as new furniture).
-//   drawAnim paints each frame: the live sky in the windows, animated props, then the people in depth
-//   order (props in front of a person are drawn again over them).
+//   drawAnim paints each frame: the live sky in the windows (and again whatever the static layer drew
+//   in front of a window: wall props, tall floor props), animated props, then the people in depth
+//   order (props in front of a person are drawn again over them). A custom static fn that paints over
+//   a window repeats that part in its anim fn.
 //   actors: { owner: { pose | clip, id | look, t, mood, visible }, you: { pose | clip, t, mood, visible,
 //             x, y, facing, look, karma }, extra: [{ look, x, y, clip, t, facing, mood, player }] } (every
 //             field optional). pose / clip: any SR.art.stick clip; the UI.md §5.6 proprietor poses are
@@ -44,6 +46,7 @@
 // An id without a registered def returns a neutral room in its int.<id> palette (the grey-box
 // placeholder). SR.art.interior.kit: the helpers custom draw fns receive (box, back, depthScale, prop,
 // stick, color, tone, sky); SR.art.interior.types(): the prop types.
+// Ink: outlines 3 u, details 1 u (ART_AUDIO §1.1 rule 2); Flash Reduction holds flickers steady.
 // Node-loadable: nothing draws at load time.
 (function () {
   'use strict';
@@ -1218,8 +1221,9 @@
     var props = visibleProps(K, state);
     var i, q;
     // The live sky is repainted every frame over the cached static layer, so whatever the static
-    // layer drew over a window (wall props, the lights, a tall floor prop standing in front of it)
-    // is drawn again on top of the new sky: wall props and lights here, floor props in the depth pass.
+    // layer drew over a window (a wall prop, a tall floor prop standing in front of it) is drawn
+    // again on top of the new sky: wall props here, floor props in the depth pass. (The lights'
+    // soft glow is not redrawn over the glass: re-adding it in a clip would leave a seam.)
     var skies = K.skies || (K.skies = []);
     skies.length = 0;
     if (K.def.window) {
@@ -1237,14 +1241,6 @@
       if (!q.def.wall || q.def.sky) continue;
       if (skies.length && overlapsSky(skies, q.x, q.y, q.w, q.h)) drawProp(ctx, K, q, t, state);
       if (q.def.anim) q.def.anim(ctx, q, K, t, state);
-    }
-    if (skies.length && K.def.lights && K.def.lights.length) {
-      ctx.save();
-      ctx.beginPath();
-      for (i = 0; i < skies.length; i += 4) ctx.rect(skies[i], skies[i + 1], skies[i + 2], skies[i + 3]);
-      ctx.clip();
-      drawLights(ctx, K);
-      ctx.restore();
     }
     // people, in depth order with the props in front of them drawn again
     var people = [];

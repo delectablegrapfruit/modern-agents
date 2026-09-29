@@ -30,6 +30,8 @@
   // Per-step output without garbage (ARCHITECTURE §17): the tags array is reused, a door's tag
   // object and the prompt object stay the same while they describe the same door.
   var TAGS = [], tagObjs = {}, promptObj = null, tiersCache = {};
+  var DEAD = 0.2;      // a move input longer than this counts (the pad's dead zone, CONTRACT §12.1)
+  var NOSE_IN = 8;     // a car's "nose" point sits 8 u inside its bumper (entering a trigger by car)
   D.tags = TAGS;
 
   /** Forgets prompts, dwell, disarmed triggers and the entry log (a new game, a test). */
@@ -117,8 +119,8 @@
   D.armed = function (id) { return !disarmed[id]; };
   /** Disarms every trigger within the re-arm distance of (x, y) (placing, exiting). */
   D.disarmNear = function (x, y) {
-    var r = cfg().rearm;
-    G().doors.forEach(function (d) { if (Math.hypot(d.tc[0] - x, d.tc[1] - y) <= r + 48) D.disarm(d.id); });
+    var r = cfg().rearm + cfg().doorW / 2;   // the re-arm distance plus half a trigger: anything touching it
+    G().doors.forEach(function (d) { if (Math.hypot(d.tc[0] - x, d.tc[1] - y) <= r) D.disarm(d.id); });
   };
 
   // --- entering and leaving -----------------------------------------------------------------------
@@ -244,7 +246,7 @@
       var sp = Math.sqrt(p.vx * p.vx + p.vy * p.vy), cosCar = Math.cos(c.dwellAngle * Math.PI / 180);
       if (p.knockdown > 0 || sp < 1) return;
       // The car is in a trigger when its centre or its nose (just inside the bumper) is.
-      var nose = Math.max(0, c.carLength / 2 - 8) * (p.v < 0 ? -1 : 1);
+      var nose = Math.max(0, c.carLength / 2 - NOSE_IN) * (p.v < 0 ? -1 : 1);
       var nx = p.x + Math.cos(p.a) * nose, ny = p.y + Math.sin(p.a) * nose;
       for (i = 0; i < g.doors.length; i++) {
         d = g.doors[i];
@@ -277,7 +279,7 @@
       d = g.doors[i];
       if (!inTrigger(d, p.x, p.y)) { dwell[d.id] = 0; continue; }
       if (disarmed[d.id]) continue;
-      var aimed = mag > 0.2 && -(input.x * d.out[0] + input.y * d.out[1]) / mag >= cosMax - 1e-9;
+      var aimed = mag > DEAD && -(input.x * d.out[0] + input.y * d.out[1]) / mag >= cosMax - 1e-9;
       var routed = !!(p.route && inTrigger(d, p.route.to.x, p.route.to.y));
       if (aimed || routed) {
         dwell[d.id] = (dwell[d.id] || 0) + dt;

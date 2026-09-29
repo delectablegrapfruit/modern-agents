@@ -13,6 +13,9 @@
   function cfg() { return SR.world.cfg || (SR.world.cfg = SR.world.readCfg()); }
   function P() { return SR.world.player; }
 
+  var DEAD = 0.2;       // a move input longer than this counts (the pad's dead zone, CONTRACT §12.1)
+  var REVERSE = 0.3;    // "reversing": the input points back onto the sheet, within about 72° of straight in
+
   var F = {
     /** 'none' | 'teeter' | 'drop' | 'catch' | 'land' */
     phase: 'none',
@@ -113,7 +116,7 @@
     if (F.phase === 'teeter') {
       p.teeter = Math.max(0, F.grace - F.t);
       var mag = Math.sqrt(input.x * input.x + input.y * input.y);
-      if (mag > 0.2 && (input.x * F.out[0] + input.y * F.out[1]) / mag < -0.3) {
+      if (mag > DEAD && (input.x * F.out[0] + input.y * F.out[1]) / mag < -REVERSE) {
         p.x = F.from.x; p.y = F.from.y; p.vx = p.vy = 0; p.v = 0; p.teeter = 0;
         F.phase = 'none';
         F.saved = { t: SR.world.time, x: p.x, y: p.y };

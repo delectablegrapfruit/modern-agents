@@ -1,10 +1,10 @@
 // js/world/player.js — owner: W1-W. SR.world.player (ARCHITECTURE §8.2, §8.5; GDD §3.8; B-15):
 // walking (280 u/s, 0.08 s to top), skating (×2, Pro Deck ×2.5, Marathoner ×1.15), driving the
-// junker (×3) and the sports car (×5) with arcade steering on surfaces (asphalt full speed, paths
-// and plazas 60 %, sidewalks and lawns capped at 200 u/s), getting in and out of your car within
-// 64 u, click-to-walk routes from SR.world.nav, the car-hit knockdown, and people hopping 24 u
-// aside from your car (no damage, no karma, no Heat). Leaving the ground hands over to
-// SR.world.fall (the teeter). Node-safe.
+// junker (×3) and the sports car (×5), 96 × 52 u against the static world, with arcade steering on
+// surfaces (asphalt full speed, paths and plazas 60 %, sidewalks and lawns capped at 200 u/s),
+// getting in and out of your car within 64 u, click-to-walk routes from SR.world.nav, the car-hit
+// knockdown, and people hopping 24 u aside from your car (no damage, no karma, no Heat). Leaving
+// the ground hands over to SR.world.fall (the teeter). Node-safe.
 (function () {
   'use strict';
   var SR = window.SR;
@@ -62,7 +62,9 @@
   /** @returns {boolean} the Marathoner perk applies (flag `perks`). */
   P.marathoner = function () {
     var s = state();
-    return !!(SR.features && SR.features.perks && s && s.perks && s.perks.owned && s.perks.owned.indexOf('marathoner') >= 0);
+    if (!s) return false;
+    if (SR.rules.perks && typeof SR.rules.perks.has === 'function') return !!SR.rules.perks.has(s, 'marathoner');
+    return !!(SR.features && SR.features.perks && s.perks && s.perks.owned && s.perks.owned.indexOf('marathoner') >= 0);
   };
 
   /** @returns {number} the current top speed (u/s) on foot or in the car (before surface caps). */

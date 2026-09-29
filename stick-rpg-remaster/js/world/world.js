@@ -23,6 +23,7 @@
     playerRadius: 'playerRadius',
     doorW: 'door.trigger.w', doorH: 'door.trigger.h', doorOffset: ['door.trigger.offset', 'door.trigger.out'], dwell: 'door.dwell', dwellAngle: 'door.angle',
     interact: 'door.interact', prompt: 'door.prompt', tag: 'door.tag', exit: 'door.exit', rearm: 'door.rearm', porchN: 'door.porchN.visible',
+    porchFactor: 'door.porchN.annexFactor', porchAdd: 'door.porchN.add',
     camOmega: 'camera.omega', camDeadW: 'camera.deadZone.0', camDeadH: 'camera.deadZone.1', camLook: ['camera.lookAhead', 'camera.lookAheadSec'],
     camLookMax: 'camera.lookCap', camPad: 'camera.bounds', zoom0: 'camera.zooms.0', zoom1: 'camera.zooms.1', zoom2: 'camera.zooms.2',
     projection: ['projection.k', 'projection.zFactor'], occlusionAlpha: 'occlusionAlpha.alpha', occlusionMs: 'occlusionAlpha.ms',
@@ -52,6 +53,7 @@
     junker: 840, junkerAccel: 0.6, junkerTurn: 3.2, reverse: 200, sports: 1400, sportsAccel: 0.9, sportsTurn: 3.8,
     drivePath: 0.6, driveCap: 200, parkRange: 64, hop: 24, playerRadius: 14,
     doorW: 96, doorH: 48, doorOffset: 24, dwell: 0.2, dwellAngle: 45, interact: 96, prompt: 96, tag: 160, exit: 56, rearm: 64, porchN: 32,
+    porchFactor: 0.5, porchAdd: 32,
     camOmega: 8, camDeadW: 96, camDeadH: 64, camLook: 0.25, camLookMax: 140, camPad: 480, zoom0: 0.8, zoom1: 1, zoom2: 1.25,
     projection: 0.5, occlusionAlpha: 0.35, occlusionMs: 150, edgeWarn: 60, edgeWarnFog: 90, teeterMs: 150,
     fallTotal: 1.5, fallDrop: 0.55, fallCatch: 0.5, fallLand: 0.45, fallSkip: 0.5, fallHp: 10, fallHpHardLanding: 5, fallInside: 64,
@@ -233,11 +235,11 @@
   // The entity arrays the world reads from the modules that own walkers and cars (W2-City's traffic
   // and pedestrians, W2-Street's street people, W3-Crime's police), under the same names the
   // renderer accepts (js/render/actors.js). Entities are { x, y, visible?, active?, ... }.
-  var ENTITY_SOURCES = {
-    car: [['traffic', ['cars', 'list', 'pool']]],
-    ped: [['pedestrians', ['peds', 'list', 'pool']]],
-    person: [['streetnpcs', ['people', 'list', 'npcs']]],
-    police: [['police', ['officers', 'list']]],
+  var ENTITY_SOURCES = {       // kind: [module, array names in order of preference]
+    car: ['traffic', ['cars', 'list', 'pool']],
+    ped: ['pedestrians', ['peds', 'list', 'pool']],
+    person: ['streetnpcs', ['people', 'list', 'npcs']],
+    police: ['police', ['officers', 'list']],
   };
   var NO_ENTITIES = [];
 
@@ -248,7 +250,7 @@
   W.entities = function (kind) {
     var src = ENTITY_SOURCES[kind];
     if (!src) return NO_ENTITIES;
-    var mod = W[src[0][0]], names = src[0][1];
+    var mod = W[src[0]], names = src[1];
     if (!mod) return NO_ENTITIES;
     for (var i = 0; i < names.length; i++) if (Array.isArray(mod[names[i]])) return mod[names[i]];
     return NO_ENTITIES;

@@ -586,7 +586,7 @@
     var out = ac.createGain();
     out.connect(o.dest);
     var ch = { id: id, def: def, C: C, E: E, out: out, nodes: [out], tracks: {}, variant: o.variant || null,
-      level: C.gain, stopAt: null, disposeAt: null, stinger: !!o.stinger, voices: 0, start: o.at,
+      level: C.gain, stopAt: null, disposeAt: null, stinger: !!o.stinger, start: o.at,
       seq: sequencer(C, { start: o.at, pos: o.pos }) };
     var fade = o.fade || 0;
     if (fade > 0) {

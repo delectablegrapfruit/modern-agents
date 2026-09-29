@@ -62,13 +62,42 @@ async function sheet(T, name, check) {
   });
 
   T.section('actors sheet');
-  await sheet(T, 'actors', async (info) => {
+  await sheet(T, 'actors', async (info, t) => {
     const p = info.perf;
     T.ok(p && p.cityMs > 0 && p.portraitMs > 0, 'the sheet measured the rig', p);
     console.log('  perf: city character ' + p.cityMs.toFixed(4) + ' ms (budget ' + p.budget.city.toFixed(4) + '), portrait ' +
-      p.portraitMs.toFixed(4) + ' ms (budget ' + p.budget.portrait.toFixed(4) + '), calibration ×' + p.calibration.factor.toFixed(2));
+      p.portraitMs.toFixed(4) + ' ms (budget ' + p.budget.portrait.toFixed(4) + '), calibration ×' + p.calibration.factor.toFixed(2) +
+      ' (' + p.calibration.source + '); at the 1920 × 1080 stage scale a city character takes ' + p.city1080Ms.toFixed(4) + ' ms');
+    if (fs.existsSync(path.join(h.ROOT, 'tests', 'perf', 'calibrate.js'))) {
+      T.eq(p.calibration.source, 'tests/perf/calibrate.js', 'the budgets use the calibration of ARCHITECTURE §17 (tests/perf/calibrate.js)');
+    }
     T.ok(p.cityMs <= p.budget.city, 'one city character ≤ 0.08 ms × calibration');
     T.ok(p.portraitMs <= p.budget.portrait, 'one portrait ≤ 0.5 ms × calibration');
+    const px = await t.page.evaluate(() => {
+      const SR = window.SR;
+      const mk = () => { const c = document.createElement('canvas'); c.width = 240; c.height = 200; return c.getContext('2d', { willReadFrequently: true }); };
+      // the stamp's grain mask takes specks out of the ink only: an opaque ground stays opaque
+      const g = mk();
+      g.fillStyle = SR.art.draw.color('grass'); g.fillRect(0, 0, 240, 200);
+      SR.art.draw.stamp(g, 'FLATLINED', 120, 100, { size: 34 });
+      const d = g.getImageData(0, 0, 240, 200).data;
+      let holes = 0;
+      for (let i = 3; i < d.length; i += 4) if (d[i] < 255) holes++;
+      // the driver of a closed car shows through its glass (pixels that change when a driver is aboard)
+      const seen = [];
+      for (let dir = 0; dir < 8; dir++) {
+        const a = mk(), b = mk();
+        SR.art.vehicles.draw(a, 'junker', dir, 120, 110, { t: 0, scale: 1.5 });
+        SR.art.vehicles.draw(b, 'junker', dir, 120, 110, { t: 0, scale: 1.5, driver: { karma: 40 } });
+        const da = a.getImageData(0, 0, 240, 200).data, db = b.getImageData(0, 0, 240, 200).data;
+        let n = 0;
+        for (let i = 0; i < da.length; i += 4) if (Math.abs(da[i] - db[i]) + Math.abs(da[i + 1] - db[i + 1]) + Math.abs(da[i + 2] - db[i + 2]) > 60) n++;
+        seen.push(n);
+      }
+      return { holes, seen };
+    });
+    T.eq(px.holes, 0, 'the stamp never punches holes through what lies under it');
+    T.ok(px.seen.filter((n) => n >= 200).length >= 6, 'the player driving the junker is visible through the glass (changed pixels per direction: ' + px.seen.join(' ') + ')');
   });
 
   T.section('kit sheet');

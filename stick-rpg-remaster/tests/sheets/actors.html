@@ -176,6 +176,11 @@
       A.label(vc, ty, 8, r * 128 + 16, { size: 11, color: 'ui.ink-900', weight: 700 });
       for (var d = 0; d < 8; d++) {
         var sc = ty === 'skybus' ? 0.26 : 0.72;
+        if (ty !== 'plane' && d % 3 === 0) {   // the braking ones leave skid marks
+          vc.save(); vc.translate(150 + d * 142, r * 128 + 76); vc.scale(sc, sc);
+          SR.art.vehicles.skid(vc, ty, d * Math.PI / 4, 0, 0, 70, 0.9);
+          vc.restore();
+        }
         SR.art.vehicles.draw(vc, ty, d, 150 + d * 142, r * 128 + 76, { scale: sc, t: 0.3 + d * 0.13, lights: d % 2 === 0, brake: d % 3 === 0,
           driver: ty === 'sports' || ty === 'junker' ? { karma: 40 } : ty === 'taxi' ? { look: 3 } : ty === 'police' ? { look: 'officer' } : undefined,
           flashReduction: false, z: ty === 'plane' ? 20 : 0, carry: ty === 'plane' && d === 2 });

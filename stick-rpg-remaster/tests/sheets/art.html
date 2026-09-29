@@ -79,7 +79,7 @@
     var keys = ['bld.bank.walls', 'bld.mcsticks.walls', 'bld.casino.walls', 'bld.bus.walls', 'grass', 'water', 'int.mcsticks.floorB', 'bld.pawn.walls'];
     keys.forEach(function (k, i) {
       for (var t = -1; t <= 1; t++) { dv.fillStyle = D.tone(k, t); dv.fillRect(20 + i * 70 + (t + 1) * 20, 20, 20, 30); }
-      A.label(dv, k.replace('bld.', '').replace('.walls', ''), 20 + i * 70, 64, { size: 9 });
+      A.label(dv, k.replace('bld.', '').replace('.walls', ''), 20 + i * 70, 64 + (i % 2) * 11, { size: 9 });  // staggered: long keys never overlap
     });
     [1, 1.5, 2, 3].forEach(function (w, i) { dv.beginPath(); dv.moveTo(620, 26 + i * 12); dv.lineTo(760, 26 + i * 12); D.inkStroke(dv, w); });
     D.text(dv, 'Display 28', 800, 44, { size: 28, role: 'display' });

@@ -9,6 +9,8 @@
 
   function cfg() { return SR.world.cfg || (SR.world.cfg = SR.world.readCfg()); }
 
+  var ZOOM_TAUS = 5;   // the zoom eases exponentially, 5 time constants per driveZoomEase (0.6 s: 99 % there)
+
   var C = {
     x: 0, y: 0, vx: 0, vy: 0,
     /** The centre at the start of the last step (the renderer interpolates px → x by alpha). */
@@ -94,7 +96,7 @@
     C.y += C.vy * dt;
     clampCentre();
     // Zoom eases toward its level (driving: one level out) over about driveZoomEase seconds.
-    var zt = levelZoom(), k = Math.min(1, dt * 5 / Math.max(0.05, c.driveZoomEase));
+    var zt = levelZoom(), k = Math.min(1, dt * ZOOM_TAUS / Math.max(0.05, c.driveZoomEase));
     C.zoom += (zt - C.zoom) * k;
     if (Math.abs(zt - C.zoom) < 1e-4) C.zoom = zt;
   };

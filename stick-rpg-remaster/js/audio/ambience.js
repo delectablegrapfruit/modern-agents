@@ -1,10 +1,10 @@
 // js/audio/ambience.js — owner: W1-S. SR.audio.ambience(id, level) (ARCHITECTURE §12; ART_AUDIO §13.6):
 // beds of looping recipes plus randomly scheduled one-shots, on the ambience bus (-24 dB), each
-// fading 1 s on changes (ART_AUDIO §13.7), their loops under an optional swell (slow AM). Beds: city
-// (distant traffic with slow swells; birds by
-// day, crickets by night), birds, crickets, rain, wind (the caller drives its level from the edge
-// distance and Windy weather), fog (a rare fog horn), casino (murmur, chips, a slot ding), bar
-// (chatter, glass clinks), fryer, office (hum), campus (murmur), park (fountain, ducks, birds by day).
+// fading 1 s on changes (ART_AUDIO §13.7), their loops under an optional swell (slow AM). Beds:
+// city (distant traffic with slow swells; birds by day, crickets by night), birds, crickets, rain,
+// wind (the caller drives its level from the edge distance and Windy weather), fog (a rare fog
+// horn), casino (a murmur with AM, chips, a slot ding), bar (chatter, glass clinks), fryer, office
+// (hum), campus (murmur), park (fountain, ducks, birds by day).
 // The clock for day and night is SR.state.clock.min (05:30-19:30 is day, the city music's switch
 // times), or the override set with SR.audio.ambience.time(min). Random timing draws from
 // SR.rng.fx (offline renders pass a seeded stream).

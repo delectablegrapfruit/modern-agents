@@ -576,6 +576,40 @@ T.section('cars are 96 × 52 against the static world (GDD §3.8)');
 }
 
 // ------------------------------------------------------------------------------------------------
+T.section('top speeds and surfaces (B-15), the Guard Rails decree');
+{
+  const W = SR.world, P = W.player, F = W.fall;
+  const s = SR.rules.state.create({ seed: 10 });
+  SR.state = s;
+  W.start(s);
+  const tops = () => [P.topSpeed(false), P.topSpeed(true)].map((v) => Math.round(v * 100) / 100);
+  const plain = tops();
+  s.items.prodeck = 1;
+  const deck = tops();
+  s.perks.owned.push('marathoner');
+  const noFlag = tops();
+  const hadFlag = SR.features.perks;
+  SR.features.perks = true;
+  const withPerk = tops();
+  SR.features.perks = hadFlag;
+  T.eq([plain, deck, noFlag, withPerk], [[280, 560], [280, 700], [280, 700], [322, 805]],
+    'walk 280, skate 560, Pro Deck 700; Marathoner ×1.15 on walk and skate only while the perks flag is on');
+  T.eq(['asphalt', 'path', 'plaza', 'sidewalk', 'lawn'].map((q) => P.surfaceCap(q, 840)), [840, 504, 504, 200, 200],
+    'car speed by surface: asphalt ×1, paths and plazas ×0.6, sidewalks and lawns capped at 200');
+  // Guard Rails for All (a decree): unrailed edges hold like railings, as with Safe edges.
+  s.election.decrees = ['guardRails'];
+  P.place(4180, 4300, 180);
+  for (let i = 0; i < 120; i++) W.update(1 / 60, { x: 0, y: 1, skate: false });
+  const held = !F.active() && G.onGround(P.x, P.y) && s.records.falls === 0;
+  s.election.decrees = [];
+  P.place(4180, 4300, 180);
+  for (let i = 0; i < 60 && !F.active(); i++) W.update(1 / 60, { x: 0, y: 1, skate: false });
+  T.ok(W.safeEdges({ election: { decrees: ['guardRails'] } }) && held && F.active(), 'with Guard Rails for All the Point Margin tip holds you; without it you fall');
+  F.reset();
+  SR.state = null;
+}
+
+// ------------------------------------------------------------------------------------------------
 T.section('the Fold Rescue sequence (GDD §3.9, B-15 fall)');
 {
   const W = SR.world, P = W.player, F = W.fall, Cam = W.camera, STEP = 1 / 60;

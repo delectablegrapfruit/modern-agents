@@ -781,16 +781,16 @@
    * @param {number} n
    * @returns {object} a normalised look
    */
+  var pedCache = new Map();   // keyed by the number itself: no string built per pedestrian per frame
   function pedLook(n) {
-    var key = 'ped:' + n;
-    var hit = normCache.get(key);
+    var hit = pedCache.get(n);
     if (hit) return hit;
     var h = SR.util.hash('ped', n);
     var acc = PED_ACC[h % PED_ACC.length];
     var def = { head: 'npc.' + NPC_HEADS[(h >>> 8) % NPC_HEADS.length], child: ((h >>> 16) % 100) < 8, acc: acc ? [acc] : [], col: {} };
     if (acc) def.col[acc] = PED_COL[(h >>> 20) % PED_COL.length];
     var out = normalize(def);
-    normCache.set(key, out);
+    pedCache.set(n, out);
     return out;
   }
 
