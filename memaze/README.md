@@ -40,7 +40,8 @@ No build step, no dependencies: plain HTML/CSS/JS, plus an optional Python serve
   buzz. Then the picture blinks, and stays grey and faded while the shield is down, fizzing now and then, with a soft
   warning beep. There is no health bar and no red; the grey picture is it.
   No rapid hits: for 0.75 s the edges hold like walls, and a new hit needs a new touch (holding against the edge, or
-  sliding along it, never counts twice). 5 s after you're off the edge the shield is back: over the last second it
+  sliding along it, never counts twice). 5 s after the hit the shield is back, even if you're still pressed against the
+  edge: over the last second it
   recharges with a rising sound and a gold shimmer, and the picture fills back in. A second touch before that and
   your picture shatters into glassy shards, your *lose* media plays, then you go back to the last flag you reached, or
   the start. Spawning in (every start, restart and flag), the shards fly back together; nothing hurts until you're whole.

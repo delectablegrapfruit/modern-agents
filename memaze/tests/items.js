@@ -60,18 +60,18 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     G.draw();
     const look = () => parseFloat(MZ.$('#player-media').style.opacity || 1);
     check('hurt shows on the picture only: faded, no health HUD, no screen glow', look() < 0.5 && !MZ.$('#hud-health') && !MZ.$('#hurt-flash'), look());
-    run(5, d);
-    check('holding against the edge never hits twice', G.hp === 1 && G.state === 'play' && events.filter((e) => e.startsWith('hit')).length === 1, G.hp);
-    check('no healing while still on the edge', G.hurtT === 0, G.hurtT.toFixed(2));
-    away(d); // off the edge for about 1 s
-    run(3.2);
-    check('not healed 4 s after leaving the edge', G.hp === 1 && G.hurtLevel() > 0 && G.hurtLevel() < 0.3, G.hurtLevel().toFixed(2));
+    const hits = () => events.filter((e) => e.startsWith('hit')).length;
+    run(3.9, d); // held against the edge all along
+    check('holding against the edge never hits twice', G.hp === 1 && G.state === 'play' && hits() === 1, G.hp);
+    check('not healed 4 s after the hit', G.hp === 1 && G.hurtLevel() > 0 && G.hurtLevel() < 0.3, G.hurtLevel().toFixed(2));
+    run(0.35, d);
     G.draw();
     check('the last second: the shield recharges, the picture filling back in', MZ.$('#player').classList.contains('recharge') && look() > 0.45 && look() < 1, look());
-    run(1.2);
-    check('healed 5 s after leaving the edge', G.hp === 2 && G.hurtLevel() === 0, G.hp);
+    run(1, d);
+    check('healed 5 s after the hit, even held against the edge the whole time (never damaged for good)', G.hp === 2 && G.hurtLevel() === 0 && hits() === 1, G.hp);
     G.draw();
     check('recharged: the picture is solid again', look() === 1 && !MZ.$('#player').classList.contains('recharge'), look());
+    away(d);
     events.length = 0;
     touch(d); run(0.3, { x: -d.x, y: -d.y }); run(0.55); // back off, then straight back in once the 0.75 s guard is over
     events.length = 0;

@@ -18,7 +18,7 @@
   // walls for a moment, and until you've been clear of the edge for a beat, so holding against it never counts twice.
   // Once you've been off the edge long enough, the shield recharges: the picture fills back in with the rising sound.
   const HEARTS = 2, MAX_BONUS = 2;
-  const REGEN = 5;    // seconds clear of the edge until you're healed
+  const REGEN = 5;    // seconds from a hit until you're healed (pressed against the edge or not)
   const RECHARGE = 1; // ...the last of which is the recharge
   const GUARD = 0.75; // seconds the edges hold after a hit (and after a Bullet or Launch lands)
   const CLEAR = 0.25; // after a hit, seconds off the edge before it can hurt again
@@ -994,11 +994,9 @@
     tickPower(dt) {
       const fx = this.fx;
       if (this.guardT > 0) this.guardT = Math.max(0, this.guardT - dt);
-      if (!this.stuck) { // healing waits until you're off the edge
-        const was = this.hurtT;
-        this.hurtT += dt;
-        if (this.hp < HEARTS && was < REGEN - RECHARGE && this.hurtT >= REGEN - RECHARGE) MZ.Audio.play('recharge');
-      }
+      const was = this.hurtT; // (healing runs on from the hit, even held against the edge: never damaged for good)
+      this.hurtT += dt;
+      if (this.hp < HEARTS && was < REGEN - RECHARGE && this.hurtT >= REGEN - RECHARGE) MZ.Audio.play('recharge');
       if (this.hp < HEARTS && this.hurtT >= REGEN) { this.hp = HEARTS; this.emit('power'); }
       if (this.hp < HEARTS && !this.recharging() && (this.beepT -= dt) <= 0) { this.beepT = 0.8; MZ.Audio.play('low'); } // shield's down
       if (this.roll && (this.roll.t += dt) >= ROLL) this.endRoll();
