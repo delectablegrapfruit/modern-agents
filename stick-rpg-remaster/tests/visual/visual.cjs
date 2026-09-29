@@ -363,10 +363,21 @@ async function selftest() {
   const p = png(4, 2, (x, y) => [x * 60, y * 120, 30]);
   T.ok(p.slice(1, 4).toString() === 'PNG' && p.length > 40, 'the PNG encoder writes a PNG');
 
-  T.section('record, compare, detect (a real scene, twice)');
-  const scene = SCENES.find((s) => s.id === 'artbible');
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sr-visual-'));
   try {
+    T.section('a scene with a golden that turns pending fails');
+    const never = { id: 'qa-never', kind: 'dev', source: 'canvas', sel: '#world', needs: () => false, setup: () => {} };
+    const inner = () => { const r = []; return { r, section() {}, ok(c, m) { r.push([!!c, m]); return !!c; }, eq(g, w, m) { return this.ok(JSON.stringify(g) === JSON.stringify(w), m); } }; };
+    const a = inner();
+    const ra = await run({ T: a, scenes: [never], goldens: tmp });
+    T.ok(a.r.length === 0 && ra.pending.join() === 'qa-never', 'without a golden, a scene whose owners have not landed is pending');
+    writeGolden(tmp, never, { rows: A, size: [1280, 720] });
+    const b = inner();
+    await run({ T: b, scenes: [never], goldens: tmp });
+    T.ok(b.r.length === 1 && !b.r[0][0] && /cannot be captured/.test(b.r[0][1]), 'with a golden, the same scene fails (its setup broke or the golden is stale)', b.r);
+
+    T.section('record, compare, detect (a real scene, twice)');
+    const scene = SCENES.find((s) => s.id === 'artbible');
     const c1 = await capture(scene);
     if (c1.status !== 'ok') { T.ok(c1.status === 'pending', 'the art bible scene is ' + c1.status + ' (' + (c1.note || '') + ')'); return T.done(); }
     writeGolden(tmp, scene, c1);
@@ -378,17 +389,6 @@ async function selftest() {
     fs.writeFileSync(goldenFile(tmp, 'artbible'), JSON.stringify(doc));
     const det = compare(readGolden(tmp, 'artbible').rows, c2.rows);
     T.ok(det.bad.length === 1 && det.bad[0].x === 40 && det.bad[0].y === 20, 'a 1-cell change in the golden fails the comparison at that cell', det.bad);
-
-    T.section('a scene with a golden that turns pending fails');
-    const never = { id: 'qa-never', kind: 'dev', source: 'canvas', sel: '#world', needs: () => false, setup: () => {} };
-    const inner = () => { const r = []; return { r, section() {}, ok(c, m) { r.push([!!c, m]); return !!c; }, eq(g, w, m) { return this.ok(JSON.stringify(g) === JSON.stringify(w), m); } }; };
-    const a = inner();
-    const ra = await run({ T: a, scenes: [never], goldens: tmp });
-    T.ok(a.r.length === 0 && ra.pending.join() === 'qa-never', 'without a golden, a scene whose owners have not landed is pending');
-    fs.writeFileSync(goldenFile(tmp, 'qa-never'), JSON.stringify(Object.assign({}, doc, { id: 'qa-never' })));
-    const b = inner();
-    await run({ T: b, scenes: [never], goldens: tmp });
-    T.ok(b.r.length === 1 && !b.r[0][0] && /cannot be captured/.test(b.r[0][1]), 'with a golden, the same scene fails (its setup broke or the golden is stale)', b.r);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

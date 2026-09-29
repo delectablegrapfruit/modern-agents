@@ -583,7 +583,7 @@ function selftest(opts) {
     T.ok(isBinary(Buffer.from('abc'), 'art/logo.png'), 'a binary extension marks a binary file');
     T.ok(!isBinary(Buffer.from('// text\n'), 'js/a.js'), 'a text file passes');
     const bin = binaryCheck({ root: ROOT });
-    T.ok(bin.error === null && bin.mode === 'git' && bin.files > 50, 'git ls-files lists the project (' + bin.files + ' files)', bin.error);
+    T.ok(bin.error === null && bin.files > 50, 'the project\'s files are listed (' + bin.files + ', ' + bin.mode + ')', bin.error);
     put('art/logo.png', 'not really a png');
     put('shots/W1-Q/x.png', 'ignored');
     put('tests/visual/out/y.png', 'ignored');

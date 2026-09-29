@@ -1,9 +1,9 @@
 # Requests from W1-Q (Quality tooling), wave 1
 
 Each request names the file, the exact change, why, and the workaround used meanwhile
-(BUILD_PLAN §1.3). Items 1-4 and 8 are for the lead (CONTRACT, ARCHITECTURE, a kernel test); item 5
-is for W1-R; item 6 for W1-G; item 7 for W1-A and W1-S. Requests addressed to W1-Q by other packages
-were applied in W1-Q's files (listed at the end).
+(BUILD_PLAN §1.3). Items 1-4 and 8-10 are for the lead (CONTRACT, ARCHITECTURE, a kernel test, an
+integration note); item 5 is for W1-R; item 6 for W1-G; item 7 for W1-A and W1-S. Requests addressed
+to W1-Q by other packages were applied in W1-Q's files (listed at the end).
 
 ## 1. `docs/CONTRACT.md` §17-§18 (lead): record the quality tools' public interfaces
 
@@ -15,16 +15,31 @@ were applied in W1-Q's files (listed at the end).
     `--wave N` makes a missing reference a warning when the file that should register it still
     carries the stub marker (text keys by the prefix map; icons, sfx, songs, skins, sub-screens,
     buildings, actions, fns, palette keys by their owner file); it also lists wave-≤N files that are
-    still stubs as warnings. Strict (no `--wave`) is the release gate.
+    still stubs as warnings. Strict (no `--wave`) is the release gate. Besides the data, it checks
+    the ids that code names outright (review addition): the first argument of any `text('…')`
+    call, every `'reason.…'` literal, `{ key: '<ns>.…' }` for the text-only namespaces (toast,
+    stamp, vm, news, report, bark, greet, cap, tv, taunt, enc, event, arc, front, ori, ui, hud,
+    reason, place, act, desc, card, sub, mg, ach, advisor, pocket, contact, key, set),
+    `audio.sfx / music / stinger('…')`, `art.icon(ctx, '…')` and `iconURL('…')`; a key the same file
+    tests with `has('…')` is optional and a key built with `+` is skipped. It also checks the
+    frozen names: sub-screens in their CONTRACT §10 files with their P / flag (a row opening a P1
+    one carries its flag), skins on their §13 engines in their files, songs in their §14.2 files;
+    `open` names a skin or an engine without skins (D29); and an opening row's `hpAbove` covers the
+    possible voluntary hurt of its `:resolve`.
   - `tools/shingles.cjs [--shingles] [--banned] [--binary] [--root dir] [--ref dir] [--paths a,b]
     [--selftest]`: the three copyright checks of ARCHITECTURE §18 in one tool (all three by default;
-    "the banned-strings check" of BUILD_PLAN §1.6 is `node tools/shingles.cjs --banned`).
+    "the banned-strings check" of BUILD_PLAN §1.6 is `node tools/shingles.cjs --banned`). Words
+    are compared lower-case without punctuation, with placeholders, interpolations and plain
+    numbers as one wildcard. Outside a git work tree (an exported tree) the binary check walks the
+    files minus the git-ignored directories.
   - `tools/banned.txt` format: `[substring]` (default), `[word]`, `[upper]` and `[only-in] term:
     where, where` lists; `#` comments; a marker alone switches the list, a marker with text is a
     one-line entry.
   - `tools/run-all.cjs [--wave N | --strict] [--only g,g] [--skip g,g] [--full] [--jobs N] [--bail]
     [--verbose] [--list]`, groups `node`, `tools`, `balance`, `e2e`, `visual`, `perf`; without
-    `--wave` it infers the wave from the stubs left (strict when none is left).
+    `--wave` it infers the wave from the stubs left (strict when none is left); an unknown group
+    name or a `--wave` outside 1-4 is a usage error (exit 2); a suite past its timeout gets SIGTERM
+    (Playwright closes its browsers), then SIGKILL 5 s later.
   - `tests/e2e/a11y.test.cjs` exports `audit(rootSel)` (in-page: names, roles, image alternatives,
     dialog names, text contrast ≥ 4.5 / 3, text ≥ 12 px), `tabWalk(t)` (real Tab presses through
     the current focus scope: order, scope, ring, names), `check(T, t, label, rootSel)` and
@@ -35,6 +50,12 @@ were applied in W1-Q's files (listed at the end).
   - `tests/visual/visual.cjs [--record] [--only a,b] [--list] [--goldens dir] [--strict]
     [--selftest]`; goldens are `tests/visual/goldens/<scene>.json` = `{ id, kind, source, sel,
     grid: [64, 36], tolerance: 12, size, preset, viewport, dpr, rows: [36 strings of 64 RRGGBB] }`.
+    A scene that has a golden and can no longer be captured fails (never "pending").
+  - `tests/perf/perf.cjs [--quick] [--record] [--only id,id] [--json file] [--selftest]`;
+    `tests/perf/baseline.json` = `{ v: 1, note, tours: { <frames>: { fingerprint, recorded,
+    calibration, frames, configs: { <config>: { driver, update, render } } } } }`, one recording per
+    tour length: the lead runs `--record` and `--record --quick` (run-all's default) at each
+    integration, and each run is gated against the recording of its own tour length.
   - `tests/balance/sim.cjs`: `simulate({ bot, policy, seeds, days, difficulty, length, SR })`,
     `csv`, `summary`, `chart`, `assertBands`, `BANDS`; bots (`tests/balance/bots.cjs`) are
     `{ name, decide(state, ctx) → { id, params } | null, minigame?, init?, jailChoice? }` with the
@@ -55,7 +76,10 @@ were applied in W1-Q's files (listed at the end).
   step, render ≤ 11 ms (world 6 + lighting 2 + baking 3), frame ≤ 16.7 ms, all × the calibration
   factor; baking per frame from `SR.render.stats().frame.parts.bakeGround + bakeBuildings` ≤ 3 ms ×
   factor and ≤ 2 chunks; Low under ×4 throttle: frame JS work ≤ 33 ms × factor. The raw frame time
-  and the native canvas time are reported, not gated." (This also answers W1-G request 5.)
+  and the native canvas time are reported, not gated. Memory: each cache against its budget over
+  the route at zoom 0.8 / 1 / 1.25, and the render caches + the stage canvases + the JS heap ≤
+  160 MB (the parts' budgets add up to more than the total, so the total binds)." (This also
+  answers W1-G request 5.)
 - **Why:** the raw headless p95 of a frame measures the container's software rasteriser (26 ms at
   High on the render sheet while the JS work is 1.7 ms), so it cannot gate the game's CPU cost.
 - **Meanwhile:** implemented that way; the relative gate compares the same JS-work numbers.
@@ -127,6 +151,27 @@ were applied in W1-Q's files (listed at the end).
   `node tools/run-all.cjs` (with another agent's perf tour running) the suite hung until run-all's
   timeout killed it; run alone it passes (75 / 75).
 - **Meanwhile:** run-all times a suite out after 10 minutes and reports it as failed.
+
+## 9. CONTRACT §7 (lead): length limits for event and encounter cards
+
+- **File:** `docs/CONTRACT.md` §7 (the length limits) and ARCHITECTURE §7.2.
+- **Change:** add `enc.` ≤ 400 and `event.` ≤ 400 to the prefix list.
+- **Why:** GDD §6.11 validates "event and encounter cards ≤ 400", but the prefix list only has
+  `card.` (the building cards' keys), so the keys of event and encounter cards (`enc.*`,
+  `event.*`, en-events.js) had no limit.
+- **Meanwhile:** `tools/validate.cjs` applies 400 to both prefixes (W1-Q review).
+
+## 10. Integration note (lead): `validate --wave 1` reports W1-E's pending reason keys
+
+- **File:** none (W1-E's own request, `docs/requests/W1-E.md`, asks for the `reason.*` keys of
+  `js/rules/{bank,homes,jobs,stocks,training}.js` in `js/data/text/en-prog.js`).
+- **Change:** apply W1-E's request before running `node tools/run-all.cjs`.
+- **Why:** the validator now checks the text keys that code names (item 1). The 34 keys of that
+  request are raised as refusal reasons by W1-E's rules but registered nowhere, so the card would
+  show `⟦reason.hired⟧`; `node tools/validate.cjs --wave 1` reports them as 35 errors (one per key
+  and file) until they are registered, and none once they are (checked by planting the request's
+  keys).
+- **Meanwhile:** nothing; the errors are real.
 
 ## Requests to W1-Q, applied in W1-Q's files
 
