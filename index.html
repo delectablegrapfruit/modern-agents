@@ -186,6 +186,43 @@ p{margin:0}
 .acts .a.on{color:var(--accent)}
 .acts .a:hover{color:var(--accent);background:var(--accent-2)}
 
+/* ---------- feed post: person first, then the embed ---------- */
+.fp{padding:14px 16px 4px;border-bottom:1px solid var(--line);cursor:pointer}
+.fctx{display:flex;align-items:center;gap:6px;margin:0 0 8px 50px;font:500 12.5px var(--sans);color:var(--muted)}
+.phd{display:flex;align-items:center;gap:10px}
+.phd .pav{flex:none}
+.pid{flex:1;min-width:0}
+.nmrow{display:flex;align-items:center;gap:4px;min-width:0;font-size:15px;line-height:1.3}
+.nmrow .nm{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.nmrow .hn{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex-shrink:2}
+.phd .tm{align-self:flex-start;font-size:13px;color:var(--muted);padding-top:2px}
+.tok{display:flex;align-items:center;gap:5px;margin-top:2px;font-size:12.5px;line-height:1.4;color:var(--muted);white-space:nowrap}
+.tok b{color:var(--accent);font-weight:600;font-variant-numeric:tabular-nums}
+.tok .sep{width:3px;height:3px;border-radius:50%;background:var(--muted);opacity:.6;margin:0 2px}
+.tok .stack .av{--sz:16px;font-size:0}
+.tok .i{color:var(--muted)}
+.gauge{flex:none;transform:rotate(-90deg)}
+.gauge circle{fill:none;stroke-width:2.6}
+.gauge .gb{stroke:var(--line)}
+.gauge .gf{stroke:var(--accent);stroke-linecap:round}
+.fp .txt{margin-top:10px;font-size:15.5px}
+.fp .acts{max-width:none;margin:4px -8px 0}
+.fp .triedl{margin-top:10px}
+.fp .askk{margin-top:10px}
+.card{position:relative;margin-top:10px;border:1px solid var(--line);border-radius:18px;overflow:hidden;background:var(--bg)}
+.hero{position:relative;display:grid;place-items:center;padding:22px 16px;background:color-mix(in srgb,var(--tint) 16%,var(--bg))}
+.hero .cv{height:196px;border-radius:3px;box-shadow:0 16px 30px -14px rgba(0,0,0,.5),0 2px 6px rgba(0,0,0,.1)}
+.hero .cv.music,.hero .cv.podcast,.hero .cv.article{height:178px}
+.hero .new{position:absolute;left:12px;top:12px;margin:0;background:var(--bg)}
+.cmeta{display:flex;flex-direction:column;gap:2px;padding:12px 14px 10px}
+.cmeta .att-t{font-size:22px}
+.card.big{margin-top:12px}
+.card.big .hero{padding:28px 16px}
+.card.big .hero .cv{height:250px}
+.card.big .hero .cv.music,.card.big .hero .cv.podcast,.card.big .hero .cv.article{height:220px}
+.day{display:flex;justify-content:space-between;padding:8px 16px;font:500 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);background:var(--bg-2);border-bottom:1px solid var(--line)}
+.focus .tok{margin-top:8px}
+
 /* ---------- the pick attachment and "Open in" ---------- */
 .att{margin-top:6px;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(--bg)}
 .att-m{display:flex;gap:14px;align-items:center;padding:12px;background:color-mix(in srgb,var(--tint) 9%,var(--bg))}
@@ -635,7 +672,7 @@ const S={
  follows:new Set(["mara","tobias","lena","dev","sable","priya","ines","me"]),
  star:new Set(["pk_tide"]),rv:new Set(),save:new Set(["pk_jonah","pk_carto"]),joined:new Set(["slowcinema","transfic"]),
  def:{music:"spotify",film:"mubi",book:"libby",article:"safari",game:"steam",podcast:"overcast",art:"maps"},
- welcome:true,ai:false,ptab:"picks",atab:"all",mtab:"posts",ctype:"share",cwork:"lowceil",verdict:"loved",showRv:true,unseen:true,
+ welcome:false,ai:false,ptab:"picks",atab:"all",mtab:"posts",ctype:"share",cwork:"lowceil",verdict:"loved",showRv:true,unseen:true,
 };
 
 /* ---------- helpers ---------- */
@@ -782,7 +819,7 @@ function render(){
   const v=$("#view"),t=cur();
   const key=S.welcome?"welcome":S.stack.length?S.stack.map(s=>s.n+(s.id||"")).join("/"):S.tab+S.feed;
   const st=v.scrollTop;
-  v.innerHTML=S.welcome?welcome():t?SCREENS[t.n](t.id):SCREENS[S.tab]();
+  v.innerHTML=t?SCREENS[t.n](t.id):SCREENS[S.tab]();
   v.scrollTop=key===lastKey?st:0;lastKey=key;
   const showFab=!t&&S.tab!=="me"&&!S.welcome;
   $("#tabs").hidden=S.welcome;
@@ -793,10 +830,16 @@ function render(){
 }
 
 /* ---------- post parts ---------- */
-function repLine(u){
-  if(!u.cur)return "";
-  return `<button class="rep" data-act="rep" data-id="${u.id}">${CURL[u.cur]} curator · <b>${u.landed}% landed</b> · vouched by ${u.vouchedBy}</button>`;
+function ring(pct,sz=16){
+  const r=6.2,c=2*Math.PI*r;
+  return `<svg class="gauge" viewBox="0 0 16 16" width="${sz}" height="${sz}" aria-hidden="true"><circle cx="8" cy="8" r="${r}" class="gb"/><circle cx="8" cy="8" r="${r}" class="gf" stroke-dasharray="${(c*pct/100).toFixed(2)} ${c.toFixed(2)}"/></svg>`;
 }
+function tok(u){
+  if(!u.cur)return `<div class="tok">Member · ${u.tried} tried</div>`;
+  const fv=followedVouchers(u.id);
+  return `<button class="tok" data-act="rep" data-id="${u.id}" aria-label="${u.landed}% landed, vouched for by ${u.vouchedBy}">${ring(u.landed)}<b>${u.landed}%</b><span class="sep"></span>${fv.length?`<span class="stack">${fv.slice(0,3).map(v=>av(U[v.from],"xs")).join("")}</span>`:icon("shield","xs")}<span>${u.vouchedBy}</span><span class="sep"></span><span>${CURL[u.cur]}</span></button>`;
+}
+const repLine=u=>u.cur?tok(u):"";
 function head(u,min){
   return `<div class="ph"><button class="nm" data-act="rep" data-id="${u.id}">${esc(u.name)}</button>${u.cur?chk():""}<span class="hn">@${u.h}</span><span class="tm">· ${ago(min)}</span><span class="more">${icon("more","sm")}</span></div>`;
 }
@@ -807,6 +850,10 @@ function openRow(w,cur){
 function attach(w,cur,pid,sm){
   const st=stretch(w),checker=U[cur]&&U[cur].cur?U[cur]:U[w.c]&&U[w.c].cur?U[w.c]:null;
   return `<div class="att ${sm?"sm":""}" style="--tint:${w.art.c[0]}"><div class="att-m" ${pid?`data-go="thread" data-id="${pid}"`:""}>${cover(w)}<div class="att-i"><span class="kick">${ONE[w.m]} · ${w.year}</span>${st&&!sm?`<span class="new">${esc(st)}</span>`:""}<span class="att-t">${esc(w.title)}</span><span class="att-b">${esc(w.by)}</span><span class="att-b">${esc(w.spec)}</span>${checker&&!sm?`<span class="hm">${icon("shield","xs")}Human-made · checked by ${esc(first(checker.name))}</span>`:""}</div></div>${openRow(w,cur)}</div>`;
+}
+function hero(w,cur,pid){
+  const st=stretch(w),ck=U[cur]&&U[cur].cur?U[cur]:U[w.c]&&U[w.c].cur?U[w.c]:null,go=pid?`data-go="thread" data-id="${pid}"`:"";
+  return `<div class="card" style="--tint:${w.art.c[0]}"><div class="hero" ${go}>${cover(w)}${st?`<span class="new">${esc(st)}</span>`:""}</div><div class="cmeta" ${go}><span class="kick">${ONE[w.m]} · ${w.year} · ${esc(w.spec)}</span><span class="att-t">${esc(w.title)}</span><span class="att-b">${esc(w.by)}</span>${ck?`<span class="hm">${icon("shield","xs")}Human-made · checked by ${esc(first(ck.name))}</span>`:""}</div>${openRow(w,cur)}</div>`;
 }
 function known(w){
   const ids=(w.known||[]).filter(k=>S.follows.has(k));
@@ -824,7 +871,7 @@ const note=(t,cls="")=>t?`<p class="txt ${cls}">${rich(t)}</p>`:"";
 function body(p){
   const u=U[p.by];
   switch(p.t){
-    case "pick":return `${repLine(u)}${note(p.text)}${attach(W[p.w],p.by,p.id)}${known(W[p.w])}`;
+    case "pick":return `${note(p.text)}${hero(W[p.w],p.by,p.id)}${known(W[p.w])}`;
     case "tried":{const w=W[p.w],c=U[w.c];return `<div class="triedl"><span>Tried ${c.id==="me"?"a pick":`<button class="lk" data-act="rep" data-id="${c.id}">@${c.h}</button>’s pick`}</span><span class="vd ${p.verdict}">${p.verdict==="loved"?icon("starF","xs"):""}${VERD[p.verdict]}</span></div>${note(p.text)}${attach(w,w.c,p.of&&POSTS[p.of]&&POSTS[p.of].t==="pick"?p.of:"",true)}`;}
     case "ask":{const a=ANSWERS[p.id]||[],cu=a.filter(x=>U[x.by].cur).length;return `<span class="askk">${icon("hash","xs")}Ask</span><p class="txt ask">${rich(p.text)}</p>${a.length?`<div class="ansrow"><span class="stack">${a.slice(0,3).map(x=>av(U[x.by],"xs")).join("")}</span><span><b>${a.length} answers</b> · ${cu} from curators</span><span class="sp"></span>${icon("chevR","sm")}</div>`:`<div class="ansrow">No answers yet. Be the first.</div>`}`;}
     case "quote":{const q=POSTS[p.of],qu=U[q.by];return `${note(p.text)}<div class="quote" data-go="thread" data-id="${q.id}"><div class="ph">${av(qu,"xs")}<span class="nm">${esc(qu.name)}</span>${qu.cur?chk():""}<span class="hn">@${qu.h}</span></div>${note(q.text)}${attach(W[q.w],q.by,q.id,true)}</div>`;}
@@ -833,10 +880,10 @@ function body(p){
 }
 function postHTML(p,o={}){
   const u=U[p.by];let ctx="";
-  if(o.rv)ctx=`<div class="ctx">${icon("rv")}<span>${esc(U[o.rv].name)} re-vouched</span></div>`;
-  else if(p.t==="reply")ctx=`<div class="ctx">${icon("reply")}<span>Replying to @${U[p.to].h}</span></div>`;
-  else if(p.ctx&&!o.noctx)ctx=`<div class="ctx">${icon("reply")}<span>${esc(p.ctx)}</span></div>`;
-  return `<article class="post" data-go="${p.t==="ask"?"ask":"thread"}" data-id="${p.id}">${ctx}<button class="pav" data-act="rep" data-id="${u.id}" aria-label="${esc(u.name)}">${av(u)}</button><div class="pc">${head(u,o.min||p.min)}${body(p)}${acts(p)}</div></article>`;
+  if(o.rv)ctx=`<div class="fctx">${icon("rv","xs")}${esc(U[o.rv].name)} re-vouched</div>`;
+  else if(p.t==="reply")ctx=`<div class="fctx">${icon("reply","xs")}Replying to @${U[p.to].h}</div>`;
+  else if(p.ctx&&!o.noctx)ctx=`<div class="fctx">${icon("reply","xs")}${esc(p.ctx)}</div>`;
+  return `<article class="fp" data-go="${p.t==="ask"?"ask":"thread"}" data-id="${p.id}">${ctx}<div class="phd"><button class="pav" data-act="rep" data-id="${u.id}" aria-label="${esc(u.name)}">${av(u,"md")}</button><div class="pid"><div class="nmrow"><button class="nm" data-act="rep" data-id="${u.id}">${esc(u.name)}</button>${u.cur?chk():""}<span class="hn">@${u.h}</span></div>${tok(u)}</div><span class="tm">${ago(o.min||p.min)}</span></div>${body(p)}${acts(p)}</article>`;
 }
 function miniReply(r,pid){
   const u=U[r.by];
@@ -844,20 +891,6 @@ function miniReply(r,pid){
 }
 
 /* ---------- screens ---------- */
-function welcome(){
-  const w=W.salt,m=U.mara;
-  return `<div class="wel"><span class="mark">vouch${chk("")}</span>
-  <h1>Picks from people who sign their name.</h1>
-  <p class="lede">Your assistant learns what you already like. On Vouch, named people show you what you wouldn’t think to ask for, and keep a public record of how it went.</p>
-  <div class="wcard"><div class="ph">${av(m,"sm")}<span class="nm">${esc(m.name)}</span>${chk()}<span class="hn">@${m.h}</span></div>${repLine(m)}${attach(w,"mara","")}</div>
-  <ul class="wpts">
-   <li>${icon("shield")}<span><b>Accountable.</b> Every curator has a landed rate: how often people who tried a pick loved it.</span></li>
-   <li>${icon("ext")}<span><b>Wider.</b> Picks from outside your usual, chosen by a person rather than predicted.</span></li>
-   <li>${icon("users")}<span><b>Together.</b> Clubs, asks and live rooms with the people you know.</span></li>
-  </ul>
-  <div class="invite">${av(m,"sm")}<span><b>Mara Okonkwo invited you.</b> You’ll start by following Mara and six people Mara vouches for.</span></div>
-  <button class="btn wide" data-act="start">Start with Mara’s circle</button></div>`;
-}
 function home(){
   const items=S.feed==="following"
    ?FOLLOWING.filter(it=>it.rv?(S.follows.has(it.rv)&&S.showRv):(S.follows.has(POSTS[it.id].by)||POSTS[it.id].ctx))
@@ -865,7 +898,8 @@ function home(){
   let h=`<div class="home-top"><div class="row1"><button data-tab="me" aria-label="Me">${av(U.me,"sm")}</button><span class="mark">vouch${chk("")}</span><span></span></div>
   <div class="ttabs" role="tablist"><button class="${S.feed==="following"?"on":""}" role="tab" aria-selected="${S.feed==="following"}" data-act="feed" data-id="following">Following</button><button class="${S.feed==="everyone"?"on":""}" role="tab" aria-selected="${S.feed==="everyone"}" data-act="feed" data-id="everyone">Everyone</button></div></div>`;
   if(S.feed==="following")h+=`<div class="live" data-go="live"><span class="pulse"></span><span class="grow"><b>Tobias is live</b> · Side B, together · ${LIVE.listening} listening</span><span class="btn sm ghost">Join</span></div>`;
-  h+=items.map(it=>postHTML(POSTS[it.id],{rv:it.rv,min:it.min})).join("");
+  const dayOf=m=>m<1440?"Today":m<2880?"Yesterday":"Sunday";let day="";
+  for(const it of items){const m=it.min||POSTS[it.id].min,d=dayOf(m);if(d!==day){day=d;const n=items.filter(x=>dayOf(x.min||POSTS[x.id].min)===d).length;h+=`<div class="day"><span>${d}</span><span>${n} post${n===1?"":"s"}</span></div>`;}h+=postHTML(POSTS[it.id],{rv:it.rv,min:it.min});}
   const ppl=new Set(items.map(it=>it.rv||POSTS[it.id].by)).size;
   return h+`<div class="end">${chk("")}<b>You’re caught up.</b><p>${S.feed==="following"?`${items.length} posts from ${ppl} people you follow since Sunday. Newest first, nothing ranked.`:`Everything posted on Vouch since Sunday, newest first.`}</p></div>`;
 }
@@ -877,7 +911,7 @@ function thread(id){
   if(p.t==="pick"){
     const app=appFor(w),others=CHOICES[w.m].filter(a=>a!==app),rate=w.aff[app];
     main=`${p.text?`${note(p.text,"lg")}<div class="sign"><span>${esc(u.name)}</span></div>`:""}
-    <div class="big-att"><div class="top" >${cover(w)}<div class="att-i"><span class="kick">${ONE[w.m]} · ${w.year}</span><span class="att-t">${esc(w.title)}</span><span class="att-b">${esc(w.by)}</span><span class="att-b">${esc(w.spec)}</span></div></div>
+    <div class="card big" style="--tint:${w.art.c[0]}"><div class="hero">${cover(w)}${stretch(w)?`<span class="new">${esc(stretch(w))}</span>`:""}</div><div class="cmeta"><span class="kick">${ONE[w.m]} · ${w.year} · ${esc(w.spec)}</span><span class="att-t">${esc(w.title)}</span><span class="att-b">${esc(w.by)}</span><span class="hm">${icon("shield","xs")}Human-made · checked by ${esc(first(u.name))}</span></div>
      <div class="openbar"><button class="btn acc wide" data-act="open" data-id="${w.id}" data-by="${u.id}">${icon("ext")}Open in ${APPS[app]}</button>
      ${others.some(a=>w.on.includes(a))?`<div class="also"><span>Also in</span>${others.filter(a=>w.on.includes(a)).map(a=>`<button data-act="open" data-id="${w.id}" data-by="${u.id}" data-app="${a}">${APPS[a]}</button>`).join("")}</div>`:""}</div>
      <div class="disc">${icon("flag","sm")}<span>${esc(w.disc)}</span></div></div>${known(w)}`;
@@ -896,7 +930,7 @@ function ask(id){
   const p=POSTS[id],u=U[p.by],a=(ANSWERS[id]||[]).slice().sort((x,y)=>(y.chosen?1:0)-(x.chosen?1:0)||x.min-y.min);
   return `${hdr("Ask",`${a.length} answers`)}<section class="focus"><div class="fhead"><button data-act="rep" data-id="${u.id}">${av(u)}</button><div class="who"><div class="nm">${esc(u.name)}</div><div class="hn">@${u.h} · ${ago(p.min)}</div></div></div>
   <span class="askk" style="margin-top:12px">${icon("hash","xs")}Ask</span><p class="txt lg" style="margin-top:4px">${rich(p.text)}</p>
-  <p class="hint" style="padding:10px 0 12px">People answer with picks, in their own name, and each answer counts toward their record. ${u.id==="me"?"You":esc(first(u.name))} can mark one as the answer; the rest stay in order of time.</p></section>
+  <p class="hint" style="padding:10px 0 12px">Answer with a pick. ${u.id==="me"?"You":esc(first(u.name))} can mark one as the answer; the rest stay in order of time.</p></section>
   ${a.map(x=>{const au=U[x.by];return `<article class="post">${x.chosen?`<div class="ctx">${icon("check")}<span>${u.id==="me"?"You":esc(first(u.name))} picked this one</span></div>`:""}<button class="pav" data-act="rep" data-id="${au.id}">${av(au)}</button><div class="pc">${head(au,x.min)}${repLine(au)}${note(x.text)}${attach(W[x.w],x.by,"")}<div class="acts"><button class="a" data-act="reply" data-id="${id}">${icon("reply")}</button><button class="a" data-act="toast" data-id="Re-vouched.">${icon("rv")}</button><button class="a" data-act="toast" data-id="Starred.">${icon("star")}<span>${x.st}</span></button><button class="a" data-act="share">${icon("share")}</button></div></div></article>`;}).join("")}
   <div class="replybar">${av(U.me,"sm")}<button class="fake" data-act="answer" data-id="${id}">Answer with a pick</button></div>`;
 }
@@ -943,9 +977,9 @@ function discover(){
   <div class="search">${icon("search")}<input class="inp" id="dq" placeholder="Search people, picks, #tags" autocomplete="off"></div>
   <div class="live" data-go="live" style="border-top:1px solid var(--line)"><span class="pulse"></span><span class="grow"><b>Live now</b> · Side B, together with @reinholt · ${LIVE.listening} listening</span>${icon("chevR","sm")}</div>
   <div class="sec">Vouched for by your circle <small>no ranking</small></div>
-  ${cand.map(({u,v})=>`<div class="row top"><button data-act="rep" data-id="${u.id}">${av(u,"md")}</button><div class="grow" data-act="rep" data-id="${u.id}"><div class="t">${esc(u.name)}${chk()}</div><div class="s">${CURL[u.cur]} curator · <span style="color:var(--accent)">${u.landed}% landed</span> · vouched by ${u.vouchedBy}</div><q>${esc(v[0].why)}</q><div class="s">${esc(first(U[v[0].from].name))}, whom you follow</div></div><button class="btn sm" data-act="follow" data-id="${u.id}">Follow</button></div>`).join("")||`<div class="empty">You follow everyone your circle vouches for.</div>`}
-  <div class="sec">Outside your usual <small>chosen by people, not predicted</small></div>
-  ${["pk_pod","pk_blue","pk_jonah"].map(id=>{const p=POSTS[id],w=W[p.w],u=U[p.by];return `<div class="lrow" style="grid-template-columns:auto minmax(0,1fr)" data-go="thread" data-id="${id}">${cover(w)}<div style="min-width:0"><div class="t">${esc(w.title)}</div><div class="s">${esc(stretch(w))} · picked by ${esc(first(u.name))}, <span style="color:var(--accent)">${u.landed}% landed</span></div><button class="open" data-act="open" data-id="${w.id}" data-by="${u.id}">${icon("ext")}Open in ${APPS[appFor(w)]}</button></div></div>`;}).join("")}
+  ${cand.map(({u,v})=>`<div class="row top"><button data-act="rep" data-id="${u.id}">${av(u,"md")}</button><div class="grow" data-act="rep" data-id="${u.id}"><div class="t">${esc(u.name)}${chk()}</div>${tok(u)}<q>${esc(v[0].why)}</q><div class="s">${esc(first(U[v[0].from].name))}, whom you follow</div></div><button class="btn sm" data-act="follow" data-id="${u.id}">Follow</button></div>`).join("")||`<div class="empty">You follow everyone your circle vouches for.</div>`}
+  <div class="sec">Outside your usual <small>media you rarely try</small></div>
+  ${["pk_pod","pk_blue","pk_jonah"].map(id=>{const p=POSTS[id],w=W[p.w],u=U[p.by];return `<div class="lrow" style="grid-template-columns:auto minmax(0,1fr)" data-go="thread" data-id="${id}">${cover(w)}<div style="min-width:0"><div class="t">${esc(w.title)}</div><div class="s">${esc(stretch(w))} · picked by ${esc(first(u.name))}</div><button class="open" data-act="open" data-id="${w.id}" data-by="${u.id}">${icon("ext")}Open in ${APPS[appFor(w)]}</button></div></div>`;}).join("")}
   <div class="sec">Clubs <small>${S.joined.size} joined</small></div>
   ${CLUBS.map(c=>`<div class="club" data-go="club" data-id="${c.id}"><span class="sq">#</span><div class="grow"><div class="t">${esc(c.name)}</div><div class="s">${fmt(c.members)} members · hosted by @${U[c.host].h}</div></div>${S.joined.has(c.id)?`<span class="hint">Joined</span>`:`<button class="btn sm ghost" data-act="join" data-id="${c.id}">Join</button>`}</div>`).join("")}
   <div class="sec">Open asks <small>newest first</small></div>
@@ -966,7 +1000,7 @@ function club(id){
   return `${hdr(c.name,`#${c.tag}`)}<section class="chead"><h2>${esc(c.name)}</h2><button class="tag lk" data-go="tag" data-id="${c.tag}">#${c.tag}</button><p>${esc(c.about)}</p>
   <div class="meta"><span>${av(h,"xs")}&nbsp;Hosted by <b>@${h.h}</b></span><span><b>${fmt(c.members)}</b> members</span></div>
   <div style="margin-top:12px"><button class="btn sm ${j?"ghost":""}" data-act="join" data-id="${id}">${j?"Joined":"Join the club"}</button></div></section>
-  <div class="pinned"><span class="kick">Pinned · this week’s pick</span>${attach(W[c.week],c.host,c.post)}</div>
+  <div class="pinned"><span class="kick">Pinned · this week’s pick</span>${hero(W[c.week],c.host,c.post)}</div>
   <div class="sec">Talk <small>newest last</small></div>
   ${talk.slice().sort((a,b)=>b.min-a.min).map(r=>miniReply(r,c.post)).join("")||`<div class="empty">Nobody has posted yet this week.</div>`}
   <div class="replybar">${av(U.me,"sm")}<button class="fake" data-act="toast" data-id="Club posts aren’t stored in the prototype.">Post to the club</button></div>`;
@@ -1012,8 +1046,8 @@ function settings(){
   <div class="srow" data-act="togglerv"><div class="grow"><div class="t">Show re-vouches</div><div class="v" style="font-size:13px">Picks that people you follow pass along</div></div><span class="tog ${S.showRv?"on":""}"></span></div>
   <div class="srow"><div class="grow"><div class="t">Order</div><div class="v" style="font-size:13px">Newest first. There is no other option.</div></div></div>
   <div class="sec">Your assistant</div>
-  <div class="srow" data-act="toggleai"><div class="grow"><div class="t">Let my assistant read Vouch</div><div class="v" style="font-size:13px">Who you follow, what you saved and how picks landed, so it can point you to people. Off until you turn it on.</div></div><span class="tog ${S.ai?"on":""}"></span></div>
-  <div class="srow" style="cursor:default"><div class="grow"><div class="t">Let my assistant post</div><div class="v" style="font-size:13px">Not available. Everything on Vouch is posted by a person.</div></div><span class="tog" style="opacity:.35"></span></div>
+  <div class="srow" data-act="toggleai"><div class="grow"><div class="t">Let my assistant read Vouch</div><div class="v" style="font-size:13px">Your follows and saved picks. Off by default.</div></div><span class="tog ${S.ai?"on":""}"></span></div>
+  <div class="srow" style="cursor:default"><div class="grow"><div class="t">Let my assistant post</div><div class="v" style="font-size:13px">Not available.</div></div><span class="tog" style="opacity:.35"></span></div>
   <div class="sec">After you open something</div>
   <div class="srow"><div class="grow"><div class="t">Ask “Did it land?”</div><div class="v" style="font-size:13px">Your answer is anonymous and feeds the curator’s landed rate</div></div><span class="tog on"></span></div>
   <div style="height:30px"></div>`;
@@ -1028,11 +1062,11 @@ function compose(){
   <div class="cbody">${av(U.me)}<div>
    ${hasLink?`<div class="linkin">${icon("link","sm")}<input class="inp" id="clink" value="${esc(w.link)}" aria-label="Link" autocomplete="off"></div>
    <p class="matched">${chk("")}Matched to ${esc(w.title)} · in ${n} app${n===1?"":"s"}. Each person opens it in their own.</p>
-   ${attach(w,"me","",false)}
+   ${hero(w,"me","")}
    ${t==="tried"?`<div class="verdicts">${Object.entries(VERD).map(([k,l])=>`<button class="${S.verdict===k?"on":""}" data-act="verdict" data-id="${k}">${l}</button>`).join("")}</div>`:""}`:""}
    <label for="ctext" class="kick" style="position:absolute;left:-9999px">${t==="ask"?"Your question":"Note"}</label>
    <textarea id="ctext" class="${hasLink?"short":""}" placeholder="${t==="ask"?"What are you looking for?":rt?"Your reply":"Add a note (optional)"}">${esc(txt)}</textarea>
-   <p class="hint">${t==="ask"&&!rt?"Asks need words. People answer with picks. ":""}Posted in your name. Assistants and bots can’t post to Vouch.</p>
+   <p class="hint">${t==="ask"&&!rt?"Asks need words. People answer with picks.":""}</p>
   </div></div>
   <div class="suggest"><span class="hint">Mention</span>${["mara","reinholt","lenareads","sundaytable"].map(h=>{const u=byHandle(h);return `<button data-act="toast" data-id="Mentions insert @${h}.">${av(u,"xs")}@${h}</button>`;}).join("")}</div>
   <div class="ctools">${icon("link")}${icon("at")}${icon("hash")}<span class="sp"></span><span class="hint">${hasLink?"Link only is fine":""}</span><svg class="ring" viewBox="0 0 26 26" aria-label="${txt.length} of 280 characters"><circle class="bg" cx="13" cy="13" r="${r}"/><circle class="fg" cx="13" cy="13" r="${r}" stroke-dasharray="${(cc*frac).toFixed(1)} ${cc.toFixed(1)}"/></svg></div>`;
@@ -1109,15 +1143,7 @@ function returnFromApp(){
 function cancelHandoff(){clearTimeout(hoTimer);document.querySelector(".status .b2a").hidden=true;$("#screen").classList.remove("away");$("#app").classList.remove("outside");const el=$("#handoff");el.hidden=true;el.classList.remove("show");el.innerHTML="";S.ho=null;renderRail();}
 
 /* ---------- prototype rail ---------- */
-const WHY=[
- ["rep","Accountable","Curators keep a public landed rate. An assistant is never wrong in public."],
- ["stretch","Wider","Your AI tunes to what you already like. People stretch it."],
- ["human","Human-made","Media is infinite and free. Every pick is checked for human makers."],
- ["live","Together","Your AI can’t watch it with you. Clubs, asks and live rooms can."],
- ["assistant","Works with your AI","Your assistant can read your Vouch. It can’t post to it."],
-];
 const JUMPS=[
- ["welcome","Welcome","The pitch, in the app"],
  ["home","Home","Following, newest first. It ends."],
  ["rep","Reputation check","Tap any curator: landed rate, vouches, record"],
  ["open","Open in","Hand off to the app built for the medium"],
@@ -1142,11 +1168,9 @@ function renderRail(){
   const r=$("#rail");if(!r)return;
   const at=railAt(),th=document.documentElement.dataset.theme||"auto";
   r.innerHTML=`<span class="mark">vouch${chk("")}</span><p class="thesis">Human taste across all media, as the antidote to machine content.</p>
-  <div><h2>Why people, when everyone has an AI</h2><div class="jumps">${WHY.map(([k,l,n],i)=>`<button class="jump ${at===k||at==={human:"thread",assistant:"settings",stretch:"discover"}[k]?"on":""}" data-jump="${k}"><span class="n">${i+1}</span><b>${l}</b><span>${n}</span></button>`).join("")}</div></div>
-  <div><h2>Evidence</h2><ul class="ev"><li>AI tracks are over half of Deezer’s uploads and 1–3% of its streams. People skip slop.</li><li>50% of US consumers prefer brands that avoid generative AI; about 10% act on it (Cosmos). Vouch is built for the 10%.</li></ul></div>
-  <div><h2>Screens</h2><div class="sjumps">${JUMPS.map(([k,l])=>`<button class="${at===k?"on":""}" data-jump="${k}">${l}</button>`).join("")}</div></div>
+  <div><h2>Screens</h2><div class="jumps">${JUMPS.map(([k,l,n],i)=>`<button class="jump ${at===k?"on":""}" data-jump="${k}"><span class="n">${String(i+1).padStart(2,"0")}</span><b>${l}</b><span>${n}</span></button>`).join("")}</div></div>
   <div><h2>Theme</h2><div class="tseg">${[["auto","Auto"],["light","Light"],["dark","Dark"]].map(([k,l])=>`<button class="${th===k?"on":""}" data-theme-set="${k}">${l}</button>`).join("")}</div></div>
-  <p class="fine">Visual prototype. People, works and numbers are fictional; the two evidence lines come from the brief. App names show where a pick would open; no affiliation.</p>`;
+  <p class="fine">Visual prototype. People, works and numbers are fictional. App names show where a pick would open; no affiliation.</p>`;
 }
 function jump(k){
   closeSheet();if(S.ho)cancelHandoff();
