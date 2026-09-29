@@ -602,23 +602,32 @@
       document.getElementById('titlebar').addEventListener('dblclick', (e) => {
         const t = e.target;
         if (!t || !t.closest || t.closest('button, input') || !t.closest('[data-drag]')) return;
-        if (L.Touch && L.Touch.recent()) return; // a double tap on a phone: there is no window to roll up
+        if (L.Touch && (L.Touch.recent() || L.Touch.only)) return; // a double tap on a phone: there is no window to roll up
         e.preventDefault();
         this.toggle();
       });
       this.idle = new BarIdle(document.getElementById('bar-idle'), () => app.look(),
         () => app.settings.motion === 'reduced' || !!(root.matchMedia && root.matchMedia('(prefers-reduced-motion: reduce)').matches));
       this.set(!!app.state.collapsed, true);
+      // The trackpad taken away while rolled up: there is no way back down by touch, so it opens.
+      L.bus.on('input', () => { if (this.on && !this.allowed()) this.set(false); });
     },
+
+    /** Touch alone (a phone, a tablet with nothing attached) has no window to roll up. */
+    allowed() { return !(L.Touch && L.Touch.only); },
 
     toggle() { this.set(!this.on); },
 
     set(on, first) {
       const app = this.app;
+      // Never rolled up by touch alone, and a save that was (brought over from the Mac) opens; the save keeps saying
+      // so, for an Export back.
+      const keep = !this.allowed();
+      if (keep) on = false;
       if (on === this.on && !first) return;
       this.on = on;
-      app.state.collapsed = on;
-      if (!first) app.store.touch();
+      if (!keep) app.state.collapsed = on;
+      if (!first && !keep) app.store.touch();
       if (on) {
         // Like switching away from the tab: Classic pauses, the music stops, the factory runs on unseen.
         if (app.tab === 'classic') { app.modes.classic.togglePause(true); L.Music.stop(); }
@@ -646,7 +655,7 @@
     },
   };
 
-  // Its key, listed after the tabs' in Settings ▸ Keys.
+  // Its key, listed after the tabs' in Settings ▸ Keys (not by touch alone, where nothing rolls up).
   if (L.KEY_HELP) {
     const at = L.KEY_HELP.findIndex(([k]) => /^⌘1/.test(k));
     L.KEY_HELP.splice(at < 0 ? L.KEY_HELP.length : at + 1, 0, ['⌘J', 'Collapse into the title bar, or expand']);

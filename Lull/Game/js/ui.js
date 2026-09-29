@@ -777,18 +777,30 @@
       return wrap;
     };
     /** A segmented control: one choice of a few, the chosen one raised. */
-    const seg = (k, options) => {
+    const seg = (k, options, onChange) => {
       const wrap = h('div', { class: 'seg set-seg', role: 'group' });
       options.forEach(([v, label]) => {
-        const b = h('button', { 'data-v': String(v), 'aria-pressed': String(s[k] === v), onclick: () => { set(k, v); wrap.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); } }, label);
+        const b = h('button', { 'data-v': String(v), 'aria-pressed': String(s[k] === v), onclick: () => { set(k, v); wrap.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); if (onChange) onChange(); } }, label);
         wrap.appendChild(b);
       });
       return wrap;
     };
-    // A touch screen gets the Touch card; with no mouse or trackpad at all, the pointer's settings go.
-    const touchy = !!(L.Touch && L.Touch.available()), touchOnly = !!(L.Touch && L.Touch.touchOnly());
+    // What the device can do, read afresh each time a section is drawn (a trackpad or a keyboard can come and go while
+    // Settings is open): a touch screen gets the Touch card; touch alone (no mouse or trackpad) loses the pointer's
+    // settings and the window background; touch with no key pressed yet loses the keyboard's too, and Keys becomes
+    // Gestures. The macOS app is never touch alone.
+    let touchy, only, keyless;
+    const readDevice = () => {
+      const T = L.Touch;
+      only = !!(T && T.only); keyless = !!(T && T.keyless);
+      touchy = !!(T && T.available()) || only;
+    };
+    readDevice();
     const bgPreview = (mode) => h('span', { class: 'tile-prev bgp bgp-' + mode }, h('i'));
     const themePreview = (t) => h('span', { class: 'tile-prev thp thp-' + t }, h('i'), h('i'), h('i'));
+    // Counter-clockwise puzzles need the other turn or a half turn: named the way this player turns.
+    const ccwHint = () => (!keyless ? 'New puzzles use Z and A' : s.tapTurn === 'cw' ? 'New puzzles use two-finger taps' : 'New puzzles use tap left and two fingers');
+    const gestureList = () => h('div', { class: 'keys gestures' }, L.Touch.help(s).map(([k, d]) => [h('span', { class: 'k' }, h('span', { class: 'gest' }, k)), h('span', null, d)]));
 
     const sections = {
       look: {
@@ -799,7 +811,8 @@
           const tintOn = () => { const on = s.bg === 'tint'; tint.classList.toggle('off', !on); tint.querySelector('input').disabled = !on; };
           tintOn();
           return [
-          card('Window background',
+          // The window over the desktop (the app, a browser's desk): by touch alone the page is the whole screen, solid.
+          only ? null : card('Window background',
             tiles('bg', [['clear', 'Clear', bgPreview('clear')], ['glass', 'Glass', bgPreview('glass')], ['tint', 'Tint', bgPreview('tint')], ['solid', 'Solid', bgPreview('solid')]], '', tintOn),
             tint),
           card('Theme', tiles('theme', [['dark', 'Dark', themePreview('dark')], ['light', 'Light', themePreview('light')], ['auto', 'Auto', themePreview('auto')]])),
@@ -819,34 +832,35 @@
         icon: 'window', label: 'Window',
         body: () => [card(null,
           row('Float above other windows', null, toggle('onTop')),
-          touchOnly ? null : row('Fade when the pointer leaves', null, toggle('fadeAway')),
+          row('Fade when the pointer leaves', null, toggle('fadeAway')),
           row('Show and hide', null, h('kbd', { class: 'big' }, '⌥⌘L')))],
       } : null,
       controls: {
         icon: 'controls', label: 'Controls',
         body: () => {
-          const keyboard = card('Keyboard',
+          // Lower repeat also paces Classic's finger resting down the board: with no keyboard it goes with the gestures.
+          const lower = row('Lower repeat', null, range('lowerRepeat', 0, 150, 5, ' ms'));
+          const puzzles = row('Counter-clockwise puzzles', ccwHint(), toggle('ccwPuzzles', () => { const pm = app.modes.puzzle; if (pm && pm.puzzle && !pm.done) pm.loadNumbered(pm.ps.diff); else if (pm && pm.puzzle) pm.renderNav(); }));
+          const hint = puzzles.querySelector('.hint');
+          return [
+          keyless ? null : card('Keyboard',
             row('Repeat delay', null, range('das', 60, 400, 5, ' ms')),
             row('Repeat rate', null, range('arr', 0, 150, 5, ' ms')),
-            row('Lower repeat', null, range('lowerRepeat', 0, 150, 5, ' ms')));
-          return [
-          touchOnly ? null : keyboard,
+            lower),
           touchy ? card('Touch',
             row('Touch controls', null, toggle('touch')),
             row('Drag sensitivity', null, range('touchSens', 1, 10, 1, '')),
             row('Hard drop swipe', null, seg('touchFlick', [[0, 'Light'], [1, 'Medium'], [2, 'Firm']])),
-            row('Tap to turn', null, seg('tapTurn', [['sides', 'Sides'], ['cw', 'Clockwise']])),
+            row('Tap to turn', null, seg('tapTurn', [['sides', 'Sides'], ['cw', 'Clockwise']], () => { if (hint) hint.textContent = ccwHint(); })),
+            keyless ? lower : null,
             root.navigator && 'vibrate' in root.navigator ? row('Haptics', null, toggle('haptics')) : null) : null,
-          touchOnly ? null : card('Mouse',
+          only ? null : card('Mouse',
             row('Mouse control', null, toggle('mouse'))),
           card('Board', row('Next pieces shown', null, range('preview', 1, 6, 1, '')),
             row('Control hints', null, toggle('hints'))),
-          touchOnly ? null : card('Classic',
+          only ? null : card('Classic',
             row('Pause when the pointer leaves', null, toggle('pauseAway'))),
-          card('Puzzles',
-            row('Counter-clockwise puzzles', touchOnly ? 'New puzzles use tap left and two fingers' : 'New puzzles use Z and A', toggle('ccwPuzzles', () => { const pm = app.modes.puzzle; if (pm && pm.puzzle && !pm.done) pm.loadNumbered(pm.ps.diff); else if (pm && pm.puzzle) pm.renderNav(); }))),
-          // With no keyboard to speak of, its timings come last (a tablet may still have one).
-          touchOnly ? keyboard : null,
+          card('Puzzles', puzzles),
           ];
         },
       },
@@ -863,11 +877,18 @@
           row('Announcer volume', null, range('announcerVolume', 0, 100, 1, '%', 100)),
           row('Sound pack', (L.SOUNDS[app.state.equipped.sound] || L.SOUNDS.soft).name, h('button', { class: 'btn sm', onclick: () => listen(app, app.state.equipped.sound) }, icon('playIcon'), 'Listen')))],
       },
+      // The keys, or by touch alone the gestures: the same place in the list, named for what is there.
       keys: {
-        icon: 'keys', label: 'Keys',
-        body: () => [
-          touchy && L.TOUCH_HELP ? card('Touch', h('div', { class: 'keys gestures' }, L.TOUCH_HELP.map(([k, d]) => [h('span', { class: 'k' }, h('span', { class: 'gest' }, k)), h('span', null, d)]))) : null,
-          card(touchy ? 'Keyboard' : null, h('div', { class: 'keys' }, L.KEY_HELP.filter(([k]) => !(touchOnly && /^(Mouse|Left click|Right click|Wheel|Click HOLD)/.test(k))).map(([k, d]) => [h('span', { class: 'k' }, h('kbd', null, k)), h('span', null, d)])))],
+        get icon() { return keyless ? 'gestures' : 'keys'; },
+        get label() { return keyless ? 'Gestures' : 'Keys'; },
+        body: () => {
+          if (keyless) return [card(null, gestureList())];
+          // No mouse or trackpad: none of its lines. Nothing to roll up: no ⌘J.
+          const keys = L.KEY_HELP.filter(([k]) => !(only && (/^(Mouse|Left click|Right click|Wheel|Click HOLD)/.test(k) || k === '⌘J')));
+          return [
+            touchy ? card('Touch', gestureList()) : null,
+            card(touchy ? 'Keyboard' : null, h('div', { class: 'keys' }, keys.map(([k, d]) => [h('span', { class: 'k' }, h('kbd', null, k)), h('span', null, d)])))];
+        },
       },
       data: {
         icon: 'data', label: 'Data',
@@ -880,19 +901,52 @@
         ],
       },
     };
-    const ids = Object.keys(sections).filter((k) => sections[k]);
     let cur = section && sections[section] ? section : 'look';
     const pane = h('div', { class: 'set-pane scroll' });
     const nav = h('nav', { class: 'set-nav' });
-    const show = (id) => {
+    // A section is listed only with something in it.
+    const bodyOf = (id) => sections[id].body().filter(Boolean);
+    const show = (id, keepScroll) => {
       cur = id;
       nav.querySelectorAll('button').forEach((b) => b.setAttribute('aria-current', String(b.dataset.id === id)));
-      pane.replaceChildren(...sections[id].body().filter(Boolean));
-      pane.scrollTop = 0;
+      const top = pane.scrollTop;
+      pane.replaceChildren(...bodyOf(id));
+      pane.scrollTop = keepScroll ? top : 0;
     };
-    ids.forEach((id) => nav.appendChild(h('button', { 'data-id': id, onclick: () => show(id) }, h('span', { class: 'ni', html: L.Icons.icon(sections[id].icon) }), h('span', null, sections[id].label))));
+    const build = () => {
+      const ids = Object.keys(sections).filter((k) => sections[k] && bodyOf(k).length);
+      if (!ids.includes(cur)) cur = ids[0];
+      nav.replaceChildren(...ids.map((id) => h('button', { 'data-id': id, onclick: () => show(id) }, h('span', { class: 'ni', html: L.Icons.icon(sections[id].icon) }), h('span', null, sections[id].label))));
+    };
+    build();
     const body = h('div', { class: 'settings' }, nav, pane);
-    const handle = openModal({ title: 'Settings', body, width: 620 });
+    // A trackpad or a keyboard attached or taken away while Settings is open: the list and the section follow, and focus
+    // stays on the same control (or its twin in the redrawn section).
+    let handle = null;
+    const redraw = () => {
+      if (!handle || !handle.el.isConnected) return;
+      const a = document.activeElement;
+      let find = null;
+      if (a && nav.contains(a) && a.dataset.id) find = () => nav.querySelector('button[data-id="' + a.dataset.id + '"]');
+      else if (a && pane.contains(a)) {
+        const all = () => [...pane.querySelectorAll('button, input, select, textarea, [tabindex]')];
+        const i = all().indexOf(a), k = a.dataset.setting;
+        find = () => (k && pane.querySelector('[data-setting="' + k + '"]')) || all()[i];
+      }
+      readDevice(); build(); show(cur, true);
+      if (a && !a.isConnected && find) { const b = find(); (b || handle.el).focus({ preventScroll: true }); }
+    };
+    // Pressed by a first key (a keyboard just attached): that key finishes first (Tab moves on, Space and Enter press
+    // what has focus, on its way up), then the redraw.
+    const off = L.bus.on('input', (e) => {
+      if (!e || !e.byKey) { redraw(); return; }
+      let done = false;
+      const go = () => { if (done) return; done = true; document.removeEventListener('keyup', up, true); clearTimeout(t); setTimeout(redraw, 0); };
+      const up = () => go();
+      document.addEventListener('keyup', up, true);
+      const t = setTimeout(go, 800);
+    });
+    handle = openModal({ title: 'Settings', body, width: 620, onClose: off });
     handle.el.classList.add('modal-settings');
     show(cur);
   }
@@ -991,7 +1045,8 @@
     app.appendChild(tip);
     let timer = null, cur = null;
     // The foot names a key; to a touch player, the gesture instead (data-tip-touch), or nothing.
-    const foot = (el) => (L.Touch && L.Touch.using ? el.dataset.tipTouch : el.dataset.tipFoot);
+    // With no keyboard at all (touch alone, no key pressed yet), never a key.
+    const foot = (el) => (L.Touch && (L.Touch.using || L.Touch.keyless) ? el.dataset.tipTouch : el.dataset.tipFoot);
     const hide = () => { clearTimeout(timer); tip.classList.add('hidden'); };
     const show = (el) => {
       if (!el.isConnected) return;

@@ -103,7 +103,7 @@ allows, pruned by counting the holes the gem rows still need) proves no fewer pi
 gives up counts as a shortcut. A gem seed that runs out of tries settles for a lines puzzle on its last board.
 Solving pays lines (more on the first try, double for the Daily). Dailies are the same in every copy of Lull: day
 numbers run through a fixed, keyed shuffle of all 2³² seeds per difficulty, so every date has one seed and every seed
-belongs to exactly one date (hover a seed to see which). That is 4,294,967,296 seeds per difficulty, 12,884,901,888 in all. History lists every puzzle you opened — solved or
+belongs to exactly one date (hover a seed, or press and hold it, to see which). That is 4,294,967,296 seeds per difficulty, 12,884,901,888 in all. History lists every puzzle you opened — solved or
 not, tries, time — with its seed and a play button; the star saves a seed (from a row, or the star on the puzzle's card
 for the puzzle in play; filled once saved), and History ▸ Saved keeps them. Solutions only ever need turns a person expects (in place, or
 nudged sideways off a wall), never SRS kicks that hop a piece through a gap — and only the one direction a single
@@ -365,6 +365,8 @@ and first-try rates by difficulty and wildcard, factory output and shapes presse
 | wheel | lower one row (never sets the piece) |
 | click HOLD | hold, or swap back |
 
+By touch alone Settings ▸ Keys is Settings ▸ Gestures, and lists the gestures ([Touch](#touch)) instead.
+
 ## Touch
 
 On a phone or a tablet the board is played with one finger, anywhere on it (`js/touch.js` reads the gestures;
@@ -387,16 +389,17 @@ lowering or hold from it, and one touch drops or holds once at most. Only the bo
 bars, buttons, cards and toasts are taps of their own, and a touch on the board with a power-up tray open only closes
 the tray. A tap never reaches the board as a click (it would drop the piece). Settings ▸ Controls ▸ Touch: Touch
 controls, Drag sensitivity (1–10, the finger travel per cell), Hard drop swipe (Light, Medium, Firm) and Tap to turn;
-Haptics where the device has them (not iPhone: Safari has no vibration). With no mouse or trackpad, the Mouse card and
-"when the pointer leaves" go. A long press shows a tooltip; the control hints name the gesture (`Swipe ↓ drops`, `Tap
+Haptics where the device has them (not iPhone: Safari has no vibration). By touch alone, what a phone cannot use goes
+([On phones](#iphone-and-ipad)). A long press shows a tooltip; the control hints name the gesture (`Swipe ↓ drops`, `Tap
 turns`). A phone held upright gets the whole screen, clear of the notch and home indicator: a title bar of two rows
 (Lull, Stats, Achievements, the wallet, sound and Settings; then the places to play), every button at least 44 px,
-toasts at the top, away from the well, and no key caps; on its side the bars stand beside the board. No page zoom,
+toasts at the top, away from the well; on its side the bars stand beside the board. No page zoom,
 bounce or text selection; there is no window to roll up.
 
 **Window** — the panel floats over every Space, full-screen apps included: it never activates Lull (activating a regular app pulls the screen back to its own Space), so ⌥⌘L shows it right over whatever is in front and hands it the keyboard. When the pointer leaves, Lull dims and fades to 60% (Settings ▸ Window ▸ Fade when the pointer leaves); it comes back as soon as the pointer does.
 
-**Collapse** — the chevron, ⌘J or a double-click on the empty bar rolls Lull up into its title bar, where a parade of
+**Collapse** — the chevron, ⌘J or a double-click on the empty bar (never by touch alone: there is no window to roll up,
+and a save rolled up on the Mac opens whole, still saying so for an Export back) rolls Lull up into its title bar, where a parade of
 pieces falls along it (`js/collapse.js`): the bar is a well on its side, four lanes deep, and pieces come in from the
 left and travel smoothly to the right, each in its own SRS orientation and at its own speed — a game gravity level on
 the Classic curve, mostly Level 1–2 drifters (about a cell a second), some Level 3–5 walkers and now and then a Level
@@ -467,8 +470,9 @@ cd Lull && swift run          # the same, straight from the package
 open Lull/Game/index.html     # any browser, any OS (saves to localStorage)
 
 node Lull/scripts/test.cjs            # game logic: 750 puzzles replayed through the engine, turns, items, factory, board library, save
-node Lull/scripts/browser-test.cjs    # the page played in headless Chromium (needs Playwright), then touch-test.cjs
+node Lull/scripts/browser-test.cjs    # the page played in headless Chromium (needs Playwright), then touch- and device-test
 node Lull/scripts/touch-test.cjs      # an emulated phone played with real touches: gestures, layout, 44 px targets
+node Lull/scripts/device-test.cjs     # what a phone, a desktop browser, the app and a tablet with a trackpad are offered
 node Lull/scripts/audio-render.cjs out/   # every sound and a minute of music rendered offline: WAVs, peak, loudness, brightness
 node Lull/scripts/audio-render.cjs out/ --harmony   # every pack's pitched sounds in every section: notes found, share in its key, A/B mixes
 
@@ -509,6 +513,20 @@ macOS shell). The page asks that it be kept (`navigator.storage.persist`) from t
 browser is likelier to clear it. Chromium and Safari decide without asking the player; Firefox shows a prompt, so a
 Firefox tab does not ask.
 
+**On phones** — decided by what the device has, not what it is called (`Touch.sync` in `js/touch.js`, live: a trackpad
+or a keyboard attached or taken away changes it at once, Settings included). *Touch alone* — no mouse, trackpad or
+hovering pen among any of its pointers, and never the macOS app (`body.touch-only`) — has no window and no pointer, so
+these go: Settings ▸ Look ▸ Window background and Tint strength (the page is drawn solid; the saved choice is kept for
+an Export back to the Mac), the Mouse card, Pause when the pointer leaves, the dimming when the pointer leaves, and
+rolling the window up (chevron, double-click, ⌘J; a rolled-up save opens whole). The Window section (float on top,
+fade, ⌥⌘L) and the pin, hide and quit buttons are the app's alone everywhere. With no key pressed yet either
+(`body.keyless`), the keyboard goes too: Repeat delay and Repeat rate, key caps on buttons and key names in tooltips
+(a long press names the control only), and Settings ▸ Keys becomes Gestures, a list of the gestures alone (it follows
+Tap to turn). Lower repeat stays, in the Touch card: it paces Classic's resting finger. The first key pressed on a
+hardware keyboard (an iPad's) brings the keyboard's settings back for the visit. An iPad with a trackpad keeps
+everything a pointer has. Sound, Data (Export and Import move a save between a tab and the Home Screen) and the rest are
+the same everywhere.
+
 **Deploy** — the `pages` job in `.github/workflows/lull.yml` runs on pushes to branch `lull` once the Linux test job
 passes: `scripts/web-build.cjs` builds the site and `actions/deploy-pages` publishes it. Every path is relative, so it
 works under `/modern-agents/`. Once, in the repository's settings:
@@ -526,7 +544,7 @@ The address is shown on the `pages` job and under Settings ▸ Pages.
 |---|---|
 | `Game/` | the game: `index.html`, `manifest.webmanifest`, `sw.js` (the offline copy), `icons/` (the Home Screen icons), `css/`, and `js/` — `webapp` (the Home Screen app: the worker, its updates, lasting storage), `icons` (the one SVG icon set), `pieces` (SRS tetrominoes, pentominoes, big and custom shapes, polyomino enumeration), `board`, `engine` (the floating-piece rules and every item), `items` (the chain multiplier, combos, Luck, the daily gift, power-ups earned in play), `library` (the Relaxed board library: shelved and retired boards, names, caps), `puzzlegen` (seeds, wildcards, reverse construction, reachability search, forward verification), `factory` (presses, the belt, the bin, one step for play and time away, save repair), `store` (save, catalog, stats), `achievements`, `fxphysics` (the item effects' blocks, debris and dust: gravity, bounces, spirals, fixed pools), `render` (canvas: skins, frames, effects, item animations, rotated views), `factoryview` (the factory floor, drawn like the board), `hints` (control hints: the struggle signals, their limits and retirement), `touch` (the touch gestures: a pure reader of fingers, and the page's touch helpers), `webapp` (the Home Screen web app: the offline copy's registration and updates), `collapse` (the window rolled up into its title bar, and the parade of pieces along it), `modes`, `ui`, `app` |
 | `Sources/Lull/` | the macOS shell: a borderless `NSPanel` (floating, all Spaces, edge-resizable, draggable by the page's title bar) around a transparent `WKWebView`, a blur for the Glass background, the save file, the ⌥⌘L hot key, and a self-test CI runs |
-| `scripts/` | `make-app.sh`, `icon.swift`, `line-glyph.py` (builds the line glyph's font into `lull.css`), `test.cjs`, `browser-test.cjs`, `audio-render.cjs` (renders and measures the synthesized audio offline), `pitch.cjs` (finds the notes in a render, to check sound effects are in the music's key), `splice-voice.py` (cuts the announcer's lines from a recording), `web-build.cjs` (the site as deployed), `web-icons.cjs` (the Home Screen icons), `web-test.cjs` and `web-browser-test.cjs` (the web app's tests, run by the two above), `touch-test.cjs` (an emulated phone played with gestures, run by browser-test) |
+| `scripts/` | `make-app.sh`, `icon.swift`, `line-glyph.py` (builds the line glyph's font into `lull.css`), `test.cjs`, `browser-test.cjs`, `audio-render.cjs` (renders and measures the synthesized audio offline), `pitch.cjs` (finds the notes in a render, to check sound effects are in the music's key), `splice-voice.py` (cuts the announcer's lines from a recording), `web-build.cjs` (the site as deployed), `web-icons.cjs` (the Home Screen icons), `web-test.cjs` and `web-browser-test.cjs` (the web app's tests, run by the two above), `touch-test.cjs` (an emulated phone played with gestures, run by browser-test), `device-test.cjs` (what each device is offered in Settings and the bar, and live changes; run by browser-test) |
 
 ## Credits
 

@@ -1409,8 +1409,9 @@ body.browser.away #app { opacity: 0.6; }
 /* ==== touch screens =====================================================================================================
    A phone or a tablet (a coarse pointer and no hover): the window is the whole screen, clear of the notch and the home
    indicator (env(safe-area-inset-*); the page asks for viewport-fit=cover), every control a finger uses is at least
-   44 × 44 px, key caps leave the labels (the tooltips name gestures instead: js/ui.js), and there is no window to roll
-   up. A phone held upright gets a title bar of two rows: Lull, the wallet, sound and Settings; then the places to play
+   44 × 44 px. By touch alone (body.touch-only and body.keyless, from js/touch.js: no mouse, trackpad or keyboard, so
+   whatever the main pointer) there is no window to roll up and no key caps (the tooltips name gestures instead:
+   js/ui.js). A phone held upright gets a title bar of two rows: Lull, the wallet, sound and Settings; then the places to play
    as one full-width track, with Stats and Achievements beside it. */
 @media (hover: none) and (pointer: coarse) {
   :root { --radius: 0px; }
@@ -1456,17 +1457,22 @@ body.browser.away #app { opacity: 0.6; }
   .puz-mods { height: 32px; }
   .mod { height: 32px; padding: 0 11px 0 9px; }
   .modal header .x { width: 44px; height: 44px; margin-right: -6px; }
-  .set-nav button { min-height: 44px; }
+  .set-nav button { min-height: 44px; min-width: 44px; }
   .subtabs button { height: 40px; }
   .seg button { min-height: 36px; }
   .set-row input[type="range"] { height: 44px; width: 140px; }
   .set-row input[type="range"]::-webkit-slider-thumb { width: 24px; height: 24px; margin-top: -10px; }
   .set-row input[type="range"]::-moz-range-thumb { width: 24px; height: 24px; }
   .switch::before { content: ""; position: absolute; inset: -12px -6px; }
-
-  /* Key caps are for keyboards (Settings ▸ Keys still lists them, for a tablet with one). */
-  .btn kbd, .overlay kbd { display: none; }
 }
+/* Settings' sections as one strip across the top (narrow): a button widened to 44 px keeps its icon in the middle. The
+   list down the side keeps its icons in one column. */
+@media (hover: none) and (pointer: coarse) and (max-width: 520px) { .set-nav button { justify-content: center; } }
+/* Key caps are for keyboards: gone by touch alone until a key is pressed (js/touch.js sets body.keyless; a tablet with
+   a keyboard gets them back). */
+body.keyless .btn kbd, body.keyless .overlay kbd { display: none; }
+/* By touch alone the window never rolls up (js/collapse.js), so its chevron never shows, whatever the main pointer. */
+body.touch-only #btn-collapse { display: none; }
 
 /* A phone held upright: two rows. */
 @media (hover: none) and (pointer: coarse) and (max-width: 600px) {

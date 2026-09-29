@@ -69,7 +69,9 @@
       rootEl.style.setProperty('--accent', s.accent);
       rootEl.style.setProperty('--tint', String(s.tint));
       const appEl = document.getElementById('app');
-      appEl.className = 'bg-' + s.bg;
+      // Touch alone (a phone, a tablet), the page is the whole screen with nothing behind it to see through: solid,
+      // whatever the save says (an Export back to the Mac keeps its choice).
+      appEl.className = 'bg-' + (L.Touch && L.Touch.only ? 'solid' : s.bg);
       this.sound.enabled = !!s.sound;
       this.sound.volume = s.volume;
       if (this.sound.master) this.sound.master.gain.value = s.volume;
@@ -236,6 +238,8 @@
         const ro = new ResizeObserver(() => this.onResize());
         for (const id of ['cv-play', 'cv-classic', 'cv-puzzle', 'cv-floor']) ro.observe(document.getElementById(id).parentElement);
       }
+      // A trackpad or a keyboard attached or taken away: the background follows (Settings follows on its own).
+      L.bus.on('input', () => this.applySettings());
       if (root.matchMedia) {
         const mq = root.matchMedia('(prefers-color-scheme: light)');
         const fn = () => { if (this.settings.theme === 'auto') this.applySettings(); };
@@ -269,8 +273,8 @@
       if (this.settings.pauseAway !== false && c && c.running()) c.togglePause(true);
     },
 
-    /** Touch in use (a finger was down a moment ago, or the device has no mouse at all). */
-    touchNow() { return !!(L.Touch && (L.Touch.recent() || L.Touch.touchOnly())); },
+    /** Touch in use (a finger was down a moment ago, or the device has no mouse or trackpad at all). */
+    touchNow() { return !!(L.Touch && (L.Touch.recent() || L.Touch.only)); },
 
     openSettings() { L.Collapse.set(false); UI.openSettings(this); },
 
@@ -384,8 +388,8 @@
         body: h('div', null,
           h('p', null, 'Pieces fall only when you drop them.'),
           // A phone or a tablet with no keyboard or mouse: the gestures instead of the keys.
-          L.Touch && L.Touch.touchOnly() && L.TOUCH_HELP
-            ? h('div', { class: 'keys gestures', style: { marginTop: '10px' } }, L.TOUCH_HELP.slice(0, 7).map(([k, d]) => [h('span', { class: 'k' }, h('span', { class: 'gest' }, k)), h('span', null, d)]))
+          L.Touch && L.Touch.keyless
+            ? h('div', { class: 'keys gestures', style: { marginTop: '10px' } }, L.Touch.help(this.settings).slice(0, 7).map(([k, d]) => [h('span', { class: 'k' }, h('span', { class: 'gest' }, k)), h('span', null, d)]))
             : h('div', { class: 'keys', style: { marginTop: '10px' } }, L.KEY_HELP.slice(0, 7).map(([k, d]) => [h('span', { class: 'k' }, h('kbd', null, k)), h('span', null, d)]))),
         buttons: [{ label: 'Start', kind: 'primary' }],
       });

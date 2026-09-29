@@ -1001,7 +1001,7 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
   await shot('23-history');
   const vol = await ev(() => {
     const pz = Lull.app.store.state.stats.puzzle, n = pz.E.solved + pz.M.solved + pz.H.solved, f = document.querySelector('.hist-foot');
-    const d = Lull.app.modes.puzzle.puzzle.diff, tip = document.querySelector('#puz-diff button[aria-pressed="true"]').title;
+    const d = Lull.app.modes.puzzle.puzzle.diff, tip = document.querySelector('#puz-diff button[aria-pressed="true"]').dataset.tip;
     return { n, text: f && f.textContent, fits: f && f.scrollWidth <= f.clientWidth + 1, tip, dn: pz[d].solved, dname: Lull.Puzzles.DIFFS[d].name };
   });
   check('History ends with the solved count against every seed', vol.n > 0 && vol.text === vol.n.toLocaleString('en-US') + ' of 12,884,901,888 puzzles solved' && vol.fits, JSON.stringify(vol));
@@ -3054,6 +3054,8 @@ const KEY_FOR = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: '
 
   // ---- touch: an emulated phone, played with gestures (scripts/touch-test.cjs) -----------------------------------------
   await require('./touch-test.cjs')({ browser, check, PAGE, OUT });
+  // ---- what the device can do: a phone, a desktop browser, the app, a tablet with a trackpad (device-test.cjs) -------
+  await require('./device-test.cjs')({ browser, check, PAGE, OUT });
   // The Home Screen web app, served over http as it is deployed: offline, updates, full screen (web-browser-test.cjs).
   console.log('web app');
   await require('./web-browser-test.cjs')({ browser, check, OUT });

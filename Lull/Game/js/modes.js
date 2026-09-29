@@ -1764,7 +1764,7 @@
 
     renderDiff() {
       const d = this.puzzle ? this.puzzle.diff : this.ps.diff;
-      this.el.diff.replaceChildren(...['E', 'M', 'H'].map((k) => h('button', { 'aria-pressed': String(k === d), title: this.volume(k), onclick: () => this.setDiff(k) },
+      this.el.diff.replaceChildren(...['E', 'M', 'H'].map((k) => h('button', { 'aria-pressed': String(k === d), 'data-tip': this.volume(k), onclick: () => this.setDiff(k) },
         h('span', { class: 'dot', style: { background: Puzzles.DIFFS[k].color } }), h('span', { class: 'full' }, Puzzles.DIFFS[k].name), h('span', { class: 'short' }, k))));
     }
 
@@ -1795,9 +1795,9 @@
       this.el.id.replaceChildren(where.join(' · ') + ' · ' + p.pieces.length + ' pieces');
       this.el.seed.replaceChildren(h('span', { class: 'code' }, p.seed), icon('copy'));
       this.renderSaveBtn();
-      // Every seed is some date's Daily.
+      // Every seed is some date's Daily (a tooltip, so a long press shows it too).
       const dd = Puzzles.dailyDateOf(p.seed);
-      this.el.seed.title = 'Copy seed' + (dd && dd.key ? ' · the Daily for ' + dayLabel(dd.key) : dd ? ' · the Daily in ' + dd.years.toLocaleString() + ' years' : '');
+      this.el.seed.dataset.tip = 'Copy seed' + (dd && dd.key ? ' · the Daily for ' + dayLabel(dd.key) : dd ? ' · the Daily in ' + dd.years.toLocaleString() + ' years' : '');
       this.renderGoal();
       this.renderMods();
     }

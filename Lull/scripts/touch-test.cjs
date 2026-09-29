@@ -413,9 +413,29 @@ module.exports = async function touchTests({ browser, check, PAGE, OUT }) {
     await P2.shot('74-phone-' + w + '-' + theme + '-tray');
     await P2.ev(() => { Lull.app.modes.play.openTray(null); Lull.UI.openSettings(Lull.app, 'controls'); });
     await P2.page.waitForTimeout(200);
-    const touchCard = await P2.ev(() => ({ touch: [...document.querySelectorAll('.set-card-title')].map((e) => e.textContent), mouse: !!document.querySelector('.switch[data-setting="mouse"]'), pause: !!document.querySelector('.switch[data-setting="pauseAway"]') }));
-    check(w + 'x' + h + ' ' + theme + ': Settings ▸ Controls has the Touch card, and no Mouse card on a touch-only phone', touchCard.touch[0] === 'Touch' && !touchCard.mouse && !touchCard.pause, JSON.stringify(touchCard));
+    const touchCard = await P2.ev(() => {
+      const nav = document.querySelector('.set-nav'), m = document.querySelector('.modal-settings').getBoundingClientRect();
+      return { touch: [...document.querySelectorAll('.set-card-title')].map((e) => e.textContent), mouse: !!document.querySelector('.switch[data-setting="mouse"]'), pause: !!document.querySelector('.switch[data-setting="pauseAway"]'),
+        nav: [...nav.querySelectorAll('button')].map((b) => b.textContent).join(), fits: nav.scrollWidth <= nav.clientWidth + 1 && [...nav.querySelectorAll('button')].every((b) => { const r = b.getBoundingClientRect(); return r.left >= m.left - 0.5 && r.right <= m.right + 0.5 && b.offsetHeight >= 44 && b.offsetWidth >= 44; }) };
+    });
+    check(w + 'x' + h + ' ' + theme + ': Settings ▸ Controls has the Touch card, and no Mouse or Keyboard card on a touch-only phone', touchCard.touch[0] === 'Touch' && !touchCard.touch.includes('Keyboard') && !touchCard.mouse && !touchCard.pause, JSON.stringify(touchCard));
+    check(w + 'x' + h + ' ' + theme + ': the Settings list (Look, Controls, Sound, Gestures, Data) fits, every button 44 px', touchCard.nav === 'Look,Controls,Sound,Gestures,Data' && touchCard.fits, JSON.stringify(touchCard));
+    const icons = await P2.ev(() => {
+      const nav = document.querySelector('.set-nav'), col = getComputedStyle(nav).flexDirection === 'column';
+      const xs = [...nav.querySelectorAll('button')].map((b) => { const r = b.getBoundingClientRect(), i = b.querySelector('.ni').getBoundingClientRect(); return { l: Math.round(i.left), off: Math.abs((i.left + i.right) / 2 - (r.left + r.right) / 2), only: b.textContent.trim() === '' || getComputedStyle(b.lastElementChild).display === 'none' }; });
+      return { col, lefts: xs.map((x) => x.l), ok: col ? new Set(xs.map((x) => x.l)).size === 1 : xs.filter((x) => x.only).every((x) => x.off <= 1) };
+    });
+    check(w + 'x' + h + ' ' + theme + ': the Settings list keeps its icons in line (one column down the side; an icon alone centred in its button)', icons.ok, JSON.stringify(icons));
     await P2.shot('74-phone-' + w + '-' + theme + '-settings');
+    if (w === 667) {
+      // A keyboard attached with Settings open: its first key still does its work, and focus stays in the window.
+      await P2.ev(() => document.querySelector('.switch[data-setting="hints"]').focus());
+      const was = await P2.ev(() => Lull.app.settings.hints);
+      await P2.page.keyboard.press('Space');
+      await P2.page.waitForTimeout(120);
+      const k = await P2.ev(() => ({ hints: Lull.app.settings.hints, focus: document.activeElement.dataset.setting || document.activeElement.tagName, inModal: document.querySelector('.modal-settings').contains(document.activeElement), nav: [...document.querySelectorAll('.set-nav button')].map((b) => b.textContent).join() }));
+      check('a first key with Settings open (Space on a switch) flips it, keeps focus on it, and brings Keys back', k.hints === !was && k.focus === 'hints' && k.inModal && k.nav === 'Look,Controls,Sound,Keys,Data', JSON.stringify(k));
+    }
     await P2.ev(() => { while (Lull.UI.modalOpen()) Lull.UI.closeTopModal(); });
     if (P2 !== P) await P2.ctx.close();
   }

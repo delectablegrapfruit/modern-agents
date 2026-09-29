@@ -290,8 +290,38 @@
 
     /** A touch device at all (the Touch settings show). */
     available() { return !!(root.navigator && root.navigator.maxTouchPoints > 0); },
-    /** No mouse or trackpad at all (mouse-only settings hide). */
-    touchOnly() { return this.available() && root.matchMedia ? !mq('(any-pointer: fine)') : false; },
+    /**
+     * Touch alone: fingers, and no mouse, trackpad or pen that hovers — a phone, or a tablet with nothing attached.
+     * Never the macOS app. What only a pointer or the Mac's window can do goes (body.touch-only): the Mouse card, the
+     * pointer leaving, the window background, rolling the window up. Asked of every pointer the device has, not only
+     * its main one, so an iPad with a trackpad keeps them.
+     */
+    touchOnly() {
+      if (L.native && L.native.available) return false;
+      return mq('(any-pointer: coarse)') && !mq('(any-pointer: fine)') && !mq('(any-hover: hover)');
+    },
+    only: false, // touchOnly(), kept up to date
+    keysSeen: false, // a hardware key was pressed (an iPad keyboard with no trackpad)
+    keyless: false, // touch alone and no key pressed yet: no keyboard settings, key caps or key names
+    /**
+     * Reads the device again (at start, and whenever a pointer or a keyboard comes or goes): the body's classes, and
+     * 'input' on L.bus when either changed, so Settings, the look and the title bar follow at once.
+     */
+    sync(byKey) {
+      const only = this.touchOnly(), keyless = only && !this.keysSeen;
+      const body = root.document && root.document.body;
+      if (body) { body.classList.toggle('touch-only', only); body.classList.toggle('keyless', keyless); }
+      if (only === this.only && keyless === this.keyless) return false;
+      this.only = only;
+      this.keyless = keyless;
+      if (L.bus) L.bus.emit('input', { only, keyless, byKey: !!byKey });
+      return true;
+    },
+    /** What each gesture does, as the settings have it (Tap to turn: Clockwise makes every tap clockwise). */
+    help(settings) {
+      if (!settings || settings.tapTurn !== 'cw') return TOUCH_HELP;
+      return TOUCH_HELP.filter(([k]) => k !== 'Tap left').map(([k, d]) => (k === 'Tap right' ? ['Tap', d] : [k, d]));
+    },
     /** A touch within the last ms (default: long enough that a tap's emulated mouse events are past). */
     recent(ms) { return now() - this.lastAt < (ms == null ? T.MOUSE_GUARD : ms); },
     /** The player is using touch now (the last pointer was a finger or a pen). */
@@ -346,10 +376,28 @@
         const t = e.target;
         if (this.recent() && !(t && t.closest && t.closest('input, textarea'))) e.preventDefault();
       });
+      // A pointer or a keyboard coming or going (an iPad's trackpad attached, a phone's mouse): read again, live.
+      if (root.matchMedia) {
+        for (const q of ['(any-pointer: fine)', '(any-pointer: coarse)', '(any-hover: hover)']) {
+          const m = root.matchMedia(q);
+          if (m && m.addEventListener) m.addEventListener('change', () => this.sync());
+          else if (m && m.addListener) m.addListener(() => this.sync());
+        }
+      }
+      // A key pressed outside a text field is a hardware keyboard (the on-screen one types only into fields): its
+      // settings, key caps and key names come back, for this visit.
+      doc.addEventListener('keydown', (e) => {
+        if (this.keysSeen || !e.isTrusted || !e.key || e.key === 'Unidentified' || e.isComposing) return;
+        const t = e.target;
+        if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+        this.keysSeen = true;
+        this.sync(true); // (the key has yet to do its work: a listener that redraws waits for it, see byKey)
+      }, true);
+      this.sync();
     },
   };
 
-  /** What each gesture does, for Settings ▸ Keys and the welcome. */
+  /** What each gesture does, for Settings ▸ Gestures (or Keys) and the welcome (Touch.help fits it to the settings). */
   const TOUCH_HELP = [
     ['Drag ← →', 'Move'],
     ['Drag ↓', 'Lower'],
