@@ -437,6 +437,9 @@ kbd {
 .item-btn .n { position: absolute; right: 6px; top: 4px; font: 700 var(--fs-2xs) var(--mono-font); color: var(--fg); }
 .item-btn.empty .n { color: var(--gem); opacity: 0.85; }
 .item-btn.poor .n { color: var(--faint); opacity: 0.8; }
+/* Refused on this board (its recipe): in its place, quiet; its tip says why. */
+.item-btn.refused { opacity: 0.42; cursor: default; }
+@media (hover: hover) { .item-btn.refused:hover { background: var(--panel); border-color: var(--line); transform: none; } }
 /* Rarity, quietly: a small dot in the corner (uncommon in the accent, rare in gold). */
 .item-btn[data-rarity]::before { content: ""; position: absolute; left: 7px; top: 7px; width: 5px; height: 5px; border-radius: 50%; }
 .item-btn[data-rarity="uncommon"]::before { background: var(--accent); opacity: 0.8; }
@@ -897,6 +900,8 @@ table.st { width: 100%; border-collapse: collapse; font-variant-numeric: tabular
 table.st td { padding: 8px 4px; border-bottom: 1px solid var(--line); }
 table.st tr:last-child td { border-bottom: 0; }
 table.st td.nw { white-space: nowrap; }
+/* A past board's recipe, a muted second line: it never widens its column (ellipsis instead). */
+table.st .past-lbl { width: 0; min-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--faint); font-size: var(--fs-2xs); }
 /* Past boards in a narrow window: how long each lived gives way, so the rest keep their room. */
 @media (max-width: 360px) { table.st .opt { display: none; } }
 table.st td:first-child { color: var(--muted); }
@@ -1228,6 +1233,9 @@ div.lib-open { cursor: default; }
   .lib-open .d .sz::after { content: none; }
   .lib-open .d .sz + .st { margin-left: 0; }
 }
+/* A board of another recipe: its label shares the size's line, with ellipsis (in full as its tip); on a phone, on a line of its own. */
+.lib-open .d.labelled .sz { flex: 0 1 auto; min-width: 0; }
+@media (max-width: 360px) { .lib-open .d.labelled .sz { flex: 1 1 100%; } }
 /* Narrow: the actions stand in a column at the row's end, so the name keeps its room. */
 @media (max-width: 360px) {
   .lib-acts { flex-direction: column; gap: 0; }
@@ -1235,8 +1243,10 @@ div.lib-open { cursor: default; }
   .lib-open { gap: 8px; padding-right: 2px; }
 }
 
-/* New board: a size (Width and Height steppers, presets, the empty well drawn small) and Create. */
-.nb-body { display: flex; flex-direction: column; gap: 14px; position: relative; }
+/* New board: the size (Width and Height steppers, the empty well drawn small) always on top; four tabs (Size, Shapes,
+   Modifiers, Mode) and one panel under them, of one height whichever tab is open (the tallest panel's, measured at each
+   size: a panel taller than that scrolls inside itself, the footer stays); then Create. */
+.nb-body { display: flex; flex-direction: column; gap: 12px; position: relative; --nb-panel-h: 158px; }
 /* The size read out after a button or a preset (VoiceOver); nothing on screen. */
 .nb-live { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .nb-main { display: flex; align-items: center; gap: 16px; }
@@ -1268,6 +1278,54 @@ div.lib-open { cursor: default; }
   .nb-step { width: 44px; height: 44px; }
   .nb-val { min-width: 36px; line-height: 38px; }
   .nb-preset { min-height: 44px; justify-content: center; }
+}
+/* The tabs: a name, and its short value under it, muted (Size has no value: it is on the steppers). */
+.nb-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px; margin-bottom: -2px; }
+.nb-tab { min-width: 0; height: 44px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 0 3px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--muted); line-height: 1.15; }
+.nb-tab .nm, .nb-tab .vl { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nb-tab .nm { font-size: 12.5px; font-weight: 650; color: var(--fg); }
+.nb-tab .vl { font-size: var(--fs-xs); color: var(--muted); }
+@media (hover: hover) { .nb-tab:hover { background: var(--panel-2); } }
+.nb-tab[aria-selected="true"] { border-color: var(--accent-line); background: var(--accent-soft); }
+.nb-tab[aria-selected="true"] .vl { color: var(--accent-ink); }
+.nb-tab:focus-visible { outline-offset: 1px; }
+/* One panel, one height: the options at its top, the reason for an option that is off on its last line. */
+.nb-panel { height: var(--nb-panel-h); display: flex; flex-direction: column; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.nb-content { display: flex; flex-direction: column; gap: 8px; }
+.nb-content > .nb-presets { gap: 4px; }
+.nb-why { flex: none; margin: auto 0 0 !important; min-height: 18px; line-height: 18px; font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nb-none { margin: 0 !important; padding: 12px 2px; color: var(--faint) !important; font-size: var(--fs-sm); }
+/* An option the other choices rule out: in its place, quiet; a press says why (.nb-why). */
+.nb-body [aria-disabled="true"]:is(.nb-chip, .nb-switch, .nb-mode, .nb-level, .nb-preset) { opacity: 0.42; cursor: default; }
+/* Shapes: chips in 3 × 2, a sample beside the name. */
+.nb-chips { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 4px; }
+.nb-chip { min-width: 0; height: 44px; display: flex; align-items: center; gap: 5px; padding: 0 6px 0 5px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); font-size: var(--fs-sm); font-weight: 600; text-align: left; }
+.nb-chip canvas { flex: none; display: block; }
+.nb-chip .nm { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (hover: hover) { .nb-chip:not([aria-disabled="true"]):hover, .nb-switch:not([aria-disabled="true"]):hover { background: var(--panel-2); } }
+.nb-chip[aria-pressed="true"] { border-color: var(--accent-line); background: var(--accent-soft); }
+/* A shapes part's own line under the chips (Custom: what it deals, and Edit). */
+.nb-custom { height: 44px; display: flex; align-items: center; gap: 8px; margin-top: -8px; color: var(--muted); font-size: var(--fs-sm); min-width: 0; }
+.nb-custom > span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Modifiers: a switch a row. */
+.nb-mods { display: flex; flex-direction: column; gap: 8px; }
+.nb-switch { height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 10px 0 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); font-size: var(--fs-md); font-weight: 600; text-align: left; }
+.nb-switch .sw { position: relative; width: 36px; height: 21px; border-radius: 11px; background: var(--panel-3); box-shadow: inset 0 0 0 1px var(--line); flex: none; transition: background-color var(--t-med) var(--ease); }
+.nb-switch .sw::after { content: ""; position: absolute; top: 2.5px; left: 2.5px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.3); transition: transform var(--t-med) var(--ease-out); }
+.nb-switch[aria-checked="true"] .sw { background: var(--accent); box-shadow: none; }
+.nb-switch[aria-checked="true"] .sw::after { transform: translateX(15px); }
+/* Mode: the modes, then the chosen one's level. */
+.nb-modes, .nb-lvl { display: flex; width: 100%; }
+.nb-modes button, .nb-lvl button { flex: 1 1 0; min-width: 0; justify-content: center; height: 34px; padding: 0 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (hover: none) and (pointer: coarse) {
+  .nb-modes button, .nb-lvl button { height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) { .nb-switch .sw, .nb-switch .sw::after { transition: none; } }
+/* A phone: a little more room across, so "Modifiers" and the chips' names fit. */
+@media (max-width: 360px) {
+  .modal-newboard .body { padding-left: 12px; padding-right: 12px; }
+  .nb-tab { padding: 0 2px; }
+  .nb-chip { padding: 0 4px; gap: 4px; }
 }
 
 .seed-modal p { margin-top: 0; }

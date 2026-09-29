@@ -143,6 +143,8 @@
       if (ok && before && /^(moveL|moveR|rotate|rotateInv|cw|ccw|r180|lower)$/.test(a) && g.piece === prevPiece) {
         this.view.trail(before, beforeColor, this.reduced);
         if (a === 'lower' && !rep) snd.play('lower');
+        // The recipe's view parts animate a move or a turn their own way (Jelly's wobble).
+        if (this.view.parts.length) this.view.partsCall(/^move/.test(a) ? 'onMove' : a === 'lower' ? 'onLower' : 'onRotate', a, this.reduced);
       }
       this.view.dirty = true;
       // Keys are in charge until the mouse moves again (so arrows work with the pointer resting on the board).
@@ -234,12 +236,16 @@
         const d = this.view.lay.s * AIM_STICK;
         for (const [dx, dy] of [[d, 0], [-d, 0], [0, d], [0, -d]]) { const c = this.view.cellClamped(px + dx, py + dy); if (c && c.x === cur) { col = cur; break; } }
       }
-      // Inverted Controls turn the mouse around too: the piece goes to the mirror of the pointer's column.
-      const target = this.inverted ? g.w - 1 - col : col;
+      // Inverted Controls turn the mouse around too: the piece goes to the mirror of the pointer's column. A board's
+      // controller can aim elsewhere (mapInput 'aim': Mirror's copy follows the pointer when it is the nearer).
+      const target = this.mapInput('aim', this.inverted ? g.w - 1 - col : col, this.pointer);
       if (col !== cur) { this.prevCol = this.target; this.colAt = performance.now(); this.rawCol = col; this.target = target; }
       this.aimAt(target);
       this.view.pointerCol = col;
     }
+
+    /** What an input means on this board (Free Play asks its controller: ctl.input); elsewhere, what it says. */
+    mapInput(kind, v) { return v; }
 
     aimAt(col) {
       const g = this.game;
@@ -275,6 +281,9 @@
         const [x, y] = pos(e), t = e.timeStamp || performance.now();
         if (this.gest.active) { this.gest.down(e.pointerId, x, y, t); return; }
         const opts = this.touchOpts(x, y);
+        this.touchAt = [x, y];
+        // A controller may turn a gesture's sideways moves around (swap: Mirror, a touch that starts on the copy's side).
+        this.touchSwap = !!(opts && opts.swap);
         this.gest.down(e.pointerId, x, y, t, opts);
         if (opts && !opts.tapOnly && this.touchIntercept && this.touchIntercept()) this.gest.consume();
         this.touchPiece = this.game && this.game.piece;
@@ -310,12 +319,12 @@
       const floor = ['down', 'left', 'right', 'up'].find((a) => this.mapArrow(a) === 'lower') || 'down';
       this.touchFloor = floor;
       const slide = /^move/.test(this.mapArrow('left')) ? 'x' : 'y';
-      return {
+      return this.mapInput('touch', {
         step: L.Touch.stepFor(lay.s, st.touchSens), flickV: L.Touch.T.FLICK_V[st.touchFlick != null ? st.touchFlick : 1] || 1.1,
         flickMin: Math.max(L.Touch.T.FLICK_MIN, L.Touch.T.FLICK_MIN_CELLS * lay.s), slide, floor: ARROWS[floor],
         centerX: lay.board.x + lay.board.w / 2, onHold: this.view.onHoldTouch(x, y),
         softMs: this.softDrop ? Math.max(16, st.lowerRepeat || 70) : 0, tapOnly,
-      };
+      }, [x, y]);
     }
 
     /** Mid-touch: a card or a window that came up takes the rest of it; a new piece takes its lowering, drop and hold. */
@@ -334,14 +343,14 @@
       let ok = false;
       try {
         switch (it.type) {
-          case 'move': ok = this.action(it.dir, !it.fresh); break;
+          case 'move': ok = this.action(this.touchSwap ? this.touchSlideSwap(it.dir) : it.dir, !it.fresh); break;
           case 'lower': ok = this.action(this.touchFloor || 'down', true); if (ok) this.app.sound.play('lower'); break;
           case 'drop': ok = this.action('drop'); break;
           case 'hold': ok = this.action('hold'); break;
           case 'r180': ok = this.action('r180'); break;
           case 'tap':
             if (this.touchTapStarts && this.touchTapStarts()) { ok = this.action('drop'); break; }
-            ok = this.action(this.settings.tapTurn === 'cw' ? 'rotate' : it.side === 'left' ? 'ccw' : 'cw');
+            { const side = this.mapInput('tap', it.side, this.touchAt); ok = this.action(this.settings.tapTurn === 'cw' ? 'rotate' : side === 'left' ? 'ccw' : 'cw'); }
             break;
         }
       } finally { this.touchActing = false; }
@@ -350,6 +359,9 @@
       if (ok && !it.undo) L.Touch.haptic(it.type === 'drop' || it.type === 'hold' ? 8 : 4);
       return ok;
     }
+
+    /** A gesture's sideways move turned around (touchSwap): the opposite screen direction. */
+    touchSlideSwap(dir) { return { left: 'right', right: 'left', up: 'down', down: 'up' }[dir]; }
 
     showCard(content, cls) {
       this.overlay.replaceChildren(h('div', { class: 'card' + (cls ? ' ' + cls : '') }, content));
@@ -360,7 +372,11 @@
 
     frame(now, dt) {
       if (this.gest && this.gest.active) { this.touchGuard(); this.gest.tick(now); }
-      if (this.app.hints) this.app.hints.frame(this, now, dt);
+      // A board whose recipe has no control hints (R.hints false: Battle) never shows one.
+      if (this.app.hints) {
+        if (!(this.game && this.game.rules && this.game.rules.hints === false)) { this.hintsOff = false; this.app.hints.frame(this, now, dt); }
+        else if (!this.hintsOff) { this.hintsOff = true; if (this.app.hints.hide) this.app.hints.hide(); }
+      }
       this.view.reducedMotion = this.reduced;
       this.view.fx.update(dt);
       if (this.view.needsFrame()) {
@@ -574,6 +590,56 @@
 
   // ---- free play ----------------------------------------------------------------------------------------------------
 
+  /**
+   * What runs a Relaxed board: PlayMode asks its controller (this.ctl) at every turn. The plain controller is today's
+   * Free Play, exactly; a board recipe's part can give its own (Recipe.part's controller(play, game), for the board's
+   * recipe), and whatever it leaves out is the plain one's (its hooks reach the plain one as this.base). Hooks, called
+   * with this = the controller:
+   *   view: 'single' | 'battle'     the board view's layout (another than 'single' is drawn by a view part: BoardView.shell)
+   *   timed: false                  a clock that runs while play.canRun() (Battle's)
+   *   frame(now, dt, running)       every frame on the Play tab; running is play.canRun()
+   *   pause(why)                    play has to stop: 'blur', 'pointer' (it left the window), 'hidden', 'tab', 'modal',
+   *                                 'collapse' (app.onAway and the frame loop)
+   *   counts() -> bool              this second counts as played on the board (s.playMs, the Played tile)
+   *   pay(r) -> banked              what a lock's rows pay (plain: Pay.clear with gold, a boost, Double or Nothing)
+   *   onLock(r)                     a piece (or Settle) was set: the plain one pays, keeps the records, finds combos,
+   *                                 plays the sound and checks achievements
+   *   onEnd(kind, silent)           the board ended ('topout'): kind is 'full', or the part's own that ended it (it sets
+   *                                 game.endKind, 'wilted', before the game emits 'topout'); its card
+   *   cards: { kind(play, kind) -> content }   a card by kind (full: the Board full card)
+   *   status(parts, { stat }) -> [elements]   the status bar's figures; parts: { lines, score, chain, side }, the
+   *                                 plain ones; stat(label, value, cls, tip) makes one more
+   *   bar(el) -> true               it drew the bar under the board itself (plain: the power-up groups)
+   *   tiles(game) -> [[value, label]]   more tiles for the board's summary (the Board full and Retire cards)
+   *   key(e) -> true                a key it took, before the game's own keys (Battle's S, Shift+S)
+   *   action(a, rep) -> ok          an action the game does not know (P: 'pause')
+   *   input(kind, v, pos) -> v      what an input means here: 'aim' (the mouse's target column), 'touch' (a gesture's
+   *                                 options; swap: true turns its sideways moves around), 'tap' ('left' or 'right')
+   *   fx() -> lay                   the layout effects over the board are placed in (a view with two boards: yours)
+   *   attach(game) / detach()       its board came into play / is leaving it
+   */
+  function plainController(play) {
+    return {
+      key: 'plain', view: 'single', timed: false,
+      frame() {},
+      pause() {},
+      counts: () => true,
+      pay: (r) => play.payClear(r),
+      onLock: (r) => play.plainLock(r),
+      onEnd: (kind, silent) => play.boardFull(kind, silent),
+      cards: { full: (pm) => pm.fullCard() },
+      status: (parts) => [parts.lines, parts.score, parts.chain, parts.side],
+      bar: () => false,
+      tiles: () => [],
+      key: () => false,
+      action: () => false,
+      input: (kind, v) => v,
+      fx: () => play.view.lay,
+      attach() {},
+      detach() {},
+    };
+  }
+
   class PlayMode extends BoardMode {
     constructor(app) {
       super(app, 'cv-play', 'play-overlay');
@@ -587,7 +653,7 @@
       const saved = app.store.state.free;
       // A board in play of a size no board can have (a save edited by hand) is not resumed: a new one takes its place.
       if (saved && Library.playable(saved)) { try { game = new Game({ saved, previewCount: this.settings.preview }); } catch (e) { game = null; } }
-      if (!game) game = new Game({ w: B.size.w, h: B.size.h, previewCount: this.settings.preview });
+      if (!game) game = new Game({ w: B.size.w, h: B.size.h, recipe: B.recipe, previewCount: this.settings.preview });
       game.previewCount = this.settings.preview;
       this.thumbs = new Map(); // thumbnail images (data URLs) by board, stack and look
       this.attachGame(game, {});
@@ -616,7 +682,91 @@
 
     afterHold() { this.syncCounters(); if (this.armed) { this.armed = null; this.renderItems(); } }
 
-    onLock(r) {
+    /** A board comes into play: its controller (the plain one, or its recipe's) and the view's layout for it. */
+    attachGame(game, view) {
+      if (this.ctl && this.ctl.detach) this.ctl.detach();
+      this.ctl = this.makeController(game);
+      super.attachGame(game, view);
+      // A lock the recipe refuses (a part's refuseLock: Battle's "Set it on your board") says why.
+      game.on('refused', (note) => { if (note) toast(String(note), 'bad', 1800); });
+      this.view.layoutName = this.ctl.view || 'single';
+      this.ctl.attach(game);
+    }
+
+    /** The plain controller (today's Free Play), with a recipe part's own hooks over it (see plainController). */
+    makeController(game) {
+      const base = plainController(this);
+      const own = L.Recipe && game && game.recipe ? L.Recipe.controller(this, game) : null;
+      if (!own) return base;
+      const ctl = Object.assign({}, base, own, { base });
+      ctl.cards = Object.assign({}, base.cards, own.cards || {});
+      return ctl;
+    }
+
+    /**
+     * Whether a timed board's clock may run now: Free Play in front, nothing over the board (a window, a card), the
+     * page shown and the window focused, and a board in play (Classic's running() and document.hasFocus()).
+     */
+    canRun() {
+      return this.app.tab === 'play' && !(L.Collapse && L.Collapse.on) && !UI.modalOpen() && !this.cardOpen && !document.hidden && document.hasFocus() && !!this.game && !this.game.over;
+    }
+
+    frame(now, dt) {
+      // A window over the board pauses its controller (a timed one stops its clock; the plain one has none).
+      const modal = UI.modalOpen();
+      if (modal && !this.modalUp) this.ctl.pause('modal');
+      this.modalUp = modal;
+      this.ctl.frame(now, dt, this.canRun());
+      super.frame(now, dt);
+    }
+
+    /** Actions the game does not know go to the controller (Battle's pause). */
+    modeAction(a, rep) { return !!this.ctl.action(a, rep); }
+
+    /** A key the controller takes before the game's own keys. */
+    key(e) { return this.ctl.key(e) === true; }
+
+    mapInput(kind, v, pos) { return this.ctl.input(kind, v, pos); }
+
+    /** Where effects over the board are placed: the board of the controller's view (fx), or the one view's. */
+    fxLay() { return this.ctl.fx() || this.view.lay; }
+
+    onLock(r) { this.ctl.onLock(r); }
+
+    /**
+     * What a lock's rows pay on a plain board (js/items.js, Pay): a quad or T-spin (or 5+ lines) is worth one extra;
+     * the multiplier — the back-to-back streak alone, an eighth a link, ×2.5 at most (twenty in a row) — multiplies
+     * it; gold triples that, and a combo's boost adds its share. All of it in Standard lines, by the board's worth.
+     * Sets r.banked, r.mult (and r.golden, r.boost, r.double) and banks it on the board; returns what it paid.
+     */
+    payClear(r) {
+      const g = this.game, s = g.s;
+      const paid = Pay.clear(s, r, g.rules);
+      const pay = paid.pay;
+      if (paid.golden) {
+        // Gold on the board is spent one clear at a time (the last of it on a wide board pays its share).
+        r.golden = true;
+        const b = this.fxLay().board, left = Pay.clearsLeft(s.gold, g.rules);
+        this.view.fx.text('GOLDEN ' + Chain.fmt(paid.goldX) + (left > 0 ? ' · ' + left + ' left' : ''), b.x + b.w / 2, b.y + b.h * 0.3, '#ffd35a', 18);
+        this.app.sound.play('golden');
+      }
+      if (paid.boost) r.boost = paid.boost;
+      if (paid.double) {
+        // Double or Nothing: this clear decided it.
+        const won = paid.double === 'won', b = this.fxLay().board;
+        r.double = paid.double;
+        this.view.fx.text(won ? 'DOUBLE' : 'NOTHING', b.x + b.w / 2, b.y + b.h * 0.3, won ? '#ffd35a' : '#9aa3b2', 18);
+        if (won) this.app.sound.play('golden');
+      }
+      r.banked = pay; r.mult = s.mult;
+      // Gold spent on a chain of 20 or more, built by hand (Midas): counted clear by clear, reset by any other.
+      s.goldRun = r.golden && r.hand && (s.hchain || 0) >= 20 ? (s.goldRun || 0) + 1 : 0;
+      s.banked = Library.bank((s.banked || 0) + pay);
+      return pay;
+    }
+
+    /** A lock on a plain board: what it pays, the records, combos, the sound and the achievements. */
+    plainLock(r) {
       const st = this.app.store, F = st.state.stats.free, g = this.game;
       this.syncCounters();
       if (this.armed) { this.armed = null; this.renderItems(); }
@@ -633,30 +783,8 @@
       // Every row pays by the board's worth (Library.worth: its width and recipe): a line 5 wide is half a Standard
       // line, 20 wide two. What pays and counts is r.own, the rows' own cells (a row's FOREIGN cells never pay).
       const lk = Library.worth(g);
-      if (r.lines) {
-        const paid = Pay.clear(s, r, g.rules);
-        const pay = paid.pay;
-        if (paid.golden) {
-          // Gold on the board is spent one clear at a time (the last of it on a wide board pays its share).
-          r.golden = true;
-          const b = this.view.lay.board, left = Pay.clearsLeft(s.gold, g.rules);
-          this.view.fx.text('GOLDEN ' + Chain.fmt(paid.goldX) + (left > 0 ? ' · ' + left + ' left' : ''), b.x + b.w / 2, b.y + b.h * 0.3, '#ffd35a', 18);
-          this.app.sound.play('golden');
-        }
-        if (paid.boost) r.boost = paid.boost;
-        if (paid.double) {
-          // Double or Nothing: this clear decided it.
-          const won = paid.double === 'won', b = this.view.lay.board;
-          r.double = paid.double;
-          this.view.fx.text(won ? 'DOUBLE' : 'NOTHING', b.x + b.w / 2, b.y + b.h * 0.3, won ? '#ffd35a' : '#9aa3b2', 18);
-          if (won) this.app.sound.play('golden');
-        }
-        r.banked = pay; r.mult = s.mult;
-        // Gold spent on a chain of 20 or more, built by hand (Midas): counted clear by clear, reset by any other.
-        s.goldRun = r.golden && r.hand && (s.hchain || 0) >= 20 ? (s.goldRun || 0) + 1 : 0;
-        s.banked = Library.bank((s.banked || 0) + pay);
-      }
-      if (r.netSaved) { const b = this.view.lay.board; this.view.fx.text('SAFETY NET', b.x + b.w / 2, b.y + b.h * 0.3, '#8fe3ff', 16); }
+      if (r.lines) this.ctl.pay(r);
+      if (r.netSaved) { const b = this.fxLay().board; this.view.fx.text('SAFETY NET', b.x + b.w / 2, b.y + b.h * 0.3, '#8fe3ff', 16); }
       if (r.special !== 'settle') {
         F.pieces++;
         st.day().pieces++;
@@ -735,18 +863,28 @@
      * The Board full card: the board's numbers, and Undo (whenever there is a placement to take back: how many are held,
      * or the price), Boards and Retire. The numbers scroll on a short screen; the buttons always show.
      */
-    onTopout(silent) {
-      const g = this.game, F = this.app.store.state.stats.free;
+    onTopout(silent) { this.ctl.onEnd(this.game.endKind || 'full', silent); }
+
+    /** The board ended (plain: full): counted (unless silent: a redraw), and its card (the controller's cards[kind]). */
+    boardFull(kind, silent) {
+      const F = this.app.store.state.stats.free;
       if (!silent) { F.topouts++; this.app.store.touch(); }
-      this.showCard([
+      const card = this.ctl.cards[kind] || this.ctl.cards.full;
+      this.showCard(card(this, kind), 'topout');
+      this.fadeEdges(this.overlay.querySelector('.board-sum'));
+    }
+
+    /** The Board full card's content: the board's summary, then Undo, Boards and Retire. */
+    fullCard() {
+      const g = this.game;
+      return [
         h('h2', null, 'Board full'),
-        this.boardSummary(Library.summarize(g.s, Date.now())),
+        this.boardSummary(Library.summarize(g.s, Date.now()), g.recipe, this.ctl.tiles(g)),
         h('div', { class: 'row' },
           g.history.length ? undoButton(this.app.store, { class: 'btn', id: 'topout-undo', onclick: () => this.topoutUndo() }, ico('item-rewind'), ITEMS.rewind.name) : null,
           h('button', { class: 'btn', onclick: () => this.openLibrary() }, ico('boards'), 'Boards'),
           h('button', { class: 'btn primary', onclick: () => this.newBoard('full') }, ico('retire'), 'Retire')),
-      ], 'topout');
-      this.fadeEdges(this.overlay.querySelector('.board-sum'));
+      ];
     }
 
     /**
@@ -792,8 +930,10 @@
      * or one made with it), else the board in play's (the full board's card). Lines is the board's own count; Lines
      * banked is what it paid, in Standard lines.
      */
-    boardSummary(m) {
+    boardSummary(m, recipe, extra) {
       const sz = m.w ? m : this.game;
+      // The board's recipe in words (Recipe.label: nothing on a default board), and a controller's own tiles.
+      const label = recipe && L.Recipe ? L.Recipe.label(recipe) : '';
       const items = Object.entries(m.items || {}).filter(([id, n]) => n > 0 && ITEMS[id]).sort((a, b) => b[1] - a[1]);
       const nItems = items.reduce((a, [, n]) => a + n, 0);
       const ppm = m.playMs > 30000 ? (m.pieces / (m.playMs / 60000)).toFixed(1) : '—';
@@ -805,7 +945,9 @@
         tile(fmtInt(m.maxCombo), 'Best combo'), tile(fmtInt(m.maxB2B), 'Best back-to-back'), tile(fmtInt(m.chain), 'Best chain'),
         tile(fmtInt(m.hchain), 'Best chain, no power-ups'), tile(fmtLines(m.banked) + ' ' + LINE, 'Lines banked'), tile(fmtInt(m.combos), 'Combos'),
         tile(Library.sizeLabel(sz.w, sz.h), 'Size'),
-        h('div', { class: 'bs span2' }, h('div', { class: 'v' }, nItems ? fmtInt(nItems) + ' used' : 'none'), h('div', { class: 'l' }, 'Power-ups' + (items.length ? ': ' + items.slice(0, 6).map(([id, n]) => ITEMS[id].name + (n > 1 ? ' ×' + n : '')).join(', ') : ''))));
+        h('div', { class: 'bs span2' }, h('div', { class: 'v' }, nItems ? fmtInt(nItems) + ' used' : 'none'), h('div', { class: 'l' }, 'Power-ups' + (items.length ? ': ' + items.slice(0, 6).map(([id, n]) => ITEMS[id].name + (n > 1 ? ' ×' + n : '')).join(', ') : ''))),
+        label ? h('div', { class: 'bs span2 board-tile', title: label }, h('div', { class: 'v' }, label), h('div', { class: 'l' }, 'Board')) : null,
+        (extra || []).map(([v, l]) => tile(v, l)));
     }
 
     /** Stats ▸ Free Play's log of past boards (kept apart from the library's records; deleting a record keeps it). */
@@ -814,7 +956,10 @@
       const F = this.app.store.state.stats.free, now = Date.now(), m = Library.summarize(s, now);
       F.boardLog = F.boardLog || [];
       size = size || this.game;
-      F.boardLog.unshift({ at: now, reason: reason || 'manual', w: size.w, h: size.h, life: m.life, playMs: m.playMs, pieces: m.pieces, lines: m.lines, score: m.score, quads: m.quads, tspins: m.tspins, perfect: m.perfect, maxCombo: m.maxCombo, chain: m.chain, items: Object.values(m.items).reduce((a, b) => a + b, 0) });
+      const entry = { at: now, reason: reason || 'manual', w: size.w, h: size.h, life: m.life, playMs: m.playMs, pieces: m.pieces, lines: m.lines, score: m.score, quads: m.quads, tspins: m.tspins, perfect: m.perfect, maxCombo: m.maxCombo, chain: m.chain, items: Object.values(m.items).reduce((a, b) => a + b, 0) };
+      // A board of another recipe than the default keeps it (thin: Recipe.thin), for its label in Past boards.
+      if (L.Recipe && size.recipe && !L.Recipe.isDefault(size.recipe)) entry.recipe = L.Recipe.thin(size.recipe);
+      F.boardLog.unshift(entry);
       if (F.boardLog.length > 30) F.boardLog.length = 30;
     }
 
@@ -826,25 +971,27 @@
       const st = this.app.store, now = Date.now();
       Library.ensure(st.state, now);
       this.syncCounters();
-      const s = this.game.s, size = { w: this.game.w, h: this.game.h };
+      const s = this.game.s, size = { w: this.game.w, h: this.game.h }, recipe = this.game.recipe;
       if (s.pieces) {
         this.logBoard(s, reason);
         Library.retire(st.state, st.state.boards.cur, this.game.toJSON(), now, reason);
         Library.newCurrent(st.state, now);
       }
-      // The new board is the old one's size: nothing asks (New board is where a size is chosen).
-      this.freshGame(size);
+      // The new board is the old one's size and recipe: nothing asks (New board is where they are chosen).
+      this.freshGame(size, recipe);
       this.persist();
     }
 
     /**
-     * A new, empty game for the board in play (after Retire, Delete or New board), at `size` (clamped to what a board
-     * can be): by default the size last chosen in the New board window.
+     * A new, empty game for the board in play (after Retire, Delete or New board), at `size` and of `recipe` (the size
+     * clamped to what a board of it can be): by default the size and recipe last chosen in the New board window.
      */
-    freshGame(size) {
-      const z = Library.clampSize(size || this.app.store.state.boards.size);
+    freshGame(size, recipe) {
+      const B = this.app.store.state.boards;
+      const r = recipe || B.recipe || (L.Recipe && L.Recipe.DEFAULT);
+      const z = Library.clampSize(size || B.size, r);
       this.app.store.state.stats.free.boards++;
-      this.setGame(new Game({ w: z.w, h: z.h, previewCount: this.settings.preview }));
+      this.setGame(new Game({ w: z.w, h: z.h, recipe: r, previewCount: this.settings.preview }));
     }
 
     // ---- the board library -------------------------------------------------------------------------------------------
@@ -857,6 +1004,9 @@
       const s = this.game.s;
       return !s.pieces && this.game.board.isEmpty() && !Object.values(s.items || {}).some((n) => n > 0) && !s.gold && !s.double && !s.net && !s.boost;
     }
+
+    /** Is the board in play of this recipe (Recipe.equal: the same board, whatever order its keys were written in)? */
+    sameRecipe(r) { return !L.Recipe || L.Recipe.equal(r || L.Recipe.DEFAULT, this.game.recipe || L.Recipe.DEFAULT); }
 
     /** The board in play as saved, marked when it is full (for the library's list). */
     boardJSON() { const j = this.game.toJSON(); if (this.game.over) j.over = true; return j; }
@@ -879,15 +1029,16 @@
     persist() { this.save(); this.app.store.save(); }
 
     /**
-     * Shelves the board in play and starts a new one (its own seed) at `size`, by default the size last chosen. A board
+     * Shelves the board in play and starts a new one (its own seed) at `size` and of `recipe`, by default the ones last chosen. A board
      * nothing has been done on is not shelved (it would be an empty board kept): it is made again at that size, in its
      * own record. False when the library is full, or when an untouched board would be made again as it is.
      */
-    shelveAndNew(size) {
-      const st = this.app.store, now = Date.now(), z = Library.clampSize(size || st.state.boards.size);
+    shelveAndNew(size, recipe) {
+      const st = this.app.store, now = Date.now(), r = recipe || st.state.boards.recipe || (L.Recipe && L.Recipe.DEFAULT), z = Library.clampSize(size || st.state.boards.size, r);
       if (this.untouched()) {
-        if (!size && z.w === this.game.w && z.h === this.game.h) return false;
-        this.setGame(new Game({ w: z.w, h: z.h, previewCount: this.settings.preview }));
+        // An untouched board of another recipe is made again with it, as one of another size is.
+        if (!size && z.w === this.game.w && z.h === this.game.h && this.sameRecipe(r)) return false;
+        this.setGame(new Game({ w: z.w, h: z.h, recipe: r, previewCount: this.settings.preview }));
         this.app.sound.play('hold');
         this.persist();
         return true;
@@ -895,94 +1046,252 @@
       if (Library.full(st.state.boards)) { toast('Library full', 'bad'); this.app.sound.play('error'); return false; }
       this.syncCounters();
       Library.startNew(st.state, this.boardJSON(), now);
-      this.freshGame(z);
+      this.freshGame(z, r);
       this.app.sound.play('hold');
       this.persist();
       return true;
     }
 
     /**
-     * The New board window: a size (Width and Height, a few presets, the empty well drawn small) and Create. It opens
-     * on the size last chosen (Standard at first); Create remembers it and makes the board (shelveAndNew).
-     * `done(true)` once a board was made.
+     * The New board window: the board's size and recipe, and Create. On top, always: the empty well drawn small and the
+     * Width and Height steppers. Under them four tabs (Size, Shapes, Modifiers, Mode), each with a short value, and one
+     * panel: Size has the presets; Shapes its chips (Normal, and each shapes part's); Modifiers a switch for each
+     * modifier; Mode the modes and the level of the one chosen. It opens on the Size tab, with focus on Width, at the
+     * size and recipe last chosen. The last choice wins (Recipe.resolve): an option the choice rules out moves to an
+     * allowed one (and comes back when it is allowed again), and the live region says what changed; an option the
+     * other choices rule out stays in place, off (aria-disabled), and a press on it shows why in one muted line. The
+     * size shown is the one asked for, clamped to what a board of the recipe can be (Recipe.clampSize), so it comes
+     * back when the recipe allows it again. Create remembers both and makes the board (shelveAndNew). `done(true)` once
+     * a board was made.
+     *
+     * The feature parts fill it through Recipe.uiPart({ key, order, … }), every field optional:
+     *   chips: [{ value, name, piece | sample(ctx, px, look) }]   Shapes chips (path 'shapes.preset'); Normal is built in
+     *   tab: 'shapes' | 'mods' | 'mode' | 'size', panel(r, api) -> element   more in that tab's panel, under its options
+     *   value(r) -> text          the Shapes tab's short value ("Frantic", "Custom")
+     *   mod: 'jelly', name        Modifiers: its switch's name        mode: 'protect', name   Mode: its button's name
+     *   levels(r) -> { path, values: [[value, label]] } | null      the level row of its mode
+     *   stepper(r, key) -> { label } | null   a stepper's name ('w', 'h': Battle's Height is Rows)
+     *   presets(r) -> [[name, w, h]] | null   the Size tab's presets
+     *   sizeFor(r, asked) -> asked | null     the size to show once the recipe changed (Battle keeps its own)
+     *   commit(r, size) -> { recipe, size } | null   what Create makes
+     * api: { recipe, choose(path, value), why(text), refresh(), look, app }.
      */
     openNewBoard(done) {
-      const st = this.app.store, B = st.state.boards;
-      const { LIMITS, STANDARD } = Library;
-      let z = Library.clampSize(B.size);
-      const PRESETS = [['Small', 6, 12], ['Standard', STANDARD.w, STANDARD.h], ['Tall', 8, 30], ['Wide', 16, 16]];
+      const st = this.app.store, B = st.state.boards, R = L.Recipe;
+      const clone = (v) => JSON.parse(JSON.stringify(v));
+      let recipe = R.normalize(B.recipe), memo = {}, tab = 'size';
+      // What was asked for (any size a board can have) and what is shown (that, as a board of this recipe can be).
+      let asked = Library.clampSize(B.size), z = R.clampSize(asked, recipe), lim = R.limits(recipe);
+      const uis = () => R.uis();
+      const cap = (t) => String(t).charAt(0).toUpperCase() + String(t).slice(1);
+      const modName = (k) => { const u = uis().find((x) => x.mod === k); return (u && u.name) || cap(k); };
+      const modeName = (m) => { const u = uis().find((x) => x.mode === m); return (u && u.name) || cap(m); };
+      const idOf = (path, v) => path + '=' + (typeof v === 'string' ? v : JSON.stringify(v));
+      const lk = UI.lookWith(this.app), look = { skin: lk.skin, color: (c) => lk.colors[c], colors: lk.colors, t: 0, alpha: 1 };
+      /** The chips of the Shapes tab: Normal, then each shapes part's. */
+      const chips = () => {
+        const out = [{ path: 'shapes.preset', value: 'normal', name: 'Normal', piece: 'T' }];
+        for (const u of uis()) for (const c of u.chips || []) {
+          const k = out.findIndex((o) => o.value === c.value && o.path === (c.path || 'shapes.preset'));
+          const chip = Object.assign({ path: 'shapes.preset' }, c);
+          if (k >= 0) out[k] = chip; else out.push(chip);
+        }
+        return out;
+      };
+      /** The modifiers a part brings (options mods.k), in the recipe's order. */
+      const mods = () => R.MODS.filter((k) => R.options().some((o) => o.path === 'mods.' + k));
+      const modes = () => (R.options().find((o) => o.path === 'mode') || { values: ['plain'] }).values;
+      const tabValue = (k) => {
+        if (k === 'shapes') {
+          const u = uis().find((x) => x.value);
+          const v = u && u.value(recipe);
+          if (v) return v;
+          const c = chips().find((x) => R.canon(R.getPath(recipe, x.path)) === R.canon(x.value));
+          return c ? c.name : 'Normal';
+        }
+        if (k === 'mods') { const on = R.MODS.filter((m) => recipe.mods && recipe.mods[m]); return !on.length ? 'Off' : on.length === 1 ? modName(on[0]) : on.length === 2 ? 'Both' : on.length + ' on'; }
+        if (k === 'mode') return modeName(recipe.mode);
+        return '';
+      };
+      const TABS = [['size', 'Size'], ['shapes', 'Shapes'], ['mods', 'Modifiers'], ['mode', 'Mode']];
+
       const preview = h('canvas', { class: 'nb-preview', 'aria-hidden': 'true' });
-      const presets = h('div', { class: 'nb-presets', role: 'group', 'aria-label': 'Presets' }, PRESETS.map(([name, w, hh]) =>
-        h('button', { type: 'button', class: 'nb-preset', 'data-w': String(w), 'data-h': String(hh), 'aria-pressed': 'false', onclick: () => set({ w, h: hh }, true) },
-          h('b', null, name), h('span', null, Library.sizeLabel(w, hh)))));
+      const presetList = () => { for (const u of uis()) { const p = u.presets && u.presets(recipe); if (p) return p; } return [['Small', 6, 12], ['Standard', Library.STANDARD.w, Library.STANDARD.h], ['Tall', 8, 30], ['Wide', 16, 16]]; };
       /** One stepper: its label, −, the number (a spin button: ↑ ↓, Page Up / Down by 5, Home, End) and +. */
       const stepper = (key, label) => {
-        const [lo, hi] = LIMITS[key];
         const minus = h('button', { type: 'button', class: 'icon-btn nb-step', 'aria-label': 'Fewer ' + (key === 'w' ? 'columns' : 'rows'), html: L.Icons.icon('minus'), onclick: () => set({ [key]: z[key] - 1 }, true) });
         const plus = h('button', { type: 'button', class: 'icon-btn nb-step', 'aria-label': 'More ' + (key === 'w' ? 'columns' : 'rows'), html: L.Icons.icon('plus'), onclick: () => set({ [key]: z[key] + 1 }, true) });
-        const val = h('div', { class: 'nb-val', role: 'spinbutton', tabindex: '0', 'aria-label': label, 'aria-valuemin': String(lo), 'aria-valuemax': String(hi), 'data-k': key });
+        const val = h('div', { class: 'nb-val', role: 'spinbutton', tabindex: '0', 'aria-label': label, 'data-k': key });
+        const name = h('span', { class: 'nb-label' }, label);
         val.addEventListener('keydown', (e) => {
           const by = { ArrowUp: 1, ArrowRight: 1, ArrowDown: -1, ArrowLeft: -1, PageUp: 5, PageDown: -5 }[e.key];
           if (by) set({ [key]: z[key] + by });
-          else if (e.key === 'Home') set({ [key]: lo });
-          else if (e.key === 'End') set({ [key]: hi });
+          else if (e.key === 'Home') set({ [key]: lim[key][0] });
+          else if (e.key === 'End') set({ [key]: lim[key][1] });
           else return;
           e.preventDefault(); e.stopPropagation();
         });
-        return { el: h('div', { class: 'nb-row' }, h('span', { class: 'nb-label' }, label), h('div', { class: 'nb-stepper' }, minus, val, plus)), minus, plus, val, key, lo, hi };
+        return { el: h('div', { class: 'nb-row' }, name, h('div', { class: 'nb-stepper' }, minus, val, plus)), minus, plus, val, name, key, label };
       };
       const steppers = [stepper('w', 'Width'), stepper('h', 'Height')];
       const paint = () => {
         // The empty well at this size, fitted in a fixed box on whole device pixels (as the library's thumbnails).
-        const theme = this.app.theme, dpr = Math.min(3, root.devicePixelRatio || 1);
+        const dpr = Math.min(3, root.devicePixelRatio || 1);
         const boxW = 76, boxH = 124;
         const c = Math.max(1, Math.floor(Math.min(boxW * dpr / z.w, boxH * dpr / z.h)));
         const W = z.w * c, H = z.h * c;
         preview.width = W; preview.height = H;
         preview.style.width = W / dpr + 'px'; preview.style.height = H / dpr + 'px';
-        const ctx = preview.getContext('2d');
-        const gr = ctx.createLinearGradient(0, 0, 0, H);
-        gr.addColorStop(0, theme.wellTop || theme.well); gr.addColorStop(1, theme.wellBottom || theme.well);
-        ctx.fillStyle = gr; ctx.fillRect(0, 0, W, H);
-        if (c >= 4) {
-          ctx.fillStyle = theme.grid || theme.line;
-          for (let x = 1; x < z.w; x++) ctx.fillRect(x * c, 0, 1, H);
-          for (let y = 1; y < z.h; y++) ctx.fillRect(0, y * c, W, 1);
-        }
+        Render.previewBoard(preview.getContext('2d'), { x: 0, y: 0, w: W, h: H }, z.w, z.h, recipe, this.app.theme, { cell: c, dpr });
       };
-      // A button or a preset changes a number that does not have focus: the new size is read out (VoiceOver).
+      // A button, a preset or an option changes what does not have focus: the change is read out (VoiceOver).
       const live = h('div', { class: 'nb-live', 'aria-live': 'polite' });
-      const set = (o, say) => {
+      const why = h('p', { class: 'nb-why' });
+      const showWhy = (text) => { why.textContent = text || ''; if (text) live.textContent = text; };
+
+      // ---- the tabs and the panel ----
+      const tabBtns = TABS.map(([k, name]) => h('button', {
+        type: 'button', role: 'tab', class: 'nb-tab' + (k === 'size' ? ' solo' : ''), id: 'nb-tab-' + k, 'data-tab': k, 'aria-controls': 'nb-panel',
+        onclick: () => select(k),
+      }, h('b', { class: 'nm' }, name), k === 'size' ? null : h('span', { class: 'vl' })));
+      const tabs = h('div', { class: 'nb-tabs', role: 'tablist', 'aria-label': 'Board options' }, tabBtns);
+      tabs.addEventListener('keydown', (e) => {
+        const i = TABS.findIndex(([k]) => k === tab);
+        const j = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: TABS.length - 1 }[e.key];
+        if (j == null) return;
+        e.preventDefault(); e.stopPropagation();
+        const k = TABS[(j + TABS.length) % TABS.length][0];
+        select(k);
+        tabBtns.find((b) => b.dataset.tab === k).focus();
+      });
+      const content = h('div', { class: 'nb-content' });
+      const panel = h('div', { class: 'nb-panel', role: 'tabpanel', id: 'nb-panel' }, content, why);
+      const select = (k) => { if (k !== tab) { tab = k; showWhy(''); } refresh(); };
+
+      /** An option's button: pressed when the recipe has it, off (with why) when the other choices rule it out. */
+      const option = (path, value, cls, kids, role) => {
+        const bad = R.conflicts(recipe)[idOf(path, value)] || null;
+        const on = R.canon(R.getPath(recipe, path)) === R.canon(value);
+        return h('button', Object.assign({ type: 'button', class: cls, 'data-path': path, 'data-value': typeof value === 'string' ? value : JSON.stringify(value), 'aria-disabled': bad ? 'true' : null, 'data-tip': bad, onclick: () => choose(path, value) },
+          role === 'switch' ? { role: 'switch', 'aria-checked': String(on) } : { 'aria-pressed': String(on) }), kids);
+      };
+      const said = (path, v) => {
+        if (path.startsWith('mods.')) return modName(path.slice(5)) + (v ? ' on' : ' off');
+        if (path === 'mode') return modeName(v);
+        const c = chips().find((x) => x.path === path && R.canon(x.value) === R.canon(v));
+        if (c) return c.name;
+        for (const u of uis()) { const lv = u.levels && u.levels(recipe); const hit = lv && lv.path === path && lv.values.find(([x]) => R.canon(x) === R.canon(v)); if (hit) return hit[1]; }
+        return cap(typeof v === 'string' ? v : JSON.stringify(v));
+      };
+      /** A choice: refused with its reason when ruled out; else made, and whatever it rules out moves (the last choice wins). */
+      const choose = (path, value) => {
+        const bad = R.conflicts(recipe)[idOf(path, value)];
+        if (bad) { showWhy(bad); return; }
+        const next = clone(recipe);
+        R.setPath(next, path, value);
+        const res = R.resolve(next, path, memo);
+        memo = res.memo;
         const was = z;
-        z = Library.clampSize(Object.assign({}, z, o));
+        recipe = res.recipe;
+        for (const u of uis()) if (u.sizeFor) { const a = u.sizeFor(recipe, asked); if (a) asked = a; }
+        showWhy('');
+        refresh();
+        const words = [said(path, R.getPath(recipe, path))].concat(res.changes.map((c) => said(c.path, c.to)));
+        if (was.w !== z.w || was.h !== z.h) words.push(Library.sizeLabel(z.w, z.h));
+        live.textContent = words.join(', ');
+      };
+      const api = { get recipe() { return recipe; }, choose, why: showWhy, refresh: () => refresh(), look, app: this.app };
+      const extras = (k) => uis().filter((u) => u.tab === k && u.panel).map((u) => u.panel(recipe, api)).filter(Boolean);
+      const panels = {
+        size: () => {
+          const list = presetList();
+          return [h('div', { class: 'nb-presets', role: 'group', 'aria-label': 'Presets', style: { gridTemplateColumns: 'repeat(' + Math.min(4, list.length) + ', minmax(0, 1fr))' } }, list.map(([name, w, hh]) => {
+            const fits = R.sizeOk(w, hh, recipe);
+            return h('button', { type: 'button', class: 'nb-preset', 'data-w': String(w), 'data-h': String(hh), 'aria-pressed': String(w === z.w && hh === z.h), 'aria-disabled': fits ? null : 'true',
+              onclick: () => { if (!fits) { showWhy('Smallest here is ' + Library.sizeLabel(lim.w[0], lim.h[0])); return; } set({ w, h: hh }, true); } },
+            h('b', null, name), h('span', null, Library.sizeLabel(w, hh)));
+          }))].concat(extras('size'));
+        },
+        shapes: () => [h('div', { class: 'nb-chips', role: 'group', 'aria-label': 'Shapes' }, chips().map((c) => option(c.path, c.value, 'nb-chip',
+          [UI.canvasFor(28, 28, (ctx) => { if (c.sample) c.sample(ctx, 28, look); else if (c.piece) Render.drawPieceIn(ctx, { id: c.piece }, { x: 0, y: 0, w: 28, h: 28 }, 7, look); }), h('span', { class: 'nm' }, c.name)])))].concat(extras('shapes')),
+        mods: () => {
+          const list = mods();
+          return [list.length ? h('div', { class: 'nb-mods', role: 'group', 'aria-label': 'Modifiers' }, list.map((k) => option('mods.' + k, !recipe.mods[k], 'nb-switch',
+            [h('span', { class: 'nm' }, modName(k)), h('span', { class: 'sw', 'aria-hidden': 'true' })], 'switch')))
+            : h('p', { class: 'nb-none' }, 'None')].concat(extras('mods'));
+        },
+        mode: () => {
+          const u = uis().find((x) => x.mode === recipe.mode), lv = u && u.levels ? u.levels(recipe) : null;
+          return [h('div', { class: 'nb-modes seg', role: 'group', 'aria-label': 'Mode' }, modes().map((m) => option('mode', m, 'nb-mode', modeName(m)))),
+            lv ? h('div', { class: 'nb-lvl seg', role: 'group', 'aria-label': 'Level' }, lv.values.map(([v, name]) => option(lv.path, v, 'nb-level', name))) : null].concat(extras('mode'));
+        },
+      };
+      // A switch shows the recipe's state: a press asks for the other one (option() is built with the value to choose).
+      const fixSwitches = () => content.querySelectorAll('.nb-switch').forEach((b) => b.setAttribute('aria-checked', String(!!recipe.mods[b.dataset.path.slice(5)])));
+      const refresh = () => {
+        lim = R.limits(recipe);
+        z = R.clampSize(asked, recipe);
+        tabBtns.forEach((b) => {
+          const on = b.dataset.tab === tab;
+          b.setAttribute('aria-selected', String(on));
+          b.tabIndex = on ? 0 : -1;
+          const vl = b.querySelector('.vl');
+          if (vl) { vl.textContent = tabValue(b.dataset.tab); b.title = b.querySelector('.nm').textContent + ': ' + vl.textContent; }
+        });
+        panel.setAttribute('aria-labelledby', 'nb-tab-' + tab);
+        panel.dataset.tab = tab;
+        const focused = content.contains(document.activeElement) ? document.activeElement : null;
+        // The option that had focus keeps it through the redraw (a switch by its path: its value to choose flips).
+        const again = focused && (focused.dataset.path ? '[data-path="' + focused.dataset.path + '"]' + (focused.getAttribute('role') === 'switch' ? '' : '[data-value="' + CSS.escape(focused.dataset.value) + '"]') : focused.dataset.w ? '[data-w="' + focused.dataset.w + '"][data-h="' + focused.dataset.h + '"]' : null);
+        content.replaceChildren(...panels[tab]().filter(Boolean));
+        fixSwitches();
+        if (again) { const f = content.querySelector(again); if (f) f.focus(); }
         for (const sp of steppers) {
+          const t = uis().map((u) => u.stepper && u.stepper(recipe, sp.key)).find(Boolean);
+          const label = (t && t.label) || sp.label;
+          sp.name.textContent = label;
+          sp.val.setAttribute('aria-label', label);
+          const [lo, hi] = lim[sp.key];
           sp.val.textContent = String(z[sp.key]);
+          sp.val.setAttribute('aria-valuemin', String(lo));
+          sp.val.setAttribute('aria-valuemax', String(hi));
           sp.val.setAttribute('aria-valuenow', String(z[sp.key]));
           // Off at the limit, but never disabled: a disabled button would drop focus out of the window, where Enter
           // is Create. It keeps focus and a press does nothing (the size is clamped).
-          sp.minus.setAttribute('aria-disabled', String(z[sp.key] <= sp.lo));
-          sp.plus.setAttribute('aria-disabled', String(z[sp.key] >= sp.hi));
+          sp.minus.setAttribute('aria-disabled', String(z[sp.key] <= lo));
+          sp.plus.setAttribute('aria-disabled', String(z[sp.key] >= hi));
         }
-        presets.querySelectorAll('.nb-preset').forEach((b) => b.setAttribute('aria-pressed', String(+b.dataset.w === z.w && +b.dataset.h === z.h)));
-        if (say && (was.w !== z.w || was.h !== z.h)) live.textContent = was.h === z.h ? 'Width ' + z.w : was.w === z.w ? 'Height ' + z.h : Library.sizeLabel(z.w, z.h);
         paint();
       };
-      set({});
+      const set = (o, say) => {
+        const was = z;
+        asked = Library.clampSize(Object.assign({}, z, o));
+        refresh();
+        if (say && (was.w !== z.w || was.h !== z.h)) live.textContent = was.h === z.h ? steppers[0].name.textContent + ' ' + z.w : was.w === z.w ? steppers[1].name.textContent + ' ' + z.h : Library.sizeLabel(z.w, z.h);
+      };
+      refresh();
       const body = h('div', { class: 'nb-body' },
         h('div', { class: 'nb-main' }, h('div', { class: 'nb-well' }, preview), h('div', { class: 'nb-fields' }, steppers.map((sp) => sp.el))),
-        presets, live);
+        tabs, panel, live);
       const handle = UI.openModal({
-        title: 'New board', icon: 'newBoard', width: 340, cls: 'modal-newboard', body,
+        title: 'New board', icon: 'newBoard', cls: 'modal-newboard', body,
         buttons: [{ label: 'Cancel' }, { label: 'Create', kind: 'primary', onClick: () => {
-          B.size = { w: z.w, h: z.h };
-          const made = this.shelveAndNew(z);
+          let out = { recipe, size: { w: z.w, h: z.h } };
+          for (const u of uis()) if (u.commit) out = u.commit(out.recipe, out.size) || out;
+          B.size = { w: out.size.w, h: out.size.h };
+          B.recipe = R.normalize(out.recipe);
+          const made = this.shelveAndNew(B.size, B.recipe);
           if (!made) st.touch();
           if (done) done(made);
         } }],
       });
-      // Enter on a button (a stepper's, a preset, Cancel, Close) presses that button; anywhere else it is Create.
+      // Enter on a button (a stepper's, a preset, a tab, an option, Cancel, Close) presses that button; anywhere else
+      // it is Create.
       handle.el.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.closest('button') && !e.target.closest('.btn.primary')) e.stopPropagation(); });
       steppers[0].val.focus();
+      // For the tests: the window's recipe and size as they stand.
+      handle.nb = { get recipe() { return recipe; }, get size() { return z; }, select, choose };
+      this.lastNB = handle;
       return handle;
     }
 
@@ -994,7 +1303,10 @@
       this.syncCounters();
       let game = null;
       if (Library.playable(json)) { try { game = new Game({ saved: json, previewCount: this.settings.preview }); } catch (e) { game = null; } }
-      if (!game) { const z = Library.clampSize(json); game = new Game({ w: z.w, h: z.h, previewCount: this.settings.preview }); }
+      if (!game) {
+        const r = L.Recipe ? L.Recipe.normalize(json.recipe) : undefined, z = Library.clampSize(json, r);
+        game = new Game({ w: z.w, h: z.h, recipe: r, previewCount: this.settings.preview });
+      }
       this.setGame(game);
       this.app.sound.play('hold');
       this.persist();
@@ -1009,7 +1321,7 @@
       if (!s || !s.pieces) return;
       UI.openModal({
         title: 'Retire ' + rec.name + '?', icon: 'retire', width: 420, cls: 'modal-retire',
-        body: [this.boardSummary(Library.summarize(s, Date.now(), cur ? this.game : rec.game)), B.retired.length >= Library.MAX_RETIRED ? h('p', { class: 'lib-note' }, 'Oldest retired board is removed') : null],
+        body: [this.boardSummary(Library.summarize(s, Date.now(), cur ? this.game : rec.game), cur ? this.game.recipe : rec.game.recipe, cur ? this.ctl.tiles(this.game) : []), B.retired.length >= Library.MAX_RETIRED ? h('p', { class: 'lib-note' }, 'Oldest retired board is removed') : null],
         buttons: [{ label: 'Cancel' }, { label: 'Retire', kind: 'primary', onClick: () => { this.retire(id); if (after) after(); } }],
       });
     }
@@ -1035,12 +1347,12 @@
       const st = this.app.store, B = st.state.boards, now = Date.now();
       if (Library.findRetired(B, id)) { Library.removeRetired(B, id); this.persist(); return; }
       if (id === B.cur) {
-        // The board that takes its place is its size.
-        const size = { w: this.game.w, h: this.game.h };
+        // The board that takes its place is its size and recipe.
+        const size = { w: this.game.w, h: this.game.h }, recipe = this.game.recipe;
         this.syncCounters();
         Library.remove(st.state, id);
         Library.newCurrent(st.state, now);
-        this.freshGame(size);
+        this.freshGame(size, recipe);
       } else Library.remove(st.state, id);
       this.persist();
     }
@@ -1058,36 +1370,25 @@
      * of it at that scale, a larger one is fitted in, at one device pixel a cell or more, so every row is as tall. Cached by board, stack, look and scale, so it is redrawn only when one of those
      * changed.
      */
-    thumb(id, cells, w, hh) {
+    thumb(id, cells, w, hh, recipe) {
       const eq = this.app.store.state.equipped, theme = this.app.theme;
       const dpr = Math.min(3, root.devicePixelRatio || 1);
       const str = typeof cells === 'string' ? cells : Library.encodeCells(cells);
-      const key = [id, eq.palette, theme.name, theme.wellTop, dpr, w, hh, str].join('|');
+      // A view part can draw its option over the stack (Render.previewBoard: Mirror's line, the sprout): by recipe too.
+      const rk = recipe && L.Recipe && !L.Recipe.isDefault(recipe) ? L.Recipe.key(recipe) : '';
+      const key = [id, eq.palette, theme.name, theme.wellTop, dpr, w, hh, str, rk].join('|');
       let url = this.thumbs.get(id);
       if (!url || url.key !== key) {
         const vals = (typeof cells === 'string' ? Library.decodeCells(cells) : cells) || [];
         // The box a Standard board fills (three pixels a cell, or whole device pixels near it); any size is fitted in it.
         const c0 = Math.max(3, Math.round(3 * dpr)), BW = Library.STANDARD.w * c0, BH = Library.STANDARD.h * c0;
-        const c = Math.max(1, Math.min(c0, Math.floor(BW / w), Math.floor(BH / hh))), gap = c >= 5 ? 1 : 0, pad = Math.max(2, Math.round(2 * dpr));
+        const c = Math.max(1, Math.min(c0, Math.floor(BW / w), Math.floor(BH / hh))), pad = Math.max(2, Math.round(2 * dpr));
         const W = BW + pad * 2, H = BH + pad * 2, ww = w * c + pad * 2, wh = hh * c + pad * 2;
         const ox = Math.floor((W - ww) / 2), oy = Math.floor((H - wh) / 2);
         const look = Render.makeLook(eq, theme, 0, true);
         const cv = document.createElement('canvas');
         cv.width = W; cv.height = H;
-        const ctx = cv.getContext('2d');
-        ctx.translate(ox, oy);
-        const gr = ctx.createLinearGradient(0, 0, 0, wh);
-        gr.addColorStop(0, theme.wellTop || theme.well); gr.addColorStop(1, theme.wellBottom || theme.well);
-        ctx.fillStyle = gr; Render.rr(ctx, 0, 0, ww, wh, Math.min(4 * dpr, ww / 4)); ctx.fill();
-        for (let y = 0; y < hh; y++) for (let x = 0; x < w; x++) {
-          const v = vals[y * w + x];
-          if (!v) continue;
-          ctx.fillStyle = look.colors[v & CELL.COLOR] || look.colors[8];
-          ctx.fillRect(pad + x * c, pad + (hh - 1 - y) * c, c - gap, c - gap);
-        }
-        const lw = Math.max(1, Math.round(dpr));
-        ctx.strokeStyle = theme.rim || theme.line; ctx.lineWidth = lw;
-        Render.rr(ctx, lw / 2, lw / 2, ww - lw, wh - lw, Math.min(4 * dpr, ww / 4)); ctx.stroke();
+        Render.previewBoard(cv.getContext('2d'), { x: ox, y: oy, w: ww, h: wh }, w, hh, recipe, theme, { style: 'thumb', cell: c, pad, dpr, cells: vals, look });
         url = { key, src: cv.toDataURL(), W: W / dpr, H: H / dpr };
         this.thumbs.set(id, url);
         if (this.thumbs.size > 80) this.thumbs.delete(this.thumbs.keys().next().value);
@@ -1170,12 +1471,14 @@
         const full = cur ? this.game.over : !!(g && g.over);
         const cells = cur ? this.game.board.cells : g ? g.cells : [];
         const z = cur ? this.game : Library.clampSize(g), w = z.w, hh = z.h;
+        const recipe = cur ? this.game.recipe : g && g.recipe, label = recipe && L.Recipe ? L.Recipe.label(recipe) : '', short = label && L.Recipe.label(recipe, true);
         const open = h(editing === rec.id ? 'div' : 'button', {
           class: 'lib-open', 'data-id': rec.id, 'aria-label': editing === rec.id ? null : (cur ? rec.name + ', in play' : 'Play ' + rec.name),
           onclick: editing === rec.id ? null : () => { if (!cur) this.switchTo(rec.id); close(); },
-        }, this.thumb(rec.id, cells, w, hh), h('div', { class: 'grow' }, nameEl(rec, B),
-          h('div', { class: 'd' }, cur ? h('span', { class: 'tag on' }, 'Playing') : null, full ? h('span', { class: 'tag full' }, 'Full') : null,
-            h('span', { class: 'sz' }, [Library.sizeLabel(w, hh), cur ? null : when(rec.touched)].filter(Boolean).join(' · ')),
+        }, this.thumb(rec.id, cells, w, hh, recipe), h('div', { class: 'grow' }, nameEl(rec, B),
+          h('div', { class: 'd' + (short ? ' labelled' : '') }, cur ? h('span', { class: 'tag on' }, 'Playing') : null, full ? h('span', { class: 'tag full' }, 'Full') : null,
+            // The size, then the board's recipe in short (Recipe.label: nothing on a default board; in full as its tip).
+            h('span', { class: 'sz', title: label || null }, [Library.sizeLabel(w, hh), short, cur ? null : when(rec.touched)].filter(Boolean).join(' · ')),
             h('span', { class: 'st' }, ['Lines ' + fmtInt(s.lines || 0), 'Score ' + fmtInt(s.score || 0)].join(' · ')))));
         return h('div', { class: 'lib-row' + (cur ? ' current' : ''), 'data-id': rec.id }, open,
           h('div', { class: 'lib-acts' },
@@ -1183,14 +1486,17 @@
             s.pieces ? act('retire', 'Retire', () => this.confirmRetire(rec.id, afterGone(rec.id))) : gap(),
             act('trash', 'Delete', () => this.confirmDelete(rec.id, afterGone(rec.id)), 'del')));
       };
-      const retiredRow = (e) => h('div', { class: 'lib-row retired', 'data-id': e.id },
+      const retiredRow = (e) => {
+        const label = e.recipe && L.Recipe ? L.Recipe.label(e.recipe) : '', short = label && L.Recipe.label(e.recipe, true);
+        return h('div', { class: 'lib-row retired', 'data-id': e.id },
         h('button', { class: 'lib-open', 'data-id': e.id, 'aria-label': e.name, onclick: () => this.openRetired(e.id, afterGone(e.id)) },
-          this.thumb(e.id, e.cells, e.w, e.h),
+          this.thumb(e.id, e.cells, e.w, e.h, e.recipe),
           h('div', { class: 'grow' }, h('div', { class: 't' }, e.name),
-            h('div', { class: 'd' }, e.reason === 'full' ? h('span', { class: 'tag full' }, 'Full') : null,
-              h('span', { class: 'sz' }, when(e.at) + ' · ' + Library.sizeLabel(e.w, e.h)),
+            h('div', { class: 'd' + (short ? ' labelled' : '') }, e.reason === 'full' ? h('span', { class: 'tag full' }, 'Full') : null,
+              h('span', { class: 'sz', title: label || null }, [when(e.at), Library.sizeLabel(e.w, e.h), short].filter(Boolean).join(' · ')),
               h('span', { class: 'st' }, ['Lines ' + fmtInt(e.sum.lines || 0), 'Score ' + fmtInt(e.sum.score || 0)].join(' · '))))),
         h('div', { class: 'lib-acts' }, act('trash', 'Delete', () => this.confirmDelete(e.id, afterGone(e.id)), 'del')));
+      };
       const newBtn = h('button', { class: 'btn sm primary lib-new', 'aria-label': 'New board', onclick: () => this.openNewBoard((made) => { if (made && handle && handle.el.isConnected) { tab = 'saved'; editing = null; draw(st.state.boards.cur); } }) }, ico('newBoard'), h('span', { class: 'lbl' }, 'New board'));
       const seg = h('div', { class: 'seg lib-tabs' }, [['saved', 'Saved'], ['retired', 'Retired']].map(([k, l]) =>
         h('button', { 'data-k': k, 'aria-pressed': String(k === tab), onclick: () => { tab = k; editing = null; draw(); } }, l, h('span', { class: 'c' }))));
@@ -1244,7 +1550,7 @@
       // Delete asks first; only once it is done does the record close (Cancel leaves it open, where it was).
       const rec = UI.openModal({
         title: e.name, icon: 'retire', width: 420, cls: 'modal-retire',
-        body: [h('div', { class: 'lib-dates' }, this.thumb(e.id, e.cells, e.w, e.h), h('div', null, h('div', null, h('i', null, 'Started '), day(e.sum.startedAt || e.created)), h('div', null, h('i', null, 'Retired '), day(e.at)))), this.boardSummary(e.sum)],
+        body: [h('div', { class: 'lib-dates' }, this.thumb(e.id, e.cells, e.w, e.h, e.recipe), h('div', null, h('div', null, h('i', null, 'Started '), day(e.sum.startedAt || e.created)), h('div', null, h('i', null, 'Retired '), day(e.at)))), this.boardSummary(e.sum, e.recipe)],
         buttons: [{ label: 'Delete', kind: 'danger', onClick: () => { this.confirmDelete(id, () => { rec.close(); if (after) after(); }); return false; } }, { label: 'Close', kind: 'primary' }],
       });
     }
@@ -1258,13 +1564,16 @@
         : s.net > 0 ? stat('Luck', 'Net', 'opt boost', ITEMS.net.desc)
         : s.boost ? stat('Boost', Chain.fmt(s.boost.x) + ' · ' + Pay.clearsLeft(s.boost.left, this.game.rules), 'opt boost', 'Next ' + Pay.clearsLeft(s.boost.left, this.game.rules) + ' clears pay ' + Chain.fmt(s.boost.x))
         : stat('Pieces', fmtInt(s.pieces), 'opt');
+      // The plain figures; the board's controller lays out the bar from them (Protect's Leaves in place of Score).
+      const parts = {
+        lines: stat('Lines', fmtInt(s.lines)),
+        score: stat('Score', fmtInt(s.score)),
+        chain: h('span', { class: 'stat ' + (s.chain > 1 ? 'chain' : 'slot-off'), 'data-tip-title': 'Chain', 'data-tip': 'Back-to-back plus combo. ' + (s.hand === false ? 'Power-ups on the board.' : 'No power-ups on the board: ' + (s.hchain || 0) + '.') },
+          h('i', null, 'Chain '), h('b', null, String(s.chain || 0), h('span', { class: 'mult' }, ' · ' + Chain.fmt(s.mult || 1)))),
+        side,
+      };
       this.status.replaceChildren(
-        h('div', { class: 'stats' },
-          stat('Lines', fmtInt(s.lines)),
-          stat('Score', fmtInt(s.score)),
-          h('span', { class: 'stat ' + (s.chain > 1 ? 'chain' : 'slot-off'), 'data-tip-title': 'Chain', 'data-tip': 'Back-to-back plus combo. ' + (s.hand === false ? 'Power-ups on the board.' : 'No power-ups on the board: ' + (s.hchain || 0) + '.') },
-            h('i', null, 'Chain '), h('b', null, String(s.chain || 0), h('span', { class: 'mult' }, ' · ' + Chain.fmt(s.mult || 1)))),
-          side),
+        h('div', { class: 'stats' }, this.ctl.status(parts, { stat })),
         h('div', { class: 'acts' },
           this.giftBtn(),
           h('button', { class: 'btn sm boards-btn', 'aria-label': 'Boards', 'data-tip': 'Boards', onclick: () => this.openLibrary() }, ico('boards'), h('span', { class: 'lbl' }, 'Boards'))));
@@ -1315,6 +1624,8 @@
      * (dimmed when the wallet is short). Click to use; one you have none of is bought and used. Esc closes it.
      */
     renderItems() {
+      // A controller with a bar of its own (Battle: Send, Start over, Pause) draws it instead of the power-ups.
+      if (this.ctl.bar(this.itembar) === true) { this.tray = null; this.renderTray(); return; }
       const inv = this.app.store.state.inventory;
       const armedId = this.armed && this.armed.piece === this.game.piece ? this.armed.id : null;
       this.itembar.replaceChildren(...ITEM_GROUPS.map((g) => {
@@ -1350,10 +1661,12 @@
         h('div', { class: 'tray-items' }, ids.map((id) => {
           const it = ITEMS[id], n = inv[id] || 0;
           const on = this.armed && this.armed.id === id && this.armed.piece === this.game.piece;
+          // One this board refuses (its recipe's rules: R.refuse, or a part's allow) stays in its place, off, with why.
+          const why = this.game.allow(id);
           return h('button', {
-            class: 'item-btn' + (n || on ? '' : ' empty') + (!n && !on && wallet < it.price ? ' poor' : '') + (on ? ' on' : ''), 'data-item': id,
-            'data-rarity': it.rarity === 'common' ? null : it.rarity,
-            'data-tip-title': it.name, 'data-tip-icon': 'item-' + id, 'data-tip': it.desc,
+            class: 'item-btn' + (n || on ? '' : ' empty') + (!n && !on && wallet < it.price ? ' poor' : '') + (on ? ' on' : '') + (why ? ' refused' : ''), 'data-item': id,
+            'data-rarity': it.rarity === 'common' ? null : it.rarity, 'aria-disabled': why ? 'true' : null,
+            'data-tip-title': it.name, 'data-tip-icon': 'item-' + id, 'data-tip': why || it.desc,
             'data-tip-foot': on ? 'Again to take it back' : null,
             onclick: () => this.useItem(id),
           }, h('span', { class: 'ii', html: L.Icons.icon('item-' + id) }), h('span', { class: 'il' }, it.name), h('span', { class: 'n' }, n || on ? String(n) : LINE + it.price));
@@ -1372,6 +1685,9 @@
       if (!it) return;
       if (this.cardOpen && id !== 'rewind') return;
       if (this.armed && this.armed.id === id && this.armed.piece === this.game.piece) { this.disarm(); return; }
+      // Refused on this board (Game.allow: the recipe's rules and parts): nothing is spent or bought; the reason shows.
+      const why = this.game.allow(id);
+      if (why) { toast(why, 'bad'); this.app.sound.play('error'); return; }
       if (!this.game.piece && id !== 'rewind') { toast('No piece in play', 'bad'); return; }
       if (!st.state.inventory[id]) {
         if (st.state.lines < it.price) { toast(it.name + ' · ' + fmtInt(it.price) + ' ' + LINE, 'bad'); this.app.sound.play('error'); return; }
@@ -1439,11 +1755,8 @@
       const become = (entry) => { if (g.replacePiece(Object.assign({ tag: id }, entry))) done(); else noRoom(); };
       if (SPECIALS.has(id)) { if (g.setSpecial(id)) done(); else noRoom(); return; }
       switch (id) {
-        case 'reroll': {
-          const opts = Pieces.TETROMINOES.filter((t) => t !== (cur && cur.type.id));
-          become({ id: opts[Math.floor(Math.random() * opts.length)] });
-          break;
-        }
+        // Another piece from where this board's pieces come from (its dealer; today's: one of the seven).
+        case 'reroll': become({ id: g.dealer.reroll(g, cur && cur.type.id) }); break;
         case 'mirror': become({ id: Pieces.mirrorOf(cur.type).id, special: cur.special, tag: cur.entry.tag || null }); break;
         case 'pebble': become({ id: 'M1' }); break;
         case 'noodle': become({ id: Pieces.customType([[0, 0], [1, 0], [2, 0], [3, 0], [4, 0], [5, 0]]).id }); break;
@@ -1457,7 +1770,8 @@
           UI.openBlueprint(this.app, (cells) => { if (cells) become({ id: Pieces.customType(cells).id }); });
           break;
         case 'order':
-          UI.openOrderSlip(this.app, (pick) => { if (pick) become({ id: pick }); });
+          // The pieces this board's dealer can give (a board of the seven: today's list, with the small three).
+          UI.openOrderSlip(this.app, (pick) => { if (pick) become({ id: pick }); }, g.dealer === L.BAG_DEALER ? null : g.dealer.candidates(g));
           break;
         case 'pick':
           UI.openPickOfThree(this.app, g.queue.slice(0, 3), (i) => { if (i == null) return; if (g.pickFromQueue(i)) done(); else noRoom(); });

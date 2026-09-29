@@ -56,8 +56,8 @@ get a calm two-word name no other board has (Mossy Harbor, Quiet Orchard), then 
 
 *Sizes* — a board is any size from 4 × 8 to 20 × 40, chosen when it is made and fixed for its life. New board opens a
 small window: Width and Height steppers (− and +; on the number, ↑ ↓, Page Up / Down by 5, Home and End; 44 px targets
-by touch), four presets (Small 6 × 12, Standard 10 × 20, Tall 8 × 30, Wide 16 × 16), the empty well drawn at that
-size, and Create (Enter, except on a button: that button, so Cancel is Cancel; a − or + at the limit
+by touch) beside the empty well drawn at that size, always on top; under them four tabs, Size, Shapes, Modifiers and
+Mode (see [Board options](#board-options)), the Size tab holding four presets (Small 6 × 12, Standard 10 × 20, Tall 8 × 30, Wide 16 × 16), and Create (Enter, except on a button: that button, so Cancel is Cancel; a − or + at the limit
 keeps focus and does nothing, and the new size is read out after a button or a preset). It opens on the size last
 chosen (`boards.size` in the save; Standard at first). A board made
 without asking — Retire on a full board's card, Retire or Delete of the board in play — is the size of the one it
@@ -416,6 +416,43 @@ per piece or per action than a Standard board (`f = min(1, 4 / E)`, E the mean c
 `Board.get` reads as a wall (`CELL.WALL`); every cell bit has one name in `CELL` (`js/board.js`), and anything that
 reads a colour masks with `CELL.COLOR`.
 
+*The New board window* (`PlayMode.openNewBoard`) — the steppers and the well stay on top; under them a tablist of
+four tabs (roving focus: ← → Home End; Enter or Space on a tab selects it and never creates), each 44 px tall with its
+name and, muted, its short value (Shapes "Normal", Modifiers "Off", "Jelly", "Mirror" or "Both", Mode "Plain"; Size has
+none: its value is on the steppers), then one panel the same height on every tab (the tallest panel's at each size; a
+taller one scrolls inside itself and the footer stays): Size the presets, Shapes chips in 3 × 2 (a sample beside the
+name), Modifiers a switch each, Mode the modes and the chosen one's level. It opens on Size with focus on Width, on the
+recipe and size last chosen (`boards.recipe`, `boards.size`). The last choice wins (`Recipe.resolve`): an option it
+rules out moves to an allowed one, comes back once it is allowed again, and the change is read out; an option the other
+choices rule out (`Recipe.conflicts`) stays in its place, off (`aria-disabled`), and a press shows why in one muted
+line. The size shown is the one asked for as a board of the recipe can be (`Recipe.clampSize`): a larger minimum raises
+it, and going back restores what was asked. The parts fill the tabs through `Recipe.uiPart` (chips, a switch, a mode and
+its levels, a panel of their own, the steppers' names, presets, Create), so the window's code never changes for them.
+A board of another recipe than the default says so: after its size on its library row (the short label, the full one
+as its tip; on a phone, a line of its own), as a Board tile on its summary, and as a muted second line in Past boards.
+Retire, Delete and a full board's Retire start the next board with the same recipe; an untouched board asked for again
+with another recipe is made again, in its own record.
+
+*What runs a board* — Free Play asks the board's *controller* at every turn (`plainController` in `js/modes.js` is
+today's Free Play exactly; a part can give its own, and whatever it leaves out stays plain): its layout, a clock that
+runs only while `canRun()` (the tab in front, no window or card over it, the page shown and the window focused), a pause
+when the window loses focus or the pointer leaves it (`app.onAway`), the page is hidden, the tab changes, a window opens
+or the window rolls up, whether a second counts as played, what a clear pays, what a lock does, how the board ends
+(`onEnd(kind)` and its card), the status figures, the bar under the board, more summary tiles, its own keys and actions,
+and what a mouse aim, a touch or a tap means. A recipe's rules can refuse power-ups (shown off in their tray, the
+reason as the tip; a press spends nothing and says why), turn off Undo (no history) and the control hints; Reroll and
+Order Slip ask the board's dealer. Stats rows come through `UI.statRow`.
+
+*Drawing* (`js/render.js`) — `render()` clears the canvas, then draws the plate and `paint(ctx, box)`: the board unit
+laid out in a box (`layout(box)`; the whole canvas for one board). A part's view half (`Recipe.viewPart`) composes:
+the first painter whose `claims(v)` is true draws a stored cell, then a `claims: 'rest'` painter the own cells, the
+piece, its ghost and the trays, then the plain cell; overlays after the stack, the piece and the rim; `busy` keeps
+frames coming; move, turn and lock triggers; no red rim; which turn the trays draw; and marks on the New board preview
+and the library's thumbnails (`Render.previewBoard`, which draws both). With `?freeze=1` every frame is drawn at one
+fixed moment (`Render.clock`), for tests that compare pixels: `scripts/recipe-pixels.json` holds the board, an animated
+look, the red rim, thumbnails and previews at four window sizes in both themes, recorded from the tree before the
+render split, and the drawing now matches it pixel for pixel.
+
 ### Shapes
 <!-- part:shapes -->
 
@@ -561,6 +598,7 @@ node Lull/scripts/browser-test.cjs    # the page played in headless Chromium (ne
 node Lull/scripts/touch-test.cjs      # an emulated phone played with real touches: gestures, layout, 44 px targets
 node Lull/scripts/device-test.cjs     # what a phone, a desktop browser, the app and a tablet with a trackpad are offered
 node Lull/scripts/undo-test.cjs       # every way of buying an Undo charges 5; the Board full and puzzle cards fit, down to 320 x 568
+node Lull/scripts/recipe-test.cjs --write-pixels <Game dir>   # records recipe-pixels.json from a tree (browser-test runs recipe-test)
 node Lull/scripts/audio-render.cjs out/   # every sound and a minute of music rendered offline: WAVs, peak, loudness, brightness
 node Lull/scripts/audio-render.cjs out/ --harmony   # every pack's pitched sounds in every section: notes found, share in its key, A/B mixes
 
@@ -632,7 +670,7 @@ The address is shown on the `pages` job and under Settings ▸ Pages.
 |---|---|
 | `Game/` | the game: `index.html`, `manifest.webmanifest`, `sw.js` (the offline copy), `icons/` (the Home Screen icons), `css/`, and `js/` — `webapp` (the Home Screen app: the worker, its updates, lasting storage), `icons` (the one SVG icon set), `pieces` (SRS tetrominoes, pentominoes, big and custom shapes, polyomino enumeration, ids that rebuild themselves), `board` (the grid and the one table of cell bits), `recipe` (the board recipe: its parts, rules and limits), `engine` (the floating-piece rules, every item and the recipe's hooks), `items` (the chain multiplier, combos, Luck, the daily gift, power-ups earned in play), `library` (the Relaxed board library: shelved and retired boards, names, caps), `puzzlegen` (seeds, wildcards, reverse construction, reachability search, forward verification), `factory` (presses, the belt, the bin, one step for play and time away, save repair), `store` (save, catalog, stats), `achievements`, `fxphysics` (the item effects' blocks, debris and dust: gravity, bounces, spirals, fixed pools), `render` (canvas: skins, frames, effects, item animations, rotated views), `factoryview` (the factory floor, drawn like the board), `hints` (control hints: the struggle signals, their limits and retirement), `touch` (the touch gestures: a pure reader of fingers, and the page's touch helpers), `webapp` (the Home Screen web app: the offline copy's registration and updates), `collapse` (the window rolled up into its title bar, and the parade of pieces along it), `modes`, `ui`, `app` |
 | `Sources/Lull/` | the macOS shell: a borderless `NSPanel` (floating, all Spaces, edge-resizable, draggable by the page's title bar) around a transparent `WKWebView`, a blur for the Glass background, the save file, the ⌥⌘L hot key, and a self-test CI runs |
-| `scripts/` | `make-app.sh`, `icon.swift`, `line-glyph.py` (builds the line glyph's font into `lull.css`), `test.cjs`, `browser-test.cjs`, `audio-render.cjs` (renders and measures the synthesized audio offline), `pitch.cjs` (finds the notes in a render, to check sound effects are in the music's key), `splice-voice.py` (cuts the announcer's lines from a recording), `web-build.cjs` (the site as deployed), `web-icons.cjs` (the Home Screen icons), `web-test.cjs` and `web-browser-test.cjs` (the web app's tests, run by the two above), `touch-test.cjs` (an emulated phone played with gestures, run by browser-test), `device-test.cjs` (what each device is offered in Settings and the bar, and live changes; run by browser-test), `golden.cjs` and `golden.json` (the golden identity run, and its record), `sizes-test.cjs` (board sizes: the New board window, every extreme size, pay by width, layout; run by browser-test), `undo-test.cjs` (every way of buying an Undo, and the cards that offer it at every size; run by browser-test) |
+| `scripts/` | `make-app.sh`, `icon.swift`, `line-glyph.py` (builds the line glyph's font into `lull.css`), `test.cjs`, `browser-test.cjs`, `audio-render.cjs` (renders and measures the synthesized audio offline), `pitch.cjs` (finds the notes in a render, to check sound effects are in the music's key), `splice-voice.py` (cuts the announcer's lines from a recording), `web-build.cjs` (the site as deployed), `web-icons.cjs` (the Home Screen icons), `web-test.cjs` and `web-browser-test.cjs` (the web app's tests, run by the two above), `touch-test.cjs` (an emulated phone played with gestures, run by browser-test), `device-test.cjs` (what each device is offered in Settings and the bar, and live changes; run by browser-test), `golden.cjs` and `golden.json` (the golden identity run, and its record), `sizes-test.cjs` (board sizes: the New board window, every extreme size, pay by width, layout; run by browser-test), `undo-test.cjs` (every way of buying an Undo, and the cards that offer it at every size; run by browser-test), `recipe-test.cjs` and `recipe-pixels.json` (the board recipe in the page: the New board window, labels, the controller, and the board drawn pixel for pixel as recorded; run by browser-test) |
 
 ## Credits
 

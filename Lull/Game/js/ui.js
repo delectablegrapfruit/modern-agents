@@ -639,6 +639,34 @@
     return row;
   }
 
+  // ---- rows a board option adds to Stats (UI.statRow) ----------------------------------------------------------------
+
+  const STAT_ROWS = [];
+  /**
+   * A board option's own rows in Stats, so a part never edits this file: def { sub: 'free' (the Stats tab), at:
+   * 'pieces' (after Pieces placed) | 'end' (before Past boards, the default), order, render(app, stats, look) -> an
+   * element, a list of them, or null }. part is its key (a part registered again replaces its rows there).
+   */
+  function statRow(part, def) {
+    const i = STAT_ROWS.findIndex((r) => r.part === part && r.sub === def.sub && (r.at || 'end') === (def.at || 'end') && r.id === def.id);
+    const row = Object.assign({ part, order: (L.Recipe && L.Recipe.get(part) && L.Recipe.get(part).order) || 0 }, def);
+    if (i >= 0) STAT_ROWS.splice(i, 1, row); else STAT_ROWS.push(row);
+    STAT_ROWS.sort((a, b) => a.order - b.order);
+    return row;
+  }
+  function statRows(app, sub, at, els) {
+    for (const r of STAT_ROWS) {
+      if (r.sub !== sub || (r.at || 'end') !== at) continue;
+      const out = r.render(app, app.store.state.stats, lookWith(app));
+      if (out) els.push(...[].concat(out).filter(Boolean));
+    }
+  }
+  /** A past board's recipe, as a muted second line (none for a default board). */
+  function pastLabel(b) {
+    const label = b.recipe && L.Recipe ? L.Recipe.label(b.recipe) : '';
+    return label ? h('div', { class: 'past-lbl', title: label }, L.Recipe.label(b.recipe, true)) : null;
+  }
+
   function renderStats(app, sub) {
     const tabs = document.getElementById('stats-tabs');
     const body = document.getElementById('stats-body');
@@ -677,6 +705,7 @@
       els.push(h('h4', null, 'Clears'), hbars([['Single', F.clears[1]], ['Double', F.clears[2]], ['Triple', F.clears[3]], ['Quad', F.clears[4]], ['5+', F.clears[5]]]));
       els.push(h('h4', null, 'Pieces placed'), hbars(Pieces.TETROMINOES.map((id) => [id, F.byType[id] || 0]).concat(Object.keys(F.byType).filter((k) => !Pieces.TETROMINOES.includes(k)).map((k) => [k, F.byType[k]])),
         (i, label) => look.colors[(Pieces.TYPES[label] && Pieces.TYPES[label].color) || 15]));
+      statRows(app, 'free', 'pieces', els);
       els.push(h('h4', null, 'Technique'), table([
         ['T-spins', fmtInt(F.tspins)], ['Lines from T-spins', fmtInt(F.tspinLines)], ['Perfect clears', fmtInt(F.perfect)],
         ['Longest combo', fmtInt(F.maxCombo)], ['Longest back-to-back', fmtInt(Math.max(0, F.maxB2B))],
@@ -694,12 +723,14 @@
         const pays = [rw.lines ? rw.lines + ' ' + LINE : null, rw.boost ? L.Chain.fmt(rw.boost.x) + ' for ' + rw.boost.clears + ' clears' : null, fmtInt(rw.score) + ' points'].filter(Boolean).join(' · ');
         return h('div', { class: 'combo' }, h('b', null, c.name), h('span', null, c.how), h('i', null, pays + ' · ×' + fmtInt(b.n)));
       })));
+      statRows(app, 'free', 'end', els);
       const log = F.boardLog || [];
       if (log.length) {
         els.push(h('h4', null, 'Past boards'), h('table', { class: 'st cols' },
           h('tr', null, ['Retired', 'Size', 'Lived', 'Lines', 'Score', 'Pieces', 'Power-ups'].map((c) => h('th', c === 'Lived' ? { class: 'opt' } : null, c))),
           log.slice(0, 15).map((b) => h('tr', null,
-            h('td', null, new Date(b.at).toLocaleDateString([], { month: 'short', day: 'numeric' }) + (b.reason === 'full' ? ' · full' : '')),
+            // A board of another recipe shows it as a muted second line (its full label as the tip).
+            h('td', null, new Date(b.at).toLocaleDateString([], { month: 'short', day: 'numeric' }) + (b.reason === 'full' ? ' · full' : ''), pastLabel(b)),
             h('td', { class: 'nw' }, b.w && b.h ? L.Library.sizeLabel(b.w, b.h).replace(/ /g, '\u202f') : '—'), h('td', { class: 'opt' }, b.life ? fmtDuration(b.life) : '—'), h('td', null, fmtInt(b.lines)), h('td', null, fmtInt(b.score)), h('td', null, fmtInt(b.pieces)), h('td', null, fmtInt(b.items))))));
       }
     } else if (sub === 'puzzle') {
@@ -987,13 +1018,14 @@
 
   // ---- item pickers ---------------------------------------------------------------------------------------------------
 
-  function openOrderSlip(app, onPick) {
+  /** Order Slip: a piece to choose; ids is what the board's dealer can give (dealer.candidates), else the seven and the small three. */
+  function openOrderSlip(app, onPick, ids) {
     const look = lookWith(app);
-    const ids = Pieces.TETROMINOES.concat(['I3', 'V3', 'D2']);
+    ids = (ids && ids.length ? ids : Pieces.TETROMINOES.concat(['I3', 'V3', 'D2'])).filter((id) => Pieces.get(id));
     let picked = false, handle = null;
     const choose = (id) => { picked = true; handle.close(); onPick(id); };
-    const grid = h('div', { class: 'picker' }, ids.map((id) => h('button', { title: Pieces.TYPES[id].name, onclick: () => choose(id) },
-      canvasFor(56, 54, (ctx) => { const t = Pieces.TYPES[id]; const b = Pieces.boundsOf(t.rots[0]); const s = Math.floor(Math.min(46 / b.w, 40 / b.h, 13)); drawMiniPiece(ctx, look, id, (56 - b.w * s) / 2, (54 - b.h * s) / 2, s, 0); }))));
+    const grid = h('div', { class: 'picker' }, ids.map((id) => h('button', { title: Pieces.get(id).name || id, 'data-id': id, onclick: () => choose(id) },
+      canvasFor(56, 54, (ctx) => { const t = Pieces.get(id); const b = Pieces.boundsOf(t.rots[0]); const s = Math.floor(Math.min(46 / b.w, 40 / b.h, 13)); drawMiniPiece(ctx, look, id, (56 - b.w * s) / 2, (54 - b.h * s) / 2, s, 0); }))));
     handle = openModal({ title: 'Order Slip', body: grid, onClose: () => { if (!picked) onPick(null); } });
   }
 
@@ -1099,5 +1131,5 @@
     document.addEventListener('keydown', hide, true);
   }
 
-  L.UI = { initTooltips, h, ICONS, icon, toast, syncToasts, openModal, modalOpen, closeTopModal, submitTopModal, confirm, canvasFor, renderShop, refreshShopPrices, renderStats, renderAchievements, showAchievement, openSettings, openOrderSlip, openPickOfThree, openBlueprint, copyText, lookWith, drawMiniPiece };
+  L.UI = { initTooltips, h, ICONS, icon, toast, syncToasts, openModal, modalOpen, closeTopModal, submitTopModal, confirm, canvasFor, renderShop, refreshShopPrices, renderStats, renderAchievements, showAchievement, openSettings, openOrderSlip, openPickOfThree, openBlueprint, copyText, lookWith, drawMiniPiece, statRow };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

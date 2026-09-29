@@ -6,6 +6,36 @@
   const { CELL, Pieces, PALETTES, clamp } = L;
   const { LINE } = L;
 
+  // Frozen time, for tests that compare pixels (the page opened with ?freeze=1): every board draws at one fixed
+  // moment, so twinkling stars, the Prism palette, a laser's pulse and the danger rim hold still, and nothing shakes.
+  const FREEZE = root.location && /[?&]freeze=1(&|$)/.test(root.location.search || '') ? 4321 : null;
+  /** The time a frame is drawn at: now, or the frozen moment. */
+  const clock = (now) => (FREEZE != null ? FREEZE : now);
+
+  // ---- the board recipe's view parts (Recipe.viewPart) --------------------------------------------------------------
+  //
+  // A part's view half draws what its option adds. Every hook is optional; hooks run in the parts' order:
+  //   active(game) -> bool       is it on this board (default: the game has the part's engine extension)
+  //   claims(v, view) -> bool    a stored cell it draws itself (Protect: the sprout, moles, stones; Battle: filler);
+  //                              claims: 'rest' draws the own cells no other painter claimed (Jelly)
+  //   cell(ctx, v, x, y, s, kind, view, at) -> false to fall back   kind: 'stack', 'piece', 'ghost' or 'tray'; v is the
+  //                              cell (stack) or the colour slot; at: { x, y } on the board, or { cells } of the piece
+  //   overStack / overPiece / overRim (ctx, view, now)   drawn after the stack, after the piece, after the rim
+  //   busy(view, now) -> bool    it is animating (ORed into needsFrame)
+  //   onLock(view, r, reduced) / onMove / onRotate / onLower (view, act, reduced)   animation triggers (Free Play's moves)
+  //   dangerRim: false           no red rim near the top
+  //   trayRot(entry, view) -> rot   which turn the Hold and Next trays draw
+  //   preview(ctx, geom, recipe, theme)   over the New board preview and the library thumbnails (previewBoard)
+  //   layout: 'battle', render(view, ctx, now)   a whole frame of its own for that controller view (BoardView.shell)
+  const viewParts = () => (L.Recipe && L.Recipe.views ? L.Recipe.views() : []);
+  /** The view parts on for this game. */
+  function activeViews(game) {
+    const all = viewParts();
+    if (!all.length || !game) return [];
+    const keys = new Set((game.ext || []).map((e) => e.key));
+    return all.filter((p) => (typeof p.active === 'function' ? p.active(game) : keys.has(p.key)));
+  }
+
   // ---- colour ---------------------------------------------------------------------------------------------------------
 
   const rgbCache = new Map();
@@ -836,8 +866,54 @@
     for (const [cx, cy] of cells) {
       const x = Math.round(ox + (cx - b.minX) * s), y = Math.round(oy + (b.maxY - cy) * s);
       if (single) drawSpecial(ctx, special, x, y, s, look.t);
-      else drawCell(ctx, look.skin, color, x, y, s, look.alpha);
+      // A view part's painter (look.paint, from BoardView.trayLook) draws the tray's blocks in its own look.
+      else if (!look.paint || look.paint(ctx, type.color, x, y, s, { x: cx, y: cy, cells, alpha: look.alpha }) === false) drawCell(ctx, look.skin, color, x, y, s, look.alpha);
     }
+  }
+
+  /**
+   * A board drawn small, on whole device pixels, where the box is (canvas pixels), c pixels a cell:
+   *  - style 'well' (the New board window): the empty well's wash and, at 4 px a cell or more, its grid;
+   *  - style 'thumb' (a library thumbnail): a rounded well of pad around the cells, the stack (o.cells, one value a
+   *    cell, row 0 at the bottom) as plain squares in o.look's colours (gap between them from 5 px a cell), a hairline rim.
+   * Then each view part's preview(ctx, geom, recipe, theme) draws over it (geom: { x, y, c, w, h, style, dpr }, the
+   * cells' top-left in canvas pixels).
+   */
+  function previewBoard(ctx, box, w, h, recipe, theme, o) {
+    o = o || {};
+    const c = o.cell, style = o.style || 'well';
+    ctx.save();
+    ctx.translate(box.x, box.y);
+    let geom;
+    if (style === 'thumb') {
+      const pad = o.pad || 0, gap = c >= 5 ? 1 : 0, dpr = o.dpr || 1, ww = box.w, wh = box.h, vals = o.cells || [], look = o.look;
+      const gr = ctx.createLinearGradient(0, 0, 0, wh);
+      gr.addColorStop(0, theme.wellTop || theme.well); gr.addColorStop(1, theme.wellBottom || theme.well);
+      ctx.fillStyle = gr; rr(ctx, 0, 0, ww, wh, Math.min(4 * dpr, ww / 4)); ctx.fill();
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const v = vals[y * w + x];
+        if (!v) continue;
+        ctx.fillStyle = look.colors[v & CELL.COLOR] || look.colors[8];
+        ctx.fillRect(pad + x * c, pad + (h - 1 - y) * c, c - gap, c - gap);
+      }
+      const lw = Math.max(1, Math.round(dpr));
+      ctx.strokeStyle = theme.rim || theme.line; ctx.lineWidth = lw;
+      rr(ctx, lw / 2, lw / 2, ww - lw, wh - lw, Math.min(4 * dpr, ww / 4)); ctx.stroke();
+      geom = { x: pad, y: pad, c, w, h, style, dpr };
+    } else {
+      const W = w * c, H = h * c;
+      const gr = ctx.createLinearGradient(0, 0, 0, H);
+      gr.addColorStop(0, theme.wellTop || theme.well); gr.addColorStop(1, theme.wellBottom || theme.well);
+      ctx.fillStyle = gr; ctx.fillRect(0, 0, W, H);
+      if (c >= 4) {
+        ctx.fillStyle = theme.grid || theme.line;
+        for (let x = 1; x < w; x++) ctx.fillRect(x * c, 0, 1, H);
+        for (let y = 1; y < h; y++) ctx.fillRect(0, y * c, W, 1);
+      }
+      geom = { x: 0, y: 0, c, w, h, style, dpr: o.dpr || 1 };
+    }
+    for (const p of viewParts()) if (p.preview) { ctx.save(); p.preview(ctx, geom, recipe, theme); ctx.restore(); }
+    ctx.restore();
   }
 
   // ---- the board view -------------------------------------------------------------------------------------------------
@@ -855,6 +931,9 @@
       this.lay = null;
       this.cssW = 0; this.cssH = 0;
       this.hint = null;
+      this.parts = []; this.claimers = []; this.rest = null;
+      // A controller's view other than the one board ('single'): a view part with that layout draws the whole frame.
+      this.layoutName = 'single';
     }
 
     attach(game, view) {
@@ -863,6 +942,42 @@
       this.fx.clear();
       this.lay = null;
       this.dirty = true;
+      this.refreshParts();
+    }
+
+    /** The recipe's view parts on this board (Recipe.viewPart), and its cell painters in their order. */
+    refreshParts() {
+      this.parts = activeViews(this.game);
+      this.claimers = this.parts.filter((p) => typeof p.claims === 'function' && p.cell);
+      this.rest = this.parts.find((p) => p.claims === 'rest' && p.cell) || null;
+      this.painting = this.claimers.length > 0 || !!this.rest;
+    }
+
+    /** Every active view part's hook `name`, called as hook(view, ...args), in order. */
+    partsCall(name, ...args) { for (const p of this.parts) if (typeof p[name] === 'function') p[name](this, ...args); }
+
+    /**
+     * A cell drawn by the view parts' painters: the first whose claims(v) is true, then the 'rest' painter for an own
+     * cell (not FOREIGN) or a piece's; false when none drew it (the caller draws it as always).
+     */
+    paintCell(ctx, v, x, y, s, kind, at) {
+      if (kind === 'stack') for (const p of this.claimers) if (p.claims(v, this) && p.cell(ctx, v, x, y, s, kind, this, at) !== false) return true;
+      const r = this.rest;
+      if (r && !(kind === 'stack' && v & CELL.FOREIGN) && r.cell(ctx, v, x, y, s, kind, this, at) !== false) return true;
+      return false;
+    }
+
+    /** The view's own frame for a controller layout other than one board ('battle'), or null. */
+    shell() {
+      if (this.layoutName === 'single') return null;
+      return viewParts().find((p) => p.layout === this.layoutName && typeof p.render === 'function') || null;
+    }
+
+    /** A tray's entry, turned as a view part asks (trayRot). */
+    trayEntry(e) {
+      if (!e) return e;
+      for (const p of this.parts) if (p.trayRot) { const r = p.trayRot(e, this); if (r != null && r !== (e.rot || 0)) return Object.assign({}, e, { rot: r }); }
+      return e;
     }
 
     resize() {
@@ -883,11 +998,12 @@
      * The board as one composed unit: a plate holding the well, with Hold and Next in recessed trays beside it (or,
      * when the window is tall and narrow, above it). The side columns are slim so the grid gets the room.
      */
-    layout() {
+    layout(box) {
       const g = this.game;
       const rot = this.view.rot;
       const cols = rot % 180 === 0 ? g.w : g.h, rows = rot % 180 === 0 ? g.h : g.w;
-      const W = this.cssW, H = this.cssH, m = 8;
+      // Into a part of the canvas when given one (a view with more than one board), else the whole of it.
+      const W = box ? box.w : this.cssW, H = box ? box.h : this.cssH, m = 8, ox = box ? box.x : 0, oy = box ? box.y : 0;
       const side = 2.7, gap = 0.4, pad = 0.42, wp = 0.2, top = 2.9;
       // The side trays never go narrower than this (a tall board's cells can be a few pixels; HOLD and NEXT still fit).
       const SW_MIN = 36;
@@ -915,7 +1031,7 @@
       let plate, bx, by, hold, next, nextDir;
       if (wide) {
         const pw = P * 2 + (sw + G) * (1 + hs) + bw + WP * 2, ph = P * 2 + bh + WP * 2;
-        plate = { x: Math.round((W - pw) / 2), y: Math.round((H - ph) / 2), w: pw, h: ph };
+        plate = { x: ox + Math.round((W - pw) / 2), y: oy + Math.round((H - ph) / 2), w: pw, h: ph };
         bx = plate.x + P + (sw + G) * hs + WP; by = plate.y + P + WP;
         const ty = plate.y + P + lab;
         hold = { x: plate.x + P, y: ty, w: sw, h: Math.round(sw * 0.82) };
@@ -924,7 +1040,7 @@
       } else {
         const th = Math.max(Math.round(top * s) - lab, Math.round(ts * 1.6));
         const pw = P * 2 + bw + WP * 2, ph = P * 2 + lab + th + G + bh + WP * 2;
-        plate = { x: Math.round((W - pw) / 2), y: Math.round((H - ph) / 2), w: pw, h: ph };
+        plate = { x: ox + Math.round((W - pw) / 2), y: oy + Math.round((H - ph) / 2), w: pw, h: ph };
         bx = plate.x + P + WP; by = plate.y + P + lab + th + G + WP;
         const ty = plate.y + P + lab, iw = bw + WP * 2;
         hold = { x: plate.x + P, y: ty, w: Math.round(iw * 0.3), h: th };
@@ -935,7 +1051,7 @@
       }
       // A wide board's plate can be shorter than the Next tray it holds (a short board beside a column of trays).
       if (wide) plate.h = Math.max(plate.h, next.y + next.h + P - plate.y);
-      this.lay = { s, ts, cols, rows, board: { x: bx, y: by, w: bw, h: bh }, hold, next, nextDir, wide, plate, lab };
+      this.lay = { s, ts, cols, rows, board: { x: bx, y: by, w: bw, h: bh }, hold, next, nextDir, wide, plate, lab, box: box || null };
       // Words over the board (PERFECT CLEAR, a combo's name) are kept within the well (its walls included).
       this.fx.maxW = bw + WP * 2;
       this.lay.well = wellRect(this.lay.board, s);
@@ -1017,19 +1133,46 @@
       return look.colors[v & CELL.COLOR] || look.colors[8];
     }
 
-    needsFrame() { const g = this.game; return this.dirty || this.fx.active || this.alive || (g && g.piece && (g.piece.special || (g.s && g.s.gold > 0))) || (this.look && this.look.animated); }
+    needsFrame() {
+      const g = this.game;
+      if (this.dirty || this.fx.active || this.alive || (g && g.piece && (g.piece.special || (g.s && g.s.gold > 0))) || (this.look && this.look.animated)) return true;
+      for (const p of this.parts) if (p.busy && p.busy(this, performance.now())) return true;
+      const sh = this.shell();
+      return !!(sh && sh.busy && sh.busy(this, performance.now()));
+    }
 
+    /**
+     * One frame: the canvas cleared, then the board unit (its plate, then paint), or, for a controller layout of its
+     * own ('battle'), that view part's render(view, ctx, now), which lays out and paints boards into boxes itself.
+     */
     render(now) {
       if (!this.game || !this.look || !this.cssW) return;
-      const ctx = this.ctx, look = this.look, g = this.game;
-      if (!this.lay) this.layout();
-      const { s, board, cols, rows } = this.lay;
+      now = clock(now);
+      const ctx = this.ctx, look = this.look;
       ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
       ctx.__dpr = this.dpr; ctx.__light = look.theme.name === 'light';
       ctx.clearRect(0, 0, this.cssW, this.cssH);
+      const sh = this.shell();
+      if (sh) sh.render(this, ctx, now);
+      else {
+        if (!this.lay || this.lay.box) this.layout();
+        this.drawPlate(ctx);
+        this.paint(ctx, null, now);
+      }
+      this.dirty = false;
+    }
+
+    /**
+     * The board unit drawn into its layout (the plate aside): the well, the stack, the piece and its ghost, the rim,
+     * the trays and the effects. box: a part of the canvas to lay it out in (see layout), or null for the whole.
+     */
+    paint(ctx, box, now) {
+      const look = this.look, g = this.game;
+      const same = (a, b) => (!a && !b) || (a && b && a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h);
+      if (!this.lay || !same(this.lay.box, box)) this.layout(box);
+      const { s, board, cols, rows } = this.lay;
       // Shake moves only the board and its effects (never the hold and queue beside it), and stays small.
-      const shake = Math.min(8, this.fx.shake), shx = shake > 0.2 ? (Math.random() - 0.5) * shake : 0, shy = shake > 0.2 ? (Math.random() - 0.5) * shake : 0;
-      this.drawPlate(ctx);
+      const shake = FREEZE != null ? 0 : Math.min(8, this.fx.shake), shx = shake > 0.2 ? (Math.random() - 0.5) * shake : 0, shy = shake > 0.2 ? (Math.random() - 0.5) * shake : 0;
       ctx.save();
       if (shx || shy) ctx.translate(shx, shy);
 
@@ -1069,7 +1212,7 @@
           if (v & CELL.HIDDEN) continue;
           if (near && !near.has(x + ',' + y)) continue;
           const [sx, sy] = this.toScreen(x, y);
-          drawCell(ctx, look.skin, this.colorOf(v), sx, sy, s);
+          if (!this.painting || !this.paintCell(ctx, v, sx, sy, s, 'stack', { x, y })) drawCell(ctx, look.skin, this.colorOf(v), sx, sy, s);
           if (v & CELL.GEM) drawGem(ctx, sx, sy, s, now);
         }
       }
@@ -1087,6 +1230,7 @@
         ctx.fill('evenodd');
         ctx.restore();
       }
+      if (this.parts.length) this.partsDraw('overStack', ctx, now);
 
       // Mouse play: the column under the pointer.
       if (this.pointerCol != null && p) {
@@ -1119,7 +1263,11 @@
           for (const [dx, dy] of L.BOMB_PATTERN) { const x = cx + dx, y = gy + dy; if (x < 0 || x >= g.w || y < 0 || y >= g.h) continue; const [sx, sy] = this.toScreen(x, y); ctx.fillRect(sx, sy, s, s); }
           if (look.ghost !== 'off') for (const [gx, gy2] of ghostCells) { const [sx, sy] = this.toScreen(gx, gy2); ghostCell(ctx, look.ghost, '#ff9f43', sx, sy, s); }
         } else if (look.ghost !== 'off') {
-          for (const [cx, cy] of ghostCells) { const [sx, sy] = this.toScreen(cx, cy); ghostCell(ctx, look.ghost, color, sx, sy, s); }
+          const ga = this.rest ? { cells: ghostCells, style: look.ghost } : null;
+          for (const [cx, cy] of ghostCells) {
+            const [sx, sy] = this.toScreen(cx, cy);
+            if (!ga || !this.paintCell(ctx, p.type.color, sx, sy, s, 'ghost', Object.assign({ x: cx, y: cy }, ga))) ghostCell(ctx, look.ghost, color, sx, sy, s);
+          }
         }
         if (p.special === 'laser' && ghostCells.length) {
           // The beam to come: a faint red line across every row the piece will land in.
@@ -1137,7 +1285,8 @@
           const tint = golden ? '#f2c14e' : color;
           // Phasing: translucent, and it shimmers (more faintly still while inside other blocks).
           const shimmer = p.special === 'phase' && !this.reducedMotion ? 0.12 * Math.sin(now / 170 + (cx + cy) * 0.9) : 0;
-          drawCell(ctx, look.skin, tint, sx, sy, s, p.special === 'phase' ? (overlapping ? 0.4 : 0.72) + shimmer : 1);
+          // A view part's painter draws a plain piece in its own look (Jelly); gold and the tools keep theirs.
+          if (!this.rest || p.special || golden || !this.paintCell(ctx, p.type.color, sx, sy, s, 'piece', { x: cx, y: cy, cells: pieceCells })) drawCell(ctx, look.skin, tint, sx, sy, s, p.special === 'phase' ? (overlapping ? 0.4 : 0.72) + shimmer : 1);
           if (golden) {
             const k = ((now / 900 + (cx + cy) * 0.12) % 1.4) - 0.2;
             ctx.save(); ctx.beginPath(); ctx.rect(sx, sy, s, s); ctx.clip();
@@ -1158,12 +1307,13 @@
         }
       }
 
+      if (this.parts.length) this.partsDraw('overPiece', ctx, now);
       if (p && (p.special || (g.s && g.s.gold > 0))) this.ambient(p, pieceCells, now);
 
       drawRim(ctx, wr, look.theme);
       drawFrame(ctx, look.frame, wr, look.theme.accent, tl, look.theme);
-      // Close to the top: the rim breathes red.
-      if (!g.fixed && g.board.stackHeight() > g.h * 0.72) {
+      // Close to the top: the rim breathes red (unless a view part says the rim means nothing here: dangerRim false).
+      if (!g.fixed && !this.parts.some((vp) => vp.dangerRim === false) && g.board.stackHeight() > g.h * 0.72) {
         ctx.save(); ctx.strokeStyle = rgba('#eb6f92', 0.35 + 0.25 * Math.sin((look.still ? 0 : now) / 250)); ctx.lineWidth = 2.5;
         rr(ctx, wr.x - 1, wr.y - 1, wr.w + 2, wr.h + 2, wr.r + 1); ctx.stroke(); ctx.restore();
         this.alive = !look.still;
@@ -1180,6 +1330,7 @@
         else { ctx.fillText('⇅', board.x + board.w / 2, board.y - glow * 0.9); ctx.fillText('⇅', board.x + board.w / 2, board.y + board.h + glow * 0.9); }
         ctx.restore();
       }
+      if (this.parts.length) this.partsDraw('overRim', ctx, now);
 
       ctx.restore();
       this.drawSide(ctx, now);
@@ -1187,8 +1338,10 @@
       if (shx || shy) ctx.translate(shx, shy);
       this.fx.draw(ctx);
       ctx.restore();
-      this.dirty = false;
     }
+
+    /** Each active view part's overlay `name` (overStack, overPiece, overRim), in order, each in its own save. */
+    partsDraw(name, ctx, now) { for (const p of this.parts) if (p[name]) { ctx.save(); p[name](ctx, this, now); ctx.restore(); } }
 
     /** The plate the board unit sits on: a soft raised panel, a hairline, a shadow. Cached with the well's layers. */
     drawPlate(ctx) {
@@ -1255,11 +1408,13 @@
         rr(ctx, b.x + 0.5, b.y + 0.5, b.w - 1, b.h - 1, r); ctx.stroke();
       };
       const pl = { skin: look.skin, color: (c) => (this.view.mono ? look.monoColor : look.colors[c]), t: now };
+      // A 'rest' painter (Jelly) draws the trays' blocks too.
+      if (this.rest) pl.paint = (c2, v, x, y, sz, at) => this.paintCell(c2, v, x, y, sz, 'tray', at);
       // Hold
       if (!g.mods.noHold) {
         label('HOLD', hold.x, hold.y, hold.w);
         tray(hold, this.holdHover);
-        if (g.hold) drawPieceIn(ctx, g.hold, hold, s * 0.72, Object.assign({}, pl, { alpha: g.holdLocked && !g.freeHold ? 0.35 : 1 }));
+        if (g.hold) drawPieceIn(ctx, this.parts.length ? this.trayEntry(g.hold) : g.hold, hold, s * 0.72, Object.assign({}, pl, { alpha: g.holdLocked && !g.freeHold ? 0.35 : 1 }));
       }
       // Next: the queue in one tray, the piece coming first and largest, the rest after a hairline.
       const n = Math.min(g.fixed ? g.queue.length : g.previewCount, g.queue.length);
@@ -1299,7 +1454,7 @@
         ctx.fillText('?', box.x + box.w / 2, box.y + box.h / 2); ctx.textAlign = 'start'; ctx.textBaseline = 'top';
         return;
       }
-      drawPieceIn(ctx, entry, { x: box.x + 4, y: box.y + 4, w: box.w - 8, h: box.h - 8 }, i === 0 ? s * 0.62 : s * 0.46, Object.assign({}, pl, { alpha: i === 0 ? 1 : 0.8 }));
+      drawPieceIn(ctx, this.parts.length ? this.trayEntry(entry) : entry, { x: box.x + 4, y: box.y + 4, w: box.w - 8, h: box.h - 8 }, i === 0 ? s * 0.62 : s * 0.46, Object.assign({}, pl, { alpha: i === 0 ? 1 : 0.8 }));
     }
 
     // ---- effects hooks ---------------------------------------------------------------------------------------------
@@ -1321,6 +1476,7 @@
     onLock(result, reduced) {
       if (this.fx.world) this.fx.world.land();
       if (!this.lay) this.layout();
+      if (this.parts.length) this.partsCall('onLock', result, reduced);
       const s = this.lay.s, look = this.look;
       const effect = look.effect;
       const pieceColor = this.colorOf(result.color || 8);
@@ -1838,5 +1994,5 @@
     };
   }
 
-  L.Render = { rgb, rgba, shade, mix, hsl, luminance, paletteColors, forWell, drawWell, drawRim, wellRect, ANIMATED_BACKDROPS, drawCell, cellSprite, drawFrame, drawBackdrop, ghostCell, drawPieceIn, drawSpecial, drawGem, FX, BoardView, makeLook, rr, FONT, SKIN_PAINT, labelFor };
+  L.Render = { rgb, rgba, shade, mix, hsl, luminance, paletteColors, forWell, drawWell, drawRim, wellRect, ANIMATED_BACKDROPS, drawCell, cellSprite, drawFrame, drawBackdrop, ghostCell, drawPieceIn, drawSpecial, drawGem, FX, BoardView, makeLook, rr, FONT, SKIN_PAINT, labelFor, previewBoard, FREEZE, clock, activeViews };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

@@ -187,7 +187,8 @@ function freePlay(seed, w, h, total) {
     const become = (entry) => g.replacePiece(Object.assign({ tag: id }, entry));
     if (SPECIALS.has(id)) ok = g.setSpecial(id);
     else switch (id) {
-      case 'reroll': { const opts = Pieces.TETROMINOES.filter((t) => t !== (cur && cur.type.id)); ok = become({ id: opts[Math.floor(Math.random() * opts.length)] }); break; }
+      // As PlayMode does: the board's dealer when there is one (it draws the same Math.random as the old list).
+      case 'reroll': { if (g.dealer) { ok = become({ id: g.dealer.reroll(g, cur && cur.type.id) }); break; } const opts = Pieces.TETROMINOES.filter((t) => t !== (cur && cur.type.id)); ok = become({ id: opts[Math.floor(Math.random() * opts.length)] }); break; }
       case 'mirror': ok = become({ id: Pieces.mirrorOf(cur.type).id, special: cur.special, tag: cur.entry.tag || null }); break;
       case 'pebble': ok = become({ id: 'M1' }); break;
       case 'noodle': ok = become({ id: Pieces.customType([[0, 0], [1, 0], [2, 0], [3, 0], [4, 0], [5, 0]]).id }); break;

@@ -1105,5 +1105,5 @@
     return { ms: b[0] - a[0], lines: b[1] - a[1] };
   }
 
-  Object.assign(L, { Game, freshStats, paceOf, spawnPos, BOMB_PATTERN, SINGLE_SPECIALS: SINGLE });
+  Object.assign(L, { Game, freshStats, paceOf, spawnPos, BOMB_PATTERN, SINGLE_SPECIALS: SINGLE, BAG_DEALER });
 })(typeof globalThis !== 'undefined' ? globalThis : this);
