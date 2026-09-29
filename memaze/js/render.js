@@ -152,11 +152,12 @@
   // ---------- Tox Boxes ----------
   const TOX_STONE = [150, 142, 192]; // lavender-grey stone
   const toxRGB = (b) => 'rgb(' + TOX_STONE.map((c) => Math.round(c * b)).join(',') + ')';
-  // One side of a Tox Box, in its own s x s square (up is -y): the hollow side (a thick rim round the dark inside), or
-  // an angry face (heavy brows down to the middle over glaring eyes, gritted teeth).
-  function toxFaceArt(g, s, hollow) {
+  // Side k of a Tox Box (toxFace numbering), in its own s x s square (up is -y): 0 the hollow side (a thick rim round
+  // the dark inside), 2 (opposite it) an X cut deep in the stone, 1 and 3 an angry face (heavy brows down to the middle
+  // over glaring eyes, gritted teeth).
+  function toxFaceArt(g, s, k) {
     const h = s / 2;
-    if (hollow) {
+    if (k === 0) {
       const q = h - s * 0.11, gr = g.createRadialGradient(0, 0, q * 0.15, 0, 0, q * 1.45);
       gr.addColorStop(0, '#07050e'); gr.addColorStop(1, '#2d2545');
       g.fillStyle = gr; g.fillRect(-q, -q, 2 * q, 2 * q);
@@ -165,6 +166,13 @@
       return;
     }
     g.strokeStyle = 'rgba(255,255,255,0.16)'; g.lineWidth = s * 0.035; g.strokeRect(-h * 0.82, -h * 0.82, h * 1.64, h * 1.64); // bevel
+    if (k === 2) {
+      const q = s * 0.27, x = () => { g.beginPath(); g.moveTo(-q, -q); g.lineTo(q, q); g.moveTo(q, -q); g.lineTo(-q, q); };
+      g.lineCap = 'square';
+      x(); g.strokeStyle = '#2a2140'; g.lineWidth = s * 0.17; g.stroke();
+      g.save(); g.translate(s * 0.012, s * 0.02); x(); g.strokeStyle = '#120c1e'; g.lineWidth = s * 0.1; g.stroke(); g.restore();
+      return;
+    }
     g.lineCap = 'round';
     for (const k of [-1, 1]) {
       g.fillStyle = '#fff4d0'; g.beginPath(); g.ellipse(k * s * 0.19, -s * 0.03, s * 0.115, s * 0.085, 0, 0, TAU); g.fill();
@@ -380,10 +388,10 @@
     // goes over its leading edge, lifting toward you as it does; landing, a puff of dust.
     drawTox(bx, t) {
       const ctx = this.ctx, s = bx.s, h = s / 2, st = MZ.toxAt(bx, t), A = bx.tiles[st.i], B = bx.tiles[st.j];
-      // The faces are painted on the cube as a Tox Box's are, each upright while it's a side facing along the track: so
-      // once tumbled round on top it lies with its brows toward one end of the track (which end depends on how the box
-      // was painted), and as the box tumbles on, the face coming up turns with it. Never simply upright on screen.
-      if (bx.up == null) { const h = Math.sin(bx.tiles[0].x * 0.013 + bx.tiles[0].y * 0.029) * 43758.5453; bx.up = h - Math.floor(h) < 0.5 ? -Math.PI / 2 : Math.PI / 2; }
+      // The sides are painted on the cube: hollow side down, the X is on top and the two faces at either end of it stand
+      // upright, heads toward the X. Tumbled on, each keeps that: with face k down, face k + 1 is ahead (up the tiles)
+      // and k + 3 behind, so face 3 comes up on top with its head up the track (toward the X, now ahead) and face 1
+      // with its head down it.
       let a0 = Math.atan2(A.uy, A.ux), a1 = Math.atan2(B.uy, B.ux);
       while (a1 - a0 > Math.PI) a1 -= TAU;
       while (a1 - a0 < -Math.PI) a1 += TAU;
@@ -399,8 +407,8 @@
         ctx.save();
         ctx.beginPath(); ctx.rect(l, -h, ww, s); ctx.clip();
         ctx.fillStyle = toxRGB(1); ctx.fillRect(l, -h, ww, s);
-        ctx.translate(l + ww / 2, 0); ctx.scale(ww / s, 1); ctx.rotate(bx.up);
-        toxFaceArt(ctx, s, k === 0);
+        ctx.translate(l + ww / 2, 0); ctx.scale(ww / s, 1); ctx.rotate(k === 1 ? -Math.PI / 2 : Math.PI / 2);
+        toxFaceArt(ctx, s, k);
         ctx.restore();
         if (lit < 1) { ctx.fillStyle = 'rgba(12,6,28,' + ((1 - lit) * 0.8).toFixed(3) + ')'; ctx.fillRect(l, -h, ww, s); }
         ctx.strokeStyle = 'rgba(22,14,40,0.9)'; ctx.lineWidth = s * 0.035; ctx.strokeRect(l, -h, ww, s);
