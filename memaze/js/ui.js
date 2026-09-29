@@ -637,10 +637,13 @@
       return el;
     },
     settings() {
+      const touchy = MZ.mobile || navigator.maxTouchPoints > 0, mousy = !MZ.mobile || matchMedia('(any-pointer: fine)').matches; // (the rows for what this device has)
       return this.panel('Settings', [
         section('Controls',
-          segmented('Mouse', 'controls.mouse', [['glide', 'Glide'], ['lock', 'Lock'], ['drag', 'Drag']], () => this.rebuild()),
-          h('p', { class: 'note' }, { glide: 'Glide: point where to go, no clicking; rest the pointer on your picture to stop. Click and drag still works.', lock: 'Lock: click once and the mouse is captured; just move it (Esc lets go).', drag: 'Drag: click and drag the maze.' }[S().controls.mouse || 'glide']),
+          touchy ? segmented('Touch', 'controls.touch', [['joystick', 'Joystick'], ['drag', 'Drag']], () => this.rebuild()) : null,
+          touchy ? h('p', { class: 'note' }, { joystick: 'Joystick: put a thumb down anywhere and slide it the way to go, further for faster; lift to stop. Two fingers zoom.', drag: 'Drag: the maze follows your finger.' }[S().controls.touch || 'joystick']) : null,
+          mousy ? segmented('Mouse', 'controls.mouse', [['glide', 'Glide'], ['lock', 'Lock'], ['drag', 'Drag']], () => this.rebuild()) : null,
+          mousy ? h('p', { class: 'note' }, { glide: 'Glide: point where to go, no clicking; rest the pointer on your picture to stop. Click and drag still works.', lock: 'Lock: click once and the mouse is captured; just move it (Esc lets go).', drag: 'Drag: click and drag the maze.' }[S().controls.mouse || 'glide']) : null,
           toggle('Invert drag', 'controls.invert'),
           range('Drag speed', 'controls.speed', 0.5, 2, 0.05, times)),
         section('Gameplay',
@@ -679,13 +682,14 @@
     help() {
       return this.panel('How to play', [
         h('ul', { class: 'facts' },
+          MZ.mobile ? h('li', null, 'Put a thumb down anywhere and a joystick appears: slide it the way to go, further for faster, and lift to stop. Two fingers zoom. (Settings → Touch → Drag drags the maze instead.)') : null,
           h('li', null, 'Drag the maze to move through it. With a mouse you don\'t have to: by default (Glide) you head toward the pointer, faster the further it is, and stop with it resting on your picture. Settings → Mouse also has Lock (click once, then just move the mouse; Esc lets go) and Drag.'),
           h('li', null, 'Touching the edge breaks your shield: your picture turns grey and faded. Touch it again before the shield recharges (5 s once you’re off the edge) and you’re out. Holding against the edge never counts twice. Your picture is the hitbox: transparent parts don’t count.'),
           h('li', null, 'Touch a mystery box to shatter it. With an empty slot you get an item; use it with a right click, Space, E or the button in the corner.'),
           h('ul', { class: 'items' },
             h('li', null, h('b', null, 'Invincible'), ': no damage for 8 s; the edges hold like walls.'),
             h('li', null, h('b', null, 'Extra hit'), ': a gold ring around you that takes the next hit (up to two).'),
-            h('li', null, h('b', null, 'Bullet'), ': carries you along the corridors toward GOAL.'),
+            h('li', null, h('b', null, 'Bullet'), ': carries you along the corridors toward GOAL, and right into it if it’s in reach.'),
             h('li', null, h('b', null, 'Launch'), ' (rare): a short hop above the maze. Steer while you’re up, as far as the ring of clouds; you come down right where you are, so aim for the board: landing in the void is a fall. The map keeps all you saw.'),
             h('li', null, h('b', null, 'Magic carpet'), ' (rare): float over the gaps for 3.5 s. Be over floor when it runs out.'),
             h('li', null, h('b', null, 'Path'), ': for 6 s a glowing trail shows the way to GOAL from wherever you are (or to the key or switch that opens it), on the map too.'),

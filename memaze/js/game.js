@@ -150,7 +150,14 @@
       if (!force && key === this.key) return;
       this.item = item;
       this.key = key;
-      if (Game.sprite) Game.sprite.load(item, { chroma: cfg.chroma, shape });
+      if (!Game.sprite) return;
+      Game.sprite.load(item, { chroma: cfg.chroma, shape }).then(() => {
+        if (!Game.sprite.failed || this.item !== item) return;
+        // This browser can't show it (a HEIC photo, a video in a format it can't play): the Sticker stands in.
+        const heic = /\.hei[cf]$/i.test(item.name || '') || /hei[cf]/i.test((item.blob && item.blob.type) || '');
+        MZ.toast(heic ? '“' + item.name + '” is a HEIC photo, which this browser can’t show: save it as JPEG or PNG. The Sticker stands in.' : 'This browser can’t show “' + item.name + '”. The Sticker stands in.', 4000);
+        Game.sprite.load(MZ.Media.get('default:sticker'), { chroma: cfg.chroma, shape: null });
+      });
     },
   };
   const GoalMedia = {
@@ -252,6 +259,7 @@
       MZ.Audio.setVolumes({ master: s.audio.master, sfx: s.audio.sfx, music: s.audio.music, media: s.audio.media });
       MZ.Audio.Music.set(s.music.media);
       this.input.mouseMode = s.controls.mouse || 'glide';
+      this.input.touchMode = s.controls.touch || 'joystick';
       if (this.input.mouseMode !== 'lock') this.input.unlock();
       document.documentElement.classList.toggle('reduced-motion', s.display.reducedMotion);
       document.documentElement.classList.toggle('reduce-flash', s.display.reduceFlash);
@@ -797,6 +805,39 @@
       g.strokeStyle = '#fff'; g.lineWidth = 3.5; g.stroke();
       g.restore();
     },
+    // Invincible: the picture glows round its outline, cycling through the rainbow (blinking as it runs out). Drawn
+    // here under the picture, not as a CSS filter on it: phones don't always draw those.
+    drawRainbow(css, up) {
+      const sp = this.sprite, src = sp.src;
+      let st = sp.canvas;
+      if (src && src.live) { // (the browser shows this one itself: take a copy now and then)
+        st = this.glowCopy || (this.glowCopy = document.createElement('canvas'));
+        if (!(this.t - (this.glowCopyT || -1) < 0.1) && !sp.snapshot(st)) return;
+        this.glowCopyT = this.t;
+      }
+      if (!st.width) return;
+      const R = this.renderer, dpr = R.dpr, pad = 34, n = Math.ceil((css + 2 * pad) * dpr), p = pad * dpr, w = css * dpr;
+      const gc = this.glowCv || (this.glowCv = document.createElement('canvas'));
+      if (gc.width !== n) gc.width = gc.height = n;
+      const q = gc.getContext('2d');
+      const C = [[255, 61, 110], [255, 216, 74], [60, 242, 255]], u = S().display.reducedMotion ? 1 : ((this.t / 0.6) % 1) * 3;
+      const A = C[Math.floor(u) % 3], B = C[(Math.floor(u) + 1) % 3], f = u - Math.floor(u);
+      const col = 'rgb(' + A.map((a, k) => Math.round(a + (B[k] - a) * f)).join(',') + ')';
+      q.setTransform(1, 0, 0, 1, 0, 0);
+      q.globalCompositeOperation = 'source-over';
+      q.clearRect(0, 0, n, n);
+      for (const [c, blur] of [[col, 22], [col, 22], [col, 14], [col, 14], [col, 8], ['#fff', 4], ['#fff', 4]]) { q.shadowColor = c; q.shadowBlur = blur * dpr; q.drawImage(st, p, p, w, w); }
+      q.shadowColor = 'transparent'; q.shadowBlur = 0;
+      q.globalCompositeOperation = 'destination-out'; // (only the glow: the picture itself is the DOM's)
+      q.drawImage(st, p, p, w, w);
+      q.globalCompositeOperation = 'source-over';
+      const g = R.ctx;
+      g.save();
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      if (this.fx.star < 1.5 && Math.floor(this.t / 0.1) % 2) g.globalAlpha = 0.35;
+      g.drawImage(gc, Math.round((R.w / 2 - css / 2 - pad) * dpr), Math.round((R.h / 2 - css / 2 - up - pad) * dpr));
+      g.restore();
+    },
     // A loss shatters the picture; spawning in, the pieces fly back together (you can already move, and nothing hurts).
     shatter() {
       if (S().display.reducedMotion) return false;
@@ -1235,9 +1276,9 @@
       const boxes = (m.gboxes || []).filter((gb) => !gb.out && this.item !== gb.item);
       return this.nearestOf(g, dist, m.keys.filter((k) => !k.taken).concat(m.plates, boxes));
     },
-    // Bullet: the route from here along the corridors, toward GOAL (stopping short of it), or in Endless outward, as far
-    // as the run allows, finishing on a junction with solid floor. Shut doors and switched-off bridges stop it too: with
-    // GOAL shut off it flies to what opens the way (the key, say).
+    // Bullet: the route from here along the corridors, toward GOAL, or in Endless outward, as far as the run allows,
+    // finishing on a junction with solid floor; with GOAL in reach it flies you right into it. Shut doors and
+    // switched-off bridges stop it too: with GOAL shut off it flies to what opens the way (the key, say).
     bulletRoute() {
       const g = this.graph(), at = this.nearestOnCorridor(g);
       if (!at) return null;
@@ -1262,7 +1303,8 @@
       // Walk back from the target, then lay the corridors out from here.
       const { pts, nodeAt, cum } = this.chainPoints(g, at, prev, target);
       let len = cum[cum.length - 1];
-      if (this.maze) { // stop short of GOAL: the finish is yours
+      const home = !!this.maze && target === g.id(this.maze.goal) && len <= BULLET_RUN; // GOAL in reach: all the way in
+      if (this.maze && !home) { // else stop short of it, never parked in front of it
         const G = this.maze.goal, stop = this.goalR() + this.box() * 0.75 + 12;
         for (let i = 1; i < pts.length; i++) {
           if (Math.hypot(pts[i].x - G.x, pts[i].y - G.y) >= stop) continue;
@@ -1323,7 +1365,7 @@
           if (this.maze) for (const d of this.maze.doors) if (!d.open && MZ.segsCross(b.x, b.y, q.x, q.y, d.ax, d.ay, d.bx, d.by)) this.openDoor(d); // flying through with its key
           b.x = q.x; b.y = q.y;
           B.s = from + ((to - from) * i) / n;
-          if (this.pickups()) return;
+          if (this.pickups()) { if (this.state !== 'play') fx.bullet = null; return; } // (into GOAL, say)
         }
         if (B.s >= B.len) { fx.bullet = null; this.land(); }
         return;
@@ -1736,6 +1778,7 @@
         if (this.pieces) this.drawPieces(css);
         if (fx.storm) this.drawStorm(css, fx.storm);
         if (this.glide && !this.pieces) this.drawGlide(css, this.glide);
+        if (fx.star > 0 && !this.pieces && !(this.toxPin && this.state === 'play')) this.drawRainbow(css, lift * Math.min(innerWidth, innerHeight) * HOP);
         if (this.formedAt != null && this.t - this.formedAt < 0.3) this.drawFormed(css, (this.t - this.formedAt) / 0.3);
         pl.style.visibility = this.pieces ? 'hidden' : ''; // in pieces: those are drawn instead
         // Health shows on the picture only: on a hit the shield flares and the picture jolts; it blinks while the edges
@@ -1774,7 +1817,42 @@
         if (this.mode === 'endless') this.minimap.drawRadar(this.world, b, this.beacons, view, this.seenNear(b.x, b.y, 1000).concat([view]), boxesOn ? this.boxes : null);
         else this.minimap.draw(b, this.maze && this.maze.goal, this.gems, view, this.checkpoints, boxesOn ? this.boxes : null, this.maze, fx.path > 0 && this.pathLine ? this.pathLine.pts : null);
       } else mmEl.hidden = true;
+      if (this.state === 'play' && !menu) this.drawStick(mmEl);
       this.emit('frame');
+    },
+    // Touch Joystick: the stick under the finger working it; idle (on a phone), a faint one where a thumb might go,
+    // clear of the map and the item button. Wherever a finger comes down, that's where the stick is.
+    drawStick(mmEl) {
+      const inp = this.input, st = inp.stick, R = MZ.Input.STICK_R, W = this.renderer.w, H = this.renderer.h;
+      if (!st && !(MZ.mobile && inp.touchMode === 'joystick')) return;
+      let ox, oy, kx = 0, ky = 0;
+      if (st) {
+        ox = st.ox; oy = st.oy; kx = st.x - ox; ky = st.y - oy;
+        const d = Math.hypot(kx, ky);
+        if (d > R) { kx *= R / d; ky *= R / d; }
+      } else {
+        if (!this.stickHome || this.stickHome.W !== W || this.stickHome.H !== H || this.t - this.stickHome.t > 0.5) {
+          const x = W / 2;
+          let y = H - 28 - R;
+          for (const el of [mmEl, MZ.$('#hud-power')]) {
+            const r = el && !el.hidden ? el.getBoundingClientRect() : null;
+            if (r && r.width && x + R > r.left - 10 && x - R < r.right + 10 && y + R > r.top - 10) y = r.top - 14 - R;
+          }
+          this.stickHome = { t: this.t, W, H, x, y };
+        }
+        ox = this.stickHome.x; oy = this.stickHome.y;
+      }
+      const g = this.renderer.ctx, dpr = this.renderer.dpr;
+      g.save();
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      g.globalAlpha = st ? 0.9 : 0.4;
+      g.beginPath(); g.arc(ox, oy, R, 0, Math.PI * 2);
+      g.fillStyle = 'rgba(10,8,24,0.3)'; g.fill();
+      g.lineWidth = 2.5; g.strokeStyle = 'rgba(255,255,255,0.6)'; g.stroke();
+      g.beginPath(); g.arc(ox + kx, oy + ky, R * 0.42, 0, Math.PI * 2);
+      g.fillStyle = 'rgba(255,255,255,0.8)'; g.fill();
+      g.lineWidth = 2; g.strokeStyle = 'rgba(10,8,24,0.55)'; g.stroke();
+      g.restore();
     },
   });
 

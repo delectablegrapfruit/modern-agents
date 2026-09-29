@@ -45,7 +45,7 @@ body[data-state="play"] #stage:active { cursor: grabbing; }
 #player { position: absolute; left: 50%; top: 50%; pointer-events: none; will-change: transform; }
 #player-media { width: 100%; height: 100%; }
 #player-canvas { width: 100%; height: 100%; display: block; }
-.sprite-hold { position: fixed; left: 0; top: 0; width: 2px; height: 2px; overflow: hidden; opacity: 0; pointer-events: none; }
+.sprite-hold { position: fixed; left: 0; top: 0; width: 2px; height: 2px; overflow: hidden; opacity: 0.01; pointer-events: none; } /* (not 0: phones pause a video they deem hidden) */
 .sprite-hold video { width: 2px; height: 2px; }
 
 
@@ -107,15 +107,8 @@ body[data-state="play"] #stage:active { cursor: grabbing; }
 @keyframes bob { 0%, 100% { transform: translateY(0) scale(0.92); } 50% { transform: translateY(-5%) scale(0.95); } }
 @keyframes jolt { 0% { transform: scale(0.8) rotate(-7deg); } 45% { transform: scale(1.08) rotate(4deg); } 100% { transform: none; } }
 .reduced-motion #player.flare #player-media > * { animation: none; }
-/* ...and glows while invincible */
-#player.invincible #player-media { animation: rainbow 0.6s linear infinite; }
-#player.invincible.ending #player-media { animation: rainbow 0.6s linear infinite, blink 0.2s steps(2) infinite; }
-@keyframes rainbow {
-  0% { filter: drop-shadow(0 0 3px #fff) drop-shadow(0 0 10px #ff3d6e) drop-shadow(0 0 16px #ff3d6e); }
-  33% { filter: drop-shadow(0 0 3px #fff) drop-shadow(0 0 10px #ffd84a) drop-shadow(0 0 16px #ffd84a); }
-  66% { filter: drop-shadow(0 0 3px #fff) drop-shadow(0 0 10px #3cf2ff) drop-shadow(0 0 16px #3cf2ff); }
-  100% { filter: drop-shadow(0 0 3px #fff) drop-shadow(0 0 10px #ff3d6e) drop-shadow(0 0 16px #ff3d6e); } }
-.reduced-motion #player.invincible #player-media { animation: none; filter: drop-shadow(0 0 3px #fff) drop-shadow(0 0 10px #ffd84a) drop-shadow(0 0 16px #ffd84a); }
+/* ...and glows while invincible (the glow is drawn on the maze's canvas), blinking as it runs out */
+#player.invincible.ending #player-media { animation: blink 0.2s steps(2) infinite; }
 .screen-help ul.items { margin: 6px 0 4px; padding-left: 18px; }
 .screen-help ul.items li { margin: 3px 0; }
 

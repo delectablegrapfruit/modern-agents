@@ -27,6 +27,10 @@ No build step, no dependencies: plain HTML/CSS/JS, plus an optional Python serve
   leaves the window (a small chevron shows the way you're heading; click-and-drag still works). **Lock** captures the
   mouse with one click (pointer lock): just move it and the maze follows 1:1; Esc lets go and pauses. **Drag** is
   click-and-drag only.
+- **On a phone or tablet, a joystick** (Settings → Touch): put a thumb down anywhere and the stick is there; slide it
+  the way to go, faster the further (like Glide), and lift to stop. Past its reach the stick follows your thumb. Two
+  fingers still zoom. A faint one sits at the bottom when you're not touching. **Drag** drags the maze 1:1 instead.
+  Phones and tablets are detected (a touch screen with no mouse to hover with).
 - **The paths float over nothing.** Reach **GOAL** and your *win* media plays. GOAL ends its maze, so a generated maze
   always puts it at a dead end: on a junction it would stand across the corridors beyond it (anything past it reachable
   only through it, finishing by accident while exploring). It's the dead end farthest along from the start; where no
@@ -75,7 +79,7 @@ Time Trial never has them.
 |---|---|
 | **Invincible** | 8 s without damage; the edges hold like walls. Your picture glows. |
 | **Extra hit** | Used at once: a gold ring turns around you and takes the next hit instead (up to two rings). Rings don't come back. |
-| **Bullet** | Carries you along the corridors toward GOAL (Endless: outward) for about 1800 units, over vanishing bridges and all, finishing on a junction short of GOAL. Invincible while flying. |
+| **Bullet** | Carries you along the corridors toward GOAL (Endless: outward) for about 1800 units, over vanishing bridges and all, finishing on a junction; with GOAL within that reach, it flies you right into it. Invincible while flying. |
 | **Launch** | As rare as the carpet. A short 1.45 s hop: the camera pulls out while you're up, and you steer (drag or keys, at the zoomed-out scale), over the void and everything, up to 340 units from where you took off: a ring of clouds marks that border, with a haze beyond it. A shadow marks the spot below you. You come down right where you are: on the board, you're fine; in the void, it's a fall (a hit, then the nearest floor). The map fills in with everything the screen showed. |
 | **Magic carpet** | The rarest item, with Launch: 3.5 s of floating over the void. It flickers when it's about to run out: be over floor by then, or it's a fall. |
 | **Path** | For 6 s a glowing trail runs along the floor from wherever you are to GOAL, and on the map (over the fog too). It follows you as you move, and only goes where you can: with GOAL behind a door you can't open yet (or a switched-off bridge), it leads to the nearest key or switch instead. Endless: to the nearest unlit beacon. |

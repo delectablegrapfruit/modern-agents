@@ -175,7 +175,18 @@
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   }
 
+  // A phone or tablet: a touch screen with no mouse to hover with (iPads call themselves Macs).
+  const mobile = (() => {
+    try {
+      const ua = navigator.userAgent || '';
+      return /Android|iPhone|iPad|iPod|Mobi/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) ||
+        (matchMedia('(pointer: coarse)').matches && !matchMedia('(any-hover: hover)').matches);
+    } catch (e) { return false; }
+  })();
+  if (typeof document !== 'undefined') document.documentElement.classList.toggle('mobile', mobile);
+
   Object.assign(MZ, {
+    mobile,
     hashStr, hashInts, h01, rng, clamp, lerp, randomSeed,
     segDist2, segsCross, segSegDist2, fmtTime, fmtClock, store, merge, clone, emitter, $, $$, h, toast, download, today,
   });

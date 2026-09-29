@@ -272,7 +272,9 @@
   class Sprite {
     constructor(canvas) {
       this.canvas = canvas;
-      this.ctx = canvas.getContext('2d');
+      // (kept in plain memory, not on the GPU: phones drop CSS filters on a GPU canvas, and it's read back for the
+      // chroma key anyway)
+      this.ctx = canvas.getContext('2d', { willReadFrequently: true });
       this.mc = document.createElement('canvas');
       this.mc.width = this.mc.height = MASK;
       this.mctx = this.mc.getContext('2d', { willReadFrequently: true });
@@ -282,6 +284,8 @@
       this.hold = document.createElement('div');
       this.hold.className = 'sprite-hold';
       document.body.appendChild(this.hold);
+      const nudge = () => { if (this.src && this.src.video) this.kick(this.src, true); }; // (a touch or key lets it play)
+      for (const ev of ['pointerup', 'touchend', 'keydown']) window.addEventListener(ev, nudge, true);
     }
 
     // item: a media item; opts: {chroma}. Resolves once the first frame (and its hitbox) is ready.
@@ -291,6 +295,7 @@
       this.key = keyer(opts && opts.chroma);
       this.pixel = !!(item && item.pixel);
       this.shape = SHAPES[opts && opts.shape] ? opts.shape : null; // (null: whole and uncut)
+      this.failed = false;
       if (!item || item.kind === 'builtin') { this.src = null; this.mask = null; this.clear(); return; }
       let src = null;
       try {
@@ -301,6 +306,7 @@
       }
       if (token !== this.token) { if (src && src.video) src.video.remove(); return; }
       this.src = src;
+      this.failed = !src; // (this browser can't show it: a HEIC photo in most, say)
       if (src && src.live) { // shown by the browser itself, which keeps it animating
         src.img.className = 'media-el' + (this.pixel ? ' pixelated' : '');
         if (this.shape) { // (the rim goes on the canvas underneath)
@@ -322,17 +328,33 @@
     }
     clear() { this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height); }
 
+    // Phones hold back a video's frames until it plays, and may not let it play by itself (Low Power Mode, say): it's
+    // started at once, and again whenever it's found stopped (see current), which a touch or key allows.
     async loadVideo(url) {
       const v = document.createElement('video');
-      v.muted = true; v.loop = true; v.playsInline = true; v.setAttribute('playsinline', ''); v.preload = 'auto';
+      v.muted = v.defaultMuted = true; v.setAttribute('muted', ''); v.loop = true; v.autoplay = true;
+      v.playsInline = true; v.setAttribute('playsinline', ''); v.setAttribute('webkit-playsinline', ''); v.preload = 'auto';
       v.src = url;
       this.hold.appendChild(v);
+      const src = { kind: 'video', video: v, w: 0, h: 0, kickAt: 0 };
+      this.kick(src, true);
       await new Promise((res, rej) => {
-        v.addEventListener('loadeddata', res, { once: true });
-        v.addEventListener('error', () => rej(new Error('video failed')), { once: true });
+        const tm = setTimeout(res, 4000); // no frame yet: it shows once one comes
+        const ok = () => { clearTimeout(tm); res(); };
+        v.addEventListener('loadeddata', ok, { once: true });
+        v.addEventListener('playing', ok, { once: true });
+        v.addEventListener('error', () => { clearTimeout(tm); rej(new Error('video failed')); }, { once: true });
       });
-      v.play().catch(() => {});
-      return { kind: 'video', video: v, w: v.videoWidth, h: v.videoHeight };
+      this.kick(src, true);
+      src.w = v.videoWidth; src.h = v.videoHeight;
+      return src;
+    }
+    kick(src, now) {
+      const v = src.video, t = performance.now();
+      if (!v.paused || !v.isConnected || (!now && t - src.kickAt < 800)) return;
+      src.kickAt = t;
+      const p = v.play();
+      if (p && p.catch) p.catch(() => {});
     }
 
     async loadImage(item) {
@@ -407,7 +429,8 @@
       }
       if (s.kind === 'video') {
         const v = s.video;
-        if (v.readyState < 2) return null;
+        this.kick(s);
+        if (v.readyState < 2 || !v.videoWidth) return null;
         return { el: v, sig: v.currentTime, w: v.videoWidth, h: v.videoHeight };
       }
       // Still images; SVGs are re-read now and then in case they animate.

@@ -21,7 +21,7 @@
     music: { label: 'Music', kinds: ['audio', 'video'] },
   };
   const EXT = {
-    image: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'apng', 'svg', 'bmp', 'ico'],
+    image: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'apng', 'svg', 'bmp', 'ico', 'heic', 'heif'],
     video: ['mp4', 'm4v', 'webm', 'mov', 'ogv'],
     audio: ['mp3', 'ogg', 'oga', 'opus', 'wav', 'm4a', 'aac', 'flac'],
   };

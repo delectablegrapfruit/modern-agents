@@ -378,6 +378,20 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     await MZ.Media.remove(item.id);
     return res;
   });
+  // A picture this browser can't show (a HEIC photo, here) never leaves you invisible: the Sticker stands in, with a note.
+  const heic = await page.evaluate(async () => {
+    const G = MZ.Game, S = MZ.Save.settings, wait = (ms) => new Promise((r) => setTimeout(r, ms)), was = S.player.media;
+    const bytes = new Uint8Array(64); bytes.set([0, 0, 0, 24, 102, 116, 121, 112, 104, 101, 105, 99], 0); // (an ftyp heic box and nothing more)
+    const [item] = await MZ.Media.importFiles([new File([bytes], 'IMG_0001.HEIC', { type: 'image/heic' })], 'player');
+    S.player.media = item.id; G.applySettings();
+    await wait(800);
+    G.sprite.update(performance.now(), true);
+    const res = { item: !!item, src: G.sprite.src && G.sprite.src.kind, mask: !!G.sprite.mask, note: Array.from(document.querySelectorAll('.toast')).some((t) => /HEIC/.test(t.textContent)) };
+    S.player.media = was; G.applySettings();
+    await MZ.Media.remove(item.id);
+    return res;
+  });
+  out.push({ name: 'a picture this browser can\'t show (HEIC) falls back to the Sticker, with a note', ok: heic.item && heic.src === 'image' && heic.mask && heic.note, info: JSON.stringify(heic) });
   const full = 96 * 96;
   out.push({ name: 'your own picture is cut to a circle by default, and that is its hitbox', ok: shp.def === 'circle' && shp.circle && shp.circle.maxR < 0.53 && Math.abs(shp.circle.cells / full - Math.PI / 4) < 0.04, info: shp.circle && (shp.circle.cells / full).toFixed(3) });
   out.push({ name: '...or to the shape you choose (square, heart, star...), or left as it is', ok: shp.square && shp.square.maxR > 0.65 && shp.heart && shp.heart.cells < shp.circle.cells * 0.9 && shp.star && shp.star.cells < shp.circle.cells * 0.9 && shp.original && shp.original.cells > full * 0.95, info: [shp.square, shp.heart, shp.star, shp.original].map((x) => x && (x.cells / full).toFixed(2)).join(' / ') });

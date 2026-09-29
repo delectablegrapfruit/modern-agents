@@ -5,10 +5,15 @@
  *   glide  (default) the pointer steers: you head toward it, faster the further it is; rest it on your picture to stop.
  *          Clicking and dragging still works.
  *   lock   click once and the mouse is captured (pointer lock): moving it drags the maze 1:1, no button held; Esc lets go.
- *   drag   click and drag only. */
+ *   drag   click and drag only.
+ * On a touch screen (the Touch setting):
+ *   joystick (default) a thumbstick wherever your finger comes down: slide it to head that way, faster the further
+ *            (as Glide does with a mouse); lift to stop. Two fingers still pinch.
+ *   drag     drag the maze 1:1. */
 (function () {
   'use strict';
   const MZ = window.MZ;
+  const STICK_R = 56, STICK_DEAD = 6; // the thumbstick's reach and its dead middle, CSS px
 
   class Input {
     constructor(el) {
@@ -21,6 +26,8 @@
       this.onZoom = null;
       this.onUse = null; // right click
       this.mouseMode = 'glide';
+      this.touchMode = 'joystick';
+      this.stick = null; // Joystick: {id, ox, oy, x, y}, where the finger came down (the stick's middle) and where it is
       this.mouse = null; // Glide: where the mouse pointer is over the stage (null: away, or not a mouse)
       this.locked = false; // Lock: the mouse is captured
       this.onUnlock = null;
@@ -51,7 +58,7 @@
         if (!w || e.pointerType !== w || this.pointers.has(e.pointerId) || this.pointers.size !== 1) return;
         this.pinch = null;
         const [id, p] = Array.from(this.pointers)[0];
-        if (this.enabled) this.drag = { id, x: p.x, y: p.y };
+        if (this.enabled) this.grip(id, p.x, p.y, w);
       };
       window.addEventListener('pointerup', lifted);
       window.addEventListener('pointercancel', lifted);
@@ -77,8 +84,13 @@
         this.release();
         return;
       }
-      if (this.drag || this.pinch) return; // a third finger during a pinch does nothing
-      this.drag = { id: e.pointerId, x: e.clientX, y: e.clientY };
+      if (this.drag || this.stick || this.pinch) return; // a third finger during a pinch does nothing
+      this.grip(e.pointerId, e.clientX, e.clientY, e.pointerType);
+    }
+    // One finger (or the mouse) down: it drags, or with the Joystick a finger works the stick from where it is.
+    grip(id, x, y, type) {
+      if (type !== 'mouse' && this.touchMode === 'joystick') this.stick = { id, ox: x, oy: y, x, y };
+      else this.drag = { id, x, y };
     }
     move(e) {
       if (this.enabled && e.pointerType === 'mouse' && e.button === 2 && e.buttons & 2 && this.onUse) this.onUse(); // pressed while dragging
@@ -96,6 +108,13 @@
         this.pinch.d = d;
         return;
       }
+      const st = this.stick;
+      if (st && st.id === e.pointerId) { // past its reach, the stick's middle follows the finger
+        st.x = e.clientX; st.y = e.clientY;
+        const dx = st.x - st.ox, dy = st.y - st.oy, d = Math.hypot(dx, dy);
+        if (d > STICK_R) { st.ox = st.x - (dx / d) * STICK_R; st.oy = st.y - (dy / d) * STICK_R; }
+        return;
+      }
       const g = this.drag;
       if (!g || g.id !== e.pointerId) return;
       this.grabDX += e.clientX - g.x;
@@ -104,17 +123,17 @@
     }
     up(e) {
       if (!this.pointers.delete(e.pointerId)) return;
-      if (this.drag && this.drag.id === e.pointerId) this.release();
+      if ((this.drag && this.drag.id === e.pointerId) || (this.stick && this.stick.id === e.pointerId)) this.release();
       if (!this.pinch) return;
       // A pinch finger lifted: re-measure the pair still down, or let the last finger drag on from where it is.
       const ps = Array.from(this.pointers);
       if (ps.length >= 2) this.pinch.d = Math.hypot(ps[0][1].x - ps[1][1].x, ps[0][1].y - ps[1][1].y);
       else {
         this.pinch = null;
-        if (ps.length && this.enabled) this.drag = { id: ps[0][0], x: ps[0][1].x, y: ps[0][1].y };
+        if (ps.length && this.enabled) this.grip(ps[0][0], ps[0][1].x, ps[0][1].y, e.pointerType);
       }
     }
-    release() { this.drag = null; }
+    release() { this.drag = null; this.stick = null; }
     lock() {
       if (this.locked || !this.el.requestPointerLock) return;
       try {
@@ -125,7 +144,15 @@
     unlock() { if (this.locked && document.exitPointerLock) document.exitPointerLock(); }
     // Glide: the way to head, |v| <= 1, from the screen centre (cx, cy) toward the pointer: nothing within `dead` px (on
     // the picture), full speed `range` px beyond that. Not while a button drags.
+    // The Joystick gives the same, from the stick.
     glide(cx, cy, dead, range) {
+      const st = this.stick;
+      if (st) {
+        const dx = st.x - st.ox, dy = st.y - st.oy, d = Math.hypot(dx, dy);
+        if (d <= STICK_DEAD) return { x: 0, y: 0 };
+        const k = Math.pow(Math.min(1, (d - STICK_DEAD) / (STICK_R - STICK_DEAD)), 1.3) / d;
+        return { x: dx * k, y: dy * k };
+      }
       if (this.mouseMode !== 'glide' || !this.mouse || this.drag || this.pinch) return { x: 0, y: 0 };
       const dx = this.mouse.x - cx, dy = this.mouse.y - cy, d = Math.hypot(dx, dy);
       if (d <= dead) return { x: 0, y: 0 };
@@ -167,5 +194,6 @@
     }
   }
 
+  Input.STICK_R = STICK_R;
   MZ.Input = Input;
 })();

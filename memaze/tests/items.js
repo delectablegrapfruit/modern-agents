@@ -133,6 +133,31 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     S.controls.mouse = 'glide'; G.applySettings();
     G.quit();
 
+    // ----- touch: the Joystick steers as Glide does; Touch → Drag drags -----
+    G.startJourney(1);
+    S.controls.touch = 'joystick'; G.applySettings();
+    const tch = (type, id, x, y, primary) => stg.dispatchEvent(new PointerEvent(type, { pointerType: 'touch', pointerId: id, isPrimary: primary !== false, clientX: x, clientY: y, bubbles: true }));
+    const j0x = G.ball.x, j0y = G.ball.y, jdx = G.input.grabDX;
+    tch('pointerdown', 7, 300, 500); tch('pointermove', 7, 300 + fdir.x * 70, 500 + fdir.y * 70);
+    run(0.5);
+    const stuck = (G.ball.x - j0x) * fdir.x + (G.ball.y - j0y) * fdir.y;
+    check('Joystick: a thumb down anywhere, slid the way to go, steers you there (as Glide does)', stuck > 40 && !G.input.drag && G.input.grabDX === jdx, Math.round(stuck));
+    tch('pointerup', 7, 300 + fdir.x * 70, 500 + fdir.y * 70);
+    const s0x = G.ball.x, s0y = G.ball.y;
+    run(0.3);
+    check('...lifting it stops you', Math.hypot(G.ball.x - s0x, G.ball.y - s0y) < 0.5 && !G.input.stick);
+    tch('pointerdown', 8, 300, 500); tch('pointerdown', 9, 500, 500, false);
+    check('...and two fingers pinch, never steer', !G.input.stick && !!G.input.pinch);
+    tch('pointerup', 9, 500, 500); tch('pointerup', 8, 300, 500);
+    S.controls.touch = 'drag'; G.applySettings();
+    const dgx = G.input.grabDX;
+    tch('pointerdown', 10, 300, 500); tch('pointermove', 10, 340, 500);
+    check('Touch → Drag: the finger drags the maze instead', G.input.grabDX - dgx === 40 && !G.input.stick);
+    tch('pointerup', 10, 340, 500);
+    G.input.grabDX = 0; G.input.grabDY = 0;
+    S.controls.touch = 'joystick'; G.applySettings();
+    G.quit();
+
     // ----- Path: shows the way -----
     G.startJourney(3);
     G.giveItem('path');
@@ -232,12 +257,14 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     check('Bullet carries you about 1800 units along the corridors', len > 1500 && !G.fx.bullet, Math.round(len) + ' in ' + maxT.toFixed(1) + 's');
     check('Bullet lands on the floor, unhurt, short of GOAL', onFloor() && G.hp === 2 && G.state === 'play');
     check('Bullet heads along the corridors toward GOAL', along(G.ball.x, G.ball.y) > g0 + 1200, Math.round(g0) + ' -> ' + Math.round(along(G.ball.x, G.ball.y)));
-    // Near the goal it stops short and the finish is yours.
-    const last = m.mainPath[m.mainPath.length - 3];
-    G.ball.x = m.nodes[last].x; G.ball.y = m.nodes[last].y;
+    G.quit();
+    // With GOAL in reach it flies you right into it.
+    G.startJourney(3);
+    const m3 = G.maze, last = m3.mainPath[m3.mainPath.length - 3];
+    G.ball.x = m3.nodes[last].x; G.ball.y = m3.nodes[last].y;
     G.giveItem('bullet'); G.useItem();
-    for (let i = 0; i < 60 * 8 && G.fx.bullet; i++) frame(1 / 60);
-    check('Bullet near GOAL stops short of it', G.state === 'play' && onFloor(), G.state);
+    for (let i = 0; i < 60 * 8 && G.fx.bullet && G.state === 'play'; i++) frame(1 / 60);
+    check('Bullet with GOAL in reach flies you into it', G.state !== 'play' && !G.fx.bullet && Math.hypot(G.ball.x - m3.goal.x, G.ball.y - m3.goal.y) < G.goalR() + G.box(), G.state);
     G.quit();
     // A shut door stops the Bullet: it never crosses one.
     G.startJourney(5);
