@@ -107,6 +107,8 @@
       var out = { credited: n - toLien, toLien: toLien, deltas: [] };
       if (toLien) { var l0 = m.lien; m.lien -= toLien; out.deltas.push(delta('lien', null, l0, m.lien)); }
       if (out.credited) { var v0 = m[to]; m[to] += out.credited; out.deltas.push(delta(to, null, v0, m[to])); }
+      // The action pipeline names the source on its cash / bank Delta (docs/requests/W1-Q.md 5).
+      if (out.credited && SR.rules.effects && SR.rules.effects.noteIncome) SR.rules.effects.noteIncome(to, out.credited, src);
       return out;
     },
 

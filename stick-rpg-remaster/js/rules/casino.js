@@ -28,9 +28,6 @@
   var SYMBOLS = ['dollar', 'seven', 'bar', 'bell', 'cherry', 'blank'];
   var LINES = ['dollar3', 'seven3', 'bar3', 'bell3', 'cherry3', 'cherry2', 'cherry1'];
   var DOUBLE_ZERO = 37;          // roulette: the 00 pocket
-  // Darts Auto (B-14f): each throw is released at a uniform time of the wobble; a window far longer
-  // than its periods (1 / 0.53 s and 1 / 0.71 s) makes the two phases effectively independent.
-  var AUTO_WINDOW_SEC = 600;
 
   function C() { return SR.tuning.casino; }
   function BJ() { return SR.tuning.casino.bj; }
@@ -616,9 +613,11 @@
     rng = rng || SR.rng.rules;
     var p = params && typeof params.phx === 'number' ? params : Object.assign({}, params || {}, dartsParams(s, params, rng));
     if (typeof p.A !== 'number') p.A = dartsAmp(s, params);
-    var n = p.darts || C().darts.perGame, throws = [], score = 0;
+    // Each throw is released at a uniform time in a window far longer than the wobble's periods
+    // (1 / 0.53 s and 1 / 0.71 s), so the two phases are effectively independent (B-14f `auto`).
+    var n = p.darts || C().darts.perGame, win = C().darts.autoWindowSec, throws = [], score = 0;
     for (var i = 0; i < n; i++) {
-      var w = wobble(rng.float(0, AUTO_WINDOW_SEC), p), pts = dartsScore(w.x, w.y);
+      var w = wobble(rng.float(0, win), p), pts = dartsScore(w.x, w.y);
       throws.push(pts);
       score += pts;
     }
@@ -657,7 +656,7 @@
   function canPlay(s, game) {
     var c = s.casino;
     if (game === 'blackjack') {
-      if (feat('nightlife') && s.clock.day < (c.barredUntil || 0)) return no('reason.notNow', { day: c.barredUntil });
+      if (feat('nightlife') && s.clock.day < (c.barredUntil || 0)) return no('reason.barred', { day: c.barredUntil });
       if ((s.daily.bjHands || 0) >= BJ().handsPerDay) return no('reason.dailyLimit');
       if (s.money.cash < BJ().bets[0]) return no('reason.needCash', { n: BJ().bets[0], money: money(BJ().bets[0]) });
     } else if (game === 'slots') {
@@ -719,7 +718,7 @@
    */
   function slotsRound(s, bet, ctx) {
     bet = Mth.floor(Number(bet) || 0);
-    if (vip(s).slotBets.indexOf(bet) < 0) return { ok: false, reason: 'reason.unavailable', vars: { n: bet } };
+    if (vip(s).slotBets.indexOf(bet) < 0) return { ok: false, reason: 'reason.badBet', vars: { n: bet } };
     var sh = short(s, bet);
     if (sh) return sh;
     var r = spin(rng0(ctx), bet, pays(s));
@@ -743,7 +742,7 @@
     if (!gate.ok) return { ok: false, reason: gate.reason, vars: gate.vars };
     var bet = Mth.floor(Number(p.bet !== undefined ? p.bet : p.round && p.round.bet) || 0);
     var lim = vip(s).bjBets;
-    if (bet < lim[0] || bet > lim[1]) return { ok: false, reason: 'reason.unavailable', vars: { n: bet } };
+    if (bet < lim[0] || bet > lim[1]) return { ok: false, reason: 'reason.badBet', vars: { n: bet } };
     var net = p.round ? settle(p.round) : Number(p.net) || 0;
     // The stake (VIP points, the gamble payload, the cash it needed): a played round's own, else the
     // engine's `wagered` (a double or a split stakes up to 2 × the bet), else the bet or the loss.
@@ -767,14 +766,14 @@
    * @returns {object} a partial Result; the `gamble` payload carries the pocket
    */
   function rouletteRound(s, bets, ctx) {
-    if (!isArray(bets) || !bets.length) return { ok: false, reason: 'reason.unavailable', vars: {} };
+    if (!isArray(bets) || !bets.length) return { ok: false, reason: 'reason.badBet', vars: {} };
     var total = 0;
     for (var i = 0; i < bets.length; i++) {
       var amt = Mth.floor(Number(bets[i].amount) || 0);
-      if (amt <= 0 || !covers(bets[i])) return { ok: false, reason: 'reason.unavailable', vars: { i: i } };
+      if (amt <= 0 || !covers(bets[i])) return { ok: false, reason: 'reason.badBet', vars: { i: i } };
       total += amt;
     }
-    if (total > vip(s).rouletteLimit) return { ok: false, reason: 'reason.unavailable', vars: { n: total } };
+    if (total > vip(s).rouletteLimit) return { ok: false, reason: 'reason.badBet', vars: { n: total } };
     var sh = short(s, total);
     if (sh) return sh;
     var pocket = rouletteSpin(rng0(ctx)), r = rouletteSettle(bets, pocket);
@@ -826,9 +825,9 @@
   function dartsMatchStart(s, tier, stake, ctx) {
     var M = C().darts.match, gate = canPlay(s, 'darts');
     if (!gate.ok) return { ok: false, reason: gate.reason, vars: gate.vars };
-    if (!M[tier] || !M[tier].target) return { ok: false, reason: 'reason.unavailable', vars: {} };
+    if (!M[tier] || !M[tier].target) return { ok: false, reason: 'reason.badBet', vars: {} };
     stake = Mth.floor(Number(stake) || 0);
-    if (stake < M.stake[0] || stake > M.stake[1]) return { ok: false, reason: 'reason.unavailable', vars: { n: stake } };
+    if (stake < M.stake[0] || stake > M.stake[1]) return { ok: false, reason: 'reason.badBet', vars: { n: stake } };
     var sh = short(s, stake);
     if (sh) return sh;
     s.money.cash -= stake;
@@ -933,7 +932,8 @@
     darts: {
       score: dartsScore, amp: dartsAmp, params: dartsParams, wobble: wobble, autoThrows: autoThrows,
       practice: dartsPractice, matchStart: dartsMatchStart, match: dartsMatch,
-      AUTO_WINDOW_SEC: AUTO_WINDOW_SEC,
+      /** @deprecated read SR.tuning.casino.darts.autoWindowSec (kept for W1-C's recorded name). */
+      get AUTO_WINDOW_SEC() { return C().darts.autoWindowSec; },
     },
     vip: vip,
     vipDrink: vipDrink,

@@ -32,7 +32,7 @@
      * @param {object=} ctx { rng, now, source }
      * @returns {{outcome: string, cause: string, bill: number, writtenOff: number, report: (object|null),
      *   events: object[], toasts: object[]}} `toasts` carries Second Wind's toast (ARCHITECTURE §6.7:
-     *   "a toast; nothing else happens"); docs/requests/W1-E.md R3 asks act.js to merge it
+     *   "a toast; nothing else happens"); js/rules/act.js appends it to Result.toasts
      */
     down: function (s, cause, ctx) {
       ctx = ctx || { rng: SR.rng.rules, now: s.clock.min, source: 'sim' };

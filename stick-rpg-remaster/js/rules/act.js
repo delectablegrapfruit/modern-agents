@@ -324,28 +324,53 @@
     if (!d) return;
     res.down = d;
     // health.down may raise the `down` rule event itself (Down.events); otherwise it is added here.
+    // Its toasts (Second Wind's, ARCHITECTURE §6.7) join the Result's (docs/requests/W1-E.md R3).
     if (Array.isArray(d.events)) Array.prototype.push.apply(res.events, d.events);
+    if (Array.isArray(d.toasts)) Array.prototype.push.apply(res.toasts, d.toasts);
     if (!res.events.some(function (e) { return e.name === 'down'; })) {
       res.events.push({ name: 'down', payload: { cause: d.cause || cause, outcome: d.outcome } });
     }
   }
 
-  /** Cost, effects, the arcs hook and the HP-0 hook, on s. Sets c.afterCost for previews. */
+  /**
+   * Cost, effects, the arcs hook and the HP-0 hook, on s. Sets c.afterCost for previews and
+   * c.income (what was credited to cash and bank by income source, CONTRACT §8.4).
+   */
   function execute(s, def, c, res) {
-    applyCost(s, c);
-    c.afterCost = snapshot(s);
-    SR.rules.effects.run(s, def.effects, c, res);
-    if (c.refused) return;
-    arcs(s, c, res);
-    if (c.refused) return;
-    if (!c.preview && !res.down && !s.over && s.stats.hp <= 0) down(s, c, res);
+    var closeIncome = SR.rules.effects.trackIncome();
+    try {
+      applyCost(s, c);
+      c.afterCost = snapshot(s);
+      SR.rules.effects.run(s, def.effects, c, res);
+      if (c.refused) return;
+      arcs(s, c, res);
+      if (c.refused) return;
+      if (!c.preview && !res.down && !s.over && s.stats.hp <= 0) down(s, c, res);
+    } finally {
+      c.income = closeIncome();
+    }
   }
 
-  /** Deltas, the `stat` rule events derived from them, and `over`. */
-  function finish(s, before, res) {
+  /** @returns {(string|null)} the income source that credited the most to a field ('cash' | 'bank'). */
+  function mainSource(rec) {
+    var best = null;
+    Object.keys(rec || {}).forEach(function (k) { if (!best || rec[k] > rec[best]) best = k; });
+    return best;
+  }
+
+  /**
+   * Deltas, the `stat` rule events derived from them, and `over`. A positive cash or bank Delta
+   * names its income source as `key` when an income credit reached that field (the source that
+   * credited the most; CONTRACT §8.3 `key?`, docs/requests/W1-Q.md 5).
+   */
+  function finish(s, before, res, c) {
     res.deltas = diff(before, snapshot(s));
     res.deltas.forEach(function (d) {
       if (d.kind === 'stat' && d.n > 0) res.events.push({ name: 'stat', payload: { key: d.key, n: d.n, total: d.to } });
+      if ((d.kind === 'cash' || d.kind === 'bank') && d.n > 0 && c && c.income) {
+        var src = mainSource(c.income[d.kind]);
+        if (src) d.key = src;
+      }
     });
     if (!before.over && s.over && !res.over) {
       var reason = s.result && s.result.reason ? s.result.reason : res.down && res.down.outcome === 'death' ? 'death' : 'time';
@@ -386,7 +411,7 @@
       restore(s, backup, c.rng, rngState);
       return refusal(id, c.refused.reason, c.refused.vars);
     }
-    finish(s, before, res);
+    finish(s, before, res, c);
     return res;
   }
 

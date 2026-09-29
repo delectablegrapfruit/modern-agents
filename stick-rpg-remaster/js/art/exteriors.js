@@ -547,8 +547,10 @@
     fillRect(ctx, board, P.trim);
     fillRect(ctx, [board[0], board[3] - 3, board[2], board[3]], L().tone(P.trim, -1));
     outlineRect(ctx, P, lw, top ? [board[0], top[1], board[2], board[3]] : board);
-    textOn(ctx, signText(g), [board[0] + 6, board[1] + 3, board[2] - 6, board[3] - 3], contrastInk(P, P.trim));
+    var box = [board[0] + 6, board[1] + 3, board[2] - 6, board[3] - 3];
+    textOn(ctx, signText(g), box, contrastInk(P, P.trim));
     g.signRect = board;
+    g.signBox = { r: box };
     covered(g, top ? [board[0], top[1], board[2], board[3]] : board);
   }
 
@@ -839,6 +841,7 @@
         outlineRect(ctx, P, lw * 0.7, plate);
         textOn(ctx, t, plate, contrastInk(P, P.trim), { fill: 0.8 });
         g.signRect = plate;
+        g.signBox = { r: plate, fill: 0.8 };
         covered(g, plate);
       }
     }
@@ -865,7 +868,7 @@
         fillRect(ctx, plate, P.trim);
         outlineRect(ctx, P, lw * 0.7, plate);
         textOn(ctx, t, plate, contrastInk(P, P.trim), { fill: 0.8 });
-        if (!g.signRect) g.signRect = plate;
+        if (!g.signRect) { g.signRect = plate; g.signBox = { r: plate, fill: 0.8 }; }
         covered(g, plate);
       }
     }
@@ -919,8 +922,10 @@
     fillRect(ctx, [c[0], c[3] - 6, c[2], c[3]], L().tone(P.trim, -1));
     fillRect(ctx, [c[0], c[1], c[2], c[3] - 6], P.trim);
     outlineRect(ctx, P, lw, [c[0], c[1], c[2], c[3]]);
-    textOn(ctx, signText(g), [c[0] + 6, c[1] + 2, c[2] - 6, c[3] - 8], contrastInk(P, P.trim), { fill: 0.8 });
+    var box = [c[0] + 6, c[1] + 2, c[2] - 6, c[3] - 8];
+    textOn(ctx, signText(g), box, contrastInk(P, P.trim), { fill: 0.8 });
     g.signRect = c;
+    g.signBox = { r: box, fill: 0.8 };
     covered(g, c);
     // Standing sign post on the porch's outer strip.
     var p = g.post;
@@ -970,7 +975,12 @@
     x.strokeStyle = tube;
     x.lineWidth = 2;
     x.strokeRect(r[0] + 2, r[1] + 2, r[2] - r[0] - 4, r[3] - r[1] - 4);
-    if (t && r === g.signRect) textOn(x, t, [r[0] + 6, r[1] + 3, r[2] - 6, r[3] - 3], tube);
+    // The tubes trace the lettering exactly as the sign was painted (its box and size, g.signBox):
+    // a smaller copy lit over the painted letters doubled every neon sign at night (wave-1 integration).
+    if (t && r === g.signRect) {
+      var box = g.signBox || { r: [r[0] + 6, r[1] + 3, r[2] - 6, r[3] - 3] };
+      textOn(x, t, box.r, tube, { fill: box.fill });
+    }
     out.push({ sprite: c, x: r[0] - 8, y: r[1] - 8, w: ww, h: hh, px: c.width * c.height });
   }
 

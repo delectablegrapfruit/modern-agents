@@ -41,6 +41,21 @@ refer to them by key (`'bld.bank.walls'`, `'int.mcsticks.floorB'`, `'karma.good.
 
 ## 2. Palette (`SR.art.palette`)
 
+**The shape of `SR.art.palette`** (CONTRACT D32 says how a key resolves: a dotted path, a numeric segment indexing an array; this is which keys exist).
+`palette.sky` is an array of keyframes `{ h, top, horizon, ambient, light }` (`h` and `light` are
+the only numeric leaves); `palette.ui` mirrors `css/tokens.css` under the token names without the
+leading `--` (`'ui.ink-900'`, `'ui.money-ink'`, plus `white`, `gold`, `newsprint`), with
+non-enumerable camelCase aliases (`'ui.ink900'`); the karma bands are `karma.good.0..9` /
+`karma.evil.0..9` (B-04c); `fighter.0` is the Ring's masked regulars and `fighter.1..12` the
+ladder; every `int.<id>` has the neutral set `wall wallHi wallShade trim floorA floorB counter
+accent light` (ids `default home apt apt2 pent mansion castle mcsticks store pawn furniture bank nli
+uofs cityhall bar casino bus jail hospital trip news`); every `city.<id>` has `ground base tower
+roof accent trim window`; `bld.<id>` has `walls shade roof trim` plus a few named extras
+(`skylight`, `plate`, `ivy`, `dome`, `bulb`, `stripe`, `gate`, `moat`, `garden`) and `bld.default`
+exists; the other groups are `light` (emissives), `weather`, `stick`, `acc` (accessories), `kit`
+(interior materials), `mat` (the bible's five materials), `car`, `prop` (pre-seeded for
+`js/art/props.js`), `npc` (§2.3) and `fx` (coins, confetti, stamp ink, newsprint).
+
 ### 2.1 World
 
 | Name | Hex | Use |
@@ -201,8 +216,10 @@ skate bowl, coin binoculars, sawhorses, parked cars.
 
 ## 7. Characters (`js/art/stick.js`)
 
-- **Rig:** 12 joints (head, neck, shoulders L/R, elbows L/R, hands L/R, hips L/R, knees L/R, feet
-  L/R), poses as joint-angle arrays, clips as keyframes with eased interpolation.
+- **Rig:** 14 points (head, neck, shoulders L/R, elbows L/R, hands L/R, hips L/R, knees L/R, feet
+  L/R) driven by a pose of 12 numbers (lean, head, two arm and two leg segments per side, lift,
+  rot); poses are these arrays, clips keyframes with eased interpolation (`SR.art.stick`, CONTRACT
+  §15.3).
 - **City view (3/4 top-down standee):** adult 52 u tall (head r 8, torso 18, legs 22), children
   38 u; limbs 3 u ink; the head fill is the karma colour for the player and a neutral tone for
   everyone else; 4 facings (side mirrored); a face (two dots and a mouth line by mood) when facing
@@ -224,13 +241,22 @@ skate bowl, coin binoculars, sawhorses, parked cars.
   magnifying glass), Brother Margin (sandwich board "THE FOLD IS COMING"), Pilot Ori (goggles,
   scarf), Mayor Doodle (sash), General Crayon (peaked cap, medals). Fighters: one accessory each
   (data).
+- **Person ids** the rig and the portraits know (for `data/people.js`, building `owner` /
+  `portrait` and interiors' `owner.id`): `harold kid dealer newguy mcholland sticky mel dee vinnie
+  sofia penny bea gil frankie terry lou tabby quill plume crease preacher ori doodle crayon officer
+  board stranger player`; fighters by their `data/fighters.js` id or `fighter.<n>`; pedestrians by
+  number; or a look object `{ head: 'npc.<name>', acc: ['beanie', ...], col: { beanie: 'acc.red' },
+  child }`. Aliases resolve the long forms (`skid`, `red`, `margin`, `lucky_lou`, ...); an unknown id
+  draws the plain look and warns once. Brother Margin's board lettering is the text key
+  `bark.preacher.board` (en-park.js, W3-Park).
 - **Line boil (P2 option, off by default):** stroke endpoints jitter ±0.6 u, redrawn every 150 ms,
   characters only.
 
 ## 8. Vehicles (`js/art/vehicles.js`)
 
 Seen from 3/4 above: roof, windshield, the side panel on the facing side; 8 directions (4 drawn,
-mirrored). Types: compact, sedan, taxi, van, police (light bar red/blue at 2 Hz; steady with Flash
+mirrored). Types: compact, sedan, taxi, van, police (light bar red/blue, the halves swapping every
+0.5 s, `SR.art.vehicles.lightPhase(t)`, so at most 2 flashes a second; steady with Flash
 Reduction), the junker (yellow with a mismatched door, a nod to the original's yellow car), the
 sports car (red convertible), the Sky Bus. Wheels spin; headlights and brake lights are emissive
 spots; skid marks on hard braking.
@@ -267,6 +293,12 @@ SR.def.interior('mcsticks', {
   lectern, chalkboard, lockers, barbell, treadmill, plants, lamps, posters, rugs, vault door, teller
   window, water cooler, filing cabinet, elevator, departures board, ticket window, bench, ballot box,
   podium, flags, and each furniture piece (8 + 6 tier-2 variants) for home interiors.
+
+  The building scene calls `SR.art.interior(id, params)` with the door resolver's params (`{
+  homeId, mode }`: the home draws its tier and mode) and `drawAnim(ctx, t, state, actors)` with
+  `actors = { owner: { id, pose }, you: { pose } }` (poses `idle`, `talk`, `happy`, `shock`, `work`:
+  react-happy on a purchase, react-shock on a crime, work while you work; UI §5.6). The kit's full
+  def fields (wall and floor types, `fns`, prop `when` / `pick`) are listed in CONTRACT §15.3.
 
 | Interior | Hero prop and loops | Proprietor |
 |---|---|---|
@@ -427,6 +459,11 @@ resumes at its position after overlays.
 | Phone | ring, vibrate, answering-machine beep (1 kHz + tape hiss), voicemail start |
 | Voices | gibberish blips per character: a formant-filtered saw at the character's pitch with syllable timing from the text (Harold low and slow, Skid high and fast, Terry nervous vibrato, Sticky gravelly, Lou smooth) |
 
+Registered names other packages play (W1-S, wave 1): UI `click`, `open`, `close`, `confirm`, `error`,
+`toggle`, `blip` (voice bus; `pitch` is a ratio), `purchase`, `ticktock`, `hover`, `typewriter`,
+`stamp`; minigames `mg_hit`, `mg_miss`, `mg_item`, `mg_bin`, `mg_serve`, `mg_tick`. The Stamp plays
+the stinger `stingers.stamp` once W2-Music registers it, else the `stamp` sfx.
+
 ### 13.6 Ambience (`js/audio/ambience.js`)
 
 City bed (distant traffic from low-passed noise with slow swells, level by traffic density), birds
@@ -451,6 +488,17 @@ ducks and fountain.
   and stingers 3, UI 2, world one-shots 1, loops 0).
 - **Captions:** each sound with a caption key (`cap.horn`, `cap.siren`, `cap.answering`,
   `cap.edgeWind`, `cap.thunder`, `cap.knock`) emits a `caption` event with its direction.
+- **As built (wave 1, CONTRACT D50):** the Level column is a **bus trim** under the player's slider
+  (music 0 dB and sfx 0 dB, whose material peaks at ≤ -10 / ≤ -6 dBFS; ambience -24, ui -12, voice
+  -16 dB); the voice bus follows the SFX slider (Settings has no voice slider). The compressor runs
+  with a **hard knee**, and a trim after it removes the automatic makeup gain Web Audio adds, so
+  material below -14 dBFS passes at unity and only peaks are squeezed; its 6 ms lookahead delays the
+  output (the loop-seam check allows for it). The graph is buses → compressor → makeup trim →
+  **master gain** (the Master slider) → destination, so the slider is a clean output volume. **Music
+  notes are priority 2.5** in the voice pool (above UI 2, below the Stamp and stingers 3), so a
+  flurry of clicks never steals the song. Mono downmixes after the master gain. A voice-bus sound
+  ducks the song 4 dB for its length; `SR.audio.duck(6, Infinity)` holds a duck (minigames) until
+  released.
 
 ### 13.8 Data formats (frozen at M0 in `docs/CONTRACT.md`)
 
@@ -513,6 +561,10 @@ A layer is one source: `osc` (`sine`, `square`, `saw`, `triangle`, `pulse` with 
 `indexDecay`); `freq` is a number, a list with `at` offsets, or a `sweep: [from, to, seconds,
 'exp'|'lin']`; optional `filter` (`type`, `freq`, `q`, optional `sweep`); `env` is ADSR in seconds
 with `a ≥ 0.005` (no clicks); `start` offsets the layer; `dur` is the gate length; `gain` per layer.
+The validator's reading of both formats (required fields, ranges, envelope shapes, the per-pattern
+`bpm` for `final_edition`'s 84 → 100) is CONTRACT §14.4. Note on the `coin` example: with `s: 0`
+and `d: 0.05` its envelope is silent before the second pitch at 0.06 s; it stays a valid fixture,
+and the shipped `coin` uses `s: 0.6`.
 
 **Objective checks** (`tests/e2e/audio.test.cjs`, ARCHITECTURE §18) replace listening: every song
 and sfx is rendered offline and must meet the peak, RMS, click, loop-seam, NaN / denormal, length

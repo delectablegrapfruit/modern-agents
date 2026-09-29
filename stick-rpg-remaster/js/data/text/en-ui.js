@@ -53,6 +53,20 @@
     'ui.pad.connected': 'Controller connected',
     'ui.pad.disconnected': 'Controller disconnected',
 
+    // ---- the art bible's section labels (W1-A: js/art/bible.js, the #artbible page; ART_AUDIO §1) ----
+    'ui.bible.title': 'Art bible',
+    'ui.bible.palette': 'Palette',
+    'ui.bible.materials': 'Materials',
+    'ui.bible.lines': 'Line weights',
+    'ui.bible.doors': 'Door treatments',
+    'ui.bible.poses': 'Poses and looks',
+    'ui.bible.karma': 'Karma bands',
+    'ui.bible.interior': 'Interior corner',
+    'ui.bible.icons': 'Icons',
+    'ui.bible.grain': 'Paper grain',
+    'ui.bible.stamp': 'Stamp',
+    'ui.bible.float': 'FloatText',
+
     // ---- card groups and row variants (UI.md §5.6) ----
     'ui.group.eat': 'Eat',
     'ui.group.buy': 'Buy',
@@ -260,8 +274,8 @@
     'mg.frame.duel.statusCards': 'Card {n} of {total} · pay ×{m}',
     'mg.frame.duel.scoreMirror': 'Won {wins}, lost {losses}',
     'mg.frame.duel.d': 'D {d}',
-    'mg.frame.duel.halved': 'countered: easier',
-    'mg.frame.duel.doubled': 'countered: harder',
+    'mg.frame.duel.halved': 'beats their stance',          // D × 0.5: this option beats the stance (B-30)
+    'mg.frame.duel.doubled': 'their stance counters it',   // D × 2: the stance counters this option
     'mg.frame.duel.ev': 'EV {ev}',
     'mg.frame.duel.hint': '{name} leans {stance}',
     'mg.frame.duel.optionAria': 'Option {k}: {label}, {stat} {value}, {pct} chance',

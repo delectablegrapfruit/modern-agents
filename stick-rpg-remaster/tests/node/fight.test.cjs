@@ -117,6 +117,15 @@ T.section('the ladder and the enemy (B-13, GDD §6.3)');
   T.ok(K.near(miss / 20000, 0.30, 0.015), 'Wobbly Pete misses 30 % of his attacks (' + (miss / 20000).toFixed(3) + ')');
   const irma = F.create(K.state(SR, { stats: { str: 100 } }), 'bar', 9, SR.rng.create(1));
   T.eq(F.range(irma, 'inkBeam').max, Math.floor(65 * 1.5 * 0.7), 'Iron Irma takes 30 % less');
+  // The quirks' sizes live in SR.tuning.fight.quirks (docs/requests/W1-C.md 7); the data names the id.
+  T.eq([1, 3, 8, 9].map((n) => F.opponent(K.state(SR), 'bar', n, SR.rng.create(1)).quirk),
+    [{ miss: 0.30, id: 'wobbly' }, { id: 'kicker', always: 'kick' }, { fireballOdds: 2, id: 'pyro' }, { armor: 0.30, id: 'iron' }], 'each quirk with its size from tuning');
+  const Q = SR.tuning.fight.quirks.iron;
+  Q.armor = 0.5;
+  const irma2 = F.create(K.state(SR, { stats: { str: 100 } }), 'bar', 9, SR.rng.create(1));
+  Q.armor = 0.30;
+  T.eq(F.range(irma2, 'inkBeam').max, Math.floor(65 * 1.5 * 0.5), 'a tuning change reaches the fight (tuning.fight.quirks.iron.armor)');
+  T.ok(SR.registry.entries('fighter').every((e) => !e.def.quirk || ['miss', 'fireballOdds', 'armor'].every((k) => !(k in e.def.quirk))), 'fighters.js holds no quirk sizes');
 }
 
 T.section('the vest and Guard (P1)');

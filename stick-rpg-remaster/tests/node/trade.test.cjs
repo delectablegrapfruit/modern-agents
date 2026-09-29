@@ -193,7 +193,7 @@ T.section('boarding the red-eye (GDD §4.11, B-01)');
   const s = base();
   T.ok(R.canBoard(s, 'smuggle', 'gusty').ok, 'the red-eye boards at 00:00');
   s.clock.min = 30;
-  T.eq(R.canBoard(s, 'smuggle', 'gusty').reason, 'reason.notNow', 'and only then (orig)');
+  T.eq([R.canBoard(s, 'smuggle', 'gusty').reason, SR.text.has('reason.redEye')], ['reason.redEye', true], 'and only then (orig; "Buses leave at 00:00", W1-C request 8)');
   s.clock.min = 0; s.money.cash = 114;
   T.eq([R.ticket(s, 'gusty'), R.canBoard(s, 'smuggle', 'gusty').reason], [115, 'reason.needCash'], 'the ticket (B-12a)');
   T.eq(R.canBoard(s, 'smuggle', 'atlantis').reason, 'reason.unknown', 'an unknown city');
@@ -286,7 +286,7 @@ T.section('through the action pipeline (named fns)');
   const rc = K.act(SR, pc, 'smuggleCost', { city: 'eraser' }, 2);
   T.eq([pvc.cost.cash, rc.ok, pc.money.cash], [130, true, 870], 'a row whose cost is the ticket (\'trade.ticket\'): the chip shows it, it is taken once');
   const late = base({ clock: { min: 30 } });
-  T.eq(K.act(SR, late, 'smuggle', { city: 'gusty' }).reason, 'reason.notNow', 'the red-eye rule through the pipeline');
+  T.eq(K.act(SR, late, 'smuggle', { city: 'gusty' }).reason, 'reason.redEye', 'the red-eye rule through the pipeline');
 }
 
 T.done();

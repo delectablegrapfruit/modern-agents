@@ -259,11 +259,12 @@ T.section('the tip at step 10, the end of the game, the report');
   T.eq(N.run(a, H.ctx(SR, 21), {}), N.run(b, H.ctx(SR, 21), {}), 'deterministic: the same state and seed give the same report');
   T.eq(a, b, '… and the same state');
   const h = H.state(SR, { clock: { day: 150 } });
+  const h0 = h.history.nw.length;   // create() seeds the day-1 point (W1-E request R2)
   N.run(h, H.ctx(SR, 1), {});
-  T.eq(h.history.nw.length, 0, 'after day 120 the history is weekly (day 151 is not a 7th morning)');
+  T.eq(h.history.nw.length - h0, 0, 'after day 120 the history is weekly (day 151 is not a 7th morning)');
   h.clock.day = 147;
   N.run(h, H.ctx(SR, 1), {});
-  T.eq(h.history.nw.length, 1, 'day 148 = 120 + 28 is');
+  T.eq(h.history.nw.length - h0, 1, 'day 148 = 120 + 28 is');
 }
 
 T.section('weather at night: the Heat Wave, storms, weather alerts (review fixes)');
@@ -338,6 +339,57 @@ T.section('the campaign morning and the night\'s clock (review fixes)');
   }
   rf();
   T.ok(events >= 6 && events <= 26, 'about 40 % of campaign mornings bring an event (real election rules)', events);
+}
+
+T.section('wave-1 integration requests (W1-R 12, W1-W 3, W1-E R2)');
+{
+  // W1-R request 12: night stat gains raise the `stat` rule event into Report.events.
+  const f = H.state(SR, { clock: { day: 3 }, stats: { int: 50 }, furniture: { owned: { books: 1 } }, election: { decrees: ['mandatoryHats'] } });
+  const rf = N.run(f, H.ctx(SR, 1), {});
+  const stat = rf.events.filter((e) => e.name === 'stat').map((e) => [e.payload.key, e.payload.n, e.payload.total]);
+  T.eq(stat, [['int', 2, 52], ['cha', 1, f.stats.cha]], 'the nightly furniture gain (step 7) and Mandatory Hats (step 9) raise `stat` events { key, n, total }');
+
+  // W1-W request 3 (GDD §3.10, B-15 carHit): the ambulance-chaser call the morning after a car hit.
+  const C = SR.tuning.world.carHit;
+  const none = H.state(SR, {});
+  N.run(none, H.ctx(SR, 1), {});
+  T.ok(!none.msgs.some((m) => /^vm\.carhit\./.test(m.key)), 'no car hit, no call');
+  const keys = new Set(), pays = [];
+  let cheques = 0, lines = 0, right = 0;
+  const n = 400;
+  for (let seed = 1; seed <= n; seed++) {
+    const s = H.state(SR, { money: { cash: 0 }, flags: { carHitVm: true } });
+    const r = N.run(s, H.ctx(SR, seed), {});
+    const vm = s.msgs.filter((m) => /^vm\.carhit\./.test(m.key));
+    if (vm.length !== 1 || s.flags.carHitVm) continue;
+    keys.add(vm[0].key);
+    const line = r.lines.find((l) => l.key === 'report.carHitCheque');
+    if (vm[0].vars.cheque) {
+      cheques++;
+      pays.push(vm[0].vars.n);
+      if (line && line.vars.n === vm[0].vars.n && s.money.cash === vm[0].vars.n) lines++;
+    } else if (!line && vm[0].vars.n === 0 && s.money.cash === 0) lines++;
+    right++;
+  }
+  T.eq(right, n, 'one voicemail each morning after a hit; the flag is cleared');
+  T.eq([...keys].sort(), ['vm.carhit.1', 'vm.carhit.2', 'vm.carhit.3'], 'one of three voicemails (orig)');
+  T.ok(Math.abs(cheques / n - C.settlement.chance) < 0.06, '20 % carry a settlement cheque', cheques / n);
+  T.ok(pays.every((p) => p >= 50 && p <= 200) && Math.min(...pays) < 80 && Math.max(...pays) > 170, 'of $50-$200 (50 + rand(0..150))', [Math.min(...pays), Math.max(...pays)]);
+  T.eq(lines, n, 'a cheque is paid to cash with its report line; a plain call pays nothing');
+  const lien = H.state(SR, { money: { cash: 0, lien: 1000 }, flags: { carHitVm: true } });
+  let paid = null;
+  for (let seed = 1; seed <= 60 && !paid; seed++) {
+    const t = SR.util.clone(lien);
+    N.run(t, H.ctx(SR, seed), {});
+    const vm = t.msgs.find((m) => /^vm\.carhit\./.test(m.key));
+    if (vm && vm.vars.cheque) paid = [vm.vars.n, t.money.cash, t.money.lien];
+  }
+  T.ok(paid && paid[1] === paid[0] - Math.floor(paid[0] / 2 + 0.5) && paid[2] === 1000 - (paid[0] - paid[1]), 'the cheque is income (`prize`): half goes to a lien', paid);
+
+  // W1-E request R2: daily.shifts is a daily counter the night resets.
+  const d = H.state(SR, { daily: { shifts: 2 } });
+  N.run(d, H.ctx(SR, 1), {});
+  T.eq(d.daily.shifts, 0, 'daily.shifts resets at night');
 }
 
 T.done();

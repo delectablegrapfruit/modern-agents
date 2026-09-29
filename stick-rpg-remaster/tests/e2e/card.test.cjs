@@ -7,6 +7,9 @@
 //     feedback; world.enter and door:entered / door:exited on arrival and leaving;
 //   - hold-confirm repeats a `repeatable` row every tuning.time.repeatHoldMs until refused, and
 //     never repeats a row with confirm, minigame or screen; R repeats the card's last action;
+//     a stat-gain stamp shows once per hold and never stops it, and the held key's repeats do not
+//     skip it (CONTRACT D47); Tab moves focus and never opens the Pocket in a building (D57);
+//     a minigame or Hustle that cannot run yet shows a toast, never an unhandled rejection;
 //   - a test sub-screen mounts, refreshes after ctx.act and when a child pops, vetoes Back (the
 //     host asks to confirm) and unmounts; card.open('testbank', { screen }) from another building
 //     lands on it; keyboard, a mocked gamepad and touch (a drag scrolls the long card body; a
@@ -34,6 +37,9 @@ async function setup(opts) {
     if (SR.reg.sfx && !SR.reg.sfx.error) SR.def.sfx('error', { bus: 'ui', gain: 0.3, layers: [] });
     const real = SR.audio.sfx;
     SR.audio.sfx = function (name) { window.__sfx.push(name); return typeof real === 'function' ? real.apply(this, arguments) : null; };
+    window.__music = [];
+    const realMusic = SR.audio.music;
+    SR.audio.music = function (id, o) { window.__music.push([id, o || null]); return typeof realMusic === 'function' ? realMusic.apply(this, arguments) : undefined; };
     window.__ev = [];
     ['enter', 'door:entered', 'door:exited', 'action:done'].forEach((n) => SR.events.on(n, (p) => window.__ev.push({ n, p: n === 'action:done' ? { id: p.id, ok: p.result.ok } : p })));
     window.__pad = { id: 'Xbox Wireless Controller (mock)', index: 0, connected: true, mapping: 'standard', timestamp: 0, axes: [0, 0, 0, 0],
@@ -180,19 +186,46 @@ async function setup(opts) {
   await P.keyboard.press('Escape');
   T.eq(await ev(() => window.SR.ui.card.screens()), [], 'Esc closes the sub-screen (back one crumb)');
   T.eq(await active(), 'row-testshop.badRepeat2', 'focus returns to the row that opened it');
-  // A stat gain ≥ 2 stamps once; during the hold its stamps are coalesced and do not stop it.
+  // A stat gain ≥ 2 stamps once per hold; later stat stamps are coalesced and do not stop it
+  // (GDD §4.4, CONTRACT D47), and the held key's own repeats never skip the showing stamp.
+  const stampsShown = () => ev(() => document.querySelectorAll('#ui .ui-layer--stamp .stamp:not(.is-leaving)').length);
   await ev(() => { window.SR.debug.fast(false); window.SR.ui.stamp.clear(); window.__sfx.length = 0; });
-  await set({ stats: { int: 7, hp: 200 } });   // not Winded (HP ≥ 25 %), so +2 a run
+  await set({ stats: { int: 7, hp: 200 }, clock: { min: 480 } });   // not Winded (HP ≥ 25 %), so +2 a run
   await focusRow('testshop.study');
   await P.keyboard.down('Enter');
   const st1 = await ev(() => ({ int: window.SR.state.stats.int, stamp: window.SR.ui.stamp.current(), sfx: window.__sfx.slice() }));
+  await P.keyboard.down('Enter');       // the OS key repeats of the held Enter (repeat: true)
+  await P.keyboard.down('Enter');
+  const stRep = await ev(() => window.SR.ui.stamp.current());
   await step(every);
   await step(every);
-  const st2 = await ev(() => ({ int: window.SR.state.stats.int, stamps: document.querySelectorAll('#ui .ui-layer--stamp .stamp:not(.is-leaving)').length, busyOther: window.SR.ui.stamp.busy({ ignoreStat: true }) }));
+  const st2 = await ev(() => ({ int: window.SR.state.stats.int, stamps: document.querySelectorAll('#ui .ui-layer--stamp .stamp:not(.is-leaving)').length, busyOther: window.SR.ui.stamp.busy({ ignoreStat: true }),
+    repeating: window.SR.ui.card.repeating() }));
   await P.keyboard.up('Enter');
   T.ok(st1.int === 9 && /INTELLIGENCE/.test(st1.stamp || ''), 'the first run stamps "+2 INTELLIGENCE!"', st1);
   T.ok(st1.sfx.indexOf('stamp') >= 0 || !(await ev(() => !!window.SR.reg.sfx.stamp)), 'the stamp thuds (W1-S\'s `stamp` recipe)', st1.sfx);
-  T.ok(st2.int === 13 && st2.stamps <= 1 && !st2.busyOther, 'the repeat goes on through the stat stamp; no stamp per repeat', st2);
+  T.ok(/INTELLIGENCE/.test(stRep || ''), 'the held key\'s repeats do not skip the stat stamp (only a new press does)', stRep);
+  T.ok(st2.int === 13 && st2.stamps <= 1 && !st2.busyOther && st2.repeating, 'the repeat goes on through the stat stamp; no stamp per repeat', st2);
+  // The hold's first gain ≥ 2 stamps even when an earlier run of the same hold gained less.
+  await ev(() => window.SR.ui.stamp.clear());
+  await set({ stats: { int: 7, hp: 10 }, clock: { min: 480 } });    // Winded (HP < 25 %): +1 a run
+  await focusRow('testshop.study');
+  await P.keyboard.down('Enter');
+  const w1 = await ev(() => ({ int: window.SR.state.stats.int, stamp: window.SR.ui.stamp.current() }));
+  await set({ stats: { hp: 200 } });                                // rested: the next runs gain +2
+  await step(every);
+  const w2 = await ev(() => ({ int: window.SR.state.stats.int, stamp: window.SR.ui.stamp.current() }));
+  await step(every);
+  const w3 = { int: await ev(() => window.SR.state.stats.int), stamps: await stampsShown(), repeating: await ev(() => window.SR.ui.card.repeating()) };
+  await P.keyboard.up('Enter');
+  T.ok(w1.int === 8 && w1.stamp === null, 'Winded, the hold\'s first run gains +1: no stamp', w1);
+  T.ok(w2.int === 10 && /INTELLIGENCE/.test(w2.stamp || ''), 'the hold\'s first gain ≥ 2 stamps', w2);
+  T.ok(w3.int === 12 && w3.stamps <= 1 && w3.repeating, 'the next one is coalesced and the repeat goes on', w3);
+  // R is one run per press, not a hold: its stat gain stamps.
+  await ev(() => window.SR.ui.stamp.clear());
+  await P.keyboard.press('KeyR');
+  const rR = await ev(() => ({ int: window.SR.state.stats.int, stamp: window.SR.ui.stamp.current() }));
+  T.ok(rR.int === 14 && /INTELLIGENCE/.test(rR.stamp || ''), 'R (one run per press) stamps its stat gain', rR);
   await ev(() => { window.SR.ui.stamp.clear(); window.SR.debug.fast(true); });
   // Holding the pad's A repeats too.
   await set({ money: { cash: 100 }, stats: { hp: 10 } });
@@ -210,9 +243,37 @@ async function setup(opts) {
   await ev(() => window.SR.ui.focus.focus(document.querySelector('#ui [data-id="row-testshop.badRepeat3-hustle"]')));
   await ev(() => window.SR.ui.card.refresh());
   T.eq(await active(), 'row-testshop.badRepeat3-hustle', 'the Hustle button keeps focus through a refresh');
+  // A Hustle whose skin is not registered yet: SR.minigame.run rejects and the card shows a toast
+  // (no unhandled rejection; the zero-console-errors check below covers it).
+  await ev(() => window.SR.ui.toast.clear());
+  s0 = await state();
+  await P.keyboard.press('Enter');
+  await P.waitForTimeout(30);
+  const hustleToasts = await ev(() => window.SR.ui.toast.list().map((x) => x.text));
+  T.ok(hustleToasts.some((x) => /not set up yet/.test(x)) && (await state()).cash === s0.cash,
+    'a Hustle whose skin is still a stub shows "The table is not set up yet" and charges nothing', hustleToasts);
+  await ev(() => window.SR.ui.toast.clear());
   await ev(() => window.SR.debug.feature('hustles', false));
   await ev(() => window.SR.ui.card.refresh());
   T.eq(await active(), 'row-testshop.badRepeat3', 'and focus falls back to its row when the button goes away');
+  // Tab moves focus in the card and never opens the Pocket here; the pad's View button, or any
+  // other binding of `pocket`, does (CONTRACT §15.5, D57). A stand-in Pocket while it is a stub.
+  await ev(() => {
+    const SR = window.SR;
+    if (!SR.reg.scene.pocket) SR.scenes.register('pocket', { kind: 'overlay', onAction: () => true });
+    SR.input.bind('pocket', ['Tab', 'KeyP', 'Pad8']);
+  });
+  await focusRow('testshop.shake');
+  await P.keyboard.press('Tab');
+  const tabbed = { scenes: await t.scenes(), active: await active() };
+  T.ok(tabbed.scenes.join() === 'building' && tabbed.active !== 'row-testshop.shake', 'Tab moves focus in the card and does not open the Pocket', tabbed);
+  await P.keyboard.press('KeyP');
+  T.eq(await t.scenes(), ['building', 'pocket'], 'another key bound to `pocket` opens it');
+  await ev(() => window.SR.scenes.pop());
+  await pad(8);
+  T.eq(await t.scenes(), ['building', 'pocket'], 'the pad\'s View button opens it');
+  await ev(() => { window.SR.scenes.pop(); window.SR.input.bind('pocket', null); });
+  await step(1);
   // Clicking a variant keeps focus on its row (the option under the pointer is rebuilt).
   await P.click('#ui [data-id="row-testshop.work-variant-overtime"]');
   T.eq([await active(), await ev(() => window.SR.ui.card.rows().find((r) => r.id === 'testshop.work').variant)], ['row-testshop.work', 'overtime'],
@@ -245,6 +306,7 @@ async function setup(opts) {
   await ev(() => { window.__ev.length = 0; window.W1D.log.length = 0; window.SR.ui.card.open('testbank', { screen: 'test.form' }); });
   await step(1);
   T.ok(await ev(() => window.SR.ui.building.info().interior), 'a registered interior replaces the placeholder diorama (SR.art.interior)');
+  T.eq(await ev(() => window.__music.slice(-1)[0]), ['paper_sky', { fade: 0.6 }], 'entering cross-fades to the building\'s song in 600 ms (ART_AUDIO §13.4)');
   T.eq(await t.scenes(), ['building'], 'card.open(\'testbank\', { screen }) from another building …');
   T.eq(await ev(() => [window.SR.ui.card.current(), window.SR.ui.card.screens()]), ['testbank', ['test.form']], '… lands on the bank with the sub-screen open');
   const moved = await ev(() => window.__ev.slice());
@@ -308,6 +370,23 @@ async function setup(opts) {
   await P.keyboard.press('Enter');
   T.eq(await ev(() => window.W1D.log.slice()), ['mount test.child row'], 'a row\'s screenParams override the door params of the same name');
   await P.keyboard.press('Escape');
+  // A row whose minigame cannot run yet (its skin still a stub): SR.minigame.run rejects, the card
+  // shows a toast, and nothing is left as an unhandled rejection.
+  await ev(() => {
+    const SR = window.SR;
+    SR.def.text({ 'act.testbank.table': 'Try the new table' });
+    SR.def.action('testbank.table', { building: 'testbank', group: 'special', order: 10, icon: 'warning', label: 'act.testbank.table', p: 0,
+      effects: [['open', 'test.none']] });
+    SR.ui.toast.clear();
+    SR.ui.card.refresh();
+  });
+  await focusRow('testbank.table');
+  await P.keyboard.press('Enter');
+  await P.waitForTimeout(30);
+  const tableToasts = await ev(() => window.SR.ui.toast.list().map((x) => x.text));
+  T.ok(tableToasts.some((x) => /not set up yet/.test(x)), 'a row whose minigame is not registered yet shows "The table is not set up yet"', tableToasts);
+  T.eq(t.errors(), [], 'and no unhandled rejection or console error');
+  await ev(() => window.SR.ui.toast.clear());
 
   // ------------------------------------------------------------ the dialog sheet over a building
   T.section('the dialog sheet (UI.md §5.7)');
@@ -345,7 +424,8 @@ async function setup(opts) {
   const cityRegistered = await ev(() => !!window.SR.reg.scene.city);
   T.eq(after, [cityRegistered ? 'city' : 'title'], 'Esc with no sub-screen leaves for the city (' + (cityRegistered ? 'city' : 'title while city is a stub') + ')');
   T.ok((await ev(() => window.__ev.slice())).some((e) => e.n === 'door:exited' && e.p.id === 'testbank'), 'door:exited on leaving');
-  T.eq(await ev(() => document.querySelectorAll('#ui .bcard, #ui .hud').length), 0, 'the card and the HUD unmount');
+  // The city mounts its own full HUD (UI §5.5); the building's card and compact strip must go.
+  T.eq(await ev(() => document.querySelectorAll('#ui [data-scene="building"], #ui .bcard, #ui .hud.is-compact').length), 0, 'the card and the compact HUD unmount');
 
   // ------------------------------------------------------------ resolutions
   T.section('screenshots at other resolutions');

@@ -14,6 +14,7 @@
   var FLOAT_MS = 900;
   var FLOAT_FADE_MS = 300;
   var REACT_S = 0.8;          // proprietor react pose length
+  var MUSIC_FADE_S = 0.6;     // entering cross-fades to the building's song in 600 ms (ART_AUDIO §13.4)
   var VIEW_W = 760;           // the diorama's width (the card covers the rest)
   var YOU = { x: 250, y: 560 };
   var OWNER = { x: 360, y: 430 };
@@ -208,7 +209,7 @@
         try { SR.act('world.enter', { building: id }); } catch (e) { console.error('building: world.enter failed', e); }
       }
       if (def.music && SR.audio && typeof SR.audio.music === 'function') {
-        try { SR.audio.music(def.music); } catch (e2) { SR.util.warnOnce('ui.music.' + id, 'building: music failed: ' + e2.message); }
+        try { SR.audio.music(def.music, { fade: MUSIC_FADE_S }); } catch (e2) { SR.util.warnOnce('ui.music.' + id, 'building: music failed: ' + e2.message); }
       }
       B.unsubs.push(SR.events.on('stage:resized', function () { if (B) B.cacheDirty = true; }));
       B.unsubs.push(SR.events.on('home:changed', function () { if (B) B.cacheDirty = true; }));

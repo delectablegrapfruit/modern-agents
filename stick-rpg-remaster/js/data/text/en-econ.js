@@ -231,6 +231,7 @@
     'report.casinoLevy': 'Casino Levy: +{money}',
     'report.weeklyBonus': 'Weekly bonus ({pct} %): +{money}',
     'report.tow': 'Tow truck fished your car out of the clouds: -{money}',
+    'report.carHitCheque': "Settlement cheque for yesterday's car hit: +{money}",
     // Markets
     'report.stockUp': '{ticker} ▲ {pct} % ({price})',
     'report.stockDown': '{ticker} ▼ {pct} % ({price})',

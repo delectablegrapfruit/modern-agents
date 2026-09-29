@@ -11,13 +11,14 @@
 //      the stage canvases; the JS heap is reported;
 //   4. the relative gate: p95 update and render against tests/perf/baseline.json, normalised by
 //      the calibration; > 20 % worse fails on the same machine fingerprint, only warns on another;
-//   plus the static script size (≤ 1.8 MB of JS), the boot time (≤ 1.5 s × factor to the first
-//   scene) and a save (serialise and write ≤ 20 ms × factor).
+//   plus the static script size (≤ 8 MB of JS, comments included; D45), the boot time (≤ 1.5 s ×
+//   factor to the first scene) and a save (serialise and write ≤ 20 ms × factor).
 // Canvas raster: a headless container rasterises canvases in software on the main thread, and
 // Chromium flushes a large frame's display list in the middle of whatever canvas call comes next
 // (10-30 ms at 1920 × 1080), which a GPU does off the CPU. So the CPU budgets gate each frame's
 // JS work (the frame's time minus the time spent inside native canvas calls, test-only timers on
-// CanvasRenderingContext2D.prototype); the raw frame time and the native canvas time are reported.
+// CanvasRenderingContext2D.prototype and on the stage contexts' own draw methods); the raw frame
+// time and the native canvas time are reported.
 // (GPU emulation with SwiftShader was tried and is worse: its sync points stall the main thread.)
 // Drivers: the game's `city` scene once W2-City lands; until then W1-G's render sheet with its stub
 // actors (40 walkers, 14 cars; tests/sheets/render.html); a tour without either is pending.
@@ -56,7 +57,9 @@ const BUDGET = {
   totalBytes: 160 * MIB,     // everything: the render caches, the stage canvases and the JS heap
   bootMs: 1500,
   saveMs: 20,
-  scriptBytes: 1.8 * MIB,    // "MB" in ARCHITECTURE §17 is 2^20 bytes (a 1 MB chunk is 512 × 512 × 4)
+  // "MB" in ARCHITECTURE §17 is 2^20 bytes (a 1 MB chunk is 512 × 512 × 4); 8 MB of JS, comments
+  // included, since the wave-1 integration (CONTRACT D45; it was 1.8 MB).
+  scriptBytes: 8 * MIB,
   gate: 0.20,                // the relative gate
   gateFloorMs: 0.25,         // differences below this are noise, whatever the ratio
 };
@@ -157,9 +160,10 @@ function setupTour(cfg) {
  * In page: runs the tour as the real loop does (one fixed step and one render per 60 Hz frame,
  * bakes included) and times each frame's update and render (test-only timers around
  * SR.scenes.update / render, which the loop calls through SR.scenes at call time) and the time
- * spent inside native canvas calls (test-only timers on CanvasRenderingContext2D.prototype, path
- * building excepted), which is subtracted: the JS work. The renderer's own bake time and chunks
- * baked per frame come from SR.render.stats(). The frame is rasterised after its timing.
+ * spent inside native canvas calls (test-only timers on CanvasRenderingContext2D.prototype and on
+ * the own methods of SR.stage.ctx / fxCtx, path building excepted), which is subtracted: the JS
+ * work. The renderer's own bake time and chunks baked per frame come from SR.render.stats(). The
+ * frame is rasterised after its timing.
  * @returns {object} perf, stats and memory
  */
 function runTour(o) {
@@ -193,6 +197,15 @@ function runTour(o) {
   SR.scenes.render = function () { const a = performance.now(); const n0 = nAcc; try { return oR.apply(this, arguments); } finally { rAcc += performance.now() - a; rNat += nAcc - n0; } };
   // Path building never flushes; everything else may.
   const PATH = /^(constructor|moveTo|lineTo|arc|arcTo|bezierCurveTo|quadraticCurveTo|rect|roundRect|ellipse|closePath|beginPath|getLineDash|getTransform|getContextAttributes|isPointInPath|isPointInStroke|isContextLost)$/;
+  // One timer per native call: a timed wrapper that reaches another (an instance wrapper calling a
+  // wrapped prototype method) counts once.
+  let depth = 0;
+  const timed = (f) => function () {
+    if (depth) return f.apply(this, arguments);
+    depth++;
+    const a = performance.now();
+    try { return f.apply(this, arguments); } finally { depth--; nAcc += performance.now() - a; }
+  };
   const P = CanvasRenderingContext2D.prototype;
   const saved = [];
   Object.getOwnPropertyNames(P).forEach((k) => {
@@ -200,7 +213,20 @@ function runTour(o) {
     if (!d || typeof d.value !== 'function' || PATH.test(k)) return;
     const f = d.value;
     saved.push([k, f]);
-    P[k] = function () { const a = performance.now(); try { return f.apply(this, arguments); } finally { nAcc += performance.now() - a; } };
+    P[k] = timed(f);
+  });
+  // The stage contexts carry their own drawImage / fill / fillRect (js/core/loop.js counts draws
+  // with per-instance wrappers that call the prototype's original methods), so the prototype
+  // timers never see those calls; time the instance methods as native too (W1-G request 8).
+  const own = [];
+  [SR.stage && SR.stage.ctx, SR.stage && SR.stage.fxCtx].forEach((c) => {
+    if (!c) return;
+    Object.getOwnPropertyNames(c).forEach((k) => {
+      const f = c[k];
+      if (typeof f !== 'function' || PATH.test(k)) return;
+      own.push([c, k, f]);
+      c[k] = timed(f);
+    });
   });
   const frames = [];
   const raw = [];
@@ -244,6 +270,7 @@ function runTour(o) {
     SR.scenes.update = oU;
     SR.scenes.render = oR;
     saved.forEach((x) => { P[x[0]] = x[1]; });
+    own.forEach((x) => { x[0][x[1]] = x[2]; });
   }
   const wall = performance.now() - t0;
   const perf = { frame: { p50: pct(frames, 0.5), p95: pct(frames, 0.95), max: Math.max.apply(null, frames) },
@@ -289,7 +316,7 @@ async function main(argv) {
   T.section('script size');
   const scripts = require(path.join(ROOT, 'tests', 'node', 'load.cjs')).indexScripts();
   const bytes = scripts.reduce((a, f) => a + (fs.existsSync(path.join(ROOT, f)) ? fs.statSync(path.join(ROOT, f)).size : 0), 0);
-  T.ok(bytes <= BUDGET.scriptBytes, 'the ' + scripts.length + ' scripts of index.html hold ' + (bytes / MIB).toFixed(2) + ' MB of JS (≤ 1.8 MB)');
+  T.ok(bytes <= BUDGET.scriptBytes, 'the ' + scripts.length + ' scripts of index.html hold ' + (bytes / MIB).toFixed(2) + ' MB of JS (≤ ' + (BUDGET.scriptBytes / MIB) + ' MB, D45)');
 
   // ---- boot, calibration, save
   T.section('calibration, boot and save (index.html, 1920 × 1080)');
@@ -407,6 +434,10 @@ function selftest() {
   const b = C.run(3);
   T.ok(a.checksum === b.checksum && a.ms > 0, 'the workload is deterministic (checksum ' + a.checksum + ') and takes ' + a.ms.toFixed(1) + ' ms in Node');
   T.eq([C.factor(1), C.factor(C.REFERENCE_MS * 1.5), C.factor(1000)], [0.5, 1.5, 4], 'the factor is measured / reference, clamped to 0.5-4');
+  T.section('budgets');
+  T.eq(BUDGET.scriptBytes, 8 * MIB, 'the script-size budget is 8 MB of JS, comments included (ARCHITECTURE §17, CONTRACT D45)');
+  T.ok(/own\.push\(\[c, k, f\]\)/.test(runTour.toString()) && /SR\.stage\.fxCtx/.test(runTour.toString()),
+    'the tour times the stage contexts\' own draw methods as native (W1-G request 8)');
   T.section('the relative gate');
   const fp = fingerprint('chromium-test');
   const base = { fingerprint: fp, calibration: { ms: 30 }, configs: { x: { update: 12, render: 5 } } };

@@ -504,6 +504,40 @@ function luma(p) { return 0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2]; }
   await page.evaluate(() => { SR.debug.projected(false); });
 
   // -------------------------------------------------------------------------------------------
+  T.section('police light bar (cached sprites)');
+  // W1-A request 8: the sprite path takes its phase from SR.art.vehicles.lightPhase, so a cached
+  // police car flashes on the vehicles' own rhythm (halves swapping every 0.5 s).
+  const police = await page.evaluate(() => {
+    const V = SR.art.vehicles, orig = V.lightPhase, calls = [];
+    V.lightPhase = function (tt) { calls.push(tt); return orig.apply(this, arguments); };
+    const car = { kind: 'police', x: 3500, y: 2476, a: 0 };   // eastAve's eastbound lane, a snapped direction
+    SR.render.actors.source('testPolice', () => [car], 'car');
+    SR.render.setView({ x: 3500, y: 2440, zoom: 1.25, min: 780 });
+    SR.render.warm();
+    const c = SR.stage.world, k = c.width / SR.W, x = c.getContext('2d');
+    const read = () => {
+      const a = SR.render.toScreen(car.x - 60, car.y - 60, 0), b = SR.render.toScreen(car.x + 60, car.y + 30, 0);
+      return Array.from(x.getImageData(Math.round(a.x * k), Math.round(a.y * k), Math.round((b.x - a.x) * k), Math.round((b.y - a.y) * k)).data);
+    };
+    // Steps to the middle of a half-second in which the bar shows phase ph, then reads the car.
+    const at = (ph) => {
+      for (let i = 0; i < 120; i++) {
+        SR.loop.step(1);
+        const f = (SR.loop.time * 2) % 1;
+        if (orig(SR.loop.time) === ph && f > 0.2 && f < 0.8) return read();
+      }
+      return null;
+    };
+    const differ = (p, q) => { let n = 0; for (let i = 0; i < p.length; i += 4) if (p[i] !== q[i] || p[i + 1] !== q[i + 1] || p[i + 2] !== q[i + 2]) n++; return n; };
+    const a0 = at(0), a1 = at(1), b0 = at(0);
+    V.lightPhase = orig;
+    SR.render.actors.source('testPolice', null);
+    return { calls: calls.length, samePhase: a0 && b0 ? differ(a0, b0) : -1, otherPhase: a0 && a1 ? differ(a0, a1) : -1, sprites: SR.render.actors.stats().count };
+  });
+  T.ok(police.calls > 0 && police.samePhase === 0 && police.otherPhase > 0 && police.sprites > 0,
+    'a cached police car takes its light phase from SR.art.vehicles.lightPhase and flashes (same phase: same pixels; other phase: the bar swaps)', police);
+
+  // -------------------------------------------------------------------------------------------
   T.section('memory (1920 × 1080, DPR 1 and 2, every zoom, a full-map tour)');
   async function tour(tt, dpr) {
     const res = await tt.page.evaluate(([levels]) => {

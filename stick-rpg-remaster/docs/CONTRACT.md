@@ -12,6 +12,10 @@ minigame and audio formats, and the test entry points.
   lead folds the decision back into ARCHITECTURE. Everything else here restates ARCHITECTURE.
 - **Status tags.** *(M0)* is implemented and tested now; *(M1)* is frozen here and implemented by
   W1-K by the end of wave 1; a package name in brackets marks the owner of a name.
+- **Wave-1 integration.** The lead folded D1-D60 (§21) into ARCHITECTURE, UI, GDD, BALANCE and
+  ART_AUDIO, and recorded the additive public names the wave-1 packages reported (§8.9, §8.10,
+  §13.1, §14.4, §15.1-§15.5, §18.1; the same lists stand in ARCHITECTURE). Nothing frozen was
+  renamed. The decisions of each request are in `docs/requests/decisions-w1-*.md`.
 
 Contents: §1 files and the load-time rule · §2 the SR namespace · §3 registries and boot ·
 §4 kernel status · §5 SR.util · §6 SR.rng · §7 SR.text and text keys · §8 the rules layer ·
@@ -192,8 +196,12 @@ Both functions therefore live in `js/boot/namespace.js` and store into the kinds
 `calendar`, `encounters`, `perks`, `traffic`, `crowd`, `street`, `park`, `civic`, `priceMods`,
 `checkMods`, `news`, `duel`, `health` (B-31). W1-R names the fields inside each table in
 `js/data/tuning.js`. The fields ARCHITECTURE already names are frozen: `time.repeatHoldMs`,
-`start.hpMaxBase`, `news.weights` and `news.minWeight`. The karma colour bands of B-04c are palette
-entries (§15), not tuning; `tuning.karma` holds only the band-index formula.
+`start.hpMaxBase`, `news.weights` and `news.minWeight`; at the wave-1 integration also the
+`tuning.world` fields other packages read (`surfaceDrive.cap`, `park.range`, `door.trigger.offset`,
+`camera.lookAhead`, `projection.k`, `fall.total`, `fall.skipAfter`, `carHit.knockdown`; W1-W request
+2) and the tuning names BALANCE now records (D55). The karma colour bands of B-04c are palette
+entries (§15), not tuning; `tuning.karma` holds only the band-index formula. Engine and
+presentation limits are named constants in their files, not tuning (D49).
 
 ## 4. Kernel status at M0
 
@@ -213,7 +221,8 @@ and the rest of `debug.js` (§17.1, `#debug`, `#artbible`) are implemented, with
 `tests/harness.cjs`, the fixtures in `tests/fixtures/`, the M1 part of `tests/node/core.test.cjs` and
 `tests/e2e/{boot,stage,input,save,slice}.test.cjs` (the slice runs the steps whose modules have
 landed; `--strict` fails on the pending ones). The additions to the frozen names are D33-D42. Scene
-transitions (§11.4, `js/core/scenes.js`) were not part of W1-K-M1.
+transitions (§11.4, `js/core/scenes.js`) were not part of W1-K-M1; the lead added them at the
+wave-1 integration (D44).
 
 ## 5. `SR.util` *(M0)*
 
@@ -264,24 +273,25 @@ migration. `js/rules` and `js/data` never contain `Math.random` (a test greps th
   day" are a text key) · `SR.text.pct(p, digits)` → `62 %`.
 - **Keys are registered only in `js/data/text/en-*.js`**, each owned by one package (ARCHITECTURE
   §7.2, §19; D16). **Length limits** by prefix: `act.` ≤ 28, `bark.` ≤ 60, `toast.` ≤ 80,
-  `greet.` ≤ 140, `news.` ≤ 220, `vm.` ≤ 280, `card.` ≤ 400.
+  `greet.` ≤ 140, `news.` ≤ 220, `vm.` ≤ 280, `card.` ≤ 400, `enc.` ≤ 400, `event.` ≤ 400 (GDD
+  §6.11's "event and encounter cards ≤ 400"; D51).
 - **Key namespaces and owner files** (the validator's `--wave` prefix map in `tools/validate.cjs`
   follows this table; a key's first two segments decide):
 
 | Keys | Owner file (wave-1/2 package) |
 |---|---|
-| `game.title`, `game.tag`, `ui.*` (incl. `ui.fanNote`), `hud.*`, `set.*` (settings), `key.*` (glyph names), `cap.*` (sound captions), `mg.frame.*` (the minigame frame and the generic engine strings) | `en-ui.js` (W1-D; W2-Front in wave 2) |
-| `reason.*` (every refusal reason: `reason.tooHurt`, `reason.featureOff`, ...), `perk.*`; in wave 3 `ach.*`, `advisor.*` | `en-prog.js` (W1-R) |
-| `item.*`, `job.*`, `home.<tier>`, `furn.*`, `stock.*`, `rank.*`, `report.*` | `en-econ.js` (W1-E) |
+| `game.title`, `game.tag`, `ui.*` (incl. `ui.fanNote`), `hud.*`, `set.*` (settings), `key.*` (glyph names), `cap.*` (sound captions), `mg.frame.*` (the minigame frame and the generic engine strings), `mg.shiftrush.*`, `mg.timingring.*`, `mg.duel.*` (the W1-M engines' own strings) | `en-ui.js` (W1-D; W2-Front in wave 2) |
+| `reason.*` (every refusal reason: `reason.tooHurt`, `reason.featureOff`, ...), `perk.*`, `toast.act.*` (the pipeline's own toasts, e.g. the forced-charge write-off); in wave 3 `ach.*`, `advisor.*` | `en-prog.js` (W1-R) |
+| `item.*`, `job.*`, `home.<tier>`, `furn.*`, `stock.*`, `rank.*`, `report.*` (every morning-report line), `vm.crew.*` (the day-365 call) and `vm.skywatch.*` (weather alerts), both raised by night step 11 | `en-econ.js` (W1-E) |
 | `city.*`, `fighter.*`, `decree.*`, `crime.*`, `trip.*` (outcomes) | `en-conflict.js` (W1-C) |
-| `place.*`, `door.*`, `ori.*` (Pilot Ori), `act.world.*`, `toast.world.*` | `en-world.js` (W1-W) |
+| `place.*`, `door.*` (door tags and modes), `ori.*` (Pilot Ori), `act.world.*`, `desc.world.*`, `toast.world.*` | `en-world.js` (W1-W; W2-City in wave 2) |
 | `toast.<module>.*`, `stamp.<module>.*` raised by a rule module that is not a building (a stat gain, a promotion, a hospital bill) (D27) | the module owner's file: `stats`, `perks`, `time` en-prog (W1-R); `jobs`, `training`, `night`, `health`, `homes`, `stocks` en-econ (W1-E); `crime`, `trade`, `fight`, `election` en-conflict (W1-C). `bank` and `casino` are building ids, so their keys follow the next row |
 | `<prefix>.<building>.*` for `act`, `desc`, `greet`, `toast`, `stamp`, `card`, and `sub.<subscreenId>` | the building's file: `home` en-home; `mcsticks`, `store` en-food; `pawn`, `furniture` en-goods; `bank`, `nli` en-money; `uofs`, `cityhall` en-civic; `bar`, `casino` en-night; `bus`, `trip`, `jail`, `hospital` en-transit; `street`, `harold`, `kid`, `dealer`, `junker` en-street; `park` en-park |
 | `mg.<engine or skin>.*` (titles, labels) | the engine's or skin's owner: `fight`, `darts`, `slots`, `blackjack`, `roulette` en-night; `scratch`, `orderup`, `holdup` en-food; `sortit`, `pitch`, `boardroom` en-money; `debate` en-civic; `hotwire` en-street; `interview`, `interrogation` en-events; `tourhook` en-transit |
-| `act.bag.*`, `act.phone.*`, `contact.*`, `pocket.*` | `en-pocket.js` (W2-Pocket; D16) |
+| `act.bag.*`, `act.phone.*`, `desc.bag.*`, `desc.phone.*`, `contact.*`, `pocket.*` | `en-pocket.js` (W2-Pocket; D16) |
 | `news.*`, `tv.*` | `en-news.js`, `en-home.js` (W2-Home) |
 | `bark.ped.*`, `vm.carhit.*` | `en-city.js` (W2-City) |
-| `vm.<npc>.*`, `bark.<npc>.*` | the NPC's file (street cast en-street; Mel en-food; NLI staff en-money; Electoral Board and rivals en-civic) |
+| `vm.<npc>.*`, `bark.<npc>.*` | the NPC's file: `harold`, `kid`, `skid`, `dealer`, `red`, `newguy`, `junker`, `mcholland` en-street; `mel`, `dee` en-food; `vinnie`, `sofia` en-goods; `penny`, `bea`, `gil`, `frankie`, `terry` en-money; `quill`, `plume`, `board`, `doodle`, `crayon` en-civic; `sticky`, `lou` en-night; `tabby` en-transit; `crease`, `margin`, `preacher` en-park; `ori` en-world |
 | `front.*` (title menu, new game, intro, results) | `en-front.js` (W2-Front) |
 | `enc.*`, `arc.*`, `event.*` | `en-events.js` (W3-Life) |
 | `taunt.<fighter>.*` | `en-night.js` (W2-Night) |
@@ -292,7 +302,7 @@ migration. `js/rules` and `js/data` never contain `Math.random` (a test greps th
 
 ```js
 SR.preview(id, params) → Preview    // pure; never mutates
-SR.act(id, params)     → Result     // mutates SR.state through rules, then emits (§8.7)
+SR.act(id, params, opts) → Result   // mutates SR.state through rules, then emits (§8.7); opts.source (§8.9)
 SR.rules.act.preview(state, id, params, ctx) / SR.rules.act.run(state, id, params, ctx)   // pure forms
 SR.rules.act.price(s, base, target, ctx) → { price, applied: [modIds], consumes }        // ARCHITECTURE §6.10
 ctx = { rng: SR.rng.rules, now: state.clock.min, source: 'ui' | 'sim' | 'debug' }
@@ -452,10 +462,177 @@ Report = { kind: 'sleep'|'jail'|'hospital', day /* the new day */, endedDay, wee
 ```
 
 **State schema v1** is ARCHITECTURE §6.1, verbatim and frozen (owner W1-R, `js/rules/state.js`).
+The wave-1 integration added fields to v1 (D43; deep-fill gives older saves their defaults, so the
+version stays 1): `trade.offer`, `fight.open`, `casino.match`, `crime.open` (the "in progress"
+records, `null` when nothing is open), `daily.shifts` (0), `history` points as `[day, value]`
+pairs seeded with day 1 by `create()`, and the flags `flags.foldDone` (the Theory of the Fold
+finished; W3-Park sets it, the MET THE ARTIST banner reads it) and `flags.carHitVm` (a car hit
+today: night step 11 queues the ambulance-chaser voicemail and clears it).
 Top-level keys: `v, seed, rng, mode, clock, player, stats, money, job, edu, perks, items, homes,
 furniture, stocks, tip, trade, fight, casino, crime, daily, weekly, npc, election, world, jail,
 pending, msgs, log, journal, records, history, achievements, flags, over, result`.
 `week(s) = floor((s.clock.day - 1) / 7)`. Invariant: `stats.hpMax === tuning.start.hpMaxBase + stats.str`.
+
+### 8.9 Additive rule names (wave-1 integration)
+
+Nothing frozen changes; an optional trailing `rng` / `ctx` is added where a rule draws.
+
+- **Pipeline** (W1-R): `SR.act(id, params, opts)` takes `opts.source` (`'ui'` default, `'sim'`,
+  `'debug'`). `SR.act` emits `action:done` for refusals too (`result.ok` false) and derives
+  `perk:offered`, `election:changed` and `game:over`; the `down` rule event comes from `Down.events`
+  when `health.down` supplies it, else the pipeline adds it, and `Down.toasts` (Second Wind's toast)
+  join `Result.toasts`. A Preview carries `id`; a hidden preview is `{ id, hidden: true }`; a gain
+  may carry `from` / `to` for non-numeric deltas. `SR.rules.act.GROUPS`, `actions(owner)` (ids in
+  card order, `:resolve` left out), `snapshot(s)`, `diff(a, b)`. `SR.rules.state.VERSION` (1).
+- **A named fn's partial Result:** `ok: false` refuses the action and rolls the state and the rules
+  stream back; returned `msgs` and `log` entries are **delivered by the pipeline** (a fn returns them
+  instead of adding them itself), except those of a partial Result built by
+  `SR.rules.effects.run(s, list, ctx)`, which that call delivered already and the pipeline only
+  reports; `deltas` are ignored (the pipeline diffs the state, so a change made by any path is
+  reported once); `report` is a set field like `open` (a sleep action hands its night Report to the
+  UI); `chance` is read by previews only.
+- **Effect arguments** beyond the frozen effect list: `stat(key, n, src)`, `item(key, n, value)` (list items
+  push / remove `value`), `toast(key, vars, kind)`; any numeric argument may name a named fn.
+  **`timeRule: 'trip'`** applies B-01's boarding windows by the trip's kind, read from `params.kind`
+  (or `params.variant`) in the `trip` event's vocabulary: `'smuggle'` (also `'redeye'`) boards only
+  at `time.redEyeDeparts` (00:00; `reason.redEye`), `'tour'` at 06:00-10:00 inclusive
+  (`time.tourWindow`; `reason.tourWindow`); without a kind any time before the wall
+  (`reason.dayOver`). **Price modifiers:** a `priceMods` row's `value` may name a named fn (`redWeek`
+  uses `mods.redWeek`: rand(90..110)/100 from hash(seed, 'redWeek', week), so it holds all week with
+  no state field); rows may carry `feature`, `except`, and `consume` + `item`.
+- **`SR.rules.time`**: `weekdayOf(day)`, `dayIndex(nameOrIndex)`, `left(s)`. **`stats`**: `gain(s,
+  key, n, src)` (what a gain would do, no mutation), `column(k)` (the B-18 rank column), `KEYS`;
+  `add(s, key, n, src, out)`: an optional `out` receives the `stat` rule event for callers outside
+  the pipeline (the night passes its Report). Gain sources: `'train'` (default: degree bonus and
+  Winded), `'furniture'` (Winded only), `'fixed'` (neither), any other (`'reward'`, `'decree'`, ...:
+  the degree bonus only). **`log`**: `weight(kind)`. **`perks`**: `update(s)` (queues due offers;
+  `stats.add` calls it), `optionsFor(stat, level)`. **`check`**: `mods(s, checkId)`, `match(glob,
+  id)`, `matchAny(globs, id, except)`, `rowApplies(row, s, ctx)`.
+- **`SR.rules.conditions`** = `{ names, eval(s, cond, ctx), all(s, list, ctx), num, count, path,
+  nameOf, label, holds, rankIndex }`; **`SR.rules.effects`** = `{ names, run(s, list, ctx, res?), one,
+  merge, partial, isPartial, credit, charge, addMsg, pruneMsgs, MSG_MAX, INCOME, trackIncome,
+  noteIncome }`. **`effects.run`, `addMsg`, `merge` and `partial` are frozen**: the night delivers
+  its voicemails through `addMsg` (one message id sequence and the 150 retention rule) and runs arc
+  effects through `run`; `run(s, list, ctx)` without `res` returns a partial Result.
+  **Income on Deltas:** while an action runs, `credit()` and `SR.rules.bank.income` report income
+  credits by source (`trackIncome()` / `noteIncome()`), and a positive `cash` / `bank` Delta
+  carries `key` = the source (`INCOME`: `wage`, `rent`, `salary`, `interest`, `deal`, `tour`,
+  `loot`, `win`, `prize`) that credited the most to it (`{ kind: 'cash', key: 'wage', n, from, to
+  }`); credits without a source name none (the balance simulator's income by source).
+- **`SR.rules.jobs`** (W1-E): `ladder`, `missingReason(p)`, `shiftCost(s, variant)`, `canWork(s,
+  track, variant, ctx)` (Overtime's "Too hurt" follows the Heat Wave `ctx.hpScale`),
+  `weeklyBonus(s)`, `legacyRank(s)`, `hustleSkin(s, track)` → `{ skin, step }`, `takeoverDue(s)`,
+  `takeover(s, m)`, `rainTips(s, track, m)`; `work(s, track, variant, m, opts)` takes `{ hustle: true
+  }` when `m` is a played hustle's result (rain tips apply to a played Order Up only; Auto stays 1.0).
+  **`training`**: `can(s, id, opts)`, `classTrack(id)`, `canGraduate(s, track)`, `gain(s, id)`
+  (Study follows the Public Library Act through `decree.studyGain`), `minutes(s, id)` (Speed Reader),
+  `napHp(s)`. **`bank`**: `income(s, n, src, to)` → `{ credited, toLien }`, `paidRate(s)`,
+  `cdPrincipal(s)`, `maturities(s)`, `lienSources()`. **`stocks`**: `quirkShock(t, facts)`,
+  `reveal(s, source)`, `revealed(s)`, `spread(s)`, `tickers()`.
+- **`SR.rules.homes`**: `freeSlots`, `has(s, base)` → the tier in use, `pieces`, `removePiece`
+  (restocks stored pieces into freed slots), `restock`, `channels(s)`, `nightly(s)`, `perk(s)`,
+  `perkOk(s, homeId)`, `usePerk(s)`, `rentOf`, `saleOf`, `rents(s)`, `homesValue`, `furnitureValue`,
+  `tierId(base, tier)`, `buyCar(s, opts)` (the Workstation catalogue's sports car, P1 `homesPlus`).
+  Furniture defs may carry `retiredBy: '<flag>'` (not sold while that flag is on).
+- **`SR.rules.calendar`**: `weekdayOf`, `eventDays`, `storm(s)`, `next(from, rng)`; `today(s).bonuses`
+  lists Tuesday (Open Mic), Saturday (the Ring, VIP points) and Sunday (the skate contest) only
+  while their own flags (`nightlife`, `arcs`) are on as well as `calendar`. **`endgame`**:
+  `breakdown(s)`, `column(karma)`, `tier(nw)`, `banners(s, reason)`. **`news`**: `lead(s)`.
+  **`night`**: `SUBSETS`, `steps` (the numbered GDD §4.7 steps); `run(s, ctx, opts)` also takes
+  `bill`, `paid`, `writtenOff`, `cause` (the Stick General lines, from `health.down`) and `trace`
+  (an array the step numbers are pushed to; tests). A Report may carry `achievements: [ids]` (step
+  12, when `achievements` is on); a Down carries `events` and `toasts`.
+- **`SR.rules.crime`** (W1-C): `holdupD`, `holdupChances`, `holdupAuto(s, params, rng)`,
+  `recentBankRobberies`, `rob(s, target, ctx)` (the start), `jailDays`, `bailBase`, `release`,
+  `canBail`, `talkChance`, `bribeCost`, `interrogation`, `mchollandTip`, `mchollandBribe`,
+  `JAIL_CHOICES`; `jail(s, reason, ctx)`, `jailDay(s, choice, ctx)`, `policeRun(s, caught, ctx)`
+  take an optional `ctx`; `holdupParams` returns `{ target, D, check: 'holdup.<target>', beats, need,
+  bestOf, stake: true, options, chances }`.
+- **`SR.rules.trade`**: `cityIds`, `ticket`, `demand`, `dailyDemand`, `tourDemand`, `reputation`,
+  `bustThreshold`, `busted`, `screwedChance`, `mugChance`, `offerPerUnit`, `offerMult`, `board`,
+  `smuggle(s, city, ctx)`, `pending(s)`, `walk`, `tourBase`, `tourFee`, `tourParams`, `tourStart`.
+  **`fight`**: `MOVES`, `ap`, `nextN`, `opponent`, `moves(f)` (cost, range, EV, allowed), `range`,
+  `expected`, `run(f)`, `autoMove`, `result`, `start`, `resolve`, `canStart`.
+- **`SR.rules.casino`**: `slots.{SYMBOLS, LINES, strip, pays(s), line, enumerate, hitRate, round}`;
+  `bj.{rank, value, total, hilo, reshuffle, draw, shoeOf, validShoe, canDouble, canSplit, hand,
+  wagered, playBook, round}`; `roulette.{DOUBLE_ZERO (37 = 00), OUTSIDE, covers, isRed, legal,
+  round}`; `scratchPrize`, `scratchEV`, `scratchRound`; `darts.{amp, params, practice, matchStart,
+  match, AUTO_WINDOW_SEC}`; `vipDrink`, `canPlay`, `applyRound`.
+- **`SR.rules.election`**: `ACTIONS`, `RIVAL`, `clampPoll`, `qualifies`, `chestTier`, `startPoll`,
+  `canCampaign`, `actionChance`, `canDebate`, `debateParams`, `debateStart`, `campaignMorning(s, rng)`,
+  `remove`, `eligible`, `decreeName`. **Night step 5 is split:** the night does the bookkeeping from
+  `tuning.election` (the rival's -rand(1..3), `campaignDay += 1` (1 on the first campaign day), the
+  debate no-show, the lapse of an unaccepted nomination); after campaign day 7 it calls
+  `electionNight(s, rng)` → a partial Result `{ won, poll, roll, path, events?, msgs?, log? }` that
+  also sets the status. At step 12 it calls `nominationCheck(s)`, then on a campaign morning
+  `campaignMorning(s, rng)`, and in office `officeMorning(s, rng)`, absorbing each partial Result.
+  The jail night (step 10) decrements `jail.daysLeft` and increments `jail.served`; the release
+  itself (jail `null`, Heat 20, the `release` event, 08:00 outside City Hall) stays with
+  `crime.jailDay` when `daysLeft` reaches 0.
+- **The "in progress" records** (ARCHITECTURE §6.1): the resolve fns `crime.robResolve`, `fight.resolve`,
+  `casino.dartsMatch`, `trade.tour` and `trade.take` / `haggle` / `walk` refuse with `reason.notNow`
+  unless today's start (`crime.open`, `fight.open`, `casino.match`, `trade.offer`) is still open, and
+  close it; the open record's facts (target, kind, rung, tier, stake, city) win over anything the
+  minigame result echoes. So a stray or repeated `:resolve` never pays twice.
+- **Named fns for data** (W1-E): `bank.{deposit, withdraw, loan, repay, openCd, breakCd, charge,
+  canLoan, hasLoan}` (params `amount` / `index`); `stocks.{buy, sell, reveal}` (params `ticker`, `n`,
+  `where`); `homes.{buy, sell, moveIn, letOut, endLet, buyFurniture, upgrade, fits, perkHere,
+  usePerk, buyCar}` (params `homeId` / `piece`, or an argument); `jobs.{canWork, work, canPromote,
+  promote, canApply, apply, hustleSkin, takeoverDue, takeover}` (a track argument or `params.track`;
+  `params.variant`, `params.m`, `params.auto`); `shift.min`, `shift.hp` (costs by `params.variant`);
+  `training.{apply, can, seminarOk, canGraduate, graduate, studyMin, paperMin, napHp}`. (W1-C):
+  `crime.{canRob, rob, robResolve, jail, jailDay, canBail, bailCost, payBail, fine, policeTalk,
+  policeBribe, policeRun, interrogation, mchollandTip, mchollandBribe}`; `trade.{canBoard, ticket,
+  smuggle, take, haggle, walk, tourStart, tour, demand}`; `fight.{start, resolve, canStart}`;
+  `casino.{canPlay, slotsSpin, bjHand, rouletteSpin, scratch, dartsPractice, dartsMatchStart,
+  dartsMatch, vipDrink, settle}`; `election.{check, qualifies, accept, canCampaign, campaign, cash,
+  min, canDebate, debateStart, debate, decree}`; `decree.{seizeBank, universalFries, renameCity,
+  studyGain}`. (W1-R): `mods.{param, decree, atLeast, redWeek}`, `perks.choose` (`params.id`).
+  Module functions return partial Results whose `log` / `msgs` the pipeline delivers.
+- **Rule-event payload extras** (fields added to the frozen rule-event payloads): `trip` adds `key`,
+  `vars` (the event card's story) and `mugged` (tours); `gamble` adds the round's facts (`reels`,
+  `stops`, `line`, `mult`; `pocket`, `wins`; `hands`, `suspicion`, `backedOff`, `barredUntil`;
+  `tier`, `score`; `pay`, `roll`).
+- **Decree ids are camelCase** (`casinoLevy`, `statueOfMe`, `mandatoryHats`, `toughOnCrime`,
+  `fourDayWeek`, `seizeBank`, `guardRails`, ...), an exception to the `snake_case` rule for content
+  ids, because `tuning.priceMods`, the night, jobs, the bank and the world read B-17's key names.
+
+### 8.10 How building data calls the conflict rules
+
+How the wave-2 building data calls the conflict rules (W1-C; for W2-Food, W2-Money, W2-Night,
+W2-Transit, W2-Civic):
+
+- **Robberies:** the row `{ timeRule: 'robbery', requires: [['fn', 'crime.canRob', 'store']],
+  effects: [['fn', 'crime.rob', 'store']], confirm: 'crime.rob.confirm.store' }` and its `:resolve`
+  `{ timeRule: 'free', effects: [['fn', 'crime.robResolve', 'store']] }`; the same with `'bank'`.
+- **Fights:** `{ cost: { min: 180 }, effects: [['fn', 'fight.start', 'bar']] }` and `:resolve` with
+  `['fn', 'fight.resolve', 'bar']`; the engine plays `Result.open.params.fight` with
+  `SR.rules.fight.{playerMove, endTurn, run}` and `host.rng`, its `auto` is
+  `SR.rules.fight.autoPlay(state, params.fight, rng)`, and its result may add `choice: 'drink'` (P1).
+- **Casino:** the engines apply each round with `SR.act` on rows calling `casino.slotsSpin` (params
+  `{ bet }`), `casino.bjHand` (`{ bet, net, wagered, trueCount, shoe }`, `wagered` being the round's
+  whole stake, `bj.wagered(round)`; or `{ round, shoe, trueCount }` after playing on a copy of
+  `SR.rules.casino.bj.shoeOf(state)`), `casino.rouletteSpin` (`{ bets }`; a pocket is 0-36 or
+  `'00'`), and read the round's facts from the `gamble` event of the Result; the minigame's `{ net }`
+  resolve then needs no money effect. `casino.settle` with `params.apply` applies a whole session.
+- **Darts (Sticky's):** practice rows call `casino.dartsPractice` (`cost: { min: 30 }`); a match row
+  (P1) calls `casino.dartsMatchStart` (`{ tier, stake }`, `cost: { min: 60 }`), and its `:resolve`
+  `['fn', 'casino.dartsMatch']` with the engine's `{ score }` pays the match stored in
+  `state.casino.match`.
+- **Trips:** the bus board's rows call `trade.smuggle` (`{ city }`, `timeRule: 'trip'`; with `cost:
+  { cash: 'trade.ticket' }` the row shows the ticket as a chip and the fn does not take it again);
+  an offer waits in `state.trade.offer` for rows calling `trade.take`, `trade.haggle` (P1),
+  `trade.walk`; final outcomes arrive as the `trip` event with the story's key and vars. Tours:
+  `trade.tourStart` and its `:resolve` `['fn', 'trade.tour']`.
+- **Jail:** the Jail Day card's rows call `crime.jailDay` (`{ choice: 'str' | 'int' | 'cha' | 'hp' }`)
+  and `crime.payBail` (P1); the Result carries the night's `report`; `release` in its events means
+  the jail scene places the player outside City Hall at 08:00.
+- **City Hall:** `election.accept` (`{ chest: 0 | 1 | 2 }`), campaign rows with `cost: { cash:
+  'election.cash', min: 'election.min' }`, `requires: [['fn', 'election.canCampaign']]` and `effects:
+  [['fn', 'election.campaign']]` (the campaign action is the id's last segment: `cityhall.rally`),
+  the debate's `election.debateStart` / `election.debate`, the Mayor's Office `election.decree`
+  (`{ id, name }`). Stepping into the city runs a silent, free action whose effect is
+  `['fn', 'election.check']` besides the morning check (GDD §4.17; W2-City adds it).
 
 ## 9. Events
 
@@ -499,6 +676,10 @@ compared field by field.
 | `encounter` | `{ id, choice, outcome }` | encounters |
 | `scrap` | `{ n }` | Theory of the Fold pickups |
 | `stat` | `{ key, n, total }` | `stats.add` (perks, achievements; not shown) |
+
+Payload extras (additive fields, §8.9): `trip` adds `key`, `vars`, `mugged`; `gamble` adds the
+round's facts. Night gains (nightly furniture, Mandatory Hats) raise `stat` into `Report.events`
+through `stats.add(s, key, n, src, report)`.
 
 ### 9.2 UI events
 
@@ -585,10 +766,11 @@ Test sub-screens use ids under `test.*` (never shipped).
 
 ### 11.1 API *(M0)*
 
-`SR.scenes.register(id, def)` (load-time safe) · `go(id, params)` (replace the whole stack) ·
+`SR.scenes.register(id, def)` (load-time safe) · `go(id, params, opts)` (replace the whole stack;
+→ `Promise` resolved when its transition ends, §11.4) ·
 `push(id, params)` → Promise resolved by `pop(result)` (or with `undefined` if `go` removes the
-scene) · `pop(result)` · `replace(id, params)` (a pending push promise carries over) ·
-`queue(id, params)` (the deferred change of ARCHITECTURE §5: `go` as soon as the top is a base
+scene) · `pop(result)` · `replace(id, params, opts)` (a pending push promise carries over) ·
+`queue(id, params, opts)` (the deferred change of ARCHITECTURE §5: `go` as soon as the top is a base
 scene; a later call replaces a pending one) · `top()` → `{ id, def, params } | null` · `stack()` →
 ids bottom to top · `get(id)` → def · `update(dt)`, `render(ctx, alpha)`, `dispatch(action, ev)`
 (called by the loop and input). Scene changes requested while one runs (from `enter`, `exit`,
@@ -607,6 +789,14 @@ ids bottom to top · `get(id)` → def · `update(dt)`, `render(ctx, alpha)`, `d
 Lifecycle order: `go` exits the stack top down (`ui.unmount`, then `exit`), then `enter(params)`,
 `ui.mount(root, params)`, `SR.audio.music(music)`. `push` calls `pause()` on the scene below;
 `pop` calls `resume()` on it after the popped scene exits.
+
+**Overlay stacking** (wave-1 integration). Scene roots are positioned (`css/base.css`) but form no
+stacking context, so an overlay's content competes by z-index with the scenes below it: the city
+HUD (`--z-hud`) and the building card (`--z-card`) paint over an overlay that sets none. An overlay
+that covers them gives its root the class `modal-root` (`--z-modal`: `confirm`, `report`) or
+`dialog-root` (`--z-overlay`: `dialog`), or gives its own frame a z-index of at least
+`var(--z-overlay)` (the minigame frame). Wave-2 overlays (`pocket`, `pause`, `settings`,
+`saveload`) do the same.
 
 ### 11.3 Scene ids
 
@@ -634,11 +824,16 @@ Deferred changes: `player:down` → `js/scenes/hospital.js`, `jail` → `js/scen
 ### 11.4 Transitions *(M1)*
 
 `SR.scenes.go(id, params, { transition })` and `replace` accept a third argument: `transition` is
-`'pageTurn'` (default for `go`), `'doorZoom'`, `'fade'` or `false`; the swap runs inside
+`'pageTurn'` (default for `go`; `replace` swaps at once unless a kind is named), `'doorZoom'`,
+`'fade'` or `false`; an unknown kind means `pageTurn`. The swap runs inside
 `SR.render.fx.transition(kind, swap)` (W1-G) → `Promise` resolved when the transition ends. It
 captures the outgoing frame on `#fx`, calls `swap()` exactly once (the kernel changes the stack
-there), then animates the cut (D30). Reduced Motion turns every transition into `fade`.
-Tests pass `false` or call `SR.debug.fast(true)`.
+there, synchronously, so the stack has changed when `go` returns), then animates the cut (D30).
+Reduced Motion turns every transition into `fade`. The change **swaps at once** (no transition, a
+resolved Promise) for `{ transition: false }`, while `SR.debug.fast()` is true, for a change
+requested while another one runs (from `enter` / `exit`), for the first scene (an empty stack) and
+while `SR.render.fx.transition` does not exist. `push`, `pop` and `queue`'s wait never transition;
+`queue` passes its options to `go`. Tests pass `false` or call `SR.debug.fast(true)` (D44).
 
 ## 12. Input *(M1; the names and bindings are frozen now)*
 
@@ -699,7 +894,9 @@ context rebinds them). Contexts are remappable per context (Settings › Control
 | `fight` | `move1`-`move7`: `Digit1`-`Digit7` |
 | `orderup` | `bin1`-`bin6`: `Digit1`-`Digit6`, `serve: ['Enter']` |
 
-Other engines name their contexts after their engine id and list their keys in `keys`.
+Other engines name their contexts after their engine id and list their keys in `keys`. An engine
+may name another context (`context`): Shift Rush uses `orderup` for both its skins, so Settings ›
+Controls remaps the three W1-M contexts `orderup`, `timingring` and `duel` (§13.1).
 **Text entry:** while a TextField, NumberField or any `input` / `textarea` has focus, only
 `confirm` (Enter), `back` (Esc) and Tab / Shift+Tab act.
 
@@ -734,6 +931,51 @@ SR.def.skin('orderup', { engine: 'shiftrush', params, art, text, auto })
 - Auto policies: ARCHITECTURE §10 (a real sample, never the expected value; roulette has none).
 - Hardcore: `state.pending = { resolve, worst }` is saved before a stake-bearing minigame opens.
 
+### 13.1 Additive minigame names (wave-1 integration)
+
+- **`SR.minigame`** (W1-M), besides `register` and `run` (`js/minigames/framework.js`, except
+  `current` in `js/scenes/minigame.js`): `lookup(id, params)` → `{ id /* engine */, def, skinId, skin,
+  params /* skin params + run params */ } | null`; `auto(id, params, rng?, state?)` → a sampled
+  result, or `null` for a game without Auto (defaults `SR.rng.rules`, `SR.state`; the simulator and
+  tests use it); `force(result)` → queued count (the next `run` resolves with it at once, without the
+  frame; `SR.debug.mg`); `chance(stat, D, { s, checkId })` and `roll(rng, p)` (→ `SR.rules.check`),
+  `tune(path, default)` (a dotted read of `SR.tuning`); `autoPolicy(lookup)`, `worst(lookup)`,
+  `forfeit(lookup, progress)`, `isStake(lookup)`, `glyph(code)`, `bindings(action, context, keys)`,
+  `engines()`; `current()` → the open round (`{ id, skin, params, t, panel, finished, replaying,
+  result, assist, device, context, contextPushed, announced, inst, host }`) or `null`.
+- **Engine def (optional fields):** `worst(params)` (Hardcore's `pending.worst`), `forfeit(params,
+  progress)` (leaving early; default `worst`), `summary(result, text, skin, params)` → the banner
+  line, `assist: false` (hides Assist), `confirmExit: true`, `stake: true`, `replay` (seconds),
+  `context` (the input context's name; default the engine id; Shift Rush sets `orderup`, the name
+  CONTRACT §12.3 gives its keys).
+- **Instance:** `pointer(kind, x, y, ev)` (`'down'|'move'|'up'` in play-area units, 1280 × 576),
+  `auto(rng)` (Auto from the current position), `replay(result)`, `progress()`,
+  `assistChanged(on)`, `peek()` (tests). `render(ctx)` receives a context in play-area units,
+  clipped to the play area.
+- **Host:** besides the host fields above: `params`, `skin`, `skinId`, `area { w, h }`, `t`, `paused` (the pause
+  panel is up or another overlay covers the frame), `interactive()`, `haptic(ms)`, `hints([{ action
+  | actions | range, label, only: 'kb'|'pad'|'touch' }])` (the bottom bar), `color(token)` (a
+  `css/tokens.css` property such as `'ink-900'`, else `SR.art.palette.ui`), `font(px, weight,
+  display)`, `chance(stat, D, checkId)`, `roll(p)`, `el`, `button`, `chip`, `ring`.
+  `label('info', text)` and `label('status', text)` are the visible top- and bottom-bar slots; other
+  ids go to the visually hidden mirror. `audio` is `{ sfx, stinger }`, silent for sounds that are
+  not registered.
+- **Skin (optional fields):** `context`, `stake`, `music`, `params` may be `fn(state, runParams)`,
+  `auto: false` (no Auto) or a policy fn. Every skin of an engine shares one input context, so
+  Settings › Controls remaps `orderup`, `timingring` and `duel`.
+- **Results:** Duel adds `picks: [optionId]` (the Ruthless karma of B-30 is the rules' to apply),
+  `stances` in stance mode and `m` in cards mode; the hotwire result adds `hits`; Auto results carry
+  `auto: true`; a result from leaving early carries `exited: true`.
+- **Run params the frame reads:** `stake` (a number is shown as "Stake $n"), `auto: true` (open
+  straight into the Auto replay; the card passes it for `game.alwaysAuto`), `resolve` (the resolve
+  action id for the Hardcore hook; without it the frame uses the last `Result.open` seen on
+  `action:done`), `step` (the Timing Ring's difficulty step, B-05 `hustle.pitch`).
+- **The play area is its own canvas** `<canvas data-id="mg-canvas">` inside the frame (in `#ui`),
+  sized to the play area's device pixels; the scene's `render(ctx, alpha)` draws there and ignores
+  the stage context (it `blocksRender`, so the city is not redrawn under it). The touch-compact
+  layout anchors `#ui` to the window while `#world` stays letterboxed, so only an own canvas keeps
+  pointer mapping exact in every layout; a visual golden of a minigame reads that canvas.
+
 ## 14. Audio
 
 ### 14.1 API (W1-S)
@@ -744,7 +986,8 @@ SR.def.skin('orderup', { engine: 'shiftrush', params, art, text, auto })
 `caption`) · `SR.audio.renderOffline(kind /* 'song'|'sfx' */, id, seconds)` → `Promise<AudioBuffer>`.
 `SR.audio.stinger(id)` takes a stinger song id (`'stingers.promotion'`); a bare name
 (`'promotion'`) means `stingers.<name>` (§14.2). `SR.audio.validate(kind, def)`: §14.3 (D31).
-Buses: `music`, `sfx`, `ambience`, `ui`, `voice` → master → compressor. Caption keys: `cap.horn`,
+Buses: `music`, `sfx`, `ambience`, `ui`, `voice` → compressor → makeup trim → master gain →
+destination (the Master slider sits after the compressor; D50, §14.4). Caption keys: `cap.horn`,
 `cap.siren`, `cap.answering`, `cap.edgeWind`, `cap.thunder`, `cap.knock` (in `en-ui.js`).
 
 ### 14.2 Song format (ART_AUDIO §13.8, frozen)
@@ -839,6 +1082,78 @@ SR.def.sfx('coin', {
   `load({ mode: 'all', extra: ['js/audio/music.js'] })` and check every `SR.reg.song` and
   `SR.reg.sfx` entry. Objective checks: ARCHITECTURE §18.
 
+### 14.4 Additive audio names and format rules (wave-1 integration)
+
+D19, D20, D21 and D31 are confirmed by W1-S as implemented; nothing in the frozen formats changed.
+
+- **`SR.audio.sfx(name, o)`** (W1-S): `o` also takes `pan` (-1..1 for a non-spatial sound) and `at`
+  (a delay in seconds); `gain` is a multiplier and `pitch` a frequency ratio (1 = as written). It
+  always returns a handle `{ name, inert, voice, playing(), stop(), set({ gain, pitch, x, y }) }`
+  (`set({ pitch })` retunes a loop). An unknown name warns once and returns an **inert handle**
+  (`inert: true`, `playing()` false, no-op `stop` / `set`), as does a one-shot played while the audio
+  is not running, culled (> 900 u) or dropped by the pool. A **loop** handle is never inert: its
+  voice starts, or starts again, on a `set()` once the audio runs, the sound is within 900 u and a
+  voice is free; a `set()` beyond 900 u releases the voice; after `stop()` it stays silent. A
+  voice-bus recipe ducks the song 4 dB for its length.
+- **`SR.audio.duck(db, ms)`** returns a release function; `ms` omitted or `Infinity` holds the duck
+  until `duck(0)` (which releases every held duck) or the release function; overlapping ducks take
+  the deepest (attack 80 ms, release 400 ms).
+- **`SR.audio.music(id, { fade, variant })`**: a falsy id fades out; the same id with another
+  variant switches on the next bar line; a request made while the context is not running (locked,
+  a hidden tab, a system interruption), a stop included, applies when it runs; a song left for
+  another resumes at its position when it returns within 180 s. It returns nothing.
+- **`SR.audio.stinger(id)`** → `{ id, stop() }` or `null` (unknown id, locked).
+- **`SR.audio.ambience(id, level)`**: beds `city`, `birds`, `crickets`, `rain`, `wind`, `fog`,
+  `casino`, `bar`, `fryer`, `office`, `campus`, `park`; level 0..1 (default 1); 0 fades out over 1 s
+  and stops; calls made while the context is not running apply when it runs; a bed the voice pool
+  steals restarts once a voice is free; `.list()`, `.time(min)` (a clock override; the default reads
+  `SR.state.clock.min`), `.status()`.
+- **`SR.audio.renderOffline(kind, id, seconds, opts)`**: `kind` may also be `'ambience'`; `seconds`
+  is optional (a song: one pass of its order plus one bar; a stinger: its order plus 1 s; a
+  one-shot: its length plus 20 ms; a loop: 2 s, released so it ends in silence; a bed: 4 s); `opts`:
+  `sampleRate` (44100), `variant`, `pos` `{ order, step }`, `seed`, `vary` (sfx; default off),
+  `level` and `min` (a bed), `sfx: [{ at, name, gain, pitch, pan }]` (more one-shots: the stress
+  script), `chunk` (seconds per offline suspend, default 0.25; `false` schedules everything first).
+- **Also:** `SR.audio.unlock()` (creates or resumes the context from a key, click or tap handler),
+  `state()` → `'locked' | 'unsupported' | 'suspended' | 'running' | 'closed'`, `stats()` (voices,
+  peak, stolen, dropped, duck, bus gains, mono, what plays), `levels()` (RMS dBFS per bus),
+  `lengthOf('song' | 'sfx', id)` (seconds), `listener(x, y, zoom)` (a spatial listener override; the
+  default is `SR.world.camera`). `SR.audio.synth`, `SR.audio.tracker` and `SR.audio.engine` are
+  internal to W1-S's files and tests.
+- **Registered sound names other packages play:** UI `click`, `open`, `close`, `confirm`, `error`,
+  `toggle`, `blip` (voice bus; `pitch` is a ratio), `purchase`, `ticktock`, `hover`, `typewriter`,
+  `stamp`; minigames `mg_hit`, `mg_miss`, `mg_item`, `mg_bin`, `mg_serve`, `mg_tick`. The Stamp plays
+  the stinger `stingers.stamp` once W2-Music registers it, else the `stamp` sfx.
+- **Songs, as the validator reads them:** `bpm`, `meter`, `stepsPerBeat`, `inst`, `patterns`,
+  `order` are required; `swing`, `key`, `scale` (documentation only), `gain`, `loopFrom`,
+  `variants`, `motif` are optional; an unknown field is a problem (it catches typos such as `bmp`).
+  Song, instrument and variant gains are 0..1, pans -1..1. Swing delays every odd step, and only when
+  `stepsPerBeat` is even. Pitches are MIDI 12..108 (C0-C8), lengths 1..256. A chord is one voice
+  (its notes share the preset's filter and envelope). A `motif` annotation starts on a note of a
+  pitched track; the five onsets are read from there (the top note of a chord), following `order`
+  into the next pattern, and must read 0, +4, +7, +9, +7. A song whose id starts `stingers.` has an
+  order of one pattern and no `loopFrom`. **Additive: a per-pattern `bpm`** (`patterns.<p>.bpm`,
+  20..300; default the song's; each pattern's steps are timed from its own start), for
+  `final_edition`'s 84 → 100.
+- **SFX, as the validator reads them:** `env` is required on every layer and `dur` on every layer of
+  a one-shot; every layer of a `loop` recipe needs a sustain (`env.s > 0`); a noise layer takes no
+  `freq`, `at` or `sweep` (use a filter); `duty` is for `osc: 'pulse'` (or a pulse FM carrier);
+  `caption` is a `cap.*` key or `null`; `gain` (recipe and layer) 0..1; `vary.pitch` and `vary.gain`
+  0..0.5; `priority` 0..3. `fm.index` is the standard modulation index (peak deviation / modulator
+  frequency). The `pitch` option and `vary.pitch` scale every frequency of a recipe, its sweeps and
+  its filters. Envelopes: attack linear; decay exponential to the sustain (with `s = 0`, to -60 dB
+  and then 5 ms to exactly 0); release exponential to -60 dB and then 5 ms to 0 (no denormals).
+- **The mix as built:** the bus levels are **trims under the player's sliders** (music 0 dB and sfx
+  0 dB, whose material peaks at ≤ -10 / ≤ -6 dBFS; ambience -24 dB, ui -12 dB, voice -16 dB); the
+  voice bus follows the SFX slider (Settings has no voice slider). The graph is sources → buses →
+  compressor (threshold -14 dB, ratio 3, **hard knee**) → a makeup trim that removes the automatic
+  makeup gain Web Audio compressors add (so material below -14 dBFS passes at unity) → **master
+  gain** (the Master slider) → destination: the slider is a clean output volume and never changes
+  how hard the compressor works. The compressor's 6 ms lookahead delays the output. Music notes are
+  priority 2.5 in the voice pool (above UI 2 and world one-shots 1, below stingers and the Stamp 3).
+  Mono downmixes after the master gain. The engine suspends its own context while the tab is hidden
+  and resumes it (if it was unlocked) when the tab shows again.
+
 ## 15. World, render, art and UI names
 
 | Namespace | Names (owner) |
@@ -857,6 +1172,257 @@ segment indexing an array: `'grass'` → `SR.art.palette.grass`, `'bld.bank.wall
 ART_AUDIO §2.2 and `.ui` the canvas mirror of `css/tokens.css`. `palette.js` is Node-loadable, so
 `tools/validate.cjs` checks every key that data names by walking this path, and every drawing
 module resolves keys the same way.
+
+**The shape of `SR.art.palette`** (D32 says how a key resolves; this is which keys exist).
+`palette.sky` is an array of keyframes `{ h, top, horizon, ambient, light }` (`h` and `light` are
+the only numeric leaves); `palette.ui` mirrors `css/tokens.css` under the token names without the
+leading `--` (`'ui.ink-900'`, `'ui.money-ink'`, plus `white`, `gold`, `newsprint`), with
+non-enumerable camelCase aliases (`'ui.ink900'`); the karma bands are `karma.good.0..9` /
+`karma.evil.0..9` (B-04c); `fighter.0` is the Ring's masked regulars and `fighter.1..12` the
+ladder; every `int.<id>` has the neutral set `wall wallHi wallShade trim floorA floorB counter
+accent light` (ids `default home apt apt2 pent mansion castle mcsticks store pawn furniture bank nli
+uofs cityhall bar casino bus jail hospital trip news`); every `city.<id>` has `ground base tower
+roof accent trim window`; `bld.<id>` has `walls shade roof trim` plus a few named extras
+(`skylight`, `plate`, `ivy`, `dome`, `bulb`, `stripe`, `gate`, `moat`, `garden`) and `bld.default`
+exists; the other groups are `light` (emissives), `weather`, `stick`, `acc` (accessories), `kit`
+(interior materials), `mat` (the bible's five materials), `car`, `prop` (pre-seeded for
+`js/art/props.js`), `npc` (ART_AUDIO §2.3) and `fx` (coins, confetti, stamp ink, newsprint).
+
+### 15.1 `SR.world` additive names (wave-1 integration)
+
+- **`SR.world`** (W1-W): `ready`, `time`, `cfg` (the B-15 numbers; `cfg.missing` lists any that do
+  not resolve), `entities(kind)` (`'car'`, `'ped'`, `'person'`, `'police'`: the live array of
+  `traffic`, `pedestrians`, `streetnpcs`, `police`), `build()`, `start(s)` (the player from
+  `state.player`, in the car named by `driving`), `place(spec, s)` and `spawnPoint(spec, s)`
+  (`'newGame'`, `'afterJail'`, `'afterHospital'`, a door id, `'homeDoor'`, `[x, y]`), `homeDoor(s)`,
+  `teleport(x, y)` (doors disarmed around the spot, camera snapped), `sync(s)` (positions →
+  `state.player`, once a second and on scene changes), `onAction(action)` (`interact`, `car`,
+  `zoomIn`, `zoomOut`, `zoomCycle`; any action skips a fall after 0.5 s), `readInput()`,
+  `safeEdges(s)` (on while `access.safeEdges` is set or the Guard Rails decree is active),
+  `assist()`; `update(dt, input?)` takes an optional `{ x, y, skate }` input (tests, headless walkers).
+- **`SR.world.geometry`**: `bounds`, `polygon`, `edges` (`{ a, b, railed, out }`), `solids`,
+  `buildings[id]` (`projected`, `tops`, `signature`, `door`), `doors`, `doorById`, `porches`,
+  `lanes`, `graph` (`{ nodes, edges: [a, b, zebraId], adj }`), `onGround`, `walkable(x, y, r)`,
+  `surfaceAt` (`asphalt`, `sidewalk`, `path`, `plaza`, `lawn`, `hole`, `sky`), `zebraAt`,
+  `nearestEdge`, `nearEdge(x, y, m, railed)`, `solidAt`, `solidsNear`, `solidDist`, `project`,
+  `projected(id)`, `projectedRects()`, `util`.
+- **`SR.world.collide`**: `dynamic` (the per-step dynamic hash, rebuilt at the start of every
+  `SR.world.update` from `entities()`: `near(x, y, r, kinds?, out?)`, `add(e, kind)`, `rebuild()`,
+  `clear()`, `count`); `move(body, dx, dy)` also takes `body.len` and `body.a` (a car's 96 × 52
+  capsule along its heading).
+- **`SR.world.nav`**: `reachable(x, y)`, `nearest(x, y, minInside)`, `lineClear`, `gridClear`,
+  `segmentInside`, `cellAt`, `center`, `connected`, `walk`, `stats`.
+- **`SR.world.player`**: `walkTo(x, y)` (click-to-walk; a click on a building routes to its door),
+  `toggleCar()`, `board(car)`, `park(x, y, a)`, `carNear()`, `knock(sec)` (the car-hit knockdown),
+  `hopAside(entity)`, `cancelRoute()`, `topSpeed()`, `hasBoard()`, `doorAt(x, y)` (the door a click
+  means: a porch or trigger, else the frontmost building hit); fields `car`, `a`, `v`, `route`,
+  `surface`, `lastSafe`, and `px`, `py` (the position at the start of the last step, which the
+  renderer interpolates by alpha).
+- **`SR.world.doors`**: `prompt` (`{ kind: 'enter'|'park', door, name, verb }`; the same object while
+  it names the same door, so a new object means a new prompt to announce), `tags` (a reused array),
+  `last`, `enter(id, via)`, `exit(id?)`, `interact()`, `parkAndEnter(id)`, `kerbHeading(door, a)`,
+  `tagFor(id)`, `doorHomes(id)`, `disarmNear(x, y)`, `go(resolution)` (the scene change:
+  `SR.scenes.go('building', { id, params }, { transition: 'doorZoom' })`).
+- **`SR.world.fall`**: `phase` (`none`, `teeter`, `drop`, `catch`, `land`), `t`, `x`, `y`, `to`,
+  `car`, `saved` (the last teeter save: "Phew"), `last`, `active()`, `skip()`, `focus()`.
+- **`SR.world.camera`**: `x`, `y`, `px`, `py` (the centre at the start of the last step), `zoom`,
+  `level`, `target`, `snap`, `setLevel`, `zoomIn`, `zoomOut`, `cycle`, `view()`,
+  `toScreen(x, y, z)`, `toWorld(sx, sy)`, `bounds()`.
+- **The entity lists the renderer draws** (a convention, no registration call): the Y-sorted pass
+  draws `SR.world.traffic.cars`, `SR.world.pedestrians.list`, `SR.world.streetnpcs.list`,
+  `SR.world.police.list`, `SR.world.markers.list` and `SR.world.player`. Fields read: car `{ x, y,
+  a (radians, 0 east), kind (compact | sedan | taxi | van | police), braking }`; walker / person
+  `{ x, y, facing (degrees clockwise from north, or 'up' | 'down' | 'left' | 'right'), state ('walk'
+  | 'pause' | 'wave' | 'flee' | 'hop'), look (a look id, or the pedestrian's number), clip?, pose?,
+  visible, active?, bark, hopT }`; marker `{ x, y }`; optional `px, py` (the previous step's
+  position) are interpolated with the frame's alpha. `js/render/actors.js` also accepts `list`,
+  `pool`, `peds`, `people`, `npcs`, `officers` and `markers`, and
+  `SR.render.actors.source(name, fn, kind)` for anything else.
+- **People hop aside:** the player's car moves any walker within reach of its body 24 u aside
+  (`state: 'hop'`, `hopT: 0.6`, `bark: 'toast.world.hey'`) and never hurts them. **Driving into a
+  door:** like walking, the car enters (parks and enters on foot) only while it moves within 45° of
+  the way in.
+- **Worldmap fields beyond the ARCHITECTURE §8.1 example:** `pockets`, `jogLoop`, `links` (lawn walkways joining
+  the jog loop and Margin Path to the sidewalk graph), `features` (fountain, plinth, pond, skate
+  bowl, duck spot, chess tables, Harold's bench, busker spot, the Bite, the Dog-Ear), `spots`
+  (people's places, for `data/people.js` placeIds), `skyRibbon`; per building `name`, `orig`,
+  `homes` (a home door's tiers), `exterior.roof`, `exterior.floors`, `exterior.tops` (tall roof
+  features: turrets, the dome, the roof sign, the dice) and `exterior.signature` (rects in
+  projected space, x, y - 0.5 z); `exterior.palette` names a palette group (`bld.<id>`),
+  `exterior.detail` an `SR.def.exterior` id, `exterior.sign` a text key `place.sign.<id>`.
+
+### 15.2 `SR.render` and the exterior painter
+
+- **`SR.render`** (W1-G): `view` (overrides `{ x, y, zoom, min, day, weather, tween }`; a `null`
+  field follows `SR.world.camera` and `SR.state`) and `setView(patch)` (the title's camera drift,
+  the debug hour scrubber, sheets, tests); `toScreen(x, y, z)` / `toWorld(sx, sy)` (logical stage
+  units, the last frame's view); `warm(ctx?)` (bakes every chunk and sprite the view needs at once:
+  tests, sheets, the title's first frame); `time()` (the displayed minute, tweened 1.5 s after a
+  clock jump); `lastView()`; `debug.{projected(on), hours(on)}` (also driven by
+  `SR.debug.flags.projected` / `.time`).
+- **`SR.render.fx`**: besides `transition`, `confetti`, `jolt`, `render`: `shake(amp, ms)`,
+  `flash(ms, alpha)`, `offset()`, `flashAlpha()`, `busy()`, `state()` (`{ transition, confetti,
+  jolt }`).
+- **`SR.render.particles`**: `emit(kind, x, y, n, opts)`, `burst(kind, x, y, opts)`, `update(dt)`,
+  `draw(ctx, view)`, `clear()`, `stats()`; kinds `dust`, `coin`, `spark`, `confetti`, `splash`,
+  `scrap`, `wisp` (world units; the pool is 400 × `quality.params.particles`).
+- **`SR.render.worldui`**: `tag(x, y, text, { key, z })`, `prompt(x, y, text, opts)`, `marker(x, y)`,
+  `float(x, y, text, colour)`, `route(points | null)`, `doorTags` (tags, prompts and markers are per
+  frame; `colour` is a palette key or a stat name: `str`, `int`, `cha`, `hp`, `money`, `time`,
+  `heat`, `karma`).
+- **`SR.render.actors`**: `source(name, fn, kind)`, `player()`, `playerPos()`, `cars()`,
+  `carType(e)`, `carBox(type, dir)`, `stats()` (`{ count, px, budgetPx }` of the car sprite LRU).
+- **`SR.render.lighting.at(min, weather)`** → `{ top, horizon, ambient, light, white }` and
+  `SR.render.sky.colors` (the same); `SR.render.buildings.{sprite(id), litWindows(id, min, day),
+  litFraction(id, min), neon(id)}`; `SR.render.ground.{model(), skyVisible(view), edgeInfo(x, y)}`.
+- **`SR.art.exterior`** (W1-G, `js/art/exteriors.js`): besides `build(def, zoom, dpr)`:
+  `baker(def, zoom, dpr)`, `geom(def)`, `colours(geom)`, `placeholder(ctx, def)`, `reset()`,
+  `archetypes`, `PROJ` (a read-only getter of the projection factor in use). `build()`'s result also
+  carries `id`, `zoom`, `dpr`, `scale` (px per u), `px`, `neonPx`, and each neon entry `{ sprite, x,
+  y, w, h, px }`; `bounds` is `[x0, y0, x1, y1]` in projected world units (x, y - 0.5 z), like every
+  rect.
+- **Hooks W2-Exterior provides** (`js/art/props.js`, `js/art/skyline.js`; the render core owns the
+  caches, the draw order and the budgets): `SR.art.props.draw(ctx, type, variant, a)` (a prop with
+  its ground contact point at the origin, in world units; cached as a sprite per type, variant,
+  angle and zoom), `SR.art.props.size(type, variant, a)` → `{ w, h, ax, ay }` (u; the anchor is the
+  contact point inside the box), and `SR.art.skyline.draw(ctx, view, worldmap)` (the six distant
+  islands and the Sky Ribbon, in stage units during the sky pass; `view` carries `x, y, zoom, W, H,
+  t, min, light, sky.ambient`). Railings and the castle wall are baked into the ground chunks from
+  worldmap geometry; optional `SR.art.props.railing(ctx, a, b)` / `wall(ctx, a, b, w)` are called
+  by the ground bake when they exist. Until then `js/render/buildings.js` and `js/render/sky.js`
+  draw placeholders.
+
+### 15.3 `SR.art`
+
+- **`SR.art.draw`** (W1-A): besides `inkStroke`, `paperFill`, `tone`, `roundRect`, `poly`, `text`,
+  `shadow`: `color(keyOrColour)` (the D32 resolver every drawing module uses), `parse`, `hex`,
+  `mix(a, b, t)`, `alpha(c, a)`, `luma`, `lineWidth(ctx, u, minPx)`, `font(size, weight, role)`,
+  `FONTS`, `stamp(ctx, str, x, y, opts)` (ART_AUDIO §11), `floatText(ctx, str, x, y, colourKey, t)`
+  (ART_AUDIO §12); `tone(base, -1|0|1)` returns `#RRGGBB[AA]`.
+- **`SR.art.paper`**: `grain(kind)` → the 256 × 256 canvas (`'multiply'` | `'speck'`),
+  `grainURL(alpha)`, `pattern(ctx, kind)`, `apply(ctx, x, y, w, h, alpha)` (the 6 % / 4 % multiply),
+  `tornRect(ctx, x, y, w, h, opts)`, `SIZE`. A priority-40 boot hook sets `--grain` on `<html>`
+  unless the stylesheet set one.
+- **`SR.art.stick`**: `draw(ctx, pose, opts)` with `opts = { x, y, view: 'city'|'side', facing:
+  'down'|'up'|'left'|'right', scale, look, player, karma, head, torso, limb, mood, t, rot, mount:
+  'board', upper, anchor: 'feet'|'hip', shadow, alpha, splay }`; `pose` is a pose array, a pose name
+  or a clip name evaluated at `opts.t` (a name that is both a pose and a clip plays the clip when
+  `opts.t` is given); `player: true` without a `look` draws `SR.state.player.look`. Also
+  `clip(name, t, out)` (a pooled result unless `out`), `poses`, `clips` (`{ dur, loop, keys }`),
+  `duration(name)`, `looks`, `look(id)`, `pedLook(n)`, `karmaColor(k)`, `metrics(view, child)`,
+  `joints(pose, opts)`, `ACCESSORIES`, `accessory(name)`. Clips: `idle walk skate drive sit talk eat
+  drink work work_desk work_mop work_cook work_serve study lift cheer happy shock wave cower knocked
+  fall teeter sleep guard punch kick fireball inkbeam hurt win lose`; moods `neutral happy sad angry
+  surprised hurt sleep smug worried blink`.
+- **`SR.art.portraits`**: `draw(ctx, personId, size, mood, opts)` with `opts = { blink, bg, karma,
+  frame }`, `toCanvas(personId, size, mood, opts)`, `SIZES`.
+- **`SR.art.vehicles`**: `draw(ctx, type, dir, x, y, opts)` with `opts = { angle, t, brake, lights,
+  flashReduction, driver, shadow, alpha, scale, z, bank, pilot, carry }`; types `compact sedan taxi
+  van police junker sports skybus plane` (`player` → junker, `cab` → taxi); `lamps(type, dir,
+  angle)` → `{ head, tail }` screen offsets for the emissive pass; `skid(ctx, type, angle, x, y, len,
+  alpha)` (a ground decal W2-City keeps and fades); `size(type)`, `dirFromAngle(a)`, `lightPhase(t)`
+  (0 | 1: which half of the police bar is lit; they swap every 0.5 s, at most 2 flashes a second),
+  `TYPES`. `driver: { look, karma, player }` or `true` shows the driver's head and shoulders (the
+  open sports car the whole upper body); a driver with a `look` is an NPC unless `player: true`.
+- **Icons and logo**: `SR.art.icon(ctx, name, x, y, size, state)` (top-left at x, y; `state:
+  'disabled'`), `SR.art.iconURL(name, size, state)`, `SR.art.icon.CATEGORIES`, `.names()`, `.TABLE`;
+  `SR.art.logo.draw(ctx, t, { x, y, width, title, tag, color })` → box, `.duration` (1.2 s),
+  `.measure(title, width)`; `SR.art.bible.draw(ctx, { t })`, `SR.art.bible.sampleInterior()`.
+- **Interiors**: `SR.art.interior(id, params)` → `{ drawStatic(ctx, state), drawAnim(ctx, t, state,
+  actors) }`; the building scene passes the door resolver's params (`{ homeId, mode }`), which reach
+  props' `when(state, params)` / `pick(state, params)` and custom fns (`kit.params`); `actors` is
+  `{ owner: { id | look, pose | clip, mood, t }, you: { pose | clip, ... } }` with the poses `idle
+  talk happy shock work` (and `react-happy`, `react-shock`; happy and shock set the face). An id
+  without a registered def returns a neutral room in its `int.<id>` palette, so the scene may call
+  the factory for any building. Also `SR.art.interior.fromDef(id, def)`, `.types()`, `.kit`.
+  Interior def fields beyond ART_AUDIO §9: wall types `plain tiles panels brick stripes stone
+  wallpaper` (+ `alt`, `wainscot`, `wainscotH`), floor types `checker tiles planks carpet concrete`
+  (+ `tile`, `rows`; `perspective` 0 flat .. 1 true one-point), `floorY`, `vp`, `palette` (the
+  `int.<id>` set), `fns` (named custom fns: a function or `{ static(ctx, kit, state), anim(ctx, kit,
+  t, state) }`); prop fields `sortY`, `when`, `pick`, `flip`, `text` (a text key), `items`, `person`,
+  `alt`. `drawAnim` repaints the live sky in every window and redraws what the static layer put in
+  front of a window; a custom `static` fn that paints over a window repeats that part in its `anim`.
+- **Person ids** that `SR.art.stick.look` and `SR.art.portraits.draw` know (for `data/people.js`,
+  building `owner` / `portrait` and interiors' `owner.id`): `harold kid dealer newguy mcholland
+  sticky mel dee vinnie sofia penny bea gil frankie terry lou tabby quill plume crease preacher ori
+  doodle crayon officer board stranger player`; fighters by their `data/fighters.js` id or
+  `fighter.<n>`; pedestrians by number; or a look object `{ head: 'npc.<name>', acc: ['beanie', ...],
+  col: { beanie: 'acc.red' }, child }`. Aliases resolve the long forms (`skid`, `red`, `margin`,
+  `lucky_lou`, ...); an unknown id draws the plain look and warns once.
+
+### 15.4 `SR.ui`
+
+- **Conventions** (W1-D): every component is a factory taking one options object and returning its
+  root element; `id` becomes `data-id`; focusable parts carry `data-nav`; stateful components expose
+  `el.update(partialOpts)` (and `el.value` for inputs); chips carry `data-chip="<kind>"`.
+- **`SR.ui.dom`** (`js/ui/dom.js`): `h(tag, attrs, ...children)`, `svg`, `clear`, `on`, `t(keyOrText,
+  vars)`, `setting(key)`, `token(name)` (a CSS custom property for canvas drawing, following the
+  high-contrast and colour-blind swaps), `paint(paletteKey)`, `reduced()`, `fast()`, `uiRoot()`,
+  `layer(name)`, `announce(text)` (#aria; messages raised in the same moment are joined into one
+  update), `sfx(name, opts)` (guarded), `haptic(ms)`, `icon(name, size)` (an `<img>` from
+  `SR.art.iconURL`, or a placeholder square), `now()`, `frame(el)`, `logicalRect(el)`,
+  `refuse(el, reason)` (error sound + 120 ms shake + #aria), `applySettings()`, `invalidateTokens()`.
+- **Components** (`js/ui/components.js`) besides the frozen list: `iconButton`, `swipe(target, onLeft,
+  onRight)`, `STATS`, `button({ hotkey })` (a digit badge before the label), `segmented({ focusHost
+  })`, `chip.gains(preview)`, `chip.costs(preview, { state, def })`, `chip.fromDelta(delta)`,
+  `chip.text(opts)`, `karmaMedallion.band(k)`, `karmaMedallion.tier(k)`, `keyHint.glyph(code)`,
+  `keyHint.refreshAll()`, `tooltip(target, content)` → detach, `tooltip.hide()`.
+- **`SR.ui.focus`** (`js/ui/focus.js`): `push(root, { id, initial, restore, autofocus })` → scope,
+  `pop(scope)`, `current()`, `focused()`, `first()`, `focus(el)`, `move(dir)`, `tab(back)`,
+  `handle(action, ev)` → consumed, `activate(el)`, `navigables(root)`, `setHandler(el, fn)`,
+  `isTextTarget(el)`, `depth()`.
+- **Toast, stamp, modal**: `SR.ui.toast(opts)` (`{ key, vars, text, kind, icon, chips, id, static,
+  duration }`) with `.list()`, `.clear()`, `.caption({ key, dir })`; `SR.ui.stamp(opts)` (`{ key,
+  vars, text, kind, size, stat, static }`) with `.busy({ ignoreStat })`, `.skip()`, `.swallow()`,
+  `.clear()`, `.current()`; `SR.ui.modal(opts)` (a box) with `.open(opts)` →
+  `Promise<actionId|null>`, and `SR.ui.confirm({ title, text, vars, yes, no, danger })` →
+  `Promise<boolean>` (both through the `confirm` overlay).
+- **`SR.ui.hud`**: besides `mount(root, { compact, minimal })`, `unmount`, `compact(bool)`, `flush()`:
+  `ghost(preview | null)` (UI §1, principle 1: ghost deltas), `minimal(bool)`, `target(kind, key)` (where a flying
+  chip lands), `pulse(kind, key)`, `invalidate()`, `el()`.
+- **`SR.ui.card(opts)`** is also the Card component (`{ id, title, brand, portrait, greeting,
+  greetingVars, voice, onLeave, readout }` → element with `body`, `setGreeting`, `setReadout`,
+  `leave`); besides `open / refresh / push / pop / replace`: `feedback(result, originEl, opts)` (UI
+  §4.3 for any host), `rows()`, `debug()` (`SR.debug.ui()` calls it), `current()`, `screens()`,
+  `repeating()`, `stopRepeat()`, `leave()`, and the scene hooks `mount(root, sceneParams, hooks)`,
+  `unmount()`, `onAction(action, ev)`, `update(dt)`.
+- **`SR.ui.subhost.create(root, { onClose, onOpen, building, host, rootLabel, feedback, onResult,
+  focusScope })`** → `{ push(id, params) → Promise<popResult>, pop(result), replace, close, refresh,
+  back() → handled, onAction(action, ev) → consumed, top(), depth(), ids(), destroy(), el }`.
+  `feedback(result, originEl)` replaces the default feedback; `onResult(result, actionId)` runs after
+  each `ctx.act`. The sub-screen `ctx` adds `refresh()`; `ctx.state` is a read-only Proxy view (a
+  write throws a TypeError).
+- **`SR.ui.dialog.open(opts)`** (`{ id, person, portrait, name, text, vars, mood, voice, cancel,
+  choices: [{ id, label, vars, action, params, chips, chance, disabled, reason, variant, number: {
+  min, max, step, label, value, money, quick } }] }`) → `Promise<{ choice, n }>`: `action` is
+  previewed for the choice's chips and enabled state and the caller runs it; `cancel` names the
+  choice Esc returns (default `'leave'` when offered, else Esc does nothing with an error cue, so a
+  police stop cannot be escaped; `false`: Esc does nothing). While the line still types, Enter /
+  Space / A only complete it (a hotkey 1-4 still picks its choice). Also `dialog.refresh()`,
+  `dialog.isOpen()`. `SR.ui.building.info()` (tests: `{ id, interior, floats, ownerPose }`).
+- **How the card reads building data** (for W2-Home and every building owner): `building.modes` is
+  `{ live: [actionIds], owned: [...], forSale: [...] }` (or `{ mode: { actions: [...] } }`); when
+  the scene's `params.mode` names one, the card shows exactly those actions in that order, else
+  every action with `building: <id>`. Scene params are merged into every preview and act (`{ homeId,
+  mode, variant }`). Greetings: a named fn `greet.<buildingId>` (`(s, params, ctx)` → `{ key, vars }`
+  or a key) chooses the greeting by first visit, time, karma, weather or job (UI §5.6); without it
+  the card picks one of `building.greetings[]`, else `greet.<id>` if registered. A row with `screen`
+  passes the door params to its sub-screen; the row's own `screenParams` win over a door param of
+  the same name. The Hustle button reads `{ skin, step }` from `jobs.hustleSkin` and runs
+  `SR.minigame.run(skin, { skin, step, auto, ...params })`.
+
+### 15.5 The UI input rule
+
+DOM UI takes its input from `SR.input` actions: a scene's `onAction` offers each action to
+`SR.ui.focus.handle(action, ev)` first (arrows move focus inside the current focus scope or are
+consumed by the focused control; `confirm` activates the focused control), then handles what is
+left (`back`, `rowN`, `repeat`, `tabPrev` / `tabNext` ...). UI scenes ignore `interact` (E, Enter,
+Space and A also fire `confirm`). While `SR.input` is live, `js/ui/focus.js` suppresses the
+browser's own Enter / Space activation of focused controls, so a key activates once; Tab /
+Shift+Tab move focus in DOM order and wrap inside the scope. A stamp consumes (`ev.consumed`) every
+action of the press that skips it. Tab is `pocket` everywhere (§12.1), but only the city opens the
+Pocket on it: other scenes ignore `pocket` when `ev.code === 'Tab'`, and the Pocket closes on it
+(D57).
 
 ## 16. Saves and settings *(M1)*
 
@@ -887,6 +1453,8 @@ module resolves keys the same way.
 minigame's result), `fast(bool)`, `perf()`, `shot()` (data URL), `ui()` (adds card rows with enabled
 state and chips, toasts), `grid(bool)`, `time(bool)`, `night(kind)`, `down(cause)`,
 `quality(preset)`, `projected(bool)`. URL flags: `#debug` (FPS and perf overlay), `#artbible`.
+The overlay toggles `grid`, `time` and `projected` set `SR.debug.flags` and emit `debug:changed`;
+they invalidate no render cache (the overlays are drawn every frame; D46).
 
 ### 17.2 `tests/harness.cjs` *(M0)*
 
@@ -925,6 +1493,57 @@ the game page.
   JSON). Values from the context belong to another realm: compare with JSON or
   `assert.deepEqual`, never `assert.deepStrictEqual`.
 
+### 18.1 Quality tools (W1-Q)
+
+- **`tools/validate.cjs [--wave N] [--root dir] [--json] [--quiet] [--selftest]`** (W1-Q); module
+  `validate({ root, wave, plant, isStub })` → `{ errors, warnings, info, stats }` (`errors` /
+  `warnings` are `{ check, where, msg }`) and `textOwner(key)` (the prefix map of CONTRACT §7).
+  `--wave N` makes a missing reference a warning when the file that should register it still
+  carries the stub marker (text keys by the prefix map; icons, sfx, songs, skins, sub-screens,
+  buildings, actions, fns, palette keys by their owner file) and lists wave-≤ N files that are still
+  stubs as warnings; strict (no `--wave`) is the release gate. Besides the data it checks the ids
+  code names outright: the first argument of any `text('…')` call, every `'reason.…'` literal,
+  `{ key: '<ns>.…' }` for the text-only namespaces, `audio.sfx / music / stinger('…')`,
+  `art.icon(ctx, '…')` and `iconURL('…')` (a key the same file tests with `has('…')` is optional; a
+  key built with `+` is skipped); the frozen names (sub-screens in their files with their P / flag,
+  skins on their engines, songs in their files); `open` names a skin or an unskinned engine (D29);
+  an opening row's `hpAbove` covers the possible voluntary hurt of its `:resolve`. The causes
+  `fall`, `carHit`, `carCrash`, `fight`, `mugger`, `goons` are involuntary everywhere, and `world.*`
+  actions are exempt from the `hpAbove` rule.
+- **`tools/shingles.cjs [--shingles] [--banned] [--binary] [--root dir] [--ref dir] [--paths a,b]
+  [--selftest]`**: the three copyright checks in one tool (all three by default; "the banned-strings
+  check" is `node tools/shingles.cjs --banned`). Words are compared lower-case without punctuation,
+  with placeholders, interpolations and plain numbers as one wildcard. Outside a git work tree the
+  binary check walks the files minus the git-ignored directories. **`tools/banned.txt`**:
+  `[substring]` (default), `[word]`, `[upper]` and `[only-in] term: where, where` lists; `#`
+  comments; a marker alone switches the list, a marker with text is a one-line entry.
+- **`tools/run-all.cjs [--wave N | --strict] [--only g,g] [--skip g,g] [--full] [--jobs N] [--bail]
+  [--verbose] [--list]`**, groups `node`, `tools`, `balance`, `e2e`, `visual`, `perf`; without
+  `--wave` it infers the wave from the stubs left (strict when none is left); an unknown group or a
+  `--wave` outside 1-4 is a usage error (exit 2); a suite past its timeout gets SIGTERM, then SIGKILL
+  5 s later.
+- **`tests/e2e/a11y.test.cjs`** exports `audit(rootSel)` (in-page: names, roles, image alternatives,
+  dialog names, text contrast ≥ 4.5 / 3, text ≥ 12 px), `tabWalk(t)` (real Tab presses through the
+  current focus scope: order, scope, ring, names), `check(T, t, label, rootSel)` and
+  `focusEveryNav()`, so any e2e suite can audit its screens (`await t.eval(A.audit, '#ui')`).
+- **`tests/perf/calibrate.js`**: a classic script or a Node module; in a page `window.SRCalibrate`,
+  in Node `require()`: `run(runs?)` → `{ ms, factor, reference, checksum, runs }`, `factor(ms)`,
+  `REFERENCE_MS` (20). It never touches `window.SR`. Contact sheets load it with a `<script>` tag.
+- **`tests/visual/visual.cjs [--record] [--only a,b] [--list] [--goldens dir] [--strict]
+  [--selftest]`**; goldens are `tests/visual/goldens/<scene>.json` = `{ id, kind, source, sel, grid:
+  [64, 36], tolerance: 12, size, preset, viewport, dpr, rows: [36 strings of 64 RRGGBB] }`. A scene
+  that has a golden and can no longer be captured fails (never "pending"). Minigame scenes read
+  `[data-id="mg-canvas"]`.
+- **`tests/perf/perf.cjs [--quick] [--record] [--only id,id] [--json file] [--selftest]`**;
+  `tests/perf/baseline.json` = `{ v: 1, note, tours: { <frames>: { fingerprint, recorded,
+  calibration, frames, configs: { <config>: { driver, update, render } } } } }`, one recording per
+  tour length: the lead runs `--record` and `--record --quick` (run-all's default) at each
+  integration, and each run is gated against the recording of its own tour length.
+- **`tests/balance/sim.cjs`**: `simulate({ bot, policy, seeds, days, difficulty, length, SR })`,
+  `csv`, `summary`, `chart`, `assertBands`, `BANDS`; bots (`tests/balance/bots.cjs`) are `{ name,
+  decide(state, ctx) → { id, params } | null, minigame?, init?, jailChoice? }` with the `ctx`
+  documented in that file's header.
+
 ## 19. Feature flags (`js/data/features.js`)
 
 All `false` at M0; the lead flips them at integration. **P1:** `weather`, `shadows`, `timelapse`,
@@ -954,7 +1573,10 @@ on)` flips one at runtime (tests); an unknown flag throws.
 ## 21. Decisions
 
 Where the documents disagreed or left a gap, W1-K decided as follows (ARCHITECTURE stays the
-design of record; the lead folds these back at integration).
+design of record; the lead folds these back at integration). **D1-D42 were folded into
+ARCHITECTURE, UI, GDD, BALANCE and ART_AUDIO at the wave-1 integration**, together with D43-D60,
+which the lead decided there on the packages' requests (`docs/requests/decisions-w1-*.md`). Where
+an older document still reads otherwise, the decision here wins and the lead corrects the document.
 
 - **D1 Stub scope.** Every `js/**` and `css/**` file of ARCHITECTURE §19 is stubbed and listed in
   `index.html`, including other wave-1 packages' files (their owners overwrite them). Tests, tools,
@@ -1148,9 +1770,9 @@ design of record; the lead folds these back at integration).
   `SR.world.teleport(x, y)` (W1-W: doors disarmed around the spot, camera snapped) and falls back to
   writing the player's `x`, `y`. `mg(result)` is `SR.minigame.force(result)` (W1-M). `fast()` with no argument
   reads the flag; `fast(true)` also sets `html.sr-fast`, which zeroes CSS transitions and animations.
-  `grid`, `time`, `projected` set `SR.debug.flags.<name>` (toggle when called without an argument),
-  emit `debug:changed` and invalidate the render caches; the world and render modules draw those
-  overlays. `night(kind)` re-emits the Report's events, then emits `day:started { day, report }` as
+  `grid`, `time`, `projected` set `SR.debug.flags.<name>` (toggle when called without an argument)
+  and emit `debug:changed`; the world and render modules draw those overlays every frame, so no
+  render cache is invalidated (D46). `night(kind)` re-emits the Report's events, then emits `day:started { day, report }` as
   the report scene does after a night (the world stream follows the new day; HUD, card and autosave
   react); `down(cause)` sets HP 0, calls
   `SR.rules.health.down` and emits `player:down`. `ui()` → `{ scenes, top, contexts, items: [{ id,
@@ -1171,3 +1793,93 @@ design of record; the lead folds these back at integration).
   `save-v9-newer.json`, `save-corrupt.txt`, `export-v1.txt` (a golden export code made with Node's
   own base64 and `zlib.crc32`) and `settings-v1.json`. The wave-2 capture
   `save-v1-wave2.json` joins them at the wave-2 exit (BUILD_PLAN §4.14).
+
+- **D43 State schema v1 additions** (wave-1 integration; W1-C request 1, W1-E R2 and R10, W1-W 3).
+  `trade.offer`, `fight.open`, `casino.match`, `crime.open` (`null`; the record of a start whose
+  resolve is still to come: it survives a save, so Hardcore's `pending.worst` and a trip's event card
+  resolve after a reload, and every resolve fn pays once), `daily.shifts` (the day's shift count:
+  Motivation Monday), `history` points `[day, value]` seeded with day 1 (so a thinned history keeps
+  its days), `flags.foldDone` and `flags.carHitVm`. They are additive and deep-filled, so the
+  version stays 1 and no migration is needed. `js/rules/state.js` has them in `defaults()` /
+  `create()` since the wave-1 integration (desk-rules).
+- **D44 Scene transitions** (wave-1 integration; W1-K-M1 request 4). `js/core/scenes.js` runs `go`
+  (default `pageTurn`) and a `replace` that names a kind inside `SR.render.fx.transition`, and
+  swaps at once for `{ transition: false }`, `SR.debug.fast()`, a change requested inside another
+  change, an empty stack and a missing `SR.render.fx` (§11.4). `go` and `replace` return the
+  transition's Promise. The stack changes synchronously inside the swap, so no caller waits.
+- **D45 Script size budget: 8 MB** of JS (2^20-byte MB, comments included, the scripts `index.html`
+  lists), gated by `tests/perf/perf.cjs` `BUDGET.scriptBytes = 8 × 2^20`; the boot-time budget is
+  unchanged. The 1.8 MB figure was already spent after wave 1 (1.82 MB with about 150 files still
+  stubs) with three content waves to go, and classic scripts from `file://` load fast; there is no
+  minification step (W1-G request 7, W1-Q 3).
+- **D46 Debug overlays invalidate nothing** (W1-G request 4). `grid`, `time` and `projected` are
+  drawn every frame from `SR.debug.flags`; re-baking 40 chunks and every sprite on a toggle showed
+  placeholders for frames. A module that ever bakes an overlay listens to `debug:changed`.
+- **D47 Hold-to-repeat and stat stamps** (W1-D request 4, W1-R 10). A repeat stops at any modal,
+  dialog, minigame or stamp **except a stat-gain stamp**: during a hold the first run's stat stamp
+  shows and later ones are coalesced (float texts and the flying chips still show every gain);
+  promotion, degree, jackpot and rank stamps still stop it. `SR.ui.stamp.busy({ ignoreStat: true })`
+  is the card's check. GDD §4.4, UI §1 and §4.3, ARCHITECTURE §11.
+- **D48 Day-1 fries cost $9** (W1-R request 9). The rules win: B-02 starts you as a Fry Cook and
+  B-28a's `employee` row takes 25 % off McSticks food while you hold a McSticks job, so the B-06
+  price of $12 becomes $9; BUILD_PLAN §3.12's slice text and `tests/e2e/slice.test.cjs` say $9.
+- **D49 Engine limits stay named constants** (W1-K-M1 request 3, W1-R 2 and 3, W1-S 4, W1-G 6).
+  BALANCE holds game-balance numbers; engine and presentation limits stay named constants at the
+  top of their files, citing their section: the save retention and budget, autosave gap, Auto
+  quality thresholds and presets, stage and input constants, the loop's catch-up steps
+  (ARCHITECTURE §2-§3, §11, §15); the stat-check clamp 0.05..0.95 and D ≥ 1 (GDD §4.3's formula;
+  the 33 tuning table names are frozen, §3.6); the inbox cap of 150 (one rule shared by
+  `effects.js` and `save.js`, ARCHITECTURE §15) and the stamp threshold "gain ≥ 2" (a UI feedback
+  rule, UI §4.3); the audio mix constants; the render core's lamp, neon, light and budget numbers.
+  The ironman debounce and rule are balance (`tuning.difficulty`).
+- **D50 The audio graph as built** (W1-S request 4). Buses → compressor (hard knee) → makeup trim →
+  master gain → destination; the bus levels of ART_AUDIO §13.7 are trims under the sliders; the
+  voice bus follows the SFX slider; music notes are voice priority 2.5. The engine suspends its own
+  context while the tab is hidden (W1-K-M1 request 5 needs no loop hook). §14.1 and ARCHITECTURE §12
+  follow.
+- **D51 Text ownership settled.** `door.*` and `ori.*` belong to `en-world.js` (W1-W, then W2-City),
+  not `en-city.js`, which holds barks and the car-hit voicemails; `report.*` (every morning-report
+  line) belongs to `en-econ.js`, not `en-home.js`; `reason.*` is `en-prog.js` (D16), so `en-ui.js`
+  holds no "generic reasons"; the prefix rows of §7 follow `tools/validate.cjs` (W1-Q request 4,
+  W1-E R4); `enc.` and `event.` keys are ≤ 400 characters (W1-Q request 9). ARCHITECTURE §7.2 and
+  §19 list `en-pocket.js` (D16).
+- **D52 The ContextPrompt appears within 96 u** (the Interact range, B-15 `door.prompt`) of a door
+  or a person you can talk to; from 96 to 160 u a door shows only its plain name tag. UI §2.3 and
+  §5.5 said 160 u for the prompt, against GDD §3.6, ARCHITECTURE §8.4 and B-15.
+- **D53 CPU gates read JS work** (W1-Q request 2, W1-G 5). Headless Chromium rasterises canvases in
+  software on the main thread and flushes a frame's recording inside whatever canvas call comes
+  next, so `tests/perf/perf.cjs` gates each frame's JS work (frame time minus the time inside native
+  canvas calls, path building excepted), p95 over the tour, and reports the raw frame and native
+  times without gating them (ARCHITECTURE §17).
+- **D54 Camel-case decree ids** (W1-C request 9, W1-W 4): decree ids are the camelCase keys of B-17
+  (`casinoLevy`, `seizeBank`, `guardRails`, ...), an exception to §3.1's `snake_case` for content,
+  because tuning rows, the night, jobs, the bank and the world already read them.
+- **D55 BALANCE and `tuning.js` names** (W1-R requests 1 and 4, W1-C 7, W1-M 4 and 5, W1-W 1 and 2).
+  BALANCE records the tuning names that differ from its old keys (`health.hospital.hpPct`,
+  `endgame.ranks` / `endgame.column`, `weather.forecastAccuracy`) and the numbers the packages held
+  as constants (world, hustle, hotwire, Assist, darts, election, fight quirks, the kernel's GDD
+  ranges), marked *(w1)*; `js/data/tuning.js` has every one of them since the wave-1 integration
+  (desk-rules), and the engines that still hold a named constant (`shiftrush.js`, `timingring.js`)
+  should read the row through `SR.minigame.tune`. The B-15 field names of `tuning.world` are
+  frozen. The sortit belt brings `itemsPerCorrect` items per ticket interval (no `itemEverySec`).
+- **D56 The minigame play area is its own canvas** `[data-id="mg-canvas"]` in the frame (W1-M
+  request 3), so pointer mapping is exact in the touch-compact layout; the minigame scene
+  `blocksRender` and ignores the stage context (§13.1, ARCHITECTURE §10, §18).
+- **D57 The UI input rule** (W1-D request 2): focus first (`SR.ui.focus.handle`), then the scene;
+  one activation per key; Tab moves focus inside a scope and opens the Pocket only in the city
+  (§15.5, ARCHITECTURE §11, UI §6).
+- **D58 Render core decisions** (W1-G request 6): the grade covers the sheet, not the sky; traffic
+  cars on the 8 directions are cached sprites; the "props, actors and neon ≤ 8 MB" line is split
+  into LRUs (cars 1.25 Mpx, props 0.5 Mpx, neon 0.2 Mpx, lights 0.03 Mpx); tints repaint in place;
+  hidden lights dim with the building over them; grain on sprites is `source-atop` ink; people on
+  an east / west mat sort in front of that building; the sky pass is skipped when the sheet covers
+  the view (ARCHITECTURE §9.4).
+- **D59 Small rule readings confirmed** (W1-R request 11): McHolland's bribe blocks Heat gains
+  while `day <= bribedUntil` (inclusive); Heat Wave scales `cost.hp`, `hpAbove` and `hurt` of `train`
+  and `work` actions (ceil × 1.5); Hard Landing caps `hurt` with cause `fall` or `carHit` at 5; Iron
+  Stomach multiplies `heal` in `eat` actions (floor × 1.25); Buzz wears off on the clock's 2-hour
+  grid (no state field); Winded is judged after the action's own HP cost; the `weather` condition
+  reads Clear while the `weather` flag is off. GDD §4.2, §4.14, §3.12, §6.2 and §6.8 say so.
+- **D60 Interiors take the door params** (W1-D request 6, W1-A answer A): `SR.art.interior(id,
+  params)` receives the door resolver's params, and `drawAnim(ctx, t, state, actors)` the proprietor
+  and you (§15.3, ARCHITECTURE §9.2).

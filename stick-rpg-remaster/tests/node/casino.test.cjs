@@ -152,13 +152,13 @@ T.section('hands a day, the round applier and the pit boss (B-14b)');
   const cash = s.money.cash;
   const byRound = K.act(SR, s, 'bjHand', { round: rr, shoe: sh, trueCount: 0 });
   T.eq([byRound.ok, s.money.cash - cash, s.casino.shoe.pos], [true, Math.round(BJ.settle(rr)), sh.pos], 'a played round is settled here and its shoe kept');
-  T.eq(K.act(SR, s, 'bjHand', { bet: 4, net: 0 }).reason, 'reason.unavailable', 'bets from $5');
+  T.eq(K.act(SR, s, 'bjHand', { bet: 4, net: 0 }).reason, 'reason.badBet', 'bets from $5');
   const dbl = K.act(SR, s, 'bjHand', { bet: 10, net: 20, wagered: 20, trueCount: 0 });
   const nat = K.act(SR, s, 'bjHand', { bet: 10, net: 15, trueCount: 0 });
   const odd = K.act(SR, s, 'bjHand', { bet: 10, net: 10, wagered: 90, trueCount: 0 });
   T.eq([dbl.events[0].payload.bet, nat.events[0].payload.bet, odd.events[0].payload.bet], [20, 10, 10],
     'the stake of an engine-played hand: a double or a split stakes its `wagered` (≤ 2 × the bet); a natural stakes the bet');
-  T.eq(K.act(SR, s, 'bjHand', { bet: 501, net: 0 }).reason, 'reason.unavailable', 'to $500');
+  T.eq(K.act(SR, s, 'bjHand', { bet: 501, net: 0 }).reason, 'reason.badBet', 'to $500');
 
   const sus = (seq, extra) => {
     const x = K.state(SR, Object.assign({ stats: { cha: 100 } }, extra || {}));
@@ -172,7 +172,7 @@ T.section('hands a day, the round applier and the pit boss (B-14b)');
   const b = K.state(SR, { stats: { cha: 100 }, clock: { day: 10 } });
   let backed = null;
   for (let i = 0; i < 8; i++) { const r = BJ.suspicion(b, 20 + (i % 2), 3); if (r.backedOff) backed = { i, r }; }
-  T.eq([backed && backed.i, b.casino.suspicion, b.casino.barredUntil, CA.canPlay(b, 'blackjack').reason], [7, 0, 17, 'reason.notNow'],
+  T.eq([backed && backed.i, b.casino.suspicion, b.casino.barredUntil, CA.canPlay(b, 'blackjack').reason], [7, 0, 17, 'reason.barred'],
     'at 8 suspicion: backed off for 7 days, suspicion resets');
   b.clock.day = 17;
   T.ok(CA.canPlay(b, 'blackjack').ok, 'welcome back on day 17');
@@ -263,7 +263,7 @@ T.section('roulette: every bet type and the zeros (B-14c)');
     RO.covers({ type: 'split', nums: [1.5, 2.5] }), RO.covers({ type: 'street', n: 1.2 }), RO.covers({ type: 'straight', n: '7' })], [null, null, null, null, null, null, [7]],
     'a pocket must be a whole number 0-36 or 00 (2.5 is not 2; review probe)');
   const s = K.state(SR, { money: { cash: 5000 } });
-  T.eq(K.act(SR, s, 'roulette', { bets: [{ type: 'red', amount: 2001 }] }).reason, 'reason.unavailable', 'the table limit: $2,000 a spin (orig)');
+  T.eq(K.act(SR, s, 'roulette', { bets: [{ type: 'red', amount: 2001 }] }).reason, 'reason.badBet', 'the table limit: $2,000 a spin (orig)');
   const c = K.counting(SR.rng.create(8));
   const rr = RO.round(s, [{ type: 'red', amount: 100 }, { type: 'straight', n: 7, amount: 50 }], { rng: c });
   T.eq([c.draws, rr.events[0].payload.game, rr.events[0].payload.bet, s.stats.karma], [1, 'roulette', 150, -1], 'a spin: one draw, one gamble event, -1 karma');
@@ -333,7 +333,7 @@ T.section('darts practice and matches (B-14f)');
   const rn = K.features(SR, { nightlife: true });
   const m = K.state(SR, { money: { cash: 500 } });
   T.eq([CA.darts.matchStart(m, 'rookie', 9, K.ctx(SR)).reason, CA.darts.matchStart(m, 'rookie', 201, K.ctx(SR)).reason, CA.darts.matchStart(m, 'boss', 50, K.ctx(SR)).reason],
-    ['reason.unavailable', 'reason.unavailable', 'reason.unavailable'], 'stakes $10-$200 against Rookie, Regular or Shark');
+    ['reason.badBet', 'reason.badBet', 'reason.badBet'], 'stakes $10-$200 against Rookie, Regular or Shark');
   const st = CA.darts.matchStart(m, 'shark', 100, K.ctx(SR, 1, { id: 'bar.dartsMatch' }));
   T.eq([m.money.cash, st.open.params.target, st.open.params.pays, m.daily.dartsMatches], [400, 320, 3, 1], 'the stake is taken at the start');
   const won = CA.darts.match(m, { score: 320 }, K.ctx(SR));
@@ -363,8 +363,8 @@ function D2(fn) { return fn(); }
 T.section('rounds on the state: karma, VIP, winToday (B-14, B-29)');
 {
   const s = K.state(SR, { money: { cash: 100 } });
-  T.eq(K.act(SR, s, 'slots', { bet: 500 }).reason, 'reason.unavailable', '$500 slot bets need VIP Silver');
-  T.eq(K.act(SR, s, 'slots', { bet: 30 }).reason, 'reason.unavailable', 'bets are 5 / 25 / 100 (orig)');
+  T.eq(K.act(SR, s, 'slots', { bet: 500 }).reason, 'reason.badBet', '$500 slot bets need VIP Silver');
+  T.eq(K.act(SR, s, 'slots', { bet: 30 }).reason, 'reason.badBet', 'bets are 5 / 25 / 100 (orig)');
   const pv = SR.rules.act.preview(s, 'testc.slots', { bet: 25 }, K.ctx(SR));
   T.eq([pv.ok, s.money.cash], [true, 100], 'a preview spins nothing');
   const r = K.act(SR, s, 'slots', { bet: 25 }, 3);

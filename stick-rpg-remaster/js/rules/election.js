@@ -21,9 +21,6 @@
 
   var ACTIONS = ['rally', 'tvAd', 'doorKnock', 'kissBabies', 'intimidate', 'bribe'];
   var RIVAL = { president: 'doodle', dictator: 'crayon' };   // Mayor Doodle / General Crayon (GDD §6.2)
-  // GDD §4.17 numbers that BALANCE B-17 does not tabulate (docs/requests/W1-C.md asks to move them):
-  var PUBLIC_LIBRARY_STUDY = 3;      // Public Library Act: Study gives +3 INT
-  var UNIVERSAL_FRIES_KARMA = 10;    // Universal Basic Fries: +10 karma
 
   function T() { return SR.tuning.election; }
   function feat(flag) { return !!SR.features[flag]; }
@@ -487,19 +484,19 @@
     return { toasts: [{ key: 'toast.election.seized', vars: { n: B.cash, money: money(B.cash) }, kind: 'reward' }] };
   });
   SR.def.fn('decree.universalFries', function (s) {
-    SR.rules.stats.karma(s, UNIVERSAL_FRIES_KARMA);
+    SR.rules.stats.karma(s, T().universalFries.karma);
     return {};
   });
   SR.def.fn('decree.renameCity', function (s, params) {
-    var name = typeof (params && params.name) === 'string' ? params.name.replace(/\s+/g, ' ').trim().slice(0, SR.tuning.start.nameMax) : '';
+    var name = typeof (params && params.name) === 'string' ? params.name.replace(/\s+/g, ' ').trim().slice(0, T().cityNameMax).trim() : '';
     if (!name) return { ok: false, reason: 'reason.unavailable', vars: {} };
     s.election.cityName = name;
     return {};
   });
-  /** A numeric argument for U of S Study: tuning.training.study.gain, or 3 under the Public Library Act. */
+  /** A numeric argument for U of S Study: tuning.training.study.gain, or election.publicLibrary.study (3) under the Public Library Act. */
   SR.def.fn('decree.studyGain', function (s) {
     var active = ((s.election && s.election.decrees) || []).indexOf('publicLibrary') >= 0;
-    return active ? PUBLIC_LIBRARY_STUDY : SR.tuning.training.study.gain;
+    return active ? T().publicLibrary.study : SR.tuning.training.study.gain;
   });
 
   SR.rules.election = {

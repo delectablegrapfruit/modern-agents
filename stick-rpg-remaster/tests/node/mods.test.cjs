@@ -48,6 +48,9 @@ T.section('B-28a: the examples');
   const f = K.newState(SR);
   T.eq(f.job.ranks.mcsticks, 'cook', 'a new character is a McSticks employee');
   T.eq(price(f, 12, 'food.mcsticks.fries').price, 9, 'fries for an employee: 12 × 0.75 = $9');
+  const day1 = SR.rules.act.preview(K.newState(SR), 'testbld.fries', {}, K.ctx(SR));
+  T.eq([day1.cost.cash, day1.badges], [9, ['employee']],
+    'day 1 (the BUILD_PLAN §3.12 slice): the starting Fry Cook pays $9 for fries (lead decision: BALANCE B-28a wins over the slice text\'s $12)');
   T.eq(price(f, 12, 'food.mcsticks.fries', { variant: 'takeout' }).price, 11, 'to go: (12 + 2) × 0.75 = 10.5 → $11 (half up)');
   f.items.coupon = 1;
   const t = price(f, 12, 'food.mcsticks.fries', { variant: 'takeout' });

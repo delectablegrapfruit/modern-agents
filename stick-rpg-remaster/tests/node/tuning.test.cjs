@@ -176,6 +176,32 @@ T.section('numbers BALANCE derives from the tables');
   T.eq([ch(50), ch(100), ch(300)].map((p) => Math.round(p * 1000) / 10), [45.5, 62.5, 83.3], 'robbery beats: 45 %, 62.5 %, 83 %');
 }
 
+T.section('wave-1 requests: design numbers BALANCE does not tabulate, and frozen names');
+{
+  // [path, value, source]: the rows docs/requests/W1-{C,M,W}.md asked for (decisions-w1-desk-rules.md).
+  const ROWS = [
+    ['fight.quirks.wobbly.miss', 0.30, 'GDD §6.3 Wobbly Pete (W1-C 7)'], ['fight.quirks.pyro.fireballOdds', 2, 'GDD §6.3 The Professor (W1-C 7)'],
+    ['fight.quirks.iron.armor', 0.30, 'GDD §6.3 Iron Irma (W1-C 7)'], ['election.publicLibrary.study', 3, 'GDD §4.17 (W1-C 7)'],
+    ['election.universalFries.karma', 10, 'GDD §4.17 (W1-C 7)'], ['election.cityNameMax', 16, 'GDD §4.17 (W1-C 7)'],
+    ['casino.darts.autoWindowSec', 600, 'B-14f auto (W1-C 7)'],
+    ['jobs.hustle.orderup.items', [2, 5], 'GDD §6.5 (W1-M 4)'], ['jobs.hustle.sortit.streak', { step: 0.1, max: 1.5, every: 3 }, 'GDD §6.5 (W1-M 4)'],
+    ['jobs.hustle.sortit.travelSec', [3.2, 2.2], 'W1-M 4'], ['street.junker.ring.arc', { base: 20, perInt: 0.2, from: 200, min: 8, max: 70 }, 'GDD §6.5 (W1-M 4)'],
+    ['world.assist', { speed: 0.7, sweet: 1.5, wobble: 0.5 }, 'GDD §6.5 Assist (W1-M 4)'],
+    ['world.skateAccel', 0.25, 'GDD §3.8 (W1-W 1)'], ['world.carRange', 64, 'GDD §3.8 (W1-W 1)'], ['world.carRadius', 26, 'GDD §3.8 (W1-W 1)'],
+    ['world.carLength', 96, 'GDD §3.8 (W1-W 1)'], ['world.driveZoomEase', 0.6, 'GDD §3.7 (W1-W 1)'], ['world.teeterAssistMs', 300, 'UI §8 (W1-W 1)'],
+    ['world.navCacheSec', 1, 'ARCHITECTURE §8.2 (W1-W 1)'], ['world.carHit.voicemails', 3, 'B-15 carHit "1 of 3" (W1-W 3)'],
+  ];
+  const bad = ROWS.filter(([p, v]) => JSON.stringify(get(p)) !== JSON.stringify(v)).map(([p, v, b]) => p + ' = ' + JSON.stringify(get(p)) + ' (' + b + ' says ' + JSON.stringify(v) + ')');
+  T.eq(bad, [], ROWS.length + ' rows match their sources');
+  T.eq(TU.casino.darts.wobble.assist, TU.world.assist.wobble, 'the Assist wobble is B-14f\'s ×0.5');
+  T.eq(SR.rules.casino.darts.AUTO_WINDOW_SEC, TU.casino.darts.autoWindowSec, 'SR.rules.casino.darts.AUTO_WINDOW_SEC reads the tuning row');
+  // W1-W request 2: the world field names js/world/world.js reads are frozen.
+  const FROZEN = ['surfaceDrive.cap', 'park.range', 'door.trigger.offset', 'camera.lookAhead', 'projection.k', 'fall.total', 'fall.skipAfter', 'carHit.knockdown'];
+  T.eq(FROZEN.filter((p) => typeof get('world.' + p) !== 'number'), [], 'the world names are frozen: ' + FROZEN.join(', '));
+  const OLD = ['surfaceDrive.sidewalkCap', 'park.kerbRange', 'door.trigger.out', 'camera.lookAheadSec', 'projection.zFactor', 'fall.totalSec', 'fall.skippableAfter', 'carHit.knockdownSec'];
+  T.eq(OLD.filter((p) => get('world.' + p) !== undefined), [], 'and their wave-1 spellings are gone');
+}
+
 T.section('data hygiene');
 {
   const src = require('fs').readFileSync(require('path').join(K.L.ROOT, 'js/data/tuning.js'), 'utf8');

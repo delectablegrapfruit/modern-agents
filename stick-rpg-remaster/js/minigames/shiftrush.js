@@ -14,14 +14,16 @@
   'use strict';
   var SR = window.SR;
 
-  // BALANCE numbers come from SR.tuning.jobs.hustle (B-05, W1-R's names: m, auto, orderup, sortit).
-  // Not in BALANCE's tables (named constants; docs/requests/W1-M.md asks for rows):
-  var ITEMS_PER_TICKET = [2, 5];  // GDD §6.5: tickets list 2-5 items
-  var STREAK_STEP = 0.1;          // GDD §6.5: streaks step ×1.1 ...
-  var STREAK_MAX = 1.5;           // ... up to ×1.5
-  var STREAK_EVERY = 3;           // right sorts in a row per step (one "correct" of 3 items)
-  var BELT_TRAVEL = [3.2, 2.2];   // s an item takes down the belt, start → end of the round
-  var ASSIST_SPEED = 0.7;         // GDD §6.5 Assist: -30 % speed
+  // Every balance number comes from SR.tuning (W1-R's names): jobs.hustle (B-05: m, auto, orderup,
+  // sortit, orderup.items, sortit.streak, sortit.travelSec) and world.assist (B-15 Assist), since
+  // the wave-1 integration (CONTRACT D55, docs/requests/W1-M.md 4). These are the fallbacks for a
+  // table without the row (GDD §6.5):
+  var ITEMS_PER_TICKET = [2, 5];  // jobs.hustle.orderup.items: tickets list 2-5 items
+  var STREAK_STEP = 0.1;          // jobs.hustle.sortit.streak.step: streaks step ×1.1 ...
+  var STREAK_MAX = 1.5;           // .max: ... up to ×1.5
+  var STREAK_EVERY = 3;           // .every: right sorts in a row per step (one "correct" of 3 items)
+  var BELT_TRAVEL = [3.2, 2.2];   // jobs.hustle.sortit.travelSec: s down the belt, start → end of the round
+  var ASSIST_SPEED = 0.7;         // world.assist.speed: GDD §6.5 Assist, -30 % speed
   var FLASH = 0.35;               // s of feedback
   var KINDS = ['money', 'int', 'cha', 'str', 'time', 'heat'];   // token families that tint the bins
 
@@ -31,6 +33,9 @@
   // down and 0.925 up.
   function round3(v) { return Math.round(v * 1000) / 1000; }
   function lerp(a, b, t) { return a + (b - a) * clamp(t, 0, 1); }
+  function num(v, d) { return typeof v === 'number' && isFinite(v) ? v : d; }
+  /** @returns {number[]} a [from, to] pair of numbers from a tuning row, else the fallback. */
+  function pair(v, d) { return Array.isArray(v) && v.length >= 2 ? [num(v[0], d[0]), num(v[1], d[1])] : d.slice(); }
 
   function opts(params) {
     params = params || {};
@@ -49,11 +54,19 @@
     o.perCorrect = tune(tb + 'perCorrect', 0.075);
     o.perWrong = tune(tb + 'perWrong', 0.1);
     o.sortPer = tune('jobs.hustle.sortit.itemsPerCorrect', 3);
-    o.itemsMin = ITEMS_PER_TICKET[0];
-    o.itemsMax = ITEMS_PER_TICKET[1];
-    o.streakStep = STREAK_STEP;
-    o.streakMax = STREAK_MAX;
-    ['seconds', 'everyFrom', 'everyTo', 'base', 'perCorrect', 'perWrong', 'sortPer', 'itemsMin', 'itemsMax', 'streakStep', 'streakMax', 'mMin', 'mMax']
+    var items = pair(tune('jobs.hustle.orderup.items', ITEMS_PER_TICKET), ITEMS_PER_TICKET);
+    o.itemsMin = items[0];
+    o.itemsMax = items[1];
+    var streak = tune('jobs.hustle.sortit.streak', {});
+    o.streakStep = num(streak.step, STREAK_STEP);
+    o.streakMax = num(streak.max, STREAK_MAX);
+    o.streakEvery = Math.max(1, num(streak.every, STREAK_EVERY));
+    var travel = pair(tune('jobs.hustle.sortit.travelSec', BELT_TRAVEL), BELT_TRAVEL);
+    o.travelFrom = travel[0];
+    o.travelTo = travel[1];
+    o.assistSpeed = tune('world.assist.speed', ASSIST_SPEED);
+    ['seconds', 'everyFrom', 'everyTo', 'base', 'perCorrect', 'perWrong', 'sortPer', 'itemsMin', 'itemsMax', 'streakStep', 'streakMax', 'streakEvery',
+      'travelFrom', 'travelTo', 'mMin', 'mMax']
       .forEach(function (k) { if (typeof params[k] === 'number') o[k] = params[k]; });
     var n = o.mode === 'conveyor' ? 3 : 6;
     var bins = Array.isArray(params.bins) && params.bins.length ? params.bins.slice(0, n) : [];
@@ -74,7 +87,7 @@
 
   /** @returns {number} the streak multiplier for a right sort after `streak` right sorts in a row. */
   function streakMult(o, streak) {
-    return Math.min(o.streakMax, 1 + o.streakStep * Math.floor(streak / STREAK_EVERY));
+    return Math.min(o.streakMax, 1 + o.streakStep * Math.floor(streak / o.streakEvery));
   }
 
   // Layout in play-area units (1280 × 576).
@@ -110,7 +123,7 @@
 
     function binLabel(i) { return T(o.bins[i].label); }
     function itemLabel(it) { return T(it.label); }
-    function scale() { return host.assist ? ASSIST_SPEED : 1; }
+    function scale() { return host.assist ? o.assistSpeed : 1; }
     function left() { return Math.max(0, o.seconds - st.t); }
     function m() { return o.mode === 'conveyor' ? grade(o, st.score, st.wrong) : grade(o, st.correct, st.wrong); }
 
@@ -410,7 +423,7 @@
             spawnItem();
             st.nextAt += lerp(o.everyFrom, o.everyTo, st.nextAt / o.seconds) / o.sortPer;
           }
-          var travel = lerp(BELT_TRAVEL[0], BELT_TRAVEL[1], st.t / o.seconds);
+          var travel = lerp(o.travelFrom, o.travelTo, st.t / o.seconds);
           for (var i = 0; i < st.items.length; i++) st.items[i].p += g / travel;
           while (st.items.length && st.items[0].p >= 1) {
             st.items.shift();
@@ -503,6 +516,7 @@
     opts: opts,
     grade: function (params, correct, wrong) { return grade(opts(params), correct, wrong); },
     streakMult: function (params, streak) { return streakMult(opts(params), streak); },
-    ASSIST_SPEED: ASSIST_SPEED,
+    /** Assist's speed factor (world.assist.speed; 0.7 without the row). */
+    get ASSIST_SPEED() { return SR.minigame.tune ? SR.minigame.tune('world.assist.speed', ASSIST_SPEED) : ASSIST_SPEED; },
   });
 })();

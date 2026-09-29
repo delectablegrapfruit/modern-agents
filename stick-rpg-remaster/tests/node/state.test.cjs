@@ -92,6 +92,24 @@ T.section('create(opts)');
     [true, 555, 555, 555, 10000, 'Totally Legit', 570], 'the cheat name: 555s, $10,000, renamed, marked');
 }
 
+T.section('wave-1 integration additions (W1-C request 1, W1-E request R2)');
+{
+  const d = St.defaults();
+  T.eq([d.trade.offer, d.fight.open, d.casino.match, d.crime.open], [null, null, null, null],
+    'the start → :resolve records: trade.offer, fight.open, casino.match, crime.open start null');
+  T.eq(d.daily.shifts, 0, 'daily.shifts: the day\'s shift count (B-05 mondayBonus)');
+  T.eq(d.history, { nw: [], str: [], int: [], cha: [], karma: [] }, 'defaults() has empty history series');
+  const c = St.create({ seed: 4, stats: { str: 3, int: 9, cha: 10 }, difficulty: 'relaxed' });
+  T.eq(c.history, { nw: [[1, SR.rules.endgame.netWorth(c)]], str: [[1, 3]], int: [[1, 9]], cha: [[1, 10]], karma: [[1, 0]] },
+    'create() seeds the day-1 point of every series as [day, value] (the shape night step 12 appends)');
+  T.eq(c.history.nw[0][1], 300, 'day 1 net worth = the starting cash');
+  const old = K.json(St.create({ seed: 5 }));
+  delete old.trade.offer; delete old.fight.open; delete old.casino.match; delete old.crime.open; delete old.daily.shifts;
+  SR.util.deepFill(old, St.defaults());
+  T.eq([old.trade.offer, old.fight.open, old.casino.match, old.crime.open, old.daily.shifts], [null, null, null, null, 0],
+    'an older v1 save without them is deep-filled');
+}
+
 T.section('deep-fill of a partial v1 state (the save migration)');
 {
   const full = St.create({ seed: 5, name: 'Old Save' });

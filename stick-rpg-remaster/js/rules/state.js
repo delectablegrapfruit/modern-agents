@@ -58,11 +58,14 @@
       furniture: { owned: {}, storage: [] },
       stocks: stocks(null),
       tip: null,
-      trade: { rep: {}, visited: {}, smuggleProfit: 0, tours: 0, demand: {}, tourDemand: {}, tourWeek: {}, buyers: [0, 0, 0, 0, 0] },
-      fight: { won: 0, champion: false, ringBouts: 0 },
-      casino: { points: 0, barredUntil: 0, suspicion: 0, winToday: 0, shoe: null, lastBet: 0 },
-      crime: { bankRobDays: [] },
+      // The four `open` / `offer` / `match` fields are the start → :resolve records of W1-C's rules
+      // (docs/requests/W1-C.md 1): null, or today's trip offer / fight / darts match / robbery in progress.
+      trade: { rep: {}, visited: {}, smuggleProfit: 0, tours: 0, demand: {}, tourDemand: {}, tourWeek: {}, buyers: [0, 0, 0, 0, 0], offer: null },
+      fight: { won: 0, champion: false, ringBouts: 0, open: null },
+      casino: { points: 0, barredUntil: 0, suspicion: 0, winToday: 0, shoe: null, lastBet: 0, match: null },
+      crime: { bankRobDays: [], open: null },
       daily: {
+        shifts: 0,                     // the day's shifts (B-05 mondayBonus: the first shift; docs/requests/W1-E.md R2)
         tv: {}, beers: 0, gambleKarma: 0, uofsKarma: 0, seminars: 0, paper: 0, chess: 0, nap: 0,
         benchNap: 0, online: 0, dartsPractice: 0, dartsMatches: 0, bjHands: 0, homePerk: 0,
         charity: 0, ducks: 0, preacher: 0, skate: 0, soup: 0, leftovers: 0, relax: 0,
@@ -163,7 +166,18 @@
     var prices = {};
     T.stocks.tickers.forEach(function (t) { prices[t] = T.stocks[t].start + rng.int(-T.stocks[t].jitter, T.stocks[t].jitter); });
     s.stocks = stocks(prices);
+    seedHistory(s);
     return s;
+  }
+
+  /**
+   * The day-1 point of every history series, in the [day, value] shape night step 12 appends
+   * (ARCHITECTURE §15: the results graphs start on day 1; docs/requests/W1-E.md R2).
+   */
+  function seedHistory(s) {
+    var E = SR.rules.endgame, st = s.stats, day = s.clock.day;
+    var nw = E && typeof E.netWorth === 'function' ? E.netWorth(s) : s.money.cash + s.money.bank;
+    s.history = { nw: [[day, nw]], str: [[day, st.str]], int: [[day, st.int]], cha: [[day, st.cha]], karma: [[day, st.karma]] };
   }
 
   SR.rules.state = {

@@ -14,7 +14,10 @@ labels, float texts and minigame play areas, which are canvas. Rules and numbers
    leaves a purchase half done. Hotkeys 1-9 trigger rows. R repeats the card's last action and
    holding Enter repeats it, but only for `repeatable` actions (food, training, TV, shifts,
    consumables): never anything with a confirm, a minigame, a sub-screen or an irreversible
-   effect, and a repeat stops at any modal. Hold-to-repeat can be turned off (Settings › Game).
+   effect, and a repeat stops at any modal, dialog, minigame or stamp, **except a stat-gain
+   stamp**: during a hold the first run's stat stamp shows and later ones are coalesced (float
+   texts and flying chips still show every gain; CONTRACT D47). Hold-to-repeat can be turned off
+   (Settings › Game).
 4. **Same component, same meaning.** A time chip looks the same everywhere; so do money, HP and
    stat chips. Colour is never the only cue: every chip has an icon and a text label.
 5. **Every input is first-class.** Keyboard, mouse, gamepad and touch can complete every screen.
@@ -83,6 +86,18 @@ labels, float texts and minigame play areas, which are canvas. Rules and numbers
 }
 ```
 
+- **Tokens added in wave 1** (W1-D, in `css/tokens.css`): `--white`, `--gold` (the achievement
+  toast's edge), `--newsprint` (#F4F0E6, the report and newspaper paper, ART_AUDIO §11),
+  `--grain-opacity` (1, because `--grain` from `js/art/paper.js` is already the 4 % grain; 0 in high
+  contrast), `--stamp-alpha` (.85), `--focus-ring`, `--focus-ring-inset`, the karma bands
+  `--karma-good-0..9` / `--karma-evil-0..9` (BALANCE B-04c; the KarmaMedallion is CSS and the
+  colour-blind modes remap it) and the three colour-blind tables `:root[data-cb="protan" |
+  "deutan" | "tritan"]` (Okabe-Ito hues, each `-ink` ≥ 4.5:1 on its `-100`, asserted by
+  `tests/node/tokens.test.cjs`). `SR.art.palette.ui` mirrors `white`, `gold` and `newsprint`; the
+  karma bands are `SR.art.palette.karma`. The accessibility root classes are `html.hc` (high
+  contrast), `html.rm` (reduced motion), `html.fr` (flash reduction), `html[data-cb]`,
+  `html[data-device]` and `html.sr-fast` (tests), and `--ui-scale` is set on `:root` by
+  `js/ui/dom.js` from `SR.settings`.
 - **Type roles:** display 64 / 900 (title logo tag, results headline); h1 44 / 900 (screen titles);
   h2 32 / 900 (report headline); money 28 / 900 (the HUD cash); h3 24 / 900 (card titles); label 20
   / 700 (HUD time); body 16 / 400-600; small 14 (chips, secondary); caption 12 (numbers and labels
@@ -161,9 +176,17 @@ and a 120 ms shake.
 | **Sparkline / LineChart** | canvas; sparkline 96 × 24; chart 420 × 180 with axes in caption type | used by the bank rate board, stocks, stats and results |
 | **ProgressBar** | 6 tall, radius pill | Advisor goals, Road to Office, degree progress |
 | **Badge** | pill 20 tall | "NEW", "½ PRICE", "WED", "LOCKED" |
-| **ContextPrompt** | card 480 × 64 at the bottom left: KeyHint + verb + object + a detail ("[E] Enter McSticks") | appears within 160 u of a door or person; fades 150 ms |
+| **ContextPrompt** | card 480 × 64 at the bottom left: KeyHint + verb + object + a detail ("[E] Enter McSticks") | appears within 96 u (the Interact range, B-15 `door.prompt`) of a door or a person you can talk to; from 96 to 160 u a door shows only its plain name tag; fades 150 ms; announced once per new prompt (CONTRACT D52) |
 | **FloatText** (canvas) | display 20 in the stat colour with a 3 px ink outline; rises 40 u over 900 ms | pooled |
 | **NameTag** (canvas) | 14 / 700 on a paper pill above a named NPC | within 200 u or on hover |
+
+**Component API.** Every component is a factory `SR.ui.<name>(opts)` returning its root element
+(`id` becomes `data-id`, focusable parts carry `data-nav`, stateful components expose
+`el.update(partialOpts)` and inputs `el.value`, chips carry `data-chip="<kind>"`). The names W1-D
+built beyond this table (`iconButton`, `swipe`, `chip.gains / costs / fromDelta / text`,
+`tooltip`, `SR.ui.dom`, `SR.ui.focus`, `SR.ui.toast`, `SR.ui.stamp`, `SR.ui.modal`, `SR.ui.confirm`,
+the HUD's ghost deltas and chip targets, the card's feedback and hooks, `SR.ui.subhost`,
+`SR.ui.dialog`) are listed in ARCHITECTURE §7.1 / §7.3 and CONTRACT §15.4.
 
 ## 3. Screen map and flows
 
@@ -243,7 +266,9 @@ footer repeats cash and time for the reading eye.
 2. Gain and cost chips fly from the row to their HUD counters (200 ms, staggered 60 ms).
 3. The ClockRing sweeps through the spent time with a tick-tock (0.1 s per 30 m, max 0.8 s).
 4. Money counters count; stat chips pulse; a Stamp plays for stat gains ≥ 2, promotions, degrees,
-   jackpots and the rank ("+2 INTELLIGENCE!").
+   jackpots and the rank ("+2 INTELLIGENCE!"). A stat gain stamps once: the card drops its own
+   derived stat stamp when the rules already raised `stamp.stats.<stat>`, and during a hold-to-repeat
+   only the first run's stat stamp shows (§1, principle 3).
 5. The interior window's sky tweens to the new hour; the card refreshes previews.
 6. On leaving a building after ≥ 1 h spent: the time-lapse (P1, GDD §3.12).
 
@@ -310,7 +335,8 @@ $100. Mind the edges." The game starts inside the apartment with the answering m
 
 ### 5.5 City (P0)
 
-HUD (§4.1), the world, the context prompt, door tags ("[E] Enter McSticks" within 160 u), name tags,
+HUD (§4.1), the world, the context prompt ("[E] Enter McSticks" within 96 u), plain door name tags
+(from 96 to 160 u), name tags,
 "!" markers (P1). Click or tap the ground to walk there (a dotted ink route). With touch: the
 virtual stick (floating, left half), and a button cluster at the bottom right: Action (96 px),
 Skate toggle (64), Car (64), with the Pocket and Pause buttons in the HUD.
@@ -437,7 +463,12 @@ Skate toggle (64), Car (64), with the Pocket and Pause buttons in the HUD.
   quick replay (≤ 2 s) that can lose; roulette has no Auto. **Assist** is a toggle for the session
   (settings default). **Pause** freezes timers. **Exit** asks to confirm if a stake is live.
 - Every engine's **key map is an input context** pushed by the frame, so its keys never trigger the
-  city's actions; the bottom bar shows the context's glyphs.
+  city's actions; the bottom bar shows the context's glyphs. Every skin of an engine shares its
+  context (Shift Rush's is `orderup`), so Settings › Controls remaps `orderup`, `timingring` and
+  `duel` once for all their skins.
+- The play area is its **own canvas** (`[data-id="mg-canvas"]`, sized to the play area's device
+  pixels) inside the frame, so pointer mapping stays exact in the touch-compact layout (CONTRACT
+  D56).
 - **Screen readers:** the frame mirrors the game state in DOM text (visually hidden where the canvas
   already shows it) and announces changes in `#aria`: cards and totals ("Dealer shows 10. You have
   17."), the roulette result ("Red 32. You win $50."), slot lines, fight HP and AP ("Your HP 34.
@@ -638,7 +669,16 @@ Actions are defined in ARCHITECTURE §11. Per-screen meaning:
   Every screen is completable without a pointer.
 - **Tab** opens the Pocket only in the city scene. Inside a focus scope (building card, menus,
   modals) Tab / Shift+Tab move focus in DOM order, and the Pocket opens from the compact HUD's
-  Pocket button or the M / I / J shortcuts; Esc closes the Pocket everywhere.
+  Pocket button or the M / I / J shortcuts; Esc closes the Pocket everywhere. Tab fires the
+  `pocket` action everywhere (CONTRACT §12.1), so scenes other than the city ignore `pocket` when
+  `ev.code === 'Tab'`, and the Pocket closes on it (it does not also move focus).
+- **How DOM UI takes input** (CONTRACT §15.5, D57): a scene's `onAction` offers each action to
+  `SR.ui.focus.handle(action, ev)` first (arrows move focus inside the current scope or are consumed
+  by the focused control; `confirm` activates it), then handles what is left (`back`, `rowN`,
+  `repeat`, `tabPrev` / `tabNext`). UI scenes ignore `interact` (E, Enter, Space and A also fire
+  `confirm`); the browser's own Enter / Space activation of a focused control is suppressed, so a
+  key activates once; Tab / Shift+Tab wrap inside the scope; a Stamp swallows the press that skips
+  it. Pause, Settings, Save / Load, Title and the Pocket follow the same rule.
 - **Glyphs** follow `SR.input.last`. Everything is remappable (Settings › Controls), including each
   minigame context.
 - **Touch scrolling:** only the world canvas and minigame play areas use `touch-action: none`; card

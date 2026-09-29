@@ -38,6 +38,23 @@ T.section('format and loading');
   T.ok(SR.world.ready && G.built && N.built, 'the world builds at boot (prio 30, headless)');
   T.eq(SR.registry.hooks().filter((h) => h.file === 'js/world/world.js').map((h) => [h.prio, h.headless]), [[30, true]], 'one boot hook: prio 30, headless');
   T.eq(SR.world.cfg.missing, [], 'every world number is read from SR.tuning.world (B-15)');
+  // W1-W requests 1 and 2 (CONTRACT §3.6, D55): the seven W1-W numbers are tuning keys and the
+  // B-15 field names are frozen, so each number has exactly one path (no old spellings).
+  T.eq(Object.keys(SR.world.PATHS).filter((k) => typeof SR.world.PATHS[k] !== 'string'), [], 'each world number has one frozen tuning path');
+  const seven = ['skateAccel', 'carRange', 'carRadius', 'carLength', 'driveZoomEase', 'teeterAssistMs', 'navCacheSec'];
+  T.eq(seven.map((k) => SR.world.cfg[k]), seven.map((k) => SR.tuning.world[k]), 'the seven W1-W numbers come from SR.tuning.world (' + seven.join(', ') + ')');
+  {
+    const saved = SR.tuning;
+    SR.tuning = JSON.parse(JSON.stringify(saved));
+    SR.tuning.world.navCacheSec = 2;
+    delete SR.tuning.world.carRange;
+    const warn = console.warn;
+    console.warn = () => {};   // the expected "SR.tuning.world lacks carRange" warning
+    let c2;
+    try { c2 = SR.world.readCfg(); } finally { console.warn = warn; SR.tuning = saved; }
+    T.ok(c2.navCacheSec === 2 && c2.carRange === SR.world.B15.carRange && c2.missing.indexOf('carRange') >= 0,
+      'a tuned value wins; a missing key falls back to its B-15 value and is reported in cfg.missing', { navCacheSec: c2.navCacheSec, carRange: c2.carRange, missing: c2.missing });
+  }
   const again = L.load({ mode: 'rules', extra: WORLD }).SR.reg.worldmap.main;
   T.eq(again.props, map.props, 'the seeded props are identical on every load (no Math.random: load.cjs poisons it)');
   for (const seed of [11, 12]) {

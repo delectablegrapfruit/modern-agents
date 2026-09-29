@@ -171,7 +171,8 @@
       'act.testbank.tip': 'Tip the teller',
     });
     SR.def.building('testshop', { name: 'place.testshop', owner: 'mel', portrait: 'mel', greetings: ['test.greet'] });
-    SR.def.building('testbank', { name: 'place.testbank', owner: 'penny', portrait: 'penny', greetings: [] });
+    // The bank has a song (W1-S's paper_sky): entering cross-fades to it (ART_AUDIO §13.4).
+    SR.def.building('testbank', { name: 'place.testbank', owner: 'penny', portrait: 'penny', greetings: [], music: 'paper_sky' });
     var A = function (id, def) { def.p = def.p === undefined ? 0 : def.p; SR.def.action(id, def); };
     A('testshop.shake', { building: 'testshop', group: 'eat', order: 10, icon: 'milkshake', label: 'act.testshop.shake', cost: { cash: 8, min: 30 }, requires: [['hpBelowMax']], effects: [['heal', 12]], repeatable: true });
     A('testshop.fries', { building: 'testshop', group: 'eat', order: 20, icon: 'fries', label: 'act.testshop.fries', cost: { cash: 12, min: 30 }, requires: [['hpBelowMax']], effects: [['heal', 20]], repeatable: true });

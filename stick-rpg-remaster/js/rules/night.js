@@ -233,7 +233,7 @@
   /** 7. Nightly furniture gains: +2 per tier-1 stat piece, +4 per tier-2 (B-03, B-08b), in use only. */
   steps[7] = function furniture(s, ctx, R) {
     SR.rules.homes.nightly(s).forEach(function (g) {
-      var n = SR.rules.stats.add(s, g.stat, g.n, 'furniture');
+      var n = SR.rules.stats.add(s, g.stat, g.n, 'furniture', R);   // R receives the `stat` rule event (W1-R request 12)
       line(R, 'overnight', g.stat, 'report.furniture', { n: n, stat: g.stat.toUpperCase(), piece: SR.text('furn.' + g.id) }, 20);
     });
   };
@@ -280,7 +280,7 @@
       line(R, 'overnight', 'decree', 'report.statue', { n: k, signed: signed(k) }, 10);
     }
     if (decreeActive(s, 'mandatoryHats')) {
-      var n = SR.rules.stats.add(s, 'cha', E.mandatoryHats, 'reward');
+      var n = SR.rules.stats.add(s, 'cha', E.mandatoryHats, 'reward', R);
       line(R, 'overnight', 'cha', 'report.hats', { n: n }, 10);
     }
     zero(s.daily);
@@ -343,12 +343,13 @@
   };
 
   /**
-   * 11. Messages: the queued voicemails (loan warnings, default), the weather alert (P1 `weather`:
-   * a windy, foggy or stormy day; today's weather only, which the report shows anyway, so it gives
-   * nothing of the forecast away) and the day-365 call and car.
+   * 11. Messages: the queued voicemails (loan warnings, default), the car-hit call, the weather alert
+   * (P1 `weather`: a windy, foggy or stormy day; today's weather only, which the report shows anyway,
+   * so it gives nothing of the forecast away) and the day-365 call and car.
    */
   steps[11] = function messages(s, ctx, R, f) {
     f.msgs.forEach(function (m) { SR.rules.effects.addMsg(s, m.key, m.vars); });
+    if (s.flags.carHitVm) carHitCall(s, ctx, R);
     if (SR.features.weather) {
       var alert = SR.rules.calendar.storm(s) ? 'storm' : WEATHER_ALERTS.indexOf(s.world.weather) >= 0 ? s.world.weather : null;
       if (alert) SR.rules.effects.addMsg(s, 'vm.skywatch.' + alert, {});
@@ -363,6 +364,23 @@
       line(R, 'today', 'sportscar', 'report.day365', {}, 80);
     }
   };
+
+  /**
+   * The morning after a car hit (GDD §3.10, B-15 carHit; docs/requests/W1-W.md 3): one of the three
+   * ambulance-chaser voicemails (vm.carhit.1..3, en-city.js), 20 % of them with a settlement cheque
+   * of base + rand(0..150) ($50-$200, income 'prize', paid to cash through the lien). Draws: the
+   * voicemail, the cheque's chance, and its amount when it comes. Clears flags.carHitVm (several
+   * hits in a day bring one call).
+   */
+  function carHitCall(s, ctx, R) {
+    var C = SR.tuning.world.carHit, st = C.settlement;
+    var k = ctx.rng.int(1, C.voicemails);
+    var pay = ctx.rng.chance(st.chance) ? st.base + ctx.rng.int(st.rand[0], st.rand[1]) : 0;
+    var got = pay ? SR.rules.bank.income(s, pay, 'prize', 'cash') : null;
+    SR.rules.effects.addMsg(s, 'vm.carhit.' + k, { n: pay, money: SR.text.money(pay), cheque: pay > 0 });
+    if (pay) line(R, 'money', 'money', 'report.carHitCheque', { n: pay, money: $(pay), lien: got.toLien }, 30);
+    delete s.flags.carHitVm;
+  }
 
   /**
    * 12. Morning: nomination check, a campaign day's event, office morning, achievements, history,

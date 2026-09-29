@@ -210,9 +210,10 @@ const sorted = (l) => l.slice().sort();
   await page.mouse.click(640, 400, { button: 'right' });
   T.eq(await take(page), [], 'right-click does nothing by default');
   await page.evaluate(() => window.SR.settings.set('game.rightClickBack', true));
-  const menu = page.evaluate(() => new Promise((res) => window.addEventListener('contextmenu', (e) => setTimeout(() => res(e.defaultPrevented)), { once: true })));
+  // The listener is in place before the click (awaited), so a busy machine cannot race it (W1-Q request 8).
+  await page.evaluate(() => { window.__menu = new Promise((res) => window.addEventListener('contextmenu', (e) => setTimeout(() => res(e.defaultPrevented)), { once: true })); });
   await page.mouse.click(640, 400, { button: 'right' });
-  T.eq([await take(page), await menu], [['back+', 'back-'], true], 'with rightClickBack: right-click is back (Mouse2) and the context menu is suppressed');
+  T.eq([await take(page), await page.evaluate(() => window.__menu)], [['back+', 'back-'], true], 'with rightClickBack: right-click is back (Mouse2) and the context menu is suppressed');
   await page.evaluate(() => window.SR.settings.set('game.rightClickBack', false));
   await takeScene(page);
 

@@ -301,6 +301,24 @@ T.section('decrees (P1 civicPlus): offers of 3 eligible, once-only never return'
   T.eq(SR.reg.fn['decree.studyGain'](lib), SR.tuning.training.study.gain, 'Study gain: the B-03 value');
   lib.election.decrees = ['publicLibrary'];
   T.eq(SR.reg.fn['decree.studyGain'](lib), 3, 'the Public Library Act: Study +3 INT');
+  // The GDD §4.17 numbers are tuning rows now (docs/requests/W1-C.md 7).
+  const EL = SR.tuning.election;
+  EL.publicLibrary.study = 5;
+  T.eq(SR.reg.fn['decree.studyGain'](lib), 5, 'the Act\'s gain reads tuning.election.publicLibrary.study');
+  EL.publicLibrary.study = 3;
+  const uf = office('president');
+  uf.election.offer = ['universalFries'];
+  EL.universalFries.karma = 7;
+  const k0 = uf.stats.karma;
+  E.decree(uf, 'universalFries', {}, K.ctx(SR));
+  EL.universalFries.karma = 10;
+  T.eq(uf.stats.karma - k0, 7, 'Universal Basic Fries reads tuning.election.universalFries.karma');
+  const rn2 = office('president');
+  rn2.election.offer = ['renameCity'];
+  EL.cityNameMax = 8;
+  E.decree(rn2, 'renameCity', { name: 'Paper Heights' }, K.ctx(SR));
+  EL.cityNameMax = 16;
+  T.eq(rn2.election.cityName, 'Paper He', 'the name\'s length is tuning.election.cityNameMax');
   T.eq([E.decreeName(office('president'), 'toughOnCrime'), E.decreeName(office('dictator'), 'toughOnCrime')],
     ['decree.toughOnCrime.name', 'decree.toughOnCrime.martial'], 'Tough on Crime / Martial Law by path');
   // Through the pipeline: the decree row.

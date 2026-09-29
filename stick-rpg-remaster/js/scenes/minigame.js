@@ -2,7 +2,8 @@
 // (top bar with Exit, title, stake, cash, Auto and Assist; the canvas play area; the bottom bar
 // with key hints, Pause and a status line), the engine's input context (pushed on open, popped on
 // close and while another overlay covers the frame), the pause and exit-confirm panels, the Auto
-// replay and result banner, and the accessible state mirror (host.label, host.aria).
+// replay and result banner, the accessible state mirror (host.label, host.aria), and the music: a
+// game's own song while it plays, else the song below held 6 dB down (ART_AUDIO §13.4).
 // params = { id: engineId, skin: skinId|null, params } (CONTRACT §11.3); SR.minigame.run pushes it.
 //
 // The host an engine receives (ARCHITECTURE §10, CONTRACT §13, plus the W1-M additions marked +):
@@ -29,6 +30,7 @@
   var REPLAY_MAX = 2;
   var RESULT_HOLD = 1.1;        // s the result banner stays; any press skips it (UI §7)
   var MAX_ARIA_LINES = 4;       // lines of ours kept in #aria
+  var DUCK_DB = 6;              // ART_AUDIO §13.4: minigames duck the song 6 dB
 
   var assistPref = null;        // the session's Assist toggle (null: the access.assist setting)
   var S = null;                 // the open session
@@ -185,6 +187,16 @@
     }
   }
 
+  /**
+   * ART_AUDIO §13.4: a minigame without its own song ducks the one below 6 dB while the frame is
+   * open (a held duck: SR.audio.duck(db, Infinity) until its release function; W1-S request 6).
+   * @returns {function|null} the release
+   */
+  function holdDuck() {
+    if (!SR.audio || typeof SR.audio.duck !== 'function') return null;
+    try { var r = SR.audio.duck(DUCK_DB, Infinity); return typeof r === 'function' ? r : null; } catch (e) { return null; }
+  }
+
   /** The song of the scene the frame returns to (a building plays its building's song). */
   function musicBelow() {
     var top = SR.scenes.top();
@@ -310,7 +322,9 @@
     var frame = el('div', {
       'data-id': 'mg-frame', role: 'group', 'aria-label': titleText(),
       style: {
-        position: 'absolute', left: '0', top: '0', width: '100%', height: '100%', display: 'flex',
+        // Over the scene below: its HUD (--z-hud) and card (--z-card) live in other scene roots,
+        // which make no stacking context (wave-1 integration: the slice's minigame over the city).
+        position: 'absolute', left: '0', top: '0', width: '100%', height: '100%', zIndex: 'var(--z-overlay)', display: 'flex',
         flexDirection: 'column', background: 'var(--paper-1)', color: 'var(--ink-900)',
         font: '400 calc(16px * var(--ui-scale, 1)) var(--font-ui)', userSelect: 'none', overflow: 'hidden',
       },
@@ -715,11 +729,12 @@
       assist: def.assist === false ? false : assistPref !== null ? assistPref : settingAssist(),
       t: 0, panel: null, finished: false, closed: false, replay: null, result: null, holdT: 0, exited: false,
       hints: [], labels: {}, colors: {}, fonts: {}, announced: [], device: null, unsub: [], view: null,
-      music: (skin && skin.music) || def.music || null, inst: null, el: null,
+      music: (skin && skin.music) || def.music || null, inst: null, el: null, unduck: null,
     };
     S.host = makeHost();
     pushContext();
     playMusic(S.music);
+    if (!S.music) S.unduck = holdDuck();
     var on = function (name, fn) { S.unsub.push(SR.events.on(name, fn)); };
     on('money:changed', refreshCash);
     on('input:device', function (p) { if (p && p.device) noteDevice(p.device); });
@@ -779,6 +794,7 @@
     s.unsub.forEach(function (fn) { fn(); });
     if (s.focusScope && SR.ui && SR.ui.focus) { try { SR.ui.focus.pop(s.focusScope); } catch (e) { /* already gone */ } }
     if (s.music) playMusic(musicBelow());
+    if (s.unduck) { try { s.unduck(); } catch (e) { /* audio is optional */ } s.unduck = null; }
     if (typeof document !== 'undefined') {
       // Clear the round's lines from #aria but keep the last one (the result summary), which a
       // quiet exit or SR.debug.fast() appends in the same task as the close.

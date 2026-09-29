@@ -8,10 +8,41 @@
   var SR = window.SR;
   var hasOwn = Object.prototype.hasOwnProperty;
 
-  // Numbers the rules need that BALANCE does not tabulate (docs/requests/W1-R.md asks to move them):
+  // Engine and presentation limits, not balance numbers, so named constants (the inbox limit is
+  // ARCHITECTURE §15's retention, which js/core/save.js applies too; the stamp threshold is UI §4.3;
+  // docs/requests/decisions-w1-desk-rules.md, W1-R 3):
   var MSG_MAX = 150;         // ARCHITECTURE §15: the inbox holds at most 150 messages
   var STAMP_MIN_GAIN = 2;    // UI §4.3: a Stamp plays for stat gains ≥ 2
   var MAX_DEPTH = 16;        // nested check / chance / fn lists (a guard against data loops)
+
+  // Income sources (CONTRACT §8.4): a credit from one of them is recorded while an action runs, so
+  // the pipeline can name the source on its positive cash / bank Delta (docs/requests/W1-Q.md 5).
+  var INCOME = ['wage', 'rent', 'salary', 'interest', 'deal', 'tour', 'loot', 'win', 'prize'];
+  // The open recorders (act.js opens one per run; a stack, so a nested run records into its own).
+  var incomeStack = [];
+
+  /** Records a credit of n from src into the innermost open recorder (see trackIncome). */
+  function noteIncome(field, n, src) {
+    if (!incomeStack.length || !(n > 0) || INCOME.indexOf(src) < 0) return;
+    var rec = incomeStack[incomeStack.length - 1][field];
+    rec[src] = (rec[src] || 0) + n;
+  }
+
+  /**
+   * Opens a recorder of the income credited to cash and bank (by source) until the returned
+   * function is called; that call closes it and returns { cash: { src: n }, bank: { src: n } }.
+   * SR.rules.bank.income reports its credits here too.
+   * @returns {function(): {cash: object, bank: object}}
+   */
+  function trackIncome() {
+    var rec = { cash: {}, bank: {} };
+    incomeStack.push(rec);
+    return function () {
+      var i = incomeStack.lastIndexOf(rec);
+      if (i >= 0) incomeStack.splice(i, 1);
+      return rec;
+    };
+  }
 
   // The Result.msgs / Result.log entries that addMsg / addLog have delivered to the state already.
   // A named fn may return the partial Result of effects.run(s, list, ctx) (W1-W's world fns do);
@@ -52,6 +83,7 @@
         n -= toLien;
       }
       m[field] += n;
+      noteIncome(field, n, src);
       return n;
     }
     var take = Math.min(m[field], -n);
@@ -275,7 +307,7 @@
         SR.util.warnOnce('fx.jail', 'SR.rules.effects: jail needs SR.rules.crime.jail (not loaded yet)');
         return;
       }
-      var r = C.jail(s, reason);
+      var r = C.jail(s, reason, ctx);   // the arrest night draws from ctx.rng (docs/requests/W1-C.md 2)
       if (isPartial(r)) merge(s, r, ctx, res);
       var days = typeof r === 'number' ? r : r && typeof r.days === 'number' ? r.days : s.jail && s.jail.daysLeft ? s.jail.daysLeft : 0;
       if (!res.jailed) res.jailed = { reason: reason, days: days };
@@ -365,6 +397,9 @@
     isPartial: isPartial,
     credit: credit,
     charge: charge,
+    INCOME: INCOME.slice(),
+    trackIncome: trackIncome,
+    noteIncome: noteIncome,
     addMsg: addMsg,
     pruneMsgs: pruneMsgs,
     MSG_MAX: MSG_MAX,

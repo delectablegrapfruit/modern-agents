@@ -350,10 +350,12 @@
     overlay: function (on) { showOverlay(on !== false); return !!overlay; },
   };
 
+  // The overlays are drawn every frame from SR.debug.flags, so a toggle invalidates no render cache
+  // (re-baking 40 chunks and every sprite showed placeholders for frames; docs/requests/W1-G.md 4).
+  // A module that ever bakes an overlay into a cache listens to debug:changed and drops its own.
   function setFlag(name, on) {
     flags[name] = on === undefined ? !flags[name] : !!on;
     SR.events.emit('debug:changed', { flag: name, on: flags[name] });
-    if (SR.render && typeof SR.render.invalidate === 'function') { try { SR.render.invalidate('all'); } catch (e) { /* ignore */ } }
     return flags[name];
   }
 

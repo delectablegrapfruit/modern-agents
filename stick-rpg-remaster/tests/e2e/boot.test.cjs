@@ -1,8 +1,8 @@
 // tests/e2e/boot.test.cjs — owner: W1-K (lead). Boot from file:// (BUILD_PLAN §3.1): index.html has
 // the stage layers and every script; SR boots; the boot scene hands over to the title (the kernel's
 // stub until W2-Front registers its scenes); the M1 kernel is live (loop, stage, quality, input,
-// save, settings, the debug API); #debug shows the perf overlay; #artbible opens the art-bible
-// scene; zero console errors.
+// save, settings, the debug API, scene transitions through SR.render.fx); #debug shows the perf
+// overlay; #artbible opens the art-bible scene; zero console errors.
 //   node tests/e2e/boot.test.cjs        (screenshots: shots/W1-K-M1/, git-ignored)
 'use strict';
 const path = require('path');
@@ -132,6 +132,44 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W1-K-M1');
   T.ok((await t.debug('shot')).indexOf('data:image/png;base64,') === 0, 'SR.debug.shot() returns a PNG data URL');
   T.eq(await t.debug('projected', true), true, 'SR.debug.projected(true) sets SR.debug.flags.projected');
   await t.debug('projected', false);
+  const inval = await page.evaluate(() => {
+    const SR = window.SR, R = SR.render, orig = R.invalidate, seen = [], changed = [];
+    R.invalidate = function (w) { seen.push(w); return orig.apply(this, arguments); };
+    const off = SR.events.on('debug:changed', (p) => changed.push(p.flag + ':' + p.on));
+    try { SR.debug.grid(true); SR.debug.time(true); SR.debug.time(false); SR.debug.grid(false); } finally { R.invalidate = orig; off(); }
+    return { seen, changed };
+  });
+  T.eq(inval, { seen: [], changed: ['grid:true', 'time:true', 'time:false', 'grid:false'] }, 'an overlay toggle emits debug:changed and invalidates no render cache (W1-G request 4)');
+
+  T.section('scene transitions (CONTRACT §11.4)');
+  const tr = await page.evaluate(() => {
+    const SR = window.SR, fx = SR.render.fx, out = {};
+    if (!SR.reg.scene['test.tr']) SR.scenes.register('test.tr', { kind: 'base' });
+    const real = fx.transition, kinds = [];
+    fx.transition = function (kind, swap) { kinds.push(kind); return real.call(this, kind, swap); };
+    try {
+      const p = SR.scenes.go('test.tr');
+      out.stack = SR.scenes.stack();
+      out.running = fx.state().transition;
+      out.promise = !!p && typeof p.then === 'function';
+      SR.loop.step(30);                                   // 0.5 s of loop time: the 350 ms page turn ends
+      out.after = fx.state().transition;
+      SR.scenes.go('title', undefined, { transition: false });
+      out.none = fx.state().transition;
+      SR.debug.fast(true);
+      SR.scenes.go('test.tr');
+      out.fast = fx.state().transition;
+      SR.debug.fast(false);
+      SR.scenes.go('title', undefined, { transition: 'fade' });
+      out.fade = fx.state().transition;
+      SR.loop.step(30);
+    } finally { fx.transition = real; }
+    out.kinds = kinds;
+    return out;
+  });
+  T.eq([tr.stack, tr.running, tr.promise, tr.after], [['test.tr'], 'pageTurn', true, null], 'go runs a pageTurn through SR.render.fx (the stack changes at once; the fold ends with the loop time)');
+  T.eq([tr.none, tr.fast, tr.fade, tr.kinds], [null, null, 'fade', ['pageTurn', 'fade']], '{ transition: false } and SR.debug.fast(true) swap at once; a named kind runs that transition');
+  T.eq(await t.scenes(), ['title'], 'back on the title');
 
   fs.mkdirSync(SHOTS, { recursive: true });
   await t.shot(path.join(SHOTS, 'boot-title.png'));

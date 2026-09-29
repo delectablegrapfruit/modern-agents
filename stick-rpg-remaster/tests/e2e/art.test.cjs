@@ -54,6 +54,10 @@ async function sheet(T, name, check) {
       });
     });
     T.ok(ink.every((n) => n > 50), 'the art bible draws in every region (palette, materials, poses, interior, icons)', ink);
+    // Its section labels are text keys of en-ui.js (W1-A request 4), not the key's last segment.
+    const keys = Array.from(new Set(fs.readFileSync(path.join(h.ROOT, 'js', 'art', 'bible.js'), 'utf8').match(/'ui\.bible\.\w+'/g) || [])).map((k) => k.slice(1, -1));
+    const missing = await t.page.evaluate((keys) => keys.filter((k) => !window.SR.text.has(k)), keys);
+    T.ok(keys.length >= 12 && missing.length === 0, 'every art-bible section label (' + keys.length + ') is a text key in en-ui.js', missing);
   });
 
   T.section('icons sheet');

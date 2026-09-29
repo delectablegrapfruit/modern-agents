@@ -494,9 +494,10 @@ bay at rows 30-31, columns 7-9; the Bus Hole is the `~` at column 28, rows 21-23
   leaving a building after spending ≥ 1 h plays a 1.2 s tween from the old time to the new: clouds
   race, shadows swing, lamps switch on, with a soft tick-tock accelerando.
 - **Weather (P1, flag `weather`; P0 is always Clear)** is rolled each night from a Markov chain
-  (B-19). Tomorrow's **forecast** (80 % accurate) is information you get: TV News, The Daily Fold,
-  Market Watch and the Point Margin binoculars reveal it for the day (then the HUD weather tooltip
-  shows it too); the morning report shows only today's weather. At 12:00 and 18:00 the weather may
+  (B-19); while the flag is off, every weather condition reads Clear. Tomorrow's **forecast** (80 %
+  accurate) is information you get: TV News, The Daily Fold, Market Watch and the Point Margin
+  binoculars reveal it for the day (then the HUD weather tooltip shows it too); the morning report
+  shows only today's weather. At 12:00 and 18:00 the weather may
   move one step (30 %), ramping over 20 real seconds; any Rain during the day sets
   `world.todayHadRain`.
 
@@ -574,9 +575,11 @@ which mirrors BALANCE.md.
   (`SR.rules.stats.add('str', n)` adds the applied n to both); nothing else raises HP max. A gain
   lost to the 999 cap raises neither.
 - **Winded (new):** while HP < 25 % of HP max, training gains are halved (floor, minimum 1). Shown as
-  a status icon. Food matters all game.
+  a status icon. Food matters all game. Winded is judged after the action's own HP cost (the gym's
+  -4 can make its own gain Winded), and the preview shows the halved gain.
 - **Heat (new, 0-100):** crime attention (§4.10). Shown on the HUD only while > 0.
-- **Buzz (new, 0-5, P1):** +1 per beer or casino drink; -1 per 2 game hours; reset by sleep. Sticky
+- **Buzz (new, 0-5, P1):** +1 per beer or casino drink; -1 per 2 game hours (on the clock's 2-hour
+  grid: each time an action's time passes 02:00, 04:00, ..., 24:00); reset by sleep. Sticky
   cuts you off at Buzz 5. Effects: walk sway at ≥ 3 (cosmetic, off with Reduced Motion); darts
   wobble × (1 + 0.4 × Buzz); a ghost dartboard at ≥ 2 (orig drew one always); punch damage +1 per
   Buzz (max +3). Shown as a status icon "Tipsy ×n".
@@ -611,8 +614,11 @@ off any shortfall: cash and bank never go below zero.
 every 0.35 s until it is refused (a deliberate nod to the original's hold-Enter feel). Only actions
 marked `repeatable` repeat: food, training, TV, shifts, buying consumables. Nothing with a confirm,
 a minigame, a sub-screen or an irreversible effect (crime, loans, fights, property, the campaign)
-ever repeats, and a repeat stops at any modal, dialog, stamp or minigame. Settings › Game can turn
-hold-to-repeat off.
+ever repeats, and a repeat stops at any modal, dialog, stamp or minigame, **except a stat-gain
+stamp**: during a hold the first run's stat stamp shows and later ones are coalesced (the float
+texts and flying chips still show every gain), so holding Enter on Study or a class keeps training;
+a promotion, degree, jackpot or rank stamp still stops it (decided at the wave-1 integration).
+Settings › Game can turn hold-to-repeat off.
 
 ### 4.5 Training: the value of an hour (B-03)
 
@@ -953,7 +959,7 @@ discounts on a price, only the largest applies (BALANCE B-28a).
 
 | Stat | 100 | 250 | 450 | 700 |
 |---|---|---|---|---|
-| STR | Iron Stomach: food heals +25 % · Hard Landing: falls and car hits cost 5 HP | Brawler: +1 AP per fight turn · Pack Mule: smuggling bust threshold +10 units | Intimidating: Hold-up STR beats use D - 20; street muggers flee · Marathoner: walk and skate +15 % speed | Second Wind: once a day, HP 0 leaves you at 1 HP · Heavy Hitter: fight damage +25 % |
+| STR | Iron Stomach: food heals +25 % (the heal of an eat action, rounded down) · Hard Landing: falls and car hits cost 5 HP (at most 5) | Brawler: +1 AP per fight turn · Pack Mule: smuggling bust threshold +10 units | Intimidating: Hold-up STR beats use D - 20; street muggers flee · Marathoner: walk and skate +15 % speed | Second Wind: once a day, HP 0 leaves you at 1 HP · Heavy Hitter: fight damage +25 % |
 | INT | Speed Reader: Study and the Daily Fold take 30 m less · Coupon Clipper: 10 % off at McSticks, the store and the pawn shop | Market Sense: no 0.5 % stock spread · Tinkerer: Hotwire from INT 150; Timing Ring sweet spots +50 % | Workaholic: Overtime costs no HP and can be taken twice · Card Sharp: shows the Hi-Lo count; suspicion gains ×0.75 (§4.13) | Mastermind: seminars are free · Tax Wizard: the full-rate interest tier is $200,000 |
 | CHA | Regular: beer $15 and Mingle always gives the daily tip · Smooth Talker: pawn buys at 55 %; Haggle +0.10 | Silver Tongue: tour fees +15 % · Fast Talker: police Talk uses D - 40; bribes -50 % | Networker: each promotion needs one shift fewer · Crowd Pleaser: Open Mic tips ×2; the tour hook always succeeds | Magnetic: campaign poll starts +5 · Charming Rogue: jail sentences -2 days (min 1); bail -50 % |
 
@@ -1263,7 +1269,7 @@ All numbers of City Hall's civic rows and of the park: BALANCE B-27.
 | **Skid, the smokes kid** (orig) | Mansion corner | **Give a pack** (1 h, -2 karma, orig). First pack: the skateboard (orig). The 10th pack kills him: -30 karma and McHolland's call (orig; kept, played with cartoon distance); a skateboard with flowers leans on the lamp post afterwards. **Good branch (new):** give him gum (30 m, +1 karma) on 3 different days; he quits, trains at the skate bowl, and wins the Sunday skate contest (the first Sunday at least 3 days later; you watch it inside the 12:00-18:00 window, 2 h); he gives you his Pro Deck (+10 karma, *Role Model*). | P0 / P1 |
 | **Red, the dealer** (orig) | Dealer Alley | Sells product at $400 a gram (orig), up to 99 held: **Buy n grams** with a NumberField, no time (orig), -1 karma per 10 g (rounded up; new). **Credit line (new):** once you have bought 50 g in total, Red offers 20 g on credit: you owe 20 × the price of the day, payable in full at Red ("Pay Red") within 7 days. Paid: he offers credit again a week later. Missed: the morning after the due day his **two goons** ambush you the next time you step into the city (two forced fights in a row at ladder n = 6). Win both: the debt is cancelled, Red's credit ends for good, +10 Heat. Lose: the debt is a forced charge (cash, then bank, the rest written off) and the fight's lose rules apply; credit ends for good. After 100 g bought, -10 % prices. He can be turned in to McHolland (+15 karma, $1,000); "New Guy" replaces him 14 days later at +15 % prices. | P0 / P1 |
 | **The Junker** (orig) | Apartment lawn | Hotwire at INT 350 (orig; below it the attempt fails and costs 1 h, orig); the Timing Ring attempt from INT 200 (P1). | P0 / P1 |
-| **Detective McHolland** (orig name) | Walks at Heat ≥ 40 or for 3 days after the kid's death; otherwise at the Precinct desk | **Informant** (after you accept his offer at the Precinct desk, possible at Heat ≥ 20 or after the kid's death): turn in Red (+15 karma, $1,000), and **Pass a tip**, a Precinct row (30 m, once a week) that halves your Heat. Evil path (karma < 0): **bribe** him $2,000 for 7 days without Heat gains. He stops offering informant deals at Wicked karma. Meeting him on the street plays the **interrogation** (§6.5). | P1 |
+| **Detective McHolland** (orig name) | Walks at Heat ≥ 40 or for 3 days after the kid's death; otherwise at the Precinct desk | **Informant** (after you accept his offer at the Precinct desk, possible at Heat ≥ 20 or after the kid's death): turn in Red (+15 karma, $1,000), and **Pass a tip**, a Precinct row (30 m, once a week) that halves your Heat. Evil path (karma < 0): **bribe** him $2,000 for 7 days without Heat gains (through the 7th day inclusive). He stops offering informant deals at Wicked karma. Meeting him on the street plays the **interrogation** (§6.5). | P1 |
 | **Sticky** (orig) | Barkeep | Runs the ladder and the ring; cuts you off at Buzz 5; fight gossip in greetings. | P0 |
 | **Manager Mel** | McSticks | Your first boss: the day-1 job offer (new text for the orig premise), Shift Manager promotion, comic voicemails. | P0 |
 | **Dean Quill** | U of S | Degree ceremonies, seminar invitations. | P1 |
@@ -1410,7 +1416,8 @@ cat: HP > 10).
   arcs, the Electoral Board, rivals, the day-365 call (from "your friendly remaster crew"), loan
   warnings (5 and 1 days left), weather alerts. P0 covers the original's beats; P1 the rest.
 - **City events (P1, one a week, data; every number in B-19):** Burger Day (McSticks food half
-  price, MCS +5 %), Heat Wave (training HP costs ×1.5), Casino Night (a Friday: the slots' Bell ×3
+  price, MCS +5 %), Heat Wave (the HP costs of training and work, their "Too hurt" thresholds and
+  their possible hurt ×1.5, rounded up), Casino Night (a Friday: the slots' Bell ×3
   line pays ×24 instead of ×20, RTP 95.45 %), Paper Recycling Drive (donate a furniture piece at City
   Hall for karma), Stock scare (all tickers -5 % then a rebound), Blood Drive at City Hall (1 h, -20
   HP, +5 karma, $50). The week's event and its day are drawn on Sunday night and announced in

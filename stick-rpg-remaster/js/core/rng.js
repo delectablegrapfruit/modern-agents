@@ -4,21 +4,24 @@
 (function () {
   'use strict';
   var SR = window.SR;
+  // Math held in a local: in Node's vm contexts (the Node suites, the balance simulator) every
+  // global lookup costs ~150 ns, and int() makes several (docs/requests/W1-C.md 4).
+  var M = Math;
 
   /** @returns {function(): number} a splitmix32 sequence from a uint32 seed (used only to seed). */
   function splitmix32(x) {
     return function () {
       x = (x + 0x9e3779b9) | 0;
       var z = x;
-      z = Math.imul(z ^ (z >>> 16), 0x85ebca6b);
-      z = Math.imul(z ^ (z >>> 13), 0xc2b2ae35);
+      z = M.imul(z ^ (z >>> 16), 0x85ebca6b);
+      z = M.imul(z ^ (z >>> 13), 0xc2b2ae35);
       return (z ^ (z >>> 16)) >>> 0;
     };
   }
 
   /** @returns {number} a uint32 seed from any number or string. */
   function toSeed(n) {
-    if (typeof n === 'number' && isFinite(n) && Math.floor(n) === n) return n >>> 0;
+    if (typeof n === 'number' && isFinite(n) && M.floor(n) === n) return n >>> 0;
     return SR.util.hash(n);
   }
 
@@ -57,8 +60,8 @@
       },
       /** @returns {number} an integer in [lo, hi], both inclusive (one draw). */
       int: function (lo, hi) {
-        var l = Math.ceil(Math.min(lo, hi)), h = Math.floor(Math.max(lo, hi));
-        return l + Math.floor((next() / 4294967296) * (h - l + 1));
+        var l = M.ceil(M.min(lo, hi)), h = M.floor(M.max(lo, hi));
+        return l + M.floor((next() / 4294967296) * (h - l + 1));
       },
       /** @returns {*} a uniformly chosen element (one draw; undefined for an empty array). */
       pick: function (arr) { return arr[s.int(0, arr.length - 1)]; },

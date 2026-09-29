@@ -100,8 +100,19 @@
     if (def && typeof def.P === 'number') P = def.P;
     return {
       id: def ? def.id : kind + '.' + (n || k), name: def ? def.name : 'fighter.unknown.name',
-      n: n, k: k, hp: hp, P: P, quirk: def && def.quirk ? SR.util.clone(def.quirk) : null,
+      n: n, k: k, hp: hp, P: P, quirk: quirkOf(def),
     };
+  }
+
+  /**
+   * A fighter's quirk with its sizes: SR.tuning.fight.quirks[quirk.id] (GDD §6.3), under the def's
+   * own fields (the move of `always`, or an override).
+   * @returns {(object|null)}
+   */
+  function quirkOf(def) {
+    if (!def || !def.quirk) return null;
+    var rows = T().quirks || {};
+    return Object.assign({}, SR.util.clone(rows[def.quirk.id] || {}), SR.util.clone(def.quirk));
   }
 
   // --------------------------------------------------------------------------------------------

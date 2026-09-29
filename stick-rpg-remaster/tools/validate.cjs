@@ -116,6 +116,9 @@ const NPC_TEXT = {
   plume: 'en-civic', board: 'en-civic', doodle: 'en-civic', crayon: 'en-civic', sticky: 'en-night', lou: 'en-night',
   tabby: 'en-transit', crease: 'en-park', margin: 'en-park', preacher: 'en-park', ori: 'en-world',
 };
+// Voicemails no NPC owns: the lawyers' car-hit calls (W2-City) and night step 11's day-365 call and
+// weather alerts (W1-E R4, D51).
+const VM_TEXT = { carhit: 'en-city', crew: 'en-econ', skywatch: 'en-econ' };
 
 /** @returns {string|null} the root-relative text file that owns a key, by its prefix (CONTRACT §7). */
 function textOwner(key) {
@@ -138,7 +141,7 @@ function textOwner(key) {
   else if (a === 'sub' || a === 'act' || a === 'desc' || a === 'greet' || a === 'card') f = BUILDING_TEXT[b] || null;
   else if (a === 'toast' || a === 'stamp') f = MODULE_TEXT[b] || BUILDING_TEXT[b] || null;
   else if (a === 'bark') f = b === 'ped' ? 'en-city' : NPC_TEXT[b] || null;
-  else if (a === 'vm') f = b === 'carhit' ? 'en-city' : NPC_TEXT[b] || null;
+  else if (a === 'vm') f = VM_TEXT[b] || NPC_TEXT[b] || null;
   return f ? T(f) : null;
 }
 
@@ -1018,6 +1021,9 @@ function selftest() {
   T.eq([textOwner('act.mcsticks.fries'), textOwner('sub.bank.deposit'), textOwner('mg.hotwire.title'), textOwner('bark.ped.1'), textOwner('vm.harold.1'), textOwner('ui.fanNote')],
     ['js/data/text/en-food.js', 'js/data/text/en-money.js', 'js/data/text/en-street.js', 'js/data/text/en-city.js', 'js/data/text/en-street.js', 'js/data/text/en-ui.js'],
     'the prefix map follows CONTRACT §7');
+  T.eq([textOwner('vm.crew.day365'), textOwner('vm.skywatch.storm'), textOwner('vm.carhit.1'), textOwner('door.home.live'), textOwner('ori.fall1'), textOwner('report.loanDays')],
+    ['js/data/text/en-econ.js', 'js/data/text/en-econ.js', 'js/data/text/en-city.js', 'js/data/text/en-world.js', 'js/data/text/en-world.js', 'js/data/text/en-econ.js'],
+    'vm.crew.* and vm.skywatch.* belong to en-econ.js (W1-E R4); door.*, ori.* to en-world.js and report.* to en-econ.js (D51)');
   T.section('structural audio fallback');
   T.eq(songProblems({ bpm: 100, inst: { d: { preset: 'kit' } }, patterns: { A: { bars: 1, tracks: { d: 'k . h . s . h . k . h . s . h .' } } }, order: ['A'], loopFrom: 0 }), [], 'a valid song passes');
   T.ok(songProblems({ bpm: 100, inst: { d: { preset: 'kit' } }, patterns: { A: { bars: 1, tracks: { d: 'k . h' } } }, order: ['A', 'B'] }).length === 2, 'a short track and a missing pattern fail');

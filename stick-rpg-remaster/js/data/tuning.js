@@ -145,8 +145,14 @@
         m: [0.7, 1.3], auto: 1.0, rainTips: 1.2,
         skins: { cook: 'orderup', manager: 'orderup', janitor: 'sortit', mail: 'sortit', sales: 'pitch', exec: 'pitch', vp: 'boardroom', ceo: 'boardroom' },
         pitchStep: { sales: 0, exec: 1 },
-        orderup: { base: 0.7, perCorrect: 0.075, perWrong: 0.1, sec: 30, ticketEverySec: [6, 3] },
-        sortit: { base: 0.7, perCorrect: 0.075, perWrong: 0.1, sec: 30, ticketEverySec: [6, 3], itemsPerCorrect: 3 },
+        // items: tickets list 2-5 items (GDD §6.5, not in BALANCE; docs/requests/W1-M.md 4).
+        orderup: { base: 0.7, perCorrect: 0.075, perWrong: 0.1, sec: 30, ticketEverySec: [6, 3], items: [2, 5] },
+        // The belt brings itemsPerCorrect items per ticket interval: one every ticketEverySec / 3 =
+        // 2 s speeding to 1 s (docs/requests/W1-M.md 5). streak: ×(1 + step) per `every` right sorts
+        // in a row, up to max (GDD §6.5 ×1.1 to ×1.5); travelSec: an item's time down the belt, start
+        // → end of the round (design numbers, not in BALANCE; W1-M request 4).
+        sortit: { base: 0.7, perCorrect: 0.075, perWrong: 0.1, sec: 30, ticketEverySec: [6, 3], itemsPerCorrect: 3,
+          streak: { step: 0.1, max: 1.5, every: 3 }, travelSec: [3.2, 2.2] },
         pitch: { presses: 5, needleDegSec: 180, needlePerStep: 30, arcBase: 0.08, arcChaDiv: 4000, arcMax: 0.40, base: 0.7, perHit: 0.12 },
       },
       rating: { alpha: 0.3, start: 1.0, need: 0.9 },
@@ -417,6 +423,10 @@
         purse: { base: 500, perK: 250 },
       },
       goons: { n: 6, fights: 2 },
+      // The ladder regulars' quirks (GDD §6.3, not in BALANCE; docs/requests/W1-C.md 7), by the quirk
+      // id of js/data/fighters.js: Wobbly Pete misses 30 % of his attacks, The Professor's fireball
+      // band is ×2 as wide, Iron Irma takes 30 % less damage. (The Accountant's `always: 'kick'` is data.)
+      quirks: { wobbly: { miss: 0.30 }, pyro: { fireballOdds: 2 }, iron: { armor: 0.30 } },
     },
 
     // ---------------------------------------------------------------------------------------------
@@ -463,6 +473,9 @@
         rings: [{ r: 19, pts: 50 }, { r: 40, pts: 35 }, { r: 138, pts: 15 }, { r: 220, pts: 5 }],
         aim: { stickPxSec: 500, arrowsPxSec: 400, smoothSec: 0.2 },
         wobble: { fx: 0.53, fy: 0.71, A: 120, perBuzz: 0.4, intCap: 600, intDiv: 1200, assist: 0.5 },
+        // Auto releases each throw at a uniformly random time in 0..autoWindowSec of the wobble; far
+        // longer than its periods, so the two phases are effectively independent (B-14f `auto`).
+        autoWindowSec: 600,
         ghostBoardBuzz: 2,
         practice: { min: 30, cha: 1 },
         match: { min: 60, perDay: 3, stake: [10, 200],
@@ -495,12 +508,24 @@
       teeter: 150,                     // ms
       fall: { total: 1.5, drop: 0.55, catch: 0.5, land: 0.45, skipAfter: 0.5, hp: 10, hardLanding: 5, min: 0, landInside: 64 },   // s; -10 HP, no time (orig)
       carTow: { cash: 100 },
-      carHit: { hp: 10, knockdown: 1.14, settlement: { chance: 0.2, base: 50, rand: [0, 150] } },   // -10 HP, knockdown 1.14 s = 40 ticks (orig)
+      carHit: { hp: 10, knockdown: 1.14, voicemails: 3, settlement: { chance: 0.2, base: 50, rand: [0, 150] } },   // -10 HP, knockdown 1.14 s = 40 ticks, 1 of 3 voicemails (orig)
       carCrash: { hp: 5 },
       cab: { cash: 15, min: 30 },
       windGust: { speed: 40, range: 48, burstSec: 2, warnSec: 0.5 },
       navGrid: { cell: 32, margin: 40, reach: 32 },
       scrapEdgeMin: 64,
+      // Numbers the design names that B-15 does not tabulate (docs/requests/W1-W.md 1), read by
+      // js/world/world.js under these names:
+      skateAccel: 0.25,                // s: skateboard and Pro Deck reach top speed (GDD §3.8)
+      carRange: 64,                    // u: C / Y enters or leaves your car within 64 u of it (GDD §3.8)
+      carRadius: 26,                   // u: a car is 96 × 52; its collision capsule has half its width ...
+      carLength: 96,                   // u: ... and its length along the heading (GDD §3.8)
+      driveZoomEase: 0.6,              // s: driving eases the zoom one level out (GDD §3.7)
+      teeterAssistMs: 300,             // ms: Assist's longer teeter grace (UI §8)
+      navCacheSec: 1,                  // s: nav paths are cached (ARCHITECTURE §8.2)
+      // Minigame Assist (GDD §6.5, not in BALANCE; docs/requests/W1-M.md 4): -30 % speed, +50 % sweet
+      // spots, half the wobble (B-14f's darts wobble ×0.5 is the same number).
+      assist: { speed: 0.7, sweet: 1.5, wobble: 0.5 },
     },
 
     // ---------------------------------------------------------------------------------------------
@@ -548,6 +573,10 @@
       mandatoryHats: 1,
       toughOnCrime: { heat: -25, police: 2 },
       seizeBank: { cash: 250000, karma: -30 },
+      // GDD §4.17 numbers B-17 does not tabulate (docs/requests/W1-C.md 7):
+      publicLibrary: { study: 3 },     // Public Library Act: Study gives +3 INT
+      universalFries: { karma: 10 },   // Universal Basic Fries: +10 karma when issued
+      cityNameMax: 16,                 // Rename the City: a TextField of at most 16 characters
     },
 
     // ---------------------------------------------------------------------------------------------
@@ -705,7 +734,9 @@
       },
       junker: {
         hotwire: { int: 350, min: 60, karma: -5, heat: 15 },         // INT < 350 fails, 60 min (orig)
-        ring: { int: [200, 349], tinkererInt: 150, min: 60, hpAbove: 45, hits: 3, missHp: 15, misses: 3, alarmHeat: 10 },
+        ring: { int: [200, 349], tinkererInt: 150, min: 60, hpAbove: 45, hits: 3, missHp: 15, misses: 3, alarmHeat: 10,
+          // The sweet arc: clamp(base + (INT - from) × perInt, min, max) degrees (GDD §6.5; docs/requests/W1-M.md 4).
+          arc: { base: 20, perInt: 0.2, from: 200, min: 8, max: 70 } },
       },
       shirt: { price: 20, stack: 1 },
     },

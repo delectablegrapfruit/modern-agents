@@ -6,13 +6,12 @@
 // ring's scaling) are SR.tuning.fight (BALANCE B-13) and are read by SR.rules.fight; a def may
 // override them with `hp` / `P` (none does today).
 //
-// Quirks (GDD §6.3) are data the fight rules interpret (js/rules/fight.js):
-//   miss        a fraction of the fighter's attacks miss (Wobbly Pete: 30 %)
-//   always      the fighter always uses this move (The Accountant: kick)
-//   fireballOdds the fireball band of the enemy roll is this many times as wide (The Professor: ×2)
-//   armor       the fighter takes this fraction less damage (Iron Irma: 30 %)
-// Their sizes are GDD §6.3 numbers that BALANCE B-13 does not tabulate: docs/requests/W1-C.md asks
-// to move them to tuning.fight.quirks.
+// Quirks (GDD §6.3) are data the fight rules interpret (js/rules/fight.js); a quirk names its id
+// and the rules take its sizes from SR.tuning.fight.quirks[id] (a def's own field would override):
+//   miss        a fraction of the fighter's attacks miss (Wobbly Pete, `wobbly`: 30 %)
+//   always      the fighter always uses this move (The Accountant: kick; data, not a number)
+//   fireballOdds the fireball band of the enemy roll is this many times as wide (The Professor, `pyro`: ×2)
+//   armor       the fighter takes this fraction less damage (Iron Irma, `iron`: 30 %)
 // Pure data (Node-loadable).
 (function () {
   'use strict';
@@ -28,15 +27,15 @@
     });
   }
 
-  regular('wobbly_pete', 1, 'beanie', { id: 'wobbly', miss: 0.30 });
+  regular('wobbly_pete', 1, 'beanie', { id: 'wobbly' });
   regular('big_lou', 2, 'chain');
   regular('the_accountant', 3, 'glasses', { id: 'kicker', always: 'kick' });
   regular('karate_kyle', 4, 'headband');
   regular('biker_barb', 5, 'sunglasses');
   regular('two_beers_ted', 6, 'cup');
   regular('mad_dog_morty', 7, 'capback');
-  regular('the_professor', 8, 'mortarboard', { id: 'pyro', fireballOdds: 2 });
-  regular('iron_irma', 9, 'hardhat', { id: 'iron', armor: 0.30 });
+  regular('the_professor', 8, 'mortarboard', { id: 'pyro' });
+  regular('iron_irma', 9, 'hardhat', { id: 'iron' });
   regular('sergeant_stomp', 10, 'peakedcap');
   regular('bouncers_cousin', 11, 'headset');
   regular('old_man_knuckles', 12, 'fedora');   // the champion of Sticky's

@@ -4,8 +4,9 @@
 // and SR.util. M1 (the kernel's browser modules loaded in Node, which proves them load-time clean):
 // SR.settings (schema, checks, persistence), SR.save (envelope, tmp swap, the rules stream round
 // trip, deep-fill of a v1 fixture, a synthetic migration chain, quarantine, retention, the export
-// code, recovery, quota, Hardcore), SR.quality (presets and Auto), SR.loop.step and SR.input
-// (bindings, contexts, inject, remap, the gamepad poll).
+// code, recovery, quota, Hardcore), SR.quality (presets and Auto), SR.loop.step, scene
+// transitions (CONTRACT §11.4, with a fake SR.render.fx) and SR.input (bindings, contexts, inject,
+// remap, the gamepad poll).
 //   node tests/node/core.test.cjs
 'use strict';
 const L = require('./load.cjs');
@@ -795,6 +796,73 @@ T.section('M1: SR.loop.step (headless)');
     'perf = { update: {p50, p95}, render: {p50, p95}, fps, draws } over the frames so far');
   T.eq(p.fps, 0, 'step(n) samples work time but never fps (only animation frames measure fps)');
   T.throws(() => { SR.loop.fpsCap = 45; }, /60 or 30/, 'fpsCap is 60 or 30');
+}
+
+// ------------------------------------------------------------------------------------------------
+T.section('M1: scene transitions (CONTRACT §11.4; wave-1 integration)');
+{
+  const q = quietConsole();
+  const { SR } = m1({ console: q.console });
+  const log = [];
+  const scene = (id, extra) => SR.scenes.register(id, Object.assign({ kind: 'base', enter() { log.push('enter ' + id); }, exit() { log.push('exit ' + id); } }, extra || {}));
+  scene('test.a'); scene('test.b'); scene('test.o', { kind: 'overlay' });
+  scene('test.hop', { enter() { log.push('enter test.hop'); SR.scenes.go('test.b'); } });
+  let p = SR.scenes.go('test.a');
+  T.ok(p && typeof p.then === 'function' && SR.scenes.stack().join() === 'test.a', 'without SR.render.fx the change swaps at once; go returns a Promise');
+  // A fake SR.render.fx (a test fake, D27): records the kind and the stack before and after its swap.
+  const calls = [];
+  let mode = 'swap';
+  const fxPromise = { then(f) { return Promise.resolve().then(f); } };
+  SR.render.fx = { transition(kind, swap) {
+    if (mode === 'throw') throw new Error('boom');
+    const before = SR.scenes.stack().join();
+    if (mode === 'swap') { swap(); swap(); }
+    calls.push(kind + ' ' + before + '>' + SR.scenes.stack().join());
+    return fxPromise;
+  } };
+  log.length = 0;
+  p = SR.scenes.go('test.b');
+  T.eq([calls, log, SR.scenes.stack()], [['pageTurn test.a>test.b'], ['exit test.a', 'enter test.b'], ['test.b']], 'go runs the default pageTurn and swaps inside it exactly once (a second swap() is ignored)');
+  T.ok(p === fxPromise, 'go returns the transition\'s Promise');
+  calls.length = 0;
+  SR.scenes.go('test.a', null, { transition: 'doorZoom' });
+  SR.scenes.go('test.b', null, { transition: 'fade' });
+  SR.scenes.go('test.a', null, { transition: 'bogus' });
+  T.eq(calls, ['doorZoom test.b>test.a', 'fade test.a>test.b', 'pageTurn test.b>test.a'], 'the transition option picks the kind; an unknown kind falls back to pageTurn');
+  calls.length = 0;
+  SR.scenes.go('test.b', null, { transition: false });
+  T.eq([calls, SR.scenes.stack()], [[], ['test.b']], '{ transition: false } swaps at once');
+  SR.debug.fast(true);
+  SR.scenes.go('test.a');
+  SR.debug.fast(false);
+  T.eq([calls, SR.scenes.stack()], [[], ['test.a']], 'SR.debug.fast(true) swaps at once');
+  SR.scenes.replace('test.b');
+  T.eq([calls, SR.scenes.stack()], [[], ['test.b']], 'replace swaps at once by default');
+  SR.scenes.replace('test.a', null, { transition: 'fade' });
+  T.eq(calls, ['fade test.b>test.a'], 'replace runs a transition when one is named');
+  calls.length = 0;
+  let popped = null;
+  SR.scenes.push('test.o').then((r) => { popped = r; });
+  SR.scenes.pop(7);
+  T.eq([calls, SR.scenes.stack()], [[], ['test.a']], 'push and pop never transition');
+  SR.scenes.go('test.hop');
+  T.eq([calls, SR.scenes.stack()], [['pageTurn test.a>test.b'], ['test.b']], 'a change requested from enter() runs inside the running swap, without a second transition');
+  calls.length = 0;
+  SR.scenes.pop();
+  T.eq(SR.scenes.stack(), [], 'popping the base scene empties the stack');
+  SR.scenes.go('test.a');
+  T.eq([calls, SR.scenes.stack()], [[], ['test.a']], 'the first scene (an empty stack) swaps at once');
+  SR.scenes.queue('test.b', null, { transition: 'fade' });
+  T.eq([calls, SR.scenes.stack()], [['fade test.a>test.b'], ['test.b']], 'queue passes its options to go');
+  calls.length = 0;
+  mode = 'noswap';
+  SR.scenes.go('test.a');
+  T.eq([calls, SR.scenes.stack()], [['pageTurn test.b>test.b'], ['test.a']], 'a transition that never calls swap() still changes the stack once');
+  mode = 'throw';
+  SR.scenes.go('test.b');
+  T.ok(SR.scenes.stack().join() === 'test.b' && q.log.error.some((e) => /transition threw/.test(e)), 'a throwing transition is logged and the stack still changes', q.log.error);
+  delete SR.render.fx;
+  Promise.resolve().then(() => { if (popped !== 7) console.error('core.test: the push promise did not resolve with the pop result'); });
 }
 
 // ------------------------------------------------------------------------------------------------

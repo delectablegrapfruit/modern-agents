@@ -10,14 +10,14 @@
   'use strict';
   var SR = window.SR;
 
-  // BALANCE numbers come from SR.tuning (W1-R's names): jobs.hustle (B-05) and street.junker.ring
-  // (B-26). What BALANCE does not tabulate is a named constant here (docs/requests/W1-M.md):
-  // the hotwire arc clamp(20° + (INT - 200)/5, 8°, 70°) of GDD §6.5. Its "up to 5 presses" is
-  // B-26's 3 hits / 3 misses: the round is decided by press hits + misses - 1.
-  var HOTWIRE_ARC = { stat: 'int', base: 20, per: 0.2, from: 200, min: 8, max: 70 };
-  // GDD §6.5 Assist: -30 % speed, +50 % sweet spots. BALANCE has no table row yet (request filed).
-  var ASSIST_SPEED = 0.7;
-  var ASSIST_ARC = 1.5;
+  // Every balance number comes from SR.tuning (W1-R's names): jobs.hustle (B-05), street.junker.ring
+  // (B-26, with its arc row: the hotwire arc clamp(20° + (INT - 200)/5, 8°, 70°) of GDD §6.5) and
+  // world.assist (B-15 Assist), since the wave-1 integration (CONTRACT D55, docs/requests/W1-M.md 4).
+  // The values here are the fallbacks for a table without the row. "Up to 5 presses" is B-26's
+  // 3 hits / 3 misses: the round is decided by press hits + misses - 1.
+  var HOTWIRE_ARC = { stat: 'int', base: 20, per: 0.2, from: 200, min: 8, max: 70 };   // street.junker.ring.arc
+  var ASSIST_SPEED = 0.7;  // world.assist.speed: GDD §6.5 Assist, -30 % speed ...
+  var ASSIST_ARC = 1.5;    // world.assist.sweet: ... and +50 % sweet spots
   var ARC_CAP = 330;       // an assisted arc never covers the whole ring
   var LOCKOUT = 0.15;      // s after a press before the next one counts
   var FLASH = 0.35;        // s of hit / miss feedback
@@ -28,6 +28,14 @@
 
   function clamp(v, lo, hi) { return SR.util.clamp(v, lo, hi); }
   function round2(v) { return Math.round(v * 100) / 100; }
+  function num(v, d) { return typeof v === 'number' && isFinite(v) ? v : d; }
+
+  /** The hotwire arc rule from street.junker.ring.arc ({ base, perInt, from, min, max }; B-26). */
+  function hotwireArc(tune) {
+    var a = tune('street.junker.ring.arc', {});
+    return { stat: 'int', base: num(a.base, HOTWIRE_ARC.base), per: num(a.perInt, HOTWIRE_ARC.per), from: num(a.from, HOTWIRE_ARC.from),
+      min: num(a.min, HOTWIRE_ARC.min), max: num(a.max, HOTWIRE_ARC.max) };
+  }
 
   /** The engine's numbers for these params: SR.tuning (BALANCE), then the skin's and run params. */
   function opts(params) {
@@ -40,6 +48,7 @@
       mMin: m[0], mMax: m[1], autoM: tune('jobs.hustle.auto', 1.0),                  // B-05 hustle.m
       speed: tune('jobs.hustle.pitch.needleDegSec', 180),                            // GDD §6.5: 180°/s ...
       speedStep: tune('jobs.hustle.pitch.needlePerStep', 30),                        // ... + 30°/s per step
+      assistSpeed: tune('world.assist.speed', ASSIST_SPEED), assistArc: tune('world.assist.sweet', ASSIST_ARC),   // B-15 Assist
     };
     if (mode === 'grade') {   // B-05 hustle.pitch: 5 presses; arc min(0.40, 0.08 + CHA/4000) of the ring; m = 0.7 + 0.12 a hit
       o.presses = tune('jobs.hustle.pitch.presses', 5);
@@ -50,7 +59,7 @@
     } else {                  // B-26 junker.ring: 3 hits start the car, 3 misses trip the alarm
       o.hits = tune('street.junker.ring.hits', 3);
       o.misses = tune('street.junker.ring.misses', 3);
-      o.arc = HOTWIRE_ARC;
+      o.arc = hotwireArc(tune);
     }
     ['presses', 'hits', 'misses', 'base', 'perHit', 'mMin', 'mMax', 'speed', 'speedStep'].forEach(function (k) {
       if (typeof params[k] === 'number') o[k] = params[k];
@@ -118,8 +127,8 @@
     };
     st.arcC = (st.angle + LEAD_MIN + host.fx.float(0, LEAD_SPAN)) % 360;
 
-    function speed() { return (o.speed + o.speedStep * o.step) * (host.assist ? ASSIST_SPEED : 1); }
-    function width() { return Math.min(ARC_CAP, arc0 * (host.assist ? ASSIST_ARC : 1)); }
+    function speed() { return (o.speed + o.speedStep * o.step) * (host.assist ? o.assistSpeed : 1); }
+    function width() { return Math.min(ARC_CAP, arc0 * (host.assist ? o.assistArc : 1)); }
 
     function statusText() {
       if (o.mode === 'unlock') return host.text('mg.frame.tr.statusUnlock', { hits: st.hits, needHits: o.hits, misses: st.misses, maxMisses: o.misses });
@@ -313,7 +322,8 @@
     opts: opts,
     arcDeg: arcDeg,
     grade: function (params, hits) { return grade(opts(params), hits); },
-    ASSIST_SPEED: ASSIST_SPEED,
-    ASSIST_ARC: ASSIST_ARC,
+    /** Assist's needle factor and sweet-arc factor (world.assist.speed / .sweet; 0.7 and 1.5 without the row). */
+    get ASSIST_SPEED() { return SR.minigame.tune ? SR.minigame.tune('world.assist.speed', ASSIST_SPEED) : ASSIST_SPEED; },
+    get ASSIST_ARC() { return SR.minigame.tune ? SR.minigame.tune('world.assist.sweet', ASSIST_ARC) : ASSIST_ARC; },
   });
 })();

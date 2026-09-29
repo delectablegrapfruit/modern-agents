@@ -12,6 +12,14 @@ check modifiers, news weights, Duel skins, health) follow the tuning protocol B-
 |---|---|---|
 | B-01 … B-31 | as named in each heading | W1-R transcribes every table into `js/data/tuning.js`; a missing value is a W1-R bug |
 
+**Wave-1 integration.** Rows marked *(w1)* were added at the wave-1 integration: numbers the GDD
+states that the kernel, the engines and the world needed as keys (CONTRACT D55). `js/data/tuning.js`
+has them under the same names; a module that still holds a named fallback of the same value
+switches to the row. Where `tuning.js` names a key differently from an older BALANCE key, the table
+gives the tuning name (the old one in brackets). Engine and presentation limits (the save's
+retention and budget, the stat-check clamp, the inbox cap, the stamp threshold, the mix, the render
+budgets) are named constants in their files, not tuning (CONTRACT D49).
+
 ## B-01 Time — `tuning.time`
 
 | Key | Value | Notes |
@@ -34,6 +42,9 @@ check modifiers, news weights, Duel skins, health) follow the tuning protocol B-
 | `repeatHoldMs` | 350 | hold Enter / A repeat interval (only `repeatable` actions; setting `holdRepeat`) |
 | `weekStart` | 0 | day 1 is Monday (weekday 0); `week = floor((day - 1) / 7)` for every weekly limit |
 | `marketNights` | [0,1,2,3,4] | the nights that end Mon-Fri tick the market (decided by the ended day's weekday) |
+| `weekdays` *(w1)* | mon, tue, wed, thu, fri, sat, sun | the names conditions accept (`weekday(list)`) |
+| `skateContestMin` *(w1)* | 120 | watching the Sunday skate contest (the `skateContestWindow` row's "120 min") |
+| `buzzDecayMin` *(w1)* | 120 | Buzz -1 each time an action's time passes a multiple of 120 min on the clock (GDD §4.2) |
 
 ## B-02 New character — `tuning.start`
 
@@ -46,6 +57,8 @@ check modifiers, news weights, Duel skins, health) follow the tuning protocol B-
 | `hpMaxBase` | 15 (HP max = 15 + STR always, orig; only STR gains change it) |
 | `statCap` | 999 |
 | `karmaRange` | -100..+100 |
+| `heatRange` *(w1)* | [0, 100] (GDD §4.2) |
+| `buzzRange` *(w1)* | [0, 5] (GDD §4.2) |
 | `nameMax` | 16 characters |
 | `cheat` | name `PAPERGOD` → STR/INT/CHA 555, cash 10,000, name "Totally Legit", achievements off |
 | `startJob` | Fry Cook (hired, orig) |
@@ -87,9 +100,11 @@ check modifiers, news weights, Duel skins, health) follow the tuning protocol B-
 | `degree.bonusStat` | +25 once |
 | `degree.perGain` | +1 on every later gain of that stat, except nightly furniture |
 | `degree.ceremonyMin` | 60 |
+| `degree.tracks` *(w1)* | biz → INT, kin → STR, thr → CHA (the degree bonus's track → stat map) |
 | `uofsKarma` | +1 per U of S activity (orig), max +3 per day |
 | `winded.threshold` | HP < 25 % of HP max |
 | `winded.factor` | 0.5 (floor, min 1) |
+| `winded.min` *(w1)* | 1 (the minimum of a Winded gain); Winded is judged after the action's own HP cost |
 | `nap` | 120 min, +15 % of HP max (floor), 1 per day, home only |
 
 **Value-of-an-hour check** (points per hour → cost per point): study 1.0 → $0; class 2.0 → $5
@@ -189,7 +204,10 @@ In office you keep your NLI rank and may still work shifts.
 | `weeklyBonus` | Friday night: exec 10 %, vp 20 %, ceo 30 % of the week's NLI wages (Mon-Fri); `weekNliWages` and `weekNliShifts` reset on Monday morning |
 | `hustle.m` | 0.7..1.3; Auto exactly 1.0; rain +20 % tips on `orderup` (m × 1.2, cap 1.3) |
 | `hustle.skins` | cook, manager → `orderup`; janitor, mail → `sortit`; sales → `pitch` step 0; exec → `pitch` step 1; vp, ceo → `boardroom` |
-| `hustle.orderup` / `sortit` | m = clamp(0.7 + 0.075 × correct - 0.1 × wrong, 0.7, 1.3); 30 s; tickets every 6 s → 3 s; sortit counts 1 correct per 3 items |
+| `hustle.orderup` / `sortit` | m = clamp(0.7 + 0.075 × correct - 0.1 × wrong, 0.7, 1.3); 30 s; tickets every 6 s → 3 s; sortit counts 1 correct per 3 items: on the belt `itemsPerCorrect` (3) items arrive per ticket interval, one every `ticketEverySec / 3` = 2 s → 1 s (so a clean round with streaks reaches m ≈ 1.2-1.3) |
+| `hustle.orderup.items` *(w1)* | [2, 5] items per ticket (GDD §6.5) |
+| `hustle.sortit.streak` *(w1)* | { step: 0.1, max: 1.5, every: 3 }: every 3 right sorts in a row the multiplier steps ×1.1, up to ×1.5 (GDD §6.5) |
+| `hustle.sortit.travelSec` *(w1)* | [3.2, 2.2]: a belt item takes 3.2 s end to end at the start of the round, 2.2 s at its end |
 | `hustle.pitch` | 5 presses; needle 180 + 30 × step °/s; sweet arc = min(0.40, 0.08 + CHA/4000) of the ring; m = 0.7 + 0.12 per hit |
 | `rating` | EMA α 0.3, start 1.0; VP and CEO need ≥ 0.9 |
 | `shiftEventChance` | 0.25 |
@@ -357,15 +375,18 @@ workstation 7,000, library 11,000, homegym 13,250, lounge 15,500).
 | `stockScare` | event: all tickers -5 %, then +5 % the next market night |
 
 **EV check** (one "up" tip traded at the cap, buy before and sell after the market night):
-EV ≈ cap × (rel × 4 % - (1 - rel) × 2 % - 1 %) - $10. Half the tips point down and cannot be
-traded for profit (no shorts), so the **EV per market day is about half** the EV per up tip.
+EV ≈ cap × (rel × 4.08 % - (1 - rel) × 1.98 % - 1 %) - $10. The shock is a log return (`tick`), so
+a true 3-5 % tip moves the price by e^s - 1 (4.08 % on average) and a false one by 1 - e^(-s/2)
+(1.98 %). Half the tips point down and cannot be traded for profit (no shorts), so the **EV per
+market day is about half** the EV per up tip. (The table was corrected at the wave-1 integration:
+the old 4 % / 2 % rounding gave $50 at INT 100, a small difference of large terms.)
 
 | INT | reliability | cap | EV per up tip | EV per market day |
 |---|---|---|---|---|
-| 100 | 0.55 | 20,000 | $50 | $25 |
-| 250 | 0.625 | 35,000 | $250 | $125 |
-| 500 | 0.75 | 60,000 | $890 | $445 |
-| 999 | 0.75 | 109,900 | $1,640 | $820 |
+| 100 | 0.55 | 20,000 | $60 | $30 |
+| 250 | 0.625 | 35,000 | $275 | $135 |
+| 500 | 0.75 | 60,000 | $930 | $465 |
+| 999 | 0.75 | 109,900 | $1,715 | $855 |
 
 ## B-11 Crime — `tuning.crime`
 
@@ -506,6 +527,9 @@ day with overtime, never a multiple of it. At CHA 150 (the earliest tour, as an 
 | `ring.hp` | 150 + 1.1 × STR + 30k |
 | `ring.purse` | 500 + 250k |
 | `goons` | Red's goons: a forced fight at ladder n = 6, twice in a row (B-26 `red.credit`) |
+| `quirks.wobbly.miss` *(w1)* | 0.30: Wobbly Pete's attacks miss 30 % of the time (GDD §6.3) |
+| `quirks.pyro.fireballOdds` *(w1)* | 2: The Professor's fireball odds ×2 |
+| `quirks.iron.armor` *(w1)* | 0.30: Iron Irma takes 30 % less damage |
 
 Ladder reference (n, HP range, P): 1: 20-24, 15 · 3: 44-56, 33 · 6: 80-104, 60 · 9: 116-152, 87 ·
 12: 152-200, 114.
@@ -595,6 +619,7 @@ Units are **board pixels**: logical pixels of the minigame play area (the board 
 | `practice` | 30 min, +1 CHA the first game each day, no stake |
 | `match` | 60 min; at most 3 a day (`daily.dartsMatches`); stake 10-200; Rookie 160 (pays 2×), Regular 230 (2×), Shark 320 (3×); you win on score ≥ target |
 | `auto` | 10 throws at the centre, each at a uniformly random time (the wobble's value there); sampled |
+| `autoWindowSec` *(w1)* | 600: the Auto's random throw times are drawn from [0, 600) s, much longer than the wobble's periods |
 
 Reference (Auto, Buzz 0, 10⁵ simulated games): INT 100: mean 145, P(≥ 160) 0.25; INT 300: mean 166,
 P(≥ 160) 0.50, P(≥ 230) 0.01; INT 600: mean 187, P(≥ 160) 0.83, P(≥ 230) 0.08, P(≥ 320) ≈ 0. Shark is
@@ -624,13 +649,25 @@ won only by timing the throw.
 | `teeter` | 150 ms |
 | `fall` | 1.5 s total (drop 0.55, catch 0.5, land 0.45); skippable after 0.5 s; -10 HP (orig; Hard Landing -5); no time (orig); land ≥ 64 u inside |
 | `carTow` | $100 forced charge at night step 10; the car returns to its home lot |
-| `carHit` | -10 HP (orig), knockdown 1.14 s (orig 40 ticks), voicemail next morning (1 of 3), 20 % with a settlement 50 + rand(0..150) |
+| `carHit` | -10 HP (orig), knockdown 1.14 s (orig 40 ticks), voicemail next morning (1 of `voicemails` = 3; night step 11 on `flags.carHitVm`, once however many hits), 20 % with a settlement 50 + rand(0..150) credited as income `prize` |
 | `carCrash` | -5 HP each, bounce |
 | `cab` | $15, 30 min, phone; allowed at 24:00 to home |
 | `windGust` | 40 u/s outward within 48 u of an unrailed edge, 2 s bursts, 0.5 s warning; off with Assist › No gusts |
 | `safeEdges` | Assist › Safe edges: unrailed edges bounce like railings (no falls; fall achievements and Ori's lines off) |
 | `navGrid` | 32 u cells, 40 u edge margin; "reachable" = within 32 u of a connected cell's centre |
 | `scrapEdgeMin` | 64 u from any unrailed edge |
+| `skateAccel` *(w1)* | 0.25 s: skateboard and Pro Deck reach top speed (GDD §3.8) |
+| `carRange` *(w1)* | 64 u: C / Y enters or leaves your car within 64 u of it (GDD §3.8) |
+| `carRadius` / `carLength` *(w1)* | 26 / 96 u: a car's collision capsule (a 96 × 52 car) |
+| `driveZoomEase` *(w1)* | 0.6 s: driving eases the zoom one level out (GDD §3.7) |
+| `teeterAssistMs` *(w1)* | 300: Assist's longer teeter grace (UI §8) |
+| `navCacheSec` *(w1)* | 1: nav paths are cached for 1 s (ARCHITECTURE §8.2) |
+| `assist` *(w1)* | { speed: 0.7, sweet: 1.5, wobble: 0.5 }: GDD §6.5 Assist for the minigames: -30 % speed, +50 % sweet spots, half the wobble (the same ×0.5 as B-14f) |
+
+**Field names in `tuning.world` are frozen** (CONTRACT §3.6): `surfaceDrive.cap`, `park.range`,
+`door.trigger.offset`, `camera.lookAhead`, `projection.k`, `fall.total`, `fall.skipAfter`,
+`carHit.knockdown` (the rows above give their values). The world reads every key through
+`SR.world.cfg`, and `tests/node/invariants.test.cjs` fails if one stops resolving.
 
 ## B-16 Difficulty — `tuning.difficulty`
 
@@ -678,6 +715,11 @@ won only by timing the throw.
 | `mandatoryHats` | +1 CHA a night (night step 9) |
 | `toughOnCrime` | Heat -25 a night (replaces the normal decay); police ×2 |
 | `seizeBank` | +250,000 once; savings interest 0 forever; -30 karma |
+| `publicLibrary.study` *(w1)* | 3: Study gives +3 INT while the Public Library Act is active (GDD §4.17) |
+| `universalFries.karma` *(w1)* | 10: the Universal Fries decree's karma (GDD §4.17) |
+| `cityNameMax` *(w1)* | 16 characters: Rename the City (a TextField, like `start.nameMax`) |
+
+Decree ids are the camelCase keys above (`casinoLevy`, `seizeBank`, ...; CONTRACT D54).
 
 Example: lowest stat 700, karma +60, $200k: 30 + 5 + 6 + 25 = 66 %; the rival alone takes about 14
 points over 7 nights, so doing nothing risks a loss (52 ± 5). Lowest stat 666, karma +25, $50k: 30
@@ -689,6 +731,9 @@ door-knock a day (+4.66) end near 59.
 
 Net worth = cash + bank + CD principal + stocks at market price - loan - lien + homes × 0.9 +
 furniture prices × 0.25 + (a bought sports car, `cars.sports.bought`) 30,000.
+
+Tuning names: the floors are `endgame.ranks` (index 0 = below 0), the karma columns
+`endgame.column` (`{ good: 20, evil: -20 }`).
 
 | Net worth ≥ | Neutral | Good (karma > +20) | Evil (karma < -20) |
 |---|---|---|---|
@@ -727,10 +772,12 @@ Markov chain for tomorrow (rows = today):
 | Fog | .50 | .30 | .10 | .10 | .00 |
 | Windy | .50 | .30 | .10 | .00 | .10 |
 
-Day 1 is Clear. Forecast: correct with 0.8, otherwise a random other state; revealed for the day
+Day 1 is Clear. Forecast (`weather.forecastAccuracy`): correct with 0.8, otherwise a random other
+state; revealed for the day
 by TV News, The Daily Fold, Market Watch or the binoculars (`daily.forecastSeen`). Intra-day: at
 12:00 and 18:00, 30 % to move one step along the same chain; any Rain sets `todayHadRain`. Storm:
-15 % of Rain days. The only switch is the feature flag `weather` (off in P0: always Clear).
+15 % of Rain days. The only switch is the feature flag `weather` (off in P0: always Clear; the
+`weather` condition then reads Clear too).
 
 | Calendar key | Value |
 |---|---|
@@ -919,6 +966,7 @@ Every street interaction is an action in `data/buildings/street.js` (`building: 
 | `junker.hotwire` | INT ≥ 350: the car is yours, 60 min, -5 karma, +15 Heat (new); INT < 350: the attempt fails, 60 min (orig) | P0 |
 | `junker.ring` | INT 200-349 (Tinkerer: 150-349): the Timing Ring `hotwire` instead (60 min, needs HP > 45): 3 hits start the car (then as above); each miss -15 HP; 3 misses trip the alarm (+10 Heat, no car) | P1 `arcs` |
 | `shirt` | $20 at the pawn, stack 1, shown once Harold asks | P1 `arcs` |
+| `junker.ring.arc` *(w1)* | { base: 20, perInt: 0.2, from: 200, min: 8, max: 70 }: the hotwire sweet arc clamp(20° + (INT - 200) / 5, 8°, 70°) (GDD §6.5); "up to 5 presses" is `hits + misses - 1` | P1 `arcs` |
 
 ## B-27 Park and civic — `tuning.park`, `tuning.civic`
 
@@ -1003,6 +1051,9 @@ Check ids: `holdup.store.{str,cha,int}`, `holdup.bank.{str,cha,int}`, `police.ta
 Relaxed deliberately does **not** touch haggling, the tour hook, the other Duels, chess, the
 campaign, shift events, fights, the casino or hotwiring.
 
+The clamp (0.05..0.95) and D ≥ 1 are the formula of GDD §4.3, named constants in
+`js/rules/check.js`, not a tuning table (CONTRACT D49).
+
 ## B-29 News and the daily log — `tuning.news`
 
 `log` entries carry these weights; the morning headline is the heaviest entry of yesterday's log
@@ -1027,7 +1078,9 @@ At most 20 entries a day.
 | `haroldRepaid`, `kidGood` | 52 | | `redTurnedIn` | 48 |
 | `storeRobbery`, `busted` | 50 | | | |
 
-Headline keys: `news.head.<kind>` (arrays of templates; P0 20 templates in all, P1 60).
+Headline keys: `news.head.<kind>` (arrays of templates; P0 20 templates in all, P1 60). The log's
+daily cap is `logMax` (20); the inbox cap of 150 messages is the save retention rule of
+ARCHITECTURE §15, a constant shared by `effects.js` and `save.js` (CONTRACT D49).
 
 ## B-30 Duel skins — `tuning.duel`
 
@@ -1053,7 +1106,7 @@ Force > Facts) has D × 2; the third has D.
 | `tooHurt` | a voluntary action with worst-case HP cost c requires HP > c |
 | `secondWind` | perk: HP 0 → 1, once a day (`daily.secondWind`) |
 | `hospital.bill` | Standard: max(50, floor(0.10 × (cash + bank))), a forced charge; Relaxed: 0 |
-| `hospital.hp` | floor(0.5 × hpMax), set (not added) |
+| `hospital.hpPct` (was `hospital.hp`) | 0.5: HP = floor(0.5 × hpMax), set (not added) |
 | `hospital.wake` | 720 (12:00) the next day, outside the home door you live at |
 | `hospital.night` | the GDD §4.7 hospital subset (economy, no furniture gains) |
 | `hardcore` | HP 0 → death (after Second Wind) |

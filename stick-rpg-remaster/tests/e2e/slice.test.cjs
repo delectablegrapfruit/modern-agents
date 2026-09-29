@@ -1,16 +1,21 @@
 // tests/e2e/slice.test.cjs — owner: W1-K (lead). The grey-box vertical slice (BUILD_PLAN §3.12),
-// the wave-1 exit gate. Each step names the modules it needs; a step whose modules have not landed
-// is reported as pending (skipped), so the kernel's own steps run from M1 on and the lead's
-// integration run turns every step on:
-//   node tests/e2e/slice.test.cjs            pending steps are listed, not failed
-//   node tests/e2e/slice.test.cjs --strict   (or SLICE_STRICT=1) a pending step fails the run
+// the wave-1 exit gate. Each step names the modules it needs. Every step has landed since the
+// wave-1 integration, so a step whose modules are missing now fails (strict is the default: a
+// replacement that drops a needed id must not pass run-all as "pending"):
+//   node tests/e2e/slice.test.cjs             strict: a pending step fails the run (--strict and
+//                                             SLICE_STRICT=1 still accepted)
+//   node tests/e2e/slice.test.cjs --lenient   (or SLICE_STRICT=0) pending steps are listed, not failed
 // The action ids and numbers are those of BUILD_PLAN §3.12 and BALANCE B-06 / B-05; the lead
-// adjusts ids here if the placeholder data names them differently.
+// adjusts ids here if the placeholder data names them differently. Since the wave-1 integration the
+// city, the home and McSticks rows, the report scene and the hospital's return to the city are
+// wave-1 slice placeholders (js/scenes/{city,report,hospital}.js, js/data/buildings/{home,mcsticks}.js;
+// each file says which wave-2 package replaces it); this suite stays green through those
+// replacements, so it checks the player-visible flow, not the placeholders' DOM.
 'use strict';
 const path = require('path');
 const h = require('../harness.cjs');
 
-const STRICT = process.argv.includes('--strict') || process.env.SLICE_STRICT === '1';
+const STRICT = !(process.argv.includes('--lenient') || process.env.SLICE_STRICT === '0');
 const SHOTS = path.join(h.ROOT, 'shots', 'W1-K-M1');
 
 (async () => {
@@ -55,6 +60,7 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W1-K-M1');
     const ui = await t.ui();
     const rows = JSON.stringify(ui.rows) + JSON.stringify(ui.card || {});
     T.ok(/messages/i.test(rows) && /sleep/i.test(rows), 'the card lists Messages and Sleep', ui.rows);
+    await t.step(1);
     await t.shot(path.join(SHOTS, 'slice-apartment.png'));
   });
 
@@ -79,17 +85,55 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W1-K-M1');
     const fries = await t.act('mcsticks.fries');
     const s1 = await t.state();
     T.ok(fries.ok, 'Fries runs', fries.reason);
-    T.eq([s1.money.cash - s0.money.cash, s1.stats.hp - s0.stats.hp, s1.clock.min - s0.clock.min], [-12, 20, 30], 'Fries: -$12, +20 HP, 30 min (B-06)');
+    // B-06 lists fries at $12; a Fry Cook holds a McSticks job, so B-28a's employee row takes 25 %
+    // off: $9 on day 1 (lead decision at the wave-1 integration; BUILD_PLAN §3.12).
+    T.eq([s1.money.cash - s0.money.cash, s1.stats.hp - s0.stats.hp, s1.clock.min - s0.clock.min], [-9, 20, 30], 'Fries: -$9 (the employee discount), +20 HP, 30 min (B-06, B-28a)');
     const work = await t.act('mcsticks.work', { variant: 'full' });
     const s2 = await t.state();
     T.ok(work.ok, 'Work Full runs', work.reason);
     T.eq([s2.money.cash - s1.money.cash, s2.clock.min - s1.clock.min, s2.stats.karma - s1.stats.karma], [42, 360, 1], 'Work Full: +$42, 6 h, +1 karma (B-05)');
+    await t.step(1);
+    await t.shot(path.join(SHOTS, 'slice-mcsticks.png'));
   });
 
-  await step('walk home → Sleep → a report with sections', ['SR.rules.night.run', "SR.reg.action['home.sleep']"], async () => {
-    const rep = await t.night('sleep');
-    T.ok(rep && Array.isArray(rep.lines) && rep.lines.length > 0 && rep.day === 2, 'the night runs and the report has lines', rep && rep.day);
+  // Walk home on the real nav, then click the home card's Sleep row: the night runs, the report
+  // scene shows every line of its Report, and its button starts the next day in the city (the home
+  // rows and the report scene are wave-1 slice placeholders until W2-Home).
+  await step('walk home → Sleep → a report with sections', ['SR.rules.night.run', "SR.reg.action['home.sleep']", 'SR.reg.scene.report', 'SR.reg.scene.city', 'SR.world.player.walkTo'], async () => {
+    await t.press('back');
+    await t.step(2);
+    T.eq(await t.scenes(), ['city'], 'Leave: out of McSticks into the city');
+    // Click-to-walk to Paperview: the real nav routes to its door and walking in resolves it.
+    const walk = await page.evaluate(() => {
+      const SR = window.SR, d = SR.world.geometry.doorById.home_apt;
+      const min = SR.state.clock.min;
+      SR.world.player.walkTo(d.x, d.y - 40);
+      let n = 0;
+      while (n < 60 * 30 && SR.scenes.stack()[0] === 'city') { SR.loop.step(1); n++; }
+      const top = SR.scenes.top();
+      return { n, door: SR.world.doors.last && SR.world.doors.last.id, top: top && top.id, params: top && top.params, free: SR.state.clock.min === min };
+    });
+    T.eq([walk.door, walk.top, walk.params && walk.params.id, walk.params && walk.params.params], ['home_apt', 'building', 'home', { homeId: 'apt', mode: 'live' }],
+      'walking home enters Paperview in Live mode (' + walk.n + ' steps)');
+    T.ok(walk.free, 'walking is free (no minutes)');
+    await page.evaluate(() => { window.__days = []; window.SR.events.on('day:started', (p) => window.__days.push(p.day)); });
+    // The Sleep row itself (a real click on the card): the night runs and the report scene shows it.
+    await t.clickUI('row-home.sleep');
+    await t.step(2);
+    T.eq(await t.scenes(), ['building', 'report'], 'Sleep opens the report over the home card');
+    const rep = await page.evaluate(() => { const top = window.SR.scenes.top(); return top && top.params ? JSON.parse(JSON.stringify(top.params.report || null)) : null; });
+    T.ok(rep && Array.isArray(rep.lines) && rep.lines.length > 0 && rep.day === 2 && rep.kind === 'sleep', 'the night ran: the report of day 2 has lines', rep && rep.day);
     T.ok(new Set(rep.lines.map((l) => l.section)).size >= 1, 'grouped in sections');
+    const lines = await page.evaluate((ls) => ls.map((l) => window.SR.text(l.key, l.vars)), rep.lines);
+    const text = await t.uiText();
+    T.ok(lines.every((x) => text.indexOf(x) >= 0), 'every line of the Report is on the page', lines.filter((x) => text.indexOf(x) < 0));
+    await t.shot(path.join(SHOTS, 'slice-report.png'));
+    await t.press('confirm');
+    await t.step(2);
+    const s = await t.state();
+    const door = await page.evaluate(() => window.SR.world.spawnPoint('homeDoor'));
+    T.eq([await t.scenes(), await page.evaluate(() => window.__days)], [['city'], [2]], 'its button starts day 2 (day:started) in the city');
+    T.eq([s.player.x, s.player.y], [Math.round(door.x), Math.round(door.y)], 'outside the home door');
   });
 
   await step('Save → reload → equal state', ['SR.rules.state.create'], async () => {
@@ -110,15 +154,37 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W1-K-M1');
     const s = await t.state();
     T.ok(r.ok !== false, 'world.fall runs');
     T.eq([s.stats.hp - hp0, s.clock.min - min0], [-10, 0], 'a fall costs 10 HP and no time');
+    // And for real: walk south off the Main Street south end in the city; the world plays the
+    // teeter and the Fold Rescue and asks the rules for the cost (CONTRACT §15.1 SR.world.fall).
+    await t.goto('city');
+    await t.teleport(2489, 4040);
+    const walk = await page.evaluate(() => {
+      const SR = window.SR, F = SR.world.fall, last0 = F.last, s = SR.state, hp = s.stats.hp, min = s.clock.min;
+      let n = 0, fell = false;
+      SR.input.inject('down', true);
+      while (n < 180 && !F.active()) { SR.loop.step(1); n++; }
+      SR.input.inject('down', false);
+      while (n < 600 && F.active()) { fell = fell || F.phase === 'drop' || F.phase === 'catch' || F.phase === 'land'; SR.loop.step(1); n++; }
+      return { fell, landed: F.last !== last0 && !!F.last, dhp: SR.state.stats.hp - hp, dmin: SR.state.clock.min - min, scene: SR.scenes.stack(), n };
+    });
+    T.ok(walk.fell && walk.landed, 'walking off the south end plays the fall and lands the player (' + walk.n + ' steps)', walk);
+    T.eq([walk.dhp, walk.dmin, walk.scene], [-10, 0, ['city']], 'the real fall costs 10 HP and no time, and the city carries on');
   });
 
-  await step('HP 0 → the hospital night → 12:00 the next day outside Paperview', ['SR.rules.health.down'], async () => {
+  // The hospital scene is a stub until W2-Transit; the placeholder player:down listener brings the
+  // city back at the afterHospital spawn (the home door).
+  await step('HP 0 → the hospital night → 12:00 the next day outside Paperview', ['SR.rules.health.down', 'SR.reg.scene.city'], async () => {
+    await t.goto('city');
     await t.set({ stats: { hp: 5 }, mode: { difficulty: 'standard' } });
     const day0 = (await t.state()).clock.day;
     const d = await t.down('fall');
+    await t.step(2);
     const s = await t.state();
+    const door = await page.evaluate(() => window.SR.world.spawnPoint('afterHospital'));
     T.eq(d && d.outcome, 'hospital', 'Standard: the hospital outcome');
     T.eq([s.clock.day, s.clock.min], [day0 + 1, 720], 'the city resumes the next day at 12:00');
+    T.eq([await t.scenes(), s.player.x, s.player.y], [['city'], Math.round(door.x), Math.round(door.y)], 'in the city, outside Paperview (afterHospital)');
+    await t.shot(path.join(SHOTS, 'slice-hospital.png'));
   });
 
   await step('a test sub-screen opens from a card row', ['SR.ui.card.open', 'SR.ui.subhost.create', 'SR.reg.scene.building'], async () => {
@@ -156,9 +222,14 @@ const SHOTS = path.join(h.ROOT, 'shots', 'W1-K-M1');
     T.eq(await page.evaluate(() => window.SR.input.contexts()), [], 'and popped with the frame');
   });
 
-  await step('the sound test plays', ['SR.audio.music', 'SR.reg.song.paper_sky'], async () => {
+  // A real key press unlocks the audio context (a headless page starts locked, as a browser does
+  // before the first gesture); the song then plays, not only waits (SR.audio.stats, CONTRACT §14.4).
+  await step('the sound test plays', ['SR.audio.music', 'SR.audio.stats', 'SR.reg.song.paper_sky'], async () => {
+    await t.key('Shift');
+    await page.waitForFunction(() => window.SR.audio.state() === 'running', null, { timeout: 5000 }).catch(() => {});
     await page.evaluate(() => { window.SR.audio.music('paper_sky'); });
-    T.ok(true, 'SR.audio.music(paper_sky) runs');
+    const m = await page.evaluate(() => ({ state: window.SR.audio.state(), song: window.SR.audio.stats().music.song }));
+    T.eq([m.state, m.song], ['running', 'paper_sky'], 'the audio unlocks at a key press and paper_sky plays');
   });
 
   T.section('result');

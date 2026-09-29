@@ -163,8 +163,10 @@
    * Result shakes the origin, plays the error sound and shows the reason as a warning toast.
    * @param {object} res a Result of SR.act
    * @param {HTMLElement=} origin the row (or control) that ran it
-   * @param {{silent: boolean, flash: boolean, repeat: boolean}=} opts flash false: the caller
-   *   flashes the row itself; repeat: a hold-repeat run (stat stamps are coalesced)
+   * @param {{silent: boolean, flash: boolean, hold: {statShown: boolean}, repeat: boolean}=} opts
+   *   flash false: the caller flashes the row itself; hold: the record of a hold-to-repeat, shared
+   *   by its runs: stat stamps show until one has shown in that hold, later ones are coalesced
+   *   (CONTRACT D47); repeat without a hold: a repeat run whose stat stamps are coalesced
    * @returns {object} res
    */
   function feedback(res, origin, opts) {
@@ -180,22 +182,30 @@
     flyChips(res.deltas, origin && origin.main ? origin.main : origin);
     (res.toasts || []).forEach(function (x) { SR.ui.toast({ key: x.key, vars: x.vars, kind: x.kind || 'info' }); });
     // Stamps: the rules' own (a stat gain ≥ 2 raises stamp.stats.<stat>; promotions, degrees ...),
-    // plus a stat stamp derived from the deltas when the rules raised none. During a hold-repeat
-    // only the first stat stamp shows (a repeat stops at stamps, GDD §4.4; stat stamps would stop
-    // every training repeat after one run, so they are coalesced instead: docs/requests/W1-D.md).
+    // plus a stat stamp derived from the deltas when the rules raised none. A repeat stops at any
+    // stamp except a stat-gain stamp (GDD §4.4, CONTRACT D47): during a hold the first run that
+    // gains ≥ 2 stamps it and later runs' stat stamps are coalesced (the chips and floats still
+    // show every gain), so holding Enter on Study keeps training.
+    var hold = opts.hold || null;
+    var statOk = hold ? !hold.statShown : !opts.repeat;
+    var statShown = false;
     var seen = {};      // stat keys the rules already stamped (whatever their wording)
     (res.stamps || []).forEach(function (x) {
       var m = /^stamp\.stats\.(\w+)$/.exec(x.key || '');
       if (m) seen[m[1]] = true;
-      if (m && opts.repeat) return;
+      if (m && !statOk) return;
+      if (m) statShown = true;
       SR.ui.stamp({ text: t(x.key, x.vars), kind: x.kind || (m ? statStampKind(m[1]) : 'primary'), stat: !!m });
     });
     (res.deltas || []).forEach(function (d) {
       if (d && d.kind === 'stat' && d.n >= STAT_STAMP_MIN && SR.ui.STATS.indexOf(d.key) >= 0 && !seen[d.key]) {
         seen[d.key] = true;
-        if (!opts.repeat) SR.ui.stamp({ text: t('ui.stamp.stat', { n: d.n, stat: t('ui.statLong.' + d.key) }), kind: statStampKind(d.key), stat: true });
+        if (!statOk) return;
+        statShown = true;
+        SR.ui.stamp({ text: t('ui.stamp.stat', { n: d.n, stat: t('ui.statLong.' + d.key) }), kind: statStampKind(d.key), stat: true });
       }
     });
+    if (hold && statShown) hold.statShown = true;
     var played = false;
     (res.sfx || []).forEach(function (name) { if (D().sfx(name)) played = true; });
     if (!played) {
@@ -451,7 +461,13 @@
       feedback(res, null);
       if (after) after(res);
       if (C) refreshRows(true);
-    });
+    }, function (e) { minigameRefused(open.minigame, e); });
+  }
+
+  /** A minigame run that rejected (a skin still a stub, a round already open): a toast, no unhandled rejection. */
+  function minigameRefused(id, e) {
+    SR.util.warnOnce('ui.minigame.' + id, 'SR.ui.card: minigame "' + id + '" did not run: ' + (e && e.message));
+    SR.ui.toast({ key: 'ui.minigamePending', kind: 'warning', id: 'toast-minigame' });
   }
 
   // ------------------------------------------------------------------ the building card controller
@@ -650,6 +666,8 @@
 
   /**
    * Runs a row once (the first press or a repeat).
+   * @param {{repeat: boolean, hold: object}=} opts repeat: no spend confirm (a repeat or R);
+   *   hold: the hold-to-repeat record its feedback shares (a stat stamp shows once per hold)
    * @returns {boolean|string} true when it ran, false when refused or hidden, 'pending' while a
    *   confirm or a sub-screen is open
    */
@@ -682,13 +700,14 @@
         return 'pending';
       }
     }
-    return commit(r, params, opts.repeat);
+    return commit(r, params, opts.hold);
   }
 
-  function commit(r, params, repeat) {
+  /** Runs a row's action and plays its feedback. @param {object=} hold the hold's record (feedback) */
+  function commit(r, params, hold) {
     var res = act(r.def.id, params);
     if (C && C.hooks.onResult) { try { C.hooks.onResult(res, r.def); } catch (e) { console.error(e); } }
-    feedback(res, r.el, { silent: r.def.silent, flash: false, repeat: !!repeat });
+    feedback(res, r.el, { silent: r.def.silent, flash: false, hold: hold || null });
     // R re-runs the card's last action only if that action is repeatable (ARCHITECTURE §11), so
     // a non-repeatable run (a crime, a confirm) replaces the last action instead of being skipped.
     if (res && res.ok && C) C.last = { id: r.def.id, variant: r.variant };
@@ -732,16 +751,17 @@
     Promise.resolve(SR.minigame.run(hs.skin, runParams)).then(function (result) {
       if (!C || !result) return;
       commit(r, assign(params, { m: result.m, hustle: result }));
-    }, function (e) { SR.util.warnOnce('ui.hustle.' + hs.skin, 'SR.ui.card: hustle "' + hs.skin + '" failed: ' + (e && e.message)); });
+    }, function (e) { minigameRefused(hs.skin, e); });
   }
 
   /** A press on a row: run it, and start hold-to-repeat for a repeatable one. */
   function press(r, source) {
     if (!C) return false;
     if (SR.ui.stamp.swallow()) return false;
-    var ok = runRow(r, {});
-    if (ok === true && isRepeatable(r.def) && D().setting('game.holdRepeat') !== false && (source === 'input' || source === 'pointer')) {
-      C.hold = { id: r.id, t: 0, source: source };
+    var rec = { statShown: false };   // the hold's record: its first run's stat stamp shows, later ones coalesce
+    var ok = runRow(r, { hold: rec });
+    if (ok === true && C && isRepeatable(r.def) && D().setting('game.holdRepeat') !== false && (source === 'input' || source === 'pointer')) {
+      C.hold = { id: r.id, t: 0, source: source, rec: rec };
     }
     return ok;
   }
@@ -767,7 +787,7 @@
     while (C && C.hold && C.hold.t + 1e-6 >= iv) {
       C.hold.t -= iv;
       var r = rowById(C.hold.id);
-      if (!r || runRow(r, { repeat: true }) !== true) { if (C) C.hold = null; break; }
+      if (!r || runRow(r, { repeat: true, hold: C.hold.rec }) !== true) { if (C) C.hold = null; break; }
       if (blocked()) { C.hold = null; break; }
     }
   }
@@ -821,7 +841,11 @@
     if (ev.down === false) return false;
     // Any key completes the greeting's typewriter (UI.md §2.3) and still does its job.
     if (C.el.speech && !C.el.speech.done()) C.el.speech.complete();
-    if ((action === 'confirm' || action === 'back' || action === 'interact' || action === 'repeat' || /^row\d$/.test(action)) && SR.ui.stamp.swallow()) return true;
+    if (action === 'confirm' || action === 'back' || action === 'interact' || action === 'repeat' || /^row\d$/.test(action)) {
+      // A press skips a showing stamp and is swallowed; a held key's repeats never skip it (the
+      // stat stamp of a hold-to-repeat stays its 900 ms), they are only consumed while it shows.
+      if (ev.repeat ? SR.ui.stamp.current() !== null : SR.ui.stamp.swallow()) return true;
+    }
     if (action === 'interact') return true;   // E / Enter / Space / A also fire confirm; the card acts on that
     if (C.sub.depth()) {
       if (SR.ui.focus.handle(action, ev)) return true;
@@ -862,7 +886,9 @@
         if (!isBackBinding(ev)) openOverlay('pause');
         return true;
       case 'pocket':
-        if (ev.device === 'pad') openOverlay('pocket');
+        // Tab is `pocket` everywhere but moves focus here; only the city opens the Pocket on it
+        // (CONTRACT §15.5, D57). The pad's View button (or a remapped key) opens it.
+        if (ev.code !== 'Tab') openOverlay('pocket');
         return true;
       case 'map': case 'bag': case 'journal':
         openOverlay('pocket', { tab: action });

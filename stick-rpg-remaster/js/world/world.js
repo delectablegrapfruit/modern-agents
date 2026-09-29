@@ -12,39 +12,30 @@
   var SR = window.SR;
   var W = SR.world;
 
-  // Every world number comes from SR.tuning.world (BALANCE B-15), at these paths (a list: the
-  // first one present wins; W1-R settled some names late in wave 1).
+  // Every world number comes from SR.tuning.world (BALANCE B-15), at these paths. The names are
+  // frozen since the wave-1 integration (CONTRACT §3.6, D55; docs/requests/W1-W.md 1 and 2), so
+  // each number has one path; the seven that W1-W named (skateAccel ... navCacheSec) are flat keys.
   var PATHS = {
     walk: 'walk.speed', walkAccel: 'walk.accel',
     skate: 'skate.speed', proDeck: 'skate.proDeck', marathoner: 'skate.marathoner',
     junker: 'junker.speed', junkerAccel: 'junker.accel', junkerTurn: 'junker.turn', reverse: 'junker.reverse',
     sports: 'sports.speed', sportsAccel: 'sports.accel', sportsTurn: 'sports.turn',
-    drivePath: 'surfaceDrive.path', driveCap: ['surfaceDrive.cap', 'surfaceDrive.sidewalkCap'], parkRange: ['park.range', 'park.kerbRange'], hop: 'carVsPeople.hop',
+    drivePath: 'surfaceDrive.path', driveCap: 'surfaceDrive.cap', parkRange: 'park.range', hop: 'carVsPeople.hop',
     playerRadius: 'playerRadius',
-    doorW: 'door.trigger.w', doorH: 'door.trigger.h', doorOffset: ['door.trigger.offset', 'door.trigger.out'], dwell: 'door.dwell', dwellAngle: 'door.angle',
+    doorW: 'door.trigger.w', doorH: 'door.trigger.h', doorOffset: 'door.trigger.offset', dwell: 'door.dwell', dwellAngle: 'door.angle',
     interact: 'door.interact', prompt: 'door.prompt', tag: 'door.tag', exit: 'door.exit', rearm: 'door.rearm', porchN: 'door.porchN.visible',
     porchFactor: 'door.porchN.annexFactor', porchAdd: 'door.porchN.add',
-    camOmega: 'camera.omega', camDeadW: 'camera.deadZone.0', camDeadH: 'camera.deadZone.1', camLook: ['camera.lookAhead', 'camera.lookAheadSec'],
+    camOmega: 'camera.omega', camDeadW: 'camera.deadZone.0', camDeadH: 'camera.deadZone.1', camLook: 'camera.lookAhead',
     camLookMax: 'camera.lookCap', camPad: 'camera.bounds', zoom0: 'camera.zooms.0', zoom1: 'camera.zooms.1', zoom2: 'camera.zooms.2',
-    projection: ['projection.k', 'projection.zFactor'], occlusionAlpha: 'occlusionAlpha.alpha', occlusionMs: 'occlusionAlpha.ms',
+    projection: 'projection.k', occlusionAlpha: 'occlusionAlpha.alpha', occlusionMs: 'occlusionAlpha.ms',
     edgeWarn: 'edgeWarn.dist', edgeWarnFog: 'edgeWarn.fog', teeterMs: 'teeter',
-    fallTotal: ['fall.total', 'fall.totalSec'], fallDrop: 'fall.drop', fallCatch: 'fall.catch', fallLand: 'fall.land', fallSkip: ['fall.skipAfter', 'fall.skippableAfter'],
+    fallTotal: 'fall.total', fallDrop: 'fall.drop', fallCatch: 'fall.catch', fallLand: 'fall.land', fallSkip: 'fall.skipAfter',
     fallHp: 'fall.hp', fallHpHardLanding: 'fall.hardLanding', fallInside: 'fall.landInside',
-    carHitHp: 'carHit.hp', knockdown: ['carHit.knockdown', 'carHit.knockdownSec'], carCrashHp: 'carCrash.hp',
+    carHitHp: 'carHit.hp', knockdown: 'carHit.knockdown', carCrashHp: 'carCrash.hp',
     navCell: 'navGrid.cell', navMargin: 'navGrid.margin', navReach: 'navGrid.reach', scrapEdgeMin: 'scrapEdgeMin',
     windGust: 'windGust.speed', windGustEdge: 'windGust.range',
-  };
-
-  // Numbers the design names but BALANCE B-15 does not carry yet; docs/requests/W1-W.md asks for
-  // them in SR.tuning.world (SR.tuning wins as soon as it has them, under these names).
-  var LOCAL = {
-    skateAccel: 0.25,      // GDD §3.8: skateboard and Pro Deck reach top speed in 0.25 s
-    carRange: 64,          // GDD §3.8: C / Y enters or leaves your car within 64 u of it
-    carRadius: 26,         // cars are 96 × 52 boxes (GDD §3.8): against the static world a capsule of half the width...
-    carLength: 96,         // ...and the car's length along its heading
-    driveZoomEase: 0.6,    // GDD §3.7: driving eases the zoom one level out over 0.6 s
-    teeterAssistMs: 300,   // UI §8: Assist's longer teeter grace
-    navCacheSec: 1,        // ARCHITECTURE §8.2: nav paths are cached for 1 s
+    skateAccel: 'skateAccel', carRange: 'carRange', carRadius: 'carRadius', carLength: 'carLength',
+    driveZoomEase: 'driveZoomEase', teeterAssistMs: 'teeterAssistMs', navCacheSec: 'navCacheSec',
   };
 
   // The B-15 values, used only if a path above is missing from SR.tuning.world (a warning names it).
@@ -58,6 +49,13 @@
     projection: 0.5, occlusionAlpha: 0.35, occlusionMs: 150, edgeWarn: 60, edgeWarnFog: 90, teeterMs: 150,
     fallTotal: 1.5, fallDrop: 0.55, fallCatch: 0.5, fallLand: 0.45, fallSkip: 0.5, fallHp: 10, fallHpHardLanding: 5, fallInside: 64,
     carHitHp: 10, knockdown: 1.14, carCrashHp: 5, navCell: 32, navMargin: 40, navReach: 32, scrapEdgeMin: 64, windGust: 40, windGustEdge: 48,
+    skateAccel: 0.25,      // GDD §3.8: skateboard and Pro Deck reach top speed in 0.25 s
+    carRange: 64,          // GDD §3.8: C / Y enters or leaves your car within 64 u of it
+    carRadius: 26,         // cars are 96 × 52 boxes (GDD §3.8): against the static world a capsule of half the width...
+    carLength: 96,         // ...and the car's length along its heading
+    driveZoomEase: 0.6,    // GDD §3.7: driving eases the zoom one level out over 0.6 s
+    teeterAssistMs: 300,   // UI §8: Assist's longer teeter grace
+    navCacheSec: 1,        // ARCHITECTURE §8.2: nav paths are cached for 1 s
   };
 
   function dig(obj, path) {
@@ -66,21 +64,13 @@
     return v;
   }
 
-  /** Reads every world number from SR.tuning.world (B-15) into SR.world.cfg (plus LOCAL). */
+  /** Reads every world number from SR.tuning.world (B-15) into SR.world.cfg. */
   function readCfg() {
     var t = SR.tuning && SR.tuning.world, cfg = {}, missing = [];
     Object.keys(PATHS).forEach(function (k) {
-      var paths = [].concat(PATHS[k]), v;
-      for (var i = 0; i < paths.length; i++) {
-        v = dig(t, paths[i]);
-        if (typeof v === 'number' && isFinite(v)) break;
-      }
-      if (typeof v !== 'number' || !isFinite(v)) { v = B15[k]; missing.push(paths[0]); }
+      var v = dig(t, PATHS[k]);
+      if (typeof v !== 'number' || !isFinite(v)) { v = B15[k]; missing.push(PATHS[k]); }
       cfg[k] = v;
-    });
-    Object.keys(LOCAL).forEach(function (k) {
-      var v = dig(t, k);
-      cfg[k] = typeof v === 'number' && isFinite(v) ? v : LOCAL[k];
     });
     cfg.teeter = cfg.teeterMs / 1000;              // B-15 gives the teeter in ms
     cfg.teeterAssist = cfg.teeterAssistMs / 1000;
@@ -97,9 +87,8 @@
   W.time = 0;
   /** The world numbers (B-15), read from SR.tuning at boot by build(). */
   W.cfg = null;
-  /** The B-15 values (a fallback only if SR.tuning.world loses a key), the local numbers and the tuning paths. */
+  /** The B-15 values (a fallback only if SR.tuning.world loses a key) and the tuning paths. */
   W.B15 = B15;
-  W.LOCAL = LOCAL;
   W.PATHS = PATHS;
   W.readCfg = readCfg;
 

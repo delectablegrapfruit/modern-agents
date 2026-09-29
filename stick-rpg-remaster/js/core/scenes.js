@@ -1,7 +1,8 @@
 // js/core/scenes.js — owner: W1-K (lead). SR.scenes: the scene stack (ARCHITECTURE §5;
 // docs/CONTRACT.md §11). M0: the stack, overlays with promises, the deferred scene-change queue,
 // per-frame dispatch, and the kernel's fallback 'boot' and 'title' stubs (used only while no
-// file registers those ids). M1 adds transitions through SR.render.fx.
+// file registers those ids). M1 (wave-1 integration): transitions through SR.render.fx.transition
+// (CONTRACT §11.4) for go and replace; the stack still changes synchronously inside the swap.
 // SR.scenes.register is created by js/boot/namespace.js (load-time safe); this file adds the rest.
 (function () {
   'use strict';
@@ -11,7 +12,10 @@
   var stack = [];        // entries { id, def, params, root, resolve }
   var busy = false;
   var ops = [];          // operations requested while another one runs (run in order)
-  var pending = null;    // { id, params } queued until the top of the stack is a base scene
+  var pending = null;    // { id, params, opts } queued until the top of the stack is a base scene
+
+  var KINDS = { pageTurn: true, doorZoom: true, fade: true };
+  var GO_TRANSITION = 'pageTurn';   // go's default (CONTRACT §11.4); replace swaps at once unless asked
 
   // The kernel's placeholders (M0). A registered scene with the same id always wins.
   var fallbacks = {
@@ -118,16 +122,57 @@
     if (top && isOverlay(top.def)) return;
     var p = pending;
     pending = null;
-    go(p.id, p.params);
+    go(p.id, p.params, p.opts);
+  }
+
+  /**
+   * The transition a scene change runs, or false to swap at once: `{ transition: false }`, the
+   * debug fast flag (tests), a change requested while another one runs (from enter / exit), an
+   * empty stack (the first scene: nothing on screen to turn away from) or no SR.render.fx yet.
+   * @returns {string|false}
+   */
+  function transitionFor(opts, dflt) {
+    var k = opts && typeof opts === 'object' && hasOwn.call(opts, 'transition') ? opts.transition : dflt;
+    if (!k || busy || !stack.length) return false;
+    var D = SR.debug;
+    if (D && typeof D.fast === 'function' && D.fast() === true) return false;
+    var fx = SR.render && SR.render.fx;
+    if (!fx || typeof fx.transition !== 'function') return false;
+    return hasOwn.call(KINDS, k) ? k : GO_TRANSITION;
+  }
+
+  /**
+   * Runs a stack change, inside SR.render.fx.transition(kind, swap) when one applies. The swap
+   * runs exactly once (fx calls it synchronously, so the stack has changed when this returns).
+   * @returns {Promise<void>} resolved when the transition ends (at once without one)
+   */
+  function change(opts, dflt, fn) {
+    var kind = transitionFor(opts, dflt);
+    if (!kind) { op(fn); return Promise.resolve(); }
+    var swapped = false;
+    var swap = function () { if (swapped) return; swapped = true; op(fn); };
+    try {
+      var p = SR.render.fx.transition(kind, swap);
+      if (!swapped) swap();                 // a transition that did not swap synchronously still swaps once
+      return p && typeof p.then === 'function' ? p : Promise.resolve();
+    } catch (e) {
+      if (typeof console !== 'undefined') console.error('SR.scenes: SR.render.fx.transition threw', e);
+      swap();
+      return Promise.resolve();
+    }
   }
 
   function unknown(fnName, id) {
     if (typeof console !== 'undefined') console.error('SR.scenes.' + fnName + ': unknown scene "' + id + '"');
   }
 
-  /** Replaces the whole stack with scene id (base scenes). */
-  function go(id, params) {
-    op(function () {
+  /**
+   * Replaces the whole stack with scene id (base scenes).
+   * @param {object} [opts] `{ transition: 'pageTurn' (default) | 'doorZoom' | 'fade' | false }`
+   * @returns {Promise<void>} resolved when the transition ends
+   */
+  function go(id, params, opts) {
+    return change(opts, GO_TRANSITION, function () {
       var def = get(id);
       if (!def) { unknown('go', id); return; }
       while (stack.length) { var e = stack.pop(); leave(e); settle(e, undefined); }
@@ -167,9 +212,13 @@
     });
   }
 
-  /** Replaces the top scene; a pending push() promise carries over to the new scene. */
-  function replace(id, params) {
-    op(function () {
+  /**
+   * Replaces the top scene; a pending push() promise carries over to the new scene.
+   * @param {object} [opts] `{ transition }` as for go; replace swaps at once unless one is named
+   * @returns {Promise<void>} resolved when the transition ends
+   */
+  function replace(id, params, opts) {
+    return change(opts, false, function () {
       var def = get(id);
       if (!def) { unknown('replace', id); return; }
       var e = stack.pop();
@@ -182,10 +231,10 @@
 
   /**
    * The deferred scene change of ARCHITECTURE §5: go(id, params) as soon as the top of the stack
-   * is a base scene (now, if it already is). A later call replaces a pending one.
+   * is a base scene (now, if it already is). A later call replaces a pending one. `opts` goes to go.
    */
-  function queue(id, params) {
-    pending = { id: id, params: params };
+  function queue(id, params, opts) {
+    pending = { id: id, params: params, opts: opts };
     flushPending();
   }
 

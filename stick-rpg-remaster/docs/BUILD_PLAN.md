@@ -366,9 +366,9 @@ parts to W1-K within the first hour; later changes go through requests.
 With the real modules: boot → title (stub menu) → new game (defaults) → the apartment's building
 scene (door resolver: Paperview, Live mode) with the card (Messages, Sleep rows from placeholder
 data) → Leave → walk on the real map (render core painter, real geometry, a placeholder stick) →
-enter McSticks (placeholder interior, real card) → Fries (+20 HP, $12, 30 m) and Work Full ($42, 6
-h, +1 karma) through `SR.act` → walk home → Sleep → a placeholder report with sections → Save →
-reload → equal state. Falls work at the Main Street south end; a debug-forced HP 0 runs
+enter McSticks (placeholder interior, real card) → Fries (+20 HP, $9: the $12 of B-06 less the 25 %
+employee discount a Fry Cook gets, B-28a; 30 m) and Work Full ($42, 6 h, +1 karma) through
+`SR.act` → walk home → Sleep → a placeholder report with sections → Save → reload → equal state. Falls work at the Main Street south end; a debug-forced HP 0 runs
 `SR.rules.health.down` (the hospital night; the scene itself is a stub until W2-Transit) and the
 city resumes the next day at 12:00 outside Paperview. A test sub-screen opens from a card row. The minigame
 scene runs a Timing Ring test skin with a context map. The sound test plays. All wave-1 suites pass;
@@ -379,6 +379,24 @@ zero console errors.
 Every package works on P0 content (P1 rows may be added to data behind their `feature` flags, but
 are not required). Each building package owns the building's data file, its interior, its
 sub-screens, its skins, its text file, its `:resolve` actions and its tests.
+
+**Carried from wave 1.** Requests that wave-1 packages addressed to wave-2 (and wave-3) packages,
+and the conventions they recorded for them, are listed per package in
+`docs/requests/decisions-w1-*.md` (the lead's desk lists them under "Deferred"); each wave-2
+package reads its entries there before starting. The additive public names of wave 1 are in
+CONTRACT §8.9, §8.10, §13.1, §14.4, §15.1-§15.5 and §18.1.
+
+**Wave-1 slice placeholders.** To run the §3.12 slice, the lead's integration filled eight stubs
+with the least the slice needs; each still carries its stub marker and a header naming its owner,
+who replaces the whole file: `js/scenes/city.js` (W2-City: world update, the painter, the HUD;
+Leave brings you out of the building's door by `params.from`), `js/data/buildings/home.js` and
+`js/scenes/report.js`, `js/data/text/{en-home,en-news}.js` (W2-Home: Live mode with Sleep and
+Messages; Sleep hands its night to the UI as `Result.report`; the report scene emits
+`day:started` and returns to the city at the home door), `js/data/buildings/mcsticks.js` and
+`js/data/text/en-food.js` (W2-Food: Fries and Work), `js/scenes/hospital.js` (W2-Transit: after
+the hospital night, `SR.world.place('afterHospital')` and the city). `tests/e2e/slice.test.cjs`
+is strict (a step whose ids are missing fails) and runs in `run-all`, so it stays green through
+each replacement.
 
 ### 4.0 The rules desks (W2-RulesE, W2-RulesC)
 

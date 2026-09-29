@@ -5,7 +5,9 @@
 // rate, the hotwire Auto hit rate = arc / 360°, Shift Rush and pitch Auto m = 1.0 exactly); Pause
 // freezes timers; outcomes use host.rng; stance mode applies the counter table and the hint
 // accuracy formula; results have the ARCHITECTURE §10 shapes; #aria announces each beat; the
-// Hardcore pending hook; the frame on the real index.html with zero console errors.
+// Hardcore pending hook; the engines read their tuning rows (items, streak, belt, hotwire arc,
+// Assist); the frame on the real index.html with zero console errors, holding the song's 6 dB
+// duck while a game without its own song is open.
 // Screenshots: shots/W1-M/*.png (git-ignored).
 //   node tests/e2e/minigames.test.cjs
 'use strict';
@@ -505,6 +507,53 @@ function install(page) {
   T.ok(r.result.auto === true && r.result.beats.length === 3, 'the replayed Auto result resolves the run', r.result);
 
   // ------------------------------------------------------------------------------------------
+  T.section('tuning rows (W1-M request 4, CONTRACT D55)');
+  // The engines read jobs.hustle.orderup.items, jobs.hustle.sortit.{streak, travelSec},
+  // street.junker.ring.arc and world.assist through SR.minigame.tune; a planted table flows through.
+  const tu = await E(() => {
+    const SRx = SR.reg.minigame.shiftrush, TR = SR.reg.minigame.timingring;
+    const pick = (o, ks) => ks.reduce((a, k) => { a[k] = o[k]; return a; }, {});
+    const read = () => ({
+      tickets: pick(SRx.opts({}), ['itemsMin', 'itemsMax', 'assistSpeed']),
+      belt: pick(SRx.opts({ mode: 'conveyor' }), ['streakStep', 'streakMax', 'streakEvery', 'travelFrom', 'travelTo']),
+      mult4: SRx.streakMult({ mode: 'conveyor' }, 4),
+      arc: TR.opts({ mode: 'unlock' }).arc,
+      arc300: TR.arcDeg({ stats: { int: 300 } }, { mode: 'unlock' }),
+      assist: pick(TR.opts({}), ['assistSpeed', 'assistArc']),
+      consts: [SRx.ASSIST_SPEED, TR.ASSIST_SPEED, TR.ASSIST_ARC],
+    });
+    const now = read();
+    const rows = { items: SR.tuning.jobs.hustle.orderup.items, streak: SR.tuning.jobs.hustle.sortit.streak, travel: SR.tuning.jobs.hustle.sortit.travelSec,
+      arc: SR.tuning.street.junker.ring.arc, assist: SR.tuning.world.assist };
+    const saved = SR.tuning;
+    SR.tuning = JSON.parse(JSON.stringify(saved));
+    const TU = SR.tuning;
+    TU.jobs.hustle.orderup.items = [3, 4];
+    TU.jobs.hustle.sortit.streak = { step: 0.2, max: 1.4, every: 2 };
+    TU.jobs.hustle.sortit.travelSec = [4, 3];
+    TU.street.junker.ring.arc = { base: 30, perInt: 0.1, from: 100, min: 10, max: 60 };
+    TU.world.assist = { speed: 0.5, sweet: 2, wobble: 0.5 };
+    let planted;
+    try { planted = read(); } finally { SR.tuning = saved; }
+    return { now, rows, planted };
+  });
+  T.eq([tu.now.tickets.itemsMin, tu.now.tickets.itemsMax], tu.rows.items, 'Shift Rush tickets list jobs.hustle.orderup.items (2-5)');
+  T.eq([tu.now.belt.streakStep, tu.now.belt.streakMax, tu.now.belt.streakEvery, tu.now.belt.travelFrom, tu.now.belt.travelTo],
+    [tu.rows.streak.step, tu.rows.streak.max, tu.rows.streak.every, tu.rows.travel[0], tu.rows.travel[1]], 'the belt reads jobs.hustle.sortit.streak and .travelSec');
+  T.eq(tu.now.arc, { stat: 'int', base: tu.rows.arc.base, per: tu.rows.arc.perInt, from: tu.rows.arc.from, min: tu.rows.arc.min, max: tu.rows.arc.max }, 'the hotwire arc reads street.junker.ring.arc');
+  T.eq([tu.now.tickets.assistSpeed, tu.now.assist.assistSpeed, tu.now.assist.assistArc, tu.now.consts], [tu.rows.assist.speed, tu.rows.assist.speed, tu.rows.assist.sweet,
+    [tu.rows.assist.speed, tu.rows.assist.speed, tu.rows.assist.sweet]], 'Assist reads world.assist (speed, sweet)');
+  T.eq(tu.planted, {
+    tickets: { itemsMin: 3, itemsMax: 4, assistSpeed: 0.5 },
+    belt: { streakStep: 0.2, streakMax: 1.4, streakEvery: 2, travelFrom: 4, travelTo: 3 },
+    mult4: 1.4,
+    arc: { stat: 'int', base: 30, per: 0.1, from: 100, min: 10, max: 60 },
+    arc300: 50,
+    assist: { assistSpeed: 0.5, assistArc: 2 },
+    consts: [0.5, 0.5, 2],
+  }, 'a planted table flows into both engines (items, streak, belt, arc clamp(30 + (300 - 100) × 0.1, 10, 60) = 50°, Assist)');
+
+  // ------------------------------------------------------------------------------------------
   T.section('review probes: contexts, overlays, removal, check ids, grading');
   const ctxNames = await E(() => {
     const out = {};
@@ -729,12 +778,23 @@ function install(page) {
   const gp = g.page;
   const ring = await gp.evaluate(() => {
     SR.def.skin('test_ring', { engine: 'timingring', params: { mode: 'grade' } });
+    // A spy on the held duck (ART_AUDIO §13.4, W1-S request 6): SR.audio.duck(6, Infinity) while
+    // the frame is open, released when it closes.
+    window.__ducks = [];
+    const duck = SR.audio.duck;
+    SR.audio.duck = function (db, ms) {
+      const e = { db, ms: ms === Infinity ? 'Infinity' : ms, released: false };
+      window.__ducks.push(e);
+      const rel = duck.apply(this, arguments);
+      return function () { e.released = true; return rel.apply(this, arguments); };
+    };
     window.__res = null;
     SR.minigame.run('test_ring').then((r) => { window.__res = r; });
     return { stack: SR.scenes.stack(), ctx: SR.input.contexts() };
   });
   T.eq(ring.stack.slice(-1), ['minigame'], 'a Timing Ring test skin opens the minigame scene over the title');
   T.eq(ring.ctx.slice(-1), ['timingring'], 'with its context map pushed');
+  T.eq(await gp.evaluate(() => window.__ducks), [{ db: 6, ms: 'Infinity', released: false }], 'a game without its own song ducks the song below 6 dB, held while the frame is open');
   for (let i = 0; i < 5; i++) {
     await gp.evaluate(() => { for (let k = 0; k < 600; k++) { const c = SR.minigame.current(); const p = c.inst.peek(); const d = Math.abs(((p.angle - p.arcC) % 360 + 360) % 360); if (Math.min(d, 360 - d) < p.width / 2 - 3) return; SR.loop.step(1); } });
     await gp.keyboard.press('Space');
@@ -745,6 +805,15 @@ function install(page) {
   const gres = await gp.evaluate(() => ({ r: window.__res, stack: SR.scenes.stack(), ctx: SR.input.contexts() }));
   T.eq(gres.r, { m: 1.3, hits: 5, misses: 0 }, 'Space presses the ring on the real page (m = 1.3)');
   T.ok(gres.stack.indexOf('minigame') < 0 && gres.ctx.indexOf('timingring') < 0, 'the frame closes and pops its context');
+  T.eq(await gp.evaluate(() => window.__ducks), [{ db: 6, ms: 'Infinity', released: true }], 'closing the frame releases its duck');
+  const own = await gp.evaluate(() => {
+    SR.def.skin('test_ring_song', { engine: 'timingring', music: 'paper_sky', params: { mode: 'grade' } });
+    window.__ducks.length = 0;
+    SR.minigame.run('test_ring_song', { auto: true });
+    for (let k = 0; k < 600 && SR.minigame.current(); k++) SR.loop.step(1);
+    return { ducks: window.__ducks.slice(), open: !!SR.minigame.current() };
+  });
+  T.eq(own, { ducks: [], open: false }, 'a game with its own song switches to it and does not duck');
   T.eq(g.errors(), [], 'index.html: zero console errors after a round');
   await g.close();
 

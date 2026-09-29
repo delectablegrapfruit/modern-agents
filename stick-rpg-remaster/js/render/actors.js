@@ -308,7 +308,8 @@
       try {
         var snapped = Math.abs(((ang - dir * Math.PI / 4) % (2 * Math.PI) + 3 * Math.PI) % (2 * Math.PI) - Math.PI) < SNAP;
         if (kind !== 'player' && snapped) {
-          var phase = type === 'police' && !L().flashReduction() ? Math.floor(v.t * 2) % 2 : 0;
+          // One rhythm for the light bar: SR.art.vehicles.lightPhase (halves swap every 0.5 s).
+          var phase = type === 'police' && !L().flashReduction() ? (V.lightPhase ? V.lightPhase(v.t) : Math.floor(v.t * 2) % 2) : 0;
           var sp = carSprite(V, type, dir, v, lamps, brake, phase);
           if (sp) {
             ctx.drawImage(sp.canvas, x - sp.ax, y - sp.ay, sp.w, sp.h);

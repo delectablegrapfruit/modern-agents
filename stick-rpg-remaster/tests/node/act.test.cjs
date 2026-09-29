@@ -350,6 +350,49 @@ T.section('deltas');
   ], 'time across days, lien, list items, job, home and furniture deltas');
 }
 
+T.section('wave-1 integration requests (W1-Q 5, W1-E R3, W1-C 2)');
+{
+  // W1-Q request 5: a positive cash / bank Delta names its income source (CONTRACT §8.3 key?, §8.4).
+  SR.def.fn('test.wageToBank', (s) => { SR.rules.bank.income(s, 30, 'wage', 'bank'); return {}; });
+  SR.def.action('testbld.bankWage', { building: 'testbld', group: 'special', p: 0, effects: [['fn', 'test.wageToBank']] });
+  SR.def.action('testbld.mixed', { building: 'testbld', group: 'special', p: 0, effects: [['cash', 10, 'win'], ['cash', 50, 'wage'], ['cash', 5]] });
+  SR.def.action('testbld.spendWin', { building: 'testbld', group: 'special', p: 0, effects: [['cash', 10, 'win'], ['cash', -30]] });
+  const cashOf = (r, kind) => r.deltas.find((d) => d.kind === (kind || 'cash'));
+  const w = run(K.newState(SR), 'testbld.work');
+  T.eq(cashOf(w), { kind: 'cash', n: 42, from: 100, to: 142, key: 'wage' }, 'cash(42, wage): the Delta carries key "wage"');
+  T.eq(cashOf(run(K.newState(SR), 'testbld.bankWage'), 'bank'), { kind: 'bank', n: 30, from: 0, to: 30, key: 'wage' },
+    'SR.rules.bank.income (named fns such as jobs.work) is recorded too');
+  T.eq(cashOf(run(K.newState(SR), 'testbld.mixed')).key, 'wage', 'several sources: the one that credited the most');
+  const plain = K.newState(SR);
+  plain.stats.hp = 10;
+  T.eq(cashOf(run(plain, 'testbld.coin')).key, undefined, 'a credit without an income source names none');
+  T.eq(cashOf(run(K.newState(SR), 'testbld.spendWin')).key, undefined, 'a negative cash Delta never names a source');
+  const track = SR.rules.effects.trackIncome, open = [0, 0];
+  SR.rules.effects.trackIncome = () => { open[0]++; const close = track(); return () => { open[1]++; return close(); }; };
+  pv(K.newState(SR), 'testbld.work');
+  try { run(K.newState(SR), 'testbld.throws'); } catch (e) { /* planted */ }
+  SR.rules.effects.trackIncome = track;
+  T.ok(open[0] >= 2 && open[0] === open[1], 'previews and a thrown action close every recorder they open', open);
+
+  // W1-E request R3: Down.toasts join Result.toasts (Second Wind's toast, ARCHITECTURE §6.7).
+  const S2 = K.load();
+  K.fixtures(S2);
+  S2.features.perks = true;
+  const sw = K.newState(S2);
+  sw.perks.owned.push('secondWind');
+  const r = S2.rules.act.run(sw, 'testbld.crash', {}, K.ctx(S2));
+  T.eq([r.down.outcome, sw.stats.hp, r.toasts.map((t) => t.key)], ['secondWind', 1, ['toast.health.secondWind']], 'Second Wind: HP 1 and its toast in the Result');
+
+  // W1-C request 2: the jail effect passes the pipeline's context to SR.rules.crime.jail.
+  const S3 = K.load();
+  K.fixtures(S3);
+  let got = null;
+  S3.rules.crime.jail = (st, reason, ctx) => { got = ctx; st.jail = { daysLeft: 1, served: 0, reason, bailBase: 0 }; return { days: 1 }; };
+  const cx = K.ctx(S3, 5);
+  S3.rules.act.run(K.newState(S3), 'testbld.jail', {}, cx);
+  T.ok(got && got.rng === cx.rng && got.id === 'testbld.jail', 'crime.jail(s, reason, ctx) gets the pipeline ctx (its rng is the caller\'s stream)');
+}
+
 T.section('SR.act: events in the order of CONTRACT §8.7');
 {
   const s = K.newState(SR);

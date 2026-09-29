@@ -6,7 +6,8 @@
   var SR = window.SR;
 
   // GDD §4.3 / B-28b: chance = clamp(stat / (stat + max(D_MIN, D + ΣdD)) + Σadd, MIN, MAX).
-  // BALANCE writes these three numbers in the formula but has no key for them (requests/W1-R.md).
+  // B-28b's formula constants (GDD §4.3). They stay named constants: the 33 tuning table names are
+  // frozen (CONTRACT §3.6) and none holds the check formula (docs/requests/decisions-w1-desk-rules.md, W1-R 2).
   var CHANCE_MIN = 0.05;
   var CHANCE_MAX = 0.95;
   var D_MIN = 1;

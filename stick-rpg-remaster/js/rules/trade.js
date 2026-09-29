@@ -196,7 +196,7 @@
       if (s.clock.min < w[0]) return no('reason.notBefore', { time: SR.rules.time.fmt(w[0]) });
       if (s.clock.min > w[1]) return no('reason.notAfter', { time: SR.rules.time.fmt(w[1]) });
     } else if (s.clock.min !== SR.tuning.time.redEyeDeparts) {
-      return no('reason.notNow', { time: SR.rules.time.fmt(SR.tuning.time.redEyeDeparts) });
+      return no('reason.redEye', { time: SR.rules.time.fmt(SR.tuning.time.redEyeDeparts) });
     }
     var t = ticket(s, id);
     if (!(opts && opts.paid) && s.money.cash < t) return no('reason.needCash', { n: t, money: money(t) });
