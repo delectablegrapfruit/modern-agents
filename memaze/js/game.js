@@ -47,7 +47,7 @@
   const ICE_GRIP = 2.2;   // on ice, how fast your movement catches up with your drag (per second): low = more drift
   const ICE_MAX = 700;    // ...and the fastest you can slide
   const smooth = (k) => k * k * (3 - 2 * k);
-  const toxFar = (T, x, y) => Math.max(Math.abs((x - T.x) * T.ux + (y - T.y) * T.uy), Math.abs((y - T.y) * T.ux - (x - T.x) * T.uy)); // (square distance from a tile's middle)
+  const toxFar = (R, x, y) => Math.max(Math.abs((x - R.x) * R.ux + (y - R.y) * R.uy) - R.hl, Math.abs((y - R.y) * R.ux - (x - R.x) * R.uy) - R.hs); // (how far outside a box's footprint)
   // The picture cut into glassy shards: a jittered 4x4 grid over its visible part b (box units, 0-1), each cell split
   // along a random diagonal. Each shard has its own heading out from the middle, distance (in box sizes) and spin.
   function cutShards(seed, b) {
@@ -644,50 +644,52 @@
     },
 
     // ----- Tox Boxes (Gauntlet) -----
-    // A Tox Box at rest is solid, Invincible or not: the picture can't move into it (stepping out of one is always
-    // allowed). One resting hollow side down over you holds you in until it tumbles on. While it tumbles, nothing is
-    // solid: what counts is where it lands.
+    // A Tox Box is always solid, at rest or tumbling, Invincible or not: the picture can't move into it (if it has come
+    // over you, stepping out from under it is always allowed). One resting hollow side down over you holds you in until
+    // it tumbles on.
     toxBarred(x0, y0, x1, y1) {
       const m = this.maze;
       if (!m || !m.toxes || !m.toxes.length) return false;
       const buf = this.box() * BUFFER;
       for (const bx of m.toxes) {
         const st = MZ.toxAt(bx, this.playT);
-        if (st.f > 0) continue;
-        const T = bx.tiles[st.i], out = bx.s / 2 - buf;
-        if (MZ.toxFace(bx, st.i) === 0 && this.toxCover(T, bx.s / 2 + 2 * buf, x0, y0) === 'all') { // inside it
-          if (this.toxCover(T, bx.s / 2 + 2 * buf, x1, y1) !== 'all') return true;
+        if (st.f === 0 && MZ.toxFace(bx, st.i) === 0 && this.toxCover(bx.tiles[st.i], bx.s / 2 + 2 * buf, x0, y0) === 'all') { // inside it
+          if (this.toxCover(bx.tiles[st.i], bx.s / 2 + 2 * buf, x1, y1) !== 'all') return true;
           continue;
         }
-        if (this.toxCover(T, out, x1, y1) === 'none') continue;
-        if (this.toxCover(T, out, x0, y0) !== 'none' && toxFar(T, x1, y1) > toxFar(T, x0, y0)) continue; // stepping out of it
+        const F = MZ.toxFoot(bx, st), R = { x: F.x, y: F.y, ux: F.ux, uy: F.uy, hl: F.hl - buf, hs: F.hs - buf };
+        if (this.toxCover(R, R.hl, x1, y1, R.hs) === 'none') continue;
+        if (this.toxCover(R, R.hl, x0, y0, R.hs) !== 'none' && toxFar(R, x1, y1) > toxFar(R, x0, y0)) continue; // out from under it
         return true;
       }
       return false;
     },
-    // How much of the picture at (x, y) lies inside the square of tile T (half-size a): 'none', 'some' or 'all' of its
-    // solid pixels (before the picture has loaded, its box's inscribed circle stands in).
-    toxCover(T, a, x, y) {
+    // How much of the picture at (x, y) lies inside the rectangle round T (half-length a along it, half-width b across;
+    // a square unless b is given): 'none', 'some' or 'all' of its solid pixels (before the picture has loaded, its box's
+    // inscribed circle stands in).
+    toxCover(T, a, x, y, b) {
+      if (b == null) b = a;
       const mask = this.sprite.mask, W = this.box();
       const dx = x - T.x, dy = y - T.y, lu = dx * T.ux + dy * T.uy, lv = dy * T.ux - dx * T.uy;
       const R = (mask && mask.n ? mask.maxR : 0.45) * W;
-      if (Math.abs(lu) >= a + R || Math.abs(lv) >= a + R) return 'none';
-      if (Math.abs(lu) + R <= a && Math.abs(lv) + R <= a) return 'all';
+      if (Math.abs(lu) >= a + R || Math.abs(lv) >= b + R) return 'none';
+      if (Math.abs(lu) + R <= a && Math.abs(lv) + R <= b) return 'all';
       if (!mask || !mask.n) {
-        const cu = Math.max(0, Math.abs(lu) - a), cv = Math.max(0, Math.abs(lv) - a);
+        const cu = Math.max(0, Math.abs(lu) - a), cv = Math.max(0, Math.abs(lv) - b);
         return cu * cu + cv * cv >= R * R ? 'none' : 'some';
       }
       const p = mask.pts;
       let inn = 0;
       for (let i = 0; i < p.length; i += 2) {
         const px = p[i] * W, py = p[i + 1] * W, qu = lu + px * T.ux + py * T.uy, qv = lv + py * T.ux - px * T.uy;
-        if (Math.abs(qu) < a && Math.abs(qv) < a) inn++;
+        if (Math.abs(qu) < a && Math.abs(qv) < b) inn++;
       }
       return inn === 0 ? 'none' : inn === mask.n ? 'all' : 'some';
     },
-    // Each frame: every box that lands this frame thuds (and shakes the view when close). One landing on you crushes:
-    // a hit (none while Invincible or shielded), and you're shoved out ahead of it, the way it's going, so being crushed
-    // never gets you past one; unless it came down hollow side down right over you. True if the hit lost the maze.
+    // Each frame: every box that lands this frame thuds (and shakes the view when close). The one thing that hurts is
+    // being in its path as it slams down: that loses a life, Invincible or not (unless it came down hollow side down
+    // right over you). On the Casual rule you're shoved out ahead of it instead, the way it's going, never past it.
+    // True if it lost the maze.
     toxStep(dt) {
       const m = this.maze;
       if (!m || !m.toxes || !m.toxes.length) return false;
@@ -700,7 +702,8 @@
         if (near < 160) this.shakeT = Math.max(this.shakeT, 0.1);
         if (this.toxCover(T, bx.s / 2 - buf, b.x, b.y) === 'none') continue;
         if (MZ.toxFace(bx, now.i) === 0 && this.toxCover(T, bx.s / 2 + 2 * buf, b.x, b.y) === 'all') continue; // safe inside
-        // Out ahead of it: the next tile along, or past the end of its track; only if there's no floor there, behind it.
+        if (S().gameplay.rule !== 'casual') { MZ.Audio.play('crush'); this.lose('crush'); return true; }
+        // (Casual) Out ahead of it: the next tile along, or past the end of its track; only if there's no floor there, behind it.
         const d = now.i > was.i ? 1 : -1, W = this.box(), mask = this.sprite.mask, R = (mask && mask.n ? mask.maxR : 0.5) * W;
         const next = bx.tiles[now.i + d], u = { x: T.ux * d, y: T.uy * d };
         const ahead = next || { x: T.x + u.x * (bx.s / 2 + R + 6), y: T.y + u.y * (bx.s / 2 + R + 6) };
@@ -709,7 +712,6 @@
         this.vel.x = this.vel.y = 0;
         this.input.takeGrab();
         MZ.Audio.play('crush');
-        if (S().gameplay.rule !== 'casual' && !this.shielded() && this.hurt()) return true;
       }
       return false;
     },

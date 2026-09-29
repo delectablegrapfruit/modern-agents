@@ -31,8 +31,9 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     let grab = { x: 0, y: 0 };
     G.input.vector = () => ({ x: 0, y: 0 });
     G.input.takeGrab = () => { const g = grab; grab = { x: 0, y: 0 }; return g; };
-    const hits = [];
+    const hits = [], losses = [];
     G.on('hit', () => hits.push(G.t));
+    G.on('lose', (why) => losses.push(why));
     const run = (sec, dir, spd) => {
       for (let i = 0; i < Math.round(sec * 60); i++) {
         if (dir) { const k = G.cam.zoom * (spd || 140) / 60; grab = { x: -dir.x * k, y: -dir.y * k }; }
@@ -234,10 +235,14 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     tx.end = end0;
     const tSolid = tx.tiles.findIndex((T, k) => k > 0 && MZ.toxFace(tx, k) !== 0), tHollow = tx.tiles.findIndex((T, k) => k > 0 && MZ.toxFace(tx, k) === 0);
     const onto = (k) => tx.end + (k - 1) * step; // (going up the track) when it starts tumbling onto tile k
-    fresh(); at(onto(tSolid) - 0.05); put(tx.tiles[tSolid]);
-    run(0.05 + tx.roll + 0.1);
-    const Tk = tx.tiles[tSolid], ahead = (x, y) => (x - Tk.x) * Tk.ux + (y - Tk.y) * Tk.uy; // (how far along, past the tile it landed on)
-    check('one landing on you crushes: a hit, and you\'re shoved out ahead of it (never past it), onto the floor', hits.length === 1 && G.hp === 1 && ahead(G.ball.x, G.ball.y) >= tx.s / 2 && G.toxCover(Tk, tx.s / 2 - buf, G.ball.x, G.ball.y) === 'none' && !G.hitAt(G.ball.x, G.ball.y), hits.length + ' hits, ' + ahead(G.ball.x, G.ball.y).toFixed(0) + ' ahead');
+    const roll0 = tx.roll, fwd = { x: T0.ux, y: T0.uy };
+    fresh(); tx.roll = 6; at(tx.end + 6 * Math.sqrt(0.2)); put({ x: T0.x - fwd.x * tx.s * 0.95, y: T0.y - fwd.y * tx.s * 0.95 }); // (tumbling slowly off tile 0, you just behind it)
+    const tp0 = { x: G.ball.x, y: G.ball.y };
+    run(0.8, fwd);
+    const foot = MZ.toxFoot(tx, MZ.toxAt(tx, G.playT));
+    check('a tumbling Tox Box is solid too: you can follow it, never go through it', MZ.toxAt(tx, G.playT).f > 0 && G.toxCover(foot, foot.hl - buf, G.ball.x, G.ball.y, foot.hs - buf) === 'none' && Math.hypot(G.ball.x - tp0.x, G.ball.y - tp0.y) > 5 && !hits.length, Math.hypot(G.ball.x - tp0.x, G.ball.y - tp0.y).toFixed(0) + ' followed');
+    tx.roll = roll0;
+    const Tk = tx.tiles[tSolid];
     fresh(); at(onto(tHollow) - 0.05); put(tx.tiles[tHollow]);
     run(0.05 + tx.roll + 0.05);
     const Th = tx.tiles[tHollow], held0 = { x: G.ball.x, y: G.ball.y };
@@ -252,9 +257,10 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     run(0.5, rev);
     check('Invincible doesn\'t get you through: still solid', G.toxCover(T0, tx.s / 2 - buf, G.ball.x, G.ball.y) === 'none' && !hits.length);
     tx.end = end0;
-    at(onto(tSolid) - 0.05); put(Tk);
+    losses.length = 0; at(onto(tSolid) - 0.05); put(Tk);
+    const starOn = G.fx.star > 0;
     run(0.05 + tx.roll + 0.1);
-    check('...and one landing on you still shoves you out ahead of it (no hit)', G.fx.star > 0 && !hits.length && ahead(G.ball.x, G.ball.y) >= tx.s / 2, ahead(G.ball.x, G.ball.y).toFixed(0) + ' ahead');
+    check('in its path as it slams down: that loses a life, Invincible or not', starOn && losses.length === 1 && losses[0] === 'crush', (starOn ? 'Invincible, ' : '') + (losses.join(',') || 'no loss'));
     G.quit();
 
     // ----- the Gauntlet's item puzzles, and its goals -----
@@ -270,10 +276,13 @@ try { ({ chromium } = require('playwright')); } catch (e) {
     const gLg = G.maze.gaps.find((q) => q.ledge);
     put(gLg.a);
     check('a Launch ledge: where it comes down is under cloud', gLg.fog === 1 && !gLg.revealed);
+    const gLdir = { x: (gLg.b.x - gLg.a.x) / Math.hypot(gLg.b.x - gLg.a.x, gLg.b.y - gLg.a.y), y: (gLg.b.y - gLg.a.y) / Math.hypot(gLg.b.x - gLg.a.x, gLg.b.y - gLg.a.y) };
+    while (G.world.query(G.ball.x + gLdir.x * 2, G.ball.y + gLdir.y * 2, G.playT).depth > G.box() * 0.62) { G.ball.x += gLdir.x * 2; G.ball.y += gLdir.y * 2; } // out to the broken edge
     G.giveItem('launch'); G.useItem();
-    const gLdist = Math.hypot(gLg.b.x - gLg.a.x, gLg.b.y - gLg.a.y), gLdir = { x: (gLg.b.x - gLg.a.x) / gLdist, y: (gLg.b.y - gLg.a.y) / gLdist };
-    run(gLdist / 300, gLdir, 300); run(1.6 - gLdist / 300);
-    check('...Launch off it and the clouds part as you rise: steer to the far side and land', gLg.revealed && gLg.fog === 0 && Math.hypot(G.ball.x - gLg.b.x, G.ball.y - gLg.b.y) < 20 && !hits.length && !G.fx.bubble, Math.hypot(G.ball.x - gLg.b.x, G.ball.y - gLg.b.y).toFixed(0));
+    const gLdist = Math.hypot(gLg.b.x - G.ball.x, gLg.b.y - G.ball.y);
+    run(Math.min(1.4, gLdist / 300), gLdir, 300); run(1.6 - Math.min(1.4, gLdist / 300));
+    const gLb = Math.hypot(G.ball.x - gLg.b.x, G.ball.y - gLg.b.y), gLa = Math.hypot(G.ball.x - gLg.a.x, G.ball.y - gLg.a.y);
+    check('...Launch off it and the clouds part as you rise: steer to the far side and land', gLg.revealed && gLg.fog === 0 && gLb < gLa && !G.hitAt(G.ball.x, G.ball.y) && !hits.length && !G.fx.bubble, Math.round(gLb) + ' from its far end');
     // A long float: several corridors gone, the carpet's whole run.
     G.run.cleared = gCp; G.nextGauntlet(); fresh();
     const gCarp = G.maze.gaps.find((q) => !q.ledge && q.chain && q.chain.length > 1), gCd = Math.hypot(gCarp.b.x - gCarp.a.x, gCarp.b.y - gCarp.a.y);

@@ -9,7 +9,7 @@ const assert = require('assert');
 const MZ = require('./load.js')(['util.js', 'gen.js', 'layouts.js', 'world.js', 'levels.js']);
 const G = MZ.Gen, LV = MZ.Levels;
 const polyLen = (p) => { let l = 0; for (let i = 1; i < p.length; i++) l += Math.hypot(p[i].x - p[i - 1].x, p[i].y - p[i - 1].y); return l; };
-const GAP_MAX = 300, CARPET_MAX = 260; // a Launch reaches 340; a carpet floats 3.5 s (a slow drag must make it)
+const GAP_MIN = 180; // a gap is a real crossing, broken edge to broken edge (and no wider than its item can do: LV.GAP_VOID)
 const ITEMS = ['carpet', 'launch', 'shrink'];
 
 assert.ok(MZ.Layouts && MZ.Layouts.length === 20, 'twenty hand-made layouts (chapters 1 and 2)');
@@ -89,8 +89,9 @@ for (const lay of MZ.Layouts) {
   for (const q of lay.gaps || []) {
     const g = m.gaps.find((x) => (x.from === q.a && x.to === q.b) || (x.from === q.b && x.to === q.a));
     assert.ok(g && g.item === q.item, tag + 'a gap not where it was pinned, or needing the wrong item');
-    const d = Math.hypot(g.b.x - g.a.x, g.b.y - g.a.y);
-    assert.ok(d <= (q.item === 'carpet' ? CARPET_MAX : GAP_MAX), tag + 'a gap too long for its item (' + Math.round(d) + ')');
+    const cap = (u) => Math.max(0, ...m.edges.filter((e) => e.a === u || e.b === u).map((e) => e.hw)), wide = Math.hypot(g.b.x - g.a.x, g.b.y - g.a.y) - cap(g.from) - cap(g.to);
+    assert.ok(wide <= LV.GAP_VOID[q.item][1] + 1, tag + 'a gap too wide for its item (' + Math.round(wide) + ', broken edge to broken edge)');
+    assert.ok(wide >= GAP_MIN, tag + 'a gap too narrow to be a real crossing (' + Math.round(wide) + ')');
     assert.ok(m.gboxes.some((gb) => gb.node === q.box && gb.item === q.item), tag + 'a gap without its item box on the pinned node');
   }
   assert.strictEqual(m.crawls.length, (lay.squeezes || []).length, tag + 'Shrink ways placed ' + m.crawls.length + ' of ' + (lay.squeezes || []).length);

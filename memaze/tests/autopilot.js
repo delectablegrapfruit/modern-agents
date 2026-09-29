@@ -93,16 +93,20 @@ if (!levels.length || levels.some((l) => !(l >= 1)) || !(speed > 0)) { console.e
       // Tox Boxes: the stretches of a path where one could meet a box (along its track, or across it), each with spots to
       // wait at (clear of every box just before and after, and each hollow tile on the way, where its box only ever lands
       // hollow side down), and a check that going on from one spot to the next now never meets a box: never walking into
-      // one at rest, never under one as it lands (or is just about to).
+      // one, at rest or tumbling, never under one as it lands (or is just about to).
       const toxes = m.toxes || [], Rp = G.box() * ((G.sprite.mask && G.sprite.mask.maxR) || 0.5) + 3;
       const locate = (P, q) => { let best = { d: Infinity, s: 0 }; for (let i = 1; i < P.pts.length; i++) { const a = P.pts[i - 1], b = P.pts[i], L = P.cum[i] - P.cum[i - 1] || 1, f = Math.max(0, Math.min(1, ((q.x - a.x) * (b.x - a.x) + (q.y - a.y) * (b.y - a.y)) / (L * L))), x = a.x + (b.x - a.x) * f, y = a.y + (b.y - a.y) * f, d = Math.hypot(q.x - x, q.y - y); if (d < best.d) best = { d, s: P.cum[i - 1] + f * L }; } return best; };
       const pointAt = (P, d) => { let i = 1; while (i < P.pts.length - 1 && P.cum[i] < d) i++; const f = Math.min(1, Math.max(0, (d - P.cum[i - 1]) / (P.cum[i] - P.cum[i - 1] || 1))); return { x: P.pts[i - 1].x + (P.pts[i].x - P.pts[i - 1].x) * f, y: P.pts[i - 1].y + (P.pts[i].y - P.pts[i - 1].y) * f }; };
       const loc = (T, q) => { const dx = q.x - T.x, dy = q.y - T.y; return [Math.abs(dx * T.ux + dy * T.uy), Math.abs(dy * T.ux - dx * T.uy)]; };
       const over = (T, q, a) => { const [u, v] = loc(T, q); return u < a + Rp && v < a + Rp; }; // (the picture as a circle, a little generous)
       const within = (T, q, a) => { const [u, v] = loc(T, q); return u + Rp <= a && v + Rp <= a; };
-      const safe = (bx, q, t) => {
-        const st = MZ.toxAt(bx, t), k = st.f === 0 ? st.i : st.f > 0.75 ? st.j : -1; // (in the air, it's only where it lands that counts)
-        return k < 0 || !over(bx.tiles[k], q, bx.s / 2) || (MZ.toxFace(bx, k) === 0 && within(bx.tiles[k], q, bx.s / 2)); // (the game allows a little more)
+      const safe = (bx, q, t) => { // never in the floor it covers (at rest or tumbling), nor where it's about to land
+        const st = MZ.toxAt(bx, t), inHollow = (k) => MZ.toxFace(bx, k) === 0 && within(bx.tiles[k], q, bx.s / 2); // (the game allows a little more)
+        if (st.f === 0) return !over(bx.tiles[st.i], q, bx.s / 2) || inHollow(st.i);
+        if (inHollow(st.i) || inHollow(st.j)) return true; // it's lifting off you, or coming down over you, hollow side down
+        const F = MZ.toxFoot(bx, st), dx = q.x - F.x, dy = q.y - F.y;
+        if (Math.abs(dx * F.ux + dy * F.uy) < F.hl + Rp && Math.abs(dy * F.ux - dx * F.uy) < F.hs + Rp) return false;
+        return !(st.f > 0.75 && over(bx.tiles[st.j], q, bx.s / 2));
       };
       const near = (q) => toxes.filter((bx) => bx.tiles.some((T) => over(T, q, bx.s / 2 + 4)));
       for (const P of plan) {
@@ -181,9 +185,13 @@ if (!levels.length || levels.some((l) => !(l >= 1)) || !(speed > 0)) { console.e
           if (seg.phase === 'off' && go(mv.to)) next();
         } else if (seg && seg.type === 'warp') next();
         else if (seg && seg.type === 'item') { if (G.item === seg.item) next(); else if ((seg.t += dt) > 1) { AP.outcome = 'no ' + seg.item; } }
-        else if (seg && seg.type === 'cross') { // use the item at the gap's near end, then straight across to its far end
+        else if (seg && seg.type === 'cross') { // use the item at the gap's broken edge, then straight across to its far end
           const T = seg.gap.b;
-          if (seg.phase === 'use') { if (G.useItem()) seg.phase = 'go'; else AP.outcome = 'no ' + seg.item; }
+          if (seg.phase === 'use') { // out to the broken edge first (a Launch only reaches so far, a carpet only lasts so long), then use it
+            const dx = T.x - b.x, dy = T.y - b.y, dl = Math.hypot(dx, dy) || 1, st = Math.min(speed * dt, dl), nx = b.x + (dx / dl) * st, ny = b.y + (dy / dl) * st;
+            if (dl > 20 && G.world.query(nx, ny, G.playT).depth > G.box() * 0.62) AP.want = { x: nx - b.x, y: ny - b.y };
+            else if (G.useItem()) seg.phase = 'go'; else AP.outcome = 'no ' + seg.item;
+          }
           else {
             const d = Math.hypot(T.x - b.x, T.y - b.y), v = seg.item === 'launch' ? 420 : Math.max(speed, 170), k = Math.min(1, (v * dt) / (d || 1)); // (on a carpet, no dawdling)
             AP.want = { x: (T.x - b.x) * k, y: (T.y - b.y) * k };

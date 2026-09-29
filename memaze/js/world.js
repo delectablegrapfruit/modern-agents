@@ -38,6 +38,16 @@
     if (w < bx.roll) { const f = w / bx.roll; return { i: at(m), j: at(m + 1), f: f * f, since: null }; }
     return { i: at(m + 1), j: at(m + 1), f: 0, since: w - bx.roll };
   }
+  // The floor a Tox Box covers at state st (from toxAt): its tile at rest; tumbling, the stretch between the edge it's
+  // going over and as far as it reaches either side of it (it's at its longest halfway over). As a rectangle: centre
+  // (x, y), along (ux, uy), half-length hl, half-width hs.
+  function toxFoot(bx, st) {
+    const A = bx.tiles[st.i], h = bx.s / 2;
+    if (!(st.f > 0)) return { x: A.x, y: A.y, ux: A.ux, uy: A.uy, hl: h, hs: h };
+    const B = bx.tiles[st.j], l = Math.hypot(B.x - A.x, B.y - A.y) || 1, ux = (B.x - A.x) / l, uy = (B.y - A.y) / l;
+    const th = (st.f * Math.PI) / 2, c = Math.cos(th), s = Math.sin(th), mid = (bx.s * (s - c)) / 2;
+    return { x: (A.x + B.x) / 2 + ux * mid, y: (A.y + B.y) / 2 + uy * mid, ux, uy, hl: (bx.s * (s + c)) / 2, hs: h };
+  }
   // Which of the four faces around its tumbling axis is face down on tile k (face 0 is the hollow one): rolling back
   // undoes rolling on, so it's always the same face on the same tile, and the hollow lands on every fourth.
   const toxFace = (bx, k) => (((k - bx.h) % 4) + 4) % 4;
@@ -151,4 +161,5 @@
   MZ.moverAt = moverAt;
   MZ.toxAt = toxAt;
   MZ.toxFace = toxFace;
+  MZ.toxFoot = toxFoot;
 })();

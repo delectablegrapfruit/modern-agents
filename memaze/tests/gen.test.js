@@ -100,6 +100,7 @@ assert.ok(masks.size >= 12, 'too few shapes turn up: ' + [...masks]);
 // there, it picks up each key before its door, presses each switch before its bridge, rides each platform, steps
 // through each portal), deterministic, and a time limit with room to spare.
 let asked = 0, placed = 0, gapsPlaced = 0, squeezesPlaced = 0;
+const voids = []; // how wide each gap is, broken edge to broken edge
 const lvCases = [];
 for (let L = 1; L <= 80; L++) lvCases.push(['level ' + L, LV.levelParams(L)]);
 for (let i = 0; i < 40; i++) lvCases.push(['gauntlet #' + i, LV.gauntletParams({ seed: MZ.hashStr('lv' + i), style: i % 2 ? 'random' : 'progressive', diff: diffs[i % diffs.length] }, i)]);
@@ -140,7 +141,9 @@ for (const [label, p] of lvCases) {
       assert.strictEqual(holding, G.item, label + ': crossing a gap without its item'); holding = null;
       assert.ok(!ids.has(m.edges.find((e) => (e.a === G.from && e.b === G.to) || (e.a === G.to && e.b === G.from)) || -1), label + ': a gap with its corridor still there');
       assert.ok(!(G.chain || []).some((id) => ids.has(id)), label + ': a long gap with some of its corridors still there');
-      assert.ok(Math.hypot(G.b.x - G.a.x, G.b.y - G.a.y) <= 300, label + ': a gap too long for a Launch');
+      const cap = (u) => Math.max(0, ...m.edges.filter((e) => e.a === u || e.b === u).map((e) => e.hw)), wide = Math.hypot(G.b.x - G.a.x, G.b.y - G.a.y) - cap(G.from) - cap(G.to);
+      assert.ok(wide <= LV.GAP_VOID[G.item][1] + 1, label + ': a gap too wide for its item (' + Math.round(wide) + ')');
+      voids.push(wide);
       at = G.to;
     } else if (leg.type === 'shrink') { assert.strictEqual(holding, 'shrink', label + ': shrinking without Shrink'); holding = null; shrunk = true; }
   }
@@ -151,7 +154,9 @@ for (const [label, p] of lvCases) {
 }
 assert.ok(placed >= asked * 0.9, 'mechanics placed ' + placed + ' of ' + asked + ' asked for');
 assert.ok(gapsPlaced > 5 && squeezesPlaced > 3, 'item puzzles placed: ' + gapsPlaced + ' gaps, ' + squeezesPlaced + ' shrink gates');
-console.log(lvCases.length + ' levels solved by their route; ' + placed + '/' + asked + ' doors, switches, platforms, portals, gaps and Shrink ways placed (' + gapsPlaced + ' gaps, ' + squeezesPlaced + ' Shrink ways)');
+voids.sort((x, y) => x - y);
+assert.ok(voids[Math.floor(voids.length * 0.2)] >= 180, 'gaps too narrow to be a real crossing: 1 in 5 under ' + Math.round(voids[Math.floor(voids.length * 0.2)]));
+console.log(lvCases.length + ' levels solved by their route; ' + placed + '/' + asked + ' doors, switches, platforms, portals, gaps and Shrink ways placed (' + gapsPlaced + ' gaps ' + Math.round(voids[0]) + '-' + Math.round(voids[voids.length - 1]) + ' wide, ' + squeezesPlaced + ' Shrink ways)');
 
 // Endless chunks: deterministic, only known surfaces, no pads, and seamless links (the link's far end is the neighbour's node).
 let chunkBlinks = 0, chunkBoxes = 0;
