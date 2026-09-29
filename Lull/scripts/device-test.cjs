@@ -203,11 +203,14 @@ module.exports = async function deviceTests({ browser, check, PAGE, OUT }) {
     const cdp = await D.ctx.newCDPSession(D.page);
     const live = async () => D.ev(() => ({ b: { only: document.body.classList.contains('touch-only'), app: document.getElementById('app').className },
       nav: [...document.querySelectorAll('.set-nav button')].map((x) => x.textContent).join(), cards: [...document.querySelectorAll('.set-pane .set-card-title')].map((x) => x.textContent).join(), open: Lull.UI.modalOpen() }));
+    // The media queries' change events arrive a little after the switch (later on a busy machine): wait for the page to
+    // follow, up to two seconds, then read it.
+    const settle = (touchOnly) => D.page.waitForFunction((t) => document.body.classList.contains('touch-only') === t, touchOnly, { timeout: 2000 }).catch(() => {});
     await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
-    await sleep(150);
+    await settle(true); await sleep(50);
     const on = await live();
     await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
-    await sleep(150);
+    await settle(false); await sleep(50);
     const off = await live();
     check('live: a mouse taken away turns an open Settings into the phone\'s (Gestures, no Keyboard or Mouse card), drawn solid',
       on.open && on.b.only && on.b.app === 'bg-solid' && on.nav === 'Look,Controls,Sound,Gestures,Data' && on.cards === 'Touch,Board,Puzzles', JSON.stringify(on));
