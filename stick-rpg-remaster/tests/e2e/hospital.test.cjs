@@ -86,12 +86,21 @@ const A = require('./a11y.test.cjs');
     await t.fast(false);
     // The songs asked for, in order (SR.audio.music is wrapped; the engine may be locked headless).
     await ev(() => {
-      const A = window.SR.audio, m = A.music;
+      const A = window.SR.audio, m = A.music, st = A.stinger;
       window.__songs = [];
-      if (!A.__spied) { A.__spied = true; A.music = function (id) { window.__songs.push(id === undefined ? null : id); return m.apply(this, arguments); }; }
+      window.__stingers = [];
+      if (!A.__spied) {
+        A.__spied = true;
+        A.music = function (id) { window.__songs.push(id === undefined ? null : id); return m.apply(this, arguments); };
+        A.stinger = function (id) { window.__stingers.push(id); return st.apply(this, arguments); };
+      }
     });
     const songs = () => ev(() => window.__songs.splice(0));
+    const stingers = () => ev(() => window.__stingers.splice(0));
+    await stingers();
     const r = await fall({ money: { cash: 300, bank: 1000 } });
+    const hasDirge = await ev(() => !!(window.SR.reg.song && window.SR.reg.song['stingers.flatlined']));
+    T.eq(await stingers(), hasDirge ? ['flatlined'] : [], 'FLATLINED: the dirge alone (not the Stamp\'s level-up triad)');
     T.eq([r.down && r.down.outcome, r.down && r.down.bill, await t.scenes()], ['hospital', 130, ['hospital']],
       'a fall at 5 HP: HP 0, the bill max($50, 10 % of $1,300) = $130, the hospital scene');
     T.eq(await ev(() => window.SR.ui.stamp.current()), 'FLATLINED', 'the FLATLINED stamp');

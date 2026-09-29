@@ -235,6 +235,23 @@ const B18 = [
   T.eq((await ev(() => window.SR.save.profile())).hallOfFame.short.map((e) => e.name), ['Shorty'], 'a Short run files under Short');
   await t.goto('halloffame', { tab: 'short' });
   T.ok(/Shorty/.test(await t.uiText()) && /\$5,000/.test(await t.uiText()), 'and the Hall of Fame lists it');
+  await clearProfile();
+  const longhaul = await ev(() => {
+    const SR = window.SR;
+    SR.debug.newGame({ seed: 14, name: 'Longhaul', length: 15 });
+    const s = SR.state;
+    s.clock.day = 16; s.over = true; s.result = SR.rules.endgame.results(s, 'time');
+    const first = s.result.netWorth;
+    SR.scenes.go('results', { reason: 'time', result: s.result }, { transition: false });   // files the original end
+    SR.rules.endgame.keepPlaying(s);
+    s.money.cash += 90000; s.clock.day = 60;
+    SR.rules.endgame.retire(s);
+    SR.scenes.go('results', { reason: 'retire', result: s.result }, { transition: false });
+    const p = SR.save.profile();
+    return { first, best: p.totals.best.short, runs: p.totals.runs, days: p.totals.days, hof: (p.hallOfFame.short || []).map((e) => e.netWorth) };
+  });
+  T.eq([longhaul.best, longhaul.runs, longhaul.days, longhaul.hof], [longhaul.first, 1, 60, [longhaul.first]],
+    'a Keep-playing run counts once and adds its later days, but its best net worth and Hall of Fame entry stay at the original end', longhaul);
   await t.debug('feature', 'achievements', false);
 
   // ------------------------------------------------------------------------------------------------

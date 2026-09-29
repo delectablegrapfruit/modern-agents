@@ -41,7 +41,8 @@ Each item: the file, the exact change, why, and what W2-Transit does meanwhile.
     from }` or `{ resume: true }`; `hospital` `{ down, cause }`; `death` `{ down, cause, reason }`
     (or `{ reason, dead }` after a loan default); each of the four scene defs has an `info()` for tests;
   - `SR.ui.jail` = `{ card(opts), view(state, report, extra), summary(report), booked(days, reason), CHOICES }` and
-    `SR.ui.hospital` = `{ card(opts), gag(), lines(down, state) }` (js/ui/screens/{jail,hospital}.js);
+    `SR.ui.hospital` = `{ card(opts), gag(), lines(down, state), flatlined() }` (js/ui/screens/{jail,hospital}.js;
+    `flatlined()` shows the FLATLINED stamp and plays the dirge for the hospital and death scenes);
   - the island painter `SR.reg.interior.trip.fns.island(ctx, cityId, x, y, scale, t, { night, still })`
     (js/art/interiors/special.js; the trip scene uses it, W2-Exterior's skyline may) and its baked
     far-island sprite `fns.islandSprite(cityId, scale, night, px)` → `{ canvas, x, y, w, h }`.
@@ -102,3 +103,16 @@ Each item: the file, the exact change, why, and what W2-Transit does meanwhile.
   can show the same stale tip.
 - **Meanwhile:** `js/scenes/jail.js` calls `SR.ui.tooltip.hide()` (which clears the pending timer) when
   the card's mode changes; `tests/e2e/jail.test.cjs` covers it ("no stale tooltip of the refused Walk out").
+
+## 7. `js/ui/stamp.js` (lead; W1-D's): a stamp that does not play the level-up stinger
+
+- **Change:** let `SR.ui.stamp(o)` take `o.sting === false` (or play `stingers.stamp` only for
+  stat-gain and level-up stamps, `o.stat` / kind `primary`), so a stamp can land with its thud but
+  without the rising triad.
+- **Why:** since W2-Music registered the stingers, every stamp plays `stingers.stamp` ("level-up /
+  stamp (rising triad)", ART_AUDIO §13.4), FLATLINED included: the triad celebrated the death over the
+  dirge (`stingers.flatlined`) on Hardcore and at the start of the hospital gag. BOOKED (the jail
+  stamp) gets it too.
+- **Meanwhile:** `SR.ui.hospital.flatlined()` (js/ui/screens/hospital.js) holds `SR.audio.stinger`
+  back from `'stamp'` for the one synchronous `SR.ui.stamp` call of FLATLINED (after clearing any stamp
+  still up, so it lands at once); `tests/e2e/hospital.test.cjs` checks that only the dirge plays.

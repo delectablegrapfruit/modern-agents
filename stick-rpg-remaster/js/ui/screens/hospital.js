@@ -6,6 +6,8 @@
 //   SR.ui.hospital.card({ down, onDischarge }) → the Card element (el.leave is the discharge button)
 //   SR.ui.hospital.gag() → { el, show(word) } the gag's word layer ('bzzt' | 'kidding' | null)
 //   SR.ui.hospital.lines(down, state) → [{ id, key, vars }] the card's lines (also read by tests)
+//   SR.ui.hospital.flatlined() → the dirge's handle ({ stop() }) or null: the FLATLINED stamp and the
+//     dirge stinger, as the hospital gag and the death scene (js/scenes/{hospital,death}.js) open
 // DOM is built only when these are called (the scene's ui.mount).
 (function () {
   'use strict';
@@ -14,6 +16,27 @@
   function D() { return SR.ui.dom; }
   function h() { return D().h.apply(null, arguments); }
   function t(k, v) { return D().t(k, v); }
+
+  /**
+   * The FLATLINED moment (UI §5.12, ART_AUDIO §13.4): any stamp still showing or queued goes, the
+   * FLATLINED stamp lands at once, and the dirge (`stingers.flatlined`) plays alone. The Stamp plays
+   * the level-up stinger (`stingers.stamp`, a rising triad) with every stamp (js/ui/stamp.js); over
+   * the dirge that would celebrate the death, so it is held back for this one stamp only
+   * (docs/requests/W2-Transit.md 7 asks for a stamp option instead).
+   * @returns {{stop: function()}|null} the dirge (stop it at the BZZT), or null (not registered, audio locked)
+   */
+  function flatlined() {
+    var A = SR.audio, sting = A && typeof A.stinger === 'function' ? A.stinger : null;
+    SR.ui.stamp.clear();
+    if (sting) A.stinger = function (id) { return id === 'stamp' || id === 'stingers.stamp' ? null : sting.apply(this, arguments); };
+    try {
+      SR.ui.stamp({ key: 'stamp.hospital.flatlined', kind: 'hp' });
+    } finally {
+      if (sting) A.stinger = sting;
+    }
+    if (!sting || !SR.reg.song || !SR.reg.song['stingers.flatlined']) return null;
+    try { return sting.call(A, 'flatlined'); } catch (e) { SR.util.warnOnce('hospital.dirge', 'SR.ui.hospital: the dirge failed: ' + e.message); return null; }
+  }
 
   /**
    * The bill card's lines from the Down (ARCHITECTURE §6.7) and the state after the hospital night.
@@ -84,5 +107,5 @@
     };
   }
 
-  SR.ui.hospital = { card: card, gag: gag, lines: lines };
+  SR.ui.hospital = { card: card, gag: gag, lines: lines, flatlined: flatlined };
 })();

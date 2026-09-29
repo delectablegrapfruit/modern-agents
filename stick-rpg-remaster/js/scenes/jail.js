@@ -268,6 +268,11 @@
         render();
         if (J.mode === 'day') SR.ui.focus.focus(J.card.rows.str.main);
         if (fast() && J.card.speech) J.card.speech.complete();
+        // A fresh arrest (not a resumed cell): the cell door's verdict, the low-brass jail stinger
+        // (ART_AUDIO §13.4), over the start of doing_time.
+        if (J.params.jailed && SR.audio && typeof SR.audio.stinger === 'function' && SR.reg.song && SR.reg.song['stingers.jail']) {
+          try { SR.audio.stinger('jail'); } catch (e) { SR.util.warnOnce('jail.stinger', 'jail: the stinger failed: ' + e.message); }
+        }
       },
       unmount: function () {
         if (J && J.scope) { SR.ui.focus.pop(J.scope); J.scope = null; }

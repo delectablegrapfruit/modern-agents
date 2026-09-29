@@ -33,7 +33,7 @@
   var REPLAY_S = 2;            // ARCHITECTURE §10: the Quick fight's fast-forwarded log (2 s)
   var KO_S = 0.4, KO_HOLD_S = 0.25;   // ART_AUDIO §12 KO: an ink blot covers the screen in 400 ms, then the result
   var KO_SPLATS = 10;          // the blot's ragged rim: satellite drops around its edge
-  var TAUNT_LOW = 0.3;         // GDD §6.3 taunt 3 "when he is nearly down": at or under 30 % of his HP (flavour, not balance)
+  var TAUNT_LOW = 0.3;         // taunt 3, "nearly down" (GDD §6.3): at or under 30 % of the fighter's HP (flavour, not balance)
   var BTN_Y = 478, BTN_H = 90;
   var AREA_H = 576;            // the play area's height (CONTRACT §13.1: 1280 × 576)
   var FROZE_GAP = 18;          // u between the move bar and the "(it froze)" link above it

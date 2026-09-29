@@ -643,6 +643,23 @@ function rouletteNet(bets, pocket) {
   rr = await t.preview('casino.roulette');
   T.ok(rr.ok, 'with $5 it opens');
 
+  T.section('roulette at 150 % text (UI §8): the controls wrap upward, Cash out stays on the table');
+  await E(() => { SR.settings.set('access.textScale', 1.5); SR.state.money.cash = 5000; });
+  await k.quiet();
+  await k.row('casino.roulette');
+  await t.step(2);
+  const offTable = await E(() => {
+    const area = document.querySelector('[data-id="mg-canvas"]').getBoundingClientRect();
+    return Array.from(document.querySelectorAll('[data-id="mg-roulette-controls"] button')).filter((b) => {
+      const r = b.getBoundingClientRect();
+      return r.right > area.right + 1 || r.bottom > area.bottom + 1 || r.left < area.left - 1 || r.top < area.top - 1;
+    }).map((b) => b.getAttribute('data-id'));
+  });
+  T.eq(offTable, [], 'every roulette control (chips, Clear, Spin, Cash out) is inside the play area');
+  await t.clickUI('mg-roulette-cashout');
+  await k.closed();
+  await E(() => SR.settings.set('access.textScale', 1));
+
   T.section('no console errors');
   T.eq(t.errors(), [], 'zero console errors, page errors or failed requests');
   await t.close();

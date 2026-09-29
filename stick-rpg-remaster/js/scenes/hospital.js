@@ -288,10 +288,7 @@
         H.gag = SR.ui.hospital.gag();
         root.appendChild(H.gag.el);
         if (H.skipFast) return;
-        SR.ui.stamp({ key: 'stamp.hospital.flatlined', kind: 'hp' });
-        if (SR.audio && typeof SR.audio.stinger === 'function' && SR.reg.song && SR.reg.song['stingers.flatlined']) {
-          H.dirge = SR.audio.stinger('flatlined');
-        }
+        H.dirge = SR.ui.hospital.flatlined();
       },
       unmount: function () {
         if (H && H.scope) { SR.ui.focus.pop(H.scope); H.scope = null; }

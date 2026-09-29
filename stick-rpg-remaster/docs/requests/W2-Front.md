@@ -56,6 +56,8 @@ requests other packages addressed to W2-Front.
 - **Why:** ART_AUDIO §13.4 asks for both behaviours but no format names them.
 - **Meanwhile:** a missing variant plays the base song (the call is guarded by
   `SR.reg.song.final_edition.variants`).
+- **Status (review):** W2-Music's `final_edition.js` now registers exactly these two variants
+  (`stamp`, `minor`), and `stingers.stamp` exists; nothing is left to do here.
 
 ## 5. `docs/CONTRACT.md` / ARCHITECTURE (lead): the front end's additive names (nothing frozen changes)
 
@@ -65,9 +67,9 @@ requests other packages addressed to W2-Front.
   `profile { tab }`. Every front-end scene def has `info()` for tests; `newgame.begin(opts)` and
   `intro.skip()`.
 - **`SR.ui.title`** = `{ mount, backdrop: { enter, exit, update, render, at }, classic, navigate,
-  badge, metaLines, playTime, difficultyName, thumb, CLASSIC_URL }` (the P1 Classic cabinet in
+  swallowClick, badge, metaLines, playTime, difficultyName, thumb, CLASSIC_URL }` (the P1 Classic cabinet in
   Sticky's calls `SR.ui.title.classic()`). **`SR.ui.saveload`** = `{ latest, continueLatest, load,
-  resume, suspend, hardcore, copyText, SLOTS }`. **`SR.ui.newgame`** = `{ mount, create, roll, fair,
+  resume, suspend, quit, hardcore, copyText, SLOTS }`. **`SR.ui.newgame`** = `{ mount, create, roll, fair,
   step, options, cheatName, ACCESSORIES }`. **`SR.ui.results`** = `{ build, summary, headline, file,
   dayShown, rankText }`. **`SR.ui.settings`** = `{ contexts, actionsOf, actionLabel }`.
   **`SR.art.intro`** = `{ draw, beatAt, BEATS, DURATION }`. The render actor source `front.hide`
@@ -125,3 +127,6 @@ requests other packages addressed to W2-Front.
 - **W1-S 8** (the gamepad-only unlock line) → applied: the boot card reads "Press A to start. Sound
   begins after one click or key press." when a gamepad is connected, and the title shows "Sound
   begins after one click or key press." while the audio is locked and the last input was the pad.
+- **W2-Exterior 11** (`pause.js`, `results.js`: re-bake the building details on quitting to the
+  title) → applied in the review: both leave through `SR.ui.saveload.quit()`, which nulls the state
+  and then calls `SR.art.exteriorDetail.refresh()` (tested in `tests/e2e/frontend.test.cjs`).

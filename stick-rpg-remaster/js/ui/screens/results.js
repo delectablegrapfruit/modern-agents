@@ -110,7 +110,9 @@
       p.totals.falls = (p.totals.falls || 0) + Math.max(0, falls - prev.falls);
       p.totals.fights = (p.totals.fights || 0) + Math.max(0, fights - prev.fights);
       p.totals.best = p.totals.best || {};
-      if (!r.cheat && !has(r, 'unverified') && (p.totals.best[r.bucket] === undefined || r.netWorth > p.totals.best[r.bucket])) p.totals.best[r.bucket] = r.netWorth;
+      // The best net worth of a length counts the runs the Hall of Fame would take (B-18): never the
+      // cheat name, and a Keep-playing run only at its original end (not after 300 more days).
+      if (r.ranked && !has(r, 'unverified') && (p.totals.best[r.bucket] === undefined || r.netWorth > p.totals.best[r.bucket])) p.totals.best[r.bucket] = r.netWorth;
       seen[rk] = { days: days, falls: falls, fights: fights };
       seen[ek] = 1;
       var keys = Object.keys(seen);

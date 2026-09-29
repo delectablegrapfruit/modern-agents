@@ -43,7 +43,7 @@
     },
     patterns: {
       S: { bars: 1, tracks: {
-        whistle: 'G4 B4 D5 G5 B5 D6:11 . . . . . . . . . - ',
+        whistle: 'G4 B4 D5 G5 B5 D6:11 . . . . . . . . . -',
         brass: '. . . . . [G3 B3 D4 G4]:10 . . . . . . . . . .',
         bells: '. . . . . [B4 D5 G5]:11 . . . . . . . . . .',
         bass: 'G2:2 . D2:2 . . G1:10 . . . . . . . . . .',

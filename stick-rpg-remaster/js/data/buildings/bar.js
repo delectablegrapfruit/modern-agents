@@ -16,8 +16,8 @@
   var SR = window.SR;
 
   // Greeting thresholds (UI §5.6 flavour, not balance): a reputation after this many wins, a new
-  // face in the first days, late night and the lunch hour. The karma tiers (B-04b Good / Bad) and the ladder's length (B-13) are
-  // SR.tuning's, read when Sticky speaks.
+  // face in the first days, late night and the lunch hour. The karma tiers (B-04b Good / Bad) and
+  // the ladder's length (B-13) are SR.tuning's, read when Sticky speaks.
   var FEARED_WINS = 6, FRESH_DAYS = 3, LATE_FROM = 22 * 60, LATE_TO = 4 * 60, LUNCH = [11 * 60, 14 * 60];
 
   /** @returns {*} the value at a dotted path of SR.tuning (read at call time). */

@@ -137,7 +137,7 @@
     // Cash out no longer fit one 824 px row, so the row grows upward into the free band under the
     // board (y 348-488) instead of pushing Cash out off the play area.
     var bar = host.el('div', { 'data-id': 'mg-roulette-controls', style: {
-      position: 'absolute', left: '440px', bottom: '8px', width: '824px', display: 'flex', flexWrap: 'wrap', alignContent: 'flex-end',
+      position: 'absolute', left: '440px', bottom: '16px', width: '824px', display: 'flex', flexWrap: 'wrap', alignContent: 'flex-end',
       gap: '8px', pointerEvents: 'none' } });
     host.ui.appendChild(bar);
 

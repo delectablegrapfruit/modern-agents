@@ -385,11 +385,15 @@
       ctx.fillStyle = host.color('ink-900'); ctx.textAlign = 'left'; ctx.fillText(s, x + 12, y + 5);
     }
 
+    /**
+     * The stake as a stack of the table's own denominations ($5 / $25 / $100 / $500, whatever the
+     * chip buttons add at VIP Gold), so every bet, the $5 minimum included, shows its chips.
+     */
     function drawChips(ctx, amount, x, y) {
-      var left = amount, stack = 0;
-      for (var i = chipVals.length - 1; i >= 0 && stack < 12; i--) {
-        while (left >= chipVals[i] && stack < 12) {
-          left -= chipVals[i];
+      var vals = chipsBase(), left = amount, stack = 0;
+      for (var i = vals.length - 1; i >= 0 && stack < 12; i--) {
+        while (left >= vals[i] && stack < 12) {
+          left -= vals[i];
           ctx.beginPath(); ctx.ellipse(x, y - stack * 6, 30, 12, 0, 0, Math.PI * 2);
           ctx.fillStyle = pal(CHIP_COL[i]); ctx.fill();
           ctx.lineWidth = 2; ctx.strokeStyle = pal('inkLine'); ctx.stroke();
@@ -399,16 +403,16 @@
       }
     }
 
-    /**
-     * The shoe and the discard tray (UI §5.8): the shoe's window shows the cards still to come, with
-     * the cut card's place (B-14b: 75 %); the tray's stack grows with the cards played since the
-     * last shuffle (those of the hand still on the felt are not in it yet; a new shoe empties it).
-     */
     /** @returns {number} the cards in the discard tray: dealt since the shuffle, less those still on the felt. */
     function discarded() {
       var onTable = r ? r.dealer.length + r.hands.reduce(function (a, h) { return a + h.cards.length; }, 0) : 0;
       return Math.max(0, sh.pos - onTable);
     }
+    /**
+     * The shoe and the discard tray (UI §5.8): the shoe's window shows the cards still to come, with
+     * the cut card's place (B-14b: 75 %); the tray's stack grows with the cards played since the
+     * last shuffle (those of the hand still on the felt are not in it yet; a new shoe empties it).
+     */
     function drawShoe(ctx) {
       var size = sh.cards.length, left = size - sh.pos, used = discarded();
       var wx = SHOE.x + 12, wy = SHOE.y + 14, ww = SHOE.w - 24, wh = SHOE.h - 28;

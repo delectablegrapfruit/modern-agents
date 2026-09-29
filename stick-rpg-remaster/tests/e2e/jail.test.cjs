@@ -58,6 +58,11 @@ const A = require('./a11y.test.cjs');
 
   T.section('the Jail Day card: day, why, last night, four choices');
   {
+    await ev(() => {
+      const A = window.SR.audio, st = A.stinger;
+      window.__stingers = [];
+      A.stinger = function (id) { window.__stingers.push(id); return st.apply(this, arguments); };
+    });
     // Savings in the bank, so the arrest night earns interest (UI §5.12: "Interest +$42 · NLI ▲ 2 % · 1 message").
     await arrest(60, { money: { cash: 100, bank: 5000 } });
     const s = await t.state();
@@ -65,6 +70,9 @@ const A = require('./a11y.test.cjs');
       'Heat 60: 3 + 2 = 5 days; the arrest night ran (day 2, 08:00 in the cell)');
     T.eq(await K.text(t, 'jail-day'), 'Day 2 of 5', '"Day 2 of 5"');
     T.eq(await K.text(t, 'jail-reason'), 'Booked for 5 days: the Five-O hold-up.', 'why you are here');
+    const hasJailSting = await ev(() => !!(window.SR.reg.song && window.SR.reg.song['stingers.jail']));
+    T.eq(await ev(() => window.__stingers.splice(0).filter((id) => id === 'jail')), hasJailSting ? ['jail'] : [],
+      'a fresh arrest: the low-brass jail stinger as the cell comes up (ART_AUDIO §13.4)');
     const sum = await K.text(t, 'jail-summary');
     T.ok(/^Last night: Interest \+\$\d+ · [A-Z]{3} [▲▼] \d+ % · \d+ messages?$/.test(sum), 'last night\'s one-line summary: interest, the mover, the messages', sum);
     const ds = (await K.events(t, ['day:started', 'night']));
@@ -240,12 +248,14 @@ const A = require('./a11y.test.cjs');
   {
     await arrest(20);
     T.ok((await K.text(t, 'jail-summary')).length > 0, 'the arrest night\'s one-line summary');
+    await ev(() => window.__stingers.splice(0));
     await t.newGame({ seed: 8 });
     await t.set({ jail: { daysLeft: 3, served: 1, reason: 'bank', bailBase: 500 } });
     await t.goto('jail', { resume: true });
     await t.step(1);
     T.eq([await t.scenes(), await K.visible(t, 'jail-summary'), await K.text(t, 'jail-reason'), await K.text(t, 'jail-day')],
       [['jail'], false, 'Booked for 4 days: the bank job.', 'Day 2 of 4'], 'another game\'s cell: no stale "Last night" line');
+    T.eq(await ev(() => window.__stingers.splice(0).filter((id) => id === 'jail')), [], 'a resumed cell: no jail stinger (only an arrest plays it)');
     await t.newGame({ seed: 8 });
     await t.set({ jail: { daysLeft: 1, served: 0, reason: 'hotwire', bailBase: 500 } });
     await t.goto('jail', { resume: true });
